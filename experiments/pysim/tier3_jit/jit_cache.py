@@ -356,10 +356,13 @@ class JITTrace:
     def invoke(self, ctx: object) -> int:
         """Helper to invoke trace directly on WASMContext via CPS 4-argument calling convention."""
         tos = ctx.pop() if ctx.stack else 0
+        result_slot = len(ctx.stack)
         self.fn(ctx.context_ptr, ctx.sp_ptr, ctx.locals_ptr, tos)
-        if self.has_return_val:
-            ctx.push(ctx._c_result.value & 0xFFFF_FFFF)
-        return ctx._c_result.value
+        if not self.has_return_val:
+            return 0
+        ctx.stack.set_size(result_slot + 1)
+        result = ctx.stack[result_slot]
+        return result
 
 
 class JITCacheBank:

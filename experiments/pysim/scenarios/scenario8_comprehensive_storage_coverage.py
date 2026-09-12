@@ -164,6 +164,7 @@ def test_scenario_comprehensive_storage_and_debugger():
     sysv = System()
     wasi_ctx = WasiHostContext(sysv)
     host_funcs = wasi_ctx.build_interpreter_host_functions(module)
+    module.init_memory_data(wasi_ctx.guest_memory)
     interp = Interpreter(module, memory=wasi_ctx.guest_memory, host_functions=host_funcs)
     fn_mem_test = module.export_func_index("test_memory_widths")
     res_mem = interp.call(fn_mem_test, [])

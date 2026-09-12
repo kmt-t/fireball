@@ -225,6 +225,7 @@ def test_scenario_wasi_syscall():
     sysv = System()
     wasi_ctx = WasiHostContext(sysv)
     host_funcs = wasi_ctx.build_interpreter_host_functions(module)
+    module.init_memory_data(wasi_ctx.guest_memory)
     interp = Interpreter(module, memory=wasi_ctx.guest_memory, host_functions=host_funcs)
     # 1. Execute scatter-gather fd_write
     fn_write = module.export_func_index("test_scatter_write")

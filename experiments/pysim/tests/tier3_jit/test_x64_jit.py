@@ -111,7 +111,7 @@ def test_trace_compiler_cps_4arg_and_pic():
     assert trace.header.head_wasm_pc == head_pc
     assert trace.size_bytes >= 16
     # 2. Direct call via CPS 4-argument C function pointer fn(ctx, sp, local_base, tos)
-    locals_arr = (ctypes.c_int64 * 8)(5, 0)
+    locals_arr = (ctypes.c_uint32 * 8)(5, 0)
     res = trace.fn(
         ctypes.c_void_p(0),
         ctypes.c_void_p(0),
@@ -132,7 +132,7 @@ def test_trace_compiler_cps_4arg_and_pic():
             None,
             [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_uint32],
         )
-        locals_arr_pic = (ctypes.c_int64 * 8)(10, 0)
+        locals_arr_pic = (ctypes.c_uint32 * 8)(10, 0)
         pic_fn(
             ctypes.c_void_p(0),
             ctypes.c_void_p(0),
@@ -217,7 +217,7 @@ def test_context_helper_tail_jump_is_pic_and_uses_context_pointer():
     )
 
     def helper(_ctx: ctypes.c_void_p, _sp: ctypes.c_void_p, local_base: ctypes.c_void_p, _tos: int) -> None:
-        locals_ptr = ctypes.cast(local_base, ctypes.POINTER(ctypes.c_int64))
+        locals_ptr = ctypes.cast(local_base, ctypes.POINTER(ctypes.c_uint32))
         locals_ptr[0] += 1
 
     helper_fn = helper_type(helper)

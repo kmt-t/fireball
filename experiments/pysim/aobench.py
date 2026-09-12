@@ -413,6 +413,7 @@ def run_aobench():
     sysv = System()
     wasi_ctx = WasiHostContext(sysv)
     host_funcs = wasi_ctx.build_interpreter_host_functions(module)
+    module.init_memory_data(wasi_ctx.guest_memory)
     # 4. Tier 2: Pure Threaded CPS Interpreter Execution
     print(
         f"\n[*] Step 3: Executing on Tier 2 Threaded CPS Interpreter ({WIDTH}x{HEIGHT}, {AO_SAMPLES} samples/hit)..."
@@ -438,6 +439,7 @@ def run_aobench():
     sysv_t3 = System()
     wasi_ctx_t3 = WasiHostContext(sysv_t3)
     host_funcs_t3 = wasi_ctx_t3.build_interpreter_host_functions(module)
+    module.init_memory_data(wasi_ctx_t3.guest_memory)
     trace_compiler = TraceCompiler()
     debug = "--debug" in sys.argv
     runtime_engine = RuntimeEngine(jit_compiler=trace_compiler, yield_threshold=16, debug=debug)

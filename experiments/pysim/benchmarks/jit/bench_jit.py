@@ -155,7 +155,7 @@ class JITCompilerBenchmark:
             local_base: ctypes.c_void_p,
             _tos: int,
         ) -> None:
-            locals_ptr = ctypes.cast(local_base, ctypes.POINTER(ctypes.c_int64))
+            locals_ptr = ctypes.cast(local_base, ctypes.POINTER(ctypes.c_uint32))
             locals_ptr[0] += 1
 
         helper_fn = helper_type(helper)

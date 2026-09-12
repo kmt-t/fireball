@@ -223,8 +223,8 @@ def _gen_spill_result_to_sp() -> Generator[int, None, None]:
     # RAX for the caller to read as a return value.
     # pop rax                 58
     yield 0x58
-    # mov [r12], rax          49 89 04 24
-    yield from (0x49, 0x89, 0x04, 0x24)
+    # mov [r12], eax          41 89 04 24
+    yield from (0x41, 0x89, 0x04, 0x24)
 
 
 def _gen_restore_callee_saved_and_ret() -> Generator[int, None, None]:

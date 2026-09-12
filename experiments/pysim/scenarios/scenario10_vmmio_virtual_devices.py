@@ -36,6 +36,7 @@ except ImportError:
     wasmtime = None
 
 from interpreter import Interpreter, Trap
+from scheduler import Scheduler
 from vmmio import (
     FC_STATIC_DEVICE,
     TrapCode,
@@ -43,7 +44,6 @@ from vmmio import (
     VMMIOController,
 )
 from wasm_reader import parse
-from scheduler import Scheduler
 
 
 def test_scenario_vmmio_virtual_devices():
@@ -156,6 +156,7 @@ def test_scenario_vmmio_virtual_devices():
         phys_memory[0x30040:0x30044] = (0xCAFEBABE).to_bytes(4, "little")
 
         guest_ram = bytearray(64 * 1024)
+        module.init_memory_data(guest_ram)
         interp = Interpreter(
             module,
             memory=guest_ram,

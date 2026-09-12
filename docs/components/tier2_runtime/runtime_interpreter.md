@@ -113,14 +113,15 @@ WASMゲストの全実行状態を管理する。JIT/Interpreter 共通の仮想
 
 #### コールフレーム（call_frame descriptor）
 <!-- traceability: {PositionIndependentCode} {ContextPointerRegister} {MemoryBoundaryCheck} {EnvironmentPointer} -->
-`call_frame` は関数のコード、制御マップ、環境、および `LocalStack` の開始スロットを結び付ける実行時ディスクリプタである。`LocalStack` の Native バッファへメタデータヘッダを混在させず、ローカル値は関数の型に応じて i32/f32 を1スロット、i64/f64を2スロットで保持する。オペランドスタックはコール境界を跨いで連続し、`call`/`call_indirect`/関数復帰は常にインタープリタ境界で処理するため、JIT トレースが `call_frame` の push/pop を代行することはない。
+`call_frame` は関数インデックス、コード、制御マップ、環境、および `LocalStack` の開始スロットを結び付ける実行時ディスクリプタである。`LocalStack` の Native バッファへメタデータヘッダや型情報を混在させず、ローカル値は関数シグネチャに従って i32/f32 を1スロット、i64/f64を2スロットで保持する。CallFrameが保持するのは各local indexの物理スロットオフセットだけであり、`local.get`/`local.set`/`local.tee` は型を解釈せず、必要な1または2スロットをオペランドスタックとの間でrawコピーする。型付き演算やABI境界の読み書きだけが、命令または呼び出し側の既知の型に応じて値を解釈する。オペランドスタックはコール境界を跨いで連続し、`call`/`call_indirect`/関数復帰は常にインタープリタ境界で処理するため、JIT トレースが `call_frame` の push/pop を代行することはない。
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
+| 関数インデックス | 所有するWASM関数のメタデータを特定 | インデックス | 32bit符号なし |
 | コード参照 | 現在実行するWASM命令列 | 非所有参照 | Flash/ROM上のコードを参照 |
 | 制御マップ | block/loop/if の静的な飛び先表 | 非所有参照 | ロード時に構築した表を共有 |
 | LocalStack開始スロット | 当該関数のローカル値の先頭 | 32bitオフセット | Native local buffer 内の物理スロット位置 |
-| ローカル型列 | local index ごとの WASM 型 | 不変メタデータ | i32/f32 は1、i64/f64 は2スロット |
+| ローカルスロットオフセット列 | local index ごとの物理スロット位置 | 不変メタデータ | 型情報を持たず、32bitスロット単位 |
 
 `call_frame` のメタデータは Native LocalStack の値配列とは別に管理する。Native ABIへ渡す値配列には Pythonオブジェクト、型タグ、可変長コンテナを含めない。 `{CallFrame_Layout}`。
 

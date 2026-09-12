@@ -97,14 +97,14 @@ class WASMTraceCompiler:
             # A trace's residual value is VM operand-stack state, not a C return
             # value ({ExecutionContext_Layout}): written to `sp` (mirroring
             # x64_jit.py's SPILL_RESULT_TO_SP) instead of returned.
-            c_arr = ctypes.cast(local_base, ctypes.POINTER(ctypes.c_int64)) if local_base else None
+            c_arr = ctypes.cast(local_base, ctypes.POINTER(ctypes.c_uint32)) if local_base else None
             stk: list[int] = [tos] if tos else []
             for op, arg in ops:
                 handler = _EMU_TRACE_MAP.find(op)
                 if handler is not None:
                     handler(stk, c_arr, arg)
             if stk and sp:
-                ctypes.cast(sp, ctypes.POINTER(ctypes.c_int64))[0] = stk[-1]
+                ctypes.cast(sp, ctypes.POINTER(ctypes.c_uint32))[0] = stk[-1] & 0xFFFF_FFFF
 
         c_fn = ctypes.CFUNCTYPE(
             None,

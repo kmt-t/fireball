@@ -14,7 +14,6 @@ from collections.abc import Iterable, Iterator
 
 from jit_abi import JIT_CONTEXT_HELPER_PTR_OFFSET, JIT_CONTEXT_SIZE_BYTES
 
-
 NATIVE_VALUE_STACK_CAPACITY = 64
 NATIVE_CONTROL_STACK_CAPACITY = 32
 
@@ -190,6 +189,12 @@ class NativeValueStack:
         normalized = self._index(index)
         self._native.values[normalized] = self._encode(value)
 
+    def raw_at(self, index: int) -> int:
+        """Read one native slot, including a slot reserved by native code."""
+
+        assert 0 <= index < self._capacity
+        return int(self._native.values[index])
+
     def __iter__(self) -> Iterator[int]:
         for index in range(len(self)):
             yield self._decode(index)
@@ -217,9 +222,52 @@ class NativeValueStack:
             assert self.push_back(value)
         return True
 
-    def pop_back(self) -> int | None:
-        if not self:
-            return None
+    def truncate(self, size: int) -> None:
+        """Move the stack pointer back without touching released slots."""
+
+        assert 0 <= size <= len(self)
+        self._native.size = size
+
+    def set_size(self, size: int) -> None:
+        """Set the raw stack pointer after native code wrote existing storage."""
+
+        assert 0 <= size <= self._capacity
+        self._native.size = size
+
+    def _validate_range(self, start: int, count: int) -> None:
+        assert count >= 0
+        if not 0 <= start or start + count > len(self):
+            raise IndexError("native value stack range out of bounds")
+
+    def push_raw_from(self, source: NativeValueStack, start: int, count: int) -> bool:
+        """Copy raw slots from another Native stack onto this stack."""
+
+        source._validate_range(start, count)
+        if len(self) + count > self._capacity:
+            return False
+        destination_start = len(self)
+        for index in range(count):
+            self._native.values[destination_start + index] = source._native.values[start + index]
+        self._native.size = destination_start + count
+        return True
+
+    def copy_raw_to(self, destination: NativeValueStack, start: int, count: int) -> None:
+        """Copy the top raw slots to an existing range in another stack."""
+
+        source_start = len(self) - count
+        self._validate_range(source_start, count)
+        destination._validate_range(start, count)
+        for index in range(count):
+            destination._native.values[start + index] = self._native.values[source_start + index]
+
+    def pop_raw_to(self, destination: NativeValueStack, start: int, count: int) -> None:
+        """Copy and remove the top raw slots into another Native stack."""
+
+        self.copy_raw_to(destination, start, count)
+        self._native.size -= count
+
+    def pop_back(self) -> int:
+        assert self
         index = len(self) - 1
         value = self._decode(index)
         self._native.size = index
@@ -245,36 +293,26 @@ class NativeValueStack:
             return False
         return self.push_back(bits & 0xFFFF_FFFF) and self.push_back(bits >> 32)
 
-    def pop_i32(self) -> int | None:
+    def pop_i32(self) -> int:
         value = self.pop_back()
-        if value is None:
-            return None
         value &= 0xFFFF_FFFF
         return value - (1 << 32) if value & 0x8000_0000 else value
 
-    def pop_i64(self) -> int | None:
-        if len(self) < 2:
-            return None
+    def pop_i64(self) -> int:
+        assert len(self) >= 2
         high = self.pop_back()
         low = self.pop_back()
-        if high is None or low is None:
-            return None
         raw = (high << 32) | low
         return raw - (1 << 64) if raw & (1 << 63) else raw
 
-    def pop_f32(self) -> float | None:
+    def pop_f32(self) -> float:
         value = self.pop_back()
-        if value is None:
-            return None
         return struct.unpack("<f", struct.pack("<I", value & 0xFFFF_FFFF))[0]
 
-    def pop_f64(self) -> float | None:
-        if len(self) < 2:
-            return None
+    def pop_f64(self) -> float:
+        assert len(self) >= 2
         high = self.pop_back()
         low = self.pop_back()
-        if high is None or low is None:
-            return None
         return struct.unpack("<d", struct.pack("<Q", (high << 32) | low))[0]
 
     def peek_i32(self) -> int:
@@ -363,9 +401,9 @@ class NativeValueStack:
         self._native.size -= removed
 
     def value_ptr(self, start: int = 0) -> ctypes.c_void_p:
-        """Return a pointer to the Native raw value words for JIT/native code."""
+        """Return a pointer to the Native raw value words."""
 
-        assert 0 <= start <= len(self)
+        assert 0 <= start <= self._capacity
         address = ctypes.addressof(self._native) + ValueStackNative.values.offset + start * 4
         return ctypes.c_void_p(address)
 
@@ -393,13 +431,13 @@ assert ControlStackNative.size.offset == 512
 
 
 __all__ = [
-    "ConstBufferViewNative",
-    "ExecutionContextNative",
-    "ControlFrameNative",
-    "ControlStackNative",
-    "NativeValueStack",
     "NATIVE_CONTROL_STACK_CAPACITY",
     "NATIVE_VALUE_STACK_CAPACITY",
+    "ConstBufferViewNative",
+    "ControlFrameNative",
+    "ControlStackNative",
+    "ExecutionContextNative",
+    "NativeValueStack",
     "ValueStackNative",
     "WasmFunctionViewNative",
     "WasmModuleViewNative",

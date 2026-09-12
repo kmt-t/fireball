@@ -164,8 +164,8 @@ class Module:
     def init_memory_data(self, memory: bytearray) -> None:
         """Initializes memory with active data segments."""
         for seg in self.data_segments:
-            if seg.offset + len(seg.data) <= len(memory):
-                memory[seg.offset : seg.offset + len(seg.data)] = seg.data
+            assert seg.offset + len(seg.data) <= len(memory)
+            memory[seg.offset : seg.offset + len(seg.data)] = seg.data
 
     def table_contents(self, table_index: int) -> list[int | None]:
         """

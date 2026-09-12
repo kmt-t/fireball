@@ -48,6 +48,7 @@ def run_aobench(debug: bool = False) -> dict[str, float]:
     sysv = System()
     wasi_ctx = WasiHostContext(sysv)
     funcs = wasi_ctx.build_interpreter_host_functions(module)
+    module.init_memory_data(wasi_ctx.guest_memory)
     interp = Interpreter(module, memory=wasi_ctx.guest_memory, host_functions=funcs)
     main_fn = module.export_func_index("main")
 
@@ -64,6 +65,7 @@ def run_aobench(debug: bool = False) -> dict[str, float]:
     sysv_t3 = System()
     wasi_ctx_t3 = WasiHostContext(sysv_t3)
     funcs_t3 = wasi_ctx_t3.build_interpreter_host_functions(module)
+    module.init_memory_data(wasi_ctx_t3.guest_memory)
     trace_compiler = TraceCompiler()
     runtime_engine = RuntimeEngine(jit_compiler=trace_compiler, yield_threshold=16, debug=debug)
     runtime_engine.register_module_blocks(module)

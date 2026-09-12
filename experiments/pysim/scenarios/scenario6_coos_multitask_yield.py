@@ -1,5 +1,5 @@
-from collections.abc import Generator
 import sys
+from collections.abc import Generator
 from pathlib import Path
 
 _PYSIM_DIR = Path(__file__).resolve().parent
@@ -98,6 +98,7 @@ def test_scenario_coos_multitask():
     sysv = System()
     wasi_ctx = WasiHostContext(sysv)
     host_funcs = wasi_ctx.build_interpreter_host_functions(module)
+    module.init_memory_data(wasi_ctx.guest_memory)
     interp = Interpreter(module, memory=wasi_ctx.guest_memory, host_functions=host_funcs)
     fn_prod = module.export_func_index("producer_task")
     fn_cons = module.export_func_index("consumer_task")

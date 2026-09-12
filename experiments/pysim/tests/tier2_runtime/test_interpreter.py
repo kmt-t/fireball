@@ -74,11 +74,12 @@ def test_intp_01_02_cps_handlers_and_dispatch_table():
 def test_intp_03_control_frame_enum_and_opcode_attribute_table():
     """TEST-INTP-03: Control-frame kinds and loader opcode metadata are typed and shared."""
     from control_flow import OpcodeAttribute, opcode_has_attribute
-    from interpreter import ControlFrame, ControlFrameKind
+    from interpreter import ControlFrameKind, NativeControlStack
     from wasm_opcodes import BR_IF, CALL, I32_ADD, LOOP
 
-    frame = ControlFrame(ControlFrameKind.LOOP, start=0, match_end=4, stack_height=0)
-    assert frame.kind is ControlFrameKind.LOOP
+    control_stack = NativeControlStack(capacity=1)
+    assert control_stack.push_back(ControlFrameKind.LOOP, start=0, match_end=4, stack_height=0)
+    assert control_stack[0].kind == int(ControlFrameKind.LOOP)
     assert opcode_has_attribute(CALL, OpcodeAttribute.CALL)
     assert opcode_has_attribute(BR_IF, OpcodeAttribute.BRANCH)
     assert opcode_has_attribute(LOOP, OpcodeAttribute.BASIC_BLOCK_BOUNDARY)
@@ -215,6 +216,7 @@ def test_wasm_40_to_46_memory_load_store_grow_and_data():
         return
     mod = parse(wasm_bytes)
     mem = bytearray(65536)
+    mod.init_memory_data(mem)
     interp = Interpreter(mod, memory=mem)
     # Initial data check
     assert bytes(mem[0:9]) == b"WASM_INIT"
@@ -400,8 +402,10 @@ def test_intp_70_to_72_direct_bytecode_execution():
     assert frame.control_map is module.functions[0].control_map
     assert context.call_frame_stack[-1] is frame
     assert context.local_offset == 2
+    assert len(context.local_stack) == 2
     context.end_call_frame(frame)
     assert context.local_offset == 0
+    assert len(context.local_stack) == 0
 
     # 2. TEST-INTP-71 & TEST-INTP-72: Execution proceeds by direct byte reading and ip addition
     res = interp.call(0, [15])

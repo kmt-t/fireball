@@ -131,17 +131,17 @@ def _emit_i32_const(code: bytearray, arg: object) -> int:
 
 
 def _emit_local_get(code: bytearray, arg: object) -> int:
-    emit(code, st.LOCAL_GET, disp=int(arg) * 8)  # type: ignore[arg-type]
+    emit(code, st.LOCAL_GET, disp=int(arg) * 4)  # type: ignore[arg-type]
     return 1
 
 
 def _emit_local_set(code: bytearray, arg: object) -> int:
-    emit(code, st.LOCAL_SET, disp=int(arg) * 8)  # type: ignore[arg-type]
+    emit(code, st.LOCAL_SET, disp=int(arg) * 4)  # type: ignore[arg-type]
     return -1
 
 
 def _emit_local_tee(code: bytearray, arg: object) -> int:
-    emit(code, st.LOCAL_TEE, disp=int(arg) * 8)  # type: ignore[arg-type]
+    emit(code, st.LOCAL_TEE, disp=int(arg) * 4)  # type: ignore[arg-type]
     return 0
 
 

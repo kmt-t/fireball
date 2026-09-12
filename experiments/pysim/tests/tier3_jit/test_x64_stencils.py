@@ -125,7 +125,7 @@ def run_i32(
     try:
         buf.write(0, bytes(code))
         n_locals = max(len(locals_values or []), 1)
-        LocalsArray = ctypes.c_int64 * n_locals
+        LocalsArray = ctypes.c_uint32 * n_locals
         locals_arr = LocalsArray(*[0] * n_locals)
         for i, v in enumerate(locals_values or []):
             locals_arr[i] = v
@@ -175,7 +175,7 @@ def run_i32_checked(
     try:
         buf.write(0, bytes(code))
         n_locals = max(len(locals_values or []), 1)
-        LocalsArray = ctypes.c_int64 * n_locals
+        LocalsArray = ctypes.c_uint32 * n_locals
         locals_arr = LocalsArray(*[0] * n_locals)
         for i, v in enumerate(locals_values or []):
             locals_arr[i] = v
@@ -224,7 +224,7 @@ def test_epilogue_sign_extends_negative_i32_into_the_i64_return_value():
 
 
 def test_local_get_reads_the_correct_slot_by_index():
-    code = [(st.LOCAL_GET, {"disp": 1 * 8})]
+    code = [(st.LOCAL_GET, {"disp": 1 * 4})]
     assert run_i32(code, locals_values=[111, 222, 333]) == 222
 
 
@@ -257,8 +257,8 @@ def test_local_get_set_tee_at_a_nonzero_locals_array_offset():
 
     code = [
         const_(555),
-        (st.LOCAL_SET, {"disp": 2 * 8}),
-        (st.LOCAL_GET, {"disp": 2 * 8}),
+        (st.LOCAL_SET, {"disp": 2 * 4}),
+        (st.LOCAL_GET, {"disp": 2 * 4}),
     ]
     assert run_i32(code, locals_values=[0, 0, 0, 0]) == 555
 

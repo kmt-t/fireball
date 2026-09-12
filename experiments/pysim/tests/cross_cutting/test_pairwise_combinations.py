@@ -171,6 +171,7 @@ def run_single_pairwise_case(case_tuple: tuple) -> None:
     if runtime_engine:
         runtime_engine.register_module_blocks(module)
 
+    module.init_memory_data(wasi_ctx.guest_memory)
     interp = Interpreter(module, memory=wasi_ctx.guest_memory, host_functions=host_funcs)
     # Setup Debugger if needed
     dbg_mgr = None

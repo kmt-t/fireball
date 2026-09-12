@@ -54,19 +54,19 @@ from control_flow import (
     build_control_map,
     opcode_has_attribute,
 )
-from leb128 import decode_signed, decode_unsigned
 from interop_abi import (
     ExecutionContextNative,
     NativeValueStack,
 )
+from leb128 import decode_signed, decode_unsigned
 from native_stacks import (
-    ControlFrame,
     ControlFrameKind,
     NativeControlStack,
     _ControlFrameWindow,
     _LocalStackWindow,
 )
 from system_containers import StaticVector
+from vmmio import VMMIOController
 from wasm_module import F32, F64, I64, Module
 from wasm_opcodes import (
     BLOCK,
@@ -271,13 +271,39 @@ FB_CONF_MAX_VALUE_STACK = 64
 FB_CONF_MAX_LOCAL_STACK = 64
 
 
-def _make_int_vector(
-    values: Sequence[int], capacity: int = FB_CONF_MAX_VALUE_STACK
+def _value_slot_width(value_type: str) -> int:
+    return 2 if value_type in (I64, F64) else 1
+
+
+def _layout_offsets(local_layout: Sequence[str]) -> tuple[tuple[int, ...], int]:
+    offsets: StaticVector[int] = StaticVector(capacity=FB_CONF_MAX_LOCAL_STACK)
+    slot_count = 0
+    for value_type in local_layout:
+        assert offsets.push_back(slot_count)
+        slot_count += _value_slot_width(value_type)
+    return tuple(offsets), slot_count
+
+
+def _encode_public_args(
+    values: Sequence[int | float], param_types: Sequence[str]
 ) -> StaticVector[int]:
-    vector: StaticVector[int] = StaticVector(capacity=capacity)
-    if not vector.extend(values):
-        raise Trap("static vector capacity exceeded")
-    return vector
+    assert len(values) == len(param_types)
+    raw_args: StaticVector[int] = StaticVector(capacity=FB_CONF_MAX_VALUE_STACK)
+    for value, value_type in zip(values, param_types, strict=True):
+        if value_type == I64:
+            raw = int(value) & I64_MASK
+            assert raw_args.push_back(raw & I32_MASK)
+            assert raw_args.push_back(raw >> 32)
+        elif value_type == F32:
+            bits = struct.unpack("<I", struct.pack("<f", float(value)))[0]
+            assert raw_args.push_back(bits)
+        elif value_type == F64:
+            bits = struct.unpack("<Q", struct.pack("<d", float(value)))[0]
+            assert raw_args.push_back(bits & I32_MASK)
+            assert raw_args.push_back(bits >> 32)
+        else:
+            assert raw_args.push_back(int(value) & I32_MASK)
+    return raw_args
 
 
 @dataclass(slots=True)
@@ -294,7 +320,7 @@ class ExecEnv:
     globals: list[int]
     tables: list[list[int | None]]
     host_functions: list[Callable[..., int | None] | None]
-    vmmio: object | None = None
+    vmmio: VMMIOController | None = None
     phys_mem: bytearray | None = None
 
 
@@ -341,15 +367,16 @@ class InterpreterContext:
         self,
         code: bytes,
         control_map: ControlMap,
-        args: StaticVector[int],
-        local_types: tuple[str, ...],
+        raw_args: StaticVector[int],
+        func_index: int,
+        local_offsets: tuple[int, ...],
+        local_slot_count: int,
         env: ExecEnv,
     ) -> CallFrame:
         """Push one frame's locals into the context-owned Native local stack."""
-        assert len(args) == len(local_types)
+        assert len(raw_args) == local_slot_count
         frame_offset = self.local_offset
-        required = sum(2 if value_type in (I64, F64) else 1 for value_type in local_types)
-        if frame_offset + required > self.local_stack.capacity:
+        if frame_offset + local_slot_count > self.local_stack.capacity:
             raise Trap("local stack capacity exceeded")
         if not self.call_frame_offsets.push_back(frame_offset):
             raise Trap("call-frame offset stack capacity exceeded")
@@ -357,31 +384,21 @@ class InterpreterContext:
             code,
             control_map,
             self,
+            func_index=func_index,
             frame_offset=frame_offset,
-            local_count=len(args),
-            local_types=local_types,
+            local_count=len(local_offsets),
+            local_offsets=local_offsets,
+            local_slot_count=local_slot_count,
             env=env,
         )
         if not self.call_frame_stack.push_back(frame):
             self.call_frame_offsets.pop_back()
             raise Trap("call-frame stack capacity exceeded")
-        for index, value in enumerate(args):
-            value_type = local_types[index]
-            if value_type == I64:
-                pushed = self.local_stack.push_i64(int(value))
-            elif value_type == F32:
-                pushed = self.local_stack.push_f32(float(value))
-            elif value_type == F64:
-                pushed = self.local_stack.push_f64(float(value))
-            else:
-                pushed = self.local_stack.push_i32(int(value))
-            if not pushed:
-                while len(self.local_stack) > frame_offset:
-                    self.local_stack.pop_back()
-                self.call_frame_stack.pop_back()
-                self.call_frame_offsets.pop_back()
-                raise Trap("local stack capacity exceeded")
-        self.local_offset += required
+        if not self.local_stack.extend(raw_args):
+            self.call_frame_stack.pop_back()
+            self.call_frame_offsets.pop_back()
+            raise Trap("local stack capacity exceeded")
+        self.local_offset += local_slot_count
         return frame
 
     def end_call_frame(self, frame: CallFrame) -> None:
@@ -390,8 +407,7 @@ class InterpreterContext:
             raise Trap("call-frame offset stack mismatch")
         if not self.call_frame_stack or self.call_frame_stack[-1] is not frame:
             raise Trap("call-frame stack mismatch")
-        while len(self.local_stack) > frame.frame_offset:
-            self.local_stack.pop_back()
+        self.local_stack.truncate(frame.frame_offset)
         self.local_offset = frame.frame_offset
         self.call_frame_offsets.pop_back()
         self.call_frame_stack.pop_back()
@@ -411,8 +427,6 @@ class CallFrame:
     """
 
     __slots__ = (
-        "_jit_locals",
-        "_jit_result_slot",
         "boundary_loops_to",
         "boundary_next_pc",
         "code",
@@ -421,8 +435,10 @@ class CallFrame:
         "control_map",
         "env",
         "frame_offset",
+        "func_index",
         "local_count",
-        "local_types",
+        "local_offsets",
+        "local_slot_count",
     )
 
     def __init__(
@@ -430,21 +446,23 @@ class CallFrame:
         code: bytes,
         control_map: ControlMap,
         context: InterpreterContext,
+        func_index: int,
         frame_offset: int,
         local_count: int,
-        local_types: tuple[str, ...],
+        local_offsets: tuple[int, ...],
+        local_slot_count: int,
         env: ExecEnv | None = None,
     ):
         self.context = context
         self.control_base = len(context.control_frame_stack)
+        self.func_index = func_index
         self.frame_offset = frame_offset
         self.local_count = local_count
-        self.local_types = local_types
+        self.local_offsets = local_offsets
+        self.local_slot_count = local_slot_count
         self.code = code
         self.control_map = control_map
         self.env = env
-        self._jit_locals: tuple[int, ctypes.Array[ctypes.c_int64], ctypes.c_void_p] | None = None
-        self._jit_result_slot: tuple[ctypes.Array[ctypes.c_int64], ctypes.c_void_p] | None = None
         # Set by RuntimeEngine.run() right before each interp.step() call,
         # from that step's BasicBlock's own statically-computed next_pc /
         # loops_to (extract_basic_blocks -- the same static resolution the
@@ -468,59 +486,17 @@ class CallFrame:
         return self.context.context_ptr
 
     @property
-    def sp_ptr(self) -> ctypes.c_void_p:
-        return self.jit_result_slot()[1]
-
-    @property
     def frames(self) -> _ControlFrameWindow:
         return _ControlFrameWindow(self.context.control_frame_stack, self.control_base)
 
     @property
     def locals(self) -> _LocalStackWindow:
-        return _LocalStackWindow(self.context.local_stack, self.frame_offset, self.local_types)
-
-    def jit_locals_buffer(
-        self, n_locals: int
-    ) -> tuple[ctypes.Array[ctypes.c_int64], ctypes.c_void_p]:
-        """
-        Returns this frame's ctypes locals buffer and its already-cast
-        `c_void_p` for CPS JIT trace calls (`ctx, sp, local_base, tos`),
-        creating both on first use and reusing them for every trace
-        invoked against this frame afterwards. A fresh `ctypes.c_int64 * n`
-        array/type pair, and a fresh `ctypes.cast(..., c_void_p)` call, both
-        cost real time per call (profiling: the cast alone was ~1.8us/call,
-        comparable to the native trace call itself) -- and this frame's
-        local count, and therefore the array's address, never changes once
-        entered.
-        """
-        cached = self._jit_locals
-        if cached is not None and cached[0] == n_locals:
-            return cached[1], cached[2]
-        buf = (ctypes.c_int64 * n_locals)()
-        ptr = ctypes.cast(buf, ctypes.c_void_p)
-        self._jit_locals = (n_locals, buf, ptr)
-        return buf, ptr
-
-    def jit_result_slot(self) -> tuple[ctypes.Array[ctypes.c_int64], ctypes.c_void_p]:
-        """
-        Returns this frame's single-i64 scratch buffer and its `c_void_p`,
-        passed as the CPS `sp` argument to a compiled JIT trace. A
-        trace's result is WASM VM state, not a C return value -- it has no
-        relationship to the callee's own return channel (the real design's
-        return value, where used at all, carries a control-flow signal like
-        the next `ip`, never operand-stack data) -- so a trace with a
-        residual value (`JITTrace.has_return_val`) writes it here via `R12`
-        before returning void, and the caller reads it back from this same
-        buffer instead of from the call's return value.
-        """
-        cached = self._jit_result_slot
-        if cached is not None:
-            return cached
-        buf = (ctypes.c_int64 * 1)()
-        ptr = ctypes.cast(buf, ctypes.c_void_p)
-        self._jit_result_slot = (buf, ptr)
-        return buf, ptr
-
+        return _LocalStackWindow(
+            self.context.local_stack,
+            self.frame_offset,
+            self.local_offsets,
+            self.local_slot_count,
+        )
 
 # A handler's logical continuation: (next_ip, frame, local_base, tos), or None
 # to end this call (RETURN, or branching past the outermost implicit block).
@@ -561,19 +537,7 @@ def _do_branch(depth: int, frame: CallFrame) -> int | None:
         branch unwinds past the outermost implicit function block (== return).
     """
 
-    cframes = frame.frames
-    while depth > 0:
-        cframes.pop_back()
-        depth -= 1
-
-    if not cframes:
-        return None
-    target = cframes[-1]
-    del frame.values[target.stack_height :]
-    if target.kind is ControlFrameKind.LOOP:
-        return target.start + 2  # resume at the loop body (past opcode+blocktype)
-    cframes.pop_back()
-    return target.match_end + 1
+    return frame.frames.branch(depth, frame.values)
 
 
 @dataclass(slots=True)
@@ -602,19 +566,17 @@ class InterpreterCall:
     finished: bool = False
     results: StaticVector[int | float] | None = None
 
-    def current_pc(self) -> int | None:
+    def current_pc(self) -> int:
         """
-        This call's unified `(func_index, ip)` address, or `None` if it has
-        already finished, or is about to (fallen off the end of the code --
-        the next `step()` will notice and finish it). A runtime driving a
-        tiered JIT cache checks this between steps; the interpreter itself
-        never looks at it.
+        Return this call's unified `(func_index, ip)` address.
+
+        The runtime must finalize a call before asking for its PC. A missing
+        continuation or an instruction pointer past the code is an invariant
+        violation, not a valid address state.
         """
-        if self.cont is None:
-            return None
+        assert self.cont is not None
         ip, frame, _, _ = self.cont
-        if ip >= len(frame.code):
-            return None
+        assert 0 <= ip < len(frame.code)
         return (self.func_index << 16) | ip
 
 
@@ -636,13 +598,11 @@ class Interpreter:
         module: Module,
         memory: bytearray | None = None,
         host_functions: list[Callable[..., int | None] | None] | None = None,
-        vmmio: object | None = None,
+        vmmio: VMMIOController | None = None,
         phys_mem: bytearray | None = None,
     ):
         self.module = module
         self.memory = memory
-        if self.memory is not None:
-            self.module.init_memory_data(self.memory)
 
         self.host_functions = (
             host_functions if host_functions is not None else [None] * len(module.imports)
@@ -715,7 +675,8 @@ class Interpreter:
             results = self._call_import(func_index, args)
             return InterpreterCall(func_index, context, cont=None, finished=True, results=results)
 
-        frame, locals_arr = self._build_frame(func_index, _make_int_vector(args), context)
+        raw_args = _encode_public_args(args, self.module.func_type(func_index).params)
+        frame, locals_arr = self._build_frame(func_index, raw_args, context)
         tos = frame.values[-1] if frame.values else 0
         return InterpreterCall(func_index, context, cont=(0, frame, locals_arr, tos))
 
@@ -747,16 +708,14 @@ class Interpreter:
         return results
 
     def _build_frame(
-        self, func_index: int, args: StaticVector[int | float], context: InterpreterContext
+        self, func_index: int, raw_args: StaticVector[int], context: InterpreterContext
     ) -> tuple[CallFrame, _LocalStackWindow]:
         """
         Builds the initial frame + locals for a WASM (non-import) function
-        activation. `args` -- already popped off the caller's operand stack
-        by `_enter_or_resolve_call`, or a fresh literal list from an
-        external `start`/`call` entry point -- is never read again by its
-        owner after this call, so it's converted and extended in place and
-        reused directly as `locals_arr`, rather than copied into a second,
-        freshly-allocated list of the same values.
+        activation. `raw_args` contains the parameter values as 32-bit
+        slots, already ordered for direct placement into the local stack.
+        The internal call path obtains it directly from the operand stack;
+        the public entry path encodes host values once at that boundary.
 
         The Native local slots are pushed into `context` by
         `InterpreterContext.begin_call_frame`; the operand stack is also owned
@@ -764,26 +723,23 @@ class Interpreter:
         """
         fn = self.module.functions[func_index - len(self.module.imports)]
         layout = self.module.locals_layout(func_index)
-        for i in range(len(args)):
-            if layout[i] == I64:
-                args[i] = _to_i64(args[i])
-            elif layout[i] == F32:
-                args[i] = _to_f32(args[i])
-            elif layout[i] == F64:
-                args[i] = float(args[i])
-            else:
-                args[i] = _to_i32(args[i])
-        if len(layout) > len(args):
-            for _ in range(len(layout) - len(args)):
-                if not args.push_back(0):
-                    raise Trap("local vector capacity exceeded")
+        local_offsets, local_slot_count = _layout_offsets(layout)
+        param_slot_count = sum(
+            _value_slot_width(value_type) for value_type in self.module.func_type(func_index).params
+        )
+        assert len(raw_args) == param_slot_count
+        for _ in range(local_slot_count - param_slot_count):
+            if not raw_args.push_back(0):
+                raise Trap("local vector capacity exceeded")
         if fn.control_map is None:
             fn.control_map = build_control_map(fn.code)
         frame = context.begin_call_frame(
             fn.code,
             fn.control_map,
-            args,
-            local_types=tuple(layout),
+            raw_args,
+            func_index=func_index,
+            local_offsets=local_offsets,
+            local_slot_count=local_slot_count,
             env=self._env,
         )
         return frame, frame.locals
@@ -897,25 +853,24 @@ class Interpreter:
                 )
             callee_ft = declared_type
 
-        popped_args: StaticVector[int | float] = StaticVector(capacity=FB_CONF_MAX_VALUE_STACK)
-        for value_type in reversed(callee_ft.params):
-            if value_type == I64:
-                value = frame.values.pop_i64()
-            elif value_type == F32:
-                value = frame.values.pop_f32()
-            elif value_type == F64:
-                value = frame.values.pop_f64()
-            else:
-                value = frame.values.pop_i32()
-            assert value is not None
-            assert popped_args.push_back(value)
-        call_args: StaticVector[int | float] = StaticVector(capacity=FB_CONF_MAX_VALUE_STACK)
-        for index in range(len(popped_args) - 1, -1, -1):
-            assert call_args.push_back(popped_args[index])
-        resume_tos = frame.values[-1] if frame.values else 0
-        resume_cont = (next_ip, frame, locals_arr, resume_tos)
-
         if self.module.is_import(callee_func_index):
+            call_args: StaticVector[int | float] = StaticVector(capacity=FB_CONF_MAX_VALUE_STACK)
+            popped_args: StaticVector[int | float] = StaticVector(
+                capacity=FB_CONF_MAX_VALUE_STACK
+            )
+            for value_type in reversed(callee_ft.params):
+                if value_type == I64:
+                    value = frame.values.pop_i64()
+                elif value_type == F32:
+                    value = frame.values.pop_f32()
+                elif value_type == F64:
+                    value = frame.values.pop_f64()
+                else:
+                    value = frame.values.pop_i32()
+                assert value is not None
+                assert popped_args.push_back(value)
+            for index in range(len(popped_args) - 1, -1, -1):
+                assert call_args.push_back(popped_args[index])
             results = self._call_import(callee_func_index, call_args)
             for index, result in enumerate(results):
                 result_type = callee_ft.results[index]
@@ -929,12 +884,23 @@ class Interpreter:
                     pushed = frame.values.push_i32(int(result))
                 if not pushed:
                     raise Trap("operand stack capacity exceeded")
-            r_tos = frame.values[-1] if frame.values else 0
-            call_state.cont = (next_ip, frame, locals_arr, r_tos)
+            resume_tos = frame.values[-1] if frame.values else 0
+            call_state.cont = (next_ip, frame, locals_arr, resume_tos)
             return call_state
 
+        popped_raw_args: StaticVector[int] = StaticVector(capacity=FB_CONF_MAX_VALUE_STACK)
+        for value_type in reversed(callee_ft.params):
+            for _ in range(_value_slot_width(value_type)):
+                value = frame.values.pop_back()
+                assert value is not None
+                assert popped_raw_args.push_back(value)
+        raw_call_args: StaticVector[int] = StaticVector(capacity=FB_CONF_MAX_VALUE_STACK)
+        for index in range(len(popped_raw_args) - 1, -1, -1):
+            assert raw_call_args.push_back(popped_raw_args[index])
+        resume_tos = frame.values[-1] if frame.values else 0
+        resume_cont = (next_ip, frame, locals_arr, resume_tos)
         callee_frame, callee_locals = self._build_frame(
-            callee_func_index, call_args, call_state.context
+            callee_func_index, raw_call_args, call_state.context
         )
         if not call_state.call_stack.push_back((call_state.func_index, resume_cont)):
             raise Trap("call stack capacity exceeded")
@@ -969,9 +935,7 @@ def _h_block(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
     match_end = frame.control_map.blocks[ip][0]
-    if not frame.frames.push_back(
-        ControlFrame(ControlFrameKind.BLOCK, ip, match_end, len(frame.values))
-    ):
+    if not frame.frames.push_back(ControlFrameKind.BLOCK, ip, match_end, len(frame.values)):
         raise Trap("control frame capacity exceeded")
     return (ip + 2, frame, env, local_base)
 
@@ -981,9 +945,7 @@ def _h_loop(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
     match_end = frame.control_map.blocks[ip][0]
-    if not frame.frames.push_back(
-        ControlFrame(ControlFrameKind.LOOP, ip, match_end, len(frame.values))
-    ):
+    if not frame.frames.push_back(ControlFrameKind.LOOP, ip, match_end, len(frame.values)):
         raise Trap("control frame capacity exceeded")
     return (ip + 2, frame, env, local_base)
 
@@ -996,16 +958,12 @@ def _h_if(
     cond = frame.values.pop_back()
     if cond == 0:
         if else_off is not None:
-            if not frame.frames.push_back(
-                ControlFrame(ControlFrameKind.IF, ip, match_end, len(frame.values))
-            ):
+            if not frame.frames.push_back(ControlFrameKind.IF, ip, match_end, len(frame.values)):
                 raise Trap("control frame capacity exceeded")
             return (else_off + 1, frame, env, local_base)
         else:
             return (match_end + 1, frame, env, local_base)
-    if not frame.frames.push_back(
-        ControlFrame(ControlFrameKind.IF, ip, match_end, len(frame.values))
-    ):
+    if not frame.frames.push_back(ControlFrameKind.IF, ip, match_end, len(frame.values)):
         raise Trap("control frame capacity exceeded")
     return (ip + 2, frame, env, local_base)
 
@@ -1108,15 +1066,11 @@ def _h_local_get(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
     idx, next_ip = decode_unsigned(frame.code, ip + 1)
-    value_type = local_base.value_type(idx)
-    if value_type == I64:
-        assert frame.values.push_i64(local_base.get_i64(idx))
-    elif value_type == F32:
-        assert frame.values.push_f32(local_base.get_f32(idx))
-    elif value_type == F64:
-        assert frame.values.push_f64(local_base.get_f64(idx))
-    else:
-        assert frame.values.push_i32(local_base.get_i32(idx))
+    assert frame.values.push_raw_from(
+        frame.context.local_stack,
+        local_base.raw_slot(idx),
+        local_base.raw_width(idx),
+    )
     return (next_ip, frame, env, local_base)
 
 
@@ -1126,23 +1080,11 @@ def _h_local_set(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
     idx, next_ip = decode_unsigned(frame.code, ip + 1)
-    value_type = local_base.value_type(idx)
-    if value_type == I64:
-        value = frame.values.pop_i64()
-        assert value is not None
-        local_base.set_i64(idx, value)
-    elif value_type == F32:
-        value = frame.values.pop_f32()
-        assert value is not None
-        local_base.set_f32(idx, value)
-    elif value_type == F64:
-        value = frame.values.pop_f64()
-        assert value is not None
-        local_base.set_f64(idx, value)
-    else:
-        value = frame.values.pop_i32()
-        assert value is not None
-        local_base.set_i32(idx, value)
+    frame.values.pop_raw_to(
+        frame.context.local_stack,
+        local_base.raw_slot(idx),
+        local_base.raw_width(idx),
+    )
     return (next_ip, frame, env, local_base)
 
 
@@ -1152,15 +1094,11 @@ def _h_local_tee(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
     idx, next_ip = decode_unsigned(frame.code, ip + 1)
-    value_type = local_base.value_type(idx)
-    if value_type == I64:
-        local_base.set_i64(idx, frame.values.peek_i64())
-    elif value_type == F32:
-        local_base.set_f32(idx, frame.values.peek_f32())
-    elif value_type == F64:
-        local_base.set_f64(idx, frame.values.peek_f64())
-    else:
-        local_base.set_i32(idx, frame.values.peek_i32())
+    frame.values.copy_raw_to(
+        frame.context.local_stack,
+        local_base.raw_slot(idx),
+        local_base.raw_width(idx),
+    )
     return (next_ip, frame, env, local_base)
 
 

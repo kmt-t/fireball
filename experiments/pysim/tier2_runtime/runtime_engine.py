@@ -43,7 +43,7 @@ from virq import (
     VirqDispatcher,
     VirqDispatchResult,
 )
-from wasm_module import BasicBlock, Module, TraceBlock
+from wasm_module import I32, BasicBlock, Module, TraceBlock
 from wasm_opcodes import (
     I32_ADD,
     I32_CONST,
@@ -524,16 +524,20 @@ class RuntimeEngine:
         COMPILED = CardState.COMPILED
 
         while not call_state.finished:
+            assert call_state.cont is not None
+            current_ip, current_frame, _, _ = call_state.cont
+            if current_ip >= len(current_frame.code):
+                call_state = interp.step(call_state)
+                continue
             pc = call_state.current_pc()
-            if pc is not None and call_state.cont is not None:
-                block_here = self.get_block(pc)
-                frame_here = call_state.cont[1]
-                if block_here is not None and len(frame_here.frames) > block_here.frame_depth:
-                    frame_here.frames.truncate(block_here.frame_depth)
-                frame_here.boundary_next_pc = block_here.next_pc if block_here is not None else None
-                frame_here.boundary_loops_to = (
-                    block_here.loops_to if block_here is not None else None
-                )
+            block_here = self.get_block(pc)
+            frame_here = call_state.cont[1]
+            if block_here is not None and len(frame_here.frames) > block_here.frame_depth:
+                frame_here.frames.truncate(block_here.frame_depth)
+            frame_here.boundary_next_pc = block_here.next_pc if block_here is not None else None
+            frame_here.boundary_loops_to = (
+                block_here.loops_to if block_here is not None else None
+            )
 
             trace = None
             if pc is not None and self.trackable.is_marked(pc):
@@ -550,9 +554,11 @@ class RuntimeEngine:
                     if self.debug:
                         trace.exec_count += 1
                     call_state = self._invoke_trace(interp, call_state, trace)
-                    pc = call_state.current_pc()
-                    if pc is None or call_state.finished:
+                    assert call_state.cont is not None
+                    next_ip, next_frame, _, _ = call_state.cont
+                    if call_state.finished or next_ip >= len(next_frame.code):
                         break
+                    pc = call_state.current_pc()
                     if self.trackable.is_marked(pc) and self.bitmap.get_state(pc) == COMPILED:
                         trace = self.cache.lookup(pc)
                         in_chain = trace is not None
@@ -564,17 +570,21 @@ class RuntimeEngine:
                     self.stat_trace_exits_to_interp += 1
 
                 # After trace chain ends, synchronize frame before returning to interpreter
-                if not call_state.finished and pc is not None and call_state.cont is not None:
-                    block_here = self.get_block(pc)
-                    frame_here = call_state.cont[1]
-                    if block_here is not None and len(frame_here.frames) > block_here.frame_depth:
-                        frame_here.frames.truncate(block_here.frame_depth)
-                    frame_here.boundary_next_pc = (
-                        block_here.next_pc if block_here is not None else None
-                    )
-                    frame_here.boundary_loops_to = (
-                        block_here.loops_to if block_here is not None else None
-                    )
+                if not call_state.finished and call_state.cont is not None:
+                    assert call_state.cont is not None
+                    next_ip, next_frame, _, _ = call_state.cont
+                    if next_ip < len(next_frame.code):
+                        pc = call_state.current_pc()
+                        block_here = self.get_block(pc)
+                        frame_here = next_frame
+                        if block_here is not None and len(frame_here.frames) > block_here.frame_depth:
+                            frame_here.frames.truncate(block_here.frame_depth)
+                        frame_here.boundary_next_pc = (
+                            block_here.next_pc if block_here is not None else None
+                        )
+                        frame_here.boundary_loops_to = (
+                            block_here.loops_to if block_here is not None else None
+                        )
             else:
                 self.stat_interp_steps += 1
                 if pc is not None and self.trackable.is_marked(pc):
@@ -593,40 +603,29 @@ class RuntimeEngine:
     ) -> InterpreterCall:
         """
         Executes one compiled native x64 JIT trace and advances `call_state`
-        past it. Calls the trace directly on this frame's cached locals
-        buffer rather than building a fresh `WASMContext` (ctypes array
-        type + instance) per call -- the buffer's address is stable across
-        every trace invoked against the same frame, so allocating it once
-        and reusing it turns a per-call ctypes array construction into a
-        per-call O(locals) value copy on the hot path
-        (`{ADR_TraceBoundaryYield}`'s per-block dispatch). When the optional
-        `native_trace_call` accelerator (jit/native_trace_call.pyx) is
-        built, its raw C function pointer call replaces `trace.fn`'s
-        `ctypes.CFUNCTYPE` libffi trampoline, which otherwise dominates this
-        call's cost; the fallback keeps this correct on a plain-Python
-        checkout. A trace's residual value is VM operand-stack state, not a
-        C return value ({ExecutionContext_Layout}): `SPILL_RESULT_TO_SP`
-        writes it to `frame.jit_result_slot()`'s buffer (passed as `sp`,
-        R12) instead of returning it, and every trace always returns void.
+        past it. The trace receives the interpreter's Native operand and
+        local stacks directly; no JIT-only ctypes buffers or typed copy-back
+        path is allowed. A residual value is written by native code into the
+        next raw operand-stack slot passed as `sp` and then committed by
+        advancing that same stack's pointer.
         """
         ip, frame, locals_arr, tos = call_state.cont
-        try:
-            n_locals = self._n_locals_by_func[call_state.func_index]
-        except IndexError:
-            n_locals = max(len(locals_arr), 16)
-        c_locals, locals_ptr = frame.jit_locals_buffer(n_locals)
-        for i, v in enumerate(locals_arr):
-            c_locals[i] = v
-        c_result, result_ptr = frame.jit_result_slot()
+        local_layout = interp.module.locals_layout(call_state.func_index)
+        # The current x64 trace emitters support i32 locals only. The storage
+        # itself remains raw and is shared with the interpreter.
+        assert all(value_type == I32 for value_type in local_layout)
+        result_slot = len(frame.values)
+        locals_ptr = frame.context.local_stack.value_ptr(frame.frame_offset)
+        result_ptr = frame.values.value_ptr(result_slot)
         if _native_trace_call is not None and trace.raw_addr is not None:
             _native_trace_call.invoke_trace(
                 trace.raw_addr, frame.context_ptr.value, result_ptr.value, locals_ptr.value, 0
             )
         else:
             trace.fn(frame.context_ptr, result_ptr, locals_ptr, 0)
-        for i in range(len(locals_arr)):
-            locals_arr[i] = c_locals[i] & 0xFFFF_FFFF
-        res = c_result[0]
+        res = frame.values.raw_at(result_slot) if trace.has_return_val else 0
+        if trace.has_return_val and trace.loops_to is None:
+            frame.values.set_size(result_slot + 1)
 
         if trace.loops_to is not None:
             # Terminator was BR_IF against a loop backedge: the trace's
@@ -636,8 +635,6 @@ class RuntimeEngine:
             cond = res if res is not None else 0
             next_unified = trace.loops_to if cond != 0 else trace.next_pc
         else:
-            if trace.has_return_val and res is not None:
-                frame.values.push_back(res & 0xFFFF_FFFF)
             next_unified = trace.next_pc
 
         # next_unified is None only for a JIT-compiled block whose

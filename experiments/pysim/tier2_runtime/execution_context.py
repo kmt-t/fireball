@@ -18,13 +18,11 @@ class WASMContext:
 
     __slots__ = (
         "_c_context",
-        "_c_locals",
         "_c_mem",
-        "_c_result",
-        "_jit_helper_keepalive",
         "_cached_locals_view",
-        "_n_locals",
+        "_jit_helper_keepalive",
         "fault",
+        "local_stack",
         "memory",
         "stack",
         "stack_capacity",
@@ -36,21 +34,16 @@ class WASMContext:
         stack_capacity: int = 64,
     ):
         n_locals = 16
-        self._c_locals = (ctypes.c_int64 * n_locals)()
-
-        self._n_locals = n_locals
         self.fault: str | None = None
         self.stack_capacity = stack_capacity
         self.stack: NativeValueStack = NativeValueStack(capacity=stack_capacity)
+        self.local_stack: NativeValueStack = NativeValueStack(capacity=n_locals)
+        self.local_stack.set_size(n_locals)
         self.memory = memory
         if memory is not None:
             self._c_mem = (ctypes.c_char * len(memory)).from_buffer(memory)
         else:
             self._c_mem = None
-        # A trace's residual value is VM operand-stack state, not a C return
-        # value ({ExecutionContext_Layout}), so SPILL_RESULT_TO_SP writes it
-        # here via the CPS sp argument.
-        self._c_result = ctypes.c_int64()
         # This is the Python mirror of wasm_interop.hxx. It is a
         # fixed-layout Native structure, not a Python object graph. Word 8 remains the
         # 64-bit process-local helper pointer used by PIC JIT delegation.
@@ -70,11 +63,11 @@ class WASMContext:
 
     @property
     def sp_ptr(self) -> ctypes.c_void_p:
-        return ctypes.cast(ctypes.pointer(self._c_result), ctypes.c_void_p)
+        return self.stack.value_ptr(len(self.stack))
 
     @property
     def locals_ptr(self) -> ctypes.c_void_p:
-        return ctypes.cast(self._c_locals, ctypes.c_void_p)
+        return self.local_stack.value_ptr()
 
     @property
     def mem_ptr(self) -> ctypes.c_void_p:
@@ -115,17 +108,16 @@ class WASMContext:
             self._ctx = ctx
 
         def __getitem__(self, idx: int) -> int:
-            return self._ctx._c_locals[idx] & 0xFFFF_FFFF
+            return self._ctx.local_stack[idx]
 
         def __setitem__(self, idx: int, val: int) -> None:
-            self._ctx._c_locals[idx] = val & 0xFFFF_FFFF
+            self._ctx.local_stack[idx] = val
 
         def __len__(self) -> int:
-            return self._ctx._n_locals
+            return len(self._ctx.local_stack)
 
         def __iter__(self) -> Iterator[int]:
-            for i in range(self._ctx._n_locals):
-                yield self._ctx._c_locals[i] & 0xFFFF_FFFF
+            yield from self._ctx.local_stack
 
     @property
     def locals(self) -> WASMContext._LocalsView:
@@ -133,21 +125,14 @@ class WASMContext:
 
     @locals.setter
     def locals(self, values: tuple[int, ...]) -> None:
-        if len(values) > self._n_locals:
-            self.fault = "WASM_LOCAL_STACK_CAPACITY"
-            return
+        assert len(values) <= len(self.local_stack)
         for i, v in enumerate(values):
-            self._c_locals[i] = v & 0xFFFF_FFFF
+            self.local_stack[i] = v
 
     def push(self, val: int) -> bool:
-        if not self.stack.push_back(val & 0xFFFF_FFFF):
-            self.fault = "WASM_EXECUTION_STACK_OVERFLOW"
-            return False
+        assert self.stack.push_back(val & 0xFFFF_FFFF)
         return True
 
     def pop(self) -> int:
         val = self.stack.pop_back()
-        if val is None:
-            self.fault = "WASM_EXECUTION_STACK_UNDERFLOW"
-            return 0
         return val

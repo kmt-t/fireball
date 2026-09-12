@@ -31,10 +31,8 @@ def invoke_trace(
     """Calls a compiled trace's native entry point directly as a C function pointer.
 
     `fn_addr` is the trace's raw entry address (`JITTrace.raw_addr`).
-    `sp_addr` is `frame.jit_result_slot()`'s buffer: a trace with a
-    residual value writes it there (via R12) instead of returning it -- a
-    trace's result is VM operand-stack state, not a C return value, so the
-    return value itself carries nothing and is discarded here.
+    `sp_addr` is the next raw slot in the shared operand stack: a trace with
+    a residual value writes it there (via R12) instead of returning it.
     """
     cdef trace_fn_t fn = <trace_fn_t><void*><unsigned long long>fn_addr
     cdef void* ctx = <void*><unsigned long long>ctx_addr

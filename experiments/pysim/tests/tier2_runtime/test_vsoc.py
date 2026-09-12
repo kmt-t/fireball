@@ -600,6 +600,7 @@ def test_guest_wasi_01_interpreter_fd_write():
         struct.pack_into("<II", ctx.guest_memory, 0, 16, len(msg))
         ctx.guest_memory[16 : 16 + len(msg)] = msg
         host_funcs = ctx.build_interpreter_host_functions(mod)
+        mod.init_memory_data(ctx.guest_memory)
         interp = Interpreter(mod, memory=ctx.guest_memory, host_functions=host_funcs)
         res = interp.call(mod.export_func_index("main"), [])
         assert res == [0], f"Expected WASI SUCCESS (0), got {res}"
@@ -631,6 +632,7 @@ def test_guest_wasi_02_interpreter_clock_and_random():
     try:
         ctx = WasiHostContext(sysv)
         host_funcs = ctx.build_interpreter_host_functions(mod)
+        mod.init_memory_data(ctx.guest_memory)
         interp = Interpreter(mod, memory=ctx.guest_memory, host_functions=host_funcs)
         res = interp.call(mod.export_func_index("main"), [])
         assert res == [0]
@@ -662,6 +664,7 @@ def test_guest_wasi_03_interpreter_proc_exit():
     try:
         ctx = WasiHostContext(sysv)
         host_funcs = ctx.build_interpreter_host_functions(mod)
+        mod.init_memory_data(ctx.guest_memory)
         interp = Interpreter(mod, memory=ctx.guest_memory, host_functions=host_funcs)
         assert sysv.halted is False
         interp.call(mod.export_func_index("main"), [])

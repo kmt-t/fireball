@@ -787,8 +787,8 @@ def test_jitr_return_terminated_block_jit_result_correct():
     TEST-JITR-43: a JIT-compiled block whose terminator is RETURN has
     `trace.next_pc is None` (the function is ending, not falling through to
     another block). `_invoke_trace` must resolve this via O(1)
-    `len(frame.code)` -- the same "past the end" sentinel `current_pc()`
-    already checks for -- never by decoding an `Instr` at runtime, which
+    `len(frame.code)` -- an end-of-code state that the runtime finalizes
+    before calling `current_pc()` -- never by decoding an `Instr` at runtime, which
     `{DirectBytecodeExecution}` (GOTCHA-INTP-05) forbids: no
     instruction-object generation at runtime, ever.
     """

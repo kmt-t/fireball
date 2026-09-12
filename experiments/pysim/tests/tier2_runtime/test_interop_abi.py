@@ -18,7 +18,8 @@ for _path in (
     if str(_path) not in sys.path:
         sys.path.insert(0, str(_path))
 
-from interop_abi import (  # noqa: E402
+from execution_context import WASMContext
+from interop_abi import (
     ConstBufferViewNative,
     ControlStackNative,
     ExecutionContextNative,
@@ -29,8 +30,7 @@ from interop_abi import (  # noqa: E402
     WasmRunRequestNative,
     WasmRunResultNative,
 )
-from execution_context import WASMContext  # noqa: E402
-from interpreter import ControlFrame, ControlFrameKind, InterpreterContext, NativeControlStack  # noqa: E402
+from interpreter import ControlFrameKind, InterpreterContext, NativeControlStack
 
 
 def test_native_layout_matches_x64_jit_context():
@@ -111,7 +111,12 @@ def test_native_value_stack_owns_the_fixed_storage():
     assert stack.value_ptr().value == ctypes.addressof(stack.native.values)
     assert stack.pop_f32() == 1.5
     assert stack.pop_i32() == -1
-    assert stack.pop_back() is None
+    try:
+        stack.pop_back()
+    except AssertionError:
+        pass
+    else:
+        raise AssertionError("empty Native value stack must fail fast")
 
     wide_stack = NativeValueStack(capacity=4)
     assert wide_stack.push_i64(-1)
@@ -124,14 +129,13 @@ def test_native_value_stack_owns_the_fixed_storage():
 
 def test_native_control_stack_owns_flat_frame_records():
     stack = NativeControlStack(capacity=2)
-    frame = ControlFrame(ControlFrameKind.LOOP, start=3, match_end=12, stack_height=4)
-    assert stack.push_back(frame)
+    assert stack.push_back(ControlFrameKind.LOOP, start=3, match_end=12, stack_height=4)
     assert stack.native.size == 1
     assert isinstance(stack.native, ControlStackNative)
     restored = stack[-1]
-    assert restored.kind is ControlFrameKind.LOOP
+    assert restored.kind == int(ControlFrameKind.LOOP)
     assert (restored.start, restored.match_end, restored.stack_height) == (3, 12, 4)
-    assert stack.pop_back().kind is ControlFrameKind.LOOP
+    assert stack.pop_back().kind == int(ControlFrameKind.LOOP)
     try:
         stack.pop_back()
     except IndexError:

@@ -76,6 +76,7 @@ def test_scenario_loader_memory():
     sysv = System()
     wasi_ctx = WasiHostContext(sysv)
     host_funcs = wasi_ctx.build_interpreter_host_functions(module)
+    module.init_memory_data(wasi_ctx.guest_memory)
     interp = Interpreter(module, memory=wasi_ctx.guest_memory, host_functions=host_funcs)
     # 3. Verify Active Data Segments loaded in memory
     seg1 = wasi_ctx.guest_memory[256 : 256 + 39].decode("utf-8")

@@ -232,7 +232,7 @@ def test_jitc_gotcha_01_02_03_conventions():
     assert trace.header.head_wasm_pc == head_pc
     assert trace.size_bytes >= 16
 
-    locals_arr = (ctypes.c_int64 * 8)(10, 0)
+    locals_arr = (ctypes.c_uint32 * 8)(10, 0)
     trace.fn(
         head_pc,
         ctypes.c_void_p(0),

@@ -32,7 +32,7 @@
 
 - **新規エントリ（`STENCIL_PROLOGUE_FULL` を通過）**: インタープリタ・ディスパッチャから `exec_trace` 関数ポインタ経由で呼び出される場合。CPS 4引数ディスパッチ規約（`R0=ctx, R1=sp, R2=local_base, R3=tos`）に基づいて呼び出され、真の AAPCS 呼び出し境界を跨ぐため、Callee-saved レジスタ（`R4-R6, R8-R11, LR`）の退避を行う。`R3: tos` はそのまま JIT スタックキャッシュ `TOS` として活用される。
 - **チェイン・エントリ（`STENCIL_PROLOGUE_FULL` の直後のオフセット、プロローグをスキップ）**: 常駐先行トレースからの直接分岐（`{JIT_LazyChaining}` によりバックパッチされた `B.W` またはヘッダ動的ジャンプ `BX r12`）で入ってくる場合。先行トレースのレジスタ状態（`R3=TOS / R4=NOS / R5=NNOS` のキャッシュ値含む）がそのまま生きているため、退避・再ロードは不要かつ有害。
-- **AAPCS 準拠終了エピローグ（`STENCIL_EPILOGUE_FLUSH_D1`/`D2`）**: 後続の常駐トレースが存在しない、またはこのトレースがチェインの終端である場合。基本ブロック末尾でプッシュされたスタックキャッシュ（`R3: TOS`、Depth 2 では `R4: NOS` も）をオペランドスタック（`[R1, #offset]`）へ確実に書き戻し（Flush）、コンテキスト `R0` の `ip`（`+0x00`）および `sp_offset`（`+0x0C`）を同期した上で、Callee-saved レジスタを `POP` 復元してリターンする（`{GOTCHA-JITC-07}`）。
+- **AAPCS 準拠終了エピローグ（`STENCIL_EPILOGUE_FLUSH_D1`/`D2`/`D3`）**: 後続の常駐トレースが存在しない、またはこのトレースがチェインの終端である場合。基本ブロック末尾でプッシュされたスタックキャッシュ（`R3: TOS`、Depth 2 では `R4: NOS`、Depth 3 では `R5: NNOS` も）をオペランドスタック（`[R1, #offset]`）へ確実に書き戻し（Flush）、コンテキスト `R0` の `ip`（`+0x00`）および `sp_offset`（`+0x0C`）を同期した上で、Callee-saved レジスタを `POP` 復元してリターンする（`{GOTCHA-JITC-07}`）。
 - **直接チェイン分岐（エピローグなし）**: `{JIT_LazyChaining}` により後続トレースが常駐と解決済みの場合、上記エピローグの代わりに後続トレースのチェイン・エントリへのジャンプ（動的ヘッダ参照 `BX r12`）を配置する。フラッシュも `POP` も発生せず、レジスタは分岐を跨いでそのまま生き続ける。
 
 #### `STENCIL_PROLOGUE_FULL` (Callee-saved 全域退避 + LR、新規エントリ専用)
@@ -61,6 +61,16 @@
   pop.w {r4-r6, r8-r11, pc} ; [Offset 0x04] Callee-saved 復元 & リターン
   ```
 - **バイナリ列 (8 Bytes)**: `0B 60 4C 60 BD E8 70 8F`
+
+#### `STENCIL_EPILOGUE_FLUSH_D3` (TOS & NOS & NNOS 書き戻し + Callee-saved 復元 & リターン)
+- **Thumb-2 命令列**:
+  ```asm
+  str   r3, [r1, #0x00]    ; TOS 書き戻し
+  str   r4, [r1, #0x04]    ; NOS 書き戻し
+  str   r5, [r1, #0x08]    ; NNOS 書き戻し
+  pop.w {r4-r6, r8-r11, pc} ; Callee-saved 復元 & リターン
+  ```
+- **バイナリ列 (10 Bytes)**: `0B 60 4C 60 8D 60 BD E8 70 8F`
 
 #### `STENCIL_DYNAMIC_CHAIN_EXIT_D1` (ヘッダ参照動的チェイン分岐 & インタープリタ復帰エピローグ)
 - **概要**: コードの自己書き換え（インプレースパッチ）を行わず、自身のトレースヘッダ内のデータフィールド `chain_target_addr`（+0x0C）の解決状態（非ゼロかゼロか）に応じて動的に分岐する。
@@ -96,6 +106,17 @@
   bx    r12                ; [Offset 0x08] R12 のハンドラアドレスへ直接ジャンプ
   ```
 - **バイナリ列 (10 Bytes)**: `0B 60 4C 60 BD E8 70 4F 60 47`
+
+#### `STENCIL_FALLBACK_FLUSH_D3` (TOS & NOS & NNOS 書き戻し $\to$ インタープリタ末尾ジャンプ)
+- **Thumb-2 命令列**:
+  ```asm
+  str   r3, [r1, #0x00]    ; TOS 書き戻し
+  str   r4, [r1, #0x04]    ; NOS 書き戻し
+  str   r5, [r1, #0x08]    ; NNOS 書き戻し
+  pop.w {r4-r6, r8-r11, lr} ; Callee-saved 復元
+  bx    r12                ; R12 のハンドラアドレスへ直接ジャンプ
+  ```
+- **バイナリ列 (12 Bytes)**: `0B 60 4C 60 8D 60 BD E8 70 4F 60 47`
 
 #### `STENCIL_EXTERNAL_CALL_STUB` (外部 AAPCS C/C++ 関数呼出境界)
 - **Thumb-2 命令列**:
@@ -308,7 +329,7 @@
 
 <!-- traceability: {JIT_RegisterMapping} -->
 
-各ステンシル名の末尾 `_dN` は、その命令が実行される時点でオペランドスタックキャッシュに何個の値が常駐しているか（= これから読み書きするレジスタの組）を表す**レジスタバリアント**であり、`jit_trace_header.variant_id`（8bit、[`jit_compiler.md`](docs/components/tier3_jit/jit_compiler.md) の ``jit_compiler.md` (Trace Header)` 参照）と同じ ID 空間を共有する。**この軸は同一トレース内部（intra-trace）で連続する命令間のレジスタ引き継ぎに関するものであり、トレース境界をまたぐチェイニング（`{JIT_LazyChaining}`）とは無関係である**——トレース境界は常にメモリ（オペランドスタック上の正準アドレス）経由でスピル/リロードされ、レジスタ内容を熱いまま引き継ぐことはない（[`jit_compiler.md`](docs/components/tier3_jit/jit_compiler.md) の `{JIT_LazyChaining}` を正本とする）。同一トレース内で、将来のステンシルバリアント動的選択が連続する命令間で異なるレジスタ配置を選ぶ場合（下記 NOTE 参照）にのみ、この `variant_id` を使った引き継ぎ互換性の判定とグルー挿入が意味を持つ。
+各ステンシル名の末尾 `_dN` は、その命令が実行される時点でオペランドスタックキャッシュに何個の値が常駐しているか（= これから読み書きするレジスタの組）を表す**レジスタバリアント**であり、`jit_trace_header.variant_id`（8bit、[`jit_compiler.md`](docs/components/tier3_jit/jit_compiler.md) の ``jit_compiler.md` (Trace Header)` 参照）と同じ ID 空間を共有する。**この軸は同一トレース内部（intra-trace）で連続する命令間のレジスタ引き継ぎに関するものであり、トレース境界をまたぐチェイニングとは別物である**。通常のトレース脱出では正準スタックへスピル/リロードするが、`{JIT_LazyChaining}` により解決済みの直接チェインへ進む場合はエピローグを省略し、`R3-R5` のキャッシュ状態を次のチェイン・エントリへそのまま引き継ぐ。
 
 | `variant_id` | 名称 | レジスタ占有状態 | 該当ステンシル |
 | :---: | :--- | :--- | :--- |

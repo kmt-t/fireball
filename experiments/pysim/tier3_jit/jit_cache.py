@@ -49,7 +49,7 @@ class HotspotBitmap:
 
     __slots__ = ("card_shift", "default_func_code_len", "func_storages", "func_tables")
 
-    def __init__(self, card_shift: int = 2, default_func_code_len: int = 64):
+    def __init__(self, card_shift: int = 3, default_func_code_len: int = 64):
         self.card_shift = card_shift
         self.default_func_code_len = default_func_code_len
         self.func_storages: list[MutableBitStorage | None] = []
@@ -158,7 +158,7 @@ class BlockCardMask:
 
     __slots__ = ("card_shift", "func_storages", "func_tables")
 
-    def __init__(self, card_shift: int = 2):
+    def __init__(self, card_shift: int = 3):
         self.card_shift = card_shift
         self.func_storages: list[MutableBitStorage | None] = []
         self.func_tables: list[BitView | None] = []
@@ -341,22 +341,22 @@ class JITTrace:
 
     def __call__(
         self,
-        ip_or_locals: int | list[int],
-        stack_bot_or_mem: int | object = 0,
+        ctx_or_locals: object | list[int],
+        sp_or_mem: int | object = 0,
         local_base: int = 0,
         tos: int = 0,
     ) -> int:
         """
         Invokes the native JIT trace directly via ctypes CPS 4-argument calling convention:
-                (uint32_t ip, void* stack_bot, void* local_base, uint32_t tos)
+                (void* ctx, void* sp, void* local_base, uint32_t tos)
         """
 
-        return self.fn(ip_or_locals, stack_bot_or_mem, local_base, tos)
+        return self.fn(ctx_or_locals, sp_or_mem, local_base, tos)
 
     def invoke(self, ctx: object) -> int:
         """Helper to invoke trace directly on WASMContext via CPS 4-argument calling convention."""
         tos = ctx.pop() if ctx.stack else 0
-        self.fn(self.head_pc, ctx.stack_bot_ptr, ctx.locals_ptr, tos)
+        self.fn(ctx.context_ptr, ctx.sp_ptr, ctx.locals_ptr, tos)
         if self.has_return_val:
             ctx.push(ctx._c_result.value & 0xFFFF_FFFF)
         return ctx._c_result.value
@@ -633,5 +633,3 @@ class JITMultiBufferCache:
             if self.on_evict and purged:
                 self.on_evict(purged)
         self._fast_slots = [None] * self.NUM_FAST_SLOTS
-
-

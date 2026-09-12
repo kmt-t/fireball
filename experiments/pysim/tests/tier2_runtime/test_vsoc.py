@@ -94,9 +94,7 @@ def _virq_event(vector_id: int, source_id: int = 0) -> InterruptEvent:
 
 def test_virq_50_static_nodes_and_safepoint_registration():
     """TEST-VSOC-50: only the fixed root/category/device nodes are mutable."""
-    dispatcher = VirqDispatcher(
-        _make_virq_module(), lambda _index, _v, _s, _c, _p0, _p1: 1
-    )
+    dispatcher = VirqDispatcher(_make_virq_module(), lambda _index, _v, _s, _c, _p0, _p1: 1)
 
     root = dispatcher.register_dispatcher(int(VirqNode.ROOT), 0)
     device = dispatcher.register_dispatcher(VirqNode.device(2), 1)
@@ -116,9 +114,7 @@ def test_virq_50_static_nodes_and_safepoint_registration():
 
 def test_virq_51_rejects_wrong_wasm_signature_without_overwrite():
     """TEST-VSOC-51: a signature mismatch does not replace an active registration."""
-    dispatcher = VirqDispatcher(
-        _make_virq_module(), lambda _index, _v, _s, _c, _p0, _p1: 0
-    )
+    dispatcher = VirqDispatcher(_make_virq_module(), lambda _index, _v, _s, _c, _p0, _p1: 0)
     accepted = dispatcher.register_dispatcher(int(VirqNode.ROOT), 0)
     dispatcher.commit_safepoint()
     rejected = dispatcher.register_dispatcher(int(VirqNode.ROOT), 3)
@@ -464,7 +460,9 @@ def test_tier_02_interpreter_to_jit_trace_transition():
     )
     """
     wasm_bytes = wat_to_wasm(wat)
-    engine = IntegratedHybridEngine(yield_threshold=3)
+    # Keep the preamble and loop heads on separate cards so this test can
+    # observe the full UNEXECUTED -> EXECUTED -> HOT transition directly.
+    engine = IntegratedHybridEngine(yield_threshold=3, card_shift=2)
     mod = engine.load_wasm(wasm_bytes)
     loop_pc = mod.blocks[1].head_pc
 

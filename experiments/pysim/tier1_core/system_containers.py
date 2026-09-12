@@ -427,11 +427,11 @@ class ReadOnlyRadixBinaryTreeStorage(Generic[ValT]):
     Strictly separates storage ownership from non-owning view borrows ({Type_Vocabulary}, {GLOBAL_Policy_Memory}).
     """
 
-    keys: list[int]
-    values: list[ValT]
-    radix_table: list[int]
+    keys: tuple[int, ...]
+    values: tuple[ValT, ...]
+    radix_table: tuple[int, ...]
     radix_shift: int
-    entries: list[tuple[int, ValT]]
+    entries: tuple[tuple[int, ValT], ...]
     key_transform: Callable[[int], int] | None = None
 
     @classmethod
@@ -442,10 +442,10 @@ class ReadOnlyRadixBinaryTreeStorage(Generic[ValT]):
         radix_shift: int = 28,
         key_transform: Callable[[int], int] | None = None,
     ) -> ReadOnlyRadixBinaryTreeStorage[ValT]:
-        paired = sorted(zip(keys, values, strict=False), key=lambda p: p[0])
-        s_keys = [p[0] for p in paired]
-        s_vals = [p[1] for p in paired]
-        table = build_radix_table(s_keys, radix_shift=radix_shift, key_transform=key_transform)
+        paired = tuple(sorted(zip(keys, values, strict=False), key=lambda p: p[0]))
+        s_keys = tuple(p[0] for p in paired)
+        s_vals = tuple(p[1] for p in paired)
+        table = tuple(build_radix_table(s_keys, radix_shift=radix_shift, key_transform=key_transform))
         return cls(
             keys=s_keys,
             values=s_vals,
@@ -483,13 +483,15 @@ class _MutableRadixKeysView(Sequence[int]):
                 yield item[0]
 
     def __getitem__(self, idx: int | slice) -> int | Sequence[int]:
-        if isinstance(idx, slice):
+        try:
             start, stop, step = idx.indices(self._owner._count)
             return [
                 self._owner._buffer[i][0]
                 for i in range(start, stop, step)
                 if self._owner._buffer[i] is not None
             ]
+        except AttributeError:
+            pass
         if not (0 <= idx < self._owner._count):
             raise IndexError(f"index {idx} out of range (count={self._owner._count})")
         item = self._owner._buffer[idx]
@@ -513,13 +515,15 @@ class _MutableRadixValuesView(Sequence[ValT], Generic[ValT]):
                 yield item[1]
 
     def __getitem__(self, idx: int | slice) -> ValT | Sequence[ValT]:
-        if isinstance(idx, slice):
+        try:
             start, stop, step = idx.indices(self._owner._count)
             return [
                 self._owner._buffer[i][1]
                 for i in range(start, stop, step)
                 if self._owner._buffer[i] is not None
             ]
+        except AttributeError:
+            pass
         if not (0 <= idx < self._owner._count):
             raise IndexError(f"index {idx} out of range (count={self._owner._count})")
         item = self._owner._buffer[idx]
@@ -543,13 +547,15 @@ class _MutableRadixEntriesView(Sequence[tuple[int, ValT]], Generic[ValT]):
                 yield item
 
     def __getitem__(self, idx: int | slice) -> tuple[int, ValT] | Sequence[tuple[int, ValT]]:
-        if isinstance(idx, slice):
+        try:
             start, stop, step = idx.indices(self._owner._count)
             return [
                 self._owner._buffer[i]
                 for i in range(start, stop, step)
                 if self._owner._buffer[i] is not None
             ]
+        except AttributeError:
+            pass
         if not (0 <= idx < self._owner._count):
             raise IndexError(f"index {idx} out of range (count={self._owner._count})")
         item = self._owner._buffer[idx]
@@ -800,13 +806,15 @@ class _MutableMapBufferView(Sequence[tuple[KeyT, ValT]], Generic[KeyT, ValT]):
                 yield item
 
     def __getitem__(self, idx: int | slice) -> tuple[KeyT, ValT] | Sequence[tuple[KeyT, ValT]]:
-        if isinstance(idx, slice):
+        try:
             start, stop, step = idx.indices(self._owner._count)
             return [
                 self._owner._buffer[i]
                 for i in range(start, stop, step)
                 if self._owner._buffer[i] is not None
             ]
+        except AttributeError:
+            pass
         if not (0 <= idx < self._owner._count):
             raise IndexError(f"index {idx} out of range (count={self._owner._count})")
         item = self._owner._buffer[idx]
@@ -938,13 +946,15 @@ class _MutableSetBufferView(Sequence[KeyT], Generic[KeyT]):
                 yield item
 
     def __getitem__(self, idx: int | slice) -> KeyT | Sequence[KeyT]:
-        if isinstance(idx, slice):
+        try:
             start, stop, step = idx.indices(self._owner._count)
             return [
                 self._owner._buffer[i]
                 for i in range(start, stop, step)
                 if self._owner._buffer[i] is not None
             ]
+        except AttributeError:
+            pass
         if not (0 <= idx < self._owner._count):
             raise IndexError(f"index {idx} out of range (count={self._owner._count})")
         item = self._owner._buffer[idx]
@@ -1179,11 +1189,10 @@ class StaticVector(Generic[T]):
         return iter(self._items)
 
     def __eq__(self, other: object) -> bool:
-        if isinstance(other, StaticVector):
+        try:
             return self._items == other._items
-        if isinstance(other, list):
+        except AttributeError:
             return self._items == other
-        return NotImplemented
 
     def __repr__(self) -> str:
         return f"StaticVector(capacity={self.capacity}, items={self._items!r})"

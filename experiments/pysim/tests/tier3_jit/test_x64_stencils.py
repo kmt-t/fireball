@@ -46,7 +46,7 @@ real return value -- a testing-only convenience for checking one stencil's
 math in isolation. x64_jit.py's actual compile_trace() never uses
 EPILOGUE_RETURN_I32 for a real trace: a trace's residual value is VM
 operand-stack state, not a C return value, so production traces write it to
-`stack_bot` (`SPILL_RESULT_TO_STACK_BOT`) and always return void
+`sp` (`SPILL_RESULT_TO_SP`) and always return void
 ({ADR_TosCacheAsymmetry}, GOTCHA-JITC-07).
 """
 
@@ -586,9 +586,10 @@ def test_executable_buffer_wx_protection_lifecycle():
         # Writing after commit must be rejected
         try:
             buf.write(0, b"\xcc")
-            raise AssertionError("expected write outside patch transaction to fail")
         except AssertionError as e:
             assert "Cannot write to ExecutableBuffer" in str(e)
+        else:
+            raise AssertionError("expected write outside patch transaction to fail")
 
         # Reopening transaction switches back to RW+XN
         buf.begin_jit_patch()

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+from collections.abc import Sequence
 from pathlib import Path
 
 _PYSIM_DIR = Path(__file__).resolve().parent
@@ -41,6 +42,7 @@ from ipc_router import (
     pack_key32,
 )
 from logger import LogDictionary, Logger, LogLevel
+from memory import FB_CONF_MEMORY_POOL_SIZE, MemoryManager
 from scheduler import Scheduler
 
 # kv_pair key_ids (ipc_router.md §3.3): Functional scope, UINT32 values.
@@ -48,6 +50,13 @@ _KEY_CMD = pack_key32(ScopeKind.FUNCTIONAL, DataType.UINT32, key_id=1)
 _KEY_TASK_ID = pack_key32(ScopeKind.FUNCTIONAL, DataType.UINT32, key_id=2)
 _CMD_START_TASK = 1
 _CMD_KILL = 2
+
+
+def _make_test_ipc_message(entries: Sequence[tuple[int, int]] = ()) -> IPCMessage:
+    """Constructs message storage through the Tier 2 adapter for this scenario."""
+    manager = MemoryManager()
+    assert manager.init_manager(0x20020000, FB_CONF_MEMORY_POOL_SIZE).is_ok
+    return IPCMessage.from_entries(entries, memory_manager=manager)
 
 
 def test_scenario_ipc_router_and_logging():
@@ -70,22 +79,22 @@ def test_scenario_ipc_router_and_logging():
         status1, ch1 = router.lookup("fireball://core/coos/0")
         assert status1 == IpcStatus.COMPLETED and ch1 is not None
 
-        msg1 = IPCMessage.from_entries([(_KEY_CMD, _CMD_START_TASK), (_KEY_TASK_ID, 10)])
+        msg1 = _make_test_ipc_message([(_KEY_CMD, _CMD_START_TASK), (_KEY_TASK_ID, 10)])
         status, _ = yield from router.send(ch1, msg1)
         sent.append(("1_rendezvous", status, msg1))
 
         # 2. RBAC Permission Denied: no RUNTIME -> DEBUGGER edge exists.
-        msg2 = IPCMessage.from_entries([(_KEY_CMD, _CMD_KILL)])
+        msg2 = _make_test_ipc_message([(_KEY_CMD, _CMD_KILL)])
         status2, ch2 = router.lookup("fireball://dbg/manager/0")
         sent.append(("2_permission_denied", status2, msg2))
 
         # 3. URI Not Found
-        msg3 = IPCMessage.from_entries()
+        msg3 = _make_test_ipc_message()
         status3, ch3 = router.lookup("fireball://unknown/service")
         sent.append(("3_not_found", status3, msg3))
 
         # 4. Message exceeds the static 8 kv_pair buffer (ipc_router.md §3.3/§5.1).
-        oversized = IPCMessage.from_entries([(i, i) for i in range(9)])
+        oversized = _make_test_ipc_message([(i, i) for i in range(9)])
         status4, _ = yield from router.send(ch1, oversized)
         sent.append(("4_too_large", status4, oversized))
 

@@ -5,7 +5,7 @@ description: experiments/pysim 配下の Python ソースコードを、組み�
 
 # pysim ソースコードレビュースキル (pysim Review Skill)
 
-`experiments/pysim/` は、通常の `new` / `delete`、`malloc` / `free` / `realloc` / `calloc`、標準の動的 STL コンテナを禁止し、placement/in-place `new` とプロジェクトで提供する独自ヒープ API・独自コンテナを許可する組み込み C++23 の設計を、Python 上で事前実証する参照シミュレータです。`pysim` 自身では、Python 標準の `dict` / `set` / `list` を禁止し、固定容量のシステムコンテナを使用します。
+`experiments/pysim/` は、通常の `new` / `delete`、`malloc` / `free` / `realloc` / `calloc`、標準の動的 STL コンテナを禁止し、placement/in-place `new` とプロジェクトで提供する独自ヒープ API・独自コンテナを許可する組み込み C++23 の設計を、Python 上で事前実証する参照シミュレータです。`pysim` 自身では、Python 標準の `dict` / `set` / `list` を禁止し、固定容量のシステムコンテナを使用します。参照モデルは fail-fast を原則とし、不変条件・境界・契約違反を `assert` で即時検出します。
 
 本スキルは、**「組み込み C++ に 1 対 1 で移植可能であること」** を前提に、ユーザー指定の **9大評価軸** を専門サブエージェント群を活用して厳格に監査します。
 
@@ -57,14 +57,17 @@ graph TD
 
 ---
 
+横断監査として、仕様の不変条件・境界・副作用を `assert` が直接検証しているかも確認します。`print`・非空判定・固定件数だけの代理検証、無条件 `pass`、検証失敗の握りつぶし、テスト自身が送出した `AssertionError` の自己捕捉は指摘対象です。pysim では不具合を検出した時点で停止することを優先します。
+
 ## 運用手順 (Workflow)
 
 ### Step 1: 静的アンチパターンスキャンの実行
 
-まず付属の AST スキャナを実行し、対象コード内の機械的違反（Any, dict, set, append, RTTI, bytearray, 型注釈欠落）を瞬時に抽出します。
+まず付属の AST スキャナを実行し、対象コード内の機械的違反（Any, dict, set, append, RTTI, bytearray, 型注釈欠落）を瞬時に抽出します。続けて `spec-integrator` のソース検証を実行し、`spec-integrator.yaml` の `pysim_imports` 設定に従ってTier 1の汎用コードがTier 2/3の実装へ逆流していないこと、bare importが`sys.path`依存で別Tierへ解決されないことを確認します。
 
 ```powershell
 uv run python .agents/skills/pysim-review/scripts/scan_pysim_anti_patterns.py <target_path> --json
+powershell tools/check-src.ps1 -group pysim
 ```
 
 スキャン結果の JSON リストを控えておき、Step 2 のサブエージェントへインプットとして渡します。

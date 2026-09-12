@@ -82,13 +82,16 @@ def test_mem_02_recovery_strategy_on_exhaustion():
 def test_mem_03_total_allocation_bound():
     """TEST-MEM-03: Total allocated bytes never exceeds FB_CONF_MEMORY_POOL_SIZE."""
     mm = MemoryManager()
-    pool_size = 128 * 1024
+    pool_size = FB_CONF_MEMORY_POOL_SIZE
     mm.init_manager(pool_base=0x20020000, pool_size=pool_size)
+    allocation_failed = False
     for i in range(1, 10):
         res = mm.acquire_task_heap(owner=i)
         assert mm.total_allocated_bytes <= pool_size
         if res.is_err:
+            allocation_failed = True
             break
+    assert allocation_failed, "allocation must fail at the configured pool boundary"
 
 
 def test_mem_04_owner_task_id_auto_set():
@@ -119,11 +122,13 @@ def test_mem_06_guest_ram_64kb_alignment():
     """TEST-MEM-06: pool_base is strictly 64KB aligned."""
     mm = MemoryManager()
     assert mm.init_manager(pool_base=0x20020000, pool_size=FB_CONF_MEMORY_POOL_SIZE).is_ok
+    caught = False
     try:
         mm.init_manager(pool_base=0x20021000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
-        raise AssertionError("Expected AssertionError for unaligned pool_base")
     except AssertionError as e:
+        caught = True
         assert "64KB aligned" in str(e)
+    assert caught, "Expected AssertionError for unaligned pool_base"
 
 
 def test_mem_10_shared_block_ownership_transfer():
@@ -173,9 +178,10 @@ def test_mem_10_shared_block_ownership_transfer():
     # Access during in-flight must raise AssertionError
     try:
         sb_a.read_u32(4)
+    except AssertionError as e:
+        assert "released" in str(e) or "in-flight" in str(e)
+    else:
         raise AssertionError("Expected access error while in-flight")
-    except AssertionError:
-        pass
 
     # Simulate IPC Router Grant phase
     mm.page_registry.update_owner(page_idx, 2)
@@ -222,10 +228,11 @@ def test_mem_14_page_granular_permission_isolation():
 
     # Task 1 allocates a small block (256 bytes)
     sb_t1_a = mm.allocate_shared(caller_task_id=1, size=256).unwrap()
-    # Task 1 allocates another small block (256 bytes) -> reuses Task 1's page!
+    # Task 1 allocates another small block (256 bytes) -> a separate page is
+    # required so page-granular ownership transfer cannot split a page.
     sb_t1_b = mm.allocate_shared(caller_task_id=1, size=256).unwrap()
-    assert sb_t1_a.page_idx == sb_t1_b.page_idx
-    assert sb_t1_a.slot_idx != sb_t1_b.slot_idx
+    assert sb_t1_a.page_idx != sb_t1_b.page_idx
+    assert sb_t1_a.slot_idx == sb_t1_b.slot_idx == 0
 
     # Task 2 allocates a small block (256 bytes) -> MUST allocate a separate 4KB page!
     sb_t2 = mm.allocate_shared(caller_task_id=2, size=256).unwrap()
@@ -249,21 +256,21 @@ def test_mem_15_vmmio_fc14_tlb_sync():
     status, _ = vmmio.access(raw_addr, is_write=False, current_task_id=1)
     assert status == "OK_PHYSICAL"
 
-    # Task 2 access traps with OWNER_MISMATCH (aliased to UNREGISTERED_PAGE)
+    # Task 2 access traps with the canonical unregistered-page fault.
     status, _ = vmmio.access(raw_addr, is_write=False, current_task_id=2)
-    assert status == TrapCode.OWNER_MISMATCH
+    assert status == TrapCode.UNREGISTERED_PAGE
 
     # Release puts page in flight -> Task 1 also traps!
     shm_id = sb.release(caller_task_id=1)
     status, _ = vmmio.access(raw_addr, is_write=False, current_task_id=1)
-    assert status == TrapCode.OWNER_MISMATCH
+    assert status == TrapCode.UNREGISTERED_PAGE
 
     # Grant to Task 2 -> Task 2 can access, Task 1 cannot!
     assert mm.grant_shared(shm_id, 2)
     status, _ = vmmio.access(raw_addr, is_write=False, current_task_id=2)
     assert status == "OK_PHYSICAL"
     status, _ = vmmio.access(raw_addr, is_write=False, current_task_id=1)
-    assert status == TrapCode.OWNER_MISMATCH
+    assert status == TrapCode.UNREGISTERED_PAGE
 
 
 def test_mem_20_mpu_8_regions_static_allocation():
@@ -294,9 +301,9 @@ def test_mem_24_transaction_batching_barrier_efficiency():
     mpu = PMSAv8MPU(pool_base=0x20020000)
     mpu.begin_jit_patch()
     for _ in range(10):
-        # Simulate copying and patching 10 instruction stencils within one batch
-        pass
+        mpu.patch_stencil()
     mpu.commit_jit_patch()
+    assert mpu.patch_count == 10
     assert mpu.dsb_count == 2, "Batching must only emit 2 barriers per compilation unit"
     assert mpu.isb_count == 2
 

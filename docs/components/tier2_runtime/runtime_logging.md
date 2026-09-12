@@ -134,6 +134,8 @@ stateDiagram-v2
     DrainingBatch --> Idle: "buffer_empty"
 ```
 
+形式検証モデルの状態との対応は、`Idle` = `s_idle_empty`、`Validating`/`Enqueuing` = `s_active_partial` または `s_active_full`、`Flushing`/`DrainingBatch` = `s_idle_flushing`、`dma_complete` 後の完了 = `s_flush_done`、割り込み経路 = `s_irq_preempt`/`s_irq_handled` である。`s_blocked_caller`、`s_never_flushed`、`s_irq_blocked` は `guards=False` でのみ到達する違反状態である。 `{BufferedLogging}`
+
 ### 4.5 内部シーケンス
 <!-- traceability: {DictionaryBasedIPC} {BufferedLogging} {GLOBAL_IdleDetection} -->
 #### ログ出力シーケンス
@@ -169,7 +171,7 @@ sequenceDiagram
 | 機能概要 | 発生したイベントを、レベルと辞書オフセット形式で記録する。 |
 | シグネチャ | `log_event(level: log-level, offset: dictionary-offset, args: scalar-argument-view<4>) -> log-result` |
 | 引数 | `level`: ログレベル重要度<br>`offset`: 辞書オフセット（IPC送信時は `kv_pair` の識別キー幅である24bitに収める）<br>`args`: ログパラメータとなる最大4個のスカラー引数ビュー |
-| 戻り値 | `log_result_t` (常に `SUCCESS` を返し、バッファ満杯時は最古ログを自動上書きしてシステムの実行継続性を最優先する) |
+| 戻り値 | `log-result`（概念実装では `SUCCESS`、レベル除外時は `FILTERED`、満杯時に上書きした場合は `OVERWRITTEN`） |
 | 期待する結果 | 正常：ログ情報がリングバッファにキューイングされる。 |
 
 #### バッファリング出力 (`flush`)
@@ -177,8 +179,8 @@ sequenceDiagram
 | 項目 | 内容 |
 | :--- | :--- |
 | 機能概要 | リングバッファに蓄積されたログを物理トランスポートへ一括出力する。 |
-| シグネチャ | `auto flush() -> log_result_t` |
-| 戻り値 | `log_result_t` (成功時は `SUCCESS`、物理トランスポートがDMA転送中かつ出力バッファが空でないといったハードウェアビジー状態の失敗時には `ERR_TRANSPORTER_BUSY` を返す) |
+| シグネチャ | `flush(batch_size: u32, interrupt_pending: optional<callback>) -> u32` |
+| 戻り値 | 転送したログ件数。トランスポートがビジーの場合は新しいバッチを開始せず、転送済み件数を返す。 |
 | 補足 | COOS の `set_idle_hook` により、システムアイドル時に呼び出される。DMAバッチ転送は開始後は完了割り込み（`dma_complete`）まで中断できないため、実行中バッチの完了は待機する。バッチ完了時点で割り込み（INTイベント、例：WASIタイマー等）が確認された場合は、残余エントリがあっても次バッチの転送開始をスキップして速やかに制御をスケジューラに戻す。 |
 
 ### 5.2 URI/IPCインターフェース

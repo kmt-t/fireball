@@ -32,6 +32,7 @@ for _p in [
     if _sp not in sys.path:
         sys.path.insert(0, _sp)
 
+from helpers import make_test_ipc_message
 from ipc_router import (
     DataType,
     IPCMessage,
@@ -88,7 +89,7 @@ def test_ipc_01_uri_lookup_and_permission_matrix():
     status1, ch1 = router.lookup("fireball://device/gpio/0")
     assert status1 == IpcStatus.COMPLETED and ch1 is not None
 
-    msg1 = IPCMessage.from_entries([(_KEY_CMD, _CMD_PIN_HIGH)])
+    msg1 = make_test_ipc_message([(_KEY_CMD, _CMD_PIN_HIGH)])
     gen = router.send(ch1, msg1)
     assert next(gen) == (ChannelAction.BLOCK, None)
     assert msg1.ownership == OwnershipState.IN_FLIGHT
@@ -103,7 +104,7 @@ def test_ipc_01_uri_lookup_and_permission_matrix():
 
     # Anti-spoofing verification: even if HAL_GPIO holds ch1 (from RUNTIME),
     # send() enforces TCB role check and denies transmission.
-    msg2 = IPCMessage.from_entries([(_KEY_CMD, _CMD_PIN_HIGH)])
+    msg2 = make_test_ipc_message([(_KEY_CMD, _CMD_PIN_HIGH)])
     gen_spoof = router.send(ch1, msg2)
     try:
         next(gen_spoof)
@@ -210,7 +211,7 @@ def test_ipc_04_select_recv_picks_first_ready_sender_and_clears_group():
     def debugger_sender():
         status, ch = router.lookup("fireball://core/coos/0")
         assert status == IpcStatus.COMPLETED and ch is not None
-        status, _ = yield from router.send(ch, IPCMessage.from_entries([(1, 99)]))
+        status, _ = yield from router.send(ch, make_test_ipc_message([(1, 99)]))
         assert status == IpcStatus.COMPLETED
 
     recv_id = sched.spawn("core_receiver", core_receiver(), role=Role.CORE_SERVICE)
@@ -247,7 +248,7 @@ def test_ipc_04_select_recv_picks_first_ready_sender_and_clears_group():
     def runtime_sender():
         status, ch = router.lookup("fireball://core/coos/0")
         assert status == IpcStatus.COMPLETED and ch is not None
-        status, _ = yield from router.send(ch, IPCMessage.from_entries([(1, 7)]))
+        status, _ = yield from router.send(ch, make_test_ipc_message([(1, 7)]))
         assert status == IpcStatus.COMPLETED
 
     sched.spawn("core_receiver2", core_receiver2(), role=Role.CORE_SERVICE)
@@ -262,7 +263,7 @@ def test_ipc_05_message_storage_ownership_and_access_check():
     """TEST-IPC-05: IPCMessage owns its SharedBlock storage and enforces ownership checks upon access."""
     from ipc_router import OwnershipState
 
-    msg = IPCMessage.from_entries([(10, 100), (20, 200)])
+    msg = make_test_ipc_message([(10, 100), (20, 200)])
     assert msg.ownership == OwnershipState.SENDER_OWNS
     assert msg.get(10) == 100
     assert msg.get(20) == 200
@@ -273,23 +274,24 @@ def test_ipc_05_message_storage_ownership_and_access_check():
     msg.ownership = OwnershipState.IN_FLIGHT
     try:
         _ = msg.get(10)
-        raise AssertionError("Accessing entries during IN_FLIGHT must raise AssertionError")
     except AssertionError as e:
         assert "Cannot access IPCMessage entries while ownership is IN_FLIGHT" in str(e)
+    else:
+        raise AssertionError("Accessing entries during IN_FLIGHT must raise AssertionError")
 
     try:
         _ = msg.entries
-        raise AssertionError(
-            "Accessing entries property during IN_FLIGHT must raise AssertionError"
-        )
     except AssertionError as e:
         assert "Cannot access IPCMessage entries while ownership is IN_FLIGHT" in str(e)
+    else:
+        raise AssertionError("Accessing entries property during IN_FLIGHT must raise AssertionError")
 
     try:
         _ = len(msg)
-        raise AssertionError("Calling len() during IN_FLIGHT must raise AssertionError")
     except AssertionError as e:
         assert "Cannot access IPCMessage entries while ownership is IN_FLIGHT" in str(e)
+    else:
+        raise AssertionError("Calling len() during IN_FLIGHT must raise AssertionError")
 
     # Transition to RECEIVER_OWNS: access is permitted again
     msg.ownership = OwnershipState.RECEIVER_OWNS
@@ -317,7 +319,7 @@ def test_ipc_06_router_create_channel_authorization():
     assert ch_denied is None, "HAL_GPIO -> DEBUGGER must be denied by RBAC"
 
     # Communication over the authorized channel
-    msg = IPCMessage.from_entries([(1, 42)])
+    msg = make_test_ipc_message([(1, 42)])
     sched.current_task = sched.get_task(runtime_task_id)
     action, _ = ch_hal.send(msg)
     assert action == ChannelAction.BLOCK

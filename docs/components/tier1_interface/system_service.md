@@ -66,10 +66,11 @@ flowchart TD
 stateDiagram-v2
     [*] --> Loaded: load_service (static)
     Loaded --> Running: start_guest
-    Running --> Stopped: stop_guest
     Running --> Failed: fault detected
     Failed --> Loaded: self_reboot (SelfReboot_via_Event)
 ```
+
+形式検証モデルでは、複数サービスの障害隔離を検証するため、上図の単一サービスの状態を次の抽象状態へ写像する。`s_all_running` は `Running`、`s_a_crashed`/`s_b_crashed` は `Failed`、`s_a_isolated`/`s_b_isolated` は障害を局所化した `Failed` の中間状態、`s_a_rebooting`/`s_b_rebooting` は `self_reboot` 実行中、`s_a_recovered`/`s_b_recovered` は `Loaded` から `Running` へ戻る復旧状態に対応する。`s_corrupted` と `s_stuck` は仕様上到達してはならない違反状態である。 `{META_FaultIsolation}`
 
 図中の各ブロックは以下を指す：
 - **Isolated IPC Service**（サービス）: IPCルータ経由で隔離実行される、WASI以外の汎用サービス（本節冒頭で定義した「サービス」の実体。WASM上で実行される常駐タスクである）。

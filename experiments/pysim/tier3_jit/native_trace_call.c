@@ -1243,8 +1243,8 @@ static int __Pyx_init_tpflags_variables(void) {
   #endif
 #endif
 
-#define __PYX_HAVE__pysim__jit__native_trace_call
-#define __PYX_HAVE_API__pysim__jit__native_trace_call
+#define __PYX_HAVE__pysim__tier3_jit__native_trace_call
+#define __PYX_HAVE_API__pysim__tier3_jit__native_trace_call
 /* Early includes */
 #include <stdint.h>
 #ifdef _OPENMP
@@ -1671,14 +1671,14 @@ static const char* const __pyx_f[] = {
 
 /*--- Type declarations ---*/
 
-/* "pysim/jit/native_trace_call.pyx":21
- * from libc.stdint cimport int64_t, uint32_t
+/* "pysim/tier3_jit/native_trace_call.pyx":21
+ * from libc.stdint cimport uint32_t
  * 
- * ctypedef int64_t (*trace_fn_t)(uint32_t, void*, void*, uint32_t) noexcept nogil             # <<<<<<<<<<<<<<
+ * ctypedef void (*trace_fn_t)(void*, void*, void*, uint32_t) noexcept nogil             # <<<<<<<<<<<<<<
  * 
  * 
 */
-typedef int64_t (*__pyx_t_5pysim_3jit_17native_trace_call_trace_fn_t)(uint32_t, void *, void *, uint32_t);
+typedef void (*__pyx_t_5pysim_9tier3_jit_17native_trace_call_trace_fn_t)(void *, void *, void *, uint32_t);
 /* #### Code section: utility_code_proto ### */
 
 /* --- Runtime support code (head) --- */
@@ -2408,19 +2408,19 @@ static int __Pyx_State_RemoveModule(void*);
 
 /* Module declarations from "libc.stdint" */
 
-/* Module declarations from "pysim.jit.native_trace_call" */
+/* Module declarations from "pysim.tier3_jit.native_trace_call" */
 /* #### Code section: typeinfo ### */
 /* #### Code section: before_global_var ### */
-#define __Pyx_MODULE_NAME "pysim.jit.native_trace_call"
-extern int __pyx_module_is_main_pysim__jit__native_trace_call;
-int __pyx_module_is_main_pysim__jit__native_trace_call = 0;
+#define __Pyx_MODULE_NAME "pysim.tier3_jit.native_trace_call"
+extern int __pyx_module_is_main_pysim__tier3_jit__native_trace_call;
+int __pyx_module_is_main_pysim__tier3_jit__native_trace_call = 0;
 
-/* Implementation of "pysim.jit.native_trace_call" */
+/* Implementation of "pysim.tier3_jit.native_trace_call" */
 /* #### Code section: global_var ### */
 /* #### Code section: string_decls ### */
-static const char __pyx_k_experiments_pysim_jit_native_tr[] = "\nexperiments/pysim/jit/native_trace_call.pyx\nOptional native accelerator for RuntimeEngine._invoke_trace\047s hot path.\n\n`ctypes.CFUNCTYPE` calls a compiled JITTrace through a libffi trampoline\n(~1.1us/call measured, dominated by argument marshalling through libffi\nrather than the trace body itself). This module instead casts the trace\047s\nalready-known entry address straight to a C function pointer and calls it,\nmatching x64_jit.py\047s CPS 4-argument convention exactly:\n    int64_t (*)(uint32_t ip, void* stack_bot, void* local_base, uint32_t tos)\n\nBuilt via build_native.ps1 / build_native.sh into native_trace_call.pyd /\n.so alongside this file. RuntimeEngine imports it opportunistically -- when\nabsent (module not built), `_invoke_trace` falls back to the ctypes path,\nso pysim\047s plain-Python regression suite runs unmodified either way.\n";
+static const char __pyx_k_experiments_pysim_jit_native_tr[] = "\nexperiments/pysim/jit/native_trace_call.pyx\nOptional native accelerator for RuntimeEngine._invoke_trace\047s hot path.\n\n`ctypes.CFUNCTYPE` calls a compiled JITTrace through a libffi trampoline\n(~1.1us/call measured, dominated by argument marshalling through libffi\nrather than the trace body itself). This module instead casts the trace\047s\nalready-known entry address straight to a C function pointer and calls it,\nmatching x64_jit.py\047s CPS 4-argument convention exactly:\n    void (*)(void* ctx, void* sp, void* local_base, uint32_t tos)\n\nBuilt via build_native.ps1 / build_native.sh into native_trace_call.pyd /\n.so alongside this file. RuntimeEngine imports it opportunistically -- when\nabsent (module not built), `_invoke_trace` falls back to the ctypes path,\nso pysim\047s plain-Python regression suite runs unmodified either way.\n";
 /* #### Code section: decls ### */
-static PyObject *__pyx_pf_5pysim_3jit_17native_trace_call_invoke_trace(CYTHON_UNUSED PyObject *__pyx_self, unsigned PY_LONG_LONG __pyx_v_fn_addr, unsigned int __pyx_v_head_pc, unsigned PY_LONG_LONG __pyx_v_stack_bot_addr, unsigned PY_LONG_LONG __pyx_v_local_base_addr, unsigned int __pyx_v_tos); /* proto */
+static PyObject *__pyx_pf_5pysim_9tier3_jit_17native_trace_call_invoke_trace(CYTHON_UNUSED PyObject *__pyx_self, unsigned PY_LONG_LONG __pyx_v_fn_addr, unsigned PY_LONG_LONG __pyx_v_ctx_addr, unsigned PY_LONG_LONG __pyx_v_sp_addr, unsigned PY_LONG_LONG __pyx_v_local_base_addr, unsigned int __pyx_v_tos); /* proto */
 /* #### Code section: late_includes ### */
 /* #### Code section: module_state ### */
 /* SmallCodeConfig */
@@ -2448,7 +2448,7 @@ namespace {
     __Pyx_CachedCFunction __pyx_umethod_PyDict_Type_pop;
     __Pyx_CachedCFunction __pyx_umethod_PyDict_Type_values;
     PyObject *__pyx_codeobj_tab[1];
-    PyObject *__pyx_string_tab[28];
+    PyObject *__pyx_string_tab[29];
 /* #### Code section: module_state_contents ### */
 /* CommonTypesMetaclass.module_state_decls */
 PyTypeObject *__pyx_CommonTypesMetaclassType;
@@ -2505,21 +2505,22 @@ static __pyx_mstatetype * const __pyx_mstate_global = &__pyx_mstate_global_stati
 #define __pyx_n_u_is_coroutine __pyx_string_tab[10]
 #define __pyx_n_u_asyncio_coroutines __pyx_string_tab[11]
 #define __pyx_n_u_cline_in_traceback __pyx_string_tab[12]
-#define __pyx_n_u_fn __pyx_string_tab[13]
-#define __pyx_n_u_fn_addr __pyx_string_tab[14]
-#define __pyx_n_u_head_pc __pyx_string_tab[15]
-#define __pyx_n_u_invoke_trace __pyx_string_tab[16]
-#define __pyx_n_u_items __pyx_string_tab[17]
-#define __pyx_n_u_local_base __pyx_string_tab[18]
-#define __pyx_n_u_local_base_addr __pyx_string_tab[19]
-#define __pyx_n_u_pop __pyx_string_tab[20]
-#define __pyx_n_u_pysim_jit_native_trace_call __pyx_string_tab[21]
-#define __pyx_n_u_setdefault __pyx_string_tab[22]
-#define __pyx_n_u_stack_bot __pyx_string_tab[23]
-#define __pyx_n_u_stack_bot_addr __pyx_string_tab[24]
-#define __pyx_n_u_tos __pyx_string_tab[25]
-#define __pyx_n_u_values __pyx_string_tab[26]
-#define __pyx_kp_b_iso88591_W_7_6a_G_7q_9K_1 __pyx_string_tab[27]
+#define __pyx_n_u_ctx __pyx_string_tab[13]
+#define __pyx_n_u_ctx_addr __pyx_string_tab[14]
+#define __pyx_n_u_fn __pyx_string_tab[15]
+#define __pyx_n_u_fn_addr __pyx_string_tab[16]
+#define __pyx_n_u_invoke_trace __pyx_string_tab[17]
+#define __pyx_n_u_items __pyx_string_tab[18]
+#define __pyx_n_u_local_base __pyx_string_tab[19]
+#define __pyx_n_u_local_base_addr __pyx_string_tab[20]
+#define __pyx_n_u_pop __pyx_string_tab[21]
+#define __pyx_n_u_pysim_tier3_jit_native_trace_cal __pyx_string_tab[22]
+#define __pyx_n_u_setdefault __pyx_string_tab[23]
+#define __pyx_n_u_sp __pyx_string_tab[24]
+#define __pyx_n_u_sp_addr __pyx_string_tab[25]
+#define __pyx_n_u_tos __pyx_string_tab[26]
+#define __pyx_n_u_values __pyx_string_tab[27]
+#define __pyx_kp_b_iso88591_W_W_0_G_q_G_7q_5_L __pyx_string_tab[28]
 /* #### Code section: module_state_clear ### */
 #if CYTHON_USE_MODULE_STATE
 static CYTHON_SMALL_CODE int __pyx_m_clear(PyObject *m) {
@@ -2538,7 +2539,7 @@ static CYTHON_SMALL_CODE int __pyx_m_clear(PyObject *m) {
   Py_CLEAR(clear_module_state->__pyx_umethod_PyDict_Type_pop.method);
   Py_CLEAR(clear_module_state->__pyx_umethod_PyDict_Type_values.method);
   for (int i=0; i<1; ++i) { Py_CLEAR(clear_module_state->__pyx_codeobj_tab[i]); }
-  for (int i=0; i<28; ++i) { Py_CLEAR(clear_module_state->__pyx_string_tab[i]); }
+  for (int i=0; i<29; ++i) { Py_CLEAR(clear_module_state->__pyx_string_tab[i]); }
 /* #### Code section: module_state_clear_contents ### */
 /* CommonTypesMetaclass.module_state_clear */
 Py_CLEAR(clear_module_state->__pyx_CommonTypesMetaclassType);
@@ -2565,7 +2566,7 @@ static CYTHON_SMALL_CODE int __pyx_m_traverse(PyObject *m, visitproc visit, void
   Py_VISIT(traverse_module_state->__pyx_umethod_PyDict_Type_pop.method);
   Py_VISIT(traverse_module_state->__pyx_umethod_PyDict_Type_values.method);
   for (int i=0; i<1; ++i) { __Pyx_VISIT_CONST(traverse_module_state->__pyx_codeobj_tab[i]); }
-  for (int i=0; i<28; ++i) { __Pyx_VISIT_CONST(traverse_module_state->__pyx_string_tab[i]); }
+  for (int i=0; i<29; ++i) { __Pyx_VISIT_CONST(traverse_module_state->__pyx_string_tab[i]); }
 /* #### Code section: module_state_traverse_contents ### */
 /* CommonTypesMetaclass.module_state_traverse */
 Py_VISIT(traverse_module_state->__pyx_CommonTypesMetaclassType);
@@ -2579,25 +2580,25 @@ return 0;
 #endif
 /* #### Code section: module_code ### */
 
-/* "pysim/jit/native_trace_call.pyx":24
+/* "pysim/tier3_jit/native_trace_call.pyx":24
  * 
  * 
  * def invoke_trace(             # <<<<<<<<<<<<<<
  *     unsigned long long fn_addr,
- *     unsigned int head_pc,
+ *     unsigned long long ctx_addr,
 */
 
 /* Python wrapper */
-static PyObject *__pyx_pw_5pysim_3jit_17native_trace_call_1invoke_trace(PyObject *__pyx_self, 
+static PyObject *__pyx_pw_5pysim_9tier3_jit_17native_trace_call_1invoke_trace(PyObject *__pyx_self,
 #if CYTHON_VECTORCALL
 PyObject *const *__pyx_args, Py_ssize_t __pyx_nargs, PyObject *__pyx_kwds
 #else
 PyObject *__pyx_args, PyObject *__pyx_kwds
 #endif
 ); /*proto*/
-PyDoc_STRVAR(__pyx_doc_5pysim_3jit_17native_trace_call_invoke_trace, "Calls a compiled trace\047s native entry point directly as a C function pointer.\n\n    `fn_addr` is the trace\047s raw entry address (`JITTrace.raw_addr`).\n    `stack_bot_addr` is `frame.jit_result_slot()`\047s buffer: a trace with a\n    residual value writes it there (via R12) instead of returning it -- a\n    trace\047s result is VM operand-stack state, not a C return value, so the\n    return value itself carries nothing and is discarded here.\n    ");
-static PyMethodDef __pyx_mdef_5pysim_3jit_17native_trace_call_1invoke_trace = {"invoke_trace", (PyCFunction)(void(*)(void))(__Pyx_PyCFunction_FastCallWithKeywords)__pyx_pw_5pysim_3jit_17native_trace_call_1invoke_trace, __Pyx_METH_FASTCALL|METH_KEYWORDS, __pyx_doc_5pysim_3jit_17native_trace_call_invoke_trace};
-static PyObject *__pyx_pw_5pysim_3jit_17native_trace_call_1invoke_trace(PyObject *__pyx_self, 
+PyDoc_STRVAR(__pyx_doc_5pysim_9tier3_jit_17native_trace_call_invoke_trace, "Calls a compiled trace\047s native entry point directly as a C function pointer.\n\n    `fn_addr` is the trace\047s raw entry address (`JITTrace.raw_addr`).\n    `sp_addr` is `frame.jit_result_slot()`\047s buffer: a trace with a\n    residual value writes it there (via R12) instead of returning it -- a\n    trace\047s result is VM operand-stack state, not a C return value, so the\n    return value itself carries nothing and is discarded here.\n    ");
+static PyMethodDef __pyx_mdef_5pysim_9tier3_jit_17native_trace_call_1invoke_trace = {"invoke_trace", (PyCFunction)(void(*)(void))(__Pyx_PyCFunction_FastCallWithKeywords)__pyx_pw_5pysim_9tier3_jit_17native_trace_call_1invoke_trace, __Pyx_METH_FASTCALL|METH_KEYWORDS, __pyx_doc_5pysim_9tier3_jit_17native_trace_call_invoke_trace};
+static PyObject *__pyx_pw_5pysim_9tier3_jit_17native_trace_call_1invoke_trace(PyObject *__pyx_self,
 #if CYTHON_VECTORCALL
 PyObject *const *__pyx_args, Py_ssize_t __pyx_nargs, PyObject *__pyx_kwds
 #else
@@ -2605,8 +2606,8 @@ PyObject *__pyx_args, PyObject *__pyx_kwds
 #endif
 ) {
   unsigned PY_LONG_LONG __pyx_v_fn_addr;
-  unsigned int __pyx_v_head_pc;
-  unsigned PY_LONG_LONG __pyx_v_stack_bot_addr;
+  unsigned PY_LONG_LONG __pyx_v_ctx_addr;
+  unsigned PY_LONG_LONG __pyx_v_sp_addr;
   unsigned PY_LONG_LONG __pyx_v_local_base_addr;
   unsigned int __pyx_v_tos;
   #if !CYTHON_VECTORCALL
@@ -2629,7 +2630,7 @@ PyObject *__pyx_args, PyObject *__pyx_kwds
   #endif
   __pyx_kwvalues = __Pyx_KwValues_FASTCALL(__pyx_args, __pyx_nargs);
   {
-    PyObject ** const __pyx_pyargnames[] = {&__pyx_mstate_global->__pyx_n_u_fn_addr,&__pyx_mstate_global->__pyx_n_u_head_pc,&__pyx_mstate_global->__pyx_n_u_stack_bot_addr,&__pyx_mstate_global->__pyx_n_u_local_base_addr,&__pyx_mstate_global->__pyx_n_u_tos,0};
+    PyObject ** const __pyx_pyargnames[] = {&__pyx_mstate_global->__pyx_n_u_fn_addr,&__pyx_mstate_global->__pyx_n_u_ctx_addr,&__pyx_mstate_global->__pyx_n_u_sp_addr,&__pyx_mstate_global->__pyx_n_u_local_base_addr,&__pyx_mstate_global->__pyx_n_u_tos,0};
     const Py_ssize_t __pyx_kwds_len = (__pyx_kwds) ? __Pyx_NumKwargs_FASTCALL(__pyx_kwds) : 0;
     if (unlikely(__pyx_kwds_len < 0)) __PYX_ERR(0, 24, __pyx_L3_error)
     if (__pyx_kwds_len > 0) {
@@ -2677,8 +2678,8 @@ PyObject *__pyx_args, PyObject *__pyx_kwds
       if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[4])) __PYX_ERR(0, 24, __pyx_L3_error)
     }
     __pyx_v_fn_addr = __Pyx_PyLong_As_unsigned_PY_LONG_LONG(values[0]); if (unlikely((__pyx_v_fn_addr == (unsigned PY_LONG_LONG)-1) && PyErr_Occurred())) __PYX_ERR(0, 25, __pyx_L3_error)
-    __pyx_v_head_pc = __Pyx_PyLong_As_unsigned_int(values[1]); if (unlikely((__pyx_v_head_pc == (unsigned int)-1) && PyErr_Occurred())) __PYX_ERR(0, 26, __pyx_L3_error)
-    __pyx_v_stack_bot_addr = __Pyx_PyLong_As_unsigned_PY_LONG_LONG(values[2]); if (unlikely((__pyx_v_stack_bot_addr == (unsigned PY_LONG_LONG)-1) && PyErr_Occurred())) __PYX_ERR(0, 27, __pyx_L3_error)
+    __pyx_v_ctx_addr = __Pyx_PyLong_As_unsigned_PY_LONG_LONG(values[1]); if (unlikely((__pyx_v_ctx_addr == (unsigned PY_LONG_LONG)-1) && PyErr_Occurred())) __PYX_ERR(0, 26, __pyx_L3_error)
+    __pyx_v_sp_addr = __Pyx_PyLong_As_unsigned_PY_LONG_LONG(values[2]); if (unlikely((__pyx_v_sp_addr == (unsigned PY_LONG_LONG)-1) && PyErr_Occurred())) __PYX_ERR(0, 27, __pyx_L3_error)
     __pyx_v_local_base_addr = __Pyx_PyLong_As_unsigned_PY_LONG_LONG(values[3]); if (unlikely((__pyx_v_local_base_addr == (unsigned PY_LONG_LONG)-1) && PyErr_Occurred())) __PYX_ERR(0, 28, __pyx_L3_error)
     __pyx_v_tos = __Pyx_PyLong_As_unsigned_int(values[4]); if (unlikely((__pyx_v_tos == (unsigned int)-1) && PyErr_Occurred())) __PYX_ERR(0, 29, __pyx_L3_error)
   }
@@ -2691,11 +2692,11 @@ PyObject *__pyx_args, PyObject *__pyx_kwds
   for (Py_ssize_t __pyx_temp=0; __pyx_temp < (Py_ssize_t)(sizeof(values)/sizeof(values[0])); ++__pyx_temp) {
     Py_XDECREF(values[__pyx_temp]);
   }
-  __Pyx_AddTraceback("pysim.jit.native_trace_call.invoke_trace", __pyx_clineno, __pyx_lineno, __pyx_filename);
+  __Pyx_AddTraceback("pysim.tier3_jit.native_trace_call.invoke_trace", __pyx_clineno, __pyx_lineno, __pyx_filename);
   __Pyx_RefNannyFinishContext();
   return NULL;
   __pyx_L4_argument_unpacking_done:;
-  __pyx_r = __pyx_pf_5pysim_3jit_17native_trace_call_invoke_trace(__pyx_self, __pyx_v_fn_addr, __pyx_v_head_pc, __pyx_v_stack_bot_addr, __pyx_v_local_base_addr, __pyx_v_tos);
+  __pyx_r = __pyx_pf_5pysim_9tier3_jit_17native_trace_call_invoke_trace(__pyx_self, __pyx_v_fn_addr, __pyx_v_ctx_addr, __pyx_v_sp_addr, __pyx_v_local_base_addr, __pyx_v_tos);
 
   /* function exit code */
   for (Py_ssize_t __pyx_temp=0; __pyx_temp < (Py_ssize_t)(sizeof(values)/sizeof(values[0])); ++__pyx_temp) {
@@ -2710,46 +2711,56 @@ PyObject *__pyx_args, PyObject *__pyx_kwds
   return __pyx_r;
 }
 
-static PyObject *__pyx_pf_5pysim_3jit_17native_trace_call_invoke_trace(CYTHON_UNUSED PyObject *__pyx_self, unsigned PY_LONG_LONG __pyx_v_fn_addr, unsigned int __pyx_v_head_pc, unsigned PY_LONG_LONG __pyx_v_stack_bot_addr, unsigned PY_LONG_LONG __pyx_v_local_base_addr, unsigned int __pyx_v_tos) {
-  __pyx_t_5pysim_3jit_17native_trace_call_trace_fn_t __pyx_v_fn;
-  void *__pyx_v_stack_bot;
+static PyObject *__pyx_pf_5pysim_9tier3_jit_17native_trace_call_invoke_trace(CYTHON_UNUSED PyObject *__pyx_self, unsigned PY_LONG_LONG __pyx_v_fn_addr, unsigned PY_LONG_LONG __pyx_v_ctx_addr, unsigned PY_LONG_LONG __pyx_v_sp_addr, unsigned PY_LONG_LONG __pyx_v_local_base_addr, unsigned int __pyx_v_tos) {
+  __pyx_t_5pysim_9tier3_jit_17native_trace_call_trace_fn_t __pyx_v_fn;
+  void *__pyx_v_ctx;
+  void *__pyx_v_sp;
   void *__pyx_v_local_base;
   PyObject *__pyx_r = NULL;
   __Pyx_RefNannyDeclarations
   __Pyx_RefNannySetupContext("invoke_trace", 0);
 
-  /* "pysim/jit/native_trace_call.pyx":39
+  /* "pysim/tier3_jit/native_trace_call.pyx":39
  *     return value itself carries nothing and is discarded here.
  *     """
  *     cdef trace_fn_t fn = <trace_fn_t><void*><unsigned long long>fn_addr             # <<<<<<<<<<<<<<
- *     cdef void* stack_bot = <void*><unsigned long long>stack_bot_addr
- *     cdef void* local_base = <void*><unsigned long long>local_base_addr
+ *     cdef void* ctx = <void*><unsigned long long>ctx_addr
+ *     cdef void* sp = <void*><unsigned long long>sp_addr
 */
-  __pyx_v_fn = ((__pyx_t_5pysim_3jit_17native_trace_call_trace_fn_t)((void *)((unsigned PY_LONG_LONG)__pyx_v_fn_addr)));
+  __pyx_v_fn = ((__pyx_t_5pysim_9tier3_jit_17native_trace_call_trace_fn_t)((void *)((unsigned PY_LONG_LONG)__pyx_v_fn_addr)));
 
-  /* "pysim/jit/native_trace_call.pyx":40
+  /* "pysim/tier3_jit/native_trace_call.pyx":40
  *     """
  *     cdef trace_fn_t fn = <trace_fn_t><void*><unsigned long long>fn_addr
- *     cdef void* stack_bot = <void*><unsigned long long>stack_bot_addr             # <<<<<<<<<<<<<<
+ *     cdef void* ctx = <void*><unsigned long long>ctx_addr             # <<<<<<<<<<<<<<
+ *     cdef void* sp = <void*><unsigned long long>sp_addr
+ *     cdef void* local_base = <void*><unsigned long long>local_base_addr
+*/
+  __pyx_v_ctx = ((void *)((unsigned PY_LONG_LONG)__pyx_v_ctx_addr));
+
+  /* "pysim/tier3_jit/native_trace_call.pyx":41
+ *     cdef trace_fn_t fn = <trace_fn_t><void*><unsigned long long>fn_addr
+ *     cdef void* ctx = <void*><unsigned long long>ctx_addr
+ *     cdef void* sp = <void*><unsigned long long>sp_addr             # <<<<<<<<<<<<<<
  *     cdef void* local_base = <void*><unsigned long long>local_base_addr
  *     with nogil:
 */
-  __pyx_v_stack_bot = ((void *)((unsigned PY_LONG_LONG)__pyx_v_stack_bot_addr));
+  __pyx_v_sp = ((void *)((unsigned PY_LONG_LONG)__pyx_v_sp_addr));
 
-  /* "pysim/jit/native_trace_call.pyx":41
- *     cdef trace_fn_t fn = <trace_fn_t><void*><unsigned long long>fn_addr
- *     cdef void* stack_bot = <void*><unsigned long long>stack_bot_addr
+  /* "pysim/tier3_jit/native_trace_call.pyx":42
+ *     cdef void* ctx = <void*><unsigned long long>ctx_addr
+ *     cdef void* sp = <void*><unsigned long long>sp_addr
  *     cdef void* local_base = <void*><unsigned long long>local_base_addr             # <<<<<<<<<<<<<<
  *     with nogil:
- *         fn(head_pc, stack_bot, local_base, tos)
+ *         fn(ctx, sp, local_base, tos)
 */
   __pyx_v_local_base = ((void *)((unsigned PY_LONG_LONG)__pyx_v_local_base_addr));
 
-  /* "pysim/jit/native_trace_call.pyx":42
- *     cdef void* stack_bot = <void*><unsigned long long>stack_bot_addr
+  /* "pysim/tier3_jit/native_trace_call.pyx":43
+ *     cdef void* sp = <void*><unsigned long long>sp_addr
  *     cdef void* local_base = <void*><unsigned long long>local_base_addr
  *     with nogil:             # <<<<<<<<<<<<<<
- *         fn(head_pc, stack_bot, local_base, tos)
+ *         fn(ctx, sp, local_base, tos)
 */
   {
       PyThreadState * _save;
@@ -2757,19 +2768,19 @@ static PyObject *__pyx_pf_5pysim_3jit_17native_trace_call_invoke_trace(CYTHON_UN
       __Pyx_FastGIL_Remember();
       /*try:*/ {
 
-        /* "pysim/jit/native_trace_call.pyx":43
+        /* "pysim/tier3_jit/native_trace_call.pyx":44
  *     cdef void* local_base = <void*><unsigned long long>local_base_addr
  *     with nogil:
- *         fn(head_pc, stack_bot, local_base, tos)             # <<<<<<<<<<<<<<
+ *         fn(ctx, sp, local_base, tos)             # <<<<<<<<<<<<<<
 */
-        (void)(__pyx_v_fn(__pyx_v_head_pc, __pyx_v_stack_bot, __pyx_v_local_base, __pyx_v_tos));
+        __pyx_v_fn(__pyx_v_ctx, __pyx_v_sp, __pyx_v_local_base, __pyx_v_tos);
       }
 
-      /* "pysim/jit/native_trace_call.pyx":42
- *     cdef void* stack_bot = <void*><unsigned long long>stack_bot_addr
+      /* "pysim/tier3_jit/native_trace_call.pyx":43
+ *     cdef void* sp = <void*><unsigned long long>sp_addr
  *     cdef void* local_base = <void*><unsigned long long>local_base_addr
  *     with nogil:             # <<<<<<<<<<<<<<
- *         fn(head_pc, stack_bot, local_base, tos)
+ *         fn(ctx, sp, local_base, tos)
 */
       /*finally:*/ {
         /*normal exit:*/{
@@ -2781,16 +2792,17 @@ static PyObject *__pyx_pf_5pysim_3jit_17native_trace_call_invoke_trace(CYTHON_UN
       }
   }
 
-  /* "pysim/jit/native_trace_call.pyx":24
+  /* "pysim/tier3_jit/native_trace_call.pyx":24
  * 
  * 
  * def invoke_trace(             # <<<<<<<<<<<<<<
  *     unsigned long long fn_addr,
- *     unsigned int head_pc,
+ *     unsigned long long ctx_addr,
 */
 
   /* function exit code */
   __pyx_r = Py_None; __Pyx_INCREF(Py_None);
+
 
 
 
@@ -3119,13 +3131,13 @@ __Pyx_RefNannySetupContext("PyInit_native_trace_call", 0);
   if (__Pyx_InitConstants(__pyx_mstate) < (0)) __PYX_ERR(0, 1, __pyx_L1_error)
   stringtab_initialized = 1;
   if (__Pyx_InitGlobals() < (0)) __PYX_ERR(0, 1, __pyx_L1_error)
-  if (__pyx_module_is_main_pysim__jit__native_trace_call) {
+  if (__pyx_module_is_main_pysim__tier3_jit__native_trace_call) {
     if (PyObject_SetAttr(__pyx_m, __pyx_mstate_global->__pyx_n_u_name, __pyx_mstate_global->__pyx_n_u_main) < (0)) __PYX_ERR(0, 1, __pyx_L1_error)
   }
   {
     PyObject *modules = PyImport_GetModuleDict(); if (unlikely(!modules)) __PYX_ERR(0, 1, __pyx_L1_error)
-    if (!PyDict_GetItemString(modules, "pysim.jit.native_trace_call")) {
-      if (unlikely((PyDict_SetItemString(modules, "pysim.jit.native_trace_call", __pyx_m) < 0))) __PYX_ERR(0, 1, __pyx_L1_error)
+    if (!PyDict_GetItemString(modules, "pysim.tier3_jit.native_trace_call")) {
+      if (unlikely((PyDict_SetItemString(modules, "pysim.tier3_jit.native_trace_call", __pyx_m) < 0))) __PYX_ERR(0, 1, __pyx_L1_error)
     }
   }
   /*--- Builtin init code ---*/
@@ -3144,14 +3156,14 @@ __Pyx_RefNannySetupContext("PyInit_native_trace_call", 0);
   if (__Pyx_InitAfterSharedUtility() < (0)) __PYX_ERR(0, 1, __pyx_L1_error)
   /*--- Execution code ---*/
 
-  /* "pysim/jit/native_trace_call.pyx":24
+  /* "pysim/tier3_jit/native_trace_call.pyx":24
  * 
  * 
  * def invoke_trace(             # <<<<<<<<<<<<<<
  *     unsigned long long fn_addr,
- *     unsigned int head_pc,
+ *     unsigned long long ctx_addr,
 */
-  __pyx_t_2 = __Pyx_CyFunction_New(&__pyx_mdef_5pysim_3jit_17native_trace_call_1invoke_trace, 0, __pyx_mstate_global->__pyx_n_u_invoke_trace, NULL, __pyx_mstate_global->__pyx_n_u_pysim_jit_native_trace_call, __pyx_mstate_global->__pyx_d, ((PyObject *)__pyx_mstate_global->__pyx_codeobj_tab[0])); if (unlikely(!__pyx_t_2)) __PYX_ERR(0, 24, __pyx_L1_error)
+  __pyx_t_2 = __Pyx_CyFunction_New(&__pyx_mdef_5pysim_9tier3_jit_17native_trace_call_1invoke_trace, 0, __pyx_mstate_global->__pyx_n_u_invoke_trace, NULL, __pyx_mstate_global->__pyx_n_u_pysim_tier3_jit_native_trace_cal, __pyx_mstate_global->__pyx_d, ((PyObject *)__pyx_mstate_global->__pyx_codeobj_tab[0])); if (unlikely(!__pyx_t_2)) __PYX_ERR(0, 24, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_2);
   #if CYTHON_COMPILING_IN_CPYTHON && PY_VERSION_HEX >= 0x030E0000
   PyUnstable_Object_EnableDeferredRefcount(__pyx_t_2);
@@ -3159,7 +3171,7 @@ __Pyx_RefNannySetupContext("PyInit_native_trace_call", 0);
   if (PyDict_SetItem(__pyx_mstate_global->__pyx_d, __pyx_mstate_global->__pyx_n_u_invoke_trace, __pyx_t_2) < (0)) __PYX_ERR(0, 24, __pyx_L1_error)
   __Pyx_DECREF(__pyx_t_2); __pyx_t_2 = 0;
 
-  /* "pysim/jit/native_trace_call.pyx":1
+  /* "pysim/tier3_jit/native_trace_call.pyx":1
  * # cython: language_level=3, boundscheck=False, wraparound=False             # <<<<<<<<<<<<<<
  * """
  * experiments/pysim/jit/native_trace_call.pyx
@@ -3176,7 +3188,7 @@ __Pyx_RefNannySetupContext("PyInit_native_trace_call", 0);
   __Pyx_XDECREF(__pyx_t_2);
   if (__pyx_m) {
     if (__pyx_mstate->__pyx_d && stringtab_initialized) {
-      __Pyx_AddTraceback("init pysim.jit.native_trace_call", __pyx_clineno, __pyx_lineno, __pyx_filename);
+      __Pyx_AddTraceback("init pysim.tier3_jit.native_trace_call", __pyx_clineno, __pyx_lineno, __pyx_filename);
     }
     #if !CYTHON_USE_MODULE_STATE
     Py_CLEAR(__pyx_m);
@@ -3190,7 +3202,7 @@ __Pyx_RefNannySetupContext("PyInit_native_trace_call", 0);
     }
     #endif
   } else if (!PyErr_Occurred()) {
-    PyErr_SetString(PyExc_ImportError, "init pysim.jit.native_trace_call");
+    PyErr_SetString(PyExc_ImportError, "init pysim.tier3_jit.native_trace_call");
   }
   __pyx_L0:;
   __Pyx_RefNannyFinishContext();
@@ -3232,14 +3244,14 @@ static int __Pyx_InitConstants(__pyx_mstatetype *__pyx_mstate) {
   int __pyx_clineno = 0;
   CYTHON_UNUSED_VAR(__pyx_mstate);
   {
-    const struct { const unsigned int length: 5; } str_length_index[] = {{1},{21},{20},{12},{8},{8},{10},{8},{12},{8},{13},{18},{18},{2},{7},{7},{12},{5},{10},{15},{3},{27},{10},{9},{14},{3},{6}};
-    const struct { const unsigned int length: 6; } bytes_length_index[] = {{52}};
-    /* compression: none (339 bytes) */
-static const char bytes[] = "?native_trace_call.pyx__Pyx_PyDict_NextRef__annotate____func____main____module____name____qualname____test___is_coroutineasyncio.coroutinescline_in_tracebackfnfn_addrhead_pcinvoke_traceitemslocal_baselocal_base_addrpoppysim.jit.native_trace_callsetdefaultstack_botstack_bot_addrtosvalues\200\001\360\036\000\005\032\230\034\240W\320,@\300\001\330\004\033\2307\320\"6\260a\330\004\034\230G\320#7\260q\330\t\n\330\010\n\210!\2109\220K\230|\2501";
+    const struct { const unsigned int length: 6; } str_length_index[] = {{1},{21},{20},{12},{8},{8},{10},{8},{12},{8},{13},{18},{18},{3},{8},{2},{7},{12},{5},{10},{15},{3},{33},{10},{2},{7},{3},{6}};
+    const struct { const unsigned int length: 6; } bytes_length_index[] = {{62}};
+    /* compression: none (345 bytes) */
+static const char bytes[] = "?native_trace_call.pyx__Pyx_PyDict_NextRef__annotate____func____main____module____name____qualname____test___is_coroutineasyncio.coroutinescline_in_tracebackctxctx_addrfnfn_addrinvoke_traceitemslocal_baselocal_base_addrpoppysim.tier3_jit.native_trace_callsetdefaultspsp_addrtosvalues\200\001\360\036\000\005\032\230\034\240W\320,@\300\001\330\004\025\220W\320\0340\260\001\330\004\024\220G\320\033/\250q\330\004\034\230G\320#7\260q\330\t\n\330\010\n\210!\2105\220\004\220L\240\001";
     PyObject *data = NULL;
     PyObject **stringtab = __pyx_mstate->__pyx_string_tab;
     Py_ssize_t pos = 0;
-    for (int i = 0; i < 27; i++) {
+    for (int i = 0; i < 28; i++) {
       Py_ssize_t bytes_length = str_length_index[i].length;
       PyObject *string = PyUnicode_DecodeUTF8(bytes + pos, bytes_length, NULL);
       if (likely(string) && i >= 2) PyUnicode_InternInPlace(&string);
@@ -3250,8 +3262,8 @@ static const char bytes[] = "?native_trace_call.pyx__Pyx_PyDict_NextRef__annotat
       stringtab[i] = string;
       pos += bytes_length;
     }
-    for (int i = 27; i < 28; i++) {
-      Py_ssize_t bytes_length = bytes_length_index[i-27].length;
+    for (int i = 28; i < 29; i++) {
+      Py_ssize_t bytes_length = bytes_length_index[i-28].length;
       PyObject *string = PyBytes_FromStringAndSize(bytes + pos, bytes_length);
       stringtab[i] = string;
       pos += bytes_length;
@@ -3261,14 +3273,14 @@ static const char bytes[] = "?native_trace_call.pyx__Pyx_PyDict_NextRef__annotat
       }
     }
     Py_XDECREF(data);
-    for (Py_ssize_t i = 0; i < 28; i++) {
+    for (Py_ssize_t i = 0; i < 29; i++) {
       if (unlikely(PyObject_Hash(stringtab[i]) == -1)) {
         __PYX_ERR(0, 1, __pyx_L1_error)
       }
     }
     #if CYTHON_IMMORTAL_CONSTANTS
     {
-      PyObject **table = stringtab + 27;
+      PyObject **table = stringtab + 28;
       for (Py_ssize_t i=0; i<1; ++i) {
         #if PY_VERSION_HEX >= 0x030F0000
         PyUnstable_SetImmortal(table[i]);
@@ -3324,9 +3336,9 @@ static int __Pyx_CreateCodeObjects(__pyx_mstatetype *__pyx_mstate) {
   PyObject* tuple_dedup_map = PyDict_New();
   if (unlikely(!tuple_dedup_map)) return -1;
   {
-    const __Pyx_PyCode_New_function_description descr = {5, 0, 0, 8, (unsigned int)(CO_OPTIMIZED|CO_NEWLOCALS), 24};
-    PyObject* const varnames[] = {__pyx_mstate->__pyx_n_u_fn_addr, __pyx_mstate->__pyx_n_u_head_pc, __pyx_mstate->__pyx_n_u_stack_bot_addr, __pyx_mstate->__pyx_n_u_local_base_addr, __pyx_mstate->__pyx_n_u_tos, __pyx_mstate->__pyx_n_u_fn, __pyx_mstate->__pyx_n_u_stack_bot, __pyx_mstate->__pyx_n_u_local_base};
-    __pyx_mstate_global->__pyx_codeobj_tab[0] = __Pyx_PyCode_New(descr, varnames, __pyx_mstate->__pyx_kp_u_native_trace_call_pyx, __pyx_mstate->__pyx_n_u_invoke_trace, __pyx_mstate->__pyx_kp_b_iso88591_W_7_6a_G_7q_9K_1, tuple_dedup_map); if (unlikely(!__pyx_mstate_global->__pyx_codeobj_tab[0])) goto bad;
+    const __Pyx_PyCode_New_function_description descr = {5, 0, 0, 9, (unsigned int)(CO_OPTIMIZED|CO_NEWLOCALS), 24};
+    PyObject* const varnames[] = {__pyx_mstate->__pyx_n_u_fn_addr, __pyx_mstate->__pyx_n_u_ctx_addr, __pyx_mstate->__pyx_n_u_sp_addr, __pyx_mstate->__pyx_n_u_local_base_addr, __pyx_mstate->__pyx_n_u_tos, __pyx_mstate->__pyx_n_u_fn, __pyx_mstate->__pyx_n_u_ctx, __pyx_mstate->__pyx_n_u_sp, __pyx_mstate->__pyx_n_u_local_base};
+    __pyx_mstate_global->__pyx_codeobj_tab[0] = __Pyx_PyCode_New(descr, varnames, __pyx_mstate->__pyx_kp_u_native_trace_call_pyx, __pyx_mstate->__pyx_n_u_invoke_trace, __pyx_mstate->__pyx_kp_b_iso88591_W_W_0_G_q_G_7q_5_L, tuple_dedup_map); if (unlikely(!__pyx_mstate_global->__pyx_codeobj_tab[0])) goto bad;
   }
   Py_DECREF(tuple_dedup_map);
   return 0;

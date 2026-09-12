@@ -311,7 +311,7 @@ Copy-and-Patch JIT コンパイラ（`jit_compiler`）および 3 面循環キ�
 | `{GOTCHA-JITC-01}` | `jit_compiler.md` | `jit_compiler_test_spec.md` | CPS引数レジスタ（R0-R3）とJIT内部一時レジスタ（R4-R6, R8-R11）が呼び出し境界を越えて物理的に重複しない | TEST-JITC-01 |
 | `{GOTCHA-JITC-02}` | `jit_compiler.md` | `jit_compiler_test_spec.md` | mem_base/mem_size は execution_context（[R0, #0x28], [R0, #0x2C]）から一度だけピン留めロードする（独立した env 引数レジスタは廃止済み） | TEST-JITC-02 |
 | `{GOTCHA-JITC-05}` | `jit_compiler.md` | `jit_compiler_test_spec.md` | トラップ分岐（BHS.W）はアドレス未確定のままオフセット0で仮発行し、エピローグ生成後に実アドレスへ2パスバックパッチする | TEST-JITC-05 |
-| `{GOTCHA-JITC-07}` | `jit_compiler.md` | `jit_compiler_test_spec.md` | トレースの残余値（VM オペランドスタック状態）は stack_bot 経由でメモリへ書き込み、トレースは常に void を返す——C/AAPCS の戻り値レジスタとは無関係 | TEST-JITC-07 |
+| `{GOTCHA-JITC-07}` | `jit_compiler.md` | `jit_compiler_test_spec.md` | トレースの残余値（VM オペランドスタック状態）は `sp` 経由でメモリへ書き込み、トレースは常に void を返す——C/AAPCS の戻り値レジスタとは無関係 | TEST-JITC-07 |
 | `{GOTCHA-JITR-02}` | `jit_runtime.md` | `jit_runtime_test_spec.md` | Oldestバンクからの昇格時、被チェイン登録（inbound_sources）を昇格先バンクへ移管しダングリングジャンプを防ぐ | TEST-JITR-09 |
 | `{GOTCHA-JITR-03}` | `jit_runtime.md` | `jit_runtime_test_spec.md` | LIFO逆順コンパイル（後入れ先出し）により、先行ブロックコンパイル時点で後続ブロックが既にキャッシュ常駐し即時チェイニングが成立する | TEST-JITR-12 |
 

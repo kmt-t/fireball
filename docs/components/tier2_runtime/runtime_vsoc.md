@@ -130,7 +130,7 @@ vSoC コアエンジンの実行委譲、協調イールド、および外部介
   vSoC インスタンス生成時、メモリマネージャより固定長 RAM パーティション（データアリーナ: `RW + XN`）および JIT コードキャッシュ用セクション（MPU `W^X` 制御対象: 6KB）の貸与を受け、専用の `bump_allocator`（データ用）および `jit_code_allocator`（コード用）を初期化する。WASM ローダ経由でモジュールコンストラクタにデータ用バンプアロケータを渡し、モジュール内の全システムコンテナストレージ（`ReadOnlyRadixBinaryTreeStorage`, `MutableBitStorage` 等）を順次切り出す。一方、JIT コンパイラは MPU の `W^X` 保護が適用された JIT コードセクションから専用アロケータによりネイティブトレースを確保・管理する。モジュール実行終了・アンロード時は、JIT キャッシュを無効化（3-Bank Flush）した上で、バンプアロケータのアリーナごと $O(1)$ で一括リセット・返還し、JIT コードセクションも解放する。個別の `free()` や複雑なオブジェクトデストラクタ走査を一切行わないため、動的メモリ断片化および他モジュールからのダングリングトレースチェインが原理的に根絶される。
 - **実行エンジン委譲とステートレス化 (`GOTCHA-VSOC-01`, `{ThreadedInterpreter}`, `{JIT_CopyAndPatch}`)**:
   vSoCは `step()` で現在のPCに対応する `exec_trace`（`void __fastcall (execution_context* ctx, uint32_t* sp, uint32_t* local_base, uint32_t tos)`）を呼び出す。 `exec_trace` はインタープリタのディスパッチャまたはJITコードを指し、`__fastcall` 呼び出し規約（R0=ctx, R1=sp, R2=local_base, R3=tos）によってレジスタ上で高速に実行エンジンへ制御を委譲する。
-  **設計理由と不変条件**: インタープリタおよび JIT トレース自身を C++20 コルーチン化することは厳禁とする。コルーチン化すると命令ディスパッチごとにコルーチンフレームの割り当てや退避・復帰が発生し、コンパイラによる末尾呼び出し最適化（`[[clang::musttail]]`）が阻害されてスタックを急速に消費してしまう。そのため、インタープリタは完全ステートレスなプレーン関数として設計し、次に実行すべき PC を返却して vSoC のメインループへ戻る規約とする。
+  **設計理由と不変条件**: インタープリタおよび JIT トレース自身を C++20 コルーチン化することは厳禁とする。コルーチン化すると命令ディスパッチごとにコルーチンフレームの割り当てや退避・復帰が発生し、コンパイラによる末尾呼び出し最適化（`[[clang::musttail]]`）が阻害されてスタックを急速に消費してしまう。そのため、インタープリタは完全ステートレスな `void` プレーン関数として設計し、次に実行すべき PC は `execution_context.ip`（`R0` の `+0x00`）へ書き戻して vSoC のメインループへ戻る規約とする。
 - **概算Yield と明示的イールド点 (`GOTCHA-VSOC-02`, `{Challenge_ApproximateYield}`)**:
   vSoC は `exec_trace` から制御が戻るたび（`runtime_interpreter.md` `{ADR_TraceBoundaryYield}` のトレース境界）に、監視対象の `yield_threshold` を基準として自ら `co_yield` を発行するかどうかを判定する。
   **設計理由と不変条件**: 命令実行ハンドラの内部に命令数カウンタのインクリメントやイールド判定を埋め込むと、最速パスのホットループに不要な条件分岐とレジスタ退避が加わり、JIT やインタープリタの実行性能が著しく低下する。そのため、イールド判定はトレース境界（ブロック末尾や基本ブロックの切れ目）でのみ vSoC が一括して行い、タイムスライス消費時に初めて協調的 yield を発行する。
@@ -188,33 +188,21 @@ COOS Scheduler、vSoC Engine、Execution Engine（Interpreter / JIT）、HAL/Deb
 
 ```mermaid
 sequenceDiagram
-    autonumber
-    participant Sched as COOS Scheduler
-    participant vSoC as vSoC
-    participant Exec as Execution Engine (Interpreter / JIT Trace)
-    participant Debug as Debugger / Profiler
+    participant S as Scheduler
+    participant V as vSoC
+    participant E as Executor
+    participant D as Debugger
 
-    Sched->>vSoC: step() (Dispatch active Task)
-    Note over vSoC: Check Debugger attach status
-    opt Debugger Attached
-        vSoC->>Debug: Check breakpoints & single-step flags
-    end
-
-    vSoC->>vSoC: Lookup exec_trace for current PC
-    Note over vSoC,Exec: GOTCHA-VSOC-01: Pass (R0=ctx, R1=sp, R2=local_base, R3=tos)
-    vSoC->>Exec: Call exec_trace via __fastcall (Stateless Plain Function)
-
-    Note over Exec: Executes instructions in pure C++ musttail / Native JIT
-    Exec-->>vSoC: Return next PC at Trace Boundary (ADR_TraceBoundaryYield)
-
-    Note over vSoC: GOTCHA-VSOC-02: Batch Timeslice & Approximate Yield Check
-    vSoC->>vSoC: executed_instructions += trace_length
-    alt Timeslice Expired (executed_instructions >= yield_threshold)
-        vSoC->>vSoC: executed_instructions = 0
-        vSoC-->>Sched: co_yield (Voluntary yield at clean trace boundary)
-        Note over Sched: Scheduler switches to next READY task
-    else Timeslice Remaining
-        Note over vSoC: Continue directly to next step() without coroutine overhead
+    S->>V: step
+    V->>D: check debugger status
+    D-->>V: debugger status
+    V->>E: execute trace
+    E-->>V: return next pc
+    V->>V: update instruction count
+    alt Timeslice expired
+        V-->>S: yield at trace boundary
+    else Timeslice remaining
+        V->>V: continue to next step
     end
 ```
 

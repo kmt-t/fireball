@@ -7,7 +7,7 @@
 統合参考実装: [`runtime_engine_concept.py`](docs/components/tier2_runtime/concepts/runtime_engine_concept.py)。スタックキャッシュ固有の参考実装は [`stack_cache_concept.py`](docs/components/tier3_jit/concepts/stack_cache_concept.py) とする。
 3面キャッシュ・ホットスポット・チェイニングの統合ケースは `runtime_engine_concept.py` および pysim のJITランタイムテストを参照し、スタックキャッシュ固有ケースは `stack_cache_concept.py` で検証する。
 
-WASM PC→ネイティブコードの3段検索（カードマーキング→Radix→二分探索）、2-bitホットスポット検出、3面世代交代キャッシュ（Active/Warm/Oldest）、Oldest-Only Promotion、局所チェイン解決(O(k))、MPU W^X保護を検証する。
+WASM PC→ネイティブコードの4段検索（カードマーキング→Folding XOR高速キャッシュ→Radix→二分探索）、2-bitホットスポット検出、3面世代交代キャッシュ（Active/Warm/Oldest）、Oldest-Only Promotion、局所チェイン解決(O(k))、MPU W^X保護を検証する。
 
 ## 2. テストケース一覧
 
@@ -35,7 +35,7 @@ WASM PC→ネイティブコードの3段検索（カードマーキング→Rad
 | TEST-JITR-12 | LIFO順でのバッチコンパイル | キューに複数PC | idle_hookを実行 | 後入れのPCから先にコンパイルされる | `{JIT_ReverseCompilationOrder}`, runtime_engine_concept.py `test_lifo_compile_queue_order` |
 | TEST-JITR-13 | コンパイル待ち列投入後もカード状態はCOMPILEDのまま変えない(検索ミス時) | COMPILED状態でActive/Warm/Oldestすべてmiss | 検索を実行 | NULL返却＋キュー投入されるが、カード状態はCOMPILEDから変化しない | 下記直交表 ケース7, `{ADR_SafeQueuingOnHotMiss}` |
 
-### 3段検索・3面キャッシュ 直交表マトリクス
+### 4段検索・3面キャッシュ 直交表マトリクス
 <!-- traceability: {JIT_MultiBuffer_Cache} {JIT_OldestOnly_Promote} {ADR_SafeQueuingOnHotMiss} -->
 
 JITトレース検索時の内部状態と期待される挙動を検証する組み合わせ直交表マトリクス。3面バンク（Active / Warm / Oldest）を独立した列として扱う。
@@ -51,7 +51,7 @@ JITトレース検索時の内部状態と期待される挙動を検証する�
 | 7 | COMPILED (3) | miss | miss | miss | NULL 返却 + コンパイル待ち列へ投入。**カード状態は COMPILED のまま変更しない** `{ADR_SafeQueuingOnHotMiss}` | TEST-JITR-24 |
 | 8 | (書き込み時) | **満杯** | - | - | 3面リングローテーション: Oldest を Purge して新 Active に、Active→Warm、Warm→Oldest。同時に `chain_next` のダングリング掃引を行う | TEST-JITR-25 |
 
-#### 3段検索テストケース一覧
+#### 4段検索テストケース一覧
 
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |

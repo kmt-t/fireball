@@ -76,16 +76,18 @@ def properties():
 if __name__ == "__main__":
     from pyModelChecking.CTL import modelcheck
 
-    for guards in (True, False):
-        mode = "guards=True" if guards else "guards=False"
-        print(f"=== System Config Formal Verification ({mode}) ===")
-        model = build_model(guards=guards)
-        for prop in properties():
-            result = modelcheck(model, prop["formula"])
-            holds = model.S0.issubset(result)
-            if guards:
-                assert holds == prop["expect"], prop["name"]
-                print(f"[PASS] {prop['name']}")
-            else:
-                assert not holds, f"Mutation for {prop['name']} was not detected"
-                print(f"[PASS (Refuted as expected)] {prop['name']}")
+    print("=== System Config Formal Verification (guards=True) ===")
+    model = build_model(guards=True)
+    for prop in properties():
+        result = modelcheck(model, prop["formula"])
+        holds = model.S0.issubset(result)
+        assert holds == prop["expect"], prop["name"]
+        print(f"[PASS] {prop['name']}")
+
+    print("=== System Config Formal Verification (guards=False) ===")
+    mutated_model = build_model(guards=False)
+    for prop in properties():
+        result = modelcheck(mutated_model, prop["formula"])
+        holds = mutated_model.S0.issubset(result)
+        assert not holds, f"Mutation for {prop['name']} was not detected"
+        print(f"[PASS (Refuted as expected)] {prop['name']}")

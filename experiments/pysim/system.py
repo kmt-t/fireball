@@ -261,90 +261,90 @@ class System:
             tuple[int, Callable[[int, int, int, int, int, int], int]]
         ] = StaticVector.of(
             (
-            (
-                FbSyscallId.SYS_YIELD,
-                lambda a0, a1, a2, a3, a4, a5: int(self._apply_sys_control(SYS_CONTROL_YIELD)),
-            ),
-            (
-                FbSyscallId.SYS_HALT,
-                lambda a0, a1, a2, a3, a4, a5: int(self._apply_sys_control(SYS_CONTROL_HALT)),
-            ),
-            (
-                FbSyscallId.SYS_RESET,
-                lambda a0, a1, a2, a3, a4, a5: int(self._apply_sys_control(SYS_CONTROL_RESET)),
-            ),
-            (
-                FbSyscallId.MMIO_READ32,
-                lambda a0, a1, a2, a3, a4, a5: self._mmio_read(a0, 4),
-            ),
-            (
-                FbSyscallId.MMIO_WRITE32,
-                lambda a0, a1, a2, a3, a4, a5: int(self._mmio_write(a0, a1, 4)),
-            ),
-            (
-                FbSyscallId.MMIO_READ8,
-                lambda a0, a1, a2, a3, a4, a5: self._mmio_read(a0, 1),
-            ),
-            (
-                FbSyscallId.MMIO_WRITE8,
-                lambda a0, a1, a2, a3, a4, a5: int(self._mmio_write(a0, a1, 1)),
-            ),
-            (
-                FbSyscallId.MMIO_BULK_READ,
-                lambda a0, a1, a2, a3, a4, a5: int(self._mmio_bulk_read(a0, a1, a2)),
-            ),
-            (
-                FbSyscallId.MMIO_BULK_WRITE,
-                lambda a0, a1, a2, a3, a4, a5: int(self._mmio_bulk_write(a0, a1, a2)),
-            ),
-            (
-                FbSyscallId.VDMA_START,
-                lambda a0, a1, a2, a3, a4, a5: int(self._vdma_start(a0, a1, a2)),
-            ),
-            (
-                FbSyscallId.IRQ_READ_FLAGS,
-                lambda a0, a1, a2, a3, a4, a5: self._irq_read_flags(),
-            ),
-            (
-                FbSyscallId.IRQ_CLEAR,
-                lambda a0, a1, a2, a3, a4, a5: int(self._irq_clear(a0)),
-            ),
-            (
-                FbSyscallId.IPC_SEND,
-                lambda a0, a1, a2, a3, a4, a5: int(self._ipc_send(a0, a1, a2)),
-            ),
-            (
-                FbSyscallId.IPC_RECV,
-                lambda a0, a1, a2, a3, a4, a5: int(self._ipc_recv(a0, a1, a2)),
-            ),
-            (
-                FbSyscallId.IPC_LOOKUP,
-                lambda a0, a1, a2, a3, a4, a5: self._ipc_lookup(a0, a1),
-            ),
-            (
-                FbSyscallId.WASI_FD_WRITE,
-                lambda a0, a1, a2, a3, a4, a5: int(self._wasi_fd_write(a0, a1, a2, a3)),
-            ),
-            (
-                FbSyscallId.WASI_FD_READ,
-                lambda a0, a1, a2, a3, a4, a5: int(self._wasi_fd_read(a0, a1, a2, a3)),
-            ),
-            (
-                FbSyscallId.WASI_FD_CLOSE,
-                lambda a0, a1, a2, a3, a4, a5: int(self._wasi_fd_close(a0)),
-            ),
-            (
-                FbSyscallId.WASI_CLOCK_TIME_GET,
-                lambda a0, a1, a2, a3, a4, a5: int(self._wasi_clock_time_get(a2)),
-            ),
-            (
-                FbSyscallId.WASI_PROC_EXIT,
-                lambda a0, a1, a2, a3, a4, a5: int(self._wasi_proc_exit(a0)),
-            ),
-            (
-                FbSyscallId.WASI_RANDOM_GET,
-                lambda a0, a1, a2, a3, a4, a5: int(self._wasi_random_get(a0, a1)),
-            ),
+                (
+                    FbSyscallId.SYS_YIELD,
+                    lambda a0, a1, a2, a3, a4, a5: int(self._apply_sys_control(SYS_CONTROL_YIELD)),
+                ),
+                (
+                    FbSyscallId.SYS_HALT,
+                    lambda a0, a1, a2, a3, a4, a5: int(self._apply_sys_control(SYS_CONTROL_HALT)),
+                ),
+                (
+                    FbSyscallId.SYS_RESET,
+                    lambda a0, a1, a2, a3, a4, a5: int(self._apply_sys_control(SYS_CONTROL_RESET)),
+                ),
+                (
+                    FbSyscallId.MMIO_READ32,
+                    lambda a0, a1, a2, a3, a4, a5: self._mmio_read(a0, 4),
+                ),
+                (
+                    FbSyscallId.MMIO_WRITE32,
+                    lambda a0, a1, a2, a3, a4, a5: int(self._mmio_write(a0, a1, 4)),
+                ),
+                (
+                    FbSyscallId.MMIO_READ8,
+                    lambda a0, a1, a2, a3, a4, a5: self._mmio_read(a0, 1),
+                ),
+                (
+                    FbSyscallId.MMIO_WRITE8,
+                    lambda a0, a1, a2, a3, a4, a5: int(self._mmio_write(a0, a1, 1)),
+                ),
+                (
+                    FbSyscallId.MMIO_BULK_READ,
+                    lambda a0, a1, a2, a3, a4, a5: int(self._mmio_bulk_read(a0, a1, a2)),
+                ),
+                (
+                    FbSyscallId.MMIO_BULK_WRITE,
+                    lambda a0, a1, a2, a3, a4, a5: int(self._mmio_bulk_write(a0, a1, a2)),
+                ),
+                (
+                    FbSyscallId.VDMA_START,
+                    lambda a0, a1, a2, a3, a4, a5: int(self._vdma_start(a0, a1, a2)),
+                ),
+                (
+                    FbSyscallId.IRQ_READ_FLAGS,
+                    lambda a0, a1, a2, a3, a4, a5: self._irq_read_flags(),
+                ),
+                (
+                    FbSyscallId.IRQ_CLEAR,
+                    lambda a0, a1, a2, a3, a4, a5: int(self._irq_clear(a0)),
+                ),
+                (
+                    FbSyscallId.IPC_SEND,
+                    lambda a0, a1, a2, a3, a4, a5: int(self._ipc_send(a0, a1, a2)),
+                ),
+                (
+                    FbSyscallId.IPC_RECV,
+                    lambda a0, a1, a2, a3, a4, a5: int(self._ipc_recv(a0, a1, a2)),
+                ),
+                (
+                    FbSyscallId.IPC_LOOKUP,
+                    lambda a0, a1, a2, a3, a4, a5: self._ipc_lookup(a0, a1),
+                ),
+                (
+                    FbSyscallId.WASI_FD_WRITE,
+                    lambda a0, a1, a2, a3, a4, a5: int(self._wasi_fd_write(a0, a1, a2, a3)),
+                ),
+                (
+                    FbSyscallId.WASI_FD_READ,
+                    lambda a0, a1, a2, a3, a4, a5: int(self._wasi_fd_read(a0, a1, a2, a3)),
+                ),
+                (
+                    FbSyscallId.WASI_FD_CLOSE,
+                    lambda a0, a1, a2, a3, a4, a5: int(self._wasi_fd_close(a0)),
+                ),
+                (
+                    FbSyscallId.WASI_CLOCK_TIME_GET,
+                    lambda a0, a1, a2, a3, a4, a5: int(self._wasi_clock_time_get(a2)),
+                ),
+                (
+                    FbSyscallId.WASI_PROC_EXIT,
+                    lambda a0, a1, a2, a3, a4, a5: int(self._wasi_proc_exit(a0)),
+                ),
+                (
+                    FbSyscallId.WASI_RANDOM_GET,
+                    lambda a0, a1, a2, a3, a4, a5: int(self._wasi_random_get(a0, a1)),
+                ),
             ),
             capacity=32,
         )
@@ -689,11 +689,10 @@ class System:
             status, _ = task.result if task.result else (IpcStatus.COMPLETED, None)
         except StopIteration as e:
             # Direct O(1) rendezvous handoff (atomic ownership transfer)
-            status, _ = (
-                e.value
-                if (isinstance(e.value, tuple) and len(e.value) == 2)
-                else (IpcStatus.COMPLETED, None)
-            )
+            try:
+                status, _ = e.value
+            except (TypeError, ValueError):
+                status = IpcStatus.COMPLETED
             self.scheduler.run_until_idle()
 
         if status == IpcStatus.COMPLETED:
@@ -725,11 +724,10 @@ class System:
             status, msg = task.result if task.result else (IpcStatus.COMPLETED, None)
         except StopIteration as e:
             # Direct O(1) rendezvous handoff
-            status, msg = (
-                e.value
-                if (isinstance(e.value, tuple) and len(e.value) == 2)
-                else (IpcStatus.COMPLETED, None)
-            )
+            try:
+                status, msg = e.value
+            except (TypeError, ValueError):
+                status, msg = IpcStatus.COMPLETED, None
             self.scheduler.run_until_idle()
 
         if status in (IpcStatus.ERR_NOT_FOUND, IpcStatus.ERR_PERMISSION_DENIED) or msg is None:
@@ -830,9 +828,9 @@ class System:
             if uri_key in self.hal_tasks:
                 raise HalError(f"HAL driver URI hash collision: {driver.uri}")
             self.hal_tasks.insert(uri_key, task)
-            self._hal_task_ids.insert(uri_key, self.scheduler.spawn(
-                f"hal_task[{driver.uri}]", task.run(), role=desc.role
-            ))
+            self._hal_task_ids.insert(
+                uri_key, self.scheduler.spawn(f"hal_task[{driver.uri}]", task.run(), role=desc.role)
+            )
         return self._hal_task_ids
 
     def hal_task_for(self, uri: str) -> HalTask | None:

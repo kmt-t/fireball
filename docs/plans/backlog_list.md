@@ -75,7 +75,7 @@ Fireball Hypervisor の現行作業および次期フェーズのタスク一覧
 - [ ] **`execution_context` & 独立3バッファスタック (`inc/runtime/interpreter.hxx`)**:
   - `OperandStack`/`LocalStack`/`control_frame` 専用領域の独立管理・ローカル変数基底 R2 渡し `{ContextPointerRegister}`
 - [ ] **コア命令ハンドラ群 (`src/runtime/opcode_handlers.cxx`)**:
-  - `__fastcall` 継続渡し（CPS）4引数シグネチャ（R0=IP, R1=stack_bot, R2=local_base, R3=tos） `{ThreadedInterpreter}`
+  - `__fastcall` 継続渡し（CPS）4引数シグネチャ（R0=ctx, R1=sp, R2=local_base, R3=tos） `{ThreadedInterpreter}`
   - 算術・比較・変換・制御・メモリ操作ハンドラと `MemoryBoundaryCheck` トラップ `{MemoryBoundaryCheck}`
   - 分岐脱出時のフレームプルーニングと TOS 復元 (`GOTCHA-INTR-02`)
 - [ ] **スレッド化ディスパッチャ (`src/runtime/dispatch.cxx`)**:
@@ -89,7 +89,7 @@ Fireball Hypervisor の現行作業および次期フェーズのタスク一覧
 - [ ] **トリプルバッファ キャッシュマネージャ (`src/jit/cache_manager.cxx`)**:
   - 2KB × 3面 の代謝（Oldest 破棄・昇格）制御 `{JIT_MultiBuffer_Cache}` `{JIT_OldestOnly_Promote}`
   - MPU W^X バッチトランザクション管理（書き込み時 RW+XN / 実行時 RO+X）
-  - 3段高速検索パイプライン（カードマーキング $	o$ 基数テーブル $	o$ 二分探索）
+  - 4段高速検索パイプライン（カードマーキング $	o$ Folding XOR高速キャッシュ $	o$ 基数テーブル $	o$ 二分探索）
 - [ ] **Safepoint 協調 & 透過的インタープリタ切り替え (`src/jit/safepoint.cxx`)**:
   - JIT $\leftrightarrow$ インタープリタ間の Low-Overhead フォールバックおよびホットスポット検出 `{JIT_LazyChaining}` `{Interpreter_LazyJITSwitch}` `{JIT_RuntimeAPI_Fallback}`
 - [ ] **JIT 単体テストスイート (`tests/test_jit.cxx`)**:

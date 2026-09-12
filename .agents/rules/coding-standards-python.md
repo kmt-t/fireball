@@ -12,6 +12,20 @@ scope: GLOBAL
 - `docs/**/concepts/` のコンセプトコードでは、Python 標準の `dict` / `set` / `list` を使用してよい。
 - `experiments/pysim/` には専用の `pysim-review` 規約を適用し、`dict` / `set` / `list` を禁止する。両者の規約を混同しない。
 
+## 1.1 pysim の即時失敗とアサーション規約
+
+- `experiments/pysim/` は参照シミュレータであり、不変条件・事前条件・事後条件・型契約に違反した場合は `assert` で直ちに停止させる。pysim で不具合を握りつぶしたり、暗黙のフォールバックで処理を継続したりしてはならない。
+- テストは戻り値や件数だけでなく、仕様が要求する状態・副作用・境界条件を `assert` で検証する。`print`、非空判定、固定件数の確認だけを成功根拠にしてはならない。
+- 失敗を期待するテストでは、対象処理を `try` ブロック内で実行し、対象が送出する具体的な例外だけを捕捉する。テスト自身が失敗用に送出した `AssertionError` を同じ `except` で捕捉して成功扱いにする偽陽性パターンを禁止する。
+- 仕様上スキップが許可された外部依存の `ImportError` を除き、広すぎる `except Exception` や検証失敗を無条件に無視する例外処理を禁止する。
+
+## 1.2 pysim のimport依存方向規約
+
+- `experiments/pysim/` の製品コードは、`docs/architecture/document_structure.md` のTier依存方向に従う。上位Tier（小さいTier番号）は下位Tierの実装モジュールをimportしてはならず、下位Tierから上位Tierの契約・インターフェースを参照する。
+- Interpreter、WASMタスクアダプタ、テスト用ハーネスなど特定ランタイムに固有の処理をCOOS・IPC RouterなどTier 1の汎用コンポーネントへ持ち込んではならない。必要なアダプタはランタイムまたはテスト側に置く。
+- bare importが`sys.path`の順序で別Tierの同名モジュールへ解決される構成を禁止する。各ローカルimportは所属Tierと実ファイルが一意に確認できなければならない。
+- レビュー時は `powershell tools/check-src.ps1 -group pysim` を実行し、`spec-integrator.yaml` の `pysim_imports` 設定に基づく違反を0件にする。テスト・シナリオ固有の補助importは製品コードの依存グラフへ混入させない。
+
 ## 1. 型安全性と `Any` 完全禁止規約 (Strict Type Safety)
 
 - **`typing.Any` の完全禁止 (アンチパターン I の防止)**:

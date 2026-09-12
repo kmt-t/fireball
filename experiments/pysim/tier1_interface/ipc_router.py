@@ -14,21 +14,92 @@ from __future__ import annotations
 
 from collections.abc import Generator, Sequence
 from enum import IntEnum
-from typing import TYPE_CHECKING
+from typing import Protocol
 
-if TYPE_CHECKING:
-    from logger import Logger
-    from memory import MemoryManager, SharedBlock
-
-from logger import (
-    LOG_EVT_IPC_INVALID_OWNERSHIP,
-    LOG_EVT_IPC_MSG_TOO_LARGE,
-    LOG_EVT_IPC_RBAC_DENIED,
-    LOG_EVT_IPC_UNKNOWN_URI,
-    LogLevel,
-)
 from scheduler import Channel, ChannelAction, Scheduler
 from system_containers import FlatMapView, StaticVector
+
+
+class LogLevel(IntEnum):
+    """Tier 1 logging contract; the runtime logger supplies the concrete sink."""
+
+    DEBUG = 0
+    INFO = 1
+    WARN = 2
+    ERROR = 3
+    FATAL = 4
+
+
+LOG_EVT_IPC_RBAC_DENIED = 0x0201
+LOG_EVT_IPC_UNKNOWN_URI = 0x0202
+LOG_EVT_IPC_MSG_TOO_LARGE = 0x0203
+LOG_EVT_IPC_INVALID_OWNERSHIP = 0x0204
+LOG_EVT_IPC_CHANNEL_COLLISION = 0x0205
+
+
+class Logger(Protocol):
+    """Minimal logging port owned by the Tier 1 interface."""
+
+    def log_event(
+        self,
+        level: LogLevel,
+        dict_offset: int,
+        arg0: int = 0,
+        arg1: int = 0,
+        arg2: int = 0,
+        arg3: int = 0,
+    ) -> str: ...
+
+
+class SharedBlock(Protocol):
+    """Shared-memory block operations required by the IPC ownership contract."""
+
+    data: bytearray
+    owner: int
+
+    def u64_capacity(self) -> int: ...
+
+    def read_u64(self, index: int) -> int: ...
+
+    def read_entry(self, index: int) -> tuple[int, int]: ...
+
+    def write_u64(self, index: int, value: int) -> None: ...
+
+    def write_entry(self, index: int, key: int, value: int) -> None: ...
+
+    def release(self, caller_task_id: int) -> int: ...
+
+
+class _MemoryResult(Protocol):
+    is_err: bool
+
+    def unwrap(self) -> SharedBlock: ...
+
+
+class _SharedSlot(Protocol):
+    allocated: bool
+    page_idx: int
+
+
+class _SharedSlotTable(Protocol):
+    def find(self, key: int) -> _SharedSlot | None: ...
+
+
+class _PageRegistry(Protocol):
+    def update_owner(self, page_idx: int, owner_id: int) -> None: ...
+
+
+class MemoryManager(Protocol):
+    """Tier 1 memory port; Tier 2 owns the allocator implementation."""
+
+    shm_slots: _SharedSlotTable
+    page_registry: _PageRegistry
+
+    def allocate_shared(self, caller_task_id: int, size: int) -> _MemoryResult: ...
+
+    def claim(self, task_id: int, shm_id: int) -> _MemoryResult: ...
+
+    def grant_shared(self, shm_id: int, task_id: int) -> None: ...
 
 # ipc_router.md {3.3}: a message is a static, fixed-size buffer of at most 8
 # kv_pair entries.
@@ -210,20 +281,11 @@ class IPCMessage:
         task_id: int = 1,
     ) -> IPCMessage:
         """Helper to allocate a SharedBlock memory block and populate it with entries."""
-        if memory_manager is not None:
-            sb = memory_manager.allocate_shared(caller_task_id=task_id, size=256).unwrap()
-        else:
-            from memory import FB_CONF_MPU_R6_SHARED_MEMORY_BASE, SharedBlock
-
-            sb = SharedBlock(
-                shm_id=0,
-                page_idx=0,
-                slot_idx=0,
-                size=256,
-                owner=task_id,
-                base_address=FB_CONF_MPU_R6_SHARED_MEMORY_BASE,
-                manager=None,
-            )
+        assert memory_manager is not None, (
+            "IPCMessage.from_entries requires an injected memory manager; "
+            "test callers must construct the adapter on the test side"
+        )
+        sb = memory_manager.allocate_shared(caller_task_id=task_id, size=256).unwrap()
         msg = cls(sb)
         if entries:
             msg.write_entries(entries)
@@ -274,10 +336,8 @@ class IPCMessage:
     def get(self, key: int, default: int | None = None) -> int | None:
         """Retrieves a value via flat_map_view binary search over entries in the memory block."""
         self._check_ownership()
-        for k, v in self._read_entries():
-            if k == key:
-                return v
-        return default
+        value = self.payload.find(key)
+        return default if value is None else value
 
     def __getitem__(self, key: int) -> int:
         val = self.get(key)
@@ -287,10 +347,7 @@ class IPCMessage:
 
     def __contains__(self, key: int) -> bool:
         self._check_ownership()
-        for k, _ in self._read_entries():
-            if k == key:
-                return True
-        return False
+        return self.payload.find(key) is not None
 
     def __len__(self) -> int:
         self._check_ownership()
@@ -301,9 +358,7 @@ class IPCMessage:
 
 def bytes_to_kv_entries(data: bytes) -> StaticVector[tuple[int, int]]:
     """Packs arbitrary byte buffer into AoS (key32, val32) entries with length metadata."""
-    entries: StaticVector[tuple[int, int]] = StaticVector(
-        capacity=(len(data) + 3) // 4 + 1
-    )
+    entries: StaticVector[tuple[int, int]] = StaticVector(capacity=(len(data) + 3) // 4 + 1)
     entries.push_back((0, len(data)))
     for i in range(0, len(data), 4):
         chunk = data[i : i + 4]
@@ -348,7 +403,7 @@ def kv_entries_to_bytes(entries: Sequence[tuple[int, int]], max_len: int | None 
 # but a build that wires stdout directly onto the physical UART would alias
 # both URIs onto the same role/channel/task by adding a row, not by
 # restructuring Role.
-_SERVICE_TABLE: list[tuple[str, "ServiceDescriptor"]] = sorted(
+_SERVICE_ENTRIES: tuple[tuple[str, "ServiceDescriptor"], ...] = tuple(sorted(
     [
         ("fireball://core/coos/0", ServiceDescriptor(Role.CORE_SERVICE)),
         ("fireball://dbg/manager/0", ServiceDescriptor(Role.DEBUGGER)),
@@ -360,10 +415,7 @@ _SERVICE_TABLE: list[tuple[str, "ServiceDescriptor"]] = sorted(
         ("fireball://service/stdout/0", ServiceDescriptor(Role.HAL_STDOUT)),
     ],
     key=lambda entry: entry[0],
-)
-
-# Static ROM array owning the service table entries as (URI, ServiceDescriptor) pairs (AoS)
-_SERVICE_ENTRIES: tuple[tuple[str, "ServiceDescriptor"], ...] = tuple(_SERVICE_TABLE)
+))
 
 # ipc_router.md §4.1.1's FB_CONF_ROUTER_ROLE_MATRIX (9x9 constexpr array,
 # rows = sender, columns = target); every DENY cell is listed explicitly, per

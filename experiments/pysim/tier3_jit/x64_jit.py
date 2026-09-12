@@ -6,8 +6,8 @@ with 16-byte fixed headers (JITTraceHeader) and direct trace chaining.
 Conforms strictly to docs/components/tier3_jit/jit_compiler.md and
 docs/components/tier2_runtime/runtime_interpreter.md.
 CPS 4-argument calling convention:
-  RCX (R0): uint32_t ip          -- WASM PC
-  RDX (R1): void* stack_bot      -- execution_context
+  RCX (R0): void* ctx            -- execution_context
+  RDX (R1): void* sp             -- operand-stack pointer
   R8  (R2): void* local_base     -- locals array pointer
   R9  (R3): uint32_t tos         -- stack top value
 """
@@ -61,9 +61,9 @@ I32_MASK = 0xFFFFFFFF
 
 # CPS 4-argument function pointer type matching interpreter opcode_handler
 TRACE_FN_TYPE = ctypes.CFUNCTYPE(
-    ctypes.c_int64,
-    ctypes.c_uint32,  # arg0: ip
-    ctypes.c_void_p,  # arg1: stack_bot
+    None,
+    ctypes.c_void_p,  # arg0: ctx
+    ctypes.c_void_p,  # arg1: sp
     ctypes.c_void_p,  # arg2: local_base
     ctypes.c_uint32,  # arg3: tos
 )
@@ -88,8 +88,8 @@ def gen_pic_prologue() -> bytes:
     Generates the PIC CPS 4-argument prologue for Windows or Linux:
         Saves callee-saved registers and maps arguments to execution registers:
           R10 = local_base
-          R12 = stack_bot
-          R13 = ip
+          R12 = sp
+          R13 = ctx
           (tos passed in arg3: R9 on Win64, RCX on SysV)
     """
     code = bytearray()
@@ -99,19 +99,19 @@ def gen_pic_prologue() -> bytes:
     code += bytes((0x41, 0x56))  # push r14
     code += bytes((0x41, 0x57))  # push r15
     if IS_WINDOWS:
-        # Windows x64 ABI: (RCX=ip, RDX=stack_bot, R8=local_base, R9=tos)
+        # Windows x64 ABI: (RCX=ctx, RDX=sp, R8=local_base, R9=tos)
         code += bytes((0x57,))  # push rdi
         code += bytes((0x48, 0x89, 0xE7))  # mov rdi, rsp
         code += bytes((0x4D, 0x89, 0xC2))  # mov r10, r8   (R10 = local_base)
-        code += bytes((0x49, 0x89, 0xD4))  # mov r12, rdx  (R12 = stack_bot)
-        code += bytes((0x49, 0x89, 0xCD))  # mov r13, rcx  (R13 = ip)
+        code += bytes((0x49, 0x89, 0xD4))  # mov r12, rdx  (R12 = sp)
+        code += bytes((0x49, 0x89, 0xCD))  # mov r13, rcx  (R13 = ctx)
     else:
-        # System V AMD64 ABI (Linux): (RDI=ip, RSI=stack_bot, RDX=local_base, RCX=tos)
+        # System V AMD64 ABI (Linux): (RDI=ctx, RSI=sp, RDX=local_base, RCX=tos)
         code += bytes((0x55,))  # push rbp
         code += bytes((0x48, 0x89, 0xE5))  # mov rbp, rsp
         code += bytes((0x49, 0x89, 0xD2))  # mov r10, rdx  (R10 = local_base)
-        code += bytes((0x49, 0x89, 0xF4))  # mov r12, rsi  (R12 = stack_bot)
-        code += bytes((0x49, 0x89, 0xFD))  # mov r13, rdi  (R13 = ip)
+        code += bytes((0x49, 0x89, 0xF4))  # mov r12, rsi  (R12 = sp)
+        code += bytes((0x49, 0x89, 0xFD))  # mov r13, rdi  (R13 = ctx)
     return bytes(code)
 
 
@@ -294,10 +294,10 @@ class TraceCompiler:
         header_bytes = header.pack()
         # A trace's residual value is VM operand-stack state, not a C return
         # value -- {ExecutionContext_Layout} -- so it is written to memory
-        # (via R12 / stack_bot) rather than returned in RAX; the trace itself
-        # always returns void.
+        # (via R12 / sp) rather than returned in RAX; the trace itself always
+        # returns void.
         if stack_depth == 1:
-            code += st.SPILL_RESULT_TO_STACK_BOT.code
+            code += st.SPILL_RESULT_TO_SP.code
         code += st.EPILOGUE_RETURN_VOID.code
 
         total_size = len(header_bytes) + len(code)
@@ -308,11 +308,11 @@ class TraceCompiler:
         buf.write(0, bytes(full_blob))
         # Direct ctypes C function entry at +0x10 (past the 16-byte header)
         # Signature matches interpreter opcode handler:
-        # int64_t (*)(uint32_t ip, void* stack_bot, void* local_base, uint32_t tos)
+        # void (*)(void* ctx, void* sp, void* local_base, uint32_t tos)
         fn = buf.function_at(
             16,
-            ctypes.c_int64,
-            [ctypes.c_uint32, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_uint32],
+            None,
+            [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_uint32],
         )
         trace = JITTrace(
             head_pc=head_pc,

@@ -15,9 +15,9 @@ from __future__ import annotations
 
 import bisect
 from collections.abc import Mapping
+from typing import Protocol
 
-from interpreter import Interpreter
-from runtime_engine import IntegratedHybridEngine, WASMContext
+from execution_context import WASMContext
 from system_containers import MutableFlatMapStorage
 from wasm_module import BasicBlock
 
@@ -26,10 +26,22 @@ from wasm_module import BasicBlock
 FB_CONF_DEBUG_MAX_PC_SAMPLES = 64
 
 
+class _DebuggerEngine(Protocol):
+    """Tier 2 execution contract implemented by an injected runtime engine."""
+
+    def attach_debugger(self, debugger: object) -> None: ...
+
+    def detach_debugger(self) -> None: ...
+
+    def flush_jit_cache(self) -> None: ...
+
+    def run_block_interpret(self, block: BasicBlock, ctx: WASMContext) -> int | None: ...
+
+
 class DebuggerManager:
     """Manages debug state, breakpoint sets, execution stepping, and integrated profiling."""
 
-    def __init__(self, engine: IntegratedHybridEngine | Interpreter | None = None):
+    def __init__(self, engine: _DebuggerEngine | None = None):
         self.engine = engine
         self.attached: bool = False
         self.halted: bool = False
@@ -100,6 +112,11 @@ class DebuggerManager:
         """Invalidates all JIT cache banks when memory is rewritten by debugger ({Debugger_Jit_Flush})."""
         if self.engine is not None:
             self.engine.flush_jit_cache()
+
+    def require_execution_engine(self) -> _DebuggerEngine:
+        """Returns the injected execution engine; construction is an outer-layer responsibility."""
+        assert self.engine is not None, "GDB execution requires an injected runtime engine"
+        return self.engine
 
     def read_virtual_registers(self, pc: int, ctx: WASMContext) -> list[int]:
         """Returns 20 virtual registers: 0:pc, 1:sp, 2:fp, 3:tos, 4..19:local0..15."""
@@ -222,7 +239,7 @@ class GDBRspProtocol:
             self.dbg.sample_pc(current_pc)
             block = blocks[current_pc]
             # Execute single step via Interpreter
-            engine = self.dbg.engine or IntegratedHybridEngine()
+            engine = self.dbg.require_execution_engine()
             next_pc = engine.run_block_interpret(block, ctx)
             self.dbg.verify_assertions(ctx.memory)
             if next_pc is None:
@@ -231,7 +248,7 @@ class GDBRspProtocol:
             return self.format_packet("S05"), next_pc
         # c - Continue Execution
         elif cmd == "c":
-            engine = self.dbg.engine or IntegratedHybridEngine()
+            engine = self.dbg.require_execution_engine()
             pc = current_pc
             while pc is not None:
                 if self.dbg.has_breakpoint(pc) and pc != current_pc:

@@ -2,7 +2,7 @@
 <!-- evidence:
      formal: formal/jit_cache_model.py
      benchmark: benchmarks/jit_zero_compile_cost_bench.py
-     concept: concepts/stack_cache_concept.py
+     concept: ../tier2_runtime/concepts/runtime_engine_concept.py
      test: tests/jit_runtime_test_spec.md
 -->
 
@@ -22,7 +22,7 @@ JIT ランタイム管理は、WASM PC とネイティブコードの紐付け�
     - **上位 16-bit (`func_index`)**: モジュール内の関数インデックス（0 〜 65,535）。
     - **下位 16-bit (`bytecode_offset`)**: 当該関数のバイトコード内オフセット（0 〜 65,535 バイト）。
   - **役割**: 複数関数を含む WASM モジュールにおいて、HotspotBitmap、HistoryRing、JITTraceHeader、JITCacheLookup、Trace Chaining 全域で関数間の PC 衝突を防止し、一意な追跡とディスパッチを保証する。
-- **`JitEntryIndex`**: WASMオフセットとネイティブコードの対応付け、および 3 段高速検索ロジックをカプセル化した主要クラス。
+- **`JitEntryIndex`**: WASMオフセットとネイティブコードの対応付け、および 4 段高速検索ロジックをカプセル化した主要クラス。
 - **カードマーキング表 (Card Marking Table)**: 関数ごとのコード領域を 8 バイト単位のカードで分割管理する 2 ビット状態表。密ビュー `fireball::bit_view<2>` として参照（1 バイトあたり 4 カード = 32 バイト分のコード領域）。`card_idx = bytecode_offset >> FB_CONF_JIT_CARD_SHIFT`（デフォルト値: `3`）。
   - `0: UNEXECUTED` (未実行)
   - `1: EXECUTED` (実行済み)
@@ -84,9 +84,9 @@ flowchart TD
    **設計理由と不変条件**: 複数回のアイドル走査や非同期イベントにより同一 PC に対するコンパイル要求が重複してエンキューされた場合でも、二重コンパイルによる貴重なキャッシュ容量の浪費と CPU 時間の損失を完全に防止する。
 
 
-#### 3段高速検索パイプライン手順（手順アクティビティ図）
+#### 4段高速検索パイプライン手順（手順アクティビティ図）
 <!-- traceability: {JIT_MultiBuffer_Cache} {LowLatencyJIT} {DirectMappedJIT16} {META_BinarySearch} -->
-実行時 PC からネイティブ `exec_trace` アドレスを極小オーバーヘッドで特定する探索パイプラインを示す。
+実行時 PC からネイティブ `exec_trace` アドレスを極小オーバーヘッドで特定する 4 段探索パイプラインを示す。
 
 ```mermaid
 flowchart TD
@@ -94,16 +94,16 @@ flowchart TD
     Stage1 --> CheckCompiled{"Card State == COMPILED?"}
 
     CheckCompiled -- "No" --> ExitInterp(["Fast Exit: Dispatch to Interpreter Handler"])
-    CheckCompiled -- "Yes" --> StageFast["[Stage 1.5] Direct-Mapped Folding XOR JIT Cache[16] (O(1))"]
+    CheckCompiled -- "Yes" --> StageFast["[Stage 2] Direct-Mapped Folding XOR JIT Cache[16] (O(1))"]
 
     StageFast --> FastHit{"Cache Tag == head_pc ?"}
     FastHit -- "HIT" --> ReturnTrace(["Return Native Code Entry: exec_trace (O(1) Direct)"])
 
-    FastHit -- "MISS" --> Stage2["[Stage 2] Radix Key: radix_key = bswap32(pc)"]
-    Stage2 --> LookupRadix["prefix = radix_key >> radix_shift; first = table[prefix], last = table[prefix+1] (O(1))"]
-    LookupRadix --> Stage3["[Stage 3] Bounded Binary Search in radix_binary_tree_view [first, last] (O(log n))"]
+    FastHit -- "MISS" --> StageRadix["[Stage 3] Radix Key: radix_key = bswap32(pc)"]
+    StageRadix --> LookupRadix["prefix = radix_key >> radix_shift; first = table[prefix], last = table[prefix+1] (O(1))"]
+    LookupRadix --> StageBinary["[Stage 4] Bounded Binary Search in radix_binary_tree_view [first, last] (O(log n))"]
 
-    Stage3 --> Hit{"JIT Entry found?"}
+    StageBinary --> Hit{"JIT Entry found?"}
     Hit -- "Yes" --> FillSlot["Fill Folding XOR Cache Slot"] --> ReturnTrace
     Hit -- "No (False Positive / Evicted)" --> ExitInterp
 ```

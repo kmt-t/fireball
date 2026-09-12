@@ -14,13 +14,13 @@ Copy-and-Patch pays nothing for this at compile time: the variants are all
 pre-compiled byte sequences, so the extra table costs ROM, not cycles.
 
 Register assignment (Cortex-M33 / AAPCS __fastcall convention):
-    R0  = ip        (WASM PC / bytecode pointer - Arg 1)
-    R1  = stack_bot (stack bottom context pointer `{ContextPointerRegister}` - Arg 2)
+    R0  = ctx       (execution_context pointer `{ContextPointerRegister}` - Arg 1)
+    R1  = sp        (operand stack pointer - Arg 2)
     R2  = local_base (WASM local variables base pointer - Arg 3)
-    R3  = tos       (operand stack top-of-stack value, CPS boundary only - Arg 4)
-    R4  = TOS       (operand stack top cache)
-    R5  = NOS       (operand stack next-of-top cache)
-    R6  = NNOS      (operand stack 3rd cache / select)
+    R3  = tos / TOS (operand stack top cache, CPS boundary value - Arg 4)
+    R4  = NOS       (operand stack next-of-top cache)
+    R5  = NNOS      (operand stack 3rd cache / select)
+    R6  = scratch
     R7  = FP        (AAPCS standard frame pointer - preserved)
     R8  = mem_base  (linear memory base pointer)
     R9  = mem_size  (linear memory size for bounds check)
@@ -37,7 +37,7 @@ class WASMTrap(Exception):
     pass
 
 
-MAX_CACHED = 2  # R4, R5
+MAX_CACHED = 2  # R3, R4
 
 
 class Variant:
@@ -57,43 +57,43 @@ class Variant:
 
 # Stencil table: op -> {incoming cache depth: Variant}
 #
-# Depth 0 = stack entirely in memory. Depth 1 = TOS in R4. Depth 2 = TOS in R4,
-# NOS in R5. Entering a variant that would exceed MAX_CACHED spills first.
+# Depth 0 = stack entirely in memory. Depth 1 = TOS in R3. Depth 2 = TOS in R3,
+# NOS in R4. Entering a variant that would exceed MAX_CACHED spills first.
 STENCILS: dict[str, dict[int, Variant]] = {
     "i32.const": {
-        0: Variant(["MOVW R4, #{imm_lo}", "MOVT R4, #{imm_hi}"], 1, ("imm_lo", "imm_hi")),
+        0: Variant(["MOVW R3, #{imm_lo}", "MOVT R3, #{imm_hi}"], 1, ("imm_lo", "imm_hi")),
         1: Variant(
-            ["MOV R5, R4", "MOVW R4, #{imm_lo}", "MOVT R4, #{imm_hi}"],
+            ["MOV R4, R3", "MOVW R3, #{imm_lo}", "MOVT R3, #{imm_hi}"],
             2,
             ("imm_lo", "imm_hi"),
         ),
         2: Variant(
-            ["PUSH R5", "MOV R5, R4", "MOVW R4, #{imm_lo}", "MOVT R4, #{imm_hi}"],
+            ["PUSH R4", "MOV R4, R3", "MOVW R3, #{imm_lo}", "MOVT R3, #{imm_hi}"],
             2,
             ("imm_lo", "imm_hi"),
         ),
     },
     "local.get": {
-        0: Variant(["LDR R4, [R2, #{slot}]"], 1, ("slot",)),
-        1: Variant(["MOV R5, R4", "LDR R4, [R2, #{slot}]"], 2, ("slot",)),
-        2: Variant(["PUSH R5", "MOV R5, R4", "LDR R4, [R2, #{slot}]"], 2, ("slot",)),
+        0: Variant(["LDR R3, [R2, #{slot}]"], 1, ("slot",)),
+        1: Variant(["MOV R4, R3", "LDR R3, [R2, #{slot}]"], 2, ("slot",)),
+        2: Variant(["PUSH R4", "MOV R4, R3", "LDR R3, [R2, #{slot}]"], 2, ("slot",)),
     },
     "local.set": {
-        1: Variant(["STR R4, [R2, #{slot}]"], 0, ("slot",)),
-        2: Variant(["STR R4, [R2, #{slot}]", "MOV R4, R5"], 1, ("slot",)),
+        1: Variant(["STR R3, [R2, #{slot}]"], 0, ("slot",)),
+        2: Variant(["STR R3, [R2, #{slot}]", "MOV R3, R4"], 1, ("slot",)),
     },
     # Binary ops consume TOS and NOS, produce one value in TOS.
-    "i32.add": {2: Variant(["ADD R4, R5, R4"], 1)},
-    "i32.sub": {2: Variant(["SUB R4, R5, R4"], 1)},
-    "i32.mul": {2: Variant(["MUL R4, R5, R4"], 1)},
+    "i32.add": {2: Variant(["ADD R3, R4, R3"], 1)},
+    "i32.sub": {2: Variant(["SUB R3, R4, R3"], 1)},
+    "i32.mul": {2: Variant(["MUL R3, R4, R3"], 1)},
     # Memory ops. `{MemoryBoundaryCheck}` `{FastAddressCheck}`
     # R8 holds mem_base, R9 holds mem_size. Bounds check is CMP + BHS.
     "i32.load": {
-        1: Variant(["CMP R4, R9", "BHS __trap_oob", "LDR R4, [R8, R4]"], 1),
-        2: Variant(["CMP R4, R9", "BHS __trap_oob", "LDR R4, [R8, R4]"], 2),
+        1: Variant(["CMP R3, R9", "BHS __trap_oob", "LDR R3, [R8, R3]"], 1),
+        2: Variant(["CMP R3, R9", "BHS __trap_oob", "LDR R3, [R8, R3]"], 2),
     },
     "i32.store": {
-        2: Variant(["CMP R5, R9", "BHS __trap_oob", "STR R4, [R8, R5]"], 0),
+        2: Variant(["CMP R4, R9", "BHS __trap_oob", "STR R3, [R8, R4]"], 0),
     },
     "backedge": {
         d: Variant(
@@ -107,9 +107,9 @@ STENCILS: dict[str, dict[int, Variant]] = {
 
 # Refill from memory when a variant needs more operands than are cached.
 REFILL = {
-    (0, 1): ["POP R4"],
-    (0, 2): ["POP R5", "POP R4"],
-    (1, 2): ["POP R5", "MOV R5, R4", "MOV R4, R5"],  # conceptual; see _refill
+    (0, 1): ["POP R3"],
+    (0, 2): ["POP R4", "POP R3"],
+    (1, 2): ["POP R4", "MOV R4, R3", "MOV R3, R4"],  # conceptual; see _refill
 }
 
 
@@ -156,19 +156,19 @@ class StackCachingCompiler:
     @staticmethod
     def _refill(cur: int, need: int) -> list[str]:
         if cur == 0 and need == 1:
-            return ["POP R4"]
+            return ["POP R3"]
         if cur == 0 and need == 2:
-            return ["POP R5", "POP R4"]
+            return ["POP R4", "POP R3"]
         if cur == 1 and need == 2:
-            return ["MOV R5, R4", "POP R4"]  # old TOS becomes NOS
+            return ["MOV R4, R3", "POP R3"]  # old TOS becomes NOS
         return []
 
     @staticmethod
     def _spill(depth: int) -> list[str]:
         if depth == 1:
-            return ["PUSH R4"]
+            return ["PUSH R3"]
         if depth == 2:
-            return ["PUSH R5", "PUSH R4"]
+            return ["PUSH R4", "PUSH R3"]
         return []
 
 
@@ -191,7 +191,6 @@ def execute(
         "R3": 0,
         "R4": 0,
         "R5": 0,
-        "R6": 0,
         "R7": 0,
         "R8": 0,
         "R9": mem_size,
@@ -205,9 +204,9 @@ def execute(
         ins = listing[i]
         head = ins.split()[0]
         if head == "MOVW":
-            R["R4"] = int(ins.split("#")[1])
+            R["R3"] = int(ins.split("#")[1])
         elif head == "MOVT":
-            R["R4"] = (R["R4"] & 0xFFFF) | (int(ins.split("#")[1]) << 16)
+            R["R3"] = (R["R3"] & 0xFFFF) | (int(ins.split("#")[1]) << 16)
         elif head == "MOV":
             dst, src = ins.replace(",", "").split()[1:3]
             R[dst] = R[src]
@@ -230,19 +229,19 @@ def execute(
                 slot = int(ins.split("#")[1].rstrip("]")) // 4
                 if not 0 <= slot < len(locals_):
                     raise WASMTrap("LOCAL_INDEX_OUT_OF_RANGE")
-                R["R4"] = locals_[slot]
+                R["R3"] = locals_[slot]
             elif "[R8" in ins:
-                a = R["R4"]
-                R["R4"] = int.from_bytes(mem[a : a + 4], "little")
+                a = R["R3"]
+                R["R3"] = int.from_bytes(mem[a : a + 4], "little")
         elif head == "STR":
             if "[R2" in ins:
                 slot = int(ins.split("#")[1].rstrip("]")) // 4
                 if not 0 <= slot < len(locals_):
                     raise WASMTrap("LOCAL_INDEX_OUT_OF_RANGE")
-                locals_[slot] = R["R4"]
+                locals_[slot] = R["R3"]
             elif "[R8" in ins:
-                a = R["R5"]
-                mem[a : a + 4] = (R["R4"] & 0xFFFF_FFFF).to_bytes(4, "little")
+                a = R["R4"]
+                mem[a : a + 4] = (R["R3"] & 0xFFFF_FFFF).to_bytes(4, "little")
         elif head == "CMP":
             reg, limit_reg = ins.replace(",", "").split()[1:3]
             R["_bhs"] = (R[reg] & 0xFFFF_FFFF) >= (R[limit_reg] & 0xFFFF_FFFF)
@@ -297,7 +296,7 @@ def test_binary_op_is_a_single_instruction() -> None:
     listing, depth = StackCachingCompiler().compile_block(
         [("local.get", 0), ("local.get", 1), ("i32.add", None)]
     )
-    assert listing[-1] == "ADD R4, R5, R4", listing
+    assert listing[-1] == "ADD R3, R4, R3", listing
     assert depth == 1
 
 
@@ -312,7 +311,7 @@ def test_spill_only_when_the_cache_overflows() -> None:
 
 def test_memory_access_carries_the_bound_check() -> None:
     listing, _ = StackCachingCompiler().compile_block([("local.get", 0), ("i32.load", None)])
-    assert "CMP R4, R9" in listing and "BHS __trap_oob" in listing, listing
+    assert "CMP R3, R9" in listing and "BHS __trap_oob" in listing, listing
 
 
 def test_out_of_bounds_load_traps() -> None:
@@ -340,7 +339,7 @@ def test_a_broken_stencil_is_detected() -> None:
     import copy
 
     saved = copy.deepcopy(STENCILS["i32.mul"])
-    STENCILS["i32.mul"] = {2: Variant(["ADD R4, R5, R4"], 1)}
+    STENCILS["i32.mul"] = {2: Variant(["ADD R3, R4, R3"], 1)}
     try:
         c = StackCachingCompiler()
         loc = [5, 1]

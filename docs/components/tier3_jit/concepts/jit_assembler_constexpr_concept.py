@@ -222,6 +222,15 @@ class Thumb2Assembler:
         return struct.pack("<H", code)
 
     @staticmethod
+    def lsrs_imm(rd: Reg, rm: Reg, imm5: int) -> bytes:
+        """LSRS Rd, Rm, #imm5 (16-bit immediate-shift encoding)."""
+        _check_low_reg(rd)
+        _check_low_reg(rm)
+        assert 0 <= imm5 <= 31, f"LSRS immediate out of range: {imm5}"
+        code = 0x0800 | (imm5 << 6) | (rm << 3) | rd
+        return struct.pack("<H", code)
+
+    @staticmethod
     def rors_reg(rd: Reg, rm: Reg) -> bytes:
         """RORS Rd, Rm (16-bit) -> 41C0 | (rm << 3) | rd"""
         _check_low_reg(rd)

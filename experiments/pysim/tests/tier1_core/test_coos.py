@@ -117,9 +117,10 @@ def test_coos_05_one_waiter_per_channel_enforced():
     sched.current_task = t2
     try:
         ch.send(2)
-        raise AssertionError("Expected AssertionError for second sender on same channel")
     except AssertionError as e:
         assert "separate channels" in str(e)
+    else:
+        raise AssertionError("Expected AssertionError for second sender on same channel")
 
 
 def test_coos_06_csp_handoff_direct_switch():

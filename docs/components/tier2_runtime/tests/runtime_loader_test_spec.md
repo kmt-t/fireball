@@ -6,6 +6,7 @@
 参考実装: [`loader_concept.py`](docs/components/tier2_runtime/concepts/loader_concept.py)
 
 ROM上WASM32バイナリのゼロコピー索引化（`ModuleView`）、V1〜V6軽量検証、バンプアロケータのトランザクショナルロールバック、ハッシュ＋`RadixBinaryTreeView`（`fireball::radix_binary_tree_view`）によるインポート解決およびシンボル検索、ファイル内データ位置からのデコード値逆引きを検証する。
+物理実装のROM文字列ビュー契約に対し、概念コードは比較可能なPython `str`を意味論上の代替として使用する。
 
 ## 2. テストケース一覧
 
@@ -28,7 +29,7 @@ ROM上WASM32バイナリのゼロコピー索引化（`ModuleView`）、V1〜V6�
 | TEST-LOAD-10 | セクション内容をRAMへコピーしない | 正常なバイナリ | パース後、`section_view`の実装を確認 | 開始オフセットとサイズのみを保持し、内容の複製を持たない | 「Zero-Copy Indexing」, `{ZeroCopyIndexing}` |
 | TEST-LOAD-11 | エクスポート名はROM参照 | エクスポート名を持つバイナリ | `exports_dict`の要素を確認 | 文字列はROM上の`string_view`相当であり、RAMコピーがない | - |
 | TEST-LOAD-12 | エクスポート名順ソート | 複数エクスポート（非アルファベット順で宣言） | パース後の`exports_dict`を確認 | 名前順にソートされている | 「名前順にソート」 |
-| TEST-LOAD-13 | ハッシュ＋RadixBinaryTreeView シンボル検索 | エクスポートシンボル登録済み | `lookup_export(name)` | FNV-1a ハッシュと RadixBinaryTreeView による $O(k)$ 探索で正しい`ExportEntry`を返す。未登録名は`None` | 「シンボル検索」, `{META_AccessDictionary}`, `{META_BinarySearch}` |
+| TEST-LOAD-13 | ハッシュ＋RadixBinaryTreeView シンボル検索 | エクスポートシンボル登録済み | `lookup_export(name)` | FNV-1a ハッシュと RadixBinaryTreeView による $O(1)+O(\log n)$ 索引探索後、ROM上の元文字列を照合して正しい`ExportEntry`を返す。未登録名は`None` | 「シンボル検索」, `{META_AccessDictionary}`, `{META_BinarySearch}` |
 | TEST-LOAD-14 | 関数アクセサの遅延デコード | 任意の関数 | `get_function(idx).get_code_stream()` | localsベクタ宣言をスキップした実行本体ストリームを返す | function_accessor |
 | TEST-LOAD-15 | グローバルアクセサ | 任意のグローバル変数宣言 | `get_global(idx).get_metadata()` | (valtype, mutable)を正しく返す | global_accessor |
 
@@ -37,7 +38,7 @@ ROM上WASM32バイナリのゼロコピー索引化（`ModuleView`）、V1〜V6�
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | TEST-LOAD-20 | 未解決インポートは実行不可状態 | インポートを持つモジュールをprepare（依存先未登録） | `is_ready`を確認 | `False`（実行不可） | - |
-| TEST-LOAD-21 | ハッシュ＋RadixBinaryTreeView インポート解決 | 依存モジュールが先に登録済み | `resolve_imports(module)` | 文字列走査ではなくハッシュ＋RadixBinaryTreeView で $O(k)$ 解決され、`True`（`is_ready == True`）になる | resolve-imports |
+| TEST-LOAD-21 | ハッシュ＋RadixBinaryTreeView インポート解決 | 依存モジュールが先に登録済み | `resolve_imports(module)` | ハッシュ＋RadixBinaryTreeView で $O(1)+O(\log n)$ に候補を絞り、元文字列照合後に `True`（`is_ready == True`）になる | resolve-imports |
 | TEST-LOAD-22 | シンボル未発見での解決失敗 | 依存モジュールに該当エクスポートがない | `resolve_imports` | `WasmLinkError`相当（`{MultiModule_Support}`） | loader_concept.py `WasmLinkError` |
 | TEST-LOAD-23 | インポート/エクスポートの型シグネチャ不一致 | 型が異なる同名エクスポート | 同上 | 拒否される | loader_concept.py `resolve_imports`の型チェック |
 | TEST-LOAD-24 | モジュール登録数上限 | `FB_CONF_MAX_MODULES`（既定4）到達 | 5個目をprepare | `WasmLinkError`（レジストリ上限超過） | runtime_loader.md (Resource Constraints) |
@@ -56,13 +57,13 @@ ROM上WASM32バイナリのゼロコピー索引化（`ModuleView`）、V1〜V6�
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | TEST-LOAD-40 | デコード済みエンティティのファイル位置登録 | WASMバイナリパース完了 | `decoded_entity_registry` の内容を確認 | 各セクション、関数コード、グローバル、データセグメントが開始・終了ファイルオフセットとともに登録されている | `decoded_entity_registry` |
-| TEST-LOAD-41 | RadixBinaryTreeView によるファイルオフセット検索 | デコード済みモジュール | `lookup_by_file_offset(offset)` を実行 | 基数表＋有界二分探索（$O(k)$ / $O(\log n)$）により、指定オフセットを包含するデコード済みエンティティが正確に返却される | 「ファイル位置逆引き」, `lookup-by-file-offset` |
+| TEST-LOAD-41 | RadixBinaryTreeView によるファイルオフセット検索 | デコード済みモジュール | `lookup_by_file_offset(offset)` を実行 | 基数表による $O(1)$ の区間絞り込みと有界二分探索 $O(\log n)$ により、指定オフセットを包含するデコード済みエンティティが正確に返却される | 「ファイル位置逆引き」, `lookup-by-file-offset` |
 | TEST-LOAD-42 | 関数バイトコード位置からの関数アクセサ逆引き | 関数コード内オフセット | `lookup_by_file_offset(code_offset)` | 該当する `FunctionAccessor`（関数インデックス・シグネチャ）が即座に特定・返却される | - |
 | TEST-LOAD-43 | データセグメント・グローバル位置の特定 | データセグメント内オフセット | `lookup_by_file_offset(data_offset)` | 該当するデータ定義またはグローバルエントリが正確に返却される | - |
 | TEST-LOAD-44 | 範囲外・未定義隙間オフセットの境界処理 | ヘッダ以前またはバイナリ終端超過オフセット | `lookup_by_file_offset(invalid_offset)` | エラー/未発見（`None` / `false`）を返しクラッシュしない | 不変条件 |
-| TEST-LOAD-45 | インポートテーブルのハッシュ＋RadixBinaryTreeView 検索 | インポートエントリ多数 | `find_import(module, field)` | 文字列比較走査を行わずハッシュ値から RadixBinaryTreeView を $O(k)$ で探索して即座に解決される | 「インポートテーブル検索」 |
+| TEST-LOAD-45 | インポートテーブルのハッシュ＋RadixBinaryTreeView 検索 | インポートエントリ多数 | `find_import(module, field)` | ハッシュ値から RadixBinaryTreeView を $O(1)+O(\log n)$ で探索し、元のモジュール名・フィールド名を照合して解決される | 「インポートテーブル検索」 |
 | TEST-LOAD-46 | シンボルハッシュ衝突時の安全な文字列一致検証 | 同一ハッシュ値を持つ異なるシンボル名 | `lookup_export(name)` | ハッシュ一致後に ROM 上の文字列を 1 回照合し、誤ったシンボルの誤認を確実に防ぐ | 「シンボル検索」 |
-| TEST-LOAD-47 | 未定義シンボルの高速不存在判定 | 未エクスポートのシンボル名 | `lookup_export(non_existent)` | $O(k)$ のツリー走査で即座に `None` を返し、不要な文字列比較を行わない | - |
+| TEST-LOAD-47 | 未定義シンボルの高速不存在判定 | 未エクスポートのシンボル名 | `lookup_export(non_existent)` | ハッシュ索引の $O(1)$ の区間絞り込みと有界探索 $O(\log n)$ の後、候補がなければ `None` を返す。候補がある場合のみ元文字列を照合する | - |
 | TEST-LOAD-48 | ローダ所有のベーシックブロック索引と不変メタ情報公開 | パース済み WASM モジュール | `mod.get_block(pc)` / `mod.block_tree` | ランタイム側での再構築なしに、ローダが構築した `ReadOnlyRadixBinaryTreeStorage` から $O(1) + O(\log n)$ で `BasicBlock` メタ情報を直接解決できる | `{Loader_BasicBlockIndex}` |
 | TEST-LOAD-49 | int4_t スコアリングによる JIT 候補ビットマップ生成 | WASM モジュールロード | `cand_bm.evaluate_block(bb, table, threshold=9)` | 128B BitView<4> テーブルから命令ごとの機械語短縮スコア（int4_t）を積算し、合計9点以上のブロックの head_pc カードビット（1bit）が正確に 1 にセットされる | `{JIT_StaticBenefitScoring}`, `{JIT_CandidateBitmap}` |
 | TEST-LOAD-50 | JITCandidateBitmap 非候補ブロックの touch/履歴バイパス | 非候補ブロック（カードビット 0）の実行 | `eng.run(cold_pc, ctx)` | インタープリタ実行は行われるが、HotspotBitmap.touch() および履歴リングへの記録が完全にバイパスされ、カード状態が UNEXECUTED のまま維持される | `{JIT_CandidateBitmap}` |
@@ -80,7 +81,7 @@ ROM上WASM32バイナリのゼロコピー索引化（`ModuleView`）、V1〜V6�
 
 - **軽量検証 (TEST-LOAD-01〜07)**: V1〜V6検証および失敗時のアロケータロールバック。
 - **ゼロコピー索引化 (TEST-LOAD-10〜15)**: ROM直接参照、ハッシュ＋RadixBinaryTreeView シンボル検索、遅延アクセサ。
-- **複数モジュール・インポート解決 (TEST-LOAD-20〜25)**: ハッシュ＋RadixBinaryTreeView による $O(k)$ インポート解決、型照合、レジストリ上限、LIFOアンロード。
+- **複数モジュール・インポート解決 (TEST-LOAD-20〜25)**: ハッシュ索引の $O(1)$ の区間絞り込みと有界探索 $O(\log n)$、元文字列照合によるインポート解決、型照合、レジストリ上限、LIFOアンロード。
 - **容量制約 (TEST-LOAD-30〜32)**: 最大数制限およびLEB128ガード。
 - **RadixBinaryTreeView 索引 & JIT候補判定 (TEST-LOAD-40〜50)**: デコード済みエンティティ登録、RadixBinaryTreeView によるファイルオフセット逆引き、ハッシュ＋RadixBinaryTreeView によるインポート/エクスポート高速解決、ハッシュ衝突耐性、不存在判定、ローダ所有のベーシックブロック索引（`TEST-LOAD-48`）、`int4_t` スコアリングによる JIT 候補ビットマップ生成（`TEST-LOAD-49`）、非候補カードにおける touch/履歴バイパス（`TEST-LOAD-50`）。
 

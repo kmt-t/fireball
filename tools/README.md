@@ -27,7 +27,7 @@ Windows（PowerShell）および Linux / WSL（Bash）の双方で同一の操�
 | **format-doc** | `tools/format-doc.ps1`<br>`tools/format-doc.sh` | 静的整形 | Markdown ドキュメントの静的正規化（改行・末尾空白等）を適用。引数で対象Markdown指定可能。 |
 | **check-doc** | `tools/check-doc.ps1`<br>`tools/check-doc.sh` | 静的検査 | ドキュメントの静的検証（8大品質ゲート: Format, Traceability, Hierarchy, Formal, WIT, Evidence, Obligation, Consistency）を実行。引数で対象Markdown指定可能。 |
 | **format-src** | `tools/format-src.ps1`<br>`tools/format-src.sh` | 静的整形 | ソースコードの静的フォーマッタ（Python: Ruff / C++: clang-format）を適用。`-group`（`cpp`, `python`, `concepts`, `formal`, `pysim`, `all`）や個別ファイル指定可能。 |
-| **check-src** | `tools/check-src.ps1`<br>`tools/check-src.sh` | 静的検査 | ソースコードの静的規約・サボり検証（Python は AST／tokenize、C++ は clang AST へ移行可能な言語別バックエンドで TODO放置・空関数・typing.Any完全禁止・形式モデル変異検査 `guards=False` 必須、実機テスト実行）を実行。`-group` や個別ファイル指定可能。 |
+| **check-src** | `tools/check-src.ps1`<br>`tools/check-src.sh` | 静的検査 | ソースコードの静的規約・サボり検証（Python は AST／tokenize、C++ は clang AST へ移行可能な言語別バックエンドで TODO放置・空関数・typing.Any完全禁止・形式モデル変異検査 `guards=False` 必須、pysim の設定駆動 import Tier 依存方向検査、実機テスト実行）を実行。`-group` や個別ファイル指定可能。 |
 | **risk** | `tools/risk.ps1`<br>`tools/risk.sh` | LLM評価 | LLMによりドキュメントのキーワードの設計複雑度・リスク評価を行う。 |
 | **llm-word** | `tools/llm-word.ps1`<br>`tools/llm-word.sh` | LLM検査 | LLMにより単語揺れチェックを行う（エンベディング類似度 + 文脈判定 + レポート出力）。 |
 | **llm-single-review** | `tools/llm-single-review.ps1`<br>`tools/llm-single-review.sh` | LLM監査 | 指定されたファイルまたは全ファイルの全セクション単体、およびファイルに含まれる高リスクキーワードのリンクの島に関連するレビューを行う。 |

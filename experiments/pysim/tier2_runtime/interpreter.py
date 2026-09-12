@@ -9,8 +9,8 @@ Patch specifics.
 Execution model: `docs/specs/wasm_instruction_set.md` §1 mandates a real
 **threaded interpreter** (`{ThreadedInterpreter}`) -- every opcode is its
 own CPS (continuation-passing) handler with a fixed 4-argument
-`__fastcall` signature (`R0: ip`, `R1: stack_bot`, `R2: env`,
-`R3: local_base`), not a central switch/if-elif loop a handler merely
+`__fastcall` signature (`R0: ctx`, `R1: sp`, `R2: local_base`,
+`R3: tos`), not a central switch/if-elif loop a handler merely
 falls back into. This file follows that shape for real: `_HANDLERS` maps
 opcode -> handler function, each handler receives exactly those four
 arguments and returns the *next* continuation itself (or `None` to end the
@@ -23,7 +23,7 @@ recursion depth for long-running loops. So the four-argument continuation
 is *returned* rather than tail-called, and a small trampoline in `_run`
 re-dispatches it -- indirect threading instead of direct threading, same
 handler-per-opcode shape, no stack growth per WASM instruction.
-`R1: stack_bot` addresses, in the real design, a fixed buffer shared by two
+`R1: sp` addresses, in the real design, a fixed buffer shared by two
 independently-growing stacks (ADR-INTERP-03, runtime_interpreter.md §3.1):
 call frames/locals/operand values grow from the bottom, while block/loop/if
 control frames grow from the top in a dedicated region of their own --
@@ -262,7 +262,9 @@ FB_CONF_MAX_VALUE_STACK = 64
 FB_CONF_MAX_LOCAL_STACK = 64
 
 
-def _make_int_vector(values: Sequence[int], capacity: int = FB_CONF_MAX_VALUE_STACK) -> StaticVector[int]:
+def _make_int_vector(
+    values: Sequence[int], capacity: int = FB_CONF_MAX_VALUE_STACK
+) -> StaticVector[int]:
     vector: StaticVector[int] = StaticVector(capacity=capacity)
     if not vector.extend(values):
         raise Trap("static vector capacity exceeded")
@@ -372,6 +374,7 @@ class InterpreterContext:
     """Execution-context-owned stacks shared by the complete call chain."""
 
     __slots__ = (
+        "_c_context",
         "call_frame_offsets",
         "call_frame_stack",
         "control_frame_stack",
@@ -381,6 +384,7 @@ class InterpreterContext:
     )
 
     def __init__(self):
+        self._c_context = (ctypes.c_uint32 * 15)()
         self.operand_stack: StaticVector[int] = StaticVector(capacity=FB_CONF_MAX_VALUE_STACK)
         self.local_stack: StaticVector[object] = StaticVector(capacity=FB_CONF_MAX_LOCAL_STACK)
         self.local_offset = 0
@@ -393,6 +397,11 @@ class InterpreterContext:
         self.control_frame_stack: StaticVector[ControlFrame] = StaticVector(
             capacity=FB_CONF_MAX_NESTING_DEPTH
         )
+
+    @property
+    def context_ptr(self) -> ctypes.c_void_p:
+        """Pointer to the fixed-size native execution-context backing store."""
+        return ctypes.cast(self._c_context, ctypes.c_void_p)
 
     def begin_call_frame(
         self,
@@ -508,6 +517,14 @@ class CallFrame:
         return self.context.operand_stack
 
     @property
+    def context_ptr(self) -> ctypes.c_void_p:
+        return self.context.context_ptr
+
+    @property
+    def sp_ptr(self) -> ctypes.c_void_p:
+        return self.jit_result_slot()[1]
+
+    @property
     def frames(self) -> _ControlFrameWindow:
         return _ControlFrameWindow(self.context.control_frame_stack, self.control_base)
 
@@ -520,8 +537,8 @@ class CallFrame:
     ) -> tuple[ctypes.Array[ctypes.c_int64], ctypes.c_void_p]:
         """
         Returns this frame's ctypes locals buffer and its already-cast
-        `c_void_p` for CPS JIT trace calls (`ip, stack_bot, local_base,
-        tos`), creating both on first use and reusing them for every trace
+        `c_void_p` for CPS JIT trace calls (`ctx, sp, local_base, tos`),
+        creating both on first use and reusing them for every trace
         invoked against this frame afterwards. A fresh `ctypes.c_int64 * n`
         array/type pair, and a fresh `ctypes.cast(..., c_void_p)` call, both
         cost real time per call (profiling: the cast alone was ~1.8us/call,
@@ -540,7 +557,7 @@ class CallFrame:
     def jit_result_slot(self) -> tuple[ctypes.Array[ctypes.c_int64], ctypes.c_void_p]:
         """
         Returns this frame's single-i64 scratch buffer and its `c_void_p`,
-        passed as the CPS `stack_bot` argument to a compiled JIT trace. A
+        passed as the CPS `sp` argument to a compiled JIT trace. A
         trace's result is WASM VM state, not a C return value -- it has no
         relationship to the callee's own return channel (the real design's
         return value, where used at all, carries a control-flow signal like
@@ -558,7 +575,7 @@ class CallFrame:
         return buf, ptr
 
 
-# A handler's continuation: (next_ip, stack_bot, local_base, tos), or None
+# A handler's logical continuation: (next_ip, frame, local_base, tos), or None
 # to end this call (RETURN, or branching past the outermost implicit block).
 _Cont = tuple[int, CallFrame, _LocalStackWindow, int] | None
 
@@ -937,8 +954,8 @@ class Interpreter:
 
 
 # ---------------------------------------------------------------------------
-# Per-opcode CPS handlers. Each receives exactly (ip, stack_bot, env,
-# local_base) and returns the next continuation itself.
+# Per-opcode logical CPS handlers. Each receives the current instruction PC,
+# frame, local-variable view, and returns the next continuation itself.
 # ---------------------------------------------------------------------------
 
 
@@ -950,7 +967,9 @@ def _h_unreachable(
 
 
 @_handler(NOP)
-def _h_nop(ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow) -> _HandlerResult:
+def _h_nop(
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
+) -> _HandlerResult:
     return (ip + 1, frame, env, local_base)
 
 
@@ -979,7 +998,9 @@ def _h_loop(
 
 
 @_handler(IF)
-def _h_if(ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow) -> _HandlerResult:
+def _h_if(
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
+) -> _HandlerResult:
     match_end, else_off = frame.control_map.blocks[ip]
     cond = frame.values.pop_back()
     if cond == 0:
@@ -1011,7 +1032,9 @@ def _h_else(
 
 
 @_handler(END)
-def _h_end(ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow) -> _HandlerResult:
+def _h_end(
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
+) -> _HandlerResult:
     if frame.frames:
         frame.frames.pop_back()
     return (ip + 1, frame, env, local_base)
@@ -1019,7 +1042,9 @@ def _h_end(ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalSta
 
 @_handler(BR)
 @cython.locals(depth=cython.Py_ssize_t)
-def _h_br(ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow) -> _HandlerResult:
+def _h_br(
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
+) -> _HandlerResult:
     if frame.boundary_next_pc is not None:
         return (frame.boundary_next_pc & 0xFFFF, frame, env, local_base)
     depth, _ = decode_unsigned(frame.code, ip + 1)

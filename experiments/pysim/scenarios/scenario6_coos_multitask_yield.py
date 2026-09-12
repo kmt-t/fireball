@@ -1,3 +1,4 @@
+from collections.abc import Generator
 import sys
 from pathlib import Path
 
@@ -27,7 +28,9 @@ Tests:
 
 import wasmtime
 from interpreter import Interpreter
+from scheduler import ChannelAction
 from system import System
+from system_containers import StaticVector
 from wasi import WasiHostContext
 from wasm_reader import parse
 
@@ -75,6 +78,19 @@ SCENARIO6_WAT = """
 """
 
 
+def make_wasm_task_coro(
+    interp: Interpreter, func_index: int, args: list[int]
+) -> Generator[tuple[ChannelAction, None], None, StaticVector[int]]:
+    """Test-only adapter from Interpreter steps to generic COOS coroutines."""
+    step_iter = interp.run_iter(func_index, args)
+    call_state = next(step_iter)
+    for call_state in step_iter:
+        if not call_state.finished:
+            yield (ChannelAction.YIELD, None)
+    assert call_state.finished, "Interpreter coroutine must finish with a final call state"
+    return call_state.results
+
+
 def test_scenario_coos_multitask():
     print("[*] Running Scenario 6: COOS Cooperative Multitasking & Coroutines...")
     wasm_bytes = bytes(wasmtime.wat2wasm(SCENARIO6_WAT))
@@ -109,10 +125,15 @@ def test_scenario_coos_multitask():
     assert cons_steps > 0, "Consumer should have taken multiple steps"
     print(f"    -> Consumer ran in {cons_steps} step(s) and computed expected sum: {cons_res[0]}.")
 
-    # 3. Collaborative execution via COOS Scheduler (spawn_wasm_task)
+    # 3. This integration scenario supplies the test-only WASM adapter;
+    # COOS receives only generic coroutines.
     interp_coos = Interpreter(module, memory=wasi_ctx.guest_memory, host_functions=host_funcs)
-    t_prod = sysv.scheduler.spawn_wasm_task("producer_task", interp_coos, fn_prod, [N])
-    t_cons = sysv.scheduler.spawn_wasm_task("consumer_task", interp_coos, fn_cons, [N])
+    t_prod = sysv.scheduler.spawn(
+        "producer_task", make_wasm_task_coro(interp_coos, fn_prod, [N])
+    )
+    t_cons = sysv.scheduler.spawn(
+        "consumer_task", make_wasm_task_coro(interp_coos, fn_cons, [N])
+    )
     sysv.scheduler.run_until_idle()
     prod_task = sysv.scheduler.get_task(t_prod)
     cons_task = sysv.scheduler.get_task(t_cons)

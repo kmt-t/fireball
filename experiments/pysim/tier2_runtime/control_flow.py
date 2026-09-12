@@ -454,7 +454,9 @@ class ControlMap:
     no dynamically-resized hash table to reach for."""
 
     blocks: FlatMapView[int, tuple[int, int | None]]  # opener_ip -> (match_end_ip, else_offset)
-    br_tables: FlatMapView[int, tuple[tuple[int, ...], int]]  # br_table_ip -> (labels, default_label)
+    br_tables: FlatMapView[
+        int, tuple[tuple[int, ...], int]
+    ]  # br_table_ip -> (labels, default_label)
 
 
 @dataclass(slots=True)
@@ -469,9 +471,9 @@ def build_control_map(code: bytes) -> ControlMap:
     block_entries: StaticVector[tuple[int, tuple[int, int | None]]] = StaticVector(
         capacity=len(code)
     )
-    br_table_entries: StaticVector[
-        tuple[int, tuple[tuple[int, ...], int]]
-    ] = StaticVector(capacity=len(code))
+    br_table_entries: StaticVector[tuple[int, tuple[tuple[int, ...], int]]] = StaticVector(
+        capacity=len(code)
+    )
     # [opcode, start_offset, else_offset] per still-open BLOCK/LOOP/IF, in a
     # fixed-size buffer indexed by `depth` (see FB_CONF_MAX_NESTING_DEPTH) --
     # else_offset is filled in place when this entry's own ELSE is reached,

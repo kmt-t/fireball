@@ -394,9 +394,7 @@ def test_intp_70_to_72_direct_bytecode_execution():
 
     # 1. TEST-INTP-70: the context owns the call-frame and LocalStack construction.
     context = InterpreterContext()
-    frame, locals_arr = interp._build_frame(
-        0, StaticVector.of((15,), capacity=64), context
-    )
+    frame, locals_arr = interp._build_frame(0, StaticVector.of((15,), capacity=64), context)
     assert frame.code == module.functions[0].code
     assert frame.control_map is not None
     assert frame.control_map is module.functions[0].control_map

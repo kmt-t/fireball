@@ -43,6 +43,8 @@ ItemT = TypeVar("ItemT")
 def _push_or_raise(target: StaticVector[ItemT], item: ItemT, label: str) -> None:
     if not target.push_back(item):
         raise WasmParseError(f"{label} capacity exceeded")
+
+
 FB_CONF_MAX_WASM_PAGES = 16
 FB_CONF_WASM_PAGE_SIZE = 65536
 
@@ -405,13 +407,14 @@ class ModuleView:
         "is_ready",
         "memories",
         "module_name",
-        "registry",
         "resolved_imports",
         "rom_binary",
         "sections",
         "start_func_idx",
         "tables",
         "types",
+        "allocator_start",
+        "allocator_end",
     )
 
     def __init__(self, module_name: str, rom_binary: bytes | bytearray | memoryview):
@@ -444,6 +447,8 @@ class ModuleView:
         self.export_tree: RadixBinaryTreeView | None = None
         self.import_tree: RadixBinaryTreeView | None = None
         self.entity_offset_tree: RadixBinaryTreeView | None = None
+        self.allocator_start: int | None = None
+        self.allocator_end: int | None = None
 
     def register_entity(
         self,
@@ -467,9 +472,7 @@ class ModuleView:
         )
         self.export_tree = self.export_storage.view()
 
-        imp_keys = tuple(
-            fnv1a_32(f"{imp.module_name}::{imp.field_name}") for imp in self.imports
-        )
+        imp_keys = tuple(fnv1a_32(f"{imp.module_name}::{imp.field_name}") for imp in self.imports)
         self.import_storage = ReadOnlyRadixBinaryTreeStorage.create(
             imp_keys, self.imports, radix_shift=28
         )
@@ -574,7 +577,12 @@ class WasmLoader:
             raise WasmLinkError(f"Module registry capacity ({self.max_modules}) exceeded")
         watermark = self.allocator.save()
         try:
+            # Reserve fixed metadata scratch so transactional rollback and LIFO
+            # unload exercise a real allocator mutation ({META_BumpAllocator}).
+            self.allocator.allocate(64, alignment=8)
             view = ModuleView(module_name, wasm_binary)
+            view.allocator_start = watermark
+            view.allocator_end = self.allocator.save()
             stream = BinaryStream(wasm_binary)
             # V1: Magic Number Check
             magic = bytes(stream.read_bytes(4))
@@ -777,9 +785,7 @@ class WasmLoader:
                 stream.seek(body_start + body_size)
 
     def resolve_imports(self, module: ModuleView) -> bool:
-        entries: StaticVector[tuple[str, ExportEntry]] = StaticVector(
-            capacity=FB_CONF_MAX_IMPORTS
-        )
+        entries: StaticVector[tuple[str, ExportEntry]] = StaticVector(capacity=FB_CONF_MAX_IMPORTS)
         for imp in module.imports:
             target_mod = self.lookup(imp.module_name)
             if target_mod is None:
@@ -801,5 +807,8 @@ class WasmLoader:
     def unload(self, module: ModuleView) -> bool:
         if module.module_name in self.registry:
             self.registry.remove(module.module_name)
+            if module.allocator_end == self.allocator.save():
+                assert module.allocator_start is not None
+                self.allocator.restore(module.allocator_start)
             return True
         return False

@@ -18,26 +18,39 @@ from __future__ import annotations
 
 from collections.abc import Callable, Generator, Iterator
 from enum import IntEnum
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from logger import Logger
-    from tier2_runtime.interpreter import Interpreter
+from typing import Protocol
 
 from interrupt_event import InterruptEvent
-from logger import (
-    LOG_EVT_COOS_DUPLICATE_TASK,
-    LOG_EVT_COOS_HANDOFF_LIMIT,
-    LOG_EVT_COOS_IRQ_OVERFLOW,
-    LOG_EVT_COOS_TASK_CAPACITY,
-    LogLevel,
-)
 from system_containers import RingBuffer, StaticVector
 
 FB_CONF_MAX_TASKS = 16
 FB_CONF_MAX_CONSECUTIVE_HANDOFFS = 4
 FB_CONF_INTERRUPT_QUEUE_SIZE = 16
 FB_CONF_MAX_IDLE_HOOKS = 8
+
+# Tier 1 owns the scheduler diagnostics identifiers. The Tier 2 logger can
+# consume them, but COOS must remain independent of the runtime implementation.
+LOG_EVT_COOS_HANDOFF_LIMIT = 0x0101
+LOG_EVT_COOS_TASK_CAPACITY = 0x0102
+LOG_EVT_COOS_DUPLICATE_TASK = 0x0103
+LOG_EVT_COOS_IRQ_OVERFLOW = 0x0104
+
+
+class SchedulerLogLevel(IntEnum):
+    WARN = 2
+    ERROR = 3
+
+
+class _SchedulerLogger(Protocol):
+    def log_event(
+        self,
+        level: IntEnum,
+        dict_offset: int,
+        arg0: int = 0,
+        arg1: int = 0,
+        arg2: int = 0,
+        arg3: int = 0,
+    ) -> str: ...
 
 
 class BoundedReadyQueue:
@@ -153,20 +166,6 @@ class Channel:
         return self.scheduler.channel_recv(self)
 
 
-def make_wasm_task_coro(
-    interp: Interpreter, func_index: int, args: list[int]
-) -> Generator[tuple[ChannelAction, None], None, list[int]]:
-    """Wraps an Interpreter execution as a cooperative coroutine for COOS task scheduling."""
-    gen = interp.run_iter(func_index, args)
-    # The freshly-start()ed state, before any step, is not itself a yield point.
-    call_state = next(gen)
-    for call_state in gen:
-        if not call_state.finished:
-            yield (ChannelAction.YIELD, None)
-    results: list[int] = call_state.results
-    return results
-
-
 class Task:
     """A single coroutine-based task with explicit cooperative lifecycle state."""
 
@@ -220,7 +219,7 @@ class Scheduler:
         self,
         max_tasks: int = FB_CONF_MAX_TASKS,
         max_handoffs: int = FB_CONF_MAX_CONSECUTIVE_HANDOFFS,
-        logger: Logger | None = None,
+        logger: _SchedulerLogger | None = None,
     ):
         self.max_tasks = max_tasks
         self.max_handoffs = max_handoffs
@@ -256,7 +255,7 @@ class Scheduler:
         if len(self._all) >= self.max_tasks:
             if self.logger is not None:
                 self.logger.log_event(
-                    LogLevel.ERROR,
+                    SchedulerLogLevel.ERROR,
                     LOG_EVT_COOS_TASK_CAPACITY,
                     self.max_tasks,
                     len(self._all) + 1,
@@ -269,7 +268,7 @@ class Scheduler:
             if self.get_task(assigned_id) is not None:
                 if self.logger is not None:
                     self.logger.log_event(
-                        LogLevel.ERROR,
+                        SchedulerLogLevel.ERROR,
                         LOG_EVT_COOS_DUPLICATE_TASK,
                         assigned_id,
                         0,
@@ -289,19 +288,6 @@ class Scheduler:
         if coro is not None:
             self._ready_coro_count += 1
         return task.task_id
-
-    def spawn_wasm_task(
-        self,
-        name: str,
-        interp: Interpreter,
-        func_index: int,
-        args: list[int],
-        task_id: int | None = None,
-        role: int = 0,
-    ) -> int:
-        """Spawns a WASM execution context as a first-class COOS task."""
-        coro = make_wasm_task_coro(interp, func_index, args)
-        return self.spawn(name, coro, task_id=task_id, role=role)
 
     def detach(self, task: Task) -> None:
         """
@@ -349,7 +335,10 @@ class Scheduler:
                             WaitDir.NONE,
                             None,
                         )
-            val = data.move_to(receiver.task_id) if hasattr(data, "move_to") else data
+            try:
+                val = data.move_to(receiver.task_id)
+            except AttributeError:
+                val = data
             receiver.received_val = val
             receiver.state = TaskState.READY
             sender.state = TaskState.READY
@@ -373,8 +362,10 @@ class Scheduler:
             val = sender.pending_val
             sender.pending_val = None  # Prevent double ownership
             ch.waiter_task, ch.waiter_dir = None, WaitDir.NONE
-            if hasattr(val, "move_to"):
+            try:
                 val = val.move_to(receiver.task_id)
+            except AttributeError:
+                pass
             receiver.received_val = val
             sender.state = TaskState.READY
             receiver.state = TaskState.READY
@@ -401,8 +392,10 @@ class Scheduler:
                 val = sender.pending_val
                 sender.pending_val = None
                 ch.waiter_task, ch.waiter_dir = None, WaitDir.NONE
-                if hasattr(val, "move_to"):
+                try:
                     val = val.move_to(receiver.task_id)
+                except AttributeError:
+                    pass
                 receiver.received_val = val
                 sender.state = TaskState.READY
                 receiver.state = TaskState.READY
@@ -429,7 +422,7 @@ class Scheduler:
             return (ChannelAction.DIRECT_SWITCH, target_task.task_id)
         if self.logger is not None:
             self.logger.log_event(
-                LogLevel.WARN,
+                SchedulerLogLevel.WARN,
                 LOG_EVT_COOS_HANDOFF_LIMIT,
                 target_task.task_id,
                 self.consecutive_handoffs,
@@ -452,7 +445,7 @@ class Scheduler:
             self.dropped_irqs += 1
             if self.logger is not None:
                 self.logger.log_event(
-                    LogLevel.WARN,
+                    SchedulerLogLevel.WARN,
                     LOG_EVT_COOS_IRQ_OVERFLOW,
                     event.vector_id,
                     self.dropped_irqs,

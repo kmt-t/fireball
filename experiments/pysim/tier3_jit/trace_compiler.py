@@ -92,24 +92,23 @@ class WASMTraceCompiler:
                 return None
         has_ret = any(op in (I32_CONST, I32_ADD, I32_SUB, I32_MUL) for op, _ in ops)
 
-        def trace_fn(ip: int, stack_bot: object, local_base: object, tos: int) -> int:
-            # Emulated handler matching CPS 4-argument C signature (ip, stack_bot, local_base, tos).
+        def trace_fn(ctx: object, sp: object, local_base: object, tos: int) -> None:
+            # Emulated handler matching CPS 4-argument C signature (ctx, sp, local_base, tos).
             # A trace's residual value is VM operand-stack state, not a C return
-            # value ({ExecutionContext_Layout}): written to `stack_bot` (mirroring
-            # x64_jit.py's SPILL_RESULT_TO_STACK_BOT) instead of returned.
+            # value ({ExecutionContext_Layout}): written to `sp` (mirroring
+            # x64_jit.py's SPILL_RESULT_TO_SP) instead of returned.
             c_arr = ctypes.cast(local_base, ctypes.POINTER(ctypes.c_int64)) if local_base else None
             stk: list[int] = [tos] if tos else []
             for op, arg in ops:
                 handler = _EMU_TRACE_MAP.find(op)
                 if handler is not None:
                     handler(stk, c_arr, arg)
-            if stk and stack_bot:
-                ctypes.cast(stack_bot, ctypes.POINTER(ctypes.c_int64))[0] = stk[-1]
-            return 0
+            if stk and sp:
+                ctypes.cast(sp, ctypes.POINTER(ctypes.c_int64))[0] = stk[-1]
 
         c_fn = ctypes.CFUNCTYPE(
-            ctypes.c_int64,
-            ctypes.c_uint32,
+            None,
+            ctypes.c_void_p,
             ctypes.c_void_p,
             ctypes.c_void_p,
             ctypes.c_uint32,
@@ -124,4 +123,3 @@ class WASMTraceCompiler:
         )
         trace._keepalive = c_fn
         return trace
-

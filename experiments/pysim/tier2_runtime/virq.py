@@ -108,9 +108,7 @@ class VirqDispatcher:
         self._pending_functions: StaticVector[int] = StaticVector(capacity=max_nodes)
         for _ in range(max_nodes):
             self._pending_functions.push_back(INVALID_FUNCTION_INDEX)
-        self._sources: StaticVector[VirqSource] = StaticVector(
-            capacity=3 + max_devices
-        )
+        self._sources: StaticVector[VirqSource] = StaticVector(capacity=3 + max_devices)
         self._sources.push_back(
             VirqSource(VECTOR_SYSTEM, int(VirqNode.SYSTEM), INVALID_FUNCTION_INDEX, 0)
         )

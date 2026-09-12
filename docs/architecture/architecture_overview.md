@@ -84,7 +84,7 @@ Fireball の実行コアは、以下の 6 つの物理メカニズムによっ�
 |  [Pillar 1] 独立3バッファ・スタックモデル (Three Independent Stack Buffers Model)                  |
 |             └─ execution_context (R0), OperandStack / LocalStack / control_frame の3独立バッファ    |
 +---------------------------------------------------------------------------------------------------+
-|  [Pillar 2] 3段直接 JIT 検索パイプライン (3-Stage Direct JIT Lookup Pipeline)                     |
+|  [Pillar 2] 4段直接 JIT 検索パイプライン (4-Stage Direct JIT Lookup Pipeline)                     |
 |             └─ Card Marking (O(1)) -> Direct-Mapped XOR (O(1)) -> Radix Table -> Binary Search    |
 +---------------------------------------------------------------------------------------------------+
 |  [Pillar 3] 3面世代交代回転コードキャッシュ (3-Bank Generational Rotating Code Cache)             |
@@ -111,14 +111,14 @@ Fireball の実行コアは、以下の 6 つの物理メカニズムによっ�
   4. **`control_frame` 専用領域**: `block`/`loop`/`if` の入れ子を管理する（16バイト固定サイズ）。オペランドスタックとは同居しない（ADR-INTERP-03、`{ControlFrame_Layout}`）。
 - **レジスタ規約**: `R0: ctx`（`execution_context` 構造体ポインタ）、`R1: sp`（`OperandStack` スタックポインタ）、`R2: local_base`（カレント `call_frame` のローカル変数配列先頭）、`R3: tos`（最上位オペランド値）が全ハンドラおよびJITトレースへ渡され、CPS 第1〜第4引数（`ctx`, `sp`, `local_base`, `tos`）として直接引き継がれる。基本ブロック末尾で `tos, nos, nnos` をスタック（`[R1, #offset]`）にフラッシュし、コンテキスト `R0` の `ip`（+0x00）および `sp_offset`（+0x0C）を書き戻す。 `{ContextPointerRegister}` `{JIT_RegisterMapping}`
 
-### 3.2 Pillar 2: 3段直接 JIT 検索パイプライン (3-Stage Direct JIT Lookup Pipeline)
+### 3.2 Pillar 2: 4段直接 JIT 検索パイプライン (4-Stage Direct JIT Lookup Pipeline)
 <!-- traceability: {SimpleJITArchitecture} {JIT_MultiBuffer_Cache} {FlatViewNarrowing} {META_FlatMapIndexed} {META_BinarySearch} {DirectMappedJIT16} -->
 - **Stage 1 (カードマーキング表: `bit_view<2>`) [$O(1)$]**: バイトコード位置に対し `card_idx = bytecode_offset >> FB_CONF_JIT_CARD_SHIFT`（`card_shift = 3`、8バイト単位）で 2-bit 状態表を参照し、`COMPILED` でなければ即座にインタープリタ継続（Fast Exit）。
-- **Stage 1.5 (Direct-Mapped 4-bit Folding XOR キャッシュ: 16 entries) [$O(1)$]**: カードマーク済みの場合は 16 エントリのダイレクトマップキャッシュ（`{DirectMappedJIT16}`）を VPN/PC の Folding XOR で参照し、ヒット時は即座にトレース実行アドレスを返却して探索を終了。
-- **Stage 2 & 3 (基数二分探索木索引: `radix_binary_tree_view`) [$O(1) + O(\log n)$]**:
+- **Stage 2 (Direct-Mapped 4-bit Folding XOR キャッシュ: 16 entries) [$O(1)$]**: カードマーク済みの場合は 16 エントリのダイレクトマップキャッシュ（`{DirectMappedJIT16}`）を `UnifiedPC` の Folding XOR で参照し、ヒット時は即座にトレース実行アドレスを返却して探索を終了。
+- **Stage 3 & 4 (基数二分探索木索引: `radix_binary_tree_view`) [$O(1) + O(\log n)$]**:
   - キャッシュミスの際、関数間衝突を防ぐ `UnifiedPC`（`(func_index << 16) | bytecode_offset`）に対し、最下位ビットの変動を上位に分散させる `radix_key = bswap32(pc)` を算出。
-  - **Stage 2 (Radix Table) [$O(1)$]**: 基数粗索引テーブルを参照し、有界区間 `[first, last]` を $O(1)$ で特定。
-  - **Stage 3 (有界二分探索) [$O(\log n)$]**: 狭められたソート済みエントリ区間に対してのみ二分探索を実行し、ネイティブ実行アドレスを特定。 `{FlatViewNarrowing}` `{META_BinarySearch}`
+  - **Stage 3 (Radix Table) [$O(1)$]**: 基数粗索引テーブルを参照し、有界区間 `[first, last]` を $O(1)$ で特定。
+  - **Stage 4 (有界二分探索) [$O(\log n)$]**: 狭められたソート済みエントリ区間に対してのみ二分探索を実行し、ネイティブ実行アドレスを特定。 `{FlatViewNarrowing}` `{META_BinarySearch}`
 
 ### 3.3 Pillar 3: 3面世代交代回転コードキャッシュ (3-Bank Generational Rotating Code Cache)
 <!-- traceability: {JIT_MultiBuffer_Cache} {JIT_OldestOnly_Promote} {SimpleJITArchitecture} {JIT_ReverseCompilationOrder} -->
@@ -140,7 +140,7 @@ Fireball の実行コアは、以下の 6 つの物理メカニズムによっ�
 
 ### 3.5 Pillar 5: 折りたたみXOR TLB ＆ 平坦ページ表 (Folding XOR TLB & FlatMap Page Table)
 <!-- traceability: {FastAddressCheck} {META_RestrictedPhysicalAccess} {LowLatencyLookup} {UnifiedAccessModel} {ADR_PageGranularPermissionIsolation} -->
-- **Fast-path (Bit 31 = 0)**: ゲストRAMアクセス。ベースポインタ加算と単一のサイズ比較命令（`CMP addr, mem_size`、マスクなし）による高速変換・境界保護。
+- **Fast-path (Bit 31 = 0)**: ゲストRAMアクセス。ベースポインタ加算と、開始アドレスおよびアクセス末尾（`addr + width - 1`）を `mem_size` と比較する境界保護（1バイトアクセスは単一比較、複数バイトアクセスは加算後の比較を追加。マスクなし）による高速変換。
 - **vMMIO-path (Bit 31 = 1)**: VPN（20 bits）に対し 4-bit Folding XOR を計算し、16エントリ TLB を直接参照。ミス時は `flat_map_view` を二分探索。 `{FastAddressCheck}` `{LowLatencyLookup}`
 - **unmap によるハードウェア/仮想化境界遮断**: アクセス権限のない領域（他タスク所有SHM、FLIGHT中、未登録）は仮想アドレス空間から物理的・論理的に unmap される。PTE に `owner_id` フィールドを持たせず、未登録ページフォルト（`TRAP_UNREGISTERED_PAGE`）により最速かつ確実に遮断する。 `{UnifiedAccessModel}` `{ADR_PageGranularPermissionIsolation}`
 

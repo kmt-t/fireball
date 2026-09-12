@@ -24,6 +24,8 @@ FB_CONF_MAX_IMPORTS = 32
 FB_CONF_MAX_WASM_PAGES = 16  # System physical budget limit for linear memory pages (64KB each)
 FB_CONF_WASM_PAGE_SIZE = 65536
 
+BACKS = ["components/tier2_runtime/runtime_loader.md"]
+
 
 class WasmParseError(Exception):
     """Raised when binary format, LEB128 width, or stream boundary is violated."""
@@ -237,7 +239,10 @@ class BinaryStream:
         return result & 0xFFFFFFFFFFFFFFFF
 
     def read_string(self) -> str:
-        """Decodes UTF-8 string with LEB128 length prefix without heap copy."""
+        """Decode a UTF-8 string; the concept model materializes ``str`` for comparison.
+
+        The physical C++ implementation keeps the corresponding ROM span as a view.
+        """
         length = self.read_leb128_u32()
         raw_bytes = self.read_bytes(length)
         try:
@@ -404,7 +409,7 @@ class GlobalAccessor:
 
 
 def fnv1a_32(data: str | bytes) -> int:
-    """FNV-1a 32-bit hash for fast zero-copy symbol lookup."""
+    """Compute the FNV-1a 32-bit key used for bounded symbol lookup."""
     if isinstance(data, str):
         raw = data.encode("utf-8")
     else:
@@ -474,6 +479,12 @@ class RadixBinaryTreeView:
         if first >= last:
             return None
         return self.map_view.slice(first, last).find(key)
+
+    def find_all(self, key: int) -> list[object]:
+        """Return every value for a key, preserving hash-collision candidates."""
+        first = bisect.bisect_left(self.keys, key)
+        last = bisect.bisect_right(self.keys, key)
+        return self.values[first:last]
 
     def find_interval(self, offset: int) -> object | None:
         """Range lookup for interval keys [start, end) stored as DecodedEntity."""
@@ -569,33 +580,33 @@ class ModuleView:
 
     def lookup_export(self, name: str) -> ExportEntry | None:
         """
-        Hash + RadixBinaryTreeView symbol lookup with zero-copy string verification in O(k).
+        Hash + RadixBinaryTreeView lookup with bounded candidate verification.
         `{META_AccessDictionary}` `{META_BinarySearch}`
         """
         if self.export_tree is None:
             return None
         h = fnv1a_32(name)
-        candidate = self.export_tree.find(h)
-        if candidate is not None and candidate.name == name:
-            return candidate
+        for candidate in self.export_tree.find_all(h):
+            if isinstance(candidate, ExportEntry) and candidate.name == name:
+                return candidate
         return None
 
     def find_import(self, module_name: str, field_name: str) -> ImportEntry | None:
-        """Hash + RadixBinaryTreeView import table lookup in O(k)."""
+        """Hash + RadixBinaryTreeView import lookup with bounded candidate verification."""
         if self.import_tree is None:
             return None
         h = fnv1a_32(f"{module_name}::{field_name}")
-        candidate = self.import_tree.find(h)
-        if (
-            candidate is not None
-            and candidate.module_name == module_name
-            and candidate.field_name == field_name
-        ):
-            return candidate
+        for candidate in self.import_tree.find_all(h):
+            if (
+                isinstance(candidate, ImportEntry)
+                and candidate.module_name == module_name
+                and candidate.field_name == field_name
+            ):
+                return candidate
         return None
 
     def lookup_by_file_offset(self, file_offset: int) -> DecodedEntity | None:
-        """Looks up a decoded entity containing the given file byte offset using RadixBinaryTreeView in O(k)."""
+        """Looks up a decoded entity containing the given file byte offset."""
         if self.entity_offset_tree is None:
             return None
         return self.entity_offset_tree.find_interval(file_offset)
@@ -671,6 +682,8 @@ class WasmLoader:
     ):
         self.allocator = allocator or BumpAllocator()
         self.registry: dict[str, ModuleView] = {}
+        self._load_order: list[str] = []
+        self._savepoints: dict[str, int] = {}
         self.max_modules = max_modules
         self.max_wasm_pages = max_wasm_pages
 
@@ -689,6 +702,8 @@ class WasmLoader:
         try:
             view = self._parse_and_verify(module_name, wasm_binary)
             self.registry[module_name] = view
+            self._load_order.append(module_name)
+            self._savepoints[module_name] = save_point
             return view
         except Exception:
             # Transactional rollback of any scratch allocations
@@ -698,6 +713,8 @@ class WasmLoader:
     def _parse_and_verify(
         self, module_name: str, wasm_binary: bytes | bytearray | memoryview
     ) -> ModuleView:
+        # Reserve metadata so rollback tests exercise a real allocator mutation.
+        self.allocator.allocate(64, alignment=8)
         stream = BinaryStream(wasm_binary)
         # ----------------------------------------------------------------------
         # V1: Magic Number Check (\0asm -> 0x00, 0x61, 0x73, 0x6D)
@@ -950,6 +967,10 @@ class WasmLoader:
         """
         if module.module_name in self.registry:
             del self.registry[module.module_name]
+            if self._load_order and self._load_order[-1] == module.module_name:
+                save_point = self._savepoints.pop(module.module_name)
+                self.allocator.restore(save_point)
+                self._load_order.pop()
             return True
         return False
 
@@ -1177,6 +1198,7 @@ def test_wasm_loader_lifecycle_and_verification() -> None:
     app_buf.append(SectionID.IMPORT)
     app_buf.extend(_encode_leb128_u32(len(app_imp)))
     app_buf.extend(app_imp)
+    app_watermark = loader.allocator.offset
     app_view = loader.prepare("app_module", bytes(app_buf))
     assert app_view.is_ready is False  # Not ready until imports resolved
     assert loader.resolve_imports(app_view) is True
@@ -1185,6 +1207,7 @@ def test_wasm_loader_lifecycle_and_verification() -> None:
     # 11. Unload
     assert loader.unload(app_view) is True
     assert loader.lookup("app_module") is None
+    assert loader.allocator.offset == app_watermark
     print("[PASS] All WASM Loader concept tests passed successfully.")
 
 
@@ -1192,7 +1215,7 @@ def test_wasm_loader_radix_binary_tree_offset_indexing() -> None:
     """
     Verifies TEST-LOAD-40 ~ TEST-LOAD-44:
     - Registration of decoded entities in DecodedEntityRegistry
-    - O(k) RadixBinaryTree file offset containment search
+    - RadixBinaryTree file offset containment search over a bounded interval
     - Reverse-lookup of FunctionAccessor, GlobalAccessor, SectionView by file byte offset
     - Boundary and invalid offset rejection
     """
@@ -1232,10 +1255,10 @@ def test_wasm_loader_radix_binary_tree_offset_indexing() -> None:
 def test_wasm_loader_hash_radix_binary_tree_view_symbol_lookup() -> None:
     """
     Verifies TEST-LOAD-13, TEST-LOAD-21, TEST-LOAD-45 ~ TEST-LOAD-47:
-    - Hash + RadixBinaryTreeView symbol lookup (O(k))
+    - Hash + RadixBinaryTreeView symbol lookup with bounded candidate verification
     - Hash + RadixBinaryTreeView import table lookup and multi-module linking
     - Hash collision resistance (string verification)
-    - Non-existent symbol rejection without linear scanning
+    - Non-existent symbol rejection without scanning the complete table
     """
     loader = WasmLoader()
     wasm_bytes = _build_test_wasm_binary(export_names=["alpha", "beta", "gamma", "compute"])
@@ -1251,6 +1274,19 @@ def test_wasm_loader_hash_radix_binary_tree_view_symbol_lookup() -> None:
     # TEST-LOAD-47: Fast non-existent symbol rejection
     assert view.lookup_export("non_existent_func") is None
     assert view.lookup_export("") is None
+
+    # TEST-LOAD-46 / GOTCHA-LOAD-01: two index entries with one hash must be
+    # disambiguated by the original symbol name rather than the hash alone.
+    collision_view = ModuleView("collision_mod", b"\x00")
+    wrong = ExportEntry("other", ExternalKind.FUNCTION, 1)
+    target = ExportEntry("target", ExternalKind.FUNCTION, 2)
+    target_hash = fnv1a_32("target")
+    collision_view.exports_dict = [wrong, target]
+    collision_view.export_tree = RadixBinaryTreeView(
+        [target_hash, target_hash], collision_view.exports_dict
+    )
+    assert collision_view.lookup_export("target") is target
+    assert collision_view.lookup_export("other") is None
     # TEST-LOAD-45 & TEST-LOAD-21: Multi-module import resolution via Hash + RadixBinaryTreeView
     app_buf = bytearray()
     app_buf.extend(b"\x00asm\x01\x00\x00\x00")

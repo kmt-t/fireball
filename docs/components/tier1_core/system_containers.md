@@ -261,6 +261,7 @@ struct mutable_flat_map_storage {
 # コンテナ語彙の概念コード (FlatViewNarrowing / PackedBitView)
 
 import bisect
+from collections.abc import Sequence
 
 ALLOWED_BITS = (1, 2, 4)
 
@@ -333,23 +334,26 @@ class _SortedWindow:
 
 
 class FlatMapView(_SortedWindow):
-    """flat_map_view<Key, Value>: sorted keys, narrow-then-search, returns a value."""
+    """flat_map_view<Key, Value>: sorted pairs, narrow-then-search, returns a value."""
 
-    def __init__(self, keys, values, first=0, last=None):
-        super().__init__(keys, first, last)
-        self.values = values
+    def __init__(self, entries: Sequence[tuple], first=0, last=None):
+        self.entries = entries
+        self.first = first
+        self.last = len(entries) if last is None else last
 
     def slice(self, first, last):
         assert self.first <= first <= last <= self.last, "a view may only ever shrink"
-        return FlatMapView(self.keys, self.values, first, last)
+        return FlatMapView(self.entries, first, last)
 
     def narrow(self, lo, hi):
-        return FlatMapView(self.keys, self.values, *self._bounds(lo, hi))
+        first = bisect.bisect_left(self.entries, lo, self.first, self.last, key=lambda e: e[0])
+        last = bisect.bisect_right(self.entries, hi, self.first, self.last, key=lambda e: e[0])
+        return FlatMapView(self.entries, first, last)
 
     def find(self, key):
         """Binary search inside the current window only."""
-        i = self._locate(key)
-        return None if i is None else self.values[i]
+        i = bisect.bisect_left(self.entries, key, self.first, self.last, key=lambda e: e[0])
+        return None if i >= self.last or self.entries[i][0] != key else self.entries[i][1]
 
 
 class FlatSetView(_SortedWindow):
@@ -385,19 +389,16 @@ class RadixBinaryTreeView:
     def __init__(
         self,
         keys: Sequence[int],
-        values,
+        values: Sequence,
         radix_table: Sequence[int],
         radix_shift: int,
-        key_transform=None,
     ):
         self.map_view = FlatMapView(list(zip(keys, values, strict=False)))
         self.radix_table = radix_table  # pure scalar offsets array [0, 3, 6, ...]
         self.radix_shift = radix_shift
-        self.key_transform = key_transform
 
     def find(self, key: int):
-        rk = self.key_transform(key) if self.key_transform is not None else key
-        prefix = rk >> self.radix_shift
+        prefix = key >> self.radix_shift
         if prefix < 0 or prefix + 1 >= len(self.radix_table):
             return None
         first = self.radix_table[prefix]
@@ -426,7 +427,7 @@ def lookup_jit_entry(
     card_idx = pc >> card_shift
     if card_idx >= card_table.size() or card_table.at(card_idx) != 3:  # 3 = COMPILED
         return None
-    if hasattr(view, "radix_table"):
+    if isinstance(view, RadixBinaryTreeView):
         return view.find(pc)
     group_idx = pc >> group_shift
     if group_idx < 0 or group_idx + 1 >= len(entry_group_bounds):
@@ -438,7 +439,7 @@ def lookup_jit_entry(
     return view.slice(first, last).find(pc)
 
 
-def card_marking_table(storage, card_count: int) -> BitView:
+def card_marking_table(storage: bytearray, card_count: int) -> BitView:
     """The 2-bit per-card state table: 4 cards per byte instead of one.
 
     Note this returns a BitView, not a FlatMapView -- card marking is answered
@@ -447,7 +448,7 @@ def card_marking_table(storage, card_count: int) -> BitView:
     return BitView(storage, bits=2, origin=0, count=card_count)
 
 
-def breakpoint_set(sorted_pcs) -> FlatSetView:
+def breakpoint_set(sorted_pcs: Sequence[int]) -> FlatSetView:
     """Debugger breakpoints: the interpreter asks 'is this PC a breakpoint?',
     which is membership, not a lookup."""
     return FlatSetView(sorted_pcs)

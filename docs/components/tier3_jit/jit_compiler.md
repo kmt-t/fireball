@@ -88,6 +88,8 @@ WASM バイトコードにおける制御フロー命令は、その内部動作
 <!-- traceability: {JIT_CopyAndPatch} {JIT_ZeroCompileCostTheorem} {JIT_RegisterMapping} {PositionIndependentCode} -->
 JIT コンパイラがフォールバックせずにネイティブバイナリとしてインライン展開・生成する命令セット（全 54 命令）の仕様台帳を以下に定める。内訳は制御・スタック 5、構文デリミタ 4、定数ロード 2、変数アクセス 6、32bit 算術・論理 17、32bit 比較 11、リニアメモリアクセス 9 の合計 `5 + 4 + 2 + 6 + 17 + 11 + 9 = 54` 命令である。
 
+この54命令の語彙・展開形式は本表と `jit_copy_patch_concept.py` の全件カバレッジテストで検証し、`jit_cache_model.py` は本表の命令生成そのものではなく、JITキャッシュのW^X・ライフサイクル・チェイニング不変条件を検証する。
+
 | カテゴリ | WASM Opcode (Hex) | 命令名 | JIT ネイティブ展開形式 (Thumb-2) | スタック/レジスタ効果 | 生成バイト数 |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | **制御・スタック** | `0x00` | `unreachable` | `bkpt #0x00` | トラップ | 2 Bytes |
@@ -104,8 +106,8 @@ JIT コンパイラがフォールバックせずにネイティブバイナリ�
 | **変数アクセス** | `0x20` | `local.get` | `ldr r3, [r2, #offset]` | $\to$ R3 (TOS) | 2 Bytes |
 | | `0x21` | `local.set` | `str r3, [r2, #offset]` | R3 $\to$ Local | 2 Bytes |
 | | `0x22` | `local.tee` | `str r3, [r2, #offset]` | R3 $\to$ Local (R3維持) | 2 Bytes |
-| | `0x23` | `global.get`| `ldr.w r12, [r1, #0x28]; ldr.w r3, [r12, #offset]` | $\to$ R3 (TOS) | 8 Bytes |
-| | `0x24` | `global.set`| `ldr.w r12, [r1, #0x28]; str.w r3, [r12, #offset]` | R3 $\to$ Global | 8 Bytes |
+| | `0x23` | `global.get`| `ldr.w r12, [r0, #0x30]; ldr.w r3, [r12, #offset]` | $\to$ R3 (TOS) | 8 Bytes |
+| | `0x24` | `global.set`| `ldr.w r12, [r0, #0x30]; str.w r3, [r12, #offset]` | R3 $\to$ Global | 8 Bytes |
 | | `0x1B` | `select` | `cmp r3, #0; it ne; movne r4, r5; mov r3, r4` | 3値選択 $\to$ R3 | 8 Bytes |
 | **32bit 算術・論理** | `0x6A` | `i32.add` | `adds r3, r4, r3` | R4 + R3 $\to$ R3 | 2 Bytes |
 | | `0x6B` | `i32.sub` | `subs r3, r4, r3` | R4 - R3 $\to$ R3 | 2 Bytes |
@@ -135,15 +137,15 @@ JIT コンパイラがフォールバックせずにネイティブバイナリ�
 | | `0x4D` | `i32.le_u` | `cmp r4, r3; it ls; movls r3, #1; it hi; movhi r3, #0` | R4 <= R3 (符号無) | 10 Bytes |
 | | `0x4E` | `i32.ge_s` | `cmp r4, r3; it ge; movge r3, #1; it lt; movlt r3, #0` | R4 >= R3 (符号付) | 10 Bytes |
 | | `0x4F` | `i32.ge_u` | `cmp r4, r3; it hs; movhs r3, #1; it lo; movlo r3, #0` | R4 >= R3 (符号無) | 10 Bytes |
-| **リニアメモリアクセス** | `0x28` | `i32.load` | `cmp r3, r9; bhs.w <trap>; ldr.w r3, [r8, r3]` | 32bit ロード (`GOTCHA-JITC-04`) | 10 Bytes |
+| **リニアメモリアクセス** | `0x28` | `i32.load` | `cmp r3, r9; bhs.w <trap>; add.w r12, r3, #3; cmp r12, r9; bhs.w <trap>; ldr.w r3, [r8, r3]` | 32bit ロード (`GOTCHA-JITC-04`) | 18 Bytes |
 | | `0x2C` | `i32.load8_s` | `cmp r3, r9; bhs.w <trap>; ldrsb.w r3, [r8, r3]`| 8bit 符号付ロード | 10 Bytes |
 | | `0x2D` | `i32.load8_u` | `cmp r3, r9; bhs.w <trap>; ldrb.w r3, [r8, r3]` | 8bit 符号無ロード | 10 Bytes |
-| | `0x2E` | `i32.load16_s`| `cmp r3, r9; bhs.w <trap>; ldrsh.w r3, [r8, r3]`| 16bit 符号付ロード | 10 Bytes |
-| | `0x2F` | `i32.load16_u`| `cmp r3, r9; bhs.w <trap>; ldrh.w r3, [r8, r3]` | 16bit 符号無ロード | 10 Bytes |
-| | `0x36` | `i32.store` | `cmp r4, r9; bhs.w <trap>; str.w r3, [r8, r4]` | 32bit ストア (`GOTCHA-JITC-04`) | 10 Bytes |
+| | `0x2E` | `i32.load16_s`| `cmp r3, r9; bhs.w <trap>; add.w r12, r3, #1; cmp r12, r9; bhs.w <trap>; ldrsh.w r3, [r8, r3]`| 16bit 符号付ロード | 18 Bytes |
+| | `0x2F` | `i32.load16_u`| `cmp r3, r9; bhs.w <trap>; add.w r12, r3, #1; cmp r12, r9; bhs.w <trap>; ldrh.w r3, [r8, r3]` | 16bit 符号無ロード | 18 Bytes |
+| | `0x36` | `i32.store` | `cmp r4, r9; bhs.w <trap>; add.w r12, r4, #3; cmp r12, r9; bhs.w <trap>; str.w r3, [r8, r4]` | 32bit ストア (`GOTCHA-JITC-04`) | 18 Bytes |
 | | `0x3A` | `i32.store8` | `cmp r4, r9; bhs.w <trap>; strb.w r3, [r8, r4]` | 8bit ストア | 10 Bytes |
 | | `0x3B` | `i32.store16`| `cmp r4, r9; bhs.w <trap>; strh.w r3, [r8, r4]` | 16bit ストア | 10 Bytes |
-| | `0x3F` | `memory.size`| `ldr.w r3, [r1, #0x24]` | ページ数取得 | 4 Bytes |
+| | `0x3F` | `memory.size`| `ldr.w r3, [r0, #0x2C]; lsrs r3, r3, #16` | リニアメモリのページ数取得（バイト数を64KiB単位へ変換） | 8 Bytes |
 
 ##### 3.3.3 インタープリタ委譲命令台帳（Delegated Opcode Specification）
 <!-- traceability: {JIT_RuntimeAPI_Fallback} {Libgcc_Runtime_Helper} -->
@@ -174,7 +176,7 @@ JIT トレース内にインライン展開せず、トレース境界でイン�
 // コメントは「実機 ARM AAPCS レジスタ / 実機 RISC-V ABI レジスタ / x86-64 ホストシミュレータ __fastcall レジスタ」の対応を示す。
 // この4本は呼び出し境界でのみ使われ、jit_stencil_catalog.md のトレース本体内 assignable pool
 // (ARM R4-R6, R8-R11 / RISC-V s1-s7) とは物理レジスタが重ならない別の割り当てである。
-typedef int64_t (*opcode_handler_t)(
+typedef void (*opcode_handler_t)(
     execution_context* ctx,        // ARM R0 / RISC-V a0 / x86-64 RCX: 実行コンテキスト (60バイト 15フィールド)
     uint32_t*          sp,         // ARM R1 / RISC-V a1 / x86-64 RDX: オペランドスタックポインタ
     void*              local_base, // ARM R2 / RISC-V a2 / x86-64 R8:  ローカル変数配列基底ポインタ
@@ -259,12 +261,12 @@ JIT キャッシュ内に書き込まれる各トレースは、**先頭に 16 �
 5. **インタープリタ連携とハンドラ直接呼び出し (Low-Overhead Interop & Direct Handler Call)**:
    - JIT トレースとインタープリタの命令ハンドラ（`opcode_handler`）は完全に同一の CPS 4引数呼び出し規約（`R0: ctx, R1: sp, R2: local_base, R3: tos`）を共有する。
    - JIT トレースは直線的な算術・ローカル変数演算、構文デリミタ消去、および SP 即値巻き戻しを伴う多段分岐（`br`, `br_if`）をネイティブインライン展開する。
-   - コールフレーム生成や動的解決が必要な真の境界命令（`call`, `call_indirect`, `br_table`）やホストシステムコールに達した際は、直接インタープリタのハンドラテーブル（`handler_table[opcode]`）へ末尾ジャンプ（Tail Jump / `BX`）するか、戻り値 `next_ip` を返却してインタープリタへ即座にフォールバックする。
+   - コールフレーム生成や動的解決が必要な真の境界命令（`call`, `call_indirect`, `br_table`）やホストシステムコールに達した際は、直接インタープリタのハンドラテーブル（`handler_table[opcode]`）へ末尾ジャンプ（Tail Jump / `BX`）するか、`execution_context.ip`（`R0` の `+0x00`）を更新して `void` でインタープリタへ即座にフォールバックする。
    - レジスタ規約が完全一致しているためコンテキスト再構築コストはゼロであり、JIT の軽量性（Zero Compile Cost）と完全な制御フロー安全性を両立する。 `{JIT_RuntimeAPI_Fallback}` `{ADR_TosCacheAsymmetry}`
 
 #### JIT トレース検索 & 3面キャッシュ代謝オーケストレーション
 <!-- traceability: {JIT_MultiBuffer_Cache} {JIT_OldestOnly_Promote} -->
-3段直接 JIT 検索および 3面キャッシュローテーションの詳細は、ランタイム管理の正本である `{JIT_MultiBuffer_Cache}` を参照すること。コンパイラコアは生成されたネイティブトレースの登録と命令同期を `{JIT_MultiBuffer_Cache}` に委譲する。
+4段直接 JIT 検索および 3面キャッシュローテーションの詳細は、ランタイム管理の正本である `{JIT_MultiBuffer_Cache}` を参照すること。コンパイラコアは生成されたネイティブトレースの登録と命令同期を `{JIT_MultiBuffer_Cache}` に委譲する。
 
 #### トレース・チェイニング（連鎖実行）と専用分岐ハンドラ分離
 <!-- traceability: {JIT_LazyChaining} -->
@@ -473,7 +475,7 @@ sequenceDiagram
 - **方策**:
     - `{PositionIndependentCode}`: 生成コードを位置独立とし、配置場所の自由度を確保。
     - `Cache Capacity Check`: コード生成時にキャッシュ溢れを厳密にチェックし、溢れた場合は 3面リングローテーションにより Oldest バンクを破棄して再利用する。これはキャッシュ容量管理であり、`{MemoryBoundaryCheck}`（ゲストメモリアクセスの隔離）とは別の関心事である。 `{SimpleJITArchitecture}`
-    - `{MemoryBoundaryCheck}`: 生成コードに埋め込むゲストメモリアクセスの境界チェック。`FastAddressCheck` のサイズ比較命令（`CMP addr, mem_size; BHS.W <trap>`、マスクは使わない）により、ゲストリニアメモリ範囲外へのロード/ストアを検出した時点でインタープリタへのフォールバックへトラップする（境界外アドレスを黙って折り畳んで継続することはない）。 `{MemoryBoundaryCheck}` `{FastAddressCheck}`
+    - `{MemoryBoundaryCheck}`: 生成コードに埋め込むゲストメモリアクセスの境界チェック。`FastAddressCheck` はまず `CMP addr, mem_size; BHS.W <trap>` で開始アドレスを検査し、1バイトを超えるアクセスでは `addr + width - 1` を `mem_size` と比較して末尾境界も検査する（マスクは使わない）。境界外へのロード/ストアはインタープリタへトラップし、アドレスを黙って折り畳んで継続しない。 `{MemoryBoundaryCheck}` `{FastAddressCheck}`
     - `MPU W^X 保護`: Cortex-M33 PMSAv8 MPU を用い、JIT パッチ書き込み時は `RW+XN`、ネイティブ実行時は `RO+X` に切り替え、`__DSB(); __ISB();` メモリ・命令同期バリアを発行する。書き込みと実行の同時許可（RWX）を物理的に排除する。`formal/jit_cache_model.py` により変異検査付き形式モデルとして検証。
 
 ## 7. 形式検証・テスト仕様との対応

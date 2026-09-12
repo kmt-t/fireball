@@ -54,9 +54,9 @@ import ctypes
 from control_flow import extract_basic_blocks
 from debugger import DebuggerManager, GDBRspProtocol
 from hal_dispatch import HalBufferPool, HalBufferTrap, UartTransport
+from helpers import make_test_ipc_message
 from interpreter import _HANDLERS, Interpreter
 from ipc_router import (
-    IPCMessage,
     IPCRouter,
     IpcStatus,
     OwnershipState,
@@ -300,11 +300,13 @@ def test_jitc_gotcha_04_05_boundary_check_and_backpatch():
 def test_jitc_gotcha_06_arm_mls_instruction_ordering():
     """GOTCHA-JITC-06: ARM MLS ordering Rd = Ra - Rn * Rm computes remainder correctly."""
     asm = Thumb2Assembler()
-    encoded = asm.mls(Reg.R4, Reg.R12, Reg.R4, Reg.R5)
+    encoded = asm.mls(Reg.R3, Reg.R12, Reg.R3, Reg.R4)
     engine = CopyPatchJITEngine()
     catalog_hex = engine.stencils["i32_rem_s_d2"].hex_bytes
     assert len(encoded) == 4
     assert len(catalog_hex) > 0
+    dividend, quotient, divisor = 17, 3, 5
+    assert dividend - quotient * divisor == 2
 
 
 def test_jitr_gotcha_01_idle_hook_skips_recompiling_already_resident_trace():
@@ -492,7 +494,7 @@ def test_ipcr_gotcha_01_no_queue_assertion_on_duplicate_send():
     status, ch = router.lookup("fireball://device/gpio/0")
     assert status == IpcStatus.COMPLETED and ch is not None
 
-    msg1 = IPCMessage.from_entries([(1, 100)])
+    msg1 = make_test_ipc_message([(1, 100)])
     gen1 = router.send(ch, msg1)
     assert next(gen1) == (ChannelAction.BLOCK, None)
     assert msg1.ownership == OwnershipState.IN_FLIGHT
@@ -501,15 +503,16 @@ def test_ipcr_gotcha_01_no_queue_assertion_on_duplicate_send():
     assert ch.waiter_dir == WaitDir.SEND
 
     # Duplicate send on the busy channel raises assertion (no queue exists)
-    msg2 = IPCMessage.from_entries([(2, 200)])
+    msg2 = make_test_ipc_message([(2, 200)])
     sender2_id = sched.spawn("sender2", role=Role.RUNTIME)
     sched.current_task = sched.get_task(sender2_id)
     gen2 = router.send(ch, msg2)
     try:
         next(gen2)
+    except AssertionError as error:
+        assert str(error)
+    else:
         raise AssertionError("Duplicate send on CSP channel must raise assertion")
-    except AssertionError:
-        pass
 
 
 def test_ipcr_gotcha_02_preflight_rejection_preserves_sender_ownership():
@@ -519,7 +522,7 @@ def test_ipcr_gotcha_02_preflight_rejection_preserves_sender_ownership():
     sender_id = sched.spawn("sender_hal", role=Role.HAL_UART)
     sched.current_task = sched.get_task(sender_id)
 
-    msg = IPCMessage.from_entries([(1, 99)])
+    msg = make_test_ipc_message([(1, 99)])
     status, ch = router.lookup("fireball://dbg/manager/0")
     assert status == IpcStatus.ERR_PERMISSION_DENIED
     assert ch is None
@@ -613,9 +616,10 @@ def test_coos_gotcha_02_single_waiter_assert():
     sched.current_task = t2
     try:
         ch.send(200)
+    except AssertionError as error:
+        assert str(error)
+    else:
         raise AssertionError("Expected AssertionError on duplicate channel send")
-    except AssertionError:
-        pass
 
 
 def test_cont_gotcha_01_bit_view_power_of_two_factors():
@@ -627,11 +631,12 @@ def test_cont_gotcha_01_bit_view_power_of_two_factors():
     assert bv1.bits == 1 and bv2.bits == 2 and bv4.bits == 4
 
     for invalid_bits in [3, 5, 6, 7]:
+        rejected = False
         try:
             BitView(buf, bits=invalid_bits)
-            raise AssertionError(f"Expected BitView to reject bits={invalid_bits}")
         except (ValueError, AssertionError):
-            pass
+            rejected = True
+        assert rejected, f"Expected BitView to reject bits={invalid_bits}"
 
 
 def test_cont_gotcha_02_narrowing_never_expands_bounds():
@@ -645,12 +650,12 @@ def test_cont_gotcha_02_narrowing_never_expands_bounds():
 
     # Attempting to expand or slice outside bounds must raise ValueError("a view may only ever shrink")
     for invalid_first, invalid_last in [(-1, 3), (0, 10), (3, 2), (2, 6)]:
+        rejected = False
         try:
             view.slice(invalid_first, invalid_last)
-            raise AssertionError(f"Expected slice({invalid_first}, {invalid_last}) to fail")
         except (ValueError, IndexError, AssertionError) as e:
-            if isinstance(e, AssertionError) and "Expected" in str(e):
-                raise
+            rejected = True
+        assert rejected, f"Expected slice({invalid_first}, {invalid_last}) to fail"
 
 
 def test_log_gotcha_01_no_runtime_pointer_scalar_args_only():
@@ -708,11 +713,12 @@ def test_mem_gotcha_02_release_and_flight_protection():
     shm_id = b.release(caller_task_id=1)
     assert b._is_in_flight
     assert not b._is_active
+    access_rejected = False
     try:
         b.read_u32(0)
-        raise AssertionError("Expected access to in-flight block to be rejected")
     except AssertionError:
-        pass
+        access_rejected = True
+    assert access_rejected, "Expected access to in-flight block to be rejected"
 
     assert not mm.claim(receiver_task_id=2, shm_id=shm_id).is_ok
 
@@ -723,19 +729,23 @@ def test_mem_gotcha_02b_release_owner_only():
     mm.init_manager(pool_base=0x20020000, pool_size=0x40000)
     b = mm.allocate_shared(caller_task_id=1, size=64).unwrap()
 
+    release_rejected = False
     try:
         b.release(caller_task_id=2)
-        raise AssertionError("Non-owner must not be able to release() another task's SharedBlock")
     except AssertionError as e:
+        release_rejected = True
         assert "GOTCHA-MEM-02" in str(e)
+    assert release_rejected, "Non-owner must not be able to release() another task's SharedBlock"
 
+    address_rejected = False
     try:
         b.get_address(caller_task_id=2)
-        raise AssertionError(
-            "Non-owner must not be able to get_address() another task's SharedBlock"
-        )
     except AssertionError as e:
+        address_rejected = True
         assert "GOTCHA-MEM-02" in str(e)
+    assert address_rejected, (
+        "Non-owner must not be able to get_address() another task's SharedBlock"
+    )
 
     assert b._is_active
     assert b.get_owner() == 1

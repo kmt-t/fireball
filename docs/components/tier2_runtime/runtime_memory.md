@@ -1,6 +1,6 @@
 # メモリマネージャ 実装（system_allocator / shm_allocator） コンポーネント設計書 {VERIFY_FORMAL} {VERIFY_LLM}
 <!-- evidence:
-     formal: ../tier3_jit/formal/jit_cache_model.py
+     formal: formal/runtime_memory_model.py
      test: tests/runtime_memory_test_spec.md
      concept: concepts/runtime_memory_concept.py
 -->
@@ -52,7 +52,7 @@ flowchart TD
   - `{META_BumpAllocator}`: 固定長パーティションおよび型付きプールスロットによる断片化なき高速貸与。
   - `{Runtime_BumpAllocator}`: 1ランタイム1ゲスト（`{OneRuntimeOneGuest}`）の実行モデルにおいて、各ランタイムに対して固定長 RAM パーティション（データアリーナ: `RW + XN`）を一括貸与する。ランタイム内部のシステムコンテナストレージ確保はすべてこのアリーナから順次切り出され、アンロード時は個別オブジェクトの破棄なしに $O(1)$ でアリーナ全体が回収・リセットされる。なお、JIT ネイティブコードキャッシュ（3-Bank）は MPU の `W^X`（ライト・実行権限排他）制御が適用された専用の実行可能セクションから専用の JIT コードアロケータによって確保され、データ用バンプアロケータ（RAM/XN）とはハードウェア保護ドメインが厳格に分離される。
   - `{System_Allocator}`: システム層（カーネル、vMMIO、IPC ルータ等）のシステムコンテナストレージ向けに、固定長システムヒープアリーナを dlmalloc（`mspace`）により運用する。システム稼働中の動的な登録・破棄に柔軟対応し、$O(\log n)$ の有界レイテンシで個別解放と断片化の自動合体を提供する。
-  - `{Shm_Allocator}`: 共有メモリ領域（MPU Region 6）を固定長アリーナとして dlmalloc（`mspace`）により運用し、可変長 `allocate_shared(size)` 要求に即座に応じる。RAII 解放時の自動合体により、長時間のゼロコピー IPC 通信下でも断片化を最小化する。
+  - `{Shm_Allocator}`: 共有メモリ領域（MPU Region 6）を固定長アリーナとして dlmalloc（`mspace`）により運用し、`allocate_shared(caller_task_id, size)` 要求に即座に応じる。RAII 解放時の自動合体により、長時間のゼロコピー IPC 通信下でも断片化を最小化する。
   - `{WasmPageAlignment}`: ゲスト RAM（Region 3）を WASM ページサイズである **64KB アライメント**（`0x10000` 境界）に配置し、単一の比較命令による $O(1)$ 高速境界検査（`FastAddressCheck`）と PMSAv8 リージョン境界を完全一致させる。
 
 ### 5.2 メモリ制約と方策
@@ -91,7 +91,7 @@ Cortex-M33 MPU および vMMIO のハードウェア保護機構において、�
 
 1. **他タスクとのページ混在の禁止**:
    - 異なるタスクに属する共有メモリスロットを同一 4KB 物理ページ内に共存（相乗り）させることは厳格に禁止される。
-   - `allocate_shared(caller_task_id, size)` は、`shm_allocator`（dlmalloc `create_mspace_with_base`）を介して可変長バッファを切り出す際、既に `caller_task_id` が所有し十分な空き容量のある 4KB 物理ページ内の領域から割り当てる。存在しない場合は必ず新規の 4KB 物理ページを `caller_task_id` 専用として払い出し、そのページ境界内でメモリを切り出す。これにより、dlmalloc による可変長アロケーションの柔軟性と、4KB ページ単位の unmap ハードウェア保護（`{PageGranularPermissionIsolation}`）を両立させる。 `{Shm_Allocator}`
+   - `allocate_shared(caller_task_id, size)` は、`size` が 1〜4KB の範囲であることを確認し、1ブロックにつき新規の 4KB 物理ページを `caller_task_id` 専用として払い出す。そのページ境界内でのみメモリを切り出し、4KB を超える要求は拒否する。同一所有者のブロックもページを共有しないため、ページ単位の Revoke/Grant で所有権が分裂しない。 `{Shm_Allocator}` `{PageGranularPermissionIsolation}`
 2. **ページ単位の所有権移譲**:
    - IPC 転送時、所有権の移譲（Revoke $\to$ Grant）はページ全体を単位として連動する。
    - ページ内の全スロットは常に同一の所有者（または移譲中アンマップ状態）であり、一部のスロットのみが別タスクへ移譲されてページ内で所有者が分裂する状態は生じない。
@@ -155,8 +155,9 @@ JIT コードキャッシュ（Region 4）は、実行可能（Execute）と書�
 ## 8. 形式検証・テスト仕様との対応
 
 ### 8.1 検証対象の不変条件
-- **ページ単位権限分離**: 4KB 物理ページ内に異種タスクのスロットが共存しないこと（`TEST-MEM-14`, `GOTCHA-MEM-01`）。専用の形式モデルは現時点で存在せず、[`runtime_memory_test_spec.md`](docs/components/tier2_runtime/tests/runtime_memory_test_spec.md) のテストケースのみで検証される。
-- **非所有者アクセストラップ**: 所有権未取得（未マッピング）スロットへのアクセスが `TRAP_UNREGISTERED_PAGE` で拒絶されること（`TEST-MEM-16`, `GOTCHA-MEM-02`）。専用の形式モデルは現時点で存在せず、テストケースのみで検証される。
+- **ページ単位権限分離**: 4KB 物理ページ内に異種タスクのスロットが共存しないこと（`TEST-MEM-14`, `GOTCHA-MEM-01`）。[`runtime_memory_model.py`](docs/components/tier2_runtime/formal/runtime_memory_model.py) の `page_never_mixes_owners` が反例のないことを検証する。
+- **非所有者アクセストラップ**: 所有権未取得（未マッピング）スロットへのアクセスが `TRAP_UNREGISTERED_PAGE` で拒絶されること（`TEST-MEM-16`, `GOTCHA-MEM-02`）。同モデルの `non_owner_access_traps` が不正アクセス状態への到達を禁止する。
+- **所有権転送完了性**: 転送中のページが所有者未確定のまま停留せず、新所有者へ到達すること。`ownership_transfer_completes` が `guards=False` で追加した転送喪失経路を反証する。
 - **W^X 不変条件**: JIT キャッシュ領域で `RWX` が同時に許可される状態が存在しないこと（[`jit_cache_model.py`](docs/components/tier3_jit/formal/jit_cache_model.py), `TEST-MEM-23`）。この形式モデルが証明する残り4命題（3面バンク回転・2ビットホットスポットFSM・遅延チェイニング）は [`jit_compiler.md`](docs/components/tier3_jit/jit_compiler.md)/[`jit_runtime.md`](docs/components/tier3_jit/jit_runtime.md) が対象であり、本コンポーネントの評価対象外である。
 
 ### 8.2 テスト仕様書との連携

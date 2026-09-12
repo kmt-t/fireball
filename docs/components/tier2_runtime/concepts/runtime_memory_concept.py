@@ -18,6 +18,8 @@ from enum import Enum, auto
 from types import TracebackType
 from typing import Generic, TypeVar
 
+BACKS = ["components/tier2_runtime/runtime_memory.md"]
+
 T = TypeVar("T")
 
 # -----------------------------------------------------------------------------
@@ -263,6 +265,7 @@ class PMSAv8MPU:
         self.dsb_count = 0
         self.isb_count = 0
         self.patch_in_progress = False
+        self.patch_count = 0
         self._setup_static_regions(pool_base)
 
     def _setup_static_regions(self, pool_base: int) -> None:
@@ -365,6 +368,11 @@ class PMSAv8MPU:
         self.dsb_count += 1
         self.isb_count += 1
         self.patch_in_progress = False
+
+    def patch_stencil(self) -> None:
+        """Record one instruction-stencil patch inside the active transaction."""
+        assert self.patch_in_progress, "Stencil patch requires an active JIT transaction"
+        self.patch_count += 1
 
     def assert_no_rwx(self) -> None:
         """Verify the strict invariant: No region is ever RW and X simultaneously."""
@@ -668,13 +676,16 @@ def test_mem_02_recovery_strategy_on_exhaustion() -> None:
 def test_mem_03_total_allocation_bound() -> None:
     """TEST-MEM-03: Total allocated bytes never exceeds FB_CONF_MEMORY_POOL_SIZE."""
     mm = MemoryManager()
-    pool_size = 256 * 1024
+    pool_size = FB_CONF_MEMORY_POOL_SIZE
     mm.init_manager(pool_base=0x20020000, pool_size=pool_size)
+    allocation_failed = False
     for i in range(1, 10):
         res = mm.acquire_task_heap(owner=i)
         assert mm.total_allocated_bytes <= pool_size
         if res.is_err:
+            allocation_failed = True
             break
+    assert allocation_failed, "The configured pool must reject an allocation at its boundary"
 
 
 def test_mem_04_owner_task_id_auto_set() -> None:
@@ -712,11 +723,13 @@ def test_mem_06_guest_ram_64kb_alignment() -> None:
     assert res.is_ok
     # Unaligned base must assert / reject
     unaligned_base = 0x20021000
+    alignment_rejected = False
     try:
         mm.init_manager(pool_base=unaligned_base, pool_size=FB_CONF_MEMORY_POOL_SIZE)
-        raise AssertionError("Unaligned pool_base must fail")
     except AssertionError as e:
+        alignment_rejected = True
         assert "64KB aligned" in str(e)
+    assert alignment_rejected, "Unaligned pool_base must fail"
 
 
 def test_mem_07_allocate_shared_registers_vmmio_pte() -> None:
@@ -776,19 +789,23 @@ def test_mem_gotcha_02_shared_block_release_owner_only() -> None:
     mm.init_manager(pool_base=0x20020000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
     sb = mm.allocate_shared(caller_task_id=1, size=1024).unwrap()
     # Rogue task 2 attempts to release task 1's block
+    release_rejected = False
     try:
         sb.release(caller_task_id=2)
-        raise AssertionError("Non-owner must not be able to release() another task's SharedBlock")
     except AssertionError as e:
+        release_rejected = True
         assert "GOTCHA-MEM-02" in str(e)
+    assert release_rejected, "Non-owner must not be able to release() another task's SharedBlock"
     # Rogue task 2 attempts to read task 1's block
+    address_rejected = False
     try:
         sb.get_address(caller_task_id=2)
-        raise AssertionError(
-            "Non-owner must not be able to get_address() another task's SharedBlock"
-        )
     except AssertionError as e:
+        address_rejected = True
         assert "GOTCHA-MEM-02" in str(e)
+    assert address_rejected, (
+        "Non-owner must not be able to get_address() another task's SharedBlock"
+    )
     # The block is still active and owned by task 1
     assert sb._is_active
     assert sb.get_owner() == 1
@@ -927,9 +944,9 @@ def test_mem_24_transaction_batching_barrier_efficiency() -> None:
     # 10 patches applied in a single compilation unit
     mpu.begin_jit_patch()
     for _ in range(10):
-        # Simulate copying and patching instruction stencils
-        pass
+        mpu.patch_stencil()
     mpu.commit_jit_patch()
+    assert mpu.patch_count == 10
     assert mpu.dsb_count == 2, "Batching must only emit 2 barriers per compilation unit"
     assert mpu.isb_count == 2
 

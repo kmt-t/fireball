@@ -19,12 +19,12 @@ Execution model:
 
 from __future__ import annotations
 
-import ctypes
 import os
 import sys
-from collections.abc import Callable, Iterator
+from collections.abc import Callable
 
 from control_flow import iter_block_ops
+from execution_context import WASMContext
 from interpreter import Interpreter, InterpreterCall
 from recovery import Result
 from system_containers import (
@@ -91,7 +91,6 @@ class RuntimeEngine:
     """Integrated Tiered Tracing Runtime Engine combining Interpreter and JIT."""
 
     __slots__ = (
-        "__dict__",
         "_fast_block_slots",
         "_n_locals_by_func",
         "_virq",
@@ -119,7 +118,7 @@ class RuntimeEngine:
         self,
         jit_compiler: object | None = None,
         yield_threshold: int = 16,
-        card_shift: int = 2,
+        card_shift: int = 3,
         min_trace_bytes: int | None = None,
         compile_queue_capacity: int = 4,
         block_capacity: int = 64,
@@ -606,8 +605,8 @@ class RuntimeEngine:
         `ctypes.CFUNCTYPE` libffi trampoline, which otherwise dominates this
         call's cost; the fallback keeps this correct on a plain-Python
         checkout. A trace's residual value is VM operand-stack state, not a
-        C return value ({ExecutionContext_Layout}): `SPILL_RESULT_TO_STACK_BOT`
-        writes it to `frame.jit_result_slot()`'s buffer (passed as `stack_bot`,
+        C return value ({ExecutionContext_Layout}): `SPILL_RESULT_TO_SP`
+        writes it to `frame.jit_result_slot()`'s buffer (passed as `sp`,
         R12) instead of returning it, and every trace always returns void.
         """
         ip, frame, locals_arr, tos = call_state.cont
@@ -621,10 +620,10 @@ class RuntimeEngine:
         c_result, result_ptr = frame.jit_result_slot()
         if _native_trace_call is not None and trace.raw_addr is not None:
             _native_trace_call.invoke_trace(
-                trace.raw_addr, trace.head_pc, result_ptr.value, locals_ptr.value, 0
+                trace.raw_addr, frame.context_ptr.value, result_ptr.value, locals_ptr.value, 0
             )
         else:
-            trace.fn(trace.head_pc, result_ptr, locals_ptr, 0)
+            trace.fn(frame.context_ptr, result_ptr, locals_ptr, 0)
         for i in range(len(locals_arr)):
             locals_arr[i] = c_locals[i] & 0xFFFF_FFFF
         res = c_result[0]
@@ -654,106 +653,6 @@ class RuntimeEngine:
         new_tos = frame.values[-1] if frame.values else 0
         call_state.cont = (next_ip, frame, locals_arr, new_tos)
         return call_state
-
-
-class WASMContext:
-    """Execution context for hybrid Tiered Interpreter/JIT execution with direct ctypes backing."""
-
-    __slots__ = (
-        "_c_locals",
-        "_c_mem",
-        "_c_result",
-        "_cached_locals_view",
-        "_n_locals",
-        "fault",
-        "memory",
-        "stack",
-        "stack_capacity",
-    )
-
-    def __init__(
-        self,
-        memory: bytearray | None = None,
-        stack_capacity: int = 64,
-    ):
-        n_locals = 16
-        self._c_locals = (ctypes.c_int64 * n_locals)()
-
-        self._n_locals = n_locals
-        self.fault: str | None = None
-        self.stack_capacity = stack_capacity
-        self.stack: StaticVector[int] = StaticVector(capacity=stack_capacity)
-        self.memory = memory
-        if memory is not None:
-            self._c_mem = (ctypes.c_char * len(memory)).from_buffer(memory)
-        else:
-            self._c_mem = None
-        # A trace's residual value is VM operand-stack state, not a C return
-        # value ({ExecutionContext_Layout}), so `SPILL_RESULT_TO_STACK_BOT`
-        # writes it here (via R12, the CPS `stack_bot` argument) instead of
-        # in the call's return value.
-        self._c_result = ctypes.c_int64()
-        self._cached_locals_view = self._LocalsView(self)
-
-    @property
-    def stack_bot_ptr(self) -> ctypes.c_void_p:
-        return ctypes.cast(ctypes.pointer(self._c_result), ctypes.c_void_p)
-
-    @property
-    def locals_ptr(self) -> ctypes.c_void_p:
-        return ctypes.cast(self._c_locals, ctypes.c_void_p)
-
-    @property
-    def mem_ptr(self) -> ctypes.c_void_p:
-        if self._c_mem is not None:
-            return ctypes.c_void_p(ctypes.addressof(self._c_mem))
-        return ctypes.c_void_p(0)
-
-    class _LocalsView:
-        __slots__ = ("_ctx",)
-
-        def __init__(self, ctx: WASMContext):
-            self._ctx = ctx
-
-        def __getitem__(self, idx: int) -> int:
-            return self._ctx._c_locals[idx] & 0xFFFF_FFFF
-
-        def __setitem__(self, idx: int, val: int) -> None:
-            self._ctx._c_locals[idx] = val & 0xFFFF_FFFF
-
-        def __len__(self) -> int:
-            return self._ctx._n_locals
-
-        def __iter__(self) -> Iterator[int]:
-            for i in range(self._ctx._n_locals):
-                yield self._ctx._c_locals[i] & 0xFFFF_FFFF
-
-    @property
-    def locals(self) -> WASMContext._LocalsView:
-        return self._cached_locals_view
-
-    @locals.setter
-    def locals(self, values: tuple[int, ...]) -> None:
-        if len(values) > self._n_locals:
-            self.fault = "WASM_LOCAL_STACK_CAPACITY"
-            return
-        for i, v in enumerate(values):
-            self._c_locals[i] = v & 0xFFFF_FFFF
-
-    def push(self, val: int) -> bool:
-        if not self.stack.push_back(val & 0xFFFF_FFFF):
-            self.fault = "WASM_EXECUTION_STACK_OVERFLOW"
-            return False
-        return True
-
-    def pop(self) -> int:
-        val = self.stack.pop_back()
-        if val is None:
-            self.fault = "WASM_EXECUTION_STACK_UNDERFLOW"
-            return 0
-        return val
-
-
 
 
 def _interp_i32_const(ctx: WASMContext, arg: object) -> None:
@@ -813,7 +712,6 @@ class IntegratedHybridEngine:
     """
 
     __slots__ = (
-        "__dict__",
         "_dispatch",
         "bitmap",
         "blocks",
@@ -839,7 +737,7 @@ class IntegratedHybridEngine:
     def __init__(
         self,
         yield_threshold: int = 4,
-        card_shift: int = 2,
+        card_shift: int = 3,
         compiler: object | None = None,
         min_trace_bytes: int | None = None,
         compile_queue_capacity: int = 4,

@@ -12,6 +12,8 @@ import os
 import struct
 import sys
 
+BACKS = ["components/tier3_jit/jit_compiler.md"]
+
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from jit_assembler_constexpr_concept import Cond, Reg, Thumb2Assembler
 
@@ -134,16 +136,25 @@ _MEMORY_OP_ADDR_REG = {
     "i32.store16": Reg.R4,
 }
 
+_MEMORY_OP_ACCESS_WIDTH = {
+    "i32.load": 4,
+    "i32.load8_s": 1,
+    "i32.load8_u": 1,
+    "i32.load16_s": 2,
+    "i32.load16_u": 2,
+    "i32.store": 4,
+    "i32.store8": 1,
+    "i32.store16": 2,
+}
+
 
 class CopyPatchJITEngine:
     def __init__(self, cache_size: int = 4096):
         self.cache_size = cache_size
         self.code_cache: list[str] = ["NOP"] * cache_size
-        # Real machine code, emitted in lockstep with code_cache. Everything else in
-        # this file only ever manipulated the disassembly strings above -- compile_trace
-        # never read a single stencil's hex_bytes, so nothing here could actually be
-        # copied into memory and executed. byte_cache is the real output of the engine;
-        # code_cache remains purely for human-readable inspection/logging.
+        # Real machine code is emitted in lockstep with code_cache. compile_trace
+        # reads each stencil's hex_bytes into byte_cache, while code_cache retains
+        # the disassembly for inspection and verification.
         self.byte_cache: bytearray = bytearray(cache_size * 4)
         self.byte_write_pos: int = 0
         self.last_trace_byte_range: tuple[int, int] = (0, 0)
@@ -391,7 +402,10 @@ class CopyPatchJITEngine:
             # mem_size lives inside execution_context (R0: ctx) at +0x2C
             # ({ExecutionContext_Layout}).
             "memory_size_d0": Stencil(
-                "memory_size_d0", ["LDR.W r3, [r0, #0x2C]"], "D0 F8 2C 30", {}
+                "memory_size_d0",
+                ["LDR.W r3, [r0, #0x2C]", "LSRS r3, r3, #16"],
+                "D0 F8 2C 30 1B 0C",
+                {},
             ),
         }
 
@@ -474,7 +488,7 @@ class CopyPatchJITEngine:
         `exit_kind` selects one of three trace-boundary shapes, which must not be
         conflated (docs/specs/jit_stencil_catalog.md 3.1):
         - "return"/"fallback": a genuine AAPCS exit. `flush_dirty_spills()` writes
-          every dirty cached value (TOS/NOS, ...) to its stack_bot-relative
+          every dirty cached value (TOS/NOS, ...) to its sp-relative
           canonical address first, since nothing preserves R4-R6 past the
           POP/BX that follows -- WASM operand-stack state and the C return value
           are unrelated ({GOTCHA-JITC-07}).
@@ -652,11 +666,22 @@ class CopyPatchJITEngine:
                 emit(f"BL {func_name}", asm.bl(0))  # relocation hole: patched after linking
                 emit("POP {r0-r3, r12, lr}", asm.pop_w(reg_mask=call_mask, pop_lr=True))
             elif op in _MEMORY_OP_ADDR_REG:
-                # FastAddressCheck: CMP the address (r3 for load, r4 for store) against mem_size (R9)
+                # FastAddressCheck: reject addr >= mem_size first, then reject
+                # addr + width - 1 >= mem_size. The first comparison also
+                # prevents a 32-bit end-address addition from wrapping.
                 addr_reg = _MEMORY_OP_ADDR_REG[op]
                 emit(f"CMP {addr_reg.name.lower()}, r9", asm.cmp_reg_t2(addr_reg, Reg.R9))
                 oob_branch_fixups.append(self.byte_write_pos)
                 emit("BHS.W <trap>", asm.b_cond_w(Cond.HS, 0))
+                access_width = _MEMORY_OP_ACCESS_WIDTH[op]
+                if access_width > 1:
+                    emit(
+                        f"ADD.W r12, {addr_reg.name.lower()}, #{access_width - 1}",
+                        asm.add_w_imm12(Reg.R12, addr_reg, access_width - 1),
+                    )
+                    emit("CMP r12, r9", asm.cmp_reg_t2(Reg.R12, Reg.R9))
+                    oob_branch_fixups.append(self.byte_write_pos)
+                    emit("BHS.W <trap>", asm.b_cond_w(Cond.HS, 0))
                 emit_stencil(self.stencils[op.replace(".", "_") + "_r8"])
                 current_variant = 1 if "load" in op else 0
             else:
@@ -685,7 +710,7 @@ class CopyPatchJITEngine:
                     raise ValueError(f"Unsupported stencil opcode: {op}")
 
         # 5. Emit Exit. "return"/"fallback" are genuine AAPCS exits: every dirty
-        # cached value must be flushed to its canonical stack_bot-relative address
+        # cached value must be flushed to its canonical sp-relative address
         # first, since nothing preserves R4-R6 past the POP/BX below.
         # "chain" / "dynamic_chain" is a dynamic header-driven chain exit:
         # It dynamically checks the header's chain_target_addr (+0x0C).
@@ -1064,7 +1089,7 @@ def test_stencil_catalog_matches_assembler() -> None:
         + asm.ldr_w_imm12(Reg.R3, Reg.R12, 0),
         "global_set_d1": asm.ldr_w_imm12(Reg.R12, Reg.R0, 0x30)
         + asm.str_w_imm12(Reg.R3, Reg.R12, 0),
-        "memory_size_d0": asm.ldr_w_imm12(Reg.R3, Reg.R0, 0x2C),
+        "memory_size_d0": asm.ldr_w_imm12(Reg.R3, Reg.R0, 0x2C) + asm.lsrs_imm(Reg.R3, Reg.R3, 16),
         "i32_add_d2": asm.adds_reg(Reg.R3, Reg.R4, Reg.R3),
         "i32_sub_d2": asm.subs_reg(Reg.R3, Reg.R4, Reg.R3),
         "i32_mul_d2": asm.mul(Reg.R3, Reg.R4, Reg.R3),
@@ -1234,7 +1259,7 @@ def test_control_flow_and_all_54_opcodes() -> None:
         ("global.get", 0),
         ("global.set", 0),
         ("select", None),
-        # 32-bit Integer ALU & Logic (16)
+        # 32-bit Integer ALU & Logic (17)
         ("i32.add", None),
         ("i32.sub", None),
         ("i32.mul", None),
@@ -1275,6 +1300,7 @@ def test_control_flow_and_all_54_opcodes() -> None:
         ("i32.store16", None),
         ("memory.size", None),
     ]
+    assert len(all_54_opcodes) == 54, len(all_54_opcodes)
     # Verify every single opcode compiles without raising ValueError
     for op, arg in all_54_opcodes:
         engine_single = CopyPatchJITEngine()
@@ -1351,18 +1377,18 @@ def test_fast_address_check_traps_before_access() -> None:
     assert "LDR.W r3, [r8, r3]" in code
     # The bounds check + branch must be emitted strictly before the access it guards.
     assert code.index("BHS.W <trap>") < code.index("LDR.W r3, [r8, r3]")
-    assert len(engine.last_oob_fixups) == 1
+    assert len(engine.last_oob_fixups) == 2
     assert engine.last_trap_tail_byte_addr is not None
-    branch_byte_addr = engine.last_oob_fixups[0]
-    rel_offset = engine.last_trap_tail_byte_addr - (branch_byte_addr + 4)
-    assert rel_offset > 0, "trap tail must be patched to a real forward offset, not left at 0"
-    expected_bytes = asm.b_cond_w(Cond.HS, rel_offset)
-    patched_bytes = bytes(
-        engine.byte_cache[branch_byte_addr : branch_byte_addr + len(expected_bytes)]
-    )
-    assert patched_bytes == expected_bytes, (
-        "BHS.W placeholder was not back-patched to the trap tail"
-    )
+    for branch_byte_addr in engine.last_oob_fixups:
+        rel_offset = engine.last_trap_tail_byte_addr - (branch_byte_addr + 4)
+        assert rel_offset > 0, "trap tail must be patched to a real forward offset, not left at 0"
+        expected_bytes = asm.b_cond_w(Cond.HS, rel_offset)
+        patched_bytes = bytes(
+            engine.byte_cache[branch_byte_addr : branch_byte_addr + len(expected_bytes)]
+        )
+        assert patched_bytes == expected_bytes, (
+            "BHS.W placeholder was not back-patched to the trap tail"
+        )
     # The trap tail itself must reach the interpreter fallback (POP + BX r12), never a bare return.
     assert code[-1] == "BX r12"
 

@@ -239,14 +239,22 @@ def run_single_pairwise_case(case_tuple: tuple) -> None:
 
 
 def test_all_pairwise_combinations():
+    factor_count = len(PAIRWISE_CASES[0]) - 1
+    covered_pairs = {
+        (left, right, case[left + 1], case[right + 1])
+        for case in PAIRWISE_CASES
+        for left in range(factor_count)
+        for right in range(left + 1, factor_count)
+    }
+    assert len(covered_pairs) == 288, (
+        f"pairwise coverage incomplete: {len(covered_pairs)} of 288 combinations"
+    )
     print(f"[*] Executing {len(PAIRWISE_CASES)} All-Pairs Combinatorial Test Cases...")
     for case_tuple in PAIRWISE_CASES:
         case_id = case_tuple[0]
         run_single_pairwise_case(case_tuple)
         print(f"    [PASS] {case_id}: {case_tuple[1:]}")
-    print(
-        f"[PASS] All {len(PAIRWISE_CASES)} Pairwise Combinations passed with 100% 2-way interaction coverage."
-    )
+    print(f"[PASS] All {len(PAIRWISE_CASES)} Pairwise Combinations passed with 100% 2-way interaction coverage.")
 
 
 if __name__ == "__main__":

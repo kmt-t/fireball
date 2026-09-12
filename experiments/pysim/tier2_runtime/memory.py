@@ -1,5 +1,5 @@
 """
-experiments/pysim/tier3_platform/memory.py
+experiments/pysim/tier2_runtime/memory.py
 COOS Memory Manager & PMSAv8 MPU simulation.
 - Consolidated physical memory pool and fixed-size partition leasing
 - Typed slot pools with zero dynamic void* heap
@@ -37,7 +37,9 @@ class PageMappingCallbacks:
 
 # Configuration & Constants (FB_CONF_*)
 FB_CONF_MEMORY_POOL_SIZE = 21504  # system_config.md: sum of all sub-pools (bytes)
-FB_CONF_TASK_HEAP_SIZES = (4096,)  # system_config.md FB_CONF_TASK_HEAP_SIZES: per-VM-slot ROM size table
+FB_CONF_TASK_HEAP_SIZES = (
+    4096,
+)  # system_config.md FB_CONF_TASK_HEAP_SIZES: per-VM-slot ROM size table
 FB_CONF_MAX_TASKS = 16
 FB_CONF_MAX_SHM_PAGES = 32
 FB_PAGE_SIZE = 4096  # 4KB SHM page size
@@ -426,12 +428,13 @@ class MPURegion:
 class PMSAv8MPU:
     """Cortex-M33 PMSAv8 8-region Memory Protection Unit simulator."""
 
-    __slots__ = ("dsb_count", "isb_count", "patch_in_progress", "regions")
+    __slots__ = ("dsb_count", "isb_count", "patch_count", "patch_in_progress", "regions")
 
     def __init__(self, pool_base: int = 0x20020000):
         self.regions: tuple[MPURegion, ...] = ()
         self.dsb_count = 0
         self.isb_count = 0
+        self.patch_count = 0
         self.patch_in_progress = False
         self._setup_static_regions(pool_base)
 
@@ -524,6 +527,11 @@ class PMSAv8MPU:
         self.dsb_count += 1
         self.isb_count += 1
         self.patch_in_progress = False
+
+    def patch_stencil(self) -> None:
+        """Record one instruction-stencil patch inside the active transaction."""
+        assert self.patch_in_progress, "Stencil patch requires an active JIT transaction"
+        self.patch_count += 1
 
     def assert_no_rwx(self) -> None:
         for r in self.regions:
@@ -649,56 +657,47 @@ class MemoryManager:
                 )
             )
 
-        # Page-granular isolation: find an existing page owned by caller_task_id with enough space,
-        # OR find an unallocated page to reserve exclusively for caller_task_id.
+        # Page-granular isolation: one shared block owns one physical page.
+        # Reusing a page for multiple blocks would make a later page-granular
+        # Grant transfer unrelated slots together, violating ownership isolation.
         target_page: ShmPageInfo | None = None
+        if self.total_allocated_bytes + FB_PAGE_SIZE > self.pool_size:
+            return Result(
+                error=MemoryErrorResult(
+                    "ERR_SHM_EXHAUSTED",
+                    RecoveryStrategy(RecoveryAction.DEGRADE, "No free SHM pages in physical pool"),
+                )
+            )
         for page in self.shm_pages:
-            if page.allocated and page.owner_id == caller_task_id:
-                if FB_PAGE_SIZE - page.allocated_bytes >= size:
-                    target_page = page
-                    break
+            if not page.allocated:
+                target_page = page
+                break
 
         if target_page is None:
-            # Need a new 4KB page
-            if self.total_allocated_bytes + FB_PAGE_SIZE > self.pool_size:
-                return Result(
-                    error=MemoryErrorResult(
-                        "ERR_SHM_EXHAUSTED",
-                        RecoveryStrategy(
-                            RecoveryAction.DEGRADE, "No free SHM pages in physical pool"
-                        ),
-                    )
+            return Result(
+                error=MemoryErrorResult(
+                    "ERR_SHM_EXHAUSTED",
+                    RecoveryStrategy(RecoveryAction.DEGRADE, "All SHM page slots exhausted"),
                 )
-            for page in self.shm_pages:
-                if not page.allocated:
-                    target_page = page
-                    break
+            )
 
-            if target_page is None:
-                return Result(
-                    error=MemoryErrorResult(
-                        "ERR_SHM_EXHAUSTED",
-                        RecoveryStrategy(RecoveryAction.DEGRADE, "All SHM page slots exhausted"),
-                    )
-                )
+        # Initialize new page exclusively for caller_task_id
+        target_page.allocated = True
+        target_page.owner_id = caller_task_id
+        target_page.allocated_bytes = 0
+        target_page.slot_count = 0
+        self.total_allocated_bytes += FB_PAGE_SIZE
 
-            # Initialize new page exclusively for caller_task_id
-            target_page.allocated = True
-            target_page.owner_id = caller_task_id
-            target_page.allocated_bytes = 0
-            target_page.slot_count = 0
-            self.total_allocated_bytes += FB_PAGE_SIZE
-
-            # Register in page registry and notify listener
-            base_addr = FB_CONF_MPU_R6_SHARED_MEMORY_BASE + (target_page.page_idx * FB_PAGE_SIZE)
-            self.page_registry.register_page(target_page.page_idx, caller_task_id, base_addr)
-            if self._page_mapping_callbacks is not None:
-                self._page_mapping_callbacks.on_map_page(
-                    target_page.page_idx, base_addr, caller_task_id
-                )
+        # Register in page registry and notify listener
+        base_addr = FB_CONF_MPU_R6_SHARED_MEMORY_BASE + (target_page.page_idx * FB_PAGE_SIZE)
+        self.page_registry.register_page(target_page.page_idx, caller_task_id, base_addr)
+        if self._page_mapping_callbacks is not None:
+            self._page_mapping_callbacks.on_map_page(
+                target_page.page_idx, base_addr, caller_task_id
+            )
 
         # Allocate slot inside target_page
-        slot_idx = target_page.slot_count
+        slot_idx = 0
         slot_offset = target_page.allocated_bytes
         target_page.slot_count += 1
         target_page.allocated_bytes += size

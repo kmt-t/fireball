@@ -14,6 +14,9 @@ Implementation Invariants & Gotchas:
 from collections.abc import Callable
 from dataclasses import dataclass
 from enum import IntEnum
+import inspect
+
+BACKS = ["components/tier2_runtime/runtime_logging.md"]
 
 
 class LogLevel(IntEnum):
@@ -209,6 +212,8 @@ class Logger:
         """
         total_flushed = 0
         while not self.ring_buffer.is_empty():
+            if self.transport.is_busy or self.transport.dma_active:
+                break
             batch: list[str] = []
             while not self.ring_buffer.is_empty() and len(batch) < batch_size:
                 entry = self.ring_buffer.pop()
@@ -360,6 +365,14 @@ def test_logger_storage_ownership_separation() -> None:
     assert "External format: 100" in transport.output_log[0]
 
 
+def test_logger_cannot_carry_a_runtime_string_but_console_can() -> None:
+    """The internal log API carries only a dictionary offset and four scalars."""
+    parameters = inspect.signature(Logger.log_event).parameters
+    assert "dict_offset" in parameters
+    assert "arg0" in parameters and "arg3" in parameters
+    assert "message" not in parameters and "text" not in parameters
+
+
 if __name__ == "__main__":
     test_logger_dictionary_formatting()
     test_logger_buffering_and_idle_flush()
@@ -368,4 +381,5 @@ if __name__ == "__main__":
     test_logger_ipc_message_handling()
     test_logger_flush_interruption()
     test_logger_storage_ownership_separation()
+    test_logger_cannot_carry_a_runtime_string_but_console_can()
     print("[PASS] All Logger concept tests passed successfully.")

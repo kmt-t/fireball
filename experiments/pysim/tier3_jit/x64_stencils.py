@@ -13,11 +13,13 @@ generator's single run stands in for "compile-time evaluation", and every
 actual JIT compilation afterwards only ever touches the frozen result,
 never re-runs the generator. This is enforced by `_materialize()` below,
 not just a naming convention.
-Calling convention for a compiled function (Microsoft x64 ABI, since the
-host is Windows): RCX = pointer to this function's [params..., locals...]
-array (int64 slots), RDX = pointer to the linear memory byte buffer.
-R10/R11 hold those two values for the lifetime of the function body (the
-prologue copies them there) so RCX/RDX stay free as general scratch, since
+Calling convention for a compiled function is the shared CPS boundary:
+`ctx` (R0) is the execution-context pointer, `sp` (R1) is the operand-stack
+pointer, `local_base` (R2) points at the local-value array, and `tos` (R3) is
+the top operand. The x64 body keeps the local and linear-memory pointers in
+R10/R11 for the lifetime of the function body.
+The prologue copies those pointers there so the incoming argument registers
+stay free as general scratch, since
 i32.shl/shr_s/shr_u need the shift count in CL. The WASM operand stack is
 the real x64 hardware stack (PUSH/POP), one 8-byte slot per WASM value.
 """
@@ -212,11 +214,11 @@ def _gen_epilogue_return_void() -> Generator[int, None, None]:
     yield from _gen_restore_callee_saved_and_ret()
 
 
-def _gen_spill_result_to_stack_bot() -> Generator[int, None, None]:
+def _gen_spill_result_to_sp() -> Generator[int, None, None]:
     # A compiled trace's residual value is WASM VM state (the operand stack's
     # top), not a C return value -- it has no relationship to the callee's
     # own return channel, so it is written to memory (via R12, the CPS
-    # stack_bot argument `gen_pic_prologue` maps it to) rather than left in
+    # sp argument `gen_pic_prologue` maps it to) rather than left in
     # RAX for the caller to read as a return value.
     # pop rax                 58
     yield 0x58
@@ -569,9 +571,7 @@ def _gen_global_set() -> Generator[int, None, None]:
 PROLOGUE = _materialize("prologue", _gen_prologue())
 EPILOGUE_RETURN_I32 = _materialize("epilogue_return_i32", _gen_epilogue_return_i32())
 EPILOGUE_RETURN_VOID = _materialize("epilogue_return_void", _gen_epilogue_return_void())
-SPILL_RESULT_TO_STACK_BOT = _materialize(
-    "spill_result_to_stack_bot", _gen_spill_result_to_stack_bot()
-)
+SPILL_RESULT_TO_SP = _materialize("spill_result_to_sp", _gen_spill_result_to_sp())
 LOCAL_GET = _materialize("local_get", _gen_local_get(), disp=3)
 LOCAL_SET = _materialize("local_set", _gen_local_set(), disp=4)
 LOCAL_TEE = _materialize("local_tee", _gen_local_tee(), disp=7)

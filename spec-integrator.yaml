@@ -433,5 +433,34 @@ source_verification:
         - id: "anti_sabotage"
           enabled: true
           rules: ["forbid_typing_any", "dummy_pass", "todo_comment"]
+        - id: "pysim_imports"
+          enabled: true
         - id: "run_tests"
           enabled: true
+
+pysim_imports:
+  enabled: true
+  root: "experiments/pysim"
+  # 製品コードの各ファイルを、文書階層上のTierへ割り当てる正本。
+  # tests/、scenarios/、benchmarks/ は製品依存グラフの検査対象外とする。
+  tiers:
+    - tier: 1
+      paths:
+        - "tier1_core/**/*.py"
+        - "tier1_interface/**/*.py"
+        - "__init__.py"
+    - tier: 2
+      paths:
+        - "tier2_runtime/**/*.py"
+      exclude:
+        - "tier2_runtime/runtime_engine.py"
+        - "tier2_runtime/wasi.py"
+    - tier: 3
+      paths:
+        - "tier2_runtime/runtime_engine.py"
+        - "tier2_runtime/wasi.py"
+        - "system.py"
+        - "main.py"
+        - "aobench.py"
+        - "tier3_jit/**/*.py"
+        - "tier3_platform/**/*.py"

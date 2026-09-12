@@ -7,7 +7,7 @@
 
 ## 1. コンセプト
 <!-- traceability: {ROMParsing} {META_AccessDictionary} {META_BumpAllocator} {META_BinarySearch} -->
-WASMローダは、ROM上のWASM32バイナリをパースし、実行環境が参照しやすい索引構造（ModuleView）を生成する。RAMへの全展開を避け、ROM上のデータを直接参照することでメモリ消費を極小化する。デコードされた各種メタデータ・要素（セクション、関数コード、グローバル、データセグメント）は内部レジストリ（`decoded_entity_registry`）に格納され、**WASMファイル内のバイト位置（データオフセット）をキーとして `RadixBinaryTreeView`（`fireball::radix_binary_tree_view`）により粗粒度インデックス $O(1)$ ＋ 狭域2分探索 $O(\log n)$（全体で $O(\log N)$ 確定時間）で高速検索** できる。さらに、**インポートテーブルおよびエクスポートシンボルの検索も、文字列比較ではなくシンボル名ハッシュ（FNV-1a 32-bit）をキーとした `RadixBinaryTreeView` により $O(1) + O(\log n)$ で瞬時に解決・引き当てる**。 `{ROMParsing}` `{META_AccessDictionary}` `{META_BumpAllocator}` `{META_BinarySearch}`
+WASMローダは、ROM上のWASM32バイナリをパースし、実行環境が参照しやすい索引構造（ModuleView）を生成する。RAMへの全展開を避け、ROM上のデータを直接参照することでメモリ消費を極小化する。デコードされた各種メタデータ・要素（セクション、関数コード、グローバル、データセグメント）は内部レジストリ（`decoded_entity_registry`）に格納され、**WASMファイル内のバイト位置（データオフセット）をキーとして `RadixBinaryTreeView`（`fireball::radix_binary_tree_view`）により粗粒度インデックス $O(1)$ ＋ 狭域2分探索 $O(\log n)$（全体で $O(\log N)$ 確定時間）で高速検索** できる。さらに、**インポートテーブルおよびエクスポートシンボルの検索は、シンボル名ハッシュ（FNV-1a 32-bit）をキーとした `RadixBinaryTreeView` で候補を絞り、候補ごとにROM上の元文字列を照合する。索引探索は $O(1) + O(\log n)$、衝突照合込みの worst-case は $O(1) + O(\log n) + O(L)$ である**。 `{ROMParsing}` `{META_AccessDictionary}` `{META_BumpAllocator}` `{META_BinarySearch}`
 本設計の動作モデルおよび軽量検証スコープ（V1〜V6）、ハッシュ＋RadixBinaryTreeView によるシンボル・インポート検索、RadixBinaryTreeView によるファイル位置逆引き、バンプアロケータによるトランザクション保護（`save`/`restore`）は、コンセプトコード（[`loader_concept.py`](docs/components/tier2_runtime/concepts/loader_concept.py)）によって動作検証されている。
 
 ## 2. アーキテクチャ分類
@@ -133,7 +133,7 @@ ROM上の読み取り専用バイト列ビューをラップし、カレント�
     - セクションスキャン時に内容をRAMにコピーせず、ROM上の開始オフセットとサイズを索引化する。
     - 各セクション、関数コードブロック、グローバル変数、データセグメント等のデコード済みエントリを `decoded_entity_registry` に登録する。
     - 各エントリの開始ファイルオフセット `file_offset` をキーとして、基数2進探索木ビュー（`fireball::radix_binary_tree_view`）を構築する。粗い Radix Table で区間を特定後、狭めた区間に対する有界二分探索により $O(1) + O(\log n)$ でファイル内の任意バイト位置から該当するデコード済みエンティティ（関数メタデータ、セクション、データ定義）を高速逆引きできるようにする。
-    - エクスポートおよびインポートエントリをパースし、シンボル名の 32-bit ハッシュ値（FNV-1a）を算出。名前文字列は ROM 上の文字列ビューとして RAM コピーゼロで保持しつつ、ハッシュ値をキーとした `export_tree` / `import_tree`（`fireball::radix_binary_tree_view`）を構築する。
+    - エクスポートおよびインポートエントリをパースし、シンボル名の 32-bit ハッシュ値（FNV-1a）を算出。物理実装では名前文字列を ROM 上の文字列ビューとして RAM コピーゼロで保持し、ハッシュ値をキーとした `export_tree` / `import_tree`（`fireball::radix_binary_tree_view`）を構築する。概念コードは、この比較意味論をデコード済み文字列値で再現する。
 - **シンボル検索とハッシュ衝突完全排除 (`GOTCHA-LOAD-01`, `{META_AccessDictionary}`, `{META_BinarySearch}`)**:
   シンボル名ハッシュ（FNV-1a 32-bit）をキーとして `export_tree`（`radix_binary_tree_view`）を、粗索引 $O(1)$ と狭い区間の二分探索 $O(\log n)$ の組み合わせで探索する。候補が得られた後は ROM 上の元の名前を照合するため、照合込みの worst-case は $O(1) + O(\log n) + O(L)$（$L$ は名前長）である。
   **設計理由と不変条件**: 32-bit ハッシュ値による探索のみで関数解決を完了させると、万一のハッシュ衝突発生時に誤った関数がディスパッチされ、壊滅的な誤動作を引き起こす。そのため、ハッシュ探索で候補エントリがヒットした際は必ず ROM 上の元のシンボル名文字列と 1 回完全一致照合を行い、ハッシュ衝突によるシンボル誤認を完全に排除する。
@@ -254,6 +254,8 @@ stateDiagram-v2
     Parsing --> Error: parse_fail
     Ready --> Idle: unload
 ```
+
+形式検証モデルの状態との対応は、`Idle` = `s_rom_unparsed`、`Parsing` = `s_parsing`/`s_parsed_unverified`、`Verifying` = `s_verifying`、`Ready` = `s_verified_ok`/`s_executable`、`Error` = `s_verified_bad`/`s_rollback_done` である。`s_executing_unverified`、`s_stuck_verifying`、`s_leaked_bump` は `guards=False` でのみ到達する違反状態として、図の正常系には含めない。 `{LightweightVerifier}`
 
 ### 4.5 内部シーケンス
 <!-- traceability: {ZeroCopyIndexing} {META_AccessDictionary} {META_ConfigurableSystem} {LightweightVerifier} -->

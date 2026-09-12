@@ -76,21 +76,21 @@
 
 | Opcode | 命令名 | スタック遷移 | インタープリタ実装 | JIT Stencil 提供 | 物理動作・備考 |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| `0x28` | `i32.load` | `[i32] -> [i32]` | 境界チェック（比較+トラップ） $\to$ 32-bit ロード | あり (LDR.W) | `CMP r3, r9; BHS.W <trap>; LDR r3, [r8, r3]` (`r8=mem_base, r9=mem_size`) |
-| `0x29` | `i64.load` | `[i32] -> [i64]` | 境界チェック（比較+トラップ） $\to$ 64-bit ロード | あり (LDRD) | `CMP r3, r9; BHS.W <trap>; LDRD r3, r4, [r8, r3]` |
-| `0x2A` | `f32.load` | `[i32] -> [f32]` | 境界チェック（比較+トラップ） $\to$ 単精度ロード | あり (VLDR.32) | `CMP r3, r9; BHS.W <trap>; VLDR s0, [r8, r3]` (FPU搭載時) |
-| `0x2B` | `f64.load` | `[i32] -> [f64]` | 境界チェック（比較+トラップ） $\to$ 倍精度ロード | あり (VLDR.64) | `CMP r3, r9; BHS.W <trap>; VLDR d0, [r8, r3]` (FPv5搭載時) |
+| `0x28` | `i32.load` | `[i32] -> [i32]` | 開始・終端 (`addr+3`) の境界チェック（比較+トラップ） $\to$ 32-bit ロード | あり (LDR.W) | `CMP r3, r9; BHS.W <trap>; ADD r12, r3, #3; CMP r12, r9; BHS.W <trap>; LDR r3, [r8, r3]` (`r8=mem_base, r9=mem_size`) |
+| `0x29` | `i64.load` | `[i32] -> [i64]` | 開始・終端 (`addr+7`) の境界チェック（比較+トラップ） $\to$ 64-bit ロード | あり (LDRD) | `CMP r3, r9; BHS.W <trap>; ADD r12, r3, #7; CMP r12, r9; BHS.W <trap>; LDRD r3, r4, [r8, r3]` |
+| `0x2A` | `f32.load` | `[i32] -> [f32]` | 開始・終端 (`addr+3`) の境界チェック（比較+トラップ） $\to$ 単精度ロード | あり (VLDR.32) | `CMP r3, r9; BHS.W <trap>; ADD r12, r3, #3; CMP r12, r9; BHS.W <trap>; VLDR s0, [r8, r3]` (FPU搭載時) |
+| `0x2B` | `f64.load` | `[i32] -> [f64]` | 開始・終端 (`addr+7`) の境界チェック（比較+トラップ） $\to$ 倍精度ロード | あり (VLDR.64) | `CMP r3, r9; BHS.W <trap>; ADD r12, r3, #7; CMP r12, r9; BHS.W <trap>; VLDR d0, [r8, r3]` (FPv5搭載時) |
 | `0x2C` | `i32.load8_s`| `[i32] -> [i32]` | 境界チェック（比較+トラップ） $\to$ 符号拡張 8-bit ロード | あり (LDRSB) | `CMP r3, r9; BHS.W <trap>; LDRSB r3, [r8, r3]` |
 | `0x2D` | `i32.load8_u`| `[i32] -> [i32]` | 境界チェック（比較+トラップ） $\to$ ゼロ拡張 8-bit ロード | あり (LDRB) | `CMP r3, r9; BHS.W <trap>; LDRB r3, [r8, r3]` |
-| `0x2E` | `i32.load16_s`| `[i32] -> [i32]`| 境界チェック（比較+トラップ） $\to$ 符号拡張 16-bit ロード | あり (LDRSH) | `CMP r3, r9; BHS.W <trap>; LDRSH r3, [r8, r3]` |
-| `0x2F` | `i32.load16_u`| `[i32] -> [i32]`| 境界チェック（比較+トラップ） $\to$ ゼロ拡張 16-bit ロード | あり (LDRH) | `CMP r3, r9; BHS.W <trap>; LDRH r3, [r8, r3]` |
-| `0x36` | `i32.store` | `[i32, i32] -> []` | 境界チェック（比較+トラップ） $\to$ 32-bit メモリストア | あり (STR.W) | `CMP r4, r9; BHS.W <trap>; STR r3, [r8, r4]` (`r3=val, r4=addr`) |
-| `0x37` | `i64.store` | `[i32, i64] -> []` | 境界チェック（比較+トラップ） $\to$ 64-bit メモリストア | あり (STRD) | `CMP r3, r9; BHS.W <trap>; STRD r4, r5, [r8, r3]`（値ペア高位語は `mem_base`/`mem_size` と衝突しない `r5` を使う） |
-| `0x38` | `f32.store` | `[i32, f32] -> []` | 境界チェック（比較+トラップ） $\to$ 単精度メモリストア | あり (VSTR.32) | `CMP r3, r9; BHS.W <trap>; VSTR s0, [r8, r3]` |
-| `0x39` | `f64.store` | `[i32, f64] -> []` | 境界チェック（比較+トラップ） $\to$ 倍精度メモリストア | あり (VSTR.64) | `CMP r3, r9; BHS.W <trap>; VSTR d0, [r8, r3]` |
+| `0x2E` | `i32.load16_s`| `[i32] -> [i32]`| 開始・終端 (`addr+1`) の境界チェック（比較+トラップ） $\to$ 符号拡張 16-bit ロード | あり (LDRSH) | `CMP r3, r9; BHS.W <trap>; ADD r12, r3, #1; CMP r12, r9; BHS.W <trap>; LDRSH r3, [r8, r3]` |
+| `0x2F` | `i32.load16_u`| `[i32] -> [i32]`| 開始・終端 (`addr+1`) の境界チェック（比較+トラップ） $\to$ ゼロ拡張 16-bit ロード | あり (LDRH) | `CMP r3, r9; BHS.W <trap>; ADD r12, r3, #1; CMP r12, r9; BHS.W <trap>; LDRH r3, [r8, r3]` |
+| `0x36` | `i32.store` | `[i32, i32] -> []` | 開始・終端 (`addr+3`) の境界チェック（比較+トラップ） $\to$ 32-bit メモリストア | あり (STR.W) | `CMP r4, r9; BHS.W <trap>; ADD r12, r4, #3; CMP r12, r9; BHS.W <trap>; STR r3, [r8, r4]` (`r3=val, r4=addr`) |
+| `0x37` | `i64.store` | `[i32, i64] -> []` | 開始・終端 (`addr+7`) の境界チェック（比較+トラップ） $\to$ 64-bit メモリストア | あり (STRD) | `CMP r3, r9; BHS.W <trap>; ADD r12, r3, #7; CMP r12, r9; BHS.W <trap>; STRD r4, r5, [r8, r3]`（値ペア高位語は `mem_base`/`mem_size` と衝突しない `r5` を使う） |
+| `0x38` | `f32.store` | `[i32, f32] -> []` | 開始・終端 (`addr+3`) の境界チェック（比較+トラップ） $\to$ 単精度メモリストア | あり (VSTR.32) | `CMP r3, r9; BHS.W <trap>; ADD r12, r3, #3; CMP r12, r9; BHS.W <trap>; VSTR s0, [r8, r3]` |
+| `0x39` | `f64.store` | `[i32, f64] -> []` | 開始・終端 (`addr+7`) の境界チェック（比較+トラップ） $\to$ 倍精度メモリストア | あり (VSTR.64) | `CMP r3, r9; BHS.W <trap>; ADD r12, r3, #7; CMP r12, r9; BHS.W <trap>; VSTR d0, [r8, r3]` |
 | `0x3A` | `i32.store8` | `[i32, i32] -> []` | 境界チェック（比較+トラップ） $\to$ 8-bit メモリストア | あり (STRB) | `CMP r4, r9; BHS.W <trap>; STRB r3, [r8, r4]` |
-| `0x3B` | `i32.store16`| `[i32, i32] -> []` | 境界チェック（比較+トラップ） $\to$ 16-bit メモリストア | あり (STRH) | `CMP r4, r9; BHS.W <trap>; STRH r3, [r8, r4]` |
-| `0x3F` | `memory.size`| `[] -> [i32]` | 現在のリニアメモリページ数を返す | あり (LDR via execution_context.mem_size) | `LDR.W r3, [r0, #0x2C]` |
+| `0x3B` | `i32.store16`| `[i32, i32] -> []` | 開始・終端 (`addr+1`) の境界チェック（比較+トラップ） $\to$ 16-bit メモリストア | あり (STRH) | `CMP r4, r9; BHS.W <trap>; ADD r12, r4, #1; CMP r12, r9; BHS.W <trap>; STRH r3, [r8, r4]` |
+| `0x3F` | `memory.size`| `[] -> [i32]` | 現在のリニアメモリページ数を返す | あり (LDR + 64KiB単位変換 via execution_context.mem_size) | `LDR.W r3, [r0, #0x2C]; LSRS r3, r3, #16` |
 | `0x40` | `memory.grow`| `[i32] -> [i32]` | リニアメモリ拡張 (ランタイムAPI呼出) | あり (Runtime Call) | `BL vsoc_memory_grow` |
 
 ---

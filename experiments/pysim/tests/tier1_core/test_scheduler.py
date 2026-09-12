@@ -131,15 +131,17 @@ def test_sched_04_shared_block_move_semantics_csp_rendezvous():
     # Sender instance was invalidated via move semantics (C++23 std::move / &&)
     try:
         sb.read_bytes(0, 5)
-        raise AssertionError("Expected AssertionError: Sender must not access moved SharedBlock")
     except AssertionError as e:
         assert "Cannot access released" in str(e) or "inactive" in str(e)
+    else:
+        raise AssertionError("Expected AssertionError: Sender must not access moved SharedBlock")
 
     try:
         sb.write_bytes(0, b"Fail")
-        raise AssertionError("Expected AssertionError: Sender must not write to moved SharedBlock")
     except AssertionError as e:
         assert "Cannot access released" in str(e) or "inactive" in str(e)
+    else:
+        raise AssertionError("Expected AssertionError: Sender must not write to moved SharedBlock")
 
     # Sub-case 2: Receiver waits first, Sender arrives second
     ch2 = sched.create_channel()
@@ -162,9 +164,10 @@ def test_sched_04_shared_block_move_semantics_csp_rendezvous():
 
     try:
         sb2.read_bytes(0, 5)
-        raise AssertionError("Expected AssertionError: Sender must not access moved SharedBlock")
     except AssertionError as e:
         assert "Cannot access released" in str(e) or "inactive" in str(e)
+    else:
+        raise AssertionError("Expected AssertionError: Sender must not access moved SharedBlock")
 
 
 if __name__ == "__main__":

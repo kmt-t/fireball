@@ -62,7 +62,7 @@
 - **Phase 1.3: Copy-and-Patch JIT Compiler & Runtime (`jit_compiler`, `jit_runtime`)**
   - ARM Thumb-2 / x86_64 ネイティブパッチステンシル & 事前コンパイルテンプレート `{JIT_CopyAndPatch}` `{ADR_TosCacheAsymmetry}`
   - 2KB×3面 トリプルバッファ MPU W^X 代謝マネージャ `{JIT_MultiBuffer_Cache}` `{JIT_OldestOnly_Promote}`
-  - 3段高速検索パイプライン（カードマーキング $	o$ 基数テーブル $	o$ 二分探索）
+  - 4段高速検索パイプライン（カードマーキング $	o$ Folding XOR高速キャッシュ $	o$ 基数テーブル $	o$ 二分探索）
   - Safepoint 協調 & JIT/インタープリタ透過切り替え `{JIT_LazyChaining}` `{Interpreter_LazyJITSwitch}` `{JIT_RuntimeAPI_Fallback}`
 - **Phase 1.4: Standalone vSoC Harness & WAMR Benchmark (`runtime_vsoc`)**
   - ホスト (x86_64 / Linux / macOS / Windows) 実行ハーネス

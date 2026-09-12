@@ -50,7 +50,7 @@ for _p in [
 experiments/pysim/tests/tier3_jit/test_x64_jit.py
 Spec-compliant tests for Fireball Trace-based Copy-and-Patch JIT Compiler (x64_jit.py).
 Verifies:
-1. Exact CPS 4-argument calling convention: (uint32_t ip, void* stack_bot, void* env, void* local_base)
+1. Exact CPS 4-argument calling convention: (void* ctx, void* sp, void* local_base, uint32_t tos)
 2. 16-byte physical JITTraceHeader layout at offset +0x00
 3. Position-Independent Code (PIC) execution across arbitrary memory relocations
 4. Direct trace chaining and hybrid tiering transitions
@@ -110,15 +110,15 @@ def test_trace_compiler_cps_4arg_and_pic():
     # 1. 16-byte header verification
     assert trace.header.head_wasm_pc == head_pc
     assert trace.size_bytes >= 16
-    # 2. Direct call via CPS 4-argument C function pointer fn(ip, stack_bot, local_base, tos)
+    # 2. Direct call via CPS 4-argument C function pointer fn(ctx, sp, local_base, tos)
     locals_arr = (ctypes.c_int64 * 8)(5, 0)
     res = trace.fn(
-        0x100,
+        ctypes.c_void_p(0),
         ctypes.c_void_p(0),
         ctypes.cast(locals_arr, ctypes.c_void_p),
         0,
     )
-    assert res == 0
+    assert res is None
     assert locals_arr[1] == 40
     # 3. PIC Verification: Copy raw trace binary to a completely different buffer address
     # and execute it without any relocation adjustments -- must produce identical result!
@@ -129,12 +129,12 @@ def test_trace_compiler_cps_4arg_and_pic():
         reloc_buf.write(reloc_offset, raw_blob)
         pic_fn = reloc_buf.function_at(
             reloc_offset + 16,  # Entry at +0x10 past 16-byte header
-            ctypes.c_int64,
-            [ctypes.c_uint32, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_uint32],
+            None,
+            [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_uint32],
         )
         locals_arr_pic = (ctypes.c_int64 * 8)(10, 0)
         pic_fn(
-            0x100,
+            ctypes.c_void_p(0),
             ctypes.c_void_p(0),
             ctypes.cast(locals_arr_pic, ctypes.c_void_p),
             0,

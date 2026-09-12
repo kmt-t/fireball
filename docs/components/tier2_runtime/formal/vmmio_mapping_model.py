@@ -16,8 +16,8 @@ def build_model(*, guards: bool = True) -> Kripke:
     vMMIO メモリアクセスディスパッチ・境界検査・TLB・権限執行の保護証明・変異検査対応モデル
     - s_idle: メモリアクセス開始
     - s_guest_ram_eval: Bit 31 == 0 のリニア RAM バイパス境界判定 (FastAddressCheck)
-    - s_guest_ram_ok: RAM 境界内 (addr < guest_ram_size) 物理アクセス成功
-    - s_trap_ram_oob: RAM 境界外 (addr >= guest_ram_size) トラップ
+    - s_guest_ram_ok: RAM 境界内 (addr + access_width - 1 < guest_ram_size) 物理アクセス成功
+    - s_trap_ram_oob: RAM 境界外 (addr + access_width - 1 >= guest_ram_size) トラップ
     - s_tlb_lookup: Bit 31 == 1 の 4-bit Folding XOR TLB 探索
     - s_tlb_hit_check_perm: TLB ヒット時のインライン権限チェック
     - s_flatmap_walk: TLB ミス時の PTE 探索 (二分探索)
@@ -98,9 +98,12 @@ def build_model(*, guards: bool = True) -> Kripke:
         "s_trap_unregistered": {"trapped", "trap_unregistered"},
         "s_trap_access_violation": {"trapped", "trap_access_violation"},
         # 違反状態
-        "s_unauthorized_ram": {"access_ok", "unauthorized_ram"},
-        "s_unauthorized_perm": {"access_ok", "unauthorized_perm"},
-        "s_stale_access": {"access_ok", "stale_access"},
+        # Mutation-only states intentionally have no `access_ok`/`trapped`
+        # label: they represent a stuck unsafe path and must also refute the
+        # liveness property, not merely the safety properties.
+        "s_unauthorized_ram": {"unauthorized_ram"},
+        "s_unauthorized_perm": {"unauthorized_perm"},
+        "s_stale_access": {"stale_access"},
     }
     return Kripke(S=S, S0=S0, R=R, L=L)
 
@@ -172,12 +175,11 @@ if __name__ == "__main__":
         assert passed == prop["expect"], f"Property {prop['name']} verification failed!"
         print(f"  [{'PASS' if passed else 'FAIL'}] {prop['name']}")
 
-    # 2. 変異検査反証 (guards=False: 全ての安全性特性式が確実に False 検出されること)
+    # 2. 変異検査反証 (guards=False: 全ての特性式が確実に False 検出されること)
     km_mut = build_model(guards=False)
     print("=== Mutation Testing: vMMIO Memory Mapping Model (guards=False) ===")
     for prop in properties():
-        if prop["kind"] == "safety":
-            res_mut = modelcheck(km_mut, prop["formula"])
-            violated = not km_mut.S0.issubset(res_mut)
-            assert violated, f"Mutation for {prop['name']} was NOT detected!"
-            print(f"  [PASS (Refuted as expected)] {prop['name']}")
+        res_mut = modelcheck(km_mut, prop["formula"])
+        violated = not km_mut.S0.issubset(res_mut)
+        assert violated, f"Mutation for {prop['name']} was NOT detected!"
+        print(f"  [PASS (Refuted as expected)] {prop['name']}")

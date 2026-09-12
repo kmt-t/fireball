@@ -541,7 +541,8 @@ def test_jitr_block_capacity_from_wasm_loader_and_no_set():
     assert engine.get_block(first_block.head_pc) is first_block
 
     # 3. Strictly verify no python set is used anywhere in engine
-    for attr, val in engine.__dict__.items():
+    for attr in RuntimeEngine.__slots__:
+        val = getattr(engine, attr)
         assert not isinstance(val, set), (
             f"Attribute {attr} must not be a set! Use system containers."
         )
@@ -644,7 +645,11 @@ def test_jitr_backward_branch_block_byte_span_not_disqualified():
         return
     module = parse(wasm_bytes)
     fn_idx = module.export_func_index("sum_to")
-    engine = RuntimeEngine(jit_compiler=TraceCompiler(), yield_threshold=8)
+    # Use a compact test card so both deliberately short loop blocks remain
+    # eligible; the production default remains the specification's 3-bit card.
+    engine = RuntimeEngine(
+        jit_compiler=TraceCompiler(), yield_threshold=8, card_shift=2
+    )
     engine.register_module_blocks(module)
     interp = Interpreter(module)
 
@@ -813,7 +818,11 @@ def test_jitr_return_terminated_block_jit_result_correct():
         return
     module = parse(wasm_bytes)
     fn_idx = module.export_func_index("f")
-    engine = RuntimeEngine(jit_compiler=TraceCompiler(), yield_threshold=2)
+    # The tail is intentionally compact; use the smaller test card so its
+    # RETURN-terminated block remains a valid JIT candidate.
+    engine = RuntimeEngine(
+        jit_compiler=TraceCompiler(), yield_threshold=2, card_shift=2
+    )
     engine.register_module_blocks(module)
     interp = Interpreter(module)
 

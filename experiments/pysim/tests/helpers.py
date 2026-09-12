@@ -28,3 +28,18 @@ for _p in [
     _sp = str(_p)
     if _sp not in sys.path:
         sys.path.insert(0, _sp)
+
+
+from ipc_router import IPCMessage
+
+
+def make_test_ipc_message(
+    entries: tuple[tuple[int, int], ...] | list[tuple[int, int]] = (),
+    task_id: int = 1,
+) -> IPCMessage:
+    """Builds IPC storage through the Tier 2 memory adapter for tests only."""
+    from memory import FB_CONF_MEMORY_POOL_SIZE, MemoryManager
+
+    manager = MemoryManager()
+    assert manager.init_manager(0x20020000, FB_CONF_MEMORY_POOL_SIZE).is_ok
+    return IPCMessage.from_entries(entries, memory_manager=manager, task_id=task_id)

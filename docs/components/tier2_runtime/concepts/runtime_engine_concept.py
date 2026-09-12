@@ -102,7 +102,7 @@ class HotspotBitmap:
     storage = bytearray((card_count + 3) // 4)
     """
 
-    def __init__(self, card_shift: int = 2, default_func_code_len: int = 64):
+    def __init__(self, card_shift: int = 3, default_func_code_len: int = 64):
         self.card_shift = card_shift
         self.default_func_code_len = default_func_code_len
         # Static array of BitView indexed by func_idx
@@ -385,7 +385,7 @@ class JITCandidateBitmap:
     Cards with bit 0 allow the interpreter to skip HotspotBitmap.touch() and history tracking entirely.
     """
 
-    def __init__(self, card_shift: int = 2, default_func_code_len: int = 64):
+    def __init__(self, card_shift: int = 3, default_func_code_len: int = 64):
         self.card_shift = card_shift
         self.default_func_code_len = default_func_code_len
         self.func_tables: list[BitView | None] = []
@@ -891,7 +891,7 @@ class IntegratedRuntimeEngine:
     def __init__(
         self,
         yield_threshold: int = 8,
-        card_shift: int = 2,
+        card_shift: int = 3,
         min_trace_bytes: int | None = None,
         candidate_threshold: int = 9,
     ):
@@ -1460,7 +1460,7 @@ def test_opcode_benefit_table_int4_decode() -> None:
 def test_bb_scoring_and_candidate_bitmap() -> None:
     """Verifies static block scoring and JIT candidate bitmap marking with threshold 9."""
     table = OpcodeBenefitTable()
-    cand_bm = JITCandidateBitmap(card_shift=2)
+    cand_bm = JITCandidateBitmap(card_shift=3)
 
     # 1. High benefit arithmetic block: local.get(6) + i32.const(6) + i32.add(7) = 19 >= 9
     bb_hot = BasicBlock(
@@ -1492,7 +1492,7 @@ def test_bb_scoring_and_candidate_bitmap() -> None:
 
 def test_interpreter_bypasses_touch_for_non_candidate() -> None:
     """Verifies that the interpreter bypasses HotspotBitmap.touch() for non-candidate blocks."""
-    eng = IntegratedRuntimeEngine(card_shift=2, candidate_threshold=9)
+    eng = IntegratedRuntimeEngine(card_shift=3, candidate_threshold=9)
     ctx = WASMContext()
 
     # Register a cold (non-candidate) block at 0x200

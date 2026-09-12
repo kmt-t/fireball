@@ -12,7 +12,7 @@ import threading
 from collections.abc import Generator, Mapping
 
 from debugger import DebuggerManager, GDBRspProtocol
-from runtime_engine import WASMContext
+from execution_context import WASMContext
 from scheduler import ChannelAction
 from wasm_module import BasicBlock
 

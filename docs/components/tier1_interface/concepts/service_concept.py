@@ -21,7 +21,9 @@ class ServiceState:
 
 class LoadResult:
     SUCCESS = "SUCCESS"
-    NOT_FOUND = "NOT_FOUND"
+    RETRY = "RETRY"
+    RESTART = "RESTART"
+    PANIC = "PANIC"
 
 
 @dataclass
@@ -41,7 +43,9 @@ class ServiceManager:
 
     def load_service(self, uri: str) -> str:
         if uri not in self._configured_uris:
-            return LoadResult.NOT_FOUND
+            # A URI outside the compile-time configuration is a fatal
+            # configuration error; the public contract exposes PANIC.
+            return LoadResult.PANIC
         record = self._services.get(uri)
         if record is None:
             record = ServiceRecord(uri=uri)
@@ -81,7 +85,7 @@ def test_fixed_uri_load_and_rejection() -> None:
     manager = ServiceManager((service_uri,))
     assert manager.load_service(service_uri) == LoadResult.SUCCESS
     assert manager.state(service_uri) == ServiceState.RUNNING
-    assert manager.load_service("fireball://service/unknown/0") == LoadResult.NOT_FOUND
+    assert manager.load_service("fireball://service/unknown/0") == LoadResult.PANIC
 
 
 def test_fault_isolation_and_targeted_restart() -> None:

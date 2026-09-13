@@ -197,6 +197,8 @@ flowchart TD
 <!-- traceability: {JIT_RuntimeAPI_Fallback} {ContextPointerRegister} {EnvironmentPointer} {JIT_RegisterMapping} {ADR_TosCacheAsymmetry} -->
 命令ハンドラおよびJITトレースは、継続渡し（Continuation Passing Style: CPS）と `__fastcall` 呼び出し規約による同一の4引数入口を持つ。実行コンテキストポインタ（`ctx`）、オペランドスタックポインタ（`sp`）、ローカル変数基底（`local_base`）、スタックトップ値（`tos`）を物理レジスタで引き継ぐ。インタープリタハンドラは次回呼び出し用の4引数とトラップ状態を結果として返し、次のPCは `ctx` に保持する。JITトレースは従来どおり末尾ジャンプで継続し、結果レコードを返さない。 `{JIT_RuntimeAPI_Fallback}` `{ContextPointerRegister}` `{EnvironmentPointer}` `{JIT_RegisterMapping}`
 
+命令実行中のWASMトラップは、ハンドラからPython例外を送出して制御フローを組み立てず、継続引数とトラップ情報を含む結果として返す。トラップを受け取った実行器は全アクティブフレームを破棄して `InterpreterCall.trap` を確定し、以後の命令を実行しない。同期的な公開ヘルパーが互換性のためにこの確定済みトラップを再送出する場合、それはハンドラ内部の実行経路ではない。追加仕様の一覧とマージ判定項目は [runtime_interpreter_test_spec.md の追加GOTCHA一覧](tests/runtime_interpreter_test_spec.md#追加gotcha一覧マージ判定用) に集約する。
+
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
 | 実行シグネチャ | インタープリタ命令ハンドラの継続渡し（CPS）4引数シグネチャ | 関数ポインタ | `handler_result (__fastcall *)(execution_context* __restrict__ ctx, uint32_t* __restrict__ sp, uint32_t* __restrict__ local_base, uint32_t tos) noexcept` |

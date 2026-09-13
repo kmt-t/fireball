@@ -49,8 +49,8 @@ graph LR
 
 | Preview1 関数 | 公開 Fireball IF | 変換方針 |
 | :--- | :--- | :--- |
-| `fd_write` | `get-interface` + `acquire-buffer` + `stream-write` + `release-buffer` | iovec を順に処理し、全要素を先に検証する |
-| `fd_read` | `get-interface` + `acquire-buffer` + `stream-read` + `release-buffer` | 読み出し結果をゲストの iovec へ反映する |
+| `fd_write` | `get-interface` + 固定バッファスロット + `stream-write` | iovec を順に処理し、全要素を先に検証する |
+| `fd_read` | `get-interface` + 固定バッファスロット + `stream-read` | 読み出し結果をゲストの iovec へ反映する |
 | `fd_close` | `stream-close` | 解決済みストリームを閉じる |
 | `fd_seek` | ゲスト側の仮想FD状態 | 仮想ファイル位置を更新する |
 | `clock_time_get` | `clock-get-now` | WASI の時刻表現へ変換する |
@@ -76,14 +76,13 @@ sequenceDiagram
     L->>R: get-interface("fireball://hal/stdout/0")
     R-->>L: interface handle
     L->>L: validate all iovec ranges
-    L->>B: acquire-buffer(total or next slice)
+    L->>B: select fixed buffer slot
     B-->>L: hal-buffer-slice
     L->>B: copy guest bytes into slice
     L->>H: stream-write(handle, slice)
     H->>D: dispatch stream write
     D-->>H: written bytes / error
     H-->>L: operation result
-    L->>B: release-buffer(slice)
     B-->>L: released
     L-->>G: WASI errno, nwritten
 ```

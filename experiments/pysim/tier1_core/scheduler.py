@@ -16,6 +16,7 @@ Implementation Invariants & Gotchas:
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 from collections.abc import Callable, Generator, Iterator
 from enum import IntEnum
 from typing import Protocol
@@ -249,6 +250,28 @@ class Scheduler:
         """Returns the authenticated identity of the task currently running."""
         assert self.current_task is not None, "No task is currently running"
         return self.current_task.task_id
+
+    def activate_task(self, task: Task) -> None:
+        """Activates a scheduler-registered task for a synchronous host entrypoint."""
+        assert self.get_task(task.task_id) is task, "Task must be registered with this scheduler"
+        assert self.current_task is None, "A scheduler task is already active"
+        self.current_task = task
+
+    def require_active_task(self, task: Task) -> None:
+        """Checks the scheduler-selected task without permitting replacement."""
+        assert self.get_task(task.task_id) is task, "Task must be registered with this scheduler"
+        assert self.current_task is task, "The requested task is not scheduler-selected"
+
+    @contextmanager
+    def task_context(self, task: Task) -> Iterator[None]:
+        """Temporarily runs scheduler-owned work under a registered task identity."""
+        assert self.get_task(task.task_id) is task, "Task must be registered with this scheduler"
+        previous = self.current_task
+        self.current_task = task
+        try:
+            yield
+        finally:
+            self.current_task = previous
 
     def spawn(
         self,
@@ -529,6 +552,7 @@ class Scheduler:
 
     def run_until_idle(self, budget: int | None = None) -> None:
         """Runs cooperative tasks until all coroutines block, yield or terminate, then fires idle hooks."""
+        previous_task = self.current_task
         self.drain_interrupts()
         step_budget = budget if budget is not None else max(1000, len(self._ready) * 64 + 16)
         while self._ready and step_budget > 0:
@@ -572,6 +596,7 @@ class Scheduler:
 
         for hook in self.idle_hooks:
             hook()
+        self.current_task = previous_task
 
     def run_to_completion(self, max_sweeps: int = 1000) -> None:
         for _ in range(max_sweeps):

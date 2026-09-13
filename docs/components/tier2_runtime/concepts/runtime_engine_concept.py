@@ -95,37 +95,31 @@ class BitView:
 
 
 class HotspotBitmap:
-    """Per-Function 2-bit state per CARD (4 bytes per card) backed by BitView<2>.
-    `func_tables` is a static list of BitViews indexed by `func_idx` (0 <= func_idx < num_functions).
-    Each function's BitView is sized strictly to its code length at module load time:
-    card_count = (func_code_len + (1 << card_shift) - 1) >> card_shift
-    storage = bytearray((card_count + 3) // 4)
-    """
+    """Per-function 2-bit card state with one owned byte storage per function."""
 
     def __init__(self, card_shift: int = 2, default_func_code_len: int = 64):
         self.card_shift = card_shift
         self.default_func_code_len = default_func_code_len
-        # Static array of BitView indexed by func_idx
-        self.func_tables: list[BitView | None] = []
+        self.func_storages: list[bytearray | None] = []
 
     def allocate_functions(self, num_functions: int) -> None:
         """Allocates static slot array for known number of functions at load time."""
-        if len(self.func_tables) < num_functions:
-            self.func_tables.extend([None] * (num_functions - len(self.func_tables)))
+        if len(self.func_storages) < num_functions:
+            self.func_storages.extend([None] * (num_functions - len(self.func_storages)))
 
     def register_function(self, func_idx: int, code_len: int) -> BitView:
         """Allocates a dedicated BitView<2> matching the exact function code length."""
-        if func_idx >= len(self.func_tables):
-            self.func_tables.extend([None] * (func_idx + 1 - len(self.func_tables)))
+        if func_idx >= len(self.func_storages):
+            self.func_storages.extend([None] * (func_idx + 1 - len(self.func_storages)))
         card_count = max(1, (code_len + (1 << self.card_shift) - 1) >> self.card_shift)
         storage = bytearray((card_count + 3) // 4)
-        view = BitView(storage, bits=2, origin=0, count=card_count)
-        self.func_tables[func_idx] = view
-        return view
+        self.func_storages[func_idx] = storage
+        return BitView(storage, bits=2, origin=0, count=card_count)
 
     def _get_or_create_view(self, func_idx: int) -> BitView:
-        if func_idx < len(self.func_tables) and self.func_tables[func_idx] is not None:
-            return self.func_tables[func_idx]  # type: ignore[return-value]
+        if func_idx < len(self.func_storages) and self.func_storages[func_idx] is not None:
+            storage = self.func_storages[func_idx]
+            return BitView(storage, bits=2, origin=0, count=len(storage) * 4)
         return self.register_function(func_idx, self.default_func_code_len)
 
     def _split_pc(self, pc: int) -> tuple[int, int]:
@@ -183,8 +177,9 @@ class HotspotBitmap:
         marginally-hot card would thrash between compile and evict forever.
         """
         func_idx, offset = self._split_pc(pc)
-        if func_idx < len(self.func_tables) and self.func_tables[func_idx] is not None:
-            view = self.func_tables[func_idx]
+        if func_idx < len(self.func_storages) and self.func_storages[func_idx] is not None:
+            storage = self.func_storages[func_idx]
+            view = BitView(storage, bits=2, origin=0, count=len(storage) * 4)
             card = offset >> self.card_shift
             if card < view.size():  # type: ignore[union-attr]
                 view.put(card, CardState.UNEXECUTED)  # type: ignore[union-attr]

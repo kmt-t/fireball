@@ -30,7 +30,7 @@ Tests:
 - Safety check rejecting unsafe format specifiers (%s/%p) at dictionary registration
 """
 
-from hal_dispatch import StreamTransport
+from stream_transport import StreamTransport
 from ipc_router import (
     DataType,
     IPCMessage,

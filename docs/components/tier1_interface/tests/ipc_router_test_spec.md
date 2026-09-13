@@ -12,7 +12,7 @@ URIベースのサービス検索（3段パイプライン）、ロールベー�
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | TEST-IPCR-01 | レジストリは実際にFlatMapView（O(log N)二分探索） | - | `_REGISTRY`の型を確認 | `dict`ではなく`FlatMapView`のインスタンスである | ipc_router_concept.py `test_registry_is_a_real_flat_map_view_not_a_dict` |
-| TEST-IPCR-02 | URI Lookup成功 | 登録済みURI（例: `fireball://device/gpio/0`） | `router.lookup(uri)` | `(COMPLETED, channel)` オブジェクトを返す | Stage 1, Stage 2 |
+| TEST-IPCR-02 | URI Lookup成功 | 登録済みURI（例: `fireball://hal/gpio/0`） | `router.lookup(uri)` | `(COMPLETED, channel)` オブジェクトを返す | Stage 1, Stage 2 |
 | TEST-IPCR-03 | URI Lookup失敗 | 未登録URI | `router.lookup(uri)` を呼ぶ | `(ERR_NOT_FOUND, None)` を返し、メッセージ所有権は送信側のまま(`SENDER_OWNS`) | Error1, ipc_router_concept.py `test_unregistered_uri_is_rejected` |
 | TEST-IPCR-04 | ロールベースアクセス制御・許可 | `RUNTIME`→`HAL_GPIO`（許可） | `lookup(uri)` でチャネル取得後 `send(channel, msg)` | `COMPLETED`を返す | 表, `{RoleBasedAccessControl}` |
 | TEST-IPCR-05 | ロールベースアクセス制御・拒否 & 偽装防止 | `RUNTIME`→`DEBUGGER`（拒否） | `lookup(uri)` を呼ぶ。また他ロールのチャネルを直接指定して `send(channel, msg)` を試行 | `ERR_PERMISSION_DENIED`を返し、TCB ロール検査により偽装送信も拒否され、所有権が送信側のまま維持される | Error2, ipc_router_concept.py `test_permission_denied` |

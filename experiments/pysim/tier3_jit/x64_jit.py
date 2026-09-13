@@ -234,8 +234,6 @@ _EMIT_STORAGE: ReadOnlyFlatMapStorage[int, Callable[[bytearray, WasmOperand], in
         ]
     )
 )
-EMIT_MAP: FlatMapView[int, Callable[[bytearray, WasmOperand], int]] = _EMIT_STORAGE.view()
-
 def _complex_helper_info(op: int) -> tuple[int, int] | None:
     """Return the direct context-member slot and raw result width."""
 
@@ -396,7 +394,7 @@ class TraceCompiler:
         """
         Compiles a single loader-owned BasicBlock into a PIC native JITTrace
         using `_EMIT_TABLE` dispatch. `block.instructions` is streamed exactly once,
-        never materialized into a list: `EMIT_MAP.find(op)` alone is the
+        never materialized into a list: `_EMIT_STORAGE.find(op)` alone is the
         single "does this op have stencil support" signal (a `None` result
         means fall back to Tier 2 interpretation for this block) -- the
         stack-depth Trace Boundary Invariant is checked and the native code
@@ -418,7 +416,7 @@ class TraceCompiler:
         for op, arg in block.instructions:
             saw_op = True
             assert helper_index is None, "a complex helper must terminate a trace"
-            emitter = EMIT_MAP.find(op)
+            emitter = _EMIT_STORAGE.view().find(op)
             if emitter is None:
                 helper_info = _complex_helper_info(op)
                 if helper_info is None:

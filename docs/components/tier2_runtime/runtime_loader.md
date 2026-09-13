@@ -26,9 +26,9 @@ WASMローダは、ROM上のWASM32バイナリをパースし、実行環境が�
 - **`BinaryStream`**: ROMデータをバイト境界・LEB128ガード付きで読み進めるストリームリーダ。
 - **`WasmLoader`**: バイナリ検証、パース、および `ModuleView` の構築を担うローダクラス。親ランタイムの `bump_allocator` を非所有参照として保持する。 `{Runtime_BumpAllocator}`
 - **`decoded_entity_registry`**: デコードされた各エンティティ（セクション、関数コード、グローバル、データセグメント）を保持するレジストリ。
-- **`entity_offset_tree` (`radix_binary_tree_view`)**: ファイル内のバイト位置（開始オフセット）をキーとしてデコード済みエンティティへ $O(1) + O(\log n)$ でマッピングする基数2進木索引。
-- **`import_tree` / `export_tree` (`radix_binary_tree_view`)**: シンボル名（インポート名・エクスポート名）のハッシュ値をキーとして各エントリへ $O(1) + O(\log n)$ でマッピングする基数2進木索引。
-- **`basic_block_tree` (`radix_binary_tree_view`)**: モジュール内の全基本ブロックメタ情報（`BasicBlock`: `head_pc`, `next_pc`, `loops_to`, `frame_depth`, `byte_span`）へ UnifiedPC（`bswap32(pc)`）でアクセスする基数2進木索引。`BasicBlock` はPCレンジと制御フローメタ情報のみを保持し、デコード済み命令列は持たない――命令列はブロックが実際にコンパイル・実行される瞬間にのみ、バイトコードから都度ストリーミングで導出する（`TraceBlock`）。ランタイムや JIT コンパイラがブロック探索・メタ情報を再生成することなく、ローダ側の不変（ReadOnly）索引構造から直接 $O(1) + O(\log n)$ でブロック解決する。 `{Loader_BasicBlockIndex}`
+- **`entity_offset_storage` (`ReadOnlyRadixBinaryTreeStorage`)**: ファイル内のバイト位置（開始オフセット）をキーとしてデコード済みエンティティへ $O(1) + O(\log n)$ でマッピングする基数2進木索引。検索時だけviewを借用する。
+- **`import_storage` / `export_storage` (`ReadOnlyRadixBinaryTreeStorage`)**: シンボル名（インポート名・エクスポート名）のハッシュ値をキーとして各エントリへ $O(1) + O(\log n)$ でマッピングする基数2進木索引。検索時だけviewを借用する。
+- **`block_storage` (`ReadOnlyRadixBinaryTreeStorage`)**: モジュール内の全基本ブロックメタ情報（`BasicBlock`: `head_pc`, `next_pc`, `loops_to`, `frame_depth`, `byte_span`）へ UnifiedPC（`bswap32(pc)`）でアクセスする基数2進木索引。`BasicBlock` はPCレンジと制御フローメタ情報のみを保持し、デコード済み命令列は持たない――命令列はブロックが実際にコンパイル・実行される瞬間にのみ、バイトコードから都度ストリーミングで導出する（`TraceBlock`）。ランタイムや JIT コンパイラがブロック探索・メタ情報を再生成することなく、ローダ側の不変ストレージから借用viewで $O(1) + O(\log n)$ にブロックを解決する。 `{Loader_BasicBlockIndex}`
 - **`opcode_benefit_table` (`BitView<4>`)**: ROM 上に配置される 128 バイト（256 opcode $\times$ 4-bit）の静的テーブル。インタープリタ処理命令数と JIT 処理命令数の差分（短縮機械語命令数、分岐8倍換算）をゼロ点固定線形正規化した `int4_t`（-8〜+7、1スコア＝2命令相当短縮）を保持する。 `{JIT_StaticBenefitScoring}`
 - **`jit_candidate_bitmap` (`BitView<1>`)**: モジュールロード時に各基本ブロックの命令スコア合算値が閾値（9点：コンパイルオーバーヘッド換算値6点＋デルタ3点）に達したブロックの `head_pc` が属する Card を 1bit でマーキングしたビットマップ。インタープリタ実行ループにおける `touch()` スキップに供される。 `{JIT_CandidateBitmap}`
 - **`control_map`**: 各関数の制御デリミタと `br_table` の静的対応を保持する固定長メタデータ。インタープリタはロード済みの関数メタデータを参照し、実行時に制御構造を再走査しない。命令列そのものは保持せず、必要な命令だけをROM上のコードからストリーミングする。
@@ -77,7 +77,7 @@ ROM上のバイナリデータに対する「窓」として機能し、WIT上�
 これにより、RAM消費を最小限に抑えつつ、クライアントに対しては型安全なインターフェースを提供する。 `{ROMParsing}`
 
 - **セクション索引**: WASM標準セクション（Type, Import, Code等）のオフセットとサイズをキャッシュする。
-- **シンボル検索**: エクスポート名ハッシュからインデックスへの高速な引き当て（`export_tree`）を提供する。
+- **シンボル検索**: エクスポート名ハッシュからインデックスへの高速な引き当て（`export_storage`から借用view）を提供する。
 
 #### バイナリストリーム（BinaryStream）
 <!-- traceability: {ROMParsing} -->
@@ -133,12 +133,12 @@ ROM上の読み取り専用バイト列ビューをラップし、カレント�
     - セクションスキャン時に内容をRAMにコピーせず、ROM上の開始オフセットとサイズを索引化する。
     - 各セクション、関数コードブロック、グローバル変数、データセグメント等のデコード済みエントリを `decoded_entity_registry` に登録する。
     - 各エントリの開始ファイルオフセット `file_offset` をキーとして、基数2進探索木ビュー（`fireball::radix_binary_tree_view`）を構築する。粗い Radix Table で区間を特定後、狭めた区間に対する有界二分探索により $O(1) + O(\log n)$ でファイル内の任意バイト位置から該当するデコード済みエンティティ（関数メタデータ、セクション、データ定義）を高速逆引きできるようにする。
-    - エクスポートおよびインポートエントリをパースし、シンボル名の 32-bit ハッシュ値（FNV-1a）を算出。物理実装では名前文字列を ROM 上の文字列ビューとして RAM コピーゼロで保持し、ハッシュ値をキーとした `export_tree` / `import_tree`（`fireball::radix_binary_tree_view`）を構築する。概念コードは、この比較意味論をデコード済み文字列値で再現する。
+    - エクスポートおよびインポートエントリをパースし、シンボル名の 32-bit ハッシュ値（FNV-1a）を算出。名前文字列をROM上の文字列ビューとしてRAMコピーゼロで保持し、ハッシュ値をキーとした `export_storage` / `import_storage`（`fireball::radix_binary_tree_view`を借用）を構築する。概念コードは、この比較意味論をデコード済み文字列値で再現する。
 - **シンボル検索とハッシュ衝突完全排除 (`GOTCHA-LOAD-01`, `{META_AccessDictionary}`, `{META_BinarySearch}`)**:
-  シンボル名ハッシュ（FNV-1a 32-bit）をキーとして `export_tree`（`radix_binary_tree_view`）を、粗索引 $O(1)$ と狭い区間の二分探索 $O(\log n)$ の組み合わせで探索する。候補が得られた後は ROM 上の元の名前を照合するため、照合込みの worst-case は $O(1) + O(\log n) + O(L)$（$L$ は名前長）である。
+  シンボル名ハッシュ（FNV-1a 32-bit）をキーとして `export_storage`から借用した`radix_binary_tree_view`を、粗索引 $O(1)$ と狭い区間の二分探索 $O(\log n)$ の組み合わせで探索する。候補が得られた後はROM上の元の名前を照合するため、照合込みの worst-case は $O(1) + O(\log n) + O(L)$（$L$ は名前長）である。
   **設計理由と不変条件**: 32-bit ハッシュ値による探索のみで関数解決を完了させると、万一のハッシュ衝突発生時に誤った関数がディスパッチされ、壊滅的な誤動作を引き起こす。そのため、ハッシュ探索で候補エントリがヒットした際は必ず ROM 上の元のシンボル名文字列と 1 回完全一致照合を行い、ハッシュ衝突によるシンボル誤認を完全に排除する。
-- **インポートテーブル検索と依存関係解決 (resolve_imports)**: インポートテーブルの各エントリに対し、インポート先モジュール名・フィールド名のハッシュ値で対象モジュールの `export_tree`（`radix_binary_tree_view`）を探索する。候補区間の索引探索は $O(1) + O(\log n)$、ROM上の元文字列による衝突照合を含む worst-case は $O(1) + O(\log n) + O(L)$ であり、照合後に依存関係を解決してモジュールを実行可能状態へ遷移させる。 `{MultiModule_Support}` `{META_BinarySearch}`
-- **ファイル位置逆引き (lookup_by_file_offset)**: 任意のファイル内バイトオフセットから `entity_offset_tree`（`radix_binary_tree_view`）を検索し、そのオフセットを包含するデコード済みエンティティ（セクション、関数、データ等）を即座に特定・返却する。
+- **インポートテーブル検索と依存関係解決 (resolve_imports)**: インポートテーブルの各エントリに対し、インポート先モジュール名・フィールド名のハッシュ値で対象モジュールの `export_storage`から借用した`radix_binary_tree_view`を探索する。候補区間の索引探索は $O(1) + O(\log n)$、ROM上の元文字列による衝突照合を含む worst-case は $O(1) + O(\log n) + O(L)$ であり、照合後に依存関係を解決してモジュールを実行可能状態へ遷移させる。 `{MultiModule_Support}` `{META_BinarySearch}`
+- **ファイル位置逆引き (lookup_by_file_offset)**: 任意のファイル内バイトオフセットから `entity_offset_storage`の借用`radix_binary_tree_view`を検索し、そのオフセットを包含するデコード済みエンティティ（セクション、関数、データ等）を即座に特定・返却する。
 - **メモリセクション検証**: Memory Section をパースし、論理ページサイズ（64KB単位）および初期要求ページ数を取得。物理割当が部分ページ（例: 8KB）の場合や複数ページ（`N * 64KB`）の場合でも、モジュール初期ページ要求とシステム物理予算（`FB_CONF_MAX_WASM_PAGES`）を照合し、実行時境界判定へ引き渡す。
 - **アンロードと専用バンプアロケータ一括回収 (`GOTCHA-LOAD-03`, `{OneRuntimeOneGuest}`, `{Runtime_BumpAllocator}`)**:
   `unload` はモジュールをアンロードし、親ランタイムの `bump_allocator` を一括リセットまたは返還する。
@@ -207,7 +207,7 @@ flowchart TD
 ```mermaid
 flowchart TD
     Start(["Symbol Lookup Request: target_name"]) --> Hash["Compute 32-bit FNV-1a Hash of target_name"]
-    Hash --> BSearch["Bounded Binary Search in export_tree (O(1) + O(log n))"]
+    Hash --> BSearch["Bounded Binary Search in export_storage view (O(1) + O(log n))"]
     BSearch --> Found{"Candidate Entry found by Hash?"}
 
     Found -- "No" --> NotFound(["Symbol Not Found (ERR_NOT_FOUND)"])

@@ -64,7 +64,7 @@ ROM上WASM32バイナリのゼロコピー索引化（`ModuleView`）、V1〜V6�
 | TEST-LOAD-45 | インポートテーブルのハッシュ＋RadixBinaryTreeView 検索 | インポートエントリ多数 | `find_import(module, field)` | ハッシュ値から RadixBinaryTreeView を $O(1)+O(\log n)$ で探索し、元のモジュール名・フィールド名を照合して解決される | 「インポートテーブル検索」 |
 | TEST-LOAD-46 | シンボルハッシュ衝突時の安全な文字列一致検証 | 同一ハッシュ値を持つ異なるシンボル名 | `lookup_export(name)` | ハッシュ一致後に ROM 上の文字列を 1 回照合し、誤ったシンボルの誤認を確実に防ぐ | 「シンボル検索」 |
 | TEST-LOAD-47 | 未定義シンボルの高速不存在判定 | 未エクスポートのシンボル名 | `lookup_export(non_existent)` | ハッシュ索引の $O(1)$ の区間絞り込みと有界探索 $O(\log n)$ の後、候補がなければ `None` を返す。候補がある場合のみ元文字列を照合する | - |
-| TEST-LOAD-48 | ローダ所有のベーシックブロック索引と不変メタ情報公開 | パース済み WASM モジュール | `mod.get_block(pc)` / `mod.block_tree` | ランタイム側での再構築なしに、ローダが構築した `ReadOnlyRadixBinaryTreeStorage` から $O(1) + O(\log n)$ で `BasicBlock` メタ情報を直接解決できる | `{Loader_BasicBlockIndex}` |
+| TEST-LOAD-48 | ローダ所有のベーシックブロック索引と不変メタ情報公開 | パース済み WASM モジュール | `mod.get_block(pc)` / `mod.block_storage` | ランタイム側での再構築なしに、ローダが構築した `ReadOnlyRadixBinaryTreeStorage` と借用viewから $O(1) + O(\log n)$ で `BasicBlock` メタ情報を解決できる | `{Loader_BasicBlockIndex}` |
 | TEST-LOAD-49 | int4_t スコアリングによる JIT 候補ビットマップ生成 | WASM モジュールロード | `cand_bm.evaluate_block(bb, table, threshold=9)` | 128B BitView<4> テーブルから命令ごとの機械語短縮スコア（int4_t）を積算し、合計9点以上のブロックの head_pc カードビット（1bit）が正確に 1 にセットされる | `{JIT_StaticBenefitScoring}`, `{JIT_CandidateBitmap}` |
 | TEST-LOAD-50 | JITCandidateBitmap 非候補ブロックの touch/履歴バイパス | 非候補ブロック（カードビット 0）の実行 | `eng.run(cold_pc, ctx)` | インタープリタ実行は行われるが、HotspotBitmap.touch() および履歴リングへの記録が完全にバイパスされ、カード状態が UNEXECUTED のまま維持される | `{JIT_CandidateBitmap}` |
 

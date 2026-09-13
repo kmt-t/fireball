@@ -27,6 +27,8 @@
 <!-- traceability: {GLOBAL_Policy_Memory} {META_NoStdVector} {GLOBAL_StaticScalability} -->
 メモリ所有権とビューを厳格に分離し、要素の追加（`insert`）や削除（`remove`）等の変更操作はすべて **可変ストレージ（Mutable Storage）** の責務とする。非所有ビュー（View）は探索・走査に専念し、一切の変更操作を提供しない。また、下位互換用のエイリアスは全廃し、正規のクラス名のみを直接使用する。
 
+所有権は単一のストレージインスタンスだけが持つ。ストレージ所有側は同じ実体を指すviewをメンバとして二重保持せず、必要な処理の呼び出し時に借用する。別インスタンスが所有ストレージを検索する場合だけ、所有者から非所有viewを受け取る。view単独を所有型として扱ったり、同じ実体に複数の所有者を作ったりしてはならない。
+
 | コンテナ種別 | 非所有ビュー (View)<br/>※探索・絞り込み専用 | 読み取り専用ストレージ (ReadOnly Storage)<br/>※静的イミュータブル実体 | 可変ストレージ (Mutable Storage)<br/>※要素追加(`insert`)・削除(`remove`) | 実体所有権 | 変更操作の責務 |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | **FlatMap** (疎マップ) | `flat_map_view<K, V>` | `read_only_flat_map_storage<K, V>` | `mutable_flat_map_storage<K, V, Capacity>` | Storage が AoS 配列を完全所有 | **Mutable Storage のみ** (`insert`, `remove`) |
@@ -254,6 +256,7 @@ struct mutable_flat_map_storage {
 - **絞り込みの合成**: 絞り込み操作の戻り値は同じビュー型であるため、複数段の索引を順に適用できる。各段は区間を単調に狭めるのみで、区間外の要素を再び含めることはない。
 - **ビット詰めアクセス**: 論理添字 $i$ に対する物理位置は `bit = origin + i * Bits` として求まり、`byte = bit >> 3`、`shift = bit & 7` となる。`Bits` が 8 の約数であるため 1 要素がバイトを跨ぐことはなく、単一バイトのロードとシフト・マスクで読み出しが完結する。 `{PackedBitView}` `{GLOBAL_StrictMemoryLimit}`
 - **AoS 標準ソートと二分探索 (Standard Sort & Binary Search)**: 自前のソート関数（連動ヒープソート等）の車輪の再発明を排し、C++ 標準の `std::sort`（C++20 `constexpr` 対応）および射影付き `std::lower_bound` をそのまま利用する。小規模組み込み（$N \le 64$）においてデータ全体が 1〜2 本のキャッシュライン（32〜64 バイト）に収まるため、AoS でキャッシュミスは発生せず、標準ライブラリの極限まで最適化されたアルゴリズムの恩恵を最大化できる。 `{META_ZeroCostAbstraction}` `{GLOBAL_StrictMemoryLimit}`
+- **検索方式の選択**: 読み取り量とエントリ数が大きく、全域二分探索が広い範囲を読む表には `RadixBinaryTreeView` を使い、基数表で狭い連続範囲へ絞ってキャッシュ汚染を抑える。エントリ数が小さい表は基数表を持たず `FlatMapView` の二分探索を使う。アクセス局所性がある固定表は、キーをXOR折りたたみして選ぶダイレクトマップキャッシュを併用する。 `{META_BinarySearch}` `{LowLatencyLookup}`
 
 実行可能な参照実装と検証テストは [`flat_view_concept.py`](docs/components/tier1_core/concepts/flat_view_concept.py) を参照。ビット詰めの近傍非破壊性、非バイト境界での `slice`、絞り込みの単調縮小性、集合の所属判定、JIT 検索経路をテストで固定している。
 

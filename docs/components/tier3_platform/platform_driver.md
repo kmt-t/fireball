@@ -15,23 +15,34 @@
 <!-- traceability: {META_3TierSeparation} -->
 本コンポーネントは **Tier 3 (プラットフォーム / リーフコンポーネント: Leaf Component)** に属し、ハードウェアとハイパーバイザの物理境界を抽象化する物理ドライバ実装を担当する。抽象化層（URI Resolver、コマンドプロトコル）は Tier 2 の [`hal_dispatch.md`](docs/components/tier2_runtime/hal_dispatch.md) が担う。 `{META_3TierSeparation}`
 
+### 2.1 WASI-HAL結線設定
+
+WASIアダプタとHALドライバのURI結線は、物理ドライバ実装とは別のTier 3設定ファイル [`wasi_hal_bindings.py`](../../../experiments/pysim/tier3_platform/wasi_hal_bindings.py) で選択する。Tier 2はURIをハードコードせず、Tier 1の [`WasiHalBindings`](../../../experiments/pysim/tier1_interface/wasi_bindings.py) 契約を通じて注入された値だけを利用する。
+
+| 結線 | 既定URI |
+| :--- | :--- |
+| `stdout_uri` | `fireball://hal/stdout/0` |
+| `timer_uri` | `fireball://hal/timer/0` |
+| `uart_uri` | `fireball://hal/uart/0` |
+| `logger_uri` | `fireball://hal/logger/0` |
+
 ## 3. 静的モデル
 
 ### 3.1 データ構造
 - **デバイスレジストリ（物理実体）**: 管理対象のデバイス情報を保持する静的配列。
-- **HALバッファプール（物理実体）**: デバイス通信用に使用する、ドライバ側で管理される固定長バッファプール。**vMMIOの DYNAMIC 領域（コンパイル時に事前予約された専用ページプール）に配置され、安全かつ有界に管理される。**
+- **HALバッファプール（物理実体）**: デバイス通信用に使用する、HALが管理する固定長バッファプール。**vMMIOの DYNAMIC 領域（コンパイル時に事前予約された専用ページプール）に配置され、安全かつ有界に管理される。バッファは共有メモリの所有権を持たず、`bind_runtime`した単一RuntimeとHALドライバがアクセスする。**
 - **RSPパケットバッファ**: RSPパケットの送受信に使用する固定長バッファ。
 
 ### 3.2 内部ブロック図
 ```mermaid
 flowchart TD
     IPCR["Tier1: ipc_router (URI resolved to dedicated Role/Channel)"]
-    IPCR -->|CSP Rendezvous| T1["hal_task: Role.HAL_UART"] --> UART[UART Driver: fireball://device/uart/0]
-    IPCR -->|CSP Rendezvous| T2["hal_task: dedicated Role"] --> RTT[RTT Driver: fireball://device/rtt/0]
-    IPCR -->|CSP Rendezvous| T3["hal_task: Role.HAL_GPIO"] --> GPIO[GPIO Driver: fireball://device/gpio/0]
-    IPCR -->|CSP Rendezvous| T4["hal_task: Role.HAL_I2C"] --> I2C[I2C Driver: fireball://device/i2c/0]
-    IPCR -->|CSP Rendezvous| T5["hal_task: Role.HAL_SPI"] --> SPI[SPI Driver: fireball://device/spi/0]
-    IPCR -->|CSP Rendezvous| T6["hal_task: Role.HAL_TIMER"] --> Timer[Timer Driver: fireball://device/timer/0]
+    IPCR -->|CSP Rendezvous| T1["hal_task: Role.HAL_UART"] --> UART[UART Driver: fireball://hal/uart/0]
+    IPCR -->|CSP Rendezvous| T2["hal_task: dedicated Role"] --> RTT[RTT Driver: fireball://hal/rtt/0]
+    IPCR -->|CSP Rendezvous| T3["hal_task: Role.HAL_GPIO"] --> GPIO[GPIO Driver: fireball://hal/gpio/0]
+    IPCR -->|CSP Rendezvous| T4["hal_task: Role.HAL_I2C"] --> I2C[I2C Driver: fireball://hal/i2c/0]
+    IPCR -->|CSP Rendezvous| T5["hal_task: Role.HAL_SPI"] --> SPI[SPI Driver: fireball://hal/spi/0]
+    IPCR -->|CSP Rendezvous| T6["hal_task: Role.HAL_TIMER"] --> Timer[Timer Driver: fireball://hal/timer/0]
     UART --> RSP[RSP Parser]
     RTT --> RSP
     RSP --> Queue[debug_command_queue]
@@ -49,7 +60,7 @@ flowchart TD
 | :--- | :--- | :--- | :--- |
 | デバイス識別子 | システム全体で重複しない、デバイスごとの管理番号 | ID値 | `device_id` |
 | デバイス名 | 人間が識別可能なデバイスの名称 | 固定長配列 | 16bytes |
-| 階層URI | IPC ルータに登録される正規化 URI | 文字列 | `fireball://device/<type>/<instance>` |
+| 階層URI | IPC ルータに登録される正規化 URI | 文字列 | `fireball://hal/<type>/<instance>` |
 | デバイス種別 | 入出力の特性（ブロック/ストリーム等）を識別する | 列挙型 | - |
 | 転送単位 | デバイスが扱う最小のデータブロックサイズ | バイト数 | - |
 | 予約ページ数 | vMMIO DYNAMIC領域に確保するページ数 (`reserved_pages`) | ページ数 | デフォルト0 |
@@ -73,28 +84,21 @@ flowchart TD
 - **割り込み通知（push）**: 物理割り込み発生時、ISRは原因情報を固定5ワードの`interrupt-event`へ変換し、COOSの`notify_interrupt(event)`で固定長FIFOへ投函するのみとする。物理デバイスの複数原因は、上位のイベント源マッピングで同じデバイス系統へ集約する。**ISRがタスク状態を直接書き換えることはない。**実際のREADY遷移は、スケジューラが協調境界でFIFOをドレインする際に行われる（`{GLOBAL_InterruptWakeup}`を正本とする）。この非同期境界の分離は、[`interrupt_boundary_model.py`](docs/components/tier3_platform/formal/interrupt_boundary_model.py) に定義されたCTL検証項目 `isr_does_not_update_task_state_directly` および `interrupt_event_reaches_scheduler_boundary` として証明されている性質である。
 - **割り込み配送**: COOSから渡された`interrupt-event`は、vSoCがSafepointで受け取り、ゲスト配送またはドロップを行う。vIRQの分類・デバイスノード・ゲスト関数登録はvSoCとvMMIOの契約に従い、物理ドライバはゲスト関数を直接呼び出さない。 `{TaskPollInterruptEvent}` `{GLOBAL_InterruptWakeup}`
 
-#### HalBufferPool バッファ確保・境界検査手順（手順アクティビティ図）
+#### HalBufferPool 固定スロット・境界検査手順（手順アクティビティ図）
 <!-- traceability: {GOTCHA-HAL-01} {HAL_Interface} {IPC_ZeroCopy} -->
-デバイス通信用バッファスロットの固定長境界検証、タスク所有権照合、および不正アクセス防御手順を示す。
+デバイス通信用固定スロットの境界検証、Runtimeバインド、および不正アクセス防御手順を示す。
 
 ```mermaid
 flowchart TD
-    Start(["HAL Driver: acquire_buffer(size)"]) --> CheckSize{"Requested size <= FB_CONF_HAL_BUFFER_SIZE (256B)?"}
-
-    CheckSize -- "No (> 256B)" --> RejectSize(["Reject: HAL_ERROR_INVALID_SIZE"])
-    CheckSize -- "Yes" --> AllocSlot["Find Free Slot in Fixed-Capacity HalBufferPool (FB_CONF_HAL_MAX_BUFFERS = 4 slots)"]
-    AllocSlot --> SlotFound{"Available slot found?"}
-
-    SlotFound -- "No" --> RejectFull(["Reject: Pool Exhausted (ERR_NO_RESOURCE)"])
-    SlotFound -- "Yes" --> MarkSlot["Mark Slot Active & Set slot.owner_id = caller_task_id"]
-    MarkSlot --> ReturnHandle(["Return hal_buf_id Handle to Caller"])
-
-    subgraph Buffer Release / Destruction
-        RelStart(["HAL Driver: release_buffer(hal_buf_id)"]) --> VerifyOwner{"caller_task_id == slot.owner_id?"}
-        VerifyOwner -- "No (Unauthorized Task!)" --> TrapOwner(["GOTCHA-HAL-01 Trap: HalBufferTrap / ERR_PERMISSION_DENIED"])
-        VerifyOwner -- "Yes" --> ClearSlot["Zero slot memory & Reset slot.owner_id = 0"]
-        ClearSlot --> ReturnPool(["Slot returned to Free Pool"])
-    end
+    Start(["Runtime: bind_runtime()"])
+    Start --> MapSlots["Map all fixed slots in HalBufferPool to vMMIO DYNAMIC"]
+    MapSlots --> SingleRuntime{"Already bound to another Runtime?"}
+    SingleRuntime -- "Yes" --> Reject(["Reject: HalBufferTrap"])
+    SingleRuntime -- "No" --> Select["Runtime selects slot by buffer_id"]
+    Select --> Bounds{"offset + length <= FB_CONF_HAL_BUFFER_SIZE (256B)?"}
+    Bounds -- "No" --> Trap(["GOTCHA-HAL-01 Trap: HalBufferTrap"])
+    Bounds -- "Yes" --> Access["Runtime and HAL driver access the same fixed slot"]
+    Access --> Unbind(["Runtime: unbind_runtime() -> unmap all slots"])
 ```
 
 ### 4.2 状態遷移図（物理デバイス状態）
@@ -145,11 +149,11 @@ sequenceDiagram
 
 ### 5.1 物理実装の勘所・不変条件
 <!-- traceability: {HAL_Interface} {IPC_ZeroCopy} -->
-[`hal_dispatch.md`](docs/components/tier2_runtime/hal_dispatch.md) の `{HAL_Interface}` で定義された契約API（`read`, `write`, `transfer`, `acquire_buffer`）を、以下の物理不変条件に従って実装する。
+[`hal_dispatch.md`](docs/components/tier2_runtime/hal_dispatch.md) の `{HAL_Interface}` で定義された契約API（`read`, `write`, `transfer`, `get-buffer`）を、以下の物理不変条件に従って実装する。
 
 **静的固定長バッファプールの境界厳格検査 (`GOTCHA-HAL-01`)**:
-`acquire_buffer`（`HalBufferPool`）は、固定サイズスロット（`FB_CONF_HAL_BUFFER_SIZE` = 256 バイト）の静的プールからバッファを切り出す。
-**設計理由と不変条件**: 要求サイズが 256 バイトを超過した場合（`size > FB_CONF_HAL_BUFFER_SIZE`）は即座に `HAL_ERROR_INVALID_SIZE` で拒絶する。また、バッファ解放時（`release_buffer`）は呼び出し元タスク ID が割り当て時の所有タスク ID と一致することを厳格に検査し、不一致時は `HalBufferTrap` により即時停止させる。これにより、隣接する固定長スロットの汚染や不正解放を完全に防止する。
+`HalBufferPool` は、`FB_CONF_HAL_MAX_BUFFERS` 個の固定サイズスロット（`FB_CONF_HAL_BUFFER_SIZE` = 256 バイト）を保持する。Runtimeの`bind_runtime`で全スロットをvMMIO DYNAMICへマップし、`get-buffer(buffer_id)`でスロットを選択する。HALは常に全スロットへアクセスでき、Runtimeは一度に一つだけバインドできる。`unbind_runtime`は全スロットのマッピングを解除する。
+**設計理由と不変条件**: 固定スロットは共有メモリの所有権を持たず、HALの`acquire`/`release`も存在しない。Runtime以外のゲストがDYNAMICマッピングを取得すること、また`offset + length`がスロット境界を越えることは`HalBufferTrap`で即時停止させる。
 
 `stream-read` / `stream-write` を処理するHALドライバは、コマンドに含まれる `hal_buf_id` を使って所有ゲストのバッファスロットへHALサブシステム権限でアクセスする。ゲスト所有権の検査はゲスト側の公開ビューで行い、ドライバ側は同じ固定スロットの境界検査だけを通過して読み書きする。したがって、標準入出力のストリーミングにドライバ専用の複製バッファや生ポインタは存在しない。
 

@@ -53,7 +53,7 @@ import ctypes
 
 from control_flow import extract_basic_blocks
 from debugger import DebuggerManager, GDBRspProtocol
-from hal_dispatch import HalBufferPool, HalBufferTrap, StreamTransport
+from hal_dispatch import HalBufferPool, HalBufferTrap
 from helpers import make_test_ipc_message
 from interpreter import _HANDLERS, Interpreter
 from ipc_router import (
@@ -63,6 +63,7 @@ from ipc_router import (
     Role,
 )
 from jit_copy_patch_concept import CopyPatchJITEngine, Reg, Thumb2Assembler
+from stream_transport import StreamTransport
 from loader import WasmLoader
 from logger import LogDictionary, Logger, LogLevel
 from memory import MemoryManager
@@ -395,7 +396,7 @@ def test_jitr_gotcha_03_lifo_reverse_compilation_order():
         compiled_traces.append(pc)
         return t
 
-    engine = RuntimeEngine(jit_compiler=PcOnlyCompiler(dummy_compiler))
+    engine = RuntimeEngine(jit_compiler=PcOnlyCompiler(dummy_compiler), code_lengths=(0x400,))
     engine.compile_queue = StaticVector.of(
         [0x100, 0x200, 0x300], capacity=engine.compile_queue_capacity
     )
@@ -504,7 +505,7 @@ def test_vmmio_gotcha_03_revoke_invalidates_tlb_blocks_inflight():
     """GOTCHA-VMMIO-03: Revoke immediately invalidates TLB entry and blocks access in-flight."""
     scheduler = Scheduler()
     owner_id = scheduler.spawn("owner")
-    scheduler.current_task = scheduler.get_task(owner_id)
+    scheduler.activate_task(scheduler.get_task(owner_id))
     ctrl = VMMIOController(guest_ram_size=64 * 1024, scheduler=scheduler)
     vpn = 0xE0000
     ctrl.map_shm_page(vpn=vpn, phys_page=2, owner_id=1)
@@ -516,10 +517,10 @@ def test_vmmio_gotcha_03_revoke_invalidates_tlb_blocks_inflight():
 
     stat1, _ = ctrl.access(raw_addr=0xE000_0000, is_write=True)
     task2_id = ctrl.scheduler.spawn("rogue")
-    ctrl.scheduler.current_task = ctrl.scheduler.get_task(task2_id)
-    stat2, _ = ctrl.access(raw_addr=0xE000_0000, is_write=True)
-    assert stat1 == TrapCode.OWNER_MISMATCH
-    assert stat2 == TrapCode.OWNER_MISMATCH
+    with ctrl.scheduler.task_context(ctrl.scheduler.get_task(task2_id)):
+        stat2, _ = ctrl.access(raw_addr=0xE000_0000, is_write=True)
+    assert stat1 == TrapCode.UNREGISTERED_PAGE
+    assert stat2 == TrapCode.UNREGISTERED_PAGE
 
 
 # ==============================================================================
@@ -534,7 +535,7 @@ def test_ipcr_gotcha_01_no_queue_assertion_on_duplicate_send():
     sender_id = sched.spawn("sender", role=Role.RUNTIME)
     sched.current_task = sched.get_task(sender_id)
 
-    status, ch = router.lookup("fireball://device/gpio/0")
+    status, ch = router.lookup("fireball://hal/gpio/0")
     assert status == IPCStatus.COMPLETED and ch is not None
 
     msg1 = make_test_ipc_message([(1, 100)])
@@ -804,36 +805,23 @@ def test_mem_gotcha_02b_release_owner_only():
 
 
 def test_hal_gotcha_01_hal_buffer_pool_bounds_violation_rejected():
-    """GOTCHA-HAL-01: HalBufferPool rejects slice requests exceeding maximum buffer size and non-owner releases."""
+    """GOTCHA-HAL-01: fixed HAL slots reject out-of-bounds slices."""
     scheduler = Scheduler()
     owner_id = scheduler.spawn("owner")
-    other_id = scheduler.spawn("other")
     scheduler.current_task = scheduler.get_task(owner_id)
     from vmmio import VMMIOController
 
     vmmio = VMMIOController(guest_ram_size=8192, scheduler=scheduler)
     pool = HalBufferPool(scheduler, vmmio)
-    pool.bind_guest()
-    handle = pool.acquire_buffer(size=128)
-    assert handle.capacity == 128
-
+    pool.bind_runtime()
+    handle = pool.buffer(0)
+    assert handle.capacity == 256
     try:
-        pool.acquire_buffer(size=512)
-        raise AssertionError("Expected HalBufferPool.acquire_buffer to reject size > 256")
-    except ValueError:
-        pass
-
-    try:
-        scheduler.current_task = scheduler.get_task(other_id)
-        pool.release_buffer(handle)
-        raise AssertionError(
-            "Expected HalBufferTrap when task 2 attempts to release task 1's buffer"
-        )
+        pool.view(handle, 0, 257)
+        raise AssertionError("Expected HalBufferTrap for a slice beyond the fixed slot")
     except HalBufferTrap:
         pass
-
-    scheduler.current_task = scheduler.get_task(owner_id)
-    pool.release_buffer(handle)
+    pool.close_all()
 
 
 def test_sys_gotcha_01_undefined_syscall_returns_enosys():
@@ -846,7 +834,7 @@ def test_sys_gotcha_01_undefined_syscall_returns_enosys():
 
 def test_dbg_gotcha_01_memory_write_flushes_jit_cache():
     """GOTCHA-DBG-01: Debugger memory write immediately invalidates all JIT cache banks."""
-    engine = IntegratedHybridEngine(compiler=TraceCompiler())
+    engine = IntegratedHybridEngine(compiler=TraceCompiler(), code_lengths=(2,))
     dbg = DebuggerManager(engine=engine)
     dbg.attach()
     rsp = GDBRspProtocol(dbg)

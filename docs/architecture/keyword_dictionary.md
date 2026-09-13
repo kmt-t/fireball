@@ -122,7 +122,7 @@ Fireball の全体構造、依存性の方向、リソース予算、品質保�
 | `{ADR_FivePoolMemoryModel}` | `system_memory.md` | `system_memory.md` | メモリマネージャを5プール（ホスト用ヒープ・タスクヒープ・共有メモリ用ヒープ・ランタイム用バンプアロケータ・JITキャッシュアロケータ）の統一契約として再定義 | - |
 | `{ADR_IntrusiveTcbList}` | `requirement_list.md` | `os_scheduler.md` | 動的アロケーションを排除するための侵入型 TCB（Task Control Block）リスト構造 | - |
 | `{ADR_MemoryManagerMinimalSurface}` | `requirement_list.md` | `system_memory.md` | メモリマネージャの公開インターフェース最小化・内部詳細のカプセル化 | - |
-| `{ADR_PageGranularPermissionIsolation}` | `runtime_memory.md` | `runtime_memory.md` | 共有メモリの4KB物理ページ単位での排他所有権管理とアクセス権限分離（owner_idフィールドは持たず、マッピング有無で判定） | TEST-MEM-14, TEST-MEM-15 |
+| `{ADR_PageGranularPermissionIsolation}` | `runtime_memory.md` | `runtime_memory.md` | 共有メモリの4KB物理ページ単位での排他所有権管理とアクセス権限分離（PTEの`owner_id`とスケジューラの現在タスクIDを照合し、Revoke時はPTE/TLBを無効化） | TEST-MEM-14, TEST-MEM-15 |
 | `{ADR_RendezvousChannel}` | `requirement_list.md` | `os_coos.md` | チャネル通信における純粋ランデブー方式（バッファリングなし即時所有権移譲）採用 | - |
 | `{ADR_SafeQueuingOnHotMiss}` | `requirement_list.md` | `jit_runtime.md` | JIT キャッシュミス時の安全なキューイングとインタープリタ実行継続 | - |
 | `{ADR_ScalableCodeOffset}` | `requirement_list.md` | `jit_compiler.md` | 可変長コードオフセットによる Thumb-2 / AArch64 ジャンプ命令最適化 | - |
@@ -346,7 +346,7 @@ Copy-and-Patch JIT コンパイラ（`jit_compiler`）および 3 面循環キ�
 
 | キーワード | 定義元正本 | 対象コンポーネント | 仕様概要・検証内容 | 対応テストケースID（キーワードではない） |
 | :--- | :--- | :--- | :--- | :--- |
-| `{ExecutionContext_Layout}` | `architecture_overview.md` | `runtime_interpreter.md` | execution_context 60バイト物理フィールド配置（15フィールド、R0起点。3独立バッファ頂点・境界、リニアメモリ情報、グローバル基底・上限、ハンドラテーブルを内包、ADR-INTERP-03） | Scenario 1〜11 |
+| `{ExecutionContext_Layout}` | `architecture_overview.md` | `runtime_interpreter.md` | execution_context Tier 2 ABI 152バイト配置（15個の32bit状態フィールド、予約領域、11個の64bit JITヘルパーポインタ。ターゲット物理配置は各ABIで定義） | Scenario 1〜11 |
 | `{CallFrame_Layout}` | `runtime_interpreter.md` | `architecture_overview.md` | call_frame 12バイト、LocalStack 専用の独立固定容量バッファへのインライン物理配置 | Scenario 3, 8 |
 | `{ControlFrame_Layout}` | `runtime_interpreter.md` | `architecture_overview.md` | control_frame 16バイト、OperandStack/LocalStack とは独立した専用固定容量バッファへの物理配置 | Scenario 3 |
 | `{VsocRuntime_Layout}` | `architecture_overview.md` | `runtime_vsoc.md` | execution_context 内包 vsoc_runtime 16バイト物理実行環境配置 (+0x28〜+0x37) | Scenario 1〜11 |
@@ -395,7 +395,7 @@ Copy-and-Patch JIT コンパイラ（`jit_compiler`）および 3 面循環キ�
 | `{PreflightRejection}` | `ipc_router.md` | `ipc_router.md` | Revoke前の静的チェック（RBAC拒否・メッセージサイズ超過）失敗時、所有権は送信側から一度も動かない | Scenario 9 (TEST-INT-81) |
 | `{RAM_Bypass_Bit31}` | `runtime_vmmio.md` | `runtime_vmmio.md` | Bit 31 == 0 アドレスに対するページテーブル不使用 $O(1)$ 高速バイパス | Scenario 10 (TEST-INT-90) |
 | `{RSPChecksumVerify}` | `gdb_rsp_protocol.md` | `debug_manager.md` | GDB RSP パケットのチェックサム検証と、不一致時のNAK応答による再送制御ポリシー | TEST-DBG-03 |
-| `{RadixBinaryTreeView_bswap32}` | `system_containers.md` | `jit_runtime.md` | UnifiedPC（func_idx << 20 | pc）の bswap32 による Radix 検索 | Scenario 5 (TEST-INT-40, TEST-INT-41) |
+| `{RadixBinaryTreeView_bswap32}` | `system_containers.md` | `jit_runtime.md` | UnifiedPC（func_idx << 16 | pc）の bswap32 による Radix 検索 | Scenario 5 (TEST-INT-40, TEST-INT-41) |
 | `{RingBuffer_Overwrite}` | `system_containers.md` | `system_containers.md` | 静的容量リングバッファ、満杯時の最古エントリ自動上書き | Scenario 9 (TEST-INT-82) |
 | `{SignZeroExtension}` | `runtime_interpreter.md` | `runtime_interpreter.md` | 8/16/32-bit メモリ読み書きの符号付き・符号なしゼロ/符号拡張 | Scenario 8 (TEST-INT-70) |
 | `{Syscall_ProcExit}` | `runtime_syscall.md` | `runtime_syscall.md` | proc_exit システムコールによるゲストタスク停止および終了コード伝播 | Scenario 2 (TEST-INT-11) |

@@ -91,10 +91,10 @@ def test_vmmio_02_fc14_shm_owner_isolation_and_flight():
     ctrl.scheduler.current_task = ctrl.scheduler.get_task(rogue_id)
     stat, _ = ctrl.access(raw_addr=0xE000_0000, is_write=True)
     assert stat == TrapCode.OWNER_MISMATCH
-    # In-flight access TRAPS for all tasks
+    # Revoked mapping is no longer registered for any task.
     ctrl.revoke_shm_owner(vpn=0xE0000)
     stat, _ = ctrl.access(raw_addr=0xE000_0000, is_write=True)
-    assert stat == TrapCode.OWNER_MISMATCH
+    assert stat == TrapCode.UNREGISTERED_PAGE
 
 
 def test_vmmio_03_undefined_function_code_traps():

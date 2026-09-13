@@ -365,9 +365,10 @@ PASSTHROUGH アドレス変換:
 
 ### 4.6 HAL DYNAMICバッファマッピング (FC=13)
 <!-- traceability: {HAL_Interface} {IPC_ZeroCopy} -->
-HALが用意した固定長バッファは vMMIO の DYNAMIC 領域へマップする。DYNAMIC のマップ権はゲスト単位で管理し、マルチゲスト構成では同時に1ゲストだけがこの領域を保持できる。別ゲストの `bind_guest` は拒否し、既存ゲストのバッファを再利用する場合も所有ゲストを変更しない。
+HALが用意した固定長バッファは vMMIO の DYNAMIC 領域へマップする。DYNAMIC のマップ権はRuntime単位で管理し、マルチゲスト構成では同時に1つのRuntimeだけがこの領域を保持できる。別Runtimeの `bind_runtime` は拒否し、固定バッファにタスク所有権を設定しない。
 
-`acquire-buffer` はHALバッファを確保した後にDYNAMICページをマップし、`release-buffer` はバッファを返却してページをアンマップし、対応するTLBエントリをフラッシュする。ゲストに直接ポインタを渡さず、バッファIDと固定スロットから算出した仮想アドレスだけをインターフェース境界に渡す。
+HALが保持する固定バッファは、DYNAMICゲストのバインド時にDYNAMICページへ一括マップする。これは共有メモリの所有権移譲ではなく、HAL固定スロットの静的マッピングである。DYNAMICをバインドした単一ゲストとHALドライバが同じliveバッファへアクセスし、ゲストに直接ポインタを渡さず、バッファIDと固定スロットから算出した仮想アドレスだけをインターフェース境界に渡す。
+Runtime終了時は `unbind_runtime` で全固定スロットを一括アンマップし、対応するTLBエントリをフラッシュしてから、次のRuntimeを結線できる。個別バッファの`acquire`/`release`は存在しない。
 
 ### 4.7 共有メモリマッピング (FC=14)
 <!-- traceability: {OwnershipTransfer} -->

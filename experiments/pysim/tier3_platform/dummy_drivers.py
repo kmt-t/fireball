@@ -10,28 +10,43 @@ from hal_dispatch import (
     ARG_MAX_LEN,
     ARG_OFFSET,
     HalDriver,
-    StreamTransport,
-    Timer,
     WasiIpcCmd,
 )
 from system_containers import FlatMapView
+from stream_transport import StreamTransport
+
+
+class Timer:
+    """プラットフォーム単調時計のpysim実体。"""
+
+    def get_now_ns(self) -> int:
+        return time.monotonic_ns()
+
+    def subscribe(self, nanos: int, callback) -> int:
+        assert nanos >= 0
+        assert callback is not None
+        return 1
 
 
 class DummyDriver(HalDriver):
     """標準入出力ストリームと単調増加時刻を提供する。"""
 
     def __init__(
-        self, uri: str = "fireball://device/uart/0", transport: StreamTransport | None = None
+        self,
+        uri: str,
+        transport: StreamTransport | None = None,
+        stream_enabled: bool = True,
     ):
         super().__init__(uri)
         self.transport = transport or StreamTransport()
         self.start_time_ns = time.monotonic_ns()
         self.tick_count = 0
         self.timer = Timer()
-        self.register_command(WasiIpcCmd.STREAM_WRITE_BUFFER, self._write_buffer)
-        self.register_command(WasiIpcCmd.STREAM_READ_BUFFER, self._read_buffer)
-        self.register_command(WasiIpcCmd.STREAM_FLUSH, self._flush)
-        self.register_command(WasiIpcCmd.STREAM_CLOSE, self._close)
+        if stream_enabled:
+            self.register_command(WasiIpcCmd.STREAM_WRITE_BUFFER, self._write_buffer)
+            self.register_command(WasiIpcCmd.STREAM_READ_BUFFER, self._read_buffer)
+            self.register_command(WasiIpcCmd.STREAM_FLUSH, self._flush)
+            self.register_command(WasiIpcCmd.STREAM_CLOSE, self._close)
         self.register_command(WasiIpcCmd.CLOCK_GET_NOW, self._get_now)
         self.register_command(WasiIpcCmd.CLOCK_SUBSCRIBE, self._subscribe)
         self.register_command(WasiIpcCmd.CLOCK_GET_RES, self._get_resolution)
@@ -56,7 +71,7 @@ class DummyDriver(HalDriver):
 
     def _write_buffer(self, params: FlatMapView) -> int:
         view = self._buffer_view(params, ARG_LENGTH)
-        return self.transport.write(bytes(view))
+        return self.transport.write(view)
 
     def _read_buffer(self, params: FlatMapView) -> int:
         view = self._buffer_view(params, ARG_MAX_LEN)

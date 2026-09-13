@@ -20,7 +20,7 @@ from typing import TypeAlias, TypeVar
 from system_containers import (
     FlatMapView,
     MutableFlatMapStorage,
-    RadixBinaryTreeView,
+    ReadOnlyFlatMapStorage,
     ReadOnlyRadixBinaryTreeStorage,
     StaticVector,
 )
@@ -400,15 +400,12 @@ class ModuleView:
         "allocator_start",
         "code_offsets",
         "entity_offset_storage",
-        "entity_offset_tree",
         "entity_registry",
         "export_storage",
-        "export_tree",
         "exports_dict",
         "functions",
         "globals",
         "import_storage",
-        "import_tree",
         "imports",
         "is_ready",
         "memories",
@@ -442,15 +439,17 @@ class ModuleView:
             capacity=FB_CONF_MAX_FUNCTIONS
         )
         self.start_func_idx: int | None = None
-        self.resolved_imports: FlatMapView[str, ExportEntry] = FlatMapView(())
+        self.resolved_imports: ReadOnlyFlatMapStorage[str, ExportEntry] = (
+            ReadOnlyFlatMapStorage.create(())
+        )
         self.is_ready: bool = False
         # Decoded entity registry & RadixBinaryTreeView indexes ({META_BinarySearch})
         self.entity_registry: StaticVector[DecodedEntity] = StaticVector(
             capacity=FB_CONF_MAX_ENTITIES
         )
-        self.export_tree: RadixBinaryTreeView | None = None
-        self.import_tree: RadixBinaryTreeView | None = None
-        self.entity_offset_tree: RadixBinaryTreeView | None = None
+        self.export_storage: ReadOnlyRadixBinaryTreeStorage[ExportEntry] | None = None
+        self.import_storage: ReadOnlyRadixBinaryTreeStorage[ImportEntry] | None = None
+        self.entity_offset_storage: ReadOnlyRadixBinaryTreeStorage[DecodedEntity] | None = None
         self.allocator_start: int | None = None
         self.allocator_end: int | None = None
 
@@ -474,36 +473,33 @@ class ModuleView:
         self.export_storage = ReadOnlyRadixBinaryTreeStorage.create(
             exp_keys, self.exports_dict, radix_shift=28
         )
-        self.export_tree = self.export_storage.view()
 
         imp_keys = tuple(fnv1a_32(f"{imp.module_name}::{imp.field_name}") for imp in self.imports)
         self.import_storage = ReadOnlyRadixBinaryTreeStorage.create(
             imp_keys, self.imports, radix_shift=28
         )
-        self.import_tree = self.import_storage.view()
 
         ent_keys = tuple(e.start_offset for e in self.entity_registry)
         self.entity_offset_storage = ReadOnlyRadixBinaryTreeStorage.create(
             ent_keys, self.entity_registry, radix_shift=4
         )
-        self.entity_offset_tree = self.entity_offset_storage.view()
 
     def lookup_export(self, name: str) -> ExportEntry | None:
         """Hash + RadixBinaryTreeView symbol lookup with zero-copy string verification in O(k)."""
-        if self.export_tree is None:
+        if self.export_storage is None:
             return None
         h = fnv1a_32(name)
-        candidate = self.export_tree.find(h)
+        candidate = self.export_storage.view().find(h)
         if candidate is not None and candidate.name == name:
             return candidate
         return None
 
     def find_import(self, module_name: str, field_name: str) -> ImportEntry | None:
         """Hash + RadixBinaryTreeView import table lookup in O(k)."""
-        if self.import_tree is None:
+        if self.import_storage is None:
             return None
         h = fnv1a_32(f"{module_name}::{field_name}")
-        candidate = self.import_tree.find(h)
+        candidate = self.import_storage.view().find(h)
         if (
             candidate is not None
             and candidate.module_name == module_name
@@ -520,9 +516,9 @@ class ModuleView:
 
     def lookup_by_file_offset(self, file_offset: int) -> DecodedEntity | None:
         """Looks up a decoded entity containing the given file byte offset using RadixBinaryTreeView in O(k)."""
-        if self.entity_offset_tree is None:
+        if self.entity_offset_storage is None:
             return None
-        return self.entity_offset_tree.find_interval(file_offset)
+        return self.entity_offset_storage.view().find_interval(file_offset)
 
     def num_imported_functions(self) -> int:
         return sum(1 for imp in self.imports if imp.kind == ExternalKind.FUNCTION)
@@ -804,7 +800,7 @@ class WasmLoader:
             )
 
         entries.sort(key=lambda e: e[0])
-        module.resolved_imports = FlatMapView(entries)
+        module.resolved_imports = ReadOnlyFlatMapStorage.create(entries)
         module.is_ready = True
         return True
 

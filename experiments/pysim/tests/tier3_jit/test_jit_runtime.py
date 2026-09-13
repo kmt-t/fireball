@@ -62,7 +62,7 @@ def wat_to_wasm(wat_text: str) -> bytes:
 
 def test_hotspot_01_2bit_card_marking_state_transitions():
     """TEST-HOTSPOT-01 / TEST-JITR-02: 2-bit state machine: UNEXECUTED (00) -> EXECUTED (01) -> HOT (10) -> COMPILED (11)."""
-    bitmap = HotspotBitmap(card_shift=4)
+    bitmap = HotspotBitmap(card_shift=4, code_lengths=(512,))
     pc = 0x100
     assert bitmap.get_state(pc) == CardState.UNEXECUTED
     # First touch: UNEXECUTED -> EXECUTED
@@ -79,7 +79,7 @@ def test_hotspot_01_2bit_card_marking_state_transitions():
 
 def test_jitr_01_card_marking_granularity():
     """TEST-JITR-01: Card marking granularity is 64-byte card, not individual instruction."""
-    bitmap = HotspotBitmap(card_shift=6)  # 64-byte cards
+    bitmap = HotspotBitmap(card_shift=6, code_lengths=(0x1100,))  # 64-byte cards
     pc1 = 0x1000
     pc2 = 0x1020  # Same 64-byte card (0x1000..0x103F)
     assert bitmap.get_state(pc1) == CardState.UNEXECUTED
@@ -110,7 +110,7 @@ def test_hotspot_03_lifo_compile_queue_batch_drain():
         compiled_traces.append(pc)
         return t
 
-    engine = RuntimeEngine(jit_compiler=PcOnlyCompiler(dummy_compiler))
+    engine = RuntimeEngine(jit_compiler=PcOnlyCompiler(dummy_compiler), code_lengths=(0x400,))
     engine.compile_queue = StaticVector.of(
         [0x100, 0x200, 0x300], capacity=engine.compile_queue_capacity
     )
@@ -297,7 +297,7 @@ def test_jitc_20_trace_header_16byte_physical_layout():
 
 def test_hotspot_05_3bank_cache_rotation_and_eviction_resets_card():
     """TEST-HOTSPOT-05: Oldest bank eviction unlinks inbound sources and resets card state to UNEXECUTED."""
-    bitmap = HotspotBitmap()
+    bitmap = HotspotBitmap(code_lengths=(128,))
     cache = JITMultiBufferCache(bank_capacity=256)
     cache.on_evict = lambda pcs: [bitmap.mark_evicted(p) for p in pcs]
     t_evict = JITTrace(0x50, lambda: 50, size_bytes=64)
@@ -479,12 +479,11 @@ def test_jitr_block_capacity_from_wasm_loader_and_no_set():
         return
     mod = parse(wasm_bytes)
 
-    # 1. WASM loader provides total_basic_blocks metadata and owns block_storage & block_tree
+    # 1. WASM loader provides total_basic_blocks metadata and owns block_storage
     assert mod.total_basic_blocks == 2
     assert mod.block_storage is not None
     assert len(mod.block_storage.keys) == mod.total_basic_blocks
     assert isinstance(mod.block_storage, ReadOnlyRadixBinaryTreeStorage)
-    assert mod.block_tree is not None
     assert len(mod.blocks) == 2
 
     # 2. RuntimeEngine binds loader-owned blocks and resolves them seamlessly

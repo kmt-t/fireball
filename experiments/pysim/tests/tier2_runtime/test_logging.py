@@ -32,9 +32,7 @@ for _p in [
     if _sp not in sys.path:
         sys.path.insert(0, _sp)
 
-from hal_dispatch import (
-    StreamTransport,
-)
+from stream_transport import StreamTransport
 from interrupt_event import InterruptEvent
 from ipc_router import (
     IPCMessage,
@@ -140,7 +138,7 @@ def test_log_04_coos_and_ipc_diagnostic_logging():
                 [(i, i) for i in range(1, 10)],  # 9 pairs > 8
                 memory_manager=sysv.memory_manager,
             )
-            _, ch = sysv.ipc.lookup("fireball://device/gpio/0")
+            _, ch = sysv.ipc.lookup("fireball://hal/gpio/0")
             assert ch is not None
             yield from sysv.ipc.send(ch, too_large_msg)
 

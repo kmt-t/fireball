@@ -36,9 +36,7 @@ for _p in [
         sys.path.insert(0, _sp)
 
 from control_flow import extract_basic_blocks
-from hal_dispatch import (
-    StreamTransport,
-)
+from stream_transport import StreamTransport
 from interpreter import Interpreter
 from logger import LogDictionary, Logger, LogLevel
 from runtime_engine import (
@@ -253,24 +251,25 @@ def test_hal_task_ipc_communication():
     sysv = System()
     try:
         runtime_task = sysv.start_runtime_task(name="hal_ipc_guest")
-        sysv.pool.bind_guest()
-        buffer_handle = sysv.pool.acquire_buffer(size=128)
+        sysv.pool.bind_runtime()
+        buffer_handle = sysv.pool.buffer(0)
         sysv.pool.view(buffer_handle, 0, 128)[:] = b"x" * 128
         sysv.scheduler.current_task = runtime_task
-        sysv.start_hal_driver(DummyDriver(transport=sysv.transport))
+        sysv.start_hal_driver(DummyDriver(sysv.wasi_hal_bindings.stdout_uri, transport=sysv.transport))
         engine = Wasi03pEngine(sysv)
         # Send command via IPC
         nwritten = engine.send_ipc_command(
-            "fireball://device/uart/0",
+            "fireball://hal/stdout/0",
             WasiIpcCmd.STREAM_WRITE_BUFFER,
             FlatMapView(
                 [(ARG_BUFFER_HANDLE, buffer_handle.buffer_id), (ARG_LENGTH, 128), (ARG_OFFSET, 0)]
             ),
         )
         assert nwritten == 128
-        uart_task = sysv.hal_task_for("fireball://device/uart/0")
-        assert uart_task.processed_count == 1
-        assert uart_task.last_handled_cmd == WasiIpcCmd.STREAM_WRITE_BUFFER
+        stdio_task = sysv.hal_task_for("fireball://hal/stdout/0")
+        assert stdio_task is not None
+        assert stdio_task.processed_count == 1
+        assert stdio_task.last_handled_cmd == WasiIpcCmd.STREAM_WRITE_BUFFER
     finally:
         sysv.shutdown()
 
@@ -373,7 +372,7 @@ def test_idle_01_jit_batch_compilation_on_idle():
         compiled_log.append(pc)
         return JITTrace(head_pc=pc, native_fn=lambda: pc, size_bytes=64)
 
-    engine = RuntimeEngine(jit_compiler=PcOnlyCompiler(mock_compiler))
+    engine = RuntimeEngine(jit_compiler=PcOnlyCompiler(mock_compiler), code_lengths=(0x400,))
     engine.bitmap.touch(0x100)
     engine.bitmap.touch(0x100)  # HOT
     engine.bitmap.touch(0x200)
@@ -414,6 +413,7 @@ def test_idle_02_logging_flush_on_idle():
 def test_tier_01_interpreter_to_jit_cooperative_flow():
     """TEST-TIER-01: End-to-end integration of cooperative WASM execution on COOS with idle JIT compilation and log flush."""
     sysv = System()
+    sysv.runtime_engine = RuntimeEngine(code_lengths=(0x1001,))
     sysv.dictionary.register(0x10, "wasm iteration=%d")
     executed_steps = []
 
@@ -583,7 +583,7 @@ def test_tier_03_trace_chaining_and_interpreter_fallback():
 
 
 def test_guest_wasi_01_interpreter_fd_write():
-    """TEST-GUEST-WASI-01: WASM guest invoking wasi_snapshot_preview1.fd_write in Interpreter outputs to host UART."""
+    """TEST-GUEST-WASI-01: WASM guest fd_write reaches the standard-I/O HAL task."""
     wat = """
     (module
       (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
@@ -600,7 +600,10 @@ def test_guest_wasi_01_interpreter_fd_write():
     mod = parse(wasm_bytes)
     sysv = System()
     try:
+        from dummy_drivers import DummyDriver
+
         ctx = WasiHostContext(sysv)
+        sysv.start_hal_driver(DummyDriver(sysv.wasi_hal_bindings.stdout_uri, transport=sysv.transport))
         # Set up guest memory:
         # offset 0: iov { buf: 16, len: 12 }
         # offset 16: "hello guest\n"
@@ -638,7 +641,12 @@ def test_guest_wasi_02_interpreter_clock_and_random():
     mod = parse(wasm_bytes)
     sysv = System()
     try:
+        from dummy_drivers import DummyDriver
+
         ctx = WasiHostContext(sysv)
+        sysv.start_hal_driver(
+            DummyDriver(sysv.wasi_hal_bindings.timer_uri, stream_enabled=False)
+        )
         host_funcs = ctx.build_interpreter_host_functions(mod)
         mod.init_memory_data(ctx.guest_memory)
         interp = Interpreter(mod, memory=ctx.guest_memory, host_functions=host_funcs)
@@ -686,7 +694,7 @@ def test_debugger_manager_gdb_rsp_integration():
     """TEST-DBG-01..15: Verifies Debug Manager GDB RSP protocol, breakpoints, registers and JIT flush."""
     from debugger import DebuggerManager, GDBRspProtocol
 
-    engine = IntegratedHybridEngine(compiler=TraceCompiler())
+    engine = IntegratedHybridEngine(compiler=TraceCompiler(), code_lengths=(2,))
     dbg = DebuggerManager(engine=engine)
     dbg.attach()
     rsp = GDBRspProtocol(dbg)

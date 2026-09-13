@@ -155,7 +155,7 @@ def run_single_pairwise_case(case_tuple: tuple) -> None:
     sysv = System()
     wasi_ctx = WasiHostContext(sysv)
     wasi_dummy = WasiDummyContext()
-    stdio = DummyDriver(transport=sysv.transport)
+    stdio = DummyDriver(sysv.wasi_hal_bindings.stdout_uri, transport=sysv.transport)
     sysv.start_hal_driver(stdio)
     # 2. Parse WASM Module
     wasm_bytes = bytes(wasmtime.wat2wasm(WAT_TEMPLATE))
@@ -240,8 +240,8 @@ def run_single_pairwise_case(case_tuple: tuple) -> None:
         payload = f"pairwise:{case_id}".encode("ascii")
         if sysv.scheduler.current_task is None:
             sysv.start_runtime_task(name="pairwise_hal_guest")
-        sysv.pool.bind_guest()
-        buffer_handle = sysv.pool.acquire_buffer(size=len(payload))
+        sysv.pool.bind_runtime()
+        buffer_handle = sysv.pool.buffer(0)
         sysv.pool.view(buffer_handle, 0, len(payload))[:] = payload
         assert stdio.dispatch(
             WasiIpcCmd.STREAM_WRITE_BUFFER,

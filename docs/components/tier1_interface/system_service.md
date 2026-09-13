@@ -93,7 +93,7 @@ sequenceDiagram
     participant H as HAL
 
     G->>L: WASI Call (e.g., fd_write)
-    L->>R: get-interface("fireball://device/uart/0")
+    L->>R: get-interface("fireball://hal/uart/0")
     R-->>L: interface handle
     L->>H: stream-write(handle, buffer)
     H-->>L: operation result
@@ -107,7 +107,7 @@ sequenceDiagram
 
 ゲスト側の WASI API を Fireball の公開 IF へ変換する責務は、Tier 3のゲストアダプタに属する。本コンポーネントはサービスのロード、障害隔離、再起動、およびサービスが利用する境界の説明に限定し、Preview1 の関数シグネチャ、iovec 走査、HAL コマンド生成を記述しない。
 
-`libfireball` は `get-interface`、`acquire-buffer`、`stream-write` 等の Tier 2 HAL IF を呼び出す。サービスの実行状態、COOS のスケジューリング、HAL タスクの待機状態は、それぞれの正本仕様に従う。
+`libfireball` は `get-interface`、固定バッファスロット、`stream-write` 等の Tier 2 HAL IF を呼び出す。サービスの実行状態、COOS のスケジューリング、HAL タスクの待機状態は、それぞれの正本仕様に従う。
 
 ## 5. インターフェース定義
 

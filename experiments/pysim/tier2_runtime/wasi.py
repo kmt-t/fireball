@@ -36,12 +36,18 @@ from hal_dispatch import (
     ARG_SLAVE_ADDR,
     ARG_TX_BUFFER_HANDLE,
     ARG_VAL,
+    FB_CONF_HAL_BUFFER_SIZE,
     WasiIpcCmd,
     HalBufferHandle,
 )
+from wasi_bindings import WasiHalBindings
 from loader import fnv1a_32
 from system import FbSyscallId, System
-from system_containers import FlatMapView, RadixBinaryTreeView
+from system_containers import (
+    FlatMapView,
+    ReadOnlyFlatMapStorage,
+    ReadOnlyRadixBinaryTreeStorage,
+)
 from wasm_module import Module
 
 
@@ -86,178 +92,70 @@ class WasiInterfaceVTable:
 class Wasi03pEngine:
     """WASI 0.3p Core Engine providing Hierarchical URI Resolution, IPC Command Dispatch, and the HAL buffer pool."""
 
-    def __init__(self, sysv: System):
+    def __init__(self, sysv: System, bindings: WasiHalBindings | None = None):
         self.sysv = sysv
-        self._interfaces: FlatMapView[str, WasiInterfaceVTable]
+        self.bindings = bindings if bindings is not None else sysv.wasi_hal_bindings
+        self._interface_storage: ReadOnlyFlatMapStorage[str, WasiInterfaceVTable]
         self._setup_standard_interfaces()
 
     def _setup_standard_interfaces(self) -> None:
         """
         Registers standard WASI 0.3p and Fireball HAL interfaces with
-        Hierarchical URIs. The registry itself is a FlatMapView keyed by
+        Hierarchical URIs. The registry itself is a read-only flat-map storage keyed by
         URI (std::string_view in C++) -- system_containers.md names this
         exact case ("the IPC registry") as flat_map_view's string-key use,
         so a sorted array here, not a dict, is the spec-sanctioned shape.
         """
         uart_iface = WasiInterfaceVTable(
-            write=self._stream_write,
-            read=self._stream_read,
-            close=self._stream_close,
-            write_buffer=self._write_buffer,
-            read_buffer=self._read_buffer,
-            flush=lambda: 0,
+            close=lambda: self._send_simple(self.bindings.uart_uri, WasiIpcCmd.STREAM_CLOSE),
+            write_buffer=lambda handle, offset, length: self._write_buffer(
+                self.bindings.uart_uri, handle, offset, length
+            ),
+            read_buffer=lambda handle, offset, length: self._read_buffer(
+                self.bindings.uart_uri, handle, offset, length
+            ),
+            flush=lambda: self._send_simple(self.bindings.uart_uri, WasiIpcCmd.STREAM_FLUSH),
         )
         timer_iface = WasiInterfaceVTable(
-            get_now=self._clock_get_now,
+            get_now=lambda: self._clock_get_now(self.bindings.timer_uri),
             get_resolution=lambda: 1_000_000,  # 1ms
             subscribe=lambda nanos: 1,  # pollable handle
         )
         console_iface = WasiInterfaceVTable(
-            write=self._console_write,
-            write_buffer=self._write_buffer,
+            write_buffer=lambda handle, offset, length: self._write_buffer(
+                self.bindings.stdout_uri, handle, offset, length
+            ),
         )
         logger_iface = WasiInterfaceVTable(
             log=lambda msg: self.sysv.logger.debug(msg),
         )
 
         entries: list[tuple[str, WasiInterfaceVTable]] = [
-            ("fireball://device/uart/0", uart_iface),
-            ("fireball://hal/stdout/0", uart_iface),
+            (self.bindings.uart_uri, uart_iface),
+            (self.bindings.stdout_uri, uart_iface),
             ("wasi:io/streams@0.3.0", uart_iface),
             ("wasi:io/streams", uart_iface),
-            ("fireball://device/timer/0", timer_iface),
+            (self.bindings.timer_uri, timer_iface),
             ("wasi:clocks/monotonic-clock@0.3.0", timer_iface),
             ("wasi:clocks/monotonic-clock", timer_iface),
             ("wasi:cli/stdout@0.3.0", console_iface),
             ("wasi:cli/stdout", console_iface),
-            ("fireball://hal/logger/0", logger_iface),
+            (self.bindings.logger_uri, logger_iface),
         ]
         entries.sort(key=lambda e: e[0])
-        self._interface_entries = tuple(entries)
-        self._interfaces = FlatMapView(self._interface_entries)
+        self._interface_storage = ReadOnlyFlatMapStorage.create(entries)
 
     def get_interface(self, uri: str) -> WasiInterfaceVTable | None:
         """Resolves an interface descriptor by its Hierarchical IPC communication URI."""
-        return self._interfaces.find(uri)
+        return self._interface_storage.view().find(uri)
 
     def dispatch_command(self, uri: str, cmd_id: int, params: FlatMapView) -> WasiValue:
         """
-        Dispatches a WASI 0.3p IPC Driver Command to the resolved device
-        interface. Matches hal_dispatch.md §5.1's `control(id, cmd, params:
-        ipc-message)`: `params` is always a FlatMapView over packed kv_pair
-        keys (ipc_router.md §3.3) -- one statically-typed argument, no
-        runtime inspection of what was passed.
+        Dispatches through the HAL task. The runtime never invokes a driver
+        vtable directly; URI resolution and command execution are separate
+        IPC operations.
         """
-        iface = self.get_interface(uri)
-        if iface is None:
-            return None
-
-        def _get_val(key_packed: int, default: WasiValue = None) -> WasiValue:
-            val = params.find(key_packed)
-            return default if val is None else val
-
-        # 0. Capability Query
-        if cmd_id == WasiIpcCmd.QUERY_CAPS:
-            target_cmd = _get_val(ARG_QUERY_CMD_ID, 0)
-            if target_cmd == WasiIpcCmd.QUERY_CAPS:
-                return 1
-            # Check Stream Capabilities
-            if target_cmd in (WasiIpcCmd.STREAM_WRITE_BUFFER, WasiIpcCmd.STREAM_READ_BUFFER):
-                return 1 if (iface.write_buffer is not None or iface.read_buffer is not None) else 0
-            # Check Clock Capabilities
-            if target_cmd in (
-                WasiIpcCmd.CLOCK_GET_NOW,
-                WasiIpcCmd.CLOCK_SUBSCRIBE,
-                WasiIpcCmd.CLOCK_GET_RES,
-            ):
-                return 1 if iface.get_now is not None else 0
-            # Check GPIO Capabilities
-            if target_cmd in (
-                WasiIpcCmd.GPIO_SET_PIN,
-                WasiIpcCmd.GPIO_GET_PIN,
-                WasiIpcCmd.GPIO_CONFIG_PIN,
-                WasiIpcCmd.GPIO_SUBSCRIBE_EDGE,
-            ):
-                return 1 if iface.set_pin is not None else 0
-            # Check Bus Capabilities
-            if target_cmd in (WasiIpcCmd.BUS_TRANSFER_BUFFER, WasiIpcCmd.BUS_CONFIG):
-                return 1 if iface.transfer_buffer is not None else 0
-            # Check Poll Capabilities
-            if target_cmd in (WasiIpcCmd.POLL_CHECK, WasiIpcCmd.POLL_WAIT):
-                return 1
-            return 0
-
-        # 1. Stream Commands
-        if cmd_id == WasiIpcCmd.STREAM_WRITE_BUFFER:
-            if iface.write_buffer is None:
-                return 0
-            handle = _get_val(ARG_BUFFER_HANDLE)
-            offset = _get_val(ARG_OFFSET, 0)
-            length = _get_val(ARG_LENGTH, 0)
-            return iface.write_buffer(handle, offset, length)
-        elif cmd_id == WasiIpcCmd.STREAM_READ_BUFFER:
-            if iface.read_buffer is None:
-                return 0
-            handle = _get_val(ARG_BUFFER_HANDLE)
-            offset = _get_val(ARG_OFFSET, 0)
-            max_len = _get_val(ARG_MAX_LEN, 0)
-            return iface.read_buffer(handle, offset, max_len)
-        elif cmd_id == WasiIpcCmd.STREAM_FLUSH:
-            return iface.flush() if iface.flush is not None else 0
-        elif cmd_id == WasiIpcCmd.STREAM_CLOSE:
-            fd = _get_val(ARG_FD, 1)
-            return iface.close(fd) if iface.close is not None else 0
-
-        # 2. Clock / Timer Commands
-        elif cmd_id == WasiIpcCmd.CLOCK_GET_NOW:
-            return iface.get_now() if iface.get_now is not None else None
-        elif cmd_id == WasiIpcCmd.CLOCK_SUBSCRIBE:
-            nanos = _get_val(ARG_NANOS, 0)
-            return iface.subscribe(nanos) if iface.subscribe is not None else None
-        elif cmd_id == WasiIpcCmd.CLOCK_GET_RES:
-            return iface.get_resolution() if iface.get_resolution is not None else None
-
-        # 3. GPIO / Trigger Commands
-        elif cmd_id == WasiIpcCmd.GPIO_SET_PIN:
-            if iface.set_pin is None:
-                return None
-            return iface.set_pin(_get_val(ARG_PIN_NO, 0), _get_val(ARG_VAL, False))
-        elif cmd_id == WasiIpcCmd.GPIO_GET_PIN:
-            if iface.get_pin is None:
-                return None
-            return iface.get_pin(_get_val(ARG_PIN_NO, 0))
-        elif cmd_id == WasiIpcCmd.GPIO_CONFIG_PIN:
-            if iface.config_pin is None:
-                return None
-            return iface.config_pin(_get_val(ARG_PIN_NO, 0), _get_val(ARG_MODE, 0))
-        elif cmd_id == WasiIpcCmd.GPIO_SUBSCRIBE_EDGE:
-            if iface.subscribe_edge is None:
-                return None
-            return iface.subscribe_edge(_get_val(ARG_PIN_NO, 0), _get_val(ARG_EDGE_TYPE, 0))
-
-        # 4. Bus Commands
-        elif cmd_id == WasiIpcCmd.BUS_TRANSFER_BUFFER:
-            if iface.transfer_buffer is None:
-                return None
-            return iface.transfer_buffer(
-                _get_val(ARG_TX_BUFFER_HANDLE),
-                _get_val(ARG_RX_BUFFER_HANDLE),
-                _get_val(ARG_LENGTH, 0),
-            )
-        elif cmd_id == WasiIpcCmd.BUS_CONFIG:
-            if iface.config is None:
-                return None
-            return iface.config(
-                _get_val(ARG_CLOCK_HZ, 100_000), _get_val(ARG_SLAVE_ADDR, 0), _get_val(ARG_MODE, 0)
-            )
-
-        # 5. Poll Commands
-        elif cmd_id == WasiIpcCmd.POLL_CHECK:
-            return 1  # Ready
-        elif cmd_id == WasiIpcCmd.POLL_WAIT:
-            return 0  # Success
-
-        return None
+        return self.send_ipc_command(uri, cmd_id, params)
 
     def send_ipc_command(self, uri: str, cmd_id: int, params: FlatMapView) -> WasiValue:
         """
@@ -266,6 +164,9 @@ class Wasi03pEngine:
         """
         from hal_dispatch import make_hal_ipc_message
         from ipc_router import IPCStatus, Role
+
+        caller_task = self.sysv.scheduler.current_task
+        assert caller_task is not None, "WASI IPC requires an active runtime task"
 
         def sender_coro():
             status, channel = self.sysv.ipc.lookup(uri)
@@ -278,48 +179,58 @@ class Wasi03pEngine:
 
         self.sysv.scheduler.spawn("wasi_ipc_sender", sender_coro(), role=Role.RUNTIME)
         self.sysv.scheduler.run_until_idle()
+        self.sysv.scheduler.require_active_task(caller_task)
 
         target_task = self.sysv.hal_task_for(uri)
         assert target_task is not None, f"HAL driver is not started: {uri}"
         return target_task.last_result
 
-    # Resource Methods
-    def _stream_write(self, fd: int, data: bytes) -> int:
-        if fd in (1, 2):
-            self.sysv.transport.write(data)
-            return len(data)
-        return len(data)
+    # Resource methods: Tier 2 only builds and sends HAL commands.
+    def _send_simple(self, uri: str, cmd_id: WasiIpcCmd) -> int:
+        result = self.send_ipc_command(uri, cmd_id, FlatMapView(()))
+        assert isinstance(result, int)
+        return result
 
-    def _stream_read(self, fd: int, max_len: int) -> bytes:
-        return b""
-
-    def _stream_close(self, fd: int) -> int:
-        return 0
-
-    def _write_buffer(self, handle: HalBufferHandle, offset: int, length: int) -> int:
-        """Writes data from shared memory (FC=14) to device transport."""
-        if not self.sysv.pool.can_view(handle, offset, length):
-            return 0
-        view = self.sysv.pool.view(handle, offset, length)
-        self.sysv.transport.write(bytes(view))
-        return len(view)
-
-    def _read_buffer(self, handle: HalBufferHandle, offset: int, max_len: int) -> int:
-        """Reads data from device transport into shared memory (FC=14)."""
-        return 0
-
-    def _transfer_buffer(
-        self, tx_handle: HalBufferHandle, rx_handle: HalBufferHandle, length: int
+    def _write_buffer(
+        self, uri: str, handle: HalBufferHandle, offset: int, length: int
     ) -> int:
-        """Transfers data between shared memory buffers via DMA/Bus."""
-        return length
+        params = FlatMapView(
+            tuple(
+                sorted(
+                    (
+                        (ARG_BUFFER_HANDLE, handle.buffer_id),
+                        (ARG_OFFSET, offset),
+                        (ARG_LENGTH, length),
+                    )
+                )
+            )
+        )
+        result = self.send_ipc_command(uri, WasiIpcCmd.STREAM_WRITE_BUFFER, params)
+        assert isinstance(result, int)
+        return result
 
-    def _clock_get_now(self) -> int:
-        return time.monotonic_ns()
+    def _read_buffer(
+        self, uri: str, handle: HalBufferHandle, offset: int, max_len: int
+    ) -> int:
+        params = FlatMapView(
+            tuple(
+                sorted(
+                    (
+                        (ARG_BUFFER_HANDLE, handle.buffer_id),
+                        (ARG_OFFSET, offset),
+                        (ARG_MAX_LEN, max_len),
+                    )
+                )
+            )
+        )
+        result = self.send_ipc_command(uri, WasiIpcCmd.STREAM_READ_BUFFER, params)
+        assert isinstance(result, int)
+        return result
 
-    def _console_write(self, data: bytes) -> int:
-        self.sysv.transport.write(data)
-        return len(data)
+    def _clock_get_now(self, uri: str) -> int:
+        result = self.send_ipc_command(uri, WasiIpcCmd.CLOCK_GET_NOW, FlatMapView(()))
+        assert isinstance(result, int)
+        return result
 
 
 # ==============================================================================
@@ -331,11 +242,17 @@ class WasiHostContext:
     Transparently adapts wasi_snapshot_preview1 function calls to WASI 0.3p / HAL Core.
     """
 
-    def __init__(self, sysv: System, guest_memory: bytearray | None = None):
+    def __init__(
+        self,
+        sysv: System,
+        guest_memory: bytearray | None = None,
+        bindings: WasiHalBindings | None = None,
+    ):
         self.sysv = sysv
         self.guest_memory = guest_memory if guest_memory is not None else bytearray(64 * 1024)
-        self.sysv.bind_guest(self.guest_memory)
-        self.core03p = Wasi03pEngine(sysv)
+        self.sysv.bind_runtime(self.guest_memory)
+        self.bindings = bindings if bindings is not None else sysv.wasi_hal_bindings
+        self.core03p = Wasi03pEngine(sysv, self.bindings)
         self.sysv.wasi_context = self
         self._keepalive_trampolines: list[Callable[..., int]] = []
 
@@ -386,13 +303,9 @@ class WasiHostContext:
         else:
             radix_table = [0]
 
-        self._import_keys = list(keys)
-        self._import_values = list(values)
-        self._import_radix_table = list(radix_table)
-        self._import_tree = RadixBinaryTreeView(
-            self._import_keys,
-            self._import_values,
-            self._import_radix_table,
+        self._import_storage = ReadOnlyRadixBinaryTreeStorage.create(
+            keys,
+            values,
             radix_shift=radix_shift,
         )
 
@@ -420,6 +333,8 @@ class WasiHostContext:
         Every guest-memory offset is validated before the first write, so an
         invalid later iovec cannot expose output from an earlier one.
         """
+        if fd != 1 and fd != 2:
+            return 8  # EBADF
         mem = self.guest_memory
         mem_len = len(mem)
         if iovs_len < 0 or nwritten_ptr < 0 or nwritten_ptr > mem_len - 4:
@@ -435,30 +350,99 @@ class WasiHostContext:
                 return 21  # EFAULT
 
         total_written = 0
-        stream_iface = self.core03p.get_interface("wasi:io/streams")
-        write_fn = stream_iface.write if stream_iface is not None else None
-
-        # Second pass: perform the writes now that the whole vector is known valid.
+        # Second pass: copy each guest slice into the HAL-owned buffer and
+        # send it through the dedicated HAL task. The driver receives only a
+        # buffer ID and slice coordinates, never a guest pointer.
         for i in range(iovs_len):
             iov_offset = iovs_ptr + (i * 8)
             base, length = struct.unpack_from("<II", mem, iov_offset)
-            buf = bytes(mem[base : base + length])
-            if write_fn is not None:
-                total_written += write_fn(fd, buf)
-            else:
-                self.sysv.transport.write(buf)
-                total_written += len(buf)
+            remaining = length
+            source_offset = base
+            while remaining:
+                chunk_len = min(remaining, FB_CONF_HAL_BUFFER_SIZE)
+                handle = self.sysv.pool.buffer(0)
+                view = self.sysv.pool.view(handle, 0, chunk_len)
+                view[:] = mem[source_offset : source_offset + chunk_len]
+                result = self.core03p.send_ipc_command(
+                    self.bindings.stdout_uri,
+                    WasiIpcCmd.STREAM_WRITE_BUFFER,
+                    FlatMapView(
+                        tuple(
+                            sorted(
+                                (
+                                    (ARG_BUFFER_HANDLE, handle.buffer_id),
+                                    (ARG_OFFSET, 0),
+                                    (ARG_LENGTH, chunk_len),
+                                )
+                            )
+                        )
+                    ),
+                )
+                assert isinstance(result, int)
+                assert result == chunk_len
+                total_written += result
+                source_offset += chunk_len
+                remaining -= chunk_len
 
         struct.pack_into("<I", mem, nwritten_ptr, total_written)
         return 0  # SUCCESS
 
     def fd_read(self, fd: int, iovs_ptr: int, iovs_len: int, nread_ptr: int) -> int:
         """Adapts wasi_snapshot_preview1:fd_read to WASI 0.3p wasi:io/streams:read."""
-        return int(
-            self.sysv.fireball_call(
-                FbSyscallId.WASI_FD_READ, fd, iovs_ptr, iovs_len, nread_ptr, 0, 0
-            )
-        )
+        if fd != 0:
+            return 8  # EBADF
+        mem = self.guest_memory
+        mem_len = len(mem)
+        if iovs_len < 0 or nread_ptr < 0 or nread_ptr > mem_len - 4:
+            return 21  # EFAULT
+        if iovs_ptr < 0 or iovs_ptr > mem_len or iovs_len > (mem_len - iovs_ptr) // 8:
+            return 21  # EFAULT
+
+        for i in range(iovs_len):
+            iov_offset = iovs_ptr + (i * 8)
+            base, length = struct.unpack_from("<II", mem, iov_offset)
+            if base > mem_len or length > mem_len - base:
+                return 21  # EFAULT
+
+        total_read = 0
+        handle = self.sysv.pool.buffer(1)
+        for i in range(iovs_len):
+            iov_offset = iovs_ptr + (i * 8)
+            base, length = struct.unpack_from("<II", mem, iov_offset)
+            remaining = length
+            destination_offset = base
+            while remaining:
+                chunk_len = min(remaining, FB_CONF_HAL_BUFFER_SIZE)
+                result = self.core03p.send_ipc_command(
+                    self.bindings.stdout_uri,
+                    WasiIpcCmd.STREAM_READ_BUFFER,
+                    FlatMapView(
+                        tuple(
+                            sorted(
+                                (
+                                    (ARG_BUFFER_HANDLE, handle.buffer_id),
+                                    (ARG_OFFSET, 0),
+                                    (ARG_MAX_LEN, chunk_len),
+                                )
+                            )
+                        )
+                    ),
+                )
+                assert isinstance(result, int)
+                assert 0 <= result <= chunk_len
+                if result == 0:
+                    remaining = 0
+                    break
+                view = self.sysv.pool.view(handle, 0, result)
+                mem[destination_offset : destination_offset + result] = view
+                total_read += result
+                destination_offset += result
+                remaining -= result
+                if result < chunk_len:
+                    break
+
+        struct.pack_into("<I", mem, nread_ptr, total_read)
+        return 0
 
     def fd_close(self, fd: int) -> int:
         """Adapts wasi_snapshot_preview1:fd_close to WASI 0.3p wasi:io/streams:close."""
@@ -473,10 +457,12 @@ class WasiHostContext:
         flow once disabled in the target C++ build).
         """
         mem = self.guest_memory
-        clock_iface = self.core03p.get_interface("wasi:clocks/monotonic-clock")
-        now_ns = clock_iface.get_now() if clock_iface is not None else time.monotonic_ns()
-        if time_ptr + 8 <= len(mem):
-            struct.pack_into("<Q", mem, time_ptr, now_ns)
+        assert 0 <= time_ptr <= len(mem) - 8
+        now_ns = self.core03p.send_ipc_command(
+            self.bindings.timer_uri, WasiIpcCmd.CLOCK_GET_NOW, FlatMapView(())
+        )
+        assert isinstance(now_ns, int)
+        struct.pack_into("<Q", mem, time_ptr, now_ns)
         return 0
 
     def proc_exit(self, exit_code: int) -> int:
@@ -504,7 +490,7 @@ class WasiHostContext:
     ) -> Callable[..., int] | None:
         """Resolves an import name to the corresponding host function callable via RadixBinaryTreeView."""
         h = fnv1a_32(f"{module_name}::{field_name}")
-        candidate = self._import_tree.find(h)
+        candidate = self._import_storage.view().find(h)
         if candidate is not None:
             mod, field, handler = candidate
             if mod == module_name and field == field_name:

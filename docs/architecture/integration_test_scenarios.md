@@ -50,7 +50,7 @@
 
 | 仕様キーワード / 不変条件 | 定義元設計書 | 仕様上の定義・要件 | カバーテスト ID | 実装実証 |
 | :--- | :--- | :--- | :--- | :---: |
-| `RadixBinaryTreeView_bswap32` | `system_containers.md`, `jit_runtime.md` | UnifiedPC（`func_idx << 20 \| pc`）の bswap32 によるリトルエンディアン上位集約インデックス検索 | `TEST-INT-40`, `TEST-INT-41` | ✅ PASS |
+| `RadixBinaryTreeView_bswap32` | `system_containers.md`, `jit_runtime.md` | UnifiedPC（`func_idx << 16 \| pc`）の bswap32 によるリトルエンディアン上位集約インデックス検索 | `TEST-INT-40`, `TEST-INT-41` | ✅ PASS |
 | `FlatMapView_BinarySearch` | `system_containers.md`, `ipc_router.md` | 静的ソート配列に対する $O(\log N)$ バイナリサーチ（動的割当なし） | `TEST-INT-01`, `TEST-INT-80` | ✅ PASS |
 | `RingBuffer_Overwrite` | `system_containers.md`, `runtime_logging.md` | 静的容量リングバッファ、満杯時の最古エントリ自動上書き | `TEST-INT-82` | ✅ PASS |
 | `BitView_CardMarking` | `system_containers.md`, `jit_runtime.md` | 関数ごと 8バイト/カード 2-bit カードマーキング（UNEXEC $\to$ EXEC $\to$ HOT $\to$ COMPILED） | `TEST-INT-30`, `TEST-INT-31` | ✅ PASS |

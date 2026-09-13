@@ -594,18 +594,23 @@ class MemoryManager:
 
 
 # -----------------------------------------------------------------------------
-# HAL Integration Wrapper (hal_dispatch.md §5.1 Delegation)
+# HAL fixed-buffer boundary (hal_dispatch.md §5.1 contract)
 # -----------------------------------------------------------------------------
 
 
-class HALBufferManager:
-    """Simulates hal_dispatch.md acquire_buffer delegating to allocate_shared."""
+class HALFixedBufferManager:
+    """Models HAL-owned fixed slots separately from the SHM allocator."""
 
-    def __init__(self, memory_manager: MemoryManager):
-        self.mem = memory_manager
+    def __init__(self, slot_count: int = 4, slot_size: int = 256):
+        assert slot_count > 0
+        assert slot_size > 0
+        self.slot_count = slot_count
+        self.slot_size = slot_size
 
-    def acquire_buffer(self, hal_task_id: int, size: int) -> Result[SharedBlock]:
-        return self.mem.allocate_shared(hal_task_id, size)
+    def get_buffer(self, slot_index: int) -> tuple[int, int]:
+        """Selects a fixed HAL slot; it never allocates or transfers ownership."""
+        assert 0 <= slot_index < self.slot_count
+        return (slot_index, self.slot_size)
 
 
 # =============================================================================
@@ -752,16 +757,16 @@ def test_mem_08_claim_requires_valid_shm_id() -> None:
     assert c_res.error.error_code == "ERR_INVALID_SHM_ID"
 
 
-def test_mem_09_hal_acquire_buffer_delegates_to_allocate_shared() -> None:
-    """TEST-MEM-09: hal_dispatch acquire_buffer unifies with memory manager allocate_shared."""
+def test_mem_09_hal_fixed_buffer_is_separate_from_shared_memory() -> None:
+    """TEST-MEM-09: HAL fixed slots do not allocate or own SHM blocks."""
     mm = MemoryManager()
     mm.init_manager(pool_base=0x20020000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
-    hal = HALBufferManager(mm)
-    res = hal.acquire_buffer(hal_task_id=10, size=512)
-    assert res.is_ok
-    sb = res.unwrap()
-    assert sb.owner == 10
-    assert mm.vmmio_registry.is_mapped(sb.page_idx)
+    hal = HALFixedBufferManager()
+    slot, size = hal.get_buffer(0)
+    assert slot == 0
+    assert size == 256
+    assert mm.total_allocated_bytes == 0
+    assert not mm.vmmio_registry.is_mapped(0)
 
 
 def test_mem_10_shared_block_ownership_transfer() -> None:
@@ -975,7 +980,7 @@ if __name__ == "__main__":
     test_mem_06_guest_ram_64kb_alignment()
     test_mem_07_allocate_shared_registers_vmmio_pte()
     test_mem_08_claim_requires_valid_shm_id()
-    test_mem_09_hal_acquire_buffer_delegates_to_allocate_shared()
+    test_mem_09_hal_fixed_buffer_is_separate_from_shared_memory()
     test_mem_10_shared_block_ownership_transfer()
     test_mem_gotcha_02_shared_block_release_owner_only()
     test_mem_10b_shared_block_vmmio_pte_flight_and_claim()

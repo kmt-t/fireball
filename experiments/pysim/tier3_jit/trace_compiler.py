@@ -10,7 +10,7 @@ import ctypes
 from collections.abc import Callable
 
 from jit_cache import JITTrace
-from system_containers import FlatMapView, ReadOnlyFlatMapStorage
+from system_containers import ReadOnlyFlatMapStorage
 from wasm_module import WASM_LOCAL_SLOT_WORDS, TraceBlock, WasmOperand
 from control_flow import iter_block_ops
 from wasm_opcodes import (
@@ -80,11 +80,6 @@ _EMU_TRACE_STORAGE: ReadOnlyFlatMapStorage[int, Callable[[list[int], NativeLocal
         ]
     )
 )
-_EMU_TRACE_MAP: FlatMapView[int, Callable[[list[int], NativeLocals, WasmOperand], None]] = (
-    _EMU_TRACE_STORAGE.view()
-)
-
-
 class WASMTraceCompiler:
     """Compiles a loader-owned BasicBlock into a callable native JITTrace."""
 
@@ -105,7 +100,7 @@ class WASMTraceCompiler:
             c_arr = ctypes.cast(local_base, ctypes.POINTER(ctypes.c_uint32)) if local_base else None
             stk: list[int] = [tos] if tos else []
             for op, arg in iter_block_ops(block.code, block.head_offset, block.byte_span):
-                handler = _EMU_TRACE_MAP.find(op)
+                handler = _EMU_TRACE_STORAGE.view().find(op)
                 if handler is not None:
                     handler(stk, c_arr, arg)
             if stk and sp:

@@ -31,7 +31,6 @@ from interpreter import Interpreter, InterpreterCall
 from jit_scoring import JIT_CANDIDATE_THRESHOLD
 from recovery import Result
 from system_containers import (
-    FlatMapView,
     ReadOnlyFlatMapStorage,
     StaticVector,
 )
@@ -133,6 +132,7 @@ class RuntimeEngine:
         jit_compiler: _JitCompiler | None = None,
         yield_threshold: int = 16,
         card_shift: int = JIT_CARD_SHIFT,
+        code_lengths: tuple[int, ...] = (),
         min_trace_bytes: int | None = None,
         candidate_threshold: int = JIT_CANDIDATE_THRESHOLD,
         compile_queue_capacity: int = 4,
@@ -144,10 +144,10 @@ class RuntimeEngine:
         self.stat_jit_invocations: int = 0
         self.stat_chain_hits: int = 0
         self.stat_trace_exits_to_interp: int = 0
-        self.bitmap = HotspotBitmap(card_shift=card_shift)
+        self.bitmap = HotspotBitmap(card_shift=card_shift, code_lengths=code_lengths)
         assert candidate_threshold >= 0
         self.candidate_threshold = candidate_threshold
-        self.trackable = BlockCardMask(card_shift=card_shift)
+        self.trackable = BlockCardMask(card_shift=card_shift, code_lengths=code_lengths)
         self.ring = HistoryRing()
         self.cache = JITMultiBufferCache()
         self.cache.on_evict = self._handle_eviction
@@ -224,9 +224,15 @@ class RuntimeEngine:
 
     def register_module_blocks(self, module: Module) -> None:
         """Binds the loader-owned immutable block index."""
-        if module.block_tree is None:
+        if module.block_storage is None:
             module.build_basic_block_index()
         self.module = module
+        code_lengths = tuple(0 for _ in module.imports) + tuple(
+            len(function.code) for function in module.functions
+        )
+        card_shift = self.bitmap.card_shift
+        self.bitmap = HotspotBitmap(card_shift=card_shift, code_lengths=code_lengths)
+        self.trackable = BlockCardMask(card_shift=card_shift, code_lengths=code_lengths)
         self._virq = VirqDispatcher(module, self._invoke_virq)
         self._fast_block_slots = [None] * 16
         # `next_pc is not None and byte_span >= min_trace_bytes` is a pure
@@ -705,11 +711,6 @@ _INTERP_BLOCK_STORAGE: ReadOnlyFlatMapStorage[int, Callable[[WASMContext, WasmOp
         ]
     )
 )
-_INTERP_BLOCK_MAP: FlatMapView[int, Callable[[WASMContext, WasmOperand], None]] = (
-    _INTERP_BLOCK_STORAGE.view()
-)
-
-
 class IntegratedHybridEngine:
     """
     Full Tiered Runtime Engine: Interpreter execution -> 2-bit card tracking ->
@@ -742,15 +743,16 @@ class IntegratedHybridEngine:
         self,
         yield_threshold: int = 4,
         card_shift: int = JIT_CARD_SHIFT,
+        code_lengths: tuple[int, ...] = (),
         compiler: _JitCompiler | None = None,
         min_trace_bytes: int | None = None,
         candidate_threshold: int = JIT_CANDIDATE_THRESHOLD,
         compile_queue_capacity: int = 4,
     ):
-        self.bitmap = HotspotBitmap(card_shift=card_shift)
+        self.bitmap = HotspotBitmap(card_shift=card_shift, code_lengths=code_lengths)
         assert candidate_threshold >= 0
         self.candidate_threshold = candidate_threshold
-        self.trackable = BlockCardMask(card_shift=card_shift)
+        self.trackable = BlockCardMask(card_shift=card_shift, code_lengths=code_lengths)
         self.history = HistoryRing(capacity=32)
         self.cache = JITMultiBufferCache()
         self.compiler = compiler or WASMTraceCompiler()
@@ -788,9 +790,15 @@ class IntegratedHybridEngine:
 
     def register_module_blocks(self, module: Module) -> None:
         """Binds loader-owned basic blocks and control skip Radix tree from a parsed WASM Module."""
-        if module.block_tree is None:
+        if module.block_storage is None:
             module.build_basic_block_index()
         self.module = module
+        code_lengths = tuple(0 for _ in module.imports) + tuple(
+            len(function.code) for function in module.functions
+        )
+        card_shift = self.bitmap.card_shift
+        self.bitmap = HotspotBitmap(card_shift=card_shift, code_lengths=code_lengths)
+        self.trackable = BlockCardMask(card_shift=card_shift, code_lengths=code_lengths)
         self.blocks = [(b.head_pc, b) for b in module.blocks]
         self.trackable.clear()
         for b in module.blocks:
@@ -884,7 +892,7 @@ class IntegratedHybridEngine:
         trace_block = self.resolve_trace_block(block.head_pc, block)
         assert trace_block is not None
         for op, arg in trace_block.instructions:
-            handler = _INTERP_BLOCK_MAP.find(op)
+            handler = _INTERP_BLOCK_STORAGE.view().find(op)
             if handler is not None:
                 handler(ctx, arg)
                 if ctx.fault is not None:

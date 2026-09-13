@@ -20,7 +20,7 @@
 | TEST-MEM-04 | 所有者task-idの自動設定 | - | `acquire-task-heap`/`acquire-slot`/`allocate-shared` | 呼び出し元task-idが自動設定される（`block.owner != 0`） | - |
 | TEST-MEM-05 | `release-task-heap`/`release-slot`は所有者のみ実行可能 | 他タスクが確保したブロック | 別task-idから`release-task-heap`/`release-slot` | 拒否される（`memory-error`: `invalid-owner`） | 「所有者タスクのみ実行可能」 |
 | TEST-MEM-08 | `claim`は有効なハンドルを要求する | 無効・解放済みハンドル | `claim(handle)` | 拒否される（`memory-error`: `invalid-owner`または`out-of-bounds`） | claim 事前条件 |
-| TEST-MEM-09 | HALの`acquire_buffer`との一本化 | HALがバッファを確保 | `acquire_buffer(size)`（HAL）を呼ぶ | 内部的に本コンポーネントの`allocate-shared`を呼び出しており、HALとメモリマネージャが独立にSHMページを確保しない | allocate-shared 補足 |
+| TEST-MEM-09 | HAL固定バッファと共有メモリの分離 | HAL固定スロットをRuntimeへマップ | `bind_runtime`後に固定スロットを取得する | HAL固定バッファは共有メモリと別プールであり、`allocate-shared`を呼び出さない | runtime_vmmio.md 4.6 |
 
 ### `shared-block`ライフサイクル（契約レベル）
 

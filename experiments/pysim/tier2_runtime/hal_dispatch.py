@@ -1,19 +1,9 @@
 """
 experiments/pysim/tier3_platform/hal.py
 Real (not mocked) HAL underlayer for the pysim experiment.
-- StreamTransport: a genuine OS-level byte pipe (socket.socketpair), standing
-  in for the physical UART/ITM line. Bytes written here really cross a
-  kernel-buffered duplex socket, so a full/blocked transport is an actual
-  socket condition, not an in-memory flag someone forgot to flip.
-- HalBufferPool: acquire_buffer()/release_buffer() backed by a plain
-  bytearray per slot. The point being tested -- "a guest can only touch a
-  buffer via a handle the pool has authorized, never via a raw pointer" --
-  is a property of the *lookup discipline* (every access goes through
-  _resolve()'s ownership/bounds check), not of the byte storage being real
-  OS shared memory, so a bytearray proves it exactly as well without the
-  extra process-boundary machinery.
-- Timer: wall-clock timer via time.monotonic_ns(), matching
-  wasi:clocks/monotonic-clock's nanosecond contract.
+This module contains only the Tier 2 HAL command and buffer-access contracts.
+The stream endpoint, timer, and fixed-buffer storage are Tier 3 platform
+implementations.
 This intentionally sets aside C++ naming/type conventions and is not wired
 into the C++ build. It exists to pressure-test whether the *design* in
 docs/components/tier1_interface/interface_wit.md and
@@ -23,13 +13,11 @@ something has to really run.
 
 from __future__ import annotations
 
-import socket
-import threading
 import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from enum import IntEnum
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
     from memory import MemoryManager
@@ -96,9 +84,10 @@ class HalError(Exception):
 
 class HalBufferTrap(HalError):
     """
-    A guest touched a HAL buffer-pool handle it does not own, or a slice
-        escaped the handle's acquired bounds. Mirrors runtime_vmmio.md 4.6's
-        vMMIO PTE ownership trap -- a real MMU would fault here.
+    A guest touched an unmapped or stale HAL buffer-pool handle, or a slice
+        escaped the handle's acquired bounds. DYNAMIC buffers do not carry
+        shared-memory task ownership; the mapped-guest boundary is checked
+        separately from the HAL driver's privileged view.
     """
 
 
@@ -107,70 +96,11 @@ class HalBufferTrap(HalError):
 # ---------------------------------------------------------------------------
 
 
-class StreamTransport:
-    """
-    One host-side duplex stream, modeled as a real OS socket pair.
-        `device_sock` is the endpoint a driver writes to;
-        `host_sock` is what a host-side terminal/log collector reads from.
-        Nothing here is a Python list standing in for hardware: bytes written
-        via write() genuinely traverse a kernel socket buffer.
-    """
+class StreamSink(Protocol):
+    """Tier 2が要求するストリーム出力の最小契約。実体はTier 3が提供する。"""
 
-    def __init__(self):
-        self.device_sock, self.host_sock = socket.socketpair()
-        self.device_sock.settimeout(0.2)
-        self.host_sock.settimeout(0.2)
-        self._lock = threading.Lock()
-        self.bytes_written = 0
-
-    def write(self, data: bytes) -> int:
-        """Writes physical output to the host-side stream endpoint."""
-        with self._lock:
-            n = self.device_sock.send(data)
-            self.bytes_written += n
-            return n
-
-    def feed_input(self, data: bytes) -> int:
-        """Feeds host input into the device-side stream endpoint."""
-        with self._lock:
-            return self.host_sock.send(data)
-
-    def read_input(self, max_len: int = 4096) -> bytes:
-        """Reads bytes that the host supplied to the device side."""
-        assert max_len > 0
-        chunks: list[bytes] = []
-        total = 0
-        try:
-            while total < max_len:
-                chunk = self.device_sock.recv(max_len - total)
-                if not chunk:
-                    break
-                chunks.append(chunk)
-                total += len(chunk)
-                if len(chunk) < max_len:
-                    break
-        except (TimeoutError, BlockingIOError):
-            pass
-        return b"".join(chunks)
-
-    def drain_output(self) -> bytes:
-        """Reads everything currently sitting on the host output endpoint."""
-        chunks: list[bytes] = []
-        try:
-            while True:
-                chunk = self.host_sock.recv(4096)
-                if not chunk:
-                    break
-                chunks.append(chunk)
-                if len(chunk) < 4096:
-                    break
-        except (TimeoutError, BlockingIOError):
-            pass
-        return b"".join(chunks)
-
-    def close(self) -> None:
-        self.device_sock.close()
-        self.host_sock.close()
+    def write(self, data: bytes | memoryview) -> int:
+        ...
 
 
 # ---------------------------------------------------------------------------
@@ -184,15 +114,12 @@ FB_CONF_HAL_MAX_BUFFERS = 4  # docs/components/tier1_core/system_config.md 3.3.3
 @dataclass
 class HalBufferHandle:
     """
-    What acquire_buffer() actually returns: an opaque integer ID, not a
-    pointer. Handing this value to code running as a different owner is
-        meaningless -- there is no address inside it that could be dereferenced
-        as guest linear memory, only a lookup key the pool checks against an
-        owner table before it will hand back a byte.
+    What the fixed buffer accessor returns: an opaque integer ID, not a
+    pointer. The handle identifies a live slot in the HAL-owned fixed pool;
+    it is not a shared-memory ownership token.
     """
 
     buffer_id: int
-    owner_task: int
     capacity: int
     virtual_address: int
     _storage: bytearray = field(repr=False, compare=False)
@@ -200,103 +127,83 @@ class HalBufferHandle:
 
 class HalBufferPool:
     """
-    `acquire_buffer()` backed by FB_CONF_HAL_MAX_BUFFERS fixed-size slots
-        of at most FB_CONF_HAL_BUFFER_SIZE bytes each: a static pool, not a
-        dynamic allocator (hal_dispatch.md 5.1's "静的固定長バッファプール"),
-        MMIO'd into the vMMIO DYNAMIC region. The DYNAMIC mapping is bound to
-        exactly one guest task for the pool lifetime. acquire_buffer() is the
-        ownership-taking call a client must make before it may touch a slot at all --
-        every other method re-checks that ownership before honoring a
-        request (GOTCHA-HAL-01).
+    FB_CONF_HAL_MAX_BUFFERS fixed-size slots of
+        FB_CONF_HAL_BUFFER_SIZE bytes each: a static pool, not a dynamic
+        allocator. The pool is MMIO'd into the vMMIO DYNAMIC region when the
+        single runtime mapping is bound. There is no acquire/release lifecycle;
+        HAL owns all slots for the lifetime of the system. The HAL driver may
+        access every slot, while the one mapped guest may access the same slots.
     """
 
     def __init__(self, scheduler: Scheduler, vmmio: VMMIOController):
         self._scheduler = scheduler
         self._vmmio = vmmio
-        self._slots: StaticVector[HalBufferHandle | None] = StaticVector.of(
-            (None,) * FB_CONF_HAL_MAX_BUFFERS, capacity=FB_CONF_HAL_MAX_BUFFERS
+        self._slots: StaticVector[HalBufferHandle] = StaticVector.of(
+            tuple(
+                HalBufferHandle(
+                    buffer_id=slot_idx,
+                    capacity=FB_CONF_HAL_BUFFER_SIZE,
+                    virtual_address=(FC_DYNAMIC << 28) | (slot_idx << VMMIO_PAGE_SHIFT),
+                    _storage=bytearray(FB_CONF_HAL_BUFFER_SIZE),
+                )
+                for slot_idx in range(FB_CONF_HAL_MAX_BUFFERS)
+            ),
+            capacity=FB_CONF_HAL_MAX_BUFFERS,
         )
-        self._mapped_guest_task: int | None = None
+        self._mapped_runtime_task: int | None = None
 
-    def bind_guest(self) -> None:
-        """Binds the DYNAMIC mapping to one guest for its whole lifetime."""
+    def bind_runtime(self) -> None:
+        """Binds and maps the fixed DYNAMIC buffer array to one runtime task."""
         task_id = self.current_task_id
-        if self._mapped_guest_task is None:
-            self._mapped_guest_task = task_id
+        if self._mapped_runtime_task is None:
+            self._mapped_runtime_task = task_id
+            for slot_idx, handle in enumerate(self._slots):
+                self._vmmio.map_dynamic_page(
+                    handle.virtual_address >> VMMIO_PAGE_SHIFT, slot_idx
+                )
             return
-        assert self._mapped_guest_task == task_id, "HAL DYNAMIC mapping supports one guest only"
+        assert self._mapped_runtime_task == task_id, "HAL DYNAMIC mapping supports one runtime only"
 
     @property
     def current_task_id(self) -> int:
         return self._scheduler.current_task_id
 
-    def acquire_buffer(self, size: int) -> HalBufferHandle:
-        """Claims ownership of one free static slot for the running task."""
+    def buffer(self, buffer_id: int) -> HalBufferHandle:
+        """Returns one fixed HAL buffer visible to the mapped guest."""
         task_id = self.current_task_id
-        assert self._mapped_guest_task == task_id, "HAL DYNAMIC mapping is not bound to this guest"
-        if size <= 0 or size > FB_CONF_HAL_BUFFER_SIZE:
-            raise ValueError(
-                f"acquire_buffer(size={size}) exceeds FB_CONF_HAL_BUFFER_SIZE={FB_CONF_HAL_BUFFER_SIZE}"
-            )
+        assert self._mapped_runtime_task == task_id, "HAL DYNAMIC mapping is not bound to this runtime"
+        assert 0 <= buffer_id < len(self._slots)
+        return self._slots[buffer_id]
 
-        slot_idx = -1
-        for i, s in enumerate(self._slots):
-            if s is None:
-                slot_idx = i
-                break
-        if slot_idx < 0:
-            raise HalError("HAL buffer pool exhausted (FB_CONF_HAL_MAX_BUFFERS)")
-        virtual_address = (FC_DYNAMIC << 28) | (slot_idx << VMMIO_PAGE_SHIFT)
-        self._vmmio.map_dynamic_page(virtual_address >> VMMIO_PAGE_SHIFT, slot_idx)
-        handle = HalBufferHandle(
-            buffer_id=slot_idx,
-            owner_task=task_id,
-            capacity=size,
-            virtual_address=virtual_address,
-            _storage=bytearray(size),
-        )
-        self._slots[slot_idx] = handle
-        return handle
-
-    def release_buffer(self, handle: HalBufferHandle) -> None:
+    def unbind_runtime(self) -> None:
+        """Unmaps all fixed DYNAMIC buffers from the currently bound Runtime."""
         task_id = self.current_task_id
-        for i, s in enumerate(self._slots):
-            if s is not None and s.buffer_id == handle.buffer_id:
-                if s.owner_task != task_id:
-                    raise HalBufferTrap(
-                        f"task {task_id} cannot release buffer {handle.buffer_id}: not the owner"
-                    )
-                self._slots[i] = None
-                self._vmmio.unmap_dynamic_page(s.virtual_address >> VMMIO_PAGE_SHIFT)
-                return
-        raise HalBufferTrap(f"task {task_id} cannot release buffer {handle.buffer_id}: not found")
+        assert self._mapped_runtime_task == task_id, "HAL DYNAMIC mapping is not bound to this runtime"
+        for handle in self._slots:
+            self._vmmio.unmap_dynamic_page(handle.virtual_address >> VMMIO_PAGE_SHIFT)
+        self._mapped_runtime_task = None
 
     def _resolve(self, handle: HalBufferHandle) -> HalBufferHandle:
         task_id = self.current_task_id
-        for s in self._slots:
-            if s is not None and s.buffer_id == handle.buffer_id:
-                if s.owner_task != task_id:
-                    raise HalBufferTrap(
-                        f"task {task_id} does not own buffer {handle.buffer_id} (owner={s.owner_task}); "
-                        "no linear-memory pointer would ever bypass this check"
-                    )
-                return s
-        raise HalBufferTrap(f"buffer {handle.buffer_id} does not exist (stale, or never acquired)")
+        assert self._mapped_runtime_task == task_id, "HAL DYNAMIC mapping is not bound to this runtime"
+        assert 0 <= handle.buffer_id < len(self._slots), (
+            f"buffer {handle.buffer_id} does not exist"
+        )
+        record = self._slots[handle.buffer_id]
+        assert record.buffer_id == handle.buffer_id, "stale HAL buffer handle"
+        return record
 
     def view_for_driver(self, buffer_id: int, offset: int, length: int) -> memoryview:
-        """Resolves a caller-owned buffer for the HAL driver currently serving it.
+        """Resolves a live HAL-owned buffer for the driver currently serving it.
 
         The driver is the trusted HAL subsystem endpoint for the pool, so its access is
-        independent of the guest task that acquired the handle. The public
-        guest-facing ``view`` method keeps the ownership check.
+        independent of the guest task that mapped the DYNAMIC region. The public
+        guest-facing ``view`` method checks the mapped guest instead.
         """
         assert buffer_id >= 0
-        record: HalBufferHandle | None = None
-        for slot in self._slots:
-            if slot is not None and slot.buffer_id == buffer_id:
-                record = slot
-                break
-        assert record is not None, f"buffer {buffer_id} does not exist"
+        assert buffer_id < len(self._slots), f"buffer {buffer_id} does not exist"
+        record = self._slots[buffer_id]
+        assert record.buffer_id == buffer_id, f"buffer {buffer_id} does not exist"
         assert 0 <= offset <= record.capacity
         assert 0 <= length <= record.capacity - offset
         status, _physical = self._vmmio.access(record.virtual_address + offset, is_write=False)
@@ -304,26 +211,31 @@ class HalBufferPool:
         return memoryview(record._storage)[offset : offset + length]
 
     def close_all(self) -> None:
-        for i in range(len(self._slots)):
-            handle = self._slots[i]
-            if handle is not None:
-                self._vmmio.unmap_dynamic_page(handle.virtual_address >> VMMIO_PAGE_SHIFT)
-            self._slots[i] = None
+        if self._mapped_runtime_task is None:
+            return
+        for handle in self._slots:
+            self._vmmio.unmap_dynamic_page(handle.virtual_address >> VMMIO_PAGE_SHIFT)
+        self._mapped_runtime_task = None
 
     def can_view(self, handle: HalBufferHandle, offset: int, length: int) -> bool:
         """
-        Non-throwing precondition check for view(): same ownership/bounds
+        Non-throwing precondition check for view(): same mapping/bounds
         rules, but a bool return instead of raising HalBufferTrap, for callers
         that must not depend on catching an exception (exceptions disabled
         in the target C++ build).
         """
         task_id = self.current_task_id
-        for s in self._slots:
-            if s is not None and s.buffer_id == handle.buffer_id:
-                if s.owner_task != task_id:
-                    return False
-                return 0 <= offset and 0 <= length and length <= s.capacity - offset
-        return False
+        if self._mapped_runtime_task != task_id:
+            return False
+        if handle.buffer_id < 0 or handle.buffer_id >= len(self._slots):
+            return False
+        slot = self._slots[handle.buffer_id]
+        return (
+            slot.buffer_id == handle.buffer_id
+            and 0 <= offset
+            and 0 <= length
+            and length <= slot.capacity - offset
+        )
 
     def view(self, handle: HalBufferHandle, offset: int, length: int) -> memoryview:
         """
@@ -335,30 +247,12 @@ class HalBufferPool:
         record = self._resolve(handle)
         if offset < 0 or length < 0 or offset > record.capacity or length > record.capacity - offset:
             raise HalBufferTrap(
-                f"hal-buffer-slice(offset={offset}, len={length}) escapes buffer {handle.buffer_id}'s "
-                f"acquired capacity ({record.capacity} bytes)"
+                f"hal-buffer-slice(offset={offset}, len={length}) escapes fixed buffer "
+                f"{handle.buffer_id}'s capacity ({record.capacity} bytes)"
             )
         status, _physical = self._vmmio.access(record.virtual_address + offset, is_write=False)
         assert status == VmmioStatus.OK_PHYSICAL, "HAL buffer is not mapped in vMMIO DYNAMIC"
         return memoryview(record._storage)[offset : offset + length]
-
-
-# ---------------------------------------------------------------------------
-# Timer
-# ---------------------------------------------------------------------------
-
-
-class Timer:
-    """wasi:clocks/monotonic-clock, backed by the real system clock."""
-
-    def get_now_ns(self) -> int:
-        return time.monotonic_ns()
-
-    def subscribe(self, nanos: int, callback) -> threading.Timer:
-        t = threading.Timer(nanos / 1e9, callback)
-        t.daemon = True
-        t.start()
-        return t
 
 
 # ---------------------------------------------------------------------------
@@ -421,7 +315,8 @@ class HalDriver:
     def dispatch(self, cmd_id: int, params: FlatMapView) -> HalResult:
         """Dispatches an IPC command through the driver's registered callback."""
         callback = self._find_command(cmd_id)
-        return None if callback is None else callback(params)
+        assert callback is not None, f"unregistered HAL command {cmd_id:#x}"
+        return callback(params)
 
     def start(self, ipc: IPCRouter, scheduler: Scheduler, role: Role) -> tuple[int, HalTask]:
         """Starts this driver's dedicated HAL task and returns its task handle."""
@@ -435,7 +330,7 @@ ARG_RESULT = pack_key32(ScopeKind.FUNCTIONAL, DataType.UINT32, key_id=0xFF)
 
 class HalTask:
     """
-    COOS Task for one HAL device/service instance ({META_3TierSeparation},
+    COOS Task for one HAL device/HAL-subsystem instance ({META_3TierSeparation},
     {hal_dispatch.md}). HAL operates as one independent cooperative task
     *per device instance*, not one shared task for the whole HAL layer: the
     IPC router hands each task's role its own dedicated CSP channel (1

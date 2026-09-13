@@ -6,7 +6,12 @@ interface types {
     enum role {
         runtime,
         core-service,
-        platform-hal,
+        hal-uart,
+        hal-stdout,
+        hal-gpio,
+        hal-timer,
+        hal-i2c,
+        hal-spi,
         debugger,
     }
 
@@ -40,7 +45,7 @@ interface router {
     /// WASMサービスまたはHALサブシステム固有のURIと、それを処理するチャネルおよびロールを関連付けて登録する
     register-service: func(uri: string, service-role: role, channel: u32) -> ipc-status;
 
-    /// 登録済みWASMサービス/HALデバイスのURIからチャネルハンドルを解決する（現在実行中タスクのロールでRBAC検証）
+    /// 登録済みWASMサービス/HALエンドポイントのURIからチャネルハンドルを解決する（現在実行中タスクのロールでRBAC検証）
     lookup-service: func(uri: string) -> result<u32, ipc-status>;
 
     /// 宛先チャネルへ最大8個のKVペアメッセージを送信する（現在実行中タスクからゼロコピー同期CSPハンドオフ）

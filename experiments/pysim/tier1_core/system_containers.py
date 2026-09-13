@@ -110,6 +110,14 @@ class ReadOnlyBitStorage:
     def buffer(self) -> bytes:
         return self._buffer
 
+    def at(self, index: int) -> int:
+        """Read one packed element without creating a borrowing view."""
+
+        assert 0 <= index < self.count
+        bit = index * self.bits
+        mask = (1 << self.bits) - 1
+        return (self._buffer[bit >> 3] >> (bit & 7)) & mask
+
     def view(self, origin: int = 0, count: int | None = None) -> BitView:
         return BitView(
             self._buffer, self.bits, origin=origin, count=count if count is not None else self.count

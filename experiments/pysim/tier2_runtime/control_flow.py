@@ -19,8 +19,6 @@ from enum import IntFlag
 
 from leb128 import decode_signed, decode_unsigned
 from system_containers import (
-    BitView,
-    FlatMapView,
     MutableBitStorage,
     ReadOnlyBitStorage,
     ReadOnlyFlatMapStorage,
@@ -197,7 +195,7 @@ class OpcodeAttribute(IntFlag):
     BRANCH = 8
 
 
-def _opcode_bitview(*opcodes: int) -> BitView:
+def _opcode_table(*opcodes: int) -> ReadOnlyBitStorage:
     """
     Builds a frozen, read-only 1-bit-per-opcode (32 bytes total) membership
     table for one of the fixed opcode-class checks below, in place of a
@@ -206,7 +204,7 @@ def _opcode_bitview(*opcodes: int) -> BitView:
     storage = MutableBitStorage(count=256, bits=1)
     for _op in opcodes:
         storage.put(_op, 1)
-    return ReadOnlyBitStorage(bytes(storage.buffer), bits=1, count=256).view()
+    return ReadOnlyBitStorage(bytes(storage.buffer), bits=1, count=256)
 
 
 _OPCODE_ATTRIBUTE_STORAGE = MutableBitStorage(count=256, bits=4)
@@ -226,9 +224,9 @@ for _opcode, _attributes in (
     _OPCODE_ATTRIBUTE_STORAGE.put(_opcode, int(_attributes))
 
 # Immutable ROM-style opcode metadata: 256 opcodes x 4 bits = 128 bytes.
-OPCODE_ATTRIBUTES: BitView = ReadOnlyBitStorage(
+OPCODE_ATTRIBUTES: ReadOnlyBitStorage = ReadOnlyBitStorage(
     bytes(_OPCODE_ATTRIBUTE_STORAGE.buffer), bits=4, count=256
-).view()
+)
 
 
 def opcode_has_attribute(opcode: int, attribute: OpcodeAttribute) -> bool:
@@ -239,11 +237,11 @@ def opcode_has_attribute(opcode: int, attribute: OpcodeAttribute) -> bool:
     # BitView.at() and an IntFlag construction on every dispatch.
     assert 0 <= opcode < 256
     bit = opcode << 2
-    packed = (OPCODE_ATTRIBUTES.storage[bit >> 3] >> (bit & 7)) & 0x0F
+    packed = OPCODE_ATTRIBUTES.at(opcode)
     return (packed & int(attribute)) != 0
 
 
-_MEMARG_OPCODES = _opcode_bitview(
+_MEMARG_OPCODES = _opcode_table(
     I32_LOAD,
     I32_LOAD8_S,
     I32_LOAD8_U,
@@ -260,12 +258,12 @@ _MEMARG_OPCODES = _opcode_bitview(
     F64_STORE,
 )
 
-_MEMORY_INDEX_OPCODES = _opcode_bitview(
+_MEMORY_INDEX_OPCODES = _opcode_table(
     MEMORY_SIZE,
     MEMORY_GROW,
 )  # followed by a single reserved 0x00 byte
 
-_NO_OPERAND = _opcode_bitview(
+_NO_OPERAND = _opcode_table(
     UNREACHABLE,
     NOP,
     ELSE,
@@ -399,7 +397,7 @@ _NO_OPERAND = _opcode_bitview(
     F64_REINTERPRET_I64,
 )
 
-_LEB_UNSIGNED_OPERAND = _opcode_bitview(
+_LEB_UNSIGNED_OPERAND = _opcode_table(
     BR,
     BR_IF,
     CALL,
@@ -410,7 +408,7 @@ _LEB_UNSIGNED_OPERAND = _opcode_bitview(
     GLOBAL_SET,
 )
 
-_BLOCK_OPENERS = _opcode_bitview(BLOCK, LOOP, IF)
+_BLOCK_OPENERS = _opcode_table(BLOCK, LOOP, IF)
 
 # {Policy_Memory}: no dynamically-growing container (a Python list grown via
 # .append()/.pop() models a heap-backed std::vector, which is banned by
@@ -439,8 +437,8 @@ class Instr:
 class ControlMap:
     """Pre-indexed control metadata with a fixed locality cache."""
 
-    blocks: FlatMapView[int, tuple[int, int | None]]
-    br_tables: FlatMapView[int, tuple[tuple[int, ...], int]]
+    blocks: ReadOnlyFlatMapStorage[int, tuple[int, int | None]]
+    br_tables: ReadOnlyFlatMapStorage[int, tuple[tuple[int, ...], int]]
     block_cache: StaticVector[tuple[int, tuple[int, int | None]] | None]
     br_table_cache: StaticVector[tuple[int, tuple[tuple[int, ...], int]] | None]
 
@@ -461,7 +459,8 @@ class ControlMap:
         cached = self.block_cache[slot]
         if cached is not None and cached[0] == ip:
             return cached[1]
-        value = self.blocks[ip]
+        value = self.blocks.view().find(ip)
+        assert value is not None, f"unknown control block at {ip}"
         self.block_cache[slot] = (ip, value)
         return value
 
@@ -472,7 +471,8 @@ class ControlMap:
         cached = self.br_table_cache[slot]
         if cached is not None and cached[0] == ip:
             return cached[1]
-        value = self.br_tables[ip]
+        value = self.br_tables.view().find(ip)
+        assert value is not None, f"unknown br_table at {ip}"
         self.br_table_cache[slot] = (ip, value)
         return value
 
@@ -572,8 +572,8 @@ def build_control_map(code: bytes) -> ControlMap:
 
     assert depth == 0, "unterminated block/loop/if (missing END)"
     return ControlMap(
-        blocks=ReadOnlyFlatMapStorage.create(block_entries).view(),
-        br_tables=ReadOnlyFlatMapStorage.create(br_table_entries).view(),
+        blocks=ReadOnlyFlatMapStorage.create(block_entries),
+        br_tables=ReadOnlyFlatMapStorage.create(br_table_entries),
         block_cache=StaticVector.of((None,) * 4, capacity=4),
         br_table_cache=StaticVector.of((None,) * 4, capacity=4),
     )
@@ -693,9 +693,9 @@ for _op in (
 # Read-only 1-bit-per-opcode membership table (32 bytes total, not a
 # 256-slot Python list of bool object pointers): frozen once at import
 # time, never mutated again.
-_IS_BB_OPCODE: BitView = ReadOnlyBitStorage(
+_IS_BB_OPCODE: ReadOnlyBitStorage = ReadOnlyBitStorage(
     bytes(_IS_BB_OPCODE_BUILD.buffer), bits=1, count=256
-).view()
+)
 
 
 def iter_block_ops(code: bytes, head_offset: int, byte_span: int) -> Iterator[tuple[int, WasmOperand]]:

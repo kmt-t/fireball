@@ -26,4 +26,4 @@ vMMIO 仮想アドレス空間（Bit 31 == 1, Stage 2/3）における、64件�
 2. **TLB ミス & FlatMap 探索測定**:
    - 64件のPTE格納上限内で、TLB 容量（32エントリ）を超える33ページをストライド走査し、TLB ミスに伴う FlatMap（`vmmio_ptes`）二分探索とリフィルのオーバーヘッドを計測。
 3. **セキュリティゲート測定**:
-   - Revoke（`unmap_shm_page`）済みの SHM ページへ再アクセスを投入し、PTE 不在（マッピング解除済み）による `TRAP_UNREGISTERED_PAGE` 判定コストを算出する。PTE に `owner_id` フィールドは存在せず、アクセス制御はマッピングの存在有無のみで執行される（`runtime_vmmio.md` を正本とする）。
+   - Revoke（`unmap_shm_page`）済みの SHM ページへ再アクセスを投入し、PTE 不在（マッピング解除済み）による `TRAP_UNREGISTERED_PAGE` 判定コストを算出する。通常アクセスではPTEの `owner_id` とスケジューラの現在タスクIDを照合し、RevokeではPTEとTLBを削除して未登録ページとして遮断する（`runtime_vmmio.md` を正本とする）。

@@ -153,7 +153,7 @@ _SCORE_ENTRIES: tuple[tuple[int, int], ...] = (
 class OpcodeBenefitTable:
     """ROM-shaped 4-bit signed score table indexed by numeric WASM opcode."""
 
-    __slots__ = ("storage", "view")
+    __slots__ = ("storage",)
 
     def __init__(self) -> None:
         storage = bytearray((0x88,) * OPCODE_TABLE_BYTES)
@@ -161,28 +161,26 @@ class OpcodeBenefitTable:
         for opcode, score in _SCORE_ENTRIES:
             view.put(opcode, _encode_int4(score))
         self.storage: bytes = bytes(storage)
-        self.view: BitView = BitView(self.storage, bits=4, count=OPCODE_TABLE_COUNT)
 
     def score(self, opcode: int) -> int:
         assert 0 <= opcode < OPCODE_TABLE_COUNT
-        return _decode_int4(self.view.at(opcode))
+        table = BitView(self.storage, bits=4, count=OPCODE_TABLE_COUNT)
+        return _decode_int4(table.at(opcode))
 
 
 class JITCandidateBitmap:
     """Fixed per-function one-bit card bitmap populated at module load."""
 
-    __slots__ = ("card_shift", "func_storages", "func_tables")
+    __slots__ = ("card_shift", "func_storages")
 
     def __init__(self, card_shift: int = JIT_CARD_SHIFT) -> None:
         assert card_shift >= 0
         self.card_shift = card_shift
         self.func_storages: StaticVector[MutableBitStorage | None] = StaticVector(capacity=0)
-        self.func_tables: StaticVector[BitView | None] = StaticVector(capacity=0)
 
     def allocate_functions(self, function_count: int) -> None:
         assert function_count >= 0
         self.func_storages = StaticVector.of((None,) * function_count, capacity=function_count)
-        self.func_tables = StaticVector.of((None,) * function_count, capacity=function_count)
 
     @staticmethod
     def _split_pc(pc: int) -> tuple[int, int]:
@@ -191,29 +189,26 @@ class JITCandidateBitmap:
 
     def mark(self, pc: int, code_len: int) -> None:
         func_index, offset = self._split_pc(pc)
-        assert func_index < len(self.func_tables)
+        assert func_index < len(self.func_storages)
         card = offset >> self.card_shift
         card_count = max(1, (code_len + (1 << self.card_shift) - 1) >> self.card_shift)
         assert card < card_count
         storage = self.func_storages[func_index]
-        view = self.func_tables[func_index]
-        if storage is None or view is None:
+        if storage is None:
             storage = MutableBitStorage(count=card_count, bits=1)
-            view = storage.view()
             self.func_storages[func_index] = storage
-            self.func_tables[func_index] = view
-        assert card < view.size()
-        view.put(card, 1)
+        assert card < storage.count
+        storage.put(card, 1)
 
     def is_candidate(self, pc: int) -> bool:
         func_index, offset = self._split_pc(pc)
-        if func_index >= len(self.func_tables):
+        if func_index >= len(self.func_storages):
             return False
-        view = self.func_tables[func_index]
-        if view is None:
+        storage = self.func_storages[func_index]
+        if storage is None:
             return False
         card = offset >> self.card_shift
-        return card < view.size() and view.at(card) != 0
+        return card < storage.count and storage.view().at(card) != 0
 
 
 def score_opcodes(opcodes: Iterable[int], table: OpcodeBenefitTable) -> int:

@@ -39,7 +39,7 @@ class VmmioStatus(IntEnum):
     UNDEFINED_FC = 4
     UNREGISTERED_PAGE = 5
     ACCESS_VIOLATION = 6
-    OWNER_MISMATCH = 5  # Aliased per ADR_PageGranularPermissionIsolation.
+    OWNER_MISMATCH = 7
 
 
 TrapCode = VmmioStatus
@@ -65,7 +65,8 @@ class VmmioAddress:
     __slots__ = ("raw",)
 
     def __init__(self, raw: int):
-        self.raw = raw & 0xFFFF_FFFF
+        assert 0 <= raw <= 0xFFFF_FFFF
+        self.raw = raw
 
     def is_linear(self) -> bool:
         # Bit[31] == 0 -> guest RAM (Tier 1), fast-bypass vMMIO entirely.
@@ -110,7 +111,8 @@ class Tier3PTE:
     """
     FC=14/15 (SHM / PASSTHROUGH). 32-bit layout, no bit overlap:
         [31:12] PPN(20) | [11] VALID | [10] READ | [9] WRITE | [8] EXEC | [7:0] Reserved
-    PTE does not store owner_id; access control is enforced by presence of mapping (unmap on revoke).
+    PTE stores owner_id for FC=14 shared-memory access checks. Revocation
+    removes the mapping and flushes the corresponding TLB entry.
     """
 
     __slots__ = ("exec_", "owner_id", "phys_page", "read", "valid", "write")
@@ -157,8 +159,7 @@ class VMMIOController:
 
     def __init__(self, guest_ram_size: int = 8192, *, scheduler: Scheduler):  # FB_CONF_GUEST_RAM_SIZE
 
-        if guest_ram_size <= 0:
-            raise ValueError("guest RAM size must be positive")
+        assert guest_ram_size > 0
         self.scheduler = scheduler
         self.guest_ram_size = guest_ram_size
         # FlatMap PTE storage: vpn (20-bit) -> PTE, capacity-bounded per
@@ -284,10 +285,16 @@ class VMMIOController:
         def _to_vpn(page_idx: int) -> int:
             return (0xE000_0000 >> 12) + page_idx
 
+        def _physical_page(physical_addr: int) -> int:
+            assert physical_addr % VMMIO_PAGE_SIZE == 0
+            return physical_addr >> VMMIO_PAGE_SHIFT
+
         memory_manager.register_page_mapping_callbacks(
             PageMappingCallbacks(
-                on_map_page=lambda page_idx, _addr, owner_id: self.map_shm_page(
-                    _to_vpn(page_idx), phys_page=page_idx, owner_id=owner_id
+                on_map_page=lambda page_idx, physical_addr, owner_id: self.map_shm_page(
+                    _to_vpn(page_idx),
+                    phys_page=_physical_page(physical_addr),
+                    owner_id=owner_id,
                 ),
                 on_owner_changed=lambda page_idx, _addr, _previous_owner_id, _new_owner_id: self.unmap_shm_page(
                     _to_vpn(page_idx)

@@ -35,12 +35,11 @@ interface types {
 interface resolver {
     use types.{hal-buffer-slice, operation-result, recovery-strategy-category};
 
-    /// IPC 宛先 URI (e.g. "fireball://device/uart/0", "fireball://device/gpio/0", "fireball://device/timer/0", "fireball://device/i2c/0", "fireball://hal/stdout/0") から通信チャネルハンドルを取得
+    /// IPC 宛先 URI (e.g. "fireball://hal/uart/0", "fireball://hal/gpio/0", "fireball://hal/timer/0", "fireball://hal/i2c/0", "fireball://hal/stdout/0") から通信チャネルハンドルを取得
     get-interface: func(uri: string) -> result<u32, recovery-strategy-category>;
     /// HALバッファプール（vMMIO/DYNAMIC）バッファの確保
-    acquire-buffer: func(size-bytes: u32) -> result<hal-buffer-slice, recovery-strategy-category>;
-    /// HALバッファプール（vMMIO/DYNAMIC）バッファの解放
-    release-buffer: func(slice: hal-buffer-slice) -> operation-result;
+    /// HALが保持する固定バッファスロットのビューを取得
+    get-buffer: func(slot-index: u32) -> result<hal-buffer-slice, recovery-strategy-category>;
     /// ストリームからHALバッファへ読み込む
     stream-read: func(handle: u32, buffer: hal-buffer-slice) -> operation-result;
     /// HALバッファからストリームへ書き込む
@@ -68,7 +67,7 @@ interface trap {
 ///
 /// GPIO・タイマー・バス・ストリーム・コンソール個別の WIT リソースは定義しない。
 /// HAL は WASI 0.3p と親和性のある汎用IFであり、`resolver.get-interface(uri)` で対象デバイス/HALを
-/// 解決し、`acquire-buffer`/`release-buffer` で得た `hal-buffer-slice` に対して
+/// 解決し、`get-buffer` で得た `hal-buffer-slice` に対して
 /// IPC コマンドID（`hal_dispatch.md` §5.2 を正本とする）を発行することで、
 /// あらゆる WASI 0.3p 相当の読み書き・バス転送・非同期通知（poll）を一本化して表現する。
 world fireball {

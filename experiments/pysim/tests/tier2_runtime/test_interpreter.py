@@ -17,6 +17,7 @@ _REPO_ROOT = _PYSIM_DIR.parent.parent
 
 for _p in [
     _TESTS_DIR,
+    _TEST_FILE.parent,
     _PYSIM_DIR,
     _PYSIM_DIR / "tier1_core",
     _PYSIM_DIR / "tier1_interface",

@@ -27,7 +27,7 @@ class VmmioStatus(IntEnum):
     UNDEFINED_FC = 4
     UNREGISTERED_PAGE = 5
     ACCESS_VIOLATION = 6
-    OWNER_MISMATCH = 5
+    OWNER_MISMATCH = 7
 
 
 TrapCode = VmmioStatus
@@ -181,8 +181,7 @@ class VMMIOController:
     """
 
     def __init__(self, guest_ram_size: int = 8192):  # FB_CONF_GUEST_RAM_SIZE
-        if guest_ram_size <= 0:
-            raise ValueError("guest RAM size must be positive")
+        assert guest_ram_size > 0
         self.guest_ram_size = guest_ram_size
         self.allocator = ShmVirtualAddressAllocator()
         # FlatMap PTE storage: vpn (20-bit) -> PTE

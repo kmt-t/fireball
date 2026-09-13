@@ -17,7 +17,7 @@ from enum import IntEnum
 
 from logging_interface import Logger, LogLevel
 from memory_interface import MemoryManager, SharedBlock
-from scheduler import Channel, ChannelAction, Scheduler, Task
+from scheduler import Channel, ChannelAction, Scheduler, Task, WaitDir
 from system_containers import FlatMapView, StaticVector
 
 LOG_EVT_IPC_RBAC_DENIED = 0x0201
@@ -31,6 +31,16 @@ LOG_EVT_IPC_CHANNEL_COLLISION = 0x0205
 # kv_pair entries.
 FB_CONF_ROUTER_MAX_KV_PAIRS = 8
 FB_TASK_ID_FLIGHT = 0xFF
+
+# Canonical HAL endpoint URIs. The registry and upper runtime layers import
+# these constants instead of duplicating endpoint spelling.
+FB_URI_HAL_UART = "fireball://hal/uart/0"
+FB_URI_HAL_STDOUT = "fireball://hal/stdout/0"
+FB_URI_HAL_TIMER = "fireball://hal/timer/0"
+FB_URI_HAL_GPIO = "fireball://hal/gpio/0"
+FB_URI_HAL_I2C = "fireball://hal/i2c/0"
+FB_URI_HAL_SPI = "fireball://hal/spi/0"
+FB_URI_HAL_LOGGER = "fireball://hal/logger/0"
 
 
 class ScopeKind(IntEnum):
@@ -82,14 +92,13 @@ class Role(IntEnum):
     can be plain constexpr-style arrays indexed by role value instead of a
     hash map.
 
-    Each HAL_* role is bound to exactly one device/service instance and one
-    dedicated HalTask (ipc_router.md {ISR_Safety} + "1 channel = 1 waiter"):
+    Each HAL_* role is bound to exactly one endpoint instance and one
+    dedicated receiver task (ipc_router.md {ISR_Safety} + "1 channel = 1 waiter"):
     a single shared PLATFORM_HAL role could not distinguish which of several
-    same-type instances (two UART-shaped endpoints) a message was meant for,
+    same-type endpoint instances a message was meant for,
     since only the receiving task's role -- not the URI -- selects a channel.
     Multiple URIs MAY alias the same role when they are genuinely the same
-    physical endpoint (e.g. a build where "console stdout" is wired directly
-    onto the UART device); the registry below is a URI -> Role table, not
+    physical endpoint; the registry below is a URI -> Role table, not
     1:1, so aliasing one role to several URIs is a matter of adding rows,
     not restructuring this enum.
     """
@@ -320,23 +329,21 @@ def kv_entries_to_bytes(entries: Sequence[tuple[int, int]], max_len: int | None 
 # used as the flat_map_view key directly (no hashing): std::string_view
 # comparison is a bounded, allocation-free lexicographic compare.
 #
-# URI -> Role is many-to-one, not 1:1: "fireball://device/uart/0" and
+# URI -> Role is many-to-one, not 1:1: "fireball://hal/uart/0" and
 # "fireball://hal/stdout/0" are kept on distinct HAL_UART/HAL_STDOUT
-# roles here because system.py currently wires them to two independent
-# DummyDriver instances (one raw device, one console-shaped service),
-# but a build that wires stdout directly onto the physical UART would alias
-# both URIs onto the same role/channel/task by adding a row, not by
-# restructuring Role.
+# roles here because each URI resolves to an independent endpoint instance;
+# an implementation may alias a URI only when it intentionally shares the
+# same endpoint instance, without changing the routing table shape.
 _SERVICE_ENTRIES: tuple[tuple[str, "ServiceDescriptor"], ...] = tuple(sorted(
     [
         ("fireball://core/coos/0", ServiceDescriptor(Role.CORE_SERVICE)),
         ("fireball://dbg/manager/0", ServiceDescriptor(Role.DEBUGGER)),
-        ("fireball://device/gpio/0", ServiceDescriptor(Role.HAL_GPIO)),
-        ("fireball://device/i2c/0", ServiceDescriptor(Role.HAL_I2C)),
-        ("fireball://device/spi/0", ServiceDescriptor(Role.HAL_SPI)),
-        ("fireball://device/timer/0", ServiceDescriptor(Role.HAL_TIMER)),
-        ("fireball://device/uart/0", ServiceDescriptor(Role.HAL_UART)),
-        ("fireball://hal/stdout/0", ServiceDescriptor(Role.HAL_STDOUT)),
+        (FB_URI_HAL_GPIO, ServiceDescriptor(Role.HAL_GPIO)),
+        (FB_URI_HAL_I2C, ServiceDescriptor(Role.HAL_I2C)),
+        (FB_URI_HAL_SPI, ServiceDescriptor(Role.HAL_SPI)),
+        (FB_URI_HAL_TIMER, ServiceDescriptor(Role.HAL_TIMER)),
+        (FB_URI_HAL_UART, ServiceDescriptor(Role.HAL_UART)),
+        (FB_URI_HAL_STDOUT, ServiceDescriptor(Role.HAL_STDOUT)),
     ],
     key=lambda entry: entry[0],
 ))
@@ -418,13 +425,9 @@ class IPCRouter:
     def _grant_for_task(self, shm_id: int, task: Task | None) -> bool:
         """Run the grant under the scheduler-selected receiver context."""
         assert task is not None, "Grant requires a scheduler-registered receiver"
-        previous = self.scheduler.current_task
-        self.scheduler.current_task = task
-        try:
+        with self.scheduler.task_context(task):
             assert self.memory_manager is not None
             return self.memory_manager.grant_shared(shm_id)
-        finally:
-            self.scheduler.current_task = previous
 
     def lookup_service_handle(self, uri: str) -> int:
         """Resolves URI to integer service handle via FlatMapView binary search (O(log N))."""
@@ -562,6 +565,7 @@ class IPCRouter:
                             slot.page_idx, FB_TASK_ID_FLIGHT
                         )
 
+        receiver_task = channel.waiter_task if channel.waiter_dir == WaitDir.RECV else None
         message.ownership = OwnershipState.IN_FLIGHT
         action, target = channel.send(message)
         was_blocked = action == ChannelAction.BLOCK
@@ -574,7 +578,9 @@ class IPCRouter:
         # coroutine performs this phase after the rendezvous; repeating it here
         # would overwrite the grant with an invented task id.
         if self.memory_manager is not None and not was_blocked:
-            recv_task = self.scheduler.get_task(target) if target is not None else None
+            recv_task = receiver_task
+            if recv_task is None and target is not None:
+                recv_task = self.scheduler.get_task(target)
 
             if message._in_flight_shm_id is not None:
                 self._grant_for_task(message._in_flight_shm_id, recv_task)

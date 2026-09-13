@@ -105,7 +105,7 @@ Fireball の実行コアは、以下の 6 つの物理メカニズムによっ�
 <!-- traceability: {ContextPointerRegister} {MemoryBoundaryCheck} {ThreadedInterpreter} {ExecutionContext_Layout} {CallFrame_Layout} {ControlFrame_Layout} -->
 - **物理実体**: `OperandStack`・`LocalStack`・`control_frame` 専用領域の、互いに独立した3本の固定長バッファ（計 2KB〜4KB）。 `{ExecutionContext_Layout}` `{CallFrame_Layout}` `{ControlFrame_Layout}`
 - **物理レイアウト**:
-  1. **`execution_context`（計60バイト、15フィールドの固定サイズ構造体）**: IP、SP、ローカル変数、コールフレームの領域開始・終端・オフセット、リニアメモリ情報（開始アドレス・サイズ）、グローバル変数領域（開始・終端）、ハンドラテーブルを保持する。
+  1. **`execution_context`（Tier 2 ABIでは計152バイト）**: 15個の32bit実行状態フィールド、予約領域、および命令別JITヘルパーポインタを保持する。物理レイアウトと呼出規約の対応はターゲット（x64 / ARMv8-M）ごとに定義し、Tier 2の論理フィールド契約を共有する。
   2. **`OperandStack`**: WASM オペランド値のみを保持し、コールチェーン全体を貫いて連続する（呼び出しを跨いでも作り直されない）。
   3. **`LocalStack`**: 関数呼び出しごとに `call_frame`（12バイト: 親フレームオフセット・戻り先PC・関数インデックス）とその関数のローカル変数配列をひとまとめにして push/pop する。 `{CallFrame_Layout}`
   4. **`control_frame` 専用領域**: `block`/`loop`/`if` の入れ子を管理する（16バイト固定サイズ）。オペランドスタックとは同居しない（ADR-INTERP-03、`{ControlFrame_Layout}`）。
@@ -178,7 +178,7 @@ ARM Cortex-M33 (ARMv8-M Mainline) における物理レジスタの厳格な役�
 
 ### 4.1 メモリ常駐構造体の物理バイトオフセット
 
-- **`execution_context`（`R0: ctx` 起点、計60バイト、15フィールド）**:
+- **`execution_context`（`R0: ctx` 起点、Tier 2 ABIでは計152バイト）**:
   - `+0x00`: `ip` (u32) — IP（現在または復帰時の WASM PC）
   - `+0x04`: `sp_base` (u32) — SP領域開始位置（OperandStack バッファ先頭アドレス）
   - `+0x08`: `sp_limit` (u32) — SP領域終端位置（OperandStack バッファ終端アドレス）
@@ -194,6 +194,8 @@ ARM Cortex-M33 (ARMv8-M Mainline) における物理レジスタの厳格な役�
   - `+0x30`: `globals_base` (u32) — グローバル変数領域開始位置（WASM global 配列基底）
   - `+0x34`: `globals_limit` (u32) — グローバル変数領域終端位置（WASM global 配列終端）
   - `+0x38`: `handler_table` (u32) — ハンドラテーブル（命令ディスパッチテーブル参照）
+  - `+0x3C`: `reserved` (u32) — 64bitヘルパー配列のアライメント領域
+  - `+0x40`〜`+0x97`: `jit_helper_ptrs[11]` (u64[11]) — 命令別JITヘルパー関数ポインタ
   - ※ `+0x28`〜`+0x37`（`mem_base`, `mem_size`, `globals_base`, `globals_limit`）は `vsoc_runtime` 領域として JIT トレースおよびインタープリタハンドラが実行ループ内で直接参照する極小の物理実行環境（16バイト）を形成する。 `{VsocRuntime_Layout}`
   - ※ 基本ブロック末尾では、スタックがプッシュされた場合に `TOS, NOS, NNOS` をオペランドスタック（`[R1, #offset]`）へフラッシュし、コンテキスト `R0` の `ip`（`+0x00`）および `sp_offset`（`+0x0C`）を書き換えて状態を完全同期する。 `{ExecutionContext_Layout}` `{AAPCS_FastCall}`
 
@@ -350,7 +352,7 @@ sequenceDiagram
 | **BLOCKEDタスク起床方式** (`{ADR_EventDrivenWakeQueue}`) | **イベントドリブン起床キュー** | 線形スキャンによる $O(n)$ ポーリングを排除し、O(1) コンテキストスイッチを維持。設計根拠: `{ADR_EventDrivenWakeQueue}` |
 | **IPC共有メモリの所有権表現** (`{ADR_SharedBlockRaii}`) | **RAII所有権を持つ`shared-block`リソース** | 単なる整数IDでは防げないダングリング参照・解放忘れを型で排除。Revoke/Grantに対応。設計根拠: `{ADR_SharedBlockRaii}` |
 | **メモリマネージャの問い合わせAPI** (`{ADR_MemoryManagerMinimalSurface}`) | **`query`/`check-ownership`を持たない最小公開面** | 情報は`shared_block`側や呼び出し元が既に保持しており、二重の問い合わせ経路を作らない。設計根拠: `{ADR_MemoryManagerMinimalSurface}` |
-| **ページ単位権限分離とunmap遮断** (`{ADR_PageGranularPermissionIsolation}`) | **4KB物理ページ単位の権限分離とPTE unmap** | SHMのPTEに`owner_id`を保持し、スケジューラの現在タスクIDと照合する。所有権変更・RevokeではPTEとTLBを即時無効化する。HAL DYNAMICは別契約として、マルチゲスト構成でも同時マップ可能なゲストを1つに限定する。設計根拠: `{ADR_PageGranularPermissionIsolation}` |
+| **ページ単位権限分離とunmap遮断** (`{ADR_PageGranularPermissionIsolation}`) | **4KB物理ページ単位の権限分離とPTE unmap** | SHMのPTEに`owner_id`を保持し、スケジューラから取得した現在タスクIDと照合する。所有権変更・RevokeではPTEとTLBを即時無効化する。HAL DYNAMICは別契約として、マルチゲスト構成でも同時マップ可能なゲストを1つに限定する。設計根拠: `{ADR_PageGranularPermissionIsolation}` |
 | **1ランタイム1ゲスト原則** (`{OneRuntimeOneGuest}`) | **1ランタイム1ゲストの直交分離とIPC協調** | 単一VM内での複数モジュール同居を禁止し、マルチインスタンスは独立ランタイムの並行起動とCoOS IPCで実現。障害・メモリを完全隔離。 |
 | **ランタイム専用バンプアロケータ** (`{Runtime_BumpAllocator}`) | **専用アリーナ所有とアンロード時 $O(1)$ 一括解放（W^Xコード分離）** | 各ランタイムが固定長バンプアロケータを所有し、WASMモジュール内のシステムコンテナストレージ（RAM/XN）確保を一元管理。アンロード時にアリーナごと一括リセットし断片化を根絶。なお、JITコードキャッシュはMPU W^X制御の専用実行可能セクションから専用アロケータで確保され、データアリーナとは厳格にドメイン分離。 |
 | **システムコンテナ用アロケータ** (`{System_Allocator}`) | **dlmalloc による固定長システムヒープアリーナ管理** | システム層（PTE表, チャネル, ブレークポイント等）の動的増減に柔軟対応し、断片化の自動合体を伴う個別解放を可能にする。 |

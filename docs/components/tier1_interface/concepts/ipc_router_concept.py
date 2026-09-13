@@ -23,7 +23,7 @@ _EMPTY_ENTRIES: list[tuple[int, int]] = []
 
 
 class Role(IntEnum):
-    """Each HAL_* role is bound to exactly one device/service instance and one
+    """Each HAL_* role is bound to exactly one endpoint/service instance and one
     dedicated CSP channel (ipc_router.md {ADR_RendezvousChannel}): a single
     shared role could not distinguish which of several same-type instances
     (e.g. the physical UART vs. a separately-registered console stream) a
@@ -122,18 +122,18 @@ class Channel:
 
 # Stage 1: registry (URI -> role), a sorted array searched via flat_map_view --
 # {LowLatencyLookup}/{META_FlatMapIndexed}'s O(log N) claim, backed for real.
-# URI -> Role is many-to-one, not 1:1: "fireball://device/uart/0" and
+# URI -> Role is many-to-one, not 1:1: "fireball://hal/uart/0" and
 # "fireball://hal/stdout/0" each keep their own dedicated Role/channel
 # so two same-type instances never collide on one channel.
 _REGISTRY_ENTRIES = sorted(
     [
         ("fireball://core/coos/0", Role.CORE_SERVICE),
         ("fireball://dbg/manager/0", Role.DEBUGGER),
-        ("fireball://device/gpio/0", Role.HAL_GPIO),
-        ("fireball://device/i2c/0", Role.HAL_I2C),
-        ("fireball://device/spi/0", Role.HAL_SPI),
-        ("fireball://device/timer/0", Role.HAL_TIMER),
-        ("fireball://device/uart/0", Role.HAL_UART),
+        ("fireball://hal/gpio/0", Role.HAL_GPIO),
+        ("fireball://hal/i2c/0", Role.HAL_I2C),
+        ("fireball://hal/spi/0", Role.HAL_SPI),
+        ("fireball://hal/timer/0", Role.HAL_TIMER),
+        ("fireball://hal/uart/0", Role.HAL_UART),
         ("fireball://hal/stdout/0", Role.HAL_STDOUT),
     ]
 )
@@ -141,7 +141,7 @@ _REGISTRY = FlatMapView(_REGISTRY_ENTRIES)
 
 # Stage 2: FB_CONF_ROUTER_ROLE_MATRIX (9x9, rows=sender, cols=target); every
 # DENY cell is listed explicitly, matching the C++ constexpr array exactly.
-# Every HAL_* role is a leaf (all-DENY row) -- device/service instances never
+# Every HAL_* role is a leaf (all-DENY row) -- endpoint instances never
 # initiate an IPC send themselves (ipc_router.md "全 DENY 行・列の意味").
 _HAL_ROLES = (
     Role.HAL_UART,
@@ -245,7 +245,7 @@ def test_registry_is_a_real_flat_map_view_not_a_dict() -> None:
         "registry must be a real FlatMapView so the O(log N) claim is backed by the actual mechanism"
     )
     assert not isinstance(_REGISTRY, dict)
-    assert _REGISTRY.find("fireball://device/gpio/0") == Role.HAL_GPIO
+    assert _REGISTRY.find("fireball://hal/gpio/0") == Role.HAL_GPIO
     assert _REGISTRY.find("fireball://nonexistent/service/0") is None
 
 
@@ -268,7 +268,7 @@ def test_permission_denied() -> None:
     assert msg.ownership == OwnershipState.SENDER_OWNS  # Ownership not modified
 
     # Spoofing attempt: HAL_GPIO cannot send even if holding an authorized channel from RUNTIME
-    status_ok, ch_runtime = router.lookup("fireball://device/gpio/0")
+    status_ok, ch_runtime = router.lookup("fireball://hal/gpio/0")
     assert status_ok == "COMPLETED" and ch_runtime is not None
 
     router.current_task_role = Role.HAL_GPIO
@@ -281,7 +281,7 @@ def test_successful_zero_copy_handoff() -> None:
     router = IPCRouter(current_task_role=Role.RUNTIME)
     msg = IPCMessage(entries=[(1, 5)])
     # Step 1: RUNTIME resolves destination to Channel and sends.
-    status, ch = router.lookup("fireball://device/gpio/0")
+    status, ch = router.lookup("fireball://hal/gpio/0")
     assert status == "COMPLETED" and ch is not None
 
     send_status, _ = router.send(ch, msg)
@@ -320,7 +320,7 @@ def test_no_queue_full_state_exists() -> None:
     a second send before the first is received is a programming error (one
     waiter per channel), not a recoverable Rollback condition."""
     router = IPCRouter(current_task_role=Role.RUNTIME)
-    status, ch = router.lookup("fireball://device/gpio/0")
+    status, ch = router.lookup("fireball://hal/gpio/0")
     assert status == "COMPLETED" and ch is not None
 
     msg1 = IPCMessage(entries=[(1, 1)])

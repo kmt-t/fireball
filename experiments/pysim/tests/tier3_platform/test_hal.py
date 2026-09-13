@@ -39,11 +39,12 @@ from hal_dispatch import (
     HalBufferPool,
     HalBufferTrap,
     WasiIpcCmd,
-    Timer,
-    StreamTransport,
 )
+from ipc_router import FB_URI_HAL_STDOUT
 from dummy_drivers import DummyDriver
+from dummy_drivers import Timer
 from scheduler import Scheduler
+from stream_transport import StreamTransport
 from system import (
     System,
 )
@@ -62,7 +63,7 @@ def wat_to_wasm(wat_text: str) -> bytes:
         return b""
 
 
-def test_hal_01_stream_transport_is_real_pipe():
+def test_hal_01_stream_transport_uses_fixed_buffers():
     t = StreamTransport()
     try:
         assert t.write(b"fireball\n") == 9
@@ -81,12 +82,12 @@ def test_hal_02_dummy_stdio_driver_streams_stdin_and_stdout():
     assert scheduler.current_task is not None
     vmmio = VMMIOController(guest_ram_size=8192, scheduler=scheduler)
     pool = HalBufferPool(scheduler, vmmio)
-    pool.bind_guest()
-    driver = DummyDriver()
+    pool.bind_runtime()
+    driver = DummyDriver(FB_URI_HAL_STDOUT)
     driver.bind_buffer_pool(pool)
     try:
-        rx = pool.acquire_buffer(size=32)
-        tx = pool.acquire_buffer(size=32)
+        rx = pool.buffer(0)
+        tx = pool.buffer(1)
         tx_view = pool.view(tx, 0, 10)
         tx_view[:] = b"out-1out-2"
         assert driver.feed_stdin(b"in-1in-2") == 8
@@ -117,43 +118,40 @@ def test_hal_03_timer_monotonic_ns():
     assert t2 > t1
 
 
-def test_hal_04_hal_buffer_pool_rejects_oversized():
+def test_hal_04_hal_buffer_pool_maps_fixed_slots():
     scheduler = Scheduler()
     task_id = scheduler.spawn("test_task")
     scheduler.current_task = scheduler.get_task(task_id)
     vmmio = VMMIOController(guest_ram_size=8192, scheduler=scheduler)
     pool = HalBufferPool(scheduler, vmmio)
-    pool.bind_guest()
+    pool.bind_runtime()
     try:
-        try:
-            pool.acquire_buffer(size=FB_CONF_HAL_BUFFER_SIZE + 1)
-            raise AssertionError("expected ValueError for oversized acquire_buffer")
-        except ValueError:
-            pass
-        handles = [pool.acquire_buffer(size=32) for _ in range(FB_CONF_HAL_MAX_BUFFERS)]
+        handles = [pool.buffer(i) for i in range(FB_CONF_HAL_MAX_BUFFERS)]
         assert len(handles) == FB_CONF_HAL_MAX_BUFFERS
+        for handle in handles:
+            assert handle.capacity == FB_CONF_HAL_BUFFER_SIZE
     finally:
         pool.close_all()
 
 
-def test_hal_05_hal_buffer_slice_bounds_and_ownership():
+def test_hal_05_hal_buffer_slice_bounds_and_guest_mapping():
     scheduler = Scheduler()
     owner_id = scheduler.spawn("owner")
     other_id = scheduler.spawn("other")
     scheduler.current_task = scheduler.get_task(owner_id)
     vmmio = VMMIOController(guest_ram_size=8192, scheduler=scheduler)
     pool = HalBufferPool(scheduler, vmmio)
-    pool.bind_guest()
+    pool.bind_runtime()
     try:
         scheduler.current_task = scheduler.get_task(other_id)
         try:
-            pool.bind_guest()
+            pool.bind_runtime()
         except AssertionError as error:
-            assert str(error) == "HAL DYNAMIC mapping supports one guest only"
+            assert str(error) == "HAL DYNAMIC mapping supports one runtime only"
         else:
             raise AssertionError("expected one-guest DYNAMIC mapping assertion")
         scheduler.current_task = scheduler.get_task(owner_id)
-        h = pool.acquire_buffer(size=16)
+        h = pool.buffer(0)
         status, _ = vmmio.access(h.virtual_address, is_write=False)
         assert status == VmmioStatus.OK_PHYSICAL
         view = pool.view(h, 0, 16)
@@ -161,11 +159,12 @@ def test_hal_05_hal_buffer_slice_bounds_and_ownership():
         scheduler.current_task = scheduler.get_task(other_id)
         try:
             pool.view(h, 0, 16)
-            raise AssertionError("expected HalBufferTrap: non-owner does not own handle")
-        except HalBufferTrap:
-            pass
-        scheduler.current_task = scheduler.get_task(owner_id)
-        pool.release_buffer(h)
+            raise AssertionError("expected assertion: other guest is not DYNAMIC-mapped")
+        except AssertionError as error:
+            assert "DYNAMIC mapping is not bound" in str(error)
+        finally:
+            scheduler.current_task = scheduler.get_task(owner_id)
+        pool.close_all()
         status, _ = vmmio.access(h.virtual_address, is_write=False)
         assert status == TrapCode.UNREGISTERED_PAGE
     finally:
@@ -186,33 +185,34 @@ def test_hal_task_ipc_communication():
     try:
         runtime_task = sysv.start_runtime_task(name="hal_ipc_guest")
         sysv.scheduler.current_task = runtime_task
-        sysv.pool.bind_guest()
-        buffer_handle = sysv.pool.acquire_buffer(size=128)
+        sysv.pool.bind_runtime()
+        buffer_handle = sysv.pool.buffer(0)
         buffer_view = sysv.pool.view(buffer_handle, 0, 128)
         buffer_view[:] = b"x" * 128
-        sysv.start_hal_driver(DummyDriver(transport=sysv.transport))
+        sysv.start_hal_driver(DummyDriver(sysv.wasi_hal_bindings.stdout_uri, transport=sysv.transport))
         engine = Wasi03pEngine(sysv)
         # Send command via IPC
         nwritten = engine.send_ipc_command(
-            "fireball://device/uart/0",
+            "fireball://hal/stdout/0",
             WasiIpcCmd.STREAM_WRITE_BUFFER,
             FlatMapView(
                 [(ARG_BUFFER_HANDLE, buffer_handle.buffer_id), (ARG_LENGTH, 128), (ARG_OFFSET, 0)]
             ),
         )
         assert nwritten == 128
-        uart_task = sysv.hal_task_for("fireball://device/uart/0")
-        assert uart_task.processed_count == 1
-        assert uart_task.last_handled_cmd == WasiIpcCmd.STREAM_WRITE_BUFFER
+        stdio_task = sysv.hal_task_for("fireball://hal/stdout/0")
+        assert stdio_task is not None
+        assert stdio_task.processed_count == 1
+        assert stdio_task.last_handled_cmd == WasiIpcCmd.STREAM_WRITE_BUFFER
     finally:
         sysv.shutdown()
 
 
 if __name__ == "__main__":
-    test_hal_01_stream_transport_is_real_pipe()
+    test_hal_01_stream_transport_uses_fixed_buffers()
     test_hal_02_dummy_stdio_driver_streams_stdin_and_stdout()
     test_hal_03_timer_monotonic_ns()
-    test_hal_04_hal_buffer_pool_rejects_oversized()
-    test_hal_05_hal_buffer_slice_bounds_and_ownership()
+    test_hal_04_hal_buffer_pool_maps_fixed_slots()
+    test_hal_05_hal_buffer_slice_bounds_and_guest_mapping()
     test_hal_task_ipc_communication()
     print("[PASS] All 6 HAL Drivers & HalBufferPool tests passed.")

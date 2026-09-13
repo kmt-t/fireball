@@ -138,7 +138,7 @@ vMMIOアドレス空間全体への汎用アクセス。SYSCTL/IPCR/VDMA/SHM/DYN
 | `0x13` | `MMIO_WRITE8` | `addr` (`fb_val_t`: 物理アドレス), `value` (`fb_val_t`: 8bit値) | `0` (エラー時は `ERR_OUT_OF_BOUNDS` または `ERR_ACCESS_DENIED`) | 8bit書き込み |
 | `0x14` | `MMIO_BULK_READ` | `addr` (`fb_val_t`: 物理アドレス), `dest_offset` (`fb_offset_t`: ゲスト物理ベース相対), `byte_count` (`fb_val_t`: 転送バイト数) | `0` (エラー時は `ERR_OUT_OF_BOUNDS`, `ERR_ACCESS_DENIED` または `ERR_INVALID_SIZE`) | バルク読み出し（ゲストメモリへコピー） `{META_RestrictedPhysicalAccess}` |
 | `0x15` | `MMIO_BULK_WRITE` | `addr` (`fb_val_t`: 物理アドレス), `src_offset` (`fb_offset_t`: ゲスト物理ベース相対), `byte_count` (`fb_val_t`: 転送バイト数) | `0` (エラー時は `ERR_OUT_OF_BOUNDS`, `ERR_ACCESS_DENIED` または `ERR_INVALID_SIZE`) | バルク書き込み（ゲストメモリから書込） `{META_RestrictedPhysicalAccess}` |
-| `0x16` | `TRIGGER_SET_PIN` | `pin` (`fb_val_t`), `value` (`fb_val_t`: 0/1) | `0` (エラー時は `ERR_OUT_OF_BOUNDS` または `ERR_ACCESS_DENIED`) | GPIOピン出力設定（`{Fast_Path_GPIO}` vMMIO直接ストアのゲストアダプタ経路、`FB_SYSCALL_TRIGGER_SET_PIN`）。**pysim実験実装での状態**: 専用のGPIO vMMIOレジスタ配線が未実装のため、`fireball_call` ディスパッチテーブルには未登録であり、呼び出すと `GOTCHA-SYS-01` の規定通り安全に `WasiErrno.NOSYS` を返す（GPIOはこの実験では IPC 経由の `fireball://device/gpio/0` デバイスとして到達可能）。実機ターゲットでの本ID実装は別途 vMMIO GPIO レジスタ配線を前提とする。 |
+| `0x16` | `TRIGGER_SET_PIN` | `pin` (`fb_val_t`), `value` (`fb_val_t`: 0/1) | `0` (エラー時は `ERR_OUT_OF_BOUNDS` または `ERR_ACCESS_DENIED`) | GPIOピン出力設定（`{Fast_Path_GPIO}` vMMIO直接ストアのゲストアダプタ経路、`FB_SYSCALL_TRIGGER_SET_PIN`）。**pysim実験実装での状態**: 専用のGPIO vMMIOレジスタ配線が未実装のため、`fireball_call` ディスパッチテーブルには未登録であり、呼び出すと `GOTCHA-SYS-01` の規定通り安全に `WasiErrno.NOSYS` を返す（GPIOはこの実験では IPC 経由の `fireball://hal/gpio/0` HALサブシステムとして到達可能）。実機ターゲットでの本ID実装は別途 vMMIO GPIO レジスタ配線を前提とする。 |
 
 ### 6.4. VDMA (`0x20`-`0x2F`)
 <!-- traceability: {VDMA} -->

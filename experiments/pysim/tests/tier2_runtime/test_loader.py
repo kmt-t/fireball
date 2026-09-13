@@ -295,7 +295,7 @@ def test_load_20_to_25_multi_module_import_resolution():
     # TEST-LOAD-21: Hash + RadixBinaryTreeView import resolution
     assert loader.resolve_imports(app_view) is True
     assert app_view.is_ready is True
-    assert "lib_mod.helper" in app_view.resolved_imports
+    assert app_view.resolved_imports.view().find("lib_mod.helper") is not None
     # Unload
     assert loader.unload(app_view) is True
     assert loader.lookup("app_mod") is None
@@ -397,7 +397,7 @@ def test_load_48_loader_basic_block_index():
 
     # Loader owns basic block storage and index ({Loader_BasicBlockIndex})
     assert mod.block_storage is not None
-    assert mod.block_tree is not None
+    assert mod.block_storage is not None
     assert len(mod.blocks) == 2
     assert mod.total_basic_blocks == 2
 

@@ -46,12 +46,12 @@ def test_scenario_hal_and_wasi_drivers():
     # 1. Standard I/O stream driver
     sysv = System()
     runtime_task = sysv.start_runtime_task(name="scenario11_stdio_guest")
-    sysv.pool.bind_guest()
-    stdio = DummyDriver(transport=sysv.transport)
+    sysv.pool.bind_runtime()
+    stdio = DummyDriver(sysv.wasi_hal_bindings.stdout_uri, transport=sysv.transport)
     sysv.start_hal_driver(stdio)
     sysv.scheduler.current_task = runtime_task
-    rx = sysv.pool.acquire_buffer(size=64)
-    tx = sysv.pool.acquire_buffer(size=64)
+    rx = sysv.pool.buffer(0)
+    tx = sysv.pool.buffer(1)
     tx_view = sysv.pool.view(tx, 0, 28)
     tx_view[:] = b"stdout-chunk-1stdout-chunk-2"
     assert stdio.feed_stdin(b"stdin-chunk-1stdin-chunk-2") == 26
@@ -68,7 +68,7 @@ def test_scenario_hal_and_wasi_drivers():
     sysv.shutdown()
     print("    [Phase A.1] HAL Standard I/O Driver (stdin/stdout streaming) [PASS]")
     # 2. Timer Driver
-    timer = DummyDriver("fireball://device/timer/0")
+    timer = DummyDriver("fireball://hal/timer/0")
     t0 = timer.get_monotonic_ns()
     timer.step_ticks(5)
     assert timer.tick_count == 5

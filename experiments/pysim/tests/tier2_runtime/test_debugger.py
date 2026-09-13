@@ -133,7 +133,7 @@ def test_dbg_04_05_read_memory_and_bounds_check():
 
 def test_dbg_06_07_write_memory_flush_jit_and_bounds_check():
     """TEST-DBG-06, TEST-DBG-07: 'M' command writes memory, flushes JIT cache, and checks bounds."""
-    engine = IntegratedHybridEngine(compiler=TraceCompiler())
+    engine = IntegratedHybridEngine(compiler=TraceCompiler(), code_lengths=(2,))
     dbg = DebuggerManager(engine=engine)
     dbg.attach()
     rsp = GDBRspProtocol(dbg)

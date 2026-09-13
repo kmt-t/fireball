@@ -289,11 +289,11 @@ def test_mem_15_vmmio_fc14_tlb_sync():
     status, _ = vmmio.access(raw_addr, is_write=False)
     assert status == VmmioStatus.OK_PHYSICAL
 
-    # Task 2 access traps with the canonical unregistered-page fault.
+    # Task 2 access traps on the mapped page's owner check.
     sched.current_task = sched.get_task(2)
     assert sched.current_task is not None
     status, _ = vmmio.access(raw_addr, is_write=False)
-    assert status == TrapCode.UNREGISTERED_PAGE
+    assert status == TrapCode.OWNER_MISMATCH
 
     # Release puts page in flight -> Task 1 also traps!
     sched.current_task = sched.get_task(1)
@@ -314,11 +314,11 @@ def test_mem_15_vmmio_fc14_tlb_sync():
     status, _ = vmmio.access(raw_addr, is_write=False)
     assert status == VmmioStatus.OK_PHYSICAL
 
-    # The old owner remains isolated after the receiver's mapping is active.
+    # The old owner remains isolated by the remapped PTE owner check.
     sched.current_task = sched.get_task(1)
     assert sched.current_task is not None
     status, _ = vmmio.access(raw_addr, is_write=False)
-    assert status == TrapCode.UNREGISTERED_PAGE
+    assert status == TrapCode.OWNER_MISMATCH
 
 
 def test_mem_20_mpu_8_regions_static_allocation():

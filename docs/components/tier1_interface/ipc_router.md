@@ -75,9 +75,9 @@ IPC通信の最小単位。1つのメッセージで8個のペアを送信でき
 | | `0b00011` | `uint16_t` / 16ビット即値 |
 
 ##### スコープ定義
-- **機能的IPC**: キーを、受信側が定義する関数やリクエスト種類を特定する識別子として使用する（デバイス制御コマンド識別子の具体例は `hal_dispatch.md` 正本を参照）。 `{TypeSafeMessaging}`
+- **機能的IPC**: キーを、受信側が定義する関数やリクエスト種類を特定する識別子として使用する。 `{TypeSafeMessaging}`
 - **辞書参照IPC**: キーを、受信側が保持する静的な辞書内の文字列オフセットとして解釈する。 `{DictionaryBasedIPC}`
-- **階層URIルーティング**: 各デバイスおよびサービスは `fireball://<domain>/<type>/<instance>`（例: `fireball://device/uart/0`, `fireball://device/gpio/0`, `fireball://device/timer/0`, `fireball://device/i2c/0`）の正規化されたURIで登録され、IPCルータを介して $O(\log N)$ でディスパッチされる。 `{URIAbstraction}`
+- **階層URIルーティング**: 各HALサブシステムは `fireball://hal/<type>/<instance>`（例: `fireball://hal/uart/0`, `fireball://hal/gpio/0`, `fireball://hal/timer/0`, `fireball://hal/i2c/0`）の正規化されたURIで登録され、IPCルータを介して $O(\log N)$ でディスパッチされる。 `{URIAbstraction}`
 
 #### IPCメッセージ（message）
 <!-- traceability: {TypeSafeMessaging} {META_FlatMapIndexed} {OwnershipTransfer} {ADR_SharedBlockRaii} -->
@@ -98,7 +98,7 @@ Key-Valueペアを複数集約した通信の基本単位。メッセージ自�
 | サービスURI | サービスを一意に特定するための正規化された文字列 | 文字列ビュー | - |
 | セキュリティロール | サービスに割り当てられた権限レベル。アクセス制御と CSP チャネル選択の両方に利用 | ビットフラグ | - |
 
-※ 待ち受けチャネルはレジストリエントリに個別の ID として保持しない。`FB_CONF_ROUTER_ROLE_MATRIX`（9x9）の ALLOW セル 1 つにつき、専用の CSP チャネル（`fireball::channel<ipc_message>`、バッファなし・単一送受信ペアのランデブー）が 1 本ずつ静的に対応付けられ、`(sender_role, target_role)` の組から一意に導出される。1 本のチャネルは 1 対の送受信方向にしか使えないため（`{ADR_RendezvousChannel}`）、同一の受信ロールへ複数の送信ロールから送る場合でも、エッジごとに別々のチャネルを持つ。HAL の各デバイス／HALインスタンスは専用ロール（`HAL_UART`, `HAL_STDOUT`, `HAL_GPIO`, `HAL_TIMER`, `HAL_I2C`, `HAL_SPI`）を個別に持つ——単一の共有ロールでは、同種インスタンスが複数存在する場合（例: 物理 UART と別登録のコンソール出力）にメッセージの宛先インスタンスを区別できないためである。
+※ 待ち受けチャネルはレジストリエントリに個別の ID として保持しない。`FB_CONF_ROUTER_ROLE_MATRIX`（9x9）の ALLOW セル 1 つにつき、専用の CSP チャネル（`fireball::channel<ipc_message>`、バッファなし・単一送受信ペアのランデブー）が 1 本ずつ静的に対応付けられ、`(sender_role, target_role)` の組から一意に導出される。1 本のチャネルは 1 対の送受信方向にしか使えないため（`{ADR_RendezvousChannel}`）、同一の受信ロールへ複数の送信ロールから送る場合でも、エッジごとに別々のチャネルを持つ。HAL の各エンドポイントインスタンスは専用ロール（`HAL_UART`, `HAL_STDOUT`, `HAL_GPIO`, `HAL_TIMER`, `HAL_I2C`, `HAL_SPI`）を個別に持つ——単一の共有ロールでは、同種インスタンスが複数存在する場合にメッセージの宛先を区別できないためである。
 
 ## 4. 動的モデル
 
@@ -156,7 +156,7 @@ sequenceDiagram
 #### IPC ルータ フルセット・コンセプトコード (`concepts/ipc_router_concept.py`)
 ```python
 class Role(IntEnum):
-    """Each HAL_* role is bound to exactly one device/service instance and one
+    """Each HAL_* role is bound to exactly one endpoint/service instance and one
     dedicated CSP channel ({ADR_RendezvousChannel}): a single shared role
     could not distinguish which of several same-type instances (e.g. the
     physical UART vs. a separately-registered console stream) a message was
@@ -252,18 +252,18 @@ class Channel:
 
 
 # Stage 1: registry (URI -> role), a sorted array searched via flat_map_view.
-# URI -> Role is many-to-one, not 1:1: "fireball://device/uart/0" and
+# URI -> Role is many-to-one, not 1:1: "fireball://hal/uart/0" and
 # "fireball://hal/stdout/0" each keep their own dedicated Role/channel
 # so two same-type instances never collide on one channel.
 _REGISTRY_ENTRIES = sorted(
     [
         ("fireball://core/coos/0", Role.CORE_SERVICE),
         ("fireball://dbg/manager/0", Role.DEBUGGER),
-        ("fireball://device/gpio/0", Role.HAL_GPIO),
-        ("fireball://device/i2c/0", Role.HAL_I2C),
-        ("fireball://device/spi/0", Role.HAL_SPI),
-        ("fireball://device/timer/0", Role.HAL_TIMER),
-        ("fireball://device/uart/0", Role.HAL_UART),
+        ("fireball://hal/gpio/0", Role.HAL_GPIO),
+        ("fireball://hal/i2c/0", Role.HAL_I2C),
+        ("fireball://hal/spi/0", Role.HAL_SPI),
+        ("fireball://hal/timer/0", Role.HAL_TIMER),
+        ("fireball://hal/uart/0", Role.HAL_UART),
         ("fireball://hal/stdout/0", Role.HAL_STDOUT),
     ]
 )
@@ -271,7 +271,7 @@ _REGISTRY = FlatMapView(_REGISTRY_ENTRIES)
 
 # Stage 2: FB_CONF_ROUTER_ROLE_MATRIX (9x9, rows=sender, cols=target); every
 # DENY cell is listed explicitly, matching the C++ constexpr array exactly.
-# Every HAL_* role is a leaf (all-DENY row) -- device/service instances never
+# Every HAL_* role is a leaf (all-DENY row) -- endpoint instances never
 # initiate an IPC send themselves (see "全 DENY 行・列の意味" below).
 _HAL_ROLES = (
     Role.HAL_UART,
@@ -418,7 +418,7 @@ flowchart TD
 #### ロール間通信許可マトリクス (FB_CONF_ROUTER_ROLE_MATRIX)
 <!-- traceability: {RoleBasedAccessControl} -->
 
-本表は `{META_ConfigurableSystem}` の `FB_CONF_ROUTER_ROLE_MATRIX` (9x9 `constexpr` 配列) を**そのまま**表現したものであり、全 DENY の行・列も省略しない。省略すると「そのロールの権限が未定義」と読めてしまい、C++ 定義との差分が生じるためである。HAL は単一の共有ロールではなく、デバイス／HALインスタンスごとに専用ロール（`HAL_UART`, `HAL_STDOUT`, `HAL_GPIO`, `HAL_TIMER`, `HAL_I2C`, `HAL_SPI`）を持つ——単一ロールでは同種インスタンスが複数存在する場合（物理 UART と別登録のコンソール出力ストリームなど）に宛先を区別できないためである。
+本表は `{META_ConfigurableSystem}` の `FB_CONF_ROUTER_ROLE_MATRIX` (9x9 `constexpr` 配列) を**そのまま**表現したものであり、全 DENY の行・列も省略しない。省略すると「そのロールの権限が未定義」と読めてしまい、C++ 定義との差分が生じるためである。HAL は単一の共有ロールではなく、エンドポイントインスタンスごとに専用ロール（`HAL_UART`, `HAL_STDOUT`, `HAL_GPIO`, `HAL_TIMER`, `HAL_I2C`, `HAL_SPI`）を持つ——単一ロールでは同種インスタンスが複数存在する場合に宛先を区別できないためである。
 
 | 送信元ロール (Sender) \ 送信先ロール (Target) | RUNTIME | CORE_SERVICE | HAL_UART | HAL_STDOUT | HAL_GPIO | HAL_TIMER | HAL_I2C | HAL_SPI | DEBUGGER |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
@@ -552,7 +552,7 @@ stateDiagram-v2
 <!-- traceability: {Challenge_CspHandoffStarvation} -->
 CSP Handoff による直接のコンテキストスイッチを伴うメッセージ移譲において、特定の送受信タスクのペアが CPU 実行時間を占有して他のタスクがスターベーション（実行飢餓）に陥るのを防ぐため、以下のガード条件を適用する。
 1. **最大連続ハンドオフ回数の制限**: 直接の実行権移譲（Handoff）が連続して `FB_CONF_MAX_CONSECUTIVE_HANDOFFS` 回に達した場合、強制的に READY キュー末尾へ自タスクを yield させ、一度スケジューラによるラウンドロビン巡回（メインループ復帰）をトリガーする。
-2. **タイムスライス閾値監視**: タイマードライバの Tick カウントに基づき、前回のスケジュールから一定時間（例: 10ms）以上経過している場合は、直接スイッチを行わず、いったんスケジューラの通常のラウンドロビン巡回に自タスクを戻す。CSP チャネル自体にはキューが存在しないため、これは「別経路（キュー）へのフォールバック」ではなく、同じランデブーを次の巡回で改めて試みるだけの単純な yield である。 `{Challenge_CspHandoffStarvation}`
+2. **タイムスライス閾値監視**: スケジューラの単調Tickカウントに基づき、前回のスケジュールから一定時間（例: 10ms）以上経過している場合は、直接スイッチを行わず、いったんスケジューラの通常のラウンドロビン巡回に自タスクを戻す。CSP チャネル自体にはキューが存在しないため、これは「別経路（キュー）へのフォールバック」ではなく、同じランデブーを次の巡回で改めて試みるだけの単純な yield である。 `{Challenge_CspHandoffStarvation}`
 
 ### 4.4 内部シーケンス図
 <!-- traceability: {LowLatencyLookup} {META_AccessDictionary} {META_FlatMapIndexed} {OwnershipTransfer} {IPC_ZeroCopy} -->
@@ -566,7 +566,7 @@ sequenceDiagram
     participant Reg as Registry
     participant Ch as CSP Channel
 
-    C->>R: lookup("fireball://device/uart/0")
+    C->>R: lookup("fireball://hal/uart/0")
     R->>Reg: search(uri)
     Reg-->>R: entry(target_role)
     Note over R: Check Permission using Client TCB Role

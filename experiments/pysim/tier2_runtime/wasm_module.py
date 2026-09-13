@@ -20,7 +20,6 @@ from typing import TYPE_CHECKING
 from jit_scoring import OpcodeBenefitTable
 from system_containers import (
     FlatMapView,
-    RadixBinaryTreeView,
     ReadOnlyRadixBinaryTreeStorage,
     bswap32,
     build_radix_table,
@@ -173,7 +172,6 @@ class Module:
     data_segments: list[DataSegment] = field(default_factory=list)
     start_function: int | None = None
     block_storage: ReadOnlyRadixBinaryTreeStorage[BasicBlock] | None = None
-    block_tree: RadixBinaryTreeView[BasicBlock] | None = None
     blocks: list[BasicBlock] = field(default_factory=list)
     opcode_benefit_table: OpcodeBenefitTable | None = None
 
@@ -288,7 +286,6 @@ class Module:
         self.blocks = all_blocks
         if not all_blocks:
             self.block_storage = None
-            self.block_tree = None
             return
 
         sorted_blocks = sorted(all_blocks, key=lambda b: bswap32(b.head_pc))
@@ -302,13 +299,12 @@ class Module:
             radix_shift=radix_shift,
             entries=tuple(zip(inv_keys, sorted_blocks, strict=False)),
         )
-        self.block_tree = self.block_storage.view()
 
     def get_block(self, pc: int) -> BasicBlock | None:
         """Looks up a BasicBlock by UnifiedPC via the loader's Radix tree (O(1) + O(log n))."""
-        if self.block_tree is None:
+        if self.block_storage is None:
             return None
-        return self.block_tree.find(bswap32(pc))
+        return self.block_storage.view().find(bswap32(pc))
 
     @property
     def total_basic_blocks(self) -> int:

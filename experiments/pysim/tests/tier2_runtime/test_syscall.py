@@ -173,7 +173,7 @@ def test_syscall_15_mmio_bulk_read_dest_offset_out_of_bounds():
     sysv.start_runtime_task(name="test_runtime_task")
     try:
         guest_mem = bytearray(b"\xaa" * 16)
-        sysv.bind_guest(guest_mem)
+        sysv.bind_runtime(guest_mem)
         addr = FB_CONF_VSOC_PASSTHROUGH_BASE
         assert (
             sysv.fireball_call(FbSyscallId.MMIO_BULK_READ, addr, 100, 4, 0, 0, 0) == WasiErrno.FAULT
@@ -191,7 +191,7 @@ def test_syscall_04_vdma_transfer():
     try:
         guest_mem = bytearray(64)
         guest_mem[0:4] = struct.pack("<I", 0x11223344)
-        sysv.bind_guest(guest_mem)
+        sysv.bind_runtime(guest_mem)
         dst = FB_CONF_VSOC_PASSTHROUGH_BASE + 0x1000
         assert sysv.fireball_call(FbSyscallId.VDMA_START, 0, dst, 4, 0, 0, 0) == WasiErrno.SUCCESS
         assert sysv.fireball_call(FbSyscallId.MMIO_READ32, dst, 0, 0, 0, 0, 0) == 0x11223344
@@ -224,14 +224,14 @@ def test_syscall_06_ipc_lookup_send_recv():
     sysv = System()
     sysv.start_runtime_task(name="test_runtime_task")
     try:
-        uri = "fireball://device/gpio/0"
+        uri = "fireball://hal/gpio/0"
         uri_bytes = uri.encode()
         payload = b"SET_GPIO"
 
         guest_mem = bytearray(128)
         guest_mem[0 : len(uri_bytes)] = uri_bytes
         guest_mem[64 : 64 + len(payload)] = payload
-        sysv.bind_guest(guest_mem)
+        sysv.bind_runtime(guest_mem)
         guest_task = sysv.scheduler.current_task
         assert guest_task is not None
         handle = sysv.fireball_call(FbSyscallId.IPC_LOOKUP, 0, len(uri_bytes), 0, 0, 0, 0)
@@ -300,11 +300,15 @@ def test_syscall_07_wasi_fd_write():
     sysv = System()
     sysv.start_runtime_task(name="test_runtime_task")
     try:
+        from dummy_drivers import DummyDriver
+        from wasi import WasiHostContext
+
         guest_mem = bytearray(64)
         message = b"hello from wasm\n"
         guest_mem[32 : 32 + len(message)] = message
         struct.pack_into("<II", guest_mem, 0, 32, len(message))
-        sysv.bind_guest(guest_mem)
+        WasiHostContext(sysv, guest_memory=guest_mem)
+        sysv.start_hal_driver(DummyDriver(sysv.wasi_hal_bindings.stdout_uri, transport=sysv.transport))
         assert sysv.fireball_call(FbSyscallId.WASI_FD_WRITE, 1, 0, 1, 48, 0, 0) == WasiErrno.SUCCESS
         assert sysv.transport.drain_output() == message
         nwritten = struct.unpack_from("<I", guest_mem, 48)[0]
@@ -318,6 +322,9 @@ def test_wasi_01_fd_write_scatter_gather():
     sysv = System()
     sysv.start_runtime_task(name="test_runtime_task")
     try:
+        from dummy_drivers import DummyDriver
+        from wasi import WasiHostContext
+
         guest_mem = bytearray(128)
         chunk1 = b"FIREBALL_"
         chunk2 = b"WASI_SCATTER_GATHER\n"
@@ -326,7 +333,8 @@ def test_wasi_01_fd_write_scatter_gather():
         # 2 iovecs at offset 0 and 8
         struct.pack_into("<II", guest_mem, 0, 32, len(chunk1))
         struct.pack_into("<II", guest_mem, 8, 64, len(chunk2))
-        sysv.bind_guest(guest_mem)
+        WasiHostContext(sysv, guest_memory=guest_mem)
+        sysv.start_hal_driver(DummyDriver(sysv.wasi_hal_bindings.stdout_uri, transport=sysv.transport))
         # Write to stdout (fd=1) with 2 iovecs, result at offset 100
         assert (
             sysv.fireball_call(FbSyscallId.WASI_FD_WRITE, 1, 0, 2, 100, 0, 0) == WasiErrno.SUCCESS
@@ -343,12 +351,14 @@ def test_wasi_01b_fd_write_prevalidates_all_iovecs():
     sysv = System()
     sysv.start_runtime_task(name="test_runtime_task")
     try:
+        from wasi import WasiHostContext
+
         guest_mem = bytearray(128)
         guest_mem[32:35] = b"bad"
         struct.pack_into("<II", guest_mem, 0, 32, 3)
         struct.pack_into("<II", guest_mem, 8, 200, 1)
         struct.pack_into("<I", guest_mem, 120, 0xA5A5A5A5)
-        sysv.bind_guest(guest_mem)
+        WasiHostContext(sysv, guest_memory=guest_mem)
 
         assert (
             sysv.fireball_call(FbSyscallId.WASI_FD_WRITE, 1, 0, 2, 120, 0, 0)
@@ -365,9 +375,13 @@ def test_wasi_02_fd_read_eof():
     sysv = System()
     sysv.start_runtime_task(name="test_runtime_task")
     try:
+        from dummy_drivers import DummyDriver
+        from wasi import WasiHostContext
+
         guest_mem = bytearray(64)
         struct.pack_into("<II", guest_mem, 0, 16, 32)
-        sysv.bind_guest(guest_mem)
+        WasiHostContext(sysv, guest_memory=guest_mem)
+        sysv.start_hal_driver(DummyDriver(sysv.wasi_hal_bindings.stdout_uri, transport=sysv.transport))
         assert sysv.fireball_call(FbSyscallId.WASI_FD_READ, 0, 0, 1, 48, 0, 0) == WasiErrno.SUCCESS
         nread = struct.unpack_from("<I", guest_mem, 48)[0]
         assert nread == 0  # Standard WASI EOF
@@ -391,7 +405,7 @@ def test_wasi_04_clock_time_get_monotonic():
     sysv.start_runtime_task(name="test_runtime_task")
     try:
         guest_mem = bytearray(64)
-        sysv.bind_guest(guest_mem)
+        sysv.bind_runtime(guest_mem)
         assert (
             sysv.fireball_call(FbSyscallId.WASI_CLOCK_TIME_GET, 0, 0, 16, 0, 0, 0)
             == WasiErrno.SUCCESS
@@ -430,7 +444,7 @@ def test_wasi_06_random_get():
     sysv.start_runtime_task(name="test_runtime_task")
     try:
         guest_mem = bytearray(64)
-        sysv.bind_guest(guest_mem)
+        sysv.bind_runtime(guest_mem)
         assert (
             sysv.fireball_call(FbSyscallId.WASI_RANDOM_GET, 8, 16, 0, 0, 0, 0) == WasiErrno.SUCCESS
         )
@@ -446,9 +460,11 @@ def test_wasi_07_invalid_fd_returns_badf():
     sysv = System()
     sysv.start_runtime_task(name="test_runtime_task")
     try:
+        from wasi import WasiHostContext
+
         guest_mem = bytearray(64)
         struct.pack_into("<II", guest_mem, 0, 16, 8)
-        sysv.bind_guest(guest_mem)
+        WasiHostContext(sysv, guest_memory=guest_mem)
         res = sysv.fireball_call(FbSyscallId.WASI_FD_WRITE, 99, 0, 1, 48, 0, 0)
         assert res == WasiErrno.BADF
     finally:
@@ -460,8 +476,10 @@ def test_wasi_08_out_of_bounds_offset_returns_fault():
     sysv = System()
     sysv.start_runtime_task(name="test_runtime_task")
     try:
+        from wasi import WasiHostContext
+
         guest_mem = bytearray(64)
-        sysv.bind_guest(guest_mem)
+        WasiHostContext(sysv, guest_memory=guest_mem)
         # iovs_ptr way past 64 bytes
         res = sysv.fireball_call(FbSyscallId.WASI_FD_WRITE, 1, 0x10000, 1, 48, 0, 0)
         assert res == WasiErrno.FAULT

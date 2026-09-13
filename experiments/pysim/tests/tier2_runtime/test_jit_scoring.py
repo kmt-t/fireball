@@ -20,7 +20,6 @@ for _path in (
 from jit_scoring import (
     JIT_CANDIDATE_THRESHOLD,
     OPCODE_TABLE_BYTES,
-    OPCODE_TABLE_COUNT,
     OpcodeBenefitTable,
     score_opcodes,
 )
@@ -31,7 +30,7 @@ from wasm_opcodes import I32_ADD, I32_CONST, I32_POPCNT, RETURN
 def test_numeric_opcode_score_table() -> None:
     table = OpcodeBenefitTable()
     assert len(table.storage) == OPCODE_TABLE_BYTES
-    assert len(table.view) == OPCODE_TABLE_COUNT
+    assert table.score(I32_CONST) == 6
     assert table.score(I32_ADD) == 7
     assert table.score(I32_POPCNT) == -8
     assert score_opcodes((I32_CONST, I32_CONST, I32_ADD), table) == 19
@@ -46,5 +45,5 @@ def test_loader_scores_basic_block_once() -> None:
     module.build_basic_block_index()
     assert module.opcode_benefit_table is not None
     assert len(module.blocks) == 1
-    assert module.blocks[0].jit_score == 23
+    assert module.blocks[0].jit_score == 19
     assert module.blocks[0].jit_score >= JIT_CANDIDATE_THRESHOLD

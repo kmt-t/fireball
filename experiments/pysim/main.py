@@ -70,8 +70,8 @@ def task_bus_owner(sysv: System):
     """
 
     master = sysv.bus_master()
-    tx = sysv.pool.acquire_buffer(size=64)
-    rx = sysv.pool.acquire_buffer(size=64)
+    tx = sysv.pool.buffer(0)
+    rx = sysv.pool.buffer(1)
     tx_view = sysv.pool.view(tx, 0, 8)
     tx_view[:8] = b"HELLOHAL"
     n = master.transfer_data(ShmSlice(tx, 0, 8), ShmSlice(rx, 0, 8))

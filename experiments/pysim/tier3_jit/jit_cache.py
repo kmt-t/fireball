@@ -52,48 +52,23 @@ FB_CONF_MAX_INBOUND_SOURCES = 16
 
 
 class HotspotBitmap:
-    """Per-Function 2-bit state per CARD backed by MutableBitStorage and non-owning BitView<2>.
-    `func_storages` owns the backing bit buffers.
-    `func_tables` borrows non-owning BitViews indexed by `func_idx`.
-    """
+    """Per-function 2-bit card state with one owned storage per function."""
 
-    __slots__ = ("card_shift", "default_func_code_len", "func_storages", "func_tables")
+    __slots__ = ("card_shift", "func_storages")
 
-    def __init__(self, card_shift: int = JIT_CARD_SHIFT, default_func_code_len: int = 64):
+    def __init__(self, card_shift: int = JIT_CARD_SHIFT, code_lengths: tuple[int, ...] = ()):
         self.card_shift = card_shift
-        self.default_func_code_len = default_func_code_len
-        self.func_storages: list[MutableBitStorage | None] = []
-        self.func_tables: list[BitView | None] = []
-
-    def allocate_functions(self, num_functions: int) -> None:
-        """Allocates static slot array for known number of functions at load time."""
-        if len(self.func_tables) < num_functions:
-            delta = num_functions - len(self.func_tables)
-            self.func_storages.extend([None] * delta)
-            self.func_tables.extend([None] * delta)
-
-    def register_function(self, func_idx: int, code_len: int) -> BitView:
-        """Allocates a dedicated MutableBitStorage<2> matching the exact function code length."""
-        if func_idx >= len(self.func_tables):
-            delta = func_idx + 1 - len(self.func_tables)
-            self.func_storages.extend([None] * delta)
-            self.func_tables.extend([None] * delta)
-        card_count = max(1, (code_len + (1 << self.card_shift) - 1) >> self.card_shift)
-        storage = MutableBitStorage(count=card_count, bits=2)
-        if self.func_storages[func_idx] is not None:
-            old_buf = self.func_storages[func_idx].buffer
-            storage.buffer[: min(len(storage.buffer), len(old_buf))] = old_buf[
-                : min(len(storage.buffer), len(old_buf))
-            ]
-        view = storage.view()
-        self.func_storages[func_idx] = storage
-        self.func_tables[func_idx] = view
-        return view
-
-    def _get_or_create_view(self, func_idx: int) -> BitView:
-        if func_idx < len(self.func_tables) and self.func_tables[func_idx] is not None:
-            return self.func_tables[func_idx]  # type: ignore[return-value]
-        return self.register_function(func_idx, self.default_func_code_len)
+        assert all(code_len >= 0 for code_len in code_lengths)
+        self.func_storages: StaticVector[MutableBitStorage] = StaticVector.of(
+            tuple(
+                MutableBitStorage(
+                    count=max(1, (code_len + (1 << card_shift) - 1) >> card_shift),
+                    bits=2,
+                )
+                for code_len in code_lengths
+            ),
+            capacity=len(code_lengths),
+        )
 
     def _split_pc(self, pc: int) -> tuple[int, int]:
         if pc > 0xFFFF:
@@ -110,36 +85,36 @@ class HotspotBitmap:
 
     def get_state(self, pc: int) -> int:
         func_idx, offset = self._split_pc(pc)
-        view = self._get_or_create_view(func_idx)
+        assert func_idx < len(self.func_storages)
+        storage = self.func_storages[func_idx]
         card = offset >> self.card_shift
-        if card >= view.size():
-            return CardState.UNEXECUTED
-        return view.at(card)
+        assert card < storage.count
+        return storage.view().at(card)
 
     def touch(self, pc: int) -> int:
         """2-bit state machine transition: UNEXECUTED -> EXECUTED -> HOT."""
         func_idx, offset = self._split_pc(pc)
-        view = self._get_or_create_view(func_idx)
+        assert func_idx < len(self.func_storages)
+        storage = self.func_storages[func_idx]
         card = offset >> self.card_shift
-        if card >= view.size():
-            view = self.register_function(func_idx, (card + 1) << self.card_shift)
-        s = view.at(card)
+        assert card < storage.count
+        s = storage.view().at(card)
         if s == CardState.COMPILED:
             return s
         if s == CardState.UNEXECUTED:
             s = CardState.EXECUTED
         elif s == CardState.EXECUTED:
             s = CardState.HOT
-        view.put(card, s)
+        storage.put(card, s)
         return s
 
     def mark_compiled(self, pc: int) -> None:
         func_idx, offset = self._split_pc(pc)
-        view = self._get_or_create_view(func_idx)
+        assert func_idx < len(self.func_storages)
+        storage = self.func_storages[func_idx]
         card = offset >> self.card_shift
-        if card >= view.size():
-            view = self.register_function(func_idx, (card + 1) << self.card_shift)
-        view.put(card, CardState.COMPILED)
+        assert card < storage.count
+        storage.put(card, CardState.COMPILED)
 
     def mark_evicted(self, pc: int) -> None:
         """
@@ -150,28 +125,36 @@ class HotspotBitmap:
         marginally-hot card would thrash between compile and evict forever.
         """
         func_idx, offset = self._split_pc(pc)
-        if func_idx < len(self.func_tables) and self.func_tables[func_idx] is not None:
-            view = self.func_tables[func_idx]
-            card = offset >> self.card_shift
-            if card < view.size():  # type: ignore[union-attr]
-                view.put(card, CardState.UNEXECUTED)  # type: ignore[union-attr]
+        assert func_idx < len(self.func_storages)
+        storage = self.func_storages[func_idx]
+        card = offset >> self.card_shift
+        assert card < storage.count
+        storage.put(card, CardState.UNEXECUTED)
 
 
 class BlockCardMask:
     """
     Per-function 1-bit-per-CARD mask, mirroring `HotspotBitmap`'s own
-    per-function `MutableBitStorage`/`BitView` split at the same
-    `card_shift`. Write-once at `register_module_blocks` time from a
-    property already fully known then (never re-derived per dispatch),
-    read-only for the rest of the run.
+    per-function `MutableBitStorage` at the same `card_shift`. Write-once at
+    `register_module_blocks` time from a property already fully known then
+    (never re-derived per dispatch), read-only for the rest of the run.
     """
 
-    __slots__ = ("card_shift", "func_storages", "func_tables")
+    __slots__ = ("card_shift", "func_storages")
 
-    def __init__(self, card_shift: int = JIT_CARD_SHIFT):
+    def __init__(self, card_shift: int = JIT_CARD_SHIFT, code_lengths: tuple[int, ...] = ()):
         self.card_shift = card_shift
-        self.func_storages: list[MutableBitStorage | None] = []
-        self.func_tables: list[BitView | None] = []
+        assert all(code_len >= 0 for code_len in code_lengths)
+        self.func_storages: StaticVector[MutableBitStorage] = StaticVector.of(
+            tuple(
+                MutableBitStorage(
+                    count=max(1, (code_len + (1 << card_shift) - 1) >> card_shift),
+                    bits=1,
+                )
+                for code_len in code_lengths
+            ),
+            capacity=len(code_lengths),
+        )
 
     def _split_pc(self, pc: int) -> tuple[int, int]:
         if pc > 0xFFFF:
@@ -181,43 +164,30 @@ class BlockCardMask:
     def mark(self, pc: int) -> None:
         func_idx, offset = self._split_pc(pc)
         card = offset >> self.card_shift
-        if func_idx >= len(self.func_tables):
-            delta = func_idx + 1 - len(self.func_tables)
-            self.func_storages.extend([None] * delta)
-            self.func_tables.extend([None] * delta)
-        view = self.func_tables[func_idx]
-        if view is None or card >= view.size():
-            storage = MutableBitStorage(count=card + 1, bits=1)
-            old = self.func_storages[func_idx]
-            if old is not None:
-                storage.buffer[: len(old.buffer)] = old.buffer
-            view = storage.view()
-            self.func_storages[func_idx] = storage
-            self.func_tables[func_idx] = view
-        view.put(card, 1)
+        assert func_idx < len(self.func_storages)
+        storage = self.func_storages[func_idx]
+        assert card < storage.count
+        storage.put(card, 1)
 
     def is_marked(self, pc: int) -> bool:
         func_idx, offset = self._split_pc(pc)
-        if func_idx >= len(self.func_tables) or self.func_tables[func_idx] is None:
-            return False
-        view = self.func_tables[func_idx]
+        assert func_idx < len(self.func_storages)
+        storage = self.func_storages[func_idx]
         card = offset >> self.card_shift
-        if card >= view.size():  # type: ignore[union-attr]
-            return False
-        return view.at(card) != 0  # type: ignore[union-attr]
+        assert card < storage.count
+        return storage.view().at(card) != 0
 
     def unmark(self, pc: int) -> None:
         func_idx, offset = self._split_pc(pc)
-        if func_idx >= len(self.func_tables) or self.func_tables[func_idx] is None:
-            return
-        view = self.func_tables[func_idx]
+        assert func_idx < len(self.func_storages)
+        storage = self.func_storages[func_idx]
         card = offset >> self.card_shift
-        if card < view.size():  # type: ignore[union-attr]
-            view.put(card, 0)  # type: ignore[union-attr]
+        assert card < storage.count
+        storage.put(card, 0)
 
     def clear(self) -> None:
-        self.func_storages = []
-        self.func_tables = []
+        for storage in self.func_storages:
+            storage.clear()
 
 
 class HistoryRing:

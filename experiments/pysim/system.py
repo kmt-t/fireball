@@ -26,7 +26,7 @@ from dataclasses import dataclass
 from enum import IntEnum
 from typing import TYPE_CHECKING, Callable
 
-from hal_dispatch import HalBufferHandle, HalBufferPool, StreamTransport
+from hal_dispatch import HalBufferHandle, HalBufferPool
 from ipc_router import (
     IPCMessage,
     IPCRouter,
@@ -44,14 +44,16 @@ if TYPE_CHECKING:
     from wasi import WasiHostContext
 
 from loader import fnv1a_32
-from logger import ConsoleOutput, LogDictionary, Logger, LogLevel
+from logger import LogDictionary, Logger, LogLevel
 from memory import (
     FB_CONF_MEMORY_POOL_SIZE,
     MemoryManager,
 )
 from runtime_engine import RuntimeEngine
+from stream_transport import StreamTransport
+from wasi_hal_bindings import DEFAULT_WASI_HAL_BINDINGS
 from scheduler import FB_CONF_MAX_TASKS, Channel, Scheduler, Task, TaskState
-from system_containers import MutableFlatMapStorage, RadixBinaryTreeView, StaticVector
+from system_containers import MutableFlatMapStorage, ReadOnlyFlatMapStorage, StaticVector
 from vmmio import (
     FC_STATIC_DEVICE,
     TrapCode,
@@ -156,71 +158,20 @@ FB_CONF_VSOC_PASSTHROUGH_BASE = 0xF000_0000  # runtime_vmmio.md §3.3's FC=15 wi
 _PASSTHROUGH_TEST_PAGES = 16  # this experiment's own arbitrary backing size,
 
 
-# not a spec constant -- real PASSTHROUGH size
-# depends on the host peripherals actually mapped
-@dataclass(frozen=True)
-class ShmSlice:
-    """
-    interface_wit.md 5.3's `shm-slice{handle, offset, len}`. There is no
-        field here that could ever carry a guest linear-memory address -- only
-        a handle name the pool must independently recognize and authorize.
-    """
-
-    handle: HalBufferHandle
-    offset: int
-    len: int
-
-
-class BusMaster:
-    """
-    `fireball:host/bus`'s `bus-master.transfer-data`, resolved to the
-        real shared-memory pool.
-    """
-
-    def __init__(self, pool: HalBufferPool):
-        self.pool = pool
-
-    def transfer_data(self, tx: ShmSlice, rx: ShmSlice) -> int:
-        tx_view = self.pool.view(tx.handle, tx.offset, tx.len)
-        rx_view = self.pool.view(rx.handle, rx.offset, rx.len)
-        n = min(len(tx_view), len(rx_view))
-        rx_view[:n] = bytes(tx_view[:n])
-        return n
-
-
-class BusSlave:
-    """`fireball:host/bus`'s `bus-slave.set-response` / `get-received`."""
-
-    def __init__(self, pool: HalBufferPool):
-        self.pool = pool
-        self._pending_response: bytes = b""
-
-    def set_response(self, data: ShmSlice) -> None:
-        view = self.pool.view(data.handle, data.offset, data.len)
-        self._pending_response = bytes(view)
-
-    def get_received(self, dest: ShmSlice) -> int:
-        view = self.pool.view(dest.handle, dest.offset, dest.len)
-        n = min(len(view), len(self._pending_response))
-        view[:n] = self._pending_response[:n]
-        return n
-
-
 class System:
     """
-    One running Fireball-shaped host: a single UART line, a single SHM
-        buffer pool, one dictionary logger and one raw console writer sharing
-        that line, a real vMMIO controller (FlatMap PTEs + TLB, reused from
+    One running Fireball-shaped host: a single platform I/O sink, a single SHM
+        buffer pool, one dictionary logger, a real vMMIO controller (FlatMap PTEs + TLB, reused from
         vmmio_concept.py) fronted by SYSCTL/IPCR/VDMA static-device registers
         and a PASSTHROUGH-backed physical memory window, and a real IPC router
         (reused from ipc_router_concept.py) with its fixed 3-service registry.
     """
 
     def __init__(self):
+        self.wasi_hal_bindings = DEFAULT_WASI_HAL_BINDINGS
         self.transport = StreamTransport()
         self.dictionary = LogDictionary()
         self.logger = Logger(self.transport, self.dictionary, min_level=LogLevel.DEBUG)
-        self.console = ConsoleOutput(self.transport)
         self.scheduler = Scheduler(logger=self.logger)
         # --- vMMIO: real FlatMap+TLB dispatch, this file's own register/byte
         # storage behind it (vmmio_concept.access() deliberately stops at the
@@ -263,135 +214,111 @@ class System:
         self.reset_requested = False
         self.exit_code: int | None = None
         self._guest_memory: bytearray | None = None
-        self._bound_guest_task: Task | None = None
-        self.hal_tasks: MutableFlatMapStorage[int, HalTask] = MutableFlatMapStorage(capacity=8)
-        self._hal_task_ids: MutableFlatMapStorage[int, int] = MutableFlatMapStorage(capacity=8)
+        self._bound_runtime_task: Task | None = None
+        self._hal_task_storage: MutableFlatMapStorage[int, HalTask] = MutableFlatMapStorage(
+            capacity=8
+        )
+        self._hal_task_index: ReadOnlyFlatMapStorage[int, HalTask] = (
+            ReadOnlyFlatMapStorage.create(())
+        )
         self.gdb_server: GDBServer | None = None
         self._gdb_task_id: int | None = None
         self.wasi_context: WasiHostContext | None = None
-        # Build fireball_call dispatch table via RadixBinaryTreeView
-        syscall_handlers: StaticVector[
-            tuple[int, Callable[[int, int, int, int, int, int], int]]
-        ] = StaticVector.of(
+        # Build the small fireball_call dispatch table as read-only storage.
+        syscall_entries: tuple[tuple[int, SyscallHandler], ...] = (
             (
-                (
-                    FbSyscallId.SYS_YIELD,
-                    lambda a0, a1, a2, a3, a4, a5: int(self._apply_sys_control(SYS_CONTROL_YIELD)),
-                ),
-                (
-                    FbSyscallId.SYS_HALT,
-                    lambda a0, a1, a2, a3, a4, a5: int(self._apply_sys_control(SYS_CONTROL_HALT)),
-                ),
-                (
-                    FbSyscallId.SYS_RESET,
-                    lambda a0, a1, a2, a3, a4, a5: int(self._apply_sys_control(SYS_CONTROL_RESET)),
-                ),
-                (
-                    FbSyscallId.MMIO_READ32,
-                    lambda a0, a1, a2, a3, a4, a5: self._mmio_read(a0, 4),
-                ),
-                (
-                    FbSyscallId.MMIO_WRITE32,
-                    lambda a0, a1, a2, a3, a4, a5: int(self._mmio_write(a0, a1, 4)),
-                ),
-                (
-                    FbSyscallId.MMIO_READ8,
-                    lambda a0, a1, a2, a3, a4, a5: self._mmio_read(a0, 1),
-                ),
-                (
-                    FbSyscallId.MMIO_WRITE8,
-                    lambda a0, a1, a2, a3, a4, a5: int(self._mmio_write(a0, a1, 1)),
-                ),
-                (
-                    FbSyscallId.MMIO_BULK_READ,
-                    lambda a0, a1, a2, a3, a4, a5: int(self._mmio_bulk_read(a0, a1, a2)),
-                ),
-                (
-                    FbSyscallId.MMIO_BULK_WRITE,
-                    lambda a0, a1, a2, a3, a4, a5: int(self._mmio_bulk_write(a0, a1, a2)),
-                ),
-                (
-                    FbSyscallId.VDMA_START,
-                    lambda a0, a1, a2, a3, a4, a5: int(self._vdma_start(a0, a1, a2)),
-                ),
-                (
-                    FbSyscallId.IRQ_READ_FLAGS,
-                    lambda a0, a1, a2, a3, a4, a5: self._irq_read_flags(),
-                ),
-                (
-                    FbSyscallId.IRQ_CLEAR,
-                    lambda a0, a1, a2, a3, a4, a5: int(self._irq_clear(a0)),
-                ),
-                (
-                    FbSyscallId.IPC_SEND,
-                    lambda a0, a1, a2, a3, a4, a5: int(self._ipc_send(a0, a1, a2)),
-                ),
-                (
-                    FbSyscallId.IPC_RECV,
-                    lambda a0, a1, a2, a3, a4, a5: int(self._ipc_recv(a0, a1, a2)),
-                ),
-                (
-                    FbSyscallId.IPC_LOOKUP,
-                    lambda a0, a1, a2, a3, a4, a5: self._ipc_lookup(a0, a1),
-                ),
-                (
-                    FbSyscallId.WASI_FD_WRITE,
-                    lambda a0, a1, a2, a3, a4, a5: int(self._wasi_fd_write(a0, a1, a2, a3)),
-                ),
-                (
-                    FbSyscallId.WASI_FD_READ,
-                    lambda a0, a1, a2, a3, a4, a5: int(self._wasi_fd_read(a0, a1, a2, a3)),
-                ),
-                (
-                    FbSyscallId.WASI_FD_CLOSE,
-                    lambda a0, a1, a2, a3, a4, a5: int(self._wasi_fd_close(a0)),
-                ),
-                (
-                    FbSyscallId.WASI_CLOCK_TIME_GET,
-                    lambda a0, a1, a2, a3, a4, a5: int(self._wasi_clock_time_get(a2)),
-                ),
-                (
-                    FbSyscallId.WASI_PROC_EXIT,
-                    lambda a0, a1, a2, a3, a4, a5: int(self._wasi_proc_exit(a0)),
-                ),
-                (
-                    FbSyscallId.WASI_RANDOM_GET,
-                    lambda a0, a1, a2, a3, a4, a5: int(self._wasi_random_get(a0, a1)),
-                ),
+                FbSyscallId.SYS_YIELD,
+                lambda a0, a1, a2, a3, a4, a5: int(self._apply_sys_control(SYS_CONTROL_YIELD)),
             ),
-            capacity=32,
+            (
+                FbSyscallId.SYS_HALT,
+                lambda a0, a1, a2, a3, a4, a5: int(self._apply_sys_control(SYS_CONTROL_HALT)),
+            ),
+            (
+                FbSyscallId.SYS_RESET,
+                lambda a0, a1, a2, a3, a4, a5: int(self._apply_sys_control(SYS_CONTROL_RESET)),
+            ),
+            (
+                FbSyscallId.MMIO_READ32,
+                lambda a0, a1, a2, a3, a4, a5: self._mmio_read(a0, 4),
+            ),
+            (
+                FbSyscallId.MMIO_WRITE32,
+                lambda a0, a1, a2, a3, a4, a5: int(self._mmio_write(a0, a1, 4)),
+            ),
+            (
+                FbSyscallId.MMIO_READ8,
+                lambda a0, a1, a2, a3, a4, a5: self._mmio_read(a0, 1),
+            ),
+            (
+                FbSyscallId.MMIO_WRITE8,
+                lambda a0, a1, a2, a3, a4, a5: int(self._mmio_write(a0, a1, 1)),
+            ),
+            (
+                FbSyscallId.MMIO_BULK_READ,
+                lambda a0, a1, a2, a3, a4, a5: int(self._mmio_bulk_read(a0, a1, a2)),
+            ),
+            (
+                FbSyscallId.MMIO_BULK_WRITE,
+                lambda a0, a1, a2, a3, a4, a5: int(self._mmio_bulk_write(a0, a1, a2)),
+            ),
+            (
+                FbSyscallId.VDMA_START,
+                lambda a0, a1, a2, a3, a4, a5: int(self._vdma_start(a0, a1, a2)),
+            ),
+            (
+                FbSyscallId.IRQ_READ_FLAGS,
+                lambda a0, a1, a2, a3, a4, a5: self._irq_read_flags(),
+            ),
+            (
+                FbSyscallId.IRQ_CLEAR,
+                lambda a0, a1, a2, a3, a4, a5: int(self._irq_clear(a0)),
+            ),
+            (
+                FbSyscallId.IPC_SEND,
+                lambda a0, a1, a2, a3, a4, a5: int(self._ipc_send(a0, a1, a2)),
+            ),
+            (
+                FbSyscallId.IPC_RECV,
+                lambda a0, a1, a2, a3, a4, a5: int(self._ipc_recv(a0, a1, a2)),
+            ),
+            (
+                FbSyscallId.IPC_LOOKUP,
+                lambda a0, a1, a2, a3, a4, a5: self._ipc_lookup(a0, a1),
+            ),
+            (
+                FbSyscallId.WASI_FD_WRITE,
+                lambda a0, a1, a2, a3, a4, a5: int(self._wasi_fd_write(a0, a1, a2, a3)),
+            ),
+            (
+                FbSyscallId.WASI_FD_READ,
+                lambda a0, a1, a2, a3, a4, a5: int(self._wasi_fd_read(a0, a1, a2, a3)),
+            ),
+            (
+                FbSyscallId.WASI_FD_CLOSE,
+                lambda a0, a1, a2, a3, a4, a5: int(self._wasi_fd_close(a0)),
+            ),
+            (
+                FbSyscallId.WASI_CLOCK_TIME_GET,
+                lambda a0, a1, a2, a3, a4, a5: int(self._wasi_clock_time_get(a2)),
+            ),
+            (
+                FbSyscallId.WASI_PROC_EXIT,
+                lambda a0, a1, a2, a3, a4, a5: int(self._wasi_proc_exit(a0)),
+            ),
+            (
+                FbSyscallId.WASI_RANDOM_GET,
+                lambda a0, a1, a2, a3, a4, a5: int(self._wasi_random_get(a0, a1)),
+            ),
         )
-        syscall_handlers.sort(key=lambda x: int(x[0]))
-        keys = tuple(int(x[0]) for x in syscall_handlers)
-        values = tuple(x[1] for x in syscall_handlers)
-        radix_shift = 4
-        max_prefix = max(keys) >> radix_shift
-        radix_table: StaticVector[int] = StaticVector.of(
-            (0,) * (max_prefix + 2), capacity=max_prefix + 2
-        )
-        current_prefix = 0
-        for idx, k in enumerate(keys):
-            prefix = k >> radix_shift
-            while current_prefix < prefix:
-                current_prefix += 1
-                radix_table[current_prefix] = idx
-        while current_prefix <= max_prefix:
-            current_prefix += 1
-            radix_table[current_prefix] = len(keys)
-
-        self._syscall_keys = keys
-        self._syscall_values = values
-        self._syscall_radix_table = tuple(radix_table)
-        self._syscall_dispatch_tree = RadixBinaryTreeView(
-            self._syscall_keys,
-            self._syscall_values,
-            self._syscall_radix_table,
-            radix_shift=radix_shift,
+        syscall_entries = tuple(sorted(syscall_entries, key=lambda x: int(x[0])))
+        self._syscall_handlers: ReadOnlyFlatMapStorage[int, SyscallHandler] = (
+            ReadOnlyFlatMapStorage.create(syscall_entries)
         )
         syscall_vector_table: StaticVector[SyscallHandler | None] = StaticVector.of(
             (None,) * 256, capacity=256
         )
-        for syscall_id, handler in zip(keys, values, strict=True):
+        for syscall_id, handler in syscall_entries:
             assert syscall_id < len(syscall_vector_table)
             syscall_vector_table[syscall_id] = handler
         self._syscall_vector_table = tuple(syscall_vector_table)
@@ -408,7 +335,7 @@ class System:
         task = self.scheduler.get_task(task_id)
         assert task is not None
         self.scheduler.detach(task)
-        self.scheduler.current_task = task
+        self.scheduler.activate_task(task)
         return task
 
     def register_syscall_vector_table(
@@ -418,13 +345,7 @@ class System:
         assert len(vector_table) <= 4096
         self._syscall_vector_table = tuple(vector_table)
 
-    def bus_master(self) -> BusMaster:
-        return BusMaster(self.pool)
-
-    def bus_slave(self) -> BusSlave:
-        return BusSlave(self.pool)
-
-    def bind_guest(self, memory: bytearray | None, role: Role = Role.RUNTIME) -> None:
+    def bind_runtime(self, memory: bytearray | None, role: Role = Role.RUNTIME) -> None:
         """
         Must be called before invoking guest code that will use
                 `fb_offset_t` arguments (IPC_*/WASI_*): those are relative offsets
@@ -442,9 +363,14 @@ class System:
         if task is None:
             task = self.start_runtime_task(name="guest_task", role=role)
         assert task.role == role, "Guest binding role must match the current scheduler task"
-        self.scheduler.current_task = task
-        self._bound_guest_task = task
-        self.pool.bind_guest()
+        self.scheduler.require_active_task(task)
+        self._bound_runtime_task = task
+        self.pool.bind_runtime()
+
+    def unbind_runtime(self) -> None:
+        """Unmaps the fixed HAL DYNAMIC buffers from the bound Runtime."""
+        self.pool.unbind_runtime()
+        self._bound_runtime_task = None
 
     # --- fireball_call ------------------------------------------------
     def fireball_call(
@@ -461,13 +387,13 @@ class System:
         The one host import a guest actually needs
                 (runtime_syscall.md's WIT definition and calling convention): a
                 single syscall-ID-dispatched bridge carrying `id` plus six
-                generic u32 args, dispatched via RadixBinaryTreeView.
+                generic u32 args, dispatched via the small read-only flat map storage.
         """
 
         assert self.scheduler.current_task is not None, (
             "fireball_call requires an active scheduler task"
         )
-        handler = self._syscall_dispatch_tree.find(syscall_id)
+        handler = self._syscall_handlers.view().find(syscall_id)
         if handler is not None:
             return handler(arg0, arg1, arg2, arg3, arg4, arg5)
         return int(WasiErrno.NOSYS)
@@ -750,7 +676,6 @@ class System:
                 status = IPCStatus.COMPLETED
             self.scheduler.run_until_idle()
 
-        self.scheduler.current_task = task
         if status == IPCStatus.COMPLETED:
             return WasiErrno.SUCCESS
         if status == IPCStatus.ERR_PERMISSION_DENIED:
@@ -780,7 +705,6 @@ class System:
                 status, msg = IPCStatus.COMPLETED, None
             self.scheduler.run_until_idle()
 
-        self.scheduler.current_task = task
         if status in (IPCStatus.ERR_NOT_FOUND, IPCStatus.ERR_PERMISSION_DENIED) or msg is None:
             return int(WasiErrno.NOENT)
         data = kv_entries_to_bytes(msg.entries, max_len=buf_len)
@@ -791,49 +715,16 @@ class System:
 
     # --- WASI (interface_wit.md §5.5-5.6) --------------------------------
     def _wasi_fd_write(self, fd: int, iovs_ptr: int, iovs_len: int, nwritten_ptr: int) -> WasiErrno:
-        """Dispatches fd_write either via registered WasiHostContext or directly to console."""
-        if self.wasi_context is not None:
-            res = self.wasi_context.fd_write(fd, iovs_ptr, iovs_len, nwritten_ptr)
-            return WasiErrno(res) if res in WasiErrno._value2member_map_ else WasiErrno.SUCCESS
-
-        if fd != 1 and fd != 2:
-            return WasiErrno.BADF
-
-        if iovs_len < 0 or not self._guest_ram_ok(nwritten_ptr, 4):
-            return WasiErrno.FAULT
-        if not self._guest_ram_ok(iovs_ptr, iovs_len * 8):
-            return WasiErrno.FAULT
-
-        # Validate the complete scatter/gather vector before producing output.
-        # This prevents a valid early iovec from being visible when a later
-        # iovec is malformed.
-        for i in range(iovs_len):
-            iov = self._read_guest(iovs_ptr + i * 8, 8)
-            assert iov is not None
-            buf, buf_len = struct.unpack("<II", iov)
-            if not self._guest_ram_ok(buf, buf_len):
-                return WasiErrno.FAULT
-
-        total = 0
-        for i in range(iovs_len):
-            iov = self._read_guest(iovs_ptr + i * 8, 8)
-            assert iov is not None
-            buf, buf_len = struct.unpack("<II", iov)
-            data = self._read_guest(buf, buf_len)
-            assert data is not None
-            self.console.write(data)
-            total += len(data)
-
-        if not self._write_guest(nwritten_ptr, struct.pack("<I", total)):
-            return WasiErrno.FAULT
-        return WasiErrno.SUCCESS
+        """Dispatches fd_write through the registered WASI-to-HAL adapter."""
+        assert self.wasi_context is not None, "WASI fd_write requires a bound WASI context"
+        result = self.wasi_context.fd_write(fd, iovs_ptr, iovs_len, nwritten_ptr)
+        return WasiErrno(result)
 
     def _wasi_fd_read(self, fd: int, iovs_ptr: int, iovs_len: int, nread_ptr: int) -> WasiErrno:
-        # No real stdin exists in this experiment -- reporting 0 bytes read
-        # (EOF) is a genuine, spec-legal WASI outcome, not a stand-in value.
-        if not self._write_guest(nread_ptr, struct.pack("<I", 0)):
-            return WasiErrno.FAULT
-        return WasiErrno.SUCCESS
+        """Dispatches fd_read through the registered WASI-to-HAL adapter."""
+        assert self.wasi_context is not None, "WASI fd_read requires a bound WASI context"
+        result = self.wasi_context.fd_read(fd, iovs_ptr, iovs_len, nread_ptr)
+        return WasiErrno(result)
 
     def _wasi_fd_close(self, fd: int) -> WasiErrno:
         return WasiErrno.SUCCESS
@@ -863,15 +754,17 @@ class System:
         desc = self.ipc.find_service(driver.uri)
         assert desc is not None, f"HAL driver URI not registered: {driver.uri}"
         uri_key = fnv1a_32(driver.uri)
-        assert self.hal_tasks.find(uri_key) is None, f"duplicate HAL driver URI: {driver.uri}"
+        assert self._hal_task_index.view().find(uri_key) is None, (
+            f"duplicate HAL driver URI: {driver.uri}"
+        )
         task_id, task = driver.start(self.ipc, self.scheduler, desc.role)
-        assert self.hal_tasks.insert(uri_key, task)
-        assert self._hal_task_ids.insert(uri_key, task_id)
+        assert self._hal_task_storage.insert(uri_key, task)
+        self._hal_task_index = ReadOnlyFlatMapStorage.create(self._hal_task_storage.entries)
         return task_id
 
     def hal_task_for(self, uri: str) -> HalTask | None:
         """Returns the dedicated HalTask instance bound to `uri`, if spawned."""
-        return self.hal_tasks.find(fnv1a_32(uri))
+        return self._hal_task_index.view().find(fnv1a_32(uri))
 
     def spawn_gdbserver_task(
         self,
@@ -905,7 +798,7 @@ class System:
     def shutdown(self) -> None:
         if self.gdb_server is not None:
             self.gdb_server.stop()
-        for _, task in self.hal_tasks.items():
+        for _, task in self._hal_task_index.entries:
             task.running = False
         self.pool.close_all()
         self.transport.close()

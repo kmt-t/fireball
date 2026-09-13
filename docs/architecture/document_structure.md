@@ -53,7 +53,7 @@ Tier は単なる「OSやハードウェアの実行レイヤ」ではなく、*
 | レイヤー | ディレクトリ | 定義される設計書 | 複雑度・責務の範囲 |
 | :--- | :--- | :--- | :--- |
 | **Tier 0** | `docs/requires/` | システム要求仕様書 (`requirement_list.md`) | **最上位要求 (Why)**<br>システム全体が満たすべき受入基準・機能要求。 |
-| **Tier 1** | `docs/components/tier1_core/`<br>`docs/components/tier1_interface/` | スケジューラ、チャネル通信、システムサービス、独立したインターフェイス契約、IPCルータ、共有静的コンテナ語彙等のコア仕様書 | **粗粒度主要コンポーネント (What)**<br>要求（Tier 0）を直接受け取る。単一仕様書で状態遷移・ポリシーを自己完結して記述可能なシステム要素。契約/実装分割パターン（`{META_ContractImplSplit}`）では抽象契約側を担う。 |
+| **Tier 1** | `docs/components/tier1_core/`<br>`docs/components/tier1_interface/` | スケジューラ、チャネル通信、システムサービス、独立したインターフェース契約、IPCルータ、共有静的コンテナ語彙等のコア仕様書 | **粗粒度主要コンポーネント (What)**<br>要求（Tier 0）を直接受け取る。単一仕様書で状態遷移・ポリシーを自己完結して記述可能なシステム要素。契約/実装分割パターン（`{META_ContractImplSplit}`）では抽象契約側を担う。 |
 | **Tier 2** | `docs/components/tier2_runtime/` | WASMインタープリタ、WASMローダー、vMMIO、デバッグマネージャ、メモリマネージャ実装（`runtime_memory.md`）、HAL抽象化層（`hal_dispatch.md`）等のサブコンポーネント仕様書 | **分解されたサブコンポーネント (How - Subsystem)**<br>Tier 1 で扱うには状態空間やアルゴリズムが複雑化するため、独立した責務としてブレークダウンされた要素。契約/実装分割パターン（`{META_ContractImplSplit}`）では実装側を担う場合がある。 |
 | **Tier 3** | `docs/components/tier3_platform/`<br>`docs/components/tier3_jit/` | HALドライバ実装（`platform_driver.md`）、ゲストアダプタ（`libfireball.md`）、JITコンパイラ一式（コード生成コア `jit_compiler.md`、ランタイム管理 `jit_runtime.md`）| **詳細リーフ / 物理コンポーネント (How - Leaf)**<br>Tier 2 からさらに責務が切り出された具象コンポーネント、ハードウェア抽象化層の最終物理実装、またはゲストへ組み込むABIアダプタ。 |
 | **Specs** | `docs/specs/` | WASM命令セット、WASI Preview 1 ABI、GDB RSP、JITステンシルカタログ等の規格マトリクス | **横串物理規格・具象カタログ (How - Physical Specs)**<br>コンポーネントを横断して統一される具象バイナリ列、ABI、パケット形式、命令セットマトリクス。各ファイル冒頭にアーキテクチャ分類（Tierラベル）を明示する。 |

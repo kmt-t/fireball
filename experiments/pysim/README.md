@@ -72,7 +72,7 @@ experiments/pysim/
 │   └── exec_memory.py     # MPU W^X トランザクション & 実行可能メモリ (mprotect/VirtualProtect)
 │
 ├── tier3_platform/        # Tier 3 Platform & ハードウェア依存部
-│   ├── hal_dummy_drivers.py # HAL ダミードライバ (GPIO/I2C/SPI/Timer)
+│   ├── dummy_drivers.py      # HAL ダミードライバ (標準入出力/時刻)
 │   └── wasi_dummy_fs.py   # インメモリ VFS ファイルシステム
 │
 ├── scenarios/             # 全 11 コンポーネント統合シナリオ (End-to-End Scenarios)
@@ -124,7 +124,7 @@ experiments/pysim/
 10. **Scenario 10: vMMIO Virtual Devices & Address Translation (`scenarios/scenario10_vmmio_virtual_devices.py`)**:
     - 2段階ダイレクトデコードページテーブル、Bit 31 ゲスト RAM バイパス、Direct-Mapped ソフトウェア TLB（Folding XOR Hash）、タスク間共有メモリ（FC=0xE）の所有権検証と `TRAP_OWNER_MISMATCH` 遮断、パススルー物理アクセス。
 11. **Scenario 11: HAL & WASI Dummy Drivers (`scenarios/scenario11_hal_and_wasi_drivers.py`)**:
-    - HAL GPIO（割り込み通知）、I2C（LM75 温度センサ）、SPI（EEPROM）、Timer、および WASI Preview 1（fd_read, fd_write, fd_seek, random_get, clock_time_get）。
+    - HAL 標準入出力ストリーム（stdin/stdout）と Timer、および WASI Preview 1（fd_read, fd_write, fd_seek, random_get, clock_time_get）。
 
 ---
 

@@ -134,7 +134,7 @@ WAT_TEMPLATE = """
 )
 """
 
-from hal_dummy_drivers import DummyGpioDriver, PinMode
+from dummy_drivers import DummyUartDriver
 from wasi_dummy_fs import WasiDummyContext
 
 
@@ -153,8 +153,7 @@ def run_single_pairwise_case(case_tuple: tuple) -> None:
     sysv = System()
     wasi_ctx = WasiHostContext(sysv)
     wasi_dummy = WasiDummyContext()
-    gpio = DummyGpioDriver(pin_count=16)
-    gpio.set_pin_mode(1, PinMode.OUTPUT)
+    stdio = DummyUartDriver(transport=sysv.transport)
     # 2. Parse WASM Module
     wasm_bytes = bytes(wasmtime.wat2wasm(WAT_TEMPLATE))
     module = parse(wasm_bytes)
@@ -235,8 +234,9 @@ def run_single_pairwise_case(case_tuple: tuple) -> None:
         read_buf = bytearray(16)
         wasi_dummy.fd_read(3, read_buf, 0, 1, 12)
     elif host_mode == "hal":
-        gpio.write_pin(1, 1)
-        assert gpio.read_pin(1) == 1
+        payload = f"pairwise:{case_id}".encode("ascii")
+        assert stdio.write_stdout(payload) == len(payload)
+        assert stdio.drain_stdout() == payload
 
 
 def test_all_pairwise_combinations():

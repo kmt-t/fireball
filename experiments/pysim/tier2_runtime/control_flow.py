@@ -22,16 +22,11 @@ from system_containers import (
     BitView,
     FlatMapView,
     MutableBitStorage,
-    RadixBinaryTreeView,
     ReadOnlyBitStorage,
     ReadOnlyFlatMapStorage,
-    ReadOnlyFlatSetStorage,
-    ReadOnlyRadixBinaryTreeStorage,
     StaticVector,
-    bswap32,
-    build_radix_table,
 )
-from wasm_module import Function
+from wasm_module import Function, WasmOperand
 from wasm_opcodes import (
     BLOCK,
     BR,
@@ -431,26 +426,14 @@ _BLOCK_OPENERS = _opcode_bitview(BLOCK, LOOP, IF)
 # core/scheduler.py's FB_CONF_MAX_TASKS=16) until a real spec value exists.
 FB_CONF_MAX_NESTING_DEPTH = 32
 
-
 @dataclass(slots=True)
 class Instr:
-    """
-    Minimal per-instruction descriptor for basic-block/control-flow
-    scanning (`iter_scan_instrs`) -- exactly the fields that resolving
-    block boundaries and branch targets needs, and no others. Immediate
-    values a block-scan never inspects (`i32.const`'s decoded value,
-    memarg align/offset, `br_table`'s full label vector, `call_indirect`'s
-    tableidx) are walked past to find the next instruction's offset, but
-    never decoded into a stored field -- see `iter_scan_instrs`.
-    """
+    """Minimal one-instruction descriptor yielded by the streaming scanner."""
 
-    offset: int  # offset of the opcode byte itself
+    offset: int
     opcode: int
-    end_offset: int  # offset immediately after this instruction
-    operand: int | None = (
-        None  # depth / local index / func index / BR_TABLE's default label / CALL_INDIRECT's typeidx
-    )
-
+    end_offset: int
+    operand: int | None = None
 
 @dataclass(slots=True)
 class ControlMap:
@@ -611,7 +594,7 @@ def iter_scan_instrs(code: bytes, start: int = 0) -> Iterator[Instr]:
     depth) stack of exactly the instructions it still needs, rather than
     this function holding every instruction of the whole function for it.
     A caller that only wants the single instruction sitting at a known
-    offset (e.g. `build_control_skip_storage`) gets it via
+    offset gets it via
     `next(iter_scan_instrs(code, offset))` -- being a generator, this
     decodes exactly that one instruction and no more, not the whole
     function up to it.
@@ -703,6 +686,8 @@ for _op in (
     I32_STORE,
     I32_STORE8,
     I32_STORE16,
+    MEMORY_SIZE,
+    MEMORY_GROW,
 ):
     _IS_BB_OPCODE_BUILD.put(_op, 1)
 # Read-only 1-bit-per-opcode membership table (32 bytes total, not a
@@ -713,13 +698,13 @@ _IS_BB_OPCODE: BitView = ReadOnlyBitStorage(
 ).view()
 
 
-def iter_block_ops(code: bytes, head_offset: int, byte_span: int) -> Iterator[tuple[int, object]]:
+def iter_block_ops(code: bytes, head_offset: int, byte_span: int) -> Iterator[tuple[int, WasmOperand]]:
     """
     Streams ONE BasicBlock's compilable `(opcode, arg)` op stream directly
     from raw bytecode, scoped to exactly `[head_offset, head_offset+byte_span)`,
     one instruction at a time -- never materializes the whole block's op
     list. Called on demand, at the moment a block is actually compiled or
-    interpreted (see `wasm_module.BasicBlock` / `TraceBlock`). A block's own
+    interpreted (see `wasm_module.BasicBlock`). A block's own
     byte_span, by construction (see `extract_basic_blocks`), spans only
     BB-opcode instructions, so every instruction decoded in range belongs in
     the result -- no filtering needed here.
@@ -732,7 +717,7 @@ def iter_block_ops(code: bytes, head_offset: int, byte_span: int) -> Iterator[tu
         off += 1
         if _LEB_UNSIGNED_OPERAND.at(opcode):
             operand, off = decode_unsigned(code, off)
-            arg: object = operand
+            arg: WasmOperand = operand
         elif opcode in (I32_CONST, I64_CONST):
             arg, off = decode_signed(code, off)
         elif opcode == F32_CONST:
@@ -747,6 +732,11 @@ def iter_block_ops(code: bytes, head_offset: int, byte_span: int) -> Iterator[tu
             _align, off = decode_unsigned(code, off)
             mem_offset, off = decode_unsigned(code, off)
             arg = mem_offset
+        elif _MEMORY_INDEX_OPCODES.at(opcode):
+            reserved = code[off]
+            off += 1
+            assert reserved == 0, "only memory index 0 is supported"
+            arg = None
         elif _NO_OPERAND.at(opcode):
             arg = None
         else:
@@ -926,65 +916,3 @@ def extract_basic_blocks(
                 "ERR_WASM_UNSUPPORTED_FEATURE: basic-block count exceeds code capacity"
             )
     return blocks
-
-
-def build_control_skip_storage(
-    functions: Sequence[Function], n_imports: int = 0
-) -> ReadOnlyRadixBinaryTreeStorage[int] | None:
-    """Constructs a ReadOnlyRadixBinaryTreeStorage owning delimiter PCs -> fallthrough basic block head PCs.
-
-    Key byte order is inverted using bswap32 to maximize entropy in the upper bits
-    for uniform Radix Table prefix distribution. Backing buffers are owned by this storage.
-    """
-    pairs: StaticVector[tuple[int, int]] = StaticVector(
-        capacity=sum(len(fn.code) for fn in functions)
-    )
-    for idx, fn in enumerate(functions):
-        func_idx = n_imports + idx
-        base_pc = func_idx << 16
-        code = fn.code
-        if not code:
-            continue
-        blocks = extract_basic_blocks(code, func_index=func_idx)
-        heads = ReadOnlyFlatSetStorage.create(tuple(b[0] for b in blocks)).view()
-        for _head_pc, delim_pc, _loops_to, _frame_depth, _byte_span in blocks:
-            if delim_pc is not None:
-                offset = delim_pc & 0xFFFF
-                if offset < len(code):
-                    # Decodes just this one instruction (see iter_scan_instrs),
-                    # never the whole function up to it.
-                    ins = next(iter_scan_instrs(code, offset))
-                    fallthrough_pc = base_pc | ins.end_offset
-                    if heads.contains(fallthrough_pc) and not pairs.push_back(
-                        (delim_pc, fallthrough_pc)
-                    ):
-                        raise WasmUnsupportedFeatureError(
-                            "ERR_WASM_UNSUPPORTED_FEATURE: control-skip pair count exceeds code capacity"
-                        )
-
-    if not pairs:
-        return None
-
-    # Key byte order is inverted via bswap32
-    sorted_pairs = tuple(sorted(pairs, key=lambda p: bswap32(p[0])))
-    inv_keys = tuple(bswap32(p[0]) for p in sorted_pairs)
-    fallthrough_heads = tuple(p[1] for p in sorted_pairs)
-
-    # Compact 4-bit prefix Radix Table (<= 16 buckets / 17 entries)
-    radix_shift = 28
-    radix_table = build_radix_table(inv_keys, radix_shift=radix_shift)
-    return ReadOnlyRadixBinaryTreeStorage(
-        keys=inv_keys,
-        values=fallthrough_heads,
-        radix_table=radix_table,
-        radix_shift=radix_shift,
-        entries=tuple(zip(inv_keys, fallthrough_heads, strict=False)),
-    )
-
-
-def build_control_skip_tree(
-    functions: Sequence[object], n_imports: int = 0
-) -> RadixBinaryTreeView[int] | None:
-    """Borrows a non-owning RadixBinaryTreeView over the constructed storage."""
-    storage = build_control_skip_storage(functions, n_imports=n_imports)
-    return storage.view() if storage is not None else None

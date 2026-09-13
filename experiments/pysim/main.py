@@ -98,7 +98,7 @@ def task_hostile_neighbor(sysv: System, other_handle):
     try:
         sysv.pool.view(other_handle, 0, 8)
         findings.append(
-            f"BUG: current task could read another task's SHM handle {other_handle.name} -- "
+            f"BUG: current task could read another task's buffer {other_handle.buffer_id} -- "
             "ownership isolation is broken"
         )
     except HalBufferTrap as e:

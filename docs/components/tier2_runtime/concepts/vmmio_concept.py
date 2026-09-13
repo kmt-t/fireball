@@ -35,7 +35,8 @@ TrapCode = VmmioStatus
 
 # Function Codes (bits[31:28]) — see runtime_vmmio.md "アドレス分解の対応関係"
 FC_STATIC_DEVICE = 0xC  # 0xC000_0000: SYSCTL / IPCR / VDMA (Stage 2, syscall dispatch)
-FC_SHM = 0xE  # 0xE000_0000: Shared Memory (Stage 3, mapping-checked, no owner_id)
+FC_DYNAMIC = 0xD  # 0xD000_0000: HAL-owned bounded dynamic buffers
+FC_SHM = 0xE  # 0xE000_0000: Shared Memory (Stage 3, owner-checked)
 FC_PASSTHROUGH = 0xF  # 0xF000_0000: Physical passthrough (Stage 3)
 FB_TASK_ID_INVALID = 0x00
 FB_TASK_ID_FLIGHT = 0xFF
@@ -148,9 +149,7 @@ class ShmVirtualAddressAllocator:
 class Stage3PTE:
     """
     FC=14/15 (SHM / PASSTHROUGH). 32-bit layout, no bit overlap:
-        [31:12] PPN(20) | [11] VALID | [10] READ | [9] WRITE | [8] EXEC | [7:0] Reserved (0)
-    Note: owner_id is eliminated from hardware PTE. Access control is enforced
-    purely by page mapping presence (unmapped page -> TRAP_UNREGISTERED_PAGE).
+        [31:12] PPN(20) | [11] VALID | [10] READ | [9] WRITE | [8] EXEC | [7:0] OWNER_TASK_ID
     """
 
     def __init__(
@@ -160,12 +159,14 @@ class Stage3PTE:
         read: bool = True,
         write: bool = True,
         exec_: bool = False,
+        owner_id: int = FB_TASK_ID_INVALID,
     ):
         self.phys_page = phys_page
         self.valid = valid
         self.read = read
         self.write = write
         self.exec_ = exec_
+        self.owner_id = owner_id
 
 
 class TLBSlot(TypedDict):
@@ -190,8 +191,34 @@ class VMMIOController:
         self.tlb: list[TLBSlot] = [TLBSlot(vpn=0xFFFF_FFFF, pte=None) for _ in range(32)]
         self.tlb_hits = 0
         self.tlb_misses = 0
+        self.dynamic_guest_id: int | None = None
 
     # --- Static & Dynamic PTE Registration (FlatMap) ---
+    def bind_dynamic_guest(self, task_id: int) -> None:
+        """Binds FC=13 DYNAMIC mappings to one guest for the pool lifetime."""
+        if self.dynamic_guest_id is None:
+            self.dynamic_guest_id = task_id
+            return
+        assert self.dynamic_guest_id == task_id
+
+    def map_dynamic_page(self, vpn: int, phys_page: int) -> None:
+        """Maps one HAL-owned FC=13 page after the guest binding is established."""
+        assert (vpn >> 16) == FC_DYNAMIC
+        assert self.dynamic_guest_id is not None
+        self.ptes[vpn] = Stage3PTE(phys_page=phys_page)
+        tlb_idx = self.tlb_index(vpn)
+        if self.tlb[tlb_idx]["vpn"] == vpn:
+            self.tlb[tlb_idx] = TLBSlot(vpn=0xFFFF_FFFF, pte=None)
+
+    def unmap_dynamic_page(self, vpn: int) -> None:
+        """Unmaps one FC=13 page and invalidates its TLB entry."""
+        assert (vpn >> 16) == FC_DYNAMIC
+        if vpn in self.ptes:
+            del self.ptes[vpn]
+        tlb_idx = self.tlb_index(vpn)
+        if self.tlb[tlb_idx]["vpn"] == vpn:
+            self.tlb[tlb_idx] = TLBSlot(vpn=0xFFFF_FFFF, pte=None)
+
     def map_static_device(
         self,
         vpn: int,
@@ -202,14 +229,22 @@ class VMMIOController:
         """Registers a Stage 2 static device page (FC=12) into FlatMap."""
         self.ptes[vpn] = StaticDevicePTE(handler=handler, read=read, write=write)
 
-    def map_shm_page(self, vpn: int, phys_page: int, read: bool = True, write: bool = True) -> None:
-        """Registers a Stage 3 SHM page (FC=14) into FlatMap. Pure PTE without owner_id."""
+    def map_shm_page(
+        self,
+        vpn: int,
+        phys_page: int,
+        read: bool = True,
+        write: bool = True,
+        owner_id: int = FB_TASK_ID_INVALID,
+    ) -> None:
+        """Registers a Stage 3 SHM page (FC=14) into FlatMap."""
         self.ptes[vpn] = Stage3PTE(
             phys_page=phys_page,
             valid=True,
             read=read,
             write=write,
             exec_=False,
+            owner_id=owner_id,
         )
 
     def unmap_shm_page(self, vpn: int) -> None:
@@ -291,7 +326,12 @@ class VMMIOController:
         self.tlb[tlb_idx] = TLBSlot(vpn=vpn, pte=pte)
         return pte
 
-    def access(self, raw_addr: int, is_write: bool) -> tuple[VmmioStatus, int]:
+    def access(
+        self,
+        raw_addr: int,
+        is_write: bool,
+        current_task_id: int = FB_TASK_ID_INVALID,
+    ) -> tuple[VmmioStatus, int]:
         """
         Full dispatch: RAM bypass -> TLB/FlatMap -> permission check (always,
         TLB hit or not) -> syscall dispatch or physical access.
@@ -313,6 +353,7 @@ class VMMIOController:
             # Check known valid FCs for proper trap classification
             if not (
                 addr.fc() == FC_STATIC_DEVICE
+                or addr.fc() == FC_DYNAMIC
                 or addr.fc() == FC_SHM
                 or addr.fc() == FC_PASSTHROUGH
             ):
@@ -337,6 +378,12 @@ class VMMIOController:
             return (TrapCode.ACCESS_VIOLATION, 0)
         if not is_write and not pte.read:
             return (TrapCode.ACCESS_VIOLATION, 0)
+
+        if addr.fc() == FC_DYNAMIC and self.dynamic_guest_id != current_task_id:
+            return (TrapCode.OWNER_MISMATCH, 0)
+        if addr.fc() == FC_SHM and pte.owner_id != FB_TASK_ID_INVALID:
+            if pte.owner_id == FB_TASK_ID_FLIGHT or pte.owner_id != current_task_id:
+                return (TrapCode.OWNER_MISMATCH, 0)
 
         phys_addr = (pte.phys_page << 12) | addr.offset()
         return (VmmioStatus.OK_PHYSICAL, phys_addr)
@@ -379,9 +426,29 @@ def test_tlb_hit_after_first_walk() -> None:
     assert ctrl.tlb_hits == 1, "second access to the same page must hit the TLB"
 
 
+def test_dynamic_mapping_is_single_guest() -> None:
+    """FC=13 DYNAMIC mapping is not shareable between guest bindings."""
+    ctrl = VMMIOController()
+    ctrl.bind_dynamic_guest(7)
+    ctrl.bind_dynamic_guest(7)
+    rejected = False
+    try:
+        ctrl.bind_dynamic_guest(8)
+    except AssertionError:
+        rejected = True
+    assert rejected, "a second guest must not bind FC=13 DYNAMIC"
+    ctrl.map_dynamic_page(vpn=0xD0000, phys_page=0x2000)
+    status, physical = ctrl.access(0xD000_0040, is_write=True, current_task_id=7)
+    assert status == VmmioStatus.OK_PHYSICAL
+    assert physical == (0x2000 << 12) | 0x40
+    ctrl.unmap_dynamic_page(0xD0000)
+    status, _ = ctrl.access(0xD000_0040, is_write=True)
+    assert status == TrapCode.UNREGISTERED_PAGE
+
+
 def test_undefined_fc_traps() -> None:
     ctrl = VMMIOController()
-    status, _ = ctrl.access(0x8000_0000 | (0xD << 28), is_write=False)  # FC=13, reserved
+    status, _ = ctrl.access(0x8000_0000 | (0xB << 28), is_write=False)  # FC=11, reserved
     assert status == TrapCode.UNDEFINED_FC
 
 
@@ -604,6 +671,7 @@ if __name__ == "__main__":
     test_ram_bypass_never_touches_page_table()
     test_static_device_syscall_dispatch()
     test_tlb_hit_after_first_walk()
+    test_dynamic_mapping_is_single_guest()
     test_undefined_fc_traps()
     test_shm_unmap_isolation()
     test_revoke_invalidates_tlb_and_blocks_unmapped_access()

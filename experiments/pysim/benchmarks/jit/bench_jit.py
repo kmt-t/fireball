@@ -29,9 +29,10 @@ for _p in [
 import wasm_opcodes as op
 from control_flow import extract_basic_blocks, iter_block_ops
 from interpreter import Interpreter
-from runtime_engine import HotspotBitmap, RuntimeEngine, TraceBlock, WASMContext
+from runtime_engine import HotspotBitmap, RuntimeEngine, WASMContext
 from system_containers import RadixBinaryTreeView, bswap32
 from wasm_reader import parse
+from wasm_module import TraceBlock
 from x64_jit import TraceCompiler
 
 
@@ -45,12 +46,8 @@ class JITCompilerBenchmark:
         results: dict[str, float | int] = {}
 
         # 3.1 Copy-and-Patch Compilation Throughput (Arithmetic Basic Block) --
-        # real WASM bytecode, via the same extract_basic_blocks + iter_block_ops
-        # path production JIT compilation uses. iter_block_ops streams its
-        # block's ops rather than returning a materialized list, so each
-        # compile_trace() call needs its own fresh TraceBlock/stream -- the
-        # same one can't be replayed across iterations -- built inside the
-        # timed loop alongside the compile_trace() call itself.
+        # Real WASM bytecode. The loader-owned BasicBlock is the shared
+        # instruction source for both interpreter and JIT paths.
         code = bytes([op.LOCAL_GET, 0, op.I32_CONST, 1, op.I32_ADD, op.LOCAL_SET, 0])
         head_pc, next_pc, loops_to, frame_depth, byte_span = extract_basic_blocks(code)[0]
         t0 = time.perf_counter()
@@ -58,7 +55,7 @@ class JITCompilerBenchmark:
         for _ in range(compile_count):
             block = TraceBlock(
                 head_pc=head_pc,
-                ops=iter_block_ops(code, head_pc & 0xFFFF, byte_span),
+                instructions=iter_block_ops(code, head_pc & 0xFFFF, byte_span),
                 next_pc=next_pc,
                 loops_to=loops_to,
                 byte_span=byte_span,
@@ -168,7 +165,7 @@ class JITCompilerBenchmark:
             head_pc=0xF000,
             block=TraceBlock(
                 head_pc=0xF000,
-                ops=((op.LOCAL_GET, 0), (op.LOCAL_SET, 0)),
+                instructions=((op.LOCAL_GET, 0), (op.LOCAL_SET, 0)),
                 next_pc=None,
                 loops_to=None,
                 byte_span=4,

@@ -50,9 +50,10 @@ import struct
 
 from control_flow import extract_basic_blocks
 from exec_memory import ExecutableBuffer
-from runtime_engine import BasicBlock, IntegratedHybridEngine, TraceBlock, WASMContext
+from runtime_engine import BasicBlock, IntegratedHybridEngine, WASMContext
 from test_support import wat_to_wasm
 from wasm_module import WASM_LOCAL_SLOT_WORDS
+from wasm_module import TraceBlock
 from wasm_opcodes import (
     F32_ADD,
     F32_CONST,
@@ -141,11 +142,10 @@ def test_complex_helpers_use_shared_raw_slots_for_i64_and_floating_point():
         trace = compiler.compile_trace(
             0,
             TraceBlock(
-                0,
-                ((I64_CONST, left), (I64_CONST, right), (op, None)),
-                3,
-                None,
-                3,
+                head_pc=0,
+                instructions=((I64_CONST, left), (I64_CONST, right), (op, None)),
+                next_pc=3,
+                byte_span=3,
             ),
         )
         assert trace is not None
@@ -160,11 +160,10 @@ def test_complex_helpers_use_shared_raw_slots_for_i64_and_floating_point():
         trace = compiler.compile_trace(
             0,
             TraceBlock(
-                0,
-                ((F32_CONST, left_bits), (F32_CONST, right_bits), (op, None)),
-                3,
-                None,
-                3,
+                head_pc=0,
+                instructions=((F32_CONST, left_bits), (F32_CONST, right_bits), (op, None)),
+                next_pc=3,
+                byte_span=3,
             ),
         )
         assert trace is not None
@@ -180,11 +179,10 @@ def test_complex_helpers_use_shared_raw_slots_for_i64_and_floating_point():
         trace = compiler.compile_trace(
             0,
             TraceBlock(
-                0,
-                ((F64_CONST, left_bits), (F64_CONST, right_bits), (op, None)),
-                3,
-                None,
-                3,
+                head_pc=0,
+                instructions=((F64_CONST, left_bits), (F64_CONST, right_bits), (op, None)),
+                next_pc=3,
+                byte_span=3,
             ),
         )
         assert trace is not None
@@ -335,7 +333,7 @@ def test_context_helper_tail_jump_is_pic_and_uses_context_pointer():
         head_pc,
         TraceBlock(
             head_pc=head_pc,
-            ops=((LOCAL_GET, 0), (LOCAL_SET, 0)),
+                instructions=((LOCAL_GET, 0), (LOCAL_SET, 0)),
             next_pc=next_pc,
             loops_to=loops_to,
             byte_span=byte_span,
@@ -484,8 +482,8 @@ def test_hybrid_interpreter_to_jit_trace_elevation():
     assert engine.interp_blocks >= 3
 
 
-def test_jit_chaining_with_control_skip_table():
-    """TEST-JITC-54: JIT trace chaining resolves fallthrough target via control_skip_tree (bswap32 RadixBinaryTreeView)."""
+def test_jit_chaining_uses_loader_resolved_successors():
+    """TEST-JITC-54: JIT chaining uses loader-resolved block successors directly."""
     wat = """
     (module
       (func (export "f") (param i32) (result i32)

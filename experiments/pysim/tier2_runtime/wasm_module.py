@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 from jit_scoring import OpcodeBenefitTable
 from system_containers import (
@@ -25,18 +26,19 @@ from system_containers import (
     build_radix_table,
 )
 
+if TYPE_CHECKING:
+    from control_flow import ControlMap
+
+
+WasmOperand = int | None
+
 
 @dataclass
 class BasicBlock:
     """
     A straight-line run of WASM instructions ending with branch/return, as PC
-    range + control-flow metadata ONLY. Deliberately holds no decoded op
-    stream: `Module.blocks` keeps one of these per basic block in the program
-    for the module's whole lifetime, and a real embedded target (32KB RAM)
-    has no memory to spend on a redundant decoded-instruction copy per block
-    on top of the raw bytecode it already holds. See `TraceBlock` for the
-    transient, decode-on-demand input JIT compilation / block interpretation
-    actually consumes.
+    range + control-flow metadata only. Decoded instructions are never stored
+    in the module; consumers obtain a one-shot iterator over raw bytecode.
     """
 
     head_pc: int
@@ -49,18 +51,12 @@ class BasicBlock:
 
 @dataclass
 class TraceBlock:
-    """
-    Transient compiler/interpreter input: a `(opcode, arg)` op stream for ONE
-    basic block plus its control-flow successors. Never stored per block like
-    `BasicBlock` -- built on demand from `control_flow.iter_block_ops`, a
-    single-use generator. `byte_span` is this block's own byte length (see
-    `BasicBlock.byte_span`): an upper bound on its op count (each op is at
-    least 1 byte), used as the fixed capacity for any consumer that must
-    retain the op stream past one pass (see `WASMTraceCompiler.compile_trace`).
-    """
+    """Transient raw-bytecode iterator and metadata for one compilation pass."""
 
     head_pc: int
-    ops: Iterable[tuple[int, object]]
+    instructions: Iterable[tuple[int, WasmOperand]]
+    code: bytes | None = None
+    head_offset: int = 0
     next_pc: int | None = None
     loops_to: int | None = None
     byte_span: int = 0
@@ -106,7 +102,7 @@ class Function:
     # Determined by the loader from decoded instructions. CallFrame uses this
     # metadata to select the non-nested-call fast path without rescanning code.
     has_nested_calls: bool = False
-    control_map: object | None = None
+    control_map: ControlMap | None = None
     # Params + locals_extra and their raw widths are immutable load-time
     # metadata. The execution path uses the fixed local-slot stride directly;
     # no per-call physical-offset table is needed.
@@ -178,8 +174,6 @@ class Module:
     start_function: int | None = None
     block_storage: ReadOnlyRadixBinaryTreeStorage[BasicBlock] | None = None
     block_tree: RadixBinaryTreeView[BasicBlock] | None = None
-    control_skip_storage: ReadOnlyRadixBinaryTreeStorage[int] | None = None
-    control_skip_tree: RadixBinaryTreeView[int] | None = None
     blocks: list[BasicBlock] = field(default_factory=list)
     opcode_benefit_table: OpcodeBenefitTable | None = None
 
@@ -262,46 +256,34 @@ class Module:
         return local.locals_layout_cache
 
     def build_basic_block_index(self) -> None:
-        """Extracts basic blocks and builds ReadOnlyRadixBinaryTreeStorage indexes on the loader side."""
-        from control_flow import build_control_skip_storage, extract_basic_blocks, iter_block_ops
+        """Build the immutable block and instruction indexes during loading."""
+        from control_flow import extract_basic_blocks, iter_block_ops
         from jit_scoring import score_opcodes
 
         self.opcode_benefit_table = OpcodeBenefitTable()
 
         n_imports = len(self.imports)
-        try:
-            self.control_skip_storage = build_control_skip_storage(
-                self.functions, n_imports=n_imports
-            )
-            self.control_skip_tree = (
-                self.control_skip_storage.view() if self.control_skip_storage is not None else None
-            )
-        except Exception:
-            self.control_skip_storage = None
-            self.control_skip_tree = None
-
         all_blocks: list[BasicBlock] = []
         for idx, fn in enumerate(self.functions):
             func_idx = n_imports + idx
-            try:
-                extracted = extract_basic_blocks(fn.code, func_index=func_idx)
-                for head_pc, next_pc, loops_to, frame_depth, byte_span in extracted:
-                    if byte_span > 0:
-                        opcodes = (opcode for opcode, _ in iter_block_ops(
-                            fn.code, head_pc & 0xFFFF, byte_span
-                        ))
-                        all_blocks.append(
-                            BasicBlock(
-                                head_pc=head_pc,
-                                next_pc=next_pc,
-                                loops_to=loops_to,
-                                frame_depth=frame_depth,
-                                byte_span=byte_span,
-                                jit_score=score_opcodes(opcodes, self.opcode_benefit_table),
-                            )
+            extracted = extract_basic_blocks(fn.code, func_index=func_idx)
+            for head_pc, next_pc, loops_to, frame_depth, byte_span in extracted:
+                if byte_span > 0:
+                    all_blocks.append(
+                        BasicBlock(
+                            head_pc=head_pc,
+                            next_pc=next_pc,
+                            loops_to=loops_to,
+                            frame_depth=frame_depth,
+                            byte_span=byte_span,
+                            jit_score=score_opcodes(
+                                (opcode for opcode, _ in iter_block_ops(
+                                    fn.code, head_pc & 0xFFFF, byte_span
+                                )),
+                                self.opcode_benefit_table,
+                            ),
                         )
-            except Exception:
-                continue
+                    )
 
         self.blocks = all_blocks
         if not all_blocks:
@@ -318,7 +300,7 @@ class Module:
             values=sorted_blocks,
             radix_table=radix_table,
             radix_shift=radix_shift,
-            entries=list(zip(inv_keys, sorted_blocks, strict=False)),
+            entries=tuple(zip(inv_keys, sorted_blocks, strict=False)),
         )
         self.block_tree = self.block_storage.view()
 

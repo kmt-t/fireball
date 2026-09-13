@@ -379,7 +379,7 @@ Copy-and-Patch JIT コンパイラ（`jit_compiler`）および 3 面循環キ�
 | `{DirectMappedTLB32}` | `runtime_vmmio.md` | `runtime_vmmio.md` | 20-bit VPN の 5-bit Folding XOR Hash による32エントリ Direct-Mapped TLB | Scenario 10 (TEST-INT-92) |
 | `{FlatMapView_BinarySearch}` | `system_containers.md` | `system_containers.md` | 静的ソート配列に対する $O(\log N)$ バイナリサーチ（動的割当なし） | Scenario 1, 9 (TEST-INT-01, TEST-INT-80) |
 | `{FuelExhaustion_Yield}` | `os_scheduler.md` | `os_scheduler.md` | Fuel 枯渇（トレース境界での quantum 判定）での決定論的な中断と再開 | Scenario 6 (TEST-INT-50) |
-| `{HAL_PeripheralDrivers}` | `platform_driver.md` | `platform_driver.md` | GPIO（入出力・エッジIRQ）、I2C（LM75）、SPI（EEPROM）、Timer ダミードライバ | Scenario 11 (TEST-INT-100〜TEST-INT-102) |
+| `{HAL_PeripheralDrivers}` | `platform_driver.md` | `platform_driver.md` | 標準入出力ストリーム、Timer ダミードライバ | Scenario 11 (TEST-INT-100〜TEST-INT-102) |
 | `{ISR_Safety}` | `os_coos.md` | `os_coos_test_spec.md` | ISRコンテキストとスケジューラ境界の分離——ISRはイベントキューへの記録のみ行い、run_step 開始時の割り込みドレインで初めてタスクがREADYへ遷移する | TEST-COOS-03 |
 | `{InterruptibleFlush}` | `runtime_logging.md` | `runtime_logging_test_spec.md` | flush 実行中に interrupt_pending() が真を返した時点で全フラッシュを強行せずループを抜けてスケジューラへ制御を戻す | TEST-LOG-03 |
 | `{JIT_CandidateBitmap}` | `runtime_loader.md` | `runtime_loader.md` | WASMロード時にJITコンパイル対象と判定された基本ブロックをCard単位1bitでマーキングするJIT候補ビットマップ（非候補カードでのtouchスキップ連携） | TEST-LOAD-49, TEST-LOAD-50 |

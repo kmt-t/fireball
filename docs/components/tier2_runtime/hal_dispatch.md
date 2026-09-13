@@ -10,7 +10,7 @@
 <!-- traceability: {IPCRouter} {URIAbstraction} {TypeSafeMessaging} {IPC_ZeroCopy} -->
 HAL (Hardware Abstraction Layer) は、COOS 上で稼働する独立したタスク（`hal_task`）として常駐し、物理ハードウェアおよび仮想ペリフェラルへのアクセスを抽象化して提供する。**デバイス/サービスインスタンス 1 つにつき `hal_task` インスタンス 1 つが専用に対応する**（1 タスクは正確に 1 つの物理ドライバのみを所有する）。これは IPC ルータの「1 チャネル 1 待機者」制約（`{ADR_RendezvousChannel}`）に由来する契約であり、単一の共有タスクが複数の同種デバイスインスタンス（例: 物理 UART と、別登録されたコンソール出力ストリーム）を URI 単位で振り分けることはできない——受信側チャネルの選択はロール（IPC ルータの `Role`）でのみ行われ、メッセージ内の URI 情報では行われないためである。上位層（Runtime, Debugger, Guest 等）からの直接関数呼び出しは行わず、通信はすべて IPC ルータ（`ipc_router`）を介した CSP rendezvous メッセージパッシングによって行われる。ペリフェラル・ストリーム・GPIO 等は階層型 URI（`fireball://device/<driver-type>/<instance-id>`）経由で動的にバインド・解決され、解決されたインスタンスごとに専用ロール・専用チャネル・専用 `hal_task` が対応付けられる。
 
-各 `hal_task` インスタンスは IPC ルータ（`ipc_router`）から自身が担当する 1 インスタンス宛ての WASI 0.3p ドライバ通信コマンド（`CMD_STREAM_*`, `CMD_CLOCK_*`, `CMD_GPIO_*`, `CMD_BUS_*`）を受信し、HALバッファプール（物理実体は Tier 3 の vMMIO/DYNAMIC 領域）のバッファスライス（`hal-buffer-slice`、本コンポーネントから見た不透明ハンドル）を介してゼロコピーで高速データ転送を実行する。 `{IPCRouter}` `{URIAbstraction}` `{TypeSafeMessaging}` `{IPC_ZeroCopy}`
+各 `hal_task` インスタンスは IPC ルータ（`ipc_router`）から自身が担当する 1 インスタンス宛ての WASI 0.3p ドライバ通信コマンド（`CMD_STREAM_*`, `CMD_CLOCK_*`, `CMD_GPIO_*`, `CMD_BUS_*`）を受信し、HALバッファプール（物理実体は Tier 3 の vMMIO/DYNAMIC 領域）のバッファスライス（`hal-buffer-slice`、本コンポーネントから見た不透明ハンドル）を介してゼロコピーで高速データ転送を実行する。DYNAMIC領域はマルチゲスト構成でも同時にマップできるゲストを1つに限定する。 `{IPCRouter}` `{URIAbstraction}` `{TypeSafeMessaging}` `{IPC_ZeroCopy}`
 
 ## 2. アーキテクチャ分類
 <!-- traceability: {META_3TierSeparation} {IPCRouter} {URIAbstraction} {META_StaticDI} -->
@@ -21,6 +21,15 @@ HAL (Hardware Abstraction Layer) は、COOS 上で稼働する独立したタス
 ### 3.1 データ構造
 - **デバイスレジストリ（契約）**: 階層 URI からドライバインスタンスへの解決契約。物理的なデバイス情報配列の実体は Tier 3 を正本とする。
 - **HALバッファプール（契約）**: `acquire_buffer`/`release_buffer` によって貸与される不透明ハンドル（`hal-buf-id` / `hal-buffer-slice`）の契約。物理的な固定長バッファプールの配置（vMMIO DYNAMIC 領域）は Tier 3 を正本とする。
+
+#### ドライバ登録と起動
+物理ドライバはHAL共通層へ受け付けるコマンドIDとコールバックを登録し、自身の `hal_task` を起動する。HAL共通層がUART等のデバイスを列挙したり、ドライバタスクを代理起動したりしない。
+
+| 操作 | 契約 |
+| :--- | :--- |
+| `register-command` | ドライバ固有のコマンドIDと型付きコールバックを1対1で登録する。重複IDは拒否する |
+| `start` | ドライバが登録済みコマンド表を持つ `hal_task` をCOOSへ登録する |
+| `dispatch` | 受信したコマンドIDに対応するコールバックを呼ぶ。未登録IDは処理せず拒否する |
 
 ### 3.2 内部ブロック図
 ```mermaid

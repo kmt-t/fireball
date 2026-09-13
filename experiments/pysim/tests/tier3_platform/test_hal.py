@@ -41,6 +41,7 @@ from hal_dispatch import (
     Timer,
     UartTransport,
 )
+from dummy_drivers import DummyUartDriver
 from scheduler import Scheduler
 from system import (
     System,
@@ -48,6 +49,7 @@ from system import (
 from system_containers import (
     FlatMapView,
 )
+from vmmio import TrapCode, VMMIOController, VmmioStatus
 
 
 def wat_to_wasm(wat_text: str) -> bytes:
@@ -69,7 +71,20 @@ def test_hal_01_uart_transport_is_real_pipe():
         t.close()
 
 
-def test_hal_02_timer_monotonic_ns():
+def test_hal_02_dummy_stdio_driver_streams_stdin_and_stdout():
+    driver = DummyUartDriver()
+    try:
+        assert driver.feed_stdin(b"in-1") == 4
+        assert driver.feed_stdin(b"in-2") == 4
+        assert driver.read_stdin(32) == b"in-1in-2"
+        assert driver.write_stdout(b"out-1") == 5
+        assert driver.write_stdout(b"out-2") == 5
+        assert driver.drain_stdout() == b"out-1out-2"
+    finally:
+        driver.transport.close()
+
+
+def test_hal_03_timer_monotonic_ns():
     timer = Timer()
     t1 = timer.get_now_ns()
     time.sleep(0.001)
@@ -77,11 +92,13 @@ def test_hal_02_timer_monotonic_ns():
     assert t2 > t1
 
 
-def test_hal_03_hal_buffer_pool_rejects_oversized():
+def test_hal_04_hal_buffer_pool_rejects_oversized():
     scheduler = Scheduler()
     task_id = scheduler.spawn("test_task")
     scheduler.current_task = scheduler.get_task(task_id)
-    pool = HalBufferPool(scheduler)
+    vmmio = VMMIOController(guest_ram_size=8192, scheduler=scheduler)
+    pool = HalBufferPool(scheduler, vmmio)
+    pool.bind_guest()
     try:
         try:
             pool.acquire_buffer(size=FB_CONF_HAL_BUFFER_SIZE + 1)
@@ -94,14 +111,26 @@ def test_hal_03_hal_buffer_pool_rejects_oversized():
         pool.close_all()
 
 
-def test_hal_04_hal_buffer_slice_bounds_and_ownership():
+def test_hal_05_hal_buffer_slice_bounds_and_ownership():
     scheduler = Scheduler()
     owner_id = scheduler.spawn("owner")
     other_id = scheduler.spawn("other")
     scheduler.current_task = scheduler.get_task(owner_id)
-    pool = HalBufferPool(scheduler)
+    vmmio = VMMIOController(guest_ram_size=8192, scheduler=scheduler)
+    pool = HalBufferPool(scheduler, vmmio)
+    pool.bind_guest()
     try:
+        scheduler.current_task = scheduler.get_task(other_id)
+        try:
+            pool.bind_guest()
+        except AssertionError as error:
+            assert str(error) == "HAL DYNAMIC mapping supports one guest only"
+        else:
+            raise AssertionError("expected one-guest DYNAMIC mapping assertion")
+        scheduler.current_task = scheduler.get_task(owner_id)
         h = pool.acquire_buffer(size=16)
+        status, _ = vmmio.access(h.virtual_address, is_write=False)
+        assert status == VmmioStatus.OK_PHYSICAL
         view = pool.view(h, 0, 16)
         assert len(view) == 16
         scheduler.current_task = scheduler.get_task(other_id)
@@ -110,6 +139,10 @@ def test_hal_04_hal_buffer_slice_bounds_and_ownership():
             raise AssertionError("expected HalBufferTrap: non-owner does not own handle")
         except HalBufferTrap:
             pass
+        scheduler.current_task = scheduler.get_task(owner_id)
+        pool.release_buffer(h)
+        status, _ = vmmio.access(h.virtual_address, is_write=False)
+        assert status == TrapCode.UNREGISTERED_PAGE
     finally:
         pool.close_all()
 
@@ -126,7 +159,7 @@ def test_hal_task_ipc_communication():
 
     sysv = System()
     try:
-        sysv.spawn_hal_tasks()
+        sysv.start_hal_driver(DummyUartDriver(transport=sysv.transport))
         engine = Wasi03pEngine(sysv)
         # Send command via IPC
         nwritten = engine.send_ipc_command(
@@ -144,8 +177,9 @@ def test_hal_task_ipc_communication():
 
 if __name__ == "__main__":
     test_hal_01_uart_transport_is_real_pipe()
-    test_hal_02_timer_monotonic_ns()
-    test_hal_03_hal_buffer_pool_rejects_oversized()
-    test_hal_04_hal_buffer_slice_bounds_and_ownership()
+    test_hal_02_dummy_stdio_driver_streams_stdin_and_stdout()
+    test_hal_03_timer_monotonic_ns()
+    test_hal_04_hal_buffer_pool_rejects_oversized()
+    test_hal_05_hal_buffer_slice_bounds_and_ownership()
     test_hal_task_ipc_communication()
-    print("[PASS] All 5 HAL Drivers & HalBufferPool tests passed.")
+    print("[PASS] All 6 HAL Drivers & HalBufferPool tests passed.")

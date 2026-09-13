@@ -98,12 +98,12 @@ def test_vmmio_02_fc14_shm_owner_isolation_and_flight():
 
 
 def test_vmmio_03_undefined_function_code_traps():
-    """TEST-VMMIO-03: Undefined FC (0x0..0xB, 0xD) immediately traps."""
+    """TEST-VMMIO-03: Undefined FC (0x0..0xB) immediately traps."""
     scheduler = Scheduler()
     task_id = scheduler.spawn("test_task")
     scheduler.current_task = scheduler.get_task(task_id)
     ctrl = VMMIOController(guest_ram_size=64 * 1024, scheduler=scheduler)
-    stat, _ = ctrl.access(raw_addr=0xD000_0000, is_write=False)
+    stat, _ = ctrl.access(raw_addr=0xB000_0000, is_write=False)
     assert stat == TrapCode.UNDEFINED_FC
 
 

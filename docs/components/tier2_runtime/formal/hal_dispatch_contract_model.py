@@ -17,6 +17,10 @@ def build_model(*, guards: bool = True) -> Kripke:
         "s_direct_access",
         "s_raw_pointer",
         "s_early_revoke",
+        "s_dynamic_bind_guest_a",
+        "s_dynamic_bound_guest_a",
+        "s_dynamic_bound_guest_b",
+        "s_dynamic_rejected",
     ]
     initial_states = {"s_request"}
     relations = [
@@ -29,6 +33,11 @@ def build_model(*, guards: bool = True) -> Kripke:
         ("s_direct_access", "s_direct_access"),
         ("s_raw_pointer", "s_raw_pointer"),
         ("s_early_revoke", "s_early_revoke"),
+        ("s_preflight", "s_dynamic_bind_guest_a"),
+        ("s_dynamic_bind_guest_a", "s_dynamic_bound_guest_a"),
+        ("s_dynamic_bound_guest_a", "s_dynamic_rejected"),
+        ("s_dynamic_rejected", "s_request"),
+        ("s_dynamic_bound_guest_b", "s_dynamic_bound_guest_b"),
     ]
     if not guards:
         relations = [
@@ -36,6 +45,7 @@ def build_model(*, guards: bool = True) -> Kripke:
             ("s_preflight", "s_direct_access"),
             ("s_preflight", "s_raw_pointer"),
             ("s_preflight", "s_early_revoke"),
+            ("s_dynamic_bound_guest_a", "s_dynamic_bound_guest_b"),
         ]
 
     labels = {
@@ -47,6 +57,10 @@ def build_model(*, guards: bool = True) -> Kripke:
         "s_direct_access": {"direct_access"},
         "s_raw_pointer": {"raw_pointer"},
         "s_early_revoke": {"early_revoke"},
+        "s_dynamic_bind_guest_a": {"dynamic_bind_pending"},
+        "s_dynamic_bound_guest_a": {"dynamic_bound_one_guest"},
+        "s_dynamic_bound_guest_b": {"dynamic_multi_guest"},
+        "s_dynamic_rejected": {"dynamic_bind_rejected"},
     }
     return Kripke(S=states, S0=initial_states, R=relations, L=labels)
 
@@ -76,6 +90,14 @@ def properties():
             "logic": "CTL",
             "formula": AG(Not(AtomicProposition("early_revoke"))),
             "violation": AtomicProposition("early_revoke"),
+            "expect": True,
+        },
+        {
+            "name": "dynamic_mapping_is_bound_to_one_guest",
+            "kind": "safety",
+            "logic": "CTL",
+            "formula": AG(Not(AtomicProposition("dynamic_multi_guest"))),
+            "violation": AtomicProposition("dynamic_multi_guest"),
             "expect": True,
         },
     ]

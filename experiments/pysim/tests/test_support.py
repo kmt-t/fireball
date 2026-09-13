@@ -11,7 +11,7 @@ from __future__ import annotations
 from collections.abc import Callable
 
 import wasmtime
-from runtime_engine import BasicBlock, JITTrace, TraceBlock
+from runtime_engine import BasicBlock, JITTrace
 
 
 def wat_to_wasm(wat_text: str) -> bytes:
@@ -33,5 +33,5 @@ class PcOnlyCompiler:
     def __init__(self, fn: Callable[[int], JITTrace | None]):
         self._fn = fn
 
-    def compile_trace(self, pc: int, block: BasicBlock | TraceBlock | None) -> JITTrace | None:
+    def compile_trace(self, pc: int, block: BasicBlock | None) -> JITTrace | None:
         return self._fn(pc)

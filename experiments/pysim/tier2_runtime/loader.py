@@ -15,7 +15,7 @@ Implements:
 from __future__ import annotations
 
 import struct
-from typing import TypeVar
+from typing import TypeAlias, TypeVar
 
 from system_containers import (
     FlatMapView,
@@ -305,6 +305,9 @@ class SectionView:
         self.payload_size = payload_size
 
 
+EntityPayload: TypeAlias = SectionView | GlobalEntry | tuple[int, int]
+
+
 class FunctionAccessor:
     __slots__ = ("_code_offset", "_code_size", "_rom_data", "func_idx", "type_idx", "type_sig")
 
@@ -377,7 +380,7 @@ class DecodedEntity:
         start_offset: int,
         end_offset: int,
         name_or_idx: str | int,
-        payload: bytes | object,
+        payload: EntityPayload,
     ):
         self.kind = kind  # "SECTION", "FUNCTION", "GLOBAL", "DATA"
         self.start_offset = start_offset
@@ -457,7 +460,7 @@ class ModuleView:
         start_offset: int,
         end_offset: int,
         name_or_idx: str | int,
-        payload: bytes | object,
+        payload: EntityPayload,
     ) -> DecodedEntity:
 
         entity = DecodedEntity(kind, start_offset, end_offset, name_or_idx, payload)

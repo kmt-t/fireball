@@ -174,7 +174,7 @@ class ExecutableBuffer:
 
     def function_at(
         self, offset: int, restype: type | None, argtypes: Sequence[type]
-    ) -> Callable[..., object]:
+    ) -> Callable[..., int | None]:
         self.finalize()
         func_type = ctypes.CFUNCTYPE(restype, *argtypes)
         return func_type(self.base + offset)

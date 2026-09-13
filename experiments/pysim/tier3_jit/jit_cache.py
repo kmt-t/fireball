@@ -7,17 +7,26 @@ state machine, trace descriptors, and cache residency policy.
 from __future__ import annotations
 
 import bisect
+import ctypes
 from collections.abc import Callable
+from typing import TYPE_CHECKING
 
 from config import JIT_CARD_SHIFT
 from system_containers import (
     BitView,
     MutableBitStorage,
-    RadixBinaryTreeView,
     RingBuffer,
     StaticVector,
-    bswap32,
 )
+
+if TYPE_CHECKING:
+    from execution_context import WASMContext
+
+
+NativeTraceFn = Callable[
+    [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, int], int | None
+]
+TraceArgument = ctypes.c_void_p | int | list[int]
 
 
 class CardState:
@@ -308,14 +317,14 @@ class JITTrace:
     def __init__(
         self,
         head_pc: int,
-        fn: Callable[[int, object, object, int], int] | None = None,
+        fn: NativeTraceFn | None = None,
         size_bytes: int = 64,
         next_pc: int | None = None,
         loops_to: int | None = None,
         has_return_val: bool = False,
         result_words: int = 1,
-        buf: object = None,
-        native_fn: Callable[[int, object, object, int], int] | None = None,
+        buf: ctypes.Array[ctypes.c_ubyte] | None = None,
+        native_fn: NativeTraceFn | None = None,
         raw_addr: int | None = None,
     ):
         self.head_pc = head_pc
@@ -333,7 +342,7 @@ class JITTrace:
         self._exec_buf = buf  # Keeps executable buffer alive in memory
 
     @property
-    def native_fn(self) -> Callable[..., int] | None:
+    def native_fn(self) -> NativeTraceFn | None:
         return self.fn
 
     @property
@@ -346,8 +355,8 @@ class JITTrace:
 
     def __call__(
         self,
-        ctx_or_locals: object | list[int],
-        sp_or_mem: int | object = 0,
+        ctx_or_locals: TraceArgument,
+        sp_or_mem: TraceArgument = 0,
         local_base: int = 0,
         tos: int = 0,
     ) -> int:
@@ -358,7 +367,7 @@ class JITTrace:
 
         return self.fn(ctx_or_locals, sp_or_mem, local_base, tos)
 
-    def invoke(self, ctx: object) -> int:
+    def invoke(self, ctx: WASMContext) -> int:
         """Helper to invoke trace directly on WASMContext via CPS 4-argument calling convention."""
         tos = ctx.pop() if ctx.stack else 0
         result_slot = len(ctx.stack)
@@ -462,7 +471,6 @@ class JITMultiBufferCache:
         "_fast_slots",
         "active_idx",
         "banks",
-        "control_skip_tree",
         "evictions",
         "oldest_idx",
         "on_evict",
@@ -478,7 +486,6 @@ class JITMultiBufferCache:
         self.promotions = 0
         self.evictions = 0
         self.on_evict: Callable[[list[int]], None] | None = None
-        self.control_skip_tree: RadixBinaryTreeView[int] | None = None
         # Direct-mapped 4-slot cache keyed by a repeatedly folded XOR over
         # UnifiedPC.
         self._fast_slots: list[tuple[int, JITTrace] | None] = [None] * self.NUM_FAST_SLOTS
@@ -578,12 +585,10 @@ class JITMultiBufferCache:
             self.rotate()
             if not self.active.allocate(trace):
                 return False
-        # Chain into active/warm successor if resident (never oldest, never loops_to)
+        # Chain into active/warm successor if resident (never oldest, never loops_to).
+        # BasicBlock successors are resolved by the loader, so no delimiter
+        # lookup is needed here.
         succ = trace.next_pc
-        if succ is not None and self.control_skip_tree is not None:
-            skipped = self.control_skip_tree.find(bswap32(succ))
-            if skipped is not None:
-                succ = skipped
         if succ is not None and (self.active.has_trace(succ) or self.warm.has_trace(succ)):
             trace.chain_next = succ
             self.register_chain(trace.head_pc, succ)
@@ -592,10 +597,6 @@ class JITMultiBufferCache:
             for _, resident_t in b.traces:
                 if resident_t.chain_next is None and resident_t.next_pc is not None:
                     res_succ = resident_t.next_pc
-                    if self.control_skip_tree is not None:
-                        res_skipped = self.control_skip_tree.find(bswap32(res_succ))
-                        if res_skipped is not None:
-                            res_succ = res_skipped
                     if res_succ == trace.head_pc:
                         resident_t.chain_next = trace.head_pc
                         self.register_chain(resident_t.head_pc, trace.head_pc)

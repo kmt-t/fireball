@@ -284,7 +284,7 @@ Python 製の参照シミュレータ環境（`experiments/pysim`）を用いて
 - **全 11 シナリオ**: **11/11 PASSED** (約 6.3 秒)
 - **全 18 コンポーネント 100% カバレッジ**: Tier 1 Core、Tier 1 Interface、Tier 2 Runtime、Tier 3 Platform & JIT の全コンポーネントを実動検証。
 - **完全差分検証**: 全シナリオにおいて、純粋インタープリタ実行と JIT 実行の出力がバイト単位・値単位で 100% 一致。
-- **HAL & WASI 完全スタック**: GPIO / I2C / SPI / Timer ダミードライバおよび WASI In-Memory VFS / Random / Clock が完全実動。
+- **HAL & WASI 完全スタック**: 標準入出力ストリーム / Timer ダミードライバおよび WASI In-Memory VFS / Random / Clock が完全実動。
 
 #### 参照テストランナーの実行方法
 

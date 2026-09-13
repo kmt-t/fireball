@@ -50,8 +50,11 @@ VmmioVectorHandler = Callable[[int, int, bool], int | None]
 
 # Function Codes (bits[31:28]) — see runtime_vmmio.md "アドレス分解の対応関係"
 FC_STATIC_DEVICE = 0xC  # 0xC000_0000: SYSCTL / IPCR / VDMA (Tier 2, syscall dispatch)
+FC_DYNAMIC = 0xD  # 0xD000_0000: HAL-owned bounded dynamic buffers
 FC_SHM = 0xE  # 0xE000_0000: Shared Memory (Tier 3, page-isolated via unmap)
 FC_PASSTHROUGH = 0xF  # 0xF000_0000: Physical passthrough (Tier 3)
+VMMIO_PAGE_SHIFT = 12
+VMMIO_PAGE_SIZE = 1 << VMMIO_PAGE_SHIFT
 FB_TASK_ID_INVALID = 0x00
 FB_TASK_ID_FLIGHT = 0xFF
 
@@ -217,6 +220,30 @@ class VMMIOController:
         ), "vMMIO PTE table capacity exceeded"
         self.flush_tlb_entry(vpn)
 
+    def map_dynamic_page(self, vpn: int, phys_page: int) -> None:
+        """Maps one HAL-owned page in the FC=13 DYNAMIC region."""
+        assert (vpn >> 16) == FC_DYNAMIC, "DYNAMIC VPN is outside FC=13"
+        if self.ptes.find(vpn) is not None:
+            self.ptes.remove(vpn)
+        assert self.ptes.insert(
+            vpn,
+            Tier3PTE(
+                phys_page=phys_page,
+                valid=True,
+                read=True,
+                write=True,
+                exec_=False,
+            ),
+        ), "vMMIO PTE table capacity exceeded"
+        self.flush_tlb_entry(vpn)
+
+    def unmap_dynamic_page(self, vpn: int) -> None:
+        """Unmaps one HAL-owned DYNAMIC page and invalidates its TLB entry."""
+        assert (vpn >> 16) == FC_DYNAMIC, "DYNAMIC VPN is outside FC=13"
+        if self.ptes.find(vpn) is not None:
+            self.ptes.remove(vpn)
+        self.flush_tlb_entry(vpn)
+
     def map_passthrough_page(
         self, vpn: int, phys_page: int, read: bool = True, write: bool = True
     ) -> None:
@@ -340,6 +367,7 @@ class VMMIOController:
             # Check known valid FCs for proper trap classification
             if not (
                 addr.fc() == FC_STATIC_DEVICE
+                or addr.fc() == FC_DYNAMIC
                 or addr.fc() == FC_SHM
                 or addr.fc() == FC_PASSTHROUGH
             ):

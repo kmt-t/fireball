@@ -24,7 +24,13 @@ from exec_memory import ExecutableBuffer
 from jit_abi import JIT_CONTEXT_HELPER_PTR_OFFSET, JIT_CONTEXT_WORD_BYTES
 from jit_cache import JITTrace, JITTraceHeader
 from system_containers import FlatMapView, ReadOnlyFlatMapStorage, StaticVector
-from wasm_module import WASM_LOCAL_SLOT_BYTES, WASM_VALUE_SLOT_BYTES, BasicBlock, TraceBlock
+from wasm_module import (
+    WASM_LOCAL_SLOT_BYTES,
+    WASM_VALUE_SLOT_BYTES,
+    BasicBlock,
+    TraceBlock,
+    WasmOperand,
+)
 from wasm_opcodes import (
     DROP,
     F32_ADD,
@@ -140,50 +146,57 @@ def gen_pic_prologue() -> bytes:
 
 def _make_fixed_emitter(
     stencil_bytes: bytes, depth_change: int
-) -> Callable[[bytearray, object], int]:
-    def _emitter(code: bytearray, _arg: object) -> int:
+) -> Callable[[bytearray, WasmOperand], int]:
+    def _emitter(code: bytearray, _arg: WasmOperand) -> int:
         code += stencil_bytes
         return depth_change
 
     return _emitter
 
 
-def _emit_i32_const(code: bytearray, arg: object) -> int:
+def _emit_i32_const(code: bytearray, arg: WasmOperand) -> int:
+    assert arg is not None
     emit(code, st.I32_CONST, ((st.Relocation.IMM, int(arg)),))
     return 1
 
 
-def _emit_i64_const(code: bytearray, arg: object) -> int:
+def _emit_i64_const(code: bytearray, arg: WasmOperand) -> int:
+    assert arg is not None
     emit(code, st.I64_CONST, ((st.Relocation.IMM64, int(arg) & 0xFFFF_FFFF_FFFF_FFFF),))
     return 1
 
 
-def _emit_f32_const(code: bytearray, arg: object) -> int:
+def _emit_f32_const(code: bytearray, arg: WasmOperand) -> int:
+    assert arg is not None
     emit(code, st.F32_CONST, ((st.Relocation.IMM, int(arg) & I32_MASK),))
     return 1
 
 
-def _emit_f64_const(code: bytearray, arg: object) -> int:
+def _emit_f64_const(code: bytearray, arg: WasmOperand) -> int:
+    assert arg is not None
     emit(code, st.F64_CONST, ((st.Relocation.IMM64, int(arg) & 0xFFFF_FFFF_FFFF_FFFF),))
     return 1
 
 
-def _emit_local_get(code: bytearray, arg: object) -> int:
+def _emit_local_get(code: bytearray, arg: WasmOperand) -> int:
+    assert arg is not None
     emit(code, st.LOCAL_GET, ((st.Relocation.DISP, int(arg)),))
     return 1
 
 
-def _emit_local_set(code: bytearray, arg: object) -> int:
+def _emit_local_set(code: bytearray, arg: WasmOperand) -> int:
+    assert arg is not None
     emit(code, st.LOCAL_SET, ((st.Relocation.DISP, int(arg)),))
     return -1
 
 
-def _emit_local_tee(code: bytearray, arg: object) -> int:
+def _emit_local_tee(code: bytearray, arg: WasmOperand) -> int:
+    assert arg is not None
     emit(code, st.LOCAL_TEE, ((st.Relocation.DISP, int(arg)),))
     return 0
 
 
-_EMIT_STORAGE: ReadOnlyFlatMapStorage[int, Callable[[bytearray, object], int]] = (
+_EMIT_STORAGE: ReadOnlyFlatMapStorage[int, Callable[[bytearray, WasmOperand], int]] = (
     ReadOnlyFlatMapStorage.create(
         [
             (I32_CONST, _emit_i32_const),
@@ -221,7 +234,7 @@ _EMIT_STORAGE: ReadOnlyFlatMapStorage[int, Callable[[bytearray, object], int]] =
         ]
     )
 )
-EMIT_MAP: FlatMapView[int, Callable[[bytearray, object], int]] = _EMIT_STORAGE.view()
+EMIT_MAP: FlatMapView[int, Callable[[bytearray, WasmOperand], int]] = _EMIT_STORAGE.view()
 
 def _complex_helper_info(op: int) -> tuple[int, int] | None:
     """Return the direct context-member slot and raw result width."""
@@ -358,18 +371,14 @@ class TraceCompiler:
         local_widths: tuple[int, ...] | None = None,
     ) -> JITTrace | None:
         """
-        Production entry point: derives this compile's transient `TraceBlock`
-        input from `block`'s PC metadata against the owning function's raw
-        bytecode -- `BasicBlock` itself never stores the op stream (see
-        `wasm_module.BasicBlock`). The derived ops list is discarded once
-        `compile_trace` returns; nothing here is kept past this one call.
+        Production entry point. `BasicBlock` supplies loader-computed control
+        metadata; instructions are streamed from raw bytecode.
         """
-        ops = iter_block_ops(code, block.head_pc & 0xFFFF, block.byte_span)
         return self.compile_trace(
             block.head_pc,
             TraceBlock(
                 head_pc=block.head_pc,
-                ops=ops,
+                instructions=iter_block_ops(code, block.head_pc & 0xFFFF, block.byte_span),
                 next_pc=block.next_pc,
                 loops_to=block.loops_to,
                 byte_span=block.byte_span,
@@ -385,8 +394,8 @@ class TraceCompiler:
         tail_context_helper: bool = False,
     ) -> JITTrace | None:
         """
-        Compiles a single TraceBlock op stream into a PIC native JITTrace
-        using `_EMIT_TABLE` dispatch. `block.ops` is streamed exactly once,
+        Compiles a single loader-owned BasicBlock into a PIC native JITTrace
+        using `_EMIT_TABLE` dispatch. `block.instructions` is streamed exactly once,
         never materialized into a list: `EMIT_MAP.find(op)` alone is the
         single "does this op have stencil support" signal (a `None` result
         means fall back to Tier 2 interpretation for this block) -- the
@@ -406,7 +415,7 @@ class TraceCompiler:
         result_words = 1
         saw_op = False
         local_widths = block.local_widths
-        for op, arg in block.ops:
+        for op, arg in block.instructions:
             saw_op = True
             assert helper_index is None, "a complex helper must terminate a trace"
             emitter = EMIT_MAP.find(op)

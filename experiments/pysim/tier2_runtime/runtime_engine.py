@@ -22,6 +22,7 @@ from __future__ import annotations
 import os
 import sys
 from collections.abc import Callable
+from typing import Protocol, TextIO
 
 from config import JIT_CARD_SHIFT
 from control_flow import iter_block_ops
@@ -31,11 +32,8 @@ from jit_scoring import JIT_CANDIDATE_THRESHOLD
 from recovery import Result
 from system_containers import (
     FlatMapView,
-    RadixBinaryTreeView,
     ReadOnlyFlatMapStorage,
-    ReadOnlyRadixBinaryTreeStorage,
     StaticVector,
-    bswap32,
 )
 from virq import (
     DispatchResult,
@@ -45,7 +43,7 @@ from virq import (
     VirqDispatcher,
     VirqDispatchResult,
 )
-from wasm_module import BasicBlock, Module, TraceBlock
+from wasm_module import BasicBlock, Module, TraceBlock, WasmOperand
 from wasm_opcodes import (
     I32_ADD,
     I32_CONST,
@@ -62,6 +60,21 @@ except ImportError:
     # Optional accelerator (see tier3_jit/native_trace_call.pyx and build scripts):
     # not built -- _invoke_trace falls back to the ctypes.CFUNCTYPE path below.
     _native_trace_call = None
+
+
+class _JitCompiler(Protocol):
+    def compile_trace(self, head_pc: int, block: TraceBlock | None) -> JITTrace | None: ...
+
+
+class _Debugger(Protocol):
+    halted: bool
+    stop_signal: int
+
+    def has_breakpoint(self, pc: int) -> bool: ...
+
+    def sample_pc(self, pc: int) -> None: ...
+
+    def verify_assertions(self, memory: bytearray) -> None: ...
 
 from tier3_jit.jit_cache import (
     _CARD_STATE_NAMES,
@@ -101,7 +114,6 @@ class RuntimeEngine:
         "candidate_threshold",
         "compile_queue",
         "compile_queue_capacity",
-        "control_skip_tree",
         "debug",
         "exec_counter",
         "jit_compiler",
@@ -118,7 +130,7 @@ class RuntimeEngine:
 
     def __init__(
         self,
-        jit_compiler: object | None = None,
+        jit_compiler: _JitCompiler | None = None,
         yield_threshold: int = 16,
         card_shift: int = JIT_CARD_SHIFT,
         min_trace_bytes: int | None = None,
@@ -147,7 +159,6 @@ class RuntimeEngine:
         self.compile_queue: StaticVector[int] = StaticVector(capacity=compile_queue_capacity)
         self.module: Module | None = None
         self._fast_block_slots: list[tuple[int, BasicBlock | None] | None] = [None] * 16
-        self.control_skip_tree: RadixBinaryTreeView[int] | None = None
         self.yield_threshold = yield_threshold
         self.exec_counter = 0
         # A card's 2-bit state can only ever describe ONE block: if two
@@ -191,24 +202,20 @@ class RuntimeEngine:
         return blk
 
     def resolve_trace_block(self, pc: int) -> TraceBlock | None:
-        """
-        Builds this compile's transient `TraceBlock` from the persisted
-        `BasicBlock`'s PC metadata plus the owning function's raw bytecode --
-        `BasicBlock` itself never stores the op stream (see
-        `wasm_module.BasicBlock`); `self.blocks` here only ever comes from a
-        real parsed `Module` (`register_module_blocks`), so `self.module` is
-        always available whenever `get_block` finds something.
-        """
+        """Creates a transient iterator over raw bytecode for one consumer."""
         block = self.get_block(pc)
         if block is None or self.module is None:
             return None
-        code = self.module.code_for(pc >> 16)
-        function = self.module.functions[(pc >> 16) - len(self.module.imports)]
+        function_index = pc >> 16
+        function = self.module.functions[function_index - len(self.module.imports)]
         assert function.local_widths_cache is not None
-        ops = iter_block_ops(code, pc & 0xFFFF, block.byte_span)
         return TraceBlock(
             head_pc=pc,
-            ops=ops,
+            instructions=iter_block_ops(
+                self.module.code_for(function_index), pc & 0xFFFF, block.byte_span
+            ),
+            code=self.module.code_for(function_index),
+            head_offset=pc & 0xFFFF,
             next_pc=block.next_pc,
             loops_to=block.loops_to,
             byte_span=block.byte_span,
@@ -216,13 +223,11 @@ class RuntimeEngine:
         )
 
     def register_module_blocks(self, module: Module) -> None:
-        """Binds loader-owned basic blocks and control skip Radix tree from a parsed WASM Module."""
+        """Binds the loader-owned immutable block index."""
         if module.block_tree is None:
             module.build_basic_block_index()
         self.module = module
         self._virq = VirqDispatcher(module, self._invoke_virq)
-        self.control_skip_tree = module.control_skip_tree
-        self.cache.control_skip_tree = module.control_skip_tree
         self._fast_block_slots = [None] * 16
         # `next_pc is not None and byte_span >= min_trace_bytes` is a pure
         # function of static BasicBlock properties + this engine's own
@@ -326,6 +331,8 @@ class RuntimeEngine:
             trace = None
             if self.jit_compiler is not None:
                 trace_block = self.resolve_trace_block(pc)
+                if self.module is not None:
+                    assert trace_block is not None
                 trace = self.jit_compiler.compile_trace(pc, trace_block)
 
             if trace is not None and self.cache.insert(trace):
@@ -351,7 +358,7 @@ class RuntimeEngine:
             for _, t in bank.traces:
                 t.exec_count = 0
 
-    def dump_internal_state(self, file: object | None = None) -> str:
+    def dump_internal_state(self, file: TextIO | None = None) -> str:
         """
         Dumps runtime internal state including execution stats, JIT cache banks,
         and chaining diagnostics for all compiled traces.
@@ -447,22 +454,16 @@ class RuntimeEngine:
                         diag = "[UNLINKED] Function Return / Terminal block"
                     else:
                         succ = t.next_pc
-                        skipped_note = ""
-                        if self.control_skip_tree is not None:
-                            skipped = self.control_skip_tree.find(bswap32(succ))
-                            if skipped is not None:
-                                skipped_note = f" (skipped to 0x{skipped:04X})"
-                                succ = skipped
                         target_trace = self.cache.find_trace(succ)
                         if target_trace is not None:
                             t_bank = self.cache.find_bank(succ)
                             if t_bank is self.cache.oldest:
                                 diag = f"[UNLINKED] Target 0x{succ:04X} in Oldest bank (prohibited)"
                             else:
-                                diag = f"[UNLINKED] Target 0x{succ:04X} resident{skipped_note} but unlinked"
+                                diag = f"[UNLINKED] Target 0x{succ:04X} resident but unlinked"
                         else:
                             if not self.trackable.is_marked(succ):
-                                diag = f"[UNLINKED] Target 0x{succ:04X} uncompilable (unsupported stencil / non-trackable){skipped_note}"
+                                diag = f"[UNLINKED] Target 0x{succ:04X} uncompilable (unsupported stencil / non-trackable)"
                             else:
                                 st = self.bitmap.get_state(succ)
                                 st_name = (
@@ -470,7 +471,7 @@ class RuntimeEngine:
                                     if 0 <= st < len(_CARD_STATE_NAMES)
                                     else f"STATE_{st}"
                                 )
-                                diag = f"[UNLINKED] Target 0x{succ:04X} not compiled ({st_name}){skipped_note}"
+                                diag = f"[UNLINKED] Target 0x{succ:04X} not compiled ({st_name})"
 
                 lines.append(
                     f"  {bname:<7} {h_pc_str:<10} {n_pc_str:<10} {l_pc_str:<10} {c_pc_str:<10} {execs:<8,d} {diag}"
@@ -505,11 +506,8 @@ class RuntimeEngine:
 
         output_str = "\n".join(lines) + "\n"
         target_file = file if file is not None else sys.stderr
-        try:
-            target_file.write(output_str)  # type: ignore[union-attr]
-            target_file.flush()  # type: ignore[union-attr]
-        except (AttributeError, TypeError):
-            pass
+        target_file.write(output_str)
+        target_file.flush()
         return output_str
 
     def run(
@@ -658,39 +656,43 @@ class RuntimeEngine:
         return call_state
 
 
-def _interp_i32_const(ctx: WASMContext, arg: object) -> None:
-    ctx.push(int(arg))  # type: ignore[arg-type]
+def _interp_i32_const(ctx: WASMContext, arg: WasmOperand) -> None:
+    assert arg is not None
+    ctx.push(arg)
 
 
-def _interp_i32_add(ctx: WASMContext, _arg: object) -> None:
+def _interp_i32_add(ctx: WASMContext, _arg: WasmOperand) -> None:
     b, a = ctx.pop(), ctx.pop()
     ctx.push((a + b) & 0xFFFF_FFFF)
 
 
-def _interp_i32_sub(ctx: WASMContext, _arg: object) -> None:
+def _interp_i32_sub(ctx: WASMContext, _arg: WasmOperand) -> None:
     b, a = ctx.pop(), ctx.pop()
     ctx.push((a - b) & 0xFFFF_FFFF)
 
 
-def _interp_i32_mul(ctx: WASMContext, _arg: object) -> None:
+def _interp_i32_mul(ctx: WASMContext, _arg: WasmOperand) -> None:
     b, a = ctx.pop(), ctx.pop()
     ctx.push((a * b) & 0xFFFF_FFFF)
 
 
-def _interp_local_get(ctx: WASMContext, arg: object) -> None:
-    ctx.push(ctx.locals[arg])  # type: ignore[index]
+def _interp_local_get(ctx: WASMContext, arg: WasmOperand) -> None:
+    assert arg is not None
+    ctx.push(ctx.locals[arg])
 
 
-def _interp_local_set(ctx: WASMContext, arg: object) -> None:
-    ctx.locals[arg] = ctx.pop()  # type: ignore[index]
+def _interp_local_set(ctx: WASMContext, arg: WasmOperand) -> None:
+    assert arg is not None
+    ctx.locals[arg] = ctx.pop()
 
 
-def _interp_local_tee(ctx: WASMContext, arg: object) -> None:
+def _interp_local_tee(ctx: WASMContext, arg: WasmOperand) -> None:
+    assert arg is not None
     val = ctx.stack[-1] & 0xFFFF_FFFF if ctx.stack else 0
-    ctx.locals[arg] = val  # type: ignore[index]
+    ctx.locals[arg] = val
 
 
-_INTERP_BLOCK_STORAGE: ReadOnlyFlatMapStorage[int, Callable[[WASMContext, object], None]] = (
+_INTERP_BLOCK_STORAGE: ReadOnlyFlatMapStorage[int, Callable[[WASMContext, WasmOperand], None]] = (
     ReadOnlyFlatMapStorage.create(
         [
             (I32_CONST, _interp_i32_const),
@@ -703,7 +705,7 @@ _INTERP_BLOCK_STORAGE: ReadOnlyFlatMapStorage[int, Callable[[WASMContext, object
         ]
     )
 )
-_INTERP_BLOCK_MAP: FlatMapView[int, Callable[[WASMContext, object], None]] = (
+_INTERP_BLOCK_MAP: FlatMapView[int, Callable[[WASMContext, WasmOperand], None]] = (
     _INTERP_BLOCK_STORAGE.view()
 )
 
@@ -724,8 +726,6 @@ class IntegratedHybridEngine:
         "compile_queue",
         "compile_queue_capacity",
         "compiler",
-        "control_skip_storage",
-        "control_skip_tree",
         "debugger",
         "exec_counter",
         "history",
@@ -742,7 +742,7 @@ class IntegratedHybridEngine:
         self,
         yield_threshold: int = 4,
         card_shift: int = JIT_CARD_SHIFT,
-        compiler: object | None = None,
+        compiler: _JitCompiler | None = None,
         min_trace_bytes: int | None = None,
         candidate_threshold: int = JIT_CANDIDATE_THRESHOLD,
         compile_queue_capacity: int = 4,
@@ -768,15 +768,13 @@ class IntegratedHybridEngine:
         # away, so no two tracked blocks can ever land on the same card.
         self.min_trace_bytes = min_trace_bytes if min_trace_bytes is not None else (1 << card_shift)
         self.blocks: list[tuple[int, BasicBlock]] = []  # Flat slot list instead of dynamic dict
-        self.control_skip_storage: ReadOnlyRadixBinaryTreeStorage[int] | None = None
-        self.control_skip_tree: RadixBinaryTreeView[int] | None = None
         self.interp_blocks = 0
         self.jit_traces = 0
         self.compilations = 0
         self.yields = 0
         # Handler table dispatch pointer ({DebuggerLabelTableSwitch})
         # Default is normal zero-overhead handler table.
-        self.debugger: object | None = None
+        self.debugger: _Debugger | None = None
         self._dispatch = self._dispatch_normal
         self.cache.on_evict = lambda pcs: [self.bitmap.mark_evicted(pc) for pc in pcs]
 
@@ -793,9 +791,6 @@ class IntegratedHybridEngine:
         if module.block_tree is None:
             module.build_basic_block_index()
         self.module = module
-        self.control_skip_storage = module.control_skip_storage
-        self.control_skip_tree = module.control_skip_tree
-        self.cache.control_skip_tree = module.control_skip_tree
         self.blocks = [(b.head_pc, b) for b in module.blocks]
         self.trackable.clear()
         for b in module.blocks:
@@ -810,7 +805,7 @@ class IntegratedHybridEngine:
     def handler_table(self) -> str:
         return "debug" if self._dispatch == self._dispatch_debug else "normal"
 
-    def attach_debugger(self, debugger: object) -> None:
+    def attach_debugger(self, debugger: _Debugger) -> None:
         """Switches handler table pointer to debug dispatch with ZERO per-step overhead in normal mode ({DebuggerLabelTableSwitch})."""
         self.debugger = debugger
         self._dispatch = self._dispatch_debug
@@ -831,6 +826,28 @@ class IntegratedHybridEngine:
             if b_pc == pc:
                 return block
         return None
+
+    def resolve_trace_block(self, pc: int, block: BasicBlock | None = None) -> TraceBlock | None:
+        """Creates a transient iterator over raw bytecode for one consumer."""
+        if block is None:
+            block = self.get_block(pc)
+        if block is None or self.module is None:
+            return None
+        function_index = pc >> 16
+        function = self.module.functions[function_index - len(self.module.imports)]
+        assert function.local_widths_cache is not None
+        return TraceBlock(
+            head_pc=pc,
+            instructions=iter_block_ops(
+                self.module.code_for(function_index), pc & 0xFFFF, block.byte_span
+            ),
+            code=self.module.code_for(function_index),
+            head_offset=pc & 0xFFFF,
+            next_pc=block.next_pc,
+            loops_to=block.loops_to,
+            byte_span=block.byte_span,
+            local_widths=function.local_widths_cache,
+        )
 
     def on_yield(self) -> None:
         """Promotes HOT cards in history ring to LIFO compile queue."""
@@ -853,8 +870,8 @@ class IntegratedHybridEngine:
                 self.bitmap.mark_compiled(head_pc)
                 continue
             trace_block = self.resolve_trace_block(head_pc)
-            if trace_block is None:
-                continue
+            if self.module is not None:
+                assert trace_block is not None
             trace = self.compiler.compile_trace(head_pc, trace_block)
             if trace is not None:
                 self.cache.insert(trace)
@@ -863,42 +880,10 @@ class IntegratedHybridEngine:
                 compiled += 1
         return compiled
 
-    def resolve_trace_block(self, pc: int, block: BasicBlock | None = None) -> TraceBlock | None:
-        """
-        Builds this compile/interpret call's transient `TraceBlock` from the
-        persisted `BasicBlock`'s PC metadata plus the owning function's raw
-        bytecode -- `BasicBlock` itself never stores the op stream (see
-        `wasm_module.BasicBlock`). Decoded fresh every call, never cached:
-        matches `interpreter.py`'s direct-bytecode dispatch, which redecodes
-        LEB128 operands on every step rather than persisting `Instr` objects.
-        `block`, when the caller already has it (`_interpret_block`'s hot
-        dispatch path), skips this engine's uncached `get_block` -- unlike
-        `RuntimeEngine.get_block`, this one has no `_fast_block_slots` cache,
-        so re-deriving `block` from `pc` here would redo a full Radix tree
-        search on every single non-JIT block dispatch.
-        """
-        if block is None:
-            block = self.get_block(pc)
-        if block is None or self.module is None:
-            return None
-        code = self.module.code_for(pc >> 16)
-        function = self.module.functions[(pc >> 16) - len(self.module.imports)]
-        assert function.local_widths_cache is not None
-        ops = iter_block_ops(code, pc & 0xFFFF, block.byte_span)
-        return TraceBlock(
-            head_pc=pc,
-            ops=ops,
-            next_pc=block.next_pc,
-            loops_to=block.loops_to,
-            byte_span=block.byte_span,
-            local_widths=function.local_widths_cache,
-        )
-
     def _interpret_block(self, block: BasicBlock, ctx: WASMContext) -> None:
-        trace_block = self.resolve_trace_block(block.head_pc, block=block)
-        if trace_block is None:
-            return
-        for op, arg in trace_block.ops:
+        trace_block = self.resolve_trace_block(block.head_pc, block)
+        assert trace_block is not None
+        for op, arg in trace_block.instructions:
             handler = _INTERP_BLOCK_MAP.find(op)
             if handler is not None:
                 handler(ctx, arg)
@@ -914,10 +899,6 @@ class IntegratedHybridEngine:
             target = block.loops_to if cond != 0 else block.next_pc
         else:
             target = block.next_pc
-        if target is not None and self.control_skip_tree is not None:
-            skipped = self.control_skip_tree.find(bswap32(target))
-            if skipped is not None:
-                return skipped
         return target
 
     def run_block_interpret(self, block: BasicBlock, ctx: WASMContext) -> int | None:

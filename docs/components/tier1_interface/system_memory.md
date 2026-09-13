@@ -22,7 +22,7 @@
 
 ## 2. アーキテクチャ分類
 <!-- traceability: {META_3TierSeparation} -->
-本コンポーネントは **Tier 1 Interface (独立インターフェイス契約: Independent Interface Contract)** に属し、システム全体の5プール貸与ポリシーおよび独立ヒープ不変条件を定義する抽象契約を担当する。実装（`system_allocator`/`shm_allocator`/`bump_allocator`等）は Tier 2 の [`runtime_memory.md`](docs/components/tier2_runtime/runtime_memory.md) が担う。 `{META_3TierSeparation}`
+本コンポーネントは **Tier 1 Interface (独立インターフェース契約: Independent Interface Contract)** に属し、システム全体の5プール貸与ポリシーおよび独立ヒープ不変条件を定義する抽象契約を担当する。実装（`system_allocator`/`shm_allocator`/`bump_allocator`等）は Tier 2 の [`runtime_memory.md`](docs/components/tier2_runtime/runtime_memory.md) が担う。 `{META_3TierSeparation}`
 
 ## 3. 静的モデル
 

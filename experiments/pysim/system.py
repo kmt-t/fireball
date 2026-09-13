@@ -39,7 +39,7 @@ from ipc_router import (
 if TYPE_CHECKING:
     from debugger import DebuggerManager
     from gdb_server import GDBServer
-    from hal_dispatch import HalTask
+    from hal_dispatch import HalDriver, HalTask
     from interpreter import BasicBlock, WASMContext
     from wasi import WasiHostContext
 
@@ -118,6 +118,7 @@ class WasiErrno(IntEnum):
     BADF = 8
     FAULT = 21
     INVAL = 28
+    IO = 29
     NOENT = 44
     NOMEM = 48
     NOSYS = 52
@@ -221,12 +222,12 @@ class System:
         self.logger = Logger(self.transport, self.dictionary, min_level=LogLevel.DEBUG)
         self.console = ConsoleOutput(self.transport)
         self.scheduler = Scheduler(logger=self.logger)
-        self.pool = HalBufferPool(self.scheduler)
         # --- vMMIO: real FlatMap+TLB dispatch, this file's own register/byte
         # storage behind it (vmmio_concept.access() deliberately stops at the
         # dispatch decision -- see its module docstring -- it carries no
         # value/buffer of its own).
         self.vmmio = VMMIOController(guest_ram_size=FB_CONF_GUEST_RAM_SIZE, scheduler=self.scheduler)
+        self.pool = HalBufferPool(self.scheduler, self.vmmio)
         self.sysctl_regs = bytearray(0x30)
         self.ipcr_regs = bytearray(0x10)
         self.vdma_regs = bytearray(0x10)
@@ -443,6 +444,7 @@ class System:
         assert task.role == role, "Guest binding role must match the current scheduler task"
         self.scheduler.current_task = task
         self._bound_guest_task = task
+        self.pool.bind_guest()
 
     # --- fireball_call ------------------------------------------------
     def fireball_call(
@@ -472,11 +474,10 @@ class System:
 
     # --- guest memory (fb_offset_t resolution) -------------------------
     def _guest_ram_ok(self, offset: int, length: int) -> bool:
-        return (
-            self._guest_memory is not None
-            and 0 <= offset
-            and offset + length <= len(self._guest_memory)
-        )
+        if self._guest_memory is None or offset < 0 or length < 0:
+            return False
+        memory_length = len(self._guest_memory)
+        return offset <= memory_length and length <= memory_length - offset
 
     def _read_guest(self, offset: int, length: int) -> bytes | None:
         if not self._guest_ram_ok(offset, length):
@@ -795,17 +796,31 @@ class System:
             res = self.wasi_context.fd_write(fd, iovs_ptr, iovs_len, nwritten_ptr)
             return WasiErrno(res) if res in WasiErrno._value2member_map_ else WasiErrno.SUCCESS
 
-        if fd not in (1, 2):
+        if fd != 1 and fd != 2:
             return WasiErrno.BADF
+
+        if iovs_len < 0 or not self._guest_ram_ok(nwritten_ptr, 4):
+            return WasiErrno.FAULT
+        if not self._guest_ram_ok(iovs_ptr, iovs_len * 8):
+            return WasiErrno.FAULT
+
+        # Validate the complete scatter/gather vector before producing output.
+        # This prevents a valid early iovec from being visible when a later
+        # iovec is malformed.
+        for i in range(iovs_len):
+            iov = self._read_guest(iovs_ptr + i * 8, 8)
+            assert iov is not None
+            buf, buf_len = struct.unpack("<II", iov)
+            if not self._guest_ram_ok(buf, buf_len):
+                return WasiErrno.FAULT
+
         total = 0
         for i in range(iovs_len):
             iov = self._read_guest(iovs_ptr + i * 8, 8)
-            if iov is None:
-                return WasiErrno.FAULT
+            assert iov is not None
             buf, buf_len = struct.unpack("<II", iov)
             data = self._read_guest(buf, buf_len)
-            if data is None:
-                return WasiErrno.FAULT
+            assert data is not None
             self.console.write(data)
             total += len(data)
 
@@ -842,46 +857,16 @@ class System:
             return WasiErrno.FAULT
         return WasiErrno.SUCCESS
 
-    def spawn_hal_tasks(self) -> MutableFlatMapStorage[int, int]:
-        """Spawns one dedicated COOS task per HAL device/service instance
-        (hal_dispatch.md). Each instance's URI resolves to its own Role and
-        therefore its own CSP channel (ipc_router.md "1 channel = 1 waiter"),
-        so one shared task could not tell two same-type instances apart --
-        HAL communicates strictly via IPC, never raw direct method calls.
-        """
-        if self._hal_task_ids:
-            return self._hal_task_ids
-
-        from hal_dispatch import (
-            DummyBusDriver,
-            DummyGpioDriver,
-            DummyTimerDriver,
-            DummyUartDriver,
-            HalError,
-            HalTask,
-        )
-
-        self.hal_drivers = (
-            DummyUartDriver("fireball://device/uart/0", transport=self.transport),
-            DummyUartDriver("fireball://service/stdout/0", transport=self.transport),
-            DummyGpioDriver("fireball://device/gpio/0"),
-            DummyTimerDriver("fireball://device/timer/0"),
-            DummyBusDriver("fireball://device/i2c/0"),
-            DummyBusDriver("fireball://device/spi/0"),
-        )
-        for driver in self.hal_drivers:
-            desc = self.ipc.find_service(driver.uri)
-            if desc is None:
-                raise HalError(f"HAL driver URI not registered in IPC router: {driver.uri}")
-            task = HalTask(self.ipc, driver)
-            uri_key = fnv1a_32(driver.uri)
-            if uri_key in self.hal_tasks:
-                raise HalError(f"HAL driver URI hash collision: {driver.uri}")
-            self.hal_tasks.insert(uri_key, task)
-            self._hal_task_ids.insert(
-                uri_key, self.scheduler.spawn(f"hal_task[{driver.uri}]", task.run(), role=desc.role)
-            )
-        return self._hal_task_ids
+    def start_hal_driver(self, driver: HalDriver) -> int:
+        """Registers and starts one driver-owned HAL device task."""
+        desc = self.ipc.find_service(driver.uri)
+        assert desc is not None, f"HAL driver URI not registered: {driver.uri}"
+        uri_key = fnv1a_32(driver.uri)
+        assert self.hal_tasks.find(uri_key) is None, f"duplicate HAL driver URI: {driver.uri}"
+        task_id, task = driver.start(self.ipc, self.scheduler, desc.role)
+        assert self.hal_tasks.insert(uri_key, task)
+        assert self._hal_task_ids.insert(uri_key, task_id)
+        return task_id
 
     def hal_task_for(self, uri: str) -> HalTask | None:
         """Returns the dedicated HalTask instance bound to `uri`, if spawned."""

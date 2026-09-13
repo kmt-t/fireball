@@ -10,8 +10,9 @@ import ctypes
 from collections.abc import Callable
 
 from jit_cache import JITTrace
-from system_containers import FlatMapView, ReadOnlyFlatMapStorage, StaticVector
-from wasm_module import WASM_LOCAL_SLOT_WORDS, TraceBlock
+from system_containers import FlatMapView, ReadOnlyFlatMapStorage
+from wasm_module import WASM_LOCAL_SLOT_WORDS, TraceBlock, WasmOperand
+from control_flow import iter_block_ops
 from wasm_opcodes import (
     I32_ADD,
     I32_CONST,
@@ -23,43 +24,50 @@ from wasm_opcodes import (
 )
 
 
-def _emu_i32_const(stk: list[int], _arr: object, arg: object) -> None:
-    stk.append(int(arg))  # type: ignore[arg-type]
+NativeLocals = ctypes.POINTER(ctypes.c_uint32) | None
 
 
-def _emu_i32_add(stk: list[int], _arr: object, _arg: object) -> None:
+def _emu_i32_const(stk: list[int], _arr: NativeLocals, arg: WasmOperand) -> None:
+    assert arg is not None
+    stk.append(arg)
+
+
+def _emu_i32_add(stk: list[int], _arr: NativeLocals, _arg: WasmOperand) -> None:
     b, a = stk.pop(), stk.pop()
     stk.append((a + b) & 0xFFFF_FFFF)
 
 
-def _emu_i32_sub(stk: list[int], _arr: object, _arg: object) -> None:
+def _emu_i32_sub(stk: list[int], _arr: NativeLocals, _arg: WasmOperand) -> None:
     b, a = stk.pop(), stk.pop()
     stk.append((a - b) & 0xFFFF_FFFF)
 
 
-def _emu_i32_mul(stk: list[int], _arr: object, _arg: object) -> None:
+def _emu_i32_mul(stk: list[int], _arr: NativeLocals, _arg: WasmOperand) -> None:
     b, a = stk.pop(), stk.pop()
     stk.append((a * b) & 0xFFFF_FFFF)
 
 
-def _emu_local_get(stk: list[int], arr: object, arg: object) -> None:
-    index = int(arg) * WASM_LOCAL_SLOT_WORDS
-    stk.append((arr[index] if arr else 0) & 0xFFFF_FFFF)  # type: ignore[index]
+def _emu_local_get(stk: list[int], arr: NativeLocals, arg: WasmOperand) -> None:
+    assert arg is not None
+    index = arg * WASM_LOCAL_SLOT_WORDS
+    stk.append((arr[index] if arr else 0) & 0xFFFF_FFFF)
 
 
-def _emu_local_set(stk: list[int], arr: object, arg: object) -> None:
+def _emu_local_set(stk: list[int], arr: NativeLocals, arg: WasmOperand) -> None:
+    assert arg is not None
     val = stk.pop() & 0xFFFF_FFFF
     if arr:
-        arr[int(arg) * WASM_LOCAL_SLOT_WORDS] = val  # type: ignore[index]
+        arr[arg * WASM_LOCAL_SLOT_WORDS] = val
 
 
-def _emu_local_tee(stk: list[int], arr: object, arg: object) -> None:
+def _emu_local_tee(stk: list[int], arr: NativeLocals, arg: WasmOperand) -> None:
+    assert arg is not None
     val = stk[-1] & 0xFFFF_FFFF if stk else 0
     if arr:
-        arr[int(arg) * WASM_LOCAL_SLOT_WORDS] = val  # type: ignore[index]
+        arr[arg * WASM_LOCAL_SLOT_WORDS] = val
 
 
-_EMU_TRACE_STORAGE: ReadOnlyFlatMapStorage[int, Callable[[list[int], object, object], None]] = (
+_EMU_TRACE_STORAGE: ReadOnlyFlatMapStorage[int, Callable[[list[int], NativeLocals, WasmOperand], None]] = (
     ReadOnlyFlatMapStorage.create(
         [
             (I32_CONST, _emu_i32_const),
@@ -72,37 +80,31 @@ _EMU_TRACE_STORAGE: ReadOnlyFlatMapStorage[int, Callable[[list[int], object, obj
         ]
     )
 )
-_EMU_TRACE_MAP: FlatMapView[int, Callable[[list[int], object, object], None]] = (
+_EMU_TRACE_MAP: FlatMapView[int, Callable[[list[int], NativeLocals, WasmOperand], None]] = (
     _EMU_TRACE_STORAGE.view()
 )
 
 
 class WASMTraceCompiler:
-    """Compiles a TraceBlock op stream into a fast callable native JITTrace using table dispatch."""
+    """Compiles a loader-owned BasicBlock into a callable native JITTrace."""
 
     __slots__ = ()
 
     def compile_trace(self, head_pc: int, block: TraceBlock) -> JITTrace | None:
-        # `ops` outlives this call, captured by `trace_fn` below for every
-        # future invocation of the returned JITTrace, so it needs a fixed
-        # capacity: `block.byte_span` (each op is at least 1 byte, so it can
-        # never hold more ops than that).
-        ops: StaticVector[tuple[int, object]] = StaticVector(capacity=block.byte_span)
-        for op, arg in block.ops:
-            if not ops.push_back((op, arg)):
-                return None
-        has_ret = any(
-            op == I32_CONST or op == I32_ADD or op == I32_SUB or op == I32_MUL for op, _ in ops
-        )
+        assert block.code is not None
+        has_ret = False
+        for op, _arg in iter_block_ops(block.code, block.head_offset, block.byte_span):
+            if op == I32_CONST or op == I32_ADD or op == I32_SUB or op == I32_MUL:
+                has_ret = True
 
-        def trace_fn(ctx: object, sp: object, local_base: object, tos: int) -> None:
+        def trace_fn(ctx: int, sp: int, local_base: int, tos: int) -> None:
             # Emulated handler matching CPS 4-argument C signature (ctx, sp, local_base, tos).
             # A trace's residual value is VM operand-stack state, not a C return
             # value ({ExecutionContext_Layout}): written to `sp` (mirroring
             # x64_jit.py's SPILL_RESULT_TO_SP) instead of returned.
             c_arr = ctypes.cast(local_base, ctypes.POINTER(ctypes.c_uint32)) if local_base else None
             stk: list[int] = [tos] if tos else []
-            for op, arg in ops:
+            for op, arg in iter_block_ops(block.code, block.head_offset, block.byte_span):
                 handler = _EMU_TRACE_MAP.find(op)
                 if handler is not None:
                     handler(stk, c_arr, arg)
@@ -119,7 +121,7 @@ class WASMTraceCompiler:
         trace = JITTrace(
             head_pc=head_pc,
             fn=c_fn,
-            size_bytes=len(ops) * 4,
+            size_bytes=block.byte_span * 4,
             next_pc=block.next_pc,
             loops_to=block.loops_to,
             has_return_val=has_ret,

@@ -5,20 +5,15 @@ Integration Scenario 12: WASI 0.3p Hierarchical URI Resolver, IPC Driver Command
 Tests:
 1. Hierarchical IPC URI interface resolution via `resolver.get-interface`:
    - "fireball://device/uart/0" (UART character stream via HAL buffer pool)
-   - "fireball://device/gpio/0" (Fast-path GPIO trigger)
    - "fireball://device/timer/0" (Monotonic hardware timer)
-   - "fireball://device/i2c/0" (I2C bus master/slave zero-copy)
-   - "fireball://device/spi/0" (SPI bus master/slave zero-copy)
    - "fireball://service/stdout/0" (Console standard output)
    - "fireball://service/logger/0" (System logger)
    - Standard WASI 0.3p aliases ("wasi:io/streams@0.3.0", "wasi:clocks/monotonic-clock@0.3.0")
 2. Driver Capability Query Protocol (`CMD_QUERY_CAPS` = 0x00):
-   - Querying supported / unsupported commands on UART, GPIO, Timer, Bus drivers.
+   - Querying supported / unsupported commands on standard I/O and Timer drivers.
 3. WASI 0.3p IPC Driver Command Protocol dispatching via `dispatch_command`:
    - Stream: `CMD_STREAM_WRITE_BUFFER`
    - Clock: `CMD_CLOCK_GET_NOW`
-   - GPIO: `CMD_GPIO_SET_PIN`
-   - Bus: `CMD_BUS_TRANSFER_BUFFER`
 4. WASI 0.1p (`wasi_snapshot_preview1`) adapter delegating to WASI 0.3p buffer-pool streams and clocks
 """
 
@@ -48,14 +43,9 @@ from hal_dispatch import (
     ARG_BUFFER_HANDLE,
     ARG_LENGTH,
     ARG_OFFSET,
-    ARG_PIN_NO,
     ARG_QUERY_CMD_ID,
-    ARG_VAL,
-    DummyBusDriver,
-    DummyGpioDriver,
-    DummyTimerDriver,
-    DummyUartDriver,
 )
+from dummy_drivers import DummyTimerDriver, DummyUartDriver
 from system import System
 from system_containers import FlatMapView
 from wasi import Wasi03pEngine, WasiHostContext, WasiIpcCmd
@@ -63,7 +53,7 @@ from wasi import Wasi03pEngine, WasiHostContext, WasiIpcCmd
 _EMPTY_PARAMS = FlatMapView(())
 
 
-def _params(*pairs: tuple[int, object]) -> FlatMapView:
+def _params(*pairs: tuple[int, int]) -> FlatMapView:
     """Builds a params FlatMapView from packed (key, value) pairs, matching
     hal_dispatch.md §5.1's control(id, cmd, params: ipc-message)."""
     sorted_pairs = sorted(pairs, key=lambda kv: kv[0])
@@ -80,10 +70,7 @@ def test_wasi03p_hierarchical_uri_and_ipc_commands():
     # 1. Test Hierarchical IPC URIs Resolution
     hierarchical_uris = [
         "fireball://device/uart/0",
-        "fireball://device/gpio/0",
         "fireball://device/timer/0",
-        "fireball://device/i2c/0",
-        "fireball://device/spi/0",
         "fireball://service/stdout/0",
         "fireball://service/logger/0",
         "wasi:clocks/monotonic-clock@0.3.0",
@@ -104,27 +91,7 @@ def test_wasi03p_hierarchical_uri_and_ipc_commands():
         WasiIpcCmd.QUERY_CAPS,
         _params((ARG_QUERY_CMD_ID, WasiIpcCmd.STREAM_WRITE_BUFFER)),
     )
-    uart_supports_gpio = engine.dispatch_command(
-        "fireball://device/uart/0",
-        WasiIpcCmd.QUERY_CAPS,
-        _params((ARG_QUERY_CMD_ID, WasiIpcCmd.GPIO_SET_PIN)),
-    )
     assert uart_supports_stream == 1, "UART must support STREAM_WRITE_BUFFER"
-    assert uart_supports_gpio == 0, "UART must NOT support GPIO_SET_PIN"
-
-    # GPIO capability check
-    gpio_supports_gpio = engine.dispatch_command(
-        "fireball://device/gpio/0",
-        WasiIpcCmd.QUERY_CAPS,
-        _params((ARG_QUERY_CMD_ID, WasiIpcCmd.GPIO_SET_PIN)),
-    )
-    gpio_supports_stream = engine.dispatch_command(
-        "fireball://device/gpio/0",
-        WasiIpcCmd.QUERY_CAPS,
-        _params((ARG_QUERY_CMD_ID, WasiIpcCmd.STREAM_WRITE_BUFFER)),
-    )
-    assert gpio_supports_gpio == 1, "GPIO must support GPIO_SET_PIN"
-    assert gpio_supports_stream == 0, "GPIO must NOT support STREAM_WRITE_BUFFER"
 
     # Timer capability check
     timer_supports_clock = engine.dispatch_command(
@@ -132,27 +99,27 @@ def test_wasi03p_hierarchical_uri_and_ipc_commands():
         WasiIpcCmd.QUERY_CAPS,
         _params((ARG_QUERY_CMD_ID, WasiIpcCmd.CLOCK_GET_NOW)),
     )
-    timer_supports_bus = engine.dispatch_command(
+    timer_supports_stream = engine.dispatch_command(
         "fireball://device/timer/0",
         WasiIpcCmd.QUERY_CAPS,
-        _params((ARG_QUERY_CMD_ID, WasiIpcCmd.BUS_TRANSFER_BUFFER)),
+        _params((ARG_QUERY_CMD_ID, WasiIpcCmd.STREAM_WRITE_BUFFER)),
     )
     assert timer_supports_clock == 1, "Timer must support CLOCK_GET_NOW"
-    assert timer_supports_bus == 0, "Timer must NOT support BUS_TRANSFER_BUFFER"
+    assert timer_supports_stream == 0, "Timer must NOT support STREAM_WRITE_BUFFER"
 
     print("    [CAPABILITY QUERY] All driver capability checks passed successfully.")
 
+    runtime_task = sysv.start_runtime_task(name="scenario12_runtime")
+    sysv.pool.bind_guest()
+
     # 3. Test Direct Dummy Driver Classes
     dummy_uart = DummyUartDriver()
-    dummy_gpio = DummyGpioDriver()
     dummy_timer = DummyTimerDriver()
-    dummy_bus = DummyBusDriver()
 
     assert dummy_uart.dispatch(0x00, _params((ARG_QUERY_CMD_ID, 0x01))) == 1
     assert dummy_uart.dispatch(0x00, _params((ARG_QUERY_CMD_ID, 0x20))) == 0
-    assert dummy_gpio.dispatch(0x00, _params((ARG_QUERY_CMD_ID, 0x20))) == 1
     assert dummy_timer.dispatch(0x00, _params((ARG_QUERY_CMD_ID, 0x10))) == 1
-    assert dummy_bus.dispatch(0x00, _params((ARG_QUERY_CMD_ID, 0x30))) == 1
+    dummy_uart.transport.close()
 
     # 4. Test WASI 0.3p IPC Command Protocol: Clock / Timer (0x10)
     now_ns = engine.dispatch_command(
@@ -161,17 +128,7 @@ def test_wasi03p_hierarchical_uri_and_ipc_commands():
     assert now_ns is not None and now_ns > 0, "Expected valid monotonic timestamp"
     print(f"    [IPC CMD:CLOCK_GET_NOW] now_ns={now_ns}")
 
-    # 5. Test WASI 0.3p IPC Command Protocol: GPIO Set Pin (0x20)
-    engine.dispatch_command(
-        "fireball://device/gpio/0",
-        WasiIpcCmd.GPIO_SET_PIN,
-        _params((ARG_PIN_NO, 15), (ARG_VAL, True)),
-    )
-    out_gpio = sysv.transport.drain().decode("utf-8")
-    assert out_gpio == "[GPIO:15=True]", f"GPIO output mismatch: {out_gpio}"
-    print(f"    [IPC CMD:GPIO_SET_PIN] Verified output: {out_gpio}")
-
-    # 6. Test WASI 0.3p IPC Command Protocol: Stream Write via HAL buffer (0x01)
+    # 5. Test WASI 0.3p IPC Command Protocol: Stream Write via HAL buffer (0x01)
     buffer_handle = sysv.pool.acquire_buffer(size=64)
     buffer_view = sysv.pool.view(buffer_handle, offset=0, length=24)
     msg = b"IPC-CMD-SHM-STREAM-OK!"
@@ -191,7 +148,7 @@ def test_wasi03p_hierarchical_uri_and_ipc_commands():
     assert out_uart == "IPC-CMD-SHM-STREAM-OK!", f"UART SHM output mismatch: {out_uart}"
     print(f"    [IPC CMD:STREAM_WRITE_BUFFER] Written {nwritten} bytes -> {out_uart}")
 
-    # 6.b Test Dispatch with a directly-built params FlatMapView, matching
+    # 5.b Test Dispatch with a directly-built params FlatMapView, matching
     # dispatch_command's single statically-typed argument exactly (no
     # secondary "IPCMessage vs FlatMapView" shape to infer at the callee).
     fmap_view = _params(
@@ -207,8 +164,8 @@ def test_wasi03p_hierarchical_uri_and_ipc_commands():
     assert out_uart_fmap == "IPC-CMD-SHM-STREAM-OK!"
     print(f"    [IPC FlatMapView DISPATCH] Written {nwritten_fmap} bytes -> {out_uart_fmap}")
 
-    # 6.c Test Full HAL Task IPC Rendezvous Communication (Task-to-Task CSP)
-    sysv.spawn_hal_tasks()
+    # 5.c Test Full HAL Task IPC Rendezvous Communication (Task-to-Task CSP)
+    sysv.start_hal_driver(DummyUartDriver(transport=sysv.transport))
     ipc_res = engine.send_ipc_command(
         "fireball://device/uart/0",
         WasiIpcCmd.STREAM_WRITE_BUFFER,
@@ -221,7 +178,9 @@ def test_wasi03p_hierarchical_uri_and_ipc_commands():
         f"    [HAL Task IPC Rendezvous] Successfully received and dispatched command via HAL task (count={uart_task.processed_count})"
     )
 
-    # 2) Key-Value Pair Array (Specification §3.3 Bit Assignment)
+    sysv.scheduler.current_task = runtime_task
+
+    # 6. Key-Value Pair Array (Specification §3.3 Bit Assignment)
     from ipc_router import DataType, IPCMessage, ScopeKind, pack_key32
 
     # Pack 32-bit keys and 32-bit values:

@@ -247,11 +247,12 @@ def test_virq_55_does_not_enter_wasi_polling_path():
 def test_hal_task_ipc_communication():
     """TEST-HAL-01: HAL operates as a distinct task on COOS and handles commands via IPC rendezvous."""
     from hal_dispatch import ARG_LENGTH, ARG_OFFSET
+    from dummy_drivers import DummyUartDriver
     from wasi import Wasi03pEngine, WasiIpcCmd
 
     sysv = System()
     try:
-        sysv.spawn_hal_tasks()
+        sysv.start_hal_driver(DummyUartDriver(transport=sysv.transport))
         engine = Wasi03pEngine(sysv)
         # Send command via IPC
         nwritten = engine.send_ipc_command(

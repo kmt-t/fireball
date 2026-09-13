@@ -229,8 +229,8 @@ def test_wasm_01_to_06_unsupported_features_rejected():
         b"\x07\x0d\x01\x09test_simd\x00\x00"
         b"\x0a\x06\x01\x04\x00\xfd\x00\x0b"
     )
-    mod = parse(wasm_bytes)
     try:
+        mod = parse(wasm_bytes)
         interp = Interpreter(mod)
         interp.call(0, [])
         raise AssertionError("Expected WasmUnsupportedFeatureError for SIMD opcode")

@@ -338,6 +338,28 @@ def test_wasi_01_fd_write_scatter_gather():
         sysv.shutdown()
 
 
+def test_wasi_01b_fd_write_prevalidates_all_iovecs():
+    """GOTCHA-SYS-03: an invalid later iovec cannot partially write output."""
+    sysv = System()
+    sysv.start_runtime_task(name="test_runtime_task")
+    try:
+        guest_mem = bytearray(128)
+        guest_mem[32:35] = b"bad"
+        struct.pack_into("<II", guest_mem, 0, 32, 3)
+        struct.pack_into("<II", guest_mem, 8, 200, 1)
+        struct.pack_into("<I", guest_mem, 120, 0xA5A5A5A5)
+        sysv.bind_guest(guest_mem)
+
+        assert (
+            sysv.fireball_call(FbSyscallId.WASI_FD_WRITE, 1, 0, 2, 120, 0, 0)
+            == WasiErrno.FAULT
+        )
+        assert sysv.transport.drain() == b""
+        assert struct.unpack_from("<I", guest_mem, 120)[0] == 0xA5A5A5A5
+    finally:
+        sysv.shutdown()
+
+
 def test_wasi_02_fd_read_eof():
     """TEST-SYS-81: WASI_FD_READ reports 0 bytes read (EOF) without crashing."""
     sysv = System()
@@ -467,6 +489,7 @@ if __name__ == "__main__":
     test_syscall_06_ipc_lookup_send_recv()
     test_syscall_07_wasi_fd_write()
     test_wasi_01_fd_write_scatter_gather()
+    test_wasi_01b_fd_write_prevalidates_all_iovecs()
     test_wasi_02_fd_read_eof()
     test_wasi_03_fd_close()
     test_wasi_04_clock_time_get_monotonic()

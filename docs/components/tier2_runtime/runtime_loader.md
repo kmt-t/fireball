@@ -31,7 +31,7 @@ WASMローダは、ROM上のWASM32バイナリをパースし、実行環境が�
 - **`basic_block_tree` (`radix_binary_tree_view`)**: モジュール内の全基本ブロックメタ情報（`BasicBlock`: `head_pc`, `next_pc`, `loops_to`, `frame_depth`, `byte_span`）へ UnifiedPC（`bswap32(pc)`）でアクセスする基数2進木索引。`BasicBlock` はPCレンジと制御フローメタ情報のみを保持し、デコード済み命令列は持たない――命令列はブロックが実際にコンパイル・実行される瞬間にのみ、バイトコードから都度ストリーミングで導出する（`TraceBlock`）。ランタイムや JIT コンパイラがブロック探索・メタ情報を再生成することなく、ローダ側の不変（ReadOnly）索引構造から直接 $O(1) + O(\log n)$ でブロック解決する。 `{Loader_BasicBlockIndex}`
 - **`opcode_benefit_table` (`BitView<4>`)**: ROM 上に配置される 128 バイト（256 opcode $\times$ 4-bit）の静的テーブル。インタープリタ処理命令数と JIT 処理命令数の差分（短縮機械語命令数、分岐8倍換算）をゼロ点固定線形正規化した `int4_t`（-8〜+7、1スコア＝2命令相当短縮）を保持する。 `{JIT_StaticBenefitScoring}`
 - **`jit_candidate_bitmap` (`BitView<1>`)**: モジュールロード時に各基本ブロックの命令スコア合算値が閾値（9点：コンパイルオーバーヘッド換算値6点＋デルタ3点）に達したブロックの `head_pc` が属する Card を 1bit でマーキングしたビットマップ。インタープリタ実行ループにおける `touch()` スキップに供される。 `{JIT_CandidateBitmap}`
-- **`control_skip_tree` (`radix_binary_tree_view`)**: デリミタPCからフォールスルー先ブロック先頭PCへの基数2進木索引。制御フロー終端のジャンプ解決をローダ側で保持・提供する。
+- **`control_map`**: 各関数の制御デリミタと `br_table` の静的対応を保持する固定長メタデータ。インタープリタはロード済みの関数メタデータを参照し、実行時に制御構造を再走査しない。命令列そのものは保持せず、必要な命令だけをROM上のコードからストリーミングする。
 
 ### 3.2 内部ブロック図
 <!-- traceability: {ZeroCopyIndexing} {META_BumpAllocator} {Runtime_BumpAllocator} -->

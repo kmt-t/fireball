@@ -33,7 +33,7 @@ vMMIO領域（Stage 2/3）のセキュリティモデルは**PTEに埋め込ま�
 
 1. **Stage 1 (ゲストRAMバイパス)**: ゲスト専用RAM領域（Bit 31 == 0、FC=0..7）。`addr >= guest_ram_size` による比較ベースの単一の高速境界チェック（`FastAddressCheck`）のみで高速処理し、境界外は即座にトラップする。
 2. **Stage 2 (静的vMMIO, FC=12)**: コンパイル時にアドレスが確定するコアデバイス（SYSCTL, IPCR, VDMA等）。アドレス `0xC000_0000` は FC=12 に位置する。JIT生成時に許可チェックを行い、許可済みならネイティブコードに直接デバイスキーを埋め込む。
-3. **Stage 3 (動的vMMIO, FC=14-15)**: SHM（FC=14, `0xE000_0000`）、PASSTHROUGH（FC=15, `0xF000_0000`）領域のアクセス。TLB または FlatMap を経由して PTE を解決し、エントリの権限フィールドで可否を判定する。
+3. **Stage 3 (動的vMMIO, FC=13-15)**: HAL DYNAMIC（FC=13, `0xD000_0000`）、SHM（FC=14, `0xE000_0000`）、PASSTHROUGH（FC=15, `0xF000_0000`）領域のアクセス。TLB または FlatMap を経由して PTE を解決し、エントリの権限フィールドで可否を判定する。DYNAMIC はマルチゲスト構成でも同時にマップできるゲストを1つに限定する。
 
 IPC経由のデータ交換は行わない — GPIOのようなsub-µs応答が必要な周辺機器はIPCレイテンシに耐えられないため、このダイレクトアクセスモデルが採用されている。 `{Fast_Path_GPIO}`
 
@@ -137,16 +137,16 @@ Static Devices (Stage 2) 向け。PTE には Device Type やパーミッショ�
 
 #### Stage 3 ページテーブルエントリ
 <!-- traceability: {META_Static_Resolution} {OwnershipTransfer} -->
-SHM (FC=14) および Passthrough (FC=15) 向け。PTE には PPN（物理ページ番号）とハードウェア保護フラグを保持する。PTE に `owner_id` フィールドは存在せず、アクセス制御は「マッピングの存在（PTE 有効）」によって完全に執行される。
+SHM (FC=14) および Passthrough (FC=15) 向け。PTE には PPN（物理ページ番号）、ハードウェア保護フラグ、およびSHM所有タスクIDを保持する。SHMアクセスではスケジューラの現在タスクIDと `owner_id` を照合し、Revokeまたは所有権変更時はPTEをアンマップしてTLBをフラッシュする。DYNAMIC (FC=13) はHALバッファプールの単一ゲストバインドで保護する。
 
 ```
-32-bit Stage 3 (SHM / Passthrough) PTE:
+32-bit Stage 3 (DYNAMIC / SHM / Passthrough) PTE:
 [31:12] PPN (Physical Page Number, 20 bits: phys_page)
 [11]    VALID (1 = 有効マッピング)
 [10]    READ (1 = 読み出し許可)
 [9]     WRITE (1 = 書き込み許可)
 [8]     EXEC (1 = 実行許可 — Passthrough で使用)
-[7:0]   Reserved (0)
+[7:0]   OWNER_TASK_ID (SHM only; DYNAMIC uses pool guest binding)
 ```
 
 **FC=14 (SHM) エントリの仮想化マッピングは、Tier 3 共有メモリマネージャが発火する物理ページイベントの購読を通じて自律的に駆動される（`{VmmioShmDelegation}`）。vMMIO コントローラは共有メモリマネージャにイベントリスナーを登録し、物理ページのライフサイクル通知（割り当てマッピング、Revoke アンマップ＆TLBフラッシュ、再マッピング、解放）を受けて自身の仮想アドレス空間（VPN: `(0xE000_0000 >> 12) + page_idx`）に対応する PTE 登録・アンマップ・TLB フラッシュを実行する。メモリマネージャ側が vMMIO の内部実装やアドレス体系を直接操作することはなく、クリーンアーキテクチャ（DIP）が維持される。**
@@ -327,6 +327,7 @@ FlatMap ページテーブル、ダイレクトマップ
 | `0xC000_1000` | `12` (`0xC`) | **IPCR** | IPCルータ連携レジスタ |
 | `0xC000_2000` | `12` (`0xC`) | **VDMA** `{VDMA}` | 仮想DMA（バルク転送） |
 | `0xC000_3000` | `12` (`0xC`) | **vIRQ** | 原因付き仮想割り込みディスパッチャ専用ページ |
+| `0xD000_0000` – `0xDFFF_FFFF` | `13` (`0xD`) | **DYNAMIC** | HALが提供する固定長バッファの動的マッピング。マップ対象ゲストは1つだけ |
 | `0xE000_0000` – `0xEFFF_FFFF` | `14` (`0xE`) | **SHM** | 共有メモリ（1領域=1ページ）。デコード上の全域は256MBだが、実際にビットマップアロケータがPTEを割り当てるのは先頭128KB（32ページ）のみ。PTE格納表全体の上限は64件 |
 | `0xF000_0000` – `0xFFFF_FFFF` | `15` (`0xF`) | **PASSTHROUGH** | 物理アドレス直結 |
 
@@ -360,9 +361,15 @@ PASSTHROUGH アドレス変換:
 | `0x08` | `REG_VDMA_COUNT` | R/W | 転送バイト数 |
 | `0x0C` | `REG_VDMA_CTRL` | W | 制御（Bit0: START） |
 
-`REG_VDMA_SRC` / `REG_VDMA_DST` に指定できるアドレスはゲストRAM（Stage 1）および vMMIO空間（FC=14/15）。SHMアドレス（FC=14）を転送先/元に指定した場合、VDMAハンドラが `dispatch_access` と同一の権限チェック（PTE のマッピング・パーミッション検証）を実施する。
+`REG_VDMA_SRC` / `REG_VDMA_DST` に指定できるアドレスはゲストRAM（Stage 1）および vMMIO空間（FC=13/14/15）。DYNAMIC（FC=13）またはSHM（FC=14）アドレスを転送先/元に指定した場合、VDMAハンドラが `dispatch_access` と同一の権限チェック（PTE のマッピング・パーミッション検証）を実施する。
 
-### 4.6 共有メモリマッピング (FC=14)
+### 4.6 HAL DYNAMICバッファマッピング (FC=13)
+<!-- traceability: {HAL_Interface} {IPC_ZeroCopy} -->
+HALが用意した固定長バッファは vMMIO の DYNAMIC 領域へマップする。DYNAMIC のマップ権はゲスト単位で管理し、マルチゲスト構成では同時に1ゲストだけがこの領域を保持できる。別ゲストの `bind_guest` は拒否し、既存ゲストのバッファを再利用する場合も所有ゲストを変更しない。
+
+`acquire-buffer` はHALバッファを確保した後にDYNAMICページをマップし、`release-buffer` はバッファを返却してページをアンマップし、対応するTLBエントリをフラッシュする。ゲストに直接ポインタを渡さず、バッファIDと固定スロットから算出した仮想アドレスだけをインターフェース境界に渡す。
+
+### 4.7 共有メモリマッピング (FC=14)
 <!-- traceability: {OwnershipTransfer} -->
 SHM へのアクセスは **IPCルータ経由でのみ許可される**。ゲストは IPCルータからハンドルを受け取ることによってのみ FC=14 アドレス空間にアクセスできる。SHM の所有権状態は IPCルータが一元管理し（[`ipc_router.md`](docs/components/tier1_interface/ipc_router.md) の `{OwnershipTransfer}` 準拠）、vMMIO はその状態を執行するのみ。 `{OwnershipTransfer}`
 
@@ -386,7 +393,7 @@ graph LR
 4. **Grant (`claim(shm-id)`)**: 所有権変更時に Tier 1 の `PageMappingCallbacks.on_owner_changed` を受け、vMMIO は旧 PTE と TLB エントリを無効化する。ランデブー成立後、受信タスク側で `claim()` を呼び出すと `on_map_page` により受信タスクの仮想アドレス空間へ PTE がマッピングされ、有効な `shared-block` ハンドルが取得可能となる。
 5. **障害時回復 (`rollback_transfer`)**: 相手タスクが永久に到達しない場合、送信タスクはブロックし続ける。タスク異常終了やタイムアウト等によるフォールト発生時は、物理メモリ層の `rollback_transfer()` により送信元タスクの空間へ PTE を再マッピングし、リソースの回収・再利用を行う。
 
-### 4.7 原因付き vIRQ ディスパッチ
+### 4.8 原因付き vIRQ ディスパッチ
 <!-- traceability: {META_ConfigurableSystem} {GLOBAL_InterruptWakeup} -->
 
 vIRQ は、物理割り込みをゲストへ直接配送するための専用 vMMIO ページである。ゲストは [`libfireball.md`](docs/components/tier3_platform/libfireball.md) のラッパーを通じて、固定スロットへ WASM 関数インデックスを登録する。登録値は vSoC が検証し、Safepoint で原子的に反映する。`REG_IRQ_FLAGS` のポーリングは vIRQ の配送経路ではない。

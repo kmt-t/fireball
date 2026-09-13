@@ -26,8 +26,7 @@ from __future__ import annotations
 import socket
 import threading
 import time
-import uuid
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from enum import IntEnum
 from typing import TYPE_CHECKING
@@ -36,9 +35,10 @@ if TYPE_CHECKING:
     from memory import MemoryManager
     from scheduler import Scheduler
 
-from ipc_router import DataType, IPCMessage, IPCRouter, IPCStatus, ScopeKind, pack_key32
+from ipc_router import DataType, IPCMessage, IPCRouter, IPCStatus, Role, ScopeKind, pack_key32
 from scheduler import ChannelAction
-from system_containers import FlatMapView, FlatSetView, StaticVector
+from system_containers import FlatMapView, StaticVector
+from vmmio import FC_DYNAMIC, VMMIOController, VMMIO_PAGE_SHIFT, VmmioStatus
 
 # hal_dispatch.md §4.2's kv_pair command arguments: each is a packed
 # (ScopeKind.FUNCTIONAL, DataType.UINT32, key_id) key per ipc_router.md §3.3,
@@ -130,6 +130,29 @@ class UartTransport:
             self.bytes_written += n
             return n
 
+    def feed_stdin(self, data: bytes) -> int:
+        """Feeds host input into the device side of the full-duplex stream."""
+        with self._lock:
+            return self.host_sock.send(data)
+
+    def read_stdin(self, max_len: int = 4096) -> bytes:
+        """Reads bytes that the host supplied to the device side."""
+        assert max_len > 0
+        chunks: list[bytes] = []
+        total = 0
+        try:
+            while total < max_len:
+                chunk = self.device_sock.recv(max_len - total)
+                if not chunk:
+                    break
+                chunks.append(chunk)
+                total += len(chunk)
+                if len(chunk) < max_len:
+                    break
+        except (TimeoutError, BlockingIOError):
+            pass
+        return b"".join(chunks)
+
     def drain(self) -> bytes:
         """Host-side read of everything currently sitting on the wire."""
         chunks: list[bytes] = []
@@ -161,16 +184,17 @@ FB_CONF_HAL_MAX_BUFFERS = 4  # docs/components/tier1_core/system_config.md 3.3.3
 @dataclass
 class HalBufferHandle:
     """
-    What acquire_buffer() actually returns: an opaque *name*, not a
-        pointer. Handing this value to code running as a different owner is
+    What acquire_buffer() actually returns: an opaque integer ID, not a
+    pointer. Handing this value to code running as a different owner is
         meaningless -- there is no address inside it that could be dereferenced
         as guest linear memory, only a lookup key the pool checks against an
         owner table before it will hand back a byte.
     """
 
-    name: str
+    buffer_id: int
     owner_task: int
     capacity: int
+    virtual_address: int
     _storage: bytearray = field(repr=False, compare=False)
 
 
@@ -179,16 +203,28 @@ class HalBufferPool:
     `acquire_buffer()` backed by FB_CONF_HAL_MAX_BUFFERS fixed-size slots
         of at most FB_CONF_HAL_BUFFER_SIZE bytes each: a static pool, not a
         dynamic allocator (hal_dispatch.md 5.1's "静的固定長バッファプール"),
-        MMIO'd into the vMMIO DYNAMIC region. Multiple client tasks may
-        contend for the same device, so acquire_buffer() is the ownership-
-        taking call a client must make before it may touch a slot at all --
+        MMIO'd into the vMMIO DYNAMIC region. The DYNAMIC mapping is bound to
+        exactly one guest task for the pool lifetime. acquire_buffer() is the
+        ownership-taking call a client must make before it may touch a slot at all --
         every other method re-checks that ownership before honoring a
         request (GOTCHA-HAL-01).
     """
 
-    def __init__(self, scheduler: Scheduler):
+    def __init__(self, scheduler: Scheduler, vmmio: VMMIOController):
         self._scheduler = scheduler
-        self._slots: list[HalBufferHandle | None] = [None] * FB_CONF_HAL_MAX_BUFFERS
+        self._vmmio = vmmio
+        self._slots: StaticVector[HalBufferHandle | None] = StaticVector.of(
+            (None,) * FB_CONF_HAL_MAX_BUFFERS, capacity=FB_CONF_HAL_MAX_BUFFERS
+        )
+        self._mapped_guest_task: int | None = None
+
+    def bind_guest(self) -> None:
+        """Binds the DYNAMIC mapping to one guest for its whole lifetime."""
+        task_id = self.current_task_id
+        if self._mapped_guest_task is None:
+            self._mapped_guest_task = task_id
+            return
+        assert self._mapped_guest_task == task_id, "HAL DYNAMIC mapping supports one guest only"
 
     @property
     def current_task_id(self) -> int:
@@ -197,6 +233,7 @@ class HalBufferPool:
     def acquire_buffer(self, size: int) -> HalBufferHandle:
         """Claims ownership of one free static slot for the running task."""
         task_id = self.current_task_id
+        assert self._mapped_guest_task == task_id, "HAL DYNAMIC mapping is not bound to this guest"
         if size <= 0 or size > FB_CONF_HAL_BUFFER_SIZE:
             raise ValueError(
                 f"acquire_buffer(size={size}) exceeds FB_CONF_HAL_BUFFER_SIZE={FB_CONF_HAL_BUFFER_SIZE}"
@@ -209,9 +246,14 @@ class HalBufferPool:
                 break
         if slot_idx < 0:
             raise HalError("HAL buffer pool exhausted (FB_CONF_HAL_MAX_BUFFERS)")
-        name = f"fb_hal_buf_{uuid.uuid4().hex[:12]}"
+        virtual_address = (FC_DYNAMIC << 28) | (slot_idx << VMMIO_PAGE_SHIFT)
+        self._vmmio.map_dynamic_page(virtual_address >> VMMIO_PAGE_SHIFT, slot_idx)
         handle = HalBufferHandle(
-            name=name, owner_task=task_id, capacity=size, _storage=bytearray(size)
+            buffer_id=slot_idx,
+            owner_task=task_id,
+            capacity=size,
+            virtual_address=virtual_address,
+            _storage=bytearray(size),
         )
         self._slots[slot_idx] = handle
         return handle
@@ -219,29 +261,33 @@ class HalBufferPool:
     def release_buffer(self, handle: HalBufferHandle) -> None:
         task_id = self.current_task_id
         for i, s in enumerate(self._slots):
-            if s is not None and s.name == handle.name:
+            if s is not None and s.buffer_id == handle.buffer_id:
                 if s.owner_task != task_id:
                     raise HalBufferTrap(
-                        f"task {task_id} cannot release {handle.name}: not the owner"
+                        f"task {task_id} cannot release buffer {handle.buffer_id}: not the owner"
                     )
                 self._slots[i] = None
+                self._vmmio.unmap_dynamic_page(s.virtual_address >> VMMIO_PAGE_SHIFT)
                 return
-        raise HalBufferTrap(f"task {task_id} cannot release {handle.name}: not found")
+        raise HalBufferTrap(f"task {task_id} cannot release buffer {handle.buffer_id}: not found")
 
     def _resolve(self, handle: HalBufferHandle) -> HalBufferHandle:
         task_id = self.current_task_id
         for s in self._slots:
-            if s is not None and s.name == handle.name:
+            if s is not None and s.buffer_id == handle.buffer_id:
                 if s.owner_task != task_id:
                     raise HalBufferTrap(
-                        f"task {task_id} does not own {handle.name} (owner={s.owner_task}); "
+                        f"task {task_id} does not own buffer {handle.buffer_id} (owner={s.owner_task}); "
                         "no linear-memory pointer would ever bypass this check"
                     )
                 return s
-        raise HalBufferTrap(f"handle {handle.name} does not exist (stale, or never acquired)")
+        raise HalBufferTrap(f"buffer {handle.buffer_id} does not exist (stale, or never acquired)")
 
     def close_all(self) -> None:
         for i in range(len(self._slots)):
+            handle = self._slots[i]
+            if handle is not None:
+                self._vmmio.unmap_dynamic_page(handle.virtual_address >> VMMIO_PAGE_SHIFT)
             self._slots[i] = None
 
     def can_view(self, handle: HalBufferHandle, offset: int, length: int) -> bool:
@@ -253,10 +299,10 @@ class HalBufferPool:
         """
         task_id = self.current_task_id
         for s in self._slots:
-            if s is not None and s.name == handle.name:
+            if s is not None and s.buffer_id == handle.buffer_id:
                 if s.owner_task != task_id:
                     return False
-                return 0 <= offset and 0 <= length and offset + length <= s.capacity
+                return 0 <= offset and 0 <= length and length <= s.capacity - offset
         return False
 
     def view(self, handle: HalBufferHandle, offset: int, length: int) -> memoryview:
@@ -267,11 +313,13 @@ class HalBufferPool:
         """
 
         record = self._resolve(handle)
-        if offset < 0 or length < 0 or offset + length > record.capacity:
+        if offset < 0 or length < 0 or offset > record.capacity or length > record.capacity - offset:
             raise HalBufferTrap(
-                f"hal-buffer-slice(offset={offset}, len={length}) escapes {handle.name}'s "
+                f"hal-buffer-slice(offset={offset}, len={length}) escapes buffer {handle.buffer_id}'s "
                 f"acquired capacity ({record.capacity} bytes)"
             )
+        status, _physical = self._vmmio.access(record.virtual_address + offset, is_write=False)
+        assert status == VmmioStatus.OK_PHYSICAL, "HAL buffer is not mapped in vMMIO DYNAMIC"
         return memoryview(record._storage)[offset : offset + length]
 
 
@@ -298,150 +346,62 @@ class Timer:
 # ---------------------------------------------------------------------------
 
 
+HalResult = int | bytes | None
+HalCommandCallback = Callable[[FlatMapView], HalResult]
+
+
+@dataclass(frozen=True, slots=True)
+class HalCommandBinding:
+    """One driver-owned command ID and its access callback."""
+
+    command_id: int
+    callback: HalCommandCallback
+
+
 class HalDriver:
     """
-    Base class for HAL device drivers supporting WASI 0.3p IPC Commands.
-    Matches hal_dispatch.md §5.1's `control(id, cmd, params: ipc-message)`:
-    exactly one statically-typed params argument, always a FlatMapView over
-    packed kv_pair keys (ipc_router.md §3.3) -- no kwargs escape hatch, no
-    runtime inspection of what was passed (C++ has neither RTTI nor
-    reflection to do that with).
+    Base class for device-owned HAL command configuration.
+
+    A driver registers the command IDs it accepts and the callback invoked on
+    access. The generic HAL task only transports the command and performs the
+    callback lookup; it does not contain device-specific dispatch logic.
     """
 
-    def __init__(self, uri: str, supported_commands: Sequence[int] = ()):
+    def __init__(self, uri: str):
         self.uri = uri
-        # QUERY_CAPS is always supported.
-        self._supported_commands_storage = sorted((WasiIpcCmd.QUERY_CAPS, *supported_commands))
-        self.supported_commands = FlatSetView(self._supported_commands_storage)
+        self._command_bindings: StaticVector[HalCommandBinding] = StaticVector(capacity=16)
+        self.register_command(WasiIpcCmd.QUERY_CAPS, self._query_caps)
+
+    def register_command(self, command_id: int, callback: HalCommandCallback) -> None:
+        """Registers one driver command callback before the task is started."""
+        assert self._find_command(command_id) is None, f"duplicate HAL command {command_id:#x}"
+        assert self._command_bindings.push_back(HalCommandBinding(command_id, callback))
+        self._command_bindings.sort(key=lambda binding: binding.command_id)
+
+    def _find_command(self, command_id: int) -> HalCommandCallback | None:
+        for binding in self._command_bindings:
+            if binding.command_id == command_id:
+                return binding.callback
+        return None
+
+    def _query_caps(self, params: FlatMapView) -> int:
+        query_cmd = params.find(ARG_QUERY_CMD_ID)
+        return 1 if query_cmd is not None and self._find_command(query_cmd) is not None else 0
 
     def is_supported(self, cmd_id: int) -> int:
         """Checks if this driver supports the given command ID (1=True, 0=False)."""
-        return 1 if cmd_id in self.supported_commands else 0
+        return 1 if self._find_command(cmd_id) is not None else 0
 
-    def dispatch(self, cmd_id: int, params: FlatMapView) -> object:
-        """Dispatches an IPC command to the driver handler."""
-        if cmd_id == WasiIpcCmd.QUERY_CAPS:
-            query_cmd = params.find(ARG_QUERY_CMD_ID)
-            return self.is_supported(0 if query_cmd is None else query_cmd)
+    def dispatch(self, cmd_id: int, params: FlatMapView) -> HalResult:
+        """Dispatches an IPC command through the driver's registered callback."""
+        callback = self._find_command(cmd_id)
+        return None if callback is None else callback(params)
 
-        return self._handle_command(cmd_id, params)
-
-    def _handle_command(self, cmd_id: int, params: FlatMapView) -> object:
-        raise NotImplementedError(f"Command {cmd_id} not implemented for {self.uri}")
-
-
-class DummyUartDriver(HalDriver):
-    """Dummy UART Driver supporting Stream Read/Write via SHM."""
-
-    def __init__(
-        self, uri: str = "fireball://device/uart/0", transport: UartTransport | None = None
-    ):
-        super().__init__(
-            uri,
-            supported_commands=(
-                WasiIpcCmd.STREAM_WRITE_BUFFER,
-                WasiIpcCmd.STREAM_READ_BUFFER,
-                WasiIpcCmd.STREAM_FLUSH,
-                WasiIpcCmd.STREAM_CLOSE,
-            ),
-        )
-        self.transport = transport or UartTransport()
-
-    def _handle_command(self, cmd_id: int, params: FlatMapView) -> object:
-        if cmd_id == WasiIpcCmd.STREAM_WRITE_BUFFER:
-            # hal_dispatch.md §4.2: buffer_handle/offset/len resolve a zero-copy
-            # HAL buffer slice; this dummy has no pool reference to resolve one
-            # against, so it stands in with the slice length only.
-            length = params.find(ARG_LENGTH)
-            return 0 if length is None else length
-        elif cmd_id == WasiIpcCmd.STREAM_READ_BUFFER:
-            return self.transport.drain()
-        elif cmd_id in (WasiIpcCmd.STREAM_FLUSH, WasiIpcCmd.STREAM_CLOSE):
-            return 0
-        return None
-
-
-class DummyGpioDriver(HalDriver):
-    """Dummy GPIO Driver supporting Pin R/W, Configuration, and Edge IRQ."""
-
-    # hal_dispatch.md doesn't fix a pin count; a real MCU GPIO port is a
-    # small, bounded set, so a fixed-size array (not a dict) models it.
-    _MAX_PINS = 64
-
-    def __init__(self, uri: str = "fireball://device/gpio/0"):
-        super().__init__(
-            uri,
-            supported_commands=(
-                WasiIpcCmd.GPIO_SET_PIN,
-                WasiIpcCmd.GPIO_GET_PIN,
-                WasiIpcCmd.GPIO_CONFIG_PIN,
-                WasiIpcCmd.GPIO_SUBSCRIBE_EDGE,
-            ),
-        )
-        self.pins: StaticVector[bool] = StaticVector.of(
-            (False,) * self._MAX_PINS, capacity=self._MAX_PINS
-        )
-        self.modes: StaticVector[int] = StaticVector.of(
-            (0,) * self._MAX_PINS, capacity=self._MAX_PINS
-        )
-
-    def _handle_command(self, cmd_id: int, params: FlatMapView) -> object:
-        pin = params.find(ARG_PIN_NO) or 0
-        if cmd_id == WasiIpcCmd.GPIO_SET_PIN:
-            self.pins[pin] = bool(params.find(ARG_VAL))
-            return 0
-        elif cmd_id == WasiIpcCmd.GPIO_GET_PIN:
-            return 1 if self.pins[pin] else 0
-        elif cmd_id == WasiIpcCmd.GPIO_CONFIG_PIN:
-            self.modes[pin] = params.find(ARG_MODE) or 0
-            return 0
-        elif cmd_id == WasiIpcCmd.GPIO_SUBSCRIBE_EDGE:
-            return 1  # pollable handle
-        return None
-
-
-class DummyTimerDriver(HalDriver):
-    """Dummy Timer Driver supporting Monotonic Clock and Subscriptions."""
-
-    def __init__(self, uri: str = "fireball://device/timer/0"):
-        super().__init__(
-            uri,
-            supported_commands=(
-                WasiIpcCmd.CLOCK_GET_NOW,
-                WasiIpcCmd.CLOCK_SUBSCRIBE,
-                WasiIpcCmd.CLOCK_GET_RES,
-            ),
-        )
-        self.timer = Timer()
-
-    def _handle_command(self, cmd_id: int, params: FlatMapView) -> object:
-        if cmd_id == WasiIpcCmd.CLOCK_GET_NOW:
-            return self.timer.get_now_ns()
-        elif cmd_id == WasiIpcCmd.CLOCK_SUBSCRIBE:
-            return 1  # pollable handle
-        elif cmd_id == WasiIpcCmd.CLOCK_GET_RES:
-            return 1_000_000  # 1ms
-        return None
-
-
-class DummyBusDriver(HalDriver):
-    """Dummy I2C/SPI Bus Driver supporting Zero-Copy SHM Transfer."""
-
-    def __init__(self, uri: str = "fireball://device/i2c/0"):
-        super().__init__(
-            uri,
-            supported_commands=(
-                WasiIpcCmd.BUS_TRANSFER_BUFFER,
-                WasiIpcCmd.BUS_CONFIG,
-            ),
-        )
-
-    def _handle_command(self, cmd_id: int, params: FlatMapView) -> object:
-        if cmd_id == WasiIpcCmd.BUS_TRANSFER_BUFFER:
-            return params.find(ARG_LENGTH) or 0
-        elif cmd_id == WasiIpcCmd.BUS_CONFIG:
-            return 0
-        return None
+    def start(self, ipc: IPCRouter, scheduler: Scheduler, role: Role) -> tuple[int, HalTask]:
+        """Starts this driver's dedicated HAL task and returns its task handle."""
+        task = HalTask(ipc, self)
+        task_id = scheduler.spawn(f"hal_task[{self.uri}]", task.run(), role=role)
+        return task_id, task
 
 
 ARG_RESULT = pack_key32(ScopeKind.FUNCTIONAL, DataType.UINT32, key_id=0xFF)
@@ -458,7 +418,7 @@ class HalTask:
     GPIO-shaped endpoints) apart -- only the *role* selects which channel a
     message lands on, the URI itself never rides the hot transfer path. One
     HalTask thus owns exactly one HalDriver and is spawned under exactly the
-    Role that URI resolves to (see system.py `spawn_hal_tasks`).
+    Role that URI resolves to (see system.py `start_hal_driver`).
     """
 
     def __init__(self, ipc: IPCRouter, driver: HalDriver):
@@ -466,7 +426,7 @@ class HalTask:
         self.driver = driver
         self.running = True
         self.last_handled_cmd: int | None = None
-        self.last_result: object = None
+        self.last_result: HalResult = None
         self.processed_count: int = 0
 
     def run(self):

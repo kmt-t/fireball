@@ -41,6 +41,7 @@ import math
 import struct
 from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass, field
+from typing import Protocol
 
 import cython
 from control_flow import (
@@ -372,7 +373,7 @@ class InterpreterContext:
             frame_offset=frame_offset,
             env=env,
         )
-        local_slot_count = frame.local_slot_count
+        local_slot_count = len(frame.local_widths) * WASM_LOCAL_SLOT_WORDS
         assert len(raw_args) == local_slot_count
         if frame_offset + local_slot_count > self.local_stack.capacity:
             raise Trap("local stack capacity exceeded")
@@ -434,7 +435,6 @@ class CallFrame:
         "has_nested_calls",
         "local_count",
         "local_i32_only",
-        "local_slot_count",
         "local_widths",
         "values",
     )
@@ -451,10 +451,8 @@ class CallFrame:
         assert not module.is_import(func_index)
         function = module.functions[func_index - len(module.imports)]
         local_widths = function.local_widths_cache
-        local_slot_count = function.local_slot_count_cache
         local_i32_only = function.local_i32_only_cache
         assert local_widths is not None
-        assert local_slot_count is not None
         assert local_i32_only is not None
         self.context = context
         self.values = context.operand_stack
@@ -465,10 +463,12 @@ class CallFrame:
         self.frame_offset = frame_offset
         self.local_count = len(local_widths)
         self.local_widths = local_widths
-        self.local_slot_count = local_slot_count
         self.local_i32_only = local_i32_only
         self._locals = _LocalStackWindow(
-            context.local_stack, frame_offset, local_widths, local_slot_count
+            context.local_stack,
+            frame_offset,
+            local_widths,
+            len(local_widths) * WASM_LOCAL_SLOT_WORDS,
         )
         self.code = function.code
         assert function.control_map is not None
@@ -505,6 +505,11 @@ class CallFrame:
 # implicit block). `tos` remains a runtime/JIT boundary field; operand values
 # themselves live only in the Native stack.
 _Cont = tuple[int, CallFrame, _LocalStackWindow, int] | None
+
+
+class DebuggerAttachment(Protocol):
+    halted: bool
+    stop_signal: int
 
 # A per-opcode handler's return shape. The next instruction pointer is written
 # to ctx, and the returned continuation carries the exact four arguments for
@@ -626,7 +631,7 @@ class Interpreter:
         self.tables: list[list[int | None]] = [
             module.table_contents(i) for i in range(len(module.tables))
         ]
-        self.debugger: object | None = None
+        self.debugger: DebuggerAttachment | None = None
         self.vmmio = vmmio
         self.phys_mem = phys_mem
         self._env = ExecEnv(
@@ -641,7 +646,7 @@ class Interpreter:
         if self.module.start_function is not None:
             self.call(self.module.start_function, ())
 
-    def attach_debugger(self, debugger: object) -> None:
+    def attach_debugger(self, debugger: DebuggerAttachment) -> None:
         """
         Records the attached debugger. Unlike IntegratedHybridEngine's
         {DebuggerLabelTableSwitch}, the threaded interpreter's `_HANDLERS`

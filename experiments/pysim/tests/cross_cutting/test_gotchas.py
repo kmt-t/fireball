@@ -809,7 +809,11 @@ def test_hal_gotcha_01_hal_buffer_pool_bounds_violation_rejected():
     owner_id = scheduler.spawn("owner")
     other_id = scheduler.spawn("other")
     scheduler.current_task = scheduler.get_task(owner_id)
-    pool = HalBufferPool(scheduler)
+    from vmmio import VMMIOController
+
+    vmmio = VMMIOController(guest_ram_size=8192, scheduler=scheduler)
+    pool = HalBufferPool(scheduler, vmmio)
+    pool.bind_guest()
     handle = pool.acquire_buffer(size=128)
     assert handle.capacity == 128
 

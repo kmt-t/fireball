@@ -19,13 +19,11 @@ for _p in [
     if _sp not in sys.path:
         sys.path.insert(0, _sp)
 
-"""Integration Scenario 11: HAL Peripheral Drivers & WASI Preview 1 Full Dummy Stack.
+"""Integration Scenario 11: HAL Stream/Timer Drivers & WASI Preview 1 Dummy Stack.
 
 Tests:
-1. HAL Dummy Peripheral Drivers:
-   - GPIO: Mode configuration (Input/Output), Pin state read/write, Edge-triggered IRQ dispatch
-   - I2C: Bus master register read/write on simulated LM75 temperature sensor (0x48)
-   - SPI: Full-duplex bus master transaction on simulated 4KB SPI EEPROM (WREN, WRITE, READ)
+1. HAL Dummy Drivers:
+   - Standard I/O: full-duplex stdin/stdout streaming
    - Timer: High-resolution monotonic clock (monotonic_ns) and tick advancement
 2. WASI Preview 1 In-Memory Virtual Stack:
    - File I/O: Virtual file descriptors (fd_read, fd_write, fd_seek: SET/CUR/END)
@@ -33,13 +31,7 @@ Tests:
    - System Utilities: random_get (entropy pool fill), clock_time_get (monotonic/realtime timestamp)
 """
 
-from hal_dummy_drivers import (
-    DummyGpioDriver,
-    DummyI2cDriver,
-    DummySpiDriver,
-    DummyTimerDriver,
-    PinMode,
-)
+from dummy_drivers import DummyTimerDriver, DummyUartDriver
 from wasi_dummy_fs import WasiDummyContext, WasiErrno, WasiWhence
 
 
@@ -48,48 +40,23 @@ def test_scenario_hal_and_wasi_drivers():
     # -------------------------------------------------------------------------
     # Part A: HAL Peripheral Dummy Drivers Verification
     # -------------------------------------------------------------------------
-    # 1. GPIO Controller
-    gpio = DummyGpioDriver(pin_count=16)
-    gpio.set_pin_mode(2, PinMode.OUTPUT)
-    gpio.set_pin_mode(3, PinMode.INPUT)
-    irq_events = []
-    gpio.register_irq(2, lambda pin, lvl: irq_events.append((pin, lvl)))
-    gpio.write_pin(2, 1)
-    assert gpio.read_pin(2) == 1
-    gpio.write_pin(2, 0)
-    assert gpio.read_pin(2) == 0
-    assert irq_events == [(2, 1), (2, 0)]
-    print("    [Phase A.1] HAL GPIO Driver (Pin R/W & Edge IRQ Dispatch) [PASS]")
-    # 2. I2C Bus Master & LM75 Temperature Sensor
-    i2c = DummyI2cDriver()
-    # Read default temperature from device 0x48 reg 0x00 (25.5 C -> 0x1980)
-    temp_raw = i2c.read_register(0x48, 0x00)
-    assert temp_raw == 0x1980
-    # Write configuration register 0x01 = 0x02
-    assert i2c.write_register(0x48, 0x01, 0x02) is True
-    assert i2c.read_register(0x48, 0x01) == 0x02
-    print("    [Phase A.2] HAL I2C Driver & LM75 Sensor (0x48 Temp Read & Reg Write) [PASS]")
-    # 3. SPI Bus Master & 4KB EEPROM (25LC040)
-    spi = DummySpiDriver(memory_size=4096)
-    # Enable write (WREN: 0x06)
-    spi.transfer(bytes([0x06]))
-    assert spi.write_enabled is True
-    # Write payload [0xAA, 0xBB, 0xCC, 0xDD] at address 0x0100 (CMD 0x02, addr_hi 0x01, addr_lo 0x00)
-    tx_write = bytes([0x02, 0x01, 0x00, 0xAA, 0xBB, 0xCC, 0xDD])
-    spi.transfer(tx_write)
-    assert spi.write_enabled is False  # auto disabled
-    # Read back 4 bytes from address 0x0100 (CMD 0x03, addr_hi 0x01, addr_lo 0x00, 4 dummy bytes)
-    tx_read = bytes([0x03, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00])
-    rx_data = spi.transfer(tx_read)
-    assert rx_data[3:] == bytes([0xAA, 0xBB, 0xCC, 0xDD])
-    print("    [Phase A.3] HAL SPI Driver & 4KB EEPROM (WREN, Write & Read Verification) [PASS]")
-    # 4. Timer Driver
+    # 1. Standard I/O stream driver
+    stdio = DummyUartDriver()
+    assert stdio.feed_stdin(b"stdin-chunk-1") == len(b"stdin-chunk-1")
+    assert stdio.feed_stdin(b"stdin-chunk-2") == len(b"stdin-chunk-2")
+    assert stdio.read_stdin(64) == b"stdin-chunk-1stdin-chunk-2"
+    assert stdio.write_stdout(b"stdout-chunk-1") == len(b"stdout-chunk-1")
+    assert stdio.write_stdout(b"stdout-chunk-2") == len(b"stdout-chunk-2")
+    assert stdio.drain_stdout() == b"stdout-chunk-1stdout-chunk-2"
+    stdio.transport.close()
+    print("    [Phase A.1] HAL Standard I/O Driver (stdin/stdout streaming) [PASS]")
+    # 2. Timer Driver
     timer = DummyTimerDriver()
     t0 = timer.get_monotonic_ns()
     timer.step_ticks(5)
     assert timer.tick_count == 5
     assert timer.get_monotonic_ns() >= t0
-    print("    [Phase A.4] HAL Timer Driver (Monotonic Clock & Ticks) [PASS]")
+    print("    [Phase A.2] HAL Timer Driver (Monotonic Clock & Ticks) [PASS]")
     # -------------------------------------------------------------------------
     # Part B: WASI Preview 1 In-Memory Dummy Stack Verification
     # -------------------------------------------------------------------------

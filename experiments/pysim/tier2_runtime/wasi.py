@@ -37,11 +37,15 @@ from hal_dispatch import (
     ARG_TX_BUFFER_HANDLE,
     ARG_VAL,
     WasiIpcCmd,
+    HalBufferHandle,
 )
 from loader import fnv1a_32
 from system import FbSyscallId, System
 from system_containers import FlatMapView, RadixBinaryTreeView
 from wasm_module import Module
+
+
+WasiValue = int | bytes | HalBufferHandle | None
 
 
 # ==============================================================================
@@ -60,23 +64,23 @@ class WasiInterfaceVTable:
     than via `in`/`.get()` (dict-only APIs with no C++ counterpart).
     """
 
-    write: Callable[..., object] | None = None
-    read: Callable[..., object] | None = None
-    close: Callable[..., object] | None = None
-    write_buffer: Callable[..., object] | None = None
-    read_buffer: Callable[..., object] | None = None
-    flush: Callable[..., object] | None = None
-    get_now: Callable[..., object] | None = None
-    get_resolution: Callable[..., object] | None = None
-    subscribe: Callable[..., object] | None = None
-    set_pin: Callable[..., object] | None = None
-    get_pin: Callable[..., object] | None = None
-    config_pin: Callable[..., object] | None = None
-    subscribe_edge: Callable[..., object] | None = None
-    transfer: Callable[..., object] | None = None
-    transfer_buffer: Callable[..., object] | None = None
-    config: Callable[..., object] | None = None
-    log: Callable[..., object] | None = None
+    write: Callable[..., WasiValue] | None = None
+    read: Callable[..., WasiValue] | None = None
+    close: Callable[..., WasiValue] | None = None
+    write_buffer: Callable[..., WasiValue] | None = None
+    read_buffer: Callable[..., WasiValue] | None = None
+    flush: Callable[..., WasiValue] | None = None
+    get_now: Callable[..., WasiValue] | None = None
+    get_resolution: Callable[..., WasiValue] | None = None
+    subscribe: Callable[..., WasiValue] | None = None
+    set_pin: Callable[..., WasiValue] | None = None
+    get_pin: Callable[..., WasiValue] | None = None
+    config_pin: Callable[..., WasiValue] | None = None
+    subscribe_edge: Callable[..., WasiValue] | None = None
+    transfer: Callable[..., WasiValue] | None = None
+    transfer_buffer: Callable[..., WasiValue] | None = None
+    config: Callable[..., WasiValue] | None = None
+    log: Callable[..., WasiValue] | None = None
 
 
 class Wasi03pEngine:
@@ -112,17 +116,6 @@ class Wasi03pEngine:
             write=self._console_write,
             write_buffer=self._write_buffer,
         )
-        gpio_iface = WasiInterfaceVTable(
-            set_pin=lambda pin, val: self.sysv.transport.write(f"[GPIO:{pin}={val}]".encode()),
-            get_pin=lambda pin: 0,
-            config_pin=lambda pin, mode: 0,
-            subscribe_edge=lambda pin, edge: 1,  # pollable handle
-        )
-        bus_iface = WasiInterfaceVTable(
-            transfer=lambda tx, rx: len(tx),
-            transfer_buffer=self._transfer_buffer,
-            config=lambda clock_hz, addr, mode: 0,
-        )
         logger_iface = WasiInterfaceVTable(
             log=lambda msg: self.sysv.logger.debug(msg),
         )
@@ -137,13 +130,6 @@ class Wasi03pEngine:
             ("wasi:clocks/monotonic-clock", timer_iface),
             ("wasi:cli/stdout@0.3.0", console_iface),
             ("wasi:cli/stdout", console_iface),
-            ("fireball://device/gpio/0", gpio_iface),
-            ("fireball:hal/gpio@0.3.0", gpio_iface),
-            ("fireball:hal/gpio", gpio_iface),
-            ("fireball://device/i2c/0", bus_iface),
-            ("fireball://device/spi/0", bus_iface),
-            ("fireball:hal/bus@0.3.0", bus_iface),
-            ("fireball:hal/bus", bus_iface),
             ("fireball://service/logger/0", logger_iface),
         ]
         entries.sort(key=lambda e: e[0])
@@ -154,7 +140,7 @@ class Wasi03pEngine:
         """Resolves an interface descriptor by its Hierarchical IPC communication URI."""
         return self._interfaces.find(uri)
 
-    def dispatch_command(self, uri: str, cmd_id: int, params: FlatMapView) -> object:
+    def dispatch_command(self, uri: str, cmd_id: int, params: FlatMapView) -> WasiValue:
         """
         Dispatches a WASI 0.3p IPC Driver Command to the resolved device
         interface. Matches hal_dispatch.md §5.1's `control(id, cmd, params:
@@ -166,7 +152,7 @@ class Wasi03pEngine:
         if iface is None:
             return None
 
-        def _get_val(key_packed: int, default: object = None) -> object:
+        def _get_val(key_packed: int, default: WasiValue = None) -> WasiValue:
             val = params.find(key_packed)
             return default if val is None else val
 
@@ -273,16 +259,13 @@ class Wasi03pEngine:
 
         return None
 
-    def send_ipc_command(self, uri: str, cmd_id: int, params: FlatMapView) -> object:
+    def send_ipc_command(self, uri: str, cmd_id: int, params: FlatMapView) -> WasiValue:
         """
         Sends an IPC Driver Command to the HAL Server Task via IPCRouter ({hal_dispatch.md}).
         HAL operates as a distinct task and communicates strictly over IPC rendezvous.
         """
         from hal_dispatch import make_hal_ipc_message
         from ipc_router import IPCStatus, Role
-
-        # Ensure every HAL device/service instance's own task is spawned
-        self.sysv.spawn_hal_tasks()
 
         def sender_coro():
             status, channel = self.sysv.ipc.lookup(uri)
@@ -297,7 +280,8 @@ class Wasi03pEngine:
         self.sysv.scheduler.run_until_idle()
 
         target_task = self.sysv.hal_task_for(uri)
-        return target_task.last_result if target_task is not None else None
+        assert target_task is not None, f"HAL driver is not started: {uri}"
+        return target_task.last_result
 
     # Resource Methods
     def _stream_write(self, fd: int, data: bytes) -> int:
@@ -312,7 +296,7 @@ class Wasi03pEngine:
     def _stream_close(self, fd: int) -> int:
         return 0
 
-    def _write_buffer(self, handle: object, offset: int, length: int) -> int:
+    def _write_buffer(self, handle: HalBufferHandle, offset: int, length: int) -> int:
         """Writes data from shared memory (FC=14) to device transport."""
         if not self.sysv.pool.can_view(handle, offset, length):
             return 0
@@ -320,11 +304,13 @@ class Wasi03pEngine:
         self.sysv.transport.write(bytes(view))
         return len(view)
 
-    def _read_buffer(self, handle: object, offset: int, max_len: int) -> int:
+    def _read_buffer(self, handle: HalBufferHandle, offset: int, max_len: int) -> int:
         """Reads data from device transport into shared memory (FC=14)."""
         return 0
 
-    def _transfer_buffer(self, tx_handle: object, rx_handle: object, length: int) -> int:
+    def _transfer_buffer(
+        self, tx_handle: HalBufferHandle, rx_handle: HalBufferHandle, length: int
+    ) -> int:
         """Transfers data between shared memory buffers via DMA/Bus."""
         return length
 
@@ -351,7 +337,7 @@ class WasiHostContext:
         self.sysv.bind_guest(self.guest_memory)
         self.core03p = Wasi03pEngine(sysv)
         self.sysv.wasi_context = self
-        self._keepalive_trampolines: list[object] = []
+        self._keepalive_trampolines: list[Callable[..., int]] = []
 
         # Build static host import table via RadixBinaryTreeView
         host_entries: list[tuple[str, str, Callable[..., int]]] = [
@@ -431,42 +417,39 @@ class WasiHostContext:
     def fd_write(self, fd: int, iovs_ptr: int, iovs_len: int, nwritten_ptr: int) -> int:
         """
         Adapts wasi_snapshot_preview1:fd_write to WASI 0.3p wasi:io/streams:write.
-        Every guest-memory offset used below is bounds-checked before use,
-        so the only exception this can still raise is a genuine OS-socket
-        failure (broken pipe / send timeout) surfacing from UartTransport --
-        a real hardware-boundary condition, not a control-flow shortcut, so
-        it's caught narrowly (OSError) rather than a blanket `except Exception`.
+        Every guest-memory offset is validated before the first write, so an
+        invalid later iovec cannot expose output from an earlier one.
         """
         mem = self.guest_memory
         mem_len = len(mem)
+        if iovs_len < 0 or nwritten_ptr < 0 or nwritten_ptr > mem_len - 4:
+            return 21  # EFAULT
+        if iovs_ptr < 0 or iovs_ptr > mem_len or iovs_len > (mem_len - iovs_ptr) // 8:
+            return 21  # EFAULT
+
+        # First pass: validate every iovec and its payload without side effects.
+        for i in range(iovs_len):
+            iov_offset = iovs_ptr + (i * 8)
+            base, length = struct.unpack_from("<II", mem, iov_offset)
+            if base > mem_len or length > mem_len - base:
+                return 21  # EFAULT
+
         total_written = 0
         stream_iface = self.core03p.get_interface("wasi:io/streams")
         write_fn = stream_iface.write if stream_iface is not None else None
 
-        try:
-            for i in range(iovs_len):
-                iov_offset = iovs_ptr + (i * 8)
-                if iov_offset + 8 > mem_len:
-                    return 21  # EFAULT
-                base, length = struct.unpack_from("<II", mem, iov_offset)
-                if base + length > mem_len:
-                    return 21  # EFAULT
-                buf = bytes(mem[base : base + length])
-                if write_fn is not None:
-                    total_written += write_fn(fd, buf)
-                else:
-                    self.sysv.transport.write(buf)
-                    total_written += len(buf)
-        except OSError:
-            # Fallback to system call directly
-            return int(
-                self.sysv.fireball_call(
-                    FbSyscallId.WASI_FD_WRITE, fd, iovs_ptr, iovs_len, nwritten_ptr, 0, 0
-                )
-            )
+        # Second pass: perform the writes now that the whole vector is known valid.
+        for i in range(iovs_len):
+            iov_offset = iovs_ptr + (i * 8)
+            base, length = struct.unpack_from("<II", mem, iov_offset)
+            buf = bytes(mem[base : base + length])
+            if write_fn is not None:
+                total_written += write_fn(fd, buf)
+            else:
+                self.sysv.transport.write(buf)
+                total_written += len(buf)
 
-        if nwritten_ptr + 4 <= mem_len:
-            struct.pack_into("<I", mem, nwritten_ptr, total_written)
+        struct.pack_into("<I", mem, nwritten_ptr, total_written)
         return 0  # SUCCESS
 
     def fd_read(self, fd: int, iovs_ptr: int, iovs_len: int, nread_ptr: int) -> int:

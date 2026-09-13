@@ -142,7 +142,8 @@ Fireball の実行コアは、以下の 6 つの物理メカニズムによっ�
 <!-- traceability: {FastAddressCheck} {META_RestrictedPhysicalAccess} {LowLatencyLookup} {UnifiedAccessModel} {ADR_PageGranularPermissionIsolation} -->
 - **Fast-path (Bit 31 = 0)**: ゲストRAMアクセス。ベースポインタ加算と、開始アドレスおよびアクセス末尾（`addr + width - 1`）を `mem_size` と比較する境界保護（1バイトアクセスは単一比較、複数バイトアクセスは加算後の比較を追加。マスクなし）による高速変換。
 - **vMMIO-path (Bit 31 = 1)**: VPN（20 bits）に対し 5-bit Folding XOR（20→10→5）を計算し、32エントリ TLB を直接参照。ミス時は `flat_map_view` を二分探索。 `{FastAddressCheck}` `{LowLatencyLookup}`
-- **unmap によるハードウェア/仮想化境界遮断**: アクセス権限のない領域（他タスク所有SHM、FLIGHT中、未登録）は仮想アドレス空間から物理的・論理的に unmap される。PTE に `owner_id` フィールドを持たせず、未登録ページフォルト（`TRAP_UNREGISTERED_PAGE`）により最速かつ確実に遮断する。 `{UnifiedAccessModel}` `{ADR_PageGranularPermissionIsolation}`
+- **HAL DYNAMIC (FC=13)**: HALが用意した固定長バッファをvMMIOへ動的マップする領域。マルチゲスト構成ではDYNAMICマッピングを保持できるゲストを1つに限定し、別ゲストからのバインド要求は拒否する。
+- **unmap によるハードウェア/仮想化境界遮断**: アクセス権限のない領域（他タスク所有SHM、FLIGHT中、未登録）は仮想アドレス空間から物理的・論理的に unmap される。SHMのPTEには `owner_id` を保持し、スケジューラの現在タスクIDと照合する。所有権変更・RevokeではPTEとTLBを即時無効化する。HAL DYNAMICバッファは別契約として、マルチゲスト構成でも同時マップ可能なゲストを1つに限定する。 `{UnifiedAccessModel}` `{ADR_PageGranularPermissionIsolation}`
 
 ### 3.6 Pillar 6: ゼロコピー CSP ランデブー・ハンドオフ (Zero-Copy CSP Rendezvous Handoff)
 <!-- traceability: {IPC_ZeroCopy} {TypeSafeMessaging} {ADR_RendezvousChannel} {ADR_SharedBlockRaii} -->
@@ -349,7 +350,7 @@ sequenceDiagram
 | **BLOCKEDタスク起床方式** (`{ADR_EventDrivenWakeQueue}`) | **イベントドリブン起床キュー** | 線形スキャンによる $O(n)$ ポーリングを排除し、O(1) コンテキストスイッチを維持。設計根拠: `{ADR_EventDrivenWakeQueue}` |
 | **IPC共有メモリの所有権表現** (`{ADR_SharedBlockRaii}`) | **RAII所有権を持つ`shared-block`リソース** | 単なる整数IDでは防げないダングリング参照・解放忘れを型で排除。Revoke/Grantに対応。設計根拠: `{ADR_SharedBlockRaii}` |
 | **メモリマネージャの問い合わせAPI** (`{ADR_MemoryManagerMinimalSurface}`) | **`query`/`check-ownership`を持たない最小公開面** | 情報は`shared_block`側や呼び出し元が既に保持しており、二重の問い合わせ経路を作らない。設計根拠: `{ADR_MemoryManagerMinimalSurface}` |
-| **ページ単位権限分離とunmap遮断** (`{ADR_PageGranularPermissionIsolation}`) | **4KB物理ページ単位の権限分離とPTE unmap** | PTEに`owner_id`を持たせず、マッピングの有無（unmap）とTLB即時フラッシュでハードウェア/仮想化境界遮断。設計根拠: `{ADR_PageGranularPermissionIsolation}` |
+| **ページ単位権限分離とunmap遮断** (`{ADR_PageGranularPermissionIsolation}`) | **4KB物理ページ単位の権限分離とPTE unmap** | SHMのPTEに`owner_id`を保持し、スケジューラの現在タスクIDと照合する。所有権変更・RevokeではPTEとTLBを即時無効化する。HAL DYNAMICは別契約として、マルチゲスト構成でも同時マップ可能なゲストを1つに限定する。設計根拠: `{ADR_PageGranularPermissionIsolation}` |
 | **1ランタイム1ゲスト原則** (`{OneRuntimeOneGuest}`) | **1ランタイム1ゲストの直交分離とIPC協調** | 単一VM内での複数モジュール同居を禁止し、マルチインスタンスは独立ランタイムの並行起動とCoOS IPCで実現。障害・メモリを完全隔離。 |
 | **ランタイム専用バンプアロケータ** (`{Runtime_BumpAllocator}`) | **専用アリーナ所有とアンロード時 $O(1)$ 一括解放（W^Xコード分離）** | 各ランタイムが固定長バンプアロケータを所有し、WASMモジュール内のシステムコンテナストレージ（RAM/XN）確保を一元管理。アンロード時にアリーナごと一括リセットし断片化を根絶。なお、JITコードキャッシュはMPU W^X制御の専用実行可能セクションから専用アロケータで確保され、データアリーナとは厳格にドメイン分離。 |
 | **システムコンテナ用アロケータ** (`{System_Allocator}`) | **dlmalloc による固定長システムヒープアリーナ管理** | システム層（PTE表, チャネル, ブレークポイント等）の動的増減に柔軟対応し、断片化の自動合体を伴う個別解放を可能にする。 |

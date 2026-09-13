@@ -3,8 +3,6 @@
 ## 1. 目的と対象範囲
 
 正本: [`runtime_interpreter.md`](docs/components/tier2_runtime/runtime_interpreter.md), [`wasm_instruction_set.md`](docs/specs/wasm_instruction_set.md)
-参考実装: [`interpreter_concept.py`](docs/components/tier2_runtime/concepts/interpreter_concept.py)
-
 `{ThreadedInterpreter}`（CPS 4引数ハンドラ方式）、`OperandStack`・`LocalStack`・`control_frame` の3本の独立スタック、ラベルアリティに基づくスタックプルーニング、i32/i64演算、境界チェック付きメモリアクセス、Safepointポーリングを検証する。
 
 ## 2. テストケース一覧
@@ -13,7 +11,7 @@
 
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| TEST-INTP-01 | ハンドラのシグネチャがCPS 4引数(`ctx, sp, local_base, tos`)である | 実装コードを確認 | 各opcodeハンドラの引数を確認 | すべてのハンドラが同一の4引数シグネチャを持ち、次の継続を自ら返す（中央のswitch/if-elifループが「次に何をするか」を決定しない） | wasm_instruction_set.md, runtime_interpreter.md |
+| TEST-INTP-01 | ハンドラのシグネチャと継続結果がCPS 4引数(`ctx, sp, local_base, tos`)である | 実装コードを確認 | 各opcodeハンドラの引数と結果を確認 | すべてのハンドラが同一の4引数シグネチャを持ち、継続時は次回呼び出し用の4引数とトラップ状態を返す。正常終了は継続なし、トラップは非NULLのトラップ情報で表す | wasm_instruction_set.md, runtime_interpreter.md |
 | TEST-INTP-02 | ハンドラテーブルによるディスパッチ | - | ディスパッチ機構を確認 | opcode→ハンドラ関数のテーブル参照で分岐し、線形if-elif連鎖ではない | 同上 |
 | TEST-INTP-03 | インタープリタとJITトレースのCPS 4引数規約完全一致 | JITトレース生成 | JITエントリとハンドラシグネチャを比較 | `void (*)(execution_context* ctx, uint32_t* sp, uint32_t* local_base, uint32_t tos)` で完全一致し、ディスパッチテーブルから直接 C 呼び出し可能 | `{ContextPointerRegister}` `{AAPCS_FastCall}` `{PositionIndependentCode}` |
 | TEST-INTP-04 | JITトレースからインタープリタへのシームレスフォールバック | 未コンパイルのブロックへ分岐 | トレース実行完了 | トレース末尾でインタープリタへスムーズに復帰し、後続ブロックをインタープリタが継続実行する | `{JIT_LazyChaining}` `{JIT_RuntimeAPI_Fallback}` |

@@ -28,6 +28,7 @@
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | TEST-MEM-10 | `allocate-shared`→`release`→`claim`の所有権移動 | タスクAが`allocate-shared`済み | ライフサイクル手順を実行 | `release`後はA側で無効化され、`claim`後はB側が所有権を得る（二重所有なし） | `{OwnershipTransfer}` |
 | TEST-MEM-10c | `rollback_transfer()`による所有権の復元 | `release()`済みで送信中断 | `rollback_transfer(handle)`を送信タスクの実行コンテキストから実行 | 所有権が送信元タスクへ復元される（ダングリングのまま放置されない）。物理的なページ再マッピング挙動の検証は [`runtime_memory_test_spec.md`](docs/components/tier2_runtime/tests/runtime_memory_test_spec.md) TEST-MEM-10c(物理)を正本とする | ipc_router.md |
+| TEST-MEM-10d | 所有権変更通知フック | `PageMappingCallbacks`を登録済み | `release()`、`claim()`、`rollback_transfer()`を順に実行 | 所有権変更ごとに`on_owner_changed`が旧・新所有者を通知し、再利用可能な所有ビューの作成時だけ`on_map_page`が発火する。コールバックはtask-idを引数で自己申告させない | [`system_memory.md`](docs/components/tier1_interface/system_memory.md)「共有ページマッピング・所有権変更通知フック」 |
 | TEST-MEM-11 | `shared-block`のRAII自動解放 | Bがdropする | drop実行 | メモリが自動解放される（明示的`release`呼び出し不要） | 「ADR_SharedBlockRaii」 |
 | TEST-MEM-12 | `shm-id`のkv_pairエンコーディング | IPC送信 | メッセージ構築 | 型スコープ上位3bit=`0b000`（機能的）、下位5bit=`0b00001`（u32）のkv_pairとして格納される。`ipc_router.md`の型語彙表にない独自の`dtype=handle`は使わない | ipc_router.md |
 | TEST-MEM-13 | `query()`/`check_ownership()`が削除されている | - | APIサーフェスを確認 | これらのAPIは存在しない（`shared_block.get_size()`/`get_owner()`で代替） | ADR_MemoryManagerMinimalSurface |

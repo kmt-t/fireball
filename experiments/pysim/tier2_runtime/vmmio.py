@@ -2,7 +2,7 @@
 experiments/pysim/tier2_runtime/vmmio.py
 vMMIO FlatMap Page Table & Direct-Mapped TLB simulation.
 - RAM Bypass Flag (Bit 31): O(1) linear-RAM fast path, no table lookup
-- FlatMap PTE storage: maps 20-bit VPN -> PTE
+- FlatMap PTE storage: maps 20-bit VPN -> PTE (64 entries)
 - Direct-mapped Software TLB[32] keyed by Folding XOR Hash over 20-bit VPN:
   folds 20 -> 10 -> 5 and selects a 5-bit slot index (0..31)
 - Tier 1 linear RAM: Bit31 bypass PLUS a size-comparison bound check (no mask, no
@@ -15,26 +15,32 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from enum import IntEnum
 from typing import TYPE_CHECKING
 
 from system_containers import MutableFlatMapStorage, StaticVector
 from scheduler import Scheduler
 
 if TYPE_CHECKING:
-    from memory import MemoryManager
+    from memory_interface import MemoryManager
 
 # docs/components/tier1_core/system_config.md {META_FlatMapIndexed}: max PTE
 # count the FlatMap page table can hold.
-FB_CONF_VMMIO_MAX_PTES = 32
+FB_CONF_VMMIO_MAX_PTES = 64
 
 
-class TrapCode:
-    __slots__ = ()
-    OUT_OF_BOUNDS = "TRAP_MEMORY_OUT_OF_BOUNDS"
-    UNDEFINED_FC = "TRAP_UNDEFINED_FC"
-    UNREGISTERED_PAGE = "TRAP_UNREGISTERED_PAGE"
-    ACCESS_VIOLATION = "TRAP_ACCESS_VIOLATION"
-    OWNER_MISMATCH = "TRAP_UNREGISTERED_PAGE"  # Aliased to UNREGISTERED_PAGE per ADR_PageGranularPermissionIsolation
+class VmmioStatus(IntEnum):
+    OK_GUEST_RAM = 0
+    OK_SYSCALL = 1
+    OK_PHYSICAL = 2
+    OUT_OF_BOUNDS = 3
+    UNDEFINED_FC = 4
+    UNREGISTERED_PAGE = 5
+    ACCESS_VIOLATION = 6
+    OWNER_MISMATCH = 5  # Aliased per ADR_PageGranularPermissionIsolation.
+
+
+TrapCode = VmmioStatus
 
 
 # Function Codes (bits[31:28]) — see runtime_vmmio.md "アドレス分解の対応関係"
@@ -124,7 +130,8 @@ class TLBSlot:
 
 class VMMIOController:
     """
-    FlatMap Page Table (vpn -> PTE) with a direct-mapped 32-entry software TLB.
+    FlatMap Page Table (vpn -> PTE, 64 entries) with a direct-mapped 32-entry
+    software TLB.
         TLB hits provide O(1) hot-path access, while TLB misses look up the FlatMap.
     """
 
@@ -159,13 +166,15 @@ class VMMIOController:
         write: bool = True,
     ) -> None:
         """Registers a Tier 2 static device page (FC=12) into FlatMap."""
-        self.ptes.insert(vpn, StaticDevicePTE(handler=handler, read=read, write=write))
+        assert self.ptes.insert(
+            vpn, StaticDevicePTE(handler=handler, read=read, write=write)
+        ), "vMMIO PTE table capacity exceeded"
 
     def map_shm_page(self, vpn: int, phys_page: int, owner_id: int = 0) -> None:
         """Registers a Tier 3 SHM page (FC=14) into FlatMap."""
-        if vpn in self.ptes:
+        if self.ptes.find(vpn) is not None:
             self.ptes.remove(vpn)
-        self.ptes.insert(
+        assert self.ptes.insert(
             vpn,
             Tier3PTE(
                 phys_page=phys_page,
@@ -175,16 +184,16 @@ class VMMIOController:
                 exec_=False,
                 owner_id=owner_id,
             ),
-        )
+        ), "vMMIO PTE table capacity exceeded"
         self.flush_tlb_entry(vpn)
 
     def map_passthrough_page(
         self, vpn: int, phys_page: int, read: bool = True, write: bool = True
     ) -> None:
         """Registers a Tier 3 Passthrough page (FC=15) into FlatMap."""
-        if vpn in self.ptes:
+        if self.ptes.find(vpn) is not None:
             self.ptes.remove(vpn)
-        self.ptes.insert(
+        assert self.ptes.insert(
             vpn,
             Tier3PTE(
                 phys_page=phys_page,
@@ -193,7 +202,7 @@ class VMMIOController:
                 write=write,
                 exec_=True,
             ),
-        )
+        ), "vMMIO PTE table capacity exceeded"
         self.flush_tlb_entry(vpn)
 
     def revoke_shm_owner(self, vpn: int) -> None:
@@ -201,30 +210,19 @@ class VMMIOController:
         IPC Router Revoke phase: physically unmaps the page from vMMIO and flushes its TLB entry.
         Subsequent accesses will trap via TRAP_UNREGISTERED_PAGE (ADR_PageGranularPermissionIsolation).
         """
-        if vpn in self.ptes:
+        if self.ptes.find(vpn) is not None:
             self.ptes.remove(vpn)
         self.flush_tlb_entry(vpn)
 
-    def update_shm_owner(self, vpn: int, new_owner_id: int, phys_page: int | None = None) -> bool:
-        """Updates or remaps an FC=14 SHM page upon grant and flushes its TLB entry."""
-        pte = self.ptes.find(vpn)
-        if pte is not None:
-            pte.owner_id = new_owner_id
-        else:
-            p_page = phys_page if phys_page is not None else (vpn & 0xFFF)
-            self.map_shm_page(vpn, phys_page=p_page, owner_id=new_owner_id)
-        self.flush_tlb_entry(vpn)
-        return True
-
     def unmap_shm_page(self, vpn: int) -> None:
         """Unregisters an FC=14 SHM page and flushes its TLB entry."""
-        if vpn in self.ptes:
+        if self.ptes.find(vpn) is not None:
             self.ptes.remove(vpn)
         self.flush_tlb_entry(vpn)
 
     def register_to_memory_manager(self, memory_manager: MemoryManager) -> None:
         """Registers vMMIO FC=14 SHM page table listeners into MemoryManager."""
-        from memory import PageMappingCallbacks
+        from memory_interface import PageMappingCallbacks
 
         def _to_vpn(page_idx: int) -> int:
             return (0xE000_0000 >> 12) + page_idx
@@ -234,10 +232,9 @@ class VMMIOController:
                 on_map_page=lambda page_idx, _addr, owner_id: self.map_shm_page(
                     _to_vpn(page_idx), phys_page=page_idx, owner_id=owner_id
                 ),
-                on_update_owner=lambda page_idx, _addr, new_owner_id: self.update_shm_owner(
-                    _to_vpn(page_idx), new_owner_id
+                on_owner_changed=lambda page_idx, _addr, _previous_owner_id, _new_owner_id: self.unmap_shm_page(
+                    _to_vpn(page_idx)
                 ),
-                on_revoke=lambda page_idx, _addr: self.revoke_shm_owner(_to_vpn(page_idx)),
                 on_unmap_page=lambda page_idx, _addr: self.unmap_shm_page(_to_vpn(page_idx)),
             )
         )
@@ -286,11 +283,12 @@ class VMMIOController:
         slot.pte = pte
         return pte
 
-    def access(self, raw_addr: int, is_write: bool) -> tuple[str, str]:
+    def access(self, raw_addr: int, is_write: bool) -> tuple[VmmioStatus, int]:
         """
         Full dispatch: RAM bypass -> TLB/FlatMap -> permission check (always,
         TLB hit or not) -> syscall dispatch or physical access.
-        Returns (status_code, detail).
+        Returns (status, physical_address). The second field is zero unless
+        the status is OK_PHYSICAL.
         """
 
         current_task_id = self.scheduler.current_task_id
@@ -300,50 +298,53 @@ class VMMIOController:
             if addr.raw >= self.guest_ram_size:
                 return (
                     TrapCode.OUT_OF_BOUNDS,
-                    f"guest address {addr.raw:#010x} exceeds "
-                    f"FB_CONF_GUEST_RAM_SIZE ({self.guest_ram_size})",
+                    0,
                 )
-            return ("OK_GUEST_RAM", "bypassed to linear guest RAM")
+            return (VmmioStatus.OK_GUEST_RAM, 0)
         # 2. TLB / FlatMap lookup.
         pte = self._lookup_pte(addr)
         if pte is None:
             # Check known valid FCs for proper trap classification
-            if addr.fc() not in (FC_STATIC_DEVICE, FC_SHM, FC_PASSTHROUGH):
+            if not (
+                addr.fc() == FC_STATIC_DEVICE
+                or addr.fc() == FC_SHM
+                or addr.fc() == FC_PASSTHROUGH
+            ):
                 return (
                     TrapCode.UNDEFINED_FC,
-                    f"FC {addr.fc():#x} is not a valid vMMIO region",
+                    0,
                 )
-            return (TrapCode.UNREGISTERED_PAGE, f"no PTE at VPN {addr.vpn():#x}")
+            return (TrapCode.UNREGISTERED_PAGE, 0)
         # 3. Permission check — runs unconditionally, TLB hit or miss.
         # The FC already at hand (from the address itself, decoded before
         # any table lookup) determines the PTE's shape -- checked from that,
         # not via isinstance (no RTTI in the target build).
         if addr.fc() == FC_STATIC_DEVICE:
             if is_write and not pte.write:
-                return (TrapCode.ACCESS_VIOLATION, "static device: write not permitted")
+                return (TrapCode.ACCESS_VIOLATION, 0)
             if not is_write and not pte.read:
-                return (TrapCode.ACCESS_VIOLATION, "static device: read not permitted")
+                return (TrapCode.ACCESS_VIOLATION, 0)
             if pte.handler is not None:
                 pte.handler(addr.syscall_metadata(), addr.offset(), is_write)
-            return ("OK_SYSCALL", "dispatched to static device handler")
+            return (VmmioStatus.OK_SYSCALL, 0)
         # Tier3PTE (SHM / PASSTHROUGH)
         if not pte.valid:
-            return (TrapCode.ACCESS_VIOLATION, "page marked invalid")
+            return (TrapCode.ACCESS_VIOLATION, 0)
         if is_write and not pte.write:
-            return (TrapCode.ACCESS_VIOLATION, "write not permitted")
+            return (TrapCode.ACCESS_VIOLATION, 0)
         if not is_write and not pte.read:
-            return (TrapCode.ACCESS_VIOLATION, "read not permitted")
+            return (TrapCode.ACCESS_VIOLATION, 0)
         if addr.fc() == FC_SHM:
             if pte.owner_id == FB_TASK_ID_FLIGHT:
                 return (
                     TrapCode.OWNER_MISMATCH,
-                    "page is in-flight (ownership transfer)",
+                    0,
                 )
             if current_task_id != 0 and pte.owner_id != 0 and pte.owner_id != current_task_id:
                 return (
                     TrapCode.OWNER_MISMATCH,
-                    f"page unmapped for task {current_task_id} (owner={pte.owner_id})",
+                    0,
                 )
 
         phys_addr = (pte.phys_page << 12) | addr.offset()
-        return ("OK_PHYSICAL", f"physical access at {phys_addr:#010x}")
+        return (VmmioStatus.OK_PHYSICAL, phys_addr)

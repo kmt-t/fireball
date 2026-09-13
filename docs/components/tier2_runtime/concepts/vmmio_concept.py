@@ -4,13 +4,14 @@ Reference Concept Implementation: vMMIO FlatMap Page Table & Direct-Mapped TLB
 Implementation Invariants & Gotchas:
 - GOTCHA-VMMIO-01: Guest RAM access (Bit 31 == 0) completely bypasses TLB with direct
   base addition and bound check, preserving peak memory throughput.
-- GOTCHA-VMMIO-02: Folding XOR hash uniformly diffuses all 20 VPN bits across 16 slots,
+- GOTCHA-VMMIO-02: Folding XOR hash uniformly diffuses all 20 VPN bits across 32 slots,
   preventing inter-device cache conflict and TLB thrashing.
 - GOTCHA-VMMIO-03: Shared memory revocation unmaps the PTE and immediately
   flushes TLB entry, blocking subsequent access with TRAP_UNREGISTERED_PAGE.
 """
 
 from collections.abc import Callable
+from enum import IntEnum
 from typing import TypedDict
 
 BACKS = [
@@ -18,11 +19,18 @@ BACKS = [
 ]
 
 
-class TrapCode:
-    OUT_OF_BOUNDS = "TRAP_MEMORY_OUT_OF_BOUNDS"
-    UNDEFINED_FC = "TRAP_UNDEFINED_FC"
-    UNREGISTERED_PAGE = "TRAP_UNREGISTERED_PAGE"
-    ACCESS_VIOLATION = "TRAP_ACCESS_VIOLATION"
+class VmmioStatus(IntEnum):
+    OK_GUEST_RAM = 0
+    OK_SYSCALL = 1
+    OK_PHYSICAL = 2
+    OUT_OF_BOUNDS = 3
+    UNDEFINED_FC = 4
+    UNREGISTERED_PAGE = 5
+    ACCESS_VIOLATION = 6
+    OWNER_MISMATCH = 5
+
+
+TrapCode = VmmioStatus
 
 
 # Function Codes (bits[31:28]) — see runtime_vmmio.md "アドレス分解の対応関係"
@@ -283,11 +291,12 @@ class VMMIOController:
         self.tlb[tlb_idx] = TLBSlot(vpn=vpn, pte=pte)
         return pte
 
-    def access(self, raw_addr: int, is_write: bool) -> tuple[str, str]:
+    def access(self, raw_addr: int, is_write: bool) -> tuple[VmmioStatus, int]:
         """
         Full dispatch: RAM bypass -> TLB/FlatMap -> permission check (always,
         TLB hit or not) -> syscall dispatch or physical access.
-        Returns (status_code, detail).
+        Returns (status, physical_address). The second field is zero unless
+        the status is OK_PHYSICAL.
         """
         addr = VmmioAddress(raw_addr)
         # 1. Fast RAM bypass (Stage 1) — O(1), never touches the page table.
@@ -295,39 +304,42 @@ class VMMIOController:
             if addr.raw >= self.guest_ram_size:
                 return (
                     TrapCode.OUT_OF_BOUNDS,
-                    f"guest address {addr.raw:#010x} exceeds "
-                    f"FB_CONF_GUEST_RAM_SIZE ({self.guest_ram_size})",
+                    0,
                 )
-            return ("OK_GUEST_RAM", "bypassed to linear guest RAM")
+            return (VmmioStatus.OK_GUEST_RAM, 0)
         # 2. TLB / FlatMap lookup.
         pte = self._lookup_pte(addr)
         if pte is None:
             # Check known valid FCs for proper trap classification
-            if addr.fc() not in (FC_STATIC_DEVICE, FC_SHM, FC_PASSTHROUGH):
+            if not (
+                addr.fc() == FC_STATIC_DEVICE
+                or addr.fc() == FC_SHM
+                or addr.fc() == FC_PASSTHROUGH
+            ):
                 return (
                     TrapCode.UNDEFINED_FC,
-                    f"FC {addr.fc():#x} is not a valid vMMIO region",
+                    0,
                 )
-            return (TrapCode.UNREGISTERED_PAGE, f"no PTE at VPN {addr.vpn():#x}")
+            return (TrapCode.UNREGISTERED_PAGE, 0)
         # 3. Permission check — runs unconditionally, TLB hit or miss.
         if isinstance(pte, StaticDevicePTE):
             if is_write and not pte.write:
-                return (TrapCode.ACCESS_VIOLATION, "static device: write not permitted")
+                return (TrapCode.ACCESS_VIOLATION, 0)
             if not is_write and not pte.read:
-                return (TrapCode.ACCESS_VIOLATION, "static device: read not permitted")
+                return (TrapCode.ACCESS_VIOLATION, 0)
             if pte.handler is not None:
                 pte.handler(addr.syscall_metadata(), addr.offset(), is_write)
-            return ("OK_SYSCALL", "dispatched to static device handler")
+            return (VmmioStatus.OK_SYSCALL, 0)
         # Stage3PTE (SHM / PASSTHROUGH)
         if not pte.valid:
-            return (TrapCode.ACCESS_VIOLATION, "page marked invalid")
+            return (TrapCode.ACCESS_VIOLATION, 0)
         if is_write and not pte.write:
-            return (TrapCode.ACCESS_VIOLATION, "write not permitted")
+            return (TrapCode.ACCESS_VIOLATION, 0)
         if not is_write and not pte.read:
-            return (TrapCode.ACCESS_VIOLATION, "read not permitted")
+            return (TrapCode.ACCESS_VIOLATION, 0)
 
         phys_addr = (pte.phys_page << 12) | addr.offset()
-        return ("OK_PHYSICAL", f"physical access at {phys_addr:#010x}")
+        return (VmmioStatus.OK_PHYSICAL, phys_addr)
 
 
 # ==============================================================================
@@ -338,7 +350,7 @@ class VMMIOController:
 def test_ram_bypass_never_touches_page_table() -> None:
     ctrl = VMMIOController()
     status, _ = ctrl.access(0x0000_1000, is_write=False)
-    assert status == "OK_GUEST_RAM"
+    assert status == VmmioStatus.OK_GUEST_RAM
     assert ctrl.tlb_hits == 0 and ctrl.tlb_misses == 0
 
 
@@ -351,7 +363,7 @@ def test_static_device_syscall_dispatch() -> None:
     )
     addr = 0xC042_0004
     status, _ = ctrl.access(addr, is_write=True)
-    assert status == "OK_SYSCALL"
+    assert status == VmmioStatus.OK_SYSCALL
     assert dispatched == [(0x042, 0x004, True)]
 
 
@@ -360,10 +372,10 @@ def test_tlb_hit_after_first_walk() -> None:
     ctrl.map_static_device(vpn=0xC0001, handler=lambda sys_id, o, w: None)
     addr = 0xC000_1000
     status1, _ = ctrl.access(addr, is_write=False)
-    assert status1 == "OK_SYSCALL"
+    assert status1 == VmmioStatus.OK_SYSCALL
     assert ctrl.tlb_misses == 1 and ctrl.tlb_hits == 0
     status2, _ = ctrl.access(addr, is_write=False)
-    assert status2 == "OK_SYSCALL"
+    assert status2 == VmmioStatus.OK_SYSCALL
     assert ctrl.tlb_hits == 1, "second access to the same page must hit the TLB"
 
 
@@ -380,7 +392,7 @@ def test_shm_unmap_isolation() -> None:
     addr = 0xE000_2000
     # Mapped: access succeeds.
     status, _ = ctrl.access(addr, is_write=True)
-    assert status == "OK_PHYSICAL"
+    assert status == VmmioStatus.OK_PHYSICAL
     # Revoke (ownership transfer / unmap): page is removed from FlatMap & TLB.
     ctrl.unmap_shm_page(vpn=0xE0002)
     # Subsequent access traps as unregistered page.
@@ -407,7 +419,7 @@ def test_linear_ram_is_bounds_checked_not_waved_through() -> None:
     """The Bit31 bypass must still enforce `{MemoryBoundaryCheck}`."""
     ctrl = VMMIOController(guest_ram_size=8192)
     ok, _ = ctrl.access(0x0000_1FFF, is_write=True)
-    assert ok == "OK_GUEST_RAM", "last in-range byte must be accepted"
+    assert ok == VmmioStatus.OK_GUEST_RAM, "last in-range byte must be accepted"
     for bad in (0x0000_2000, 0x0001_0000, 0x7FFF_FFFF):
         st, _ = ctrl.access(bad, is_write=True)
         assert st == TrapCode.OUT_OF_BOUNDS, f"{bad:#x} is past the 8KB allocation"
@@ -422,7 +434,7 @@ def test_linear_ram_bound_check_works_for_non_power_of_two_size() -> None:
     derived from a non-power-of-two size does not land on the real boundary."""
     ctrl = VMMIOController(guest_ram_size=12288)  # 12KB — not a power of two
     ok, _ = ctrl.access(12287, is_write=False)
-    assert ok == "OK_GUEST_RAM", "last in-range byte (size-1) must be accepted"
+    assert ok == VmmioStatus.OK_GUEST_RAM, "last in-range byte (size-1) must be accepted"
     st, _ = ctrl.access(12288, is_write=False)
     assert st == TrapCode.OUT_OF_BOUNDS, "the first byte past the real 12KB boundary must trap"
 
@@ -462,11 +474,9 @@ def test_flatmap_pte_registration_and_tlb_caching() -> None:
     # Access all 32 pages
     for p in range(32):
         addr = 0xE000_0000 | (p << 12) | 0x10
-        st, msg = ctrl.access(addr, is_write=False)
-        assert st == "OK_PHYSICAL"
-        assert (
-            f"0x{0x1000010 + (p << 12):08x}" in msg or f"0x{(0x1000 + p) << 12 | 0x10:08x}" in msg
-        )
+        st, phys_addr = ctrl.access(addr, is_write=False)
+        assert st == VmmioStatus.OK_PHYSICAL
+        assert phys_addr == ((0x1000 + p) << 12) | 0x10
 
     # Repeated access to a hot working set of 8 pages achieves 100% TLB hits
     for p in range(8):
@@ -478,7 +488,7 @@ def test_flatmap_pte_registration_and_tlb_caching() -> None:
         for p in range(8):
             addr = 0xE000_0000 | (p << 12)
             st, _ = ctrl.access(addr, is_write=False)
-            assert st == "OK_PHYSICAL"
+            assert st == VmmioStatus.OK_PHYSICAL
     assert ctrl.tlb_hits == before_hits + 80, "working set in TLB must achieve 100% hit rate"
 
 
@@ -514,10 +524,10 @@ def test_vmmio_alloc_and_map_multipage() -> None:
     # Access across all 3 pages
     for i in range(3):
         vaddr = base_vaddr + (i * 4096) + 0x40
-        st, msg = ctrl.access(vaddr, is_write=True)
-        assert st == "OK_PHYSICAL"
+        st, phys_addr = ctrl.access(vaddr, is_write=True)
+        assert st == VmmioStatus.OK_PHYSICAL
         expected_phys = (phys[i] << 12) | 0x40
-        assert f"{expected_phys:#010x}" in msg
+        assert phys_addr == expected_phys
 
     # Unmap and free
     ctrl.unmap_and_free_shm(vpage_start=0, num_pages=3)
@@ -531,10 +541,10 @@ def test_passthrough_page_access() -> None:
     ctrl = VMMIOController()
     ctrl.map_passthrough_page(vpn=0xF0005, phys_page=0x9ABC, read=True, write=True)
     addr = 0xF000_5080
-    status, msg = ctrl.access(addr, is_write=False)
-    assert status == "OK_PHYSICAL"
+    status, phys_addr = ctrl.access(addr, is_write=False)
+    assert status == VmmioStatus.OK_PHYSICAL
     expected_phys = (0x9ABC << 12) | 0x080
-    assert f"{expected_phys:#010x}" in msg
+    assert phys_addr == expected_phys
 
 
 def test_permission_checks_enforced_even_on_tlb_hit() -> None:
@@ -545,13 +555,12 @@ def test_permission_checks_enforced_even_on_tlb_hit() -> None:
     addr = 0xE000_5000
     # 1. Warm up TLB with read access
     status, _ = ctrl.access(addr, is_write=False)
-    assert status == "OK_PHYSICAL"
+    assert status == VmmioStatus.OK_PHYSICAL
     assert ctrl.tlb_hits == 0 and ctrl.tlb_misses == 1
 
     # 2. Subsequent write access hits TLB lookup, but must be blocked by permission check
-    status, msg = ctrl.access(addr, is_write=True)
+    status, _ = ctrl.access(addr, is_write=True)
     assert status == TrapCode.ACCESS_VIOLATION
-    assert "write not permitted" in msg
     assert ctrl.tlb_hits == 1  # TLB lookup was a hit, but permission check caught it!
 
 
@@ -562,7 +571,7 @@ def test_tlb_slot_conflict_eviction() -> None:
     vpn_a = 0xE0000
     target_slot = ctrl.tlb_index(vpn_a)
     vpn_b: int | None = None
-    for cand in range(1, 32):
+    for cand in range(1, 64):
         cand_vpn = 0xE0000 + cand
         if ctrl.tlb_index(cand_vpn) == target_slot:
             vpn_b = cand_vpn

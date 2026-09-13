@@ -207,6 +207,18 @@ JIT コード生成専用に予約された固定長リージョン（`FB_CONF_J
 - **非所有タスク操作の完全遮断 (`GOTCHA-MEM-02`)**: 共有メモリブロックの操作時、ブロックの所有タスク ID を厳格に照合し、非所有タスクからの操作は拒否される。具体的な検出・遮断機構は Tier 2 の実装詳細（`runtime_memory.md`）を正本とし、本契約はそれを規定しない。
 - **障害時回復**: 所有権移譲が完了しない場合、`rollback_transfer(handle)` を現在実行中の送信タスクから呼び出して元の所有者へ戻し、リソースのダングリングを防止する。
 
+### 6.3 共有ページマッピング・所有権変更通知フック
+<!-- traceability: {OwnershipTransfer} {VmmioShmDelegation} {META_FaultIsolation} -->
+Tier 1 は、共有ページの外部マッピング管理者がライフサイクルを監視するための汎用コールバック口 `PageMappingCallbacks` を提供する。これは vMMIO、PTE、TLB を契約へ持ち込むものではなく、物理ページの状態変化を通知するだけの依存性逆転用ポートである。
+
+| コールバック | シグネチャ | 発火条件 | 契約上の意味 |
+| :--- | :--- | :--- | :--- |
+| `on_map_page` | `(page_idx, physical_addr, owner_id)` | 確保、`claim`、ロールバックで有効な所有ビューを作るとき | 外部管理者が新しい所有者のビューを登録する |
+| `on_owner_changed` | `(page_idx, physical_addr, previous_owner_id, new_owner_id)` | 所有者が変わるとき（`release` による `IN_FLIGHT` 遷移を含む） | 旧ビューを先に無効化する。所有者変更だけでは再マップしない |
+| `on_unmap_page` | `(page_idx, physical_addr)` | 共有ページをプールへ返却するとき | 外部管理者がページのビューを破棄する |
+
+`on_owner_changed` はメモリマネージャが所有者台帳を更新した後に一度だけ発火し、登録側は旧マッピングをアンマップする。新しい所有ビューは、所有権確立後の `on_map_page`（`claim` または `rollback_transfer`）で明示的に再登録する。コールバックの呼び出し側が task-id を引数で自己申告することはない。
+
 ## 7. 設計判断 (ADR)
 <!-- traceability: {ADR_SharedBlockRaii} {ADR_MemoryManagerMinimalSurface} -->
 このコンポーネントのADRは `{ADR_SharedBlockRaii}` および `{ADR_MemoryManagerMinimalSurface}` のキーワードで参照される。物理実装に関する `{ADR_PageGranularPermissionIsolation}` は [`runtime_memory.md`](docs/components/tier2_runtime/runtime_memory.md) を正本とする。

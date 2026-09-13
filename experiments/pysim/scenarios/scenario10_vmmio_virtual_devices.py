@@ -42,6 +42,7 @@ from vmmio import (
     TrapCode,
     VmmioAddress,
     VMMIOController,
+    VmmioStatus,
 )
 from wasm_reader import parse
 
@@ -86,11 +87,11 @@ def test_scenario_vmmio_virtual_devices():
     # -------------------------------------------------------------------------
     # 3.1 Linear RAM Fast-Bypass Access (Bit 31 == 0)
     status_ram, _ = controller.access(raw_addr=0x0000_0100, is_write=False)
-    assert status_ram == "OK_GUEST_RAM"
+    assert status_ram == VmmioStatus.OK_GUEST_RAM
     print("    [Phase 3.1] Linear RAM O(1) Fast-Bypass Access -> OK_GUEST_RAM [PASS]")
     # 3.2 Device Page Read/Write by Owner & Handler Dispatch
     status_dev_w, _ = controller.access(raw_addr=0xC000_1010, is_write=True)
-    assert status_dev_w == "OK_SYSCALL"
+    assert status_dev_w == VmmioStatus.OK_SYSCALL
     assert len(handled_events) == 1
     assert handled_events[0] == (0, 0x010, True)
     print("    [Phase 3.2] vMMIO Device Page Write & Syscall Dispatch -> OK_SYSCALL [PASS]")
@@ -99,7 +100,7 @@ def test_scenario_vmmio_virtual_devices():
     assert controller.tlb[tlb_idx].vpn == dev_vpn
     initial_hits = controller.tlb_hits
     status_dev_r, _ = controller.access(raw_addr=0xC000_1010, is_write=False)
-    assert status_dev_r == "OK_SYSCALL"
+    assert status_dev_r == VmmioStatus.OK_SYSCALL
     assert controller.tlb_hits == initial_hits + 1
     print("    [Phase 3.3] Direct-Mapped Software TLB Hit (Folding XOR Hash) -> TLB_HIT [PASS]")
     # 3.4 Permission Violation: Write to Read-Only SHM
@@ -126,8 +127,8 @@ def test_scenario_vmmio_virtual_devices():
     controller.scheduler.current_task = controller.scheduler.get_task(1)
     assert controller.scheduler.current_task is not None
     status_pass, detail = controller.access(raw_addr=0xF000_3040, is_write=True)
-    assert status_pass == "OK_PHYSICAL"
-    assert "0x00030040" in detail
+    assert status_pass == VmmioStatus.OK_PHYSICAL
+    assert detail == 0x00030040
     print("    [Phase 3.6] Passthrough Direct Physical Access -> OK_PHYSICAL [PASS]")
     # 3.7 Unregistered Page Trap
     status_unreg, _ = controller.access(raw_addr=0xC000_9000, is_write=False)

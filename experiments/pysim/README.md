@@ -52,7 +52,7 @@ experiments/pysim/
 │   ├── leb128.py          # uleb128 / sleb128 デコーダ
 │   ├── control_flow.py    # 静的ブロック解析 & 制御構造デコーダ
 │   ├── loader.py          # WASM モジュールローダー & アクティブセグメント展開
-│   ├── interpreter.py     # CPS 4引数 スレッド化インタープリタ (Threaded Interpreter)
+│   ├── interpreter.py     # 4引数継続ハンドラの参照インタープリタ (Threaded Interpreter)
 │   ├── runtime_engine.py  # vSoC実行制御とTier 3 JITサービス連携
 │   ├── vmmio.py           # 2段階ダイレクトデコード ページテーブル & ソフトウェア TLB
 │   ├── logger.py          # 構造化ログカタログ & アイドルフラッシュ

@@ -5,7 +5,7 @@
 正本: [`runtime_vmmio.md`](docs/components/tier2_runtime/runtime_vmmio.md)
 参考実装: [`vmmio_concept.py`](docs/components/tier2_runtime/concepts/vmmio_concept.py)
 
-Bit31によるRAM/vMMIO高速分岐、FlatMap PTE + 32エントリDirect-Mapped TLB、Stage1/2/3の3段階セキュリティゲート、SHM所有権チェック、VDMA、TLB無効化を検証する。
+Bit31によるRAM/vMMIO高速分岐、64件のFlatMap PTE + 32エントリDirect-Mapped TLB、Stage1/2/3の3段階セキュリティゲート、SHM所有権チェック、VDMA、TLB無効化を検証する。
 
 ## 2. 直交表マトリクス（Pairwise / Combinatorial Matrix）
 

@@ -25,7 +25,7 @@ for _p in [
     if _sp not in sys.path:
         sys.path.insert(0, _sp)
 
-from vmmio import VMMIOController
+from vmmio import VMMIOController, VmmioStatus
 from scheduler import Scheduler
 
 
@@ -47,7 +47,7 @@ class VMMIOBenchmark:
         self.vmmio.map_static_device(vpn=0xC0000, handler=dummy_dev)
 
         # Register SHM pages (FC=0xE)
-        for i in range(32):
+        for i in range(33):
             self.vmmio.map_shm_page(vpn=0xE0000 + i, phys_page=0x1000 + i, owner_id=1)
 
         # Register Passthrough pages (FC=0xF)
@@ -80,10 +80,10 @@ class VMMIOBenchmark:
         results["folding_xor_hash_ns"] = (t1 - t0) / iterations * 1e9
 
         # 2.3 TLB Miss -> FlatMap Walk (O(log N) Lookup & Refill)
-        # Cycle through 32 different pages to fill the 32-entry TLB.
+        # Cycle through 33 valid pages to exceed the 32-entry TLB capacity.
         t0 = time.perf_counter()
         for i in range(iterations):
-            addr = 0xE000_0000 + ((i % 32) << 12)
+            addr = 0xE000_0000 + ((i % 33) << 12)
             _ = vmmio.access(addr, is_write=False)
         t1 = time.perf_counter()
         results["tlb_miss_flatmap_mops"] = iterations / (t1 - t0) / 1e6
@@ -106,11 +106,12 @@ class VMMIOBenchmark:
         t0 = time.perf_counter()
         for _ in range(iterations):
             res, _ = vmmio.access(shm_addr, is_write=False)
-            if res == "TRAP_OWNER_MISMATCH":
+            if res == VmmioStatus.OWNER_MISMATCH:
                 mismatch_traps += 1
         t1 = time.perf_counter()
         results["rbac_isolation_check_mops"] = iterations / (t1 - t0) / 1e6
         results["rbac_isolation_check_ns"] = (t1 - t0) / iterations * 1e9
+        assert mismatch_traps == iterations
 
         return results
 
@@ -132,7 +133,7 @@ def main():
         f"  * TLB Miss -> FlatMap Walk (O(logN)): {res['tlb_miss_flatmap_mops']:.2f} M ops/s  ({res['tlb_miss_flatmap_ns']:.1f} ns/walk)"
     )
     print(
-        f"  * TLB Hit Acceleration Ratio:         {res['tlb_hit_mops'] / res['tlb_miss_flatmap_mops']:.2f}x faster than FlatMap walk"
+        f"  * TLB Hit / FlatMap Walk Ratio:        {res['tlb_hit_mops'] / res['tlb_miss_flatmap_mops']:.2f}x"
     )
     print(
         f"  * Static Syscall Dispatch (FC=0xC):   {res['static_device_dispatch_mops']:.2f} M ops/s  ({res['static_device_dispatch_ns']:.1f} ns/dispatch)"

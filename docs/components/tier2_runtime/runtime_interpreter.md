@@ -195,11 +195,13 @@ flowchart TD
 
 #### オプコードハンドラ / トレース実行（opcode_handler / exec_trace）
 <!-- traceability: {JIT_RuntimeAPI_Fallback} {ContextPointerRegister} {EnvironmentPointer} {JIT_RegisterMapping} {ADR_TosCacheAsymmetry} -->
-命令ハンドラおよびJITトレースの共通実行シグネチャ。継続渡し（Continuation Passing Style: CPS）と `__fastcall` 呼び出し規約により、ホットな実行変数を物理レジスタに直接載せてハンドラ間で引き継ぐ。実行コンテキストポインタ（`ctx`）、オペランドスタックポインタ（`sp`）、ローカル変数基底（`local_base`）、スタックトップ値（`tos`）渡しにより、4引数シグネチャに統一している。 `{JIT_RuntimeAPI_Fallback}` `{ContextPointerRegister}` `{EnvironmentPointer}` `{JIT_RegisterMapping}`
+命令ハンドラおよびJITトレースは、継続渡し（Continuation Passing Style: CPS）と `__fastcall` 呼び出し規約による同一の4引数入口を持つ。実行コンテキストポインタ（`ctx`）、オペランドスタックポインタ（`sp`）、ローカル変数基底（`local_base`）、スタックトップ値（`tos`）を物理レジスタで引き継ぐ。インタープリタハンドラは次回呼び出し用の4引数とトラップ状態を結果として返し、次のPCは `ctx` に保持する。JITトレースは従来どおり末尾ジャンプで継続し、結果レコードを返さない。 `{JIT_RuntimeAPI_Fallback}` `{ContextPointerRegister}` `{EnvironmentPointer}` `{JIT_RegisterMapping}`
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
-| 実行シグネチャ | `__fastcall` による継続渡し（CPS）4引数シグネチャ | 関数ポインタ | `void (__fastcall *)(execution_context* __restrict__ ctx, uint32_t* __restrict__ sp, uint32_t* __restrict__ local_base, uint32_t tos) noexcept` |
+| 実行シグネチャ | インタープリタ命令ハンドラの継続渡し（CPS）4引数シグネチャ | 関数ポインタ | `handler_result (__fastcall *)(execution_context* __restrict__ ctx, uint32_t* __restrict__ sp, uint32_t* __restrict__ local_base, uint32_t tos) noexcept` |
+| ハンドラ結果 | 次の継続引数とトラップ状態 | 固定結果レコード | `ctx`、`sp`、`local_base`、`tos`、`trap_code`。次のPCは `ctx->ip` に格納し、`trap_code == 0` を正常、非0をトラップとする |
+| JITトレース入口 | インタープリタと同一の4引数入口を持つ末尾継続 | 関数ポインタ | `void (__fastcall *)(execution_context* __restrict__ ctx, uint32_t* __restrict__ sp, uint32_t* __restrict__ local_base, uint32_t tos) noexcept` |
 | レジスタ割り当て | ARM AAPCS / `__fastcall` 引数レジスタマッピング | 物理レジスタ | `R0`: `ctx`, `R1`: `sp`, `R2`: `local_base`, `R3`: `tos` (`{AAPCS_FastCall}` 準拠) |
 
 WASM オプコードごとのスタック遷移およびハンドラ実装マトリクスは `{ThreadedInterpreter}` を参照。
@@ -212,7 +214,7 @@ WASM オプコードごとのスタック遷移およびハンドラ実装マト
 ### 4.1 アルゴリズム
 <!-- traceability: {ThreadedInterpreter} {JIT_RuntimeAPI_Fallback} {Interpreter_LazyJITSwitch} {LowLatencyJIT} {SimpleJITArchitecture} {Challenge_ApproximateYield} {Debug_Integrated} {ContextPointerRegister} {ADR_TosCacheAsymmetry} -->
 - **Threaded Dispatch with Continuation Passing Style (CPS)**: 命令ハンドラを連鎖させるテーブルディスパッチ方式で分岐コストを極小化する。
-  - ハンドラ関数型を `void __fastcall(execution_context* ctx, uint32_t* sp, uint32_t* local_base, uint32_t tos) noexcept` に統一。
+  - インタープリタのハンドラ関数型を `handler_result __fastcall(execution_context* ctx, uint32_t* sp, uint32_t* local_base, uint32_t tos) noexcept` に統一し、結果レコードで次の4引数とトラップ状態を返す。JITトレースの関数型は `void __fastcall(...) noexcept` とする。
   - `ctx` (R0 `{ContextPointerRegister}`), `sp` (R1), `local_base` (R2 `{ContextPointerRegister}` `{JIT_RegisterMapping}`), `tos` (R3 `{AAPCS_FastCall}`) のホットな変数を `__fastcall` 引数レジスタ上で保持・更新。
   - `OperandStack`・`LocalStack`・`control_frame` それぞれの領域開始・終端・オフセット、およびリニアメモリ情報（`mem_base`, `mem_size`, `globals_base`）、ハンドラテーブルを `execution_context` 内で直接管理する。さらに、JITが複雑処理をCへ委譲する際の `complex_helper_ptr` を `+0x40` に保持する。3本は互いに独立した固定容量バッファであり、`call_frame` は `LocalStack` へ、`control_frame` はその専用バッファへ、それぞれ独自に構築する。`R2` をローカル変数基底ポインタ `local_base`、`R3` をスタックトップ値 `tos` として直接引き回す。 `{ContextPointerRegister}` `{JIT_RegisterMapping}` `{AAPCS_FastCall}` `{PositionIndependentCode}`
   - 非制御命令では `[[clang::musttail]]` による直接末尾ジャンプ（Direct-Threaded Code）を行い、レジスタ上の引数をそのまま次のハンドラへ継続渡し（CPS）する。 `{ThreadedInterpreter}`
@@ -411,15 +413,6 @@ sequenceDiagram
 <!-- traceability: {META_FaultIsolation} {MemoryBoundaryCheck} -->
 - **目標**: ゲストの暴走を隔離。 `{META_FaultIsolation}`
 - **方策**: `sp_boundary` と `memory_size`（WASM 64KB ページまたは部分ページ実サイズ）による境界チェック `{MemoryBoundaryCheck}`、Safepointでの`interrupt-event`保留処理による安全な割り込み処理。
-
-## 7. 参考実装リスト
-
-| 名称 | 参照先URL/文献名 | 採用/考慮する理由 |
-| :--- | :--- | :--- |
-| WAMR Fast Interpreter | github.com/bytecodealliance/wasm-micro-runtime | ロード時ルックアップによる直接ジャンプの定石として |
-| WASM3 Interpreter | github.com/wasm3/wasm3 | 最適化されたバイトコードディスパッチャの参考 |
-
----
 
 ## 8. 設計判断 (ADR)
 

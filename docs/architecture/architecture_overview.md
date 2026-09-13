@@ -94,7 +94,7 @@ Fireball の実行コアは、以下の 6 つの物理メカニズムによっ�
 |             └─ 純粋同期ランデブー (容量0/1待機者) + 対称遷移 (Symmetric Transfer) + 有界ハンドオフ  |
 +---------------------------------------------------------------------------------------------------+
 |  [Pillar 5] 折りたたみXOR TLB ＆ 平坦ページ表 (Folding XOR TLB & FlatMap Page Table)               |
-|             └─ 20-bit VPN Folding XOR (32 entries) + FlatMap + unmap遮断 (TRAP_UNREGISTERED_PAGE) |
+|             └─ 20-bit VPN Folding XOR (PTE 64 / TLB 32) + FlatMap + unmap遮断 (TRAP_UNREGISTERED_PAGE) |
 +---------------------------------------------------------------------------------------------------+
 |  [Pillar 6] ゼロコピー CSP ランデブー・ハンドオフ (Zero-Copy CSP Rendezvous Handoff)               |
 |             └─ Revoke (unmap/TLB flush) -> Rendezvous (&& move) -> Grant (map)                    |
@@ -146,7 +146,7 @@ Fireball の実行コアは、以下の 6 つの物理メカニズムによっ�
 
 ### 3.6 Pillar 6: ゼロコピー CSP ランデブー・ハンドオフ (Zero-Copy CSP Rendezvous Handoff)
 <!-- traceability: {IPC_ZeroCopy} {TypeSafeMessaging} {ADR_RendezvousChannel} {ADR_SharedBlockRaii} -->
-- **所有権移転シーケンス**: `Revoke`（送信元の vMMIO PTE を unmap し TLB を即時フラッシュ） $\to$ `Rendezvous`（コルーチンフレーム間での右辺値ムーブ `&&` による所有権移譲） $\to$ `Grant`（受信側の vMMIO PTE へ map）。
+- **所有権移転シーケンス**: `Revoke`（Tier 1 の所有権変更通知を受けた vMMIO が旧 PTE を unmap し TLB を即時フラッシュ） $\to$ `Rendezvous`（コルーチンフレーム間での右辺値ムーブ `&&` による所有権移譲） $\to$ `Grant`（受信側の `claim()` 完了時に vMMIO PTE へ map）。
 - **Move-only RAII による安全性**: メモリコピーや TCB 置換ではなく、C++23 ムーブセマンティクス（`shared_block` RAII リソースの `release()`/`claim()`）によって所有権をゼロコピーで安全に移管。キューを持たないためバッファ満杯は原理的に発生しない。共有ブロックのバッファは `shm_allocator`（dlmalloc `create_mspace_with_base`）から可変長で切り出され、RAII デストラクタで自動解放・合体される。 `{IPC_ZeroCopy}` `{ADR_RendezvousChannel}` `{ADR_SharedBlockRaii}` `{Shm_Allocator}`
 
 ---

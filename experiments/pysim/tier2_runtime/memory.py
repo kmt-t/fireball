@@ -10,30 +10,16 @@ COOS Memory Manager & PMSAv8 MPU simulation.
 from __future__ import annotations
 
 import struct
-from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum, auto
 from types import TracebackType
 from typing import Generic, TypeVar
 
 from scheduler import Scheduler
+from memory_interface import PageMappingCallbacks
 from system_containers import MutableFlatMapStorage, StaticVector
 
 T = TypeVar("T")
-
-
-@dataclass(slots=True)
-class PageMappingCallbacks:
-    """Decoupled callbacks for external page table / MMU listeners."""
-
-    on_map_page: Callable[
-        [int, int, int], None
-    ]  # (page_idx: int, phys_addr: int, owner_id: int) -> None
-    on_update_owner: Callable[
-        [int, int, int], None
-    ]  # (page_idx: int, phys_addr: int, new_owner_id: int) -> None
-    on_revoke: Callable[[int, int], None]  # (page_idx: int, phys_addr: int) -> None
-    on_unmap_page: Callable[[int, int], None]  # (page_idx: int, phys_addr: int) -> None
 
 
 # Configuration & Constants (FB_CONF_*)
@@ -346,11 +332,7 @@ class SharedBlock:
         if self._manager is not None:
             self._is_active = False
             self._is_in_flight = True
-            self._manager.page_registry.update_owner(self.page_idx, FB_TASK_ID_FLIGHT)
-            if self.page_idx < len(self._manager.shm_pages):
-                self._manager.shm_pages[self.page_idx].owner_id = FB_TASK_ID_FLIGHT
-            if self._manager._page_mapping_callbacks is not None:
-                self._manager._page_mapping_callbacks.on_revoke(self.page_idx, self.base_address)
+            self._manager._set_shared_owner(self.page_idx, FB_TASK_ID_FLIGHT)
         return self.shm_id
 
     def move_to(self, new_owner: int) -> SharedBlock:
@@ -364,13 +346,8 @@ class SharedBlock:
         self._is_in_flight = False
 
         if self._manager is not None:
-            self._manager.page_registry.update_owner(self.page_idx, new_owner)
-            if self.page_idx < len(self._manager.shm_pages):
-                self._manager.shm_pages[self.page_idx].owner_id = new_owner
-            if self._manager._page_mapping_callbacks is not None:
-                self._manager._page_mapping_callbacks.on_update_owner(
-                    self.page_idx, self.base_address, new_owner
-                )
+            self._manager._set_shared_owner(self.page_idx, new_owner)
+            self._manager._notify_shared_page_mapped(self.page_idx)
 
         return SharedBlock(
             shm_id=self.shm_id,
@@ -599,6 +576,28 @@ class MemoryManager:
         """Registers external page table / MMU listener callbacks for SHM page events."""
         self._page_mapping_callbacks = callbacks
 
+    def _notify_shared_page_mapped(self, page_idx: int) -> None:
+        callbacks = self._page_mapping_callbacks
+        if callbacks is None:
+            return
+        page = self.shm_pages[page_idx]
+        physical_addr = FB_CONF_MPU_R6_SHARED_MEMORY_BASE + (page_idx * FB_PAGE_SIZE)
+        callbacks.on_map_page(page_idx, physical_addr, page.owner_id)
+
+    def _set_shared_owner(self, page_idx: int, new_owner_id: int) -> None:
+        previous_owner_id = self.page_registry.get_owner(page_idx)
+        assert previous_owner_id is not None, "Shared page must be registered before ownership changes"
+        if previous_owner_id == new_owner_id:
+            return
+        assert self.page_registry.update_owner(page_idx, new_owner_id)
+        self.shm_pages[page_idx].owner_id = new_owner_id
+        callbacks = self._page_mapping_callbacks
+        if callbacks is not None:
+            physical_addr = FB_CONF_MPU_R6_SHARED_MEMORY_BASE + (page_idx * FB_PAGE_SIZE)
+            callbacks.on_owner_changed(
+                page_idx, physical_addr, previous_owner_id, new_owner_id
+            )
+
     def init_manager(self, pool_base: int, pool_size: int) -> Result[bool]:
         assert pool_base % FB_WASM_PAGE_SIZE == 0, (
             f"pool_base 0x{pool_base:X} must be 64KB aligned (WasmPageAlignment)"
@@ -709,9 +708,7 @@ class MemoryManager:
         base_addr = FB_CONF_MPU_R6_SHARED_MEMORY_BASE + (target_page.page_idx * FB_PAGE_SIZE)
         self.page_registry.register_page(target_page.page_idx, caller_task_id, base_addr)
         if self._page_mapping_callbacks is not None:
-            self._page_mapping_callbacks.on_map_page(
-                target_page.page_idx, base_addr, caller_task_id
-            )
+            self._notify_shared_page_mapped(target_page.page_idx)
 
         # Allocate slot inside target_page
         slot_idx = 0
@@ -766,13 +763,7 @@ class MemoryManager:
             "Shared block must be in flight before grant"
         )
         slot.owner = new_owner_task_id
-        if slot.page_idx < len(self.shm_pages):
-            self.shm_pages[slot.page_idx].owner_id = new_owner_task_id
-        self.page_registry.update_owner(slot.page_idx, new_owner_task_id)
-        if self._page_mapping_callbacks is not None:
-            self._page_mapping_callbacks.on_update_owner(
-                slot.page_idx, slot.base_address, new_owner_task_id
-            )
+        self._set_shared_owner(slot.page_idx, new_owner_task_id)
         return True
 
     def claim(self, shm_id: int) -> Result[SharedBlock]:
@@ -797,6 +788,7 @@ class MemoryManager:
             )
 
         slot.owner = receiver_task_id
+        self._notify_shared_page_mapped(page_idx)
         sb = SharedBlock(
             shm_id=shm_id,
             page_idx=page_idx,
@@ -815,13 +807,8 @@ class MemoryManager:
         slot = self.shm_slots.find(shm_id)
         if slot is not None:
             slot.owner = original_sender_id
-            if slot.page_idx < len(self.shm_pages):
-                self.shm_pages[slot.page_idx].owner_id = original_sender_id
-            self.page_registry.update_owner(slot.page_idx, original_sender_id)
-            if self._page_mapping_callbacks is not None:
-                self._page_mapping_callbacks.on_update_owner(
-                    slot.page_idx, slot.base_address, original_sender_id
-                )
+            self._set_shared_owner(slot.page_idx, original_sender_id)
+            self._notify_shared_page_mapped(slot.page_idx)
 
     def deallocate(self, addr: int) -> None:
         """Deallocate local static partition or slot. Owner enforced."""

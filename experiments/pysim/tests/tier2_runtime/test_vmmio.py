@@ -40,6 +40,7 @@ from ipc_router import (
 from vmmio import (
     TrapCode,
     VMMIOController,
+    VmmioStatus,
 )
 from scheduler import Scheduler
 
@@ -63,13 +64,13 @@ def test_vmmio_01_three_tier_gate_dispatch():
     ctrl.map_passthrough_page(vpn=0xF0000, phys_page=1)
     # Linear RAM (Tier 1)
     stat, detail = ctrl.access(raw_addr=0x1000, is_write=False)
-    assert stat == "OK_GUEST_RAM"
+    assert stat == VmmioStatus.OK_GUEST_RAM
     # Static Device (Tier 2, FC=12)
     stat, detail = ctrl.access(raw_addr=0xC000_0000, is_write=True)
-    assert stat == "OK_SYSCALL"
+    assert stat == VmmioStatus.OK_SYSCALL
     # Passthrough (Tier 3, FC=15)
     stat, detail = ctrl.access(raw_addr=0xF000_0000, is_write=False)
-    assert stat == "OK_PHYSICAL"
+    assert stat == VmmioStatus.OK_PHYSICAL
     # Out of Bounds Linear RAM
     stat, _ = ctrl.access(raw_addr=0x10000, is_write=False)
     assert stat == TrapCode.OUT_OF_BOUNDS
@@ -84,7 +85,7 @@ def test_vmmio_02_fc14_shm_owner_isolation_and_flight():
     ctrl.map_shm_page(vpn=0xE0000, phys_page=2, owner_id=1)
     # Owner 1 access OK
     stat, _ = ctrl.access(raw_addr=0xE000_0000, is_write=True)
-    assert stat == "OK_PHYSICAL"
+    assert stat == VmmioStatus.OK_PHYSICAL
     # Rogue task 2 access TRAPS
     rogue_id = ctrl.scheduler.spawn("rogue")
     ctrl.scheduler.current_task = ctrl.scheduler.get_task(rogue_id)

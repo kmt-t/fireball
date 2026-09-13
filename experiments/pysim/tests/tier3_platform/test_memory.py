@@ -45,6 +45,7 @@ from scheduler import Scheduler
 from vmmio import (
     TrapCode,
     VMMIOController,
+    VmmioStatus,
 )
 
 
@@ -223,14 +224,20 @@ def test_mem_10_shared_block_ownership_transfer():
 def test_mem_10c_rollback_transfer_restores_owner_id():
     """TEST-MEM-10c: rollback_transfer() restores PTE owner_id to the original sender."""
     mm, scheduler = _make_memory_manager(1, 2)
+    vmmio = VMMIOController(guest_ram_size=8192, scheduler=scheduler)
+    vmmio.register_to_memory_manager(mm)
     mm.init_manager(pool_base=0x20020000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
     sb = mm.allocate_shared(size=1024).unwrap()
+    raw_addr = 0xE000_0000 + (sb.page_idx * 4096)
+    assert vmmio.access(raw_addr, is_write=False)[0] == VmmioStatus.OK_PHYSICAL
     shm_id = sb.release()
     assert mm.page_registry.get_owner(sb.page_idx) == FB_TASK_ID_FLIGHT
+    assert vmmio.access(raw_addr, is_write=False)[0] == TrapCode.UNREGISTERED_PAGE
     scheduler.current_task = scheduler.get_task(1)
     assert scheduler.current_task is not None
     mm.rollback_transfer(shm_id=shm_id)
     assert mm.page_registry.get_owner(sb.page_idx) == 1
+    assert vmmio.access(raw_addr, is_write=False)[0] == VmmioStatus.OK_PHYSICAL
 
 
 def test_mem_11_shared_block_raII_auto_deallocate():
@@ -268,7 +275,7 @@ def test_mem_14_page_granular_permission_isolation():
 
 
 def test_mem_15_vmmio_fc14_tlb_sync():
-    """TEST-MEM-15: vMMIO FC=14 mapping, update and TLB flush driven by MemoryManager."""
+    """TEST-MEM-15: ownership changes unmap FC=14 until claim remaps the page."""
 
     mm, sched = _make_memory_manager(1, 2)
     vmmio = VMMIOController(guest_ram_size=8192, scheduler=sched)
@@ -280,7 +287,7 @@ def test_mem_15_vmmio_fc14_tlb_sync():
 
     # Verify task 1 can access its own SHM page
     status, _ = vmmio.access(raw_addr, is_write=False)
-    assert status == "OK_PHYSICAL"
+    assert status == VmmioStatus.OK_PHYSICAL
 
     # Task 2 access traps with the canonical unregistered-page fault.
     sched.current_task = sched.get_task(2)
@@ -295,11 +302,19 @@ def test_mem_15_vmmio_fc14_tlb_sync():
     status, _ = vmmio.access(raw_addr, is_write=False)
     assert status == TrapCode.UNREGISTERED_PAGE
 
-    # Grant to Task 2 -> Task 2 can access, Task 1 cannot!
+    # Grant changes ownership and therefore unmaps the page again.
     sched.current_task = sched.get_task(2)
     assert mm.grant_shared(shm_id)
     status, _ = vmmio.access(raw_addr, is_write=False)
-    assert status == "OK_PHYSICAL"
+    assert status == TrapCode.UNREGISTERED_PAGE
+
+    # Claim establishes the receiver's active view and remaps the page.
+    claimed = mm.claim(shm_id).unwrap()
+    assert claimed.get_owner() == 2
+    status, _ = vmmio.access(raw_addr, is_write=False)
+    assert status == VmmioStatus.OK_PHYSICAL
+
+    # The old owner remains isolated after the receiver's mapping is active.
     sched.current_task = sched.get_task(1)
     assert sched.current_task is not None
     status, _ = vmmio.access(raw_addr, is_write=False)

@@ -55,6 +55,7 @@ from vmmio import (
     FC_STATIC_DEVICE,
     TrapCode,
     VmmioAddress,
+    VmmioStatus,
     VMMIOController,
 )
 from wasm_module import BasicBlock
@@ -491,8 +492,12 @@ class System:
         return WasiErrno.SUCCESS
 
     # --- vMMIO Generic (real FlatMap/TLB dispatch + real backing bytes) -
-    def _trap_to_errno(self, status: str) -> WasiErrno | None:
-        if status in ("OK_SYSCALL", "OK_PHYSICAL", "OK_GUEST_RAM"):
+    def _trap_to_errno(self, status: VmmioStatus) -> WasiErrno | None:
+        if (
+            status == VmmioStatus.OK_SYSCALL
+            or status == VmmioStatus.OK_PHYSICAL
+            or status == VmmioStatus.OK_GUEST_RAM
+        ):
             return None
         for trap_status, errno in (
             (TrapCode.OUT_OF_BOUNDS, WasiErrno.FAULT),
@@ -515,8 +520,8 @@ class System:
                 Returns (errno_or_None, backing_bytearray_or_None, local_offset).
         """
 
-        status, _ = self.vmmio.access(addr, is_write)
-        errno = self._trap_to_errno(status)
+        access_status, _ = self.vmmio.access(addr, is_write)
+        errno = self._trap_to_errno(access_status)
         if errno is not None:
             return errno, None, None
         a = VmmioAddress(addr)

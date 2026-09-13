@@ -80,9 +80,9 @@ flowchart TD
 
 ### 6.2 共有メモリマッピングと仮想化リスナーへのコールバック委譲（物理実装）
 <!-- traceability: {VmmioShmDelegation} {OwnerMismatchTrap} -->
-物理メモリマネージャは、クリーンアーキテクチャ（依存性逆転の原則: DIP）に従い、特定の上位仮想化ハードウェア（vMMIO 等）の内部シンボルや特定の仮想アドレス体系（`0xE000_0000`）に直接依存しない。これは Tier 1 Interface 契約（[`system_memory.md`](docs/components/tier1_interface/system_memory.md)）が要求する事項ではなく、本コンポーネント自身が DIP を維持するために自発的に採用する物理実装上の設計である。物理メモリマネージャは `{VmmioShmDelegation}` が定義するイベント通知インターフェース（リスナー機構）を提供し、仮想化層（vMMIO コントローラ等）がこれを購読・登録する。 `{VmmioShmDelegation}`
+物理メモリマネージャは、クリーンアーキテクチャ（依存性逆転の原則: DIP）に従い、特定の上位仮想化ハードウェア（vMMIO 等）の内部シンボルや特定の仮想アドレス体系（`0xE000_0000`）に直接依存しない。Tier 1 Interface の [`system_memory.md`](docs/components/tier1_interface/system_memory.md) が定義する `PageMappingCallbacks` を受け付け、仮想化層（vMMIO コントローラ等）がこれを登録する。 `{VmmioShmDelegation}`
 
-物理メモリマネージャは物理ページ（4KB）のライフサイクル変化時にこの通知を発火し、仮想化層側が自身の仮想アドレス空間（VPN）に対応するページテーブル（PTE）更新や TLB エントリフラッシュを自律的に実施する。 `{OwnerMismatchTrap}`
+物理メモリマネージャは物理ページ（4KB）のライフサイクル変化時にこの通知を発火する。所有者が変わる場合は `on_owner_changed` を先に発火し、仮想化層側は旧ページビューをアンマップして TLB エントリをフラッシュする。`claim` またはロールバックが `on_map_page` を発火した後に、仮想化層側が新しい所有者の仮想アドレス空間（VPN）へ PTE を登録する。 `{OwnerMismatchTrap}`
 
 ### 6.3 ページ単位権限分離仕様（Page-Granular Permission Isolation）
 <!-- traceability: {PageGranularPermissionIsolation} {META_FaultIsolation} -->
@@ -104,11 +104,11 @@ Cortex-M33 MPU および vMMIO のハードウェア保護機構において、�
 | :---: | :--- | :--- | :--- | :--- |
 | 1 | 確保 | 所有 (`TaskA`) | - | 専用 4KB 物理ページを確保し `owner=TaskA` を記録、マッピング通知を発火 |
 | 2 | 書込 | 書込可能 | - | 正常アクセス（本コンポーネントの関与なし） |
-| 3 | 送信開始 | **無効化** (ハンドル返却) | - | `owner` を in-flight 状態へ更新し、アンマップ通知を発火 (Revoke) |
+| 3 | 送信開始 | **無効化** (ハンドル返却) | - | `owner` を in-flight 状態へ更新し、`on_owner_changed` を発火。登録済み仮想化層がアンマップ (Revoke) |
 | 4 | メッセージ化 | - | - | スコープ: `RESOURCE` |
 | 5 | ランデブー | サスペンド待機 | - | 送受信マッチング待ち (Rendezvous、IPC ルータの責務) |
 | 6 | 認可・受信 | 待機解除 | 受信完了 | 受信タスクへのハンドオフ確約 |
-| 7 | 所有権取得 | - | **所有** (`TaskB`) | `owner=TaskB` を記録し、マッピング通知を発火 (Grant) |
+| 7 | 所有権取得 | - | **所有** (`TaskB`) | `owner=TaskB` を記録し、`on_map_page` を発火。登録済み仮想化層がマップ (Grant) |
 | 8 | 読出 | - | 読出可能 | 正常アクセス（本コンポーネントの関与なし） |
 | 9 | 自動解放 | - | **解放** | ページをプールへ返却し、アンマップ通知を発火 |
 

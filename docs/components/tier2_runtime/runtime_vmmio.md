@@ -11,7 +11,7 @@ vMMIO (Virtual Memory-Mapped I/O) は、ホストが仲介するリソース（�
 
 WASM ゲストのリニアメモリは、WebAssembly 標準仕様に準拠して **64KB ページ単位 (65,536 bytes)** でページング・管理・拡張（`memory.grow`）される論理空間（`N * 64KB`）である。ただし、RAM < 64KB の極小組込み環境（Cortex-M 等）に適合するため、物理実装としては **64KB に満たない部分ページ（Sub-64KB / Partial Page: 例 8KB, 16KB）** の割り当てを許容し、境界超過アクセスを即座にトラップする設計をとる。一方、ホスト/デバイス側の vMMIO 領域は **1ページ（4KB）** 単位で管理される。 `{META_RestrictedPhysicalAccess}` `{vMMIO_TrapAndEmulate}` `{PhysicalPassthrough}` `{DynamicMmap}` `{UnifiedAccessModel}`
 
-本アーキテクチャでは、PTE（Page Table Entry）の保存にシステム全体の設計規約（`{META_FlatMapIndexed}`）に準拠した **静的ソート済み配列と、それを引く `fireball::flat_map_view`** を採用し、仮想ページ番号（VPN）から PTE へのマッピングをフラットに保持・管理する。
+本アーキテクチャでは、PTE（Page Table Entry）の保存にシステム全体の設計規約（`{META_FlatMapIndexed}`）に準拠した **64件固定の静的ソート済み配列と、それを引く `fireball::flat_map_view`** を採用し、仮想ページ番号（VPN）から PTE へのマッピングをフラットに保持・管理する。PTE登録が64件を超える場合は契約違反として `assert` で停止する。
 
 標準の `std::flat_map` を素のまま用いない理由: C++23 の `std::flat_map` はコンテナアダプタであり、既定の下位コンテナが `std::vector` であるため、そのままでは `{META_NoStdVector}` および `{GLOBAL_Policy_Memory}`（無制約な動的再確保に伴うレイテンシ揺らぎとメモリ断片化の排除）に抵触する。本プロジェクトは表の実体を用途別アロケータまたは静的配列から確保し、`fireball::flat_map_view` で引く（`{META_FlatMapIndexed}` を正本とする）。 `{META_NoStdVector}` `{GLOBAL_Policy_Memory}`
 
@@ -51,7 +51,7 @@ IPC経由のデータ交換は行わない — GPIOのようなsub-µs応答が�
 | 配置 | 構造体 | 概要 |
 | :--- | :--- | :--- |
 | ROM | `vmmio_address` | アドレスビットフィールド定義（C++23 ヘルパー構造体、実体なし） |
-| ROM/RAM | `vmmio_ptes` | 仮想ページ番号 (VPN) → 32bit PTE の FlatMap（`fireball::flat_map_view<uint32_t, uint32_t>`） |
+| ROM/RAM | `vmmio_ptes[64]` | 仮想ページ番号 (VPN) → 32bit PTE の FlatMap（`fireball::flat_map_view<uint32_t, uint32_t>`）。登録上限は64件 |
 | RAM | ソフトウェアTLB配列 | `vmmio_tlb_cache[32]` 32エントリのダイレクトマップ型高速TLBキャッシュ配列 |
 
 - **`VmmioController`**: アドレス境界デコード、FlatMap PTE ルックアップ、TLBキャッシュ管理、動的マッピング管理を担う主要クラス。
@@ -64,7 +64,7 @@ graph TD
     subgraph vMMIO_Layer
         Filter["MSB Address Filter<br/>Bit 31 == 0 vs 1"]
         Decoder["Address Decoder<br/>FC(31:28) + VPN(31:12) + Offset(11:0)"]
-        FlatMap["vmmio_ptes (FlatMap)<br/>Key: VPN -> Value: PTE"]
+        FlatMap["vmmio_ptes[64] (FlatMap)<br/>Key: VPN -> Value: PTE"]
         TLB["Direct-Mapped TLB (32)<br/>Index = Hash(VPN) & 31"]
         Controller["VmmioController"]
         PermGate{"Permission Check<br/>Valid, R/W"}
@@ -116,7 +116,7 @@ graph TD
 
 | 項目名 | 機能と役割 | 備考（制約、型など） |
 | :--- | :--- | :--- |
-| FlatMap ページテーブル | 仮想ページ番号 (VPN) → 32bit PTE のマッピング。 | `vmmio_ptes`（`fireball::flat_map_view<uint32_t, uint32_t>`） |
+| FlatMap ページテーブル | 仮想ページ番号 (VPN) → 32bit PTE のマッピング。64件固定で、登録超過は契約違反として `assert` で停止する。 | `vmmio_ptes[64]`（`fireball::flat_map_view<uint32_t, uint32_t>`） |
 | ソフトウェアTLB（グローバル） | 仮想ページ番号 (VPN) → PTE マッピングをダイレクトマップハッシュでキャッシュ。ホットパスを完全 O(1) に高速化する。 | `vmmio_tlb_cache[32]`（固定32エントリ、ハッシュ結合） |
 
 #### 静的デバイスページテーブルエントリ
@@ -166,7 +166,7 @@ vMMIO SHM 領域（`0xE000_0000`〜`0xE001_FFFF`、最大 32 ページ = 128KB�
 | 構造体・型定義名 | 構成要素 | 型分類 | 役割と不変条件 |
 | :--- | :--- | :--- | :--- |
 | `pte_entry` | `vpn` (Key: 仮想ページ番号: 20bit)<br>`pte` (Value: 32bit PTE属性) | 構造体 | ソート済みページテーブルの1レコード |
-| `VmmioPteStore` | `std::array<pte_entry, FB_CONF_VMMIO_MAX_PTES>` | 固定長配列 | コンパイル時に静的確保されるPTE実体ストレージ（動的確保ゼロ） |
+| `VmmioPteStore` | `std::array<pte_entry, FB_CONF_VMMIO_MAX_PTES>` (`64`) | 固定長配列 | コンパイル時に静的確保されるPTE実体ストレージ（動的確保ゼロ）。容量超過は `assert` で停止 |
 | `VmmioPteView` | `fireball::flat_map_view<uint32_t, uint32_t>` | ビュー | 二分探索索引を提供する軽量ゼロコピービュー |
 
 
@@ -327,7 +327,7 @@ FlatMap ページテーブル、ダイレクトマップ
 | `0xC000_1000` | `12` (`0xC`) | **IPCR** | IPCルータ連携レジスタ |
 | `0xC000_2000` | `12` (`0xC`) | **VDMA** `{VDMA}` | 仮想DMA（バルク転送） |
 | `0xC000_3000` | `12` (`0xC`) | **vIRQ** | 原因付き仮想割り込みディスパッチャ専用ページ |
-| `0xE000_0000` – `0xEFFF_FFFF` | `14` (`0xE`) | **SHM** | 共有メモリ（1領域=1ページ）。デコード上の全域は256MBだが、実際にPTEが割り当てられるのは先頭128KB（32ページ）のみ |
+| `0xE000_0000` – `0xEFFF_FFFF` | `14` (`0xE`) | **SHM** | 共有メモリ（1領域=1ページ）。デコード上の全域は256MBだが、実際にビットマップアロケータがPTEを割り当てるのは先頭128KB（32ページ）のみ。PTE格納表全体の上限は64件 |
 | `0xF000_0000` – `0xFFFF_FFFF` | `15` (`0xF`) | **PASSTHROUGH** | 物理アドレス直結 |
 
 PASSTHROUGH アドレス変換:
@@ -381,7 +381,7 @@ graph LR
 1. **Alloc (`allocate-shared`)**: COOS / 物理メモリマネージャが SHM 物理ページを確保し、送信タスク空間の仮想アドレス（VPN）へ vMMIO 経由でマッピング（PTE 登録）する。
 2. **Revoke (`shm.release()`)**: 送信側がリソースを手放し、IPCルータが送信タスクの権限を無効化する。vMMIO から PTE をアンマップ（削除）し、TLB の該当エントリを即時フラッシュする。この時点で送信タスクからの旧アドレスアクセスは即座に `TRAP_UNREGISTERED_PAGE`（未登録ページフォルト）となり安全に遮断される。
 3. **Rendezvous**: IPCルータが `(sender_role, target_role)` エッジ専用の CSP チャネル上でハンドルを含むメッセージのバッファなし同期ハンドオフを試みる。受信タスクが既に待機していれば即座に、まだ到達していなければ送信タスクが協調スケジューラ上でブロックする。キューが存在しないため、キュー満杯による差し戻しは発生しない。
-4. **Grant (`claim(shm-id)`)**: ランデブーが成立した瞬間、受信タスク側で `claim()` を呼び出すことで受信タスクの仮想アドレス空間へ PTE がマッピングされ、有効な `shared-block` ハンドルが取得可能となる。
+4. **Grant (`claim(shm-id)`)**: 所有権変更時に Tier 1 の `PageMappingCallbacks.on_owner_changed` を受け、vMMIO は旧 PTE と TLB エントリを無効化する。ランデブー成立後、受信タスク側で `claim()` を呼び出すと `on_map_page` により受信タスクの仮想アドレス空間へ PTE がマッピングされ、有効な `shared-block` ハンドルが取得可能となる。
 5. **障害時回復 (`rollback_transfer`)**: 相手タスクが永久に到達しない場合、送信タスクはブロックし続ける。タスク異常終了やタイムアウト等によるフォールト発生時は、物理メモリ層の `rollback_transfer()` により送信元タスクの空間へ PTE を再マッピングし、リソースの回収・再利用を行う。
 
 ### 4.7 原因付き vIRQ ディスパッチ

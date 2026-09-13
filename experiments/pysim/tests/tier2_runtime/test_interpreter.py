@@ -48,7 +48,7 @@ def wat_to_wasm(wat_text: str) -> bytes:
 
 
 def test_intp_01_02_cps_handlers_and_dispatch_table():
-    """TEST-INTP-01, 02: Opcode handlers use CPS 4-arg signature (ip, frame, env, locals) and direct array table dispatch."""
+    """TEST-INTP-01, 02: Opcode handlers use the direct raw signature and array dispatch."""
     import inspect
 
     from interpreter import _HANDLERS
@@ -56,14 +56,17 @@ def test_intp_01_02_cps_handlers_and_dispatch_table():
     # Direct 256-element array table (no dynamic dict lookup)
     assert type(_HANDLERS) is list
     assert len(_HANDLERS) == 256
-    # Every registered handler must accept exactly 4 arguments and return next continuation
+    # Every registered handler must accept exactly 4 raw arguments.
     registered_count = 0
     for op, handler in enumerate(_HANDLERS):
         if handler is not None:
             registered_count += 1
             sig = inspect.signature(handler)
             assert len(sig.parameters) == 4, (
-                f"Handler for opcode 0x{op:02X} must have exactly 4 arguments (CPS)"
+                f"Handler for opcode 0x{op:02X} must have exactly 4 arguments"
+            )
+            assert tuple(sig.parameters) == ("ctx", "sp", "local_base", "tos"), (
+                f"Handler for opcode 0x{op:02X} must use the native CPS prototype"
             )
 
     assert registered_count >= 30, (
@@ -95,6 +98,46 @@ def test_intp_04_control_map_uses_four_entry_locality_caches():
     assert len(control_map.br_table_cache) == 4
     for ip in (0, 1, 2, 0xFFFF):
         assert 0 <= control_map._cache_slot(ip) < 4
+
+
+def test_intp_05_handler_returns_trap_outcome():
+    """A WASM trap is an explicit handler outcome, not an absent continuation."""
+    from interpreter import _HANDLERS
+    from wasm_opcodes import UNREACHABLE
+
+    module = parse(wat_to_wasm("(module (func unreachable))"))
+    call_state = Interpreter(module).start(0, [])
+    assert call_state.cont is not None
+    ip, frame, local_base, tos = call_state.cont
+    call_state.context.bind_handler_state(ip, frame)
+
+    handler = _HANDLERS[UNREACHABLE]
+    assert handler is not None
+    result = handler(call_state.context, frame.values, local_base, tos)
+    assert result is not None
+    result_ctx, result_sp, result_locals, result_tos, trap = result
+    assert result_ctx is call_state.context
+    assert result_sp is frame.values
+    assert result_locals is local_base
+    assert result_tos == tos
+    assert isinstance(trap, Trap)
+
+    stepped = Interpreter(module).step(Interpreter(module).start(0, []))
+    assert stepped.finished
+    assert stepped.results is None
+    assert isinstance(stepped.trap, Trap)
+
+
+def test_intp_06_memory_traps_are_handler_results():
+    """vMMIO faults leave the handler as a trap result, never as a Python exception."""
+    module = parse(
+        wat_to_wasm("(module (func (param i32) (result i32) local.get 0 i32.load))")
+    )
+    interp = Interpreter(module, memory=bytearray(65536))
+    stepped = interp.step(interp.start(0, [0x8000_0000]))
+    assert stepped.finished
+    assert stepped.results is None
+    assert isinstance(stepped.trap, Trap)
 
 
 def test_wasm_01_to_06_unsupported_features_rejected():
@@ -406,7 +449,7 @@ def test_intp_70_to_72_direct_bytecode_execution():
     interp = Interpreter(module)
 
     # 1. TEST-INTP-70: the context owns the call-frame and LocalStack construction.
-    context = InterpreterContext()
+    context = InterpreterContext(module)
     frame, locals_arr = interp._build_frame(0, StaticVector.of((15,), capacity=64), context)
     assert frame.code == module.functions[0].code
     assert frame.control_map is not None

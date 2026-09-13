@@ -89,7 +89,7 @@ def _make_memory_manager() -> tuple[MemoryManager, Scheduler]:
     manager.init_manager(pool_base=0x20020000, pool_size=0x40000)
     return manager, scheduler
 from test_support import PcOnlyCompiler, wat_to_wasm
-from vmmio import TrapCode, VMMIOController
+from vmmio import TrapCode, VMMIOController, VmmioStatus
 from wasm_opcodes import I32_ADD, I32_CONST, LOCAL_GET, LOCAL_SET
 from wasm_reader import parse
 from x64_jit import TraceCompiler
@@ -99,8 +99,8 @@ from x64_jit import TraceCompiler
 # ==============================================================================
 
 
-def test_intp_gotcha_01_tos_stack_sync():
-    """GOTCHA-INTP-01: R3 (tos) and operand stack memory remain synchronized across individual instructions."""
+def test_intp_gotcha_01_native_stack_sync():
+    """GOTCHA-INTP-01: Direct handlers update the shared Native operand stack."""
     wat = """
     (module
       (func (export "main") (result i32)
@@ -115,25 +115,46 @@ def test_intp_gotcha_01_tos_stack_sync():
     interp = Interpreter(module)
 
     call_state = interp.start(0, [])
-    ip, frame, locals_arr, tos = call_state.cont
-    assert tos == 0
+    ip, frame, locals_arr, _ = call_state.cont
 
-    # Execute instruction 0 (i32.const 10) directly via CPS handler
-    cont = _HANDLERS[frame.code[ip]](ip, frame, locals_arr, tos)
-    ip, frame, locals_arr, tos = cont
-    assert tos == 10
+    # Execute instruction 0 (i32.const 10) directly via the raw handler.
+    call_state.context.bind_handler_state(ip, frame)
+    result = _HANDLERS[frame.code[ip]](call_state.context, frame.values, locals_arr, 0)
+    assert result is not None
+    result_ctx, result_sp, locals_arr, next_tos, trap = result
+    assert result_ctx is call_state.context
+    assert result_sp is frame.values
+    assert trap is None
+    assert next_tos == frame.values.raw_top()
+    assert frame.values.raw_top() == 10
     assert frame.values == [10]
+    ip = int(result_ctx.native_context.ip)
+    frame = result_ctx.call_frame_stack[-1]
 
     # Execute instruction 1 (i32.const 20)
-    cont = _HANDLERS[frame.code[ip]](ip, frame, locals_arr, tos)
-    ip, frame, locals_arr, tos = cont
-    assert tos == 20
+    call_state.context.bind_handler_state(ip, frame)
+    result = _HANDLERS[frame.code[ip]](result_ctx, result_sp, locals_arr, next_tos)
+    assert result is not None
+    result_ctx, result_sp, locals_arr, next_tos, trap = result
+    assert result_ctx is call_state.context
+    assert result_sp is frame.values
+    assert trap is None
+    assert next_tos == frame.values.raw_top()
+    assert frame.values.raw_top() == 20
     assert frame.values == [10, 20]
+    ip = int(result_ctx.native_context.ip)
+    frame = result_ctx.call_frame_stack[-1]
 
-    # Execute instruction 2 (i32.add) -> pops 20 and 10, pushes 30 -> tos=30
-    cont = _HANDLERS[frame.code[ip]](ip, frame, locals_arr, tos)
-    ip, frame, locals_arr, tos = cont
-    assert tos == 30
+    # Execute instruction 2 (i32.add) -> pops 20 and 10, pushes 30.
+    call_state.context.bind_handler_state(ip, frame)
+    result = _HANDLERS[frame.code[ip]](result_ctx, result_sp, locals_arr, next_tos)
+    assert result is not None
+    result_ctx, result_sp, locals_arr, next_tos, trap = result
+    assert result_ctx is call_state.context
+    assert result_sp is frame.values
+    assert trap is None
+    assert next_tos == frame.values.raw_top()
+    assert frame.values.raw_top() == 30
     assert frame.values == [30]
 
 
@@ -461,7 +482,7 @@ def test_vmmio_gotcha_01_ram_bypass_never_touches_tlb():
     misses_before = ctrl.tlb_misses
 
     stat, _ = ctrl.access(raw_addr=0x100, is_write=False)
-    assert stat == "OK_GUEST_RAM"
+    assert stat == VmmioStatus.OK_GUEST_RAM
     assert ctrl.tlb_hits == hits_before
     assert ctrl.tlb_misses == misses_before
 
@@ -489,7 +510,7 @@ def test_vmmio_gotcha_03_revoke_invalidates_tlb_blocks_inflight():
     ctrl.map_shm_page(vpn=vpn, phys_page=2, owner_id=1)
 
     stat, _ = ctrl.access(raw_addr=0xE000_0000, is_write=True)
-    assert stat == "OK_PHYSICAL"
+    assert stat == VmmioStatus.OK_PHYSICAL
 
     ctrl.revoke_shm_owner(vpn=vpn)
 

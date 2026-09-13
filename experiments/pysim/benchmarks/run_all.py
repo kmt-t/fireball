@@ -104,7 +104,7 @@ def main():
         f"  * TLB Miss -> FlatMap Walk (O(logN)): {vmmio_res['tlb_miss_flatmap_mops']:.2f} M ops/s  ({vmmio_res['tlb_miss_flatmap_ns']:.1f} ns/walk)"
     )
     print(
-        f"  * TLB Hit Acceleration Ratio:         {vmmio_res['tlb_hit_mops'] / vmmio_res['tlb_miss_flatmap_mops']:.2f}x faster than FlatMap walk"
+        f"  * TLB Hit / FlatMap Walk Ratio:        {vmmio_res['tlb_hit_mops'] / vmmio_res['tlb_miss_flatmap_mops']:.2f}x"
     )
     print(
         f"  * Static Syscall Dispatch (FC=0xC):   {vmmio_res['static_device_dispatch_mops']:.2f} M ops/s  ({vmmio_res['static_device_dispatch_ns']:.1f} ns/dispatch)"

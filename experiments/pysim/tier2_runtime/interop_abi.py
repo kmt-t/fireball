@@ -12,7 +12,7 @@ import ctypes
 import struct
 from collections.abc import Iterable, Iterator
 
-from jit_abi import JIT_CONTEXT_HELPER_PTR_OFFSET, JIT_CONTEXT_SIZE_BYTES
+from jit_abi import JIT_CONTEXT_HELPER_PTR_OFFSET, JIT_CONTEXT_SIZE_BYTES, JIT_HELPER_COUNT
 
 NATIVE_VALUE_STACK_CAPACITY = 64
 NATIVE_CONTROL_STACK_CAPACITY = 32
@@ -38,7 +38,7 @@ class ExecutionContextNative(ctypes.Structure):
         ("globals_limit", ctypes.c_uint32),
         ("handler_table", ctypes.c_uint32),
         ("reserved0", ctypes.c_uint32),
-        ("complex_helper_ptr", ctypes.c_uint64),
+        ("jit_helper_ptrs", ctypes.c_uint64 * JIT_HELPER_COUNT),
     ]
 
 
@@ -152,6 +152,7 @@ class NativeValueStack:
         self._capacity = capacity
         self._native = ValueStackNative()
         self._values_address = ctypes.addressof(self._native) + ValueStackNative.values.offset
+        assert self._values_address % 8 == 0
 
     @property
     def capacity(self) -> int:
@@ -431,7 +432,7 @@ assert ctypes.sizeof(ExecutionContextNative) == JIT_CONTEXT_SIZE_BYTES
 assert _offset(ExecutionContextNative, "mem_base") == 0x28
 assert _offset(ExecutionContextNative, "handler_table") == 0x38
 assert _offset(ExecutionContextNative, "reserved0") == 0x3C
-assert _offset(ExecutionContextNative, "complex_helper_ptr") == JIT_CONTEXT_HELPER_PTR_OFFSET
+assert _offset(ExecutionContextNative, "jit_helper_ptrs") == JIT_CONTEXT_HELPER_PTR_OFFSET
 assert ctypes.sizeof(ConstBufferViewNative) == 16
 assert ctypes.sizeof(WasmFunctionViewNative) == 24
 assert ctypes.sizeof(WasmModuleViewNative) == 24

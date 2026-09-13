@@ -28,6 +28,6 @@ Copy-and-Patch 方式による JIT コンパイル速度（トレース結合＋
 3. **実行速度比較 (Differential Execution)**:
    - 同一の WASM 算術ループモジュールを Pure Interpreter (Tier 2) と Hybrid JIT (Tier 3) で実行し、計算結果の等価性と実行所要時間を比較。
 4. **複雑処理の委譲測定**:
-   - `TraceCompiler` に空のネイティブスタック境界と `tail_context_helper=True` を指定し、`WASMContext.set_jit_helper()` でCPS関数ポインタを `+0x40` に設定する。
+   - `TraceCompiler` に空のネイティブスタック境界と `tail_context_helper=True` を指定し、`WASMContext.set_jit_helpers()` で命令別CPS関数ポインタ配列を設定する。
    - 同一のトレースバイナリを別の実行可能バッファへコピーして呼び出し、コンテキスト内の関数へ到達することと副作用を直接 `assert` する。
    - pysimでは `ctypes` コールバックのPython遷移コストを含むため、組込みCの性能値とは分離して報告する。

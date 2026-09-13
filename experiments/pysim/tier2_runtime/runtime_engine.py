@@ -43,7 +43,7 @@ from virq import (
     VirqDispatcher,
     VirqDispatchResult,
 )
-from wasm_module import I32, BasicBlock, Module, TraceBlock
+from wasm_module import BasicBlock, Module, TraceBlock
 from wasm_opcodes import (
     I32_ADD,
     I32_CONST,
@@ -197,6 +197,8 @@ class RuntimeEngine:
         if block is None or self.module is None:
             return None
         code = self.module.code_for(pc >> 16)
+        function = self.module.functions[(pc >> 16) - len(self.module.imports)]
+        assert function.local_widths_cache is not None
         ops = iter_block_ops(code, pc & 0xFFFF, block.byte_span)
         return TraceBlock(
             head_pc=pc,
@@ -204,6 +206,7 @@ class RuntimeEngine:
             next_pc=block.next_pc,
             loops_to=block.loops_to,
             byte_span=block.byte_span,
+            local_widths=function.local_widths_cache,
         )
 
     def register_module_blocks(self, module: Module) -> None:
@@ -619,7 +622,7 @@ class RuntimeEngine:
             trace.fn(frame.context_ptr, result_ptr, locals_ptr, 0)
         res = frame.values.raw_at(result_slot) if trace.has_return_val else 0
         if trace.has_return_val and trace.loops_to is None:
-            frame.values.set_size(result_slot + 1)
+            frame.values.set_size(result_slot + trace.result_words)
 
         if trace.loops_to is not None:
             # Terminator was BR_IF against a loop backedge: the trace's
@@ -861,6 +864,8 @@ class IntegratedHybridEngine:
         if block is None or self.module is None:
             return None
         code = self.module.code_for(pc >> 16)
+        function = self.module.functions[(pc >> 16) - len(self.module.imports)]
+        assert function.local_widths_cache is not None
         ops = iter_block_ops(code, pc & 0xFFFF, block.byte_span)
         return TraceBlock(
             head_pc=pc,
@@ -868,6 +873,7 @@ class IntegratedHybridEngine:
             next_pc=block.next_pc,
             loops_to=block.loops_to,
             byte_span=block.byte_span,
+            local_widths=function.local_widths_cache,
         )
 
     def _interpret_block(self, block: BasicBlock, ctx: WASMContext) -> None:

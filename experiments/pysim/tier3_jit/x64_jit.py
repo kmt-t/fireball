@@ -21,11 +21,22 @@ from collections.abc import Callable
 import x64_stencils as st
 from control_flow import iter_block_ops
 from exec_memory import ExecutableBuffer
+from jit_abi import JIT_CONTEXT_HELPER_PTR_OFFSET, JIT_CONTEXT_WORD_BYTES
 from jit_cache import JITTrace, JITTraceHeader
-from system_containers import FlatMapView, ReadOnlyFlatMapStorage
-from wasm_module import BasicBlock, TraceBlock
+from system_containers import FlatMapView, ReadOnlyFlatMapStorage, StaticVector
+from wasm_module import WASM_LOCAL_SLOT_BYTES, BasicBlock, TraceBlock
 from wasm_opcodes import (
     DROP,
+    F32_ADD,
+    F32_CONST,
+    F32_DIV,
+    F32_MUL,
+    F32_SUB,
+    F64_ADD,
+    F64_CONST,
+    F64_DIV,
+    F64_MUL,
+    F64_SUB,
     I32_ADD,
     I32_AND,
     I32_CONST,
@@ -51,6 +62,10 @@ from wasm_opcodes import (
     I32_SHR_U,
     I32_SUB,
     I32_XOR,
+    I64_ADD,
+    I64_CONST,
+    I64_MUL,
+    I64_SUB,
     LOCAL_GET,
     LOCAL_SET,
     LOCAL_TEE,
@@ -69,17 +84,25 @@ TRACE_FN_TYPE = ctypes.CFUNCTYPE(
 )
 
 
-def patch(code: bytearray, base: int, stencil: st.Stencil, reloc_name: str, value: int) -> None:
-    width = 8 if reloc_name == "addr" else 4
-    off = base + stencil.relocs[reloc_name]
+def patch_at(code: bytearray, off: int, width: int, value: int) -> None:
+    """Patch one already-resolved Copy-and-Patch site in O(1)."""
+
+    assert width == 4 or width == 8
     code[off : off + width] = (value & ((1 << (width * 8)) - 1)).to_bytes(width, "little")
 
 
-def emit(code: bytearray, stencil: st.Stencil, **patches: int) -> int:
+def emit(
+    code: bytearray,
+    stencil: st.Stencil,
+    patches: tuple[tuple[st.Relocation, int], ...] = (),
+) -> int:
     base = len(code)
     code += stencil.code
-    for name, value in patches.items():
-        patch(code, base, stencil, name, value)
+    for reloc_id, value in patches:
+        width = 8 if reloc_id == st.Relocation.ADDR or reloc_id == st.Relocation.IMM64 else 4
+        reloc_offset = stencil.reloc_offsets[int(reloc_id)]
+        assert reloc_offset != st.NO_RELOCATION
+        patch_at(code, base + reloc_offset, width, value)
     return base
 
 
@@ -126,22 +149,37 @@ def _make_fixed_emitter(
 
 
 def _emit_i32_const(code: bytearray, arg: object) -> int:
-    emit(code, st.I32_CONST, imm=int(arg))  # type: ignore[arg-type]
+    emit(code, st.I32_CONST, ((st.Relocation.IMM, int(arg)),))
+    return 1
+
+
+def _emit_i64_const(code: bytearray, arg: object) -> int:
+    emit(code, st.I64_CONST, ((st.Relocation.IMM64, int(arg) & 0xFFFF_FFFF_FFFF_FFFF),))
+    return 1
+
+
+def _emit_f32_const(code: bytearray, arg: object) -> int:
+    emit(code, st.F32_CONST, ((st.Relocation.IMM, int(arg) & I32_MASK),))
+    return 1
+
+
+def _emit_f64_const(code: bytearray, arg: object) -> int:
+    emit(code, st.F64_CONST, ((st.Relocation.IMM64, int(arg) & 0xFFFF_FFFF_FFFF_FFFF),))
     return 1
 
 
 def _emit_local_get(code: bytearray, arg: object) -> int:
-    emit(code, st.LOCAL_GET, disp=int(arg) * 4)  # type: ignore[arg-type]
+    emit(code, st.LOCAL_GET, ((st.Relocation.DISP, int(arg)),))
     return 1
 
 
 def _emit_local_set(code: bytearray, arg: object) -> int:
-    emit(code, st.LOCAL_SET, disp=int(arg) * 4)  # type: ignore[arg-type]
+    emit(code, st.LOCAL_SET, ((st.Relocation.DISP, int(arg)),))
     return -1
 
 
 def _emit_local_tee(code: bytearray, arg: object) -> int:
-    emit(code, st.LOCAL_TEE, disp=int(arg) * 4)  # type: ignore[arg-type]
+    emit(code, st.LOCAL_TEE, ((st.Relocation.DISP, int(arg)),))
     return 0
 
 
@@ -149,6 +187,9 @@ _EMIT_STORAGE: ReadOnlyFlatMapStorage[int, Callable[[bytearray, object], int]] =
     ReadOnlyFlatMapStorage.create(
         [
             (I32_CONST, _emit_i32_const),
+            (I64_CONST, _emit_i64_const),
+            (F32_CONST, _emit_f32_const),
+            (F64_CONST, _emit_f64_const),
             (I32_ADD, _make_fixed_emitter(st.I32_ADD.code, -1)),
             (I32_SUB, _make_fixed_emitter(st.I32_SUB.code, -1)),
             (I32_MUL, _make_fixed_emitter(st.I32_MUL.code, -1)),
@@ -182,6 +223,68 @@ _EMIT_STORAGE: ReadOnlyFlatMapStorage[int, Callable[[bytearray, object], int]] =
 )
 EMIT_MAP: FlatMapView[int, Callable[[bytearray, object], int]] = _EMIT_STORAGE.view()
 
+def _complex_helper_info(op: int) -> tuple[int, int] | None:
+    """Return the direct context-member slot and raw result width."""
+
+    if op == I64_ADD:
+        return 0, 2
+    if op == I64_SUB:
+        return 1, 2
+    if op == I64_MUL:
+        return 2, 2
+    if op == F32_ADD:
+        return 3, 1
+    if op == F32_SUB:
+        return 4, 1
+    if op == F32_MUL:
+        return 5, 1
+    if op == F32_DIV:
+        return 6, 1
+    if op == F64_ADD:
+        return 7, 2
+    if op == F64_SUB:
+        return 8, 2
+    if op == F64_MUL:
+        return 9, 2
+    if op == F64_DIV:
+        return 10, 2
+    return None
+
+
+def _spill_hardware_stack_to_sp(code: bytearray, widths: StaticVector[int]) -> None:
+    """Copy compile-time-known 8-byte hardware stack values to raw 32-bit slots."""
+
+    value_count = len(widths)
+    for value_index in range(value_count):
+        source_offset = (value_count - value_index - 1) * 8
+        destination_offset = sum(widths[index] for index in range(value_index)) * 4
+        for word in range(widths[value_index]):
+            src = source_offset + word * 4
+            dst = destination_offset + word * 4
+            if src == 0:
+                code += bytes((0x8B, 0x04, 0x24))  # mov eax, [rsp]
+            elif src < 128:
+                code += bytes((0x8B, 0x44, 0x24, src))
+            else:
+                code += bytes((0x8B, 0x84, 0x24)) + src.to_bytes(4, "little")
+            if dst == 0:
+                code += bytes((0x41, 0x89, 0x04, 0x24))  # mov [r12], eax
+            elif dst < 128:
+                code += bytes((0x41, 0x89, 0x44, 0x24, dst))
+            else:
+                code += bytes((0x41, 0x89, 0x84, 0x24)) + dst.to_bytes(4, "little")
+
+
+def _discard_hardware_stack(code: bytearray, value_count: int) -> None:
+    assert value_count >= 0
+    byte_count = value_count * 8
+    if byte_count == 0:
+        return
+    if byte_count < 128:
+        code += bytes((0x48, 0x83, 0xC4, byte_count))
+    else:
+        code += bytes((0x48, 0x81, 0xC4)) + byte_count.to_bytes(4, "little")
+
 
 class TraceCompiler:
     """
@@ -197,6 +300,9 @@ class TraceCompiler:
         sorted(
             [
                 (I32_CONST, (0, 1)),
+                (I64_CONST, (0, 1)),
+                (F32_CONST, (0, 1)),
+                (F64_CONST, (0, 1)),
                 (LOCAL_GET, (0, 1)),
                 (LOCAL_SET, (1, 0)),
                 (LOCAL_TEE, (1, 1)),
@@ -225,6 +331,17 @@ class TraceCompiler:
                 (I32_LE_U, (2, 1)),
                 (I32_GE_S, (2, 1)),
                 (I32_GE_U, (2, 1)),
+                (I64_ADD, (2, 1)),
+                (I64_SUB, (2, 1)),
+                (I64_MUL, (2, 1)),
+                (F32_ADD, (2, 1)),
+                (F32_SUB, (2, 1)),
+                (F32_MUL, (2, 1)),
+                (F32_DIV, (2, 1)),
+                (F64_ADD, (2, 1)),
+                (F64_SUB, (2, 1)),
+                (F64_MUL, (2, 1)),
+                (F64_DIV, (2, 1)),
             ],
             key=lambda e: e[0],
         )
@@ -234,7 +351,12 @@ class TraceCompiler:
     )
     STACK_EFFECTS: FlatMapView[int, tuple[int, int]] = FlatMapView(_STACK_EFFECT_ENTRIES_TUPLE)
 
-    def compile_block(self, code: bytes, block: BasicBlock) -> JITTrace | None:
+    def compile_block(
+        self,
+        code: bytes,
+        block: BasicBlock,
+        local_widths: tuple[int, ...] | None = None,
+    ) -> JITTrace | None:
         """
         Production entry point: derives this compile's transient `TraceBlock`
         input from `block`'s PC metadata against the owning function's raw
@@ -251,6 +373,7 @@ class TraceCompiler:
                 next_pc=block.next_pc,
                 loops_to=block.loops_to,
                 byte_span=block.byte_span,
+                local_widths=local_widths,
             ),
         )
 
@@ -278,12 +401,44 @@ class TraceCompiler:
         code += gen_pic_prologue()
         sim_depth = 0
         stack_depth = 0
+        stack_widths: StaticVector[int] = StaticVector(capacity=block.byte_span)
+        helper_index: int | None = None
+        result_words = 1
         saw_op = False
+        local_widths = block.local_widths
         for op, arg in block.ops:
             saw_op = True
+            assert helper_index is None, "a complex helper must terminate a trace"
             emitter = EMIT_MAP.find(op)
             if emitter is None:
-                return None
+                helper_info = _complex_helper_info(op)
+                if helper_info is None:
+                    return None
+                helper_index, helper_words = helper_info
+                result_words = helper_words
+                pops, pushes = self.STACK_EFFECTS[op]
+                sim_depth -= pops
+                assert sim_depth >= 0, "complex helper trace has operand-stack underflow"
+                sim_depth += pushes
+                assert sim_depth == 1, "complex helper trace must leave one result"
+                _spill_hardware_stack_to_sp(code, stack_widths)
+                _discard_hardware_stack(code, stack_depth)
+                assert len(stack_widths) > 0
+                stack_depth = 0
+                stack_widths.clear()
+                code += st.CONTEXT_HELPER_TAIL_JUMP.code
+                helper_base = len(code) - len(st.CONTEXT_HELPER_TAIL_JUMP.code)
+                helper_offset = st.CONTEXT_HELPER_TAIL_JUMP.reloc_offsets[
+                    int(st.Relocation.HELPER_DISP)
+                ]
+                assert helper_offset != st.NO_RELOCATION
+                patch_at(
+                    code,
+                    helper_base + helper_offset,
+                    4,
+                    JIT_CONTEXT_HELPER_PTR_OFFSET + helper_index * JIT_CONTEXT_WORD_BYTES,
+                )
+                break
             # Trace Boundary Invariant: block must be self-contained (stack depth never drops below 0)
             pops, pushes = self.STACK_EFFECTS[op]
             sim_depth -= pops
@@ -291,7 +446,31 @@ class TraceCompiler:
                 # Depends on values on caller's operand stack -> execute safely in interpreter
                 return None
             sim_depth += pushes
-            stack_depth += emitter(code, arg)
+            emit_arg = arg
+            local_width = 1
+            if op == LOCAL_GET or op == LOCAL_SET or op == LOCAL_TEE:
+                assert local_widths is not None
+                local_index = int(arg)
+                assert 0 <= local_index < len(local_widths)
+                emit_arg = local_index * WASM_LOCAL_SLOT_BYTES
+                local_width = local_widths[local_index]
+            stack_depth += emitter(code, emit_arg)
+            if op == I32_CONST or op == F32_CONST:
+                assert stack_widths.push_back(1)
+            elif op == I64_CONST or op == F64_CONST:
+                assert stack_widths.push_back(2)
+            elif op == LOCAL_GET:
+                assert stack_widths.push_back(local_width)
+            elif op == LOCAL_SET or op == DROP:
+                stack_widths.pop_back()
+            elif op == LOCAL_TEE:
+                assert len(stack_widths) > 0
+            elif op == I32_EQZ:
+                assert len(stack_widths) > 0
+            else:
+                stack_widths.pop_back()
+                stack_widths.pop_back()
+                assert stack_widths.push_back(1)
 
         if not saw_op or sim_depth < 0 or sim_depth > 1 or stack_depth < 0 or stack_depth > 1:
             # Empty block, or multi-value stack outputs / underflow -- executed
@@ -302,12 +481,23 @@ class TraceCompiler:
         # value -- {ExecutionContext_Layout} -- so it is written to memory
         # (via R12 / sp) rather than returned in RAX; the trace itself always
         # returns void.
-        if tail_context_helper:
+        if helper_index is not None:
+            # The complex helper already owns the terminal control transfer.
+            # Its raw result is written to the shared stack base and committed
+            # by the caller using ``result_words``.
+            pass
+        elif tail_context_helper:
             # A helper is a terminal complex-operation boundary.  The current
             # x64 implementation only delegates once the native operand stack
             # is empty, so the helper observes fully synchronized locals/SP.
             assert stack_depth == 0, "context-helper tail jump requires an empty native stack"
+            helper_base = len(code)
             code += st.CONTEXT_HELPER_TAIL_JUMP.code
+            helper_offset = st.CONTEXT_HELPER_TAIL_JUMP.reloc_offsets[
+                int(st.Relocation.HELPER_DISP)
+            ]
+            assert helper_offset != st.NO_RELOCATION
+            patch_at(code, helper_base + helper_offset, 4, JIT_CONTEXT_HELPER_PTR_OFFSET)
         else:
             if stack_depth == 1:
                 code += st.SPILL_RESULT_TO_SP.code
@@ -333,7 +523,8 @@ class TraceCompiler:
             size_bytes=total_size,
             next_pc=block.next_pc,
             loops_to=block.loops_to,
-            has_return_val=(stack_depth > 0),
+            has_return_val=(stack_depth > 0 or helper_index is not None),
+            result_words=result_words if helper_index is not None else 1,
             buf=buf,
             raw_addr=buf.address_of(16),
         )

@@ -16,6 +16,7 @@ from interop_abi import (
     ControlStackNative,
     NativeValueStack,
 )
+from wasm_module import WASM_LOCAL_SLOT_WORDS
 
 
 class ControlFrameKind(IntEnum):
@@ -153,21 +154,28 @@ class ControlFrameWindow:
 class LocalStackWindow:
     """Typed access methods over one frame's raw Native local slots."""
 
-    __slots__ = ("_base", "_offsets", "_slot_count", "_storage")
+    __slots__ = ("_base", "_local_count", "_slot_count", "_storage", "_widths")
 
     def __init__(
-        self, storage: NativeValueStack, base: int, offsets: tuple[int, ...], slot_count: int
+        self,
+        storage: NativeValueStack,
+        base: int,
+        widths: tuple[int, ...],
+        slot_count: int,
     ):
+        assert all(width == 1 or width == 2 for width in widths)
+        assert slot_count == len(widths) * WASM_LOCAL_SLOT_WORDS
         self._storage = storage
         self._base = base
-        self._offsets = offsets
+        self._local_count = len(widths)
+        self._widths = widths
         self._slot_count = slot_count
 
     def __len__(self) -> int:
-        return len(self._offsets)
+        return self._local_count
 
     def _local_index(self, index: int) -> int:
-        local_count = len(self._offsets)
+        local_count = self._local_count
         normalized = index if index >= 0 else local_count + index
         if not 0 <= normalized < local_count:
             raise IndexError("local stack index out of range")
@@ -175,7 +183,7 @@ class LocalStackWindow:
 
     def _slot_index(self, index: int) -> int:
         normalized = self._local_index(index)
-        return self._base + self._offsets[normalized]
+        return self._base + normalized * WASM_LOCAL_SLOT_WORDS
 
     def raw_slot(self, index: int) -> int:
         """Return the absolute raw-slot position for a logical local."""
@@ -186,27 +194,19 @@ class LocalStackWindow:
         """Return one logical local's absolute slot and raw width together."""
 
         normalized = self._local_index(index)
-        start = self._offsets[normalized]
-        next_offset = (
-            self._offsets[normalized + 1]
-            if normalized + 1 < len(self._offsets)
-            else self._slot_count
-        )
-        width = next_offset - start
-        assert width in (1, 2)
+        start = normalized * WASM_LOCAL_SLOT_WORDS
+        width = self._widths[normalized]
+        assert start + width <= self._slot_count
+        assert width == 1 or width == 2
         return self._base + start, width
 
     def raw_width(self, index: int) -> int:
         """Return the raw slot count without interpreting the value."""
 
         normalized = self._local_index(index)
-        next_offset = (
-            self._offsets[normalized + 1]
-            if normalized + 1 < len(self._offsets)
-            else self._slot_count
-        )
-        width = next_offset - self._offsets[normalized]
-        assert width in (1, 2)
+        width = self._widths[normalized]
+        assert normalized * WASM_LOCAL_SLOT_WORDS + width <= self._slot_count
+        assert width == 1 or width == 2
         return width
 
     def get_i32(self, index: int) -> int:

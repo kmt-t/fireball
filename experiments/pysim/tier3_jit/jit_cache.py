@@ -300,6 +300,7 @@ class JITTrace:
         "loops_to",
         "next_pc",
         "raw_addr",
+        "result_words",
         "size_bytes",
     )
 
@@ -311,6 +312,7 @@ class JITTrace:
         next_pc: int | None = None,
         loops_to: int | None = None,
         has_return_val: bool = False,
+        result_words: int = 1,
         buf: object = None,
         native_fn: Callable[[int, object, object, int], int] | None = None,
         raw_addr: int | None = None,
@@ -322,6 +324,8 @@ class JITTrace:
         self.next_pc = next_pc  # Unconditional fallthrough successor
         self.loops_to = loops_to  # Conditional loop backedge (never auto-chained)
         self.has_return_val = has_return_val
+        assert result_words > 0
+        self.result_words = result_words
         self.header = JITTraceHeader(head_wasm_pc=head_pc, trace_byte_size=size_bytes)
         self.chain_next: int | None = None
         self.exec_count: int = 0
@@ -360,7 +364,7 @@ class JITTrace:
         self.fn(ctx.context_ptr, ctx.sp_ptr, ctx.locals_ptr, tos)
         if not self.has_return_val:
             return 0
-        ctx.stack.set_size(result_slot + 1)
+        ctx.stack.set_size(result_slot + self.result_words)
         result = ctx.stack[result_slot]
         return result
 

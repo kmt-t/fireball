@@ -8,9 +8,8 @@ import ctypes
 from collections.abc import Iterator
 
 from interop_abi import ExecutionContextNative, NativeValueStack
-from jit_abi import (
-    JIT_CONTEXT_SIZE_BYTES,
-)
+from jit_abi import JIT_CONTEXT_SIZE_BYTES, JIT_HELPER_COUNT
+from wasm_module import WASM_LOCAL_SLOT_WORDS
 
 
 class WASMContext:
@@ -20,7 +19,6 @@ class WASMContext:
         "_c_context",
         "_c_mem",
         "_cached_locals_view",
-        "_jit_helper_keepalive",
         "fault",
         "local_stack",
         "memory",
@@ -37,19 +35,17 @@ class WASMContext:
         self.fault: str | None = None
         self.stack_capacity = stack_capacity
         self.stack: NativeValueStack = NativeValueStack(capacity=stack_capacity)
-        self.local_stack: NativeValueStack = NativeValueStack(capacity=n_locals)
-        self.local_stack.set_size(n_locals)
+        self.local_stack: NativeValueStack = NativeValueStack(capacity=n_locals * WASM_LOCAL_SLOT_WORDS)
+        self.local_stack.set_size(n_locals * WASM_LOCAL_SLOT_WORDS)
         self.memory = memory
         if memory is not None:
             self._c_mem = (ctypes.c_char * len(memory)).from_buffer(memory)
         else:
             self._c_mem = None
-        # This is the Python mirror of wasm_interop.hxx. It is a
-        # fixed-layout Native structure, not a Python object graph. Word 8 remains the
-        # 64-bit process-local helper pointer used by PIC JIT delegation.
+        # This is the Python mirror of wasm_interop.hxx: a fixed-layout Native
+        # structure, not a Python object graph.
         self._c_context = ExecutionContextNative()
         assert ctypes.sizeof(self._c_context) == JIT_CONTEXT_SIZE_BYTES
-        self._jit_helper_keepalive: object | None = None
         self._cached_locals_view = self._LocalsView(self)
 
     @property
@@ -76,30 +72,29 @@ class WASMContext:
         return ctypes.c_void_p(0)
 
     @property
-    def jit_helper_ptr(self) -> int:
-        """Return the context-owned address used by a complex JIT tail jump."""
+    def jit_helper_ptrs(self) -> tuple[int, ...]:
+        """Return the instruction-indexed helper addresses in the Native context."""
 
-        return int(self._c_context.complex_helper_ptr)
+        return tuple(int(self._c_context.jit_helper_ptrs[index]) for index in range(JIT_HELPER_COUNT))
 
-    def set_jit_helper(self, helper_addr: int, keepalive: object | None = None) -> None:
-        """Install a non-zero CPS helper address in the execution context.
+    def set_jit_helpers(self, helper_addresses: tuple[int, ...]) -> None:
+        """Install instruction-specific CPS helper addresses in the context.
 
-        ``keepalive`` is only for the Python simulator (for example a
-        ``ctypes`` callback); the embedded implementation owns its function
-        image independently.  The generated JIT code reads this slot through
-        ``ctx`` and therefore remains position independent.
+        Entries are ordered by the Tier 2/Tier 3 helper ABI.  The generated
+        JIT code loads the operation-specific member directly; the interpreter
+        never dispatches through this array.
         """
 
-        assert helper_addr > 0, "JIT helper address must be non-zero"
-        assert helper_addr <= 0xFFFF_FFFF_FFFF_FFFF, "JIT helper address exceeds ABI width"
-        self._c_context.complex_helper_ptr = helper_addr
-        self._jit_helper_keepalive = keepalive
-
+        assert len(helper_addresses) == JIT_HELPER_COUNT
+        for index, helper_addr in enumerate(helper_addresses):
+            assert helper_addr > 0
+            assert helper_addr <= 0xFFFF_FFFF_FFFF_FFFF
+            self._c_context.jit_helper_ptrs[index] = helper_addr
     def clear_jit_helper(self) -> None:
-        """Remove the installed helper and release the simulator keepalive."""
+        """Clear all instruction-specific helper addresses."""
 
-        self._c_context.complex_helper_ptr = 0
-        self._jit_helper_keepalive = None
+        for index in range(JIT_HELPER_COUNT):
+            self._c_context.jit_helper_ptrs[index] = 0
 
     class _LocalsView:
         __slots__ = ("_ctx",)
@@ -108,16 +103,19 @@ class WASMContext:
             self._ctx = ctx
 
         def __getitem__(self, idx: int) -> int:
-            return self._ctx.local_stack[idx]
+            assert 0 <= idx < len(self)
+            return self._ctx.local_stack[idx * WASM_LOCAL_SLOT_WORDS]
 
         def __setitem__(self, idx: int, val: int) -> None:
-            self._ctx.local_stack[idx] = val
+            assert 0 <= idx < len(self)
+            self._ctx.local_stack[idx * WASM_LOCAL_SLOT_WORDS] = val
 
         def __len__(self) -> int:
-            return len(self._ctx.local_stack)
+            return len(self._ctx.local_stack) // WASM_LOCAL_SLOT_WORDS
 
         def __iter__(self) -> Iterator[int]:
-            yield from self._ctx.local_stack
+            for index in range(len(self)):
+                yield self[index]
 
     @property
     def locals(self) -> WASMContext._LocalsView:
@@ -125,9 +123,9 @@ class WASMContext:
 
     @locals.setter
     def locals(self, values: tuple[int, ...]) -> None:
-        assert len(values) <= len(self.local_stack)
+        assert len(values) <= len(self.locals)
         for i, v in enumerate(values):
-            self.local_stack[i] = v
+            self.locals[i] = v
 
     def push(self, val: int) -> bool:
         assert self.stack.push_back(val & 0xFFFF_FFFF)

@@ -62,6 +62,7 @@ class JITCompilerBenchmark:
                 next_pc=next_pc,
                 loops_to=loops_to,
                 byte_span=byte_span,
+                local_widths=(1,),
             )
             _trace = self.compiler.compile_trace(head_pc=head_pc, block=block)
         t1 = time.perf_counter()
@@ -161,10 +162,8 @@ class JITCompilerBenchmark:
         helper_fn = helper_type(helper)
         helper_ctx = WASMContext()
         helper_ctx.locals = (0,)
-        helper_ctx.set_jit_helper(
-            ctypes.cast(helper_fn, ctypes.c_void_p).value or 0,
-            keepalive=helper_fn,
-        )
+        helper_addr = ctypes.cast(helper_fn, ctypes.c_void_p).value or 0
+        helper_ctx.set_jit_helpers((helper_addr,) * 11)
         helper_trace = self.compiler.compile_trace(
             head_pc=0xF000,
             block=TraceBlock(
@@ -173,6 +172,7 @@ class JITCompilerBenchmark:
                 next_pc=None,
                 loops_to=None,
                 byte_span=4,
+                local_widths=(1,),
             ),
             tail_context_helper=True,
         )

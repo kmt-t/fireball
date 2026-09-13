@@ -29,9 +29,7 @@ from __future__ import annotations
 import sys
 from collections.abc import Generator, Iterable
 from dataclasses import dataclass, field
-
-from jit_abi import JIT_CONTEXT_HELPER_PTR_OFFSET
-from system_containers import FlatMapView
+from enum import IntEnum
 
 IS_WINDOWS = sys.platform == "win32"
 
@@ -44,19 +42,31 @@ class WasmTrapError(OSError):
     """Raised when WASM execution traps (e.g. out-of-bounds memory access or unreachable)."""
 
 
-_EMPTY_RELOC_ENTRIES: tuple[tuple[str, int], ...] = ()
-_EMPTY_RELOCS: FlatMapView[str, int] = FlatMapView(_EMPTY_RELOC_ENTRIES)
+class Relocation(IntEnum):
+    DISP = 0
+    IMM = 1
+    REL32 = 2
+    MAX_ADDR = 3
+    TRAP = 4
+    ADDR = 5
+    IMM64 = 6
+    HELPER_DISP = 7
+
+
+RELOCATION_COUNT = 8
+NO_RELOCATION = -1
+_EMPTY_RELOC_ENTRIES: tuple[tuple[Relocation, int], ...] = ()
+_EMPTY_RELOC_OFFSETS: tuple[int, ...] = (NO_RELOCATION,) * RELOCATION_COUNT
 
 
 @dataclass(frozen=True)
 class Stencil:
-    name: str
     code: bytes
-    reloc_entries: tuple[tuple[str, int], ...] = field(default_factory=lambda: _EMPTY_RELOC_ENTRIES)
-    # name -> byte offset within `code` of a 4-byte little-endian relocation
-    # slot: a sorted flat_map_view over a small, fixed reloc-name vocabulary
-    # ("disp", "imm", "rel32", "max_addr", "trap", "addr"), never a dict.
-    relocs: FlatMapView[str, int] = field(default_factory=lambda: _EMPTY_RELOCS)
+    reloc_entries: tuple[tuple[Relocation, int], ...] = field(
+        default_factory=lambda: _EMPTY_RELOC_ENTRIES
+    )
+    # Relocation IDs are dense integers, so patch lookup is one tuple index.
+    reloc_offsets: tuple[int, ...] = field(default_factory=lambda: _EMPTY_RELOC_OFFSETS)
 
     def __len__(self) -> int:
         return len(self.code)
@@ -77,15 +87,19 @@ _SENTINEL_MAX_ADDR = bytes((0xA1, 0xA1, 0xA1, 0xA1))
 _SENTINEL_TRAP = bytes((0xA2, 0xA2, 0xA2, 0xA2))
 _SENTINEL_DISP = bytes((0xA3, 0xA3, 0xA3, 0xA3))
 _SENTINEL_ADDR64 = bytes((0xA4,) * 8)
-_RELOC_SENTINELS: tuple[tuple[str, bytes], ...] = (
-    ("max_addr", _SENTINEL_MAX_ADDR),
-    ("trap", _SENTINEL_TRAP),
-    ("disp", _SENTINEL_DISP),
-    ("addr", _SENTINEL_ADDR64),
+_SENTINEL_IMM64 = bytes((0xA6,) * 8)
+_SENTINEL_HELPER_DISP = bytes((0xA5,) * 4)
+_RELOC_SENTINELS: tuple[tuple[Relocation, bytes], ...] = (
+    (Relocation.MAX_ADDR, _SENTINEL_MAX_ADDR),
+    (Relocation.TRAP, _SENTINEL_TRAP),
+    (Relocation.DISP, _SENTINEL_DISP),
+    (Relocation.ADDR, _SENTINEL_ADDR64),
+    (Relocation.IMM64, _SENTINEL_IMM64),
+    (Relocation.HELPER_DISP, _SENTINEL_HELPER_DISP),
 )
 
 
-def _materialize_auto(name: str, gen: Generator[int, None, None] | Iterable[int]) -> Stencil:
+def _materialize_auto(gen: Generator[int, None, None] | Iterable[int]) -> Stencil:
     """
     Like _materialize(), but discovers every relocation slot in `gen`'s
         output by locating the sentinel patterns in `_RELOC_SENTINELS`, instead
@@ -93,67 +107,48 @@ def _materialize_auto(name: str, gen: Generator[int, None, None] | Iterable[int]
     """
 
     code = bytearray(gen)
-    entries: list[tuple[str, int]] = []
+    entries: list[tuple[Relocation, int]] = []
     for reloc_name, sentinel in _RELOC_SENTINELS:
         idx = code.find(sentinel)
         if idx == -1:
             continue
-        assert code.find(sentinel, idx + 1) == -1, (
-            f"stencil {name!r}: sentinel for {reloc_name!r} appears more than once"
-        )
+        assert code.find(sentinel, idx + 1) == -1
         entries.append((reloc_name, idx))
         code[idx : idx + len(sentinel)] = bytes(len(sentinel))
     entries.sort(key=lambda e: e[0])
     reloc_entries = tuple(entries)
-    relocs = FlatMapView(reloc_entries)
-    return Stencil(name=name, code=bytes(code), reloc_entries=reloc_entries, relocs=relocs)
-
-
-def _cut(
-    name: str,
-    gen: Generator[int, None, None] | Iterable[int],
-    **sentinels: bytes,
-) -> Stencil:
-    """
-    Drains a stencil generator into a mutable bytearray, finds each
-    named sentinel byte-pattern, records its offset as a relocation, and
-    zeroes the sentinel bytes so the template sits with a clean placeholder.
-    """
-
-    code = bytearray(gen)
-    entries: list[tuple[str, int]] = []
-    for reloc_name, sentinel in sentinels.items():
-        idx = code.find(sentinel)
-        if idx == -1:
-            continue
-        assert code.find(sentinel, idx + 1) == -1, (
-            f"stencil {name!r}: sentinel for {reloc_name!r} appears more than once"
-        )
-        entries.append((reloc_name, idx))
-        code[idx : idx + len(sentinel)] = bytes(len(sentinel))
-    entries.sort(key=lambda e: e[0])
-    reloc_entries = tuple(entries)
-    relocs = FlatMapView(reloc_entries)
-    return Stencil(name=name, code=bytes(code), reloc_entries=reloc_entries, relocs=relocs)
+    reloc_offsets = _relocation_offsets(reloc_entries)
+    return Stencil(code=bytes(code), reloc_entries=reloc_entries, reloc_offsets=reloc_offsets)
 
 
 def _materialize(
-    name: str,
     gen: Generator[int, None, None] | Iterable[int],
-    **relocs: int,
+    relocs: tuple[tuple[Relocation, int], ...] = (),
 ) -> Stencil:
     """
     Drains a stencil generator exactly once ("compile time") into a
     frozen Stencil. Called only at module load, never per-JIT-compilation.
-    Relocations are passed as keyword arguments (disp=3, imm=1, ...) --
-    Python's own calling convention, not a dict this code chose as
-    storage -- and converted immediately into a sorted flat_map_view.
+    Relocations use fixed dense integer IDs and are converted immediately into
+    a direct-index offset tuple.
     """
 
-    entries = sorted(relocs.items(), key=lambda e: e[0])
-    reloc_entries = tuple(entries)
-    reloc_view = FlatMapView(reloc_entries)
-    return Stencil(name=name, code=bytes(gen), reloc_entries=reloc_entries, relocs=reloc_view)
+    reloc_entries = tuple(sorted(relocs, key=lambda e: e[0]))
+    reloc_offsets = _relocation_offsets(reloc_entries)
+    return Stencil(code=bytes(gen), reloc_entries=reloc_entries, reloc_offsets=reloc_offsets)
+
+
+def _relocation_offsets(
+    entries: tuple[tuple[Relocation, int], ...],
+) -> tuple[int, ...]:
+    """Build the dense relocation table once while materializing a stencil."""
+
+    offsets = [NO_RELOCATION] * RELOCATION_COUNT
+    for reloc_id, offset in entries:
+        index = int(reloc_id)
+        assert 0 <= index < RELOCATION_COUNT
+        assert offsets[index] == NO_RELOCATION
+        offsets[index] = offset
+    return tuple(offsets)
 
 
 # ---------------------------------------------------------------------------
@@ -262,6 +257,13 @@ def _gen_i32_const() -> Generator[int, None, None]:
     yield 0xB8
     yield from (0x00, 0x00, 0x00, 0x00)
     # push rax                                  50
+    yield 0x50
+
+
+def _gen_i64_const() -> Generator[int, None, None]:
+    # mov rax, imm64 (48 B8 imm64); push rax
+    yield from (0x48, 0xB8)
+    yield from _SENTINEL_IMM64
     yield 0x50
 
 
@@ -568,12 +570,9 @@ def _gen_global_set() -> Generator[int, None, None]:
 def _gen_context_helper_tail_jump() -> Generator[int, None, None]:
     """Tail-jump to a complex-operation helper selected by ``ctx``.
 
-    The helper uses the same CPS four-argument ABI as a trace.  The target
-    address is loaded from ``[r13 + JIT_CONTEXT_HELPER_PTR_OFFSET]`` after
-    the prologue has preserved ``ctx`` in r13; no process address is present
-    in the generated code.  Restoring the JIT frame before ``jmp rax`` makes
-    the helper a true tail destination and preserves the caller's return
-    address.  The helper must return with the same CPS ABI.
+    The helper is loaded directly from ``[r13 + JIT_CONTEXT_HELPER_PTR_OFFSET]``.
+    Restoring the JIT frame before ``jmp rax`` makes the helper a true tail
+    destination and preserves the caller's return address.
     """
 
     if IS_WINDOWS:
@@ -587,9 +586,9 @@ def _gen_context_helper_tail_jump() -> Generator[int, None, None]:
         yield from (0x4C, 0x89, 0xE6)  # mov rsi, r12
         yield from (0x4D, 0x89, 0xD2)  # mov rdx, r10
 
-    # mov rax, [r13 + disp32] -- disp is a context-layout constant.
+    # mov rax, [r13 + helper_slot_offset]
     yield from (0x49, 0x8B, 0x85)
-    yield from JIT_CONTEXT_HELPER_PTR_OFFSET.to_bytes(4, "little")
+    yield from _SENTINEL_HELPER_DISP
     yield from _gen_restore_unwind_only()
     yield from (0xFF, 0xE0)  # jmp rax
 
@@ -598,61 +597,64 @@ def _gen_context_helper_tail_jump() -> Generator[int, None, None]:
 # Stencil table -- every generator above is drained exactly once here.
 # ---------------------------------------------------------------------------
 
-PROLOGUE = _materialize("prologue", _gen_prologue())
-EPILOGUE_RETURN_I32 = _materialize("epilogue_return_i32", _gen_epilogue_return_i32())
-EPILOGUE_RETURN_VOID = _materialize("epilogue_return_void", _gen_epilogue_return_void())
-SPILL_RESULT_TO_SP = _materialize("spill_result_to_sp", _gen_spill_result_to_sp())
-LOCAL_GET = _materialize("local_get", _gen_local_get(), disp=3)
-LOCAL_SET = _materialize("local_set", _gen_local_set(), disp=4)
-LOCAL_TEE = _materialize("local_tee", _gen_local_tee(), disp=7)
-I32_CONST = _materialize("i32_const", _gen_i32_const(), imm=1)
-I32_ADD = _materialize("i32_add", _gen_binop(bytes((0x01, 0xD8))))  # add eax, ebx
-I32_SUB = _materialize("i32_sub", _gen_binop(bytes((0x29, 0xD8))))  # sub eax, ebx
-I32_MUL = _materialize("i32_mul", _gen_binop(bytes((0x0F, 0xAF, 0xC3))))  # imul eax, ebx
+PROLOGUE = _materialize(_gen_prologue())
+EPILOGUE_RETURN_I32 = _materialize(_gen_epilogue_return_i32())
+EPILOGUE_RETURN_VOID = _materialize(_gen_epilogue_return_void())
+SPILL_RESULT_TO_SP = _materialize(_gen_spill_result_to_sp())
+LOCAL_GET = _materialize(_gen_local_get(), ((Relocation.DISP, 3),))
+LOCAL_SET = _materialize(_gen_local_set(), ((Relocation.DISP, 4),))
+LOCAL_TEE = _materialize(_gen_local_tee(), ((Relocation.DISP, 7),))
+I32_CONST = _materialize(_gen_i32_const(), ((Relocation.IMM, 1),))
+I64_CONST = _materialize(_gen_i64_const(), ((Relocation.IMM64, 2),))
+F32_CONST = _materialize(_gen_i32_const(), ((Relocation.IMM, 1),))
+F64_CONST = _materialize(_gen_i64_const(), ((Relocation.IMM64, 2),))
+I32_ADD = _materialize(_gen_binop(bytes((0x01, 0xD8))))  # add eax, ebx
+I32_SUB = _materialize(_gen_binop(bytes((0x29, 0xD8))))  # sub eax, ebx
+I32_MUL = _materialize(_gen_binop(bytes((0x0F, 0xAF, 0xC3))))  # imul eax, ebx
 
-I32_AND = _materialize("i32_and", _gen_binop(bytes((0x21, 0xD8))))  # and eax, ebx
-I32_OR = _materialize("i32_or", _gen_binop(bytes((0x09, 0xD8))))  # or eax, ebx
-I32_XOR = _materialize("i32_xor", _gen_binop(bytes((0x31, 0xD8))))  # xor eax, ebx
-I32_DIV_S = _materialize("i32_div_s", _gen_i32_div_s())
-I32_DIV_U = _materialize("i32_div_u", _gen_i32_div_u())
-I32_REM_S = _materialize("i32_rem_s", _gen_i32_rem_s())
-I32_REM_U = _materialize("i32_rem_u", _gen_i32_rem_u())
-I32_SHL = _materialize("i32_shl", _gen_shift(4))
-I32_SHR_S = _materialize("i32_shr_s", _gen_shift(7))
-I32_SHR_U = _materialize("i32_shr_u", _gen_shift(5))
-I32_EQZ = _materialize("i32_eqz", _gen_i32_eqz())
-I32_EQ = _materialize("i32_eq", _gen_cmp_setcc(0x94))  # sete
-I32_NE = _materialize("i32_ne", _gen_cmp_setcc(0x95))  # setne
-I32_LT_S = _materialize("i32_lt_s", _gen_cmp_setcc(0x9C))  # setl
-I32_LT_U = _materialize("i32_lt_u", _gen_cmp_setcc(0x92))  # setb
-I32_GT_S = _materialize("i32_gt_s", _gen_cmp_setcc(0x9F))  # setg
-I32_GT_U = _materialize("i32_gt_u", _gen_cmp_setcc(0x97))  # seta
-I32_LE_S = _materialize("i32_le_s", _gen_cmp_setcc(0x9E))  # setle
-I32_LE_U = _materialize("i32_le_u", _gen_cmp_setcc(0x96))  # setbe
-I32_GE_S = _materialize("i32_ge_s", _gen_cmp_setcc(0x9D))  # setge
-I32_GE_U = _materialize("i32_ge_u", _gen_cmp_setcc(0x93))  # setae
-I32_LOAD = _materialize_auto("i32_load", _gen_i32_load())
-I32_LOAD8_S = _materialize_auto("i32_load8_s", _gen_i32_load8_s())
-I32_LOAD8_U = _materialize_auto("i32_load8_u", _gen_i32_load8_u())
-I32_LOAD16_S = _materialize_auto("i32_load16_s", _gen_i32_load16_s())
-I32_LOAD16_U = _materialize_auto("i32_load16_u", _gen_i32_load16_u())
-I32_STORE = _materialize_auto("i32_store", _gen_i32_store())
-I32_STORE8 = _materialize_auto("i32_store8", _gen_i32_store8())
-I32_STORE16 = _materialize_auto("i32_store16", _gen_i32_store16())
-I32_CLZ = _materialize("i32_clz", _gen_i32_clz())
-I32_CTZ = _materialize("i32_ctz", _gen_i32_ctz())
-I32_POPCNT = _materialize("i32_popcnt", _gen_i32_popcnt())
-I32_ROTL = _materialize("i32_rotl", _gen_rotate(0))
-I32_ROTR = _materialize("i32_rotr", _gen_rotate(1))
-GLOBAL_GET = _materialize_auto("global_get", _gen_global_get())
-GLOBAL_SET = _materialize_auto("global_set", _gen_global_set())
-DROP = _materialize("drop", _gen_drop())
-SELECT = _materialize("select", _gen_select())
-BR = _materialize("br", _gen_br(), rel32=1)
-BR_IF = _materialize("br_if", _gen_br_if(), rel32=5)
-CALL = _materialize("call", _gen_call(), rel32=1)
-UNREACHABLE = _materialize("unreachable", _gen_unreachable())
-TRAP = _materialize("trap", _gen_trap())
-CONTEXT_HELPER_TAIL_JUMP = _materialize(
-    "context_helper_tail_jump", _gen_context_helper_tail_jump()
+I32_AND = _materialize(_gen_binop(bytes((0x21, 0xD8))))  # and eax, ebx
+I32_OR = _materialize(_gen_binop(bytes((0x09, 0xD8))))  # or eax, ebx
+I32_XOR = _materialize(_gen_binop(bytes((0x31, 0xD8))))  # xor eax, ebx
+I32_DIV_S = _materialize(_gen_i32_div_s())
+I32_DIV_U = _materialize(_gen_i32_div_u())
+I32_REM_S = _materialize(_gen_i32_rem_s())
+I32_REM_U = _materialize(_gen_i32_rem_u())
+I32_SHL = _materialize(_gen_shift(4))
+I32_SHR_S = _materialize(_gen_shift(7))
+I32_SHR_U = _materialize(_gen_shift(5))
+I32_EQZ = _materialize(_gen_i32_eqz())
+I32_EQ = _materialize(_gen_cmp_setcc(0x94))  # sete
+I32_NE = _materialize(_gen_cmp_setcc(0x95))  # setne
+I32_LT_S = _materialize(_gen_cmp_setcc(0x9C))  # setl
+I32_LT_U = _materialize(_gen_cmp_setcc(0x92))  # setb
+I32_GT_S = _materialize(_gen_cmp_setcc(0x9F))  # setg
+I32_GT_U = _materialize(_gen_cmp_setcc(0x97))  # seta
+I32_LE_S = _materialize(_gen_cmp_setcc(0x9E))  # setle
+I32_LE_U = _materialize(_gen_cmp_setcc(0x96))  # setbe
+I32_GE_S = _materialize(_gen_cmp_setcc(0x9D))  # setge
+I32_GE_U = _materialize(_gen_cmp_setcc(0x93))  # setae
+I32_LOAD = _materialize_auto(_gen_i32_load())
+I32_LOAD8_S = _materialize_auto(_gen_i32_load8_s())
+I32_LOAD8_U = _materialize_auto(_gen_i32_load8_u())
+I32_LOAD16_S = _materialize_auto(_gen_i32_load16_s())
+I32_LOAD16_U = _materialize_auto(_gen_i32_load16_u())
+I32_STORE = _materialize_auto(_gen_i32_store())
+I32_STORE8 = _materialize_auto(_gen_i32_store8())
+I32_STORE16 = _materialize_auto(_gen_i32_store16())
+I32_CLZ = _materialize(_gen_i32_clz())
+I32_CTZ = _materialize(_gen_i32_ctz())
+I32_POPCNT = _materialize(_gen_i32_popcnt())
+I32_ROTL = _materialize(_gen_rotate(0))
+I32_ROTR = _materialize(_gen_rotate(1))
+GLOBAL_GET = _materialize_auto(_gen_global_get())
+GLOBAL_SET = _materialize_auto(_gen_global_set())
+DROP = _materialize(_gen_drop())
+SELECT = _materialize(_gen_select())
+BR = _materialize(_gen_br(), ((Relocation.REL32, 1),))
+BR_IF = _materialize(_gen_br_if(), ((Relocation.REL32, 5),))
+CALL = _materialize(_gen_call(), ((Relocation.REL32, 1),))
+UNREACHABLE = _materialize(_gen_unreachable())
+TRAP = _materialize(_gen_trap())
+CONTEXT_HELPER_TAIL_JUMP = _materialize_auto(
+    _gen_context_helper_tail_jump()
 )

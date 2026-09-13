@@ -34,19 +34,21 @@ from interpreter import ControlFrameKind, InterpreterContext, NativeControlStack
 
 
 def test_native_layout_matches_x64_jit_context():
-    assert ctypes.sizeof(ExecutionContextNative) == 72
+    assert ctypes.sizeof(ExecutionContextNative) == 152
     assert ExecutionContextNative.mem_base.offset == 0x28
     assert ExecutionContextNative.handler_table.offset == 0x38
     assert ExecutionContextNative.reserved0.offset == 0x3C
-    assert ExecutionContextNative.complex_helper_ptr.offset == 0x40
+    assert ExecutionContextNative.jit_helper_ptrs.offset == 0x40
 
     ctx = ExecutionContextNative()
     ctx.ip = 0x1234
     ctx.mem_size = 0x4000
-    ctx.complex_helper_ptr = 0x0123_4567_89AB_CDEF
+    ctx.jit_helper_ptrs[0] = 0x0123_4567_89AB_CDEF
+    ctx.jit_helper_ptrs[10] = 0x0FED_CBA9_8765_4321
     assert ctx.ip == 0x1234
     assert ctx.mem_size == 0x4000
-    assert ctx.complex_helper_ptr == 0x0123_4567_89AB_CDEF
+    assert ctx.jit_helper_ptrs[0] == 0x0123_4567_89AB_CDEF
+    assert ctx.jit_helper_ptrs[10] == 0x0FED_CBA9_8765_4321
 
 
 def test_native_views_are_non_owning_fixed_width_records():
@@ -106,6 +108,7 @@ def test_native_value_stack_owns_the_fixed_storage():
     assert stack.push_f32(1.5)
     assert not stack.push_back(3)
     assert stack.native.size == 2
+    assert stack.value_ptr().value % 8 == 0
     assert stack.read_i32(0) == -1
     assert stack.read_f32(1) == 1.5
     assert stack.value_ptr().value == ctypes.addressof(stack.native.values)

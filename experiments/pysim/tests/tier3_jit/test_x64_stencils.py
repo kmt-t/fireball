@@ -74,6 +74,7 @@ import random
 
 import x64_stencils as st
 from exec_memory import ExecutableBuffer
+from wasm_module import WASM_LOCAL_SLOT_BYTES, WASM_LOCAL_SLOT_WORDS
 
 I32_MASK = 0xFFFFFFFF
 
@@ -87,11 +88,24 @@ def _u32(v: int) -> int:
     return v & I32_MASK
 
 
+_RELOCATIONS = {
+    "disp": st.Relocation.DISP,
+    "imm": st.Relocation.IMM,
+    "rel32": st.Relocation.REL32,
+    "max_addr": st.Relocation.MAX_ADDR,
+    "trap": st.Relocation.TRAP,
+    "addr": st.Relocation.ADDR,
+}
+
+
 def patch(code: bytearray, base: int, stencil: st.Stencil, reloc_name: str, value: int) -> None:
     # Every relocation this codebase uses is 4 bytes except globals'
     # absolute-address "addr" slots, which are a full 64-bit pointer.
-    width = 8 if reloc_name == "addr" else 4
-    off = base + stencil.relocs[reloc_name]
+    reloc_id = _RELOCATIONS[reloc_name]
+    width = 8 if reloc_id == st.Relocation.ADDR else 4
+    reloc_offset = stencil.reloc_offsets[int(reloc_id)]
+    assert reloc_offset != st.NO_RELOCATION
+    off = base + reloc_offset
     code[off : off + width] = (value & ((1 << (width * 8)) - 1)).to_bytes(width, "little")
 
 
@@ -125,10 +139,10 @@ def run_i32(
     try:
         buf.write(0, bytes(code))
         n_locals = max(len(locals_values or []), 1)
-        LocalsArray = ctypes.c_uint32 * n_locals
-        locals_arr = LocalsArray(*[0] * n_locals)
+        LocalsArray = ctypes.c_uint32 * (n_locals * WASM_LOCAL_SLOT_WORDS)
+        locals_arr = LocalsArray()
         for i, v in enumerate(locals_values or []):
-            locals_arr[i] = v
+            locals_arr[i * WASM_LOCAL_SLOT_WORDS] = v
 
         mem_ptr = 0
         c_mem = None
@@ -161,8 +175,11 @@ def run_i32_checked(
     trap_relocs = []
     for stencil, patches in body_stencils_with_patches:
         base = emit(code, stencil, **patches)
-        if "trap" in stencil.relocs and "trap" not in patches:
-            trap_relocs.append(base + stencil.relocs["trap"])
+        if (
+            stencil.reloc_offsets[int(st.Relocation.TRAP)] != st.NO_RELOCATION
+            and patches.get("trap") is None
+        ):
+            trap_relocs.append(base + stencil.reloc_offsets[int(st.Relocation.TRAP)])
 
     code += st.EPILOGUE_RETURN_I32.code
     trap_offset = len(code)
@@ -175,10 +192,10 @@ def run_i32_checked(
     try:
         buf.write(0, bytes(code))
         n_locals = max(len(locals_values or []), 1)
-        LocalsArray = ctypes.c_uint32 * n_locals
-        locals_arr = LocalsArray(*[0] * n_locals)
+        LocalsArray = ctypes.c_uint32 * (n_locals * WASM_LOCAL_SLOT_WORDS)
+        locals_arr = LocalsArray()
         for i, v in enumerate(locals_values or []):
-            locals_arr[i] = v
+            locals_arr[i * WASM_LOCAL_SLOT_WORDS] = v
 
         mem_ptr = 0
         c_mem = None
@@ -224,7 +241,7 @@ def test_epilogue_sign_extends_negative_i32_into_the_i64_return_value():
 
 
 def test_local_get_reads_the_correct_slot_by_index():
-    code = [(st.LOCAL_GET, {"disp": 1 * 4})]
+    code = [(st.LOCAL_GET, {"disp": 1 * WASM_LOCAL_SLOT_BYTES})]
     assert run_i32(code, locals_values=[111, 222, 333]) == 222
 
 
@@ -257,8 +274,8 @@ def test_local_get_set_tee_at_a_nonzero_locals_array_offset():
 
     code = [
         const_(555),
-        (st.LOCAL_SET, {"disp": 2 * 4}),
-        (st.LOCAL_GET, {"disp": 2 * 4}),
+        (st.LOCAL_SET, {"disp": 2 * WASM_LOCAL_SLOT_BYTES}),
+        (st.LOCAL_GET, {"disp": 2 * WASM_LOCAL_SLOT_BYTES}),
     ]
     assert run_i32(code, locals_values=[0, 0, 0, 0]) == 555
 

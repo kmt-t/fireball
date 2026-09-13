@@ -34,18 +34,6 @@ _PYSIM_DIR = Path(__file__).resolve().parent
 while not (_PYSIM_DIR / "tier1_core").is_dir():
     _PYSIM_DIR = _PYSIM_DIR.parent
 
-for _p in [
-    _PYSIM_DIR,
-    _PYSIM_DIR / "tier1_core",
-    _PYSIM_DIR / "tier1_interface",
-    _PYSIM_DIR / "tier2_runtime",
-    _PYSIM_DIR / "tier3_jit",
-    _PYSIM_DIR / "tier3_platform",
-]:
-    _sp = str(_p)
-    if _sp not in sys.path:
-        sys.path.insert(0, _sp)
-
 """
 experiments/pysim/tests/tier3_jit/test_x64_jit.py
 Spec-compliant tests for Fireball Trace-based Copy-and-Patch JIT Compiler (x64_jit.py).
@@ -58,22 +46,164 @@ Verifies:
 """
 
 import ctypes
+import struct
 
 from control_flow import extract_basic_blocks
 from exec_memory import ExecutableBuffer
 from runtime_engine import BasicBlock, IntegratedHybridEngine, TraceBlock, WASMContext
 from test_support import wat_to_wasm
+from wasm_module import WASM_LOCAL_SLOT_WORDS
 from wasm_opcodes import (
+    F32_ADD,
+    F32_CONST,
+    F32_DIV,
+    F32_MUL,
+    F32_SUB,
+    F64_ADD,
+    F64_CONST,
+    F64_DIV,
+    F64_MUL,
+    F64_SUB,
     I32_ADD,
     I32_AND,
     I32_CONST,
     I32_MUL,
     I32_SHL,
     I32_SUB,
+    I64_ADD,
+    I64_CONST,
+    I64_MUL,
+    I64_SUB,
     LOCAL_GET,
     LOCAL_SET,
 )
 from x64_jit import TraceCompiler
+
+_HELPER_TYPE = ctypes.CFUNCTYPE(
+    None,
+    ctypes.c_void_p,
+    ctypes.POINTER(ctypes.c_uint32),
+    ctypes.c_void_p,
+    ctypes.c_uint32,
+)
+
+
+def _make_raw_helpers() -> tuple[tuple[int, ...], tuple[ctypes._CFuncPtr, ...]]:
+    def i64_binary(sp, operation):
+        left = sp[0] | (sp[1] << 32)
+        right = sp[2] | (sp[3] << 32)
+        value = operation(left, right) & 0xFFFF_FFFF_FFFF_FFFF
+        sp[0] = value & 0xFFFF_FFFF
+        sp[1] = (value >> 32) & 0xFFFF_FFFF
+
+    def f32_binary(sp, operation):
+        left = struct.unpack("<f", struct.pack("<I", sp[0]))[0]
+        right = struct.unpack("<f", struct.pack("<I", sp[1]))[0]
+        value = operation(left, right)
+        sp[0] = struct.unpack("<I", struct.pack("<f", value))[0]
+
+    def f64_binary(sp, operation):
+        left = struct.unpack("<d", struct.pack("<II", sp[0], sp[1]))[0]
+        right = struct.unpack("<d", struct.pack("<II", sp[2], sp[3]))[0]
+        low, high = struct.unpack("<II", struct.pack("<d", operation(left, right)))
+        sp[0] = low
+        sp[1] = high
+
+    callbacks = tuple(
+        _HELPER_TYPE(fn)
+        for fn in (
+            lambda c, s, l, t: i64_binary(s, lambda a, b: a + b),
+            lambda c, s, l, t: i64_binary(s, lambda a, b: a - b),
+            lambda c, s, l, t: i64_binary(s, lambda a, b: a * b),
+            lambda c, s, l, t: f32_binary(s, lambda a, b: a + b),
+            lambda c, s, l, t: f32_binary(s, lambda a, b: a - b),
+            lambda c, s, l, t: f32_binary(s, lambda a, b: a * b),
+            lambda c, s, l, t: f32_binary(s, lambda a, b: a / b),
+            lambda c, s, l, t: f64_binary(s, lambda a, b: a + b),
+            lambda c, s, l, t: f64_binary(s, lambda a, b: a - b),
+            lambda c, s, l, t: f64_binary(s, lambda a, b: a * b),
+            lambda c, s, l, t: f64_binary(s, lambda a, b: a / b),
+        )
+    )
+    return tuple(ctypes.cast(fn, ctypes.c_void_p).value or 0 for fn in callbacks), callbacks
+
+
+def test_complex_helpers_use_shared_raw_slots_for_i64_and_floating_point():
+    """Complex values cross the JIT boundary as raw 32-bit words, not Python values."""
+    addresses, keepalive = _make_raw_helpers()
+    compiler = TraceCompiler()
+    ctx = WASMContext()
+    ctx.set_jit_helpers(addresses)
+
+    def run_i64(op, left: int, right: int, expected: int) -> None:
+        ctx.stack.set_size(0)
+        ctx.set_jit_helpers(addresses)
+        trace = compiler.compile_trace(
+            0,
+            TraceBlock(
+                0,
+                ((I64_CONST, left), (I64_CONST, right), (op, None)),
+                3,
+                None,
+                3,
+            ),
+        )
+        assert trace is not None
+        trace.invoke(ctx)
+        assert ctx.stack[:] == (expected & 0xFFFF_FFFF, expected >> 32)
+
+    def run_f32(op, left: float, right: float, expected: float) -> None:
+        ctx.stack.set_size(0)
+        ctx.set_jit_helpers(addresses)
+        left_bits = struct.unpack("<I", struct.pack("<f", left))[0]
+        right_bits = struct.unpack("<I", struct.pack("<f", right))[0]
+        trace = compiler.compile_trace(
+            0,
+            TraceBlock(
+                0,
+                ((F32_CONST, left_bits), (F32_CONST, right_bits), (op, None)),
+                3,
+                None,
+                3,
+            ),
+        )
+        assert trace is not None
+        trace.invoke(ctx)
+        actual = struct.unpack("<f", struct.pack("<I", ctx.stack[0]))[0]
+        assert abs(actual - expected) < 1e-6
+
+    def run_f64(op, left: float, right: float, expected: float) -> None:
+        ctx.stack.set_size(0)
+        ctx.set_jit_helpers(addresses)
+        left_bits = struct.unpack("<Q", struct.pack("<d", left))[0]
+        right_bits = struct.unpack("<Q", struct.pack("<d", right))[0]
+        trace = compiler.compile_trace(
+            0,
+            TraceBlock(
+                0,
+                ((F64_CONST, left_bits), (F64_CONST, right_bits), (op, None)),
+                3,
+                None,
+                3,
+            ),
+        )
+        assert trace is not None
+        trace.invoke(ctx)
+        actual = struct.unpack("<d", struct.pack("<II", ctx.stack[0], ctx.stack[1]))[0]
+        assert abs(actual - expected) < 1e-12
+
+    run_i64(I64_ADD, 0x0000_0001_0000_0002, 3, 0x0000_0001_0000_0005)
+    run_i64(I64_SUB, 9, 4, 5)
+    run_i64(I64_MUL, 9, 4, 36)
+    run_f32(F32_ADD, 1.5, 2.25, 3.75)
+    run_f32(F32_SUB, 9.0, 4.0, 5.0)
+    run_f32(F32_MUL, 9.0, 4.0, 36.0)
+    run_f32(F32_DIV, 9.0, 4.0, 2.25)
+    run_f64(F64_ADD, 1.5, 2.25, 3.75)
+    run_f64(F64_SUB, 9.0, 4.0, 5.0)
+    run_f64(F64_MUL, 9.0, 4.0, 36.0)
+    run_f64(F64_DIV, 9.0, 4.0, 2.25)
+    assert keepalive
 
 
 def test_trace_compiler_cps_4arg_and_pic():
@@ -106,12 +236,13 @@ def test_trace_compiler_cps_4arg_and_pic():
         frame_depth=frame_depth,
         byte_span=byte_span,
     )
-    trace = compiler.compile_block(code, block)
+    trace = compiler.compile_block(code, block, local_widths=(1, 1))
     # 1. 16-byte header verification
     assert trace.header.head_wasm_pc == head_pc
     assert trace.size_bytes >= 16
     # 2. Direct call via CPS 4-argument C function pointer fn(ctx, sp, local_base, tos)
-    locals_arr = (ctypes.c_uint32 * 8)(5, 0)
+    locals_arr = (ctypes.c_uint32 * 8)()
+    locals_arr[0] = 5
     res = trace.fn(
         ctypes.c_void_p(0),
         ctypes.c_void_p(0),
@@ -119,7 +250,7 @@ def test_trace_compiler_cps_4arg_and_pic():
         0,
     )
     assert res is None
-    assert locals_arr[1] == 40
+    assert locals_arr[WASM_LOCAL_SLOT_WORDS] == 40
     # 3. PIC Verification: Copy raw trace binary to a completely different buffer address
     # and execute it without any relocation adjustments -- must produce identical result!
     raw_blob = trace._exec_buf.read(0, trace.size_bytes)
@@ -132,7 +263,8 @@ def test_trace_compiler_cps_4arg_and_pic():
             None,
             [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_uint32],
         )
-        locals_arr_pic = (ctypes.c_uint32 * 8)(10, 0)
+        locals_arr_pic = (ctypes.c_uint32 * 8)()
+        locals_arr_pic[0] = 10
         pic_fn(
             ctypes.c_void_p(0),
             ctypes.c_void_p(0),
@@ -140,7 +272,7 @@ def test_trace_compiler_cps_4arg_and_pic():
             0,
         )
         # (10 + 10) * 3 - 5 = 55
-        assert locals_arr_pic[1] == 55, "PIC trace failed when relocated in memory"
+        assert locals_arr_pic[WASM_LOCAL_SLOT_WORDS] == 55, "PIC trace failed when relocated in memory"
     finally:
         reloc_buf.close()
 
@@ -181,7 +313,11 @@ def test_trace_compiler_bitwise_and_shifts_pic():
         frame_depth=frame_depth,
         byte_span=byte_span,
     )
-    trace = compiler.compile_block(code, block)
+    trace = compiler.compile_block(
+        code,
+        block,
+        local_widths=(1, 1, 1, 1),
+    )
     ctx = WASMContext()
     ctx.locals = (0x0F, 0x07, 0, 0)
     trace.invoke(ctx)
@@ -203,6 +339,7 @@ def test_context_helper_tail_jump_is_pic_and_uses_context_pointer():
             next_pc=next_pc,
             loops_to=loops_to,
             byte_span=byte_span,
+            local_widths=(1,),
         ),
         tail_context_helper=True,
     )
@@ -223,13 +360,14 @@ def test_context_helper_tail_jump_is_pic_and_uses_context_pointer():
     helper_fn = helper_type(helper)
     ctx = WASMContext()
     ctx.locals = (10,)
-    ctx.set_jit_helper(ctypes.cast(helper_fn, ctypes.c_void_p).value or 0, keepalive=helper_fn)
+    helper_addr = ctypes.cast(helper_fn, ctypes.c_void_p).value or 0
+    ctx.set_jit_helpers((helper_addr,) * 11)
     trace.invoke(ctx)
     assert ctx.locals[0] == 11
-    assert ctx.jit_helper_ptr != 0
+    assert ctx.jit_helper_ptrs[0] == helper_addr
 
     raw_blob = trace._exec_buf.read(0, trace.size_bytes)
-    helper_addr_bytes = (ctx.jit_helper_ptr & 0xFFFF_FFFF_FFFF_FFFF).to_bytes(8, "little")
+    helper_addr_bytes = helper_addr.to_bytes(8, "little")
     assert helper_addr_bytes not in raw_blob, "helper address was embedded in PIC code"
     relocated = ExecutableBuffer(len(raw_blob) + 96)
     try:

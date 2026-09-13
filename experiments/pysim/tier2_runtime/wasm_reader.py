@@ -317,5 +317,6 @@ def parse(data: bytes | bytearray) -> Module:
         # else: custom section -- skip its bytes.
         off = sec_end
 
+    module.prepare_function_layouts()
     module.build_basic_block_index()
     return module

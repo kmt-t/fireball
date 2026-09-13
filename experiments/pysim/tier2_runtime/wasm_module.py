@@ -62,6 +62,7 @@ class TraceBlock:
     next_pc: int | None = None
     loops_to: int | None = None
     byte_span: int = 0
+    local_widths: tuple[int, ...] | None = None
 
 
 # WASM value types we support (MVP i32 only for now; i64/f32/f64 are parsed
@@ -70,9 +71,20 @@ I32 = "i32"
 I64 = "i64"
 F32 = "f32"
 F64 = "f64"
+WASM_RAW_WORD_BYTES = 4
+WASM_LOCAL_SLOT_BYTES = 16
+WASM_LOCAL_SLOT_WORDS = WASM_LOCAL_SLOT_BYTES // WASM_RAW_WORD_BYTES
+assert WASM_LOCAL_SLOT_BYTES % WASM_RAW_WORD_BYTES == 0
 VALTYPE_BYTES: FlatMapView[int, str] = FlatMapView(
     ((0x7C, F64), (0x7D, F32), (0x7E, I64), (0x7F, I32))
 )
+
+
+def value_slot_width(value_type: str) -> int:
+    """Return the raw 32-bit slot width of one WASM value."""
+
+    assert value_type == I32 or value_type == I64 or value_type == F32 or value_type == F64
+    return 2 if value_type == I64 or value_type == F64 else 1
 
 
 @dataclass(frozen=True)
@@ -91,16 +103,14 @@ class Function:
     # metadata to select the non-nested-call fast path without rescanning code.
     has_nested_calls: bool = False
     control_map: object | None = None
-    # Params + locals_extra -- a pure function of this Function's own static
-    # fields, lazily built once on first call and reused after, exactly like
-    # control_map above. Without this, Interpreter._build_frame's `layout =
-    # module.locals_layout(func_index)` would rebuild this same list (a
-    # fresh concat allocation) on every single WASM call to this function.
-    locals_layout_cache: list[str] | None = None
-    local_offsets_cache: tuple[int, ...] | None = None
+    # Params + locals_extra and their raw widths are immutable load-time
+    # metadata. The execution path uses the fixed local-slot stride directly;
+    # no per-call physical-offset table is needed.
+    locals_layout_cache: tuple[str, ...] | None = None
+    local_widths_cache: tuple[int, ...] | None = None
     local_slot_count_cache: int | None = None
     local_i32_only_cache: bool | None = None
-    param_slot_count_cache: int | None = None
+    param_packed_slot_count_cache: int | None = None
 
 
 @dataclass
@@ -168,6 +178,29 @@ class Module:
     control_skip_tree: RadixBinaryTreeView[int] | None = None
     blocks: list[BasicBlock] = field(default_factory=list)
 
+    def __post_init__(self) -> None:
+        # Directly constructed concept modules are already complete at
+        # construction time. Parsed modules call this same operation after all
+        # sections have been decoded.
+        self.prepare_function_layouts()
+
+    def prepare_function_layouts(self) -> None:
+        """Precompute fixed-width local slots and parameter widths at module load."""
+
+        for function in self.functions:
+            assert 0 <= function.type_index < len(self.types)
+            function_type = self.types[function.type_index]
+            local_layout = function_type.params + tuple(function.locals_extra)
+            local_widths = tuple(value_slot_width(value_type) for value_type in local_layout)
+            local_slot_count = len(local_layout) * WASM_LOCAL_SLOT_WORDS
+            function.locals_layout_cache = local_layout
+            function.local_widths_cache = local_widths
+            function.local_slot_count_cache = local_slot_count
+            function.local_i32_only_cache = all(width == 1 for width in local_widths)
+            function.param_packed_slot_count_cache = sum(
+                value_slot_width(value_type) for value_type in function_type.params
+            )
+
     def init_memory_data(self, memory: bytearray) -> None:
         """Initializes memory with active data segments."""
         for seg in self.data_segments:
@@ -209,7 +242,7 @@ class Module:
                 return exp.index
         raise KeyError(f"no exported function named {name!r}")
 
-    def locals_layout(self, func_index: int) -> list[str]:
+    def locals_layout(self, func_index: int) -> tuple[str, ...]:
         """
         Params followed by declared locals -- WASM addresses both with a
                 single local index space starting at 0. Imports have no body, so
@@ -218,10 +251,9 @@ class Module:
 
         ft = self.func_type(func_index)
         if self.is_import(func_index):
-            return list(ft.params)
+            return ft.params
         local = self.functions[func_index - len(self.imports)]
-        if local.locals_layout_cache is None:
-            local.locals_layout_cache = list(ft.params) + list(local.locals_extra)
+        assert local.locals_layout_cache is not None
         return local.locals_layout_cache
 
     def build_basic_block_index(self) -> None:

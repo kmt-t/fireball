@@ -11,7 +11,7 @@ from collections.abc import Callable
 
 from jit_cache import JITTrace
 from system_containers import FlatMapView, ReadOnlyFlatMapStorage, StaticVector
-from wasm_module import TraceBlock
+from wasm_module import WASM_LOCAL_SLOT_WORDS, TraceBlock
 from wasm_opcodes import (
     I32_ADD,
     I32_CONST,
@@ -43,19 +43,20 @@ def _emu_i32_mul(stk: list[int], _arr: object, _arg: object) -> None:
 
 
 def _emu_local_get(stk: list[int], arr: object, arg: object) -> None:
-    stk.append((arr[arg] if arr else 0) & 0xFFFF_FFFF)  # type: ignore[index]
+    index = int(arg) * WASM_LOCAL_SLOT_WORDS
+    stk.append((arr[index] if arr else 0) & 0xFFFF_FFFF)  # type: ignore[index]
 
 
 def _emu_local_set(stk: list[int], arr: object, arg: object) -> None:
     val = stk.pop() & 0xFFFF_FFFF
     if arr:
-        arr[arg] = val  # type: ignore[index]
+        arr[int(arg) * WASM_LOCAL_SLOT_WORDS] = val  # type: ignore[index]
 
 
 def _emu_local_tee(stk: list[int], arr: object, arg: object) -> None:
     val = stk[-1] & 0xFFFF_FFFF if stk else 0
     if arr:
-        arr[arg] = val  # type: ignore[index]
+        arr[int(arg) * WASM_LOCAL_SLOT_WORDS] = val  # type: ignore[index]
 
 
 _EMU_TRACE_STORAGE: ReadOnlyFlatMapStorage[int, Callable[[list[int], object, object], None]] = (
@@ -90,7 +91,9 @@ class WASMTraceCompiler:
         for op, arg in block.ops:
             if not ops.push_back((op, arg)):
                 return None
-        has_ret = any(op in (I32_CONST, I32_ADD, I32_SUB, I32_MUL) for op, _ in ops)
+        has_ret = any(
+            op == I32_CONST or op == I32_ADD or op == I32_SUB or op == I32_MUL for op, _ in ops
+        )
 
         def trace_fn(ctx: object, sp: object, local_base: object, tos: int) -> None:
             # Emulated handler matching CPS 4-argument C signature (ctx, sp, local_base, tos).

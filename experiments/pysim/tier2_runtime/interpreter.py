@@ -62,7 +62,14 @@ from native_stacks import (
 )
 from system_containers import StaticVector
 from vmmio import VMMIOController, VmmioStatus
-from wasm_module import F32, F64, I32, I64, Module
+from wasm_module import (
+    F32,
+    F64,
+    I64,
+    WASM_LOCAL_SLOT_WORDS,
+    Module,
+    value_slot_width,
+)
 from wasm_opcodes import (
     BLOCK,
     BR,
@@ -267,19 +274,6 @@ FB_CONF_MAX_VALUE_STACK = 64
 FB_CONF_MAX_LOCAL_STACK = 64
 
 
-def _value_slot_width(value_type: str) -> int:
-    return 2 if value_type == I64 or value_type == F64 else 1
-
-
-def _layout_offsets(local_layout: Sequence[str]) -> tuple[tuple[int, ...], int]:
-    offsets: StaticVector[int] = StaticVector(capacity=FB_CONF_MAX_LOCAL_STACK)
-    slot_count = 0
-    for value_type in local_layout:
-        assert offsets.push_back(slot_count)
-        slot_count += _value_slot_width(value_type)
-    return tuple(offsets), slot_count
-
-
 def _encode_public_args(
     values: Sequence[int | float], param_types: Sequence[str]
 ) -> StaticVector[int]:
@@ -439,8 +433,8 @@ class CallFrame:
         "has_nested_calls",
         "local_count",
         "local_i32_only",
-        "local_offsets",
         "local_slot_count",
+        "local_widths",
         "values",
     )
 
@@ -455,10 +449,10 @@ class CallFrame:
         assert module is not None
         assert not module.is_import(func_index)
         function = module.functions[func_index - len(module.imports)]
-        local_offsets = function.local_offsets_cache
+        local_widths = function.local_widths_cache
         local_slot_count = function.local_slot_count_cache
         local_i32_only = function.local_i32_only_cache
-        assert local_offsets is not None
+        assert local_widths is not None
         assert local_slot_count is not None
         assert local_i32_only is not None
         self.context = context
@@ -468,12 +462,12 @@ class CallFrame:
         self.func_index = func_index
         self.has_nested_calls = function.has_nested_calls
         self.frame_offset = frame_offset
-        self.local_count = len(local_offsets)
-        self.local_offsets = local_offsets
+        self.local_count = len(local_widths)
+        self.local_widths = local_widths
         self.local_slot_count = local_slot_count
         self.local_i32_only = local_i32_only
         self._locals = _LocalStackWindow(
-            context.local_stack, frame_offset, local_offsets, local_slot_count
+            context.local_stack, frame_offset, local_widths, local_slot_count
         )
         self.code = function.code
         assert function.control_map is not None
@@ -819,8 +813,9 @@ class Interpreter:
     ) -> tuple[CallFrame, _LocalStackWindow]:
         """
         Builds the initial frame + locals for a WASM (non-import) function
-        activation. `raw_args` contains the parameter values as 32-bit
-        slots, already ordered for direct placement into the local stack.
+        activation. `raw_args` contains the packed parameter values as
+        32-bit slots; the load-time parameter offsets place them into the
+        aligned local layout exactly once at frame creation.
         The internal call path obtains it directly from the operand stack;
         the public entry path encodes host values once at that boundary.
 
@@ -829,31 +824,29 @@ class Interpreter:
         by that same context and is shared across the complete call chain.
         """
         fn = self.module.functions[func_index - len(self.module.imports)]
-        layout = self.module.locals_layout(func_index)
-        if fn.local_offsets_cache is None:
-            offsets, slot_count = _layout_offsets(layout)
-            fn.local_offsets_cache = offsets
-            fn.local_slot_count_cache = slot_count
-            fn.local_i32_only_cache = all(value_type == I32 for value_type in layout)
-        if fn.param_slot_count_cache is None:
-            fn.param_slot_count_cache = sum(
-                _value_slot_width(value_type)
-                for value_type in self.module.func_type(func_index).params
-            )
+        function_type = self.module.types[fn.type_index]
         local_slot_count = fn.local_slot_count_cache
-        param_slot_count = fn.param_slot_count_cache
+        local_widths = fn.local_widths_cache
+        param_packed_slot_count = fn.param_packed_slot_count_cache
         assert local_slot_count is not None
-        assert fn.local_offsets_cache is not None
+        assert local_widths is not None
         assert fn.local_i32_only_cache is not None
-        assert param_slot_count is not None
-        assert len(raw_args) == param_slot_count
-        for _ in range(local_slot_count - param_slot_count):
-            assert raw_args.push_back(0)
+        assert param_packed_slot_count is not None
+        assert len(raw_args) == param_packed_slot_count
+        local_values: StaticVector[int] = StaticVector(capacity=FB_CONF_MAX_LOCAL_STACK)
+        for _ in range(local_slot_count):
+            assert local_values.push_back(0)
+        raw_offset = 0
+        for index, width in enumerate(local_widths[: len(function_type.params)]):
+            for word in range(width):
+                local_values[index * WASM_LOCAL_SLOT_WORDS + word] = raw_args[raw_offset]
+                raw_offset += 1
+        assert raw_offset == len(raw_args)
         if fn.control_map is None:
             fn.control_map = build_control_map(fn.code)
         assert fn.control_map is not None
         frame = context.begin_call_frame(
-            raw_args,
+            local_values,
             func_index=func_index,
             env=self._env,
         )
@@ -1033,7 +1026,7 @@ class Interpreter:
 
         popped_raw_args: StaticVector[int] = StaticVector(capacity=FB_CONF_MAX_VALUE_STACK)
         for value_type in reversed(callee_ft.params):
-            for _ in range(_value_slot_width(value_type)):
+            for _ in range(value_slot_width(value_type)):
                 value = frame.values.pop_back()
                 assert value is not None
                 assert popped_raw_args.push_back(value)

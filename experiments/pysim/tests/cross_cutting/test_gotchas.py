@@ -249,7 +249,7 @@ def test_jitc_gotcha_01_02_03_conventions():
         frame_depth=frame_depth,
         byte_span=byte_span,
     )
-    trace = compiler.compile_block(code, block)
+    trace = compiler.compile_block(code, block, local_widths=(1,))
     assert trace.header.head_wasm_pc == head_pc
     assert trace.size_bytes >= 16
 

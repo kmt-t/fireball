@@ -31,7 +31,9 @@ typedef struct fireball_execution_context_native {
   uint32_t globals_limit;
   uint32_t handler_table;
   uint32_t reserved0;
-  uint64_t complex_helper_ptr;
+  // One direct CPS helper function pointer per delegated instruction. JIT
+  // code selects a compile-time-known entry by context-relative offset.
+  uint64_t jit_helper_ptrs[11];
 } fireball_execution_context_native;
 
 typedef struct fireball_const_buffer_view_native {
@@ -79,7 +81,11 @@ enum {
 };
 
 typedef struct fireball_value_stack_native {
-  uint32_t values[FIREBALL_NATIVE_VALUE_STACK_CAPACITY];
+#ifdef __cplusplus
+  alignas(8) uint32_t values[FIREBALL_NATIVE_VALUE_STACK_CAPACITY];
+#else
+  _Alignas(8) uint32_t values[FIREBALL_NATIVE_VALUE_STACK_CAPACITY];
+#endif
   uint32_t size;
   uint32_t reserved0;
 } fireball_value_stack_native;
@@ -130,17 +136,18 @@ static_assert(__is_standard_layout(wasm_run_result_native));
 static_assert(__is_trivially_copyable(wasm_run_result_native));
 static_assert(__is_standard_layout(value_stack_native));
 static_assert(__is_trivially_copyable(value_stack_native));
+static_assert(alignof(value_stack_native) == 8);
 static_assert(__is_standard_layout(control_frame_native));
 static_assert(__is_trivially_copyable(control_frame_native));
 static_assert(__is_standard_layout(control_stack_native));
 static_assert(__is_trivially_copyable(control_stack_native));
 
-static_assert(sizeof(execution_context_native) == 72);
+static_assert(sizeof(execution_context_native) == 152);
 static_assert(offsetof(execution_context_native, ip) == 0x00);
 static_assert(offsetof(execution_context_native, mem_base) == 0x28);
 static_assert(offsetof(execution_context_native, handler_table) == 0x38);
 static_assert(offsetof(execution_context_native, reserved0) == 0x3c);
-static_assert(offsetof(execution_context_native, complex_helper_ptr) == 0x40);
+static_assert(offsetof(execution_context_native, jit_helper_ptrs) == 0x40);
 static_assert(sizeof(const_buffer_view_native) == 16);
 static_assert(sizeof(wasm_function_view_native) == 24);
 static_assert(sizeof(wasm_module_view_native) == 24);

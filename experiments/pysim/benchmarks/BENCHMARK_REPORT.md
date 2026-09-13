@@ -49,14 +49,14 @@
 
 [Section 3: JIT Compiler & Runtime Dispatch]
 --------------------------------------------------------------------------------
-  * Copy-and-Patch Compile Speed:       16,960 Traces/sec  (58.96 us/trace)
-  * Compile Cost per WASM Instruction:  14740.3 ns/opcode
-  * 2-Bit Card Marking O(1) Check:      1.40 M ops/s  (711.8 ns/check)
-  * bswap32 Radix Tree Section Search:  0.43 M ops/s  (2336.6 ns/lookup)
-  * Arithmetic Loop (100,000 iters):    Interp: 7642.12 ms | JIT: 3350.86 ms
+  * Copy-and-Patch Compile Speed:       18,687 Traces/sec  (53.51 us/trace)
+  * Compile Cost per WASM Instruction:  13378.6 ns/opcode
+  * 2-Bit Card Marking O(1) Check:      1.56 M ops/s  (642.9 ns/check)
+  * bswap32 Radix Tree Section Search:  0.50 M ops/s  (1999.2 ns/lookup)
+  * Arithmetic Loop (100,000 iters):    Interp: 5949.46 ms | JIT: 2832.19 ms
   * Differential Result Check:          Interp=704,982,704 | JIT=704,982,704 (MATCH)
-  * Measured JIT Speedup:               2.28x faster
-  * PIC Context Helper Tail Jump:       0.12 M ops/s  (8221.0 ns/dispatch; 10,000 calls)
+  * Measured JIT Speedup:               2.10x faster
+  * PIC Context Helper Tail Jump:       0.12 M ops/s  (8036.6 ns/dispatch; 10,000 calls)
 
 [Section 4: JIT Cache Metabolism & Corner Cases]
 --------------------------------------------------------------------------------
@@ -94,12 +94,12 @@
 ベンチマークのPTE格納表を64件、TLBを32件として分離した。初期化は静的1ページ・SHM33ページ・passthrough16ページの計50件を登録し、全登録処理で容量超過を `assert` する。`TLB Miss -> FlatMap Walk` は32エントリを超える33ページの有効な作業集合を循環させる測定であり、実測カウンタは `tlb_hits=590,877`、`tlb_misses=9,123`、PTE登録件数は50件だった。これは33ページ中のハッシュ衝突を含むリフィル挙動の測定で、毎回のアクセスを強制ミスさせる値ではない。
 
 ### 3.3 JIT Compiler & Runtime Dispatch
-- **Copy-and-Patch 高速コンパイル**: ネイティブステンシルのメモリコピーとリロケーション解決を 16,960 Traces/sec（58.96 us/trace）で実行。4命令ブロック換算で 14,740.3 ns/opcode であり、コードバッファ確保も含む。
-- **実行時パイプライン**: カード判定は711.8ns、Radix検索は2336.6ns。トレース本体ではなく、JIT候補判定・エントリ検索のPython実装コストである。
-- **算術演算ループ差分検証**: 100,000 反復の算術ホットループにおいて、Tier 2 インタープリタ（7642.12 ms）に対して Tier 3 JIT（3350.86 ms）が **2.28x 高速化**を達成し、演算結果（`704,982,704`）が完全一致（Exact Match）。
-- **Cヘルパー境界**: `complex_helper_ptr` を `ctx + 0x40` から読み、JITフレーム復元後に末尾ジャンプする経路は 8221.0ns/dispatch。pysimの `ctypes` コールバックを含むABI回帰値であり、組込みCの性能値ではない。
+- **Copy-and-Patch 高速コンパイル**: ネイティブステンシルのメモリコピーと固定パッチ位置への書き込みを 18,687 Traces/sec（53.51 us/trace）で実行。4命令ブロック換算で 13,378.6 ns/opcode であり、コードバッファ確保も含む。
+- **実行時パイプライン**: カード判定は642.9ns、Radix検索は1999.2ns。トレース本体ではなく、JIT候補判定・エントリ検索のPython実装コストである。
+- **算術演算ループ差分検証**: 100,000 反復の算術ホットループにおいて、Tier 2 インタープリタ（5949.46 ms）に対して Tier 3 JIT（2832.19 ms）が **2.10x 高速化**を達成し、演算結果（`704,982,704`）が完全一致（Exact Match）。
+- **Cヘルパー境界**: 命令別 `jit_helper_ptrs[]` をコンテキスト内の固定スロットから直接読み、JITフレーム復元後に末尾ジャンプする経路は 8036.6ns/dispatch。pysimの `ctypes` コールバックを含むABI回帰値であり、組込みCの性能値ではない。
 
-同一ターゲットを単独実行した追跡測定（`bench_jit.py`）では、インタープリタ `7175.04 ms`、JIT `3474.97 ms`、速度比 `2.06x` となった。統合実行と単独実行で時間が変動しているため、単発値を絶対性能とは扱わず、同一実行条件内の比較値として扱う。
+同一ターゲットを単独実行した追跡測定（`bench_jit.py`）では、インタープリタ `5949.46 ms`、JIT `2832.19 ms`、速度比 `2.10x` となった。統合実行と単独実行で時間が変動しているため、単発値を絶対性能とは扱わず、同一実行条件内の比較値として扱う。
 
 ### 3.4 JIT Cache Metabolism & 3面ローテーション
 - **3面リングバッファ代謝 (Active / Warm / Oldest)**:

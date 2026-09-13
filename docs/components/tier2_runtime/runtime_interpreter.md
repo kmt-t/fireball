@@ -18,9 +18,9 @@ Interpreter は、WASM命令をスレッドインタープリタ方式で実行�
 
 ### 3.1 データ構造
 - **`Interpreter`**: WASM命令の実行、コンテキスト管理、および外部環境（vSoC）との連携をカプセル化した主要クラス。
-- **`execution_context`**: 仮想CPUレジスタ、下記3本のスタックそれぞれの領域開始・終端・オフセット、リニアメモリ情報、およびJIT複雑処理ヘルパーを保持する固定サイズの構造体（計72バイト）。
+- **`execution_context`**: 仮想CPUレジスタ、下記3本のスタックそれぞれの領域開始・終端・オフセット、リニアメモリ情報、および命令別JITヘルパーを保持する固定サイズの構造体（計152バイト）。
 - **`OperandStack`（オペランドスタック）**: WASM のオペランド値のみを保持する、コールチェーン全体を貫く1本の固定容量スタック。呼び出しごとに区切られたり作り直されたりはせず、呼び出しは「現在の頂点からどれだけ積んだか」を1つ記憶するだけで、関数を跨いでも連続している。
-- **`LocalStack`（ローカル変数スタック）**: コールチェーン全体で共有する Native 固定容量の raw 32-bit slot 配列。各関数のローカル値は WASM 型に従い、i32/f32 は1スロット、i64/f64 は2スロットを使う。`call_frame` の実行時メタデータはこの値配列へ混在させず、別のディスクリプタとして管理する。
+- **`LocalStack`（ローカル変数スタック）**: コールチェーン全体で共有する Native 固定容量の raw 32-bit slot 配列。論理ローカル1個につき16バイトの固定スロットを割り当て、アクセス先は `local_base + slot * 16` から直接計算する。値の有効ワード数はWASM型に従い、i32/f32は1ワード、i64/f64は2ワードを使うため、後者も自然に8バイト境界を満たす。引数は同じ固定スロットへロード時に詰め、呼び出しごとのオフセット表を実行時に参照しない。`call_frame` の実行時メタデータはこの値配列へ混在させず、別のディスクリプタとして管理する。
 - **`control_frame` スタック**: `block`/`loop`/`if` の入れ子を管理する固定容量スタック。
 - **`interpreter_config`**: 3本それぞれのスタック容量やyield閾値などの不変な構成情報。
 
@@ -69,7 +69,7 @@ graph TD
 WASMゲストの全実行状態を管理する。JIT/Interpreter 共通の仮想CPUレジスタ群として設計する。 `{PositionIndependentCode}` `{ContextPointerRegister}`
 
 **独立した固定構造体としての配置 (`{ContextPointerRegister}`)**:
-`execution_context` は、`OperandStack`・`LocalStack`・`control_frame` スタック（いずれも互いに独立した固定容量バッファ）のいずれにもインライン配置されない、単体の固定サイズ構造体（計72バイト）である。ハンドラ呼び出しの第1引数（`R0: ctx`）として渡される。`R1` はオペランドスタックポインタ（`sp`、第2引数）、`R2` はカレントの `call_frame`（`LocalStack` 内）のローカル変数配列先頭を指す `local_base`（第3引数）として、`R3` はオペランドスタックのスタックトップ値 `tos`（第4引数）として直接引き回す。複雑命令をCへ委譲する場合の関数ポインタはコンテキストの `+0x40` に置き、JITコードはそのスロットを `ctx` 相対で読む。基本ブロック末尾では、スタックがプッシュされた場合に `TOS, NOS, NNOS` をオペランドスタック（`[R1, #offset]`）へフラッシュし、コンテキスト `R0` の `ip`（`+0x00`）および `sp_offset`（`+0x0C`）を書き換えて状態を完全同期する。 `{ContextPointerRegister}` `{JIT_RegisterMapping}` `{AAPCS_FastCall}` `{PositionIndependentCode}`
+`execution_context` は、`OperandStack`・`LocalStack`・`control_frame` スタック（いずれも互いに独立した固定容量バッファ）のいずれにもインライン配置されない、単体の固定サイズ構造体（計152バイト）である。ハンドラ呼び出しの第1引数（`R0: ctx`）として渡される。`R1` はオペランドスタックポインタ（`sp`、第2引数）、`R2` はカレントの `call_frame`（`LocalStack` 内）のローカル変数配列先頭を指す `local_base`（第3引数）として、`R3` はオペランドスタックのスタックトップ値 `tos`（第4引数）として直接引き回す。複雑命令をCへ委譲する場合の命令別関数ポインタはJIT専用コンテキストメンバ `jit_helper_ptrs[]` に置き、JITコードは対象要素を `ctx` 相対で読み、直接末尾ジャンプする。インタープリタの命令ディスパッチはこのヘルパーを呼ばない。基本ブロック末尾では、スタックがプッシュされた場合に `TOS, NOS, NNOS` をオペランドスタック（`[R1, #offset]`）へフラッシュし、コンテキスト `R0` の `ip`（`+0x00`）および `sp_offset`（`+0x0C`）を書き換えて状態を完全同期する。 `{ContextPointerRegister}` `{JIT_RegisterMapping}` `{AAPCS_FastCall}` `{PositionIndependentCode}`
 
 ##### CPS 4引数 仮想CPUレジスタ（ディスパッチ境界での引数受渡し）
 
@@ -80,7 +80,7 @@ WASMゲストの全実行状態を管理する。JIT/Interpreter 共通の仮想
 | ローカル変数基底 | カレントコールフレームのローカル変数配列基底ポインタ | 物理レジスタ | `R2: local_base` (`{AAPCS_FastCall}` 準拠) |
 | スタックトップ (TOS) | `OperandStack` 最上位値（スタックトップ）を直接保持するレジスタ | 物理レジスタ | `R3: tos` (`{AAPCS_FastCall}` 準拠) |
 
-##### `execution_context` 物理メモリレイアウト（既存15フィールド + JIT拡張 / 計72バイト）
+##### `execution_context` 物理メモリレイアウト（既存15フィールド + JIT拡張 / 計152バイト）
 
 `[R0, #0x00]`〜`[R0, #0x3B]`（最終フィールドの開始オフセットは `[R0, #0x38]`）に配置される固定構造体メモリフィールド：
 
@@ -101,9 +101,9 @@ WASMゲストの全実行状態を管理する。JIT/Interpreter 共通の仮想
 | グローバル変数領域開始位置 (globals_base) | WASM global 配列の開始アドレス | メモリアドレス | 4バイト (`[R0, #0x30]`) |
 | グローバル変数領域終端位置 (globals_limit) | WASM global 配列の終端アドレス | メモリアドレス | 4バイト (`[R0, #0x34]`) |
 | ハンドラテーブル (handler_table) | 命令ハンドラへのジャンプテーブルポインタ | テーブルポインタ | 4バイト (`[R0, #0x38]`) |
-| 複雑処理ヘルパー (complex_helper_ptr) | JITがCヘルパーへ末尾遷移するための関数ポインタ | 関数ポインタ | 8バイト (`[R0, #0x40]`、`+0x3C`〜`+0x3F`は予約) |
+| JITヘルパー (jit_helper_ptrs) | 命令ごとのCヘルパー関数ポインタ | 関数ポインタ配列 | 88バイト (`[R0, #0x40]`〜`[R0, #0x97]`) |
 
-`execution_context` 構造体実体は既存の15個の32bitフィールドに、4バイトの予約領域と64bitの `complex_helper_ptr` を加えた計72バイトである（`[R0, #0x00]`〜`[R0, #0x47]`）。3本のスタックそれぞれの領域開始・終端・オフセットを対称なフィールドとして持つことで、いずれか1本の伸び縮みが他の記録位置へ影響することは物理的にあり得ない。JITの複雑処理委譲先はコンテキストの `+0x40` から間接参照し、コード領域へプロセスアドレスを埋め込まない。バイトオフセットの物理配置は `{ExecutionContext_Layout}` に記載する。 `{PositionIndependentCode}`
+`execution_context` 構造体実体は既存の15個の32bitフィールドに、4バイトの予約領域、および11個の64bit `jit_helper_ptrs` を加えた計152バイトである（`[R0, #0x00]`〜`[R0, #0x97]`）。3本のスタックそれぞれの領域開始・終端・オフセットを対称なフィールドとして持つことで、いずれか1本の伸び縮みが他の記録位置へ影響することは物理的にあり得ない。JITの複雑処理委譲先は対象命令のメンバから直接参照し、コード領域へプロセスアドレスを埋め込まない。バイトオフセットの物理配置は `{ExecutionContext_Layout}` に記載する。 `{PositionIndependentCode}`
 
 **TOS レジスタキャッシングとスタック同期不変条件 (`GOTCHA-INTP-01`)**:
 オペランドスタックの最上位要素（Top-of-Stack: TOS）を常に物理レジスタ `R3: tos` に常駐させることで、メモリアクセス回数を半減させ、スタック操作命令（`i32.add`, `local.get` 等）の実行性能を最大化する。各命令ハンドラの入口において、直前の演算結果は `R3` に保持されており、必要に応じて第2オペランドのみをスタックバッファからポップする。ハンドラを脱出して関数呼び出しや外部システムコール、JIT 遷移を行う境界においては、TOS レジスタの値をメインスタック配列へ書き戻して（フラッシュ）同期させる。
@@ -113,7 +113,7 @@ WASMゲストの全実行状態を管理する。JIT/Interpreter 共通の仮想
 
 #### コールフレーム（call_frame descriptor）
 <!-- traceability: {PositionIndependentCode} {ContextPointerRegister} {MemoryBoundaryCheck} {EnvironmentPointer} -->
-`call_frame` は関数インデックス、コード、制御マップ、環境、および `LocalStack` の開始スロットを結び付ける実行時ディスクリプタである。`LocalStack` の Native バッファへメタデータヘッダや型情報を混在させず、ローカル値は関数シグネチャに従って i32/f32 を1スロット、i64/f64を2スロットで保持する。CallFrameが保持するのは各local indexの物理スロットオフセットだけであり、`local.get`/`local.set`/`local.tee` は型を解釈せず、必要な1または2スロットをオペランドスタックとの間でrawコピーする。型付き演算やABI境界の読み書きだけが、命令または呼び出し側の既知の型に応じて値を解釈する。オペランドスタックはコール境界を跨いで連続し、`call`/`call_indirect`/関数復帰は常にインタープリタ境界で処理するため、JIT トレースが `call_frame` の push/pop を代行することはない。
+`call_frame` は関数インデックス、コード、制御マップ、環境、および `LocalStack` の開始スロットを結び付ける実行時ディスクリプタである。`LocalStack` の Native バッファへメタデータヘッダや型情報を混在させず、論理ローカルは16バイト固定スロット、値の有効ワードは関数シグネチャに従って i32/f32を1ワード、i64/f64を2ワードで保持する。`local.get`/`local.set`/`local.tee` は型を解釈せず、local indexから `slot * 16` を直接計算して必要な1または2ワードをオペランドスタックとの間でrawコピーする。型付き演算やABI境界の読み書きだけが、命令または呼び出し側の既知の型に応じて値を解釈する。オペランドスタックはコール境界を跨いで連続し、`call`/`call_indirect`/関数復帰は常にインタープリタ境界で処理するため、JIT トレースが `call_frame` の push/pop を代行することはない。
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
@@ -121,7 +121,7 @@ WASMゲストの全実行状態を管理する。JIT/Interpreter 共通の仮想
 | コード参照 | 現在実行するWASM命令列 | 非所有参照 | Flash/ROM上のコードを参照 |
 | 制御マップ | block/loop/if の静的な飛び先表 | 非所有参照 | ロード時に構築した表を共有 |
 | LocalStack開始スロット | 当該関数のローカル値の先頭 | 32bitオフセット | Native local buffer 内の物理スロット位置 |
-| ローカルスロットオフセット列 | local index ごとの物理スロット位置 | 不変メタデータ | 型情報を持たず、32bitスロット単位 |
+| ローカルスロット | local index ごとの固定領域 | 16バイト固定 | `local_base + local_index * 16` から直接計算 |
 
 `call_frame` のメタデータは Native LocalStack の値配列とは別に管理する。Native ABIへ渡す値配列には Pythonオブジェクト、型タグ、可変長コンテナを含めない。 `{CallFrame_Layout}`。
 
@@ -218,7 +218,7 @@ WASM オプコードごとのスタック遷移およびハンドラ実装マト
 - **Threaded Dispatch with Continuation Passing Style (CPS)**: 命令ハンドラを連鎖させるテーブルディスパッチ方式で分岐コストを極小化する。
   - インタープリタのハンドラ関数型を `handler_result __fastcall(execution_context* ctx, uint32_t* sp, uint32_t* local_base, uint32_t tos) noexcept` に統一し、結果レコードで次の4引数とトラップ状態を返す。JITトレースの関数型は `void __fastcall(...) noexcept` とする。
   - `ctx` (R0 `{ContextPointerRegister}`), `sp` (R1), `local_base` (R2 `{ContextPointerRegister}` `{JIT_RegisterMapping}`), `tos` (R3 `{AAPCS_FastCall}`) のホットな変数を `__fastcall` 引数レジスタ上で保持・更新。
-  - `OperandStack`・`LocalStack`・`control_frame` それぞれの領域開始・終端・オフセット、およびリニアメモリ情報（`mem_base`, `mem_size`, `globals_base`）、ハンドラテーブルを `execution_context` 内で直接管理する。さらに、JITが複雑処理をCへ委譲する際の `complex_helper_ptr` を `+0x40` に保持する。3本は互いに独立した固定容量バッファであり、`call_frame` は `LocalStack` へ、`control_frame` はその専用バッファへ、それぞれ独自に構築する。`R2` をローカル変数基底ポインタ `local_base`、`R3` をスタックトップ値 `tos` として直接引き回す。 `{ContextPointerRegister}` `{JIT_RegisterMapping}` `{AAPCS_FastCall}` `{PositionIndependentCode}`
+  - `OperandStack`・`LocalStack`・`control_frame` それぞれの領域開始・終端・オフセット、およびリニアメモリ情報（`mem_base`, `mem_size`, `globals_base`）、ハンドラテーブルを `execution_context` 内で直接管理する。さらに、JITが複雑処理をCへ委譲する際の命令別関数ポインタを `jit_helper_ptrs[]` に保持する。3本は互いに独立した固定容量バッファであり、`call_frame` は `LocalStack` へ、`control_frame` はその専用バッファへ、それぞれ独自に構築する。`R2` をローカル変数基底ポインタ `local_base`、`R3` をスタックトップ値 `tos` として直接引き回す。 `{ContextPointerRegister}` `{JIT_RegisterMapping}` `{AAPCS_FastCall}` `{PositionIndependentCode}`
   - 非制御命令では `[[clang::musttail]]` による直接末尾ジャンプ（Direct-Threaded Code）を行い、レジスタ上の引数をそのまま次のハンドラへ継続渡し（CPS）する。 `{ThreadedInterpreter}`
 - **JIT コードとの完全な呼び出し規約整合 (Low-Overhead Interop)**:
   - JIT コンパイラが生成するネイティブトレース（`exec_trace`）も、インタープリタと全く同一の `__fastcall` CPS 4引数シグネチャ（R0=ctx, R1=SP, R2=local_base, R3=tos）に従う。

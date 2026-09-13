@@ -733,8 +733,16 @@ def iter_block_ops(code: bytes, head_offset: int, byte_span: int) -> Iterator[tu
         if _LEB_UNSIGNED_OPERAND.at(opcode):
             operand, off = decode_unsigned(code, off)
             arg: object = operand
-        elif opcode == I32_CONST:
+        elif opcode in (I32_CONST, I64_CONST):
             arg, off = decode_signed(code, off)
+        elif opcode == F32_CONST:
+            assert off + 4 <= end
+            arg = int.from_bytes(code[off : off + 4], "little")
+            off += 4
+        elif opcode == F64_CONST:
+            assert off + 8 <= end
+            arg = int.from_bytes(code[off : off + 8], "little")
+            off += 8
         elif _MEMARG_OPCODES.at(opcode):
             _align, off = decode_unsigned(code, off)
             mem_offset, off = decode_unsigned(code, off)

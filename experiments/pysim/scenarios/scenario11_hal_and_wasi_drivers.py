@@ -31,7 +31,10 @@ Tests:
    - System Utilities: random_get (entropy pool fill), clock_time_get (monotonic/realtime timestamp)
 """
 
-from dummy_drivers import DummyTimerDriver, DummyUartDriver
+from dummy_drivers import DummyDriver
+from hal_dispatch import ARG_BUFFER_HANDLE, ARG_LENGTH, ARG_MAX_LEN, ARG_OFFSET, WasiIpcCmd
+from system import System
+from system_containers import FlatMapView
 from wasi_dummy_fs import WasiDummyContext, WasiErrno, WasiWhence
 
 
@@ -41,17 +44,31 @@ def test_scenario_hal_and_wasi_drivers():
     # Part A: HAL Peripheral Dummy Drivers Verification
     # -------------------------------------------------------------------------
     # 1. Standard I/O stream driver
-    stdio = DummyUartDriver()
-    assert stdio.feed_stdin(b"stdin-chunk-1") == len(b"stdin-chunk-1")
-    assert stdio.feed_stdin(b"stdin-chunk-2") == len(b"stdin-chunk-2")
-    assert stdio.read_stdin(64) == b"stdin-chunk-1stdin-chunk-2"
-    assert stdio.write_stdout(b"stdout-chunk-1") == len(b"stdout-chunk-1")
-    assert stdio.write_stdout(b"stdout-chunk-2") == len(b"stdout-chunk-2")
+    sysv = System()
+    runtime_task = sysv.start_runtime_task(name="scenario11_stdio_guest")
+    sysv.pool.bind_guest()
+    stdio = DummyDriver(transport=sysv.transport)
+    sysv.start_hal_driver(stdio)
+    sysv.scheduler.current_task = runtime_task
+    rx = sysv.pool.acquire_buffer(size=64)
+    tx = sysv.pool.acquire_buffer(size=64)
+    tx_view = sysv.pool.view(tx, 0, 28)
+    tx_view[:] = b"stdout-chunk-1stdout-chunk-2"
+    assert stdio.feed_stdin(b"stdin-chunk-1stdin-chunk-2") == 26
+    assert stdio.dispatch(
+        WasiIpcCmd.STREAM_READ_BUFFER,
+        FlatMapView([(ARG_BUFFER_HANDLE, rx.buffer_id), (ARG_OFFSET, 0), (ARG_MAX_LEN, 64)]),
+    ) == 26
+    assert bytes(sysv.pool.view(rx, 0, 26)) == b"stdin-chunk-1stdin-chunk-2"
+    assert stdio.dispatch(
+        WasiIpcCmd.STREAM_WRITE_BUFFER,
+        FlatMapView([(ARG_BUFFER_HANDLE, tx.buffer_id), (ARG_OFFSET, 0), (ARG_LENGTH, 28)]),
+    ) == 28
     assert stdio.drain_stdout() == b"stdout-chunk-1stdout-chunk-2"
-    stdio.transport.close()
+    sysv.shutdown()
     print("    [Phase A.1] HAL Standard I/O Driver (stdin/stdout streaming) [PASS]")
     # 2. Timer Driver
-    timer = DummyTimerDriver()
+    timer = DummyDriver("fireball://device/timer/0")
     t0 = timer.get_monotonic_ns()
     timer.step_ticks(5)
     assert timer.tick_count == 5

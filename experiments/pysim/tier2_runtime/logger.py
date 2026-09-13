@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING, Callable, Sequence
 from system_containers import FlatMapView, RingBuffer
 
 if TYPE_CHECKING:
-    from hal_dispatch import UartTransport
+    from hal_dispatch import StreamTransport
 
 # Matches a printf-style numeric conversion (%d, %08X, %u, ...) but not a
 # literal "%%". Deliberately excludes %s/%p/%c: LogDictionary.register()
@@ -141,7 +141,7 @@ class Logger:
 
     def __init__(
         self,
-        transport: UartTransport,
+        transport: StreamTransport,
         dictionary: LogDictionary,
         min_level: LogLevel = LogLevel.INFO,
         capacity: int = 16,
@@ -195,7 +195,7 @@ class Logger:
 class ConsoleOutput:
     """Console raw-byte output path (interface_wit.md "console-output"): no dictionary, no ring buffer."""
 
-    def __init__(self, transport: UartTransport):
+    def __init__(self, transport: StreamTransport):
         self.transport = transport
 
     def write(self, data: bytes) -> int:

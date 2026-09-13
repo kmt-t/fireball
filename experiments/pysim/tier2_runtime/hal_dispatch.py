@@ -1,7 +1,7 @@
 """
 experiments/pysim/tier3_platform/hal.py
 Real (not mocked) HAL underlayer for the pysim experiment.
-- UartTransport: a genuine OS-level byte pipe (socket.socketpair), standing
+- StreamTransport: a genuine OS-level byte pipe (socket.socketpair), standing
   in for the physical UART/ITM line. Bytes written here really cross a
   kernel-buffered duplex socket, so a full/blocked transport is an actual
   socket condition, not an in-memory flag someone forgot to flip.
@@ -103,14 +103,14 @@ class HalBufferTrap(HalError):
 
 
 # ---------------------------------------------------------------------------
-# UART / console transport
+# Host-side stream endpoint
 # ---------------------------------------------------------------------------
 
 
-class UartTransport:
+class StreamTransport:
     """
-    One physical serial line, modeled as a real duplex OS socket pair.
-        `device_sock` is the "wire" a real UART peripheral would drive;
+    One host-side duplex stream, modeled as a real OS socket pair.
+        `device_sock` is the endpoint a driver writes to;
         `host_sock` is what a host-side terminal/log collector reads from.
         Nothing here is a Python list standing in for hardware: bytes written
         via write() genuinely traverse a kernel socket buffer.
@@ -124,18 +124,18 @@ class UartTransport:
         self.bytes_written = 0
 
     def write(self, data: bytes) -> int:
-        """Physical transmit: blocks on the real socket buffer if full."""
+        """Writes physical output to the host-side stream endpoint."""
         with self._lock:
             n = self.device_sock.send(data)
             self.bytes_written += n
             return n
 
-    def feed_stdin(self, data: bytes) -> int:
-        """Feeds host input into the device side of the full-duplex stream."""
+    def feed_input(self, data: bytes) -> int:
+        """Feeds host input into the device-side stream endpoint."""
         with self._lock:
             return self.host_sock.send(data)
 
-    def read_stdin(self, max_len: int = 4096) -> bytes:
+    def read_input(self, max_len: int = 4096) -> bytes:
         """Reads bytes that the host supplied to the device side."""
         assert max_len > 0
         chunks: list[bytes] = []
@@ -153,8 +153,8 @@ class UartTransport:
             pass
         return b"".join(chunks)
 
-    def drain(self) -> bytes:
-        """Host-side read of everything currently sitting on the wire."""
+    def drain_output(self) -> bytes:
+        """Reads everything currently sitting on the host output endpoint."""
         chunks: list[bytes] = []
         try:
             while True:
@@ -283,6 +283,26 @@ class HalBufferPool:
                 return s
         raise HalBufferTrap(f"buffer {handle.buffer_id} does not exist (stale, or never acquired)")
 
+    def view_for_driver(self, buffer_id: int, offset: int, length: int) -> memoryview:
+        """Resolves a caller-owned buffer for the HAL driver currently serving it.
+
+        The driver is the trusted HAL subsystem endpoint for the pool, so its access is
+        independent of the guest task that acquired the handle. The public
+        guest-facing ``view`` method keeps the ownership check.
+        """
+        assert buffer_id >= 0
+        record: HalBufferHandle | None = None
+        for slot in self._slots:
+            if slot is not None and slot.buffer_id == buffer_id:
+                record = slot
+                break
+        assert record is not None, f"buffer {buffer_id} does not exist"
+        assert 0 <= offset <= record.capacity
+        assert 0 <= length <= record.capacity - offset
+        status, _physical = self._vmmio.access(record.virtual_address + offset, is_write=False)
+        assert status == VmmioStatus.OK_PHYSICAL, "HAL buffer is not mapped in vMMIO DYNAMIC"
+        return memoryview(record._storage)[offset : offset + length]
+
     def close_all(self) -> None:
         for i in range(len(self._slots)):
             handle = self._slots[i]
@@ -369,8 +389,14 @@ class HalDriver:
 
     def __init__(self, uri: str):
         self.uri = uri
+        self._buffer_pool: HalBufferPool | None = None
         self._command_bindings: StaticVector[HalCommandBinding] = StaticVector(capacity=16)
         self.register_command(WasiIpcCmd.QUERY_CAPS, self._query_caps)
+
+    def bind_buffer_pool(self, pool: HalBufferPool) -> None:
+        """Binds the system HAL buffer pool before this driver task starts."""
+        assert self._buffer_pool is None or self._buffer_pool is pool
+        self._buffer_pool = pool
 
     def register_command(self, command_id: int, callback: HalCommandCallback) -> None:
         """Registers one driver command callback before the task is started."""

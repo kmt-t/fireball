@@ -30,7 +30,7 @@ Tests:
 - Safety check rejecting unsafe format specifiers (%s/%p) at dictionary registration
 """
 
-from hal_dispatch import UartTransport
+from hal_dispatch import StreamTransport
 from ipc_router import (
     DataType,
     IPCMessage,
@@ -147,7 +147,7 @@ def test_scenario_ipc_router_and_logging():
     # -------------------------------------------------------------------------
     # Section 2: Structured System Logging & LogDictionary Safety
     # -------------------------------------------------------------------------
-    transport = UartTransport()
+    transport = StreamTransport()
     log_dict = LogDictionary(capacity=16)
     # 1. Register valid format strings
     log_dict.register(0x100, "TASK_INIT: id=%d priority=%d")
@@ -169,7 +169,7 @@ def test_scenario_ipc_router_and_logging():
     flushed_count = logger.flush()
     assert flushed_count == 2
     # Read UART output stream
-    emitted = transport.drain().decode("ascii")
+    emitted = transport.drain_output().decode("ascii")
     assert "TASK_INIT: id=1 priority=5" in emitted
     assert "0x12345678" not in emitted  # DEBUG filtered
     assert "COOS_STATE: state=0xDEADBEEF" in emitted

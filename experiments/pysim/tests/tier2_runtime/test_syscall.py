@@ -306,7 +306,7 @@ def test_syscall_07_wasi_fd_write():
         struct.pack_into("<II", guest_mem, 0, 32, len(message))
         sysv.bind_guest(guest_mem)
         assert sysv.fireball_call(FbSyscallId.WASI_FD_WRITE, 1, 0, 1, 48, 0, 0) == WasiErrno.SUCCESS
-        assert sysv.transport.drain() == message
+        assert sysv.transport.drain_output() == message
         nwritten = struct.unpack_from("<I", guest_mem, 48)[0]
         assert nwritten == len(message)
     finally:
@@ -331,7 +331,7 @@ def test_wasi_01_fd_write_scatter_gather():
         assert (
             sysv.fireball_call(FbSyscallId.WASI_FD_WRITE, 1, 0, 2, 100, 0, 0) == WasiErrno.SUCCESS
         )
-        assert sysv.transport.drain() == chunk1 + chunk2
+        assert sysv.transport.drain_output() == chunk1 + chunk2
         nwritten = struct.unpack_from("<I", guest_mem, 100)[0]
         assert nwritten == len(chunk1) + len(chunk2)
     finally:
@@ -354,7 +354,7 @@ def test_wasi_01b_fd_write_prevalidates_all_iovecs():
             sysv.fireball_call(FbSyscallId.WASI_FD_WRITE, 1, 0, 2, 120, 0, 0)
             == WasiErrno.FAULT
         )
-        assert sysv.transport.drain() == b""
+        assert sysv.transport.drain_output() == b""
         assert struct.unpack_from("<I", guest_mem, 120)[0] == 0xA5A5A5A5
     finally:
         sysv.shutdown()

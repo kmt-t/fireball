@@ -37,7 +37,7 @@ for _p in [
 
 from control_flow import extract_basic_blocks
 from hal_dispatch import (
-    UartTransport,
+    StreamTransport,
 )
 from interpreter import Interpreter
 from logger import LogDictionary, Logger, LogLevel
@@ -246,19 +246,26 @@ def test_virq_55_does_not_enter_wasi_polling_path():
 
 def test_hal_task_ipc_communication():
     """TEST-HAL-01: HAL operates as a distinct task on COOS and handles commands via IPC rendezvous."""
-    from hal_dispatch import ARG_LENGTH, ARG_OFFSET
-    from dummy_drivers import DummyUartDriver
+    from hal_dispatch import ARG_BUFFER_HANDLE, ARG_LENGTH, ARG_OFFSET
+    from dummy_drivers import DummyDriver
     from wasi import Wasi03pEngine, WasiIpcCmd
 
     sysv = System()
     try:
-        sysv.start_hal_driver(DummyUartDriver(transport=sysv.transport))
+        runtime_task = sysv.start_runtime_task(name="hal_ipc_guest")
+        sysv.pool.bind_guest()
+        buffer_handle = sysv.pool.acquire_buffer(size=128)
+        sysv.pool.view(buffer_handle, 0, 128)[:] = b"x" * 128
+        sysv.scheduler.current_task = runtime_task
+        sysv.start_hal_driver(DummyDriver(transport=sysv.transport))
         engine = Wasi03pEngine(sysv)
         # Send command via IPC
         nwritten = engine.send_ipc_command(
             "fireball://device/uart/0",
             WasiIpcCmd.STREAM_WRITE_BUFFER,
-            FlatMapView([(ARG_LENGTH, 128), (ARG_OFFSET, 0)]),
+            FlatMapView(
+                [(ARG_BUFFER_HANDLE, buffer_handle.buffer_id), (ARG_LENGTH, 128), (ARG_OFFSET, 0)]
+            ),
         )
         assert nwritten == 128
         uart_task = sysv.hal_task_for("fireball://device/uart/0")
@@ -386,7 +393,7 @@ def test_idle_01_jit_batch_compilation_on_idle():
 
 def test_idle_02_logging_flush_on_idle():
     """TEST-IDLE-02: Deferred logs in RingBuffer are flushed to UART transport upon scheduler idle."""
-    transport = UartTransport()
+    transport = StreamTransport()
     dictionary = LogDictionary()
     dictionary.register(0x01, "event payload=%d")
     logger = Logger(transport, dictionary, min_level=LogLevel.INFO)
@@ -399,7 +406,7 @@ def test_idle_02_logging_flush_on_idle():
     # Scheduler reaches IDLE -> fires idle hook
     flushed = logger.flush()
     assert flushed == 2
-    wire_output = transport.drain().decode("utf-8")
+    wire_output = transport.drain_output().decode("utf-8")
     assert "event payload=42" in wire_output
     assert "event payload=99" in wire_output
 
@@ -431,7 +438,7 @@ def test_tier_01_interpreter_to_jit_cooperative_flow():
     assert "task_step_0" in executed_steps
     assert "monitor_step_0" in executed_steps
     # Verify deferred logs were flushed by idle_hook
-    wire = sysv.transport.drain().decode("utf-8")
+    wire = sysv.transport.drain_output().decode("utf-8")
     assert "wasm iteration=0" in wire
     assert "wasm iteration=4" in wire
 
@@ -605,7 +612,7 @@ def test_guest_wasi_01_interpreter_fd_write():
         interp = Interpreter(mod, memory=ctx.guest_memory, host_functions=host_funcs)
         res = interp.call(mod.export_func_index("main"), [])
         assert res == [0], f"Expected WASI SUCCESS (0), got {res}"
-        assert sysv.transport.drain() == msg
+        assert sysv.transport.drain_output() == msg
         nwritten = struct.unpack_from("<I", ctx.guest_memory, 32)[0]
         assert nwritten == len(msg)
     finally:

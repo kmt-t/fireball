@@ -231,7 +231,7 @@ def test_scenario_wasi_syscall():
     fn_write = module.export_func_index("test_scatter_write")
     res_written = interp.call(fn_write, [])
     assert res_written == [23], f"Expected 23 bytes written (10 + 13), got {res_written}"
-    output_str = sysv.transport.drain().decode("utf-8")
+    output_str = sysv.transport.drain_output().decode("utf-8")
     assert output_str == "HELLO-WASI [SYSTEM_OK]\n", f"WASI stdout mismatch: {output_str!r}"
     # 2. Test proc_exit
     fn_exit = module.export_func_index("test_exit")

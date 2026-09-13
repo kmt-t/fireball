@@ -55,7 +55,7 @@ def run_aobench(debug: bool = False) -> dict[str, int | float]:
     t0_t2 = time.perf_counter()
     interp.call(main_fn, [WIDTH, HEIGHT])
     t1_t2 = time.perf_counter()
-    render_output = sysv.transport.drain().decode("utf-8", errors="replace")
+    render_output = sysv.transport.drain_output().decode("utf-8", errors="replace")
     t2_time_ms = (t1_t2 - t0_t2) * 1000
     hit_pixels = sum(1 for ch in render_output if ch in (".", ":", "+", "#", "@"))
     total_rays = (WIDTH * HEIGHT) + (hit_pixels * AO_SAMPLES)
@@ -74,7 +74,7 @@ def run_aobench(debug: bool = False) -> dict[str, int | float]:
     t0_t3 = time.perf_counter()
     runtime_engine.run(interp_t3, main_fn, [WIDTH, HEIGHT])
     t1_t3 = time.perf_counter()
-    render_output_t3 = sysv_t3.transport.drain().decode("utf-8", errors="replace")
+    render_output_t3 = sysv_t3.transport.drain_output().decode("utf-8", errors="replace")
     t3_time_ms = (t1_t3 - t0_t3) * 1000
     t3_rays_per_sec = total_rays / (t3_time_ms / 1000.0) if t3_time_ms > 0 else 0
     speedup_ratio = t2_time_ms / t3_time_ms if t3_time_ms > 0 else 1.0

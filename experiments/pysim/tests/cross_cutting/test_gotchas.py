@@ -53,7 +53,7 @@ import ctypes
 
 from control_flow import extract_basic_blocks
 from debugger import DebuggerManager, GDBRspProtocol
-from hal_dispatch import HalBufferPool, HalBufferTrap, UartTransport
+from hal_dispatch import HalBufferPool, HalBufferTrap, StreamTransport
 from helpers import make_test_ipc_message
 from interpreter import _HANDLERS, Interpreter
 from ipc_router import (
@@ -712,7 +712,7 @@ def test_log_gotcha_01_no_runtime_pointer_scalar_args_only():
             pass
 
     d.register(0x20, "Task %d event %u (0x%08X)")
-    uart = UartTransport()
+    uart = StreamTransport()
     logger = Logger(uart, d, capacity=4)
     res = logger.log_event(LogLevel.INFO, dict_offset=0x20, arg0=1, arg1=2, arg2=0xABC)
     assert res == "QUEUED"
@@ -722,7 +722,7 @@ def test_log_gotcha_02_ring_buffer_oldest_overwrite():
     """GOTCHA-LOG-02: Ring buffer overwrite on full preserves system non-blocking invariant."""
     d = LogDictionary()
     d.register(0x10, "Event %d")
-    uart = UartTransport()
+    uart = StreamTransport()
     cap = 4
     logger = Logger(uart, d, capacity=cap)
 

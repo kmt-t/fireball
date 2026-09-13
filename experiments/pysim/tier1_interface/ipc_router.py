@@ -321,9 +321,9 @@ def kv_entries_to_bytes(entries: Sequence[tuple[int, int]], max_len: int | None 
 # comparison is a bounded, allocation-free lexicographic compare.
 #
 # URI -> Role is many-to-one, not 1:1: "fireball://device/uart/0" and
-# "fireball://service/stdout/0" are kept on distinct HAL_UART/HAL_STDOUT
+# "fireball://hal/stdout/0" are kept on distinct HAL_UART/HAL_STDOUT
 # roles here because system.py currently wires them to two independent
-# DummyUartDriver instances (one raw device, one console-shaped service),
+# DummyDriver instances (one raw device, one console-shaped service),
 # but a build that wires stdout directly onto the physical UART would alias
 # both URIs onto the same role/channel/task by adding a row, not by
 # restructuring Role.
@@ -336,7 +336,7 @@ _SERVICE_ENTRIES: tuple[tuple[str, "ServiceDescriptor"], ...] = tuple(sorted(
         ("fireball://device/spi/0", ServiceDescriptor(Role.HAL_SPI)),
         ("fireball://device/timer/0", ServiceDescriptor(Role.HAL_TIMER)),
         ("fireball://device/uart/0", ServiceDescriptor(Role.HAL_UART)),
-        ("fireball://service/stdout/0", ServiceDescriptor(Role.HAL_STDOUT)),
+        ("fireball://hal/stdout/0", ServiceDescriptor(Role.HAL_STDOUT)),
     ],
     key=lambda entry: entry[0],
 ))

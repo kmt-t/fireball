@@ -60,6 +60,7 @@ from debugger import DebuggerManager
 from interpreter import Interpreter
 from runtime_engine import RuntimeEngine
 from system import System
+from system_containers import FlatMapView
 from wasi import WasiHostContext
 from wasm_reader import parse
 from x64_jit import TraceCompiler
@@ -134,7 +135,8 @@ WAT_TEMPLATE = """
 )
 """
 
-from dummy_drivers import DummyUartDriver
+from dummy_drivers import DummyDriver
+from hal_dispatch import ARG_BUFFER_HANDLE, ARG_LENGTH, ARG_OFFSET, WasiIpcCmd
 from wasi_dummy_fs import WasiDummyContext
 
 
@@ -153,7 +155,8 @@ def run_single_pairwise_case(case_tuple: tuple) -> None:
     sysv = System()
     wasi_ctx = WasiHostContext(sysv)
     wasi_dummy = WasiDummyContext()
-    stdio = DummyUartDriver(transport=sysv.transport)
+    stdio = DummyDriver(transport=sysv.transport)
+    sysv.start_hal_driver(stdio)
     # 2. Parse WASM Module
     wasm_bytes = bytes(wasmtime.wat2wasm(WAT_TEMPLATE))
     module = parse(wasm_bytes)
@@ -235,7 +238,21 @@ def run_single_pairwise_case(case_tuple: tuple) -> None:
         wasi_dummy.fd_read(3, read_buf, 0, 1, 12)
     elif host_mode == "hal":
         payload = f"pairwise:{case_id}".encode("ascii")
-        assert stdio.write_stdout(payload) == len(payload)
+        if sysv.scheduler.current_task is None:
+            sysv.start_runtime_task(name="pairwise_hal_guest")
+        sysv.pool.bind_guest()
+        buffer_handle = sysv.pool.acquire_buffer(size=len(payload))
+        sysv.pool.view(buffer_handle, 0, len(payload))[:] = payload
+        assert stdio.dispatch(
+            WasiIpcCmd.STREAM_WRITE_BUFFER,
+            FlatMapView(
+                [
+                    (ARG_BUFFER_HANDLE, buffer_handle.buffer_id),
+                    (ARG_OFFSET, 0),
+                    (ARG_LENGTH, len(payload)),
+                ]
+            ),
+        ) == len(payload)
         assert stdio.drain_stdout() == payload
 
 

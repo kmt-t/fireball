@@ -6,8 +6,8 @@ Tests:
 1. Hierarchical IPC URI interface resolution via `resolver.get-interface`:
    - "fireball://device/uart/0" (UART character stream via HAL buffer pool)
    - "fireball://device/timer/0" (Monotonic hardware timer)
-   - "fireball://service/stdout/0" (Console standard output)
-   - "fireball://service/logger/0" (System logger)
+   - "fireball://hal/stdout/0" (Console standard output)
+   - "fireball://hal/logger/0" (System logger)
    - Standard WASI 0.3p aliases ("wasi:io/streams@0.3.0", "wasi:clocks/monotonic-clock@0.3.0")
 2. Driver Capability Query Protocol (`CMD_QUERY_CAPS` = 0x00):
    - Querying supported / unsupported commands on standard I/O and Timer drivers.
@@ -45,7 +45,7 @@ from hal_dispatch import (
     ARG_OFFSET,
     ARG_QUERY_CMD_ID,
 )
-from dummy_drivers import DummyTimerDriver, DummyUartDriver
+from dummy_drivers import DummyDriver
 from system import System
 from system_containers import FlatMapView
 from wasi import Wasi03pEngine, WasiHostContext, WasiIpcCmd
@@ -71,8 +71,8 @@ def test_wasi03p_hierarchical_uri_and_ipc_commands():
     hierarchical_uris = [
         "fireball://device/uart/0",
         "fireball://device/timer/0",
-        "fireball://service/stdout/0",
-        "fireball://service/logger/0",
+        "fireball://hal/stdout/0",
+        "fireball://hal/logger/0",
         "wasi:clocks/monotonic-clock@0.3.0",
         "wasi:io/streams@0.3.0",
         "wasi:cli/stdout@0.3.0",
@@ -113,8 +113,8 @@ def test_wasi03p_hierarchical_uri_and_ipc_commands():
     sysv.pool.bind_guest()
 
     # 3. Test Direct Dummy Driver Classes
-    dummy_uart = DummyUartDriver()
-    dummy_timer = DummyTimerDriver()
+    dummy_uart = DummyDriver()
+    dummy_timer = DummyDriver("fireball://device/timer/0")
 
     assert dummy_uart.dispatch(0x00, _params((ARG_QUERY_CMD_ID, 0x01))) == 1
     assert dummy_uart.dispatch(0x00, _params((ARG_QUERY_CMD_ID, 0x20))) == 0
@@ -144,7 +144,7 @@ def test_wasi03p_hierarchical_uri_and_ipc_commands():
         ),
     )
     assert nwritten == len(msg)
-    out_uart = sysv.transport.drain().decode("utf-8")
+    out_uart = sysv.transport.drain_output().decode("utf-8")
     assert out_uart == "IPC-CMD-SHM-STREAM-OK!", f"UART SHM output mismatch: {out_uart}"
     print(f"    [IPC CMD:STREAM_WRITE_BUFFER] Written {nwritten} bytes -> {out_uart}")
 
@@ -160,16 +160,20 @@ def test_wasi03p_hierarchical_uri_and_ipc_commands():
         "fireball://device/uart/0", WasiIpcCmd.STREAM_WRITE_BUFFER, fmap_view
     )
     assert nwritten_fmap == len(msg)
-    out_uart_fmap = sysv.transport.drain().decode("utf-8")
+    out_uart_fmap = sysv.transport.drain_output().decode("utf-8")
     assert out_uart_fmap == "IPC-CMD-SHM-STREAM-OK!"
     print(f"    [IPC FlatMapView DISPATCH] Written {nwritten_fmap} bytes -> {out_uart_fmap}")
 
     # 5.c Test Full HAL Task IPC Rendezvous Communication (Task-to-Task CSP)
-    sysv.start_hal_driver(DummyUartDriver(transport=sysv.transport))
+    sysv.start_hal_driver(DummyDriver(transport=sysv.transport))
     ipc_res = engine.send_ipc_command(
         "fireball://device/uart/0",
         WasiIpcCmd.STREAM_WRITE_BUFFER,
-        _params((ARG_LENGTH, len(msg)), (ARG_OFFSET, 0)),
+        _params(
+            (ARG_BUFFER_HANDLE, buffer_handle.buffer_id),
+            (ARG_LENGTH, len(msg)),
+            (ARG_OFFSET, 0),
+        ),
     )
     assert ipc_res == len(msg)
     uart_task = sysv.hal_task_for("fireball://device/uart/0")

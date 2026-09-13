@@ -5,7 +5,7 @@
 正本: [`runtime_logging.md`](docs/components/tier2_runtime/runtime_logging.md)
 参考実装: [`logging_concept.py`](docs/components/tier2_runtime/concepts/logging_concept.py)
 
-**適用範囲外の明記**: `runtime_logging.md` 冒頭は「本コンポーネントが扱うのはビルド時に辞書登録された固定フォーマットの内部状態ログのみである」と明示し、ゲストの `wasi:cli/stdout`/`stderr`（`print`/`eprint`）は別経路（`interface_wit.md` の `console-output` の位置づけ節、`fireball://service/stdout/0`）で扱うとしている。したがって本テスト仕様書は **辞書ベースの内部ログ** のみを対象とし、生バイト出力は `../../tier1_interface/tests/interface_wit_test_spec.md` 側の責務とする。
+**適用範囲外の明記**: `runtime_logging.md` 冒頭は「本コンポーネントが扱うのはビルド時に辞書登録された固定フォーマットの内部状態ログのみである」と明示し、ゲストの `wasi:cli/stdout`/`stderr`（`print`/`eprint`）は別経路（`interface_wit.md` の `console-output` の位置づけ節、`fireball://hal/stdout/0`）で扱うとしている。したがって本テスト仕様書は **辞書ベースの内部ログ** のみを対象とし、生バイト出力は `../../tier1_interface/tests/interface_wit_test_spec.md` 側の責務とする。
 
 ## 2. テストケース一覧
 

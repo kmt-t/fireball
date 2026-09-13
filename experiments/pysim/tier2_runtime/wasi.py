@@ -122,7 +122,7 @@ class Wasi03pEngine:
 
         entries: list[tuple[str, WasiInterfaceVTable]] = [
             ("fireball://device/uart/0", uart_iface),
-            ("fireball://service/stdout/0", uart_iface),
+            ("fireball://hal/stdout/0", uart_iface),
             ("wasi:io/streams@0.3.0", uart_iface),
             ("wasi:io/streams", uart_iface),
             ("fireball://device/timer/0", timer_iface),
@@ -130,7 +130,7 @@ class Wasi03pEngine:
             ("wasi:clocks/monotonic-clock", timer_iface),
             ("wasi:cli/stdout@0.3.0", console_iface),
             ("wasi:cli/stdout", console_iface),
-            ("fireball://service/logger/0", logger_iface),
+            ("fireball://hal/logger/0", logger_iface),
         ]
         entries.sort(key=lambda e: e[0])
         self._interface_entries = tuple(entries)

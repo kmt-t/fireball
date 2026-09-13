@@ -38,10 +38,11 @@ from hal_dispatch import (
     FB_CONF_HAL_MAX_BUFFERS,
     HalBufferPool,
     HalBufferTrap,
+    WasiIpcCmd,
     Timer,
-    UartTransport,
+    StreamTransport,
 )
-from dummy_drivers import DummyUartDriver
+from dummy_drivers import DummyDriver
 from scheduler import Scheduler
 from system import (
     System,
@@ -61,26 +62,50 @@ def wat_to_wasm(wat_text: str) -> bytes:
         return b""
 
 
-def test_hal_01_uart_transport_is_real_pipe():
-    t = UartTransport()
+def test_hal_01_stream_transport_is_real_pipe():
+    t = StreamTransport()
     try:
         assert t.write(b"fireball\n") == 9
-        assert t.drain() == b"fireball\n"
-        assert t.drain() == b""
+        assert t.drain_output() == b"fireball\n"
+        assert t.drain_output() == b""
     finally:
         t.close()
 
 
 def test_hal_02_dummy_stdio_driver_streams_stdin_and_stdout():
-    driver = DummyUartDriver()
+    from hal_dispatch import ARG_BUFFER_HANDLE, ARG_LENGTH, ARG_MAX_LEN, ARG_OFFSET
+
+    scheduler = Scheduler()
+    task_id = scheduler.spawn("stdio_guest")
+    scheduler.current_task = scheduler.get_task(task_id)
+    assert scheduler.current_task is not None
+    vmmio = VMMIOController(guest_ram_size=8192, scheduler=scheduler)
+    pool = HalBufferPool(scheduler, vmmio)
+    pool.bind_guest()
+    driver = DummyDriver()
+    driver.bind_buffer_pool(pool)
     try:
-        assert driver.feed_stdin(b"in-1") == 4
-        assert driver.feed_stdin(b"in-2") == 4
-        assert driver.read_stdin(32) == b"in-1in-2"
-        assert driver.write_stdout(b"out-1") == 5
-        assert driver.write_stdout(b"out-2") == 5
+        rx = pool.acquire_buffer(size=32)
+        tx = pool.acquire_buffer(size=32)
+        tx_view = pool.view(tx, 0, 10)
+        tx_view[:] = b"out-1out-2"
+        assert driver.feed_stdin(b"in-1in-2") == 8
+        assert driver.dispatch(
+            WasiIpcCmd.STREAM_READ_BUFFER,
+            FlatMapView(
+                [(ARG_BUFFER_HANDLE, rx.buffer_id), (ARG_OFFSET, 0), (ARG_MAX_LEN, 32)]
+            ),
+        ) == 8
+        assert bytes(pool.view(rx, 0, 8)) == b"in-1in-2"
+        assert driver.dispatch(
+            WasiIpcCmd.STREAM_WRITE_BUFFER,
+            FlatMapView(
+                [(ARG_BUFFER_HANDLE, tx.buffer_id), (ARG_OFFSET, 0), (ARG_LENGTH, 10)]
+            ),
+        ) == 10
         assert driver.drain_stdout() == b"out-1out-2"
     finally:
+        pool.close_all()
         driver.transport.close()
 
 
@@ -154,18 +179,26 @@ def test_hal_05_hal_buffer_slice_bounds_and_ownership():
 
 def test_hal_task_ipc_communication():
     """TEST-HAL-01: HAL operates as a distinct task on COOS and handles commands via IPC rendezvous."""
-    from hal_dispatch import ARG_LENGTH, ARG_OFFSET
+    from hal_dispatch import ARG_BUFFER_HANDLE, ARG_LENGTH, ARG_OFFSET
     from wasi import Wasi03pEngine, WasiIpcCmd
 
     sysv = System()
     try:
-        sysv.start_hal_driver(DummyUartDriver(transport=sysv.transport))
+        runtime_task = sysv.start_runtime_task(name="hal_ipc_guest")
+        sysv.scheduler.current_task = runtime_task
+        sysv.pool.bind_guest()
+        buffer_handle = sysv.pool.acquire_buffer(size=128)
+        buffer_view = sysv.pool.view(buffer_handle, 0, 128)
+        buffer_view[:] = b"x" * 128
+        sysv.start_hal_driver(DummyDriver(transport=sysv.transport))
         engine = Wasi03pEngine(sysv)
         # Send command via IPC
         nwritten = engine.send_ipc_command(
             "fireball://device/uart/0",
             WasiIpcCmd.STREAM_WRITE_BUFFER,
-            FlatMapView([(ARG_LENGTH, 128), (ARG_OFFSET, 0)]),
+            FlatMapView(
+                [(ARG_BUFFER_HANDLE, buffer_handle.buffer_id), (ARG_LENGTH, 128), (ARG_OFFSET, 0)]
+            ),
         )
         assert nwritten == 128
         uart_task = sysv.hal_task_for("fireball://device/uart/0")
@@ -176,7 +209,7 @@ def test_hal_task_ipc_communication():
 
 
 if __name__ == "__main__":
-    test_hal_01_uart_transport_is_real_pipe()
+    test_hal_01_stream_transport_is_real_pipe()
     test_hal_02_dummy_stdio_driver_streams_stdin_and_stdout()
     test_hal_03_timer_monotonic_ns()
     test_hal_04_hal_buffer_pool_rejects_oversized()

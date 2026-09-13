@@ -40,7 +40,7 @@
 | | [`runtime_syscall.md`](docs/components/tier2_runtime/runtime_syscall.md) | `fireball_call` ABI、syscallディスパッチ、ゲスト境界検証 | Scenario 2, 10, 11 |
 | | [`hal_dispatch.md`](docs/components/tier2_runtime/hal_dispatch.md) | WASI親和性のあるURI、バッファ、ストリーム、クロック、ポーリングIF | Scenario 2, 11 |
 | **Tier 3 Platform** | [`libfireball.md`](docs/components/tier3_platform/libfireball.md) | WASI Preview1からFireball公開IFへのゲスト側変換 | Scenario 2, 11 |
-| **Tier 3 Platform** | [`platform_driver.md`](docs/components/tier3_platform/platform_driver.md) | GPIO, I2C, SPI, Timer, UartTransport | Scenario 2, 7, 9, 11 |
+| **Tier 3 Platform** | [`platform_driver.md`](docs/components/tier3_platform/platform_driver.md) | GPIO, I2C, SPI, Timer, StreamTransport | Scenario 2, 7, 9, 11 |
 | **Tier 3 JIT** | [`jit_compiler.md`](docs/components/tier3_jit/jit_compiler.md) | Copy-and-Patch JIT 生成、PIC トレース、差分検証 | Scenario 4, 5, 8 |
 | | [`jit_runtime.md`](docs/components/tier3_jit/jit_runtime.md) | 3面キャッシュ代謝、2-bit Card Marking、UnifiedPC + bswap32 | Scenario 4, 5 |
 

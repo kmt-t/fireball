@@ -123,7 +123,7 @@ class Channel:
 # Stage 1: registry (URI -> role), a sorted array searched via flat_map_view --
 # {LowLatencyLookup}/{META_FlatMapIndexed}'s O(log N) claim, backed for real.
 # URI -> Role is many-to-one, not 1:1: "fireball://device/uart/0" and
-# "fireball://service/stdout/0" each keep their own dedicated Role/channel
+# "fireball://hal/stdout/0" each keep their own dedicated Role/channel
 # so two same-type instances never collide on one channel.
 _REGISTRY_ENTRIES = sorted(
     [
@@ -134,7 +134,7 @@ _REGISTRY_ENTRIES = sorted(
         ("fireball://device/spi/0", Role.HAL_SPI),
         ("fireball://device/timer/0", Role.HAL_TIMER),
         ("fireball://device/uart/0", Role.HAL_UART),
-        ("fireball://service/stdout/0", Role.HAL_STDOUT),
+        ("fireball://hal/stdout/0", Role.HAL_STDOUT),
     ]
 )
 _REGISTRY = FlatMapView(_REGISTRY_ENTRIES)

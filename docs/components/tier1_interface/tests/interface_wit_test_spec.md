@@ -26,13 +26,13 @@
 | TEST-WIT-10 | `fireball-call`のkebab-case→snake_caseマッピング | - | C++バインディング生成物を確認 | `fireball_call`として公開される | {WIT_Interface_Spec} |
 | TEST-WIT-11 | Trigger(GPIO)の直接マッピング | `FB_SYSCALL_TRIGGER_SET_PIN`等 | `fireball_call`に直接該当IDを渡す | ハンドルルックアップを経由せず直接操作される | {WIT_Interface_Spec} |
 
-### コンソール生バイト出力経路 (`fireball://service/stdout/0`)
+### コンソール生バイト出力経路 (`fireball://hal/stdout/0`)
 
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| TEST-WIT-20 | 任意長生バイト列の出力 | ゲストが`print`/`eprint`相当を実行 | `resolver.get-interface("fireball://service/stdout/0")`、`acquire-buffer`、`stream-write`を順に利用 | データがそのまま`HAL_Transport`へ渡される（辞書変換もリングバッファ構造化もされない） | `libfireball_test_spec.md` |
+| TEST-WIT-20 | 任意長生バイト列の出力 | ゲストが`print`/`eprint`相当を実行 | `resolver.get-interface("fireball://hal/stdout/0")`、`acquire-buffer`、`stream-write`を順に利用 | データがそのまま`HAL_Transport`へ渡される（辞書変換もリングバッファ構造化もされない） | `libfireball_test_spec.md` |
 | TEST-WIT-21 | 内部ロガーとの排他性なし（インターリーブ許容） | 内部ロガーのflushとコンソール出力経路の書き込みが同時期に発生 | 両方を実行 | 出力順序の保証はされない（インターリーブし得る）ことを仕様として確認する（バグではない） | 末尾 |
-| TEST-WIT-22 | WASI_FD_WRITE→コンソール出力経路への自動ルーティング | ゲストの`print`/`eprint` | `libfireball` が `fireball_call(WASI_FD_WRITE,...)`を発行 | `fireball://service/stdout/0`を解決し、HALの`stream-write`へ変換される | `libfireball_test_spec.md` |
+| TEST-WIT-22 | WASI_FD_WRITE→コンソール出力経路への自動ルーティング | ゲストの`print`/`eprint` | `libfireball` が `fireball_call(WASI_FD_WRITE,...)`を発行 | `fireball://hal/stdout/0`を解決し、HALの`stream-write`へ変換される | `libfireball_test_spec.md` |
 | TEST-WIT-23 | WASI親和性のあるHAL汎用操作 | `resolver` が公開されている | `stream-read/write`、`stream-flush/close`、`clock-get-now/resolution`、`poll-check/wait`の型を確認 | 個別デバイスresource型なしに、同じハンドル境界で操作できる | `hal_dispatch.md` |
 
 ## 3. テスト検証実績と網羅状況

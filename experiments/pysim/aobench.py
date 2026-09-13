@@ -423,7 +423,7 @@ def run_aobench():
     t0_t2 = time.perf_counter()
     interp_t2.call(main_func_idx, [WIDTH, HEIGHT])
     t1_t2 = time.perf_counter()
-    render_output = sysv.transport.drain().decode("utf-8", errors="replace")
+    render_output = sysv.transport.drain_output().decode("utf-8", errors="replace")
     print("\n--- [Render Output from Guest WASM via WASI stdout] ---")
     print(render_output)
     print("-------------------------------------------------------")
@@ -448,7 +448,7 @@ def run_aobench():
     t0_t3 = time.perf_counter()
     runtime_engine.run(interp_t3, main_func_idx, [WIDTH, HEIGHT])
     t1_t3 = time.perf_counter()
-    render_output_t3 = sysv_t3.transport.drain().decode("utf-8", errors="replace")
+    render_output_t3 = sysv_t3.transport.drain_output().decode("utf-8", errors="replace")
     t3_time_ms = (t1_t3 - t0_t3) * 1000
     t3_rays_per_sec = total_rays / (t3_time_ms / 1000.0) if t3_time_ms > 0 else 0
     speedup_ratio = t2_time_ms / t3_time_ms if t3_time_ms > 0 else 1.0

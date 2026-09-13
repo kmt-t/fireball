@@ -8,9 +8,11 @@
 
 ## 1. コンセプト
 <!-- traceability: {IPCRouter} {URIAbstraction} {TypeSafeMessaging} {IPC_ZeroCopy} -->
-HAL (Hardware Abstraction Layer) は、COOS 上で稼働する独立したタスク（`hal_task`）として常駐し、物理ハードウェアおよび仮想ペリフェラルへのアクセスを抽象化して提供する。**デバイス/サービスインスタンス 1 つにつき `hal_task` インスタンス 1 つが専用に対応する**（1 タスクは正確に 1 つの物理ドライバのみを所有する）。これは IPC ルータの「1 チャネル 1 待機者」制約（`{ADR_RendezvousChannel}`）に由来する契約であり、単一の共有タスクが複数の同種デバイスインスタンス（例: 物理 UART と、別登録されたコンソール出力ストリーム）を URI 単位で振り分けることはできない——受信側チャネルの選択はロール（IPC ルータの `Role`）でのみ行われ、メッセージ内の URI 情報では行われないためである。上位層（Runtime, Debugger, Guest 等）からの直接関数呼び出しは行わず、通信はすべて IPC ルータ（`ipc_router`）を介した CSP rendezvous メッセージパッシングによって行われる。ペリフェラル・ストリーム・GPIO 等は階層型 URI（`fireball://device/<driver-type>/<instance-id>`）経由で動的にバインド・解決され、解決されたインスタンスごとに専用ロール・専用チャネル・専用 `hal_task` が対応付けられる。
+HAL (Hardware Abstraction Layer) は、COOS 上で稼働する独立したタスク（`hal_task`）として常駐し、物理ハードウェアおよび仮想ペリフェラルへのアクセスを抽象化して提供する。**デバイス／HALインスタンス 1 つにつき `hal_task` インスタンス 1 つが専用に対応する**（1 タスクは正確に 1 つの物理ドライバのみを所有する）。これは IPC ルータの「1 チャネル 1 待機者」制約（`{ADR_RendezvousChannel}`）に由来する契約であり、単一の共有タスクが複数の同種デバイスインスタンス（例: 物理 UART と、別登録されたコンソール出力ストリーム）を URI 単位で振り分けることはできない——受信側チャネルの選択はロール（IPC ルータの `Role`）でのみ行われ、メッセージ内の URI 情報では行われないためである。上位層（Runtime, Debugger, Guest 等）からの直接関数呼び出しは行わず、通信はすべて IPC ルータ（`ipc_router`）を介した CSP rendezvous メッセージパッシングによって行われる。ペリフェラル・ストリーム・GPIO 等は階層型 URI（`fireball://device/<driver-type>/<instance-id>`）経由で動的にバインド・解決され、解決されたインスタンスごとに専用ロール・専用チャネル・専用 `hal_task` が対応付けられる。
 
 各 `hal_task` インスタンスは IPC ルータ（`ipc_router`）から自身が担当する 1 インスタンス宛ての WASI 0.3p ドライバ通信コマンド（`CMD_STREAM_*`, `CMD_CLOCK_*`, `CMD_GPIO_*`, `CMD_BUS_*`）を受信し、HALバッファプール（物理実体は Tier 3 の vMMIO/DYNAMIC 領域）のバッファスライス（`hal-buffer-slice`、本コンポーネントから見た不透明ハンドル）を介してゼロコピーで高速データ転送を実行する。DYNAMIC領域はマルチゲスト構成でも同時にマップできるゲストを1つに限定する。 `{IPCRouter}` `{URIAbstraction}` `{TypeSafeMessaging}` `{IPC_ZeroCopy}`
+
+`acquire-buffer` の呼び出し側がバッファの所有者となるが、受信した `hal-buffer-slice` を処理するHALドライバは、そのドライバタスクのHALサブシステム権限で当該バッファを参照できる。ドライバとの転送は常にハンドル、オフセット、長さで指定し、ドライバへ生ポインタや独立したストリーム用データバッファを渡さない。
 
 ## 2. アーキテクチャ分類
 <!-- traceability: {META_3TierSeparation} {IPCRouter} {URIAbstraction} {META_StaticDI} -->
@@ -52,9 +54,9 @@ COOS 上で独立して実行される協調タスク。**1 タスクインス�
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
-| タスクコルーチン | COOS スケジューラ上で、自インスタンス宛ての IPC 受信を待機・処理する実行体 | コルーチン | 1 デバイス/サービスインスタンスにつき 1 タスクスロット |
+| タスクコルーチン | COOS スケジューラ上で、自インスタンス宛ての IPC 受信を待機・処理する実行体 | コルーチン | 1 デバイス／HALインスタンスにつき 1 タスクスロット |
 | 所有ドライバ | このタスクが専有する単一の物理ドライバインスタンス（Tier 3 の [`platform_driver.md`](docs/components/tier3_platform/platform_driver.md) を正本とする） | ドライバインスタンス | 1 タスク = 1 ドライバ（1:1） |
-| セキュリティロール | IPC ルータで検証される、このインスタンス専用の権限ロール | ロール | `Role.HAL_*`（デバイス/サービスインスタンスごとに個別のロール値。例: `Role.HAL_UART`, `Role.HAL_GPIO`） |
+| セキュリティロール | IPC ルータで検証される、このインスタンス専用の権限ロール | ロール | `Role.HAL_*`（デバイス／HALインスタンスごとに個別のロール値。例: `Role.HAL_UART`, `Role.HAL_GPIO`） |
 
 #### HAL構成（hal_config、契約レベル定数）
 <!-- traceability: {META_ConfigurableSystem} -->
@@ -83,7 +85,7 @@ HAL の公開境界は、WASI 0.3p の interface / stream / pollable に対応�
 
 | 操作 | シグネチャ | 役割 |
 | :--- | :--- | :--- |
-| `get-interface` | `get-interface(uri: string) -> result<u32, recovery-strategy-category>` | URI からデバイスまたはサービスのインターフェースハンドルを取得する |
+| `get-interface` | `get-interface(uri: string) -> result<u32, recovery-strategy-category>` | URI からデバイスまたはHALのインターフェースハンドルを取得する |
 | `acquire-buffer` | `acquire-buffer(size-bytes: u32) -> result<hal-buffer-slice, recovery-strategy-category>` | ゼロコピー転送用の HAL バッファスライスを確保する |
 | `release-buffer` | `release-buffer(slice: hal-buffer-slice) -> operation-result` | HAL バッファスライスの所有権を返却する |
 | `stream-read` | `stream-read(handle: u32, buffer: hal-buffer-slice) -> operation-result` | ストリームから HAL バッファへ読み込む |
@@ -107,7 +109,7 @@ HAL が管轄するすべてのハードウェアドライバおよびコンソ�
 - `fireball://device/i2c/0`: I2C バスマスタ／スレーブドライバ
 - `fireball://device/spi/0`: SPI バスマスタ／スレーブドライバ
 - `fireball://device/rtt/0`: SEGGER RTT デバッグ通信ドライバ
-- `fireball://service/stdout/0`: 標準出力コンソールストリーム
+- `fireball://hal/stdout/0`: 標準出力HALストリーム
 
 各ドライバは IPC ルータ経由で以下の `kv_pair` コマンドを受信し、HALバッファプール（`hal-buffer-slice`、不透明ハンドル）と連携してハードウェア処理を実行する：
 

@@ -26,7 +26,7 @@ from dataclasses import dataclass
 from enum import IntEnum
 from typing import TYPE_CHECKING, Callable
 
-from hal_dispatch import HalBufferHandle, HalBufferPool, UartTransport
+from hal_dispatch import HalBufferHandle, HalBufferPool, StreamTransport
 from ipc_router import (
     IPCMessage,
     IPCRouter,
@@ -217,7 +217,7 @@ class System:
     """
 
     def __init__(self):
-        self.transport = UartTransport()
+        self.transport = StreamTransport()
         self.dictionary = LogDictionary()
         self.logger = Logger(self.transport, self.dictionary, min_level=LogLevel.DEBUG)
         self.console = ConsoleOutput(self.transport)
@@ -859,6 +859,7 @@ class System:
 
     def start_hal_driver(self, driver: HalDriver) -> int:
         """Registers and starts one driver-owned HAL device task."""
+        driver.bind_buffer_pool(self.pool)
         desc = self.ipc.find_service(driver.uri)
         assert desc is not None, f"HAL driver URI not registered: {driver.uri}"
         uri_key = fnv1a_32(driver.uri)

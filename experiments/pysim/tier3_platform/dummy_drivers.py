@@ -5,71 +5,70 @@ from __future__ import annotations
 import time
 
 from hal_dispatch import (
+    ARG_BUFFER_HANDLE,
     ARG_LENGTH,
     ARG_MAX_LEN,
+    ARG_OFFSET,
     HalDriver,
+    StreamTransport,
     Timer,
-    UartTransport,
     WasiIpcCmd,
 )
 from system_containers import FlatMapView
 
 
-class DummyUartDriver(HalDriver):
-    """標準入力・標準出力を全二重ストリームとして提供する。"""
+class DummyDriver(HalDriver):
+    """標準入出力ストリームと単調増加時刻を提供する。"""
 
     def __init__(
-        self, uri: str = "fireball://device/uart/0", transport: UartTransport | None = None
+        self, uri: str = "fireball://device/uart/0", transport: StreamTransport | None = None
     ):
         super().__init__(uri)
-        self.transport = transport or UartTransport()
+        self.transport = transport or StreamTransport()
+        self.start_time_ns = time.monotonic_ns()
+        self.tick_count = 0
+        self.timer = Timer()
         self.register_command(WasiIpcCmd.STREAM_WRITE_BUFFER, self._write_buffer)
         self.register_command(WasiIpcCmd.STREAM_READ_BUFFER, self._read_buffer)
         self.register_command(WasiIpcCmd.STREAM_FLUSH, self._flush)
         self.register_command(WasiIpcCmd.STREAM_CLOSE, self._close)
-
-    def write_stdout(self, data: bytes) -> int:
-        """標準出力へバイト列をストリーミング送信する。"""
-        return self.transport.write(data)
+        self.register_command(WasiIpcCmd.CLOCK_GET_NOW, self._get_now)
+        self.register_command(WasiIpcCmd.CLOCK_SUBSCRIBE, self._subscribe)
+        self.register_command(WasiIpcCmd.CLOCK_GET_RES, self._get_resolution)
 
     def feed_stdin(self, data: bytes) -> int:
         """標準入力ストリームへホスト側からバイト列を供給する。"""
-        return self.transport.feed_stdin(data)
-
-    def read_stdin(self, max_len: int = 4096) -> bytes:
-        """標準入力ストリームから最大 ``max_len`` バイトを読む。"""
-        return self.transport.read_stdin(max_len)
+        return self.transport.feed_input(data)
 
     def drain_stdout(self) -> bytes:
         """ホスト側から標準出力ストリームを読み出す。"""
-        return self.transport.drain()
+        return self.transport.drain_output()
+
+    def _buffer_view(self, params: FlatMapView, length_key: int) -> memoryview:
+        assert self._buffer_pool is not None, "HAL buffer pool is not bound"
+        handle = params.find(ARG_BUFFER_HANDLE)
+        offset = params.find(ARG_OFFSET)
+        length = params.find(length_key)
+        assert handle is not None
+        assert offset is not None
+        assert length is not None
+        return self._buffer_pool.view_for_driver(handle, offset, length)
 
     def _write_buffer(self, params: FlatMapView) -> int:
-        length = params.find(ARG_LENGTH)
-        return 0 if length is None else length
+        view = self._buffer_view(params, ARG_LENGTH)
+        return self.transport.write(bytes(view))
 
-    def _read_buffer(self, params: FlatMapView) -> bytes:
-        max_len = params.find(ARG_MAX_LEN)
-        return self.read_stdin(4096 if max_len is None or max_len == 0 else max_len)
+    def _read_buffer(self, params: FlatMapView) -> int:
+        view = self._buffer_view(params, ARG_MAX_LEN)
+        data = self.transport.read_input(len(view))
+        view[: len(data)] = data
+        return len(data)
 
     def _flush(self, params: FlatMapView) -> int:
         return 0
 
     def _close(self, params: FlatMapView) -> int:
         return 0
-
-
-class DummyTimerDriver(HalDriver):
-    """単調増加時刻とタイマ tick を提供する。"""
-
-    def __init__(self, uri: str = "fireball://device/timer/0"):
-        super().__init__(uri)
-        self.start_time_ns = time.monotonic_ns()
-        self.tick_count = 0
-        self.timer = Timer()
-        self.register_command(WasiIpcCmd.CLOCK_GET_NOW, self._get_now)
-        self.register_command(WasiIpcCmd.CLOCK_SUBSCRIBE, self._subscribe)
-        self.register_command(WasiIpcCmd.CLOCK_GET_RES, self._get_resolution)
 
     def get_monotonic_ns(self) -> int:
         return time.monotonic_ns() - self.start_time_ns

@@ -247,7 +247,7 @@ def main() -> None:
 
     sched.run_to_completion()
     print("\n== pysim: draining the real OS transport the whole run wrote to ==")
-    on_the_wire = sysv.transport.drain().decode("utf-8", errors="replace")
+    on_the_wire = sysv.transport.drain_output().decode("utf-8", errors="replace")
     print(f"  {sysv.transport.bytes_written} bytes actually crossed the socketpair:")
     for line in on_the_wire.splitlines():
         print(f"    | {line}")

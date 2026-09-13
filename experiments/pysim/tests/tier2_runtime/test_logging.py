@@ -33,7 +33,7 @@ for _p in [
         sys.path.insert(0, _sp)
 
 from hal_dispatch import (
-    UartTransport,
+    StreamTransport,
 )
 from interrupt_event import InterruptEvent
 from ipc_router import (
@@ -67,7 +67,7 @@ def test_log_01_dictionary_rejects_pointer_specifiers():
 
 
 def test_log_02_logger_ring_buffer_overwrites():
-    t = UartTransport()
+    t = StreamTransport()
     try:
         d = LogDictionary()
         d.register(0x01, "event #%d")
@@ -78,7 +78,7 @@ def test_log_02_logger_ring_buffer_overwrites():
         assert logger.ring.overwrite_count == 2
         flushed = logger.flush()
         assert flushed == 4
-        wire = t.drain().decode()
+        wire = t.drain_output().decode()
         assert "event #2" in wire and "event #5" in wire
     finally:
         t.close()
@@ -149,7 +149,7 @@ def test_log_04_coos_and_ipc_diagnostic_logging():
 
         # Flush logger to UART (in addition to idle hooks)
         sysv.logger.flush()
-        wire = sysv.transport.drain().decode()
+        wire = sysv.transport.drain_output().decode()
 
         # Verify all diagnostic strings were formatted and transmitted
         assert "COOS: duplicate task id rejected" in wire
@@ -164,7 +164,7 @@ def test_log_04_coos_and_ipc_diagnostic_logging():
 def test_log_05_gotcha_03_interrupt_checked_only_at_batch_boundary():
     """GOTCHA-LOG-03: flush() checks interrupt_pending only after a batch
     completes, never mid-batch, since a started transfer cannot be preempted."""
-    t = UartTransport()
+    t = StreamTransport()
     try:
         d = LogDictionary()
         d.register(0x01, "event #%d")

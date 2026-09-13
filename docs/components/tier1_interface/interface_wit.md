@@ -10,14 +10,14 @@
 <!-- traceability: {WIT_Interface_Purpose} {WIT_First} {WIT_Common_Types} {URIAbstraction} -->
 本ドキュメントは、Fireballプロジェクトにおいてゲスト（WASM）環境に公開されるシステムコールおよびハードウェア抽象化層（HAL）のインターフェース仕様を定義する。ゲスト側のWASI互換アダプタはTier 3に属し、本書はその依存先となる公開WIT契約を定義する。
 
-**HAL は WASI 0.3 Preview (WASI 0.3p / Component Model) と親和性のある抽象IFである。** GPIO・タイマー・バス通信・ストリーム・コンソール出力等の個別デバイス/サービスごとに専用の WIT リソース型を定義することはしない。ゲストは階層型 URI から対象を動的に解決する **URI Resolver** と、ゼロコピー転送用の **HALバッファプール** の2つの汎用機構のみを介して、あらゆる WASI 0.3p 相当の読み書き・バス転送・非同期通知を行う。個々のデバイス/サービスの振る舞いは、IPCコマンドID（[`hal_dispatch.md`](docs/components/tier2_runtime/hal_dispatch.md) の URI 命名規則・IPC コマンド仕様節を正本とする）によって決定される。レガシーな WASI 0.1p (`wasi_snapshot_preview1`) ABI は、これらの公開IFを呼び出すTier 3ゲストアダプタとして提供する。 `{WIT_Interface_Purpose}` `{WIT_First}` `{WIT_Common_Types}` `{URIAbstraction}`
+**HAL は WASI 0.3 Preview (WASI 0.3p / Component Model) と親和性のある抽象IFである。** GPIO・タイマー・バス通信・ストリーム・コンソール出力等の個別デバイス/HALごとに専用の WIT リソース型を定義することはしない。ゲストは階層型 URI から対象を動的に解決する **URI Resolver** と、ゼロコピー転送用の **HALバッファプール** の2つの汎用機構のみを介して、あらゆる WASI 0.3p 相当の読み書き・バス転送・非同期通知を行う。個々のデバイス/HALの振る舞いは、IPCコマンドID（[`hal_dispatch.md`](docs/components/tier2_runtime/hal_dispatch.md) の URI 命名規則・IPC コマンド仕様節を正本とする）によって決定される。レガシーな WASI 0.1p (`wasi_snapshot_preview1`) ABI は、これらの公開IFを呼び出すTier 3ゲストアダプタとして提供する。 `{WIT_Interface_Purpose}` `{WIT_First}` `{WIT_Common_Types}` `{URIAbstraction}`
 
 ## 2. アーキテクチャ原則
 
 <!-- traceability: {CleanArchitecture} {META_SpecificationFirst} {META_Risk_Tiering} {URIAbstraction} -->
 - **URI Resolver メソッド**: `resolver.get-interface(uri: string)` により、URI 文字列からインターフェースハンドルを取得可能とする。個別デバイスの WIT リソース型は存在しない——ハンドルに対する操作はすべて IPC コマンドID経由で行う。
 - **HALバッファプール（vMMIO/DYNAMIC）ゼロコピー I/O**: デバイス通信のデータ送受信は、`resolver.acquire-buffer` / `resolver.release-buffer` で貸与される HALバッファプール（vMMIO/DYNAMIC 領域の `hal-buffer-slice`）を通じてゼロコピー／極低レイテンシで実行される。 `{URIAbstraction}` `{META_RestrictedPhysicalAccess}`
-- **IPC 宛先 URI と階層命名規則**: URI は、`fireball://<domain>/<type>/<instance>`（例: `fireball://device/uart/0`, `fireball://device/gpio/0`, `fireball://device/timer/0`, `fireball://device/i2c/0`, `fireball://service/stdout/0`）の**階層型 URI 命名規則**に従い、**IPC ルータ（`ipc_router`）でデバイスやサービスと通信するための宛先 URI** として機能する。
+- **IPC 宛先 URI と階層命名規則**: URI は、`fireball://<domain>/<type>/<instance>`（例: `fireball://device/uart/0`, `fireball://device/gpio/0`, `fireball://device/timer/0`, `fireball://device/i2c/0`, `fireball://hal/stdout/0`）の**階層型 URI 命名規則**に従い、**IPC ルータ（`ipc_router`）でデバイスやHALと通信するための宛先 URI** として機能する。
 - **WASI 0.1p 互換ラッパー (Adapter Pattern)**: 既存の WASI Preview 1 (`fd_write`, `fd_read`, `clock_time_get`, `proc_exit` 等) は、Tier 3ゲストアダプタが上記の URI Resolver + HALバッファプール機構へ変換する。
 - **Stateless Interface**: リソースハンドルを通じた操作を行い、ホスト側で状態を管理する。
 
@@ -25,9 +25,9 @@
 
 ### 3.1 基礎インターフェース & IPC URI Resolver
 <!-- traceability: {CooperativeMultitasking} {Asynchronous_Notification} {URIAbstraction} {META_RestrictedPhysicalAccess} -->
-以下の基礎コンポーネントのみを提供する。個別デバイス/サービス向けの WIT リソース型は定義しない。
+以下の基礎コンポーネントのみを提供する。個別デバイス/HAL向けの WIT リソース型は定義しない。
 
-- `resolver`: 階層型 IPC 宛先 URI（`fireball://device/<type>/<instance>`, `fireball://service/<type>/<instance>`）から通信ハンドルを取得し、HALバッファプール（`hal-buffer-slice`）を貸与・返却するリゾルバ。 `{URIAbstraction}` `{META_RestrictedPhysicalAccess}`
+- `resolver`: 階層型 IPC 宛先 URI（`fireball://device/<type>/<instance>`, `fireball://hal/<type>/<instance>`）から通信ハンドルを取得し、HALバッファプール（`hal-buffer-slice`）を貸与・返却するリゾルバ。 `{URIAbstraction}` `{META_RestrictedPhysicalAccess}`
 
 ```wit
 /// WASI 0.3p / IPC 動的インターフェース取得・HALバッファ解決 (URI Resolver)
@@ -71,7 +71,7 @@ flowchart TD
     W3Core --> GPIO[fireball://device/gpio/0]
     W3Core --> Timer[fireball://device/timer/0]
     W3Core --> I2C[fireball://device/i2c/0]
-    W3Core --> Console[fireball://service/stdout/0]
+    W3Core --> Console[fireball://hal/stdout/0]
 ```
 
 ### 3.2 リカバリー戦略とエラーハンドリング
@@ -139,11 +139,11 @@ GPIO のような割り込み応答性・ビットバンギング等の要求か
 <!-- traceability: {DictionaryBasedIPC} -->
 ゲストの `print`/`eprint` が書き込む文字列は実行時に組み立てられる任意長データであり、`runtime_logging.md` の内部ロガー（`{DictionaryBasedIPC}`、ビルド時登録の辞書オフセット＋固定4引数のみを扱い、実行時の辞書追加は不可）では表現できない。そのため、コンソール出力は内部ロガーとは独立した経路として扱う。
 
-専用の `console-output` リソース型は設けない。ゲストは `resolver.get-interface("fireball://service/stdout/0")` で標準出力サービスを解決し、`acquire-buffer` で確保した `hal-buffer-slice` に任意長の生バイト列を書き込んだ上で、UART 等と同じ `CMD_STREAM_WRITE_BUFFER` コマンドを発行する。辞書変換もリングバッファへの構造化格納も行わず、`HAL_Transport`（UART/ITM 等）へそのまま渡される。
+専用の `console-output` リソース型は設けない。ゲストは `resolver.get-interface("fireball://hal/stdout/0")` で標準出力HALを解決し、`acquire-buffer` で確保した `hal-buffer-slice` に任意長の生バイト列を書き込んだ上で、UART 等と同じ `CMD_STREAM_WRITE_BUFFER` コマンドを発行する。辞書変換もリングバッファへの構造化格納も行わず、`HAL_Transport`（UART/ITM 等）へそのまま渡される。
 
 物理トランスポート（`HAL_Transport`）は `runtime_logging.md` のロガーと共有するが、辞書・リングバッファは経由しない別経路であり、両者は排他的に出力順序が保証されるわけではない（インターリーブし得る）。
 
-ゲスト側アダプタが `fireball_call(WASI_FD_WRITE, ...)`（`runtime_syscall.md` 正本）を発行し、ゲストの `print`/`eprint` 呼び出しをこの `fireball://service/stdout/0` 経路へ変換する。ホスト側のディスパッチとHAL操作は、それぞれ `runtime_syscall.md` と `hal_dispatch.md` の契約に従う。
+ゲスト側アダプタが `fireball_call(WASI_FD_WRITE, ...)`（`runtime_syscall.md` 正本）を発行し、ゲストの `print`/`eprint` 呼び出しをこの `fireball://hal/stdout/0` 経路へ変換する。ホスト側のディスパッチとHAL操作は、それぞれ `runtime_syscall.md` と `hal_dispatch.md` の契約に従う。
 
 ## 6. 非同期通知メカニズム
 

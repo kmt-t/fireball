@@ -73,7 +73,7 @@ sequenceDiagram
     participant D as Device Driver
 
     G->>L: fd_write(fd, iovs)
-    L->>R: get-interface("fireball://service/stdout/0")
+    L->>R: get-interface("fireball://hal/stdout/0")
     R-->>L: interface handle
     L->>L: validate all iovec ranges
     L->>B: acquire-buffer(total or next slice)

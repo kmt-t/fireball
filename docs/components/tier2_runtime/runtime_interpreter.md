@@ -20,7 +20,7 @@ Interpreter は、WASM命令をスレッドインタープリタ方式で実行�
 - **`Interpreter`**: WASM命令の実行、コンテキスト管理、および外部環境（vSoC）との連携をカプセル化した主要クラス。
 - **`execution_context`**: 仮想CPUレジスタ、下記3本のスタックそれぞれの領域開始・終端・オフセット、リニアメモリ情報、および命令別JITヘルパーを保持する固定サイズの構造体（計152バイト）。
 - **`OperandStack`（オペランドスタック）**: WASM のオペランド値のみを保持する、コールチェーン全体を貫く1本の固定容量スタック。呼び出しごとに区切られたり作り直されたりはせず、呼び出しは「現在の頂点からどれだけ積んだか」を1つ記憶するだけで、関数を跨いでも連続している。
-- **`LocalStack`（ローカル変数スタック）**: コールチェーン全体で共有する Native 固定容量の raw 32-bit slot 配列。論理ローカル1個につき16バイトの固定スロットを割り当て、アクセス先は `local_base + slot * 16` から直接計算する。値の有効ワード数はWASM型に従い、i32/f32は1ワード、i64/f64は2ワードを使うため、後者も自然に8バイト境界を満たす。引数は同じ固定スロットへロード時に詰め、呼び出しごとのオフセット表を実行時に参照しない。`call_frame` の実行時メタデータはこの値配列へ混在させず、別のディスクリプタとして管理する。
+- **`LocalStack`（ローカル変数スタック）**: コールチェーン全体で共有する固定容量の raw 32-bit slot 配列。論理ローカル1個につき `WASM_LOCAL_ALIGNMENT_BYTES` の固定スロットを割り当て、アクセス先は `local_base + slot * WASM_LOCAL_ALIGNMENT_BYTES` から直接計算する。値の有効ワード数はWASM型に従い、i32/f32は1ワード、i64/f64は2ワードを使うため、wide値も自然に境界を満たす。引数は同じ固定スロットへロード時に詰め、呼び出しごとのオフセット表を実行時に参照しない。`call_frame` の実行時メタデータはこの値配列へ混在させず、別のディスクリプタとして管理する。
 - **`control_frame` スタック**: `block`/`loop`/`if` の入れ子を管理する固定容量スタック。
 - **`interpreter_config`**: 3本それぞれのスタック容量やyield閾値などの不変な構成情報。
 
@@ -35,8 +35,8 @@ graph TD
     end
 
     subgraph Local_Stack_Memory["LocalStack: 固定容量バッファ2"]
-        Loc0[Native local slots: frame 0]
-        Loc1[Native local slots: frame 1]
+        Loc0[uint32_t local slots: frame 0]
+        Loc1[uint32_t local slots: frame 1]
     end
 
     subgraph Control_Frame_Memory["ControlFrameStack: 固定容量バッファ3"]
@@ -113,21 +113,21 @@ WASMゲストの全実行状態を管理する。JIT/Interpreter 共通の仮想
 
 #### コールフレーム（call_frame descriptor）
 <!-- traceability: {PositionIndependentCode} {ContextPointerRegister} {MemoryBoundaryCheck} {EnvironmentPointer} -->
-`call_frame` は関数インデックス、コード、制御マップ、環境、および `LocalStack` の開始スロットを結び付ける実行時ディスクリプタである。`LocalStack` の Native バッファへメタデータヘッダや型情報を混在させず、論理ローカルは16バイト固定スロット、値の有効ワードは関数シグネチャに従って i32/f32を1ワード、i64/f64を2ワードで保持する。`local.get`/`local.set`/`local.tee` は型を解釈せず、local indexから `slot * 16` を直接計算して必要な1または2ワードをオペランドスタックとの間でrawコピーする。型付き演算やABI境界の読み書きだけが、命令または呼び出し側の既知の型に応じて値を解釈する。オペランドスタックはコール境界を跨いで連続し、`call`/`call_indirect`/関数復帰は常にインタープリタ境界で処理するため、JIT トレースが `call_frame` の push/pop を代行することはない。
+`call_frame` は関数インデックス、コード、制御マップ、環境、および `LocalStack` の開始スロットを結び付ける実行時ディスクリプタである。`LocalStack` の固定長 `uint32_t` 配列へメタデータヘッダや型情報を混在させず、論理ローカルは `WASM_LOCAL_ALIGNMENT_BYTES` 固定スロット、値の有効ワードは関数シグネチャに従って i32/f32を1ワード、i64/f64を2ワードで保持する。`local.get`/`local.set`/`local.tee` は型を解釈せず、local indexから `slot * WASM_LOCAL_ALIGNMENT_BYTES` を直接計算して必要な1または2ワードをオペランドスタックとの間でrawコピーする。型付き演算やABI境界の読み書きだけが、命令または呼び出し側の既知の型に応じて値を解釈する。オペランドスタックはコール境界を跨いで連続し、`call`/`call_indirect`/関数復帰は常にインタープリタ境界で処理するため、JIT トレースが `call_frame` の push/pop を代行することはない。
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
 | 関数インデックス | 所有するWASM関数のメタデータを特定 | インデックス | 32bit符号なし |
 | コード参照 | 現在実行するWASM命令列 | 非所有参照 | Flash/ROM上のコードを参照 |
 | 制御マップ | block/loop/if の静的な飛び先表 | 非所有参照 | ロード時に構築した表を共有 |
-| LocalStack開始スロット | 当該関数のローカル値の先頭 | 32bitオフセット | Native local buffer 内の物理スロット位置 |
-| ローカルスロット | local index ごとの固定領域 | 16バイト固定 | `local_base + local_index * 16` から直接計算 |
+| LocalStack開始スロット | 当該関数のローカル値の先頭 | 32bitオフセット | 固定長ローカル配列内の物理スロット位置 |
+| ローカルスロット | local index ごとの固定領域 | `WASM_LOCAL_ALIGNMENT_BYTES` 固定 | `local_base + local_index * WASM_LOCAL_ALIGNMENT_BYTES` から直接計算 |
 
-`call_frame` のメタデータは Native LocalStack の値配列とは別に管理する。Native ABIへ渡す値配列には Pythonオブジェクト、型タグ、可変長コンテナを含めない。 `{CallFrame_Layout}`。
+`call_frame` のメタデータは LocalStack の値配列とは別に管理する。ABIへ渡す値配列には型タグや可変長コンテナを含めない。 `{CallFrame_Layout}`。
 
 #### 制御フレーム（control_frame）
 <!-- traceability: {PositionIndependentCode} {ContextPointerRegister} {MemoryBoundaryCheck} {EnvironmentPointer} -->
-`block/loop/if` 命令によるネスト構造とジャンプ先を管理する、独自の固定容量バッファへ積まれる。`loop`/`block`/`if` の分岐だけは JIT トレースが `next_pc`/分岐先アドレスとしてインタープリタを介さずに直接解決できてしまうため（`{TraceBoundaryInvariant}`、pysim 参照実装は `{JIT_RuntimeAPI_Fallback}`）、この構文の開始・終了に対応するフレームの積み下ろしを JIT が代行しない場面が生まれる。`control_frame` が `OperandStack`/`LocalStack` と物理的に完全に独立したバッファであることにより、この積み下ろし漏れが生じても、他の2本のスタックの記録位置が物理的に乱れることは絶対にない。
+`block/loop/if` 命令によるネスト構造とジャンプ先を管理する、独自の固定容量バッファへ積まれる。`loop`/`block`/`if` の分岐だけは JIT トレースが `next_pc`/分岐先アドレスとしてインタープリタを介さずに直接解決できるため（`{TraceBoundaryInvariant}`、`{JIT_RuntimeAPI_Fallback}`）、この構文の開始・終了に対応するフレームの積み下ろしを JIT が代行しない場面が生まれる。`control_frame` が `OperandStack`/`LocalStack` と物理的に完全に独立したバッファであることにより、この積み下ろし漏れが生じても、他の2本のスタックの記録位置が物理的に乱れることは絶対にない。
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
@@ -197,7 +197,7 @@ flowchart TD
 <!-- traceability: {JIT_RuntimeAPI_Fallback} {ContextPointerRegister} {EnvironmentPointer} {JIT_RegisterMapping} {ADR_TosCacheAsymmetry} -->
 命令ハンドラおよびJITトレースは、継続渡し（Continuation Passing Style: CPS）と `__fastcall` 呼び出し規約による同一の4引数入口を持つ。実行コンテキストポインタ（`ctx`）、オペランドスタックポインタ（`sp`）、ローカル変数基底（`local_base`）、スタックトップ値（`tos`）を物理レジスタで引き継ぐ。インタープリタハンドラは次回呼び出し用の4引数とトラップ状態を結果として返し、次のPCは `ctx` に保持する。JITトレースは従来どおり末尾ジャンプで継続し、結果レコードを返さない。 `{JIT_RuntimeAPI_Fallback}` `{ContextPointerRegister}` `{EnvironmentPointer}` `{JIT_RegisterMapping}`
 
-命令実行中のWASMトラップは、ハンドラからPython例外を送出して制御フローを組み立てず、継続引数とトラップ情報を含む結果として返す。トラップを受け取った実行器は全アクティブフレームを破棄して `InterpreterCall.trap` を確定し、以後の命令を実行しない。同期的な公開ヘルパーが互換性のためにこの確定済みトラップを再送出する場合、それはハンドラ内部の実行経路ではない。追加仕様の一覧とマージ判定項目は [runtime_interpreter_test_spec.md の追加GOTCHA一覧](tests/runtime_interpreter_test_spec.md#追加gotcha一覧マージ判定用) に集約する。
+命令実行中のWASMトラップは、ハンドラから言語処理系の例外を送出して制御フローを組み立てず、継続引数とトラップ情報を含む結果として返す。トラップを受け取った実行器は全アクティブフレームを破棄して実行結果を確定し、以後の命令を実行しない。同期的な公開APIがこの確定済みトラップを呼び出し側へ伝える場合、それはハンドラ内部の実行経路ではない。追加仕様の一覧とマージ判定項目は [runtime_interpreter_test_spec.md](docs/components/tier2_runtime/tests/runtime_interpreter_test_spec.md#追加gotcha一覧マージ判定用) に集約する。
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
@@ -234,72 +234,8 @@ WASM オプコードごとのスタック遷移およびハンドラ実装マト
 - **トレース境界での協調的Yield (`{ADR_TraceBoundaryYield}`)**: インタープリタは命令ごとに精密なステップカウンタや割り込みイベントを評価・中断したりしない——**トレースの切れ目（基本ブロック末尾、ループ境界、関数呼出/復帰、または JIT トレース脱出境界）でのみ、インタープリタの命令ハンドラが呼び出し元（vSoC）へ制御を返す**。`yield_threshold` の判定と `co_yield` の発行は、この戻り値を受け取った vSoC 自身が行う（概算Yield、`{Challenge_ApproximateYield}`）——インタープリタは `co_yield` を発行するコルーチンではなく、ただの `__fastcall` 関数である。命令単位の検査オーバーヘッドを完全排除して `[[clang::musttail]]` 直結ディスパッチを最速化しつつ、トレース境界でレジスタとスタックが自然に整合するためステート退避を極小化する。 `{ADR_TraceBoundaryYield}` `{Challenge_ApproximateYield}`
 - **デバッグ・プロファイラフック**: 命令実行前後でブレークポイント判定、実行時PC頻度サンプリング（プロファイラ統合）、およびメモリ/レジスタの動的アサーション検証を行い、Debugger/Profiler に制御を委譲する。 `{Debug_Integrated}`
 
-#### WASM インタープリタ フルセット・コンセプトコード (`concepts/interpreter_concept.py`)
-```python
-class WASMTrap(Exception):
-    pass
-
-
-class WASMInterpreter:
-    MAX_STACK_DEPTH = 64
-
-    def __init__(self, memory_size: int = 65536):
-        self.operand_stack: list[int] = []
-        self.local_stack: list[int] = []
-        self.memory: list[int] = [0] * (
-            memory_size // 8
-        )  # std::span<uint64_t> (linear memory backing array)
-        self.safepoint_pending: bool = False
-        self.safepoints_hit: int = 0
-
-    def push(self, val: int) -> None:
-        if len(self.operand_stack) >= self.MAX_STACK_DEPTH:
-            raise WASMTrap("STACK_OVERFLOW")
-        self.operand_stack.append(val & 0xFFFF_FFFF)
-
-    def pop(self) -> int:
-        if not self.operand_stack:
-            raise WASMTrap("STACK_UNDERFLOW")
-        return self.operand_stack.pop()
-
-    def check_safepoint(self) -> bool:
-        """Cooperative safepoint polling at loop headers."""
-        if self.safepoint_pending:
-            self.safepoints_hit += 1
-            return True
-        return False
-
-    def execute_block(self, instructions: list[tuple[str, int]]) -> str:
-        """Executes WASM bytecode with stack bounds & safepoint checking."""
-        pc = 0
-        while pc < len(instructions):
-            op, arg = instructions[pc]
-            if op == "i32.const":
-                self.push(arg)
-            elif op == "i32.add":
-                b, a = self.pop(), self.pop()
-                self.push(a + b)
-            elif op == "i32.sub":
-                b, a = self.pop(), self.pop()
-                self.push(a - b)
-            elif op == "i32.mul":
-                b, a = self.pop(), self.pop()
-                self.push(a * b)
-            elif op == "local.get":
-                self.push(self.locals[arg])
-            elif op == "local.set":
-                self.locals[arg] = self.pop()
-            elif op == "br_if_loop_header":
-                if self.pop() != 0:
-                    if self.check_safepoint():
-                        return "SAFEPOINT_YIELD"
-                    pc = arg
-                    continue
-            elif op == "return":
-                return "COMPLETED"
-            pc += 1
-        return "COMPLETED"
-```
+#### WASM インタープリタのコンセプトコード
+実行可能な概念モデルは [`interpreter_concept.py`](docs/components/tier2_runtime/concepts/interpreter_concept.py) に分離する。本文書には実装言語のコードを埋め込まず、ここではWASM実行契約と固定レイアウトだけを規定する。
 
 #### 統合 Tiered ランタイムエンジン・コンセプトコード (`concepts/runtime_engine_concept.py`)
 インタープリタ実行、2-bit Hotspot 検出、Copy-and-Patch JIT コンパイル、3面マルチバッファキャッシュ（Active/Warm/Oldest）、および MPU W^X 保護プロトコルを統合した自己完結実行シミュレーションは [`runtime_engine_concept.py`](docs/components/tier2_runtime/concepts/runtime_engine_concept.py) を参照。
@@ -456,11 +392,11 @@ sequenceDiagram
   `control_frame` を、`LocalStack`（`call_frame` + ローカル変数）および `OperandStack` の領域とは完全に切り離した、3本目の専用固定容量バッファへ配置する。`LocalStack` と `OperandStack` は ADR-INTERP-04 に従ってそれぞれ独立した固定容量バッファであり、3本の伸び縮みを示す値は独立して管理する。どのスタックの変化も、他のスタックの記録位置に影響することはない。
 - **根拠とトレードオフ**:
   1. **JIT の無関心を安全にする**: JIT トレースは元々 `control_frame` の存在を一切知らずに動作する設計であり、それ自体は変えない。変えるのは、その無関心さが物理的な事故につながらないようにすることである。専用領域へ分離すれば、JIT がどれだけオペランドスタックを伸び縮みさせようと、`control_frame` の記録位置は物理的に一切揺るがない。
-  2. **論理的な整合はなお別途必要**: 専用領域への分離は「オペランドスタックの値が壊れない」ことは保証するが、「JIT が代行しなかった積み下ろし分のフレームが残留する」こと自体は防がない。フレームスタックを本来あるべき深さへ巻き戻す（切り詰める）だけでは、この残留分は取り除けても、逆方向（JIT がまたいだ側で構文に「入った」場面）のズレは直せない。したがって後続の深さ相対な分岐命令が誤った階層を指し示してしまう論理的な不整合は、フレームスタックの巻き戻しだけでは防げない——分岐先解決そのものを、フレームスタックの中身に頼らず、モジュールロード時に一度きり静的に決まるベーシックブロック単位の分岐先（ラベルPC / `exec_trace`）から直接行うことで防ぐ（`GOTCHA-INTP-06`）。この設計は pysim 参照実装で実際に検証されている（`{JIT_RuntimeAPI_Fallback}`, `GOTCHA-JITR-06`）——C++ 実装でも、深さ相対の `control_frame` スタック走査だけに頼った分岐先解決は同じ不整合を再現し得るため、同じ「静的解決を直接使う」方針を踏襲する必要がある。
+  2. **論理的な整合はなお別途必要**: 専用領域への分離は「オペランドスタックの値が壊れない」ことは保証するが、「JIT が代行しなかった積み下ろし分のフレームが残留する」こと自体は防がない。フレームスタックを本来あるべき深さへ巻き戻す（切り詰める）だけでは、この残留分は取り除けても、逆方向（JIT がまたいだ側で構文に「入った」場面）のズレは直せない。したがって後続の深さ相対な分岐命令が誤った階層を指し示してしまう論理的な不整合は、フレームスタックの巻き戻しだけでは防げない——分岐先解決そのものを、フレームスタックの中身に頼らず、モジュールロード時に一度きり静的に決まるベーシックブロック単位の分岐先（ラベルPC / `exec_trace`）から直接行うことで防ぐ（`GOTCHA-INTP-06`）。この設計は形式検証とテストで検証する——C++ 実装でも、深さ相対の `control_frame` スタック走査だけに頼った分岐先解決は同じ不整合を再現し得るため、同じ「静的解決を直接使う」方針を踏襲する必要がある。
   3. **メモリオーバーヘッドの扱い**: `control_frame` は3本目の固定容量バッファとして容量を独立管理する。3本の容量を個別に定義するため、いずれか1本の伸長が他のスタックの記録位置を侵食することはない。
   4. **`call_frame` はこの分離の対象外**: `call`/`call_indirect`/関数復帰は常にインタープリタへ制御が戻る境界であり、JIT が `call_frame` の積み下ろしを代行することは決してない。本 ADR が扱うリスクは `control_frame`（`loop`/`block`/`if`）に固有のものである（`call_frame` を独自の `LocalStack` へ分離する判断そのものは、別の動機に基づく ADR-INTERP-04 を参照）。
 - **影響範囲**:
-  - `runtime_interpreter.md`（データ構造・execution_context・制御フレーム）, `jit_runtime.md`（pysim 参照実装、`{JIT_RuntimeAPI_Fallback}`）, `experiments/pysim`（参照実装での論理的整合の検証）
+  - `runtime_interpreter.md`（データ構造・execution_context・制御フレーム）, `jit_runtime.md`（`{JIT_RuntimeAPI_Fallback}`）
 
 ### ADR-INTERP-04: オペランドスタックを LocalStack から分離し、コール境界を跨いで連続させる
 

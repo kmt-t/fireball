@@ -16,8 +16,7 @@ absent (module not built), `_invoke_trace` falls back to the ctypes path,
 so pysim's plain-Python regression suite runs unmodified either way.
 """
 
-from libc.stdint cimport int64_t, uint32_t, uint64_t, uintptr_t
-from libc.string cimport memcpy
+from libc.stdint cimport uint32_t, uint64_t, uintptr_t
 
 ctypedef void (*trace_fn_t)(void*, void*, void*, uint32_t) noexcept nogil
 ctypedef void (*helper_fn_t)(void*, uint32_t*, void*, uint32_t) noexcept nogil
@@ -171,15 +170,11 @@ _HELPERS[9] = _helper_f64_mul
 _HELPERS[10] = _helper_f64_div
 
 
-def helper_address(unsigned int helper_index):
-    """Return one built-in helper address for a Tier 2 helper table."""
-    assert helper_index < 11
-    return <unsigned long long><uintptr_t>_HELPERS[helper_index]
-
-
 def helper_table_addresses():
     """Return the fixed built-in helper ABI table in slot order."""
-    return tuple(helper_address(index) for index in range(11))
+    return tuple(
+        <unsigned long long><uintptr_t>_HELPERS[index] for index in range(11)
+    )
 
 
 def invoke_trace(

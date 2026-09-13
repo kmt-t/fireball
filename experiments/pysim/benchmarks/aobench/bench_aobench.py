@@ -33,7 +33,7 @@ from wasm_reader import parse
 from x64_jit import TraceCompiler
 
 
-def run_aobench(debug: bool = False) -> dict[str, float]:
+def run_aobench(debug: bool = False) -> dict[str, int | float]:
     WIDTH = 32
     HEIGHT = 16
     AO_SAMPLES = 4
@@ -92,6 +92,10 @@ def run_aobench(debug: bool = False) -> dict[str, float]:
         "t2_rays_per_sec": t2_rays_per_sec,
         "t3_rays_per_sec": t3_rays_per_sec,
         "speedup_ratio": speedup_ratio,
+        "interp_blocks": runtime_engine.stat_interp_steps,
+        "jit_invocations": runtime_engine.stat_jit_invocations,
+        "chain_invocations": runtime_engine.stat_chain_hits,
+        "trace_exits_to_interp": runtime_engine.stat_trace_exits_to_interp,
         "compiled_traces": len(runtime_engine.cache.active.traces),
     }
 
@@ -112,6 +116,10 @@ def main():
         f"  * Tier 3 (Hybrid + JIT):    {res['t3_time_ms']:.2f} ms  ({res['t3_rays_per_sec']:,.0f} Rays / Sec)"
     )
     print(f"  * Measured Speedup:         {res['speedup_ratio']:.2f}x faster")
+    print(
+        f"  * JIT Chained Invocations: {res['chain_invocations']:,} / {res['jit_invocations']:,}"
+        f" ({res['chain_invocations'] / res['jit_invocations'] * 100.0:.1f}%)"
+    )
     print(f"  * Active JIT Traces:        {res['compiled_traces']} compiled traces")
     print("=" * 80)
     print("[PASS] 3D Ambient Occlusion benchmark completed successfully.")

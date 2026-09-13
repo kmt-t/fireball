@@ -54,6 +54,7 @@ TEST_SUITES = [
         TEST_DIR / "tier2_runtime" / "test_logging.py",
     ),
     ("Tier 2 Runtime", "WASM Loader & Segments", TEST_DIR / "tier2_runtime" / "test_loader.py"),
+    ("Tier 2 Runtime", "JIT Candidate Scoring", TEST_DIR / "tier2_runtime" / "test_jit_scoring.py"),
     (
         "Tier 2 Runtime",
         "WASM Interpreter & Instructions",

@@ -20,6 +20,7 @@ for _path in (
 
 from execution_context import WASMContext
 from interop_abi import (
+    NATIVE_STACK_ALIGNMENT_BYTES,
     ConstBufferViewNative,
     ControlStackNative,
     ExecutionContextNative,
@@ -100,15 +101,15 @@ def test_interpreter_and_jit_contexts_share_native_record_type():
 
 
 def test_native_value_stack_owns_the_fixed_storage():
-    assert ctypes.sizeof(ValueStackNative) == 264
-    assert ValueStackNative.size.offset == 256
+    assert ctypes.sizeof(ValueStackNative) == 520
+    assert ValueStackNative.size.offset == 512
     stack = NativeValueStack(capacity=2)
     assert isinstance(stack.native, ValueStackNative)
     assert stack.push_i32(-1)
     assert stack.push_f32(1.5)
     assert not stack.push_back(3)
     assert stack.native.size == 2
-    assert stack.value_ptr().value % 8 == 0
+    assert stack.value_ptr().value % NATIVE_STACK_ALIGNMENT_BYTES == 0
     assert stack.read_i32(0) == -1
     assert stack.read_f32(1) == 1.5
     assert stack.value_ptr().value == ctypes.addressof(stack.native.values)

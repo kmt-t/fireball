@@ -172,6 +172,10 @@ def main():
         f"  * Tier 3 (Hybrid + JIT):              {ao_res['t3_time_ms']:.2f} ms  ({ao_res['t3_rays_per_sec']:,.0f} Rays / Sec)"
     )
     print(f"  * Measured Speedup:                   {ao_res['speedup_ratio']:.2f}x faster")
+    print(
+        f"  * JIT Chained Invocations:            {ao_res['chain_invocations']:,} / "
+        f"{ao_res['jit_invocations']:,} ({ao_res['chain_invocations'] / ao_res['jit_invocations'] * 100.0:.1f}%)"
+    )
     print(f"  * Active JIT Cache Bank Traces:       {ao_res['compiled_traces']} compiled traces")
     print("=" * 80)
     print(f"[PASS] All benchmarks completed successfully in {t_total:.2f} seconds.")

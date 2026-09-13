@@ -9,6 +9,7 @@ from __future__ import annotations
 import bisect
 from collections.abc import Callable
 
+from config import JIT_CARD_SHIFT
 from system_containers import (
     BitView,
     MutableBitStorage,
@@ -49,7 +50,7 @@ class HotspotBitmap:
 
     __slots__ = ("card_shift", "default_func_code_len", "func_storages", "func_tables")
 
-    def __init__(self, card_shift: int = 3, default_func_code_len: int = 64):
+    def __init__(self, card_shift: int = JIT_CARD_SHIFT, default_func_code_len: int = 64):
         self.card_shift = card_shift
         self.default_func_code_len = default_func_code_len
         self.func_storages: list[MutableBitStorage | None] = []
@@ -158,7 +159,7 @@ class BlockCardMask:
 
     __slots__ = ("card_shift", "func_storages", "func_tables")
 
-    def __init__(self, card_shift: int = 3):
+    def __init__(self, card_shift: int = JIT_CARD_SHIFT):
         self.card_shift = card_shift
         self.func_storages: list[MutableBitStorage | None] = []
         self.func_tables: list[BitView | None] = []

@@ -338,8 +338,8 @@ def test_hotspot_06_short_blocks_never_tracked_avoiding_card_aliasing():
     )
     """
     wasm_bytes = bytes(wasmtime.wat2wasm(wat))
-    engine = RuntimeEngine(jit_compiler=PcOnlyCompiler(lambda pc: None), card_shift=3)
-    assert engine.min_trace_bytes == 8
+    engine = RuntimeEngine(jit_compiler=PcOnlyCompiler(lambda pc: None))
+    assert engine.min_trace_bytes == 4
     mod = engine.load_wasm(wasm_bytes)
     h0 = mod.blocks[0].head_pc
     h1 = mod.blocks[1].head_pc
@@ -649,8 +649,8 @@ def test_jitr_backward_branch_block_byte_span_not_disqualified():
         return
     module = parse(wasm_bytes)
     fn_idx = module.export_func_index("sum_to")
-    # Use a compact test card so both deliberately short loop blocks remain
-    # eligible; the production default remains the specification's 3-bit card.
+    # Use the production 4-byte card so both deliberately short loop blocks
+    # remain eligible.
     engine = RuntimeEngine(
         jit_compiler=TraceCompiler(), yield_threshold=8, card_shift=2
     )

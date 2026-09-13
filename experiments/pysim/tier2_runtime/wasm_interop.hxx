@@ -76,15 +76,18 @@ typedef struct fireball_wasm_run_result_native {
 } fireball_wasm_run_result_native;
 
 enum {
-  FIREBALL_NATIVE_VALUE_STACK_CAPACITY = 64,
+  FIREBALL_NATIVE_VALUE_STACK_CAPACITY = 128,
   FIREBALL_NATIVE_CONTROL_STACK_CAPACITY = 32,
+  FIREBALL_NATIVE_STACK_ALIGNMENT_BYTES = sizeof(uint64_t),
 };
 
 typedef struct fireball_value_stack_native {
 #ifdef __cplusplus
-  alignas(8) uint32_t values[FIREBALL_NATIVE_VALUE_STACK_CAPACITY];
+  alignas(FIREBALL_NATIVE_STACK_ALIGNMENT_BYTES)
+      uint32_t values[FIREBALL_NATIVE_VALUE_STACK_CAPACITY];
 #else
-  _Alignas(8) uint32_t values[FIREBALL_NATIVE_VALUE_STACK_CAPACITY];
+  _Alignas(FIREBALL_NATIVE_STACK_ALIGNMENT_BYTES)
+      uint32_t values[FIREBALL_NATIVE_VALUE_STACK_CAPACITY];
 #endif
   uint32_t size;
   uint32_t reserved0;
@@ -136,7 +139,7 @@ static_assert(__is_standard_layout(wasm_run_result_native));
 static_assert(__is_trivially_copyable(wasm_run_result_native));
 static_assert(__is_standard_layout(value_stack_native));
 static_assert(__is_trivially_copyable(value_stack_native));
-static_assert(alignof(value_stack_native) == 8);
+static_assert(alignof(value_stack_native) == FIREBALL_NATIVE_STACK_ALIGNMENT_BYTES);
 static_assert(__is_standard_layout(control_frame_native));
 static_assert(__is_trivially_copyable(control_frame_native));
 static_assert(__is_standard_layout(control_stack_native));
@@ -153,9 +156,9 @@ static_assert(sizeof(wasm_function_view_native) == 24);
 static_assert(sizeof(wasm_module_view_native) == 24);
 static_assert(sizeof(wasm_run_request_native) == 48);
 static_assert(sizeof(wasm_run_result_native) == 24);
-static_assert(sizeof(value_stack_native) == 264);
+static_assert(sizeof(value_stack_native) == 520);
 static_assert(offsetof(value_stack_native, values) == 0);
-static_assert(offsetof(value_stack_native, size) == 256);
+static_assert(offsetof(value_stack_native, size) == 512);
 static_assert(sizeof(control_frame_native) == 16);
 static_assert(sizeof(control_stack_native) == 520);
 static_assert(offsetof(control_stack_native, frames) == 0);

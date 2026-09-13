@@ -50,6 +50,7 @@ from control_flow import (
     opcode_has_attribute,
 )
 from interop_abi import (
+    NATIVE_VALUE_STACK_CAPACITY,
     ExecutionContextNative,
     NativeValueStack,
 )
@@ -271,7 +272,7 @@ class Trap(Exception):
 
 
 FB_CONF_MAX_VALUE_STACK = 64
-FB_CONF_MAX_LOCAL_STACK = 64
+FB_CONF_MAX_LOCAL_STACK = NATIVE_VALUE_STACK_CAPACITY
 
 
 def _encode_public_args(

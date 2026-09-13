@@ -25,8 +25,8 @@ for _p in [
     if _sp not in sys.path:
         sys.path.insert(0, _sp)
 
-from vmmio import VMMIOController
 from scheduler import Scheduler
+from vmmio import VMMIOController
 
 
 class LinearMemoryBenchmark:

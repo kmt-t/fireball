@@ -25,8 +25,9 @@ for _p in [
     if _sp not in sys.path:
         sys.path.insert(0, _sp)
 
-from vmmio import VMMIOController, VmmioStatus
 from scheduler import Scheduler
+
+from vmmio import VMMIOController, VmmioStatus
 
 
 class VMMIOBenchmark:
@@ -58,13 +59,22 @@ class VMMIOBenchmark:
         results = {}
 
         # 2.1 Direct-Mapped TLB Hit (O(1) Folding XOR Hash)
-        # Access the same page repeatedly to guarantee 100% TLB Hit rate
+        # Warm the exact VPN once, then measure only accesses whose lookup must
+        # hit the same direct-mapped slot.  Include counters in the assertion;
+        # timing alone cannot prove that this is a TLB-hit benchmark.
         shm_addr = 0xE000_0010
-        t0 = time.perf_counter()
         vmmio = self.vmmio
+        warm_status, _ = vmmio.access(shm_addr, is_write=False)
+        assert warm_status == VmmioStatus.OK_PHYSICAL
+        hit_count_before = vmmio.tlb_hits
+        miss_count_before = vmmio.tlb_misses
+        t0 = time.perf_counter()
         for _ in range(iterations):
-            _ = vmmio.access(shm_addr, is_write=False)
+            status, _ = vmmio.access(shm_addr, is_write=False)
+            assert status == VmmioStatus.OK_PHYSICAL
         t1 = time.perf_counter()
+        assert vmmio.tlb_hits - hit_count_before == iterations
+        assert vmmio.tlb_misses - miss_count_before == 0
         results["tlb_hit_mops"] = iterations / (t1 - t0) / 1e6
         results["tlb_hit_latency_ns"] = (t1 - t0) / iterations * 1e9
 

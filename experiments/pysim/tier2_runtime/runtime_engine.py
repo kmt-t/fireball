@@ -23,9 +23,11 @@ import os
 import sys
 from collections.abc import Callable
 
+from config import JIT_CARD_SHIFT
 from control_flow import iter_block_ops
 from execution_context import WASMContext
 from interpreter import Interpreter, InterpreterCall
+from jit_scoring import JIT_CANDIDATE_THRESHOLD
 from recovery import Result
 from system_containers import (
     FlatMapView,
@@ -96,6 +98,7 @@ class RuntimeEngine:
         "_virq_interp",
         "bitmap",
         "cache",
+        "candidate_threshold",
         "compile_queue",
         "compile_queue_capacity",
         "control_skip_tree",
@@ -117,8 +120,9 @@ class RuntimeEngine:
         self,
         jit_compiler: object | None = None,
         yield_threshold: int = 16,
-        card_shift: int = 3,
+        card_shift: int = JIT_CARD_SHIFT,
         min_trace_bytes: int | None = None,
+        candidate_threshold: int = JIT_CANDIDATE_THRESHOLD,
         compile_queue_capacity: int = 4,
         block_capacity: int = 64,
         debug: bool = False,
@@ -129,6 +133,8 @@ class RuntimeEngine:
         self.stat_chain_hits: int = 0
         self.stat_trace_exits_to_interp: int = 0
         self.bitmap = HotspotBitmap(card_shift=card_shift)
+        assert candidate_threshold >= 0
+        self.candidate_threshold = candidate_threshold
         self.trackable = BlockCardMask(card_shift=card_shift)
         self.ring = HistoryRing()
         self.cache = JITMultiBufferCache()
@@ -224,7 +230,11 @@ class RuntimeEngine:
         # not re-derived on every dispatch in record_block_head.
         self.trackable.clear()
         for b in module.blocks:
-            if b.next_pc is not None and b.byte_span >= self.min_trace_bytes:
+            if (
+                b.next_pc is not None
+                and b.byte_span >= self.min_trace_bytes
+                and b.jit_score >= self.candidate_threshold
+            ):
                 self.trackable.mark(b.head_pc)
 
     def record_block_head(self, pc: int) -> bool:
@@ -709,6 +719,7 @@ class IntegratedHybridEngine:
         "bitmap",
         "blocks",
         "cache",
+        "candidate_threshold",
         "compilations",
         "compile_queue",
         "compile_queue_capacity",
@@ -730,12 +741,15 @@ class IntegratedHybridEngine:
     def __init__(
         self,
         yield_threshold: int = 4,
-        card_shift: int = 3,
+        card_shift: int = JIT_CARD_SHIFT,
         compiler: object | None = None,
         min_trace_bytes: int | None = None,
+        candidate_threshold: int = JIT_CANDIDATE_THRESHOLD,
         compile_queue_capacity: int = 4,
     ):
         self.bitmap = HotspotBitmap(card_shift=card_shift)
+        assert candidate_threshold >= 0
+        self.candidate_threshold = candidate_threshold
         self.trackable = BlockCardMask(card_shift=card_shift)
         self.history = HistoryRing(capacity=32)
         self.cache = JITMultiBufferCache()
@@ -785,7 +799,11 @@ class IntegratedHybridEngine:
         self.blocks = [(b.head_pc, b) for b in module.blocks]
         self.trackable.clear()
         for b in module.blocks:
-            if b.next_pc is not None and b.byte_span >= self.min_trace_bytes:
+            if (
+                b.next_pc is not None
+                and b.byte_span >= self.min_trace_bytes
+                and b.jit_score >= self.candidate_threshold
+            ):
                 self.trackable.mark(b.head_pc)
 
     @property

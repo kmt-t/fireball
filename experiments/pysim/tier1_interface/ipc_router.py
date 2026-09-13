@@ -15,7 +15,7 @@ from __future__ import annotations
 from collections.abc import Generator, Sequence
 from enum import IntEnum
 
-from logging_interface import LogLevel, Logger
+from logging_interface import Logger, LogLevel
 from memory_interface import MemoryManager, SharedBlock
 from scheduler import Channel, ChannelAction, Scheduler, Task
 from system_containers import FlatMapView, StaticVector

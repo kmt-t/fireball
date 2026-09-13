@@ -24,6 +24,8 @@ from collections.abc import Callable, Iterable, Iterator, Sequence
 from dataclasses import dataclass
 from typing import Generic, TypeVar
 
+from config import JIT_CARD_SHIFT
+
 KeyT = TypeVar("KeyT")
 ValT = TypeVar("ValT")
 T = TypeVar("T")
@@ -744,7 +746,7 @@ def lookup_jit_entry_flatmap(
     card_table: BitView,
     entry_group_bounds: Sequence[int],
     pc: int,
-    card_shift: int = 2,
+    card_shift: int = JIT_CARD_SHIFT,
     group_shift: int = 6,
 ) -> ValT | None:
     """
@@ -771,7 +773,7 @@ def lookup_jit_entry_radix(
     view: RadixBinaryTreeView[ValT],
     card_table: BitView,
     pc: int,
-    card_shift: int = 2,
+    card_shift: int = JIT_CARD_SHIFT,
 ) -> ValT | None:
     """
     JIT entry lookup over a RadixBinaryTreeView, which narrows to its group

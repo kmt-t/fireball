@@ -24,7 +24,7 @@ from exec_memory import ExecutableBuffer
 from jit_abi import JIT_CONTEXT_HELPER_PTR_OFFSET, JIT_CONTEXT_WORD_BYTES
 from jit_cache import JITTrace, JITTraceHeader
 from system_containers import FlatMapView, ReadOnlyFlatMapStorage, StaticVector
-from wasm_module import WASM_LOCAL_SLOT_BYTES, BasicBlock, TraceBlock
+from wasm_module import WASM_LOCAL_SLOT_BYTES, WASM_VALUE_SLOT_BYTES, BasicBlock, TraceBlock
 from wasm_opcodes import (
     DROP,
     F32_ADD,
@@ -256,7 +256,7 @@ def _spill_hardware_stack_to_sp(code: bytearray, widths: StaticVector[int]) -> N
 
     value_count = len(widths)
     for value_index in range(value_count):
-        source_offset = (value_count - value_index - 1) * 8
+        source_offset = (value_count - value_index - 1) * WASM_VALUE_SLOT_BYTES
         destination_offset = sum(widths[index] for index in range(value_index)) * 4
         for word in range(widths[value_index]):
             src = source_offset + word * 4
@@ -277,7 +277,7 @@ def _spill_hardware_stack_to_sp(code: bytearray, widths: StaticVector[int]) -> N
 
 def _discard_hardware_stack(code: bytearray, value_count: int) -> None:
     assert value_count >= 0
-    byte_count = value_count * 8
+    byte_count = value_count * WASM_VALUE_SLOT_BYTES
     if byte_count == 0:
         return
     if byte_count < 128:

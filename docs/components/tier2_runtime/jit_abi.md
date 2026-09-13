@@ -4,7 +4,7 @@
 
 この文書は、Tier 2ランタイムがTier 3 JITへ提供する、複雑な処理をCヘルパーへ委譲するためのABI契約を定義する。JITはプロセス内の関数アドレスを命令列へ埋め込まず、CPSの第1引数 `ctx` が指す実行コンテキストから関数ポインタを読み出す。これにより、コードキャッシュを任意のアドレスへ複製しても同じコードを実行できる。 `{ContextPointerRegister}` `{PositionIndependentCode}`
 
-PythonシミュレータとC++実装の共有正本は [`wasm_interop.hxx`](experiments/pysim/tier2_runtime/wasm_interop.hxx) とし、Python側は [`interop_abi.py`](experiments/pysim/tier2_runtime/interop_abi.py) の `ctypes.Structure` で同じフィールド順・サイズ・オフセットを検査する。`InterpreterContext` と `WASMContext` は同じ `ExecutionContextNative` を実行コンテキストとして保持し、インタープリタ単独実行とインタープリタからJITへの遷移で `ctx` のABI型を変えない。Native構造体は所有権を持たず、コード・関数表・結果配列は `address + length` の非所有ビューとして渡す。したがって、ネイティブ呼び出しが終了するまで、バッファと記述子の寿命をPython側で保持する。 `{ExecutionContext_Layout}` `{META_ZeroCostAbstraction}`
+`execution_context` と関連するビュー型のC++ ABIは、固定フィールド順・サイズ・オフセットを持つ標準レイアウト構造体として定義する。インタープリタ単独実行とインタープリタからJITへの遷移で `ctx` のABI型を変えない。構造体は所有権を持たず、コード・関数表・結果配列は `address + length` の非所有ビューとして渡すため、呼び出し側が呼び出し完了まで対象領域の寿命を保証する。 `{ExecutionContext_Layout}` `{META_ZeroCostAbstraction}`
 
 ## コンテキスト拡張
 
@@ -17,11 +17,11 @@ PythonシミュレータとC++実装の共有正本は [`wasm_interop.hxx`](expe
 
 `jit_helper_ptrs` は実行時に設定される命令別の関数ポインタ配列であり、JITコードのリロケーション対象ではない。実行する委譲命令に対応する要素が0であってはならない。JITはコンパイル時に決めた要素をコンテキスト相対で直接ロードし、インタープリタはこの配列を参照しない。 `{PositionIndependentCode}`
 
-`fireball_execution_context_native` は、32bitのゲスト状態フィールド15個、予約領域4バイト、および11個のJIT専用64bit helperアドレスからなる152バイトの標準レイアウトである。`fireball_const_buffer_view_native`、`fireball_wasm_function_view_native`、`fireball_wasm_module_view_native` は、Python/C++間でWASMコードと関数メタデータを渡すための非所有Native構造体である。文字列、`std::vector`、Pythonオブジェクト、仮想関数、例外はこの境界に含めない。 `{ExecutionContext_Layout}` `{META_NoStdVector}`
+`fireball_execution_context_native` は、32bitのゲスト状態フィールド15個、予約領域4バイト、および11個のJIT専用64bit helperアドレスからなる152バイトの標準レイアウトである。`fireball_const_buffer_view_native`、`fireball_wasm_function_view_native`、`fireball_wasm_module_view_native` は、WASMコードと関数メタデータを渡す非所有の標準レイアウト構造体である。文字列、`std::vector`、仮想関数、例外はこの境界に含めない。 `{ExecutionContext_Layout}` `{META_NoStdVector}`
 
-実行時の `OperandStack`、`LocalStack`、`control_frame` も Python コンテナではなく固定容量の Native レコードを実体とする。値スタックは8バイト境界に配置した raw 32-bit word 配列で、WASM の i32/f32 は1スロット、i64/f64 は2スロットを使用する。ローカルは1個あたり16バイトの固定スロットとし、JIT/インタープリタとも `slot * 16` からアドレスを直接計算する。したがってローカルオフセット表を保持・参照する必要はなく、i64/f64の有効ワードも自然に8バイト境界へ置かれる。値の型タグは記録せず、型を知っているインタープリタ/JIT ハンドラが対応する読み書きメソッドを選択する。制御フレームは固定長の4ワードレコード配列として保持する。 `{META_NoStdVector}`
+実行時の `OperandStack`、`LocalStack`、`control_frame` は、固定容量の構造体と配列として配置する。値スタックは `WASM_VALUE_SLOT_BYTES` の境界に配置した raw 32-bit word 配列で、WASM の i32/f32 は1スロット、i64/f64 は2スロットを使用する。ローカルは `WASM_LOCAL_ALIGNMENT_BYTES` 固定スロットとし、JIT/インタープリタとも `slot * WASM_LOCAL_ALIGNMENT_BYTES` からアドレスを直接計算する。したがってローカルオフセット表を保持・参照する必要はなく、i64/f64の有効ワードも自然に境界へ置かれる。値の型タグは記録せず、型を知っているハンドラが対応する読み書きメソッドを選択する。制御フレームは固定長の4ワードレコード配列として保持する。 `{META_NoStdVector}`
 
-関数の引数・戻り値バッファも同じ原則で扱う。`WasmRunRequestNative` と `WasmRunResultNative` はバッファポインタと個数だけを渡し、戻り値型や型タグを保持しない。呼び出し側が関数シグネチャを知っているため、必要なスロット幅と解釈は呼び出し側で決める。インタープリタのPython向け `call()` が型付き値へ変換する処理は、このNative ABIの外側にあるアダプタ処理である。
+関数の引数・戻り値バッファも同じ原則で扱う。`WasmRunRequestNative` と `WasmRunResultNative` はバッファポインタと個数だけを渡し、戻り値型や型タグを保持しない。呼び出し側が関数シグネチャを知っているため、必要なスロット幅と解釈は呼び出し側で決める。
 
 ## 委譲シグネチャ
 

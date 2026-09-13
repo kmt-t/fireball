@@ -16,6 +16,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 
+from jit_scoring import OpcodeBenefitTable
 from system_containers import (
     FlatMapView,
     RadixBinaryTreeView,
@@ -43,6 +44,7 @@ class BasicBlock:
     loops_to: int | None = None
     frame_depth: int = 0
     byte_span: int = 0
+    jit_score: int = 0
 
 
 @dataclass
@@ -72,7 +74,9 @@ I64 = "i64"
 F32 = "f32"
 F64 = "f64"
 WASM_RAW_WORD_BYTES = 4
-WASM_LOCAL_SLOT_BYTES = 16
+WASM_VALUE_SLOT_BYTES = 8
+WASM_LOCAL_ALIGNMENT_BYTES = WASM_VALUE_SLOT_BYTES
+WASM_LOCAL_SLOT_BYTES = WASM_LOCAL_ALIGNMENT_BYTES
 WASM_LOCAL_SLOT_WORDS = WASM_LOCAL_SLOT_BYTES // WASM_RAW_WORD_BYTES
 assert WASM_LOCAL_SLOT_BYTES % WASM_RAW_WORD_BYTES == 0
 VALTYPE_BYTES: FlatMapView[int, str] = FlatMapView(
@@ -177,6 +181,7 @@ class Module:
     control_skip_storage: ReadOnlyRadixBinaryTreeStorage[int] | None = None
     control_skip_tree: RadixBinaryTreeView[int] | None = None
     blocks: list[BasicBlock] = field(default_factory=list)
+    opcode_benefit_table: OpcodeBenefitTable | None = None
 
     def __post_init__(self) -> None:
         # Directly constructed concept modules are already complete at
@@ -258,7 +263,10 @@ class Module:
 
     def build_basic_block_index(self) -> None:
         """Extracts basic blocks and builds ReadOnlyRadixBinaryTreeStorage indexes on the loader side."""
-        from control_flow import build_control_skip_storage, extract_basic_blocks
+        from control_flow import build_control_skip_storage, extract_basic_blocks, iter_block_ops
+        from jit_scoring import score_opcodes
+
+        self.opcode_benefit_table = OpcodeBenefitTable()
 
         n_imports = len(self.imports)
         try:
@@ -279,6 +287,9 @@ class Module:
                 extracted = extract_basic_blocks(fn.code, func_index=func_idx)
                 for head_pc, next_pc, loops_to, frame_depth, byte_span in extracted:
                     if byte_span > 0:
+                        opcodes = (opcode for opcode, _ in iter_block_ops(
+                            fn.code, head_pc & 0xFFFF, byte_span
+                        ))
                         all_blocks.append(
                             BasicBlock(
                                 head_pc=head_pc,
@@ -286,6 +297,7 @@ class Module:
                                 loops_to=loops_to,
                                 frame_depth=frame_depth,
                                 byte_span=byte_span,
+                                jit_score=score_opcodes(opcodes, self.opcode_benefit_table),
                             )
                         )
             except Exception:

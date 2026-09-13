@@ -41,10 +41,10 @@ from hal_dispatch import (
     Timer,
     UartTransport,
 )
+from scheduler import Scheduler
 from system import (
     System,
 )
-from scheduler import Scheduler
 from system_containers import (
     FlatMapView,
 )

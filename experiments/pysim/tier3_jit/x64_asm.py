@@ -16,6 +16,8 @@ from __future__ import annotations
 
 from system_containers import FlatMapView
 
+X64_STACK_ALIGNMENT_BYTES = 16
+
 # name -> (needs_rex_extension_bit, low_3_bits_of_the_register_number)
 # A sorted flat_map_view<std::string_view, ...> (system_containers.md
 # explicitly names string_view as a valid Key type), never a dict -- this
@@ -93,7 +95,7 @@ def mov_load_rsp_disp32(dst: str, disp: int) -> bytes:
 
 
 def and_rsp_imm8(imm8: int) -> bytes:
-    """and rsp, imm8 (sign-extended) -- used as `and rsp, -16` to align down."""
+    """and rsp, imm8 (sign-extended) -- used with the ABI alignment constant."""
     return bytes((0x48, 0x83, 0xE4, imm8 & 0xFF))
 
 

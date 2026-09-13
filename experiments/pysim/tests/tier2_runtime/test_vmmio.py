@@ -37,12 +37,12 @@ from ipc_router import (
     ScopeKind,
     pack_key32,
 )
+from scheduler import Scheduler
 from vmmio import (
     TrapCode,
     VMMIOController,
     VmmioStatus,
 )
-from scheduler import Scheduler
 
 
 def wat_to_wasm(wat_text: str) -> bytes:

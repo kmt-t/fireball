@@ -551,7 +551,7 @@ sequenceDiagram
 | 利用コンポーネント | 型 | 用途 | 絞り込みに用いる粗索引 |
 | :--- | :--- | :--- | :--- |
 | JIT エントリ索引 (`jit_runtime_entry`) | `radix_binary_tree_view` | WASM PC からネイティブコードオフセットへの変換 | Radix Table (基数プレフィックス $O(1)$) |
-| JIT カードマーキング (`jit_runtime_hotspot`) | `bit_view<2>` | 関数ごと 8バイト単位カードの 2-bit 実行状態 | なし ($O(1)$ 直接添字アクセス: `func_code_offset >> 3`) |
+| JIT カードマーキング (`jit_runtime_hotspot`) | `bit_view<2>` | 関数ごと 4バイト単位カードの 2-bit 実行状態 | なし ($O(1)$ 直接添字アクセス: `func_code_offset >> 2`) |
 | vMMIO PTE表 (`runtime_vmmio`) | `flat_map_view` | 仮想ページ番号 (VPN) から PTE への変換 | ファンクションコード (FC) による Tier 区分 |
 | vMMIO 許可アドレス (`system_config_details`) | `flat_set_view` | 物理アドレスが許可範囲に属するかの判定 | なし（`FB_CONF_VMMIO_ALLOWED_ADDRS` で有界） |
 | IPCルータ (`ipc_router`) | `flat_map_view` | サービスURI からチャネルIDへの解決 | URI スキーマ・ドメインの前方一致 |

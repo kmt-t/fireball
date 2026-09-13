@@ -13,9 +13,11 @@ import struct
 from collections.abc import Iterable, Iterator
 
 from jit_abi import JIT_CONTEXT_HELPER_PTR_OFFSET, JIT_CONTEXT_SIZE_BYTES, JIT_HELPER_COUNT
+from wasm_module import WASM_VALUE_SLOT_BYTES
 
-NATIVE_VALUE_STACK_CAPACITY = 64
+NATIVE_VALUE_STACK_CAPACITY = 128
 NATIVE_CONTROL_STACK_CAPACITY = 32
+NATIVE_STACK_ALIGNMENT_BYTES = WASM_VALUE_SLOT_BYTES
 
 
 class ExecutionContextNative(ctypes.Structure):
@@ -152,7 +154,7 @@ class NativeValueStack:
         self._capacity = capacity
         self._native = ValueStackNative()
         self._values_address = ctypes.addressof(self._native) + ValueStackNative.values.offset
-        assert self._values_address % 8 == 0
+        assert self._values_address % NATIVE_STACK_ALIGNMENT_BYTES == 0
 
     @property
     def capacity(self) -> int:
@@ -438,8 +440,8 @@ assert ctypes.sizeof(WasmFunctionViewNative) == 24
 assert ctypes.sizeof(WasmModuleViewNative) == 24
 assert ctypes.sizeof(WasmRunRequestNative) == 48
 assert ctypes.sizeof(WasmRunResultNative) == 24
-assert ctypes.sizeof(ValueStackNative) == 264
-assert ValueStackNative.size.offset == 256
+assert ctypes.sizeof(ValueStackNative) == 520
+assert ValueStackNative.size.offset == 512
 assert ctypes.sizeof(ControlFrameNative) == 16
 assert ctypes.sizeof(ControlStackNative) == 520
 assert ControlStackNative.size.offset == 512

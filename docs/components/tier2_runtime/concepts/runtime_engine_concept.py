@@ -95,14 +95,14 @@ class BitView:
 
 
 class HotspotBitmap:
-    """Per-Function 2-bit state per CARD (8 bytes per card) backed by BitView<2>.
+    """Per-Function 2-bit state per CARD (4 bytes per card) backed by BitView<2>.
     `func_tables` is a static list of BitViews indexed by `func_idx` (0 <= func_idx < num_functions).
     Each function's BitView is sized strictly to its code length at module load time:
     card_count = (func_code_len + (1 << card_shift) - 1) >> card_shift
     storage = bytearray((card_count + 3) // 4)
     """
 
-    def __init__(self, card_shift: int = 3, default_func_code_len: int = 64):
+    def __init__(self, card_shift: int = 2, default_func_code_len: int = 64):
         self.card_shift = card_shift
         self.default_func_code_len = default_func_code_len
         # Static array of BitView indexed by func_idx
@@ -239,12 +239,13 @@ class OpcodeBenefitTable:
         "i32.ge_u": 6,
         "i32.clz": 6,
         "i32.ctz": 6,
-        "i32.popcnt": 6,
         "local.get": 6,
         "local.set": 6,
         "local.tee": 6,
         "i32.const": 6,
         "i64.const": 6,
+        "f32.const": 6,
+        "f64.const": 6,
         # Memory access, shifts & control branch: +10..11 instrs saved -> +5
         "i32.load": 5,
         "i32.load8_s": 5,
@@ -270,6 +271,18 @@ class OpcodeBenefitTable:
         "return": 4,
         "drop": 4,
         "nop": 4,
+        # Direct C helper tail jumps: positive net gain after the boundary cost.
+        "i64.add": 3,
+        "i64.sub": 3,
+        "i64.mul": 3,
+        "f32.add": 3,
+        "f32.sub": 3,
+        "f32.mul": 3,
+        "f32.div": 3,
+        "f64.add": 3,
+        "f64.sub": 3,
+        "f64.mul": 3,
+        "f64.div": 3,
         # Syntax delimiters: 0 instrs saved (inlined to trace header, 0 bytes) -> 0
         "block": 0,
         "loop": 0,
@@ -281,6 +294,12 @@ class OpcodeBenefitTable:
         "br_table": -1,
         # OS memory expansion & copy/fill: -4 instrs saved -> -2 (0xE)
         "memory.grow": -2,
+        # Unsupported/trapping operations: maximum penalty.
+        "i32.popcnt": -8,
+        "i64.div_s": -8,
+        "i64.div_u": -8,
+        "i64.rem_s": -8,
+        "i64.rem_u": -8,
         # Trap & unbacked: -16 instrs saved -> -8 (0x8)
         "unreachable": -8,
     }
@@ -317,6 +336,8 @@ class OpcodeBenefitTable:
         "memory.grow": 0x40,
         "i32.const": 0x41,
         "i64.const": 0x42,
+        "f32.const": 0x43,
+        "f64.const": 0x44,
         "i32.eqz": 0x45,
         "i32.eq": 0x46,
         "i32.ne": 0x47,
@@ -346,6 +367,21 @@ class OpcodeBenefitTable:
         "i32.shr_u": 0x76,
         "i32.rotl": 0x77,
         "i32.rotr": 0x78,
+        "i64.add": 0x7C,
+        "i64.sub": 0x7D,
+        "i64.mul": 0x7E,
+        "i64.div_s": 0x7F,
+        "i64.div_u": 0x80,
+        "i64.rem_s": 0x81,
+        "i64.rem_u": 0x82,
+        "f32.add": 0x92,
+        "f32.sub": 0x93,
+        "f32.mul": 0x94,
+        "f32.div": 0x95,
+        "f64.add": 0xA0,
+        "f64.sub": 0xA1,
+        "f64.mul": 0xA2,
+        "f64.div": 0xA3,
     }
 
     def __init__(self):
@@ -385,7 +421,7 @@ class JITCandidateBitmap:
     Cards with bit 0 allow the interpreter to skip HotspotBitmap.touch() and history tracking entirely.
     """
 
-    def __init__(self, card_shift: int = 3, default_func_code_len: int = 64):
+    def __init__(self, card_shift: int = 2, default_func_code_len: int = 64):
         self.card_shift = card_shift
         self.default_func_code_len = default_func_code_len
         self.func_tables: list[BitView | None] = []
@@ -891,7 +927,7 @@ class IntegratedRuntimeEngine:
     def __init__(
         self,
         yield_threshold: int = 8,
-        card_shift: int = 3,
+        card_shift: int = 2,
         min_trace_bytes: int | None = None,
         candidate_threshold: int = 9,
     ):
@@ -1446,6 +1482,10 @@ def test_opcode_benefit_table_int4_decode() -> None:
     assert table.get_score("br") == 5
     assert table.get_score("br_if") == 5
     assert table.get_score("i32.div_s") == 4
+    assert table.get_score("drop") == 4
+    assert table.get_score("f32.add") == 3
+    assert table.get_score("f64.div") == 3
+    assert table.get_score("i32.popcnt") == -8
     assert table.get_score("return") == 4
     assert table.get_score("nop") == 4
     assert table.get_score("block") == 0, "syntax delimiters are neutral (0)"
@@ -1460,7 +1500,7 @@ def test_opcode_benefit_table_int4_decode() -> None:
 def test_bb_scoring_and_candidate_bitmap() -> None:
     """Verifies static block scoring and JIT candidate bitmap marking with threshold 9."""
     table = OpcodeBenefitTable()
-    cand_bm = JITCandidateBitmap(card_shift=3)
+    cand_bm = JITCandidateBitmap(card_shift=2)
 
     # 1. High benefit arithmetic block: local.get(6) + i32.const(6) + i32.add(7) = 19 >= 9
     bb_hot = BasicBlock(
@@ -1492,7 +1532,7 @@ def test_bb_scoring_and_candidate_bitmap() -> None:
 
 def test_interpreter_bypasses_touch_for_non_candidate() -> None:
     """Verifies that the interpreter bypasses HotspotBitmap.touch() for non-candidate blocks."""
-    eng = IntegratedRuntimeEngine(card_shift=3, candidate_threshold=9)
+    eng = IntegratedRuntimeEngine(card_shift=2, candidate_threshold=9)
     ctx = WASMContext()
 
     # Register a cold (non-candidate) block at 0x200

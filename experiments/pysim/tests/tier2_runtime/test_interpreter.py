@@ -92,8 +92,8 @@ def test_intp_03_control_frame_enum_and_opcode_attribute_table():
     assert not opcode_has_attribute(I32_ADD, OpcodeAttribute.BASIC_BLOCK_BOUNDARY)
 
 
-def test_intp_04_locals_use_fixed_sixteen_byte_slots():
-    """Each logical local uses a fixed 16-byte slot; wide values are 8-byte aligned."""
+def test_intp_04_locals_use_fixed_eight_byte_slots():
+    """Each logical local uses a fixed 8-byte slot; wide values stay aligned."""
     function = Function(
         type_index=0,
         locals_extra=(I32, I64),
@@ -106,7 +106,7 @@ def test_intp_04_locals_use_fixed_sixteen_byte_slots():
 
     assert function.param_packed_slot_count_cache == 5
     assert function.local_widths_cache == (1, 2, 2, 1, 2)
-    assert function.local_slot_count_cache == 20
+    assert function.local_slot_count_cache == 10
     assert Interpreter(module).call(0, [7, 42, 3.5]) == [42]
 
 
@@ -534,8 +534,8 @@ def test_intp_70_to_72_direct_bytecode_execution():
     assert frame.control_map is not None
     assert frame.control_map is module.functions[0].control_map
     assert context.call_frame_stack[-1] is frame
-    assert context.local_offset == 8
-    assert len(context.local_stack) == 8
+    assert context.local_offset == 4
+    assert len(context.local_stack) == 4
     context.end_call_frame(frame)
     assert context.local_offset == 0
     assert len(context.local_stack) == 0
@@ -568,7 +568,7 @@ if __name__ == "__main__":
 
 if __name__ == "__main__":
     test_intp_01_02_cps_handlers_and_dispatch_table()
-    test_intp_04_locals_use_fixed_sixteen_byte_slots()
+    test_intp_04_locals_use_fixed_eight_byte_slots()
     test_wasm_01_to_06_unsupported_features_rejected()
     test_wasm_10_to_15_control_flow_and_calls()
     test_wasm_20_21_drop_and_select()

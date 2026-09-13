@@ -23,7 +23,7 @@ JIT ランタイム管理は、WASM PC とネイティブコードの紐付け�
     - **下位 16-bit (`bytecode_offset`)**: 当該関数のバイトコード内オフセット（0 〜 65,535 バイト）。
   - **役割**: 複数関数を含む WASM モジュールにおいて、HotspotBitmap、HistoryRing、JITTraceHeader、JITCacheLookup、Trace Chaining 全域で関数間の PC 衝突を防止し、一意な追跡とディスパッチを保証する。
 - **`JitEntryIndex`**: WASMオフセットとネイティブコードの対応付け、および 4 段高速検索ロジックをカプセル化した主要クラス。
-- **カードマーキング表 (Card Marking Table)**: 関数ごとのコード領域を 8 バイト単位のカードで分割管理する 2 ビット状態表。密ビュー `fireball::bit_view<2>` として参照（1 バイトあたり 4 カード = 32 バイト分のコード領域）。`card_idx = bytecode_offset >> FB_CONF_JIT_CARD_SHIFT`（デフォルト値: `3`）。
+- **カードマーキング表 (Card Marking Table)**: 関数ごとのコード領域を 4 バイト単位のカードで分割管理する 2 ビット状態表。密ビュー `fireball::bit_view<2>` として参照（1 バイトあたり 4 カード = 16 バイト分のコード領域）。`card_idx = bytecode_offset >> FB_CONF_JIT_CARD_SHIFT`（デフォルト値: `2`）。
   - `0: UNEXECUTED` (未実行)
   - `1: EXECUTED` (実行済み)
   - `2: HOT` (コンパイル要求中)
@@ -157,9 +157,9 @@ stateDiagram-v2
 
 Eviction resets to `UNEXECUTED`, not `EXECUTED`（`jit_runtime_test_spec.md` TEST-JITR-04）。
 
-### 4.3 トレース実行時の分岐解決とインタープリタ復帰（pysim参照実装）
+### 4.3 トレース実行時の分岐解決とインタープリタ復帰
 <!-- traceability: {JIT_RuntimeAPI_Fallback} {DirectBytecodeExecution} -->
-`{TraceBoundaryInvariant}` が定める制御フロー・コール境界のインタープリタ委譲不変条件を、pysim 参照実装がどのように満たしているかを示す。モジュールロード時に一度だけ行う静的解析で、各基本ブロックに次の付帯情報を持たせておくことで、実行時の分岐解決を定数時間で行える。
+`{TraceBoundaryInvariant}` が定める制御フロー・コール境界のインタープリタ委譲不変条件を示す。モジュールロード時に一度だけ行う静的解析で、各基本ブロックに次の付帯情報を持たせておくことで、実行時の分岐解決を定数時間で行える。
 
 | 付帯情報 | 意味 |
 | :--- | :--- |

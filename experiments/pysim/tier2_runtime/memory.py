@@ -15,8 +15,8 @@ from enum import Enum, auto
 from types import TracebackType
 from typing import Generic, TypeVar
 
-from scheduler import Scheduler
 from memory_interface import PageMappingCallbacks
+from scheduler import Scheduler
 from system_containers import MutableFlatMapStorage, StaticVector
 
 T = TypeVar("T")

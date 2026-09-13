@@ -24,6 +24,7 @@ from system_containers import (
     ReadOnlyRadixBinaryTreeStorage,
     StaticVector,
 )
+from wasm_module import WASM_RAW_WORD_BYTES, WASM_VALUE_SLOT_BYTES
 
 # Configuration Constants
 FB_CONF_MAX_MODULES = 4
@@ -114,7 +115,7 @@ class BumpAllocator:
         self.storage = bytearray(capacity)
         self.offset = 0
 
-    def allocate(self, size: int, alignment: int = 4) -> int:
+    def allocate(self, size: int, alignment: int = WASM_RAW_WORD_BYTES) -> int:
         aligned_offset = (self.offset + (alignment - 1)) & ~(alignment - 1)
         if aligned_offset + size > self.capacity:
             raise MemoryError("BumpAllocator capacity exceeded")
@@ -392,6 +393,8 @@ class ModuleView:
     """
 
     __slots__ = (
+        "allocator_end",
+        "allocator_start",
         "code_offsets",
         "entity_offset_storage",
         "entity_offset_tree",
@@ -413,8 +416,6 @@ class ModuleView:
         "start_func_idx",
         "tables",
         "types",
-        "allocator_start",
-        "allocator_end",
     )
 
     def __init__(self, module_name: str, rom_binary: bytes | bytearray | memoryview):
@@ -579,7 +580,7 @@ class WasmLoader:
         try:
             # Reserve fixed metadata scratch so transactional rollback and LIFO
             # unload exercise a real allocator mutation ({META_BumpAllocator}).
-            self.allocator.allocate(64, alignment=8)
+            self.allocator.allocate(64, alignment=WASM_VALUE_SLOT_BYTES)
             view = ModuleView(module_name, wasm_binary)
             view.allocator_start = watermark
             view.allocator_end = self.allocator.save()

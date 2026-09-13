@@ -113,7 +113,7 @@ Fireball の実行コアは、以下の 6 つの物理メカニズムによっ�
 
 ### 3.2 Pillar 2: 4段直接 JIT 検索パイプライン (4-Stage Direct JIT Lookup Pipeline)
 <!-- traceability: {SimpleJITArchitecture} {JIT_MultiBuffer_Cache} {FlatViewNarrowing} {META_FlatMapIndexed} {META_BinarySearch} {DirectMappedJIT4} -->
-- **Stage 1 (カードマーキング表: `bit_view<2>`) [$O(1)$]**: バイトコード位置に対し `card_idx = bytecode_offset >> FB_CONF_JIT_CARD_SHIFT`（`card_shift = 3`、8バイト単位）で 2-bit 状態表を参照し、`COMPILED` でなければ即座にインタープリタ継続（Fast Exit）。
+- **Stage 1 (カードマーキング表: `bit_view<2>`) [$O(1)$]**: バイトコード位置に対し `card_idx = bytecode_offset >> FB_CONF_JIT_CARD_SHIFT`（`card_shift = 2`、4バイト単位）で 2-bit 状態表を参照し、`COMPILED` でなければ即座にインタープリタ継続（Fast Exit）。
 - **Stage 2 (Direct-Mapped Folding XOR キャッシュ: 4 entries) [$O(1)$]**: カードマーク済みの場合は 4 エントリのダイレクトマップキャッシュ（`{DirectMappedJIT4}`）を `UnifiedPC` の3段折りたたみ（32→16→8→4 bit）に4段目のXORを加えた2-bitスロットで参照し、ヒット時は即座にトレース実行アドレスを返却して探索を終了。
 - **Stage 3 & 4 (基数二分探索木索引: `radix_binary_tree_view`) [$O(1) + O(\log n)$]**:
   - キャッシュミスの際、関数間衝突を防ぐ `UnifiedPC`（`(func_index << 16) | bytecode_offset`）に対し、最下位ビットの変動を上位に分散させる `radix_key = bswap32(pc)` を算出。

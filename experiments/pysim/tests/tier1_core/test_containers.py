@@ -191,7 +191,7 @@ def test_cont_08_radix_binary_tree_view_coarse_radix_lookup():
 
 
 def test_cont_09_jit_entry_lookup_card_table_prefilter():
-    """TEST-CONT-09: lookup_jit_entry performs O(1) Card Marking check before searching (card_shift=3, 8B/card)."""
+    """TEST-CONT-09: lookup_jit_entry performs O(1) Card Marking check before searching (explicit 8B/card case)."""
     card_storage = bytearray(4)
     card_table = BitView(card_storage, bits=2, origin=0, count=16)
     keys = [0x0010, 0x0020]

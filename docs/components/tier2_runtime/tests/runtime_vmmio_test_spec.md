@@ -49,6 +49,7 @@ Bit31によるRAM/vMMIO高速分岐、64件のFlatMap PTE + 32エントリDirect
 | TEST-VMMIO-16 | FlatMap登録件数と検索 | 32件のSHMページを登録 | 全件アクセス | 全件が正しく解決される。ホットな作業集合(8件)への繰り返しアクセスは100%ヒット | `vmmio_concept.py` `test_flatmap_pte_registration_and_tlb_caching` |
 | TEST-VMMIO-17 | TLBヒット時も権限チェックは必ず実施 | TLBにキャッシュ済みのPTE | 読み出し専用ページへ書き込みアクセス | TLBヒットであってもインライン権限チェックで`TRAP_ACCESS_VIOLATION`となる | {META_RestrictedPhysicalAccess}, `vmmio_concept.py` `test_permission_checks_enforced_even_on_tlb_hit` |
 | TEST-VMMIO-18 | Direct-Mapped TLB スロット衝突と置換（Eviction） | 同一ハッシュスロットに衝突する2つのVPN | Aアクセス（充填）→ Bアクセス（置換）→ 再度Aアクセス | Aの再アクセス時にミスが発生し、スロットが無条件上書きされる | `vmmio_concept.py` `test_tlb_slot_conflict_eviction` |
+| TEST-VMMIO-19 | インタープリタのsyscall doorbell | SYSCTLページとsyscall vector tableが登録済み | `REG_SYSCALL_ID`、6引数、`REG_SYS_CONTROL=4`をWASM `store`で設定し、`REG_SYSCALL_ARG0`を`load` | vMMIOのPTE/TLB・権限検査を通過してsyscallが実行され、戻り値が`REG_SYSCALL_ARG0`へ反映される。未登録IDは`NOSYS` | `runtime_vmmio.md`, `runtime_interpreter_test_spec.md` GOTCHA-INTP-21 |
 
 ### 3段階セキュリティゲート・SHMマッピング保護 ({OwnershipTransfer})
 

@@ -21,6 +21,7 @@ from __future__ import annotations
 import os
 import struct
 import time
+from collections.abc import Sequence
 from dataclasses import dataclass
 from enum import IntEnum
 from typing import TYPE_CHECKING, Callable
@@ -55,8 +56,8 @@ from vmmio import (
     FC_STATIC_DEVICE,
     TrapCode,
     VmmioAddress,
-    VmmioStatus,
     VMMIOController,
+    VmmioStatus,
 )
 from wasm_module import BasicBlock
 
@@ -124,6 +125,9 @@ class WasiErrno(IntEnum):
     NOTCAPABLE = 76
 
 
+SyscallHandler = Callable[[int, int, int, int, int, int], int]
+
+
 # runtime_vmmio.md §4.3-§4.5: real static-device addresses and register
 # offsets (not invented -- copied from the spec's own register tables).
 SYSCTL_BASE = 0xC000_0000
@@ -133,6 +137,10 @@ _STATIC_DEVICE_PAGE_MASK = 0xFFFF_F000
 REG_SYS_CONTROL = 0x00
 REG_SYS_STATUS = 0x04
 REG_IRQ_FLAGS = 0x08
+REG_SYSCALL_ID = 0x10
+REG_SYSCALL_CMD = 0x14
+REG_SYSCALL_ARG0 = 0x18
+REG_SYSCALL_ARG5 = 0x2C
 REG_VDMA_SRC = 0x00
 REG_VDMA_DST = 0x04
 REG_VDMA_COUNT = 0x08
@@ -222,7 +230,10 @@ class System:
         self.sysctl_regs = bytearray(0x30)
         self.ipcr_regs = bytearray(0x10)
         self.vdma_regs = bytearray(0x10)
-        self.vmmio.map_static_device(vpn=SYSCTL_BASE >> 12)
+        self.vmmio.map_static_device(
+            vpn=SYSCTL_BASE >> 12,
+            value_handler=self._sysctl_vmmio_access,
+        )
         self.vmmio.map_static_device(vpn=IPCR_BASE >> 12)
         self.vmmio.map_static_device(vpn=VDMA_BASE >> 12)
         # PASSTHROUGH (FC=15) test window. Real PASSTHROUGH pages map to
@@ -376,6 +387,13 @@ class System:
             self._syscall_radix_table,
             radix_shift=radix_shift,
         )
+        syscall_vector_table: StaticVector[SyscallHandler | None] = StaticVector.of(
+            (None,) * 256, capacity=256
+        )
+        for syscall_id, handler in zip(keys, values, strict=True):
+            assert syscall_id < len(syscall_vector_table)
+            syscall_vector_table[syscall_id] = handler
+        self._syscall_vector_table = tuple(syscall_vector_table)
 
     def _on_idle(self) -> None:
         """COOS idle_hook dispatch: flushes deferred logs and compiles queued JIT traces."""
@@ -391,6 +409,13 @@ class System:
         self.scheduler.detach(task)
         self.scheduler.current_task = task
         return task
+
+    def register_syscall_vector_table(
+        self, vector_table: Sequence[SyscallHandler | None]
+    ) -> None:
+        """Replace the host-side syscall vector used by the SYSCTL doorbell."""
+        assert len(vector_table) <= 4096
+        self._syscall_vector_table = tuple(vector_table)
 
     def bus_master(self) -> BusMaster:
         return BusMaster(self.pool)
@@ -490,6 +515,33 @@ class System:
         else:
             return WasiErrno.INVAL
         return WasiErrno.SUCCESS
+
+    def _sysctl_vmmio_access(self, offset: int, value: int, is_write: bool) -> int:
+        """Serve interpreter load/store traffic for the SYSCTL syscall doorbell."""
+        assert offset % 4 == 0
+        assert offset + 4 <= len(self.sysctl_regs)
+        if not is_write:
+            return struct.unpack_from("<I", self.sysctl_regs, offset)[0]
+
+        value &= 0xFFFF_FFFF
+        struct.pack_into("<I", self.sysctl_regs, offset, value)
+        if offset != REG_SYS_CONTROL or value != SYS_CONTROL_SYSCALL:
+            if offset == REG_SYS_CONTROL:
+                return int(self._apply_sys_control(value))
+            return 0
+
+        syscall_id = struct.unpack_from("<I", self.sysctl_regs, REG_SYSCALL_ID)[0]
+        args = tuple(
+            struct.unpack_from("<I", self.sysctl_regs, REG_SYSCALL_ARG0 + index * 4)[0]
+            for index in range(6)
+        )
+        result = int(WasiErrno.NOSYS)
+        if syscall_id < len(self._syscall_vector_table):
+            handler = self._syscall_vector_table[syscall_id]
+            if handler is not None:
+                result = handler(*args)
+        struct.pack_into("<I", self.sysctl_regs, REG_SYSCALL_ARG0, result & 0xFFFF_FFFF)
+        return int(result)
 
     # --- vMMIO Generic (real FlatMap/TLB dispatch + real backing bytes) -
     def _trap_to_errno(self, status: VmmioStatus) -> WasiErrno | None:

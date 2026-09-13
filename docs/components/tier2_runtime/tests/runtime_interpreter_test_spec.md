@@ -116,6 +116,7 @@
 | GOTCHA-INTP-18 | 実行時引数のセットアップと外部資源の注入は呼び出し側の責務。インタープリタがJIT専用の初期化を行わない | 本番実行とテスト実行で別の初期化経路が生まれ、JITだけ異なる状態を参照する | `memory`、host function、vMMIO等は明示的に呼び出し側から渡し、テスト専用の起動処理を製品コードへ入れない | 方針反映・要実装境界監査 |
 | GOTCHA-INTP-19 | 小さい`ControlMap`キャッシュは4エントリ固定、キーは32bit値をXORで4bitへ折りたたむ | 過大なキャッシュ、異なるハッシュ式、未定義の置換で局所性と決定性が崩れる | `temp = v ^ (v >> 16)`、`temp ^= temp >> 8`、`temp ^= temp >> 4`、`temp ^= temp >> 2`、`temp &= 0x3`を使い、キャッシュ挿入失敗は`assert`する | 実装済み・既存テスト済み |
 | GOTCHA-INTP-20 | テスト専用のインタープリタ起動・検査コードを本番インタープリタへ混ぜない | 本番コードがテスト都合のAPIや特殊セットアップを持ち、Tier境界とROM/RAM責務が崩れる | テスト側が`Interpreter.start()`／`step()`を使って状態を組み立て、本番側は実行責務だけを持つ | 方針反映・要配置監査 |
+| GOTCHA-INTP-21 | インタープリタのvMMIO syscall経路は`libfireball`と独立した登録済みvector tableを使う | WASMがSYSCTLのsyscall doorbellを`load/store`する | `REG_SYSCALL_ID`、6引数、`REG_SYS_CONTROL=4`を設定して戻り値を読む | vMMIOのPTE/TLB・権限検査後に登録済みsyscallが実行され、結果が`REG_SYSCALL_ARG0`へ返る。未登録IDは`NOSYS`であり、ゲストアダプタを本番インタープリタへimportしない | `runtime_vmmio.md`、`runtime_syscall.md` |
 
 ## 3. テスト検証実績と網羅状況
 

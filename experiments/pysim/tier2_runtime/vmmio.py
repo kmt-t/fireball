@@ -9,17 +9,19 @@ vMMIO FlatMap Page Table & Direct-Mapped TLB simulation.
   power-of-two constraint on guest_ram_size) — traps to the interpreter on OOB
 - PTE permission check (VALID/READ/WRITE/EXEC + Owner ID) on every access,
   including on TLB hit — the TLB only skips the table lookup, never the check
+- Static-device value accesses can dispatch through a registered syscall vector
+  table and return the handler's u32 result to the interpreter
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from enum import IntEnum
 from typing import TYPE_CHECKING
 
-from system_containers import MutableFlatMapStorage, StaticVector
 from scheduler import Scheduler
+from system_containers import MutableFlatMapStorage, StaticVector
 
 if TYPE_CHECKING:
     from memory_interface import MemoryManager
@@ -41,6 +43,9 @@ class VmmioStatus(IntEnum):
 
 
 TrapCode = VmmioStatus
+
+
+VmmioVectorHandler = Callable[[int, int, bool], int | None]
 
 
 # Function Codes (bits[31:28]) — see runtime_vmmio.md "アドレス分解の対応関係"
@@ -81,7 +86,7 @@ class VmmioAddress:
 class StaticDevicePTE:
     """FC=12 (Static Device). Holds permission flags and optional handler."""
 
-    __slots__ = ("cacheable", "handler", "read", "write")
+    __slots__ = ("cacheable", "handler", "read", "value_handler", "write")
 
     def __init__(
         self,
@@ -89,8 +94,10 @@ class StaticDevicePTE:
         read: bool = True,
         write: bool = True,
         cacheable: bool = False,
+        value_handler: VmmioVectorHandler | None = None,
     ):
         self.handler = handler
+        self.value_handler = value_handler
         self.read = read
         self.write = write
         self.cacheable = cacheable
@@ -135,7 +142,15 @@ class VMMIOController:
         TLB hits provide O(1) hot-path access, while TLB misses look up the FlatMap.
     """
 
-    __slots__ = ("guest_ram_size", "ptes", "tlb", "tlb_hits", "tlb_misses", "scheduler")
+    __slots__ = (
+        "guest_ram_size",
+        "ptes",
+        "scheduler",
+        "syscall_vector_table",
+        "tlb",
+        "tlb_hits",
+        "tlb_misses",
+    )
 
     def __init__(self, guest_ram_size: int = 8192, *, scheduler: Scheduler):  # FB_CONF_GUEST_RAM_SIZE
 
@@ -156,6 +171,7 @@ class VMMIOController:
         )
         self.tlb_hits = 0
         self.tlb_misses = 0
+        self.syscall_vector_table: tuple[VmmioVectorHandler | None, ...] = ()
 
     # --- Static & Dynamic PTE Registration (FlatMap) ---
     def map_static_device(
@@ -164,11 +180,25 @@ class VMMIOController:
         handler: Callable[[int, int, bool], None] | None = None,
         read: bool = True,
         write: bool = True,
+        value_handler: VmmioVectorHandler | None = None,
     ) -> None:
         """Registers a Tier 2 static device page (FC=12) into FlatMap."""
         assert self.ptes.insert(
-            vpn, StaticDevicePTE(handler=handler, read=read, write=write)
+            vpn,
+            StaticDevicePTE(
+                handler=handler,
+                read=read,
+                write=write,
+                value_handler=value_handler,
+            ),
         ), "vMMIO PTE table capacity exceeded"
+
+    def register_vector_table(
+        self, vector_table: Sequence[VmmioVectorHandler | None]
+    ) -> None:
+        """Register the interpreter-visible static-vMMIO syscall vector table."""
+        assert len(vector_table) <= 4096
+        self.syscall_vector_table = tuple(vector_table)
 
     def map_shm_page(self, vpn: int, phys_page: int, owner_id: int = 0) -> None:
         """Registers a Tier 3 SHM page (FC=14) into FlatMap."""
@@ -283,12 +313,15 @@ class VMMIOController:
         slot.pte = pte
         return pte
 
-    def access(self, raw_addr: int, is_write: bool) -> tuple[VmmioStatus, int]:
+    def access(
+        self, raw_addr: int, is_write: bool, value: int | None = None
+    ) -> tuple[VmmioStatus, int]:
         """
         Full dispatch: RAM bypass -> TLB/FlatMap -> permission check (always,
         TLB hit or not) -> syscall dispatch or physical access.
-        Returns (status, physical_address). The second field is zero unless
-        the status is OK_PHYSICAL.
+        Returns (status, physical_address_or_syscall_result). A value supplied
+        for a static-device access is dispatched to its registered handler and
+        returned in the second field.
         """
 
         current_task_id = self.scheduler.current_task_id
@@ -324,6 +357,21 @@ class VMMIOController:
                 return (TrapCode.ACCESS_VIOLATION, 0)
             if not is_write and not pte.read:
                 return (TrapCode.ACCESS_VIOLATION, 0)
+            if value is not None and pte.value_handler is not None:
+                result = pte.value_handler(
+                    addr.offset(), value & 0xFFFF_FFFF, is_write
+                )
+                return (VmmioStatus.OK_SYSCALL, 0 if result is None else result)
+            vector_id = addr.syscall_metadata()
+            if (
+                value is not None
+                and vector_id < len(self.syscall_vector_table)
+                and self.syscall_vector_table[vector_id] is not None
+            ):
+                vector_handler = self.syscall_vector_table[vector_id]
+                assert vector_handler is not None
+                result = vector_handler(addr.offset(), value & 0xFFFF_FFFF, is_write)
+                return (VmmioStatus.OK_SYSCALL, 0 if result is None else result)
             if pte.handler is not None:
                 pte.handler(addr.syscall_metadata(), addr.offset(), is_write)
             return (VmmioStatus.OK_SYSCALL, 0)

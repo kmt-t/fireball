@@ -349,6 +349,8 @@ PASSTHROUGH アドレス変換:
 | `0x28` | `REG_SYSCALL_ARG4` | R/W | 第5引数 |
 | `0x2C` | `REG_SYSCALL_ARG5` | R/W | 第6引数 |
 
+インタープリタは `SYSCTL_BASE` の静的 vMMIO ページへ通常の WASM `load/store` を行うことで、この syscall doorbell を使用できる。`REG_SYSCALL_ID`、`REG_SYSCALL_ARG0`〜`REG_SYSCALL_ARG5`を設定し、`REG_SYS_CONTROL`へ `4`（`Syscall`）を書き込むと、ランタイムが登録済みの syscall vector table の該当エントリを現在タスクの権限で呼び出す。戻り値は `REG_SYSCALL_ARG0` に u32 として格納される。未登録IDは `NOSYS` として返し、ベクタテーブルはゲスト側 `libfireball` とは独立したホスト／インタープリタ側の登録物とする。`REG_SYSCALL_CMD` は将来のサブコマンド拡張用に予約する。 `{UnifiedAccessModel}`
+
 ### 4.5 VDMA レジスタ詳細 (FC=12)
 <!-- traceability: {VDMA} -->
 | オフセット | レジスタ名 | R/W | 説明 |

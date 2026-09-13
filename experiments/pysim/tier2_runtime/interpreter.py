@@ -425,6 +425,8 @@ class CallFrame:
     """
 
     __slots__ = (
+        "_frames",
+        "_locals",
         "boundary_loops_to",
         "boundary_next_pc",
         "code",
@@ -433,12 +435,10 @@ class CallFrame:
         "control_map",
         "env",
         "frame_offset",
-        "_frames",
         "func_index",
         "has_nested_calls",
         "local_count",
         "local_i32_only",
-        "_locals",
         "local_offsets",
         "local_slot_count",
         "values",
@@ -658,6 +658,13 @@ class Interpreter:
 
     def detach_debugger(self) -> None:
         self.debugger = None
+
+    def register_vector_table(
+        self, vector_table: Sequence[Callable[[int, int, bool], int | None] | None]
+    ) -> None:
+        """Register host syscall vectors used by static-vMMIO accesses."""
+        assert self.vmmio is not None
+        self.vmmio.register_vector_table(vector_table)
 
     def flush_jit_cache(self) -> None:
         """
@@ -1363,9 +1370,11 @@ def _vmmio_load(
         return 0, Trap(
             f"memory access out of bounds at addr={addr:#x} (no vMMIO configured)"
         )
-    status, phys_addr = env.vmmio.access(addr, is_write=False)
+    status, phys_addr = env.vmmio.access(addr, is_write=False, value=0)
     if status > VmmioStatus.OK_PHYSICAL:
         return 0, Trap(status)
+    if status == VmmioStatus.OK_SYSCALL:
+        return phys_addr, None
     if status == VmmioStatus.OK_PHYSICAL:
         assert env.phys_mem is not None
         assert phys_addr + width <= len(env.phys_mem)
@@ -1379,7 +1388,11 @@ def _vmmio_load(
 def _vmmio_store(env: ExecEnv, addr: int, val_bytes: bytes) -> Trap | None:
     if env.vmmio is None:
         return Trap(f"memory access out of bounds at addr={addr:#x} (no vMMIO configured)")
-    status, phys_addr = env.vmmio.access(addr, is_write=True)
+    status, phys_addr = env.vmmio.access(
+        addr,
+        is_write=True,
+        value=int.from_bytes(val_bytes, "little"),
+    )
     if status > VmmioStatus.OK_PHYSICAL:
         return Trap(status)
     if status == VmmioStatus.OK_PHYSICAL:

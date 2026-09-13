@@ -34,7 +34,9 @@ for _p in [
         sys.path.insert(0, _sp)
 
 from interpreter import Interpreter, InterpreterContext, Trap
+from scheduler import Scheduler
 from system_containers import StaticVector
+from vmmio import VMMIOController
 from wasm_reader import WasmUnsupportedFeatureError, parse
 
 
@@ -138,6 +140,64 @@ def test_intp_06_memory_traps_are_handler_results():
     assert stepped.finished
     assert stepped.results is None
     assert isinstance(stepped.trap, Trap)
+
+
+def test_intp_07_vmmio_syscall_doorbell_and_vector_table():
+    """Interpreter load/store reaches host syscalls through static vMMIO."""
+    from system import SYS_CONTROL_SYSCALL, SYSCTL_BASE, System
+
+    sysv = System()
+    sysv.start_runtime_task(name="interpreter_runtime_task")
+    try:
+        module = parse(
+            wat_to_wasm(
+                f"""(module
+                  (memory 1)
+                  (func (result i32)
+                    i32.const {SYSCTL_BASE + 0x10}
+                    i32.const 2
+                    i32.store
+                    i32.const {SYSCTL_BASE + 0x00}
+                    i32.const {SYS_CONTROL_SYSCALL}
+                    i32.store
+                    i32.const {SYSCTL_BASE + 0x18}
+                    i32.load))"""
+            )
+        )
+        interp = Interpreter(
+            module,
+            memory=bytearray(65536),
+            vmmio=sysv.vmmio,
+            phys_mem=sysv.phys_mem,
+        )
+        result = interp.call(0, [])
+        assert result[0] == 0
+        assert sysv.halted
+        assert sysv.sysctl_regs[0x18:0x1C] == b"\x00\x00\x00\x00"
+    finally:
+        sysv.shutdown()
+
+    scheduler = Scheduler()
+    task_id = scheduler.spawn("vector_task")
+    scheduler.current_task = scheduler.get_task(task_id)
+    ctrl = VMMIOController(guest_ram_size=65536, scheduler=scheduler)
+    vector_page = (0xC000_0000 | (3 << 16))
+    ctrl.map_static_device(vector_page >> 12)
+    interp_module = parse(
+        wat_to_wasm(
+            f"""(module
+              (memory 1)
+              (func (result i32)
+                i32.const {vector_page}
+                i32.load))"""
+        )
+    )
+    interp = Interpreter(interp_module, memory=bytearray(65536), vmmio=ctrl)
+    interp.register_vector_table(
+        (None, None, None, lambda offset, value, is_write: 0x1234)
+    )
+    result = interp.call(0, [])
+    assert result[0] == 0x1234
 
 
 def test_wasm_01_to_06_unsupported_features_rejected():

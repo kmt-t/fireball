@@ -22,6 +22,8 @@
 アクセスパスB: guest fireball_call(id, args) → host代理 → vMMIO → PTEマッピング解決 → 直接物理アクセス
 ```
 
+インタープリタは、`libfireball` のゲストアダプタを経由せず、SYSCTL の syscall doorbell レジスタを通常の vMMIO `load/store` として操作できる。`REG_SYSCALL_ID` と6個の引数を設定して `REG_SYS_CONTROL=4` を書き込み、戻り値を `REG_SYSCALL_ARG0` から読み出す。実行先はランタイムが登録する syscall vector table であり、`fireball_call` と同じID・WASI `errno_t` の戻り値規約を共有する。
+
 vMMIOアドレス空間（Stage 2/3）に対しては、どちらのパスも最終的に統一された vMMIO ページマッピング機構（PTE / TLB）を通る。アクセス権限のない領域（他タスク所有の共有メモリや未割当領域）は仮想アドレス空間から物理的に **unmap（マッピング解除）** されており、PTE 不在として未登録ページトラップ（`TRAP_UNREGISTERED_PAGE`）により即座に遮断される。セキュリティ境界は vMMIO のマッピング存在性により 1 箇所に統一される（ゲストRAMのFastAddressCheckとは独立した別ゲート）。 `{UnifiedAccessModel}`
 
 ## 4. `fireball_call` WIT定義

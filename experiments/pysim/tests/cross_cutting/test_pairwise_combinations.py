@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import csv
 import sys
+from itertools import combinations
 from pathlib import Path
 
 _TEST_FILE = Path(__file__).resolve()
@@ -27,33 +29,11 @@ for _p in [
     if _sp not in sys.path:
         sys.path.insert(0, _sp)
 
-import sys
-from pathlib import Path
-
 """
 test_pairwise_combinations.py: Comprehensive 2-Way All-Pairs Combinatorial Test Suite.
 Verifies that all 26 orthogonal test cases (covering 100% of the 288 2-way factor interactions)
 execute seamlessly and preserve all architectural invariants across Tier 1, Tier 2, and Tier 3.
 """
-
-import sys
-from pathlib import Path
-
-_PYSIM_DIR = Path(__file__).resolve().parent
-while not (_PYSIM_DIR / "tier1_core").is_dir():
-    _PYSIM_DIR = _PYSIM_DIR.parent
-
-for _p in [
-    _PYSIM_DIR,
-    _PYSIM_DIR / "tier1_core",
-    _PYSIM_DIR / "tier1_interface",
-    _PYSIM_DIR / "tier2_runtime",
-    _PYSIM_DIR / "tier3_jit",
-    _PYSIM_DIR / "tier3_platform",
-]:
-    _sp = str(_p)
-    if _sp not in sys.path:
-        sys.path.insert(0, _sp)
 
 import wasmtime
 from debugger import DebuggerManager
@@ -66,43 +46,55 @@ from wasm_reader import parse
 from x64_jit import TraceCompiler
 
 PAIRWISE_CASES = [
-    # (ID, engine, cache, mem_width, storage, host_call, scheduler, debugger)
-    ("TEST-PAIR-01", "hybrid", "cold", "8bit", "ram", "wasi_console", "noint", "detached"),
-    ("TEST-PAIR-02", "jit", "evict", "8bit", "globals", "ipc", "yield", "inspect"),
-    ("TEST-PAIR-03", "interp", "warm", "32bit", "locals", "none", "yield", "detached"),
-    ("TEST-PAIR-04", "hybrid", "evict", "16bit", "locals", "wasi_vfs", "multi", "active"),
-    ("TEST-PAIR-05", "jit", "warm", "grow", "shm", "hal", "noint", "active"),
-    ("TEST-PAIR-06", "interp", "flush", "16bit", "shm", "wasi_console", "multi", "inspect"),
-    ("TEST-PAIR-07", "hybrid", "cold", "grow", "globals", "none", "multi", "inspect"),
-    ("TEST-PAIR-08", "jit", "flush", "16bit", "ram", "none", "yield", "active"),
-    ("TEST-PAIR-09", "jit", "evict", "32bit", "ram", "hal", "multi", "detached"),
-    ("TEST-PAIR-10", "interp", "flush", "grow", "locals", "ipc", "noint", "detached"),
-    ("TEST-PAIR-11", "hybrid", "warm", "32bit", "globals", "wasi_vfs", "noint", "inspect"),
-    ("TEST-PAIR-12", "interp", "cold", "32bit", "shm", "wasi_vfs", "yield", "active"),
-    ("TEST-PAIR-13", "interp", "flush", "8bit", "locals", "hal", "multi", "inspect"),
-    (
-        "TEST-PAIR-14",
-        "interp",
-        "evict",
-        "grow",
-        "globals",
-        "wasi_console",
-        "yield",
-        "detached",
-    ),
-    ("TEST-PAIR-15", "hybrid", "warm", "16bit", "ram", "ipc", "multi", "active"),
-    ("TEST-PAIR-16", "hybrid", "evict", "16bit", "shm", "hal", "yield", "detached"),
-    ("TEST-PAIR-17", "hybrid", "flush", "16bit", "globals", "hal", "noint", "active"),
-    ("TEST-PAIR-18", "hybrid", "evict", "8bit", "shm", "none", "noint", "active"),
-    ("TEST-PAIR-19", "jit", "cold", "grow", "locals", "wasi_console", "noint", "active"),
-    ("TEST-PAIR-20", "jit", "evict", "grow", "ram", "wasi_vfs", "noint", "detached"),
-    ("TEST-PAIR-21", "interp", "flush", "8bit", "ram", "wasi_vfs", "multi", "inspect"),
-    ("TEST-PAIR-22", "hybrid", "cold", "16bit", "shm", "ipc", "multi", "detached"),
-    ("TEST-PAIR-23", "jit", "warm", "32bit", "shm", "wasi_console", "multi", "active"),
-    ("TEST-PAIR-24", "jit", "flush", "32bit", "shm", "ipc", "noint", "active"),
-    ("TEST-PAIR-25", "hybrid", "cold", "grow", "globals", "hal", "yield", "active"),
-    ("TEST-PAIR-26", "hybrid", "warm", "8bit", "locals", "wasi_vfs", "multi", "active"),
+    # (engine, cache, mem_width, storage, host_call, scheduler, debugger)
+    ("hybrid", "cold", "8bit", "ram", "wasi_console", "noint", "detached"),
+    ("jit", "evict", "8bit", "globals", "ipc", "yield", "inspect"),
+    ("interp", "warm", "32bit", "locals", "none", "yield", "detached"),
+    ("hybrid", "evict", "16bit", "locals", "wasi_vfs", "multi", "active"),
+    ("jit", "warm", "grow", "shm", "hal", "noint", "active"),
+    ("interp", "flush", "16bit", "shm", "wasi_console", "multi", "inspect"),
+    ("hybrid", "cold", "grow", "globals", "none", "multi", "inspect"),
+    ("jit", "flush", "16bit", "ram", "none", "yield", "active"),
+    ("jit", "evict", "32bit", "ram", "hal", "multi", "detached"),
+    ("interp", "flush", "grow", "locals", "ipc", "noint", "detached"),
+    ("hybrid", "warm", "32bit", "globals", "wasi_vfs", "noint", "inspect"),
+    ("interp", "cold", "32bit", "shm", "wasi_vfs", "yield", "active"),
+    ("interp", "flush", "8bit", "locals", "hal", "multi", "inspect"),
+    ("interp", "evict", "grow", "globals", "wasi_console", "yield", "detached"),
+    ("hybrid", "warm", "16bit", "ram", "ipc", "multi", "active"),
+    ("hybrid", "evict", "16bit", "shm", "hal", "yield", "detached"),
+    ("hybrid", "flush", "16bit", "globals", "hal", "noint", "active"),
+    ("hybrid", "evict", "8bit", "shm", "none", "noint", "active"),
+    ("jit", "cold", "grow", "locals", "wasi_console", "noint", "active"),
+    ("jit", "evict", "grow", "ram", "wasi_vfs", "noint", "detached"),
+    ("interp", "flush", "8bit", "ram", "wasi_vfs", "multi", "inspect"),
+    ("hybrid", "cold", "16bit", "shm", "ipc", "multi", "detached"),
+    ("jit", "warm", "32bit", "shm", "wasi_console", "multi", "active"),
+    ("jit", "flush", "32bit", "shm", "ipc", "noint", "active"),
+    ("hybrid", "cold", "grow", "globals", "hal", "yield", "active"),
+    ("hybrid", "warm", "8bit", "locals", "wasi_vfs", "multi", "active"),
 ]
+
+
+def pairwise_case_id(case_number: int) -> str:
+    return f"TEST-PAIR-{case_number:02d}"
+
+
+def _load_factor_levels() -> tuple[tuple[str, ...], ...]:
+    factor_csv = _REPO_ROOT / "docs" / "specs" / "tests" / "pairwise_factors.csv"
+    levels: list[list[str]] = []
+    factor_ids: list[str] = []
+    with factor_csv.open(newline="", encoding="utf-8") as stream:
+        for row in csv.DictReader(stream):
+            factor_id = row["factor_id"]
+            if not factor_ids or factor_ids[-1] != factor_id:
+                factor_ids.append(factor_id)
+                levels.append([])
+            levels[-1].append(row["level"])
+    return tuple(tuple(factor_levels) for factor_levels in levels)
+
+
+PAIRWISE_FACTORS = _load_factor_levels()
 
 WAT_TEMPLATE = """
 (module
@@ -140,9 +132,8 @@ from hal_dispatch import ARG_BUFFER_HANDLE, ARG_LENGTH, ARG_OFFSET, WasiIpcCmd
 from wasi_dummy_fs import WasiDummyContext
 
 
-def run_single_pairwise_case(case_tuple: tuple) -> None:
+def run_single_pairwise_case(case_id: str, case_tuple: tuple[str, ...]) -> None:
     (
-        case_id,
         engine_mode,
         cache_mode,
         mem_width,
@@ -257,21 +248,31 @@ def run_single_pairwise_case(case_tuple: tuple) -> None:
 
 
 def test_all_pairwise_combinations():
-    factor_count = len(PAIRWISE_CASES[0]) - 1
+    factor_count = len(PAIRWISE_FACTORS)
+    assert all(len(case) == factor_count for case in PAIRWISE_CASES)
     covered_pairs = {
-        (left, right, case[left + 1], case[right + 1])
+        (left, right, case[left], case[right])
         for case in PAIRWISE_CASES
-        for left in range(factor_count)
-        for right in range(left + 1, factor_count)
+        for left, right in combinations(range(factor_count), 2)
     }
-    assert len(covered_pairs) == 288, (
-        f"pairwise coverage incomplete: {len(covered_pairs)} of 288 combinations"
+    expected_pairs = sum(
+        len(PAIRWISE_FACTORS[left]) * len(PAIRWISE_FACTORS[right])
+        for left, right in combinations(range(factor_count), 2)
+    )
+    assert len(covered_pairs) == expected_pairs, (
+        f"pairwise coverage incomplete: {len(covered_pairs)} of {expected_pairs} combinations"
     )
     print(f"[*] Executing {len(PAIRWISE_CASES)} All-Pairs Combinatorial Test Cases...")
-    for case_tuple in PAIRWISE_CASES:
-        case_id = case_tuple[0]
-        run_single_pairwise_case(case_tuple)
-        print(f"    [PASS] {case_id}: {case_tuple[1:]}")
+    expected_case_ids = tuple(
+        pairwise_case_id(case_number) for case_number in range(1, len(PAIRWISE_CASES) + 1)
+    )
+    executed_case_ids: list[str] = []
+    for case_number, case_tuple in enumerate(PAIRWISE_CASES, start=1):
+        case_id = pairwise_case_id(case_number)
+        run_single_pairwise_case(case_id, case_tuple)
+        executed_case_ids.append(case_id)
+        print(f"    [PASS] {case_id}: {case_tuple}")
+    assert tuple(executed_case_ids) == expected_case_ids
     print(f"[PASS] All {len(PAIRWISE_CASES)} Pairwise Combinations passed with 100% 2-way interaction coverage.")
 
 

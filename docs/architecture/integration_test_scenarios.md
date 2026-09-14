@@ -27,26 +27,26 @@
 | **Tier 1 Core** | [`os_scheduler.md`](docs/components/tier1_core/os_scheduler.md) | Fuel / `yield_every` 境界中断、DIRECT_SWITCH | Scenario 6, 9 |
 | **Tier 1 Core** | [`system_config.md`](docs/components/tier1_core/system_config.md) | システム静的定数、スタック・RAM容量制約 | Scenario 1, 10 |
 | **Tier 1 Core** | [`system_containers.md`](docs/components/tier1_core/system_containers.md) | `RadixBinaryTreeView` (bswap32), `FlatMapView`, `RingBuffer` | Scenario 1, 4, 5, 9 |
-| **Tier 1 Interface** | [`interface_wit.md`](docs/components/tier1_interface/interface_wit.md) | 公開WIT、URI Resolver、型シグネチャ整合 | Scenario 2, 11 |
+| **Tier 1 Interface** | [`interface_wit.md`](docs/components/tier1_interface/interface_wit.md) | 公開WIT、URI Resolver、型シグネチャ整合 | Scenario 2, 11, 12 |
 | | [`ipc_router.md`](docs/components/tier1_interface/ipc_router.md) | 3段階ルーティング、RBAC、Zero-Copy 所有権移譲 | Scenario 9 |
-| | [`system_service.md`](docs/components/tier1_interface/system_service.md) | システムサービス呼び出し、WASI トランスポート | Scenario 2, 11 |
+| | [`system_service.md`](docs/components/tier1_interface/system_service.md) | システムサービス呼び出し、WASI トランスポート | Scenario 2, 11, 12 |
 | **Tier 2 Runtime** | [`runtime_vsoc.md`](docs/components/tier2_runtime/runtime_vsoc.md) | 統合 ExecEnv、モジュールリンク、共有メモリ | Scenario 1, 4, 6, 8 |
 | | [`runtime_loader.md`](docs/components/tier2_runtime/runtime_loader.md) | WASM バイナリパース、Active Data/Elem セグメント | Scenario 1, 8 |
-| | [`runtime_interpreter.md`](docs/components/tier2_runtime/runtime_interpreter.md) | CPS 4引数ディスパッチ、全幅メモリ、深い再帰、制御フレーム | Scenario 1〜11 |
+| | [`runtime_interpreter.md`](docs/components/tier2_runtime/runtime_interpreter.md) | CPS 4引数ディスパッチ、全幅メモリ、深い再帰、制御フレーム | Scenario 1〜12 |
 | | [`runtime_vmmio.md`](docs/components/tier2_runtime/runtime_vmmio.md) | Bit 31 RAM Bypass、FlatMap PTE、TLB[32]、仮想デバイス | Scenario 10 |
 | | [`debug_manager.md`](docs/components/tier2_runtime/debug_manager.md) | GDB RSP TCP ソケット接続、ブレークポイント、レジスタ/メモリ改変 | Scenario 7, 8 |
 | | [`runtime_memory.md`](docs/components/tier2_runtime/runtime_memory.md) | リニアメモリページ拡張（`memory.grow`）、MPU 領域保護 | Scenario 1, 4, 8, 10 |
 | | [`runtime_logging.md`](docs/components/tier2_runtime/runtime_logging.md) | 構造化ロギング、LogDictionary、UART 出力 | Scenario 9 |
-| | [`runtime_syscall.md`](docs/components/tier2_runtime/runtime_syscall.md) | `fireball_call` ABI、syscallディスパッチ、ゲスト境界検証 | Scenario 2, 10, 11 |
-| | [`hal_dispatch.md`](docs/components/tier2_runtime/hal_dispatch.md) | WASI親和性のあるURI、バッファ、ストリーム、クロック、ポーリングIF | Scenario 2, 11 |
-| **Tier 3 Platform** | [`libfireball.md`](docs/components/tier3_platform/libfireball.md) | WASI Preview1からFireball公開IFへのゲスト側変換 | Scenario 2, 11 |
-| **Tier 3 Platform** | [`platform_driver.md`](docs/components/tier3_platform/platform_driver.md) | GPIO, I2C, SPI, Timer, StreamTransport | Scenario 2, 7, 9, 11 |
+| | [`runtime_syscall.md`](docs/components/tier2_runtime/runtime_syscall.md) | `fireball_call` ABI、syscallディスパッチ、ゲスト境界検証 | Scenario 2, 10, 11, 12 |
+| | [`hal_dispatch.md`](docs/components/tier2_runtime/hal_dispatch.md) | WASI親和性のあるURI、バッファ、ストリーム、クロック、ポーリングIF | Scenario 2, 11, 12 |
+| **Tier 3 Platform** | [`libfireball.md`](docs/components/tier3_platform/libfireball.md) | WASI Preview1からFireball公開IFへのゲスト側変換 | Scenario 2, 11, 12 |
+| **Tier 3 Platform** | [`platform_driver.md`](docs/components/tier3_platform/platform_driver.md) | GPIO, I2C, SPI, Timer, StreamTransport | Scenario 2, 7, 9, 11, 12 |
 | **Tier 3 JIT** | [`jit_compiler.md`](docs/components/tier3_jit/jit_compiler.md) | Copy-and-Patch JIT 生成、PIC トレース、差分検証 | Scenario 4, 5, 8 |
 | | [`jit_runtime.md`](docs/components/tier3_jit/jit_runtime.md) | 3面キャッシュ代謝、2-bit Card Marking、UnifiedPC + bswap32 | Scenario 4, 5 |
 
 ### 1.3 仕様キーワード・不変条件カバレッジ追跡表 (Requirements Traceability Matrix: RTM)
 
-各コンポーネント設計書に定義されている仕様キーワード、アーキテクチャ不変条件（Invariants）、およびエッジケース要件に対する結合テスト（Scenario 1〜11）の実動網羅状況：
+各コンポーネント設計書に定義されている仕様キーワード、アーキテクチャ不変条件（Invariants）、およびエッジケース要件に対する結合テスト（Scenario 1〜12）の実動網羅状況：
 
 | 仕様キーワード / 不変条件 | 定義元設計書 | 仕様上の定義・要件 | カバーテスト ID | 実装実証 |
 | :--- | :--- | :--- | :--- | :---: |
@@ -273,15 +273,27 @@
 
 ---
 
+### シナリオ 12: WASI 0.3p Hierarchical URI Resolver & IPC Commands
+
+- **対象コンポーネント**: `interface_wit`, `hal_dispatch`, `runtime_syscall`, `libfireball`, `platform_driver`
+- **参照実装スクリプト (Reference Script)**: [`scenario12_wasi03p_uri_resolver.py`](experiments/pysim/scenarios/scenario12_wasi03p_uri_resolver.py)
+- **検証シナリオ**:
+  - 階層型 URI と WASI 0.3p エイリアスの解決。
+  - 標準入出力・Timer ドライバの能力照会と未対応コマンドの拒否。
+  - HAL 固定バッファを用いたストリーム書き込みと Timer コマンドの IPC 処理。
+  - WASI 0.1p の URI 解決・クロック処理への委譲。
+
+---
+
 ## 3. 実装検証環境と実証実績
 
 本書に定義された結合テストシナリオは、Fireball ハイパーバイザの本番実装および参照実装に対する共通の受入基準（Acceptance Criteria）として機能する。
 
 ### 3.1 参照実装（pysim）による検証実績
 
-Python 製の参照シミュレータ環境（`experiments/pysim`）を用いて全 11 シナリオの実動検証が完了している。
+ Python 製の参照シミュレータ環境（`experiments/pysim`）を用いて全 12 シナリオの実動検証が完了している。
 
-- **全 11 シナリオ**: **11/11 PASSED** (約 6.3 秒)
+- **全 12 シナリオ**: **12/12 PASSED**
 - **全 18 コンポーネント 100% カバレッジ**: Tier 1 Core、Tier 1 Interface、Tier 2 Runtime、Tier 3 Platform & JIT の全コンポーネントを実動検証。
 - **完全差分検証**: 全シナリオにおいて、純粋インタープリタ実行と JIT 実行の出力がバイト単位・値単位で 100% 一致。
 - **HAL & WASI 完全スタック**: 標準入出力ストリーム / Timer ダミードライバおよび WASI In-Memory VFS / Random / Clock が完全実動。

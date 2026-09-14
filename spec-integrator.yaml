@@ -69,8 +69,29 @@ benchmark_verification:
   tag: "{VERIFY_BENCHMARK}"
 
 obligation:
-  require_full_coverage: false
-  stale_is_error: false
+  require_full_coverage: true
+  stale_is_error: true
+
+verification_matrix:
+  enabled: true
+  strict: true
+  document: "docs/architecture/verification_factor_matrix.md"
+  component_root: "docs/components"
+  factor_csv: "docs/specs/tests/pairwise_factors.csv"
+  scenario_dir: "experiments/pysim/scenarios"
+  scenario_runner: "experiments/pysim/scenarios/run_all.py"
+  unit_runner: "experiments/pysim/tests/run_all.py"
+  pairwise_test: "experiments/pysim/tests/cross_cutting/test_pairwise_combinations.py"
+  expected:
+    component_specs: 22
+    concept_files: 17
+    formal_models: 17
+    test_specs: 21
+    pysim_unit_suites: 24
+    scenarios: 12
+    pairwise_factors: 7
+    pairwise_cases: 26
+    pairwise_interactions: 288
 
 consistency:
   enabled: true

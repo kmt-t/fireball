@@ -1,6 +1,6 @@
 """
 Fireball Full Component Integration Test Suite Runner.
-Executes all 11 integration test scenarios end-to-end against genuine WASM bytecode.
+Executes all 12 integration test scenarios end-to-end against genuine WASM bytecode.
 """
 
 import subprocess
@@ -72,6 +72,10 @@ SCENARIOS = [
     (
         "Scenario 11: HAL & WASI Dummy Drivers",
         SCENARIO_DIR / "scenario11_hal_and_wasi_drivers.py",
+    ),
+    (
+        "Scenario 12: WASI 0.3p URI Resolver",
+        SCENARIO_DIR / "scenario12_wasi03p_uri_resolver.py",
     ),
 ]
 

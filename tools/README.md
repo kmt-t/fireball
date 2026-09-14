@@ -18,7 +18,7 @@ pip install -r requirements.txt
 
 ## 1. ツール・スクリプト一覧 (Tool Architecture)
 
-Fireball のツール体系は以下の 10 の標準コマンド群で構成されています。ドキュメント検証とソースコード検証は完全に分離されており、対象ファイルやグループ（C++, Pythonサブグループ）を明示指定して実行可能です。
+Fireball のツール体系は以下の 11 の標準コマンド群で構成されています。ドキュメント検証とソースコード検証は完全に分離されており、対象ファイルやグループ（C++, Pythonサブグループ）を明示指定して実行可能です。
 Windows（PowerShell）および Linux / WSL（Bash）の双方で同一の操作が可能です。
 
 | コマンド | スクリプト (Windows / Linux) | 種別 | 主な役割 |
@@ -26,6 +26,7 @@ Windows（PowerShell）および Linux / WSL（Bash）の双方で同一の操�
 | **build** | `tools/build.ps1`<br>`tools/build.sh` | DB構築 | ドキュメントからデータベース（DocGraph, トポロジー）を構築し、TF-IDFによるキーワード・用語リストを作成。引数で対象Markdown指定可能。 |
 | **format-doc** | `tools/format-doc.ps1`<br>`tools/format-doc.sh` | 静的整形 | Markdown ドキュメントの静的正規化（改行・末尾空白等）を適用。引数で対象Markdown指定可能。 |
 | **check-doc** | `tools/check-doc.ps1`<br>`tools/check-doc.sh` | 静的検査 | ドキュメントの静的検証（8大品質ゲート: Format, Traceability, Hierarchy, Formal, WIT, Evidence, Obligation, Consistency）を実行。引数で対象Markdown指定可能。 |
+| **check-verification-matrix** | `tools/check-verification-matrix.ps1` | 静的検査 | コンセプト、形式モデル、テスト仕様、pysimテスト、シナリオ、因子CSVの実在・登録・件数・自動ID対応・ペアワイズ完全被覆を検査。 |
 | **format-src** | `tools/format-src.ps1`<br>`tools/format-src.sh` | 静的整形 | ソースコードの静的フォーマッタ（Python: Ruff / C++: clang-format）を適用。`-group`（`cpp`, `python`, `concepts`, `formal`, `pysim`, `all`）や個別ファイル指定可能。 |
 | **check-src** | `tools/check-src.ps1`<br>`tools/check-src.sh` | 静的検査 | ソースコードの静的規約・サボり検証（Python は AST／tokenize、C++ は clang AST へ移行可能な言語別バックエンドで TODO放置・空関数・typing.Any / object / 非None Union / pysim製品コードの明示的な `raise`・RTTI・`in` 演算子・テスト専用コード混入・本番のテスト／互換用シンボル・コンパイルAPIの必須引数への `None` 許容の完全禁止・形式モデル変異検査 `guards=False` 必須、pysim の設定駆動 import Tier 依存方向検査・利用側の組み込み `dict` / `set` / `list` 禁止検査（システムコンテナ実装内部は除外）、実機テスト実行）を実行。`-group` や個別ファイル指定可能。`try` / `except` の捕捉は許可する。 |
 | **risk** | `tools/risk.ps1`<br>`tools/risk.sh` | LLM評価 | LLMによりドキュメントのキーワードの設計複雑度・リスク評価を行う。 |
@@ -56,6 +57,7 @@ Windows（PowerShell）および Linux / WSL（Bash）の双方で同一の操�
 | **ドキュメントDB・用語インデックス作成** | `powershell tools/build.ps1`<br>`./tools/build.sh` | 0円 / 1〜2秒 |
 | **ドキュメント自動フォーマット** | `powershell tools/format-doc.ps1 [files...]`<br>`./tools/format-doc.sh [files...]` | 0円 / 1秒 |
 | **ドキュメント静的品質ゲート検証** | `powershell tools/check-doc.ps1 [files...]`<br>`./tools/check-doc.sh [files...]` | 0円 / 5〜10秒 |
+| **検証成果物・因子マトリクス検証** | `powershell tools/check-verification-matrix.ps1` | 0円 / 1秒 |
 | **ソースコード自動フォーマット** | `powershell tools/format-src.ps1 -group <group> [files...]`<br>`./tools/format-src.sh -g <group> [files...]` | 0円 / 1秒 |
 | **ソースコード品質・サボり検査** | `powershell tools/check-src.ps1 -group <group> [files...]`<br>`./tools/check-src.sh -g <group> [files...]` | 0円 / 2〜5秒 |
 | **用語表記揺れの確認** | `powershell tools/llm-word.ps1 -quick`（静的のみ）<br>`powershell tools/llm-word.ps1`（LLM判定込み） | 0円（quick） / 課金 |

@@ -35,7 +35,8 @@ try:
 except ImportError:
     wasmtime = None
 
-from interpreter import Interpreter, Trap
+from interpreter import Interpreter
+from interpreter import TrapCode as InterpreterTrapCode
 from scheduler import Scheduler
 from vmmio import (
     FC_STATIC_DEVICE,
@@ -188,12 +189,11 @@ def test_scenario_vmmio_virtual_devices():
         print("    [Phase 4.3] WASM Guest vMMIO Read (Bit 31 == 1) -> Physical Memory Read [PASS]")
 
         # 4.4 vMMIO Unregistered Address Trap -> WASM Trap
-        trap_raised = False
-        try:
-            interp.call(fn_w, [0xC000_9000, 0x99])
-        except Trap:
-            trap_raised = True
-        assert trap_raised, "Expected Trap on accessing unregistered vMMIO address"
+        trap_state = interp.start(fn_w, [0xC000_9000, 0x99])
+        while not trap_state.finished:
+            trap_state = interp.step(trap_state)
+        assert trap_state.trap is not None
+        assert trap_state.trap.code == InterpreterTrapCode.VMMIO_ACCESS
         print("    [Phase 4.4] WASM Guest Unregistered vMMIO Address -> Trap Raised [PASS]")
 
     print(

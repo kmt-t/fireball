@@ -2,7 +2,7 @@
 
 ## 1. 目的と対象範囲
 
-正本: [`hal_dispatch.md`](../hal_dispatch.md)
+正本: [hal_dispatch.md](docs/components/tier2_runtime/hal_dispatch.md)
 IPCルータ経由の全アクセス契約、`hal-buf-id`による生ポインタ渡し禁止契約、割り込みpush/pull二経路の役割分担契約、ゼロコピー転送契約、および高速パスとIPC経由制御の区別を検証する。物理的なバッファプール配置やRSPトランスポートの実装詳細は [`platform_driver_test_spec.md`](docs/components/tier3_platform/tests/platform_driver_test_spec.md) の責務とする。
 
 ## 2. テストケース一覧

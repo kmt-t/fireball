@@ -74,7 +74,7 @@ experiments/pysim/
 │   ├── dummy_drivers.py      # HAL ダミードライバ (標準入出力/時刻)
 │   └── wasi_dummy_fs.py   # インメモリ VFS ファイルシステム
 │
-├── scenarios/             # 全 11 コンポーネント統合シナリオ (End-to-End Scenarios)
+├── scenarios/             # 全 12 コンポーネント統合シナリオ (End-to-End Scenarios)
 │   ├── scenario1_loader_and_memory.py
 │   ├── scenario2_wasi_syscall_io.py
 │   ├── scenario3_recursion_and_tables.py
@@ -86,6 +86,7 @@ experiments/pysim/
 │   ├── scenario9_ipc_router_and_logging.py
 │   ├── scenario10_vmmio_virtual_devices.py
 │   ├── scenario11_hal_and_wasi_drivers.py
+│   ├── scenario12_wasi03p_uri_resolver.py
 │   └── run_all.py         # 全シナリオ一括実行ドライバ
 │
 ├── tests/                 # 単体テストスイート (9 テストファイル)
@@ -98,9 +99,9 @@ experiments/pysim/
 
 ---
 
-## 2. 実証された 11 の統合シナリオ (Integration Scenarios)
+## 2. 実証された 12 の統合シナリオ (Integration Scenarios)
 
-`pysim` は以下の全 11 シナリオ（`scenarios/run_all.py`）を 100% パスし、Fireball 仕様の実現可能性を実証しています：
+`pysim` は以下の全 12 シナリオ（`scenarios/run_all.py`）を 100% パスし、Fireball 仕様の実現可能性を実証しています：
 
 1. **Scenario 1: WASM Loader & Active Data Segments (`scenarios/scenario1_loader_and_memory.py`)**:
    - ROM 上の WASM バイナリのゼロコピー解析、Function 以外の可変長メタデータを `offset/size` と先読みした LEB128 数値で索引化、アクティブデータセグメントのリニアメモリ初期配置。
@@ -123,7 +124,9 @@ experiments/pysim/
 10. **Scenario 10: vMMIO Virtual Devices & Address Translation (`scenarios/scenario10_vmmio_virtual_devices.py`)**:
     - 2段階ダイレクトデコードページテーブル、Bit 31 ゲスト RAM バイパス、Direct-Mapped ソフトウェア TLB（Folding XOR Hash）、タスク間共有メモリ（FC=0xE）の所有権検証と `TRAP_OWNER_MISMATCH` 遮断、パススルー物理アクセス。
 11. **Scenario 11: HAL & WASI Dummy Drivers (`scenarios/scenario11_hal_and_wasi_drivers.py`)**:
-    - HAL 標準入出力ストリーム（stdin/stdout）と Timer、および WASI Preview 1（fd_read, fd_write, fd_seek, random_get, clock_time_get）。
+   - HAL 標準入出力ストリーム（stdin/stdout）と Timer、および WASI Preview 1（fd_read, fd_write, fd_seek, random_get, clock_time_get）。
+12. **Scenario 12: WASI 0.3p URI Resolver (`scenarios/scenario12_wasi03p_uri_resolver.py`)**:
+   - 階層型 URI 解決、ドライバ能力照会、HAL バッファ経由の IPC コマンド、および WASI 0.1p アダプタ委譲。
 
 ---
 

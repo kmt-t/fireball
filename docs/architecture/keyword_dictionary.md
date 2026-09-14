@@ -104,7 +104,7 @@ Fireball の全体構造、依存性の方向、リソース予算、品質保�
 | `{IoC}` | `requirement_list.md` | `architecture_overview.md` | 制御の反転によるコンポーネント間結合の疎結合化 | - |
 | `{LowOverhead}` | `requirement_list.md` | `architecture_overview.md` | 超低消費リソース・高速起動のためのオーバーヘッド最小化 | - |
 | `{NotRTOS}` | `requirement_list.md` | `os_coos.md` | リアルタイム性（プリエンプション）よりもメモリ効率と決定論的移植性を最優先 | - |
-| `{Pairwise_Combinatorial_Testing}` | `combinatorial_test_spec.md` | `combinatorial_test_spec.md` | 7因子288組の全2因子間ペアを100%網羅する All-Pairs 組み合わせテスト | TEST-PAIR-01〜TEST-PAIR-26 |
+| `{Pairwise_Combinatorial_Testing}` | `verification_factor_matrix.md` | `verification_factor_matrix.md` | 因子CSV、自動採番ケース、成果物連鎖、7因子288組の全2因子間ペアを100%網羅する検証マトリクス | TEST-PAIR-01〜TEST-PAIR-26 |
 | `{Resource_Estimation_Model}` | `requirement_list.md` | `architecture_overview.md` | メモリ・ROM・サイクルバジェットのリソース見積もり予測モデル | - |
 | `{Size_15KLOC}` | `requirement_list.md` | `architecture_overview.md` | コード規模を 15,000 行以内に抑制するフットプリント最小化制約 | - |
 | `{ZeroRuntimeOverhead}` | `requirement_list.md` | `architecture_overview.md` | インライン展開と直接ディスパッチによる実行時オーバーヘッドゼロの達成 | - |
@@ -229,7 +229,7 @@ WASM 実行エンジン（`runtime_vsoc`）、CPS スレッドインタープリ
 | `{JIT_Safepoint}` | `requirement_list.md` | `runtime_vsoc.md` | JIT 生成コードおよびインタープリタ内の協調的セーフポイントポーリング | - |
 | `{OneRuntimeOneGuest}` | `requirement_list.md` | `runtime_vsoc.md` | 1ランタイム1ゲストの直交分離。マルチインスタンスは独立ランタイム並行起動とIPC協調で実現 | - |
 | `{Runtime_BumpAllocator}` | `requirement_list.md` | `runtime_loader.md` | ランタイム単位の固定長データバンプアロケータ所有。モジュール内のシステムコンテナストレージ確保とアンロード時 $O(1)$ 一括解放（W^Xコード分離） | - |
-| `{ThreadedInterpreter}` | `requirement_list.md` | `runtime_interpreter.md` | CPS 4引数ディスパッチ、UnifiedStack、レジスタ保持による高速命令実行 | Scenario 1〜11 |
+| `{ThreadedInterpreter}` | `requirement_list.md` | `runtime_interpreter.md` | CPS 4引数ディスパッチ、UnifiedStack、レジスタ保持による高速命令実行 | Scenario 1〜12 |
 | `{MemoryBoundaryCheck}` | `requirement_list.md` | `runtime_interpreter.md` | ゲストリニアメモリ境界外アクセスのトラップ遮断 | Scenario 1, 8, 10 |
 | `{FastAddressCheck}` | `requirement_list.md` | `runtime_interpreter.md` | オフセット境界判定のビット演算による高速アドレスチェック | - |
 | `{Interpreter_LazyJITSwitch}` | `requirement_list.md` | `runtime_interpreter.md` | ホットスポット検出時のインタープリタからJITコードへの遅延遷移 | - |
@@ -346,10 +346,10 @@ Copy-and-Patch JIT コンパイラ（`jit_compiler`）および 3 面循環キ�
 
 | キーワード | 定義元正本 | 対象コンポーネント | 仕様概要・検証内容 | 対応テストケースID（キーワードではない） |
 | :--- | :--- | :--- | :--- | :--- |
-| `{ExecutionContext_Layout}` | `architecture_overview.md` | `runtime_interpreter.md` | execution_context Tier 2 ABI 152バイト配置（15個の32bit状態フィールド、予約領域、11個の64bit JITヘルパーポインタ。ターゲット物理配置は各ABIで定義） | Scenario 1〜11 |
+| `{ExecutionContext_Layout}` | `architecture_overview.md` | `runtime_interpreter.md` | execution_context Tier 2 ABI 152バイト配置（15個の32bit状態フィールド、予約領域、11個の64bit JITヘルパーポインタ。ターゲット物理配置は各ABIで定義） | Scenario 1〜12 |
 | `{CallFrame_Layout}` | `runtime_interpreter.md` | `architecture_overview.md` | call_frame 12バイト、LocalStack 専用の独立固定容量バッファへのインライン物理配置 | Scenario 3, 8 |
 | `{ControlFrame_Layout}` | `runtime_interpreter.md` | `architecture_overview.md` | control_frame 16バイト、OperandStack/LocalStack とは独立した専用固定容量バッファへの物理配置 | Scenario 3 |
-| `{VsocRuntime_Layout}` | `architecture_overview.md` | `runtime_vsoc.md` | execution_context 内包 vsoc_runtime 16バイト物理実行環境配置 (+0x28〜+0x37) | Scenario 1〜11 |
+| `{VsocRuntime_Layout}` | `architecture_overview.md` | `runtime_vsoc.md` | execution_context 内包 vsoc_runtime 16バイト物理実行環境配置 (+0x28〜+0x37) | Scenario 1〜12 |
 
 ---
 
@@ -359,8 +359,8 @@ Copy-and-Patch JIT コンパイラ（`jit_compiler`）および 3 面循環キ�
 
 | キーワード | 定義元正本 | 対象コンポーネント | 仕様概要・検証内容 | 対応テストケースID（キーワードではない） |
 | :--- | :--- | :--- | :--- | :--- |
-| `{AAPCS_FastCall}` | `architecture_overview.md` | `runtime_interpreter.md` | CPS 4引数 AAPCS レジスタマッピング規約 (R0=ctx, R1=sp, R2=local_base, R3=tos) | Scenario 1〜11 |
-| `{CPS_4Args}` | `runtime_interpreter.md` | `runtime_interpreter.md` | ctx, sp, local_base, tos による 4 引数 CPS ディスパッチ規約 | Scenario 1〜11 |
+| `{AAPCS_FastCall}` | `architecture_overview.md` | `runtime_interpreter.md` | CPS 4引数 AAPCS レジスタマッピング規約 (R0=ctx, R1=sp, R2=local_base, R3=tos) | Scenario 1〜12 |
+| `{CPS_4Args}` | `runtime_interpreter.md` | `runtime_interpreter.md` | ctx, sp, local_base, tos による 4 引数 CPS ディスパッチ規約 | Scenario 1〜12 |
 
 ---
 
@@ -374,7 +374,7 @@ Copy-and-Patch JIT コンパイラ（`jit_compiler`）および 3 面循環キ�
 | `{BitView_CardMarking}` | `system_containers.md` | `jit_runtime.md` | 関数ごと 8バイト/カード 2-bit カードマーキング Hotspot 検出（UNEXEC → EXEC → HOT → COMPILED） | Scenario 4 (TEST-INT-30) |
 | `{ControlFrameCleanup}` | `runtime_interpreter.md` | `runtime_interpreter.md` | br_table / block / loop / if 偽分岐時のスタックフレーム自動復元 | Scenario 3 (TEST-INT-20, TEST-INT-22) |
 | `{DeterministicRingBuffer}` | `runtime_logging.md` | `runtime_logging_test_spec.md` | リングバッファ満杯時、ブロックやエラーを起こさず最古エントリを上書きして直近ログを保存する非ブロック不変条件 | TEST-LOG-02 |
-| `{DirectBytecodeExecution}` | `runtime_interpreter.md` | `runtime_interpreter.md` | ROM/Flash バイトコード直接デコード、命令オブジェクト生成ゼロ、およびポインタ加算（ip + len）によるO(1)命令実行 | Scenario 1〜11 (TEST-INTP-50) |
+| `{DirectBytecodeExecution}` | `runtime_interpreter.md` | `runtime_interpreter.md` | ROM/Flash バイトコード直接デコード、命令オブジェクト生成ゼロ、およびポインタ加算（ip + len）によるO(1)命令実行 | Scenario 1〜12 (TEST-INTP-50) |
 | `{DirectMappedJIT4}` | `jit_runtime.md` | `jit_runtime.md` | 32-bit UnifiedPC の4段 Folding XOR Hash と2-bitスロット選択による4エントリ Direct-Mapped JIT キャッシュ一撃検索 | Scenario 4, 5 (TEST-JITR-26) |
 | `{DirectMappedTLB32}` | `runtime_vmmio.md` | `runtime_vmmio.md` | 20-bit VPN の 5-bit Folding XOR Hash による32エントリ Direct-Mapped TLB | Scenario 10 (TEST-INT-92) |
 | `{FlatMapView_BinarySearch}` | `system_containers.md` | `system_containers.md` | 静的ソート配列に対する $O(\log N)$ バイナリサーチ（動的割当なし） | Scenario 1, 9 (TEST-INT-01, TEST-INT-80) |

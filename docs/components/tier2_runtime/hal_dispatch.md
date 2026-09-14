@@ -5,7 +5,7 @@
      contract-only: true
 -->
 
-本コンポーネントは、Tier 3 の物理ドライバ実装 [`platform_driver.md`](../tier3_platform/platform_driver.md)（UART/SEGGER RTT 物理レジスタ操作、RSPパケットのバイト列エンコード/デコード）が実現すべき抽象契約（URI Resolver、コマンドプロトコル、ゼロコピー転送インターフェース）を定義する（`{META_ContractImplSplit}` 契約/実装分割パターン）。
+本コンポーネントは、Tier 3 の物理ドライバ実装（UART/SEGGER RTT 物理レジスタ操作、RSPパケットのバイト列エンコード/デコード）が実現すべき抽象契約（URI Resolver、コマンドプロトコル、ゼロコピー転送インターフェース）を定義する（`{META_ContractImplSplit}` 契約/実装分割パターン）。Tier 2 は物理ドライバの実装詳細を参照しない。
 
 ## 1. コンセプト
 <!-- traceability: {IPCRouter} {URIAbstraction} {TypeSafeMessaging} {IPC_ZeroCopy} -->

@@ -50,4 +50,8 @@ if ($files.Count -gt 0) {
 }
 
 & uv @cmdArgs
-exit $LASTEXITCODE
+$docExit = $LASTEXITCODE
+& (Join-Path $scriptDir "check-verification-matrix.ps1") -config $config
+$matrixExit = $LASTEXITCODE
+if ($docExit -ne 0 -or $matrixExit -ne 0) { exit 1 }
+exit 0

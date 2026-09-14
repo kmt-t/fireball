@@ -13,11 +13,11 @@
 
 ## 2. アーキテクチャ分類
 <!-- traceability: {META_3TierSeparation} -->
-本コンポーネントは **Tier 3 (プラットフォーム / リーフコンポーネント: Leaf Component)** に属し、ハードウェアとハイパーバイザの物理境界を抽象化する物理ドライバ実装を担当する。抽象化層（URI Resolver、コマンドプロトコル）は Tier 2 の [`hal_dispatch.md`](docs/components/tier2_runtime/hal_dispatch.md) が担う。 `{META_3TierSeparation}`
+本コンポーネントは **Tier 3 (プラットフォーム / リーフコンポーネント: Leaf Component)** に属し、ハードウェアとハイパーバイザの物理境界を抽象化する物理ドライバ実装を担当する。抽象化層（URI Resolver、コマンドプロトコル）は Tier 2 の [hal_dispatch.md](docs/components/tier2_runtime/hal_dispatch.md) が担う。 `{META_3TierSeparation}`
 
 ### 2.1 WASI-HAL結線設定
 
-WASIアダプタとHALドライバのURI結線は、物理ドライバ実装とは別のTier 3設定ファイル [`wasi_hal_bindings.py`](../../../experiments/pysim/tier3_platform/wasi_hal_bindings.py) で選択する。Tier 2はURIをハードコードせず、Tier 1の [`WasiHalBindings`](../../../experiments/pysim/tier1_interface/wasi_bindings.py) 契約を通じて注入された値だけを利用する。
+WASIアダプタとHALドライバのURI結線は、物理ドライバ実装とは別のTier 3設定ファイル [wasi_hal_bindings.py](experiments/pysim/tier3_platform/wasi_hal_bindings.py) で選択する。Tier 2はURIをハードコードせず、Tier 1の `WasiHalBindings` 契約を通じて注入された値だけを利用する。
 
 | 結線 | 既定URI |
 | :--- | :--- |

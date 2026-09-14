@@ -14,11 +14,12 @@ Implements:
 from __future__ import annotations
 
 import bisect
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import Protocol
 
+from config import FB_CONF_DEBUG_MAX_ASSERTIONS, FB_CONF_DEBUG_MAX_BREAKPOINTS
 from execution_context import WASMContext
-from system_containers import MutableFlatMapStorage, ReadOnlyFlatMapView
+from system_containers import MutableFlatMapStorage, ReadOnlyFlatMapView, StaticVector
 from wasm_module import BasicBlock
 
 # docs/components/tier1_core/system_config.md {Debug_Integrated}
@@ -47,13 +48,17 @@ class DebuggerManager:
         self.halted: bool = False
         self.stop_signal: int = 5  # SIGTRAP (5)
         # Sorted breakpoint list (flat_set_view semantics with O(log N) binary search)
-        self._breakpoints: list[int] = []
+        self._breakpoints: StaticVector[int] = StaticVector(capacity=FB_CONF_DEBUG_MAX_BREAKPOINTS)
         # Integrated Profiler & Test Tool ({Debug_Integrated})
         self._pc_sample_storage: MutableFlatMapStorage[int, int] = MutableFlatMapStorage(
             capacity=FB_CONF_DEBUG_MAX_PC_SAMPLES
         )
-        self.memory_assertions: list[tuple[int, int, str]] = []
-        self.assertion_violations: list[str] = []
+        self.memory_assertions: StaticVector[tuple[int, int]] = StaticVector(
+            capacity=FB_CONF_DEBUG_MAX_ASSERTIONS
+        )
+        self._assertion_violations: StaticVector[tuple[int, int, int]] = StaticVector(
+            capacity=FB_CONF_DEBUG_MAX_ASSERTIONS
+        )
 
     def attach(self) -> None:
         """Attaches debugger, halting execution and enabling interpreter debug handler table ({DebuggerLabelTableSwitch})."""
@@ -74,13 +79,13 @@ class DebuggerManager:
         """Adds a breakpoint maintaining sorted order for flat_set_view O(log N) lookup."""
         idx = bisect.bisect_left(self._breakpoints, pc)
         if idx == len(self._breakpoints) or self._breakpoints[idx] != pc:
-            self._breakpoints.insert(idx, pc)
+            assert self._breakpoints.insert_at(idx, pc)
 
     def remove_breakpoint(self, pc: int) -> None:
         """Removes a breakpoint if present."""
         idx = bisect.bisect_left(self._breakpoints, pc)
         if idx < len(self._breakpoints) and self._breakpoints[idx] == pc:
-            self._breakpoints.pop(idx)
+            self._breakpoints.pop_at(idx)
 
     def has_breakpoint(self, pc: int) -> bool:
         """O(log N) breakpoint existence check."""
@@ -89,7 +94,7 @@ class DebuggerManager:
 
     def add_memory_assertion(self, addr: int, expected: int, desc: str = "") -> None:
         """Registers a dynamic memory assertion hook ({Debug_Integrated})."""
-        self.memory_assertions.append((addr, expected, desc))
+        assert self.memory_assertions.push_back((addr, expected))
 
     def sample_pc(self, pc: int) -> None:
         """Samples PC execution frequency ({Debug_Integrated})."""
@@ -105,13 +110,20 @@ class DebuggerManager:
         """Verifies memory assertions against current guest memory ({Debug_Integrated})."""
         if memory is None:
             return
-        for addr, expected, desc in self.memory_assertions:
+        for addr, expected in self.memory_assertions:
             if addr < len(memory):
                 val = memory[addr]
                 if val != expected:
-                    self.assertion_violations.append(
-                        f"ASSERTION_FAILED: addr 0x{addr:X} expected {expected} got {val} ({desc})"
-                    )
+                    assert self._assertion_violations.push_back((addr, expected, val))
+
+    @property
+    def assertion_violations(self) -> StaticVector[str]:
+        violations: StaticVector[str] = StaticVector(capacity=len(self._assertion_violations))
+        for addr, expected, actual in self._assertion_violations:
+            violations.append(
+                f"ASSERTION_FAILED: addr 0x{addr:X} expected {expected} got {actual}"
+            )
+        return violations
 
     def flush_jit_cache(self) -> None:
         """Invalidates all JIT cache banks when memory is rewritten by debugger ({Debugger_Jit_Flush})."""
@@ -123,15 +135,19 @@ class DebuggerManager:
         assert self.engine is not None, "GDB execution requires an injected runtime engine"
         return self.engine
 
-    def read_virtual_registers(self, pc: int, ctx: WASMContext) -> list[int]:
+    def read_virtual_registers(self, pc: int, ctx: WASMContext) -> StaticVector[int]:
         """Returns 20 virtual registers: 0:pc, 1:sp, 2:fp, 3:tos, 4..19:local0..15."""
         sp = len(ctx.stack)
         fp = 0
         tos = ctx.stack[-1] if ctx.stack else 0
-        locals_list = [ctx.locals[i] if i < len(ctx.locals) else 0 for i in range(16)]
-        return [pc, sp, fp, tos, *locals_list]
+        regs: StaticVector[int] = StaticVector(capacity=20)
+        for value in (pc, sp, fp, tos):
+            regs.append(value)
+        for i in range(16):
+            regs.append(ctx.locals[i] if i < len(ctx.locals) else 0)
+        return regs
 
-    def write_virtual_registers(self, regs: list[int], ctx: WASMContext) -> int:
+    def write_virtual_registers(self, regs: Sequence[int], ctx: WASMContext) -> int:
         """Updates virtual registers from a 20-integer list. Returns new PC."""
         new_pc = regs[0] if len(regs) > 0 else 0
         # locals
@@ -188,7 +204,9 @@ class GDBRspProtocol:
             try:
                 # 20 registers * 8 hex digits = 160 chars
                 hex_data = args
-                regs = [int(hex_data[i : i + 8], 16) for i in range(0, len(hex_data), 8)]
+                regs: StaticVector[int] = StaticVector(capacity=20)
+                for i in range(0, len(hex_data), 8):
+                    assert regs.push_back(int(hex_data[i : i + 8], 16))
                 new_pc = self.dbg.write_virtual_registers(regs, ctx)
                 return self.format_packet("OK"), new_pc
             except Exception:

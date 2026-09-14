@@ -39,7 +39,7 @@ class BitView:
 
     def __init__(self, storage: memoryview, bits: int, origin: int = 0, count: int = 0):
         if bits != 1 and bits != 2 and bits != 4:
-            raise ValueError(f"Bits must be 1, 2 or 4 (got {bits})")
+            assert False, f"Bits must be 1, 2 or 4 (got {bits})"
         self.storage = storage
         self.bits = bits
         self.origin = origin  # bit offset of logical element 0
@@ -53,7 +53,7 @@ class BitView:
 
     def _bit_pos(self, i: int) -> int:
         if not (0 <= i < self.count):
-            raise IndexError(f"index {i} outside bit_view of size {self.count}")
+            assert False, f"index {i} outside bit_view of size {self.count}"
         return self.origin + i * self.bits
 
     def at(self, i: int) -> int:
@@ -64,7 +64,7 @@ class BitView:
     def put(self, i: int, value: int) -> None:
         mask = (1 << self.bits) - 1
         if not (0 <= value <= mask):
-            raise ValueError(f"value {value} does not fit in {self.bits} bits (max {mask})")
+            assert False, f"value {value} does not fit in {self.bits} bits (max {mask})"
         bit = self._bit_pos(i)
         byte_idx, shift = bit >> 3, bit & 7
         cleared = self.storage[byte_idx] & ~(mask << shift) & 0xFF
@@ -77,7 +77,7 @@ class BitView:
         """
 
         if not (0 <= first <= last <= self.count):
-            raise ValueError(
+            assert False, (
                 f"a view may only ever shrink (0 <= {first} <= {last} <= {self.count})"
             )
         return BitView(self.storage, self.bits, self.origin + first * self.bits, last - first)
@@ -93,7 +93,7 @@ class ReadOnlyBitStorage:
 
     def __init__(self, buffer: bytes, bits: int, count: int):
         if bits != 1 and bits != 2 and bits != 4:
-            raise ValueError(f"Bits must be 1, 2 or 4 (got {bits})")
+            assert False, f"Bits must be 1, 2 or 4 (got {bits})"
         self._buffer = buffer
         self.bits = bits
         self.count = count
@@ -127,7 +127,7 @@ class MutableBitStorage:
 
     def __init__(self, count: int, bits: int = 1, default: int = 0):
         if bits != 1 and bits != 2 and bits != 4:
-            raise ValueError(f"Bits must be 1, 2 or 4 (got {bits})")
+            assert False, f"Bits must be 1, 2 or 4 (got {bits})"
         self.count = count
         self.bits = bits
         total_bits = count * bits
@@ -143,9 +143,9 @@ class MutableBitStorage:
     def put(self, i: int, value: int) -> None:
         mask = (1 << self.bits) - 1
         if not (0 <= value <= mask):
-            raise ValueError(f"value {value} does not fit in {self.bits} bits (max {mask})")
+            assert False, f"value {value} does not fit in {self.bits} bits (max {mask})"
         if not (0 <= i < self.count):
-            raise IndexError(f"index {i} outside mutable_bit_storage of size {self.count}")
+            assert False, f"index {i} outside mutable_bit_storage of size {self.count}"
         bit = i * self.bits
         byte_idx, shift = bit >> 3, bit & 7
         cleared = self._buffer[byte_idx] & ~(mask << shift) & 0xFF
@@ -348,8 +348,7 @@ class ReadOnlyFlatMapView(Generic[KeyT, ValT]):
 
     def __getitem__(self, key: KeyT) -> ValT:
         val = self.find(key)
-        if val is None:
-            raise KeyError(key)
+        assert val is not None, key
         return val
 
     def __contains__(self, key: KeyT) -> bool:
@@ -526,6 +525,10 @@ class MutableFlatSetStorage(Generic[KeyT]):
     def __len__(self) -> int:
         return self._count
 
+    def __iter__(self) -> Iterator[KeyT]:
+        for index in range(self._count):
+            yield self[index]
+
     @property
     def count(self) -> int:
         return self._count
@@ -533,8 +536,7 @@ class MutableFlatSetStorage(Generic[KeyT]):
     def __getitem__(self, index: int) -> KeyT:
         if index < 0:
             index += self._count
-        if not 0 <= index < self._count:
-            raise IndexError(index)
+        assert 0 <= index < self._count, index
         key = self._buffer[index]
         assert key is not None
         return key
@@ -596,6 +598,10 @@ class MutableFlatMapStorage(Generic[KeyT, ValT]):
     def __len__(self) -> int:
         return self._count
 
+    def __iter__(self) -> Iterator[tuple[KeyT, ValT]]:
+        for index in range(self._count):
+            yield self[index]
+
     @property
     def count(self) -> int:
         return self._count
@@ -603,8 +609,7 @@ class MutableFlatMapStorage(Generic[KeyT, ValT]):
     def __getitem__(self, index: int) -> tuple[KeyT, ValT]:
         if index < 0:
             index += self._count
-        if not 0 <= index < self._count:
-            raise IndexError(index)
+        assert 0 <= index < self._count, index
         entry = self._buffer[index]
         assert entry is not None
         return entry
@@ -724,11 +729,14 @@ class MutableRadixBinaryTreeStorage(Sequence[tuple[int, ValT]], Generic[ValT]):
     def __getitem__(self, index: int) -> tuple[int, ValT]:
         if index < 0:
             index += self._count
-        if not 0 <= index < self._count:
-            raise IndexError(index)
+        assert 0 <= index < self._count, index
         entry = self._buffer[index]
         assert entry is not None
         return entry
+
+    def __iter__(self) -> Iterator[tuple[int, ValT]]:
+        for index in range(self._count):
+            yield self[index]
 
     @property
     def count(self) -> int:
@@ -837,9 +845,9 @@ class RingBuffer(Generic[T]):
         self.count -= 1
         return item
 
-    def drain(self) -> list[T]:
-        """Drain all elements in FIFO order."""
-        out: list[T] = []
+    def drain(self) -> StaticVector[T]:
+        """Drain all elements in FIFO order into an exact-capacity vector."""
+        out: StaticVector[T] = StaticVector(capacity=self.count)
         while self.count > 0:
             item = self.pop()
             if item is not None:
@@ -881,7 +889,7 @@ class StaticVector(Generic[T]):
         vec: StaticVector[T] = cls(capacity=cap)
         for item in items:
             if not vec.push_back(item):
-                raise ValueError(f"StaticVector.of: {len(items)} items exceed capacity {cap}")
+                assert False, f"StaticVector.of: {len(items)} items exceed capacity {cap}"
         return vec
 
     def push_back(self, item: T) -> bool:
@@ -889,6 +897,11 @@ class StaticVector(Generic[T]):
             return False
         self._items.append(item)
         return True
+
+    def append(self, item: T) -> None:
+        """Append one item and fail fast when the fixed capacity is exhausted."""
+
+        assert self.push_back(item)
 
     def extend(self, items: Iterable[T]) -> bool:
         pending = tuple(items)
@@ -908,8 +921,7 @@ class StaticVector(Generic[T]):
         return True
 
     def pop_at(self, index: int = -1) -> T:
-        if not self._items:
-            raise IndexError("pop from an empty StaticVector")
+        assert self._items, "pop from an empty StaticVector"
         return self._items.pop(index)
 
     def pop_back(self) -> T | None:

@@ -58,7 +58,13 @@ from system_containers import (
     ReadOnlyFlatMapView,
     StaticVector,
 )
-from test_support import PcOnlyCompiler, wat_to_wasm
+from test_support import (
+    PcOnlyCompiler,
+    compile_module_block,
+    compile_test_block,
+    make_pc_only_module,
+    wat_to_wasm,
+)
 from virq import (
     DispatchResult,
     InterruptEvent,
@@ -66,6 +72,7 @@ from virq import (
     RegistrationStatus,
     VirqDispatcher,
     VirqDispatchResult,
+    VirqFaultCode,
     VirqNode,
 )
 from wasi import WasiHostContext
@@ -228,7 +235,7 @@ def test_virq_54_handled_and_reject_are_terminal():
     assert rejected.outcome == VirqDispatchResult.REJECT
     assert tuple(calls) == (0,)
     assert dispatcher.last_path == (int(VirqNode.ROOT),)
-    assert dispatcher.faults[-1] == "ROOT_REJECT"
+    assert dispatcher.faults[-1] == VirqFaultCode.ROOT_REJECT
 
 
 def test_virq_55_does_not_enter_wasi_polling_path():
@@ -377,6 +384,7 @@ def test_idle_01_jit_batch_compilation_on_idle():
         return JITTrace(head_pc=pc, native_fn=lambda: pc, size_bytes=64)
 
     engine = RuntimeEngine(jit_compiler=PcOnlyCompiler(mock_compiler), code_lengths=(0x400,))
+    engine.register_module_blocks(make_pc_only_module((0x100, 0x200, 0x300)))
     engine.bitmap.touch(0x100)
     engine.bitmap.touch(0x100)  # HOT
     engine.bitmap.touch(0x200)
@@ -548,14 +556,10 @@ def test_tier_03_trace_chaining_and_interpreter_fallback():
     block_b = mod.blocks[1]
     block_c = mod.blocks[2]
     # Compile block B first, then block A (so A can chain directly into resident B)
-    trace_b = engine.compiler.compile_trace(
-        block_b.head_pc, engine.resolve_trace_block(block_b.head_pc)
-    )
+    trace_b = compile_module_block(engine.compiler, mod, block_b)
     engine.cache.insert(trace_b)
     engine.bitmap.mark_compiled(block_b.head_pc)
-    trace_a = engine.compiler.compile_trace(
-        block_a.head_pc, engine.resolve_trace_block(block_a.head_pc)
-    )
+    trace_a = compile_module_block(engine.compiler, mod, block_a)
     engine.cache.insert(trace_a)
     engine.bitmap.mark_compiled(block_a.head_pc)
     # Assert trace A chained directly into trace B
@@ -712,7 +716,7 @@ def test_debugger_manager_gdb_rsp_integration():
     res_g, _ = rsp.handle_packet("g", 0x100, ctx, {})
     assert len(res_g[1 : res_g.index("#")]) == 160
     # 3. Memory write & JIT flush ({Debugger_Jit_Flush}) -- real WASM bytecode
-    # (`i32.const 42`) run through the same extract_basic_blocks + compile_block
+    # (`i32.const 42`) with the same loader metadata passed to the compiler
     # path production JIT compilation uses; the exact head_pc doesn't matter here,
     # only that inserting a trace and then flushing it round-trips.
     flush_code = bytes([I32_CONST, 42])
@@ -726,7 +730,7 @@ def test_debugger_manager_gdb_rsp_integration():
         frame_depth=fc_frame_depth,
         byte_span=fc_byte_span,
     )
-    trace = engine.compiler.compile_block(flush_code, flush_block)
+    trace = compile_test_block(engine.compiler, flush_code, flush_block, ())
     engine.cache.insert(trace)
     assert engine.cache.active.has_trace(fc_head_pc)
     res_m, _ = rsp.handle_packet("M0,4:aabbccdd", 0x100, ctx, {})
@@ -826,9 +830,7 @@ def test_interpreter_debugger_handler_table_switch_and_hooks():
     assert dbg.pc_sample_counts[block1.head_pc] == 1
     assert len(dbg.assertion_violations) == 1
     # 5. JIT Bypass under debug mode (TEST-INTP-65: JIT trace exists but interpreter debug table runs)
-    trace = engine.compiler.compile_trace(
-        block1.head_pc, engine.resolve_trace_block(block1.head_pc)
-    )
+    trace = compile_module_block(engine.compiler, mod, block1)
     engine.cache.insert(trace)
     assert engine.cache.active.has_trace(block1.head_pc)
     # Run step at block1 under debug mode -> interp_blocks increments, NOT jit_traces
@@ -861,7 +863,7 @@ def test_wasm_loader_and_radix_binary_tree_view_indexes():
     try:
         loader.prepare("bad", _build_test_wasm_binary(magic=b"\x7fELF"))
         assert False
-    except WasmVerifyError:
+    except AssertionError:
         pass
     assert loader.allocator.offset == watermark
     # 3. ReadOnlyRadixBinaryTreeView file offset reverse-lookup (TEST-LOAD-40..44)

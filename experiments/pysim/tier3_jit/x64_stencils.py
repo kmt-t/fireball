@@ -21,7 +21,8 @@ R10/R11 for the lifetime of the function body.
 The prologue copies those pointers there so the incoming argument registers
 stay free as general scratch, since
 i32.shl/shr_s/shr_u need the shift count in CL. The WASM operand stack is
-the real x64 hardware stack (PUSH/POP), one 8-byte slot per WASM value.
+the shared Native stack addressed by R12; RSP remains the native call stack
+and is never used as the WASM operand stack.
 """
 
 from __future__ import annotations
@@ -30,6 +31,8 @@ import sys
 from collections.abc import Generator, Iterable
 from dataclasses import dataclass, field
 from enum import IntEnum
+
+from system_containers import StaticVector
 
 IS_WINDOWS = sys.platform == "win32"
 
@@ -107,7 +110,7 @@ def _materialize_auto(gen: Iterable[int]) -> Stencil:
     """
 
     code = bytearray(gen)
-    entries: list[tuple[Relocation, int]] = []
+    entries: StaticVector[tuple[Relocation, int]] = StaticVector(capacity=RELOCATION_COUNT)
     for reloc_name, sentinel in _RELOC_SENTINELS:
         idx = code.find(sentinel)
         if idx == -1:
@@ -142,7 +145,9 @@ def _relocation_offsets(
 ) -> tuple[int, ...]:
     """Build the dense relocation table once while materializing a stencil."""
 
-    offsets = [NO_RELOCATION] * RELOCATION_COUNT
+    offsets: StaticVector[int] = StaticVector.of(
+        tuple(NO_RELOCATION for _ in range(RELOCATION_COUNT)), capacity=RELOCATION_COUNT
+    )
     for reloc_id, offset in entries:
         index = int(reloc_id)
         assert 0 <= index < RELOCATION_COUNT
@@ -585,6 +590,7 @@ def _gen_context_helper_tail_jump() -> Generator[int, None, None]:
         yield from (0x4C, 0x89, 0xEF)  # mov rdi, r13
         yield from (0x4C, 0x89, 0xE6)  # mov rsi, r12
         yield from (0x4D, 0x89, 0xD2)  # mov rdx, r10
+        yield from (0x44, 0x89, 0xC9)  # mov ecx, r9d
 
     # mov rax, [r13 + helper_slot_offset]
     yield from (0x49, 0x8B, 0x85)

@@ -41,9 +41,11 @@ import math
 import struct
 from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass, field
+from enum import IntEnum
 from typing import Protocol
 
 import cython
+from config import FB_CONF_MAX_VALUE_STACK
 from control_flow import (
     FB_CONF_MAX_NESTING_DEPTH,
     OpcodeAttribute,
@@ -268,8 +270,32 @@ def _f32_max(a: float, b: float) -> float:
     return a if a > b else b
 
 
+class TrapCode(IntEnum):
+    LOCAL_STACK_CAPACITY = 1
+    CALL_FRAME_CAPACITY = 2
+    CALL_STACK_CAPACITY = 3
+    OPERAND_STACK_CAPACITY = 4
+    NO_HOST_HANDLER = 5
+    TABLE_INDEX_OUT_OF_BOUNDS = 6
+    TABLE_SLOT_UNINITIALIZED = 7
+    INDIRECT_CALL_TYPE_MISMATCH = 8
+    UNREACHABLE = 9
+    CONTROL_FRAME_CAPACITY = 10
+    VMMIO_NOT_CONFIGURED = 11
+    VMMIO_ACCESS = 12
+    MEMORY_OUT_OF_BOUNDS = 13
+    MEMORY_SECTION_MISSING = 14
+    INTEGER_DIVIDE_BY_ZERO = 15
+    INTEGER_OVERFLOW = 16
+    INVALID_CONVERSION = 17
+
+
 class Trap(Exception):
-    pass
+    __slots__ = ("code", "detail")
+
+    def __init__(self, code: TrapCode, detail: int = 0):
+        self.code = code
+        self.detail = detail
 
 
 class WasmNumber(Protocol):
@@ -282,7 +308,6 @@ class WasmNumber(Protocol):
         ...
 
 
-FB_CONF_MAX_VALUE_STACK = 64
 FB_CONF_MAX_LOCAL_STACK = NATIVE_VALUE_STACK_CAPACITY
 
 
@@ -319,9 +344,9 @@ class ExecEnv:
 
     module: Module
     memory: bytearray | None
-    globals: list[int]
-    tables: list[list[int | None]]
-    host_functions: list[Callable[..., int | None] | None]
+    globals: StaticVector[int]
+    tables: StaticVector[StaticVector[int | None]]
+    host_functions: StaticVector[Callable[..., int | None] | None]
     vmmio: VMMIOController | None = None
     phys_mem: bytearray | None = None
 
@@ -385,17 +410,15 @@ class InterpreterContext:
         )
         local_slot_count = len(frame.local_widths) * WASM_LOCAL_SLOT_WORDS
         assert len(raw_args) == local_slot_count
-        if frame_offset + local_slot_count > self.local_stack.capacity:
-            raise Trap("local stack capacity exceeded")
-        if not self.call_frame_offsets.push_back(frame_offset):
-            raise Trap("call-frame offset stack capacity exceeded")
+        assert frame_offset + local_slot_count <= self.local_stack.capacity
+        assert self.call_frame_offsets.push_back(frame_offset)
         if not self.call_frame_stack.push_back(frame):
             self.call_frame_offsets.pop_back()
-            raise Trap("call-frame stack capacity exceeded")
+            assert False, "call-frame stack capacity exceeded"
         if not self.local_stack.extend(raw_args):
             self.call_frame_stack.pop_back()
             self.call_frame_offsets.pop_back()
-            raise Trap("local stack capacity exceeded")
+            assert False, "local stack capacity exceeded"
         self.local_offset += local_slot_count
         return frame
 
@@ -480,7 +503,7 @@ class CallFrame:
             local_widths,
             len(local_widths) * WASM_LOCAL_SLOT_WORDS,
         )
-        self.code = function.code
+        self.code = context.module.code_for(func_index)
         assert function.control_map is not None
         self.control_map = function.control_map
         self.env = env
@@ -534,7 +557,9 @@ _HandlerFn = Callable[
 ]
 
 # Fixed 256-slot direct-indexed dispatch table for WASM byte opcodes (0x00..0xFF)
-_HANDLERS: list[_HandlerFn | None] = [None] * 256
+_HANDLERS: StaticVector[_HandlerFn | None] = StaticVector.of(
+    tuple(None for _ in range(256)), capacity=256
+)
 _BASIC_BLOCK_BOUNDARY: tuple[bool, ...] = tuple(
     opcode_has_attribute(opcode, OpcodeAttribute.BASIC_BLOCK_BOUNDARY) for opcode in range(256)
 )
@@ -627,20 +652,26 @@ class Interpreter:
         self,
         module: Module,
         memory: bytearray | None = None,
-        host_functions: list[Callable[..., int | None] | None] | None = None,
+        host_functions: StaticVector[Callable[..., int | None] | None] | None = None,
         vmmio: VMMIOController | None = None,
         phys_mem: bytearray | None = None,
     ):
         self.module = module
         self.memory = memory
 
-        self.host_functions = (
-            host_functions if host_functions is not None else [None] * len(module.imports)
+        self.host_functions = host_functions
+        if self.host_functions is None:
+            self.host_functions = StaticVector.of(
+                tuple(None for _ in range(len(module.imports))), capacity=len(module.imports)
+            )
+        self.globals: StaticVector[int] = StaticVector(capacity=len(module.globals))
+        for global_value in module.globals:
+            self.globals.append(global_value.init_value)
+        self.tables: StaticVector[StaticVector[int | None]] = StaticVector(
+            capacity=len(module.tables)
         )
-        self.globals: list[int] = [g.init_value for g in module.globals]
-        self.tables: list[list[int | None]] = [
-            module.table_contents(i) for i in range(len(module.tables))
-        ]
+        for table_index in range(len(module.tables)):
+            self.tables.append(module.table_contents(table_index))
         self.debugger: DebuggerAttachment | None = None
         self.vmmio = vmmio
         self.phys_mem = phys_mem
@@ -693,11 +724,11 @@ class Interpreter:
                 if results is not None:
                     return results
                 assert call_state.trap is not None
-                raise call_state.trap
+                assert False, call_state.trap.code
         while not call_state.finished:
             call_state = self._step(call_state, stop_at_boundary=False)
         if call_state.trap is not None:
-            raise call_state.trap
+            assert False, call_state.trap.code
         assert call_state.results is not None
         return call_state.results
 
@@ -711,8 +742,7 @@ class Interpreter:
                 break
             opcode = frame.code[ip]
             handler = _HANDLERS[opcode]
-            if handler is None:
-                raise NotImplementedError(f"interpreter: unhandled opcode 0x{opcode:02X}")
+            assert handler is not None, f"interpreter: unhandled opcode 0x{opcode:02X}"
             call_state.context.bind_handler_state(ip, frame)
             tos = frame.values.raw_top() if frame.values else 0
             result = handler(call_state.context, frame.values, locals_arr, tos)
@@ -803,12 +833,11 @@ class Interpreter:
         """Resolves a host import synchronously -- there is no bytecode to step through."""
         handler = self.host_functions[func_index] if func_index < len(self.host_functions) else None
         if handler is None:
-            imp = self.module.imports[func_index]
             return (
                 StaticVector(capacity=4),
-                Trap(f"no host handler registered for import {imp.module}.{imp.name}"),
+                Trap(TrapCode.NO_HOST_HANDLER, func_index),
             )
-        result = handler(*[_to_i32(int(a)) for a in args])
+        result = handler(*map(lambda value: _to_i32(int(value)), args))
         ft = self.module.func_type(func_index)
         results: StaticVector[WasmNumber] = StaticVector(capacity=4)
         if ft.results:
@@ -840,7 +869,7 @@ class Interpreter:
         by that same context and is shared across the complete call chain.
         """
         fn = self.module.functions[func_index - len(self.module.imports)]
-        function_type = self.module.types[fn.type_index]
+        function_type = self.module.func_type(func_index)
         local_slot_count = fn.local_slot_count_cache
         local_widths = fn.local_widths_cache
         param_packed_slot_count = fn.param_packed_slot_count_cache
@@ -853,13 +882,14 @@ class Interpreter:
         for _ in range(local_slot_count):
             assert local_values.push_back(0)
         raw_offset = 0
-        for index, width in enumerate(local_widths[: len(function_type.params)]):
+        for index in range(len(function_type.params)):
+            width = local_widths[index]
             for word in range(width):
                 local_values[index * WASM_LOCAL_SLOT_WORDS + word] = raw_args[raw_offset]
                 raw_offset += 1
         assert raw_offset == len(raw_args)
         if fn.control_map is None:
-            fn.control_map = build_control_map(fn.code)
+            fn.control_map = build_control_map(self.module.code_for(func_index))
         assert fn.control_map is not None
         frame = context.begin_call_frame(
             local_values,
@@ -897,8 +927,7 @@ class Interpreter:
                     continue
                 is_boundary = _BASIC_BLOCK_BOUNDARY[op]
                 handler = _HANDLERS[op]
-                if handler is None:
-                    raise NotImplementedError(f"interpreter: unhandled opcode 0x{op:02X}")
+                assert handler is not None, f"interpreter: unhandled opcode 0x{op:02X}"
                 call_state.context.bind_handler_state(ip, frame)
                 result = handler(call_state.context, frame.values, locals_arr, tos)
                 if result is None:
@@ -988,19 +1017,14 @@ class Interpreter:
             table = frame.env.tables[tableidx]
             table_slot = _to_u32(frame.values.pop_back())
             if table_slot >= len(table):
-                return Trap(
-                    f"call_indirect: table index {table_slot} out of bounds (size {len(table)})"
-                )
+                return Trap(TrapCode.TABLE_INDEX_OUT_OF_BOUNDS, table_slot)
             callee_func_index = table[table_slot]
             if callee_func_index is None:
-                return Trap(f"call_indirect: table slot {table_slot} is uninitialized")
-            declared_type = self.module.types[typeidx]
+                return Trap(TrapCode.TABLE_SLOT_UNINITIALIZED, table_slot)
+            declared_type = self.module.type_at(typeidx)
             actual_type = self.module.func_type(callee_func_index)
             if declared_type != actual_type:
-                return Trap(
-                    f"call_indirect: type mismatch (declared {declared_type}, "
-                    f"actual {actual_type} at table slot {table_slot})"
-                )
+                return Trap(TrapCode.INDIRECT_CALL_TYPE_MISMATCH, table_slot)
             callee_ft = declared_type
 
         if self.module.is_import(callee_func_index):
@@ -1035,7 +1059,7 @@ class Interpreter:
                 else:
                     pushed = frame.values.push_i32(int(result))
                 if not pushed:
-                    return Trap("operand stack capacity exceeded")
+                    return Trap(TrapCode.OPERAND_STACK_CAPACITY)
             resume_tos = frame.values[-1] if frame.values else 0
             call_state.cont = (next_ip, frame, locals_arr, resume_tos)
             return None
@@ -1058,7 +1082,7 @@ class Interpreter:
         except Trap as trap:
             return trap
         if not call_state.call_stack.push_back((call_state.func_index, resume_cont)):
-            return Trap("call stack capacity exceeded")
+            return Trap(TrapCode.CALL_STACK_CAPACITY)
         call_state.func_index = callee_func_index
         callee_tos = callee_frame.values[-1] if callee_frame.values else 0
         call_state.cont = (0, callee_frame, callee_locals, callee_tos)
@@ -1075,7 +1099,7 @@ def _h_unreachable(
     ctx: InterpreterContext, sp: NativeValueStack, local_base: _LocalStackWindow, tos: int
 ) -> _HandlerResult:
     ip, frame, env = _handler_state(ctx, sp)
-    return (ctx, sp, local_base, tos, Trap("unreachable instruction executed"))
+    return (ctx, sp, local_base, tos, Trap(TrapCode.UNREACHABLE))
 
 
 @_handler(NOP)
@@ -1094,7 +1118,7 @@ def _h_block(
     ip, frame, env = _handler_state(ctx, sp)
     match_end = frame.control_map.block(ip)[0]
     if not frame.frames.push_back(ControlFrameKind.BLOCK, ip, match_end, len(frame.values)):
-        return (ctx, sp, local_base, tos, Trap("control frame capacity exceeded"))
+        return (ctx, sp, local_base, tos, Trap(TrapCode.CONTROL_FRAME_CAPACITY))
     ctx.native_context.ip = ip + 2
     return (ctx, sp, local_base, sp.raw_top() if sp else 0, None)
 
@@ -1106,7 +1130,7 @@ def _h_loop(
     ip, frame, env = _handler_state(ctx, sp)
     match_end = frame.control_map.block(ip)[0]
     if not frame.frames.push_back(ControlFrameKind.LOOP, ip, match_end, len(frame.values)):
-        return (ctx, sp, local_base, tos, Trap("control frame capacity exceeded"))
+        return (ctx, sp, local_base, tos, Trap(TrapCode.CONTROL_FRAME_CAPACITY))
     ctx.native_context.ip = ip + 2
     return (ctx, sp, local_base, sp.raw_top() if sp else 0, None)
 
@@ -1121,14 +1145,14 @@ def _h_if(
     if cond == 0:
         if else_off is not None:
             if not frame.frames.push_back(ControlFrameKind.IF, ip, match_end, len(frame.values)):
-                return (ctx, sp, local_base, tos, Trap("control frame capacity exceeded"))
+                return (ctx, sp, local_base, tos, Trap(TrapCode.CONTROL_FRAME_CAPACITY))
             ctx.native_context.ip = else_off + 1
             return (ctx, sp, local_base, sp.raw_top() if sp else 0, None)
         else:
             ctx.native_context.ip = match_end + 1
             return (ctx, sp, local_base, sp.raw_top() if sp else 0, None)
     if not frame.frames.push_back(ControlFrameKind.IF, ip, match_end, len(frame.values)):
-        return (ctx, sp, local_base, tos, Trap("control frame capacity exceeded"))
+        return (ctx, sp, local_base, tos, Trap(TrapCode.CONTROL_FRAME_CAPACITY))
     ctx.native_context.ip = ip + 2
     return (ctx, sp, local_base, sp.raw_top() if sp else 0, None)
 
@@ -1376,12 +1400,10 @@ def _vmmio_load(
     env: ExecEnv, addr: int, width: int, signed: bool
 ) -> tuple[int, Trap | None]:
     if env.vmmio is None:
-        return 0, Trap(
-            f"memory access out of bounds at addr={addr:#x} (no vMMIO configured)"
-        )
+        return 0, Trap(TrapCode.VMMIO_NOT_CONFIGURED, addr)
     status, phys_addr = env.vmmio.access(addr, is_write=False, value=0)
     if status > VmmioStatus.OK_PHYSICAL:
-        return 0, Trap(status)
+        return 0, Trap(TrapCode.VMMIO_ACCESS, int(status))
     if status == VmmioStatus.OK_SYSCALL:
         return phys_addr, None
     if status == VmmioStatus.OK_PHYSICAL:
@@ -1396,14 +1418,14 @@ def _vmmio_load(
 
 def _vmmio_store(env: ExecEnv, addr: int, val_bytes: bytes) -> Trap | None:
     if env.vmmio is None:
-        return Trap(f"memory access out of bounds at addr={addr:#x} (no vMMIO configured)")
+        return Trap(TrapCode.VMMIO_NOT_CONFIGURED, addr)
     status, phys_addr = env.vmmio.access(
         addr,
         is_write=True,
         value=int.from_bytes(val_bytes, "little"),
     )
     if status > VmmioStatus.OK_PHYSICAL:
-        return Trap(status)
+        return Trap(TrapCode.VMMIO_ACCESS, int(status))
     if status == VmmioStatus.OK_PHYSICAL:
         assert env.phys_mem is not None
         assert phys_addr + len(val_bytes) <= len(env.phys_mem)
@@ -1425,7 +1447,7 @@ def _h_i32_load(
         assert frame.values.push_back(value)
     else:
         if env.memory is None or addr + 4 > len(env.memory):
-            return (ctx, sp, local_base, tos, Trap(f"i32.load out of bounds at addr={addr}"))
+            return (ctx, sp, local_base, tos, Trap(TrapCode.MEMORY_OUT_OF_BOUNDS, addr))
         frame.values.push_back(int.from_bytes(env.memory[addr : addr + 4], "little", signed=True))
     ctx.native_context.ip = next_ip
     return (ctx, sp, local_base, sp.raw_top() if sp else 0, None)
@@ -1445,7 +1467,7 @@ def _h_i32_load8_s(
         assert frame.values.push_back(value)
     else:
         if env.memory is None or addr + 1 > len(env.memory):
-            return (ctx, sp, local_base, tos, Trap(f"i32.load8_s out of bounds at addr={addr}"))
+            return (ctx, sp, local_base, tos, Trap(TrapCode.MEMORY_OUT_OF_BOUNDS, addr))
         frame.values.push_back(int.from_bytes(env.memory[addr : addr + 1], "little", signed=True))
     ctx.native_context.ip = next_ip
     return (ctx, sp, local_base, sp.raw_top() if sp else 0, None)
@@ -1465,7 +1487,7 @@ def _h_i32_load8_u(
         assert frame.values.push_back(value)
     else:
         if env.memory is None or addr + 1 > len(env.memory):
-            return (ctx, sp, local_base, tos, Trap(f"i32.load8_u out of bounds at addr={addr}"))
+            return (ctx, sp, local_base, tos, Trap(TrapCode.MEMORY_OUT_OF_BOUNDS, addr))
         frame.values.push_back(env.memory[addr])
     ctx.native_context.ip = next_ip
     return (ctx, sp, local_base, sp.raw_top() if sp else 0, None)
@@ -1485,7 +1507,7 @@ def _h_i32_load16_s(
         assert frame.values.push_back(value)
     else:
         if env.memory is None or addr + 2 > len(env.memory):
-            return (ctx, sp, local_base, tos, Trap(f"i32.load16_s out of bounds at addr={addr}"))
+            return (ctx, sp, local_base, tos, Trap(TrapCode.MEMORY_OUT_OF_BOUNDS, addr))
         frame.values.push_back(int.from_bytes(env.memory[addr : addr + 2], "little", signed=True))
     ctx.native_context.ip = next_ip
     return (ctx, sp, local_base, sp.raw_top() if sp else 0, None)
@@ -1505,7 +1527,7 @@ def _h_i32_load16_u(
         assert frame.values.push_back(value)
     else:
         if env.memory is None or addr + 2 > len(env.memory):
-            return (ctx, sp, local_base, tos, Trap(f"i32.load16_u out of bounds at addr={addr}"))
+            return (ctx, sp, local_base, tos, Trap(TrapCode.MEMORY_OUT_OF_BOUNDS, addr))
         frame.values.push_back(int.from_bytes(env.memory[addr : addr + 2], "little", signed=False))
     ctx.native_context.ip = next_ip
     return (ctx, sp, local_base, sp.raw_top() if sp else 0, None)
@@ -1529,7 +1551,7 @@ def _h_i32_store(
             return (ctx, sp, local_base, tos, trap)
     else:
         if env.memory is None or addr + 4 > len(env.memory):
-            return (ctx, sp, local_base, tos, Trap(f"i32.store out of bounds at addr={addr}"))
+            return (ctx, sp, local_base, tos, Trap(TrapCode.MEMORY_OUT_OF_BOUNDS, addr))
         env.memory[addr : addr + 4] = raw_val
     ctx.native_context.ip = next_ip
     return (ctx, sp, local_base, sp.raw_top() if sp else 0, None)
@@ -1543,14 +1565,14 @@ def _h_i32_store8(
     mem_offset, next_ip = _read_memarg(frame.code, ip)
     value = frame.values.pop_back() & 0xFF
     addr = _to_u32(frame.values.pop_back()) + mem_offset
-    raw_val = bytes([value])
+    raw_val = value.to_bytes(1, "little")
     if addr & 0x8000_0000:
         trap = _vmmio_store(env, addr, raw_val)
         if trap is not None:
             return (ctx, sp, local_base, tos, trap)
     else:
         if env.memory is None or addr + 1 > len(env.memory):
-            return (ctx, sp, local_base, tos, Trap(f"i32.store8 out of bounds at addr={addr}"))
+            return (ctx, sp, local_base, tos, Trap(TrapCode.MEMORY_OUT_OF_BOUNDS, addr))
         env.memory[addr] = value
     ctx.native_context.ip = next_ip
     return (ctx, sp, local_base, sp.raw_top() if sp else 0, None)
@@ -1571,7 +1593,7 @@ def _h_i32_store16(
             return (ctx, sp, local_base, tos, trap)
     else:
         if env.memory is None or addr + 2 > len(env.memory):
-            return (ctx, sp, local_base, tos, Trap(f"i32.store16 out of bounds at addr={addr}"))
+            return (ctx, sp, local_base, tos, Trap(TrapCode.MEMORY_OUT_OF_BOUNDS, addr))
         env.memory[addr : addr + 2] = raw_val
     ctx.native_context.ip = next_ip
     return (ctx, sp, local_base, sp.raw_top() if sp else 0, None)
@@ -1586,7 +1608,7 @@ def _h_memory_size(
 ) -> _HandlerResult:
     ip, frame, env = _handler_state(ctx, sp)
     if env.memory is None:
-        return (ctx, sp, local_base, tos, Trap("memory.size with no memory section"))
+        return (ctx, sp, local_base, tos, Trap(TrapCode.MEMORY_SECTION_MISSING))
     frame.values.push_back(len(env.memory) // PAGE_SIZE)
     ctx.native_context.ip = ip + 2
     return (ctx, sp, local_base, sp.raw_top() if sp else 0, None)
@@ -1837,9 +1859,9 @@ def _h_i32_div_s(
     b = _to_i32(frame.values.pop_back())
     a = _to_i32(frame.values.pop_back())
     if b == 0:
-        return (ctx, sp, local_base, tos, Trap("integer divide by zero"))
+        return (ctx, sp, local_base, tos, Trap(TrapCode.INTEGER_DIVIDE_BY_ZERO))
     if a == -2147483648 and b == -1:
-        return (ctx, sp, local_base, tos, Trap("integer overflow"))
+        return (ctx, sp, local_base, tos, Trap(TrapCode.INTEGER_OVERFLOW))
     q = abs(a) // abs(b)
     frame.values.push_back(_to_i32(-q if (a < 0) != (b < 0) else q))
     ctx.native_context.ip = ip + 1
@@ -1854,7 +1876,7 @@ def _h_i32_div_u(
     b = _to_u32(frame.values.pop_back())
     a = _to_u32(frame.values.pop_back())
     if b == 0:
-        return (ctx, sp, local_base, tos, Trap("integer divide by zero"))
+        return (ctx, sp, local_base, tos, Trap(TrapCode.INTEGER_DIVIDE_BY_ZERO))
     frame.values.push_back(_to_i32(a // b))
     ctx.native_context.ip = ip + 1
     return (ctx, sp, local_base, sp.raw_top() if sp else 0, None)
@@ -1868,7 +1890,7 @@ def _h_i32_rem_s(
     b = _to_i32(frame.values.pop_back())
     a = _to_i32(frame.values.pop_back())
     if b == 0:
-        return (ctx, sp, local_base, tos, Trap("integer divide by zero"))
+        return (ctx, sp, local_base, tos, Trap(TrapCode.INTEGER_DIVIDE_BY_ZERO))
     r = abs(a) % abs(b)
     frame.values.push_back(_to_i32(-r if a < 0 else r))
     ctx.native_context.ip = ip + 1
@@ -1883,7 +1905,7 @@ def _h_i32_rem_u(
     b = _to_u32(frame.values.pop_back())
     a = _to_u32(frame.values.pop_back())
     if b == 0:
-        return (ctx, sp, local_base, tos, Trap("integer divide by zero"))
+        return (ctx, sp, local_base, tos, Trap(TrapCode.INTEGER_DIVIDE_BY_ZERO))
     frame.values.push_back(_to_i32(a % b))
     ctx.native_context.ip = ip + 1
     return (ctx, sp, local_base, sp.raw_top() if sp else 0, None)
@@ -2020,7 +2042,7 @@ def _h_i64_load(
             return (ctx, sp, local_base, tos, trap)
     else:
         if env.memory is None or addr + 8 > len(env.memory):
-            return (ctx, sp, local_base, tos, Trap("out of bounds memory access"))
+            return (ctx, sp, local_base, tos, Trap(TrapCode.MEMORY_OUT_OF_BOUNDS, addr))
         val = struct.unpack("<q", env.memory[addr : addr + 8])[0]
     assert frame.values.push_i64(val)
     ctx.native_context.ip = next_ip
@@ -2043,7 +2065,7 @@ def _h_i64_store(
             return (ctx, sp, local_base, tos, trap)
     else:
         if env.memory is None or addr + 8 > len(env.memory):
-            return (ctx, sp, local_base, tos, Trap("out of bounds memory access"))
+            return (ctx, sp, local_base, tos, Trap(TrapCode.MEMORY_OUT_OF_BOUNDS, addr))
         env.memory[addr : addr + 8] = raw_val
     ctx.native_context.ip = next_ip
     return (ctx, sp, local_base, sp.raw_top() if sp else 0, None)
@@ -2057,7 +2079,7 @@ def _h_f32_load(
     offset, next_ip = _read_memarg(frame.code, ip)
     addr = _to_u32(frame.values.pop_back()) + offset
     if env.memory is None or addr + 4 > len(env.memory):
-        return (ctx, sp, local_base, tos, Trap("out of bounds memory access"))
+        return (ctx, sp, local_base, tos, Trap(TrapCode.MEMORY_OUT_OF_BOUNDS, addr))
     val = struct.unpack("<f", env.memory[addr : addr + 4])[0]
     assert frame.values.push_f32(val)
     ctx.native_context.ip = next_ip
@@ -2074,7 +2096,7 @@ def _h_f32_store(
     assert val is not None
     addr = _to_u32(frame.values.pop_back()) + offset
     if env.memory is None or addr + 4 > len(env.memory):
-        return (ctx, sp, local_base, tos, Trap("out of bounds memory access"))
+        return (ctx, sp, local_base, tos, Trap(TrapCode.MEMORY_OUT_OF_BOUNDS, addr))
     env.memory[addr : addr + 4] = struct.pack("<f", val)
     ctx.native_context.ip = next_ip
     return (ctx, sp, local_base, sp.raw_top() if sp else 0, None)
@@ -2088,7 +2110,7 @@ def _h_f64_load(
     offset, next_ip = _read_memarg(frame.code, ip)
     addr = _to_u32(frame.values.pop_back()) + offset
     if env.memory is None or addr + 8 > len(env.memory):
-        return (ctx, sp, local_base, tos, Trap("out of bounds memory access"))
+            return (ctx, sp, local_base, tos, Trap(TrapCode.MEMORY_OUT_OF_BOUNDS, addr))
     val = struct.unpack("<d", env.memory[addr : addr + 8])[0]
     assert frame.values.push_f64(val)
     ctx.native_context.ip = next_ip
@@ -2105,7 +2127,7 @@ def _h_f64_store(
     assert val is not None
     addr = _to_u32(frame.values.pop_back()) + offset
     if env.memory is None or addr + 8 > len(env.memory):
-        return (ctx, sp, local_base, tos, Trap("out of bounds memory access"))
+            return (ctx, sp, local_base, tos, Trap(TrapCode.MEMORY_OUT_OF_BOUNDS, addr))
     env.memory[addr : addr + 8] = struct.pack("<d", val)
     ctx.native_context.ip = next_ip
     return (ctx, sp, local_base, sp.raw_top() if sp else 0, None)
@@ -2257,9 +2279,9 @@ def _h_i64_div_s(
     b = _to_i64(b)
     a = _to_i64(a)
     if b == 0:
-        return (ctx, sp, local_base, tos, Trap("integer divide by zero"))
+        return (ctx, sp, local_base, tos, Trap(TrapCode.INTEGER_DIVIDE_BY_ZERO))
     if a == -0x8000_0000_0000_0000 and b == -1:
-        return (ctx, sp, local_base, tos, Trap("integer overflow"))
+        return (ctx, sp, local_base, tos, Trap(TrapCode.INTEGER_OVERFLOW))
     q = abs(a) // abs(b)
     assert frame.values.push_i64(_to_i64(-q if (a < 0) != (b < 0) else q))
     ctx.native_context.ip = ip + 1
@@ -2277,7 +2299,7 @@ def _h_i64_div_u(
     b = _to_u64(b)
     a = _to_u64(a)
     if b == 0:
-        return (ctx, sp, local_base, tos, Trap("integer divide by zero"))
+        return (ctx, sp, local_base, tos, Trap(TrapCode.INTEGER_DIVIDE_BY_ZERO))
     assert frame.values.push_i64(_to_i64(a // b))
     ctx.native_context.ip = ip + 1
     return (ctx, sp, local_base, sp.raw_top() if sp else 0, None)
@@ -2695,7 +2717,7 @@ def _h_i64_rem_s(
     b = _to_i64(b)
     a = _to_i64(a)
     if b == 0:
-        return (ctx, sp, local_base, tos, Trap("integer divide by zero"))
+        return (ctx, sp, local_base, tos, Trap(TrapCode.INTEGER_DIVIDE_BY_ZERO))
     r = abs(a) % abs(b)
     assert frame.values.push_i64(_to_i64(-r if a < 0 else r))
     ctx.native_context.ip = ip + 1
@@ -2713,7 +2735,7 @@ def _h_i64_rem_u(
     b = _to_u64(b)
     a = _to_u64(a)
     if b == 0:
-        return (ctx, sp, local_base, tos, Trap("integer divide by zero"))
+        return (ctx, sp, local_base, tos, Trap(TrapCode.INTEGER_DIVIDE_BY_ZERO))
     assert frame.values.push_i64(_to_i64(a % b))
     ctx.native_context.ip = ip + 1
     return (ctx, sp, local_base, sp.raw_top() if sp else 0, None)
@@ -3187,7 +3209,7 @@ def _h_i32_trunc_f32_u(
     a = frame.values.pop_f32()
     assert a is not None
     if math.isnan(a) or a <= -1.0 or a >= 4294967296.0:
-        return (ctx, sp, local_base, tos, Trap("invalid conversion to integer"))
+        return (ctx, sp, local_base, tos, Trap(TrapCode.INVALID_CONVERSION))
     frame.values.push_back(_to_i32(int(a)))
     ctx.native_context.ip = ip + 1
     return (ctx, sp, local_base, sp.raw_top() if sp else 0, None)
@@ -3201,7 +3223,7 @@ def _h_i32_trunc_f64_u(
     a = frame.values.pop_f64()
     assert a is not None
     if math.isnan(a) or a <= -1.0 or a >= 4294967296.0:
-        return (ctx, sp, local_base, tos, Trap("invalid conversion to integer"))
+        return (ctx, sp, local_base, tos, Trap(TrapCode.INVALID_CONVERSION))
     frame.values.push_back(_to_i32(int(a)))
     ctx.native_context.ip = ip + 1
     return (ctx, sp, local_base, sp.raw_top() if sp else 0, None)

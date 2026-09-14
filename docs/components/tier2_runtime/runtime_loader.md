@@ -25,10 +25,10 @@ WASMローダは、ROM上のWASM32バイナリをパースし、実行環境が�
 - **`ModuleView`**: ROM上のバイナリをゼロコピーで参照するための不変インデックス構造体。
 - **`BinaryStream`**: ROMデータをバイト境界・LEB128ガード付きで読み進めるストリームリーダ。
 - **`WasmLoader`**: バイナリ検証、パース、および `ModuleView` の構築を担うローダクラス。親ランタイムの `bump_allocator` を非所有参照として保持する。 `{Runtime_BumpAllocator}`
-- **`decoded_entity_registry`**: デコードされた各エンティティ（セクション、関数コード、グローバル、データセグメント）を保持するレジストリ。
+- **`decoded_entity_registry`**: 各エンティティの種類・ファイル内開始位置・長さ・参照に必要な最小メタ情報だけを保持する固定長レジストリ。関数コード、名前文字列、データ本体は所有せず、WASM原本上の範囲を参照する。
 - **`entity_offset_storage` (`ReadOnlyRadixBinaryTreeStorage`)**: ファイル内のバイト位置（開始オフセット）をキーとしてデコード済みエンティティへ $O(1) + O(\log n)$ でマッピングする基数2進木索引。検索時だけviewを借用する。
 - **`import_storage` / `export_storage` (`ReadOnlyRadixBinaryTreeStorage`)**: シンボル名（インポート名・エクスポート名）のハッシュ値をキーとして各エントリへ $O(1) + O(\log n)$ でマッピングする基数2進木索引。検索時だけviewを借用する。
-- **`block_storage` (`ReadOnlyRadixBinaryTreeStorage`)**: モジュール内の全基本ブロックメタ情報（`BasicBlock`: `head_pc`, `next_pc`, `loops_to`, `frame_depth`, `byte_span`）へ UnifiedPC（`bswap32(pc)`）でアクセスする基数2進木索引。`BasicBlock` はPCレンジと制御フローメタ情報のみを保持し、デコード済み命令列は持たない――命令列はブロックが実際にコンパイル・実行される瞬間にのみ、バイトコードから都度ストリーミングで導出する（`TraceBlock`）。ランタイムや JIT コンパイラがブロック探索・メタ情報を再生成することなく、ローダ側の不変ストレージから借用viewで $O(1) + O(\log n)$ にブロックを解決する。 `{Loader_BasicBlockIndex}`
+- **`block_storage` (`ReadOnlyRadixBinaryTreeStorage`)**: モジュール内の全基本ブロックメタ情報（`BasicBlock`: `head_pc`, `next_pc`, `loops_to`, `frame_depth`, `byte_span`）へ UnifiedPC（`bswap32(pc)`）でアクセスする基数2進木索引。`BasicBlock` はPCレンジと制御フローメタ情報のみを保持し、デコード済み命令列は持たない――命令列はブロックが実際にコンパイル・実行される瞬間にのみ、バイトコードから一度だけストリーミングで導出する。ランタイムや JIT コンパイラがブロック探索・メタ情報を再生成することなく、ローダ側の不変ストレージから借用viewで $O(1) + O(\log n)$ にブロックを解決する。 `{Loader_BasicBlockIndex}`
 - **`opcode_benefit_table` (`BitView<4>`)**: ROM 上に配置される 128 バイト（256 opcode $\times$ 4-bit）の静的テーブル。インタープリタ処理命令数と JIT 処理命令数の差分（短縮機械語命令数、分岐8倍換算）をゼロ点固定線形正規化した `int4_t`（-8〜+7、1スコア＝2命令相当短縮）を保持する。 `{JIT_StaticBenefitScoring}`
 - **`jit_candidate_bitmap` (`BitView<1>`)**: モジュールロード時に各基本ブロックの命令スコア合算値が閾値（9点：コンパイルオーバーヘッド換算値6点＋デルタ3点）に達したブロックの `head_pc` が属する Card を 1bit でマーキングしたビットマップ。インタープリタ実行ループにおける `touch()` スキップに供される。 `{JIT_CandidateBitmap}`
 - **`control_map`**: 各関数の制御デリミタと `br_table` の静的対応を保持する固定長メタデータ。インタープリタはロード済みの関数メタデータを参照し、実行時に制御構造を再走査しない。命令列そのものは保持せず、必要な命令だけをROM上のコードからストリーミングする。
@@ -77,6 +77,7 @@ ROM上のバイナリデータに対する「窓」として機能し、WIT上�
 これにより、RAM消費を最小限に抑えつつ、クライアントに対しては型安全なインターフェースを提供する。 `{ROMParsing}`
 
 - **セクション索引**: WASM標準セクション（Type, Import, Code等）のオフセットとサイズをキャッシュする。
+- **メタデータの遅延参照**: `Function` 以外の可変長メタデータ本体（型列、Element の関数列、Data のバイト列等）は展開せず、ROM上の `offset/size` と、解決に必要な LEB128 数値（`kind`、`index`、`type_index`、件数等）だけを先読みする。必要時に `BinaryStream` でその範囲を読む。Import/Export は名前を保持せず、Import は外部名範囲と `kind/type_index`、Export は公開名範囲と `kind/index` を持つ。
 - **シンボル検索**: エクスポート名ハッシュからインデックスへの高速な引き当て（`export_storage`から借用view）を提供する。
 
 #### バイナリストリーム（BinaryStream）
@@ -131,7 +132,7 @@ ROM上の読み取り専用バイト列ビューをラップし、カレント�
   **設計理由と不変条件**: WASM バイナリの検証エラー（セクション長不整合、未定義型参照、リソース上限超過等）が発生した際、途中まで確保した内部メタデータやインデックス領域が残留すると、静的バンプアロケータの物理メモリが永久に枯渇・リークする。そのため、検証失敗時は例外なくアロケータ位置を開始前のスナップショットへ完全に巻き戻し、不正バイナリによるリソース断片化をゼロにする。
 - **module_view 構築 & デコード値レジストリ登録 (Zero-Copy & Radix-Indexed)**: `{ZeroCopyIndexing}` `{META_BinarySearch}`
     - セクションスキャン時に内容をRAMにコピーせず、ROM上の開始オフセットとサイズを索引化する。
-    - 各セクション、関数コードブロック、グローバル変数、データセグメント等のデコード済みエントリを `decoded_entity_registry` に登録する。
+    - 各セクション、関数コードブロック、グローバル変数、データセグメント等について、内容を展開しない最小ディスクリプタを `decoded_entity_registry` に登録する。
     - 各エントリの開始ファイルオフセット `file_offset` をキーとして、基数2進探索木ビュー（`fireball::radix_binary_tree_view`）を構築する。粗い Radix Table で区間を特定後、狭めた区間に対する有界二分探索により $O(1) + O(\log n)$ でファイル内の任意バイト位置から該当するデコード済みエンティティ（関数メタデータ、セクション、データ定義）を高速逆引きできるようにする。
     - エクスポートおよびインポートエントリをパースし、シンボル名の 32-bit ハッシュ値（FNV-1a）を算出。名前文字列をROM上の文字列ビューとしてRAMコピーゼロで保持し、ハッシュ値をキーとした `export_storage` / `import_storage`（`fireball::radix_binary_tree_view`を借用）を構築する。概念コードは、この比較意味論をデコード済み文字列値で再現する。
 - **シンボル検索とハッシュ衝突完全排除 (`GOTCHA-LOAD-01`, `{META_AccessDictionary}`, `{META_BinarySearch}`)**:

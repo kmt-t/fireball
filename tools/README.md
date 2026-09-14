@@ -27,12 +27,25 @@ Windows（PowerShell）および Linux / WSL（Bash）の双方で同一の操�
 | **format-doc** | `tools/format-doc.ps1`<br>`tools/format-doc.sh` | 静的整形 | Markdown ドキュメントの静的正規化（改行・末尾空白等）を適用。引数で対象Markdown指定可能。 |
 | **check-doc** | `tools/check-doc.ps1`<br>`tools/check-doc.sh` | 静的検査 | ドキュメントの静的検証（8大品質ゲート: Format, Traceability, Hierarchy, Formal, WIT, Evidence, Obligation, Consistency）を実行。引数で対象Markdown指定可能。 |
 | **format-src** | `tools/format-src.ps1`<br>`tools/format-src.sh` | 静的整形 | ソースコードの静的フォーマッタ（Python: Ruff / C++: clang-format）を適用。`-group`（`cpp`, `python`, `concepts`, `formal`, `pysim`, `all`）や個別ファイル指定可能。 |
-| **check-src** | `tools/check-src.ps1`<br>`tools/check-src.sh` | 静的検査 | ソースコードの静的規約・サボり検証（Python は AST／tokenize、C++ は clang AST へ移行可能な言語別バックエンドで TODO放置・空関数・typing.Any / object / 非None Union / pysim製品コードの明示的な `raise`・RTTI・`in` 演算子・テスト専用コード混入の完全禁止・形式モデル変異検査 `guards=False` 必須、pysim の設定駆動 import Tier 依存方向検査・利用側の組み込み `dict` / `set` / `list` 禁止検査（システムコンテナ実装内部は除外）、実機テスト実行）を実行。`-group` や個別ファイル指定可能。`try` / `except` の捕捉は許可する。 |
+| **check-src** | `tools/check-src.ps1`<br>`tools/check-src.sh` | 静的検査 | ソースコードの静的規約・サボり検証（Python は AST／tokenize、C++ は clang AST へ移行可能な言語別バックエンドで TODO放置・空関数・typing.Any / object / 非None Union / pysim製品コードの明示的な `raise`・RTTI・`in` 演算子・テスト専用コード混入・本番のテスト／互換用シンボル・コンパイルAPIの必須引数への `None` 許容の完全禁止・形式モデル変異検査 `guards=False` 必須、pysim の設定駆動 import Tier 依存方向検査・利用側の組み込み `dict` / `set` / `list` 禁止検査（システムコンテナ実装内部は除外）、実機テスト実行）を実行。`-group` や個別ファイル指定可能。`try` / `except` の捕捉は許可する。 |
 | **risk** | `tools/risk.ps1`<br>`tools/risk.sh` | LLM評価 | LLMによりドキュメントのキーワードの設計複雑度・リスク評価を行う。 |
 | **llm-word** | `tools/llm-word.ps1`<br>`tools/llm-word.sh` | LLM検査 | LLMにより単語揺れチェックを行う（エンベディング類似度 + 文脈判定 + レポート出力）。 |
 | **llm-single-review** | `tools/llm-single-review.ps1`<br>`tools/llm-single-review.sh` | LLM監査 | 指定されたファイルまたは全ファイルの全セクション単体、およびファイルに含まれる高リスクキーワードのリンクの島に関連するレビューを行う。 |
 | **llm-keyword-review** | `tools/llm-keyword-review.ps1`<br>`tools/llm-keyword-review.sh` | LLM監査 | リスクの高いキーワードのリンクの島に関連するレビューを行う。 |
 | **llm-judge** | `tools/llm-judge.ps1`<br>`tools/llm-judge.sh` | LLM監査 | `{VERIFY_LLM}` を付与した全文書を対象に、文書単体レビューと関連文書の島レビューを実行し、判定結果をハッシュ固定してキャッシュDBへ永続化する。**Obligation Gate（`OBLIG-JUDGE-*` / `OBLIG-DOC-JUDGE-*`）を履行する唯一のコマンド**であり、`llm-single-review` / `llm-keyword-review`（結果は標準出力のみで DB に固定されない）とは異なる。 |
+
+### 検査エラーの報告規約
+
+検査ツールがエラーまたは修正要求を出すときは、対象ファイルだけを機械的に判定してはならない。`docs/requires/requirement_list.md`、対象コンポーネントの設計書、および `docs/architecture/document_structure.md` を確認し、次の情報をエラー詳細へ含める。
+
+- 何が違反したか（対象のファイル、行、規約または検査ID）。
+- なぜ駄目なのか（言語仕様、所有権、決定性、移植性、実行時挙動などの技術的理由）。
+- 対象の要求制約（実装言語、必要な処理速度／計算量、許容RAM容量、許容ROM容量）。
+- その違反が要求へ与える影響と、要求を満たす修正方向。
+
+要求仕様または対象範囲を確認できない場合は、速度・RAM・ROM・言語を推測してエラーを断定せず、「要求未確認」として不足している正本を報告する。単なる検査パターンの一致を、要求適合性の確認済みとして扱ってはならない。
+
+引数の省略可能性も検査対象とする。デフォルト値や `T | None` によって省略を許している引数を、関数内部で `assert` などにより実質的な必須条件として扱っている場合はエラーにする。省略時に動作しない入力は本番コードで回復せず、呼び出し側（テストならテストコード側）で準備して、具象型の必須引数として渡す。
 
 ---
 

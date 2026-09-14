@@ -21,10 +21,10 @@
   - 文字列による状態・ID 比較を行わない。すべて `IntEnum` または整数インデックスで扱う。
 - **命令列・ブロック内容の非マテリアライズ**:
   - バイトコードを丸ごとデコードして `Instr` オブジェクトの `list`/`dict` として保持しない。呼び出し側が一度しか消費しないなら、ジェネレータでストリーミングデコードする（`control_flow.iter_scan_instrs`/`iter_block_ops` 等）。
-  - コンパイル済みトレースのように、消費し切ったあとも同じ内容を繰り返し評価する必要がある場合は、既知の上限で容量を決めた `StaticVector` に詰め替えて保持する（`WASMTraceCompiler.compile_trace` が `TraceBlock.byte_span` を容量に使う実例）。
+  - コンパイル済みトレースのように、消費し切ったあとも同じ内容を繰り返し評価する必要がある場合は、既知の上限で容量を決めた `StaticVector` に詰め替えて保持する。
   - デコードした値のうち呼び出し側が使わないフィールドは、そもそもアンパックせずバイト位置だけ進めて捨てる（未使用の `const_value`/`memarg` 等をデコードしない）。
 - **パース/ロード時に確定する値の実行時再計算禁止**:
-  - 関数やブロックの静的メタデータ（制御構造マップ、ローカル変数レイアウト、JIT コンパイル対象として妥当なブロックか等）は、ロード時に一度だけ計算してキャッシュし、ディスパッチのたびに再導出しない。`Function.control_map`（遅延ビルド後キャッシュ）、`Function.locals_layout_cache`（`list(params) + list(locals_extra)` を初回呼び出し時に1度だけ計算しキャッシュする）、`RuntimeEngine.trackable`（`BlockCardMask`: `next_pc is not None and byte_span >= min_trace_bytes` をロード時に1回だけ判定し1bit/ブロックでマスクする）が実例。
+  - 関数やブロックの静的メタデータ（制御構造マップ、ローカル変数レイアウト、JIT コンパイル対象として妥当なブロックか等）は、ロード時に一度だけ計算してキャッシュし、ディスパッチのたびに再導出しない。`Function.control_map`、`Function.locals_layout_cache`、`RuntimeEngine.trackable`（`BlockCardMask`: `next_pc is not None and byte_span >= min_trace_bytes` をロード時に1回だけ判定し1bit/ブロックでマスクする）が実例。WASM セクションの件数、要素数、ローカル数、JIT バンクの容量もロード時または入力メタデータから固定容量を決める。
   - 呼び出し元がすでに解決済みのオブジェクト（例: `BasicBlock`）を持っている場合、それを再度 PC からルックアップし直さない（該当関数に `block: T | None = None` のような省略可能引数を足し、渡された側を優先する）。
 
 **この制約は `experiments/pysim/` のみに適用され、`docs/components/**/concepts/*.py` の参考実装コードには適用されません。** concept コードは仕様の意図を伝えるための説明的なスニペットであり、可読性を優先して `dict` などの通常の Python イディオムを使ってよいものとします。
@@ -65,7 +65,6 @@ experiments/pysim/
 │
 ├── tier3_jit/             # Tier 3 JIT コンパイラ & ネイティブ生成
 │   ├── jit_cache.py       # ホットスポット状態・トレース記述子・3面キャッシュ
-│   ├── trace_compiler.py  # インタープリタ互換のフォールバックトレース生成
 │   ├── x64_jit.py         # Copy-and-Patch JIT コンパイラ (x64)
 │   ├── x64_asm.py         # constexpr x64 アセンブラ
 │   ├── x64_stencils.py    # 事前コンパイル済み JIT ネイティブステンシルカタログ
@@ -104,7 +103,7 @@ experiments/pysim/
 `pysim` は以下の全 11 シナリオ（`scenarios/run_all.py`）を 100% パスし、Fireball 仕様の実現可能性を実証しています：
 
 1. **Scenario 1: WASM Loader & Active Data Segments (`scenarios/scenario1_loader_and_memory.py`)**:
-   - ROM 上の WASM バイナリのゼロコピー解析、Type/Func/Memory/Export セクション展開、アクティブデータセグメントのリニアメモリ初期配置。
+   - ROM 上の WASM バイナリのゼロコピー解析、Function 以外の可変長メタデータを `offset/size` と先読みした LEB128 数値で索引化、アクティブデータセグメントのリニアメモリ初期配置。
 2. **Scenario 2: WASI System Call & I/O Dispatch (`scenarios/scenario2_wasi_syscall_io.py`)**:
    - `fireball_call` 経由での `wasi_snapshot_preview1.fd_write` (分散ギャザー I/O) および `proc_exit` 終了コード伝播。
 3. **Scenario 3: Recursion & Indirect Table Dispatch (`scenarios/scenario3_recursion_and_tables.py`)**:

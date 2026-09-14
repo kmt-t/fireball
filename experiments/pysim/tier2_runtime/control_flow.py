@@ -512,7 +512,7 @@ def build_control_map(code: bytes) -> ControlMap:
             off += 1
             assert blocktype == 0x40, "only the empty blocktype is supported in this experiment"
             if depth >= FB_CONF_MAX_NESTING_DEPTH:
-                raise WasmUnsupportedFeatureError(
+                assert False, (
                     "ERR_WASM_UNSUPPORTED_FEATURE: block/loop/if nesting exceeds "
                     f"FB_CONF_MAX_NESTING_DEPTH={FB_CONF_MAX_NESTING_DEPTH} at offset {start}"
                 )
@@ -537,12 +537,12 @@ def build_control_map(code: bytes) -> ControlMap:
             for _ in range(n_labels):
                 lbl, off = decode_unsigned(code, off)
                 if not labels.push_back(lbl):
-                    raise WasmUnsupportedFeatureError(
+                    assert False, (
                         "ERR_WASM_UNSUPPORTED_FEATURE: br_table label count exceeds code capacity"
                     )
             default_lbl, off = decode_unsigned(code, off)
             if not br_table_entries.push_back((start, (tuple(labels), default_lbl))):
-                raise WasmUnsupportedFeatureError(
+                assert False, (
                     "ERR_WASM_UNSUPPORTED_FEATURE: br_table count exceeds code capacity"
                 )
         elif opcode == CALL_INDIRECT:
@@ -559,13 +559,13 @@ def build_control_map(code: bytes) -> ControlMap:
                 assert opener is not None
                 open_stack[depth] = None
                 if not block_entries.push_back((opener.start, (start, opener.else_offset))):
-                    raise WasmUnsupportedFeatureError(
+                    assert False, (
                         "ERR_WASM_UNSUPPORTED_FEATURE: block count exceeds code capacity"
                     )
         elif _NO_OPERAND.at(opcode):
             pass
         else:
-            raise WasmUnsupportedFeatureError(
+            assert False, (
                 f"ERR_WASM_UNSUPPORTED_FEATURE: opcode 0x{opcode:02X} at offset {start} is not supported"
             )
 
@@ -637,7 +637,7 @@ def iter_scan_instrs(code: bytes, start: int = 0) -> Iterator[Instr]:
         elif _NO_OPERAND.at(opcode):
             pass
         else:
-            raise WasmUnsupportedFeatureError(
+            assert False, (
                 f"ERR_WASM_UNSUPPORTED_FEATURE: opcode 0x{opcode:02X} at offset {start} is not supported"
             )
 
@@ -739,7 +739,7 @@ def iter_block_ops(code: bytes, head_offset: int, byte_span: int) -> Iterator[tu
         elif _NO_OPERAND.at(opcode):
             arg = None
         else:
-            raise WasmUnsupportedFeatureError(
+            assert False, (
                 f"ERR_WASM_UNSUPPORTED_FEATURE: opcode 0x{opcode:02X} at offset {start} "
                 "is not a supported basic-block opcode"
             )
@@ -817,7 +817,7 @@ def extract_basic_blocks(
 
         if _BLOCK_OPENERS.at(ins.opcode):
             if active_openers_depth >= FB_CONF_MAX_NESTING_DEPTH:
-                raise WasmUnsupportedFeatureError(
+                assert False, (
                     "ERR_WASM_UNSUPPORTED_FEATURE: block/loop/if nesting exceeds "
                     f"FB_CONF_MAX_NESTING_DEPTH={FB_CONF_MAX_NESTING_DEPTH} at offset {ins.offset}"
                 )
@@ -897,7 +897,7 @@ def extract_basic_blocks(
 
                 byte_span = cur_span_end - (cur_head & 0xFFFF)
                 if not blocks.push_back((cur_head, next_pc, loops_to, cur_frame_depth, byte_span)):
-                    raise WasmUnsupportedFeatureError(
+                    assert False, (
                         "ERR_WASM_UNSUPPORTED_FEATURE: basic-block count exceeds code capacity"
                     )
                 cur_op_count = 0
@@ -911,7 +911,7 @@ def extract_basic_blocks(
     if cur_head is not None and cur_op_count:
         byte_span = cur_span_end - (cur_head & 0xFFFF)
         if not blocks.push_back((cur_head, None, None, cur_frame_depth, byte_span)):
-            raise WasmUnsupportedFeatureError(
+            assert False, (
                 "ERR_WASM_UNSUPPORTED_FEATURE: basic-block count exceeds code capacity"
             )
     return blocks

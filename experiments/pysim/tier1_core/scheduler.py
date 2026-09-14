@@ -76,8 +76,7 @@ class BoundedReadyQueue:
         return self._items.insert_at(0, task)
 
     def dequeue(self) -> Task:
-        if not self._items:
-            raise IndexError("pop from an empty ready queue")
+        assert self._items, "pop from an empty ready queue"
         return self._items.pop_at(0)
 
     def remove(self, task: Task) -> bool:
@@ -303,7 +302,7 @@ class Scheduler:
                     0,
                     0,
                 )
-            raise RuntimeError(f"Task capacity exceeded (max {self.max_tasks})")
+            assert False, f"Task capacity exceeded (max {self.max_tasks})"
         if task_id is not None:
             assigned_id = task_id
             if self.get_task(assigned_id) is not None:
@@ -316,7 +315,7 @@ class Scheduler:
                         0,
                         0,
                     )
-                raise ValueError(f"Task with ID {assigned_id} already exists")
+                assert False, f"Task with ID {assigned_id} already exists"
         else:
             while self.get_task(self._next_id) is not None:
                 self._next_id += 1
@@ -527,8 +526,9 @@ class Scheduler:
         task.waiting_irq = irq_id
 
     def set_idle_hook(self, fn: Callable[[], None]) -> None:
-        if not self.idle_hooks.push_back(fn):
-            raise RuntimeError(f"Idle hooks capacity exceeded (max {FB_CONF_MAX_IDLE_HOOKS})")
+        assert self.idle_hooks.push_back(fn), (
+            f"Idle hooks capacity exceeded (max {FB_CONF_MAX_IDLE_HOOKS})"
+        )
 
     def pending_task_count(self) -> int:
         blocked_irq_count = sum(
@@ -624,7 +624,7 @@ class Scheduler:
             )
             if not self._ready and not has_irq_waiters:
                 return
-        raise RuntimeError(
+        assert False, (
             f"scheduler did not reach idle within {max_sweeps} sweeps "
             "(a task is stuck BLOCKED on an event nobody notifies)"
         )

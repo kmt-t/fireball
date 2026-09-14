@@ -16,19 +16,17 @@ from __future__ import annotations
 
 import ctypes
 import sys
-from collections.abc import Callable
+from collections.abc import Iterable, Sequence
 
 import x64_stencils as st
 from control_flow import iter_block_ops
 from exec_memory import ExecutableBuffer
 from jit_abi import JIT_CONTEXT_HELPER_PTR_OFFSET, JIT_CONTEXT_WORD_BYTES
 from jit_cache import JITTrace, JITTraceHeader
-from system_containers import ReadOnlyFlatMapStorage, ReadOnlyFlatMapView, StaticVector
+from system_containers import ReadOnlyFlatMapView, StaticVector
 from wasm_module import (
     WASM_LOCAL_SLOT_BYTES,
-    WASM_VALUE_SLOT_BYTES,
     BasicBlock,
-    TraceBlock,
     WasmOperand,
 )
 from wasm_opcodes import (
@@ -141,160 +139,216 @@ def gen_pic_prologue() -> bytes:
         code += bytes((0x49, 0x89, 0xD2))  # mov r10, rdx  (R10 = local_base)
         code += bytes((0x49, 0x89, 0xF4))  # mov r12, rsi  (R12 = sp)
         code += bytes((0x49, 0x89, 0xFD))  # mov r13, rdi  (R13 = ctx)
+        code += bytes((0x44, 0x89, 0xC9))  # mov r9d, ecx (preserve CPS TOS)
     return bytes(code)
 
 
-def _make_fixed_emitter(
-    stencil_bytes: bytes, depth_change: int
-) -> Callable[[bytearray, WasmOperand], int]:
-    def _emitter(code: bytearray, _arg: WasmOperand) -> int:
-        code += stencil_bytes
-        return depth_change
+# Register-resident operand-cache instructions.  R9d is TOS, R11d is NOS,
+# and R12 is the shared Native operand-stack write cursor.  These byte strings
+# never touch RSP; RSP is reserved for the native call frame.
+_MOV_NOS_FROM_TOS = bytes((0x45, 0x89, 0xCB))
+_MOV_TOS_FROM_NOS = bytes((0x45, 0x89, 0xD9))
+_STORE_TOS_TO_LOCAL = bytes((0x45, 0x89, 0x8A))
+_STORE_TOS_TO_SP = bytes((0x45, 0x89, 0x8C, 0x24))
+_STORE_NOS_TO_SP = bytes((0x45, 0x89, 0x9C, 0x24))
+_LOAD_TOS_FROM_SP = bytes((0x45, 0x8B, 0x8C, 0x24))
+_LOAD_NOS_FROM_SP = bytes((0x45, 0x8B, 0x9C, 0x24))
 
-    return _emitter
-
-
-def _emit_i32_const(code: bytearray, arg: WasmOperand) -> int:
-    assert arg is not None
-    emit(code, st.I32_CONST, ((st.Relocation.IMM, int(arg)),))
-    return 1
-
-
-def _emit_i64_const(code: bytearray, arg: WasmOperand) -> int:
-    assert arg is not None
-    emit(code, st.I64_CONST, ((st.Relocation.IMM64, int(arg) & 0xFFFF_FFFF_FFFF_FFFF),))
-    return 1
+_STACK_LOCATION_TOS = -1
+_STACK_LOCATION_NOS = -2
 
 
-def _emit_f32_const(code: bytearray, arg: WasmOperand) -> int:
-    assert arg is not None
-    emit(code, st.F32_CONST, ((st.Relocation.IMM, int(arg) & I32_MASK),))
-    return 1
+def _load_tos_imm32(value: int) -> bytes:
+    return bytes((0x41, 0xB9)) + (value & I32_MASK).to_bytes(4, "little")
 
 
-def _emit_f64_const(code: bytearray, arg: WasmOperand) -> int:
-    assert arg is not None
-    emit(code, st.F64_CONST, ((st.Relocation.IMM64, int(arg) & 0xFFFF_FFFF_FFFF_FFFF),))
-    return 1
+def _load_tos_local(offset: int) -> bytes:
+    return bytes((0x45, 0x8B, 0x8A)) + (offset & I32_MASK).to_bytes(4, "little")
 
 
-def _emit_local_get(code: bytearray, arg: WasmOperand) -> int:
-    assert arg is not None
-    emit(code, st.LOCAL_GET, ((st.Relocation.DISP, int(arg)),))
-    return 1
+def _store_tos_local(offset: int) -> bytes:
+    return _STORE_TOS_TO_LOCAL + (offset & I32_MASK).to_bytes(4, "little")
 
 
-def _emit_local_set(code: bytearray, arg: WasmOperand) -> int:
-    assert arg is not None
-    emit(code, st.LOCAL_SET, ((st.Relocation.DISP, int(arg)),))
+def _store_register_to_sp(code: bytearray, location: int, slot: int) -> None:
+    assert location == _STACK_LOCATION_TOS or location == _STACK_LOCATION_NOS
+    assert slot >= 0
+    code += (_STORE_TOS_TO_SP if location == _STACK_LOCATION_TOS else _STORE_NOS_TO_SP)
+    code += (slot * 4).to_bytes(4, "little")
+
+
+def _load_register_from_sp(code: bytearray, location: int, slot: int) -> None:
+    assert location == _STACK_LOCATION_TOS or location == _STACK_LOCATION_NOS
+    assert slot >= 0
+    code += (_LOAD_TOS_FROM_SP if location == _STACK_LOCATION_TOS else _LOAD_NOS_FROM_SP)
+    code += (slot * 4).to_bytes(4, "little")
+
+
+def _emit_raw_const_to_sp(code: bytearray, value: int, slot: int) -> None:
+    code += _load_tos_imm32(value)
+    _store_register_to_sp(code, _STACK_LOCATION_TOS, slot)
+
+
+def _complex_helper_index(operation: int) -> int:
+    if operation == I64_ADD:
+        return 0
+    if operation == I64_SUB:
+        return 1
+    if operation == I64_MUL:
+        return 2
+    if operation == F32_ADD:
+        return 3
+    if operation == F32_SUB:
+        return 4
+    if operation == F32_MUL:
+        return 5
+    if operation == F32_DIV:
+        return 6
+    if operation == F64_ADD:
+        return 7
+    if operation == F64_SUB:
+        return 8
+    if operation == F64_MUL:
+        return 9
+    if operation == F64_DIV:
+        return 10
     return -1
 
 
-def _emit_local_tee(code: bytearray, arg: WasmOperand) -> int:
+def _complex_value_width(operation: int) -> int:
+    if operation == I64_CONST or operation == F64_CONST:
+        return 2
+    assert operation == F32_CONST
+    return 1
+
+
+def _emit_register_push(
+    code: bytearray,
+    operation: int,
+    arg: WasmOperand,
+    stack_locations: StaticVector[int],
+    spilled_words: int,
+) -> int:
+    """Push a value while recording its register or shared-stack location."""
+    if len(stack_locations) >= 2:
+        assert stack_locations[-2] == _STACK_LOCATION_NOS
+        _store_register_to_sp(code, _STACK_LOCATION_NOS, spilled_words)
+        stack_locations[-2] = spilled_words
+        spilled_words += 1
+    if stack_locations:
+        assert stack_locations[-1] == _STACK_LOCATION_TOS
+        code += _MOV_NOS_FROM_TOS
+        stack_locations[-1] = _STACK_LOCATION_NOS
     assert arg is not None
-    emit(code, st.LOCAL_TEE, ((st.Relocation.DISP, int(arg)),))
-    return 0
-
-
-_EMIT_STORAGE: ReadOnlyFlatMapStorage[int, Callable[[bytearray, WasmOperand], int]] = (
-    ReadOnlyFlatMapStorage.create(
-        [
-            (I32_CONST, _emit_i32_const),
-            (I64_CONST, _emit_i64_const),
-            (F32_CONST, _emit_f32_const),
-            (F64_CONST, _emit_f64_const),
-            (I32_ADD, _make_fixed_emitter(st.I32_ADD.code, -1)),
-            (I32_SUB, _make_fixed_emitter(st.I32_SUB.code, -1)),
-            (I32_MUL, _make_fixed_emitter(st.I32_MUL.code, -1)),
-            (I32_AND, _make_fixed_emitter(st.I32_AND.code, -1)),
-            (I32_OR, _make_fixed_emitter(st.I32_OR.code, -1)),
-            (I32_XOR, _make_fixed_emitter(st.I32_XOR.code, -1)),
-            (I32_SHL, _make_fixed_emitter(st.I32_SHL.code, -1)),
-            (I32_SHR_U, _make_fixed_emitter(st.I32_SHR_U.code, -1)),
-            (I32_SHR_S, _make_fixed_emitter(st.I32_SHR_S.code, -1)),
-            (I32_DIV_S, _make_fixed_emitter(st.I32_DIV_S.code, -1)),
-            (I32_DIV_U, _make_fixed_emitter(st.I32_DIV_U.code, -1)),
-            (I32_REM_S, _make_fixed_emitter(st.I32_REM_S.code, -1)),
-            (I32_REM_U, _make_fixed_emitter(st.I32_REM_U.code, -1)),
-            (I32_EQZ, _make_fixed_emitter(st.I32_EQZ.code, 0)),
-            (I32_EQ, _make_fixed_emitter(st.I32_EQ.code, -1)),
-            (I32_NE, _make_fixed_emitter(st.I32_NE.code, -1)),
-            (I32_LT_S, _make_fixed_emitter(st.I32_LT_S.code, -1)),
-            (I32_LT_U, _make_fixed_emitter(st.I32_LT_U.code, -1)),
-            (I32_GT_S, _make_fixed_emitter(st.I32_GT_S.code, -1)),
-            (I32_GT_U, _make_fixed_emitter(st.I32_GT_U.code, -1)),
-            (I32_LE_S, _make_fixed_emitter(st.I32_LE_S.code, -1)),
-            (I32_LE_U, _make_fixed_emitter(st.I32_LE_U.code, -1)),
-            (I32_GE_S, _make_fixed_emitter(st.I32_GE_S.code, -1)),
-            (I32_GE_U, _make_fixed_emitter(st.I32_GE_U.code, -1)),
-            (DROP, _make_fixed_emitter(st.DROP.code, -1)),
-            (LOCAL_GET, _emit_local_get),
-            (LOCAL_SET, _emit_local_set),
-            (LOCAL_TEE, _emit_local_tee),
-        ]
-    )
-)
-def _complex_helper_info(op: int) -> tuple[int, int] | None:
-    """Return the direct context-member slot and raw result width."""
-
-    if op == I64_ADD:
-        return 0, 2
-    if op == I64_SUB:
-        return 1, 2
-    if op == I64_MUL:
-        return 2, 2
-    if op == F32_ADD:
-        return 3, 1
-    if op == F32_SUB:
-        return 4, 1
-    if op == F32_MUL:
-        return 5, 1
-    if op == F32_DIV:
-        return 6, 1
-    if op == F64_ADD:
-        return 7, 2
-    if op == F64_SUB:
-        return 8, 2
-    if op == F64_MUL:
-        return 9, 2
-    if op == F64_DIV:
-        return 10, 2
-    return None
-
-
-def _spill_hardware_stack_to_sp(code: bytearray, widths: StaticVector[int]) -> None:
-    """Copy compile-time-known 8-byte hardware stack values to raw 32-bit slots."""
-
-    value_count = len(widths)
-    for value_index in range(value_count):
-        source_offset = (value_count - value_index - 1) * WASM_VALUE_SLOT_BYTES
-        destination_offset = sum(widths[index] for index in range(value_index)) * 4
-        for word in range(widths[value_index]):
-            src = source_offset + word * 4
-            dst = destination_offset + word * 4
-            if src == 0:
-                code += bytes((0x8B, 0x04, 0x24))  # mov eax, [rsp]
-            elif src < 128:
-                code += bytes((0x8B, 0x44, 0x24, src))
-            else:
-                code += bytes((0x8B, 0x84, 0x24)) + src.to_bytes(4, "little")
-            if dst == 0:
-                code += bytes((0x41, 0x89, 0x04, 0x24))  # mov [r12], eax
-            elif dst < 128:
-                code += bytes((0x41, 0x89, 0x44, 0x24, dst))
-            else:
-                code += bytes((0x41, 0x89, 0x84, 0x24)) + dst.to_bytes(4, "little")
-
-
-def _discard_hardware_stack(code: bytearray, value_count: int) -> None:
-    assert value_count >= 0
-    byte_count = value_count * WASM_VALUE_SLOT_BYTES
-    if byte_count == 0:
-        return
-    if byte_count < 128:
-        code += bytes((0x48, 0x83, 0xC4, byte_count))
+    if operation == I32_CONST:
+        code += _load_tos_imm32(int(arg))
     else:
-        code += bytes((0x48, 0x81, 0xC4)) + byte_count.to_bytes(4, "little")
+        assert operation == LOCAL_GET
+        code += _load_tos_local(int(arg))
+    assert stack_locations.push_back(_STACK_LOCATION_TOS)
+    return spilled_words
+
+
+def _emit_register_binary(code: bytearray, operation: int) -> None:
+    # The operation is intentionally encoded as a register operation:
+    # R9=TOS receives (R11=NOS) op (R9=TOS).
+    if operation == I32_ADD:
+        code += bytes((0x45, 0x01, 0xD9))
+    elif operation == I32_SUB:
+        code += bytes((0x45, 0x29, 0xCB, 0x45, 0x89, 0xD9))
+    elif operation == I32_MUL:
+        code += bytes((0x45, 0x0F, 0xAF, 0xCB))
+    elif operation == I32_AND:
+        code += bytes((0x45, 0x21, 0xD9))
+    elif operation == I32_OR:
+        code += bytes((0x45, 0x09, 0xD9))
+    elif operation == I32_XOR:
+        code += bytes((0x45, 0x31, 0xD9))
+    else:
+        condition = 0
+        if operation == I32_EQ:
+            condition = 0x94
+        elif operation == I32_NE:
+            condition = 0x95
+        elif operation == I32_LT_S:
+            condition = 0x9C
+        elif operation == I32_LT_U:
+            condition = 0x92
+        elif operation == I32_GT_S:
+            condition = 0x9F
+        elif operation == I32_GT_U:
+            condition = 0x97
+        elif operation == I32_LE_S:
+            condition = 0x9E
+        elif operation == I32_LE_U:
+            condition = 0x96
+        elif operation == I32_GE_S:
+            condition = 0x9D
+        elif operation == I32_GE_U:
+            condition = 0x93
+        else:
+            assert False
+        code += bytes((0x45, 0x39, 0xCB))
+        code += bytes((0x0F, condition, 0xC0))
+        code += bytes((0x44, 0x0F, 0xB6, 0xC8))
+
+
+def _emit_register_eqz(code: bytearray) -> None:
+    code += bytes((0x45, 0x85, 0xC9, 0x0F, 0x94, 0xC0, 0x44, 0x0F, 0xB6, 0xC8))
+
+
+def _emit_register_shift(code: bytearray, operation: int) -> None:
+    code += bytes((0x44, 0x89, 0xC9))
+    code += bytes((0x45, 0x89, 0xD9))
+    if operation == I32_SHL:
+        code += bytes((0x41, 0xD3, 0xE1))
+    elif operation == I32_SHR_S:
+        code += bytes((0x41, 0xD3, 0xF9))
+    else:
+        assert operation == I32_SHR_U
+        code += bytes((0x41, 0xD3, 0xE9))
+
+
+def _emit_register_pop(code: bytearray, stack_locations: StaticVector[int], spilled_words: int) -> int:
+    """Pop TOS and promote the next compile-time location into TOS."""
+    assert stack_locations
+    assert stack_locations[-1] == _STACK_LOCATION_TOS
+    stack_locations.pop_back()
+    if not stack_locations:
+        return spilled_words
+    if stack_locations[-1] == _STACK_LOCATION_NOS:
+        stack_locations[-1] = _STACK_LOCATION_TOS
+        return spilled_words
+    assert stack_locations[-1] == spilled_words - 1
+    _load_register_from_sp(code, _STACK_LOCATION_TOS, stack_locations[-1])
+    stack_locations.pop_back()
+    assert spilled_words > 0
+    spilled_words -= 1
+    assert stack_locations.push_back(_STACK_LOCATION_TOS)
+    return spilled_words
+
+
+def _emit_register_binary_with_spill(
+    code: bytearray,
+    operation: int,
+    stack_locations: StaticVector[int],
+    spilled_words: int,
+) -> int:
+    """Materialize NOS from shared Native storage when the cache is shallow."""
+    assert len(stack_locations) >= 2
+    assert stack_locations[-1] == _STACK_LOCATION_TOS
+    if stack_locations[-2] >= 0:
+        assert stack_locations[-2] == spilled_words - 1
+        _load_register_from_sp(code, _STACK_LOCATION_NOS, stack_locations[-2])
+        stack_locations[-2] = _STACK_LOCATION_NOS
+        assert spilled_words > 0
+        spilled_words -= 1
+    assert stack_locations[-2] == _STACK_LOCATION_NOS
+    _emit_register_binary(code, operation)
+    stack_locations.pop_back()
+    stack_locations.pop_back()
+    assert stack_locations.push_back(_STACK_LOCATION_TOS)
+    return spilled_words
 
 
 class TraceCompiler:
@@ -309,7 +363,7 @@ class TraceCompiler:
     # fixed, compile-time-known opcode integer vocabulary, never a dict or string.
     _STACK_EFFECT_ENTRIES: tuple[tuple[int, tuple[int, int]], ...] = tuple(
         sorted(
-            [
+            (
                 (I32_CONST, (0, 1)),
                 (I64_CONST, (0, 1)),
                 (F32_CONST, (0, 1)),
@@ -353,151 +407,161 @@ class TraceCompiler:
                 (F64_SUB, (2, 1)),
                 (F64_MUL, (2, 1)),
                 (F64_DIV, (2, 1)),
-            ],
+            ),
             key=lambda e: e[0],
         )
     )
     _STACK_EFFECT_ENTRIES_TUPLE: tuple[tuple[int, tuple[int, int]], ...] = tuple(
         _STACK_EFFECT_ENTRIES
     )
-    STACK_EFFECTS: ReadOnlyFlatMapView[int, tuple[int, int]] = ReadOnlyFlatMapView(_STACK_EFFECT_ENTRIES_TUPLE)
-
-    def compile_block(
-        self,
-        code: bytes,
-        block: BasicBlock,
-        local_widths: tuple[int, ...] | None = None,
-    ) -> JITTrace | None:
-        """
-        Production entry point. `BasicBlock` supplies loader-computed control
-        metadata; instructions are streamed from raw bytecode.
-        """
-        return self.compile_trace(
-            block.head_pc,
-            TraceBlock(
-                head_pc=block.head_pc,
-                instructions=iter_block_ops(code, block.head_pc & 0xFFFF, block.byte_span),
-                next_pc=block.next_pc,
-                loops_to=block.loops_to,
-                byte_span=block.byte_span,
-                local_widths=local_widths,
-            ),
-        )
+    STACK_EFFECTS: ReadOnlyFlatMapView[int, tuple[int, int]] = ReadOnlyFlatMapView(
+        _STACK_EFFECT_ENTRIES_TUPLE
+    )
 
     def compile_trace(
         self,
         head_pc: int,
-        block: TraceBlock | None,
+        instructions: Iterable[tuple[int, WasmOperand]],
+        next_pc: int | None,
+        loops_to: int | None,
+        byte_span: int,
+        local_widths: Sequence[int],
         *,
         tail_context_helper: bool = False,
     ) -> JITTrace | None:
         """
         Compiles a single loader-owned BasicBlock into a PIC native JITTrace
-        using `_EMIT_TABLE` dispatch. `block.instructions` is streamed exactly once,
-        never materialized into a list: `_EMIT_STORAGE.find(op)` alone is the
-        single "does this op have stencil support" signal (a `None` result
-        means fall back to Tier 2 interpretation for this block) -- the
-        stack-depth Trace Boundary Invariant is checked and the native code
-        emitted for that same op right after, all within the one pass over
-        the stream.
+        `instructions` is streamed exactly once and never materialized.
+        The compile-time cache map is ordered from NOS to TOS; its last entry
+        is R9/TOS and its preceding entry is R11/NOS.  The map is only the
+        compiler's proof of register placement.  The generated code never
+        initializes or uses RSP as a WASM operand stack.
         """
-        if block is None:
-            return None
+        assert byte_span > 0
         header = JITTraceHeader(head_wasm_pc=head_pc)
         code = bytearray()
         code += gen_pic_prologue()
-        sim_depth = 0
-        stack_depth = 0
-        stack_widths: StaticVector[int] = StaticVector(capacity=block.byte_span)
-        helper_index: int | None = None
-        result_words = 1
+        # Ordered bottom-to-top location map.  Negative values denote the two
+        # register cache entries; non-negative values are slots already
+        # written to the shared Native operand stack at [R12 + slot * 4].
+        stack_locations: StaticVector[int] = StaticVector(capacity=byte_span + 1)
+        spilled_words = 0
+        helper_words = 0
+        helper_index = -1
         saw_op = False
-        local_widths = block.local_widths
-        for op, arg in block.instructions:
+        for op, arg in instructions:
             saw_op = True
-            assert helper_index is None, "a complex helper must terminate a trace"
-            emitter = _EMIT_STORAGE.view().find(op)
-            if emitter is None:
-                helper_info = _complex_helper_info(op)
-                if helper_info is None:
-                    return None
-                helper_index, helper_words = helper_info
-                result_words = helper_words
-                pops, pushes = self.STACK_EFFECTS[op]
-                sim_depth -= pops
-                assert sim_depth >= 0, "complex helper trace has operand-stack underflow"
-                sim_depth += pushes
-                assert sim_depth == 1, "complex helper trace must leave one result"
-                _spill_hardware_stack_to_sp(code, stack_widths)
-                _discard_hardware_stack(code, stack_depth)
-                assert len(stack_widths) > 0
-                stack_depth = 0
-                stack_widths.clear()
-                code += st.CONTEXT_HELPER_TAIL_JUMP.code
-                helper_base = len(code) - len(st.CONTEXT_HELPER_TAIL_JUMP.code)
-                helper_offset = st.CONTEXT_HELPER_TAIL_JUMP.reloc_offsets[
-                    int(st.Relocation.HELPER_DISP)
-                ]
-                assert helper_offset != st.NO_RELOCATION
-                patch_at(
-                    code,
-                    helper_base + helper_offset,
-                    4,
-                    JIT_CONTEXT_HELPER_PTR_OFFSET + helper_index * JIT_CONTEXT_WORD_BYTES,
-                )
+            helper_index = _complex_helper_index(op)
+            if helper_index >= 0:
+                assert arg is None
+                assert not stack_locations
+                assert helper_words == 4 or helper_words == 2
+                expected_words = 2 if helper_index >= 3 and helper_index <= 6 else 4
+                assert helper_words == expected_words
                 break
-            # Trace Boundary Invariant: block must be self-contained (stack depth never drops below 0)
-            pops, pushes = self.STACK_EFFECTS[op]
-            sim_depth -= pops
-            if sim_depth < 0:
-                # Depends on values on caller's operand stack -> execute safely in interpreter
+            stack_effect = self.STACK_EFFECTS.find(op)
+            if stack_effect is None:
                 return None
-            sim_depth += pushes
-            emit_arg = arg
-            local_width = 1
-            if op == LOCAL_GET or op == LOCAL_SET or op == LOCAL_TEE:
-                assert local_widths is not None
+            pops, pushes = stack_effect
+            if pops > len(stack_locations):
+                # A basic block may not consume an operand owned by its caller.
+                # The block extractor must split before that boundary.
+                return None
+            if op == I32_CONST or op == LOCAL_GET:
+                assert pushes == 1
+                if op == LOCAL_GET:
+                    assert arg is not None
+                    local_index = int(arg)
+                    assert 0 <= local_index < len(local_widths)
+                    if local_widths[local_index] != 1:
+                        return None
+                    arg = local_index * WASM_LOCAL_SLOT_BYTES
+                spilled_words = _emit_register_push(
+                    code, op, arg, stack_locations, spilled_words
+                )
+            elif op == I64_CONST or op == F32_CONST or op == F64_CONST:
+                assert arg is not None
+                assert not stack_locations
+                width = _complex_value_width(op)
+                raw_value = int(arg)
+                for word in range(width):
+                    _emit_raw_const_to_sp(code, (raw_value >> (word * 32)) & I32_MASK, helper_words)
+                    helper_words += 1
+            elif op == LOCAL_SET or op == DROP:
+                if op == LOCAL_SET:
+                    assert arg is not None
+                    local_index = int(arg)
+                    assert 0 <= local_index < len(local_widths)
+                    if local_widths[local_index] != 1:
+                        return None
+                    code += _store_tos_local(local_index * WASM_LOCAL_SLOT_BYTES)
+                spilled_words = _emit_register_pop(code, stack_locations, spilled_words)
+            elif op == LOCAL_TEE:
+                assert arg is not None
                 local_index = int(arg)
                 assert 0 <= local_index < len(local_widths)
-                emit_arg = local_index * WASM_LOCAL_SLOT_BYTES
-                local_width = local_widths[local_index]
-            stack_depth += emitter(code, emit_arg)
-            if op == I32_CONST or op == F32_CONST:
-                assert stack_widths.push_back(1)
-            elif op == I64_CONST or op == F64_CONST:
-                assert stack_widths.push_back(2)
-            elif op == LOCAL_GET:
-                assert stack_widths.push_back(local_width)
-            elif op == LOCAL_SET or op == DROP:
-                stack_widths.pop_back()
-            elif op == LOCAL_TEE:
-                assert len(stack_widths) > 0
+                if local_widths[local_index] != 1 or not stack_locations:
+                    return None
+                code += _store_tos_local(local_index * WASM_LOCAL_SLOT_BYTES)
             elif op == I32_EQZ:
-                assert len(stack_widths) > 0
+                if not stack_locations or stack_locations[-1] != _STACK_LOCATION_TOS:
+                    return None
+                _emit_register_eqz(code)
+            elif (
+                op == I32_ADD
+                or op == I32_SUB
+                or op == I32_MUL
+                or op == I32_AND
+                or op == I32_OR
+                or op == I32_XOR
+                or op == I32_EQ
+                or op == I32_NE
+                or op == I32_LT_S
+                or op == I32_LT_U
+                or op == I32_GT_S
+                or op == I32_GT_U
+                or op == I32_LE_S
+                or op == I32_LE_U
+                or op == I32_GE_S
+                or op == I32_GE_U
+            ):
+                spilled_words = _emit_register_binary_with_spill(
+                    code, op, stack_locations, spilled_words
+                )
+            elif op == I32_SHL or op == I32_SHR_S or op == I32_SHR_U:
+                assert len(stack_locations) >= 2
+                assert stack_locations[-1] == _STACK_LOCATION_TOS
+                if stack_locations[-2] >= 0:
+                    assert stack_locations[-2] == spilled_words - 1
+                    _load_register_from_sp(code, _STACK_LOCATION_NOS, stack_locations[-2])
+                    stack_locations[-2] = _STACK_LOCATION_NOS
+                    assert spilled_words > 0
+                    spilled_words -= 1
+                assert stack_locations[-2] == _STACK_LOCATION_NOS
+                _emit_register_shift(code, op)
+                stack_locations.pop_back()
+                stack_locations.pop_back()
+                assert stack_locations.push_back(_STACK_LOCATION_TOS)
             else:
-                stack_widths.pop_back()
-                stack_widths.pop_back()
-                assert stack_widths.push_back(1)
+                return None
 
-        if not saw_op or sim_depth < 0 or sim_depth > 1 or stack_depth < 0 or stack_depth > 1:
-            # Empty block, or multi-value stack outputs / underflow -- executed
-            # safely by Tier 2 Interpreter instead.
+        if (
+            not saw_op
+            or len(stack_locations) > 1
+            or spilled_words != 0
+            or (helper_index < 0 and helper_words != 0)
+        ):
+            # Empty blocks and traces with residual values below TOS are not
+            # valid standalone JIT exits.  They remain interpreter work.
             return None
         header_bytes = header.pack()
         # A trace's residual value is VM operand-stack state, not a C return
         # value -- {ExecutionContext_Layout} -- so it is written to memory
         # (via R12 / sp) rather than returned in RAX; the trace itself always
         # returns void.
-        if helper_index is not None:
-            # The complex helper already owns the terminal control transfer.
-            # Its raw result is written to the shared stack base and committed
-            # by the caller using ``result_words``.
-            pass
-        elif tail_context_helper:
-            # A helper is a terminal complex-operation boundary.  The current
-            # x64 implementation only delegates once the native operand stack
-            # is empty, so the helper observes fully synchronized locals/SP.
-            assert stack_depth == 0, "context-helper tail jump requires an empty native stack"
+        if tail_context_helper:
+            assert helper_index < 0
+            assert not stack_locations
             helper_base = len(code)
             code += st.CONTEXT_HELPER_TAIL_JUMP.code
             helper_offset = st.CONTEXT_HELPER_TAIL_JUMP.reloc_offsets[
@@ -505,9 +569,24 @@ class TraceCompiler:
             ]
             assert helper_offset != st.NO_RELOCATION
             patch_at(code, helper_base + helper_offset, 4, JIT_CONTEXT_HELPER_PTR_OFFSET)
+        elif helper_index >= 0:
+            assert not stack_locations
+            helper_base = len(code)
+            code += st.CONTEXT_HELPER_TAIL_JUMP.code
+            helper_offset = st.CONTEXT_HELPER_TAIL_JUMP.reloc_offsets[
+                int(st.Relocation.HELPER_DISP)
+            ]
+            assert helper_offset != st.NO_RELOCATION
+            patch_at(
+                code,
+                helper_base + helper_offset,
+                4,
+                JIT_CONTEXT_HELPER_PTR_OFFSET + helper_index * JIT_CONTEXT_WORD_BYTES,
+            )
         else:
-            if stack_depth == 1:
-                code += st.SPILL_RESULT_TO_SP.code
+            if stack_locations:
+                assert stack_locations[0] == _STACK_LOCATION_TOS
+                _store_register_to_sp(code, _STACK_LOCATION_TOS, 0)
             code += st.EPILOGUE_RETURN_VOID.code
 
         total_size = len(header_bytes) + len(code)
@@ -522,16 +601,21 @@ class TraceCompiler:
         fn = buf.function_at(
             16,
             None,
-            [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_uint32],
+            (ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_uint32),
         )
         trace = JITTrace(
             head_pc=head_pc,
             fn=fn,
             size_bytes=total_size,
-            next_pc=block.next_pc,
-            loops_to=block.loops_to,
-            has_return_val=(stack_depth > 0 or helper_index is not None),
-            result_words=result_words if helper_index is not None else 1,
+            next_pc=next_pc,
+            loops_to=loops_to,
+            has_return_val=bool(stack_locations) or helper_index >= 0,
+            result_words=(
+                2
+                if helper_index >= 0
+                and (helper_index <= 2 or helper_index >= 7)
+                else 1
+            ),
             buf=buf,
             raw_addr=buf.address_of(16),
         )

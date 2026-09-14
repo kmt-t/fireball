@@ -3,17 +3,14 @@
 experiments/pysim/jit/native_trace_call.pyx
 Optional native accelerator for RuntimeEngine._invoke_trace's hot path.
 
-`ctypes.CFUNCTYPE` calls a compiled JITTrace through a libffi trampoline
-(~1.1us/call measured, dominated by argument marshalling through libffi
-rather than the trace body itself). This module instead casts the trace's
-already-known entry address straight to a C function pointer and calls it,
-matching x64_jit.py's CPS 4-argument convention exactly:
+`ctypes.CFUNCTYPE` calls a compiled JITTrace through a libffi trampoline.
+This module instead casts the trace's already-known entry address straight to
+a C function pointer and calls it, matching x64_jit.py's CPS 4-argument convention exactly:
     void (*)(void* ctx, void* sp, void* local_base, uint32_t tos)
 
-Built via build_native.ps1 / build_native.sh into native_trace_call.pyd /
-.so alongside this file. RuntimeEngine imports it opportunistically -- when
-absent (module not built), `_invoke_trace` falls back to the ctypes path,
-so pysim's plain-Python regression suite runs unmodified either way.
+Built via build_native.ps1 / build_native.sh into native_trace_call.pyd / .so
+alongside this file. RuntimeEngine imports it opportunistically; when absent,
+the same compiled trace is called through ctypes.
 """
 
 from libc.stdint cimport uint32_t, uint64_t, uintptr_t

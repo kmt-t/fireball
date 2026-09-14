@@ -28,19 +28,19 @@ if IS_WINDOWS:
     PAGE_EXECUTE_READWRITE = 0x40
     _kernel32 = ctypes.windll.kernel32
     _kernel32.VirtualAlloc.restype = ctypes.c_void_p
-    _kernel32.VirtualAlloc.argtypes = [
+    _kernel32.VirtualAlloc.argtypes = (
         ctypes.c_void_p,
         ctypes.c_size_t,
         wt.DWORD,
         wt.DWORD,
-    ]
-    _kernel32.VirtualFree.argtypes = [ctypes.c_void_p, ctypes.c_size_t, wt.DWORD]
-    _kernel32.VirtualProtect.argtypes = [
+    )
+    _kernel32.VirtualFree.argtypes = (ctypes.c_void_p, ctypes.c_size_t, wt.DWORD)
+    _kernel32.VirtualProtect.argtypes = (
         ctypes.c_void_p,
         ctypes.c_size_t,
         wt.DWORD,
         ctypes.POINTER(wt.DWORD),
-    ]
+    )
 else:
     # Linux / POSIX
     PROT_NONE = 0x0
@@ -51,16 +51,16 @@ else:
     MAP_ANONYMOUS = 0x20 if sys.platform.startswith("linux") else 0x1000
     _libc = ctypes.CDLL(None)
     _libc.mmap.restype = ctypes.c_void_p
-    _libc.mmap.argtypes = [
+    _libc.mmap.argtypes = (
         ctypes.c_void_p,
         ctypes.c_size_t,
         ctypes.c_int,
         ctypes.c_int,
         ctypes.c_int,
         ctypes.c_int64,
-    ]
-    _libc.mprotect.argtypes = [ctypes.c_void_p, ctypes.c_size_t, ctypes.c_int]
-    _libc.munmap.argtypes = [ctypes.c_void_p, ctypes.c_size_t]
+    )
+    _libc.mprotect.argtypes = (ctypes.c_void_p, ctypes.c_size_t, ctypes.c_int)
+    _libc.munmap.argtypes = (ctypes.c_void_p, ctypes.c_size_t)
 
 
 class ExecutableBuffer:
@@ -85,7 +85,7 @@ class ExecutableBuffer:
             # Initial state: RW+XN (PAGE_READWRITE) for initial configuration
             addr = _kernel32.VirtualAlloc(None, size, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE)
             if not addr:
-                raise MemoryError("VirtualAlloc failed to allocate executable memory")
+                assert False, "VirtualAlloc failed to allocate executable memory"
             self.base = addr
             self.current_protection = PAGE_READWRITE
         else:
@@ -94,7 +94,7 @@ class ExecutableBuffer:
                 None, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0
             )
             if addr is None or addr == -1 or addr == 0xFFFFFFFFFFFFFFFF:
-                raise MemoryError("mmap failed to allocate executable memory")
+                assert False, "mmap failed to allocate executable memory"
             self.base = addr
             self.current_protection = PROT_READ | PROT_WRITE
 

@@ -46,7 +46,7 @@ from runtime_engine import (
     RuntimeEngine,
 )
 from system_containers import ReadOnlyRadixBinaryTreeStorage, StaticVector
-from test_support import PcOnlyCompiler
+from test_support import PcOnlyCompiler, make_pc_only_module
 from wasm_reader import parse
 from x64_jit import TraceCompiler
 
@@ -111,6 +111,7 @@ def test_hotspot_03_lifo_compile_queue_batch_drain():
         return t
 
     engine = RuntimeEngine(jit_compiler=PcOnlyCompiler(dummy_compiler), code_lengths=(0x400,))
+    engine.register_module_blocks(make_pc_only_module((0x100, 0x200, 0x300)))
     engine.compile_queue = StaticVector.of(
         [0x100, 0x200, 0x300], capacity=engine.compile_queue_capacity
     )
@@ -237,14 +238,17 @@ def test_jitr_bitmap_checked_before_cache_lookup():
     interp = Interpreter(module)
 
     lookup_calls = []
-    real_lookup = engine.cache.lookup
+    real_lookup = JITMultiBufferCache.lookup
 
-    def spy(pc):
+    def spy(cache, pc):
         lookup_calls.append((pc, engine.bitmap.get_state(pc)))
-        return real_lookup(pc)
+        return real_lookup(cache, pc)
 
-    engine.cache.lookup = spy
-    engine.run(interp, fn_idx, [50])
+    JITMultiBufferCache.lookup = spy
+    try:
+        engine.run(interp, fn_idx, [50])
+    finally:
+        JITMultiBufferCache.lookup = real_lookup
 
     assert lookup_calls, (
         "the loop must have gotten hot enough to compile and hit the cache at least once"

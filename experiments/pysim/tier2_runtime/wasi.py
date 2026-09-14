@@ -19,12 +19,14 @@ import struct
 from collections.abc import Callable
 from dataclasses import dataclass
 
+from config import FB_CONF_MAX_IMPORTS
 from hal_dispatch import (
     ARG_BUFFER_HANDLE,
     ARG_LENGTH,
     ARG_MAX_LEN,
     ARG_OFFSET,
     FB_CONF_HAL_BUFFER_SIZE,
+    HalBufferHandle,
     WasiIpcCmd,
 )
 from loader import fnv1a_32
@@ -33,6 +35,7 @@ from system_containers import (
     ReadOnlyFlatMapStorage,
     ReadOnlyFlatMapView,
     ReadOnlyRadixBinaryTreeStorage,
+    StaticVector,
 )
 from wasi_bindings import WasiHalBindings
 from wasm_module import Module
@@ -81,7 +84,7 @@ class Wasi03pEngine:
     def __init__(self, sysv: System, bindings: WasiHalBindings | None = None):
         self.sysv = sysv
         self.bindings = bindings if bindings is not None else sysv.wasi_hal_bindings
-        self._interface_storage: ReadOnlyFlatMapStorage[str, WasiInterfaceVTable]
+        self._interface_storage: ReadOnlyFlatMapStorage[int, WasiInterfaceVTable]
         self._setup_standard_interfaces()
 
     def _setup_standard_interfaces(self) -> None:
@@ -116,24 +119,27 @@ class Wasi03pEngine:
             log=lambda msg: self.sysv.logger.debug(msg),
         )
 
-        entries: list[tuple[str, WasiInterfaceVTable]] = [
-            (self.bindings.uart_uri, uart_iface),
-            (self.bindings.stdout_uri, uart_iface),
-            ("wasi:io/streams@0.3.0", uart_iface),
-            ("wasi:io/streams", uart_iface),
-            (self.bindings.timer_uri, timer_iface),
-            ("wasi:clocks/monotonic-clock@0.3.0", timer_iface),
-            ("wasi:clocks/monotonic-clock", timer_iface),
-            ("wasi:cli/stdout@0.3.0", console_iface),
-            ("wasi:cli/stdout", console_iface),
-            (self.bindings.logger_uri, logger_iface),
-        ]
+        entries: StaticVector[tuple[int, WasiInterfaceVTable]] = StaticVector.of(
+            (
+            (fnv1a_32(self.bindings.uart_uri), uart_iface),
+            (fnv1a_32(self.bindings.stdout_uri), uart_iface),
+            (fnv1a_32("wasi:io/streams@0.3.0"), uart_iface),
+            (fnv1a_32("wasi:io/streams"), uart_iface),
+            (fnv1a_32(self.bindings.timer_uri), timer_iface),
+            (fnv1a_32("wasi:clocks/monotonic-clock@0.3.0"), timer_iface),
+            (fnv1a_32("wasi:clocks/monotonic-clock"), timer_iface),
+            (fnv1a_32("wasi:cli/stdout@0.3.0"), console_iface),
+            (fnv1a_32("wasi:cli/stdout"), console_iface),
+            (fnv1a_32(self.bindings.logger_uri), logger_iface),
+            ),
+            capacity=FB_CONF_MAX_IMPORTS,
+        )
         entries.sort(key=lambda e: e[0])
         self._interface_storage = ReadOnlyFlatMapStorage.create(entries)
 
     def get_interface(self, uri: str) -> WasiInterfaceVTable | None:
         """Resolves an interface descriptor by its Hierarchical IPC communication URI."""
-        return self._interface_storage.view().find(uri)
+        return self._interface_storage.view().find(fnv1a_32(uri))
 
     def dispatch_command(self, uri: str, cmd_id: int, params: ReadOnlyFlatMapView) -> WasiValue:
         """
@@ -236,10 +242,13 @@ class WasiHostContext:
         self.bindings = bindings if bindings is not None else sysv.wasi_hal_bindings
         self.core03p = Wasi03pEngine(sysv, self.bindings)
         self.sysv.wasi_context = self
-        self._keepalive_trampolines: list[Callable[..., int]] = []
+        self._keepalive_trampolines: StaticVector[Callable[..., int]] = StaticVector(
+            capacity=FB_CONF_MAX_IMPORTS
+        )
 
         # Build static host import table via ReadOnlyRadixBinaryTreeView
-        host_entries: list[tuple[str, str, Callable[..., int]]] = [
+        host_entries: StaticVector[tuple[str, str, Callable[..., int]]] = StaticVector.of(
+            (
             ("wasi_snapshot_preview1", "fd_write", self.fd_write),
             ("wasi_snapshot_preview1", "fd_read", self.fd_read),
             ("wasi_snapshot_preview1", "fd_close", self.fd_close),
@@ -259,32 +268,25 @@ class WasiHostContext:
             ("fireball", "fd_write", self.fd_write),
             ("env", "fireball_call", self.fireball_call),
             ("env", "fd_write", self.fd_write),
-        ]
-        hashed_entries: list[tuple[int, tuple[str, str, Callable[..., int]]]] = []
+            ),
+            capacity=FB_CONF_MAX_IMPORTS,
+        )
+        hashed_entries: StaticVector[tuple[int, tuple[str, str, Callable[..., int]]]] = StaticVector(
+            capacity=FB_CONF_MAX_IMPORTS
+        )
         for mod, field, handler in host_entries:
             h = fnv1a_32(f"{mod}::{field}")
             hashed_entries.append((h, (mod, field, handler)))
 
         hashed_entries.sort(key=lambda x: x[0])
-        keys = [x[0] for x in hashed_entries]
-        values = [x[1] for x in hashed_entries]
-        # 32-bit FNV-1a hash prefix: 4 bits (16 buckets, max table size 17)
+        keys: StaticVector[int] = StaticVector(capacity=len(hashed_entries))
+        values: StaticVector[tuple[str, str, Callable[..., int]]] = StaticVector(
+            capacity=len(hashed_entries)
+        )
+        for key, value in hashed_entries:
+            keys.append(key)
+            values.append(value)
         radix_shift = 28
-        if keys:
-            max_prefix = max(keys) >> radix_shift
-            radix_table = [0] * (max_prefix + 2)
-            current_prefix = 0
-            for idx, k in enumerate(keys):
-                prefix = k >> radix_shift
-                while current_prefix < prefix:
-                    current_prefix += 1
-                    radix_table[current_prefix] = idx
-            while current_prefix <= max_prefix:
-                current_prefix += 1
-                radix_table[current_prefix] = len(keys)
-        else:
-            radix_table = [0]
-
         self._import_storage = ReadOnlyRadixBinaryTreeStorage.create(
             keys,
             values,
@@ -478,7 +480,9 @@ class WasiHostContext:
                 return handler
         return None
 
-    def build_interpreter_host_functions(self, module: Module) -> list[Callable[..., int] | None]:
+    def build_interpreter_host_functions(
+        self, module: Module
+    ) -> StaticVector[Callable[..., int] | None]:
         """
         Maps all imported functions in the module to host function
         callables for the Interpreter. Import indices are 0..len(imports)-1
@@ -486,21 +490,29 @@ class WasiHostContext:
         that ordinal is the direct fit -- not a dict, which would imply a
         sparse/arbitrary key space this table never has.
         """
-        host_funcs: list[Callable[..., int] | None] = [None] * len(module.imports)
-        for idx, imp in enumerate(module.imports):
-            host_funcs[idx] = self.get_handler_for_import(imp.module, imp.name)
+        host_funcs: StaticVector[Callable[..., int] | None] = StaticVector.of(
+            tuple(None for _ in range(len(module.imports))), capacity=len(module.imports)
+        )
+        for idx, _imp in enumerate(module.imports):
+            host_funcs[idx] = self.get_handler_for_import(
+                module.import_module_name(idx), module.import_field_name(idx)
+            )
         return host_funcs
 
-    def build_jit_trampolines(self, module: Module) -> list[int | None]:
+    def build_jit_trampolines(self, module: Module) -> StaticVector[int | None]:
         """Creates ctypes CFUNCTYPE native trampolines for JIT execution."""
-        trampolines: list[int | None] = [None] * len(module.imports)
+        trampolines: StaticVector[int | None] = StaticVector.of(
+            tuple(None for _ in range(len(module.imports))), capacity=len(module.imports)
+        )
         for idx, imp in enumerate(module.imports):
-            handler = self.get_handler_for_import(imp.module, imp.name)
+            handler = self.get_handler_for_import(
+                module.import_module_name(idx), module.import_field_name(idx)
+            )
             if handler is None:
                 continue
-            ft = module.types[imp.type_index]
+            ft = module.type_at(imp.type_index)
             nparams = len(ft.params)
-            c_args = [ctypes.c_uint32] * nparams
+            c_args = (ctypes.c_uint32,) * nparams
             c_ret = ctypes.c_uint32  # WASI returns errno as u32
             c_func_type = ctypes.CFUNCTYPE(c_ret, *c_args)
 
@@ -512,7 +524,7 @@ class WasiHostContext:
 
             wrapped = make_wrapper(handler, nparams)
             t = c_func_type(wrapped)
-            self._keepalive_trampolines.append(t)
+            assert self._keepalive_trampolines.push_back(t)
             addr = ctypes.cast(t, ctypes.c_void_p).value
             assert addr is not None
             trampolines[idx] = addr

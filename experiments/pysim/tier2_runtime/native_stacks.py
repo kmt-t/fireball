@@ -53,7 +53,7 @@ class NativeControlStack:
         size = int(self._native.size)
         normalized = index if index >= 0 else size + index
         if not 0 <= normalized < size:
-            raise IndexError("native control stack index out of range")
+            assert False, "native control stack index out of range"
         return normalized
 
     def __getitem__(self, index: int) -> ControlFrameNative:
@@ -76,7 +76,7 @@ class NativeControlStack:
 
     def pop_back(self) -> ControlFrameNative:
         if not self:
-            raise IndexError("native control frame stack underflow")
+            assert False, "native control frame stack underflow"
         index = int(self._native.size) - 1
         frame = self._native.frames[index]
         self._native.size = index
@@ -112,7 +112,7 @@ class ControlFrameWindow:
         storage_size = int(self._storage.native.size)
         absolute = self._base + index if index >= 0 else storage_size + index
         if not (self._base <= absolute < storage_size):
-            raise IndexError("control frame index out of range")
+            assert False, "control frame index out of range"
         return absolute
 
     def __getitem__(self, index: int) -> ControlFrameNative:
@@ -125,7 +125,7 @@ class ControlFrameWindow:
 
     def pop_back(self) -> ControlFrameNative:
         if not self:
-            raise IndexError("native control frame stack underflow")
+            assert False, "native control frame stack underflow"
         return self._storage.pop_back()
 
     def truncate(self, depth: int) -> None:
@@ -178,7 +178,7 @@ class LocalStackWindow:
         local_count = self._local_count
         normalized = index if index >= 0 else local_count + index
         if not 0 <= normalized < local_count:
-            raise IndexError("local stack index out of range")
+            assert False, "local stack index out of range"
         return normalized
 
     def _slot_index(self, index: int) -> int:
@@ -240,11 +240,11 @@ _ControlFrameWindow = ControlFrameWindow
 _LocalStackWindow = LocalStackWindow
 
 
-__all__ = [
+__all__ = (
     "ControlFrameKind",
     "ControlFrameWindow",
     "LocalStackWindow",
     "NativeControlStack",
     "_ControlFrameWindow",
     "_LocalStackWindow",
-]
+)

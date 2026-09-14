@@ -37,6 +37,7 @@ from memory import (
     FB_CONF_TASK_HEAP_SIZES,
     FB_TASK_ID_FLIGHT,
     AccessPermission,
+    MemoryErrorCode,
     MemoryManager,
     PMSAv8MPU,
     RecoveryAction,
@@ -90,7 +91,7 @@ def test_mem_02_recovery_strategy_on_exhaustion():
     assert scheduler.current_task is not None
     r2 = mm.acquire_task_heap()
     assert r2.is_err
-    assert r2.error.error_code == "ERR_POOL_EXHAUSTED"
+    assert r2.error.error_code == MemoryErrorCode.POOL_EXHAUSTED
     assert r2.error.recovery.action in (RecoveryAction.DEGRADE, RecoveryAction.RETRY)
 
 

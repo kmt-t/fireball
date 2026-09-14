@@ -51,9 +51,8 @@ import struct
 from control_flow import extract_basic_blocks
 from exec_memory import ExecutableBuffer
 from runtime_engine import BasicBlock, IntegratedHybridEngine, WASMContext
-from test_support import wat_to_wasm
+from test_support import compile_module_block, compile_test_block, wat_to_wasm
 from wasm_module import WASM_LOCAL_SLOT_WORDS
-from wasm_module import TraceBlock
 from wasm_opcodes import (
     F32_ADD,
     F32_CONST,
@@ -141,12 +140,11 @@ def test_complex_helpers_use_shared_raw_slots_for_i64_and_floating_point():
         ctx.set_jit_helpers(addresses)
         trace = compiler.compile_trace(
             0,
-            TraceBlock(
-                head_pc=0,
-                instructions=((I64_CONST, left), (I64_CONST, right), (op, None)),
-                next_pc=3,
-                byte_span=3,
-            ),
+            ((I64_CONST, left), (I64_CONST, right), (op, None)),
+            3,
+            None,
+            3,
+            (),
         )
         assert trace is not None
         trace.invoke(ctx)
@@ -159,12 +157,11 @@ def test_complex_helpers_use_shared_raw_slots_for_i64_and_floating_point():
         right_bits = struct.unpack("<I", struct.pack("<f", right))[0]
         trace = compiler.compile_trace(
             0,
-            TraceBlock(
-                head_pc=0,
-                instructions=((F32_CONST, left_bits), (F32_CONST, right_bits), (op, None)),
-                next_pc=3,
-                byte_span=3,
-            ),
+            ((F32_CONST, left_bits), (F32_CONST, right_bits), (op, None)),
+            3,
+            None,
+            3,
+            (),
         )
         assert trace is not None
         trace.invoke(ctx)
@@ -178,12 +175,11 @@ def test_complex_helpers_use_shared_raw_slots_for_i64_and_floating_point():
         right_bits = struct.unpack("<Q", struct.pack("<d", right))[0]
         trace = compiler.compile_trace(
             0,
-            TraceBlock(
-                head_pc=0,
-                instructions=((F64_CONST, left_bits), (F64_CONST, right_bits), (op, None)),
-                next_pc=3,
-                byte_span=3,
-            ),
+            ((F64_CONST, left_bits), (F64_CONST, right_bits), (op, None)),
+            3,
+            None,
+            3,
+            (),
         )
         assert trace is not None
         trace.invoke(ctx)
@@ -208,7 +204,7 @@ def test_trace_compiler_cps_4arg_and_pic():
     """TEST-JITC-01: TraceCompiler emits 16-byte header + PIC code callable via CPS 4-arg convention."""
     compiler = TraceCompiler()
     # Block: local[1] = (local[0] + 10) * 3 - 5 -- real WASM bytecode, run through
-    # the same extract_basic_blocks + compile_block path production JIT compilation uses.
+    # The test prepares the same loader metadata passed by the runtime.
     code = bytes(
         [
             LOCAL_GET,
@@ -234,7 +230,7 @@ def test_trace_compiler_cps_4arg_and_pic():
         frame_depth=frame_depth,
         byte_span=byte_span,
     )
-    trace = compiler.compile_block(code, block, local_widths=(1, 1))
+    trace = compile_test_block(compiler, code, block, (1, 1))
     # 1. 16-byte header verification
     assert trace.header.head_wasm_pc == head_pc
     assert trace.size_bytes >= 16
@@ -311,11 +307,7 @@ def test_trace_compiler_bitwise_and_shifts_pic():
         frame_depth=frame_depth,
         byte_span=byte_span,
     )
-    trace = compiler.compile_block(
-        code,
-        block,
-        local_widths=(1, 1, 1, 1),
-    )
+    trace = compile_test_block(compiler, code, block, (1, 1, 1, 1))
     ctx = WASMContext()
     ctx.locals = (0x0F, 0x07, 0, 0)
     trace.invoke(ctx)
@@ -331,14 +323,11 @@ def test_context_helper_tail_jump_is_pic_and_uses_context_pointer():
     head_pc, next_pc, loops_to, frame_depth, byte_span = extract_basic_blocks(code)[0]
     trace = compiler.compile_trace(
         head_pc,
-        TraceBlock(
-            head_pc=head_pc,
-                instructions=((LOCAL_GET, 0), (LOCAL_SET, 0)),
-            next_pc=next_pc,
-            loops_to=loops_to,
-            byte_span=byte_span,
-            local_widths=(1,),
-        ),
+        ((LOCAL_GET, 0), (LOCAL_SET, 0)),
+        next_pc,
+        loops_to,
+        byte_span,
+        (1,),
         tail_context_helper=True,
     )
     assert trace is not None
@@ -408,14 +397,10 @@ def test_trace_chaining_between_traces():
     block_a = mod.blocks[0]
     block_b = mod.blocks[1]
     # Compile trace B first, then A (enabling immediate forward chaining)
-    trace_b = engine.compiler.compile_trace(
-        block_b.head_pc, engine.resolve_trace_block(block_b.head_pc)
-    )
+    trace_b = compile_module_block(engine.compiler, mod, block_b)
     engine.cache.insert(trace_b)
     engine.bitmap.mark_compiled(block_b.head_pc)
-    trace_a = engine.compiler.compile_trace(
-        block_a.head_pc, engine.resolve_trace_block(block_a.head_pc)
-    )
+    trace_a = compile_module_block(engine.compiler, mod, block_a)
     engine.cache.insert(trace_a)
     engine.bitmap.mark_compiled(block_a.head_pc)
     assert trace_a.chain_next == block_b.head_pc
@@ -509,15 +494,11 @@ def test_jit_chaining_uses_loader_resolved_successors():
     block_b = mod.blocks[1]
 
     # 1. Backward chaining: compile B (target) first, then A (source).
-    trace_b = engine.compiler.compile_trace(
-        block_b.head_pc, engine.resolve_trace_block(block_b.head_pc)
-    )
+    trace_b = compile_module_block(engine.compiler, mod, block_b)
     engine.cache.insert(trace_b)
     engine.bitmap.mark_compiled(block_b.head_pc)
 
-    trace_a = engine.compiler.compile_trace(
-        block_a.head_pc, engine.resolve_trace_block(block_a.head_pc)
-    )
+    trace_a = compile_module_block(engine.compiler, mod, block_a)
     engine.cache.insert(trace_a)
     engine.bitmap.mark_compiled(block_a.head_pc)
 
@@ -542,18 +523,14 @@ def test_jit_chaining_uses_loader_resolved_successors():
     block_a2 = mod2.blocks[0]
     block_b2 = mod2.blocks[1]
 
-    trace_a2 = engine2.compiler.compile_trace(
-        block_a2.head_pc, engine2.resolve_trace_block(block_a2.head_pc)
-    )
+    trace_a2 = compile_module_block(engine2.compiler, mod2, block_a2)
     engine2.cache.insert(trace_a2)
     engine2.bitmap.mark_compiled(block_a2.head_pc)
     assert trace_a2.chain_next is None  # B is not resident yet
 
     # Now insert B: forward chaining must inspect resident trace A, resolve its delimiter,
     # and patch trace_a2.chain_next = block_b2.head_pc!
-    trace_b2 = engine2.compiler.compile_trace(
-        block_b2.head_pc, engine2.resolve_trace_block(block_b2.head_pc)
-    )
+    trace_b2 = compile_module_block(engine2.compiler, mod2, block_b2)
     engine2.cache.insert(trace_b2)
     engine2.bitmap.mark_compiled(block_b2.head_pc)
 

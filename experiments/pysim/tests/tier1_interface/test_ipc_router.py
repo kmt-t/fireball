@@ -33,6 +33,7 @@ for _p in [
         sys.path.insert(0, _sp)
 
 from helpers import make_test_ipc_message
+from memory import FB_CONF_MEMORY_POOL_SIZE, MemoryManager
 from ipc_router import (
     DataType,
     IPCMessage,
@@ -63,6 +64,12 @@ _KEY_SHM_ID = pack_key32(ScopeKind.RESOURCE, DataType.UINT32, key_id=1)
 _CMD_PIN_HIGH = 1
 
 
+def _make_router(sched: Scheduler) -> IPCRouter:
+    manager = MemoryManager(sched)
+    assert manager.init_manager(0x20020000, FB_CONF_MEMORY_POOL_SIZE).is_ok
+    return IPCRouter(sched, manager)
+
+
 def _run_immediate(gen):
     """Drives an IPCRouter.send()/recv() generator that is expected to reject
     at Stage 1/2 (URI lookup / RBAC) -- i.e. never touch a CSP channel and so
@@ -77,7 +84,7 @@ def _run_immediate(gen):
 def test_ipc_01_uri_lookup_and_permission_matrix():
     """TEST-IPC-01: Service URI lookup and role-based access control."""
     sched = Scheduler()
-    router = IPCRouter(sched)
+    router = _make_router(sched)
     entry = router.find_service("fireball://hal/gpio/0")
     assert entry is not None
     assert entry.role == Role.HAL_GPIO
@@ -89,7 +96,7 @@ def test_ipc_01_uri_lookup_and_permission_matrix():
     status1, ch1 = router.lookup("fireball://hal/gpio/0")
     assert status1 == IPCStatus.COMPLETED and ch1 is not None
 
-    msg1 = make_test_ipc_message([(_KEY_CMD, _CMD_PIN_HIGH)])
+    msg1 = make_test_ipc_message([(_KEY_CMD, _CMD_PIN_HIGH)], memory_manager=router.memory_manager)
     gen = router.send(ch1, msg1)
     assert next(gen) == (ChannelAction.BLOCK, None)
     assert msg1.ownership == OwnershipState.IN_FLIGHT
@@ -104,7 +111,7 @@ def test_ipc_01_uri_lookup_and_permission_matrix():
 
     # Anti-spoofing verification: even if HAL_GPIO holds ch1 (from RUNTIME),
     # send() enforces TCB role check and denies transmission.
-    msg2 = make_test_ipc_message([(_KEY_CMD, _CMD_PIN_HIGH)])
+    msg2 = make_test_ipc_message([(_KEY_CMD, _CMD_PIN_HIGH)], memory_manager=router.memory_manager)
     gen_spoof = router.send(ch1, msg2)
     try:
         next(gen_spoof)
@@ -205,7 +212,7 @@ def test_ipc_04_select_recv_picks_first_ready_sender_and_clears_group():
     left as a stale waiter) so it remains independently usable afterward.
     """
     sched = Scheduler()
-    router = IPCRouter(sched)
+    router = _make_router(sched)
 
     received: list[tuple[IPCStatus, IPCMessage]] = []
 
@@ -216,7 +223,9 @@ def test_ipc_04_select_recv_picks_first_ready_sender_and_clears_group():
     def debugger_sender():
         status, ch = router.lookup("fireball://core/coos/0")
         assert status == IPCStatus.COMPLETED and ch is not None
-        status, _ = yield from router.send(ch, make_test_ipc_message([(1, 99)]))
+        status, _ = yield from router.send(
+            ch, make_test_ipc_message([(1, 99)], memory_manager=router.memory_manager)
+        )
         assert status == IPCStatus.COMPLETED
 
     recv_id = sched.spawn("core_receiver", core_receiver(), role=Role.CORE_SERVICE)
@@ -253,7 +262,9 @@ def test_ipc_04_select_recv_picks_first_ready_sender_and_clears_group():
     def runtime_sender():
         status, ch = router.lookup("fireball://core/coos/0")
         assert status == IPCStatus.COMPLETED and ch is not None
-        status, _ = yield from router.send(ch, make_test_ipc_message([(1, 7)]))
+        status, _ = yield from router.send(
+            ch, make_test_ipc_message([(1, 7)], memory_manager=router.memory_manager)
+        )
         assert status == IPCStatus.COMPLETED
 
     sched.spawn("core_receiver2", core_receiver2(), role=Role.CORE_SERVICE)
@@ -307,7 +318,7 @@ def test_ipc_05_message_storage_ownership_and_access_check():
 def test_ipc_06_router_create_channel_authorization():
     """TEST-IPC-06: router.create_channel() resolves destination, binds current task, checks RBAC, and returns Channel."""
     sched = Scheduler()
-    router = IPCRouter(sched)
+    router = _make_router(sched)
 
     # Task with Role.RUNTIME can open channel to HAL (ALLOWED)
     runtime_task_id = sched.spawn("runtime_task", role=Role.RUNTIME)
@@ -324,7 +335,7 @@ def test_ipc_06_router_create_channel_authorization():
     assert ch_denied is None, "HAL_GPIO -> DEBUGGER must be denied by RBAC"
 
     # Communication over the authorized channel
-    msg = make_test_ipc_message([(1, 42)])
+    msg = make_test_ipc_message([(1, 42)], memory_manager=router.memory_manager)
     sched.current_task = sched.get_task(runtime_task_id)
     action, _ = ch_hal.send(msg)
     assert action == ChannelAction.BLOCK

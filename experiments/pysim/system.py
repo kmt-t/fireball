@@ -21,7 +21,7 @@ from __future__ import annotations
 import os
 import struct
 import time
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from enum import IntEnum
 from typing import TYPE_CHECKING, Callable
 
@@ -652,8 +652,8 @@ class System:
         task = self.scheduler.current_task
         assert task is not None, "IPC send requires an active scheduler task"
         msg = IPCMessage.from_entries(
-            bytes_to_kv_storage(payload),
             memory_manager=self.memory_manager,
+            entries=bytes_to_kv_storage(payload),
         )
 
         gen = self.ipc.send(channel, msg)
@@ -778,7 +778,7 @@ class System:
         dbg: DebuggerManager,
         start_pc: int = 0,
         ctx: WASMContext | None = None,
-        blocks: list[BasicBlock] | None = None,
+        blocks: Mapping[int, BasicBlock] | None = None,
         host: str = "127.0.0.1",
         port: int = 0,
     ) -> tuple[int, int]:

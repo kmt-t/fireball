@@ -245,7 +245,7 @@ class HalBufferPool:
 
         record = self._resolve(handle)
         if offset < 0 or length < 0 or offset > record.capacity or length > record.capacity - offset:
-            raise HalBufferTrap(
+            assert False, (
                 f"hal-buffer-slice(offset={offset}, len={length}) escapes fixed buffer "
                 f"{handle.buffer_id}'s capacity ({record.capacity} bytes)"
             )
@@ -374,10 +374,13 @@ class HalTask:
 def make_hal_ipc_message(
     cmd_id: int,
     params: Sequence[tuple[int, int]] = (),
-    memory_manager: MemoryManager | None = None,
+    *,
+    memory_manager: MemoryManager,
 ) -> IPCMessage:
     """Builds a standardized IPCMessage for communicating with HalTask."""
-    entries = list(params)
-    entries.append((ARG_CMD_ID, cmd_id))
-    sorted_entries = sorted(entries, key=lambda kv: kv[0])
-    return IPCMessage.from_entries(sorted_entries, memory_manager=memory_manager)
+    entries: StaticVector[tuple[int, int]] = StaticVector(capacity=len(params) + 1)
+    for entry in params:
+        assert entries.push_back(entry)
+    assert entries.push_back((ARG_CMD_ID, cmd_id))
+    entries.sort(key=lambda kv: kv[0])
+    return IPCMessage.from_entries(entries, memory_manager=memory_manager)

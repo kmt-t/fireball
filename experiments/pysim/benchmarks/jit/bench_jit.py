@@ -32,7 +32,6 @@ from interpreter import Interpreter
 from runtime_engine import HotspotBitmap, RuntimeEngine, WASMContext
 from system_containers import ReadOnlyRadixBinaryTreeView, bswap32
 from wasm_reader import parse
-from wasm_module import TraceBlock
 from x64_jit import TraceCompiler
 
 
@@ -53,15 +52,14 @@ class JITCompilerBenchmark:
         t0 = time.perf_counter()
         compile_count = 10_000
         for _ in range(compile_count):
-            block = TraceBlock(
-                head_pc=head_pc,
-                instructions=iter_block_ops(code, head_pc & 0xFFFF, byte_span),
-                next_pc=next_pc,
-                loops_to=loops_to,
-                byte_span=byte_span,
-                local_widths=(1,),
+            _trace = self.compiler.compile_trace(
+                head_pc,
+                iter_block_ops(code, head_pc & 0xFFFF, byte_span),
+                next_pc,
+                loops_to,
+                byte_span,
+                (1,),
             )
-            _trace = self.compiler.compile_trace(head_pc=head_pc, block=block)
         t1 = time.perf_counter()
         results["jit_compile_traces_per_sec"] = compile_count / (t1 - t0)
         results["jit_compile_latency_us"] = (t1 - t0) / compile_count * 1e6
@@ -162,15 +160,12 @@ class JITCompilerBenchmark:
         helper_addr = ctypes.cast(helper_fn, ctypes.c_void_p).value or 0
         helper_ctx.set_jit_helpers((helper_addr,) * 11)
         helper_trace = self.compiler.compile_trace(
-            head_pc=0xF000,
-            block=TraceBlock(
-                head_pc=0xF000,
-                instructions=((op.LOCAL_GET, 0), (op.LOCAL_SET, 0)),
-                next_pc=None,
-                loops_to=None,
-                byte_span=4,
-                local_widths=(1,),
-            ),
+            0xF000,
+            ((op.LOCAL_GET, 0), (op.LOCAL_SET, 0)),
+            None,
+            None,
+            4,
+            (1,),
             tail_context_helper=True,
         )
         assert helper_trace is not None

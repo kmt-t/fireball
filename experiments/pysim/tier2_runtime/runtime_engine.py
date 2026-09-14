@@ -21,10 +21,10 @@ from __future__ import annotations
 
 import os
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Iterable, Sequence
 from typing import Protocol, TextIO
 
-from config import JIT_CARD_SHIFT
+from config import JIT_CARD_SHIFT, RUNTIME_BLOCK_CACHE_SLOT_COUNT
 from control_flow import iter_block_ops
 from execution_context import WASMContext
 from interpreter import Interpreter, InterpreterCall
@@ -42,7 +42,7 @@ from virq import (
     VirqDispatcher,
     VirqDispatchResult,
 )
-from wasm_module import BasicBlock, Module, TraceBlock, WasmOperand
+from wasm_module import BasicBlock, Module, WasmOperand
 from wasm_opcodes import (
     I32_ADD,
     I32_CONST,
@@ -61,8 +61,27 @@ except ImportError:
     _native_trace_call = None
 
 
+def _module_code_lengths(module: Module) -> tuple[int, ...]:
+    """Build the immutable per-function code-length vector without tuple growth."""
+
+    lengths: StaticVector[int] = StaticVector(capacity=len(module.imports) + len(module.functions))
+    for _ in module.imports:
+        lengths.append(0)
+    for index in range(len(module.functions)):
+        lengths.append(len(module.code_for(len(module.imports) + index)))
+    return tuple(lengths)
+
+
 class _JitCompiler(Protocol):
-    def compile_trace(self, head_pc: int, block: TraceBlock | None) -> JITTrace | None: ...
+    def compile_trace(
+        self,
+        head_pc: int,
+        instructions: Iterable[tuple[int, WasmOperand]],
+        next_pc: int | None,
+        loops_to: int | None,
+        byte_span: int,
+        local_widths: Sequence[int],
+    ) -> JITTrace | None: ...
 
 
 class _Debugger(Protocol):
@@ -86,9 +105,9 @@ from tier3_jit.jit_cache import (
     JITTrace,
     JITTraceHeader,
 )
-from tier3_jit.trace_compiler import WASMTraceCompiler
+from tier3_jit.x64_jit import TraceCompiler
 
-__all__ = [
+__all__ = (
     "BlockCardMask",
     "CardState",
     "HistoryRing",
@@ -98,7 +117,7 @@ __all__ = [
     "JITTrace",
     "JITTraceHeader",
     "RuntimeEngine",
-]
+)
 
 
 class RuntimeEngine:
@@ -159,7 +178,12 @@ class RuntimeEngine:
         # StaticVector's exact fixed capacity, never exceeded.
         self.compile_queue: StaticVector[int] = StaticVector(capacity=compile_queue_capacity)
         self.module: Module | None = None
-        self._fast_block_slots: list[tuple[int, BasicBlock | None] | None] = [None] * 16
+        self._fast_block_slots: StaticVector[tuple[int, BasicBlock | None] | None] = (
+            StaticVector.of(
+                tuple(None for _ in range(RUNTIME_BLOCK_CACHE_SLOT_COUNT)),
+                capacity=RUNTIME_BLOCK_CACHE_SLOT_COUNT,
+            )
+        )
         self.yield_threshold = yield_threshold
         self.exec_counter = 0
         # A card's 2-bit state can only ever describe ONE block: if two
@@ -176,7 +200,7 @@ class RuntimeEngine:
         self._virq: VirqDispatcher | None = None
         self._virq_interp: Interpreter | None = None
 
-    def _handle_eviction(self, purged_pcs: list[int]) -> None:
+    def _handle_eviction(self, purged_pcs: StaticVector[int]) -> None:
         for pc in purged_pcs:
             self.bitmap.mark_evicted(pc)
 
@@ -190,11 +214,11 @@ class RuntimeEngine:
 
     def get_block(self, pc: int) -> BasicBlock | None:
         # Fold UnifiedPC 32 -> 16 -> 8 -> 4 with exactly three XORs for the
-        # 16-slot locality cache.
+        # configured locality cache.
         temp = pc ^ (pc >> 16)
         temp = temp ^ (temp >> 8)
         temp = temp ^ (temp >> 4)
-        slot = temp & 0x0F
+        slot = temp & (RUNTIME_BLOCK_CACHE_SLOT_COUNT - 1)
         cached = self._fast_block_slots[slot]
         if cached is not None and cached[0] == pc:
             return cached[1]
@@ -202,25 +226,19 @@ class RuntimeEngine:
         self._fast_block_slots[slot] = (pc, blk)
         return blk
 
-    def resolve_trace_block(self, pc: int) -> TraceBlock | None:
-        """Creates a transient iterator over raw bytecode for one consumer."""
-        block = self.get_block(pc)
-        if block is None or self.module is None:
-            return None
+    def _compile_trace(self, pc: int, block: BasicBlock) -> JITTrace | None:
+        """Compile directly from loader metadata and a one-shot bytecode iterator."""
+        assert self.module is not None
         function_index = pc >> 16
         function = self.module.functions[function_index - len(self.module.imports)]
         assert function.local_widths_cache is not None
-        return TraceBlock(
-            head_pc=pc,
-            instructions=iter_block_ops(
-                self.module.code_for(function_index), pc & 0xFFFF, block.byte_span
-            ),
-            code=self.module.code_for(function_index),
-            head_offset=pc & 0xFFFF,
-            next_pc=block.next_pc,
-            loops_to=block.loops_to,
-            byte_span=block.byte_span,
-            local_widths=function.local_widths_cache,
+        return self.jit_compiler.compile_trace(
+            pc,
+            iter_block_ops(self.module.code_for(function_index), pc & 0xFFFF, block.byte_span),
+            block.next_pc,
+            block.loops_to,
+            block.byte_span,
+            function.local_widths_cache,
         )
 
     def register_module_blocks(self, module: Module) -> None:
@@ -228,14 +246,15 @@ class RuntimeEngine:
         if module.block_storage is None:
             module.build_basic_block_index()
         self.module = module
-        code_lengths = tuple(0 for _ in module.imports) + tuple(
-            len(function.code) for function in module.functions
-        )
+        code_lengths = _module_code_lengths(module)
         card_shift = self.bitmap.card_shift
         self.bitmap = HotspotBitmap(card_shift=card_shift, code_lengths=code_lengths)
         self.trackable = BlockCardMask(card_shift=card_shift, code_lengths=code_lengths)
         self._virq = VirqDispatcher(module, self._invoke_virq)
-        self._fast_block_slots = [None] * 16
+        self._fast_block_slots = StaticVector.of(
+            tuple(None for _ in range(RUNTIME_BLOCK_CACHE_SLOT_COUNT)),
+            capacity=RUNTIME_BLOCK_CACHE_SLOT_COUNT,
+        )
         # `next_pc is not None and byte_span >= min_trace_bytes` is a pure
         # function of static BasicBlock properties + this engine's own
         # min_trace_bytes, both already known here -- decided once per block,
@@ -337,10 +356,10 @@ class RuntimeEngine:
                 continue
             trace = None
             if self.jit_compiler is not None:
-                trace_block = self.resolve_trace_block(pc)
-                if self.module is not None:
-                    assert trace_block is not None
-                trace = self.jit_compiler.compile_trace(pc, trace_block)
+                assert self.module is not None
+                block = self.get_block(pc)
+                assert block is not None
+                trace = self._compile_trace(pc, block)
 
             if trace is not None and self.cache.insert(trace):
                 self.bitmap.mark_compiled(pc)
@@ -370,7 +389,7 @@ class RuntimeEngine:
         Dumps runtime internal state including execution stats, JIT cache banks,
         and chaining diagnostics for all compiled traces.
         """
-        lines: list[str] = []
+        lines: StaticVector[str] = StaticVector(capacity=RUNTIME_BLOCK_CACHE_SLOT_COUNT * 4)
         lines.append("=" * 80)
         lines.append(
             "                  RuntimeEngine Internal State & Chaining Dump                  "
@@ -402,11 +421,11 @@ class RuntimeEngine:
 
         lines.append("[2. JIT Multi-Buffer Cache]")
         lines.append("  * Cache Banks:")
-        for idx, bname in [
+        for idx, bname in (
             (self.cache.active_idx, "Active"),
             (self.cache.warm_idx, "Warm"),
             (self.cache.oldest_idx, "Oldest"),
-        ]:
+        ):
             bank = self.cache.banks[idx]
             cap = max(bank.capacity_bytes, 1)
             pct = (bank.used_bytes / cap) * 100.0
@@ -418,12 +437,14 @@ class RuntimeEngine:
         lines.append("")
 
         lines.append("[3. Compiled Traces & Chaining Analysis]")
-        all_traces: list[tuple[str, JITTrace]] = []
-        for bname, bank in [
+        all_traces: StaticVector[tuple[str, JITTrace]] = StaticVector(
+            capacity=RUNTIME_BLOCK_CACHE_SLOT_COUNT * 3
+        )
+        for bname, bank in (
             ("Active", self.cache.active),
             ("Warm", self.cache.warm),
             ("Oldest", self.cache.oldest),
-        ]:
+        ):
             for _, t in bank.traces:
                 all_traces.append((bname, t))
         all_traces.sort(key=lambda x: x[1].head_pc)
@@ -521,9 +542,9 @@ class RuntimeEngine:
         self,
         interp: Interpreter,
         func_index: int,
-        args: list[int],
+        args: Sequence[int],
         idle_budget: int = 4,
-    ) -> list[int]:
+    ) -> StaticVector[int]:
         """
         Drives `interp` to completion. Execution proceeds block-by-block for
         interpretation, or in a continuous native loop until chaining ends for JIT traces.
@@ -621,7 +642,7 @@ class RuntimeEngine:
         next raw operand-stack slot passed as `sp` and then committed by
         advancing that same stack's pointer.
         """
-        ip, frame, locals_arr, tos = call_state.cont
+        ip, frame, locals_arr, _tos = call_state.cont
         # The current x64 trace emitters support i32 locals only.  This is
         # validated once while creating the common interpreter frame; the
         # storage itself remains raw and is shared with both tiers.
@@ -631,10 +652,14 @@ class RuntimeEngine:
         result_ptr = frame.values.value_ptr(result_slot)
         if _native_trace_call is not None and trace.raw_addr is not None:
             _native_trace_call.invoke_trace(
-                trace.raw_addr, frame.context_ptr.value, result_ptr.value, locals_ptr.value, 0
+                trace.raw_addr,
+                frame.context_ptr.value,
+                result_ptr.value,
+                locals_ptr.value,
+                0,
             )
         else:
-            trace.fn(frame.context_ptr, result_ptr, locals_ptr, 0)
+            trace.execute(frame.context_ptr, result_ptr, locals_ptr, 0)
         res = frame.values.raw_at(result_slot) if trace.has_return_val else 0
         if trace.has_return_val and trace.loops_to is None:
             frame.values.set_size(result_slot + trace.result_words)
@@ -659,7 +684,12 @@ class RuntimeEngine:
         # handling (step(), ip >= len(code))
         # is what must process the actual return-to-caller mechanics next.
         next_ip = (next_unified & 0xFFFF) if next_unified is not None else len(frame.code)
-        call_state.cont = (next_ip, frame, locals_arr, 0)
+        call_state.cont = (
+            next_ip,
+            frame,
+            locals_arr,
+            frame.values.raw_top() if frame.values else 0,
+        )
         return call_state
 
 
@@ -701,7 +731,7 @@ def _interp_local_tee(ctx: WASMContext, arg: WasmOperand) -> None:
 
 _INTERP_BLOCK_STORAGE: ReadOnlyFlatMapStorage[int, Callable[[WASMContext, WasmOperand], None]] = (
     ReadOnlyFlatMapStorage.create(
-        [
+        (
             (I32_CONST, _interp_i32_const),
             (I32_ADD, _interp_i32_add),
             (I32_SUB, _interp_i32_sub),
@@ -709,7 +739,7 @@ _INTERP_BLOCK_STORAGE: ReadOnlyFlatMapStorage[int, Callable[[WASMContext, WasmOp
             (LOCAL_GET, _interp_local_get),
             (LOCAL_SET, _interp_local_set),
             (LOCAL_TEE, _interp_local_tee),
-        ]
+        )
     )
 )
 class IntegratedHybridEngine:
@@ -756,7 +786,7 @@ class IntegratedHybridEngine:
         self.trackable = BlockCardMask(card_shift=card_shift, code_lengths=code_lengths)
         self.history = HistoryRing(capacity=32)
         self.cache = JITMultiBufferCache()
-        self.compiler = compiler or WASMTraceCompiler()
+        self.compiler = compiler or TraceCompiler()
         self.compile_queue_capacity = compile_queue_capacity
         # LIFO queue: on_yield below drops a promotion that doesn't fit
         # rather than growing past this -- the card stays HOT, so it's
@@ -770,7 +800,7 @@ class IntegratedHybridEngine:
         # every tracked block's next sibling starts at least a full card
         # away, so no two tracked blocks can ever land on the same card.
         self.min_trace_bytes = min_trace_bytes if min_trace_bytes is not None else (1 << card_shift)
-        self.blocks: list[tuple[int, BasicBlock]] = []  # Flat slot list instead of dynamic dict
+        self.blocks: StaticVector[tuple[int, BasicBlock]] = StaticVector(capacity=0)
         self.interp_blocks = 0
         self.jit_traces = 0
         self.compilations = 0
@@ -779,7 +809,11 @@ class IntegratedHybridEngine:
         # Default is normal zero-overhead handler table.
         self.debugger: _Debugger | None = None
         self._dispatch = self._dispatch_normal
-        self.cache.on_evict = lambda pcs: [self.bitmap.mark_evicted(pc) for pc in pcs]
+        self.cache.on_evict = self._handle_eviction
+
+    def _handle_eviction(self, purged_pcs: StaticVector[int]) -> None:
+        for pc in purged_pcs:
+            self.bitmap.mark_evicted(pc)
 
     def load_wasm(self, wasm_bytes: bytes) -> Module:
         """Parses raw WASM binary and binds all loader-owned basic blocks and Radix trees."""
@@ -794,13 +828,13 @@ class IntegratedHybridEngine:
         if module.block_storage is None:
             module.build_basic_block_index()
         self.module = module
-        code_lengths = tuple(0 for _ in module.imports) + tuple(
-            len(function.code) for function in module.functions
-        )
+        code_lengths = _module_code_lengths(module)
         card_shift = self.bitmap.card_shift
         self.bitmap = HotspotBitmap(card_shift=card_shift, code_lengths=code_lengths)
         self.trackable = BlockCardMask(card_shift=card_shift, code_lengths=code_lengths)
-        self.blocks = [(b.head_pc, b) for b in module.blocks]
+        self.blocks = StaticVector(capacity=len(module.blocks))
+        for block in module.blocks:
+            self.blocks.append((block.head_pc, block))
         self.trackable.clear()
         for b in module.blocks:
             if (
@@ -836,26 +870,19 @@ class IntegratedHybridEngine:
                 return block
         return None
 
-    def resolve_trace_block(self, pc: int, block: BasicBlock | None = None) -> TraceBlock | None:
-        """Creates a transient iterator over raw bytecode for one consumer."""
-        if block is None:
-            block = self.get_block(pc)
-        if block is None or self.module is None:
-            return None
+    def _compile_trace(self, pc: int, block: BasicBlock) -> JITTrace | None:
+        """Compile directly from loader metadata and a one-shot bytecode iterator."""
+        assert self.module is not None
         function_index = pc >> 16
         function = self.module.functions[function_index - len(self.module.imports)]
         assert function.local_widths_cache is not None
-        return TraceBlock(
-            head_pc=pc,
-            instructions=iter_block_ops(
-                self.module.code_for(function_index), pc & 0xFFFF, block.byte_span
-            ),
-            code=self.module.code_for(function_index),
-            head_offset=pc & 0xFFFF,
-            next_pc=block.next_pc,
-            loops_to=block.loops_to,
-            byte_span=block.byte_span,
-            local_widths=function.local_widths_cache,
+        return self.compiler.compile_trace(
+            pc,
+            iter_block_ops(self.module.code_for(function_index), pc & 0xFFFF, block.byte_span),
+            block.next_pc,
+            block.loops_to,
+            block.byte_span,
+            function.local_widths_cache,
         )
 
     def on_yield(self) -> None:
@@ -878,10 +905,9 @@ class IntegratedHybridEngine:
                 # whether *this* pc specifically already has a trace.
                 self.bitmap.mark_compiled(head_pc)
                 continue
-            trace_block = self.resolve_trace_block(head_pc)
-            if self.module is not None:
-                assert trace_block is not None
-            trace = self.compiler.compile_trace(head_pc, trace_block)
+            block = self.get_block(head_pc)
+            assert block is not None
+            trace = self._compile_trace(head_pc, block)
             if trace is not None:
                 self.cache.insert(trace)
                 self.bitmap.mark_compiled(head_pc)
@@ -890,9 +916,10 @@ class IntegratedHybridEngine:
         return compiled
 
     def _interpret_block(self, block: BasicBlock, ctx: WASMContext) -> None:
-        trace_block = self.resolve_trace_block(block.head_pc, block)
-        assert trace_block is not None
-        for op, arg in trace_block.instructions:
+        assert self.module is not None
+        function_index = block.head_pc >> 16
+        code = self.module.code_for(function_index)
+        for op, arg in iter_block_ops(code, block.head_pc & 0xFFFF, block.byte_span):
             handler = _INTERP_BLOCK_STORAGE.view().find(op)
             if handler is not None:
                 handler(ctx, arg)

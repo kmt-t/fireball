@@ -11,7 +11,15 @@ import ctypes
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
-from config import JIT_CARD_SHIFT
+from config import (
+    JIT_CACHE_BANK_CAPACITY_BYTES,
+    JIT_CACHE_BANK_COUNT,
+    JIT_CACHE_FAST_SLOT_COUNT,
+    JIT_CACHE_MAX_INBOUND_SOURCES,
+    JIT_CARD_SHIFT,
+    JIT_TRACE_DEFAULT_BYTES,
+    JIT_TRACE_HEADER_BYTES,
+)
 from system_containers import (
     MutableBitStorage,
     RingBuffer,
@@ -47,9 +55,7 @@ _CARD_STATE_NAMES = ("UNEXECUTED", "EXECUTED", "HOT", "COMPILED")
 # is sized generously against that, matching this file's other small
 # FB_CONF-style bounds (JITMultiBufferCache.NUM_FAST_SLOTS=4,
 # RuntimeEngine.compile_queue_capacity=4).
-FB_CONF_MAX_INBOUND_SOURCES = 16
-
-
+FB_CONF_MAX_INBOUND_SOURCES = JIT_CACHE_MAX_INBOUND_SOURCES
 class HotspotBitmap:
     """Per-function 2-bit card state with one owned storage per function."""
 
@@ -208,7 +214,7 @@ class HistoryRing:
     def record(self, pc: int) -> None:
         self.ring.push(pc)
 
-    def drain(self) -> list[int]:
+    def drain(self) -> StaticVector[int]:
         return self.ring.drain()
 
 
@@ -238,11 +244,12 @@ class JITTraceHeader:
     def __init__(
         self,
         head_wasm_pc: int,
-        trace_byte_size: int = 64,
+        trace_byte_size: int = JIT_TRACE_DEFAULT_BYTES,
         flags: int = 0,
         variant_id: int = 0,
     ):
         self.head_wasm_pc = head_wasm_pc & 0xFFFF_FFFF
+        assert trace_byte_size >= JIT_TRACE_HEADER_BYTES
         self.trace_byte_size = trace_byte_size & 0xFFFF
         self.flags = flags & 0xFF
         self.variant_id = variant_id & 0xFF
@@ -267,7 +274,6 @@ class JITTrace:
     """Compiled native trace descriptor backed by JITTraceHeader and native ctypes function pointer."""
 
     __slots__ = (
-        "__dict__",
         "_exec_buf",
         "_keepalive",
         "chain_next",
@@ -287,7 +293,7 @@ class JITTrace:
         self,
         head_pc: int,
         fn: NativeTraceFn | None = None,
-        size_bytes: int = 64,
+        size_bytes: int = JIT_TRACE_DEFAULT_BYTES,
         next_pc: int | None = None,
         loops_to: int | None = None,
         has_return_val: bool = False,
@@ -299,6 +305,7 @@ class JITTrace:
         self.head_pc = head_pc
         self.fn = fn or native_fn  # Direct ctypes CFUNCTYPE function pointer or callable
         self.raw_addr = raw_addr  # Entry point as a plain int, for native_trace_call
+        assert size_bytes >= JIT_TRACE_HEADER_BYTES
         self.size_bytes = size_bytes
         self.next_pc = next_pc  # Unconditional fallthrough successor
         self.loops_to = loops_to  # Conditional loop backedge (never auto-chained)
@@ -325,27 +332,38 @@ class JITTrace:
     def __call__(
         self,
         ctx_or_locals: TraceArgument,
-        sp_or_mem: TraceArgument = 0,
-        local_base: int = 0,
-        tos: int = 0,
+        sp_or_mem: TraceArgument,
+        local_base: TraceArgument,
+        tos: int,
     ) -> int:
         """
         Invokes the native JIT trace directly via ctypes CPS 4-argument calling convention:
                 (void* ctx, void* sp, void* local_base, uint32_t tos)
         """
 
+        assert self.fn is not None
         return self.fn(ctx_or_locals, sp_or_mem, local_base, tos)
 
     def invoke(self, ctx: WASMContext) -> int:
         """Helper to invoke trace directly on WASMContext via CPS 4-argument calling convention."""
-        tos = ctx.pop() if ctx.stack else 0
         result_slot = len(ctx.stack)
-        self.fn(ctx.context_ptr, ctx.sp_ptr, ctx.locals_ptr, tos)
+        # The interpreter owns the shared stack before entry.  A trace that
+        # needs an input operand is rejected during compilation; therefore no
+        # entry value is popped or copied into a JIT-owned stack.
+        self.execute(ctx.context_ptr, ctx.sp_ptr, ctx.locals_ptr, 0)
         if not self.has_return_val:
             return 0
         ctx.stack.set_size(result_slot + self.result_words)
         result = ctx.stack[result_slot]
         return result
+
+    def execute(
+        self, ctx: TraceArgument, sp: TraceArgument, local_base: TraceArgument, tos: int
+    ) -> None:
+        """Execute the compiled PIC entry point with the shared CPS arguments."""
+
+        assert self.fn is not None
+        self.fn(ctx, sp, local_base, tos)
 
 
 class JITCacheBank:
@@ -366,16 +384,21 @@ class JITCacheBank:
         "_values",
         "bank_id",
         "capacity_bytes",
+        "entry_capacity",
         "inbound_sources",
         "used_bytes",
     )
 
-    def __init__(self, bank_id: int, capacity_bytes: int = 2048):
+    def __init__(self, bank_id: int, capacity_bytes: int = JIT_CACHE_BANK_CAPACITY_BYTES):
         self.bank_id = bank_id
+        assert capacity_bytes >= JIT_TRACE_HEADER_BYTES
         self.capacity_bytes = capacity_bytes
+        self.entry_capacity = max(1, capacity_bytes // JIT_TRACE_HEADER_BYTES)
         self.used_bytes = 0
-        self._keys: list[int] = []
-        self._values: list[JITTrace | None] = []  # None marks a tombstoned slot
+        self._keys: StaticVector[int] = StaticVector(capacity=self.entry_capacity)
+        self._values: StaticVector[JITTrace | None] = StaticVector(
+            capacity=self.entry_capacity
+        )  # None marks a tombstoned slot
         self.inbound_sources: StaticVector[int] = StaticVector(capacity=FB_CONF_MAX_INBOUND_SOURCES)
 
     def _live_index(self, head_pc: int) -> int | None:
@@ -385,12 +408,14 @@ class JITCacheBank:
         return None
 
     @property
-    def traces(self) -> list[tuple[int, JITTrace]]:
-        return [
-            (pc, trace)
-            for pc, trace in zip(self._keys, self._values, strict=True)
-            if trace is not None
-        ]
+    def traces(self) -> StaticVector[tuple[int, JITTrace]]:
+        traces: StaticVector[tuple[int, JITTrace]] = StaticVector(
+            capacity=self.entry_capacity
+        )
+        for pc, trace in zip(self._keys, self._values, strict=True):
+            if trace is not None:
+                traces.append((pc, trace))
+        return traces
 
     def get_trace(self, head_pc: int) -> JITTrace | None:
         idx = self._live_index(head_pc)
@@ -407,10 +432,11 @@ class JITCacheBank:
         self._values[idx] = None
         return trace
 
-    def clear(self) -> list[int]:
-        purged = [
-            pc for pc, trace in zip(self._keys, self._values, strict=True) if trace is not None
-        ]
+    def clear(self) -> StaticVector[int]:
+        purged: StaticVector[int] = StaticVector(capacity=self.entry_capacity)
+        for pc, trace in zip(self._keys, self._values, strict=True):
+            if trace is not None:
+                purged.append(pc)
         self._keys.clear()
         self._values.clear()
         self.inbound_sources.clear()
@@ -426,8 +452,8 @@ class JITCacheBank:
         if idx < len(self._keys) and self._keys[idx] == trace.head_pc:
             self._values[idx] = trace  # reuse the existing (live or tombstoned) slot
         else:
-            self._keys.insert(idx, trace.head_pc)
-            self._values.insert(idx, trace)
+            assert self._keys.insert_at(idx, trace.head_pc)
+            assert self._values.insert_at(idx, trace)
         self.used_bytes += delta
         return True
 
@@ -436,7 +462,6 @@ class JITMultiBufferCache:
     """3-bank rotating JIT code cache: Active / Warm / Oldest with O(k) bounded unlinking and Direct-Mapped Folding XOR lookup."""
 
     __slots__ = (
-        "__dict__",
         "_fast_slots",
         "active_idx",
         "banks",
@@ -447,17 +472,22 @@ class JITMultiBufferCache:
         "warm_idx",
     )
 
-    NUM_FAST_SLOTS = 4
+    NUM_FAST_SLOTS = JIT_CACHE_FAST_SLOT_COUNT
 
-    def __init__(self, bank_capacity: int = 2048):
-        self.banks = [JITCacheBank(i, bank_capacity) for i in range(3)]
+    def __init__(self, bank_capacity: int = JIT_CACHE_BANK_CAPACITY_BYTES):
+        self.banks: StaticVector[JITCacheBank] = StaticVector.of(
+            tuple(JITCacheBank(i, bank_capacity) for i in range(JIT_CACHE_BANK_COUNT)),
+            capacity=JIT_CACHE_BANK_COUNT,
+        )
         self.active_idx, self.warm_idx, self.oldest_idx = 0, 1, 2
         self.promotions = 0
         self.evictions = 0
-        self.on_evict: Callable[[list[int]], None] | None = None
+        self.on_evict: Callable[[StaticVector[int]], None] | None = None
         # Direct-mapped 4-slot cache keyed by a repeatedly folded XOR over
         # UnifiedPC.
-        self._fast_slots: list[tuple[int, JITTrace] | None] = [None] * self.NUM_FAST_SLOTS
+        self._fast_slots: StaticVector[tuple[int, JITTrace] | None] = StaticVector.of(
+            tuple(None for _ in range(self.NUM_FAST_SLOTS)), capacity=self.NUM_FAST_SLOTS
+        )
 
     def _hash_slot(self, pc: int) -> int:
         """Fold a 32-bit UnifiedPC with four XORs and select two bits."""
@@ -527,7 +557,9 @@ class JITMultiBufferCache:
         # these sources in the bank that used to hold the promoted trace,
         # never finds them there anymore, and never unlinks them to the
         # interpreter fallback once this trace is eventually purged for real.
-        following_sources = []
+        following_sources: StaticVector[int] = StaticVector(
+            capacity=FB_CONF_MAX_INBOUND_SOURCES
+        )
         for src_pc in old_oldest.inbound_sources:
             src_trace = self.find_trace(src_pc)
             if src_trace is not None and src_trace.chain_next == head_pc:
@@ -573,7 +605,7 @@ class JITMultiBufferCache:
         self._fast_slots[slot] = (trace.head_pc, trace)
         return True
 
-    def rotate(self) -> list[int]:
+    def rotate(self) -> StaticVector[int]:
         """
         Rotates Active -> Warm -> Oldest -> Active and purges the old Oldest bank.
                 Performs O(k) bounded unlinking on purged inbound sources.
@@ -603,7 +635,9 @@ class JITMultiBufferCache:
         self.active_idx = new_active
         self.warm_idx = new_warm
         self.oldest_idx = new_oldest
-        self._fast_slots = [None] * self.NUM_FAST_SLOTS
+        self._fast_slots = StaticVector.of(
+            tuple(None for _ in range(self.NUM_FAST_SLOTS)), capacity=self.NUM_FAST_SLOTS
+        )
         if self.on_evict and purged_pcs:
             self.on_evict(purged_pcs)
         return purged_pcs
@@ -615,4 +649,6 @@ class JITMultiBufferCache:
             self.evictions += len(purged)
             if self.on_evict and purged:
                 self.on_evict(purged)
-        self._fast_slots = [None] * self.NUM_FAST_SLOTS
+        self._fast_slots = StaticVector.of(
+            tuple(None for _ in range(self.NUM_FAST_SLOTS)), capacity=self.NUM_FAST_SLOTS
+        )

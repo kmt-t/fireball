@@ -32,8 +32,9 @@ from logger import LogLevel
 from recovery import RecoveryManager, RecoveryStrategy, Result
 from runtime_engine import IntegratedHybridEngine, WASMContext
 from system import ShmSlice, System
+from system_containers import StaticVector
 
-findings: list[str] = []
+findings: StaticVector[str] = StaticVector(capacity=8)
 
 
 def task_structured_logger(sysv: System):
@@ -113,7 +114,7 @@ def task_retry_then_succeed(sysv: System):
     """
 
     mgr = RecoveryManager(sleep_fn=lambda _s: None)
-    attempts_made = [0]
+    attempts_made: StaticVector[int] = StaticVector.of((0,), capacity=1)
 
     def flaky_operation() -> Result[str, str]:
         attempts_made[0] += 1
@@ -136,7 +137,7 @@ def task_retry_exhausted(sysv: System):
     """
 
     mgr = RecoveryManager(sleep_fn=lambda _s: None)
-    reset_performed = [False]
+    reset_performed: StaticVector[bool] = StaticVector.of((False,), capacity=1)
 
     def failing_op() -> Result[str, str]:
         return Result.err("RESOURCE_DEADLOCK", RecoveryStrategy.RETRY)
@@ -191,7 +192,9 @@ def demo_wasmjit_hybrid_execution(sysv: System) -> None:
     print("  [Stage 1] Initial iterations running via Tier 2 Interpreter...")
     for iter_idx in range(1, 4):
         pc = engine.run_step(pc, ctx)
-        state_name = ["UNEXECUTED", "EXECUTED", "HOT", "COMPILED"][engine.bitmap.get_state(loop_pc)]
+        state_name = ("UNEXECUTED", "EXECUTED", "HOT", "COMPILED")[
+            engine.bitmap.get_state(loop_pc)
+        ]
         print(
             f"    iteration {iter_idx}: executed via Interpreter (card 0x{loop_pc:x} state={state_name})"
         )
@@ -241,8 +244,7 @@ def main() -> None:
     # spawn the hostile neighbor now that a real handle exists to attack.
     tx_handle = next(s for s in sysv.pool._slots if s is not None)
     print("\n== pysim: a second task attacks the first task's SHM handle ==")
-    for gen in [task_hostile_neighbor(sysv, other_handle=tx_handle)]:
-        sched.spawn("hostile-neighbor", gen)
+    sched.spawn("hostile-neighbor", task_hostile_neighbor(sysv, other_handle=tx_handle))
 
     sched.run_to_completion()
     print("\n== pysim: draining the real OS transport the whole run wrote to ==")
@@ -254,11 +256,7 @@ def main() -> None:
     demo_wasmjit_hybrid_execution(sysv)
     sysv.shutdown()
     print("\n== pysim: findings ==")
-    if findings:
-        for f in findings:
-            print(f"  - {f}")
-
-        raise SystemExit(1)
+    assert len(findings) == 0, tuple(findings)
     print("  No behavioral bugs found: every enforced invariant held under real execution.")
     print("  (See recovery.py's retry-exhaustion comment for one spec gap this build had")
     print("   to resolve by assumption -- not a code bug, a place interface_wit.md should")

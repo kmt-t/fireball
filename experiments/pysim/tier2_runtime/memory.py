@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import struct
 from dataclasses import dataclass, field
-from enum import Enum, auto
+from enum import Enum, IntEnum, auto
 from types import TracebackType
 from typing import Generic, TypeVar
 
@@ -44,19 +44,38 @@ class RecoveryAction(Enum):
     PANIC = auto()
 
 
+class MemoryErrorCode(IntEnum):
+    ALREADY_ACQUIRED = 1
+    POOL_EXHAUSTED = 2
+    INVALID_SIZE = 3
+    SHM_EXHAUSTED = 4
+    INVALID_SHM_ID = 5
+    GRANT_NOT_COMPLETED = 6
+
+
+class MemoryReasonCode(IntEnum):
+    TASK_PARTITION_ALREADY_ACQUIRED = 1
+    PHYSICAL_MEMORY_POOL_EXHAUSTED = 2
+    REQUESTED_SHM_SIZE_OUT_OF_BOUNDS = 3
+    NO_FREE_SHM_PAGES = 4
+    ALL_SHM_PAGE_SLOTS_EXHAUSTED = 5
+    INVALID_OR_DEALLOCATED_SHM_ID = 6
+    GRANT_PHASE_INCOMPLETE = 7
+
+
 @dataclass(slots=True)
 class RecoveryStrategy:
     action: RecoveryAction
-    message: str
+    reason_code: MemoryReasonCode
 
 
 @dataclass(slots=True)
 class MemoryErrorResult:
-    error_code: str
+    error_code: MemoryErrorCode
     recovery: RecoveryStrategy
 
     def __str__(self) -> str:
-        return f"MemoryError({self.error_code}: {self.recovery.message}, action={self.recovery.action.name})"
+        return f"MemoryError({self.error_code.name}:{self.recovery.reason_code.name}, action={self.recovery.action.name})"
 
 
 @dataclass(slots=True)
@@ -73,8 +92,7 @@ class Result(Generic[T]):
         return self.error is not None
 
     def unwrap(self) -> T:
-        if self.error is not None:
-            raise RuntimeError(f"Unwrap failed on Result: {self.error}")
+        assert self.error is None, self.error
         assert self.value is not None
         return self.value
 
@@ -393,7 +411,6 @@ class AccessPermission(Enum):
 @dataclass(slots=True)
 class MPURegion:
     region_no: int
-    name: str
     base_address: int
     limit_address: int
     ap: AccessPermission
@@ -430,7 +447,6 @@ class PMSAv8MPU:
         self.regions = (
             MPURegion(
                 0,
-                "Flash_KernelCode",
                 0x00000000,
                 0x0007FFE0,
                 AccessPermission.RO,
@@ -438,7 +454,6 @@ class PMSAv8MPU:
             ),
             MPURegion(
                 1,
-                "Kernel_DataBSS",
                 0x20000000,
                 0x20007FE0,
                 AccessPermission.RW,
@@ -446,7 +461,6 @@ class PMSAv8MPU:
             ),
             MPURegion(
                 2,
-                "Kernel_PoolHeap",
                 0x20008000,
                 0x2001FFE0,
                 AccessPermission.RW,
@@ -454,7 +468,6 @@ class PMSAv8MPU:
             ),
             MPURegion(
                 3,
-                "Guest_WasmRAM",
                 pool_base,
                 pool_base + 0x000FFE0,
                 AccessPermission.RW,
@@ -462,7 +475,6 @@ class PMSAv8MPU:
             ),
             MPURegion(
                 4,
-                "JIT_CodeCache",
                 0x20040000,
                 0x2007FFE0,
                 AccessPermission.RO,
@@ -470,7 +482,6 @@ class PMSAv8MPU:
             ),
             MPURegion(
                 5,
-                "Peripheral_MMIO",
                 0x40000000,
                 0x4003FFE0,
                 AccessPermission.RW,
@@ -479,7 +490,6 @@ class PMSAv8MPU:
             ),
             MPURegion(
                 6,
-                "Shared_Memory",
                 FB_CONF_MPU_R6_SHARED_MEMORY_BASE,
                 0x200BFFE0,
                 AccessPermission.RW,
@@ -487,7 +497,6 @@ class PMSAv8MPU:
             ),
             MPURegion(
                 7,
-                "Stack_Guard",
                 0x200C0000,
                 0x200C0020,
                 AccessPermission.NO_ACCESS,
@@ -522,7 +531,7 @@ class PMSAv8MPU:
         for r in self.regions:
             if r.enabled:
                 assert not (r.is_writable and r.is_executable), (
-                    f"Invariant violation: Region {r.region_no} ({r.name}) has RWX permissions"
+                    f"Invariant violation: Region {r.region_no} has RWX permissions"
                 )
 
 
@@ -613,10 +622,10 @@ class MemoryManager:
         if self.partition_owners.view().find(owner) is not None:
             return Result(
                 error=MemoryErrorResult(
-                    "ERR_ALREADY_ACQUIRED",
+                    MemoryErrorCode.ALREADY_ACQUIRED,
                     RecoveryStrategy(
                         RecoveryAction.RETRY,
-                        f"Task {owner} already has an active partition",
+                        MemoryReasonCode.TASK_PARTITION_ALREADY_ACQUIRED,
                     ),
                 )
             )
@@ -625,8 +634,11 @@ class MemoryManager:
         if slot_index >= len(FB_CONF_TASK_HEAP_SIZES):
             return Result(
                 error=MemoryErrorResult(
-                    "ERR_POOL_EXHAUSTED",
-                    RecoveryStrategy(RecoveryAction.DEGRADE, "Physical memory pool exhausted"),
+                    MemoryErrorCode.POOL_EXHAUSTED,
+                    RecoveryStrategy(
+                        RecoveryAction.DEGRADE,
+                        MemoryReasonCode.PHYSICAL_MEMORY_POOL_EXHAUSTED,
+                    ),
                 )
             )
 
@@ -634,8 +646,11 @@ class MemoryManager:
         if self.total_allocated_bytes + slot_size > self.pool_size:
             return Result(
                 error=MemoryErrorResult(
-                    "ERR_POOL_EXHAUSTED",
-                    RecoveryStrategy(RecoveryAction.DEGRADE, "Physical memory pool exhausted"),
+                    MemoryErrorCode.POOL_EXHAUSTED,
+                    RecoveryStrategy(
+                        RecoveryAction.DEGRADE,
+                        MemoryReasonCode.PHYSICAL_MEMORY_POOL_EXHAUSTED,
+                    ),
                 )
             )
 
@@ -668,8 +683,11 @@ class MemoryManager:
         if size <= 0 or size > FB_PAGE_SIZE:
             return Result(
                 error=MemoryErrorResult(
-                    "ERR_INVALID_SIZE",
-                    RecoveryStrategy(RecoveryAction.RETRY, "Requested SHM size out of bounds"),
+                    MemoryErrorCode.INVALID_SIZE,
+                    RecoveryStrategy(
+                        RecoveryAction.RETRY,
+                        MemoryReasonCode.REQUESTED_SHM_SIZE_OUT_OF_BOUNDS,
+                    ),
                 )
             )
 
@@ -680,8 +698,8 @@ class MemoryManager:
         if self.total_allocated_bytes + FB_PAGE_SIZE > self.pool_size:
             return Result(
                 error=MemoryErrorResult(
-                    "ERR_SHM_EXHAUSTED",
-                    RecoveryStrategy(RecoveryAction.DEGRADE, "No free SHM pages in physical pool"),
+                    MemoryErrorCode.SHM_EXHAUSTED,
+                    RecoveryStrategy(RecoveryAction.DEGRADE, MemoryReasonCode.NO_FREE_SHM_PAGES),
                 )
             )
         for page in self.shm_pages:
@@ -692,8 +710,11 @@ class MemoryManager:
         if target_page is None:
             return Result(
                 error=MemoryErrorResult(
-                    "ERR_SHM_EXHAUSTED",
-                    RecoveryStrategy(RecoveryAction.DEGRADE, "All SHM page slots exhausted"),
+                    MemoryErrorCode.SHM_EXHAUSTED,
+                    RecoveryStrategy(
+                        RecoveryAction.DEGRADE,
+                        MemoryReasonCode.ALL_SHM_PAGE_SLOTS_EXHAUSTED,
+                    ),
                 )
             )
 
@@ -772,8 +793,11 @@ class MemoryManager:
         if slot is None or not slot.allocated:
             return Result(
                 error=MemoryErrorResult(
-                    "ERR_INVALID_SHM_ID",
-                    RecoveryStrategy(RecoveryAction.RETRY, "Invalid or deallocated SHM ID"),
+                    MemoryErrorCode.INVALID_SHM_ID,
+                    RecoveryStrategy(
+                        RecoveryAction.RETRY,
+                        MemoryReasonCode.INVALID_OR_DEALLOCATED_SHM_ID,
+                    ),
                 )
             )
 
@@ -782,8 +806,11 @@ class MemoryManager:
         if current_owner != receiver_task_id:
             return Result(
                 error=MemoryErrorResult(
-                    "ERR_GRANT_NOT_COMPLETED",
-                    RecoveryStrategy(RecoveryAction.RETRY, "Grant phase incomplete in page table"),
+                    MemoryErrorCode.GRANT_NOT_COMPLETED,
+                    RecoveryStrategy(
+                        RecoveryAction.RETRY,
+                        MemoryReasonCode.GRANT_PHASE_INCOMPLETE,
+                    ),
                 )
             )
 

@@ -142,7 +142,7 @@ def test_native_control_stack_owns_flat_frame_records():
     assert stack.pop_back().kind == int(ControlFrameKind.LOOP)
     try:
         stack.pop_back()
-    except IndexError:
+    except AssertionError:
         pass
     else:
         raise AssertionError("empty Native control stack must fail fast")

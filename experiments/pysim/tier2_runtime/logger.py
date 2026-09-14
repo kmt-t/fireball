@@ -49,7 +49,7 @@ LOG_EVT_IPC_MSG_TOO_LARGE = 0x0203
 LOG_EVT_IPC_INVALID_OWNERSHIP = 0x0204
 LOG_EVT_IPC_CHANNEL_COLLISION = 0x0205
 
-STANDARD_DIAGNOSTIC_EVENTS: list[tuple[int, str]] = [
+STANDARD_DIAGNOSTIC_EVENTS: tuple[tuple[int, str], ...] = (
     (LOG_EVT_COOS_HANDOFF_LIMIT, "COOS: handoff limit reached (task=%d, count=%d)"),
     (LOG_EVT_COOS_TASK_CAPACITY, "COOS: task capacity exceeded (max=%d, attempted=%d)"),
     (LOG_EVT_COOS_DUPLICATE_TASK, "COOS: duplicate task id rejected (task=%d)"),
@@ -59,7 +59,7 @@ STANDARD_DIAGNOSTIC_EVENTS: list[tuple[int, str]] = [
     (LOG_EVT_IPC_MSG_TOO_LARGE, "IPC: message too large (kv_count=%d, max=%d)"),
     (LOG_EVT_IPC_INVALID_OWNERSHIP, "IPC: invalid ownership state (current_state=%d, op=%d)"),
     (LOG_EVT_IPC_CHANNEL_COLLISION, "IPC: channel waiter collision (channel=%d, dir=%d)"),
-]
+)
 
 
 class LogDictionary:
@@ -85,7 +85,7 @@ class LogDictionary:
     def register(self, offset: int, fmt: str) -> None:
         for bad in _DISALLOWED_SPECIFIERS:
             if fmt.find(bad) >= 0:
-                raise ValueError(
+                assert False, (
                     f"dictionary entry 0x{offset:X} uses '{bad}', which cannot be "
                     "backed by a u32 argument without reading it as a pointer"
                 )

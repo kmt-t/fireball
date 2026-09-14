@@ -71,7 +71,7 @@ def test_scenario_ipc_router_and_logging():
     # Stage 1: IPC Router 3-Stage Pipeline (URI lookup -> RBAC -> CSP handoff)
     # -------------------------------------------------------------------------
     sched = Scheduler()
-    router = IPCRouter(sched)
+    router = IPCRouter(sched, manager)
 
     # IPC is inter-*task* communication: both parties below are genuine
     # scheduler tasks, each performing its own sequence of sends/recvs as its

@@ -7,6 +7,8 @@ description: experiments/pysim 配下の Python ソースコードを、組み�
 
 `experiments/pysim/` は、通常の `new` / `delete`、`malloc` / `free` / `realloc` / `calloc`、標準の動的 STL コンテナを禁止し、placement/in-place `new` とプロジェクトで提供する独自ヒープ API・独自コンテナを許可する組み込み C++23 の設計を、Python 上で事前実証する参照シミュレータです。`pysim` 自身では、Python 標準の `dict` / `set` / `list` を禁止し、固定容量のシステムコンテナを使用します。参照モデルは fail-fast を原則とし、不変条件・境界・契約違反を `assert` で即時検出します。製品コードでは明示的な `raise` を使用せず、`try` / `except` による捕捉は許可します。
 
+評価ターゲットは最小構成の SRAM 32KB / Flash 96KB であり、これは目安ではなくレビューのハード制約である。回避可能なメタデータ複製、キャッシュ、文字列本体、二重バッファ、一時オブジェクト、未使用フィールドは、1バイトでも残っていれば不適合として扱う。要求がコードから明示されていない場合も、このターゲット制約を読み取って判定し、Pythonの利便性を理由に緩和しない。
+
 本スキルは、**「組み込み C++ に 1 対 1 で移植可能であること」** を前提に、ユーザー指定の **9大評価軸** を専門サブエージェント群を活用して厳格に監査します。
 
 ```mermaid
@@ -34,9 +36,10 @@ graph TD
 1. **仕様書との一致性 (Specification Parity & Invariants)**:
    - `docs/components/**` のアーキテクチャ・状態機械・Gotchas（勘所）と一致しているか。
 2. **型が書いてあるか (Strict Static Typing & No Any)**:
-   - すべての引数・戻り値・属性に具象型が明記されているか。`typing.Any` と `object` が 0 件か。`T | None` / `Optional[T]` 以外のUnionがないか。製品コードに `raise` がないか（`except` は許可）。
+   - すべての引数・戻り値・属性に具象型が明記されているか。`typing.Any` と `object` が 0 件か。`T | None` / `Optional[T]` 以外のUnionがないか。製品コードに `raise` がないか（`except` は許可）。製品クラスの実行時メンバーへ `str` または文字列要素を含むコンテナを持たせず、ROM上の範囲・整数ID・固定長数値で表現しているか。文字列リテラル初期値、`ClassVar`、`Final` のクラス定数はROM配置可能なため許可する。
 3. **set、dict、listを使っていないか (No Built-in Containers: set/dict/list)**:
    - 素の `dict`/`set`/`list`（リテラル、コンストラクタ、型注釈、内包表記を含む）が製品コードで使われていないか。`BitView`, `ReadOnlyFlatMapView`, `ReadOnlyRadixBinaryTreeView`, `StaticVector`, `RingBuffer` 等のシステムコンテナに置き換えられているか。設定で除外されたシステムコンテナ実装、テスト、シナリオ、ベンチマークは対象外とする。
+   - 禁止コンテナの抜け道として、可変列を `tuple` の連結・再生成で実装していないか。構築中データは固定容量コンテナで保持し、`tuple`/`bytes` はロード完了後の不変データを凍結する場合に限って認める。
    - `isinstance` 等の RTTI、リフレクション用属性、`in` / `not in` 演算子による線形探索を製品コードに持ち込んでいないか。
 4. **計算量・設定値管理を意識したコードか (Algorithmic Complexity, Determinism & Configuration)**:
    - $O(1)$ スケジューリング、決定論的ディスパッチ、ホットパスでの線形探索 $O(N)$ 回避、ループ内アロケーション排除、ロード時メタデータの事前計算キャッシュ。
@@ -66,7 +69,7 @@ graph TD
 
 ### Step 1: 静的アンチパターンスキャンの実行
 
-まず付属の AST スキャナを実行し、対象コード内の機械的違反（Any, dict, set, list, append, RTTI, bytearray, 型注釈欠落）を瞬時に抽出します。続けて `spec-integrator` のソース検証を実行し、`spec-integrator.yaml` の `pysim_imports` 設定に従ってTier 1の汎用コードがTier 2/3の実装へ逆流していないこと、bare importが`sys.path`依存で別Tierへ解決されないことを確認します。
+まず付属の AST スキャナを実行し、対象コード内の機械的違反（Any, object, 実行時文字列メンバー, dict, set, list, append, RTTI, bytearray, 型注釈欠落）を瞬時に抽出します。続けて `spec-integrator` のソース検証を実行し、`spec-integrator.yaml` の `pysim_imports` 設定に従ってTier 1の汎用コードがTier 2/3の実装へ逆流していないこと、bare importが`sys.path`依存で別Tierへ解決されないことを確認します。
 
 ```powershell
 uv run python .agents/skills/pysim-review/scripts/scan_pysim_anti_patterns.py <target_path> --json
@@ -110,7 +113,7 @@ invoke_subagent(
 
 #### サブエージェント 2: 型・コンテナ・ROM/RAM配置・メモリ監査 (`type-memory-auditor`)
 - **担当評価軸**:
-  - **軸 2 (完全型付け)**: `typing.Any` と `object` が 0 件であるか、`T | None` / `Optional[T]` 以外のUnionがないか、すべての関数引数・戻り値・クラス属性が厳格に型付けされているか（Raw Generic の排除）。
+   - **軸 2 (完全型付け)**: `typing.Any` と `object` が 0 件であるか、`T | None` / `Optional[T]` 以外のUnionがないか、すべての関数引数・戻り値・クラス属性が厳格に型付けされているか（Raw Generic の排除）。必須入力を `None` で受けるコンパイルAPIや、テスト／互換用の本番シンボルを検出し、呼び出し側でのメタデータ準備を要求する。
   - **軸 3 (set/dict/list排除)**: 素の `dict`/`set`/`list`（リテラル、コンストラクタ、型注釈、内包表記を含む）が製品コードで使われていないか。設定で除外されたシステムコンテナ実装、テスト、シナリオ、ベンチマークは対象外とし、それ以外は View / 固定容量 Storage / `StaticVector` / `RingBuffer` に移行されているか。
   - **軸 6 (ROM/RAM配置)**: 定数表やイミュータブルなバイト列が `bytearray` や可変オブジェクトで保持されず、Flash ROM に置ける `bytes`, `tuple`, `ReadOnly*Storage` 等の不変構造になっているか。
   - **軸 7 (余計なメモリ使用排除)**: 実行時インスタンスクラスでの `__slots__` 欠落（暗黙の `__dict__` 浪費）、二重管理フィールドや不要な冗長バッファ、過剰な固定容量確保、ホットパス内の一時オブジェクト生成がないか。

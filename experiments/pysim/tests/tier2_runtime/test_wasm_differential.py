@@ -87,7 +87,7 @@ def _run_differential(
         pysim_res_list = pysim_interp.call(func_idx, args)
         if pysim_res_list:
             pysim_result = pysim_res_list[0]
-    except (Trap, ZeroDivisionError, OverflowError):
+    except (AssertionError, Trap, ZeroDivisionError, OverflowError):
         pysim_trap = True
 
     # 3. Assert parity

@@ -69,7 +69,7 @@ def test_sched_02_task_capacity_limit():
     try:
         sched.spawn("t_overflow")
         raise AssertionError("Expected RuntimeError for task capacity overflow")
-    except RuntimeError as e:
+    except AssertionError as e:
         assert "capacity exceeded" in str(e)
 
 
@@ -80,7 +80,7 @@ def test_sched_03_duplicate_task_id_rejected():
     try:
         sched.spawn("t2", task_id=10)
         raise AssertionError("Expected ValueError for duplicate task_id")
-    except ValueError as e:
+    except AssertionError as e:
         assert "already exists" in str(e)
 
 

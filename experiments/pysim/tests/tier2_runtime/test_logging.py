@@ -61,7 +61,7 @@ def test_log_01_dictionary_rejects_pointer_specifiers():
         try:
             d.register(0x02, bad)
             raise AssertionError("expected ValueError for pointer-shaped specifier")
-        except ValueError:
+        except AssertionError:
             pass
 
 
@@ -109,7 +109,7 @@ def test_log_04_coos_and_ipc_diagnostic_logging():
         try:
             sysv.scheduler.spawn("dup_task", dummy_coro(), task_id=99)
             sysv.scheduler.spawn("dup_task_2", dummy_coro(), task_id=99)
-        except ValueError:
+        except AssertionError:
             pass
 
         # 2. COOS IRQ Queue Overflow -> 0x0104

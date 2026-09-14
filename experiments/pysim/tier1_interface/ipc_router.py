@@ -212,7 +212,8 @@ class IPCMessage:
     def from_entries(
         cls,
         entries: Sequence[tuple[int, int]] = (),
-        memory_manager: MemoryManager | None = None,
+        *,
+        memory_manager: MemoryManager,
     ) -> IPCMessage:
         """Allocate and populate a message for the scheduler's current task."""
         assert memory_manager is not None, (
@@ -274,8 +275,7 @@ class IPCMessage:
 
     def __getitem__(self, key: int) -> int:
         val = self.get(key)
-        if val is None:
-            raise KeyError(key)
+        assert val is not None, key
         return val
 
     def __contains__(self, key: int) -> bool:
@@ -335,7 +335,7 @@ def kv_entries_to_bytes(entries: Sequence[tuple[int, int]], max_len: int | None 
 # an implementation may alias a URI only when it intentionally shares the
 # same endpoint instance, without changing the routing table shape.
 _SERVICE_ENTRIES: tuple[tuple[str, "ServiceDescriptor"], ...] = tuple(sorted(
-    [
+    (
         ("fireball://core/coos/0", ServiceDescriptor(Role.CORE_SERVICE)),
         ("fireball://dbg/manager/0", ServiceDescriptor(Role.DEBUGGER)),
         (FB_URI_HAL_GPIO, ServiceDescriptor(Role.HAL_GPIO)),
@@ -344,7 +344,7 @@ _SERVICE_ENTRIES: tuple[tuple[str, "ServiceDescriptor"], ...] = tuple(sorted(
         (FB_URI_HAL_TIMER, ServiceDescriptor(Role.HAL_TIMER)),
         (FB_URI_HAL_UART, ServiceDescriptor(Role.HAL_UART)),
         (FB_URI_HAL_STDOUT, ServiceDescriptor(Role.HAL_STDOUT)),
-    ],
+    ),
     key=lambda entry: entry[0],
 ))
 
@@ -407,8 +407,8 @@ class IPCRouter:
     def __init__(
         self,
         scheduler: Scheduler,
+        memory_manager: MemoryManager,
         logger: Logger | None = None,
-        memory_manager: MemoryManager | None = None,
     ):
         self.scheduler = scheduler
         self.logger = logger
@@ -422,11 +422,10 @@ class IPCRouter:
             for row in FB_CONF_ROUTER_ROLE_MATRIX
         )
 
-    def _grant_for_task(self, shm_id: int, task: Task | None) -> bool:
+    def _grant_for_task(self, shm_id: int, task: Task) -> bool:
         """Run the grant under the scheduler-selected receiver context."""
         assert task is not None, "Grant requires a scheduler-registered receiver"
         with self.scheduler.task_context(task):
-            assert self.memory_manager is not None
             return self.memory_manager.grant_shared(shm_id)
 
     def lookup_service_handle(self, uri: str) -> int:
@@ -504,10 +503,9 @@ class IPCRouter:
         current = self.scheduler.current_task
         assert current is not None, "IPC send requires an active scheduler task"
         sender_role = Role(current.role)
-        allowed_channels = [ch for ch in self._edge_channels[int(sender_role)] if ch is not None]
         channel_allowed = False
-        for allowed_channel in allowed_channels:
-            if allowed_channel is channel:
+        for allowed_channel in self._edge_channels[int(sender_role)]:
+            if allowed_channel is not None and allowed_channel is channel:
                 channel_allowed = True
                 break
         if not channel_allowed:
@@ -557,18 +555,17 @@ class IPCRouter:
         entries_to_grant = message.entries
 
         # Revoke phase: prepare message's own SharedBlock and any entry-embedded shm_id for transfer
-        if self.memory_manager is not None:
-            if message._block is not None:
-                message._in_flight_shm_id = message._block.release()
+        if message._block is not None:
+            message._in_flight_shm_id = message._block.release()
 
-            for k, val in entries_to_grant:
-                sk, _, _ = unpack_key32(k)
-                if sk == ScopeKind.RESOURCE and val >= 0:
-                    slot = self.memory_manager.shm_slots.view().find(val)
-                    if slot is not None and slot.allocated:
-                        self.memory_manager.page_registry.update_owner(
-                            slot.page_idx, FB_TASK_ID_FLIGHT
-                        )
+        for k, val in entries_to_grant:
+            sk, _, _ = unpack_key32(k)
+            if sk == ScopeKind.RESOURCE and val >= 0:
+                slot = self.memory_manager.shm_slots.view().find(val)
+                if slot is not None and slot.allocated:
+                    self.memory_manager.page_registry.update_owner(
+                        slot.page_idx, FB_TASK_ID_FLIGHT
+                    )
 
         receiver_task = channel.waiter_task if channel.waiter_dir == WaitDir.RECV else None
         message.ownership = OwnershipState.IN_FLIGHT
@@ -582,7 +579,7 @@ class IPCRouter:
         # A blocked sender has no authenticated receiver target yet. The receiver
         # coroutine performs this phase after the rendezvous; repeating it here
         # would overwrite the grant with an invented task id.
-        if self.memory_manager is not None and not was_blocked:
+        if not was_blocked:
             recv_task = receiver_task
             if recv_task is None and target is not None:
                 recv_task = self.scheduler.get_task(target)
@@ -612,8 +609,12 @@ class IPCRouter:
         assert receiver is not None, "IPC receive requires an active scheduler task"
         current_role = Role(receiver.role)
 
-        channels = [ch for row in self._edge_channels if (ch := row[int(current_role)]) is not None]
-        if not channels:
+        channels: StaticVector[Channel] = StaticVector(capacity=len(Role))
+        for row in self._edge_channels:
+            ch = row[int(current_role)]
+            if ch is not None:
+                assert channels.push_back(ch)
+        if len(channels) == 0:
             return (IPCStatus.ERR_PERMISSION_DENIED, None)
 
         action, target = self.scheduler.channel_select_recv(channels)
@@ -624,18 +625,17 @@ class IPCRouter:
         message.ownership = OwnershipState.RECEIVER_OWNS
 
         # Grant phase: if message's own SHM block or entry-embedded shm_id are present, grant to receiver
-        if self.memory_manager is not None:
-            if message._in_flight_shm_id is not None:
-                self.memory_manager.grant_shared(message._in_flight_shm_id)
-                res = self.memory_manager.claim(message._in_flight_shm_id)
-                if not res.is_err:
-                    message._block = res.unwrap()
-                message._in_flight_shm_id = None
+        if message._in_flight_shm_id is not None:
+            self.memory_manager.grant_shared(message._in_flight_shm_id)
+            res = self.memory_manager.claim(message._in_flight_shm_id)
+            if not res.is_err:
+                message._block = res.unwrap()
+            message._in_flight_shm_id = None
 
-            # Grant any shm_id passed in entries (ScopeKind.RESOURCE)
-            for k, val in message.entries:
-                sk, _, _ = unpack_key32(k)
-                if sk == ScopeKind.RESOURCE and val >= 0:
-                    self.memory_manager.grant_shared(val)
+        # Grant any shm_id passed in entries (ScopeKind.RESOURCE)
+        for k, val in message.entries:
+            sk, _, _ = unpack_key32(k)
+            if sk == ScopeKind.RESOURCE and val >= 0:
+                self.memory_manager.grant_shared(val)
 
         return (IPCStatus.COMPLETED, message)

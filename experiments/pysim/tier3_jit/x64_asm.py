@@ -23,29 +23,25 @@ X64_STACK_ALIGNMENT_BYTES = 16
 # explicitly names string_view as a valid Key type), never a dict -- this
 # is a fixed 16-entry table known at compile time, exactly the shape a
 # `constexpr std::array` lookup keyed by register name would have.
-_REG_ENTRIES: list[tuple[str, tuple[int, int]]] = sorted(
-    [
-        ("rax", (0, 0)),
-        ("rcx", (0, 1)),
-        ("rdx", (0, 2)),
-        ("rbx", (0, 3)),
-        ("rsp", (0, 4)),
-        ("rbp", (0, 5)),
-        ("rsi", (0, 6)),
-        ("rdi", (0, 7)),
-        ("r8", (1, 0)),
-        ("r9", (1, 1)),
-        ("r10", (1, 2)),
-        ("r11", (1, 3)),
-        ("r12", (1, 4)),
-        ("r13", (1, 5)),
-        ("r14", (1, 6)),
-        ("r15", (1, 7)),
-    ],
-    key=lambda e: e[0],
+_REG_ENTRIES: tuple[tuple[str, tuple[int, int]], ...] = (
+    ("r10", (1, 2)),
+    ("r11", (1, 3)),
+    ("r12", (1, 4)),
+    ("r13", (1, 5)),
+    ("r14", (1, 6)),
+    ("r15", (1, 7)),
+    ("r8", (1, 0)),
+    ("r9", (1, 1)),
+    ("rax", (0, 0)),
+    ("rbp", (0, 5)),
+    ("rbx", (0, 3)),
+    ("rcx", (0, 1)),
+    ("rdi", (0, 7)),
+    ("rdx", (0, 2)),
+    ("rsi", (0, 6)),
+    ("rsp", (0, 4)),
 )
-_REG_ENTRIES_TUPLE: tuple[tuple[str, tuple[int, int]], ...] = tuple(_REG_ENTRIES)
-REG_INFO: ReadOnlyFlatMapView[str, tuple[int, int]] = ReadOnlyFlatMapView(_REG_ENTRIES_TUPLE)
+REG_INFO: ReadOnlyFlatMapView[str, tuple[int, int]] = ReadOnlyFlatMapView(_REG_ENTRIES)
 
 
 def push_reg(name: str) -> bytes:

@@ -36,16 +36,20 @@ from scheduler import Scheduler
 
 def make_test_ipc_message(
     entries: tuple[tuple[int, int], ...] | list[tuple[int, int]] = (),
+    memory_manager: MemoryManager | None = None,
 ) -> IPCMessage:
     """Builds IPC storage through the Tier 2 memory adapter for tests only."""
     from memory import FB_CONF_MEMORY_POOL_SIZE, MemoryManager
 
-    scheduler = Scheduler()
-    task_id = scheduler.spawn("test_message_owner")
-    scheduler.current_task = scheduler.get_task(task_id)
-    assert scheduler.current_task is not None
-    manager = MemoryManager(scheduler)
-    assert manager.init_manager(0x20020000, FB_CONF_MEMORY_POOL_SIZE).is_ok
-    message = IPCMessage.from_entries(entries, memory_manager=manager)
-    scheduler.current_task = None
+    if memory_manager is None:
+        scheduler = Scheduler()
+        task_id = scheduler.spawn("test_message_owner")
+        scheduler.current_task = scheduler.get_task(task_id)
+        assert scheduler.current_task is not None
+        manager = MemoryManager(scheduler)
+        assert manager.init_manager(0x20020000, FB_CONF_MEMORY_POOL_SIZE).is_ok
+        message = IPCMessage.from_entries(entries, memory_manager=manager)
+        scheduler.current_task = None
+        return message
+    message = IPCMessage.from_entries(entries, memory_manager=memory_manager)
     return message

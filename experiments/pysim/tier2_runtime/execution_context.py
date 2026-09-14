@@ -32,7 +32,7 @@ class WASMContext:
         stack_capacity: int = 64,
     ):
         n_locals = 16
-        self.fault: str | None = None
+        self.fault: int | None = None
         self.stack_capacity = stack_capacity
         self.stack: NativeValueStack = NativeValueStack(capacity=stack_capacity)
         self.local_stack: NativeValueStack = NativeValueStack(capacity=n_locals * WASM_LOCAL_SLOT_WORDS)

@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Final
 
 
 @dataclass(frozen=True, slots=True)
 class WasiHalBindings:
     """WASIアダプタが利用するHALエンドポイントURIの注入値。"""
 
-    stdout_uri: str
-    timer_uri: str
-    uart_uri: str
-    logger_uri: str
+    stdout_uri: Final[str]
+    timer_uri: Final[str]
+    uart_uri: Final[str]
+    logger_uri: Final[str]

@@ -13,6 +13,7 @@ pysim コードベース向け静的アンチパターンスキャナ。
 8. 到達不能な if 分岐 (DEAD_IF_BRANCH)
 9. 明示的な例外送出 (NO_RAISE; except による捕捉は許可)
 10. テストコード・テスト用バックドアの製品コード混入 (NO_TEST_CODE_IN_PRODUCT)
+11. 製品クラスの文字列メンバー (NO_STRING_MEMBER)
 """
 
 from __future__ import annotations
@@ -50,6 +51,7 @@ class PySimASTVisitor(ast.NodeVisitor):
         enforce_in_operator: bool = True,
         enforce_raise: bool = True,
         enforce_test_backdoor: bool = True,
+        enforce_string_members: bool = True,
     ):
         self.filename = filename
         self.enforce_builtin_containers = enforce_builtin_containers
@@ -58,6 +60,7 @@ class PySimASTVisitor(ast.NodeVisitor):
         self.enforce_in_operator = enforce_in_operator
         self.enforce_raise = enforce_raise
         self.enforce_test_backdoor = enforce_test_backdoor
+        self.enforce_string_members = enforce_string_members
         self.issues: list[Issue] = []
 
     def _add_issue(self, rule_id: str, severity: str, node: ast.AST, message: str) -> None:
@@ -246,6 +249,41 @@ class PySimASTVisitor(ast.NodeVisitor):
                     node,
                     f"Class '{node.name}' does not define '__slots__'. Add __slots__ to eliminate dynamic __dict__ RAM overhead.",
                 )
+        if self.enforce_string_members:
+            member_annotations: list[ast.AnnAssign] = [
+                statement for statement in node.body if isinstance(statement, ast.AnnAssign)
+            ]
+            for method in node.body:
+                if not isinstance(method, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    continue
+                member_annotations.extend(
+                    statement
+                    for statement in ast.walk(method)
+                    if isinstance(statement, ast.AnnAssign)
+                    and isinstance(statement.target, ast.Attribute)
+                    and isinstance(statement.target.value, ast.Name)
+                    and statement.target.value.id in ("self", "cls")
+                )
+            for statement in member_annotations:
+                if isinstance(statement.value, ast.Constant) and isinstance(statement.value.value, str):
+                    continue
+                if (
+                    isinstance(statement.annotation, ast.Subscript)
+                    and isinstance(statement.annotation.value, ast.Name)
+                    and statement.annotation.value.id in ("ClassVar", "Final")
+                ):
+                    continue
+                if not any(
+                    isinstance(item, ast.Name) and item.id == "str"
+                    for item in ast.walk(statement.annotation)
+                ):
+                    continue
+                self._add_issue(
+                    "NO_STRING_MEMBER",
+                    "ERROR",
+                    statement,
+                    "String-typed class members are prohibited in pysim product code; store a ROM byte range, integer ID, or fixed numeric representation.",
+                )
         self.generic_visit(node)
 
     def visit_If(self, node: ast.If) -> None:
@@ -399,6 +437,7 @@ def scan_file(
     raise_exclude_paths: set[str],
     test_backdoor_exclude_paths: set[str],
     non_none_union_exclude_paths: set[str],
+    string_member_exclude_paths: set[str],
 ) -> list[Issue]:
     rel_path = str(file_path.relative_to(repo_root)).replace("\\", "/")
     content = file_path.read_text(encoding="utf-8")
@@ -430,6 +469,9 @@ def scan_file(
     enforce_non_none_union = not any(
         fnmatch.fnmatch(rel_path, pattern) for pattern in non_none_union_exclude_paths
     )
+    enforce_string_members = not any(
+        fnmatch.fnmatch(rel_path, pattern) for pattern in string_member_exclude_paths
+    )
     callable_parameter_lists = {
         id(node.slice.elts[0])
         for node in ast.walk(tree)
@@ -450,6 +492,7 @@ def scan_file(
         enforce_in_operator=enforce_in_operator,
         enforce_raise=enforce_raise,
         enforce_test_backdoor=enforce_test_backdoor,
+        enforce_string_members=enforce_string_members,
     )
     visitor.visit(tree)
     if enforce_non_none_union:
@@ -607,6 +650,9 @@ def main() -> int:
     non_none_union_exclude_paths = load_source_policy_paths(
         repo_root, "non_none_union_exclude_paths"
     )
+    string_member_exclude_paths = load_source_policy_paths(
+        repo_root, "string_member_exclude_paths"
+    )
 
     all_issues: list[Issue] = []
     for p_str in args.paths:
@@ -622,6 +668,7 @@ def main() -> int:
                     raise_exclude_paths,
                     test_backdoor_exclude_paths,
                     non_none_union_exclude_paths,
+                    string_member_exclude_paths,
                 )
             )
         elif p.is_dir():
@@ -638,6 +685,7 @@ def main() -> int:
                         raise_exclude_paths,
                         test_backdoor_exclude_paths,
                         non_none_union_exclude_paths,
+                        string_member_exclude_paths,
                     )
                 )
 

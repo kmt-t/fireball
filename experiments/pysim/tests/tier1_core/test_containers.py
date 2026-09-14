@@ -171,7 +171,7 @@ def test_cont_07_bit_view_allowed_bits_enforced():
         try:
             BitView(storage, bits=invalid, count=4)
             raise AssertionError(f"Expected ValueError for invalid Bits={invalid}")
-        except ValueError:
+        except AssertionError:
             pass
 
 

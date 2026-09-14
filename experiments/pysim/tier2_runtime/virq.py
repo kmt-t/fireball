@@ -65,6 +65,13 @@ class RegistrationStatus(IntEnum):
     PENDING = 0
 
 
+class VirqFaultCode(IntEnum):
+    UNREGISTERED_SOURCE = 1
+    ROOT_REJECT = 2
+    CATEGORY_REJECT = 3
+    DEVICE_REJECT = 4
+
+
 @dataclass(frozen=True, slots=True)
 class VirqSource:
     vector_id: int
@@ -76,7 +83,7 @@ class VirqSource:
 @dataclass(frozen=True, slots=True)
 class DispatchResult:
     outcome: VirqDispatchResult
-    error: str | None = None
+    error: VirqFaultCode | None = None
 
 
 VirqInvoker = Callable[[int, int, int, int, int, int], int]
@@ -128,7 +135,7 @@ class VirqDispatcher:
                 )
             )
         self._last_path: StaticVector[int] = StaticVector(capacity=max_nodes)
-        self._faults: StaticVector[str] = StaticVector(capacity=max_nodes)
+        self._faults: StaticVector[VirqFaultCode] = StaticVector(capacity=max_nodes)
 
     @property
     def active_functions(self) -> tuple[int, ...]:
@@ -143,7 +150,7 @@ class VirqDispatcher:
         return tuple(self._last_path)
 
     @property
-    def faults(self) -> tuple[str, ...]:
+    def faults(self) -> tuple[VirqFaultCode, ...]:
         return tuple(self._faults)
 
     def register_dispatcher(
@@ -173,26 +180,26 @@ class VirqDispatcher:
         self._last_path.clear()
         source = self._source_for(event)
         if source is None:
-            return self._reject("UNREGISTERED_SOURCE")
+            return self._reject(VirqFaultCode.UNREGISTERED_SOURCE)
 
         result = self._invoke(int(VirqNode.ROOT), event)
         if result == VirqDispatchResult.HANDLED:
             return DispatchResult(result)
         if result == VirqDispatchResult.REJECT:
-            return self._reject("ROOT_REJECT")
+            return self._reject(VirqFaultCode.ROOT_REJECT)
 
         result = self._invoke(source.category_node, event)
         if result == VirqDispatchResult.HANDLED:
             return DispatchResult(result)
         if result == VirqDispatchResult.REJECT:
-            return self._reject("CATEGORY_REJECT")
+            return self._reject(VirqFaultCode.CATEGORY_REJECT)
 
         if source.device_node != INVALID_FUNCTION_INDEX:
             result = self._invoke(source.device_node, event)
             if result == VirqDispatchResult.HANDLED:
                 return DispatchResult(result)
             if result == VirqDispatchResult.REJECT:
-                return self._reject("DEVICE_REJECT")
+                return self._reject(VirqFaultCode.DEVICE_REJECT)
         return DispatchResult(VirqDispatchResult.PASS_THROUGH)
 
     def _valid_node(self, node_id: int) -> bool:
@@ -214,8 +221,13 @@ class VirqDispatcher:
             ].type_index
         if type_index < 0 or type_index >= len(self._module.types):
             return False
-        func_type = self._module.types[type_index]
-        return func_type.params == (I32,) * 5 and func_type.results == (I32,)
+        func_type = self._module.func_type(function_index)
+        if len(func_type.params) != 5 or len(func_type.results) != 1:
+            return False
+        for index in range(5):
+            if func_type.params[index] != I32:
+                return False
+        return func_type.results[0] == I32
 
     def _source_for(self, event: InterruptEvent) -> VirqSource | None:
         for source in self._sources:
@@ -243,6 +255,6 @@ class VirqDispatcher:
             return VirqDispatchResult.REJECT
         return VirqDispatchResult(raw_result)
 
-    def _reject(self, reason: str) -> DispatchResult:
+    def _reject(self, reason: VirqFaultCode) -> DispatchResult:
         self._faults.push_back(reason)
         return DispatchResult(VirqDispatchResult.REJECT, reason)

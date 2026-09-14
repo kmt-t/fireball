@@ -56,7 +56,7 @@ docs/components/tier2_runtime/tests/debug_manager_test_spec.md (TEST-DBG-01 ~ TE
 from control_flow import extract_basic_blocks
 from debugger import DebuggerManager, GDBRspProtocol
 from runtime_engine import BasicBlock, IntegratedHybridEngine, WASMContext
-from test_support import wat_to_wasm
+from test_support import compile_test_block, wat_to_wasm
 from wasm_opcodes import I32_CONST
 from x64_jit import TraceCompiler
 
@@ -140,7 +140,7 @@ def test_dbg_06_07_write_memory_flush_jit_and_bounds_check():
     mem = bytearray(64)
     ctx = WASMContext(memory=mem)
     # Populate JIT cache -- real WASM bytecode (`i32.const 10`), run through the
-    # same extract_basic_blocks + compile_block path production JIT compilation uses.
+    # The test prepares the same loader metadata passed by production.
     code = bytes([I32_CONST, 10])
     head_pc, next_pc, loops_to, frame_depth, byte_span = extract_basic_blocks(code)[0]
     block = BasicBlock(
@@ -150,7 +150,7 @@ def test_dbg_06_07_write_memory_flush_jit_and_bounds_check():
         frame_depth=frame_depth,
         byte_span=byte_span,
     )
-    trace = engine.compiler.compile_block(code, block)
+    trace = compile_test_block(engine.compiler, code, block, ())
     engine.cache.insert(trace)
     assert engine.cache.active.has_trace(head_pc)
     # In-bounds write: "M0,4:deadbeef"

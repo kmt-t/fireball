@@ -40,9 +40,8 @@ FB_CONF_MAX_FUNCTION_PARAMS = 16
 ItemT = TypeVar("ItemT")
 
 
-def _push_or_raise(target: StaticVector[ItemT], item: ItemT, label: str) -> None:
-    if not target.push_back(item):
-        raise WasmParseError(f"{label} capacity exceeded")
+def _push_or_assert(target: StaticVector[ItemT], item: ItemT, label: str) -> None:
+    assert target.push_back(item), f"{label} capacity exceeded"
 
 
 FB_CONF_MAX_WASM_PAGES = 16
@@ -117,7 +116,7 @@ class BumpAllocator:
     def allocate(self, size: int, alignment: int = WASM_RAW_WORD_BYTES) -> int:
         aligned_offset = (self.offset + (alignment - 1)) & ~(alignment - 1)
         if aligned_offset + size > self.capacity:
-            raise MemoryError("BumpAllocator capacity exceeded")
+            assert False, "BumpAllocator capacity exceeded"
         self.offset = aligned_offset + size
         return aligned_offset
 
@@ -147,7 +146,7 @@ class BinaryStream:
         self.cursor = offset
         self.limit = len(self.view) if length is None else offset + length
         if self.limit > len(self.view):
-            raise WasmParseError(
+            assert False, (
                 f"Stream limit {self.limit} exceeds underlying buffer size {len(self.view)}"
             )
 
@@ -159,12 +158,12 @@ class BinaryStream:
 
     def seek(self, pos: int) -> None:
         if pos < 0 or pos > self.limit:
-            raise WasmParseError(f"Seek position {pos} out of range [0, {self.limit}]")
+            assert False, f"Seek position {pos} out of range [0, {self.limit}]"
         self.cursor = pos
 
     def read_bytes(self, n: int) -> memoryview:
         if self.cursor + n > self.limit:
-            raise WasmParseError(
+            assert False, (
                 f"Unexpected end of stream: requested {n} bytes, {self.remaining()} remaining"
             )
 
@@ -181,9 +180,9 @@ class BinaryStream:
         count = 0
         while True:
             if count >= 5:
-                raise WasmParseError("LEB128 u32 exceeded maximum 5 bytes")
+                assert False, "LEB128 u32 exceeded maximum 5 bytes"
             if self.cursor >= self.limit:
-                raise WasmParseError("Truncated LEB128 u32 integer")
+                assert False, "Truncated LEB128 u32 integer"
             b = self.read_u8()
             count += 1
             result |= (b & 0x7F) << shift
@@ -192,7 +191,7 @@ class BinaryStream:
             shift += 7
 
         if result > 0xFFFFFFFF:
-            raise WasmParseError("LEB128 u32 value out of 32-bit range")
+            assert False, "LEB128 u32 value out of 32-bit range"
         return result
 
     def read_leb128_s32(self) -> int:
@@ -201,9 +200,9 @@ class BinaryStream:
         count = 0
         while True:
             if count >= 5:
-                raise WasmParseError("LEB128 s32 exceeded maximum 5 bytes")
+                assert False, "LEB128 s32 exceeded maximum 5 bytes"
             if self.cursor >= self.limit:
-                raise WasmParseError("Truncated LEB128 s32 integer")
+                assert False, "Truncated LEB128 s32 integer"
             b = self.read_u8()
             count += 1
             result |= (b & 0x7F) << shift
@@ -223,7 +222,7 @@ class BinaryStream:
         try:
             return bytes(raw_bytes).decode("utf-8")
         except UnicodeDecodeError as e:
-            raise WasmParseError(f"Invalid UTF-8 string: {e}") from e
+            assert False, f"Invalid UTF-8 string: {e}"
 
 
 class FuncType:
@@ -433,7 +432,7 @@ class ModuleView:
             capacity=FB_CONF_MAX_FUNCTIONS
         )
         self.start_func_idx: int | None = None
-        self.resolved_imports: ReadOnlyFlatMapStorage[str, ExportEntry] = (
+        self.resolved_imports: ReadOnlyFlatMapStorage[int, ExportEntry] = (
             ReadOnlyFlatMapStorage.create(())
         )
         self.is_ready: bool = False
@@ -517,10 +516,10 @@ class ModuleView:
     def get_function(self, func_idx: int) -> FunctionAccessor:
         num_imported = self.num_imported_functions()
         if func_idx < num_imported:
-            raise ValueError(f"Cannot get code accessor for imported function index {func_idx}")
+            assert False, f"Cannot get code accessor for imported function index {func_idx}"
         internal_idx = func_idx - num_imported
         if internal_idx >= len(self.functions):
-            raise IndexError(f"Function index {func_idx} out of range")
+            assert False, f"Function index {func_idx} out of range"
         type_idx = self.functions[internal_idx]
         type_sig = self.types[type_idx]
         code_offset, code_size = self.code_offsets[internal_idx]
@@ -535,7 +534,7 @@ class ModuleView:
 
     def get_global(self, global_idx: int) -> GlobalAccessor:
         if global_idx < 0 or global_idx >= len(self.globals):
-            raise IndexError(f"Global index {global_idx} out of range")
+            assert False, f"Global index {global_idx} out of range"
         return GlobalAccessor(global_idx, self.globals[global_idx], self.rom_binary)
 
 
@@ -554,18 +553,18 @@ class WasmLoader:
         max_wasm_pages: int = FB_CONF_MAX_WASM_PAGES,
     ):
         self.allocator = allocator or BumpAllocator()
-        self.registry: MutableFlatMapStorage[str, ModuleView] = MutableFlatMapStorage(
+        self.registry: MutableFlatMapStorage[int, ModuleView] = MutableFlatMapStorage(
             capacity=max_modules
         )
         self.max_modules = max_modules
         self.max_wasm_pages = max_wasm_pages
 
     def lookup(self, name: str) -> ModuleView | None:
-        return self.registry.view().find(name)
+        return self.registry.view().find(fnv1a_32(name))
 
     def prepare(self, module_name: str, wasm_binary: memoryview) -> ModuleView:
         if len(self.registry) >= self.max_modules:
-            raise WasmLinkError(f"Module registry capacity ({self.max_modules}) exceeded")
+            assert False, f"Module registry capacity ({self.max_modules}) exceeded"
         watermark = self.allocator.save()
         try:
             # Reserve fixed metadata scratch so transactional rollback and LIFO
@@ -578,7 +577,7 @@ class WasmLoader:
             # V1: Magic Number Check
             magic = bytes(stream.read_bytes(4))
             if magic != b"\x00asm":
-                raise WasmVerifyError(
+                assert False, (
                     f"V1 Verification Failed: Invalid magic number {magic!r}, expected b'\\x00asm'"
                 )
 
@@ -586,7 +585,7 @@ class WasmLoader:
             ver_raw = stream.read_bytes(4)
             version = struct.unpack("<I", ver_raw)[0]
             if version != 1:
-                raise WasmVerifyError(
+                assert False, (
                     f"V2 Verification Failed: Unsupported WASM version {version}, expected 1"
                 )
 
@@ -598,14 +597,14 @@ class WasmLoader:
                 payload_start = stream.tell()
                 # V3: Section bounds check
                 if payload_start + sec_size > stream.limit:
-                    raise WasmVerifyError(
+                    assert False, (
                         f"V3 Verification Failed: Section {sec_id} size {sec_size} exceeds binary end"
                     )
 
                 # V4: Section order check
                 if sec_id != SectionID.CUSTOM:
                     if sec_id <= last_section_id:
-                        raise WasmVerifyError(
+                        assert False, (
                             f"V4 Verification Failed: Section ID {sec_id} appears out of order after {last_section_id}"
                         )
 
@@ -625,25 +624,25 @@ class WasmLoader:
             num_types = len(view.types)
             for ftype_idx in view.functions:
                 if ftype_idx >= num_types:
-                    raise WasmVerifyError(
+                    assert False, (
                         f"V5 Verification Failed: Function with invalid type index {ftype_idx}"
                     )
 
             for imp in view.imports:
                 if imp.kind == ExternalKind.FUNCTION and imp.desc >= num_types:
-                    raise WasmVerifyError(
+                    assert False, (
                         f"V5 Verification Failed: Import with invalid type index {imp.desc}"
                     )
 
             if len(view.functions) != len(view.code_offsets):
-                raise WasmVerifyError(
+                assert False, (
                     f"Function count ({len(view.functions)}) != Code count ({len(view.code_offsets)})"
                 )
 
             # V6: Memory page budget
             for mem in view.memories:
                 if mem.initial_pages > self.max_wasm_pages:
-                    raise WasmVerifyError(
+                    assert False, (
                         f"V6 Verification Failed: Memory pages {mem.initial_pages} > budget {self.max_wasm_pages}"
                     )
 
@@ -652,11 +651,11 @@ class WasmLoader:
             if not view.imports:
                 view.is_ready = True
 
-            self.registry.insert(module_name, view)
+            assert self.registry.insert(fnv1a_32(module_name), view)
             return view
         except Exception:
             self.allocator.restore(watermark)
-            raise
+            assert False, "WASM module preparation failed after allocator rollback"
 
     def _parse_section_content(self, sec_id: int, stream: BinaryStream, view: ModuleView) -> None:
         if sec_id == SectionID.TYPE:
@@ -664,20 +663,20 @@ class WasmLoader:
             for _ in range(count):
                 form = stream.read_u8()
                 if form != 0x60:
-                    raise WasmParseError(f"Invalid type form 0x{form:02X}")
+                    assert False, f"Invalid type form 0x{form:02X}"
                 p_count = stream.read_leb128_u32()
                 if p_count > FB_CONF_MAX_FUNCTION_PARAMS:
-                    raise WasmParseError("Function parameter count exceeds fixed capacity")
+                    assert False, "Function parameter count exceeds fixed capacity"
                 params = StaticVector[int](capacity=FB_CONF_MAX_FUNCTION_PARAMS)
                 for _ in range(p_count):
-                    _push_or_raise(params, stream.read_u8(), "function parameter")
+                    _push_or_assert(params, stream.read_u8(), "function parameter")
                 r_count = stream.read_leb128_u32()
                 if r_count > FB_CONF_MAX_FUNCTION_PARAMS:
-                    raise WasmParseError("Function result count exceeds fixed capacity")
+                    assert False, "Function result count exceeds fixed capacity"
                 results = StaticVector[int](capacity=FB_CONF_MAX_FUNCTION_PARAMS)
                 for _ in range(r_count):
-                    _push_or_raise(results, stream.read_u8(), "function result")
-                _push_or_raise(view.types, FuncType(params, results), "type")
+                    _push_or_assert(results, stream.read_u8(), "function result")
+                _push_or_assert(view.types, FuncType(params, results), "type")
         elif sec_id == SectionID.IMPORT:
             count = stream.read_leb128_u32()
             for _ in range(count):
@@ -686,7 +685,7 @@ class WasmLoader:
                 kind = stream.read_u8()
                 if kind == ExternalKind.FUNCTION:
                     type_idx = stream.read_leb128_u32()
-                    _push_or_raise(
+                    _push_or_assert(
                         view.imports,
                         ImportEntry(mod_name, field_name, kind, type_idx),
                         "import",
@@ -696,31 +695,31 @@ class WasmLoader:
                     flags = stream.read_leb128_u32()
                     initial = stream.read_leb128_u32()
                     maximum = stream.read_leb128_u32() if (flags & 1) else None
-                    _push_or_raise(view.tables, TableEntry(elemtype, initial, maximum), "table")
-                    _push_or_raise(
+                    _push_or_assert(view.tables, TableEntry(elemtype, initial, maximum), "table")
+                    _push_or_assert(
                         view.imports, ImportEntry(mod_name, field_name, kind, 0), "import"
                     )
                 elif kind == ExternalKind.MEMORY:
                     flags = stream.read_leb128_u32()
                     initial = stream.read_leb128_u32()
                     maximum = stream.read_leb128_u32() if (flags & 1) else None
-                    _push_or_raise(view.memories, MemoryEntry(initial, maximum), "memory")
-                    _push_or_raise(
+                    _push_or_assert(view.memories, MemoryEntry(initial, maximum), "memory")
+                    _push_or_assert(
                         view.imports, ImportEntry(mod_name, field_name, kind, 0), "import"
                     )
                 elif kind == ExternalKind.GLOBAL:
                     valtype = stream.read_u8()
                     mutable = stream.read_u8() == 1
-                    _push_or_raise(view.globals, GlobalEntry(valtype, mutable, 0, 0), "global")
-                    _push_or_raise(
+                    _push_or_assert(view.globals, GlobalEntry(valtype, mutable, 0, 0), "global")
+                    _push_or_assert(
                         view.imports, ImportEntry(mod_name, field_name, kind, 0), "import"
                     )
         elif sec_id == SectionID.FUNCTION:
             count = stream.read_leb128_u32()
             if count > FB_CONF_MAX_FUNCTIONS:
-                raise WasmParseError("Function count exceeds FB_CONF_MAX_FUNCTIONS")
+                assert False, "Function count exceeds FB_CONF_MAX_FUNCTIONS"
             for _ in range(count):
-                _push_or_raise(view.functions, stream.read_leb128_u32(), "function")
+                _push_or_assert(view.functions, stream.read_leb128_u32(), "function")
         elif sec_id == SectionID.TABLE:
             count = stream.read_leb128_u32()
             for _ in range(count):
@@ -728,14 +727,14 @@ class WasmLoader:
                 flags = stream.read_leb128_u32()
                 initial = stream.read_leb128_u32()
                 maximum = stream.read_leb128_u32() if (flags & 1) else None
-                _push_or_raise(view.tables, TableEntry(elemtype, initial, maximum), "table")
+                _push_or_assert(view.tables, TableEntry(elemtype, initial, maximum), "table")
         elif sec_id == SectionID.MEMORY:
             count = stream.read_leb128_u32()
             for _ in range(count):
                 flags = stream.read_leb128_u32()
                 initial = stream.read_leb128_u32()
                 maximum = stream.read_leb128_u32() if (flags & 1) else None
-                _push_or_raise(view.memories, MemoryEntry(initial, maximum), "memory")
+                _push_or_assert(view.memories, MemoryEntry(initial, maximum), "memory")
         elif sec_id == SectionID.GLOBAL:
             count = stream.read_leb128_u32()
             for g_idx in range(count):
@@ -746,17 +745,17 @@ class WasmLoader:
                     pass
                 init_size = stream.tell() - init_start
                 g_entry = GlobalEntry(valtype, mutable, init_start, init_size)
-                _push_or_raise(view.globals, g_entry, "global")
+                _push_or_assert(view.globals, g_entry, "global")
                 view.register_entity("GLOBAL", init_start, init_start + init_size, g_idx)
         elif sec_id == SectionID.EXPORT:
             count = stream.read_leb128_u32()
             if count > FB_CONF_MAX_EXPORTS:
-                raise WasmParseError("Export count exceeds FB_CONF_MAX_EXPORTS")
+                assert False, "Export count exceeds FB_CONF_MAX_EXPORTS"
             for _ in range(count):
                 name = stream.read_string()
                 kind = stream.read_u8()
                 index = stream.read_leb128_u32()
-                _push_or_raise(view.exports_dict, ExportEntry(name, kind, index), "export")
+                _push_or_assert(view.exports_dict, ExportEntry(name, kind, index), "export")
         elif sec_id == SectionID.START:
             view.start_func_idx = stream.read_leb128_u32()
         elif sec_id == SectionID.CODE:
@@ -764,7 +763,7 @@ class WasmLoader:
             for c_idx in range(count):
                 body_size = stream.read_leb128_u32()
                 body_start = stream.tell()
-                _push_or_raise(view.code_offsets, (body_start, body_size), "code body")
+                _push_or_assert(view.code_offsets, (body_start, body_size), "code body")
                 func_idx = view.num_imported_functions() + c_idx
                 view.register_entity(
                     "FUNCTION",
@@ -775,17 +774,17 @@ class WasmLoader:
                 stream.seek(body_start + body_size)
 
     def resolve_imports(self, module: ModuleView) -> bool:
-        entries: StaticVector[tuple[str, ExportEntry]] = StaticVector(capacity=FB_CONF_MAX_IMPORTS)
+        entries: StaticVector[tuple[int, ExportEntry]] = StaticVector(capacity=FB_CONF_MAX_IMPORTS)
         for imp in module.imports:
             target_mod = self.lookup(imp.module_name)
             if target_mod is None:
-                raise WasmLinkError(f"Dependency module '{imp.module_name}' not found")
+                assert False, f"Dependency module '{imp.module_name}' not found"
             export_entry = target_mod.lookup_export(imp.field_name)
             if export_entry is None or export_entry.kind != imp.kind:
-                raise WasmLinkError(f"Unresolved import '{imp.module_name}.{imp.field_name}'")
-            _push_or_raise(
+                assert False, f"Unresolved import '{imp.module_name}.{imp.field_name}'"
+            _push_or_assert(
                 entries,
-                (f"{imp.module_name}.{imp.field_name}", export_entry),
+                (fnv1a_32(f"{imp.module_name}.{imp.field_name}"), export_entry),
                 "resolved import",
             )
 
@@ -795,7 +794,7 @@ class WasmLoader:
         return True
 
     def unload(self, module: ModuleView) -> bool:
-        removed = self.registry.remove(module.module_name)
+        removed = self.registry.remove(fnv1a_32(module.module_name))
         if removed is None:
             return False
         assert removed is module

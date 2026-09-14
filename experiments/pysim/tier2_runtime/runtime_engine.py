@@ -24,7 +24,12 @@ import sys
 from collections.abc import Callable, Iterable, Sequence
 from typing import Protocol, TextIO
 
-from config import JIT_CARD_SHIFT, RUNTIME_BLOCK_CACHE_SLOT_COUNT
+from config import (
+    JIT_CARD_SHIFT,
+    RUNTIME_BLOCK_CACHE_SLOT_COUNT,
+    RUNTIME_DEBUG_REPORT_LINE_CAPACITY,
+    RUNTIME_DEBUG_TRACE_REPORT_CAPACITY,
+)
 from control_flow import iter_block_ops
 from execution_context import WASMContext
 from interpreter import Interpreter, InterpreterCall
@@ -389,7 +394,7 @@ class RuntimeEngine:
         Dumps runtime internal state including execution stats, JIT cache banks,
         and chaining diagnostics for all compiled traces.
         """
-        lines: StaticVector[str] = StaticVector(capacity=RUNTIME_BLOCK_CACHE_SLOT_COUNT * 4)
+        lines: StaticVector[str] = StaticVector(capacity=RUNTIME_DEBUG_REPORT_LINE_CAPACITY)
         lines.append("=" * 80)
         lines.append(
             "                  RuntimeEngine Internal State & Chaining Dump                  "
@@ -438,7 +443,7 @@ class RuntimeEngine:
 
         lines.append("[3. Compiled Traces & Chaining Analysis]")
         all_traces: StaticVector[tuple[str, JITTrace]] = StaticVector(
-            capacity=RUNTIME_BLOCK_CACHE_SLOT_COUNT * 3
+            capacity=RUNTIME_DEBUG_TRACE_REPORT_CAPACITY
         )
         for bname, bank in (
             ("Active", self.cache.active),

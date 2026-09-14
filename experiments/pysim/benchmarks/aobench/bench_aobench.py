@@ -28,6 +28,7 @@ for _p in [
 from interpreter import Interpreter
 from runtime_engine import RuntimeEngine
 from system import System
+from dummy_drivers import DummyDriver
 from wasi import WasiHostContext
 from wasm_reader import parse
 from x64_jit import TraceCompiler
@@ -47,6 +48,9 @@ def run_aobench(debug: bool = False) -> dict[str, int | float]:
     # 1. Tier 2 Reference Execution
     sysv = System()
     wasi_ctx = WasiHostContext(sysv)
+    sysv.start_hal_driver(
+        DummyDriver(sysv.wasi_hal_bindings.stdout_uri, transport=sysv.transport)
+    )
     funcs = wasi_ctx.build_interpreter_host_functions(module)
     module.init_memory_data(wasi_ctx.guest_memory)
     interp = Interpreter(module, memory=wasi_ctx.guest_memory, host_functions=funcs)
@@ -64,6 +68,9 @@ def run_aobench(debug: bool = False) -> dict[str, int | float]:
     # 2. Tier 3 JIT Hybrid Execution
     sysv_t3 = System()
     wasi_ctx_t3 = WasiHostContext(sysv_t3)
+    sysv_t3.start_hal_driver(
+        DummyDriver(sysv_t3.wasi_hal_bindings.stdout_uri, transport=sysv_t3.transport)
+    )
     funcs_t3 = wasi_ctx_t3.build_interpreter_host_functions(module)
     module.init_memory_data(wasi_ctx_t3.guest_memory)
     trace_compiler = TraceCompiler()

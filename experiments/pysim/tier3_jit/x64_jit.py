@@ -230,11 +230,12 @@ def _emit_register_push(
     spilled_words: int,
 ) -> int:
     """Push a value while recording its register or shared-stack location."""
-    if len(stack_locations) >= 2:
-        assert stack_locations[-2] == _STACK_LOCATION_NOS
+    if len(stack_locations) >= 2 and stack_locations[-2] == _STACK_LOCATION_NOS:
         _store_register_to_sp(code, _STACK_LOCATION_NOS, spilled_words)
         stack_locations[-2] = spilled_words
         spilled_words += 1
+    elif len(stack_locations) >= 2:
+        assert stack_locations[-2] >= 0
     if stack_locations:
         assert stack_locations[-1] == _STACK_LOCATION_TOS
         code += _MOV_NOS_FROM_TOS

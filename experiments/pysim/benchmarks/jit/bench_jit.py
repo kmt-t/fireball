@@ -30,7 +30,7 @@ import wasm_opcodes as op
 from control_flow import extract_basic_blocks, iter_block_ops
 from interpreter import Interpreter
 from runtime_engine import HotspotBitmap, RuntimeEngine, WASMContext
-from system_containers import ReadOnlyRadixBinaryTreeView, bswap32
+from system_containers import ReadOnlyRadixBinaryTreeStorage, bswap32
 from wasm_reader import parse
 from x64_jit import TraceCompiler
 
@@ -77,18 +77,13 @@ class JITCompilerBenchmark:
         # 3.3 bswap32 Radix Tree Section Lookup
         keys = [(idx << 16) | (idx * 16) for idx in range(64)]
         values = list(range(64))
-        radix_table = [0] * 17
-        for idx in range(16):
-            radix_table[idx] = (idx * 64) // 16
-        radix_table[16] = 64
-
-        radix_tree = ReadOnlyRadixBinaryTreeView(
+        radix_storage = ReadOnlyRadixBinaryTreeStorage.create(
             keys=keys,
             values=values,
-            radix_table=radix_table,
             radix_shift=28,
             key_transform=bswap32,
         )
+        radix_tree = radix_storage.view()
         t0 = time.perf_counter()
         for i in range(iterations):
             pc = ((i % 64) << 16) | ((i % 64) * 16)

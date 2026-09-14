@@ -34,6 +34,7 @@ except ImportError:
 import wasm_opcodes as op
 from interpreter import Interpreter
 from system import System
+from dummy_drivers import DummyDriver
 from wasi import WasiHostContext
 from wasm_reader import parse
 
@@ -224,6 +225,9 @@ def test_scenario_wasi_syscall():
     module = parse(wasm_bytes)
     sysv = System()
     wasi_ctx = WasiHostContext(sysv)
+    sysv.start_hal_driver(
+        DummyDriver(sysv.wasi_hal_bindings.stdout_uri, transport=sysv.transport)
+    )
     host_funcs = wasi_ctx.build_interpreter_host_functions(module)
     module.init_memory_data(wasi_ctx.guest_memory)
     interp = Interpreter(module, memory=wasi_ctx.guest_memory, host_functions=host_funcs)

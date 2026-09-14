@@ -11,13 +11,12 @@ Fireball System Logging Engine mirroring docs/components/tier2_runtime/runtime_l
 
 from __future__ import annotations
 
-import bisect
 import re
 from dataclasses import dataclass
 from enum import IntEnum
 from typing import TYPE_CHECKING, Callable, Sequence
 
-from system_containers import FlatMapView, RingBuffer
+from system_containers import MutableFlatMapStorage, ReadOnlyFlatMapView, RingBuffer
 
 if TYPE_CHECKING:
     from hal_dispatch import StreamSink
@@ -67,41 +66,35 @@ class LogDictionary:
     """
     ROM-resident, build-time-only format string table (runtime_logging.md 4.2).
     Storage ownership is separated: LogDictionary borrows entries storage
-    and presents format strings via non-owning FlatMapView (AoS).
+    and presents format strings via a non-owning ReadOnlyFlatMapView (AoS).
     """
 
     def __init__(
         self,
-        storage: list[tuple[int, str]] | None = None,
+        storage: MutableFlatMapStorage[int, str] | None = None,
         capacity: int = 128,
         include_diagnostic_events: bool = True,
     ):
-        if storage is not None:
-            self.storage = storage
-        elif include_diagnostic_events:
-            self.storage = sorted(STANDARD_DIAGNOSTIC_EVENTS, key=lambda x: x[0])
-        else:
-            self.storage = []
-        self._view: FlatMapView[int, str] = FlatMapView(self.storage)
-        self.payload: FlatMapView[int, str] = self._view
+        self.storage = storage if storage is not None else MutableFlatMapStorage(capacity=capacity)
+        if include_diagnostic_events and storage is None:
+            for event_id, fmt in STANDARD_DIAGNOSTIC_EVENTS:
+                assert self.storage.insert(event_id, fmt)
+        self._view: ReadOnlyFlatMapView[int, str] = self.storage.view()
+        self.payload: ReadOnlyFlatMapView[int, str] = self._view
 
     def register(self, offset: int, fmt: str) -> None:
         for bad in _DISALLOWED_SPECIFIERS:
-            if bad in fmt:
+            if fmt.find(bad) >= 0:
                 raise ValueError(
                     f"dictionary entry 0x{offset:X} uses '{bad}', which cannot be "
                     "backed by a u32 argument without reading it as a pointer"
                 )
 
-        idx = bisect.bisect_left(self.storage, offset, key=lambda e: e[0])
-        if idx < len(self.storage) and self.storage[idx][0] == offset:
-            self.storage[idx] = (offset, fmt)
-        else:
-            self.storage.insert(idx, (offset, fmt))
-        self._view = FlatMapView(self.storage)
+        assert self.storage.insert(offset, fmt)
+        self._view = self.storage.view()
         self.payload = self._view
 
-    def view(self) -> FlatMapView[int, str]:
+    def view(self) -> ReadOnlyFlatMapView[int, str]:
         return self._view
 
     @property

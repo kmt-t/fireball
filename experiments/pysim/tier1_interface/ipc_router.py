@@ -1,7 +1,7 @@
 """
 experiments/pysim/tier1_core/ipc_router.py
 Fireball IPC Router: URI/RBAC front-end over the CSP rendezvous engine.
-- Stage 1: Static URI Lookup to Service Descriptor via FlatMapView (binary search)
+- Stage 1: Static URI Lookup to Service Descriptor via ReadOnlyFlatMapView (binary search)
 - Stage 2: Role-Based Access Control (RBAC)
 - Stage 3: Bufferless synchronous CSP handoff (scheduler.Channel).
   - GOTCHA-IPCR-01: Duplicate send on a waiting channel triggers assertion error
@@ -17,8 +17,8 @@ from enum import IntEnum
 
 from logging_interface import Logger, LogLevel
 from memory_interface import MemoryManager, SharedBlock
-from scheduler import Channel, ChannelAction, Scheduler, Task, WaitDir
-from system_containers import FlatMapView, StaticVector
+from scheduler import Channel, ChannelAction, ChannelPayload, Scheduler, Task, WaitDir
+from system_containers import ReadOnlyFlatMapView, StaticVector
 
 LOG_EVT_IPC_RBAC_DENIED = 0x0201
 LOG_EVT_IPC_UNKNOWN_URI = 0x0202
@@ -164,9 +164,9 @@ class IPCMessage:
 
     def _check_ownership(self) -> None:
         """Ensures the caller task/context currently holds ownership of the message."""
-        assert self.ownership in (
-            OwnershipState.SENDER_OWNS,
-            OwnershipState.RECEIVER_OWNS,
+        assert (
+            self.ownership == OwnershipState.SENDER_OWNS
+            or self.ownership == OwnershipState.RECEIVER_OWNS
         ), f"Cannot access IPCMessage entries while ownership is {self.ownership.name}!"
 
     @property
@@ -231,13 +231,13 @@ class IPCMessage:
         return self._read_entries()
 
     @property
-    def payload(self) -> FlatMapView:
+    def payload(self) -> ReadOnlyFlatMapView:
         self._check_ownership()
-        return FlatMapView(self._read_entries())
+        return ReadOnlyFlatMapView(self._read_entries())
 
     @property
-    def flat_map_view(self) -> FlatMapView:
-        """Returns the non-owning FlatMapView for zero-copy binary search access."""
+    def flat_map_view(self) -> ReadOnlyFlatMapView:
+        """Returns the non-owning flat-map view for zero-copy lookup."""
         return self.payload
 
     def claim_resource(
@@ -307,7 +307,7 @@ def bytes_to_kv_storage(data: bytes) -> StaticVector[tuple[int, int]]:
 
 def kv_entries_to_bytes(entries: Sequence[tuple[int, int]], max_len: int | None = None) -> bytes:
     """Unpacks AoS (key32, val32) entries back into raw bytes using length metadata."""
-    entries_view = FlatMapView(entries)
+    entries_view = ReadOnlyFlatMapView(entries)
     length_value = entries_view.find(0)
     total_len = 0 if length_value is None else length_value
     if max_len is not None:
@@ -367,7 +367,7 @@ _HAL_ROLES: tuple[Role, ...] = (
 
 
 def _role_row(allowed_targets: Sequence[Role]) -> tuple[bool, ...]:
-    return tuple(role in allowed_targets for role in Role)
+    return tuple(any(role == target for target in allowed_targets) for role in Role)
 
 
 FB_CONF_ROUTER_ROLE_MATRIX: tuple[tuple[bool, ...], ...] = (
@@ -414,7 +414,7 @@ class IPCRouter:
         self.logger = logger
         self.memory_manager = memory_manager
         # Non-owning view borrowing ROM-resident AoS storage array (_SERVICE_ENTRIES)
-        self.registry = FlatMapView(_SERVICE_ENTRIES)
+        self.registry = ReadOnlyFlatMapView(_SERVICE_ENTRIES)
 
         # Pre-allocate one dedicated CSP rendezvous channel per allowed edge in the RBAC matrix
         self._edge_channels: tuple[tuple[Channel | None, ...], ...] = tuple(
@@ -430,7 +430,7 @@ class IPCRouter:
             return self.memory_manager.grant_shared(shm_id)
 
     def lookup_service_handle(self, uri: str) -> int:
-        """Resolves URI to integer service handle via FlatMapView binary search (O(log N))."""
+        """Resolves URI to integer service handle via ReadOnlyFlatMapView binary search (O(log N))."""
         return self.registry.find_index(uri)
 
     def get_service_descriptor(self, service_handle: int) -> ServiceDescriptor | None:
@@ -494,7 +494,7 @@ class IPCRouter:
 
     def send(
         self, channel: Channel, message: IPCMessage
-    ) -> Generator[tuple[ChannelAction, None], None, tuple[IPCStatus, object]]:
+    ) -> Generator[tuple[ChannelAction, None], None, tuple[IPCStatus, ChannelPayload | None]]:
         """
         Stage 3: synchronous CSP send on the pre-authorized Channel object.
         Zero-copy: `message` itself is never duplicated, only its `ownership`
@@ -505,7 +505,12 @@ class IPCRouter:
         assert current is not None, "IPC send requires an active scheduler task"
         sender_role = Role(current.role)
         allowed_channels = [ch for ch in self._edge_channels[int(sender_role)] if ch is not None]
-        if channel not in allowed_channels:
+        channel_allowed = False
+        for allowed_channel in allowed_channels:
+            if allowed_channel is channel:
+                channel_allowed = True
+                break
+        if not channel_allowed:
             if self.logger is not None:
                 self.logger.log_event(
                     LogLevel.WARN,
@@ -559,7 +564,7 @@ class IPCRouter:
             for k, val in entries_to_grant:
                 sk, _, _ = unpack_key32(k)
                 if sk == ScopeKind.RESOURCE and val >= 0:
-                    slot = self.memory_manager.shm_slots.find(val)
+                    slot = self.memory_manager.shm_slots.view().find(val)
                     if slot is not None and slot.allocated:
                         self.memory_manager.page_registry.update_owner(
                             slot.page_idx, FB_TASK_ID_FLIGHT

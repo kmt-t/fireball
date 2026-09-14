@@ -9,13 +9,13 @@
 <!-- traceability: {Type_Vocabulary} {META_FlatMapIndexed} {META_BinarySearch} {META_NoStdVector} {GLOBAL_Policy_Memory} {META_ZeroCostAbstraction} {GLOBAL_StaticScalability} {FlatViewNarrowing} {PackedBitView} {System_Allocator} -->
 本コンポーネントは、Fireball 全体で共有されるコンテナ語彙を定義する。複数の Tier が同じ参照パターンを必要とするため、各所で個別に説明せず本書を型定義の正本とする。 `{Type_Vocabulary}`
 
-語彙は **4 つの独立した型**からなる。それぞれ答える問いが異なるため、共通のテンプレートに統合しない。
+検索語彙は **3 種類（Set / Map / RadixBinaryTree）× 2 世代（ReadOnly / Mutable）× Storage / View** で構成する。View は各種類に1つだけ存在し、常に読み取り専用である。Bit は検索語彙とは別の密な状態表である。
 
 | 型 | 答える問い | 参照方法 | 主な用途 |
 | :--- | :--- | :--- | :--- |
-| `fireball::flat_map_view<Key, Value>` | 「キー `K` に対応する値は何か」 | 絞り込み + **二分探索** $O(\log n)$ | vMMIO PTE表、IPCサービスレジストリ |
-| `fireball::flat_set_view<Key>` | 「キー `K` は含まれるか」 | 絞り込み + **二分探索** $O(\log n)$ | ブレークポイントPC集合、vMMIO許可アドレス範囲 |
-| `fireball::radix_binary_tree_view<Key, Value, RadixShift>` | 「キー `K` に対応する値は何か（基数＋二分探索）」 | **Radix Table** ($O(1)$) + **有界二分探索** $O(\log n)$ | JITエントリ索引（WASM PC $\to$ ネイティブコードオフセット） |
+| `ReadOnlyFlatMapView` | 「キー `K` に対応する値は何か」 | 絞り込み + **二分探索** $O(\log n)$ | vMMIO PTE表、IPCサービスレジストリ |
+| `ReadOnlyFlatSetView` | 「キー `K` は含まれるか」 | 絞り込み + **二分探索** $O(\log n)$ | ブレークポイントPC集合、vMMIO許可アドレス範囲 |
+| `ReadOnlyRadixBinaryTreeView` | 「キー `K` に対応する値は何か（基数＋二分探索）」 | **Radix Table** ($O(1)$) + **有界二分探索** $O(\log n)$ | JITエントリ索引（WASM PC $\to$ ネイティブコードオフセット） |
 | `fireball::bit_view<Bits>` | 「添字 `i` の状態は何か」 | 添字による**直接参照** $O(1)$ | JITカードマーキング表、権限ニブル、フラグ列 |
 
 **なぜ 4 つに分けるか**:
@@ -29,12 +29,15 @@
 
 所有権は単一のストレージインスタンスだけが持つ。ストレージ所有側は同じ実体を指すviewをメンバとして二重保持せず、必要な処理の呼び出し時に借用する。別インスタンスが所有ストレージを検索する場合だけ、所有者から非所有viewを受け取る。view単独を所有型として扱ったり、同じ実体に複数の所有者を作ったりしてはならない。
 
-| コンテナ種別 | 非所有ビュー (View)<br/>※探索・絞り込み専用 | 読み取り専用ストレージ (ReadOnly Storage)<br/>※静的イミュータブル実体 | 可変ストレージ (Mutable Storage)<br/>※要素追加(`insert`)・削除(`remove`) | 実体所有権 | 変更操作の責務 |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| **FlatMap** (疎マップ) | `flat_map_view<K, V>` | `read_only_flat_map_storage<K, V>` | `mutable_flat_map_storage<K, V, Capacity>` | Storage が AoS 配列を完全所有 | **Mutable Storage のみ** (`insert`, `remove`) |
-| **FlatSet** (疎集合) | `flat_set_view<K>` | `read_only_flat_set_storage<K>` | `mutable_flat_set_storage<K, Capacity>` | Storage が キー配列を完全所有 | **Mutable Storage のみ** (`insert`, `remove`) |
-| **RadixBinaryTree** (基数木) | `radix_binary_tree_view<K, V, RadixShift>` | `read_only_radix_binary_tree_storage<V>` | `mutable_radix_binary_tree_storage<V, Capacity>` | Storage が キー・値・Radix表を完全所有 | **Mutable Storage のみ** (`insert`, `remove` + Radix表自動更新) |
-| **BitView** (ビット配列) | `bit_view<Bits>` | `read_only_bit_storage` | `mutable_bit_storage` | Storage が バイトバッファを完全所有 | **Mutable Storage のみ** (`put`, `fill`, `clear`) |
+| 種類 | ReadOnly Storage | Mutable Storage | 非所有 ReadOnly View |
+| :--- | :--- | :--- | :--- |
+| **FlatSet** | `ReadOnlyFlatSetStorage<K>` | `MutableFlatSetStorage<K>` | `ReadOnlyFlatSetView<K>` |
+| **FlatMap** | `ReadOnlyFlatMapStorage<K, V>` | `MutableFlatMapStorage<K, V>` | `ReadOnlyFlatMapView<K, V>` |
+| **RadixBinaryTree** | `ReadOnlyRadixBinaryTreeStorage<V>` | `MutableRadixBinaryTreeStorage<V>` | `ReadOnlyRadixBinaryTreeView<V>` |
+
+Storage は実体を単独で所有し、生成時および変更時にキー順を維持する。RadixBinaryTree の Storage はソート済みエントリに加えて Radix Table も更新する。View は Storage の実体を借用し、`find`、`contains`、`slice`、`narrow` だけを提供する。検索メソッドを Storage に追加せず、Mutable View も定義しない。
+
+`BitView`、`ReadOnlyBitStorage`、`MutableBitStorage`、`RingBuffer`、`StaticVector` はこの検索コンテナ行列の対象外であり、密な状態表または順序付き逐次コンテナとして独立に定義する。
 
 **固定長配列と有効エントリカウント規約 (`{GLOBAL_Policy_Memory}`, `{META_NoStdVector}`)**:
 - **固定長事前確保バッファ**: `mutable_*_storage` は、動的リサイズ（`std::vector` や `list.insert`/`append` 等のヒープ再確保）を完全に禁止する。インスタンス化時に `Capacity` サイズの内部バッファ（`_buffer = [None] * capacity`）を一括して事前確保する。

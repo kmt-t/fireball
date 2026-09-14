@@ -13,7 +13,6 @@ something has to really run.
 
 from __future__ import annotations
 
-import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from enum import IntEnum
@@ -25,8 +24,8 @@ if TYPE_CHECKING:
 
 from ipc_router import DataType, IPCMessage, IPCRouter, IPCStatus, Role, ScopeKind, pack_key32
 from scheduler import ChannelAction
-from system_containers import FlatMapView, StaticVector
-from vmmio import FC_DYNAMIC, VMMIOController, VMMIO_PAGE_SHIFT, VmmioStatus
+from system_containers import ReadOnlyFlatMapView, StaticVector
+from vmmio import FC_DYNAMIC, VMMIO_PAGE_SHIFT, VMMIOController, VmmioStatus
 
 # hal_dispatch.md §4.2's kv_pair command arguments: each is a packed
 # (ScopeKind.FUNCTIONAL, DataType.UINT32, key_id) key per ipc_router.md §3.3,
@@ -99,7 +98,7 @@ class HalBufferTrap(HalError):
 class StreamSink(Protocol):
     """Tier 2が要求するストリーム出力の最小契約。実体はTier 3が提供する。"""
 
-    def write(self, data: bytes | memoryview) -> int:
+    def write(self, data: memoryview) -> int:
         ...
 
 
@@ -260,8 +259,8 @@ class HalBufferPool:
 # ---------------------------------------------------------------------------
 
 
-HalResult = int | bytes | None
-HalCommandCallback = Callable[[FlatMapView], HalResult]
+HalResult = int
+HalCommandCallback = Callable[[ReadOnlyFlatMapView], HalResult]
 
 
 @dataclass(frozen=True, slots=True)
@@ -304,7 +303,7 @@ class HalDriver:
                 return binding.callback
         return None
 
-    def _query_caps(self, params: FlatMapView) -> int:
+    def _query_caps(self, params: ReadOnlyFlatMapView) -> int:
         query_cmd = params.find(ARG_QUERY_CMD_ID)
         return 1 if query_cmd is not None and self._find_command(query_cmd) is not None else 0
 
@@ -312,7 +311,7 @@ class HalDriver:
         """Checks if this driver supports the given command ID (1=True, 0=False)."""
         return 1 if self._find_command(cmd_id) is not None else 0
 
-    def dispatch(self, cmd_id: int, params: FlatMapView) -> HalResult:
+    def dispatch(self, cmd_id: int, params: ReadOnlyFlatMapView) -> HalResult:
         """Dispatches an IPC command through the driver's registered callback."""
         callback = self._find_command(cmd_id)
         assert callback is not None, f"unregistered HAL command {cmd_id:#x}"

@@ -18,7 +18,7 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from enum import IntEnum
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol
 
 from scheduler import Scheduler
 from system_containers import MutableFlatMapStorage, StaticVector
@@ -46,6 +46,18 @@ TrapCode = VmmioStatus
 
 
 VmmioVectorHandler = Callable[[int, int, bool], int | None]
+
+
+class VmmioPte(Protocol):
+    """Common statically-selected PTE fields used after FC decoding."""
+
+    read: bool
+    write: bool
+    valid: bool
+    owner_id: int
+    phys_page: int
+    handler: Callable[[int, int, bool], None] | None
+    value_handler: VmmioVectorHandler | None
 
 
 # Function Codes (bits[31:28]) — see runtime_vmmio.md "アドレス分解の対応関係"
@@ -137,7 +149,7 @@ class Tier3PTE:
 @dataclass(slots=True)
 class TLBSlot:
     vpn: int = 0xFFFF_FFFF
-    pte: StaticDevicePTE | Tier3PTE | None = None
+    pte: VmmioPte | None = None
 
 
 class VMMIOController:
@@ -165,7 +177,7 @@ class VMMIOController:
         # FlatMap PTE storage: vpn (20-bit) -> PTE, capacity-bounded per
         # system_config.md's FB_CONF_VMMIO_MAX_PTES (a fixed static array in
         # C++, so a MutableFlatMapStorage here, never a dict).
-        self.ptes: MutableFlatMapStorage[int, StaticDevicePTE | Tier3PTE] = MutableFlatMapStorage(
+        self.ptes: MutableFlatMapStorage[int, VmmioPte] = MutableFlatMapStorage(
             capacity=FB_CONF_VMMIO_MAX_PTES
         )
         # Direct-mapped TLB: 32 slots, keyed by a repeatedly folded XOR over
@@ -206,7 +218,7 @@ class VMMIOController:
 
     def map_shm_page(self, vpn: int, phys_page: int, owner_id: int = 0) -> None:
         """Registers a Tier 3 SHM page (FC=14) into FlatMap."""
-        if self.ptes.find(vpn) is not None:
+        if self.ptes.view().find(vpn) is not None:
             self.ptes.remove(vpn)
         assert self.ptes.insert(
             vpn,
@@ -224,7 +236,7 @@ class VMMIOController:
     def map_dynamic_page(self, vpn: int, phys_page: int) -> None:
         """Maps one HAL-owned page in the FC=13 DYNAMIC region."""
         assert (vpn >> 16) == FC_DYNAMIC, "DYNAMIC VPN is outside FC=13"
-        if self.ptes.find(vpn) is not None:
+        if self.ptes.view().find(vpn) is not None:
             self.ptes.remove(vpn)
         assert self.ptes.insert(
             vpn,
@@ -241,7 +253,7 @@ class VMMIOController:
     def unmap_dynamic_page(self, vpn: int) -> None:
         """Unmaps one HAL-owned DYNAMIC page and invalidates its TLB entry."""
         assert (vpn >> 16) == FC_DYNAMIC, "DYNAMIC VPN is outside FC=13"
-        if self.ptes.find(vpn) is not None:
+        if self.ptes.view().find(vpn) is not None:
             self.ptes.remove(vpn)
         self.flush_tlb_entry(vpn)
 
@@ -249,7 +261,7 @@ class VMMIOController:
         self, vpn: int, phys_page: int, read: bool = True, write: bool = True
     ) -> None:
         """Registers a Tier 3 Passthrough page (FC=15) into FlatMap."""
-        if self.ptes.find(vpn) is not None:
+        if self.ptes.view().find(vpn) is not None:
             self.ptes.remove(vpn)
         assert self.ptes.insert(
             vpn,
@@ -268,13 +280,13 @@ class VMMIOController:
         IPC Router Revoke phase: physically unmaps the page from vMMIO and flushes its TLB entry.
         Subsequent accesses will trap via TRAP_UNREGISTERED_PAGE (ADR_PageGranularPermissionIsolation).
         """
-        if self.ptes.find(vpn) is not None:
+        if self.ptes.view().find(vpn) is not None:
             self.ptes.remove(vpn)
         self.flush_tlb_entry(vpn)
 
     def unmap_shm_page(self, vpn: int) -> None:
         """Unregisters an FC=14 SHM page and flushes its TLB entry."""
-        if self.ptes.find(vpn) is not None:
+        if self.ptes.view().find(vpn) is not None:
             self.ptes.remove(vpn)
         self.flush_tlb_entry(vpn)
 
@@ -329,7 +341,7 @@ class VMMIOController:
         temp = temp ^ (temp >> 5)
         return temp & 0x1F
 
-    def _lookup_pte(self, addr: VmmioAddress) -> StaticDevicePTE | Tier3PTE | None:
+    def _lookup_pte(self, addr: VmmioAddress) -> VmmioPte | None:
         """Returns the PTE from TLB (O(1)) or falls back to FlatMap."""
         vpn = addr.vpn()
         tlb_idx = self.tlb_index(vpn)
@@ -339,7 +351,7 @@ class VMMIOController:
             return slot.pte
         self.tlb_misses += 1
         # FlatMap lookup
-        pte = self.ptes.find(vpn)
+        pte = self.ptes.view().find(vpn)
         if pte is None:
             return None
         # Refill: in-place overwrite (O(1), zero allocation).

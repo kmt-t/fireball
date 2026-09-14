@@ -13,7 +13,6 @@ from typing import TYPE_CHECKING
 
 from config import JIT_CARD_SHIFT
 from system_containers import (
-    BitView,
     MutableBitStorage,
     RingBuffer,
     StaticVector,
@@ -26,7 +25,7 @@ if TYPE_CHECKING:
 NativeTraceFn = Callable[
     [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, int], int | None
 ]
-TraceArgument = ctypes.c_void_p | int | list[int]
+TraceArgument = ctypes.c_void_p
 
 
 class CardState:
@@ -495,7 +494,7 @@ class JITMultiBufferCache:
 
     def register_chain(self, source_pc: int, target_pc: int) -> None:
         target_bank = self.find_bank(target_pc)
-        if target_bank is not None and source_pc not in target_bank.inbound_sources:
+        if target_bank is not None and not target_bank.inbound_sources.contains(source_pc):
             target_bank.inbound_sources.push_back(source_pc)
 
     def lookup(self, head_pc: int) -> JITTrace | None:
@@ -543,7 +542,7 @@ class JITMultiBufferCache:
         target_bank = self.find_bank(head_pc)
         if target_bank is not None:
             for src_pc in following_sources:
-                if src_pc not in target_bank.inbound_sources:
+                if not target_bank.inbound_sources.contains(src_pc):
                     target_bank.inbound_sources.push_back(src_pc)
 
         self.promotions += 1

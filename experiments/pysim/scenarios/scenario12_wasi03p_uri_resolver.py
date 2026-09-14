@@ -47,17 +47,17 @@ from hal_dispatch import (
 )
 from dummy_drivers import DummyDriver
 from system import System
-from system_containers import FlatMapView
+from system_containers import ReadOnlyFlatMapView
 from wasi import Wasi03pEngine, WasiHostContext, WasiIpcCmd
 
-_EMPTY_PARAMS = FlatMapView(())
+_EMPTY_PARAMS = ReadOnlyFlatMapView(())
 
 
-def _params(*pairs: tuple[int, int]) -> FlatMapView:
-    """Builds a params FlatMapView from packed (key, value) pairs, matching
+def _params(*pairs: tuple[int, int]) -> ReadOnlyFlatMapView[int, int]:
+    """Builds a parameter ReadOnlyFlatMapView from packed pairs, matching
     hal_dispatch.md §5.1's control(id, cmd, params: ipc-message)."""
     sorted_pairs = sorted(pairs, key=lambda kv: kv[0])
-    return FlatMapView(sorted_pairs)
+    return ReadOnlyFlatMapView(sorted_pairs)
 
 
 def test_wasi03p_hierarchical_uri_and_ipc_commands():
@@ -143,7 +143,7 @@ def test_wasi03p_hierarchical_uri_and_ipc_commands():
     assert out_uart.startswith("IPC-CMD-SHM-STREAM-OK!"), f"UART SHM output mismatch: {out_uart}"
     print(f"    [IPC CMD:STREAM_WRITE_BUFFER] Written {nwritten} bytes -> {out_uart}")
 
-    # 4.b Test the same IPC path with a directly-built params FlatMapView.
+    # 4.b Test the same IPC path with a directly-built params ReadOnlyFlatMapView.
     fmap_view = _params(
         (ARG_LENGTH, len(msg)),
         (ARG_OFFSET, 0),
@@ -155,7 +155,7 @@ def test_wasi03p_hierarchical_uri_and_ipc_commands():
     assert nwritten_fmap == len(msg)
     out_uart_fmap = sysv.transport.drain_output().decode("utf-8")
     assert out_uart_fmap.startswith("IPC-CMD-SHM-STREAM-OK!")
-    print(f"    [IPC FlatMapView DISPATCH] Written {nwritten_fmap} bytes -> {out_uart_fmap}")
+    print(f"    [IPC ReadOnlyFlatMapView DISPATCH] Written {nwritten_fmap} bytes -> {out_uart_fmap}")
 
     # 4.c Confirm the dedicated HAL task processed both commands.
     stdio_task = sysv.hal_task_for("fireball://hal/stdout/0")

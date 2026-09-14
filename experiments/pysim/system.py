@@ -22,11 +22,10 @@ import os
 import struct
 import time
 from collections.abc import Sequence
-from dataclasses import dataclass
 from enum import IntEnum
 from typing import TYPE_CHECKING, Callable
 
-from hal_dispatch import HalBufferHandle, HalBufferPool
+from hal_dispatch import HalBufferPool
 from ipc_router import (
     IPCMessage,
     IPCRouter,
@@ -50,9 +49,8 @@ from memory import (
     MemoryManager,
 )
 from runtime_engine import RuntimeEngine
-from stream_transport import StreamTransport
-from wasi_hal_bindings import DEFAULT_WASI_HAL_BINDINGS
 from scheduler import FB_CONF_MAX_TASKS, Channel, Scheduler, Task, TaskState
+from stream_transport import StreamTransport
 from system_containers import MutableFlatMapStorage, ReadOnlyFlatMapStorage, StaticVector
 from vmmio import (
     FC_STATIC_DEVICE,
@@ -61,6 +59,7 @@ from vmmio import (
     VMMIOController,
     VmmioStatus,
 )
+from wasi_hal_bindings import DEFAULT_WASI_HAL_BINDINGS
 from wasm_module import BasicBlock
 
 
@@ -517,7 +516,7 @@ class System:
         # vmmio_concept.access() itself already computed internally, from
         # the same public PTE fields it exposes (self.vmmio.ptes is a
         # public FlatMap, not a hidden implementation detail).
-        pte = self.vmmio.ptes.find(a.vpn())
+        pte = self.vmmio.ptes.view().find(a.vpn())
         phys_addr = (pte.phys_page << 12) | a.offset()
         return None, self.phys_mem, phys_addr
 
@@ -664,7 +663,9 @@ class System:
             task.coro = gen
             self.scheduler.attach(task)
             while (
-                task.state not in (TaskState.TERMINATED, TaskState.READY) and task.coro is not None
+                task.state != TaskState.TERMINATED
+                and task.state != TaskState.READY
+                and task.coro is not None
             ):
                 self.scheduler.step()
             status, _ = task.result if task.result else (IPCStatus.COMPLETED, None)
@@ -693,7 +694,9 @@ class System:
             task.coro = gen
             self.scheduler.attach(task)
             while (
-                task.state not in (TaskState.TERMINATED, TaskState.READY) and task.coro is not None
+                task.state != TaskState.TERMINATED
+                and task.state != TaskState.READY
+                and task.coro is not None
             ):
                 self.scheduler.step()
             status, msg = task.result if task.result else (IPCStatus.COMPLETED, None)
@@ -705,7 +708,11 @@ class System:
                 status, msg = IPCStatus.COMPLETED, None
             self.scheduler.run_until_idle()
 
-        if status in (IPCStatus.ERR_NOT_FOUND, IPCStatus.ERR_PERMISSION_DENIED) or msg is None:
+        if (
+            status == IPCStatus.ERR_NOT_FOUND
+            or status == IPCStatus.ERR_PERMISSION_DENIED
+            or msg is None
+        ):
             return int(WasiErrno.NOENT)
         data = kv_entries_to_bytes(msg.entries, max_len=buf_len)
         n = len(data)
@@ -759,7 +766,7 @@ class System:
         )
         task_id, task = driver.start(self.ipc, self.scheduler, desc.role)
         assert self._hal_task_storage.insert(uri_key, task)
-        self._hal_task_index = ReadOnlyFlatMapStorage.create(self._hal_task_storage.entries)
+        self._hal_task_index = ReadOnlyFlatMapStorage.create(self._hal_task_storage.view().entries)
         return task_id
 
     def hal_task_for(self, uri: str) -> HalTask | None:

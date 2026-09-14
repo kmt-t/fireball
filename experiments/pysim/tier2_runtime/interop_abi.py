@@ -23,7 +23,9 @@ NATIVE_STACK_ALIGNMENT_BYTES = WASM_VALUE_SLOT_BYTES
 class ExecutionContextNative(ctypes.Structure):
     """Fixed physical execution context consumed by interpreter and JIT."""
 
-    _fields_ = [
+    __slots__ = ()
+
+    _fields_ = (
         ("ip", ctypes.c_uint32),
         ("sp_base", ctypes.c_uint32),
         ("sp_limit", ctypes.c_uint32),
@@ -41,45 +43,53 @@ class ExecutionContextNative(ctypes.Structure):
         ("handler_table", ctypes.c_uint32),
         ("reserved0", ctypes.c_uint32),
         ("jit_helper_ptrs", ctypes.c_uint64 * JIT_HELPER_COUNT),
-    ]
+    )
 
 
 class ConstBufferViewNative(ctypes.Structure):
     """Non-owning immutable byte buffer view: address, length, reserved."""
 
-    _fields_ = [
+    __slots__ = ()
+
+    _fields_ = (
         ("data", ctypes.c_void_p),
         ("size", ctypes.c_uint32),
         ("reserved0", ctypes.c_uint32),
-    ]
+    )
 
 
 class WasmFunctionViewNative(ctypes.Structure):
     """Non-owning function metadata and code view."""
 
-    _fields_ = [
+    __slots__ = ()
+
+    _fields_ = (
         ("code", ConstBufferViewNative),
         ("type_index", ctypes.c_uint32),
         ("locals_count", ctypes.c_uint32),
-    ]
+    )
 
 
 class WasmModuleViewNative(ctypes.Structure):
     """Non-owning module descriptor pointing at a function-view array."""
 
-    _fields_ = [
+    __slots__ = ()
+
+    _fields_ = (
         ("function_table", ctypes.c_void_p),
         ("function_count", ctypes.c_uint32),
         ("imported_function_count", ctypes.c_uint32),
         ("start_function", ctypes.c_uint32),
         ("flags", ctypes.c_uint32),
-    ]
+    )
 
 
 class WasmRunRequestNative(ctypes.Structure):
     """Flat request passed from a Python adapter to a native run entry point."""
 
-    _fields_ = [
+    __slots__ = ()
+
+    _fields_ = (
         ("module_view", ctypes.c_void_p),
         ("execution_context", ctypes.c_void_p),
         ("arguments", ctypes.c_void_p),
@@ -88,7 +98,7 @@ class WasmRunRequestNative(ctypes.Structure):
         ("argument_count", ctypes.c_uint32),
         ("result_capacity", ctypes.c_uint32),
         ("max_blocks", ctypes.c_uint32),
-    ]
+    )
 
 
 class WasmRunResultNative(ctypes.Structure):
@@ -98,44 +108,52 @@ class WasmRunResultNative(ctypes.Structure):
     owns the function signature and interprets the returned Native slots.
     """
 
-    _fields_ = [
+    __slots__ = ()
+
+    _fields_ = (
         ("status", ctypes.c_uint32),
         ("fault_code", ctypes.c_uint32),
         ("value_count", ctypes.c_uint32),
         ("reserved0", ctypes.c_uint32),
         ("results", ctypes.c_void_p),
-    ]
+    )
 
 
 class ValueStackNative(ctypes.Structure):
     """Fixed-capacity raw WASM value stack shared with the embedded runtime."""
 
-    _fields_ = [
+    __slots__ = ()
+
+    _fields_ = (
         ("values", ctypes.c_uint32 * NATIVE_VALUE_STACK_CAPACITY),
         ("size", ctypes.c_uint32),
         ("reserved0", ctypes.c_uint32),
-    ]
+    )
 
 
 class ControlFrameNative(ctypes.Structure):
     """Flat Native representation of one WASM control frame."""
 
-    _fields_ = [
+    __slots__ = ()
+
+    _fields_ = (
         ("kind", ctypes.c_uint32),
         ("start", ctypes.c_uint32),
         ("match_end", ctypes.c_uint32),
         ("stack_height", ctypes.c_uint32),
-    ]
+    )
 
 
 class ControlStackNative(ctypes.Structure):
     """Fixed-capacity Native control-frame stack."""
 
-    _fields_ = [
+    __slots__ = ()
+
+    _fields_ = (
         ("frames", ControlFrameNative * NATIVE_CONTROL_STACK_CAPACITY),
         ("size", ctypes.c_uint32),
         ("reserved0", ctypes.c_uint32),
-    ]
+    )
 
 
 class NativeValueStack:
@@ -172,7 +190,6 @@ class NativeValueStack:
 
     @staticmethod
     def _encode(value: int) -> int:
-        assert isinstance(value, int)
         return value & 0xFFFF_FFFF
 
     def _decode(self, index: int) -> int:
@@ -181,13 +198,10 @@ class NativeValueStack:
     def _index(self, index: int) -> int:
         size = int(self._native.size)
         normalized = index if index >= 0 else size + index
-        if not 0 <= normalized < size:
-            raise IndexError("native value stack index out of range")
+        assert 0 <= normalized < size
         return normalized
 
-    def __getitem__(self, index: int | slice) -> int | tuple[int, ...]:
-        if isinstance(index, slice):
-            return tuple(self._decode(i) for i in range(*index.indices(len(self))))
+    def __getitem__(self, index: int) -> int:
         return self._decode(self._index(index))
 
     def __setitem__(self, index: int, value: int) -> None:
@@ -210,12 +224,8 @@ class NativeValueStack:
         for index in range(len(self)):
             yield self._decode(index)
 
-    def __eq__(self, other: object) -> bool:
-        if isinstance(other, NativeValueStack):
-            return tuple(self) == tuple(other)
-        if isinstance(other, (list, tuple)):
-            return tuple(self) == tuple(other)
-        return False
+    def __eq__(self, other: Iterable[int]) -> bool:
+        return tuple(self) == tuple(other)
 
     def push_back(self, value: int) -> bool:
         size = int(self._native.size)
@@ -247,8 +257,7 @@ class NativeValueStack:
 
     def _validate_range(self, start: int, count: int) -> None:
         assert count >= 0
-        if not 0 <= start or start + count > int(self._native.size):
-            raise IndexError("native value stack range out of bounds")
+        assert 0 <= start and start + count <= int(self._native.size)
 
     def push_raw_from(self, source: NativeValueStack, start: int, count: int) -> bool:
         """Copy raw slots from another Native stack onto this stack."""
@@ -334,23 +343,19 @@ class NativeValueStack:
         return struct.unpack("<d", struct.pack("<Q", (high << 32) | low))[0]
 
     def peek_i32(self) -> int:
-        if len(self) < 1:
-            raise IndexError("native value stack underflow")
+        assert len(self) >= 1
         return self.read_i32(len(self) - 1)
 
     def peek_i64(self) -> int:
-        if len(self) < 2:
-            raise IndexError("native value stack underflow")
+        assert len(self) >= 2
         return self.read_i64(len(self) - 2)
 
     def peek_f32(self) -> float:
-        if len(self) < 1:
-            raise IndexError("native value stack underflow")
+        assert len(self) >= 1
         return self.read_f32(len(self) - 1)
 
     def peek_f64(self) -> float:
-        if len(self) < 2:
-            raise IndexError("native value stack underflow")
+        assert len(self) >= 2
         return self.read_f64(len(self) - 2)
 
     def read_i32(self, index: int) -> int:
@@ -359,8 +364,7 @@ class NativeValueStack:
 
     def read_i64(self, index: int) -> int:
         self._index(index)
-        if index + 1 >= len(self):
-            raise IndexError("native i64 value exceeds stack bounds")
+        assert index + 1 < len(self)
         raw = self._decode(index) | (self._decode(index + 1) << 32)
         return raw - (1 << 64) if raw & (1 << 63) else raw
 
@@ -369,8 +373,7 @@ class NativeValueStack:
 
     def read_f64(self, index: int) -> float:
         self._index(index)
-        if index + 1 >= len(self):
-            raise IndexError("native f64 value exceeds stack bounds")
+        assert index + 1 < len(self)
         raw = self._decode(index) | (self._decode(index + 1) << 32)
         return struct.unpack("<d", struct.pack("<Q", raw))[0]
 
@@ -380,8 +383,7 @@ class NativeValueStack:
 
     def write_i64(self, index: int, value: int) -> None:
         self._index(index)
-        if index + 1 >= len(self):
-            raise IndexError("native i64 value exceeds stack bounds")
+        assert index + 1 < len(self)
         raw = value & 0xFFFF_FFFF_FFFF_FFFF
         self._native.values[index] = raw & 0xFFFF_FFFF
         self._native.values[index + 1] = raw >> 32
@@ -391,8 +393,7 @@ class NativeValueStack:
 
     def write_f64(self, index: int, value: float) -> None:
         self._index(index)
-        if index + 1 >= len(self):
-            raise IndexError("native f64 value exceeds stack bounds")
+        assert index + 1 < len(self)
         raw = struct.unpack("<Q", struct.pack("<d", value))[0]
         self._native.values[index] = raw & 0xFFFF_FFFF
         self._native.values[index + 1] = raw >> 32
@@ -401,14 +402,9 @@ class NativeValueStack:
         while self:
             assert self.pop_back() is not None
 
-    def __delitem__(self, index: int | slice) -> None:
-        if isinstance(index, int):
-            start = self._index(index)
-            stop = start + 1
-        else:
-            start, stop, step = index.indices(len(self))
-            if step != 1:
-                raise ValueError("native value stack deletion requires a unit step")
+    def __delitem__(self, index: int) -> None:
+        start = self._index(index)
+        stop = start + 1
         if start >= stop:
             return
         removed = stop - start
@@ -425,16 +421,12 @@ class NativeValueStack:
         return ctypes.c_void_p(self._values_address + start * 4)
 
 
-def _offset(struct_type: type[ctypes.Structure], field_name: str) -> int:
-    return int(getattr(struct_type, field_name).offset)
-
-
 assert ctypes.sizeof(ctypes.c_void_p) == 8
 assert ctypes.sizeof(ExecutionContextNative) == JIT_CONTEXT_SIZE_BYTES
-assert _offset(ExecutionContextNative, "mem_base") == 0x28
-assert _offset(ExecutionContextNative, "handler_table") == 0x38
-assert _offset(ExecutionContextNative, "reserved0") == 0x3C
-assert _offset(ExecutionContextNative, "jit_helper_ptrs") == JIT_CONTEXT_HELPER_PTR_OFFSET
+assert ExecutionContextNative.mem_base.offset == 0x28
+assert ExecutionContextNative.handler_table.offset == 0x38
+assert ExecutionContextNative.reserved0.offset == 0x3C
+assert ExecutionContextNative.jit_helper_ptrs.offset == JIT_CONTEXT_HELPER_PTR_OFFSET
 assert ctypes.sizeof(ConstBufferViewNative) == 16
 assert ctypes.sizeof(WasmFunctionViewNative) == 24
 assert ctypes.sizeof(WasmModuleViewNative) == 24
@@ -447,7 +439,7 @@ assert ctypes.sizeof(ControlStackNative) == 520
 assert ControlStackNative.size.offset == 512
 
 
-__all__ = [
+__all__ = (
     "NATIVE_CONTROL_STACK_CAPACITY",
     "NATIVE_VALUE_STACK_CAPACITY",
     "ConstBufferViewNative",
@@ -460,4 +452,4 @@ __all__ = [
     "WasmModuleViewNative",
     "WasmRunRequestNative",
     "WasmRunResultNative",
-]
+)

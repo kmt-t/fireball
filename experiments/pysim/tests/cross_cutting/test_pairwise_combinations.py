@@ -60,7 +60,7 @@ from debugger import DebuggerManager
 from interpreter import Interpreter
 from runtime_engine import RuntimeEngine
 from system import System
-from system_containers import FlatMapView
+from system_containers import ReadOnlyFlatMapView
 from wasi import WasiHostContext
 from wasm_reader import parse
 from x64_jit import TraceCompiler
@@ -245,7 +245,7 @@ def run_single_pairwise_case(case_tuple: tuple) -> None:
         sysv.pool.view(buffer_handle, 0, len(payload))[:] = payload
         assert stdio.dispatch(
             WasiIpcCmd.STREAM_WRITE_BUFFER,
-            FlatMapView(
+            ReadOnlyFlatMapView(
                 [
                     (ARG_BUFFER_HANDLE, buffer_handle.buffer_id),
                     (ARG_OFFSET, 0),

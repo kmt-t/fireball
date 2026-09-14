@@ -21,7 +21,7 @@ for _p in [
 
 Tests:
 - UnifiedPC address space across multiple guest functions
-- `bswap32` KeyProjection on RadixBinaryTreeView for uniform O(1) JIT entry indexing
+- `bswap32` KeyProjection on ReadOnlyRadixBinaryTreeView for uniform O(1) JIT entry indexing
 - Hotspot tracking and JIT execution across deeply nested function invocations
 """
 
@@ -29,7 +29,7 @@ import wasmtime
 from interpreter import Interpreter
 from runtime_engine import RuntimeEngine
 from system import System
-from system_containers import RadixBinaryTreeView
+from system_containers import ReadOnlyRadixBinaryTreeView
 from wasi import WasiHostContext
 from wasm_reader import parse
 from x64_jit import TraceCompiler
@@ -123,7 +123,7 @@ def test_scenario_multimodule_unified_pc():
     func_indices_in_jit = {(pc >> 16) for pc, _ in runtime_engine.cache.active.traces}
     print(f"    -> Compiled JIT traces belong to functions: {func_indices_in_jit}")
     assert len(func_indices_in_jit) >= 2, "Traces should span across multiple functions"
-    # 4. Verify RadixBinaryTreeView lookup across all compiled UnifiedPCs
+    # 4. Verify ReadOnlyRadixBinaryTreeView lookup across all compiled UnifiedPCs
     sorted_pairs = sorted(runtime_engine.cache.active.traces, key=lambda x: x[0])
     keys = [p[0] for p in sorted_pairs]
     vals = [p[1] for p in sorted_pairs]
@@ -140,10 +140,14 @@ def test_scenario_multimodule_unified_pc():
         current_prefix += 1
         radix_table[current_prefix] = len(keys)
 
-    radix_tree = RadixBinaryTreeView(keys, vals, radix_table, radix_shift=radix_shift)
+    radix_tree = ReadOnlyRadixBinaryTreeView(
+        entries=tuple(zip(keys, vals, strict=False)),
+        radix_table=radix_table,
+        radix_shift=radix_shift,
+    )
     for k, v in zip(keys, vals, strict=False):
         found = radix_tree.find(k)
-        assert found is v, f"RadixBinaryTreeView lookup failed for UnifiedPC 0x{k:08X}"
+        assert found is v, f"ReadOnlyRadixBinaryTreeView lookup failed for UnifiedPC 0x{k:08X}"
 
     print(
         f"    [PASS] Scenario 5 (Multi-Function UnifiedPC) verified with {len(runtime_engine.cache.active.traces)} traces."

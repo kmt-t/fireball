@@ -19,7 +19,7 @@ from typing import TYPE_CHECKING
 
 from jit_scoring import OpcodeBenefitTable
 from system_containers import (
-    FlatMapView,
+    ReadOnlyFlatMapView,
     ReadOnlyRadixBinaryTreeStorage,
     bswap32,
     build_radix_table,
@@ -74,7 +74,7 @@ WASM_LOCAL_ALIGNMENT_BYTES = WASM_VALUE_SLOT_BYTES
 WASM_LOCAL_SLOT_BYTES = WASM_LOCAL_ALIGNMENT_BYTES
 WASM_LOCAL_SLOT_WORDS = WASM_LOCAL_SLOT_BYTES // WASM_RAW_WORD_BYTES
 assert WASM_LOCAL_SLOT_BYTES % WASM_RAW_WORD_BYTES == 0
-VALTYPE_BYTES: FlatMapView[int, str] = FlatMapView(
+VALTYPE_BYTES: ReadOnlyFlatMapView[int, str] = ReadOnlyFlatMapView(
     ((0x7C, F64), (0x7D, F32), (0x7E, I64), (0x7F, I32))
 )
 

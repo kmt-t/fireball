@@ -128,15 +128,15 @@ def test_mem_05_release_and_deallocate_owner_only():
     scheduler.current_task = scheduler.get_task(3)
     assert scheduler.current_task is not None
     mm.acquire_task_heap()
-    assert 3 in mm.partition_owners
+    assert mm.partition_owners.view().find(3) is not None
     # Rogue task 4 attempts to release task 3's partition
     scheduler.current_task = scheduler.get_task(4)
     mm.release_task_heap()
-    assert 3 in mm.partition_owners
+    assert mm.partition_owners.view().find(3) is not None
     # Owner releases
     scheduler.current_task = scheduler.get_task(3)
     mm.release_task_heap()
-    assert 3 not in mm.partition_owners
+    assert mm.partition_owners.view().find(3) is None
 
 
 def test_mem_06_guest_ram_64kb_alignment():
@@ -247,9 +247,9 @@ def test_mem_11_shared_block_raII_auto_deallocate():
     initial_alloc = mm.total_allocated_bytes
     with mm.allocate_shared(size=1024).unwrap() as sb:
         assert mm.total_allocated_bytes > initial_alloc
-        assert sb.shm_id in mm.shm_slots
+    assert mm.shm_slots.view().find(sb.shm_id) is None
     assert mm.total_allocated_bytes == initial_alloc
-    assert sb.shm_id not in mm.shm_slots
+    assert mm.shm_slots.view().find(sb.shm_id) is None
 
 
 def test_mem_14_page_granular_permission_isolation():

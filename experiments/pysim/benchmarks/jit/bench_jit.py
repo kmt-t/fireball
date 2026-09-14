@@ -30,7 +30,7 @@ import wasm_opcodes as op
 from control_flow import extract_basic_blocks, iter_block_ops
 from interpreter import Interpreter
 from runtime_engine import HotspotBitmap, RuntimeEngine, WASMContext
-from system_containers import RadixBinaryTreeView, bswap32
+from system_containers import ReadOnlyRadixBinaryTreeView, bswap32
 from wasm_reader import parse
 from wasm_module import TraceBlock
 from x64_jit import TraceCompiler
@@ -84,7 +84,7 @@ class JITCompilerBenchmark:
             radix_table[idx] = (idx * 64) // 16
         radix_table[16] = 64
 
-        radix_tree = RadixBinaryTreeView(
+        radix_tree = ReadOnlyRadixBinaryTreeView(
             keys=keys,
             values=values,
             radix_table=radix_table,

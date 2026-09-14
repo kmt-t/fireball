@@ -13,7 +13,7 @@ without hitting Python's recursion limit.
 
 from __future__ import annotations
 
-from collections.abc import Iterator, Sequence
+from collections.abc import Iterator
 from dataclasses import dataclass
 from enum import IntFlag
 
@@ -24,7 +24,7 @@ from system_containers import (
     ReadOnlyFlatMapStorage,
     StaticVector,
 )
-from wasm_module import Function, WasmOperand
+from wasm_module import WasmOperand
 from wasm_opcodes import (
     BLOCK,
     BR,
@@ -236,7 +236,6 @@ def opcode_has_attribute(opcode: int, attribute: OpcodeAttribute) -> bool:
     # fixed four-bit packed table, so decode it in place instead of paying for
     # BitView.at() and an IntFlag construction on every dispatch.
     assert 0 <= opcode < 256
-    bit = opcode << 2
     packed = OPCODE_ATTRIBUTES.at(opcode)
     return (packed & int(attribute)) != 0
 
@@ -521,7 +520,7 @@ def build_control_map(code: bytes) -> ControlMap:
             depth += 1
         elif _LEB_UNSIGNED_OPERAND.at(opcode):
             _, off = decode_unsigned(code, off)
-        elif opcode in (I32_CONST, I64_CONST):
+        elif opcode == I32_CONST or opcode == I64_CONST:
             _, off = decode_signed(code, off)
         elif opcode == F32_CONST:
             off += 4
@@ -612,7 +611,7 @@ def iter_scan_instrs(code: bytes, start: int = 0) -> Iterator[Instr]:
             assert blocktype == 0x40, "only the empty blocktype is supported in this experiment"
         elif _LEB_UNSIGNED_OPERAND.at(opcode):
             operand, off = decode_unsigned(code, off)
-        elif opcode in (I32_CONST, I64_CONST):
+        elif opcode == I32_CONST or opcode == I64_CONST:
             _, off = decode_signed(code, off)  # value unused by block-boundary scanning
         elif opcode == F32_CONST:
             off += 4
@@ -718,7 +717,7 @@ def iter_block_ops(code: bytes, head_offset: int, byte_span: int) -> Iterator[tu
         if _LEB_UNSIGNED_OPERAND.at(opcode):
             operand, off = decode_unsigned(code, off)
             arg: WasmOperand = operand
-        elif opcode in (I32_CONST, I64_CONST):
+        elif opcode == I32_CONST or opcode == I64_CONST:
             arg, off = decode_signed(code, off)
         elif opcode == F32_CONST:
             assert off + 4 <= end

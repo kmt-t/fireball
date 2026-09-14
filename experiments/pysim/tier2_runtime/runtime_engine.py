@@ -139,7 +139,8 @@ class RuntimeEngine:
         block_capacity: int = 64,
         debug: bool = False,
     ):
-        self.debug = debug or (os.environ.get("FIREBALL_DEBUG", "").lower() in ("1", "true", "yes"))
+        debug_env = os.environ.get("FIREBALL_DEBUG", "").lower()
+        self.debug = debug or debug_env == "1" or debug_env == "true" or debug_env == "yes"
         self.stat_interp_steps: int = 0
         self.stat_jit_invocations: int = 0
         self.stat_chain_hits: int = 0
@@ -310,7 +311,7 @@ class RuntimeEngine:
         drained_pcs = self.ring.drain()
         for pc in drained_pcs:
             new_state = self.bitmap.touch(pc)
-            if new_state == CardState.HOT and pc not in self.compile_queue:
+            if new_state == CardState.HOT and not self.compile_queue.contains(pc):
                 self.compile_queue.push_back(pc)
                 # JIT compile queue overflow: compile all on the spot!
                 if len(self.compile_queue) >= self.compile_queue_capacity:
@@ -860,7 +861,7 @@ class IntegratedHybridEngine:
     def on_yield(self) -> None:
         """Promotes HOT cards in history ring to LIFO compile queue."""
         for pc in self.history.drain():
-            if self.bitmap.get_state(pc) == CardState.HOT and pc not in self.compile_queue:
+            if self.bitmap.get_state(pc) == CardState.HOT and not self.compile_queue.contains(pc):
                 self.compile_queue.push_back(pc)
 
     def idle_hook(self, budget: int = 4) -> int:

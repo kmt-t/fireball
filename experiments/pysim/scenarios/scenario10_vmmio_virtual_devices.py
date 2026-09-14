@@ -121,8 +121,8 @@ def test_scenario_vmmio_virtual_devices():
     controller.scheduler.current_task = controller.scheduler.get_task(task2_id)
     assert controller.scheduler.current_task is not None
     status_flight, _ = controller.access(raw_addr=0xE000_2008, is_write=False)
-    assert status_flight == TrapCode.OWNER_MISMATCH
-    print("    [Phase 3.5] IPC Revoke & In-Flight TLB Invalidation -> TRAP_OWNER_MISMATCH [PASS]")
+    assert status_flight == TrapCode.UNREGISTERED_PAGE
+    print("    [Phase 3.5] IPC Revoke & In-Flight TLB Invalidation -> TRAP_UNREGISTERED_PAGE [PASS]")
     # 3.6 Passthrough Physical Memory Access (FC=0xF)
     controller.scheduler.current_task = controller.scheduler.get_task(1)
     assert controller.scheduler.current_task is not None

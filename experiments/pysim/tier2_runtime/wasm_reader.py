@@ -277,7 +277,7 @@ def _parse_data_section(data: bytes, off: int, end: int, module: Module) -> None
     assert off == end, "data section length mismatch"
 
 
-def parse(data: bytes | bytearray) -> Module:
+def parse(data: memoryview) -> Module:
     data = bytes(data)
     if data[0:4] != MAGIC:
         raise WasmParseError("missing \\0asm magic header")

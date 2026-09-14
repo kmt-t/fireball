@@ -34,13 +34,13 @@ for _p in [
 
 from system_containers import (
     BitView,
-    FlatMapView,
-    FlatSetView,
+    ReadOnlyFlatMapView,
+    ReadOnlyFlatSetView,
     MutableBitStorage,
     MutableFlatMapStorage,
     MutableFlatSetStorage,
     MutableRadixBinaryTreeStorage,
-    RadixBinaryTreeView,
+    ReadOnlyRadixBinaryTreeView,
     ReadOnlyBitStorage,
     ReadOnlyFlatMapStorage,
     ReadOnlyFlatSetStorage,
@@ -61,7 +61,7 @@ def wat_to_wasm(wat_text: str) -> bytes:
 def test_cont_01_flat_map_view_find_binary_search():
     """TEST-CONT-01: flat_map_view.find performs O(log n) binary search returning value or None."""
     entries = [(10, 100), (20, 200), (30, 300), (40, 400), (50, 500), (60, 600)]
-    view = FlatMapView(entries)
+    view = ReadOnlyFlatMapView(entries)
     assert view.find(30) == 300
     assert view.find(10) == 100
     assert view.find(60) == 600
@@ -75,7 +75,7 @@ def test_cont_01_flat_map_view_find_binary_search():
 def test_cont_02_narrow_monotonic_shrinkage():
     """TEST-CONT-02: narrow(lo, hi) produces monotonic sub-window subset."""
     entries = [(10, 1), (20, 2), (30, 3), (40, 4), (50, 5), (60, 6), (70, 7), (80, 8)]
-    v0 = FlatMapView(entries)
+    v0 = ReadOnlyFlatMapView(entries)
     v1 = v0.narrow(20, 60)
     assert v1.size() == 5  # 20, 30, 40, 50, 60
     assert v1.find(20) == 2
@@ -92,22 +92,22 @@ def test_cont_02_narrow_monotonic_shrinkage():
 def test_cont_03_slice_monotonic_shrinkage_and_bounds():
     """TEST-CONT-03: slice must only ever shrink within parent view bounds."""
     entries = [(10, 1), (20, 2), (30, 3), (40, 4), (50, 5)]
-    v0 = FlatMapView(entries)
+    v0 = ReadOnlyFlatMapView(entries)
     v1 = v0.slice(1, 4)
     assert v1.size() == 3
     assert v1.find(20) == 2
     assert v1.find(40) == 4
     try:
         v1.slice(0, 5)  # Expanding beyond v1's window [1, 4] must fail
-        raise AssertionError("Expected ValueError when expanding slice")
-    except ValueError:
+        raise AssertionError("Expected AssertionError when expanding slice")
+    except AssertionError:
         pass
 
 
 def test_cont_04_flat_set_view_membership_only():
     """TEST-CONT-04: flat_set_view answers contains(key) with bool, carries no value span."""
     keys = [100, 200, 300, 400]
-    set_view = FlatSetView(keys)
+    set_view = ReadOnlyFlatSetView(keys)
     assert set_view.contains(200) is True
     assert set_view.contains(250) is False
     assert (300 in set_view) is True
@@ -182,7 +182,9 @@ def test_cont_08_radix_binary_tree_view_coarse_radix_lookup():
     # Radix shift = 8 -> prefix = pc >> 8
     # Prefix 0: [0, 2), Prefix 1: [2, 5), Prefix 2: [5, 6)
     radix_table = [0, 2, 5, 6]
-    tree = RadixBinaryTreeView(keys, values, radix_table, radix_shift=8)
+    tree = ReadOnlyRadixBinaryTreeView(
+        entries=tuple(zip(keys, values, strict=False)), radix_table=radix_table, radix_shift=8
+    )
     assert tree.find(0x0120) == "T1_B"
     assert tree.find(0x0010) == "T0_A"
     assert tree.find(0x0210) == "T2_A"
@@ -198,7 +200,9 @@ def test_cont_09_jit_entry_lookup_card_table_prefilter():
     values = ["NATIVE_0010", "NATIVE_0020"]
     # Prefix 0: empty [0, 0), Prefix 1: [0, 1), Prefix 2: [1, 2)
     radix_table = [0, 0, 1, 2]
-    tree = RadixBinaryTreeView(keys, values, radix_table, radix_shift=4)
+    tree = ReadOnlyRadixBinaryTreeView(
+        entries=tuple(zip(keys, values, strict=False)), radix_table=radix_table, radix_shift=4
+    )
     # PC 0x0010 (16) is card 2 (16 >> 3). Currently UNEXECUTED (0) -> lookup returns None without search
     assert lookup_jit_entry_radix(tree, card_table, pc=0x0010, card_shift=3) is None
     # Mark card 2 as COMPILED (3)
@@ -211,11 +215,11 @@ def test_cont_10_container_type_separation():
     keys = [1, 2, 3]
     vals = [10, 20, 30]
     entries = list(zip(keys, vals, strict=False))
-    m = FlatMapView(entries)
-    s = FlatSetView(keys)
-    assert type(m) is FlatMapView
-    assert type(s) is FlatSetView
-    assert type(s) is not FlatMapView
+    m = ReadOnlyFlatMapView(entries)
+    s = ReadOnlyFlatSetView(keys)
+    assert type(m) is ReadOnlyFlatMapView
+    assert type(s) is ReadOnlyFlatSetView
+    assert type(s) is not ReadOnlyFlatMapView
     assert hasattr(m, "values")
     assert not hasattr(s, "values")
 
@@ -235,6 +239,8 @@ def test_cont_11_storage_and_view_ownership_separation():
     assert mut_map.insert(100, "X")
     assert mut_map.insert(200, "Y")
     v_mut = mut_map.view()
+    assert type(v_mut) is ReadOnlyFlatMapView
+    assert not hasattr(mut_map, "find")
     assert v_mut.find(100) == "X"
     assert v_mut.find(200) == "Y"
     # Mutation on storage propagates to borrowed view
@@ -255,6 +261,8 @@ def test_cont_11_storage_and_view_ownership_separation():
     assert mut_set.insert(42)
     assert mut_set.insert(99)
     v_set_mut = mut_set.view()
+    assert type(v_set_mut) is ReadOnlyFlatSetView
+    assert not hasattr(mut_set, "contains")
     assert v_set_mut.contains(42)
     assert mut_set.remove(42)
     assert not v_set_mut.contains(42)
@@ -267,8 +275,7 @@ def test_cont_11_storage_and_view_ownership_separation():
     rv2 = ro_radix.view()
     assert rv1.find(20) == "B"
     assert rv2.find(30) == "C"
-    assert rv1.keys is ro_radix.keys
-    assert rv1.values is ro_radix.values
+    assert rv1.entries is ro_radix.entries
     assert rv1.radix_table is ro_radix.radix_table
     assert not hasattr(rv1, "insert")
     assert not hasattr(rv1, "remove")
@@ -277,6 +284,8 @@ def test_cont_11_storage_and_view_ownership_separation():
     assert mut_radix.insert(10, "A")
     assert mut_radix.insert(30, "C")
     rv_mut = mut_radix.view()
+    assert type(rv_mut) is ReadOnlyRadixBinaryTreeView
+    assert not hasattr(mut_radix, "find")
     assert rv_mut.find(10) == "A"
     assert rv_mut.find(30) == "C"
     assert rv_mut.find(20) is None
@@ -307,16 +316,17 @@ def test_cont_11_storage_and_view_ownership_separation():
 
 
 def test_cont_12_mutable_flat_map_storage_standard_sort():
-    """TEST-CONT-12: MutableFlatMapStorage manages fixed-capacity sorted entries (AoS) and presents FlatMapView."""
+    """TEST-CONT-12: MutableFlatMapStorage manages fixed-capacity sorted entries (AoS) and presents ReadOnlyFlatMapView."""
     entries = [(50, "E"), (10, "A"), (40, "D"), (20, "B"), (30, "C")]
     sorted_entries = sorted(entries, key=lambda x: x[0])
     map_storage = MutableFlatMapStorage(capacity=8)
     for k, v in sorted_entries:
         map_storage.insert(k, v)
     assert map_storage.is_sorted()
-    assert map_storage.keys == [10, 20, 30, 40, 50]
-    assert map_storage.values == ["A", "B", "C", "D", "E"]
-    assert map_storage.entries == [(10, "A"), (20, "B"), (30, "C"), (40, "D"), (50, "E")]
+    map_view = map_storage.view()
+    assert list(map_view.keys) == [10, 20, 30, 40, 50]
+    assert list(map_view.values) == ["A", "B", "C", "D", "E"]
+    assert list(map_view.entries) == [(10, "A"), (20, "B"), (30, "C"), (40, "D"), (50, "E")]
 
     # View correctly finds via binary search
     v = map_storage.view()
@@ -340,29 +350,30 @@ def test_cont_13_mutable_flat_map_sorted_insert_remove():
 
     # Maintained sorted order at all times
     assert storage.is_sorted()
-    assert storage.keys == [10, 20, 30, 40, 50]
-    assert storage.values == ["ten", "twenty", "thirty", "forty", "fifty"]
+    storage_view = storage.view()
+    assert list(storage_view.keys) == [10, 20, 30, 40, 50]
+    assert list(storage_view.values) == ["ten", "twenty", "thirty", "forty", "fifty"]
 
     # Updating existing key replaces value, returns True (size stays 5)
     assert storage.insert(30, "THIRTY_UPDATED") is True
     assert len(storage) == 5
-    assert storage.keys == [10, 20, 30, 40, 50]
-    assert storage.values == ["ten", "twenty", "THIRTY_UPDATED", "forty", "fifty"]
+    assert list(storage_view.keys) == [10, 20, 30, 40, 50]
+    assert list(storage_view.values) == ["ten", "twenty", "THIRTY_UPDATED", "forty", "fifty"]
 
     # Removal maintains sorted order
     assert storage.remove(10) == "ten"
-    assert storage.keys == [20, 30, 40, 50]
-    assert storage.values == ["twenty", "THIRTY_UPDATED", "forty", "fifty"]
+    assert list(storage_view.keys) == [20, 30, 40, 50]
+    assert list(storage_view.values) == ["twenty", "THIRTY_UPDATED", "forty", "fifty"]
     assert storage.is_sorted()
 
     assert storage.remove(30) == "THIRTY_UPDATED"
-    assert storage.keys == [20, 40, 50]
-    assert storage.values == ["twenty", "forty", "fifty"]
+    assert list(storage_view.keys) == [20, 40, 50]
+    assert list(storage_view.values) == ["twenty", "forty", "fifty"]
     assert storage.is_sorted()
 
     assert storage.remove(50) == "fifty"
-    assert storage.keys == [20, 40]
-    assert storage.values == ["twenty", "forty"]
+    assert list(storage_view.keys) == [20, 40]
+    assert list(storage_view.values) == ["twenty", "forty"]
     assert storage.is_sorted()
 
     assert storage.remove(999) is None
@@ -394,7 +405,7 @@ def test_cont_14_mutable_storages_fixed_array_and_entry_count():
     assert m.insert(20, "twenty") is True
     assert m.count == 4
     assert len(m._buffer) == 4  # Array length strictly unchanged
-    assert m.keys == [10, 20, 30, 40]
+    assert list(m.view().keys) == [10, 20, 30, 40]
 
     # Exceeding capacity returns False without altering storage
     assert m.insert(50, "fifty") is False
@@ -404,14 +415,14 @@ def test_cont_14_mutable_storages_fixed_array_and_entry_count():
     # In-place key update succeeds without increasing count
     assert m.insert(30, "THIRTY") is True
     assert m.count == 4
-    assert m.find(30) == "THIRTY"
+    assert m.view().find(30) == "THIRTY"
 
     # Removal shifts in-place and zeroes vacated trailing slot
     assert m.remove(20) == "twenty"
     assert m.count == 3
     assert len(m._buffer) == 4
     assert m._buffer[3] is None
-    assert m.keys == [10, 30, 40]
+    assert list(m.view().keys) == [10, 30, 40]
 
     # 2. MutableFlatSetStorage
     s: MutableFlatSetStorage[int] = MutableFlatSetStorage(capacity=3)
@@ -434,7 +445,7 @@ def test_cont_14_mutable_storages_fixed_array_and_entry_count():
     assert s.count == 2
     assert len(s._buffer) == 3
     assert s._buffer[2] is None
-    assert s.keys == [200, 300]
+    assert list(s.view().keys) == [200, 300]
 
     # 3. MutableRadixBinaryTreeStorage
     r: MutableRadixBinaryTreeStorage[str] = MutableRadixBinaryTreeStorage(capacity=3, radix_shift=4)
@@ -457,7 +468,7 @@ def test_cont_14_mutable_storages_fixed_array_and_entry_count():
     assert r.count == 2
     assert len(r._buffer) == 3
     assert r._buffer[2] is None
-    assert r.keys == [20, 30]
+    assert [entry[0] for entry in r.view().entries] == [20, 30]
     rv = r.view()
     assert rv.find(20) == "B"
     assert rv.find(30) == "C"

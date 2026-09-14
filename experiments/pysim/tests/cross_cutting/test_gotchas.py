@@ -78,7 +78,7 @@ from runtime_engine import (
 )
 from scheduler import ChannelAction, Scheduler, WaitDir
 from system import System, WasiErrno
-from system_containers import BitView, FlatMapView, MutableFlatMapStorage, StaticVector
+from system_containers import BitView, ReadOnlyFlatMapView, MutableFlatMapStorage, StaticVector
 
 
 def _make_memory_manager() -> tuple[MemoryManager, Scheduler]:
@@ -216,7 +216,7 @@ def test_intp_gotcha_03_if_false_no_else_no_frame_leak():
 
 
 def test_intp_gotcha_04_unified_pc_multi_module():
-    """GOTCHA-INTP-04: UnifiedPC ((func_index << 16) | offset) prevents cross-function collision in FlatMapView."""
+    """GOTCHA-INTP-04: UnifiedPC ((func_index << 16) | offset) prevents cross-function collision in ReadOnlyFlatMapView."""
     pc_fn0 = (0 << 16) | 0x0010
     pc_fn1 = (1 << 16) | 0x0010
     assert pc_fn0 != pc_fn1
@@ -224,7 +224,7 @@ def test_intp_gotcha_04_unified_pc_multi_module():
     keys = sorted([pc_fn0, pc_fn1])
     vals = [100 if k == pc_fn0 else 200 for k in keys]
     entries = list(zip(keys, vals, strict=False))
-    view = FlatMapView(entries)
+    view = ReadOnlyFlatMapView(entries)
 
     assert view.find(pc_fn0) == 100
     assert view.find(pc_fn1) == 200

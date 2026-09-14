@@ -10,7 +10,8 @@ scope: GLOBAL
 本ドキュメントは、Fireball プロジェクトにおける参照シミュレータ（`experiments/pysim`）、コンセプトコード（`docs/**/concepts/`）、形式検証モデル（`docs/**/formal/`）、およびテストコードの Python 実装規約を定義する。
 
 - `docs/**/concepts/` のコンセプトコードでは、Python 標準の `dict` / `set` / `list` を使用してよい。
-- `experiments/pysim/` には専用の `pysim-review` 規約を適用し、`dict` / `set` / `list` を禁止する。両者の規約を混同しない。
+- `experiments/pysim/` には専用の `pysim-review` 規約を適用し、素の `dict` / `set` / `list` を禁止する。リテラル、`dict()` / `set()` / `list()`、型注釈、および内包表記も対象とし、`ReadOnly*Storage`、`Mutable*Storage`、`StaticVector`、`RingBuffer` 等のシステムコンテナを使用する。両者の規約を混同しない。
+- 例外として、`spec-integrator.yaml` の `builtin_container_exclude_paths` に指定したシステムコンテナ実装内部、テスト、シナリオ、ベンチマークでは、組み込み `dict` / `set` / `list` を使用してよい。製品コードには適用しない。
 - ストレージの所有権は常に単一インスタンスに限定する。所有側は実体ストレージだけを保持し、検索用のviewを二重に保持しない。別インスタンスが所有ストレージを検索する場合だけ、借用viewを渡す。
 
 ## 0.1 検索コンテナの選択規約
@@ -22,6 +23,10 @@ scope: GLOBAL
 ## 1.1 pysim の即時失敗とアサーション規約
 
 - `experiments/pysim/` は参照シミュレータであり、不変条件・事前条件・事後条件・型契約に違反した場合は `assert` で直ちに停止させる。pysim で不具合を握りつぶしたり、暗黙のフォールバックで処理を継続したりしてはならない。
+- pysim の製品コードでは明示的な `raise` を禁止する。`try` / `except` による境界での捕捉は許可するが、エラーは `Result` 等の戻り値へ集約し、事前条件・不変条件違反は `assert` で停止させる。
+- `isinstance`、`type`、`hasattr`、`getattr`、`setattr` および型・リフレクション用の特殊属性を使用しない。実行時型判定ではなく、静的な型・専用メソッド・明示的な状態を使う。
+- `in` / `not in` 演算子を製品コードで使用しない。線形探索を隠蔽するため、固定キーは分岐またはインデックス、テーブルは専用ビューの検索メソッドを使う。
+- `pytest` / `unittest` / `mock`、`test_*` / `_test_*` の製品シンボル、テスト専用フックやバックドアを `experiments/pysim` の製品コードへ持ち込まない。テスト専用セットアップは `experiments/pysim/tests` 側に置く。
 - テストは戻り値や件数だけでなく、仕様が要求する状態・副作用・境界条件を `assert` で検証する。`print`、非空判定、固定件数の確認だけを成功根拠にしてはならない。
 - 失敗を期待するテストでは、対象処理を `try` ブロック内で実行し、対象が送出する具体的な例外だけを捕捉する。テスト自身が失敗用に送出した `AssertionError` を同じ `except` で捕捉して成功扱いにする偽陽性パターンを禁止する。
 - 仕様上スキップが許可された外部依存の `ImportError` を除き、広すぎる `except Exception` や検証失敗を無条件に無視する例外処理を禁止する。
@@ -35,9 +40,10 @@ scope: GLOBAL
 
 ## 1. 型安全性と `Any` 完全禁止規約 (Strict Type Safety)
 
-- **`typing.Any` の完全禁止 (アンチパターン I の防止)**:
+- **`typing.Any` / `object` の完全禁止 (アンチパターン I の防止)**:
   - 静的型解析の形骸化を防止するため、コードベース全体で `typing.Any` の使用を **0 件（完全禁止）** とする。
-  - 関数の引数、戻り値、構造体フィールドには、必ず**具体的なクラス名**、**具象型**（`int`, `bytes`, `str` 等）、または汎用コンテナであれば `object` を明示する。
+  - pysimの関数引数、戻り値、構造体フィールドには、必ず**具体的なクラス名**または**具象型**（`int`, `bytes`, `str` 等）を明示し、`object` と `typing.Any` を使用しない。
+  - pysimの型注釈では `T | None` / `Optional[T]` 以外のUnionを禁止する。異なる非None型のUnionは、境界の型を曖昧にするため使用しない。
   - 成功・失敗を表現する代数的データ型（`Result` 等）では、エラーなしを `Result[T, Never]`、値なしを `Result[Never, E]` として `typing.Never` を活用し、`Any` を一切使わずに静的型検査を満たす。
 
 ---

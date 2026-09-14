@@ -23,7 +23,7 @@ Tests:
 - Parsing WAT with active data segments, globals, and memory definition
 - Linear memory initialization with active data segments
 - Dynamic memory growth via `memory.grow` and `memory.size`
-- Zero-copy symbol lookup via RadixBinaryTreeView
+- Zero-copy symbol lookup via ReadOnlyRadixBinaryTreeView
 """
 
 import wasmtime

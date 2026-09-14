@@ -509,17 +509,15 @@ class DecodedEntity:
         kind: str,
         start_offset: int,
         end_offset: int,
-        name_or_idx: object,
-        payload: object,
+        index: int,
     ):
         self.kind = kind  # "SECTION", "FUNCTION", "GLOBAL", "DATA"
         self.start_offset = start_offset
         self.end_offset = end_offset
-        self.name_or_idx = name_or_idx
-        self.payload = payload
+        self.index = index
 
     def __repr__(self) -> str:
-        return f"DecodedEntity({self.kind}, [{hex(self.start_offset)}..{hex(self.end_offset)}), {self.name_or_idx})"
+        return f"DecodedEntity({self.kind}, [{hex(self.start_offset)}..{hex(self.end_offset)}), {self.index})"
 
 
 # ==============================================================================
@@ -559,10 +557,9 @@ class ModuleView:
         kind: str,
         start_offset: int,
         end_offset: int,
-        name_or_idx: object,
-        payload: object,
+        index: int,
     ) -> DecodedEntity:
-        entity = DecodedEntity(kind, start_offset, end_offset, name_or_idx, payload)
+        entity = DecodedEntity(kind, start_offset, end_offset, index)
         self.entity_registry.append(entity)
         return entity
 
@@ -769,7 +766,7 @@ class WasmLoader:
                 payload_size=sec_size,
             )
             view.sections[sec_id] = sec_view
-            view.register_entity("SECTION", sec_start, sec_start + sec_total_size, sec_id, sec_view)
+            view.register_entity("SECTION", sec_start, sec_start + sec_total_size, sec_id)
             # Dispatch section-specific zero-copy parsers
             sec_stream = BinaryStream(wasm_binary, offset=payload_start, length=sec_size)
             self._parse_section_content(sec_id, sec_stream, view)
@@ -895,7 +892,7 @@ class WasmLoader:
                 init_size = stream.tell() - init_start
                 g_entry = GlobalEntry(valtype, mutable, init_start, init_size)
                 view.globals.append(g_entry)
-                view.register_entity("GLOBAL", init_start, init_start + init_size, g_idx, g_entry)
+                view.register_entity("GLOBAL", init_start, init_start + init_size, g_idx)
         elif sec_id == SectionID.EXPORT:
             count = stream.read_leb128_u32()
             if count > FB_CONF_MAX_EXPORTS:
@@ -921,7 +918,6 @@ class WasmLoader:
                     body_start,
                     body_start + body_size,
                     func_idx,
-                    (body_start, body_size),
                 )
                 stream.seek(body_start + body_size)
 
@@ -1234,18 +1230,18 @@ def test_wasm_loader_radix_binary_tree_offset_indexing() -> None:
     entity_at_start = view.lookup_by_file_offset(func_start)
     assert entity_at_start is not None
     assert entity_at_start.kind == "FUNCTION"
-    assert entity_at_start.name_or_idx == 0
+    assert entity_at_start.index == 0
     # Lookup in the middle of function body
     entity_in_mid = view.lookup_by_file_offset(func_start + 2)
     assert entity_in_mid is not None
     assert entity_in_mid.kind == "FUNCTION"
-    assert entity_in_mid.name_or_idx == 0
+    assert entity_in_mid.index == 0
     # 3. TEST-LOAD-43: Lookup global entity
     global_entry = view.globals[0]
     entity_global = view.lookup_by_file_offset(global_entry.init_expr_offset)
     assert entity_global is not None
     assert entity_global.kind == "GLOBAL"
-    assert entity_global.name_or_idx == 0
+    assert entity_global.index == 0
     # 4. TEST-LOAD-44: Invalid / out-of-range offsets
     assert view.lookup_by_file_offset(len(wasm_bytes) + 100) is None
     assert view.lookup_by_file_offset(0xFFFFFFFF) is None

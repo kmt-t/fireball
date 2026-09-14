@@ -67,17 +67,17 @@ def classify_trap_strategy(trap: str) -> RecoveryStrategy:
     """Deterministic mapping from a vMMIO / interpreter / MPU trap string to {META_RecoveryStrategy}."""
     trap = trap.upper()
     if (
-        "OUT_OF_BOUNDS" in trap
-        or "ACCESS_VIOLATION" in trap
-        or "OWNER_MISMATCH" in trap
-        or "MPU" in trap
+        trap.find("OUT_OF_BOUNDS") >= 0
+        or trap.find("ACCESS_VIOLATION") >= 0
+        or trap.find("OWNER_MISMATCH") >= 0
+        or trap.find("MPU") >= 0
     ):
         return RecoveryStrategy.PANIC
-    if "UNDEFINED_FC" in trap:
+    if trap.find("UNDEFINED_FC") >= 0:
         return RecoveryStrategy.PANIC
-    if "UNREGISTERED_PAGE" in trap or "UNINITIALIZED" in trap:
+    if trap.find("UNREGISTERED_PAGE") >= 0 or trap.find("UNINITIALIZED") >= 0:
         return RecoveryStrategy.RESTART
-    if "BUSY" in trap or "AGAIN" in trap:
+    if trap.find("BUSY") >= 0 or trap.find("AGAIN") >= 0:
         return RecoveryStrategy.RETRY
     return RecoveryStrategy.RESTART
 
@@ -86,11 +86,11 @@ def classify_errno_strategy(errno: int) -> RecoveryStrategy:
     """Deterministic mapping from a WASI errno (wasi::errno) to {META_RecoveryStrategy}."""
     if errno == 0:  # SUCCESS
         return RecoveryStrategy.IGNORE
-    if errno in (6, 73, 76):  # EAGAIN (6), ETIMEDOUT (73), ENOMEM (76)
+    if errno == 6 or errno == 73 or errno == 76:  # EAGAIN, ETIMEDOUT, ENOMEM
         return RecoveryStrategy.RETRY
-    if errno in (28, 44, 8):  # EINVAL (28), ENOENT (44), EBADF (8)
+    if errno == 28 or errno == 44 or errno == 8:  # EINVAL, ENOENT, EBADF
         return RecoveryStrategy.RESTART
-    if errno in (63, 21):  # EPERM (63), EFAULT (21)
+    if errno == 63 or errno == 21:  # EPERM, EFAULT
         return RecoveryStrategy.PANIC
     return RecoveryStrategy.RESTART
 

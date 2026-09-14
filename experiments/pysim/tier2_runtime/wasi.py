@@ -16,42 +16,28 @@ from __future__ import annotations
 
 import ctypes
 import struct
-import time
 from collections.abc import Callable
 from dataclasses import dataclass
 
 from hal_dispatch import (
     ARG_BUFFER_HANDLE,
-    ARG_CLOCK_HZ,
-    ARG_EDGE_TYPE,
-    ARG_FD,
     ARG_LENGTH,
     ARG_MAX_LEN,
-    ARG_MODE,
-    ARG_NANOS,
     ARG_OFFSET,
-    ARG_PIN_NO,
-    ARG_QUERY_CMD_ID,
-    ARG_RX_BUFFER_HANDLE,
-    ARG_SLAVE_ADDR,
-    ARG_TX_BUFFER_HANDLE,
-    ARG_VAL,
     FB_CONF_HAL_BUFFER_SIZE,
     WasiIpcCmd,
-    HalBufferHandle,
 )
-from wasi_bindings import WasiHalBindings
 from loader import fnv1a_32
 from system import FbSyscallId, System
 from system_containers import (
-    FlatMapView,
     ReadOnlyFlatMapStorage,
+    ReadOnlyFlatMapView,
     ReadOnlyRadixBinaryTreeStorage,
 )
+from wasi_bindings import WasiHalBindings
 from wasm_module import Module
 
-
-WasiValue = int | bytes | HalBufferHandle | None
+WasiValue = int
 
 
 # ==============================================================================
@@ -149,7 +135,7 @@ class Wasi03pEngine:
         """Resolves an interface descriptor by its Hierarchical IPC communication URI."""
         return self._interface_storage.view().find(uri)
 
-    def dispatch_command(self, uri: str, cmd_id: int, params: FlatMapView) -> WasiValue:
+    def dispatch_command(self, uri: str, cmd_id: int, params: ReadOnlyFlatMapView) -> WasiValue:
         """
         Dispatches through the HAL task. The runtime never invokes a driver
         vtable directly; URI resolution and command execution are separate
@@ -157,7 +143,7 @@ class Wasi03pEngine:
         """
         return self.send_ipc_command(uri, cmd_id, params)
 
-    def send_ipc_command(self, uri: str, cmd_id: int, params: FlatMapView) -> WasiValue:
+    def send_ipc_command(self, uri: str, cmd_id: int, params: ReadOnlyFlatMapView) -> WasiValue:
         """
         Sends an IPC Driver Command to the HAL Server Task via IPCRouter ({hal_dispatch.md}).
         HAL operates as a distinct task and communicates strictly over IPC rendezvous.
@@ -187,14 +173,13 @@ class Wasi03pEngine:
 
     # Resource methods: Tier 2 only builds and sends HAL commands.
     def _send_simple(self, uri: str, cmd_id: WasiIpcCmd) -> int:
-        result = self.send_ipc_command(uri, cmd_id, FlatMapView(()))
-        assert isinstance(result, int)
-        return result
+        result = self.send_ipc_command(uri, cmd_id, ReadOnlyFlatMapView(()))
+        return int(result)
 
     def _write_buffer(
         self, uri: str, handle: HalBufferHandle, offset: int, length: int
     ) -> int:
-        params = FlatMapView(
+        params = ReadOnlyFlatMapView(
             tuple(
                 sorted(
                     (
@@ -206,13 +191,12 @@ class Wasi03pEngine:
             )
         )
         result = self.send_ipc_command(uri, WasiIpcCmd.STREAM_WRITE_BUFFER, params)
-        assert isinstance(result, int)
-        return result
+        return int(result)
 
     def _read_buffer(
         self, uri: str, handle: HalBufferHandle, offset: int, max_len: int
     ) -> int:
-        params = FlatMapView(
+        params = ReadOnlyFlatMapView(
             tuple(
                 sorted(
                     (
@@ -224,13 +208,11 @@ class Wasi03pEngine:
             )
         )
         result = self.send_ipc_command(uri, WasiIpcCmd.STREAM_READ_BUFFER, params)
-        assert isinstance(result, int)
-        return result
+        return int(result)
 
     def _clock_get_now(self, uri: str) -> int:
-        result = self.send_ipc_command(uri, WasiIpcCmd.CLOCK_GET_NOW, FlatMapView(()))
-        assert isinstance(result, int)
-        return result
+        result = self.send_ipc_command(uri, WasiIpcCmd.CLOCK_GET_NOW, ReadOnlyFlatMapView(()))
+        return int(result)
 
 
 # ==============================================================================
@@ -256,7 +238,7 @@ class WasiHostContext:
         self.sysv.wasi_context = self
         self._keepalive_trampolines: list[Callable[..., int]] = []
 
-        # Build static host import table via RadixBinaryTreeView
+        # Build static host import table via ReadOnlyRadixBinaryTreeView
         host_entries: list[tuple[str, str, Callable[..., int]]] = [
             ("wasi_snapshot_preview1", "fd_write", self.fd_write),
             ("wasi_snapshot_preview1", "fd_read", self.fd_read),
@@ -366,7 +348,7 @@ class WasiHostContext:
                 result = self.core03p.send_ipc_command(
                     self.bindings.stdout_uri,
                     WasiIpcCmd.STREAM_WRITE_BUFFER,
-                    FlatMapView(
+                    ReadOnlyFlatMapView(
                         tuple(
                             sorted(
                                 (
@@ -378,9 +360,9 @@ class WasiHostContext:
                         )
                     ),
                 )
-                assert isinstance(result, int)
-                assert result == chunk_len
-                total_written += result
+                written = int(result)
+                assert written == chunk_len
+                total_written += written
                 source_offset += chunk_len
                 remaining -= chunk_len
 
@@ -416,7 +398,7 @@ class WasiHostContext:
                 result = self.core03p.send_ipc_command(
                     self.bindings.stdout_uri,
                     WasiIpcCmd.STREAM_READ_BUFFER,
-                    FlatMapView(
+                    ReadOnlyFlatMapView(
                         tuple(
                             sorted(
                                 (
@@ -428,17 +410,17 @@ class WasiHostContext:
                         )
                     ),
                 )
-                assert isinstance(result, int)
-                assert 0 <= result <= chunk_len
-                if result == 0:
+                read_count = int(result)
+                assert 0 <= read_count <= chunk_len
+                if read_count == 0:
                     remaining = 0
                     break
-                view = self.sysv.pool.view(handle, 0, result)
-                mem[destination_offset : destination_offset + result] = view
-                total_read += result
-                destination_offset += result
-                remaining -= result
-                if result < chunk_len:
+                view = self.sysv.pool.view(handle, 0, read_count)
+                mem[destination_offset : destination_offset + read_count] = view
+                total_read += read_count
+                destination_offset += read_count
+                remaining -= read_count
+                if read_count < chunk_len:
                     break
 
         struct.pack_into("<I", mem, nread_ptr, total_read)
@@ -459,10 +441,9 @@ class WasiHostContext:
         mem = self.guest_memory
         assert 0 <= time_ptr <= len(mem) - 8
         now_ns = self.core03p.send_ipc_command(
-            self.bindings.timer_uri, WasiIpcCmd.CLOCK_GET_NOW, FlatMapView(())
+            self.bindings.timer_uri, WasiIpcCmd.CLOCK_GET_NOW, ReadOnlyFlatMapView(())
         )
-        assert isinstance(now_ns, int)
-        struct.pack_into("<Q", mem, time_ptr, now_ns)
+        struct.pack_into("<Q", mem, time_ptr, int(now_ns))
         return 0
 
     def proc_exit(self, exit_code: int) -> int:
@@ -488,7 +469,7 @@ class WasiHostContext:
     def get_handler_for_import(
         self, module_name: str, field_name: str
     ) -> Callable[..., int] | None:
-        """Resolves an import name to the corresponding host function callable via RadixBinaryTreeView."""
+        """Resolves an import name to the corresponding host function callable via ReadOnlyRadixBinaryTreeView."""
         h = fnv1a_32(f"{module_name}::{field_name}")
         candidate = self._import_storage.view().find(h)
         if candidate is not None:

@@ -140,19 +140,19 @@ class ExecutableBuffer:
             assert self.current_protection != PAGE_EXECUTE_READWRITE, (
                 "Invariant violation: Buffer is in RWX state"
             )
-            assert self.current_protection in (
-                PAGE_READWRITE,
-                PAGE_EXECUTE_READ,
-                PAGE_READONLY,
+            assert (
+                self.current_protection == PAGE_READWRITE
+                or self.current_protection == PAGE_EXECUTE_READ
+                or self.current_protection == PAGE_READONLY
             )
         else:
             assert self.current_protection != (PROT_READ | PROT_WRITE | PROT_EXEC), (
                 "Invariant violation: Buffer is in RWX state"
             )
-            assert self.current_protection in (
-                PROT_READ | PROT_WRITE,
-                PROT_READ | PROT_EXEC,
-                PROT_READ,
+            assert (
+                self.current_protection == (PROT_READ | PROT_WRITE)
+                or self.current_protection == (PROT_READ | PROT_EXEC)
+                or self.current_protection == PROT_READ
             )
 
     def write(self, offset: int, data: bytes) -> None:

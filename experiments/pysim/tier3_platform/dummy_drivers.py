@@ -12,8 +12,8 @@ from hal_dispatch import (
     HalDriver,
     WasiIpcCmd,
 )
-from system_containers import FlatMapView
 from stream_transport import StreamTransport
+from system_containers import ReadOnlyFlatMapView
 
 
 class Timer:
@@ -59,7 +59,7 @@ class DummyDriver(HalDriver):
         """ホスト側から標準出力ストリームを読み出す。"""
         return self.transport.drain_output()
 
-    def _buffer_view(self, params: FlatMapView, length_key: int) -> memoryview:
+    def _buffer_view(self, params: ReadOnlyFlatMapView, length_key: int) -> memoryview:
         assert self._buffer_pool is not None, "HAL buffer pool is not bound"
         handle = params.find(ARG_BUFFER_HANDLE)
         offset = params.find(ARG_OFFSET)
@@ -69,20 +69,20 @@ class DummyDriver(HalDriver):
         assert length is not None
         return self._buffer_pool.view_for_driver(handle, offset, length)
 
-    def _write_buffer(self, params: FlatMapView) -> int:
+    def _write_buffer(self, params: ReadOnlyFlatMapView) -> int:
         view = self._buffer_view(params, ARG_LENGTH)
         return self.transport.write(view)
 
-    def _read_buffer(self, params: FlatMapView) -> int:
+    def _read_buffer(self, params: ReadOnlyFlatMapView) -> int:
         view = self._buffer_view(params, ARG_MAX_LEN)
         data = self.transport.read_input(len(view))
         view[: len(data)] = data
         return len(data)
 
-    def _flush(self, params: FlatMapView) -> int:
+    def _flush(self, params: ReadOnlyFlatMapView) -> int:
         return 0
 
-    def _close(self, params: FlatMapView) -> int:
+    def _close(self, params: ReadOnlyFlatMapView) -> int:
         return 0
 
     def get_monotonic_ns(self) -> int:
@@ -93,11 +93,11 @@ class DummyDriver(HalDriver):
         self.tick_count += count
         return self.tick_count
 
-    def _get_now(self, params: FlatMapView) -> int:
+    def _get_now(self, params: ReadOnlyFlatMapView) -> int:
         return self.timer.get_now_ns()
 
-    def _subscribe(self, params: FlatMapView) -> int:
+    def _subscribe(self, params: ReadOnlyFlatMapView) -> int:
         return 1
 
-    def _get_resolution(self, params: FlatMapView) -> int:
+    def _get_resolution(self, params: ReadOnlyFlatMapView) -> int:
         return 1_000_000

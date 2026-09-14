@@ -16,7 +16,7 @@ class StreamTransport:
         self._output_len = 0
         self.bytes_written = 0
 
-    def write(self, data: bytes | memoryview) -> int:
+    def write(self, data: memoryview) -> int:
         """デバイス側から標準出力へバイト列を書き込む。"""
         written = len(data)
         assert written <= len(self._output) - self._output_len

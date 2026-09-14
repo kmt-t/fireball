@@ -107,7 +107,7 @@ class GDBServer:
                     break
 
                 # Process all complete packets in buffer
-                while "$" in buffer and "#" in buffer:
+                while buffer.find("$") >= 0 and buffer.find("#") >= 0:
                     dollar_idx = buffer.index("$")
                     hash_idx = buffer.find("#", dollar_idx)
                     if hash_idx == -1 or len(buffer) < hash_idx + 3:
@@ -175,7 +175,7 @@ class GDBServer:
                 except Exception:
                     break
                 # Process all complete packets in buffer
-                while "$" in buffer and "#" in buffer:
+                while buffer.find("$") >= 0 and buffer.find("#") >= 0:
                     dollar_idx = buffer.index("$")
                     hash_idx = buffer.find("#", dollar_idx)
                     if hash_idx == -1 or len(buffer) < hash_idx + 3:

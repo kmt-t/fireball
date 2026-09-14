@@ -23,7 +23,7 @@ for _p in [
 """Integration Scenario 9: Tier 1 Interface IPC Router & Structured System Logging.
 
 Tests:
-- 3-Stage IPC Router pipeline (Static URI FlatMapView lookup, RBAC role check,
+- 3-Stage IPC Router pipeline (Static URI ReadOnlyFlatMapView lookup, RBAC role check,
   bufferless synchronous CSP handoff via scheduler.Channel)
 - Message KV-pair static buffer limit (ERR_MSG_TOO_LARGE)
 - Dictionary-based structured logging (LogDictionary, LogLevel filtering, UART transport emission)

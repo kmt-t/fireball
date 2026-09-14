@@ -272,12 +272,22 @@ class Trap(Exception):
     pass
 
 
+class WasmNumber(Protocol):
+    """Numeric host value accepted at the public interpreter boundary."""
+
+    def __int__(self) -> int:
+        ...
+
+    def __float__(self) -> float:
+        ...
+
+
 FB_CONF_MAX_VALUE_STACK = 64
 FB_CONF_MAX_LOCAL_STACK = NATIVE_VALUE_STACK_CAPACITY
 
 
 def _encode_public_args(
-    values: Sequence[int | float], param_types: Sequence[str]
+    values: Sequence[WasmNumber], param_types: Sequence[str]
 ) -> StaticVector[int]:
     assert len(values) == len(param_types)
     raw_args: StaticVector[int] = StaticVector(capacity=FB_CONF_MAX_VALUE_STACK)
@@ -583,7 +593,7 @@ class InterpreterCall:
         default_factory=lambda: StaticVector(capacity=FB_CONF_MAX_NESTING_DEPTH)
     )
     finished: bool = False
-    results: StaticVector[int | float] | None = None
+    results: StaticVector[WasmNumber] | None = None
     trap: Trap | None = None
 
     def current_pc(self) -> int:
@@ -693,7 +703,7 @@ class Interpreter:
 
     def _call_without_nested_calls(
         self, call_state: InterpreterCall
-    ) -> StaticVector[int | float] | None:
+    ) -> StaticVector[WasmNumber] | None:
         """Complete a call without materializing CPS state at every instruction."""
         ip, frame, locals_arr, _ = call_state.cont
         while True:
@@ -720,7 +730,7 @@ class Interpreter:
         while frame.frames:
             frame.frames.pop_back()
         call_state.context.end_call_frame(frame)
-        results: StaticVector[int | float] = StaticVector(capacity=4)
+        results: StaticVector[WasmNumber] = StaticVector(capacity=4)
         if func_type.results:
             result_type = func_type.results[0]
             if result_type == I64:
@@ -788,8 +798,8 @@ class Interpreter:
         return InterpreterCall(func_index, context, cont=(0, frame, locals_arr, 0))
 
     def _call_import(
-        self, func_index: int, args: Sequence[int | float]
-    ) -> tuple[StaticVector[int | float], Trap | None]:
+        self, func_index: int, args: Sequence[WasmNumber]
+    ) -> tuple[StaticVector[WasmNumber], Trap | None]:
         """Resolves a host import synchronously -- there is no bytecode to step through."""
         handler = self.host_functions[func_index] if func_index < len(self.host_functions) else None
         if handler is None:
@@ -800,11 +810,11 @@ class Interpreter:
             )
         result = handler(*[_to_i32(int(a)) for a in args])
         ft = self.module.func_type(func_index)
-        results: StaticVector[int | float] = StaticVector(capacity=4)
+        results: StaticVector[WasmNumber] = StaticVector(capacity=4)
         if ft.results:
             result_type = ft.results[0]
             if result_type == I64:
-                result_value: int | float = _to_i64(int(result))
+                result_value: WasmNumber = _to_i64(int(result))
             elif result_type == F32:
                 result_value = _to_f32(float(result))
             elif result_type == F64:
@@ -920,7 +930,7 @@ class Interpreter:
                 frame.frames.pop_back()
             call_state.context.end_call_frame(frame)
             if not call_state.call_stack:
-                results: StaticVector[int | float] = StaticVector(capacity=4)
+                results: StaticVector[WasmNumber] = StaticVector(capacity=4)
                 # The Native operand stack contains raw slots only. The
                 # caller's function signature selects the typed read here;
                 # no return type is stored in the result buffer.
@@ -994,8 +1004,8 @@ class Interpreter:
             callee_ft = declared_type
 
         if self.module.is_import(callee_func_index):
-            call_args: StaticVector[int | float] = StaticVector(capacity=FB_CONF_MAX_VALUE_STACK)
-            popped_args: StaticVector[int | float] = StaticVector(
+            call_args: StaticVector[WasmNumber] = StaticVector(capacity=FB_CONF_MAX_VALUE_STACK)
+            popped_args: StaticVector[WasmNumber] = StaticVector(
                 capacity=FB_CONF_MAX_VALUE_STACK
             )
             for value_type in reversed(callee_ft.params):

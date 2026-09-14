@@ -14,7 +14,7 @@ re-derive it" discipline that caught four bugs in x64_stencils.py.
 
 from __future__ import annotations
 
-from system_containers import FlatMapView
+from system_containers import ReadOnlyFlatMapView
 
 X64_STACK_ALIGNMENT_BYTES = 16
 
@@ -45,7 +45,7 @@ _REG_ENTRIES: list[tuple[str, tuple[int, int]]] = sorted(
     key=lambda e: e[0],
 )
 _REG_ENTRIES_TUPLE: tuple[tuple[str, tuple[int, int]], ...] = tuple(_REG_ENTRIES)
-REG_INFO: FlatMapView[str, tuple[int, int]] = FlatMapView(_REG_ENTRIES_TUPLE)
+REG_INFO: ReadOnlyFlatMapView[str, tuple[int, int]] = ReadOnlyFlatMapView(_REG_ENTRIES_TUPLE)
 
 
 def push_reg(name: str) -> bytes:
@@ -120,7 +120,7 @@ def ret() -> bytes:
     return bytes((0xC3,))
 
 
-_SCALE_BITS: FlatMapView[int, int] = FlatMapView(((1, 0), (2, 1), (4, 2), (8, 3)))
+_SCALE_BITS: ReadOnlyFlatMapView[int, int] = ReadOnlyFlatMapView(((1, 0), (2, 1), (4, 2), (8, 3)))
 
 
 def mov_load_scaled(dst: str, base: str, index: str, scale: int) -> bytes:
@@ -159,14 +159,6 @@ def cmp_dword_scaled_imm32(base: str, index: str, scale: int, imm32: int) -> byt
     return prefix + bytes((0x81, modrm, sib)) + tail + (imm32 & 0xFFFFFFFF).to_bytes(4, "little")
 
 
-def test_reg_reg(reg: str) -> bytes:
-    """test reg, reg (64-bit) -- sets ZF iff reg == 0."""
-    ext, lo = REG_INFO[reg]
-    rex = 0x48 | (0x05 if ext else 0)  # both R and B extend the same register here
-    modrm = 0xC0 | (lo << 3) | lo
-    return bytes((rex, 0x85, modrm))
-
-
 def cmp_reg_imm32(reg: str, imm32: int) -> bytes:
     """cmp reg32, imm32 (32-bit compare against any register, not just eax's short form)."""
     ext, lo = REG_INFO[reg]
@@ -191,7 +183,7 @@ def jcc_rel32_placeholder(condition: str) -> tuple[bytes, int]:
         unsigned), "ae", "b", "be" -- the ones this codebase's glue code uses.
     """
 
-    opcode = FlatMapView(
+    opcode = ReadOnlyFlatMapView(
         (
             ("a", 0x87),
             ("ae", 0x83),

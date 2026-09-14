@@ -2,20 +2,21 @@
 
 本ドキュメントは、Fireball Hypervisor の参照シミュレータ（`experiments/pysim/`）におけるソースコード品質・組込みC++23移植可能性を評価するための公式ルーブリックである。
 
-pysim は「**通常の `new` / `delete`、`malloc` / `free` / `realloc` / `calloc`、標準の動的コンテナを使用しない静的型付け言語（C++23）**」を Python 上で事前実証するシミュレータである。placement/in-place `new` とプロジェクトで提供する独自ヒープ API・独自コンテナは許可されるが、pysim の Python コードでは `dict` / `set` / `list` を使用しない。一般的な Python イディオムは適用されず、以下の9大評価軸に厳格に適合しなければならない。
+pysim は「**通常の `new` / `delete`、`malloc` / `free` / `realloc` / `calloc`、標準の動的コンテナを使用しない静的型付け言語（C++23）**」を Python 上で事前実証するシミュレータである。placement/in-place `new` とプロジェクトで提供する独自ヒープ API・独自コンテナは許可されるが、pysim の Python コードでは `typing.Any` / `object` / `dict` / `set` / `list` を使用しない。一般的な Python イディオムは適用されず、以下の9大評価軸に厳格に適合しなければならない。
 
 ---
 
 ## 1. 重要度（Severity）の判定基準
 
 - **CRITICAL (重大な欠陥 / C++ 移植不可)**:
-  - 実行時データ構造としての `dict` / `set` の使用。
-  - `typing.Any` の使用。
+  - 実行時データ構造としての `dict` / `set` / `list` の使用。
+  - `typing.Any` または `object` 型の使用。
+  - `T | None` / `Optional[T]` 以外のUnion型の使用。
+  - 製品コードからの明示的な `raise`。`except` による捕捉は許可する。
   - 仕様書との真っ向からの乖離・不変条件（Gotchas）の違反。
   - ホットパスにおける無制限ループや致命的な $O(N)$ ボトルネック。
   - 文書階層と実装の責務分割が真っ向から矛盾し、セキュリティ境界または依存方向を破壊している場合。
 - **MAJOR (主要な改善項目 / 組込み規約違反)**:
-  - 無制限伸縮 `list`（`.append` 等）の使用（`StaticVector` 未移行）。
   - リードオンリーデータを `bytearray` などの可変 RAM 構造で保持（ROM 配置違反）。
   - 実行時クラスでの `__slots__` 欠落（動的 `__dict__` のメモリ浪費）。
   - 明らかな二重管理データ構造や不要な冗長バッファ（メモリ浪費）。
@@ -23,6 +24,7 @@ pysim は「**通常の `new` / `delete`、`malloc` / `free` / `realloc` / `call
   - 型注釈の欠落（引数・戻り値・Raw Generic）。
   - 不要な後方互換用レガシー分岐の放置。
   - 動的型検査 `isinstance` 等の使用（No RTTI 違反）。
+  - `in` / `not in` による線形探索（固定キーは分岐、テーブルは専用ビュー検索へ置き換える）。
   - カード幅、アライメント、容量、閾値、バッファサイズ、ビット幅などの変更可能な運用定数を製品コードへ直書きし、設定定数・設定ファイルから変更できない場合。
   - 一つの実行モジュールに複数Tier・複数コンポーネントの責務を混在させ、仕様書の分割と一致しない場合。
   - 下位Tierのモジュールが上位Tierの仕様・利用シナリオへ依存する場合、または別コンポーネントの内部処理を重複実装する場合。
@@ -54,22 +56,26 @@ pysim は「**通常の `new` / `delete`、`malloc` / `free` / `realloc` / `call
 - **上位正本ルールの遵守**:
   - 仕様書とコードで食い違いがある場合、仕様書側が常に正本である。
 
-### 2.2 型が書いてあるか (Strict Static Typing & No Any)
+### 2.2 型が書いてあるか・例外を送出していないか (Strict Static Typing & No Any/object/Union/raise)
 - **`typing.Any` の完全禁止 (アンチパターン I)**:
   - コードベース全体で `typing.Any` の使用が **0 件** であること。
+- **`object` と非None Unionの禁止**:
+  - pysimで `object` 型を使用しないこと。
+  - `T | None` / `Optional[T]` のnullable型以外のUnion（`T | U`, `Union[T, U]`）を使用しないこと。
 - **全引数・戻り値・属性の完全型付け**:
   - すべての公開・内部関数、メソッド（`__init__` 等を除く）の引数および戻り値に具象型が明示されているか。
   - コンテナや Generic（`Generic[T]`）の型引数が裸（Raw Generic: `list`, `tuple`, `Channel` 等）になっていないか。
 - **代数的データ型の活用**:
   - 成功・失敗の表現に `Result[T, Never]` や `Result[Never, E]` を活用し、`Any` や緩い Union を排除しているか。
 
-### 2.3 set、dict、動的配列を使っていないか (No Dynamic Containers: set/dict/unbounded list)
-- **動的コンテナの完全禁止 (`{GLOBAL_Policy_Memory}`)**:
-  - Python の素の `dict` や `set` が実行時データ構造（ルックアップ、テーブル、キャッシュ等）として使われていないか。
+### 2.3 set、dict、listを使っていないか (No Built-in Containers: set/dict/list)
+- **組み込みコンテナの完全禁止 (`{GLOBAL_Policy_Memory}`)**:
+  - Python の素の `dict`、`set`、`list` が実行時データ構造（ルックアップ、テーブル、キャッシュ等）として使われていないか。リテラル、コンストラクタ、型注釈、内包表記も違反とする。
+  - ただし `experiments/pysim/tier1_core/system_containers.py` のシステムコンテナ実装内部に限り、内部表現としての組み込みコンテナは設定で除外する。利用側コードの違反を免除するものではない。
 - **システムコンテナ語彙 (`core/system_containers.py`) の強制**:
-  - 固定長配列、`BitView`/`FlatMapView`/`FlatSetView`/`RadixBinaryTreeView`（読み取り専用）、または `MutableFlatMapStorage`/`MutableFlatSetStorage`/`MutableRadixBinaryTreeStorage`（固定容量可変）に置き換えられているか。
+  - 固定長配列、`BitView`/`ReadOnlyFlatMapView`/`ReadOnlyFlatSetView`/`ReadOnlyRadixBinaryTreeView`（非所有読み取り専用）、または `MutableFlatMapStorage`/`MutableFlatSetStorage`/`MutableRadixBinaryTreeStorage`（固定容量可変）に置き換えられているか。
 - **伸縮リスト（`.append`, `.insert`, `.pop`）の排除**:
-  - 無制限に伸縮する `list` を禁止し、順次蓄積には `StaticVector`（LIFO / bounded capacity）、リング巡回には `RingBuffer`（FIFO / bounded capacity）を使用しているか。
+  - 順次蓄積には `StaticVector`（LIFO / bounded capacity）、リング巡回には `RingBuffer`（FIFO / bounded capacity）を使用しているか。
   - 容量上限の根拠（`FB_CONF_*` 定数等）が明記されているか。
 
 ### 2.4 計算量を意識したコードか (Algorithmic Complexity & Determinism)

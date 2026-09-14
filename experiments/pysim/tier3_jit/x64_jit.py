@@ -23,7 +23,7 @@ from control_flow import iter_block_ops
 from exec_memory import ExecutableBuffer
 from jit_abi import JIT_CONTEXT_HELPER_PTR_OFFSET, JIT_CONTEXT_WORD_BYTES
 from jit_cache import JITTrace, JITTraceHeader
-from system_containers import FlatMapView, ReadOnlyFlatMapStorage, StaticVector
+from system_containers import ReadOnlyFlatMapStorage, ReadOnlyFlatMapView, StaticVector
 from wasm_module import (
     WASM_LOCAL_SLOT_BYTES,
     WASM_VALUE_SLOT_BYTES,
@@ -360,7 +360,7 @@ class TraceCompiler:
     _STACK_EFFECT_ENTRIES_TUPLE: tuple[tuple[int, tuple[int, int]], ...] = tuple(
         _STACK_EFFECT_ENTRIES
     )
-    STACK_EFFECTS: FlatMapView[int, tuple[int, int]] = FlatMapView(_STACK_EFFECT_ENTRIES_TUPLE)
+    STACK_EFFECTS: ReadOnlyFlatMapView[int, tuple[int, int]] = ReadOnlyFlatMapView(_STACK_EFFECT_ENTRIES_TUPLE)
 
     def compile_block(
         self,

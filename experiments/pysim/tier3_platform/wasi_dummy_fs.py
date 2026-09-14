@@ -111,13 +111,14 @@ class WasiDummyContext:
                     ]
                     self.stdin_pos += to_read
                     total_read += to_read
-            elif fd in self.files:
-                chunk = self.files[fd].read(buf_len)
+            else:
+                virtual_file = self.files.view().find(fd)
+                if virtual_file is None:
+                    return WasiErrno.BADF
+                chunk = virtual_file.read(buf_len)
                 if chunk:
                     memory[buf_ptr : buf_ptr + len(chunk)] = chunk
                     total_read += len(chunk)
-            else:
-                return WasiErrno.BADF
         memory[nread_ptr : nread_ptr + 4] = total_read.to_bytes(4, "little")
         return WasiErrno.SUCCESS
 
@@ -142,11 +143,12 @@ class WasiDummyContext:
             elif fd == 2:  # stderr
                 self.stderr_buffer.extend(chunk)
                 total_written += len(chunk)
-            elif fd in self.files:
-                w = self.files[fd].write(chunk)
-                total_written += w
             else:
-                return WasiErrno.BADF
+                virtual_file = self.files.view().find(fd)
+                if virtual_file is None:
+                    return WasiErrno.BADF
+                w = virtual_file.write(chunk)
+                total_written += w
         memory[nwritten_ptr : nwritten_ptr + 4] = total_written.to_bytes(4, "little")
         return WasiErrno.SUCCESS
 
@@ -154,9 +156,10 @@ class WasiDummyContext:
         self, fd: int, offset: int, whence: int, memory: bytearray, newoffset_ptr: int
     ) -> int:
 
-        if fd not in self.files:
+        virtual_file = self.files.view().find(fd)
+        if virtual_file is None:
             return WasiErrno.BADF
-        new_pos = self.files[fd].seek(offset, whence)
+        new_pos = virtual_file.seek(offset, whence)
         if new_pos < 0:
             return WasiErrno.INVAL
         memory[newoffset_ptr : newoffset_ptr + 8] = new_pos.to_bytes(8, "little")

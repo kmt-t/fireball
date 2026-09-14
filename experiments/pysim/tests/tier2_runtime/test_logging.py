@@ -39,6 +39,7 @@ from ipc_router import (
     Role,
 )
 from logger import LogDictionary, Logger, LogLevel
+from system_containers import MutableFlatMapStorage
 from system import (
     System,
 )
@@ -84,7 +85,9 @@ def test_log_02_logger_ring_buffer_overwrites():
 
 def test_log_03_dictionary_storage_ownership_separation():
     """TEST-LOG-03: LogDictionary borrows entries storage without owning/duplicating it."""
-    storage = [(0x01, "event #%d"), (0x02, "value %d %d")]
+    storage = MutableFlatMapStorage[int, str](capacity=4)
+    assert storage.insert(0x01, "event #%d")
+    assert storage.insert(0x02, "value %d %d")
     d = LogDictionary(storage=storage)
 
     # Ownership separation assertion

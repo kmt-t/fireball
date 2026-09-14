@@ -34,6 +34,10 @@ for _p in [
     if _sp not in sys.path:
         sys.path.insert(0, _sp)
 
+# Keep the product Tier 3 package ahead of tests/tier3_jit when importing
+# runtime_engine's qualified Tier 3 modules.
+sys.path.insert(0, str(_PYSIM_DIR))
+
 from interpreter import Interpreter, InterpreterContext, Trap
 from scheduler import Scheduler
 from system_containers import StaticVector
@@ -459,14 +463,14 @@ def test_wasm_f32_arithmetic_min_max_and_precision():
 
 
 def test_wasm_loader_and_radix_binary_tree_view_indexes():
-    """TEST-LOAD-01..47: Verifies WASM Loader zero-copy indexing, verification, and RadixBinaryTreeView file offset & hash symbol indexes."""
+    """TEST-LOAD-01..47: Verifies WASM Loader zero-copy indexing, verification, and ReadOnlyRadixBinaryTreeView file offset & hash symbol indexes."""
     from loader import WasmLoader, WasmVerifyError
     from test_loader import _build_test_wasm_binary
 
     loader = WasmLoader()
     wasm_bytes = _build_test_wasm_binary(export_names=["zeta", "alpha", "beta"])
     view = loader.prepare("test_module", wasm_bytes)
-    # 1. Zero-copy & Hash + RadixBinaryTreeView export lookup (TEST-LOAD-13)
+    # 1. Zero-copy & Hash + ReadOnlyRadixBinaryTreeView export lookup (TEST-LOAD-13)
     assert [e.name for e in view.exports_dict] == ["alpha", "beta", "zeta"]
     assert view.lookup_export_func("alpha") == 0
     assert view.lookup_export_func("beta") == 0
@@ -480,13 +484,13 @@ def test_wasm_loader_and_radix_binary_tree_view_indexes():
     except WasmVerifyError:
         pass
     assert loader.allocator.offset == watermark
-    # 3. RadixBinaryTreeView file offset reverse-lookup (TEST-LOAD-40..44)
+    # 3. ReadOnlyRadixBinaryTreeView file offset reverse-lookup (TEST-LOAD-40..44)
     assert len(view.entity_registry) > 0
     func_start, func_size = view.code_offsets[0]
     entity_fn = view.lookup_by_file_offset(func_start)
     assert entity_fn is not None
     assert entity_fn.kind == "FUNCTION"
-    assert entity_fn.name_or_idx == 0
+    assert entity_fn.index == 0
     # Middle of function
     entity_fn_mid = view.lookup_by_file_offset(func_start + 2)
     assert entity_fn_mid is not None

@@ -35,8 +35,11 @@ for _p in [
     if _sp not in sys.path:
         sys.path.insert(0, _sp)
 
+# Keep the product Tier 3 package ahead of tests/tier3_jit when importing
+# runtime_engine's qualified Tier 3 modules.
+sys.path.insert(0, str(_PYSIM_DIR))
+
 from control_flow import extract_basic_blocks
-from stream_transport import StreamTransport
 from interpreter import Interpreter
 from logger import LogDictionary, Logger, LogLevel
 from runtime_engine import (
@@ -47,11 +50,12 @@ from runtime_engine import (
     RuntimeEngine,
     WASMContext,
 )
+from stream_transport import StreamTransport
 from system import (
     System,
 )
 from system_containers import (
-    FlatMapView,
+    ReadOnlyFlatMapView,
     StaticVector,
 )
 from test_support import PcOnlyCompiler, wat_to_wasm
@@ -244,8 +248,8 @@ def test_virq_55_does_not_enter_wasi_polling_path():
 
 def test_hal_task_ipc_communication():
     """TEST-HAL-01: HAL operates as a distinct task on COOS and handles commands via IPC rendezvous."""
-    from hal_dispatch import ARG_BUFFER_HANDLE, ARG_LENGTH, ARG_OFFSET
     from dummy_drivers import DummyDriver
+    from hal_dispatch import ARG_BUFFER_HANDLE, ARG_LENGTH, ARG_OFFSET
     from wasi import Wasi03pEngine, WasiIpcCmd
 
     sysv = System()
@@ -261,7 +265,7 @@ def test_hal_task_ipc_communication():
         nwritten = engine.send_ipc_command(
             "fireball://hal/stdout/0",
             WasiIpcCmd.STREAM_WRITE_BUFFER,
-            FlatMapView(
+            ReadOnlyFlatMapView(
                 [(ARG_BUFFER_HANDLE, buffer_handle.buffer_id), (ARG_LENGTH, 128), (ARG_OFFSET, 0)]
             ),
         )
@@ -839,14 +843,14 @@ def test_interpreter_debugger_handler_table_switch_and_hooks():
 
 
 def test_wasm_loader_and_radix_binary_tree_view_indexes():
-    """TEST-LOAD-01..47: Verifies WASM Loader zero-copy indexing, verification, and RadixBinaryTreeView file offset & hash symbol indexes."""
+    """TEST-LOAD-01..47: Verifies WASM Loader zero-copy indexing, verification, and ReadOnlyRadixBinaryTreeView file offset & hash symbol indexes."""
     from loader import WasmLoader, WasmVerifyError
     from test_loader import _build_test_wasm_binary
 
     loader = WasmLoader()
     wasm_bytes = _build_test_wasm_binary(export_names=["zeta", "alpha", "beta"])
     view = loader.prepare("test_module", wasm_bytes)
-    # 1. Zero-copy & Hash + RadixBinaryTreeView export lookup (TEST-LOAD-13)
+    # 1. Zero-copy & Hash + ReadOnlyRadixBinaryTreeView export lookup (TEST-LOAD-13)
     assert [e.name for e in view.exports_dict] == ["alpha", "beta", "zeta"]
     assert view.lookup_export_func("alpha") == 0
     assert view.lookup_export_func("beta") == 0
@@ -860,13 +864,13 @@ def test_wasm_loader_and_radix_binary_tree_view_indexes():
     except WasmVerifyError:
         pass
     assert loader.allocator.offset == watermark
-    # 3. RadixBinaryTreeView file offset reverse-lookup (TEST-LOAD-40..44)
+    # 3. ReadOnlyRadixBinaryTreeView file offset reverse-lookup (TEST-LOAD-40..44)
     assert len(view.entity_registry) > 0
     func_start, func_size = view.code_offsets[0]
     entity_fn = view.lookup_by_file_offset(func_start)
     assert entity_fn is not None
     assert entity_fn.kind == "FUNCTION"
-    assert entity_fn.name_or_idx == 0
+    assert entity_fn.index == 0
     # Middle of function
     entity_fn_mid = view.lookup_by_file_offset(func_start + 2)
     assert entity_fn_mid is not None

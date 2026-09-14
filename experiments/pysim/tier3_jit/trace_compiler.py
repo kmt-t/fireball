@@ -9,10 +9,10 @@ from __future__ import annotations
 import ctypes
 from collections.abc import Callable
 
+from control_flow import iter_block_ops
 from jit_cache import JITTrace
 from system_containers import ReadOnlyFlatMapStorage
 from wasm_module import WASM_LOCAL_SLOT_WORDS, TraceBlock, WasmOperand
-from control_flow import iter_block_ops
 from wasm_opcodes import (
     I32_ADD,
     I32_CONST,
@@ -22,7 +22,6 @@ from wasm_opcodes import (
     LOCAL_SET,
     LOCAL_TEE,
 )
-
 
 NativeLocals = ctypes.POINTER(ctypes.c_uint32) | None
 

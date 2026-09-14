@@ -1,13 +1,13 @@
 """
 experiments/pysim/tier2_runtime/loader.py
-WASM Loader & Zero-Copy Indexing Engine with Hash + RadixBinaryTreeView Indexes.
+WASM Loader & Zero-Copy Indexing Engine with hash-indexed radix-binary-tree views.
 Conforms strictly to docs/components/tier2_runtime/runtime_loader.md
 and docs/components/tier1_core/system_containers.md.
 Implements:
 1. Zero-Copy ROM-resident WASM32 parsing ({ROMParsing}, {ZeroCopyIndexing})
 2. Transactional memory rollback via BumpAllocator ({META_BumpAllocator})
-3. RadixBinaryTreeView interval indexing for file offset reverse-lookup ({META_BinarySearch})
-4. Hash + RadixBinaryTreeView symbol and import lookup in O(k) ({META_AccessDictionary}, {META_BinarySearch})
+3. ReadOnlyRadixBinaryTreeView interval indexing for file offset reverse-lookup ({META_BinarySearch})
+4. Hash + ReadOnlyRadixBinaryTreeView symbol and import lookup in O(k) ({META_AccessDictionary}, {META_BinarySearch})
 5. Lightweight Verification Scope (V1-V6) ({LightweightVerifier})
 6. Multi-module registry & import resolution ({MultiModule_Support})
 """
@@ -15,10 +15,9 @@ Implements:
 from __future__ import annotations
 
 import struct
-from typing import TypeAlias, TypeVar
+from typing import TypeVar
 
 from system_containers import (
-    FlatMapView,
     MutableFlatMapStorage,
     ReadOnlyFlatMapStorage,
     ReadOnlyRadixBinaryTreeStorage,
@@ -140,7 +139,7 @@ class BinaryStream:
 
     def __init__(
         self,
-        data: bytes | bytearray | memoryview,
+        data: memoryview,
         offset: int = 0,
         length: int | None = None,
     ):
@@ -305,9 +304,6 @@ class SectionView:
         self.payload_size = payload_size
 
 
-EntityPayload: TypeAlias = SectionView | GlobalEntry | tuple[int, int]
-
-
 class FunctionAccessor:
     __slots__ = ("_code_offset", "_code_size", "_rom_data", "func_idx", "type_idx", "type_sig")
 
@@ -316,7 +312,7 @@ class FunctionAccessor:
         func_idx: int,
         type_idx: int,
         type_sig: FuncType,
-        rom_data: bytes | bytearray | memoryview,
+        rom_data: memoryview,
         code_offset: int,
         code_size: int,
     ):
@@ -352,7 +348,7 @@ class GlobalAccessor:
         self,
         global_idx: int,
         entry: GlobalEntry,
-        rom_data: bytes | bytearray | memoryview,
+        rom_data: memoryview,
     ):
         self.global_idx = global_idx
         self.entry = entry
@@ -372,21 +368,19 @@ class GlobalAccessor:
 class DecodedEntity:
     """Decoded entity residing at file offset interval [start_offset, end_offset)."""
 
-    __slots__ = ("end_offset", "kind", "name_or_idx", "payload", "start_offset")
+    __slots__ = ("end_offset", "index", "kind", "start_offset")
 
     def __init__(
         self,
         kind: str,
         start_offset: int,
         end_offset: int,
-        name_or_idx: str | int,
-        payload: EntityPayload,
+        index: int,
     ):
         self.kind = kind  # "SECTION", "FUNCTION", "GLOBAL", "DATA"
         self.start_offset = start_offset
         self.end_offset = end_offset
-        self.name_or_idx = name_or_idx
-        self.payload = payload
+        self.index = index
 
 
 class ModuleView:
@@ -418,7 +412,7 @@ class ModuleView:
         "types",
     )
 
-    def __init__(self, module_name: str, rom_binary: bytes | bytearray | memoryview):
+    def __init__(self, module_name: str, rom_binary: memoryview):
         self.module_name = module_name
         self.rom_binary = memoryview(rom_binary)
         # Section IDs are SectionID.CUSTOM(0)..DATA_COUNT(12): a fixed, dense
@@ -443,7 +437,7 @@ class ModuleView:
             ReadOnlyFlatMapStorage.create(())
         )
         self.is_ready: bool = False
-        # Decoded entity registry & RadixBinaryTreeView indexes ({META_BinarySearch})
+        # Decoded entity registry & radix-binary-tree indexes ({META_BinarySearch})
         self.entity_registry: StaticVector[DecodedEntity] = StaticVector(
             capacity=FB_CONF_MAX_ENTITIES
         )
@@ -458,17 +452,14 @@ class ModuleView:
         kind: str,
         start_offset: int,
         end_offset: int,
-        name_or_idx: str | int,
-        payload: EntityPayload,
+        index: int,
     ) -> DecodedEntity:
-
-        entity = DecodedEntity(kind, start_offset, end_offset, name_or_idx, payload)
-        if not self.entity_registry.push_back(entity):
-            raise WasmParseError("decoded entity registry capacity exceeded")
+        entity = DecodedEntity(kind, start_offset, end_offset, index)
+        assert self.entity_registry.push_back(entity)
         return entity
 
     def build_indexes(self) -> None:
-        """Constructs RadixBinaryTreeView indexes for exports, imports, and entity offsets."""
+        """Constructs read-only radix-binary-tree indexes for exports, imports, and entity offsets."""
         exp_keys = tuple(fnv1a_32(exp.name) for exp in self.exports_dict)
         self.export_storage = ReadOnlyRadixBinaryTreeStorage.create(
             exp_keys, self.exports_dict, radix_shift=28
@@ -485,7 +476,7 @@ class ModuleView:
         )
 
     def lookup_export(self, name: str) -> ExportEntry | None:
-        """Hash + RadixBinaryTreeView symbol lookup with zero-copy string verification in O(k)."""
+        """Hash + read-only radix lookup with zero-copy string verification in O(k)."""
         if self.export_storage is None:
             return None
         h = fnv1a_32(name)
@@ -495,7 +486,7 @@ class ModuleView:
         return None
 
     def find_import(self, module_name: str, field_name: str) -> ImportEntry | None:
-        """Hash + RadixBinaryTreeView import table lookup in O(k)."""
+        """Hash + read-only radix import table lookup in O(k)."""
         if self.import_storage is None:
             return None
         h = fnv1a_32(f"{module_name}::{field_name}")
@@ -515,7 +506,7 @@ class ModuleView:
         return None
 
     def lookup_by_file_offset(self, file_offset: int) -> DecodedEntity | None:
-        """Looks up a decoded entity containing the given file byte offset using RadixBinaryTreeView in O(k)."""
+        """Looks up a decoded entity containing the given file byte offset using a read-only radix view in O(k)."""
         if self.entity_offset_storage is None:
             return None
         return self.entity_offset_storage.view().find_interval(file_offset)
@@ -570,9 +561,9 @@ class WasmLoader:
         self.max_wasm_pages = max_wasm_pages
 
     def lookup(self, name: str) -> ModuleView | None:
-        return self.registry.find(name)
+        return self.registry.view().find(name)
 
-    def prepare(self, module_name: str, wasm_binary: bytes | bytearray | memoryview) -> ModuleView:
+    def prepare(self, module_name: str, wasm_binary: memoryview) -> ModuleView:
         if len(self.registry) >= self.max_modules:
             raise WasmLinkError(f"Module registry capacity ({self.max_modules}) exceeded")
         watermark = self.allocator.save()
@@ -624,7 +615,7 @@ class WasmLoader:
                 sec_view = SectionView(sec_id, sec_start, sec_total_size, payload_start, sec_size)
                 view.sections[sec_id] = sec_view
                 view.register_entity(
-                    "SECTION", sec_start, sec_start + sec_total_size, sec_id, sec_view
+                    "SECTION", sec_start, sec_start + sec_total_size, sec_id
                 )
                 sec_stream = BinaryStream(wasm_binary, offset=payload_start, length=sec_size)
                 self._parse_section_content(sec_id, sec_stream, view)
@@ -756,7 +747,7 @@ class WasmLoader:
                 init_size = stream.tell() - init_start
                 g_entry = GlobalEntry(valtype, mutable, init_start, init_size)
                 _push_or_raise(view.globals, g_entry, "global")
-                view.register_entity("GLOBAL", init_start, init_start + init_size, g_idx, g_entry)
+                view.register_entity("GLOBAL", init_start, init_start + init_size, g_idx)
         elif sec_id == SectionID.EXPORT:
             count = stream.read_leb128_u32()
             if count > FB_CONF_MAX_EXPORTS:
@@ -780,7 +771,6 @@ class WasmLoader:
                     body_start,
                     body_start + body_size,
                     func_idx,
-                    (body_start, body_size),
                 )
                 stream.seek(body_start + body_size)
 
@@ -805,10 +795,11 @@ class WasmLoader:
         return True
 
     def unload(self, module: ModuleView) -> bool:
-        if module.module_name in self.registry:
-            self.registry.remove(module.module_name)
-            if module.allocator_end == self.allocator.save():
-                assert module.allocator_start is not None
-                self.allocator.restore(module.allocator_start)
-            return True
-        return False
+        removed = self.registry.remove(module.module_name)
+        if removed is None:
+            return False
+        assert removed is module
+        if module.allocator_end == self.allocator.save():
+            assert module.allocator_start is not None
+            self.allocator.restore(module.allocator_start)
+        return True

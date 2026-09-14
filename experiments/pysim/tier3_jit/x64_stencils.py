@@ -99,7 +99,7 @@ _RELOC_SENTINELS: tuple[tuple[Relocation, bytes], ...] = (
 )
 
 
-def _materialize_auto(gen: Generator[int, None, None] | Iterable[int]) -> Stencil:
+def _materialize_auto(gen: Iterable[int]) -> Stencil:
     """
     Like _materialize(), but discovers every relocation slot in `gen`'s
         output by locating the sentinel patterns in `_RELOC_SENTINELS`, instead
@@ -122,7 +122,7 @@ def _materialize_auto(gen: Generator[int, None, None] | Iterable[int]) -> Stenci
 
 
 def _materialize(
-    gen: Generator[int, None, None] | Iterable[int],
+    gen: Iterable[int],
     relocs: tuple[tuple[Relocation, int], ...] = (),
 ) -> Stencil:
     """

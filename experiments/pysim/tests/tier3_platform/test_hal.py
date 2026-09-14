@@ -49,7 +49,7 @@ from system import (
     System,
 )
 from system_containers import (
-    FlatMapView,
+    ReadOnlyFlatMapView,
 )
 from vmmio import TrapCode, VMMIOController, VmmioStatus
 
@@ -93,14 +93,14 @@ def test_hal_02_dummy_stdio_driver_streams_stdin_and_stdout():
         assert driver.feed_stdin(b"in-1in-2") == 8
         assert driver.dispatch(
             WasiIpcCmd.STREAM_READ_BUFFER,
-            FlatMapView(
+            ReadOnlyFlatMapView(
                 [(ARG_BUFFER_HANDLE, rx.buffer_id), (ARG_OFFSET, 0), (ARG_MAX_LEN, 32)]
             ),
         ) == 8
         assert bytes(pool.view(rx, 0, 8)) == b"in-1in-2"
         assert driver.dispatch(
             WasiIpcCmd.STREAM_WRITE_BUFFER,
-            FlatMapView(
+            ReadOnlyFlatMapView(
                 [(ARG_BUFFER_HANDLE, tx.buffer_id), (ARG_OFFSET, 0), (ARG_LENGTH, 10)]
             ),
         ) == 10
@@ -195,7 +195,7 @@ def test_hal_task_ipc_communication():
         nwritten = engine.send_ipc_command(
             "fireball://hal/stdout/0",
             WasiIpcCmd.STREAM_WRITE_BUFFER,
-            FlatMapView(
+            ReadOnlyFlatMapView(
                 [(ARG_BUFFER_HANDLE, buffer_handle.buffer_id), (ARG_LENGTH, 128), (ARG_OFFSET, 0)]
             ),
         )

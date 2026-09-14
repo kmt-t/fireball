@@ -48,7 +48,7 @@ for _p in [
 
 """
 experiments/pysim/tests/tier2_runtime/test_loader.py
-Tests for WASM Loader, Zero-Copy Indexing, and Hash + RadixBinaryTreeView Symbol/Import/Offset Indexes.
+Tests for WASM Loader, Zero-Copy Indexing, and Hash + ReadOnlyRadixBinaryTreeView Symbol/Import/Offset Indexes.
 Conforms strictly to docs/components/tier2_runtime/tests/runtime_loader_test_spec.md (TEST-LOAD-01 ~ TEST-LOAD-47).
 """
 
@@ -232,14 +232,14 @@ def test_load_01_to_07_lightweight_verification():
 
 
 def test_load_10_to_15_zero_copy_and_accessors():
-    """TEST-LOAD-10..15: Verifies ROM direct references, Hash + RadixBinaryTreeView export lookup, and lazy accessors."""
+    """TEST-LOAD-10..15: Verifies ROM direct references, Hash + ReadOnlyRadixBinaryTreeView export lookup, and lazy accessors."""
     loader = WasmLoader()
     wasm_bytes = _build_test_wasm_binary(export_names=["zeta", "alpha", "beta"])
     view = loader.prepare("zc_mod", wasm_bytes)
     # Exports sorted
     exp_names = [e.name for e in view.exports_dict]
     assert exp_names == ["alpha", "beta", "zeta"]
-    # Hash + RadixBinaryTreeView lookup (TEST-LOAD-13)
+    # Hash + ReadOnlyRadixBinaryTreeView lookup (TEST-LOAD-13)
     assert view.lookup_export_func("alpha") == 0
     assert view.lookup_export_func("beta") == 0
     assert view.lookup_export_func("zeta") == 0
@@ -259,7 +259,7 @@ def test_load_10_to_15_zero_copy_and_accessors():
 
 
 def test_load_20_to_25_multi_module_import_resolution():
-    """TEST-LOAD-20..25: Verifies multi-module imports, readiness, linking via Hash + RadixBinaryTreeView, and unloading."""
+    """TEST-LOAD-20..25: Verifies multi-module imports, readiness, linking via Hash + ReadOnlyRadixBinaryTreeView, and unloading."""
     loader = WasmLoader()
     # 1. Prepare target library module
     lib_wasm = _build_test_wasm_binary(export_names=["helper"])
@@ -292,7 +292,7 @@ def test_load_20_to_25_multi_module_import_resolution():
     app_buf.extend(app_imp)
     app_view = loader.prepare("app_mod", bytes(app_buf))
     assert app_view.is_ready is False  # Pending resolution
-    # TEST-LOAD-21: Hash + RadixBinaryTreeView import resolution
+    # TEST-LOAD-21: Hash + ReadOnlyRadixBinaryTreeView import resolution
     assert loader.resolve_imports(app_view) is True
     assert app_view.is_ready is True
     assert app_view.resolved_imports.view().find("lib_mod.helper") is not None
@@ -302,7 +302,7 @@ def test_load_20_to_25_multi_module_import_resolution():
 
 
 def test_load_40_to_47_radix_binary_tree_view_indexes():
-    """TEST-LOAD-40..47: Verifies RadixBinaryTreeView file offset and Hash symbol/import indexes."""
+    """TEST-LOAD-40..47: Verifies ReadOnlyRadixBinaryTreeView file offset and Hash symbol/import indexes."""
     loader = WasmLoader()
     wasm_bytes = _build_test_wasm_binary(export_names=["alpha", "beta", "gamma", "compute"])
     view = loader.prepare("radix_mod", wasm_bytes)
@@ -317,7 +317,7 @@ def test_load_40_to_47_radix_binary_tree_view_indexes():
     entity_start = view.lookup_by_file_offset(func_start)
     assert entity_start is not None
     assert entity_start.kind == "FUNCTION"
-    assert entity_start.name_or_idx == 0
+    assert entity_start.index == 0
     entity_mid = view.lookup_by_file_offset(func_start + 2)
     assert entity_mid is not None
     assert entity_mid.kind == "FUNCTION"
@@ -329,7 +329,7 @@ def test_load_40_to_47_radix_binary_tree_view_indexes():
     # 4. TEST-LOAD-44: Invalid / out-of-bounds offsets
     assert view.lookup_by_file_offset(len(wasm_bytes) + 100) is None
     assert view.lookup_by_file_offset(0xFFFFFFFF) is None
-    # 5. TEST-LOAD-45: Import table RadixBinaryTreeView search
+    # 5. TEST-LOAD-45: Import table ReadOnlyRadixBinaryTreeView search
     app_buf = bytearray()
     app_buf.extend(b"\x00asm\x01\x00\x00\x00")
     app_type = bytearray()

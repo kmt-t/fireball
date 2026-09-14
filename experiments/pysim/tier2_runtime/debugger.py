@@ -6,7 +6,7 @@ and docs/specs/gdb_rsp_protocol.md.
 Implements:
 1. GDB RSP Minimal Command Set (?, g, G, m, M, Z0, z0, s, c) ({RSPMinimalSet})
 2. Virtual Register Mapping (0:pc, 1:sp, 2:fp, 3:tos, 4..19:local0..15)
-3. Breakpoint Management via sorted FlatSetView semantics ({FlatViewNarrowing})
+3. Breakpoint Management via sorted ReadOnlyFlatSetView semantics ({FlatViewNarrowing})
 4. JIT Cache Invalidation on Memory Write ({Debugger_Jit_Flush})
 5. Integrated Profiler (PC sampling frequency & memory assertions) ({Debug_Integrated})
 """
@@ -18,7 +18,7 @@ from collections.abc import Mapping
 from typing import Protocol
 
 from execution_context import WASMContext
-from system_containers import MutableFlatMapStorage
+from system_containers import MutableFlatMapStorage, ReadOnlyFlatMapView
 from wasm_module import BasicBlock
 
 # docs/components/tier1_core/system_config.md {Debug_Integrated}
@@ -49,7 +49,7 @@ class DebuggerManager:
         # Sorted breakpoint list (flat_set_view semantics with O(log N) binary search)
         self._breakpoints: list[int] = []
         # Integrated Profiler & Test Tool ({Debug_Integrated})
-        self.pc_sample_counts: MutableFlatMapStorage[int, int] = MutableFlatMapStorage(
+        self._pc_sample_storage: MutableFlatMapStorage[int, int] = MutableFlatMapStorage(
             capacity=FB_CONF_DEBUG_MAX_PC_SAMPLES
         )
         self.memory_assertions: list[tuple[int, int, str]] = []
@@ -93,8 +93,13 @@ class DebuggerManager:
 
     def sample_pc(self, pc: int) -> None:
         """Samples PC execution frequency ({Debug_Integrated})."""
-        count = self.pc_sample_counts.find(pc)
-        self.pc_sample_counts.insert(pc, 1 if count is None else count + 1)
+        count = self._pc_sample_storage.view().find(pc)
+        assert self._pc_sample_storage.insert(pc, 1 if count is None else count + 1)
+
+    @property
+    def pc_sample_counts(self) -> ReadOnlyFlatMapView[int, int]:
+        """Returns a borrowed read-only view of the profiler's owned storage."""
+        return self._pc_sample_storage.view()
 
     def verify_assertions(self, memory: bytearray | None) -> None:
         """Verifies memory assertions against current guest memory ({Debug_Integrated})."""
@@ -163,7 +168,7 @@ class GDBRspProtocol:
         raw = packet.strip()
         raw = raw.removeprefix("$")
 
-        if "#" in raw:
+        if raw.find("#") >= 0:
             raw = raw.split("#")[0]
 
         if not raw:
@@ -234,7 +239,7 @@ class GDBRspProtocol:
                 return self.format_packet("E01"), current_pc
         # s - Single Step Instruction
         elif cmd == "s":
-            if current_pc not in blocks:
+            if blocks.get(current_pc) is None:
                 return self.format_packet("W00"), current_pc
             self.dbg.sample_pc(current_pc)
             block = blocks[current_pc]
@@ -254,7 +259,7 @@ class GDBRspProtocol:
                 if self.dbg.has_breakpoint(pc) and pc != current_pc:
                     self.dbg.stop_signal = 5
                     return self.format_packet("S05"), pc
-                if pc not in blocks:
+                if blocks.get(pc) is None:
                     return self.format_packet("W00"), pc
                 self.dbg.sample_pc(pc)
                 block = blocks[pc]

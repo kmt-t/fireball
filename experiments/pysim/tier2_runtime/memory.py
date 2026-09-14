@@ -275,7 +275,7 @@ class SharedBlock:
         self._check_access(offset, length)
         return bytes(self.data[offset : offset + length])
 
-    def write_bytes(self, offset: int, src: bytes | bytearray) -> None:
+    def write_bytes(self, offset: int, src: memoryview) -> None:
         self._check_access(offset, len(src))
         self.data[offset : offset + len(src)] = src
 
@@ -610,7 +610,7 @@ class MemoryManager:
 
     def acquire_task_heap(self) -> Result[PartitionView]:
         owner = self._scheduler.current_task_id
-        if owner in self.partition_owners:
+        if self.partition_owners.view().find(owner) is not None:
             return Result(
                 error=MemoryErrorResult(
                     "ERR_ALREADY_ACQUIRED",
@@ -653,7 +653,7 @@ class MemoryManager:
 
     def release_task_heap(self) -> None:
         caller_task_id = self._scheduler.current_task_id
-        if caller_task_id not in self.partition_owners:
+        if self.partition_owners.view().find(caller_task_id) is None:
             return
         pv = self.partition_owners.remove(caller_task_id)
         if pv is not None:
@@ -749,17 +749,17 @@ class MemoryManager:
     def grant_shared(self, shm_id: int) -> bool:
         """Grants in-flight SHM block to the receiver task in page table (Grant phase)."""
         new_owner_task_id = self._scheduler.current_task_id
-        assert new_owner_task_id not in (0, FB_TASK_ID_FLIGHT), (
+        assert new_owner_task_id != 0 and new_owner_task_id != FB_TASK_ID_FLIGHT, (
             "Grant target must be a concrete task identity"
         )
         assert self._scheduler.get_task(new_owner_task_id) is not None, (
             "Grant target must be a registered scheduler task"
         )
-        slot = self.shm_slots.find(shm_id)
+        slot = self.shm_slots.view().find(shm_id)
         if slot is None or not slot.allocated:
             return False
         current_owner = self.page_registry.get_owner(slot.page_idx)
-        assert current_owner in (FB_TASK_ID_FLIGHT, new_owner_task_id), (
+        assert current_owner == FB_TASK_ID_FLIGHT or current_owner == new_owner_task_id, (
             "Shared block must be in flight before grant"
         )
         slot.owner = new_owner_task_id
@@ -768,7 +768,7 @@ class MemoryManager:
 
     def claim(self, shm_id: int) -> Result[SharedBlock]:
         receiver_task_id = self._scheduler.current_task_id
-        slot = self.shm_slots.find(shm_id)
+        slot = self.shm_slots.view().find(shm_id)
         if slot is None or not slot.allocated:
             return Result(
                 error=MemoryErrorResult(
@@ -804,7 +804,7 @@ class MemoryManager:
     def rollback_transfer(self, shm_id: int) -> None:
         """Restores a shared block's original owner in the page table."""
         original_sender_id = self._scheduler.current_task_id
-        slot = self.shm_slots.find(shm_id)
+        slot = self.shm_slots.view().find(shm_id)
         if slot is not None:
             slot.owner = original_sender_id
             self._set_shared_owner(slot.page_idx, original_sender_id)
@@ -824,7 +824,7 @@ class MemoryManager:
 
     def _deallocate_shared_slot(self, page_idx: int, slot_idx: int, owner: int) -> None:
         shm_id = (page_idx << 8) | slot_idx
-        if shm_id in self.shm_slots:
+        if self.shm_slots.view().find(shm_id) is not None:
             self.shm_slots.remove(shm_id)
 
             # Check if any slots in this page remain allocated

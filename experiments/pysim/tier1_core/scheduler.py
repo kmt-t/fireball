@@ -16,8 +16,8 @@ Implementation Invariants & Gotchas:
 
 from __future__ import annotations
 
+from collections.abc import Callable, Generator, Iterator, Sequence
 from contextlib import contextmanager
-from collections.abc import Callable, Generator, Iterator
 from enum import IntEnum
 from typing import Protocol
 
@@ -52,6 +52,12 @@ class _SchedulerLogger(Protocol):
         arg2: int = 0,
         arg3: int = 0,
     ) -> str: ...
+
+
+class ChannelPayload(Protocol):
+    """Opaque rendezvous payload; ownership is transferred by the caller."""
+
+    pass
 
 
 class BoundedReadyQueue:
@@ -90,8 +96,14 @@ class BoundedReadyQueue:
     def __bool__(self) -> bool:
         return bool(self._items)
 
+    def contains(self, task: Task) -> bool:
+        for index in range(len(self._items)):
+            if self._items[index] is task:
+                return True
+        return False
+
     def __contains__(self, task: Task) -> bool:
-        return task in self._items
+        return self.contains(task)
 
     def __iter__(self) -> Iterator[Task]:
         return iter(self._items)
@@ -156,12 +168,12 @@ class Channel:
         # channels, preserving the one-waiter-per-channel invariant.
         self.waiter_group: SelectGroup | None = None
 
-    def send(self, data: object) -> tuple[ChannelAction, object]:
+    def send(self, data: ChannelPayload) -> tuple[ChannelAction, ChannelPayload | None]:
         """Synchronous CSP send on this channel."""
         assert self.scheduler is not None, "Channel not attached to a scheduler"
         return self.scheduler.channel_send(self, data)
 
-    def recv(self) -> tuple[ChannelAction, object]:
+    def recv(self) -> tuple[ChannelAction, ChannelPayload | None]:
         """Synchronous CSP recv on this channel."""
         assert self.scheduler is not None, "Channel not attached to a scheduler"
         return self.scheduler.channel_recv(self)
@@ -186,7 +198,7 @@ class Task:
         self,
         task_id: int,
         name: str,
-        coro: Generator[object, None, None] | None = None,
+        coro: Generator[ChannelPayload, None, None] | None = None,
         role: int = 0,
     ):
         self.task_id = task_id
@@ -194,9 +206,9 @@ class Task:
         self.coro = coro
         self.role = role
         self.state = TaskState.READY
-        self.pending_val: object = None
-        self.received_val: object = None
-        self.result: object = None
+        self.pending_val: ChannelPayload | None = None
+        self.received_val: ChannelPayload | None = None
+        self.result: ChannelPayload | None = None
         self.waiting_irq: int | None = None
 
 
@@ -276,7 +288,7 @@ class Scheduler:
     def spawn(
         self,
         name: str,
-        coro: Generator[object, None, None] | None = None,
+        coro: Generator[ChannelPayload, None, None] | None = None,
         task_id: int | None = None,
         role: int = 0,
     ) -> int:
@@ -323,7 +335,7 @@ class Scheduler:
         Removes a task from the READY queue so it will never be picked up by
         run_until_idle().
         """
-        if task in self._ready:
+        if self._ready.contains(task):
             if task.coro is not None:
                 self._ready_coro_count -= 1
             self._ready.remove(task)
@@ -332,7 +344,7 @@ class Scheduler:
         """
         Puts an external/detached task back on the READY queue.
         """
-        if task not in self._ready:
+        if not self._ready.contains(task):
             self._ready.enqueue(task)
             if task.coro is not None:
                 self._ready_coro_count += 1
@@ -344,7 +356,9 @@ class Scheduler:
         """
         return Channel(scheduler=self)
 
-    def channel_send(self, channel: Channel, data: object) -> tuple[ChannelAction, object]:
+    def channel_send(
+        self, channel: Channel, data: ChannelPayload
+    ) -> tuple[ChannelAction, ChannelPayload | None]:
         """Synchronous CSP send with atomic ownership handoff directly on Channel."""
         ch = channel
         sender = self.current_task
@@ -380,7 +394,7 @@ class Scheduler:
         sender.state = TaskState.SUSPENDED_CSP
         return (ChannelAction.BLOCK, None)
 
-    def channel_recv(self, channel: Channel) -> tuple[ChannelAction, object]:
+    def channel_recv(self, channel: Channel) -> tuple[ChannelAction, ChannelPayload | None]:
         """Synchronous CSP recv with atomic ownership handoff directly on Channel."""
         ch = channel
         receiver = self.current_task
@@ -406,7 +420,9 @@ class Scheduler:
         receiver.state = TaskState.SUSPENDED_CSP
         return (ChannelAction.BLOCK, None)
 
-    def channel_select_recv(self, channels: list[Channel]) -> tuple[ChannelAction, object]:
+    def channel_select_recv(
+        self, channels: Sequence[Channel]
+    ) -> tuple[ChannelAction, ChannelPayload | None]:
         """
         Guarded external choice (receive-only select, {ADR_RendezvousChannel}):
         waits on whichever of `channels` gets a matching sender first.
@@ -439,11 +455,13 @@ class Scheduler:
         receiver.state = TaskState.SUSPENDED_CSP
         return (ChannelAction.BLOCK, None)
 
-    def _handoff_or_yield(self, target_task: Task) -> tuple[ChannelAction, object]:
+    def _handoff_or_yield(
+        self, target_task: Task
+    ) -> tuple[ChannelAction, ChannelPayload | None]:
         """CSP direct handoff or scheduler yield upon consecutive threshold."""
         if self.consecutive_handoffs < self.max_handoffs:
             self.consecutive_handoffs += 1
-            if target_task in self._ready:
+            if self._ready.contains(target_task):
                 self._ready.remove(target_task)
             elif target_task.coro is not None:
                 self._ready_coro_count += 1
@@ -462,7 +480,7 @@ class Scheduler:
         # CRITICAL FIX (GOTCHA-SCHED-01):
         # When consecutive handoff limit is reached, target_task was woken (state = READY),
         # but was NOT enqueued into self._ready if it wasn't already there!
-        if target_task not in self._ready:
+        if not self._ready.contains(target_task):
             self._ready.enqueue(target_task)
             if target_task.coro is not None:
                 self._ready_coro_count += 1

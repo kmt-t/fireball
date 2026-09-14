@@ -432,7 +432,38 @@ source_verification:
           enabled: true
         - id: "anti_sabotage"
           enabled: true
-          rules: ["forbid_typing_any", "dummy_pass", "todo_comment"]
+          rules: ["forbid_typing_any", "forbid_object_type", "forbid_non_none_union", "forbid_builtin_containers", "forbid_raise", "forbid_rtti", "forbid_in_operator", "forbid_test_backdoor", "dummy_pass", "todo_comment"]
+          builtin_container_exclude_paths:
+            - "experiments/pysim/tier1_core/system_containers.py"
+            - "experiments/pysim/aobench.py"
+            - "experiments/pysim/tests/**"
+            - "experiments/pysim/scenarios/**"
+            - "experiments/pysim/benchmarks/**"
+          rtti_exclude_paths:
+            - "experiments/pysim/aobench.py"
+            - "experiments/pysim/tests/**"
+            - "experiments/pysim/scenarios/**"
+            - "experiments/pysim/benchmarks/**"
+          raise_exclude_paths:
+            - "experiments/pysim/aobench.py"
+            - "experiments/pysim/tests/**"
+            - "experiments/pysim/scenarios/**"
+            - "experiments/pysim/benchmarks/**"
+          test_backdoor_exclude_paths:
+            - "experiments/pysim/aobench.py"
+            - "experiments/pysim/tests/**"
+            - "experiments/pysim/scenarios/**"
+            - "experiments/pysim/benchmarks/**"
+          in_operator_exclude_paths:
+            - "experiments/pysim/aobench.py"
+            - "experiments/pysim/tests/**"
+            - "experiments/pysim/scenarios/**"
+            - "experiments/pysim/benchmarks/**"
+          non_none_union_exclude_paths:
+            - "experiments/pysim/aobench.py"
+            - "experiments/pysim/tests/**"
+            - "experiments/pysim/scenarios/**"
+            - "experiments/pysim/benchmarks/**"
         - id: "pysim_imports"
           enabled: true
         - id: "run_tests"

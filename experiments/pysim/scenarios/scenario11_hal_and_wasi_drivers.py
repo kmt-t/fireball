@@ -34,7 +34,7 @@ Tests:
 from dummy_drivers import DummyDriver
 from hal_dispatch import ARG_BUFFER_HANDLE, ARG_LENGTH, ARG_MAX_LEN, ARG_OFFSET, WasiIpcCmd
 from system import System
-from system_containers import FlatMapView
+from system_containers import ReadOnlyFlatMapView
 from wasi_dummy_fs import WasiDummyContext, WasiErrno, WasiWhence
 
 
@@ -57,12 +57,12 @@ def test_scenario_hal_and_wasi_drivers():
     assert stdio.feed_stdin(b"stdin-chunk-1stdin-chunk-2") == 26
     assert stdio.dispatch(
         WasiIpcCmd.STREAM_READ_BUFFER,
-        FlatMapView([(ARG_BUFFER_HANDLE, rx.buffer_id), (ARG_OFFSET, 0), (ARG_MAX_LEN, 64)]),
+        ReadOnlyFlatMapView(((ARG_BUFFER_HANDLE, rx.buffer_id), (ARG_OFFSET, 0), (ARG_MAX_LEN, 64))),
     ) == 26
     assert bytes(sysv.pool.view(rx, 0, 26)) == b"stdin-chunk-1stdin-chunk-2"
     assert stdio.dispatch(
         WasiIpcCmd.STREAM_WRITE_BUFFER,
-        FlatMapView([(ARG_BUFFER_HANDLE, tx.buffer_id), (ARG_OFFSET, 0), (ARG_LENGTH, 28)]),
+        ReadOnlyFlatMapView(((ARG_BUFFER_HANDLE, tx.buffer_id), (ARG_OFFSET, 0), (ARG_LENGTH, 28))),
     ) == 28
     assert stdio.drain_stdout() == b"stdout-chunk-1stdout-chunk-2"
     sysv.shutdown()
@@ -110,7 +110,9 @@ def test_scenario_hal_and_wasi_drivers():
     guest_mem[20:24] = (8).to_bytes(4, "little")
     err_w = wasi_vfs.fd_write(fd=3, memory=guest_mem, iovs_ptr=16, iovs_len=1, nwritten_ptr=50)
     assert err_w == WasiErrno.SUCCESS
-    assert b"extra=99" in wasi_vfs.files[3].data
+    config_file = wasi_vfs.files.view().find(3)
+    assert config_file is not None
+    assert b"extra=99" in config_file.data
     print("    [Phase B.3] WASI In-Memory VFS (fd_write mutation) [PASS]")
     # 4. WASI random_get
     err_rnd = wasi_vfs.random_get(memory=guest_mem, buf_ptr=400, buf_len=16)

@@ -16,17 +16,16 @@ _PYSIM_DIR = Path(__file__).resolve().parent
 while not (_PYSIM_DIR / "tier1_core").is_dir():
     _PYSIM_DIR = _PYSIM_DIR.parent
 
-for _p in [
+for _p in (
     _PYSIM_DIR,
     _PYSIM_DIR / "tier1_core",
     _PYSIM_DIR / "tier1_interface",
     _PYSIM_DIR / "tier2_runtime",
     _PYSIM_DIR / "tier3_jit",
     _PYSIM_DIR / "tier3_platform",
-]:
+):
     _sp = str(_p)
-    if _sp not in sys.path:
-        sys.path.insert(0, _sp)
+    sys.path.insert(0, _sp)
 
 from hal_dispatch import HalBufferTrap
 from logger import LogLevel
@@ -197,7 +196,7 @@ def demo_wasmjit_hybrid_execution(sysv: System) -> None:
             f"    iteration {iter_idx}: executed via Interpreter (card 0x{loop_pc:x} state={state_name})"
         )
 
-    assert loop_pc in engine.compile_queue, "HOT block must be enqueued to compile_queue on yield"
+    assert engine.compile_queue.contains(loop_pc), "HOT block must be enqueued to compile_queue on yield"
     print(
         "  [Stage 2] COOS idle_hook triggered: batch-compiling HOT trace into Active JIT cache..."
     )

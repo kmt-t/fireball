@@ -1,11 +1,11 @@
 ---
 name: pysim-review
-description: experiments/pysim 配下の Python ソースコードを、組み込み C++23 への移植可能性およびプロジェクト設計規約の観点から徹底レビューするスキル。仕様書一致性、型注釈・Any禁止、set/dict/動的配列排除・システムコンテナ強制、計算量・決定論性、設定値・定数の一元管理、不要な後方互換コードの排除、ROM/RAM配置可能性（不変性）、余計なメモリ使用の排除、デッドコード排除、文書階層に基づくコンポーネント分割の9大評価軸を専門サブエージェントで並行監査する。
+description: experiments/pysim 配下の Python ソースコードを、組み込み C++23 への移植可能性およびプロジェクト設計規約の観点から徹底レビューするスキル。仕様書一致性、型注釈・Any禁止、set/dict/list排除・システムコンテナ強制、例外送出禁止、計算量・決定論性、設定値・定数の一元管理、不要な後方互換コードの排除、ROM/RAM配置可能性（不変性）、余計なメモリ使用の排除、デッドコード排除、文書階層に基づくコンポーネント分割の評価軸を専門サブエージェントで並行監査する。
 ---
 
 # pysim ソースコードレビュースキル (pysim Review Skill)
 
-`experiments/pysim/` は、通常の `new` / `delete`、`malloc` / `free` / `realloc` / `calloc`、標準の動的 STL コンテナを禁止し、placement/in-place `new` とプロジェクトで提供する独自ヒープ API・独自コンテナを許可する組み込み C++23 の設計を、Python 上で事前実証する参照シミュレータです。`pysim` 自身では、Python 標準の `dict` / `set` / `list` を禁止し、固定容量のシステムコンテナを使用します。参照モデルは fail-fast を原則とし、不変条件・境界・契約違反を `assert` で即時検出します。
+`experiments/pysim/` は、通常の `new` / `delete`、`malloc` / `free` / `realloc` / `calloc`、標準の動的 STL コンテナを禁止し、placement/in-place `new` とプロジェクトで提供する独自ヒープ API・独自コンテナを許可する組み込み C++23 の設計を、Python 上で事前実証する参照シミュレータです。`pysim` 自身では、Python 標準の `dict` / `set` / `list` を禁止し、固定容量のシステムコンテナを使用します。参照モデルは fail-fast を原則とし、不変条件・境界・契約違反を `assert` で即時検出します。製品コードでは明示的な `raise` を使用せず、`try` / `except` による捕捉は許可します。
 
 本スキルは、**「組み込み C++ に 1 対 1 で移植可能であること」** を前提に、ユーザー指定の **9大評価軸** を専門サブエージェント群を活用して厳格に監査します。
 
@@ -17,7 +17,7 @@ graph TD
     subgraph ParallelAudit["並行専門監査 (Parallel Audit)"]
        A1["Subagent 1: spec-complexity-auditor<br/>- 1. 仕様書との一致性・Gotchas同期<br/>- 4. 計算量・設定値管理 (O(1)/定数一元化)<br/>- 5. 後方互換性がないか (不要なフォールバックの排除)<br/>- 8. デッドコードがないか (未使用関数/変数/到達不能分岐)"]
         A1["Subagent 1: spec-complexity-auditor<br/>- 1. 仕様書との一致性・Gotchas同期<br/>- 4. 計算量・設定値管理 (O(1)/定数一元化)<br/>- 5. 後方互換性がないか (不要なフォールバックの排除)<br/>- 8. デッドコードがないか (未使用関数/変数/到達不能分岐)<br/>- 9. 文書階層に基づくコンポーネント分割"]
-        A2["Subagent 2: type-memory-auditor<br/>- 2. 型が書いてあるか (Any禁止・完全型付け)<br/>- 3. set、dict、動的配列を使っていないか (システムコンテナ強制)<br/>- 6. ROM/RAM配置可能性 (リードオンリーデータのROM化)<br/>- 7. 余計なメモリを使用していないか (__slots__/二重管理排除)"]
+       A2["Subagent 2: type-memory-auditor<br/>- 2. 型が書いてあるか (Any禁止・完全型付け)<br/>- 3. set、dict、listを使っていないか (システムコンテナ強制)<br/>- 6. ROM/RAM配置可能性 (リードオンリーデータのROM化)<br/>- 7. 余計なメモリを使用していないか (__slots__/二重管理排除)"]
     end
 
     Step2 --> A1
@@ -34,9 +34,10 @@ graph TD
 1. **仕様書との一致性 (Specification Parity & Invariants)**:
    - `docs/components/**` のアーキテクチャ・状態機械・Gotchas（勘所）と一致しているか。
 2. **型が書いてあるか (Strict Static Typing & No Any)**:
-   - すべての引数・戻り値・属性に具象型が明記されているか。`typing.Any` が 0 件か。
-3. **set、dict、動的配列を使っていないか (No Dynamic Containers: set/dict/unbounded list)**:
-   - 素の `dict`/`set` や伸縮 `list`（`.append` 等）が使われていないか。`BitView`, `FlatMapView`, `RadixBinaryTreeView`, `StaticVector`, `RingBuffer` 等の固定容量システムコンテナに置き換えられているか。
+   - すべての引数・戻り値・属性に具象型が明記されているか。`typing.Any` と `object` が 0 件か。`T | None` / `Optional[T]` 以外のUnionがないか。製品コードに `raise` がないか（`except` は許可）。
+3. **set、dict、listを使っていないか (No Built-in Containers: set/dict/list)**:
+   - 素の `dict`/`set`/`list`（リテラル、コンストラクタ、型注釈、内包表記を含む）が製品コードで使われていないか。`BitView`, `ReadOnlyFlatMapView`, `ReadOnlyRadixBinaryTreeView`, `StaticVector`, `RingBuffer` 等のシステムコンテナに置き換えられているか。設定で除外されたシステムコンテナ実装、テスト、シナリオ、ベンチマークは対象外とする。
+   - `isinstance` 等の RTTI、リフレクション用属性、`in` / `not in` 演算子による線形探索を製品コードに持ち込んでいないか。
 4. **計算量・設定値管理を意識したコードか (Algorithmic Complexity, Determinism & Configuration)**:
    - $O(1)$ スケジューリング、決定論的ディスパッチ、ホットパスでの線形探索 $O(N)$ 回避、ループ内アロケーション排除、ロード時メタデータの事前計算キャッシュ。
    - カード幅、アライメント、容量、閾値、バッファサイズ、ビット幅など、ビルドやターゲットで変更される運用定数を関数・クラス・ベンチマークへ直書きせず、正本の設定ファイルまたは設定定数から参照しているか。
@@ -65,7 +66,7 @@ graph TD
 
 ### Step 1: 静的アンチパターンスキャンの実行
 
-まず付属の AST スキャナを実行し、対象コード内の機械的違反（Any, dict, set, append, RTTI, bytearray, 型注釈欠落）を瞬時に抽出します。続けて `spec-integrator` のソース検証を実行し、`spec-integrator.yaml` の `pysim_imports` 設定に従ってTier 1の汎用コードがTier 2/3の実装へ逆流していないこと、bare importが`sys.path`依存で別Tierへ解決されないことを確認します。
+まず付属の AST スキャナを実行し、対象コード内の機械的違反（Any, dict, set, list, append, RTTI, bytearray, 型注釈欠落）を瞬時に抽出します。続けて `spec-integrator` のソース検証を実行し、`spec-integrator.yaml` の `pysim_imports` 設定に従ってTier 1の汎用コードがTier 2/3の実装へ逆流していないこと、bare importが`sys.path`依存で別Tierへ解決されないことを確認します。
 
 ```powershell
 uv run python .agents/skills/pysim-review/scripts/scan_pysim_anti_patterns.py <target_path> --json
@@ -109,8 +110,8 @@ invoke_subagent(
 
 #### サブエージェント 2: 型・コンテナ・ROM/RAM配置・メモリ監査 (`type-memory-auditor`)
 - **担当評価軸**:
-  - **軸 2 (完全型付け)**: `typing.Any` が 0 件であるか、すべての関数引数・戻り値・クラス属性が厳格に型付けされているか（Raw Generic の排除）。
-  - **軸 3 (set/dict/動的配列排除)**: 素の `dict`/`set` や `.append()` 伸縮リストが使われていないか。`system_containers.py` の View / 固定容量 Storage / `StaticVector` / `RingBuffer` に移行されているか。
+  - **軸 2 (完全型付け)**: `typing.Any` と `object` が 0 件であるか、`T | None` / `Optional[T]` 以外のUnionがないか、すべての関数引数・戻り値・クラス属性が厳格に型付けされているか（Raw Generic の排除）。
+  - **軸 3 (set/dict/list排除)**: 素の `dict`/`set`/`list`（リテラル、コンストラクタ、型注釈、内包表記を含む）が製品コードで使われていないか。設定で除外されたシステムコンテナ実装、テスト、シナリオ、ベンチマークは対象外とし、それ以外は View / 固定容量 Storage / `StaticVector` / `RingBuffer` に移行されているか。
   - **軸 6 (ROM/RAM配置)**: 定数表やイミュータブルなバイト列が `bytearray` や可変オブジェクトで保持されず、Flash ROM に置ける `bytes`, `tuple`, `ReadOnly*Storage` 等の不変構造になっているか。
   - **軸 7 (余計なメモリ使用排除)**: 実行時インスタンスクラスでの `__slots__` 欠落（暗黙の `__dict__` 浪費）、二重管理フィールドや不要な冗長バッファ、過剰な固定容量確保、ホットパス内の一時オブジェクト生成がないか。
 
@@ -120,8 +121,8 @@ invoke_subagent(
 
 親エージェントは各サブエージェントの報告を集約し、以下の基準で判定を下します。
 
-- **CRITICAL**: 実行時 `dict`/`set` の使用、`Any` の使用、仕様書との真っ向からの乖離、ホットパスの致命的 $O(N)$ ボトルネック。
-- **MAJOR**: 無制限伸縮 `list`（`.append` 等）の使用、ROM化可能なデータの可変 RAM 保持、実行時クラスでの `__slots__` 欠落、二重管理データ構造、変更可能な運用定数の製品コードへの直書き、到達不能分岐や未使用関数（デッドコード）、型注釈欠落、不要な後方互換フォールバックの残存、動的型検査（No RTTI 違反）。
+- **CRITICAL**: 実行時 `dict`/`set`/`list` の使用（設定で除外されたシステムコンテナ実装内部を除く）、`Any` / `object` の使用、None以外のUnion型、仕様書との真っ向からの乖離、ホットパスの致命的 $O(N)$ ボトルネック。
+- **MAJOR**: ROM化可能なデータの可変 RAM 保持、実行時クラスでの `__slots__` 欠落、二重管理データ構造、変更可能な運用定数の製品コードへの直書き、到達不能分岐や未使用関数（デッドコード）、型注釈欠落、不要な後方互換フォールバックの残存、動的型検査（No RTTI 違反）。
 - **MINOR**: 容量上限の根拠コメントの不足、未使用インポート文やローカル変数、Docstring の表現揺れ、局所的な最適化の余地。
 
 - **総合判定**:
@@ -148,7 +149,7 @@ invoke_subagent(
 | :--- | :--- | :---: | :--- |
 | **1. 仕様書との一致性** | Spec & Complexity | PASS/WARN/FAIL | 状態機械・Gotchas不変条件の準拠状況 |
 | **2. 型が書いてあるか** | Type & Memory | PASS/WARN/FAIL | Any排除、関数の引数・戻り値の完全型付け |
-| **3. set、dict、動的配列を使っていないか** | Type & Memory | PASS/WARN/FAIL | set/dict/動的配列排除、システムコンテナ(FlatMap/StaticVector等)の適用 |
+| **3. set、dict、listを使っていないか** | Type & Memory | PASS/WARN/FAIL | set/dict/list排除、システムコンテナ(FlatMap/StaticVector等)の適用（実装内部は設定除外） |
 | **4. 計算量・設定値管理を意識したコードか** | Spec & Complexity | PASS/WARN/FAIL | O(1)決定論性、線形探索排除、事前計算キャッシュ、定数一元化 |
 | **5. 後方互換性がないか** | Spec & Complexity | PASS/WARN/FAIL | 不要な旧仕様フォールバックの排除、シナリオ互換 |
 | **6. ROM/RAM 配置可能性** | Type & Memory | PASS/WARN/FAIL | 定数・バイト列の不変性(bytes/tuple)、ROM化 |

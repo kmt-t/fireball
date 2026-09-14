@@ -150,7 +150,7 @@ def test_complex_helpers_use_shared_raw_slots_for_i64_and_floating_point():
         )
         assert trace is not None
         trace.invoke(ctx)
-        assert ctx.stack[:] == (expected & 0xFFFF_FFFF, expected >> 32)
+        assert tuple(ctx.stack) == (expected & 0xFFFF_FFFF, expected >> 32)
 
     def run_f32(op, left: float, right: float, expected: float) -> None:
         ctx.stack.set_size(0)

@@ -54,6 +54,8 @@ def expect_assertion(message: str = "") -> Iterator[None]:
             assert message in str(error)
     else:
         raise AssertionError("expected the operation to raise AssertionError")
+
+
 def make_test_ipc_message(
     entries: tuple[tuple[int, int], ...] | list[tuple[int, int]] = (),
     memory_manager: MemoryManager | None = None,

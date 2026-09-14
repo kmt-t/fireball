@@ -155,6 +155,13 @@ llm_judge:
       severity: "ERROR"
       prompt_file: "tools/spec-integrator/prompts/checks/clarity_completeness.prompt"
 
+    - id: "readability_structure"
+      name: "Readable Procedure, Main-Line, and Supplementary-Condition Structure"
+      mode: ["single", "cluster"]
+      enabled: true
+      severity: "WARNING"
+      prompt_file: "tools/spec-integrator/prompts/checks/readability_structure.prompt"
+
     - id: "natural_language_standards"
       name: "Japanese Natural Language Standard"
       mode: ["single", "cluster"]

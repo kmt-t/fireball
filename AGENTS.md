@@ -30,7 +30,7 @@
 - Python（シミュレータ・概念コード・形式検証・テスト）は `typing.Any` を完全禁止し、具体型・代数的データ型を用いる。
 - pysim は fail-fast の参照シミュレータとし、不変条件・境界・契約違反は `assert` で即時検出する。テストは代理指標だけでなく状態・副作用を直接 `assert` し、テスト自身の `AssertionError` を捕捉して成功扱いにしない。
 - pysim の製品コードはTier依存方向を厳守し、ランタイム固有処理をCOOS・IPC等の汎用層へimportしない。Tierと対象ファイルの対応は `spec-integrator.yaml` の `pysim_imports` を正本とし、`powershell tools/check-src.ps1 -group pysim` の `spec-integrator` 検査でローカルimportの解決先と依存方向を検査する。
-- ドキュメント本文は日本語（自然言語）、コード名・API 名・キーワード・URI は英語。
+- ドキュメント本文は日本語（自然言語・一文一義・常体徹底）、コード名・API 名・キーワード・URI は英語。
 - 複雑な動的アルゴリズムの図は、責務重視＝シーケンス図（`sequenceDiagram`）、手順重視＝アクティビティ図（`flowchart TD`）とする。
 - 形式検証は Python `pyModelChecking`（Kripke 構造・CTL/LTL）で記述・実行し、`guards=False` 変異検査を必須とする。
 

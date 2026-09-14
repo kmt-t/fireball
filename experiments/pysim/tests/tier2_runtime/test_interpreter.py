@@ -38,21 +38,13 @@ for _p in [
 # runtime_engine's qualified Tier 3 modules.
 sys.path.insert(0, str(_PYSIM_DIR))
 
+from helpers import expect_assertion, wat_to_wasm
 from interpreter import Interpreter, InterpreterContext, Trap
 from scheduler import Scheduler
 from system_containers import StaticVector
 from vmmio import VMMIOController
 from wasm_module import F64, I32, I64, Function, FuncType, Module
-from wasm_reader import WasmUnsupportedFeatureError, parse
-
-
-def wat_to_wasm(wat_text: str) -> bytes:
-    try:
-        import wasmtime
-
-        return bytes(wasmtime.wat2wasm(wat_text))
-    except ImportError:
-        return b""
+from wasm_reader import parse
 
 
 def test_intp_01_02_cps_handlers_and_dispatch_table():
@@ -234,13 +226,10 @@ def test_wasm_01_to_06_unsupported_features_rejected():
         b"\x07\x0d\x01\x09test_simd\x00\x00"
         b"\x0a\x06\x01\x04\x00\xfd\x00\x0b"
     )
-    try:
+    with expect_assertion("ERR_WASM_UNSUPPORTED_FEATURE"):
         mod = parse(wasm_bytes)
         interp = Interpreter(mod)
         interp.call(0, [])
-        raise AssertionError("Expected WasmUnsupportedFeatureError for SIMD opcode")
-    except AssertionError:
-        pass
 
 
 def test_wasm_10_to_15_control_flow_and_calls():
@@ -275,11 +264,8 @@ def test_wasm_10_to_15_control_flow_and_calls():
     mod = parse(wasm_bytes)
     interp = Interpreter(mod)
     # TEST-WASM-10: unreachable traps
-    try:
+    with expect_assertion():
         interp.call(mod.export_func_index("unreachable_fn"), [])
-        raise AssertionError("Expected Trap for unreachable")
-    except AssertionError:
-        pass
     # TEST-WASM-13: br_table branch resolution
     assert interp.call(mod.export_func_index("calc_fn"), [0]) == [100]
     assert interp.call(mod.export_func_index("calc_fn"), [1]) == [200]
@@ -363,11 +349,8 @@ def test_wasm_40_to_46_memory_load_store_grow_and_data():
     assert pages == [2]
     assert struct.unpack_from("<I", mem, 16)[0] == 0x12345678
     # OOB trap check
-    try:
+    with expect_assertion():
         interp.call(mod.export_func_index("trap_oob"), [])
-        raise AssertionError("Expected Trap on out of bounds memory access")
-    except AssertionError:
-        pass
 
 
 def test_wasm_50_to_56_integer_arithmetic_and_bitwise():
@@ -392,11 +375,8 @@ def test_wasm_50_to_56_integer_arithmetic_and_bitwise():
     mod = parse(wasm_bytes)
     interp = Interpreter(mod)
     # TEST-WASM-54: Div by zero traps
-    try:
+    with expect_assertion():
         interp.call(mod.export_func_index("div_s"), [10, 0])
-        raise AssertionError("Expected Trap on division by zero")
-    except AssertionError:
-        pass
     # Normal div
     assert interp.call(mod.export_func_index("div_s"), [10, 2]) == [5]
     # TEST-WASM-52, 55, 56: Bit ops
@@ -464,7 +444,7 @@ def test_wasm_f32_arithmetic_min_max_and_precision():
 
 def test_wasm_loader_and_radix_binary_tree_view_indexes():
     """TEST-LOAD-01..47: Verifies WASM Loader zero-copy indexing, verification, and ReadOnlyRadixBinaryTreeView file offset & hash symbol indexes."""
-    from loader import WasmLoader, WasmVerifyError
+    from loader import WasmLoader
     from test_loader import _build_test_wasm_binary
 
     loader = WasmLoader()
@@ -478,11 +458,8 @@ def test_wasm_loader_and_radix_binary_tree_view_indexes():
     assert view.lookup_export_func("unknown") is None
     # 2. Transactional rollback on invalid WASM
     watermark = loader.allocator.offset
-    try:
+    with expect_assertion():
         loader.prepare("bad", _build_test_wasm_binary(magic=b"\x7fELF"))
-        assert False
-    except AssertionError:
-        pass
     assert loader.allocator.offset == watermark
     # 3. ReadOnlyRadixBinaryTreeView file offset reverse-lookup (TEST-LOAD-40..44)
     assert len(view.entity_registry) > 0

@@ -32,30 +32,24 @@ for _p in [
     if _sp not in sys.path:
         sys.path.insert(0, _sp)
 
+from helpers import expect_assertion
 from system_containers import (
     BitView,
-    ReadOnlyFlatMapView,
-    ReadOnlyFlatSetView,
     MutableBitStorage,
     MutableFlatMapStorage,
     MutableFlatSetStorage,
     MutableRadixBinaryTreeStorage,
-    ReadOnlyRadixBinaryTreeView,
     ReadOnlyBitStorage,
     ReadOnlyFlatMapStorage,
+    ReadOnlyFlatMapView,
     ReadOnlyFlatSetStorage,
+    ReadOnlyFlatSetView,
     ReadOnlyRadixBinaryTreeStorage,
+    ReadOnlyRadixBinaryTreeView,
+    RingBuffer,
+    StaticVector,
     lookup_jit_entry_radix,
 )
-
-
-def wat_to_wasm(wat_text: str) -> bytes:
-    try:
-        import wasmtime
-
-        return bytes(wasmtime.wat2wasm(wat_text))
-    except ImportError:
-        return b""
 
 
 def test_cont_01_flat_map_view_find_binary_search():
@@ -97,11 +91,8 @@ def test_cont_03_slice_monotonic_shrinkage_and_bounds():
     assert v1.size() == 3
     assert v1.find(20) == 2
     assert v1.find(40) == 4
-    try:
+    with expect_assertion():
         v1.slice(0, 5)  # Expanding beyond v1's window [1, 4] must fail
-        raise AssertionError("Expected AssertionError when expanding slice")
-    except AssertionError:
-        pass
 
 
 def test_cont_04_flat_set_view_membership_only():
@@ -168,11 +159,8 @@ def test_cont_07_bit_view_allowed_bits_enforced():
     BitView(storage, bits=4, count=8)
     # Invalid
     for invalid in (3, 5, 6, 7, 8):
-        try:
+        with expect_assertion():
             BitView(storage, bits=invalid, count=4)
-            raise AssertionError(f"Expected ValueError for invalid Bits={invalid}")
-        except AssertionError:
-            pass
 
 
 def test_cont_08_radix_binary_tree_view_coarse_radix_lookup():
@@ -450,6 +438,7 @@ def test_cont_14_mutable_storages_fixed_array_and_entry_count():
     # 3. MutableRadixBinaryTreeStorage
     r: MutableRadixBinaryTreeStorage[str] = MutableRadixBinaryTreeStorage(capacity=3, radix_shift=4)
     assert len(r._buffer) == 3
+
     assert r.count == 0
     assert r._buffer == [None, None, None]
 
@@ -475,6 +464,47 @@ def test_cont_14_mutable_storages_fixed_array_and_entry_count():
     assert rv.find(10) is None
 
 
+def test_cont_15_public_container_lifecycle_methods():
+    """Covers the remaining public lifecycle and view-window methods."""
+    set_view = ReadOnlyFlatSetView((1, 3, 5))
+    assert set_view.size() == 3
+    assert not set_view.empty()
+    assert set_view.slice(1, 3).keys == (3, 5)
+    assert set_view.narrow(2, 4).keys == (3,)
+
+    flat_set = MutableFlatSetStorage[int](capacity=2)
+    assert flat_set.size() == 0
+    assert flat_set.insert(2)
+    assert flat_set.insert(1)
+    flat_set.clear()
+    assert flat_set.size() == 0
+
+    flat_map = MutableFlatMapStorage[int, str](capacity=2)
+    assert flat_map.insert(2, "two")
+    assert flat_map.size() == 1
+    assert flat_map.clear() is None
+    assert flat_map.size() == 0
+
+    radix = MutableRadixBinaryTreeStorage[str](capacity=2, radix_shift=4)
+    assert radix.insert(2, "two")
+    assert radix.size() == 1
+    radix.clear()
+    assert radix.size() == 0
+
+    ring = RingBuffer[int](capacity=2)
+    assert ring.size() == 0
+    ring.push(1)
+    assert ring.size() == 1
+    assert ring.pop() == 1
+    assert ring.is_empty()
+
+    vector = StaticVector.of((1, 2), capacity=3)
+    assert vector.size() == 2
+    assert vector.at(1) == 2
+    del vector[0]
+    assert repr(vector).startswith("StaticVector")
+
+
 # ===========================================================================
 # Cooperative Multitasking & Idle-Hook Integration (YIELD / IDLE / TIER)
 # ===========================================================================
@@ -495,4 +525,5 @@ if __name__ == "__main__":
     test_cont_12_mutable_flat_map_storage_standard_sort()
     test_cont_13_mutable_flat_map_sorted_insert_remove()
     test_cont_14_mutable_storages_fixed_array_and_entry_count()
-    print("[PASS] All 14 System Containers & Views tests passed.")
+    test_cont_15_public_container_lifecycle_methods()
+    print("[PASS] All 15 System Containers & Views tests passed.")

@@ -11,6 +11,7 @@ _PYSIM_DIR = _TEST_FILE.parents[2]
 _REPO_ROOT = _PYSIM_DIR.parent.parent
 for _path in (
     _PYSIM_DIR,
+    _PYSIM_DIR / "tests",
     _PYSIM_DIR / "tier1_core",
     _PYSIM_DIR / "tier2_runtime",
     _REPO_ROOT,
@@ -19,6 +20,7 @@ for _path in (
         sys.path.insert(0, str(_path))
 
 from execution_context import WASMContext
+from helpers import expect_assertion
 from interop_abi import (
     NATIVE_STACK_ALIGNMENT_BYTES,
     ConstBufferViewNative,
@@ -32,6 +34,7 @@ from interop_abi import (
     WasmRunResultNative,
 )
 from interpreter import ControlFrameKind, InterpreterContext, NativeControlStack
+from native_stacks import LocalStackWindow
 
 
 def test_native_layout_matches_x64_jit_context():
@@ -91,6 +94,7 @@ def test_native_views_are_non_owning_fixed_width_records():
 def test_interpreter_and_jit_contexts_share_native_record_type():
     interpreter_context = InterpreterContext()
     jit_context = WASMContext()
+    memory_context = WASMContext(memory=bytearray(8))
 
     assert isinstance(interpreter_context.native_context, ExecutionContextNative)
     assert isinstance(jit_context.native_context, ExecutionContextNative)
@@ -98,6 +102,12 @@ def test_interpreter_and_jit_contexts_share_native_record_type():
         interpreter_context.native_context
     )
     assert jit_context.context_ptr.value == ctypes.addressof(jit_context.native_context)
+    assert memory_context.mem_ptr.value != 0
+    helper_addresses = tuple(range(1, 1 + len(memory_context.jit_helper_ptrs)))
+    memory_context.set_jit_helpers(helper_addresses)
+    assert memory_context.jit_helper_ptrs == helper_addresses
+    memory_context.clear_jit_helper()
+    assert memory_context.jit_helper_ptrs == (0,) * len(helper_addresses)
 
 
 def test_native_value_stack_owns_the_fixed_storage():
@@ -115,12 +125,8 @@ def test_native_value_stack_owns_the_fixed_storage():
     assert stack.value_ptr().value == ctypes.addressof(stack.native.values)
     assert stack.pop_f32() == 1.5
     assert stack.pop_i32() == -1
-    try:
+    with expect_assertion():
         stack.pop_back()
-    except AssertionError:
-        pass
-    else:
-        raise AssertionError("empty Native value stack must fail fast")
 
     wide_stack = NativeValueStack(capacity=4)
     assert wide_stack.push_i64(-1)
@@ -130,9 +136,39 @@ def test_native_value_stack_owns_the_fixed_storage():
     assert wide_stack.pop_f64() == 1.25
     assert wide_stack.pop_i64() == -1
 
+    typed_stack = NativeValueStack(capacity=8)
+    assert typed_stack.push_i32(-1)
+    assert typed_stack.push_i64(-2)
+    assert typed_stack.push_f32(1.25)
+    assert typed_stack.push_f64(2.5)
+    assert typed_stack.peek_f64() == 2.5
+    peek_stack = NativeValueStack(capacity=1)
+    assert peek_stack.push_f32(1.25)
+    assert peek_stack.peek_f32() == 1.25
+    i32_peek_stack = NativeValueStack(capacity=1)
+    assert i32_peek_stack.push_i32(-7)
+    assert i32_peek_stack.peek_i32() == -7
+    i64_peek_stack = NativeValueStack(capacity=2)
+    assert i64_peek_stack.push_i64(-8)
+    assert i64_peek_stack.peek_i64() == -8
+    assert typed_stack.read_i64(1) == -2
+    assert typed_stack.read_f64(4) == 2.5
+    typed_stack.write_i32(0, 7)
+    typed_stack.write_i64(1, 9)
+    typed_stack.write_f32(3, 3.5)
+    typed_stack.write_f64(4, 4.5)
+    assert typed_stack.read_i32(0) == 7
+    assert typed_stack.read_i64(1) == 9
+    assert typed_stack.read_f32(3) == 3.5
+    assert typed_stack.read_f64(4) == 4.5
+    del typed_stack[0]
+    typed_stack.clear()
+    assert not typed_stack
+
 
 def test_native_control_stack_owns_flat_frame_records():
     stack = NativeControlStack(capacity=2)
+    assert stack.capacity == 2
     assert stack.push_back(ControlFrameKind.LOOP, start=3, match_end=12, stack_height=4)
     assert stack.native.size == 1
     assert isinstance(stack.native, ControlStackNative)
@@ -140,12 +176,11 @@ def test_native_control_stack_owns_flat_frame_records():
     assert restored.kind == int(ControlFrameKind.LOOP)
     assert (restored.start, restored.match_end, restored.stack_height) == (3, 12, 4)
     assert stack.pop_back().kind == int(ControlFrameKind.LOOP)
-    try:
+    assert stack.push_back(ControlFrameKind.BLOCK, start=4, match_end=8, stack_height=0)
+    stack.truncate(0)
+    assert len(stack) == 0
+    with expect_assertion():
         stack.pop_back()
-    except AssertionError:
-        pass
-    else:
-        raise AssertionError("empty Native control stack must fail fast")
 
 
 def test_runtime_contexts_expose_native_stack_records():
@@ -157,6 +192,23 @@ def test_runtime_contexts_expose_native_stack_records():
     assert isinstance(jit_context.stack, NativeValueStack)
 
 
+def test_local_stack_window_uses_fixed_slot_offsets_and_typed_accessors():
+    storage = NativeValueStack(capacity=8)
+    assert storage.extend((0, 0, 0, 0, 0, 0, 0, 0))
+    window = LocalStackWindow(storage, base=0, widths=(1, 2, 1, 2), slot_count=8)
+    assert len(window) == 4
+    assert window.raw_slot(2) == 4
+    assert window.raw_width(1) == 2
+    window.set_i32(0, -3)
+    window.set_i64(1, -4)
+    window.set_f32(2, 1.5)
+    window.set_f64(3, 2.5)
+    assert window.get_i32(0) == -3
+    assert window.get_i64(1) == -4
+    assert window.get_f32(2) == 1.5
+    assert window.get_f64(3) == 2.5
+
+
 if __name__ == "__main__":
     test_native_layout_matches_x64_jit_context()
     test_native_views_are_non_owning_fixed_width_records()
@@ -164,4 +216,5 @@ if __name__ == "__main__":
     test_native_value_stack_owns_the_fixed_storage()
     test_native_control_stack_owns_flat_frame_records()
     test_runtime_contexts_expose_native_stack_records()
+    test_local_stack_window_uses_fixed_slot_offsets_and_typed_accessors()
     print("[PASS] test_interop_abi")

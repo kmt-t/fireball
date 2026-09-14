@@ -45,15 +45,6 @@ from vmmio import (
 )
 
 
-def wat_to_wasm(wat_text: str) -> bytes:
-    try:
-        import wasmtime
-
-        return bytes(wasmtime.wat2wasm(wat_text))
-    except ImportError:
-        return b""
-
-
 def test_vmmio_01_three_tier_gate_dispatch():
     """TEST-VMMIO-01: 3-tier address gate resolves Linear RAM, Static Devices, and SHM/Passthrough."""
     scheduler = Scheduler()

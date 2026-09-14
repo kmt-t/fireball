@@ -32,17 +32,9 @@ for _p in [
     if _sp not in sys.path:
         sys.path.insert(0, _sp)
 
+from helpers import expect_assertion
 from interrupt_event import InterruptEvent
 from scheduler import ChannelAction, Scheduler, TaskState, WaitDir
-
-
-def wat_to_wasm(wat_text: str) -> bytes:
-    try:
-        import wasmtime
-
-        return bytes(wasmtime.wat2wasm(wat_text))
-    except ImportError:
-        return b""
 
 
 def test_coos_01_send_first_suspends_csp():
@@ -115,12 +107,8 @@ def test_coos_05_one_waiter_per_channel_enforced():
     sched.current_task = t1
     ch.send(1)
     sched.current_task = t2
-    try:
+    with expect_assertion("separate channels"):
         ch.send(2)
-    except AssertionError as e:
-        assert "separate channels" in str(e)
-    else:
-        raise AssertionError("Expected AssertionError for second sender on same channel")
 
 
 def test_coos_06_csp_handoff_direct_switch():

@@ -53,8 +53,8 @@ import ctypes
 
 from control_flow import extract_basic_blocks
 from debugger import DebuggerManager, GDBRspProtocol
-from hal_dispatch import HalBufferPool, HalBufferTrap
-from helpers import make_test_ipc_message
+from hal_dispatch import HalBufferPool
+from helpers import expect_assertion, make_test_ipc_message, wat_to_wasm
 from interpreter import _HANDLERS, Interpreter
 from ipc_router import (
     IPCRouter,
@@ -63,7 +63,6 @@ from ipc_router import (
     Role,
 )
 from jit_copy_patch_concept import CopyPatchJITEngine, Reg, Thumb2Assembler
-from stream_transport import StreamTransport
 from loader import WasmLoader
 from logger import LogDictionary, Logger, LogLevel
 from memory import FB_CONF_MEMORY_POOL_SIZE, MemoryManager
@@ -77,8 +76,9 @@ from runtime_engine import (
     WASMContext,
 )
 from scheduler import ChannelAction, Scheduler, WaitDir
+from stream_transport import StreamTransport
 from system import System, WasiErrno
-from system_containers import BitView, ReadOnlyFlatMapView, MutableFlatMapStorage, StaticVector
+from system_containers import BitView, MutableFlatMapStorage, ReadOnlyFlatMapView, StaticVector
 
 
 def _make_router(sched: Scheduler) -> IPCRouter:
@@ -97,10 +97,8 @@ def _make_memory_manager() -> tuple[MemoryManager, Scheduler]:
     return manager, scheduler
 from test_support import (
     PcOnlyCompiler,
-    compile_module_block,
     compile_test_block,
     make_pc_only_module,
-    wat_to_wasm,
 )
 from vmmio import TrapCode, VMMIOController, VmmioStatus
 from wasm_opcodes import I32_ADD, I32_CONST, LOCAL_GET, LOCAL_SET
@@ -564,12 +562,8 @@ def test_ipcr_gotcha_01_no_queue_assertion_on_duplicate_send():
     sender2_id = sched.spawn("sender2", role=Role.RUNTIME)
     sched.current_task = sched.get_task(sender2_id)
     gen2 = router.send(ch, msg2)
-    try:
+    with expect_assertion():
         next(gen2)
-    except AssertionError as error:
-        assert str(error)
-    else:
-        raise AssertionError("Duplicate send on CSP channel must raise assertion")
 
 
 def test_ipcr_gotcha_02_preflight_rejection_preserves_sender_ownership():
@@ -671,12 +665,8 @@ def test_coos_gotcha_02_single_waiter_assert():
     ch.send(100)
 
     sched.current_task = t2
-    try:
+    with expect_assertion():
         ch.send(200)
-    except AssertionError as error:
-        assert str(error)
-    else:
-        raise AssertionError("Expected AssertionError on duplicate channel send")
 
 
 def test_cont_gotcha_01_bit_view_power_of_two_factors():
@@ -719,11 +709,8 @@ def test_log_gotcha_01_no_runtime_pointer_scalar_args_only():
     """GOTCHA-LOG-01: Logging interface rejects string specifiers and accepts only scalar u32 arguments."""
     d = LogDictionary()
     for bad_fmt in ["Message: %s", "Pointer: %p", "Char: %c"]:
-        try:
+        with expect_assertion():
             d.register(0x10, bad_fmt)
-            raise AssertionError(f"Expected LogDictionary to reject '{bad_fmt}'")
-        except AssertionError:
-            pass
 
     d.register(0x20, "Task %d event %u (0x%08X)")
     uart = StreamTransport()
@@ -769,21 +756,13 @@ def test_mem_gotcha_02_release_and_flight_protection():
     shm_id = b.release()
     assert b._is_in_flight
     assert not b._is_active
-    access_rejected = False
-    try:
+    with expect_assertion():
         b.read_u32(0)
-    except AssertionError:
-        access_rejected = True
-    assert access_rejected, "Expected access to in-flight block to be rejected"
 
     scheduler.current_task = scheduler.get_task(2)
     assert not mm.claim(shm_id).is_ok
-    size_rejected = False
-    try:
+    with expect_assertion():
         b.get_size()
-    except AssertionError:
-        size_rejected = True
-    assert size_rejected, "get_size() must reject an in-flight block"
 
 
 def test_mem_gotcha_02b_release_owner_only():
@@ -792,23 +771,11 @@ def test_mem_gotcha_02b_release_owner_only():
     b = mm.allocate_shared(size=64).unwrap()
     scheduler.current_task = scheduler.get_task(2)
 
-    release_rejected = False
-    try:
+    with expect_assertion("GOTCHA-MEM-02"):
         b.release()
-    except AssertionError as e:
-        release_rejected = True
-        assert "GOTCHA-MEM-02" in str(e)
-    assert release_rejected, "Non-owner must not be able to release() another task's SharedBlock"
 
-    address_rejected = False
-    try:
+    with expect_assertion("GOTCHA-MEM-02"):
         b.get_address()
-    except AssertionError as e:
-        address_rejected = True
-        assert "GOTCHA-MEM-02" in str(e)
-    assert address_rejected, (
-        "Non-owner must not be able to get_address() another task's SharedBlock"
-    )
 
     assert b._is_active
     assert b.get_owner() == 1
@@ -829,11 +796,8 @@ def test_hal_gotcha_01_hal_buffer_pool_bounds_violation_rejected():
     pool.bind_runtime()
     handle = pool.buffer(0)
     assert handle.capacity == 256
-    try:
+    with expect_assertion("escapes fixed buffer"):
         pool.view(handle, 0, 257)
-        raise AssertionError("Expected HalBufferTrap for a slice beyond the fixed slot")
-    except AssertionError:
-        pass
     pool.close_all()
 
 

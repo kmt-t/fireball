@@ -59,6 +59,7 @@ while not (_PYSIM_DIR / "tier1_core").is_dir():
 
 for _p in [
     _PYSIM_DIR,
+    _PYSIM_DIR / "tests",
     _PYSIM_DIR / "tier1_core",
     _PYSIM_DIR / "tier1_interface",
     _PYSIM_DIR / "tier2_runtime",
@@ -74,6 +75,7 @@ import random
 
 import x64_stencils as st
 from exec_memory import ExecutableBuffer
+from helpers import expect_assertion
 from wasm_module import WASM_LOCAL_SLOT_BYTES, WASM_LOCAL_SLOT_WORDS
 
 I32_MASK = 0xFFFFFFFF
@@ -601,12 +603,8 @@ def test_executable_buffer_wx_protection_lifecycle():
         assert buf.patch_in_progress is False
 
         # Writing after commit must be rejected
-        try:
+        with expect_assertion("Cannot write to ExecutableBuffer"):
             buf.write(0, b"\xcc")
-        except AssertionError as e:
-            assert "Cannot write to ExecutableBuffer" in str(e)
-        else:
-            raise AssertionError("expected write outside patch transaction to fail")
 
         # Reopening transaction switches back to RW+XN
         buf.begin_jit_patch()

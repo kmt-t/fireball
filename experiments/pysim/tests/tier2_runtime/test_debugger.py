@@ -55,8 +55,9 @@ docs/components/tier2_runtime/tests/debug_manager_test_spec.md (TEST-DBG-01 ~ TE
 
 from control_flow import extract_basic_blocks
 from debugger import DebuggerManager, GDBRspProtocol
+from helpers import wat_to_wasm
 from runtime_engine import BasicBlock, IntegratedHybridEngine, WASMContext
-from test_support import compile_test_block, wat_to_wasm
+from test_support import compile_test_block
 from wasm_opcodes import I32_CONST
 from x64_jit import TraceCompiler
 

@@ -54,13 +54,13 @@ Conforms strictly to docs/components/tier2_runtime/tests/runtime_loader_test_spe
 
 import struct
 
+from helpers import expect_assertion
 from loader import (
     ExternalKind,
     FuncType,
     SectionID,
     ValType,
     WasmLoader,
-    WasmVerifyError,
     fnv1a_32,
 )
 
@@ -189,46 +189,28 @@ def test_load_01_to_07_lightweight_verification():
     assert view.is_ready is True
     # V1: Bad magic
     watermark = loader.allocator.offset
-    try:
+    with expect_assertion():
         loader.prepare("bad_magic", _build_test_wasm_binary(magic=b"\x7fELF"))
-        assert False
-    except AssertionError:
-        pass
     assert loader.allocator.offset == watermark
     # V2: Bad version
-    try:
+    with expect_assertion():
         loader.prepare("bad_ver", _build_test_wasm_binary(version=2))
-        assert False
-    except AssertionError:
-        pass
     assert loader.allocator.offset == watermark
     # V3: Bad section bounds
-    try:
+    with expect_assertion():
         loader.prepare("bad_bounds", _build_test_wasm_binary(corrupt_section_bounds=True))
-        assert False
-    except AssertionError:
-        pass
     assert loader.allocator.offset == watermark
     # V4: Bad section order
-    try:
+    with expect_assertion():
         loader.prepare("bad_order", _build_test_wasm_binary(corrupt_section_order=True))
-        assert False
-    except AssertionError:
-        pass
     assert loader.allocator.offset == watermark
     # V5: Bad type index
-    try:
+    with expect_assertion():
         loader.prepare("bad_type", _build_test_wasm_binary(invalid_type_idx=True))
-        assert False
-    except AssertionError:
-        pass
     assert loader.allocator.offset == watermark
     # V6: Exceeds page budget
-    try:
+    with expect_assertion():
         loader.prepare("bad_mem", _build_test_wasm_binary(memory_pages=32))
-        assert False
-    except AssertionError:
-        pass
     assert loader.allocator.offset == watermark
 
 

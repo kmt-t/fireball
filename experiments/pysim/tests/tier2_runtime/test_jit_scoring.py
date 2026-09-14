@@ -20,6 +20,7 @@ for _path in (
 from jit_scoring import (
     JIT_CANDIDATE_THRESHOLD,
     OPCODE_TABLE_BYTES,
+    JITCandidateBitmap,
     OpcodeBenefitTable,
     score_opcodes,
 )
@@ -47,3 +48,20 @@ def test_loader_scores_basic_block_once() -> None:
     assert len(module.blocks) == 1
     assert module.blocks[0].jit_score == 19
     assert module.blocks[0].jit_score >= JIT_CANDIDATE_THRESHOLD
+
+
+def test_jit_candidate_bitmap_allocates_and_marks_function_cards() -> None:
+    bitmap = JITCandidateBitmap(card_shift=2)
+    bitmap.allocate_functions(2)
+    assert bitmap.is_candidate(0) is False
+    bitmap.mark((1 << 16) | 4, code_len=8)
+    assert bitmap.is_candidate((1 << 16) | 4) is True
+    assert bitmap.is_candidate((1 << 16) | 0) is False
+    assert bitmap.is_candidate((2 << 16) | 0) is False
+
+
+if __name__ == "__main__":
+    test_numeric_opcode_score_table()
+    test_loader_scores_basic_block_once()
+    test_jit_candidate_bitmap_allocates_and_marks_function_cards()
+    print("[PASS] All 3 JIT scoring tests passed.")

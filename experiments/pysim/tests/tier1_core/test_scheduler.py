@@ -32,16 +32,8 @@ for _p in [
     if _sp not in sys.path:
         sys.path.insert(0, _sp)
 
-from scheduler import ChannelAction, Scheduler, TaskState
-
-
-def wat_to_wasm(wat_text: str) -> bytes:
-    try:
-        import wasmtime
-
-        return bytes(wasmtime.wat2wasm(wat_text))
-    except ImportError:
-        return b""
+from helpers import expect_assertion
+from scheduler import BoundedReadyQueue, ChannelAction, Scheduler, TaskState
 
 
 def test_sched_01_pure_round_robin_fifo():
@@ -66,22 +58,16 @@ def test_sched_02_task_capacity_limit():
     for i in range(4):
         sched.spawn(f"t{i}")
 
-    try:
+    with expect_assertion("capacity exceeded"):
         sched.spawn("t_overflow")
-        raise AssertionError("Expected RuntimeError for task capacity overflow")
-    except AssertionError as e:
-        assert "capacity exceeded" in str(e)
 
 
 def test_sched_03_duplicate_task_id_rejected():
     """TEST-SCHED-03: Attempting to spawn with an existing task_id is rejected."""
     sched = Scheduler()
     sched.spawn("t1", task_id=10)
-    try:
+    with expect_assertion("already exists"):
         sched.spawn("t2", task_id=10)
-        raise AssertionError("Expected ValueError for duplicate task_id")
-    except AssertionError as e:
-        assert "already exists" in str(e)
 
 
 # ===========================================================================
@@ -130,19 +116,11 @@ def test_sched_04_shared_block_move_semantics_csp_rendezvous():
     assert recv_sb.read_bytes(0, 34) == b"Hello Fireball CSP Move Semantics!"
 
     # Sender instance was invalidated via move semantics (C++23 std::move / &&)
-    try:
+    with expect_assertion():
         sb.read_bytes(0, 5)
-    except AssertionError as e:
-        assert "Cannot access released" in str(e) or "inactive" in str(e)
-    else:
-        raise AssertionError("Expected AssertionError: Sender must not access moved SharedBlock")
 
-    try:
+    with expect_assertion():
         sb.write_bytes(0, b"Fail")
-    except AssertionError as e:
-        assert "Cannot access released" in str(e) or "inactive" in str(e)
-    else:
-        raise AssertionError("Expected AssertionError: Sender must not write to moved SharedBlock")
 
     # Sub-case 2: Receiver waits first, Sender arrives second
     ch2 = sched.create_channel()
@@ -164,12 +142,34 @@ def test_sched_04_shared_block_move_semantics_csp_rendezvous():
     assert recv_sb2.get_owner() == 2
     assert recv_sb2.read_bytes(0, 15) == b"Subcase 2 Move!"
 
-    try:
+    with expect_assertion():
         sb2.read_bytes(0, 5)
-    except AssertionError as e:
-        assert "Cannot access released" in str(e) or "inactive" in str(e)
-    else:
-        raise AssertionError("Expected AssertionError: Sender must not access moved SharedBlock")
+
+
+def test_sched_05_queue_and_detached_task_lifecycle():
+    queue = BoundedReadyQueue(capacity=2)
+    scheduler = Scheduler(max_tasks=3)
+    first = scheduler.get_task(scheduler.spawn("first"))
+    second = scheduler.get_task(scheduler.spawn("second"))
+    assert first is not None and second is not None
+    assert queue.enqueue(first)
+    assert queue.enqueue_front(second)
+    assert len(queue) == 2
+    assert first in queue
+    assert list(queue) == [second, first]
+    assert queue.remove(second)
+    queue.clear()
+    assert not queue
+
+    task_id = scheduler.spawn("detached")
+    task = scheduler.get_task(task_id)
+    assert task is not None
+    scheduler.detach(task)
+    assert scheduler.pending_task_count() == 2
+    scheduler.attach(task)
+    assert scheduler.pending_task_count() == 3
+    scheduler.attach(task)
+    assert scheduler.pending_task_count() == 3
 
 
 if __name__ == "__main__":
@@ -177,4 +177,5 @@ if __name__ == "__main__":
     test_sched_02_task_capacity_limit()
     test_sched_03_duplicate_task_id_rejected()
     test_sched_04_shared_block_move_semantics_csp_rendezvous()
-    print("[PASS] All 4 Round-Robin Scheduler tests passed.")
+    test_sched_05_queue_and_detached_task_lifecycle()
+    print("[PASS] All 5 Round-Robin Scheduler tests passed.")

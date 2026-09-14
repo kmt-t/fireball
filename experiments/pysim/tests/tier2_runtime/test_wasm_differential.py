@@ -37,17 +37,9 @@ for _p in [
     if _sp not in sys.path:
         sys.path.insert(0, _sp)
 
+from helpers import wat_to_wasm
 from interpreter import Interpreter, Trap
 from wasm_reader import parse
-
-
-def _wat_to_wasm(wat_text: str) -> bytes:
-    try:
-        import wasmtime
-
-        return bytes(wasmtime.wat2wasm(wat_text))
-    except ImportError:
-        return b""
 
 
 def _run_differential(
@@ -59,7 +51,7 @@ def _run_differential(
     """Runs a function under both pysim Interpreter and wasmtime, asserting identical outcomes."""
     import wasmtime
 
-    wasm_bytes = _wat_to_wasm(wat_text)
+    wasm_bytes = wat_to_wasm(wat_text)
     assert wasm_bytes, "wasmtime.wat2wasm must succeed in differential test environment"
 
     # 1. Execute with wasmtime

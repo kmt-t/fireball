@@ -6,7 +6,11 @@ Common setup, sys.path configuration, and test utilities for all pysim unit test
 from __future__ import annotations
 
 import sys
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
+
+import wasmtime
 
 _TESTS_DIR = Path(__file__).resolve().parent
 _PYSIM_DIR = _TESTS_DIR.parent
@@ -31,25 +35,40 @@ for _p in [
 
 
 from ipc_router import IPCMessage
+from memory import MemoryManager
 from scheduler import Scheduler
 
 
+def wat_to_wasm(wat_text: str) -> bytes:
+    """Compile WAT through the real wasmtime test dependency."""
+    return bytes(wasmtime.wat2wasm(wat_text))
+
+
+@contextmanager
+def expect_assertion(message: str = "") -> Iterator[None]:
+    """Require one assertion from the operation inside this context."""
+    try:
+        yield
+    except AssertionError as error:
+        if message:
+            assert message in str(error)
+    else:
+        raise AssertionError("expected the operation to raise AssertionError")
 def make_test_ipc_message(
     entries: tuple[tuple[int, int], ...] | list[tuple[int, int]] = (),
     memory_manager: MemoryManager | None = None,
 ) -> IPCMessage:
     """Builds IPC storage through the Tier 2 memory adapter for tests only."""
-    from memory import FB_CONF_MEMORY_POOL_SIZE, MemoryManager
+    from memory import FB_CONF_MEMORY_POOL_SIZE
 
     if memory_manager is None:
         scheduler = Scheduler()
         task_id = scheduler.spawn("test_message_owner")
-        scheduler.current_task = scheduler.get_task(task_id)
-        assert scheduler.current_task is not None
+        task = scheduler.get_task(task_id)
+        assert task is not None
         manager = MemoryManager(scheduler)
         assert manager.init_manager(0x20020000, FB_CONF_MEMORY_POOL_SIZE).is_ok
-        message = IPCMessage.from_entries(entries, memory_manager=manager)
-        scheduler.current_task = None
-        return message
+        with scheduler.task_context(task):
+            return IPCMessage.from_entries(entries, memory_manager=manager)
     message = IPCMessage.from_entries(entries, memory_manager=memory_manager)
     return message

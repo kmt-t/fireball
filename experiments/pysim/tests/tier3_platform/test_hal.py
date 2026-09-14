@@ -33,16 +33,15 @@ for _p in [
     if _sp not in sys.path:
         sys.path.insert(0, _sp)
 
+from dummy_drivers import DummyDriver, Timer
 from hal_dispatch import (
     FB_CONF_HAL_BUFFER_SIZE,
     FB_CONF_HAL_MAX_BUFFERS,
     HalBufferPool,
-    HalBufferTrap,
     WasiIpcCmd,
 )
+from helpers import expect_assertion
 from ipc_router import FB_URI_HAL_STDOUT
-from dummy_drivers import DummyDriver
-from dummy_drivers import Timer
 from scheduler import Scheduler
 from stream_transport import StreamTransport
 from system import (
@@ -52,15 +51,7 @@ from system_containers import (
     ReadOnlyFlatMapView,
 )
 from vmmio import TrapCode, VMMIOController, VmmioStatus
-
-
-def wat_to_wasm(wat_text: str) -> bytes:
-    try:
-        import wasmtime
-
-        return bytes(wasmtime.wat2wasm(wat_text))
-    except ImportError:
-        return b""
+from wasi_dummy_fs import WasiDummyContext, WasiErrno, WasiWhence
 
 
 def test_hal_01_stream_transport_uses_fixed_buffers():
@@ -90,6 +81,8 @@ def test_hal_02_dummy_stdio_driver_streams_stdin_and_stdout():
         tx = pool.buffer(1)
         tx_view = pool.view(tx, 0, 10)
         tx_view[:] = b"out-1out-2"
+        assert driver.is_supported(WasiIpcCmd.STREAM_WRITE_BUFFER) == 1
+        assert driver.is_supported(0xFFFF) == 0
         assert driver.feed_stdin(b"in-1in-2") == 8
         assert driver.dispatch(
             WasiIpcCmd.STREAM_READ_BUFFER,
@@ -144,26 +137,23 @@ def test_hal_05_hal_buffer_slice_bounds_and_guest_mapping():
     pool.bind_runtime()
     try:
         scheduler.current_task = scheduler.get_task(other_id)
-        try:
+        with expect_assertion("HAL DYNAMIC mapping supports one runtime only"):
             pool.bind_runtime()
-        except AssertionError as error:
-            assert str(error) == "HAL DYNAMIC mapping supports one runtime only"
-        else:
-            raise AssertionError("expected one-guest DYNAMIC mapping assertion")
         scheduler.current_task = scheduler.get_task(owner_id)
         h = pool.buffer(0)
         status, _ = vmmio.access(h.virtual_address, is_write=False)
         assert status == VmmioStatus.OK_PHYSICAL
         view = pool.view(h, 0, 16)
         assert len(view) == 16
+        assert pool.can_view(h, 0, 16)
         scheduler.current_task = scheduler.get_task(other_id)
-        try:
+        assert not pool.can_view(h, 0, 16)
+        with expect_assertion("DYNAMIC mapping is not bound"):
             pool.view(h, 0, 16)
-            raise AssertionError("expected assertion: other guest is not DYNAMIC-mapped")
-        except AssertionError as error:
-            assert "DYNAMIC mapping is not bound" in str(error)
-        finally:
-            scheduler.current_task = scheduler.get_task(owner_id)
+        scheduler.current_task = scheduler.get_task(owner_id)
+        pool.unbind_runtime()
+        assert not pool.can_view(h, 0, 16)
+        pool.bind_runtime()
         pool.close_all()
         status, _ = vmmio.access(h.virtual_address, is_write=False)
         assert status == TrapCode.UNREGISTERED_PAGE
@@ -208,6 +198,34 @@ def test_hal_task_ipc_communication():
         sysv.shutdown()
 
 
+def test_wasi_dummy_fd_write_updates_stdout_and_count():
+    context = WasiDummyContext()
+    memory = bytearray(96)
+    payload = b"out"
+    memory[32 : 32 + len(payload)] = payload
+    memory[0:8] = (32).to_bytes(4, "little") + len(payload).to_bytes(4, "little")
+
+    assert context.fd_write(1, memory, 0, 1, 64) == WasiErrno.SUCCESS
+    assert bytes(context.stdout_buffer) == payload
+    assert int.from_bytes(memory[64:68], "little") == len(payload)
+
+
+def test_wasi_dummy_fd_seek_writes_new_offset():
+    context = WasiDummyContext()
+    memory = bytearray(32)
+
+    assert context.fd_seek(3, 4, WasiWhence.SET, memory, 8) == WasiErrno.SUCCESS
+    assert int.from_bytes(memory[8:16], "little") == 4
+
+
+def test_wasi_dummy_clock_time_get_writes_timestamp():
+    context = WasiDummyContext()
+    memory = bytearray(16)
+
+    assert context.clock_time_get(1, 0, memory, 0) == WasiErrno.SUCCESS
+    assert int.from_bytes(memory[0:8], "little") > 0
+
+
 if __name__ == "__main__":
     test_hal_01_stream_transport_uses_fixed_buffers()
     test_hal_02_dummy_stdio_driver_streams_stdin_and_stdout()
@@ -215,4 +233,7 @@ if __name__ == "__main__":
     test_hal_04_hal_buffer_pool_maps_fixed_slots()
     test_hal_05_hal_buffer_slice_bounds_and_guest_mapping()
     test_hal_task_ipc_communication()
-    print("[PASS] All 6 HAL Drivers & HalBufferPool tests passed.")
+    test_wasi_dummy_fd_write_updates_stdout_and_count()
+    test_wasi_dummy_fd_seek_writes_new_offset()
+    test_wasi_dummy_clock_time_get_writes_timestamp()
+    print("[PASS] All 9 HAL Drivers & HalBufferPool tests passed.")

@@ -32,6 +32,7 @@ for _p in [
     if _sp not in sys.path:
         sys.path.insert(0, _sp)
 
+from helpers import expect_assertion
 from memory import (
     FB_CONF_MEMORY_POOL_SIZE,
     FB_CONF_TASK_HEAP_SIZES,
@@ -48,15 +49,6 @@ from vmmio import (
     VMMIOController,
     VmmioStatus,
 )
-
-
-def wat_to_wasm(wat_text: str) -> bytes:
-    try:
-        import wasmtime
-
-        return bytes(wasmtime.wat2wasm(wat_text))
-    except ImportError:
-        return b""
 
 
 def _make_memory_manager(*task_ids: int) -> tuple[MemoryManager, Scheduler]:
@@ -144,13 +136,8 @@ def test_mem_06_guest_ram_64kb_alignment():
     """TEST-MEM-06: pool_base is strictly 64KB aligned."""
     mm, _ = _make_memory_manager()
     assert mm.init_manager(pool_base=0x20020000, pool_size=FB_CONF_MEMORY_POOL_SIZE).is_ok
-    caught = False
-    try:
+    with expect_assertion("64KB aligned"):
         mm.init_manager(pool_base=0x20021000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
-    except AssertionError as e:
-        caught = True
-        assert "64KB aligned" in str(e)
-    assert caught, "Expected AssertionError for unaligned pool_base"
 
 
 def test_mem_10_shared_block_ownership_transfer():
@@ -198,12 +185,8 @@ def test_mem_10_shared_block_ownership_transfer():
     assert mm.page_registry.get_owner(page_idx) == FB_TASK_ID_FLIGHT
 
     # Access during in-flight must raise AssertionError
-    try:
+    with expect_assertion():
         sb_a.read_u32(4)
-    except AssertionError as e:
-        assert "released" in str(e) or "in-flight" in str(e)
-    else:
-        raise AssertionError("Expected access error while in-flight")
 
     # Simulate IPC Router Grant phase
     mm.page_registry.update_owner(page_idx, 2)

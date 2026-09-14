@@ -41,15 +41,6 @@ from recovery import (
 )
 
 
-def wat_to_wasm(wat_text: str) -> bytes:
-    try:
-        import wasmtime
-
-        return bytes(wasmtime.wat2wasm(wat_text))
-    except ImportError:
-        return b""
-
-
 def test_recovery_01_retry_success_within_limit():
     """TEST-RECOVERY-01: Transient failure succeeds within 3 retries (10ms backoff) without exceptions."""
     mgr = RecoveryManager(sleep_fn=lambda _s: None)
@@ -133,6 +124,8 @@ def test_recovery_04_errorcode_to_strategy_mapping():
     assert classify_trap_strategy("TRAP_OWNER_MISMATCH") == RecoveryStrategy.PANIC
     assert classify_trap_strategy("TRAP_UNDEFINED_FC") == RecoveryStrategy.PANIC
     assert classify_trap_strategy("TRAP_UNREGISTERED_PAGE") == RecoveryStrategy.RESTART
+    assert Result.ok("value").unwrap() == "value"
+    assert Result.err("failed").unwrap() is None
 
 
 # ===========================================================================

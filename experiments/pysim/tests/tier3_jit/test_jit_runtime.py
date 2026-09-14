@@ -34,6 +34,7 @@ for _p in [
         sys.path.insert(0, _sp)
 
 import wasmtime
+from helpers import wat_to_wasm
 from interpreter import Interpreter
 from runtime_engine import (
     CardState,
@@ -51,19 +52,11 @@ from wasm_reader import parse
 from x64_jit import TraceCompiler
 
 
-def wat_to_wasm(wat_text: str) -> bytes:
-    try:
-        import wasmtime
-
-        return bytes(wasmtime.wat2wasm(wat_text))
-    except ImportError:
-        return b""
-
-
 def test_hotspot_01_2bit_card_marking_state_transitions():
     """TEST-HOTSPOT-01 / TEST-JITR-02: 2-bit state machine: UNEXECUTED (00) -> EXECUTED (01) -> HOT (10) -> COMPILED (11)."""
     bitmap = HotspotBitmap(card_shift=4, code_lengths=(512,))
     pc = 0x100
+    assert bitmap.card_of(pc) == pc >> 4
     assert bitmap.get_state(pc) == CardState.UNEXECUTED
     # First touch: UNEXECUTED -> EXECUTED
     assert bitmap.touch(pc) == CardState.EXECUTED
@@ -92,6 +85,7 @@ def test_jitr_01_card_marking_granularity():
 def test_hotspot_02_history_ring_buffered_yield_drain():
     """TEST-HOTSPOT-02 / TEST-JITR-05: Interpreter records basic-block heads to HistoryRing, drained on yield."""
     ring = HistoryRing(capacity=8)
+    assert ring.capacity == 8
     for i in range(10):
         ring.record(0x1000 + i * 4)
 
@@ -146,6 +140,10 @@ def test_hotspot_04_3bank_cache_oldest_only_promotion():
     assert cache.active.has_trace(0x100)
     assert not cache.oldest.has_trace(0x100)
     assert (t1.flags & JITTraceHeader.FLAG_PROMOTED) != 0
+    trace = JITTrace(head_pc=0x400, native_fn=lambda *_args: 7, size_bytes=64)
+    assert trace.native_fn is not None
+    assert trace(0, 0, 0, 0) == 7
+    trace.execute(0, 0, 0, 0)
 
 
 def test_jitr_cache_bank_traces_always_sorted_by_head_pc():

@@ -40,6 +40,7 @@ for _p in [
 sys.path.insert(0, str(_PYSIM_DIR))
 
 from control_flow import extract_basic_blocks
+from helpers import expect_assertion, wat_to_wasm
 from interpreter import Interpreter
 from logger import LogDictionary, Logger, LogLevel
 from runtime_engine import (
@@ -63,7 +64,6 @@ from test_support import (
     compile_module_block,
     compile_test_block,
     make_pc_only_module,
-    wat_to_wasm,
 )
 from virq import (
     DispatchResult,
@@ -251,6 +251,22 @@ def test_virq_55_does_not_enter_wasi_polling_path():
     result = dispatcher.dispatch_interrupt_event(_virq_event(0x2000))
     assert result.outcome == VirqDispatchResult.HANDLED
     assert len(poll_calls) == 0
+
+
+def test_runtime_engine_registers_virq_dispatchers_through_bound_module():
+    """The runtime facade delegates vIRQ registration to its module-bound dispatcher."""
+    engine = RuntimeEngine()
+    unavailable = engine.register_virq_dispatcher(int(VirqNode.ROOT), 0)
+    assert not unavailable.is_ok
+    assert unavailable.error == RegistrationError.MODULE_UNAVAILABLE
+
+    engine.register_module_blocks(_make_virq_module())
+    pending = engine.register_virq_dispatcher(int(VirqNode.ROOT), 0)
+    assert pending.is_ok
+    assert pending.value == RegistrationStatus.PENDING
+    invalid = engine.register_virq_dispatcher(int(VirqNode.ROOT), 3)
+    assert not invalid.is_ok
+    assert invalid.error == RegistrationError.FUNCTION_SIGNATURE_INVALID
 
 
 def test_hal_task_ipc_communication():
@@ -846,7 +862,7 @@ def test_interpreter_debugger_handler_table_switch_and_hooks():
 
 def test_wasm_loader_and_radix_binary_tree_view_indexes():
     """TEST-LOAD-01..47: Verifies WASM Loader zero-copy indexing, verification, and ReadOnlyRadixBinaryTreeView file offset & hash symbol indexes."""
-    from loader import WasmLoader, WasmVerifyError
+    from loader import WasmLoader
     from test_loader import _build_test_wasm_binary
 
     loader = WasmLoader()
@@ -860,11 +876,8 @@ def test_wasm_loader_and_radix_binary_tree_view_indexes():
     assert view.lookup_export_func("unknown") is None
     # 2. Transactional rollback on invalid WASM
     watermark = loader.allocator.offset
-    try:
+    with expect_assertion():
         loader.prepare("bad", _build_test_wasm_binary(magic=b"\x7fELF"))
-        assert False
-    except AssertionError:
-        pass
     assert loader.allocator.offset == watermark
     # 3. ReadOnlyRadixBinaryTreeView file offset reverse-lookup (TEST-LOAD-40..44)
     assert len(view.entity_registry) > 0

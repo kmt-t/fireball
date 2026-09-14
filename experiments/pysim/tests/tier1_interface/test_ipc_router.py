@@ -32,8 +32,7 @@ for _p in [
     if _sp not in sys.path:
         sys.path.insert(0, _sp)
 
-from helpers import make_test_ipc_message
-from memory import FB_CONF_MEMORY_POOL_SIZE, MemoryManager
+from helpers import expect_assertion, make_test_ipc_message
 from ipc_router import (
     DataType,
     IPCMessage,
@@ -44,20 +43,11 @@ from ipc_router import (
     ScopeKind,
     pack_key32,
 )
+from memory import FB_CONF_MEMORY_POOL_SIZE, MemoryManager
 from scheduler import ChannelAction, Scheduler, TaskState, WaitDir
 from system import (
     System,
 )
-
-
-def wat_to_wasm(wat_text: str) -> bytes:
-    try:
-        import wasmtime
-
-        return bytes(wasmtime.wat2wasm(wat_text))
-    except ImportError:
-        return b""
-
 
 _KEY_CMD = pack_key32(ScopeKind.FUNCTIONAL, DataType.UINT32, key_id=1)
 _KEY_SHM_ID = pack_key32(ScopeKind.RESOURCE, DataType.UINT32, key_id=1)
@@ -285,29 +275,21 @@ def test_ipc_05_message_storage_ownership_and_access_check():
     assert msg.get(20) == 200
     assert len(msg) == 2
     assert 10 in msg
+    msg.append(15, 150)
+    assert msg.data is not None
+    assert msg.flat_map_view.find(15) == 150
+    assert msg.flat_map_view.find(99) is None
 
     # Transition to IN_FLIGHT (sending): access to entries is strictly prohibited
     msg.ownership = OwnershipState.IN_FLIGHT
-    try:
+    with expect_assertion("Cannot access IPCMessage entries while ownership is IN_FLIGHT"):
         _ = msg.get(10)
-    except AssertionError as e:
-        assert "Cannot access IPCMessage entries while ownership is IN_FLIGHT" in str(e)
-    else:
-        raise AssertionError("Accessing entries during IN_FLIGHT must raise AssertionError")
 
-    try:
+    with expect_assertion("Cannot access IPCMessage entries while ownership is IN_FLIGHT"):
         _ = msg.entries
-    except AssertionError as e:
-        assert "Cannot access IPCMessage entries while ownership is IN_FLIGHT" in str(e)
-    else:
-        raise AssertionError("Accessing entries property during IN_FLIGHT must raise AssertionError")
 
-    try:
+    with expect_assertion("Cannot access IPCMessage entries while ownership is IN_FLIGHT"):
         _ = len(msg)
-    except AssertionError as e:
-        assert "Cannot access IPCMessage entries while ownership is IN_FLIGHT" in str(e)
-    else:
-        raise AssertionError("Calling len() during IN_FLIGHT must raise AssertionError")
 
     # Transition to RECEIVER_OWNS: access is permitted again
     msg.ownership = OwnershipState.RECEIVER_OWNS

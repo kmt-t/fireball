@@ -5,6 +5,7 @@ Unit tests for Tier 2 Runtime: Syscall & WASI Environment
 Traceability: runtime_syscall_test_spec.md
 """
 
+import ctypes
 import struct
 import sys
 import time
@@ -34,6 +35,7 @@ for _p in [
     if _sp not in sys.path:
         sys.path.insert(0, _sp)
 
+from helpers import wat_to_wasm
 from ipc_router import (
     IPCMessage,
     IPCStatus,
@@ -48,15 +50,6 @@ from system import (
     System,
     WasiErrno,
 )
-
-
-def wat_to_wasm(wat_text: str) -> bytes:
-    try:
-        import wasmtime
-
-        return bytes(wasmtime.wat2wasm(wat_text))
-    except ImportError:
-        return b""
 
 
 def test_syscall_01_unknown_id_returns_nosys():
@@ -84,6 +77,10 @@ def test_syscall_02_sys_control_registers():
     sysv.start_runtime_task(name="test_runtime_task")
     try:
         assert sysv.fireball_call(FbSyscallId.SYS_YIELD, 0, 0, 0, 0, 0, 0) == WasiErrno.SUCCESS
+        from wasi import WasiHostContext
+
+        host = WasiHostContext(sysv, guest_memory=bytearray(64))
+        assert host.fireball_call(FbSyscallId.SYS_YIELD) == WasiErrno.SUCCESS
         assert sysv.fireball_call(FbSyscallId.SYS_RESET, 0, 0, 0, 0, 0, 0) == WasiErrno.SUCCESS
         assert sysv.reset_requested
         assert sysv.fireball_call(FbSyscallId.SYS_HALT, 0, 0, 0, 0, 0, 0) == WasiErrno.SUCCESS
@@ -487,6 +484,32 @@ def test_wasi_08_out_of_bounds_offset_returns_fault():
         sysv.shutdown()
 
 
+def test_wasi_jit_trampoline_invokes_the_registered_handler():
+    """The JIT trampoline resolves and invokes the same WASI host handler."""
+    from wasi import WasiHostContext
+    from wasm_reader import parse
+
+    module = parse(
+        wat_to_wasm(
+            '(module (import "wasi_snapshot_preview1" "proc_exit" '
+            '(func (param i32))))'
+        )
+    )
+    sysv = System()
+    try:
+        context = WasiHostContext(sysv)
+        trampolines = context.build_jit_trampolines(module)
+        assert len(trampolines) == 1
+        address = trampolines[0]
+        assert address is not None and address != 0
+        native_fn = ctypes.CFUNCTYPE(ctypes.c_uint32, ctypes.c_uint32)(address)
+        assert native_fn(7) == 0
+        assert sysv.halted is True
+        assert sysv.exit_code == 7
+    finally:
+        sysv.shutdown()
+
+
 # ===========================================================================
 # 10. WASM Instruction Set & Interpreter (runtime_interpreter_test_spec.md, wasm_instruction_set_test_spec.md)
 # ===========================================================================
@@ -515,4 +538,5 @@ if __name__ == "__main__":
     test_wasi_06_random_get()
     test_wasi_07_invalid_fd_returns_badf()
     test_wasi_08_out_of_bounds_offset_returns_fault()
-    print("[PASS] All 21 Syscall & WASI Environment tests passed.")
+    test_wasi_jit_trampoline_invokes_the_registered_handler()
+    print("[PASS] All 22 Syscall & WASI Environment tests passed.")

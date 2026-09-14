@@ -71,8 +71,8 @@ import time
 
 from debugger import DebuggerManager
 from gdb_server import GDBServer
+from helpers import wat_to_wasm
 from runtime_engine import IntegratedHybridEngine, WASMContext
-from test_support import wat_to_wasm
 from x64_jit import TraceCompiler
 
 

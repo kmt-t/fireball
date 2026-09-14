@@ -32,37 +32,26 @@ for _p in [
     if _sp not in sys.path:
         sys.path.insert(0, _sp)
 
-from stream_transport import StreamTransport
+from helpers import expect_assertion
 from interrupt_event import InterruptEvent
 from ipc_router import (
     IPCMessage,
     Role,
 )
-from logger import LogDictionary, Logger, LogLevel
-from system_containers import MutableFlatMapStorage
+from logger import ConsoleOutput, LogDictionary, Logger, LogLevel
+from stream_transport import StreamTransport
 from system import (
     System,
 )
-
-
-def wat_to_wasm(wat_text: str) -> bytes:
-    try:
-        import wasmtime
-
-        return bytes(wasmtime.wat2wasm(wat_text))
-    except ImportError:
-        return b""
+from system_containers import MutableFlatMapStorage
 
 
 def test_log_01_dictionary_rejects_pointer_specifiers():
     d = LogDictionary()
     d.register(0x01, "ok: %d %d")
     for bad in ("bad: %s", "bad: %p", "bad: %c"):
-        try:
+        with expect_assertion():
             d.register(0x02, bad)
-            raise AssertionError("expected ValueError for pointer-shaped specifier")
-        except AssertionError:
-            pass
 
 
 def test_log_02_logger_ring_buffer_overwrites():
@@ -93,8 +82,16 @@ def test_log_03_dictionary_storage_ownership_separation():
     # Ownership separation assertion
     assert d.storage is storage
     assert d.payload.entries is storage
+    assert d.view() is d.payload
+    assert d.entries is storage
     assert d.format(0x01, (42, 0, 0, 0)) == "event #42"
     assert d.format(0x02, (10, 20, 0, 0)) == "value 10 20"
+    transport = StreamTransport()
+    try:
+        assert ConsoleOutput(transport).write(b"raw") == 3
+        assert transport.drain_output() == b"raw"
+    finally:
+        transport.close()
 
 
 def test_log_04_coos_and_ipc_diagnostic_logging():
@@ -106,11 +103,9 @@ def test_log_04_coos_and_ipc_diagnostic_logging():
             return
             yield
 
-        try:
+        with expect_assertion():
             sysv.scheduler.spawn("dup_task", dummy_coro(), task_id=99)
             sysv.scheduler.spawn("dup_task_2", dummy_coro(), task_id=99)
-        except AssertionError:
-            pass
 
         # 2. COOS IRQ Queue Overflow -> 0x0104
         for irq_idx in range(20):

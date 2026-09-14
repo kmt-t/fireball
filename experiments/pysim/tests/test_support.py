@@ -10,24 +10,16 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Sequence
 
-import wasmtime
 from control_flow import iter_block_ops
 from runtime_engine import BasicBlock, JITTrace
 from system_containers import (
     ReadOnlyRadixBinaryTreeStorage,
     StaticVector,
-    build_radix_table,
     bswap32,
+    build_radix_table,
 )
-from wasm_module import FuncType, Function, Module, WasmOperand
+from wasm_module import Function, FuncType, Module, WasmOperand
 from x64_jit import TraceCompiler
-
-
-def wat_to_wasm(wat_text: str) -> bytes:
-    """Compiles WAT source to a real WASM binary via wasmtime -- the standard
-    way this test suite feeds real bytecode into `RuntimeEngine.load_wasm` /
-    `IntegratedHybridEngine.load_wasm` instead of hand-building op tuples."""
-    return bytes(wasmtime.wat2wasm(wat_text))
 
 
 class PcOnlyCompiler:

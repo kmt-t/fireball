@@ -757,8 +757,7 @@ class Interpreter:
             ip = int(result_ctx.native_context.ip)
 
         func_type = self.module.func_type(call_state.func_index)
-        while frame.frames:
-            frame.frames.pop_back()
+        frame.frames.truncate(0)
         call_state.context.end_call_frame(frame)
         results: StaticVector[WasmNumber] = StaticVector(capacity=4)
         if func_type.results:
@@ -781,8 +780,7 @@ class Interpreter:
         """Terminate every active frame and publish a runtime trap outcome."""
         while call_state.context.call_frame_stack:
             frame = call_state.context.call_frame_stack[-1]
-            while frame.frames:
-                frame.frames.pop_back()
+            frame.frames.truncate(0)
             call_state.context.end_call_frame(frame)
         while call_state.call_stack:
             call_state.call_stack.pop_back()
@@ -955,8 +953,7 @@ class Interpreter:
             # The context-owned control-frame window is independent from the
             # LocalStack frame lifetime; discard any frames left by a JIT
             # boundary before releasing this call activation.
-            while frame.frames:
-                frame.frames.pop_back()
+            frame.frames.truncate(0)
             call_state.context.end_call_frame(frame)
             if not call_state.call_stack:
                 results: StaticVector[WasmNumber] = StaticVector(capacity=4)

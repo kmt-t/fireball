@@ -32,6 +32,7 @@ from interop_abi import (
     WasmRunResultNative,
 )
 from interpreter import ControlFrameKind, InterpreterContext, NativeControlStack
+from native_stacks import ControlFrameWindow
 
 
 def test_native_layout_matches_x64_jit_context():
@@ -148,6 +149,20 @@ def test_native_control_stack_owns_flat_frame_records():
         raise AssertionError("empty Native control stack must fail fast")
 
 
+def test_control_frame_window_rewinds_multiple_frames_with_one_size_update():
+    storage = NativeControlStack(capacity=4)
+    assert storage.push_back(ControlFrameKind.BLOCK, start=0, match_end=4, stack_height=0)
+    window = ControlFrameWindow(storage, base=0)
+    assert window.push_back(ControlFrameKind.IF, start=4, match_end=8, stack_height=0)
+    assert window.push_back(ControlFrameKind.LOOP, start=8, match_end=12, stack_height=0)
+    assert len(window) == 3
+
+    window.truncate(0)
+
+    assert len(window) == 0
+    assert len(storage) == 0
+
+
 def test_runtime_contexts_expose_native_stack_records():
     interpreter_context = InterpreterContext()
     jit_context = WASMContext()
@@ -163,5 +178,6 @@ if __name__ == "__main__":
     test_interpreter_and_jit_contexts_share_native_record_type()
     test_native_value_stack_owns_the_fixed_storage()
     test_native_control_stack_owns_flat_frame_records()
+    test_control_frame_window_rewinds_multiple_frames_with_one_size_update()
     test_runtime_contexts_expose_native_stack_records()
     print("[PASS] test_interop_abi")

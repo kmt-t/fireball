@@ -857,13 +857,6 @@ class Interpreter:
     def detach_debugger(self) -> None:
         self.debugger = None
 
-    def register_vector_table(
-        self, vector_table: Sequence[Callable[[int, int, bool], int | None] | None]
-    ) -> None:
-        """Register host syscall vectors used by static-vMMIO accesses."""
-        assert self.vmmio is not None
-        self.vmmio.register_vector_table(vector_table)
-
     def flush_jit_cache(self) -> None:
         """
         No-op: a bare `Interpreter` never owns a JIT cache -- only a

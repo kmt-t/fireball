@@ -58,14 +58,14 @@ doc_graph.json
 *.exp
 
 # Cython-generated C for optional native accelerators (see
-# experiments/pysim/jit/native_trace_call.pyx, build_native.ps1/.sh)
-experiments/pysim/jit/native_trace_call.c
+# experiments/pysim/tier3_jit/native_trace_call.pyx, build_native.ps1/.sh)
+experiments/pysim/tier3_jit/native_trace_call.c
 
 # Cython pure-python-mode generated C for pysim's optional interpreter
 # acceleration. The build scripts keep generated files out of source dirs.
-experiments/pysim/runtime/leb128.c
-experiments/pysim/runtime/interpreter.c
-experiments/pysim/runtime/runtime_engine.c
+experiments/pysim/tier2_runtime/leb128.c
+experiments/pysim/tier2_runtime/interpreter.c
+experiments/pysim/tier2_runtime/runtime_engine.c
 
 # Logs and generated state
 *.log

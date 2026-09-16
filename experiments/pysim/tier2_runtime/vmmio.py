@@ -9,8 +9,8 @@ vMMIO FlatMap Page Table & Direct-Mapped TLB simulation.
   power-of-two constraint on guest_ram_size) — traps to the interpreter on OOB
 - PTE permission check (VALID/READ/WRITE/EXEC + Owner ID) on every access,
   including on TLB hit — the TLB only skips the table lookup, never the check
-- Static-device value accesses can dispatch through a registered syscall vector
-  table and return the handler's u32 result to the interpreter
+  - Static-device value accesses can dispatch through a registered device handler
+    and return the handler's u32 result to the interpreter
 """
 
 from __future__ import annotations
@@ -182,7 +182,6 @@ class VMMIOController:
         "guest_ram_size",
         "ptes",
         "scheduler",
-        "syscall_vector_table",
         "tlb",
         "tlb_hits",
         "tlb_misses",
@@ -206,7 +205,6 @@ class VMMIOController:
         )
         self.tlb_hits = 0
         self.tlb_misses = 0
-        self.syscall_vector_table: tuple[VmmioVectorHandler | None, ...] = ()
 
     # --- Static & Dynamic PTE Registration (FlatMap) ---
     def map_static_device(
@@ -227,13 +225,6 @@ class VMMIOController:
                 value_handler=value_handler,
             ),
         ), "vMMIO PTE table capacity exceeded"
-
-    def register_vector_table(
-        self, vector_table: Sequence[VmmioVectorHandler | None]
-    ) -> None:
-        """Register the interpreter-visible static-vMMIO syscall vector table."""
-        assert len(vector_table) <= 4096
-        self.syscall_vector_table = tuple(vector_table)
 
     def map_shm_page(
         self,
@@ -444,16 +435,6 @@ class VMMIOController:
                 result = pte.value_handler(
                     addr.offset(), value & 0xFFFF_FFFF, is_write
                 )
-                return (VmmioStatus.OK_SYSCALL, 0 if result is None else result)
-            vector_id = addr.syscall_metadata()
-            if (
-                value is not None
-                and vector_id < len(self.syscall_vector_table)
-                and self.syscall_vector_table[vector_id] is not None
-            ):
-                vector_handler = self.syscall_vector_table[vector_id]
-                assert vector_handler is not None
-                result = vector_handler(addr.offset(), value & 0xFFFF_FFFF, is_write)
                 return (VmmioStatus.OK_SYSCALL, 0 if result is None else result)
             if pte.handler is not None:
                 pte.handler(addr.syscall_metadata(), addr.offset(), is_write)

@@ -33,7 +33,7 @@ FB_CONF_VMMIO_MAX_PTES = 64
 
 class VmmioStatus(IntEnum):
     OK_GUEST_RAM = 0
-    OK_SYSCALL = 1
+    OK_STATIC_DEVICE = 1
     OK_PHYSICAL = 2
     OUT_OF_BOUNDS = 3
     UNDEFINED_FC = 4
@@ -89,8 +89,8 @@ class VmmioAddress:
     def fc(self) -> int:
         return (self.raw >> 28) & 0xF
 
-    def syscall_metadata(self) -> int:
-        # Syscall Metadata / Syscall ID: bits [27:16] (12 bits)
+    def device_metadata(self) -> int:
+        # Static-device metadata: bits [27:16] (12 bits)
         return (self.raw >> 16) & 0xFFF
 
     def vpn(self) -> int:
@@ -391,8 +391,8 @@ class VMMIOController:
     ) -> tuple[VmmioStatus, int]:
         """
         Full dispatch: RAM bypass -> TLB/FlatMap -> permission check (always,
-        TLB hit or not) -> syscall dispatch or physical access.
-        Returns (status, physical_address_or_syscall_result). A value supplied
+        TLB hit or not) -> static-device dispatch or physical access.
+        Returns (status, physical_address_or_device_result). A value supplied
         for a static-device access is dispatched to its registered handler and
         returned in the second field.
         """
@@ -435,10 +435,10 @@ class VMMIOController:
                 result = pte.value_handler(
                     addr.offset(), value & 0xFFFF_FFFF, is_write
                 )
-                return (VmmioStatus.OK_SYSCALL, 0 if result is None else result)
+                return (VmmioStatus.OK_STATIC_DEVICE, 0 if result is None else result)
             if pte.handler is not None:
-                pte.handler(addr.syscall_metadata(), addr.offset(), is_write)
-            return (VmmioStatus.OK_SYSCALL, 0)
+                pte.handler(addr.device_metadata(), addr.offset(), is_write)
+            return (VmmioStatus.OK_STATIC_DEVICE, 0)
         # Tier3PTE (SHM / PASSTHROUGH)
         if not pte.valid:
             return (TrapCode.ACCESS_VIOLATION, 0)

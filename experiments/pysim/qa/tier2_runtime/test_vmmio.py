@@ -58,7 +58,7 @@ def test_vmmio_01_three_tier_gate_dispatch():
     assert stat == VmmioStatus.OK_GUEST_RAM
     # Static Device (Tier 2, FC=12)
     stat, detail = ctrl.access(raw_addr=0xC000_0000, is_write=True)
-    assert stat == VmmioStatus.OK_SYSCALL
+    assert stat == VmmioStatus.OK_STATIC_DEVICE
     # Passthrough (Tier 3, FC=15)
     stat, detail = ctrl.access(raw_addr=0xF000_0000, is_write=False)
     assert stat == VmmioStatus.OK_PHYSICAL

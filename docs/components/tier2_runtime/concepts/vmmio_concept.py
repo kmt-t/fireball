@@ -21,7 +21,7 @@ BACKS = [
 
 class VmmioStatus(IntEnum):
     OK_GUEST_RAM = 0
-    OK_SYSCALL = 1
+    OK_STATIC_DEVICE = 1
     OK_PHYSICAL = 2
     OUT_OF_BOUNDS = 3
     UNDEFINED_FC = 4
@@ -55,8 +55,8 @@ class VmmioAddress:
     def fc(self) -> int:
         return (self.raw >> 28) & 0xF
 
-    def syscall_metadata(self) -> int:
-        # Syscall Metadata / Syscall ID: bits [27:16] (12 bits)
+    def device_metadata(self) -> int:
+        # Static-device metadata: bits [27:16] (12 bits)
         return (self.raw >> 16) & 0xFFF
 
     def vpn(self) -> int:
@@ -333,7 +333,7 @@ class VMMIOController:
     ) -> tuple[VmmioStatus, int]:
         """
         Full dispatch: RAM bypass -> TLB/FlatMap -> permission check (always,
-        TLB hit or not) -> syscall dispatch or physical access.
+        TLB hit or not) -> static-device dispatch or physical access.
         Returns (status, physical_address). The second field is zero unless
         the status is OK_PHYSICAL.
         """
@@ -368,8 +368,8 @@ class VMMIOController:
             if not is_write and not pte.read:
                 return (TrapCode.ACCESS_VIOLATION, 0)
             if pte.handler is not None:
-                pte.handler(addr.syscall_metadata(), addr.offset(), is_write)
-            return (VmmioStatus.OK_SYSCALL, 0)
+                pte.handler(addr.device_metadata(), addr.offset(), is_write)
+            return (VmmioStatus.OK_STATIC_DEVICE, 0)
         # Stage3PTE (SHM / PASSTHROUGH)
         if not pte.valid:
             return (TrapCode.ACCESS_VIOLATION, 0)
@@ -400,7 +400,7 @@ def test_ram_bypass_never_touches_page_table() -> None:
     assert ctrl.tlb_hits == 0 and ctrl.tlb_misses == 0
 
 
-def test_static_device_syscall_dispatch() -> None:
+def test_static_device_dispatch() -> None:
     ctrl = VMMIOController()
     dispatched = []
     vpn = (0xC000_0000 | (0x042 << 16)) >> 12
@@ -409,7 +409,7 @@ def test_static_device_syscall_dispatch() -> None:
     )
     addr = 0xC042_0004
     status, _ = ctrl.access(addr, is_write=True)
-    assert status == VmmioStatus.OK_SYSCALL
+    assert status == VmmioStatus.OK_STATIC_DEVICE
     assert dispatched == [(0x042, 0x004, True)]
 
 
@@ -418,10 +418,10 @@ def test_tlb_hit_after_first_walk() -> None:
     ctrl.map_static_device(vpn=0xC0001, handler=lambda sys_id, o, w: None)
     addr = 0xC000_1000
     status1, _ = ctrl.access(addr, is_write=False)
-    assert status1 == VmmioStatus.OK_SYSCALL
+    assert status1 == VmmioStatus.OK_STATIC_DEVICE
     assert ctrl.tlb_misses == 1 and ctrl.tlb_hits == 0
     status2, _ = ctrl.access(addr, is_write=False)
-    assert status2 == VmmioStatus.OK_SYSCALL
+    assert status2 == VmmioStatus.OK_STATIC_DEVICE
     assert ctrl.tlb_hits == 1, "second access to the same page must hit the TLB"
 
 
@@ -668,7 +668,7 @@ def test_tlb_slot_conflict_eviction() -> None:
 
 if __name__ == "__main__":
     test_ram_bypass_never_touches_page_table()
-    test_static_device_syscall_dispatch()
+    test_static_device_dispatch()
     test_tlb_hit_after_first_walk()
     test_dynamic_mapping_is_single_guest()
     test_undefined_fc_traps()

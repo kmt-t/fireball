@@ -560,7 +560,9 @@ class InterpreterContext:
         self._c_context.ip = ip
 
 
-def _read_memarg(code: bytes, ip: int) -> tuple[int, int]:
+def _read_memarg(
+    code: cython.const[cython.uchar][:], ip: int
+) -> tuple[int, int]:
     align, off = decode_unsigned(code, ip + 1)
     mem_offset, next_ip = decode_unsigned(code, off)
     return mem_offset, next_ip
@@ -1619,7 +1621,7 @@ def _vmmio_load(
     status, phys_addr = env.vmmio.access(addr, is_write=False, value=0)
     if status > VmmioStatus.OK_PHYSICAL:
         return 0, Trap(TrapCode.VMMIO_ACCESS, int(status))
-    if status == VmmioStatus.OK_SYSCALL:
+    if status == VmmioStatus.OK_STATIC_DEVICE:
         return phys_addr, None
     if status == VmmioStatus.OK_PHYSICAL:
         assert env.phys_mem is not None
@@ -2061,6 +2063,7 @@ def _h_i32_sub(
 
 
 @_handler(I32_MUL)
+@cython.locals(a=cython.longlong, b=cython.longlong)
 def _h_i32_mul(
     ctx: InterpreterContext, sp: NativeValueStack, local_base: _LocalStackWindow, tos: int
 ) -> _HandlerResult:

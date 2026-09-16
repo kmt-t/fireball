@@ -95,8 +95,8 @@ graph TD
 | :--- | :--- | :--- |
 | RAM Bypass Flag | Bit 31 が 0 のときはゲストRAMアクセス（Stage 1）とし、vMMIOを高速バイパス。 | ビット[31]（1 bit） |
 | Function Code | vMMIO 領域時の機能種別（FC）。`vpn >> 16` でも抽出可能。 | ビット[31:28]（4 bits）、16種別 |
-| Syscall Metadata / ID | 静的デバイス・Syscall 領域（FC=12）における Syscall ID / サービス識別メタデータ。 | ビット[27:16]（12 bits: `0..4095`） |
-| VPN (Virtual Page Number) | 仮想ページ番号（FC + Syscall Metadata + Page Index を包含）。FlatMap のキーおよび TLB のマッチタグ。 | ビット[31:12]（20 bits: `raw >> 12`） |
+| Device Metadata | 静的デバイス領域（FC=12）におけるデバイス／サービス識別メタデータ。host-call の syscall ID とは別の値である。 | ビット[27:16]（12 bits: `0..4095`） |
+| VPN (Virtual Page Number) | 仮想ページ番号（FC + Device Metadata + Page Index を包含）。FlatMap のキーおよび TLB のマッチタグ。 | ビット[31:12]（20 bits: `raw >> 12`） |
 | Offset | 4KBページ内でのバイトオフセット。PTE 解決後に相対アドレスとして使用。 | ビット[11:0]（12 bits）、4KB |
 
 アドレスデコード、TLB 探索、境界検査、および PTE 解決の実行可能なリファレンス実装は [`vmmio_concept.py`](docs/components/tier2_runtime/concepts/vmmio_concept.py) を正本とする。
@@ -127,7 +127,7 @@ Static Devices (Stage 2) 向け。PTE には Device Type やパーミッショ�
 32-bit Static Device PTE:
 [31:24] Reserved
 [23:20] Flags (4 bits):
-        [3] Type (FC に対応した値 — FC=12 では 0 = Syscall)
+        [3] Type (FC に対応した値 — FC=12 では 0 = Static Device)
         [2] CACHEABLE (JIT キャッシュ可能)
         [1] WRITE_ENABLED
         [0] READ_ENABLED
@@ -283,7 +283,7 @@ sequenceDiagram
         end
 
         alt FC == 12 (Static Device)
-            C->>H: dispatch_syscall(Syscall_ID, Offset, is_write)
+            C->>H: dispatch_static_device(Device_Metadata, Offset, is_write)
         else FC == 14 or FC == 15 (SHM / Passthrough)
             C->>H: Access physical memory (Phys_addr)
         end

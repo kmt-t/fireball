@@ -81,7 +81,7 @@ def test_syscall_02_host_call_system_control():
         from wasi import WasiHostContext
 
         host = WasiHostContext(sysv, guest_memory=bytearray(64))
-        assert host.fireball_call(FbSyscallId.SYS_YIELD) == WasiErrno.SUCCESS
+        assert host.fireball_call(FbSyscallId.SYS_YIELD, 0, 0, 0, 0, 0, 0) == WasiErrno.SUCCESS
         assert sysv.fireball_call(FbSyscallId.SYS_RESET, 0, 0, 0, 0, 0, 0) == WasiErrno.SUCCESS
         assert sysv.reset_requested
         assert sysv.fireball_call(FbSyscallId.SYS_HALT, 0, 0, 0, 0, 0, 0) == WasiErrno.SUCCESS

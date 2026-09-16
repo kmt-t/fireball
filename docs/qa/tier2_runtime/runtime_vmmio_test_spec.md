@@ -15,8 +15,8 @@ Bit31によるRAM/vMMIO高速分岐、64件のFlatMap PTE + 32エントリDirect
 | :---: | :--- | :--- | :--- | :--- | :--- | :--- |
 | **C-01** | Guest RAM (Bit 31==0) | Read | N/A (Bypass) | 境界内 (`addr < size`) | テーブル非参照で直接アクセス成功 (`OK_GUEST_RAM`) | TEST-VMMIO-01 |
 | **C-02** | Guest RAM (Bit 31==0) | Write | N/A (Bypass) | 境界外 (`addr >= size`) | 即時トラップ (`TRAP_MEMORY_OUT_OF_BOUNDS`) | TEST-VMMIO-02 |
-| **C-03** | Static Device (FC=12) | Read / Write | Cold Miss | 有効・登録済み | FlatMap探索 → TLBリフィル → ハンドラ実行 (`OK_SYSCALL`) | TEST-VMMIO-10 |
-| **C-04** | Static Device (FC=12) | Read / Write | Hit | 有効・登録済み | TLB完全 $O(1)$ ヒット → ハンドラ実行 (`OK_SYSCALL`) | TEST-VMMIO-11 |
+| **C-03** | Static Device (FC=12) | Read / Write | Cold Miss | 有効・登録済み | FlatMap探索 → TLBリフィル → ハンドラ実行 (`OK_STATIC_DEVICE`) | TEST-VMMIO-10 |
+| **C-04** | Static Device (FC=12) | Read / Write | Hit | 有効・登録済み | TLB完全 $O(1)$ ヒット → ハンドラ実行 (`OK_STATIC_DEVICE`) | TEST-VMMIO-11 |
 | **C-05** | Undefined FC (FC=13) | Any | N/A | 未定義領域 | 即時トラップ (`TRAP_UNDEFINED_FC`) | TEST-VMMIO-12 |
 | **C-06** | SHM (FC=14) | Read | Cold Miss | 有効マッピング | FlatMap二分探索 → TLBリフィル → 物理アクセス (`OK_PHYSICAL`) | TEST-VMMIO-20 |
 | **C-07** | SHM (FC=14) | Write | Hit | 書き込み禁止 (`write=False`) | TLBヒット時も権限チェック執行 → トラップ (`TRAP_ACCESS_VIOLATION`) | TEST-VMMIO-17 |
@@ -40,12 +40,12 @@ Bit31によるRAM/vMMIO高速分岐、64件のFlatMap PTE + 32エントリDirect
 
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| TEST-VMMIO-10 | 静的デバイス(FC=12)ページへのアクセスとハンドラ呼び出し | SYSCTL等をmap_static_device済み | 該当アドレスへアクセス | `OK_SYSCALL`を返し、登録ハンドラが`(syscall_metadata, offset, is_write)`で呼ばれる | `vmmio_concept.py` `test_static_device_syscall_dispatch` |
+| TEST-VMMIO-10 | 静的デバイス(FC=12)ページへのアクセスとハンドラ呼び出し | IPCR等をmap_static_device済み | 該当アドレスへアクセス | `OK_STATIC_DEVICE`を返し、登録ハンドラが`(device_metadata, offset, is_write)`で呼ばれる | `vmmio_concept.py` `test_static_device_dispatch` |
 | TEST-VMMIO-11 | TLBヒット（2回目以降のアクセス） | 同一ページへ2回アクセス | 2回目のアクセス | `tlb_hits`が増加し、`tlb_misses`は増えない | {META_RestrictedPhysicalAccess}, `vmmio_concept.py` `test_tlb_hit_after_first_walk` |
 | TEST-VMMIO-12 | 未定義FCのトラップ分類 | FC=13（未割当） | アクセス | `TRAP_UNDEFINED_FC`を返す | `vmmio_concept.py` `test_undefined_fc_traps` |
 | TEST-VMMIO-13 | 未登録ページのトラップ分類 | 有効なFCだが該当VPNが未登録 | アクセス | `TRAP_UNREGISTERED_PAGE`を返す | `vmmio_concept.py` `test_undefined_fc_traps` |
 | TEST-VMMIO-14 | Folding XOR HashによるFC間の衝突回避 | FC=12/14/15の同一下位ページ番号 | `tlb_index`を比較 | 異なるTLBスロットに分散する | `vmmio_concept.py` `test_tlb_index_separates_function_codes` |
-| TEST-VMMIO-15 | 混在アクセスパターンでの高いTLBヒット率 | Syscall宛先とSHM宛先を交互にアクセス | 10回繰り返す | ヒット率90%以上（スラッシングしない） | `vmmio_concept.py` `test_interleaved_syscall_and_shm_keep_hitting_the_tlb` |
+| TEST-VMMIO-15 | 混在アクセスパターンでの高いTLBヒット率 | 静的デバイス宛先とSHM宛先を交互にアクセス | 10回繰り返す | ヒット率90%以上（スラッシングしない） | `vmmio_concept.py` `test_interleaved_device_and_shm_keep_hitting_the_tlb` |
 | TEST-VMMIO-16 | FlatMap登録件数と検索 | 32件のSHMページを登録 | 全件アクセス | 全件が正しく解決される。ホットな作業集合(8件)への繰り返しアクセスは100%ヒット | `vmmio_concept.py` `test_flatmap_pte_registration_and_tlb_caching` |
 | TEST-VMMIO-17 | TLBヒット時も権限チェックは必ず実施 | TLBにキャッシュ済みのPTE | 読み出し専用ページへ書き込みアクセス | TLBヒットであってもインライン権限チェックで`TRAP_ACCESS_VIOLATION`となる | {META_RestrictedPhysicalAccess}, `vmmio_concept.py` `test_permission_checks_enforced_even_on_tlb_hit` |
 | TEST-VMMIO-18 | Direct-Mapped TLB スロット衝突と置換（Eviction） | 同一ハッシュスロットに衝突する2つのVPN | Aアクセス（充填）→ Bアクセス（置換）→ 再度Aアクセス | Aの再アクセス時にミスが発生し、スロットが無条件上書きされる | `vmmio_concept.py` `test_tlb_slot_conflict_eviction` |
@@ -86,7 +86,7 @@ Bit31によるRAM/vMMIO高速分岐、64件のFlatMap PTE + 32エントリDirect
 | GOTCHA ID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | GOTCHA-VMMIO-01 | Bit 31 RAM 高速バイパスのテーブル完全非参照 | `addr < 0x8000_0000` の任意のアドレス | `access(addr)` を実行 | ページテーブル走査（FlatMap walk）および TLB 検索・更新を一切行わず即座に `OK_GUEST_RAM` を返す（`tlb_hits` / `tlb_misses` が不変）。**実装の勘所**: ゲスト RAM アクセス時に誤って TLB 検索フックを挟むと、実行時メモリアクセスの最頻パスで深刻な性能低下を引き起こす | `runtime_vmmio.md` {GOTCHA-VMMIO-01} |
-| GOTCHA-VMMIO-02 | Direct-Mapped TLB の 5-bit Folding XOR Hash | 同一下位ページ番号を持つ異なる FC（FC=12 静的, FC=14 SHM, FC=15 パススルー） | 各ページの `tlb_index` を算出 | `vpn` を 20→10→5 bit と2回の XORで折りたたみ（`temp = vpn ^ (vpn >> 10); temp = temp ^ (temp >> 5); temp & 0x1F`）ことで、異なるFCの同一下位ページを分散する。**実装の勘所**: 単純な下位マスクを用いると、Syscall（FC=12）と SHM（FC=14）の同一番号ページが同一スロットで常に衝突・スラッシングを起こす | `runtime_vmmio.md` {GOTCHA-VMMIO-02} |
+| GOTCHA-VMMIO-02 | Direct-Mapped TLB の 5-bit Folding XOR Hash | 同一下位ページ番号を持つ異なる FC（FC=12 静的デバイス, FC=14 SHM, FC=15 パススルー） | 各ページの `tlb_index` を算出 | `vpn` を 20→10→5 bit と2回の XORで折りたたみ（`temp = vpn ^ (vpn >> 10); temp = temp ^ (temp >> 5); temp & 0x1F`）ことで、異なるFCの同一下位ページを分散する。**実装の勘所**: 単純な下位マスクを用いると、静的デバイス（FC=12）と SHM（FC=14）の同一番号ページが同一スロットで常に衝突・スラッシングを起こす | `runtime_vmmio.md` {GOTCHA-VMMIO-02} |
 | GOTCHA-VMMIO-03 | SHM Revoke 後の未マッピング遮断と TLB 即時破棄 | SHM ページ（FC=14）が TLB にキャッシュされた状態 | `revoke_shm(vpn)` を実行 | 対象 TLB スロットが無効化され、FlatMap からも削除されるためアクセスが即座に `TRAP_UNREGISTERED_PAGE` で拒絶される。**実装の勘所**: PTE のアンマップを行っても TLB の該当スロットをフラッシュし忘れると、旧所有者が in-flight 中（ランデブー待ち）に TLB ヒット経由でデータを不正読み書きできる重大な脆弱性となる | `runtime_vmmio.md` {GOTCHA-VMMIO-03} |
 
 ## 3. テスト検証実績と網羅状況

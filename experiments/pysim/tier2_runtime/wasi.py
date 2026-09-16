@@ -30,6 +30,7 @@ from hal_dispatch import (
     WasiIpcCmd,
 )
 from loader import fnv1a_32
+from libfireball import Libfireball
 from system import FbSyscallId, System
 from system_containers import (
     ReadOnlyFlatMapStorage,
@@ -241,6 +242,7 @@ class WasiHostContext:
         self.sysv.bind_runtime(self.guest_memory)
         self.bindings = bindings if bindings is not None else sysv.wasi_hal_bindings
         self.core03p = Wasi03pEngine(sysv, self.bindings)
+        self.libfireball = Libfireball(sysv.fireball_call)
         self.sysv.wasi_context = self
         self._keepalive_trampolines: StaticVector[Callable[..., int]] = StaticVector(
             capacity=FB_CONF_MAX_IMPORTS
@@ -457,14 +459,14 @@ class WasiHostContext:
     def fireball_call(
         self,
         sys_id: int,
-        a0: int = 0,
-        a1: int = 0,
-        a2: int = 0,
-        a3: int = 0,
-        a4: int = 0,
-        a5: int = 0,
+        a0: int,
+        a1: int,
+        a2: int,
+        a3: int,
+        a4: int,
+        a5: int,
     ) -> int:
-        return int(self.sysv.fireball_call(sys_id, a0, a1, a2, a3, a4, a5))
+        return self.libfireball.fireball_call6(sys_id, a0, a1, a2, a3, a4, a5)
 
     def get_handler_for_import(
         self, module_name: str, field_name: str

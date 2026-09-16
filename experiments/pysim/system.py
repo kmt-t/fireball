@@ -408,7 +408,7 @@ class System:
     # --- vMMIO Generic (real FlatMap/TLB dispatch + real backing bytes) -
     def _trap_to_errno(self, status: VmmioStatus) -> WasiErrno | None:
         if (
-            status == VmmioStatus.OK_SYSCALL
+            status == VmmioStatus.OK_STATIC_DEVICE
             or status == VmmioStatus.OK_PHYSICAL
             or status == VmmioStatus.OK_GUEST_RAM
         ):

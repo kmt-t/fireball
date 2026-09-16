@@ -17,8 +17,6 @@ from wasm_module import (
     FB_CONF_MAX_LOCALS,
     I32,
     I64,
-    DataSegment,
-    Element,
     Export,
     Function,
     FuncType,
@@ -300,61 +298,14 @@ def _parse_table_section(data: memoryview, off: int, end: int, module: Module) -
     assert off == end, "table section length mismatch"
 
 
-def _parse_i32_offset_expr(
-    data: memoryview, off: int, module: Module, expression_name: str
-) -> tuple[int, int | None, int]:
-    opcode = data[off]
-    off += 1
-    global_index: int | None = None
-    if opcode == op.I32_CONST:
-        offset, off = decode_signed(data, off)
-        offset &= 0xFFFF_FFFF
-    elif opcode == op.GLOBAL_GET:
-        global_index, off = decode_unsigned(data, off)
-        assert global_index < len(module.globals), f"{expression_name} global index out of range"
-        global_value = module.globals[global_index]
-        assert global_value.imported and not global_value.mutable and global_value.vtype == I32, (
-            f"{expression_name} global.get must reference an imported immutable i32 global"
-        )
-        offset = 0
-    else:
-        assert False, f"{expression_name} offset must use i32.const or global.get"
-    assert data[off] == op.END, f"{expression_name} offset expression must end with 0x0B"
-    return offset, global_index, off + 1
-
-
 def _parse_element_section(data: memoryview, off: int, end: int, module: Module) -> None:
-    n, off = decode_unsigned(data, off)
-    for _ in range(n):
-        flags, off = decode_unsigned(data, off)
-        assert flags == 0 or flags == 2, f"unsupported element segment flags={flags}"
-        table_index = 0
-        if flags == 2:
-            table_index, off = decode_unsigned(data, off)
+    module.element_section_offset = off
+    module.element_section_size = end - off
+
+    def validate_element(table_index: int, _slot: int, _function_index: int) -> None:
         assert table_index < len(module.tables), "element segment table index out of range"
-        offset, offset_global_index, off = _parse_i32_offset_expr(
-            data, off, module, "element segment"
-        )
-        if flags == 2:
-            elem_kind, off = decode_unsigned(data, off)
-            assert elem_kind == 0, "only funcref element segments are supported"
-        n_funcs, off = decode_unsigned(data, off)
-        func_indices_offset = off
-        for _ in range(n_funcs):
-            _, off = decode_unsigned(data, off)
 
-        module.elements.append(
-            Element(
-                table_index=table_index,
-                offset=offset,
-                offset_global_index=offset_global_index,
-                func_indices_offset=func_indices_offset,
-                func_indices_size=off - func_indices_offset,
-                func_count=n_funcs,
-            )
-        )
-
-    assert off == end, "element section length mismatch"
+    module.stream_element_initializers(validate_element, (), resolve_globals=False)
 
 
 def _parse_global_section(data: memoryview, off: int, end: int, module: Module) -> None:
@@ -476,32 +427,14 @@ def _parse_start_section(data: memoryview, off: int, end: int, module: Module) -
 
 
 def _parse_data_section(data: memoryview, off: int, end: int, module: Module) -> None:
-    n, off = decode_unsigned(data, off)
-    for _ in range(n):
-        flags, off = decode_unsigned(data, off)
-        assert flags == 0 or flags == 2, f"unsupported data segment flags={flags}"
-        mem_idx = 0
-        if flags == 2:
-            mem_idx, off = decode_unsigned(data, off)
-        assert module.memory is not None, "data segment requires linear memory"
-        assert mem_idx == 0, "only memory index 0 is supported"
-        offset, offset_global_index, off = _parse_i32_offset_expr(
-            data, off, module, "data segment"
-        )
-        data_len, off = decode_unsigned(data, off)
-        data_offset = off
-        off += data_len
-        module.data_segments.append(
-            DataSegment(
-                memory_index=mem_idx,
-                offset=offset,
-                offset_global_index=offset_global_index,
-                data_offset=data_offset,
-                data_size=data_len,
-            )
-        )
+    module.data_section_offset = off
+    module.data_section_size = end - off
+    assert module.memory is not None, "data segment requires linear memory"
 
-    assert off == end, "data section length mismatch"
+    def validate_data(_offset: int, _data: memoryview) -> None:
+        return None
+
+    module.stream_data_initializers(validate_data, (), resolve_globals=False)
 
 
 def _parse_custom_section(data: memoryview, off: int, end: int) -> None:
@@ -1000,8 +933,6 @@ def parse(data: memoryview) -> Module:
         export_count=section_counts.exports,
         global_count=section_counts.globals + section_counts.imports,
         table_count=section_counts.tables,
-        element_count=section_counts.elements,
-        data_segment_count=section_counts.data_segments,
     )
     type_indices = StaticVector[int](capacity=section_counts.functions)
     off = 8

@@ -13,14 +13,12 @@ the Code section's implicit numbering are all in this unified space.
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from config import (
     FB_CONF_MAX_BASIC_BLOCKS,
-    FB_CONF_MAX_DATA_SEGMENTS,
-    FB_CONF_MAX_ELEMENTS,
     FB_CONF_MAX_EXPORTS,
     FB_CONF_MAX_FUNCTIONS,
     FB_CONF_MAX_GLOBALS,
@@ -29,7 +27,8 @@ from config import (
     FB_CONF_MAX_TYPES,
 )
 from jit_scoring import OpcodeBenefitTable
-from leb128 import decode_unsigned
+from leb128 import decode_signed, decode_unsigned
+import wasm_opcodes as op
 from system_containers import (
     ReadOnlyFlatMapStorage,
     ReadOnlyRadixBinaryTreeStorage,
@@ -43,6 +42,8 @@ if TYPE_CHECKING:
 
 
 WasmOperand = int | None
+ElementInitializer = Callable[[int, int, int], None]
+DataInitializer = Callable[[int, memoryview], None]
 
 
 @dataclass
@@ -221,6 +222,10 @@ class Module:
         default_factory=lambda: StaticVector(capacity=0)
     )
     start_function: int | None = None
+    element_section_offset: int = 0
+    element_section_size: int = 0
+    data_section_offset: int = 0
+    data_section_size: int = 0
     block_storage: ReadOnlyRadixBinaryTreeStorage[BasicBlock] | None = None
     blocks: StaticVector[BasicBlock] = field(
         default_factory=lambda: StaticVector(capacity=0)
@@ -243,8 +248,6 @@ class Module:
         export_count: int,
         global_count: int,
         table_count: int,
-        element_count: int,
-        data_segment_count: int,
     ) -> None:
         """Set exact section capacities before the loader starts appending."""
 
@@ -255,16 +258,12 @@ class Module:
         assert len(self.exports) == 0
         assert len(self.globals) == 0
         assert len(self.tables) == 0
-        assert len(self.elements) == 0
-        assert len(self.data_segments) == 0
         self.types = StaticVector(capacity=type_count)
         self.imports = StaticVector(capacity=import_count)
         self.functions = StaticVector(capacity=function_count)
         self.exports = StaticVector(capacity=export_count)
         self.globals = StaticVector(capacity=global_count)
         self.tables = StaticVector(capacity=table_count + import_count)
-        self.elements = StaticVector(capacity=element_count)
-        self.data_segments = StaticVector(capacity=data_segment_count)
 
     def prepare_function_layouts(self) -> None:
         """Precompute fixed-width local slots and parameter widths at module load."""
@@ -293,8 +292,112 @@ class Module:
                 value_slot_width(value_type) for value_type in function_type.results
             )
 
+    def stream_element_initializers(
+        self,
+        callback: ElementInitializer,
+        global_values: Sequence[int],
+        resolve_globals: bool = True,
+    ) -> None:
+        """Stream active element entries to a callback without retaining them."""
+
+        if self.element_section_size == 0:
+            for elem in self.elements:
+                offset = elem.offset
+                if elem.offset_global_index is not None:
+                    assert resolve_globals
+                    assert elem.offset_global_index < len(global_values)
+                    offset = global_values[elem.offset_global_index] & 0xFFFF_FFFF
+                if elem.func_indices is not None:
+                    for index, function_index in enumerate(elem.func_indices):
+                        callback(elem.table_index, offset + index, function_index)
+                else:
+                    assert self.source is not None
+                    off = elem.func_indices_offset
+                    end = off + elem.func_indices_size
+                    for index in range(elem.func_count):
+                        function_index, off = decode_unsigned(self.source, off)
+                        callback(elem.table_index, offset + index, function_index)
+                    assert off == end
+            return
+
+        assert self.source is not None
+        data = self.source
+        off = self.element_section_offset
+        end = off + self.element_section_size
+        segment_count, off = decode_unsigned(data, off)
+        for _ in range(segment_count):
+            flags, off = decode_unsigned(data, off)
+            assert flags == 0 or flags == 2, f"unsupported element segment flags={flags}"
+            table_index = 0
+            if flags == 2:
+                table_index, off = decode_unsigned(data, off)
+            offset, off = _read_init_offset(
+                data, off, end, global_values, self, "element segment", resolve_globals
+            )
+            if flags == 2:
+                elem_kind, off = decode_unsigned(data, off)
+                assert elem_kind == 0, "only funcref element segments are supported"
+            function_count, off = decode_unsigned(data, off)
+            for index in range(function_count):
+                function_index, off = decode_unsigned(data, off)
+                callback(table_index, offset + index, function_index)
+        assert off == end, "element section length mismatch"
+
+    def stream_data_initializers(
+        self,
+        callback: DataInitializer,
+        global_values: Sequence[int],
+        resolve_globals: bool = True,
+    ) -> None:
+        """Stream active data segments to a callback without retaining them."""
+
+        if self.data_section_size == 0:
+            for seg in self.data_segments:
+                data = seg.data
+                if data is None:
+                    assert self.source is not None
+                    data = self.source[seg.data_offset : seg.data_offset + seg.data_size]
+                offset = seg.offset
+                if seg.offset_global_index is not None:
+                    assert resolve_globals
+                    assert seg.offset_global_index < len(global_values)
+                    offset = global_values[seg.offset_global_index] & 0xFFFF_FFFF
+                callback(offset, data)
+            return
+
+        assert self.source is not None
+        data = self.source
+        off = self.data_section_offset
+        end = off + self.data_section_size
+        segment_count, off = decode_unsigned(data, off)
+        for _ in range(segment_count):
+            flags, off = decode_unsigned(data, off)
+            assert flags == 0 or flags == 2, f"unsupported data segment flags={flags}"
+            memory_index = 0
+            if flags == 2:
+                memory_index, off = decode_unsigned(data, off)
+            assert memory_index == 0, "only memory index 0 is supported"
+            offset, off = _read_init_offset(
+                data, off, end, global_values, self, "data segment", resolve_globals
+            )
+            data_size, off = decode_unsigned(data, off)
+            data_end = off + data_size
+            assert data_end <= end, "data segment exceeds section bounds"
+            callback(offset, data[off:data_end])
+            off = data_end
+        assert off == end, "data section length mismatch"
+
     def init_memory_data(self, memory: bytearray, global_values: Sequence[int]) -> None:
         """Initializes memory with active data segments."""
+
+        def write_data(offset: int, data: memoryview) -> None:
+            assert offset + len(data) <= len(memory)
+            memory[offset : offset + len(data)] = data
+
+        if self.data_section_size != 0:
+            self.stream_data_initializers(write_data, global_values)
+            return
+
         for seg in self.data_segments:
             if seg.data is None:
                 assert self.source is not None
@@ -328,6 +431,16 @@ class Module:
         else:
             assert len(initial) >= table.min_size
             slots = initial
+
+        if self.element_section_size != 0:
+            def write_element(segment_table_index: int, slot: int, function_index: int) -> None:
+                if segment_table_index == table_index:
+                    assert 0 <= slot < len(slots), "element segment exceeds table bounds"
+                    slots[slot] = function_index
+
+            self.stream_element_initializers(write_element, global_values)
+            return slots
+
         for elem in self.elements:
             if elem.table_index != table_index:
                 continue
@@ -516,6 +629,42 @@ def _read_func_type(data: memoryview, offset: int, size: int) -> FuncType:
         off += 1
     assert off == end
     return FuncType(params=params, results=results, offset=offset, size=size)
+
+
+def _read_init_offset(
+    data: memoryview,
+    off: int,
+    end: int,
+    global_values: Sequence[int],
+    module: Module,
+    expression_name: str,
+    resolve_globals: bool,
+) -> tuple[int, int]:
+    opcode = data[off]
+    off += 1
+    if opcode == op.I32_CONST:
+        offset, off = decode_signed(data, off)
+        offset &= 0xFFFF_FFFF
+    elif opcode == op.GLOBAL_GET:
+        global_index, off = decode_unsigned(data, off)
+        if not resolve_globals:
+            assert global_index < len(module.globals), (
+                f"{expression_name} global index out of range"
+            )
+            global_ref = module.globals[global_index]
+            assert global_ref.imported and not global_ref.mutable and global_ref.vtype == I32, (
+                f"{expression_name} global.get must reference an imported immutable i32 global"
+            )
+            offset = 0
+        else:
+            assert global_index < len(global_values), (
+                f"{expression_name} global index out of range"
+            )
+            offset = global_values[global_index] & 0xFFFF_FFFF
+    else:
+        assert False, f"{expression_name} offset must use i32.const or global.get"
+    assert off < end and data[off] == op.END, f"{expression_name} offset expression must end with 0x0B"
+    return offset, off + 1
 
 
 def _read_u32_vector(data: memoryview, offset: int, count: int) -> StaticVector[int]:

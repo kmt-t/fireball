@@ -7,7 +7,7 @@
 
 ## 1. コンセプト
 <!-- traceability: {ROMParsing} {META_AccessDictionary} {META_BumpAllocator} {META_BinarySearch} -->
-WASMローダは、ROM上のWASM32バイナリをパースし、実行環境が参照しやすい索引構造（ModuleView）を生成する。RAMへの全展開を避け、ROM上のデータを直接参照することでメモリ消費を極小化する。デコードされた各種メタデータ・要素（セクション、関数コード、グローバル、データセグメント）は内部レジストリ（`decoded_entity_registry`）に格納され、**WASMファイル内のバイト位置（データオフセット）をキーとして `RadixBinaryTreeView`（`fireball::radix_binary_tree_view`）により粗粒度インデックス $O(1)$ ＋ 狭域2分探索 $O(\log n)$（全体で $O(\log N)$ 確定時間）で高速検索** できる。さらに、**インポートテーブルおよびエクスポートシンボルの検索は、シンボル名ハッシュ（FNV-1a 32-bit）をキーとした `RadixBinaryTreeView` で候補を絞り、候補ごとにROM上の元文字列を照合する。索引探索は $O(1) + O(\log n)$、衝突照合込みの worst-case は $O(1) + O(\log n) + O(L)$ である**。
+WASMローダは、ROM上のWASM32バイナリをパースし、実行環境が参照しやすい索引構造（ModuleView）を生成する。RAMへの全展開を避け、ROM上のデータを直接参照することでメモリ消費を極小化する。固定長メタデータは内部レジストリ（`decoded_entity_registry`）に格納する。Element/Dataの個別初期化定義は配列化せず、セクション位置からcallbackで逐次処理する。**WASMファイル内のバイト位置（データオフセット）をキーとして `RadixBinaryTreeView`（`fireball::radix_binary_tree_view`）により粗粒度インデックス $O(1)$ ＋ 狭域2分探索 $O(\log n)$（全体で $O(\log N)$ 確定時間）で高速検索** できる。さらに、**インポートテーブルおよびエクスポートシンボルの検索は、シンボル名ハッシュ（FNV-1a 32-bit）をキーとした `RadixBinaryTreeView` で候補を絞り、候補ごとにROM上の元文字列を照合する。索引探索は $O(1) + O(\log n)$、衝突照合込みの worst-case は $O(1) + O(\log n) + O(L)$ である**。
 本設計の動作モデルおよび軽量検証スコープ（V1〜V6）、ハッシュ＋RadixBinaryTreeView によるシンボル・インポート検索、RadixBinaryTreeView によるファイル位置逆引き、バンプアロケータによるトランザクション保護（`save`/`restore`）は、コンセプトコード（[`loader_concept.py`](docs/components/tier2_runtime/concepts/loader_concept.py)）によって動作検証されている。
 
 ## 2. アーキテクチャ分類
@@ -78,6 +78,7 @@ ROM上のバイナリデータに対する「窓」として機能し、WIT上�
 
 - **セクション索引**: WASM標準セクション（Type, Import, Code等）のオフセットとサイズをキャッシュする。
 - **メタデータの遅延参照**: `Function` 以外の可変長メタデータ本体（型列、Element の関数列、Data のバイト列等）は展開せず、ROM上の `offset/size` と、解決に必要な LEB128 数値（`kind`、`index`、`type_index`、件数等）だけを先読みする。必要時に `BinaryStream` でその範囲を読む。Import/Export は名前を保持せず、Import は外部名範囲と `kind/type_index`、Export は公開名範囲と `kind/index` を持つ。
+- **Element/Data初期化のストリーム処理**: ElementセクションとDataセクションは個別エントリの配列を保持せず、ROM上のセクション位置とサイズだけを保持する。パース時は検証callbackへエントリを逐次渡す。起動時は適用callbackへエントリを逐次渡す。`global.get`を含む初期化式は起動時の実値で解決する。
 - **シンボル検索**: エクスポート名ハッシュからインデックスへの高速な引き当て（`export_storage`から借用view）を提供する。
 
 #### バイナリストリーム（BinaryStream）
@@ -132,9 +133,13 @@ ROM上の読み取り専用バイト列ビューをラップし、カレント�
   **設計理由と不変条件**: WASM バイナリの検証エラー（セクション長不整合、未定義型参照、リソース上限超過等）が発生した際、途中まで確保した内部メタデータやインデックス領域が残留すると、静的バンプアロケータの物理メモリが永久に枯渇・リークする。そのため、検証失敗時は例外なくアロケータ位置を開始前のスナップショットへ完全に巻き戻し、不正バイナリによるリソース断片化をゼロにする。
 - **module_view 構築 & デコード値レジストリ登録 (Zero-Copy & Radix-Indexed)**: `{META_BinarySearch}`
     - セクションスキャン時に内容をRAMにコピーせず、ROM上の開始オフセットとサイズを索引化する。
-    - 各セクション、関数コードブロック、グローバル変数、データセグメント等について、内容を展開しない最小ディスクリプタを `decoded_entity_registry` に登録する。
+    - 各セクション、関数コードブロック、グローバル変数等について、内容を展開しない最小ディスクリプタを `decoded_entity_registry` に登録する。
     - 各エントリの開始ファイルオフセット `file_offset` をキーとして、基数2進探索木ビュー（`fireball::radix_binary_tree_view`）を構築する。粗い Radix Table で区間を特定後、狭めた区間に対する有界二分探索により $O(1) + O(\log n)$ でファイル内の任意バイト位置から該当するデコード済みエンティティ（関数メタデータ、セクション、データ定義）を高速逆引きできるようにする。
     - エクスポートおよびインポートエントリをパースし、シンボル名の 32-bit ハッシュ値（FNV-1a）を算出。名前文字列をROM上の文字列ビューとしてRAMコピーゼロで保持し、ハッシュ値をキーとした `export_storage` / `import_storage`（`fireball::radix_binary_tree_view`を借用）を構築する。概念コードは、この比較意味論をデコード済み文字列値で再現する。
+- **Element/Data初期化の2段階ストリーム処理**: `{ROMParsing}`
+    - `prepare`はElement/DataセクションをROM上で走査し、形式、境界、参照先を検証callbackで確認する。個別エントリをRAMへ保存しない。
+    - `load`は同じセクションを再走査し、Elementの関数番号をテーブルへ書き込み、Dataのバイト範囲をリニアメモリへコピーする。各エントリは適用callbackへ直接渡す。
+    - `global.get`を使うオフセットは、`prepare`で参照先の制約を検証し、`load`で確定したグローバル値を用いて解決する。
 - **シンボル検索とハッシュ衝突完全排除 (`GOTCHA-LOAD-01`, , `{META_BinarySearch}`)**:
   シンボル名ハッシュ（FNV-1a 32-bit）をキーとして `export_storage`から借用した`radix_binary_tree_view`を、粗索引 $O(1)$ と狭い区間の二分探索 $O(\log n)$ の組み合わせで探索する。候補が得られた後はROM上の元の名前を照合するため、照合込みの worst-case は $O(1) + O(\log n) + O(L)$（$L$ は名前長）である。
   **設計理由と不変条件**: 32-bit ハッシュ値による探索のみで関数解決を完了させると、万一のハッシュ衝突発生時に誤った関数がディスパッチされ、壊滅的な誤動作を引き起こす。そのため、ハッシュ探索で候補エントリがヒットした際は必ず ROM 上の元のシンボル名文字列と 1 回完全一致照合を行い、ハッシュ衝突によるシンボル誤認を完全に排除する。
@@ -301,11 +306,11 @@ sequenceDiagram
 
 | 項目 | 内容 |
 | :--- | :--- |
-| 機能概要 | モジュールの線形メモリをゲストRAMに展開し、初期化する。 |
+| 機能概要 | モジュールの線形メモリとテーブルを確保し、ROM上の初期化定義をストリーミングで適用する。 |
 | シグネチャ | `load(module: wasm-module-view) -> operation-result` |
 | 引数 | `module`: 展開対象のモジュールビュー |
 | 事前条件 | モジュールが `prepare` によりハースネスに登録済みであること。 |
-| 事後条件 | モジュールのリニアメモリおよびテーブル領域がゲストRAMに確保・初期化される。 |
+| 事後条件 | モジュールのリニアメモリおよびテーブル領域がゲストRAMに確保・初期化され、Element/Dataの個別エントリ配列を保持しない。 |
 
 #### `resolve-imports`
 

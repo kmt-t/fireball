@@ -6,6 +6,7 @@
 参考実装: [`loader_concept.py`](docs/components/tier2_runtime/concepts/loader_concept.py)
 
 ROM上WASM32バイナリのゼロコピー索引化（`ModuleView`）、V1〜V6軽量検証、バンプアロケータのトランザクショナルロールバック、ハッシュ＋`RadixBinaryTreeView`（`fireball::radix_binary_tree_view`）によるインポート解決およびシンボル検索、ファイル内データ位置からのデコード値逆引きを検証する。
+Element/Data初期化定義を個別配列へ展開せず、パース時検証と起動時適用をcallbackによる2段階ストリーム処理で行うことも検証対象とする。
 物理実装のROM文字列ビュー契約に対し、概念コードは比較可能なPython `str`を意味論上の代替として使用する。
 
 ## 2. テストケース一覧
@@ -32,6 +33,7 @@ ROM上WASM32バイナリのゼロコピー索引化（`ModuleView`）、V1〜V6�
 | TEST-LOAD-13 | ハッシュ＋RadixBinaryTreeView シンボル検索 | エクスポートシンボル登録済み | `lookup_export(name)` | FNV-1a ハッシュと RadixBinaryTreeView による $O(1)+O(\log n)$ 索引探索後、ROM上の元文字列を照合して正しい`ExportEntry`を返す。未登録名は`None` | 「シンボル検索」, `{META_AccessDictionary}`, `{META_BinarySearch}` |
 | TEST-LOAD-14 | 関数アクセサの遅延デコード | 任意の関数 | `get_function(idx).get_code_stream()` | localsベクタ宣言をスキップした実行本体ストリームを返す | function_accessor |
 | TEST-LOAD-15 | グローバルアクセサ | 任意のグローバル変数宣言 | `get_global(idx).get_metadata()` | (valtype, mutable)を正しく返す | global_accessor |
+| TEST-LOAD-16 | Element/Data初期化のストリーム処理 | ElementまたはDataセグメントを持つ正常なバイナリ | パース後に起動時初期化を実行 | 個別セグメント配列を生成せず、各定義がcallback経由でテーブルまたはメモリへ適用される。`global.get`のオフセットは起動時のグローバル値で解決される | `runtime_loader.md`「Element/Data初期化の2段階ストリーム処理」 |
 
 ### 複数モジュール・インポート解決
 

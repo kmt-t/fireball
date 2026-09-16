@@ -38,7 +38,9 @@ foreach ($mod in $modules) {
     $generatedC = Join-Path $nativeBuildDir "$mod.c"
     $outputPyd = Join-Path $scriptDir "$mod.pyd"
     Write-Host ">>> Transpiling $mod.py -> $nativeBuildDir/$mod.c (Cython)" -ForegroundColor Yellow
-    & uv run cython "$mod.py" -3 -o $generatedC
+    # Invoke Cython as a Python module; the uv console-script trampoline can
+    # fail to canonicalize this workspace path on managed Windows hosts.
+    & uv run python -B -m cython "$mod.py" -3 -o $generatedC
     if ($LASTEXITCODE -ne 0) { throw "cython transpile failed for $mod" }
 
     Write-Host ">>> Compiling $nativeBuildDir/$mod.c -> .pyd (clang-cl)" -ForegroundColor Yellow

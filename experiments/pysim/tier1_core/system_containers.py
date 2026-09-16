@@ -12,7 +12,7 @@ dense/sequential containers.
 from __future__ import annotations
 
 import bisect
-from collections.abc import Callable, Iterable, Iterator, Sequence
+from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass
 from typing import Generic, TypeVar
 
@@ -851,7 +851,7 @@ class StaticVector(Generic[T]):
         self._items: list[T] = []
 
     @classmethod
-    def of(cls, items: Sequence[T], capacity: int | None = None) -> StaticVector[T]:
+    def of(cls, items: Iterable[T], capacity: int | None = None) -> StaticVector[T]:
         """Builds a StaticVector pre-populated with `items` (test/setup convenience)."""
         cap = capacity if capacity is not None else len(items)
         vec: StaticVector[T] = cls(capacity=cap)
@@ -871,13 +871,25 @@ class StaticVector(Generic[T]):
 
         assert self.push_back(item)
 
-    def extend(self, items: Iterable[T]) -> bool:
-        pending = tuple(items)
-        if len(self._items) + len(pending) > self.capacity:
+    def extend(self, items: Sequence[T]) -> bool:
+        item_count = len(items)
+        if len(self._items) + item_count > self.capacity:
             return False
-        for item in pending:
-            self._items.append(item)
+        for index in range(item_count):
+            self._items.append(items[index])
         return True
+
+    def reverse_in_place(self) -> None:
+        """Reverse the populated range without constructing a temporary sequence."""
+
+        left = 0
+        right = len(self._items) - 1
+        while left < right:
+            temporary = self._items[left]
+            self._items[left] = self._items[right]
+            self._items[right] = temporary
+            left += 1
+            right -= 1
 
     def insert_at(self, index: int, item: T) -> bool:
         if not (0 <= index <= len(self._items)) or len(self._items) >= self.capacity:

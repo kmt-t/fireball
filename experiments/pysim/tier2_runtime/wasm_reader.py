@@ -214,16 +214,7 @@ def _parse_import_section(data: memoryview, off: int, end: int, module: Module) 
             off += 1
             mutable = data[off] == 0x01
             off += 1
-            descriptor = Import(
-                module_offset=module_offset,
-                module_size=mod_len,
-                name_offset=name_offset,
-                name_size=field_len,
-                type_index=0,
-                value_type=value_type,
-                mutable=mutable,
-            )
-            module.global_imports.append(descriptor)
+            module.global_import_count += 1
             module.globals.append(
                 Global(vtype=value_type, mutable=mutable, init_value=0, imported=True)
             )
@@ -248,16 +239,7 @@ def _parse_import_section(data: memoryview, off: int, end: int, module: Module) 
                 f"only funcref table imports are supported, got 0x{elem_type:02X}"
             )
             minimum, maximum, off = _parse_limits(data, off)
-            descriptor = Import(
-                module_offset=module_offset,
-                module_size=mod_len,
-                name_offset=name_offset,
-                name_size=field_len,
-                type_index=0,
-                min_limit=minimum,
-                max_limit=maximum,
-            )
-            module.table_imports.append(descriptor)
+            module.table_import_count += 1
             module.tables.append(Table(min_size=minimum, max_size=maximum, imported=True))
         else:
             assert False, f"unsupported import kind={kind}"
@@ -622,9 +604,11 @@ class _SelectAnalysisState:
 
 
 _SelectAnalysisHandler = Callable[[_SelectAnalysisState, int, int, int], None]
-_SELECT_ANALYSIS_HANDLERS: StaticVector[_SelectAnalysisHandler | None] = StaticVector.of(
-    tuple(None for _ in range(256)), capacity=256
+_SELECT_ANALYSIS_HANDLERS: StaticVector[_SelectAnalysisHandler | None] = StaticVector(
+    capacity=256
 )
+for _ in range(256):
+    _SELECT_ANALYSIS_HANDLERS.append(None)
 
 
 def _select_analysis_handler(*opcodes: int) -> Callable[[_SelectAnalysisHandler], _SelectAnalysisHandler]:

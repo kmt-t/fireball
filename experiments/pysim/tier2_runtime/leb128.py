@@ -10,9 +10,6 @@ from __future__ import annotations
 import cython
 
 
-@cython.locals(
-    offset=cython.Py_ssize_t, result=cython.longlong, shift=cython.int, byte=cython.uchar
-)
 def decode_unsigned(
     data: cython.const[cython.uchar][:], offset: int
 ) -> tuple[int, int]:
@@ -28,9 +25,6 @@ def decode_unsigned(
         shift += 7
 
 
-@cython.locals(
-    offset=cython.Py_ssize_t, result=cython.longlong, shift=cython.int, byte=cython.uchar
-)
 def decode_signed(
     data: cython.const[cython.uchar][:], offset: int
 ) -> tuple[int, int]:

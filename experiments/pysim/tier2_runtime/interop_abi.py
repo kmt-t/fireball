@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import ctypes
 import struct
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterator, Sequence
 
 from jit_abi import JIT_CONTEXT_HELPER_PTR_OFFSET, JIT_CONTEXT_SIZE_BYTES, JIT_HELPER_COUNT
 from wasm_module import WASM_VALUE_SLOT_BYTES
@@ -225,8 +225,14 @@ class NativeValueStack:
         for index in range(len(self)):
             yield self._decode(index)
 
-    def __eq__(self, other: Iterable[int]) -> bool:
-        return tuple(self) == tuple(other)
+    def __eq__(self, other: Sequence[int]) -> bool:
+        size = len(self)
+        if size != len(other):
+            return False
+        for index in range(size):
+            if self.raw_at(index) != other[index]:
+                return False
+        return True
 
     def push_back(self, value: int) -> bool:
         size = int(self._native.size)
@@ -236,13 +242,33 @@ class NativeValueStack:
         self._native.size = size + 1
         return True
 
-    def extend(self, values: Iterable[int]) -> bool:
-        pending = tuple(values)
-        if int(self._native.size) + len(pending) > self._capacity:
+    def extend(self, values: Sequence[int]) -> bool:
+        value_count = len(values)
+        size = int(self._native.size)
+        if size + value_count > self._capacity:
             return False
-        for value in pending:
-            assert self.push_back(value)
+        for index in range(value_count):
+            self._native.values[size + index] = self._encode(values[index])
+        self._native.size = size + value_count
         return True
+
+    def push_zeroed(self, count: int) -> bool:
+        """Append zero-initialized raw slots in one fixed-capacity operation."""
+
+        assert count >= 0
+        size = int(self._native.size)
+        if size + count > self._capacity:
+            return False
+        for index in range(count):
+            self._native.values[size + index] = 0
+        self._native.size = size + count
+        return True
+
+    def write_raw_at(self, index: int, value: int) -> None:
+        """Write one slot after the caller has reserved it in the stack."""
+
+        assert 0 <= index < self._capacity
+        self._native.values[index] = self._encode(value)
 
     def truncate(self, size: int) -> None:
         """Move the stack pointer back without touching released slots."""

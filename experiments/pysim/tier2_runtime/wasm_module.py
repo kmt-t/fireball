@@ -24,7 +24,6 @@ from config import (
     FB_CONF_MAX_EXPORTS,
     FB_CONF_MAX_FUNCTIONS,
     FB_CONF_MAX_GLOBALS,
-    FB_CONF_MAX_IMPORTS,
     FB_CONF_MAX_LOCALS,
     FB_CONF_MAX_TABLES,
     FB_CONF_MAX_TYPES,
@@ -114,6 +113,8 @@ class Function:
     local_slot_count_cache: int | None = None
     local_i32_only_cache: bool | None = None
     param_packed_slot_count_cache: int | None = None
+    param_count_cache: int | None = None
+    result_arity_cache: int | None = None
 
     def __post_init__(self) -> None:
         if self.code is not None:
@@ -192,66 +193,46 @@ class DataSegment:
 @dataclass
 class Module:
     types: StaticVector[FuncType] = field(
-        default_factory=lambda: StaticVector(capacity=FB_CONF_MAX_TYPES)
+        default_factory=lambda: StaticVector(capacity=0)
     )
     imports: StaticVector[Import] = field(
-        default_factory=lambda: StaticVector(capacity=FB_CONF_MAX_IMPORTS)
+        default_factory=lambda: StaticVector(capacity=0)
     )
-    global_imports: StaticVector[Import] = field(
-        default_factory=lambda: StaticVector(capacity=FB_CONF_MAX_IMPORTS)
-    )
+    global_import_count: int = 0
     functions: StaticVector[Function] = field(
-        default_factory=lambda: StaticVector(capacity=FB_CONF_MAX_FUNCTIONS)
+        default_factory=lambda: StaticVector(capacity=0)
     )
     exports: StaticVector[Export] = field(
-        default_factory=lambda: StaticVector(capacity=FB_CONF_MAX_EXPORTS)
+        default_factory=lambda: StaticVector(capacity=0)
     )
     memory: Memory | None = None
     memory_import: Import | None = None
     globals: StaticVector[Global] = field(
-        default_factory=lambda: StaticVector(capacity=FB_CONF_MAX_GLOBALS)
+        default_factory=lambda: StaticVector(capacity=0)
     )
     tables: StaticVector[Table] = field(
-        default_factory=lambda: StaticVector(capacity=FB_CONF_MAX_TABLES)
+        default_factory=lambda: StaticVector(capacity=0)
     )
-    table_imports: StaticVector[Import] = field(
-        default_factory=lambda: StaticVector(capacity=FB_CONF_MAX_IMPORTS)
-    )
+    table_import_count: int = 0
     elements: StaticVector[Element] = field(
-        default_factory=lambda: StaticVector(capacity=FB_CONF_MAX_ELEMENTS)
+        default_factory=lambda: StaticVector(capacity=0)
     )
     data_segments: StaticVector[DataSegment] = field(
-        default_factory=lambda: StaticVector(capacity=FB_CONF_MAX_DATA_SEGMENTS)
+        default_factory=lambda: StaticVector(capacity=0)
     )
     start_function: int | None = None
     block_storage: ReadOnlyRadixBinaryTreeStorage[BasicBlock] | None = None
     blocks: StaticVector[BasicBlock] = field(
-        default_factory=lambda: StaticVector(capacity=FB_CONF_MAX_BASIC_BLOCKS)
+        default_factory=lambda: StaticVector(capacity=0)
     )
     opcode_benefit_table: OpcodeBenefitTable | None = None
     source: memoryview | None = None
 
     def __post_init__(self) -> None:
-        # Directly constructed concept modules are already complete at
-        # construction time. Parsed modules call this same operation after all
-        # sections have been decoded.
-        self.types = StaticVector.of(tuple(self.types), capacity=FB_CONF_MAX_TYPES)
-        self.imports = StaticVector.of(tuple(self.imports), capacity=FB_CONF_MAX_IMPORTS)
-        self.global_imports = StaticVector.of(
-            tuple(self.global_imports), capacity=FB_CONF_MAX_IMPORTS
-        )
-        self.functions = StaticVector.of(tuple(self.functions), capacity=FB_CONF_MAX_FUNCTIONS)
-        self.exports = StaticVector.of(tuple(self.exports), capacity=FB_CONF_MAX_EXPORTS)
-        self.globals = StaticVector.of(tuple(self.globals), capacity=FB_CONF_MAX_GLOBALS)
-        self.tables = StaticVector.of(tuple(self.tables), capacity=FB_CONF_MAX_TABLES)
-        self.table_imports = StaticVector.of(
-            tuple(self.table_imports), capacity=FB_CONF_MAX_IMPORTS
-        )
-        self.elements = StaticVector.of(tuple(self.elements), capacity=FB_CONF_MAX_ELEMENTS)
-        self.data_segments = StaticVector.of(
-            tuple(self.data_segments), capacity=FB_CONF_MAX_DATA_SEGMENTS
-        )
-        self.blocks = StaticVector.of(tuple(self.blocks), capacity=FB_CONF_MAX_BASIC_BLOCKS)
+        # Parsed modules replace every section with its exact two-pass capacity
+        # in configure_section_capacities() before appending any records.
+        # Direct concept modules may provide already-materialized sequences;
+        # their metadata is read directly without a second full copy.
         self.prepare_function_layouts()
 
     def configure_section_capacities(
@@ -269,22 +250,19 @@ class Module:
 
         assert len(self.types) == 0
         assert len(self.imports) == 0
-        assert len(self.global_imports) == 0
+        assert self.global_import_count == 0
         assert len(self.functions) == 0
         assert len(self.exports) == 0
         assert len(self.globals) == 0
         assert len(self.tables) == 0
-        assert len(self.table_imports) == 0
         assert len(self.elements) == 0
         assert len(self.data_segments) == 0
         self.types = StaticVector(capacity=type_count)
         self.imports = StaticVector(capacity=import_count)
-        self.global_imports = StaticVector(capacity=import_count)
         self.functions = StaticVector(capacity=function_count)
         self.exports = StaticVector(capacity=export_count)
         self.globals = StaticVector(capacity=global_count)
         self.tables = StaticVector(capacity=table_count + import_count)
-        self.table_imports = StaticVector(capacity=import_count)
         self.elements = StaticVector(capacity=element_count)
         self.data_segments = StaticVector(capacity=data_segment_count)
 
@@ -307,8 +285,12 @@ class Module:
             function.local_widths_cache = local_widths
             function.local_slot_count_cache = local_slot_count
             function.local_i32_only_cache = all(width == 1 for width in local_widths)
+            function.param_count_cache = len(function_type.params)
             function.param_packed_slot_count_cache = sum(
                 value_slot_width(value_type) for value_type in function_type.params
+            )
+            function.result_arity_cache = sum(
+                value_slot_width(value_type) for value_type in function_type.results
             )
 
     def init_memory_data(self, memory: bytearray, global_values: Sequence[int]) -> None:
@@ -340,9 +322,9 @@ class Module:
 
         table = self.tables[table_index]
         if initial is None:
-            slots: StaticVector[int | None] = StaticVector.of(
-                tuple(None for _ in range(table.min_size)), capacity=table.min_size
-            )
+            slots = StaticVector[int | None](capacity=table.min_size)
+            for _ in range(table.min_size):
+                slots.append(None)
         else:
             assert len(initial) >= table.min_size
             slots = initial
@@ -473,7 +455,14 @@ class Module:
             return
 
         sorted_blocks = all_blocks
-        inv_keys = tuple(bswap32(block.head_pc) for block in sorted_blocks)
+        inv_keys: StaticVector[int] = StaticVector(capacity=len(sorted_blocks))
+        entries: StaticVector[tuple[int, BasicBlock]] = StaticVector(
+            capacity=len(sorted_blocks)
+        )
+        for block in sorted_blocks:
+            inverse_key = bswap32(block.head_pc)
+            inv_keys.append(inverse_key)
+            entries.append((inverse_key, block))
         radix_shift = 28
         radix_table = build_radix_table(inv_keys, radix_shift=radix_shift)
         self.block_storage = ReadOnlyRadixBinaryTreeStorage[BasicBlock](
@@ -481,7 +470,7 @@ class Module:
             values=sorted_blocks,
             radix_table=radix_table,
             radix_shift=radix_shift,
-            entries=tuple(zip(inv_keys, sorted_blocks, strict=False)),
+            entries=entries,
         )
 
     def get_block(self, pc: int) -> BasicBlock | None:

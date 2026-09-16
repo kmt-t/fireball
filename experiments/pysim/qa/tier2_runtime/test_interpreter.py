@@ -137,13 +137,7 @@ def test_intp_05_handler_returns_trap_outcome():
     handler = _HANDLERS[UNREACHABLE]
     assert handler is not None
     result = handler(call_state.context, frame.values, local_base, tos)
-    assert result is not None
-    result_ctx, result_sp, result_locals, result_tos, trap = result
-    assert result_ctx is call_state.context
-    assert result_sp is frame.values
-    assert result_locals is local_base
-    assert result_tos == tos
-    assert isinstance(trap, Trap)
+    assert isinstance(result, Trap)
 
     stepped = Interpreter(module).step(Interpreter(module).start(0, []))
     assert stepped.finished

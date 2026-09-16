@@ -130,12 +130,10 @@ def test_intp_gotcha_01_native_stack_sync():
     # Execute instruction 0 (i32.const 10) directly via the raw handler.
     call_state.context.bind_handler_state(ip, frame)
     result = _HANDLERS[frame.code[ip]](call_state.context, frame.values, locals_arr, 0)
-    assert result is not None
-    result_ctx, result_sp, locals_arr, next_tos, trap = result
-    assert result_ctx is call_state.context
-    assert result_sp is frame.values
-    assert trap is None
-    assert next_tos == frame.values.raw_top()
+    assert result is None
+    result_ctx = call_state.context
+    result_sp = frame.values
+    next_tos = frame.values.raw_top()
     assert frame.values.raw_top() == 10
     assert frame.values == [10]
     ip = int(result_ctx.native_context.ip)
@@ -144,12 +142,8 @@ def test_intp_gotcha_01_native_stack_sync():
     # Execute instruction 1 (i32.const 20)
     call_state.context.bind_handler_state(ip, frame)
     result = _HANDLERS[frame.code[ip]](result_ctx, result_sp, locals_arr, next_tos)
-    assert result is not None
-    result_ctx, result_sp, locals_arr, next_tos, trap = result
-    assert result_ctx is call_state.context
-    assert result_sp is frame.values
-    assert trap is None
-    assert next_tos == frame.values.raw_top()
+    assert result is None
+    next_tos = frame.values.raw_top()
     assert frame.values.raw_top() == 20
     assert frame.values == [10, 20]
     ip = int(result_ctx.native_context.ip)
@@ -158,12 +152,7 @@ def test_intp_gotcha_01_native_stack_sync():
     # Execute instruction 2 (i32.add) -> pops 20 and 10, pushes 30.
     call_state.context.bind_handler_state(ip, frame)
     result = _HANDLERS[frame.code[ip]](result_ctx, result_sp, locals_arr, next_tos)
-    assert result is not None
-    result_ctx, result_sp, locals_arr, next_tos, trap = result
-    assert result_ctx is call_state.context
-    assert result_sp is frame.values
-    assert trap is None
-    assert next_tos == frame.values.raw_top()
+    assert result is None
     assert frame.values.raw_top() == 30
     assert frame.values == [30]
 

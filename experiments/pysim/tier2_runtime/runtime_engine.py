@@ -58,15 +58,26 @@ except ImportError:
     _native_trace_call = None
 
 
-def _module_code_lengths(module: Module) -> tuple[int, ...]:
-    """Build the immutable per-function code-length vector without tuple growth."""
+def _module_code_lengths(module: Module) -> StaticVector[int]:
+    """Build the bounded per-function code-length vector incrementally."""
 
     lengths: StaticVector[int] = StaticVector(capacity=len(module.imports) + len(module.functions))
     for _ in module.imports:
         lengths.append(0)
     for index in range(len(module.functions)):
         lengths.append(len(module.code_for(len(module.imports) + index)))
-    return tuple(lengths)
+    return lengths
+
+
+def _empty_block_slots() -> StaticVector[tuple[int, BasicBlock | None] | None]:
+    """Create the fixed direct-mapped block cache without materializing an iterator."""
+
+    slots: StaticVector[tuple[int, BasicBlock | None] | None] = StaticVector(
+        capacity=RUNTIME_BLOCK_CACHE_SLOT_COUNT
+    )
+    for _ in range(RUNTIME_BLOCK_CACHE_SLOT_COUNT):
+        assert slots.push_back(None)
+    return slots
 
 
 class _JitCompiler(Protocol):
@@ -147,7 +158,7 @@ class RuntimeEngine:
         jit_compiler: _JitCompiler | None = None,
         yield_threshold: int = 16,
         card_shift: int = JIT_CARD_SHIFT,
-        code_lengths: tuple[int, ...] = (),
+        code_lengths: Sequence[int] = (),
         min_trace_bytes: int | None = None,
         candidate_threshold: int = JIT_CANDIDATE_THRESHOLD,
         compile_queue_capacity: int = 4,
@@ -174,12 +185,7 @@ class RuntimeEngine:
         # StaticVector's exact fixed capacity, never exceeded.
         self.compile_queue: StaticVector[int] = StaticVector(capacity=compile_queue_capacity)
         self.module: Module | None = None
-        self._fast_block_slots: StaticVector[tuple[int, BasicBlock | None] | None] = (
-            StaticVector.of(
-                tuple(None for _ in range(RUNTIME_BLOCK_CACHE_SLOT_COUNT)),
-                capacity=RUNTIME_BLOCK_CACHE_SLOT_COUNT,
-            )
-        )
+        self._fast_block_slots = _empty_block_slots()
         self.yield_threshold = yield_threshold
         self.exec_counter = 0
         # A card's 2-bit state can only ever describe ONE block: if two
@@ -247,10 +253,7 @@ class RuntimeEngine:
         self.bitmap = HotspotBitmap(card_shift=card_shift, code_lengths=code_lengths)
         self.trackable = BlockCardMask(card_shift=card_shift, code_lengths=code_lengths)
         self._virq = VirqDispatcher(module, self._invoke_virq)
-        self._fast_block_slots = StaticVector.of(
-            tuple(None for _ in range(RUNTIME_BLOCK_CACHE_SLOT_COUNT)),
-            capacity=RUNTIME_BLOCK_CACHE_SLOT_COUNT,
-        )
+        self._fast_block_slots = _empty_block_slots()
         # `byte_span >= min_trace_bytes` and the static score are pure
         # functions of BasicBlock properties + this engine's own threshold,
         # both already known here -- decided once per block, not re-derived on
@@ -557,14 +560,17 @@ class RuntimeEngine:
         COMPILED = CardState.COMPILED
 
         while not call_state.finished:
-            assert call_state.cont is not None
-            current_ip, current_frame, _, _ = call_state.cont
+            assert call_state._frame is not None
+            current_ip = call_state._ip
+            current_frame = call_state._frame
+            assert current_frame is not None
             if current_ip == RETURN_SENTINEL_IP:
                 call_state = interp.step(call_state)
                 continue
             pc = call_state.current_pc()
             block_here = self.get_block(pc)
-            frame_here = call_state.cont[1]
+            frame_here = call_state._frame
+            assert frame_here is not None
             if block_here is not None and len(frame_here.frames) > block_here.frame_depth:
                 frame_here.frames.truncate(block_here.frame_depth)
             frame_here.boundary_next_pc = block_here.next_pc if block_here is not None else None
@@ -587,8 +593,10 @@ class RuntimeEngine:
                     if self.debug:
                         trace.exec_count += 1
                     call_state = self._invoke_trace(interp, call_state, trace)
-                    assert call_state.cont is not None
-                    next_ip, next_frame, _, _ = call_state.cont
+                    assert call_state._frame is not None
+                    next_ip = call_state._ip
+                    next_frame = call_state._frame
+                    assert next_frame is not None
                     if call_state.finished or next_ip == RETURN_SENTINEL_IP:
                         break
                     pc = call_state.current_pc()
@@ -608,9 +616,10 @@ class RuntimeEngine:
                     self.stat_trace_exits_to_interp += 1
 
                 # After trace chain ends, synchronize frame before returning to interpreter
-                if not call_state.finished and call_state.cont is not None:
-                    assert call_state.cont is not None
-                    next_ip, next_frame, _, _ = call_state.cont
+                if not call_state.finished and call_state._frame is not None:
+                    next_ip = call_state._ip
+                    next_frame = call_state._frame
+                    assert next_frame is not None
                     if next_ip != RETURN_SENTINEL_IP:
                         pc = call_state.current_pc()
                         block_here = self.get_block(pc)
@@ -650,7 +659,9 @@ class RuntimeEngine:
         next raw operand-stack slot passed as `sp` and then committed by
         advancing that same stack's pointer.
         """
-        ip, frame, locals_arr, _tos = call_state.cont
+        frame = call_state._frame
+        locals_arr = call_state._locals
+        assert frame is not None and locals_arr is not None
         # The current x64 trace emitters support i32 locals only.  This is
         # validated once while creating the common interpreter frame; the
         # storage itself remains raw and is shared with both tiers.
@@ -697,10 +708,8 @@ class RuntimeEngine:
                 # same implicit return boundary as Interpreter.step() reaches
                 # after executing the final END opcode.
                 next_ip = RETURN_SENTINEL_IP
-        call_state.cont = (
-            next_ip,
-            frame,
-            locals_arr,
-            frame.values.raw_top() if frame.values else 0,
-        )
+        call_state._ip = next_ip
+        call_state._frame = frame
+        call_state._locals = locals_arr
+        call_state._tos = frame.values.raw_top() if frame.values else 0
         return call_state

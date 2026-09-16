@@ -13,7 +13,9 @@ import cython
 @cython.locals(
     offset=cython.Py_ssize_t, result=cython.longlong, shift=cython.int, byte=cython.uchar
 )
-def decode_unsigned(data: bytes, offset: int) -> tuple[int, int]:
+def decode_unsigned(
+    data: cython.const[cython.uchar][:], offset: int
+) -> tuple[int, int]:
     """Returns (value, new_offset)."""
     result = 0
     shift = 0
@@ -29,7 +31,9 @@ def decode_unsigned(data: bytes, offset: int) -> tuple[int, int]:
 @cython.locals(
     offset=cython.Py_ssize_t, result=cython.longlong, shift=cython.int, byte=cython.uchar
 )
-def decode_signed(data: bytes, offset: int) -> tuple[int, int]:
+def decode_signed(
+    data: cython.const[cython.uchar][:], offset: int
+) -> tuple[int, int]:
     """Returns (value, new_offset). Used for i32.const/i64.const (sleb128)."""
     result = 0
     shift = 0

@@ -59,7 +59,7 @@ classDiagram
     WasmService --> VSoCRuntime : syscall
     GuestApplication --> Libfireball : links adapter
     WasmService --> Libfireball : links adapter
-    Libfireball --> VSoCRuntime : public trap and HAL IF
+    Libfireball --> VSoCRuntime : public host-call and HAL IF
     VSoCRuntime --> COOSKernel : yield
     VSoCRuntime --> IPCRouter : URI lookup and routing
     IPCRouter --> COOSKernel : task lifecycle

@@ -50,6 +50,7 @@ from system import (
     System,
     WasiErrno,
 )
+from vmmio import TrapCode
 
 
 def test_syscall_01_unknown_id_returns_nosys():
@@ -72,7 +73,7 @@ def test_syscall_16_trigger_set_pin_reserved_nosys():
         sysv.shutdown()
 
 
-def test_syscall_02_sys_control_registers():
+def test_syscall_02_host_call_system_control():
     sysv = System()
     sysv.start_runtime_task(name="test_runtime_task")
     try:
@@ -182,7 +183,7 @@ def test_syscall_15_mmio_bulk_read_dest_offset_out_of_bounds():
         sysv.shutdown()
 
 
-def test_syscall_04_vdma_transfer():
+def test_syscall_04_vdma_host_call_transfer():
     sysv = System()
     sysv.start_runtime_task(name="test_runtime_task")
     try:
@@ -191,7 +192,9 @@ def test_syscall_04_vdma_transfer():
         sysv.bind_runtime(guest_mem)
         dst = FB_CONF_VSOC_PASSTHROUGH_BASE + 0x1000
         assert sysv.fireball_call(FbSyscallId.VDMA_START, 0, dst, 4, 0, 0, 0) == WasiErrno.SUCCESS
-        assert sysv.fireball_call(FbSyscallId.MMIO_READ32, dst, 0, 0, 0, 0, 0) == 0x11223344
+        assert sysv.phys_mem[0x1000:0x1004] == struct.pack("<I", 0x11223344)
+        status, _ = sysv.vmmio.access(0xC000_2000, is_write=False)
+        assert status == TrapCode.UNREGISTERED_PAGE
     finally:
         sysv.shutdown()
 
@@ -518,14 +521,14 @@ def test_wasi_jit_trampoline_invokes_the_registered_handler():
 if __name__ == "__main__":
     test_syscall_01_unknown_id_returns_nosys()
     test_syscall_16_trigger_set_pin_reserved_nosys()
-    test_syscall_02_sys_control_registers()
+    test_syscall_02_host_call_system_control()
     test_syscall_03_mmio_read_write()
     test_syscall_11_mmio_read32_out_of_bounds()
     test_syscall_12_mmio_write32_permission_denied()
     test_syscall_13_mmio_read8_write8()
     test_syscall_14_mmio_bulk_read_write_invalid_size()
     test_syscall_15_mmio_bulk_read_dest_offset_out_of_bounds()
-    test_syscall_04_vdma_transfer()
+    test_syscall_04_vdma_host_call_transfer()
     test_syscall_05_irq_flags()
     test_syscall_06_ipc_lookup_send_recv()
     test_syscall_07_wasi_fd_write()

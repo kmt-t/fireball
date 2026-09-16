@@ -2,14 +2,14 @@
 experiments/pysim/system.py
 Wires HAL + Logger/ConsoleOutput + the recovery-strategy engine + the real
 fireball_call syscall surface into one running system.
-fireball_call's ID space, register layout and error-code convention adhere
+fireball_call's host-call ID space and error-code convention adhere
 strictly to the architectural specifications:
 - `docs/components/tier2_runtime/runtime_syscall.md` defines the real ID table
-- `docs/components/tier2_runtime/runtime_vmmio.md` defines the vMMIO address/register layout
+- `docs/components/tier2_runtime/runtime_vmmio.md` defines the vMMIO address layout
 - `docs/components/tier1_interface/ipc_router.md` defines the URI-routed, zero-copy message queue
 This module uses self-contained simulation modules (`vmmio.py`, `ipc_router.py`,
 `tier2_runtime/memory.py`) mirroring the authoritative concept models, and provides
-the actual register/byte-level storage and wire-level u32 handle numbering
+    the actual byte-level storage and wire-level u32 handle numbering
 required for end-to-end execution.
 All guest output routes through WASI_FD_WRITE (console-output) to adhere strictly
 to runtime_logging.md and interface_wit.md's "console-output" section (dictionary
@@ -153,7 +153,7 @@ class System:
         self.dictionary = LogDictionary()
         self.logger = Logger(self.transport, self.dictionary, min_level=LogLevel.DEBUG)
         self.scheduler = Scheduler(logger=self.logger)
-        # --- vMMIO: real FlatMap+TLB dispatch, this file's own register/byte
+        # --- vMMIO: real FlatMap+TLB dispatch, this file's own byte
         # storage behind it (vmmio_concept.access() deliberately stops at the
         # dispatch decision -- see its module docstring -- it carries no
         # value/buffer of its own).

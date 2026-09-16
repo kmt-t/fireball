@@ -80,7 +80,7 @@ graph TD
     FlatMap -- returns --> WalkResult[Resolved PTE]
     WalkResult -- refills --> TLB
     WalkResult --> PermGate
-    PermGate -- "Passed" --> Handler["PTE Handler<br/>(Syscall or Phys)"]
+    PermGate -- "Passed" --> Handler["PTE Handler<br/>(Device or Phys)"]
     PermGate -- "Failed" --> Trap["Trap: Access Violation"]
 ```
 

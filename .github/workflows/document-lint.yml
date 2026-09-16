@@ -23,6 +23,11 @@ jobs:
         enable-cache: true
         python-version: '3.11'
 
+    - name: Install Fireball Python dependencies
+      run: |
+        uv venv .venv --python 3.11
+        uv pip install --python .venv/bin/python -r requirements.txt
+
     - name: Ensure script execution permissions
       run: |
         chmod +x tools/*.sh
@@ -50,6 +55,11 @@ jobs:
       with:
         enable-cache: true
         python-version: '3.11'
+
+    - name: Install Fireball Python dependencies
+      run: |
+        uv venv .venv --python 3.11
+        uv pip install --python .venv/bin/python -r requirements.txt
 
     - name: Ensure script execution permissions
       run: |

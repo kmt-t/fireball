@@ -385,6 +385,15 @@ sequenceDiagram
 | エラー時の挙動 | 未登録イベントやFIFO満杯はCOOS側でドロップされる。vSoCから渡された不正なイベントは `recovery-strategy: ignore` とし、ゲスト実行コンテキストの破壊を防ぐ。 |
 | 補足 | vSoCのSafepoint配送を補助するだけで、ゲスト関数の階層ディスパッチやWASIポーリングは担当しない。 |
 
+#### CPSハンドラ・ネイティブ実験境界 (`cps_interpreter`)
+<!-- traceability: {ThreadedInterpreter} {ContextPointerRegister} {InterpreterContextStackless} -->
+
+[`interpreter_cps.py`](experiments/pysim/tier2_runtime/interpreter_cps.py) は、通常Python実装とCythonネイティブCPSチェインを切り替える互換入口である。命令意味論と既存の `_h_*` 本体は `interpreter.py` に残し、`cps_chain.pyx` が4引数C関数ポインタ表からPythonハンドラを呼び、基本ブロック終端でない場合だけ `[[clang::musttail]]` 継続呼出しを行う。ジャンプ・分岐命令はチェインせず、既存インタープリタの境界処理へ戻る。AO-Benchはこの入口を経由し、`--native-cps` 指定時にネイティブ経路を必須化する。
+
+ネイティブCPSはWASMバイナリデコーダの代替ではなく、既存WASM命令ハンドラの実行連鎖を検証する実験境界である。目的は、Python互換境界を保ったまま、実インタープリタ全175ハンドラを対象に `(ctx, sp, local_base, tos)` のC関数ポインタチェイン、基本ブロック境界、分岐、ループ、トラップを同一のAO-Benchで検証することである。
+
+ネイティブ経路は通常命令のハンドラ末尾から次の関数ポインタへ継続し、Clangの `[[clang::musttail]]` を実際に通す。分岐・呼出し・戻りは基本ブロック境界としてチェインを戻し、既存のフレーム処理へ接続する。ビルドは任意であり、未ビルドでも通常Python経路の動作は変わらない。
+
 ### 5.2 URI/IPCインターフェース
 <!-- traceability: {META_RecoveryStrategy} -->
 本コンポーネントは vSoC の内部ライブラリとして利用され、直接のIPCインターフェースは持たない。

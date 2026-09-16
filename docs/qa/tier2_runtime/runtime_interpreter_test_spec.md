@@ -16,6 +16,16 @@
 | TEST-INTP-03 | Interpreter handlerとJIT traceの引数ABI | JITトレース生成 | handlerとtrace entryの型・引数配置を比較 | 両者は`ctx, sp, local_base, tos`の4引数配置を共有するが、Interpreter handlerは`handler_result`、JIT trace entryは`void`を返し、関数ポインタ型は分離される | `{ContextPointerRegister}` `{AAPCS_FastCall}` `{PositionIndependentCode}` |
 | TEST-INTP-04 | JITトレースからインタープリタへのシームレスフォールバック | 未コンパイルのブロックへ分岐 | トレース実行完了 | トレース末尾でインタープリタへスムーズに復帰し、後続ブロックをインタープリタが継続実行する | `{JIT_LazyChaining}` `{JIT_RuntimeAPI_Fallback}` |
 
+### Python互換CPSチェイン実験
+
+| テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| TEST-INTP-05 | Python/Native CPS入口互換 | ネイティブ拡張の有無が異なる環境 | 同じWASMモジュールを通常入口とCPS入口で実行 | 公開API、戻り値、トラップ、フレーム状態が一致し、未ビルド時もPython入口が動作する | `interpreter.py`, `interpreter_cps.py` |
+| TEST-INTP-06 | C関数ポインタによる4引数チェイン | `cps_chain.pyx`をビルド済み | ネイティブCPS入口を実行 | `(ctx, sp, local_base, tos)`の関数ポインタ表から通常命令の次ハンドラへ継続する | `cps_chain.pyx`, `runtime_interpreter.md` |
+| TEST-INTP-07 | 通常命令のmusttail継続 | Clang 17+でネイティブ拡張をビルド済み | 算術・メモリ・浮動小数点命令を連続実行 | ハンドラ末尾の `[[clang::musttail]]` 継続呼出しで基本ブロック内を実行する | `{ThreadedInterpreter}` |
+| TEST-INTP-08 | ジャンプ・分岐境界 | `br`、`br_if`、`br_table`、`call`を含むWASM | 境界命令を実行 | ジャンプ・分岐はCPSチェインせず、既存フレーム処理へ戻って正しいPC・制御スタックを保つ | `{InterpreterContextStackless}` |
+| TEST-INTP-09 | AO-Bench全命令差分 | wasmtimeとTier 2/Tier 3を利用可能 | `aobench.py --native-cps`を実行 | Float32 sanity、全AO出力、Tier 2/Tier 3の528バイト出力が完全一致する | `{META_RecoveryStrategy}` |
+
 ### 3本の独立スタック・関数呼び出し ({ContextPointerRegister})
 
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
@@ -125,6 +135,7 @@
 ## 3. テスト検証実績と網羅状況
 
 - **CPSディスパッチ & 3本の独立スタック (TEST-INTP-01〜14)**: 4引数規約、OperandStackのアンダー/オーバーフロー、LocalStack上の再帰呼び出し、戻り値、容量独立性。
+- **Python互換CPSネイティブ実験 (TEST-INTP-05〜09)**: 通常Python入口、全175ハンドラを対象にしたC関数ポインタチェイン、musttail継続、分岐境界、AO-Bench差分の一致。
 - **ラベルアリティ & プルーニング (TEST-INTP-20〜23)**: ブロック脱出、ループ背進辺、多重ネスト br_table。
 - **i64全演算 & メモリアクセス (TEST-INTP-30〜43)**: 64bit算術・シフト・ビットカウント・境界外トラップ。
 - **Safepointポーリング (TEST-INTP-50〜51)**: ループ背進辺での協調的ポーリング。

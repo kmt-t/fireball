@@ -2,23 +2,29 @@
 
 本レポートは、Fireball Hypervisor の全層（Tier 1 Core OS / Tier 2 Runtime / Tier 3 JIT & Platform）を具象化した `pysim` における全 5 つのベンチマークスイートの実測測定結果、JIT トレースチェイニング動作診断、および C++23 実機実装への移植性・性能予測をまとめた詳細レポートです。
 
-Section 1〜4の既存値は 2026-09-14 に同一ワークスペースで再実行した結果である。2026-09-16にJIT検索を疎な二分探索へ変更したため、Section 3のJIT測定だけ同日に再実行して差し替えた。Pythonプロセス、OSスケジューリング、`ctypes`境界の影響を含むため、絶対値ではなく同一環境での比較値として扱う。
+Section 1〜4の既存値は 2026-09-14〜2026-09-16 に同一ワークスペースで再実行した結果である。Section 5のAO-Benchは 2026-09-17 に、現行のCython CPSチェインを有効化して再測定した。Pythonプロセス、OSスケジューリング、およびPythonハンドラ本体呼出しの影響を含むため、絶対値ではなく同一環境での比較値として扱う。
 
 ---
 
 ## 1. 測定環境・実行構成
 
 - **プラットフォーム**: Windows (AMD64)
-- **ランタイム**: Python 3.14 (pysim) / ctypes CPS 4-argument C-Calling Convention
-- **Cython実行状況**: `tier3_jit/native_trace_call.pyd` をJITのネイティブ呼び出し経路で使用。`tier2_runtime/interpreter.pyd` は今回の実行環境に存在しないため、インタープリタ本体はPython実装で測定。
+- **ランタイム**: Python 3.14 (pysim) / Cython CPS 4-argument C-Calling Convention
+- **Cython実行状況**: `tier3_jit/native_trace_call.pyd` をJITのネイティブ呼び出し経路で使用。AO-BenchのTier 2は `cps_chain.pyx` をclang-clでビルドした `_interpreter_cps_native.pyd` によるネイティブCPSチェインを使用し、命令意味論は既存Pythonハンドラ本体を呼び出して測定。
 - **ローカル領域レイアウト**: `WASM_LOCAL_ALIGNMENT_BYTES` を基準に8バイト固定スロットへ統一。Native value stack の物理容量は `NATIVE_VALUE_STACK_CAPACITY`（128 raw words）。
 - **実行コマンド**:
   ```bash
   .venv/Scripts/python.exe experiments/pysim/benchmarks/run_all.py
   ```
-- **AO-Bench 単体・チェイニング内部ダンプ実行コマンド**:
+- **従来AO-Bench単体・チェイニング内部ダンプ実行コマンド**:
   ```bash
   .venv/Scripts/python.exe experiments/pysim/benchmarks/aobench/bench_aobench.py --debug
+  ```
+- **今回のネイティブCPS AO-Bench実行コマンド**:
+  ```powershell
+  powershell -ExecutionPolicy Bypass -File experiments/pysim/tier2_runtime/build_interpreter_cps_native.ps1
+  $env:PYTHONPATH = "$env:TEMP\fireball-pysim-native-cps"
+  uv run --system-certs python experiments/pysim/aobench.py --native-cps
   ```
 
 ---
@@ -72,10 +78,10 @@ Section 1〜4の既存値は 2026-09-14 に同一ワークスペースで再実�
 [Section 5: 3D Raytracing Ambient Occlusion (AO-Bench)]
 --------------------------------------------------------------------------------
   * Resolution & Sampling:              32 x 16 (1,600 rays / frame)
-  * Tier 2 (Interpreter):               10386.32 ms  (154 Rays / Sec)
-  * Tier 3 (Hybrid + JIT):              9582.90 ms  (167 Rays / Sec)
-  * Measured Speedup:                   1.08x faster
-  * JIT Chained Invocations:            33,106 / 82,053 (40.3%)
+  * Tier 2 (Threaded CPS, native):      6642.29 ms  (241 Rays / Sec)
+  * Tier 3 (Hybrid + JIT):              6535.92 ms  (245 Rays / Sec)
+  * Measured Speedup:                   1.02x faster
+  * Differential Check:                 PASS (528 bytes, byte-for-byte)
   * Active JIT Cache Bank Traces:       8 compiled traces
 ================================================================================
 ```
@@ -178,11 +184,11 @@ Section 1〜4の既存値は 2026-09-14 に同一ワークスペースで再実�
 ## 5. シミュレータ性能特性と C++23 実機実装への予測
 
 ### 5.1 Python シミュレータ上での特性分析
-AO-Bench の今回の統合実測結果は `1.08x`（インタープリタ 10386.32 ms に対し JIT 9582.90 ms）でした。4バイトカード（`card_shift=2`）へ統一したことで、連続JIT実行は33,106回（40.3%）となり、チェイン終端・未コンパイル境界からの復帰は48,947回でした。
-1. **Python $\leftrightarrow$ Ctypes FFI 境界オーバーヘッド**:
-   - AO-Bench では 82,053 回のJIT呼び出しのうち33,106回がチェイン接続されました。残る境界復帰ではPython側ランタイムのフレーム同期・探索コストが発生します。
+2026-09-17の現行ネイティブCPS経路では、Tier 2が `6642.29 ms`、Tier 3が `6535.92 ms`、速度比は `1.02x` となった。Tier 2は `cps_chain.pyx` の4引数C関数ポインタチェインを通過し、各命令の意味論は既存Pythonハンドラ本体で実行した。Tier 3との描画結果は528バイトで完全一致した。
+1. **Cython CPSチェイン境界**:
+   - 通常命令ではC関数ポインタ表から次ハンドラへ継続し、基本ブロック境界およびジャンプ・分岐・呼出し・戻りでインタープリタ境界へ戻る。今回の統合ベンチマーク出力ではCPS継続回数は個別に公開していないため、チェイン率は主張しない。
 2. **オンデマンド・コンパイルと動的解決**:
-   - ホットスポット到達時の Copy-and-Patch コンパイル処理が同一スレッド内で逐次実行されるため、フレーム所要時間に含まれます。
+   - Tier 3ではホットスポット到達時の Copy-and-Patch コンパイル処理が同一スレッド内で逐次実行されるため、フレーム所要時間に含まれる。
 
 ### 5.2 C++23 実機実装（Cortex-M33 / x64）での予測
 実機 C++23 実装においては、アーキテクチャ設計により上記ボトルネックが消滅します：

@@ -62,6 +62,11 @@ TEST_SUITES = [
     ),
     (
         "Tier 2 Runtime",
+        "CPS Interpreter Python/Native Compatibility",
+        TEST_DIR / "tier2_runtime" / "test_cps_interpreter.py",
+    ),
+    (
+        "Tier 2 Runtime",
         "Python/C++ ABI Native Layout",
         TEST_DIR / "tier2_runtime" / "test_interop_abi.py",
     ),

@@ -39,7 +39,8 @@ try:
 except ImportError:
     wasmtime = None
 
-from interpreter import Interpreter, InterpreterBindings
+from dummy_drivers import DummyDriver
+from interpreter_cps import BACKEND, NATIVE_AVAILABLE, Interpreter, InterpreterBindings
 from system import System
 from wasi import WasiHostContext
 from wasm_reader import parse
@@ -390,9 +391,7 @@ def run_aobench():
     if wasmtime is not None:
         print("\n[*] Step 1: Compiling Q8.8 3D AO-Bench WAT via `wasmtime.wat2wasm`...")
         wasm_bytes = bytes(wasmtime.wat2wasm(GENUINE_AO_WAT))
-        with open(wasm_path, "wb") as f:
-            f.write(wasm_bytes)
-        print(f"    -> Generated external WASM binary ({len(wasm_bytes)} bytes) -> {wasm_path}")
+        print(f"    -> Generated WASM binary in memory ({len(wasm_bytes)} bytes)")
     else:
         print(
             f"\n[*] Step 1: Loading pre-compiled Q8.8 3D AO-Bench WASM binary from {wasm_path}..."
@@ -410,12 +409,14 @@ def run_aobench():
 
     # 3. Setup System & WASI Context for Tier 2 Baseline
     sysv = System()
+    sysv.start_hal_driver(DummyDriver(sysv.wasi_hal_bindings.stdout_uri, transport=sysv.transport))
     wasi_ctx = WasiHostContext(sysv)
     host_funcs = wasi_ctx.build_interpreter_host_functions(module)
     module.init_memory_data(wasi_ctx.guest_memory, ())
     # 4. Tier 2: Pure Threaded CPS Interpreter Execution
     print(
-        f"\n[*] Step 3: Executing on Tier 2 Threaded CPS Interpreter ({WIDTH}x{HEIGHT}, {AO_SAMPLES} samples/hit)..."
+        f"\n[*] Step 3: Executing on Tier 2 Threaded CPS Interpreter "
+        f"(backend={BACKEND}, {WIDTH}x{HEIGHT}, {AO_SAMPLES} samples/hit)..."
     )
     interp_t2 = Interpreter(
         module, InterpreterBindings.with_memory_and_functions(wasi_ctx.guest_memory, host_funcs)
@@ -438,6 +439,9 @@ def run_aobench():
         "[*] Step 4: Executing on Tier 3 RuntimeEngine (Card-Marking Hotspot Profiler + idle_hook JIT Compiler)..."
     )
     sysv_t3 = System()
+    sysv_t3.start_hal_driver(
+        DummyDriver(sysv_t3.wasi_hal_bindings.stdout_uri, transport=sysv_t3.transport)
+    )
     wasi_ctx_t3 = WasiHostContext(sysv_t3)
     host_funcs_t3 = wasi_ctx_t3.build_interpreter_host_functions(module)
     module.init_memory_data(wasi_ctx_t3.guest_memory, ())
@@ -499,12 +503,31 @@ def run_aobench():
 
 
 if __name__ == "__main__":
+    if "--native-cps" in sys.argv:
+        assert NATIVE_AVAILABLE, (
+            "--native-cps requires the optional _interpreter_cps_native extension; "
+            "build it with build_interpreter_cps_native.ps1 first"
+        )
     # Verify Float32 Ambient Occlusion Raytracer if wasmtime is available
     if wasmtime is not None:
         print("[*] Running Float32 Ambient Occlusion Benchmark...")
         wasm_float_bytes = wasmtime.wat2wasm(GENUINE_AO_FLOAT_WAT)
         module_float = parse(wasm_float_bytes)
-        interp_float = Interpreter(module_float, InterpreterBindings.empty())
+        sysv_float = System()
+        sysv_float.start_hal_driver(
+            DummyDriver(
+                sysv_float.wasi_hal_bindings.stdout_uri, transport=sysv_float.transport
+            )
+        )
+        wasi_ctx_float = WasiHostContext(sysv_float)
+        host_funcs_float = wasi_ctx_float.build_interpreter_host_functions(module_float)
+        module_float.init_memory_data(wasi_ctx_float.guest_memory, ())
+        interp_float = Interpreter(
+            module_float,
+            InterpreterBindings.with_memory_and_functions(
+                wasi_ctx_float.guest_memory, host_funcs_float
+            ),
+        )
         hits = interp_float.call(module_float.export_func_index("run_ao_float"), [32, 32])
         print(
             f"    [PASS] Float32 Raytracer executed successfully: {hits[0]} primary sphere hits on 32x32 grid."

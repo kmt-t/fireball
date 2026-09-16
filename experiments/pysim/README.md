@@ -202,3 +202,16 @@ powershell experiments/pysim/tier2_runtime/build_native.ps1
 # Linux/WSL: clang が必要
 ./experiments/pysim/tier2_runtime/build_native.sh
 ```
+
+### （任意）Cython C-level CPSハンドラ実験
+`experiments/pysim/tier2_runtime/interpreter_cps.py` は実インタープリタの通常Python版とCython CPSチェインの共通入口である。`cps_chain.pyx` が既存 `interpreter.py` の全ハンドラを4引数C関数ポインタ経由で連鎖し、通常命令の末尾継続には `[[clang::musttail]]` を使用する。分岐・呼出し・戻りはチェイン境界として既存インタープリタへ戻るため、AO-Bench全体を同じ入口で検証できる。
+```bash
+# Windows: clang-cl + Visual Studio Build Tools + Windows SDK が必要
+powershell experiments/pysim/tier2_runtime/build_interpreter_cps_native.ps1
+$env:PYTHONPATH = "$env:TEMP/fireball-pysim-native-cps"
+powershell experiments/pysim/aobench.py --native-cps
+
+# Linux/WSL: clang が必要
+./experiments/pysim/tier2_runtime/build_interpreter_cps_native.sh
+PYTHONPATH=/tmp/fireball-pysim-native uv run --system-certs python experiments/pysim/aobench.py --native-cps
+```

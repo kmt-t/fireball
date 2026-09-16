@@ -266,8 +266,6 @@ class WasiHostContext:
             ("fireball", "get_interface", self.wasi03p_get_interface),
             ("fireball", "fireball_call", self.fireball_call),
             ("fireball", "fd_write", self.fd_write),
-            ("env", "fireball_call", self.fireball_call),
-            ("env", "fd_write", self.fd_write),
             ),
             capacity=FB_CONF_MAX_IMPORTS,
         )

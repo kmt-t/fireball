@@ -242,7 +242,7 @@
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | TEST-INT-90 | Bit 31 RAM Bypass 高速パス | リニア RAM アドレス | `access()` 実行 | ページテーブルを介さず `OK_GUEST_RAM` で即時バイパスされる | `RAM_Bypass_Bit31` |
-| TEST-INT-91 | 仮想デバイス書き込みとハンドラディスパッチ | デバイスページ登録済み | `access()` で書き込み | `OK_SYSCALL` が返り登録ハンドラが呼び出される | `vMMIO_TrapAndEmulate` |
+| TEST-INT-91 | 仮想デバイス書き込みとハンドラディスパッチ | デバイスページ登録済み | `access()` で書き込み | `OK_STATIC_DEVICE` が返り登録ハンドラが呼び出される | `vMMIO_TrapAndEmulate` |
 | TEST-INT-92 | 32エントリ Direct-Mapped TLB キャッシュ | 同一ページ反復アクセス | 連続 `access()` | 2回目以降が TLB ヒットとなり `tlb_hits` が増加する | `DirectMappedTLB32` |
 | TEST-INT-93 | タスク間共有メモリ所有権分離 | 非所有（未マッピング）タスクのSHMアクセス | `access()` 実行 | `TRAP_UNREGISTERED_PAGE` で安全にトラップ遮断される | `OwnerMismatchTrap` |
 

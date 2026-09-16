@@ -15,7 +15,7 @@ vMMIO FlatMap Page Table & Direct-Mapped TLB simulation.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable
 from dataclasses import dataclass
 from enum import IntEnum
 from typing import TYPE_CHECKING, Protocol

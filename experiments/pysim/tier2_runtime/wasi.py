@@ -29,8 +29,8 @@ from hal_dispatch import (
     HalBufferHandle,
     WasiIpcCmd,
 )
-from loader import fnv1a_32
 from libfireball import Libfireball
+from loader import fnv1a_32
 from system import FbSyscallId, System
 from system_containers import (
     ReadOnlyFlatMapStorage,

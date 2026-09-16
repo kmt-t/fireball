@@ -514,10 +514,10 @@ def test_tlb_index_separates_function_codes() -> None:
     assert len({a, b, c}) == 3, f"FCs collide: {a}, {b}, {c}"
 
 
-def test_interleaved_syscall_and_shm_keep_hitting_the_tlb() -> None:
-    """The IPC pattern (syscall to IPCR, then touch SHM) must not thrash."""
+def test_interleaved_device_and_shm_keep_hitting_the_tlb() -> None:
+    """The IPCR static-device and SHM pattern must not thrash."""
     ctrl = VMMIOController()
-    ctrl.map_static_device(vpn=0xC0003, handler=lambda sys_id, o, w: None)
+    ctrl.map_static_device(vpn=0xC0003, handler=lambda device_metadata, o, w: None)
     ctrl.map_shm_page(vpn=0xE0003, phys_page=0x900)
     sysc = 0xC000_3000
     shm = 0xE000_3000
@@ -677,7 +677,7 @@ if __name__ == "__main__":
     test_linear_ram_is_bounds_checked_not_waved_through()
     test_linear_ram_bound_check_works_for_non_power_of_two_size()
     test_tlb_index_separates_function_codes()
-    test_interleaved_syscall_and_shm_keep_hitting_the_tlb()
+    test_interleaved_device_and_shm_keep_hitting_the_tlb()
     test_flatmap_pte_registration_and_tlb_caching()
     test_shm_virtual_address_allocator_consecutive()
     test_vmmio_alloc_and_map_multipage()

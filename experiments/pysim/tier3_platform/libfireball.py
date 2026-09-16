@@ -23,6 +23,10 @@ class Libfireball:
     def __init__(self, host_call: FireballHostCall):
         self._host_call = host_call
 
+    @staticmethod
+    def _validate_u32(value: int) -> None:
+        assert 0 <= value <= U32_MAX, "fireball host-call values must be u32"
+
     def _call(
         self,
         syscall_id: int,
@@ -33,8 +37,13 @@ class Libfireball:
         arg4: int,
         arg5: int,
     ) -> int:
-        for value in (syscall_id, arg0, arg1, arg2, arg3, arg4, arg5):
-            assert 0 <= value <= U32_MAX, "fireball host-call values must be u32"
+        self._validate_u32(syscall_id)
+        self._validate_u32(arg0)
+        self._validate_u32(arg1)
+        self._validate_u32(arg2)
+        self._validate_u32(arg3)
+        self._validate_u32(arg4)
+        self._validate_u32(arg5)
         result = self._host_call(syscall_id, arg0, arg1, arg2, arg3, arg4, arg5)
         assert 0 <= result <= U32_MAX, "fireball host-call result must be u32"
         return result

@@ -99,7 +99,7 @@ class VMMIOBenchmark:
         results["tlb_miss_flatmap_mops"] = iterations / (t1 - t0) / 1e6
         results["tlb_miss_flatmap_ns"] = (t1 - t0) / iterations * 1e9
 
-        # 2.4 Static Device Syscall Dispatch (FC=0xC)
+        # 2.4 Static Device Dispatch (FC=0xC)
         dev_addr = 0xC000_0000
         t0 = time.perf_counter()
         for _ in range(iterations):

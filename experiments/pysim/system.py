@@ -21,7 +21,7 @@ from __future__ import annotations
 import os
 import struct
 import time
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 from enum import IntEnum
 from typing import TYPE_CHECKING, Callable
 

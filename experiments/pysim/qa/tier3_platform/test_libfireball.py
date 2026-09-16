@@ -3,6 +3,8 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+import pytest
+
 _TEST_FILE = Path(__file__).resolve()
 _PYSIM_DIR = _TEST_FILE.parents[2]
 for _path in (
@@ -44,8 +46,5 @@ def test_libfireball_host_call_argument_packing() -> None:
 
 def test_libfireball_rejects_non_u32_host_call_values() -> None:
     lib = Libfireball(lambda *_args: 0)
-    try:
+    with pytest.raises(AssertionError):
         lib.fireball_call1(0x20, -1)
-    except AssertionError:
-        return
-    assert False, "non-u32 host-call values must fail fast"

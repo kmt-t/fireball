@@ -41,7 +41,7 @@ done
 
 mkdir -p "$(dirname "$REPORT")"
 
-CMD_ARGS=("run" "--system-certs" "--project" "tools/spec-integrator"
+CMD_ARGS=("run" "--system-certs" "--extra" "dev" "--extra" "prose" "--project" "tools/spec-integrator"
           "python" "-m" "spec_integrator.cli" "check-doc"
           "--config" "$CONFIG" "--report" "$REPORT")
 if [[ -n "$CLEAN" ]]; then

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Clean Architecture SOLID Review"
+  short_description: "Review class roles, dependencies and factories with SOLID."
+  default_prompt: "Use $clean-architecture-solid-review to review class responsibilities, dependencies, and factory placement."

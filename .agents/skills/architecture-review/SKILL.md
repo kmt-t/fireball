@@ -47,7 +47,7 @@ uv run python .agents/skills/architecture-review/scripts/collect_arch_context.py
 
 スクリプトにより以下の4ドメインのファイルパスおよび存在状況が出力されます：
 - `abi`: ABI、`execution_context`、レジスタマップ、CPS規約
-- `jit`: 3-Bankコードキャッシュ、Radix Tableディスパッチ、トレースチェイニング
+- `jit`: 共通領域を含む8KB・3バンクコードキャッシュ、少数疎キーの二分探索ディスパッチ、トレースチェイニング
 - `ipc_mem`: CSP直接ハンドオフ、`SharedBlock`ムーブセマンティクス、vMMIO unmap保護
 - `traceability`: 要求仕様、WIT定義、キーワード辞書アンカー
 
@@ -86,6 +86,8 @@ invoke_subagent(
 
 各サブエージェントには、**評価ルーブリック [`references/architecture_review_rubric.md`](./references/architecture_review_rubric.md)** および対象ドキュメントの絶対パスを参照させます。
 
+文章構成を評価・修正提案する場合は [`.agents/rules/documentation-standards.md`](../../rules/documentation-standards.md) を正本とし、段落の役割が切り替わる位置で分けます。句点や文字数だけで機械的に段落を分けず、定義・契約、動作・手順、理由・設計判断、検証の共通型を使います。
+
 #### サブエージェント 1: ABI・コンテキスト・物理レジスタ規約監査 (`arch-abi-auditor`)
 - **対象**: [`architecture_overview.md`](../../../docs/architecture/architecture_overview.md) の「Physical Register & ABI Map」「メモリ常駐構造体の物理バイトオフセット」 ↔ `runtime_interpreter.md`, `runtime_vsoc.md`, `jit_compiler.md`, `jit_stencil_catalog.md`, `vsoc_runtime.wit`
 - **検証観点**:
@@ -96,10 +98,10 @@ invoke_subagent(
   5. 最上位概要の ABI・メモリレイアウト図（Mermaid）と本文記述・下位仕様の完全一致性（図の陳腐化・追随漏れの排除）。
 
 #### サブエージェント 2: JIT パイプライン・キャッシュ・ディスパッチ監査 (`arch-jit-auditor`)
-- **対象**: [`architecture_overview.md`](../../../docs/architecture/architecture_overview.md) の「Pillar 2: 4段直接 JIT 検索パイプライン」「Pillar 3: 3面世代交代回転コードキャッシュ」 ↔ `jit_runtime.md`, `jit_compiler.md`, `runtime_vsoc.md`, `vsoc_cache_coherency_model.py`, `jit_cache_model.py`
+- **対象**: [`architecture_overview.md`](../../../docs/architecture/architecture_overview.md) の「Pillar 2: 3段直接 JIT 検索パイプライン」「Pillar 3: 共通2KB領域＋3面世代交代回転コードキャッシュ」 ↔ `jit_runtime.md`, `jit_compiler.md`, `runtime_vsoc.md`, `vsoc_cache_coherency_model.py`, `jit_cache_model.py`
 - **検証観点**:
   1. 世代交代コードキャッシュのバンク構成、役割分担、および昇格規則が、形式モデルおよび下位 JIT ランタイム仕様と論理的に完全一致しているか。
-  2. 多段ディスパッチパイプライン（直前キャッシュ、粗索引、有界探索）の各段の計算量、探索手順、および境界条件の整合性。
+  2. 3段ディスパッチパイプライン（カード判定、4スロットFolding XOR、疎なソート配列二分探索）の計算量、探索手順、および境界条件の整合性。JIT用Radix索引が設けられていないことも確認する。
   3. MPU W^X 保護遷移プロトコルおよびキャッシュバリア（DSB/ISB）発行タイミングの整合性。
   4. トレースチェイニングおよびコンパイル順序（LIFO逆順コンパイル等）による即時チェイニング成立保証の記述整合性。
   5. 最上位概要の JIT・キャッシュ・ディスパッチ関連図（Mermaid）と本文記述・下位仕様の完全一致性（図の陳腐化・追随漏れの排除）。

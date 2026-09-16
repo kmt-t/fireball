@@ -1,186 +1,32 @@
 ---
 name: document-validation
-description: Fireball リポジトリの標準ドキュメント検証パイプライン (spec-integrator) を実行するスキル。静的リンク、要求トレーサビリティ、Tier 階層一貫性、形式検証 (pyModelChecking)、WIT インターフェース定義、および LLM as a Judge を実行する際に使用する。
+description: Fireball の仕様・設計・検証資料を、必要な証跡と実行範囲に沿って検証するときに使う。検証コマンドの選定、要求との照合、結果の報告を支援する。
 ---
 
-# Document Validation (spec-integrator)
+# ドキュメント検証
 
-Fireball のドキュメント品質、トレーサビリティ、形式モデル、WIT インターフェース、ベンチマーク、およびセマンティック整合性を包括的に検証するための標準エントリポイントです。
+変更箇所と直接関係する資料だけを対象に、要求、設計、検証証跡の整合を確認する。検証規則やコマンド一覧をこのスキルへ複製せず、各正本を参照する。
 
-## エラー報告時の要求確認
+## 正本の使い分け
 
-検査結果をエラーとして報告する前に、`docs/requires/requirement_list.md`、対象設計書、および対象Tierの正本を確認します。エラーには、違反箇所、なぜ許容できないか、対象の実装言語、要求される処理速度／計算量、許容RAM容量、許容ROM容量、要求への影響、修正方向を含めます。要求正本を確認できない場合は、未確認の言語・速度・RAM・ROM条件を推測せず、要求未確認として報告します。
+- 守るべき条件は、該当する <code>.agents/rules/</code> のルールを確認する。
+- コンポーネントが備える検証証跡と網羅性は、[検証因子・成果物マトリクス](../../../docs/architecture/verification_factor_matrix.md) で確認する。
+- テスト仕様と記録済み結果の配置は、[品質保証資料の案内](../../../docs/qa/README.md) に従う。
+- 検証方法と実行コマンドは、[検証・開発ツールの使い分け](../../../tools/README.md) から選ぶ。CLI の個別ゲートとオプションは [spec-integrator のリファレンス](../../../tools/spec-integrator/README.md) を参照する。
+- 日本語の文体と段落構成は、[documentation-standards](../../rules/documentation-standards.md) を正本とする。
 
-## 文章構成レビュー（必須）
+## 検証手順
 
-ドキュメントレビューでは、内容の正しさだけでなく、文章が人間に追跡可能な構造になっているかを確認します。次の形式を満たしていない記述は修正対象です。
+1. 変更範囲を特定し、要求仕様、対象設計書、文書階層の定義を読む。要求や数値制約を確認できない場合は推測しない。
+2. マトリクスで対象コンポーネントの必要証跡を確認する。該当しない証跡は理由付きで N/A とし、未作成を N/A で隠さない。
+3. 変更箇所と直接関係するテストを選び、README にある該当ゲートを実行する。<code>check-doc</code> と <code>check-src</code> は検証マトリクスも確認するため、単独実行はマトリクスだけを調べる場合に限る。
+4. 検査結果を、失敗・警告・情報に分ける。警告を合格や不合格へ読み替えず、検査パターンの一致だけで要求違反と断定しない。検証の有効性は [verification-antipatterns](../../rules/verification-antipatterns.md) に照らして確認する。
+5. ドキュメント変更では、連動修正の検査を先に行う。問題を解消した後に DocGraph と整合性基準を更新する。
+6. 継続して参照するテスト仕様や実行証跡だけを QA 資料の正本へ記録する。ツールの一時レポートを手作業で複製しない。
 
-- **一文一義の遵守**: 1つの文で述べる命題・事実・契約は原則1つとし、1文の長さは目安60〜80文字（最大100文字以内）とする。「〜であり、〜のため、〜によって」等の接続助詞で複数の節を数珠繋ぎにした長大複文は文を分割する。
-- **主述の近接**: 主語の直後に長大な修飾節や入れ子の括弧書きを挟み込まず、主語と述語の距離を近づけて結論を先に見せる。
-- **契約と背景の分離**: 仕様としての動作契約・不変条件をまず短文で言い切り、理由や形式検証エビデンスは後続文または箇条書きに分離する。
-- **手順と注意事項の分離**: 手順と注意事項を、それぞれ簡潔な箇条書きに分ける。
-- **本筋先行と箇条書き分解**: 本筋を最初に簡潔に示し、付帯条件を目的別の箇条書きグループへ分ける。
+## 実行範囲と報告
 
-レビュー時は、次の順で確認します。
-
-1. 本文から要求、手順、前提条件、制約、例外、理由、検証方法を抽出する。
-2. 1文が100文字を超えている箇所、接続助詞で複数の命題が連結されている箇所を特定し、一文一義の短文へ分割する。
-3. 本筋を一文または短い手順列として先に配置する。
-4. 付帯条件を適用範囲・安全性・正確性・性能・実装補足の順でグループ化し、影響の大きい順に並べる。
-5. 分解前に抽出した情報と分解後の短文・箇条書きを照合し、情報の欠落、重複、意味の変化がないことを確認する。
-6. 理由は現在の仕様上の根拠に限定し、過去の経緯、作業履歴、変更前の状態を削除する。
-
-段落や文が長いことだけを理由に情報を削除してはなりません。情報量が多い場合は、一文一義の短文、見出し、箇条書き、表、手順図へ適切に分割します。レビュー結果には、可読性違反の箇所だけでなく、分解前後の情報照合で仕様情報が欠落していないことも記録します。
-
-## 段階的運用手順 (Workflow & Levels)
-
-> [!IMPORTANT]
-> **エージェント実行原則（コスト・所要時間・課金制御）**:
-> - **回帰テストは関係あるファイルだけに絞る**: 全体テストを無差別に走らせず、**変更したファイルおよび直接関連するコンポーネント・単体テストのみ**を実行すること。
-> - **普段（日常の編集・実装・コミット前）**: 必ず **Level 0（関連する個別単体テスト）** または **Level 1（ローカル静的ゲート `powershell tools/check-doc.ps1` / `powershell tools/check-src.ps1` / コスト 0）** の簡易テストのみを実行すること。
-> - **フルテスト / クラウド LLM 監査（Level 2 / Level 3）**: 所要時間が長くクラウド API 課金が発生するため、**ユーザーから明示的な指示（「フルテストやって」「LLM監査して」等）があった場合のみ** 実行すること。エージェントが自発的・コミットごとに自動実行してはならない。
-
-日常の編集からリリース判定まで、必要最小限のスコープで検証を実行し、無駄な全件監査や待機時間・API課金を排除します。
-
-```mermaid
-graph TD
-    L0["Level 0: 関連ファイルの単体実行<br/>（変更箇所のみ・秒速・コスト0）"] -->|編集・実装中| L0
-    L0 -->|コミット前| L1["Level 1 (既定): 静的ゲート<br/>（全体静的リンク/形式検証・5〜10秒・コスト0）"]
-    L1 -.->|【ユーザー明示指示時のみ】<br/>仕様・ADR変更時| L2["Level 2: マイルストーン LLM 意味監査<br/>（要件サブグラフ・文書一貫性）"]
-    L2 -.->|【ユーザー明示指示時のみ】<br/>PR・リリース前| L3["Level 3: 完全全量監査<br/>（CI / リリースゲート）"]
-    Sync["--level sync: 整合性ベースライン更新<br/>（検証レベルではない、書き込み専用）"]
-```
-
-### Level 0: 日常の編集・関連ファイル個別検証 (Inner Loop / 0.1秒〜数秒)
-**回帰テストは変更に関係のあるファイルのみを直接実行します。**
-
-```powershell
-# 変更した概念コードのみを実行
-uv run python docs/components/tier2_runtime/concepts/logging_concept.py
-
-# 変更した形式検証モデルのみを実行（pyModelChecking）
-uv run python docs/components/tier1_core/formal/coos_channel_model.py
-
-# 変更したベンチマークのみを実行
-uv run python docs/components/tier1_core/benchmarks/direct_context_switch_bench.py
-
-# 変更した spec-integrator 単体テストのみを実行
-uv run --project tools/spec-integrator pytest tools/spec-integrator/tests/test_db.py
-```
-
-### 仕様変更後のドキュメントDB更新
-Markdown を編集したら、ドキュメントDBおよびキーワードインデックスを再構築します：
-
-```powershell
-powershell -ExecutionPolicy Bypass -File tools/build.ps1
-```
-
-### 静的チェック・品質ゲート・サボり検証 (コスト0 / 数秒)
-ドキュメントの静的品質ゲート（Format, Traceability, Hierarchy, WIT, Evidence, Obligation, Consistency）およびソースコードの規約・サボり検査（Anti-Sabotage）を高速確認します。LLM は呼び出されません。
-```powershell
-# ドキュメント 8大品質ゲート検証 (Windows / Linux)
-powershell tools/check-doc.ps1 [files...]
-./tools/check-doc.sh [files...]
-
-# ソースコード サボり・規約・テスト検証 (Windows / Linux)
-powershell tools/check-src.ps1 -group <cpp|python|concepts|formal|pysim|all> [files...]
-./tools/check-src.sh -g <group> [files...]
-```
-
-### 自動フォーマット
-```powershell
-# ドキュメント静的フォーマット (Windows / Linux)
-powershell tools/format-doc.ps1 [files...]
-./tools/format-doc.sh [files...]
-
-# ソースコード自動フォーマット (Python: Ruff / C++: clang-format)
-powershell tools/format-src.ps1 -group <cpp|python|concepts|formal|pysim|all> [files...]
-./tools/format-src.sh -g <group> [files...]
-```
-
-### ドキュメントDB構築・キーワード抽出 (TF-IDF)
-```powershell
-# Windows
-powershell tools/build.ps1
-# クリーン再構築: powershell tools/build.ps1 -clean
-
-# Linux / WSL
-./tools/build.sh
-```
-
-### クラウド LLM 監査（API 課金、ユーザー明示指示時のみ）
-
-#### 1. 単語揺れ検査 (`llm-word`)
-```powershell
-# 通常実行（エンベディング類似度 + LLM文脈判定）
-powershell tools/llm-word.ps1
-
-# 高速・静的実行（LLM判定スキップ、コスト0）
-powershell tools/llm-word.ps1 -quick
-
-# Linux / WSL
-./tools/llm-word.sh
-./tools/llm-word.sh --quick
-```
-
-#### 2. キーワードリスク評価 (`risk`)
-```powershell
-# 既定（上位15キーワード）
-powershell tools/risk.ps1
-
-# 網羅的評価
-powershell tools/risk.ps1 -exhaustive
-
-# Linux / WSL
-./tools/risk.sh
-./tools/risk.sh -a
-```
-
-#### 3. 単体ドキュメント・高リスク島レビュー (`llm-single-review`)
-指定されたファイルまたは全ファイルの全セクション単体、およびそのファイルに含まれる高リスクキーワードのリンクの島に関連するレビューを実行します。
-```powershell
-# 単一ファイル
-powershell tools/llm-single-review.ps1 -file docs/components/tier1_core/os_scheduler.md
-
-# 全ファイル
-powershell tools/llm-single-review.ps1 -all
-
-# チェック項目一覧の表示
-powershell tools/llm-single-review.ps1 -listChecks
-
-# プロンプト確認（Dry Run）
-powershell tools/llm-single-review.ps1 -file docs/components/tier1_core/os_scheduler.md -dryRun
-```
-
-#### 4. 高リスクキーワード島レビュー (`llm-keyword-review`)
-高リスクキーワードを含むドキュメント島の一括レビューを実行します。
-```powershell
-# 全高リスクキーワードの島を一括レビュー
-powershell tools/llm-keyword-review.ps1
-
-# 特定キーワードの島のみレビュー
-powershell tools/llm-keyword-review.ps1 -keyword JIT_STENCIL
-```
-
----
-
-## エビデンス明示記法（方式A）
-
-各設計書のタイトル直下に以下の HTML コメントブロックを配置し、検証エビデンスを明示します：
-
-```markdown
-# コンポーネント設計書 {VERIFY_FORMAL} {VERIFY_BENCHMARK} {VERIFY_LLM}
-<!-- evidence:
-     formal: formal/coos_channel_model.py
-     benchmark: benchmarks/direct_context_switch_bench.py
-     concept: concepts/coos_concept.py
--->
-```
-
----
-
-## 設定と真実の源泉 (Source of Truth)
-- システム設定: [`spec-integrator.yaml`](../../../spec-integrator.yaml)
-- 階層・キーワード・エビデンス規約: [`docs/architecture/document_structure.md`](../../../docs/architecture/document_structure.md)
-- リンク用キーワード台帳正本: [`docs/architecture/keyword_dictionary.md`](../../../docs/architecture/keyword_dictionary.md)
-- 要求仕様正本: [`docs/requires/requirement_list.md`](../../../docs/requires/requirement_list.md)
+- 回帰テストは変更ファイルと直接関係する範囲に限る。全件監査は、ユーザーから明示指示があった場合にだけ行う。
+- API 利用を伴うリスク評価・LLM 監査は、ユーザーの明示指示がある場合だけ実行する。<code>{VERIFY_LLM}</code> の義務を記録付きで履行する場合は <code>llm-judge</code> を使う。
+- 不具合を報告するときは、[検査範囲と報告の規約](../../../tools/README.md#検査範囲と報告) に従う。処理速度、計算量、RAM、ROM の正本が未確認なら、その条件を未確認として明記する。
+- 結果には、実行した対象とコマンド、合否または警告、未実行の範囲と理由を記録する。

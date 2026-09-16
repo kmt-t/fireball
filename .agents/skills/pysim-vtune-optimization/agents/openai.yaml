@@ -1,0 +1,4 @@
+interface:
+  display_name: "PySIM VTune Optimization"
+  short_description: "Rank PySIM optimizations with VTune and embedded budgets."
+  default_prompt: "Use $pysim-vtune-optimization to profile a pysim workload with VTune and rank optimizations against Fireball constraints."

@@ -55,7 +55,8 @@ def _artifact_inventory(repo_root: Path, matrix: dict) -> dict[str, list[str]]:
             _relative(path, repo_root) for path in root.glob("tier*/formal/*_model.py")
         ),
         "test_specs": sorted(
-            _relative(path, repo_root) for path in root.glob("tier*/tests/*_test_spec.md")
+            _relative(path, repo_root)
+            for path in (repo_root / matrix["test_spec_root"]).glob("tier*/*_test_spec.md")
         ),
         "scenarios": sorted(
             _relative(path, repo_root)

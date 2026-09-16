@@ -1,84 +1,100 @@
-# Fireball ツール体系 & 検証パイプライン仕様書
+# 検証・開発ツールの使い分け
 
-Fireball Hypervisor の品質保証、コードフォーマット、静的トレーサビリティ、形式検証（pyModelChecking）、WIT インターフェース検証、Python シミュレータ実機相当テスト、および LLM as a Judge を実行する統合ツール体系です。
+この文書は、変更内容に応じた検証方法と実行入口を示す。コマンドの詳細なオプションと各ゲートの検査項目は [spec-integrator のリファレンス](spec-integrator/README.md) を参照する。
 
-Windows（PowerShell）および Linux / WSL（Bash）の双方で完全透過に同一のコマンドライン操作が可能です。
+## 正本の分担
 
-### 前提パッケージのインストール (Prerequisites)
-プロジェクトのルート直下にある [requirements.txt](requirements.txt) を用いて、必要な Python モジュールを一括インストールします：
-```bash
-# uv を使用する場合 (推奨・高速):
-uv pip install -r requirements.txt
-
-# 通常の pip を使用する場合:
-pip install -r requirements.txt
-```
-
----
-
-## 1. ツール・スクリプト一覧 (Tool Architecture)
-
-Fireball のツール体系は以下の 11 の標準コマンド群で構成されています。ドキュメント検証とソースコード検証は完全に分離されており、対象ファイルやグループ（C++, Pythonサブグループ）を明示指定して実行可能です。
-Windows（PowerShell）および Linux / WSL（Bash）の双方で同一の操作が可能です。
-
-| コマンド | スクリプト (Windows / Linux) | 種別 | 主な役割 |
-| :--- | :--- | :---: | :--- |
-| **build** | `tools/build.ps1`<br>`tools/build.sh` | DB構築 | ドキュメントからデータベース（DocGraph, トポロジー）を構築し、TF-IDFによるキーワード・用語リストを作成。引数で対象Markdown指定可能。 |
-| **format-doc** | `tools/format-doc.ps1`<br>`tools/format-doc.sh` | 静的整形 | Markdown ドキュメントの静的正規化（改行・末尾空白等）を適用。引数で対象Markdown指定可能。 |
-| **check-doc** | `tools/check-doc.ps1`<br>`tools/check-doc.sh` | 静的検査 | ドキュメントの静的検証（8大品質ゲート: Format, Traceability, Hierarchy, Formal, WIT, Evidence, Obligation, Consistency）を実行。引数で対象Markdown指定可能。 |
-| **check-verification-matrix** | `tools/check-verification-matrix.ps1` | 静的検査 | コンセプト、形式モデル、テスト仕様、pysimテスト、シナリオ、因子CSVの実在・登録・件数・自動ID対応・ペアワイズ完全被覆を検査。 |
-| **format-src** | `tools/format-src.ps1`<br>`tools/format-src.sh` | 静的整形 | ソースコードの静的フォーマッタ（Python: Ruff / C++: clang-format）を適用。`-group`（`cpp`, `python`, `concepts`, `formal`, `pysim`, `all`）や個別ファイル指定可能。 |
-| **check-src** | `tools/check-src.ps1`<br>`tools/check-src.sh` | 静的検査 | ソースコードの静的規約・サボり検証（Python は AST／tokenize、C++ は clang AST へ移行可能な言語別バックエンドで TODO放置・空関数・typing.Any / object / 非None Union / pysim製品コードの明示的な `raise`・RTTI・`in` 演算子・テスト専用コード混入・本番のテスト／互換用シンボル・コンパイルAPIの必須引数への `None` 許容の完全禁止・形式モデル変異検査 `guards=False` 必須、pysim の設定駆動 import Tier 依存方向検査・利用側の組み込み `dict` / `set` / `list` 禁止検査（システムコンテナ実装内部は除外）、実機テスト実行）を実行。`-group` や個別ファイル指定可能。`try` / `except` の捕捉は許可する。 |
-| **risk** | `tools/risk.ps1`<br>`tools/risk.sh` | LLM評価 | LLMによりドキュメントのキーワードの設計複雑度・リスク評価を行う。 |
-| **llm-word** | `tools/llm-word.ps1`<br>`tools/llm-word.sh` | LLM検査 | LLMにより単語揺れチェックを行う（エンベディング類似度 + 文脈判定 + レポート出力）。 |
-| **llm-single-review** | `tools/llm-single-review.ps1`<br>`tools/llm-single-review.sh` | LLM監査 | 指定されたファイルまたは全ファイルの全セクション単体、およびファイルに含まれる高リスクキーワードのリンクの島に関連するレビューを行う。 |
-| **llm-keyword-review** | `tools/llm-keyword-review.ps1`<br>`tools/llm-keyword-review.sh` | LLM監査 | リスクの高いキーワードのリンクの島に関連するレビューを行う。 |
-| **llm-judge** | `tools/llm-judge.ps1`<br>`tools/llm-judge.sh` | LLM監査 | `{VERIFY_LLM}` を付与した全文書を対象に、文書単体レビューと関連文書の島レビューを実行し、判定結果をハッシュ固定してキャッシュDBへ永続化する。**Obligation Gate（`OBLIG-JUDGE-*` / `OBLIG-DOC-JUDGE-*`）を履行する唯一のコマンド**であり、`llm-single-review` / `llm-keyword-review`（結果は標準出力のみで DB に固定されない）とは異なる。 |
-
-### 検査エラーの報告規約
-
-検査ツールがエラーまたは修正要求を出すときは、対象ファイルだけを機械的に判定してはならない。`docs/requires/requirement_list.md`、対象コンポーネントの設計書、および `docs/architecture/document_structure.md` を確認し、次の情報をエラー詳細へ含める。
-
-- 何が違反したか（対象のファイル、行、規約または検査ID）。
-- なぜ駄目なのか（言語仕様、所有権、決定性、移植性、実行時挙動などの技術的理由）。
-- 対象の要求制約（実装言語、必要な処理速度／計算量、許容RAM容量、許容ROM容量）。
-- その違反が要求へ与える影響と、要求を満たす修正方向。
-
-要求仕様または対象範囲を確認できない場合は、速度・RAM・ROM・言語を推測してエラーを断定せず、「要求未確認」として不足している正本を報告する。単なる検査パターンの一致を、要求適合性の確認済みとして扱ってはならない。
-
-引数の省略可能性も検査対象とする。デフォルト値や `T | None` によって省略を許している引数を、関数内部で `assert` などにより実質的な必須条件として扱っている場合はエラーにする。省略時に動作しない入力は本番コードで回復せず、呼び出し側（テストならテストコード側）で準備して、具象型の必須引数として渡す。
-
----
-
-## 2. 目的別クイックスタート (Workflow by Purpose)
-
-| 目的 | コマンド（Windows / Linux） | コスト・所要時間 |
+| 情報 | 正本 | 役割 |
 | :--- | :--- | :--- |
-| **ドキュメントDB・用語インデックス作成** | `powershell tools/build.ps1`<br>`./tools/build.sh` | 0円 / 1〜2秒 |
-| **ドキュメント自動フォーマット** | `powershell tools/format-doc.ps1 [files...]`<br>`./tools/format-doc.sh [files...]` | 0円 / 1秒 |
-| **ドキュメント静的品質ゲート検証** | `powershell tools/check-doc.ps1 [files...]`<br>`./tools/check-doc.sh [files...]` | 0円 / 5〜10秒 |
-| **検証成果物・因子マトリクス検証** | `powershell tools/check-verification-matrix.ps1` | 0円 / 1秒 |
-| **ソースコード自動フォーマット** | `powershell tools/format-src.ps1 -group <group> [files...]`<br>`./tools/format-src.sh -g <group> [files...]` | 0円 / 1秒 |
-| **ソースコード品質・サボり検査** | `powershell tools/check-src.ps1 -group <group> [files...]`<br>`./tools/check-src.sh -g <group> [files...]` | 0円 / 2〜5秒 |
-| **用語表記揺れの確認** | `powershell tools/llm-word.ps1 -quick`（静的のみ）<br>`powershell tools/llm-word.ps1`（LLM判定込み） | 0円（quick） / 課金 |
-| **キーワードリスク評価 (マイルストーン時)** | `powershell tools/risk.ps1` | 課金 / 30秒〜1分 |
-| **単体ドキュメントのレビュー** | `powershell tools/llm-single-review.ps1 -file docs/components/tier1_core/os_scheduler.md`<br>`powershell tools/llm-single-review.ps1 -tagged`（{VERIFY_LLM}付与文書のみ） | 課金 |
-| **高リスクキーワードの島レビュー** | `powershell tools/llm-keyword-review.ps1` | 課金 |
-| **`{VERIFY_LLM}` 義務の履行（Obligation Gate）** | `powershell tools/llm-judge.ps1`<br>`./tools/llm-judge.sh` | 課金 |
+| 開発・実装上の必須条件 | [開発ルール](../.agents/rules/development-policy.md)、各コーディングルール | 守るべき条件を定める。 |
+| 検証の反パターン | [verification-antipatterns](../.agents/rules/verification-antipatterns.md) | 証拠のない検証、恒真アサーション、未結線テストなどを防ぐ。 |
+| コンポーネントごとの必要証跡と網羅性 | [検証因子・成果物マトリクス](../docs/architecture/verification_factor_matrix.md) | 必要な検証成果物と因子の対応を定める。 |
+| テスト仕様・結果の配置 | [品質保証資料の案内](../docs/qa/README.md) | テスト仕様と記録済み証跡を分類する。 |
+| 検証の選び方と実行入口 | この文書 | 変更範囲に合うコマンドを選ぶ。 |
+| ドキュメント検証の運用手順 | [document-validation スキル](../.agents/skills/document-validation/SKILL.md) | 対象を絞り、正本と検査結果を照合する。 |
+| CLI の検査項目・オプション | [spec-integrator のリファレンス](spec-integrator/README.md) | ツールの実装に対応する詳細を示す。 |
 
----
+## 検証の分類
 
-## 3. 品質ゲート詳細 (8 Quality Gates via `check-doc`)
+検証は目的で選ぶ。作業段階を示すレベル番号は使わない。
 
-`tools/check-doc.ps1` / `tools/check-doc.sh` が検証する 8 つのドキュメント品質ゲートです（1 件でも違反があれば終了コード 1 で失敗）。
-
-| ゲート名 | ルール | 検査内容 |
+| 分類 | 対象・役割 | 主な入口 |
 | :--- | :--- | :--- |
-| **1. Format Gate** | `FMT-*` | Markdown 内部リンク切れ、見出しアンカー切れ、Mermaid構文、**ファイルリンク形式（ベースネーム表記・プロジェクトルート相対パス強制: `FMT-FILE-LINK-FORMAT`）**、**レーベンシュタイン距離による静的タイポ・表記揺れ（`FMT-LEVENSHTEIN-TYPO`）** の検出。 |
-| **2. Traceability Gate** | `TRACE-*` | 未定義キーワードの参照、未参照の要求仕様、孤立ノードの検出。 |
-| **3. Hierarchy Gate** | `HIERARCHY-*` | Tier（0:要求 $\to$ 1:主要 $\to$ 2:サブ $\to$ 3:リーフ）間の逆流参照・カプセル化違反の検出。 |
-| **4. Formal Gate** | `FORMAL-*` | `docs/**/formal/*.py`（pyModelChecking）の実行、LTL/CTL 検証、`BACKS` 契約の検証。 |
-| **5. WIT Gate** | `WIT-*` | `wit/*.wit` の構文・型整合性・エラー回復戦略契約の検証。 |
-| **6. Evidence Gate** | `EVIDENCE-*` | `<!-- evidence: ... -->` で主張されたベンチマークや実装ファイルの実在性とアサーション検証。 |
-| **7. Obligation Gate** | `OBLIG-*` | リスク評価（`risk`）で導出された検証義務、および `{VERIFY_LLM}` タグが要求する意味監査義務（`llm-judge` でハッシュ固定・DB永続化）が **100% 履行** されているかの検証。 |
-| **8. Consistency Gate** | `CONSIST-*`<br>`TERM_VARIANCE` | 一貫性ベースラインとの差分・シンボル値ズレ、および **TF-IDF + さくらのAI エンベディング・LLM文脈監査による用語表記揺れ（`TERM_VARIANCE`）** の警告。 |
+| **準備・更新** | フォーマッタはファイルを変更する。build は DocGraph と用語索引、整合性の基準データを更新する。どちらも合否を示す検査ではない。 | format-doc、format-src、build |
+| **決定的な品質ゲート** | ドキュメント構造・要求追跡・Tier・形式モデル・WIT・証跡・検証義務・整合性を機械判定する。コード規約や結線済みテストも対象にする。 | check-doc、check-src |
+| **証拠の実行** | 単体・結合テスト、形式モデル、シナリオ、ベンチマークを実行して動作や性質を確かめる。必要な証拠と登録先はマトリクスで確認する。 | 各検証成果物の実行入口。pysim は [experiments/pysim/README.md](../experiments/pysim/README.md) を参照。 |
+| **参考警告** | GiNZA の日本語可読性警告など、機械判定だけで合否を決められない箇所をレビュー候補として示す。 | check-doc の文章可読性警告 |
+| **意味・リスク監査** | LLM による用語揺れ、リスク、意味整合性を調べる。API 利用を伴う監査はユーザーの明示指示がある場合だけ実行する。 | risk、llm-word、llm-single-review、llm-keyword-review、llm-judge |
+
+check-doc と check-src は、検証因子・成果物マトリクスも確認する。マトリクスだけを調べるときは check-verification-matrix を使う。ゲートの識別子と判定内容は CLI リファレンスに集約する。
+
+## 専門レビューの使い分け
+
+専門レビューは、決定的な品質ゲートや実行証跡を代替しない。変更対象に合うスキルを選ぶ。指摘は要求・設計・実装の正本と照合する。
+
+| 対象 | スキル | 主な確認内容 |
+| :--- | :--- | :--- |
+| 最上位アーキテクチャと下位Tier | [architecture-review](../.agents/skills/architecture-review/SKILL.md) | 概要設計、下位仕様、形式モデル、WIT、実装の垂直整合性。 |
+| 個別コンポーネント | [component-review](../.agents/skills/component-review/SKILL.md) | 仕様、形式モデル、コンセプトコード、テスト仕様・実装の証跡連鎖。 |
+| クラス責務と依存設計 | [clean-architecture-solid-review](../.agents/skills/clean-architecture-solid-review/SKILL.md) | Clean Architecture、SOLID、依存方向、ファクトリ配置、計算量と簡潔さ。 |
+| pysim の移植性・規約 | [pysim-review](../.agents/skills/pysim-review/SKILL.md) | C++23 移植性、型・コンテナ・決定性・計算量・RAM/ROM 配置。 |
+| pysim の性能最適化 | [pysim-vtune-optimization](../.agents/skills/pysim-vtune-optimization/SKILL.md) | VTune の実測ボトルネック、RAM/ROM 予算、事前計算と遅延計算の比較。 |
+
+## 変更範囲から選ぶ
+
+| 変更 | 実行する検証 |
+| :--- | :--- |
+| Markdown の仕様・設計・検証資料 | 対象ファイルを指定した check-doc。文章可読性は警告として確認する。 |
+| C++、Python、コンセプト、形式モデル、pysim | 対象の check-src を使う。変更ファイルに合う -group を指定し、直接関係するテストも実行する。 |
+| 検証成果物、因子、水準、シナリオ、登録設定 | check-verification-matrix を使う。check-doc と check-src にも同じ検査が含まれる。 |
+| 設計書と要求キーワードの編集 | check-doc で連動修正漏れを確認する。問題を解消してから build で基準データを更新する。先に build すると編集差分を検査できない。 |
+| LLM 判定義務 {VERIFY_LLM} の履行 | ユーザーの明示指示を受けて llm-judge を実行する。他のレビュー結果では義務を履行できない。 |
+
+### 検査範囲と報告
+
+回帰テストは変更ファイルと直接関係する範囲に絞る。
+検査結果を不具合として報告するときは、要求仕様と対象設計を確認する。違反箇所、技術的理由、要求への影響、修正方向を示す。
+処理速度・計算量・RAM・ROM の条件を正本で確認できない場合は推測しない。未確認として報告する。
+
+## 標準コマンド
+
+Windows は PowerShell、Linux / WSL は Bash の入口を使う。[files...] は対象ファイルの省略可能な指定を表す。
+<code>-group</code> には <code>cpp</code>、<code>python</code>、<code>concepts</code>、<code>formal</code>、<code>pysim</code>、<code>all</code> を指定する。
+
+| 目的 | Windows | Linux / WSL |
+| :--- | :--- | :--- |
+| ドキュメント整形 | <code>powershell tools/format-doc.ps1 [files...]</code> | <code>./tools/format-doc.sh [files...]</code> |
+| ドキュメント検証 | <code>powershell tools/check-doc.ps1 [files...]</code> | <code>./tools/check-doc.sh [files...]</code> |
+| ソース検証 | <code>powershell tools/check-src.ps1 -group &lt;group&gt; [files...]</code> | <code>./tools/check-src.sh -g &lt;group&gt; [files...]</code> |
+| 検証マトリクスのみ | <code>powershell tools/check-verification-matrix.ps1</code> | <code>uv run --system-certs --project tools/spec-integrator python tools/check_verification_matrix.py spec-integrator.yaml</code> |
+| ソース整形 | <code>powershell tools/format-src.ps1 -group &lt;group&gt; [files...]</code> | <code>./tools/format-src.sh -g &lt;group&gt; [files...]</code> |
+| DocGraph・索引の更新 | <code>powershell tools/build.ps1</code> | <code>./tools/build.sh</code> |
+
+ドキュメント検証では、Format、Traceability、Hierarchy、Formal、WIT、Evidence、Obligation、Consistency の各ゲートを確認する。
+ソース検証では、選んだグループの規約とサボり検査を行う。結線済みの検証も実行する。
+詳しい検査項目は [spec-integrator のゲート仕様](spec-integrator/README.md) を参照する。
+
+### 文章可読性の補助警告
+
+check-doc は GiNZA で日本語文を解析する。長文や複雑な節接続をレビュー候補として警告する。
+警告は品質ゲートのエラーに数えない。終了コードにも影響しない。
+
+しきい値は <code>spec-integrator.yaml</code> の <code>prose_readability</code> で調整する。初期値は文長100文字超、または90文字以上かつ節接続候補4箇所以上である。
+コードブロック・見出し・HTMLコメントは解析しない。表の文章セルは解析する。
+GiNZA の構文解析は、冗長性や意味の正しさを判定しない。警告箇所は人が内容を確認する。
+
+文章チェックを含む環境を初回に用意する場合は、<code>uv sync --project tools/spec-integrator --extra dev --extra prose</code> を実行する。
+
+## 任意の補助監査
+
+| 目的 | Windows | Linux / WSL | 区分 |
+| :--- | :--- | :--- | :--- |
+| 用語候補の静的確認 | <code>powershell tools/llm-word.ps1 -quick</code> | <code>./tools/llm-word.sh --quick</code> | LLM 不使用 |
+| 用語揺れの意味判定 | <code>powershell tools/llm-word.ps1</code> | <code>./tools/llm-word.sh</code> | API 利用 |
+| キーワードのリスク評価 | <code>powershell tools/risk.ps1</code> | <code>./tools/risk.sh</code> | API 利用 |
+| 文書単体のレビュー | <code>powershell tools/llm-single-review.ps1 -file &lt;path&gt;</code> | <code>./tools/llm-single-review.sh --file &lt;path&gt;</code> | API 利用 |
+| キーワード島のレビュー | <code>powershell tools/llm-keyword-review.ps1 -keyword &lt;name&gt;</code> | <code>./tools/llm-keyword-review.sh --keyword &lt;name&gt;</code> | API 利用 |
+| {VERIFY_LLM} 義務の履行 | <code>powershell tools/llm-judge.ps1</code> | <code>./tools/llm-judge.sh</code> | API 利用・判定を記録 |
+
+API 利用を伴う監査は、ユーザーの明示指示がある場合だけ実行する。
+<code>{VERIFY_LLM}</code> の義務は <code>llm-judge</code> で記録付きで履行する。詳細なオプションは [spec-integrator のリファレンス](spec-integrator/README.md) を参照する。

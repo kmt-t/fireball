@@ -37,7 +37,7 @@ if ($reportsDir -and -not (Test-Path $reportsDir)) {
     New-Item -ItemType Directory -Path $reportsDir | Out-Null
 }
 
-$cmdArgs = @("run", "--system-certs", "--project", "tools/spec-integrator",
+$cmdArgs = @("run", "--system-certs", "--extra", "dev", "--extra", "prose", "--project", "tools/spec-integrator",
              "python", "-m", "spec_integrator.cli", "check-doc",
              "--config", $config, "--report", $report)
 if ($clean) { $cmdArgs += "--clean" }

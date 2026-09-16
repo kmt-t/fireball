@@ -128,11 +128,12 @@ def find_component_files(repo_root: Path, target: str) -> ChainArtifacts:
             if p.is_file():
                 concept_files.append(p)
     # tests
-    for p in tier_dir.glob(f"tests/*{component_name}*_test_spec.md"):
+    qa_tier_dir = repo_root / "docs" / "qa" / tier_dir.name
+    for p in qa_tier_dir.glob(f"*{component_name}*_test_spec.md"):
         if p.is_file():
             test_spec_files.append(p)
     if not test_spec_files:
-        for p in tier_dir.glob(f"tests/*{component_name}*.md"):
+        for p in qa_tier_dir.glob(f"*{component_name}*.md"):
             if p.is_file():
                 test_spec_files.append(p)
     # wit

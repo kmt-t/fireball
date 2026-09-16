@@ -63,11 +63,11 @@ DOMAINS = {
     },
     "jit": {
         "name": "JIT Pipeline, Cache & Dispatch",
-        "description": "3-Bank Generational Cache, Radix Table dispatch, trace chaining, LIFO compile",
+        "description": "8KB contiguous JIT region with fixed common code plus three rotating banks, sparse-key binary-search dispatch, trace chaining, LIFO compile",
         "keywords": [
-            "RadixTable_Dispatch",
-            "FlatViewNarrowing",
+            "DirectMappedJIT4",
             "META_BinarySearch",
+            "JIT_CopyAndPatch",
             "JIT_MultiBuffer_Cache",
             "JIT_OldestOnly_Promote",
             "SimpleJITArchitecture",

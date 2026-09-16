@@ -146,4 +146,4 @@ sequenceDiagram
 
 ## 6. 検証と実装時期
 
-参照実装は [`experiments/pysim/tier3_platform/libfireball.py`](experiments/pysim/tier3_platform/libfireball.py) の `Libfireball` である。`Libfireball` は固定 7 引数の host-call 関数を注入し、`fireball_call0`〜`fireball_call6` の不足引数を `0` で埋めて直接呼び出す。実機向け C/C++ ゲストライブラリは、この固定形状を静的バインディングへ移植する。検証は [`test_libfireball.py`](experiments/pysim/qa/tier3_platform/test_libfireball.py) と、Tier 2 のホスト側 `runtime_syscall` テストで行う。
+参照実装は [`libfireball.py`](experiments/pysim/tier3_platform/libfireball.py) の `Libfireball` である。`Libfireball` は固定 7 引数の host-call 関数を注入し、`fireball_call0`〜`fireball_call6` の不足引数を `0` で埋めて直接呼び出す。実機向け C/C++ ゲストライブラリは、この固定形状を静的バインディングへ移植する。検証は [`test_libfireball.py`](experiments/pysim/qa/tier3_platform/test_libfireball.py) と、Tier 2 のホスト側 `runtime_syscall` テストで行う。

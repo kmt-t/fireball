@@ -87,6 +87,63 @@ class _SectionCounts:
         self.data_segments = 0
 
 
+class _ParseCallbacks:
+    """Parse-time event sink used to keep ROM parsing separate from storage."""
+
+    __slots__ = ("module",)
+
+    def __init__(self, module: Module) -> None:
+        self.module = module
+
+    def on_type(self, function_type: FuncType) -> None:
+        self.module.types.append(function_type)
+
+    def on_function_import(self, import_entry: Import) -> None:
+        self.module.imports.append(import_entry)
+
+    def on_global_import(self, value_type: int, mutable: bool) -> None:
+        self.module.global_import_count += 1
+        self.module.globals.append(
+            Global(vtype=value_type, mutable=mutable, init_value=0, imported=True)
+        )
+
+    def on_memory_import(self, import_entry: Import, minimum: int, maximum: int | None) -> None:
+        assert self.module.memory is None, "multiple imported/defined memories are unsupported"
+        self.module.memory_import = import_entry
+        self.module.memory = Memory(min_pages=minimum, max_pages=maximum, imported=True)
+
+    def on_table_import(self, minimum: int, maximum: int | None) -> None:
+        self.module.table_import_count += 1
+        self.module.tables.append(Table(min_size=minimum, max_size=maximum, imported=True))
+
+    def on_table(self, minimum: int, maximum: int | None) -> None:
+        self.module.tables.append(Table(min_size=minimum, max_size=maximum))
+
+    def on_memory(self, minimum: int, maximum: int | None) -> None:
+        assert self.module.memory is None, "multiple imported/defined memories are unsupported"
+        self.module.memory = Memory(min_pages=minimum, max_pages=maximum)
+
+    def on_global(self, global_value: Global) -> None:
+        self.module.globals.append(global_value)
+
+    def on_export(self, export: Export) -> None:
+        self.module.exports.append(export)
+
+    def on_function(self, function: Function) -> None:
+        self.module.functions.append(function)
+
+    def on_start(self, function_index: int) -> None:
+        self.module.start_function = function_index
+
+    def on_element_section(self, offset: int, size: int) -> None:
+        self.module.element_section_offset = offset
+        self.module.element_section_size = size
+
+    def on_data_section(self, offset: int, size: int) -> None:
+        self.module.data_section_offset = offset
+        self.module.data_section_size = size
+
+
 def _read_section_counts(data: memoryview) -> _SectionCounts:
     counts = _SectionCounts()
     off = 8
@@ -174,16 +231,21 @@ def _parse_functype(data: memoryview, off: int) -> tuple[FuncType, int]:
     return FuncType(params=params, results=results, offset=record_offset, size=off - record_offset), off
 
 
-def _parse_type_section(data: memoryview, off: int, end: int, module: Module) -> None:
+def _parse_type_section(
+    data: memoryview, off: int, end: int, callbacks: _ParseCallbacks
+) -> None:
     n, off = decode_unsigned(data, off)
     for _ in range(n):
         ft, off = _parse_functype(data, off)
-        module.types.append(ft)
+        callbacks.on_type(ft)
 
     assert off == end, "type section length mismatch"
 
 
-def _parse_import_section(data: memoryview, off: int, end: int, module: Module) -> None:
+def _parse_import_section(
+    data: memoryview, off: int, end: int, callbacks: _ParseCallbacks
+) -> None:
+    module = callbacks.module
     n, off = decode_unsigned(data, off)
     for _ in range(n):
         mod_len, off = decode_unsigned(data, off)
@@ -198,7 +260,7 @@ def _parse_import_section(data: memoryview, off: int, end: int, module: Module) 
         off += 1
         if kind == 0:
             type_index, off = decode_unsigned(data, off)
-            module.imports.append(
+            callbacks.on_function_import(
                 Import(
                     module_offset=module_offset,
                     module_size=mod_len,
@@ -212,13 +274,9 @@ def _parse_import_section(data: memoryview, off: int, end: int, module: Module) 
             off += 1
             mutable = data[off] == 0x01
             off += 1
-            module.global_import_count += 1
-            module.globals.append(
-                Global(vtype=value_type, mutable=mutable, init_value=0, imported=True)
-            )
+            callbacks.on_global_import(value_type, mutable)
         elif kind == 2:
             minimum, maximum, off = _parse_limits(data, off, is_memory=True)
-            assert module.memory is None, "multiple imported/defined memories are unsupported"
             descriptor = Import(
                 module_offset=module_offset,
                 module_size=mod_len,
@@ -228,8 +286,7 @@ def _parse_import_section(data: memoryview, off: int, end: int, module: Module) 
                 min_limit=minimum,
                 max_limit=maximum,
             )
-            module.memory_import = descriptor
-            module.memory = Memory(min_pages=minimum, max_pages=maximum, imported=True)
+            callbacks.on_memory_import(descriptor, minimum, maximum)
         elif kind == 1:
             elem_type = data[off]
             off += 1
@@ -237,8 +294,7 @@ def _parse_import_section(data: memoryview, off: int, end: int, module: Module) 
                 f"only funcref table imports are supported, got 0x{elem_type:02X}"
             )
             minimum, maximum, off = _parse_limits(data, off)
-            module.table_import_count += 1
-            module.tables.append(Table(min_size=minimum, max_size=maximum, imported=True))
+            callbacks.on_table_import(minimum, maximum)
         else:
             assert False, f"unsupported import kind={kind}"
 
@@ -273,18 +329,23 @@ def _parse_limits(
     return minimum, maximum, off
 
 
-def _parse_memory_section(data: memoryview, off: int, end: int, module: Module) -> None:
+def _parse_memory_section(
+    data: memoryview, off: int, end: int, callbacks: _ParseCallbacks
+) -> None:
+    module = callbacks.module
     n, off = decode_unsigned(data, off)
     assert n <= 1, "only single linear memory is supported"
     for _ in range(n):
         assert module.memory is None, "multiple imported/defined memories are unsupported"
         mn, mx, off = _parse_limits(data, off, is_memory=True)
-        module.memory = Memory(min_pages=mn, max_pages=mx)
+        callbacks.on_memory(mn, mx)
 
     assert off == end, "memory section length mismatch"
 
 
-def _parse_table_section(data: memoryview, off: int, end: int, module: Module) -> None:
+def _parse_table_section(
+    data: memoryview, off: int, end: int, callbacks: _ParseCallbacks
+) -> None:
     n, off = decode_unsigned(data, off)
     for _ in range(n):
         elem_type = data[off]
@@ -293,14 +354,16 @@ def _parse_table_section(data: memoryview, off: int, end: int, module: Module) -
             f"only funcref tables are supported, got 0x{elem_type:02X}"
         )
         mn, mx, off = _parse_limits(data, off)
-        module.tables.append(Table(min_size=mn, max_size=mx))
+        callbacks.on_table(mn, mx)
 
     assert off == end, "table section length mismatch"
 
 
-def _parse_element_section(data: memoryview, off: int, end: int, module: Module) -> None:
-    module.element_section_offset = off
-    module.element_section_size = end - off
+def _parse_element_section(
+    data: memoryview, off: int, end: int, callbacks: _ParseCallbacks
+) -> None:
+    module = callbacks.module
+    callbacks.on_element_section(off, end - off)
 
     def validate_element(table_index: int, _slot: int, _function_index: int) -> None:
         assert table_index < len(module.tables), "element segment table index out of range"
@@ -308,7 +371,10 @@ def _parse_element_section(data: memoryview, off: int, end: int, module: Module)
     module.stream_element_initializers(validate_element, (), resolve_globals=False)
 
 
-def _parse_global_section(data: memoryview, off: int, end: int, module: Module) -> None:
+def _parse_global_section(
+    data: memoryview, off: int, end: int, callbacks: _ParseCallbacks
+) -> None:
+    module = callbacks.module
     n, off = decode_unsigned(data, off)
     for _ in range(n):
         vtype = _read_value_type(data, off)
@@ -349,7 +415,7 @@ def _parse_global_section(data: memoryview, off: int, end: int, module: Module) 
         assert init_type == vtype, "global initializer type must match global type"
         assert data[off] == 0x0B, "global init expr must end with 0x0B"
         off += 1
-        module.globals.append(
+        callbacks.on_global(
             Global(
                 vtype=vtype,
                 mutable=mutable,
@@ -361,7 +427,9 @@ def _parse_global_section(data: memoryview, off: int, end: int, module: Module) 
     assert off == end, "global section length mismatch"
 
 
-def _parse_export_section(data: memoryview, off: int, end: int, module: Module) -> None:
+def _parse_export_section(
+    data: memoryview, off: int, end: int, callbacks: _ParseCallbacks
+) -> None:
     n, off = decode_unsigned(data, off)
     for _ in range(n):
         name_len, off = decode_unsigned(data, off)
@@ -371,7 +439,7 @@ def _parse_export_section(data: memoryview, off: int, end: int, module: Module) 
         kind = data[off]
         off += 1
         idx, off = decode_unsigned(data, off)
-        module.exports.append(
+        callbacks.on_export(
             Export(name_offset=name_offset, name_size=name_len, kind=kind, index=idx)
         )
 
@@ -379,8 +447,13 @@ def _parse_export_section(data: memoryview, off: int, end: int, module: Module) 
 
 
 def _parse_code_section(
-    data: memoryview, off: int, end: int, type_indices: StaticVector[int], module: Module
+    data: memoryview,
+    off: int,
+    end: int,
+    type_indices: StaticVector[int],
+    callbacks: _ParseCallbacks,
 ) -> None:
+    module = callbacks.module
 
     n, off = decode_unsigned(data, off)
     assert n == len(type_indices), "code section entry count must match function section"
@@ -405,7 +478,7 @@ def _parse_code_section(
                 locals_extra.append(vtype)
 
         code = data[loff:body_end]  # instruction stream, including the trailing 0x0B (end)
-        module.functions.append(
+        callbacks.on_function(
             Function(
                 type_index=type_indices[i],
                 locals_extra=locals_extra,
@@ -420,15 +493,19 @@ def _parse_code_section(
     assert off == end, "code section length mismatch"
 
 
-def _parse_start_section(data: memoryview, off: int, end: int, module: Module) -> None:
+def _parse_start_section(
+    data: memoryview, off: int, end: int, callbacks: _ParseCallbacks
+) -> None:
     func_idx, off = decode_unsigned(data, off)
-    module.start_function = func_idx
+    callbacks.on_start(func_idx)
     assert off == end, "start section length mismatch"
 
 
-def _parse_data_section(data: memoryview, off: int, end: int, module: Module) -> None:
-    module.data_section_offset = off
-    module.data_section_size = end - off
+def _parse_data_section(
+    data: memoryview, off: int, end: int, callbacks: _ParseCallbacks
+) -> None:
+    module = callbacks.module
+    callbacks.on_data_section(off, end - off)
     assert module.memory is not None, "data segment requires linear memory"
 
     def validate_data(_offset: int, _data: memoryview) -> None:
@@ -935,6 +1012,7 @@ def parse(data: memoryview) -> Module:
         table_count=section_counts.tables,
     )
     type_indices = StaticVector[int](capacity=section_counts.functions)
+    callbacks = _ParseCallbacks(module)
     off = 8
     last_section_id = 0
     while off < len(data):
@@ -950,27 +1028,27 @@ def parse(data: memoryview) -> Module:
             assert sec_id > last_section_id, "WASM sections are duplicated or out of order"
             last_section_id = sec_id
         if sec_id == SEC_TYPE:
-            _parse_type_section(data, off, sec_end, module)
+            _parse_type_section(data, off, sec_end, callbacks)
         elif sec_id == SEC_IMPORT:
-            _parse_import_section(data, off, sec_end, module)
+            _parse_import_section(data, off, sec_end, callbacks)
         elif sec_id == SEC_FUNCTION:
             type_indices = _parse_function_section(data, off, sec_end)
         elif sec_id == SEC_TABLE:
-            _parse_table_section(data, off, sec_end, module)
+            _parse_table_section(data, off, sec_end, callbacks)
         elif sec_id == SEC_MEMORY:
-            _parse_memory_section(data, off, sec_end, module)
+            _parse_memory_section(data, off, sec_end, callbacks)
         elif sec_id == SEC_GLOBAL:
-            _parse_global_section(data, off, sec_end, module)
+            _parse_global_section(data, off, sec_end, callbacks)
         elif sec_id == SEC_EXPORT:
-            _parse_export_section(data, off, sec_end, module)
+            _parse_export_section(data, off, sec_end, callbacks)
         elif sec_id == SEC_START:
-            _parse_start_section(data, off, sec_end, module)
+            _parse_start_section(data, off, sec_end, callbacks)
         elif sec_id == SEC_ELEMENT:
-            _parse_element_section(data, off, sec_end, module)
+            _parse_element_section(data, off, sec_end, callbacks)
         elif sec_id == SEC_CODE:
-            _parse_code_section(data, off, sec_end, type_indices, module)
+            _parse_code_section(data, off, sec_end, type_indices, callbacks)
         elif sec_id == SEC_DATA:
-            _parse_data_section(data, off, sec_end, module)
+            _parse_data_section(data, off, sec_end, callbacks)
         elif sec_id == 0:
             pass
         else:

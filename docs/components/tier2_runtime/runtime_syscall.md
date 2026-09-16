@@ -15,14 +15,14 @@
 
 ## 3. 背景
 <!-- traceability: {UnifiedAccessModel} -->
-`fireball_call` は、vMMIOアドレス空間（[`runtime_vmmio.md`](docs/components/tier2_runtime/runtime_vmmio.md) の Stage 2/3、Bit 31 == 1）に対する**代理実行ラッパー**である。直接vMMIOアドレスにアクセスできないゲスト言語のために、シングル・トラップ命令経由でホストがvMMIO操作を代行する。ゲスト専用RAM（Stage 1, Bit 31 == 0）はこの対象外であり、`FastAddressCheck` による別経路の境界チェックのみで完結する。
+`fireball_call` は、WASM の import からホストディスパッチへ直結する**ホストコール境界**である。ホストは `id` と6個の引数を直接受け取り、登録済みハンドラを同期実行する。ホストコールの転送に vMMIO の SYSCTL レジスタや VDMA レジスタは使用しない。ゲスト専用RAM（Stage 1, Bit 31 == 0）は `FastAddressCheck` により保護し、MMIO操作を要求するIDだけが対象アドレスの vMMIO ゲートを明示的に利用する。
 
 ```
 アクセスパスA: guest load/store(vMMIO_addr) → PTEマッピング解決 (未登録時 TRAP) → 直接物理アクセス
-アクセスパスB: guest fireball_call(id, args) → host代理 → vMMIO → PTEマッピング解決 → 直接物理アクセス
+アクセスパスB: guest import fireball_call(id, args) → host-call dispatch → handler
 ```
 
-インタープリタは、`libfireball` のゲストアダプタを経由せず、SYSCTL の syscall doorbell レジスタを通常の vMMIO `load/store` として操作できる。`REG_SYSCALL_ID` と6個の引数を設定して `REG_SYS_CONTROL=4` を書き込み、戻り値を `REG_SYSCALL_ARG0` から読み出す。実行先はランタイムが登録する syscall vector table であり、`fireball_call` と同じID・WASI `errno_t` の戻り値規約を共有する。
+インタープリタと JIT は、`fireball:host/trap` の import を host call として捕捉し、`fireball_call` のハンドラを直接呼び出す。戻り値は host call の結果として WASM の呼び出し元へ返す。SYSCTL の syscall doorbell、`REG_SYSCALL_*`、および vMMIO syscall vector table は定義しない。
 
 vMMIOアドレス空間（Stage 2/3）に対しては、どちらのパスも最終的に統一された vMMIO ページマッピング機構（PTE / TLB）を通る。アクセス権限のない領域（他タスク所有の共有メモリや未割当領域）は仮想アドレス空間から物理的に **unmap（マッピング解除）** されており、PTE 不在として未登録ページトラップ（`TRAP_UNREGISTERED_PAGE`）により即座に遮断される。セキュリティ境界は vMMIO のマッピング存在性により 1 箇所に統一される（ゲストRAMのFastAddressCheckとは独立した別ゲート）。
 
@@ -52,9 +52,9 @@ world fireball {
 }
 ```
 
-##### トラップ高速パスとレジスタ直接マッピング
+##### ホストコール高速パス
 <!-- traceability: {Trap_Interface} -->
-`fireball_call` は、実行環境のJIT/Interpreterが提供するインポート関数呼び出しをインターセプトし、ホスト側の仮想レジスタ `REG_SYSCALL_*` に引数を直接複写（レジスタマッピング）することで、トラップ（`ecall` / `svc` 等）の処理オーバーヘッドを極限まで削減する高速パスを提供する。
+`fireball_call` は、実行環境の JIT/Interpreter が提供する import 呼び出しをインターセプトし、引数をホスト側の固定シグネチャへ直接渡す高速パスを提供する。vMMIO レジスタへの引数複写や SYSCTL doorbell の操作は行わない。
 
 ## 5. `fireball_call` 呼び出し規約
 
@@ -102,7 +102,7 @@ world fireball {
 未定義または予約済みのシステムコール ID が呼び出された場合、ホスト側はアボートやカーネルパニックを発生させず、WASI 準拠の `WasiErrno.NOSYS`（52）を返却して安全に復帰する。これにより、新機能の有無を動的に問い合わせるゲストランタイムや標準ライブラリ（WASI libc 等）がフォールバック機構を安全に機能させることができる。
 
 ## 6. システムコールID
-システムコールIDは、`fireball_call`が実行する特定の操作を識別し、vMMIOの全機能をカバーする。カテゴリ別に管理される。
+システムコールIDは、`fireball_call` が実行する特定のホスト操作を識別する。カテゴリ別に管理される。vMMIO の通常アクセスそのものは WASM の load/store 経路で扱い、host call はその搬送手段にしない。
 
 ### 6.1. カテゴリ一覧
 
@@ -128,7 +128,7 @@ world fireball {
 | `0x03` | `SYS_RESET` | — | `0` | ゲストリセット |
 
 ### 6.3. vMMIO Generic (`0x10`-`0x1F`)
-vMMIOアドレス空間全体への汎用アクセス。SYSCTL/IPCR/VDMA/SHM/DYNAMIC/PASSTHROUGHすべての領域に対応。アクセス可否は、対象物理アドレスが `FB_CONF_VMMIO_ALLOWED_ADDRS`（[`system_config.md`](docs/components/tier1_core/system_config.md)）の許可範囲に属するかで判定される。この許可判定はタスク単位ではなく物理アドレス単位のグローバルなゲートであり、PTEに埋め込まれた権限フィールドが唯一の検証点となる（`runtime_vmmio.md` を正本とする）。SHM領域（FC=14）等、タスク間で所有権が移動するリソースの排他制御は `{RoleBasedAccessControl}` と IPCルータの所有権移譲によって別途行われ、vMMIOの物理アクセス許可判定とは独立している。 `{META_RestrictedPhysicalAccess}`
+vMMIO管理下のアドレスへの汎用 host-call 操作である。IPCR/SHM/DYNAMIC/PASSTHROUGH等を対象とし、SYSCTL syscall doorbell と VDMA レジスタは対象に含めない。アクセス可否は、対象物理アドレスが `FB_CONF_VMMIO_ALLOWED_ADDRS`（[`system_config.md`](docs/components/tier1_core/system_config.md)）の許可範囲に属するかで判定される。この許可判定はタスク単位ではなく物理アドレス単位のグローバルなゲートであり、PTEに埋め込まれた権限フィールドが唯一の検証点となる（`runtime_vmmio.md` を正本とする）。SHM領域（FC=14）等、タスク間で所有権が移動するリソースの排他制御は `{RoleBasedAccessControl}` と IPCルータの所有権移譲によって別途行われ、vMMIOの物理アクセス許可判定とは独立している。 `{META_RestrictedPhysicalAccess}`
 
 | ID | 名前 | 引数 | 戻り値 | 説明 |
 | :--- | :--- | :--- | :--- | :--- |
@@ -138,11 +138,11 @@ vMMIOアドレス空間全体への汎用アクセス。SYSCTL/IPCR/VDMA/SHM/DYN
 | `0x13` | `MMIO_WRITE8` | `addr` (`fb_val_t`: 物理アドレス), `value` (`fb_val_t`: 8bit値) | `0` (エラー時は `ERR_OUT_OF_BOUNDS` または `ERR_ACCESS_DENIED`) | 8bit書き込み |
 | `0x14` | `MMIO_BULK_READ` | `addr` (`fb_val_t`: 物理アドレス), `dest_offset` (`fb_offset_t`: ゲスト物理ベース相対), `byte_count` (`fb_val_t`: 転送バイト数) | `0` (エラー時は `ERR_OUT_OF_BOUNDS`, `ERR_ACCESS_DENIED` または `ERR_INVALID_SIZE`) | バルク読み出し（ゲストメモリへコピー） `{META_RestrictedPhysicalAccess}` |
 | `0x15` | `MMIO_BULK_WRITE` | `addr` (`fb_val_t`: 物理アドレス), `src_offset` (`fb_offset_t`: ゲスト物理ベース相対), `byte_count` (`fb_val_t`: 転送バイト数) | `0` (エラー時は `ERR_OUT_OF_BOUNDS`, `ERR_ACCESS_DENIED` または `ERR_INVALID_SIZE`) | バルク書き込み（ゲストメモリから書込） `{META_RestrictedPhysicalAccess}` |
-| `0x16` | `TRIGGER_SET_PIN` | `pin` (`fb_val_t`), `value` (`fb_val_t`: 0/1) | `0` (エラー時は `ERR_OUT_OF_BOUNDS` または `ERR_ACCESS_DENIED`) | GPIOピン出力設定（`{Fast_Path_GPIO}` vMMIO直接ストアのゲストアダプタ経路、`FB_SYSCALL_TRIGGER_SET_PIN`）。**pysim実験実装での状態**: 専用のGPIO vMMIOレジスタ配線が未実装のため、`fireball_call` ディスパッチテーブルには未登録であり、呼び出すと `GOTCHA-SYS-01` の規定通り安全に `WasiErrno.NOSYS` を返す（GPIOはこの実験では IPC 経由の `fireball://hal/gpio/0` HALサブシステムとして到達可能）。実機ターゲットでの本ID実装は別途 vMMIO GPIO レジスタ配線を前提とする。 |
+| `0x16` | `TRIGGER_SET_PIN` | `pin` (`fb_val_t`), `value` (`fb_val_t`: 0/1) | `0` (エラー時は `ERR_OUT_OF_BOUNDS` または `ERR_ACCESS_DENIED`) | GPIOピン出力設定（`{Fast_Path_GPIO}` の host-call 経路、`FB_SYSCALL_TRIGGER_SET_PIN`）。**pysim実験実装での状態**: 専用GPIOハンドラが未実装のため、`fireball_call` は `GOTCHA-SYS-01` の規定通り安全に `WasiErrno.NOSYS` を返す。高速な実機GPIOアクセスは別契約の直接vMMIOストアで行う。 |
 
 ### 6.4. VDMA (`0x20`-`0x2F`)
 <!-- traceability: {VDMA} -->
-仮想DMA操作のセマンティックラッパー。内部的にvMMIO VDMAレジスタへの書き込みに変換される。
+仮想DMA操作を実行する host-call ハンドラである。VDMA レジスタへの vMMIO 書き込みには変換しない。
 
 | ID | 名前 | 引数 | 戻り値 | 説明 |
 | :--- | :--- | :--- | :--- | :--- |
@@ -230,7 +230,7 @@ WASIの引数レイアウトとエラー変換は、`libfireball` が `runtime_s
 
 ### 8.1. 役割
 <!-- traceability: {Challenge_WasiFdWriteLoop} {WASI_Async_Bridge} -->
-`fireball_call` を捕捉し、`id` に基づいて適切なハンドラにディスパッチする。WASI関連の呼び出しに対しては、対応するサービスや下位レイヤーのハードウェアHAL（Zephyr/SoC SDKなど）の操作を実行する。
+`fireball_call` を host call として捕捉し、`id` に基づいて適切なハンドラにディスパッチする。WASI関連の呼び出しに対しては、対応するサービスや下位レイヤーのハードウェアHAL（Zephyr/SoC SDKなど）の操作を実行する。
 
 | 機構名 | 課題と背景 | 解決方針・設計構造 | 関連キーワード |
 | :--- | :--- | :--- | :--- |
@@ -268,13 +268,13 @@ WASIの引数レイアウトとエラー変換は、`libfireball` が `runtime_s
 ## 11. トラップ状態プロトコル
 <!-- traceability: {Trap_Interface} -->
 
-`fireball_call` は、トラップ命令（RISC-Vの `ecall` や ARMの `svc` 等）をベースにした同期通信インターフェースである。ゲストWASM実行環境においてインポート関数呼び出し（`call`）が行われると、実行エンジン（Interpreter/JIT）がこれをトラップし、ホスト側の対応するC++ハンドラに制御を同期的に移譲する（トラップ状態プロトコル）。
+`fireball_call` は、WASM import をベースにした同期 host-call インターフェースである。ゲストWASM実行環境で import 呼び出し（`call`）が行われると、実行エンジン（Interpreter/JIT）がホスト側の対応する C++ ハンドラへ制御を同期的に移譲する。基盤CPUの `ecall` や `svc` は実装詳細であり、vMMIO レジスタ経路を意味しない。
 
 ##### トラップ実行の制御フロー
 トラップ命令ベースの同期通信インターフェース（`{Trap_Interface}`）における、具体的な実行制御フローは以下の通りである。
 
 1. **ゲスト実行**: ゲストが `fireball_call(id, a0, ...)` を呼び出す。
-2. **トラップ検知**: 実行エンジンがインポート関数のトラップ（トラップ命令に相当）を検知。
-3. **レジスタマッピング**: 引数 `id` および `a0`〜`a5` が仮想レジスタ `REG_SYSCALL_*` にコピーされる。
-4. **ホストディスパッチ**: ホスト側ハンドラが呼び出され、処理が同期的に実行される。この間、ゲストタスクのPC（Program Counter）はトラップ命令位置で静止し、スタックおよびローカル変数は自動的に保存される。
-5. **完了と復帰**: ホストが `REG_SYSCALL_RET` に戻り値を設定すると、実行エンジンがゲストタスクのPCを次の命令に進め、実行を自動的に復元・再開する。
+2. **ホストコール検知**: 実行エンジンが `fireball_call` import を解決する。
+3. **引数受け渡し**: 引数 `id` および `a0`〜`a5` を固定 host-call シグネチャでホストへ渡す。
+4. **ホストディスパッチ**: ホスト側ハンドラが同期実行される。この間、ゲストタスクのPC（Program Counter）は import 呼び出し位置で停止する。
+5. **完了と復帰**: ホストコールの戻り値を WASM の結果値へ変換し、実行エンジンが次の命令からゲストを再開する。

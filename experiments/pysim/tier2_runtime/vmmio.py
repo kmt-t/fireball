@@ -63,7 +63,7 @@ class VmmioPte(Protocol):
 
 
 # Function Codes (bits[31:28]) — see runtime_vmmio.md "アドレス分解の対応関係"
-FC_STATIC_DEVICE = 0xC  # 0xC000_0000: SYSCTL / IPCR / VDMA (Tier 2, syscall dispatch)
+FC_STATIC_DEVICE = 0xC  # 0xC000_0000: IPCR / vIRQ (Tier 2 device access)
 FC_DYNAMIC = 0xD  # 0xD000_0000: HAL-owned bounded dynamic buffers
 FC_SHM = 0xE  # 0xE000_0000: Shared Memory (Tier 3, page-isolated via unmap)
 FC_PASSTHROUGH = 0xF  # 0xF000_0000: Physical passthrough (Tier 3)

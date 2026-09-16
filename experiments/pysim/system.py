@@ -130,28 +130,9 @@ class WasiErrno(IntEnum):
 SyscallHandler = Callable[[int, int, int, int, int, int], int]
 
 
-# runtime_vmmio.md §4.3-§4.5: real static-device addresses and register
-# offsets (not invented -- copied from the spec's own register tables).
-SYSCTL_BASE = 0xC000_0000
+# runtime_vmmio.md §4.3: real static-device addresses.
 IPCR_BASE = 0xC000_1000
-VDMA_BASE = 0xC000_2000
 _STATIC_DEVICE_PAGE_MASK = 0xFFFF_F000
-REG_SYS_CONTROL = 0x00
-REG_SYS_STATUS = 0x04
-REG_IRQ_FLAGS = 0x08
-REG_SYSCALL_ID = 0x10
-REG_SYSCALL_CMD = 0x14
-REG_SYSCALL_ARG0 = 0x18
-REG_SYSCALL_ARG5 = 0x2C
-REG_VDMA_SRC = 0x00
-REG_VDMA_DST = 0x04
-REG_VDMA_COUNT = 0x08
-REG_VDMA_CTRL = 0x0C
-VDMA_CTRL_START_BIT = 0x1
-SYS_CONTROL_RESET = 1
-SYS_CONTROL_YIELD = 2
-SYS_CONTROL_HALT = 3
-SYS_CONTROL_SYSCALL = 4
 FB_CONF_GUEST_RAM_SIZE = 4096  # system_config.md §3.3.4
 FB_CONF_VSOC_PASSTHROUGH_BASE = 0xF000_0000  # runtime_vmmio.md §3.3's FC=15 window
 _PASSTHROUGH_TEST_PAGES = 16  # this experiment's own arbitrary backing size,
@@ -160,8 +141,8 @@ _PASSTHROUGH_TEST_PAGES = 16  # this experiment's own arbitrary backing size,
 class System:
     """
     One running Fireball-shaped host: a single platform I/O sink, a single SHM
-        buffer pool, one dictionary logger, a real vMMIO controller (FlatMap PTEs + TLB, reused from
-        vmmio_concept.py) fronted by SYSCTL/IPCR/VDMA static-device registers
+        buffer pool, one dictionary logger, and a real vMMIO controller (FlatMap PTEs + TLB, reused from
+        vmmio_concept.py) fronted by an IPCR static-device page
         and a PASSTHROUGH-backed physical memory window, and a real IPC router
         (reused from ipc_router_concept.py) with its fixed 3-service registry.
     """
@@ -178,15 +159,8 @@ class System:
         # value/buffer of its own).
         self.vmmio = VMMIOController(guest_ram_size=FB_CONF_GUEST_RAM_SIZE, scheduler=self.scheduler)
         self.pool = HalBufferPool(self.scheduler, self.vmmio)
-        self.sysctl_regs = bytearray(0x30)
         self.ipcr_regs = bytearray(0x10)
-        self.vdma_regs = bytearray(0x10)
-        self.vmmio.map_static_device(
-            vpn=SYSCTL_BASE >> 12,
-            value_handler=self._sysctl_vmmio_access,
-        )
         self.vmmio.map_static_device(vpn=IPCR_BASE >> 12)
-        self.vmmio.map_static_device(vpn=VDMA_BASE >> 12)
         # PASSTHROUGH (FC=15) test window. Real PASSTHROUGH pages map to
         # actual host peripherals (FB_CONF_VSOC_PASSTHROUGH_BASE); this
         # experiment has none, so it backs the window with plain memory --
@@ -227,15 +201,21 @@ class System:
         syscall_entries: tuple[tuple[int, SyscallHandler], ...] = (
             (
                 FbSyscallId.SYS_YIELD,
-                lambda a0, a1, a2, a3, a4, a5: int(self._apply_sys_control(SYS_CONTROL_YIELD)),
+                lambda a0, a1, a2, a3, a4, a5: int(
+                    self._apply_sys_control(int(FbSyscallId.SYS_YIELD))
+                ),
             ),
             (
                 FbSyscallId.SYS_HALT,
-                lambda a0, a1, a2, a3, a4, a5: int(self._apply_sys_control(SYS_CONTROL_HALT)),
+                lambda a0, a1, a2, a3, a4, a5: int(
+                    self._apply_sys_control(int(FbSyscallId.SYS_HALT))
+                ),
             ),
             (
                 FbSyscallId.SYS_RESET,
-                lambda a0, a1, a2, a3, a4, a5: int(self._apply_sys_control(SYS_CONTROL_RESET)),
+                lambda a0, a1, a2, a3, a4, a5: int(
+                    self._apply_sys_control(int(FbSyscallId.SYS_RESET))
+                ),
             ),
             (
                 FbSyscallId.MMIO_READ32,
@@ -314,13 +294,7 @@ class System:
         self._syscall_handlers: ReadOnlyFlatMapStorage[int, SyscallHandler] = (
             ReadOnlyFlatMapStorage.create(syscall_entries)
         )
-        syscall_vector_table: StaticVector[SyscallHandler | None] = StaticVector.of(
-            (None,) * 256, capacity=256
-        )
-        for syscall_id, handler in syscall_entries:
-            assert syscall_id < len(syscall_vector_table)
-            syscall_vector_table[syscall_id] = handler
-        self._syscall_vector_table = tuple(syscall_vector_table)
+        self.irq_flags = 0
 
     def _on_idle(self) -> None:
         """COOS idle_hook dispatch: flushes deferred logs and compiles queued JIT traces."""
@@ -336,13 +310,6 @@ class System:
         self.scheduler.detach(task)
         self.scheduler.activate_task(task)
         return task
-
-    def register_syscall_vector_table(
-        self, vector_table: Sequence[SyscallHandler | None]
-    ) -> None:
-        """Replace the host-side syscall vector used by the SYSCTL doorbell."""
-        assert len(vector_table) <= 4096
-        self._syscall_vector_table = tuple(vector_table)
 
     def bind_runtime(self, memory: bytearray | None, role: Role = Role.RUNTIME) -> None:
         """
@@ -415,19 +382,15 @@ class System:
         self._guest_memory[offset : offset + len(data)] = data
         return True
 
-    # --- System (SYS_YIELD/HALT/RESET, real REG_SYS_CONTROL semantics) --
+    # --- System host calls (SYS_YIELD/HALT/RESET) -----------------------
     def _apply_sys_control(self, cmd: int) -> WasiErrno:
         """
-        runtime_vmmio.md's REG_SYS_CONTROL: `1`=Reset, `2`=Yield,
-                `3`=Halt. `fireball_call`'s SYS_YIELD/HALT/RESET IDs are the
-                "cannot do a raw vMMIO store" proxy for writing this exact
-                register (runtime_syscall.md's "アクセスパスB"), so both paths
-                funnel through this one real effect.
+        Applies a system-control effect directly for a host-call request.
+        There is no SYSCTL vMMIO doorbell or register shadow.
         """
-        struct.pack_into("<I", self.sysctl_regs, REG_SYS_CONTROL, cmd & 0xFFFF_FFFF)
-        if cmd == SYS_CONTROL_RESET:
+        if cmd == int(FbSyscallId.SYS_RESET):
             self.reset_requested = True
-        elif cmd == SYS_CONTROL_YIELD:
+        elif cmd == int(FbSyscallId.SYS_YIELD):
             # {CooperativeMultitasking}: a real yield suspends the calling
             # coroutine until the scheduler resumes it. This experiment's
             # WASM JIT has no continuation/suspend mechanism -- a native
@@ -436,38 +399,11 @@ class System:
             # generator-based yield is the actual host-side yield model for
             # the HAL demo; this path can only acknowledge the request.
             pass
-        elif cmd == SYS_CONTROL_HALT:
+        elif cmd == int(FbSyscallId.SYS_HALT):
             self.halted = True
         else:
             return WasiErrno.INVAL
         return WasiErrno.SUCCESS
-
-    def _sysctl_vmmio_access(self, offset: int, value: int, is_write: bool) -> int:
-        """Serve interpreter load/store traffic for the SYSCTL syscall doorbell."""
-        assert offset % 4 == 0
-        assert offset + 4 <= len(self.sysctl_regs)
-        if not is_write:
-            return struct.unpack_from("<I", self.sysctl_regs, offset)[0]
-
-        value &= 0xFFFF_FFFF
-        struct.pack_into("<I", self.sysctl_regs, offset, value)
-        if offset != REG_SYS_CONTROL or value != SYS_CONTROL_SYSCALL:
-            if offset == REG_SYS_CONTROL:
-                return int(self._apply_sys_control(value))
-            return 0
-
-        syscall_id = struct.unpack_from("<I", self.sysctl_regs, REG_SYSCALL_ID)[0]
-        args = tuple(
-            struct.unpack_from("<I", self.sysctl_regs, REG_SYSCALL_ARG0 + index * 4)[0]
-            for index in range(6)
-        )
-        result = int(WasiErrno.NOSYS)
-        if syscall_id < len(self._syscall_vector_table):
-            handler = self._syscall_vector_table[syscall_id]
-            if handler is not None:
-                result = handler(*args)
-        struct.pack_into("<I", self.sysctl_regs, REG_SYSCALL_ARG0, result & 0xFFFF_FFFF)
-        return int(result)
 
     # --- vMMIO Generic (real FlatMap/TLB dispatch + real backing bytes) -
     def _trap_to_errno(self, status: VmmioStatus) -> WasiErrno | None:
@@ -505,12 +441,8 @@ class System:
         a = VmmioAddress(addr)
         if a.fc() == FC_STATIC_DEVICE:
             page = addr & _STATIC_DEVICE_PAGE_MASK
-            if page == SYSCTL_BASE:
-                return None, self.sysctl_regs, a.offset()
             if page == IPCR_BASE:
                 return None, self.ipcr_regs, a.offset()
-            if page == VDMA_BASE:
-                return None, self.vdma_regs, a.offset()
             return WasiErrno.NOENT, None, None
         # Tier 3 (SHM / PASSTHROUGH): resolve the same phys_addr formula
         # vmmio_concept.access() itself already computed internally, from
@@ -535,10 +467,6 @@ class System:
         if off + width > len(backing):
             return WasiErrno.FAULT
         backing[off : off + width] = (value & ((1 << (8 * width)) - 1)).to_bytes(width, "little")
-        if backing is self.sysctl_regs and off == REG_SYS_CONTROL:
-            return self._apply_sys_control(value)
-        if backing is self.vdma_regs and off == REG_VDMA_CTRL and (value & VDMA_CTRL_START_BIT):
-            return self._run_vdma()
         return WasiErrno.SUCCESS
 
     def _mmio_bulk_read(self, addr: int, dest_offset: int, byte_count: int) -> WasiErrno:
@@ -561,17 +489,9 @@ class System:
         backing[off : off + byte_count] = data
         return WasiErrno.SUCCESS
 
-    # --- VDMA (real REG_VDMA_* registers + a real memcpy) ---------------
+    # --- VDMA host call (no vMMIO register transport) -------------------
     def _vdma_start(self, src: int, dst: int, byte_count: int) -> WasiErrno:
-        struct.pack_into(
-            "<III",
-            self.vdma_regs,
-            REG_VDMA_SRC,
-            src & 0xFFFF_FFFF,
-            dst & 0xFFFF_FFFF,
-            byte_count & 0xFFFF_FFFF,
-        )
-        return self._run_vdma()
+        return self._run_vdma(src, dst, byte_count)
 
     def _vdma_region(
         self, addr: int, count: int, is_write: bool
@@ -590,8 +510,7 @@ class System:
             return None, None
         return backing, off
 
-    def _run_vdma(self) -> WasiErrno:
-        src, dst, count = struct.unpack_from("<III", self.vdma_regs, REG_VDMA_SRC)
+    def _run_vdma(self, src: int, dst: int, count: int) -> WasiErrno:
         src_backing, src_off = self._vdma_region(src, count, is_write=False)
         if src_backing is None:
             return WasiErrno.FAULT
@@ -601,13 +520,12 @@ class System:
         dst_backing[dst_off : dst_off + count] = bytes(src_backing[src_off : src_off + count])
         return WasiErrno.SUCCESS
 
-    # --- IRQ (REG_IRQ_FLAGS, shared with SYSCTL's own register file) ----
+    # --- IRQ flags (host-side notification state) -----------------------
     def _irq_read_flags(self) -> int:
-        return struct.unpack_from("<I", self.sysctl_regs, REG_IRQ_FLAGS)[0]
+        return self.irq_flags
 
     def _irq_clear(self, mask: int) -> WasiErrno:
-        flags = struct.unpack_from("<I", self.sysctl_regs, REG_IRQ_FLAGS)[0]
-        struct.pack_into("<I", self.sysctl_regs, REG_IRQ_FLAGS, flags & ~mask & 0xFFFF_FFFF)
+        self.irq_flags &= ~mask & 0xFFFF_FFFF
         return WasiErrno.SUCCESS
 
     def raise_irq(self, mask: int) -> None:
@@ -619,8 +537,7 @@ class System:
                 IRQ_CLEAR to observe.
         """
 
-        flags = struct.unpack_from("<I", self.sysctl_regs, REG_IRQ_FLAGS)[0]
-        struct.pack_into("<I", self.sysctl_regs, REG_IRQ_FLAGS, (flags | mask) & 0xFFFF_FFFF)
+        self.irq_flags = (self.irq_flags | mask) & 0xFFFF_FFFF
 
     # --- IPC (real IPCRouter: URI lookup, RBAC, CSP rendezvous handoff) ---
     def _ipc_lookup(self, uri_offset: int, uri_len: int) -> int:

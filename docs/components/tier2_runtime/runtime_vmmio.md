@@ -32,7 +32,7 @@ FlatMap 単体での探索は $O(\log N)$ である。本アーキテクチャ�
 vMMIO領域（Stage 2/3）のセキュリティモデルは**PTEに埋め込まれた権限フィールドがゲート**である。アクセス権限は PTE に保持され、ルックアップと権限チェックを1パスで完結させる。ゲストRAM（Stage 1）はPTEを経由せず、`FastAddressCheck` による境界チェックのみをゲートとする別経路である。アクセス特性に応じてセキュリティゲートを以下の3段階に階層化する。
 
 1. **Stage 1 (ゲストRAMバイパス)**: ゲスト専用RAM領域（Bit 31 == 0、FC=0..7）。`addr >= guest_ram_size` による比較ベースの単一の高速境界チェック（`FastAddressCheck`）のみで高速処理し、境界外は即座にトラップする。
-2. **Stage 2 (静的vMMIO, FC=12)**: コンパイル時にアドレスが確定するコアデバイス（SYSCTL, IPCR, VDMA等）。アドレス `0xC000_0000` は FC=12 に位置する。JIT生成時に許可チェックを行い、許可済みならネイティブコードに直接デバイスキーを埋め込む。
+2. **Stage 2 (静的vMMIO, FC=12)**: コンパイル時にアドレスが確定するコアデバイス（IPCR、vIRQ等）。システムコールと VDMA の host call はこのアドレス空間を経由しない。
 3. **Stage 3 (動的vMMIO, FC=13-15)**: HAL DYNAMIC（FC=13, `0xD000_0000`）、SHM（FC=14, `0xE000_0000`）、PASSTHROUGH（FC=15, `0xF000_0000`）領域のアクセス。TLB または FlatMap を経由して PTE を解決し、エントリの権限フィールドで可否を判定する。DYNAMIC はマルチゲスト構成でも同時にマップできるゲストを1つに限定する。
 
 IPC経由のデータ交換は行わない — GPIOのようなsub-µs応答が必要な周辺機器はIPCレイテンシに耐えられないため、このダイレクトアクセスモデルが採用されている。
@@ -106,7 +106,7 @@ graph TD
 | アドレス範囲 | MSB | FC | 割り当て用途 |
 | :--- | :--- | :--- | :--- |
 | `0x0000_0000` – `0x7FFF_FFFF` | 0 | - | ゲスト RAM（WASM線形メモリ）— Stage 1 |
-| `0xC000_0000` – `0xC000_FFFF` | 1 | 12 (`0xC`) | Static Devices（SYSCTL, IPCR, VDMA）— Stage 2 |
+| `0xC000_0000` – `0xC000_FFFF` | 1 | 12 (`0xC`) | Static Devices（IPCR, vIRQ等）— Stage 2。SYSCTL／VDMAのhost call transportは含まない |
 | `0xE000_0000` – `0xEFFF_FFFF` | 1 | 14 (`0xE`) | SHM（共有メモリ）— Stage 3。この 256MB はアドレスデコード上の FC=14 全域であり、実際にビットマップアロケータが PTE を割り当てる範囲は先頭 128KB（`0xE000_0000`〜`0xE001_FFFF`、32ページ）のみに限られる。残りは PTE 未登録のまま予約され、アクセスは `TRAP_UNREGISTERED_PAGE` となる |
 | `0xF000_0000` – `0xFFFF_FFFF` | 1 | 15 (`0xF`) | PASSTHROUGH（物理アドレス直結）— Stage 3 |
 
@@ -131,7 +131,7 @@ Static Devices (Stage 2) 向け。PTE には Device Type やパーミッショ�
         [2] CACHEABLE (JIT キャッシュ可能)
         [1] WRITE_ENABLED
         [0] READ_ENABLED
-[19:16] Device Type (4 bits) — {SYSCTL=0, IPCR=1, VDMA=2, ...}
+[19:16] Device Type (4 bits) — {IPCR=1, vIRQ=3, ...}
 [15:0]  Reserved
 ```
 
@@ -299,18 +299,11 @@ FlatMap ページテーブル、ダイレクトマップ
 [`vmmio_concept.py`](docs/components/tier2_runtime/concepts/vmmio_concept.py) を正本とする。
 仕様書側に複製は置かない（二重管理を避けるため）。
 
-### 4.2 アルゴリズム: 仮想DMA (VDMA)
+### 4.2 仮想DMAとの境界
 <!-- traceability: {VDMA} -->
-ゲストリニアメモリと vMMIO 空間（または他のメモリ領域）間の高速転送を実現する。
+VDMA は `fireball_call(VDMA_START, src, dst, byte_count, ...)` の host call として実行する。VDMA の要求設定、開始、完了値は vMMIO レジスタへ書き込まない。
 
-**アクセス方式**: 純粋MMIOトラップ。直接vMMIOアドレスにアクセス可能なゲストはVDMAレジスタへ直接書き込み、アクセス不可なゲスト言語は `fireball_call(VDMA_START)` 経由でホストが代理実行。
-
-1. **転送設定**: ゲストが `REG_VDMA_SRC`, `REG_VDMA_DST`, `REG_VDMA_COUNT` にパラメータを書き込む。
-2. **トリガー**: `REG_VDMA_CTRL` の `START` ビットを `1` に書き込む。
-3. **実行**:
-   - vMMIO ハンドラが物理アドレスを解決（境界チェックを適用）。
-   - `std::memcpy` または HAL経由のDMAを用いて一括転送を実行。
-4. **完了**: 転送完了後、必要に応じてゲストに仮想割り込み（`IRQ_VDMA_DONE`）を通知する。
+転送元と転送先は、ゲストリニアメモリまたは vMMIO 管理下のマッピングを指定できる。後者のアドレス権限と所有権は `VmmioController` の共通アクセスゲートで検査するが、VDMA の制御要求自体は vMMIO のデバイスページを通らない。
 
 ### 4.3 仮想デバイスマップ
 <!-- traceability: {VDMA} -->
@@ -318,9 +311,7 @@ FlatMap ページテーブル、ダイレクトマップ
 
 | アドレス範囲 | FC | デバイス名 | 説明 |
 |:---| :--- | :--- | :--- |
-| `0xC000_0000` | `12` (`0xC`) | **SYSCTL** | システム制御（Yield, Halt, Syscall等） |
 | `0xC000_1000` | `12` (`0xC`) | **IPCR** | IPCルータ連携レジスタ |
-| `0xC000_2000` | `12` (`0xC`) | **VDMA** | 仮想DMA（バルク転送） |
 | `0xC000_3000` | `12` (`0xC`) | **vIRQ** | 原因付き仮想割り込みディスパッチャ専用ページ |
 | `0xD000_0000` – `0xDFFF_FFFF` | `13` (`0xD`) | **DYNAMIC** | HALが提供する固定長バッファの動的マッピング。マップ対象ゲストは1つだけ |
 | `0xE000_0000` – `0xEFFF_FFFF` | `14` (`0xE`) | **SHM** | 共有メモリ。デコード上の全域は256MBだが、予約対象は先頭128KB（4KB×32スロット）のみ。各PTEの物理基点と実サイズは要求に応じる。PTE格納表全体の上限は64件 |
@@ -329,34 +320,9 @@ FlatMap ページテーブル、ダイレクトマップ
 PASSTHROUGH アドレス変換:
 `物理アドレス = pte.phys_page << 12 | Offset`
 
-### 4.4 SYSCTL レジスタ詳細 (FC=12)
-<!-- traceability: {VDMA} -->
-| オフセット | レジスタ名 | R/W | 説明 |
-| :--- | :--- | :--- | :--- |
-| `0x00` | `REG_SYS_CONTROL` | W | `1`: Reset, `2`: Yield, `3`: Halt, `4`: Syscall |
-| `0x04` | `REG_SYS_STATUS` | R | システム状態フラグ |
-| `0x08` | `REG_IRQ_FLAGS` | R | 予約済みステータス。vIRQイベントのゲスト配送には使用しない |
-| `0x10` | `REG_SYSCALL_ID` | R/W | サービスID |
-| `0x14` | `REG_SYSCALL_CMD` | R/W | コマンドID |
-| `0x18` | `REG_SYSCALL_ARG0` | R/W | 第1引数 / 戻り値 |
-| `0x1C` | `REG_SYSCALL_ARG1` | R/W | 第2引数 |
-| `0x20` | `REG_SYSCALL_ARG2` | R/W | 第3引数 |
-| `0x24` | `REG_SYSCALL_ARG3` | R/W | 第4引数 |
-| `0x28` | `REG_SYSCALL_ARG4` | R/W | 第5引数 |
-| `0x2C` | `REG_SYSCALL_ARG5` | R/W | 第6引数 |
-
-インタープリタは `SYSCTL_BASE` の静的 vMMIO ページへ通常の WASM `load/store` を行うことで、この syscall doorbell を使用できる。`REG_SYSCALL_ID`、`REG_SYSCALL_ARG0`〜`REG_SYSCALL_ARG5`を設定し、`REG_SYS_CONTROL`へ `4`（`Syscall`）を書き込むと、ランタイムが登録済みの syscall vector table の該当エントリを現在タスクの権限で呼び出す。戻り値は `REG_SYSCALL_ARG0` に u32 として格納される。未登録IDは `NOSYS` として返し、ベクタテーブルはゲスト側 `libfireball` とは独立したホスト／インタープリタ側の登録物とする。`REG_SYSCALL_CMD` は将来のサブコマンド拡張用に予約する。 `{UnifiedAccessModel}`
-
-### 4.5 VDMA レジスタ詳細 (FC=12)
-<!-- traceability: {VDMA} -->
-| オフセット | レジスタ名 | R/W | 説明 |
-| :--- | :--- | :--- | :--- |
-| `0x00` | `REG_VDMA_SRC` | R/W | 転送元アドレス |
-| `0x04` | `REG_VDMA_DST` | R/W | 転送先アドレス |
-| `0x08` | `REG_VDMA_COUNT` | R/W | 転送バイト数 |
-| `0x0C` | `REG_VDMA_CTRL` | W | 制御（Bit0: START） |
-
-`REG_VDMA_SRC` / `REG_VDMA_DST` に指定できるアドレスはゲストRAM（Stage 1）および vMMIO空間（FC=13/14/15）。DYNAMIC（FC=13）またはSHM（FC=14）アドレスを転送先/元に指定した場合、VDMAハンドラが `dispatch_access` と同一の権限チェック（PTE のマッピング・パーミッション検証）を実施する。
+### 4.4 Host call で扱う機能
+<!-- traceability: {Trap_Interface} {VDMA} -->
+システム制御、システムコール、WASI、IPC、および VDMA は `fireball:host/trap` の import host call で実行する。これらの要求を vMMIO の SYSCTL／VDMA レジスタへ変換する経路は存在しない。vMMIO はゲストの load/store によるデバイス・共有メモリ・passthrough アクセスだけを扱う。
 
 ### 4.6 HAL DYNAMICバッファマッピング (FC=13)
 <!-- traceability: {HAL_Interface} {IPC_ZeroCopy} -->
@@ -543,7 +509,7 @@ Stage 3 アクセス（FC=14/15）において毎回 FlatMap の二分探索を�
 ### 6.1 性能制約と方策
 <!-- traceability: {META_ConfigurableSystem} {FastAddressCheck} {vMMIO_TLB} -->
 - **目標**: MMIOアクセスのオーバーヘッドを最小化する。
-- **方策1**: コアデバイス（SYSCTL等）をFC=12に配置し、配列/ハッシュ参照のみで即時解決できるようにする。
+- **方策1**: vMMIOデバイス（IPCR等）をFC=12に配置し、配列/ハッシュ参照のみで即時解決できるようにする。SYSCTL／VDMAのhost callはこの経路を使用しない。
 - **方策2**: アドレス空間を RAM Bypass（最上位ビット=0）と vMMIO領域（最上位ビット=1）に分割し、探索とデコードのホットパス探索コストを削減する。
 - **方策3**: ダイレクトマップ型 Software TLB により、Stage 3 の繰り返しアクセスを完全 O(1) で超高速キャッシュ解決する。
 

@@ -116,19 +116,19 @@ type routing-result = result<_, recovery-strategy-category>;
 - **IPC は所有権ロールバックを必要としない**: IPC ルータ（`ipc_router.md`）はバッファなし同期 CSP チャネル（`{ADR_RendezvousChannel}`）であり、宛先ごとの有界キューを持たない。したがって `ERR_QUEUE_FULL` のような一時的な資源競合は原理的に発生せず、`Revoke` 後の所有権ロールバックという回復処理も存在しない——送信は相手タスクの到達を待つのみで、失敗して差し戻る経路がない。
 - **デバッグ情報の分離**: 失敗の詳細理由はログシステムで確認する。インターフェースには含めない。
 
-## 4. 低レベル・トラップ・インターフェース
+## 4. 低レベル・ホストコール・インターフェース
 <!-- traceability: {Syscall_Mapping} -->
-WASI標準には存在しない、Fireball固有の高速システムコール。実体は `../tier2_runtime/runtime_syscall.md` で定義される `fireball::fireball_call` である。このインターフェース設計を通じて、低レベルなシステムコールがWITの世界とマッピングされる（）。
+WASI標準には存在しない、Fireball固有の高速 host call である。実体は `../tier2_runtime/runtime_syscall.md` で定義される `fireball::fireball_call` である。WASM import がこの host call を直接ホストディスパッチへ接続し、SYSCTL／VDMAの vMMIO レジスタは経由しない。
 
 ### 4.1. `fireball:host/trap` の定義
 <!-- traceability: {Syscall_Mapping} -->
-WIT内では `fireball-call` という kebab-case 名で定義されるが、C++バインディングおよび公開APIとしては名前空間 `fireball` 内に `fireball_call`（snake_case）としてマッピングされ公開される。
+WIT内では `fireball-call` という kebab-case 名で定義されるが、C++バインディングおよび公開APIとしては名前空間 `fireball` 内に `fireball_call`（snake_case）としてマッピングされ、host call として公開される。
 
 - `fireball-call(id: u32, arg0: u32, arg1: u32, arg2: u32, arg3: u32, arg4: u32, arg5: u32) -> u32`
 
 ### 4.2. 高応答トリガーインターフェース
 <!-- traceability: {Syscall_Mapping} -->
-GPIO のような割り込み応答性・ビットバンギング等の要求から、URI Resolver 経由のハンドルルックアップを介さず、`fireball-call` に直接マッピングされた ID を通じて操作するものとする。ゲスト側の呼び出しラッパーはTier 3で定義し、本書では raw trap 契約だけを扱う。
+GPIO のような割り込み応答性・ビットバンギング等の要求から、URI Resolver 経由のハンドルルックアップを介さず、`fireball-call` に直接マッピングされた ID を通じて操作するものとする。ゲスト側の呼び出しラッパーはTier 3で定義し、本書では raw host-call 契約だけを扱う。
 
 - **理由**: ハンドルルックアップのオーバーヘッド排除、レジスタ直結に近いレイテンシの確保。
 - **ID**: `FB_SYSCALL_TRIGGER_SET_PIN`（）。

@@ -1,7 +1,7 @@
 """
 docs/components/tier2_runtime/formal/syscall_trap_model.py
-pyModelChecking による fireball_call トラップ状態プロトコルの
-(1) ホストハンドラが REG_SYSCALL_RET を設定して完了するまで、ゲストが再開されないこと
+pyModelChecking による fireball_call host-call 状態プロトコルの
+(1) ホストハンドラが戻り値を返して完了するまで、ゲストが再開されないこと
 (2) トラップは必ずいずれ完了し、ゲスト実行が再開されること
 の形式検証（証明・変異検査対応）モデル
 
@@ -19,10 +19,10 @@ def build_model(*, guards: bool = True) -> Kripke:
     """
     トラップ状態プロトコルの変異検査対応保護証明モデル（トラップ経路 A・B 対称）
     - s_guest_running: ゲストが通常実行中 (running)
-    - s_{a,b}_trap: fireball_call によりトラップ検知、ゲスト PC 静止 (in_trap)
-    - s_{a,b}_args: 引数が REG_SYSCALL_* へマッピング済み (in_trap)
+    - s_{a,b}_trap: fireball_call import の解決、ゲスト PC 静止 (in_trap)
+    - s_{a,b}_args: 引数が host-call シグネチャへ渡された状態 (in_trap)
     - s_{a,b}_dispatch: ホスト側ハンドラが同期実行中 (in_trap)
-    - s_{a,b}_retset: ホストが REG_SYSCALL_RET を設定 (in_trap)
+    - s_{a,b}_retset: ホストハンドラが戻り値を返した状態 (in_trap)
     - s_{a,b}_resumed: ゲスト PC が次命令へ進み実行再開
     - s_premature_resume: 違反状態（ホストハンドラ完了前にゲストが再開してしまう）
     - s_stuck_trap: 違反状態（ホストハンドラが完了せず、ゲストが永久に再開されない）
@@ -62,9 +62,9 @@ def build_model(*, guards: bool = True) -> Kripke:
     ]
     if not guards:
         # ガード無効時（変異検査）:
-        # 1. 「RET 設定 → 復帰」の同期規律を外すと、ハンドラ完了前にゲストが再開してしまう
+        # 1. 「ホスト戻り値 → 復帰」の同期規律を外すと、ハンドラ完了前にゲストが再開してしまう
         R = [*R, ("s_a_dispatch", "s_premature_resume"), ("s_b_dispatch", "s_premature_resume")]
-        # 2. ホストハンドラの完了保証を外すと、トラップが永久に完了しない経路が生じる
+        # 2. ホストハンドラの完了保証を外すと、host call が永久に完了しない経路が生じる
         R = [*R, ("s_a_dispatch", "s_stuck_trap"), ("s_b_dispatch", "s_stuck_trap")]
 
     L = {
@@ -97,7 +97,7 @@ def properties():
             "logic": "CTL",
             "formula": AG(Not(bad_premature)),
             "violation": bad_premature,
-            "expect": True,  # RET 設定を経てのみ復帰する規律により、早期再開状態は到達不能
+            "expect": True,  # ホストハンドラの戻り値を経てのみ復帰するため、早期再開状態は到達不能
         },
         {
             "name": "every_trap_eventually_resumes_guest",

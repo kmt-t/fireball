@@ -64,7 +64,7 @@ Loader/Interpreter/JIT/vMMIO/Debuggerを統合する`vsoc_harness`（静的DI）
 
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| TEST-VSOC-40 | `fireball_call`の引数個数とパッキング | システムコール発行 | 引数のパッキング状態を検証 | `fireball_call(id, arg0..arg5)`（計7引数）として統一され、`id`（上位16bit: service_id, 下位16bit: command_id）および6つの汎用レジスタ引数で正しく低レイヤーへ渡る | `{Syscall_Mapping}` |
+| TEST-VSOC-40 | `fireball_call` host-call の引数個数とパッキング | システムコール発行 | import host call の受け渡しを検証 | `fireball_call(id, arg0..arg5)`（計7引数）として統一され、6つの汎用引数がvMMIOレジスタを経由せずホストハンドラへ直接渡る | `{Syscall_Mapping}` |
 
 ### 実装の勘所・不変条件（Gotchas & Implementation Invariants）
 

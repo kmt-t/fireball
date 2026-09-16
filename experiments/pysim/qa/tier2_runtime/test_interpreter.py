@@ -42,7 +42,7 @@ from helpers import expect_assertion, make_interpreter as Interpreter, wat_to_wa
 from interpreter import InterpreterContext, Trap, WasmNumber
 from scheduler import Scheduler
 from system_containers import StaticVector
-from vmmio import VMMIOController
+from vmmio import TrapCode, VMMIOController
 from wasm_module import F64, I32, I64, Function, FuncType, Memory, Module
 from wasm_reader import parse
 
@@ -238,62 +238,47 @@ def test_intp_06_memory_traps_are_handler_results():
     assert isinstance(stepped.trap, Trap)
 
 
-def test_intp_07_vmmio_syscall_doorbell_and_vector_table():
-    """Interpreter load/store reaches host syscalls through static vMMIO."""
-    from system import SYS_CONTROL_SYSCALL, SYSCTL_BASE, System
+def test_intp_07_host_call_and_vmmio_separation():
+    """Interpreter imports dispatch directly to host calls, not SYSCTL vMMIO."""
+    from system import FbSyscallId, System, WasiErrno
+    from wasi import WasiHostContext
 
     sysv = System()
-    sysv.start_runtime_task(name="interpreter_runtime_task")
     try:
         module = parse(
             wat_to_wasm(
                 f"""(module
-                  (memory 1)
+                  (import "fireball" "fireball_call"
+                    (func $fireball_call
+                      (param i32 i32 i32 i32 i32 i32 i32) (result i32)))
                   (func (result i32)
-                    i32.const {SYSCTL_BASE + 0x10}
-                    i32.const 2
-                    i32.store
-                    i32.const {SYSCTL_BASE + 0x00}
-                    i32.const {SYS_CONTROL_SYSCALL}
-                    i32.store
-                    i32.const {SYSCTL_BASE + 0x18}
-                    i32.load))"""
+                    i32.const {int(FbSyscallId.SYS_HALT)}
+                    i32.const 0
+                    i32.const 0
+                    i32.const 0
+                    i32.const 0
+                    i32.const 0
+                    i32.const 0
+                    call $fireball_call))"""
             )
         )
+        wasi_ctx = WasiHostContext(sysv, guest_memory=bytearray(65536))
         interp = Interpreter(
             module,
-            memory=bytearray(65536),
+            memory=wasi_ctx.guest_memory,
+            host_functions=wasi_ctx.build_interpreter_host_functions(module),
             vmmio=sysv.vmmio,
             phys_mem=sysv.phys_mem,
         )
-        result = interp.call(0, [])
-        assert result[0] == 0
+        result = interp.call(1, [])
+        assert result[0] == WasiErrno.SUCCESS
         assert sysv.halted
-        assert sysv.sysctl_regs[0x18:0x1C] == b"\x00\x00\x00\x00"
+
+        # SYSCTL is not a vMMIO transport anymore; its old page is unmapped.
+        status, _ = sysv.vmmio.access(0xC000_0000, is_write=False)
+        assert status == TrapCode.UNREGISTERED_PAGE
     finally:
         sysv.shutdown()
-
-    scheduler = Scheduler()
-    task_id = scheduler.spawn("vector_task")
-    scheduler.current_task = scheduler.get_task(task_id)
-    ctrl = VMMIOController(guest_ram_size=65536, scheduler=scheduler)
-    vector_page = (0xC000_0000 | (3 << 16))
-    ctrl.map_static_device(vector_page >> 12)
-    interp_module = parse(
-        wat_to_wasm(
-            f"""(module
-              (memory 1)
-              (func (result i32)
-                i32.const {vector_page}
-                i32.load))"""
-        )
-    )
-    interp = Interpreter(interp_module, memory=bytearray(65536), vmmio=ctrl)
-    interp.register_vector_table(
-        (None, None, None, lambda offset, value, is_write: 0x1234)
-    )
-    result = interp.call(0, [])
-    assert result[0] == 0x1234
 
 
 def test_wasm_01_to_06_unsupported_features_rejected():

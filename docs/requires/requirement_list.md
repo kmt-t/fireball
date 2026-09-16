@@ -46,7 +46,7 @@ graph LR
 | `{JIT_LazyChaining}` | JITコードの末尾をデフォルトでインタープリタへ戻るようにし、実行時検索のオーバーヘッドを削減する。 | 高 | レビュー |
 | `{Interpreter_LazyJITSwitch}` | ループ先頭へのジャンプでインタープリタの命令ハンドラが制御をvSoCへ返すたびに、vSoCがJITキャッシュを再判定し、動的なネイティブ移行を実現する（判定主体はvSoCであり、インタープリタ自身はJITキャッシュを持たない）。 | 高 | レビュー |
 | `{vMMIO_TrapAndEmulate}` | ゲストからのメモリアクセスをトラップし、ホスト側のフックを呼び出す。 | 高 | テスト |
-| `{VDMA}` | 仮想DMAにより、ゲストリニアメモリと仮想・物理アドレス間の高速転送を実現する。 | 中 | テスト |
+| `{VDMA}` | host call により、ゲストリニアメモリと仮想・物理アドレス間の高速転送を実現する。VDMAの制御要求は vMMIO レジスタを経由しない。 | 中 | テスト |
 | `{JIT_ReverseCompilationOrder}` | キューを逆順（LIFO）で処理し、コンパイル直後の即時チェイニング率を向上させる。 | 高 | レビュー |
 | `{DynamicMmap}` | 共有メモリIDを指定し、外部バッファをvMMIO空間に一時的にマッピングする。 | 高 | テスト |
 | `{EnvironmentPointer}` | 周辺コンポーネント・リニアメモリへの参照を `execution_context` 内の環境フィールド（`vsoc_runtime` 領域）経由で型安全に行う。 | 高 | レビュー |
@@ -101,7 +101,7 @@ graph LR
 | `{WIT_Interface_Spec}` | WebAssembly Interface Types (WIT) を用いた、言語非依存のインターフェース定義手法。 | 高 | レビュー |
 | `{WIT_Common_Types}` | 複数のWIT定義間で共有される基本型定義。 | 高 | レビュー |
 | `{WIT_Interface_Purpose}` | インターフェース設計の背景と論理的な不変条件の記述。 | 高 | レビュー |
-| `{Trap_Interface}` | 高速パスのためのトラップ命令ベースの同期通信インターフェース。 | 高 | テスト |
+| `{Trap_Interface}` | 高速パスのための同期 host-call import インターフェース。CPUトラップ命令は実装詳細であり、vMMIOレジスタ経路を意味しない。 | 高 | テスト |
 | `{Syscall_Mapping}` | WASMゲストの命令とホスト側のシステムコールIDの静的な紐付け。 | 高 | レビュー |
 | `{HAL_Interface}` | 物理デバイス操作を抽象化し、IPC経由で提供する標準インターフェース。 | 高 | レビュー |
 | `{Syscall_Return_Value}` | システムコールの戻り値型とエラー伝播の標準。 | 高 | レビュー |

@@ -3,10 +3,10 @@
 ## 1. 目的と対象範囲
 
 正本: [`runtime_syscall.md`](docs/components/tier2_runtime/runtime_syscall.md)
-関連正本: [`runtime_vmmio.md`](docs/components/tier2_runtime/runtime_vmmio.md)（vMMIOアドレス空間・SYSCTL/VDMAレジスタ）、[`system_config.md`](docs/components/tier1_core/system_config.md)（アドレス定数）
+関連正本: [`runtime_vmmio.md`](docs/components/tier2_runtime/runtime_vmmio.md)（vMMIOアドレス空間と対象アドレスの保護）、[`system_config.md`](docs/components/tier1_core/system_config.md)（アドレス定数）
 参考実装: [`syscall_concept.py`](docs/components/tier2_runtime/concepts/syscall_concept.py)
 
-`fireball_call(id, arg0..arg5) -> u32` の実ID空間（System/vMMIO Generic/VDMA/IRQ/IPC/WASI）と、WASI `errno_t` 準拠の戻り値規約を検証する。
+`fireball_call(id, arg0..arg5) -> u32` の host-call ID 空間（System/vMMIO Generic/VDMA/IRQ/IPC/WASI）と、WASI `errno_t` 準拠の戻り値規約を検証する。host call の搬送に SYSCTL／VDMA の vMMIO レジスタを使用しないことも検証する。
 
 ## 2. テストケース一覧
 
@@ -34,8 +34,8 @@
 
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| TEST-SYS-20 | `VDMA_START`成功 | `src`/`dst`が共に許可アドレス | `fireball_call(0x20, src, dst, byte_count,...)` | `0`を返し、`byte_count`バイトが転送される | runtime_vmmio.md |
-| TEST-SYS-21 | VDMA転送先がSHM(FC=14)の場合の所有権チェック | `dst`がSHMアドレスで、呼び出し元が非所有者 | `VDMA_START`を呼ぶ | `dispatch_access`と同一の権限チェックにより拒否される | runtime_vmmio.md |
+| TEST-SYS-20 | `VDMA_START` host call 成功 | `src`/`dst`が共に許可アドレス | `fireball_call(0x20, src, dst, byte_count,...)` | `0`を返し、`byte_count`バイトが転送される。VDMAレジスタへのアクセスは発生しない | runtime_syscall.md, runtime_vmmio.md |
+| TEST-SYS-21 | VDMA host call の転送先がSHM(FC=14)の場合の所有権チェック | `dst`がSHMアドレスで、呼び出し元が非所有者 | `VDMA_START`を呼ぶ | 転送要求は host call で受け、転送先の共通vMMIO権限ゲートにより拒否される | runtime_vmmio.md |
 | TEST-SYS-22 | VDMA完了時の仮想割り込み通知（該当する場合） | 完了通知が要求されている | 転送完了後の状態を確認 | `IRQ_VDMA_DONE`相当が立つ | runtime_vmmio.md  |
 
 ### IRQ予約領域 (`0x30`-`0x3F`)

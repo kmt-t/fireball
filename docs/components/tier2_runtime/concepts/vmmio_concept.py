@@ -34,7 +34,7 @@ TrapCode = VmmioStatus
 
 
 # Function Codes (bits[31:28]) — see runtime_vmmio.md "アドレス分解の対応関係"
-FC_STATIC_DEVICE = 0xC  # 0xC000_0000: SYSCTL / IPCR / VDMA (Stage 2, syscall dispatch)
+FC_STATIC_DEVICE = 0xC  # 0xC000_0000: IPCR / vIRQ (Stage 2 device access)
 FC_DYNAMIC = 0xD  # 0xD000_0000: HAL-owned bounded dynamic buffers
 FC_SHM = 0xE  # 0xE000_0000: Shared Memory (Stage 3, owner-checked)
 FC_PASSTHROUGH = 0xF  # 0xF000_0000: Physical passthrough (Stage 3)

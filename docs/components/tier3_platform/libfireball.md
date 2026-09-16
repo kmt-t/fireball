@@ -3,7 +3,7 @@
      test: docs/qa/tier3_platform/libfireball_test_spec.md
 -->
 
-`libfireball` は、WASM ゲストへ静的に組み込むゲスト側アダプタライブラリである。ゲストの WASI Preview1 呼び出しと Fireball の公開 ABI を、Tier 2 が定義する `fireball_call` および HAL 抽象 IF へ変換する。ホスト側のシステムコールディスパッチ、HAL タスク、物理ドライバは実装しない。
+`libfireball` は、WASM ゲストへ静的に組み込むゲスト側アダプタライブラリである。ゲストの WASI Preview1 呼び出しと Fireball の公開 ABI を、WASM import の host call である `fireball_call` および HAL 抽象 IF へ変換する。SYSCTL／VDMA の vMMIO レジスタ操作は行わない。
 
 ## 1. アーキテクチャ分類
 <!-- traceability: {META_3TierSeparation} -->
@@ -25,9 +25,9 @@
 ```mermaid
 graph LR
     Guest[WASM Guest] --> Lib[libfireball<br/>guest adapter]
-    Lib -->|fireball-call| Trap[Fireball trap ABI]
+    Lib -->|fireball-call host import| HostCall[Fireball host-call ABI]
     Lib -->|resolver / buffer / command| HalIF[Tier 2 HAL interface]
-    Trap --> Syscall[Tier 2 runtime_syscall]
+    HostCall --> Syscall[Tier 2 runtime_syscall]
     HalIF --> HAL[Tier 2 hal_dispatch]
     HAL --> Driver[Tier 3 platform_driver]
 ```
@@ -36,13 +36,17 @@ graph LR
 
 ## 4. インターフェース
 
-### 4.1 Fireball trap バインディング
+### 4.1 Fireball host-call バインディング
 
 | ゲスト側関数 | 呼び出し先 | 役割 |
 | :--- | :--- | :--- |
-| `fireball_call0`〜`fireball_call6` | `fireball:host/trap` | システムコール ID と最大 6 個の `u32` 引数を渡す |
+| `fireball_call0`〜`fireball_call6` | `fireball:host/trap` | システムコール ID と最大 6 個の `u32` 引数を host call で渡す |
 
 引数の型、ゲストメモリの相対オフセット、エラーコードは `runtime_syscall.md` の契約に従う。
+
+`fireball_call` は実行エンジンの import 解決からホストハンドラへ直接接続する。ホスト側で引数を SYSCTL レジスタへ複写したり、戻り値を vMMIO レジスタから読み出したりしない。
+
+`VDMA_START` は `fireball_call(VDMA_START, src, dst, byte_count, 0, 0, 0)` として発行する。VDMA の開始要求に VDMA レジスタページを使用しない。
 
 ### 4.2 WASI Preview1 アダプタ
 <!-- traceability: {WASI_ScatteredIO} {WASI_InMemVFS} -->
@@ -54,7 +58,7 @@ graph LR
 | `fd_close` | `stream-close` | 解決済みストリームを閉じる |
 | `fd_seek` | ゲスト側の仮想FD状態 | 仮想ファイル位置を更新する |
 | `clock_time_get` | `clock-get-now` | WASI の時刻表現へ変換する |
-| `proc_exit` | `fireball_call` の終了操作 | ゲストの終了状態を通知する |
+| `proc_exit` | `fireball_call` host call の終了操作 | ゲストの終了状態を通知する |
 | `random_get` | HAL の URI 解決とストリーム操作 | 乱数デバイスからバッファへ取得する |
 
 Preview1 の errno と Fireball の戻り値の対応は `runtime_syscall.md` の契約に従う。HAL のデバイス固有コマンドや物理ドライバ型は、このライブラリの公開 API に含めない。

@@ -2,14 +2,15 @@
 experiments/pysim/tier2_runtime/wasm_reader.py
 Binary .wasm parser. Supports Type(1), Import(2), Function(3), Table(4),
 Memory(5), Global(6), Export(7), Element(9), Code(10). Data(11) and custom
-sections are skipped by length rather than rejected, so a real-world
-module carrying them still loads.
+sections are validated and decoded without copying their payloads.
 """
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from leb128 import decode_signed, decode_unsigned
-from system_containers import StaticVector
+from system_containers import ReadOnlyFlatMapStorage, StaticVector
 from wasm_module import (
     F32,
     F64,
@@ -28,6 +29,7 @@ from wasm_module import (
     Table,
 )
 from wasm_opcodes import CALL, CALL_INDIRECT
+import wasm_opcodes as op
 
 MAGIC = b"\x00asm"
 VERSION = b"\x01\x00\x00\x00"
@@ -49,6 +51,17 @@ def _read_value_type(data: memoryview, off: int) -> int:
     value_type = data[off]
     assert value_type == I32 or value_type == I64 or value_type == F32 or value_type == F64
     return value_type
+
+
+def _validate_utf8_name(
+    data: memoryview, offset: int, size: int, end: int, field_name: str
+) -> None:
+    name_end = offset + size
+    assert name_end <= end, f"{field_name} exceeds section bounds"
+    try:
+        data[offset:name_end].tobytes().decode("utf-8")
+    except UnicodeDecodeError:
+        assert False, f"{field_name} is not valid UTF-8"
 
 
 class _SectionCounts:
@@ -148,12 +161,19 @@ def _parse_functype(data: memoryview, off: int) -> tuple[FuncType, int]:
     if tag != 0x60:
         assert False, f"expected functype tag 0x60, got 0x{tag:02X}"
     nparams, off = decode_unsigned(data, off)
-    off += nparams
+    params = StaticVector[int](capacity=nparams)
+    for _ in range(nparams):
+        assert params.push_back(_read_value_type(data, off))
+        off += 1
 
     nresults, off = decode_unsigned(data, off)
-    off += nresults
+    assert nresults <= 1, "MVP functions have at most one result"
+    results = StaticVector[int](capacity=nresults)
+    for _ in range(nresults):
+        assert results.push_back(_read_value_type(data, off))
+        off += 1
     assert off <= len(data)
-    return FuncType(params=None, results=None, offset=record_offset, size=off - record_offset), off
+    return FuncType(params=params, results=results, offset=record_offset, size=off - record_offset), off
 
 
 def _parse_type_section(data: memoryview, off: int, end: int, module: Module) -> None:
@@ -170,24 +190,77 @@ def _parse_import_section(data: memoryview, off: int, end: int, module: Module) 
     for _ in range(n):
         mod_len, off = decode_unsigned(data, off)
         module_offset = off
+        _validate_utf8_name(data, off, mod_len, end, "import module name")
         off += mod_len
         field_len, off = decode_unsigned(data, off)
         name_offset = off
+        _validate_utf8_name(data, off, field_len, end, "import field name")
         off += field_len
         kind = data[off]
         off += 1
-        if kind != 0:
-            assert False, f"only function imports (kind=0) are supported, got kind={kind}"
-        type_index, off = decode_unsigned(data, off)
-        module.imports.append(
-            Import(
+        if kind == 0:
+            type_index, off = decode_unsigned(data, off)
+            module.imports.append(
+                Import(
+                    module_offset=module_offset,
+                    module_size=mod_len,
+                    name_offset=name_offset,
+                    name_size=field_len,
+                    type_index=type_index,
+                )
+            )
+        elif kind == 3:
+            value_type = _read_value_type(data, off)
+            off += 1
+            mutable = data[off] == 0x01
+            off += 1
+            descriptor = Import(
                 module_offset=module_offset,
                 module_size=mod_len,
                 name_offset=name_offset,
                 name_size=field_len,
-                type_index=type_index,
+                type_index=0,
+                value_type=value_type,
+                mutable=mutable,
             )
-        )
+            module.global_imports.append(descriptor)
+            module.globals.append(
+                Global(vtype=value_type, mutable=mutable, init_value=0, imported=True)
+            )
+        elif kind == 2:
+            minimum, maximum, off = _parse_limits(data, off, is_memory=True)
+            assert module.memory is None, "multiple imported/defined memories are unsupported"
+            descriptor = Import(
+                module_offset=module_offset,
+                module_size=mod_len,
+                name_offset=name_offset,
+                name_size=field_len,
+                type_index=0,
+                min_limit=minimum,
+                max_limit=maximum,
+            )
+            module.memory_import = descriptor
+            module.memory = Memory(min_pages=minimum, max_pages=maximum, imported=True)
+        elif kind == 1:
+            elem_type = data[off]
+            off += 1
+            assert elem_type == ELEM_TYPE_FUNCREF, (
+                f"only funcref table imports are supported, got 0x{elem_type:02X}"
+            )
+            minimum, maximum, off = _parse_limits(data, off)
+            descriptor = Import(
+                module_offset=module_offset,
+                module_size=mod_len,
+                name_offset=name_offset,
+                name_size=field_len,
+                type_index=0,
+                min_limit=minimum,
+                max_limit=maximum,
+            )
+            module.table_imports.append(descriptor)
+            module.tables.append(Table(min_size=minimum, max_size=maximum, imported=True))
+        else:
+            assert False, f"unsupported import kind={kind}"
 
     assert off == end, "import section length mismatch"
 
@@ -203,21 +276,29 @@ def _parse_function_section(data: memoryview, off: int, end: int) -> StaticVecto
     return type_indices
 
 
-def _parse_limits(data: memoryview, off: int) -> tuple[int, int | None, int]:
+def _parse_limits(
+    data: memoryview, off: int, *, is_memory: bool = False
+) -> tuple[int, int | None, int]:
     flag = data[off]
     off += 1
+    assert flag == 0x00 or flag == 0x01, f"invalid limits flag=0x{flag:02X}"
     minimum, off = decode_unsigned(data, off)
+    maximum: int | None = None
     if flag == 0x01:
         maximum, off = decode_unsigned(data, off)
-        return minimum, maximum, off
-    return minimum, None, off
+        assert minimum <= maximum, "limits minimum exceeds maximum"
+    if is_memory:
+        assert minimum <= 65536, "memory minimum exceeds 65536 pages"
+        assert maximum is None or maximum <= 65536, "memory maximum exceeds 65536 pages"
+    return minimum, maximum, off
 
 
 def _parse_memory_section(data: memoryview, off: int, end: int, module: Module) -> None:
     n, off = decode_unsigned(data, off)
     assert n <= 1, "only single linear memory is supported"
     for _ in range(n):
-        mn, mx, off = _parse_limits(data, off)
+        assert module.memory is None, "multiple imported/defined memories are unsupported"
+        mn, mx, off = _parse_limits(data, off, is_memory=True)
         module.memory = Memory(min_pages=mn, max_pages=mx)
 
     assert off == end, "memory section length mismatch"
@@ -237,18 +318,44 @@ def _parse_table_section(data: memoryview, off: int, end: int, module: Module) -
     assert off == end, "table section length mismatch"
 
 
+def _parse_i32_offset_expr(
+    data: memoryview, off: int, module: Module, expression_name: str
+) -> tuple[int, int | None, int]:
+    opcode = data[off]
+    off += 1
+    global_index: int | None = None
+    if opcode == op.I32_CONST:
+        offset, off = decode_signed(data, off)
+        offset &= 0xFFFF_FFFF
+    elif opcode == op.GLOBAL_GET:
+        global_index, off = decode_unsigned(data, off)
+        assert global_index < len(module.globals), f"{expression_name} global index out of range"
+        global_value = module.globals[global_index]
+        assert global_value.imported and not global_value.mutable and global_value.vtype == I32, (
+            f"{expression_name} global.get must reference an imported immutable i32 global"
+        )
+        offset = 0
+    else:
+        assert False, f"{expression_name} offset must use i32.const or global.get"
+    assert data[off] == op.END, f"{expression_name} offset expression must end with 0x0B"
+    return offset, global_index, off + 1
+
+
 def _parse_element_section(data: memoryview, off: int, end: int, module: Module) -> None:
     n, off = decode_unsigned(data, off)
     for _ in range(n):
-        table_index, off = decode_unsigned(data, off)
-        # Offset expr: this experiment only supports `i32.const N end`.
-        assert data[off] == 0x41, (
-            "only i32.const offset expressions are supported for element segments"
+        flags, off = decode_unsigned(data, off)
+        assert flags == 0 or flags == 2, f"unsupported element segment flags={flags}"
+        table_index = 0
+        if flags == 2:
+            table_index, off = decode_unsigned(data, off)
+        assert table_index < len(module.tables), "element segment table index out of range"
+        offset, offset_global_index, off = _parse_i32_offset_expr(
+            data, off, module, "element segment"
         )
-        off += 1
-        offset, off = decode_signed(data, off)
-        assert data[off] == 0x0B, "element offset expr must end with 0x0B"
-        off += 1
+        if flags == 2:
+            elem_kind, off = decode_unsigned(data, off)
+            assert elem_kind == 0, "only funcref element segments are supported"
         n_funcs, off = decode_unsigned(data, off)
         func_indices_offset = off
         for _ in range(n_funcs):
@@ -258,6 +365,7 @@ def _parse_element_section(data: memoryview, off: int, end: int, module: Module)
             Element(
                 table_index=table_index,
                 offset=offset,
+                offset_global_index=offset_global_index,
                 func_indices_offset=func_indices_offset,
                 func_indices_size=off - func_indices_offset,
                 func_count=n_funcs,
@@ -274,13 +382,48 @@ def _parse_global_section(data: memoryview, off: int, end: int, module: Module) 
         off += 1
         mutable = data[off] == 0x01
         off += 1
-        # Init expr: this experiment only supports `i32.const N end`.
-        assert data[off] == 0x41, "only i32.const init expressions are supported for globals"
+        opcode = data[off]
         off += 1
-        init_value, off = decode_signed(data, off)
+        init_global_index: int | None = None
+        if opcode == op.I32_CONST:
+            init_type = I32
+            init_value, off = decode_signed(data, off)
+            init_value &= 0xFFFF_FFFF
+        elif opcode == op.I64_CONST:
+            init_type = I64
+            init_value, off = decode_signed(data, off)
+            init_value &= 0xFFFF_FFFF_FFFF_FFFF
+        elif opcode == op.F32_CONST:
+            init_type = F32
+            init_value = int.from_bytes(data[off : off + 4], "little")
+            off += 4
+        elif opcode == op.F64_CONST:
+            init_type = F64
+            init_value = int.from_bytes(data[off : off + 8], "little")
+            off += 8
+        else:
+            if opcode == op.GLOBAL_GET:
+                init_global_index, off = decode_unsigned(data, off)
+                assert init_global_index < len(module.globals)
+                imported_global = module.globals[init_global_index]
+                assert imported_global.imported and not imported_global.mutable, (
+                    "global initializer global.get must reference an imported immutable global"
+                )
+                init_type = imported_global.vtype
+                init_value = 0
+            else:
+                assert False, f"unsupported global initializer opcode 0x{opcode:02X}"
+        assert init_type == vtype, "global initializer type must match global type"
         assert data[off] == 0x0B, "global init expr must end with 0x0B"
         off += 1
-        module.globals.append(Global(vtype=vtype, mutable=mutable, init_value=init_value))
+        module.globals.append(
+            Global(
+                vtype=vtype,
+                mutable=mutable,
+                init_value=init_value,
+                init_global_index=init_global_index if opcode == op.GLOBAL_GET else None,
+            )
+        )
 
     assert off == end, "global section length mismatch"
 
@@ -290,6 +433,7 @@ def _parse_export_section(data: memoryview, off: int, end: int, module: Module) 
     for _ in range(n):
         name_len, off = decode_unsigned(data, off)
         name_offset = off
+        _validate_utf8_name(data, off, name_len, end, "export name")
         off += name_len
         kind = data[off]
         off += 1
@@ -352,15 +496,16 @@ def _parse_start_section(data: memoryview, off: int, end: int, module: Module) -
 def _parse_data_section(data: memoryview, off: int, end: int, module: Module) -> None:
     n, off = decode_unsigned(data, off)
     for _ in range(n):
-        mem_idx, off = decode_unsigned(data, off)
-        # Offset expr: only i32.const N end
-        assert data[off] == 0x41, (
-            "only i32.const offset expressions are supported for data segments"
+        flags, off = decode_unsigned(data, off)
+        assert flags == 0 or flags == 2, f"unsupported data segment flags={flags}"
+        mem_idx = 0
+        if flags == 2:
+            mem_idx, off = decode_unsigned(data, off)
+        assert module.memory is not None, "data segment requires linear memory"
+        assert mem_idx == 0, "only memory index 0 is supported"
+        offset, offset_global_index, off = _parse_i32_offset_expr(
+            data, off, module, "data segment"
         )
-        off += 1
-        offset, off = decode_signed(data, off)
-        assert data[off] == 0x0B, "data offset expr must end with 0x0B"
-        off += 1
         data_len, off = decode_unsigned(data, off)
         data_offset = off
         off += data_len
@@ -368,12 +513,490 @@ def _parse_data_section(data: memoryview, off: int, end: int, module: Module) ->
             DataSegment(
                 memory_index=mem_idx,
                 offset=offset,
+                offset_global_index=offset_global_index,
                 data_offset=data_offset,
                 data_size=data_len,
             )
         )
 
     assert off == end, "data section length mismatch"
+
+
+def _parse_custom_section(data: memoryview, off: int, end: int) -> None:
+    name_size, off = decode_unsigned(data, off)
+    name_end = off + name_size
+    assert name_end <= end, "custom section name exceeds section bounds"
+    data[off:name_end].tobytes().decode("utf-8")
+
+
+class _AnalysisControlFrame:
+    __slots__ = (
+        "else_seen",
+        "height",
+        "label_type",
+        "opcode",
+        "parent_unreachable",
+        "result_type",
+        "unreachable",
+    )
+
+    def __init__(
+        self,
+        height: int,
+        result_type: int | None,
+        label_type: int | None,
+        opcode: int,
+        parent_unreachable: bool,
+    ) -> None:
+        self.height = height
+        self.result_type = result_type
+        self.label_type = label_type
+        self.opcode = opcode
+        self.parent_unreachable = parent_unreachable
+        self.unreachable = parent_unreachable
+        self.else_seen = False
+
+
+class _SelectAnalysisState:
+    __slots__ = (
+        "code",
+        "controls",
+        "drop_widths",
+        "ended",
+        "function",
+        "locals_types",
+        "module",
+        "select_widths",
+        "values",
+    )
+
+    def __init__(self, module: Module, function_index: int) -> None:
+        self.module = module
+        self.function = module.functions[function_index - len(module.imports)]
+        self.code = module.code_for(function_index)
+        self.locals_types = module.locals_layout(function_index)
+        self.values: StaticVector[int | None] = StaticVector(capacity=len(self.code) + 1)
+        self.controls: StaticVector[_AnalysisControlFrame] = StaticVector(
+            capacity=min(33, len(self.code) + 1)
+        )
+        self.drop_widths: StaticVector[tuple[int, int]] = StaticVector(capacity=len(self.code))
+        self.select_widths: StaticVector[tuple[int, int]] = StaticVector(capacity=len(self.code))
+        self.ended = False
+        function_type = module.func_type(function_index)
+        assert function_type.results is not None and len(function_type.results) <= 1
+        function_result = function_type.results[0] if function_type.results else None
+        outer = _AnalysisControlFrame(0, function_result, function_result, -1, False)
+        assert self.controls.push_back(outer)
+
+    def pop(self, expected_type: int | None = None) -> int | None:
+        frame = self.controls[-1]
+        if len(self.values) == frame.height and frame.unreachable:
+            return expected_type
+        assert len(self.values) > frame.height, "WASM operand stack underflow"
+        actual_type = self.values.pop_back()
+        if expected_type is not None and actual_type is not None:
+            assert actual_type == expected_type, "WASM operand type mismatch"
+        return actual_type
+
+    def push(self, value_type: int) -> None:
+        assert self.values.push_back(value_type)
+
+    def pop_label(self, depth: int) -> int | None:
+        assert 0 <= depth < len(self.controls), "WASM branch depth out of range"
+        return self.controls[len(self.controls) - depth - 1].label_type
+
+    def mark_unreachable(self) -> None:
+        frame = self.controls[-1]
+        self.trim(frame.height)
+        frame.unreachable = True
+
+    def finish_arm(self, frame: _AnalysisControlFrame) -> None:
+        if frame.result_type is not None:
+            self.pop(frame.result_type)
+        assert len(self.values) == frame.height, "WASM control result stack mismatch"
+        self.trim(frame.height)
+
+    def trim(self, height: int) -> None:
+        while len(self.values) > height:
+            self.values.pop_back()
+
+
+_SelectAnalysisHandler = Callable[[_SelectAnalysisState, int, int, int], None]
+_SELECT_ANALYSIS_HANDLERS: StaticVector[_SelectAnalysisHandler | None] = StaticVector.of(
+    tuple(None for _ in range(256)), capacity=256
+)
+
+
+def _select_analysis_handler(*opcodes: int) -> Callable[[_SelectAnalysisHandler], _SelectAnalysisHandler]:
+    def register(handler: _SelectAnalysisHandler) -> _SelectAnalysisHandler:
+        for opcode in opcodes:
+            _SELECT_ANALYSIS_HANDLERS[opcode] = handler
+        return handler
+
+    return register
+
+
+@_select_analysis_handler(op.UNREACHABLE, op.BLOCK, op.LOOP, op.IF, op.ELSE, op.END,
+                          op.BR, op.BR_IF, op.BR_TABLE, op.RETURN)
+def _analyze_control(state: _SelectAnalysisState, opcode: int, offset: int,
+                     operand: int) -> None:
+    if opcode == op.UNREACHABLE:
+        state.mark_unreachable()
+        return
+    if opcode == op.BLOCK or opcode == op.LOOP or opcode == op.IF:
+        if opcode == op.IF:
+            state.pop(I32)
+        blocktype = state.code[offset + 1]
+        assert blocktype == 0x40 or blocktype == I32 or blocktype == I64 or (
+            blocktype == F32 or blocktype == F64
+        ), "invalid MVP block type"
+        result_type = None if blocktype == 0x40 else blocktype
+        frame = _AnalysisControlFrame(
+            len(state.values),
+            result_type,
+            None if opcode == op.LOOP else result_type,
+            opcode,
+            False,
+        )
+        assert state.controls.push_back(frame)
+        return
+    if opcode == op.ELSE:
+        frame = state.controls[-1]
+        assert frame.opcode == op.IF and not frame.else_seen, "unexpected ELSE"
+        state.finish_arm(frame)
+        frame.else_seen = True
+        frame.unreachable = frame.parent_unreachable
+        return
+    if opcode == op.END:
+        assert state.controls, "unexpected END"
+        frame = state.controls[-1]
+        assert frame.opcode != op.IF or frame.result_type is None or frame.else_seen, (
+            "result-producing IF requires ELSE"
+        )
+        state.finish_arm(frame)
+        state.controls.pop_back()
+        if not state.controls:
+            state.ended = True
+        elif frame.result_type is not None:
+            state.push(frame.result_type)
+        return
+    if opcode == op.BR_IF:
+        state.pop(I32)
+        label_type = state.pop_label(operand)
+        if label_type is not None:
+            state.pop(label_type)
+            state.push(label_type)
+        return
+    if opcode == op.BR:
+        label_type = state.pop_label(operand)
+        if label_type is not None:
+            state.pop(label_type)
+        state.mark_unreachable()
+        return
+    if opcode == op.BR_TABLE:
+        state.pop(I32)
+        label_count, cursor = decode_unsigned(state.code, offset + 1)
+        default_depth = operand
+        default_type = state.pop_label(default_depth)
+        for _ in range(label_count):
+            depth, cursor = decode_unsigned(state.code, cursor)
+            assert state.pop_label(depth) == default_type, "br_table label types differ"
+        if default_type is not None:
+            state.pop(default_type)
+        state.mark_unreachable()
+        return
+    assert opcode == op.RETURN
+    result_type = state.controls[0].label_type
+    if result_type is not None:
+        state.pop(result_type)
+    state.mark_unreachable()
+
+
+@_select_analysis_handler(op.DROP, op.SELECT)
+def _analyze_stack_ops(state: _SelectAnalysisState, opcode: int, offset: int,
+                       operand: int) -> None:
+    if opcode == op.DROP:
+        value_type = state.pop()
+        if value_type == I64 or value_type == F64:
+            assert state.drop_widths.push_back((offset, 2))
+        return
+    state.pop(I32)
+    right_type = state.pop()
+    left_type = state.pop()
+    assert left_type is None or right_type is None or left_type == right_type, (
+        "SELECT operands have different types"
+    )
+    selected_type = left_type if left_type is not None else right_type
+    if selected_type is None:
+        selected_type = I32
+    if selected_type == I64 or selected_type == F64:
+        assert state.select_widths.push_back((offset, 2))
+    state.push(selected_type)
+
+
+@_select_analysis_handler(op.LOCAL_GET, op.LOCAL_SET, op.LOCAL_TEE,
+                          op.GLOBAL_GET, op.GLOBAL_SET)
+def _analyze_variables(state: _SelectAnalysisState, opcode: int, offset: int,
+                       operand: int) -> None:
+    if opcode == op.LOCAL_GET:
+        assert operand < len(state.locals_types)
+        state.push(state.locals_types[operand])
+    elif opcode == op.LOCAL_SET:
+        assert operand < len(state.locals_types)
+        state.pop(state.locals_types[operand])
+    elif opcode == op.LOCAL_TEE:
+        assert operand < len(state.locals_types)
+        value_type = state.locals_types[operand]
+        state.pop(value_type)
+        state.push(value_type)
+    elif opcode == op.GLOBAL_GET:
+        assert operand < len(state.module.globals)
+        state.push(state.module.globals[operand].vtype)
+    else:
+        assert operand < len(state.module.globals)
+        global_entry = state.module.globals[operand]
+        assert global_entry.mutable, "GLOBAL_SET targets immutable global"
+        state.pop(global_entry.vtype)
+
+
+@_select_analysis_handler(op.I32_CONST, op.I64_CONST, op.F32_CONST, op.F64_CONST)
+def _analyze_constants(state: _SelectAnalysisState, opcode: int, offset: int,
+                       operand: int) -> None:
+    value_type = I32 if opcode == op.I32_CONST else I64 if opcode == op.I64_CONST else (
+        F32 if opcode == op.F32_CONST else F64
+    )
+    state.push(value_type)
+
+
+def _memory_alignment_exponent(opcode: int) -> int:
+    if (opcode == op.I32_LOAD or opcode == op.F32_LOAD or opcode == op.I32_STORE
+            or opcode == op.F32_STORE):
+        return 2
+    if (opcode == op.I64_LOAD or opcode == op.F64_LOAD or opcode == op.I64_STORE
+            or opcode == op.F64_STORE):
+        return 3
+    if (opcode == op.I32_LOAD8_S or opcode == op.I32_LOAD8_U or opcode == op.I64_LOAD8_S
+            or opcode == op.I64_LOAD8_U or opcode == op.I32_STORE8
+            or opcode == op.I64_STORE8):
+        return 0
+    if (opcode == op.I32_LOAD16_S or opcode == op.I32_LOAD16_U or opcode == op.I64_LOAD16_S
+            or opcode == op.I64_LOAD16_U or opcode == op.I32_STORE16
+            or opcode == op.I64_STORE16):
+        return 1
+    assert opcode == op.I64_LOAD32_S or opcode == op.I64_LOAD32_U or opcode == op.I64_STORE32
+    return 2
+
+
+def _validate_memory_alignment(state: _SelectAnalysisState, opcode: int, offset: int) -> None:
+    alignment, _ = decode_unsigned(state.code, offset + 1)
+    assert alignment <= _memory_alignment_exponent(opcode), (
+        "memory alignment exceeds the natural alignment"
+    )
+
+
+@_select_analysis_handler(*range(op.I32_LOAD, op.I64_LOAD32_U + 1))
+def _analyze_load(state: _SelectAnalysisState, opcode: int, offset: int,
+                  operand: int) -> None:
+    assert state.module.memory is not None, "load requires linear memory"
+    _validate_memory_alignment(state, opcode, offset)
+    state.pop(I32)
+    if opcode == op.I32_LOAD or op.I32_LOAD8_S <= opcode <= op.I32_LOAD16_U:
+        state.push(I32)
+    elif opcode == op.I64_LOAD or op.I64_LOAD8_S <= opcode <= op.I64_LOAD32_U:
+        state.push(I64)
+    elif opcode == op.F32_LOAD:
+        state.push(F32)
+    else:
+        assert opcode == op.F64_LOAD
+        state.push(F64)
+
+
+@_select_analysis_handler(*range(op.I32_STORE, op.I64_STORE32 + 1))
+def _analyze_store(state: _SelectAnalysisState, opcode: int, offset: int,
+                   operand: int) -> None:
+    assert state.module.memory is not None, "store requires linear memory"
+    _validate_memory_alignment(state, opcode, offset)
+    if opcode == op.I32_STORE or opcode == op.I32_STORE8 or opcode == op.I32_STORE16:
+        state.pop(I32)
+    elif opcode == op.I64_STORE or opcode == op.I64_STORE8 or opcode == op.I64_STORE16 or (
+        opcode == op.I64_STORE32
+    ):
+        state.pop(I64)
+    elif opcode == op.F32_STORE:
+        state.pop(F32)
+    else:
+        assert opcode == op.F64_STORE
+        state.pop(F64)
+    state.pop(I32)
+
+
+@_select_analysis_handler(op.MEMORY_SIZE, op.MEMORY_GROW)
+def _analyze_memory_size_grow(state: _SelectAnalysisState, opcode: int, offset: int,
+                              operand: int) -> None:
+    assert state.module.memory is not None, "memory instruction requires linear memory"
+    if opcode == op.MEMORY_GROW:
+        state.pop(I32)
+    state.push(I32)
+
+
+@_select_analysis_handler(op.CALL, op.CALL_INDIRECT)
+def _analyze_call(state: _SelectAnalysisState, opcode: int, offset: int,
+                  operand: int) -> None:
+    function_type = (state.module.func_type(operand) if opcode == op.CALL
+                     else state.module.type_at(operand))
+    if opcode == op.CALL_INDIRECT:
+        assert len(state.module.tables) > 0, "CALL_INDIRECT requires a table"
+        _, table_index_end = decode_unsigned(state.code, offset + 1)
+        table_index, _ = decode_unsigned(state.code, table_index_end)
+        assert table_index == 0, "only table index zero is supported"
+        state.pop(I32)
+    assert function_type.params is not None and function_type.results is not None
+    parameter_index = len(function_type.params)
+    while parameter_index > 0:
+        parameter_index -= 1
+        state.pop(function_type.params[parameter_index])
+    if function_type.results:
+        state.push(function_type.results[0])
+
+
+@_select_analysis_handler(*range(0x45, 0x67))
+def _analyze_comparison(state: _SelectAnalysisState, opcode: int, offset: int,
+                        operand: int) -> None:
+    if opcode == op.I32_EQZ:
+        state.pop(I32)
+    elif opcode >= 0x46 and opcode <= 0x4F:
+        state.pop(I32)
+        state.pop(I32)
+    elif opcode == op.I64_EQZ:
+        state.pop(I64)
+    elif opcode >= 0x51 and opcode <= 0x5A:
+        state.pop(I64)
+        state.pop(I64)
+    elif opcode >= 0x5B and opcode <= 0x60:
+        state.pop(F32)
+        state.pop(F32)
+    else:
+        state.pop(F64)
+        state.pop(F64)
+    state.push(I32)
+
+
+@_select_analysis_handler(*range(0x67, 0x79), op.I32_EXTEND8_S, op.I32_EXTEND16_S)
+def _analyze_i32_operation(state: _SelectAnalysisState, opcode: int, offset: int,
+                           operand: int) -> None:
+    if opcode <= 0x69 or opcode == op.I32_EXTEND8_S or opcode == op.I32_EXTEND16_S:
+        state.pop(I32)
+    else:
+        state.pop(I32)
+        state.pop(I32)
+    state.push(I32)
+
+
+@_select_analysis_handler(*range(0x79, 0x8B), op.I64_EXTEND8_S, op.I64_EXTEND16_S,
+                          op.I64_EXTEND32_S)
+def _analyze_i64_operation(state: _SelectAnalysisState, opcode: int, offset: int,
+                           operand: int) -> None:
+    if opcode <= 0x7B or opcode >= op.I64_EXTEND8_S:
+        state.pop(I64)
+    else:
+        state.pop(I64)
+        state.pop(I64)
+    state.push(I64)
+
+
+@_select_analysis_handler(*range(0x8B, 0x92))
+def _analyze_f32_unary(state: _SelectAnalysisState, opcode: int, offset: int,
+                       operand: int) -> None:
+    state.pop(F32)
+    state.push(F32)
+
+
+@_select_analysis_handler(*range(0x92, 0x99))
+def _analyze_f32_binary(state: _SelectAnalysisState, opcode: int, offset: int,
+                        operand: int) -> None:
+    state.pop(F32)
+    state.pop(F32)
+    state.push(F32)
+
+
+@_select_analysis_handler(*range(0x99, 0xA0))
+def _analyze_f64_unary(state: _SelectAnalysisState, opcode: int, offset: int,
+                       operand: int) -> None:
+    state.pop(F64)
+    state.push(F64)
+
+
+@_select_analysis_handler(*range(0xA0, 0xA7))
+def _analyze_f64_binary(state: _SelectAnalysisState, opcode: int, offset: int,
+                        operand: int) -> None:
+    state.pop(F64)
+    state.pop(F64)
+    state.push(F64)
+
+
+@_select_analysis_handler(*range(0xA7, 0xC0))
+def _analyze_conversion(state: _SelectAnalysisState, opcode: int, offset: int,
+                        operand: int) -> None:
+    if opcode == op.I32_WRAP_I64:
+        state.pop(I64)
+        state.push(I32)
+    elif opcode <= op.I32_TRUNC_F64_U:
+        state.pop(F32 if opcode == op.I32_TRUNC_F32_S or opcode == op.I32_TRUNC_F32_U else F64)
+        state.push(I32)
+    elif opcode == op.I64_EXTEND_I32_S or opcode == op.I64_EXTEND_I32_U:
+        state.pop(I32)
+        state.push(I64)
+    elif opcode <= op.I64_TRUNC_F64_U:
+        source_type = F32 if opcode == op.I64_TRUNC_F32_S or opcode == op.I64_TRUNC_F32_U else F64
+        state.pop(source_type)
+        state.push(I64)
+    elif opcode == op.F32_CONVERT_I32_S or opcode == op.F32_CONVERT_I32_U:
+        state.pop(I32)
+        state.push(F32)
+    elif opcode == op.F32_CONVERT_I64_S or opcode == op.F32_CONVERT_I64_U:
+        state.pop(I64)
+        state.push(F32)
+    elif opcode == op.F32_DEMOTE_F64:
+        state.pop(F64)
+        state.push(F32)
+    elif opcode == op.F64_CONVERT_I32_S or opcode == op.F64_CONVERT_I32_U:
+        state.pop(I32)
+        state.push(F64)
+    elif opcode == op.F64_CONVERT_I64_S or opcode == op.F64_CONVERT_I64_U:
+        state.pop(I64)
+        state.push(F64)
+    elif opcode == op.F64_PROMOTE_F32:
+        state.pop(F32)
+        state.push(F64)
+    elif opcode == op.I32_REINTERPRET_F32:
+        state.pop(F32)
+        state.push(I32)
+    elif opcode == op.I64_REINTERPRET_F64:
+        state.pop(F64)
+        state.push(I64)
+    elif opcode == op.F32_REINTERPRET_I32:
+        state.pop(I32)
+        state.push(F32)
+    else:
+        assert opcode == op.F64_REINTERPRET_I64
+        state.pop(I64)
+        state.push(F64)
+
+
+def _index_stack_value_widths(module: Module, function_index: int) -> None:
+    """Record wide DROP and SELECT operands by direct-indexed type analysis."""
+    from control_flow import iter_scan_instrs
+
+    state = _SelectAnalysisState(module, function_index)
+    for instruction in iter_scan_instrs(state.code):
+        assert not state.ended, "instructions follow the function END"
+        handler = _SELECT_ANALYSIS_HANDLERS[instruction.opcode]
+        if handler is not None:
+            operand = instruction.operand if instruction.operand is not None else 0
+            handler(state, instruction.opcode, instruction.offset, operand)
+    assert state.ended, "function body is missing END"
+    state.function.select_widths = ReadOnlyFlatMapStorage.create(state.select_widths)
+    state.function.drop_widths = ReadOnlyFlatMapStorage.create(state.drop_widths)
 
 
 def parse(data: memoryview) -> Module:
@@ -391,18 +1014,26 @@ def parse(data: memoryview) -> Module:
         import_count=section_counts.imports,
         function_count=section_counts.functions,
         export_count=section_counts.exports,
-        global_count=section_counts.globals,
+        global_count=section_counts.globals + section_counts.imports,
         table_count=section_counts.tables,
         element_count=section_counts.elements,
         data_segment_count=section_counts.data_segments,
     )
     type_indices = StaticVector[int](capacity=section_counts.functions)
     off = 8
+    last_section_id = 0
     while off < len(data):
         sec_id = data[off]
         off += 1
         sec_len, off = decode_unsigned(data, off)
         sec_end = off + sec_len
+        assert sec_end <= len(data), "section length exceeds module bounds"
+        if sec_id == 0:
+            _parse_custom_section(data, off, sec_end)
+        else:
+            assert 1 <= sec_id <= SEC_DATA, f"unsupported MVP section id={sec_id}"
+            assert sec_id > last_section_id, "WASM sections are duplicated or out of order"
+            last_section_id = sec_id
         if sec_id == SEC_TYPE:
             _parse_type_section(data, off, sec_end, module)
         elif sec_id == SEC_IMPORT:
@@ -425,10 +1056,24 @@ def parse(data: memoryview) -> Module:
             _parse_code_section(data, off, sec_end, type_indices, module)
         elif sec_id == SEC_DATA:
             _parse_data_section(data, off, sec_end, module)
-
-        # else: custom section -- skip its bytes.
+        elif sec_id == 0:
+            pass
+        else:
+            assert False, f"unsupported MVP section id={sec_id}"
         off = sec_end
 
+    for import_entry in module.imports:
+        module.type_at(import_entry.type_index)
+    if module.start_function is not None:
+        start_type = module.func_type(module.start_function)
+        assert start_type.params is not None and len(start_type.params) == 0, (
+            "start function must not have parameters"
+        )
+        assert start_type.results is not None and len(start_type.results) == 0, (
+            "start function must not have results"
+        )
     module.prepare_function_layouts()
+    for function_index in range(len(module.imports), len(module.imports) + len(module.functions)):
+        _index_stack_value_widths(module, function_index)
     module.build_basic_block_index()
     return module

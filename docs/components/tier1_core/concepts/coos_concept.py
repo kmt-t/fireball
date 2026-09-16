@@ -8,8 +8,8 @@ Implementation Invariants & Gotchas:
   concurrent senders or receivers trigger assertion error.
 - GOTCHA-COOS-03: ISR interrupt notification queue is non-blocking; task wake-up is
   deferred to cooperative drain_interrupts at scheduler yield points.
-- GOTCHA-SCHED-01: Consecutive direct handoff bound forces yield back to main loop to
-  prevent starvation of periodic/monitoring tasks.
+- GOTCHA-SCHED-01: Consecutive direct handoff bound returns control to the scheduler
+  after the configured limit; it does not guarantee task fairness or response time.
 - ADR-SharedBlockRaii: Move-only RAII shared memory block guarantees zero-copy ownership transfer
   via C++23 move semantics (rvalue reference &&), eliminating double-ownership.
 """

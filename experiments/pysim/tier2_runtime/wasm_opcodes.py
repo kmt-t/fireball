@@ -30,9 +30,18 @@ I32_LOAD8_S = 0x2C
 I32_LOAD8_U = 0x2D
 I32_LOAD16_S = 0x2E
 I32_LOAD16_U = 0x2F
+I64_LOAD8_S = 0x30
+I64_LOAD8_U = 0x31
+I64_LOAD16_S = 0x32
+I64_LOAD16_U = 0x33
+I64_LOAD32_S = 0x34
+I64_LOAD32_U = 0x35
 I32_STORE = 0x36
 I32_STORE8 = 0x3A
 I32_STORE16 = 0x3B
+I64_STORE8 = 0x3C
+I64_STORE16 = 0x3D
+I64_STORE32 = 0x3E
 MEMORY_SIZE = 0x3F
 MEMORY_GROW = 0x40
 I32_CONST = 0x41
@@ -65,6 +74,8 @@ I32_SHR_S = 0x75
 I32_SHR_U = 0x76
 I32_ROTL = 0x77
 I32_ROTR = 0x78
+I32_EXTEND8_S = 0xC0
+I32_EXTEND16_S = 0xC1
 I64_LOAD = 0x29
 F32_LOAD = 0x2A
 F64_LOAD = 0x2B
@@ -120,6 +131,9 @@ I64_SHR_S = 0x87
 I64_SHR_U = 0x88
 I64_ROTL = 0x89
 I64_ROTR = 0x8A
+I64_EXTEND8_S = 0xC2
+I64_EXTEND16_S = 0xC3
+I64_EXTEND32_S = 0xC4
 
 F32_ABS = 0x8B
 F32_NEG = 0x8C
@@ -177,7 +191,7 @@ I64_REINTERPRET_F64 = 0xBD
 F32_REINTERPRET_I32 = 0xBE
 F64_REINTERPRET_I64 = 0xBF
 
-# blocktype byte used by block/loop/if when there is no result value (the
-# only form this experiment supports -- multi-value blocktypes are not
-# implemented).
+# blocktype byte used by block/loop/if when there is no result value.  The
+# control-flow scanner also accepts the four single-result value types; type
+# indices and multi-value block signatures remain unsupported here.
 BLOCKTYPE_EMPTY = 0x40

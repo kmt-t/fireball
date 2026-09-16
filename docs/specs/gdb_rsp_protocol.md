@@ -4,7 +4,7 @@
 <!-- traceability: {DebuggerLabelTableSwitch} {Debug_Integrated} {META_ZeroCostAbstraction} -->
 本仕様書は、Fireball Hypervisor が UART / デバッグシリアル経由でホスト GDB クライアントに提供する **GDB Remote Serial Protocol (RSP)** のパケットフォーマット、サポートコマンドセット、および WASM 仮想レジスタ番号マッピングを定義する正本である。
 
-デバッグセッション確立時、Hypervisor は JIT 実行を無効化し、インタープリタのラベルテーブル切り替え（`{DebuggerLabelTableSwitch}`）により全命令境界でブレークポイント判定（`flat_set_view` 参照）とステップ実行を実現する。 `{DebuggerLabelTableSwitch}` `{Debug_Integrated}` `{META_ZeroCostAbstraction}`
+デバッグセッション確立時、Hypervisor は JIT 実行を無効化し、インタープリタのラベルテーブル切り替え（）により全命令境界でブレークポイント判定（`flat_set_view` 参照）とステップ実行を実現する。
 
 ---
 

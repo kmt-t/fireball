@@ -2,16 +2,16 @@
 <!-- evidence:
      formal: formal/vsoc_cache_coherency_model.py
      concept: concepts/debugger_concept.py
-     test: tests/debug_manager_test_spec.md
+     test: docs/qa/tier2_runtime/debug_manager_test_spec.md
 -->
 
 ## 1. コンセプト
 <!-- traceability: {RSPMinimalSet} {DebuggerLabelTableSwitch} {MemoryIsolation} {Debug_Standard_Env} {RSP_Transport_Selectable} {Debug_Integrated} {Debugger_Jit_Flush} -->
-デバッガおよび GDB Server は、VSCode等の外部ツールからのデバッグを可能にするため、COOS 上の**独立した協調タスク（`gdbserver_task`）**として常駐し、GDB Remote Serial Protocol (RSP) に基づく非同期・協調的な実行制御を行う。標準環境として VSCode, UART, J-Link をサポートする。また `{Debug_Integrated}` に準拠し、GDB RSP制御に加えて、**実行時プロファイラ機能（ホットスポットサンプリングや実行頻度計測）** および **動的テストツール機能（命令トレース・実行時メモリ/レジスタアサーション）** を内蔵する。RSPパケットの送受信待ち時は COOS スケジューラへ `yield` することで、ゲストタスクや HAL タスクの実行を阻害しない。JITキャッシュの無効化はアタッチ中常時ではなく、デバッガがメモリを書き換えた場合にのみ発生する（`runtime_vsoc.md` の `{Debugger_Jit_Flush}` を正本とする）。 `{RSPMinimalSet}` `{DebuggerLabelTableSwitch}` `{MemoryIsolation}` `{Debug_Standard_Env}` `{RSP_Transport_Selectable}` `{Debug_Integrated}` `{Debugger_Jit_Flush}`
+デバッガおよび GDB Server は、VSCode等の外部ツールからのデバッグを可能にするため、COOS 上の**独立した協調タスク（`gdbserver_task`）**として常駐し、GDB Remote Serial Protocol (RSP) に基づく非同期・協調的な実行制御を行う。標準環境として VSCode, UART, J-Link をサポートする。また に準拠し、GDB RSP制御に加えて、**実行時プロファイラ機能（ホットスポットサンプリングや実行頻度計測）** および **動的テストツール機能（命令トレース・実行時メモリ/レジスタアサーション）** を内蔵する。RSPパケットの送受信待ち時は COOS スケジューラへ `yield` することで、ゲストタスクや HAL タスクの実行を阻害しない。JITキャッシュの無効化はアタッチ中常時ではなく、デバッガがメモリを書き換えた場合にのみ発生する（`runtime_vsoc.md` の を正本とする）。
 
 ## 2. アーキテクチャ分類
 <!-- traceability: {META_3TierSeparation} {RSPMinimalSet} -->
-本コンポーネントは **Tier 2 (分解されたサブコンポーネント: Decomposed Subcomponent)** に属し、vSoC (`runtime_vsoc.md`) から分解されたデバッグ状態制御、プロファイラ集計、ブレークポイント管理、および COOS 協調タスクとして稼働する GDB RSP 通信・コマンドディスパッチを担当する。具象的なプロトコル仕様は [gdb_rsp_protocol.md](docs/specs/gdb_rsp_protocol.md) を正本とする。 `{META_3TierSeparation}` `{RSPMinimalSet}`
+本コンポーネントは **Tier 2 (分解されたサブコンポーネント: Decomposed Subcomponent)** に属し、vSoC (`runtime_vsoc.md`) から分解されたデバッグ状態制御、プロファイラ集計、ブレークポイント管理、および COOS 協調タスクとして稼働する GDB RSP 通信・コマンドディスパッチを担当する。具象的なプロトコル仕様は [gdb_rsp_protocol.md](docs/specs/gdb_rsp_protocol.md) を正本とする。
 
 ## 3. 静的モデル
 
@@ -63,14 +63,14 @@ graph TD
 | HALトランスポート | RSPパケットの送受信を担うHAL抽象化レイヤへの参照。 | 構造体への参照 | `hal_transport` (非所有) |
 | `cmd_queue` | HALから供給されるコマンドキュー。 | 構造体への参照 | `debug_command_queue` |
 | デバッグ状態 | デバッガの現在の動作モード（実行中、中断中など）。 | 列挙型 | `debug_state` |
-| ブレークポイントリスト | 設定されているブレークポイントのアドレス一覧。昇順ソート済みの固定長配列（`FB_CONF_DEBUG_MAX_BREAKPOINTS` 件）として保持し、実行時の判定は `fireball::flat_set_view<address>` の `contains()` で行う。 | 固定長配列 + 集合ビュー | `{META_NoStdVector}` `{FlatViewNarrowing}` |
+| ブレークポイントリスト | 設定されているブレークポイントのアドレス一覧。昇順ソート済みの固定長配列（`FB_CONF_DEBUG_MAX_BREAKPOINTS` 件）として保持し、実行時の判定は `fireball::flat_set_view<address>` の `contains()` で行う。 | 固定長配列 + 集合ビュー | `{FlatViewNarrowing}` |
 | RSPパケットバッファ | フレーミングされた 1 パケットの ASCII ペイロード | 固定長配列 | 256 Bytes (`FB_CONF_RSP_PACKET_MAX`) |
-| プロファイラバッファ | サンプリングされたPC頻度とホットスポット統計。PCの昇順ソート済み固定長配列（`FB_CONF_DEBUG_MAX_PC_SAMPLES` 件）として保持し、`fireball::flat_map_view<address, count>` で参照する。 | 固定長配列 + マップビュー | `FB_CONF_DEBUG_MAX_PC_SAMPLES` `{Debug_Integrated}` `{META_NoStdVector}` |
+| プロファイラバッファ | サンプリングされたPC頻度とホットスポット統計。PCの昇順ソート済み固定長配列（`FB_CONF_DEBUG_MAX_PC_SAMPLES` 件）として保持し、`fireball::flat_map_view<address, count>` で参照する。 | 固定長配列 + マップビュー | `FB_CONF_DEBUG_MAX_PC_SAMPLES` |
 | `last_stop_reason` | 直近の停止要因。 | ID値 | 信号番号等 |
 
 #### 仮想レジスタセット（virtual_register_set）
 <!-- traceability: {RSPMinimalSet} -->
-GDB等の外部クライアントに提示する WASM 仮想レジスタ番号マッピング（`0: pc`, `1: sp`, `2: fp`, `3: tos`, `4..19: local0..15`）は `{RSPMinimalSet}` を正本とする。 `{RSPMinimalSet}`
+GDB等の外部クライアントに提示する WASM 仮想レジスタ番号マッピング（`0: pc`, `1: sp`, `2: fp`, `3: tos`, `4..19: local0..15`）は を正本とする。
 
 ## 4. 動的モデル
 
@@ -82,13 +82,13 @@ GDB等の外部クライアントに提示する WASM 仮想レジスタ番号�
 2. **コマンドディスパッチと JIT キャッシュ即時フラッシュ (`GOTCHA-DBG-01`, `{Debugger_Jit_Flush}`)**:
    - 取得したコマンド（`?`, `g/G`, `m/M`, `c`, `s`, `Z0/z0` 等）の GDB コマンド構文を解析し、ディスパッチする。
    **設計理由と不変条件**: メモリ書き込みコマンド（`M` パケット）によってゲスト RAM 上のバイト列やコード領域が書き換えられた場合、直ちに JIT キャッシュの全バンク（Active / Warm / Oldest）を無効化（`invalidate_all_banks()`）する。書き換え前の古いネイティブコードが JIT キャッシュに残存していると、デバッガでパッチを当てた処理が反映されず、自己書き換えコード的不整合を引き起こすためである。
-3. **ハンドラテーブル切替によるゼロオーバーヘッド・デバッグ (`GOTCHA-DBG-02`, `{DebuggerLabelTableSwitch}`)**:
+3. **ハンドラテーブル切替によるゼロオーバーヘッド・デバッグ (`GOTCHA-DBG-02`, )**:
    - デバッガアタッチ中は命令粒度の実行制御のためインタープリタのハンドラテーブルをデバッグ用テーブル（`debug_handler_table`）へ切り替えて 1 命令ずつステップ実行またはブレークポイントまで連続実行する。
    **設計理由と不変条件**: 通常実行時のインタープリタハンドラ内に `if (debug_enabled)` やブレークポイント検査の条件分岐を埋め込むと、非デバッグ時の実行性能が恒常的に数〜十数% 劣化する。そのため、通常実行時は分岐ゼロの高速ハンドラテーブルを使用し、デバッグセッション開始時にのみ関数ポインタテーブルをアトミックに差し替えることで、非デバッグ時のオーバーヘッドを完全にゼロに保つ。
 4. **ステップ実行**:
-   - インタープリタを「1命令実行」モードで呼び出し、実行後に `Stopped` 状態へ遷移して停止理由（SIGTRAP）を通知。 `{RSPMinimalSet}`
+   - インタープリタを「1命令実行」モードで呼び出し、実行後に `Stopped` 状態へ遷移して停止理由（SIGTRAP）を通知。
 5. **プロファイリング & 動的テスト**:
-   - 実行中 PC をサンプリング記録し、外部ツールへプロファイルサマリを出力。メモリアサーションを検証。 `{Debug_Integrated}`
+   - 実行中 PC をサンプリング記録し、外部ツールへプロファイルサマリを出力。メモリアサーションを検証。
 
 #### デバッガ・インタープリタ結合コンセプトコード (`concepts/debugger_concept.py`)
 デバッガとインタープリタの結合、GDB RSP パケット処理、統一スタック検査、プロファイラサンプリングの参照実装：
@@ -199,17 +199,17 @@ sequenceDiagram
 ### 6.1 性能制約と方策
 <!-- traceability: {DebuggerLabelTableSwitch} -->
 - **目標**: デバッグ無効時のオーバーヘッドをゼロにする。
-- **方策**: `{DebuggerLabelTableSwitch}` デバッガ無効時はインタープリタのハンドラテーブルを切り替えず、通常の高速実行を維持する。
+- **方策**: デバッガ無効時はインタープリタのハンドラテーブルを切り替えず、通常の高速実行を維持する。
 
 ### 6.2 メモリ制約と方策
 <!-- traceability: {MemoryIsolation} {META_NoStdVector} -->
 - **目標**: 最小限のRAMでデバッグ機能を提供する。
-- **方策**: `{MemoryIsolation}` `{META_NoStdVector}` デバッガ専用の独立バッファと配列を使用し、システム本体のメモリを圧迫しない。
+- **方策**: デバッガ専用の独立バッファと配列を使用し、システム本体のメモリを圧迫しない。
 
 ### 6.3 安全性制約と方策
 <!-- traceability: {MemoryBoundaryCheck} -->
 - **目標**: デバッガによる不正なメモリアクセスを防止する。
-- **方策**: `{MemoryBoundaryCheck}` デバッグコマンドによるメモリアクセスに対し、WASMリニアメモリの境界チェックを強制する。
+- **方策**: デバッグコマンドによるメモリアクセスに対し、WASMリニアメモリの境界チェックを強制する。
 
 ## 7. 形式検証・テスト仕様との対応
 
@@ -219,4 +219,4 @@ sequenceDiagram
 
 ### 7.2 テスト仕様書との連携
 
-GDB RSP、ブレークポイント、ハンドラテーブル切替、およびJITキャッシュ協調のテストケースは [`debug_manager_test_spec.md`](docs/components/tier2_runtime/tests/debug_manager_test_spec.md) を正本とする。
+GDB RSP、ブレークポイント、ハンドラテーブル切替、およびJITキャッシュ協調のテストケースは [`debug_manager_test_spec.md`](docs/qa/tier2_runtime/debug_manager_test_spec.md) を正本とする。

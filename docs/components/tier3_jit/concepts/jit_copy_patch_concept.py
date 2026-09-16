@@ -36,11 +36,9 @@ class Stencil:
     it can never drift out of sync with the name itself. It is used both for the
     (not yet implemented) dynamic per-depth stencil selection and for the real
     reconciliation-glue mechanism between consecutive stencils *within* one trace
-    (see emit_variant_reconciliation_glue()) -- NOT for chaining between separately
-    compiled traces. A direct chain branch (exit_kind="chain") carries live
-    register state straight across the boundary with no memory traffic and no
-    variant reconciliation; only a genuine exit (exit_kind="return"/"fallback",
-    no resident successor) flushes dirty values to memory
+    (see emit_variant_reconciliation_glue()). Every trace boundary flushes dirty
+    stack values and synchronizes the shared execution context before either
+    returning to the interpreter or dispatching a chain target
     (jit_compiler.md 8, {ADR_TosCacheAsymmetry}, {JIT_LazyChaining}). The `_r8` memory stencils don't
     introduce a depth of their own -- loads reuse Depth 1's R4=addr, stores reuse
     Depth 2's R4=val/R5=addr -- so they're mapped onto the depth they build on top
@@ -476,6 +474,7 @@ class CopyPatchJITEngine:
         chain_next_pc: int = 0,
         chain_target_addr: int = 0,
         variant_id: int = 2,
+        chain_target_variant_id: int | None = None,
     ) -> tuple[int, int]:
         """
         Batches stencil copy & relocation patching inside a single W^X transaction.
@@ -492,24 +491,23 @@ class CopyPatchJITEngine:
           canonical address first, since nothing preserves R4-R6 past the
           POP/BX that follows -- WASM operand-stack state and the C return value
           are unrelated ({GOTCHA-JITC-07}).
-        - "chain": a direct backpatched B.W to a resident successor trace's chain
-          entry point (`chain_target_addr` must be that successor's
-          `last_chain_entry_byte_offset`, not its trace-start address). No flush,
-          no prologue/epilogue on either side of the hop -- register state
-          (including R4-R6 caches) survives untouched, which is the entire point
-          of chaining ({JIT_LazyChaining}). If `chain_target_addr` is 0 the branch
-          is left as an unresolved placeholder for later backpatching once the
-          successor is compiled (lazy chaining) or unlinking if it is evicted.
+        - "chain": a dynamic header-driven exit to a resident successor trace's
+          chain entry point (`chain_target_addr` must be that successor's
+          `last_chain_entry_byte_offset`, not its trace-start address). The
+          trace-chain epilogue always flushes dirty values and synchronizes the
+          shared execution context before either returning to the interpreter or
+          jumping to the successor. If `chain_target_addr` is 0, the AAPCS return
+          epilogue runs; otherwise the branch skips only that interpreter-return
+          epilogue. Linking and unlinking update header metadata, not code bytes.
 
         `variant_id` is the trace's register-occupancy ID (Depth 0..3, see
         docs/specs/jit_stencil_catalog.md 3.8) -- which of TOS/NOS/NNOS are register-
-        resident. It exists for consecutive stencils *within* this same trace (see
-        emit_variant_reconciliation_glue() below), which matters once a future
-        per-trace register allocator can make them disagree -- this engine does not
-        yet compute variant_id automatically from `wasm_ops` (that belongs to that
-        allocator, out of scope here); the caller states it, the same way it already
-        states `exit_kind`/`dirty_spills`. Recorded in the header for real, not
-        hardcoded.
+        resident. `chain_target_variant_id` describes the successor entry layout.
+        When the layouts differ, emit_variant_reconciliation_glue() reloads missing
+        values from the already-flushed shared OperandStack before the successor
+        stencil executes. `variant_id` remains an explicit compile input; automatic
+        allocation from `wasm_ops` is outside this concept's scope. Both IDs are
+        represented explicitly rather than being inferred from a raw address.
         """
         start_offset = self.current_write_pos
         caller_dirty_spills = list(dirty_spills) if dirty_spills is not None else None
@@ -585,10 +583,8 @@ class CopyPatchJITEngine:
 
         # 3. Emit Full Callee-saved Prologue
         emit_stencil(self.stencils["prologue_full"])
-        # The chain entry point: a resident predecessor trace's backpatched B.W
-        # (exit_kind="chain") lands exactly here, skipping the prologue above.
-        # Its register state (R3-R5 caches included) is already correct for this
-        # trace's body, so no restore or reload is needed or wanted here.
+        # The chain entry point skips only the common AAPCS start prologue.
+        # Trace-specific setup and register-variant reconciliation belong after it.
         chain_entry_byte_offset = self.byte_write_pos
         # 3b. If the trace touches linear memory, pin R8=mem_base and R9=mem_size for the
         # lifetime of the trace (execution_context: mem_base @+0x28, mem_size @+0x2C,
@@ -709,18 +705,10 @@ class CopyPatchJITEngine:
                 else:
                     raise ValueError(f"Unsupported stencil opcode: {op}")
 
-        # 5. Emit Exit. "return"/"fallback" are genuine AAPCS exits: every dirty
-        # cached value must be flushed to its canonical sp-relative address
-        # first, since nothing preserves R4-R6 past the POP/BX below.
-        # "chain" / "dynamic_chain" is a dynamic header-driven chain exit:
-        # It dynamically checks the header's chain_target_addr (+0x0C).
-        # - If resolved (chain_target_addr != 0): skips epilogue and BX r12 directly
-        #   to the successor trace's chain entry (past its prologue). Neither epilogue
-        #   nor successor prologue executes; registers survive untouched.
-        # - If unresolved (chain_target_addr == 0): falls through, flushes dirty spills,
-        #   and executes epilogue_return (POP {..., pc}) to return to the interpreter.
-        # This completely avoids in-place machine code rewriting ({ADR_TosCacheAsymmetry},
-        # {JIT_LazyChaining}, {GOTCHA-JITC-07}).
+        # 5. Emit Exit. Every exit synchronizes dirty stack values and the shared
+        # execution context. A chain epilogue does this before testing the dynamic
+        # target; only the interpreter-return POP is skipped on a resolved chain.
+        # The header is metadata, so linking/unlinking never rewrites code bytes.
         self.last_chain_branch_byte_addr = None
         if exit_kind in ("chain", "dynamic_chain"):
             # 1. Dynamically load chain_target_addr from the inlined trace header (+0x0C)
@@ -732,17 +720,21 @@ class CopyPatchJITEngine:
                 f"LDR.W r12, [header_target (rel={rel_offset})]",
                 asm.ldr_w_literal(Reg.R12, rel_offset),
             )
-            # 2. Check if chain_target_addr is resolved (!= 0)
+            # 2. Check resolution, preserving flags through stores and MOVW/MOVT.
             emit("CMP.W r12, #0", asm.cmp_w_imm(Reg.R12, 0))
-            # 3. Branch if Not Equal (resolved): skip epilogue directly to BX r12
+            # 3. Trace-chain epilogue is mandatory on both resolved and unresolved exits.
+            flush_dirty_spills_and_sync_context()
+            # 4. A resolved target skips only the interpreter-return POP.
             bne_pos = self.byte_write_pos
             self.last_chain_branch_byte_addr = bne_pos
-            emit("BNE.W <skip_epilogue_to_chain>", asm.b_cond_w(Cond.NE, 0))
-            # 4. Fallthrough path (unresolved): flush dirty spills and POP PC to return
-            flush_dirty_spills_and_sync_context()
+            emit("BNE.W <skip_interpreter_return>", asm.b_cond_w(Cond.NE, 0))
+            # 5. Unresolved path returns to the interpreter; resolved path chains.
             emit_stencil(self.stencils["epilogue_return"])
-            # 5. Chain hop target: BX r12
             chain_jump_pos = self.byte_write_pos
+            if chain_target_variant_id is not None:
+                assert self.emit_variant_reconciliation_glue(
+                    variant_id, chain_target_variant_id
+                ), "chain target variant cannot be reconstructed from the shared stack"
             rel_to_chain = chain_jump_pos - (bne_pos + 4)
             patched_bne = asm.b_cond_w(Cond.NE, rel_to_chain)
             self.byte_cache[bne_pos : bne_pos + len(patched_bne)] = patched_bne
@@ -837,14 +829,22 @@ class CopyPatchJITEngine:
         """
         source_map = VARIANT_REGISTER_MAPS[source_variant_id]
         target_map = VARIANT_REGISTER_MAPS[target_variant_id]
-        if not set(target_map).issubset(source_map):
-            return False
         moves = {
             target_map[role]: source_map[role]
             for role in target_map
-            if source_map[role] != target_map[role]
+            if role in source_map and source_map[role] != target_map[role]
         }
         asm = Thumb2Assembler()
+        stack_offsets = {"TOS": 0, "NOS": 4, "NNOS": 8}
+        for role, dst in target_map.items():
+            if role not in source_map:
+                offset = stack_offsets[role]
+                self.write_instruction(
+                    self.current_write_pos,
+                    f"LDR {dst.name.lower()}, [r1, #{offset}]",
+                )
+                self.current_write_pos += 1
+                self._emit_bytes(asm.ldr_imm(dst, Reg.R1, offset))
         for dst, src in _order_register_moves(moves):
             self.write_instruction(
                 self.current_write_pos, f"MOV {dst.name.lower()}, {src.name.lower()}"
@@ -1444,16 +1444,14 @@ def test_variant_reconciliation_glue_subset_emits_nothing() -> None:
     assert engine.byte_write_pos == start_pos
 
 
-def test_variant_reconciliation_glue_rejects_missing_value() -> None:
-    """A Depth-1 exit cannot feed a Depth-2 entry: the entry needs a NOS value the
-    predecessor never computed, and no MOV sequence can synthesize a value that was
-    never produced. This should never actually arise in a well-formed trace (depth
-    only grows via real pushes), but the mechanism must fail closed if it did."""
+def test_variant_reconciliation_glue_loads_missing_value_from_shared_stack() -> None:
+    """A non-compatible target variant reloads its missing cache value after flush."""
     engine = CopyPatchJITEngine()
     engine.begin_jit_patch()
     ok = engine.emit_variant_reconciliation_glue(source_variant_id=1, target_variant_id=2)
     engine.commit_jit_patch()
-    assert ok is False
+    assert ok is True
+    assert "LDR r4, [r1, #4]" in engine.execute_native(0, engine.byte_write_pos)
 
 
 def test_variant_reconciliation_glue_emits_real_swap_bytes() -> None:
@@ -1519,16 +1517,14 @@ def test_epilogue_flush_d1_before_return() -> None:
     assert str_idx < pop_idx, "TOS must be flushed to memory before the POP that destroys R3"
 
 
-def test_chain_branch_skips_flush_and_epilogue() -> None:
-    """exit_kind="chain" emits a dynamic header-driven exit branch.
+def test_chain_branch_flushes_and_syncs_before_either_exit() -> None:
+    """A chain exit synchronizes shared state before selecting its destination.
     The instruction sequence contains:
     1. LDR.W r12 from inlined header (+0x0C)
     2. CMP.W r12, #0
-    3. BNE.W <skip_epilogue_to_chain> (skips spill flush & POP PC)
-    4. Epilogue fallback: STR (flush) + SP/IP sync + POP.W (return to interpreter)
-    5. Chain jump: BX r12 (jumps directly to successor's chain_entry past prologue).
-    When chain_target_addr is resolved (!= 0), BNE.W executes and skips the epilogue entirely.
-    When unresolved (== 0), it falls through and executes the epilogue.
+    3. Trace-chain epilogue: spill flush and shared SP/IP synchronization
+    4. BNE.W skips only the interpreter-return POP when a target is resolved
+    5. Chain jump: BX r12 (jumps to the successor's chain entry).
     """
     engine = CopyPatchJITEngine()
     ops = [("i32.const", 10)]
@@ -1538,21 +1534,25 @@ def test_chain_branch_skips_flush_and_epilogue() -> None:
     code = engine.execute_native(start_pos, count)
     assert any("LDR.W r12, [header_target" in c for c in code)
     assert "CMP.W r12, #0" in code
-    assert "BNE.W <skip_epilogue_to_chain>" in code
+    assert "BNE.W <skip_interpreter_return>" in code
     assert "STR r3, [r1, #0]" in code
     assert "STR.W r1, [r0, #0x0C]" in code
     assert "STR.W r6, [r0, #0x00]" in code
     assert "POP.W {r4-r6, r8-r11, pc}" in code
     assert "BX r12" in code
 
-    # Verify BNE.W offset lands exactly on BX r12
-    bne_idx = code.index("BNE.W <skip_epilogue_to_chain>")
-    bx_idx = code.index("BX r12")
-    assert bne_idx < bx_idx
-    # Epilogue is strictly between BNE.W and BX r12
+    # Both exits pass through the trace-chain epilogue before dispatch.
+    cmp_idx = code.index("CMP.W r12, #0")
     str_idx = code.index("STR r3, [r1, #0]")
+    sp_sync_idx = code.index("STR.W r1, [r0, #0x0C]")
+    ip_sync_idx = code.index("STR.W r6, [r0, #0x00]")
+    bne_idx = code.index("BNE.W <skip_interpreter_return>")
     pop_idx = code.index("POP.W {r4-r6, r8-r11, pc}")
-    assert bne_idx < str_idx < pop_idx < bx_idx
+    assert cmp_idx < str_idx < sp_sync_idx < ip_sync_idx < bne_idx < pop_idx
+
+    # Verify BNE.W offset lands exactly on BX r12, skipping only the return POP.
+    bx_idx = code.index("BX r12")
+    assert bne_idx < pop_idx < bx_idx
 
 
 def test_dynamic_chain_header_patch_and_unlink() -> None:
@@ -1594,10 +1594,11 @@ def test_dynamic_chain_header_patch_and_unlink() -> None:
 
 
 def test_chain_entry_offset_is_past_the_prologue() -> None:
-    """A trace's chain entry point (where a predecessor's chain branch must land)
-    is exactly past its own prologue, never through it -- a chained hop must not
-    re-run PUSH.W {r4-r6, r8-r11, lr} on registers that are already correctly
-    live from the predecessor."""
+    """The chain entry skips the common AAPCS start prologue.
+
+    Trace-specific setup follows this entry; a chained hop must not push a
+    second common native frame.
+    """
     engine = CopyPatchJITEngine()
     start_pos, _ = engine.compile_trace([("i32.const", 1)], exit_kind="fallback")
     code_start_byte_offset, _ = engine.last_trace_byte_range
@@ -1716,7 +1717,7 @@ if __name__ == "__main__":
     test_external_aapcs_call_stub()
     test_epilogue_spill_variable_flush()
     test_epilogue_flush_d1_before_return()
-    test_chain_branch_skips_flush_and_epilogue()
+    test_chain_branch_flushes_and_syncs_before_either_exit()
     test_dynamic_chain_header_patch_and_unlink()
     test_chain_entry_offset_is_past_the_prologue()
     test_chain_branch_compiled_with_target_sets_header_correctly()
@@ -1725,7 +1726,7 @@ if __name__ == "__main__":
     test_memory_access_without_bounds_check_is_impossible()
     test_variant_reconciliation_glue_same_variant_emits_nothing()
     test_variant_reconciliation_glue_subset_emits_nothing()
-    test_variant_reconciliation_glue_rejects_missing_value()
+    test_variant_reconciliation_glue_loads_missing_value_from_shared_stack()
     test_variant_reconciliation_glue_emits_real_swap_bytes()
     test_order_register_moves_breaks_swap_cycle_correctly()
     test_variant_stack_flush_and_sp_sync()

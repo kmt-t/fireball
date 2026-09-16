@@ -1,0 +1,205 @@
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+_PYSIM_DIR = Path(__file__).resolve().parent
+while not (_PYSIM_DIR / "tier1_core").is_dir():
+    _PYSIM_DIR = _PYSIM_DIR.parent
+
+for _p in [
+    _PYSIM_DIR,
+    _PYSIM_DIR / "tier1_core",
+    _PYSIM_DIR / "tier1_interface",
+    _PYSIM_DIR / "tier2_runtime",
+    _PYSIM_DIR / "tier3_jit",
+    _PYSIM_DIR / "tier3_platform",
+]:
+    _sp = str(_p)
+    if _sp not in sys.path:
+        sys.path.insert(0, _sp)
+
+"""Integration Scenario 10: Tier 2 Runtime vMMIO Virtual Devices & Address Translation.
+
+Tests:
+- Bit 31 RAM Bypass: Linear RAM (Bit 31 == 0) fast bypass vs vMMIO (Bit 31 == 1)
+- FlatMap Page Table & PTE Permission Checking (VALID, READ, WRITE, EXEC)
+- Function Code (FC) Decoding: Static Device (0xC), Shared Memory (0xE), Passthrough (0xF)
+- Direct-mapped Software TLB[32] with Folding XOR Hash, Hit/Miss counter & Invalidation
+- Task Ownership Isolation & TRAP_OWNER_MISMATCH detection
+- Static Device syscall dispatch and handler callback
+"""
+
+try:
+    import wasmtime
+except ImportError:
+    wasmtime = None
+
+from interpreter import Interpreter, InterpreterBindings
+from interpreter import TrapCode as InterpreterTrapCode
+from scheduler import Scheduler
+from vmmio import (
+    FC_STATIC_DEVICE,
+    TrapCode,
+    VmmioAddress,
+    VMMIOController,
+    VmmioStatus,
+)
+from wasm_reader import parse
+
+
+def test_scenario_vmmio_virtual_devices():
+    print("[*] Running Scenario 10: Tier 2 Runtime vMMIO Virtual Devices & Page Table...")
+    # -------------------------------------------------------------------------
+    # Phase 1: VmmioAddress Decoding & RAM Bypass Flag (Bit 31)
+    # -------------------------------------------------------------------------
+    addr_ram = VmmioAddress(0x0001_8000)  # Linear RAM: Bit 31 == 0
+    addr_vmmio = VmmioAddress(0xC000_1020)  # vMMIO Static Device: Bit 31 == 1, FC=0xC
+    assert addr_ram.is_linear() is True
+    assert addr_vmmio.is_linear() is False
+    assert addr_vmmio.fc() == FC_STATIC_DEVICE
+    assert addr_vmmio.vpn() == (0xC000_1020 >> 12)
+    assert addr_vmmio.offset() == 0x020
+    print("    [Phase 1] VmmioAddress Decoding (Bit 31 RAM Bypass vs FC=0xC Device) [PASS]")
+    # -------------------------------------------------------------------------
+    # Phase 2: vMMIO Page Table Registration & PTE Permission Checks
+    # -------------------------------------------------------------------------
+    scheduler = Scheduler()
+    task_id = scheduler.spawn("scenario_task")
+    scheduler.current_task = scheduler.get_task(task_id)
+    controller = VMMIOController(guest_ram_size=64 * 1024, scheduler=scheduler)
+    # Handlers tracking
+    handled_events = []
+
+    def mock_device_handler(metadata: int, offset: int, is_write: bool):
+        handled_events.append((metadata, offset, is_write))
+
+    # 1. Register Virtual Device Page at 0xC000_1000 (Read/Write with handler)
+    dev_vpn = 0xC000_1000 >> 12
+    controller.map_static_device(dev_vpn, handler=mock_device_handler, read=True, write=True)
+    # 2. Register Read-Only Shared Memory Page at 0xE000_2000 (Owner: Task 2)
+    shm_vpn = 0xE000_2000 >> 12
+    controller.map_shm_page(vpn=shm_vpn, phys_page=0x20, owner_id=2)
+    # 3. Register Passthrough Physical Page at 0xF000_3000
+    pass_vpn = 0xF000_3000 >> 12
+    controller.map_passthrough_page(vpn=pass_vpn, phys_page=0x30, read=True, write=True)
+    # -------------------------------------------------------------------------
+    # Phase 3: Access Validation, TLB Caching & Owner Isolation
+    # -------------------------------------------------------------------------
+    # 3.1 Linear RAM Fast-Bypass Access (Bit 31 == 0)
+    status_ram, _ = controller.access(raw_addr=0x0000_0100, is_write=False)
+    assert status_ram == VmmioStatus.OK_GUEST_RAM
+    print("    [Phase 3.1] Linear RAM O(1) Fast-Bypass Access -> OK_GUEST_RAM [PASS]")
+    # 3.2 Device Page Read/Write by Owner & Handler Dispatch
+    status_dev_w, _ = controller.access(raw_addr=0xC000_1010, is_write=True)
+    assert status_dev_w == VmmioStatus.OK_SYSCALL
+    assert len(handled_events) == 1
+    assert handled_events[0] == (0, 0x010, True)
+    print("    [Phase 3.2] vMMIO Device Page Write & Syscall Dispatch -> OK_SYSCALL [PASS]")
+    # 3.3 TLB Hit Verification (5-bit Folding XOR Hash, 32 entries)
+    tlb_idx = controller.tlb_index(dev_vpn)
+    assert controller.tlb[tlb_idx].vpn == dev_vpn
+    initial_hits = controller.tlb_hits
+    status_dev_r, _ = controller.access(raw_addr=0xC000_1010, is_write=False)
+    assert status_dev_r == VmmioStatus.OK_SYSCALL
+    assert controller.tlb_hits == initial_hits + 1
+    print("    [Phase 3.3] Direct-Mapped Software TLB Hit (Folding XOR Hash) -> TLB_HIT [PASS]")
+    # 3.4 Permission Violation: Write to Read-Only SHM
+    # First access to SHM (Owner 2) write check
+    task2_id = controller.scheduler.spawn("task2")
+    controller.scheduler.current_task = controller.scheduler.get_task(task2_id)
+    status_shm_w, _ = controller.access(raw_addr=0xE000_2008, is_write=True)
+    # SHM was mapped with write=True by default in map_shm_page; verify owner mismatch for task 1
+    controller.scheduler.current_task = controller.scheduler.get_task(1)
+    assert controller.scheduler.current_task is not None
+    status_owner_err, _ = controller.access(raw_addr=0xE000_2008, is_write=False)
+    assert status_owner_err == TrapCode.OWNER_MISMATCH
+    print(
+        "    [Phase 3.4] Task Isolation Check (Task 1 accessing Task 2 SHM) -> TRAP_OWNER_MISMATCH [PASS]"
+    )
+    # 3.5 Revoke Ownership to In-Flight & TLB Invalidation
+    controller.revoke_shm_owner(shm_vpn)
+    controller.scheduler.current_task = controller.scheduler.get_task(task2_id)
+    assert controller.scheduler.current_task is not None
+    status_flight, _ = controller.access(raw_addr=0xE000_2008, is_write=False)
+    assert status_flight == TrapCode.UNREGISTERED_PAGE
+    print("    [Phase 3.5] IPC Revoke & In-Flight TLB Invalidation -> TRAP_UNREGISTERED_PAGE [PASS]")
+    # 3.6 Passthrough Physical Memory Access (FC=0xF)
+    controller.scheduler.current_task = controller.scheduler.get_task(1)
+    assert controller.scheduler.current_task is not None
+    status_pass, detail = controller.access(raw_addr=0xF000_3040, is_write=True)
+    assert status_pass == VmmioStatus.OK_PHYSICAL
+    assert detail == 0x00030040
+    print("    [Phase 3.6] Passthrough Direct Physical Access -> OK_PHYSICAL [PASS]")
+    # 3.7 Unregistered Page Trap
+    status_unreg, _ = controller.access(raw_addr=0xC000_9000, is_write=False)
+    assert status_unreg == TrapCode.UNREGISTERED_PAGE
+    print("    [Phase 3.7] Unregistered vMMIO Address Access -> TRAP_UNREGISTERED_PAGE [PASS]")
+
+    # -------------------------------------------------------------------------
+    # Phase 4: WASM Guest i32.load / i32.store Execution via vMMIO (Bit 31 Dispatch)
+    # -------------------------------------------------------------------------
+    if wasmtime is not None:
+        wat = """
+        (module
+          (memory (export "memory") 1)
+          (func (export "dev_write") (param $addr i32) (param $val i32)
+            (i32.store (local.get $addr) (local.get $val))
+          )
+          (func (export "dev_read") (param $addr i32) (result i32)
+            (i32.load (local.get $addr))
+          )
+        )
+        """
+        wasm_bytes = bytes(wasmtime.wat2wasm(wat))
+        module = parse(wasm_bytes)
+        phys_memory = bytearray(0x40000)
+        # Put test pattern in physical memory at 0x30040 (offset 0x40 in page 0x30)
+        phys_memory[0x30040:0x30044] = (0xCAFEBABE).to_bytes(4, "little")
+
+        guest_ram = bytearray(64 * 1024)
+        module.init_memory_data(guest_ram, ())
+        interp = Interpreter(
+            module,
+            InterpreterBindings.with_memory(guest_ram),
+            vmmio=controller,
+            phys_mem=phys_memory,
+        )
+
+        fn_w = module.export_func_index("dev_write")
+        fn_r = module.export_func_index("dev_read")
+
+        # 4.1 Normal RAM write (Bit 31 == 0) -> Fast Bypass
+        interp.call(fn_w, [0x1000, 0x11223344])
+        assert int.from_bytes(guest_ram[0x1000:0x1004], "little") == 0x11223344
+        print("    [Phase 4.1] WASM Guest RAM Write (Bit 31 == 0) -> Linear RAM Fast Bypass [PASS]")
+
+        # 4.2 vMMIO Device Write (Bit 31 == 1, FC=0xC) -> Trigger Device Handler
+        prev_events_len = len(handled_events)
+        interp.call(fn_w, [0xC000_1020, 0x55])
+        assert len(handled_events) == prev_events_len + 1
+        assert handled_events[-1] == (0, 0x020, True)
+        print(
+            "    [Phase 4.2] WASM Guest vMMIO Write (Bit 31 == 1) -> Dispatched to Device Handler [PASS]"
+        )
+
+        # 4.3 vMMIO Physical Memory Read (Bit 31 == 1, FC=0xF) -> OK_PHYSICAL read
+        read_res = interp.call(fn_r, [0xF000_3040])
+        assert read_res == [0xCAFEBABE - 0x1_0000_0000 if 0xCAFEBABE >= 0x8000_0000 else 0xCAFEBABE]
+        print("    [Phase 4.3] WASM Guest vMMIO Read (Bit 31 == 1) -> Physical Memory Read [PASS]")
+
+        # 4.4 vMMIO Unregistered Address Trap -> WASM Trap
+        trap_state = interp.start(fn_w, [0xC000_9000, 0x99])
+        while not trap_state.finished:
+            trap_state = interp.step(trap_state)
+        assert trap_state.trap is not None
+        assert trap_state.trap.code == InterpreterTrapCode.VMMIO_ACCESS
+        print("    [Phase 4.4] WASM Guest Unregistered vMMIO Address -> Trap Raised [PASS]")
+
+    print(
+        "    [PASS] Scenario 10 (vMMIO Virtual Devices & Address Translation) verified completely."
+    )
+
+
+if __name__ == "__main__":
+    test_scenario_vmmio_virtual_devices()

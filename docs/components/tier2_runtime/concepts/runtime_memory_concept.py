@@ -4,7 +4,7 @@ Reference Concept Implementation & Test Suite: Memory Manager Implementation
 (system_allocator / shm_allocator), realizing the abstract contract defined in
 docs/components/tier1_interface/system_memory.md (co_mem).
 Implementation Invariants & Gotchas:
-- GOTCHA-MEM-01: 4KB page granularity permission isolation (different tasks never share a page).
+- GOTCHA-MEM-01: 4KB virtual reservation slots are isolated; physical SHM usage is charged by requested bytes.
 - GOTCHA-MEM-02: Strict ownership enforcement prevents non-owners from releasing or accessing blocks.
 - GOTCHA-MEM-03: In-flight blocks are unmapped from vMMIO and TLB is flushed immediately.
 - GOTCHA-MEM-04: JIT code cache W^X mode switching is batched per trace to minimize barrier latency.
@@ -26,11 +26,12 @@ T = TypeVar("T")
 # Configuration & Constants (FB_CONF_*)
 # -----------------------------------------------------------------------------
 
-FB_CONF_MEMORY_POOL_SIZE = 21504  # system_config.md: sum of all sub-pools (bytes)
+FB_CONF_MEMORY_POOL_SIZE = 23552  # system_config.md: sum of all sub-pools (bytes)
 FB_CONF_TASK_HEAP_SIZES = (4096,)  # system_config.md FB_CONF_TASK_HEAP_SIZES: per-VM-slot ROM size table
 FB_CONF_MAX_TASKS = 16
 FB_CONF_MAX_SHM_PAGES = 32
 FB_PAGE_SIZE = 4096  # 4KB SHM page size
+FB_CONF_SHM_SIZE = 1024  # Physical SHM backing budget; virtual slots are separate.
 FB_WASM_PAGE_SIZE = 65536  # 64KB WASM page size
 # system_config.md "PMSAv8 MPU 物理アドレスマップ" 節: Region 6 (Shared Memory Buffers) の基点
 FB_CONF_MPU_R6_SHARED_MEMORY_BASE = 0x2008_0000
@@ -120,6 +121,7 @@ class PoolRef(Generic[T]):
 class VMMIOPTE:
     page_idx: int
     physical_addr: int
+    mapping_size: int = FB_PAGE_SIZE
     is_valid: bool = True
     read: bool = True
     write: bool = True
@@ -132,15 +134,22 @@ class VMMIOPTERegistry:
         self.ptes: dict[int, VMMIOPTE] = {}
 
     def map_page(
-        self, page_idx: int, physical_addr: int, read: bool = True, write: bool = True
+        self,
+        page_idx: int,
+        physical_addr: int,
+        read: bool = True,
+        write: bool = True,
+        mapping_size: int = FB_PAGE_SIZE,
     ) -> None:
         """Maps an SHM page into vMMIO page table."""
+        assert 0 < mapping_size <= FB_PAGE_SIZE
         self.ptes[page_idx] = VMMIOPTE(
             page_idx=page_idx,
             physical_addr=physical_addr,
             is_valid=True,
             read=read,
             write=write,
+            mapping_size=mapping_size,
         )
 
     def unmap_page(self, page_idx: int) -> None:
@@ -397,6 +406,7 @@ class MemoryManager:
         self.pool_base: int = 0
         self.pool_size: int = 0
         self.total_allocated_bytes: int = 0
+        self.shm_allocated_bytes: int = 0
         self.vmmio_registry = VMMIOPTERegistry()
         self.mpu: PMSAv8MPU | None = None
         # Static partitions per task (fixed 64KB)
@@ -414,6 +424,7 @@ class MemoryManager:
         self.pool_base = pool_base
         self.pool_size = pool_size
         self.total_allocated_bytes = 0
+        self.shm_allocated_bytes = 0
         self.mpu = PMSAv8MPU(pool_base)
         return Result(value=True)
 
@@ -501,7 +512,7 @@ class MemoryManager:
     def allocate_shared(self, caller_task_id: int, size: int) -> Result[SharedBlock]:
         """Allocate an IPC shared memory buffer with RAII ownership."""
         assert caller_task_id != 0, "Shared block must be owned by an explicit task"
-        if size <= 0 or size > FB_PAGE_SIZE:
+        if size <= 0 or size > FB_CONF_SHM_SIZE:
             return Result(
                 error=MemoryErrorResult(
                     "ERR_INVALID_SIZE",
@@ -509,7 +520,7 @@ class MemoryManager:
                 )
             )
 
-        if self.total_allocated_bytes + FB_PAGE_SIZE > self.pool_size:
+        if self.shm_allocated_bytes + size > FB_CONF_SHM_SIZE:
             return Result(
                 error=MemoryErrorResult(
                     "ERR_SHM_EXHAUSTED",
@@ -520,9 +531,9 @@ class MemoryManager:
         page_idx = len(self.shm_slots)
         slot_idx = 0
         shm_id = (page_idx << 8) | slot_idx
-        base_addr = FB_CONF_MPU_R6_SHARED_MEMORY_BASE + (page_idx * FB_PAGE_SIZE)
+        base_addr = FB_CONF_MPU_R6_SHARED_MEMORY_BASE + self.shm_allocated_bytes
         # Map page into vMMIO FC=14 table
-        self.vmmio_registry.map_page(page_idx, base_addr)
+        self.vmmio_registry.map_page(page_idx, base_addr, mapping_size=size)
         self.shm_slots[shm_id] = {
             "page_idx": page_idx,
             "slot_idx": slot_idx,
@@ -531,7 +542,8 @@ class MemoryManager:
             "base_address": base_addr,
             "allocated": True,
         }
-        self.total_allocated_bytes += FB_PAGE_SIZE
+        self.total_allocated_bytes += size
+        self.shm_allocated_bytes += size
         sb = SharedBlock(
             shm_id=shm_id,
             page_idx=page_idx,
@@ -556,7 +568,9 @@ class MemoryManager:
 
         page_idx = slot["page_idx"]
         # Grant phase establishes mapping for receiver
-        self.vmmio_registry.map_page(page_idx, slot["base_address"])
+        self.vmmio_registry.map_page(
+            page_idx, slot["base_address"], mapping_size=slot["size"]
+        )
         slot["owner"] = receiver_task_id
         sb = SharedBlock(
             shm_id=shm_id,
@@ -574,15 +588,19 @@ class MemoryManager:
         slot = self.shm_slots.get(shm_id)
         if slot:
             page_idx = slot["page_idx"]
-            self.vmmio_registry.map_page(page_idx, slot["base_address"])
+            self.vmmio_registry.map_page(
+                page_idx, slot["base_address"], mapping_size=slot["size"]
+            )
             slot["owner"] = original_sender_id
 
     def _deallocate_shared_slot(self, page_idx: int, slot_idx: int, owner: int) -> None:
         shm_id = (page_idx << 8) | slot_idx
         if shm_id in self.shm_slots:
+            slot = self.shm_slots[shm_id]
             del self.shm_slots[shm_id]
             self.vmmio_registry.unmap_page(page_idx)
-            self.total_allocated_bytes -= FB_PAGE_SIZE
+            self.total_allocated_bytes -= slot["size"]
+            self.shm_allocated_bytes -= slot["size"]
 
     def deallocate(self, caller_task_id: int, addr: int) -> None:
         """Deallocate local static partition or slot. Owner enforced."""
@@ -618,7 +636,7 @@ class HALFixedBufferManager:
 # runtime_memory_test_spec.md (TEST-MEM-20 ~ TEST-MEM-25, physical implementation: MPU/W^X).
 # TEST-MEM-14/15/16 (page-granular isolation, vMMIO FC=14 PTE/TLB sync, owner-mismatch
 # trap) are physical-implementation cases covered instead by pysim's real
-# MemoryManager/VMMIOController (experiments/pysim/tests/tier3_platform/
+# MemoryManager/VMMIOController (experiments/pysim/qa/tier3_platform/
 # test_memory.py's test_mem_14_*/test_mem_15_*), not duplicated here.
 # =============================================================================
 
@@ -741,7 +759,7 @@ def test_mem_07_allocate_shared_registers_vmmio_pte() -> None:
     """TEST-MEM-07: allocate-shared maps corresponding vMMIO FC=14 PTE."""
     mm = MemoryManager()
     mm.init_manager(pool_base=0x20020000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
-    res = mm.allocate_shared(caller_task_id=1, size=2048)
+    res = mm.allocate_shared(caller_task_id=1, size=512)
     assert res.is_ok
     sb = res.unwrap()
     assert mm.vmmio_registry.is_mapped(sb.page_idx), "vMMIO PTE must be mapped upon allocation"
@@ -853,7 +871,7 @@ def test_mem_11_shared_block_raii_auto_deallocate() -> None:
     initial_alloc = mm.total_allocated_bytes
     # Use context manager to trigger deterministic drop
     with mm.allocate_shared(caller_task_id=2, size=1024).unwrap() as sb:
-        assert mm.total_allocated_bytes == initial_alloc + FB_PAGE_SIZE
+        assert mm.total_allocated_bytes == initial_alloc + 1024
         assert sb.shm_id in mm.shm_slots
 
     # After exit (dropped), buffer is automatically deallocated

@@ -28,15 +28,16 @@ for _p in [
 
 import wasm_opcodes as op
 from control_flow import extract_basic_blocks, iter_block_ops
-from interpreter import Interpreter
-from runtime_engine import HotspotBitmap, RuntimeEngine, WASMContext
-from system_containers import ReadOnlyRadixBinaryTreeStorage, bswap32
+from interpreter import Interpreter, InterpreterBindings
+from execution_context import WASMContext
+from runtime_engine import HotspotBitmap, RuntimeEngine
+from system_containers import ReadOnlyFlatMapView
 from wasm_reader import parse
 from x64_jit import TraceCompiler
 
 
 class JITCompilerBenchmark:
-    """Measures Copy-and-Patch compilation latency, Radix lookup, and JIT speedup."""
+    """Measures Copy-and-Patch compilation latency, sparse lookup, and JIT speedup."""
 
     def __init__(self):
         self.compiler = TraceCompiler()
@@ -74,23 +75,17 @@ class JITCompilerBenchmark:
         results["card_marking_check_mops"] = iterations / (t1 - t0) / 1e6
         results["card_marking_check_ns"] = (t1 - t0) / iterations * 1e9
 
-        # 3.3 bswap32 Radix Tree Section Lookup
+        # 3.3 Sparse sorted JIT entry lookup
         keys = [(idx << 16) | (idx * 16) for idx in range(64)]
         values = list(range(64))
-        radix_storage = ReadOnlyRadixBinaryTreeStorage.create(
-            keys=keys,
-            values=values,
-            radix_shift=28,
-            key_transform=bswap32,
-        )
-        radix_tree = radix_storage.view()
+        jit_entries = ReadOnlyFlatMapView(tuple(zip(keys, values, strict=True)))
         t0 = time.perf_counter()
         for i in range(iterations):
             pc = ((i % 64) << 16) | ((i % 64) * 16)
-            _ = radix_tree.find(pc)
+            _ = jit_entries.find(pc)
         t1 = time.perf_counter()
-        results["radix_table_lookup_mops"] = iterations / (t1 - t0) / 1e6
-        results["radix_table_lookup_ns"] = (t1 - t0) / iterations * 1e9
+        results["jit_entry_lookup_mops"] = iterations / (t1 - t0) / 1e6
+        results["jit_entry_lookup_ns"] = (t1 - t0) / iterations * 1e9
 
         # 3.4 Execution Throughput: Heavy Computation (100,000 Loop Iterations)
         loop_wasm = self._create_heavy_loop_binary()
@@ -99,7 +94,7 @@ class JITCompilerBenchmark:
         LOOP_COUNT = 100_000
 
         # Pure Tier 2 Interpreter run
-        interp_pure = Interpreter(module)
+        interp_pure = Interpreter(module, InterpreterBindings.empty())
         t0 = time.perf_counter()
         res_interp = interp_pure.call(fn_idx, [LOOP_COUNT])
         t1 = time.perf_counter()
@@ -108,7 +103,7 @@ class JITCompilerBenchmark:
         # Tier 3 Native JIT run
         runtime_engine = RuntimeEngine(jit_compiler=self.compiler, yield_threshold=16)
         runtime_engine.register_module_blocks(module)
-        interp_jit = Interpreter(module)
+        interp_jit = Interpreter(module, InterpreterBindings.empty())
 
         # Warmup and compile HOT traces
         runtime_engine.run(interp_jit, fn_idx, [100])
@@ -265,7 +260,7 @@ def main():
         f"  * 2-Bit Card Marking O(1) Check:      {res['card_marking_check_mops']:.2f} M ops/s  ({res['card_marking_check_ns']:.1f} ns/check)"
     )
     print(
-        f"  * bswap32 Radix Tree Section Search:  {res['radix_table_lookup_mops']:.2f} M ops/s  ({res['radix_table_lookup_ns']:.1f} ns/lookup)"
+        f"  * Sparse JIT Entry Binary Search:      {res['jit_entry_lookup_mops']:.2f} M ops/s  ({res['jit_entry_lookup_ns']:.1f} ns/lookup)"
     )
     print(
         f"  * Arithmetic Loop (100,000 iters):    Interp: {res['interp_loop_time_ms']:.2f} ms | JIT: {res['jit_loop_time_ms']:.2f} ms"

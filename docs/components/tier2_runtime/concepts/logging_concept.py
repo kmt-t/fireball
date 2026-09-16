@@ -247,8 +247,8 @@ def test_logger_dictionary_formatting() -> None:
             (0x03, "IPC channel '%d' transfer error code: 0x%08X"),
         ]
     )
-    msg = dictionary.format(0x01, 42, 21504, 0, 0)
-    assert msg == "System booted in 42 ms (RAM free: 21504 bytes)"
+    msg = dictionary.format(0x01, 42, 23552, 0, 0)
+    assert msg == "System booted in 42 ms (RAM free: 23552 bytes)"
 
 
 def test_logger_buffering_and_idle_flush() -> None:

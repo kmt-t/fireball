@@ -1,21 +1,21 @@
 # WASM 命令セット物理仕様書 (Supported WASM Instruction Set) {VERIFY_FORMAL}
 <!-- evidence:
      formal: formal/wasm_control_flow_model.py
-     test: tests/wasm_instruction_set_test_spec.md
+     test: docs/qa/specs/wasm_instruction_set_test_spec.md
 -->
 
 ## 1. 概要と適用方針
 <!-- traceability: {ThreadedInterpreter} {JIT_CopyAndPatch} {Wasm32Only} {META_ZeroCostAbstraction} -->
 本仕様書は、Fireball Hypervisor（インタープリタおよび Copy-and-Patch JIT コンパイラ）がサポートする **WASM MVP (v1, 32-bit)** 命令セットの物理マトリクスを定義する正本である。
 
-全バイトコードは Cortex-M33（ARMv8-M）ターゲットにおける `__fastcall` 継続渡し（CPS）4引数シグネチャ（`R0: ctx`, `R1: sp`, `R2: local_base`, `R3: tos`）ハンドラ、および JIT Stencil テンプレート（同じ `R0`〜`R3` の CPS 引数マッピングを共有し、トレース内部でも `R3` をそのまま TOS キャッシュとして流用する。加えて Callee-saved 任意割当プール `R4-R6, R8-R11`（`R4`: NOS（次段キャッシュ）、`R5`: NNOS（第3段キャッシュ）、`R6`: 一時スクラッチ、メモリアクセス時は `R8`/`R9` を `mem_base`/`mem_size` に固定）、`R12`: 一時スクラッチ）へのマッピングを一意に確定する。基本ブロック末尾では、スタックがプッシュされた場合に `TOS, NOS, NNOS` をスタック（`[R1, #offset]`）へフラッシュし、コンテキスト `R0` の `ip`（+0x00）および `sp_offset`（+0x0C）を同期する。 `{ThreadedInterpreter}` `{JIT_CopyAndPatch}` `{Wasm32Only}` `{META_ZeroCostAbstraction}`
+全バイトコードは Cortex-M33（ARMv8-M）ターゲットにおける `__fastcall` 継続渡し（CPS）4引数シグネチャ（`R0: ctx`, `R1: sp`, `R2: local_base`, `R3: tos`）ハンドラ、および JIT Stencil テンプレート（同じ `R0`〜`R3` の CPS 引数マッピングを共有し、トレース内部でも `R3` をそのまま TOS キャッシュとして流用する。加えて Callee-saved 任意割当プール `R4-R6, R8-R11`（`R4`: NOS（次段キャッシュ）、`R5`: NNOS（第3段キャッシュ）、`R6`: 一時スクラッチ、メモリアクセス時は `R8`/`R9` を `mem_base`/`mem_size` に固定）、`R12`: 一時スクラッチ）へのマッピングを一意に確定する。基本ブロック末尾では、スタックがプッシュされた場合に `TOS, NOS, NNOS` をスタック（`[R1, #offset]`）へフラッシュし、コンテキスト `R0` の `ip`（+0x00）および `sp_offset`（+0x0C）を同期する。
 
 ---
 
 ## 2. 非サポート機能 (Explicit Non-Goals)
 <!-- traceability: {Wasm32Only} {GLOBAL_StrictMemoryLimit} -->
 32KB〜64KB RAM の極小組込み環境における決定論的リアルタイム性と極小フットプリントを維持するため、以下の WASM 拡張仕様は明示的にサポート対象外（Non-Goal）とし、ロード時にデコードエラー（`ERR_WASM_UNSUPPORTED_FEATURE`）として即座に拒否する：
-- **Wasm64 / Memory64 / Table64**: 64-bit アドレス空間・テーブル（完全除外 `{Wasm32Only}`）。
+- **Wasm64 / Memory64 / Table64**: 64-bit アドレス空間・テーブル（完全除外 ）。
 - **SIMD / Vector (`0xFD` プレフィックス)**: 128-bit ベクトル命令（Cortex-M33 非搭載）。
 - **Threads / Atomics (`0xFE` プレフィックス)**: 共有メモリ・アトミック命令（CSP ランデブー通信で代替）。
 - **Garbage Collection (GC) / Reference Types (`externref`, `funcref`)**: 動的GCヒープを排除。
@@ -61,7 +61,7 @@
 
 | Opcode | 命令名 | スタック遷移 | インタープリタ実装 | JIT Stencil 提供 | 物理動作・備考 |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| `0x20` | `local.get` | `[] -> [t]` | ローカル配列 `[local_base + idx]` をロード | あり (Direct LDR / Mov) | `LDR r3, [r2, #offset]`（`r2=local_base` 起点の静的オフセット畳み込み——`{ContextPointerRegister}` `{JIT_RegisterMapping}` 参照） |
+| `0x20` | `local.get` | `[] -> [t]` | ローカル配列 `[local_base + idx]` をロード | あり (Direct LDR / Mov) | `LDR r3, [r2, #offset]`（`r2=local_base` 起点の静的オフセット畳み込み——参照） |
 | `0x21` | `local.set` | `[t] -> []` | ローカル配列 `[local_base + idx]` へストア | あり (Direct STR / Mov) | `STR r3, [r2, #offset]` |
 | `0x22` | `local.tee` | `[t] -> [t]` | ローカルへ保存しつつスタックに残す | あり (STR & Keep) | `STR r3, [r2, #offset]` (TOS維持) |
 | `0x23` | `global.get` | `[] -> [t]` | グローバル配列 `[execution_context.globals_base + idx]` ロード | あり (LDR via globals_base) | `LDR.W r12, [r0, #0x30]; LDR.W r3, [r12, #glob_off]`（`{ExecutionContext_Layout}` 参照） |
@@ -133,9 +133,9 @@
 
 32ビット極小組み込みマイコン（ARM Cortex-M33 等）において、64ビット整数除算・剰余・ビットシフトや、単精度・倍精度浮動小数点（`f32`/`f64`）演算は、ハードウェア命令が存在しないか、あるいはコンパイラランタイムライブラリ（`libgcc` の `__divdi3`, `__udivdi3`, `__adddf3`, `__muldf3`, `__fixdfsi` 等）を呼び出すコードが生成される。
 
-Fireball では、これらの命令をインライン展開で肥大化させず、**ランタイムヘルパー関数 / 専用ハンドラ経由（`{Libgcc_Runtime_Helper}` / `{JIT_RuntimeAPI_Fallback}`）で統一的にディスパッチ**する。
+Fireball では、これらの命令をインライン展開で肥大化させず、**ランタイムヘルパー関数 / 専用ハンドラ経由（/ ）で統一的にディスパッチ**する。
 
-| Opcode 群 | カテゴリ / 代表命令名 | スタック遷移 | インタープリタ実装 | JIT Stencil 方針 (`{JIT_RuntimeAPI_Fallback}`) | 物理動作・Libgcc 連携 |
+| Opcode 群 | カテゴリ / 代表命令名 | スタック遷移 | インタープリタ実装 | JIT Stencil 方針 () | 物理動作・Libgcc 連携 |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | `0x79`〜`0x8A` | **i64 算術・論理・シフト** (`i64.clz`, `i64.ctz`, `i64.popcnt`, `i64.add`, `i64.sub`, `i64.mul`, `i64.div_s/u`, `i64.rem_s/u`, `i64.and/or/xor`, `i64.shl`, `i64.shr_s/u`, `i64.rotl/r`) | `[i64, i64] -> [i64]` | C++ `int64_t` / `libgcc` 呼び出し | ランタイムヘルパー呼び出し (`fireball_rt_i64_*`) | `__divdi3`, `__udivdi3`, `__moddi3`, `__umoddi3`, `__ashldi3` 等の呼出 |
 | `0x50`〜`0x5A` | **i64 比較命令** (`i64.eqz`, `i64.eq`, `i64.ne`, `i64.lt_s/u`, `i64.gt_s/u`, `i64.le_s/u`, `i64.ge_s/u`) | `[i64, i64] -> [i32]` | 64-bit 比較ハンドラ | ランタイムヘルパー呼び出し (`fireball_rt_i64_cmp`) | 上位・下位 32-bit ワード順次比較 |

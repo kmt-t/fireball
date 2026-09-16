@@ -132,7 +132,7 @@ class ValueStackNative(ctypes.Structure):
 
 
 class ControlFrameNative(ctypes.Structure):
-    """Flat Native representation of one WASM control frame."""
+    """Flat Native representation; result_arity counts shared raw stack slots."""
 
     __slots__ = ()
 
@@ -141,6 +141,7 @@ class ControlFrameNative(ctypes.Structure):
         ("start", ctypes.c_uint32),
         ("match_end", ctypes.c_uint32),
         ("stack_height", ctypes.c_uint32),
+        ("result_arity", ctypes.c_uint16),
     )
 
 
@@ -434,9 +435,9 @@ assert ctypes.sizeof(WasmRunRequestNative) == 48
 assert ctypes.sizeof(WasmRunResultNative) == 24
 assert ctypes.sizeof(ValueStackNative) == 520
 assert ValueStackNative.size.offset == 512
-assert ctypes.sizeof(ControlFrameNative) == 16
-assert ctypes.sizeof(ControlStackNative) == 520
-assert ControlStackNative.size.offset == 512
+assert ctypes.sizeof(ControlFrameNative) == 20
+assert ctypes.sizeof(ControlStackNative) == 648
+assert ControlStackNative.size.offset == 640
 
 
 __all__ = (

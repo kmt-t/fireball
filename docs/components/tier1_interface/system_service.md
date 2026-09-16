@@ -2,16 +2,16 @@
 <!-- evidence:
      formal: formal/service_fault_isolation_model.py
      concept: concepts/service_concept.py
-     test: tests/system_service_test_spec.md
+     test: docs/qa/tier1_interface/system_service_test_spec.md
 -->
 
 ## 1. コンセプト
 <!-- traceability: {META_FaultIsolation} {MemoryIsolation} {IPCRouter} {META_ServiceIsWasmResident} -->
-**サービス（Service）とは、WASM 上で実行される常駐タスクを指す。** ロギングや HAL 等、ネイティブコードとして COOS 上に常駐する基盤機能は**サブシステム（Subsystem）**と呼び、サービスとは明確に区別する（`{META_ServiceIsWasmResident}`、[`architecture_overview.md`](docs/architecture/architecture_overview.md) のレイヤー構成表を正本とする）。サービスは、IPCルータを経由してサブシステム（WASI、ロギング、HALデバイス等）へのアクセスを仲介し、WASMゲストに対してシステム機能を提供するコンポーネントである。IPCルータを経由したゼロコピー通信によってタスク分離を行い、障害隔離とメモリ安全性を確保する。 `{META_FaultIsolation}` `{MemoryIsolation}` `{IPCRouter}`
+**サービス（Service）とは、WASM 上で実行される常駐タスクを指す。** ロギングや HAL 等、ネイティブコードとして COOS 上に常駐する基盤機能は**サブシステム（Subsystem）**と呼び、サービスとは明確に区別する（、[`architecture_overview.md`](docs/architecture/architecture_overview.md) のレイヤー構成表を正本とする）。サービスは、IPCルータを経由してサブシステム（WASI、ロギング、HALデバイス等）へのアクセスを仲介し、WASMゲストに対してシステム機能を提供するコンポーネントである。IPCルータを経由したゼロコピー通信によってタスク分離を行い、障害隔離とメモリ安全性を確保する。
 
 ## 2. アーキテクチャ分類
 <!-- traceability: {META_3TierSeparation} {IPCRouter} {URIAbstraction} -->
-本コンポーネントは **Tier 1 (主要システムコンポーネント: Primary Component)** に属する。ゲストWASMに対する抽象化されたサービスレイヤを提供し、IoC (Inversion of Control) と URIベースのDIを用いて、機能拡張性と隔離性を統括する。 `{META_3TierSeparation}` `{IPCRouter}` `{URIAbstraction}`
+本コンポーネントは **Tier 1 (主要システムコンポーネント: Primary Component)** に属する。ゲストWASMに対する抽象化されたサービスレイヤを提供し、IoC (Inversion of Control) と URIベースのDIを用いて、機能拡張性と隔離性を統括する。
 
 ## 3. 静的モデル
 
@@ -45,7 +45,7 @@ flowchart TD
 
 #### サービス構成（service_config）
 <!-- traceability: {META_ConfigurableSystem} -->
-ヘッダファイルのマクロ定義によりシステム全体のパラメータおよび初期ロード構成をコンパイル時に固定する設定。 `{META_ConfigurableSystem}`
+ヘッダファイルのマクロ定義によりシステム全体のパラメータおよび初期ロード構成をコンパイル時に固定する設定。
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
@@ -56,9 +56,9 @@ flowchart TD
 
 ### 4.1 アルゴリズム
 <!-- traceability: {META_FaultIsolation} {IPCRouter} {SelfReboot_via_Event} {ServiceSelfReboot} {FaultTolerant} -->
-- **サービス分離**: 各サービスは WASM 上で実行される独立した常駐タスクとして動作し、IPCルータを介してゼロコピーで通信する。タスク単位の障害局所化（`{META_FaultIsolation}`）と自己再起動（`{SelfReboot_via_Event}`）を組み合わせることで、単一サービスの異常終了が他サービスへ波及せず、かつ自律的に復旧するフォールトトレラント設計を実現する。 `{META_FaultIsolation}` `{FaultTolerant}`
-- **WASI呼び出し**: ゲストからのWASIシステムコールを、HALサブシステムのIPCコマンドへ変換して転送する。 `{IPCRouter}`
-- **自己再起動**: 異常終了したサービスは、IPCルータまたは上位マネージャからの障害イベント通知を契機として自律的に初期化・再起動される。TCBスロットの状態をリセットし、当該サービスのみを再初期化する（他サービスやシステム全体への波及はない）。 `{SelfReboot_via_Event}` `{ServiceSelfReboot}`
+- **サービス分離**: 各サービスは WASM 上で実行される独立した常駐タスクとして動作し、IPCルータを介してゼロコピーで通信する。タスク単位の障害局所化（）と自己再起動（）を組み合わせることで、単一サービスの異常終了が他サービスへ波及せず、かつ自律的に復旧するフォールトトレラント設計を実現する。
+- **WASI呼び出し**: ゲストからのWASIシステムコールを、HALサブシステムのIPCコマンドへ変換して転送する。
+- **自己再起動**: 異常終了したサービスは、IPCルータまたは上位マネージャからの障害イベント通知を契機として自律的に初期化・再起動される。TCBスロットの状態をリセットし、当該サービスのみを再初期化する（他サービスやシステム全体への波及はない）。
 
 ### 4.2 状態遷移図
 <!-- traceability: {META_FaultIsolation} {IPCRouter} -->
@@ -70,7 +70,7 @@ stateDiagram-v2
     Failed --> Loaded: self_reboot (SelfReboot_via_Event)
 ```
 
-形式検証モデルでは、複数サービスの障害隔離を検証するため、上図の単一サービスの状態を次の抽象状態へ写像する。`s_all_running` は `Running`、`s_a_crashed`/`s_b_crashed` は `Failed`、`s_a_isolated`/`s_b_isolated` は障害を局所化した `Failed` の中間状態、`s_a_rebooting`/`s_b_rebooting` は `self_reboot` 実行中、`s_a_recovered`/`s_b_recovered` は `Loaded` から `Running` へ戻る復旧状態に対応する。`s_corrupted` と `s_stuck` は仕様上到達してはならない違反状態である。 `{META_FaultIsolation}`
+形式検証モデルでは、複数サービスの障害隔離を検証するため、上図の単一サービスの状態を次の抽象状態へ写像する。`s_all_running` は `Running`、`s_a_crashed`/`s_b_crashed` は `Failed`、`s_a_isolated`/`s_b_isolated` は障害を局所化した `Failed` の中間状態、`s_a_rebooting`/`s_b_rebooting` は `self_reboot` 実行中、`s_a_recovered`/`s_b_recovered` は `Loaded` から `Running` へ戻る復旧状態に対応する。`s_corrupted` と `s_stuck` は仕様上到達してはならない違反状態である。
 
 図中の各ブロックは以下を指す：
 - **Isolated IPC Service**（サービス）: IPCルータ経由で隔離実行される、WASI以外の汎用サービス（本節冒頭で定義した「サービス」の実体。WASM上で実行される常駐タスクである）。
@@ -78,7 +78,7 @@ stateDiagram-v2
 - **Logging Subsystem**（サブシステム）: `runtime_logging.md` の内部ロガーおよび `interface_wit.md` のコンソール生バイト出力経路（`fireball://hal/stdout/0`）を介した出力を担う、ネイティブコードとして常駐する基盤機能。サービスではない。
 - **HAL Subsystem**（サブシステム）: HAL（ハードウェア抽象化層）ドライバ群全体。ネイティブコードとして常駐する基盤機能であり、サービスではない。
 
-ゲストWASMサービスは、起動時に独立した物理メモリパーティションを割り当てられ、メモリのハードウェア境界が確立される（障害伝播防止）。すべてのサービスへのアクセスおよびシステムコール呼び出しは、必ずIPCルータ（`IPCRouter`）のルックアップおよびアクセス制御チェックを経由してのみ開始される。 `{META_FaultIsolation}` `{IPCRouter}`
+ゲストWASMサービスは、起動時に独立した物理メモリパーティションを割り当てられ、メモリのハードウェア境界が確立される（障害伝播防止）。すべてのサービスへのアクセスおよびシステムコール呼び出しは、必ずIPCルータ（`IPCRouter`）のルックアップおよびアクセス制御チェックを経由してのみ開始される。
 
 ※ `load_service (static)` における `static` とは、システムビルド時にコンフィグによって登録されたサービス一覧に基づき、実行時の動的なURI追加を行わずに、起動時に固定配列からサービスをロードする静的ロード処理を意味する。
 
@@ -114,18 +114,18 @@ sequenceDiagram
 ### 5.1 エラーハンドリング戦略
 <!-- traceability: {META_RecoveryStrategy} -->
 
-本コンポーネントでは、エラーコードではなくリカバリー戦略を返すことで、呼び出し側が具体的なアクションを取れるようにする。 `{META_RecoveryStrategy}`
+本コンポーネントでは、エラーコードではなくリカバリー戦略を返すことで、呼び出し側が具体的なアクションを取れるようにする。
 
 #### リカバリー戦略の種類と具体的ポリシー
 <!-- traceability: {META_RecoveryStrategy} -->
 - **ignore**: エラーを無視し、処理を継続する。一時的な軽微なエラーに適用され、呼び出し側は特に対処を行わずそのまま継続する。
-- **retry**: 一時的な失敗。再試行により成功する可能性がある。I/Oビジーなどの一時的エラーに適用され、呼び出し側は `FB_CONF_RETRY_BACKOFF_MS`（`{META_RecoveryStrategy}`）のウェイトを挟んで最大 3 回まで再試行を行う。
+- **retry**: 一時的な失敗。再試行により成功する可能性がある。I/Oビジーなどの一時的エラーに適用され、呼び出し側は `FB_CONF_RETRY_BACKOFF_MS`（）のウェイトを挟んで最大 3 回まで再試行を行う。
 - **restart**: モジュールまたはシステムの再初期化が必要な失敗。内部状態矛盾などの復旧可能エラーに適用され、サービスマネージャに対してサービスの再初期化（Restart）を要求し、TCBスロットの状態をリセットして再起動する。
 - **panic**: システムを即座に停止し、ダンプを出力する。カーネルパニックに適用され、システムを即座に停止（Halt）し、デバッグポートへ状態ダンプを出力する。
 
 #### 設計判断
 <!-- traceability: {META_RecoveryStrategy} -->
-失敗の詳細理由は実装詳細であり、クリーンアーキテクチャの内側が知るべきではない。デバッグ情報はログシステムで確認する。 `{META_RecoveryStrategy}`
+失敗の詳細理由は実装詳細であり、クリーンアーキテクチャの内側が知るべきではない。デバッグ情報はログシステムで確認する。
 
 ### 5.2 公開API
 外部から利用可能なオブジェクト指向APIを定義する。
@@ -156,7 +156,7 @@ enum class service_load_result_t : uint32_t {
 <!-- traceability: {META_RecoveryStrategy} -->
 - **URI規則**: `fireball://<subsystem_id>/<service_name>/<instance_id>` に準拠する（例: `fireball://services/wasi/0`）。
 - **メッセージ形式**: 64ビットのKey-Value値を `arg0`〜`arg7` の計8スロット（最大8個）含むパケット。
-  * **ヘッダ部**: `arg0` にコマンドID、`arg1` にリカバリー戦略カテゴリ `{META_RecoveryStrategy}`（`recovery-strategy-category` 値）を格納。
+  * **ヘッダ部**: `arg0` にコマンドID、`arg1` にリカバリー戦略カテゴリ （`recovery-strategy-category` 値）を格納。
   * **ペイロード部**: `arg2`〜`arg5` にコマンド固有引数（または共有メモリハンドル等）を格納。
   * **拡張部**: `arg6`〜`arg7` は将来のコマンド固有引数用に予約し、未使用時はゼロを格納。
 
@@ -165,14 +165,14 @@ enum class service_load_result_t : uint32_t {
 ### 6.1 性能制約と方策
 <!-- traceability: {IPCRouter} -->
 - **目標**: システムコールのオーバーヘッドを最小化する。
-- **方策**: `{IPCRouter}` メッセージ通信自体はIPCルータを経由するが、高頻度な呼び出し（libc等）におけるオーバーヘッドを低減するため、コンテキストスイッチのオーバーヘッドを回避するダイレクトな実行権移譲（スケジューラを介さないHandoff）を使用する。ダイレクトな実行権移譲を用いる場合であっても、呼び出しの起点となる制御フローは必ずIPCルータを通過し、アクセス制御ルーティングが行われる。
+- **方策**: メッセージ通信自体はIPCルータを経由するが、高頻度な呼び出し（libc等）におけるオーバーヘッドを低減するため、コンテキストスイッチのオーバーヘッドを回避するダイレクトな実行権移譲（スケジューラを介さないHandoff）を使用する。ダイレクトな実行権移譲を用いる場合であっても、呼び出しの起点となる制御フローは必ずIPCルータを通過し、アクセス制御ルーティングが行われる。
 
 ### 6.2 メモリ制約と方策
 <!-- traceability: {ConsolidatedHeap} {MemoryIsolation} -->
 - **目標**: サービスによるメモリ消費を隔離する。
-- **方策**: `{ConsolidatedHeap}` `{MemoryIsolation}` システム全体の物理メモリ総領域（ConsolidatedHeap）を静的に一括確保し、そこから各サービスに対して固定サイズの独立したメモリプール（GLOBAL_IndependentHeap）をメモリパーティションとして切り出すことで、動的確保を排除しつつメモリの論理的・物理的な隔離（MemoryIsolation）を実現する。 `{ConsolidatedHeap}` `{MemoryIsolation}`
+- **方策**: システム全体の物理メモリ総領域（ConsolidatedHeap）を静的に一括確保し、そこから各サービスに対して固定サイズの独立したメモリプール（GLOBAL_IndependentHeap）をメモリパーティションとして切り出すことで、動的確保を排除しつつメモリの論理的・物理的な隔離（MemoryIsolation）を実現する。
 
 ### 6.3 安全性制約と方策
 <!-- traceability: {META_FaultIsolation} -->
 - **目標**: サービスの障害が他へ波及するのを防止する。
-- **方策**: `{META_FaultIsolation}` サービスを独立した実行コンテキスト（タスク）で実行し、メモリパーティションを用いて不正アクセスやクラッシュを領域的に隔離する。
+- **方策**: サービスを独立した実行コンテキスト（タスク）で実行し、メモリパーティションを用いて不正アクセスやクラッシュを領域的に隔離する。

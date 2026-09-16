@@ -60,7 +60,12 @@ class NativeControlStack:
         return self._native.frames[self._index(index)]
 
     def push_back(
-        self, kind: ControlFrameKind, start: int, match_end: int, stack_height: int
+        self,
+        kind: ControlFrameKind,
+        start: int,
+        match_end: int,
+        stack_height: int,
+        result_arity: int = 0,
     ) -> bool:
         size = int(self._native.size)
         if size >= self._capacity:
@@ -70,6 +75,7 @@ class NativeControlStack:
         native_frame.start = start
         native_frame.match_end = match_end
         native_frame.stack_height = stack_height
+        native_frame.result_arity = result_arity
         self._native.frames[size] = native_frame
         self._native.size = size + 1
         return True
@@ -119,9 +125,16 @@ class ControlFrameWindow:
         return self._storage[self._absolute_index(index)]
 
     def push_back(
-        self, kind: ControlFrameKind, start: int, match_end: int, stack_height: int
+        self,
+        kind: ControlFrameKind,
+        start: int,
+        match_end: int,
+        stack_height: int,
+        result_arity: int = 0,
     ) -> bool:
-        return self._storage.push_back(kind, start, match_end, stack_height)
+        return self._storage.push_back(
+            kind, start, match_end, stack_height, result_arity
+        )
 
     def pop_back(self) -> ControlFrameNative:
         if not self:
@@ -133,17 +146,56 @@ class ControlFrameWindow:
         assert 0 <= depth <= len(self)
         self._storage.set_size(self._base + depth)
 
-    def branch(self, depth: int, values: NativeValueStack) -> int | None:
+    def branch(
+        self,
+        depth: int,
+        values: NativeValueStack,
+        outer_result_arity: int = 0,
+    ) -> int | None:
         """Unwind this function's native control frames and operand stack."""
 
         frame_count = len(self)
         assert 0 <= depth <= frame_count
         if depth == frame_count:
+            assert 0 <= outer_result_arity <= 2
+            final_size = len(values)
+            assert outer_result_arity <= final_size
+            result_start = final_size - outer_result_arity
+            result0 = (
+                values.raw_at(result_start) if outer_result_arity >= 1 else 0
+            )
+            result1 = (
+                values.raw_at(result_start + 1) if outer_result_arity >= 2 else 0
+            )
             self._storage.set_size(self._base)
+            values.truncate(result_start)
+            if outer_result_arity >= 1:
+                assert values.push_back(result0)
+            if outer_result_arity >= 2:
+                assert values.push_back(result1)
             return None
         target_index = frame_count - depth - 1
         target = self[target_index]
-        values.truncate(int(target.stack_height))
+        saved_height = int(target.stack_height)
+        result_arity = (
+            0
+            if int(target.kind) == int(ControlFrameKind.LOOP)
+            else int(target.result_arity)
+        )
+        assert 0 <= result_arity <= 2
+        final_size = len(values)
+        assert saved_height <= final_size
+        assert result_arity <= final_size - saved_height
+        result_start = final_size - result_arity
+        result0 = values.raw_at(result_start) if result_arity >= 1 else 0
+        result1 = (
+            values.raw_at(result_start + 1) if result_arity >= 2 else 0
+        )
+        values.truncate(saved_height)
+        if result_arity >= 1:
+            assert values.push_back(result0)
+        if result_arity >= 2:
+            assert values.push_back(result1)
         if int(target.kind) == int(ControlFrameKind.LOOP):
             self._storage.set_size(self._base + target_index + 1)
             return int(target.start) + 2

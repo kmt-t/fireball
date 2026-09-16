@@ -2,7 +2,7 @@
 
 本レポートは、Fireball Hypervisor の全層（Tier 1 Core OS / Tier 2 Runtime / Tier 3 JIT & Platform）を具象化した `pysim` における全 5 つのベンチマークスイートの実測測定結果、JIT トレースチェイニング動作診断、および C++23 実機実装への移植性・性能予測をまとめた詳細レポートです。
 
-以下の最新値は 2026-09-14 に同一ワークスペースで再実行した結果です。Pythonプロセス、OSスケジューリング、`ctypes`境界の影響を含むため、絶対値ではなく同一環境での比較値として扱います。
+Section 1〜4の既存値は 2026-09-14 に同一ワークスペースで再実行した結果である。2026-09-16にJIT検索を疎な二分探索へ変更したため、Section 3のJIT測定だけ同日に再実行して差し替えた。Pythonプロセス、OSスケジューリング、`ctypes`境界の影響を含むため、絶対値ではなく同一環境での比較値として扱う。
 
 ---
 
@@ -50,14 +50,14 @@
 
 [Section 3: JIT Compiler & Runtime Dispatch]
 --------------------------------------------------------------------------------
-  * Copy-and-Patch Compile Speed:       19,747 Traces/sec  (50.64 us/trace)
-  * Compile Cost per WASM Instruction:  12659.9 ns/opcode
-  * 2-Bit Card Marking O(1) Check:      0.70 M ops/s  (1420.5 ns/check)
-  * bswap32 Radix Tree Section Search:  0.47 M ops/s  (2109.4 ns/lookup)
-  * Arithmetic Loop (100,000 iters):    Interp: 7659.19 ms | JIT: 1703.14 ms
+  * Copy-and-Patch Compile Speed:       16,431 Traces/sec  (60.86 us/trace)
+  * Compile Cost per WASM Instruction:  15215.4 ns/opcode
+  * 2-Bit Card Marking O(1) Check:      0.63 M ops/s  (1579.2 ns/check)
+  * Sparse JIT Entry Binary Search:     0.68 M ops/s  (1461.5 ns/lookup)
+  * Arithmetic Loop (100,000 iters):    Interp: 6567.46 ms | JIT: 1379.46 ms
   * Differential Result Check:          Interp=704,982,704 | JIT=704,982,704 (MATCH)
-  * Measured JIT Speedup:               4.50x faster
-  * PIC Context Helper Tail Jump:       0.08 M ops/s  (12508.7 ns/dispatch; 10,000 calls)
+  * Measured JIT Speedup:               4.76x faster
+  * PIC Context Helper Tail Jump:       0.13 M ops/s  (7988.4 ns/dispatch; 10,000 calls)
 
 [Section 4: JIT Cache Metabolism & Corner Cases]
 --------------------------------------------------------------------------------
@@ -96,12 +96,12 @@
 ベンチマークのPTE格納表を64件、TLBを32件として分離した。初期化は静的1ページ・SHM33ページ・passthrough16ページの計50件を登録し、全登録処理で容量超過を `assert` する。`TLB Miss -> FlatMap Walk` は32エントリを超える33ページの有効な作業集合を循環させる測定であり、実測カウンタは `tlb_hits=590,877`、`tlb_misses=9,123`、PTE登録件数は50件だった。これは33ページ中のハッシュ衝突を含むリフィル挙動の測定で、毎回のアクセスを強制ミスさせる値ではない。
 
 ### 3.3 JIT Compiler & Runtime Dispatch
-- **Copy-and-Patch 高速コンパイル**: ネイティブステンシルのメモリコピーと固定パッチ位置への書き込みを 19,747 Traces/sec（50.64 us/trace）で実行。4命令ブロック換算で 12,659.9 ns/opcode であり、コードバッファ確保も含む。
-- **実行時パイプライン**: カード判定は1420.5ns、Radix検索は2109.4ns。トレース本体ではなく、JIT候補判定・エントリ検索のPython実装コストである。
-- **算術演算ループ差分検証**: 100,000 反復の算術ホットループにおいて、Tier 2 インタープリタ（7659.19 ms）に対して Tier 3 JIT（1703.14 ms）が **4.50x 高速化**を達成し、演算結果（`704,982,704`）が完全一致（Exact Match）。
-- **Cヘルパー境界**: 命令別 `jit_helper_ptrs[]` をコンテキスト内の固定スロットから直接読み、JITフレーム復元後に末尾ジャンプする経路は 12508.7ns/dispatch。pysimの `ctypes` コールバックを含むABI回帰値であり、組込みCの性能値ではない。
+- **Copy-and-Patch 高速コンパイル**: ネイティブステンシルのメモリコピーと固定パッチ位置への書き込みを 16,431 Traces/sec（60.86 us/trace）で実行。4命令ブロック換算で 15,215.4 ns/opcode であり、コードバッファ確保も含む。
+- **疎なJITエントリ検索**: 64件のソート済みJITエントリを二分探索し、0.68 M ops/s（1,461.5 ns/lookup）を計測した。JIT用Radix索引は使用しない。
+- **算術演算ループ差分検証**: 100,000 反復の算術ホットループにおいて、Tier 2 インタープリタ（6567.46 ms）に対して Tier 3 JIT（1379.46 ms）が **4.76x 高速化**を達成し、演算結果（`704,982,704`）が完全一致（Exact Match）。
+- **Cヘルパー境界**: 命令別 `jit_helper_ptrs[]` をコンテキスト内の固定スロットから直接読み、JITフレーム復元後に末尾ジャンプする経路は 7,988.4ns/dispatch。pysimの `ctypes` コールバックを含むABI回帰値であり、組込みCの性能値ではない。
 
-同一ターゲットを統合ベンチマークで測定した結果は、インタープリタ `7659.19 ms`、JIT `1703.14 ms`、速度比 `4.50x` となった。実行ごとにOSスケジューリング等で時間が変動するため、単発値を絶対性能とは扱わず、同一実行条件内の比較値として扱う。
+2026-09-16の同一実行では、インタープリタ `6567.46 ms`、JIT `1379.46 ms`、速度比 `4.76x` となった。実行ごとにOSスケジューリング等で時間が変動するため、単発値を絶対性能とは扱わず、同一実行条件内の比較値として扱う。
 
 ### 3.4 JIT Cache Metabolism & 3面ローテーション
 - **3面リングバッファ代謝 (Active / Warm / Oldest)**:

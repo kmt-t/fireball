@@ -19,10 +19,11 @@
   - シミュレータのコード品質を十分に高め、エッジケースや不変条件（Invariants）を洗い出し尽くすことで、C++ 本実装での手戻りを原理的に防止する。
 - **C++ 実装着手（Phase 1）前の必須要件**:
   1. シミュレータ（`experiments/pysim`）のコード品質向上、堅牢化、および全ユニットテストスイートの高信頼化
-  2. 実装の勘所（Gotchas）の網羅的抽出とテスト仕様書（`tests/*_test_spec.md`）へのフィードバック完了
+  2. 実装の勘所（Gotchas）の網羅的抽出とテスト仕様書（`docs/qa/tier*/`）へのフィードバック完了
   3. 物理リソース（最小構成 RAM 32KB / ROM 96KB）のバイト単位の再見積もりと整合性検証 `{Resource_Estimation_Model}`
-  4. C++23 ヘッダ（`inc/**/*.hxx`）における構造体メモリレイアウト、アライメント、constexpr 設計、POD ハーネス設計の確定
-  5. 人間（オーナー/アーキテクト）による最終レビューおよびフェーズ移行の GO 判定
+  4. 製品コード規模20 KSLOC以内の予算計画と、コメント・テストを除く同一SLOC定義による実測手順の確定 `{Size_20KSLOC}`
+  5. C++23 ヘッダ（`inc/**/*.hxx`）における構造体メモリレイアウト、アライメント、constexpr 設計、POD ハーネス設計の確定
+  6. 人間（オーナー/アーキテクト）による最終レビューおよびフェーズ移行の GO 判定
 
 ---
 
@@ -35,7 +36,7 @@
 | **Step 0: Bonsai Design & Documentation** | 静的・動的設計ペアリング、自然言語仕様徹底、Mermaid動的図解（シーケンス図／アクティビティ図）、ルール体系刷新 | **DONE** |
 | **Step 1: Early Validation** | 全16コンセプトコード（`Any`完全排除）、テスト仕様書、pyModelChecking形式検証（CTL論理式＋`guards=False`変異検査） | **DONE** |
 | **Step 2: Reference Simulation & Gotchas Feedback** | `experiments/pysim` シミュレータコードの品質向上・リファクタリング、未検証エッジケース・Gotchasの抽出、テスト仕様書およびユニットテストスイートへの還元 | **進行中 (ACTIVE)** |
-| **Step 2.4: Resource Budget & Header Review** | 物理リソース（最小構成 RAM 32KB / ROM 96KB）再見積もり（[`resource_budget_estimation.md`](docs/architecture/resource_budget_estimation.md)）・C++23ヘッダレイアウト確認 | **待機中** |
+| **Step 2.4: Resource Budget & Header Review** | RAM 32KB / ROM 96KB と製品コード20 KSLOCの再見積もり（[`resource_budget_estimation.md`](docs/architecture/resource_budget_estimation.md)）・C++23ヘッダレイアウト確認 | **待機中** |
 | **Step 2.5: Gate Review & Go Decision** | オーナー（人間）による最終品質レビュー・Freeze・Phase 1 GO判定 | **待機中** |
 
 ---
@@ -61,8 +62,8 @@
   - 分岐脱出時のフレームプルーニングと TOS レジスタ復元
 - **Phase 1.3: Copy-and-Patch JIT Compiler & Runtime (`jit_compiler`, `jit_runtime`)**
   - ARM Thumb-2 / x86_64 ネイティブパッチステンシル & 事前コンパイルテンプレート `{JIT_CopyAndPatch}` `{ADR_TosCacheAsymmetry}`
-  - 2KB×3面 トリプルバッファ MPU W^X 代謝マネージャ `{JIT_MultiBuffer_Cache}` `{JIT_OldestOnly_Promote}`
-  - 4段高速検索パイプライン（カードマーキング $	o$ Folding XOR高速キャッシュ $	o$ 基数テーブル $	o$ 二分探索）
+  - 連続8KB JIT領域（共通コード2KB + Active/Warm/Oldest各2KB）と3面 MPU W^X 代謝マネージャ `{JIT_MultiBuffer_Cache}` `{JIT_OldestOnly_Promote}`
+  - 3段検索（カードマーキング → Folding XOR高速キャッシュ → 少数のソート済みJITエントリの二分探索。Radix索引なし）
   - Safepoint 協調 & JIT/インタープリタ透過切り替え `{JIT_LazyChaining}` `{Interpreter_LazyJITSwitch}` `{JIT_RuntimeAPI_Fallback}`
 - **Phase 1.4: Standalone vSoC Harness & WAMR Benchmark (`runtime_vsoc`)**
   - ホスト (x86_64 / Linux / macOS / Windows) 実行ハーネス

@@ -30,7 +30,6 @@ LOG_EVT_IPC_CHANNEL_COLLISION = 0x0205
 # ipc_router.md {3.3}: a message is a static, fixed-size buffer of at most 8
 # kv_pair entries.
 FB_CONF_ROUTER_MAX_KV_PAIRS = 8
-FB_TASK_ID_FLIGHT = 0xFF
 
 # Canonical HAL endpoint URIs. The registry and upper runtime layers import
 # these constants instead of duplicating endpoint spelling.
@@ -563,8 +562,8 @@ class IPCRouter:
             if sk == ScopeKind.RESOURCE and val >= 0:
                 slot = self.memory_manager.shm_slots.view().find(val)
                 if slot is not None and slot.allocated:
-                    self.memory_manager.page_registry.update_owner(
-                        slot.page_idx, FB_TASK_ID_FLIGHT
+                    assert self.memory_manager.revoke_shared(val), (
+                        "RESOURCE handle must be backed by an allocated SHM block"
                     )
 
         receiver_task = channel.waiter_task if channel.waiter_dir == WaitDir.RECV else None

@@ -39,7 +39,7 @@ try:
 except ImportError:
     wasmtime = None
 
-from interpreter import Interpreter
+from interpreter import Interpreter, InterpreterBindings
 from system import System
 from wasi import WasiHostContext
 from wasm_reader import parse
@@ -412,12 +412,14 @@ def run_aobench():
     sysv = System()
     wasi_ctx = WasiHostContext(sysv)
     host_funcs = wasi_ctx.build_interpreter_host_functions(module)
-    module.init_memory_data(wasi_ctx.guest_memory)
+    module.init_memory_data(wasi_ctx.guest_memory, ())
     # 4. Tier 2: Pure Threaded CPS Interpreter Execution
     print(
         f"\n[*] Step 3: Executing on Tier 2 Threaded CPS Interpreter ({WIDTH}x{HEIGHT}, {AO_SAMPLES} samples/hit)..."
     )
-    interp_t2 = Interpreter(module, memory=wasi_ctx.guest_memory, host_functions=host_funcs)
+    interp_t2 = Interpreter(
+        module, InterpreterBindings.with_memory_and_functions(wasi_ctx.guest_memory, host_funcs)
+    )
     main_func_idx = module.export_func_index("main")
     t0_t2 = time.perf_counter()
     interp_t2.call(main_func_idx, [WIDTH, HEIGHT])
@@ -438,12 +440,15 @@ def run_aobench():
     sysv_t3 = System()
     wasi_ctx_t3 = WasiHostContext(sysv_t3)
     host_funcs_t3 = wasi_ctx_t3.build_interpreter_host_functions(module)
-    module.init_memory_data(wasi_ctx_t3.guest_memory)
+    module.init_memory_data(wasi_ctx_t3.guest_memory, ())
     trace_compiler = TraceCompiler()
     debug = "--debug" in sys.argv
     runtime_engine = RuntimeEngine(jit_compiler=trace_compiler, yield_threshold=16, debug=debug)
     runtime_engine.register_module_blocks(module)
-    interp_t3 = Interpreter(module, memory=wasi_ctx_t3.guest_memory, host_functions=host_funcs_t3)
+    interp_t3 = Interpreter(
+        module,
+        InterpreterBindings.with_memory_and_functions(wasi_ctx_t3.guest_memory, host_funcs_t3),
+    )
     t0_t3 = time.perf_counter()
     runtime_engine.run(interp_t3, main_func_idx, [WIDTH, HEIGHT])
     t1_t3 = time.perf_counter()
@@ -499,7 +504,7 @@ if __name__ == "__main__":
         print("[*] Running Float32 Ambient Occlusion Benchmark...")
         wasm_float_bytes = wasmtime.wat2wasm(GENUINE_AO_FLOAT_WAT)
         module_float = parse(wasm_float_bytes)
-        interp_float = Interpreter(module_float)
+        interp_float = Interpreter(module_float, InterpreterBindings.empty())
         hits = interp_float.call(module_float.export_func_index("run_ao_float"), [32, 32])
         print(
             f"    [PASS] Float32 Raytracer executed successfully: {hits[0]} primary sphere hits on 32x32 grid."

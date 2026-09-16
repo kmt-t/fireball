@@ -2,17 +2,17 @@
 <!-- evidence:
      concept: concepts/loader_concept.py
      formal: formal/loader_verification_model.py
-     test: tests/runtime_loader_test_spec.md
+     test: docs/qa/tier2_runtime/runtime_loader_test_spec.md
 -->
 
 ## 1. コンセプト
 <!-- traceability: {ROMParsing} {META_AccessDictionary} {META_BumpAllocator} {META_BinarySearch} -->
-WASMローダは、ROM上のWASM32バイナリをパースし、実行環境が参照しやすい索引構造（ModuleView）を生成する。RAMへの全展開を避け、ROM上のデータを直接参照することでメモリ消費を極小化する。デコードされた各種メタデータ・要素（セクション、関数コード、グローバル、データセグメント）は内部レジストリ（`decoded_entity_registry`）に格納され、**WASMファイル内のバイト位置（データオフセット）をキーとして `RadixBinaryTreeView`（`fireball::radix_binary_tree_view`）により粗粒度インデックス $O(1)$ ＋ 狭域2分探索 $O(\log n)$（全体で $O(\log N)$ 確定時間）で高速検索** できる。さらに、**インポートテーブルおよびエクスポートシンボルの検索は、シンボル名ハッシュ（FNV-1a 32-bit）をキーとした `RadixBinaryTreeView` で候補を絞り、候補ごとにROM上の元文字列を照合する。索引探索は $O(1) + O(\log n)$、衝突照合込みの worst-case は $O(1) + O(\log n) + O(L)$ である**。 `{ROMParsing}` `{META_AccessDictionary}` `{META_BumpAllocator}` `{META_BinarySearch}`
+WASMローダは、ROM上のWASM32バイナリをパースし、実行環境が参照しやすい索引構造（ModuleView）を生成する。RAMへの全展開を避け、ROM上のデータを直接参照することでメモリ消費を極小化する。デコードされた各種メタデータ・要素（セクション、関数コード、グローバル、データセグメント）は内部レジストリ（`decoded_entity_registry`）に格納され、**WASMファイル内のバイト位置（データオフセット）をキーとして `RadixBinaryTreeView`（`fireball::radix_binary_tree_view`）により粗粒度インデックス $O(1)$ ＋ 狭域2分探索 $O(\log n)$（全体で $O(\log N)$ 確定時間）で高速検索** できる。さらに、**インポートテーブルおよびエクスポートシンボルの検索は、シンボル名ハッシュ（FNV-1a 32-bit）をキーとした `RadixBinaryTreeView` で候補を絞り、候補ごとにROM上の元文字列を照合する。索引探索は $O(1) + O(\log n)$、衝突照合込みの worst-case は $O(1) + O(\log n) + O(L)$ である**。
 本設計の動作モデルおよび軽量検証スコープ（V1〜V6）、ハッシュ＋RadixBinaryTreeView によるシンボル・インポート検索、RadixBinaryTreeView によるファイル位置逆引き、バンプアロケータによるトランザクション保護（`save`/`restore`）は、コンセプトコード（[`loader_concept.py`](docs/components/tier2_runtime/concepts/loader_concept.py)）によって動作検証されている。
 
 ## 2. アーキテクチャ分類
 <!-- traceability: {META_3TierSeparation} -->
-本コンポーネントは **Tier 2 (分解されたサブコンポーネント: Decomposed Subcomponent)** に属し、vSoC (`runtime_vsoc.md`) から分解された WASM バイナリのパース・検証、デコード値レジストリ管理、ファイル内データ位置およびインポート/エクスポートハッシュからの RadixBinaryTreeView 索引構築、および ROM 上の索引構築（ModuleView）を担当する。 `{META_3TierSeparation}`
+本コンポーネントは **Tier 2 (分解されたサブコンポーネント: Decomposed Subcomponent)** に属し、vSoC (`runtime_vsoc.md`) から分解された WASM バイナリのパース・検証、デコード値レジストリ管理、ファイル内データ位置およびインポート/エクスポートハッシュからの RadixBinaryTreeView 索引構築、および ROM 上の索引構築（ModuleView）を担当する。
 
 ## 3. 静的モデル
 
@@ -20,11 +20,11 @@ WASMローダは、ROM上のWASM32バイナリをパースし、実行環境が�
 <!-- traceability: {MultiModule_Support} {META_AccessDictionary} -->
 - **`WasmLoader`**: WASMバイナリのパース、検証、およびロード済みモジュールの管理を一括して行う主要クラス。
 - **`module_view`**: ROM上のバイナリデータへの参照と、構築された索引群を保持する読み取り専用の構造体。
-- **`module_registry`**: ロード済みの `module_view` を名前で管理するための内部リスト。 `{MultiModule_Support}`
+- **`module_registry`**: ロード済みの `module_view` を名前で管理するための内部リスト。
 <!-- traceability: {ZeroCopyIndexing} {META_BumpAllocator} {Runtime_BumpAllocator} -->
 - **`ModuleView`**: ROM上のバイナリをゼロコピーで参照するための不変インデックス構造体。
 - **`BinaryStream`**: ROMデータをバイト境界・LEB128ガード付きで読み進めるストリームリーダ。
-- **`WasmLoader`**: バイナリ検証、パース、および `ModuleView` の構築を担うローダクラス。親ランタイムの `bump_allocator` を非所有参照として保持する。 `{Runtime_BumpAllocator}`
+- **`WasmLoader`**: バイナリ検証、パース、および `ModuleView` の構築を担うローダクラス。親ランタイムの `bump_allocator` を非所有参照として保持する。
 - **`decoded_entity_registry`**: 各エンティティの種類・ファイル内開始位置・長さ・参照に必要な最小メタ情報だけを保持する固定長レジストリ。関数コード、名前文字列、データ本体は所有せず、WASM原本上の範囲を参照する。
 - **`entity_offset_storage` (`ReadOnlyRadixBinaryTreeStorage`)**: ファイル内のバイト位置（開始オフセット）をキーとしてデコード済みエンティティへ $O(1) + O(\log n)$ でマッピングする基数2進木索引。検索時だけviewを借用する。
 - **`import_storage` / `export_storage` (`ReadOnlyRadixBinaryTreeStorage`)**: シンボル名（インポート名・エクスポート名）のハッシュ値をキーとして各エントリへ $O(1) + O(\log n)$ でマッピングする基数2進木索引。検索時だけviewを借用する。
@@ -74,7 +74,7 @@ flowchart TD
 <!-- traceability: {ROMParsing} -->
 ROM上のバイナリデータに対する「窓」として機能し、WIT上では `wasm-module-view` リソースとして定義される。
 データをRAM上に展開するのではなく、必要な時に必要な情報（セクション、関数ボディ、グローバル）へアクセスするためのアクセサを提供する。
-これにより、RAM消費を最小限に抑えつつ、クライアントに対しては型安全なインターフェースを提供する。 `{ROMParsing}`
+これにより、RAM消費を最小限に抑えつつ、クライアントに対しては型安全なインターフェースを提供する。
 
 - **セクション索引**: WASM標準セクション（Type, Import, Code等）のオフセットとサイズをキャッシュする。
 - **メタデータの遅延参照**: `Function` 以外の可変長メタデータ本体（型列、Element の関数列、Data のバイト列等）は展開せず、ROM上の `offset/size` と、解決に必要な LEB128 数値（`kind`、`index`、`type_index`、件数等）だけを先読みする。必要時に `BinaryStream` でその範囲を読む。Import/Export は名前を保持せず、Import は外部名範囲と `kind/type_index`、Export は公開名範囲と `kind/index` を持つ。
@@ -116,7 +116,7 @@ ROM上の読み取り専用バイト列ビューをラップし、カレント�
 
 #### 検証結果（verification_result）
 <!-- traceability: {LightweightVerifier} -->
-バイナリ検証の結果と、不備があった場合の情報を保持する。 `{LightweightVerifier}`
+バイナリ検証の結果と、不備があった場合の情報を保持する。
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
@@ -127,15 +127,15 @@ ROM上の読み取り専用バイト列ビューをラップし、カレント�
 
 ### 4.1 アルゴリズム
 <!-- traceability: {ZeroCopyIndexing} {META_AccessDictionary} {META_BumpAllocator} -->
-- **バイナリパース & トランザクション保護 (`GOTCHA-LOAD-02`, `{META_BumpAllocator}`)**:
+- **バイナリパース & トランザクション保護 (`GOTCHA-LOAD-02`, )**:
   ROM上のデータを `BinaryStream` でラップし、`read_leb128`（最大 5/10 バイトガード）等を用いて境界チェックを行いながら順次読み取る。パース開始前に `bump_allocator::save()` でアロケータ位置を記憶し、パースや検証が失敗した場合は `bump_allocator::restore()` により確保途中の RAM 領域を完全にロールバックする。
   **設計理由と不変条件**: WASM バイナリの検証エラー（セクション長不整合、未定義型参照、リソース上限超過等）が発生した際、途中まで確保した内部メタデータやインデックス領域が残留すると、静的バンプアロケータの物理メモリが永久に枯渇・リークする。そのため、検証失敗時は例外なくアロケータ位置を開始前のスナップショットへ完全に巻き戻し、不正バイナリによるリソース断片化をゼロにする。
-- **module_view 構築 & デコード値レジストリ登録 (Zero-Copy & Radix-Indexed)**: `{ZeroCopyIndexing}` `{META_BinarySearch}`
+- **module_view 構築 & デコード値レジストリ登録 (Zero-Copy & Radix-Indexed)**: `{META_BinarySearch}`
     - セクションスキャン時に内容をRAMにコピーせず、ROM上の開始オフセットとサイズを索引化する。
     - 各セクション、関数コードブロック、グローバル変数、データセグメント等について、内容を展開しない最小ディスクリプタを `decoded_entity_registry` に登録する。
     - 各エントリの開始ファイルオフセット `file_offset` をキーとして、基数2進探索木ビュー（`fireball::radix_binary_tree_view`）を構築する。粗い Radix Table で区間を特定後、狭めた区間に対する有界二分探索により $O(1) + O(\log n)$ でファイル内の任意バイト位置から該当するデコード済みエンティティ（関数メタデータ、セクション、データ定義）を高速逆引きできるようにする。
     - エクスポートおよびインポートエントリをパースし、シンボル名の 32-bit ハッシュ値（FNV-1a）を算出。名前文字列をROM上の文字列ビューとしてRAMコピーゼロで保持し、ハッシュ値をキーとした `export_storage` / `import_storage`（`fireball::radix_binary_tree_view`を借用）を構築する。概念コードは、この比較意味論をデコード済み文字列値で再現する。
-- **シンボル検索とハッシュ衝突完全排除 (`GOTCHA-LOAD-01`, `{META_AccessDictionary}`, `{META_BinarySearch}`)**:
+- **シンボル検索とハッシュ衝突完全排除 (`GOTCHA-LOAD-01`, , `{META_BinarySearch}`)**:
   シンボル名ハッシュ（FNV-1a 32-bit）をキーとして `export_storage`から借用した`radix_binary_tree_view`を、粗索引 $O(1)$ と狭い区間の二分探索 $O(\log n)$ の組み合わせで探索する。候補が得られた後はROM上の元の名前を照合するため、照合込みの worst-case は $O(1) + O(\log n) + O(L)$（$L$ は名前長）である。
   **設計理由と不変条件**: 32-bit ハッシュ値による探索のみで関数解決を完了させると、万一のハッシュ衝突発生時に誤った関数がディスパッチされ、壊滅的な誤動作を引き起こす。そのため、ハッシュ探索で候補エントリがヒットした際は必ず ROM 上の元のシンボル名文字列と 1 回完全一致照合を行い、ハッシュ衝突によるシンボル誤認を完全に排除する。
 - **インポートテーブル検索と依存関係解決 (resolve_imports)**: インポートテーブルの各エントリに対し、インポート先モジュール名・フィールド名のハッシュ値で対象モジュールの `export_storage`から借用した`radix_binary_tree_view`を探索する。候補区間の索引探索は $O(1) + O(\log n)$、ROM上の元文字列による衝突照合を含む worst-case は $O(1) + O(\log n) + O(L)$ であり、照合後に依存関係を解決してモジュールを実行可能状態へ遷移させる。 `{MultiModule_Support}` `{META_BinarySearch}`
@@ -221,7 +221,7 @@ flowchart TD
 
 ### 4.2 メモリ制約
 <!-- traceability: {META_ConfigurableSystem} -->
-`module_view` と関連構造の最大サイズ。すべてコンパイル時固定。 `{META_ConfigurableSystem}`
+`module_view` と関連構造の最大サイズ。すべてコンパイル時固定。
 
 | 項目 | 定数名 | 既定値 | 根拠 |
 | :--- | :--- | :--- | :--- |
@@ -257,7 +257,7 @@ stateDiagram-v2
     Ready --> Idle: unload
 ```
 
-形式検証モデルの状態との対応は、`Idle` = `s_rom_unparsed`、`Parsing` = `s_parsing`/`s_parsed_unverified`、`Verifying` = `s_verifying`、`Ready` = `s_verified_ok`/`s_executable`、`Error` = `s_verified_bad`/`s_rollback_done` である。`s_executing_unverified`、`s_stuck_verifying`、`s_leaked_bump` は `guards=False` でのみ到達する違反状態として、図の正常系には含めない。 `{LightweightVerifier}`
+形式検証モデルの状態との対応は、`Idle` = `s_rom_unparsed`、`Parsing` = `s_parsing`/`s_parsed_unverified`、`Verifying` = `s_verifying`、`Ready` = `s_verified_ok`/`s_executable`、`Error` = `s_verified_bad`/`s_rollback_done` である。`s_executing_unverified`、`s_stuck_verifying`、`s_leaked_bump` は `guards=False` でのみ到達する違反状態として、図の正常系には含めない。
 
 ### 4.5 内部シーケンス
 <!-- traceability: {ZeroCopyIndexing} {META_AccessDictionary} {META_ConfigurableSystem} {LightweightVerifier} -->
@@ -390,14 +390,14 @@ sequenceDiagram
 ### 6.1 性能制約と方策
 <!-- traceability: {ROMParsing} {META_AccessDictionary} -->
 - **目標**: モジュールロード時間を最小化する。
-- **方策**: `{ROMParsing}` `{META_AccessDictionary}` RAMへのコピーを排除し、主要な要素を索引化することで、実行時の探索コストを抑える。
+- **方策**: RAMへのコピーを排除し、主要な要素を索引化することで、実行時の探索コストを抑える。
 
 ### 6.2 メモリ制約と方策
 <!-- traceability: {META_BumpAllocator} {META_NoStdVector} -->
 - **目標**: ロード時のRAM消費を極小化する。
-- **方策**: `{META_BumpAllocator}` `{META_NoStdVector}` バンプアロケータを使用し、断片化を防止しつつ、固定長配列による索引管理を行う。
+- **方策**: バンプアロケータを使用し、断片化を防止しつつ、固定長配列による索引管理を行う。
 
 ### 6.3 安全性制約と方策
 <!-- traceability: {LightweightVerifier} {Wasm32Only} -->
 - **目標**: 不正なWASMバイナリによるクラッシュを防止する。
-- **方策**: `{LightweightVerifier}` `{Wasm32Only}` ロード時にマジック値、バージョン、セクション境界の整合性を検証し、不正なバイナリを拒否する。
+- **方策**: ロード時にマジック値、バージョン、セクション境界の整合性を検証し、不正なバイナリを拒否する。

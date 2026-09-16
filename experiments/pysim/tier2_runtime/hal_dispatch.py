@@ -13,6 +13,7 @@ something has to really run.
 
 from __future__ import annotations
 
+import bisect
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from enum import IntEnum
@@ -298,7 +299,13 @@ class HalDriver:
         self._command_bindings.sort(key=lambda binding: binding.command_id)
 
     def _find_command(self, command_id: int) -> HalCommandCallback | None:
-        for binding in self._command_bindings:
+        index = bisect.bisect_left(
+            self._command_bindings,
+            command_id,
+            key=lambda binding: binding.command_id,
+        )
+        if index < len(self._command_bindings):
+            binding = self._command_bindings[index]
             if binding.command_id == command_id:
                 return binding.callback
         return None

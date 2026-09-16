@@ -2,8 +2,8 @@
 docs/components/tier2_runtime/concepts/interpreter_concept.py
 Reference Concept Implementation: Exhaustive WASM MVP (v1) Stack Interpreter with Independent Runtime Stacks
 - Complete WASM MVP opcode set matching docs/specs/wasm_instruction_set.md
-- Bottom-resident execution_context: OperandStack, LocalStack (CallFrame +
-  Locals), and ControlFrame each use an independent logical region
+- OperandStack, LocalStack, and ControlFrame use independent value regions;
+  CallFrame descriptors live separately and retain their LocalStack base offset
   (runtime_interpreter.md §3, ADR-INTERP-04)
 - Direct-Threaded __fastcall Continuation Passing Style (CPS) 4-argument dispatch (ctx, sp, local_base, tos)
 - Full stack pruning (Label Arity handling) on br / br_if / br_table
@@ -26,28 +26,26 @@ class WASMTrap(Exception):
 
 class CallFrame:
     """
-    Call frame header resident in the LocalStack immediately before its local
-    values. OperandStack and ControlFrame use independent regions; the
-    call-frame header is never interleaved with either of them.
+    Activation descriptor stored separately from LocalStack values.
+
+    frame_offset identifies the first raw LocalStack word reserved for this
+    function's locals. LocalStack contains values only; it never stores this
+    descriptor.
     `{ContextPointerRegister}` `{PositionIndependentCode}`
     """
 
     def __init__(
         self,
-        parent_offset: int,
-        return_pc: int,
         frame_offset: int,
         func_idx: int,
     ):
-        self.parent_offset = parent_offset
-        self.return_pc = return_pc
         self.frame_offset = frame_offset
         self.func_idx = func_idx
 
     @property
     def local_base(self) -> int:
-        """Return the first LocalStack slot after this frame header."""
-        return self.frame_offset + 1
+        """Return the first raw LocalStack word belonging to this function."""
+        return self.frame_offset
 
 
 class ControlFrame:
@@ -91,9 +89,9 @@ class ExecutionContext:
         self.operand_stack: list[int] = [0] * stack_capacity
         self.sp_offset: int = 0  # Operand stack growth length
         local_capacity = stack_capacity if local_stack_capacity is None else local_stack_capacity
-        self.local_stack: list[int | CallFrame] = [0] * local_capacity
+        self.local_stack: list[int] = [0] * local_capacity
         self.local_offset: int = 0
-        self.call_frame_offsets: list[int] = []
+        self.call_frame_stack: list[CallFrame] = []
         self.control_frame_stack: list[ControlFrame] = []
         self.globals: list[int] = [0] * 32
         self.memory: bytearray = bytearray(memory_size)
@@ -120,41 +118,29 @@ class ExecutionContext:
         return self.operand_stack[self.sp_offset - 1]
 
     def begin_call_frame(self, func_idx: int, args: list[int]) -> CallFrame:
-        """Push a CallFrame header and its locals into the LocalStack region."""
+        """Push a descriptor and place its local values at the saved base."""
         frame_offset = self.local_offset
-        required = 1 + len(args)
-        if frame_offset + required > len(self.local_stack):
+        if frame_offset + len(args) > len(self.local_stack):
             raise WASMTrap("LOCAL_STACK_OVERFLOW")
-        parent_offset = self.call_frame_offsets[-1] if self.call_frame_offsets else 0
-        frame = CallFrame(
-            parent_offset=parent_offset,
-            return_pc=0,
-            frame_offset=frame_offset,
-            func_idx=func_idx,
-        )
-        self.local_stack[frame_offset] = frame
-        self.local_offset += 1
-        for arg in args:
-            self.local_stack[self.local_offset] = arg
-            self.local_offset += 1
-        self.call_frame_offsets.append(frame_offset)
+        frame = CallFrame(frame_offset=frame_offset, func_idx=func_idx)
+        self.call_frame_stack.append(frame)
+        for index, arg in enumerate(args):
+            self.local_stack[frame_offset + index] = arg
+        self.local_offset += len(args)
         return frame
 
     def end_call_frame(self, frame: CallFrame) -> None:
-        """Pop the current CallFrame and its LocalStack payload."""
-        if not self.call_frame_offsets or self.call_frame_offsets[-1] != frame.frame_offset:
+        """Pop the descriptor and reclaim locals back to its saved base."""
+        if not self.call_frame_stack or self.call_frame_stack[-1] is not frame:
             raise WASMTrap("CALL_FRAME_UNDERFLOW")
-        self.call_frame_offsets.pop()
+        self.call_frame_stack.pop()
         self.local_offset = frame.frame_offset
 
     def current_call_frame(self) -> CallFrame:
-        """Return the current CallFrame header from the LocalStack region."""
-        if not self.call_frame_offsets:
+        """Return the active descriptor, independent of LocalStack storage."""
+        if not self.call_frame_stack:
             raise WASMTrap("CALL_FRAME_UNDERFLOW")
-        frame = self.local_stack[self.call_frame_offsets[-1]]
-        if not isinstance(frame, CallFrame):
-            raise WASMTrap("CALL_FRAME_CORRUPTED")
-        return frame
+        return self.call_frame_stack[-1]
 
     def prune_stack(self, saved_sp: int, arity: int) -> None:
         """
@@ -1377,6 +1363,28 @@ def test_full_wasm_recursive_factorial() -> None:
     ctx.funcs = [fact_bytecode]
     res = interp.execute_function(ctx, func_idx=0, args=[5])
     assert res == 120, f"Expected 120, got {res}"
+    assert not ctx.call_frame_stack
+    assert ctx.local_offset == 0
+
+
+def test_call_frame_descriptor_is_separate_from_local_values() -> None:
+    """The descriptor saves a LocalStack base; local storage contains values only."""
+    ctx = ExecutionContext(stack_capacity=8, local_stack_capacity=8)
+    outer = ctx.begin_call_frame(func_idx=0, args=[11, 22])
+    inner = ctx.begin_call_frame(func_idx=1, args=[33])
+    assert ctx.call_frame_stack == [outer, inner]
+    assert outer.frame_offset == 0
+    assert inner.frame_offset == 2
+    assert outer.local_base == 0
+    assert inner.local_base == 2
+    assert ctx.local_stack[:3] == [11, 22, 33]
+    ctx.end_call_frame(inner)
+    assert ctx.local_offset == 2
+    assert ctx.local_stack[:2] == [11, 22]
+    assert ctx.current_call_frame() is outer
+    ctx.end_call_frame(outer)
+    assert ctx.local_offset == 0
+    assert not ctx.call_frame_stack
 
 
 def test_independent_operand_and_local_stacks() -> None:
@@ -1585,6 +1593,7 @@ def test_globals_and_memory_grow() -> None:
 
 if __name__ == "__main__":
     test_full_wasm_recursive_factorial()
+    test_call_frame_descriptor_is_separate_from_local_values()
     test_independent_operand_and_local_stacks()
     test_block_loop_and_stack_pruning()
     test_br_table_and_parametric()

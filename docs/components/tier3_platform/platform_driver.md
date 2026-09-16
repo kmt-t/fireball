@@ -2,18 +2,18 @@
 <!-- evidence:
      formal: formal/interrupt_boundary_model.py
      concept: concepts/platform_driver_concept.py
-     test: tests/platform_driver_test_spec.md
+     test: docs/qa/tier3_platform/platform_driver_test_spec.md
 -->
 
 本コンポーネントは、Tier 2 の抽象契約 [`hal_dispatch.md`](docs/components/tier2_runtime/hal_dispatch.md)（URI Resolver、コマンドプロトコル、ゼロコピー転送インターフェース）の物理ドライバ実装である。契約と実装の記述に食い違いがあれば `hal_dispatch.md` を正とする（`{META_ContractImplSplit}` 契約/実装分割パターン）。
 
 ## 1. コンセプト
 <!-- traceability: {Challenge_InterruptSafety} {TaskPollInterruptEvent} {RSPMinimalSet} {Fast_Path_GPIO} -->
-[`hal_dispatch.md`](docs/components/tier2_runtime/hal_dispatch.md) が定義する `hal_task` コマンドディスパッチ契約を実現するため、UART・SEGGER RTT・GPIO・I2C・SPI・Timer の物理レジスタ操作ドライバ群を実装する。物理割り込みは原因付きイベントの通知とタスクウェイクアップによって安全に処理される。また、デバッグ用の GDB Remote Serial Protocol (RSP) のパケット物理エンコード/デコード（RSP Parser）を担い、解析済みデバッグコマンドを `debug_command_queue` へ供給する。 `{Challenge_InterruptSafety}` `{TaskPollInterruptEvent}` `{RSPMinimalSet}` `{Fast_Path_GPIO}`
+[`hal_dispatch.md`](docs/components/tier2_runtime/hal_dispatch.md) が定義する `hal_task` コマンドディスパッチ契約を実現するため、UART・SEGGER RTT・GPIO・I2C・SPI・Timer の物理レジスタ操作ドライバ群を実装する。物理割り込みは原因付きイベントの通知とタスクウェイクアップによって安全に処理される。また、デバッグ用の GDB Remote Serial Protocol (RSP) のパケット物理エンコード/デコード（RSP Parser）を担い、解析済みデバッグコマンドを `debug_command_queue` へ供給する。
 
 ## 2. アーキテクチャ分類
 <!-- traceability: {META_3TierSeparation} -->
-本コンポーネントは **Tier 3 (プラットフォーム / リーフコンポーネント: Leaf Component)** に属し、ハードウェアとハイパーバイザの物理境界を抽象化する物理ドライバ実装を担当する。抽象化層（URI Resolver、コマンドプロトコル）は Tier 2 の [hal_dispatch.md](docs/components/tier2_runtime/hal_dispatch.md) が担う。 `{META_3TierSeparation}`
+本コンポーネントは **Tier 3 (プラットフォーム / リーフコンポーネント: Leaf Component)** に属し、ハードウェアとハイパーバイザの物理境界を抽象化する物理ドライバ実装を担当する。抽象化層（URI Resolver、コマンドプロトコル）は Tier 2 の [hal_dispatch.md](docs/components/tier2_runtime/hal_dispatch.md) が担う。
 
 ### 2.1 WASI-HAL結線設定
 
@@ -67,7 +67,7 @@ flowchart TD
 
 #### HAL構成（hal_config、物理値）
 <!-- traceability: {META_ConfigurableSystem} -->
-`hal_dispatch.md` の契約上限を物理的な既定値として確定する。 `{META_ConfigurableSystem}`
+`hal_dispatch.md` の契約上限を物理的な既定値として確定する。
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
@@ -81,8 +81,8 @@ flowchart TD
 
 ### 4.1 割り込み処理の物理実装
 <!-- traceability: {RSP_Transport_Selectable} {TaskPollInterruptEvent} {GLOBAL_InterruptWakeup} -->
-- **割り込み通知（push）**: 物理割り込み発生時、ISRは原因情報を固定5ワードの`interrupt-event`へ変換し、COOSの`notify_interrupt(event)`で固定長FIFOへ投函するのみとする。物理デバイスの複数原因は、上位のイベント源マッピングで同じデバイス系統へ集約する。**ISRがタスク状態を直接書き換えることはない。**実際のREADY遷移は、スケジューラが協調境界でFIFOをドレインする際に行われる（`{GLOBAL_InterruptWakeup}`を正本とする）。この非同期境界の分離は、[`interrupt_boundary_model.py`](docs/components/tier3_platform/formal/interrupt_boundary_model.py) に定義されたCTL検証項目 `isr_does_not_update_task_state_directly` および `interrupt_event_reaches_scheduler_boundary` として証明されている性質である。
-- **割り込み配送**: COOSから渡された`interrupt-event`は、vSoCがSafepointで受け取り、ゲスト配送またはドロップを行う。vIRQの分類・デバイスノード・ゲスト関数登録はvSoCとvMMIOの契約に従い、物理ドライバはゲスト関数を直接呼び出さない。 `{TaskPollInterruptEvent}` `{GLOBAL_InterruptWakeup}`
+- **割り込み通知（push）**: 物理割り込み発生時、ISRは原因情報を固定5ワードの`interrupt-event`へ変換し、COOSの`notify_interrupt(event)`で固定長FIFOへ投函するのみとする。物理デバイスの複数原因は、上位のイベント源マッピングで同じデバイス系統へ集約する。**ISRがタスク状態を直接書き換えることはない。**実際のREADY遷移は、スケジューラが協調境界でFIFOをドレインする際に行われる（を正本とする）。この非同期境界の分離は、[`interrupt_boundary_model.py`](docs/components/tier3_platform/formal/interrupt_boundary_model.py) に定義されたCTL検証項目 `isr_does_not_update_task_state_directly` および `interrupt_event_reaches_scheduler_boundary` として証明されている性質である。
+- **割り込み配送**: COOSから渡された`interrupt-event`は、vSoCがSafepointで受け取り、ゲスト配送またはドロップを行う。vIRQの分類・デバイスノード・ゲスト関数登録はvSoCとvMMIOの契約に従い、物理ドライバはゲスト関数を直接呼び出さない。
 
 #### HalBufferPool 固定スロット・境界検査手順（手順アクティビティ図）
 <!-- traceability: {GOTCHA-HAL-01} {HAL_Interface} {IPC_ZeroCopy} -->
@@ -117,7 +117,7 @@ stateDiagram-v2
 <!-- traceability: {RSPMinimalSet} {RSP_Transport_Selectable} -->
 本コンポーネントは、ホスト PC 上の GDB / LLDB / VSCode デバッガと通信するための GDB RSP パケット物理処理を担当する：
 
-1. **RSP パケット受信**: UART または RTT ドライバ経由でシリアルデータ（`$<packet-data>#<checksum>`）を受信する。 `{RSP_Transport_Selectable}`
+1. **RSP パケット受信**: UART または RTT ドライバ経由でシリアルデータ（`$<packet-data>#<checksum>`）を受信する。
 2. **パケット検証 & ACK**: 2桁の 16進チェックサムを検証し、一致すれば `+`（ACK）、不一致なら `-`（NACK）を即座に応答する。
 3. **コマンド解析 (RSP Parser)**:
    - `$g` / `$G`: レジスタ一括読み出し / 書き込み
@@ -125,7 +125,7 @@ stateDiagram-v2
    - `$s` / `$c`: シングルステップ実行 / 実行再開（Continue）
    - `$Z0,<addr>,<kind>` / `$z0,<addr>,<kind>`: ソフトウェアブレークポイント設定 / 解除
    - `$?`: 停止理由問い合わせ (Stop Reply)
-4. **デバッグコマンドキュー投入**: 解析済みコマンドを `debug_command` 構造体に変換し、`debug_command_queue` へ Push。デバッガタスクがこれを Pop して vSoC / インタープリタ / JIT の実行を制御する。 `{RSPMinimalSet}`
+4. **デバッグコマンドキュー投入**: 解析済みコマンドを `debug_command` 構造体に変換し、`debug_command_queue` へ Push。デバッガタスクがこれを Pop して vSoC / インタープリタ / JIT の実行を制御する。
 
 ```mermaid
 sequenceDiagram
@@ -149,7 +149,7 @@ sequenceDiagram
 
 ### 5.1 物理実装の勘所・不変条件
 <!-- traceability: {HAL_Interface} {IPC_ZeroCopy} -->
-[`hal_dispatch.md`](docs/components/tier2_runtime/hal_dispatch.md) の `{HAL_Interface}` で定義された契約API（`read`, `write`, `transfer`, `get-buffer`）を、以下の物理不変条件に従って実装する。
+[`hal_dispatch.md`](docs/components/tier2_runtime/hal_dispatch.md) の で定義された契約API（`read`, `write`, `transfer`, `get-buffer`）を、以下の物理不変条件に従って実装する。
 
 **静的固定長バッファプールの境界厳格検査 (`GOTCHA-HAL-01`)**:
 `HalBufferPool` は、`FB_CONF_HAL_MAX_BUFFERS` 個の固定サイズスロット（`FB_CONF_HAL_BUFFER_SIZE` = 256 バイト）を保持する。Runtimeの`bind_runtime`で全スロットをvMMIO DYNAMICへマップし、`get-buffer(buffer_id)`でスロットを選択する。HALは常に全スロットへアクセスでき、Runtimeは一度に一つだけバインドできる。`unbind_runtime`は全スロットのマッピングを解除する。
@@ -172,12 +172,12 @@ UART および SEGGER RTT の双方において同一の RSP パケットエン�
 ### 6.1 メモリ制約と方策
 <!-- traceability: {META_ConfigurableSystem} -->
 - **目標**: 通信バッファによるメモリ圧迫を防止する。
-- **方策**: `{META_ConfigurableSystem}` バッファ数とサイズをコンパイル時に固定し、**vMMIOの動的領域 (`DYNAMIC`)** に配置する。
+- **方策**: バッファ数とサイズをコンパイル時に固定し、**vMMIOの動的領域 (`DYNAMIC`)** に配置する。
 
 ### 6.2 安全性制約と方策
 <!-- traceability: {Challenge_InterruptSafety} -->
 - **目標**: 割り込みによる実行コンテキストの破壊を防止する。
-- **方策**: `{Challenge_InterruptSafety}` 割り込みハンドラ内ではフラグセットのみを行い、実際のデータ処理はタスクのコンテキストで実行する。
+- **方策**: 割り込みハンドラ内ではフラグセットのみを行い、実際のデータ処理はタスクのコンテキストで実行する。
 
 ## 7. 形式検証・テスト仕様との対応
 
@@ -186,4 +186,4 @@ UART および SEGGER RTT の双方において同一の RSP パケットエン�
 - **固定長スロット境界保護**: 要求サイズが 256 バイトを超える場合の即時拒絶（`GOTCHA-HAL-01`）。
 
 ### 7.2 テスト仕様書との連携
-本コンポーネントの物理実装テストケース（TEST-HAL-03, TEST-HAL-05〜TEST-HAL-08, GOTCHA-HAL-01〜03）は、[`platform_driver_test_spec.md`](docs/components/tier3_platform/tests/platform_driver_test_spec.md) を正本として定義する。HAL契約レベルのテストケース（TEST-HAL-01, TEST-HAL-02, TEST-HAL-04, TEST-HAL-09〜TEST-HAL-13）は [`hal_dispatch_test_spec.md`](docs/components/tier2_runtime/tests/hal_dispatch_test_spec.md) を参照する。
+本コンポーネントの物理実装テストケース（TEST-HAL-03, TEST-HAL-05〜TEST-HAL-08, GOTCHA-HAL-01〜03）は、[`platform_driver_test_spec.md`](docs/qa/tier3_platform/platform_driver_test_spec.md) を正本として定義する。HAL契約レベルのテストケース（TEST-HAL-01, TEST-HAL-02, TEST-HAL-04, TEST-HAL-09〜TEST-HAL-13）は [`hal_dispatch_test_spec.md`](docs/qa/tier2_runtime/hal_dispatch_test_spec.md) を参照する。

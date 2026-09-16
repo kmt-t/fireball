@@ -13,11 +13,11 @@
   - 各コンポーネントの C++ 実装に対し、ホスト結合ハーネス等を介して本シナリオ群を検証する。
 - **参照実装（Reference Implementation / Python Simulator）**:
   - アーキテクチャの早期妥当性確認、状態遷移の探索、および Gotchas（実装上の勘所・不変条件）の抽出を目的とした Python 製の参照シミュレータ（`experiments/pysim`）。
-  - 各シナリオには、この参照実装上で動作する実行可能なリファレンススクリプト（`experiments/pysim/scenarios/`）が提供されており、仕様が実行可能（Executable Specification）であることを実証している。
+  - 各シナリオには、この参照実装上で動作する実行可能なリファレンススクリプト（`experiments/pysim/qa/scenarios/`）が提供されており、仕様が実行可能（Executable Specification）であることを実証している。
 
 - **対象 Tier**: Tier 1 Core (`os_coos`, `os_scheduler`, `system_config`, `system_containers`, `system_memory`), Tier 1 Interface (`interface_wit`, `ipc_router`, `system_service`), Tier 2 Runtime (`runtime_vsoc`, `runtime_loader`, `runtime_interpreter`, `runtime_vmmio`, `debug_manager`, `runtime_memory`, `runtime_logging`, `runtime_syscall`, `hal_dispatch`), Tier 3 Platform & JIT (`platform_driver`, `libfireball`, `jit_compiler`, `jit_runtime`)
-- **参照実装テストスイート**: `experiments/pysim/scenarios/`
-- **参照テストランナー**: [`run_all.py`](experiments/pysim/scenarios/run_all.py)
+- **参照実装テストスイート**: `experiments/pysim/qa/scenarios/`
+- **参照テストランナー**: [`run_all.py`](experiments/pysim/qa/scenarios/run_all.py)
 
 ### 1.2 コンポーネント × 結合テストシナリオ カバレッジマトリクス (Coverage Matrix)
 
@@ -42,7 +42,7 @@
 | **Tier 3 Platform** | [`libfireball.md`](docs/components/tier3_platform/libfireball.md) | WASI Preview1からFireball公開IFへのゲスト側変換 | Scenario 2, 11, 12 |
 | **Tier 3 Platform** | [`platform_driver.md`](docs/components/tier3_platform/platform_driver.md) | GPIO, I2C, SPI, Timer, StreamTransport | Scenario 2, 7, 9, 11, 12 |
 | **Tier 3 JIT** | [`jit_compiler.md`](docs/components/tier3_jit/jit_compiler.md) | Copy-and-Patch JIT 生成、PIC トレース、差分検証 | Scenario 4, 5, 8 |
-| | [`jit_runtime.md`](docs/components/tier3_jit/jit_runtime.md) | 3面キャッシュ代謝、2-bit Card Marking、UnifiedPC + bswap32 | Scenario 4, 5 |
+| | [`jit_runtime.md`](docs/components/tier3_jit/jit_runtime.md) | 3面キャッシュ代謝、2-bit Card Marking、UnifiedPC + 少数エントリ二分探索 | Scenario 4, 5 |
 
 ### 1.3 仕様キーワード・不変条件カバレッジ追跡表 (Requirements Traceability Matrix: RTM)
 
@@ -50,7 +50,7 @@
 
 | 仕様キーワード / 不変条件 | 定義元設計書 | 仕様上の定義・要件 | カバーテスト ID | 実装実証 |
 | :--- | :--- | :--- | :--- | :---: |
-| `RadixBinaryTreeView_bswap32` | `system_containers.md`, `jit_runtime.md` | UnifiedPC（`func_idx << 16 \| pc`）の bswap32 によるリトルエンディアン上位集約インデックス検索 | `TEST-INT-40`, `TEST-INT-41` | ✅ PASS |
+| `META_BinarySearch` | `system_containers.md`, `jit_runtime.md` | 疎なJIT UnifiedPCエントリのソート配列二分探索（Radix表なし） | `TEST-INT-40`, `TEST-INT-41` | ✅ PASS |
 | `FlatMapView_BinarySearch` | `system_containers.md`, `ipc_router.md` | 静的ソート配列に対する $O(\log N)$ バイナリサーチ（動的割当なし） | `TEST-INT-01`, `TEST-INT-80` | ✅ PASS |
 | `RingBuffer_Overwrite` | `system_containers.md`, `runtime_logging.md` | 静的容量リングバッファ、満杯時の最古エントリ自動上書き | `TEST-INT-82` | ✅ PASS |
 | `BitView_CardMarking` | `system_containers.md`, `jit_runtime.md` | 関数ごと 8バイト/カード 2-bit カードマーキング（UNEXEC $\to$ EXEC $\to$ HOT $\to$ COMPILED） | `TEST-INT-30`, `TEST-INT-31` | ✅ PASS |
@@ -83,7 +83,7 @@
 
 ### シナリオ 1: Tier 1 Core + Tier 2 Loader & Linear Memory
 - **対象コンポーネント**: `runtime_loader`, `runtime_interpreter`, `system_containers` (RadixBinaryTreeView, FlatMapView)
-- **参照実装スクリプト (Reference Script)**: [`scenario1_loader_and_memory.py`](experiments/pysim/scenarios/scenario1_loader_and_memory.py)
+- **参照実装スクリプト (Reference Script)**: [`scenario1_loader_and_memory.py`](experiments/pysim/qa/scenarios/scenario1_loader_and_memory.py)
 - **WAT シナリオ**:
   - アクティブデータセグメント（Active Data Segments）による ROM 文字列・バイナリ配列の初期配置
   - ゲスト関数からのリニアメモリアクセス（`i32.load` / `i32.store`）
@@ -100,7 +100,7 @@
 
 ### シナリオ 2: Tier 2 Runtime + System Call & WASI I/O
 - **対象コンポーネント**: `runtime_interpreter`, `runtime_syscall`, `hal_dispatch`, `libfireball`
-- **参照実装スクリプト (Reference Script)**: [`scenario2_wasi_syscall_io.py`](experiments/pysim/scenarios/scenario2_wasi_syscall_io.py)
+- **参照実装スクリプト (Reference Script)**: [`scenario2_wasi_syscall_io.py`](experiments/pysim/qa/scenarios/scenario2_wasi_syscall_io.py)
 - **WAT シナリオ**:
   - WASI 標準 ABI（`wasi_snapshot_preview1`）による `fd_write` および `proc_exit` のインポート解決
   - 複数 iovec 構造体（分散ギャザー I/O: Header + Payload）の stdout フラッシュ
@@ -115,7 +115,7 @@
 
 ### シナリオ 3: Tier 2 Interpreter + Recursion & Indirect Table Dispatch
 - **対象コンポーネント**: `runtime_interpreter` (UnifiedStack, CallFrame)
-- **参照実装スクリプト (Reference Script)**: [`scenario3_recursion_and_tables.py`](experiments/pysim/scenarios/scenario3_recursion_and_tables.py)
+- **参照実装スクリプト (Reference Script)**: [`scenario3_recursion_and_tables.py`](experiments/pysim/qa/scenarios/scenario3_recursion_and_tables.py)
 - **WAT シナリオ**:
   - 再帰フィボナッチ関数（`fib(12)`）による深いコールスタック構築と巻き戻し
   - WASM テーブル（`table` / `elem`）と `call_indirect` による動的関数ポインタディスパッチ（加算・減算・乗算・XOR）
@@ -131,7 +131,7 @@
 
 ### シナリオ 4: Tier 2 Runtime + Tier 3 JIT Hybrid Compilation
 - **対象コンポーネント**: `runtime_interpreter`, `runtime_engine` (CardMarking, HistoryRing), `jit_compiler`, `jit_runtime`
-- **参照実装スクリプト (Reference Script)**: [`scenario4_hybrid_jit_loop.py`](experiments/pysim/scenarios/scenario4_hybrid_jit_loop.py)
+- **参照実装スクリプト (Reference Script)**: [`scenario4_hybrid_jit_loop.py`](experiments/pysim/qa/scenarios/scenario4_hybrid_jit_loop.py)
 - **WAT シナリオ**:
   - エラトステネスの篩（素数計算: 1000 未満の素数探索）
   - ホットループ実行時の 2-bit Card Marking による HOT 検出
@@ -145,24 +145,24 @@
 
 ---
 
-### シナリオ 5: Multi-Function UnifiedPC & bswap32 Radix Tree
-- **対象コンポーネント**: `jit_runtime`, `jit_compiler`, `system_containers` (RadixBinaryTreeView)
-- **参照実装スクリプト (Reference Script)**: [`scenario5_multimodule_unified_pc.py`](experiments/pysim/scenarios/scenario5_multimodule_unified_pc.py)
+### シナリオ 5: Multi-Function UnifiedPC & sparse JIT lookup
+- **対象コンポーネント**: `jit_runtime`, `jit_compiler`, `system_containers` (StaticVector / sorted entry array)
+- **参照実装スクリプト (Reference Script)**: [`scenario5_multimodule_unified_pc.py`](experiments/pysim/qa/scenarios/scenario5_multimodule_unified_pc.py)
 - **WAT シナリオ**:
   - 複数関数（3D 内積 `dot3`、マンハッタン距離 `manhattan3`、バッチ処理 `batch_metrics`）の相互呼び出し
   - `UnifiedPC = (func_index << 16) | bytecode_offset` による関数間 PC 衝突防止
-  - `bswap32` キー投影による Radix テーブルの完全一様分散と $O(1)$ 高速検索
+  - コンパイル済みJIT entryは少数の疎なキー集合として保持し、ソート配列の二分探索で検索（Radix表なし）
 
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| TEST-INT-40 | 複数関数にまたがる UnifiedPC JIT トレース | 複数関数がホット化 | `cache.active.traces` を検査 | 異なる `func_index`（上位16bit）を持つ複数の JIT トレースが正常に共存・実行される | `RadixBinaryTreeView_bswap32` |
-| TEST-INT-41 | `RadixBinaryTreeView` による UnifiedPC 検索 | トレース登録済み | `radix_tree.find(unified_pc)` | 全 UnifiedPC に対し $O(1)$ 粗索引＋有界二分探索で正しく JIT トレースが取得できる | `RadixBinaryTreeView_bswap32`, `ThreeBankCacheEviction` |
+| TEST-INT-40 | 複数関数にまたがる UnifiedPC JIT トレース | 複数関数がホット化 | `cache.active.traces` を検査 | 異なる `func_index`（上位16bit）を持つ複数の JIT トレースが正常に共存・実行される | `JIT_MultiBuffer_Cache` |
+| TEST-INT-41 | 少数の疎なUnifiedPCエントリを二分探索 | トレース登録済み | ソート済みキーを `bisect_left(keys, unified_pc)` で検索 | 全UnifiedPCに対し二分探索で正しいJITトレースを取得する。Radix表を構築しない | `META_BinarySearch`, `ThreeBankCacheEviction` |
 
 ---
 
 ### シナリオ 6: COOS Cooperative Multitasking & Fuel-Limited Quantum Stepping
 - **対象コンポーネント**: `os_scheduler`, `os_coos`, `runtime_interpreter`
-- **参照実装スクリプト (Reference Script)**: [`scenario6_coos_multitask_yield.py`](experiments/pysim/scenarios/scenario6_coos_multitask_yield.py)
+- **参照実装スクリプト (Reference Script)**: [`scenario6_coos_multitask_yield.py`](experiments/pysim/qa/scenarios/scenario6_coos_multitask_yield.py)
 - **WAT シナリオ**:
   - プロデューサ・タスク（メモリへ 100 件のデータ書き込み）
   - コンシューマ・タスク（メモリから 100 件のデータを読み込み合計 50,500 を算出）
@@ -177,7 +177,7 @@
 
 ### シナリオ 7: GDB Remote Serial Protocol (RSP) Socket Debugger
 - **対象コンポーネント**: `debug_manager`, `gdb_rsp_protocol`, `runtime_engine` (JIT Cache Flush), `runtime_interpreter`
-- **参照実装スクリプト (Reference Script)**: [`scenario7_gdb_socket_debugger.py`](experiments/pysim/scenarios/scenario7_gdb_socket_debugger.py)
+- **参照実装スクリプト (Reference Script)**: [`scenario7_gdb_socket_debugger.py`](experiments/pysim/qa/scenarios/scenario7_gdb_socket_debugger.py)
 - **通信シナリオ**:
   - GDB サーバー（`GDBServer`）が実 TCP ソケットでリッスン
   - GDB クライアントからの接続、パケット送受信（`?`, `g`, `G`, `m`, `M`, `Z0`, `z0`, `s`, `c`）
@@ -198,7 +198,7 @@
 
 ### シナリオ 8: Storage Coverage (Globals / Locals / Memory Full-Width) & GDB Debugger
 - **対象コンポーネント**: `runtime_interpreter`, `debug_manager`, `gdb_rsp_protocol`, `runtime_loader`
-- **参照実装スクリプト (Reference Script)**: [`scenario8_comprehensive_storage_coverage.py`](experiments/pysim/scenarios/scenario8_comprehensive_storage_coverage.py)
+- **参照実装スクリプト (Reference Script)**: [`scenario8_comprehensive_storage_coverage.py`](experiments/pysim/qa/scenarios/scenario8_comprehensive_storage_coverage.py)
 - **WAT & デバッグシナリオ**:
   - 全幅メモリアクセス: `i32.store8`/`load8_u`/`load8_s`, `i32.store16`/`load16_u`/`load16_s`, `i32.store`/`load`
   - 可変グローバル変数（`global.get`, `global.set`）と呼び出し間状態永続性
@@ -216,7 +216,7 @@
 
 ### シナリオ 9: Tier 1 Interface IPC Router & Structured Logging
 - **対象コンポーネント**: `ipc_router`, `runtime_logging`, `system_containers`, `platform_driver`
-- **参照実装スクリプト (Reference Script)**: [`scenario9_ipc_router_and_logging.py`](experiments/pysim/scenarios/scenario9_ipc_router_and_logging.py)
+- **参照実装スクリプト (Reference Script)**: [`scenario9_ipc_router_and_logging.py`](experiments/pysim/qa/scenarios/scenario9_ipc_router_and_logging.py)
 - **検証シナリオ**:
   - 3段階ルーティングパイプライン: FlatMapView URI 検索、RBAC ロール権限判定、Zero-Copy 所有権移譲
   - キュー溢れ時の Rollback 復元とターゲットフォールト時の Drop Handler リソース回収
@@ -232,7 +232,7 @@
 
 ### シナリオ 10: Tier 2 Runtime vMMIO Virtual Devices & Address Translation
 - **対象コンポーネント**: `runtime_vmmio`, `runtime_syscall`, `runtime_memory`, `system_config`
-- **参照実装スクリプト (Reference Script)**: [`scenario10_vmmio_virtual_devices.py`](experiments/pysim/scenarios/scenario10_vmmio_virtual_devices.py)
+- **参照実装スクリプト (Reference Script)**: [`scenario10_vmmio_virtual_devices.py`](experiments/pysim/qa/scenarios/scenario10_vmmio_virtual_devices.py)
 - **検証シナリオ**:
   - Bit 31 RAM Bypass フラグ: ゲストリニア RAM（Bit 31 == 0）の $O(1)$ 高速パス
   - 仮想デバイス（FC=0xC）、共有メモリ（FC=0xE）、物理パススルー（FC=0xF）の PTE マッピング
@@ -250,7 +250,7 @@
 
 ### シナリオ 11: HAL Peripheral Drivers & WASI Preview 1 Full Dummy Stack
 - **対象コンポーネント**: `platform_driver`, `interface_wit`, `hal_dispatch`, `libfireball`, `runtime_syscall`, `runtime_interpreter`
-- **参照実装スクリプト (Reference Script)**: [`scenario11_hal_and_wasi_drivers.py`](experiments/pysim/scenarios/scenario11_hal_and_wasi_drivers.py)
+- **参照実装スクリプト (Reference Script)**: [`scenario11_hal_and_wasi_drivers.py`](experiments/pysim/qa/scenarios/scenario11_hal_and_wasi_drivers.py)
 - **検証シナリオ**:
   - **HAL 周辺機器ダミードライバ**:
     - GPIO コントローラ（16ピン）: 入出力モード設定、ピン読み出し/書き込み、エッジ割り込み IRQ コールバック
@@ -276,7 +276,7 @@
 ### シナリオ 12: WASI 0.3p Hierarchical URI Resolver & IPC Commands
 
 - **対象コンポーネント**: `interface_wit`, `hal_dispatch`, `runtime_syscall`, `libfireball`, `platform_driver`
-- **参照実装スクリプト (Reference Script)**: [`scenario12_wasi03p_uri_resolver.py`](experiments/pysim/scenarios/scenario12_wasi03p_uri_resolver.py)
+- **参照実装スクリプト (Reference Script)**: [`scenario12_wasi03p_uri_resolver.py`](experiments/pysim/qa/scenarios/scenario12_wasi03p_uri_resolver.py)
 - **検証シナリオ**:
   - 階層型 URI と WASI 0.3p エイリアスの解決。
   - 標準入出力・Timer ドライバの能力照会と未対応コマンドの拒否。
@@ -302,7 +302,7 @@
 
 ```bash
 # 参照実装による全結合テストシナリオの一括実行
-uv run --system-certs --with wasmtime python experiments/pysim/scenarios/run_all.py
+uv run --system-certs --with wasmtime python experiments/pysim/qa/scenarios/run_all.py
 ```
 
 ### 3.2 本番実装（C++ Hypervisor）への適用方針

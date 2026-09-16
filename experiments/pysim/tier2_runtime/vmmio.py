@@ -56,6 +56,8 @@ class VmmioPte(Protocol):
     valid: bool
     owner_id: int
     phys_page: int
+    physical_base_addr: int
+    mapping_size: int
     handler: Callable[[int, int, bool], None] | None
     value_handler: VmmioVectorHandler | None
 
@@ -127,7 +129,16 @@ class Tier3PTE:
     removes the mapping and flushes the corresponding TLB entry.
     """
 
-    __slots__ = ("exec_", "owner_id", "phys_page", "read", "valid", "write")
+    __slots__ = (
+        "exec_",
+        "mapping_size",
+        "owner_id",
+        "phys_page",
+        "physical_base_addr",
+        "read",
+        "valid",
+        "write",
+    )
 
     def __init__(
         self,
@@ -137,8 +148,16 @@ class Tier3PTE:
         write: bool = True,
         exec_: bool = False,
         owner_id: int = FB_TASK_ID_INVALID,
+        physical_base_addr: int | None = None,
+        mapping_size: int = VMMIO_PAGE_SIZE,
     ):
         self.phys_page = phys_page
+        self.physical_base_addr = (
+            (phys_page << VMMIO_PAGE_SHIFT)
+            if physical_base_addr is None
+            else physical_base_addr
+        )
+        self.mapping_size = mapping_size
         self.valid = valid
         self.read = read
         self.write = write
@@ -216,19 +235,39 @@ class VMMIOController:
         assert len(vector_table) <= 4096
         self.syscall_vector_table = tuple(vector_table)
 
-    def map_shm_page(self, vpn: int, phys_page: int, owner_id: int = 0) -> None:
-        """Registers a Tier 3 SHM page (FC=14) into FlatMap."""
+    def map_shm_page(
+        self,
+        vpn: int,
+        phys_page: int | None = None,
+        owner_id: int = 0,
+        *,
+        physical_addr: int | None = None,
+        mapping_size: int = VMMIO_PAGE_SIZE,
+    ) -> None:
+        """Maps a 4KB virtual slot onto its bounded physical SHM backing."""
+        assert (phys_page is None) != (physical_addr is None), (
+            "Provide either a physical page number or a raw backing address"
+        )
+        assert 0 < mapping_size <= VMMIO_PAGE_SIZE
+        physical_base_addr = (
+            (phys_page << VMMIO_PAGE_SHIFT)
+            if physical_addr is None
+            else physical_addr
+        )
+        assert physical_base_addr is not None and physical_base_addr >= 0
         if self.ptes.view().find(vpn) is not None:
             self.ptes.remove(vpn)
         assert self.ptes.insert(
             vpn,
             Tier3PTE(
-                phys_page=phys_page,
+                phys_page=physical_base_addr >> VMMIO_PAGE_SHIFT,
                 valid=True,
                 read=True,
                 write=True,
                 exec_=False,
                 owner_id=owner_id,
+                physical_base_addr=physical_base_addr,
+                mapping_size=mapping_size,
             ),
         ), "vMMIO PTE table capacity exceeded"
         self.flush_tlb_entry(vpn)
@@ -297,16 +336,13 @@ class VMMIOController:
         def _to_vpn(page_idx: int) -> int:
             return (0xE000_0000 >> 12) + page_idx
 
-        def _physical_page(physical_addr: int) -> int:
-            assert physical_addr % VMMIO_PAGE_SIZE == 0
-            return physical_addr >> VMMIO_PAGE_SHIFT
-
         memory_manager.register_page_mapping_callbacks(
             PageMappingCallbacks(
-                on_map_page=lambda page_idx, physical_addr, owner_id: self.map_shm_page(
+                on_map_page=lambda page_idx, physical_addr, owner_id, mapping_size: self.map_shm_page(
                     _to_vpn(page_idx),
-                    phys_page=_physical_page(physical_addr),
                     owner_id=owner_id,
+                    physical_addr=physical_addr,
+                    mapping_size=mapping_size,
                 ),
                 on_owner_changed=lambda page_idx, _addr, _previous_owner_id, _new_owner_id: self.unmap_shm_page(
                     _to_vpn(page_idx)
@@ -440,6 +476,8 @@ class VMMIOController:
                     TrapCode.OWNER_MISMATCH,
                     0,
                 )
+            if addr.offset() >= pte.mapping_size:
+                return (VmmioStatus.OUT_OF_BOUNDS, 0)
 
-        phys_addr = (pte.phys_page << 12) | addr.offset()
+        phys_addr = pte.physical_base_addr + addr.offset()
         return (VmmioStatus.OK_PHYSICAL, phys_addr)

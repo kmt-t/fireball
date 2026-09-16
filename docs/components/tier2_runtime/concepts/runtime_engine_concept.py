@@ -557,7 +557,8 @@ class JITCacheBank:
 
 
 class JITMultiBufferCache:
-    """Active / Warm / Oldest, 2KB each = 6KB [FB_CONF_JIT_CACHE_SIZE].
+    """Active / Warm / Oldest, 2KB each = 6KB evictable within the 8KB region.
+    The adjacent 2KB common-code area is persistent and outside this cache object.
     Promotion happens ON AN OLDEST-BANK HIT, not at rotation time
     (jit_compiler.md §4.1-4: "Oldest バンクでヒットし、かつ実行カウンタが
     閾値に達している真の Hot コードのみを新 Active バンクへ Promote").

@@ -40,6 +40,7 @@ def build_model(*, guards: bool = True) -> Kripke:
         "c_executed",
         "c_hot",
         "c_compiled",
+        "c_compile_failed",
         "c_evicted",
         # --- 遅延チェイニング世代状態 ---
         "ch_s0_t0_l1",  # Active内チェイン (src=0, tgt=0, linked=1)
@@ -54,6 +55,7 @@ def build_model(*, guards: bool = True) -> Kripke:
         "s_deadlock",
         "s_bad_skip_hot",
         "s_bad_permanent_deopt",
+        "s_bad_compile_failure_retry",
         "s_dangling_chain",  # guards=False で ch_s0_t1_l1 から到達するダングリング違反状態 (src=2, tgt=3, linked=1)
     ]
     S0 = {"s_idle", "ch_s0_t0_l1", "ch_s0_t1_l1"}
@@ -73,6 +75,8 @@ def build_model(*, guards: bool = True) -> Kripke:
         ("c_unexecuted", "c_executed"),
         ("c_executed", "c_hot"),
         ("c_hot", "c_compiled"),
+        ("c_hot", "c_compile_failed"),
+        ("c_compile_failed", "c_compile_failed"),
         ("c_compiled", "s_active_exec"),
         ("c_compiled", "c_evicted"),
         ("c_evicted", "c_unexecuted"),
@@ -88,6 +92,7 @@ def build_model(*, guards: bool = True) -> Kripke:
         ("s_deadlock", "s_deadlock"),
         ("s_bad_skip_hot", "s_bad_skip_hot"),
         ("s_bad_permanent_deopt", "s_bad_permanent_deopt"),
+        ("s_bad_compile_failure_retry", "s_bad_compile_failure_retry"),
         ("s_dangling_chain", "s_dangling_chain"),
     ]
     if guards:
@@ -105,6 +110,8 @@ def build_model(*, guards: bool = True) -> Kripke:
         R.append(("c_executed", "s_bad_skip_hot"))
         # 5. Eviction 復帰ガード無効
         R.append(("c_evicted", "s_bad_permanent_deopt"))
+        # 6. Compile failure後のTrackable Mask解除を無効化
+        R.append(("c_hot", "s_bad_compile_failure_retry"))
 
     L = {
         "s_idle": {"clean", "mpu_ro_x", "idle"},
@@ -117,6 +124,7 @@ def build_model(*, guards: bool = True) -> Kripke:
         "c_executed": {"executed", "recompilable", "mpu_ro_x"},
         "c_hot": {"hot", "recompilable", "mpu_ro_x"},
         "c_compiled": {"compiled", "mpu_ro_x"},
+        "c_compile_failed": {"hot", "compile_failed", "target_excluded", "mpu_ro_x"},
         "c_evicted": {"evicted", "mpu_ro_x"},
         "ch_s0_t0_l1": {"linked", "mpu_ro_x"},
         "ch_s0_t1_l1": {"linked", "mpu_ro_x"},
@@ -129,6 +137,7 @@ def build_model(*, guards: bool = True) -> Kripke:
         "s_deadlock": {"deadlock"},
         "s_bad_skip_hot": {"bad_skip_hot", "compiled"},
         "s_bad_permanent_deopt": {"bad_permanent_deopt", "evicted"},
+        "s_bad_compile_failure_retry": {"compile_failed", "compile_retry_enabled"},
         "s_dangling_chain": {"dangling_chain", "bad_chain", "linked"},
     }
     return Kripke(S=S, S0=S0, R=R, L=L)
@@ -173,6 +182,19 @@ def properties():
             "formula": AG(Not(AtomicProposition("bad_skip_hot"))),
             "violation": AtomicProposition("bad_skip_hot"),
             "expect": True,  # 2-bit FSM において COMPILED は必ず HOT を経由して到達
+        },
+        {
+            "name": "compile_failure_excludes_block_from_retries",
+            "kind": "safety",
+            "logic": "CTL",
+            "formula": AG(
+                Imply(
+                    AtomicProposition("compile_failed"),
+                    AtomicProposition("target_excluded"),
+                )
+            ),
+            "violation": AtomicProposition("compile_retry_enabled"),
+            "expect": True,  # Compile failure clears Trackable Mask; eviction remains separately recompilable
         },
         {
             "name": "eviction_always_recompilable",

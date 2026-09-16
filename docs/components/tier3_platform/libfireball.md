@@ -1,6 +1,6 @@
 # libfireball ゲストアダプタ コンポーネント設計書
 <!-- evidence:
-     test: tests/libfireball_test_spec.md
+     test: docs/qa/tier3_platform/libfireball_test_spec.md
 -->
 
 `libfireball` は、WASM ゲストへ静的に組み込むゲスト側アダプタライブラリである。ゲストの WASI Preview1 呼び出しと Fireball の公開 ABI を、Tier 2 が定義する `fireball_call` および HAL 抽象 IF へ変換する。ホスト側のシステムコールディスパッチ、HAL タスク、物理ドライバは実装しない。

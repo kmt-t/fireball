@@ -2,8 +2,8 @@
 
 ## 1. 目的
 
-<!-- traceability: {Resource_Estimation_Model} {Size_15KLOC} {GLOBAL_StrictMemoryLimit} {ConsolidatedHeap} {ROMParsing} {META_ZeroCostAbstraction} -->
-本ドキュメントは、Python リファレンスシミュレータ（`experiments/pysim`）の検証結果および各コンポーネントのアルゴリズムに基づき、Clang 17+ 組み込み C++（静的配置、ゼロ動的アロケーション、AoS `flat_map_view`、`[[clang::musttail]]`）へ本実装した際の**実装規模（LOC）**および**物理リソース予算（ROM / RAM）**の厳密な見積もりを定義するアーキテクチャ仕様書である。 `{Resource_Estimation_Model}`
+<!-- traceability: {Resource_Estimation_Model} {Size_20KSLOC} {GLOBAL_StrictMemoryLimit} {ConsolidatedHeap} {ROMParsing} {META_ZeroCostAbstraction} -->
+本ドキュメントは、Python リファレンスシミュレータ（`experiments/pysim`）の検証結果および各コンポーネントのアルゴリズムに基づき、Clang 17+ 組み込み C++（静的配置、ゼロ動的アロケーション、AoS `flat_map_view`、`[[clang::musttail]]`）へ本実装した際の**実装規模（LOC）**および**物理リソース予算（ROM / RAM）**の厳密な見積もりを定義するアーキテクチャ仕様書である。
 
 `backlog_list.md` の物理リソース予算の厳密な再見積もりタスクにおける正本ドキュメントとして、ROM（`.rodata` / `.text`）に配置可能な不変データと、RAM（SRAM / `.data` / `.bss`）に配置すべき可変状態・バッファ・スタックを厳密に区別して算出する。
 
@@ -11,39 +11,23 @@
 
 ## 2. C++ 実装規模見積もり（テストコード除く）
 
-Python シミュレータ（`experiments/pysim`）の実装行数（実測 12,580 行）をベースに、型安全な C++ 静的ヘッダ（`.hxx`）、不変条件アサーション、および実装コード（`.cxx`）への移行係数（約 1.15〜1.25 倍）を適用して算出した。
+最新の作業ツリーにある pysim 製品コード46ファイルを再計測した結果、物理行数は18,701行である。この値には空行とコメントを含み、QA、ベンチマーク、シナリオ、`main.py`、`aobench.py` は含めない。
 
-全サブシステムの合計規模は **約 14,500 LOC** となり、非機能要求 **`{Size_15KLOC}`（システム全域 15,000 行以内）** を確実に満足する。 `{Size_15KLOC}`
+旧見積もりと同じ移行係数1.15〜1.25を参考適用すると、C++ 実装規模は約21.5〜23.4 KSLOCとなる。この係数は暫定値であり、Pythonの物理行数と要求上のSLOCは計測定義が異なるため、この結果だけでは20 KSLOC予算への適合を判定できない。
 
-### サブシステム別 実装規模（LOC）一覧
+### Tier 別の pysim 実測と C++ 規模の参考推定
 
-| サブシステム | pysim 実装行数 (実測) | C++23 見積行数 (LOC) | 主な構成要素と C++ 実装設計方針 |
-| :--- | :---: | :---: | :--- |
-| **Tier 1 Core** | **1,801** | **~2,050** | |
-| - `system_containers` | 1,154 | ~1,200 | `flat_map_view`, `flat_set_view`, `radix_binary_tree_view`, `bit_view`, `mutable_*_storage`（ヘッダオンリー） |
-| - `os_coos` & `os_scheduler` | 483 | ~650 | C++20 コルーチン（対称遷移）、侵入型 READY/WAIT リスト、CSP チャネル同期 |
-| - `system_config` & `recovery` | 163 | ~200 | コンフィグマクロ、`constexpr` 定数群、リカバリー戦略列挙型 |
-| **Tier 1 Interface** | **582** | **~850** | |
-| - `ipc_router` | 582 | ~850 | URI レジストリ（ROM AoS FlatMap）、9x9 RBAC マトリックス、所有権移譲（Revoke/Grant） |
-| **Tier 2 Runtime (vSoC)** | **6,744** | **~8,100** | |
-| - `runtime_loader` | 1,001 | ~1,100 | Zero-Copy ROM パーサー、128B `OpcodeBenefitTable`、`JITCandidateBitmap` スコアラー |
-| - `runtime_interpreter` | 1,948 | ~2,100 | CPS 継続渡し (`[[clang::musttail]]`)、テーブルディスパッチ、非候補 touch バイパス |
-| - `runtime_control_flow` | 875 | ~900 | ブロック/ループ/IF 制御フレームスタック管理、ラベル脱出解決 |
-| - `runtime_vmmio` | 324 | ~450 | 16 エントリダイレクトマップ TLB、PTE FlatMap、Guest RAM バイパス |
-| - `runtime_engine` (ハーネス) | 1,415 | ~1,650 | `execution_context`、3本独立スタック、`HotspotBitmap`、`HistoryRing` |
-| - `debug_manager` & GDB RSP | 436 | ~500 | RSP パケットパーサー、ブレークポイント集合、実行頻度プロファイラ |
-| - `runtime_logging` | 192 | ~300 | 辞書参照リングバッファ、アイドル時 DMA フラッシュフック |
-| - `runtime_syscall` | (wasi/hal連携) | ~600 | `fireball_call` トラップハンドラ、引数レジスタ直接マッピング |
-| - その他 (LEB128/WASM型) | 553 | ~500 | 高速デコーダ、WASM 定数・シグネチャテーブル |
-| **Tier 3 JIT Compiler & Runtime** | **1,344** | **~1,700** | |
-| - Copy-and-Patch JIT コア | 530 | ~700 | Stencil 解決、リロケーション適用、逆順コンパイル（LIFO） |
-| - Stencil カタログ (Thumb-2) | 617 | ~700 | `constexpr` Thumb-2 機械語バイナリテンプレート配列 |
-| - JIT コードキャッシュ代謝 | 197 | ~300 | 3面世代交代（Active/Warm/Oldest）、Oldest限定昇格、MPU $W \oplus X$ 制御 |
-| **Tier 3 Platform & HAL** | **2,109** | **~1,800** | |
-| - `system_memory` / `runtime_memory` | 737 | ~700 | 統合物理プール（ConsolidatedHeap）、静的パーティショニング、SHM マネージャ |
-| - `hal_dispatch` / `platform_driver` | 611 | ~600 | 協調 HAL タスク、UART/RTT/GPIO/I2C/SPI ドライバ、ISR リングバッファ |
-| - `libfireball` ゲストアダプタ | 760 | ~500 | `fd_write`, `fd_read`, `clock_time_get` 等をTier 2の公開IFへ変換 |
-| **合計** | **12,580** | **~14,500 LOC** | **`{Size_15KLOC}` (15,000 LOC 以内) を完全に達成** |
+| 対象 | pysim 製品コード物理行数 | C++23 規模の参考推定 |
+| :--- | ---: | ---: |
+| Tier 1 Core | 1,786 | 約2.1〜2.2 KSLOC |
+| Tier 1 Interface | 759 | 約0.9〜1.0 KSLOC |
+| Tier 2 Runtime | 12,644 | 約14.5〜15.8 KSLOC |
+| Tier 3 JIT | 2,336 | 約2.7〜2.9 KSLOC |
+| Tier 3 Platform | 345 | 約0.4 KSLOC |
+| 共通入口（`system.py`、`__init__.py`） | 831 | 約1.0 KSLOC |
+| **合計** | **18,701** | **約21.5〜23.4 KSLOC** |
+
+要求上のコード規模上限は20 KSLOCである。現時点の参考推定は数値上この上限を上回るため、達成済みとは判定しない。C++実装時には同じ対象範囲・SLOC定義で計測し、実測値に基づいて構成要素別の見積もりを更新する。
 
 ---
 
@@ -54,22 +38,22 @@ Python シミュレータ（`experiments/pysim`）の実装行数（実測 12,58
 
 ### 3.1 RAM（SRAM: 可変状態・バッファ・スタック）予算内訳
 
-RAM 領域は、主動作用の**統合物理メモリプール（`ConsolidatedHeap`: 21,504 B）**と、システム起動・割り込み処理用の**プール外静的変数・OS スタック（約 3.5 KB）**に明確に分類される。
+RAM 領域は、主動作用の**統合物理メモリプール（`ConsolidatedHeap`: 23,552 B）**と、システム起動・割り込み処理用の**プール外静的変数・OS スタック（約 3.5 KB）**に明確に分類される。
 
 ```
 +-------------------------------------------------------------------------------+
 |                       TOTAL SRAM BUDGET: 32,768 Bytes                         |
 +-------------------------------------------------------+-----------------------+
-|  統合物理メモリプール (FB_CONF_MEMORY_POOL_SIZE): 21,504 B | OSスタック/静的変数:   |
-|  [Kernel] 4KB  [Runtime] 2KB  [Subsys] 3KB            | ~3,500 B              |
-|  [JIT Cache] 6KB  [Stack] 2KB  [Guest RAM] 4KB        | (安全余裕: ~7.0 KB)   |
+|  統合物理メモリプール (FB_CONF_MEMORY_POOL_SIZE): 23,552 B | OSスタック/静的変数:   |
+|  [Kernel] 4KB  [Runtime] 2KB  [Subsys] 3KB               | ~3,500 B              |
+|  [JIT Cache] 8KB  [Stack] 2KB  [Guest RAM] 4KB           | (余裕: ~5.6 KB)       |
 +-------------------------------------------------------+-----------------------+
 ```
 
 | メモリ領域 / データ実体 | RAM サイズ | ライフサイクル・用途・保護 |
 | :--- | :---: | :--- |
-| **1. 統合物理メモリプール (`ConsolidatedHeap`)** | **21,504 B** | システム共通の静的事前確保物理プール |
-| - **JIT コードキャッシュ** (`FB_CONF_JIT_CACHE_SIZE`) | 6,144 B | 2,048 B $\times$ 3面（Active / Warm / Oldest）。MPU $W \oplus X$ 保護 |
+| **1. 統合物理メモリプール (`ConsolidatedHeap`)** | **23,552 B** | システム共通の静的事前確保物理プール |
+| - **JIT コード領域** (`FB_CONF_JIT_CACHE_SIZE`) | 8,192 B | 連続8KB。共通コード2,048 B（非エビクション）+ 2,048 B $\times$ 3面（Active / Warm / Oldest）。MPU $W \oplus X$ 保護 |
 | - **ゲスト仮想タスク RAM** (`sum(FB_CONF_TASK_HEAP_SIZES)`) | 4,096 B | ゲスト WASM リニアメモリ実体（`0x0000_0000`起点、スロット別ROM配列の総和、FastAddressCheck 対象） |
 | - **カーネルプール** (`FB_CONF_KERNEL_HEAP_SIZE`) | 4,096 B | TCB（16件 $\times$ 96B $\approx$ 1.5KB）、コルーチンフレーム、<br>**共有メモリバッファ (`FB_CONF_SHM_SIZE`: 1,024 B)** を内包 |
 | - **サブシステムプール** (`FB_CONF_SUBSYS_HEAP_SIZE`) | 3,072 B | HAL 通信バッファ（256B $\times$ 4面 = 1KB）、GDB RSP バッファ（1KB）、<br>リングバッファロガー（512B） |
@@ -81,7 +65,7 @@ RAM 領域は、主動作用の**統合物理メモリプール（`ConsolidatedH
 | - ISR 割り込み通知リングバッファ | 64 B | 16 エントリ $\times$ 4B（原子キュー） |
 | - ベアメタル OS システムスタック（Cortex-M MSP） | 2,048 B | 例外・割り込みハンドラ（ISR）実行用ハードウェアスタック |
 | - グローバルポインタ・フラグ・TCBインデックス | ~500 B | カーネル・ディスパッチャ状態変数 |
-| **RAM 合計使用量** | **~25,000 B** | **32KB SRAM に対し ~7.0KB（約 22%）の安全マージンを確保** |
+| **RAM 合計使用量** | **~27,052 B** | **32KB SRAM に対し約 5,716 B（約 17.4%）の余裕を確保** |
 
 ---
 
@@ -113,7 +97,7 @@ ROM 領域は、コンパイル時に静的に確定する不変ルックアッ�
 ## 4. 予算整合性と成立性総評
 
 1. **実装規模の成立性**:
-   - `pysim`（12,580 行）から算出した C++ 本実装は約 14,500 LOC であり、要求 `{Size_15KLOC}`（15,000 行以内）の制約を完全に充足する。
+   - コード規模要求 `{Size_20KSLOC}` の上限は20 KSLOCである。pysim物理行数からの参考推定は約21.5〜23.4 KSLOCとなるため、SLOC定義でのC++実測まで予算達成を確定しない。
 2. **RAM リソースの成立性**:
    - 統合物理プール（21.5 KB）＋ システムスタック・静的変数（約 3.5 KB）＝ 約 25.0 KB。
    - 32KB SRAM の評価ターゲット環境において、約 7.0 KB（22%）の安全マージンが確保されており、不測のスタック拡張やバッファ調整に十分耐えうる。

@@ -13,7 +13,7 @@
 3. 因子の水準を固定し、シナリオは因子の組み合わせとして記録する。
 4. ツールは母集合、登録数、ファイル実在性、ペアワイズ被覆を実データから検査する。期待値をテスト本文へ重複記述しない。
 
-`spec-integrator.yaml` の `verification_matrix.strict: true` がこの判定を有効にする。成果物の追加・削除、シナリオの追加、因子の変更は、設定と本表と実行登録を同じ変更で更新する。因子の水準は [`pairwise_factors.csv`](docs/specs/tests/pairwise_factors.csv) に一元化し、設定ファイルへ複製しない。
+`spec-integrator.yaml` の `verification_matrix.strict: true` がこの判定を有効にする。成果物の追加・削除、シナリオの追加、因子の変更は、設定と本表と実行登録を同じ変更で更新する。因子の水準は [`pairwise_factors.csv`](docs/qa/specs/pairwise_factors.csv) に一元化し、設定ファイルへ複製しない。
 
 ## 2. 成果物連鎖マトリクス
 
@@ -113,31 +113,31 @@
 | formal | [vsoc_state_model.py](docs/components/tier2_runtime/formal/vsoc_state_model.py) |
 | formal | [jit_cache_model.py](docs/components/tier3_jit/formal/jit_cache_model.py) |
 | formal | [interrupt_boundary_model.py](docs/components/tier3_platform/formal/interrupt_boundary_model.py) |
-| test spec | [os_coos_test_spec.md](docs/components/tier1_core/tests/os_coos_test_spec.md) |
-| test spec | [os_scheduler_test_spec.md](docs/components/tier1_core/tests/os_scheduler_test_spec.md) |
-| test spec | [system_config_test_spec.md](docs/components/tier1_core/tests/system_config_test_spec.md) |
-| test spec | [system_containers_test_spec.md](docs/components/tier1_core/tests/system_containers_test_spec.md) |
-| test spec | [interface_wit_test_spec.md](docs/components/tier1_interface/tests/interface_wit_test_spec.md) |
-| test spec | [ipc_router_test_spec.md](docs/components/tier1_interface/tests/ipc_router_test_spec.md) |
-| test spec | [system_memory_test_spec.md](docs/components/tier1_interface/tests/system_memory_test_spec.md) |
-| test spec | [system_service_test_spec.md](docs/components/tier1_interface/tests/system_service_test_spec.md) |
-| test spec | [debug_manager_test_spec.md](docs/components/tier2_runtime/tests/debug_manager_test_spec.md) |
-| test spec | [hal_dispatch_test_spec.md](docs/components/tier2_runtime/tests/hal_dispatch_test_spec.md) |
-| test spec | [runtime_interpreter_test_spec.md](docs/components/tier2_runtime/tests/runtime_interpreter_test_spec.md) |
-| test spec | [runtime_loader_test_spec.md](docs/components/tier2_runtime/tests/runtime_loader_test_spec.md) |
-| test spec | [runtime_logging_test_spec.md](docs/components/tier2_runtime/tests/runtime_logging_test_spec.md) |
-| test spec | [runtime_memory_test_spec.md](docs/components/tier2_runtime/tests/runtime_memory_test_spec.md) |
-| test spec | [runtime_syscall_test_spec.md](docs/components/tier2_runtime/tests/runtime_syscall_test_spec.md) |
-| test spec | [runtime_vmmio_test_spec.md](docs/components/tier2_runtime/tests/runtime_vmmio_test_spec.md) |
-| test spec | [runtime_vsoc_test_spec.md](docs/components/tier2_runtime/tests/runtime_vsoc_test_spec.md) |
-| test spec | [jit_compiler_test_spec.md](docs/components/tier3_jit/tests/jit_compiler_test_spec.md) |
-| test spec | [jit_runtime_test_spec.md](docs/components/tier3_jit/tests/jit_runtime_test_spec.md) |
-| test spec | [libfireball_test_spec.md](docs/components/tier3_platform/tests/libfireball_test_spec.md) |
-| test spec | [platform_driver_test_spec.md](docs/components/tier3_platform/tests/platform_driver_test_spec.md) |
+| test spec | [os_coos_test_spec.md](docs/qa/tier1_core/os_coos_test_spec.md) |
+| test spec | [os_scheduler_test_spec.md](docs/qa/tier1_core/os_scheduler_test_spec.md) |
+| test spec | [system_config_test_spec.md](docs/qa/tier1_core/system_config_test_spec.md) |
+| test spec | [system_containers_test_spec.md](docs/qa/tier1_core/system_containers_test_spec.md) |
+| test spec | [interface_wit_test_spec.md](docs/qa/tier1_interface/interface_wit_test_spec.md) |
+| test spec | [ipc_router_test_spec.md](docs/qa/tier1_interface/ipc_router_test_spec.md) |
+| test spec | [system_memory_test_spec.md](docs/qa/tier1_interface/system_memory_test_spec.md) |
+| test spec | [system_service_test_spec.md](docs/qa/tier1_interface/system_service_test_spec.md) |
+| test spec | [debug_manager_test_spec.md](docs/qa/tier2_runtime/debug_manager_test_spec.md) |
+| test spec | [hal_dispatch_test_spec.md](docs/qa/tier2_runtime/hal_dispatch_test_spec.md) |
+| test spec | [runtime_interpreter_test_spec.md](docs/qa/tier2_runtime/runtime_interpreter_test_spec.md) |
+| test spec | [runtime_loader_test_spec.md](docs/qa/tier2_runtime/runtime_loader_test_spec.md) |
+| test spec | [runtime_logging_test_spec.md](docs/qa/tier2_runtime/runtime_logging_test_spec.md) |
+| test spec | [runtime_memory_test_spec.md](docs/qa/tier2_runtime/runtime_memory_test_spec.md) |
+| test spec | [runtime_syscall_test_spec.md](docs/qa/tier2_runtime/runtime_syscall_test_spec.md) |
+| test spec | [runtime_vmmio_test_spec.md](docs/qa/tier2_runtime/runtime_vmmio_test_spec.md) |
+| test spec | [runtime_vsoc_test_spec.md](docs/qa/tier2_runtime/runtime_vsoc_test_spec.md) |
+| test spec | [jit_compiler_test_spec.md](docs/qa/tier3_jit/jit_compiler_test_spec.md) |
+| test spec | [jit_runtime_test_spec.md](docs/qa/tier3_jit/jit_runtime_test_spec.md) |
+| test spec | [libfireball_test_spec.md](docs/qa/tier3_platform/libfireball_test_spec.md) |
+| test spec | [platform_driver_test_spec.md](docs/qa/tier3_platform/platform_driver_test_spec.md) |
 
 ## 3. 因子カタログ
 
-ペアワイズテストの因子は7個とし、各水準はテスト仕様書フォルダの [pairwise_factors.csv](docs/specs/tests/pairwise_factors.csv) だけで定義する。`PAIRWISE_CASES` はCSVの水準を使う実行データであり、因子名や水準を再定義しない。`n` 個の水準を持つ2因子の組は `n_left × n_right` 個と数える。
+ペアワイズテストの因子は7個とし、各水準はQA資料の [pairwise_factors.csv](docs/qa/specs/pairwise_factors.csv) だけで定義する。`PAIRWISE_CASES` はCSVの水準を使う実行データであり、因子名や水準を再定義しない。`n` 個の水準を持つ2因子の組は `n_left × n_right` 個と数える。
 
 | 因子 | 意味 | 水準 |
 | :--- | :--- | :--- |
@@ -178,7 +178,7 @@
 | F6×F7 | 9 |
 | 合計 | 288 |
 
-実行ケースは [test_pairwise_combinations.py](experiments/pysim/tests/cross_cutting/test_pairwise_combinations.py) の `PAIRWISE_CASES` に定義し、ケースIDは行番号から `pairwise_case_id` が自動生成する。ケースデータへIDを書かないため、行の挿入・削除で手書きIDがずれない。ツールは生成IDごとに `run_single_pairwise_case` の呼び出しが存在することを確認し、対応する実行がなければエラーにする。
+実行ケースは [test_pairwise_combinations.py](experiments/pysim/qa/cross_cutting/test_pairwise_combinations.py) の `PAIRWISE_CASES` に定義し、ケースIDは行番号から `pairwise_case_id` が自動生成する。ケースデータへIDを書かないため、行の挿入・削除で手書きIDがずれない。ツールは生成IDごとに `run_single_pairwise_case` の呼び出しが存在することを確認し、対応する実行がなければエラーにする。
 
 ## 4. シナリオ因子マトリクス
 
@@ -186,20 +186,20 @@
 
 | Scenario | Loader | Interpreter | JIT | Memory / Storage | COOS / Scheduler | IPC | vMMIO / HAL / WASI | Debug | Multi-module / URI | 実行ファイル |
 | :--- | :---: | :---: | :---: | :--- | :---: | :---: | :---: | :---: | :---: | :--- |
-| 1 | ✓ | ✓ | — | linear / segments / grow | — | — | — | — | — | [scenario1_loader_and_memory.py](experiments/pysim/scenarios/scenario1_loader_and_memory.py) |
-| 2 | — | ✓ | — | linear | — | — | WASI / syscall | — | URI | [scenario2_wasi_syscall_io.py](experiments/pysim/scenarios/scenario2_wasi_syscall_io.py) |
-| 3 | ✓ | ✓ | — | locals / table | 補 | — | — | — | indirect call | [scenario3_recursion_and_tables.py](experiments/pysim/scenarios/scenario3_recursion_and_tables.py) |
-| 4 | 補 | ✓ | ✓ | linear / cache | 補 | — | — | — | — | [scenario4_hybrid_jit_loop.py](experiments/pysim/scenarios/scenario4_hybrid_jit_loop.py) |
-| 5 | 補 | ✓ | ✓ | radix / unified PC | — | — | — | — | multi-module | [scenario5_multimodule_unified_pc.py](experiments/pysim/scenarios/scenario5_multimodule_unified_pc.py) |
-| 6 | — | ✓ | — | task state | ✓ | 補 | — | — | — | [scenario6_coos_multitask_yield.py](experiments/pysim/scenarios/scenario6_coos_multitask_yield.py) |
-| 7 | — | 補 | — | memory view | — | — | — | ✓ | socket RSP | [scenario7_gdb_socket_debugger.py](experiments/pysim/scenarios/scenario7_gdb_socket_debugger.py) |
-| 8 | ✓ | ✓ | ✓ | all storage views | 補 | — | — | ✓ | — | [scenario8_comprehensive_storage_coverage.py](experiments/pysim/scenarios/scenario8_comprehensive_storage_coverage.py) |
-| 9 | — | 補 | — | log / shared block | ✓ | ✓ | — | — | — | [scenario9_ipc_router_and_logging.py](experiments/pysim/scenarios/scenario9_ipc_router_and_logging.py) |
-| 10 | — | ✓ | — | linear / vMMIO | — | — | vMMIO | — | — | [scenario10_vmmio_virtual_devices.py](experiments/pysim/scenarios/scenario10_vmmio_virtual_devices.py) |
-| 11 | — | ✓ | — | fixed HAL buffer | 補 | — | HAL / stdout / stdin / timer | — | WASI adapter | [scenario11_hal_and_wasi_drivers.py](experiments/pysim/scenarios/scenario11_hal_and_wasi_drivers.py) |
-| 12 | ✓ | ✓ | — | guest memory | — | — | WASI 0.3p | — | URI resolver | [scenario12_wasi03p_uri_resolver.py](experiments/pysim/scenarios/scenario12_wasi03p_uri_resolver.py) |
+| 1 | ✓ | ✓ | — | linear / segments / grow | — | — | — | — | — | [scenario1_loader_and_memory.py](experiments/pysim/qa/scenarios/scenario1_loader_and_memory.py) |
+| 2 | — | ✓ | — | linear | — | — | WASI / syscall | — | URI | [scenario2_wasi_syscall_io.py](experiments/pysim/qa/scenarios/scenario2_wasi_syscall_io.py) |
+| 3 | ✓ | ✓ | — | locals / table | 補 | — | — | — | indirect call | [scenario3_recursion_and_tables.py](experiments/pysim/qa/scenarios/scenario3_recursion_and_tables.py) |
+| 4 | 補 | ✓ | ✓ | linear / cache | 補 | — | — | — | — | [scenario4_hybrid_jit_loop.py](experiments/pysim/qa/scenarios/scenario4_hybrid_jit_loop.py) |
+| 5 | 補 | ✓ | ✓ | sparse JIT lookup / unified PC | — | — | — | — | multi-module | [scenario5_multimodule_unified_pc.py](experiments/pysim/qa/scenarios/scenario5_multimodule_unified_pc.py) |
+| 6 | — | ✓ | — | task state | ✓ | 補 | — | — | — | [scenario6_coos_multitask_yield.py](experiments/pysim/qa/scenarios/scenario6_coos_multitask_yield.py) |
+| 7 | — | 補 | — | memory view | — | — | — | ✓ | socket RSP | [scenario7_gdb_socket_debugger.py](experiments/pysim/qa/scenarios/scenario7_gdb_socket_debugger.py) |
+| 8 | ✓ | ✓ | ✓ | all storage views | 補 | — | — | ✓ | — | [scenario8_comprehensive_storage_coverage.py](experiments/pysim/qa/scenarios/scenario8_comprehensive_storage_coverage.py) |
+| 9 | — | 補 | — | log / shared block | ✓ | ✓ | — | — | — | [scenario9_ipc_router_and_logging.py](experiments/pysim/qa/scenarios/scenario9_ipc_router_and_logging.py) |
+| 10 | — | ✓ | — | linear / vMMIO | — | — | vMMIO | — | — | [scenario10_vmmio_virtual_devices.py](experiments/pysim/qa/scenarios/scenario10_vmmio_virtual_devices.py) |
+| 11 | — | ✓ | — | fixed HAL buffer | 補 | — | HAL / stdout / stdin / timer | — | WASI adapter | [scenario11_hal_and_wasi_drivers.py](experiments/pysim/qa/scenarios/scenario11_hal_and_wasi_drivers.py) |
+| 12 | ✓ | ✓ | — | guest memory | — | — | WASI 0.3p | — | URI resolver | [scenario12_wasi03p_uri_resolver.py](experiments/pysim/qa/scenarios/scenario12_wasi03p_uri_resolver.py) |
 
-シナリオ集合は12件で、ランナー [run_all.py](experiments/pysim/scenarios/run_all.py) に全件を登録する。ファイルだけ存在してランナーから呼ばれないケースは合格としない。
+シナリオ集合は12件で、ランナー [run_all.py](experiments/pysim/qa/scenarios/run_all.py) に全件を登録する。ファイルだけ存在してランナーから呼ばれないケースは合格としない。
 
 ## 5. テスト因子から実装不変条件への対応
 
@@ -221,8 +221,8 @@
 | 文書 | [check-doc.ps1](tools/check-doc.ps1) | [docs](docs)、各Markdown | 既存の文書8ゲートに加え、本表ゲートも合格 |
 | ソース | [check-src.ps1](tools/check-src.ps1) | [pysim](experiments/pysim)、各Python | pysim 規約、import Tier、テスト実行、本表ゲートが合格 |
 | 形式検証 | [check-src.ps1](tools/check-src.ps1) | コンポーネント配下の各形式モデル | `pyModelChecking` 実行、guards 変異検査、モデル件数一致 |
-| 単体テスト | `uv run --project tools/spec-integrator --with wasmtime python` [run_all.py](experiments/pysim/tests/run_all.py) | 24 suite | 24/24 合格、AssertionError を成功扱いしない |
-| 結合シナリオ | `uv run --project tools/spec-integrator --with wasmtime python` [run_all.py](experiments/pysim/scenarios/run_all.py) | 12 scenarios | 12/12 合格、全シナリオをランナーから実行 |
+| 単体テスト | `uv run --project tools/spec-integrator --with wasmtime python` [run_all.py](experiments/pysim/qa/run_all.py) | 24 suite | 24/24 合格、AssertionError を成功扱いしない |
+| 結合シナリオ | `uv run --project tools/spec-integrator --with wasmtime python` [run_all.py](experiments/pysim/qa/scenarios/run_all.py) | 12 scenarios | 12/12 合格、全シナリオをランナーから実行 |
 | ペアワイズ | `test_pairwise_combinations.py` | 7因子、26ケース | 288組を100%被覆し、各ケースの状態・副作用を直接 assert |
 
 ### 6.1 実行順序

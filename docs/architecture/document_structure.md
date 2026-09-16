@@ -46,6 +46,9 @@ Tier は単なる「OSやハードウェアの実行レイヤ」ではなく、*
 
 [ Specs: 横串物理仕様・規格マトリクス (Cross-cutting Physical Specs & Catalogs) ] ─ (全Tier横断・具象規格、個々のファイルにTierラベルを明示)
   · Specs (wasm_instruction_set, wasi_preview1_abi [Tier3], gdb_rsp_protocol, jit_stencil_catalog)
+
+[ QA: 横断的品質保証・検証記録 (Cross-cutting Quality Evidence) ] ─ (全Tier横断・実行結果と品質証跡)
+  · QA (`docs/qa/`: テスト仕様書、検証データ、テスト実行結果、品質ゲート・ベンチマーク記録)
 ```
 
 ### 1.1 各 Tier の定義と配置ディレクトリ
@@ -57,6 +60,7 @@ Tier は単なる「OSやハードウェアの実行レイヤ」ではなく、*
 | **Tier 2** | `docs/components/tier2_runtime/` | WASMインタープリタ、WASMローダー、vMMIO、デバッグマネージャ、メモリマネージャ実装（`runtime_memory.md`）、HAL抽象化層（`hal_dispatch.md`）等のサブコンポーネント仕様書 | **分解されたサブコンポーネント (How - Subsystem)**<br>Tier 1 で扱うには状態空間やアルゴリズムが複雑化するため、独立した責務としてブレークダウンされた要素。契約/実装分割パターン（`{META_ContractImplSplit}`）では実装側を担う場合がある。 |
 | **Tier 3** | `docs/components/tier3_platform/`<br>`docs/components/tier3_jit/` | HALドライバ実装（`platform_driver.md`）、ゲストアダプタ（`libfireball.md`）、JITコンパイラ一式（コード生成コア `jit_compiler.md`、ランタイム管理 `jit_runtime.md`）| **詳細リーフ / 物理コンポーネント (How - Leaf)**<br>Tier 2 からさらに責務が切り出された具象コンポーネント、ハードウェア抽象化層の最終物理実装、またはゲストへ組み込むABIアダプタ。 |
 | **Specs** | `docs/specs/` | WASM命令セット、WASI Preview 1 ABI、GDB RSP、JITステンシルカタログ等の規格マトリクス | **横串物理規格・具象カタログ (How - Physical Specs)**<br>コンポーネントを横断して統一される具象バイナリ列、ABI、パケット形式、命令セットマトリクス。各ファイル冒頭にアーキテクチャ分類（Tierラベル）を明示する。 |
+| **QA** | `docs/qa/` | Tier別のテスト仕様書、検証データ、テスト実行結果、品質ゲート結果、ベンチマーク結果などの横断的品質資料 | **横断的品質保証 (Quality Assurance)**<br>コンポーネントの設計正本や実行可能テストを置き換えず、テスト仕様書と検証データは `tier1_core/` 等のTier別または `specs/` のサブディレクトリへ集約する。実行結果には範囲、環境、成否、未実行項目を記録する。 |
 | **Meta** | `docs/architecture/`<br>`docs/plans/` | 全体アーキテクチャ、設計方針、開発計画 | **全Tier横断メタ設計**<br>Hypervisor の機能コンポーネント自体には属さない共通ポリシー・計画。 |
 
 ---
@@ -161,14 +165,12 @@ Tier は単なる「OSやハードウェアの実行レイヤ」ではなく、*
 
 ---
 
-### 4.4 上位/下位キーワード表記規約
+### 4.4 キーワードの定義・参照記法規約
 
-中括弧表記のメタキーワードについて、定義元コンポーネント（上位Tier）と参照側コンポーネント（下位Tier）とで記述箇所を区別する。
+中括弧表記のキーワード（`{...}`）について、定義元正本と参照側コンポーネントとで記述箇所を厳格に区別する。
 
-- **定義元コンポーネント（上位Tier）**: 当該キーワードをセクション見出し（`###`/`####`）に明示する。
-- **参照側コンポーネント（下位Tier）**: 本文インラインで当該キーワードを引用する。
-
-契約/実装分割パターン（`{META_ContractImplSplit}`）で分割されたコンポーネント対（例: `components/tier1_interface/system_memory.md` が定義元、`components/tier2_runtime/runtime_memory.md` が参照側）に特に適用される。既存の慣行（定義側・参照側ともに本文インライン記述）から変更となるため、移行は契約/実装分割の対象キーワードから段階的に行い、`spec-integrator` のキーワード抽出ロジックが見出し形式のキーワードも正しく解釈できることを確認しながら適用範囲を広げる。
+- **定義元（Source of Truth）**: 定義箇所の本文インラインまたは表（要求仕様一覧表、台帳テーブル、セクション本文）に直接 `{Keyword}` を記述する。同一キーワードの定義が複数箇所に存在することは単一正本原則に違反し、エラーとなる。
+- **参照側（Reference / Traceability）**: 上位要求や他コンポーネントを参照・追跡する場合は、セクション見出し直下の HTML コメント `<!-- traceability: {Keyword1} {Keyword2} -->` 内に記述する。本文中に参照目的のキーワード列（例: `関連キーワード: {...}`）をインライン記述してはならない。未定義のキーワードを参照することはエラーとなる。
 
 ### 4.5 キーワードとテストケースIDの区別
 
@@ -194,7 +196,7 @@ Tier は単なる「OSやハードウェアの実行レイヤ」ではなく、*
 | `VERIFY_BENCHMARK` | 定量性能・予算実測義務 | `benchmark: benchmarks/*_bench.py`<br>（計算量 $O(1)/O(\log N)$、レイテンシ実測） | **Evidence Gate** |
 | `VERIFY_LLM` | 意味的整合性・ADR監査義務 | LLM as a Judge 判定ログ（さくらインターネット / Qwen 3.6） | **Obligation Gate** |
 | *(暗黙・全件)* | 実行可能参照実装 | `concept: concepts/*_concept.py` | Unicorn エミュレータ |
-| *(暗黙・全件)* | テスト仕様（振る舞い網羅） | `test: tests/` サブフォルダ内のコンポーネント名を冠したテスト仕様書（`concept`/`formal`/`benchmark` と同じ配置規則: 正本と同じディレクトリ直下の共有 `tests/` サブフォルダに置く） | 実行可能参照実装の一部として扱う。`concept`/`formal`/`benchmark` と同様、正本の直下 `<!-- evidence: ... -->` ブロックに宣言すること。テストケースは対象の正本（および対応する `concepts/*_concept.py`）を実際に読んだ上で導出し、実装から逆算しないこと。 |
+| *(暗黙・全件)* | テスト仕様（振る舞い網羅） | `docs/qa/tier*/` に所有Tier別で配置するテスト仕様書。WASM命令セットの横断仕様は `docs/qa/specs/` に置く | 各コンポーネント設計書の `<!-- evidence: ... -->` にリポジトリルート相対パスで宣言する。テストケースは対象の設計正本と対応する `concepts/*_concept.py` を読んで導出する。実装から逆算しない。 |
 
 ### 5.2 形式検証モデル（`formal/*.py`）の責任分担正本表
 

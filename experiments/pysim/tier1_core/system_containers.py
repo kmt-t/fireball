@@ -757,47 +757,15 @@ def _card_compiled(card_table: BitView, pc: int, card_shift: int) -> bool:
     return card_idx < card_table.size() and card_table.at(card_idx) == 3
 
 
-def lookup_jit_entry_flatmap(
+def lookup_jit_entry(
     view: ReadOnlyFlatMapView[int, ValT],
     card_table: BitView,
-    entry_group_bounds: Sequence[int],
-    pc: int,
-    card_shift: int = JIT_CARD_SHIFT,
-    group_shift: int = 6,
-) -> ValT | None:
-    """
-    JIT entry lookup over a plain flat-map view, narrowed via caller-supplied
-    group bounds:
-        1. O(1) card marking pre-filter (4 bytes per card, card_shift=2).
-        2. O(1) group-bounds slice (pure scalar offsets array where group i is [bounds[i], bounds[i+1])).
-        3. Bounded local binary search on the narrowed ReadOnlyFlatMapView.
-    """
-
-    if not _card_compiled(card_table, pc, card_shift):
-        return None
-    group_idx = pc >> group_shift
-    if group_idx < 0 or group_idx + 1 >= len(entry_group_bounds):
-        return None
-    first = entry_group_bounds[group_idx]
-    last = entry_group_bounds[group_idx + 1]
-    if first >= last:
-        return None
-    return view.slice(first, last).find(pc)
-
-
-def lookup_jit_entry_radix(
-    view: ReadOnlyRadixBinaryTreeView[ValT],
-    card_table: BitView,
     pc: int,
     card_shift: int = JIT_CARD_SHIFT,
 ) -> ValT | None:
     """
-    JIT entry lookup over a radix-binary-tree view, which narrows to its group
-    bounds internally via its own Radix Table:
-        1. O(1) card marking pre-filter (4 bytes per card, card_shift=2).
-        2. O(1) Radix Table prefix lookup + bounded local binary search (view.find()).
+    Sparse JIT entry lookup: O(1) card prefilter followed by binary search.
     """
-
     if not _card_compiled(card_table, pc, card_shift):
         return None
     return view.find(pc)

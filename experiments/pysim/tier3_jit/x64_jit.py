@@ -482,7 +482,11 @@ class TraceCompiler:
                 )
             elif op == I64_CONST or op == F32_CONST or op == F64_CONST:
                 assert arg is not None
-                assert not stack_locations
+                if stack_locations:
+                    # The wide/floating raw-slot path cannot preserve a live
+                    # register-cached operand beneath the value. Decline this
+                    # block so RuntimeEngine leaves it to the interpreter.
+                    return None
                 width = _complex_value_width(op)
                 raw_value = int(arg)
                 for word in range(width):

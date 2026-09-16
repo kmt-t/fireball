@@ -2,44 +2,44 @@
 <!-- evidence:
      formal: formal/vmmio_mapping_model.py
      concept: concepts/vmmio_concept.py
-     test: tests/runtime_vmmio_test_spec.md
+     test: docs/qa/tier2_runtime/runtime_vmmio_test_spec.md
 -->
 
 ## 1. コンセプト
-<!-- traceability: {META_RestrictedPhysicalAccess} {vMMIO_TrapAndEmulate} {PhysicalPassthrough} {DynamicMmap} {UnifiedAccessModel} {FastAddressCheck} {Fast_Path_GPIO} {META_FlatMapIndexed} -->
+<!-- traceability: {META_RestrictedPhysicalAccess} {vMMIO_TrapAndEmulate} {PhysicalPassthrough} {DynamicMmap} {UnifiedAccessModel} {FastAddressCheck} {Fast_Path_GPIO} {META_FlatMapIndexed} {META_NoStdVector} {GLOBAL_Policy_Memory} -->
 vMMIO (Virtual Memory-Mapped I/O) は、ホストが仲介するリソース（物理レジスタ（GPIO等）、共有メモリ、システムコール用バッファなど）へのアクセスを統一的に扱うアクセス層である。ホスト-ゲスト間境界を横切るアクセスのうち、vMMIOアドレス空間（Bit 31 == 1、下記 Stage 2/3）を経由するものはすべてこの層で仲介される。一方、ゲスト専用RAM（Stage 1: Bit 31 == 0）はvMMIO管理対象外とし、境界チェックのみで完結する高速バイパス経路を別途持つ（詳細は後述）。
 
-WASM ゲストのリニアメモリは、WebAssembly 標準仕様に準拠して **64KB ページ単位 (65,536 bytes)** でページング・管理・拡張（`memory.grow`）される論理空間（`N * 64KB`）である。ただし、RAM < 64KB の極小組込み環境（Cortex-M 等）に適合するため、物理実装としては **64KB に満たない部分ページ（Sub-64KB / Partial Page: 例 8KB, 16KB）** の割り当てを許容し、境界超過アクセスを即座にトラップする設計をとる。一方、ホスト/デバイス側の vMMIO 領域は **1ページ（4KB）** 単位で管理される。 `{META_RestrictedPhysicalAccess}` `{vMMIO_TrapAndEmulate}` `{PhysicalPassthrough}` `{DynamicMmap}` `{UnifiedAccessModel}`
+WASM ゲストのリニアメモリは、標準仕様に準拠して **64KB ページ単位 (65,536 bytes)** で管理する論理空間である。RAM < 64KB の極小組込み環境（Cortex-M 等）に適合するため、物理実装としては **64KB 未満の部分ページ（例: 8KB, 16KB）** の割り当ても許容する。境界超過アクセスは即座にトラップする。ホスト/デバイス側の vMMIO 領域は **1ページ（4KB）** 単位で管理する。
 
-本アーキテクチャでは、PTE（Page Table Entry）の保存にシステム全体の設計規約（`{META_FlatMapIndexed}`）に準拠した **64件固定の静的ソート済み配列と、それを引く `fireball::flat_map_view`** を採用し、仮想ページ番号（VPN）から PTE へのマッピングをフラットに保持・管理する。PTE登録が64件を超える場合は契約違反として `assert` で停止する。
+本アーキテクチャでは、PTE（Page Table Entry）の保存にシステム設計規約に準拠した **64件固定の静的ソート済み配列と、それを引く `fireball::flat_map_view`** を採用する。仮想ページ番号（VPN）から PTE へのマッピングをフラットに保持・管理する。PTE登録が64件を超える場合は、契約違反として `assert` で停止する。
 
-標準の `std::flat_map` を素のまま用いない理由: C++23 の `std::flat_map` はコンテナアダプタであり、既定の下位コンテナが `std::vector` であるため、そのままでは `{META_NoStdVector}` および `{GLOBAL_Policy_Memory}`（無制約な動的再確保に伴うレイテンシ揺らぎとメモリ断片化の排除）に抵触する。本プロジェクトは表の実体を用途別アロケータまたは静的配列から確保し、`fireball::flat_map_view` で引く（`{META_FlatMapIndexed}` を正本とする）。 `{META_NoStdVector}` `{GLOBAL_Policy_Memory}`
+標準の `std::flat_map` を素のまま用いない理由: C++23 の `std::flat_map` はコンテナアダプタであり、既定の下位コンテナが `std::vector` である。そのままでは動的再確保に伴うレイテンシ揺らぎとメモリ断片化の排除原則に抵触する。本プロジェクトでは表の実体を静的配列から確保し、`fireball::flat_map_view` で引く設計とする。
 
-FlatMap 単体での探索は $O(\log N)$（またはハッシュ探索）となるが、本アーキテクチャでは手前に **「ダイレクトマップ方式のソフトウェアTLB（32エントリ、完全 $O(1)$ キャッシュ）」** を配置する。JIT 実行やホットな共有メモリ操作などのクリティカルパスでは、大半のアクセス（目標 90% 以上）が TLB キャッシュヒット（$O(1)$）で高速解決されるため、FlatMap 化に伴うテーブル探索の遅延は十分に吸収・容認される。
+FlatMap 単体での探索は $O(\log N)$ である。本アーキテクチャでは手前に **ダイレクトマップ方式のソフトウェアTLB（32エントリ、$O(1)$ キャッシュ）** を配置する。JIT 実行やホットな共有メモリ操作のクリティカルパスでは、大半のアクセス（目標 90% 以上）が TLB キャッシュヒット（$O(1)$）で高速解決される。FlatMap 化に伴うテーブル探索の遅延は十分に吸収される。
 
 1. **リニアアドレス空間フィルタ（高速バイパス & 境界チェック）**:
-   32ビットゲストアドレスの最上位ビット（Bit 31）が `0` の場合、そのアドレスは vMMIO 管理対象外として、Stage 1（ゲストRAM）への直接アクセスとして高速バイパス（O(1) 処理）を実行する。 `{FastAddressCheck}`
-   - **統一境界チェック**: `{FastAddressCheck}` は比較命令ベースの単一の高速境界チェックである（マスクは用いない）。`guest_ram_size`（`vsoc_runtime.mem-size`）と直接比較し、`addr >= guest_ram_size` なら境界外として即座に `ERR_OUT_OF_BOUNDS` トラップを発生させる（Thumb-2: 単一の境界チェック比較命令 `CMP addr, mem_size` とトラップ分岐 `BHS.W __trap`）。マスク方式と異なり `guest_ram_size` に2の冪の制約はなく、部分ページ（例: 8KB, 12KB, 16KB）・単一 64KB ページ・複数 64KB ページ（`N * 64KB`）のいずれも同一の比較一つで判定できる（`vmmio_concept.py` の `VMMIOController.access` を正本とする）。トラップは必須であり、境界外アドレスを黙ってラップアラウンドさせて処理を継続することは許容されない。JIT トレース側（[`jit_stencil_catalog.md`](docs/specs/jit_stencil_catalog.md) の `{MemoryBoundaryCheck}`, `jit_copy_patch_concept.py`）も同一の比較+トラップ方式を採り、トラップ発生時はインタープリタへフォールバックする。インタープリタが復旧不能と判断した場合はゲストタスクを停止してよい。
+   32ビットゲストアドレスの最上位ビット（Bit 31）が `0` の場合、そのアドレスは vMMIO 管理対象外として、Stage 1（ゲストRAM）への直接アクセスとして高速バイパス（O(1) 処理）を実行する。
+   - **統一境界チェック**: 比較命令ベースの単一の高速境界チェックである（マスクは用いない）。`guest_ram_size`（`vsoc_runtime.mem-size`）と直接比較する。`addr >= guest_ram_size` なら境界外として即座に `ERR_OUT_OF_BOUNDS` トラップを発生させる。マスク方式と異なり `guest_ram_size` に2の冪の制約はない。部分ページ（例: 8KB, 16KB）や複数 64KB ページのいずれも、同一の比較命令1つで判定できる。トラップは必須であり、境界外アドレスのラップアラウンド継続は許容しない。JIT トレース側も同一の比較・トラップ方式を採り、トラップ時はインタープリタへフォールバックする。
 2. **FlatMap PTE 管理**:
    最上位ビット（Bit 31）が `1` のアドレス空間を vMMIO 領域（`0x8000_0000` – `0xFFFF_FFFF`）とする。
    - 仮想ページ番号（VPN = `raw >> 12`）をキーとして、FlatMap（`vmmio_ptes`）に PTE を格納する。
    - 動的 SHM ページや物理パススルーページをフラットに登録・管理できる。
 3. **ダイレクトマップ方式ソフトウェアTLB（完全O(1)キャッシュ）**:
    ホットパス高速化のため、一発でインデックスが決まるダイレクトマッピング（ハッシュ方式、32エントリ固定サイズ）を採用する。
-   - 仮想ページ番号（20-bit: `vpn = raw >> 12`）を 20→10→5 bit と2回の XORで折りたたみ、`temp = vpn ^ (vpn >> 10); temp = temp ^ (temp >> 5); tlb_idx = temp & 0x1F` を算出してTLBに一撃でアクセスする。ヒット時は権限チェックを通過した後に即時実行する。 `{META_RestrictedPhysicalAccess}`
+   - 仮想ページ番号（20-bit: `vpn = raw >> 12`）を 20→10→5 bit と2回の XORで折りたたみ、`temp = vpn ^ (vpn >> 10); temp = temp ^ (temp >> 5); tlb_idx = temp & 0x1F` を算出してTLBに一撃でアクセスする。ヒット時は権限チェックを通過した後に即時実行する。
   - **全ビット拡散**: FC[19:15] から下位ページ番号ビットまでの VPN 全20ビットが 5-bit 幅へ折り畳まれるため、FC 間やページ番号の変動に対して TLB スロットが均等に分散する。
 
-vMMIO領域（Stage 2/3）のセキュリティモデルは**PTEに埋め込まれた権限フィールドがゲート**である。アクセス権限は PTE に保持され、ルックアップと権限チェックを1パスで完結させる。ゲストRAM（Stage 1）はPTEを経由せず、`FastAddressCheck` による境界チェックのみをゲートとする別経路である。アクセス特性に応じてセキュリティゲートを以下の3段階に階層化する。 `{META_RestrictedPhysicalAccess}`
+vMMIO領域（Stage 2/3）のセキュリティモデルは**PTEに埋め込まれた権限フィールドがゲート**である。アクセス権限は PTE に保持され、ルックアップと権限チェックを1パスで完結させる。ゲストRAM（Stage 1）はPTEを経由せず、`FastAddressCheck` による境界チェックのみをゲートとする別経路である。アクセス特性に応じてセキュリティゲートを以下の3段階に階層化する。
 
 1. **Stage 1 (ゲストRAMバイパス)**: ゲスト専用RAM領域（Bit 31 == 0、FC=0..7）。`addr >= guest_ram_size` による比較ベースの単一の高速境界チェック（`FastAddressCheck`）のみで高速処理し、境界外は即座にトラップする。
 2. **Stage 2 (静的vMMIO, FC=12)**: コンパイル時にアドレスが確定するコアデバイス（SYSCTL, IPCR, VDMA等）。アドレス `0xC000_0000` は FC=12 に位置する。JIT生成時に許可チェックを行い、許可済みならネイティブコードに直接デバイスキーを埋め込む。
 3. **Stage 3 (動的vMMIO, FC=13-15)**: HAL DYNAMIC（FC=13, `0xD000_0000`）、SHM（FC=14, `0xE000_0000`）、PASSTHROUGH（FC=15, `0xF000_0000`）領域のアクセス。TLB または FlatMap を経由して PTE を解決し、エントリの権限フィールドで可否を判定する。DYNAMIC はマルチゲスト構成でも同時にマップできるゲストを1つに限定する。
 
-IPC経由のデータ交換は行わない — GPIOのようなsub-µs応答が必要な周辺機器はIPCレイテンシに耐えられないため、このダイレクトアクセスモデルが採用されている。 `{Fast_Path_GPIO}`
+IPC経由のデータ交換は行わない — GPIOのようなsub-µs応答が必要な周辺機器はIPCレイテンシに耐えられないため、このダイレクトアクセスモデルが採用されている。
 
 ## 2. アーキテクチャ分類
 <!-- traceability: {META_3TierSeparation} -->
-本コンポーネントは **Tier 2 (分解されたサブコンポーネント: Decomposed Subcomponent)** に属し、vSoC (`runtime_vsoc.md`) から分解された仮想MMIO・デバイスレジスタアクセスおよびメモリ空間マッピングを担当する。 `{META_3TierSeparation}`
+本コンポーネントは **Tier 2 (分解されたサブコンポーネント: Decomposed Subcomponent)** に属し、vSoC (`runtime_vsoc.md`) から分解された仮想MMIO・デバイスレジスタアクセスおよびメモリ空間マッピングを担当する。
 
 ## 3. 静的モデル
 
@@ -55,7 +55,7 @@ IPC経由のデータ交換は行わない — GPIOのようなsub-µs応答が�
 | RAM | ソフトウェアTLB配列 | `vmmio_tlb_cache[32]` 32エントリのダイレクトマップ型高速TLBキャッシュ配列 |
 
 - **`VmmioController`**: アドレス境界デコード、FlatMap PTE ルックアップ、TLBキャッシュ管理、動的マッピング管理を担う主要クラス。
-- **`vmmio_config`**: 静的な領域定義 (`vmmio_static_region`) の不変なテーブル。 `{META_Static_Resolution}`
+- **`vmmio_config`**: 静的な領域定義 (`vmmio_static_region`) の不変なテーブル。
 
 ### 3.2 内部ブロック図
 <!-- traceability: {META_Static_Resolution} -->
@@ -137,11 +137,11 @@ Static Devices (Stage 2) 向け。PTE には Device Type やパーミッショ�
 
 #### Stage 3 ページテーブルエントリ
 <!-- traceability: {META_Static_Resolution} {OwnershipTransfer} -->
-SHM (FC=14) および Passthrough (FC=15) 向け。PTE には PPN（物理ページ番号）、ハードウェア保護フラグ、およびSHM所有タスクIDを保持する。SHMアクセスではスケジューラの現在タスクIDと `owner_id` を照合し、Revokeまたは所有権変更時はPTEをアンマップしてTLBをフラッシュする。DYNAMIC (FC=13) はHALバッファプールの単一ゲストバインドで保護する。
+SHM (FC=14) および Passthrough (FC=15) 向け。PTEにはページ保護フラグとSHM所有タスクIDを保持し、SHMでは別メタデータとして物理バック基点と実サイズを保持する。SHMアクセスではスケジューラの現在タスクIDと`owner_id`を照合し、Revokeまたは所有権変更時はPTEをアンマップしてTLBをフラッシュする。DYNAMIC (FC=13) はHALバッファプールの単一ゲストバインドで保護する。
 
 ```
-32-bit Stage 3 (DYNAMIC / SHM / Passthrough) PTE:
-[31:12] PPN (Physical Page Number, 20 bits: phys_page)
+32-bit Stage 3 permission PTE (mapping metadata is held beside it):
+[31:12] PPN (Physical Page Number, 20 bits: phys_page; page-backed mappings)
 [11]    VALID (1 = 有効マッピング)
 [10]    READ (1 = 読み出し許可)
 [9]     WRITE (1 = 書き込み許可)
@@ -149,20 +149,15 @@ SHM (FC=14) および Passthrough (FC=15) 向け。PTE には PPN（物理ペー
 [7:0]   OWNER_TASK_ID (SHM only; DYNAMIC uses pool guest binding)
 ```
 
-**FC=14 (SHM) エントリの仮想化マッピングは、Tier 3 共有メモリマネージャが発火する物理ページイベントの購読を通じて自律的に駆動される（`{VmmioShmDelegation}`）。vMMIO コントローラは共有メモリマネージャにイベントリスナーを登録し、物理ページのライフサイクル通知（割り当てマッピング、Revoke アンマップ＆TLBフラッシュ、再マッピング、解放）を受けて自身の仮想アドレス空間（VPN: `(0xE000_0000 >> 12) + page_idx`）に対応する PTE 登録・アンマップ・TLB フラッシュを実行する。メモリマネージャ側が vMMIO の内部実装やアドレス体系を直接操作することはなく、クリーンアーキテクチャ（DIP）が維持される。**
+**FC=14（SHM）のマッピングは、共有メモリマネージャの予約スロットイベント購読により駆動される。4KB仮想スロット番号、物理バック基点、実サイズは独立したマッピングメタデータとして保持する。4KBの仮想予約は同量の物理RAM確保を意味しない。vMMIOはイベントに応じてPTE・サイズメタデータを登録または削除し、対応TLBをフラッシュする。**
 
 #### 仮想アドレス割り当てアルゴリズム（ビット並列連続ビットマップ方式）
 <!-- traceability: {META_Static_Resolution} -->
-vMMIO SHM 領域（`0xE000_0000`〜`0xE001_FFFF`、最大 32 ページ = 128KB）の仮想ページ割り当てには、完全 $O(1)$ かつ極小フットプリント（32ビット整数 1 個 = 4 バイト）の**ビット並列連続ビットマップ方式（Bit-Parallel Consecutive Bitmap Allocator with `ctz`）**を採用する。
-- **ビットマップ表現**: `uint32_t free_vpage_bitmap`（1 = 空き、0 = 割り当て中）。初期値は `0xFFFF_FFFF`。
-- **連続 $k$ ページ探索 ($O(1)$)**: ビット並列シフト＆AND 演算により、$k$ 連続する空きビットの開始位置を一括検出する。
-  `candidates = free_bitmap & (free_bitmap >> 1) & ... & (free_bitmap >> (k - 1))`
-  `candidates` の最下位立位ビット（`ctz` / `__builtin_ctz`）が割り当て開始ページ番号 `vpage_start` となる。ループによる線形探索を完全排除し、常に数サイクルのビット演算で完了する。
-- **マッピング単位**: ハードウェア MMU / PTE のアドレス変換（下位12ビットのオフセット透過）に完全合致する **4KB ページ単位**。複数ページの割り当ては連続する仮想ページ番号にマッピングすることで透過的に解決する。
+vMMIO SHM領域の先頭32ページ（128KB）は4KB単位の仮想予約スロットとして扱う。各SHMブロックが1スロットを占有し、PTEメタデータに物理基点と要求サイズを保持する。予約番号は固定長のページ台帳で管理する。物理SHM容量（`FB_CONF_SHM_SIZE`）とは別予算であり、スロット予約だけでは物理バイトを消費しない。
 
 #### FlatMap ページテーブル定義
 <!-- traceability: {META_FlatMapIndexed} {vMMIO_Isolation} -->
-システム全体の共通ポリシー（`{META_FlatMapIndexed}`）に準拠し、PTE の保存には `fireball::flat_map_view<uint32_t, uint32_t>`（キー: VPN = `raw >> 12`、値: 32bit PTE）を採用する。 `{vMMIO_Isolation}`
+システム全体の共通ポリシーに準拠し、PTE の保存には `fireball::flat_map_view<uint32_t, uint32_t>`（キー: VPN = `raw >> 12`、値: 32bit PTE）を採用する。
 | 構造体・型定義名 | 構成要素 | 型分類 | 役割と不変条件 |
 | :--- | :--- | :--- | :--- |
 | `pte_entry` | `vpn` (Key: 仮想ページ番号: 20bit)<br>`pte` (Value: 32bit PTE属性) | 構造体 | ソート済みページテーブルの1レコード |
@@ -306,7 +301,7 @@ FlatMap ページテーブル、ダイレクトマップ
 
 ### 4.2 アルゴリズム: 仮想DMA (VDMA)
 <!-- traceability: {VDMA} -->
-ゲストリニアメモリと vMMIO 空間（または他のメモリ領域）間の高速転送を実現する。 `{VDMA}`
+ゲストリニアメモリと vMMIO 空間（または他のメモリ領域）間の高速転送を実現する。
 
 **アクセス方式**: 純粋MMIOトラップ。直接vMMIOアドレスにアクセス可能なゲストはVDMAレジスタへ直接書き込み、アクセス不可なゲスト言語は `fireball_call(VDMA_START)` 経由でホストが代理実行。
 
@@ -325,10 +320,10 @@ FlatMap ページテーブル、ダイレクトマップ
 |:---| :--- | :--- | :--- |
 | `0xC000_0000` | `12` (`0xC`) | **SYSCTL** | システム制御（Yield, Halt, Syscall等） |
 | `0xC000_1000` | `12` (`0xC`) | **IPCR** | IPCルータ連携レジスタ |
-| `0xC000_2000` | `12` (`0xC`) | **VDMA** `{VDMA}` | 仮想DMA（バルク転送） |
+| `0xC000_2000` | `12` (`0xC`) | **VDMA** | 仮想DMA（バルク転送） |
 | `0xC000_3000` | `12` (`0xC`) | **vIRQ** | 原因付き仮想割り込みディスパッチャ専用ページ |
 | `0xD000_0000` – `0xDFFF_FFFF` | `13` (`0xD`) | **DYNAMIC** | HALが提供する固定長バッファの動的マッピング。マップ対象ゲストは1つだけ |
-| `0xE000_0000` – `0xEFFF_FFFF` | `14` (`0xE`) | **SHM** | 共有メモリ（1領域=1ページ）。デコード上の全域は256MBだが、実際にビットマップアロケータがPTEを割り当てるのは先頭128KB（32ページ）のみ。PTE格納表全体の上限は64件 |
+| `0xE000_0000` – `0xEFFF_FFFF` | `14` (`0xE`) | **SHM** | 共有メモリ。デコード上の全域は256MBだが、予約対象は先頭128KB（4KB×32スロット）のみ。各PTEの物理基点と実サイズは要求に応じる。PTE格納表全体の上限は64件 |
 | `0xF000_0000` – `0xFFFF_FFFF` | `15` (`0xF`) | **PASSTHROUGH** | 物理アドレス直結 |
 
 PASSTHROUGH アドレス変換:
@@ -372,10 +367,11 @@ Runtime終了時は `unbind_runtime` で全固定スロットを一括アンマ�
 
 ### 4.7 共有メモリマッピング (FC=14)
 <!-- traceability: {OwnershipTransfer} -->
-SHM へのアクセスは **IPCルータ経由でのみ許可される**。ゲストは IPCルータからハンドルを受け取ることによってのみ FC=14 アドレス空間にアクセスできる。SHM の所有権状態は IPCルータが一元管理し（[`ipc_router.md`](docs/components/tier1_interface/ipc_router.md) の `{OwnershipTransfer}` 準拠）、vMMIO はその状態を執行するのみ。 `{OwnershipTransfer}`
+SHM へのアクセスは **IPCルータ経由でのみ許可される**。ゲストは IPCルータからハンドルを受け取ることによってのみ FC=14 アドレス空間にアクセスできる。SHM の所有権状態は IPCルータが一元管理し（[`ipc_router.md`](docs/components/tier1_interface/ipc_router.md) の 準拠）、vMMIO はその状態を執行するのみ。
 
-- **SHMハンドル**: `(page_idx << 8) | slot_idx` の識別値。
+- **SHMハンドル**: `(page_idx << 8) | slot_idx` の識別値。`page_idx`は4KB仮想予約スロット番号であり、物理ページ番号ではない。
 - **アクセスアドレス**: `0xE000_0000 | (page_idx << 12) | offset_in_page`。
+- `page_idx` は4KB仮想予約スロットを識別し、物理アドレスや物理ページ番号を表さない。PTEはその予約を物理バック基点へ対応付け、アクセスオフセットが要求サイズ以上なら`TRAP_OUT_OF_BOUNDS`とする。
 
 ```mermaid
 graph LR
@@ -385,10 +381,10 @@ graph LR
     Entry -- "PTE Absent / Unmapped" --> Trap["TRAP_UNREGISTERED_PAGE"]
 ```
 
-#### ライフサイクル（[`ipc_router.md`](docs/components/tier1_interface/ipc_router.md) の `{OwnershipTransfer}` に従属）
+#### ライフサイクル（[`ipc_router.md`](docs/components/tier1_interface/ipc_router.md) の に従属）
 <!-- traceability: {OwnershipTransfer} -->
 
-1. **Alloc (`allocate-shared`)**: COOS / 物理メモリマネージャが SHM 物理ページを確保し、送信タスク空間の仮想アドレス（VPN）へ vMMIO 経由でマッピング（PTE 登録）する。
+1. **Alloc (`allocate-shared`)**: COOS / 物理メモリマネージャが4KB仮想予約スロットを1つ確保し、要求サイズ分だけSHM物理バック領域から割り当てる。vMMIOは物理基点・実サイズ・所有者をそのVPNへ登録する。
 2. **Revoke (`shm.release()`)**: 送信側がリソースを手放し、IPCルータが送信タスクの権限を無効化する。vMMIO から PTE をアンマップ（削除）し、TLB の該当エントリを即時フラッシュする。この時点で送信タスクからの旧アドレスアクセスは即座に `TRAP_UNREGISTERED_PAGE`（未登録ページフォルト）となり安全に遮断される。
 3. **Rendezvous**: IPCルータが `(sender_role, target_role)` エッジ専用の CSP チャネル上でハンドルを含むメッセージのバッファなし同期ハンドオフを試みる。受信タスクが既に待機していれば即座に、まだ到達していなければ送信タスクが協調スケジューラ上でブロックする。キューが存在しないため、キュー満杯による差し戻しは発生しない。
 4. **Grant (`claim(shm-id)`)**: 所有権変更時に Tier 1 の `PageMappingCallbacks.on_owner_changed` を受け、vMMIO は旧 PTE と TLB エントリを無効化する。ランデブー成立後、受信タスク側で `claim()` を呼び出すと `on_map_page` により受信タスクの仮想アドレス空間へ PTE がマッピングされ、有効な `shared-block` ハンドルが取得可能となる。
@@ -497,9 +493,9 @@ Stage 3 アクセス（FC=14/15）において毎回 FlatMap の二分探索を�
 - **Folding XOR ハッシュによる機能コード（FC）の均等分散 (`GOTCHA-VMMIO-02`)**:
   - キー（VPN）: `raw >> 12`（20-bit）
   - HASH / インデックス計算: `temp = vpn ^ (vpn >> 10); temp = temp ^ (temp >> 5); tlb_idx = temp & 0x1F`（20→10→5 bit、2回の XOR）
-  - **設計理由と不変条件**: 単純なビットマスク（`vpn & 0x1F`）や剰余を用いると、同一オフセットを持つ異なる機能コード（FC=14 SHM と FC=15 PASSTHROUGH など）が同一スロットに衝突し、TLB スラッシング（頻繁な追い出し）が発生する。上位の FC フィールドから下位ページインデックスまでの全 20 ビットを 5-bit 幅で折りたたんで XOR 合成することで、異なるデバイス領域間でのキャッシュ競合を極小化し、32 スロットの利用効率を最大化する。
+  - **設計理由と不変条件**: 単純なビットマスクでは、同一オフセットを持つ異なる機能コード（FC=14 SHM と FC=15 PASSTHROUGH 等）が同一スロットに衝突する。上位の FC から下位ページまでの全 20 ビットを 5-bit 幅で折りたたんで XOR 合成する。これにより異なるデバイス領域間の競合を極小化し、32 スロットの利用効率を最大化する。
 - **アクセス権限剥奪（Revoke）時の TLB 即時無効化 (`GOTCHA-VMMIO-03`)**:
-  - **設計理由と不変条件**: 共有メモリブロックの送信（`shm.release()`）や権限剥奪トランザクションにおいて、ページテーブル上の所有者 ID を `FB_TASK_ID_FLIGHT` へ変更する際、該当 VPN に対応する TLB エントリを直ちに無効化（フラッシュ）しなければならない。TLB の無効化を怠ると、キャッシュが残存している間に古いタスクからデータが読み書き可能となり、所有権移譲プロトコルの安全性（ゼロコピー手渡しと二重所有防止）が破壊される。
+  - **設計理由と不変条件**: 共有メモリの送信や権限剥奪トランザクションにおいて、所有者 ID を `FB_TASK_ID_FLIGHT` へ変更する際は、該当 VPN に対応する TLB エントリを直ちに無効化する。TLB 無効化を怠ると、古いタスクからデータが読み書き可能となり、所有権移譲プロトコルの安全性（ゼロコピー手渡しと二重所有防止）が破壊されるためである。
 - **キャッシュ更新 & 押し出し (Eviction & Refill)**:
   TLBミス時に FlatMap から取得した PTE を `vmmio_tlb_cache[tlb_idx]` に上書き（同一ハッシュに別のアドレスが割り当てられた場合は以前のエントリを自動無効化・上書きする完全O(1)方式）。
 
@@ -547,16 +543,16 @@ Stage 3 アクセス（FC=14/15）において毎回 FlatMap の二分探索を�
 ### 6.1 性能制約と方策
 <!-- traceability: {META_ConfigurableSystem} {FastAddressCheck} {vMMIO_TLB} -->
 - **目標**: MMIOアクセスのオーバーヘッドを最小化する。
-- **方策1**: `{META_ConfigurableSystem}` コアデバイス（SYSCTL等）をFC=12に配置し、配列/ハッシュ参照のみで即時解決できるようにする。
-- **方策2**: `{FastAddressCheck}` アドレス空間を RAM Bypass（最上位ビット=0）と vMMIO領域（最上位ビット=1）に分割し、探索とデコードのホットパス探索コストを削減する。
-- **方策3**: `{vMMIO_TLB}` ダイレクトマップ型 Software TLB により、Stage 3 の繰り返しアクセスを完全 O(1) で超高速キャッシュ解決する。
+- **方策1**: コアデバイス（SYSCTL等）をFC=12に配置し、配列/ハッシュ参照のみで即時解決できるようにする。
+- **方策2**: アドレス空間を RAM Bypass（最上位ビット=0）と vMMIO領域（最上位ビット=1）に分割し、探索とデコードのホットパス探索コストを削減する。
+- **方策3**: ダイレクトマップ型 Software TLB により、Stage 3 の繰り返しアクセスを完全 O(1) で超高速キャッシュ解決する。
 
 ### 6.2 メモリ制約と方策
 <!-- traceability: {META_ConfigurableSystem} {META_FlatMapIndexed} -->
 - **目標**: マップ管理用のメモリを最小化する。
-- **方策**: `{META_ConfigurableSystem}` `{META_FlatMapIndexed}` `fireball::flat_map_view<uint32_t, uint32_t>`（静的ソート済み配列）によるフラットな PTE 管理に集約し、登録されたページ数に応じた最小限のメモリフットプリントを実現する。
+- **方策**: `fireball::flat_map_view<uint32_t, uint32_t>`（静的ソート済み配列）によるフラットな PTE 管理に集約し、登録されたページ数に応じた最小限のメモリフットプリントを実現する。
 
 ### 6.3 安全性制約と方策
 <!-- traceability: {META_RestrictedPhysicalAccess} {OwnershipTransfer} -->
 - **目標**: ゲストが許可されていない物理アドレスにアクセスできないことを保証する。
-- **方策**: `{META_RestrictedPhysicalAccess}` `{OwnershipTransfer}` 権限チェックを解決された PTE フラグで行い、TLBヒット時も含めてすべてのアクセスパスで必ず実行する。TLBはページテーブル探索のスキップのみを担い、権限チェックをバイパスしない。FC=14 (SHM) の所有権は IPCルータが唯一の書き込み権限を持ち、Revoke 時に該当マッピングの TLB エントリを即時無効化する。
+- **方策**: 権限チェックを解決された PTE フラグで行い、TLBヒット時も含めてすべてのアクセスパスで必ず実行する。TLBはページテーブル探索のスキップのみを担い、権限チェックをバイパスしない。FC=14 (SHM) の所有権は IPCルータが唯一の書き込み権限を持ち、Revoke 時に該当マッピングの TLB エントリを即時無効化する。

@@ -13,7 +13,7 @@ the Code section's implicit numbering are all in this unified space.
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
@@ -32,6 +32,7 @@ from config import (
 from jit_scoring import OpcodeBenefitTable
 from leb128 import decode_unsigned
 from system_containers import (
+    ReadOnlyFlatMapStorage,
     ReadOnlyRadixBinaryTreeStorage,
     StaticVector,
     bswap32,
@@ -103,6 +104,8 @@ class Function:
     # metadata to select the non-nested-call fast path without rescanning code.
     has_nested_calls: bool = False
     control_map: ControlMap | None = None
+    select_widths: ReadOnlyFlatMapStorage[int, int] | None = None
+    drop_widths: ReadOnlyFlatMapStorage[int, int] | None = None
     # Params + locals_extra and their raw widths are immutable load-time
     # metadata. The execution path uses the fixed local-slot stride directly;
     # no per-call physical-offset table is needed.
@@ -131,32 +134,41 @@ class Import:
     module_size: int
     name_offset: int
     name_size: int
-    type_index: int  # only function imports (kind=0) are supported
+    type_index: int
+    value_type: int | None = None
+    mutable: bool = False
+    min_limit: int = 0
+    max_limit: int | None = None
 
 
 @dataclass
 class Memory:
     min_pages: int
     max_pages: int | None
+    imported: bool = False
 
 
 @dataclass
 class Global:
     vtype: int
     mutable: bool
-    init_value: int  # this experiment only supports a plain i32.const init expr
+    init_value: int
+    imported: bool = False
+    init_global_index: int | None = None
 
 
 @dataclass
 class Table:
     min_size: int
     max_size: int | None
+    imported: bool = False
 
 
 @dataclass
 class Element:
     table_index: int
-    offset: int  # this experiment only supports a plain i32.const offset expr
+    offset: int
+    offset_global_index: int | None = None
     func_indices_offset: int = 0
     func_indices_size: int = 0
     func_count: int = 0
@@ -166,7 +178,8 @@ class Element:
 @dataclass
 class DataSegment:
     memory_index: int
-    offset: int  # i32.const offset expr
+    offset: int
+    offset_global_index: int | None = None
     data_offset: int = 0
     data_size: int = 0
     data: memoryview | None = None  # direct-construction fallback
@@ -184,6 +197,9 @@ class Module:
     imports: StaticVector[Import] = field(
         default_factory=lambda: StaticVector(capacity=FB_CONF_MAX_IMPORTS)
     )
+    global_imports: StaticVector[Import] = field(
+        default_factory=lambda: StaticVector(capacity=FB_CONF_MAX_IMPORTS)
+    )
     functions: StaticVector[Function] = field(
         default_factory=lambda: StaticVector(capacity=FB_CONF_MAX_FUNCTIONS)
     )
@@ -191,11 +207,15 @@ class Module:
         default_factory=lambda: StaticVector(capacity=FB_CONF_MAX_EXPORTS)
     )
     memory: Memory | None = None
+    memory_import: Import | None = None
     globals: StaticVector[Global] = field(
         default_factory=lambda: StaticVector(capacity=FB_CONF_MAX_GLOBALS)
     )
     tables: StaticVector[Table] = field(
         default_factory=lambda: StaticVector(capacity=FB_CONF_MAX_TABLES)
+    )
+    table_imports: StaticVector[Import] = field(
+        default_factory=lambda: StaticVector(capacity=FB_CONF_MAX_IMPORTS)
     )
     elements: StaticVector[Element] = field(
         default_factory=lambda: StaticVector(capacity=FB_CONF_MAX_ELEMENTS)
@@ -217,10 +237,16 @@ class Module:
         # sections have been decoded.
         self.types = StaticVector.of(tuple(self.types), capacity=FB_CONF_MAX_TYPES)
         self.imports = StaticVector.of(tuple(self.imports), capacity=FB_CONF_MAX_IMPORTS)
+        self.global_imports = StaticVector.of(
+            tuple(self.global_imports), capacity=FB_CONF_MAX_IMPORTS
+        )
         self.functions = StaticVector.of(tuple(self.functions), capacity=FB_CONF_MAX_FUNCTIONS)
         self.exports = StaticVector.of(tuple(self.exports), capacity=FB_CONF_MAX_EXPORTS)
         self.globals = StaticVector.of(tuple(self.globals), capacity=FB_CONF_MAX_GLOBALS)
         self.tables = StaticVector.of(tuple(self.tables), capacity=FB_CONF_MAX_TABLES)
+        self.table_imports = StaticVector.of(
+            tuple(self.table_imports), capacity=FB_CONF_MAX_IMPORTS
+        )
         self.elements = StaticVector.of(tuple(self.elements), capacity=FB_CONF_MAX_ELEMENTS)
         self.data_segments = StaticVector.of(
             tuple(self.data_segments), capacity=FB_CONF_MAX_DATA_SEGMENTS
@@ -243,18 +269,22 @@ class Module:
 
         assert len(self.types) == 0
         assert len(self.imports) == 0
+        assert len(self.global_imports) == 0
         assert len(self.functions) == 0
         assert len(self.exports) == 0
         assert len(self.globals) == 0
         assert len(self.tables) == 0
+        assert len(self.table_imports) == 0
         assert len(self.elements) == 0
         assert len(self.data_segments) == 0
         self.types = StaticVector(capacity=type_count)
         self.imports = StaticVector(capacity=import_count)
+        self.global_imports = StaticVector(capacity=import_count)
         self.functions = StaticVector(capacity=function_count)
         self.exports = StaticVector(capacity=export_count)
         self.globals = StaticVector(capacity=global_count)
-        self.tables = StaticVector(capacity=table_count)
+        self.tables = StaticVector(capacity=table_count + import_count)
+        self.table_imports = StaticVector(capacity=import_count)
         self.elements = StaticVector(capacity=element_count)
         self.data_segments = StaticVector(capacity=data_segment_count)
 
@@ -281,7 +311,7 @@ class Module:
                 value_slot_width(value_type) for value_type in function_type.params
             )
 
-    def init_memory_data(self, memory: bytearray) -> None:
+    def init_memory_data(self, memory: bytearray, global_values: Sequence[int]) -> None:
         """Initializes memory with active data segments."""
         for seg in self.data_segments:
             if seg.data is None:
@@ -289,10 +319,19 @@ class Module:
                 data = self.source[seg.data_offset : seg.data_offset + seg.data_size]
             else:
                 data = seg.data
-            assert seg.offset + len(data) <= len(memory)
-            memory[seg.offset : seg.offset + len(data)] = data
+            offset = seg.offset
+            if seg.offset_global_index is not None:
+                assert seg.offset_global_index < len(global_values)
+                offset = global_values[seg.offset_global_index] & 0xFFFF_FFFF
+            assert offset + len(data) <= len(memory)
+            memory[offset : offset + len(data)] = data
 
-    def table_contents(self, table_index: int) -> StaticVector[int | None]:
+    def table_contents(
+        self,
+        table_index: int,
+        global_values: Sequence[int],
+        initial: StaticVector[int | None] | None = None,
+    ) -> StaticVector[int | None]:
         """
         Materializes table `table_index` as a flat list of unified
                 function indices (or None for an uninitialized slot), applying
@@ -300,9 +339,13 @@ class Module:
         """
 
         table = self.tables[table_index]
-        slots: StaticVector[int | None] = StaticVector.of(
-            tuple(None for _ in range(table.min_size)), capacity=table.min_size
-        )
+        if initial is None:
+            slots: StaticVector[int | None] = StaticVector.of(
+                tuple(None for _ in range(table.min_size)), capacity=table.min_size
+            )
+        else:
+            assert len(initial) >= table.min_size
+            slots = initial
         for elem in self.elements:
             if elem.table_index != table_index:
                 continue
@@ -314,7 +357,11 @@ class Module:
                     self.source, elem.func_indices_offset, elem.func_count
                 )
             for i, func_index in enumerate(func_indices):
-                slots[elem.offset + i] = func_index
+                offset = elem.offset
+                if elem.offset_global_index is not None:
+                    assert elem.offset_global_index < len(global_values)
+                    offset = global_values[elem.offset_global_index] & 0xFFFF_FFFF
+                slots[offset + i] = func_index
         return slots
 
     def is_import(self, func_index: int) -> bool:
@@ -394,13 +441,7 @@ class Module:
         self.opcode_benefit_table = OpcodeBenefitTable()
 
         n_imports = len(self.imports)
-        block_capacity = max(
-            1,
-            sum(
-                len(self.code_for(n_imports + index))
-                for index in range(len(self.functions))
-            ),
-        )
+        block_capacity = max(1, self.total_basic_blocks)
         assert block_capacity <= FB_CONF_MAX_BASIC_BLOCKS
         all_blocks: StaticVector[BasicBlock] = StaticVector(capacity=block_capacity)
         for idx, _fn in enumerate(self.functions):

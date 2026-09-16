@@ -125,7 +125,7 @@ def main():
         f"  * 2-Bit Card Marking O(1) Check:      {jit_res['card_marking_check_mops']:.2f} M ops/s  ({jit_res['card_marking_check_ns']:.1f} ns/check)"
     )
     print(
-        f"  * bswap32 Radix Tree Section Search:  {jit_res['radix_table_lookup_mops']:.2f} M ops/s  ({jit_res['radix_table_lookup_ns']:.1f} ns/lookup)"
+        f"  * Sparse JIT Entry Binary Search:      {jit_res['jit_entry_lookup_mops']:.2f} M ops/s  ({jit_res['jit_entry_lookup_ns']:.1f} ns/lookup)"
     )
     print(
         f"  * Arithmetic Loop (100,000 iters):    Interp: {jit_res['interp_loop_time_ms']:.2f} ms | JIT: {jit_res['jit_loop_time_ms']:.2f} ms"

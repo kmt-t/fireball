@@ -3,16 +3,16 @@
      formal: formal/coos_channel_model.py
      benchmark: benchmarks/direct_context_switch_bench.py
      concept: concepts/coos_concept.py
-     test: tests/os_coos_test_spec.md
+     test: ../../qa/tier1_core/os_coos_test_spec.md
 -->
 
 ## 1. コンセプト
 <!-- traceability: {CooperativeMultitasking} {GLOBAL_UseCpp23Library} {GLOBAL_UseCpp20Coroutine} {CSPCommunication} {EliminateDataRace} {GLOBAL_PeriodicTask} {GLOBAL_IdleDetection} {GLOBAL_InterruptWakeup} {NotRTOS} -->
-COOSは、シングルスレッド環境向けのホーアCSPベースのグリーンスレッドOSである。C++20コルーチン（および静的配列と `fireball::flat_map_view` 等、C++23の静的確保に適合させたコンテナ語彙）を活用し、スタックレスで低オーバーヘッドなタスク切り替えを実現する。また、ホーアCSPに基づき、所有権移譲によるゼロコピーメッセージパッシングを行うことで、データ競合を原理的に排除する。 `{CooperativeMultitasking}` `{GLOBAL_UseCpp23Library}` `{GLOBAL_UseCpp20Coroutine}` `{CSPCommunication}` `{EliminateDataRace}` `{GLOBAL_PeriodicTask}` `{GLOBAL_IdleDetection}` `{GLOBAL_InterruptWakeup}` `{NotRTOS}`
+COOSは、シングルスレッド環境向けのホーアCSPベースのグリーンスレッドOSである。C++20コルーチン（および静的配列と `fireball::flat_map_view` 等、C++23の静的確保に適合させたコンテナ語彙）を活用し、スタックレスで低オーバーヘッドなタスク切り替えを実現する。また、ホーアCSPに基づき、所有権移譲によるゼロコピーメッセージパッシングを行うことで、データ競合を原理的に排除する。
 
 ## 2. アーキテクチャ分類
 <!-- traceability: {META_3TierSeparation} {GLOBAL_ComponentHarness} -->
-本コンポーネントは **Tier 1 (主要システムコンポーネント: Primary Component)** に属し、システム要求定義（`requires/`）を受けて協調型タスク実行基盤およびCSPチャネル通信を提供する。 `{META_3TierSeparation}` `{GLOBAL_ComponentHarness}`
+本コンポーネントは **Tier 1 (主要システムコンポーネント: Primary Component)** に属し、システム要求定義（`requires/`）を受けて協調型タスク実行基盤およびCSPチャネル通信を提供する。
 
 ### 2.1 構成要素
 <!-- traceability: {META_3TierSeparation} {GLOBAL_ComponentHarness} -->
@@ -26,8 +26,8 @@ COOSは、シングルスレッド環境向けのホーアCSPベースのグリ�
 
 ### 3.1 データ構造
 <!-- traceability: {GLOBAL_Policy_Memory} {ADR_RendezvousChannel} -->
-- **`channel`**: **バッファを持たない**純粋同期ランデブーオブジェクト。値はチャネルに滞留せず、送信側タスクから受信側タスクへランデブー成立の瞬間に直接移譲される。 `{ADR_RendezvousChannel}`
-- **`shared_block`**: ムーブ専用 RAII 共有メモリブロック（`{ADR_SharedBlockRaii}`）。`{GLOBAL_Policy_Memory}` に基づき、静的プールから切り出され、右辺値参照（`&&`）により単一所有権を保証する。
+- **`channel`**: **バッファを持たない**純粋同期ランデブーオブジェクト。値はチャネルに滞留せず、送信側タスクから受信側タスクへランデブー成立の瞬間に直接移譲される。
+- **`shared_block`**: ムーブ専用 RAII 共有メモリブロック（`{ADR_SharedBlockRaii}`）。に基づき、静的プールから切り出され、右辺値参照（`&&`）により単一所有権を保証する。
 - **`coos_context`**: スケジューラ、CSP状態、メモリ情報を集約したグローバルコンテキスト。
 
 ### 3.2 内部ブロック図
@@ -46,21 +46,21 @@ graph TD
     M_IF --> PRE["Memory Partition"]
 ```
 
-各サブコンポーネントおよび通信リソースは、専用アロケータによって領域制限されたメモリ領域（MPUパーティション）に完全に配置され、メモリ干渉を防止する。 `{GLOBAL_Policy_Memory}`
+各サブコンポーネントおよび通信リソースは、専用アロケータによって領域制限されたメモリ領域（MPUパーティション）に完全に配置され、メモリ干渉を防止する。
 
 ### 3.3 主要なデータ定義
 <!-- traceability: {GLOBAL_Policy_Memory} -->
 
 #### CSPチャネル（channel）
 <!-- traceability: {CSPCommunication} {GLOBAL_Policy_Memory} {ADR_RendezvousChannel} {IPC_ZeroCopy} {OwnershipTransfer} {ADR_SharedBlockRaii} -->
-タスク間の同期と通信を仲介するデータ構造。ホーアCSPの定義どおり **チャネル自身は値を保持しない**（`{ADR_RendezvousChannel}`）。送信側は相手が現れるまで自身のフレーム上で転送リソース（`shared_block` 等のムーブ専用オブジェクト）を保持したまま待機し、ランデブー成立の瞬間に所有権が受信側へ移る。有界かつ安全なメモリ管理を規定する `{GLOBAL_Policy_Memory}` に従い、リソースは共有メモリアリーナから事前割り当てされた実体（共有メモリスライス等）の右辺値ムーブ（`&&`）によってのみ移譲される（ゼロコピー所有権移譲、`{IPC_ZeroCopy}` `{OwnershipTransfer}` `{ADR_SharedBlockRaii}`）。 `{CSPCommunication}` `{GLOBAL_Policy_Memory}` `{ADR_RendezvousChannel}`
+タスク間の同期と通信を仲介するデータ構造。ホーアCSPの定義どおり **チャネル自身は値を保持しない**（）。送信側は相手が現れるまで自身のフレーム上で転送リソース（`shared_block` 等のムーブ専用オブジェクト）を保持したまま待機し、ランデブー成立の瞬間に所有権が受信側へ移る。有界かつ安全なメモリ管理を規定する に従い、リソースは共有メモリアリーナから事前割り当てされた実体（共有メモリスライス等）の右辺値ムーブ（`&&`）によってのみ移譲される（ゼロコピー所有権移譲、）。
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
 | 待機タスク参照 | このチャネルで待機している単一タスクへの参照。空・送信待機・受信待機の3状態を取る | タスク参照 | `task_id`（無効値で「待機なし」を表す） |
 | 待機方向 | 待機タスクが送信側か受信側かの区別 | 列挙 | `NONE` / `SEND` / `RECV` |
 
-**チャネルがバッファも待機列も持たない設計理由と不変条件 (`{ADR_RendezvousChannel}`)**:
+**チャネルがバッファも待機列も持たない設計理由と不変条件 ()**:
 - **値スロット完全不在による二重所有排除 (`GOTCHA-COOS-01`)**:
   チャネル構造体自身はメッセージバッファ（値スロット）を一切保持しない。送信側タスクは相手が現れるまで自身のコルーチンフレーム上に値を留めたまま待機し、受信側タスクが到着した瞬間にフレーム間で直接手渡し（ゼロコピー所有権移譲）を行う。これにより、チャネル満杯（overflow）や送信失敗時の複雑なロールバック処理が原理的に不要となり、さらに「チャネルが中間的に値を保持している状態」が存在しないため、二重所有（Double Ownership）やメモリリークが構造的・形式的に排除される。
 - **1チャネル1待機者制約とキューイングの排除 (`GOTCHA-COOS-02`)**:
@@ -70,7 +70,9 @@ graph TD
 チャネルを通じたCSPメッセージ通信の基本的な制御ロジックを以下に示す。 `{CSPCommunication}`
 直接コンテキストスイッチ（CSP Handoff）は、呼び出しスタックの再帰的な蓄積を防ぐため、C++20 コルーチンの**対称遷移（Symmetric Transfer: `await_suspend` から `coroutine_handle` を返却）** を採用し、スタック深度を定数 $O(1)$ に保つ。
 
-連続ハンドオフは `FB_CONF_MAX_CONSECUTIVE_HANDOFFS` で有界化する。この上限は `{MainLoopReturnGuarantee}` の形式証明が依拠する前提であり、実装は必ずこのカウンタを備えなければならない。
+連続直接ハンドオフ回数は `FB_CONF_MAX_CONSECUTIVE_HANDOFFS` で制限する。上限到達後は直接遷移せず、スケジューラのメインループへ制御を戻す。
+
+形式検証するのは、この制御復帰とモデル内の既存 READY タスクのディスパッチである。全タスクの公平性や有界な実時間応答は保証しない。
 
 
 #### 同期ランデブー通信プロトコル（責務シーケンス図）
@@ -205,17 +207,17 @@ COOS の動的スケジューリングおよび同期通信の基本アルゴリ
 
 | アルゴリズム / 機構 | 契機・条件 | 動作内容 | 目的・安全性不変条件 | 関連キーワード |
 | :--- | :--- | :--- | :--- | :--- |
-| **CSP Handoff** | `send`/`recv` 時に相手タスクが待機中 | スケジューラをバイパスして即座に相手タスクへ直接対称遷移 | ディスパッチオーバーヘッドの極小化 | `{CSP_Handoff}` |
-| **直接コンテキストスイッチ (Direct Context Switch)** | コルーチンの対称遷移 | コールスタックを消費せず相手タスクのコルーチンハンドルへ直接ジャンプ | 2KB極小スタックでのスタックオーバーフロー完全防止 | `{DirectContextSwitch}` |
-| **割り込みウェイクアップ (Interrupt Wakeup)** | 外部イベント発生 | ISRは固定長FIFOへ汎用`interrupt-event`を投函するのみ。スケジューラが協調境界でドレインして待機タスクをREADY化 | ISRクリティカルセクション極小化・多重割り込みロック競合防止（`GOTCHA-COOS-03`） | `{GLOBAL_InterruptWakeup}` |
-| **Idle Detection** | 全タスクがBLOCKEDかつイベントキュー空 | 登録済み `idle_hook` コールバック群を専用Idleタスクとして呼び出す（呼び出し先の内部状態・トリガー条件には関与しない） | CPU省電力化および低優先度保守タスクの安全実行 | `{GLOBAL_IdleDetection}` |
-| **Memory Management** | タスク生成時 | コンパイル時固定プールから独立したメモリパーティションを切り出して貸与 | タスク間ヒープ干渉の物理排除 | `{GLOBAL_StrictMemoryLimit}` `{GLOBAL_IndependentHeap}` |
+| **CSP Handoff** | `send`/`recv` 時に相手タスクが待機中 | スケジューラをバイパスして即座に相手タスクへ直接対称遷移 | ディスパッチオーバーヘッドの極小化 | |
+| **直接コンテキストスイッチ (Direct Context Switch)** | コルーチンの対称遷移 | コールスタックを消費せず相手タスクのコルーチンハンドルへ直接ジャンプ | 2KB極小スタックでのスタックオーバーフロー完全防止 | |
+| **割り込みウェイクアップ (Interrupt Wakeup)** | 外部イベント発生 | ISRは固定長FIFOへ汎用`interrupt-event`を投函するのみ。スケジューラが協調境界でドレインして待機タスクをREADY化 | ISRクリティカルセクション極小化・多重割り込みロック競合防止（`GOTCHA-COOS-03`） | |
+| **Idle Detection** | 全タスクがBLOCKEDかつイベントキュー空 | 登録済み `idle_hook` コールバック群を専用Idleタスクとして呼び出す（呼び出し先の内部状態・トリガー条件には関与しない） | CPU省電力化および低優先度保守タスクの安全実行 | |
+| **Memory Management** | タスク生成時 | コンパイル時固定プールから独立したメモリパーティションを切り出して貸与 | タスク間ヒープ干渉の物理排除 | |
 
-- **CSP Handoff (直接スイッチ)**: `send`/`recv` 時に相手タスクが既に待機状態であった場合、スケジューラを介さず即座に相手タスクへ実行権を移譲する。 `{CSP_Handoff}`
-- **直接コンテキストスイッチ (Direct Context Switch)**: コルーチンの対称遷移（Symmetric Transfer）により、コールスタックを消費せずに相手タスクのコルーチンハンドルへ直接ジャンプする。OSスケジューラのキュー処理オーバーヘッドを完全にバイパスし、極小スタック（2KB）環境下でもスタックオーバーフローを起こさない決定論的 $O(1)$ スイッチを実現する。実測は [`direct_context_switch_bench.py`](docs/components/tier1_core/benchmarks/direct_context_switch_bench.py) を参照。 `{DirectContextSwitch}`
-- **割り込みウェイクアップ (Interrupt Wakeup)**: 外部イベントが発生した際、割り込みサービスルーチン（ISR）から `notify_interrupt(interrupt-event)` が呼び出され、固定長FIFOへ原因レコードを投函する。**実装の勘所と設計理由 (`GOTCHA-COOS-03`)**: ISR コンテキスト内ではタスク状態や優先度キューを一切直接書き換えない。ISR で直接キュー操作やコルーチン起床を行うと、ハードウェア割り込み無効化区間（クリティカルセクション）が肥大化し、最高優先度割り込みの応答レイテンシが劣化するだけでなく、多重割り込み時のロック競合を引き起こす。そのため、ISR は固定長FIFOへの原子的なイベント記録のみを行い、スケジューラが各協調境界（`run_step` 開始時）でこれをドレイン（`drain_interrupts`）して初めて、`vector_id`に対応する待機タスクを READY 状態へ遷移させて実行可能キュー末尾に投入する。FIFO満杯または待機先が未登録の場合はドロップし、ドロップ数を記録する。 `{GLOBAL_InterruptWakeup}`
-- **Idle Detection**: 全ての実行中タスクがブロック状態にあり、かつイベントキューが空（割り込みや外部イベントによる起床待ちのみ）の場合にアイドル状態と判定する。この条件が成立した時のみ、登録済みの `idle_hook` コールバック群をREADYリング外の専用Idleタスクとして呼び出す。個々のコールバック（ログフラッシュ等）が実際にいつ・何を処理するかはコールバック側の内部実装事項であり、COOS はそれを規定・関知しない（登録・起動機構のみを提供する）。ログフラッシュの具体的なトリガー条件は [`runtime_logging.md`](docs/components/tier2_runtime/runtime_logging.md) を正本とする。 `{GLOBAL_IdleDetection}`
-- **Memory Management**: タスク生成時に独立したメモリパーティションを割り当てる。 `{GLOBAL_StrictMemoryLimit}` `{GLOBAL_IndependentHeap}`
+- **CSP Handoff (直接スイッチ)**: `send`/`recv` 時に相手タスクが既に待機状態であった場合、スケジューラを介さず即座に相手タスクへ実行権を移譲する。
+- **直接コンテキストスイッチ (Direct Context Switch)**: コルーチンの対称遷移（Symmetric Transfer）により、コールスタックを消費せずに相手タスクのコルーチンハンドルへ直接ジャンプする。OSスケジューラのキュー処理オーバーヘッドを完全にバイパスし、極小スタック（2KB）環境下でもスタックオーバーフローを起こさない決定論的 $O(1)$ スイッチを実現する。実測は [`direct_context_switch_bench.py`](docs/components/tier1_core/benchmarks/direct_context_switch_bench.py) を参照。
+- **割り込みウェイクアップ (Interrupt Wakeup)**: 外部イベントが発生した際、割り込みサービスルーチン（ISR）から `notify_interrupt(interrupt-event)` が呼び出され、固定長FIFOへ原因レコードを投函する。**実装の勘所と設計理由 (`GOTCHA-COOS-03`)**: ISR コンテキスト内ではタスク状態や優先度キューを一切直接書き換えない。ISR で直接キュー操作やコルーチン起床を行うと、ハードウェア割り込み無効化区間（クリティカルセクション）が肥大化し、最高優先度割り込みの応答レイテンシが劣化するだけでなく、多重割り込み時のロック競合を引き起こす。そのため、ISR は固定長FIFOへの原子的なイベント記録のみを行い、スケジューラが各協調境界（`run_step` 開始時）でこれをドレイン（`drain_interrupts`）して初めて、`vector_id`に対応する待機タスクを READY 状態へ遷移させて実行可能キュー末尾に投入する。FIFO満杯または待機先が未登録の場合はドロップし、ドロップ数を記録する。
+- **Idle Detection**: 全ての実行中タスクがブロック状態にあり、かつイベントキューが空（割り込みや外部イベントによる起床待ちのみ）の場合にアイドル状態と判定する。この条件が成立した時のみ、登録済みの `idle_hook` コールバック群をREADYリング外の専用Idleタスクとして呼び出す。個々のコールバック（ログフラッシュ等）が実際にいつ・何を処理するかはコールバック側の内部実装事項であり、COOS はそれを規定・関知しない（登録・起動機構のみを提供する）。ログフラッシュの具体的なトリガー条件は [`runtime_logging.md`](docs/components/tier2_runtime/runtime_logging.md) を正本とする。
+- **Memory Management**: タスク生成時に独立したメモリパーティションを割り当てる。
 
 ##### コンセプトコード参照 (Reference Concept Implementation)
 <!-- evidence: concept: concepts/coos_concept.py -->
@@ -273,10 +275,10 @@ stateDiagram-v2
 - **Uninitialized**: COOS 初期化前
 - **Operational**: 正常稼働の複合状態。
   - **Ready**: 実行可能タスクが存在し、ディスパッチ待ちの状態。
-  - **Running Task**: 1つ以上のタスクが実行中。各タスクは独立メモリプール（`GLOBAL_IndependentHeap`）から論理的に切り出された固定サイズメモリ内に完全に隔離され、実行が保護される。 `{GLOBAL_StrictMemoryLimit}` `{GLOBAL_IndependentHeap}`
+  - **Running Task**: 1つ以上のタスクが実行中。各タスクは独立メモリプール（`GLOBAL_IndependentHeap`）から論理的に切り出された固定サイズメモリ内に完全に隔離され、実行が保護される。
   - **Idle**: 全タスクが BLOCKED で、イベント待ちの状態。アイドルフック実行時は追加のメモリ消費は発生しない。
-- **Recovery**: タスク障害（panic、メモリ保護例外等）が発生し、安全な状態への復旧処理中。`{META_RecoveryStrategy}` の分類との対応は次のとおり: `Recovery --> Operational`（recovery complete）は当該タスクの `restart`（TCB・ヒープ初期化、他サービス・カーネルのメモリ空間は隔離済みのため波及なし）に相当する。`Recovery --> Shutdown`（unrecoverable error）は `panic`（全タスク停止、クラッシュダンプ出力、フェイルセーフ停止）に相当し、`ignore`/`retry` では継続不能と判定された場合のみ到達する。
-- **Shutdown**: システム終了処理中。リソースの静的解放。`{META_RecoveryStrategy}` の `panic` が要求するフェイルセーフ停止の完了状態。
+- **Recovery**: タスク障害（panic、メモリ保護例外等）が発生し、安全な状態への復旧処理中。の分類との対応は次のとおり: `Recovery --> Operational`（recovery complete）は当該タスクの `restart`（TCB・ヒープ初期化、他サービス・カーネルのメモリ空間は隔離済みのため波及なし）に相当する。`Recovery --> Shutdown`（unrecoverable error）は `panic`（全タスク停止、クラッシュダンプ出力、フェイルセーフ停止）に相当し、`ignore`/`retry` では継続不能と判定された場合のみ到達する。
+- **Shutdown**: システム終了処理中。リソースの静的解放。の `panic` が要求するフェイルセーフ停止の完了状態。
 
 ### 4.3 タスク状態遷移図 (SMD: Task ライフサイクル概要)
 
@@ -294,6 +296,7 @@ stateDiagram-v2
     Running --> Blocked : block_on_ipc / block_on_event / block_on_interrupt
     Blocked --> Running : csp_handoff (Direct Context Switch)
     Blocked --> Ready : event_dispatched / interrupt_notified
+    Blocked --> Terminated : task_killed / remove_wait_registrations
 
     Running --> Terminated : task_exit
 
@@ -308,15 +311,15 @@ stateDiagram-v2
   - **Wait CSP**: チャネル通信（Send/Recv）の相手タスクが到着するのを待機。
   - **Wait Event**: 非同期イベント（システムコールやIPC応答）の到着を待機。
   - **Wait Interrupt**: 汎用`interrupt-event`（ISRによる`notify_interrupt`）を待機。
-- **Terminated**: タスクの実行が終了し、静的に確保されたTCBスロットおよびパーティションメモリが再利用可能（解放）となった状態。`Running`（自然終了、`task_exit`）からのみ到達する。**`Blocked` タスクの強制終了（外部からの `task_killed`）は現時点で未実装**（チャネル待機者参照・イベント待機キューからの登録解除を伴う設計が必要であり、[backlog_list.md](docs/plans/backlog_list.md) で追跡対象とする）——本図はそれを実装済みの遷移として描かない。
+- **Terminated**: タスクが実行対象から外れ、待機登録とコルーチンが破棄された状態。自然終了に加え、`Blocked` または `SUSPENDED_CSP` のタスクを `task_killed` で終了できる。終了時はチャネルおよびselectグループの待機登録、割り込み待機登録を解除する。未登録IDまたは終了済みタスクへの要求は `false` を返し、現在実行中など対象条件を満たさない状態はアサーションで拒否する。
 
 ## 5. インターフェース設計
 <!-- traceability: {META_StaticDI} -->
-各コンポーネントの公開仕様を定義する。 `{META_StaticDI}`
+各コンポーネントの公開仕様を定義する。
 
 ### 5.1 `coos_harness` (システムハーネス)
 <!-- traceability: {META_StaticDI} {GLOBAL_ComponentHarness} -->
-コンポーネント間の依存関係を集約する構造体。テストの容易性と依存性の分離を実現する。 `{GLOBAL_ComponentHarness}` `{META_StaticDI}`
+コンポーネント間の依存関係を集約する構造体。テストの容易性と依存性の分離を実現する。
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
@@ -344,12 +347,12 @@ C++23/20 コルーチンおよび静的アロケーションを前提とした�
 
 #### 1. 所有権管理 `shared_block` (RAII ムーブセマンティクス)
 <!-- traceability: {ADR_SharedBlockRaii} {GLOBAL_Policy_Memory} {IPC_ZeroCopy} {OwnershipTransfer} -->
-タスク間で受け渡される共有メモリブロックやメッセージリソースは、動的ヒープを使用せず、ムーブ専用（Move-only RAII）の所有権移譲を保証する `shared_block`（`{ADR_SharedBlockRaii}`）によりカプセル化される。コピーコンストラクタおよびコピー代入演算子は明示的に削除（`delete`）され、CSPチャネルへの送受信時に右辺値参照（`&&`）を強制することで、コンパイル時に二重所有やデータ競合を完全に排除する。
+タスク間で受け渡される共有メモリブロックやメッセージリソースは、動的ヒープを使用せず、ムーブ専用（Move-only RAII）の所有権移譲を保証する `shared_block`（）によりカプセル化される。コピーコンストラクタおよびコピー代入演算子は明示的に削除（`delete`）され、CSPチャネルへの送受信時に右辺値参照（`&&`）を強制することで、コンパイル時に二重所有やデータ競合を完全に排除する。
 
 ```cpp
 namespace fireball {
 
-// ムーブセマンティクスのみを許可するRAII共有メモリリソース ({ADR_SharedBlockRaii})
+// ムーブセマンティクスのみを許可するRAII共有メモリリソース ()
 class shared_block {
  public:
   shared_block() noexcept = default;
@@ -389,15 +392,16 @@ class shared_block {
 
 | 不変条件 | 説明 | 検証方法 |
 | :--- | :--- | :--- |
-| **デッドロック不在** | 同期ランデブー通信において、クライアント・サーバ規律（非循環チャネル依存）および有界ハンドオフにより循環待ちデッドロックに陥らないこと。`{Challenge_CspHandoffStarvation}` | `formal/coos_channel_model.py` CTL 安全性検証 (`AG(Not(deadlock))` ➔ True) |
+| **デッドロック不在** | 同期ランデブー通信において、クライアント・サーバ規律（非循環チャネル依存）および有界ハンドオフにより循環待ちデッドロックに陥らないこと。| `formal/coos_channel_model.py` CTL 安全性検証 (`AG(Not(deadlock))` ➔ True) |
 | **二重所有不在** | 所有権アトミック移譲により、同一チャネルを複数タスクが同時に所有しないこと。 | `formal/coos_channel_model.py` CTL 安全性検証 (`AG(Not(double_owned))` ➔ True) |
-| **メインループ復帰保証** | 連続ハンドオフ上限 `FB_CONF_MAX_CONSECUTIVE_HANDOFFS` により、ハンドオフ連鎖から必ずスケジューラへ復帰すること。 | `formal/coos_channel_model.py` CTL 進行性検証 (`AG(at_max_limit -> AF(main_loop))` ➔ True) |
+| **ハンドオフ上限到達後の制御復帰** | 上限到達後に直接ハンドオフを続けず、モデル内でスケジューラのメインループへ制御を戻すこと。実時間応答や全タスクの公平性は対象外。 | `formal/coos_channel_model.py` CTL 進行性検証 (`AG(at_max_limit -> AF(main_loop))` ➔ True) |
+| **既存 READY タスクのディスパッチ** | 上限到達時点ですでに READY キューにいたタスクが、対象タスクより前にディスパッチされることをモデル内で確認する。後続の実行時間や全タスクの公平性は対象外。 | `formal/coos_channel_model.py` CTL 進行性検証 (`AG(at_max_limit -> AF(other_ready_dispatched))` ➔ True) |
 | **状態一貫性** | タスク状態 (READY/BLOCKED/SUSPENDED) が各操作後も整合していること。 | 直交表（ケース1-8） |
 
 ### 6.2 直交表: CSP通信と状態遷移
 <!-- traceability: {CSP_Handoff} {ADR_RendezvousChannel} {GLOBAL_InterruptWakeup} -->
 
-チャネル通信時のタスク状態とスケジューラの挙動を検証する。チャネルは値を保持しないため（`{ADR_RendezvousChannel}`）、状態は「待機者なし / 送信待機 / 受信待機」の3値のみを取り、バッファ満杯（Full）ケースは存在しない。割り込み通知はイベント駆動型として扱われる。
+チャネル通信時のタスク状態とスケジューラの挙動を検証する。チャネルは値を保持しないため（）、状態は「待機者なし / 送信待機 / 受信待機」の3値のみを取り、バッファ満杯（Full）ケースは存在しない。割り込み通知はイベント駆動型として扱われる。
 
 | ケース | 自タスク要求 | チャネル待機者 | 相手状態 | 期待される動作 (自) | 期待される動作 (他) |
 | :--- | :--- | :--- | :--- | :--- | :--- |
@@ -412,6 +416,6 @@ class shared_block {
 
 **注1**: ケース5・6は仕様上の不可能ケースであり、実装では `assert` により検出する。到達した場合は「1チャネルに複数の同方向待機者を作った」という設計違反を意味する。
 
-**注2**: ケース7は `FB_CONF_MAX_CONSECUTIVE_HANDOFFS` 到達時の挙動であり、`{MainLoopReturnGuarantee}` が形式検証している性質そのものに対応する。
+**注2**: ケース7は `FB_CONF_MAX_CONSECUTIVE_HANDOFFS` 到達時の挙動であり、`{MainLoopReturnGuarantee}` が検証するモデル内の制御復帰に対応する。タスクの実行時間や協調yieldの有無はこの検証対象に含まれない。
 
-**注3**: ケース8では、割り込みハンドラ（ISR）がタスク状態を直接変更せず、代わりに INT イベントをイベントキューに投入する。スケジューラ/イベントループが INT イベントを取り出し、対象タスクを READY へ遷移させる。 `{GLOBAL_InterruptWakeup}`
+**注3**: ケース8では、割り込みハンドラ（ISR）がタスク状態を直接変更せず、代わりに INT イベントをイベントキューに投入する。スケジューラ/イベントループが INT イベントを取り出し、対象タスクを READY へ遷移させる。

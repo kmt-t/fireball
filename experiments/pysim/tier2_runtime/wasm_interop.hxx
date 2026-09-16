@@ -98,6 +98,7 @@ typedef struct fireball_control_frame_native {
   uint32_t start;
   uint32_t match_end;
   uint32_t stack_height;
+  uint16_t result_arity;
 } fireball_control_frame_native;
 
 typedef struct fireball_control_stack_native {
@@ -159,10 +160,10 @@ static_assert(sizeof(wasm_run_result_native) == 24);
 static_assert(sizeof(value_stack_native) == 520);
 static_assert(offsetof(value_stack_native, values) == 0);
 static_assert(offsetof(value_stack_native, size) == 512);
-static_assert(sizeof(control_frame_native) == 16);
-static_assert(sizeof(control_stack_native) == 520);
+static_assert(sizeof(control_frame_native) == 20);
+static_assert(sizeof(control_stack_native) == 648);
 static_assert(offsetof(control_stack_native, frames) == 0);
-static_assert(offsetof(control_stack_native, size) == 512);
+static_assert(offsetof(control_stack_native, size) == 640);
 
 } // namespace fireball::runtime
 #endif

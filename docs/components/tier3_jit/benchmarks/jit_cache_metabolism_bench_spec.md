@@ -6,7 +6,7 @@
 正本: [`jit_runtime.md`](docs/components/tier3_jit/jit_runtime.md) jit_runtime.md (Cache Ring), [`jit_cache_model.py`](docs/components/tier3_jit/formal/jit_cache_model.py)
 参考実装: [`bench_jit_cache_metabolism.py`](experiments/pysim/benchmarks/jit/bench_jit_cache_metabolism.py)
 
-Fireball の JIT 実行基盤における **3面循環コードキャッシュ（`Active` / `Warm` / `Oldest`）の代謝メカニズム**、**Oldest 限定昇格（`{JIT_OldestOnly_Promote}`）**、**局所アンリンク安全性**、および極端なワークロードにおける**コーナーケース性能**を定量的に計測・検証する。 `{JIT_MultiBuffer_Cache}` `{JIT_OldestOnly_Promote}` `{HistoryBuffer}` `{SimpleJITArchitecture}` `{META_AccessDictionary}` `{LowLatencyJIT}`
+Fireball の JIT 実行基盤における **3面循環コードキャッシュ（`Active` / `Warm` / `Oldest`）の代謝メカニズム**、**Oldest 限定昇格（）**、**局所アンリンク安全性**、および極端なワークロードにおける**コーナーケース性能**を定量的に計測・検証する。
 
 ## 2. コーナーケース・測定項目一覧
 

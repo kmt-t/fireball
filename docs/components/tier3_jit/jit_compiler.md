@@ -3,23 +3,23 @@
      formal: formal/jit_cache_model.py
      benchmark: benchmarks/zero_runtime_overhead_bench.py
      concept: concepts/jit_copy_patch_concept.py
-     test: tests/jit_compiler_test_spec.md
+     test: docs/qa/tier3_jit/jit_compiler_test_spec.md
 -->
 
 ## 1. コンセプト
 <!-- traceability: {LowLatencyJIT} {JIT_CopyAndPatch} {JIT_ZeroCompileCostTheorem} {SimpleJITArchitecture} {JIT_Encoder} {PositionIndependentCode} {SinglePassCompilation} -->
-JIT Compiler は、WASMバイトコードを実行時にネイティブコードへ変換し、実行速度を向上させる。Execution Engine (`executor`) の一部として、インタープリタと一対の実行エンジンとして機能する。極小リソース環境（RAM 32KB〜64KB）において、コンパイルコストを極小化する「Zero Compile Cost」方針に基づき、最適化を省いた高速な **Copy-and-Patch** 方式を採用する。命令テンプレートは C++ `constexpr` アセンブラによりビルド時に確定され、実行時は単純なメモリコピーと特定箇所への定数書き込み（パッチ）のみを行う。 `{LowLatencyJIT}` `{JIT_CopyAndPatch}` `{JIT_ZeroCompileCostTheorem}` `{SimpleJITArchitecture}` `{JIT_Encoder}` `{PositionIndependentCode}` `{SinglePassCompilation}`
+JIT Compiler は、WASMバイトコードを実行時にネイティブコードへ変換し、実行速度を向上させる。Execution Engine (`executor`) の一部として機能する。極小リソース環境（RAM 32KB〜64KB）を対象とする。「Zero Compile Cost」方針に基づき、最適化を省いた高速な **Copy-and-Patch** 方式を採用する。命令テンプレートは C++ `constexpr` アセンブラによりビルド時に確定される。実行時は単純なメモリコピーと特定箇所への定数パッチのみを行う。
 
 ## 2. アーキテクチャ分類
 <!-- traceability: {META_3TierSeparation} {JIT_CopyAndPatch} -->
-本コンポーネントは **Tier 3 (詳細リーフコンポーネント: Leaf Component)** に属し、vSoC (`runtime_vsoc.md`) から分解された JIT コンパイルパイプライン、事前生成テンプレートのコピー＆パッチ結合、および C++ `constexpr` 命令エンコードを担当する。ランタイム側のエントリ検索・キャッシュ管理・ホットスポット検出は [`jit_runtime.md`](docs/components/tier3_jit/jit_runtime.md) が担当する。 `{META_3TierSeparation}` `{JIT_CopyAndPatch}`
+本コンポーネントは **Tier 3 (詳細リーフコンポーネント: Leaf Component)** に属する。vSoC (`runtime_vsoc.md`) から分解された JIT コンパイルパイプラインを担当する。事前生成テンプレートのコピー＆パッチ結合、および C++ `constexpr` 命令エンコードを担当する。ランタイム側のエントリ検索・キャッシュ管理・ホットスポット検出は [`jit_runtime.md`](docs/components/tier3_jit/jit_runtime.md) が担当する。
 
 ### 2.1 JIT サブシステムのデコンポジション
-<!-- traceability: {JIT_Encoder} {JIT_CopyAndPatch} -->
+<!-- traceability: {JIT_Encoder} {JIT_CopyAndPatch} {SimpleJITArchitecture} {JIT_MultiBuffer_Cache} -->
 JITサブシステムは、以下の2つの独立した設計書に責務を分離して構成される。
 
-- **[jit_compiler.md](docs/components/tier3_jit/jit_compiler.md)**: 命令テンプレートを用いたネイティブコード生成（Copy-and-Patch Engine）および静的な命令エンコード DSL（constexpr Assembler）。 `{JIT_Encoder}` `{JIT_CopyAndPatch}`
-- **[jit_runtime.md](docs/components/tier3_jit/jit_runtime.md)**: 実行履歴監視・ホットスポット判定（Hotspot Detector）、PC-アドレス変換検索（JIT Entry Index）、および 3面キャッシュローテーション。 `{SimpleJITArchitecture}` `{JIT_MultiBuffer_Cache}`
+- **[jit_compiler.md](docs/components/tier3_jit/jit_compiler.md)**: 命令テンプレートを用いたネイティブコード生成（Copy-and-Patch Engine）および静的な命令エンコード DSL（constexpr Assembler）を担当する。
+- **[jit_runtime.md](docs/components/tier3_jit/jit_runtime.md)**: 実行履歴監視・ホットスポット判定、PC-アドレス変換検索、および 3面キャッシュローテーションを担当する。
 
 ## 3. 静的モデル
 
@@ -53,18 +53,18 @@ flowchart TD
 
 #### コンパイル単位とインタープリタ協調方針
 <!-- traceability: {LowLatencyJIT} {SimpleJITArchitecture} {PositionIndependentCode} -->
-- **関数/モジュール一括コンパイルの完全禁止**: 極小リソース環境（RAM 32KB〜64KB）におけるコンパイル遅延とメモリ消費をゼロ化するため、関数全体やモジュール全体の事前一括コンパイルは一切行わない。
-- **純粋ベーシックブロック/トレース単位コンパイル**: 2-bit カードテーブル（カードマーキング表）で HOT（`10`）に達した直線命令列（基本ブロック / トレース）のみを、スケジューラのアイドル時（`idle_hook` 等）に Copy-and-Patch により 1 トレースずつオンデマンド生成する。
+- **関数/モジュール一括コンパイルの完全禁止**: 極小リソース環境におけるコンパイル遅延とメモリ消費をゼロ化する。関数全体やモジュール全体の事前一括コンパイルは一切行わない。
+- **純粋ベーシックブロック/トレース単位コンパイル**: カードマーキング表で HOT（`10`）に達した直線命令列（基本ブロック / トレース）のみを対象とする。スケジューラのアイドル時等に Copy-and-Patch により 1 トレースずつオンデマンド生成する。
 - **制御フロー・スタック操作・演算の最適インライン展開方針 (`{JIT_RuntimeAPI_Fallback}`)**:
   - **JIT ネイティブ実行（インライン展開）対象（54命令）**:
-    高頻度な直線演算（定数、変数、算術、論理、比較、リニアメモリアクセス）に加え、**構文デリミタ（0バイト消去・ヘッダ直結）**、および**スタック巻き戻し（即値定数SP更新）を伴う多段分岐（`br`, `br_if`）** を JIT ネイティブ命令としてインライン展開する。
+    高頻度な直線演算（定数、変数、算術、論理、比較、メモリアクセス）をインライン展開する。**構文デリミタ（0バイト消去・ヘッダ直結）**、および**スタック巻き戻しを伴う多段分岐（`br`, `br_if`）** も JIT ネイティブ命令としてインライン展開する。
   - **インタープリタ委譲・ランタイムヘルパー対象（真のJIT境界命令）**:
     1. 関数間コール・フレーム生成: `call`, `call_indirect` (別フレームアロケーション、シグネチャ照合、WASI/ホスト呼出)
     2. 動的間接ジャンプテーブル: `br_table` (可変長ターゲット探索)
     3. システム・OS連携: `memory.grow`, `memory.copy`, `memory.fill`
-    4. ハードウェア非対応演算 (`{Libgcc_Runtime_Helper}`): FPU非搭載時の `f32`/`f64` 浮動小数点、64-bit 複雑除算（`libgcc` の `__divdi3` 等）
+    4. ハードウェア非対応演算 (`{Libgcc_Runtime_Helper}`): FPU非搭載時の浮動小数点演算や 64ビット整数除算・剰余は、専用ランタイムヘルパー（`fireball_rt_*`）呼び出しへ委譲する。
     これら制御境界・システムコール・ハードウェア非対応演算のみをインタープリタの命令ハンドラまたはランタイムヘルパーへ委譲する。
-- **ハンドラ互換ディスパッチ**: JIT トレースエントリポイントは、インタープリタの命令ハンドラ（`opcode_handler`）と完全に同一の C/C++ 関数シグネチャを持ち、ディスパッチテーブルから直接呼び出しが可能である。
+- **ハンドラ互換ディスパッチ**: JIT トレースエントリポイントはインタープリタ命令ハンドラと同一のシグネチャを持つ。ディスパッチテーブルから直接呼び出せる。
 
 ##### 3.3.1 制御フローおよびスタック巻き戻しの命令別処理モデル
 <!-- traceability: {JIT_CopyAndPatch} {JIT_LazyChaining} {PositionIndependentCode} -->
@@ -72,10 +72,10 @@ WASM バイトコードにおける制御フロー命令は、その内部動作
 
 1. **構文デリミタ・ヘッダ埋め込みモデル（0バイト消去 & トレースヘッダ直結）**:
    - **対象命令**: `block` (`0x02`), `loop` (`0x03`), `else` (`0x05`), `end` (`0x0B`)
-   - **処理モデル**: これらの命令は実行時の動的処理を一切持たない構文構造境界である。JIT コンパイル（基本ブロック抽出）時に後続の真の実行命令の PC（`fallthrough_head_pc`）を静的に解決し、**ネイティブ命令コードとしては 0 バイト消去（完全除去）** する。後続のフォールスルー先 PC はトレースヘッダ `jit_trace_header.chain_next_pc`（+0x08）に直接埋め込まれ、実行時に制御構造索引を検索するオーバーヘッドを完全撤廃する。
+   - **構文デリミタ**: 制御命令はネイティブコードとしては 0 バイト（完全消去）とする。後続のフォールスルー先 PC はトレースヘッダ `chain_next_pc`（+0x08）に直接埋め込む。実行時の制御構文オーバーヘッドを完全ゼロ化する。
 2. **スタック巻き戻し即値更新 & 直接ジャンプモデル（Inlined SP Adjustment & Relative Branch）**:
    - **対象命令**: `br` (`0x0C`), `br_if` (`0x0D`), `return` (`0x0F`)
-   - **スタック巻き戻しの本質**: WASM は検証済み静的型付けバイトコードであり、任意の `br depth` / `br_if depth` における巻き戻し量 $\Delta$（スタック深さの差分: 現在のスタック深さ − 分岐先ラベルの期待スタック深さ）は、**JIT コンパイル時に即値定数として完全確定** している。
+   - **スタック巻き戻しの本質**: WASM は検証済み静的型付きバイトコードである。任意の `br depth` / `br_if depth` における巻き戻し量 $\Delta$（スタック差分）は、**JIT コンパイル時に即値定数として完全確定** する。
    - **ネイティブ展開コード**: スタック巻き戻しは単なるスタックポインタ（SP）の即値加算であり、インタープリタ委譲は不要である。
      - `br`: `add sp, #(Δ * 4); b.w <rel_target>` の 2 命令で完結。
      - `br_if`: `cmp r3, #0; it ne; addne sp, #(Δ * 4); bne.w <rel_target>` の 4 命令（多段脱出 `depth > 0` を含む）で完結。
@@ -86,9 +86,9 @@ WASM バイトコードにおける制御フロー命令は、その内部動作
 
 ##### 3.3.2 JIT コンパイル対象命令セット仕様台帳（JIT Supported Opcode Specification）
 <!-- traceability: {JIT_CopyAndPatch} {JIT_ZeroCompileCostTheorem} {JIT_RegisterMapping} {PositionIndependentCode} -->
-JIT コンパイラがフォールバックせずにネイティブバイナリとしてインライン展開・生成する命令セット（全 54 命令）の仕様台帳を以下に定める。内訳は制御・スタック 5、構文デリミタ 4、定数ロード 2、変数アクセス 6、32bit 算術・論理 17、32bit 比較 11、リニアメモリアクセス 9 の合計 `5 + 4 + 2 + 6 + 17 + 11 + 9 = 54` 命令である。
+JIT ネイティブ実行対象命令（計 54 命令）の内訳は以下の通りである。スタック 5、デリミタ 4、定数 2、変数 6、32bit算術・論理 17、32bit比較 11、メモリ 9 の計54命令である。
 
-この54命令の語彙・展開形式は本表と `jit_copy_patch_concept.py` の全件カバレッジテストで検証し、`jit_cache_model.py` は本表の命令生成そのものではなく、JITキャッシュのW^X・ライフサイクル・チェイニング不変条件を検証する。
+全54命令の展開形式は概念コード [`jit_copy_patch_concept.py`](docs/components/tier3_jit/concepts/jit_copy_patch_concept.py) のテストで検証する。形式モデル `jit_cache_model.py` はキャッシュの W^X やチェイニング不変条件を検証する。
 
 | カテゴリ | WASM Opcode (Hex) | 命令名 | JIT ネイティブ展開形式 (Thumb-2) | スタック/レジスタ効果 | 生成バイト数 |
 | :--- | :--- | :--- | :--- | :--- | :--- |
@@ -165,25 +165,31 @@ JIT トレース内にインライン展開せず、トレース境界でイン�
 | **インタープリタ境界** | - | `i64.div_*`, `rem_*` | ゼロ除算・最小値オーバーフローのトラップ結果を返すABIを定義するまでインタープリタへ委譲 |
 
 **ABI 規約と境界チェック・バックパッチング (`GOTCHA-JITC-01`〜`05`)**:
-- **TOS/NOSキャッシュの書き込み方針**: CPS第4引数のTOSとJIT内部のNOS（`NTOS`）はライトバック・キャッシュであり、ライトスルーではない。JITトレース内部ではレジスタ値を正本として演算し、基本ブロック終端、JIT⇔インタープリタ境界、外部呼出し、トラップ脱出でのみ、dirtyなTOS/NOSを`sp`の指す共有Nativeスタックへ順序どおりspillし、`sp_offset`を更新する。入口の`tos`を無視して空の一時スタックから実行したり、出口でTOSを共有スタックへ書き戻さず破棄したりする実装は禁止する。 `{ADR_TosCacheAsymmetry}` `{ExecutionContext_Layout}`
-- **レジスタ整合性 (`GOTCHA-JITC-01`, `02`, `03`)**: JIT トレースとインタープリタは `__fastcall`（R0=ctx, R1=SP, R2=local_base, R3=tos）により共通の物理レジスタ規約を保持する。基本ブロック末尾では、スタックがプッシュされた場合に `TOS, NOS, NNOS` をスタック（`[R1, #offset]`）へフラッシュし、コンテキスト `R0` の `ip`（+0x00）および `sp_offset`（+0x0C）を書き換える。トレース生成時はホストアーキテクチャ（ARM/x64）の不変条件（呼び出し側退避レジスタの保全、スタックアライメント境界）を厳格に維持する。
-- **境界チェックとバックパッチング (`GOTCHA-JITC-04`, `05`)**: トレース末尾の直接ジャンプ（チェイニング）およびインタープリタへの脱出境界において、PC の境界検査を必ず先行させる。前方参照ブロックへのジャンプオフセットは、コード生成完了後にバックパッチングにより不可分に書き換えられ、未解決ジャンプによる迷走実行を完全に防止する。
-- **ARM MLS 命令のオペランド配置順序 (`GOTCHA-JITC-06`)**: ARM Thumb-2 の積和減算命令 `MLS Rd, Rn, Rm, Ra`（$Rd = Ra - Rn \times Rm$）を生成する際、減算の引かれる数（アキュムレータ）が第4オペランド $Ra$ に配置されるハードウェア仕様を遵守し、通常の乗算命令（$Rn, Rm$）との取り違えによる計算誤りを防ぐ。
+- **TOS/NOSキャッシュの同期**: JITトレース内ではレジスタ値を正本として演算する。基本ブロック終端、インタープリタ境界、トラップ時のみ dirty な値を Native スタックへ一括 spill し、`sp_offset` を更新する。キャッシュ値の破棄やダミー退避は禁止する。 `{ADR_TosCacheAsymmetry}` `{ExecutionContext_Layout}`
+- **レジスタ規約 (`GOTCHA-JITC-01`, `02`, `03`)**: JIT トレースとインタープリタは `__fastcall`（R0=ctx, R1=SP, R2=local_base, R3=tos）により共通の物理レジスタ規約を維持する。基本ブロック末尾では `TOS, NOS, NNOS` をスタックへフラッシュし、`ip` および `sp_offset` を同期する。トレースはホストアーキテクチャの呼び出し保護レジスタ保存規則を厳格に維持する。
+- **境界チェックとバックパッチング (`GOTCHA-JITC-04`, `05`)**: トレース内ジャンプおよびインタープリタ脱出境界において、PC 境界検証を必ず行う。前方参照へのジャンプオフセットはコード生成完了時にバックパッチングで不可分に書き込む。不正ジャンプを完全に防止する。
+- **ARM MLS 命令のオペランド配置制約 (`GOTCHA-JITC-06`)**: ARM Thumb-2 の積和減算命令 `MLS Rd, Rn, Rm, Ra`（$Rd = Ra - Rn \times Rm$）では、引かれる数が第4オペランド $Ra$ に配置されるハードウェア仕様を遵守する。通常の乗算命令との取り違えを防止する。
 
 #### コピーアンドパッチエンジン（CopyAndPatchEngine）クラス
 <!-- traceability: {JIT_RegisterMapping} {ContextPointerRegister} {EnvironmentPointer} {ADR_TosCacheAsymmetry} {PositionIndependentCode} -->
-テンプレートの解決とバイナリ操作をカプセル化する。インタープリタの `opcode_handler` と完全整合する `__fastcall` CPS 4引数呼び出し規約（`R0: ctx`, `R1: sp`, `R2: local_base`, `R3: tos`）に基づいて設計される。`env`（`vsoc_runtime`）は独立引数レジスタとしては廃止され、`R0` が指す `execution_context` 内に完全内包される（ADR-INTERP-03）。
+Interpreter opcode handlerと同じCPS 4引数の引数レジスタ配置を使うが、戻り値契約は異なる。Interpreter handlerは`handler_result`を返し、JIT trace entryは`void`で終了・chainするため、関数ポインタ型を共用しない。
 
 ```c
-// インタープリタ命令ハンドラおよび JIT トレース共通の C 呼び出し規約
+// Interpreter handlerとJIT trace entryは引数レジスタ配置のみ共有する。
 // コメントは「実機 ARM AAPCS レジスタ / 実機 RISC-V ABI レジスタ / x86-64 ホストシミュレータ __fastcall レジスタ」の対応を示す。
 // この4本は呼び出し境界でのみ使われ、jit_stencil_catalog.md のトレース本体内 assignable pool
 // (ARM R4-R6, R8-R11 / RISC-V s1-s7) とは物理レジスタが重ならない別の割り当てである。
-typedef void (*opcode_handler_t)(
+typedef handler_result (*interpreter_opcode_handler_t)(
     execution_context* ctx,        // ARM R0 / RISC-V a0 / x86-64 RCX: 実行コンテキスト (152バイト)
     uint32_t*          sp,         // ARM R1 / RISC-V a1 / x86-64 RDX: オペランドスタックポインタ
     void*              local_base, // ARM R2 / RISC-V a2 / x86-64 R8:  ローカル変数配列基底ポインタ
     uint32_t           tos         // ARM R3 / RISC-V a3 / x86-64 R9:  スタックトップ値 (Top of Stack)
+);
+typedef void (*jit_trace_entry_t)(
+    execution_context* ctx,
+    uint32_t*          sp,
+    void*              local_base,
+    uint32_t           tos
 );
 ```
 
@@ -191,11 +197,11 @@ typedef void (*opcode_handler_t)(
 | :--- | :--- | :--- | :--- |
 | テンプレート辞書 | WASM命令に対応するJITテンプレートの検索索引 | アクセス辞書 | `jit_template_map` |
 | 命令テンプレート | WASM命令に対応するネイティブバイナリの雛形 | バイナリビュー | ROM参照（[jit_stencil_catalog.md](docs/specs/jit_stencil_catalog.md) 準拠。Thumb-2 のみを収録し、RISC-V の物理ステンシルは別カタログとして今後定義する） |
-| 位置独立性 (PIC) | 任意アドレス・キャッシュバンクで再コンパイル不要で動作 | 設計制約 | プロセス絶対アドレス埋め込み禁止。`local_base` 相対、`R1(sp)` 相対、`ctx` 内の `jit_helper_ptrs[]` 間接参照、`rel32` 相対分岐のみ `{PositionIndependentCode}` |
+| 位置独立性 (PIC) | 任意アドレス・キャッシュバンクで再コンパイル不要で動作 | 設計制約 | プロセス絶対アドレス埋め込み禁止。`local_base` 相対、`R1(sp)` 相対、`ctx` 内の `jit_helper_ptrs[]` 間接参照、`rel32` 相対分岐のみ |
 
 ##### 物理レジスタマッピング一覧表
 <!-- traceability: {JIT_RegisterMapping} {AAPCS_FastCall} -->
-JIT トレースとインタープリタは呼び出し境界において CPS 4引数規約を共有し、トレース内部では assignable pool を用いることで物理競合を防止する（`GOTCHA-JITC-01`）。
+JIT トレースとインタープリタは境界において CPS 4引数を共有する。トレース内ではスクラッチレジスタをフル活用する。
 
 | アーキテクチャ | 物理レジスタ | 規約上の役割 / CPS引数 | トレース内部での用途 | 退避・保護責務 |
 | :--- | :--- | :--- | :--- | :--- |
@@ -218,16 +224,16 @@ JIT トレースとインタープリタは呼び出し境界において CPS 4�
 
 #### トレース境界不変条件とスタックフレーム整合性 (Trace Boundary Invariants)
 <!-- traceability: {LowLatencyJIT} {PositionIndependentCode} {JIT_RuntimeAPI_Fallback} -->
-JIT トレースとインタープリタが同一の UnifiedStack 上でシームレスに相互運用するため、以下の 3 つの不変条件を厳格に保持する：
+JIT トレースとインタープリタが共有の OperandStack 上でシームレスに相互運用するため、以下の 3 つの不変条件を厳格に保持する：
 
 1. **スタック自己完結性不変条件 (Stack Self-Containment Invariant)**:
    - JIT コンパイル対象とする BasicBlock は、**命令走査中の累積スタック深さが 0 未満（`stack_depth < 0`）に落ちない自己完結ブロックのみ**とする。
    - 先頭で `local.set` や二項演算が先行し、呼び出し元のオペランドスタック上の値を前提とするブロックは JIT 化せず、インタープリタがスタック整合性を保持して安全に実行する。
 2. **トレース境界でのメモリ同期不変条件 (Memory Synchronization at Trace Boundary)**:
-   - 基本ブロック末尾（トレース終了時、分岐時、ハンドラ呼び出し時、Safepoint 到達時）では、スタックがプッシュされた場合に `TOS, NOS, NNOS`（`R3, R4, R5`）をスタック（`[R1, #offset]`）へフラッシュし、コンテキスト `R0` の `ip`（`+0x00`）および `sp_offset`（`+0x0C`）を書き換えて状態を完全同期する。未確定のレジスタ状態を次のブロックやインタープリタへ持ち越さない。
+- 基本ブロック末尾では、`TOS, NOS, NNOS` をスタックへフラッシュする。コンテキスト `R0` の `ip` および `sp_offset` を更新して状態を同期する。
 3. **制御フロー・コール境界のインタープリタ委譲不変条件 (Control & Call Delegation Invariant)**:
-   - スタック巻き戻し（SP即値加算）を伴う多段分岐（`BR`, `BR_IF`）、構文デリミタ（`BLOCK`, `LOOP`, `ELSE`, `END`）、および復帰（`RETURN`）は JIT トレース内にインライン展開する。
-   - 一方、新しいコールフレーム生成や動的解決を伴う `CALL`, `CALL_INDIRECT`, `BR_TABLE` に遭遇した場合は、その直前で BasicBlock を終端し、インタープリタまたは専用ランタイムハンドラに委譲する。
+- スタック巻き戻しを伴う分岐（`BR`, `BR_IF`）および構文デリミタ（`BLOCK`, `LOOP`, `ELSE`, `END`）は、JIT トレース内にインライン展開する。
+- 一方、`CALL`, `CALL_INDIRECT`, `RETURN` 等の境界命令はインライン展開しない。トレース境界でインタープリタへ制御を返す。
 
 #### JIT トレース物理メモリレイアウト (`jit_trace_header`)
 <!-- traceability: {JIT_LazyChaining} {SimpleJITArchitecture} {PositionIndependentCode} -->
@@ -259,66 +265,71 @@ JIT キャッシュ内に書き込まれる各トレースは、**先頭に 16 �
 <!-- traceability: {JIT_CopyAndPatch} {JIT_RuntimeAPI_Fallback} {SinglePassCompilation} -->
 1. **トレース解析 & テンプレート選択**: WASM PC から始まる基本ブロックを 1 パス走査し、対応する事前生成ステンシルテンプレートを選択する。
 2. **メモリコピー & パッチ適用**: アクティブキャッシュへテンプレート命令列をコピーし、即値オペランドや相対分岐オフセットをインプレースでパッチする。
-3. **AAPCS 境界フォールバック**: 複雑な命令やホスト関数呼び出しはランタイム API 呼び出しスタブを生成してフォールバックする。 `{JIT_RuntimeAPI_Fallback}`
+3. **AAPCS 境界フォールバック**: 複雑な命令やホスト関数呼び出しはランタイム API 呼び出しスタブを生成してフォールバックする。
 4. **命令キャッシュ同期**: パッチ完了後、`__DSB()` および `__ISB()` バリアを発行して命令キャッシュを同期する。
 5. **インタープリタ連携とハンドラ直接呼び出し (Low-Overhead Interop & Direct Handler Call)**:
-   - JIT トレースとインタープリタの命令ハンドラ（`opcode_handler`）は完全に同一の CPS 4引数呼び出し規約（`R0: ctx, R1: sp, R2: local_base, R3: tos`）を共有する。
+- JIT トレースとインタープリタハンドラは同一の CPS 4引数規約（R0=ctx, R1=SP, R2=local_base, R3=tos）を共有する。
    - JIT トレースは直線的な算術・ローカル変数演算、構文デリミタ消去、および SP 即値巻き戻しを伴う多段分岐（`br`, `br_if`）をネイティブインライン展開する。
-   - コールフレーム生成や動的解決が必要な真の境界命令（`call`, `call_indirect`, `br_table`）やホストシステムコールに達した際は、直接インタープリタのハンドラテーブル（`handler_table[opcode]`）へ末尾ジャンプ（Tail Jump / `BX`）するか、`execution_context.ip`（`R0` の `+0x00`）を更新して `void` でインタープリタへ即座にフォールバックする。
+- コールフレームや同期が必要な境界命令に達した場合、トレース末尾で Callee-saved を復元する。レジスタ引数を保持したままインタープリタへ末尾ジャンプ（`BX r12`）する。
    - Cで実装する複雑処理へ委譲する場合は、命令別の同一CPS 4引数関数ポインタをJIT専用コンテキストメンバ `jit_helper_ptrs[]` に保持する。JITは対象命令のメンバを `ctx` 相対で直接ロードし、フレームを復元してから末尾ジャンプするため、関数アドレスはPICコードへ埋め込まれない。委譲前の値は共有Nativeスタックへraw 32bitワードで同期する。 `{PositionIndependentCode}`
-   - レジスタ規約が完全一致しているためコンテキスト再構築コストはゼロであり、JIT の軽量性（Zero Compile Cost）と完全な制御フロー安全性を両立する。 `{JIT_RuntimeAPI_Fallback}` `{ADR_TosCacheAsymmetry}`
+   - レジスタ規約が完全一致しているためコンテキスト再構築コストはゼロであり、JIT の軽量性（Zero Compile Cost）と完全な制御フロー安全性を両立する。 `{ADR_TosCacheAsymmetry}`
 
 #### JIT トレース検索 & 3面キャッシュ代謝オーケストレーション
 <!-- traceability: {JIT_MultiBuffer_Cache} {JIT_OldestOnly_Promote} -->
-4段直接 JIT 検索および 3面キャッシュローテーションの詳細は、ランタイム管理の正本である `{JIT_MultiBuffer_Cache}` を参照すること。コンパイラコアは生成されたネイティブトレースの登録と命令同期を `{JIT_MultiBuffer_Cache}` に委譲する。
+3段JIT検索および連続8KBキャッシュ領域の管理は[`jit_runtime.md`](docs/components/tier3_jit/jit_runtime.md)を正本とする。コンパイラコアは生成したトレースの登録と命令同期を同コンポーネントへ委譲する。
 
 #### トレース・チェイニング（連鎖実行）と専用分岐ハンドラ分離
 <!-- traceability: {JIT_LazyChaining} -->
-検索オーバーヘッドを排除し、ネイティブコード同士を直接接続（チェイニング）するため、**純粋インタープリタ用のジャンプハンドラと、JIT トレースから呼び出される専用チェイニングハンドラ（`jit_chain_branch_handler`）を明確に分離**する。
+Interpreter／RuntimeEngineからJITへ入るときは必ず共通プロローグ（AAPCS準拠開始プロローグ）を通す。JITトレース間では必須のトレースチェインエピローグで共有状態を同期し、callee-savedレジスタを維持したままchainする。RuntimeEngine／Interpreterへ抜けるときだけAAPCS準拠終了エピローグでレジスタとstack frameを復元する。
 
 ```mermaid
 flowchart TD
-    JITTrace[JIT Trace Body Exec] --> CheckHdr[Check chain_target_addr in Trace Header]
-    CheckHdr -->|Target != 0: Resolved| DirectBranch[BX r12: Direct Jump to Successor Body]
-    DirectBranch --> NextTrace[Successor JIT Trace Native Exec Skip Prologue]
-    CheckHdr -->|Target == 0: Unresolved| FallbackStub[Execute Epilogue Flush + POP PC]
-    FallbackStub --> InterpLoop[Return to Interpreter Loop / Record Hotspot]
+    JITTrace[JIT Trace Body Exec] --> ChainEpilogue[Flush cache + sync shared context]
+    ChainEpilogue --> CheckHdr[Check chain_target_addr and variant]
+    CheckHdr -->|Compatible| DirectBranch[BX r12: chain entry]
+    CheckHdr -->|Incompatible| Setup[Setup code reloads required variant]
+    Setup --> NextTrace[Successor trace body; preserve AAPCS frame]
+    CheckHdr -->|Target absent| ExitEpilogue[Final AAPCS epilogue: restore regs and alignment]
+    ExitEpilogue --> InterpLoop[Return to RuntimeEngine / Interpreter]
 ```
 
 1. **ハンドラの責務分離とヘッダ参照分岐**:
    - **純粋インタープリタ用ハンドラ (`_h_br` 等)**: 単純にスタックを巻き戻して次の WASM PC を算出し、ディスパッチループへ戻る（JIT 探索やパッチのオーバーヘッドが完全ゼロ）。
-   - **JIT トレース末尾のヘッダ参照分岐 (`STENCIL_DYNAMIC_CHAIN_EXIT`)**: トレース末尾ではコード自体の書き換え（インプレースパッチ）を行わず、自身のトレースヘッダ内のデータフィールド `chain_target_addr`（+0x0C）をロードして `CMP` 判定する。
+- **JITトレース末尾のヘッダ参照分岐 (`STENCIL_DYNAMIC_CHAIN_EXIT`)**: 各基本ブロック末尾で必須のトレースチェインエピローグを実行し、cache flushと共有実行コンテキスト同期を済ませてから`chain_target_addr`（+0x0C）を判定する。
 2. **ヘッダ直接リンク（Header-Driven Chaining without Code Patching）**:
-   - **初期コンパイル時**: トレースヘッダの `chain_target_addr` は `0`（未解決）で初期化される。トレース末尾では `chain_target_addr == 0` を検知してエピローグ（Flush + POP）を実行し、安全にインタープリタへ復帰する。
-   - **後続トレースコンパイル時**: 後続トレースがキャッシュ（Active/Warm）に生成された瞬間、ランタイムは先行トレースのヘッダデータスロット `chain_target_addr` に、後続トレースのプロローグ直後（チェイン入口アドレス）を不可分に書き込む。命令コードキャッシュの MPU W^X 属性切り替えや `__ISB()` 命令同期バリアを発行することなく、完全ゼロオーバーヘッドで直接チェインが確立される。
-   - **チェイン実行時**: 次回先行トレース実行時、`chain_target_addr != 0` が成立するため、エピローグ（Flush/POP）をスキップし、`BX r12` により後続トレースの本体（プロローグスキップ位置）へ直接ジャンプする。
+   - **初期コンパイル時**: `chain_target_addr`は未解決を表す。トレースチェインエピローグでflush/syncした後、最終AAPCSエピローグを実行してRuntimeEngine／Interpreterへ戻る。
+   - **後続トレースコンパイル時**: 後続トレースがキャッシュ（Active/Warm）に生成されたとき、先行ヘッダの`chain_target_addr`へ後続のchain entryを登録する。
+   - **チェイン実行時**: `chain_target_addr`解決後もflush/syncとvariant判定は省略しない。互換variantはchain entryへ直接分岐し、非互換variantは共有OperandStackからレジスタ状態を作るsetup codeを挟む。callee-saved状態とAAPCS frameは保持する。
 3. **未コンパイル時の遅延昇格**:
-   - 分岐先が未コンパイル（`chain_target_addr == 0`）の場合のみ、HistoryRing に分岐先 PC を記録した上でエピローグ経由でインタープリタへ戻る。次回以降ホット化してコンパイルされた際にヘッダが書き換えられてチェイニングが確立される。
-4. **局所再チェイニングとアンリンク（O(k) Bounded Re-chaining & Unlinking）**: チェイニング確立時にターゲットの属するバンクの **被チェイン逆引きテーブル（`inbound_chains`）** にソースの JIT エントリインデックスを登録する。ターゲットが Active $\to$ Warm $\to$ Oldest へ推移する間はキャッシュ内のコードは依然として有効に常駐しているため、チェイニングは維持され JIT 実行が継続する。**Oldest バンクがパージされ新 Active へローテートするまさにその瞬間**、破棄される Oldest バンクの `inbound_chains` に登録された被チェインエントリ（$k$ 件）のみを直接参照する。
-    - **ターゲットが Oldest-Only Promotion 等により Active/Warm へ昇格（Promote）している場合**: 先行トレースヘッダの `chain_target_addr` を昇格先のアドレスへ書き換え、昇格先バンクの `inbound_chains` へ登録を移譲する（インタープリタへフォールバックさせず、ネイティブ直接チェイン実行を維持）。
-    - **ターゲットが昇格せず完全にキャッシュアウト（Evict）する場合のみ**: 先行トレースヘッダの `chain_target_addr` を `0` にリセットする（コード変更なし）。次回実行時は自動的にエピローグ経路へ分岐しインタープリタへ安全にフォールバックする。
-    これにより、全走査オーバーヘッド $O(N)$ およびコード領域 W^X 切り替えコストを完全排除しつつ、生存トレース間のネイティブ実行効率を最大化する。 `{JIT_LazyChaining}`
+   - 分岐先が未コンパイル（`chain_target_addr == 0`）の場合、HistoryRingへ分岐先PCを記録し、最終AAPCS準拠終了エピローグでRuntimeEngine／Interpreterへ戻る。次回以降ホット化・コンパイルされた後にchainが確立する。
+4. **局所再チェイニングとアンリンク（O(k) Bounded Re-chaining & Unlinking）**:
+   - チェイニング確立時、ターゲットバンクの被チェイン逆引きテーブル（`inbound_chains`）にソースの JIT エントリインデックスを登録する。
+   - ターゲットが Active $\to$ Warm $\to$ Oldest へ推移する間、コードは有効に常駐する。チェイニングは維持され JIT 実行が継続する。
+   - Oldestバンクのローテーションは、被チェイン元$k$件の処理に加えて、PySimでは破棄bankの$n$個のスロットを`clear()`で走査する。bank検索も含む処理量は$O(n + k\log n)$であり、$O(k)$のみとは主張しない。
+   - **ターゲットが昇格（Promote）している場合**: 先行トレースヘッダの `chain_target_addr` を昇格先アドレスへ書き換える。昇格先バンクの `inbound_chains` へ登録を移譲する。ネイティブ直接チェイン実行を維持する。
+   - **ターゲットがキャッシュアウト（Evict）する場合**: 先行トレースヘッダの `chain_target_addr` を `0` にリセットする。次回実行時は自動的にエピローグ経路へ分岐し、インタープリタへ安全にフォールバックする。
+   - 逆引き表によりチェイン解決の対象を$k$件に限定するが、bank全体のclear処理は別途$O(n)$である。MPU W^X切り替え回数は設計上抑制する。
 5. **構文デリミタのトレースヘッダ直接埋め込みと直接チェイニング連携**:
-   - **制御構文デリミタの読み飛ばし**: WASM 基本ブロック末尾の制御命令（`BLOCK`, `LOOP`, `ELSE`, `END` 等）は、先行ブロックの実行完了と後続ブロックの先頭命令の間に位置する。JIT ネイティブ実行同士を直接チェイニング（`chain_next`）する際、先行ブロック終端 PC（delimiter PC）から制御構文を読み飛ばしたフォールスルー先（fallthrough head PC）を解決する必要がある。
-   - **ヘッダ直接埋め込み（Inlined Chaining Header）**: JIT コンパイル（基本ブロック抽出）時に後続のフォールスルー先 PC を静的に先読み解決し、トレースヘッダの `chain_next_pc`（+0x08）に直接埋め込む。これにより、実行時に外部の制御構造索引を検索せず、メモリオーバーヘッドおよび解決レイテンシを $O(1)$ で直接チェイニングを確立する。
+   - **制御構文デリミタの読み飛ばし**: WASM 基本ブロック末尾の制御命令（`BLOCK`, `LOOP`, `ELSE`, `END` 等）は、先行ブロックの実行完了と後続ブロックの先頭命令の間に位置する。JIT ネイティブ実行同士を直接チェイニング（`chain_next`）する際、先行ブロック終端 PC（delimiter PC）から制御構文を読み飛ばす。後続のフォールスルー先（fallthrough head PC）を解決する。
+   - **ヘッダ直接埋め込み（Inlined Chaining Header）**: JIT コンパイル時に後続のフォールスルー先 PC を静的に先読み解決する。トレースヘッダの `chain_next_pc`（+0x08）に直接埋め込む。これにより実行時の外部索引検索を排除する。メモリオーバーヘッドおよび解決レイテンシを $O(1)$ として直接チェイニングを確立する。
    - **双方向チェイニング解決フロー**:
-     - **後方チェイニング (Backward Chaining)**: 新規トレース登録時、トレースヘッダに埋め込まれた `succ = trace.chain_next_pc` を参照し、スキップ先が Active/Warm に常駐していれば `trace.chain_target_addr = succ_native_addr` を即座に接続する。
-     - **前方チェイニング (Forward Chaining)**: キャッシュ常駐トレース `resident_t` の `resident_t.chain_next_pc` が新登録トレースの `head_wasm_pc` と一致すれば、`resident_t` の分岐先スロットを新トレースのチェインエントリへインプレースパッチする。
+     - **後方チェイニング (Backward Chaining)**: 新規トレース登録時、トレースヘッダの `succ = trace.chain_next_pc` を参照する。スキップ先が Active/Warm に常駐していれば `trace.chain_target_addr = succ_native_addr` を即座に接続する。
+     - **前方チェイニング (Forward Chaining)**: 常駐トレース `resident_t` の `chain_next_pc` が新登録トレースの `head_wasm_pc` と一致するか照合する。一致すれば `resident_t` の分岐先スロットを新トレースのチェインエントリへインプレースパッチする。
 
 #### 統合 Tiered ランタイムエンジン・コンセプトコード (`../tier2_runtime/concepts/runtime_engine_concept.py`)
-インタープリタ実行、2-bit Hotspot 検出、Copy-and-Patch JIT コンパイル、3面マルチバッファキャッシュ（Active/Warm/Oldest）、および MPU W^X 保護プロトコルを統合した自己完結実行シミュレーションは [`runtime_engine_concept.py`](docs/components/tier2_runtime/concepts/runtime_engine_concept.py) を参照。
+インタープリタ実行、2-bit Hotspot 検出、Copy-and-Patch JIT、3面キャッシュ、MPU W^X 保護を統合したシミュレーションは [`runtime_engine_concept.py`](docs/components/tier2_runtime/concepts/runtime_engine_concept.py) を参照する。
 
 #### ホットスポット判定 (yield 時)
 <!-- traceability: {JIT_LazyChaining} -->
 1. **履歴走査**: インタープリタの実行サイクル中に記録、蓄積された「実行履歴バッファ」を走査する。
-2. **状態更新**: カードマーキング表の状態が「頻出」に達した命令オフセットを「コンパイル待ち列」（固定容量 LIFO キュー、`{JIT_ReverseCompilationOrder}`）に投入する。容量に達した時点でバッチコンパイル（下記）を即座に実行して空にするため、この固定容量を上回ることはない。 `{GLOBAL_Policy_Memory}`
-3. **遅延チェイニング制御**: ホットスポットと判定されてコンパイルキューへ投入されたトレースは、JITコードの末尾においてインタープリタ実行環境へ正しく復帰（遷移制御）するためのディスパッチャ・スタブが初期値としてチェイニング（連結）され、遅延チェイニングを実現する。 `{JIT_LazyChaining}`
+2. **状態更新**: カードマーキング表の状態が「頻出」に達した命令オフセットを「コンパイル待ち列」（固定容量 LIFO キュー、`{JIT_ReverseCompilationOrder}`）に投入する。容量到達時にバッチコンパイルを即座に実行して空にする。固定容量を上回ることはない。 `{GLOBAL_Policy_Memory}`
+3. **遅延チェイニング制御**: コンパイルキューへ投入されたトレースは、JITコード末尾にディスパッチャ・スタブが初期値としてチェイニングされる。インタープリタ環境へ復帰し遅延チェイニングを実現する。
 
 #### バッチコンパイル (周期実行またはアイドル時)
 <!-- traceability: {JIT_ReverseCompilationOrder} {GLOBAL_PeriodicTask} {GLOBAL_IdleDetection} -->
-1. **キューの取得**: 「コンパイル待ち列」から対象の命令オフセットを**逆順（LIFO）**で取り出す。 `{JIT_ReverseCompilationOrder}`
-2. **コンパイル実行**: 後続のトレースを先にコンパイルすることで、先行するトレースのリンク時（Patching 時）にターゲットが既にキャッシュ内に存在する確率を上げ、即時チェイニングを実現する。
-3. **補足**: COOSの `register_periodic_callback` または `set_idle_hook` により実行される。これにより、実行スレッドのブロッキング時間を抑える。 `{GLOBAL_PeriodicTask}` `{GLOBAL_IdleDetection}`
+1. **キューの取得**: 「コンパイル待ち列」から対象の命令オフセットを**逆順（LIFO）**で取り出す。
+2. **コンパイル実行**: 後続トレースを先にコンパイルする。先行トレースのリンク時にターゲットが既にキャッシュ内に存在する確率を上げる。これにより即時チェイニングを実現する。
+3. **補足**: COOSの `register_periodic_callback` または `set_idle_hook` により実行される。これにより、実行スレッドのブロッキング時間を抑える。
 
 
 #### Copy-and-Patch ステンシル結合 & バックパッチング手順（手順アクティビティ図）
@@ -366,7 +377,7 @@ stateDiagram-v2
 ### 4.3 内部シーケンス
 <!-- traceability: {JIT_LazyChaining} {JIT_ReverseCompilationOrder} {GLOBAL_PeriodicTask} {GLOBAL_IdleDetection} -->
 #### JITコンパイルおよび検索シーケンス
-サイクル全体を駆動するのは常に vSoC (V) であり、Interpreter (I) はディスパッチされた側の実行エンジンとして現れるだけで、履歴処理やキャッシュ検索を自ら開始することはない（`{Interpreter_LazyJITSwitch}`）。
+サイクル全体を駆動するのは常に vSoC (V) である。Interpreter (I) はディスパッチされた実行エンジンとして機能する。履歴処理やキャッシュ検索を自ら開始することはない（`{Interpreter_LazyJITSwitch}`）。
 ```mermaid
 sequenceDiagram
     participant V as vSoC
@@ -389,7 +400,7 @@ sequenceDiagram
         S-->>V: Fallback (Fast Exit)
         V->>I: exec_trace(pc) -- インタープリタへディスパッチ
     else Card state == COMPILED
-        S->>S: Search Active/Warm/Oldest entries (Folding XOR Cache -> Radix Table -> Binary Search)
+        S->>S: Search Active/Warm/Oldest entries (Folding XOR Cache -> sorted-array Binary Search)
         Note over S: 検索アルゴリズムおよび Oldest-Only 昇格規則の詳細はランタイム管理の正本 {JIT_MultiBuffer_Cache} を参照
         alt Hit
             S-->>V: Native Code Address
@@ -419,7 +430,7 @@ sequenceDiagram
 | 事後条件 | カードマーキング表がクリアされ、キャッシュが空の状態になる。 |
 | 不変条件 | 実行中に `config` の値を変更してはならない。 |
 | エラー時の挙動 | メモリ割り当ての不備がある場合はエラーを返す。 |
-| 補足 | `{META_ConfigurableSystem}` の方針に基づき、基本的にはブート時に一度だけ呼び出される。 |
+| 補足 | の方針に基づき、基本的にはブート時に一度だけ呼び出される。 |
 
 #### トレース検索（lookup_trace）
 <!-- traceability: {META_ConfigurableSystem} -->
@@ -428,7 +439,7 @@ sequenceDiagram
 | :--- | :--- |
 | 機能概要 | 指定されたWASMプログラムカウンタ(PC)に対応する、コンパイル済みのネイティブコードの実行アドレスを高速に検索する。 |
 | シグネチャ | `lookup_trace(pc: address) -> result<address, bool>` |
-| 補足 | カードマーキング表の状態が `COMPILED` でない場合は即座に失敗を返す。その後、`harness` 経由でエントリ索引を検索する。本機能は、ヘッダファイルで定義されたマクロ（`FB_CONF_JIT_CACHE_SIZE`等）に基づき、システムのメモリマップや検索範囲等のパラメータが固定された状態で動作する。 `{META_ConfigurableSystem}` |
+| 補足 | カードマーキング表の状態が `COMPILED` でない場合は即座に失敗を返す。その後、`harness` 経由でエントリ索引を検索する。本機能は、ヘッダファイルで定義されたマクロ（`FB_CONF_JIT_CACHE_SIZE`等）に基づき、システムのメモリマップや検索範囲等のパラメータが固定された状態で動作する。 |
 
 #### カード状態取得（get_card_state）
 <!-- traceability: {META_ConfigurableSystem} -->
@@ -437,16 +448,16 @@ sequenceDiagram
 | :--- | :--- |
 | 機能概要 | 指定したPCが属するカードの状態（2-bit）を取得する。 |
 | シグネチャ | `get_card_state(pc: address) -> u8` |
-| 補足 | 本機能は、コンパイル時に固定されたカード境界シフト値（`FB_CONF_JIT_CARD_SHIFT`等）のマクロ定義に基づき、PC値からカードインデックスへの変換を高速に行う。 `{META_ConfigurableSystem}` |
+| 補足 | 本機能は、コンパイル時に固定されたカード境界シフト値（`FB_CONF_JIT_CARD_SHIFT`等）のマクロ定義に基づき、PC値からカードインデックスへの変換を高速に行う。 |
 
-#### 検索範囲取得（get_search_range）
-<!-- traceability: {META_ConfigurableSystem} {FlatViewNarrowing} {META_BinarySearch} -->
+#### JITエントリ検索（find_entry）
+<!-- traceability: {META_ConfigurableSystem} {META_BinarySearch} -->
 
 | 項目 | 内容 |
 | :--- | :--- |
-| 機能概要 | JITエントリグループインデックスを用いて、指定されたWASM PCに対応する探索区間を $O(1)$ で `fireball::flat_map_view` へ絞り込む。生の添字対ではなくビューを返すことで、呼び出し側が区間を誤った配列と組み合わせる余地をなくす（`{FlatViewNarrowing}` を参照）。該当グループが存在しない場合は空ビューを返す。 `{FlatViewNarrowing}` `{META_BinarySearch}` |
-| シグネチャ | `get_search_range(bank_idx: u8, pc: address) -> flat_map_view<u32, code_offset>` |
-| 補足 | 本機能は、ヘッダファイルで定義されたJITエントリグループサイズおよび最大登録件数のマクロ定数（`FB_CONF_JIT_ENTRY_GROUP_SHIFT`等）に基づき、二分探索範囲をコンパイル時に静的に制限して計算する。 `{META_ConfigurableSystem}` |
+| 機能概要 | 指定されたWASM PCをバンク内の `head_pc` 昇順固定容量エントリ配列から二分探索する。エントリ数が少ないためRadix索引は持たない。 |
+| シグネチャ | `find_entry(bank_idx: u8, pc: address) -> optional<jit_entry_view>` |
+| 計算量 | 1バンクあたり $O(\log n)$。固定配列の容量は2KBバンクの上限で決まる。 |
 
 #### バッチコンパイル処理（process_batch_compile）
 <!-- traceability: {META_ConfigurableSystem} -->
@@ -469,53 +480,53 @@ sequenceDiagram
 <!-- traceability: {JIT_CopyAndPatch} {JIT_RegisterMapping} -->
 - **目標**: コンパイルレイテンシを最小化し、WAMRインタープリタを上回る実行速度を実現。
 - **方策**:
-    - `{JIT_CopyAndPatch}`: 複雑な最適化を省き、テンプレートコピーのみでコンパイルを完了。
-    - `{JIT_RegisterMapping}`: `Context`, `StackTop`, `WASM_PC` を物理レジスタに固定し、メモリアクセスを削減。
+    - : 複雑な最適化を省き、テンプレートコピーのみでコンパイルを完了。
+    - : `Context`, `StackTop`, `WASM_PC` を物理レジスタに固定し、メモリアクセスを削減。
     - `Card Marking (O(1)) + Binary Search`: カードマーキング表による $O(1)$ 事前フィルタと二分探索により、高速な検索を実現。
 
 ### 6.2 安全性制約と方策
 <!-- traceability: {PositionIndependentCode} {MemoryBoundaryCheck} {FastAddressCheck} {SimpleJITArchitecture} -->
 - **目標**: 不正なコード実行および W^X 違反の防止。
 - **方策**:
-    - `{PositionIndependentCode}`: 生成コードを位置独立とし、配置場所の自由度を確保。
-    - `Cache Capacity Check`: コード生成時にキャッシュ溢れを厳密にチェックし、溢れた場合は 3面リングローテーションにより Oldest バンクを破棄して再利用する。これはキャッシュ容量管理であり、`{MemoryBoundaryCheck}`（ゲストメモリアクセスの隔離）とは別の関心事である。 `{SimpleJITArchitecture}`
-    - `{MemoryBoundaryCheck}`: 生成コードに埋め込むゲストメモリアクセスの境界チェック。`FastAddressCheck` はまず `CMP addr, mem_size; BHS.W <trap>` で開始アドレスを検査し、1バイトを超えるアクセスでは `addr + width - 1` を `mem_size` と比較して末尾境界も検査する（マスクは使わない）。境界外へのロード/ストアはインタープリタへトラップし、アドレスを黙って折り畳んで継続しない。 `{MemoryBoundaryCheck}` `{FastAddressCheck}`
-    - `MPU W^X 保護`: Cortex-M33 PMSAv8 MPU を用い、JIT パッチ書き込み時は `RW+XN`、ネイティブ実行時は `RO+X` に切り替え、`__DSB(); __ISB();` メモリ・命令同期バリアを発行する。書き込みと実行の同時許可（RWX）を物理的に排除する。`formal/jit_cache_model.py` により変異検査付き形式モデルとして検証。
+    - : 生成コードを位置独立とし、配置場所の自由度を確保。
+    - `Cache Capacity Check`: コード生成時にキャッシュ溢れを厳密にチェックし、溢れた場合は 3面リングローテーションにより Oldest バンクを破棄して再利用する。これはキャッシュ容量管理であり、（ゲストメモリアクセスの隔離）とは別の関心事である。
+    - : 生成コードに埋め込むゲストメモリアクセスの境界チェック。`FastAddressCheck` は `CMP addr, mem_size; BHS.W <trap>` で開始アドレスを検査する。1バイト超のアクセスでは `addr + width - 1` を `mem_size` と比較して末尾境界も検査する（マスク不使用）。境界外アクセスはインタープリタへトラップする。アドレスを暗黙に折り畳んで継続しない。
+    - `MPU W^X 保護`: Cortex-M33 PMSAv8 MPU を用いる。JIT パッチ書き込み時は `RW+XN`、ネイティブ実行時は `RO+X` に切り替える。`__DSB(); __ISB();` バリアを発行する。書き込みと実行の同時許可（RWX）を物理的に排除する。形式モデル `formal/jit_cache_model.py` により変異検査付きで検証する。
 
 ## 7. 形式検証・テスト仕様との対応
 
 ### 7.1 検証対象の不変条件
-- **位置独立性 (PIC)**: 生成された Thumb-2 / RISC-V バイナリが絶対アドレスに依存せず、任意のキャッシュバンクで再コンパイル不要で動作すること（`TEST-INT-40`, `TEST-JITC-40`）。
-- **トレース境界メモリ同期**: トレースの真の脱出（後続の常駐トレースへ直接チェインしない場合）時に、キャッシュ中のスタックトップ（`R3: TOS`）・次段（`R4: NOS`）およびローカル変数がメモリへ確実に同期されること。直接チェイン分岐（`{JIT_LazyChaining}`）ではレジスタ状態がそのまま後続トレースへ引き継がれるため、この同期は発生しない（`TEST-INT-41`, `TEST-JITC-52`）。
+- **位置独立性 (PIC)**: 生成された Thumb-2 / RISC-V バイナリが絶対アドレスに依存しないこと。任意のキャッシュバンクで再コンパイル不要で動作すること（`TEST-INT-40`, `TEST-JITC-40`）。
+- **トレース境界メモリ同期**: トレースの真の脱出時に、キャッシュ中のスタックトップ（`R3: TOS`）・次段（`R4: NOS`）およびローカル変数がメモリへ確実に同期されること。直接チェイン分岐（`{JIT_LazyChaining}`）ではレジスタ状態が引き継がれるため、この同期は発生しない（`TEST-INT-41`, `TEST-JITC-52`）。
 - **W^X メモリ保護**: JIT パッチ書き込み時の `RW+XN` と実行時の `RO+X` の分離（`jit_cache_model.py`, `TEST-JITC-42`）。
 
 ### 7.2 テスト仕様書との連携
-本コンポーネントの単体テストケース（TEST-JITC-01〜TEST-JITC-56, GOTCHA-JITC-01〜06）は、[`jit_compiler_test_spec.md`](docs/components/tier3_jit/tests/jit_compiler_test_spec.md) を正本として定義する。なお、3面キャッシュの検索・昇格・代謝の組み合わせ直交表は、ランタイム管理のテスト仕様書 [`jit_runtime_test_spec.md`](docs/components/tier3_jit/tests/jit_runtime_test_spec.md) を正本とする。
+本コンポーネントの単体テストケースは [`jit_compiler_test_spec.md`](docs/qa/tier3_jit/jit_compiler_test_spec.md) を正本として定義する。3面キャッシュの直交表は [`jit_runtime_test_spec.md`](docs/qa/tier3_jit/jit_runtime_test_spec.md) を正本とする。
 
 ## 8. 設計判断 (ADR)
 <!-- traceability: {ADR_ScalableCodeOffset} {ADR_SafeQueuingOnHotMiss} {ADR_TosCacheAsymmetry} {JIT_LazyChaining} {GOTCHA-JITC-07} -->
 
-- **決定事項**: `{ADR_TosCacheAsymmetry}`
-  - **背景**: JIT トレースはスタックマシンである WASM のオペランドを `R3`/`R4`/`R5` に TOS/NOS/NNOS としてキャッシュするが、インタープリタのオプコードハンドラは AAPCS 引数レジスタ `R0`〜`R3` を CPS 境界の呼び出し引数 `(ctx, sp, local_base, tos)` で使用している。両者は `__fastcall` CPS シグネチャを共有するため、トレース境界での状態同期を決定論的に定義する必要がある。
+- **決定事項**:
+  - **背景**: JIT トレースはオペランドを `R3`/`R4`/`R5` にキャッシュする。インタープリタは引数レジスタ `R0`〜`R3` を CPS 引数で使用する。両者は `__fastcall` シグネチャを共有する。トレース境界での状態同期を決定論的に定義する必要がある。
   - **選択肢と評価**:
     - 案1: CPS を 4 引数化しつつ、インタープリタ側も TOS をレジスタ保持する。
     - 案2: JIT からもレジスタキャッシュを廃し、両者ともオペランドをメモリ上でのみ扱う。スタックマシンに対する最大最適化を捨てることになり、低レイテンシ目標の達成が困難になる。
-    - 案3: JIT トレース内部で `R3`/`R4`/`R5` を TOS/NOS/NNOS として使用し、基本ブロック末尾でプッシュされたダーティ値をオペランドスタック（`[R1, #offset]`）へフラッシュし、コンテキスト `R0` の `ip`（`+0x00`）および `sp_offset`（`+0x0C`）を書き換える。
+    - 案3: JIT トレース内部で `R3`/`R4`/`R5` を TOS/NOS/NNOS として使用する。基本ブロック末尾でプッシュされたダーティ値をスタック（`[R1, #offset]`）へフラッシュする。コンテキスト `R0` の `ip`（`+0x00`）および `sp_offset`（`+0x0C`）を書き換える。
   - **結論**: 案3を採用する。
-  - **評価**: 基本ブロック末尾でプッシュされたスタックキャッシュ（`TOS, NOS, NNOS`）をスタック（`[R1, #offset]`）へフラッシュし、コンテキスト `R0` の `ip`（+0x00）および `sp_offset`（+0x0C）を書き換えて状態を完全同期する。JIT トレースは複数 WASM 命令にまたがるため、この同期命令はトレース長で償却され、トレース内部で得られるレジスタキャッシュの利得を下回る。
-  - **トレース境界の2種類のエントリと2種類のエグジット**: 境界の性質は「真の脱出/新規進入」と「直接チェイン」の2系統に分かれ、混同してはならない（[`jit_stencil_catalog.md`](docs/specs/jit_stencil_catalog.md) のプロローグ & エピローグ・ステンシル節）。
-    - **新規エントリ / 真の脱出**: インタープリタ・ディスパッチャから初めて呼び出される場合は Callee-saved 全域退避のプロローグを通過する。真の脱出（後続の常駐トレースが存在しない、またはこのトレースがチェインの終端）では、基本ブロック末尾でダーティなスタックキャッシュ（`R3/R4/R5`）をスタックメモリ（`[R1, #offset]`）へフラッシュし、`sp_offset`（`[R0, #0x0C]`）および `ip`（`[R0, #0x00]`）を同期した上で、Callee-saved レジスタを `POP` 復元してリターン（または `BX r12` でインタープリタへジャンプ）する。呼び出し規約上の戻り値レジスタは一切経由しない——VM のオペランドスタック状態と C/AAPCS の戻り値には何の関係もない（`{GOTCHA-JITC-07}`）。
-    - **チェイン・エントリ / 直接チェイン分岐**: `{JIT_LazyChaining}` によって後続トレースが常駐と解決済みの場合、真の脱出の代わりに後続トレースのチェイン・エントリ（後続トレース自身のプロローグ直後のオフセット）への直接分岐（`B.W`、バックパッチ）を配置する。フラッシュも `POP` も発生せず、レジスタ状態（`R3-R5` のキャッシュ値を含む）は分岐を跨いでそのまま生き続ける。後続側もチェイン・エントリではプロローグを経由しないため、両者を合わせても Callee-saved の退避・復元は連結全体でちょうど1回ずつしか発生しない。
-  - **固定ローカルスロットの直接アクセス (`ContextPointerRegister`)**: 各論理ローカルは8バイト固定スロットに置かれ、カレントコールフレームのローカル変数基底レジスタ `R2 = local_base` 起点の `[R2, #(slot * 8)]` を命令生成時に直接埋め込む。実行時のオフセット表参照やベースアドレス再計算は行わない。
+  - **評価**: 基本ブロック末尾でスタックキャッシュ（`TOS, NOS, NNOS`）をスタック（`[R1, #offset]`）へフラッシュする。コンテキスト `R0` の `ip`（+0x00）および `sp_offset`（+0x0C）を書き換えて状態を同期する。この同期命令はトレース長で償却される。
+  - **トレース境界の2種類のエントリと2種類のエグジット**: 境界の性質は「真の脱出/新規進入」と「直接チェイン」の2系統に分かれる。混同してはならない（[`jit_stencil_catalog.md`](docs/specs/jit_stencil_catalog.md) 参照）。
+    - **新規エントリ / 真の脱出**: インタープリタから初めて呼び出される場合は Callee-saved 全域退避プロローグを通過する。真の脱出では、基本ブロック末尾でスタックキャッシュ（`R3/R4/R5`）をスタック（`[R1, #offset]`）へフラッシュする。`sp_offset` および `ip` を同期する。その後 Callee-saved レジスタを `POP` 復元してリターン（または `BX r12` でインタープリタへジャンプ）する。呼び出し規約上の戻り値レジスタは一切経由しない。VM のオペランドスタック状態と C/AAPCS の戻り値には何の関係もない（）。
+- **チェイン・エントリ / 直接チェイン分岐**: 後続トレースが常駐と解決済みの場合、後続トレースのチェイン・エントリへの直接分岐（`B.W`、バックパッチ）を配置する（）。フラッシュも `POP` も発生しない。レジスタ状態（`R3-R5` のキャッシュ値を含む）は分岐を跨いで保持される。後続側もプロローグを経由しない。Callee-saved の退避・復元は連結全体で1回のみ発生する。
+  - **固定ローカルスロットの直接アクセス (`ContextPointerRegister`)**: 各論理ローカルは固定スロットに配置される。ローカル変数基底レジスタ `R2 = local_base` 起点の `[R2, #(slot * 8)]` を命令生成時に直接埋め込む。実行時のオフセット表参照やベースアドレス再計算は行わない。
 
-- **決定事項**: `{ADR_ScalableCodeOffset}`
+- **決定事項**:
   - **背景**: 16ビットの `code_offset` をそのまま使用すると、コードキャッシュが64KBに制限される。将来的に外部メモリ等を活用してキャッシュを拡張（例：512KB）する場合、このビット幅がボトルネックとなる。
   - **選択肢**:
-    - 案1: `code_offset` を32ビットにする。エントリは `flat_map_view<u32, code_offset>`（キー: PC 4バイト + 値: `code_offset`）であるため、値が16ビット(2バイト)から32ビット(4バイト)になるとエントリ1件は6バイトから8バイトへ増加し、エントリテーブルのメモリ消費は約33%増加する。
+    - 案1: `code_offset` を32ビットにする。エントリは `flat_map_view<u32, code_offset>` である。値が16ビットから32ビットになるとエントリ1件は6バイトから8バイトへ増加する。エントリテーブルのメモリ消費は約33%増加する。
     - 案2: 命令アライメント (`code_align_shift`) を利用してビットシフトして保持する。
   - **結論**: 案2を採用。 `actual_offset >> code_align_shift` を保持する。
   - **評価**: これにより、エントリテーブルのサイズを維持したまま、アライメントに応じたスケーラビリティを確保できる。最大キャッシュサイズは `65535 << code_align_shift` となる。
-- **決定事項**: `{ADR_SafeQueuingOnHotMiss}`
+- **決定事項**:
   - **背景**: `COMPILED` 状態のカードで検索ミスが発生した場合、その場で同期コンパイルを行うか、キューイングするか。
   - **結論**: `Compile Queue` にプッシュし、インタープリタへフォールバックする。
   - **理由**: 同期コンパイルは実行ループ内での予測不可能なレイテンシ（ジッタ）の原因となるため。

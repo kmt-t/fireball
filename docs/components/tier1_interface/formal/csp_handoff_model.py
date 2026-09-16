@@ -48,6 +48,8 @@ def build_model(*, guards: bool = True) -> Kripke:
         ("s_in_flight", "s_receiver_holds"),
         # channel_send 分岐2: まだ受信者が到達しておらずブロック
         ("s_in_flight", "s_awaiting_peer"),
+        # 相手タスクが到達しない実行も許す。CSP単独では進行性を保証しない。
+        ("s_awaiting_peer", "s_awaiting_peer"),
         # ブロック中の送信者に受信者が到達して Grant
         ("s_awaiting_peer", "s_receiver_holds"),
         # 受信者処理完了 ➔ 送信者へ（次のメッセージに備える）

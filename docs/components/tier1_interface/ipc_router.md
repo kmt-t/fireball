@@ -3,23 +3,23 @@
      formal: formal/csp_handoff_model.py
      benchmark: benchmarks/low_latency_lookup_bench.py
      concept: concepts/ipc_router_concept.py
-     test: tests/ipc_router_test_spec.md
+     test: docs/qa/tier1_interface/ipc_router_test_spec.md
 -->
 
 ## 1. コンセプト
 <!-- traceability: {IPCRouter} {URIAbstraction} {RoleBasedAccessControl} {OwnershipTransfer} {IPCDI} {IPC_Resource_Isolation} {System_Allocator} {Shm_Allocator} -->
-IPCルータは、URIベースのサービスディスカバリとロールベースのアクセス制御を備えたメッセージルーティング層である。コンポーネント間の依存性をURIで抽象化し、所有権移譲を伴う安全なデータ移動とリソースの完全分離を実現する。ルータ内部のルーティングテーブルやチャネルレジストリ等のシステムコンテナはシステム用アロケータ（`{System_Allocator}`）から動的に確保され、ゼロコピー転送される共有メモリ（`shared_block`）は共有メモリアロケータ（`{Shm_Allocator}`）から可変長で切り出される。 `{IPCRouter}` `{URIAbstraction}` `{RoleBasedAccessControl}` `{OwnershipTransfer}` `{IPCDI}` `{IPC_Resource_Isolation}` `{System_Allocator}` `{Shm_Allocator}`
+IPCルータは、URIベースのサービスディスカバリとロールベースのアクセス制御を備えたメッセージルーティング層である。コンポーネント間の依存性をURIで抽象化する。所有権移譲を伴う安全なデータ移動とリソースの完全分離を実現する。ルータ内部のルーティングテーブルやチャネルレジストリ等のシステムコンテナは、システム用アロケータから動的に確保する。ゼロコピー転送される共有メモリ（`shared_block`）は、共有メモリアロケータから可変長で切り出す。
 
 ## 2. アーキテクチャ分類
 <!-- traceability: {META_3TierSeparation} {IPCRouter} {URIAbstraction} -->
-本コンポーネントは **Tier 1 (主要システムコンポーネント: Primary Component)** に属する。システム全体の通信基盤として機能し、IoC (Inversion of Control) と URIベースのDIを用いて、コンポーネント間の疎結合性とゼロコピー所有権移譲を統括する。 `{META_3TierSeparation}` `{IPCRouter}` `{URIAbstraction}`
+本コンポーネントは **Tier 1 (主要システムコンポーネント: Primary Component)** に属する。システム全体の通信基盤として機能し、IoC (Inversion of Control) と URIベースのDIを用いて、コンポーネント間の疎結合性とゼロコピー所有権移譲を統括する。
 
 ## 3. 静的モデル
 
 ### 3.1 データ構造
 <!-- traceability: {IPCRegistry} {META_FlatMapIndexed} {RoleBasedAccessControl} -->
-- **レジストリエントリ**: 登録されたサービスのURI、ロール、チャンネルIDを保持する。内部的には、ROM 上の `constexpr` ソート済み配列（`FB_CONF_ROUTER_MAX_SERVICES` 件）に対する `fireball::flat_map_view<std::string_view, registry_entry>` を用い、高速なディスパッチを実現する。 `{IPCRegistry}` `{META_FlatMapIndexed}`
-- **ロールマトリックス**: コンパイル時に定義された、ロール間の通信許可を判定するマトリックス。 `{RoleBasedAccessControl}`
+- **レジストリエントリ**: 登録されたサービスのURI、ロール、チャンネルIDを保持する。内部的には、ROM 上の `constexpr` ソート済み配列（`FB_CONF_ROUTER_MAX_SERVICES` 件）に対する `fireball::flat_map_view<std::string_view, registry_entry>` を用い、高速なディスパッチを実現する。
+- **ロールマトリックス**: コンパイル時に定義された、ロール間の通信許可を判定するマトリックス。
 
 ### 3.2 内部ブロック図
 <!-- traceability: {IPCRegistry} {META_FlatMapIndexed} {RoleBasedAccessControl} -->
@@ -77,11 +77,11 @@ IPC通信の最小単位。1つのメッセージで8個のペアを送信でき
 ##### スコープ定義
 - **機能的IPC**: キーを、受信側が定義する関数やリクエスト種類を特定する識別子として使用する。 `{TypeSafeMessaging}`
 - **辞書参照IPC**: キーを、受信側が保持する静的な辞書内の文字列オフセットとして解釈する。 `{DictionaryBasedIPC}`
-- **階層URIルーティング**: 各HALサブシステムは `fireball://hal/<type>/<instance>`（例: `fireball://hal/uart/0`, `fireball://hal/gpio/0`, `fireball://hal/timer/0`, `fireball://hal/i2c/0`）の正規化されたURIで登録され、IPCルータを介して $O(\log N)$ でディスパッチされる。 `{URIAbstraction}`
+- **階層URIルーティング**: 各HALサブシステムは `fireball://hal/<type>/<instance>`（例: `fireball://hal/uart/0`, `fireball://hal/gpio/0` 等）の正規化URIで登録する。IPCルータを介して $O(\log N)$ でディスパッチする。
 
 #### IPCメッセージ（message）
 <!-- traceability: {TypeSafeMessaging} {META_FlatMapIndexed} {OwnershipTransfer} {ADR_SharedBlockRaii} -->
-Key-Valueペアを複数集約した通信の基本単位。メッセージ自身が共有メモリ（`fireball::shared_block`）上に実体化され、内部の `uint64_t` 配列（`uint64_t[]`）をストレージとして直接利用する。動的メモリ確保を一切伴わない物理メモリ上のKey-Valueペア配列（ `uint64_t` エントリ配列：上位32ビットがキー、下位32ビットが値）と `fireball::flat_map_view` による二分探索を採用し、メッセージ内のキー検索を $O(\log N)$ で行う。エントリやペイロードへのアクセス時には所有権（`SENDER_OWNS` または `RECEIVER_OWNS`）を強制検証する（`IN_FLIGHT` 中のアクセスは禁止）。また、タスクを跨ぐ大きなバルクデータは別の共有メモリ（`fireball::shared_block`）の `shm_id` をエントリの値（`ScopeKind.RESOURCE`）に格納して伝送でき、IPCルータのランデブー完了時に自動で vMMIO PTE の権限付け替え（`grant_shared`）が行われる。 `{TypeSafeMessaging}` `{META_FlatMapIndexed}` `{ADR_SharedBlockRaii}`
+Key-Valueペアを複数集約した通信の基本単位である。メッセージ自身が共有メモリ（`fireball::shared_block`）上に実体化される。内部の固定長 `uint64_t` 配列をストレージとして直接利用する。動的メモリ確保を伴わない物理メモリ上のKey-Valueペア配列と、`fireball::flat_map_view` による二分探索を採用する。上位32ビットをキー、下位32ビットを値とし、メッセージ内のキー検索を $O(\log N)$ で行う。エントリやペイロードへのアクセス時には所有権（`SENDER_OWNS` または `RECEIVER_OWNS`）を検証する。`IN_FLIGHT` 中のアクセスは禁止する。タスクを跨ぐバルクデータは、別の共有メモリ（`fireball::shared_block`）の `shm_id` をエントリ値に格納して伝送できる。IPCルータのランデブー完了時に、自動で vMMIO PTE の権限付け替え（`grant_shared`）が行われる。
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
@@ -98,19 +98,23 @@ Key-Valueペアを複数集約した通信の基本単位。メッセージ自�
 | サービスURI | サービスを一意に特定するための正規化された文字列 | 文字列ビュー | - |
 | セキュリティロール | サービスに割り当てられた権限レベル。アクセス制御と CSP チャネル選択の両方に利用 | ビットフラグ | - |
 
-※ 待ち受けチャネルはレジストリエントリに個別の ID として保持しない。`FB_CONF_ROUTER_ROLE_MATRIX`（9x9）の ALLOW セル 1 つにつき、専用の CSP チャネル（`fireball::channel<ipc_message>`、バッファなし・単一送受信ペアのランデブー）が 1 本ずつ静的に対応付けられ、`(sender_role, target_role)` の組から一意に導出される。1 本のチャネルは 1 対の送受信方向にしか使えないため（`{ADR_RendezvousChannel}`）、同一の受信ロールへ複数の送信ロールから送る場合でも、エッジごとに別々のチャネルを持つ。HAL の各エンドポイントインスタンスは専用ロール（`HAL_UART`, `HAL_STDOUT`, `HAL_GPIO`, `HAL_TIMER`, `HAL_I2C`, `HAL_SPI`）を個別に持つ——単一の共有ロールでは、同種インスタンスが複数存在する場合にメッセージの宛先を区別できないためである。
+※ 待ち受けチャネルはレジストリエントリに個別の ID として保持しない。`FB_CONF_ROUTER_ROLE_MATRIX`（9x9）の ALLOW セル 1 つにつき、専用の CSP チャネル（`fireball::channel<ipc_message>`、バッファなし同期ランデブー）が 1 本ずつ静的に対応付けられる。チャネルは `(sender_role, target_role)` の組から一意に導出される。1 本のチャネルは 1 対の送受信方向にのみ使用する。同一の受信ロールへ複数の送信ロールから送る場合でも、エッジごとに別個のチャネルを割り当てる。HAL の各エンドポイントインスタンスは専用ロール（`HAL_UART`, `HAL_STDOUT`, `HAL_GPIO`, `HAL_TIMER`, `HAL_I2C`, `HAL_SPI`）を個別に持つ。単一ロールでは、同種インスタンスが複数存在する場合にメッセージの宛先を区別できないためである。
 
 ## 4. 動的モデル
 
 ### 4.1 アルゴリズム
 <!-- traceability: {LowLatencyLookup} {META_AccessDictionary} {META_FlatMapIndexed} {OwnershipTransfer} {IPC_ZeroCopy} -->
-- **サービス検索**: `fireball::flat_map_view` を用いて、URI文字列からチャンネルIDを $O(\log N)$ で取得する。 `{LowLatencyLookup}`
-- **メッセージ内検索**: メッセージ本体をソート済み配列とし `fireball::flat_map_view` で引くことで、受信側でのパラメータ検索を高速化する。 `{META_AccessDictionary}` `{META_FlatMapIndexed}`
-- **所有権移譲 (Zero-Copy CSP Handoff)**: `{OwnershipTransfer}` `{IPC_ZeroCopy}` `{ADR_RendezvousChannel}` `{ADR_SharedBlockRaii}` `{ADR_PageGranularPermissionIsolation}`
-    1. **Revoke**: URI 検索・RBAC 判定・サイズ制限チェックをすべて通過した後、送信側タスクの権限を無効化し、リソースを `IN_FLIGHT` 状態にする。この時点で送信は完了確約状態（committed）となる——キューがないため「満杯で差し戻す」という失敗状態は原理的に存在しない。共有メモリ（SHM）転送時は、送信側物理操作 `shm.release()` と連動して対応する送信元の vMMIO PTE が unmap され、TLB が即時フラッシュされることで、未登録ページフォルト（`TRAP_UNREGISTERED_PAGE`）により双方がアクセス禁止となる（`{ADR_PageGranularPermissionIsolation}`）。
-    2. **Rendezvous**: 送信側は `(sender_role, target_role)` エッジ専用の CSP チャネル 1 本上でバッファなし同期ハンドオフを行う。受信側は自らのロールへの ALLOW エッジ全てを同時に待ち受けるガード付き外部選択（select、「receive_message」参照）であり、`sender_role` 1 つに事前コミットしない。相手側が既に待機していれば即座に、まだ到達していなければ協調スケジューラ上でブロックし、相手が到達した瞬間にハンドオフが成立する。バッファに値を保持しないため、キュー満杯 (`ERR_QUEUE_FULL`) に相当する状態はそもそも発生しない。
-    3. **Grant**: ランデブー成立の瞬間に受信側タスクへ権限を付与し、状態を `RECEIVER_OWNS` へ遷移させる。共有メモリ転送時は所有権変更通知により旧 vMMIO PTE がいったんアンマップされ、受信側が `claim(shared_block)` を完了した時点で新しい PTE が登録（map）される。
-- **送信前チェックの失敗とロールバック境界**: URI 未登録 (`ERR_NOT_FOUND`)、RBAC 拒否 (`ERR_PERMISSION_DENIED`)、KV ペア数超過 (`ERR_MSG_TOO_LARGE`) はいずれも Revoke より前段の静的チェックであり、これらで失敗した場合メッセージの所有権は最初から一度も送信側から動いていない（`SENDER_OWNS` のまま保持され、回復処理を必要としない）。なお、IPC メッセージパッシング自体は CSP ランデブーのためロールバック経路を持たないが、共有メモリ等の物理リソース転送中に相手タスクが異常終了した場合は、物理メモリ層の回復機構（`rollback_transfer()`、`runtime_memory.md`）が連動して送信元タスクへの再マッピング（map）を復元する。
+- **サービス検索**: `fireball::flat_map_view` を用いて、URI文字列からチャンネルIDを $O(\log N)$ で取得する。
+- **メッセージ内検索**: メッセージ本体をソート済み配列とし `fireball::flat_map_view` で引くことで、受信側でのパラメータ検索を高速化する。
+- **所有権移譲 (Zero-Copy CSP Handoff)**:
+    1. **Revoke**: URI 検索・RBAC 判定・サイズ制限チェックをすべて通過した後に実行する。送信側タスクの権限を無効化し、リソースを `IN_FLIGHT` 状態にする。この時点で送信は完了確約状態（committed）となる。キューがないため、満杯による差し戻しは原理的に発生しない。共有メモリ転送時は、送信側の `shm.release()` と連動して送信元 vMMIO PTE を unmap する。TLB を即時フラッシュし、双方の不正アクセスを遮断する。
+    2. **Rendezvous**: 送信側は専用 CSP チャネル 1 本上でバッファなし同期ハンドオフを行う。受信側は自ロールへの全 ALLOW エッジを同時に待ち受ける。相手側が待機していれば即座にハンドオフが成立する。未到達の場合は協調スケジューラ上でブロックし、相手到達時に成立する。バッファを持たないため、キュー満杯エラーは発生しない。
+    3. **Grant**: ランデブー成立の瞬間に受信側タスクへ権限を付与し、`RECEIVER_OWNS` へ遷移させる。共有メモリ転送時は所有権変更通知により旧 PTE をアンマップする。受信側が `claim(shared_block)` を完了した時点で新しい PTE を登録する。
+- **送信前チェックの失敗とロールバック境界**:
+    - URI 未登録、RBAC 拒否、KV ペア数超過はいずれも Revoke 前段の静的検査である。
+    - これらの失敗時、メッセージ所有権は送信側のまま維持され、回復処理を要しない。
+    - メッセージパッシング自体は CSP ランデブーのためロールバック経路を持たない。
+    - 転送中に相手タスクが異常終了した場合、物理メモリ層の回復機構が送信元タスクへの再マッピングを復元する。
 
 
 #### 3段階 IPC ルーティング & 所有権移譲プロトコル（責務シーケンス図）
@@ -418,7 +422,7 @@ flowchart TD
 #### ロール間通信許可マトリクス (FB_CONF_ROUTER_ROLE_MATRIX)
 <!-- traceability: {RoleBasedAccessControl} -->
 
-本表は `{META_ConfigurableSystem}` の `FB_CONF_ROUTER_ROLE_MATRIX` (9x9 `constexpr` 配列) を**そのまま**表現したものであり、全 DENY の行・列も省略しない。省略すると「そのロールの権限が未定義」と読めてしまい、C++ 定義との差分が生じるためである。HAL は単一の共有ロールではなく、エンドポイントインスタンスごとに専用ロール（`HAL_UART`, `HAL_STDOUT`, `HAL_GPIO`, `HAL_TIMER`, `HAL_I2C`, `HAL_SPI`）を持つ——単一ロールでは同種インスタンスが複数存在する場合に宛先を区別できないためである。
+本表は `{META_ConfigurableSystem}` の `FB_CONF_ROUTER_ROLE_MATRIX` (9x9 `constexpr` 配列) を**そのまま**表現したものであり、全 DENY の行・列も省略しない。省略すると「そのロールの権限が未定義」と読めてしまい、C++ 定義との差分が生じるためである。HAL は単一の共有ロールではなく、エンドポイントインスタンスごとに専用ロール（`HAL_UART`, `HAL_STDOUT`, `HAL_GPIO`, `HAL_TIMER`, `HAL_I2C`, `HAL_SPI`）を持つ。単一ロールでは、同種インスタンスが複数存在する場合に宛先を区別できないためである。
 
 | 送信元ロール (Sender) \ 送信先ロール (Target) | RUNTIME | CORE_SERVICE | HAL_UART | HAL_STDOUT | HAL_GPIO | HAL_TIMER | HAL_I2C | HAL_SPI | DEBUGGER |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
@@ -433,11 +437,11 @@ flowchart TD
 | **DEBUGGER** | DENY | ALLOW | ALLOW | ALLOW | ALLOW | ALLOW | ALLOW | ALLOW | DENY |
 
 **全 DENY 行・列の意味**:
-- **HAL_\* の全 6 ロール行が全 DENY**: HAL は通信グラフの葉であり、自発的な送信を一切行わない。デバイス側の事象は ISR による割り込み通知（`{GLOBAL_InterruptWakeup}`）として上位へ伝わり、IPC の送信としては表現されない。単一の "PLATFORM_HAL" ロールをデバイス／HALインスタンスごとに 6 分割したのはアクセス制御の意味論を変えるためではなく、CSP の「1 チャネル 1 待機者」制約下で複数の同種インスタンスを区別可能にするためであり、各行の全 DENY 性質そのものは変わらない。
+- **HAL_\* の全 6 ロール行が全 DENY**: HAL は通信グラフの葉であり、自発的な送信を一切行わない。デバイス側の事象は ISR による割り込み通知（`{GLOBAL_InterruptWakeup}`）として上位へ伝わり、IPC の送信としては表現されない。単一の "PLATFORM_HAL" ロールをデバイスごとに 6 分割したのは、アクセス制御の意味論を変えるためではない。CSP の「1 チャネル 1 待機者」制約下で複数の同種インスタンスを区別可能にするためである。各行の全 DENY 性質そのものは変わらない。
 - **RUNTIME 列が全 DENY**: RUNTIME（ゲスト実行をホストするランタイムタスク。ゲスト自身のコードが直接 IPC に触れるわけではない）を宛先とする IPC は存在しない。RUNTIME への応答は、RUNTIME 自身が発した要求に対する返信としてのみ返る。
 - **DEBUGGER 列が全 DENY**: DEBUGGER 自身を宛先とする IPC 送信経路は存在しない（デバッガタスクへの通知は RSP トランスポート経由であり、本ルータの管轄外）。
 
-※ 送信許可（ALLOW）の関係から構築される通信有向グラフ（`RUNTIME -> CORE_SERVICE`, `RUNTIME -> HAL_*`（6 ロール）, `CORE_SERVICE -> HAL_*`（6 ロール）, `DEBUGGER -> CORE_SERVICE`, `DEBUGGER -> HAL_*`（6 ロール））は非循環（DAG）であり、循環通信待機（Circular Wait）によるデッドロックがトポロジ層で原理的に排除される。
+※ 送信許可（ALLOW）の関係から構築される通信有向グラフは非循環（DAG）である。対象エッジは RUNTIME, CORE_SERVICE, DEBUGGER から各宛先への通信である。この構造により、循環通信待機（Circular Wait）によるデッドロックがトポロジ層で原理的に排除される。
 
 ### 4.2 状態遷移図 (SysML SMD: IPC Router ルーティングフロー)
 <!-- traceability: {LowLatencyLookup} {META_AccessDictionary} {META_FlatMapIndexed} {OwnershipTransfer} {IPC_ZeroCopy} -->
@@ -540,19 +544,19 @@ stateDiagram-v2
 
 **注記:**
 - **In-flight 状態**: メッセージがチャネル上でランデブー成立待ちの状態で、送信側は操作できない状態。ダングリング参照を防止。
-- **所有権移譲とゼロコピー (`IPC_ZeroCopy`)**: チャネルの所有権移譲（Grant）が行われる際、メモリデータの物理コピーは一切発生せず、ゲストRAM上のメッセージバッファを指す相対オフセットポインタの所有権（TCB所有フラグ）を送信側から受信側へ移転させることで、極小レイテンシかつゼロコピーのデータ転送を実現する。 `{IPC_ZeroCopy}`
-- **キューが存在しないことの帰結**: 本 API はバッファなし同期ランデブー（`{ADR_RendezvousChannel}`）であるため、受信側が Kill された場合に回収すべき「キュー内の未受領メッセージ」は存在しない——In-flight 状態のメッセージは常に送信側タスク自身のスタック上（ブロック中のコルーチン）に留まり、送信側タスクの終了処理がそのまま資源回収を兼ねる。受信側が永久に到達しない場合、送信側タスクはブロックし続ける（協調スケジューラのタスクキル/タイムアウト機構による救済は本コンポーネントの範囲外）。
+- **所有権移譲とゼロコピー (`IPC_ZeroCopy`)**: チャネルの所有権移譲（Grant）では、メモリデータの物理コピーは発生しない。ゲストRAM上のメッセージバッファを指す相対オフセットポインタの所有権を、送信側から受信側へ移転する。これにより極小レイテンシのゼロコピー転送を実現する。
+- **キューが存在しないことの帰結**: 本 API はバッファなし同期ランデブーである。受信側が Kill された場合に回収すべき未受領メッセージは存在しない。In-flight 状態のメッセージは、常に送信側タスク自身のスタック上に留まる。送信側タスクの終了処理がそのまま資源回収を兼ねる。
 
 ### 4.3.1 二分探索による O(log N) 低遅延ルックアップ
 <!-- traceability: {LowLatencyLookup} {META_AccessDictionary} {META_FlatMapIndexed} -->
-* **サービス検索**: サービスレジストリ（URI から channel_id への解決）は、コンパイル時にソートされた URI 文字列スパンに対して二分探索を行うことで、動的なアロケーションを行うことなく $O(\log N)$ の低遅延名前解決を達成する。`ipc_router_concept.py` の `IPCRouter.registry` は `fireball::flat_map_view`（`{META_FlatMapIndexed}` の `FlatMapView`）そのものであり、`find()` による二分探索でルックアップする——辞書ベース実装からの移行は完了している。実測は [`low_latency_lookup_bench.py`](docs/components/tier1_interface/benchmarks/low_latency_lookup_bench.py)（同一の `FlatMapView` を直接計測、線形探索比較付き）を参照。この計測は IPC ルータの実サービス数（通常 ≤ 16）ではなく $O(\log N)$ の漸近的な成長特性そのものを N=1,000〜1,000,000 の範囲で検証するものであり、キー数を1000倍にしても `flat_map_view` のルックアップ時間は約2.0倍（$\log_2(10^6)/\log_2(10^3) = 2$、線形探索は約1,100倍）の増加に留まり、二分探索の理論的計算量と完全に合致することを実測している。 `{LowLatencyLookup}`
-* **メッセージ内検索**: メッセージの引数（KVマップ）は、キー値を昇順にソートした固定長配列（静的 flat_map 構造）として実装され、受信側でのパラメータ探索に $O(\log N)$ の二分探索を適用し、ゼロコスト抽象化を保証する。 `{META_AccessDictionary}` `{META_FlatMapIndexed}`
+* **サービス検索**: サービスレジストリ（URI から channel_id への解決）は、コンパイル時にソートされた URI 文字列スパンに対して二分探索を行う。動的アロケーションを行わず、$O(\log N)$ の低遅延名前解決を達成する。実装詳細は `ipc_router_concept.py` を参照する。実測性能は [`low_latency_lookup_bench.py`](docs/components/tier1_interface/benchmarks/low_latency_lookup_bench.py) で検証済みである。キー数を1000倍にした場合でも、探索時間は理論通り約2倍に留まる。
+* **メッセージ内検索**: メッセージ引数は、キー値を昇順にソートした固定長配列として実装する。受信側でのパラメータ探索に $O(\log N)$ の二分探索を適用し、ゼロコスト抽象化を保証する。
 
 ### 4.3.2 CSP Handoff スターベーション防止対策
 <!-- traceability: {Challenge_CspHandoffStarvation} -->
-CSP Handoff による直接のコンテキストスイッチを伴うメッセージ移譲において、特定の送受信タスクのペアが CPU 実行時間を占有して他のタスクがスターベーション（実行飢餓）に陥るのを防ぐため、以下のガード条件を適用する。
-1. **最大連続ハンドオフ回数の制限**: 直接の実行権移譲（Handoff）が連続して `FB_CONF_MAX_CONSECUTIVE_HANDOFFS` 回に達した場合、強制的に READY キュー末尾へ自タスクを yield させ、一度スケジューラによるラウンドロビン巡回（メインループ復帰）をトリガーする。
-2. **タイムスライス閾値監視**: スケジューラの単調Tickカウントに基づき、前回のスケジュールから一定時間（例: 10ms）以上経過している場合は、直接スイッチを行わず、いったんスケジューラの通常のラウンドロビン巡回に自タスクを戻す。CSP チャネル自体にはキューが存在しないため、これは「別経路（キュー）へのフォールバック」ではなく、同じランデブーを次の巡回で改めて試みるだけの単純な yield である。 `{Challenge_CspHandoffStarvation}`
+CSP Handoff によるメッセージ移譲において、特定タスクペアによる CPU 占有とスターベーションを防ぐため、以下のガード条件を適用する。
+1. **最大連続ハンドオフ回数の制限**: 連続実行権移譲が `FB_CONF_MAX_CONSECUTIVE_HANDOFFS` 回に達した場合、自タスクを READY キュー末尾へ yield させる。スケジューラによるラウンドロビン巡回をトリガーする。
+2. **タイムスライス閾値監視**: 前回のスケジュールから一定時間以上経過している場合は、直接スイッチを行わない。スケジューラの通常の巡回に自タスクを戻す。キューへの退避ではなく、次回の巡回で再試行する単純な yield である。
 
 ### 4.4 内部シーケンス図
 <!-- traceability: {LowLatencyLookup} {META_AccessDictionary} {META_FlatMapIndexed} {OwnershipTransfer} {IPC_ZeroCopy} -->
@@ -657,29 +661,29 @@ sequenceDiagram
 | 引数 | `uri`: 検索対象のサービスURI |
 | 戻り値 | オプショナル値 (成功時は認可済み `Channel` オブジェクト, 失敗時は空) |
 | エラー時の挙動 | 見つからない場合は `ERR_NOT_FOUND` を、権限がない場合は `ERR_PERMISSION_DENIED` を通知する。 |
-| 補足 | `{IPC_HandleBased}` のため、クライアントはこの認可済みチャネルオブジェクトをキャッシュして利用することが推奨される。 |
+| 補足 | ルックアップオーバーヘッドを削減するため、クライアントはこの認可済みチャネルオブジェクトをキャッシュして利用することが推奨される。 |
 
 #### メッセージルーティング（route_message）
-<!-- traceability: {OwnershipTransfer} {IPC_ZeroCopy} {ADR_RendezvousChannel} -->
+<!-- traceability: {OwnershipTransfer} {IPC_ZeroCopy} {ADR_RendezvousChannel} {CSP_Handoff} -->
 
-**COOS の CSP チャネルと同一の機構**: 本 API は `{ADR_RendezvousChannel}` が定めるバッファなし同期ランデブーそのものであり、`(sender_role, target_role)` の RBAC エッジ 1 本につき専用の CSP チャネルを持つ。値を保持するバッファが存在しないため、有界キューにおける「満杯」状態は原理的に発生しない。本 API は `{CSP_Handoff}` を主張する。送信ホットパスから URI 探索を完全に排除し、認可済み `Channel` オブジェクトを直接操作する。
+**COOS の CSP チャネルと同一の機構**: 本 API は COOS が定めるバッファなし同期ランデブーそのものである。`(sender_role, target_role)` の RBAC エッジ 1 本につき専用の CSP チャネルを持つ。値を保持するバッファが存在しないため、キュー満杯状態は原理的に発生しない。送信ホットパスから URI 探索を排除し、認可済み `Channel` オブジェクトを直接操作する。
 
 | 項目 | 内容 |
 | :--- | :--- |
-| 機能概要 | 事前認可された `Channel` オブジェクト上で、リソースの所有権を Revoke/Rendezvous/Grant の順で移譲する。呼び出し元 TCB ロールがチャネルの送信元エッジと一致することを検証する。相手が未到達の場合は協調スケジューラ上でブロックし、相手到達時に必ず完了する（キューが存在しないため失敗して差し戻る経路はない）。 `{OwnershipTransfer}` `{IPC_ZeroCopy}` `{ADR_RendezvousChannel}` |
+| 機能概要 | 事前認可された `Channel` オブジェクト上で、リソースの所有権を Revoke/Rendezvous/Grant の順で移譲する。呼び出し元 TCB ロールがチャネルの送信元エッジと一致することを検証する。相手が未到達の場合は協調スケジューラ上でブロックし、相手到達時に必ず完了する（キューが存在しないため失敗して差し戻る経路はない）。 |
 | シグネチャ | `route_message(channel: 通信チャネルオブジェクト, msg: ipc-message) -> operation-result` |
 | 引数 | `channel`: 認可済み通信チャネルオブジェクト<br>`msg`: 送信メッセージ (`ipc-message`) |
 | 戻り値 | 操作結果を示す `operation-result`（成功時は `COMPLETED` を返し、メッセージのKey-Valueペア数が8個の静的制限を超えている場合は `ERR_MSG_TOO_LARGE`、ロール不一致の場合は `ERR_PERMISSION_DENIED` を返す） |
 | エラー時の挙動 | `ERR_MSG_TOO_LARGE`/`ERR_PERMISSION_DENIED` はいずれも Revoke より前段の静的チェックであり、これらで失敗した場合メッセージの所有権は送信側から一度も動いていない（Rollback のような事後的な回復処理を必要としない）。Revoke 後は失敗経路が存在せず、相手の到達を待つのみである。 |
 
 #### メッセージ受信（receive_message）
-<!-- traceability: {OwnershipTransfer} {IPC_ZeroCopy} {ADR_RendezvousChannel} -->
+<!-- traceability: {OwnershipTransfer} {IPC_ZeroCopy} {ADR_RendezvousChannel} {CSP_Handoff} -->
 
 **ガード付き外部選択（Guarded External Choice / Select）**: 受信側は自タスクのロール宛てへの全 ALLOW エッジ（RBAC マトリックスの該当列）を同時に待ち受け、最初に到達した送信側とランデブーする。自タスクのロールは TCB から確定取得され、URI や送信元ロールの引数指定を必要としない。複数チャネルへの同時登録は、成立した瞬間に他の全チャネルから解除される（[`scheduler.py`](experiments/pysim/tier1_core/scheduler.py) の `channel_select_recv` / `SelectGroup` 参照）ため、1 チャネル 1 待機者の不変条件は破られない。
 
 | 項目 | 内容 |
 | :--- | :--- |
-| 機能概要 | 呼び出し元自身の TCB ロールへの、RBAC で許可された全エッジの専用 CSP チャネルに対してガード付き外部選択を行い、最初に到達した送信側とランデブーする（Grant）。相手がまだ誰も到達していなければ協調スケジューラ上でブロックし、いずれかの送信側到達時に必ず完了する。 `{OwnershipTransfer}` `{IPC_ZeroCopy}` `{ADR_RendezvousChannel}` |
+| 機能概要 | 呼び出し元自身の TCB ロールへの、RBAC で許可された全エッジの専用 CSP チャネルに対してガード付き外部選択を行い、最初に到達した送信側とランデブーする（Grant）。相手がまだ誰も到達していなければ協調スケジューラ上でブロックし、いずれかの送信側到達時に必ず完了する。 |
 | シグネチャ | `receive_message() -> result<ipc-message, operation-result>` |
 | 引数 | なし（自タスクのロール宛てに許可された全チャネルから選択受信） |
 | 戻り値 | 成功時は受信した `ipc-message`（所有権は呼び出し元に移譲済み）。失敗時は `operation-result`（RBAC 上どの送信元からも許可されていない場合は `ERR_PERMISSION_DENIED`） |
@@ -688,11 +692,11 @@ sequenceDiagram
 ### 5.2 URI/IPCインターフェース
 <!-- traceability: {TypeSafeMessaging} -->
 - **URI形式**: `fireball://<subsystem_id>/<stream>/<instance_id>`
-- **メッセージ形式**: `fireball::flat_map_view` を用いた、最大8要素の型安全なKey-Value構造。定数や識別キーの型安全なパッキングをサポートし、動的なアロケーションを行うことなく動作する。 `{TypeSafeMessaging}`
+- **メッセージ形式**: `fireball::flat_map_view` を用いた、最大8要素の型安全なKey-Value構造。定数や識別キーの型安全なパッキングをサポートし、動的なアロケーションを行うことなく動作する。
 
 ### 5.3 サービスファサード
-<!-- traceability: {ServiceFacade} {IoC} -->
-IPCのプリミティブ性を隠蔽し、依存性の逆転 (IoC) を実現するため、サービスの利用側（内側の層）がファサードクラスを定義する。ファサードの各メソッドは、KVマップへの生のパッキング/アンパッキングを外部に露出せず、引数・戻り値の型をシグネチャとして静的に固定した型安全なメソッドとして提供する（内部変換は `{TypeSafeMessaging}` の型安全な Key-Value 構造を利用する）。呼び出し側は `kv_pair` の型スコープやビットフラグを直接扱わない。 `{ServiceFacade}` `{IoC}`
+<!-- traceability: {ServiceFacade} {IoC} {TypeSafeMessaging} -->
+IPCのプリミティブ性を隠蔽し、依存性の逆転 (IoC) を実現するため、サービスの利用側（内側の層）がファサードクラスを定義する。ファサードの各メソッドは、KVマップへの生のパッキングやアンパッキングを外部に露出しない。引数や戻り値の型をシグネチャとして静的に固定した型安全なメソッドとして提供する。内部変換は型安全な Key-Value 構造を利用する。呼び出し側は `kv_pair` の型スコープやビットフラグを直接扱わない。
 
 ## 6. 形式検証（pyModelChecking / 直交表）
 
@@ -702,9 +706,9 @@ IPCのプリミティブ性を隠蔽し、依存性の逆転 (IoC) を実現す�
 
 | 不変条件 | 説明 | 検証方法 |
 | :--- | :--- | :--- |
-| **所有権単調性** | リソース所有権が Sender → In-flight → Receiver と一方向に移譲され、二重所有が発生しないこと。`{OwnershipTransfer}` `{IPC_ZeroCopy}` | `formal/csp_handoff_model.py` CTL 安全性検証 (`AG(Not(sender_owns & receiver_owns))` ➔ True) |
+| **所有権単調性** | リソース所有権が Sender → In-flight → Receiver と一方向に移譲され、二重所有が発生しないこと。`{OwnershipTransfer}` | `formal/csp_handoff_model.py` CTL 安全性検証 (`AG(Not(sender_owns & receiver_owns))` ➔ True) |
 | **デッドロック不在** | クライアント・サーバ規律（非循環チャネル依存）により、Send/Recv の循環待ちデッドロックが発生しないこと。`{RoleBasedAccessControl}` | 設計レビュー（自動の機械的閉路検査ツールは無し） |
-| **In-flight 有限解決性** | In-flight 状態のリソースは、相手タスクが到達し Rendezvous/Grant が成立することで必ず解決すること（相手が永久に到達しない場合を除く——本コンポーネントはタスクの生存を保証しない）。`{ADR_RendezvousChannel}` | `formal/csp_handoff_model.py` CTL 進行性検証 (`AG(in_flight -> AF(not in_flight))` ➔ True、相手タスクが有限時間内に到達するという公正性仮定の下で) |
+| **In-flight待機の安全性** | 相手が未到達なら送信側はIn-flightで待機し、相手の到達後にだけRendezvous/Grantへ進む。相手タスクの到達・有限時間内の応答はCSP単独では保証しない。`{ADR_RendezvousChannel}` | `formal/csp_handoff_model.py`で待機状態の自己ループを含めて検査。`AG(in_flight -> AF(not in_flight))`の無条件証明は行わない |
 | **単一待機者制約** | 1 本の CSP チャネルは同時に高々 1 つの送信待機または受信待機しか保持しない（キューではない）こと。 | `formal/csp_handoff_model.py` 不変式検証（二重待機の禁止） |
 
 ### 6.2 検証対象のプロパティ
@@ -712,8 +716,7 @@ IPCのプリミティブ性を隠蔽し、依存性の逆転 (IoC) を実現す�
 - **Safety**:
   - 二重所有不在（所有権競合不在）`{IPC_ZeroCopy}`
   - 単一待機者制約（1 チャネルにつき送信待機・受信待機のいずれか高々 1 つ、キュー化されない）
-- **Liveness**:
-  - In-flight 状態の有限解決性（相手タスクの到達による Rendezvous/Grant）
+- **Liveness**: CSPチャネル単独では相手タスク到達の公平性・有界応答時間を保証しないため、本モデルは無条件livenessを主張しない。
 
 ### 6.3 検証モデル概要
 
@@ -745,14 +748,14 @@ waiter_dir: {NONE, SEND, RECV}     # そのチャネルで待機中の方向
 ### 7.1 性能制約と方策
 <!-- traceability: {LowLatencyLookup} -->
 - **目標**: サービス検索のレイテンシを最小化する。
-- **方策**: `{LowLatencyLookup}` ソート済み配列の二分探索を採用する。
+- **方策**: ソート済み配列の二分探索を採用する。
 
 ### 7.2 メモリ制約と方策
 <!-- traceability: {META_BumpAllocator} {GLOBAL_StaticScalability} -->
 - **目標**: レジストリ管理によるメモリ断片化を防止する。
-- **方策**: `{META_BumpAllocator}` `{GLOBAL_StaticScalability}` バンプアロケータを使用し、最大サービス数をコンパイル時に固定する。
+- **方策**: バンプアロケータを使用し、最大サービス数をコンパイル時に固定する。
 
 ### 7.3 安全性制約と方策
 <!-- traceability: {RoleBasedAccessControl} {OwnershipTransfer} -->
 - **目標**: 不正なタスク間通信を防止する。
-- **方策**: `{RoleBasedAccessControl}` `{OwnershipTransfer}` ロールベースの認可と、厳密な所有権管理により、データ競合と不正アクセスを排除する。
+- **方策**: ロールベースの認可と、厳密な所有権管理により、データ競合と不正アクセスを排除する。

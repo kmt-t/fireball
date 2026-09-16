@@ -140,9 +140,10 @@ class HotspotBitmap:
 class BlockCardMask:
     """
     Per-function 1-bit-per-CARD mask, mirroring `HotspotBitmap`'s own
-    per-function `MutableBitStorage` at the same `card_shift`. Write-once at
-    `register_module_blocks` time from a property already fully known then
-    (never re-derived per dispatch), read-only for the rest of the run.
+    per-function `MutableBitStorage` at the same `card_shift`. Initialized at
+    `register_module_blocks` time from a property already fully known then;
+    a compile failure may clear one bit permanently, but eviction and cache
+    flush do not restore or clear candidate eligibility.
     """
 
     __slots__ = ("card_shift", "func_storages")
@@ -459,7 +460,7 @@ class JITCacheBank:
 
 
 class JITMultiBufferCache:
-    """3-bank rotating JIT code cache: Active / Warm / Oldest with O(k) bounded unlinking and Direct-Mapped Folding XOR lookup."""
+    """3-bank rotating JIT cache with bounded O(n + k log n) purge and XOR lookup."""
 
     __slots__ = (
         "_fast_slots",
@@ -608,14 +609,14 @@ class JITMultiBufferCache:
     def rotate(self) -> StaticVector[int]:
         """
         Rotates Active -> Warm -> Oldest -> Active and purges the old Oldest bank.
-                Performs O(k) bounded unlinking on purged inbound sources.
+        Performs bounded inbound unlinking plus a full purge-bank clear.
         """
 
         new_active = self.oldest_idx
         new_warm = self.active_idx
         new_oldest = self.warm_idx
         old_oldest_bank = self.banks[new_active]
-        # O(k) Unlink inbound chains pointing to traces in the bank being purged
+        # Unlink inbound chains, then clear all slots in the bank being purged.
         for src_pc in old_oldest_bank.inbound_sources:
             src_trace = self.find_trace(src_pc)
             if (

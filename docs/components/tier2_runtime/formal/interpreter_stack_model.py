@@ -16,7 +16,8 @@ def build_model(*, guards: bool = True) -> Kripke:
     """
     Interpreter の3本の独立スタックと関数復帰を抽象化した保護証明モデル。
     - s_call_entry: 関数呼び出し境界への入口
-    - s_local_frame: LocalStack に call_frame とローカル領域を確保
+    - s_call_frame_descriptor: 独立した CallFrame 領域へ記述子を積む
+    - s_local_frame: 記述子が保持する開始位置からLocalStack値を確保
     - s_operand_first: OperandStack を先に使う実行順序
     - s_control_after_operand: OperandStack の評価後に control_frame を更新
     - s_control_first: control_frame を先に更新する実行順序
@@ -25,9 +26,11 @@ def build_model(*, guards: bool = True) -> Kripke:
     - s_result_on_operand: 結果値が OperandStack に保持された状態
     - s_stack_aliasing: 違反状態（3本のスタック領域が共有される）
     - s_result_lost: 違反状態（関数復帰時に結果値が失われる）
+    - s_frame_metadata_aliasing: 違反状態（CallFrame記述子をLocalStack値領域へ混在）
     """
     S = [
         "s_call_entry",
+        "s_call_frame_descriptor",
         "s_local_frame",
         "s_operand_first",
         "s_control_after_operand",
@@ -37,11 +40,13 @@ def build_model(*, guards: bool = True) -> Kripke:
         "s_result_on_operand",
         "s_stack_aliasing",
         "s_result_lost",
+        "s_frame_metadata_aliasing",
     ]
     S0 = {"s_call_entry"}
     R = [
-        # 関数呼び出しから、LocalStack・OperandStack・control_frame を独立に使用
-        ("s_call_entry", "s_local_frame"),
+        # CallFrame記述子を独立領域へ積み、保存したLocalStack位置を参照する
+        ("s_call_entry", "s_call_frame_descriptor"),
+        ("s_call_frame_descriptor", "s_local_frame"),
         # 独立したスタック操作の順序を2通りモデル化する。
         # これにより、単一の一本道ではなく、許容される実行インターリーブを検査できる。
         ("s_local_frame", "s_operand_first"),
@@ -56,17 +61,21 @@ def build_model(*, guards: bool = True) -> Kripke:
         # 違反状態の自己ループ
         ("s_stack_aliasing", "s_stack_aliasing"),
         ("s_result_lost", "s_result_lost"),
+        ("s_frame_metadata_aliasing", "s_frame_metadata_aliasing"),
     ]
     if not guards:
         # ガード無効時（変異検査）:
-        # 1. LocalStack と OperandStack/control_frame の領域分離を怠る
+        # 1. CallFrame記述子とLocalStack値の分離を怠る
+        R = [*R, ("s_call_frame_descriptor", "s_frame_metadata_aliasing")]
+        # 2. LocalStack と OperandStack/control_frame の領域分離を怠る
         R = [*R, ("s_local_frame", "s_stack_aliasing")]
-        # 2. 関数復帰時に結果値を OperandStack へ保持しない
+        # 3. 関数復帰時に結果値を OperandStack へ保持しない
         R = [*R, ("s_return", "s_result_lost")]
 
     L = {
         "s_call_entry": {"call_boundary"},
-        "s_local_frame": {"local_stack_active", "call_active"},
+        "s_call_frame_descriptor": {"call_frame_active", "call_frame_has_local_base", "call_active"},
+        "s_local_frame": {"local_stack_active", "call_frame_active", "call_active"},
         "s_operand_first": {"operand_stack_active", "call_active"},
         "s_control_after_operand": {"control_frame_active", "call_active"},
         "s_control_first": {"control_frame_active", "call_active"},
@@ -75,12 +84,14 @@ def build_model(*, guards: bool = True) -> Kripke:
         "s_result_on_operand": {"result_on_operand_stack"},
         "s_stack_aliasing": {"stack_aliasing"},
         "s_result_lost": {"result_lost"},
+        "s_frame_metadata_aliasing": {"frame_metadata_aliasing"},
     }
     return Kripke(S=S, S0=S0, R=R, L=L)
 
 
 def properties():
     bad_aliasing = AtomicProposition("stack_aliasing")
+    bad_frame_aliasing = AtomicProposition("frame_metadata_aliasing")
     call_active = AtomicProposition("call_active")
     result_on_operand = AtomicProposition("result_on_operand_stack")
     return [
@@ -91,6 +102,14 @@ def properties():
             "formula": AG(Not(bad_aliasing)),
             "violation": bad_aliasing,
             "expect": True,  # LocalStack・OperandStack・control_frame は物理的に分離される
+        },
+        {
+            "name": "call_frame_metadata_is_separate_from_local_values",
+            "kind": "safety",
+            "logic": "CTL",
+            "formula": AG(Not(bad_frame_aliasing)),
+            "violation": bad_frame_aliasing,
+            "expect": True,  # 記述子はLocalStack開始位置だけを参照し、値配列に混在しない
         },
         {
             "name": "call_result_reaches_operand_stack",

@@ -11,7 +11,8 @@ Implementation Invariants & Gotchas:
 - GOTCHA-COOS-03: ISR interrupt notification queue is non-blocking (drain_interrupts
   wakes tasks deterministically at scheduler yield points).
 - GOTCHA-SCHED-01: Consecutive direct handoff bound (FB_CONF_MAX_CONSECUTIVE_HANDOFFS)
-  forces yield back to main loop to guarantee fair round-robin and prevent starvation.
+  returns control to the scheduler after the limit; it does not guarantee task fairness
+  or real-time response bounds.
 """
 
 from __future__ import annotations
@@ -25,6 +26,7 @@ from interrupt_event import InterruptEvent
 from system_containers import RingBuffer, StaticVector
 
 FB_CONF_MAX_TASKS = 16
+FB_CONF_MAX_CHANNELS = FB_CONF_MAX_TASKS * 4
 FB_CONF_MAX_CONSECUTIVE_HANDOFFS = 4
 FB_CONF_INTERRUPT_QUEUE_SIZE = 16
 FB_CONF_MAX_IDLE_HOOKS = 8
@@ -61,54 +63,125 @@ class ChannelPayload(Protocol):
 
 
 class BoundedReadyQueue:
-    """Fixed-capacity FIFO/round-robin queue for READY tasks, mirroring intrusive TCB list ({ADR_IntrusiveTcbList})."""
+    """Fixed-capacity intrusive circular FIFO for READY tasks ({ADR_IntrusiveTcbList})."""
 
-    __slots__ = ("_items", "capacity")
+    __slots__ = ("_head", "_size", "capacity")
 
     def __init__(self, capacity: int = FB_CONF_MAX_TASKS):
+        assert capacity > 0, "READY queue capacity must be positive"
         self.capacity = capacity
-        self._items: StaticVector[Task] = StaticVector(capacity)
+        self._head: Task | None = None
+        self._size = 0
 
     def enqueue(self, task: Task) -> bool:
-        return self._items.push_back(task)
+        if self._size >= self.capacity:
+            return False
+        assert task.ready_prev is None and task.ready_next is None, (
+            "task is already linked into a READY queue"
+        )
+        if self._head is None:
+            self._link_as_only_task(task)
+        else:
+            self._link_before(self._head, task)
+        self._size += 1
+        return True
 
     def enqueue_front(self, task: Task) -> bool:
-        return self._items.insert_at(0, task)
+        if self._size >= self.capacity:
+            return False
+        assert task.ready_prev is None and task.ready_next is None, (
+            "task is already linked into a READY queue"
+        )
+        if self._head is None:
+            self._link_as_only_task(task)
+        else:
+            self._link_before(self._head, task)
+            self._head = task
+        self._size += 1
+        return True
+
+    def _link_as_only_task(self, task: Task) -> None:
+        task.ready_prev = task
+        task.ready_next = task
+        self._head = task
+
+    @staticmethod
+    def _link_before(reference: Task, task: Task) -> None:
+        previous = reference.ready_prev
+        assert previous is not None, "READY ring is missing its previous link"
+        task.ready_prev = previous
+        task.ready_next = reference
+        previous.ready_next = task
+        reference.ready_prev = task
 
     def dequeue(self) -> Task:
-        assert self._items, "pop from an empty ready queue"
-        return self._items.pop_at(0)
+        task = self._head
+        assert task is not None, "pop from an empty ready queue"
+        following = task.ready_next
+        previous = task.ready_prev
+        assert following is not None and previous is not None, "READY ring is missing a task link"
+        if self._size == 1:
+            self._head = None
+        else:
+            following.ready_prev = previous
+            previous.ready_next = following
+            self._head = following
+        task.ready_prev = None
+        task.ready_next = None
+        self._size -= 1
+        return task
 
     def remove(self, task: Task) -> bool:
-        try:
-            self._items.remove(task)
-            return True
-        except ValueError:
+        previous = task.ready_prev
+        following = task.ready_next
+        if previous is None or following is None:
             return False
+        if self._size == 1:
+            assert self._head is task, "task is not in this READY queue"
+            self._head = None
+        else:
+            previous.ready_next = following
+            following.ready_prev = previous
+            if self._head is task:
+                self._head = following
+        task.ready_prev = None
+        task.ready_next = None
+        self._size -= 1
+        return True
 
     def clear(self) -> None:
-        self._items.clear()
+        while self._head is not None:
+            self.dequeue()
 
     def __len__(self) -> int:
-        return len(self._items)
+        return self._size
 
     def __bool__(self) -> bool:
-        return bool(self._items)
+        return self._size > 0
 
     def contains(self, task: Task) -> bool:
-        for index in range(len(self._items)):
-            if self._items[index] is task:
-                return True
-        return False
+        return task.ready_prev is not None and task.ready_next is not None
 
     def __contains__(self, task: Task) -> bool:
         return self.contains(task)
 
     def __iter__(self) -> Iterator[Task]:
-        return iter(self._items)
+        task = self._head
+        for _ in range(self._size):
+            assert task is not None, "READY ring ended before its recorded size"
+            yield task
+            task = task.ready_next
 
     def __getitem__(self, index: int) -> Task:
-        return self._items[index]
+        if index < 0:
+            index += self._size
+        assert 0 <= index < self._size, "READY queue index out of range"
+        task = self._head
+        for _ in range(index):
+            assert task is not None, "READY ring ended before its recorded size"
+            task = task.ready_next
+        assert task is not None, "READY ring ended before its recorded size"
+        return task
 
 
 class TaskState(IntEnum):
@@ -185,6 +258,8 @@ class Task:
         "coro",
         "name",
         "pending_val",
+        "ready_next",
+        "ready_prev",
         "received_val",
         "result",
         "role",
@@ -205,6 +280,8 @@ class Task:
         self.coro = coro
         self.role = role
         self.state = TaskState.READY
+        self.ready_prev: Task | None = None
+        self.ready_next: Task | None = None
         self.pending_val: ChannelPayload | None = None
         self.received_val: ChannelPayload | None = None
         self.result: ChannelPayload | None = None
@@ -214,6 +291,7 @@ class Task:
 class Scheduler:
     __slots__ = (
         "_all",
+        "_channels",
         "_next_id",
         "_ready",
         "_ready_coro_count",
@@ -239,6 +317,7 @@ class Scheduler:
         self.consecutive_handoffs = 0
         self._ready: BoundedReadyQueue = BoundedReadyQueue(capacity=self.max_tasks)
         self._all: StaticVector[Task] = StaticVector(capacity=self.max_tasks)
+        self._channels: StaticVector[Channel] = StaticVector(capacity=FB_CONF_MAX_CHANNELS)
         self.current_task: Task | None = None
         self._next_id = 1
         self.idle_hooks: StaticVector[Callable[[], None]] = StaticVector(
@@ -353,7 +432,51 @@ class Scheduler:
         Creates an unbuffered synchronous CSP rendezvous channel (ADR_RendezvousChannel).
         Call channel.send(data) or channel.recv() directly on the returned Channel.
         """
-        return Channel(scheduler=self)
+        channel = Channel(scheduler=self)
+        assert self._channels.push_back(channel), (
+            f"Channel capacity exceeded (max {FB_CONF_MAX_CHANNELS})"
+        )
+        return channel
+
+    def task_killed(self, task_id: int) -> bool:
+        """Externally terminate a blocked task and remove every wait registration."""
+
+        task = self.get_task(task_id)
+        if task is None or task.state == TaskState.TERMINATED:
+            return False
+        assert task is not self.current_task, "a running task cannot be killed externally"
+        assert (
+            task.state == TaskState.BLOCKED
+            or task.state == TaskState.SUSPENDED_CSP
+        ), (
+            "task_killed requires a blocked task"
+        )
+
+        self.detach(task)
+        task.waiting_irq = None
+        for channel in self._channels:
+            if channel.waiter_task is not task:
+                continue
+            group = channel.waiter_group
+            channel.waiter_task = None
+            channel.waiter_dir = WaitDir.NONE
+            channel.waiter_group = None
+            if group is not None:
+                for other in group.channels:
+                    if other.waiter_task is task:
+                        other.waiter_task = None
+                        other.waiter_dir = WaitDir.NONE
+                        other.waiter_group = None
+            task.pending_val = None
+            break
+
+        task.received_val = None
+        if task.coro is not None:
+            task.coro.close()
+            task.coro = None
+        task.result = None
+        task.state = TaskState.TERMINATED
+        return True
 
     def channel_send(
         self, channel: Channel, data: ChannelPayload
@@ -454,17 +577,13 @@ class Scheduler:
         receiver.state = TaskState.SUSPENDED_CSP
         return (ChannelAction.BLOCK, None)
 
-    def _handoff_or_yield(
-        self, target_task: Task
-    ) -> tuple[ChannelAction, ChannelPayload | None]:
+    def _handoff_or_yield(self, target_task: Task) -> tuple[ChannelAction, ChannelPayload | None]:
         """CSP direct handoff or scheduler yield upon consecutive threshold."""
         if self.consecutive_handoffs < self.max_handoffs:
             self.consecutive_handoffs += 1
-            if self._ready.contains(target_task):
-                self._ready.remove(target_task)
-            elif target_task.coro is not None:
+            assert self._ready.enqueue_front(target_task), "READY queue capacity exceeded"
+            if target_task.coro is not None:
                 self._ready_coro_count += 1
-            self._ready.enqueue_front(target_task)
             return (ChannelAction.DIRECT_SWITCH, target_task.task_id)
         if self.logger is not None:
             self.logger.log_event(
@@ -476,13 +595,9 @@ class Scheduler:
                 0,
             )
         self.consecutive_handoffs = 0
-        # CRITICAL FIX (GOTCHA-SCHED-01):
-        # When consecutive handoff limit is reached, target_task was woken (state = READY),
-        # but was NOT enqueued into self._ready if it wasn't already there!
-        if not self._ready.contains(target_task):
-            self._ready.enqueue(target_task)
-            if target_task.coro is not None:
-                self._ready_coro_count += 1
+        assert self._ready.enqueue(target_task), "READY queue capacity exceeded"
+        if target_task.coro is not None:
+            self._ready_coro_count += 1
         return (ChannelAction.YIELD, None)
 
     def notify_interrupt(self, event: InterruptEvent) -> bool:

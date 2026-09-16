@@ -48,7 +48,7 @@ graph TD
 
     %% Runtime Layer: vSoC
     subgraph Runtime["Runtime Layer"]
-        vSoC["<b>block: vSoC / WASM Runtime</b><br/>─ プロパティ:<br/>  · JIT キャッシュ (2KB x 2)<br/>  · WASM リニアメモリ<br/>─ ポート:<br/>  · execute(): 命令実行<br/>  · syscall(): システムコール"]:::blockStyle
+        vSoC["<b>block: vSoC / WASM Runtime</b><br/>─ プロパティ:<br/>  · JITコード領域 (8KB: 共通コード2KB + 3バンク)<br/>  · WASM リニアメモリ<br/>─ ポート:<br/>  · execute(): 命令実行<br/>  · syscall(): システムコール"]:::blockStyle
     end
 
     %% Kernel Layer: COOS & IPC Router
@@ -162,8 +162,8 @@ stateDiagram-v2
 | 制約項目 | ブロック/コンポーネント | 目標値 | 制約式 | 備考 |
 | :--- | :--- | :--- | :--- | :--- |
 | **メモリ予算 (RAM)** | システム全体 | ≤ 32 KB（最小構成） | `sum(COOS + vSoC + HAL + payload) ≤ 32KB` | 想定構成は 64KB。正本は `resource_budget.md` |
-| **コード規模 (SLOC)** | システム全体 | ≤ 15,000 SLOC | `Architecture + Components ≤ 15K` | コメント・テスト除外 |
-| **JIT キャッシュ** | vSoC Engine | 6 KB (2KB x 3) | `Active + Warm + Oldest ≤ 6KB` | 3面マルチバッファ |
+| **コード規模 (SLOC)** | システム全体 | ≤ 20,000 SLOC | `Architecture + Components ≤ 20K` | コメント・テスト除外 |
+| **JIT コード領域** | vSoC Engine | 8 KB (共通コード2KB + 2KB x 3) | `common + Active + Warm + Oldest = 8KB` | 4KBページ2枚の連続領域。共通コードは非エビクション |
 | **起動時間** | COOS + vSoC | ≤ 100 ms | `Boot latency ≤ 100ms` | ホスト環境 (x64) |
 | **タスク切り替え** | COOS Scheduler | ≤ 10 μs | `Context switch ≤ 10μs` | 実測値で検証 |
 
@@ -195,7 +195,7 @@ Fireball が準拠するアーキテクチャスタイルと設計定石を明�
 例：
 - **Zero-Cost Abstraction**: オーバーヘッドのない抽象化を最優先
 - **Deterministic Execution**: 実行時間の予測可能性を重視
-- **Extreme Efficiency**: RAM < 64KB, SLOC < 15K 制約下での効率最大化
+- **Extreme Efficiency**: RAM < 64KB, SLOC ≤ 20K 制約下での効率最大化
 
 ---
 

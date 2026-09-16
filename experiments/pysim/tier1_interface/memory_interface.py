@@ -11,8 +11,8 @@ from typing import Protocol
 class PageMappingCallbacks:
     """Tier 1 hook for observing shared-page mapping and ownership changes."""
 
-    on_map_page: Callable[[int, int, int], None]
-    # (page_idx, physical_addr, owner_id)
+    on_map_page: Callable[[int, int, int, int], None]
+    # (virtual_page_idx, physical_base_addr, owner_id, mapped_size_bytes)
     on_owner_changed: Callable[[int, int, int, int], None]
     # (page_idx, physical_addr, previous_owner_id, new_owner_id)
     on_unmap_page: Callable[[int, int], None]
@@ -22,7 +22,7 @@ class PageMappingCallbacks:
 class SharedBlock(Protocol):
     """Shared-memory block operations required by ownership boundaries."""
 
-    data: bytearray
+    data: memoryview
     owner: int
 
     def u64_capacity(self) -> int: ...
@@ -68,5 +68,7 @@ class MemoryManager(Protocol):
     def claim(self, shm_id: int) -> MemoryResult: ...
 
     def grant_shared(self, shm_id: int) -> bool: ...
+
+    def revoke_shared(self, shm_id: int) -> bool: ...
 
     def register_page_mapping_callbacks(self, callbacks: PageMappingCallbacks) -> None: ...

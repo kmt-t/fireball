@@ -3,22 +3,22 @@
      formal: formal/coos_channel_model.py
      benchmark: benchmarks/direct_context_switch_bench.py
      concept: concepts/scheduler_concept.py
-     test: tests/os_scheduler_test_spec.md
+     test: docs/qa/tier1_core/os_scheduler_test_spec.md
 -->
 
 ## 1. コンセプト
 <!-- traceability: {CooperativeMultitasking} {GLOBAL_UseCpp23Library} {GLOBAL_UseCpp20Coroutine} {COOS_Deterministic} {CSPCommunication} {LowOverheadSwitch} -->
-COOSスケジューラは、協調型OS COOS（[`os_coos.md`](docs/components/tier1_core/os_coos.md)）におけるタスクディスパッチとREADYキューの制御を司る実行制御モジュールである。タスクの実行、一時停止(yield)、および割り込みによる再開を管理し、極小リソース環境での決定論的な実行を提供する。タスク間のCSPチャネル通信に伴うサスペンド・再開制御と連動し、コンテキストスイッチには C++20 コルーチンの**対称遷移（Symmetric Transfer）** を採用する。全汎用レジスタのメモリスタック退避・復帰を排除してフレームポインタとPCのみの交換に最小化することで、数サイクルでの極低オーバーヘッドなタスク遷移を達成する。 `{CooperativeMultitasking}` `{GLOBAL_UseCpp23Library}` `{GLOBAL_UseCpp20Coroutine}` `{COOS_Deterministic}` `{CSPCommunication}` `{LowOverheadSwitch}`
+COOSスケジューラは、協調型OS COOS（[`os_coos.md`](docs/components/tier1_core/os_coos.md)）におけるタスクディスパッチとREADYキューの制御を司る実行制御モジュールである。タスクの実行、一時停止(yield)、および割り込みによる再開を管理し、極小リソース環境での決定論的な実行を提供する。タスク間のCSPチャネル通信に伴うサスペンド・再開制御と連動し、コンテキストスイッチには C++20 コルーチンの**対称遷移（Symmetric Transfer）** を採用する。全汎用レジスタのメモリスタック退避・復帰を排除してフレームポインタとPCのみの交換に最小化することで、数サイクルでの極低オーバーヘッドなタスク遷移を達成する。
 
 ## 2. アーキテクチャ分類
 <!-- traceability: {META_3TierSeparation} -->
-本コンポーネントは **Tier 1 (主要システムコンポーネント: Primary Component)** に属する。コルーチンハンドルの管理とタスク実行順序の制御に特化した単一責務のモジュールとして設計する。 `{META_3TierSeparation}`
+本コンポーネントは **Tier 1 (主要システムコンポーネント: Primary Component)** に属する。コルーチンハンドルの管理とタスク実行順序の制御に特化した単一責務のモジュールとして設計する。
 
 ## 3. 静的モデル
 
 ### 3.1 データ構造
 <!-- traceability: {COOS_Transparent} -->
-- **`Scheduler`**: タスクのREADYキュー管理、実行順序制御、およびコルーチン実行をカプセル化した主要クラス。各タスクの実行状態を外部から可視化・検査するための監査用インターフェースを提供する。 `{COOS_Transparent}`
+- **`Scheduler`**: タスクのREADYキュー管理、実行順序制御、およびコルーチン実行をカプセル化した主要クラス。各タスクの実行状態を外部から可視化・検査するための監査用インターフェースを提供する。
 - **`task_context`**: 各タスクの実行状態（READY/BLOCKED/RUNNING等の待機状態）、スタック境界、コルーチンハンドルを集約したデータ構造。
 - **`scheduler_config`**: 最大タスク数、タイムアウト閾値、および各タスクの割り当てリソース制限からなる不変の静的設定。
 
@@ -50,7 +50,7 @@ flowchart TD
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
 | 割り込み制御機 | 物理ハードウェア（NVIC）の制御用 | 構造体への参照 | `interrupt_controller` |
-| 実行可能列 | 次に実行すべきタスクのFIFO実行可能リング（侵入型循環リスト） | リスト構造 | `task_context` のリスト |
+| 実行可能列 | 次に実行すべきタスクのFIFO実行可能列（侵入型循環双方向リスト） | リスト構造 | `task_context` のリスト |
 | 待機リスト | イベントや時間待ちを行っているタスクのリスト（侵入型） | リスト構造 | `task_context` のリスト |
 | 現在のタスク | 現在CPUコアを占有しているタスク | 構造体への参照 | `task_context` (NULL許容) |
 | 状態可視化API | 外部から全タスクの待機・実行状態を安全に監視するためのメソッド群。ロックフリーな読み取り専用構造（Double Buffering）を採用し、実行中タスクをブロックせずに O(1) で状態を即座に取得可能。 | 関数オブジェクト | `Scheduler::get_task_states` (読み取り専用) |
@@ -60,17 +60,20 @@ flowchart TD
 ### 4.1 アルゴリズム
 <!-- traceability: {GLOBAL_IdleDetection} {GLOBAL_PeriodicTask} {GLOBAL_InterruptWakeup} {Challenge_CspHandoffStarvation} {CSP_Handoff} -->
 - **スケジューリング**: ラウンドロビン方式。
-    - スケジューラ・コンテキスト内の「実行可能タスク列」を固定長リングキューで管理し、定数時間 $O(1)$ でのタスク切り替えを実現する。
-- **連続直接ハンドオフ上限とメインループ強制復帰 (`GOTCHA-SCHED-01`, `{Challenge_CspHandoffStarvation}`)**:
-    - CSP通信のランデブー成立時、呼び出し元と呼び出し先は C++20 コルーチンの対称遷移（Symmetric Transfer）によりスケジューラをバイパスして直接遷移（`{CSP_Handoff}`）を行う。
-    - **設計理由と不変条件**: 直接ハンドオフを無制限に許可すると、例えば2つの高頻度通信タスクが互いにメッセージをピンポン送受信し続けた場合に CPU を独占し、READY キュー内に待機している他のタスク（タイマー処理、システム監視、低優先度タスク等）が永久にディスパッチされず餓死（Starvation）に陥る。これを防ぐため、スケジューラは連続直接遷移カウンタ（`consecutive_handoffs`）を保持し、設定された上限（ビルド時定数 `FB_CONF_MAX_CONSECUTIVE_HANDOFFS`、既定値 `4` 回）に到達した瞬間に直接遷移を強制打ち切りとし、相手タスクを READY キュー末尾へ投入した上で `YIELD` を返却してスケジューラのメイン巡回ループへ強制復帰させる。これにより、いかなる通信パターンであっても全タスクへの公平な実行機会と有界な応答時間を形式的に保証する（形式検証モデル `formal/coos_channel_model.py` にて pyModelChecking CTL モデル検査により無餓死性・有界復帰性を証明済み）。 `{GOTCHA-SCHED-01}` `{Challenge_CspHandoffStarvation}` `{CSP_Handoff}`
-- **アイドル状態の検知**: 全ての管理タスクが「待機状態（BLOCKED/SUSPENDED_CSP）」となった場合にアイドル・ハンドラ（Periodic Task、ログフラッシュ、JITバッチコンパイル等）を実行する。 `{GLOBAL_IdleDetection}` `{GLOBAL_PeriodicTask}`
-- **割り込み処理**: HALからの原因付き`interrupt-event`通知（`notify_interrupt(event)`）を受信し、固定長FIFOから回収して`vector_id`に対応する対象タスクをREADYキュー末尾に追加する。 `{GLOBAL_InterruptWakeup}`
+    - スケジューラ・コンテキスト内の「実行可能タスク列」を固定容量の侵入型循環双方向リストで管理する。末尾・先頭への追加、先頭からの取り出し、既知タスクの除去を定数時間 $O(1)$ で行う。
+- **連続直接ハンドオフ上限とメインループ復帰 (`GOTCHA-SCHED-01`)**:
+    - CSP通信のランデブー成立時、呼び出し元と呼び出し先は C++20 コルーチンの対称遷移（Symmetric Transfer）によりスケジューラをバイパスして直接遷移（）を行う。
+    - **背景**: 直接ハンドオフを無制限に許可すると、タスク間のピンポン通信がスケジューラへの復帰を遅らせ続ける可能性がある。
+    - **動作**: スケジューラは連続直接遷移カウンタ（`consecutive_handoffs`）を保持する。上限（ビルド時定数 `FB_CONF_MAX_CONSECUTIVE_HANDOFFS`、既定値 `4` 回）到達後のランデブーでは、直接遷移を行わず相手タスクを READY キュー末尾へ投入する。その後 `YIELD` を返し、スケジューラのメイン巡回ループへ制御を戻す。
+    - **保証範囲**: この上限は連続直接ハンドオフ回数と、上限到達後にスケジューラへ制御が戻ることを制限する。協調型スケジューラは実行中タスクを強制プリエンプトしないため、全タスクの公平性や有界な実時間応答は保証しない。
+    - **検証範囲**: 形式検証モデル `formal/coos_channel_model.py` は、モデル内のスケジューラ復帰と他の READY タスクのディスパッチを検証する。 `{GOTCHA-SCHED-01}`
+- **アイドル状態の検知**: 全ての管理タスクが「待機状態（BLOCKED/SUSPENDED_CSP）」となった場合にアイドル・ハンドラ（Periodic Task、ログフラッシュ、JITバッチコンパイル等）を実行する。
+- **割り込み処理**: HALからの原因付き`interrupt-event`通知（`notify_interrupt(event)`）を受信し、固定長FIFOから回収して`vector_id`に対応する対象タスクをREADYキュー末尾に追加する。
 
 
 #### 連続直接ハンドオフ上限判定とメインループ復帰手順（手順アクティビティ図）
 <!-- traceability: {GOTCHA-SCHED-01} {Challenge_CspHandoffStarvation} {CSP_Handoff} -->
-高頻度ピンポン通信による CPU 独占・他タスク餓死を防止し、メインループへの有界復帰を保証する制御フローを示す。
+連続直接ハンドオフの上限到達後にスケジューラへ制御が戻る手順を示す。この上限は全タスクの公平性や実時間の応答上限を保証しない。
 
 ```mermaid
 flowchart TD
@@ -85,7 +88,7 @@ flowchart TD
     Reset --> Enqueue["Enqueue Peer Task to READY Ring Queue (Tail)"]
     Enqueue --> ForceYield["Yield to COOS Scheduler Main Loop (Forced Yield)"]
     ForceYield --> DispatchRR["Scheduler dispatches next candidate from READY Ring"]
-    DispatchRR --> FairExec(["Fair execution of other ready tasks / background monitors"])
+    DispatchRR --> NextReady(["Dispatch next task in READY queue order"])
 ```
 
 #### スケジューラ フルセット・コンセプトコード (`concepts/scheduler_concept.py`)
@@ -101,7 +104,7 @@ class RoundRobinScheduler:
     def __init__(self, max_tasks: int = 16):
         self.max_tasks = max_tasks
         self.tasks = {}
-        self.ready_ring = []
+        self.ready_ring = collections.deque()
         self.current_task = None
         self.total_dispatches = 0
 
@@ -122,13 +125,14 @@ class RoundRobinScheduler:
 
     def schedule_next(self) -> str | None:
         """Selects the next task from the ready ring.
-        Note: The actual C++ implementation uses an intrusive circular list ({ADR_IntrusiveTcbList}),
-        achieving true O(1) pointer updates. Python list.pop(0) is used here for conceptual demonstration.
+        Note: deque.popleft() models an O(1) FIFO queue operation. The C++ implementation
+        uses an intrusive circular list ({ADR_IntrusiveTcbList}); this Python example does not
+        model the embedded memory layout.
         """
         if not self.ready_ring:
             return None
 
-        task_id = self.ready_ring.pop(0)
+        task_id = self.ready_ring.popleft()
         self.current_task = task_id
         task_entry = self.tasks[task_id]
         task_entry["state"] = TaskState.RUNNING
@@ -164,7 +168,7 @@ class RoundRobinScheduler:
             self.ready_ring.append(task_id)
 
     def run_cycle(self) -> bool:
-        """Dispatches and advances one active task in deterministic O(1)."""
+        """Dispatches one ready task and advances it to its next scheduling action."""
         task_id = self.schedule_next()
         if task_id is None:
             return False  # All tasks blocked or completed
@@ -264,7 +268,7 @@ stateDiagram-v2
 
 #### タスク生成（spawn_task - ネイティブタスク用）
 <!-- traceability: {CooperativeMultitasking} {GLOBAL_UseCpp20Coroutine} -->
-既存のコルーチンオブジェクトを移動セマンティクスによって登録し、協調型マルチタスクとして動作させる。本APIは公開APIであり、`fireball` 名前空間の下に配置される。 `{CooperativeMultitasking}` `{GLOBAL_UseCpp20Coroutine}`
+既存のコルーチンオブジェクトを移動セマンティクスによって登録し、協調型マルチタスクとして動作させる。本APIは公開APIであり、`fireball` 名前空間の下に配置される。
 
 | 項目 | 内容 | 型分類 |
 | :--- | :--- | :--- |
@@ -277,7 +281,7 @@ stateDiagram-v2
 
 #### 実行譲渡（yield）
 <!-- traceability: {LowOverheadSwitch} -->
-現在実行中のタスクを中断し、次のタスクへコンテキストを切り替える。C++20 コルーチンの対称遷移（Symmetric Transfer）により、全汎用レジスタ退避を伴わず数サイクルで高速遷移する。 `{LowOverheadSwitch}`
+現在実行中のタスクを中断し、次のタスクへコンテキストを切り替える。C++20 コルーチンの対称遷移（Symmetric Transfer）により、全汎用レジスタ退避を伴わず数サイクルで高速遷移する。
 
 | 項目 | 内容 |
 | :--- | :--- |
@@ -288,7 +292,7 @@ stateDiagram-v2
 
 #### 実行（run）
 <!-- traceability: {LowOverheadSwitch} -->
-メインスケジューリングループを開始し、READY キューのタスクを順次ディスパッチする。 `{LowOverheadSwitch}`
+メインスケジューリングループを開始し、READY キューのタスクを順次ディスパッチする。
 | 事前条件 | `init-scheduler` が完了していること。 |
 | 事後条件 | 通常、この関数は戻らない（電源断または致命的エラー時のみ）。 |
 
@@ -332,27 +336,32 @@ stateDiagram-v2
 
 このコンポーネントの ADR は、全体アーキテクチャから `{ADR_*}` キーワードで参照される。詳細な背景・選択肢の比較検討は以下に記録する。
 
-- **決定事項**: `{ADR_IntrusiveTcbList}`
+- **決定事項**:
   - **背景**: TCBの連結方式を決定する必要がある。`{GLOBAL_Policy_Memory}` の有界メモリ管理方針に基づき、スケジューラ内部での不要なメモリ確保やフラグメンテーションは極小化すべきである。
   - **選択肢と評価**:
     - 案1: `std::list` 等のノードベースコンテナで連結する。標準的で扱いやすいが、リスト操作ごとにノード確保のオーバーヘッドとフラグメンテーションのリスクが発生する。
     - 案2: TCB自体に `next` ポインタを持たせる侵入型リストで連結する。追加のノード確保が不要で、事前確保された TCB プール（`std::array<TCB, FB_CONF_MAX_TASKS>`）の要素をそのまま連結できる。
   - **結論**: 案2を採用する。
   - **理由**: 不要なノード確保や断片化を排除し、RAM 64KB環境での決定論的動作と生存を確実にするため。 `{GLOBAL_Policy_Memory}`
-- **決定事項**: `{ADR_CoosPureRoundRobin}`
+- **決定事項**:
   - **背景**: `{COOS_Scheduling_Refine}` はスケジューリングアルゴリズムの継続的な改善と最適化を要求している。RTOS的な優先度制御を導入するか、単純なラウンドロビンに留めるかを現時点のコアアルゴリズムとして決定する必要がある。
   - **選択肢と評価**:
     - 案1: 優先度付きマルチレベルキュー方式。タスクごとに絶対優先度を持たせ、最高優先度の READY タスクから実行する。柔軟な応答性制御は可能だが、優先度逆転対策（優先度継承等）が別途必要になり、`{NotRTOS}`（リアルタイム性よりメモリ効率・移植性を優先する方針）と衝突するオーバーヘッドと検証コストを持ち込む。
     - 案2: タイマ割り込みによるタイムスライス（時分割）ラウンドロビン。本プロジェクトは `{LowOverheadSwitch}` に基づく協調型（yield起点）切り替えを前提としており、強制プリエンプションはコンテキスト保存コストと非決定性を増やし、方針と相反する。
     - 案3: 侵入型循環リストによる純粋な協調型ラウンドロビン。優先度を持たず、ステートレスなインターフェース経由でアルゴリズム部分を分離し、低オーバーヘッドかつ $O(1)$ なディスパッチ性能を保証する。
   - **結論**: 案3を採用する。
-  - **理由**: RTOS ではないため不要な優先度制御によるオーバーヘッドや優先度逆転を根本排除し、公平で決定論的な協調型マルチタスクを実現するため。将来、案1/案2相当の改善が必要になった場合も、スケジューラのクライアントコード（タスク側）に影響を与えることなく差し替えられるよう、ステートレスなインターフェース経由で分離している。この決定は `{COOS_Scheduling_Refine}` が要求する「継続的な改善」を終わらせるものではなく、現時点で採用するベースラインを定めるものである。 `{COOS_Scheduling_Refine}`
+  - **採用理由**: 本プロジェクトはRTOSではないため、優先度制御を設けない。これにより制御オーバーヘッドと優先度逆転を避ける。
+  - **実行順序**: タスクが協調的にyieldしたとき、READYキュー順で次のタスクを実行する。yieldしないタスクを含む全タスクの公平性や応答時間は保証しない。
+  - **変更容易性**: ステートレスなインターフェースを介して実装を分離する。将来スケジューリング方式を変更してもタスク側のコードに影響しない。
+  - **適用範囲**: この決定は `{COOS_Scheduling_Refine}` が要求する継続的改善を妨げない。ここでは現時点のベースラインを定める。
 
-- **決定事項**: `{ADR_EventDrivenWakeQueue}`
+- **決定事項**:
   - **背景**: `BLOCKED` タスクリストの管理コストとリアルタイム性のトレードオフ（`{Challenge_CoosBlockedList}`）が課題として提起されていた。起床待ちタスクの探索方式を決定する必要がある。
   - **選択肢と評価**:
     - 案1: 線形スキャン。毎スケジューリングサイクルで BLOCKED リスト全体を走査し、起床条件を満たすタスクを探す。実装は単純だが、タスク数の増加に対して走査コストが $O(n)$ となり、最悪応答時間の予測が困難になる。
     - 案2: タイムアウトホイール（階層化タイマ）。時間経過による起床（sleep等）には強いが、`notify_interrupt` のような非同期イベントによる起床には別経路が必要になり、二系統の起床経路を維持する複雑さを持ち込む。
     - 案3: イベントドリブンな起床キュー。`notify_interrupt` 等のイベント発生時にのみ対象タスクをキューへ投入し、通常サイクルでは走査を行わない。
   - **結論**: 案3を採用する。
-  - **理由**: 組み込み環境において、待ちタスクの定期的なポーリングはCPUサイクルを著しく浪費し、最悪応答時間を予測困難にする。イベント駆動による起床通知モデル（`notify_interrupt` 等）を組み合わせることで、タスク数が増加してもリアルタイムでのコンテキストスイッチ時間 (O(1)) を維持しつつ、メモリ消費量の最小化と両立するため。 `{Challenge_CoosBlockedList}`
+  - **採用理由**: 待ちタスクを定期的にポーリングすると、組み込み環境のCPUサイクルを浪費する。ポーリング間隔によっては起床レイテンシも予測しにくくなる。
+  - **動作特性**: `notify_interrupt` 等の通知を契機に対象タスクを起床キューへ追加する。通常のスケジューリングサイクルでは BLOCKED タスクを走査しない。
+  - **性能特性**: READYリングキューのpush/popは、タスク数に依存しない $O(1)$ とする。割り込みイベントの待機者検索は配送経路に属し、計算量と応答時間を別途評価する。 `{Challenge_CoosBlockedList}`

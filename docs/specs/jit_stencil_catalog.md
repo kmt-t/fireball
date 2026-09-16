@@ -7,7 +7,7 @@
 <!-- traceability: {JIT_CopyAndPatch} {JIT_ZeroCompileCostTheorem} {JIT_RegisterMapping} {META_ZeroCostAbstraction} -->
 本仕様書は、Fireball Copy-and-Patch JIT コンパイラが実行時にコード結合およびパッチ適用を行うための **事前コンパイル済み Thumb-2 ネイティブ命令テンプレート（Stencil）** の完全な物理カタログである。
 
-ビルド時に Clang 17（`-target arm-none-eabi -mcpu=cortex-m33 -mthumb -O2`）で生成されたバイナリ列とプレースホルダ（穴: Relocation Slots）のオフセット、および多次元レジスタバリアント（スタックキャッシュ深度 `R3=TOS / R4=NOS / R5=NNOS`、`R0=ctx`、`R1=SP`、`R2=local_base`、`R8=mem_base / R9=mem_size` ピン留め、`R10=safepoint`、および AAPCS 準拠 Callee-saved 退避 `R4-R6, R8-R11`、Frame Pointer `R7`）を一意に定義する。 `{JIT_CopyAndPatch}` `{JIT_ZeroCompileCostTheorem}` `{JIT_RegisterMapping}` `{META_ZeroCostAbstraction}`
+ビルド時に Clang 17（`-target arm-none-eabi -mcpu=cortex-m33 -mthumb -O2`）で生成されたバイナリ列とプレースホルダ（穴: Relocation Slots）のオフセット、および多次元レジスタバリアント（スタックキャッシュ深度 `R3=TOS / R4=NOS / R5=NNOS`、`R0=ctx`、`R1=SP`、`R2=local_base`、`R8=mem_base / R9=mem_size` ピン留め、`R10=safepoint`、および AAPCS 準拠 Callee-saved 退避 `R4-R6, R8-R11`、Frame Pointer `R7`）を一意に定義する。
 
 ---
 
@@ -23,6 +23,8 @@
 
 ---
 
+このカタログに記載するステンシルの原本はROMに置く。実行時に共有する相対ジャンプstub、入口・終了境界stub、復帰トランポリンは、8KB JIT領域内の固定共通コード区画（2KB）へ初期化時に配置し、可変3バンクのrotation／flushから除外する。共通区画への参照はターゲット別relocationで解決し、命令形式の到達範囲を生成時に検査する。直接条件分岐の範囲を超える場合は近傍relay veneerを経由させる。
+
 ## 3. ステンシル・カタログ (Thumb-2 Stencil Catalog)
 
 ### 3.1 プロローグ & エピローグ・ステンシル (Prologue, Epilogue & Spill Flush)
@@ -30,26 +32,26 @@
 
 トレース境界には、性質の異なる 2 種類のエントリと 2 種類のエグジットが存在し、両者を混同してはならない。
 
-- **新規エントリ（`STENCIL_PROLOGUE_FULL` を通過）**: インタープリタ・ディスパッチャから `exec_trace` 関数ポインタ経由で呼び出される場合。CPS 4引数ディスパッチ規約（`R0=ctx, R1=sp, R2=local_base, R3=tos`）に基づいて呼び出され、真の AAPCS 呼び出し境界を跨ぐため、Callee-saved レジスタ（`R4-R6, R8-R11, LR`）の退避を行う。`R3: tos` はそのまま JIT スタックキャッシュ `TOS` として活用される。
-- **チェイン・エントリ（`STENCIL_PROLOGUE_FULL` の直後のオフセット、プロローグをスキップ）**: 常駐先行トレースからの直接分岐（`{JIT_LazyChaining}` によりバックパッチされた `B.W` またはヘッダ動的ジャンプ `BX r12`）で入ってくる場合。先行トレースのレジスタ状態（`R3=TOS / R4=NOS / R5=NNOS` のキャッシュ値含む）がそのまま生きているため、退避・再ロードは不要かつ有害。
-- **AAPCS 準拠終了エピローグ（`STENCIL_EPILOGUE_FLUSH_D1`/`D2`/`D3`）**: 後続の常駐トレースが存在しない、またはこのトレースがチェインの終端である場合。基本ブロック末尾でプッシュされたスタックキャッシュ（`R3: TOS`、Depth 2 では `R4: NOS`、Depth 3 では `R5: NNOS` も）をオペランドスタック（`[R1, #offset]`）へ確実に書き戻し（Flush）、コンテキスト `R0` の `ip`（`+0x00`）および `sp_offset`（`+0x0C`）を同期した上で、Callee-saved レジスタを `POP` 復元してリターンする（`{GOTCHA-JITC-07}`）。
-- **直接チェイン分岐（エピローグなし）**: `{JIT_LazyChaining}` により後続トレースが常駐と解決済みの場合、上記エピローグの代わりに後続トレースのチェイン・エントリへのジャンプ（動的ヘッダ参照 `BX r12`）を配置する。フラッシュも `POP` も発生せず、レジスタは分岐を跨いでそのまま生き続ける。
+- **新規エントリ（共通プロローグ / AAPCS 準拠開始プロローグ `STENCIL_PROLOGUE_FULL`）**: Interpreter／RuntimeEngineから`exec_trace`へ移行するときは必ず通過する。CPS 4引数（`R0=ctx, R1=sp, R2=local_base, R3=tos`）を受け、callee-savedレジスタを退避し、開始時SPをAAPCSの8-byte境界に保つ。入口variantの割り当てを整え、`R3: tos`をJITスタックキャッシュTOSとして使う。Interpreterから内部chain entryへ直接入ってはならない。
+- **トレースチェインエピローグ**: 各基本ブロック末尾で必須とする。dirtyなスタックキャッシュ（`R3: TOS`、必要なら`R4: NOS`、`R5: NNOS`）を共有OperandStackへflushし、`ctx->ip`と`ctx->sp_offset`を同期する。チェイン継続時はAAPCSフレームを維持し、後続variantの互換性を判定する。互換ならchain entryへ、非互換なら共有OperandStackから再構成するsetup codeを経て後続traceへ進む。これは関数復帰するAAPCS準拠終了エピローグとは別物である。
+- **AAPCS 準拠終了エピローグ**: RuntimeEngine／Interpreter境界へ戻るtrace終端で使用する。共有状態を同期し、callee-savedレジスタを復元してreturnまたは規定のtail transferを行う。JITからInterpreterへの移行、trap、WASM `return`直前の境界で使い、WASM戻り値そのものは共有OperandStackに置く（`{GOTCHA-JITC-07}`）。
+- **チェイン出口**: 後続traceが常駐・解決済みでもトレースチェインエピローグを省略しない。共有状態のflush/sync後にvariantを判定し、必要なsetupを挟む。AAPCS準拠終了エピローグによるcallee-saved復元はInterpreter／RuntimeEngineへ戻る場合だけ行う。
 
-#### `STENCIL_PROLOGUE_FULL` (Callee-saved 全域退避 + LR、新規エントリ専用)
+#### AAPCS 準拠開始プロローグ — `STENCIL_PROLOGUE_FULL` (Callee-saved 全域退避 + LR、新規エントリ専用)
 - **入力状態**: CPS 4引数規約 (`R0=ctx, R1=sp, R2=local_base, R3=tos`)
 - **出力状態**: Callee-saved 退避完了、JIT スタックキャッシュ `R3=TOS`
 - **Thumb-2 命令列**:
   ```asm
-  push.w {r4-r6, r8-r11, lr} ; [Offset 0x00] AAPCS 準拠 Callee-saved 退避
+  push.w {r4-r6, r8-r11, lr} ; [Offset 0x00] Callee-saved 退避（32 Bytes、8レジスタ）
   ```
 - **バイナリ列 (4 Bytes)**: `2D E9 70 4F`
-- チェイン・エントリはこのステンシルの直後（トレース先頭 + 4 Bytes）のオフセットを指し、このステンシル自体を経由しない。先行トレースからレジスタ状態（`R3-R5`）が直接引き継がれる。
+- チェイン・エントリはこのステンシルの直後（トレース先頭 + 4 Bytes）を指す。Interpreter／RuntimeEngineからの入口は必ずAAPCS準拠開始プロローグの先頭である。内部chainは共有状態を同期してからこのentryへ進み、既存のAAPCSフレームを保持する。
 
-#### `STENCIL_EPILOGUE_FLUSH_D1` (TOS 書き戻し + Callee-saved 復元 & リターン)
+#### `STENCIL_EPILOGUE_FLUSH_D1` (最終境界: TOS 書き戻し + alignment解除 + 復帰)
 - **Thumb-2 命令列**:
   ```asm
   str   r3, [r1, #0x00]    ; [Offset 0x00] RELOC_IMM8_OFFSET (TOS 書き戻し)
-  pop.w {r4-r6, r8-r11, pc} ; [Offset 0x02] Callee-saved 復元 & リターン
+  pop.w {r4-r6, r8-r11, pc} ; [Offset 0x02] Callee-saved復元 & リターン
   ```
 - **バイナリ列 (6 Bytes)**: `0B 60 BD E8 70 8F`
 
@@ -58,7 +60,7 @@
   ```asm
   str   r3, [r1, #0x00]    ; [Offset 0x00] RELOC_IMM8_OFFSET (TOS 書き戻し)
   str   r4, [r1, #0x04]    ; [Offset 0x02] RELOC_IMM8_OFFSET (NOS 書き戻し)
-  pop.w {r4-r6, r8-r11, pc} ; [Offset 0x04] Callee-saved 復元 & リターン
+  pop.w {r4-r6, r8-r11, pc} ; [Offset 0x04] Callee-saved復元 & リターン
   ```
 - **バイナリ列 (8 Bytes)**: `0B 60 4C 60 BD E8 70 8F`
 
@@ -68,32 +70,36 @@
   str   r3, [r1, #0x00]    ; TOS 書き戻し
   str   r4, [r1, #0x04]    ; NOS 書き戻し
   str   r5, [r1, #0x08]    ; NNOS 書き戻し
-  pop.w {r4-r6, r8-r11, pc} ; Callee-saved 復元 & リターン
+  pop.w {r4-r6, r8-r11, pc} ; Callee-saved復元 & リターン
   ```
 - **バイナリ列 (10 Bytes)**: `0B 60 4C 60 8D 60 BD E8 70 8F`
 
-#### `STENCIL_DYNAMIC_CHAIN_EXIT_D1` (ヘッダ参照動的チェイン分岐 & インタープリタ復帰エピローグ)
+#### `STENCIL_CHAIN_EPILOGUE_FLUSH_D1/D2/D3` (基本ブロック末尾の共有状態同期)
+各バリアントでTOS、必要ならNOS/NNOSを共有OperandStackへflushし、`ctx->ip`と`ctx->sp_offset`を更新する。callee-savedレジスタを保持するため、ここでは`POP`もreturnもしない。ヘッダのchain targetを読み、variantを照合し、必要ならsetup codeを通って後続chain entryへ進む。target不在ならAAPCS準拠終了エピローグへ分岐する。命令列はレジスタvariantとヘッダ配置に応じて生成し、終了エピローグと混同しない。
+
+#### `STENCIL_DYNAMIC_CHAIN_EXIT_D1` (ヘッダ参照動的チェイン分岐)
 - **概要**: コードの自己書き換え（インプレースパッチ）を行わず、自身のトレースヘッダ内のデータフィールド `chain_target_addr`（+0x0C）の解決状態（非ゼロかゼロか）に応じて動的に分岐する。
 - **Thumb-2 命令列**:
   ```asm
   ldr.w r12, [pc, #-offset_to_header_target] ; 自身のヘッダ chain_target_addr (+0x0C) をロード
-  cbz   r12, <interp_fallback>               ; 未解決 (0) の場合はエピローグへフォールスルー
-  bx    r12                                  ; 解決済みの場合は後続トレース（プロローグ直後）へ直接ジャンプ！
+  cbz   r12, <interp_fallback>               ; 未解決 (0) の場合は終了エピローグへフォールスルー
+  ; STENCIL_CHAIN_EPILOGUE_FLUSH_Dn: cache flush + ctx ip/sp_offset sync
+  ; variant互換性を判定し、必要ならsetup codeを実行
+  bx    r12                                  ; AAPCSフレームを維持してchain entryへ分岐
 <interp_fallback>:
-  str   r3, [r1, #0x00]                      ; TOS 書き戻し (Flush)
-  pop.w {r4-r6, r8-r11, pc}                  ; Callee-saved 復元 & リターン（インタープリタ復帰）
+  ; STENCIL_EPILOGUE_FLUSH_Dn: cache flush + ctx sync + padding解除 + callee-saved復元
   ```
 - **特徴**:
-  - **初期状態（未チェイン）**: ヘッダの `chain_target_addr` は `0`。`cbz` でフォールスルーし、TOS 書き戻しと `POP PC` で安全にインタープリタへ戻る。
-  - **チェイン確立時**: 後続トレースがコンパイルされた際、ランタイムは先行トレースヘッダのデータフィールド（`chain_target_addr`）に後続トレースのネイティブアドレスを書き込むだけ（命令コードの書き換えなし、MPU W^X 切り替え不要）。次回実行時からは `bx r12` によりエピローグおよび後続プロローグを完全にスキップしてネイティブ直行する。
+  - **初期状態（未チェイン）**: ヘッダの `chain_target_addr` は `0`。`cbz`でAAPCS準拠終了エピローグへ分岐し、共有状態を同期してInterpreter／RuntimeEngineへ戻る。
+  - **チェイン確立時**: 後続traceのchain entryをヘッダへ登録する。次回実行時もchain epilogueのflush/syncとvariant判定（必要ならsetup code）を必ず実行してから、AAPCSフレームを維持して`bx r12`する。
   - **アンリンク時**: ヘッダの `chain_target_addr` を `0` にリセットするだけで即座にインタープリタ復帰へと安全に戻る。
 
 #### `STENCIL_FALLBACK_FLUSH_D1` (TOS 書き戻し + Callee-saved 復元 $\to$ インタープリタ末尾ジャンプ)
 - **Thumb-2 命令列**:
   ```asm
   str   r3, [r1, #0x00]    ; [Offset 0x00] RELOC_IMM8_OFFSET (TOS 書き戻し)
-  pop.w {r4-r6, r8-r11, lr} ; [Offset 0x02] Callee-saved 復元
-  bx    r12                ; [Offset 0x06] R12 のハンドラアドレスへ直接ジャンプ
+  pop.w {r4-r6, r8-r11, lr} ; [Offset 0x02] Callee-saved復元
+  bx    r12                ; [Offset 0x06] R12のハンドラアドレスへ直接ジャンプ
   ```
 - **バイナリ列 (8 Bytes)**: `0B 60 BD E8 70 4F 60 47`
 
@@ -102,8 +108,8 @@
   ```asm
   str   r3, [r1, #0x00]    ; [Offset 0x00] RELOC_IMM8_OFFSET (TOS 書き戻し)
   str   r4, [r1, #0x04]    ; [Offset 0x02] RELOC_IMM8_OFFSET (NOS 書き戻し)
-  pop.w {r4-r6, r8-r11, lr} ; [Offset 0x04] Callee-saved 復元
-  bx    r12                ; [Offset 0x08] R12 のハンドラアドレスへ直接ジャンプ
+  pop.w {r4-r6, r8-r11, lr} ; [Offset 0x04] Callee-saved復元
+  bx    r12                ; [Offset 0x08] R12のハンドラアドレスへ直接ジャンプ
   ```
 - **バイナリ列 (10 Bytes)**: `0B 60 4C 60 BD E8 70 4F 60 47`
 
@@ -113,7 +119,7 @@
   str   r3, [r1, #0x00]    ; TOS 書き戻し
   str   r4, [r1, #0x04]    ; NOS 書き戻し
   str   r5, [r1, #0x08]    ; NNOS 書き戻し
-  pop.w {r4-r6, r8-r11, lr} ; Callee-saved 復元
+  pop.w {r4-r6, r8-r11, lr} ; Callee-saved復元
   bx    r12                ; R12 のハンドラアドレスへ直接ジャンプ
   ```
 - **バイナリ列 (12 Bytes)**: `0B 60 4C 60 8D 60 BD E8 70 4F 60 47`
@@ -267,7 +273,7 @@
 | `i32.rem_s` (`0x6F`) | `STENCIL_I32_REM_S_D2` | R3=TOS, R4=NOS | R3=TOS | `cbz r3, <trap>; sdiv r12, r4, r3; mls r3, r12, r3, r4` (ARM MLS: $Rd(r3) = Ra(r4) - Rn(r12) \times Rm(r3)$) | `00 B1 94 FB F3 FC 0C FB 13 43` |
 | `i32.rem_u` (`0x70`) | `STENCIL_I32_REM_U_D2` | R3=TOS, R4=NOS | R3=TOS | `cbz r3, <trap>; udiv r12, r4, r3; mls r3, r12, r3, r4` (ARM MLS: $Rd(r3) = Ra(r4) - Rn(r12) \times Rm(r3)$) | `00 B1 B4 FB F3 FC 0C FB 13 43` |
 
-※ ARMv8-M Architecture Reference Manual 規定：`MLS Rd, Rn, Rm, Ra` 命令の動作は $Rd = Ra - (Rn \times Rm)$ である。したがって `mls r3, r12, r3, r4` は $Rd(r3) = Ra(r4) - Rn(r12) \times Rm(r3)$（$被除数 - 商 \times 除数 = 剰余$）を正しく算出する（検証仕様: [jit_compiler_test_spec.md](docs/components/tier3_jit/tests/jit_compiler_test_spec.md) `GOTCHA-JITC-06` を参照）。
+※ ARMv8-M Architecture Reference Manual 規定：`MLS Rd, Rn, Rm, Ra` 命令の動作は $Rd = Ra - (Rn \times Rm)$ である。したがって `mls r3, r12, r3, r4` は $Rd(r3) = Ra(r4) - Rn(r12) \times Rm(r3)$（$被除数 - 商 \times 除数 = 剰余$）を正しく算出する（検証仕様: [jit_compiler_test_spec.md](docs/qa/tier3_jit/jit_compiler_test_spec.md) `GOTCHA-JITC-06` を参照）。
 ※ 16-bit Thumb-2 命令（`adds r3, r4, r3` 等）はリトルエンディアンバイト列（`E3 18` 等）として格納される。
 | `i32.and` (`0x71`) | `STENCIL_I32_AND_D2` | R3=TOS, R4=NOS | R3=TOS | `ands r3, r4, r3` | `23 40` |
 | `i32.or` (`0x72`) | `STENCIL_I32_OR_D2` | R3=TOS, R4=NOS | R3=TOS | `orrs r3, r4, r3` | `23 43` |
@@ -304,12 +310,12 @@
 ### 3.7 メモリアクセス系ステンシル (Linear Memory Load & Store with Boundary Protection)
 <!-- traceability: {MemoryBoundaryCheck} {FastAddressCheck} {JIT_RegisterMapping} -->
 
-すべてのロード/ストア命令は、`R9 = mem_size`（`execution_context.mem_size` [R0, #0x2C] からロード。`{FastAddressCheck}` が要求するのはサイズ比較の単一命令であり、マスクではない — `requirement_list.md` 参照）に対する `CMP` + `BHS.W` の境界チェックを経て、`R8 = mem_base`（`[R0, #0x28]` からロード）ピン留めバリアントによりアクセスされる（`R1`/`R2` ではない——`R1` は `sp`、`R2` は `local_base`）。`CMP addr, r9` の直後の `BHS.W <trap>` は、アドレスが `mem_size` 以上（符号なし）ならトレースのトラップテール（インタープリタへのフォールバック）へ即座に分岐する——実際のロード/ストアはこの分岐が不成立の場合にのみ実行される。境界チェックはロード/ストアの副作用（メモリアクセスそのもの）より必ず先に評価されるため、トラップ経路には巻き戻すべき副作用が存在しない。`mem_size` に2の冪の制約はなく、部分ページ（例: 8KB, 12KB, 16KB）・単一 64KB ページ・複数 64KB ページ（`N * 64KB`）のいずれも同一の比較一つで判定できる。
+すべてのロード/ストア命令は、`R9 = mem_size`（`execution_context.mem_size` [R0, #0x2C] からロード。が要求するのはサイズ比較の単一命令であり、マスクではない — `requirement_list.md` 参照）に対する `CMP` + `BHS.W` の境界チェックを経て、`R8 = mem_base`（`[R0, #0x28]` からロード）ピン留めバリアントによりアクセスされる（`R1`/`R2` ではない——`R1` は `sp`、`R2` は `local_base`）。`CMP addr, r9` の直後の `BHS.W <trap>` は、アドレスが `mem_size` 以上（符号なし）ならトレースのトラップテール（インタープリタへのフォールバック）へ即座に分岐する——実際のロード/ストアはこの分岐が不成立の場合にのみ実行される。境界チェックはロード/ストアの副作用（メモリアクセスそのもの）より必ず先に評価されるため、トラップ経路には巻き戻すべき副作用が存在しない。`mem_size` に2の冪の制約はなく、部分ページ（例: 8KB, 12KB, 16KB）・単一 64KB ページ・複数 64KB ページ（`N * 64KB`）のいずれも同一の比較一つで判定できる。
 
-`BHS.W` の分岐先オフセットはコンパイル時には未確定（トレースのトラップテールは、通常の出口エピローグの後にレイアウトされるため、エピローグ全体が生成し終わるまでアドレスが決まらない）。JIT エンジン（`jit_copy_patch_concept.py` の `compile_trace()`）はプレースホルダのオフセット `0` で `BHS.W` を発行しつつ、その命令のバイト位置を記録しておき、トレース末尾にトラップテール（基本ブロック末尾フラッシュ + `fallback_interp`）を生成し終えた後、記録しておいた全ての `BHS.W` を実アドレスへバックパッチする（2パス発行 + バックパッチ。検証仕様: [jit_compiler_test_spec.md](docs/components/tier3_jit/tests/jit_compiler_test_spec.md) `GOTCHA-JITC-04`, `GOTCHA-JITC-05` を参照）。
+`BHS.W` の分岐先オフセットはコンパイル時には未確定（トレースのトラップテールは、通常の出口エピローグの後にレイアウトされるため、エピローグ全体が生成し終わるまでアドレスが決まらない）。JIT エンジン（`jit_copy_patch_concept.py` の `compile_trace()`）はプレースホルダのオフセット `0` で `BHS.W` を発行しつつ、その命令のバイト位置を記録しておき、トレース末尾にトラップテール（基本ブロック末尾フラッシュ + `fallback_interp`）を生成し終えた後、記録しておいた全ての `BHS.W` を実アドレスへバックパッチする（2パス発行 + バックパッチ。検証仕様: [jit_compiler_test_spec.md](docs/qa/tier3_jit/jit_compiler_test_spec.md) `GOTCHA-JITC-04`, `GOTCHA-JITC-05` を参照）。
 
 > [!NOTE]
-> **JITホットパスとインタープリタ/vMMIO経路の境界チェックは統一されている**: JITステンシル（本節）とインタープリタ/vMMIO側（[`runtime_vmmio.md`](docs/components/tier2_runtime/runtime_vmmio.md)）は、どちらも同一の比較ベース境界チェック（マスクなし）を用い、境界外アクセスは必ずトラップしてインタープリタへフォールバックする。境界外アドレスを黙って範囲内へ折り畳んで処理を継続する（Address Wrapping）ことは許容されない。インタープリタがトラップ元の WASM PC から復旧できないと判断した場合は、ゲストタスクを停止してよい。`{MemoryBoundaryCheck}` `{vMMIO_TrapAndEmulate}`
+> **JITホットパスとインタープリタ/vMMIO経路の境界チェックは統一されている**: JITステンシル（本節）とインタープリタ/vMMIO側（[`runtime_vmmio.md`](docs/components/tier2_runtime/runtime_vmmio.md)）は、どちらも同一の比較ベース境界チェック（マスクなし）を用い、境界外アクセスは必ずトラップしてインタープリタへフォールバックする。境界外アドレスを黙って範囲内へ折り畳んで処理を継続する（Address Wrapping）ことは許容されない。インタープリタがトラップ元の WASM PC から復旧できないと判断した場合は、ゲストタスクを停止してよい。`{vMMIO_TrapAndEmulate}`
 
 | WASM 命令 | Stencil 名 | 入力状態 | 出力状態 | Thumb-2 命令列 (`R8=mem_base, R9=mem_size`) | バイナリ列 (Hex) |
 | :--- | :--- | :--- | :--- | :--- | :--- |
@@ -329,7 +335,7 @@
 
 <!-- traceability: {JIT_RegisterMapping} -->
 
-各ステンシル名の末尾 `_dN` は、その命令が実行される時点でオペランドスタックキャッシュに何個の値が常駐しているか（= これから読み書きするレジスタの組）を表す**レジスタバリアント**であり、`jit_trace_header.variant_id`（8bit、[`jit_compiler.md`](docs/components/tier3_jit/jit_compiler.md) の ``jit_compiler.md` (Trace Header)` 参照）と同じ ID 空間を共有する。**この軸は同一トレース内部（intra-trace）で連続する命令間のレジスタ引き継ぎに関するものであり、トレース境界をまたぐチェイニングとは別物である**。通常のトレース脱出では正準スタックへスピル/リロードするが、`{JIT_LazyChaining}` により解決済みの直接チェインへ進む場合はエピローグを省略し、`R3-R5` のキャッシュ状態を次のチェイン・エントリへそのまま引き継ぐ。
+各ステンシル名の末尾 `_dN` は、その命令が実行される時点でオペランドスタックキャッシュに何個の値が常駐しているか（= これから読み書きするレジスタの組）を表す**レジスタバリアント**であり、`jit_trace_header.variant_id`（8bit、[`jit_compiler.md`](docs/components/tier3_jit/jit_compiler.md) の `jit_trace_header` 参照）と同じ ID 空間を共有する。**この軸は同一トレース内部（intra-trace）で連続する命令間のレジスタ引き継ぎと、トレース境界での互換性判定に使う**。基本ブロック末尾では必ず共有スタックへflushする。直接チェイン時も、後続variantと互換しない場合はsetup codeで共有スタックから対象variantのレジスタ割り当てを再構成してから実行する。
 
 | `variant_id` | 名称 | レジスタ占有状態 | 該当ステンシル |
 | :---: | :--- | :--- | :--- |
@@ -342,7 +348,7 @@
 
 #### ローカル変数アクセスの基底ポインタと静的オフセット畳み込み (`ContextPointerRegister`)
 <!-- traceability: {ContextPointerRegister} -->
-ローカル変数アクセス（`local.get`/`local.set`/`local.tee`）は、JIT 専用のローカル変数基底レジスタ（`R2 = local_base`）経由（`[R2, #offset]`）として解決される。追加のベースレジスタを消費することなく極小フットプリントで実行可能である。`R2` は `local_base`（`local_param`）として JIT トレース内で固定される役割レジスタであり、`R3 = tos` および `mem_base`/`mem_size`（`R8`/`R9`）と同様に他ステンシルのスクラッチ用途と衝突させない（`jit_copy_patch_concept.py` を正本とする。※レジスタ分離検証は [jit_compiler_test_spec.md](docs/components/tier3_jit/tests/jit_compiler_test_spec.md) `GOTCHA-JITC-01` を参照）。
+ローカル変数アクセス（`local.get`/`local.set`/`local.tee`）は、JIT 専用のローカル変数基底レジスタ（`R2 = local_base`）経由（`[R2, #offset]`）として解決される。追加のベースレジスタを消費することなく極小フットプリントで実行可能である。`R2` は `local_base`（`local_param`）として JIT トレース内で固定される役割レジスタであり、`R3 = tos` および `mem_base`/`mem_size`（`R8`/`R9`）と同様に他ステンシルのスクラッチ用途と衝突させない（`jit_copy_patch_concept.py` を正本とする。※レジスタ分離検証は [jit_compiler_test_spec.md](docs/qa/tier3_jit/jit_compiler_test_spec.md) `GOTCHA-JITC-01` を参照）。
 
 > [!NOTE]
 > **現状は静的割当であり、動的なバリアント選択はまだ実装されていない**: `jit_copy_patch_concept.py` の `compile_trace()` は WASM 命令ごとに1つの固定ステンシルしか持たず（例: `i32.const` は常に特別処理で `R4` へ直接書き込み、`i32_const_d0`/`i32_const_d1` のどちらのステンシルも実際には参照しない）、実行時のキャッシュ深度に応じて `_d0`/`_d1`/`_d2` を動的に選び分けるロジックはまだ存在しない。したがって同一トレース内で連続する命令のレジスタ配置が食い違う状況も現状は発生しない。上表の `variant_id` は、(1) 将来その動的選択を実装する際の ID 体系、および (2) その際に必要となる命令間引き継ぎ互換性判定・グルー挿入（`_order_register_moves`/`emit_variant_reconciliation_glue` を参照、`jit_copy_patch_concept.py` 内の再利用可能なユーティリティとして検証済み実装が既に存在する）の両方に使われる、正本の割当表である。
@@ -354,4 +360,4 @@
 
 `i64` の除算・剰余・ビットシフト、および `f32`/`f64` 浮動小数点演算は、32-bit MCU（ARMv8-M / Cortex-M33）において `libgcc`（`__divdi3`, `__adddf3`, `__muldf3` 等）を呼び出すコードを生成する必要がある。
 
-JIT コンパイラは、これら複雑な命令に対してインラインステンシルを展開せず、**ランタイムヘルパー関数呼び出しスタブ（`fireball_rt_*` / `{JIT_RuntimeAPI_Fallback}`）を生成して委譲**する。これにより、JIT ステンシルカタログを極小サイズ（ROM 予算 8KB）に保ち、FPU 有無のビルド差異をランタイムヘルパー関数内部に局所化する。
+JIT コンパイラは、これら複雑な命令に対してインラインステンシルを展開せず、**ランタイムヘルパー関数呼び出しスタブ（`fireball_rt_*` / ）を生成して委譲**する。これにより、JIT ステンシルカタログを極小サイズ（ROM 予算 8KB）に保ち、FPU 有無のビルド差異をランタイムヘルパー関数内部に局所化する。

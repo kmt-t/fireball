@@ -2,13 +2,13 @@
 <!-- evidence:
      contract-only: true
      formal: formal/system_memory_model.py
-     test: tests/system_memory_test_spec.md
+     test: docs/qa/tier1_interface/system_memory_test_spec.md
      wit: wit/memory.wit
 -->
 
 ## 1. コンセプト
 <!-- traceability: {META_3TierSeparation} {GLOBAL_Policy_Memory} {ConsolidatedHeap} {GLOBAL_IndependentHeap} {GLOBAL_StrictMemoryLimit} -->
-メモリマネージャ（`memory-manager`）は、システム全体の統合物理メモリプール（`ConsolidatedHeap`）を基礎とし、`{GLOBAL_Policy_Memory}` が定める5つの独立した静的アロケーションプールを貸与するという抽象契約（`co_mem`）を定義する。各プールは用途・ライフサイクル・アロケータ方式が異なり、互いに物理的・領域的に完全に独立している（`GLOBAL_IndependentHeap`）ため、特定のプールでのメモリ不足が他のプールを道連れにしてクラッシュすることを防止する。
+メモリマネージャ（`memory-manager`）は、システム全体の統合物理メモリプール（`ConsolidatedHeap`）を基礎とし、が定める5つの独立した静的アロケーションプールを貸与するという抽象契約（`co_mem`）を定義する。各プールは用途・ライフサイクル・アロケータ方式が異なり、互いに物理的・領域的に完全に独立している（`GLOBAL_IndependentHeap`）ため、特定のプールでのメモリ不足が他のプールを道連れにしてクラッシュすることを防止する。
 
 本コンポーネントが定義する5つのプールは以下の通りである。それぞれの詳細は「4. インターフェース設計」を参照。
 
@@ -18,11 +18,11 @@
 4. **ランタイム用バンプアロケータ**（`runtime-bump-allocator`）: ランタイム単位（`{OneRuntimeOneGuest}`）に専有される、モジュールロード用の一括確保・一括解放アリーナ。
 5. **JITキャッシュアロケータ**（`jit-cache-allocator`）: JIT コード生成専用に予約された固定長リージョンの貸与。
 
-本コンポーネントは「何を提供するか（契約）」のみを定義する。5プールそれぞれの具体的なアロケータ実装（`system_allocator`、`shm_allocator`、`bump_allocator` 等）は、Tier 2 の [`runtime_memory.md`](docs/components/tier2_runtime/runtime_memory.md) を正本とする（`{META_ContractImplSplit}`「契約/実装分割パターン」）。**本契約は上位仮想化層（vMMIO 等）の内部シンボル・アドレス体系・PTE/TLB 機構を一切参照しない**——それらは Tier 2 の物理実装が専有する関心事であり、本コンポーネントは 5 プールの貸与・返却・所有権移譲という抽象操作のみを規定する。 `{META_3TierSeparation}` `{GLOBAL_Policy_Memory}` `{ConsolidatedHeap}` `{GLOBAL_IndependentHeap}` `{GLOBAL_StrictMemoryLimit}`
+本コンポーネントは「何を提供するか（契約）」のみを定義する。5プールそれぞれの具体的なアロケータ実装（`system_allocator`、`shm_allocator`、`bump_allocator` 等）は、Tier 2 の [`runtime_memory.md`](docs/components/tier2_runtime/runtime_memory.md) を正本とする（`{META_ContractImplSplit}`「契約/実装分割パターン」）。**本契約は上位仮想化層（vMMIO 等）の内部シンボル・アドレス体系・PTE/TLB 機構を一切参照しない**——それらは Tier 2 の物理実装が専有する関心事であり、本コンポーネントは 5 プールの貸与・返却・所有権移譲という抽象操作のみを規定する。
 
 ## 2. アーキテクチャ分類
 <!-- traceability: {META_3TierSeparation} -->
-本コンポーネントは **Tier 1 Interface (独立インターフェース契約: Independent Interface Contract)** に属し、システム全体の5プール貸与ポリシーおよび独立ヒープ不変条件を定義する抽象契約を担当する。実装（`system_allocator`/`shm_allocator`/`bump_allocator`等）は Tier 2 の [`runtime_memory.md`](docs/components/tier2_runtime/runtime_memory.md) が担う。 `{META_3TierSeparation}`
+本コンポーネントは **Tier 1 Interface (独立インターフェース契約: Independent Interface Contract)** に属し、システム全体の5プール貸与ポリシーおよび独立ヒープ不変条件を定義する抽象契約を担当する。実装（`system_allocator`/`shm_allocator`/`bump_allocator`等）は Tier 2 の [`runtime_memory.md`](docs/components/tier2_runtime/runtime_memory.md) が担う。
 
 ## 3. 静的モデル
 
@@ -40,7 +40,7 @@
 <!-- traceability: {GLOBAL_Policy_Memory} -->
 本コンポーネントの公開APIは `{META_StaticDI}` が定義する `co_mem` インターフェース契約そのものである。実装側（`runtime_memory.md`）は本契約をそのまま実現し、契約自体（メソッド名・引数・戻り値の意味）に食い違いがあれば本節を正とする。
 
-WITインターフェース名は kebab-case で定義されるが、C++の公開APIバインディングにおいては、`fireball` 名前空間の下に `snake_case`（例: `fireball::co_mem::host_alloc`）として実装・公開される。以下の各シグネチャは [`memory.wit`](docs/components/tier1_interface/wit/memory.wit) の `interface memory` を一言一句正本として引用する。プール基点アドレス・サイズの静的構成（5.2節）は `system_config.md` の `FB_CONF_*` 定数群を正本とし、本契約は実行時初期化 API を持たない（`{Size_15KLOC}` の最小面方針に基づき、起動シーケンス内の静的構成のみで足りるため）。
+WITインターフェース名は kebab-case で定義されるが、C++の公開APIバインディングにおいては、`fireball` 名前空間の下に `snake_case`（例: `fireball::co_mem::host_alloc`）として実装・公開される。以下の各シグネチャは [`memory.wit`](docs/components/tier1_interface/wit/memory.wit) の `interface memory` を一言一句正本として引用する。プール基点アドレス・サイズの静的構成（5.2節）は `system_config.md` の `FB_CONF_*` 定数群を正本とし、本契約は実行時初期化 API を持たない（`{Size_20KSLOC}` の製品ソースコード規模を抑える方針に基づき、起動シーケンス内の静的構成のみで足りるため）。
 
 ### 4.1 ホスト用ヒープ（`host-heap`）
 <!-- traceability: {GLOBAL_Policy_Memory} {System_Allocator} -->
@@ -91,14 +91,14 @@ WITインターフェース名は kebab-case で定義されるが、C++の公�
 
 ### 4.3 共有メモリ用ヒープ（`shared-memory-heap`）
 <!-- traceability: {OwnershipTransfer} {Shm_Allocator} -->
-共有メモリブロックの確保は、上記のタスクヒープ/型付きスロットとは別のライフサイクルを持つ。実装側（`runtime_memory.md`）の `shm_allocator` を介して、指定されたバイト数（`size`）の可変長バッファを切り出す。`shared-block` は所有権移動を表すRAIIラッパーであり、独自の所有権管理を並行して持つものではない。所有権移譲の物理的な執行手段は Tier 2 の実装詳細であり、本契約はそれを規定しない。 `{OwnershipTransfer}` `{Shm_Allocator}`
+共有メモリブロックの確保は、上記のタスクヒープ/型付きスロットとは別のライフサイクルを持つ。実装側（`runtime_memory.md`）の `shm_allocator` を介して、指定されたバイト数（`size`）の可変長バッファを切り出す。WITの`shm-handle`はABI境界で受け渡す通常のレコードであり、それ自体は線形・move-only所有権を表現しない。C++側の`shared_block`はこのレコードを包むmove-only RAII所有ラッパーであり、レコードを複製しても所有権やアクセス権は複製されない。`release()`の成功時はラッパーを移譲済みとして無効化し、`claim()`の成功時は新しい所有タスク側のラッパーを返す。所有ラッパーのdropは`release(handle)`を呼び出してプールへ返す。所有権移譲の物理的な執行手段はTier 2の実装詳細であり、本契約はそれを規定しない。
 
 | 項目 | 内容 |
 | :--- | :--- |
-| 機能概要 | IPC転送用の共有メモリブロックを割り当てる。 |
+| 機能概要 | IPC転送用の共有メモリブロックを割り当てる。4KBのFC=14仮想予約スロットは物理SHM容量とは独立し、物理バック領域は指定サイズ分だけ消費する。 |
 | シグネチャ | `allocate-shared(size-bytes: byte-count) -> result<shm-handle, memory-error>` |
 | 引数 | `size-bytes`: 割り当てサイズ |
-| 戻り値 | 成功時は `shm-handle`（`memory.wit` `types.shm-handle`。ハンドル値・基点アドレス・サイズ・所有タスクを持つレコード）。C++ 実装はこれを RAII 所有権付きの `shared_block` ラッパーで包み、デストラクタでの自動解放を保証する（`{ADR_SharedBlockRaii}`）。失敗時は `memory-error` |
+| 戻り値 | 成功時は `shm-handle`（`memory.wit` `types.shm-handle`。ハンドル値・物理バック領域の基点アドレス・サイズ・所有タスクを持つレコード）。FC=14のゲスト仮想アドレスはハンドルの予約ページ番号から別途求める。C++ 実装はこれを RAII 所有権付きの `shared_block` ラッパーで包み、デストラクタでの自動解放を保証する（`{ADR_SharedBlockRaii}`）。失敗時は `memory-error` |
 | 補足 | なお、HAL デバイス通信用のバッファは本共有メモリとは直交し、HAL 自身が管轄する固定長の HALバッファプールから切り出される。 |
 
 #### 所有権要求（claim）
@@ -121,7 +121,7 @@ WITインターフェース名は kebab-case で定義されるが、C++の公�
 
 ### 4.4 ランタイム用バンプアロケータ（`runtime-bump-allocator`）
 <!-- traceability: {Runtime_BumpAllocator} {OneRuntimeOneGuest} -->
-1ランタイム1ゲストの直交分離原則（`{OneRuntimeOneGuest}`）により、各ランタイムは独立した専用バンプアロケータアリーナを所有する。WASM モジュールのロード時に使用するシステムコンテナストレージ（`module_view`、シンボルテーブル等）はこのアリーナから一括確保され、ランタイム（またはモジュール）のアンロード時に個別解放なしで $O(1)$ 決定論的に一括解放される。 `{Runtime_BumpAllocator}` `{OneRuntimeOneGuest}`
+1ランタイム1ゲストの直交分離原則（）により、各ランタイムは独立した専用バンプアロケータアリーナを所有する。WASM モジュールのロード時に使用するシステムコンテナストレージ（`module_view`、シンボルテーブル等）はこのアリーナから一括確保され、ランタイム（またはモジュール）のアンロード時に個別解放なしで $O(1)$ 決定論的に一括解放される。
 
 | 項目 | 内容 |
 | :--- | :--- |
@@ -150,13 +150,13 @@ WITインターフェース名は kebab-case で定義されるが、C++の公�
 
 ### 4.5 JITキャッシュアロケータ（`jit-cache-allocator`）
 <!-- traceability: {JIT_MultiBuffer_Cache} {GLOBAL_StrictMemoryLimit} -->
-JIT コード生成専用に予約された固定長リージョン（`FB_CONF_JIT_CACHE_SIZE`）の貸与のみを契約範囲とする。**このリージョンをどのように面（バンク）分割し、世代交代・昇格させるかは本コンポーネントの関心事ではない**——それは JIT サブシステム自身（`jit_runtime.md`）が専有する内部状態機械であり、本契約は「固定長の実行可能メモリ領域を1つ貸与する」という最小限の保証のみを行う。 `{JIT_MultiBuffer_Cache}` `{GLOBAL_StrictMemoryLimit}`
+JITコード生成専用に予約された連続固定長リージョン（`FB_CONF_JIT_CACHE_SIZE`=8,192B、4KB物理ページ2枚）の貸与を契約する。領域の固定区画は共通コード2KBとActive/Warm/Oldest各2KBとし、`system_config.md`を正本とする。JITサブシステム（`jit_runtime.md`）は3可変バンクの世代交代・昇格を担当し、共通コード領域をエビクションしない。
 
 | 項目 | 内容 |
 | :--- | :--- |
 | 機能概要 | JIT コード生成用の固定長リージョンを貸与する。 |
 | シグネチャ | `acquire-jit-cache() -> result<jit-cache-region, memory-error>`<br>(C++マッピング: `fireball::co_mem::acquire_jit_cache`) |
-| 戻り値 | 成功時は `jit-cache-region`（固定長 `FB_CONF_JIT_CACHE_SIZE` バイトの実行可能メモリ領域ハンドル） |
+| 戻り値 | 成功時は `jit-cache-region`（連続した固定長 `FB_CONF_JIT_CACHE_SIZE`=8,192バイト、物理ページ2枚の実行可能メモリ領域ハンドル） |
 | 事前条件 | システム起動時に1度のみ呼び出される（動的な複数リージョン確保は想定しない） |
 | 補足 | W^X（書込み時 RW+XN / 実行時 RO+X）属性切り替えの実行方式は Tier 2 の実装詳細（`runtime_memory.md`）を正本とする。 |
 
@@ -171,8 +171,8 @@ JIT コード生成専用に予約された固定長リージョン（`FB_CONF_J
 <!-- traceability: {GLOBAL_StrictMemoryLimit} {GLOBAL_IndependentHeap} -->
 - **目標**: 総メモリ消費を有界化し、5プール間の相互干渉を完全に防止。
 - **方策**:
-  - `{GLOBAL_StrictMemoryLimit}`: システム全体の総割当量をコンパイル時定数（`FB_CONF_MEMORY_POOL_SIZE`、定義は `system_config.md` 正本）以内に厳格制限する契約とする。
-  - `{GLOBAL_IndependentHeap}`: 5プールそれぞれに独立した静的領域を割り当て、プール間干渉を物理的に排除する契約とする。共有メモリ用ヒープの排他制御・境界検査の物理実装は `runtime_memory.md` を正本とする。
+  - : システム全体の総割当量をコンパイル時定数（`FB_CONF_MEMORY_POOL_SIZE`、定義は `system_config.md` 正本）以内に厳格制限する契約とする。
+  - : 5プールそれぞれに独立した静的領域を割り当て、プール間干渉を物理的に排除する契約とする。共有メモリ用ヒープの排他制御・境界検査の物理実装は `runtime_memory.md` を正本とする。
 
 ### 5.3 安全性制約と方策
 - **目標**: 不正アクセス・二重解放の完全排除。
@@ -190,7 +190,7 @@ JIT コード生成専用に予約された固定長リージョン（`FB_CONF_J
 
 ### 6.2 共有メモリライフサイクルと所有権遷移（契約レベル）
 <!-- traceability: {OwnershipTransfer} {META_FaultIsolation} -->
-`shared-block` リソースが共有メモリ用ヒープにおける所有権の単位である。`shared-block` の `release()` は現在の所有者を無効化して移譲可能状態にし、`claim()` は許可された実行中タスクへ所有権を確立する。アクセス可否の物理的な執行手段は Tier 2 の実装詳細（`runtime_memory.md`）を正本とし、本契約はそれを規定しない。 `{META_FaultIsolation}` `{OwnershipTransfer}`
+`shared-block` リソースが共有メモリ用ヒープにおける所有権の単位である。`shared-block` の `release()` は現在の所有者を無効化して移譲可能状態にし、`claim()` は許可された実行中タスクへ所有権を確立する。アクセス可否の物理的な執行手段は Tier 2 の実装詳細（`runtime_memory.md`）を正本とし、本契約はそれを規定しない。
 
 ##### ライフサイクルフェーズ遷移表
 | ステップ | フェーズ | 実行API / イベント | 送信元(Task A) | 受信先(Task B) |
@@ -209,11 +209,11 @@ JIT コード生成専用に予約された固定長リージョン（`FB_CONF_J
 
 ### 6.3 共有ページマッピング・所有権変更通知フック
 <!-- traceability: {OwnershipTransfer} {VmmioShmDelegation} {META_FaultIsolation} -->
-Tier 1 は、共有ページの外部マッピング管理者がライフサイクルを監視するための汎用コールバック口 `PageMappingCallbacks` を提供する。これは vMMIO、PTE、TLB を契約へ持ち込むものではなく、物理ページの状態変化を通知するだけの依存性逆転用ポートである。
+Tier 1 は、共有メモリ予約の外部マッピング管理者がライフサイクルを監視するための汎用コールバック口 `PageMappingCallbacks` を提供する。`page_idx` は4KB単位の仮想予約スロット番号であり、物理アドレスや物理ページ番号ではない。これは vMMIO、PTE、TLB を契約へ持ち込むものではなく、予約と物理バック領域の対応・所有権状態を通知する依存性逆転用ポートである。
 
 | コールバック | シグネチャ | 発火条件 | 契約上の意味 |
 | :--- | :--- | :--- | :--- |
-| `on_map_page` | `(page_idx, physical_addr, owner_id)` | 確保、`claim`、ロールバックで有効な所有ビューを作るとき | 外部管理者が新しい所有者のビューを登録する |
+| `on_map_page` | `(page_idx, physical_base_addr, owner_id, mapped_size_bytes)` | 確保、`claim`、ロールバックで有効な所有ビューを作るとき | 外部管理者が4KB仮想予約を物理基点へ対応付け、要求サイズを超えるアクセスを拒否する |
 | `on_owner_changed` | `(page_idx, physical_addr, previous_owner_id, new_owner_id)` | 所有者が変わるとき（`release` による `IN_FLIGHT` 遷移を含む） | 旧ビューを先に無効化する。所有者変更だけでは再マップしない |
 | `on_unmap_page` | `(page_idx, physical_addr)` | 共有ページをプールへ返却するとき | 外部管理者がページのビューを破棄する |
 
@@ -221,9 +221,9 @@ Tier 1 は、共有ページの外部マッピング管理者がライフサイ�
 
 ## 7. 設計判断 (ADR)
 <!-- traceability: {ADR_SharedBlockRaii} {ADR_MemoryManagerMinimalSurface} -->
-このコンポーネントのADRは `{ADR_SharedBlockRaii}` および `{ADR_MemoryManagerMinimalSurface}` のキーワードで参照される。物理実装に関する `{ADR_PageGranularPermissionIsolation}` は [`runtime_memory.md`](docs/components/tier2_runtime/runtime_memory.md) を正本とする。
+このコンポーネントのADRは および のキーワードで参照される。物理実装に関する `{ADR_PageGranularPermissionIsolation}` は [`runtime_memory.md`](docs/components/tier2_runtime/runtime_memory.md) を正本とする。
 
-- **決定事項**: `{ADR_SharedBlockRaii}` (2026-02-17)
+- **決定事項**: (2026-02-17)
   - **背景**: IPC転送用の共有メモリを、単なる`shm-id`（整数）として扱うか、所有権を持つリソース型として扱うかを決定する必要があった。
   - **選択肢と評価**:
     - 案1: `shm-id`を単なる整数IDとし、明示的な`release_shm(id)`/`acquire_shm(id)`関数で操作する。実装は単純だが、解放忘れやダングリング参照を型システムで防げない。
@@ -231,7 +231,7 @@ Tier 1 は、共有ページの外部マッピング管理者がライフサイ�
   - **結論**: 案2を採用する。
   - **理由**: `release()`で現在の所有者を無効化し、`claim()`で次の所有者が取得する設計により、ダングリングポインタを構造的に防止できる。デストラクタでの自動解放により手動`deallocate`忘れも排除できる。`to-shm`/`to-address`のような対称的な変換名より`release`/`claim`の方が所有権移動という意図を明確に表す（`{OwnershipTransfer}`）。具体的な通信プロトコルとの接続は、それぞれの通信契約側で定義する。
 
-- **決定事項**: `{ADR_MemoryManagerMinimalSurface}` (2026-02-17)
+- **決定事項**: (2026-02-17)
   - **背景**: メモリマネージャのAPIに、確保済みブロックの情報を問い合わせる`query(addr) -> memory-info`と、所有権を確認する`check-ownership(addr, task-id) -> bool`を含めるかどうかを決定する必要があった。
   - **選択肢と評価**:
     - 案1: 両APIを提供し、呼び出し側が任意のアドレスについて情報・所有権を問い合わせられるようにする。汎用的だが、`shared-block`が既に保持している情報を別経路でも問い合わせ可能にする冗長な公開面を作り、`{META_FaultIsolation}`が要求する「所有権はshared-block経由でのみ確認できる」という単一の経路を弱める。

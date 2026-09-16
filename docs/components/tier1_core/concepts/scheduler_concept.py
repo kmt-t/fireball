@@ -3,10 +3,13 @@ docs/components/tier1_core/concepts/scheduler_concept.py
 Reference Concept Implementation: COOS Round-Robin Scheduler
 Implementation Invariants & Gotchas:
 - Pure FIFO round-robin dispatch without priority (ADR_CoosPureRoundRobin).
-- Fixed capacity bounds (FB_CONF_MAX_TASKS = 16) with zero dynamic allocation.
-- GOTCHA-SCHED-01: Round-robin fairness ensures all ready tasks receive deterministic CPU time.
+- Fixed task-capacity bound (FB_CONF_MAX_TASKS = 16) at the behavioral-model level.
+- This concept uses Python built-in containers; bounded-allocation behavior is modeled by pysim.
+- GOTCHA-SCHED-01: READY tasks are dispatched in FIFO order when running tasks yield;
+  non-yielding tasks can prevent further dispatch, so fairness and response time are not guaranteed.
 """
 
+from collections import deque
 from collections.abc import Generator
 from enum import IntEnum
 
@@ -33,7 +36,7 @@ class RoundRobinScheduler:
     def __init__(self, max_tasks: int = 16):
         self.max_tasks = max_tasks
         self.tasks: dict[str, TaskControlBlock] = {}
-        self.ready_ring: list[str] = []
+        self.ready_ring: deque[str] = deque()
         self.current_task: str | None = None
         self.total_dispatches = 0
 
@@ -52,7 +55,7 @@ class RoundRobinScheduler:
         """Selects the next task in O(1) from the ready ring."""
         if not self.ready_ring:
             return None
-        task_id = self.ready_ring.pop(0)
+        task_id = self.ready_ring.popleft()
         self.current_task = task_id
         tcb = self.tasks[task_id]
         tcb.state = TaskState.RUNNING

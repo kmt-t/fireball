@@ -39,6 +39,11 @@ tiers:
     path_pattern: 'specs/.*\.md'
     description: "全Tier横断・具象物理規格カタログ（WASM命令セット、WASI ABI、GDB RSP、JITステンシル等）。各ファイル冒頭の「アーキテクチャ分類」セクションで個別にTierラベルを自己申告するが、複数Tierから横断参照される性質上、Hierarchy Gateの逆流判定対象からはmeta同様に除外する。"
 
+  - tier: "meta"
+    name: "Quality Assurance & Test Specifications"
+    path_pattern: 'qa/.*\.md'
+    description: "全Tier横断のテスト仕様書および品質証跡。"
+
 keywords:
   meta:
     pattern: "^META_[A-Za-z0-9_]+$"
@@ -77,11 +82,12 @@ verification_matrix:
   strict: true
   document: "docs/architecture/verification_factor_matrix.md"
   component_root: "docs/components"
-  factor_csv: "docs/specs/tests/pairwise_factors.csv"
-  scenario_dir: "experiments/pysim/scenarios"
-  scenario_runner: "experiments/pysim/scenarios/run_all.py"
-  unit_runner: "experiments/pysim/tests/run_all.py"
-  pairwise_test: "experiments/pysim/tests/cross_cutting/test_pairwise_combinations.py"
+  test_spec_root: "docs/qa"
+  factor_csv: "docs/qa/specs/pairwise_factors.csv"
+  scenario_dir: "experiments/pysim/qa/scenarios"
+  scenario_runner: "experiments/pysim/qa/scenarios/run_all.py"
+  unit_runner: "experiments/pysim/qa/run_all.py"
+  pairwise_test: "experiments/pysim/qa/cross_cutting/test_pairwise_combinations.py"
   expected:
     component_specs: 22
     concept_files: 17
@@ -406,6 +412,11 @@ semantic_topic:
   backend: "sakura"
   batch_size: 16
 
+prose_readability:
+  max_sentence_characters: 100
+  complex_sentence_min_characters: 90
+  min_clause_links: 4
+
 source_verification:
   enabled: true
   groups:
@@ -464,23 +475,19 @@ source_verification:
           builtin_container_exclude_paths:
             - "experiments/pysim/tier1_core/system_containers.py"
             - "experiments/pysim/aobench.py"
-            - "experiments/pysim/tests/**"
-            - "experiments/pysim/scenarios/**"
+            - "experiments/pysim/qa/**"
             - "experiments/pysim/benchmarks/**"
           rtti_exclude_paths:
             - "experiments/pysim/aobench.py"
-            - "experiments/pysim/tests/**"
-            - "experiments/pysim/scenarios/**"
+            - "experiments/pysim/qa/**"
             - "experiments/pysim/benchmarks/**"
           raise_exclude_paths:
             - "experiments/pysim/aobench.py"
-            - "experiments/pysim/tests/**"
-            - "experiments/pysim/scenarios/**"
+            - "experiments/pysim/qa/**"
             - "experiments/pysim/benchmarks/**"
           test_backdoor_exclude_paths:
             - "experiments/pysim/aobench.py"
-            - "experiments/pysim/tests/**"
-            - "experiments/pysim/scenarios/**"
+            - "experiments/pysim/qa/**"
             - "experiments/pysim/benchmarks/**"
           forbidden_product_symbols:
             - "TraceBlock"
@@ -489,19 +496,16 @@ source_verification:
             - "emulate_trace"
           in_operator_exclude_paths:
             - "experiments/pysim/aobench.py"
-            - "experiments/pysim/tests/**"
-            - "experiments/pysim/scenarios/**"
+            - "experiments/pysim/qa/**"
             - "experiments/pysim/benchmarks/**"
           non_none_union_exclude_paths:
             - "experiments/pysim/aobench.py"
-            - "experiments/pysim/tests/**"
-            - "experiments/pysim/scenarios/**"
+            - "experiments/pysim/qa/**"
             - "experiments/pysim/benchmarks/**"
           string_member_exclude_paths:
             - "experiments/pysim/aobench.py"
             - "experiments/pysim/tier2_runtime/logger.py"
-            - "experiments/pysim/tests/**"
-            - "experiments/pysim/scenarios/**"
+            - "experiments/pysim/qa/**"
             - "experiments/pysim/benchmarks/**"
         - id: "pysim_imports"
           enabled: true
@@ -512,7 +516,7 @@ pysim_imports:
   enabled: true
   root: "experiments/pysim"
   # 製品コードの各ファイルを、文書階層上のTierへ割り当てる正本。
-  # tests/、scenarios/、benchmarks/ は製品依存グラフの検査対象外とする。
+  # qa/（統合シナリオを含む）、benchmarks/ は製品依存グラフの検査対象外とする。
   tiers:
     - tier: 1
       paths:

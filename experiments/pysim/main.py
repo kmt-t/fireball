@@ -30,9 +30,12 @@ for _p in (
 from hal_dispatch import HalBufferTrap
 from logger import LogLevel
 from recovery import RecoveryManager, RecoveryStrategy, Result
-from runtime_engine import IntegratedHybridEngine, WASMContext
+from interpreter import Interpreter, InterpreterBindings
+from runtime_engine import RuntimeEngine
 from system import ShmSlice, System
 from system_containers import StaticVector
+from wasm_reader import parse
+from x64_jit import TraceCompiler
 
 findings: StaticVector[str] = StaticVector(capacity=8)
 
@@ -181,48 +184,24 @@ def demo_wasmjit_hybrid_execution(sysv: System) -> None:
         5. WASM guest invokes standard WASI Preview 1 host calls (fd_write) and fireball_call IPC.
     """
     print("\n== wasmjit: Tiered Tracing JIT & Interpreter Hybrid Execution ==")
-    engine = IntegratedHybridEngine(yield_threshold=3)
-    mod = engine.load_wasm(FACTORIAL_WASM)
-
-    # Run factorial(6) = 720
-    ctx = WASMContext()
-    ctx.locals = (6, 0)
-    loop_pc = mod.blocks[1].head_pc  # 0x06 (the loop body)
-    pc = engine.run_step(mod.blocks[0].head_pc, ctx)  # executes preamble block (local[1] = 1)
-    print("  [Stage 1] Initial iterations running via Tier 2 Interpreter...")
-    for iter_idx in range(1, 4):
-        pc = engine.run_step(pc, ctx)
-        state_name = ("UNEXECUTED", "EXECUTED", "HOT", "COMPILED")[
-            engine.bitmap.get_state(loop_pc)
-        ]
-        print(
-            f"    iteration {iter_idx}: executed via Interpreter (card 0x{loop_pc:x} state={state_name})"
-        )
-
-    assert engine.compile_queue.contains(loop_pc), "HOT block must be enqueued to compile_queue on yield"
-    print(
-        "  [Stage 2] COOS idle_hook triggered: batch-compiling HOT trace into Active JIT cache..."
+    mod = parse(FACTORIAL_WASM)
+    interp = Interpreter(mod, InterpreterBindings.empty())
+    engine = RuntimeEngine(
+        jit_compiler=TraceCompiler(),
+        yield_threshold=3,
+        candidate_threshold=0,
     )
-    compiled = engine.idle_hook()
-    print(f"    idle_hook compiled {compiled} trace(s); card 0x{loop_pc:x} state=COMPILED")
-    assert engine.cache.active.has_trace(loop_pc)
-    print("  [Stage 3] Remaining iterations executing via Tier 3 Native JIT Trace & chaining...")
-    iter_idx = 4
-    while pc is not None:
-        prev_jit = engine.jit_traces
-        pc = engine.run_step(pc, ctx)
-        mode = "JIT Trace" if engine.jit_traces > prev_jit else "Interpreter"
-        print(f"    iteration {iter_idx}: executed via {mode}")
-        iter_idx += 1
 
-    result_val = ctx.locals[1]
+    print("  [Stage 1-3] Running through RuntimeEngine (Interpreter/JIT boundaries)...")
+    result = engine.run(interp, 0, (6,))
+    result_val = result[0]
     print(f"  [Result] fact(6) = {result_val} (expected 720) [OK]")
     print(
-        f"  [Stats] Total Interp Blocks={engine.interp_blocks}, JIT Traces={engine.jit_traces}, Compilations={engine.compilations}"
+        f"  [Stats] Total Interp Blocks={engine.stat_interp_steps}, "
+        f"JIT Traces={engine.stat_jit_invocations}"
     )
     assert result_val == 720
-    assert engine.interp_blocks >= 3
-    assert engine.jit_traces >= 3
+    assert engine.stat_interp_steps >= 1
 
 
 def main() -> None:

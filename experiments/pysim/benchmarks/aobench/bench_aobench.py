@@ -25,7 +25,7 @@ for _p in [
     if _sp not in sys.path:
         sys.path.insert(0, _sp)
 
-from interpreter import Interpreter
+from interpreter import Interpreter, InterpreterBindings
 from runtime_engine import RuntimeEngine
 from system import System
 from dummy_drivers import DummyDriver
@@ -52,8 +52,10 @@ def run_aobench(debug: bool = False) -> dict[str, int | float]:
         DummyDriver(sysv.wasi_hal_bindings.stdout_uri, transport=sysv.transport)
     )
     funcs = wasi_ctx.build_interpreter_host_functions(module)
-    module.init_memory_data(wasi_ctx.guest_memory)
-    interp = Interpreter(module, memory=wasi_ctx.guest_memory, host_functions=funcs)
+    module.init_memory_data(wasi_ctx.guest_memory, ())
+    interp = Interpreter(
+        module, InterpreterBindings.with_memory_and_functions(wasi_ctx.guest_memory, funcs)
+    )
     main_fn = module.export_func_index("main")
 
     t0_t2 = time.perf_counter()
@@ -72,11 +74,14 @@ def run_aobench(debug: bool = False) -> dict[str, int | float]:
         DummyDriver(sysv_t3.wasi_hal_bindings.stdout_uri, transport=sysv_t3.transport)
     )
     funcs_t3 = wasi_ctx_t3.build_interpreter_host_functions(module)
-    module.init_memory_data(wasi_ctx_t3.guest_memory)
+    module.init_memory_data(wasi_ctx_t3.guest_memory, ())
     trace_compiler = TraceCompiler()
     runtime_engine = RuntimeEngine(jit_compiler=trace_compiler, yield_threshold=16, debug=debug)
     runtime_engine.register_module_blocks(module)
-    interp_t3 = Interpreter(module, memory=wasi_ctx_t3.guest_memory, host_functions=funcs_t3)
+    interp_t3 = Interpreter(
+        module,
+        InterpreterBindings.with_memory_and_functions(wasi_ctx_t3.guest_memory, funcs_t3),
+    )
 
     t0_t3 = time.perf_counter()
     runtime_engine.run(interp_t3, main_fn, [WIDTH, HEIGHT])

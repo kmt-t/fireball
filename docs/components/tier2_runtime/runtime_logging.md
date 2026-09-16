@@ -2,18 +2,18 @@
 <!-- evidence:
      concept: concepts/logging_concept.py
      formal: formal/logging_flush_model.py
-     test: tests/runtime_logging_test_spec.md
+     test: docs/qa/tier2_runtime/runtime_logging_test_spec.md
 -->
 
 ## 1. コンセプト
 <!-- traceability: {IPCRouter} {DictionaryBasedIPC} {BufferedLogging} {GLOBAL_IdleDetection} -->
-ロギングコンポーネントは、ハイパーバイザ内部の状態を記録し、外部（UART/ITM等）へ出力する。システムコールはすべてIPCルータを経由して行われ、ログデータの転送もIPCルータを通過する。メモリ消費と通信負荷を抑えるため、辞書参照IPCと内部リングバッファによる遅延出力を採用する。また、COOSの **Idle Hook** を利用してシステム負荷が低い時に集中的に出力を行うことで、実行性能への影響を抑える。自己完結した参照実装は [`logging_concept.py`](docs/components/tier2_runtime/concepts/logging_concept.py) を参照。 `{IPCRouter}` `{DictionaryBasedIPC}` `{BufferedLogging}` `{GLOBAL_IdleDetection}`
+ロギングコンポーネントは、ハイパーバイザ内部の状態を記録し、外部（UART/ITM等）へ出力する。システムコールはすべてIPCルータを経由して行われ、ログデータの転送もIPCルータを通過する。メモリ消費と通信負荷を抑えるため、辞書参照IPCと内部リングバッファによる遅延出力を採用する。また、COOSの **Idle Hook** を利用してシステム負荷が低い時に集中的に出力を行うことで、実行性能への影響を抑える。自己完結した参照実装は [`logging_concept.py`](docs/components/tier2_runtime/concepts/logging_concept.py) を参照。
 
 **適用範囲外**: 本コンポーネントが扱うのはビルド時に辞書登録された固定フォーマットの内部状態ログのみである。ゲストの `wasi:cli/stdout`/`stderr`（`print`/`eprint` による実行時生成の任意長文字列）はここでは表現できず、コンソール生バイト出力経路（`interface_wit.md` の `console-output` の位置づけ節）という別経路で扱う。
 
 ## 2. アーキテクチャ分類
 <!-- traceability: {META_3TierSeparation} -->
-本コンポーネントは **Tier 2 (分解されたサブコンポーネント: Decomposed Subcomponent)** に属する。ロギングはネイティブ常駐タスクとして COOS 上で動作するサブシステムであり、COOS のタスクスケジューリング（Tier 1）に依存して存在するため、COOS 自身と同じ Tier には置かない。 `{META_3TierSeparation}`
+本コンポーネントは **Tier 2 (分解されたサブコンポーネント: Decomposed Subcomponent)** に属する。ロギングはネイティブ常駐タスクとして COOS 上で動作するサブシステムであり、COOS のタスクスケジューリング（Tier 1）に依存して存在するため、COOS 自身と同じ Tier には置かない。
 
 ## 3. 静的モデル
 
@@ -52,7 +52,7 @@ flowchart TD
 
 #### ログ構成（logging_config）
 <!-- traceability: {META_ConfigurableSystem} -->
-ロギングシステムの動作パラメータを定義する。 `{META_ConfigurableSystem}`
+ロギングシステムの動作パラメータを定義する。
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
@@ -70,10 +70,10 @@ ROM上に固定配置されたフォーマット文字列配列の非所有ア�
 
 ### 4.1 アルゴリズム
 <!-- traceability: {DictionaryBasedIPC} {BufferedLogging} -->
-- **辞書参照ロギング (`GOTCHA-LOG-01`, `{DictionaryBasedIPC}`)**:
+- **辞書参照ロギング (`GOTCHA-LOG-01`, )**:
   送信側はメッセージ文字列ではなく、辞書内のオフセットと引数のみをIPCで送信する。
   **設計理由と不変条件**: ログ API は任意長文字列ポインタ（`%s`, `%p` 等）を直接受け付ける経路を一切排除している。実行時に動的構築した文字列ポインタをログエントリに格納することを許すと、ログを出力したタスクが終了・クラッシュした後にロガーが不正メモリを参照するダングリングポインタ（Use-After-Free）が発生する。全ログメッセージを静的辞書オフセットとスカラー引数（u32）のみに限定することで、メモリ安全性を根本から保証する。
-- **遅延出力と割り込み応答性 (`GOTCHA-LOG-03`, `{BufferedLogging}`)**:
+- **遅延出力と割り込み応答性 (`GOTCHA-LOG-03`, )**:
   IPC受信時はリングバッファへの格納のみを行い、実際の物理出力は `HAL_Transport` を介した抽象化された通信路によりバックグラウンドで行われる。具体的なトランスポート実装（UARTやITMなど）はシステム構成定義ファイル（`inc/fireball_config.hxx`）で指定される。
   **設計理由と不変条件**: ログフラッシュはリングバッファの連続ブロックをバッチ単位でDMA転送する。DMA転送はハードウェア的に一度開始すると完了割り込み（`dma_complete`）まで中断できないため、`interrupt_pending()` の確認はエントリ単位ではなくバッチ境界（各バッチの `dma_complete` 到達時）でのみ行う。割り込みが確認された場合は次バッチの転送開始を見送り、残余エントリをバッファに残したままスケジューラへ制御を戻す。これにより、1バッチの転送時間を上限とした有界な割り込み応答レイテンシを保証する。
 - **バッファフル・ポリシー (`GOTCHA-LOG-02`)**: **FINALIZED: Overwrite**。
@@ -82,7 +82,7 @@ ROM上に固定配置されたフォーマット文字列配列の非所有ア�
 
 ### 4.2 辞書構造
 <!-- traceability: {DictionaryBasedIPC} -->
-辞書はROM上に固定配置され、ホスト側ツールが `dict_offset + args` から可読テキストに展開する。 `{DictionaryBasedIPC}`
+辞書はROM上に固定配置され、ホスト側ツールが `dict_offset + args` から可読テキストに展開する。
 
 | 項目 | 値 |
 | :--- | :--- |
@@ -96,7 +96,7 @@ ROM上に固定配置されたフォーマット文字列配列の非所有ア�
 
 ### 4.2.1 COOS / IPC 診断ログイベント仕様
 <!-- traceability: {DictionaryBasedIPC} {BufferedLogging} -->
-COOS および IPC において、デバッグ時に重大な不整合・境界超過・通信遮断を検知するための診断ログイベントを定義する。ログのオーバーヘッドを最小化するため、常時ログは出力せず、異常系・境界値到達時のみに厳選して発行する。 `{DictionaryBasedIPC}` `{BufferedLogging}`
+COOS および IPC において、デバッグ時に重大な不整合・境界超過・通信遮断を検知するための診断ログイベントを定義する。ログのオーバーヘッドを最小化するため、常時ログは出力せず、異常系・境界値到達時のみに厳選して発行する。
 
 | イベントID | 分類 | レベル | フォーマット文字列 | 引数構成 (args[0..3]) | 発生条件 |
 | :--- | :--- | :--- | :--- | :--- | :--- |
@@ -112,7 +112,7 @@ COOS および IPC において、デバッグ時に重大な不整合・境界�
 
 ### 4.3 COOS Idle Hook 連携 (Flush Protocol)
 <!-- traceability: {GLOBAL_IdleDetection} -->
-COOSスケジューラの `set_idle_hook` で `logger.flush()` を登録する。 `{GLOBAL_IdleDetection}`
+COOSスケジューラの `set_idle_hook` で `logger.flush()` を登録する。
 
 1. COOSスケジューラがREADYタスクがないことを検出
 2. `idle_hook()` を呼び出し → `logger.flush()` が実行
@@ -134,7 +134,7 @@ stateDiagram-v2
     DrainingBatch --> Idle: "buffer_empty"
 ```
 
-形式検証モデルの状態との対応は、`Idle` = `s_idle_empty`、`Validating`/`Enqueuing` = `s_active_partial` または `s_active_full`、`Flushing`/`DrainingBatch` = `s_idle_flushing`、`dma_complete` 後の完了 = `s_flush_done`、割り込み経路 = `s_irq_preempt`/`s_irq_handled` である。`s_blocked_caller`、`s_never_flushed`、`s_irq_blocked` は `guards=False` でのみ到達する違反状態である。 `{BufferedLogging}`
+形式検証モデルの状態との対応は、`Idle` = `s_idle_empty`、`Validating`/`Enqueuing` = `s_active_partial` または `s_active_full`、`Flushing`/`DrainingBatch` = `s_idle_flushing`、`dma_complete` 後の完了 = `s_flush_done`、割り込み経路 = `s_irq_preempt`/`s_irq_handled` である。`s_blocked_caller`、`s_never_flushed`、`s_irq_blocked` は `guards=False` でのみ到達する違反状態である。
 
 ### 4.5 内部シーケンス
 <!-- traceability: {DictionaryBasedIPC} {BufferedLogging} {GLOBAL_IdleDetection} -->
@@ -186,22 +186,22 @@ sequenceDiagram
 ### 5.2 URI/IPCインターフェース
 <!-- traceability: {DictionaryBasedIPC} -->
 - **URI**: `fireball://logging/system/0`
-- **メッセージ形式**: Key-Valueプロトコル。 `level`, `dict_offset`, `arg0`〜`arg3` を含む。 `{DictionaryBasedIPC}`
-- **不変条件**: 辞書オフセットは `kv_pair`（`{DictionaryBasedIPC}`）の識別キー幅に合わせ 24bit、引数は各 32bit とする。24bit（最大16MB）は本プロジェクトの ROM 辞書サイズに対して十分な範囲である。
+- **メッセージ形式**: Key-Valueプロトコル。 `level`, `dict_offset`, `arg0`〜`arg3` を含む。
+- **不変条件**: 辞書オフセットは `kv_pair`（）の識別キー幅に合わせ 24bit、引数は各 32bit とする。24bit（最大16MB）は本プロジェクトの ROM 辞書サイズに対して十分な範囲である。
 
 ## 6. 制約達成の方策
 
 ### 6.1 性能制約と方策
 <!-- traceability: {BufferedLogging} -->
 - **目標**: ログ出力による呼び出し側のブロッキングを最小化する。
-- **方策**: `{BufferedLogging}` 内部バッファリングと非同期出力により、IPCハンドラを即座に解放する。
+- **方策**: 内部バッファリングと非同期出力により、IPCハンドラを即座に解放する。
 
 ### 6.2 メモリ制約と方策
 <!-- traceability: {MemoryIsolation} {META_ConfigurableSystem} -->
 - **目標**: ログ機能によるメモリ圧迫を防止する。
-- **方策**: `{MemoryIsolation}` `{META_ConfigurableSystem}` 独立したログ専用バッファプールを使用し、バッファサイズをコンパイル時に固定する。バッファフル時は古いログを安全に破棄し、メモリ肥大化を防止する。
+- **方策**: 独立したログ専用バッファプールを使用し、バッファサイズをコンパイル時に固定する。バッファフル時は古いログを安全に破棄し、メモリ肥大化を防止する。
 
 ### 6.3 安全性制約と方策
 <!-- traceability: {BufferedLogging} {MemoryIsolation} {META_ConfigurableSystem} -->
 - **目標**: ログ出力の失敗がシステム全体に波及しないようにする。
-- **方策**: `{BufferedLogging}` `{MemoryIsolation}` `{META_ConfigurableSystem}` ログの蓄積はリングバッファでバッファリングを行い、メモリパーティションによってログ領域のクラッシュを他のコンポーネントから隔離する。また、バッファサイズ等の制限はコンパイル時マクロ定義で設定される。バッファフル時は古いログを破棄し、システムの継続実行を優先する。
+- **方策**: ログの蓄積はリングバッファでバッファリングを行い、メモリパーティションによってログ領域のクラッシュを他のコンポーネントから隔離する。また、バッファサイズ等の制限はコンパイル時マクロ定義で設定される。バッファフル時は古いログを破棄し、システムの継続実行を優先する。

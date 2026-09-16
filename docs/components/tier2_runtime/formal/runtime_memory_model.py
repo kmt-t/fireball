@@ -1,20 +1,19 @@
 """
 docs/components/tier2_runtime/formal/runtime_memory_model.py
-メモリマネージャのページ所有権分離・同一ページ混在禁止・所有権転送完了性を
+メモリマネージャの仮想予約スロット所有権分離・境界安全性を
 pyModelChecking の有限 Kripke 構造で検証するモデル。
 
-guards=False では、所有者検査・ページ単位の分離・転送完了遷移をそれぞれ
-無効化した反例経路を追加し、各不変条件の変異検査を行う。
+guards=False では、所有者検査・ページ単位の分離を無効化した反例経路を追加し、各不変条件の変異検査を行う。
 """
 
 from pyModelChecking import Kripke
-from pyModelChecking.CTL import AF, AG, AtomicProposition, Imply, Not
+from pyModelChecking.CTL import AG, AtomicProposition, Not
 
 BACKS = ["components/tier2_runtime/runtime_memory.md"]
 
 
 def build_model(*, guards: bool = True) -> Kripke:
-    """ページ所有権の安全性と転送完了性を検証する有限モデル。"""
+    """ページ所有権とアクセス境界の安全性を検証する有限モデル。"""
     states = [
         "s_unallocated",
         "s_owned_a",
@@ -23,7 +22,6 @@ def build_model(*, guards: bool = True) -> Kripke:
         "s_released",
         "s_wrong_owner_access",
         "s_mixed_page",
-        "s_lost_transfer",
     ]
     initial = {"s_unallocated"}
     transitions = [
@@ -33,12 +31,13 @@ def build_model(*, guards: bool = True) -> Kripke:
         ("s_unallocated", "s_owned_b"),
         ("s_owned_a", "s_owned_a"),
         ("s_owned_a", "s_in_flight"),
+        # CSP rendezvous does not imply peer arrival; indefinite waiting is valid.
+        ("s_in_flight", "s_in_flight"),
         ("s_in_flight", "s_owned_b"),
         ("s_owned_b", "s_released"),
         ("s_released", "s_unallocated"),
         ("s_wrong_owner_access", "s_wrong_owner_access"),
         ("s_mixed_page", "s_mixed_page"),
-        ("s_lost_transfer", "s_lost_transfer"),
     ]
     if not guards:
         # 各ガードを外した場合に、対応する性質を破る経路を追加する。
@@ -46,7 +45,6 @@ def build_model(*, guards: bool = True) -> Kripke:
             *transitions,
             ("s_owned_a", "s_wrong_owner_access"),
             ("s_owned_a", "s_mixed_page"),
-            ("s_in_flight", "s_lost_transfer"),
         ]
 
     labels = {
@@ -57,17 +55,14 @@ def build_model(*, guards: bool = True) -> Kripke:
         "s_released": {"released"},
         "s_wrong_owner_access": {"wrong_owner_access"},
         "s_mixed_page": {"mixed_page"},
-        "s_lost_transfer": {"lost_transfer"},
     }
     return Kripke(S=states, S0=initial, R=transitions, L=labels)
 
 
 def properties():
-    """安全性2件と転送完了性1件を返す。"""
+    """安全性2件を返す。転送完了は相手到達を仮定する上位契約である。"""
     wrong_owner_access = AtomicProposition("wrong_owner_access")
     mixed_page = AtomicProposition("mixed_page")
-    transfer_pending = AtomicProposition("transfer_pending")
-    transfer_complete = AtomicProposition("transfer_complete")
     return [
         {
             "name": "non_owner_access_traps",
@@ -83,14 +78,6 @@ def properties():
             "logic": "CTL",
             "formula": AG(Not(mixed_page)),
             "violation": mixed_page,
-            "expect": True,
-        },
-        {
-            "name": "ownership_transfer_completes",
-            "kind": "liveness",
-            "logic": "CTL",
-            "formula": AG(Imply(transfer_pending, AF(transfer_complete))),
-            "violation": AtomicProposition("lost_transfer"),
             "expect": True,
         },
     ]

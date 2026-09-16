@@ -23,13 +23,14 @@ T = TypeVar("T")
 
 
 # Configuration & Constants (FB_CONF_*)
-FB_CONF_MEMORY_POOL_SIZE = 21504  # system_config.md: sum of all sub-pools (bytes)
+FB_CONF_MEMORY_POOL_SIZE = 23552  # system_config.md: sum of all sub-pools (bytes)
 FB_CONF_TASK_HEAP_SIZES = (
     4096,
 )  # system_config.md FB_CONF_TASK_HEAP_SIZES: per-VM-slot ROM size table
 FB_CONF_MAX_TASKS = 16
 FB_CONF_MAX_SHM_PAGES = 32
 FB_PAGE_SIZE = 4096  # 4KB SHM page size
+FB_CONF_SHM_SIZE = 1024  # Physical SHM backing budget; virtual page slots are separate.
 FB_WASM_PAGE_SIZE = 65536  # 64KB WASM page size
 # system_config.md "PMSAv8 MPU 物理アドレスマップ" 節: Region 6 (Shared Memory Buffers) の基点
 FB_CONF_MPU_R6_SHARED_MEMORY_BASE = 0x2008_0000
@@ -112,18 +113,19 @@ class PartitionView:
 
 @dataclass(slots=True)
 class ShmPageInfo:
-    """4KB Physical SHM Page bookkeeping for page-granular permission isolation."""
+    """One 4KB virtual SHM reservation and its bounded physical backing."""
 
     page_idx: int
     owner_id: int
     allocated: bool = False
     allocated_bytes: int = 0
     slot_count: int = 0
+    physical_addr: int = 0
 
 
 @dataclass(slots=True)
 class ShmSlot:
-    """One allocated shared-memory page's bookkeeping record."""
+    """One allocated shared-memory block's bookkeeping record."""
 
     page_idx: int
     slot_idx: int
@@ -131,7 +133,7 @@ class ShmSlot:
     owner: int
     base_address: int
     allocated: bool
-    data: bytearray = field(default_factory=bytearray)
+    data: memoryview = field(default_factory=lambda: memoryview(bytearray()))
 
 
 @dataclass(slots=True)
@@ -144,14 +146,14 @@ class ShmPagePTE:
     is_valid: bool = True
 
 
-_FB_CONF_MAX_SHM_PHYS_PAGES = FB_CONF_MEMORY_POOL_SIZE // FB_PAGE_SIZE
+_FB_CONF_MAX_SHM_PAGE_SLOTS = FB_CONF_MAX_SHM_PAGES
 
 
 class ShmPageRegistry:
     """
     Shared memory page table registry for physical memory manager.
-    `page_idx` ranges over the physical pool's fixed page count
-    (FB_CONF_MEMORY_POOL_SIZE / FB_PAGE_SIZE), so a fixed-size array indexed
+    `page_idx` identifies a 4KB virtual reservation slot. Its range is
+    independent of the physical SHM byte budget, so a fixed-size array indexed
     directly by page_idx is the direct fit -- not a dict.
     """
 
@@ -159,8 +161,8 @@ class ShmPageRegistry:
 
     def __init__(self):
         self.ptes: StaticVector[ShmPagePTE | None] = StaticVector.of(
-            (None,) * _FB_CONF_MAX_SHM_PHYS_PAGES,
-            capacity=_FB_CONF_MAX_SHM_PHYS_PAGES,
+            (None,) * _FB_CONF_MAX_SHM_PAGE_SLOTS,
+            capacity=_FB_CONF_MAX_SHM_PAGE_SLOTS,
         )
 
     def register_page(self, page_idx: int, owner_id: int, physical_addr: int) -> None:
@@ -213,7 +215,7 @@ class SharedBlock:
         owner: int,
         base_address: int,
         manager: MemoryManager,
-        data: bytearray | None = None,
+        data: memoryview | None = None,
     ):
         self.shm_id = shm_id
         self.page_idx = page_idx
@@ -224,7 +226,7 @@ class SharedBlock:
         self._manager = manager
         self._is_active = True
         self._is_in_flight = False
-        self.data: bytearray = data if data is not None else bytearray(size)
+        self.data: memoryview = data if data is not None else memoryview(bytearray(size))
 
     def get_address(self) -> int:
         assert self._is_active, "Cannot access released or dropped SharedBlock"
@@ -250,8 +252,8 @@ class SharedBlock:
             f"Access out of bounds: offset {offset} + len {length} > size {self.size}"
         )
 
-    def get_bytearray(self) -> bytearray:
-        """Returns the underlying shared memory bytearray."""
+    def get_bytearray(self) -> memoryview:
+        """Returns a bounded view into the fixed shared-memory backing store."""
         assert self._is_active and not self._is_in_flight, (
             "Cannot access inactive or in-flight SharedBlock bytearray"
         )
@@ -549,6 +551,8 @@ class MemoryManager:
         "pool_base",
         "pool_size",
         "shm_pages",
+        "shm_storage",
+        "shm_allocated_bytes",
         "shm_slots",
         "total_allocated_bytes",
     )
@@ -565,12 +569,21 @@ class MemoryManager:
             capacity=FB_CONF_MAX_TASKS
         )
         self.shm_slots: MutableFlatMapStorage[int, ShmSlot] = MutableFlatMapStorage(
-            capacity=_FB_CONF_MAX_SHM_PHYS_PAGES
+            capacity=_FB_CONF_MAX_SHM_PAGE_SLOTS
         )
-        # Page-granular permission isolation: each 4KB physical page tracks its exclusive owner_id
+        self.shm_storage = bytearray(FB_CONF_SHM_SIZE)
+        self.shm_allocated_bytes = 0
+        # One 4KB virtual reservation per block preserves page-granular ownership.
         self.shm_pages: tuple[ShmPageInfo, ...] = tuple(
-            ShmPageInfo(page_idx=i, owner_id=0, allocated=False, allocated_bytes=0, slot_count=0)
-            for i in range(_FB_CONF_MAX_SHM_PHYS_PAGES)
+            ShmPageInfo(
+                page_idx=i,
+                owner_id=0,
+                allocated=False,
+                allocated_bytes=0,
+                slot_count=0,
+                physical_addr=0,
+            )
+            for i in range(_FB_CONF_MAX_SHM_PAGE_SLOTS)
         )
 
     @property
@@ -590,8 +603,9 @@ class MemoryManager:
         if callbacks is None:
             return
         page = self.shm_pages[page_idx]
-        physical_addr = FB_CONF_MPU_R6_SHARED_MEMORY_BASE + (page_idx * FB_PAGE_SIZE)
-        callbacks.on_map_page(page_idx, physical_addr, page.owner_id)
+        callbacks.on_map_page(
+            page_idx, page.physical_addr, page.owner_id, page.allocated_bytes
+        )
 
     def _set_shared_owner(self, page_idx: int, new_owner_id: int) -> None:
         previous_owner_id = self.page_registry.get_owner(page_idx)
@@ -602,10 +616,30 @@ class MemoryManager:
         self.shm_pages[page_idx].owner_id = new_owner_id
         callbacks = self._page_mapping_callbacks
         if callbacks is not None:
-            physical_addr = FB_CONF_MPU_R6_SHARED_MEMORY_BASE + (page_idx * FB_PAGE_SIZE)
             callbacks.on_owner_changed(
-                page_idx, physical_addr, previous_owner_id, new_owner_id
+                page_idx,
+                self.shm_pages[page_idx].physical_addr,
+                previous_owner_id,
+                new_owner_id,
             )
+
+    def _find_shm_storage_offset(self, size: int) -> int | None:
+        """Finds a reusable first-fit range in the fixed physical SHM pool."""
+        candidate = 0
+        while candidate + size <= FB_CONF_SHM_SIZE:
+            conflict_end: int | None = None
+            for page in self.shm_pages:
+                if not page.allocated:
+                    continue
+                page_start = page.physical_addr - FB_CONF_MPU_R6_SHARED_MEMORY_BASE
+                page_end = page_start + page.allocated_bytes
+                if candidate < page_end and page_start < candidate + size:
+                    conflict_end = page_end
+                    break
+            if conflict_end is None:
+                return candidate
+            candidate = conflict_end
+        return None
 
     def init_manager(self, pool_base: int, pool_size: int) -> Result[bool]:
         assert pool_base % FB_WASM_PAGE_SIZE == 0, (
@@ -680,7 +714,7 @@ class MemoryManager:
     ) -> Result[SharedBlock]:
         caller_task_id = self._scheduler.current_task_id
         assert caller_task_id != 0, "Shared block must be owned by an explicit task"
-        if size <= 0 or size > FB_PAGE_SIZE:
+        if size <= 0 or size > FB_CONF_SHM_SIZE:
             return Result(
                 error=MemoryErrorResult(
                     MemoryErrorCode.INVALID_SIZE,
@@ -691,11 +725,10 @@ class MemoryManager:
                 )
             )
 
-        # Page-granular isolation: one shared block owns one physical page.
-        # Reusing a page for multiple blocks would make a later page-granular
-        # Grant transfer unrelated slots together, violating ownership isolation.
+        # Each block receives its own virtual page reservation. The physical
+        # backing consumes only `size` bytes from the separate fixed SHM pool.
         target_page: ShmPageInfo | None = None
-        if self.total_allocated_bytes + FB_PAGE_SIZE > self.pool_size:
+        if self.total_allocated_bytes + size > self.pool_size:
             return Result(
                 error=MemoryErrorResult(
                     MemoryErrorCode.SHM_EXHAUSTED,
@@ -707,7 +740,11 @@ class MemoryManager:
                 target_page = page
                 break
 
-        if target_page is None:
+        if self.shm_allocated_bytes + size > FB_CONF_SHM_SIZE:
+            physical_offset = None
+        else:
+            physical_offset = self._find_shm_storage_offset(size)
+        if target_page is None or physical_offset is None:
             return Result(
                 error=MemoryErrorResult(
                     MemoryErrorCode.SHM_EXHAUSTED,
@@ -721,27 +758,24 @@ class MemoryManager:
         # Initialize new page exclusively for caller_task_id
         target_page.allocated = True
         target_page.owner_id = caller_task_id
-        target_page.allocated_bytes = 0
-        target_page.slot_count = 0
-        self.total_allocated_bytes += FB_PAGE_SIZE
+        target_page.allocated_bytes = size
+        target_page.slot_count = 1
+        target_page.physical_addr = FB_CONF_MPU_R6_SHARED_MEMORY_BASE + physical_offset
+        self.total_allocated_bytes += size
+        self.shm_allocated_bytes += size
 
         # Register in page registry and notify listener
-        base_addr = FB_CONF_MPU_R6_SHARED_MEMORY_BASE + (target_page.page_idx * FB_PAGE_SIZE)
+        base_addr = target_page.physical_addr
         self.page_registry.register_page(target_page.page_idx, caller_task_id, base_addr)
         if self._page_mapping_callbacks is not None:
             self._notify_shared_page_mapped(target_page.page_idx)
 
         # Allocate slot inside target_page
         slot_idx = 0
-        slot_offset = target_page.allocated_bytes
-        target_page.slot_count += 1
-        target_page.allocated_bytes += size
-
         shm_id = (target_page.page_idx << 8) | slot_idx
-        base_addr = (
-            FB_CONF_MPU_R6_SHARED_MEMORY_BASE + (target_page.page_idx * FB_PAGE_SIZE) + slot_offset
-        )
-        slot_data = bytearray(size)
+        slot_data = memoryview(self.shm_storage)[physical_offset : physical_offset + size]
+        for index in range(size):
+            slot_data[index] = 0
         self.shm_slots.insert(
             shm_id,
             ShmSlot(
@@ -785,6 +819,21 @@ class MemoryManager:
         )
         slot.owner = new_owner_task_id
         self._set_shared_owner(slot.page_idx, new_owner_task_id)
+        return True
+
+    def revoke_shared(self, shm_id: int) -> bool:
+        """Revokes the current owner's mapping before a RESOURCE handle is sent."""
+        slot = self.shm_slots.view().find(shm_id)
+        if slot is None or not slot.allocated:
+            return False
+        current_owner = self._scheduler.current_task_id
+        page_owner = self.page_registry.get_owner(slot.page_idx)
+        if page_owner == FB_TASK_ID_FLIGHT:
+            return True
+        assert slot.owner == current_owner and page_owner == current_owner, (
+            "Only the current SHM owner may revoke a RESOURCE handle"
+        )
+        self._set_shared_owner(slot.page_idx, FB_TASK_ID_FLIGHT)
         return True
 
     def claim(self, shm_id: int) -> Result[SharedBlock]:
@@ -851,24 +900,29 @@ class MemoryManager:
 
     def _deallocate_shared_slot(self, page_idx: int, slot_idx: int, owner: int) -> None:
         shm_id = (page_idx << 8) | slot_idx
-        if self.shm_slots.view().find(shm_id) is not None:
-            self.shm_slots.remove(shm_id)
+        slot = self.shm_slots.view().find(shm_id)
+        if slot is None:
+            return
+        self.shm_slots.remove(shm_id)
 
-            # Check if any slots in this page remain allocated
-            page = self.shm_pages[page_idx] if page_idx < len(self.shm_pages) else None
-            has_remaining = False
-            for s in self.shm_slots.view().values:
-                if s.page_idx == page_idx:
-                    has_remaining = True
-                    break
+        # Check whether the virtual reservation still has any live block.
+        page = self.shm_pages[page_idx] if page_idx < len(self.shm_pages) else None
+        has_remaining = False
+        for other in self.shm_slots.view().values:
+            if other.page_idx == page_idx:
+                has_remaining = True
+                break
 
-            if not has_remaining and page is not None:
-                page.allocated = False
-                page.allocated_bytes = 0
-                page.slot_count = 0
-                page.owner_id = 0
-                self.page_registry.unregister_page(page_idx)
-                if self._page_mapping_callbacks is not None:
-                    base_addr = FB_CONF_MPU_R6_SHARED_MEMORY_BASE + (page_idx * FB_PAGE_SIZE)
-                    self._page_mapping_callbacks.on_unmap_page(page_idx, base_addr)
-                self.total_allocated_bytes -= FB_PAGE_SIZE
+        if not has_remaining and page is not None:
+            if self._page_mapping_callbacks is not None:
+                self._page_mapping_callbacks.on_unmap_page(
+                    page_idx, slot.base_address
+                )
+            self.page_registry.unregister_page(page_idx)
+            page.allocated = False
+            page.allocated_bytes = 0
+            page.slot_count = 0
+            page.owner_id = 0
+            self.shm_allocated_bytes -= slot.size
+            page.physical_addr = 0
+            self.total_allocated_bytes -= slot.size

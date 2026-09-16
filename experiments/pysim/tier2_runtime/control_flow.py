@@ -100,6 +100,8 @@ from wasm_opcodes import (
     I32_CONST,
     I32_DIV_S,
     I32_DIV_U,
+    I32_EXTEND8_S,
+    I32_EXTEND16_S,
     I32_EQ,
     I32_EQZ,
     I32_GE_S,
@@ -143,6 +145,9 @@ from wasm_opcodes import (
     I64_EQZ,
     I64_EXTEND_I32_S,
     I64_EXTEND_I32_U,
+    I64_EXTEND8_S,
+    I64_EXTEND16_S,
+    I64_EXTEND32_S,
     I64_GE_S,
     I64_GE_U,
     I64_GT_S,
@@ -150,6 +155,12 @@ from wasm_opcodes import (
     I64_LE_S,
     I64_LE_U,
     I64_LOAD,
+    I64_LOAD8_S,
+    I64_LOAD8_U,
+    I64_LOAD16_S,
+    I64_LOAD16_U,
+    I64_LOAD32_S,
+    I64_LOAD32_U,
     I64_LT_S,
     I64_LT_U,
     I64_MUL,
@@ -165,6 +176,9 @@ from wasm_opcodes import (
     I64_SHR_S,
     I64_SHR_U,
     I64_STORE,
+    I64_STORE8,
+    I64_STORE16,
+    I64_STORE32,
     I64_SUB,
     I64_TRUNC_F32_S,
     I64_TRUNC_F32_U,
@@ -183,6 +197,26 @@ from wasm_opcodes import (
     SELECT,
     UNREACHABLE,
 )
+
+
+ControlBlock = tuple[int, int | None, int]
+
+
+def _decode_blocktype(code: bytes, offset: int) -> tuple[int, int]:
+    """Decode a supported blocktype and return (native-slot-count, next-offset)."""
+
+    assert 0 <= offset < len(code), "truncated blocktype"
+    blocktype = code[offset]
+    if blocktype == 0x40:
+        return 0, offset + 1
+    if blocktype == 0x7F or blocktype == 0x7D:  # i32/f32 occupy one raw stack slot
+        return 1, offset + 1
+    if blocktype == 0x7E or blocktype == 0x7C:  # i64/f64 occupy two raw stack slots
+        return 2, offset + 1
+    assert False, (
+        "ERR_WASM_UNSUPPORTED_FEATURE: blocktype must be empty or a single "
+        f"value type, got 0x{blocktype:02X}"
+    )
 from wasm_reader import WasmUnsupportedFeatureError
 
 
@@ -250,9 +284,18 @@ _MEMARG_OPCODES = _opcode_table(
     I32_STORE8,
     I32_STORE16,
     I64_LOAD,
+    I64_LOAD8_S,
+    I64_LOAD8_U,
+    I64_LOAD16_S,
+    I64_LOAD16_U,
+    I64_LOAD32_S,
+    I64_LOAD32_U,
     F32_LOAD,
     F64_LOAD,
     I64_STORE,
+    I64_STORE8,
+    I64_STORE16,
+    I64_STORE32,
     F32_STORE,
     F64_STORE,
 )
@@ -299,6 +342,8 @@ _NO_OPERAND = _opcode_table(
     0x76,  # i32 arith
     0x77,
     0x78,  # i32 rotl/rotr
+    I32_EXTEND8_S,
+    I32_EXTEND16_S,
     # i64 / f32 / f64 arithmetic & comparison ops (0 operands in instruction stream)
     I64_EQZ,
     I64_EQ,
@@ -341,6 +386,9 @@ _NO_OPERAND = _opcode_table(
     I64_SHR_U,
     I64_ROTL,
     I64_ROTR,
+    I64_EXTEND8_S,
+    I64_EXTEND16_S,
+    I64_EXTEND32_S,
     F32_ABS,
     F32_NEG,
     F32_CEIL,
@@ -436,9 +484,9 @@ class Instr:
 class ControlMap:
     """Pre-indexed control metadata with a fixed locality cache."""
 
-    blocks: ReadOnlyFlatMapStorage[int, tuple[int, int | None]]
+    blocks: ReadOnlyFlatMapStorage[int, ControlBlock]
     br_tables: ReadOnlyFlatMapStorage[int, tuple[tuple[int, ...], int]]
-    block_cache: StaticVector[tuple[int, tuple[int, int | None]] | None]
+    block_cache: StaticVector[tuple[int, ControlBlock] | None]
     br_table_cache: StaticVector[tuple[int, tuple[tuple[int, ...], int]] | None]
 
     @staticmethod
@@ -451,7 +499,7 @@ class ControlMap:
         temp = temp ^ (temp >> 2)
         return temp & 0x03
 
-    def block(self, ip: int) -> tuple[int, int | None]:
+    def block(self, ip: int) -> ControlBlock:
         """Return a block delimiter, using the fixed O(1) locality cache."""
 
         slot = self._cache_slot(ip)
@@ -481,11 +529,12 @@ class _OpenBlock:
     opcode: int
     start: int
     else_offset: int | None
+    result_arity: int
 
 
 def build_control_map(code: bytes) -> ControlMap:
     """Single linear scan over WASM bytecode to resolve block structure and br_tables once per function."""
-    block_entries: StaticVector[tuple[int, tuple[int, int | None]]] = StaticVector(
+    block_entries: StaticVector[tuple[int, ControlBlock]] = StaticVector(
         capacity=len(code)
     )
     br_table_entries: StaticVector[tuple[int, tuple[tuple[int, ...], int]]] = StaticVector(
@@ -508,15 +557,13 @@ def build_control_map(code: bytes) -> ControlMap:
         opcode = code[off]
         off += 1
         if _BLOCK_OPENERS.at(opcode):
-            blocktype = code[off]
-            off += 1
-            assert blocktype == 0x40, "only the empty blocktype is supported in this experiment"
+            result_arity, off = _decode_blocktype(code, off)
             if depth >= FB_CONF_MAX_NESTING_DEPTH:
                 assert False, (
                     "ERR_WASM_UNSUPPORTED_FEATURE: block/loop/if nesting exceeds "
                     f"FB_CONF_MAX_NESTING_DEPTH={FB_CONF_MAX_NESTING_DEPTH} at offset {start}"
                 )
-            open_stack[depth] = _OpenBlock(opcode, start, None)
+            open_stack[depth] = _OpenBlock(opcode, start, None, result_arity)
             depth += 1
         elif _LEB_UNSIGNED_OPERAND.at(opcode):
             _, off = decode_unsigned(code, off)
@@ -558,7 +605,9 @@ def build_control_map(code: bytes) -> ControlMap:
                 opener = open_stack[depth]
                 assert opener is not None
                 open_stack[depth] = None
-                if not block_entries.push_back((opener.start, (start, opener.else_offset))):
+                if not block_entries.push_back(
+                    (opener.start, (start, opener.else_offset, opener.result_arity))
+                ):
                     assert False, (
                         "ERR_WASM_UNSUPPORTED_FEATURE: block count exceeds code capacity"
                     )
@@ -606,9 +655,7 @@ def iter_scan_instrs(code: bytes, start: int = 0) -> Iterator[Instr]:
         off += 1
         operand = None
         if _BLOCK_OPENERS.at(opcode):
-            blocktype = code[off]
-            off += 1
-            assert blocktype == 0x40, "only the empty blocktype is supported in this experiment"
+            _, off = _decode_blocktype(code, off)
         elif _LEB_UNSIGNED_OPERAND.at(opcode):
             operand, off = decode_unsigned(code, off)
         elif opcode == I32_CONST or opcode == I64_CONST:
@@ -765,7 +812,7 @@ def extract_basic_blocks(
     `wasm_module.BasicBlock` for why this is never precomputed and stored
     here for every block up front.
     """
-    from wasm_opcodes import BR, BR_IF, ELSE, END, IF, RETURN
+    from wasm_opcodes import BR, BR_IF, BR_TABLE, ELSE, END, IF, RETURN
 
     control_map = build_control_map(code)
     instr_stream = iter_scan_instrs(code)
@@ -849,7 +896,7 @@ def extract_basic_blocks(
                         # loop labels which resume at the top).
                         match = control_map.block(target.offset)
                         if match is not None:
-                            match_end_ip, _else_offset = match
+                            match_end_ip, _else_offset, _result_arity = match
                             branch_target = base_pc | _skip_trailing_ends(match_end_ip + 1)
 
                 if ins.opcode == BR:
@@ -859,6 +906,12 @@ def extract_basic_blocks(
                     loops_to = None
                 elif ins.opcode == RETURN:
                     next_pc = None
+                    loops_to = None
+                elif ins.opcode == BR_TABLE:
+                    # BR_TABLE has a runtime-selected target and is not part
+                    # of a JIT basic-block body. A preceding trace must stop
+                    # at this opcode so the interpreter can resolve its table.
+                    next_pc = pc
                     loops_to = None
                 elif ins.opcode == IF:
                     # Conditional entry: the just-computed condition decides
@@ -870,7 +923,7 @@ def extract_basic_blocks(
                     skip_target = then_target
                     match = control_map.block(ins.offset)
                     if match is not None:
-                        match_end_ip, else_offset = match
+                        match_end_ip, else_offset, _result_arity = match
                         skip_target = base_pc | (
                             (else_offset + 1)
                             if else_offset is not None

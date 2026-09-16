@@ -74,23 +74,22 @@ experiments/pysim/
 │   ├── dummy_drivers.py      # HAL ダミードライバ (標準入出力/時刻)
 │   └── wasi_dummy_fs.py   # インメモリ VFS ファイルシステム
 │
-├── scenarios/             # 全 12 コンポーネント統合シナリオ (End-to-End Scenarios)
-│   ├── scenario1_loader_and_memory.py
-│   ├── scenario2_wasi_syscall_io.py
-│   ├── scenario3_recursion_and_tables.py
-│   ├── scenario4_hybrid_jit_loop.py
-│   ├── scenario5_multimodule_unified_pc.py
-│   ├── scenario6_coos_multitask_yield.py
-│   ├── scenario7_gdb_socket_debugger.py
-│   ├── scenario8_comprehensive_storage_coverage.py
-│   ├── scenario9_ipc_router_and_logging.py
-│   ├── scenario10_vmmio_virtual_devices.py
-│   ├── scenario11_hal_and_wasi_drivers.py
-│   ├── scenario12_wasi03p_uri_resolver.py
-│   └── run_all.py         # 全シナリオ一括実行ドライバ
-│
-├── tests/                 # 単体テストスイート (9 テストファイル)
-│   └── run_all.py         # 全単体テスト一括実行ドライバ
+├── qa/                    # 単体テスト・統合シナリオなど品質保証コード
+│   ├── run_all.py         # 全単体テスト一括実行ドライバ
+│   └── scenarios/         # 全 12 コンポーネント統合シナリオ
+│       ├── scenario1_loader_and_memory.py
+│       ├── scenario2_wasi_syscall_io.py
+│       ├── scenario3_recursion_and_tables.py
+│       ├── scenario4_hybrid_jit_loop.py
+│       ├── scenario5_multimodule_unified_pc.py
+│       ├── scenario6_coos_multitask_yield.py
+│       ├── scenario7_gdb_socket_debugger.py
+│       ├── scenario8_comprehensive_storage_coverage.py
+│       ├── scenario9_ipc_router_and_logging.py
+│       ├── scenario10_vmmio_virtual_devices.py
+│       ├── scenario11_hal_and_wasi_drivers.py
+│       ├── scenario12_wasi03p_uri_resolver.py
+│       └── run_all.py     # 全シナリオ一括実行ドライバ
 │
 ├── system.py              # 全 Tier 統合ファサード
 ├── aobench.py             # 3D レイトレーシング Ambient Occlusion ベンチマーク (f32 / Q8.8)
@@ -99,33 +98,33 @@ experiments/pysim/
 
 ---
 
-## 2. 実証された 12 の統合シナリオ (Integration Scenarios)
+## 2. 12 の統合シナリオ (Integration Scenarios)
 
-`pysim` は以下の全 12 シナリオ（`scenarios/run_all.py`）を 100% パスし、Fireball 仕様の実現可能性を実証しています：
+以下の12シナリオを`qa/scenarios/run_all.py`から実行できる。実行結果と未解決の失敗は品質保証資料に記録する。
 
-1. **Scenario 1: WASM Loader & Active Data Segments (`scenarios/scenario1_loader_and_memory.py`)**:
+1. **Scenario 1: WASM Loader & Active Data Segments (`qa/scenarios/scenario1_loader_and_memory.py`)**:
    - ROM 上の WASM バイナリのゼロコピー解析、Function 以外の可変長メタデータを `offset/size` と先読みした LEB128 数値で索引化、アクティブデータセグメントのリニアメモリ初期配置。
-2. **Scenario 2: WASI System Call & I/O Dispatch (`scenarios/scenario2_wasi_syscall_io.py`)**:
+2. **Scenario 2: WASI System Call & I/O Dispatch (`qa/scenarios/scenario2_wasi_syscall_io.py`)**:
    - `fireball_call` 経由での `wasi_snapshot_preview1.fd_write` (分散ギャザー I/O) および `proc_exit` 終了コード伝播。
-3. **Scenario 3: Recursion & Indirect Table Dispatch (`scenarios/scenario3_recursion_and_tables.py`)**:
+3. **Scenario 3: Recursion & Indirect Table Dispatch (`qa/scenarios/scenario3_recursion_and_tables.py`)**:
    - 再帰呼び出し、CallFrame/ControlFrame インライン整合性、`call_indirect` による Table+Element 間接ディスパッチと型シグネチャ照合。
-4. **Scenario 4: Hybrid JIT Compilation & Hotspot (`scenarios/scenario4_hybrid_jit_loop.py`)**:
+4. **Scenario 4: Hybrid JIT Compilation & Hotspot (`qa/scenarios/scenario4_hybrid_jit_loop.py`)**:
    - 2-bit カードマーキング（UNEXEC → EXEC → HOT → COMPILED）によるホットスポット検出、Copy-and-Patch x64 ネイティブコード生成、インタープリタと JIT の差分実行検証。
-5. **Scenario 5: Multi-Function UnifiedPC & Radix (`scenarios/scenario5_multimodule_unified_pc.py`)**:
+5. **Scenario 5: Multi-Function UnifiedPC & Radix (`qa/scenarios/scenario5_multimodule_unified_pc.py`)**:
    - `UnifiedPC`（`func_idx << 16 | pc`）の `bswap32` RadixBinaryTreeView による $O(1)$ キャッシュ索引、複数関数にまたがる JIT トレース実行。
-6. **Scenario 6: COOS Cooperative Multitasking (`scenarios/scenario6_coos_multitask_yield.py`)**:
+6. **Scenario 6: COOS Cooperative Multitasking (`qa/scenarios/scenario6_coos_multitask_yield.py`)**:
    - コルーチン協調マルチタスク、トレース境界での Yield 判定（`{ADR_TraceBoundaryYield}`）、Producer-Consumer CSP 直接ハンドオフ。
-7. **Scenario 7: GDB Remote Debugger Socket Session (`scenarios/scenario7_gdb_socket_debugger.py`)**:
+7. **Scenario 7: GDB Remote Debugger Socket Session (`qa/scenarios/scenario7_gdb_socket_debugger.py`)**:
    - 実際の TCP ソケット経由での GDB Remote Serial Protocol (RSP) 対話（`?`, `g`, `m`, `M`, `Z0`, `s`, `c`）、ブレークポイント停止と再開。
-8. **Scenario 8: Storage Coverage & GDB Debugger (`scenarios/scenario8_comprehensive_storage_coverage.py`)**:
+8. **Scenario 8: Storage Coverage & GDB Debugger (`qa/scenarios/scenario8_comprehensive_storage_coverage.py`)**:
    - メモリ全幅（8/16/32-bit 符号/ゼロ拡張）、グローバル・ローカル変数の永続性、および稼働中の GDB ソケットデバッグ統合。
-9. **Scenario 9: IPC Router & Structured Logging (`scenarios/scenario9_ipc_router_and_logging.py`)**:
+9. **Scenario 9: IPC Router & Structured Logging (`qa/scenarios/scenario9_ipc_router_and_logging.py`)**:
    - 3段階ルーティング（Stage 1 URI検索 → Stage 2 RBAC判定 → Stage 3 Zero-Copy CSP Rendezvous 所有権移譲）、RBAC拒否・メッセージサイズ超過の事前拒絶、構造化ログのアイドルフラッシュ。
-10. **Scenario 10: vMMIO Virtual Devices & Address Translation (`scenarios/scenario10_vmmio_virtual_devices.py`)**:
+10. **Scenario 10: vMMIO Virtual Devices & Address Translation (`qa/scenarios/scenario10_vmmio_virtual_devices.py`)**:
     - 2段階ダイレクトデコードページテーブル、Bit 31 ゲスト RAM バイパス、Direct-Mapped ソフトウェア TLB（Folding XOR Hash）、タスク間共有メモリ（FC=0xE）の所有権検証と `TRAP_OWNER_MISMATCH` 遮断、パススルー物理アクセス。
-11. **Scenario 11: HAL & WASI Dummy Drivers (`scenarios/scenario11_hal_and_wasi_drivers.py`)**:
+11. **Scenario 11: HAL & WASI Dummy Drivers (`qa/scenarios/scenario11_hal_and_wasi_drivers.py`)**:
    - HAL 標準入出力ストリーム（stdin/stdout）と Timer、および WASI Preview 1（fd_read, fd_write, fd_seek, random_get, clock_time_get）。
-12. **Scenario 12: WASI 0.3p URI Resolver (`scenarios/scenario12_wasi03p_uri_resolver.py`)**:
+12. **Scenario 12: WASI 0.3p URI Resolver (`qa/scenarios/scenario12_wasi03p_uri_resolver.py`)**:
    - 階層型 URI 解決、ドライバ能力照会、HAL バッファ経由の IPC コマンド、および WASI 0.1p アダプタ委譲。
 
 ---
@@ -171,12 +170,12 @@ uv run python experiments/pysim/benchmarks/aobench/bench_aobench.py --debug
 powershell tools/check-src.ps1 -group pysim
 
 # Python 直接実行
-uv run --system-certs --with wasmtime python experiments/pysim/scenarios/run_all.py
+uv run --system-certs --with wasmtime python experiments/pysim/qa/scenarios/run_all.py
 ```
 
 ### 全単体テストの実行
 ```bash
-uv run --system-certs --with wasmtime python experiments/pysim/tests/run_all.py
+uv run --system-certs --with wasmtime python experiments/pysim/qa/run_all.py
 ```
 
 ### 3D AO-Bench ベンチマークの実行

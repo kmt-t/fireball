@@ -2,6 +2,7 @@
 
 Fireball Hypervisor の現行作業および次期フェーズのタスク一覧。
 全体の開発ロードマップは [`roadmap_phase.md`](docs/plans/roadmap_phase.md) を参照。
+完了済み項目は [`backlog_archive.md`](docs/plans/backlog_archive.md) に移管する。
 品質課題および検証結果は検証パイプライン実行時に生成される `reports/doc_report.md` を参照。
 
 ---
@@ -12,35 +13,35 @@ Fireball Hypervisor の現行作業および次期フェーズのタスク一覧
 盆栽デザイン（Bonsai Design）に基づき、仕様策定（Step 0）、早期検証・形式検証（Step 1）を完了。
 現在は **Step 2（シミュレータコード品質向上、実装の勘所・Gotchas抽出、テスト設計・コードへの還元）** を集中的に推進中。
 
-### 1. 完了実績 (DONE)
-- [x] **Step 0: 仕様策定・動的図解・ルール体系刷新 (DONE)**:
-  - 全 13 コンポーネント設計書における静的・動的ペアリングの徹底
-  - 複雑な動的アルゴリズムに対するシーケンス図（責務重視）およびアクティビティ図（手順重視）の体系的配備
-  - `.agents/rules/` の 4 コア体系（docs, cpp, python, dev/antipatterns）への再編および Claude Code 互換 YAML frontmatter 付与
-- [x] **Step 1: コンセプトコード・初期テスト仕様・形式検証 (DONE)**:
-  - 全 16 コンセプトコードの実装および最新仕様同期（`typing.Any` 完全排除、具体型・代数的データ型徹底）
-  - 全 16 形式検証モデル（`pyModelChecking`）の CTL 論理式証明、および各モデルの対象安全性特性に対する `guards=False` 変異検査による反証性担保
-  - 全 22 ユニットテストスイート（[`test_gotchas.py`](experiments/pysim/tests/cross_cutting/test_gotchas.py) 含む 22/22 PASS）
-
----
-
-### 2. 現在進行中のタスク (ACTIVE: Step 2 推進中)
+### 1. 現在進行中のタスク (ACTIVE: Step 2 推進中)
 - [ ] **Step 2.1: pysim シミュレータコードの品質向上 & リファクタリング**:
   - `experiments/pysim/` 配下の各モジュール（Loader, Interpreter, JIT, COOS, vMMIO, HAL, GDB）のコード品質向上
   - 可読性・保守性・モジュール分離の洗練、不要・重複コードの排除、最新設計思想に沿った自然言語コメントの徹底
   - エラーハンドリング・境界検査の堅牢化
-  - `Blocked` タスクの外部強制終了（`task_killed`）の実装: チャネル待機者参照（`Channel.waiter_task`／チャネルグループ）およびイベント/割り込み待機キューからの登録解除を伴う設計が必要（[`os_coos.md`](docs/components/tier1_core/os_coos.md) §4.3 参照、現状は `Running` からの自然終了 `task_exit` のみ実装）
 - [ ] **Step 2.2: 実装の勘所（Gotchas・不変条件）の網羅的抽出とテスト設計への還元**:
   - シミュレータの実行・リファクタリングから得られる新たな実装の勘所（Gotchas）やシステム不変条件（Invariants）の継続的抽出
-  - コンポーネント別テスト仕様書（`tests/*_test_spec.md`）への Gotchas 固有識別子および設計理由の追記・拡充
+  - コンポーネント別テスト仕様書（`docs/qa/tier*/`）への Gotchas 固有識別子および設計理由の追記・拡充
   - 仕様書（自然言語記述）とテスト仕様書の完全同期
+  - **`runtime_interpreter_test_spec.md` 直交表配備**: 状態遷移（`Trap -> Ready`, `Debugging -> Running` 等）および境界条件に対する直交表マトリクス（Pairwise）を新設
+  - **`ControlFrameNative` への `result_arity` 追加と GOTCHA-INTP-02 真正検証復元**: ブロック脱出時の Label Arity スタックプルーニングと TOS 復元を実装し、`test_gotchas.py` の void ブロック代理テストを戻り値付きブロック脱出テストへ改定
+- [ ] **旧JITテストハーネスの移行と重複dispatchの除去**:
+  - QA内の`IntegratedHybridEngine`／`WASMContext`／`run_step`を参照するdebugger・GDB・vSoC・JITテストを、現行`Interpreter`／`RuntimeEngine`の共有実行コンテキストへ移行する
+  - 現行経路で同等の検証が成立したテストから旧ハーネスと重複opcode dispatchを除去する。単にテストを削除せず、既存の検証対象が維持されることを確認する
+- [ ] **アーキテクチャ監査課題の設計整合・ADR策定**:
+  - **今回反映済み**: 4KB仮想予約スロットと1KB物理SHM予算の分離、実サイズ境界付きvMMIO PTE、RESOURCE RevokeのPageMappingCallbacks経由化、`ControlFrameNative` 20バイトABI、JIT Oldest hit即時昇格、JIT用Radix表を持たない4スロットXOR＋二分探索、連続8KB（共通コード2KB＋Active/Warm/Oldest各2KB）、AAPCS開始／終了ステンシルのSP整合、基本ブロック末尾のvariant依存flushをPySim・形式モデル・仕様・テストへ同期した。PySim全24スイートと関連形式モデルを実行済み。
+  - **2026-09-16 アーキテクチャレビュー追従**: [architecture_review_report.md](docs/qa/architecture_review_report.md) のAR-01〜AR-14を解消する。JITチェイン終端／AAPCS SP整列／call_frame配置を先行し、handler ABI、compile失敗後のUNEXECUTED再計測、PySimとのJIT状態・計算量差、CSP保証とWIT／vMMIO契約、空の設計根拠、UnifiedPC実行時assertを順に整合する。control_frameとWIT RAIIの表現差はターゲットABIとの対応を明記してから欠陥判定する
+  - 完了済みのJITキャッシュ配置（連続8KB・共通コード2KB＋3バンク各2KB）と少数エントリ検索（Radixなし）は [`backlog_archive.md`](docs/plans/backlog_archive.md) に記録した。AR-05の昇格条件／chain抽象度は未解決
+  - **JITトレースヘッダ更新と MPU W^X 保護（RO+X）のハードウェア整合化**: Cortex-M33 PMSAv8 において RO 領域（Region 4）への書き込みが MemManage Fault となる制約の解消。パッチトランザクション相乗りモデル（`begin_jit_patch` 内一括更新）またはヘッダ・データスロットの RAM 領域（Region 3）分離配置モデルの策定
+  - **`call_frame` 物理レイアウトの確定と実装同期**: PySimの実行モデルに合わせ、固定容量の独立CallFrame descriptor stackがLocalStack開始raw-word位置を保持する。LocalStackはローカル値のみとし、Tier 2仕様・形式モデル・概念コード・テスト仕様・architecture_overviewを同期する
+  - **`interpreter_concept.py` の潜在バグ解消と型安全性是正**: 多重ブロック脱出時の二重ポップバグ修正、`_h_if` 条件偽時フレームリーク（`GOTCHA-INTP-03`）修正、`arg: int | object` ワイルドカードの具象型置換、ホスト再帰呼び出しの排除
 - [ ] **Step 2.3: ユニットテストコードの網羅性・品質強化**:
   - エッジケース・異常系・直交表組み合わせテストの拡充
-  - テストランナー（[`run_all.py`](experiments/pysim/tests/run_all.py)）による全 22+ スイートの高速・高信頼実行の維持
+  - テストランナー（[`run_all.py`](experiments/pysim/qa/run_all.py)）による全 22+ スイートの高速・高信頼実行の維持
 - [ ] **Step 2.4: 物理リソース予算（最小構成 RAM 32KB / ROM 96KB）の厳密な再見積もり**:
   - 詳細正本: [`resource_budget_estimation.md`](docs/architecture/resource_budget_estimation.md)
-  - **RAM (32KB)**: 統合物理メモリプール 21.5KB + OSスタック/静的変数 ~3.5KB $\to$ 静的合計 **~25.0 KB** (安全余白 ~7.0 KB / 22%) の実機適合確認 `{Resource_Estimation_Model}`
+  - **RAM (32KB)**: 統合物理メモリプール 23.55KB + OSスタック/静的変数 ~3.5KB $\to$ 静的合計 **~27.05 KB** (余裕 ~5.72 KB / 17.4%) の実機適合確認 `{Resource_Estimation_Model}`
   - **ROM (96KB)**: 不変ルックアップテーブル/辞書 ~8.2KB + 機械語コード ~45〜55KB $\to$ 静的合計 **~53〜63 KB** (空き余白 ~33〜43 KB / 約34〜45%) の確認
+  - **コード規模 (20 KSLOC)**: コメントとテストを除く製品ソースコードの上限を20,000 SLOCとする `{Size_20KSLOC}`。最新pysimの18,701物理行からの参考推定は約21.5〜23.4 KSLOCであり、計測定義が異なるため、C++実測と同じSLOC条件で再見積もりする
 - [ ] **Step 2.5: オーナー（人間）による最終品質レビュー & Phase 1 GO 判定**:
   - 仕様・シミュレータコード・テスト設計・バジェットを Freeze し、C++23 実装フェーズ（Phase 1）への移行を最終承認 `{META_SpecificationFirst}`
 
@@ -87,9 +88,9 @@ Fireball Hypervisor の現行作業および次期フェーズのタスク一覧
 - [ ] **ARM Thumb-2 / x86_64 ネイティブパッチステンシル (`inc/jit/stencils.hxx`)**:
   - `__fastcall` CPS 4引数レジスタ規約準拠の事前コンパイル済みネイティブバイト列（RO-Data）とリロケーションテーブル `{JIT_CopyAndPatch}` `{ADR_TosCacheAsymmetry}`
 - [ ] **トリプルバッファ キャッシュマネージャ (`src/jit/cache_manager.cxx`)**:
-  - 2KB × 3面 の代謝（Oldest 破棄・昇格）制御 `{JIT_MultiBuffer_Cache}` `{JIT_OldestOnly_Promote}`
+  - 連続8KB領域のうち可変バンクは2KB × 3面（Oldest 破棄・昇格）。先頭2KBの共通コード領域は非エビクション `{JIT_MultiBuffer_Cache}` `{JIT_OldestOnly_Promote}`
   - MPU W^X バッチトランザクション管理（書き込み時 RW+XN / 実行時 RO+X）
-  - 4段高速検索パイプライン（カードマーキング $	o$ Folding XOR高速キャッシュ $	o$ 基数テーブル $	o$ 二分探索）
+  - 3段検索（カードマーキング → Folding XOR高速キャッシュ → 少数のソート済みJITエントリの二分探索。Radix索引なし）
 - [ ] **Safepoint 協調 & 透過的インタープリタ切り替え (`src/jit/safepoint.cxx`)**:
   - JIT $\leftrightarrow$ インタープリタ間の Low-Overhead フォールバックおよびホットスポット検出 `{JIT_LazyChaining}` `{Interpreter_LazyJITSwitch}` `{JIT_RuntimeAPI_Fallback}`
 - [ ] **JIT 単体テストスイート (`tests/test_jit.cxx`)**:

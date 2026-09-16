@@ -14,6 +14,7 @@ pysim コードベース向け静的アンチパターンスキャナ。
 9. 明示的な例外送出 (NO_RAISE; except による捕捉は許可)
 10. テストコード・テスト用バックドアの製品コード混入 (NO_TEST_CODE_IN_PRODUCT)
 11. 製品クラスの文字列メンバー (NO_STRING_MEMBER)
+12. tuple の連結・再生成 (NO_TUPLE_REBUILD)
 """
 
 from __future__ import annotations
@@ -52,6 +53,7 @@ class PySimASTVisitor(ast.NodeVisitor):
         enforce_raise: bool = True,
         enforce_test_backdoor: bool = True,
         enforce_string_members: bool = True,
+        tuple_names: set[str] | None = None,
     ):
         self.filename = filename
         self.enforce_builtin_containers = enforce_builtin_containers
@@ -61,6 +63,7 @@ class PySimASTVisitor(ast.NodeVisitor):
         self.enforce_raise = enforce_raise
         self.enforce_test_backdoor = enforce_test_backdoor
         self.enforce_string_members = enforce_string_members
+        self.tuple_names = tuple_names or set()
         self.issues: list[Issue] = []
 
     def _add_issue(self, rule_id: str, severity: str, node: ast.AST, message: str) -> None:
@@ -155,6 +158,43 @@ class PySimASTVisitor(ast.NodeVisitor):
                 "ERROR",
                 node,
                 "The 'in' operator is prohibited in pysim product code; use a bounded view lookup or indexed access.",
+            )
+        self.generic_visit(node)
+
+    def _is_tuple_expression(self, node: ast.AST) -> bool:
+        return (
+            isinstance(node, ast.Tuple)
+            or (isinstance(node, ast.Name) and node.id in self.tuple_names)
+            or (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Name)
+                and node.func.id == "tuple"
+            )
+        )
+
+    def visit_BinOp(self, node: ast.BinOp) -> None:
+        if (
+            self.enforce_builtin_containers
+            and isinstance(node.op, ast.Add)
+            and (self._is_tuple_expression(node.left) or self._is_tuple_expression(node.right))
+        ):
+            self._add_issue(
+                "NO_TUPLE_CONCAT",
+                "ERROR",
+                node,
+                "Reason: tuple concatenation allocates and copies a new sequence, increasing peak memory. Resource requirement: create no intermediate sequence; retain data only in caller-owned bounded storage when indexed retention is required.",
+            )
+        self.generic_visit(node)
+
+    def visit_Tuple(self, node: ast.Tuple) -> None:
+        if self.enforce_builtin_containers and any(
+            isinstance(element, ast.Starred) for element in node.elts
+        ):
+            self._add_issue(
+                "NO_TUPLE_REBUILD",
+                "ERROR",
+                node,
+                "Reason: starred tuple construction materializes and copies the source. Resource requirement: create no intermediate sequence; consume incrementally, retaining data only in caller-owned bounded storage when required.",
             )
         self.generic_visit(node)
 
@@ -387,6 +427,18 @@ class PySimASTVisitor(ast.NodeVisitor):
                     node,
                     "bytearray() creates mutable RAM buffer. Use immutable 'bytes' if data is read-only (ROM placeable).",
                 )
+            elif (
+                self.enforce_builtin_containers
+                and node.func.id == "tuple"
+                and node.args
+                and not isinstance(node.args[0], ast.Tuple)
+            ):
+                self._add_issue(
+                    "NO_TUPLE_REBUILD",
+                    "ERROR",
+                    node,
+                    "Reason: tuple(iterable) materializes the entire iterable and duplicates peak memory. Resource requirement: create no intermediate sequence; consume incrementally, retaining data only in caller-owned bounded storage when required.",
+                )
 
         # list.append / insert / pop
         elif isinstance(node.func, ast.Attribute):
@@ -426,6 +478,26 @@ class PySimASTVisitor(ast.NodeVisitor):
                     "Type annotation 'list[...]' is prohibited in pysim. Use a concrete system container type.",
                 )
         self.generic_visit(node)
+
+
+def _is_tuple_annotation(node: ast.AST) -> bool:
+    if isinstance(node, ast.Name):
+        return node.id == "tuple"
+    if isinstance(node, ast.Subscript) and isinstance(node.value, ast.Name):
+        return node.value.id == "tuple"
+    return False
+
+
+def _is_tuple_expression(node: ast.AST, tuple_names: set[str]) -> bool:
+    return (
+        isinstance(node, ast.Tuple)
+        or (isinstance(node, ast.Name) and node.id in tuple_names)
+        or (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "tuple"
+        )
+    )
 
 
 def scan_file(
@@ -484,6 +556,24 @@ def scan_file(
         and node.slice.elts
         and isinstance(node.slice.elts[0], ast.List)
     }
+    tuple_names: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.arg) and node.annotation is not None:
+            if _is_tuple_annotation(node.annotation):
+                tuple_names.add(node.arg)
+        elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+            if _is_tuple_annotation(node.annotation):
+                tuple_names.add(node.target.id)
+    changed = True
+    while changed:
+        changed = False
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Assign) or not _is_tuple_expression(node.value, tuple_names):
+                continue
+            for target in node.targets:
+                if isinstance(target, ast.Name) and target.id not in tuple_names:
+                    tuple_names.add(target.id)
+                    changed = True
     visitor = PySimASTVisitor(
         rel_path,
         not is_container_implementation,
@@ -493,6 +583,7 @@ def scan_file(
         enforce_raise=enforce_raise,
         enforce_test_backdoor=enforce_test_backdoor,
         enforce_string_members=enforce_string_members,
+        tuple_names=tuple_names,
     )
     visitor.visit(tree)
     if enforce_non_none_union:

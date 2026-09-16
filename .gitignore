@@ -69,6 +69,7 @@ experiments/pysim/runtime/runtime_engine.c
 
 # Logs and generated state
 *.log
+reports/
 temp/
 states/
 

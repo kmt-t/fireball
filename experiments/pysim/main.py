@@ -235,7 +235,7 @@ def main() -> None:
     demo_wasmjit_hybrid_execution(sysv)
     sysv.shutdown()
     print("\n== pysim: findings ==")
-    assert len(findings) == 0, tuple(findings)
+    assert len(findings) == 0, findings
     print("  No behavioral bugs found: every enforced invariant held under real execution.")
     print("  (See recovery.py's retry-exhaustion comment for one spec gap this build had")
     print("   to resolve by assumption -- not a code bug, a place interface_wit.md should")

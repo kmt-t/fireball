@@ -12,7 +12,7 @@ import ctypes
 import struct
 from collections.abc import Iterator, Sequence
 
-from jit_abi import JIT_CONTEXT_HELPER_PTR_OFFSET, JIT_CONTEXT_SIZE_BYTES, JIT_HELPER_COUNT
+from jit_abi import JIT_CONTEXT_SIZE_BYTES
 from wasm_module import WASM_VALUE_SLOT_BYTES
 
 NATIVE_VALUE_STACK_CAPACITY = 128
@@ -42,7 +42,6 @@ class ExecutionContextNative(ctypes.Structure):
         ("globals_limit", ctypes.c_uint32),
         ("handler_table", ctypes.c_uint32),
         ("reserved0", ctypes.c_uint32),
-        ("jit_helper_ptrs", ctypes.c_uint64 * JIT_HELPER_COUNT),
     )
 
 
@@ -453,7 +452,6 @@ assert ctypes.sizeof(ExecutionContextNative) == JIT_CONTEXT_SIZE_BYTES
 assert ExecutionContextNative.mem_base.offset == 0x28
 assert ExecutionContextNative.handler_table.offset == 0x38
 assert ExecutionContextNative.reserved0.offset == 0x3C
-assert ExecutionContextNative.jit_helper_ptrs.offset == JIT_CONTEXT_HELPER_PTR_OFFSET
 assert ctypes.sizeof(ConstBufferViewNative) == 16
 assert ctypes.sizeof(WasmFunctionViewNative) == 24
 assert ctypes.sizeof(WasmModuleViewNative) == 24

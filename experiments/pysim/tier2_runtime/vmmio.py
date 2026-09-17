@@ -200,9 +200,9 @@ class VMMIOController:
         )
         # Direct-mapped TLB: 32 slots, keyed by a repeatedly folded XOR over
         # the 20-bit VPN.
-        self.tlb: StaticVector[TLBSlot] = StaticVector.of(
-            tuple(TLBSlot() for _ in range(32)), capacity=32
-        )
+        self.tlb: StaticVector[TLBSlot] = StaticVector(capacity=32)
+        for _ in range(32):
+            self.tlb.append(TLBSlot())
         self.tlb_hits = 0
         self.tlb_misses = 0
 

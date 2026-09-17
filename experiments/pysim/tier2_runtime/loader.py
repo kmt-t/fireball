@@ -417,10 +417,11 @@ class ModuleView:
         # Section IDs are SectionID.CUSTOM(0)..DATA_COUNT(12): a fixed, dense
         # WASM-spec-defined range, so a fixed-size array indexed by ID -- not
         # a dict -- is the direct fit.
-        self.sections: StaticVector[SectionView | None] = StaticVector.of(
-            tuple(None for _ in range(SectionID.DATA_COUNT + 1)),
-            capacity=SectionID.DATA_COUNT + 1,
+        self.sections: StaticVector[SectionView | None] = StaticVector(
+            capacity=SectionID.DATA_COUNT + 1
         )
+        for _ in range(SectionID.DATA_COUNT + 1):
+            self.sections.append(None)
         self.types: StaticVector[FuncType] = StaticVector(capacity=FB_CONF_MAX_TYPES)
         self.imports: StaticVector[ImportEntry] = StaticVector(capacity=FB_CONF_MAX_IMPORTS)
         self.functions: StaticVector[int] = StaticVector(capacity=FB_CONF_MAX_FUNCTIONS)
@@ -459,17 +460,23 @@ class ModuleView:
 
     def build_indexes(self) -> None:
         """Constructs read-only radix-binary-tree indexes for exports, imports, and entity offsets."""
-        exp_keys = tuple(fnv1a_32(exp.name) for exp in self.exports_dict)
+        exp_keys: StaticVector[int] = StaticVector(capacity=len(self.exports_dict))
+        for exp in self.exports_dict:
+            exp_keys.append(fnv1a_32(exp.name))
         self.export_storage = ReadOnlyRadixBinaryTreeStorage.create(
             exp_keys, self.exports_dict, radix_shift=28
         )
 
-        imp_keys = tuple(fnv1a_32(f"{imp.module_name}::{imp.field_name}") for imp in self.imports)
+        imp_keys: StaticVector[int] = StaticVector(capacity=len(self.imports))
+        for imp in self.imports:
+            imp_keys.append(fnv1a_32(f"{imp.module_name}::{imp.field_name}"))
         self.import_storage = ReadOnlyRadixBinaryTreeStorage.create(
             imp_keys, self.imports, radix_shift=28
         )
 
-        ent_keys = tuple(e.start_offset for e in self.entity_registry)
+        ent_keys: StaticVector[int] = StaticVector(capacity=len(self.entity_registry))
+        for entity in self.entity_registry:
+            ent_keys.append(entity.start_offset)
         self.entity_offset_storage = ReadOnlyRadixBinaryTreeStorage.create(
             ent_keys, self.entity_registry, radix_shift=4
         )

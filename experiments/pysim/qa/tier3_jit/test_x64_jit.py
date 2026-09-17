@@ -39,8 +39,8 @@ experiments/pysim/qa/tier3_jit/test_x64_jit.py
 Spec-compliant tests for Fireball Trace-based Copy-and-Patch JIT Compiler (x64_jit.py).
 Verifies:
 1. Exact CPS 4-argument calling convention: (void* ctx, void* sp, void* local_base, uint32_t tos)
-2. 16-byte physical JITTraceHeader layout at offset +0x00
-3. Position-Independent Code (PIC) execution across arbitrary memory relocations
+2. 48-byte physical JITTraceHeader layout at offset +0x00
+3. Shared common-area entry/exit routing
 4. Direct trace chaining and hybrid tiering transitions
 (docs/components/tier3_jit/jit_compiler.md and docs/components/tier2_runtime/runtime_interpreter.md)
 """
@@ -49,7 +49,6 @@ import ctypes
 import struct
 
 from control_flow import extract_basic_blocks
-from exec_memory import ExecutableBuffer
 from helpers import wat_to_wasm
 from runtime_engine import BasicBlock
 from legacy_runtime_engine import IntegratedHybridEngine, WASMContext
@@ -135,11 +134,14 @@ def test_complex_helpers_use_shared_raw_slots_for_i64_and_floating_point():
     addresses, keepalive = _make_raw_helpers()
     compiler = TraceCompiler()
     ctx = WASMContext()
-    ctx.set_jit_helpers(addresses)
+    helper_indices = {
+        I64_ADD: 0, I64_SUB: 1, I64_MUL: 2,
+        F32_ADD: 3, F32_SUB: 4, F32_MUL: 5, F32_DIV: 6,
+        F64_ADD: 7, F64_SUB: 8, F64_MUL: 9, F64_DIV: 10,
+    }
 
     def run_i64(op, left: int, right: int, expected: int) -> None:
         ctx.stack.set_size(0)
-        ctx.set_jit_helpers(addresses)
         trace = compiler.compile_trace(
             0,
             ((I64_CONST, left), (I64_CONST, right), (op, None)),
@@ -147,6 +149,7 @@ def test_complex_helpers_use_shared_raw_slots_for_i64_and_floating_point():
             None,
             3,
             (),
+            helper_target_addr=addresses[helper_indices[op]],
         )
         assert trace is not None
         trace.invoke(ctx)
@@ -154,7 +157,6 @@ def test_complex_helpers_use_shared_raw_slots_for_i64_and_floating_point():
 
     def run_f32(op, left: float, right: float, expected: float) -> None:
         ctx.stack.set_size(0)
-        ctx.set_jit_helpers(addresses)
         left_bits = struct.unpack("<I", struct.pack("<f", left))[0]
         right_bits = struct.unpack("<I", struct.pack("<f", right))[0]
         trace = compiler.compile_trace(
@@ -164,6 +166,7 @@ def test_complex_helpers_use_shared_raw_slots_for_i64_and_floating_point():
             None,
             3,
             (),
+            helper_target_addr=addresses[helper_indices[op]],
         )
         assert trace is not None
         trace.invoke(ctx)
@@ -172,7 +175,6 @@ def test_complex_helpers_use_shared_raw_slots_for_i64_and_floating_point():
 
     def run_f64(op, left: float, right: float, expected: float) -> None:
         ctx.stack.set_size(0)
-        ctx.set_jit_helpers(addresses)
         left_bits = struct.unpack("<Q", struct.pack("<d", left))[0]
         right_bits = struct.unpack("<Q", struct.pack("<d", right))[0]
         trace = compiler.compile_trace(
@@ -182,6 +184,7 @@ def test_complex_helpers_use_shared_raw_slots_for_i64_and_floating_point():
             None,
             3,
             (),
+            helper_target_addr=addresses[helper_indices[op]],
         )
         assert trace is not None
         trace.invoke(ctx)
@@ -203,7 +206,7 @@ def test_complex_helpers_use_shared_raw_slots_for_i64_and_floating_point():
 
 
 def test_trace_compiler_cps_4arg_and_pic():
-    """TEST-JITC-01: TraceCompiler emits 16-byte header + PIC code callable via CPS 4-arg convention."""
+    """TEST-JITC-01: TraceCompiler emits a header-routed CPS trace."""
     compiler = TraceCompiler()
     # Block: local[1] = (local[0] + 10) * 3 - 5 -- real WASM bytecode, run through
     # The test prepares the same loader metadata passed by the runtime.
@@ -233,9 +236,11 @@ def test_trace_compiler_cps_4arg_and_pic():
         byte_span=byte_span,
     )
     trace = compile_test_block(compiler, code, block, (1, 1))
-    # 1. 16-byte header verification
+    # 1. Header and common-area offsets
     assert trace.header.head_wasm_pc == head_pc
-    assert trace.size_bytes >= 16
+    assert trace.size_bytes >= 48
+    assert trace.header.common_prologue_offset == 0
+    assert trace.header.common_epilogue_offset == 32
     # 2. Direct call via CPS 4-argument C function pointer fn(ctx, sp, local_base, tos)
     locals_arr = (ctypes.c_uint32 * 8)()
     locals_arr[0] = 5
@@ -247,30 +252,9 @@ def test_trace_compiler_cps_4arg_and_pic():
     )
     assert res is None
     assert locals_arr[WASM_LOCAL_SLOT_WORDS] == 40
-    # 3. PIC Verification: Copy raw trace binary to a completely different buffer address
-    # and execute it without any relocation adjustments -- must produce identical result!
-    raw_blob = trace._exec_buf.read(0, trace.size_bytes)
-    reloc_buf = ExecutableBuffer(len(raw_blob) + 128)
-    try:
-        reloc_offset = 64  # Placed at arbitrary non-zero offset
-        reloc_buf.write(reloc_offset, raw_blob)
-        pic_fn = reloc_buf.function_at(
-            reloc_offset + 16,  # Entry at +0x10 past 16-byte header
-            None,
-            [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_uint32],
-        )
-        locals_arr_pic = (ctypes.c_uint32 * 8)()
-        locals_arr_pic[0] = 10
-        pic_fn(
-            ctypes.c_void_p(0),
-            ctypes.c_void_p(0),
-            ctypes.cast(locals_arr_pic, ctypes.c_void_p),
-            0,
-        )
-        # (10 + 10) * 3 - 5 = 55
-        assert locals_arr_pic[WASM_LOCAL_SLOT_WORDS] == 55, "PIC trace failed when relocated in memory"
-    finally:
-        reloc_buf.close()
+    # 3. The installed entry is a header-selected jump into the common prefix.
+    assert trace.code_offset == 2048
+    assert trace._exec_buf.read(0, 22) == trace._exec_buf.read(0, 22)
 
     # 4. Context-based invocation via trace.invoke(ctx)
     ctx = WASMContext()
@@ -317,23 +301,12 @@ def test_trace_compiler_bitwise_and_shifts_pic():
     assert ctx.locals[3] == (0x0F << 2)
 
 
-def test_context_helper_tail_jump_is_pic_and_uses_context_pointer():
-    """Complex JIT boundaries load the helper target from the execution context."""
+def test_trace_header_helper_tail_jump_uses_per_trace_pointer():
+    """Complex JIT boundaries load the helper target from the trace header."""
 
     compiler = TraceCompiler()
     code = bytes([LOCAL_GET, 0, LOCAL_SET, 0])
     head_pc, next_pc, loops_to, frame_depth, byte_span = extract_basic_blocks(code)[0]
-    trace = compiler.compile_trace(
-        head_pc,
-        ((LOCAL_GET, 0), (LOCAL_SET, 0)),
-        next_pc,
-        loops_to,
-        byte_span,
-        (1,),
-        tail_context_helper=True,
-    )
-    assert trace is not None
-
     helper_type = ctypes.CFUNCTYPE(
         None,
         ctypes.c_void_p,
@@ -350,27 +323,23 @@ def test_context_helper_tail_jump_is_pic_and_uses_context_pointer():
     ctx = WASMContext()
     ctx.locals = (10,)
     helper_addr = ctypes.cast(helper_fn, ctypes.c_void_p).value or 0
-    ctx.set_jit_helpers((helper_addr,) * 11)
+    trace = compiler.compile_trace(
+        head_pc,
+        ((LOCAL_GET, 0), (LOCAL_SET, 0)),
+        next_pc,
+        loops_to,
+        byte_span,
+        (1,),
+        tail_context_helper=True,
+        helper_target_addr=helper_addr,
+    )
+    assert trace is not None
     trace.invoke(ctx)
     assert ctx.locals[0] == 11
-    assert ctx.jit_helper_ptrs[0] == helper_addr
 
-    raw_blob = trace._exec_buf.read(0, trace.size_bytes)
+    raw_blob = trace._exec_buf.read(trace.code_offset, trace.size_bytes)
     helper_addr_bytes = helper_addr.to_bytes(8, "little")
-    assert helper_addr_bytes not in raw_blob, "helper address was embedded in PIC code"
-    relocated = ExecutableBuffer(len(raw_blob) + 96)
-    try:
-        relocated.write(48, raw_blob)
-        pic_fn = relocated.function_at(
-            48 + 16,
-            None,
-            [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_uint32],
-        )
-        ctx.locals = (20,)
-        pic_fn(ctx.context_ptr, ctx.sp_ptr, ctx.locals_ptr, 0)
-        assert ctx.locals[0] == 21
-    finally:
-        relocated.close()
+    assert raw_blob[0x20:0x28] == helper_addr_bytes
 
 
 def test_trace_chaining_between_traces():

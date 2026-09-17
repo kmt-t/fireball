@@ -13,11 +13,14 @@ Fireballは、リソース制限の厳しい小規模組み込みデバイス（
 - **高速JIT (Copy-and-Patch)**: コンパイルレイテンシを最小化し、連続8KBのJIT領域を共通コード2KBと3面キャッシュ2KB×3に分けて活用する。
 - **Conceptベース・コンポーネントハーネス**: vSoCの各コンポーネントは独立サブコンポーネントの集合として定義する。C++20 Conceptsとハーネス構造体による静的DIで結合する。
 - **メモリ管理: 5プール＋専用インタープリタスタック (`{ADR_FivePoolMemoryModel}`)**: システム全体の統合領域を5つの独立プールへ分け、インタープリタスタックは別の固定容量領域に置く（正本: [`system_memory.md`](docs/components/tier1_interface/system_memory.md)）。各領域は用途別の上限と確保経路を持ち、他領域の容量を消費しない（`{GLOBAL_Policy_Memory}`）。
-  - **タスクヒープ**: COOS がタスク起動時に貸与するタスク固有の固定長パーティションである。サイズはゲスト VM スロットごとに `system_config.md` の `FB_CONF_TASK_HEAP_SIZES` ROM 配列で個別に設定する（均等割りではない）。
-  - **ホスト用ヒープ (`{GLOBAL_Policy_Memory}`)**: dlmalloc ベースのシステムアロケータ (`system_allocator`) を用い、カーネル常駐コンテナ（PTE表、チャネル表等）の内部ストレージを個別に確保・解放する。
-  - **共有用ヒープ (`{Shm_Allocator}`)**: タスク間IPCでゼロコピー移譲する共有メモリ領域である。可変長要求に応じて`shm_allocator`が切り出し、`shared_block`のRAII所有権で寿命を管理する（`{ADR_SharedBlockRaii}`）。4KBはFC=14の仮想予約・保護単位であり、SHM物理メモリ予算とは別である。物理バック領域は要求サイズ分だけ消費する。
-  - **ランタイム用バンプアロケータ (`{Runtime_BumpAllocator}`)**: 1つのWASMランタイム（`vSoC`）は1つのゲストモジュールを担当する（`{OneRuntimeOneGuest}`）。ランタイム専用の固定長アリーナを所有し、モジュール破棄時に$O(1)$で一括解放する。マルチインスタンスは独立ランタイムで起動する。
-  - **JITキャッシュアロケータ (`{JIT_MultiBuffer_Cache}`)**: JITネイティブコードキャッシュ（3-Bank）はMPU W^X制御された専用セクションへ配置し、専用アロケータから確保する。データRAMのアリーナとは保護属性と用途を分離する。
+
+| 領域 | 用途 | 確保・解放規則 | 保護・契約 |
+|---|---|---|---|
+| タスクヒープ | COOS がタスク起動時に貸与するタスク固有の固定長パーティション | サイズはゲスト VM スロットごとに `system_config.md` の `FB_CONF_TASK_HEAP_SIZES` ROM 配列で個別に設定する。 | 均等割りではない。 |
+| ホスト用ヒープ (`{GLOBAL_Policy_Memory}`) | カーネル常駐コンテナ（PTE表、チャネル表等）の内部ストレージ | dlmalloc ベースの `system_allocator` で個別に確保・解放する。 | カーネルのシステムアロケータを使用する。 |
+| 共有用ヒープ (`{Shm_Allocator}`) | タスク間IPCでゼロコピー移譲する共有メモリ領域 | 可変長要求に応じて `shm_allocator` が切り出し、`shared_block` のRAII所有権で寿命を管理する（`{ADR_SharedBlockRaii}`）。 | 4KBはFC=14の仮想予約・保護単位であり、SHM物理メモリ予算とは別である。物理バック領域は要求サイズ分だけ消費する。 |
+| ランタイム用バンプアロケータ (`{Runtime_BumpAllocator}`) | WASMランタイム専用の固定長アリーナ | 1つのWASMランタイム（`vSoC`）が1つのゲストモジュールを担当する（`{OneRuntimeOneGuest}`）。モジュール破棄時に $O(1)$ で一括解放する。 | マルチインスタンスは独立ランタイムで起動する。 |
+| JITキャッシュアロケータ (`{JIT_MultiBuffer_Cache}`) | JITネイティブコードキャッシュ（3-Bank） | MPU W^X制御された専用セクションへ配置し、専用アロケータから確保する。 | データRAMのアリーナとは保護属性と用途を分離する。 |
 - **静的構成**: システム構成値（バッファサイズ、タスク数等）はコンパイル時に静的確定する。実行時の動的探索コストを完全排除する。
 
 ---
@@ -108,28 +111,38 @@ Fireball の実行コアは、以下の 6 つの物理メカニズムによっ�
 <!-- traceability: {ContextPointerRegister} {MemoryBoundaryCheck} {ThreadedInterpreter} {ExecutionContext_Layout} {CallFrame_Layout} -->
 - **物理実体**: `OperandStack`、`LocalStack`、`control_frame`は互いに独立した3本の固定長値バッファ（計2KB〜4KB）である。関数実行メタデータは別の固定容量`call_frame_stack`が保持し、値バッファと混在させない。
 - **物理レイアウト**:
-  1. **`execution_context`（Tier 2 ABIでは計152バイト）**: 15個の32bit実行状態フィールド、予約領域、および命令別JITヘルパーポインタを保持する。物理レイアウトと呼出規約の対応はターゲット（x64 / ARMv8-M）ごとに定義し、Tier 2の論理フィールド契約を共有する。
-  2. **`OperandStack`**: WASM オペランド値のみを保持し、コールチェーン全体を貫いて連続する（呼び出しを跨いでも作り直されない）。
-  3. **`LocalStack`**: raw 32-bitローカル値だけを保持する。calleeの値領域は現在の末尾から確保し、復帰時にdescriptorの保存位置まで一括で戻す。
-  4. **`call_frame_stack`**: 関数ごとのdescriptorを独立管理する。各descriptorは関数メタデータと`LocalStack`開始raw-word位置を保持し、ローカル値配列内にインラインヘッダを置かない。
-  5. **`control_frame` 専用領域**: `block`/`loop`/`if`の入れ子を管理する（20バイト固定サイズ）。オペランドスタックとは同居しない（`{ControlFrame_Layout}`）。
+
+| 構造 | 容量・サイズ | 保持内容・役割 | 不変条件 |
+|---|---:|---|---|
+| `execution_context` | Tier 2 ABIでは152バイト | 15個の32bit実行状態フィールド、予約領域、命令別JITヘルパーポインタを保持する。 | 物理レイアウトと呼出規約の対応はターゲット（x64 / ARMv8-M）ごとに定義し、Tier 2の論理フィールド契約を共有する。 |
+| `OperandStack` | 固定長値バッファ | WASM オペランド値だけを保持し、コールチェーン全体を貫いて連続する。 | 呼び出しを跨いでも作り直さない。 |
+| `LocalStack` | 固定長値バッファ | raw 32-bitローカル値だけを保持する。calleeの値領域は現在の末尾から確保する。 | 復帰時にdescriptorの保存位置まで一括で戻す。 |
+| `call_frame_stack` | 固定容量 | 関数ごとのdescriptorを独立管理する。各descriptorは関数メタデータと`LocalStack`開始raw-word位置を保持する。 | ローカル値配列内にインラインヘッダを置かない。 |
+| `control_frame` 専用領域 | 1フレーム20バイト、固定容量バッファ | `block`/`loop`/`if`の入れ子を管理する。 | `OperandStack`とは同居しない（`{ControlFrame_Layout}`）。 |
 - **レジスタ規約**: `R0: ctx`, `R1: sp`, `R2: local_base`, `R3: tos` を全ハンドラ・JITトレースへ渡す。CPS 第1〜第4引数として直接引き回す。基本ブロック末尾では `tos, nos, nnos` をスタックへフラッシュする。コンテキスト `R0` の `ip` および `sp_offset` を更新して状態を同期する。 `{JIT_RegisterMapping}`
 
 ### 3.2 Pillar 2: 3段直接 JIT 検索パイプライン (3-Stage Direct JIT Lookup Pipeline)
 <!-- traceability: {SimpleJITArchitecture} {JIT_MultiBuffer_Cache} {META_BinarySearch} {DirectMappedJIT4} -->
-- **Stage 1 (カードマーキング表: `bit_view<2>`) [$O(1)$]**: 4バイト単位の 2-bit 状態表を参照する。`COMPILED` でなければ直ちにインタープリタへフォールバックする（Fast Exit）。
-- **Stage 2 (Direct-Mapped Folding XOR キャッシュ: 4 entries) [$O(1)$]**: 4エントリのダイレクトマップキャッシュ（）を照合する。ヒット時は直ちにトレース実行アドレスを返却して探索を終了する。
-- **Stage 3 (ソート済みJITエントリ配列の二分探索) [$O(\log n)$]**: Fast Cache miss時、各バンクの少数かつ疎なJITエントリをソート済み配列から二分探索し、ネイティブ実行アドレスを特定する。エントリ数が少ないためRadix表は設けず、追加索引のメモリと更新処理を持たない。
+
+| 段階 | 検索対象 | 計算量 | 判定・遷移 |
+|---:|---|---:|---|
+| 1 | カードマーキング表（`bit_view<2>`） | $O(1)$ | 4バイト単位の2-bit状態表を参照する。`COMPILED` でなければインタープリタへフォールバックする（Fast Exit）。 |
+| 2 | Direct-Mapped Folding XOR キャッシュ（4 entries） | $O(1)$ | 4エントリのダイレクトマップキャッシュを照合する。ヒット時はトレース実行アドレスを返却して探索を終了する。 |
+| 3 | ソート済みJITエントリ配列 | $O(\log n)$ | Fast Cache miss時に各バンクのJITエントリを二分探索し、ネイティブ実行アドレスを特定する。Radix表は設けない。 |
+
 - **PySimとの一致**: PySimもバンク内のソート済みキーを`bisect_left`で検索する。組込み実装と参照モデルは、JITエントリの検索構造を共有する。
 
 ### 3.3 Pillar 3: 3面世代交代回転コードキャッシュ (3-Bank Generational Rotating Code Cache)
 <!-- traceability: {JIT_MultiBuffer_Cache} {JIT_OldestOnly_Promote} {SimpleJITArchitecture} {JIT_ReverseCompilationOrder} -->
 - **領域の物理的役割**:
-  - **共通コード領域 (2KB)**: 相対ジャンプ用コード、AAPCS境界コード、復帰トランポリン等を格納する固定領域。エビクションとバンクローテーションの対象外とする。
-  - `Bank 0 (Active, 2KB)`: 新規 JIT コンパイルコードおよび Oldest からの昇格コードを格納する。
-  - `Bank 1 (Warm, 2KB)`: 1世代前のコードを保持する。無償観測期間として昇格コピーを行わずにそのまま実行する。
-  - `Bank 2 (Oldest, 2KB)`: 2世代前のコードを保持する。ここでlookupがヒットしたトレースを追加のhotness判定なしに新Activeへ昇格コピーする（Warm時の昇格は行わない）。
-  - バンク満杯時は世代スライド（Active $\to$ Warm $\to$ Oldest $\to$ Recycle）により一括代謝を行う。
+
+| 領域 | 容量 | 世代・用途 | 遷移・不変条件 |
+|---|---:|---|---|
+| 共通コード領域 | 2KB | 相対ジャンプ用コード、AAPCS境界コード、復帰トランポリン等を格納する。 | エビクションとバンクローテーションの対象外とする。 |
+| `Bank 0 (Active)` | 2KB | 新規 JIT コンパイルコードおよび Oldest からの昇格コードを格納する。 | 現行世代の書き込み先とする。 |
+| `Bank 1 (Warm)` | 2KB | 1世代前のコードを保持する。 | 無償観測期間として昇格コピーを行わず、そのまま実行する。 |
+| `Bank 2 (Oldest)` | 2KB | 2世代前のコードを保持する。 | lookupがヒットしたトレースを追加のhotness判定なしに新Activeへ昇格コピーする。Warm時の昇格は行わない。 |
+| 世代スライド | — | バンク満杯時の世代交代を行う。 | `Active \to Warm \to Oldest \to Recycle` の順に一括代謝する。 |
 - **MPU W^X 保護遷移**: コンパイル時は `RW + XN` とし、パッチ完了時に `__DSB(); __ISB();` を発行して `RO + X` に切り替える。
 - **ヘッダ駆動チェイニング（W^X 切り替え不要）**: トレース間ジャンプはヘッダの `chain_target_addr`（+0x0C）を不可分更新して確立・アンリンクする。W^X 切り替えを全バイパスしゼロコストでリンクを管理する。
 - **昇格時の逆引き移行 & LIFO 逆順コンパイル**: Oldest から昇格したトレースは被チェイン表の登録を新バンクへ移行する。ダングリングジャンプを完全排除する（`{GOTCHA-JITR-02}`）。LIFO 逆順コンパイルにより即時チェイニング率を最大化する（）。
@@ -137,20 +150,28 @@ Fireball の実行コアは、以下の 6 つの物理メカニズムによっ�
 
 ### 3.4 Pillar 4: 対称直接ハンドオフ・エンジン (Symmetric Direct Handoff Engine)
 <!-- traceability: {ADR_RendezvousChannel} {CSP_Handoff} {DirectContextSwitch} {MainLoopReturnGuarantee} -->
-- **純粋同期ランデブー & 単一待機者制約**: バッファを持たない（容量 0）純粋同期ランデブーである。チャネル自身は値スロットを持たず、送信側コルーチンフレーム上の値を直接手渡す（ゼロコピー）。1チャネル1待機者を厳格に強制し、二重待機はアサーションにより即座に停止する。
-- **対称移譲 (Symmetric Transfer)**: C++20 コルーチンの `await_suspend` から相手タスクのハンドルを直接返却する。スケジューラをバイパスして直接ジャンプする。
-- **ハンドオフ上限とメインループ復帰**: `FB_CONF_MAX_CONSECUTIVE_HANDOFFS`（既定4回）により連続handoff回数を制限し、上限到達時にmain loopへ制御を戻す。これはhandoff連鎖を区切る制御であり、全タスクの公平性や有界応答時間を保証しない（`{CooperativeMultitasking}`）。
+| 機構 | 動作 | 制約・不変条件 |
+|---|---|---|
+| 純粋同期ランデブー | バッファを持たない（容量 0）チャネルで、送信側コルーチンフレーム上の値を直接手渡す（ゼロコピー）。 | 1チャネル1待機者を厳格に強制し、二重待機はアサーションで停止する。 |
+| 対称移譲 (Symmetric Transfer) | C++20 コルーチンの `await_suspend` から相手タスクのハンドルを直接返却し、スケジューラをバイパスして直接ジャンプする。 | — |
+| ハンドオフ上限とメインループ復帰 | `FB_CONF_MAX_CONSECUTIVE_HANDOFFS`（既定4回）で連続handoff回数を制限し、上限到達時にmain loopへ制御を戻す。 | handoff連鎖を区切るが、全タスクの公平性や有界応答時間は保証しない（`{CooperativeMultitasking}`）。 |
 
 ### 3.5 Pillar 5: 折りたたみXOR TLB ＆ 平坦ページ表 (Folding XOR TLB & FlatMap Page Table)
 <!-- traceability: {FastAddressCheck} {META_RestrictedPhysicalAccess} {LowLatencyLookup} {UnifiedAccessModel} {ADR_PageGranularPermissionIsolation} -->
-- **Fast-path (Bit 31 = 0)**: ゲストRAMアクセスである。ベースポインタ加算と、開始アドレスおよび末尾（`addr + width - 1`）を `mem_size` と比較する境界保護を行う。
-- **vMMIO-path (Bit 31 = 1)**: VPN（20 bits）に対し 5-bit Folding XOR（20→10→5）を計算し、32エントリ TLB を直接参照する。ミス時は `flat_map_view` を二分探索する。
-- **HAL DYNAMIC (FC=13)**: HALが用意した固定長バッファをvMMIOへ動的マップする領域である。マルチゲスト構成ではDYNAMICマッピングを保持できるゲストを1つに限定し、別ゲストからのバインド要求は拒否する。
-- **SHM所有権検査とunmapの区別**: PTE未登録・Revoke後のアクセスは`TRAP_UNREGISTERED_PAGE`となる。PTEが有効でもowner_idが現在タスクと異なる場合やFLIGHT中は`OWNER_MISMATCH` trapで拒否する。Revokeは旧PTEを削除してTLBを無効化する。HAL DYNAMICバッファは別契約として、同時マップ可能なゲストを1つに限定する。
+| 経路・検査 | 処理 | 拒否・所有権条件 |
+|---|---|---|
+| Fast-path (Bit 31 = 0) | ゲストRAMアクセスとしてベースポインタを加算する。開始アドレスと末尾（`addr + width - 1`）を `mem_size` と比較する。 | 境界外アクセスを拒否する。 |
+| vMMIO-path (Bit 31 = 1) | VPN（20 bits）に対して 5-bit Folding XOR（20→10→5）を計算し、32エントリ TLB を直接参照する。ミス時は `flat_map_view` を二分探索する。 | — |
+| HAL DYNAMIC (FC=13) | HALが用意した固定長バッファをvMMIOへ動的マップする。 | DYNAMICマッピングを保持できるゲストを1つに限定し、別ゲストからのバインド要求を拒否する。 |
+| SHM所有権検査とunmap | PTE未登録・Revoke後のアクセスは `TRAP_UNREGISTERED_PAGE` とする。Revokeは旧PTEを削除してTLBを無効化する。 | owner_idが現在タスクと異なる場合やFLIGHT中は `OWNER_MISMATCH` trapで拒否する。HAL DYNAMICバッファは同時マップ可能なゲストを1つに限定する。 |
 
 ### 3.6 Pillar 6: ゼロコピー CSP ランデブー・ハンドオフ (Zero-Copy CSP Rendezvous Handoff)
 <!-- traceability: {IPC_ZeroCopy} {TypeSafeMessaging} {ADR_RendezvousChannel} {ADR_SharedBlockRaii} -->
-- **共有権限移譲シーケンス**: `Revoke`（送信側の PTE を unmap し TLB フラッシュ） $\to$ `Rendezvous`（右辺値ムーブによる所有権移譲） $\to$ `Grant`（受信側の PTE を map）の手順で進める。
+
+1. **`Revoke`**: 送信側の PTE を unmap し、TLB をフラッシュする。
+2. **`Rendezvous`**: 右辺値ムーブにより所有権を移譲する。
+3. **`Grant`**: 受信側の PTE を map する。
+
 - **Move-only RAII による安全性**: コピー不可かつ TCB 共有なしとする。C++23 ムーブセマンティクスにより所有権をゼロコピーで安全に移譲する。共有ブロックは `shm_allocator` が切り出し、RAII デストラクタで自動回収する。 `{Shm_Allocator}`
 
 ---
@@ -181,37 +202,52 @@ ARM Cortex-M33 (ARMv8-M Mainline) における物理レジスタの厳格な役�
 
 ### 4.1 メモリ常駐構造体の物理バイトオフセット
 
-- **`execution_context`（`R0: ctx` 起点、Tier 2 ABIでは計152バイト）**:
-  - `+0x00`: `ip` (u32) — IP（現在または復帰時の WASM PC）
-  - `+0x04`: `sp_base` (u32) — SP領域開始位置（OperandStack バッファ先頭アドレス）
-  - `+0x08`: `sp_limit` (u32) — SP領域終端位置（OperandStack バッファ終端アドレス）
-  - `+0x0C`: `sp_offset` (u32) — SPオフセット / スタックポインタ（現在の OperandStack オフセット / アドレス）
-  - `+0x10`: `local_base_addr` (u32) — ローカル変数領域開始位置（LocalStack バッファ先頭アドレス）
-  - `+0x14`: `local_limit_addr` (u32) — ローカル変数領域終端位置（LocalStack バッファ終端アドレス）
-  - `+0x18`: `local_offset` (u32) — LocalStack上の次の空きraw 32-bit word位置
-  - `+0x1C`: `cf_base_addr` (u32) — 制御フレーム領域開始位置（control_frame バッファ先頭アドレス）
-  - `+0x20`: `cf_limit_addr` (u32) — 制御フレーム領域終了位置（control_frame バッファ終端アドレス）
-  - `+0x24`: `cf_offset` (u32) — 制御フレームオフセット（現在の control_frame 深さ/オフセット）
-  - `+0x28`: `mem_base` (u32) — リニアメモリ開始アドレス（ゲストRAM先頭）
-  - `+0x2C`: `mem_size` (u32) — リニアメモリサイズ（境界チェック用バイト数）
-  - `+0x30`: `globals_base` (u32) — グローバル変数領域開始位置（WASM global 配列基底）
-  - `+0x34`: `globals_limit` (u32) — グローバル変数領域終端位置（WASM global 配列終端）
-  - `+0x38`: `handler_table` (u32) — ハンドラテーブル（命令ディスパッチテーブル参照）
-  - `+0x3C`: `reserved` (u32) — 64bitヘルパー配列のアライメント領域
-  - `+0x40`〜`+0x97`: `jit_helper_ptrs[11]` (u64[11]) — 命令別JITヘルパー関数ポインタ
-  - ※ `+0x28`〜`+0x37` は `vsoc_runtime` の一部である。JIT トレースおよびインタープリタが実行ループ内で直接参照する極小の並行実行環境（16バイト）を定義する。 `{VsocRuntime_Layout}`
-  - ※ 基本ブロック末尾では `TOS, NOS, NNOS` をスタックへフラッシュする。コンテキスト `R0` の `ip` および `sp_offset` を更新して状態を完全同期する。 `{ExecutionContext_Layout}` `{AAPCS_FastCall}`
+#### `execution_context`（`R0: ctx` 起点、Tier 2 ABIでは計152バイト）
 
-- **`call_frame` descriptor（固定容量`call_frame_stack`に格納）**: 関数メタデータへの参照と`LocalStack`開始raw-word位置を保持する。descriptorの物理サイズ・ABI配置はターゲット実装で定義し、LocalStackの値配列に12バイトヘッダを埋め込まない。詳細正本: `runtime_interpreter.md`。 `{CallFrame_Layout}`
+| オフセット | フィールド | 型 | 意味 |
+|---:|---|---|---|
+| `+0x00` | `ip` | u32 | 現在または復帰時の WASM PC |
+| `+0x04` | `sp_base` | u32 | OperandStack バッファ先頭アドレス |
+| `+0x08` | `sp_limit` | u32 | OperandStack バッファ終端アドレス |
+| `+0x0C` | `sp_offset` | u32 | 現在の OperandStack オフセット / アドレス |
+| `+0x10` | `local_base_addr` | u32 | LocalStack バッファ先頭アドレス |
+| `+0x14` | `local_limit_addr` | u32 | LocalStack バッファ終端アドレス |
+| `+0x18` | `local_offset` | u32 | LocalStack上の次の空きraw 32-bit word位置 |
+| `+0x1C` | `cf_base_addr` | u32 | control_frame バッファ先頭アドレス |
+| `+0x20` | `cf_limit_addr` | u32 | control_frame バッファ終端アドレス |
+| `+0x24` | `cf_offset` | u32 | 現在の control_frame 深さ / オフセット |
+| `+0x28` | `mem_base` | u32 | ゲストRAM先頭アドレス |
+| `+0x2C` | `mem_size` | u32 | 境界チェック用のリニアメモリサイズ |
+| `+0x30` | `globals_base` | u32 | WASM global 配列基底 |
+| `+0x34` | `globals_limit` | u32 | WASM global 配列終端 |
+| `+0x38` | `handler_table` | u32 | 命令ディスパッチテーブル参照 |
+| `+0x3C` | `reserved` | u32 | 64bitヘルパー配列のアライメント領域 |
+| `+0x40`〜`+0x97` | `jit_helper_ptrs[11]` | u64[11] | 命令別JITヘルパー関数ポインタ |
 
-- **`control_frame`（独立固定容量バッファに配置、1フレーム計20バイト）**:
-  - `+0x00`: `kind` (u32) — 構造化制御ブロック種別
-  - `+0x04`: `start` (u32) — ブロック開始PC
-  - `+0x08`: `match_end` (u32) — 対応する終了PC
-  - `+0x0C`: `stack_height` (u32) — ブロック突入時の保存済みスタック長
-  - `+0x10`: `result_arity` (u16) — ブロック戻り値数
-  - `+0x12`: `reserved` (u16) — C構造体末尾のアライメント用パディング
-  - 制御ブロック（`block`, `loop`, `if`）の巻き戻し・分岐先脱出を管理する。詳細正本: `runtime_interpreter.md`。 `{ControlFrame_Layout}`
+`+0x28`〜`+0x37` は `vsoc_runtime` の一部である。JIT トレースおよびインタープリタが実行ループ内で直接参照する極小の並行実行環境（16バイト）を定義する。 `{VsocRuntime_Layout}`
+
+基本ブロック末尾では `TOS, NOS, NNOS` をスタックへフラッシュする。コンテキスト `R0` の `ip` および `sp_offset` を更新して状態を完全同期する。 `{ExecutionContext_Layout}` `{AAPCS_FastCall}`
+
+#### `call_frame` descriptor
+
+| 配置 | 保持内容 | 不変条件 |
+|---|---|---|
+| 固定容量 `call_frame_stack` | 関数メタデータへの参照と `LocalStack` 開始raw-word位置 | LocalStackの値配列に12バイトヘッダを埋め込まない。物理サイズ・ABI配置はターゲット実装で定義する。 |
+
+詳細正本: `runtime_interpreter.md`。 `{CallFrame_Layout}`
+
+#### `control_frame`（独立固定容量バッファ、1フレーム計20バイト）
+
+| オフセット | フィールド | 型 | 意味 |
+|---:|---|---|---|
+| `+0x00` | `kind` | u32 | 構造化制御ブロック種別 |
+| `+0x04` | `start` | u32 | ブロック開始PC |
+| `+0x08` | `match_end` | u32 | 対応する終了PC |
+| `+0x0C` | `stack_height` | u32 | ブロック突入時の保存済みスタック長 |
+| `+0x10` | `result_arity` | u16 | ブロック戻り値数 |
+| `+0x12` | `reserved` | u16 | C構造体末尾のアライメント用パディング |
+
+制御ブロック（`block`, `loop`, `if`）の巻き戻し・分岐先脱出を管理する。詳細正本: `runtime_interpreter.md`。 `{ControlFrame_Layout}`
 
 ---
 
@@ -246,37 +282,13 @@ flowchart TD
 
 詳細な各サブシステムの C++ 実装行数（LOC）およびバイト単位の物理リソース（RAM/ROM）見積もり正本は [`resource_budget_estimation.md`](docs/architecture/resource_budget_estimation.md) を参照のこと。
 
-### 6.1 メモリ予算 (RAM: 評価ターゲット 32KB = 32,768 Bytes)
+| 資源 | 評価条件 | 詳細正本 |
+|---|---|---|
+| RAM | 最小構成 SRAM 32KB（32,768 Bytes） | [`resource_budget_estimation.md`](docs/architecture/resource_budget_estimation.md) のRAM予算 |
+| ROM / Flash | 最小構成 Flash 96KB（98,304 Bytes） | [`resource_budget_estimation.md`](docs/architecture/resource_budget_estimation.md) のROM予算 |
+| 製品コード規模 | コメント・テストを除き20,000 SLOC以内（`{Size_20KSLOC}`） | [`resource_budget_estimation.md`](docs/architecture/resource_budget_estimation.md) のSLOC見積もり |
 
-以下は [`resource_budget_estimation.md`](docs/architecture/resource_budget_estimation.md) のRAM詳細（正本）から逆算した実配分値であり、`system_config.md` の `FB_CONF_*` 定数と 1 対 1 に対応する。数値は本概要ではなく詳細正本を常に正とする。
-
-| メモリ領域 | RAM サイズ (Bytes) | 責務 |
-| :--- | ---: | :--- |
-| **統合物理メモリプール** (`ConsolidatedHeap`) | **23,552** | 下記5プールと専用インタープリタスタックの静的事前確保物理プール（`{ADR_FivePoolMemoryModel}`） |
-| — JIT キャッシュアロケータ (`FB_CONF_JIT_CACHE_SIZE`) | 8,192 | 連続8KB（共通コード2KB + Active/Warm/Oldest各2KB）。MPU W^X 保護 |
-| — タスクヒープ (`sum(FB_CONF_TASK_HEAP_SIZES)`) | 4,096 | ゲスト WASM リニアメモリ実体（スロット別ROM配列の総和） |
-| — ホスト用ヒープ（カーネルプール）(`FB_CONF_KERNEL_HEAP_SIZE`) | 4,096 | TCB・コルーチンフレーム。共有メモリ用ヒープ（`FB_CONF_SHM_SIZE`: 1,024 B）を内包 |
-| — ホスト用ヒープ（サブシステムプール）(`FB_CONF_SUBSYS_HEAP_SIZE`) | 3,072 | HAL 通信バッファ・GDB RSP バッファ・ログリングバッファ |
-| — ランタイム用バンプアロケータ (`FB_CONF_RUNTIME_HEAP_SIZE`) | 2,048 | `execution_context`・モジュールインスタンス状態 |
-| — インタープリタ統合スタック (`FB_CONF_INTERP_STACK_SIZE`) | 2,048 | `OperandStack`/`LocalStack`/`control_frame` |
-| **システム静的変数 & OS スタック（プール外）** | **~3,500** | vMMIO TLB・ブレークポイント・ISRキュー・MSPスタック等 |
-| **RAM 合計使用量** | **~27,052** | 32KB SRAM に対し約 5.6 KB（約 17.4%）の余裕を確保 |
-
-`ConsolidatedHeap` の 23,552 Bytes は、5つの割当プール（JIT、タスク、カーネル、サブシステム、ランタイム）と、別枠の専用インタープリタ統合スタックの合計である。スタックは予約済み領域であり、6番目の割当プールではない。内訳は `8,192 + 4,096 + 4,096 + 3,072 + 2,048 + 2,048 = 23,552` Bytes となる。
-
-### 6.2 ストレージ予算 (ROM/Flash: 評価ターゲット 96KB = 98,304 Bytes)
-
-以下は [`resource_budget_estimation.md`](docs/architecture/resource_budget_estimation.md) のROM詳細（正本）から逆算した実配分値。数値は本概要ではなく詳細正本を常に正とする。
-
-| 領域 | ROM サイズ | 内容 |
-| :--- | ---: | :--- |
-| **不変ルックアップテーブル & 辞書** (`.rodata`) | **~8.2 KB** | JIT ステンシルカタログ・命令ハンドラテーブル・IPC レジストリ・RBAC マトリクス・ログ辞書等 |
-| **ハイパーバイザ機械語コード** (`.text`) | **~45〜55 KB** | インタープリタ・JIT コンパイラ・COOS カーネル・ローダー・HAL/WASI/デバッガ |
-| **ROM 合計使用量** | **~53〜63 KB** | 最小構成 Flash 96KB に対し約 34〜45% の空き容量で収容可能 |
-
-### 6.3 コード規模予算 (SLOC)
-- ターゲット: `{Size_20KSLOC}`（コメントとテストを除く製品ソースコード20,000 SLOC以内）
-- 現在の参考推定: pysim物理行数から約21.5〜23.4 KSLOC。計測定義が異なるため、C++実測まで予算達成は未確定。
+RAM、ROM、SLOCの内訳と合計は本概要に重複記載せず、`resource_budget_estimation.md` のみを正本とする。
 
 ---
 

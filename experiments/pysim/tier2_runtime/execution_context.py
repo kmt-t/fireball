@@ -8,7 +8,7 @@ import ctypes
 from collections.abc import Iterator
 
 from interop_abi import ExecutionContextNative, NativeValueStack
-from jit_abi import JIT_CONTEXT_SIZE_BYTES, JIT_HELPER_COUNT
+from jit_abi import JIT_CONTEXT_SIZE_BYTES
 from wasm_module import WASM_LOCAL_SLOT_WORDS
 
 
@@ -71,30 +71,6 @@ class WASMContext:
             return ctypes.c_void_p(ctypes.addressof(self._c_mem))
         return ctypes.c_void_p(0)
 
-    @property
-    def jit_helper_ptrs(self) -> tuple[int, ...]:
-        """Return the instruction-indexed helper addresses in the Native context."""
-
-        return tuple(int(self._c_context.jit_helper_ptrs[index]) for index in range(JIT_HELPER_COUNT))
-
-    def set_jit_helpers(self, helper_addresses: tuple[int, ...]) -> None:
-        """Install instruction-specific CPS helper addresses in the context.
-
-        Entries are ordered by the Tier 2/Tier 3 helper ABI.  The generated
-        JIT code loads the operation-specific member directly; the interpreter
-        never dispatches through this array.
-        """
-
-        assert len(helper_addresses) == JIT_HELPER_COUNT
-        for index, helper_addr in enumerate(helper_addresses):
-            assert helper_addr > 0
-            assert helper_addr <= 0xFFFF_FFFF_FFFF_FFFF
-            self._c_context.jit_helper_ptrs[index] = helper_addr
-    def clear_jit_helper(self) -> None:
-        """Clear all instruction-specific helper addresses."""
-
-        for index in range(JIT_HELPER_COUNT):
-            self._c_context.jit_helper_ptrs[index] = 0
 
     class _LocalsView:
         __slots__ = ("_ctx",)

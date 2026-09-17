@@ -574,17 +574,20 @@ class MemoryManager:
         self.shm_storage = bytearray(FB_CONF_SHM_SIZE)
         self.shm_allocated_bytes = 0
         # One 4KB virtual reservation per block preserves page-granular ownership.
-        self.shm_pages: tuple[ShmPageInfo, ...] = tuple(
-            ShmPageInfo(
-                page_idx=i,
-                owner_id=0,
-                allocated=False,
-                allocated_bytes=0,
-                slot_count=0,
-                physical_addr=0,
-            )
-            for i in range(_FB_CONF_MAX_SHM_PAGE_SLOTS)
+        self.shm_pages: StaticVector[ShmPageInfo] = StaticVector(
+            capacity=_FB_CONF_MAX_SHM_PAGE_SLOTS
         )
+        for i in range(_FB_CONF_MAX_SHM_PAGE_SLOTS):
+            self.shm_pages.append(
+                ShmPageInfo(
+                    page_idx=i,
+                    owner_id=0,
+                    allocated=False,
+                    allocated_bytes=0,
+                    slot_count=0,
+                    physical_addr=0,
+                )
+            )
 
     @property
     def current_task_id(self) -> int:

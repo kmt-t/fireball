@@ -56,14 +56,14 @@ Section 1〜4の既存値は 2026-09-14〜2026-09-16 に同一ワークスペー
 
 [Section 3: JIT Compiler & Runtime Dispatch]
 --------------------------------------------------------------------------------
-  * Copy-and-Patch Compile Speed:       16,431 Traces/sec  (60.86 us/trace)
-  * Compile Cost per WASM Instruction:  15215.4 ns/opcode
-  * 2-Bit Card Marking O(1) Check:      0.63 M ops/s  (1579.2 ns/check)
-  * Sparse JIT Entry Binary Search:     0.68 M ops/s  (1461.5 ns/lookup)
-  * Arithmetic Loop (100,000 iters):    Interp: 6567.46 ms | JIT: 1379.46 ms
+  * Copy-and-Patch Compile Speed:       14,239 Traces/sec  (70.23 us/trace)
+  * Compile Cost per WASM Instruction:  17558.0 ns/opcode
+  * 2-Bit Card Marking O(1) Check:      0.71 M ops/s  (1405.8 ns/check)
+  * Sparse JIT Entry Binary Search:     0.80 M ops/s  (1247.0 ns/lookup)
+  * Arithmetic Loop (100,000 iters):    Interp: 5600.95 ms | JIT: 1533.01 ms
   * Differential Result Check:          Interp=704,982,704 | JIT=704,982,704 (MATCH)
-  * Measured JIT Speedup:               4.76x faster
-  * PIC Context Helper Tail Jump:       0.13 M ops/s  (7988.4 ns/dispatch; 10,000 calls)
+  * Measured JIT Speedup:               3.65x faster
+  * PIC Trace-Header Helper Tail Jump:  0.13 M ops/s  (7805.9 ns/dispatch; 10,000 calls)
 
 [Section 4: JIT Cache Metabolism & Corner Cases]
 --------------------------------------------------------------------------------
@@ -78,9 +78,9 @@ Section 1〜4の既存値は 2026-09-14〜2026-09-16 に同一ワークスペー
 [Section 5: 3D Raytracing Ambient Occlusion (AO-Bench)]
 --------------------------------------------------------------------------------
   * Resolution & Sampling:              32 x 16 (1,600 rays / frame)
-  * Tier 2 (Threaded CPS, native):      6642.29 ms  (241 Rays / Sec)
-  * Tier 3 (Hybrid + JIT):              6535.92 ms  (245 Rays / Sec)
-  * Measured Speedup:                   1.02x faster
+  * Tier 2 (Threaded CPS, native):      6574.14 ms  (243 Rays / Sec)
+  * Tier 3 (Hybrid + JIT):              6996.54 ms  (229 Rays / Sec)
+  * Measured Speedup:                   0.94x (Tier 3 slower)
   * Differential Check:                 PASS (528 bytes, byte-for-byte)
   * Active JIT Cache Bank Traces:       8 compiled traces
 ================================================================================
@@ -105,9 +105,9 @@ Section 1〜4の既存値は 2026-09-14〜2026-09-16 に同一ワークスペー
 - **Copy-and-Patch 高速コンパイル**: ネイティブステンシルのメモリコピーと固定パッチ位置への書き込みを 16,431 Traces/sec（60.86 us/trace）で実行。4命令ブロック換算で 15,215.4 ns/opcode であり、コードバッファ確保も含む。
 - **疎なJITエントリ検索**: 64件のソート済みJITエントリを二分探索し、0.68 M ops/s（1,461.5 ns/lookup）を計測した。JIT用Radix索引は使用しない。
 - **算術演算ループ差分検証**: 100,000 反復の算術ホットループにおいて、Tier 2 インタープリタ（6567.46 ms）に対して Tier 3 JIT（1379.46 ms）が **4.76x 高速化**を達成し、演算結果（`704,982,704`）が完全一致（Exact Match）。
-- **Cヘルパー境界**: 命令別 `jit_helper_ptrs[]` をコンテキスト内の固定スロットから直接読み、JITフレーム復元後に末尾ジャンプする経路は 7,988.4ns/dispatch。pysimの `ctypes` コールバックを含むABI回帰値であり、組込みCの性能値ではない。
+- **Cヘルパー境界**: トレースヘッダの `helper_target_addr` を共通ヘルパー領域から読み、JITフレーム復元後に末尾ジャンプする経路は 7,805.9ns/dispatch。pysimの `ctypes` コールバックを含むABI回帰値であり、組込みCの性能値ではない。
 
-2026-09-16の同一実行では、インタープリタ `6567.46 ms`、JIT `1379.46 ms`、速度比 `4.76x` となった。実行ごとにOSスケジューリング等で時間が変動するため、単発値を絶対性能とは扱わず、同一実行条件内の比較値として扱う。
+2026-09-17の同一実行では、インタープリタ `5600.95 ms`、JIT `1533.01 ms`、速度比 `3.65x` となった。実行ごとにOSスケジューリング等で時間が変動するため、単発値を絶対性能とは扱わず、同一実行条件内の比較値として扱う。
 
 ### 3.4 JIT Cache Metabolism & 3面ローテーション
 - **3面リングバッファ代謝 (Active / Warm / Oldest)**:
@@ -184,7 +184,7 @@ Section 1〜4の既存値は 2026-09-14〜2026-09-16 に同一ワークスペー
 ## 5. シミュレータ性能特性と C++23 実機実装への予測
 
 ### 5.1 Python シミュレータ上での特性分析
-2026-09-17の現行ネイティブCPS経路では、Tier 2が `6642.29 ms`、Tier 3が `6535.92 ms`、速度比は `1.02x` となった。Tier 2は `cps_chain.pyx` の4引数C関数ポインタチェインを通過し、各命令の意味論は既存Pythonハンドラ本体で実行した。Tier 3との描画結果は528バイトで完全一致した。
+2026-09-17の現行ネイティブCPS経路では、Tier 2が `7235.07 ms`、Tier 3が `7545.16 ms`、速度比は `0.96x` となった。Tier 2は `cps_chain.pyx` の4引数C関数ポインタチェインを通過し、各命令の意味論は既存Pythonハンドラ本体で実行した。Tier 3の共有8KBコード領域へのトレース再配置後も、描画結果は528バイトで完全一致した。今回の単一測定では共有コード領域の実行経路がTier 3の速度向上を示さず、性能値は同一環境での比較値として扱う。
 1. **Cython CPSチェイン境界**:
    - 通常命令ではC関数ポインタ表から次ハンドラへ継続し、基本ブロック境界およびジャンプ・分岐・呼出し・戻りでインタープリタ境界へ戻る。今回の統合ベンチマーク出力ではCPS継続回数は個別に公開していないため、チェイン率は主張しない。
 2. **オンデマンド・コンパイルと動的解決**:

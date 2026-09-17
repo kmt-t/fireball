@@ -98,9 +98,9 @@ vSoC全体の可変な実行時状態を保持する構造体。
 | グローバル変数基底 | WASM `global` 配列（4バイト単位でインデックス付け）の開始アドレス | アドレス値 | 32bit符号なし (`[R0, #0x30]`) |
 | グローバル変数終端 | WASM `global` 配列の終端アドレス | アドレス値 | 32bit符号なし (`[R0, #0x34]`) |
 
-`vsoc_runtime` メンバを含む `execution_context` の実体は計152バイト（`+0x00`〜`+0x97`）である。内訳は15個の32ビットフィールド、4バイトの予約領域、および11個の64ビット JIT ヘルパー関数ポインタである。
+`vsoc_runtime` メンバを含む `execution_context` の実体は計64バイト（`+0x00`〜`+0x3F`）である。内訳は16個の32ビットフィールドである。JITヘルパー関数ポインタはトレースヘッダへ移した。
 `OperandStack`、`LocalStack`、`control_frame` はそれぞれ専用の境界オフセットペアを持つ独立バッファである。いずれか1本の伸縮が他の記録位置へ影響することはない（ADR-INTERP-03）。
-JIT の複雑処理委譲先は実行コンテキストの `jit_helper_ptrs[]` から命令別に直接ロードする。JIT コード内へ絶対アドレスを埋め込まない。型定義の正本は [`vsoc_runtime.wit`](docs/components/tier2_runtime/wit/vsoc_runtime.wit) であり、物理配置は および に従う。 `{PositionIndependentCode}`
+JIT の複雑処理委譲先はトレースヘッダの `helper_target_addr` からトレースごとにロードする。JITコード内へ絶対アドレスを埋め込まない。型定義の正本は [`vsoc_runtime.wit`](docs/components/tier2_runtime/wit/vsoc_runtime.wit) であり、物理配置は および に従う。 `{PositionIndependentCode}`
 
 > [!NOTE]
 > **構造体の役割分離**:

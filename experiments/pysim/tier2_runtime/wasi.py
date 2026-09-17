@@ -187,13 +187,11 @@ class Wasi03pEngine:
         self, uri: str, handle: HalBufferHandle, offset: int, length: int
     ) -> int:
         params = ReadOnlyFlatMapView(
-            tuple(
-                sorted(
-                    (
-                        (ARG_BUFFER_HANDLE, handle.buffer_id),
-                        (ARG_OFFSET, offset),
-                        (ARG_LENGTH, length),
-                    )
+            sorted(
+                (
+                    (ARG_BUFFER_HANDLE, handle.buffer_id),
+                    (ARG_OFFSET, offset),
+                    (ARG_LENGTH, length),
                 )
             )
         )
@@ -204,13 +202,11 @@ class Wasi03pEngine:
         self, uri: str, handle: HalBufferHandle, offset: int, max_len: int
     ) -> int:
         params = ReadOnlyFlatMapView(
-            tuple(
-                sorted(
-                    (
-                        (ARG_BUFFER_HANDLE, handle.buffer_id),
-                        (ARG_OFFSET, offset),
-                        (ARG_MAX_LEN, max_len),
-                    )
+            sorted(
+                (
+                    (ARG_BUFFER_HANDLE, handle.buffer_id),
+                    (ARG_OFFSET, offset),
+                    (ARG_MAX_LEN, max_len),
                 )
             )
         )
@@ -351,13 +347,11 @@ class WasiHostContext:
                     self.bindings.stdout_uri,
                     WasiIpcCmd.STREAM_WRITE_BUFFER,
                     ReadOnlyFlatMapView(
-                        tuple(
-                            sorted(
-                                (
-                                    (ARG_BUFFER_HANDLE, handle.buffer_id),
-                                    (ARG_OFFSET, 0),
-                                    (ARG_LENGTH, chunk_len),
-                                )
+                        sorted(
+                            (
+                                (ARG_BUFFER_HANDLE, handle.buffer_id),
+                                (ARG_OFFSET, 0),
+                                (ARG_LENGTH, chunk_len),
                             )
                         )
                     ),
@@ -401,13 +395,11 @@ class WasiHostContext:
                     self.bindings.stdout_uri,
                     WasiIpcCmd.STREAM_READ_BUFFER,
                     ReadOnlyFlatMapView(
-                        tuple(
-                            sorted(
-                                (
-                                    (ARG_BUFFER_HANDLE, handle.buffer_id),
-                                    (ARG_OFFSET, 0),
-                                    (ARG_MAX_LEN, chunk_len),
-                                )
+                        sorted(
+                            (
+                                (ARG_BUFFER_HANDLE, handle.buffer_id),
+                                (ARG_OFFSET, 0),
+                                (ARG_MAX_LEN, chunk_len),
                             )
                         )
                     ),
@@ -490,9 +482,11 @@ class WasiHostContext:
         that ordinal is the direct fit -- not a dict, which would imply a
         sparse/arbitrary key space this table never has.
         """
-        host_funcs: StaticVector[Callable[..., int] | None] = StaticVector.of(
-            tuple(None for _ in range(len(module.imports))), capacity=len(module.imports)
+        host_funcs: StaticVector[Callable[..., int] | None] = StaticVector(
+            capacity=len(module.imports)
         )
+        for _ in module.imports:
+            host_funcs.append(None)
         for idx, _imp in enumerate(module.imports):
             host_funcs[idx] = self.get_handler_for_import(
                 module.import_module_name(idx), module.import_field_name(idx)
@@ -501,9 +495,9 @@ class WasiHostContext:
 
     def build_jit_trampolines(self, module: Module) -> StaticVector[int | None]:
         """Creates ctypes CFUNCTYPE native trampolines for JIT execution."""
-        trampolines: StaticVector[int | None] = StaticVector.of(
-            tuple(None for _ in range(len(module.imports))), capacity=len(module.imports)
-        )
+        trampolines: StaticVector[int | None] = StaticVector(capacity=len(module.imports))
+        for _ in module.imports:
+            trampolines.append(None)
         for idx, imp in enumerate(module.imports):
             handler = self.get_handler_for_import(
                 module.import_module_name(idx), module.import_field_name(idx)

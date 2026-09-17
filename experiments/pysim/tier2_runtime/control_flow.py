@@ -19,6 +19,7 @@ from enum import IntFlag
 
 from leb128 import decode_signed, decode_unsigned
 from system_containers import (
+    freeze_sequence,
     MutableBitStorage,
     ReadOnlyBitStorage,
     ReadOnlyFlatMapStorage,
@@ -544,10 +545,11 @@ def build_control_map(code: bytes) -> ControlMap:
     # fixed-size buffer indexed by `depth` (see FB_CONF_MAX_NESTING_DEPTH) --
     # else_offset is filled in place when this entry's own ELSE is reached,
     # read back when its own END pops it.
-    open_stack: StaticVector[_OpenBlock | None] = StaticVector.of(
-        (None,) * FB_CONF_MAX_NESTING_DEPTH,
-        capacity=FB_CONF_MAX_NESTING_DEPTH,
+    open_stack: StaticVector[_OpenBlock | None] = StaticVector(
+        capacity=FB_CONF_MAX_NESTING_DEPTH
     )
+    for _ in range(FB_CONF_MAX_NESTING_DEPTH):
+        open_stack.append(None)
     depth = 0
 
     off = 0
@@ -588,7 +590,7 @@ def build_control_map(code: bytes) -> ControlMap:
                         "ERR_WASM_UNSUPPORTED_FEATURE: br_table label count exceeds code capacity"
                     )
             default_lbl, off = decode_unsigned(code, off)
-            if not br_table_entries.push_back((start, (tuple(labels), default_lbl))):
+            if not br_table_entries.push_back((start, (freeze_sequence(labels), default_lbl))):
                 assert False, (
                     "ERR_WASM_UNSUPPORTED_FEATURE: br_table count exceeds code capacity"
                 )
@@ -622,8 +624,8 @@ def build_control_map(code: bytes) -> ControlMap:
     return ControlMap(
         blocks=ReadOnlyFlatMapStorage.create(block_entries),
         br_tables=ReadOnlyFlatMapStorage.create(br_table_entries),
-        block_cache=StaticVector.of((None,) * 4, capacity=4),
-        br_table_cache=StaticVector.of((None,) * 4, capacity=4),
+        block_cache=StaticVector.of((None, None, None, None), capacity=4),
+        br_table_cache=StaticVector.of((None, None, None, None), capacity=4),
     )
 
 

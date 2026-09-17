@@ -103,7 +103,7 @@ All Fireball development is strictly governed by the specifications in `docs/` a
 - **Architecture, Document Structure, and Resource Budget**: `docs/architecture/architecture_overview.md`, `docs/architecture/document_structure.md`, `docs/architecture/resource_budget_estimation.md`
 - **Component Specifications**: `docs/components/` (Tier 1 Core/Interface, Tier 2 Runtime, Tier 3 JIT/Platform)
 - **Physical Specifications**: `docs/specs/` (WASM, WASI, GDB RSP, and JIT stencil catalogs)
-- **Integration Test Scenarios**: `docs/architecture/integration_test_scenarios.md`
+- **Integration Test Scenarios**: `docs/qa/integration_test_scenarios.md`
 - **Roadmap & Backlog**: `docs/plans/roadmap_phase.md`, `docs/plans/backlog_list.md`
 - **Tooling and Validation**: `tools/README.md`, `.agents/skills/document-validation/`
 

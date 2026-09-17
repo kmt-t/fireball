@@ -80,7 +80,7 @@ obligation:
 verification_matrix:
   enabled: true
   strict: true
-  document: "docs/architecture/verification_factor_matrix.md"
+  document: "docs/qa/verification_factor_matrix.md"
   component_root: "docs/components"
   test_spec_root: "docs/qa"
   factor_csv: "docs/qa/specs/pairwise_factors.csv"

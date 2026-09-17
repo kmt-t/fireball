@@ -121,10 +121,10 @@ class JITCompilerBenchmark:
         results["interp_loop_result"] = res_interp[0]
         results["jit_loop_result"] = res_jit[0]
 
-        # 3.5 PIC context-owned helper tail dispatch.  This is the terminal
-        # boundary used when a complex operation is implemented by C: the
-        # machine code loads the target from ctx(+0x40), restores its frame,
-        # and tail-jumps.  The callback is a C ABI function pointer supplied
+        # 3.5 PIC trace-header-owned helper tail dispatch.  This is the
+        # terminal boundary used when a complex operation is implemented by C:
+        # the common machine code loads the target from the trace header,
+        # restores its frame, and tail-jumps.  The callback is a C ABI supplied
         # by ctypes in pysim; the measured result includes the simulator's
         # Python callback cost and must not be presented as embedded C speed.
         helper_type = ctypes.CFUNCTYPE(
@@ -148,7 +148,6 @@ class JITCompilerBenchmark:
         helper_ctx = WASMContext()
         helper_ctx.locals = (0,)
         helper_addr = ctypes.cast(helper_fn, ctypes.c_void_p).value or 0
-        helper_ctx.set_jit_helpers((helper_addr,) * 11)
         helper_trace = self.compiler.compile_trace(
             0xF000,
             ((op.LOCAL_GET, 0), (op.LOCAL_SET, 0)),
@@ -157,6 +156,7 @@ class JITCompilerBenchmark:
             4,
             (1,),
             tail_context_helper=True,
+            helper_target_addr=helper_addr,
         )
         assert helper_trace is not None
         helper_iterations = max(1, iterations // 10)
@@ -270,7 +270,7 @@ def main():
     )
     print(f"  * Measured JIT Speedup:               {res['jit_speedup_ratio']:.2f}x faster")
     print(
-        f"  * PIC Context Helper Tail Jump:       {res['context_helper_tail_mops']:.2f} M ops/s  ({res['context_helper_tail_ns']:.1f} ns/dispatch; {res['context_helper_tail_invocations']:,} calls)"
+        f"  * PIC Trace-Header Helper Tail Jump:  {res['context_helper_tail_mops']:.2f} M ops/s  ({res['context_helper_tail_ns']:.1f} ns/dispatch; {res['context_helper_tail_invocations']:,} calls)"
     )
     print("=" * 80)
     print("[PASS] JIT Compiler benchmark completed successfully.")

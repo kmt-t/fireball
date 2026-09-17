@@ -18,6 +18,8 @@
 | 資料 | 内容 |
 | :--- | :--- |
 | [architecture_review_report.md](docs/qa/architecture_review_report.md) | アーキテクチャ概要、下位仕様、形式モデル、WIT、pysim間のレビュー結果と修正順 |
+| [integration_test_scenarios.md](docs/qa/integration_test_scenarios.md) | コンポーネント間の統合受入シナリオと実装検証範囲 |
+| [verification_factor_matrix.md](docs/qa/verification_factor_matrix.md) | 検証因子、必要成果物、テスト仕様、シナリオの対応マトリクス |
 | [wasm_core_mvp_test_results.md](docs/qa/wasm_core_mvp_test_results.md) | 選定したMVP互換WASTテストのファイル別成功・skip件数と集計上の制約 |
 | [pairwise_factors.csv](docs/qa/specs/pairwise_factors.csv) | 直交表テストで使う因子と水準の正本 |
 

@@ -138,18 +138,18 @@ class HalBufferPool:
     def __init__(self, scheduler: Scheduler, vmmio: VMMIOController):
         self._scheduler = scheduler
         self._vmmio = vmmio
-        self._slots: StaticVector[HalBufferHandle] = StaticVector.of(
-            tuple(
+        self._slots: StaticVector[HalBufferHandle] = StaticVector(
+            capacity=FB_CONF_HAL_MAX_BUFFERS
+        )
+        for slot_idx in range(FB_CONF_HAL_MAX_BUFFERS):
+            self._slots.append(
                 HalBufferHandle(
                     buffer_id=slot_idx,
                     capacity=FB_CONF_HAL_BUFFER_SIZE,
                     virtual_address=(FC_DYNAMIC << 28) | (slot_idx << VMMIO_PAGE_SHIFT),
                     _storage=bytearray(FB_CONF_HAL_BUFFER_SIZE),
                 )
-                for slot_idx in range(FB_CONF_HAL_MAX_BUFFERS)
-            ),
-            capacity=FB_CONF_HAL_MAX_BUFFERS,
-        )
+            )
         self._mapped_runtime_task: int | None = None
 
     def bind_runtime(self) -> None:

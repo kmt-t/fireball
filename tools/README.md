@@ -8,7 +8,7 @@
 | :--- | :--- | :--- |
 | 開発・実装上の必須条件 | [開発ルール](../.agents/rules/development-policy.md)、各コーディングルール | 守るべき条件を定める。 |
 | 検証の反パターン | [verification-antipatterns](../.agents/rules/verification-antipatterns.md) | 証拠のない検証、恒真アサーション、未結線テストなどを防ぐ。 |
-| コンポーネントごとの必要証跡と網羅性 | [検証因子・成果物マトリクス](../docs/architecture/verification_factor_matrix.md) | 必要な検証成果物と因子の対応を定める。 |
+| コンポーネントごとの必要証跡と網羅性 | [検証因子・成果物マトリクス](../docs/qa/verification_factor_matrix.md) | 必要な検証成果物と因子の対応を定める。 |
 | テスト仕様・結果の配置 | [品質保証資料の案内](../docs/qa/README.md) | テスト仕様と記録済み証跡を分類する。 |
 | 検証の選び方と実行入口 | この文書 | 変更範囲に合うコマンドを選ぶ。 |
 | ドキュメント検証の運用手順 | [document-validation スキル](../.agents/skills/document-validation/SKILL.md) | 対象を絞り、正本と検査結果を照合する。 |

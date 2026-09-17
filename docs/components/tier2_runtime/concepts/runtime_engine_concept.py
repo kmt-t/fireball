@@ -516,7 +516,7 @@ class HistoryRing:
 
 
 class JITTrace:
-    """Compiled native trace with inlined 16-byte JIT trace header. [master_physical_design.md §2.3.1]"""
+    """Compiled native trace with inlined 48-byte JIT trace header. [master_physical_design.md §2.3.1]"""
 
     HEADER_SIZE_BYTES = 16
 

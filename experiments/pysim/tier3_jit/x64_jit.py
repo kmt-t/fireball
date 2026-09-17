@@ -2,7 +2,7 @@
 experiments/pysim/tier3_jit/x64_jit.py
 Pure Trace-based Copy-and-Patch JIT Compiler for Fireball.
 Compiles individual HOT BasicBlocks / Traces into Position-Independent Code (PIC)
-with 16-byte fixed headers (JITTraceHeader) and direct trace chaining.
+with 48-byte fixed headers (JITTraceHeader) and direct trace chaining.
 Conforms strictly to docs/components/tier3_jit/jit_compiler.md and
 docs/components/tier2_runtime/runtime_interpreter.md.
 CPS 4-argument calling convention:
@@ -15,13 +15,16 @@ CPS 4-argument calling convention:
 from __future__ import annotations
 
 import ctypes
-import sys
 from collections.abc import Iterable, Sequence
 
 import x64_stencils as st
 from control_flow import iter_block_ops
-from exec_memory import ExecutableBuffer
-from jit_abi import JIT_CONTEXT_HELPER_PTR_OFFSET, JIT_CONTEXT_WORD_BYTES
+from common_code import (
+    TRACE_BODY_OFFSET,
+    TRACE_ENTRY_STUB_BYTES,
+    JITCodeCacheRegion,
+)
+from config import JIT_CACHE_ACTIVE_OFFSET_BYTES, JIT_TRACE_HEADER_BYTES
 from jit_cache import JITTrace, JITTraceHeader
 from system_containers import ReadOnlyFlatMapView, StaticVector
 from wasm_module import (
@@ -75,7 +78,6 @@ from wasm_opcodes import (
     LOCAL_TEE,
 )
 
-IS_WINDOWS = sys.platform == "win32"
 I32_MASK = 0xFFFFFFFF
 
 # CPS 4-argument function pointer type matching interpreter opcode_handler
@@ -108,39 +110,6 @@ def emit(
         assert reloc_offset != st.NO_RELOCATION
         patch_at(code, base + reloc_offset, width, value)
     return base
-
-
-def gen_pic_prologue() -> bytes:
-    """
-    Generates the PIC CPS 4-argument prologue for Windows or Linux:
-        Saves callee-saved registers and maps arguments to execution registers:
-          R10 = local_base
-          R12 = sp
-          R13 = ctx
-          (tos passed in arg3: R9 on Win64, RCX on SysV)
-    """
-    code = bytearray()
-    code += bytes((0x53,))  # push rbx
-    code += bytes((0x41, 0x54))  # push r12
-    code += bytes((0x41, 0x55))  # push r13
-    code += bytes((0x41, 0x56))  # push r14
-    code += bytes((0x41, 0x57))  # push r15
-    if IS_WINDOWS:
-        # Windows x64 ABI: (RCX=ctx, RDX=sp, R8=local_base, R9=tos)
-        code += bytes((0x57,))  # push rdi
-        code += bytes((0x48, 0x89, 0xE7))  # mov rdi, rsp
-        code += bytes((0x4D, 0x89, 0xC2))  # mov r10, r8   (R10 = local_base)
-        code += bytes((0x49, 0x89, 0xD4))  # mov r12, rdx  (R12 = sp)
-        code += bytes((0x49, 0x89, 0xCD))  # mov r13, rcx  (R13 = ctx)
-    else:
-        # System V AMD64 ABI (Linux): (RDI=ctx, RSI=sp, RDX=local_base, RCX=tos)
-        code += bytes((0x55,))  # push rbp
-        code += bytes((0x48, 0x89, 0xE5))  # mov rbp, rsp
-        code += bytes((0x49, 0x89, 0xD2))  # mov r10, rdx  (R10 = local_base)
-        code += bytes((0x49, 0x89, 0xF4))  # mov r12, rsi  (R12 = sp)
-        code += bytes((0x49, 0x89, 0xFD))  # mov r13, rdi  (R13 = ctx)
-        code += bytes((0x44, 0x89, 0xC9))  # mov r9d, ecx (preserve CPS TOS)
-    return bytes(code)
 
 
 # Register-resident operand-cache instructions.  R9d is TOS, R11d is NOS,
@@ -356,13 +325,19 @@ class TraceCompiler:
     """
     True Copy-and-Patch Trace Compiler for BasicBlocks producing Position-Independent Code (PIC).
         Appends machine-code stencils into continuous executable memory (`exec_memory.py`),
-        emitting 16-byte physical headers (JITTraceHeader) at offset 0x00 and
-        PIC code starting at offset 0x10.
+        emitting 48-byte physical headers (JITTraceHeader) at offset 0x00 and
+        a small entry stub at offset 0x30.  The stub and all exits route via
+        the common APCCS area selected by header offsets.
     """
+
+    def __init__(self) -> None:
+        # Standalone traces use the same shared-area ABI as cache-resident
+        # traces.  The rotating cache supplies its own region at install time.
+        self._standalone_region = JITCodeCacheRegion()
 
     # (pops, pushes) stack effect per opcode: a sorted flat_map_view over a
     # fixed, compile-time-known opcode integer vocabulary, never a dict or string.
-    _STACK_EFFECT_ENTRIES: tuple[tuple[int, tuple[int, int]], ...] = tuple(
+    _STACK_EFFECT_ENTRIES: StaticVector[tuple[int, tuple[int, int]]] = StaticVector.of(
         sorted(
             (
                 (I32_CONST, (0, 1)),
@@ -412,11 +387,8 @@ class TraceCompiler:
             key=lambda e: e[0],
         )
     )
-    _STACK_EFFECT_ENTRIES_TUPLE: tuple[tuple[int, tuple[int, int]], ...] = tuple(
-        _STACK_EFFECT_ENTRIES
-    )
     STACK_EFFECTS: ReadOnlyFlatMapView[int, tuple[int, int]] = ReadOnlyFlatMapView(
-        _STACK_EFFECT_ENTRIES_TUPLE
+        _STACK_EFFECT_ENTRIES
     )
 
     def compile_trace(
@@ -429,6 +401,7 @@ class TraceCompiler:
         local_widths: Sequence[int],
         *,
         tail_context_helper: bool = False,
+        helper_target_addr: int = 0,
     ) -> JITTrace | None:
         """
         Compiles a single loader-owned BasicBlock into a PIC native JITTrace
@@ -440,8 +413,10 @@ class TraceCompiler:
         """
         assert byte_span > 0
         header = JITTraceHeader(head_wasm_pc=head_pc)
-        code = bytearray()
-        code += gen_pic_prologue()
+        # mov rax, <body address>; jmp <header.common_prologue_offset>
+        code = bytearray(bytes((0x48, 0xB8)) + (0).to_bytes(8, "little"))
+        code += bytes((0xE9, 0, 0, 0, 0))
+        assert len(code) == TRACE_ENTRY_STUB_BYTES
         # Ordered bottom-to-top location map.  Negative values denote the two
         # register cache entries; non-negative values are slots already
         # written to the shared Native operand stack at [R12 + slot * 4].
@@ -559,7 +534,6 @@ class TraceCompiler:
             # Empty blocks and traces with residual values below TOS are not
             # valid standalone JIT exits.  They remain interpreter work.
             return None
-        header_bytes = header.pack()
         # A trace's residual value is VM operand-stack state, not a C return
         # value -- {ExecutionContext_Layout} -- so it is written to memory
         # (via R12 / sp) rather than returned in RAX; the trace itself always
@@ -567,50 +541,42 @@ class TraceCompiler:
         if tail_context_helper:
             assert helper_index < 0
             assert not stack_locations
+            assert helper_target_addr > 0
             helper_base = len(code)
-            code += st.CONTEXT_HELPER_TAIL_JUMP.code
-            helper_offset = st.CONTEXT_HELPER_TAIL_JUMP.reloc_offsets[
-                int(st.Relocation.HELPER_DISP)
-            ]
-            assert helper_offset != st.NO_RELOCATION
-            patch_at(code, helper_base + helper_offset, 4, JIT_CONTEXT_HELPER_PTR_OFFSET)
+            # lea rax, [rip + header]; jmp common helper
+            code += bytes((0x48, 0x8D, 0x05, 0, 0, 0, 0, 0xE9, 0, 0, 0, 0))
+            helper_header_patch_offset = JIT_TRACE_HEADER_BYTES + helper_base + 3
+            helper_exit_patch_offset = JIT_TRACE_HEADER_BYTES + helper_base + 8
+            exit_patch_offset = -1
         elif helper_index >= 0:
             assert not stack_locations
+            if helper_target_addr == 0:
+                return None
             helper_base = len(code)
-            code += st.CONTEXT_HELPER_TAIL_JUMP.code
-            helper_offset = st.CONTEXT_HELPER_TAIL_JUMP.reloc_offsets[
-                int(st.Relocation.HELPER_DISP)
-            ]
-            assert helper_offset != st.NO_RELOCATION
-            patch_at(
-                code,
-                helper_base + helper_offset,
-                4,
-                JIT_CONTEXT_HELPER_PTR_OFFSET + helper_index * JIT_CONTEXT_WORD_BYTES,
-            )
+            code += bytes((0x48, 0x8D, 0x05, 0, 0, 0, 0, 0xE9, 0, 0, 0, 0))
+            helper_header_patch_offset = JIT_TRACE_HEADER_BYTES + helper_base + 3
+            helper_exit_patch_offset = JIT_TRACE_HEADER_BYTES + helper_base + 8
+            exit_patch_offset = -1
         else:
             if stack_locations:
                 assert stack_locations[0] == _STACK_LOCATION_TOS
                 _store_register_to_sp(code, _STACK_LOCATION_TOS, 0)
-            code += st.EPILOGUE_RETURN_VOID.code
+            exit_patch_offset = JIT_TRACE_HEADER_BYTES + len(code) + 1
+            code += bytes((0xE9, 0, 0, 0, 0))
+            helper_header_patch_offset = -1
+            helper_exit_patch_offset = -1
 
-        total_size = len(header_bytes) + len(code)
+        if tail_context_helper:
+            helper_index = -1
+        header.helper_index = helper_index
+        header.helper_target_addr = helper_target_addr
+        total_size = JIT_TRACE_HEADER_BYTES + len(code)
         header.trace_byte_size = total_size
-        # Combine 16-byte header + PIC code stream
+        # Combine the fixed header and the PIC entry/body stream.  Relocation
+        # sites are patched only when this blob is installed into a region.
         full_blob = bytearray(header.pack()) + code
-        buf = ExecutableBuffer(max(len(full_blob), 64))
-        buf.write(0, bytes(full_blob))
-        # Direct ctypes C function entry at +0x10 (past the 16-byte header)
-        # Signature matches interpreter opcode handler:
-        # void (*)(void* ctx, void* sp, void* local_base, uint32_t tos)
-        fn = buf.function_at(
-            16,
-            None,
-            (ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_uint32),
-        )
         trace = JITTrace(
             head_pc=head_pc,
-            fn=fn,
             size_bytes=total_size,
             next_pc=next_pc,
             loops_to=loops_to,
@@ -621,8 +587,28 @@ class TraceCompiler:
                 and (helper_index <= 2 or helper_index >= 7)
                 else 1
             ),
-            buf=buf,
-            raw_addr=buf.address_of(16),
+            code_blob=bytes(full_blob),
+            entry_body_patch_offset=JIT_TRACE_HEADER_BYTES + 2,
+            entry_prologue_patch_offset=JIT_TRACE_HEADER_BYTES + 11,
+            exit_patch_offset=exit_patch_offset,
+            helper_header_patch_offset=helper_header_patch_offset,
+            helper_exit_patch_offset=helper_exit_patch_offset,
+            helper_index=helper_index,
+            helper_target_addr=helper_target_addr,
         )
         trace.header = header
+        assert JIT_CACHE_ACTIVE_OFFSET_BYTES + total_size <= self._standalone_region.region_bytes
+        trace.code_offset = JIT_CACHE_ACTIVE_OFFSET_BYTES
+        fn, raw_addr = self._standalone_region.install_trace(
+            trace.code_offset,
+            trace.code_blob,
+            trace.entry_body_patch_offset,
+            trace.entry_prologue_patch_offset,
+            trace.exit_patch_offset,
+            trace.helper_header_patch_offset,
+            trace.helper_exit_patch_offset,
+        )
+        trace.fn = fn
+        trace.raw_addr = raw_addr
+        trace._exec_buf = self._standalone_region.buffer
         return trace

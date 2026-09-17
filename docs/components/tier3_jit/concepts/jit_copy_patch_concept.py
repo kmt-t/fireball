@@ -75,9 +75,9 @@ class Stencil:
 
 
 class JITTraceHeader:
-    """Fixed-size 16-byte header inlined at the head of every compiled trace in the JIT cache."""
+    """Fixed-size 48-byte header with common-area and helper routing metadata."""
 
-    SIZE_BYTES = 16
+    SIZE_BYTES = 48
 
     def __init__(
         self,
@@ -87,6 +87,12 @@ class JITTraceHeader:
         variant_id: int = 0,
         chain_next_pc: int = 0,
         chain_target_addr: int = 0,
+        common_prologue_offset: int = 0,
+        common_epilogue_offset: int = 32,
+        common_helper_offset: int = 48,
+        helper_index: int = 0xFFFF_FFFF,
+        helper_target_addr: int = 0,
+        absolute_pool_offset: int = 80,
     ):
         self.head_wasm_pc = head_wasm_pc
         self.trace_size_bytes = trace_size_bytes
@@ -94,26 +100,39 @@ class JITTraceHeader:
         self.variant_id = variant_id
         self.chain_next_pc = chain_next_pc
         self.chain_target_addr = chain_target_addr
+        self.common_prologue_offset = common_prologue_offset
+        self.common_epilogue_offset = common_epilogue_offset
+        self.common_helper_offset = common_helper_offset
+        self.helper_index = helper_index
+        self.helper_target_addr = helper_target_addr
+        self.absolute_pool_offset = absolute_pool_offset
 
     def to_bytes(self) -> bytes:
         import struct
 
         return struct.pack(
-            "<IHBBII",
+            "<IHBBIIIIIIQII",
             self.head_wasm_pc,
             self.trace_size_bytes,
             self.flags,
             self.variant_id,
             self.chain_next_pc,
             self.chain_target_addr,
+            self.common_prologue_offset,
+            self.common_epilogue_offset,
+            self.common_helper_offset,
+            self.helper_index,
+            self.helper_target_addr,
+            self.absolute_pool_offset,
+            0,
         )
 
     @classmethod
     def from_bytes(cls, data: bytes | bytearray, offset: int = 0) -> "JITTraceHeader":
-        head_pc, size, flags, variant, chain_next, chain_target = struct.unpack_from(
-            "<IHBBII", data, offset
+        values = struct.unpack_from(
+            "<IHBBIIIIIIQII", data, offset
         )
-        return cls(head_pc, size, flags, variant, chain_next, chain_target)
+        return cls(*values[:6], *values[6:11])
 
 
 _REG_NAME_TO_ENUM = {r.name.lower(): r for r in Reg}
@@ -478,7 +497,7 @@ class CopyPatchJITEngine:
     ) -> tuple[int, int]:
         """
         Batches stencil copy & relocation patching inside a single W^X transaction.
-        Inlines a 16-byte JITTraceHeader at the start of the trace buffer.
+        Inlines a 48-byte JITTraceHeader at the start of the trace buffer.
         Returns (code_start_offset, total_instructions); also sets
         self.last_chain_entry_byte_offset (this trace's own chain entry point, just
         past its prologue -- see 3b in the body) and self.last_chain_branch_byte_addr
@@ -515,11 +534,11 @@ class CopyPatchJITEngine:
         asm = Thumb2Assembler()
         # 1. Begin W^X Transaction (RW + XN)
         self.begin_jit_patch()
-        # 2. Emit 16-byte JIT Trace Header (inlined at the head of every trace)
+        # 2. Emit 48-byte JIT Trace Header (inlined at the head of every trace)
         header_byte_offset = self.byte_write_pos
         self.write_instruction(
             self.current_write_pos,
-            f"// [JIT_TRACE_HEADER] pc=0x{head_wasm_pc:X} (16 bytes)",
+            f"// [JIT_TRACE_HEADER] pc=0x{head_wasm_pc:X} (48 bytes)",
         )
         self.current_write_pos += 1
         self._emit_bytes(bytes(JITTraceHeader.SIZE_BYTES))
@@ -1628,7 +1647,7 @@ def test_mpu_wx_protection() -> None:
 
 
 def test_jit_trace_header_layout() -> None:
-    """Verify that a 16-byte JITTraceHeader is correctly inlined at the head of every compiled trace."""
+    """Verify that a 48-byte JITTraceHeader is correctly inlined at the head of every compiled trace."""
     engine = CopyPatchJITEngine()
     ops = [("i32.const", 42), ("local.set", 0)]
     start_pos, count = engine.compile_trace(
@@ -1640,12 +1659,12 @@ def test_jit_trace_header_layout() -> None:
     )
     assert count > 0
     header_offset, header_len = engine.last_trace_header_range
-    assert header_len == JITTraceHeader.SIZE_BYTES == 16
+    assert header_len == JITTraceHeader.SIZE_BYTES == 48
     assert header_offset == 0
     # Parse the header directly from byte_cache
     header = JITTraceHeader.from_bytes(engine.byte_cache, header_offset)
     assert header.head_wasm_pc == 0x100
-    assert header.trace_size_bytes > 16
+    assert header.trace_size_bytes > 48
     assert header.chain_next_pc == 0x200
     assert header.chain_target_addr == 0x08001020
 

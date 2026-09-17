@@ -12,7 +12,7 @@ dense/sequential containers.
 from __future__ import annotations
 
 import bisect
-from collections.abc import Callable, Iterator, Sequence
+from collections.abc import Callable, Iterable, Iterator, Sequence
 from dataclasses import dataclass
 from typing import Generic, TypeVar
 
@@ -22,6 +22,12 @@ KeyT = TypeVar("KeyT")
 ValT = TypeVar("ValT")
 T = TypeVar("T")
 ALLOWED_BITS = (1, 2, 4)
+
+
+def freeze_sequence(items: Iterable[T]) -> tuple[T, ...]:
+    """Freeze a bounded setup sequence for an immutable ROM-style view."""
+
+    return tuple(items)
 
 # ---------------------------------------------------------------------------
 # 1. BitView (fireball::bit_view<Bits>)

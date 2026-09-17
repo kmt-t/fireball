@@ -32,7 +32,7 @@ from collections.abc import Generator, Iterable
 from dataclasses import dataclass, field
 from enum import IntEnum
 
-from system_containers import StaticVector
+from system_containers import StaticVector, freeze_sequence
 
 IS_WINDOWS = sys.platform == "win32"
 
@@ -119,7 +119,7 @@ def _materialize_auto(gen: Iterable[int]) -> Stencil:
         entries.append((reloc_name, idx))
         code[idx : idx + len(sentinel)] = bytes(len(sentinel))
     entries.sort(key=lambda e: e[0])
-    reloc_entries = tuple(entries)
+    reloc_entries = freeze_sequence(entries)
     reloc_offsets = _relocation_offsets(reloc_entries)
     return Stencil(code=bytes(code), reloc_entries=reloc_entries, reloc_offsets=reloc_offsets)
 
@@ -135,7 +135,7 @@ def _materialize(
     a direct-index offset tuple.
     """
 
-    reloc_entries = tuple(sorted(relocs, key=lambda e: e[0]))
+    reloc_entries = freeze_sequence(sorted(relocs, key=lambda e: e[0]))
     reloc_offsets = _relocation_offsets(reloc_entries)
     return Stencil(code=bytes(gen), reloc_entries=reloc_entries, reloc_offsets=reloc_offsets)
 
@@ -145,15 +145,15 @@ def _relocation_offsets(
 ) -> tuple[int, ...]:
     """Build the dense relocation table once while materializing a stencil."""
 
-    offsets: StaticVector[int] = StaticVector.of(
-        tuple(NO_RELOCATION for _ in range(RELOCATION_COUNT)), capacity=RELOCATION_COUNT
-    )
+    offsets: StaticVector[int] = StaticVector(capacity=RELOCATION_COUNT)
+    for _ in range(RELOCATION_COUNT):
+        offsets.append(NO_RELOCATION)
     for reloc_id, offset in entries:
         index = int(reloc_id)
         assert 0 <= index < RELOCATION_COUNT
         assert offsets[index] == NO_RELOCATION
         offsets[index] = offset
-    return tuple(offsets)
+    return freeze_sequence(offsets)
 
 
 # ---------------------------------------------------------------------------
@@ -573,11 +573,10 @@ def _gen_global_set() -> Generator[int, None, None]:
 
 
 def _gen_context_helper_tail_jump() -> Generator[int, None, None]:
-    """Tail-jump to a complex-operation helper selected by ``ctx``.
+    """Legacy context-selected helper stencil kept for stencil-level tests.
 
-    The helper is loaded directly from ``[r13 + JIT_CONTEXT_HELPER_PTR_OFFSET]``.
-    Restoring the JIT frame before ``jmp rax`` makes the helper a true tail
-    destination and preserves the caller's return address.
+    Runtime traces use ``HEADER_HELPER_TAIL_JUMP``; this stencil remains in the
+    catalog only for the independent encoding tests.
     """
 
     if IS_WINDOWS:
@@ -597,6 +596,30 @@ def _gen_context_helper_tail_jump() -> Generator[int, None, None]:
     yield from _SENTINEL_HELPER_DISP
     yield from _gen_restore_unwind_only()
     yield from (0xFF, 0xE0)  # jmp rax
+
+
+def _gen_header_helper_tail_jump() -> Generator[int, None, None]:
+    """Tail-jump to the helper pointer stored in the trace header.
+
+    RAX contains the trace-header address on entry.  The common stub loads
+    the per-trace CPS function pointer before restoring the JIT frame.
+    """
+
+    if IS_WINDOWS:
+        yield from (0x4C, 0x89, 0xE9)
+        yield from (0x4C, 0x89, 0xE2)
+        yield from (0x4D, 0x89, 0xD0)
+    else:
+        yield from (0x4C, 0x89, 0xEF)
+        yield from (0x4C, 0x89, 0xE6)
+        yield from (0x4D, 0x89, 0xD2)
+        yield from (0x44, 0x89, 0xC9)
+
+    # mov rax, [rax + trace_header.helper_target_addr]
+    yield from (0x48, 0x8B, 0x80)
+    yield from (0x20, 0x00, 0x00, 0x00)
+    yield from _gen_restore_unwind_only()
+    yield from (0xFF, 0xE0)
 
 
 # ---------------------------------------------------------------------------
@@ -664,3 +687,4 @@ TRAP = _materialize(_gen_trap())
 CONTEXT_HELPER_TAIL_JUMP = _materialize_auto(
     _gen_context_helper_tail_jump()
 )
+HEADER_HELPER_TAIL_JUMP = _materialize_auto(_gen_header_helper_tail_jump())

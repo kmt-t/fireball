@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING
 
 from interrupt_event import InterruptEvent
 from recovery import Result
-from system_containers import StaticVector
+from system_containers import StaticVector, freeze_sequence
 from wasm_module import I32
 
 if TYPE_CHECKING:
@@ -143,15 +143,15 @@ class VirqDispatcher:
 
     @property
     def source_table(self) -> tuple[VirqSource, ...]:
-        return tuple(self._sources)
+        return freeze_sequence(self._sources)
 
     @property
     def last_path(self) -> tuple[int, ...]:
-        return tuple(self._last_path)
+        return freeze_sequence(self._last_path)
 
     @property
     def faults(self) -> tuple[VirqFaultCode, ...]:
-        return tuple(self._faults)
+        return freeze_sequence(self._faults)
 
     def register_dispatcher(
         self, node_id: int, function_index: int
@@ -172,7 +172,7 @@ class VirqDispatcher:
     def commit_safepoint(self) -> None:
         """Atomically publish the already validated pending registration table."""
 
-        self._active_functions = tuple(self._pending_functions)
+        self._active_functions = freeze_sequence(self._pending_functions)
 
     def dispatch_interrupt_event(self, event: InterruptEvent) -> DispatchResult:
         """Dispatch one event at a safepoint through the static hierarchy."""

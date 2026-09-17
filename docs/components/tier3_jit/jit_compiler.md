@@ -25,9 +25,10 @@ JITサブシステムは、以下の2つの独立した設計書に責務を分�
 
 ### 3.1 データ構造
 - **`CopyAndPatchEngine`**: WASM命令に対応するネイティブ命令テンプレートを選択・コピーし、即値・分岐先・APIポインタをパッチ適用するクラス。
+- **共通コード領域**: 8KB JIT領域の先頭2KBをAPCCS開始プロローグ、終了エピローグ、Cヘルパー遷移、および絶対アドレスプールへ固定配置する。共通領域のコードオフセットは開始プロローグ`0x000`、終了エピローグ`0x020`、Cヘルパー遷移`0x030`、絶対アドレスプール`0x050`である。絶対アドレスプールは256バイトである。トレース本体の3面ローテーションではこの領域を破棄しない。 `{JIT_MultiBuffer_Cache}`
 - **`constexpr_assembler`**: C++の `constexpr` 機能を活用し、ビルド時に Thumb-2 / RISC-V 命令バイナリを型安全に静的生成する DSL。
 - **命令テンプレート (`jit_template`)**: パッチスロットを含むネイティブ命令列の雛形（[jit_stencil_catalog.md](docs/specs/jit_stencil_catalog.md) 準拠）。
-- **JIT トレースヘッダ (`jit_trace_header`)**: キャッシュに書き込まれる各ネイティブトレースの先頭（`+0x00`）に配置される 16 バイト固定長のメタデータ構造体。
+- **JIT トレースヘッダ (`jit_trace_header`)**: キャッシュに書き込まれる各ネイティブトレースの先頭（`+0x00`）に配置される48バイト固定長のルーティングメタデータ構造体。共通領域オフセットとトレース固有Cヘルパーアドレスを保持する。
 
 ### 3.2 内部ブロック図
 ```mermaid
@@ -180,7 +181,7 @@ Interpreter opcode handlerと同じCPS 4引数の引数レジスタ配置を使�
 // この4本は呼び出し境界でのみ使われ、jit_stencil_catalog.md のトレース本体内 assignable pool
 // (ARM R4-R6, R8-R11 / RISC-V s1-s7) とは物理レジスタが重ならない別の割り当てである。
 typedef handler_result (*interpreter_opcode_handler_t)(
-    execution_context* ctx,        // ARM R0 / RISC-V a0 / x86-64 RCX: 実行コンテキスト (152バイト)
+    execution_context* ctx,        // ARM R0 / RISC-V a0 / x86-64 RCX: 実行コンテキスト (64バイト)
     uint32_t*          sp,         // ARM R1 / RISC-V a1 / x86-64 RDX: オペランドスタックポインタ
     void*              local_base, // ARM R2 / RISC-V a2 / x86-64 R8:  ローカル変数配列基底ポインタ
     uint32_t           tos         // ARM R3 / RISC-V a3 / x86-64 R9:  スタックトップ値 (Top of Stack)
@@ -197,7 +198,7 @@ typedef void (*jit_trace_entry_t)(
 | :--- | :--- | :--- | :--- |
 | テンプレート辞書 | WASM命令に対応するJITテンプレートの検索索引 | アクセス辞書 | `jit_template_map` |
 | 命令テンプレート | WASM命令に対応するネイティブバイナリの雛形 | バイナリビュー | ROM参照（[jit_stencil_catalog.md](docs/specs/jit_stencil_catalog.md) 準拠。Thumb-2 のみを収録し、RISC-V の物理ステンシルは別カタログとして今後定義する） |
-| 位置独立性 (PIC) | 任意アドレス・キャッシュバンクで再コンパイル不要で動作 | 設計制約 | プロセス絶対アドレス埋め込み禁止。`local_base` 相対、`R1(sp)` 相対、`ctx` 内の `jit_helper_ptrs[]` 間接参照、`rel32` 相対分岐のみ |
+| 位置独立性 (PIC) | 任意アドレス・キャッシュバンクで再コンパイル不要で動作 | 設計制約 | 命令列へのプロセス絶対アドレス埋め込み禁止。トレースヘッダの `helper_target_addr` と共通領域オフセット、`local_base` 相対、`R1(sp)` 相対、`rel32` 相対分岐を使用 |
 
 ##### 物理レジスタマッピング一覧表
 <!-- traceability: {JIT_RegisterMapping} {AAPCS_FastCall} -->
@@ -237,7 +238,7 @@ JIT トレースとインタープリタが共有の OperandStack 上でシー�
 
 #### JIT トレース物理メモリレイアウト (`jit_trace_header`)
 <!-- traceability: {JIT_LazyChaining} {SimpleJITArchitecture} {PositionIndependentCode} -->
-JIT キャッシュ内に書き込まれる各トレースは、**先頭に 16 バイト固定長のメタデータヘッダを持ち、直後（`+0x10`）からネイティブ命令列（PIC Code Stream）が展開される**。エントリポイントは `trace_base + 0x10`。
+JIT キャッシュ内に書き込まれる各トレースは、**先頭に48バイト固定長のメタデータヘッダを持ち、直後（`+0x30`）からエントリスタブとネイティブ命令列（PIC Code Stream）が展開される**。エントリスタブはヘッダの共通プロローグオフセットへジャンプし、共通プロローグから本体へ継続する。
 
 | オフセット | フィールド名 | 型 | 説明 |
 | :--- | :--- | :--- | :--- |
@@ -247,7 +248,14 @@ JIT キャッシュ内に書き込まれる各トレースは、**先頭に 16 �
 | `+0x07` | `variant_id` | `uint8_t` | ステンシルバリアント／TOSレジスタ割り当て状態 ID |
 | `+0x08` | `chain_next_pc` | `uint32_t` | 直結チェイン先 UnifiedPC |
 | `+0x0C` | `chain_target_addr` | `uint32_t` | チェイン先ネイティブアドレス（初期値: 復帰スタブ） |
-| `+0x10` | コードストリーム | 可変長 | ネイティブ Thumb-2 / RISC-V 命令列（PIC Code Stream） |
+| `+0x10` | `common_prologue_offset` | `uint32_t` | 共通領域の開始プロローグオフセット |
+| `+0x14` | `common_epilogue_offset` | `uint32_t` | 共通領域の終了エピローグオフセット |
+| `+0x18` | `common_helper_offset` | `uint32_t` | 共通領域のCヘルパー遷移オフセット |
+| `+0x1C` | `helper_index` | `uint32_t` | 委譲命令種別（未使用は `0xFFFFFFFF`） |
+| `+0x20` | `helper_target_addr` | `uint64_t` | このトレース専用CPSヘルパー関数アドレス |
+| `+0x28` | `absolute_pool_offset` | `uint32_t` | 共通絶対アドレスプールのオフセット |
+| `+0x2C` | `reserved` | `uint32_t` | 予約領域 |
+| `+0x30` | コードストリーム | 可変長 | エントリスタブおよびネイティブ命令列（PIC Code Stream） |
 
 #### `constexpr_assembler` (DSL)
 <!-- traceability: {JIT_Encoder} {META_ZeroCostAbstraction} -->
@@ -271,7 +279,7 @@ JIT キャッシュ内に書き込まれる各トレースは、**先頭に 16 �
 - JIT トレースとインタープリタハンドラは同一の CPS 4引数規約（R0=ctx, R1=SP, R2=local_base, R3=tos）を共有する。
    - JIT トレースは直線的な算術・ローカル変数演算、構文デリミタ消去、および SP 即値巻き戻しを伴う多段分岐（`br`, `br_if`）をネイティブインライン展開する。
 - コールフレームや同期が必要な境界命令に達した場合、トレース末尾で Callee-saved を復元する。レジスタ引数を保持したままインタープリタへ末尾ジャンプ（`BX r12`）する。
-   - Cで実装する複雑処理へ委譲する場合は、命令別の同一CPS 4引数関数ポインタをJIT専用コンテキストメンバ `jit_helper_ptrs[]` に保持する。JITは対象命令のメンバを `ctx` 相対で直接ロードし、フレームを復元してから末尾ジャンプするため、関数アドレスはPICコードへ埋め込まれない。委譲前の値は共有Nativeスタックへraw 32bitワードで同期する。 `{PositionIndependentCode}`
+   - Cで実装する複雑処理へ委譲する場合は、対象トレースのヘッダ `helper_target_addr` に同一CPS 4引数関数ポインタを保持する。JITは共通ヘルパーオフセットへヘッダアドレスを渡し、共通コードが関数ポインタをロードしてフレームを復元後に末尾ジャンプする。委譲前の値は共有Nativeスタックへraw 32bitワードで同期する。 `{PositionIndependentCode}`
    - レジスタ規約が完全一致しているためコンテキスト再構築コストはゼロであり、JIT の軽量性（Zero Compile Cost）と完全な制御フロー安全性を両立する。 `{ADR_TosCacheAsymmetry}`
 
 #### JIT トレース検索 & 3面キャッシュ代謝オーケストレーション
@@ -338,7 +346,7 @@ BasicBlock 走査、事前コンパイル済みステンシルのコピー、即
 
 ```mermaid
 flowchart TD
-    Start(["Begin JIT Compilation of BasicBlock"]) --> InitEmit["Emit 16-byte jit_trace_header at trace_base"]
+    Start(["Begin JIT Compilation of BasicBlock"]) --> InitEmit["Emit 48-byte jit_trace_header at trace_base"]
     InitEmit --> LoopOps["Fetch Next WASM Opcode in Block"]
 
     LoopOps --> SelectStencil["Select Precompiled Thumb-2 Stencil from ROM Catalog"]

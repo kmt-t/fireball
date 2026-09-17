@@ -196,7 +196,7 @@ class IPCMessage:
         """Writes a batch of (key, value) pairs into the backing uint64_t shared memory array."""
         self._check_ownership()
         assert self._block is not None, "Cannot write entries without a backing SharedBlock"
-        sorted_entries = tuple(sorted(entries, key=lambda e: e[0]))
+        sorted_entries = sorted(entries, key=lambda e: e[0])
         self._block.write_u64(0, len(sorted_entries))
         for i, (k, v) in enumerate(sorted_entries):
             self._block.write_entry(i + 1, k, v)
@@ -333,19 +333,16 @@ def kv_entries_to_bytes(entries: Sequence[tuple[int, int]], max_len: int | None 
 # roles here because each URI resolves to an independent endpoint instance;
 # an implementation may alias a URI only when it intentionally shares the
 # same endpoint instance, without changing the routing table shape.
-_SERVICE_ENTRIES: tuple[tuple[str, "ServiceDescriptor"], ...] = tuple(sorted(
-    (
-        ("fireball://core/coos/0", ServiceDescriptor(Role.CORE_SERVICE)),
-        ("fireball://dbg/manager/0", ServiceDescriptor(Role.DEBUGGER)),
-        (FB_URI_HAL_GPIO, ServiceDescriptor(Role.HAL_GPIO)),
-        (FB_URI_HAL_I2C, ServiceDescriptor(Role.HAL_I2C)),
-        (FB_URI_HAL_SPI, ServiceDescriptor(Role.HAL_SPI)),
-        (FB_URI_HAL_TIMER, ServiceDescriptor(Role.HAL_TIMER)),
-        (FB_URI_HAL_UART, ServiceDescriptor(Role.HAL_UART)),
-        (FB_URI_HAL_STDOUT, ServiceDescriptor(Role.HAL_STDOUT)),
-    ),
-    key=lambda entry: entry[0],
-))
+_SERVICE_ENTRIES: tuple[tuple[str, "ServiceDescriptor"], ...] = (
+    ("fireball://core/coos/0", ServiceDescriptor(Role.CORE_SERVICE)),
+    ("fireball://dbg/manager/0", ServiceDescriptor(Role.DEBUGGER)),
+    (FB_URI_HAL_GPIO, ServiceDescriptor(Role.HAL_GPIO)),
+    (FB_URI_HAL_I2C, ServiceDescriptor(Role.HAL_I2C)),
+    (FB_URI_HAL_SPI, ServiceDescriptor(Role.HAL_SPI)),
+    (FB_URI_HAL_STDOUT, ServiceDescriptor(Role.HAL_STDOUT)),
+    (FB_URI_HAL_TIMER, ServiceDescriptor(Role.HAL_TIMER)),
+    (FB_URI_HAL_UART, ServiceDescriptor(Role.HAL_UART)),
+)
 
 # ipc_router.md §4.1.1's FB_CONF_ROUTER_ROLE_MATRIX (9x9 constexpr array,
 # rows = sender, columns = target); every DENY cell is listed explicitly, per
@@ -365,12 +362,25 @@ _HAL_ROLES: tuple[Role, ...] = (
 )
 
 
-def _role_row(allowed_targets: Sequence[Role]) -> tuple[bool, ...]:
-    return tuple(any(role == target for target in allowed_targets) for role in Role)
+def _role_row(allowed_targets: Sequence[Role]) -> StaticVector[bool]:
+    row: StaticVector[bool] = StaticVector(capacity=len(Role))
+    for role in Role:
+        row.append(any(role == target for target in allowed_targets))
+    return row
 
 
-FB_CONF_ROUTER_ROLE_MATRIX: tuple[tuple[bool, ...], ...] = (
-    _role_row((Role.CORE_SERVICE, *_HAL_ROLES)),  # from RUNTIME
+FB_CONF_ROUTER_ROLE_MATRIX: tuple[StaticVector[bool], ...] = (
+    _role_row(
+        (
+            Role.CORE_SERVICE,
+            Role.HAL_UART,
+            Role.HAL_STDOUT,
+            Role.HAL_GPIO,
+            Role.HAL_TIMER,
+            Role.HAL_I2C,
+            Role.HAL_SPI,
+        )
+    ),  # from RUNTIME
     _role_row(_HAL_ROLES),  # from CORE_SERVICE
     _role_row(()),  # from HAL_UART (leaf)
     _role_row(()),  # from HAL_STDOUT (leaf)
@@ -378,7 +388,17 @@ FB_CONF_ROUTER_ROLE_MATRIX: tuple[tuple[bool, ...], ...] = (
     _role_row(()),  # from HAL_TIMER (leaf)
     _role_row(()),  # from HAL_I2C (leaf)
     _role_row(()),  # from HAL_SPI (leaf)
-    _role_row((Role.CORE_SERVICE, *_HAL_ROLES)),  # from DEBUGGER
+    _role_row(
+        (
+            Role.CORE_SERVICE,
+            Role.HAL_UART,
+            Role.HAL_STDOUT,
+            Role.HAL_GPIO,
+            Role.HAL_TIMER,
+            Role.HAL_I2C,
+            Role.HAL_SPI,
+        )
+    ),  # from DEBUGGER
 )
 
 
@@ -416,10 +436,14 @@ class IPCRouter:
         self.registry = ReadOnlyFlatMapView(_SERVICE_ENTRIES)
 
         # Pre-allocate one dedicated CSP rendezvous channel per allowed edge in the RBAC matrix
-        self._edge_channels: tuple[tuple[Channel | None, ...], ...] = tuple(
-            tuple(self.scheduler.create_channel() if allowed else None for allowed in row)
-            for row in FB_CONF_ROUTER_ROLE_MATRIX
+        self._edge_channels: StaticVector[StaticVector[Channel | None]] = StaticVector(
+            capacity=len(FB_CONF_ROUTER_ROLE_MATRIX)
         )
+        for row in FB_CONF_ROUTER_ROLE_MATRIX:
+            channels: StaticVector[Channel | None] = StaticVector(capacity=len(row))
+            for allowed in row:
+                channels.append(self.scheduler.create_channel() if allowed else None)
+            self._edge_channels.append(channels)
 
     def _grant_for_task(self, shm_id: int, task: Task) -> bool:
         """Run the grant under the scheduler-selected receiver context."""

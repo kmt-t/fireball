@@ -51,6 +51,7 @@ from config import (
     JIT_CACHE_BANK_CAPACITY_BYTES,
     JIT_CACHE_BANK_COUNT,
     JIT_CACHE_ACTIVE_OFFSET_BYTES,
+    JIT_CACHE_ABSOLUTE_ADDRESS_POOL_BYTES,
     JIT_CACHE_COMMON_CODE_BYTES,
     JIT_CACHE_COMMON_CODE_OFFSET_BYTES,
     FB_CONF_JIT_CACHE_SIZE,
@@ -59,6 +60,7 @@ from config import (
     JIT_CACHE_REGION_BYTES,
     JIT_CACHE_REGION_PAGE_COUNT,
     JIT_CACHE_WARM_OFFSET_BYTES,
+    JIT_TRACE_HEADER_BYTES,
 )
 from system_containers import ReadOnlyRadixBinaryTreeStorage, StaticVector
 from test_support import PcOnlyCompiler, make_pc_only_module
@@ -85,6 +87,31 @@ def test_jitr_00_cache_region_is_two_pages_with_fixed_common_area():
         JIT_CACHE_COMMON_CODE_BYTES + JIT_CACHE_BANK_COUNT * JIT_CACHE_BANK_CAPACITY_BYTES
         == JIT_CACHE_REGION_BYTES
     )
+
+
+def test_jitr_00_common_apccs_area_survives_rotation_and_flush():
+    """APCCS stencils stay in the shared 2KB prefix while banks rotate."""
+    cache = JITMultiBufferCache()
+    common = cache.common_code
+    assert common.region_bytes == JIT_CACHE_REGION_BYTES
+    assert common.common_code_bytes == JIT_CACHE_COMMON_CODE_BYTES
+    assert common.prologue_offset == JIT_CACHE_COMMON_CODE_OFFSET_BYTES
+    assert common.prologue_size > 0
+    assert common.epilogue_size > 0
+    assert common.helper_size > 0
+    assert common.absolute_pool_size == JIT_CACHE_ABSOLUTE_ADDRESS_POOL_BYTES
+    assert common.absolute_pool_offset + common.absolute_pool_size <= common.common_code_bytes
+    snapshot = common.read_common()
+
+    trace_blob = bytes(JIT_TRACE_HEADER_BYTES + 16)
+    trace = JITTrace(head_pc=0x100, size_bytes=len(trace_blob), code_blob=trace_blob)
+    assert cache.insert(trace)
+    assert trace.code_offset == JIT_CACHE_ACTIVE_OFFSET_BYTES
+    assert common.buffer.read(trace.code_offset, len(trace_blob)) == trace_blob
+
+    cache.rotate()
+    cache.flush_all()
+    assert common.read_common() == snapshot
 
 
 def test_hotspot_01_2bit_card_marking_state_transitions():
@@ -315,21 +342,27 @@ def test_jitr_31_to_35_trace_chaining_and_ok_unlinking():
     assert not cache.oldest.has_trace(0x200)
 
 
-def test_jitc_20_trace_header_16byte_physical_layout():
-    """TEST-JITC-20: Trace header is strictly 16 bytes: u32 pc, u16 size, u8 flags, u8 variant, u32 next, u32 target."""
+def test_jitc_20_trace_header_48byte_physical_layout():
+    """TEST-JITC-20: Header carries common offsets and the per-trace helper."""
     hdr = JITTraceHeader(head_wasm_pc=0x12345678, trace_byte_size=128, flags=0x01, variant_id=0x02)
     hdr.chain_next_pc = 0x87654321
     hdr.chain_target_addr = 0x20001000
+    hdr.helper_index = 3
+    hdr.helper_target_addr = 0x0123456789ABCDEF
     raw = hdr.pack()
-    assert len(raw) == 16
+    assert len(raw) == 48
 
-    pc, size, flags, var, next_pc, target = struct.unpack("<IHBBII", raw)
+    fields = struct.unpack("<IHBBIIIIIIQII", raw)
+    pc, size, flags, var, next_pc, target = fields[:6]
     assert pc == 0x12345678
     assert size == 128
     assert flags == 0x01
     assert var == 0x02
     assert next_pc == 0x87654321
     assert target == 0x20001000
+    assert fields[6:9] == (0, 32, 48)
+    assert fields[9] == 3
+    assert fields[10] == 0x0123456789ABCDEF
 
 
 def test_hotspot_05_3bank_cache_rotation_and_eviction_resets_card():
@@ -1199,7 +1232,7 @@ if __name__ == "__main__":
     test_jitr_promote_transfers_inbound_sources_avoiding_dangling_chain()
     test_jitr_bitmap_checked_before_cache_lookup()
     test_jitr_31_to_35_trace_chaining_and_ok_unlinking()
-    test_jitc_20_trace_header_16byte_physical_layout()
+    test_jitc_20_trace_header_48byte_physical_layout()
     test_hotspot_05_3bank_cache_rotation_and_eviction_resets_card()
     test_hotspot_06_short_blocks_never_tracked_avoiding_card_aliasing()
     test_hotspot_07_idle_hook_skips_recompiling_an_already_resident_trace()

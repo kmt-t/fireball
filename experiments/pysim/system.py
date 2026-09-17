@@ -290,7 +290,7 @@ class System:
                 lambda a0, a1, a2, a3, a4, a5: int(self._wasi_random_get(a0, a1)),
             ),
         )
-        syscall_entries = tuple(sorted(syscall_entries, key=lambda x: int(x[0])))
+        syscall_entries = sorted(syscall_entries, key=lambda x: int(x[0]))
         self._syscall_handlers: ReadOnlyFlatMapStorage[int, SyscallHandler] = (
             ReadOnlyFlatMapStorage.create(syscall_entries)
         )

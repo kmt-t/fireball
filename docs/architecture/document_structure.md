@@ -41,14 +41,14 @@ Tier は単なる「OSやハードウェアの実行レイヤ」ではなく、*
   · Guest Adapter (libfireball) — WASMゲストへ組み込むWASI／Fireball ABIアダプタ。物理ドライバやCOOSタスクは実装しない
 
 [ Meta: 横断的メタ設計・開発計画 (Cross-cutting / Meta) ] ─ (全Tier横断)
-  · Architecture (architecture_overview, document_structure, integration_test_scenarios, verification_factor_matrix, keyword_dictionary, resource_budget_estimation)
+  · Architecture (architecture_overview, document_structure, keyword_dictionary, resource_budget_estimation)
   · Plans (roadmap_phase, backlog_list, backlog_archive)
 
 [ Specs: 横串物理仕様・規格マトリクス (Cross-cutting Physical Specs & Catalogs) ] ─ (全Tier横断・具象規格、個々のファイルにTierラベルを明示)
   · Specs (wasm_instruction_set, wasi_preview1_abi [Tier3], gdb_rsp_protocol, jit_stencil_catalog)
 
 [ QA: 横断的品質保証・検証記録 (Cross-cutting Quality Evidence) ] ─ (全Tier横断・実行結果と品質証跡)
-  · QA (`docs/qa/`: テスト仕様書、検証データ、テスト実行結果、品質ゲート・ベンチマーク記録)
+  · QA (`docs/qa/`: 統合テストシナリオ、検証因子・成果物マトリクス、テスト仕様書、検証データ、テスト実行結果、品質ゲート・ベンチマーク記録)
 ```
 
 ### 1.1 各 Tier の定義と配置ディレクトリ

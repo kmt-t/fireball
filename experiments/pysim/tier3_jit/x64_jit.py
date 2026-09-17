@@ -2,7 +2,7 @@
 experiments/pysim/tier3_jit/x64_jit.py
 Pure Trace-based Copy-and-Patch JIT Compiler for Fireball.
 Compiles individual HOT BasicBlocks / Traces into Position-Independent Code (PIC)
-with 48-byte fixed headers (JITTraceHeader) and direct trace chaining.
+with 56-byte x64 fixed headers (JITTraceHeader) and direct trace chaining.
 Conforms strictly to docs/components/tier3_jit/jit_compiler.md and
 docs/components/tier2_runtime/runtime_interpreter.md.
 CPS 4-argument calling convention:
@@ -22,7 +22,7 @@ from common_code import (
     TRACE_ENTRY_STUB_BYTES,
     JITCodeCacheRegion,
 )
-from config import JIT_CACHE_ACTIVE_OFFSET_BYTES, JIT_TRACE_HEADER_BYTES
+from config import JIT_CACHE_ACTIVE_OFFSET_BYTES, JIT_X64_TRACE_HEADER_BYTES
 from jit_cache import JITTrace, JITTraceHeader
 from system_containers import ReadOnlyFlatMapView, StaticVector
 from wasm_module import (
@@ -322,8 +322,8 @@ class TraceCompiler:
     """
     True Copy-and-Patch Trace Compiler for BasicBlocks producing Position-Independent Code (PIC).
         Appends machine-code stencils into continuous executable memory (`exec_memory.py`),
-        emitting 48-byte physical headers (JITTraceHeader) at offset 0x00 and
-        a small entry stub at offset 0x30.  The stub and all exits route via
+        emitting 56-byte physical headers (JITTraceHeader) at offset 0x00 and
+        a small entry stub at offset 0x38.  The stub and all exits route via
         the common APCCS area selected by header offsets.
     """
 
@@ -410,6 +410,7 @@ class TraceCompiler:
         """
         assert byte_span > 0
         header = JITTraceHeader(head_wasm_pc=head_pc)
+        header.chain_next_pc = next_pc or 0
         # mov rax, <body address>; jmp <header.common_prologue_offset>
         code = bytearray(bytes((0x48, 0xB8)) + (0).to_bytes(8, "little"))
         code += bytes((0xE9, 0, 0, 0, 0))
@@ -535,6 +536,8 @@ class TraceCompiler:
         # value -- {ExecutionContext_Layout} -- so it is written to memory
         # (via R12 / sp) rather than returned in RAX; the trace itself always
         # returns void.
+        chain_header_patch_offset = -1
+        chain_fallback_patch_offset = -1
         if tail_context_helper:
             assert helper_index < 0
             assert not stack_locations
@@ -542,8 +545,8 @@ class TraceCompiler:
             helper_base = len(code)
             # lea rax, [rip + header]; jmp common helper
             code += bytes((0x48, 0x8D, 0x05, 0, 0, 0, 0, 0xE9, 0, 0, 0, 0))
-            helper_header_patch_offset = JIT_TRACE_HEADER_BYTES + helper_base + 3
-            helper_exit_patch_offset = JIT_TRACE_HEADER_BYTES + helper_base + 8
+            helper_header_patch_offset = JIT_X64_TRACE_HEADER_BYTES + helper_base + 3
+            helper_exit_patch_offset = JIT_X64_TRACE_HEADER_BYTES + helper_base + 8
             exit_patch_offset = -1
         elif helper_index >= 0:
             assert not stack_locations
@@ -551,23 +554,42 @@ class TraceCompiler:
                 return None
             helper_base = len(code)
             code += bytes((0x48, 0x8D, 0x05, 0, 0, 0, 0, 0xE9, 0, 0, 0, 0))
-            helper_header_patch_offset = JIT_TRACE_HEADER_BYTES + helper_base + 3
-            helper_exit_patch_offset = JIT_TRACE_HEADER_BYTES + helper_base + 8
+            helper_header_patch_offset = JIT_X64_TRACE_HEADER_BYTES + helper_base + 3
+            helper_exit_patch_offset = JIT_X64_TRACE_HEADER_BYTES + helper_base + 8
             exit_patch_offset = -1
         else:
             if stack_locations:
                 assert stack_locations[0] == _STACK_LOCATION_TOS
                 _store_register_to_sp(code, _STACK_LOCATION_TOS, 0)
-            exit_patch_offset = JIT_TRACE_HEADER_BYTES + len(code) + 1
-            code += bytes((0xE9, 0, 0, 0, 0))
             helper_header_patch_offset = -1
             helper_exit_patch_offset = -1
+            if next_pc is not None and loops_to is None:
+                # The context field stores a WASM PC rather than a native
+                # pointer, so the x64 implementation publishes it as u32.
+                code += bytes((0x41, 0xC7, 0x45, 0x00))
+                code += (next_pc & I32_MASK).to_bytes(4, "little")
+                # lea rax, [rip + header]
+                chain_header_patch_offset = JIT_X64_TRACE_HEADER_BYTES + len(code) + 3
+                code += bytes((0x48, 0x8D, 0x05, 0, 0, 0, 0))
+                # mov rdx, [rax + x64 chain_target_addr]
+                code += bytes((0x48, 0x8B, 0x50, 0x10))
+                # test rdx, rdx; unresolved chains use the common epilogue
+                code += bytes((0x48, 0x85, 0xD2))
+                chain_fallback_patch_offset = JIT_X64_TRACE_HEADER_BYTES + len(code) + 2
+                code += bytes((0x0F, 0x84, 0, 0, 0, 0))
+                # A resolved target points past its entry stub, so the common
+                # prologue is not entered a second time.
+                code += bytes((0xFF, 0xE2))
+                exit_patch_offset = -1
+            else:
+                exit_patch_offset = JIT_X64_TRACE_HEADER_BYTES + len(code) + 1
+                code += bytes((0xE9, 0, 0, 0, 0))
 
         if tail_context_helper:
             helper_index = -1
         header.helper_index = helper_index
         header.helper_target_addr = helper_target_addr
-        total_size = JIT_TRACE_HEADER_BYTES + len(code)
+        total_size = JIT_X64_TRACE_HEADER_BYTES + len(code)
         header.trace_byte_size = total_size
         # Combine the fixed header and the PIC entry/body stream.  Relocation
         # sites are patched only when this blob is installed into a region.
@@ -585,11 +607,13 @@ class TraceCompiler:
                 else 1
             ),
             code_blob=bytes(full_blob),
-            entry_body_patch_offset=JIT_TRACE_HEADER_BYTES + 2,
-            entry_prologue_patch_offset=JIT_TRACE_HEADER_BYTES + 11,
+            entry_body_patch_offset=JIT_X64_TRACE_HEADER_BYTES + 2,
+            entry_prologue_patch_offset=JIT_X64_TRACE_HEADER_BYTES + 11,
             exit_patch_offset=exit_patch_offset,
             helper_header_patch_offset=helper_header_patch_offset,
             helper_exit_patch_offset=helper_exit_patch_offset,
+            chain_header_patch_offset=chain_header_patch_offset,
+            chain_fallback_patch_offset=chain_fallback_patch_offset,
             helper_index=helper_index,
             helper_target_addr=helper_target_addr,
         )
@@ -604,6 +628,8 @@ class TraceCompiler:
             trace.exit_patch_offset,
             trace.helper_header_patch_offset,
             trace.helper_exit_patch_offset,
+            trace.chain_header_patch_offset,
+            trace.chain_fallback_patch_offset,
         )
         trace.fn = fn
         trace.raw_addr = raw_addr

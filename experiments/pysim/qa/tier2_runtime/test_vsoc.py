@@ -579,17 +579,13 @@ def test_tier_03_trace_chaining_and_interpreter_fallback():
     ctx = WASMContext()
     ctx.locals = (100,)
     pc = block_a.head_pc
-    # Step 1: Run block A (JIT) -> returns block B head via direct chain
-    pc = engine.run_step(pc, ctx)
-    assert pc == block_b.head_pc
-    assert engine.jit_traces == 1
-    assert ctx.locals[0] == 110
-    # Step 2: Run block B (JIT) -> chain_next is None -> falls back to interpreter at block C
+    # Step 1: Run block A (JIT) -> executes resident block B via direct chain,
+    # then returns at the first non-resident successor C.
     pc = engine.run_step(pc, ctx)
     assert pc == block_c.head_pc
     assert engine.jit_traces == 2
     assert ctx.locals[0] == 130
-    # Step 3: Run block C (Interpreter) -> completes execution smoothly!
+    # Step 2: Run block C (Interpreter) -> completes execution smoothly.
     pc = engine.run_step(pc, ctx)
     assert pc is None
     assert engine.interp_blocks >= 1

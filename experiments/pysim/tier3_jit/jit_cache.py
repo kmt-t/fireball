@@ -16,6 +16,7 @@ from common_code import (
     COMMON_EPILOGUE_OFFSET,
     COMMON_HELPER_OFFSET,
     COMMON_PROLOGUE_OFFSET,
+    TRACE_ENTRY_STUB_BYTES,
     JITCodeCacheRegion,
 )
 from config import (
@@ -28,7 +29,6 @@ from config import (
     JIT_CACHE_WARM_OFFSET_BYTES,
     JIT_CARD_SHIFT,
     JIT_TRACE_DEFAULT_BYTES,
-    JIT_X64_CHAIN_TARGET_OFFSET,
     JIT_X64_TRACE_HEADER_BYTES,
 )
 from system_containers import (
@@ -319,6 +319,8 @@ class JITTrace:
     __slots__ = (
         "_exec_buf",
         "_keepalive",
+        "chain_fallback_patch_offset",
+        "chain_header_patch_offset",
         "chain_next",
         "code_blob",
         "code_offset",
@@ -357,6 +359,8 @@ class JITTrace:
         exit_patch_offset: int = -1,
         helper_header_patch_offset: int = -1,
         helper_exit_patch_offset: int = -1,
+        chain_header_patch_offset: int = -1,
+        chain_fallback_patch_offset: int = -1,
         helper_index: int = -1,
         helper_target_addr: int = 0,
     ):
@@ -370,7 +374,9 @@ class JITTrace:
         self.exit_patch_offset = exit_patch_offset
         self.helper_header_patch_offset = helper_header_patch_offset
         self.helper_exit_patch_offset = helper_exit_patch_offset
-        assert size_bytes >= JIT_TRACE_HEADER_BYTES
+        self.chain_header_patch_offset = chain_header_patch_offset
+        self.chain_fallback_patch_offset = chain_fallback_patch_offset
+        assert size_bytes >= JIT_X64_TRACE_HEADER_BYTES
         self.size_bytes = size_bytes
         self.next_pc = next_pc  # Unconditional fallthrough successor
         self.loops_to = loops_to  # Conditional loop backedge (never auto-chained)
@@ -468,9 +474,9 @@ class JITCacheBank:
     ):
         self.bank_id = bank_id
         self.code_offset_bytes = code_offset_bytes
-        assert capacity_bytes >= JIT_TRACE_HEADER_BYTES
+        assert capacity_bytes >= JIT_X64_TRACE_HEADER_BYTES
         self.capacity_bytes = capacity_bytes
-        self.entry_capacity = max(1, capacity_bytes // JIT_TRACE_HEADER_BYTES)
+        self.entry_capacity = max(1, capacity_bytes // JIT_X64_TRACE_HEADER_BYTES)
         self.used_bytes = 0
         self._keys: StaticVector[int] = StaticVector(capacity=self.entry_capacity)
         self._values: StaticVector[JITTrace | None] = StaticVector(
@@ -619,9 +625,60 @@ class JITMultiBufferCache:
         return None
 
     def register_chain(self, source_pc: int, target_pc: int) -> None:
+        source = self.find_trace(source_pc)
+        target = self.find_trace(target_pc)
+        if source is not None and target is not None:
+            self._link_chain(source, target)
+
+    @staticmethod
+    def _chain_eligible(source: JITTrace) -> bool:
+        return (
+            source.next_pc is not None
+            and source.loops_to is None
+            and not source.has_return_val
+        )
+
+    def _set_chain_target(self, source: JITTrace, target: JITTrace | None) -> None:
+        source.header.chain_target_addr = (
+            0
+            if target is None or target.raw_addr is None
+            else target.raw_addr + TRACE_ENTRY_STUB_BYTES
+        )
+        if source.code_offset is not None and source.raw_addr is not None:
+            self.code_region.patch_header_u64(
+                source.code_offset,
+                source.header.chain_target_addr,
+            )
+
+    def _link_chain(self, source: JITTrace, target: JITTrace) -> None:
+        assert source.next_pc == target.head_pc
+        assert self._chain_eligible(source)
+        target_bank = self.find_bank(target.head_pc)
+        assert target_bank is self.active or target_bank is self.warm
+        source.chain_next = target.head_pc
+        source.header.chain_next_pc = target.head_pc
+        self._set_chain_target(source, target)
+        if not target_bank.inbound_sources.contains(source.head_pc):
+            assert target_bank.inbound_sources.push_back(source.head_pc)
+
+    def _unlink_chain(self, source: JITTrace) -> None:
+        source.chain_next = None
+        source.header.chain_target_addr = 0
+        if source.code_offset is not None and source.raw_addr is not None:
+            self.code_region.patch_header_u64(source.code_offset, 0)
+
+    def _try_link_chain(self, source: JITTrace) -> None:
+        if not self._chain_eligible(source):
+            self._unlink_chain(source)
+            return
+        target_pc = source.next_pc
+        assert target_pc is not None
+        target = self.find_trace(target_pc)
         target_bank = self.find_bank(target_pc)
-        if target_bank is not None and not target_bank.inbound_sources.contains(source_pc):
-            target_bank.inbound_sources.push_back(source_pc)
+        if target is not None and (target_bank is self.active or target_bank is self.warm):
+            self._link_chain(source, target)
+        else:
+            self._unlink_chain(source)
 
     def _install_trace(self, trace: JITTrace) -> None:
         """Install compiled bytes into the shared rotating code region."""
@@ -638,6 +695,8 @@ class JITMultiBufferCache:
             trace.exit_patch_offset,
             trace.helper_header_patch_offset,
             trace.helper_exit_patch_offset,
+            trace.chain_header_patch_offset,
+            trace.chain_fallback_patch_offset,
         )
         trace.fn = fn
         trace.raw_addr = raw_addr
@@ -691,8 +750,11 @@ class JITMultiBufferCache:
         target_bank = self.find_bank(head_pc)
         if target_bank is not None:
             for src_pc in following_sources:
-                if not target_bank.inbound_sources.contains(src_pc):
-                    target_bank.inbound_sources.push_back(src_pc)
+                src_trace = self.find_trace(src_pc)
+                if src_trace is not None:
+                    self._link_chain(src_trace, trace)
+
+        self._try_link_chain(trace)
 
         self.promotions += 1
         self._fast_slots[slot] = (head_pc, trace)
@@ -704,21 +766,14 @@ class JITMultiBufferCache:
             if not self.active.allocate(trace):
                 return False
         self._install_trace(trace)
-        # Chain into active/warm successor if resident (never oldest, never loops_to).
-        # BasicBlock successors are resolved by the loader, so no delimiter
-        # lookup is needed here.
-        succ = trace.next_pc
-        if succ is not None and (self.active.has_trace(succ) or self.warm.has_trace(succ)):
-            trace.chain_next = succ
-            self.register_chain(trace.head_pc, succ)
+        self._try_link_chain(trace)
         # Forward chaining: check if any resident trace in active/warm can now chain into this trace
         for b in (self.active, self.warm):
             for _, resident_t in b.traces:
-                if resident_t.chain_next is None and resident_t.next_pc is not None:
+                if resident_t.chain_next is None and self._chain_eligible(resident_t):
                     res_succ = resident_t.next_pc
                     if res_succ == trace.head_pc:
-                        resident_t.chain_next = trace.head_pc
-                        self.register_chain(resident_t.head_pc, trace.head_pc)
+                        self._link_chain(resident_t, trace)
         slot = self._hash_slot(trace.head_pc)
         self._fast_slots[slot] = (trace.head_pc, trace)
         return True
@@ -746,7 +801,7 @@ class JITMultiBufferCache:
                     src_trace.chain_next
                 ) or self.banks[self.active_idx].get_trace(src_trace.chain_next)
                 if target_in_active is None:
-                    src_trace.chain_next = None  # Unlink to interpreter fallback
+                    self._unlink_chain(src_trace)
 
         purged_pcs = old_oldest_bank.clear()
         self.evictions += len(purged_pcs)
@@ -763,6 +818,9 @@ class JITMultiBufferCache:
     def flush_all(self) -> None:
         """Invalidates all JIT cache banks and unlinks chains ({Debugger_Jit_Flush})."""
         for bank in self.banks:
+            for _, trace in bank.traces:
+                if trace.chain_next is not None:
+                    self._unlink_chain(trace)
             purged = bank.clear()
             self.evictions += len(purged)
             if self.on_evict and purged:

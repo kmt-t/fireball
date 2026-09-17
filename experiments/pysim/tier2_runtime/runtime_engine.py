@@ -586,54 +586,27 @@ class RuntimeEngine:
                     trace = self.cache.lookup(pc)
 
             if trace is not None:
-                # JIT trace execution: loop until reaching the end of the trace chain
-                in_chain = False
-                while trace is not None:
-                    if in_chain:
-                        self.stat_chain_hits += 1
-                    self.stat_jit_invocations += 1
-                    if self.debug:
+                # Native x64 chaining follows the linked bodies without
+                # returning to this loop between every successor.  Count the
+                # resident chain for diagnostics, then invoke its first body
+                # exactly once.
+                chain_count = 1
+                chain_trace = trace
+                while chain_trace.chain_next is not None:
+                    successor = self.cache.find_trace(chain_trace.chain_next)
+                    assert successor is not None
+                    chain_trace = successor
+                    chain_count += 1
+                    assert chain_count <= 1024
+                self.stat_jit_invocations += chain_count
+                self.stat_chain_hits += chain_count - 1
+                if self.debug:
+                    chain_trace.exec_count += 1
+                    if chain_count > 1:
                         trace.exec_count += 1
-                    call_state = self._invoke_trace(interp, call_state, trace)
-                    assert call_state._frame is not None
-                    next_ip = call_state._ip
-                    next_frame = call_state._frame
-                    assert next_frame is not None
-                    if call_state.finished or next_ip == RETURN_SENTINEL_IP:
-                        break
-                    pc = call_state.current_pc()
-                    next_block = self.get_block(pc)
-                    if (
-                        next_block is not None
-                        and self.trackable.is_marked(pc)
-                        and self.bitmap.get_state(pc) == COMPILED
-                    ):
-                        trace = self.cache.lookup(pc)
-                        in_chain = trace is not None
-                    else:
-                        trace = None
-                        break
-
+                call_state = self._invoke_trace(interp, call_state, trace)
                 if not call_state.finished:
                     self.stat_trace_exits_to_interp += 1
-
-                # After trace chain ends, synchronize frame before returning to interpreter
-                if not call_state.finished and call_state._frame is not None:
-                    next_ip = call_state._ip
-                    next_frame = call_state._frame
-                    assert next_frame is not None
-                    if next_ip != RETURN_SENTINEL_IP:
-                        pc = call_state.current_pc()
-                        block_here = self.get_block(pc)
-                        frame_here = next_frame
-                        if block_here is not None and len(frame_here.frames) > block_here.frame_depth:
-                            frame_here.frames.truncate(block_here.frame_depth)
-                        frame_here.boundary_next_pc = (
-                            block_here.next_pc if block_here is not None else None
-                        )
-                        frame_here.boundary_loops_to = (
-                            block_here.loops_to if block_here is not None else None
-                        )
             else:
                 self.stat_interp_steps += 1
                 if pc is not None and self.trackable.is_marked(pc):
@@ -681,27 +654,48 @@ class RuntimeEngine:
             )
         else:
             trace.execute(frame.context_ptr, result_ptr, locals_ptr, 0)
-        res = frame.values.raw_at(result_slot) if trace.has_return_val else 0
-        if trace.has_return_val and trace.loops_to is None:
-            frame.values.set_size(result_slot + trace.result_words)
+        # The native entry may have traversed several successor bodies before
+        # returning through the common epilogue.  Resolve the same resident
+        # chain in metadata so result width and the final WASM continuation
+        # belong to the body that actually returned.
+        terminal_trace = trace
+        chain_depth = 1
+        while terminal_trace.chain_next is not None:
+            successor = self.cache.find_trace(terminal_trace.chain_next)
+            assert successor is not None
+            terminal_trace = successor
+            chain_depth += 1
+            assert chain_depth <= 1024
 
-        if trace.loops_to is not None:
+        res = (
+            frame.values.raw_at(result_slot)
+            if terminal_trace.has_return_val
+            else 0
+        )
+        if terminal_trace.has_return_val and terminal_trace.loops_to is None:
+            frame.values.set_size(result_slot + terminal_trace.result_words)
+
+        if terminal_trace.loops_to is not None:
             # Terminator was BR_IF against a loop backedge: the trace's
             # residual value is the branch condition, consumed here -- it
             # never reaches the WASM operand stack. This is the same
             # continuation rule used by the interpreter boundary.
             cond = res if res is not None else 0
-            next_unified = trace.loops_to if cond != 0 else trace.next_pc
+            next_unified = (
+                terminal_trace.loops_to
+                if cond != 0
+                else terminal_trace.next_pc
+            )
         else:
-            next_unified = trace.next_pc
+            next_unified = terminal_trace.next_pc
 
         # A terminal trace stops before its WASM boundary opcode. Resume at
         # that raw bytecode position so Interpreter's return/branch/end handler
         # owns sentinel publication and the corresponding frame transition.
         if next_unified is None:
-            terminal_block = self.get_block(trace.head_pc)
+            terminal_block = self.get_block(terminal_trace.head_pc)
             assert terminal_block is not None
-            next_ip = (trace.head_pc & 0xFFFF) + terminal_block.byte_span
+            next_ip = (terminal_trace.head_pc & 0xFFFF) + terminal_block.byte_span
             assert next_ip < len(frame.code)
         else:
             next_ip = next_unified & 0xFFFF

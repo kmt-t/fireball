@@ -274,9 +274,27 @@ class IntegratedHybridEngine:
     def _dispatch_normal(self, pc: int, block: BasicBlock, ctx: WASMContext) -> int | None:
         trace = self.cache.lookup(pc) if self.bitmap.get_state(pc) == CardState.COMPILED else None
         if trace is not None:
-            self.jit_traces += 1
+            result_slot = len(ctx.stack)
+            terminal_trace = trace
+            chain_count = 1
+            # A nonzero native target means the machine-code body will traverse
+            # the metadata chain before returning through the common epilogue.
+            # The legacy harness must therefore resume from the terminal body,
+            # rather than dispatching an already executed successor again.
+            if trace.header.chain_target_addr:
+                while terminal_trace.chain_next is not None:
+                    successor = self.cache.find_trace(terminal_trace.chain_next)
+                    assert successor is not None
+                    terminal_trace = successor
+                    chain_count += 1
+                    assert chain_count <= 1024
+            self.jit_traces += chain_count
             trace.invoke(ctx)
-            next_pc = trace.chain_next if trace.chain_next is not None else self._next_pc(block, ctx)
+            if terminal_trace is not trace and terminal_trace.has_return_val:
+                ctx.stack.set_size(result_slot + terminal_trace.result_words)
+            terminal_block = self.get_block(terminal_trace.head_pc)
+            assert terminal_block is not None
+            next_pc = self._next_pc(terminal_block, ctx)
         else:
             if self.trackable.is_marked(pc):
                 self.bitmap.touch(pc)

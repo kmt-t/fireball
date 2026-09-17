@@ -49,7 +49,9 @@ from config import (
     JIT_CACHE_REGION_PAGE_COUNT,
     JIT_CACHE_WARM_OFFSET_BYTES,
     JIT_TRACE_HEADER_BYTES,
+    JIT_X64_CHAIN_TARGET_OFFSET,
 )
+from execution_context import WASMContext
 from helpers import make_interpreter as Interpreter
 from helpers import wat_to_wasm
 from runtime_engine import (
@@ -64,7 +66,7 @@ from runtime_engine import (
 )
 from system_containers import ReadOnlyRadixBinaryTreeStorage, StaticVector
 from test_support import PcOnlyCompiler, make_pc_only_module
-from wasm_opcodes import BR_TABLE
+from wasm_opcodes import BR_TABLE, I32_ADD, I32_CONST, LOCAL_GET, LOCAL_SET
 from wasm_reader import parse
 from x64_jit import TraceCompiler
 
@@ -342,27 +344,83 @@ def test_jitr_31_to_35_trace_chaining_and_ok_unlinking():
     assert not cache.oldest.has_trace(0x200)
 
 
-def test_jitc_20_trace_header_48byte_physical_layout():
-    """TEST-JITC-20: Header carries common offsets and the per-trace helper."""
+def test_jitc_20_trace_header_56byte_x64_physical_layout():
+    """TEST-JITC-20: x64 header carries native-width chain and helper pointers."""
     hdr = JITTraceHeader(head_wasm_pc=0x12345678, trace_byte_size=128, flags=0x01, variant_id=0x02)
     hdr.chain_next_pc = 0x87654321
     hdr.chain_target_addr = 0x20001000
     hdr.helper_index = 3
     hdr.helper_target_addr = 0x0123456789ABCDEF
     raw = hdr.pack()
-    assert len(raw) == 48
+    assert len(raw) == 56
 
-    fields = struct.unpack("<IHBBIIIIIIQII", raw)
-    pc, size, flags, var, next_pc, target = fields[:6]
+    fields = struct.unpack("<IHBBIIQIIIIQII", raw)
+    pc, size, flags, var, next_pc, reserved, target = fields[:7]
     assert pc == 0x12345678
     assert size == 128
     assert flags == 0x01
     assert var == 0x02
     assert next_pc == 0x87654321
     assert target == 0x20001000
-    assert fields[6:9] == (0, 32, 48)
-    assert fields[9] == 3
-    assert fields[10] == 0x0123456789ABCDEF
+    assert reserved == 0
+    assert fields[7:10] == (0, 32, 48)
+    assert fields[10] == 3
+    assert fields[11] == 0x0123456789ABCDEF
+
+
+def test_jitr_native_header_chain_executes_successor_body_once():
+    """A resolved x64 header chain jumps to the successor body without re-entry."""
+
+    compiler = TraceCompiler()
+    source = compiler.compile_trace(
+        0x100,
+        ((I32_CONST, 1), (LOCAL_SET, 0)),
+        0x200,
+        None,
+        8,
+        (1,),
+    )
+    target = compiler.compile_trace(
+        0x200,
+        ((LOCAL_GET, 0), (I32_CONST, 2), (I32_ADD, None), (LOCAL_SET, 0)),
+        None,
+        None,
+        12,
+        (1,),
+    )
+    assert source is not None and target is not None
+
+    cache = JITMultiBufferCache()
+    assert cache.insert(target)
+    assert cache.insert(source)
+    assert source.chain_next == 0x200
+    assert source.header.chain_target_addr != 0
+    assert source.code_offset is not None
+    assert target.raw_addr is not None
+    raw_target = int.from_bytes(
+        cache.common_code.buffer.read(
+            source.code_offset + JIT_X64_CHAIN_TARGET_OFFSET,
+            8,
+        ),
+        "little",
+    )
+    assert raw_target == target.raw_addr + 15
+
+    context = WASMContext()
+    context.locals = (0,)
+    source.execute(context.context_ptr, context.sp_ptr, context.locals_ptr, 0)
+    assert context.locals[0] == 3
+    assert context.native_context.ip == 0x200
+    cache.flush_all()
+    assert source.chain_next is None
+    assert source.header.chain_target_addr == 0
+    assert int.from_bytes(
+        cache.common_code.buffer.read(
+            source.code_offset + JIT_X64_CHAIN_TARGET_OFFSET,
+            8,
+        ),
+        "little",
+    ) == 0
 
 
 def test_hotspot_05_3bank_cache_rotation_and_eviction_resets_card():
@@ -1231,7 +1289,7 @@ if __name__ == "__main__":
     test_jitr_promote_transfers_inbound_sources_avoiding_dangling_chain()
     test_jitr_bitmap_checked_before_cache_lookup()
     test_jitr_31_to_35_trace_chaining_and_ok_unlinking()
-    test_jitc_20_trace_header_48byte_physical_layout()
+    test_jitc_20_trace_header_56byte_x64_physical_layout()
     test_hotspot_05_3bank_cache_rotation_and_eviction_resets_card()
     test_hotspot_06_short_blocks_never_tracked_avoiding_card_aliasing()
     test_hotspot_07_idle_hook_skips_recompiling_an_already_resident_trace()

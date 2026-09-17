@@ -103,6 +103,9 @@ class JITCodeCacheRegion:
         self.helper_size = len(helper)
         self.absolute_pool_offset = COMMON_ABSOLUTE_POOL_OFFSET
         self.absolute_pool_size = JIT_CACHE_ABSOLUTE_ADDRESS_POOL_BYTES
+        assert self.prologue_offset + self.prologue_size <= self.epilogue_offset
+        assert self.epilogue_offset + self.epilogue_size <= self.helper_offset
+        assert self.helper_offset + self.helper_size <= self.common_code_bytes
         assert self.absolute_pool_offset + self.absolute_pool_size <= self.common_code_bytes
 
         common = bytearray(self.common_code_bytes)
@@ -151,11 +154,12 @@ class JITCodeCacheRegion:
                 4, "little", signed=True
             )
 
-        patch_at = entry_body_patch_offset
-        patched[patch_at : patch_at + 8] = (base + offset + TRACE_BODY_OFFSET).to_bytes(
-            8, "little"
-        )
-        patch_rel32(entry_prologue_patch_offset, common_prologue)
+        if entry_body_patch_offset >= 0:
+            patched[entry_body_patch_offset : entry_body_patch_offset + 8] = (
+                base + offset + TRACE_BODY_OFFSET
+            ).to_bytes(8, "little")
+        if entry_prologue_patch_offset >= 0:
+            patch_rel32(entry_prologue_patch_offset, common_prologue)
         if exit_patch_offset >= 0:
             patch_rel32(exit_patch_offset, common_epilogue)
         if chain_header_patch_offset >= 0:
@@ -186,7 +190,20 @@ class JITCodeCacheRegion:
             None,
             (ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_uint32),
         )
-        return fn, self.buffer.address_of(offset + JIT_TRACE_HEADER_BYTES)
+        return fn, self.buffer.address_of(offset + JIT_X64_TRACE_HEADER_BYTES)
+
+    def patch_header_u64(self, trace_offset: int, value: int) -> None:
+        """Patch one x64 header pointer under a complete W^X transaction."""
+
+        assert self.common_code_bytes <= trace_offset < self.region_bytes
+        assert 0 <= value <= 0xFFFF_FFFF_FFFF_FFFF
+        if not self.buffer.patch_in_progress:
+            self.buffer.begin_jit_patch()
+        self.buffer.write(
+            trace_offset + JIT_X64_CHAIN_TARGET_OFFSET,
+            value.to_bytes(8, "little"),
+        )
+        self.buffer.commit_jit_patch()
 
     def read_common(self) -> bytes:
         """Read the reserved prefix for immutability checks."""

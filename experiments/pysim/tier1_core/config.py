@@ -54,8 +54,8 @@ JIT_TRACE_HEADER_BYTES: int = JIT_X64_TRACE_HEADER_BYTES
 # Physical offsets in the trace header.  These are consumed by the common
 # helper stub and are part of the trace/code-cache ABI.
 # Common-code offsets are code-region offsets, not trace-header field offsets.
-# Keep the APCCS entry points in the shared 2KB prefix; header fields at +0x10,
-# +0x14, and +0x18 contain these values for the trace-side rel32 patches.
+# Keep the APCCS entry points in the shared 2KB prefix; x64 header fields at
+# +0x18, +0x1C, and +0x20 contain these values for the trace-side rel32 patches.
 JIT_TRACE_COMMON_PROLOGUE_OFFSET: int = 0
 JIT_TRACE_COMMON_EPILOGUE_OFFSET: int = 32
 JIT_TRACE_COMMON_HELPER_OFFSET: int = 48

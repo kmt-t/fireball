@@ -8,7 +8,7 @@
 <!-- traceability: {ThreadedInterpreter} {JIT_CopyAndPatch} {Wasm32Only} {META_ZeroCostAbstraction} -->
 本仕様書は、Fireball Hypervisor（インタープリタおよび Copy-and-Patch JIT コンパイラ）がサポートする **WASM MVP (v1, 32-bit)** 命令セットの物理マトリクスを定義する正本である。
 
-全バイトコードは Cortex-M33（ARMv8-M）ターゲットにおける `__fastcall` 継続渡し（CPS）4引数シグネチャ（`R0: ctx`, `R1: sp`, `R2: local_base`, `R3: tos`）ハンドラ、および JIT Stencil テンプレート（同じ `R0`〜`R3` の CPS 引数マッピングを共有し、トレース内部でも `R3` をそのまま TOS キャッシュとして流用する。加えて Callee-saved 任意割当プール `R4-R6, R8-R11`（`R4`: NOS（次段キャッシュ）、`R5`: NNOS（第3段キャッシュ）、`R6`: 一時スクラッチ、メモリアクセス時は `R8`/`R9` を `mem_base`/`mem_size` に固定）、`R12`: 一時スクラッチ）へのマッピングを一意に確定する。基本ブロック末尾では、スタックがプッシュされた場合に `TOS, NOS, NNOS` をスタック（`[R1, #offset]`）へフラッシュし、コンテキスト `R0` の `ip`（+0x00）および `sp_offset`（+0x0C）を同期する。
+全バイトコードは Cortex-M33（ARMv8-M）ターゲットにおける継続渡し4論理引数（`R0: ctx`, `R1: sp`, `R2: local_base`, `R3: tos`）のハンドラ、および JIT Stencil テンプレート（同じ `R0`〜`R3` の論理引数マッピングを共有し、トレース内部でも `R3` をそのまま TOS キャッシュとして流用する。加えて Callee-saved 任意割当プール `R4-R6, R8-R11`（`R4`: NOS（次段キャッシュ）、`R5`: NNOS（第3段キャッシュ）、`R6`: 一時スクラッチ、メモリアクセス時は `R8`/`R9` を `mem_base`/`mem_size` に固定）、`R12`: 一時スクラッチ）へのマッピングを一意に確定する。基本ブロック末尾では、スタックがプッシュされた場合に `TOS, NOS, NNOS` をスタック（`[R1, #offset]`）へフラッシュし、コンテキスト `R0` の `ip`（+0x00）および `sp_offset`（+0x0C）を同期する。
 
 ---
 
@@ -29,19 +29,19 @@
 ### 3.1 制御フロー命令 (Control Flow)
 <!-- traceability: {ThreadedInterpreter} {JIT_RuntimeAPI_Fallback} {ContextPointerRegister} -->
 
-| Opcode | 命令名 | スタック遷移 | インタープリタ実装 (`__fastcall` CPS) | JIT Stencil 提供 | 物理動作・備考 |
+| Opcode | 命令名 | スタック遷移 | インタープリタ実装（継続渡し4論理引数） | JIT Stencil 提供 | 物理動作・備考 |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | `0x00` | `unreachable` | `[] -> []` | トラップハンドラへジャンプ | あり (Direct Trap) | `BKPT #0` またはトラップルーチン呼出 |
 | `0x01` | `nop` | `[] -> []` | `ip + 1` へ継続渡し | あり (Eliminated) | JIT 時は命令生成をスキップ（0 byte） |
-| `0x02` | `block` | `[] -> []` | `control_frame` をスタックへプッシュ | あり (Label Bind) | 分岐先ラベルの記録のみ |
+| `0x02` | `block` | `[] -> []` | 制御ブロックの復帰情報を記録 | あり (Label Bind) | 分岐先ラベルの記録のみ |
 | `0x03` | `loop` | `[] -> []` | ループ先頭 PC を記録してプッシュ | あり (Label Bind) | 後方ジャンプ先ターゲット |
 | `0x04` | `if` | `[i32] -> []` | 条件判定 $\to$ 偽なら else/end へ分岐 | あり (Conditional Branch) | `CBZ` / `CBNZ` または `BNE` |
 | `0x05` | `else` | `[] -> []` | 対応する end の直後へ無条件ジャンプ | あり (Unconditional Branch) | `B.W <end_label>` |
-| `0x0B` | `end` | `[] -> []` | `control_frame` をポップ | あり (Label Target) | スコープ終了ラベル |
+| `0x0B` | `end` | `[] -> []` | 制御ブロックの復帰情報を取り除く | あり (Label Target) | スコープ終了ラベル |
 | `0x0C` | `br` | `[] -> []` | 指定深度のラベルへ無条件ジャンプ | あり (Branch) | `B.W <target_label>` |
 | `0x0D` | `br_if` | `[i32] -> []` | TOS $\ne 0$ ならラベルへジャンプ | あり (Branch Cond) | `CMP r3, #0; BNE.W <target>` |
 | `0x0E` | `br_table` | `[i32] -> []` | テーブルインデックス分岐 | あり (Jump Table) | `TBB` / `TBH` テーブル分岐 |
-| `0x10` | `call` | `[t1*] -> [t2*]`| `call_frame` を積んで関数呼出 | フォールバック (Runtime API / Interp Fallback) | JIT 複雑度低減のため `vsoc_call_function` へ委譲 |
+| `0x10` | `call` | `[t1*] -> [t2*]`| 関数呼出し記述子を積んで関数を呼び出す | フォールバック (Runtime API / Interp Fallback) | JIT 複雑度低減のためランタイムへ委譲 |
 | `0x11` | `call_indirect`| `[t1*, i32] -> [t2*]`| 関数テーブル照合 $\to$ 間接呼出 | フォールバック (Runtime API / Interp Fallback) | 型シグネチャ照合＋ `vsoc_call_indirect` へ委譲 |
 
 ---

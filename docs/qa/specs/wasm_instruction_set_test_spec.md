@@ -30,7 +30,7 @@
 | TEST-WASM-12 | `block`/`loop`/`if`/`else`/`end`のラベル解決 | ネストしたブロック | 実行 | 分岐先ラベルが正しく記録・解決される | wasm_instruction_set.md (Control Flow) |
 | TEST-WASM-13 | `br`/`br_if`/`br_table` | 各種分岐条件 | 実行 | スタック遷移`[i32]->[]`等を満たし、正しい深さへジャンプ | wasm_instruction_set.md (Control Flow) |
 | TEST-WASM-14 | `return` | 関数呼び出し中 | 実行 | コールフレームをpopして復帰 | wasm_instruction_set.md (Control Flow) |
-| TEST-WASM-15 | `call`/`call_indirect` | 直接/間接呼び出し | 実行 | `call_frame`を積んで関数呼出。`call_indirect`は型シグネチャ照合を行う | wasm_instruction_set.md (Control Flow) |
+| TEST-WASM-15 | `call`/`call_indirect` | 直接/間接呼び出し | 実行 | 関数呼出し記述子を積んで関数を呼び出す。`call_indirect`は型シグネチャ照合を行う | wasm_instruction_set.md (Control Flow) |
 
 ### パラメトリック
 

@@ -68,7 +68,11 @@ from wasm_opcodes import (
     I32_ADD,
     I32_AND,
     I32_CONST,
+    I32_DIV_S,
+    I32_DIV_U,
     I32_MUL,
+    I32_REM_S,
+    I32_REM_U,
     I32_SHL,
     I32_SUB,
     I64_ADD,
@@ -86,6 +90,12 @@ _HELPER_TYPE = ctypes.CFUNCTYPE(
     ctypes.POINTER(ctypes.c_uint32),
     ctypes.c_void_p,
     ctypes.c_uint32,
+)
+_I32_HELPER_TYPE = ctypes.CFUNCTYPE(
+    None,
+    ctypes.c_uint32,
+    ctypes.c_uint32,
+    ctypes.POINTER(ctypes.c_uint32),
 )
 
 
@@ -129,8 +139,8 @@ def _make_raw_helpers() -> tuple[tuple[int, ...], tuple[ctypes._CFuncPtr, ...]]:
     return tuple(ctypes.cast(fn, ctypes.c_void_p).value or 0 for fn in callbacks), callbacks
 
 
-def test_complex_helpers_use_shared_raw_slots_for_i64_and_floating_point():
-    """Complex values cross the JIT boundary as raw 32-bit words, not Python values."""
+def test_complex_helpers_use_shared_value_slots_for_wide_values():
+    """Wide helper values use the existing shared value-slot contract."""
     addresses, keepalive = _make_raw_helpers()
     compiler = TraceCompiler()
     ctx = WASMContext()
@@ -261,6 +271,58 @@ def test_trace_compiler_cps_4arg_and_pic():
     ctx.locals = (5, 0)
     trace.invoke(ctx)
     assert ctx.locals[1] == 40
+
+
+def test_x64_division_and_remainder_use_helper_boundary() -> None:
+    """x64 routes integer division and remainder through the helper ABI."""
+    compiler = TraceCompiler()
+    def signed(value: int) -> int:
+        return ctypes.c_int32(value).value
+
+    def signed_div(left: int, right: int) -> int:
+        quotient = abs(left) // abs(right)
+        return -quotient if (left < 0) != (right < 0) else quotient
+
+    def signed_rem(left: int, right: int) -> int:
+        remainder = abs(left) % abs(right)
+        return -remainder if left < 0 else remainder
+
+    def make_helper(operation: int) -> ctypes._CFuncPtr:
+        def helper(left: int, right: int, result: ctypes._Pointer) -> None:
+            if operation == I32_DIV_S:
+                value = signed_div(signed(left), signed(right))
+            elif operation == I32_DIV_U:
+                value = left // right
+            elif operation == I32_REM_S:
+                value = signed_rem(signed(left), signed(right))
+            else:
+                assert operation == I32_REM_U
+                value = left % right
+            result[0] = value & 0xFFFF_FFFF
+
+        return _I32_HELPER_TYPE(helper)
+
+    for operation, left, right, expected in (
+        (I32_DIV_S, 0xFFFF_FFF9, 2, 0xFFFF_FFFD),
+        (I32_DIV_U, 0xFFFF_FFF0, 2, 0x7FFF_FFF8),
+        (I32_REM_S, 0xFFFF_FFF9, 2, 0xFFFF_FFFF),
+        (I32_REM_U, 0xFFFF_FFF0, 3, 0),
+    ):
+        helper = make_helper(operation)
+        trace = compiler.compile_trace(
+            0,
+            ((I32_CONST, left), (I32_CONST, right), (operation, None)),
+            3,
+            None,
+            3,
+            (),
+            helper_target_addr=ctypes.cast(helper, ctypes.c_void_p).value or 0,
+        )
+        assert trace is not None
+        assert trace.header.common_helper_offset == 352
+        ctx = WASMContext()
+        trace.invoke(ctx)
+        assert ctx.stack[0] == expected, (operation, ctx.stack[0], expected)
 
 
 def test_trace_compiler_bitwise_and_shifts_pic():

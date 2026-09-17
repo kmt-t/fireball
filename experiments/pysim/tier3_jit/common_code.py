@@ -1,4 +1,4 @@
-"""Shared non-evictable APCCS code area for the fixed-size JIT cache region."""
+"""Shared non-evictable AAPCS code area for the fixed-size JIT cache region."""
 
 from __future__ import annotations
 
@@ -14,6 +14,7 @@ from config import (
     JIT_TRACE_COMMON_EPILOGUE_OFFSET,
     JIT_TRACE_COMMON_HELPER_OFFSET,
     JIT_TRACE_COMMON_PROLOGUE_OFFSET,
+    JIT_TRACE_TYPED_I32_HELPER_OFFSET,
     JIT_X64_CHAIN_TARGET_OFFSET,
     JIT_X64_TRACE_HEADER_BYTES,
 )
@@ -26,13 +27,14 @@ IS_WINDOWS = sys.platform == "win32"
 COMMON_PROLOGUE_OFFSET = JIT_TRACE_COMMON_PROLOGUE_OFFSET
 COMMON_EPILOGUE_OFFSET = JIT_TRACE_COMMON_EPILOGUE_OFFSET
 COMMON_HELPER_OFFSET = JIT_TRACE_COMMON_HELPER_OFFSET
+COMMON_TYPED_I32_HELPER_OFFSET = JIT_TRACE_TYPED_I32_HELPER_OFFSET
 COMMON_ABSOLUTE_POOL_OFFSET = 80
 TRACE_ENTRY_STUB_BYTES = 15
 TRACE_BODY_OFFSET = JIT_X64_TRACE_HEADER_BYTES + TRACE_ENTRY_STUB_BYTES
 
 
 def gen_pic_prologue() -> bytes:
-    """Generate the APCCS/CPS prologue template kept in common code."""
+    """Generate the AAPCS/CPS prologue template kept in common code."""
 
     code = bytearray()
     code += bytes((0x53,))  # push rbx
@@ -63,10 +65,36 @@ def _align(value: int, alignment: int) -> int:
     return (value + alignment - 1) & ~(alignment - 1)
 
 
+def gen_i32_helper_entry() -> bytes:
+    """Generate the AAPCS direct entry for two i32 inputs and one result pointer."""
+
+    code = bytearray()
+    if IS_WINDOWS:
+        # R11d=lhs, R9d=rhs, R12=result slot -> RCX, RDX, R8.
+        code += bytes((0x44, 0x89, 0xD9))
+        code += bytes((0x44, 0x89, 0xCA))
+        code += bytes((0x4D, 0x89, 0xE0))
+        code += bytes((0x4C, 0x8B, 0xB0, 0x28, 0x00, 0x00, 0x00))
+        code += bytes((0x48, 0x83, 0xEC, 0x28))
+        code += bytes((0x41, 0xFF, 0xD6))
+        code += bytes((0x48, 0x83, 0xC4, 0x28))
+    else:
+        # R11d=lhs, R9d=rhs, R12=result slot -> RDI, RSI, RDX.
+        code += bytes((0x44, 0x89, 0xDF))
+        code += bytes((0x44, 0x89, 0xCE))
+        code += bytes((0x4C, 0x89, 0xE2))
+        code += bytes((0x4C, 0x8B, 0xB0, 0x28, 0x00, 0x00, 0x00))
+        code += bytes((0x48, 0x83, 0xEC, 0x08))
+        code += bytes((0x41, 0xFF, 0xD6))
+        code += bytes((0x48, 0x83, 0xC4, 0x08))
+    code += bytes((0xE9, 0, 0, 0, 0))
+    return bytes(code)
+
+
 class JITCodeCacheRegion:
     """Own the contiguous 8KB executable region and its common 2KB prefix.
 
-    The APCCS common prefix is written once and is deliberately outside the three
+    The AAPCS common prefix is written once and is deliberately outside the three
     rotating banks.  The remaining offsets are used by ``JITCacheBank`` for
     Active, Warm, and Oldest trace storage.  A single W^X buffer is shared by
     all installed traces in a cache instance.
@@ -95,6 +123,8 @@ class JITCodeCacheRegion:
         prologue = gen_pic_prologue()
         epilogue = st.EPILOGUE_RETURN_VOID.code
         helper = st.HEADER_HELPER_TAIL_JUMP.code
+        i32_helper_entry = gen_i32_helper_entry()
+        assert len(i32_helper_entry) == 32
         self.prologue_offset = 0
         self.prologue_size = len(prologue)
         self.epilogue_offset = COMMON_EPILOGUE_OFFSET
@@ -107,11 +137,20 @@ class JITCodeCacheRegion:
         assert self.epilogue_offset + self.epilogue_size <= self.helper_offset
         assert self.helper_offset + self.helper_size <= self.common_code_bytes
         assert self.absolute_pool_offset + self.absolute_pool_size <= self.common_code_bytes
+        assert COMMON_TYPED_I32_HELPER_OFFSET + len(i32_helper_entry) <= self.common_code_bytes
 
         common = bytearray(self.common_code_bytes)
         common[self.prologue_offset : self.prologue_offset + self.prologue_size] = prologue
         common[self.epilogue_offset : self.epilogue_offset + self.epilogue_size] = epilogue
         common[self.helper_offset : self.helper_offset + self.helper_size] = helper
+        typed_i32_exit = COMMON_TYPED_I32_HELPER_OFFSET + len(i32_helper_entry) - 4
+        typed_i32_displacement = COMMON_EPILOGUE_OFFSET - (typed_i32_exit + 4)
+        i32_helper_entry = bytearray(i32_helper_entry)
+        i32_helper_entry[-4:] = typed_i32_displacement.to_bytes(4, "little", signed=True)
+        common[
+            COMMON_TYPED_I32_HELPER_OFFSET :
+            COMMON_TYPED_I32_HELPER_OFFSET + len(i32_helper_entry)
+        ] = i32_helper_entry
         self.buffer.write(0, bytes(common))
 
     def install_trace(
@@ -128,7 +167,7 @@ class JITCodeCacheRegion:
     ) -> tuple[Callable[..., int | None], int]:
         """Relocate and copy one trace using only offsets from its header.
 
-        The trace blob contains no inline APCCS code.  Its entry stub and exit
+        The trace blob contains no inline AAPCS code.  Its entry stub and exit
         stubs are patched against the common offsets serialized in the header,
         so the context does not participate in code-cache routing.
         """

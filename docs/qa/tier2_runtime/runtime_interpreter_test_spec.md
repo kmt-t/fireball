@@ -3,42 +3,42 @@
 ## 1. 目的と対象範囲
 
 正本: [`runtime_interpreter.md`](docs/components/tier2_runtime/runtime_interpreter.md), [`wasm_instruction_set.md`](docs/specs/wasm_instruction_set.md)
-`{ThreadedInterpreter}`（CPS 4引数ハンドラ方式）、独立した3本の値スタックとCallFrame descriptor stack、ラベルアリティに基づくスタックプルーニング、i32/i64演算、境界チェック付きメモリアクセス、Safepointポーリングを検証する。
+`{ThreadedInterpreter}`（4論理引数の継続渡しハンドラ方式）、独立した3本の値領域と関数呼出し記述子領域、ラベルアリティに基づくスタックプルーニング、i32/i64演算、境界チェック付きメモリアクセス、Safepointポーリングを検証する。
 
 ## 2. テストケース一覧
 
-### CPSディスパッチ方式そのもの ({ThreadedInterpreter})
+### 継続渡しディスパッチ方式そのもの ({ThreadedInterpreter})
 
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| TEST-INTP-01 | ハンドラのシグネチャと継続結果がCPS 4引数(`ctx, sp, local_base, tos`)である | 実装コードを確認 | 各opcodeハンドラの引数と結果を確認 | すべてのハンドラが同一の4引数シグネチャを持ち、継続時は次回呼び出し用の4引数とトラップ状態を返す。正常終了は継続なし、トラップは非NULLのトラップ情報で表す | wasm_instruction_set.md, runtime_interpreter.md |
+| TEST-INTP-01 | ハンドラのシグネチャと継続結果が4論理引数(`ctx, sp, local_base, tos`)である | 実装コードを確認 | 各opcodeハンドラの引数と結果を確認 | すべてのハンドラが同一の4引数シグネチャを持ち、継続時は次回呼び出し用の4引数とトラップ状態を返す。正常終了は継続なし、トラップは非NULLのトラップ情報で表す | wasm_instruction_set.md, runtime_interpreter.md |
 | TEST-INTP-02 | ハンドラテーブルによるディスパッチ | - | ディスパッチ機構を確認 | opcode→ハンドラ関数のテーブル参照で分岐し、線形if-elif連鎖ではない | 同上 |
 | TEST-INTP-03 | Interpreter handlerとJIT traceの引数ABI | JITトレース生成 | handlerとtrace entryの型・引数配置を比較 | 両者は`ctx, sp, local_base, tos`の4引数配置を共有するが、Interpreter handlerは`handler_result`、JIT trace entryは`void`を返し、関数ポインタ型は分離される | `{ContextPointerRegister}` `{AAPCS_FastCall}` `{PositionIndependentCode}` |
 | TEST-INTP-04 | JITトレースからインタープリタへのシームレスフォールバック | 未コンパイルのブロックへ分岐 | トレース実行完了 | トレース末尾でインタープリタへスムーズに復帰し、後続ブロックをインタープリタが継続実行する | `{JIT_LazyChaining}` `{JIT_RuntimeAPI_Fallback}` |
 
-### Python互換CPSチェイン実験
+### Python互換の継続チェイン実験
 
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| TEST-INTP-05 | Python/Native CPS入口互換 | ネイティブ拡張の有無が異なる環境 | 同じWASMモジュールを通常入口とCPS入口で実行 | 公開API、戻り値、トラップ、フレーム状態が一致し、未ビルド時もPython入口が動作する | `interpreter.py`, `interpreter_cps.py` |
-| TEST-INTP-06 | C関数ポインタによる4引数チェイン | `cps_chain.pyx`をビルド済み | ネイティブCPS入口を実行 | `(ctx, sp, local_base, tos)`の関数ポインタ表から通常命令の次ハンドラへ継続する | `cps_chain.pyx`, `runtime_interpreter.md` |
+| TEST-INTP-05 | Python／ネイティブ継続入口互換 | ネイティブ拡張の有無が異なる環境 | 同じWASMモジュールを通常入口と継続入口で実行 | 公開API、戻り値、トラップ、フレーム状態が一致し、未ビルド時もPython入口が動作する | `interpreter.py`, `interpreter_cps.py` |
+| TEST-INTP-06 | C関数ポインタによる4引数チェイン | `cps_chain.pyx`をビルド済み | ネイティブ継続入口を実行 | `(ctx, sp, local_base, tos)`の関数ポインタ表から通常命令の次ハンドラへ継続する | `cps_chain.pyx`, `runtime_interpreter.md` |
 | TEST-INTP-07 | 通常命令のmusttail継続 | Clang 17+でネイティブ拡張をビルド済み | 算術・メモリ・浮動小数点命令を連続実行 | ハンドラ末尾の `[[clang::musttail]]` 継続呼出しで基本ブロック内を実行する | `{ThreadedInterpreter}` |
-| TEST-INTP-08 | ジャンプ・分岐境界 | `br`、`br_if`、`br_table`、`call`を含むWASM | 境界命令を実行 | ジャンプ・分岐はCPSチェインせず、既存フレーム処理へ戻って正しいPC・制御スタックを保つ | `{InterpreterContextStackless}` |
+| TEST-INTP-08 | ジャンプ・分岐境界 | `br`、`br_if`、`br_table`、`call`を含むWASM | 境界命令を実行 | ジャンプ・分岐は継続チェインせず、既存フレーム処理へ戻って正しいPC・制御スタックを保つ | `{InterpreterContextStackless}` |
 | TEST-INTP-09 | AO-Bench全命令差分 | wasmtimeとTier 2/Tier 3を利用可能 | `aobench.py --native-cps`を実行 | Float32 sanity、全AO出力、Tier 2/Tier 3の528バイト出力が完全一致する | `{META_RecoveryStrategy}` |
 
 ### 3本の独立スタック・関数呼び出し ({ContextPointerRegister})
 
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| TEST-INTP-10 | OperandStackオーバーフロートラップ | `stack_capacity`を超えるpush | 再帰呼び出し等でOperandStackを溢れさせる | `WASMTrap("STACK_OVERFLOW")`相当が発生する（無限に領域が伸びない） | interpreter_concept.py `ExecutionContext.push` |
-| TEST-INTP-11 | OperandStackアンダーフロートラップ | 空のOperandStackでpop | pop操作 | `WASMTrap("STACK_UNDERFLOW")`相当 | interpreter_concept.py `ExecutionContext.pop` |
-| TEST-INTP-12 | 再帰呼び出し（call）とLocalStack | `fact(n)`のような再帰関数 | `execute_function`で呼び出す | 各呼び出しごとに新しいLocalStackブロックが割り当てられ、ローカル変数が互いに独立する | interpreter_concept.py `test_full_wasm_recursive_factorial` |
+| TEST-INTP-10 | オペランド領域オーバーフロートラップ | `stack_capacity`を超えるpush | 再帰呼び出し等でオペランド領域を溢れさせる | `WASMTrap("STACK_OVERFLOW")`相当が発生する（無限に領域が伸びない） | interpreter_concept.py `ExecutionContext.push` |
+| TEST-INTP-11 | オペランド領域アンダーフロートラップ | 空のオペランド領域でpop | pop操作 | `WASMTrap("STACK_UNDERFLOW")`相当 | interpreter_concept.py `ExecutionContext.pop` |
+| TEST-INTP-12 | 再帰呼び出し（call）とローカル値領域 | `fact(n)`のような再帰関数 | `execute_function`で呼び出す | 各呼び出しごとに新しいローカル値領域の区画が割り当てられ、ローカル変数が互いに独立する | interpreter_concept.py `test_full_wasm_recursive_factorial` |
 | TEST-INTP-13 | 戻り値の受け渡し | 関数が1個の結果を返す | `return`実行後の呼び出し元スタック | 呼び出し元のスタックに正しく結果が積まれる | interpreter_concept.py `execute_function` |
-| TEST-INTP-14 | OperandStackとLocalStackの容量独立性 | OperandStackの残容量が1、LocalStackに空きがある | 既存のOperandStack値を保持したまま引数付き関数を呼び出す | LocalStackへ引数を積め、関数結果と呼び出し元OperandStackの値が正しく保持される | interpreter_concept.py `test_independent_operand_and_local_stacks`, [`interpreter_stack_model.py`](docs/components/tier2_runtime/formal/interpreter_stack_model.py) |
-| TEST-INTP-15 | 3本の値スタック・CallFrame分離・関数復帰結果の形式検証 | 通常モデルと`guards=False`変異モデル | [`interpreter_stack_model.py`](docs/components/tier2_runtime/formal/interpreter_stack_model.py)を実行 | 通常モデルでは値スタック独立性、CallFrameとLocalStack値の分離、関数結果保持の3性質が成立し、各変異モデルでは対応性質が反証される | [`interpreter_stack_model.py`](docs/components/tier2_runtime/formal/interpreter_stack_model.py) |
-| TEST-INTP-16 | ネストしたcalleeの戻り値とCallFrame復帰 | callerがcalleeを呼び、calleeがi32/i64/f32/f64を返す | calleeの`return`処理を実行 | 戻り値は共有OperandStackへ残り、calleeの`CallFrame`がpopされ、call helperが復帰sentinelを消費してcallerへ戻る。C/AAPCS戻り値レジスタや専用戻り値バッファは使用しない | `runtime_interpreter.md` 関数復帰の番兵 |
+| TEST-INTP-14 | オペランド領域とローカル値領域の容量独立性 | オペランド領域の残容量が1、ローカル値領域に空きがある | 既存のオペランド値を保持したまま引数付き関数を呼び出す | ローカル値領域へ引数を積め、関数結果と呼び出し元オペランド領域の値が正しく保持される | interpreter_concept.py `test_independent_operand_and_local_stacks`, [`interpreter_stack_model.py`](docs/components/tier2_runtime/formal/interpreter_stack_model.py) |
+| TEST-INTP-15 | 3本の値領域・関数呼出し記述子分離・関数復帰結果の形式検証 | 通常モデルと`guards=False`変異モデル | [`interpreter_stack_model.py`](docs/components/tier2_runtime/formal/interpreter_stack_model.py)を実行 | 通常モデルでは値領域独立性、関数呼出し記述子とローカル値の分離、関数結果保持の3性質が成立し、各変異モデルでは対応性質が反証される | [`interpreter_stack_model.py`](docs/components/tier2_runtime/formal/interpreter_stack_model.py) |
+| TEST-INTP-16 | ネストしたcalleeの戻り値と関数呼出し記述子の復帰 | callerがcalleeを呼び、calleeがi32/i64/f32/f64を返す | calleeの`return`処理を実行 | 戻り値は共有オペランド領域へ残り、calleeの関数呼出し記述子が取り除かれ、call helperが復帰sentinelを消費してcallerへ戻る。C/AAPCS戻り値レジスタや専用戻り値バッファは使用しない | `runtime_interpreter.md` 関数復帰の番兵 |
 | TEST-INTP-17 | トップレベル復帰のRETURN sentinel | 最外周WASM関数がreturnする | return handlerとRuntimeEngineを実行 | sentinelはInterpreterのreturn handlerだけが生成し、RuntimeEngineが実行完了を判定する。JITはsentinelを生成しない | `runtime_interpreter.md` 関数復帰の番兵 |
-| TEST-INTP-18 | CallFrame descriptorとLocalStack値領域の分離 | callerが引数付きcalleeを呼び出す | call helperでcallee frameを開始し、calleeから復帰する | descriptorは独立したCallFrame stackに置かれ、`frame_offset`がLocalStackのraw-word開始位置を示す。LocalStackにはローカル値だけが入り、復帰時にdescriptorをpopして`local_offset`とLocalStack長が保存位置へ戻る | `runtime_interpreter.md` コールフレーム、`interpreter_concept.py`、`test_interpreter.py` TEST-INTP-70 |
+| TEST-INTP-18 | 関数呼出し記述子とローカル値領域の分離 | callerが引数付きcalleeを呼び出す | call helperでcalleeの実行区画を開始し、calleeから復帰する | 記述子は独立した領域に置かれ、`frame_offset`がローカル値領域の開始ワード位置を示す。ローカル値領域にはローカル値だけが入り、復帰時に記述子を取り除いて`local_offset`とローカル値領域の長さを保存位置へ戻す | `runtime_interpreter.md` 関数呼び出し境界、`interpreter_concept.py`、`test_interpreter.py` TEST-INTP-70 |
 
 ### ラベルアリティ・スタックプルーニング (`prune_stack`)
 
@@ -102,7 +102,7 @@
 
 | GOTCHA ID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| GOTCHA-INTP-01 | CPS第4引数 `tos`（R3）とスタックメモリの境界同期 | スタック空状態から複数回の push/pop | `i32.const` および二項演算を連続実行 | スタック空時は `tos=0`、値 push 時は旧 `tos` がスタックメモリへ退避され新値が `tos` に格納、値 pop 時はスタックメモリから次段値が `tos` に復元される。**実装の勘所**: `tos` は第4引数レジスタ `R3` に保持されるため、スタックメモリ（`[R1, #sp_offset]`）上の深さは「全オペランド数 - 1」となり、スタック空の境界条件でアンダーフロー誤検知や未定義値を発生させてはならない | `runtime_interpreter.md`「実行コンテキスト」, `{AAPCS_FastCall}` |
+| GOTCHA-INTP-01 | 継続渡し第4論理引数 `tos`（R3）とスタックメモリの境界同期 | スタック空状態から複数回の push/pop | `i32.const` および二項演算を連続実行 | スタック空時は `tos=0`、値 push 時は旧 `tos` がスタックメモリへ退避され新値が `tos` に格納、値 pop 時はスタックメモリから次段値が `tos` に復元される。**実装の勘所**: `tos` は第4引数レジスタ `R3` に保持されるため、スタックメモリ（`[R1, #sp_offset]`）上の深さは「全オペランド数 - 1」となり、スタック空の境界条件でアンダーフロー誤検知や未定義値を発生させてはならない | `runtime_interpreter.md`「実行コンテキスト」, `{AAPCS_FastCall}` |
 | GOTCHA-INTP-02 | Label Arity スタック巻き戻し時の TOS 復元 | `block (result i32)` 内で値を push 後に `br 0` | ブロック脱出を実行 | ブロック開始時の深さまでスタックが巻き戻され、宣言アリティ分の結果値のうち最上位値が正しく `R3: tos` レジスタへ復元されて次ハンドラへ渡る。**実装の勘所**: スタックメモリを巻き戻しただけで `tos` レジスタを更新し忘れると、脱出前の破棄された値が `tos` に残り後続命令で不正計算となる | `runtime_interpreter.md` |
 | GOTCHA-INTP-03 | if 条件偽（else節なし）での制御フレームリーク防止 | `if (cond=0)` で else 節なし | `if` 命令を実行 | `match_offset + 1` へジャンプする際、`_Frame("if")` がスタックに残らずフレームスタックの深さが不変に保たれる。**実装の勘所**: 条件成立時と同様にフレームを積んでからジャンプすると、対応する `END` 命令をスキップした際にフレームが回収されずスタックリークとなる | `runtime_interpreter.md` |
 | GOTCHA-INTP-04 | UnifiedPC による多重モジュール空間の衝突防止 | 複数モジュールがロードされ、同一オフセット（例: 0x0010）を持つ関数が存在 | 各モジュールの関数を実行 | JIT キャッシュ引き当てやデバッグブレークポイント判定において、`(func_index << 16) \| bytecode_offset` の32bit表現で一意に区別され、他モジュールの同一オフセットと決して誤衝突しない | `runtime_interpreter.md`, `{PositionIndependentCode}` |
@@ -115,16 +115,16 @@
 
 | GOTCHA ID | 追加仕様・破壊してはいけない条件 | 破壊時の症状 | 実装の判定基準 | 現状確認 |
 | :--- | :--- | :--- | :--- | :--- |
-| GOTCHA-INTP-07 | ハンドラテーブルは直接4引数ハンドラを保持し、`wrapper`／`_RAW_HANDLERS`を挟まない | 引数変換、`env`再取得、TOS再計算が命令ごとに入り、CPS契約と実行経路が二重化する | `_HANDLERS[opcode]` が `(ctx, sp, local_base, tos)`を直接受け取る関数である | 実装済み・テスト済み |
+| GOTCHA-INTP-07 | ハンドラテーブルは直接4引数ハンドラを保持し、ラッパーや二重のハンドラ表を挟まない | 引数変換、`env`再取得、TOS再計算が命令ごとに入り、継続渡し契約と実行経路が二重化する | ハンドラ表の要素が `(ctx, sp, local_base, tos)`を直接受け取る関数である | 実装済み・テスト済み |
 | GOTCHA-INTP-08 | 継続結果は次回ハンドラの4引数を必ず返し、トラップ状態を同じ結果に含める | 次のハンドラが再構築され、継続状態の取り違えやJIT境界での引数欠落が起きる | 正常継続は `(ctx, sp, local_base, tos, None)`、トラップは同じ4引数と非`None`の`Trap`を返す | 実装済み・テスト済み |
 | GOTCHA-INTP-09 | 次PCは戻り値の別フィールドではなく、`ctx.native_context.ip`（C++では`ctx->ip`）に保持する | `ip`と継続引数の状態が分裂し、次命令・JITキャッシュ・デバッガのPCが食い違う | ハンドラが`ctx.ip`を更新し、呼び出し側はその値だけで次PCを取得する | 実装済み・テスト済み |
 | GOTCHA-INTP-10 | WASM命令実行中のトラップはPython例外を制御フローに使わず、`InterpreterCall.trap`へ集約する | vMMIOだけ例外、算術だけ戻り値など、命令ごとに異なるエラー経路になる | vMMIO、`call_indirect`、整数変換、境界違反がハンドラ結果または`InterpreterCall.trap`になる。同期`call()`の最外周での再送出は互換境界として明示する | 実装済み・主要経路テスト済み |
-| GOTCHA-INTP-11 | インタープリタとJITは同一のNative `ExecutionContext`、OperandStack、LocalStackを使用する | JIT専用locals／result bufferへのコピー、アドレス再キャスト、二重スタックが発生する | JIT専用バッファや専用セットアップを作らず、CPS引数の`sp`と`local_base`がインタープリタのNative storageを指す | 実装済み・既存JITテストで確認 |
+| GOTCHA-INTP-11 | インタープリタとJITは同一の実行コンテキストと共有値領域を使用する | JIT専用locals／result bufferへのコピー、アドレス再キャスト、二重領域が発生する | JIT専用バッファや専用セットアップを作らず、境界引数の`sp`と`local_base`がインタープリタの共有記憶領域を指す | 実装済み・既存JITテストで確認 |
 | GOTCHA-INTP-12 | Native値スタックは型タグを持たないバイナリスロット列とし、型は操作側が知る | 実行時型検査、型タグのメモリ、不要なキャストがホットパスへ混入する | `push_i32`／`pop_i32`等の操作を呼び分け、スタック自身に`types`や型オブジェクトを置かない | 実装済み・要追加網羅テスト |
 | GOTCHA-INTP-13 | WASMのスロット幅に従い、i32/f32は1個、i64/f64は2個の32bitスロットを使う。ポインタは64bit | i64/f64の引数・戻り値・localが1スロット扱いになり、後続localの位置が破壊される | ローカルオフセット、引数搬送、Native stackのpush/popが同じスロット幅規則を使う | 実装済み・既存i64テスト済み |
-| GOTCHA-INTP-14 | `CallFrame`は`func_index`から関数メタデータを一度取得して紐付け、実行時にCode検索をしない | 命令ごとの関数探索、二分探索、重複メタデータ保持が発生する | `function.code`、`control_map`、local offset cache、nested-call情報をフレーム生成時に紐付ける | 実装済み・要追加性能計測 |
-| GOTCHA-INTP-15 | `local.get`／`local.set`／`local.tee`は型解釈ではなく、既知のスロット幅のrawコピーだけを行う | local操作ごとに型分岐・数値変換が入り、バイナリ状態が変質する | local windowとOperandStack間で1または2スロットを直接搬送し、型解釈は型付き演算またはABI境界だけで行う | 仕様反映済み・要追加直接テスト |
-| GOTCHA-INTP-16 | スタック巻き戻しは要素ごとの`while pop`ではなく、Nativeのスタックポインタ／長さを一度に戻す | 分岐・復帰の計算量が増え、途中状態を残してスタックを破壊する | control frameの保存高さに対して、OperandStackを一括truncateする。要素数分のpopループを置かない | 実装済み・gotchaテスト済み |
+| GOTCHA-INTP-14 | 関数呼出し記述子は関数番号から関数メタデータを一度取得して紐付け、実行時にコード検索をしない | 命令ごとの関数探索、二分探索、重複メタデータ保持が発生する | 関数コード、制御対応表、ローカル位置キャッシュ、入れ子呼出し情報を記述子生成時に紐付ける | 実装済み・要追加性能計測 |
+| GOTCHA-INTP-15 | `local.get`／`local.set`／`local.tee`は型解釈ではなく、既知のスロット幅のバイナリコピーだけを行う | local操作ごとに型分岐・数値変換が入り、バイナリ状態が変質する | ローカル値領域とオペランド領域の間で1または2スロットを直接搬送し、型解釈は型付き演算またはABI境界だけで行う | 仕様反映済み・要追加直接テスト |
+| GOTCHA-INTP-16 | スタック巻き戻しは要素ごとの`while pop`ではなく、記録した位置／長さを一度に戻す | 分岐・復帰の計算量が増え、途中状態を残してスタックを破壊する | 制御ブロック復帰情報の保存高さに対して、オペランド領域を一括truncateする。要素数分のpopループを置かない | 実装済み・gotchaテスト済み |
 | GOTCHA-INTP-17 | 不正な引数、未初期化状態、無効なフレーム、範囲外の内部状態はリカバリーせず`assert`で停止する | 壊れた状態を隠したまま継続し、後段で原因不明のデータ破壊になる | `current_pc`、handler state、frame stack、Native stack pop結果などの事前条件を`assert`で検証する | 実装済み・要不足箇所監査 |
 | GOTCHA-INTP-18 | 実行時引数のセットアップと外部資源の注入は呼び出し側の責務。インタープリタがJIT専用の初期化を行わない | 本番実行とテスト実行で別の初期化経路が生まれ、JITだけ異なる状態を参照する | `memory`、host function、vMMIO等は明示的に呼び出し側から渡し、テスト専用の起動処理を製品コードへ入れない | 方針反映・要実装境界監査 |
 | GOTCHA-INTP-19 | 小さい`ControlMap`キャッシュは4エントリ固定、キーは32bit値をXORで4bitへ折りたたむ | 過大なキャッシュ、異なるハッシュ式、未定義の置換で局所性と決定性が崩れる | `temp = v ^ (v >> 16)`、`temp ^= temp >> 8`、`temp ^= temp >> 4`、`temp ^= temp >> 2`、`temp &= 0x3`を使い、キャッシュ挿入失敗は`assert`する | 実装済み・既存テスト済み |
@@ -134,8 +134,8 @@
 
 ## 3. テスト検証実績と網羅状況
 
-- **CPSディスパッチ & 3本の独立スタック (TEST-INTP-01〜14)**: 4引数規約、OperandStackのアンダー/オーバーフロー、LocalStack上の再帰呼び出し、戻り値、容量独立性。
-- **Python互換CPSネイティブ実験 (TEST-INTP-05〜09)**: 通常Python入口、全175ハンドラを対象にしたC関数ポインタチェイン、musttail継続、分岐境界、AO-Bench差分の一致。
+- **継続渡しディスパッチと3本の独立領域 (TEST-INTP-01〜14)**: 4論理引数、オペランド領域のアンダー／オーバーフロー、ローカル値領域上の再帰呼び出し、戻り値、容量独立性。
+- **Python互換のネイティブ継続実験 (TEST-INTP-05〜09)**: 通常Python入口、全175ハンドラを対象にしたC関数ポインタチェイン、musttail継続、分岐境界、AO-Bench差分の一致。
 - **ラベルアリティ & プルーニング (TEST-INTP-20〜23)**: ブロック脱出、ループ背進辺、多重ネスト br_table。
 - **i64全演算 & メモリアクセス (TEST-INTP-30〜43)**: 64bit算術・シフト・ビットカウント・境界外トラップ。
 - **Safepointポーリング (TEST-INTP-50〜51)**: ループ背進辺での協調的ポーリング。

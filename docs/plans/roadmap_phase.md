@@ -56,8 +56,8 @@
   - バリデータ (V1〜V6) `{LightweightVerifier}`
   - 不正バイナリ検証失敗時のバンプポインタ完全ロールバック
 - **Phase 1.2: WASM Stackless Fast Interpreter (`runtime_interpreter`)**
-  - `execution_context` & 独立3バッファスタック（`OperandStack`/`LocalStack`/`control_frame`） `{ContextPointerRegister}`
-  - `__fastcall` CPS 4引数（`[[clang::musttail]]`）スレッド化ディスパッチャ `{ThreadedInterpreter}`
+  - `execution_context` と独立した3本の領域（オペランド領域、ローカル値領域、制御ブロック復帰情報領域） `{ContextPointerRegister}`
+  - 継続渡し4論理引数（`[[clang::musttail]]`）スレッド化ディスパッチャ `{ThreadedInterpreter}`
   - 全コア命令ハンドラ（算術・制御・メモリ境界トラップ） `{MemoryBoundaryCheck}`
   - 分岐脱出時のフレームプルーニングと TOS レジスタ復元
 - **Phase 1.3: Copy-and-Patch JIT Compiler & Runtime (`jit_compiler`, `jit_runtime`)**

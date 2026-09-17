@@ -114,12 +114,12 @@ Fireball の実行コアは、以下の 6 つの物理メカニズムによっ�
 
 | 構造 | 容量・サイズ | 保持内容・役割 | 不変条件 |
 |---|---:|---|---|
-| `execution_context` | Tier 2 ABIでは152バイト | 15個の32bit実行状態フィールド、予約領域、命令別JITヘルパーポインタを保持する。 | 物理レイアウトと呼出規約の対応はターゲット（x64 / ARMv8-M）ごとに定義し、Tier 2の論理フィールド契約を共有する。 |
+| `execution_context` | Tier 2の標準ABIでは64バイト | 16個の32bit実行状態フィールドを保持する。JITヘルパーのアドレスは実行コンテキストに置かない。 | 論理フィールド契約は共有し、物理レイアウトと呼出規約はターゲットごとに定義する。 |
 | `オペランドスタック` | 固定長値バッファ | WASM オペランド値だけを保持し、コールチェーン全体を貫いて連続する。 | 呼び出しを跨いでも作り直さない。 |
-| `ローカル値領域` | 固定長バイナリrawスロット列 | 型タグを持たないraw 32-bitローカル値だけを保持する。calleeの値領域は現在の末尾から確保する。 | descriptor、戻りPC、型情報を値配列へ混在させず、復帰時にdescriptorの保存位置まで一括で戻す。 |
-| `call_frame_stack` | 固定容量descriptor領域 | 関数ごとのdescriptorを独立管理する。各descriptorは関数メタデータと`local_stack`開始raw 32ビットワード位置を保持する。 | `operand_stack`／`local_stack`のバイナリ値配列内にインラインヘッダを置かない。 |
+| `ローカル値領域` | 固定長の32ビットワード領域 | 型タグを持たないローカル値だけを保持する。呼出先の値領域は現在の末尾から確保する。 | 関数実行記述子、戻りPC、型情報を値領域へ混在させず、復帰時に記述子が保存した位置まで戻す。 |
+| 関数実行記述子領域 | 固定容量の記述子領域 | 関数ごとの実行メタデータとローカル値領域の開始位置を保持する。 | オペランド領域とローカル値領域の値配列内に記述子を置かない。 |
 | 制御ブロック復帰情報の専用領域 | 1件20バイト、固定容量領域 | `block`/`loop`/`if`の入れ子を管理する。 | オペランド領域とは同居しない（`{ControlFrame_Layout}`）。 |
-- **レジスタ規約**: `R0: ctx`, `R1: sp`, `R2: local_base`, `R3: tos` を全ハンドラ・JITトレースへ渡す。CPS 第1〜第4引数として直接引き回す。基本ブロック末尾では `tos, nos, nnos` をスタックへフラッシュする。コンテキスト `R0` の `ip` および `sp_offset` を更新して状態を同期する。 `{JIT_RegisterMapping}`
+- **呼出し境界の論理規約**: 実行コンテキスト、オペランド領域の現在位置、ローカル値領域の開始位置、スタック頂点値を継続引数として渡す。物理レジスタ名と退避規則は対象アーキテクチャのABIで定義する。基本ブロック末尾の状態同期と直接チェインの省略条件も対象ABIごとに定める。 `{JIT_RegisterMapping}`
 
 ### 3.2 Pillar 2: 3段直接 JIT 検索パイプライン (3-Stage Direct JIT Lookup Pipeline)
 <!-- traceability: {SimpleJITArchitecture} {JIT_MultiBuffer_Cache} {META_BinarySearch} {DirectMappedJIT4} -->
@@ -130,7 +130,7 @@ Fireball の実行コアは、以下の 6 つの物理メカニズムによっ�
 | 2 | Direct-Mapped Folding XOR キャッシュ（4 entries） | $O(1)$ | 4エントリのダイレクトマップキャッシュを照合する。ヒット時はトレース実行アドレスを返却して探索を終了する。 |
 | 3 | ソート済みJITエントリ配列 | $O(\log n)$ | Fast Cache miss時に各バンクのJITエントリを二分探索し、ネイティブ実行アドレスを特定する。Radix表は設けない。 |
 
-- **PySimとの一致**: PySimもバンク内のソート済みキーを`bisect_left`で検索する。組込み実装と参照モデルは、JITエントリの検索構造を共有する。
+- **検索構造の契約**: バンク内のキーは昇順に保持し、二分探索で検索する。組込み実装と参照モデルは、この検索計算量の契約を共有する。
 
 ### 3.3 Pillar 3: 3面世代交代回転コードキャッシュ (3-Bank Generational Rotating Code Cache)
 <!-- traceability: {JIT_MultiBuffer_Cache} {JIT_OldestOnly_Promote} {SimpleJITArchitecture} {JIT_ReverseCompilationOrder} -->
@@ -144,7 +144,7 @@ Fireball の実行コアは、以下の 6 つの物理メカニズムによっ�
 | `Bank 2 (Oldest)` | 2KB | 2世代前のコードを保持する。 | lookupがヒットしたトレースを追加のhotness判定なしに新Activeへ昇格コピーする。Warm時の昇格は行わない。 |
 | 世代スライド | — | バンク満杯時の世代交代を行う。 | `Active \to Warm \to Oldest \to Recycle` の順に一括代謝する。 |
 - **MPU W^X 保護遷移**: コンパイル時は `RW + XN` とし、パッチ完了時に `__DSB(); __ISB();` を発行して `RO + X` に切り替える。
-- **ヘッダ駆動チェイニング（W^X 切り替え不要）**: トレース間ジャンプはヘッダの `chain_target_addr`（+0x0C）を不可分更新して確立・アンリンクする。W^X 切り替えを全バイパスしゼロコストでリンクを管理する。
+- **ヘッダ駆動チェイニング**: トレース間ジャンプは、対象ABIが定めるヘッダのターゲット欄を更新して確立・アンリンクする。ヘッダ更新もコード領域の書込みであるため、W^Xの書込み許可、更新、命令同期、実行許可の順序を省略しない。ターゲットが常駐し、呼出し境界の状態を引き継げる場合だけ直接チェインする。
 - **昇格時の逆引き移行 & LIFO 逆順コンパイル**: Oldest から昇格したトレースは被チェイン表の登録を新バンクへ移行する。ダングリングジャンプを完全排除する（`{GOTCHA-JITR-02}`）。LIFO 逆順コンパイルにより即時チェイニング率を最大化する（）。
 - **緊急時一括フラッシュ**: デバッガ（`{Debugger_Jit_Flush}`）やメモリ破壊検出時は cookie をインクリメントする。全バンクのトレースを一括無効化する。
 
@@ -183,10 +183,10 @@ ARM Cortex-M33 (ARMv8-M Mainline) における物理レジスタの厳格な役�
 
 | 物理レジスタ | AAPCS 規約 | Fireball インタープリタ | Fireball JIT トレース (役割任意割当レジスタ) | 役割と不変条件 |
 | :--- | :--- | :--- | :--- | :--- |
-| **`R0`** | Argument 1 / Scratch | `ctx` (`execution_context*`) | `ctx` (`execution_context*`) | 継続渡し（CPS）第1引数。コンテキスト構造体ポインタ 。 |
-| **`R1`** | Argument 2 / Scratch | `sp` (オペランドスタック SP) | `sp` (オペランドスタック SP) | 継続渡し（CPS）第2引数。オペランドスタックポインタ。 |
-| **`R2`** | Argument 3 / Scratch | `local_base` | `local_base` | 継続渡し（CPS）第3引数。ローカル変数基底ポインタ 。 |
-| **`R3`** | Argument 4 / Scratch | `tos` (Top of Stack) | `tos` (Top of Stack) | 継続渡し（CPS）第4引数。スタックトップ値（最上位オペランド値）。 |
+| **`R0`** | Argument 1 / Scratch | `ctx` (`execution_context*`) | `ctx` (`execution_context*`) | 継続渡し第1論理引数。コンテキスト構造体ポインタ。 |
+| **`R1`** | Argument 2 / Scratch | `sp` (オペランドスタック SP) | `sp` (オペランドスタック SP) | 継続渡し第2論理引数。オペランドスタックポインタ。 |
+| **`R2`** | Argument 3 / Scratch | `local_base` | `local_base` | 継続渡し第3論理引数。ローカル変数基底ポインタ。 |
+| **`R3`** | Argument 4 / Scratch | `tos` (Top of Stack) | `tos` (Top of Stack) | 継続渡し第4論理引数。スタックトップ値（最上位オペランド値）。 |
 | **`R4`** | Callee-saved | (保全) | **`Assignable Pool 0` (NOS)** | **スタック次段キャッシュ (NOS)**。 |
 | **`R5`** | Callee-saved | (保全) | **`Assignable Pool 1` (NNOS)** | **スタック第3段キャッシュ (NNOS)**。 |
 | **`R6`** | Callee-saved | (保全) | **`Assignable Pool 2` (scratch)** | 汎用一時レジスタ（トレース末尾のIP書き戻し等）。Callee-saved として保全。 |
@@ -202,7 +202,7 @@ ARM Cortex-M33 (ARMv8-M Mainline) における物理レジスタの厳格な役�
 
 ### 4.1 メモリ常駐構造体の物理バイトオフセット
 
-#### `execution_context`（`R0: ctx` 起点、Tier 2 ABIでは計152バイト）
+#### `execution_context`（実行コンテキスト起点、Tier 2標準ABIでは計64バイト）
 
 | オフセット | フィールド | 型 | 意味 |
 |---:|---|---|---|
@@ -212,7 +212,7 @@ ARM Cortex-M33 (ARMv8-M Mainline) における物理レジスタの厳格な役�
 | `+0x0C` | `sp_offset` | u32 | 現在の オペランドスタック オフセット / アドレス |
 | `+0x10` | `local_base_addr` | u32 | ローカル値領域 バッファ先頭アドレス |
 | `+0x14` | `local_limit_addr` | u32 | ローカル値領域 バッファ終端アドレス |
-| `+0x18` | `local_offset` | u32 | ローカル値領域上の次の空きraw 32ビットワード位置 |
+| `+0x18` | `local_offset` | u32 | ローカル値領域上の次の空き32ビットワード位置 |
 | `+0x1C` | `cf_base_addr` | u32 | 制御ブロック復帰情報領域の先頭アドレス |
 | `+0x20` | `cf_limit_addr` | u32 | 制御ブロック復帰情報領域の終端アドレス |
 | `+0x24` | `cf_offset` | u32 | 制御ブロック復帰情報の現在位置または深さ |
@@ -221,18 +221,17 @@ ARM Cortex-M33 (ARMv8-M Mainline) における物理レジスタの厳格な役�
 | `+0x30` | `globals_base` | u32 | WASM global 配列基底 |
 | `+0x34` | `globals_limit` | u32 | WASM global 配列終端 |
 | `+0x38` | `handler_table` | u32 | 命令ディスパッチテーブル参照 |
-| `+0x3C` | `reserved` | u32 | 64bitヘルパー配列のアライメント領域 |
-| `+0x40`〜`+0x97` | `jit_helper_ptrs[11]` | u64[11] | 命令別JITヘルパー関数ポインタ |
+| `+0x3C` | `reserved0` | u32 | 将来拡張用の予約領域 |
 
-`+0x28`〜`+0x37` は `vsoc_runtime` の一部である。JIT トレースおよびインタープリタが実行ループ内で直接参照する極小の並行実行環境（16バイト）を定義する。 `{VsocRuntime_Layout}`
+`+0x28`以降にはリニアメモリ、グローバル領域、命令ハンドラ表の参照を置く。これらは実行コンテキストの論理環境情報であり、別の構造体をその位置へ埋め込むことを意味しない。 `{VsocRuntime_Layout}`
 
 基本ブロック末尾では `TOS, NOS, NNOS` をスタックへフラッシュする。コンテキスト `R0` の `ip` および `sp_offset` を更新して状態を完全同期する。 `{ExecutionContext_Layout}` `{AAPCS_FastCall}`
 
-#### `call_frame` descriptor
+#### 関数呼出し記述子
 
 | 配置 | 保持内容 | 不変条件 |
 |---|---|---|
-| 固定容量 `call_frame_stack` | 関数メタデータへの参照と `local_stack` 開始raw 32ビットワード位置 | `operand_stack`／`local_stack`のバイナリ値配列にdescriptor、戻りPC、型情報を埋め込まない。descriptorの物理サイズ・ABI配置はターゲット実装で定義する。 |
+| 固定容量の関数実行記述子領域 | 関数メタデータへの参照とローカル値領域の開始位置 | オペランド領域とローカル値領域の値配列に記述子、戻りPC、型情報を埋め込まない。記述子の物理サイズ・ABI配置はターゲット実装で定義する。 |
 
 詳細正本: `runtime_interpreter.md`。 `{CallFrame_Layout}`
 

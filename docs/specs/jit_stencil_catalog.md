@@ -32,13 +32,13 @@
 
 トレース境界には、性質の異なる 2 種類のエントリと 2 種類のエグジットが存在し、両者を混同してはならない。
 
-- **新規エントリ（共通プロローグ / AAPCS 準拠開始プロローグ `STENCIL_PROLOGUE_FULL`）**: Interpreter／RuntimeEngineから`exec_trace`へ移行するときは必ず通過する。CPS 4引数（`R0=ctx, R1=sp, R2=local_base, R3=tos`）を受け、callee-savedレジスタを退避し、開始時SPをAAPCSの8-byte境界に保つ。入口variantの割り当てを整え、`R3: tos`をJITスタックキャッシュTOSとして使う。Interpreterから内部chain entryへ直接入ってはならない。
-- **トレースチェインエピローグ**: 各基本ブロック末尾で必須とする。dirtyなスタックキャッシュ（`R3: TOS`、必要なら`R4: NOS`、`R5: NNOS`）を共有OperandStackへflushし、`ctx->ip`と`ctx->sp_offset`を同期する。チェイン継続時はAAPCSフレームを維持し、後続variantの互換性を判定する。互換ならchain entryへ、非互換なら共有OperandStackから再構成するsetup codeを経て後続traceへ進む。これは関数復帰するAAPCS準拠終了エピローグとは別物である。
-- **AAPCS 準拠終了エピローグ**: RuntimeEngine／Interpreter境界へ戻るtrace終端で使用する。共有状態を同期し、callee-savedレジスタを復元してreturnまたは規定のtail transferを行う。JITからInterpreterへの移行、trap、WASM `return`直前の境界で使い、WASM戻り値そのものは共有OperandStackに置く（`{GOTCHA-JITC-07}`）。
+- **新規エントリ（共通プロローグ / AAPCS 準拠開始プロローグ `STENCIL_PROLOGUE_FULL`）**: Interpreter／RuntimeEngineから`exec_trace`へ移行するときは必ず通過する。継続渡し4論理引数（`R0=ctx, R1=sp, R2=local_base, R3=tos`）を受け、callee-savedレジスタを退避し、開始時SPをAAPCSの8-byte境界に保つ。入口variantの割り当てを整え、`R3: tos`をJITスタックキャッシュTOSとして使う。Interpreterから内部chain entryへ直接入ってはならない。
+- **トレースチェインエピローグ**: 各基本ブロック末尾で必須とする。dirtyなスタックキャッシュ（`R3: TOS`、必要なら`R4: NOS`、`R5: NNOS`）を共有オペランド領域へflushし、`ctx->ip`と`ctx->sp_offset`を同期する。チェイン継続時はAAPCSフレームを維持し、後続variantの互換性を判定する。互換ならchain entryへ、非互換なら共有オペランド領域から再構成するsetup codeを経て後続traceへ進む。これは関数復帰するAAPCS準拠終了エピローグとは別物である。
+- **AAPCS 準拠終了エピローグ**: RuntimeEngine／Interpreter境界へ戻るtrace終端で使用する。共有状態を同期し、callee-savedレジスタを復元してreturnまたは規定のtail transferを行う。JITからInterpreterへの移行、trap、WASM `return`直前の境界で使い、WASM戻り値そのものは共有オペランド領域に置く（`{GOTCHA-JITC-07}`）。
 - **チェイン出口**: 後続traceが常駐・解決済みでもトレースチェインエピローグを省略しない。共有状態のflush/sync後にvariantを判定し、必要なsetupを挟む。AAPCS準拠終了エピローグによるcallee-saved復元はInterpreter／RuntimeEngineへ戻る場合だけ行う。
 
 #### AAPCS 準拠開始プロローグ — `STENCIL_PROLOGUE_FULL` (Callee-saved 全域退避 + LR、新規エントリ専用)
-- **入力状態**: CPS 4引数規約 (`R0=ctx, R1=sp, R2=local_base, R3=tos`)
+- **入力状態**: 継続渡し4論理引数規約 (`R0=ctx, R1=sp, R2=local_base, R3=tos`)
 - **出力状態**: Callee-saved 退避完了、JIT スタックキャッシュ `R3=TOS`
 - **Thumb-2 命令列**:
   ```asm
@@ -75,7 +75,7 @@
 - **バイナリ列 (10 Bytes)**: `0B 60 4C 60 8D 60 BD E8 70 8F`
 
 #### `STENCIL_CHAIN_EPILOGUE_FLUSH_D1/D2/D3` (基本ブロック末尾の共有状態同期)
-各バリアントでTOS、必要ならNOS/NNOSを共有OperandStackへflushし、`ctx->ip`と`ctx->sp_offset`を更新する。callee-savedレジスタを保持するため、ここでは`POP`もreturnもしない。ヘッダのchain targetを読み、variantを照合し、必要ならsetup codeを通って後続chain entryへ進む。target不在ならAAPCS準拠終了エピローグへ分岐する。命令列はレジスタvariantとヘッダ配置に応じて生成し、終了エピローグと混同しない。
+各バリアントでTOS、必要ならNOS/NNOSを共有オペランド領域へflushし、`ctx->ip`と`ctx->sp_offset`を更新する。callee-savedレジスタを保持するため、ここでは`POP`もreturnもしない。ヘッダのchain targetを読み、variantを照合し、必要ならsetup codeを通って後続chain entryへ進む。target不在ならAAPCS準拠終了エピローグへ分岐する。命令列はレジスタvariantとヘッダ配置に応じて生成し、終了エピローグと混同しない。
 
 #### `STENCIL_DYNAMIC_CHAIN_EXIT_D1` (ヘッダ参照動的チェイン分岐)
 - **概要**: コードの自己書き換え（インプレースパッチ）を行わず、自身のトレースヘッダ内のデータフィールド `chain_target_addr`（+0x0C）の解決状態（非ゼロかゼロか）に応じて動的に分岐する。
@@ -127,11 +127,13 @@
 #### `STENCIL_EXTERNAL_CALL_STUB` (外部 AAPCS C/C++ 関数呼出境界)
 - **Thumb-2 命令列**:
   ```asm
-  push.w {r0-r3, r12, lr} ; [Offset 0x00] 32-bit Caller-saved 退避 (24 Bytes)
+  push.w {r0-r3, r12, lr} ; [Offset 0x00] 24バイトの退避領域を確保 (命令4 Bytes)
   bl     0x00000000       ; [Offset 0x04] RELOC_REL24_BRANCH (外部C関数, 4 Bytes)
-  pop.w  {r0-r3, r12, lr} ; [Offset 0x08] 32-bit Caller-saved 復元 (4 Bytes)
+  pop.w  {r0-r3, r12, lr} ; [Offset 0x08] 24バイトを復元 (命令4 Bytes)
   ```
 - **バイナリ列 (12 Bytes)**: `2D E9 0F 50 00 F0 00 F8 BD E8 0F 50`
+
+この12バイトの呼出しコードは共通コード領域へ一度だけ配置する。各トレースは委譲先アドレスと共通入口の選択値だけをヘッダへ保持し、呼出しコードを複製しない。
 
 ---
 
@@ -360,4 +362,4 @@
 
 `i64` の除算・剰余・ビットシフト、および `f32`/`f64` 浮動小数点演算は、32-bit MCU（ARMv8-M / Cortex-M33）において `libgcc`（`__divdi3`, `__adddf3`, `__muldf3` 等）を呼び出すコードを生成する必要がある。
 
-JIT コンパイラは、これら複雑な命令に対してインラインステンシルを展開せず、**ランタイムヘルパー関数呼び出しスタブ（`fireball_rt_*` / ）を生成して委譲**する。これにより、JIT ステンシルカタログを極小サイズ（ROM 予算 8KB）に保ち、FPU 有無のビルド差異をランタイムヘルパー関数内部に局所化する。
+JIT コンパイラは、これら複雑な命令に対してインラインステンシルを展開せず、共通コード領域に一度だけ配置したランタイムヘルパー関数呼出しコードへ委譲する。各トレースには呼出しコードを複製しない。これにより、JIT ステンシルカタログを極小サイズ（ROM 予算 8KB）に保ち、FPU 有無のビルド差異をランタイムヘルパー関数内部に局所化する。

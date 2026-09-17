@@ -19,6 +19,7 @@ from collections.abc import Iterable, Sequence
 
 import x64_stencils as st
 from common_code import (
+    COMMON_TYPED_I32_HELPER_OFFSET,
     TRACE_ENTRY_STUB_BYTES,
     JITCodeCacheRegion,
 )
@@ -156,6 +157,14 @@ def _emit_raw_const_to_sp(code: bytearray, value: int, slot: int) -> None:
 
 
 def _complex_helper_index(operation: int) -> int:
+    if operation == I32_DIV_S:
+        return 11
+    if operation == I32_DIV_U:
+        return 12
+    if operation == I32_REM_S:
+        return 13
+    if operation == I32_REM_U:
+        return 14
     if operation == I64_ADD:
         return 0
     if operation == I64_SUB:
@@ -324,7 +333,7 @@ class TraceCompiler:
         Appends machine-code stencils into continuous executable memory (`exec_memory.py`),
         emitting 56-byte physical headers (JITTraceHeader) at offset 0x00 and
         a small entry stub at offset 0x38.  The stub and all exits route via
-        the common APCCS area selected by header offsets.
+        the common AAPCS area selected by header offsets.
     """
 
     def __init__(self) -> None:
@@ -349,10 +358,6 @@ class TraceCompiler:
                 (I32_ADD, (2, 1)),
                 (I32_SUB, (2, 1)),
                 (I32_MUL, (2, 1)),
-                (I32_DIV_S, (2, 1)),
-                (I32_DIV_U, (2, 1)),
-                (I32_REM_S, (2, 1)),
-                (I32_REM_U, (2, 1)),
                 (I32_AND, (2, 1)),
                 (I32_OR, (2, 1)),
                 (I32_XOR, (2, 1)),
@@ -422,16 +427,28 @@ class TraceCompiler:
         spilled_words = 0
         helper_words = 0
         helper_index = -1
+        typed_i32_helper = False
         saw_op = False
         for op, arg in instructions:
             saw_op = True
             helper_index = _complex_helper_index(op)
             if helper_index >= 0:
                 assert arg is None
-                assert not stack_locations
-                assert helper_words == 4 or helper_words == 2
-                expected_words = 2 if helper_index >= 3 and helper_index <= 6 else 4
-                assert helper_words == expected_words
+                if 11 <= helper_index <= 14:
+                    # Integer division/remainder helpers receive typed scalar
+                    # arguments from the register cache.  The helper writes
+                    # its result through the explicit result-slot pointer.
+                    if len(stack_locations) != 2 or spilled_words != 0 or helper_words != 0:
+                        return None
+                    assert stack_locations[0] == _STACK_LOCATION_NOS
+                    assert stack_locations[1] == _STACK_LOCATION_TOS
+                    stack_locations.clear()
+                    typed_i32_helper = True
+                else:
+                    assert not stack_locations
+                    assert helper_words == 4 or helper_words == 2
+                    expected_words = 2 if 3 <= helper_index <= 6 else 4
+                    assert helper_words == expected_words
                 break
             stack_effect = self.STACK_EFFECTS.find(op)
             if stack_effect is None:
@@ -549,9 +566,9 @@ class TraceCompiler:
             helper_exit_patch_offset = JIT_X64_TRACE_HEADER_BYTES + helper_base + 8
             exit_patch_offset = -1
         elif helper_index >= 0:
-            assert not stack_locations
             if helper_target_addr == 0:
                 return None
+            assert not stack_locations
             helper_base = len(code)
             code += bytes((0x48, 0x8D, 0x05, 0, 0, 0, 0, 0xE9, 0, 0, 0, 0))
             helper_header_patch_offset = JIT_X64_TRACE_HEADER_BYTES + helper_base + 3
@@ -588,6 +605,8 @@ class TraceCompiler:
         if tail_context_helper:
             helper_index = -1
         header.helper_index = helper_index
+        if typed_i32_helper:
+            header.common_helper_offset = COMMON_TYPED_I32_HELPER_OFFSET
         header.helper_target_addr = helper_target_addr
         total_size = JIT_X64_TRACE_HEADER_BYTES + len(code)
         header.trace_byte_size = total_size
@@ -603,7 +622,7 @@ class TraceCompiler:
             result_words=(
                 2
                 if helper_index >= 0
-                and (helper_index <= 2 or helper_index >= 7)
+                and (helper_index <= 2 or 7 <= helper_index <= 10)
                 else 1
             ),
             code_blob=bytes(full_blob),

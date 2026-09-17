@@ -29,10 +29,10 @@ Fireball Hypervisor の現行作業および次期フェーズのタスク一覧
   - 現行経路で同等の検証が成立したテストから旧ハーネスと重複opcode dispatchを除去する。単にテストを削除せず、既存の検証対象が維持されることを確認する
 - [ ] **アーキテクチャ監査課題の設計整合・ADR策定**:
   - **今回反映済み**: 4KB仮想予約スロットと1KB物理SHM予算の分離、実サイズ境界付きvMMIO PTE、RESOURCE RevokeのPageMappingCallbacks経由化、`ControlFrameNative` 20バイトABI、JIT Oldest hit即時昇格、JIT用Radix表を持たない4スロットXOR＋二分探索、連続8KB（共通コード2KB＋Active/Warm/Oldest各2KB）、AAPCS開始／終了ステンシルのSP整合、基本ブロック末尾のvariant依存flushをPySim・形式モデル・仕様・テストへ同期した。PySim全24スイートと関連形式モデルを実行済み。
-  - **2026-09-16 アーキテクチャレビュー追従**: [architecture_review_report.md](docs/qa/architecture_review_report.md) のAR-01〜AR-14を解消する。JITチェイン終端／AAPCS SP整列／call_frame配置を先行し、handler ABI、compile失敗後のUNEXECUTED再計測、PySimとのJIT状態・計算量差、CSP保証とWIT／vMMIO契約、空の設計根拠、UnifiedPC実行時assertを順に整合する。control_frameとWIT RAIIの表現差はターゲットABIとの対応を明記してから欠陥判定する
+  - **2026-09-16 アーキテクチャレビュー追従**: [architecture_review_report.md](docs/qa/architecture_review_report.md) のAR-01〜AR-14を解消する。JITチェイン終端／AAPCS SP整列／関数呼出し記述子の配置を先行し、ハンドラABI、compile失敗後のUNEXECUTED再計測、pysimとのJIT状態・計算量差、CSP保証とWIT／vMMIO契約、空の設計根拠、UnifiedPC実行時assertを順に整合する。制御ブロック復帰情報とWIT RAIIの表現差はターゲットABIとの対応を明記してから欠陥判定する
   - 完了済みのJITキャッシュ配置（連続8KB・共通コード2KB＋3バンク各2KB）と少数エントリ検索（Radixなし）は [`backlog_archive.md`](docs/plans/backlog_archive.md) に記録した。AR-05の昇格条件／chain抽象度は未解決
   - **JITトレースヘッダ更新と MPU W^X 保護（RO+X）のハードウェア整合化**: Cortex-M33 PMSAv8 において RO 領域（Region 4）への書き込みが MemManage Fault となる制約の解消。パッチトランザクション相乗りモデル（`begin_jit_patch` 内一括更新）またはヘッダ・データスロットの RAM 領域（Region 3）分離配置モデルの策定
-  - **`call_frame` 物理レイアウトの確定と実装同期**: PySimの実行モデルに合わせ、固定容量の独立CallFrame descriptor stackがLocalStack開始raw-word位置を保持する。LocalStackはローカル値のみとし、Tier 2仕様・形式モデル・概念コード・テスト仕様・architecture_overviewを同期する
+  - **関数呼出し記述子の物理レイアウトの確定と実装同期**: pysimの実行モデルに合わせ、固定容量の独立した関数呼出し記述子領域がローカル値領域の開始ワード位置を保持する。ローカル値領域はローカル値だけを格納し、Tier 2仕様・形式モデル・概念コード・テスト仕様・architecture_overviewを同期する
   - **`interpreter_concept.py` の潜在バグ解消と型安全性是正**: 多重ブロック脱出時の二重ポップバグ修正、`_h_if` 条件偽時フレームリーク（`GOTCHA-INTP-03`）修正、`arg: int | object` ワイルドカードの具象型置換、ホスト再帰呼び出しの排除
 - [ ] **Step 2.3: ユニットテストコードの網羅性・品質強化**:
   - エッジケース・異常系・直交表組み合わせテストの拡充
@@ -74,9 +74,9 @@ Fireball Hypervisor の現行作業および次期フェーズのタスク一覧
 
 ### Phase 1.2: WASM Stackless Fast Interpreter (`runtime_interpreter`)
 - [ ] **`execution_context` & 独立3バッファスタック (`inc/runtime/interpreter.hxx`)**:
-  - `OperandStack`/`LocalStack`/`control_frame` 専用領域の独立管理・ローカル変数基底 R2 渡し `{ContextPointerRegister}`
+  - オペランド領域・ローカル値領域・制御ブロック復帰情報領域の独立管理・ローカル変数基底 R2 渡し `{ContextPointerRegister}`
 - [ ] **コア命令ハンドラ群 (`src/runtime/opcode_handlers.cxx`)**:
-  - `__fastcall` 継続渡し（CPS）4引数シグネチャ（R0=ctx, R1=sp, R2=local_base, R3=tos） `{ThreadedInterpreter}`
+  - 継続渡し4論理引数シグネチャ（R0=ctx, R1=sp, R2=local_base, R3=tos） `{ThreadedInterpreter}`
   - 算術・比較・変換・制御・メモリ操作ハンドラと `MemoryBoundaryCheck` トラップ `{MemoryBoundaryCheck}`
   - 分岐脱出時のフレームプルーニングと TOS 復元 (`GOTCHA-INTR-02`)
 - [ ] **スレッド化ディスパッチャ (`src/runtime/dispatch.cxx`)**:
@@ -86,7 +86,7 @@ Fireball Hypervisor の現行作業および次期フェーズのタスク一覧
 
 ### Phase 1.3: Copy-and-Patch JIT Compiler & Runtime (`jit_compiler`, `jit_runtime`)
 - [ ] **ARM Thumb-2 / x86_64 ネイティブパッチステンシル (`inc/jit/stencils.hxx`)**:
-  - `__fastcall` CPS 4引数レジスタ規約準拠の事前コンパイル済みネイティブバイト列（RO-Data）とリロケーションテーブル `{JIT_CopyAndPatch}` `{ADR_TosCacheAsymmetry}`
+  - 継続渡し4論理引数レジスタ規約準拠の事前コンパイル済みネイティブバイト列（RO-Data）とリロケーションテーブル `{JIT_CopyAndPatch}` `{ADR_TosCacheAsymmetry}`
 - [ ] **トリプルバッファ キャッシュマネージャ (`src/jit/cache_manager.cxx`)**:
   - 連続8KB領域のうち可変バンクは2KB × 3面（Oldest 破棄・昇格）。先頭2KBの共通コード領域は非エビクション `{JIT_MultiBuffer_Cache}` `{JIT_OldestOnly_Promote}`
   - MPU W^X バッチトランザクション管理（書き込み時 RW+XN / 実行時 RO+X）

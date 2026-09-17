@@ -92,7 +92,7 @@ def test_jitr_00_cache_region_is_two_pages_with_fixed_common_area():
 
 
 def test_jitr_00_common_apccs_area_survives_rotation_and_flush():
-    """APCCS stencils stay in the shared 2KB prefix while banks rotate."""
+    """AAPCS stencils stay in the shared 2KB prefix while banks rotate."""
     cache = JITMultiBufferCache()
     common = cache.common_code
     assert common.region_bytes == JIT_CACHE_REGION_BYTES

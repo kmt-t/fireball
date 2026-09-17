@@ -32,7 +32,7 @@
 | | [`system_service.md`](docs/components/tier1_interface/system_service.md) | システムサービス呼び出し、WASI トランスポート | Scenario 2, 11, 12 |
 | **Tier 2 Runtime** | [`runtime_vsoc.md`](docs/components/tier2_runtime/runtime_vsoc.md) | 統合 ExecEnv、モジュールリンク、共有メモリ | Scenario 1, 4, 6, 8 |
 | | [`runtime_loader.md`](docs/components/tier2_runtime/runtime_loader.md) | WASM バイナリパース、Active Data/Elem セグメント | Scenario 1, 8 |
-| | [`runtime_interpreter.md`](docs/components/tier2_runtime/runtime_interpreter.md) | CPS 4引数ディスパッチ、全幅メモリ、深い再帰、制御フレーム | Scenario 1〜12 |
+| | [`runtime_interpreter.md`](docs/components/tier2_runtime/runtime_interpreter.md) | 継続渡し4論理引数ディスパッチ、全幅メモリ、深い再帰、制御フレーム | Scenario 1〜12 |
 | | [`runtime_vmmio.md`](docs/components/tier2_runtime/runtime_vmmio.md) | Bit 31 RAM Bypass、FlatMap PTE、TLB[32]、仮想デバイス | Scenario 10 |
 | | [`debug_manager.md`](docs/components/tier2_runtime/debug_manager.md) | GDB RSP TCP ソケット接続、ブレークポイント、レジスタ/メモリ改変 | Scenario 7, 8 |
 | | [`runtime_memory.md`](docs/components/tier2_runtime/runtime_memory.md) | リニアメモリページ拡張（`memory.grow`）、MPU 領域保護 | Scenario 1, 4, 8, 10 |
@@ -54,7 +54,7 @@
 | `FlatMapView_BinarySearch` | `system_containers.md`, `ipc_router.md` | 静的ソート配列に対する $O(\log N)$ バイナリサーチ（動的割当なし） | `TEST-INT-01`, `TEST-INT-80` | ✅ PASS |
 | `RingBuffer_Overwrite` | `system_containers.md`, `runtime_logging.md` | 静的容量リングバッファ、満杯時の最古エントリ自動上書き | `TEST-INT-82` | ✅ PASS |
 | `BitView_CardMarking` | `system_containers.md`, `jit_runtime.md` | 関数ごと 8バイト/カード 2-bit カードマーキング（UNEXEC $\to$ EXEC $\to$ HOT $\to$ COMPILED） | `TEST-INT-30`, `TEST-INT-31` | ✅ PASS |
-| `DirectSwitch` | `os_coos.md`, `os_scheduler.md` | コンテキストスイッチスタック退避なしの CPS 関数呼び出し継続 | `TEST-INT-50`, `TEST-INT-51` | ✅ PASS |
+| `DirectSwitch` | `os_coos.md`, `os_scheduler.md` | コンテキストスイッチスタック退避なしの継続関数呼び出し | `TEST-INT-50`, `TEST-INT-51` | ✅ PASS |
 | `FuelExhaustion_Yield` | `os_scheduler.md`, `os_coos.md` | Fuel 枯渇（トレース境界での `quantum` 判定）での決定論的な中断と再開——判定・発行は駆動する側の責務 | `TEST-INT-50` | ✅ PASS |
 | `DictionaryBasedIPC` | `runtime_logging.md` | 静的 LogDictionary、危険書式（`%s` / `%p`）の登録時静的拒絶 | `TEST-INT-82` | ✅ PASS |
 | `BufferedLogging` | `runtime_logging.md` | 実行時リングバッファ蓄積 $\to$ COOS `idle_hook` での一括 UART フラッシュ | `TEST-INT-82` | ✅ PASS |
@@ -66,7 +66,7 @@
 | `DirectMappedTLB32` | `runtime_vmmio.md` | 20-bit VPN の 5-bit Folding XOR Hash による32エントリ Direct-Mapped TLB キャッシュ | `TEST-INT-92` | ✅ PASS |
 | `OwnerMismatchTrap` | `runtime_vmmio.md` | タスク間共有メモリ（FC=0xE）の所有権移動に伴うアンマップによる未登録ページフォルト（`TRAP_UNREGISTERED_PAGE`）遮断 | `TEST-INT-93` | ✅ PASS |
 | `ActiveDataSegments` | `runtime_loader.md` | モジュールロード時のアクティブデータセグメント自動リニアメモリ展開 | `TEST-INT-01` | ✅ PASS |
-| `CPS_4Args` | `runtime_interpreter.md` | `ctx, sp, local_base, tos` 4引数による CPS 関数ポインタディスパッチ | `TEST-INT-01`〜`TEST-INT-105` | ✅ PASS |
+| `CPS_4Args` | `runtime_interpreter.md` | `ctx, sp, local_base, tos` 4論理引数による継続関数ポインタディスパッチ | `TEST-INT-01`〜`TEST-INT-105` | ✅ PASS |
 | `SignZeroExtension` | `runtime_interpreter.md` | 8/16/32-bit メモリ読み書きにおける符号付き・符号なしゼロ/符号拡張の完全性 | `TEST-INT-70` | ✅ PASS |
 | `ControlFrameCleanup` | `runtime_interpreter.md` | `br_table` / `block` / `loop` / `if` 偽分岐時のスタックフレーム不変性・リーク防止 | `TEST-INT-20`, `TEST-INT-22` | ✅ PASS |
 | `RSPMinimalSet` | `debug_manager.md`, `gdb_rsp_protocol.md` | GDB RSP 最小コマンドセット（`?`, `g/G`, `m/M`, `Z0/z0`, `s`, `c`）の実ソケット対話 | `TEST-INT-60`〜`TEST-INT-64` | ✅ PASS |
@@ -114,7 +114,7 @@
 ---
 
 ### シナリオ 3: Tier 2 Interpreter + Recursion & Indirect Table Dispatch
-- **対象コンポーネント**: `runtime_interpreter` (UnifiedStack, CallFrame)
+- **対象コンポーネント**: `runtime_interpreter`（統合値領域、関数呼出し記述子）
 - **参照実装スクリプト (Reference Script)**: [`scenario3_recursion_and_tables.py`](experiments/pysim/qa/scenarios/scenario3_recursion_and_tables.py)
 - **WAT シナリオ**:
   - 再帰フィボナッチ関数（`fib(12)`）による深いコールスタック構築と巻き戻し
@@ -308,4 +308,3 @@ uv run --system-certs --with wasmtime python experiments/pysim/qa/scenarios/run_
 ### 3.2 本番実装（C++ Hypervisor）への適用方針
 
 本番ハイパーバイザ（C++23 実装）の開発においては、本書の各シナリオで定義された WAT ゲストモジュール、前提条件、入力、および期待結果・不変条件をそのまま受入テストケースとして適用する。ホストテストハーネス上で同一の WAT バイナリを実行し、参照実装と同等の入出力整合性および状態遷移不変条件を満たすことを検証する。
-

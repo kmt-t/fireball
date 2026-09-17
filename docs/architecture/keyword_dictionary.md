@@ -218,7 +218,7 @@ OSスケジューラ（`os_coos`, `os_scheduler`）、静的コンテナ（`syst
 
 ### 4.3 Tier 2 Runtime: vSoC・インタープリタ・ローダ・vMMIO・デバッガ・HAL公開IF
 
-WASM 実行エンジン（`runtime_vsoc`）、CPS スレッドインタープリタ（`runtime_interpreter`）、ゼロコピーローダ（`runtime_loader`）、仮想メモリ管理（`runtime_vmmio`）、GDB RSP デバッガ（`debug_manager`）、ロギングサブシステム（`runtime_logging`）、システムコールランタイム（`runtime_syscall`）の機能要求と設計の勘所。
+WASM 実行エンジン（`runtime_vsoc`）、継続渡しスレッドインタープリタ（`runtime_interpreter`）、ゼロコピーローダ（`runtime_loader`）、仮想メモリ管理（`runtime_vmmio`）、GDB RSP デバッガ（`debug_manager`）、ロギングサブシステム（`runtime_logging`）、システムコールランタイム（`runtime_syscall`）の機能要求と設計の勘所。
 
 #### 4.3.1 Tier 2 Runtime 要求キーワード (37 件)
 
@@ -232,7 +232,7 @@ WASM 実行エンジン（`runtime_vsoc`）、CPS スレッドインタープリ
 | `{JIT_Safepoint}` | `requirement_list.md` | `runtime_vsoc.md` | JIT 生成コードおよびインタープリタ内の協調的セーフポイントポーリング | - |
 | `{OneRuntimeOneGuest}` | `requirement_list.md` | `runtime_vsoc.md` | 1ランタイム1ゲストの直交分離。マルチインスタンスは独立ランタイム並行起動とIPC協調で実現 | - |
 | `{Runtime_BumpAllocator}` | `requirement_list.md` | `runtime_loader.md` | ランタイム単位の固定長データバンプアロケータ所有。モジュール内のシステムコンテナストレージ確保とアンロード時 $O(1)$ 一括解放（W^Xコード分離） | - |
-| `{ThreadedInterpreter}` | `requirement_list.md` | `runtime_interpreter.md` | CPS 4引数ディスパッチ、統合スタック、レジスタ保持による高速命令実行 | Scenario 1〜12 |
+| `{ThreadedInterpreter}` | `requirement_list.md` | `runtime_interpreter.md` | 継続渡し4論理引数ディスパッチ、独立領域、レジスタ保持による高速命令実行 | Scenario 1〜12 |
 | `{MemoryBoundaryCheck}` | `requirement_list.md` | `runtime_interpreter.md` | ゲストリニアメモリ境界外アクセスのトラップ遮断 | Scenario 1, 8, 10 |
 | `{FastAddressCheck}` | `requirement_list.md` | `runtime_interpreter.md` | オフセット境界判定のビット演算による高速アドレスチェック | - |
 | `{Interpreter_LazyJITSwitch}` | `requirement_list.md` | `runtime_interpreter.md` | ホットスポット検出時のインタープリタからJITコードへの遅延遷移 | - |
@@ -268,7 +268,7 @@ WASM 実行エンジン（`runtime_vsoc`）、CPS スレッドインタープリ
 | :--- | :--- | :--- | :--- | :--- |
 | `{GOTCHA-VSOC-01}` | `runtime_vsoc.md` | `runtime_vsoc_test_spec.md` | JITキャッシュ再判定の主体分離——インタープリタ自身はJITキャッシュを保持・参照せず、トレース境界で vSoC の step() が再判定する | TEST-VSOC-01 |
 | `{GOTCHA-VSOC-02}` | `runtime_vsoc.md` | `runtime_vsoc_test_spec.md` | 概算Yieldの主体分離——インタープリタ/JITトレース自身は co_yield を発行せず、vSoC が戻り値を受けて yield_threshold を評価する | TEST-VSOC-02 |
-| `{GOTCHA-INTP-01}` | `runtime_interpreter.md` | `runtime_interpreter_test_spec.md` | CPS第4引数 tos（R3）とスタックメモリの境界同期——スタック空時は tos=0、push/pop のたびに tos とスタックメモリ間で退避・復元する | TEST-INTP-01 |
+| `{GOTCHA-INTP-01}` | `runtime_interpreter.md` | `runtime_interpreter_test_spec.md` | 継続渡し第4論理引数 tos（R3）とスタックメモリの境界同期——スタック空時は tos=0、push/pop のたびに tos とスタックメモリ間で退避・復元する | TEST-INTP-01 |
 | `{GOTCHA-INTP-02}` | `runtime_interpreter.md` | `runtime_interpreter_test_spec.md` | Label Arity スタック巻き戻し時、宣言アリティ分の結果値のうち最上位値を tos レジスタへ正しく復元する | TEST-INTP-02 |
 | `{GOTCHA-INTP-03}` | `runtime_interpreter.md` | `runtime_interpreter_test_spec.md` | if 条件偽（else節なし）で分岐した際、制御フレームを積まずにジャンプし、フレームスタックの深さを不変に保つ | TEST-INTP-03 |
 | `{GOTCHA-INTP-04}` | `runtime_interpreter.md` | `runtime_interpreter_test_spec.md` | 統一プログラムカウンタ（Unified PC: `(func_index << 16) | bytecode_offset`）による複数モジュール空間の衝突防止 | TEST-INTP-97 |
@@ -302,8 +302,8 @@ Copy-and-Patch JIT コンパイラ（`jit_compiler`）および 3 面循環キ�
 | `{JIT_ReverseCompilationOrder}` | `requirement_list.md` | `jit_compiler.md` | LIFO 逆順コンパイルによる後続ブロック事前解決と即時チェイニング | - |
 | `{LowLatencyJIT}` | `requirement_list.md` | `jit_compiler.md` | 極小コンパイルレイテンシによるリアルタイムJITコード生成 | - |
 | `{SimpleJITArchitecture}` | `requirement_list.md` | `jit_compiler.md` | IR（中間表現）生成を省きバイトコードから直結パッチするシンプル構造 | - |
-| `{JIT_RegisterMapping}` | `requirement_list.md` | `jit_compiler.md` | ARM AAPCS / Thumb-2 レジスタと VM 状態の決定論的固定マッピング | - |
-| `{ContextPointerRegister}` | `requirement_list.md` | `jit_compiler.md` | execution_context を特定物理レジスタに常駐させ間接参照を極小化 | - |
+| `{JIT_RegisterMapping}` | `requirement_list.md` | `jit_compiler.md` | 論理引数とVM状態を対象ABIの物理レジスタへ決定論的に対応付ける規約 | - |
+| `{ContextPointerRegister}` | `requirement_list.md` | `jit_compiler.md` | execution_context の参照方法を対象ABIの物理レジスタ規約に従って定める契約 | - |
 | `{PositionIndependentCode}` | `requirement_list.md` | `jit_compiler.md` | キャッシュバンク配置に依存しない位置独立コード（PIC）生成 | - |
 | `{JIT_MultiBuffer_Cache}` | `requirement_list.md` | `jit_runtime.md` | 8KB連続領域（共通コード2KB＋Active / Warm / Oldest各2KB）による世代交代キャッシュ管理 | Scenario 4, 5 (TEST-INT-31) |
 | `{JIT_OldestOnly_Promote}` | `requirement_list.md` | `jit_runtime.md` | 3面キャッシュにおいて Oldest バンクでヒットしたコードのみを Active バンクへ昇格させる Oldest 限定昇格ポリシー | Scenario 4, 5 (TEST-INT-31, TEST-INT-41) |
@@ -314,8 +314,8 @@ Copy-and-Patch JIT コンパイラ（`jit_compiler`）および 3 面循環キ�
 
 | キーワード | 定義元正本 | 対象コンポーネント | 仕様概要・検証内容 | 対応テストケースID（キーワードではない） |
 | :--- | :--- | :--- | :--- | :--- |
-| `{GOTCHA-JITC-01}` | `jit_compiler.md` | `jit_compiler_test_spec.md` | CPS引数レジスタ（R0-R3）とJIT内部一時レジスタ（R4-R6, R8-R11）が呼び出し境界を越えて物理的に重複しない | TEST-JITC-01 |
-| `{GOTCHA-JITC-02}` | `jit_compiler.md` | `jit_compiler_test_spec.md` | mem_base/mem_size は execution_context（[R0, #0x28], [R0, #0x2C]）から一度だけピン留めロードする（独立した env 引数レジスタは廃止済み） | TEST-JITC-02 |
+| `{GOTCHA-JITC-01}` | `jit_compiler.md` | `jit_compiler_test_spec.md` | 境界引数レジスタ（R0-R3）とJIT内部一時レジスタ（R4-R6, R8-R11）が呼び出し境界を越えて物理的に重複しない | TEST-JITC-01 |
+| `{GOTCHA-JITC-02}` | `jit_compiler.md` | `jit_compiler_test_spec.md` | ARMv8-Mのmem_base/mem_sizeはexecution_contextの`+0x28`/`+0x2C`から一度だけピン留めロードする。物理レジスタは対象ABIごとに定める | TEST-JITC-02 |
 | `{GOTCHA-JITC-05}` | `jit_compiler.md` | `jit_compiler_test_spec.md` | トラップ分岐（BHS.W）はアドレス未確定のままオフセット0で仮発行し、エピローグ生成後に実アドレスへ2パスバックパッチする | TEST-JITC-05 |
 | `{GOTCHA-JITC-07}` | `jit_compiler.md` | `jit_compiler_test_spec.md` | トレースの残余値（VM オペランドスタック状態）は `sp` 経由でメモリへ書き込み、トレースは常に void を返す——C/AAPCS の戻り値レジスタとは無関係 | TEST-JITC-07 |
 | `{GOTCHA-JITR-01}` | `jit_runtime.md` | `jit_runtime_test_spec.md` | キャッシュ常駐性の一次情報源（二重コンパイル防止）——キュー処理時にキャッシュ常駐を再確認して二重コンパイルを抑止 | TEST-JITR-08 |
@@ -357,10 +357,10 @@ Copy-and-Patch JIT コンパイラ（`jit_compiler`）および 3 面循環キ�
 
 | キーワード | 定義元正本 | 対象コンポーネント | 仕様概要・検証内容 | 対応テストケースID（キーワードではない） |
 | :--- | :--- | :--- | :--- | :--- |
-| `{ExecutionContext_Layout}` | `architecture_overview.md` | `runtime_interpreter.md` | execution_context Tier 2 ABI 152バイト配置（15個の32bit状態フィールド、予約領域、11個の64bit JITヘルパーポインタ。ターゲット物理配置は各ABIで定義） | Scenario 1〜12 |
+| `{ExecutionContext_Layout}` | `architecture_overview.md` | `runtime_interpreter.md` | execution_context Tier 2標準ABI 64バイト配置（16個の32bit状態フィールド。ターゲット物理配置は各ABIで定義） | Scenario 1〜12 |
 | `{CallFrame_Layout}` | `runtime_interpreter.md` | `architecture_overview.md` | 固定容量の独立した関数呼出し記述子領域。各記述子はローカル値領域内の開始位置を保持し、ローカル値領域はローカル値だけを格納する | Scenario 3, 8 |
 | `{ControlFrame_Layout}` | `runtime_interpreter.md` | `architecture_overview.md` | 制御ブロックの復帰情報を20バイトで保持し、オペランド領域およびローカル値領域とは独立した専用の固定容量領域へ配置する | Scenario 3 |
-| `{VsocRuntime_Layout}` | `architecture_overview.md` | `runtime_vsoc.md` | execution_context 内包 vsoc_runtime 16バイト物理実行環境配置 (+0x28〜+0x37) | Scenario 1〜12 |
+| `{VsocRuntime_Layout}` | `architecture_overview.md` | `runtime_vsoc.md` | execution_context 内のリニアメモリ、グローバル領域、ハンドラ表に関する論理環境フィールド配置 | Scenario 1〜12 |
 
 ---
 
@@ -370,8 +370,8 @@ Copy-and-Patch JIT コンパイラ（`jit_compiler`）および 3 面循環キ�
 
 | キーワード | 定義元正本 | 対象コンポーネント | 仕様概要・検証内容 | 対応テストケースID（キーワードではない） |
 | :--- | :--- | :--- | :--- | :--- |
-| `{AAPCS_FastCall}` | `architecture_overview.md` | `runtime_interpreter.md` | CPS 4引数 AAPCS レジスタマッピング規約 (R0=ctx, R1=sp, R2=local_base, R3=tos) | Scenario 1〜12 |
-| `{CPS_4Args}` | `runtime_interpreter.md` | `runtime_interpreter.md` | ctx, sp, local_base, tos による 4 引数 CPS ディスパッチ規約 | Scenario 1〜12 |
+| `{AAPCS_FastCall}` | `architecture_overview.md` | `runtime_interpreter.md` | 継続渡し4論理引数の契約とAAPCS対象でのレジスタマッピング規約 | Scenario 1〜12 |
+| `{CPS_4Args}` | `runtime_interpreter.md` | `runtime_interpreter.md` | ctx, sp, local_base, tos による4論理引数の継続渡しディスパッチ規約 | Scenario 1〜12 |
 
 ---
 

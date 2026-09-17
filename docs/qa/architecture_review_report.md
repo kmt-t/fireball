@@ -34,13 +34,13 @@
 
 **追従結果:** 開始プロローグの保存量をAAPCS整列を維持する32バイトへ統一し、不要な`sub/add sp,#4`を除去した。外部call stubを含む実機命令列のABI検査は残件である。
 
-### AR-03 — `call_frame`の物理配置がアーキテクチャ概要とTier 2仕様で矛盾
+### AR-03 — 関数呼出し記述子の物理配置がアーキテクチャ概要とTier 2仕様で矛盾
 
-アーキテクチャ概要は`call_frame`の12バイトヘッダとローカル値を`LocalStack`内にインライン配置するとする（[architecture_overview.md](docs/architecture/architecture_overview.md)）。Tier 2仕様はメタデータを`LocalStack`へ混在させず、独立した実行時descriptorとして管理すると明記する（[runtime_interpreter.md](docs/components/tier2_runtime/runtime_interpreter.md)）。pysimも`call_frame_stack`と`local_stack`を別々に保持する（[interpreter.py](experiments/pysim/tier2_runtime/interpreter.py)）。
+アーキテクチャ概要は関数呼出し記述子の12バイトヘッダとローカル値を同じ領域にインライン配置するとする（[architecture_overview.md](docs/architecture/architecture_overview.md)）。Tier 2仕様はメタデータをローカル値領域へ混在させず、独立した実行時記述子として管理すると明記する（[runtime_interpreter.md](docs/components/tier2_runtime/runtime_interpreter.md)）。参照実装も関数呼出し記述子領域とローカル値領域を別々に保持する（[interpreter.py](experiments/pysim/tier2_runtime/interpreter.py)）。
 
 **修正案:** 実際の共有実行コンテキスト／Tier 2仕様を正本として、概要図と`CallFrame_Layout`辞書を更新するか、インライン配置へ設計を戻すなら実装・形式モデル・テストをまとめて変更する。
 
-**追従結果:** `call_frame`の分離は既存PySimどおりであり、概要側を独立descriptorと明記した。`control_frame`についてもPySim／`wasm_interop.hxx`の`kind/start/match_end/stack_height/result_arity`、20バイト配置へ同期した。
+**追従結果:** 関数呼出し記述子の分離は既存の参照実装どおりであり、概要側を独立記述子と明記した。制御ブロック復帰情報についても、`wasm_interop.hxx`の`kind/start/match_end/stack_height/result_arity`および20バイト配置へ同期した。
 
 ## 主要な指摘
 
@@ -122,7 +122,7 @@ IPC仕様は`AG(in_flight -> AF(not in_flight))`を有限解決性の証明と�
 
 ## 対象外・要確認
 
-- `control_frame`は設計書が16バイトのターゲット表現を定義する一方、x64 pysim ABI headerは20バイトを`static_assert`する。headerはx64ホストシミュレータABIを示すため、ターゲット配置との差が意図的かを確認するが、このレビューでは即時矛盾と断定しない。
+- 制御ブロック復帰情報は設計書が16バイトのターゲット表現を定義する一方、x64ホストシミュレータのABIヘッダは20バイトを`static_assert`する。ヘッダはx64ホストシミュレータABIを示すため、ターゲット配置との差が意図的かを確認するが、このレビューでは即時矛盾と断定しない。
 - Concept `Channel`は送信側を実際にはsuspendせず単一in-flight slotへ置き、2件目をassertする。ただしコード自身がscheduler統合を範囲外と明記しているため、scheduler協調コードとの責務境界の追跡事項とする。
 - architecture_overview.md:330-337のシーケンス図はサービスの応答結果が呼出元へ戻るように読める一方、ipc_router.wit:52, 55はroute-messageのipc-statusとreceive-messageを別APIにする。応答メッセージを別途ルーティングする設計なら、その経路を図で明示する。
 - 4KBページ粒度とSHM予算の差は矛盾として扱わない。仮想アドレス／ページ粒度と物理確保予算は別の制約である。

@@ -24,7 +24,7 @@ Interpreter は、WASM命令をスレッドインタープリタ方式で実行�
 - **`Interpreter`**: WASM命令の実行、コンテキスト管理、外部環境との連携をカプセル化した主要クラスである。
 - **`execution_context`**: 仮想CPUレジスタ、3本の値スタック情報、リニアメモリ情報を保持する構造体（計64バイト）である。JIT共通領域とヘルパーはトレースヘッダが保持する。
 - **`OperandStack`（オペランドスタック）**: WASM のオペランド値のみを保持する固定容量スタックである。コールチェーン全体を貫く1本の連続バッファとして動作する。呼び出しを跨いでもスタックは連続して配置される。
-- **`LocalStack`（ローカル変数スタック）**: コールチェーン全体で共有する固定容量の raw 32ビットスロット配列である。論理ローカル1個につき `WASM_LOCAL_ALIGNMENT_BYTES` の固定スロットを割り当てる。アクセス先は `local_base + slot * WASM_LOCAL_ALIGNMENT_BYTES` から直接計算する。
+- **`LocalStack`（ローカル変数スタック）**: コールチェーン全体で共有する固定容量のバイナリ raw 32ビットスロット列である。型タグ、Python/C++オブジェクト、descriptorを格納しない。論理ローカル1個につき `WASM_LOCAL_ALIGNMENT_BYTES` の固定スロットを割り当てる。アクセス先は `local_base + slot * WASM_LOCAL_ALIGNMENT_BYTES` から直接計算する。
 - **`control_frame` スタック**: `block`/`loop`/`if` の入れ子構造を管理する固定容量スタックである。
 - **`call_frame_stack`**: 関数ごとの実行メタデータを保持する独立した固定容量スタックである。各descriptorは`LocalStack`内のフレーム開始位置を保持し、`LocalStack`にはローカル値だけを置く。
 - **`interpreter_config`**: 3本のスタック容量やyield閾値などの不変な構成情報である。
@@ -130,7 +130,7 @@ TOS および NOS（次段TOS、`NTOS`）はライトバック・キャッシュ
 
 #### コールフレーム（call_frame descriptor）
 <!-- traceability: {PositionIndependentCode} {ContextPointerRegister} {MemoryBoundaryCheck} {EnvironmentPointer} {AAPCS_FastCall} -->
-`call_frame` は、関数インデックス、コード、制御マップ、環境、および`LocalStack`の開始raw-word位置を結び付ける実行時descriptorであり、独立した`call_frame_stack`に格納する。`frame_offset`は`LocalStack`のuint32ワード単位である。calleeのローカル値は現在の`local_offset`から確保し、descriptorに保存した開始位置から参照する。`LocalStack`の固定長`uint32_t`配列へdescriptor、戻りPC、型情報を混在させない。論理ローカルは`WASM_LOCAL_ALIGNMENT_BYTES`固定スロットで保持する。値の有効ワードは関数シグネチャに従う。i32/f32は1ワード、i64/f64は2ワードを占有する。
+`call_frame` は、関数インデックス、コード、制御マップ、環境、および`LocalStack`の開始raw-word位置を結び付ける実行時descriptorであり、独立した`call_frame_stack`に格納する。`frame_offset`は`LocalStack`のuint32ワード単位である。calleeのローカル値は現在の`local_offset`から確保し、descriptorに保存した開始位置から参照する。`OperandStack`／`LocalStack`は型タグを持たないバイナリrawスロット列であり、descriptor、戻りPC、型情報を格納しない。論理ローカルは`WASM_LOCAL_ALIGNMENT_BYTES`固定スロットで保持する。値の有効ワードは関数シグネチャに従う。i32/f32は1ワード、i64/f64は2ワードを占有する。
 
 `local.get`, `local.set`, `local.tee` は型を解釈しない。local index から `slot * WASM_LOCAL_ALIGNMENT_BYTES` を直接計算する。必要な 1 または 2 ワードをオペランドスタックとの間で生コピーする。型付き演算や ABI 境界の読み書きのみが、既知の型に応じて値を解釈する。オペランドスタックはコール境界を跨いで連続する。`call`, `call_indirect`, import, host call, 関数復帰は、常に Interpreter/RuntimeEngine 境界で処理する。JIT トレースが `call_frame` の push/pop や host call helper の呼出しを代行することはない。
 

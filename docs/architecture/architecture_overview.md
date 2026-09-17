@@ -116,8 +116,8 @@ Fireball の実行コアは、以下の 6 つの物理メカニズムによっ�
 |---|---:|---|---|
 | `execution_context` | Tier 2 ABIでは152バイト | 15個の32bit実行状態フィールド、予約領域、命令別JITヘルパーポインタを保持する。 | 物理レイアウトと呼出規約の対応はターゲット（x64 / ARMv8-M）ごとに定義し、Tier 2の論理フィールド契約を共有する。 |
 | `OperandStack` | 固定長値バッファ | WASM オペランド値だけを保持し、コールチェーン全体を貫いて連続する。 | 呼び出しを跨いでも作り直さない。 |
-| `LocalStack` | 固定長値バッファ | raw 32-bitローカル値だけを保持する。calleeの値領域は現在の末尾から確保する。 | 復帰時にdescriptorの保存位置まで一括で戻す。 |
-| `call_frame_stack` | 固定容量 | 関数ごとのdescriptorを独立管理する。各descriptorは関数メタデータと`LocalStack`開始raw-word位置を保持する。 | ローカル値配列内にインラインヘッダを置かない。 |
+| `LocalStack` | 固定長バイナリrawスロット列 | 型タグを持たないraw 32-bitローカル値だけを保持する。calleeの値領域は現在の末尾から確保する。 | descriptor、戻りPC、型情報を値配列へ混在させず、復帰時にdescriptorの保存位置まで一括で戻す。 |
+| `call_frame_stack` | 固定容量descriptor領域 | 関数ごとのdescriptorを独立管理する。各descriptorは関数メタデータと`LocalStack`開始raw-word位置を保持する。 | `OperandStack`／`LocalStack`のバイナリ値配列内にインラインヘッダを置かない。 |
 | `control_frame` 専用領域 | 1フレーム20バイト、固定容量バッファ | `block`/`loop`/`if`の入れ子を管理する。 | `OperandStack`とは同居しない（`{ControlFrame_Layout}`）。 |
 - **レジスタ規約**: `R0: ctx`, `R1: sp`, `R2: local_base`, `R3: tos` を全ハンドラ・JITトレースへ渡す。CPS 第1〜第4引数として直接引き回す。基本ブロック末尾では `tos, nos, nnos` をスタックへフラッシュする。コンテキスト `R0` の `ip` および `sp_offset` を更新して状態を同期する。 `{JIT_RegisterMapping}`
 
@@ -232,7 +232,7 @@ ARM Cortex-M33 (ARMv8-M Mainline) における物理レジスタの厳格な役�
 
 | 配置 | 保持内容 | 不変条件 |
 |---|---|---|
-| 固定容量 `call_frame_stack` | 関数メタデータへの参照と `LocalStack` 開始raw-word位置 | LocalStackの値配列に12バイトヘッダを埋め込まない。物理サイズ・ABI配置はターゲット実装で定義する。 |
+| 固定容量 `call_frame_stack` | 関数メタデータへの参照と `LocalStack` 開始raw-word位置 | `OperandStack`／`LocalStack`のバイナリ値配列にdescriptor、戻りPC、型情報を埋め込まない。descriptorの物理サイズ・ABI配置はターゲット実装で定義する。 |
 
 詳細正本: `runtime_interpreter.md`。 `{CallFrame_Layout}`
 

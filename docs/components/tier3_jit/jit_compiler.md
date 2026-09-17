@@ -287,7 +287,7 @@ JIT キャッシュ内に書き込まれる各トレースは、**先頭に48バ
 5. **インタープリタ連携とハンドラ直接呼び出し (Low-Overhead Interop & Direct Handler Call)**:
 - JIT トレースとインタープリタハンドラは同一の CPS 4引数規約（R0=ctx, R1=SP, R2=local_base, R3=tos）を共有する。
    - JIT トレースは直線的な算術・ローカル変数演算、構文デリミタ消去、および SP 即値巻き戻しを伴う多段分岐（`br`, `br_if`）をネイティブインライン展開する。
-- コールフレームや同期が必要な境界命令に達した場合、トレース末尾で Callee-saved を復元する。レジスタ引数を保持したままインタープリタへ末尾ジャンプ（`BX r12`）する。
+- コールフレームや同期が必要な境界命令に達した場合、RuntimeEngine／Interpreterへ戻る最終境界では Callee-saved とAAPCS frameを復元する。JITトレース間のchainではトレースチェインエピローグが共有状態だけを同期し、Callee-saved とAAPCS frameを保持したままchain entryへ進む。レジスタ引数を保持した末尾ジャンプ（`BX r12`）はARMターゲットの境界契約である。
    - Cで実装する複雑処理へ委譲する場合は、対象トレースのヘッダ `helper_target_addr` に同一CPS 4引数関数ポインタを保持する。JITは共通ヘルパーオフセットへヘッダアドレスを渡し、共通コードが関数ポインタをロードしてフレームを復元後に末尾ジャンプする。委譲前の値は共有Nativeスタックへraw 32bitワードで同期する。 `{PositionIndependentCode}`
    - レジスタ規約が完全一致しているためコンテキスト再構築コストはゼロであり、JIT の軽量性（Zero Compile Cost）と完全な制御フロー安全性を両立する。 `{ADR_TosCacheAsymmetry}`
 

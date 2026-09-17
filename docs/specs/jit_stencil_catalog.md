@@ -127,7 +127,7 @@
 #### `STENCIL_EXTERNAL_CALL_STUB` (外部 AAPCS C/C++ 関数呼出境界)
 - **Thumb-2 命令列**:
   ```asm
-  push.w {r0-r3, r12, lr} ; [Offset 0x00] 32-bit Caller-saved 退避 (4 Bytes)
+  push.w {r0-r3, r12, lr} ; [Offset 0x00] 32-bit Caller-saved 退避 (24 Bytes)
   bl     0x00000000       ; [Offset 0x04] RELOC_REL24_BRANCH (外部C関数, 4 Bytes)
   pop.w  {r0-r3, r12, lr} ; [Offset 0x08] 32-bit Caller-saved 復元 (4 Bytes)
   ```

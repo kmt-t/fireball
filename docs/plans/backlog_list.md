@@ -22,18 +22,14 @@ Fireball Hypervisor の現行作業および次期フェーズのタスク一覧
   - シミュレータの実行・リファクタリングから得られる新たな実装の勘所（Gotchas）やシステム不変条件（Invariants）の継続的抽出
   - コンポーネント別テスト仕様書（`docs/qa/tier*/`）への Gotchas 固有識別子および設計理由の追記・拡充
   - 仕様書（自然言語記述）とテスト仕様書の完全同期
-  - **`runtime_interpreter_test_spec.md` 直交表配備**: 状態遷移（`Trap -> Ready`, `Debugging -> Running` 等）および境界条件に対する直交表マトリクス（Pairwise）を新設
-  - **`ControlFrameNative` への `result_arity` 追加と GOTCHA-INTP-02 真正検証復元**: ブロック脱出時の Label Arity スタックプルーニングと TOS 復元を実装し、`test_gotchas.py` の void ブロック代理テストを戻り値付きブロック脱出テストへ改定
 - [ ] **旧JITテストハーネスの移行と重複dispatchの除去**:
   - QA内の`IntegratedHybridEngine`／`WASMContext`／`run_step`を参照するdebugger・GDB・vSoC・JITテストを、現行`Interpreter`／`RuntimeEngine`の共有実行コンテキストへ移行する
   - 現行経路で同等の検証が成立したテストから旧ハーネスと重複opcode dispatchを除去する。単にテストを削除せず、既存の検証対象が維持されることを確認する
 - [ ] **アーキテクチャ監査課題の設計整合・ADR策定**:
-  - **今回反映済み**: 4KB仮想予約スロットと1KB物理SHM予算の分離、実サイズ境界付きvMMIO PTE、RESOURCE RevokeのPageMappingCallbacks経由化、`ControlFrameNative` 20バイトABI、JIT Oldest hit即時昇格、JIT用Radix表を持たない4スロットXOR＋二分探索、連続8KB（共通コード2KB＋Active/Warm/Oldest各2KB）、AAPCS開始／終了ステンシルのSP整合、基本ブロック末尾のvariant依存flushをPySim・形式モデル・仕様・テストへ同期した。PySim全24スイートと関連形式モデルを実行済み。
-  - **2026-09-16 アーキテクチャレビュー追従**: [architecture_review_report.md](docs/qa/architecture_review_report.md) のAR-01〜AR-14を解消する。JITチェイン終端／AAPCS SP整列／関数呼出し記述子の配置を先行し、ハンドラABI、compile失敗後のUNEXECUTED再計測、pysimとのJIT状態・計算量差、CSP保証とWIT／vMMIO契約、空の設計根拠、UnifiedPC実行時assertを順に整合する。制御ブロック復帰情報とWIT RAIIの表現差はターゲットABIとの対応を明記してから欠陥判定する
-  - 完了済みのJITキャッシュ配置（連続8KB・共通コード2KB＋3バンク各2KB）と少数エントリ検索（Radixなし）は [`backlog_archive.md`](docs/plans/backlog_archive.md) に記録した。AR-05の昇格条件／chain抽象度は未解決
+  - **2026-09-16 アーキテクチャレビュー追従**: [architecture_review_report.md](docs/qa/architecture_review_report.md) に残る未再監査の指摘を、実装・仕様・形式モデル・テストの証跡で再確認する。対象はJITチェイン終端、AAPCS SP整列、ハンドラABI、JIT状態遷移・計算量、CSP保証、WIT／vMMIO契約、設計根拠である
+  - JITのネイティブトレース間chainと参照シミュレータの再検索との差は、ターゲット固有最適化と参照モデルの抽象度差を切り分けて再レビューする
   - **JITトレースヘッダ更新と MPU W^X 保護（RO+X）のハードウェア整合化**: Cortex-M33 PMSAv8 において RO 領域（Region 4）への書き込みが MemManage Fault となる制約の解消。パッチトランザクション相乗りモデル（`begin_jit_patch` 内一括更新）またはヘッダ・データスロットの RAM 領域（Region 3）分離配置モデルの策定
-  - **関数呼出し記述子の物理レイアウトの確定と実装同期**: pysimの実行モデルに合わせ、固定容量の独立した関数呼出し記述子領域がローカル値領域の開始ワード位置を保持する。ローカル値領域はローカル値だけを格納し、Tier 2仕様・形式モデル・概念コード・テスト仕様・architecture_overviewを同期する
-  - **`interpreter_concept.py` の潜在バグ解消と型安全性是正**: 多重ブロック脱出時の二重ポップバグ修正、`_h_if` 条件偽時フレームリーク（`GOTCHA-INTP-03`）修正、`arg: int | object` ワイルドカードの具象型置換、ホスト再帰呼び出しの排除
+  - **インタープリタ概念コードの移植性是正**: 残存する広すぎる型注釈を具体化し、ホスト再帰呼び出しを組み込み実装方針に適合させる
 - [ ] **Step 2.3: ユニットテストコードの網羅性・品質強化**:
   - エッジケース・異常系・直交表組み合わせテストの拡充
   - テストランナー（[`run_all.py`](experiments/pysim/qa/run_all.py)）による全 22+ スイートの高速・高信頼実行の維持

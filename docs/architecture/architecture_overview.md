@@ -286,7 +286,7 @@ flowchart TD
 |---|---|---|
 | RAM | 最小構成 SRAM 32KB（32,768 Bytes） | [`resource_budget_estimation.md`](docs/architecture/resource_budget_estimation.md) のRAM予算 |
 | ROM / Flash | 最小構成 Flash 96KB（98,304 Bytes） | [`resource_budget_estimation.md`](docs/architecture/resource_budget_estimation.md) のROM予算 |
-| 製品コード規模 | コメント・テストを除き20,000 SLOC以内（`{Size_20KSLOC}`） | [`resource_budget_estimation.md`](docs/architecture/resource_budget_estimation.md) のSLOC見積もり |
+| 製品コード規模 | コメント・テストを除き20,000 SLOC以内 | [`resource_budget_estimation.md`](docs/architecture/resource_budget_estimation.md) のSLOC見積もり |
 
 RAM、ROM、SLOCの内訳と合計は本概要に重複記載せず、`resource_budget_estimation.md` のみを正本とする。
 

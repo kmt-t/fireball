@@ -107,7 +107,7 @@ Fireball の全体構造、依存性の方向、リソース予算、品質保�
 | `{IoC}` | `requirement_list.md` | `architecture_overview.md` | 制御の反転によるコンポーネント間結合の疎結合化 | - |
 | `{LowOverhead}` | `requirement_list.md` | `architecture_overview.md` | 超低消費リソース・高速起動のためのオーバーヘッド最小化 | - |
 | `{NotRTOS}` | `requirement_list.md` | `os_coos.md` | リアルタイム性（プリエンプション）よりもメモリ効率と決定論的移植性を最優先 | - |
-| `{Pairwise_Combinatorial_Testing}` | `verification_factor_matrix.md` | `docs/qa/verification_factor_matrix.md` | 因子CSV、自動採番ケース、成果物連鎖、7因子288組の全2因子間ペアを100%網羅する検証マトリクス | TEST-PAIR-01〜TEST-PAIR-26 |
+| `{Pairwise_Combinatorial_Testing}` | `verification_factor_matrix.md` | `[verification_factor_matrix.md](docs/qa/verification_factor_matrix.md)` | 因子CSV、自動採番ケース、成果物連鎖、7因子288組の全2因子間ペアを100%網羅する検証マトリクス | TEST-PAIR-01〜TEST-PAIR-26 |
 | `{Resource_Estimation_Model}` | `requirement_list.md` | `architecture_overview.md` | メモリ・ROM・サイクルバジェットのリソース見積もり予測モデル | - |
 | `{Size_20KSLOC}` | `requirement_list.md` | `architecture_overview.md` | コメントとテストコードを除く製品ソースコードを20 KSLOC以内に収める制約 | - |
 | `{ZeroRuntimeOverhead}` | `requirement_list.md` | `architecture_overview.md` | インライン展開と直接ディスパッチによる実行時オーバーヘッドゼロの達成 | - |

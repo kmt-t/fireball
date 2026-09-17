@@ -32,9 +32,9 @@ except ImportError:
     wasmtime = None
 
 import wasm_opcodes as op
+from dummy_drivers import DummyDriver
 from interpreter import Interpreter, InterpreterBindings
 from system import System
-from dummy_drivers import DummyDriver
 from wasi import WasiHostContext
 from wasm_reader import parse
 

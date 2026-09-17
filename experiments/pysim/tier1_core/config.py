@@ -44,7 +44,13 @@ FB_CONF_JIT_CACHE_SIZE: int = JIT_CACHE_REGION_BYTES
 JIT_CACHE_REGION_PAGE_COUNT: int = JIT_CACHE_REGION_BYTES // JIT_CACHE_PAGE_BYTES
 JIT_CACHE_FAST_SLOT_COUNT: int = 4
 JIT_CACHE_MAX_INBOUND_SOURCES: int = 32
-JIT_TRACE_HEADER_BYTES: int = 48
+# The x64 simulator has its own header layout.  The 64-bit chain target is
+# aligned as a native pointer, so it is not the ARM header layout.
+JIT_X64_TRACE_HEADER_BYTES: int = 56
+JIT_X64_CHAIN_TARGET_OFFSET: int = 0x10
+JIT_X64_HELPER_TARGET_OFFSET: int = 0x28
+# Compatibility name for existing simulator-wide capacity calculations.
+JIT_TRACE_HEADER_BYTES: int = JIT_X64_TRACE_HEADER_BYTES
 # Physical offsets in the trace header.  These are consumed by the common
 # helper stub and are part of the trace/code-cache ABI.
 # Common-code offsets are code-region offsets, not trace-header field offsets.
@@ -53,7 +59,7 @@ JIT_TRACE_HEADER_BYTES: int = 48
 JIT_TRACE_COMMON_PROLOGUE_OFFSET: int = 0
 JIT_TRACE_COMMON_EPILOGUE_OFFSET: int = 32
 JIT_TRACE_COMMON_HELPER_OFFSET: int = 48
-JIT_TRACE_HELPER_TARGET_OFFSET: int = 0x20
+JIT_TRACE_HELPER_TARGET_OFFSET: int = JIT_X64_HELPER_TARGET_OFFSET
 JIT_TRACE_DEFAULT_BYTES: int = 64
 RUNTIME_BLOCK_CACHE_SLOT_COUNT: int = 4
 RUNTIME_DEBUG_REPORT_LINE_CAPACITY: int = RUNTIME_BLOCK_CACHE_SLOT_COUNT * 16

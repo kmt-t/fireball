@@ -88,7 +88,7 @@ Fireball の実行コアは、以下の 6 つの物理メカニズムによっ�
 |                                  FIREBALL MASTER PHYSICAL DESIGN                                  |
 +---------------------------------------------------------------------------------------------------+
 |  [Pillar 1] 独立3バッファ・スタックモデル (Three Independent Stack Buffers Model)                  |
-|             └─ execution_context (R0), OperandStack / LocalStack / control_frame の3独立バッファ    |
+|             └─ execution_context (R0)、オペランドスタック / ローカル値領域 / 制御ブロック復帰情報の3独立領域 |
 +---------------------------------------------------------------------------------------------------+
 |  [Pillar 2] 3段直接 JIT 検索パイプライン (3-Stage Direct JIT Lookup Pipeline)                     |
 |             └─ Card Marking (O(1)) -> Direct-Mapped XOR (O(1)) -> Binary Search (O(log n))         |
@@ -107,18 +107,18 @@ Fireball の実行コアは、以下の 6 つの物理メカニズムによっ�
 +---------------------------------------------------------------------------------------------------+
 ```
 
-### 3.1 Pillar 1: 独立3値スタックとCallFrameメタデータモデル
+### 3.1 Pillar 1: 独立3値スタックと関数呼出し記述子メタデータモデル
 <!-- traceability: {ContextPointerRegister} {MemoryBoundaryCheck} {ThreadedInterpreter} {ExecutionContext_Layout} {CallFrame_Layout} -->
-- **物理実体**: `OperandStack`、`LocalStack`、`control_frame`は互いに独立した3本の固定長値バッファ（計2KB〜4KB）である。関数実行メタデータは別の固定容量`call_frame_stack`が保持し、値バッファと混在させない。
+- **物理実体**: オペランド領域、ローカル値領域、制御ブロック復帰情報領域は互いに独立した3本の固定長バイナリ領域（計2KB〜4KB）である。関数実行メタデータは別の固定容量領域が保持し、値領域と混在させない。
 - **物理レイアウト**:
 
 | 構造 | 容量・サイズ | 保持内容・役割 | 不変条件 |
 |---|---:|---|---|
 | `execution_context` | Tier 2 ABIでは152バイト | 15個の32bit実行状態フィールド、予約領域、命令別JITヘルパーポインタを保持する。 | 物理レイアウトと呼出規約の対応はターゲット（x64 / ARMv8-M）ごとに定義し、Tier 2の論理フィールド契約を共有する。 |
-| `OperandStack` | 固定長値バッファ | WASM オペランド値だけを保持し、コールチェーン全体を貫いて連続する。 | 呼び出しを跨いでも作り直さない。 |
-| `LocalStack` | 固定長バイナリrawスロット列 | 型タグを持たないraw 32-bitローカル値だけを保持する。calleeの値領域は現在の末尾から確保する。 | descriptor、戻りPC、型情報を値配列へ混在させず、復帰時にdescriptorの保存位置まで一括で戻す。 |
-| `call_frame_stack` | 固定容量descriptor領域 | 関数ごとのdescriptorを独立管理する。各descriptorは関数メタデータと`LocalStack`開始raw-word位置を保持する。 | `OperandStack`／`LocalStack`のバイナリ値配列内にインラインヘッダを置かない。 |
-| `control_frame` 専用領域 | 1フレーム20バイト、固定容量バッファ | `block`/`loop`/`if`の入れ子を管理する。 | `OperandStack`とは同居しない（`{ControlFrame_Layout}`）。 |
+| `オペランドスタック` | 固定長値バッファ | WASM オペランド値だけを保持し、コールチェーン全体を貫いて連続する。 | 呼び出しを跨いでも作り直さない。 |
+| `ローカル値領域` | 固定長バイナリrawスロット列 | 型タグを持たないraw 32-bitローカル値だけを保持する。calleeの値領域は現在の末尾から確保する。 | descriptor、戻りPC、型情報を値配列へ混在させず、復帰時にdescriptorの保存位置まで一括で戻す。 |
+| `call_frame_stack` | 固定容量descriptor領域 | 関数ごとのdescriptorを独立管理する。各descriptorは関数メタデータと`local_stack`開始raw 32ビットワード位置を保持する。 | `operand_stack`／`local_stack`のバイナリ値配列内にインラインヘッダを置かない。 |
+| 制御ブロック復帰情報の専用領域 | 1件20バイト、固定容量領域 | `block`/`loop`/`if`の入れ子を管理する。 | オペランド領域とは同居しない（`{ControlFrame_Layout}`）。 |
 - **レジスタ規約**: `R0: ctx`, `R1: sp`, `R2: local_base`, `R3: tos` を全ハンドラ・JITトレースへ渡す。CPS 第1〜第4引数として直接引き回す。基本ブロック末尾では `tos, nos, nnos` をスタックへフラッシュする。コンテキスト `R0` の `ip` および `sp_offset` を更新して状態を同期する。 `{JIT_RegisterMapping}`
 
 ### 3.2 Pillar 2: 3段直接 JIT 検索パイプライン (3-Stage Direct JIT Lookup Pipeline)
@@ -184,7 +184,7 @@ ARM Cortex-M33 (ARMv8-M Mainline) における物理レジスタの厳格な役�
 | 物理レジスタ | AAPCS 規約 | Fireball インタープリタ | Fireball JIT トレース (役割任意割当レジスタ) | 役割と不変条件 |
 | :--- | :--- | :--- | :--- | :--- |
 | **`R0`** | Argument 1 / Scratch | `ctx` (`execution_context*`) | `ctx` (`execution_context*`) | 継続渡し（CPS）第1引数。コンテキスト構造体ポインタ 。 |
-| **`R1`** | Argument 2 / Scratch | `sp` (OperandStack SP) | `sp` (OperandStack SP) | 継続渡し（CPS）第2引数。オペランドスタックポインタ。 |
+| **`R1`** | Argument 2 / Scratch | `sp` (オペランドスタック SP) | `sp` (オペランドスタック SP) | 継続渡し（CPS）第2引数。オペランドスタックポインタ。 |
 | **`R2`** | Argument 3 / Scratch | `local_base` | `local_base` | 継続渡し（CPS）第3引数。ローカル変数基底ポインタ 。 |
 | **`R3`** | Argument 4 / Scratch | `tos` (Top of Stack) | `tos` (Top of Stack) | 継続渡し（CPS）第4引数。スタックトップ値（最上位オペランド値）。 |
 | **`R4`** | Callee-saved | (保全) | **`Assignable Pool 0` (NOS)** | **スタック次段キャッシュ (NOS)**。 |
@@ -207,15 +207,15 @@ ARM Cortex-M33 (ARMv8-M Mainline) における物理レジスタの厳格な役�
 | オフセット | フィールド | 型 | 意味 |
 |---:|---|---|---|
 | `+0x00` | `ip` | u32 | 現在または復帰時の WASM PC |
-| `+0x04` | `sp_base` | u32 | OperandStack バッファ先頭アドレス |
-| `+0x08` | `sp_limit` | u32 | OperandStack バッファ終端アドレス |
-| `+0x0C` | `sp_offset` | u32 | 現在の OperandStack オフセット / アドレス |
-| `+0x10` | `local_base_addr` | u32 | LocalStack バッファ先頭アドレス |
-| `+0x14` | `local_limit_addr` | u32 | LocalStack バッファ終端アドレス |
-| `+0x18` | `local_offset` | u32 | LocalStack上の次の空きraw 32-bit word位置 |
-| `+0x1C` | `cf_base_addr` | u32 | control_frame バッファ先頭アドレス |
-| `+0x20` | `cf_limit_addr` | u32 | control_frame バッファ終端アドレス |
-| `+0x24` | `cf_offset` | u32 | 現在の control_frame 深さ / オフセット |
+| `+0x04` | `sp_base` | u32 | オペランドスタック バッファ先頭アドレス |
+| `+0x08` | `sp_limit` | u32 | オペランドスタック バッファ終端アドレス |
+| `+0x0C` | `sp_offset` | u32 | 現在の オペランドスタック オフセット / アドレス |
+| `+0x10` | `local_base_addr` | u32 | ローカル値領域 バッファ先頭アドレス |
+| `+0x14` | `local_limit_addr` | u32 | ローカル値領域 バッファ終端アドレス |
+| `+0x18` | `local_offset` | u32 | ローカル値領域上の次の空きraw 32ビットワード位置 |
+| `+0x1C` | `cf_base_addr` | u32 | 制御ブロック復帰情報領域の先頭アドレス |
+| `+0x20` | `cf_limit_addr` | u32 | 制御ブロック復帰情報領域の終端アドレス |
+| `+0x24` | `cf_offset` | u32 | 制御ブロック復帰情報の現在位置または深さ |
 | `+0x28` | `mem_base` | u32 | ゲストRAM先頭アドレス |
 | `+0x2C` | `mem_size` | u32 | 境界チェック用のリニアメモリサイズ |
 | `+0x30` | `globals_base` | u32 | WASM global 配列基底 |
@@ -232,11 +232,11 @@ ARM Cortex-M33 (ARMv8-M Mainline) における物理レジスタの厳格な役�
 
 | 配置 | 保持内容 | 不変条件 |
 |---|---|---|
-| 固定容量 `call_frame_stack` | 関数メタデータへの参照と `LocalStack` 開始raw-word位置 | `OperandStack`／`LocalStack`のバイナリ値配列にdescriptor、戻りPC、型情報を埋め込まない。descriptorの物理サイズ・ABI配置はターゲット実装で定義する。 |
+| 固定容量 `call_frame_stack` | 関数メタデータへの参照と `local_stack` 開始raw 32ビットワード位置 | `operand_stack`／`local_stack`のバイナリ値配列にdescriptor、戻りPC、型情報を埋め込まない。descriptorの物理サイズ・ABI配置はターゲット実装で定義する。 |
 
 詳細正本: `runtime_interpreter.md`。 `{CallFrame_Layout}`
 
-#### `control_frame`（独立固定容量バッファ、1フレーム計20バイト）
+#### 制御ブロック復帰情報（独立固定容量領域、1件20バイト）
 
 | オフセット | フィールド | 型 | 意味 |
 |---:|---|---|---|

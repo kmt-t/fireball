@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
+import wasm_opcodes as op
 from leb128 import decode_signed, decode_unsigned
 from system_containers import ReadOnlyFlatMapStorage, StaticVector
 from wasm_module import (
@@ -27,7 +28,6 @@ from wasm_module import (
     Table,
 )
 from wasm_opcodes import CALL, CALL_INDIRECT
-import wasm_opcodes as op
 
 MAGIC = b"\x00asm"
 VERSION = b"\x01\x00\x00\x00"
@@ -245,7 +245,6 @@ def _parse_type_section(
 def _parse_import_section(
     data: memoryview, off: int, end: int, callbacks: _ParseCallbacks
 ) -> None:
-    module = callbacks.module
     n, off = decode_unsigned(data, off)
     for _ in range(n):
         mod_len, off = decode_unsigned(data, off)
@@ -453,8 +452,6 @@ def _parse_code_section(
     type_indices: StaticVector[int],
     callbacks: _ParseCallbacks,
 ) -> None:
-    module = callbacks.module
-
     n, off = decode_unsigned(data, off)
     assert n == len(type_indices), "code section entry count must match function section"
     for i in range(n):

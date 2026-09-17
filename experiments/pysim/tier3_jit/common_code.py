@@ -6,6 +6,7 @@ import ctypes
 import sys
 from collections.abc import Callable
 
+import x64_stencils as st
 from config import (
     JIT_CACHE_ABSOLUTE_ADDRESS_POOL_BYTES,
     JIT_CACHE_COMMON_CODE_BYTES,
@@ -13,11 +14,10 @@ from config import (
     JIT_TRACE_COMMON_EPILOGUE_OFFSET,
     JIT_TRACE_COMMON_HELPER_OFFSET,
     JIT_TRACE_COMMON_PROLOGUE_OFFSET,
-    JIT_TRACE_HEADER_BYTES,
+    JIT_X64_CHAIN_TARGET_OFFSET,
+    JIT_X64_TRACE_HEADER_BYTES,
 )
 from exec_memory import ExecutableBuffer
-import x64_stencils as st
-
 
 IS_WINDOWS = sys.platform == "win32"
 
@@ -28,7 +28,7 @@ COMMON_EPILOGUE_OFFSET = JIT_TRACE_COMMON_EPILOGUE_OFFSET
 COMMON_HELPER_OFFSET = JIT_TRACE_COMMON_HELPER_OFFSET
 COMMON_ABSOLUTE_POOL_OFFSET = 80
 TRACE_ENTRY_STUB_BYTES = 15
-TRACE_BODY_OFFSET = JIT_TRACE_HEADER_BYTES + TRACE_ENTRY_STUB_BYTES
+TRACE_BODY_OFFSET = JIT_X64_TRACE_HEADER_BYTES + TRACE_ENTRY_STUB_BYTES
 
 
 def gen_pic_prologue() -> bytes:
@@ -120,6 +120,8 @@ class JITCodeCacheRegion:
         exit_patch_offset: int,
         helper_header_patch_offset: int,
         helper_exit_patch_offset: int,
+        chain_header_patch_offset: int = -1,
+        chain_fallback_patch_offset: int = -1,
     ) -> tuple[Callable[..., int | None], int]:
         """Relocate and copy one trace using only offsets from its header.
 
@@ -131,9 +133,9 @@ class JITCodeCacheRegion:
         assert self.common_code_bytes <= offset < self.region_bytes
         assert offset + len(blob) <= self.region_bytes
         patched = bytearray(blob)
-        common_prologue = int.from_bytes(patched[0x10:0x14], "little")
-        common_epilogue = int.from_bytes(patched[0x14:0x18], "little")
-        common_helper = int.from_bytes(patched[0x18:0x1C], "little")
+        common_prologue = int.from_bytes(patched[0x18:0x1C], "little")
+        common_epilogue = int.from_bytes(patched[0x1C:0x20], "little")
+        common_helper = int.from_bytes(patched[0x20:0x24], "little")
         assert common_prologue < self.common_code_bytes
         assert common_epilogue < self.common_code_bytes
         assert common_helper < self.common_code_bytes
@@ -156,6 +158,16 @@ class JITCodeCacheRegion:
         patch_rel32(entry_prologue_patch_offset, common_prologue)
         if exit_patch_offset >= 0:
             patch_rel32(exit_patch_offset, common_epilogue)
+        if chain_header_patch_offset >= 0:
+            header_addr = base + offset
+            next_ip = base + offset + chain_header_patch_offset + 4
+            displacement = header_addr - next_ip
+            assert -(1 << 31) <= displacement < (1 << 31)
+            patched[
+                chain_header_patch_offset : chain_header_patch_offset + 4
+            ] = int(displacement).to_bytes(4, "little", signed=True)
+        if chain_fallback_patch_offset >= 0:
+            patch_rel32(chain_fallback_patch_offset, common_epilogue)
         if helper_header_patch_offset >= 0:
             header_addr = base + offset
             next_ip = base + offset + helper_header_patch_offset + 4
@@ -170,7 +182,7 @@ class JITCodeCacheRegion:
         self.buffer.write(offset, bytes(patched))
         self.buffer.commit_jit_patch()
         fn = self.buffer.function_at(
-            offset + JIT_TRACE_HEADER_BYTES,
+            offset + JIT_X64_TRACE_HEADER_BYTES,
             None,
             (ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_uint32),
         )
@@ -187,8 +199,8 @@ __all__ = (
     "COMMON_EPILOGUE_OFFSET",
     "COMMON_HELPER_OFFSET",
     "COMMON_PROLOGUE_OFFSET",
-    "JITCodeCacheRegion",
     "TRACE_BODY_OFFSET",
     "TRACE_ENTRY_STUB_BYTES",
+    "JITCodeCacheRegion",
     "gen_pic_prologue",
 )

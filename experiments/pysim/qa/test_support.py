@@ -11,7 +11,6 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable, Sequence
 
 from control_flow import iter_block_ops
-from helpers import wat_to_wasm
 from runtime_engine import BasicBlock, JITTrace
 from system_containers import (
     ReadOnlyRadixBinaryTreeStorage,

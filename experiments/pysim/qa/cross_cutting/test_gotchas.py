@@ -54,7 +54,8 @@ import ctypes
 from control_flow import extract_basic_blocks
 from debugger import DebuggerManager, GDBRspProtocol
 from hal_dispatch import HalBufferPool
-from helpers import expect_assertion, make_interpreter as Interpreter, make_test_ipc_message, wat_to_wasm
+from helpers import expect_assertion, make_test_ipc_message, wat_to_wasm
+from helpers import make_interpreter as Interpreter
 from interpreter import _HANDLERS
 from ipc_router import (
     IPCRouter,
@@ -63,11 +64,11 @@ from ipc_router import (
     Role,
 )
 from jit_copy_patch_concept import CopyPatchJITEngine, Reg, Thumb2Assembler
+from legacy_runtime_engine import IntegratedHybridEngine, WASMContext
 from loader import WasmLoader
 from logger import LogDictionary, Logger, LogLevel
 from memory import FB_CONF_MEMORY_POOL_SIZE, MemoryManager
 from runtime_engine import BasicBlock, CardState, JITMultiBufferCache, JITTrace, RuntimeEngine
-from legacy_runtime_engine import IntegratedHybridEngine, WASMContext
 from scheduler import ChannelAction, Scheduler, Task, WaitDir
 from stream_transport import StreamTransport
 from system import System, WasiErrno
@@ -686,7 +687,7 @@ def test_cont_gotcha_02_narrowing_never_expands_bounds():
         rejected = False
         try:
             view.slice(invalid_first, invalid_last)
-        except (ValueError, IndexError, AssertionError) as e:
+        except (ValueError, IndexError, AssertionError):
             rejected = True
         assert rejected, f"Expected slice({invalid_first}, {invalid_last}) to fail"
 

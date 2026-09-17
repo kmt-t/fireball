@@ -39,13 +39,13 @@ for _p in [
     if _sp not in sys.path:
         sys.path.insert(0, _sp)
 
+from dummy_drivers import DummyDriver
 from hal_dispatch import (
     ARG_BUFFER_HANDLE,
     ARG_LENGTH,
     ARG_OFFSET,
     ARG_QUERY_CMD_ID,
 )
-from dummy_drivers import DummyDriver
 from system import System
 from system_containers import ReadOnlyFlatMapView
 from wasi import Wasi03pEngine, WasiHostContext, WasiIpcCmd

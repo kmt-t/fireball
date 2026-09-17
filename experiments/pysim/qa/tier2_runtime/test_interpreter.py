@@ -38,11 +38,11 @@ for _p in [
 # runtime_engine's qualified Tier 3 modules.
 sys.path.insert(0, str(_PYSIM_DIR))
 
-from helpers import expect_assertion, make_interpreter as Interpreter, wat_to_wasm
+from helpers import expect_assertion, wat_to_wasm
+from helpers import make_interpreter as Interpreter
 from interpreter import InterpreterContext, Trap, WasmNumber
-from scheduler import Scheduler
 from system_containers import StaticVector
-from vmmio import TrapCode, VMMIOController
+from vmmio import TrapCode
 from wasm_module import F64, I32, I64, Function, FuncType, Memory, Module
 from wasm_reader import parse
 

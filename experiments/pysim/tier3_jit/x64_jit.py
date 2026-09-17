@@ -18,9 +18,7 @@ import ctypes
 from collections.abc import Iterable, Sequence
 
 import x64_stencils as st
-from control_flow import iter_block_ops
 from common_code import (
-    TRACE_BODY_OFFSET,
     TRACE_ENTRY_STUB_BYTES,
     JITCodeCacheRegion,
 )
@@ -29,7 +27,6 @@ from jit_cache import JITTrace, JITTraceHeader
 from system_containers import ReadOnlyFlatMapView, StaticVector
 from wasm_module import (
     WASM_LOCAL_SLOT_BYTES,
-    BasicBlock,
     WasmOperand,
 )
 from wasm_opcodes import (

@@ -550,10 +550,10 @@ class MemoryManager:
         "partition_owners",
         "pool_base",
         "pool_size",
-        "shm_pages",
-        "shm_storage",
         "shm_allocated_bytes",
+        "shm_pages",
         "shm_slots",
+        "shm_storage",
         "total_allocated_bytes",
     )
 

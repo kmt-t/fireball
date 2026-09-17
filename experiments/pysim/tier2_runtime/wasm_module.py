@@ -17,18 +17,13 @@ from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+import wasm_opcodes as op
 from config import (
     FB_CONF_MAX_BASIC_BLOCKS,
-    FB_CONF_MAX_EXPORTS,
-    FB_CONF_MAX_FUNCTIONS,
-    FB_CONF_MAX_GLOBALS,
     FB_CONF_MAX_LOCALS,
-    FB_CONF_MAX_TABLES,
-    FB_CONF_MAX_TYPES,
 )
 from jit_scoring import OpcodeBenefitTable
 from leb128 import decode_signed, decode_unsigned
-import wasm_opcodes as op
 from system_containers import (
     ReadOnlyFlatMapStorage,
     ReadOnlyRadixBinaryTreeStorage,

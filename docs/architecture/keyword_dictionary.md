@@ -232,7 +232,7 @@ WASM 実行エンジン（`runtime_vsoc`）、CPS スレッドインタープリ
 | `{JIT_Safepoint}` | `requirement_list.md` | `runtime_vsoc.md` | JIT 生成コードおよびインタープリタ内の協調的セーフポイントポーリング | - |
 | `{OneRuntimeOneGuest}` | `requirement_list.md` | `runtime_vsoc.md` | 1ランタイム1ゲストの直交分離。マルチインスタンスは独立ランタイム並行起動とIPC協調で実現 | - |
 | `{Runtime_BumpAllocator}` | `requirement_list.md` | `runtime_loader.md` | ランタイム単位の固定長データバンプアロケータ所有。モジュール内のシステムコンテナストレージ確保とアンロード時 $O(1)$ 一括解放（W^Xコード分離） | - |
-| `{ThreadedInterpreter}` | `requirement_list.md` | `runtime_interpreter.md` | CPS 4引数ディスパッチ、UnifiedStack、レジスタ保持による高速命令実行 | Scenario 1〜12 |
+| `{ThreadedInterpreter}` | `requirement_list.md` | `runtime_interpreter.md` | CPS 4引数ディスパッチ、統合スタック、レジスタ保持による高速命令実行 | Scenario 1〜12 |
 | `{MemoryBoundaryCheck}` | `requirement_list.md` | `runtime_interpreter.md` | ゲストリニアメモリ境界外アクセスのトラップ遮断 | Scenario 1, 8, 10 |
 | `{FastAddressCheck}` | `requirement_list.md` | `runtime_interpreter.md` | オフセット境界判定のビット演算による高速アドレスチェック | - |
 | `{Interpreter_LazyJITSwitch}` | `requirement_list.md` | `runtime_interpreter.md` | ホットスポット検出時のインタープリタからJITコードへの遅延遷移 | - |
@@ -358,8 +358,8 @@ Copy-and-Patch JIT コンパイラ（`jit_compiler`）および 3 面循環キ�
 | キーワード | 定義元正本 | 対象コンポーネント | 仕様概要・検証内容 | 対応テストケースID（キーワードではない） |
 | :--- | :--- | :--- | :--- | :--- |
 | `{ExecutionContext_Layout}` | `architecture_overview.md` | `runtime_interpreter.md` | execution_context Tier 2 ABI 152バイト配置（15個の32bit状態フィールド、予約領域、11個の64bit JITヘルパーポインタ。ターゲット物理配置は各ABIで定義） | Scenario 1〜12 |
-| `{CallFrame_Layout}` | `runtime_interpreter.md` | `architecture_overview.md` | 固定容量の独立CallFrame descriptor stack。各descriptorはLocalStack内の開始raw-word位置を保持し、LocalStackはローカル値だけを格納する | Scenario 3, 8 |
-| `{ControlFrame_Layout}` | `runtime_interpreter.md` | `architecture_overview.md` | control_frame 20バイト（kind/start/match_end/stack_height/result_arity）、OperandStack/LocalStackとは独立した専用固定容量バッファへの物理配置 | Scenario 3 |
+| `{CallFrame_Layout}` | `runtime_interpreter.md` | `architecture_overview.md` | 固定容量の独立した関数呼出し記述子領域。各記述子はローカル値領域内の開始位置を保持し、ローカル値領域はローカル値だけを格納する | Scenario 3, 8 |
+| `{ControlFrame_Layout}` | `runtime_interpreter.md` | `architecture_overview.md` | 制御ブロックの復帰情報を20バイトで保持し、オペランド領域およびローカル値領域とは独立した専用の固定容量領域へ配置する | Scenario 3 |
 | `{VsocRuntime_Layout}` | `architecture_overview.md` | `runtime_vsoc.md` | execution_context 内包 vsoc_runtime 16バイト物理実行環境配置 (+0x28〜+0x37) | Scenario 1〜12 |
 
 ---
@@ -383,7 +383,7 @@ Copy-and-Patch JIT コンパイラ（`jit_compiler`）および 3 面循環キ�
 | :--- | :--- | :--- | :--- | :--- |
 | `{ActiveDataSegments}` | `runtime_loader.md` | `runtime_loader.md` | ロード時のアクティブデータセグメント自動リニアメモリ展開 | Scenario 1 (TEST-INT-01) |
 | `{BitView_CardMarking}` | `system_containers.md` | `jit_runtime.md` | 関数ごと 8バイト/カード 2-bit カードマーキング Hotspot 検出（UNEXEC → EXEC → HOT → COMPILED） | Scenario 4 (TEST-INT-30) |
-| `{ControlFrameCleanup}` | `runtime_interpreter.md` | `runtime_interpreter.md` | br_table / block / loop / if 偽分岐時のスタックフレーム自動復元 | Scenario 3 (TEST-INT-20, TEST-INT-22) |
+| `{制御フレームCleanup}` | `runtime_interpreter.md` | `runtime_interpreter.md` | br_table / block / loop / if 偽分岐時のスタックフレーム自動復元 | Scenario 3 (TEST-INT-20, TEST-INT-22) |
 | `{DeterministicRingBuffer}` | `runtime_logging.md` | `runtime_logging_test_spec.md` | リングバッファ満杯時、ブロックやエラーを起こさず最古エントリを上書きして直近ログを保存する非ブロック不変条件 | TEST-LOG-02 |
 | `{DirectBytecodeExecution}` | `runtime_interpreter.md` | `runtime_interpreter.md` | ROM/Flash バイトコード直接デコード、命令オブジェクト生成ゼロ、およびポインタ加算（ip + len）によるO(1)命令実行 | Scenario 1〜12 (TEST-INTP-50) |
 | `{DirectMappedJIT4}` | `jit_runtime.md` | `jit_runtime.md` | 32-bit UnifiedPC の4段 Folding XOR Hash と2-bitスロット選択による4エントリ Direct-Mapped JIT キャッシュ一撃検索 | Scenario 4, 5 (TEST-JITR-26) |

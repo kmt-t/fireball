@@ -28,8 +28,8 @@ for _p in [
 
 import wasm_opcodes as op
 from control_flow import extract_basic_blocks, iter_block_ops
-from interpreter import Interpreter, InterpreterBindings
 from execution_context import WASMContext
+from interpreter import Interpreter, InterpreterBindings
 from runtime_engine import HotspotBitmap, RuntimeEngine
 from system_containers import ReadOnlyFlatMapView
 from wasm_reader import parse

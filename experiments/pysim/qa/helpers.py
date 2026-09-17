@@ -34,8 +34,8 @@ for _p in [
         sys.path.insert(0, _sp)
 
 
-from ipc_router import IPCMessage
 from interpreter import Interpreter, InterpreterBindings, WasmNumber
+from ipc_router import IPCMessage
 from memory import MemoryManager
 from scheduler import Scheduler
 from system_containers import StaticVector

@@ -615,9 +615,9 @@ def _gen_header_helper_tail_jump() -> Generator[int, None, None]:
         yield from (0x4D, 0x89, 0xD2)
         yield from (0x44, 0x89, 0xC9)
 
-    # mov rax, [rax + trace_header.helper_target_addr]
+    # mov rax, [rax + x64 trace_header.helper_target_addr]
     yield from (0x48, 0x8B, 0x80)
-    yield from (0x20, 0x00, 0x00, 0x00)
+    yield from (0x28, 0x00, 0x00, 0x00)
     yield from _gen_restore_unwind_only()
     yield from (0xFF, 0xE0)
 

@@ -27,6 +27,7 @@ ignore = [
 ]
 
 [lint.per-file-ignores]
+"experiments/pysim/**/*.py" = ["B011"]
 "**/tests/*" = ["F841", "B011"]
 "**/scenarios/*" = ["F841"]
 "**/concepts/*" = ["F841"]

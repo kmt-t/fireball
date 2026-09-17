@@ -28,9 +28,9 @@ for _p in (
     sys.path.insert(0, _sp)
 
 from hal_dispatch import HalBufferTrap
+from interpreter import Interpreter, InterpreterBindings
 from logger import LogLevel
 from recovery import RecoveryManager, RecoveryStrategy, Result
-from interpreter import Interpreter, InterpreterBindings
 from runtime_engine import RuntimeEngine
 from system import ShmSlice, System
 from system_containers import StaticVector

@@ -19,11 +19,11 @@ from enum import IntFlag
 
 from leb128 import decode_signed, decode_unsigned
 from system_containers import (
-    freeze_sequence,
     MutableBitStorage,
     ReadOnlyBitStorage,
     ReadOnlyFlatMapStorage,
     StaticVector,
+    freeze_sequence,
 )
 from wasm_module import WasmOperand
 from wasm_opcodes import (
@@ -101,10 +101,10 @@ from wasm_opcodes import (
     I32_CONST,
     I32_DIV_S,
     I32_DIV_U,
-    I32_EXTEND8_S,
-    I32_EXTEND16_S,
     I32_EQ,
     I32_EQZ,
+    I32_EXTEND8_S,
+    I32_EXTEND16_S,
     I32_GE_S,
     I32_GE_U,
     I32_GT_S,
@@ -144,11 +144,11 @@ from wasm_opcodes import (
     I64_DIV_U,
     I64_EQ,
     I64_EQZ,
-    I64_EXTEND_I32_S,
-    I64_EXTEND_I32_U,
     I64_EXTEND8_S,
     I64_EXTEND16_S,
     I64_EXTEND32_S,
+    I64_EXTEND_I32_S,
+    I64_EXTEND_I32_U,
     I64_GE_S,
     I64_GE_U,
     I64_GT_S,
@@ -199,7 +199,6 @@ from wasm_opcodes import (
     UNREACHABLE,
 )
 
-
 ControlBlock = tuple[int, int | None, int]
 
 
@@ -218,7 +217,6 @@ def _decode_blocktype(code: bytes, offset: int) -> tuple[int, int]:
         "ERR_WASM_UNSUPPORTED_FEATURE: blocktype must be empty or a single "
         f"value type, got 0x{blocktype:02X}"
     )
-from wasm_reader import WasmUnsupportedFeatureError
 
 
 class OpcodeAttribute(IntFlag):

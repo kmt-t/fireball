@@ -40,10 +40,11 @@ for _p in [
 sys.path.insert(0, str(_PYSIM_DIR))
 
 from control_flow import extract_basic_blocks
-from helpers import expect_assertion, make_interpreter as Interpreter, wat_to_wasm
+from helpers import expect_assertion, wat_to_wasm
+from helpers import make_interpreter as Interpreter
+from legacy_runtime_engine import IntegratedHybridEngine, WASMContext
 from logger import LogDictionary, Logger, LogLevel
 from runtime_engine import BasicBlock, CardState, JITTrace, RuntimeEngine
-from legacy_runtime_engine import IntegratedHybridEngine, WASMContext
 from stream_transport import StreamTransport
 from system import (
     System,

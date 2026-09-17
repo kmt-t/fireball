@@ -50,8 +50,8 @@ import struct
 
 from control_flow import extract_basic_blocks
 from helpers import wat_to_wasm
-from runtime_engine import BasicBlock
 from legacy_runtime_engine import IntegratedHybridEngine, WASMContext
+from runtime_engine import BasicBlock
 from test_support import compile_module_block, compile_test_block
 from wasm_module import WASM_LOCAL_SLOT_WORDS
 from wasm_opcodes import (

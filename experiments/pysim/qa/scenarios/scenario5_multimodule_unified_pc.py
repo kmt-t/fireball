@@ -26,6 +26,7 @@ Tests:
 """
 
 from bisect import bisect_left
+
 import wasmtime
 from interpreter import Interpreter, InterpreterBindings
 from runtime_engine import RuntimeEngine

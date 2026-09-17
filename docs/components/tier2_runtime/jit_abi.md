@@ -18,7 +18,7 @@
 
 `fireball_execution_context_native` は、32bitのゲスト状態フィールド16個からなる64バイトの標準レイアウトである。`fireball_const_buffer_view_native`、`fireball_wasm_function_view_native`、`fireball_wasm_module_view_native` は、WASMコードと関数メタデータを渡す非所有の標準レイアウト構造体である。文字列、`std::vector`、仮想関数、例外はこの境界に含めない。 `{ExecutionContext_Layout}` `{META_NoStdVector}`
 
-実行時の `OperandStack`、`LocalStack`、`control_frame` は、固定容量の構造体と配列として配置する。値スタックは `WASM_VALUE_SLOT_BYTES` の境界に配置した raw 32-bit word 配列で、WASM の i32/f32 は1スロット、i64/f64 は2スロットを使用する。ローカルは `WASM_LOCAL_ALIGNMENT_BYTES` 固定スロットとし、JIT/インタープリタとも `slot * WASM_LOCAL_ALIGNMENT_BYTES` からアドレスを直接計算する。したがってローカルオフセット表を保持・参照する必要はなく、i64/f64の有効ワードも自然に境界へ置かれる。値の型タグは記録せず、型を知っているハンドラが対応する読み書きメソッドを選択する。制御フレームは`kind/start/match_end/stack_height/result_arity`を持つ20バイトの固定長レコード配列として保持する。 `{META_NoStdVector}`
+実行時のオペランド領域、ローカル値領域、制御ブロック復帰情報領域は、固定容量の構造体と配列として配置する。値領域は `WASM_VALUE_SLOT_BYTES` の境界に配置した raw 32ビットワード配列で、WASM の i32/f32 は1スロット、i64/f64 は2スロットを使用する。ローカル値は `WASM_LOCAL_ALIGNMENT_BYTES` 固定スロットとし、JIT/インタープリタともスロット番号からアドレスを直接計算する。したがってローカルオフセット表を保持・参照する必要はなく、i64/f64の有効ワードも自然に境界へ置かれる。値の型タグは記録せず、型を知っているハンドラが対応する読み書きメソッドを選択する。制御ブロックの復帰情報は、構造種別、開始位置、終了位置、保存済みスタック長、結果個数を持つ20バイトの固定長レコード配列として保持する。 `{META_NoStdVector}`
 
 関数の引数・戻り値バッファも同じ原則で扱う。`WasmRunRequestNative` と `WasmRunResultNative` はバッファポインタと個数だけを渡し、戻り値型や型タグを保持しない。呼び出し側が関数シグネチャを知っているため、必要なスロット幅と解釈は呼び出し側で決める。
 
@@ -33,4 +33,4 @@
 | 第3引数 | `R8` | `RDX` | `local_base` |
 | 第4引数 | `R9` | `RCX` | `tos` |
 
-共通委譲スタブはトレースヘッダの `helper_target_addr` をロードし、JIT自身のcallee-savedレジスタを復元してから `jmp` する。委譲前にJITのハードウェアスタックを共有Nativeスタックへraw 32bitワードとして書き戻す。したがってヘルパーはJITの戻りアドレスを新たに積まず、同じABIで呼び出し元へ復帰する。スタック状態を同期できないトレースはこの委譲経路へコンパイルしてはならない。 `{JIT_RuntimeAPI_Fallback}`
+共通委譲スタブはトレースヘッダの `helper_target_addr` をロードし、JIT自身のcallee-savedレジスタを復元してから `jmp` する。委譲前にJITのハードウェアスタックを共有共有スタックへraw 32bitワードとして書き戻す。したがってヘルパーはJITの戻りアドレスを新たに積まず、同じABIで呼び出し元へ復帰する。スタック状態を同期できないトレースはこの委譲経路へコンパイルしてはならない。 `{JIT_RuntimeAPI_Fallback}`

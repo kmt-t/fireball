@@ -8,8 +8,9 @@ the old ``WASMContext``/``run_step`` harness while those tests are migrated.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable
+from collections.abc import Callable
 
+from config import JIT_CARD_SHIFT
 from control_flow import iter_block_ops
 from execution_context import WASMContext
 from runtime_engine import (
@@ -20,9 +21,9 @@ from runtime_engine import (
     HotspotBitmap,
     JITMultiBufferCache,
     JITTrace,
-    _module_code_lengths,
     _Debugger,
     _JitCompiler,
+    _module_code_lengths,
 )
 from system_containers import StaticVector
 from wasm_module import Module, WasmOperand
@@ -35,7 +36,6 @@ from wasm_opcodes import (
     LOCAL_SET,
     LOCAL_TEE,
 )
-from config import JIT_CARD_SHIFT
 from x64_jit import TraceCompiler
 
 

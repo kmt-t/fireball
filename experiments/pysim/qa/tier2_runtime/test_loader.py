@@ -246,7 +246,7 @@ def test_load_20_to_25_multi_module_import_resolution():
     loader = WasmLoader()
     # 1. Prepare target library module
     lib_wasm = _build_test_wasm_binary(export_names=["helper"])
-    lib_view = loader.prepare("lib_mod", lib_wasm)
+    loader.prepare("lib_mod", lib_wasm)
     # 2. Build dependent app module
     app_buf = bytearray()
     app_buf.extend(b"\x00asm\x01\x00\x00\x00")

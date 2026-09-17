@@ -37,7 +37,8 @@ for _p in [
     if _sp not in sys.path:
         sys.path.insert(0, _sp)
 
-from helpers import make_interpreter as Interpreter, wat_to_wasm
+from helpers import make_interpreter as Interpreter
+from helpers import wat_to_wasm
 from interpreter import Trap
 from wasm_reader import parse
 

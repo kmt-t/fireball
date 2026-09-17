@@ -11,6 +11,13 @@ import ctypes
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
+from common_code import (
+    COMMON_ABSOLUTE_POOL_OFFSET,
+    COMMON_EPILOGUE_OFFSET,
+    COMMON_HELPER_OFFSET,
+    COMMON_PROLOGUE_OFFSET,
+    JITCodeCacheRegion,
+)
 from config import (
     JIT_CACHE_ACTIVE_OFFSET_BYTES,
     JIT_CACHE_BANK_CAPACITY_BYTES,
@@ -18,17 +25,11 @@ from config import (
     JIT_CACHE_FAST_SLOT_COUNT,
     JIT_CACHE_MAX_INBOUND_SOURCES,
     JIT_CACHE_OLDEST_OFFSET_BYTES,
+    JIT_CACHE_WARM_OFFSET_BYTES,
     JIT_CARD_SHIFT,
     JIT_TRACE_DEFAULT_BYTES,
-    JIT_TRACE_HEADER_BYTES,
-    JIT_CACHE_WARM_OFFSET_BYTES,
-)
-from common_code import (
-    COMMON_ABSOLUTE_POOL_OFFSET,
-    COMMON_EPILOGUE_OFFSET,
-    COMMON_HELPER_OFFSET,
-    COMMON_PROLOGUE_OFFSET,
-    JITCodeCacheRegion,
+    JIT_X64_CHAIN_TARGET_OFFSET,
+    JIT_X64_TRACE_HEADER_BYTES,
 )
 from system_containers import (
     MutableBitStorage,
@@ -231,23 +232,25 @@ class HistoryRing:
 
 class JITTraceHeader:
     """
-    48-byte fixed physical memory layout:
+    x64-specific 56-byte fixed physical memory layout:
         +0x00 head_wasm_pc(u32)
         +0x04 trace_byte_size(u16)
         +0x06 flags(u8) [0x01: PROMOTED, 0x02: LOOP_HEADER]
         +0x07 variant_id(u8)
         +0x08 chain_next_pc(u32)
-        +0x0C chain_target_addr(u32)
-        +0x10 common_prologue_offset(u32)
-        +0x14 common_epilogue_offset(u32)
-        +0x18 common_helper_offset(u32)
-        +0x1C helper_index(u32)
-        +0x20 helper_target_addr(u64)
-        +0x28 absolute_pool_offset(u32)
-        +0x2C reserved(u32)
+        +0x0C reserved(u32)
+        +0x10 chain_target_addr(u64)
+        +0x18 common_prologue_offset(u32)
+        +0x1C common_epilogue_offset(u32)
+        +0x20 common_helper_offset(u32)
+        +0x24 helper_index(u32)
+        +0x28 helper_target_addr(u64)
+        +0x30 absolute_pool_offset(u32)
+        +0x34 reserved(u32)
     """
 
     __slots__ = (
+        "absolute_pool_offset",
         "chain_next_pc",
         "chain_target_addr",
         "common_epilogue_offset",
@@ -257,7 +260,6 @@ class JITTraceHeader:
         "head_wasm_pc",
         "helper_index",
         "helper_target_addr",
-        "absolute_pool_offset",
         "trace_byte_size",
         "variant_id",
     )
@@ -275,7 +277,7 @@ class JITTraceHeader:
         helper_target_addr: int = 0,
     ):
         self.head_wasm_pc = head_wasm_pc & 0xFFFF_FFFF
-        assert trace_byte_size >= JIT_TRACE_HEADER_BYTES
+        assert trace_byte_size >= JIT_X64_TRACE_HEADER_BYTES
         self.trace_byte_size = trace_byte_size & 0xFFFF
         self.flags = flags & 0xFF
         self.variant_id = variant_id & 0xFF
@@ -293,12 +295,13 @@ class JITTraceHeader:
         import struct
 
         return struct.pack(
-            "<IHBBIIIIIIQII",
+            "<IHBBIIQIIIIQII",
             self.head_wasm_pc,
             self.trace_byte_size,
             self.flags,
             self.variant_id,
             self.chain_next_pc or 0,
+            0,
             self.chain_target_addr or 0,
             self.common_prologue_offset,
             self.common_epilogue_offset,
@@ -325,10 +328,10 @@ class JITTrace:
         "exit_patch_offset",
         "fn",
         "has_return_val",
-        "helper_header_patch_offset",
-        "helper_exit_patch_offset",
         "head_pc",
         "header",
+        "helper_exit_patch_offset",
+        "helper_header_patch_offset",
         "loops_to",
         "next_pc",
         "raw_addr",
@@ -450,8 +453,8 @@ class JITCacheBank:
         "_keys",
         "_values",
         "bank_id",
-        "code_offset_bytes",
         "capacity_bytes",
+        "code_offset_bytes",
         "entry_capacity",
         "inbound_sources",
         "used_bytes",

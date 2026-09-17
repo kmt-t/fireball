@@ -307,7 +307,7 @@ def test_mem_15_vmmio_fc14_tlb_sync():
 
 def test_mem_16_virtual_page_reservation_is_independent_of_shm_backing():
     """A 4KB virtual slot maps only the requested bytes from the 1KB SHM pool."""
-    from memory import FB_CONF_SHM_SIZE, FB_PAGE_SIZE, FB_CONF_MPU_R6_SHARED_MEMORY_BASE
+    from memory import FB_CONF_MPU_R6_SHARED_MEMORY_BASE, FB_CONF_SHM_SIZE, FB_PAGE_SIZE
 
     mm, scheduler = _make_memory_manager(1)
     vmmio = VMMIOController(guest_ram_size=8192, scheduler=scheduler)

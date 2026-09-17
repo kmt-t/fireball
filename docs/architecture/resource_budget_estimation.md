@@ -58,7 +58,7 @@ RAM 領域は、主動作用の**統合物理メモリプール（`ConsolidatedH
 | - **カーネルプール** (`FB_CONF_KERNEL_HEAP_SIZE`) | 4,096 B | TCB（16件 $\times$ 96B $\approx$ 1.5KB）、コルーチンフレーム、<br>**共有メモリバッファ (`FB_CONF_SHM_SIZE`: 1,024 B)** を内包 |
 | - **サブシステムプール** (`FB_CONF_SUBSYS_HEAP_SIZE`) | 3,072 B | HAL 通信バッファ（256B $\times$ 4面 = 1KB）、GDB RSP バッファ（1KB）、<br>リングバッファロガー（512B） |
 | - **ランタイムプール** (`FB_CONF_RUNTIME_HEAP_SIZE`) | 2,048 B | `execution_context`（Tier 2 ABI 152B）、WASM モジュールインスタンス状態、<br>`HotspotBitmap`（128B）、`JITCandidateBitmap`（128B）、`HistoryRing`（64B） |
-| - **インタープリタ統合スタック** (`FB_CONF_INTERP_STACK_SIZE`) | 2,048 B | `OperandStack`（1KB）、`LocalStack`（768B）、`ControlFrame`（256B） |
+| - **インタープリタ統合スタック** (`FB_CONF_INTERP_STACK_SIZE`) | 2,048 B | `オペランドスタック`（1KB）、`ローカル値領域`（768B）、`制御フレーム`（256B） |
 | **2. システム静的変数 & OS スタック（プール外）** | **~3,500 B** | |
 | - vMMIO ソフトウェア TLB キャッシュ配列 | 256 B | 32 エントリ $\times$ 8B（VPN + PTE）ダイレクトマップ高速 TLB |
 | - ブレークポイント集合 / プロファイラバッファ | 320 B | ブレークポイント（8件 $\times$ 4B）＋ PC サンプル配列（64件 $\times$ 4B） |

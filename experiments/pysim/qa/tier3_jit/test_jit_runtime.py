@@ -34,6 +34,22 @@ for _p in [
         sys.path.insert(0, _sp)
 
 import wasmtime
+from config import (
+    FB_CONF_JIT_CACHE_SIZE,
+    JIT_CACHE_ABSOLUTE_ADDRESS_POOL_BYTES,
+    JIT_CACHE_ACTIVE_OFFSET_BYTES,
+    JIT_CACHE_BANK_CAPACITY_BYTES,
+    JIT_CACHE_BANK_COUNT,
+    JIT_CACHE_COMMON_CODE_BYTES,
+    JIT_CACHE_COMMON_CODE_OFFSET_BYTES,
+    JIT_CACHE_OLDEST_OFFSET_BYTES,
+    JIT_CACHE_PAGE_BYTES,
+    JIT_CACHE_REGION_BASE_ADDRESS,
+    JIT_CACHE_REGION_BYTES,
+    JIT_CACHE_REGION_PAGE_COUNT,
+    JIT_CACHE_WARM_OFFSET_BYTES,
+    JIT_TRACE_HEADER_BYTES,
+)
 from helpers import make_interpreter as Interpreter
 from helpers import wat_to_wasm
 from runtime_engine import (
@@ -45,22 +61,6 @@ from runtime_engine import (
     JITTrace,
     JITTraceHeader,
     RuntimeEngine,
-)
-from config import (
-    JIT_CACHE_REGION_BASE_ADDRESS,
-    JIT_CACHE_BANK_CAPACITY_BYTES,
-    JIT_CACHE_BANK_COUNT,
-    JIT_CACHE_ACTIVE_OFFSET_BYTES,
-    JIT_CACHE_ABSOLUTE_ADDRESS_POOL_BYTES,
-    JIT_CACHE_COMMON_CODE_BYTES,
-    JIT_CACHE_COMMON_CODE_OFFSET_BYTES,
-    FB_CONF_JIT_CACHE_SIZE,
-    JIT_CACHE_OLDEST_OFFSET_BYTES,
-    JIT_CACHE_PAGE_BYTES,
-    JIT_CACHE_REGION_BYTES,
-    JIT_CACHE_REGION_PAGE_COUNT,
-    JIT_CACHE_WARM_OFFSET_BYTES,
-    JIT_TRACE_HEADER_BYTES,
 )
 from system_containers import ReadOnlyRadixBinaryTreeStorage, StaticVector
 from test_support import PcOnlyCompiler, make_pc_only_module
@@ -513,7 +513,6 @@ def test_jitr_26_direct_mapped_folding_xor_jit_cache():
     pc1 = 0x00010020
     pc2 = 0x00020020
     t1 = JITTrace(head_pc=pc1, native_fn=lambda: 10, size_bytes=64)
-    t2 = JITTrace(head_pc=pc2, native_fn=lambda: 20, size_bytes=64)
 
     # 1. Verify hash slot folds UnifiedPC 32 -> 16 -> 8 -> 4 with 3 XORs
     h1 = cache._hash_slot(pc1)

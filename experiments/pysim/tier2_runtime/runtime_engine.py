@@ -295,6 +295,14 @@ class RuntimeEngine:
             return Result.err(RegistrationError.MODULE_UNAVAILABLE)
         return self._virq.register_dispatcher(node_id, function_index)
 
+    def unregister_virq_dispatcher(
+        self, node_id: int
+    ) -> Result[RegistrationStatus, RegistrationError]:
+        """Stage removal of a vIRQ registration for the next safepoint."""
+        if self._virq is None:
+            return Result.err(RegistrationError.MODULE_UNAVAILABLE)
+        return self._virq.unregister_dispatcher(node_id)
+
     def commit_virq_safepoint(self) -> None:
         """Publish validated vIRQ registrations at the execution boundary."""
         if self._virq is not None:

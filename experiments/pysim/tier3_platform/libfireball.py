@@ -12,6 +12,8 @@ from collections.abc import Callable
 from typing import Final
 
 U32_MAX: Final[int] = 0xFFFF_FFFF
+VIRQ_REGISTER: Final[int] = 0x30
+VIRQ_UNREGISTER: Final[int] = 0x31
 FireballHostCall = Callable[[int, int, int, int, int, int, int], int]
 
 
@@ -86,3 +88,11 @@ class Libfireball:
     ) -> int:
         """Issues the complete seven-field host-call ABI."""
         return self._call(syscall_id, arg0, arg1, arg2, arg3, arg4, arg5)
+
+    def fireball_virq_register(self, node_id: int, function_index: int) -> int:
+        """Stages a vIRQ guest handler through the VIRQ_REGISTER host call."""
+        return self.fireball_call2(VIRQ_REGISTER, node_id, function_index)
+
+    def fireball_virq_unregister(self, node_id: int) -> int:
+        """Stages removal of a vIRQ guest handler through the host call ABI."""
+        return self.fireball_call1(VIRQ_UNREGISTER, node_id)

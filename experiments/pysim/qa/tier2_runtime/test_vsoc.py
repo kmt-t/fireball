@@ -264,6 +264,23 @@ def test_runtime_engine_registers_virq_dispatchers_through_bound_module():
     assert invalid.error == RegistrationError.FUNCTION_SIGNATURE_INVALID
 
 
+def test_virq_unregisters_dispatcher_at_safepoint():
+    """VIRQ_UNREGISTER removes an active handler only at the next safepoint."""
+    dispatcher = VirqDispatcher(_make_virq_module(), lambda _index, _v, _s, _c, _p0, _p1: 0)
+    assert dispatcher.register_dispatcher(int(VirqNode.ROOT), 0).is_ok
+    dispatcher.commit_safepoint()
+    assert dispatcher.unregister_dispatcher(int(VirqNode.ROOT)).is_ok
+    assert (
+        dispatcher.dispatch_interrupt_event(_virq_event(0x2000)).outcome
+        == VirqDispatchResult.HANDLED
+    )
+    dispatcher.commit_safepoint()
+    assert (
+        dispatcher.dispatch_interrupt_event(_virq_event(0x2000)).outcome
+        == VirqDispatchResult.PASS_THROUGH
+    )
+
+
 def test_hal_task_ipc_communication():
     """TEST-HAL-01: HAL operates as a distinct task on COOS and handles commands via IPC rendezvous."""
     from dummy_drivers import DummyDriver

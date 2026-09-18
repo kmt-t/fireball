@@ -167,10 +167,14 @@ def test_coos_08_interrupt_notification_and_drain():
     (non-blocking ISR-side enqueue); drain wakes the waiting task on the next idle pass."""
     sched = Scheduler()
     woken = []
+    received = []
 
     def irq_handler():
         sched.wait_for_interrupt(16)
         yield (ChannelAction.BLOCK, None)
+        event = sched.consume_interrupt_event()
+        assert event is not None
+        received.append(event.words())
         woken.append("IRQ_PROCESSED")
 
     sched.spawn("handler", irq_handler())
@@ -179,6 +183,7 @@ def test_coos_08_interrupt_notification_and_drain():
     sched.notify_interrupt(InterruptEvent(16, 0, 0, 0, 0))
     sched.run_until_idle()
     assert woken == ["IRQ_PROCESSED"]
+    assert received == [(16, 0, 0, 0, 0)]
 
 
 def test_coos_09_interrupt_queue_overflow_drops():

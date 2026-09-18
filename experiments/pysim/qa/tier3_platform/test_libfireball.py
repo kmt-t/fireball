@@ -15,7 +15,7 @@ for _path in (
     if _path_text not in sys.path:
         sys.path.insert(0, _path_text)
 
-from libfireball import Libfireball
+from libfireball import Libfireball, VIRQ_REGISTER, VIRQ_UNREGISTER
 
 
 def test_libfireball_host_call_argument_packing() -> None:
@@ -48,3 +48,27 @@ def test_libfireball_rejects_non_u32_host_call_values() -> None:
     lib = Libfireball(lambda *_args: 0)
     with pytest.raises(AssertionError):
         lib.fireball_call1(0x20, -1)
+
+
+def test_libfireball_virq_registration_uses_host_call() -> None:
+    calls: list[tuple[int, int, int, int, int, int, int]] = []
+
+    def host_call(
+        syscall_id: int,
+        arg0: int,
+        arg1: int,
+        arg2: int,
+        arg3: int,
+        arg4: int,
+        arg5: int,
+    ) -> int:
+        calls.append((syscall_id, arg0, arg1, arg2, arg3, arg4, arg5))
+        return 0
+
+    lib = Libfireball(host_call)
+    assert lib.fireball_virq_register(5, 12) == 0
+    assert lib.fireball_virq_unregister(5) == 0
+    assert calls == [
+        (VIRQ_REGISTER, 5, 12, 0, 0, 0, 0),
+        (VIRQ_UNREGISTER, 5, 0, 0, 0, 0, 0),
+    ]

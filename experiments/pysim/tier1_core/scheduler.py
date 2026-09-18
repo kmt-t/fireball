@@ -289,6 +289,7 @@ class Task:
         "role",
         "state",
         "task_id",
+        "pending_interrupt_event",
         "waiting_irq",
     )
 
@@ -309,6 +310,7 @@ class Task:
         self.pending_val: ChannelPayload | None = None
         self.received_val: ChannelPayload | None = None
         self.result: ChannelPayload | None = None
+        self.pending_interrupt_event: InterruptEvent | None = None
         self.waiting_irq: int | None = None
 
 
@@ -479,6 +481,7 @@ class Scheduler:
 
         self.detach(task)
         task.waiting_irq = None
+        task.pending_interrupt_event = None
         for channel in self._channels:
             if channel.waiter_task is not task:
                 continue
@@ -644,27 +647,47 @@ class Scheduler:
         return True
 
     def drain_interrupts(self) -> int:
-        """Drain IRQ queue and wake registered tasks."""
+        """Drain IRQ queue, hand off one event, and wake its registered task."""
         count = 0
         while len(self.interrupt_event_queue) > 0:
             event = self.interrupt_event_queue.pop()
             if event is None:
                 break
             count += 1
+            delivered = False
             for task in self._all:
                 if task.waiting_irq == event.vector_id and task.state == TaskState.BLOCKED:
+                    assert task.pending_interrupt_event is None, (
+                        "a blocked interrupt waiter cannot already own an event"
+                    )
+                    task.pending_interrupt_event = event
                     task.waiting_irq = None
                     task.state = TaskState.READY
-                    self._ready.enqueue(task)
+                    assert self._ready.enqueue(task), "READY queue capacity exceeded"
                     if task.coro is not None:
                         self._ready_coro_count += 1
+                    delivered = True
+                    break
+            if not delivered:
+                self.dropped_irqs += 1
         return count
 
     def wait_for_interrupt(self, irq_id: int) -> None:
         task = self.current_task
         assert task is not None
+        assert task.pending_interrupt_event is None, (
+            "interrupt event must be consumed before waiting again"
+        )
         task.state = TaskState.BLOCKED
         task.waiting_irq = irq_id
+
+    def consume_interrupt_event(self) -> InterruptEvent | None:
+        """Consume the event handed to the current vSoC runtime task."""
+        task = self.current_task
+        assert task is not None, "consume_interrupt_event requires an active task"
+        event = task.pending_interrupt_event
+        task.pending_interrupt_event = None
+        return event
 
     def set_idle_hook(self, fn: Callable[[], None]) -> None:
         hook_added = self.idle_hooks.push_back(fn)

@@ -51,6 +51,7 @@ from system import (
     WasiErrno,
 )
 from vmmio import TrapCode
+from wasm_module import I32, Function, FuncType, Module
 
 
 def test_syscall_01_unknown_id_returns_nosys():
@@ -199,14 +200,33 @@ def test_syscall_04_vdma_host_call_transfer():
         sysv.shutdown()
 
 
-def test_syscall_05_irq_flags():
+def _make_syscall_virq_module() -> Module:
+    valid = FuncType(params=(I32, I32, I32, I32, I32), results=(I32,))
+    return Module(
+        types=(valid,),
+        imports=(),
+        functions=(Function(type_index=0, locals_extra=(), code=b""),),
+    )
+
+
+def test_syscall_05_virq_registration_host_calls():
     sysv = System()
     sysv.start_runtime_task(name="test_runtime_task")
     try:
-        sysv.raise_irq(0x4)
-        assert sysv.fireball_call(FbSyscallId.IRQ_READ_FLAGS, 0, 0, 0, 0, 0, 0) == 0x4
-        assert sysv.fireball_call(FbSyscallId.IRQ_CLEAR, 0x4, 0, 0, 0, 0, 0) == WasiErrno.SUCCESS
-        assert sysv.fireball_call(FbSyscallId.IRQ_READ_FLAGS, 0, 0, 0, 0, 0, 0) == 0
+        sysv.runtime_engine.register_module_blocks(_make_syscall_virq_module())
+        assert (
+            sysv.fireball_call(FbSyscallId.VIRQ_REGISTER, 0, 0, 0, 0, 0, 0)
+            == WasiErrno.SUCCESS
+        )
+        sysv.runtime_engine.commit_virq_safepoint()
+        assert (
+            sysv.fireball_call(FbSyscallId.VIRQ_UNREGISTER, 0, 0, 0, 0, 0, 0)
+            == WasiErrno.SUCCESS
+        )
+        assert (
+            sysv.fireball_call(FbSyscallId.VIRQ_REGISTER, 14, 0, 0, 0, 0, 0)
+            == WasiErrno.INVAL
+        )
     finally:
         sysv.shutdown()
 
@@ -529,7 +549,7 @@ if __name__ == "__main__":
     test_syscall_14_mmio_bulk_read_write_invalid_size()
     test_syscall_15_mmio_bulk_read_dest_offset_out_of_bounds()
     test_syscall_04_vdma_host_call_transfer()
-    test_syscall_05_irq_flags()
+    test_syscall_05_virq_registration_host_calls()
     test_syscall_06_ipc_lookup_send_recv()
     test_syscall_07_wasi_fd_write()
     test_wasi_01_fd_write_scatter_gather()

@@ -48,10 +48,11 @@ from memory import (
     FB_CONF_MEMORY_POOL_SIZE,
     MemoryManager,
 )
-from runtime_engine import RuntimeEngine
+from runtime_engine import DispatchResult, RuntimeEngine
 from scheduler import FB_CONF_MAX_TASKS, Channel, Scheduler, Task, TaskState
 from stream_transport import StreamTransport
 from system_containers import MutableFlatMapStorage, ReadOnlyFlatMapStorage, StaticVector
+from virq import RegistrationError
 from vmmio import (
     FC_STATIC_DEVICE,
     TrapCode,
@@ -91,8 +92,8 @@ class FbSyscallId(IntEnum):
     # device/gpio/0), not through fireball_call directly.
     TRIGGER_SET_PIN = 0x16
     VDMA_START = 0x20
-    IRQ_READ_FLAGS = 0x30
-    IRQ_CLEAR = 0x31
+    VIRQ_REGISTER = 0x30
+    VIRQ_UNREGISTER = 0x31
     IPC_SEND = 0x40
     IPC_RECV = 0x41
     IPC_LOOKUP = 0x42
@@ -248,12 +249,12 @@ class System:
                 lambda a0, a1, a2, a3, a4, a5: int(self._vdma_start(a0, a1, a2)),
             ),
             (
-                FbSyscallId.IRQ_READ_FLAGS,
-                lambda a0, a1, a2, a3, a4, a5: self._irq_read_flags(),
+                FbSyscallId.VIRQ_REGISTER,
+                lambda a0, a1, a2, a3, a4, a5: int(self._virq_register(a0, a1)),
             ),
             (
-                FbSyscallId.IRQ_CLEAR,
-                lambda a0, a1, a2, a3, a4, a5: int(self._irq_clear(a0)),
+                FbSyscallId.VIRQ_UNREGISTER,
+                lambda a0, a1, a2, a3, a4, a5: int(self._virq_unregister(a0)),
             ),
             (
                 FbSyscallId.IPC_SEND,
@@ -296,8 +297,6 @@ class System:
         self._syscall_handlers: ReadOnlyFlatMapStorage[int, SyscallHandler] = (
             ReadOnlyFlatMapStorage.create(syscall_entries)
         )
-        self.irq_flags = 0
-
     def _on_idle(self) -> None:
         """COOS idle_hook dispatch: flushes deferred logs and compiles queued JIT traces."""
         self.logger.flush()
@@ -339,6 +338,17 @@ class System:
         """Unmaps the fixed HAL DYNAMIC buffers from the bound Runtime."""
         self.pool.unbind_runtime()
         self._bound_runtime_task = None
+
+    def dispatch_current_interrupt(self) -> DispatchResult | None:
+        """Dispatch the event handed to the active vSoC runtime task at a safepoint."""
+        task = self.scheduler.current_task
+        assert task is not None, "interrupt dispatch requires an active task"
+        assert task.role == Role.RUNTIME, "only the vSoC runtime task may dispatch interrupts"
+        event = self.scheduler.consume_interrupt_event()
+        if event is None:
+            return None
+        self.runtime_engine.commit_virq_safepoint()
+        return self.runtime_engine.dispatch_interrupt_event(event)
 
     # --- fireball_call ------------------------------------------------
     def fireball_call(
@@ -522,24 +532,24 @@ class System:
         dst_backing[dst_off : dst_off + count] = bytes(src_backing[src_off : src_off + count])
         return WasiErrno.SUCCESS
 
-    # --- IRQ flags (host-side notification state) -----------------------
-    def _irq_read_flags(self) -> int:
-        return self.irq_flags
+    # --- vIRQ registration host calls ------------------------------------
+    @staticmethod
+    def _virq_errno(error: RegistrationError | None) -> WasiErrno:
+        if error == RegistrationError.MODULE_UNAVAILABLE:
+            return WasiErrno.NOSYS
+        return WasiErrno.INVAL
 
-    def _irq_clear(self, mask: int) -> WasiErrno:
-        self.irq_flags &= ~mask & 0xFFFF_FFFF
-        return WasiErrno.SUCCESS
+    def _virq_register(self, node_id: int, function_index: int) -> WasiErrno:
+        result = self.runtime_engine.register_virq_dispatcher(node_id, function_index)
+        if result.is_ok:
+            return WasiErrno.SUCCESS
+        return self._virq_errno(result.error)
 
-    def raise_irq(self, mask: int) -> None:
-        """
-        Not itself a syscall (runtime_syscall.md's async notification section:
-                interrupts are a host-to-guest notification, not a guest-initiated
-                call) -- lets a
-                test or the HAL demo set REG_IRQ_FLAGS bits for IRQ_READ_FLAGS/
-                IRQ_CLEAR to observe.
-        """
-
-        self.irq_flags = (self.irq_flags | mask) & 0xFFFF_FFFF
+    def _virq_unregister(self, node_id: int) -> WasiErrno:
+        result = self.runtime_engine.unregister_virq_dispatcher(node_id)
+        if result.is_ok:
+            return WasiErrno.SUCCESS
+        return self._virq_errno(result.error)
 
     # --- IPC (real IPCRouter: URI lookup, RBAC, CSP rendezvous handoff) ---
     def _ipc_lookup(self, uri_offset: int, uri_len: int) -> int:

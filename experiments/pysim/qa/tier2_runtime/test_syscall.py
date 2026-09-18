@@ -214,19 +214,12 @@ def test_syscall_05_virq_registration_host_calls():
     sysv.start_runtime_task(name="test_runtime_task")
     try:
         sysv.runtime_engine.register_module_blocks(_make_syscall_virq_module())
-        assert (
-            sysv.fireball_call(FbSyscallId.VIRQ_REGISTER, 0, 0, 0, 0, 0, 0)
-            == WasiErrno.SUCCESS
-        )
+        assert sysv.fireball_call(FbSyscallId.VIRQ_REGISTER, 0, 0, 0, 0, 0, 0) == WasiErrno.SUCCESS
         sysv.runtime_engine.commit_virq_safepoint()
         assert (
-            sysv.fireball_call(FbSyscallId.VIRQ_UNREGISTER, 0, 0, 0, 0, 0, 0)
-            == WasiErrno.SUCCESS
+            sysv.fireball_call(FbSyscallId.VIRQ_UNREGISTER, 0, 0, 0, 0, 0, 0) == WasiErrno.SUCCESS
         )
-        assert (
-            sysv.fireball_call(FbSyscallId.VIRQ_REGISTER, 14, 0, 0, 0, 0, 0)
-            == WasiErrno.INVAL
-        )
+        assert sysv.fireball_call(FbSyscallId.VIRQ_REGISTER, 14, 0, 0, 0, 0, 0) == WasiErrno.INVAL
     finally:
         sysv.shutdown()
 

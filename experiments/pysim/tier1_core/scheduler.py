@@ -282,7 +282,9 @@ class Task:
 
     __slots__ = (
         "coro",
+        "last_seen_generation",
         "name",
+        "pending_interrupt_event",
         "pending_val",
         "ready_next",
         "ready_prev",
@@ -291,8 +293,6 @@ class Task:
         "role",
         "state",
         "task_id",
-        "pending_interrupt_event",
-        "last_seen_generation",
         "waiting_irq",
     )
 
@@ -386,9 +386,8 @@ class Scheduler:
         target_mask = 0
         for task in self._all:
             if (
-                (task.state == TaskState.RUNNING or task.state == TaskState.READY)
-                and task.last_seen_generation != self.reschedule_generation
-            ):
+                task.state == TaskState.RUNNING or task.state == TaskState.READY
+            ) and task.last_seen_generation != self.reschedule_generation:
                 target_mask |= self._task_bit(task)
         self.round_target_mask = target_mask
         self.round_target_generation = self.reschedule_generation
@@ -541,9 +540,7 @@ class Scheduler:
         """
         channel = Channel(scheduler=self, transfer_mode=transfer_mode)
         channel_added = self._channels.push_back(channel)
-        assert channel_added, (
-            f"Channel capacity exceeded (max {FB_CONF_MAX_CHANNELS})"
-        )
+        assert channel_added, f"Channel capacity exceeded (max {FB_CONF_MAX_CHANNELS})"
         return channel
 
     def task_killed(self, task_id: int) -> bool:
@@ -791,9 +788,7 @@ class Scheduler:
 
     def set_idle_hook(self, fn: Callable[[], None]) -> None:
         hook_added = self.idle_hooks.push_back(fn)
-        assert hook_added, (
-            f"Idle hooks capacity exceeded (max {FB_CONF_MAX_IDLE_HOOKS})"
-        )
+        assert hook_added, f"Idle hooks capacity exceeded (max {FB_CONF_MAX_IDLE_HOOKS})"
 
     def pending_task_count(self) -> int:
         blocked_irq_count = sum(

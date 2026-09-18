@@ -144,7 +144,7 @@ def test_scenario_ipc_router_and_logging():
     # Section 2: Structured System Logging & LogDictionary Safety
     # -------------------------------------------------------------------------
     transport = StreamTransport()
-    log_dict = LogDictionary(capacity=16)
+    log_dict = LogDictionary()
     # 1. Register valid format strings
     log_dict.register(0x100, "TASK_INIT: id=%d priority=%d")
     log_dict.register(0x104, "COOS_STATE: state=0x%08X")

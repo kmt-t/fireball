@@ -187,9 +187,7 @@ class System:
         self.runtime_engine = RuntimeEngine()
         # Tier 2 observes COOS generations through an injected callback; it does
         # not import the Tier 1 scheduler or know its concrete implementation.
-        self.runtime_engine.set_reschedule_observer(
-            self.scheduler.observe_reschedule_generation
-        )
+        self.runtime_engine.set_reschedule_observer(self.scheduler.observe_reschedule_generation)
         self.scheduler.set_idle_hook(self._on_idle)
         self.halted = False
         self.reset_requested = False
@@ -302,6 +300,7 @@ class System:
         self._syscall_handlers: ReadOnlyFlatMapStorage[int, SyscallHandler] = (
             ReadOnlyFlatMapStorage.create(syscall_entries)
         )
+
     def _on_idle(self) -> None:
         """COOS idle_hook dispatch: flushes deferred logs and compiles queued JIT traces."""
         self.logger.flush()

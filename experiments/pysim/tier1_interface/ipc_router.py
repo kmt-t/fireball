@@ -459,9 +459,7 @@ class IPCRouter:
             channels: StaticVector[Channel | None] = StaticVector(capacity=len(row))
             for allowed in row:
                 channels.append(
-                    self.scheduler.create_channel(
-                        transfer_mode=ChannelTransferMode.MOVABLE
-                    )
+                    self.scheduler.create_channel(transfer_mode=ChannelTransferMode.MOVABLE)
                     if allowed
                     else None
                 )

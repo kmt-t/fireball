@@ -81,9 +81,7 @@ def test_intp_03_control_frame_enum_and_opcode_attribute_table():
     from wasm_opcodes import BR_IF, CALL, I32_ADD, LOOP
 
     control_stack = NativeControlStack(capacity=1)
-    pushed = control_stack.push_back(
-        ControlFrameKind.LOOP, start=0, match_end=4, stack_height=0
-    )
+    pushed = control_stack.push_back(ControlFrameKind.LOOP, start=0, match_end=4, stack_height=0)
     assert pushed
     assert control_stack[0].kind == int(ControlFrameKind.LOOP)
     assert opcode_has_attribute(CALL, OpcodeAttribute.CALL)

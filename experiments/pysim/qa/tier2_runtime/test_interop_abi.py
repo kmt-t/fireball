@@ -161,9 +161,7 @@ def test_native_value_stack_owns_the_fixed_storage():
 def test_native_control_stack_owns_flat_frame_records():
     stack = NativeControlStack(capacity=2)
     assert stack.capacity == 2
-    pushed = stack.push_back(
-        ControlFrameKind.LOOP, start=3, match_end=12, stack_height=4
-    )
+    pushed = stack.push_back(ControlFrameKind.LOOP, start=3, match_end=12, stack_height=4)
     assert pushed
     assert stack.native.size == 1
     assert isinstance(stack.native, ControlStackNative)

@@ -15,7 +15,7 @@ for _path in (
     if _path_text not in sys.path:
         sys.path.insert(0, _path_text)
 
-from libfireball import Libfireball, VIRQ_REGISTER, VIRQ_UNREGISTER
+from libfireball import VIRQ_REGISTER, VIRQ_UNREGISTER, Libfireball
 
 
 def test_libfireball_host_call_argument_packing() -> None:

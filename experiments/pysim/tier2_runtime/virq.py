@@ -169,9 +169,7 @@ class VirqDispatcher:
         self._pending_functions[node_id] = function_index
         return Result.ok(RegistrationStatus.PENDING)
 
-    def unregister_dispatcher(
-        self, node_id: int
-    ) -> Result[RegistrationStatus, RegistrationError]:
+    def unregister_dispatcher(self, node_id: int) -> Result[RegistrationStatus, RegistrationError]:
         """Stage removal of a static vIRQ registration for the next safepoint."""
         if self._module is None:
             return Result.err(RegistrationError.MODULE_UNAVAILABLE)

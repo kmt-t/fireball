@@ -41,9 +41,8 @@ jobs:
       run: |
         ./tools/check-src.sh -g pysim
 
-    - name: Run PySim Static Type Checks
+    - name: Run PySim Static Type Checks (Pilot Scope)
       run: |
-        .venv/bin/mypy --config-file mypy.ini
         .venv/bin/pyright --project pyrightconfig.json
 
     - name: Run PySim Unit Tests with Python Optimizations

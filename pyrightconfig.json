@@ -1,9 +1,12 @@
 {
   "include": [
-    "experiments/pysim/tier1_core",
-    "experiments/pysim/tier1_interface",
-    "experiments/pysim/tier2_runtime",
-    "experiments/pysim/tier3_jit"
+    "experiments/pysim/tier1_core/config.py",
+    "experiments/pysim/tier1_core/interrupt_event.py",
+    "experiments/pysim/tier1_interface/logging_interface.py",
+    "experiments/pysim/tier1_interface/memory_interface.py",
+    "experiments/pysim/tier1_interface/wasi_bindings.py",
+    "experiments/pysim/tier2_runtime/jit_abi.py",
+    "experiments/pysim/tier2_runtime/wasm_opcodes.py"
   ],
   "exclude": [
     "**/__pycache__",

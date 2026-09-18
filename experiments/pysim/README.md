@@ -177,7 +177,6 @@ uv run --system-certs --with wasmtime python -O experiments/pysim/qa/run_all.py
 uv run --system-certs --with wasmtime python -O experiments/pysim/qa/scenarios/run_all.py
 
 # 製品Tierの静的型検査
-mypy --config-file mypy.ini
 pyright --project pyrightconfig.json
 ```
 

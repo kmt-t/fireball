@@ -25,5 +25,4 @@ pytest>=8.0.0                # Unit and integration test framework
 pytest-cov>=4.1.0            # Test coverage reporting
 ruff>=0.8.0                  # Fast Python linter and code formatter (format_all)
 line_profiler>=4.1.0         # Line-by-line profiling for performance hotspots
-mypy>=1.13.0                 # Static type checking for the product Tier modules
-pyright>=1.1.390             # Cross-checking static type checker for the product Tier modules
+pyright>=1.1.390             # Static type checking for the product Tier modules

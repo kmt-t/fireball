@@ -122,6 +122,7 @@ Fireball の全体構造、依存性の方向、リソース予算、品質保�
 | :--- | :--- | :--- | :--- | :--- |
 | `{ADR_CoosPureRoundRobin}` | `requirement_list.md` | `os_scheduler.md` | COOS スケジューラにおける純粋ラウンドロビン方式の採用（複雑な動的優先度を排除） | - |
 | `{ADR_EventDrivenWakeQueue}` | `requirement_list.md` | `os_coos.md` | ポーリングを排しイベントドリブンなウェイクアップキューへの分離 | - |
+| `{ADR_InterruptRescheduleGeneration}` | `requirement_list.md` | `os_scheduler.md` | 割り込み時の協調的な再スケジュール要求を世代番号とタスクごとの観測世代で管理し、対象タスクの一巡後に要求を完了する方式 | - |
 | `{ADR_FivePoolMemoryModel}` | `system_memory.md` | `system_memory.md` | メモリマネージャを5プール（ホスト用ヒープ・タスクヒープ・共有メモリ用ヒープ・ランタイム用バンプアロケータ・JITキャッシュアロケータ）の統一契約として再定義 | - |
 | `{ADR_IntrusiveTcbList}` | `requirement_list.md` | `os_scheduler.md` | 動的アロケーションを排除するための侵入型 TCB（Task Control Block）リスト構造 | - |
 | `{ADR_MemoryManagerMinimalSurface}` | `requirement_list.md` | `system_memory.md` | メモリマネージャの公開インターフェース最小化・内部詳細のカプセル化 | - |

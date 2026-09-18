@@ -7,7 +7,7 @@
 -->
 
 ## 1. コンセプト
-<!-- traceability: {CooperativeMultitasking} {GLOBAL_UseCpp23Library} {GLOBAL_UseCpp20Coroutine} {CSPCommunication} {EliminateDataRace} {GLOBAL_PeriodicTask} {GLOBAL_IdleDetection} {GLOBAL_InterruptWakeup} {NotRTOS} -->
+<!-- traceability: {CooperativeMultitasking} {GLOBAL_UseCpp23Library} {GLOBAL_UseCpp20Coroutine} {CSPCommunication} {EliminateDataRace} {GLOBAL_PeriodicTask} {GLOBAL_IdleDetection} {GLOBAL_InterruptWakeup} {NotRTOS} {ADR_InterruptRescheduleGeneration} -->
 COOSは、シングルスレッド環境向けのホーアCSPベースのグリーンスレッドOSである。C++20コルーチン（および静的配列と `fireball::flat_map_view` 等、C++23の静的確保に適合させたコンテナ語彙）を活用し、スタックレスで低オーバーヘッドなタスク切り替えを実現する。また、ホーアCSPに基づき、所有権移譲によるゼロコピーメッセージパッシングを行うことで、データ競合を原理的に排除する。
 
 ## 2. アーキテクチャ分類
@@ -25,10 +25,10 @@ COOSは、シングルスレッド環境向けのホーアCSPベースのグリ�
 ## 3. 静的モデル
 
 ### 3.1 データ構造
-<!-- traceability: {GLOBAL_Policy_Memory} {ADR_RendezvousChannel} -->
+<!-- traceability: {GLOBAL_Policy_Memory} {ADR_RendezvousChannel} {ADR_InterruptRescheduleGeneration} -->
 - **`channel`**: **バッファを持たない**純粋同期ランデブーオブジェクト。値はチャネルに滞留せず、送信側タスクから受信側タスクへランデブー成立の瞬間に直接移譲される。
 - **`shared_block`**: ムーブ専用 RAII 共有メモリブロック（`{ADR_SharedBlockRaii}`）。に基づき、静的プールから切り出され、右辺値参照（`&&`）により単一所有権を保証する。
-- **`coos_context`**: スケジューラ、CSP状態、メモリ情報を集約したグローバルコンテキスト。
+- **`coos_context`**: スケジューラ、CSP状態、メモリ情報、および割り込み時の再スケジュール要求世代を集約したグローバルコンテキスト。
 
 ### 3.2 内部ブロック図
 <!-- traceability: {GLOBAL_Policy_Memory} -->
@@ -124,23 +124,29 @@ sequenceDiagram
 ```
 
 #### ISR 遅延起床アルゴリズム（手順アクティビティ図）
-<!-- traceability: {GLOBAL_InterruptWakeup} -->
+<!-- traceability: {GLOBAL_InterruptWakeup} {ADR_InterruptRescheduleGeneration} -->
 ハードウェア割り込み発生から、非ブロッキング ISR キューイング、およびスケジューラ yield 境界での安全な遅延起床までの決定論的手順を示す。
 
 ```mermaid
 flowchart TD
     Start(["Hardware Interrupt Triggered"]) --> ISR["HAL ISR: interrupt_handler()"]
     ISR --> Post["Enqueue interrupt-event into fixed FIFO"]
-    Post --> RetISR(["Return from Interrupt (Non-blocking)"])
+    Post --> Gen["Advance reschedule generation if no request is pending"]
+    Gen --> RetISR(["Return from Interrupt (Non-blocking)"])
 
     subgraph COOS Main Loop / Yield Point
-        YieldPoint["Current Task calls co_yield() or blocks"] --> Drain["COOS Scheduler: drain_interrupts()"]
+        YieldPoint["Current Task reaches cooperative boundary"] --> Drain["COOS Scheduler: drain_interrupts()"]
         Drain --> CheckRing{"Is Ring Buffer empty?"}
         CheckRing -- "No (event pending)" --> Pop["Pop interrupt-event from FIFO"]
         Pop --> Lookup["Lookup Task waiting for vector_id"]
         Lookup --> Wake["Mark Target Task as READY in Ring Queue"]
         Wake --> CheckRing
-        CheckRing -- "Yes" --> SchedNext["Dispatch next READY Task via Round-Robin"]
+        CheckRing -- "Yes" --> Snapshot["Snapshot RUNNING and READY tasks for current generation"]
+        Snapshot --> SchedNext["Dispatch next READY Task via Round-Robin"]
+        SchedNext --> Observe["Task records last_seen_generation and yields once"]
+        Observe --> RoundDone{"All target tasks observed?"}
+        RoundDone -- "No" --> SchedNext
+        RoundDone -- "Yes" --> Normal["Resume normal cooperative scheduling"]
     end
     RetISR -.-> YieldPoint
 ```
@@ -209,13 +215,13 @@ COOS の動的スケジューリングおよび同期通信の基本アルゴリ
 | :--- | :--- | :--- | :--- | :--- |
 | **CSP Handoff** | `send`/`recv` 時に相手タスクが待機中 | スケジューラをバイパスして即座に相手タスクへ直接対称遷移 | ディスパッチオーバーヘッドの極小化 | |
 | **直接コンテキストスイッチ (Direct Context Switch)** | コルーチンの対称遷移 | コールスタックを消費せず相手タスクのコルーチンハンドルへ直接ジャンプ | 2KB極小スタックでのスタックオーバーフロー完全防止 | |
-| **割り込みウェイクアップ (Interrupt Wakeup)** | 外部イベント発生 | ISRは固定長FIFOへ汎用`interrupt-event`を投函するのみ。スケジューラが協調境界でドレインして待機タスクをREADY化 | ISRクリティカルセクション極小化・多重割り込みロック競合防止（`GOTCHA-COOS-03`） | |
+| **割り込みウェイクアップ (Interrupt Wakeup)** | 外部イベント発生 | ISRは固定長FIFOへ汎用`interrupt-event`を投函し、保留中でなければ再スケジュール要求世代を進める。スケジューラが協調境界でドレインして待機タスクをREADY化し、対象タスクが世代を観測するまで要求を保持する | ISRクリティカルセクション極小化・多重割り込みロック競合防止（`GOTCHA-COOS-03`） | |
 | **Idle Detection** | 全タスクがBLOCKEDかつイベントキュー空 | 登録済み `idle_hook` コールバック群を専用Idleタスクとして呼び出す（呼び出し先の内部状態・トリガー条件には関与しない） | CPU省電力化および低優先度保守タスクの安全実行 | |
 | **Memory Management** | タスク生成時 | コンパイル時固定プールから独立したメモリパーティションを切り出して貸与 | タスク間ヒープ干渉の物理排除 | |
 
 - **CSP Handoff (直接スイッチ)**: `send`/`recv` 時に相手タスクが既に待機状態であった場合、スケジューラを介さず即座に相手タスクへ実行権を移譲する。
 - **直接コンテキストスイッチ (Direct Context Switch)**: コルーチンの対称遷移（Symmetric Transfer）により、コールスタックを消費せずに相手タスクのコルーチンハンドルへ直接ジャンプする。OSスケジューラのキュー処理オーバーヘッドを完全にバイパスし、極小スタック（2KB）環境下でもスタックオーバーフローを起こさない決定論的 $O(1)$ スイッチを実現する。実測は [`direct_context_switch_bench.py`](docs/components/tier1_core/benchmarks/direct_context_switch_bench.py) を参照。
-- **割り込みウェイクアップ (Interrupt Wakeup)**: 外部イベントが発生した際、割り込みサービスルーチン（ISR）から `notify_interrupt(interrupt-event)` が呼び出され、固定長FIFOへ原因レコードを投函する。**実装の勘所と設計理由 (`GOTCHA-COOS-03`)**: ISR コンテキスト内ではタスク状態や優先度キューを一切直接書き換えない。ISR で直接キュー操作やコルーチン起床を行うと、ハードウェア割り込み無効化区間（クリティカルセクション）が肥大化し、最高優先度割り込みの応答レイテンシが劣化するだけでなく、多重割り込み時のロック競合を引き起こす。そのため、ISR は固定長FIFOへの原子的なイベント記録のみを行い、スケジューラが各協調境界（`run_step` 開始時）でこれをドレイン（`drain_interrupts`）して初めて、`vector_id`に対応する待機タスクを READY 状態へ遷移させて実行可能キュー末尾に投入する。FIFO満杯または待機先が未登録の場合はドロップし、ドロップ数を記録する。
+- **割り込みウェイクアップ (Interrupt Wakeup)**: 外部イベントが発生した際、割り込みサービスルーチン（ISR）から `notify_interrupt(interrupt-event)` が呼び出され、固定長FIFOへ原因レコードを投函する。**実装の勘所と設計理由 (`GOTCHA-COOS-03`)**: ISR コンテキスト内ではタスク状態や優先度キューを一切直接書き換えない。ISR で直接キュー操作やコルーチン起床を行うと、ハードウェア割り込み無効化区間（クリティカルセクション）が肥大化し、最高優先度割り込みの応答レイテンシが劣化するだけでなく、多重割り込み時のロック競合を引き起こす。そのため、ISR は固定長FIFOへの原子的なイベント記録と再スケジュール要求世代の更新だけを行い、スケジューラが各協調境界（`run_step` 開始時）でこれをドレイン（`drain_interrupts`）して初めて、`vector_id`に対応する待機タスクを READY 状態へ遷移させて実行可能キュー末尾に投入する。FIFO満杯または待機先が未登録の場合はドロップし、ドロップ数を記録する。要求が保留中の間に到着したイベントは同じ世代へ集約し、FIFO上の原因レコードは個別に処理する。 `{ADR_InterruptRescheduleGeneration}`
 - **Idle Detection**: 全ての実行中タスクがブロック状態にあり、かつイベントキューが空（割り込みや外部イベントによる起床待ちのみ）の場合にアイドル状態と判定する。この条件が成立した時のみ、登録済みの `idle_hook` コールバック群をREADYリング外の専用Idleタスクとして呼び出す。個々のコールバック（ログフラッシュ等）が実際にいつ・何を処理するかはコールバック側の内部実装事項であり、COOS はそれを規定・関知しない（登録・起動機構のみを提供する）。ログフラッシュの具体的なトリガー条件は [`runtime_logging.md`](docs/components/tier2_runtime/runtime_logging.md) を正本とする。
 - **Memory Management**: タスク生成時に独立したメモリパーティションを割り当てる。
 

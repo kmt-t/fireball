@@ -243,7 +243,7 @@ ARMv8-MのJITトレースでは `R4` と `R5` を次段の値のキャッシュ�
 ## 4. 動的モデル
 
 ### 4.1 アルゴリズム
-<!-- traceability: {ThreadedInterpreter} {JIT_RuntimeAPI_Fallback} {Interpreter_LazyJITSwitch} {LowLatencyJIT} {SimpleJITArchitecture} {Challenge_ApproximateYield} {Debug_Integrated} {ContextPointerRegister} {ADR_TosCacheAsymmetry} {ADR_TraceBoundaryYield} -->
+<!-- traceability: {ThreadedInterpreter} {JIT_RuntimeAPI_Fallback} {Interpreter_LazyJITSwitch} {LowLatencyJIT} {SimpleJITArchitecture} {Challenge_ApproximateYield} {Debug_Integrated} {ContextPointerRegister} {ADR_TosCacheAsymmetry} {ADR_TraceBoundaryYield} {ADR_InterruptRescheduleGeneration} -->
 - **Threaded Dispatch with Continuation Passing Style**:
   - 命令ハンドラを連鎖させるテーブルディスパッチ方式で分岐コストを極小化する。
   - ハンドラ関数型は4つの論理引数に統一する。結果レコードで次の継続情報とトラップ状態を返す。
@@ -281,7 +281,7 @@ ARMv8-MのJITトレースでは `R4` と `R5` を次段の値のキャッシュ�
 - **トレース境界での協調的Yield (`ADR_TraceBoundaryYield`)**:
   - インタープリタは命令ごとの精密なカウンタ評価や中断を行わない。
   - トレースの切れ目でのみインタープリタの命令ハンドラが呼び出し元（vSoC）へ制御を返す。
-  - `yield_threshold` の判定と `co_yield` の発行は vSoC 自身が行う。
+  - `yield_threshold` の判定と `co_yield` の発行は vSoC 自身が行う。割り込み時の再スケジュール世代が未観測の場合も、vSoCは同じトレース境界で世代観測を完了させてから`co_yield`を発行する。
   - インタープリタはコルーチンではなく単なる関数である。トレース境界での自然なレジスタ・スタック整合によりステート退避を極小化する。
 - **デバッグ・プロファイラフック**:
   - 命令実行前後でブレークポイント判定、実行時PC頻度サンプリング、メモリ/レジスタの動的アサーション検証を行い、Debugger/Profiler に制御を委譲する。
@@ -446,6 +446,16 @@ sequenceDiagram
   COOS 協調型マルチタスク環境において、ゲスト WASM のインタープリタ実行を中断する粒度と Safepoint ポーリング頻度を設計する。インタープリタ自身はコルーチンにしない。インタープリタは vSoC から呼ばれ、値を返して終了する関数とする。協調的中断（`co_yield`）を判断・発行する責務は常に呼び出し元の vSoC に置く。
 - **決定事項**:
   インタープリタの命令ハンドラは、命令ごとの精密なイベント検査やカウンタ更新を行わない。トレースの切れ目（基本ブロック末尾、ループ境界、関数呼出・復帰、または JIT 脱出境界）でのみ vSoC へ制御を返す。vSoC は戻り値を受け取るたびに Yield 判定と JIT キャッシュ再判定（`{Interpreter_LazyJITSwitch}`）を行う。
+
+### ADR-INTERP-02: 再スケジュール世代の観測境界 (`{ADR_InterruptRescheduleGeneration}`)
+
+- **ステータス**: 承認 (Approved)
+- **決定事項**:
+  インタープリタはCOOSの再スケジュール世代を命令ハンドラごとに参照しない。vSoCがトレース境界で現在世代とタスクの最終観測世代を比較し、未観測であれば観測済みとして記録した後に`co_yield`を発行する。
+- **責務境界**:
+  インタープリタはWASM命令の実行とトレース境界への復帰だけを担う。世代の管理、READYキューの一巡判定、および割り込みイベントの配送はCOOSとvSoCの責務とする。
+- **保証範囲**:
+  この方式は協調境界までの再スケジュールを保証する。命令列がトレース境界へ到達しない場合の強制プリエンプションや、割り込みからの実時間応答上限は保証しない。
 - **根拠とトレードオフ**:
   1. **ディスパッチ性能の最大化**: 命令ハンドラ内での条件分岐を排除し、`[[clang::musttail]]` による高速ダイレクトスレッド実行を維持する。
   2. **レジスタ・スタック整合性の保証**: トレース境界では TOS レジスタと3本の独立スタックが自然に整合するため、複雑なステート退避が不要となる。

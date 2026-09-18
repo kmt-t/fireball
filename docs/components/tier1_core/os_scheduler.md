@@ -17,10 +17,13 @@ COOSスケジューラは、協調型OS COOS（[`os_coos.md`](docs/components/ti
 ## 3. 静的モデル
 
 ### 3.1 データ構造
-<!-- traceability: {COOS_Transparent} -->
+<!-- traceability: {COOS_Transparent} {ADR_InterruptRescheduleGeneration} -->
 - **`Scheduler`**: タスクのREADYキュー管理、実行順序制御、およびコルーチン実行をカプセル化した主要クラス。各タスクの実行状態を外部から可視化・検査するための監査用インターフェースを提供する。
-- **`task_context`**: 各タスクの実行状態（READY/BLOCKED/RUNNING等の待機状態）、スタック境界、コルーチンハンドルを集約したデータ構造。
+- **`task_context`**: 各タスクの実行状態（READY/BLOCKED/RUNNING等の待機状態）、スタック境界、コルーチンハンドル、および最後に観測した再スケジュール要求世代を集約したデータ構造。
 - **`scheduler_config`**: 最大タスク数、タイムアウト閾値、および各タスクの割り当てリソース制限からなる不変の静的設定。
+- **`reschedule_generation`**: 割り込み通知を契機に更新する単調増加の要求世代。要求が保留中の間に到着した追加イベントは同じ世代へ集約し、イベント本体は固定長FIFOで個別に保持する。
+- **`reschedule_pending`**: 未完了の協調再スケジュール要求を示す原子的な状態。要求世代の一巡完了とFIFOの空を確認するまで解除しない。
+- **`round_target_mask`**: 協調再スケジュール開始時点で実行対象となるRUNNINGおよびREADYタスクを示す固定長ビットマップ。新規生成タスクは現在の一巡の対象に含めない。
 
 ### 3.2 内部ブロック図
 <!-- traceability: {COOS_Transparent} -->
@@ -29,6 +32,7 @@ flowchart TD
     subgraph Scheduler_Layer
         Engine[Scheduler Engine]
         TCB[task_context]
+        Req[reschedule generation and pending state]
         Vis[State Visualizer Interface]
     end
 
@@ -38,11 +42,13 @@ flowchart TD
 
     Engine -- static injection --> Dependency_Injection
     Engine -- manages --> TCB
+    Engine -- manages --> Req
+    Req -- records per-task observation --> TCB
     Vis -- reads state --> TCB
 ```
 
 ### 3.3 主要なデータ定義
-<!-- traceability: {COOS_Transparent} -->
+<!-- traceability: {COOS_Transparent} {ADR_InterruptRescheduleGeneration} -->
 
 #### スケジューラクラス（Scheduler）
 依存関係（割り込み制御等）とタスクキューをカプセル化する。
@@ -53,6 +59,7 @@ flowchart TD
 | 実行可能列 | 次に実行すべきタスクのFIFO実行可能列（侵入型循環双方向リスト） | リスト構造 | `task_context` のリスト |
 | 待機リスト | イベントや時間待ちを行っているタスクのリスト（侵入型） | リスト構造 | `task_context` のリスト |
 | 現在のタスク | 現在CPUコアを占有しているタスク | 構造体への参照 | `task_context` (NULL許容) |
+| 再スケジュール要求 | 割り込み通知の保留状態、要求世代、および一巡対象マスク | 原子状態と固定長ビットマップ | `reschedule_pending`, `reschedule_generation`, `round_target_mask` |
 | 状態可視化API | 外部から全タスクの待機・実行状態を安全に監視するためのメソッド群。ロックフリーな読み取り専用構造（Double Buffering）を採用し、実行中タスクをブロックせずに O(1) で状態を即座に取得可能。 | 関数オブジェクト | `Scheduler::get_task_states` (読み取り専用) |
 
 ## 4. 動的モデル
@@ -69,10 +76,16 @@ flowchart TD
     - **検証範囲**: 形式検証モデル `formal/coos_channel_model.py` は、モデル内のスケジューラ復帰と他の READY タスクのディスパッチを検証する。 `{GOTCHA-SCHED-01}`
 - **アイドル状態の検知**: 全ての管理タスクが「待機状態（BLOCKED/SUSPENDED_CSP）」となった場合にアイドル・ハンドラ（Periodic Task、ログフラッシュ、JITバッチコンパイル等）を実行する。
 - **割り込み処理**: HALからの原因付き`interrupt-event`通知（`notify_interrupt(event)`）を受信し、固定長FIFOから回収して`vector_id`に対応する対象タスクをREADYキュー末尾に追加する。
+- **割り込み時の協調再スケジュール (`ADR_InterruptRescheduleGeneration`)**:
+    - ISRは`interrupt-event`を固定長FIFOへ投入し、要求が保留されていない場合だけ`reschedule_generation`を一世代進める。ISRはタスク状態、READYキュー、および`round_target_mask`を変更しない。
+    - スケジューラは最初の協調境界でFIFOをドレインし、割り込みで起床したタスクをREADYキューへ追加した後、RUNNINGおよびREADYタスクを`round_target_mask`へ記録する。
+    - タスクがディスパッチまたは許可された直接ハンドオフで実行を開始したとき、`task_context.last_seen_generation`が現在世代と異なる場合は現在世代へ更新し、直ちに協調的な`YIELD`へ遷移する。タスクごとの更新は一世代につき一回だけ行う。
+    - `round_target_mask`に含まれる全タスクが現在世代を観測した時点で一巡を完了する。完了時に新しい割り込み要求が保留されている場合は、要求を消去せず次の世代の一巡へ移行する。要求を解除する場合は、対象世代と現在世代が一致し、かつFIFOが空であることを原子的に確認する。
+    - BLOCKEDまたは終了したタスクは現在の対象から除外し、新規生成タスクは次の世代から対象とする。タスクが協調境界へ到達しない場合、この機構だけでは強制プリエンプションを行わない。
 
 
 #### 連続直接ハンドオフ上限判定とメインループ復帰手順（手順アクティビティ図）
-<!-- traceability: {GOTCHA-SCHED-01} {Challenge_CspHandoffStarvation} {CSP_Handoff} -->
+<!-- traceability: {GOTCHA-SCHED-01} {Challenge_CspHandoffStarvation} {CSP_Handoff} {ADR_InterruptRescheduleGeneration} -->
 連続直接ハンドオフの上限到達後にスケジューラへ制御が戻る手順を示す。この上限は全タスクの公平性や実時間の応答上限を保証しない。
 
 ```mermaid
@@ -89,6 +102,29 @@ flowchart TD
     Enqueue --> ForceYield["Yield to COOS Scheduler Main Loop (Forced Yield)"]
     ForceYield --> DispatchRR["Scheduler dispatches next candidate from READY Ring"]
     DispatchRR --> NextReady(["Dispatch next task in READY queue order"])
+```
+
+#### 割り込み要求世代の一巡手順（手順アクティビティ図）
+<!-- traceability: {ADR_InterruptRescheduleGeneration} {GLOBAL_InterruptWakeup} {TaskPollInterruptEvent} -->
+割り込み要求を検知した後、要求世代を対象タスクが一度ずつ観測するまで協調的に再スケジュールする手順を示す。
+
+```mermaid
+flowchart TD
+    Interrupt(["ISR records interrupt-event"]) --> Generation["Advance reschedule_generation once per pending burst"]
+    Generation --> Boundary["Reach cooperative boundary"]
+    Boundary --> Drain["Drain interrupt FIFO and wake registered tasks"]
+    Drain --> Snapshot["Snapshot RUNNING and READY tasks into round_target_mask"]
+    Snapshot --> Dispatch["Dispatch or complete required handoff"]
+    Dispatch --> Observe["Task compares last_seen_generation"]
+    Observe --> Seen{"Current generation already observed?"}
+    Seen -- "No" --> Mark["Store current generation and yield"]
+    Seen -- "Yes" --> Continue["Continue until next cooperative boundary"]
+    Mark --> Remaining{"All target tasks observed?"}
+    Continue --> Remaining
+    Remaining -- "No" --> Dispatch
+    Remaining -- "Yes" --> Pending{"New pending generation exists?"}
+    Pending -- "Yes" --> Boundary
+    Pending -- "No" --> Normal(["Return to normal cooperative round-robin"])
 ```
 
 #### スケジューラ フルセット・コンセプトコード (`concepts/scheduler_concept.py`)
@@ -310,8 +346,19 @@ stateDiagram-v2
 | シグネチャ | `notify_interrupt(event: interrupt_event) -> void` |
 | 引数 | `event`: `vector_id`、`source_id`、`cause_code`、`payload0`、`payload1`からなる固定5ワードの原因レコード |
 | 事前条件 | ISR コンテキスト内からのみ呼び出されること。 |
-| 事後条件 | `interrupt-event` がFIFOへ投入される。FIFO満杯の場合はドロップされ、ドロップカウントがインクリメントされる。ドレイン時に`vector_id`の待機先が未登録ならイベントをドロップし、登録済みの待機タスクだけをBLOCKEDからREADYへ遷移させてREADYキュー末尾へ挿入する。スケジューラは純粋な協調型ラウンドロビン（FIFO順）でタスクを巡回し、実行中のタスクが自発的に`yield`した際に次のタスクが実行を開始する。 |
-| 設計注記 | 割り込み通知は原因情報を保持したままイベント化され、スケジューラのメインループで安全に処理される。ISRは軽量に、イベント投入とドロップカウンタの更新だけを行う。 |
+| 事後条件 | FIFOへの`interrupt-event`投入に成功した場合、FIFO満杯でなければ、要求が保留されていない場合に`reschedule_generation`を更新し、`reschedule_pending`を設定する。FIFO満杯の場合はイベントをドロップし、ドロップカウントだけをインクリメントする。ドレイン時に`vector_id`の待機先が未登録ならイベントをドロップし、登録済みの待機タスクだけをBLOCKEDからREADYへ遷移させてREADYキュー末尾へ挿入する。 |
+| 設計注記 | 割り込み通知は原因情報を保持したままイベント化され、スケジューラのメインループで安全に処理される。ISRは軽量に、イベント投入、要求世代の更新、およびドロップカウンタの更新だけを行う。タスク状態とREADYキューは協調境界でだけ変更する。 |
+
+#### 再スケジュール世代の観測（内部契約）
+<!-- traceability: {ADR_InterruptRescheduleGeneration} {TaskPollInterruptEvent} -->
+
+| 項目 | 内容 |
+| :--- | :--- |
+| 観測契機 | タスクのディスパッチ開始時、許可されたCSP直接ハンドオフの遷移先開始時、およびvSoCのトレース境界から復帰した時点 |
+| 観測動作 | `task_context.last_seen_generation`と`reschedule_generation`を比較し、異なる場合は現在世代を記録して協調的な`YIELD`を返す |
+| 一巡完了 | `round_target_mask`の全タスクが現在世代を記録した時点 |
+| 解除条件 | 一巡完了、FIFO空、および解除対象世代と現在世代の一致を同一の原子的手順で確認した時点 |
+| 禁止事項 | ISRからのタスク状態変更、タスク自身による要求世代の巻き戻し、協調境界を持たない強制プリエンプション |
 
 #### タスク終了（terminate）
 | 項目 | 内容 |
@@ -365,3 +412,13 @@ stateDiagram-v2
   - **採用理由**: 待ちタスクを定期的にポーリングすると、組み込み環境のCPUサイクルを浪費する。ポーリング間隔によっては起床レイテンシも予測しにくくなる。
   - **動作特性**: `notify_interrupt` 等の通知を契機に対象タスクを起床キューへ追加する。通常のスケジューリングサイクルでは BLOCKED タスクを走査しない。
   - **性能特性**: READYリングキューのpush/popは、タスク数に依存しない $O(1)$ とする。割り込みイベントの待機者検索は配送経路に属し、計算量と応答時間を別途評価する。 `{Challenge_CoosBlockedList}`
+
+- **決定事項**:
+  - **背景**: 割り込み通知後に実行中タスクのCPU占有が続くと、READYタスクおよび割り込み起床タスクの実行開始が遅延する。強制プリエンプションを導入せず、協調型スケジューラの決定論を維持したまま再スケジュール要求を伝播する必要がある。
+  - **選択肢と評価**:
+    - 案1: 共有Booleanフラグを設定し、任意のタスクがフラグを解除する。実装は小さいが、複数割り込みの統合、要求の消失防止、および一巡完了の判定を表現できない。
+    - 案2: 割り込みごとに全タスクへ要求状態を複製する。要求の観測は明確だが、固定TCBに不要な状態と更新処理を追加する。
+    - 案3: COOS全体の要求世代と、TCBごとの最終観測世代を保持する。要求対象のスナップショットを固定長ビットマップで管理し、タスクごとの観測を一世代一回に制限する。
+  - **結論**: 案3を採用する。 `{ADR_InterruptRescheduleGeneration}`
+  - **採用理由**: ISR側の処理をイベント投函と世代更新に限定し、タスク側の観測を既存の協調境界へ統合できる。世代比較により、同一要求に対する重複yieldと要求の消失を防止する。
+  - **制約**: 本方式は協調的再スケジュールであり、協調境界へ到達しないタスクを強制停止しない。IPCの直接ハンドオフは、ランデブー成立に必要な遷移だけを要求中に許可し、遷移先の世代観測後に追加連鎖を停止する。

@@ -664,9 +664,11 @@ sequenceDiagram
 | 補足 | ルックアップオーバーヘッドを削減するため、クライアントはこの認可済みチャネルオブジェクトをキャッシュして利用することが推奨される。 |
 
 #### メッセージルーティング（route_message）
-<!-- traceability: {OwnershipTransfer} {IPC_ZeroCopy} {ADR_RendezvousChannel} {CSP_Handoff} -->
+<!-- traceability: {OwnershipTransfer} {IPC_ZeroCopy} {ADR_RendezvousChannel} {CSP_Handoff} {ADR_InterruptRescheduleGeneration} -->
 
 **COOS の CSP チャネルと同一の機構**: 本 API は COOS が定めるバッファなし同期ランデブーそのものである。`(sender_role, target_role)` の RBAC エッジ 1 本につき専用の CSP チャネルを持つ。値を保持するバッファが存在しないため、キュー満杯状態は原理的に発生しない。送信ホットパスから URI 探索を排除し、認可済み `Channel` オブジェクトを直接操作する。
+
+割り込み時の再スケジュール要求が保留されている場合、IPCルータはCOOSの要求世代を参照して直接ハンドオフを制限する。ランデブー成立に必要な一回の直接ハンドオフだけを許可し、遷移先タスクが世代を観測した後は追加のハンドオフ連鎖を行わず、協調スケジューラへ制御を戻す。所有権の `Sender → In-flight → Receiver` 遷移はこの制限によって変更しない。
 
 | 項目 | 内容 |
 | :--- | :--- |

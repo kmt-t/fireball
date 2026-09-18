@@ -185,6 +185,11 @@ class System:
         self._channel_table: StaticVector[Channel] = StaticVector(capacity=FB_CONF_MAX_TASKS)
         # Direct 1-based index mapping over sorted self.ipc.registry.keys array (no dynamic dict)
         self.runtime_engine = RuntimeEngine()
+        # Tier 2 observes COOS generations through an injected callback; it does
+        # not import the Tier 1 scheduler or know its concrete implementation.
+        self.runtime_engine.set_reschedule_observer(
+            self.scheduler.observe_reschedule_generation
+        )
         self.scheduler.set_idle_hook(self._on_idle)
         self.halted = False
         self.reset_requested = False

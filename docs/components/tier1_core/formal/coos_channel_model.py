@@ -49,9 +49,14 @@ def build_model(*, guards: bool = True, max_handoffs: int = DEFAULT_MAX_HANDOFFS
         "s_limit_handoff",
         "s_forced_yield",
         "s_other_ready_dispatched",
+        "s_generation_pending",
+        "s_round_snapshot",
+        "s_generation_observing",
+        "s_generation_complete",
         "s_deadlock",
         "s_double_owned",
         "s_handoff_livelock",
+        "s_generation_lost",
     ]
     transitions = [
         # 送信先着: 待機中の送信者を受信側が起床し、上限未到達なら送信者へ戻す。
@@ -70,10 +75,18 @@ def build_model(*, guards: bool = True, max_handoffs: int = DEFAULT_MAX_HANDOFFS
         ("s_limit_handoff", "s_forced_yield"),
         ("s_forced_yield", "s_other_ready_dispatched"),
         ("s_other_ready_dispatched", "s_main_loop"),
+        # 割り込み再スケジュール世代: FIFOドレイン後に対象を固定し、
+        # 各対象が一度観測してから要求を完了する。
+        ("s_main_loop", "s_generation_pending"),
+        ("s_generation_pending", "s_round_snapshot"),
+        ("s_round_snapshot", "s_generation_observing"),
+        ("s_generation_observing", "s_generation_complete"),
+        ("s_generation_complete", "s_main_loop"),
         # 到達可能な違反状態は Kripke 構造の全状態に後続状態を持たせる。
         ("s_deadlock", "s_deadlock"),
         ("s_double_owned", "s_double_owned"),
         ("s_handoff_livelock", "s_handoff_livelock"),
+        ("s_generation_lost", "s_generation_lost"),
     ]
     transitions.extend(
         (f"s_handoff_count_{count}", f"s_handoff_count_{count + 1}")
@@ -90,6 +103,7 @@ def build_model(*, guards: bool = True, max_handoffs: int = DEFAULT_MAX_HANDOFFS
                 ("s_sender_blocked", "s_double_owned"),
                 # 上限時の yield を外すと、上限判定位置で連鎖が閉じる。
                 ("s_limit_handoff", "s_handoff_livelock"),
+                ("s_round_snapshot", "s_generation_lost"),
             ]
         )
 
@@ -106,9 +120,14 @@ def build_model(*, guards: bool = True, max_handoffs: int = DEFAULT_MAX_HANDOFFS
         "s_limit_handoff": {"at_max_limit", "receiver_owns"},
         "s_forced_yield": {"yielding", "counter_reset", "target_ready_tail"},
         "s_other_ready_dispatched": {"other_ready_dispatched"},
+        "s_generation_pending": {"reschedule_pending"},
+        "s_round_snapshot": {"reschedule_pending", "round_snapshotted"},
+        "s_generation_observing": {"reschedule_pending", "task_observed"},
+        "s_generation_complete": {"generation_complete"},
         "s_deadlock": {"deadlock", "blocked_sender", "blocked_receiver"},
         "s_double_owned": {"sender_owns", "receiver_owns"},
         "s_handoff_livelock": {"at_max_limit", "handoff_livelock"},
+        "s_generation_lost": {"reschedule_pending", "generation_lost"},
     }
     labels.update({state: {"in_handoff_chain", "receiver_owns"} for state in handoff_states})
     return Kripke(S=states, S0={"s_main_loop"}, R=transitions, L=labels)
@@ -135,6 +154,10 @@ def properties() -> list[FormalProperty]:
     no_peer_dispatch_violation = And(
         AtomicProposition("at_max_limit"),
         Not(AF(AtomicProposition("other_ready_dispatched"))),
+    )
+    generation_completion_violation = And(
+        AtomicProposition("reschedule_pending"),
+        Not(AF(AtomicProposition("generation_complete"))),
     )
     return [
         {
@@ -216,6 +239,19 @@ def properties() -> list[FormalProperty]:
                 )
             ),
             "violation": no_peer_dispatch_violation,
+            "expect": True,
+        },
+        {
+            "name": "interrupt_generation_completes_after_target_observation",
+            "kind": "liveness",
+            "logic": "CTL",
+            "formula": AG(
+                Imply(
+                    AtomicProposition("reschedule_pending"),
+                    AF(AtomicProposition("generation_complete")),
+                )
+            ),
+            "violation": generation_completion_violation,
             "expect": True,
         },
     ]

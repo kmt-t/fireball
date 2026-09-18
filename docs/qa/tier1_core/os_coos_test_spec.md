@@ -41,6 +41,8 @@
 | TEST-COOS-12 | ブロックタスク終了時の待機登録解除 | タスクがselect受信待ち、割り込み待ち、または現在実行中 | `task_killed`を呼び、select対象チャネルと割り込みイベントを処理する | selectグループ内の全チャネル登録とIRQ登録が解除され、タスクは`TERMINATED`のまま再起床しない。コルーチン参照も破棄される。未登録IDおよび終了済みタスクへの要求は`false`を返し、現在実行中のタスクはアサーションで拒否する | `os_coos.md` §4.3, pysim `test_coos_12_task_killed_removes_csp_and_irq_wait_registrations` |
 | TEST-COOS-13 | 原因レコードのFIFO順序保持 | 複数の`interrupt-event`を同一FIFOへ投入 | 異なる`cause_code`とpayloadを順に投入してドレイン | 受付順と同じ順序でイベントが観測され、5ワードが欠落・混在しない | `{GLOBAL_InterruptWakeup}` |
 | TEST-COOS-14 | 未登録待機先のイベントドロップ | `vector_id`に対応する待機タスクなし | 原因レコードを投入してドレイン | ゲストや無関係なタスクを起床せず、イベントをドロップして診断カウンタだけを更新する | `{GLOBAL_InterruptWakeup}` |
+| TEST-COOS-15 | 割り込み再スケジュール世代の一巡 | READYタスクが複数存在し、割り込みイベントを受け付ける | スケジューラを協調境界まで進める | 同一保留バーストのイベントは一世代へ集約され、対象タスクは各一回だけ世代を観測してから通常のREADY巡回へ戻る | `{ADR_InterruptRescheduleGeneration}` |
+| TEST-COOS-16 | 世代保留中のCSP直接ハンドオフ停止 | `reschedule_pending=true` でCSPランデブーが成立する | `channel_send`/`channel_recv`の結果を観測する | 値の所有権移譲は成立するが、直接切替は行わず`YIELD`を返す | `{ADR_InterruptRescheduleGeneration}` |
 
 ### 2.3 形式検証の確認項目
 
@@ -54,6 +56,7 @@
 | FORMAL-COOS-04 | ハンドオフ上限時のスケジューラ復帰 | `AG(at_max_limit -> AF(main_loop))` | 正常モデルで成立し、強制yieldを外す変異モデルで反証される |
 | FORMAL-COOS-05 | ハンドオフ上限時のカウンタ初期化と末尾登録 | `AG(at_max_limit -> AF(counter_reset AND target_ready_tail))` | 正常モデルで成立し、強制yieldを外す変異モデルで反証される |
 | FORMAL-COOS-06 | 先行READYタスクへの実行機会 | `AG(at_max_limit -> AF(other_ready_dispatched))` | 既存READYタスクが1つあるモデルで成立し、強制yieldを外す変異モデルで反証される。実時間の応答上限は対象外 |
+| FORMAL-COOS-07 | 割り込み再スケジュール世代の完了 | `AG(reschedule_pending -> AF(generation_complete))` | 正常モデルでは対象スナップショットとタスク観測を経て成立し、対象確定ガードを外した変異モデルで反証される。モデル: [`coos_channel_model.py`](docs/components/tier1_core/formal/coos_channel_model.py) |
 
 ### 実装の勘所・不変条件（Gotchas & Implementation Invariants）
 

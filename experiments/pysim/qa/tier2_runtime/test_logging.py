@@ -32,18 +32,20 @@ for _p in [
     if _sp not in sys.path:
         sys.path.insert(0, _sp)
 
-from helpers import expect_assertion
+from helpers import expect_assertion, make_interpreter, wat_to_wasm
+from interpreter import TRAP_LOG_EVENTS, TrapCode
 from interrupt_event import InterruptEvent
 from ipc_router import (
     IPCMessage,
     Role,
 )
-from logger import ConsoleOutput, LogDictionary, Logger, LogLevel
+from logger import STANDARD_DIAGNOSTIC_EVENTS, ConsoleOutput, LogDictionary, Logger, LogLevel
 from stream_transport import StreamTransport
 from system import (
     System,
 )
 from system_containers import MutableFlatMapStorage
+from wasm_reader import parse
 
 
 def test_log_01_dictionary_rejects_pointer_specifiers():
@@ -183,10 +185,53 @@ def test_log_05_gotcha_03_interrupt_checked_only_at_batch_boundary():
         t.close()
 
 
+def test_log_12_interpreter_trap_diagnostic_logging():
+    """TEST-LOG-12 / GOTCHA-LOG-04: a guest trap is logged via the dictionary,
+    with the trapping unified_pc captured before frame teardown."""
+    wat = """
+    (module
+      (func $div_s (export "div_s") (param $a i32) (param $b i32) (result i32)
+        (i32.div_s (local.get $a) (local.get $b))
+      )
+    )
+    """
+    mod = parse(wat_to_wasm(wat))
+    t = StreamTransport()
+    try:
+        logger = Logger(t, LogDictionary(), min_level=LogLevel.DEBUG, capacity=8)
+        interp = make_interpreter(mod, logger=logger)
+        func_index = mod.export_func_index("div_s")
+        call_state = interp.start(func_index, [10, 0])
+        while not call_state.finished:
+            call_state = interp.step(call_state)
+        assert call_state.trap is not None
+        assert call_state.trap.code == TrapCode.INTEGER_DIVIDE_BY_ZERO
+
+        flushed = logger.flush()
+        assert flushed == 1
+        wire = t.drain_output().decode()
+        assert "TRAP: integer divide by zero (pc=0x" in wire
+    finally:
+        t.close()
+
+
+def test_log_13_trap_log_dictionary_sync_with_interpreter():
+    """TEST-LOG-13: interpreter.TRAP_LOG_EVENTS and logger.STANDARD_DIAGNOSTIC_EVENTS
+    agree on every trap event id and format string (no registration drift,
+    verification-antipatterns.md pattern E: unbacked/diverging numbers)."""
+    logger_events_by_id = dict(STANDARD_DIAGNOSTIC_EVENTS)
+    assert len(TRAP_LOG_EVENTS) == len(TrapCode)
+    for offset, fmt in TRAP_LOG_EVENTS:
+        assert offset in logger_events_by_id, f"trap event 0x{offset:X} missing from logger.py"
+        assert logger_events_by_id[offset] == fmt, f"trap event 0x{offset:X} format text diverged"
+
+
 if __name__ == "__main__":
     test_log_01_dictionary_rejects_pointer_specifiers()
     test_log_02_logger_ring_buffer_overwrites()
     test_log_03_dictionary_storage_ownership_separation()
     test_log_04_coos_and_ipc_diagnostic_logging()
     test_log_05_gotcha_03_interrupt_checked_only_at_batch_boundary()
-    print("[PASS] All 5 System Logging & Ring Buffer tests passed.")
+    test_log_12_interpreter_trap_diagnostic_logging()
+    test_log_13_trap_log_dictionary_sync_with_interpreter()
+    print("[PASS] All 7 System Logging & Ring Buffer tests passed.")

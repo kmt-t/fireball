@@ -197,6 +197,70 @@ def test_coos_09_interrupt_queue_overflow_drops():
     assert sched.dropped_irqs == 1
 
 
+def test_coos_13_interrupt_reschedule_generation_round():
+    """TEST-SCHED-14: one accepted IRQ causes each existing ready task to observe one generation."""
+    sched = Scheduler()
+    trace = []
+
+    def worker(name):
+        trace.append(f"{name}:run")
+        yield (ChannelAction.YIELD, None)
+        trace.append(f"{name}:done")
+
+    first_id = sched.spawn("first", worker("first"))
+    second_id = sched.spawn("second", worker("second"))
+    first = sched.get_task(first_id)
+    second = sched.get_task(second_id)
+    assert first is not None and second is not None
+
+    assert sched.notify_interrupt(InterruptEvent(31, 0, 0, 0, 0))
+    assert sched.notify_interrupt(InterruptEvent(32, 0, 0, 0, 0))
+    assert sched.reschedule_generation == 1, "a pending burst must be one generation"
+    assert sched.reschedule_pending
+
+    # The first two dispatches are generation observations, not task execution.
+    sched.step()
+    assert trace == []
+    assert first.last_seen_generation == 1
+    assert sched.reschedule_pending
+    sched.step()
+    assert trace == []
+    assert second.last_seen_generation == 1
+    assert not sched.reschedule_pending
+    assert sched.round_target_mask == 0
+
+    sched.step()
+    sched.step()
+    assert trace == ["first:run", "second:run"]
+
+
+def test_coos_14_pending_generation_ends_direct_handoff_chain():
+    """TEST-COOS-14: a pending generation changes direct CSP handoff into scheduler yield."""
+    sched = Scheduler()
+    ch = sched.create_channel()
+    sender_id = sched.spawn("sender")
+    receiver_id = sched.spawn("receiver")
+    sender = sched.get_task(sender_id)
+    receiver = sched.get_task(receiver_id)
+    assert sender is not None and receiver is not None
+
+    _activate_task(sched, sender)
+    assert ch.send("payload")[0] == ChannelAction.BLOCK
+    _activate_task(sched, receiver)
+    assert ch.recv()[0] == ChannelAction.DIRECT_SWITCH
+    sched.current_task = None
+
+    assert sched.notify_interrupt(InterruptEvent(33, 0, 0, 0, 0))
+    _activate_task(sched, receiver)
+    action, _ = ch.send("next")
+    assert action == ChannelAction.BLOCK
+    _activate_task(sched, sender)
+    action, _ = ch.recv()
+    assert action == ChannelAction.YIELD
+    assert sched.consecutive_handoffs == 0
+    sched.current_task = None
+
+
 def test_coos_10_idle_detection_when_all_blocked():
     """TEST-COOS-10: the idle hook fires once the READY queue empties because every task is blocked
     (SUSPENDED_CSP), not merely because the run loop happened to stop."""
@@ -305,4 +369,6 @@ if __name__ == "__main__":
     test_coos_10_idle_detection_when_all_blocked()
     test_coos_11_no_double_ownership_sanity()
     test_coos_12_task_killed_removes_csp_and_irq_wait_registrations()
-    print("[PASS] All 12 COOS Rendezvous & Handoff tests passed.")
+    test_coos_13_interrupt_reschedule_generation_round()
+    test_coos_14_pending_generation_ends_direct_handoff_chain()
+    print("[PASS] All 14 COOS Rendezvous & Handoff tests passed.")

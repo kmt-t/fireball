@@ -96,6 +96,17 @@ def _virq_event(vector_id: int, source_id: int = 0) -> InterruptEvent:
     return InterruptEvent(vector_id, source_id, 7, 11, 13)
 
 
+class _OneShotRescheduleObserver:
+    """Test double for the scheduler-owned generation boundary callback."""
+
+    def __init__(self) -> None:
+        self.polls = 0
+
+    def observe_reschedule_generation(self) -> bool:
+        self.polls += 1
+        return self.polls == 1
+
+
 def test_virq_50_static_nodes_and_safepoint_registration():
     """TEST-VSOC-50: only the fixed root/category/device nodes are mutable."""
     dispatcher = VirqDispatcher(_make_virq_module(), lambda _index, _v, _s, _c, _p0, _p1: 1)
@@ -262,6 +273,33 @@ def test_runtime_engine_registers_virq_dispatchers_through_bound_module():
     invalid = engine.register_virq_dispatcher(int(VirqNode.ROOT), 3)
     assert not invalid.is_ok
     assert invalid.error == RegistrationError.FUNCTION_SIGNATURE_INVALID
+
+
+def test_runtime_engine_cooperative_run_yields_at_reschedule_boundary():
+    """TEST-VSOC-56: vSoC returns a resumable slice when COOS requests a generation yield."""
+    wasm_bytes = wat_to_wasm(
+        """
+        (module
+          (func (export "f") (result i32)
+            i32.const 7
+          )
+        )
+        """
+    )
+    observer = _OneShotRescheduleObserver()
+    engine = RuntimeEngine(reschedule_observer=observer)
+    module = engine.load_wasm(wasm_bytes)
+    driver = engine.run_cooperative(Interpreter(module), 0, [])
+    assert next(driver) is None
+    try:
+        next(driver)
+    except StopIteration as done:
+        result = done.value
+    else:
+        assert False, "cooperative runtime must complete after the resumed slice"
+    assert result is not None
+    assert result[0] == 7
+    assert observer.polls >= 2
 
 
 def test_virq_unregisters_dispatcher_at_safepoint():

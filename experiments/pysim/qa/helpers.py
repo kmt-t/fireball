@@ -36,6 +36,7 @@ for _p in [
 
 from interpreter import Interpreter, InterpreterBindings, WasmNumber
 from ipc_router import IPCMessage
+from logger import Logger
 from memory import MemoryManager
 from scheduler import Scheduler
 from system_containers import StaticVector
@@ -57,6 +58,7 @@ def make_interpreter(
     imported_globals: StaticVector[int] | None = None,
     imported_tables: StaticVector[StaticVector[int | None]] | None = None,
     imported_memory: Memory | None = None,
+    logger: Logger | None = None,
 ) -> Interpreter:
     """Build explicit runtime bindings for compact unit-test setup."""
     min_pages = 0
@@ -91,7 +93,7 @@ def make_interpreter(
         globals=actual_globals,
         tables=actual_tables,
     )
-    return Interpreter(module, bindings, vmmio=vmmio, phys_mem=phys_mem)
+    return Interpreter(module, bindings, vmmio=vmmio, phys_mem=phys_mem, logger=logger)
 
 
 @contextmanager

@@ -8,6 +8,8 @@ Implementation Invariants & Gotchas:
   concurrent senders or receivers trigger assertion error.
 - GOTCHA-COOS-03: ISR interrupt notification queue is non-blocking; task wake-up is
   deferred to cooperative drain_interrupts at scheduler yield points.
+- ADR_InterruptRescheduleGeneration: an accepted interrupt opens one generation;
+  each task in the fixed round snapshot observes it once before normal dispatch resumes.
 - GOTCHA-SCHED-01: Consecutive direct handoff bound returns control to the scheduler
   after the configured limit; it does not guarantee task fairness or response time.
 - ADR-SharedBlockRaii: Move-only RAII shared memory block guarantees zero-copy ownership transfer
@@ -123,12 +125,13 @@ class Channel(Generic[MsgT]):
 class TaskControlBlock:
     """TCB tracking coroutine execution and rendezvous transfer states."""
 
-    __slots__ = ("coro", "id", "pending_val", "received_val", "state")
+    __slots__ = ("coro", "id", "last_seen_generation", "pending_val", "received_val", "state")
 
     def __init__(self, task_id: str, coro: Generator | None = None):
         self.id = task_id
         self.coro = coro
         self.state = TaskState.READY
+        self.last_seen_generation = 0
         self.pending_val: object | None = None
         self.received_val: object | None = None
 
@@ -145,10 +148,58 @@ class COOSKernel:
         self.consecutive_handoffs = 0
         self.idle_hook_called = False
         self.log_flush_count = 0
+        self.reschedule_generation = 0
+        self.reschedule_pending = False
+        self.round_target_generation = 0
+        self.round_target_ids: set[str] = set()
+
+    def _remove_round_target(self, task_id: str) -> None:
+        self.round_target_ids.discard(task_id)
+
+    def _begin_reschedule_round(self) -> None:
+        if not self.reschedule_pending:
+            return
+        if self.round_target_generation == self.reschedule_generation:
+            return
+        self.round_target_ids = {
+            task_id
+            for task_id, task in self.tasks.items()
+            if (
+                task.state in (TaskState.READY, TaskState.RUNNING)
+                and task.last_seen_generation != self.reschedule_generation
+            )
+        }
+        self.round_target_generation = self.reschedule_generation
+        self._complete_reschedule_if_ready()
+
+    def _complete_reschedule_if_ready(self) -> None:
+        if (
+            self.reschedule_pending
+            and self.round_target_generation == self.reschedule_generation
+            and not self.round_target_ids
+            and not self.interrupt_event_queue
+        ):
+            self.reschedule_pending = False
+            self.round_target_generation = 0
+
+    def observe_reschedule_generation(self, task_id: str | None = None) -> bool:
+        observed_id = task_id if task_id is not None else self.current_task
+        assert observed_id is not None, "generation observation requires an active task"
+        assert observed_id in self.tasks, "generation observation requires a registered task"
+        self._begin_reschedule_round()
+        if not self.reschedule_pending or observed_id not in self.round_target_ids:
+            return False
+        self.round_target_ids.remove(observed_id)
+        task = self.tasks[observed_id]
+        already_seen = task.last_seen_generation == self.reschedule_generation
+        task.last_seen_generation = self.reschedule_generation
+        self._complete_reschedule_if_ready()
+        return not already_seen
 
     def register_task(self, task_id: str, coroutine: Generator) -> None:
         assert task_id not in self.tasks, f"Task {task_id} already registered"
         self.tasks[task_id] = TaskControlBlock(task_id, coroutine)
+        self.tasks[task_id].last_seen_generation = self.reschedule_generation
         self.ready_queue.append(task_id)
 
     def create_channel(self) -> Channel:
@@ -181,6 +232,8 @@ class COOSKernel:
         ch.waiter_task, ch.waiter_dir = sender, WaitDir.SEND
         self.tasks[sender].pending_val = data
         self.tasks[sender].state = TaskState.SUSPENDED_CSP
+        self._remove_round_target(sender)
+        self._complete_reschedule_if_ready()
         return (ChannelAction.BLOCK, None)
 
     def channel_recv(self, channel: Channel) -> tuple[ChannelAction, str | None]:
@@ -206,6 +259,8 @@ class COOSKernel:
         )
         ch.waiter_task, ch.waiter_dir = receiver, WaitDir.RECV
         self.tasks[receiver].state = TaskState.SUSPENDED_CSP
+        self._remove_round_target(receiver)
+        self._complete_reschedule_if_ready()
         return (ChannelAction.BLOCK, None)
 
     def _handoff_or_yield(self, target: str) -> tuple[ChannelAction, str | None]:
@@ -213,6 +268,10 @@ class COOSKernel:
         This bound is exactly what os_coos.md 6.1 'main loop return guarantee'
         proves via AG(at_max_limit -> AF(main_loop))."""
         if self.consecutive_handoffs < self.max_consecutive_handoffs:
+            if self.reschedule_pending:
+                self.consecutive_handoffs = 0
+                self.ready_queue.append(target)
+                return (ChannelAction.YIELD, None)
             self.consecutive_handoffs += 1
             return (ChannelAction.DIRECT_SWITCH, target)
         self.consecutive_handoffs = 0
@@ -230,6 +289,9 @@ class COOSKernel:
     def notify_interrupt(self, irq_id: int) -> None:
         """Called from ISR context: non-blocking enqueue of IRQ event."""
         self.interrupt_event_queue.append(irq_id)
+        if not self.reschedule_pending:
+            self.reschedule_generation += 1
+            self.reschedule_pending = True
 
     def drain_interrupts(self) -> None:
         """Called at yield point: wake up tasks waiting on received IRQs."""
@@ -249,6 +311,8 @@ class COOSKernel:
         assert task_id is not None
         self.irq_waiters.setdefault(irq_id, []).append(task_id)
         self.tasks[task_id].state = TaskState.BLOCKED
+        self._remove_round_target(task_id)
+        self._complete_reschedule_if_ready()
         return (ChannelAction.BLOCK_IRQ, str(irq_id))
 
     # --- Main Dispatcher & Idle Loop ---
@@ -260,6 +324,7 @@ class COOSKernel:
     def run_step(self) -> bool:
         """Executes one scheduling step. Returns False when all tasks terminated."""
         self.drain_interrupts()
+        self._begin_reschedule_round()
         # Check for active tasks
         active_tasks = [t for t in self.tasks.values() if t.state != TaskState.TERMINATED]
         if not active_tasks:
@@ -272,6 +337,11 @@ class COOSKernel:
         self.current_task = task_id
         tcb = self.tasks[task_id]
         tcb.state = TaskState.RUNNING
+        if self.observe_reschedule_generation(task_id):
+            tcb.state = TaskState.READY
+            self.ready_queue.append(task_id)
+            self.current_task = None
+            return True
         try:
             assert tcb.coro is not None
             action, arg = tcb.coro.send(None)
@@ -290,6 +360,8 @@ class COOSKernel:
                 pass  # Task already in SUSPENDED_CSP or BLOCKED state
         except StopIteration:
             tcb.state = TaskState.TERMINATED
+            self._remove_round_target(task_id)
+            self._complete_reschedule_if_ready()
 
         self.current_task = None
         return True
@@ -465,7 +537,11 @@ def test_coos_interrupt_wakeup() -> None:
     assert kernel.tasks["worker"].state == TaskState.BLOCKED
     assert kernel.interrupt_event_queue == [16]
     assert "worker" not in kernel.ready_queue
-    # Step 4: Next kernel step drains IRQ, wakes worker and completes
+    # Step 4: Next kernel step drains IRQ, wakes worker, and performs the
+    # generation observation turn before returning to the task.
+    kernel.run_step()
+    assert irq_received == []
+    # Step 5: The resumed task executes after its one observation yield.
     kernel.run_step()
     assert irq_received == ["IRQ_16_PROCESSED"]
     assert kernel.tasks["worker"].state == TaskState.TERMINATED

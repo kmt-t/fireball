@@ -22,6 +22,8 @@
 | TEST-LOG-09 | ダングリングポインタ（実行時文字列）の禁止 | 実行時に構築した任意長文字列をdict_offset経由で渡そうとする | ログAPIの引数型を確認 | ログAPIは固定オフセット+u32引数4個のみを受け付け、任意長文字列やポインタ相当の値を安全に埋め込む手段が存在しないことを確認する（`{DictionaryBasedIPC}`の「実行時の辞書追加は不可」の裏付け） |  README `test_logger_cannot_carry_a_runtime_string_but_console_can` |
 | TEST-LOG-10 | IPC経由でのログ要求（`fireball://logging/system/0`） | IPCルータに`logging`宛のルートが存在する状態（ギャップ項目参照） | `handle_ipc_message`相当のペイロード（level/dict_offset/arg0-3のdict）でIPC_SENDする | ログが`log_event`と同じ結果でキューイングされる | logging_concept.py `handle_ipc_message`, `test_logger_ipc_message_handling` |
 | TEST-LOG-11 | ログ辞書ストレージ所有権分離 | 外部で実体ペア配列（ROM/静的バッファ）を定義 | ログ辞書初期化 | ログ辞書および非所有ビューが外部ストレージを参照し、実体を自己所有・複製しない | logging_concept.py `test_logger_storage_ownership_separation` |
+| TEST-LOG-12 | インタープリタ実行時トラップの診断ログ出力 | `Interpreter` にロガーを結線し、ゲストコードで整数ゼロ除算を実行 | トラップ発生後 `flush()` | `0x030F`（`TRAP: integer divide by zero`）がフォーマットされ `unified_pc` を伴って UART へ出力される | 4.2.1, `GOTCHA-LOG-04` |
+| TEST-LOG-13 | トラップログ辞書のインタープリタ・ロガー間同期 | `interpreter.TRAP_LOG_EVENTS` と `logger.STANDARD_DIAGNOSTIC_EVENTS` を突合 | 全17トラップ原因コードを走査 | 各イベントIDおよびフォーマット文字列が両モジュール間で完全一致する（登録漏れ・字面ずれの機械的検出） | 4.2.1, `GOTCHA-LOG-04` |
 
 ### 実装の勘所・不変条件（Gotchas & Implementation Invariants）
 
@@ -30,6 +32,7 @@
 | GOTCHA-LOG-01 | 実行時文字列ポインタの完全排除（ダングリングポインタ防止） | ログAPI呼び出し | 実行時文字列ポインタの受け渡しを試行 | ログAPIは固定長辞書オフセットと u32 スカラー引数4個のみを受け付け、任意長文字列を直接埋め込む手段が存在しない。**実装の勘所**: ログメッセージにポインタを含めると、対象タスクがクラッシュまたは終了した後にロガーが不正メモリを参照（Use-After-Free）する | `runtime_logging.md` , `{DictionaryBasedIPC}` |
 | GOTCHA-LOG-02 | リングバッファ満杯時の最古上書き（システム非ブロック不変条件） | リングバッファが満杯 | さらに `log_event` を実行 | エラーやブロックを起こさず、最も古いエントリを上書きして直近のログを保存する。**実装の勘所**: ログ出力でタスクをブロックさせると、高負荷時や異常発生時にシステム全体がデッドロックに陥る | `runtime_logging.md` , `{DeterministicRingBuffer}` |
 | GOTCHA-LOG-03 | 転送ループの割り込み即時応答性 | flush 実行中 | 現在のバッチ（DMA転送）完了後に `interrupt_pending()` が True を返す | バッファ全フラッシュを強行せず、現在のバッチ（DMA転送）完了時点で直ちにループを抜けてスケジューラへ制御を戻す。**実装の勘所**: DMA転送は開始後 `dma_complete` まで中断できないため、確認はエントリ単位ではなくバッチ境界でのみ行う。ログフラッシュをアトミックに実行すると、長大なログ転送中に外部割り込みレイテンシが大幅に悪化する | `runtime_logging.md` , `{InterruptibleFlush}` |
+| GOTCHA-LOG-04 | トラップ発生箇所での診断情報捕捉順序 | インタープリタがトラップを検知 | 呼出しフレーム解体前に `unified_pc` とトラップ原因コードを確定してロガーへ渡す | 診断ログに発生関数・命令位置が記録される。**実装の勘所**: フレーム解体後は `func_index`/`bytecode_offset` を復元できないため、解体前の捕捉を怠ると発生位置不明のログになる。イベントIDはトラップ原因コード + `0x0300` の機械算出とし、登録漏れを構造的に防止する | `runtime_logging.md` 4.2.1, `runtime_interpreter.md` |
 
 ## 3. テスト検証実績と網羅状況
 

@@ -24,12 +24,15 @@
 | TEST-SCHED-11 | run_until_idle/run_to_completionの停止性 | 相互にnotifyし合わないBLOCKEDタスクが残る | run_to_completionを実行 | 無限ループにならず、上限到達で明示的なエラーを返す | 実装固有の安全策 |
 | TEST-SCHED-12 | 原因レコードの順序と未登録ドロップ | FIFOに複数イベント、待機先が一部未登録 | `notify_interrupt`とドレインを実行 | 登録済みの待機先だけが受付順に起床し、未登録イベントはドロップされる | `{GLOBAL_InterruptWakeup}` |
 | TEST-SCHED-13 | READY循環リストの両端操作と定員境界 | 容量4のREADYキューを用意する | 先頭取り出し、末尾追加、先頭追加、任意タスクの除去を行う | FIFO順と循環する前後リンクを保つ。満杯時は追加を拒否し、既存タスクの順序を変えない。各リンク操作はキュー長に依存しない | `{ADR_IntrusiveTcbList}` |
+| TEST-SCHED-14 | 割り込み再スケジュール世代の一巡 | READYタスクA・Bが存在し、割り込み通知を1回以上受け付ける | FIFOをドレインし、A・Bを順にディスパッチする | `reschedule_generation`は保留バーストごとに1回だけ進み、各対象タスクの`last_seen_generation`が一度ずつ更新される。全対象の観測後に`reschedule_pending`が解除される | `{ADR_InterruptRescheduleGeneration}` |
+| TEST-SCHED-15 | 一巡中に生成されたタスクの対象外化 | 世代要求が保留中にタスクCをspawnする | 現在世代の対象マスクを確定してCをディスパッチする | Cは現在世代の`round_target_mask`に含まれず、C自身の通常の協調実行を開始する。既存対象の観測完了を待つ | `{ADR_InterruptRescheduleGeneration}` |
 
 ### 実装の勘所・不変条件（Gotchas & Implementation Invariants）
 
 | GOTCHA ID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | GOTCHA-SCHED-01 | 連続直接ハンドオフ上限後のスケジューラ復帰 | 2つのタスクが CSP Rendezvous でピンポン通信し、連続ハンドオフ数が設定上限に達している | 上限到達後にさらにランデブーを成立させる | 直接遷移せず `YIELD` でスケジューラへ制御を戻し、連続回数を0に戻す。上限は全タスクの公平性や実時間応答上限を保証しない。**pysim実装テストの観測範囲**: `TEST-COOS-07` は `YIELD` とカウンタリセットを検証し、READYキュー順序は検証しない | `os_scheduler.md` , `{Challenge_CspHandoffStarvation}` |
+| GOTCHA-SCHED-02 | 割り込み保留中の直接ハンドオフ連鎖停止 | CSPランデブー成立時に`reschedule_pending=true` | 直接ハンドオフ可能な相手を成立させる | ランデブーと所有権移譲は完了するが、相手への直接遷移を行わず`YIELD`でスケジューラへ戻り、世代観測の機会を確保する | `{ADR_InterruptRescheduleGeneration}` |
 
 ## 3. テスト検証実績と網羅状況
 

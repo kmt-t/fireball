@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import os
 import sys
-from collections.abc import Iterable, Sequence
+from collections.abc import Generator, Iterable, Sequence
 from typing import Protocol, TextIO
 
 from config import (
@@ -103,6 +103,12 @@ class _Debugger(Protocol):
     def verify_assertions(self, memory: bytearray) -> None: ...
 
 
+class _RescheduleObserver(Protocol):
+    """Tier-neutral callback supplied by the owning COOS scheduler."""
+
+    def observe_reschedule_generation(self) -> bool: ...
+
+
 from tier3_jit.jit_cache import (
     _CARD_STATE_NAMES,
     BlockCardMask,
@@ -148,6 +154,7 @@ class RuntimeEngine:
         "min_trace_bytes",
         "module",
         "ring",
+        "reschedule_observer",
         "stat_chain_hits",
         "stat_interp_steps",
         "stat_jit_invocations",
@@ -167,6 +174,7 @@ class RuntimeEngine:
         compile_queue_capacity: int = 4,
         block_capacity: int = 64,
         debug: bool = False,
+        reschedule_observer: _RescheduleObserver | None = None,
     ):
         debug_env = os.environ.get("FIREBALL_DEBUG", "").lower()
         self.debug = debug or debug_env == "1" or debug_env == "true" or debug_env == "yes"
@@ -179,6 +187,7 @@ class RuntimeEngine:
         self.candidate_threshold = candidate_threshold
         self.trackable = BlockCardMask(card_shift=card_shift, code_lengths=code_lengths)
         self.ring = HistoryRing()
+        self.reschedule_observer = reschedule_observer
         self.cache = JITMultiBufferCache()
         self.cache.on_evict = self._handle_eviction
         self.jit_compiler = jit_compiler
@@ -204,6 +213,10 @@ class RuntimeEngine:
         self.min_trace_bytes = min_trace_bytes if min_trace_bytes is not None else (1 << card_shift)
         self._virq: VirqDispatcher | None = None
         self._virq_interp: Interpreter | None = None
+
+    def set_reschedule_observer(self, observer: _RescheduleObserver | None) -> None:
+        """Attach the scheduler-owned generation observer without a Tier import."""
+        self.reschedule_observer = observer
 
     def _handle_eviction(self, purged_pcs: StaticVector[int]) -> None:
         for pc in purged_pcs:
@@ -622,6 +635,84 @@ class RuntimeEngine:
         if self.debug:
             self.dump_internal_state()
 
+        if call_state.trap is not None:
+            assert False, call_state.trap.code
+        assert call_state.results is not None
+        return call_state.results
+
+    def run_cooperative(
+        self,
+        interp: Interpreter,
+        func_index: int,
+        args: Sequence[int],
+        idle_budget: int = 4,
+    ) -> Generator[None, None, StaticVector[WasmNumber]]:
+        """Run a resumable vSoC slice, yielding at trace boundaries on request.
+
+        The scheduler callback is intentionally injected as a protocol so Tier 2
+        does not import Tier 1. A yielded ``None`` is the handoff point at which
+        the caller's coroutine returns to COOS and later resumes this generator.
+        """
+        if self.module is None and interp.module is not None:
+            self.register_module_blocks(interp.module)
+        self._virq_interp = interp
+
+        call_state = interp.start(func_index, args)
+        compiled = CardState.COMPILED
+        while not call_state.finished:
+            if (
+                self.reschedule_observer is not None
+                and self.reschedule_observer.observe_reschedule_generation()
+            ):
+                self.on_yield()
+                yield None
+                continue
+            assert call_state._frame is not None
+            current_ip = call_state._ip
+            if current_ip == RETURN_SENTINEL_IP:
+                call_state = interp.step(call_state)
+                continue
+            pc = call_state.current_pc()
+            block_here = self.get_block(pc)
+            frame_here = call_state._frame
+            assert frame_here is not None
+            if block_here is not None and len(frame_here.frames) > block_here.frame_depth:
+                frame_here.frames.truncate(block_here.frame_depth)
+            frame_here.boundary_next_pc = block_here.next_pc if block_here is not None else None
+            frame_here.boundary_loops_to = block_here.loops_to if block_here is not None else None
+
+            trace = None
+            if block_here is not None and self.trackable.is_marked(pc):
+                if self.bitmap.get_state(pc) == compiled:
+                    trace = self.cache.lookup(pc)
+
+            if trace is not None:
+                chain_count = 1
+                chain_trace = trace
+                while chain_trace.chain_next is not None:
+                    successor = self.cache.find_trace(chain_trace.chain_next)
+                    assert successor is not None
+                    chain_trace = successor
+                    chain_count += 1
+                    assert chain_count <= 1024
+                self.stat_jit_invocations += chain_count
+                self.stat_chain_hits += chain_count - 1
+                if self.debug:
+                    chain_trace.exec_count += 1
+                    if chain_count > 1:
+                        trace.exec_count += 1
+                call_state = self._invoke_trace(interp, call_state, trace)
+            else:
+                self.stat_interp_steps += 1
+                if pc is not None and self.trackable.is_marked(pc):
+                    if self.record_block_head(pc):
+                        self.idle_hook(budget=idle_budget)
+                        yield None
+                call_state = interp.step(call_state)
+
+        self.idle_hook(budget=idle_budget)
+        if self.debug:
+            self.dump_internal_state()
         if call_state.trap is not None:
             assert False, call_state.trap.code
         assert call_state.results is not None

@@ -49,6 +49,30 @@ LOG_EVT_IPC_MSG_TOO_LARGE = 0x0203
 LOG_EVT_IPC_INVALID_OWNERSHIP = 0x0204
 LOG_EVT_IPC_CHANNEL_COLLISION = 0x0205
 
+# Tier 2 (interpreter.py) owns TrapCode and computes these same offsets as
+# LOG_EVT_TRAP_BASE + TrapCode value (interpreter.TRAP_LOG_EVENTS). The IDs and
+# format strings are mirrored here rather than imported, matching the COOS/IPC
+# duplication above: interpreter.py already imports this module for Logger, so
+# an import in the other direction would be circular.
+LOG_EVT_TRAP_BASE = 0x0300
+LOG_EVT_TRAP_LOCAL_STACK_CAPACITY = 0x0301
+LOG_EVT_TRAP_CALL_FRAME_CAPACITY = 0x0302
+LOG_EVT_TRAP_CALL_STACK_CAPACITY = 0x0303
+LOG_EVT_TRAP_OPERAND_STACK_CAPACITY = 0x0304
+LOG_EVT_TRAP_NO_HOST_HANDLER = 0x0305
+LOG_EVT_TRAP_TABLE_INDEX_OUT_OF_BOUNDS = 0x0306
+LOG_EVT_TRAP_TABLE_SLOT_UNINITIALIZED = 0x0307
+LOG_EVT_TRAP_INDIRECT_CALL_TYPE_MISMATCH = 0x0308
+LOG_EVT_TRAP_UNREACHABLE = 0x0309
+LOG_EVT_TRAP_CONTROL_FRAME_CAPACITY = 0x030A
+LOG_EVT_TRAP_VMMIO_NOT_CONFIGURED = 0x030B
+LOG_EVT_TRAP_VMMIO_ACCESS = 0x030C
+LOG_EVT_TRAP_MEMORY_OUT_OF_BOUNDS = 0x030D
+LOG_EVT_TRAP_MEMORY_SECTION_MISSING = 0x030E
+LOG_EVT_TRAP_INTEGER_DIVIDE_BY_ZERO = 0x030F
+LOG_EVT_TRAP_INTEGER_OVERFLOW = 0x0310
+LOG_EVT_TRAP_INVALID_CONVERSION = 0x0311
+
 STANDARD_DIAGNOSTIC_EVENTS: tuple[tuple[int, str], ...] = (
     (LOG_EVT_COOS_HANDOFF_LIMIT, "COOS: handoff limit reached (task=%d, count=%d)"),
     (LOG_EVT_COOS_TASK_CAPACITY, "COOS: task capacity exceeded (max=%d, attempted=%d)"),
@@ -59,6 +83,38 @@ STANDARD_DIAGNOSTIC_EVENTS: tuple[tuple[int, str], ...] = (
     (LOG_EVT_IPC_MSG_TOO_LARGE, "IPC: message too large (kv_count=%d, max=%d)"),
     (LOG_EVT_IPC_INVALID_OWNERSHIP, "IPC: invalid ownership state (current_state=%d, op=%d)"),
     (LOG_EVT_IPC_CHANNEL_COLLISION, "IPC: channel waiter collision (channel=%d, dir=%d)"),
+    (LOG_EVT_TRAP_LOCAL_STACK_CAPACITY, "TRAP: local stack capacity exceeded (pc=0x%08X)"),
+    (LOG_EVT_TRAP_CALL_FRAME_CAPACITY, "TRAP: call frame capacity exceeded (pc=0x%08X)"),
+    (LOG_EVT_TRAP_CALL_STACK_CAPACITY, "TRAP: call stack capacity exceeded (pc=0x%08X)"),
+    (LOG_EVT_TRAP_OPERAND_STACK_CAPACITY, "TRAP: operand stack capacity exceeded (pc=0x%08X)"),
+    (LOG_EVT_TRAP_NO_HOST_HANDLER, "TRAP: import has no bound host handler (pc=0x%08X, func=%d)"),
+    (
+        LOG_EVT_TRAP_TABLE_INDEX_OUT_OF_BOUNDS,
+        "TRAP: table index out of bounds (pc=0x%08X, slot=%d)",
+    ),
+    (LOG_EVT_TRAP_TABLE_SLOT_UNINITIALIZED, "TRAP: table slot uninitialized (pc=0x%08X, slot=%d)"),
+    (
+        LOG_EVT_TRAP_INDIRECT_CALL_TYPE_MISMATCH,
+        "TRAP: indirect call type mismatch (pc=0x%08X, slot=%d)",
+    ),
+    (LOG_EVT_TRAP_UNREACHABLE, "TRAP: unreachable instruction executed (pc=0x%08X)"),
+    (LOG_EVT_TRAP_CONTROL_FRAME_CAPACITY, "TRAP: control frame capacity exceeded (pc=0x%08X)"),
+    (
+        LOG_EVT_TRAP_VMMIO_NOT_CONFIGURED,
+        "TRAP: vMMIO region not configured (pc=0x%08X, addr=0x%08X)",
+    ),
+    (LOG_EVT_TRAP_VMMIO_ACCESS, "TRAP: vMMIO access rejected (pc=0x%08X, status=%d)"),
+    (
+        LOG_EVT_TRAP_MEMORY_OUT_OF_BOUNDS,
+        "TRAP: linear memory access out of bounds (pc=0x%08X, addr=0x%08X)",
+    ),
+    (
+        LOG_EVT_TRAP_MEMORY_SECTION_MISSING,
+        "TRAP: memory access without a declared memory section (pc=0x%08X)",
+    ),
+    (LOG_EVT_TRAP_INTEGER_DIVIDE_BY_ZERO, "TRAP: integer divide by zero (pc=0x%08X)"),
+    (LOG_EVT_TRAP_INTEGER_OVERFLOW, "TRAP: integer division overflow (pc=0x%08X)"),
+    (LOG_EVT_TRAP_INVALID_CONVERSION, "TRAP: invalid float-to-integer conversion (pc=0x%08X)"),
 )
 
 

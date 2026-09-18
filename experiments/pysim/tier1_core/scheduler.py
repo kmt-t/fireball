@@ -10,6 +10,8 @@ Implementation Invariants & Gotchas:
   direction (no queues, no priority inversion, no dynamic allocation).
 - GOTCHA-COOS-03: ISR interrupt notification queue is non-blocking (drain_interrupts
   wakes tasks deterministically at scheduler yield points).
+- ADR_InterruptRescheduleGeneration: an accepted interrupt starts one cooperative
+  reschedule generation. Each task in the fixed round snapshot observes it once.
 - GOTCHA-SCHED-01: Consecutive direct handoff bound (FB_CONF_MAX_CONSECUTIVE_HANDOFFS)
   returns control to the scheduler after the limit; it does not guarantee task fairness
   or real-time response bounds.
@@ -290,6 +292,7 @@ class Task:
         "state",
         "task_id",
         "pending_interrupt_event",
+        "last_seen_generation",
         "waiting_irq",
     )
 
@@ -311,6 +314,7 @@ class Task:
         self.received_val: ChannelPayload | None = None
         self.result: ChannelPayload | None = None
         self.pending_interrupt_event: InterruptEvent | None = None
+        self.last_seen_generation = 0
         self.waiting_irq: int | None = None
 
 
@@ -329,6 +333,10 @@ class Scheduler:
         "logger",
         "max_handoffs",
         "max_tasks",
+        "reschedule_generation",
+        "reschedule_pending",
+        "round_target_generation",
+        "round_target_mask",
     )
 
     def __init__(
@@ -354,6 +362,74 @@ class Scheduler:
         )
         self.dropped_irqs = 0
         self._ready_coro_count = 0
+        self.reschedule_generation = 0
+        self.reschedule_pending = False
+        self.round_target_generation = 0
+        self.round_target_mask = 0
+
+    @staticmethod
+    def _task_bit(task: Task) -> int:
+        """Return the fixed-mask bit assigned to a registered task identity."""
+        assert task.task_id >= 0, "task IDs must be non-negative for round masks"
+        return 1 << task.task_id
+
+    def _remove_round_target(self, task: Task) -> None:
+        """Remove a task that blocked or terminated before observing the round."""
+        self.round_target_mask &= ~self._task_bit(task)
+
+    def _begin_reschedule_round(self) -> None:
+        """Snapshot RUNNING/READY tasks exactly once for the pending generation."""
+        if not self.reschedule_pending:
+            return
+        if self.round_target_generation == self.reschedule_generation:
+            return
+        target_mask = 0
+        for task in self._all:
+            if (
+                (task.state == TaskState.RUNNING or task.state == TaskState.READY)
+                and task.last_seen_generation != self.reschedule_generation
+            ):
+                target_mask |= self._task_bit(task)
+        self.round_target_mask = target_mask
+        self.round_target_generation = self.reschedule_generation
+        self._complete_reschedule_if_ready()
+
+    def _complete_reschedule_if_ready(self) -> None:
+        """Clear a generation only after its snapshot and FIFO are both complete."""
+        if not self.reschedule_pending:
+            return
+        if self.round_target_generation != self.reschedule_generation:
+            return
+        if self.round_target_mask != 0 or len(self.interrupt_event_queue) != 0:
+            return
+        self.reschedule_pending = False
+        self.round_target_generation = 0
+
+    def observe_reschedule_generation(self, task: Task | None = None) -> bool:
+        """Observe the current generation at a cooperative execution boundary.
+
+        Returns ``True`` exactly once per target task and generation. The caller
+        must turn that result into its normal cooperative yield; this method does
+        not perform a context switch itself.
+        """
+        observed_task = task if task is not None else self.current_task
+        assert observed_task is not None, "generation observation requires an active task"
+        assert self.get_task(observed_task.task_id) is observed_task, (
+            "generation observation requires a registered task"
+        )
+        self._begin_reschedule_round()
+        if not self.reschedule_pending:
+            return False
+        bit = self._task_bit(observed_task)
+        if self.round_target_mask & bit == 0:
+            return False
+        self.round_target_mask &= ~bit
+        if observed_task.last_seen_generation == self.reschedule_generation:
+            self._complete_reschedule_if_ready()
+            return False
+        observed_task.last_seen_generation = self.reschedule_generation
+        self._complete_reschedule_if_ready()
+        return True
 
     def get_task(self, task_id: int) -> Task | None:
         for t in self._all:
@@ -428,6 +504,8 @@ class Scheduler:
             self._next_id += 1
 
         task = Task(assigned_id, name, coro, role=role)
+        # A task created during an active generation belongs to the next round.
+        task.last_seen_generation = self.reschedule_generation
         self._all.push_back(task)
         self._ready.enqueue(task)
         if coro is not None:
@@ -482,6 +560,7 @@ class Scheduler:
         self.detach(task)
         task.waiting_irq = None
         task.pending_interrupt_event = None
+        self._remove_round_target(task)
         for channel in self._channels:
             if channel.waiter_task is not task:
                 continue
@@ -504,6 +583,7 @@ class Scheduler:
             task.coro = None
         task.result = None
         task.state = TaskState.TERMINATED
+        self._complete_reschedule_if_ready()
         return True
 
     def channel_send(
@@ -543,6 +623,8 @@ class Scheduler:
         ch.waiter_task, ch.waiter_dir = sender, WaitDir.SEND
         sender.pending_val = data
         sender.state = TaskState.SUSPENDED_CSP
+        self._remove_round_target(sender)
+        self._complete_reschedule_if_ready()
         return (ChannelAction.BLOCK, None)
 
     def channel_recv(self, channel: Channel) -> tuple[ChannelAction, ChannelPayload | None]:
@@ -569,6 +651,8 @@ class Scheduler:
         )
         ch.waiter_task, ch.waiter_dir, ch.waiter_group = receiver, WaitDir.RECV, None
         receiver.state = TaskState.SUSPENDED_CSP
+        self._remove_round_target(receiver)
+        self._complete_reschedule_if_ready()
         return (ChannelAction.BLOCK, None)
 
     def channel_select_recv(
@@ -604,11 +688,21 @@ class Scheduler:
             )
             ch.waiter_task, ch.waiter_dir, ch.waiter_group = receiver, WaitDir.RECV, group
         receiver.state = TaskState.SUSPENDED_CSP
+        self._remove_round_target(receiver)
+        self._complete_reschedule_if_ready()
         return (ChannelAction.BLOCK, None)
 
     def _handoff_or_yield(self, target_task: Task) -> tuple[ChannelAction, ChannelPayload | None]:
         """CSP direct handoff or scheduler yield upon consecutive threshold."""
         if self.consecutive_handoffs < self.max_handoffs:
+            if self.reschedule_pending:
+                # The rendezvous itself remains atomic, but a pending generation
+                # ends the direct-handoff chain at this safe boundary.
+                assert self._ready.enqueue(target_task), "READY queue capacity exceeded"
+                if target_task.coro is not None:
+                    self._ready_coro_count += 1
+                self.consecutive_handoffs = 0
+                return (ChannelAction.YIELD, None)
             self.consecutive_handoffs += 1
             assert self._ready.enqueue_front(target_task), "READY queue capacity exceeded"
             if target_task.coro is not None:
@@ -644,6 +738,9 @@ class Scheduler:
                 )
             return False
         self.interrupt_event_queue.push(event)
+        if not self.reschedule_pending:
+            self.reschedule_generation += 1
+            self.reschedule_pending = True
         return True
 
     def drain_interrupts(self) -> int:
@@ -670,6 +767,7 @@ class Scheduler:
                     break
             if not delivered:
                 self.dropped_irqs += 1
+        self._complete_reschedule_if_ready()
         return count
 
     def wait_for_interrupt(self, irq_id: int) -> None:
@@ -680,6 +778,8 @@ class Scheduler:
         )
         task.state = TaskState.BLOCKED
         task.waiting_irq = irq_id
+        self._remove_round_target(task)
+        self._complete_reschedule_if_ready()
 
     def consume_interrupt_event(self) -> InterruptEvent | None:
         """Consume the event handed to the current vSoC runtime task."""
@@ -704,6 +804,7 @@ class Scheduler:
     def step(self) -> Task | None:
         """Executes a single ready task from the front of the queue."""
         self.drain_interrupts()
+        self._begin_reschedule_round()
         if not self._ready:
             return None
         task = self._ready.dequeue()
@@ -711,6 +812,13 @@ class Scheduler:
             self._ready_coro_count -= 1
         self.current_task = task
         task.state = TaskState.RUNNING
+        if self.observe_reschedule_generation(task):
+            task.state = TaskState.READY
+            self._ready.enqueue(task)
+            if task.coro is not None:
+                self._ready_coro_count += 1
+            self.current_task = None
+            return task
         if task.coro is None:
             task.state = TaskState.READY
             self._ready.enqueue(task)
@@ -721,6 +829,8 @@ class Scheduler:
         except StopIteration as e:
             task.result = e.value
             task.state = TaskState.TERMINATED
+            self._remove_round_target(task)
+            self._complete_reschedule_if_ready()
             self.current_task = None
             return task
 
@@ -737,6 +847,7 @@ class Scheduler:
         """Runs cooperative tasks until all coroutines block, yield or terminate, then fires idle hooks."""
         previous_task = self.current_task
         self.drain_interrupts()
+        self._begin_reschedule_round()
         step_budget = budget if budget is not None else max(1000, len(self._ready) * 64 + 16)
         while self._ready and step_budget > 0:
             step_budget -= 1
@@ -747,6 +858,13 @@ class Scheduler:
                 self._ready_coro_count -= 1
             self.current_task = task
             task.state = TaskState.RUNNING
+            if self.observe_reschedule_generation(task):
+                task.state = TaskState.READY
+                self._ready.enqueue(task)
+                if task.coro is not None:
+                    self._ready_coro_count += 1
+                self.current_task = None
+                continue
             if task.coro is None:
                 task.state = TaskState.READY
                 self._ready.enqueue(task)
@@ -757,6 +875,8 @@ class Scheduler:
             except StopIteration as e:
                 task.result = e.value
                 task.state = TaskState.TERMINATED
+                self._remove_round_target(task)
+                self._complete_reschedule_if_ready()
                 self.current_task = None
                 continue
             if wait_on is None:

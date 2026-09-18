@@ -79,6 +79,9 @@ ROM上に固定配置されたフォーマット文字列配列の非所有ア�
 - **バッファフル・ポリシー (`GOTCHA-LOG-02`)**: **FINALIZED: Overwrite**。
   リングバッファが満杯の場合、古いログを破棄して新しいログを書き込む。システムの状態継続を優先。
   **設計理由と不変条件**: ログバッファが満杯になった際に呼び出し元タスクをブロック（一時停止）させたり動的メモリ再確保を行うと、高負荷時や異常フォールト発生時にログ出力処理自身が原因となってシステム全体がデッドロックやメモリ枯渇に陥る。そのため、満杯時は最も古いエントリを非ブロッキングで安全に上書きし（ドロップカウンタをインクリメント）、直近の診断情報を確実に残しつつシステムの稼働継続性を最優先する。
+- **トラップ発生箇所での診断情報捕捉 (`GOTCHA-LOG-04`)**:
+  インタープリタは、トラップによって呼出しフレームを解体する直前に `unified_pc` とトラップ原因コードを確定し、ロガーへ引き渡す。
+  **設計理由と不変条件**: フレーム解体後は `func_index` と `bytecode_offset` を復元する手段が失われるため、解体前の捕捉を怠ると診断ログに発生位置を記録できない。イベントIDをトラップ原因コードから機械的に算出する（4.2.1）ことで、ログ辞書エントリの登録漏れも同時に防止する。
 
 ### 4.2 辞書構造
 <!-- traceability: {DictionaryBasedIPC} -->
@@ -94,9 +97,9 @@ ROM上に固定配置されたフォーマット文字列配列の非所有ア�
 | 引数スライス規則 | フォーマット文字列に含まれる指定子数 $n$（$0 \le n \le 4$）に対し、渡された4引数タプルの先頭 $n$ 個（`args[0..n]`）のみが展開時に参照され、未使用スロットは安全に無視される |
 | 登録時期 | ビルド時 (実行時の追加は不可) |
 
-### 4.2.1 COOS / IPC 診断ログイベント仕様
+### 4.2.1 COOS / IPC / インタープリタ 診断ログイベント仕様
 <!-- traceability: {DictionaryBasedIPC} {BufferedLogging} -->
-COOS および IPC において、デバッグ時に重大な不整合・境界超過・通信遮断を検知するための診断ログイベントを定義する。ログのオーバーヘッドを最小化するため、常時ログは出力せず、異常系・境界値到達時のみに厳選して発行する。
+COOS、IPC、およびインタープリタ実行時トラップにおいて、デバッグ時に重大な不整合・境界超過・通信遮断・ゲストトラップを検知するための診断ログイベントを定義する。ログのオーバーヘッドを最小化するため、常時ログは出力せず、異常系・境界値到達時のみに厳選して発行する。
 
 | イベントID | 分類 | レベル | フォーマット文字列 | 引数構成 (args[0..3]) | 発生条件 |
 | :--- | :--- | :--- | :--- | :--- | :--- |
@@ -109,6 +112,25 @@ COOS および IPC において、デバッグ時に重大な不整合・境界�
 | `0x0203` | IPC | `ERROR` | `IPC: message too large (kv_count=%d, max=%d)` | `kv_count`, `max_kv_pairs`, 0, 0 | 許可された最大 KV ペア数（`FB_CONF_ROUTER_MAX_KV_PAIRS`、`system_config.md` 正本）を超過したメッセージ |
 | `0x0204` | IPC | `ERROR` | `IPC: invalid ownership state (current_state=%d, op=%d)` | `ownership_state`, `operation`, 0, 0 | 送信側が所有権を持たないメッセージの送信試行 |
 | `0x0205` | IPC | `ERROR` | `IPC: channel waiter collision (channel=%d, dir=%d)` | `channel_idx`, `wait_dir`, 0, 0 | チャネル待機不変条件違反（詳細は `ipc_router.md` 正本） |
+| `0x0301` | インタープリタ | `ERROR` | `TRAP: local stack capacity exceeded (pc=0x%08X)` | `unified_pc`, 0, 0, 0 | ローカル値領域の固定容量超過（詳細は `runtime_interpreter.md` 正本） |
+| `0x0302` | インタープリタ | `ERROR` | `TRAP: call frame capacity exceeded (pc=0x%08X)` | `unified_pc`, 0, 0, 0 | 呼出しフレーム記述子領域の固定容量超過 |
+| `0x0303` | インタープリタ | `ERROR` | `TRAP: call stack capacity exceeded (pc=0x%08X)` | `unified_pc`, 0, 0, 0 | 呼出しネスト深さ上限（`FB_CONF_MAX_NESTING_DEPTH`、`system_config.md` 正本）超過 |
+| `0x0304` | インタープリタ | `ERROR` | `TRAP: operand stack capacity exceeded (pc=0x%08X)` | `unified_pc`, 0, 0, 0 | オペランドスタック領域の固定容量超過 |
+| `0x0305` | インタープリタ | `ERROR` | `TRAP: import has no bound host handler (pc=0x%08X, func=%d)` | `unified_pc`, `callee_func_index`, 0, 0 | インポート関数呼出し先にホストハンドラが未結合 |
+| `0x0306` | インタープリタ | `ERROR` | `TRAP: table index out of bounds (pc=0x%08X, slot=%d)` | `unified_pc`, `table_slot`, 0, 0 | `call_indirect` のテーブル索引が範囲外 |
+| `0x0307` | インタープリタ | `ERROR` | `TRAP: table slot uninitialized (pc=0x%08X, slot=%d)` | `unified_pc`, `table_slot`, 0, 0 | `call_indirect` が未初期化テーブルスロットを参照 |
+| `0x0308` | インタープリタ | `ERROR` | `TRAP: indirect call type mismatch (pc=0x%08X, slot=%d)` | `unified_pc`, `table_slot`, 0, 0 | `call_indirect` の実関数シグネチャが期待型と不一致 |
+| `0x0309` | インタープリタ | `ERROR` | `TRAP: unreachable instruction executed (pc=0x%08X)` | `unified_pc`, 0, 0, 0 | `unreachable` 命令の実行 |
+| `0x030A` | インタープリタ | `ERROR` | `TRAP: control frame capacity exceeded (pc=0x%08X)` | `unified_pc`, 0, 0, 0 | `block`/`loop`/`if` 制御ブロック復帰情報領域の固定容量超過 |
+| `0x030B` | インタープリタ | `ERROR` | `TRAP: vMMIO region not configured (pc=0x%08X, addr=0x%08X)` | `unified_pc`, `guest_addr`, 0, 0 | 未登録の vMMIO アドレス領域へのアクセス（詳細は `runtime_vmmio.md` 正本） |
+| `0x030C` | インタープリタ | `ERROR` | `TRAP: vMMIO access rejected (pc=0x%08X, status=%d)` | `unified_pc`, `vmmio_status`, 0, 0 | vMMIO ハンドラによるアクセス拒否 |
+| `0x030D` | インタープリタ | `ERROR` | `TRAP: linear memory access out of bounds (pc=0x%08X, addr=0x%08X)` | `unified_pc`, `guest_addr`, 0, 0 | リニアメモリ境界外アクセス（`{MemoryBoundaryCheck}`） |
+| `0x030E` | インタープリタ | `ERROR` | `TRAP: memory access without a declared memory section (pc=0x%08X)` | `unified_pc`, 0, 0, 0 | メモリセクション未宣言モジュールでのメモリ命令実行 |
+| `0x030F` | インタープリタ | `ERROR` | `TRAP: integer divide by zero (pc=0x%08X)` | `unified_pc`, 0, 0, 0 | `div` / `rem` 系命令の除数ゼロ |
+| `0x0310` | インタープリタ | `ERROR` | `TRAP: integer division overflow (pc=0x%08X)` | `unified_pc`, 0, 0, 0 | `INT_MIN / -1` 相当の符号付き除算オーバーフロー |
+| `0x0311` | インタープリタ | `ERROR` | `TRAP: invalid float-to-integer conversion (pc=0x%08X)` | `unified_pc`, 0, 0, 0 | NaN・範囲外浮動小数点数の整数変換 (`trunc`) |
+
+`0x03xx` 帯はインタープリタ実行時トラップ専用であり、イベントIDはトラップ原因コード（`runtime_interpreter.md` の `trap_code`）に `0x0300` を加算した値に固定する（`GOTCHA-LOG-04`）。トラップ原因コードとログ辞書エントリが機械的に 1 対 1 対応するため、原因コードを追加した際にログ辞書エントリの登録漏れが生じない。`unified_pc` は `(func_index << 16) | bytecode_offset`（`{GOTCHA-INTP-04}`）であり、複数モジュールを跨いでも発生関数と命令位置を一意に特定できる。
 
 ### 4.3 COOS Idle Hook 連携 (Flush Protocol)
 <!-- traceability: {GLOBAL_IdleDetection} -->

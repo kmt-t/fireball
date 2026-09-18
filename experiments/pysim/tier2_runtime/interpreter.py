@@ -59,6 +59,7 @@ from interop_abi import (
     NativeValueStack,
 )
 from leb128 import decode_signed, decode_unsigned
+from logger import Logger, LogLevel
 from native_stacks import (
     ControlFrameKind,
     NativeControlStack,
@@ -361,6 +362,84 @@ class Trap(Exception):
     def __init__(self, code: TrapCode, detail: int = 0):
         self.code = code
         self.detail = detail
+
+
+# Interpreter Runtime Trap Diagnostic Log Events (runtime_logging.md 4.2.1, GOTCHA-LOG-04).
+# Event ID = LOG_EVT_TRAP_BASE + TrapCode value, so every TrapCode member maps to exactly
+# one dictionary entry computed from the single enum, with no separately maintained ID
+# table that could drift out of sync (verification-antipatterns.md pattern E).
+LOG_EVT_TRAP_BASE = 0x0300
+
+TRAP_LOG_EVENTS: tuple[tuple[int, str], ...] = (
+    (
+        LOG_EVT_TRAP_BASE + TrapCode.LOCAL_STACK_CAPACITY,
+        "TRAP: local stack capacity exceeded (pc=0x%08X)",
+    ),
+    (
+        LOG_EVT_TRAP_BASE + TrapCode.CALL_FRAME_CAPACITY,
+        "TRAP: call frame capacity exceeded (pc=0x%08X)",
+    ),
+    (
+        LOG_EVT_TRAP_BASE + TrapCode.CALL_STACK_CAPACITY,
+        "TRAP: call stack capacity exceeded (pc=0x%08X)",
+    ),
+    (
+        LOG_EVT_TRAP_BASE + TrapCode.OPERAND_STACK_CAPACITY,
+        "TRAP: operand stack capacity exceeded (pc=0x%08X)",
+    ),
+    (
+        LOG_EVT_TRAP_BASE + TrapCode.NO_HOST_HANDLER,
+        "TRAP: import has no bound host handler (pc=0x%08X, func=%d)",
+    ),
+    (
+        LOG_EVT_TRAP_BASE + TrapCode.TABLE_INDEX_OUT_OF_BOUNDS,
+        "TRAP: table index out of bounds (pc=0x%08X, slot=%d)",
+    ),
+    (
+        LOG_EVT_TRAP_BASE + TrapCode.TABLE_SLOT_UNINITIALIZED,
+        "TRAP: table slot uninitialized (pc=0x%08X, slot=%d)",
+    ),
+    (
+        LOG_EVT_TRAP_BASE + TrapCode.INDIRECT_CALL_TYPE_MISMATCH,
+        "TRAP: indirect call type mismatch (pc=0x%08X, slot=%d)",
+    ),
+    (
+        LOG_EVT_TRAP_BASE + TrapCode.UNREACHABLE,
+        "TRAP: unreachable instruction executed (pc=0x%08X)",
+    ),
+    (
+        LOG_EVT_TRAP_BASE + TrapCode.CONTROL_FRAME_CAPACITY,
+        "TRAP: control frame capacity exceeded (pc=0x%08X)",
+    ),
+    (
+        LOG_EVT_TRAP_BASE + TrapCode.VMMIO_NOT_CONFIGURED,
+        "TRAP: vMMIO region not configured (pc=0x%08X, addr=0x%08X)",
+    ),
+    (
+        LOG_EVT_TRAP_BASE + TrapCode.VMMIO_ACCESS,
+        "TRAP: vMMIO access rejected (pc=0x%08X, status=%d)",
+    ),
+    (
+        LOG_EVT_TRAP_BASE + TrapCode.MEMORY_OUT_OF_BOUNDS,
+        "TRAP: linear memory access out of bounds (pc=0x%08X, addr=0x%08X)",
+    ),
+    (
+        LOG_EVT_TRAP_BASE + TrapCode.MEMORY_SECTION_MISSING,
+        "TRAP: memory access without a declared memory section (pc=0x%08X)",
+    ),
+    (
+        LOG_EVT_TRAP_BASE + TrapCode.INTEGER_DIVIDE_BY_ZERO,
+        "TRAP: integer divide by zero (pc=0x%08X)",
+    ),
+    (
+        LOG_EVT_TRAP_BASE + TrapCode.INTEGER_OVERFLOW,
+        "TRAP: integer division overflow (pc=0x%08X)",
+    ),
+    (
+        LOG_EVT_TRAP_BASE + TrapCode.INVALID_CONVERSION,
+        "TRAP: invalid float-to-integer conversion (pc=0x%08X)",
+    ),
+)
 
 
 class WasmNumber(Protocol):
@@ -834,6 +913,7 @@ class Interpreter:
         "debugger",
         "globals",
         "host_functions",
+        "logger",
         "memory",
         "memory_decl",
         "module",
@@ -848,8 +928,10 @@ class Interpreter:
         bindings: InterpreterBindings,
         vmmio: VMMIOController | None = None,
         phys_mem: bytearray | None = None,
+        logger: Logger | None = None,
     ):
         self.module = module
+        self.logger = logger
         self.memory = bindings.memory
         if module.memory_import is not None:
             assert bindings.imported_memory
@@ -970,7 +1052,7 @@ class Interpreter:
             ctx.bind_handler_state(ip, frame)
             trap = handler(ctx, values, locals_arr, tos)
             if trap is not None:
-                self._abort_call(call_state, trap)
+                self._abort_call(call_state, trap, ip)
                 return None
             ip = int(ctx.native_context.ip)
             if ip >= code_len:
@@ -996,8 +1078,26 @@ class Interpreter:
         call_state.results = results
         return results
 
-    def _abort_call(self, call_state: InterpreterCall, trap: Trap) -> None:
-        """Terminate every active frame and publish a runtime trap outcome."""
+    def _abort_call(self, call_state: InterpreterCall, trap: Trap, ip: int) -> None:
+        """Terminate every active frame and publish a runtime trap outcome.
+
+        `ip` is the trapping instruction's offset within `call_state.func_index`,
+        passed explicitly by the caller rather than read from `call_state._ip`:
+        the `_call_without_nested_calls` fast path advances a local `ip` without
+        writing it back to `call_state` until the frame completes, so
+        `call_state.current_pc()` would report a stale address there.
+        """
+        if self.logger is not None:
+            # GOTCHA-LOG-04: unified_pc must be captured before frame teardown below;
+            # func_index/bytecode_offset cannot be recovered from call_state afterward.
+            unified_pc = (
+                RETURN_SENTINEL_PC
+                if ip == RETURN_SENTINEL_IP
+                else (call_state.func_index << 16) | ip
+            )
+            self.logger.log_event(
+                LogLevel.ERROR, LOG_EVT_TRAP_BASE + int(trap.code), unified_pc, trap.detail
+            )
         while call_state.context.call_frame_stack:
             frame = call_state.context.call_frame_stack[-1]
             frame.frames.truncate(0)
@@ -1143,7 +1243,7 @@ class Interpreter:
                 if op == CALL or op == CALL_INDIRECT:
                     trap = self._enter_or_resolve_call(call_state, op, ip, frame, locals_arr, tos)
                     if trap is not None:
-                        self._abort_call(call_state, trap)
+                        self._abort_call(call_state, trap, ip)
                         return call_state
                     if stop_at_boundary:
                         return call_state
@@ -1161,7 +1261,7 @@ class Interpreter:
                 ctx.bind_handler_state(ip, frame)
                 trap = handler(ctx, values, locals_arr, tos)
                 if trap is not None:
-                    self._abort_call(call_state, trap)
+                    self._abort_call(call_state, trap, ip)
                     return call_state
                 next_ip = int(ctx.native_context.ip)
                 result_frame = ctx.call_frame_stack[-1]

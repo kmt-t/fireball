@@ -115,7 +115,14 @@ def run_cps_call(owner, call_state):
                     call_state.context, frame.values, locals_arr, tos
                 )
             if trap is not None:
-                owner._abort_call(call_state, trap)
+                # `ip` is this loop's dispatch point, but a non-boundary opcode's
+                # `_CPS_HANDLER_TABLE` entry musttail-chains through `_cps_continue`
+                # for however many further instructions stay in the same basic
+                # block, so the trap may have fired several instructions past `ip`.
+                # `native_context.ip` is kept current by every chained handler
+                # (GOTCHA-LOG-04), so it -- not the stale outer `ip` -- names the
+                # actual trapping instruction.
+                owner._abort_call(call_state, trap, int(call_state.context.native_context.ip))
                 return None
             ip = int(call_state.context.native_context.ip)
             if ip >= len(frame.code):
@@ -160,7 +167,7 @@ def run_cps_step(owner, call_state, stop_at_boundary):
                         call_state, op, ip, frame, locals_arr, tos
                     )
                     if trap is not None:
-                        owner._abort_call(call_state, trap)
+                        owner._abort_call(call_state, trap, ip)
                         return call_state
                     if stop_at_boundary:
                         return call_state
@@ -176,7 +183,11 @@ def run_cps_step(owner, call_state, stop_at_boundary):
                         call_state.context, frame.values, locals_arr, tos
                     )
                 if trap is not None:
-                    owner._abort_call(call_state, trap)
+                    # See the matching comment in run_cps_call: a non-boundary
+                    # opcode's handler may musttail-chain past `ip` before trapping,
+                    # so read the trapping instruction from native_context.ip
+                    # rather than this loop's now-stale dispatch point.
+                    owner._abort_call(call_state, trap, int(call_state.context.native_context.ip))
                     return call_state
                 next_ip = int(call_state.context.native_context.ip)
                 result_frame = call_state.context.call_frame_stack[-1]

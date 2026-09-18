@@ -7,6 +7,8 @@ Implementation Invariants & Gotchas:
 - This concept uses Python built-in containers; bounded-allocation behavior is modeled by pysim.
 - GOTCHA-SCHED-01: READY tasks are dispatched in FIFO order when running tasks yield;
   non-yielding tasks can prevent further dispatch, so fairness and response time are not guaranteed.
+- ADR_InterruptRescheduleGeneration: an accepted interrupt advances one generation;
+  each task in the fixed target snapshot observes it once before normal dispatch resumes.
 """
 
 from collections import deque
@@ -22,12 +24,13 @@ class TaskState(IntEnum):
 
 
 class TaskControlBlock:
-    __slots__ = ("block_reason", "coro", "dispatches", "id", "state")
+    __slots__ = ("block_reason", "coro", "dispatches", "id", "last_seen_generation", "state")
 
     def __init__(self, task_id: str, coro: Generator):
         self.id = task_id
         self.coro = coro
         self.state = TaskState.READY
+        self.last_seen_generation = 0
         self.dispatches = 0
         self.block_reason: str | None = None
 
@@ -39,6 +42,48 @@ class RoundRobinScheduler:
         self.ready_ring: deque[str] = deque()
         self.current_task: str | None = None
         self.total_dispatches = 0
+        self.reschedule_generation = 0
+        self.reschedule_pending = False
+        self.round_target_generation = 0
+        self.round_target_ids: set[str] = set()
+
+    def _begin_reschedule_round(self) -> None:
+        if not self.reschedule_pending:
+            return
+        if self.round_target_generation == self.reschedule_generation:
+            return
+        self.round_target_ids = {
+            task_id
+            for task_id, task in self.tasks.items()
+            if (
+                task.state in (TaskState.READY, TaskState.RUNNING)
+                and task.last_seen_generation != self.reschedule_generation
+            )
+        }
+        self.round_target_generation = self.reschedule_generation
+        self._complete_reschedule_if_ready()
+
+    def _complete_reschedule_if_ready(self) -> None:
+        if self.reschedule_pending and not self.round_target_ids:
+            self.reschedule_pending = False
+            self.round_target_generation = 0
+
+    def notify_interrupt(self) -> None:
+        """Record one accepted interrupt request for the next cooperative boundary."""
+        if not self.reschedule_pending:
+            self.reschedule_generation += 1
+            self.reschedule_pending = True
+
+    def observe_reschedule_generation(self, task_id: str) -> bool:
+        self._begin_reschedule_round()
+        if task_id not in self.round_target_ids:
+            return False
+        self.round_target_ids.remove(task_id)
+        task = self.tasks[task_id]
+        already_seen = task.last_seen_generation == self.reschedule_generation
+        task.last_seen_generation = self.reschedule_generation
+        self._complete_reschedule_if_ready()
+        return not already_seen
 
     def spawn(self, task_id: str, coroutine: Generator) -> bool:
         """
@@ -48,6 +93,7 @@ class RoundRobinScheduler:
         assert len(self.tasks) < self.max_tasks, "Max task capacity exceeded"
         assert task_id not in self.tasks, f"Task {task_id} already exists"
         self.tasks[task_id] = TaskControlBlock(task_id, coroutine)
+        self.tasks[task_id].last_seen_generation = self.reschedule_generation
         self.ready_ring.append(task_id)
         return True
 
@@ -79,6 +125,8 @@ class RoundRobinScheduler:
         tcb = self.tasks[task_id]
         tcb.state = TaskState.BLOCKED
         tcb.block_reason = reason
+        self.round_target_ids.discard(task_id)
+        self._complete_reschedule_if_ready()
         self.current_task = None
 
     def unblock_task(self, task_id: str) -> None:
@@ -95,14 +143,20 @@ class RoundRobinScheduler:
         assert self.current_task is not None
         task_id = self.current_task
         self.tasks[task_id].state = TaskState.TERMINATED
+        self.round_target_ids.discard(task_id)
+        self._complete_reschedule_if_ready()
         self.current_task = None
 
     def run_cycle(self) -> bool:
         """Dispatches and advances one active task."""
+        self._begin_reschedule_round()
         task_id = self.schedule_next()
         if task_id is None:
             return False  # All tasks blocked or completed
         tcb = self.tasks[task_id]
+        if self.observe_reschedule_generation(task_id):
+            self.yield_current()
+            return True
         try:
             action = tcb.coro.send(None)
             if action == "YIELD":
@@ -170,7 +224,30 @@ def test_block_and_unblock_cycle() -> None:
     assert sched.tasks["W"].state == TaskState.TERMINATED
 
 
+def test_interrupt_reschedule_generation() -> None:
+    """An accepted interrupt gives existing READY tasks one observation turn."""
+    sched = RoundRobinScheduler(max_tasks=4)
+    trace: list[str] = []
+
+    def worker(name: str) -> Generator[str, None, None]:
+        trace.append(name)
+        yield "YIELD"
+
+    sched.spawn("A", worker("A"))
+    sched.spawn("B", worker("B"))
+    sched.notify_interrupt()
+    sched.notify_interrupt()
+    assert sched.reschedule_generation == 1
+    sched.run_cycle()
+    sched.run_cycle()
+    assert trace == []
+    assert not sched.reschedule_pending
+    sched.run_cycle()
+    assert trace == ["A"]
+
+
 if __name__ == "__main__":
     test_round_robin_fairness()
     test_block_and_unblock_cycle()
+    test_interrupt_reschedule_generation()
     print("[PASS] All Scheduler concept tests passed successfully.")

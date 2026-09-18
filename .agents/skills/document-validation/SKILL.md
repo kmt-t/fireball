@@ -10,7 +10,7 @@ description: Fireball の仕様・設計・検証資料を、必要な証跡と�
 ## 正本の使い分け
 
 - 守るべき条件は、該当する <code>.agents/rules/</code> のルールを確認する。
-- コンポーネントが備える検証証跡と網羅性は、[検証因子・成果物マトリクス](../../../docs/architecture/verification_factor_matrix.md) で確認する。
+- コンポーネントが備える検証証跡と網羅性は、[検証因子・成果物マトリクス](../../../docs/qa/verification_factor_matrix.md) で確認する。
 - テスト仕様と記録済み結果の配置は、[品質保証資料の案内](../../../docs/qa/README.md) に従う。
 - 検証方法と実行コマンドは、[検証・開発ツールの使い分け](../../../tools/README.md) から選ぶ。CLI の個別ゲートとオプションは [spec-integrator のリファレンス](../../../tools/spec-integrator/README.md) を参照する。
 - 日本語の文体と段落構成は、[documentation-standards](../../rules/documentation-standards.md) を正本とする。

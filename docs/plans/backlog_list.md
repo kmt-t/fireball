@@ -5,6 +5,15 @@ Fireball Hypervisor の現行作業および次期フェーズのタスク一覧
 完了済み項目は [`backlog_archive.md`](docs/plans/backlog_archive.md) に移管する。
 品質課題および検証結果は検証パイプライン実行時に生成される `reports/doc_report.md` を参照。
 
+現状基準日: **2026-09-18**
+
+現行リポジトリの判定は次のとおりである。
+
+- Phase 0 は Step 2 を継続中である。pysim のユニットテストは **25/25**、統合シナリオは **12/12** が通過している。
+- テストの実行基盤は整っているが、旧 JIT テストハーネス参照の除去、Gotchas の文書同期、網羅性向上は未完了である。
+- C++23 本実装は Phase 1 着手前であり、現状は `main`、allocator、backtrace の基盤に留まる。Loader、Interpreter、JIT、vSoC の実装および C++ 単体テストは未着手である。
+- アーキテクチャの整合性は、要求・設計・形式モデル・テスト・実装の現行証跡に基づいて確認する。
+
 ---
 
 ## Phase 0: Quality Gate & Early Validation 【進行中 / ACTIVE】
@@ -23,16 +32,17 @@ Fireball Hypervisor の現行作業および次期フェーズのタスク一覧
   - コンポーネント別テスト仕様書（`docs/qa/tier*/`）への Gotchas 固有識別子および設計理由の追記・拡充
   - 仕様書（自然言語記述）とテスト仕様書の完全同期
 - [ ] **旧JITテストハーネスの移行と重複dispatchの除去**:
-  - QA内の`IntegratedHybridEngine`／`WASMContext`／`run_step`を参照するdebugger・GDB・vSoC・JITテストを、現行`Interpreter`／`RuntimeEngine`の共有実行コンテキストへ移行する
+  - QA内の`IntegratedHybridEngine`／`WASMContext`／`run_step`を参照するJITテスト（少なくとも `experiments/pysim/qa/tier3_jit/test_x64_jit.py`）を、現行`Interpreter`／`RuntimeEngine`の共有実行コンテキストへ移行する
   - 現行経路で同等の検証が成立したテストから旧ハーネスと重複opcode dispatchを除去する。単にテストを削除せず、既存の検証対象が維持されることを確認する
 - [ ] **アーキテクチャ監査課題の設計整合・ADR策定**:
-  - **2026-09-16 アーキテクチャレビュー追従**: [architecture_review_report.md](docs/qa/architecture_review_report.md) に残る未再監査の指摘を、実装・仕様・形式モデル・テストの証跡で再確認する。対象はJITチェイン終端、AAPCS SP整列、ハンドラABI、JIT状態遷移・計算量、CSP保証、WIT／vMMIO契約、設計根拠である
+  - **現行証跡の再監査**: 要求・仕様・形式モデル・テスト・実装を基準に監査記録を整備する。対象はJITチェイン終端、AAPCS SP整列、ハンドラABI、JIT状態遷移・計算量、CSP保証、WIT／vMMIO契約、設計根拠である
   - JITのネイティブトレース間chainと参照シミュレータの再検索との差は、ターゲット固有最適化と参照モデルの抽象度差を切り分けて再レビューする
   - **JITトレースヘッダ更新と MPU W^X 保護（RO+X）のハードウェア整合化**: Cortex-M33 PMSAv8 において RO 領域（Region 4）への書き込みが MemManage Fault となる制約の解消。パッチトランザクション相乗りモデル（`begin_jit_patch` 内一括更新）またはヘッダ・データスロットの RAM 領域（Region 3）分離配置モデルの策定
   - **インタープリタ概念コードの移植性是正**: 残存する広すぎる型注釈を具体化し、ホスト再帰呼び出しを組み込み実装方針に適合させる
 - [ ] **Step 2.3: ユニットテストコードの網羅性・品質強化**:
   - エッジケース・異常系・直交表組み合わせテストの拡充
-  - テストランナー（[`run_all.py`](experiments/pysim/qa/run_all.py)）による全 22+ スイートの高速・高信頼実行の維持
+  - テストランナー（[`run_all.py`](experiments/pysim/qa/run_all.py)）に登録された **25 スイート**の高速・高信頼実行を維持する。2026-09-18 の実行結果は **25/25 PASSED** である
+  - 統合シナリオランナーに登録された **12 シナリオ**の実行結果も **12/12 PASSED** である。`docs/qa/verification_factor_matrix.md` の「24 suite」表記は実登録数と同期させる
 - [ ] **Step 2.4: 物理リソース予算（最小構成 RAM 32KB / ROM 96KB）の厳密な再見積もり**:
   - 詳細正本: [`resource_budget_estimation.md`](docs/architecture/resource_budget_estimation.md)
   - **RAM (32KB)**: 統合物理メモリプール 23.55KB + OSスタック/静的変数 ~3.5KB $\to$ 静的合計 **~27.05 KB** (余裕 ~5.72 KB / 17.4%) の実機適合確認 `{Resource_Estimation_Model}`
@@ -50,9 +60,11 @@ Fireball Hypervisor の現行作業および次期フェーズのタスク一覧
 **前提コンパイラ: Clang 17+ 必須（`[[clang::musttail]]` 前提、GCC/MSVC 非サポート）**。
 
 ### Phase 1.0: Core Utilities (`inc/common/`)
+現状の C++ 実装は `src/main.cxx`、`src/allocator/`、`src/utils/backtrace.cxx` の基盤のみであり、`inc/common/` および Loader 以降の Phase 1 実装は未着手である。現行のバンプアロケータは `inc/allocator/bump_allocator.hxx` に存在するが、Phase 1 完了とは判定しない。
+
 - [ ] **固定 SBO 多相関数ラッパー (`inc/common/economic_function.hxx`)**:
   - 16〜32B インラインバッファ内包、動的ヒープ確保排除、超過時コンパイル/アサート停止
-- [ ] **バンプアロケータ (`inc/common/bump_allocator.hxx`)**:
+- [ ] **バンプアロケータ (`inc/common/bump_allocator.hxx`; 現行基盤 `inc/allocator/bump_allocator.hxx`)**:
   - 一括確保・スコープ終了時一括解放（Reset）による断片化ゼロアロケータ
 - [ ] **エラー伝播 & ビュー (`inc/common/result.hxx`, `inc/common/binary_view.hxx`)**:
   - `result<T, E>`（例外フリー戻り値伝播）および `void*` を排除した `std::span` 型付きビュー

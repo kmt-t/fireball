@@ -42,7 +42,7 @@ Fireball Hypervisor の現行作業および次期フェーズのタスク一覧
 - [ ] **Step 2.3: ユニットテストコードの網羅性・品質強化**:
   - エッジケース・異常系・直交表組み合わせテストの拡充
   - テストランナー（[`run_all.py`](experiments/pysim/qa/run_all.py)）に登録された **25 スイート**の高速・高信頼実行を維持する。2026-09-18 の実行結果は **25/25 PASSED** である
-  - 統合シナリオランナーに登録された **12 シナリオ**の実行結果も **12/12 PASSED** である。`docs/qa/verification_factor_matrix.md` の「24 suite」表記は実登録数と同期させる
+  - 統合シナリオランナーに登録された **12 シナリオ**の実行結果も **12/12 PASSED** である。`docs/qa/verification_factor_matrix.md` の suite 数表記は **25 suite / 25/25 合格**へ同期済みである
 - [ ] **Step 2.4: 物理リソース予算（最小構成 RAM 32KB / ROM 96KB）の厳密な再見積もり**:
   - 詳細正本: [`resource_budget_estimation.md`](docs/architecture/resource_budget_estimation.md)
   - **RAM (32KB)**: 統合物理メモリプール 23.55KB + OSスタック/静的変数 ~3.5KB $\to$ 静的合計 **~27.05 KB** (余裕 ~5.72 KB / 17.4%) の実機適合確認 `{Resource_Estimation_Model}`

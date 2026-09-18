@@ -221,7 +221,7 @@
 | 文書 | [check-doc.ps1](tools/check-doc.ps1) | [docs](docs)、各Markdown | 既存の文書8ゲートに加え、本表ゲートも合格 |
 | ソース | [check-src.ps1](tools/check-src.ps1) | [pysim](experiments/pysim)、各Python | pysim 規約、import Tier、テスト実行、本表ゲートが合格 |
 | 形式検証 | [check-src.ps1](tools/check-src.ps1) | コンポーネント配下の各形式モデル | `pyModelChecking` 実行、guards 変異検査、モデル件数一致 |
-| 単体テスト | `uv run --project tools/spec-integrator --with wasmtime python` [run_all.py](experiments/pysim/qa/run_all.py) | 24 suite | 24/24 合格、AssertionError を成功扱いしない |
+| 単体テスト | `uv run --project tools/spec-integrator --with wasmtime python` [run_all.py](experiments/pysim/qa/run_all.py) | 25 suite | 25/25 合格、AssertionError を成功扱いしない |
 | 結合シナリオ | `uv run --project tools/spec-integrator --with wasmtime python` [run_all.py](experiments/pysim/qa/scenarios/run_all.py) | 12 scenarios | 12/12 合格、全シナリオをランナーから実行 |
 | ペアワイズ | `test_pairwise_combinations.py` | 7因子、26ケース | 288組を100%被覆し、各ケースの状態・副作用を直接 assert |
 
@@ -236,4 +236,3 @@
 - シナリオを追加したら、シナリオファイル、`run_all.py`、本表、設定の期待件数を同じ変更で更新する。
 - 因子や水準を追加したら、設定、本表、`PAIRWISE_CASES`、期待する組数を同じ変更で更新する。
 - 速度を理由に、検証対象・因子・状態・副作用の記録を削除しない。効率化はツール実装側で行い、判定基準は緩めない。
-

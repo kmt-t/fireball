@@ -69,9 +69,7 @@ def test_wasi03p_hierarchical_uri_and_ipc_commands():
     runtime_task = sysv.start_runtime_task(name="scenario12_runtime")
     sysv.pool.bind_runtime()
     sysv.start_hal_driver(DummyDriver(sysv.wasi_hal_bindings.stdout_uri, transport=sysv.transport))
-    sysv.start_hal_driver(
-        DummyDriver("fireball://hal/timer/0", stream_enabled=False)
-    )
+    sysv.start_hal_driver(DummyDriver("fireball://hal/timer/0", stream_enabled=False))
 
     # 1. Test Hierarchical IPC URIs Resolution
     hierarchical_uris = [
@@ -155,7 +153,9 @@ def test_wasi03p_hierarchical_uri_and_ipc_commands():
     assert nwritten_fmap == len(msg)
     out_uart_fmap = sysv.transport.drain_output().decode("utf-8")
     assert out_uart_fmap.startswith("IPC-CMD-SHM-STREAM-OK!")
-    print(f"    [IPC ReadOnlyFlatMapView DISPATCH] Written {nwritten_fmap} bytes -> {out_uart_fmap}")
+    print(
+        f"    [IPC ReadOnlyFlatMapView DISPATCH] Written {nwritten_fmap} bytes -> {out_uart_fmap}"
+    )
 
     # 4.c Confirm the dedicated HAL task processed both commands.
     stdio_task = sysv.hal_task_for("fireball://hal/stdout/0")

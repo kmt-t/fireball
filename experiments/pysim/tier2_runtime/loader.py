@@ -620,9 +620,7 @@ class WasmLoader:
                 sec_total_size = (payload_start - sec_start) + sec_size
                 sec_view = SectionView(sec_id, sec_start, sec_total_size, payload_start, sec_size)
                 view.sections[sec_id] = sec_view
-                view.register_entity(
-                    "SECTION", sec_start, sec_start + sec_total_size, sec_id
-                )
+                view.register_entity("SECTION", sec_start, sec_start + sec_total_size, sec_id)
                 sec_stream = BinaryStream(wasm_binary, offset=payload_start, length=sec_size)
                 self._parse_section_content(sec_id, sec_stream, view)
                 stream.seek(payload_start + sec_size)

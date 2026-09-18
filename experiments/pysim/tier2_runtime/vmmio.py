@@ -153,9 +153,7 @@ class Tier3PTE:
     ):
         self.phys_page = phys_page
         self.physical_base_addr = (
-            (phys_page << VMMIO_PAGE_SHIFT)
-            if physical_base_addr is None
-            else physical_base_addr
+            (phys_page << VMMIO_PAGE_SHIFT) if physical_base_addr is None else physical_base_addr
         )
         self.mapping_size = mapping_size
         self.valid = valid
@@ -187,7 +185,9 @@ class VMMIOController:
         "tlb_misses",
     )
 
-    def __init__(self, guest_ram_size: int = 8192, *, scheduler: Scheduler):  # FB_CONF_GUEST_RAM_SIZE
+    def __init__(
+        self, guest_ram_size: int = 8192, *, scheduler: Scheduler
+    ):  # FB_CONF_GUEST_RAM_SIZE
 
         assert guest_ram_size > 0
         self.scheduler = scheduler
@@ -241,9 +241,7 @@ class VMMIOController:
         )
         assert 0 < mapping_size <= VMMIO_PAGE_SIZE
         physical_base_addr = (
-            (phys_page << VMMIO_PAGE_SHIFT)
-            if physical_addr is None
-            else physical_addr
+            (phys_page << VMMIO_PAGE_SHIFT) if physical_addr is None else physical_addr
         )
         assert physical_base_addr is not None and physical_base_addr >= 0
         if self.ptes.view().find(vpn) is not None:
@@ -329,14 +327,16 @@ class VMMIOController:
 
         memory_manager.register_page_mapping_callbacks(
             PageMappingCallbacks(
-                on_map_page=lambda page_idx, physical_addr, owner_id, mapping_size: self.map_shm_page(
-                    _to_vpn(page_idx),
-                    owner_id=owner_id,
-                    physical_addr=physical_addr,
-                    mapping_size=mapping_size,
+                on_map_page=lambda page_idx, physical_addr, owner_id, mapping_size: (
+                    self.map_shm_page(
+                        _to_vpn(page_idx),
+                        owner_id=owner_id,
+                        physical_addr=physical_addr,
+                        mapping_size=mapping_size,
+                    )
                 ),
-                on_owner_changed=lambda page_idx, _addr, _previous_owner_id, _new_owner_id: self.unmap_shm_page(
-                    _to_vpn(page_idx)
+                on_owner_changed=lambda page_idx, _addr, _previous_owner_id, _new_owner_id: (
+                    self.unmap_shm_page(_to_vpn(page_idx))
                 ),
                 on_unmap_page=lambda page_idx, _addr: self.unmap_shm_page(_to_vpn(page_idx)),
             )
@@ -432,9 +432,7 @@ class VMMIOController:
             if not is_write and not pte.read:
                 return (TrapCode.ACCESS_VIOLATION, 0)
             if value is not None and pte.value_handler is not None:
-                result = pte.value_handler(
-                    addr.offset(), value & 0xFFFF_FFFF, is_write
-                )
+                result = pte.value_handler(addr.offset(), value & 0xFFFF_FFFF, is_write)
                 return (VmmioStatus.OK_STATIC_DEVICE, 0 if result is None else result)
             if pte.handler is not None:
                 pte.handler(addr.device_metadata(), addr.offset(), is_write)

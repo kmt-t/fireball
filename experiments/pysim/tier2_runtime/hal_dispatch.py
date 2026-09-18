@@ -99,8 +99,7 @@ class HalBufferTrap(HalError):
 class StreamSink(Protocol):
     """Tier 2が要求するストリーム出力の最小契約。実体はTier 3が提供する。"""
 
-    def write(self, data: memoryview) -> int:
-        ...
+    def write(self, data: memoryview) -> int: ...
 
 
 # ---------------------------------------------------------------------------
@@ -138,9 +137,7 @@ class HalBufferPool:
     def __init__(self, scheduler: Scheduler, vmmio: VMMIOController):
         self._scheduler = scheduler
         self._vmmio = vmmio
-        self._slots: StaticVector[HalBufferHandle] = StaticVector(
-            capacity=FB_CONF_HAL_MAX_BUFFERS
-        )
+        self._slots: StaticVector[HalBufferHandle] = StaticVector(capacity=FB_CONF_HAL_MAX_BUFFERS)
         for slot_idx in range(FB_CONF_HAL_MAX_BUFFERS):
             self._slots.append(
                 HalBufferHandle(
@@ -158,9 +155,7 @@ class HalBufferPool:
         if self._mapped_runtime_task is None:
             self._mapped_runtime_task = task_id
             for slot_idx, handle in enumerate(self._slots):
-                self._vmmio.map_dynamic_page(
-                    handle.virtual_address >> VMMIO_PAGE_SHIFT, slot_idx
-                )
+                self._vmmio.map_dynamic_page(handle.virtual_address >> VMMIO_PAGE_SHIFT, slot_idx)
             return
         assert self._mapped_runtime_task == task_id, "HAL DYNAMIC mapping supports one runtime only"
 
@@ -171,24 +166,28 @@ class HalBufferPool:
     def buffer(self, buffer_id: int) -> HalBufferHandle:
         """Returns one fixed HAL buffer visible to the mapped guest."""
         task_id = self.current_task_id
-        assert self._mapped_runtime_task == task_id, "HAL DYNAMIC mapping is not bound to this runtime"
+        assert self._mapped_runtime_task == task_id, (
+            "HAL DYNAMIC mapping is not bound to this runtime"
+        )
         assert 0 <= buffer_id < len(self._slots)
         return self._slots[buffer_id]
 
     def unbind_runtime(self) -> None:
         """Unmaps all fixed DYNAMIC buffers from the currently bound Runtime."""
         task_id = self.current_task_id
-        assert self._mapped_runtime_task == task_id, "HAL DYNAMIC mapping is not bound to this runtime"
+        assert self._mapped_runtime_task == task_id, (
+            "HAL DYNAMIC mapping is not bound to this runtime"
+        )
         for handle in self._slots:
             self._vmmio.unmap_dynamic_page(handle.virtual_address >> VMMIO_PAGE_SHIFT)
         self._mapped_runtime_task = None
 
     def _resolve(self, handle: HalBufferHandle) -> HalBufferHandle:
         task_id = self.current_task_id
-        assert self._mapped_runtime_task == task_id, "HAL DYNAMIC mapping is not bound to this runtime"
-        assert 0 <= handle.buffer_id < len(self._slots), (
-            f"buffer {handle.buffer_id} does not exist"
+        assert self._mapped_runtime_task == task_id, (
+            "HAL DYNAMIC mapping is not bound to this runtime"
         )
+        assert 0 <= handle.buffer_id < len(self._slots), f"buffer {handle.buffer_id} does not exist"
         record = self._slots[handle.buffer_id]
         assert record.buffer_id == handle.buffer_id, "stale HAL buffer handle"
         return record
@@ -245,7 +244,12 @@ class HalBufferPool:
         """
 
         record = self._resolve(handle)
-        if offset < 0 or length < 0 or offset > record.capacity or length > record.capacity - offset:
+        if (
+            offset < 0
+            or length < 0
+            or offset > record.capacity
+            or length > record.capacity - offset
+        ):
             assert False, (
                 f"hal-buffer-slice(offset={offset}, len={length}) escapes fixed buffer "
                 f"{handle.buffer_id}'s capacity ({record.capacity} bytes)"

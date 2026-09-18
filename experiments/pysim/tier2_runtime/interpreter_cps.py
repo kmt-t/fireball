@@ -11,6 +11,7 @@ except ImportError:
 
 if _native_interpreter is None:
     from interpreter import _HANDLERS, Interpreter, InterpreterBindings
+
     HANDLER_COUNT = sum(1 for handler in _HANDLERS if handler is not None)
 else:
     import interpreter as _python_interpreter
@@ -22,9 +23,7 @@ else:
             return _native_interpreter.run_cps_call(self, call_state)
 
         def _step(self, call_state, stop_at_boundary):
-            return _native_interpreter.run_cps_step(
-                self, call_state, stop_at_boundary
-            )
+            return _native_interpreter.run_cps_step(self, call_state, stop_at_boundary)
 
     InterpreterBindings = _python_interpreter.InterpreterBindings
     HANDLER_COUNT = _native_interpreter.native_handler_count()

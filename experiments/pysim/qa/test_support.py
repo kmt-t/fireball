@@ -71,7 +71,9 @@ def compile_module_block(
     function_index = block.head_pc >> 16
     function = module.functions[function_index - len(module.imports)]
     assert function.local_widths_cache is not None
-    return compile_test_block(compiler, module.code_for(function_index), block, function.local_widths_cache)
+    return compile_test_block(
+        compiler, module.code_for(function_index), block, function.local_widths_cache
+    )
 
 
 def make_pc_only_module(pcs: tuple[int, ...]) -> Module:

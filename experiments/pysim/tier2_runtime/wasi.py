@@ -122,16 +122,16 @@ class Wasi03pEngine:
 
         entries: StaticVector[tuple[int, WasiInterfaceVTable]] = StaticVector.of(
             (
-            (fnv1a_32(self.bindings.uart_uri), uart_iface),
-            (fnv1a_32(self.bindings.stdout_uri), uart_iface),
-            (fnv1a_32("wasi:io/streams@0.3.0"), uart_iface),
-            (fnv1a_32("wasi:io/streams"), uart_iface),
-            (fnv1a_32(self.bindings.timer_uri), timer_iface),
-            (fnv1a_32("wasi:clocks/monotonic-clock@0.3.0"), timer_iface),
-            (fnv1a_32("wasi:clocks/monotonic-clock"), timer_iface),
-            (fnv1a_32("wasi:cli/stdout@0.3.0"), console_iface),
-            (fnv1a_32("wasi:cli/stdout"), console_iface),
-            (fnv1a_32(self.bindings.logger_uri), logger_iface),
+                (fnv1a_32(self.bindings.uart_uri), uart_iface),
+                (fnv1a_32(self.bindings.stdout_uri), uart_iface),
+                (fnv1a_32("wasi:io/streams@0.3.0"), uart_iface),
+                (fnv1a_32("wasi:io/streams"), uart_iface),
+                (fnv1a_32(self.bindings.timer_uri), timer_iface),
+                (fnv1a_32("wasi:clocks/monotonic-clock@0.3.0"), timer_iface),
+                (fnv1a_32("wasi:clocks/monotonic-clock"), timer_iface),
+                (fnv1a_32("wasi:cli/stdout@0.3.0"), console_iface),
+                (fnv1a_32("wasi:cli/stdout"), console_iface),
+                (fnv1a_32(self.bindings.logger_uri), logger_iface),
             ),
             capacity=FB_CONF_MAX_IMPORTS,
         )
@@ -183,9 +183,7 @@ class Wasi03pEngine:
         result = self.send_ipc_command(uri, cmd_id, ReadOnlyFlatMapView(()))
         return int(result)
 
-    def _write_buffer(
-        self, uri: str, handle: HalBufferHandle, offset: int, length: int
-    ) -> int:
+    def _write_buffer(self, uri: str, handle: HalBufferHandle, offset: int, length: int) -> int:
         params = ReadOnlyFlatMapView(
             sorted(
                 (
@@ -198,9 +196,7 @@ class Wasi03pEngine:
         result = self.send_ipc_command(uri, WasiIpcCmd.STREAM_WRITE_BUFFER, params)
         return int(result)
 
-    def _read_buffer(
-        self, uri: str, handle: HalBufferHandle, offset: int, max_len: int
-    ) -> int:
+    def _read_buffer(self, uri: str, handle: HalBufferHandle, offset: int, max_len: int) -> int:
         params = ReadOnlyFlatMapView(
             sorted(
                 (
@@ -247,28 +243,28 @@ class WasiHostContext:
         # Build static host import table via ReadOnlyRadixBinaryTreeView
         host_entries: StaticVector[tuple[str, str, Callable[..., int]]] = StaticVector.of(
             (
-            ("wasi_snapshot_preview1", "fd_write", self.fd_write),
-            ("wasi_snapshot_preview1", "fd_read", self.fd_read),
-            ("wasi_snapshot_preview1", "fd_close", self.fd_close),
-            ("wasi_snapshot_preview1", "clock_time_get", self.clock_time_get),
-            ("wasi_snapshot_preview1", "proc_exit", self.proc_exit),
-            ("wasi_snapshot_preview1", "random_get", self.random_get),
-            ("wasi_unstable", "fd_write", self.fd_write),
-            ("wasi_unstable", "fd_read", self.fd_read),
-            ("wasi_unstable", "fd_close", self.fd_close),
-            ("wasi_unstable", "clock_time_get", self.clock_time_get),
-            ("wasi_unstable", "proc_exit", self.proc_exit),
-            ("wasi_unstable", "random_get", self.random_get),
-            # WASI 0.3p Dynamic URI Interface Resolver import
-            ("wasi:resolver", "get_interface", self.wasi03p_get_interface),
-            ("fireball", "get_interface", self.wasi03p_get_interface),
-            ("fireball", "fireball_call", self.fireball_call),
-            ("fireball", "fd_write", self.fd_write),
+                ("wasi_snapshot_preview1", "fd_write", self.fd_write),
+                ("wasi_snapshot_preview1", "fd_read", self.fd_read),
+                ("wasi_snapshot_preview1", "fd_close", self.fd_close),
+                ("wasi_snapshot_preview1", "clock_time_get", self.clock_time_get),
+                ("wasi_snapshot_preview1", "proc_exit", self.proc_exit),
+                ("wasi_snapshot_preview1", "random_get", self.random_get),
+                ("wasi_unstable", "fd_write", self.fd_write),
+                ("wasi_unstable", "fd_read", self.fd_read),
+                ("wasi_unstable", "fd_close", self.fd_close),
+                ("wasi_unstable", "clock_time_get", self.clock_time_get),
+                ("wasi_unstable", "proc_exit", self.proc_exit),
+                ("wasi_unstable", "random_get", self.random_get),
+                # WASI 0.3p Dynamic URI Interface Resolver import
+                ("wasi:resolver", "get_interface", self.wasi03p_get_interface),
+                ("fireball", "get_interface", self.wasi03p_get_interface),
+                ("fireball", "fireball_call", self.fireball_call),
+                ("fireball", "fd_write", self.fd_write),
             ),
             capacity=FB_CONF_MAX_IMPORTS,
         )
-        hashed_entries: StaticVector[tuple[int, tuple[str, str, Callable[..., int]]]] = StaticVector(
-            capacity=FB_CONF_MAX_IMPORTS
+        hashed_entries: StaticVector[tuple[int, tuple[str, str, Callable[..., int]]]] = (
+            StaticVector(capacity=FB_CONF_MAX_IMPORTS)
         )
         for mod, field, handler in host_entries:
             h = fnv1a_32(f"{mod}::{field}")

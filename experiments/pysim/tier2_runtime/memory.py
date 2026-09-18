@@ -606,13 +606,13 @@ class MemoryManager:
         if callbacks is None:
             return
         page = self.shm_pages[page_idx]
-        callbacks.on_map_page(
-            page_idx, page.physical_addr, page.owner_id, page.allocated_bytes
-        )
+        callbacks.on_map_page(page_idx, page.physical_addr, page.owner_id, page.allocated_bytes)
 
     def _set_shared_owner(self, page_idx: int, new_owner_id: int) -> None:
         previous_owner_id = self.page_registry.get_owner(page_idx)
-        assert previous_owner_id is not None, "Shared page must be registered before ownership changes"
+        assert previous_owner_id is not None, (
+            "Shared page must be registered before ownership changes"
+        )
         if previous_owner_id == new_owner_id:
             return
         assert self.page_registry.update_owner(page_idx, new_owner_id)
@@ -918,9 +918,7 @@ class MemoryManager:
 
         if not has_remaining and page is not None:
             if self._page_mapping_callbacks is not None:
-                self._page_mapping_callbacks.on_unmap_page(
-                    page_idx, slot.base_address
-                )
+                self._page_mapping_callbacks.on_unmap_page(page_idx, slot.base_address)
             self.page_registry.unregister_page(page_idx)
             page.allocated = False
             page.allocated_bytes = 0

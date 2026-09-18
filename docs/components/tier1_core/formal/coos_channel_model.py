@@ -26,9 +26,7 @@ class FormalProperty(TypedDict):
     expect: bool
 
 
-def build_model(
-    *, guards: bool = True, max_handoffs: int = DEFAULT_MAX_HANDOFFS
-) -> Kripke:
+def build_model(*, guards: bool = True, max_handoffs: int = DEFAULT_MAX_HANDOFFS) -> Kripke:
     """同期ランデブー、所有権、相互待ち、ハンドオフ上限をモデル化する。
 
     上限到達時は、対象より先に READY キューにいたタスクを1つディスパッチする。
@@ -112,19 +110,12 @@ def build_model(
         "s_double_owned": {"sender_owns", "receiver_owns"},
         "s_handoff_livelock": {"at_max_limit", "handoff_livelock"},
     }
-    labels.update(
-        {
-            state: {"in_handoff_chain", "receiver_owns"}
-            for state in handoff_states
-        }
-    )
+    labels.update({state: {"in_handoff_chain", "receiver_owns"} for state in handoff_states})
     return Kripke(S=states, S0={"s_main_loop"}, R=transitions, L=labels)
 
 
 def properties() -> list[FormalProperty]:
-    bad_ownership = And(
-        AtomicProposition("sender_owns"), AtomicProposition("receiver_owns")
-    )
+    bad_ownership = And(AtomicProposition("sender_owns"), AtomicProposition("receiver_owns"))
     blocked_sender_violation = And(
         AtomicProposition("blocked_sender"),
         Not(AF(AtomicProposition("sender_resumed"))),
@@ -140,9 +131,7 @@ def properties() -> list[FormalProperty]:
     forced_yield_effects = And(
         AtomicProposition("counter_reset"), AtomicProposition("target_ready_tail")
     )
-    forced_yield_violation = And(
-        AtomicProposition("at_max_limit"), Not(AF(forced_yield_effects))
-    )
+    forced_yield_violation = And(AtomicProposition("at_max_limit"), Not(AF(forced_yield_effects)))
     no_peer_dispatch_violation = And(
         AtomicProposition("at_max_limit"),
         Not(AF(AtomicProposition("other_ready_dispatched"))),

@@ -11,10 +11,10 @@ Implementation Invariants & Gotchas:
   started DMA transfer cannot be preempted.
 """
 
+import inspect
 from collections.abc import Callable
 from dataclasses import dataclass
 from enum import IntEnum
-import inspect
 
 BACKS = ["components/tier2_runtime/runtime_logging.md"]
 

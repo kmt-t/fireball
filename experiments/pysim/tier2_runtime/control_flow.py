@@ -470,6 +470,7 @@ _BLOCK_OPENERS = _opcode_table(BLOCK, LOOP, IF)
 # core/scheduler.py's FB_CONF_MAX_TASKS=16) until a real spec value exists.
 FB_CONF_MAX_NESTING_DEPTH = 32
 
+
 @dataclass(slots=True)
 class Instr:
     """Minimal one-instruction descriptor yielded by the streaming scanner."""
@@ -478,6 +479,7 @@ class Instr:
     opcode: int
     end_offset: int
     operand: int | None = None
+
 
 @dataclass(slots=True)
 class ControlMap:
@@ -533,9 +535,7 @@ class _OpenBlock:
 
 def build_control_map(code: bytes) -> ControlMap:
     """Single linear scan over WASM bytecode to resolve block structure and br_tables once per function."""
-    block_entries: StaticVector[tuple[int, ControlBlock]] = StaticVector(
-        capacity=len(code)
-    )
+    block_entries: StaticVector[tuple[int, ControlBlock]] = StaticVector(capacity=len(code))
     br_table_entries: StaticVector[tuple[int, tuple[tuple[int, ...], int]]] = StaticVector(
         capacity=len(code)
     )
@@ -543,9 +543,7 @@ def build_control_map(code: bytes) -> ControlMap:
     # fixed-size buffer indexed by `depth` (see FB_CONF_MAX_NESTING_DEPTH) --
     # else_offset is filled in place when this entry's own ELSE is reached,
     # read back when its own END pops it.
-    open_stack: StaticVector[_OpenBlock | None] = StaticVector(
-        capacity=FB_CONF_MAX_NESTING_DEPTH
-    )
+    open_stack: StaticVector[_OpenBlock | None] = StaticVector(capacity=FB_CONF_MAX_NESTING_DEPTH)
     for _ in range(FB_CONF_MAX_NESTING_DEPTH):
         open_stack.append(None)
     depth = 0
@@ -589,9 +587,7 @@ def build_control_map(code: bytes) -> ControlMap:
                     )
             default_lbl, off = decode_unsigned(code, off)
             if not br_table_entries.push_back((start, (freeze_sequence(labels), default_lbl))):
-                assert False, (
-                    "ERR_WASM_UNSUPPORTED_FEATURE: br_table count exceeds code capacity"
-                )
+                assert False, "ERR_WASM_UNSUPPORTED_FEATURE: br_table count exceeds code capacity"
         elif opcode == CALL_INDIRECT:
             _, off = decode_unsigned(code, off)
             _, off = decode_unsigned(code, off)
@@ -608,9 +604,7 @@ def build_control_map(code: bytes) -> ControlMap:
                 if not block_entries.push_back(
                     (opener.start, (start, opener.else_offset, opener.result_arity))
                 ):
-                    assert False, (
-                        "ERR_WASM_UNSUPPORTED_FEATURE: block count exceeds code capacity"
-                    )
+                    assert False, "ERR_WASM_UNSUPPORTED_FEATURE: block count exceeds code capacity"
         elif _NO_OPERAND.at(opcode):
             pass
         else:
@@ -744,7 +738,9 @@ _IS_BB_OPCODE: ReadOnlyBitStorage = ReadOnlyBitStorage(
 )
 
 
-def iter_block_ops(code: bytes, head_offset: int, byte_span: int) -> Iterator[tuple[int, WasmOperand]]:
+def iter_block_ops(
+    code: bytes, head_offset: int, byte_span: int
+) -> Iterator[tuple[int, WasmOperand]]:
     """
     Streams ONE BasicBlock's compilable `(opcode, arg)` op stream directly
     from raw bytecode, scoped to exactly `[head_offset, head_offset+byte_span)`,
@@ -964,7 +960,5 @@ def extract_basic_blocks(
     if cur_head is not None and cur_op_count:
         byte_span = cur_span_end - (cur_head & 0xFFFF)
         if not blocks.push_back((cur_head, None, None, cur_frame_depth, byte_span)):
-            assert False, (
-                "ERR_WASM_UNSUPPORTED_FEATURE: basic-block count exceeds code capacity"
-            )
+            assert False, "ERR_WASM_UNSUPPORTED_FEATURE: basic-block count exceeds code capacity"
     return blocks

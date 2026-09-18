@@ -277,7 +277,9 @@ def test_hal_task_ipc_communication():
         buffer_handle = sysv.pool.buffer(0)
         sysv.pool.view(buffer_handle, 0, 128)[:] = b"x" * 128
         sysv.scheduler.current_task = runtime_task
-        sysv.start_hal_driver(DummyDriver(sysv.wasi_hal_bindings.stdout_uri, transport=sysv.transport))
+        sysv.start_hal_driver(
+            DummyDriver(sysv.wasi_hal_bindings.stdout_uri, transport=sysv.transport)
+        )
         engine = Wasi03pEngine(sysv)
         # Send command via IPC
         nwritten = engine.send_ipc_command(
@@ -578,7 +580,9 @@ def test_guest_wasi_01_interpreter_fd_write():
         from dummy_drivers import DummyDriver
 
         ctx = WasiHostContext(sysv)
-        sysv.start_hal_driver(DummyDriver(sysv.wasi_hal_bindings.stdout_uri, transport=sysv.transport))
+        sysv.start_hal_driver(
+            DummyDriver(sysv.wasi_hal_bindings.stdout_uri, transport=sysv.transport)
+        )
         # Set up guest memory:
         # offset 0: iov { buf: 16, len: 12 }
         # offset 16: "hello guest\n"
@@ -619,9 +623,7 @@ def test_guest_wasi_02_interpreter_clock_and_random():
         from dummy_drivers import DummyDriver
 
         ctx = WasiHostContext(sysv)
-        sysv.start_hal_driver(
-            DummyDriver(sysv.wasi_hal_bindings.timer_uri, stream_enabled=False)
-        )
+        sysv.start_hal_driver(DummyDriver(sysv.wasi_hal_bindings.timer_uri, stream_enabled=False))
         host_funcs = ctx.build_interpreter_host_functions(mod)
         mod.init_memory_data(ctx.guest_memory, ())
         interp = Interpreter(mod, memory=ctx.guest_memory, host_functions=host_funcs)

@@ -113,9 +113,7 @@ if __name__ == "__main__":
         res = modelcheck(km, prop["formula"])
         passed = km.S0.issubset(res)
         if passed != prop["expect"]:
-            raise AssertionError(
-                f"Normal model property failed: {prop['name']}"
-            )
+            raise AssertionError(f"Normal model property failed: {prop['name']}")
         print(f"[PASS] {prop['name']} (guards=True)")
 
     mutation_km = build_model(guards=False)
@@ -123,7 +121,5 @@ if __name__ == "__main__":
         res = modelcheck(mutation_km, prop["formula"])
         passed = mutation_km.S0.issubset(res)
         if passed == prop["expect"]:
-            raise AssertionError(
-                f"Mutation did not invalidate property: {prop['name']}"
-            )
+            raise AssertionError(f"Mutation did not invalidate property: {prop['name']}")
         print(f"[PASS] {prop['name']} mutation rejected (guards=False)")

@@ -64,9 +64,7 @@ class Libfireball:
         """Issues a host call with three operation arguments."""
         return self._call(syscall_id, arg0, arg1, arg2, 0, 0, 0)
 
-    def fireball_call4(
-        self, syscall_id: int, arg0: int, arg1: int, arg2: int, arg3: int
-    ) -> int:
+    def fireball_call4(self, syscall_id: int, arg0: int, arg1: int, arg2: int, arg3: int) -> int:
         """Issues a host call with four operation arguments."""
         return self._call(syscall_id, arg0, arg1, arg2, arg3, 0, 0)
 

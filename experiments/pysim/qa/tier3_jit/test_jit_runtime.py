@@ -414,13 +414,16 @@ def test_jitr_native_header_chain_executes_successor_body_once():
     cache.flush_all()
     assert source.chain_next is None
     assert source.header.chain_target_addr == 0
-    assert int.from_bytes(
-        cache.common_code.buffer.read(
-            source.code_offset + JIT_X64_CHAIN_TARGET_OFFSET,
-            8,
-        ),
-        "little",
-    ) == 0
+    assert (
+        int.from_bytes(
+            cache.common_code.buffer.read(
+                source.code_offset + JIT_X64_CHAIN_TARGET_OFFSET,
+                8,
+            ),
+            "little",
+        )
+        == 0
+    )
 
 
 def test_hotspot_05_3bank_cache_rotation_and_eviction_resets_card():
@@ -750,9 +753,7 @@ def test_jitr_backward_branch_block_byte_span_not_disqualified():
     fn_idx = module.export_func_index("sum_to")
     # Use the production 4-byte card so both deliberately short loop blocks
     # remain eligible.
-    engine = RuntimeEngine(
-        jit_compiler=TraceCompiler(), yield_threshold=8, card_shift=2
-    )
+    engine = RuntimeEngine(jit_compiler=TraceCompiler(), yield_threshold=8, card_shift=2)
     engine.register_module_blocks(module)
     interp = Interpreter(module)
 
@@ -924,9 +925,7 @@ def test_jitr_return_terminated_block_jit_result_correct():
     fn_idx = module.export_func_index("f")
     # The tail is intentionally compact; use the smaller test card so its
     # RETURN-terminated block remains a valid JIT candidate.
-    engine = RuntimeEngine(
-        jit_compiler=TraceCompiler(), yield_threshold=2, card_shift=2
-    )
+    engine = RuntimeEngine(jit_compiler=TraceCompiler(), yield_threshold=2, card_shift=2)
     engine.register_module_blocks(module)
     interp = Interpreter(module)
 
@@ -1264,9 +1263,7 @@ def test_jitr_host_import_stays_on_interpreter_runtime_boundary():
 
 def test_jitr_runtime_engine_surfaces_guest_trap_at_sync_boundary():
     """TEST-JITR-48: RuntimeEngine.run must not expose a guest trap as a None result."""
-    module = parse(
-        wat_to_wasm("(module (func (result i32) i32.const 1 i32.const 0 i32.div_s))")
-    )
+    module = parse(wat_to_wasm("(module (func (result i32) i32.const 1 i32.const 0 i32.div_s))"))
     engine = RuntimeEngine()
     engine.register_module_blocks(module)
     interp = Interpreter(module)

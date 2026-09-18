@@ -120,9 +120,7 @@ class DebuggerManager:
     def assertion_violations(self) -> StaticVector[str]:
         violations: StaticVector[str] = StaticVector(capacity=len(self._assertion_violations))
         for addr, expected, actual in self._assertion_violations:
-            violations.append(
-                f"ASSERTION_FAILED: addr 0x{addr:X} expected {expected} got {actual}"
-            )
+            violations.append(f"ASSERTION_FAILED: addr 0x{addr:X} expected {expected} got {actual}")
         return violations
 
     def flush_jit_cache(self) -> None:

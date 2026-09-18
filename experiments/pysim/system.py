@@ -157,7 +157,9 @@ class System:
         # storage behind it (vmmio_concept.access() deliberately stops at the
         # dispatch decision -- see its module docstring -- it carries no
         # value/buffer of its own).
-        self.vmmio = VMMIOController(guest_ram_size=FB_CONF_GUEST_RAM_SIZE, scheduler=self.scheduler)
+        self.vmmio = VMMIOController(
+            guest_ram_size=FB_CONF_GUEST_RAM_SIZE, scheduler=self.scheduler
+        )
         self.pool = HalBufferPool(self.scheduler, self.vmmio)
         self.ipcr_regs = bytearray(0x10)
         self.vmmio.map_static_device(vpn=IPCR_BASE >> 12)
@@ -191,8 +193,8 @@ class System:
         self._hal_task_storage: MutableFlatMapStorage[int, HalTask] = MutableFlatMapStorage(
             capacity=8
         )
-        self._hal_task_index: ReadOnlyFlatMapStorage[int, HalTask] = (
-            ReadOnlyFlatMapStorage.create(())
+        self._hal_task_index: ReadOnlyFlatMapStorage[int, HalTask] = ReadOnlyFlatMapStorage.create(
+            ()
         )
         self.gdb_server: GDBServer | None = None
         self._gdb_task_id: int | None = None

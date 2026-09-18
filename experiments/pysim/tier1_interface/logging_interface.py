@@ -26,4 +26,3 @@ class Logger(Protocol):
         arg2: int = 0,
         arg3: int = 0,
     ) -> str: ...
-

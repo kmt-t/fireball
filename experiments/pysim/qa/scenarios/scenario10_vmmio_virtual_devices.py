@@ -95,7 +95,9 @@ def test_scenario_vmmio_virtual_devices():
     assert status_dev_w == VmmioStatus.OK_STATIC_DEVICE
     assert len(handled_events) == 1
     assert handled_events[0] == (0, 0x010, True)
-    print("    [Phase 3.2] vMMIO Device Page Write & Static-Device Dispatch -> OK_STATIC_DEVICE [PASS]")
+    print(
+        "    [Phase 3.2] vMMIO Device Page Write & Static-Device Dispatch -> OK_STATIC_DEVICE [PASS]"
+    )
     # 3.3 TLB Hit Verification (5-bit Folding XOR Hash, 32 entries)
     tlb_idx = controller.tlb_index(dev_vpn)
     assert controller.tlb[tlb_idx].vpn == dev_vpn
@@ -123,7 +125,9 @@ def test_scenario_vmmio_virtual_devices():
     assert controller.scheduler.current_task is not None
     status_flight, _ = controller.access(raw_addr=0xE000_2008, is_write=False)
     assert status_flight == TrapCode.UNREGISTERED_PAGE
-    print("    [Phase 3.5] IPC Revoke & In-Flight TLB Invalidation -> TRAP_UNREGISTERED_PAGE [PASS]")
+    print(
+        "    [Phase 3.5] IPC Revoke & In-Flight TLB Invalidation -> TRAP_UNREGISTERED_PAGE [PASS]"
+    )
     # 3.6 Passthrough Physical Memory Access (FC=0xF)
     controller.scheduler.current_task = controller.scheduler.get_task(1)
     assert controller.scheduler.current_task is not None

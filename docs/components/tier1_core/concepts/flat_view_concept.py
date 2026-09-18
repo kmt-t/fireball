@@ -374,15 +374,9 @@ def test_card_marking_prefilter_and_sparse_jit_entry_lookup() -> None:
     # pc=60 -> card_idx = 60 >> 3 = 7
     card_table.put(3, 3)  # card 3 (covers pc 24-31) -> 3: COMPILED
     card_table.put(7, 3)  # card 7 (covers pc 56-63) -> 3: COMPILED
-    assert (
-        lookup_jit_entry(view, card_table, pc=30, card_shift=3) == 3
-    )
-    assert (
-        lookup_jit_entry(view, card_table, pc=60, card_shift=3) == 6
-    )
-    assert (
-        lookup_jit_entry(view, card_table, pc=99, card_shift=3) is None
-    )
+    assert lookup_jit_entry(view, card_table, pc=30, card_shift=3) == 3
+    assert lookup_jit_entry(view, card_table, pc=60, card_shift=3) == 6
+    assert lookup_jit_entry(view, card_table, pc=99, card_shift=3) is None
 
 
 def test_bits_must_divide_a_byte() -> None:

@@ -81,9 +81,7 @@ def test_scenario_ipc_router_and_logging():
         status1, ch1 = router.lookup("fireball://core/coos/0")
         assert status1 == IPCStatus.COMPLETED and ch1 is not None
 
-        msg1 = _make_test_ipc_message(
-            [(_KEY_CMD, _CMD_START_TASK), (_KEY_TASK_ID, 10)], manager
-        )
+        msg1 = _make_test_ipc_message([(_KEY_CMD, _CMD_START_TASK), (_KEY_TASK_ID, 10)], manager)
         status, _ = yield from router.send(ch1, msg1)
         sent.append(("1_rendezvous", status, msg1))
 

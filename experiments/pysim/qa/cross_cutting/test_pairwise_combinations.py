@@ -273,7 +273,9 @@ def test_all_pairwise_combinations():
         executed_case_ids.append(case_id)
         print(f"    [PASS] {case_id}: {case_tuple}")
     assert tuple(executed_case_ids) == expected_case_ids
-    print(f"[PASS] All {len(PAIRWISE_CASES)} Pairwise Combinations passed with 100% 2-way interaction coverage.")
+    print(
+        f"[PASS] All {len(PAIRWISE_CASES)} Pairwise Combinations passed with 100% 2-way interaction coverage."
+    )
 
 
 if __name__ == "__main__":

@@ -74,7 +74,11 @@ def build_model(*, guards: bool = True) -> Kripke:
 
     L = {
         "s_call_entry": {"call_boundary"},
-        "s_call_frame_descriptor": {"call_frame_active", "call_frame_has_local_base", "call_active"},
+        "s_call_frame_descriptor": {
+            "call_frame_active",
+            "call_frame_has_local_base",
+            "call_active",
+        },
         "s_local_frame": {"local_stack_active", "call_frame_active", "call_active"},
         "s_operand_first": {"operand_stack_active", "call_active"},
         "s_control_after_operand": {"control_frame_active", "call_active"},

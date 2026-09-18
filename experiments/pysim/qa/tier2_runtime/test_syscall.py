@@ -308,7 +308,9 @@ def test_syscall_07_wasi_fd_write():
         guest_mem[32 : 32 + len(message)] = message
         struct.pack_into("<II", guest_mem, 0, 32, len(message))
         WasiHostContext(sysv, guest_memory=guest_mem)
-        sysv.start_hal_driver(DummyDriver(sysv.wasi_hal_bindings.stdout_uri, transport=sysv.transport))
+        sysv.start_hal_driver(
+            DummyDriver(sysv.wasi_hal_bindings.stdout_uri, transport=sysv.transport)
+        )
         assert sysv.fireball_call(FbSyscallId.WASI_FD_WRITE, 1, 0, 1, 48, 0, 0) == WasiErrno.SUCCESS
         assert sysv.transport.drain_output() == message
         nwritten = struct.unpack_from("<I", guest_mem, 48)[0]
@@ -334,7 +336,9 @@ def test_wasi_01_fd_write_scatter_gather():
         struct.pack_into("<II", guest_mem, 0, 32, len(chunk1))
         struct.pack_into("<II", guest_mem, 8, 64, len(chunk2))
         WasiHostContext(sysv, guest_memory=guest_mem)
-        sysv.start_hal_driver(DummyDriver(sysv.wasi_hal_bindings.stdout_uri, transport=sysv.transport))
+        sysv.start_hal_driver(
+            DummyDriver(sysv.wasi_hal_bindings.stdout_uri, transport=sysv.transport)
+        )
         # Write to stdout (fd=1) with 2 iovecs, result at offset 100
         assert (
             sysv.fireball_call(FbSyscallId.WASI_FD_WRITE, 1, 0, 2, 100, 0, 0) == WasiErrno.SUCCESS
@@ -360,10 +364,7 @@ def test_wasi_01b_fd_write_prevalidates_all_iovecs():
         struct.pack_into("<I", guest_mem, 120, 0xA5A5A5A5)
         WasiHostContext(sysv, guest_memory=guest_mem)
 
-        assert (
-            sysv.fireball_call(FbSyscallId.WASI_FD_WRITE, 1, 0, 2, 120, 0, 0)
-            == WasiErrno.FAULT
-        )
+        assert sysv.fireball_call(FbSyscallId.WASI_FD_WRITE, 1, 0, 2, 120, 0, 0) == WasiErrno.FAULT
         assert sysv.transport.drain_output() == b""
         assert struct.unpack_from("<I", guest_mem, 120)[0] == 0xA5A5A5A5
     finally:
@@ -381,7 +382,9 @@ def test_wasi_02_fd_read_eof():
         guest_mem = bytearray(64)
         struct.pack_into("<II", guest_mem, 0, 16, 32)
         WasiHostContext(sysv, guest_memory=guest_mem)
-        sysv.start_hal_driver(DummyDriver(sysv.wasi_hal_bindings.stdout_uri, transport=sysv.transport))
+        sysv.start_hal_driver(
+            DummyDriver(sysv.wasi_hal_bindings.stdout_uri, transport=sysv.transport)
+        )
         assert sysv.fireball_call(FbSyscallId.WASI_FD_READ, 0, 0, 1, 48, 0, 0) == WasiErrno.SUCCESS
         nread = struct.unpack_from("<I", guest_mem, 48)[0]
         assert nread == 0  # Standard WASI EOF
@@ -493,10 +496,7 @@ def test_wasi_jit_trampoline_invokes_the_registered_handler():
     from wasm_reader import parse
 
     module = parse(
-        wat_to_wasm(
-            '(module (import "wasi_snapshot_preview1" "proc_exit" '
-            '(func (param i32))))'
-        )
+        wat_to_wasm('(module (import "wasi_snapshot_preview1" "proc_exit" (func (param i32))))')
     )
     sysv = System()
     try:

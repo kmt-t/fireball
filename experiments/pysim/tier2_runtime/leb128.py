@@ -10,9 +10,7 @@ from __future__ import annotations
 import cython
 
 
-def decode_unsigned(
-    data: cython.const[cython.uchar][:], offset: int
-) -> tuple[int, int]:
+def decode_unsigned(data: cython.const[cython.uchar][:], offset: int) -> tuple[int, int]:
     """Returns (value, new_offset)."""
     result = 0
     shift = 0
@@ -25,9 +23,7 @@ def decode_unsigned(
         shift += 7
 
 
-def decode_signed(
-    data: cython.const[cython.uchar][:], offset: int
-) -> tuple[int, int]:
+def decode_signed(data: cython.const[cython.uchar][:], offset: int) -> tuple[int, int]:
     """Returns (value, new_offset). Used for i32.const/i64.const (sleb128)."""
     result = 0
     shift = 0

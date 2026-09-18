@@ -27,7 +27,9 @@ T = TypeVar("T")
 # -----------------------------------------------------------------------------
 
 FB_CONF_MEMORY_POOL_SIZE = 23552  # system_config.md: sum of all sub-pools (bytes)
-FB_CONF_TASK_HEAP_SIZES = (4096,)  # system_config.md FB_CONF_TASK_HEAP_SIZES: per-VM-slot ROM size table
+FB_CONF_TASK_HEAP_SIZES = (
+    4096,
+)  # system_config.md FB_CONF_TASK_HEAP_SIZES: per-VM-slot ROM size table
 FB_CONF_MAX_TASKS = 16
 FB_CONF_MAX_SHM_PAGES = 32
 FB_PAGE_SIZE = 4096  # 4KB SHM page size
@@ -568,9 +570,7 @@ class MemoryManager:
 
         page_idx = slot["page_idx"]
         # Grant phase establishes mapping for receiver
-        self.vmmio_registry.map_page(
-            page_idx, slot["base_address"], mapping_size=slot["size"]
-        )
+        self.vmmio_registry.map_page(page_idx, slot["base_address"], mapping_size=slot["size"])
         slot["owner"] = receiver_task_id
         sb = SharedBlock(
             shm_id=shm_id,
@@ -588,9 +588,7 @@ class MemoryManager:
         slot = self.shm_slots.get(shm_id)
         if slot:
             page_idx = slot["page_idx"]
-            self.vmmio_registry.map_page(
-                page_idx, slot["base_address"], mapping_size=slot["size"]
-            )
+            self.vmmio_registry.map_page(page_idx, slot["base_address"], mapping_size=slot["size"])
             slot["owner"] = original_sender_id
 
     def _deallocate_shared_slot(self, page_idx: int, slot_idx: int, owner: int) -> None:
@@ -905,9 +903,13 @@ def test_mem_12_shm_id_kv_pair_encoding() -> None:
     scope_functional = 0b000  # 機能的 (Functional) -- メソッド呼び出しやコマンド指示
     type_u32 = 0b00001  # uint32_t / 32ビット即値
     kv_type_byte = pack_type_byte(scope_functional, type_u32)
-    assert kv_type_byte == 0x01, "Functional u32 kv_pair type byte must be 0x01 per ipc_router.md §3.3"
+    assert kv_type_byte == 0x01, (
+        "Functional u32 kv_pair type byte must be 0x01 per ipc_router.md §3.3"
+    )
     # Ensure no custom unvocabularized dtype=handle is used
-    assert scope_functional != 0b010, "shm-id is not a hardware resource descriptor (ScopeKind.RESOURCE)"
+    assert scope_functional != 0b010, (
+        "shm-id is not a hardware resource descriptor (ScopeKind.RESOURCE)"
+    )
 
 
 def test_mem_13_query_and_check_ownership_are_removed() -> None:
@@ -1012,4 +1014,6 @@ if __name__ == "__main__":
     test_mem_23_rwx_state_permanently_eliminated()
     test_mem_24_transaction_batching_barrier_efficiency()
     test_mem_25_pmsav8_32byte_alignment()
-    print("[PASS] All runtime memory concept tests (TEST-MEM-01 ~ TEST-MEM-25) passed successfully.")
+    print(
+        "[PASS] All runtime memory concept tests (TEST-MEM-01 ~ TEST-MEM-25) passed successfully."
+    )

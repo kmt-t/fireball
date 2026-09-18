@@ -102,6 +102,7 @@ class _Debugger(Protocol):
 
     def verify_assertions(self, memory: bytearray) -> None: ...
 
+
 from tier3_jit.jit_cache import (
     _CARD_STATE_NAMES,
     BlockCardMask,
@@ -264,10 +265,7 @@ class RuntimeEngine:
         # requiring a fallthrough successor.
         self.trackable.clear()
         for b in module.blocks:
-            if (
-                b.byte_span >= self.min_trace_bytes
-                and b.jit_score >= self.candidate_threshold
-            ):
+            if b.byte_span >= self.min_trace_bytes and b.jit_score >= self.candidate_threshold:
                 self.trackable.mark(b.head_pc)
 
     def record_block_head(self, pc: int) -> bool:
@@ -576,9 +574,7 @@ class RuntimeEngine:
             if block_here is not None and len(frame_here.frames) > block_here.frame_depth:
                 frame_here.frames.truncate(block_here.frame_depth)
             frame_here.boundary_next_pc = block_here.next_pc if block_here is not None else None
-            frame_here.boundary_loops_to = (
-                block_here.loops_to if block_here is not None else None
-            )
+            frame_here.boundary_loops_to = block_here.loops_to if block_here is not None else None
 
             trace = None
             if block_here is not None and self.trackable.is_marked(pc):
@@ -667,11 +663,7 @@ class RuntimeEngine:
             chain_depth += 1
             assert chain_depth <= 1024
 
-        res = (
-            frame.values.raw_at(result_slot)
-            if terminal_trace.has_return_val
-            else 0
-        )
+        res = frame.values.raw_at(result_slot) if terminal_trace.has_return_val else 0
         if terminal_trace.has_return_val and terminal_trace.loops_to is None:
             frame.values.set_size(result_slot + terminal_trace.result_words)
 
@@ -681,11 +673,7 @@ class RuntimeEngine:
             # never reaches the WASM operand stack. This is the same
             # continuation rule used by the interpreter boundary.
             cond = res if res is not None else 0
-            next_unified = (
-                terminal_trace.loops_to
-                if cond != 0
-                else terminal_trace.next_pc
-            )
+            next_unified = terminal_trace.loops_to if cond != 0 else terminal_trace.next_pc
         else:
             next_unified = terminal_trace.next_pc
 

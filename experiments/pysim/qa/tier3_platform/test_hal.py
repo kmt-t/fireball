@@ -84,19 +84,25 @@ def test_hal_02_dummy_stdio_driver_streams_stdin_and_stdout():
         assert driver.is_supported(WasiIpcCmd.STREAM_WRITE_BUFFER) == 1
         assert driver.is_supported(0xFFFF) == 0
         assert driver.feed_stdin(b"in-1in-2") == 8
-        assert driver.dispatch(
-            WasiIpcCmd.STREAM_READ_BUFFER,
-            ReadOnlyFlatMapView(
-                [(ARG_BUFFER_HANDLE, rx.buffer_id), (ARG_OFFSET, 0), (ARG_MAX_LEN, 32)]
-            ),
-        ) == 8
+        assert (
+            driver.dispatch(
+                WasiIpcCmd.STREAM_READ_BUFFER,
+                ReadOnlyFlatMapView(
+                    [(ARG_BUFFER_HANDLE, rx.buffer_id), (ARG_OFFSET, 0), (ARG_MAX_LEN, 32)]
+                ),
+            )
+            == 8
+        )
         assert bytes(pool.view(rx, 0, 8)) == b"in-1in-2"
-        assert driver.dispatch(
-            WasiIpcCmd.STREAM_WRITE_BUFFER,
-            ReadOnlyFlatMapView(
-                [(ARG_BUFFER_HANDLE, tx.buffer_id), (ARG_OFFSET, 0), (ARG_LENGTH, 10)]
-            ),
-        ) == 10
+        assert (
+            driver.dispatch(
+                WasiIpcCmd.STREAM_WRITE_BUFFER,
+                ReadOnlyFlatMapView(
+                    [(ARG_BUFFER_HANDLE, tx.buffer_id), (ARG_OFFSET, 0), (ARG_LENGTH, 10)]
+                ),
+            )
+            == 10
+        )
         assert driver.drain_stdout() == b"out-1out-2"
     finally:
         pool.close_all()
@@ -179,7 +185,9 @@ def test_hal_task_ipc_communication():
         buffer_handle = sysv.pool.buffer(0)
         buffer_view = sysv.pool.view(buffer_handle, 0, 128)
         buffer_view[:] = b"x" * 128
-        sysv.start_hal_driver(DummyDriver(sysv.wasi_hal_bindings.stdout_uri, transport=sysv.transport))
+        sysv.start_hal_driver(
+            DummyDriver(sysv.wasi_hal_bindings.stdout_uri, transport=sysv.transport)
+        )
         engine = Wasi03pEngine(sysv)
         # Send command via IPC
         nwritten = engine.send_ipc_command(

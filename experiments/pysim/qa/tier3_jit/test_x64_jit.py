@@ -146,9 +146,17 @@ def test_complex_helpers_use_shared_value_slots_for_wide_values():
     compiler = TraceCompiler()
     ctx = WASMContext()
     helper_indices = {
-        I64_ADD: 0, I64_SUB: 1, I64_MUL: 2,
-        F32_ADD: 3, F32_SUB: 4, F32_MUL: 5, F32_DIV: 6,
-        F64_ADD: 7, F64_SUB: 8, F64_MUL: 9, F64_DIV: 10,
+        I64_ADD: 0,
+        I64_SUB: 1,
+        I64_MUL: 2,
+        F32_ADD: 3,
+        F32_SUB: 4,
+        F32_MUL: 5,
+        F32_DIV: 6,
+        F64_ADD: 7,
+        F64_SUB: 8,
+        F64_MUL: 9,
+        F64_DIV: 10,
     }
 
     def run_i64(op, left: int, right: int, expected: int) -> None:
@@ -277,6 +285,7 @@ def test_trace_compiler_cps_4arg_and_pic():
 def test_x64_division_and_remainder_use_helper_boundary() -> None:
     """x64 routes integer division and remainder through the helper ABI."""
     compiler = TraceCompiler()
+
     def signed(value: int) -> int:
         return ctypes.c_int32(value).value
 
@@ -303,12 +312,14 @@ def test_x64_division_and_remainder_use_helper_boundary() -> None:
 
         return _I32_HELPER_TYPE(helper)
 
-    for helper_slot, (operation, left, right, expected) in enumerate((
-        (I32_DIV_S, 0xFFFF_FFF9, 2, 0xFFFF_FFFD),
-        (I32_DIV_U, 0xFFFF_FFF0, 2, 0x7FFF_FFF8),
-        (I32_REM_S, 0xFFFF_FFF9, 2, 0xFFFF_FFFF),
-        (I32_REM_U, 0xFFFF_FFF0, 3, 0),
-    )):
+    for helper_slot, (operation, left, right, expected) in enumerate(
+        (
+            (I32_DIV_S, 0xFFFF_FFF9, 2, 0xFFFF_FFFD),
+            (I32_DIV_U, 0xFFFF_FFF0, 2, 0x7FFF_FFF8),
+            (I32_REM_S, 0xFFFF_FFF9, 2, 0xFFFF_FFFF),
+            (I32_REM_U, 0xFFFF_FFF0, 3, 0),
+        )
+    ):
         helper = make_helper(operation)
         trace = compiler.compile_trace(
             0,
@@ -378,7 +389,9 @@ def test_trace_header_helper_tail_jump_uses_per_trace_pointer():
         ctypes.c_uint32,
     )
 
-    def helper(_ctx: ctypes.c_void_p, _sp: ctypes.c_void_p, local_base: ctypes.c_void_p, _tos: int) -> None:
+    def helper(
+        _ctx: ctypes.c_void_p, _sp: ctypes.c_void_p, local_base: ctypes.c_void_p, _tos: int
+    ) -> None:
         locals_ptr = ctypes.cast(local_base, ctypes.POINTER(ctypes.c_uint32))
         locals_ptr[0] += 1
 

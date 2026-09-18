@@ -211,9 +211,9 @@ class JITCodeCacheRegion:
         for helper_index in range(11, 15):
             helper_offset = helper_entry_offset(helper_index)
             entry = bytearray(i32_helper_entry)
-            entry[-4:] = (
-                COMMON_EPILOGUE_OFFSET - (helper_offset + len(entry))
-            ).to_bytes(4, "little", signed=True)
+            entry[-4:] = (COMMON_EPILOGUE_OFFSET - (helper_offset + len(entry))).to_bytes(
+                4, "little", signed=True
+            )
             common[helper_offset : helper_offset + len(entry)] = entry
         self.buffer.write(0, bytes(common))
 
@@ -270,9 +270,9 @@ class JITCodeCacheRegion:
             next_ip = base + offset + chain_header_patch_offset + 4
             displacement = header_addr - next_ip
             assert -(1 << 31) <= displacement < (1 << 31)
-            patched[
-                chain_header_patch_offset : chain_header_patch_offset + 4
-            ] = int(displacement).to_bytes(4, "little", signed=True)
+            patched[chain_header_patch_offset : chain_header_patch_offset + 4] = int(
+                displacement
+            ).to_bytes(4, "little", signed=True)
         if chain_fallback_patch_offset >= 0:
             patch_rel32(chain_fallback_patch_offset, common_epilogue)
         if helper_header_patch_offset >= 0:
@@ -280,9 +280,9 @@ class JITCodeCacheRegion:
             next_ip = base + offset + helper_header_patch_offset + 4
             displacement = header_addr - next_ip
             assert -(1 << 31) <= displacement < (1 << 31)
-            patched[
-                helper_header_patch_offset : helper_header_patch_offset + 4
-            ] = int(displacement).to_bytes(4, "little", signed=True)
+            patched[helper_header_patch_offset : helper_header_patch_offset + 4] = int(
+                displacement
+            ).to_bytes(4, "little", signed=True)
             patch_rel32(helper_exit_patch_offset, common_helper)
         if not self.buffer.patch_in_progress:
             self.buffer.begin_jit_patch()
@@ -322,7 +322,7 @@ __all__ = (
     "TRACE_BODY_OFFSET",
     "TRACE_ENTRY_STUB_BYTES",
     "JITCodeCacheRegion",
-    "helper_entry_offset",
     "gen_pic_epilogue",
     "gen_pic_prologue",
+    "helper_entry_offset",
 )

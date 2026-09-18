@@ -445,10 +445,7 @@ class Scheduler:
         if task is None or task.state == TaskState.TERMINATED:
             return False
         assert task is not self.current_task, "a running task cannot be killed externally"
-        assert (
-            task.state == TaskState.BLOCKED
-            or task.state == TaskState.SUSPENDED_CSP
-        ), (
+        assert task.state == TaskState.BLOCKED or task.state == TaskState.SUSPENDED_CSP, (
             "task_killed requires a blocked task"
         )
 

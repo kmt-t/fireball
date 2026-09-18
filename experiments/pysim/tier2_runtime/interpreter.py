@@ -366,11 +366,9 @@ class Trap(Exception):
 class WasmNumber(Protocol):
     """Numeric host value accepted at the public interpreter boundary."""
 
-    def __int__(self) -> int:
-        ...
+    def __int__(self) -> int: ...
 
-    def __float__(self) -> float:
-        ...
+    def __float__(self) -> float: ...
 
 
 FB_CONF_MAX_LOCAL_STACK = NATIVE_VALUE_STACK_CAPACITY
@@ -568,9 +566,7 @@ class InterpreterContext:
         self._c_context.ip = ip
 
 
-def _read_memarg(
-    code: cython.const[cython.uchar][:], ip: int
-) -> tuple[int, int]:
+def _read_memarg(code: cython.const[cython.uchar][:], ip: int) -> tuple[int, int]:
     align, off = decode_unsigned(code, ip + 1)
     mem_offset, next_ip = decode_unsigned(code, off)
     return mem_offset, next_ip
@@ -680,6 +676,7 @@ class CallFrame:
     def locals(self) -> _LocalStackWindow:
         return self._locals
 
+
 # The interpreter call's resumable continuation: (next_ip, frame, local_base,
 # tos). `next_ip == RETURN_SENTINEL_IP` is the explicit return boundary;
 # `cont=None` is reserved for a fully finished or trapped call. `tos` remains
@@ -692,6 +689,7 @@ class DebuggerAttachment(Protocol):
     halted: bool
     stop_signal: int
 
+
 # A handler returns only an exceptional outcome. Successful handlers update
 # ctx/native stacks in place and fall through with an implicit None.
 _HandlerResult = Trap | None
@@ -702,8 +700,7 @@ _HandlerFn = Callable[
 # Fixed 256-slot direct-indexed dispatch table for WASM byte opcodes (0x00..0xFF)
 _HANDLERS: StaticVector[_HandlerFn | None] = StaticVector(capacity=256)
 _BASIC_BLOCK_BOUNDARY: bytes = bytes(
-    opcode_has_attribute(_opcode, OpcodeAttribute.BASIC_BLOCK_BOUNDARY)
-    for _opcode in range(256)
+    opcode_has_attribute(_opcode, OpcodeAttribute.BASIC_BLOCK_BOUNDARY) for _opcode in range(256)
 )
 
 
@@ -931,9 +928,7 @@ class Interpreter:
         treat interpreter-only and tiered execution uniformly.
         """
 
-    def call(
-        self, func_index: int, args: Sequence[WasmNumber]
-    ) -> StaticVector[WasmNumber]:
+    def call(self, func_index: int, args: Sequence[WasmNumber]) -> StaticVector[WasmNumber]:
         """Runs a function to completion in one call."""
         call_state = self.start(func_index, args)
         if not call_state.finished:
@@ -1010,9 +1005,7 @@ class Interpreter:
         call_state.results = None
         call_state.trap = trap
 
-    def run_iter(
-        self, func_index: int, args: Sequence[WasmNumber]
-    ) -> Iterator[InterpreterCall]:
+    def run_iter(self, func_index: int, args: Sequence[WasmNumber]) -> Iterator[InterpreterCall]:
         """
         Drives a call basic-block by basic-block, yielding the (possibly still-unfinished)
         `call_state` after every `step()` and once more after it finishes.
@@ -1143,9 +1136,7 @@ class Interpreter:
                 assert 0 <= ip < len(frame.code)
                 op = frame.code[ip]
                 if op == CALL or op == CALL_INDIRECT:
-                    trap = self._enter_or_resolve_call(
-                        call_state, op, ip, frame, locals_arr, tos
-                    )
+                    trap = self._enter_or_resolve_call(call_state, op, ip, frame, locals_arr, tos)
                     if trap is not None:
                         self._abort_call(call_state, trap)
                         return call_state
@@ -1262,9 +1253,7 @@ class Interpreter:
 
         if self.module.is_import(callee_func_index):
             call_args: StaticVector[WasmNumber] = StaticVector(capacity=FB_CONF_MAX_VALUE_STACK)
-            popped_args: StaticVector[WasmNumber] = StaticVector(
-                capacity=FB_CONF_MAX_VALUE_STACK
-            )
+            popped_args: StaticVector[WasmNumber] = StaticVector(capacity=FB_CONF_MAX_VALUE_STACK)
             for value_type in reversed(callee_ft.params):
                 if value_type == I64:
                     value = frame.values.pop_i64()
@@ -1677,9 +1666,7 @@ def _h_global_set(
 # --- Loads (Dedicated per-opcode handlers with Bit 31 RAM Bypass) ---
 
 
-def _vmmio_load(
-    env: ExecEnv, addr: int, width: int, signed: bool
-) -> tuple[int, Trap | None]:
+def _vmmio_load(env: ExecEnv, addr: int, width: int, signed: bool) -> tuple[int, Trap | None]:
     if env.vmmio is None:
         return 0, Trap(TrapCode.VMMIO_NOT_CONFIGURED, addr)
     status, phys_addr = env.vmmio.access(addr, is_write=False, value=0)
@@ -2508,7 +2495,7 @@ def _h_f64_load(
     offset, next_ip = _read_memarg(frame.code, ip)
     addr = _to_u32(frame.values.pop_back()) + offset
     if env.memory is None or addr + 8 > len(env.memory):
-            return Trap(TrapCode.MEMORY_OUT_OF_BOUNDS, addr)
+        return Trap(TrapCode.MEMORY_OUT_OF_BOUNDS, addr)
     val = struct.unpack("<d", env.memory[addr : addr + 8])[0]
     assert frame.values.push_f64(val)
     ctx.native_context.ip = next_ip
@@ -2525,7 +2512,7 @@ def _h_f64_store(
     assert val is not None
     addr = _to_u32(frame.values.pop_back()) + offset
     if env.memory is None or addr + 8 > len(env.memory):
-            return Trap(TrapCode.MEMORY_OUT_OF_BOUNDS, addr)
+        return Trap(TrapCode.MEMORY_OUT_OF_BOUNDS, addr)
     env.memory[addr : addr + 8] = struct.pack("<d", val)
     ctx.native_context.ip = next_ip
     return None
@@ -3489,9 +3476,7 @@ def _h_f32_ceil(
     ip, frame, env = _handler_state(ctx, sp)
     a = frame.values.pop_f32()
     assert a is not None
-    assert frame.values.push_f32(
-        _to_f32(_wasm_integral_round(a, "ceil"))
-    )
+    assert frame.values.push_f32(_to_f32(_wasm_integral_round(a, "ceil")))
     ctx.native_context.ip = ip + 1
     return None
 
@@ -3503,9 +3488,7 @@ def _h_f32_floor(
     ip, frame, env = _handler_state(ctx, sp)
     a = frame.values.pop_f32()
     assert a is not None
-    assert frame.values.push_f32(
-        _to_f32(_wasm_integral_round(a, "floor"))
-    )
+    assert frame.values.push_f32(_to_f32(_wasm_integral_round(a, "floor")))
     ctx.native_context.ip = ip + 1
     return None
 
@@ -3517,9 +3500,7 @@ def _h_f32_trunc(
     ip, frame, env = _handler_state(ctx, sp)
     a = frame.values.pop_f32()
     assert a is not None
-    assert frame.values.push_f32(
-        _to_f32(_wasm_integral_round(a, "trunc"))
-    )
+    assert frame.values.push_f32(_to_f32(_wasm_integral_round(a, "trunc")))
     ctx.native_context.ip = ip + 1
     return None
 
@@ -3531,9 +3512,7 @@ def _h_f32_nearest(
     ip, frame, env = _handler_state(ctx, sp)
     a = frame.values.pop_f32()
     assert a is not None
-    assert frame.values.push_f32(
-        _to_f32(_wasm_nearest(a))
-    )
+    assert frame.values.push_f32(_to_f32(_wasm_nearest(a)))
     ctx.native_context.ip = ip + 1
     return None
 
@@ -3557,9 +3536,7 @@ def _h_f64_ceil(
     ip, frame, env = _handler_state(ctx, sp)
     a = frame.values.pop_f64()
     assert a is not None
-    assert frame.values.push_f64(
-        _wasm_integral_round(a, "ceil")
-    )
+    assert frame.values.push_f64(_wasm_integral_round(a, "ceil"))
     ctx.native_context.ip = ip + 1
     return None
 
@@ -3571,9 +3548,7 @@ def _h_f64_floor(
     ip, frame, env = _handler_state(ctx, sp)
     a = frame.values.pop_f64()
     assert a is not None
-    assert frame.values.push_f64(
-        _wasm_integral_round(a, "floor")
-    )
+    assert frame.values.push_f64(_wasm_integral_round(a, "floor"))
     ctx.native_context.ip = ip + 1
     return None
 
@@ -3585,9 +3560,7 @@ def _h_f64_trunc(
     ip, frame, env = _handler_state(ctx, sp)
     a = frame.values.pop_f64()
     assert a is not None
-    assert frame.values.push_f64(
-        _wasm_integral_round(a, "trunc")
-    )
+    assert frame.values.push_f64(_wasm_integral_round(a, "trunc"))
     ctx.native_context.ip = ip + 1
     return None
 

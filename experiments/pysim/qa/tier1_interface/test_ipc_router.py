@@ -346,7 +346,9 @@ def test_ipc_07_message_in_shm_and_payload_shm_transfer():
             status, recv_msg = yield from sysv.ipc.recv()
             received.append(recv_msg)
 
-        sysv.scheduler.spawn("hal_receiver", hal_receiver(), task_id=receiver_id, role=Role.HAL_GPIO)
+        sysv.scheduler.spawn(
+            "hal_receiver", hal_receiver(), task_id=receiver_id, role=Role.HAL_GPIO
+        )
         sysv.scheduler.spawn("client_sender", client_sender(), task_id=sender_id, role=Role.RUNTIME)
         sysv.scheduler.current_task = sysv.scheduler.get_task(sender_id)
 

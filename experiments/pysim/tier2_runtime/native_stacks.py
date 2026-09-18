@@ -132,9 +132,7 @@ class ControlFrameWindow:
         stack_height: int,
         result_arity: int = 0,
     ) -> bool:
-        return self._storage.push_back(
-            kind, start, match_end, stack_height, result_arity
-        )
+        return self._storage.push_back(kind, start, match_end, stack_height, result_arity)
 
     def pop_back(self) -> ControlFrameNative:
         if not self:
@@ -161,12 +159,8 @@ class ControlFrameWindow:
             final_size = len(values)
             assert outer_result_arity <= final_size
             result_start = final_size - outer_result_arity
-            result0 = (
-                values.raw_at(result_start) if outer_result_arity >= 1 else 0
-            )
-            result1 = (
-                values.raw_at(result_start + 1) if outer_result_arity >= 2 else 0
-            )
+            result0 = values.raw_at(result_start) if outer_result_arity >= 1 else 0
+            result1 = values.raw_at(result_start + 1) if outer_result_arity >= 2 else 0
             self._storage.set_size(self._base)
             values.truncate(result_start)
             if outer_result_arity >= 1:
@@ -178,9 +172,7 @@ class ControlFrameWindow:
         target = self[target_index]
         saved_height = int(target.stack_height)
         result_arity = (
-            0
-            if int(target.kind) == int(ControlFrameKind.LOOP)
-            else int(target.result_arity)
+            0 if int(target.kind) == int(ControlFrameKind.LOOP) else int(target.result_arity)
         )
         assert 0 <= result_arity <= 2
         final_size = len(values)
@@ -188,9 +180,7 @@ class ControlFrameWindow:
         assert result_arity <= final_size - saved_height
         result_start = final_size - result_arity
         result0 = values.raw_at(result_start) if result_arity >= 1 else 0
-        result1 = (
-            values.raw_at(result_start + 1) if result_arity >= 2 else 0
-        )
+        result1 = values.raw_at(result_start + 1) if result_arity >= 2 else 0
         values.truncate(saved_height)
         if result_arity >= 1:
             assert values.push_back(result0)

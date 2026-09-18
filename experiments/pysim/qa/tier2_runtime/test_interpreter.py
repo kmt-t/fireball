@@ -111,11 +111,11 @@ def test_intp_04_control_map_uses_four_entry_locality_caches():
     """The small per-function ControlMap keeps only four direct-mapped cache slots."""
     from control_flow import build_control_map
 
-    control_map = build_control_map(b"\x02\x40\x0B")
+    control_map = build_control_map(b"\x02\x40\x0b")
     assert control_map.block(0) == (2, None, 0)
-    typed_map = build_control_map(b"\x02\x7F\x0B")
+    typed_map = build_control_map(b"\x02\x7f\x0b")
     assert typed_map.block(0) == (2, None, 1)
-    wide_map = build_control_map(b"\x02\x7E\x0B")
+    wide_map = build_control_map(b"\x02\x7e\x0b")
     assert wide_map.block(0) == (2, None, 2)
     assert len(control_map.block_cache) == 4
     assert len(control_map.br_table_cache) == 4
@@ -607,7 +607,7 @@ def test_intp_70_to_72_direct_bytecode_execution():
 
 def test_wasm_mvp_packed_memory_and_i64_float_conversions():
     """MVP: cover every i64 packed memory opcode and i64/float conversion."""
-    wat = r'''
+    wat = r"""
     (module
       (memory 1)
       (data (i32.const 0) "\80\ff\34\12\78\56\34\12")
@@ -646,10 +646,12 @@ def test_wasm_mvp_packed_memory_and_i64_float_conversions():
       (func (export "f64_from_u") (param i64) (result f64)
         (f64.convert_i64_u (local.get 0)))
     )
-    '''
+    """
     wasm_bytes = wat_to_wasm(wat)
     if not wasm_bytes:
-        print("    [SKIP] wasmtime not installed, skipping test_wasm_mvp_packed_memory_and_i64_float_conversions")
+        print(
+            "    [SKIP] wasmtime not installed, skipping test_wasm_mvp_packed_memory_and_i64_float_conversions"
+        )
         return
     module = parse(wasm_bytes)
     memory = bytearray(65536)
@@ -756,9 +758,7 @@ def test_wasm_mvp_imported_immutable_global_initializer():
     module = parse(wat_to_wasm(wat))
     imported_globals = StaticVector.of((0xFEDC_BA98_7654_3210,), capacity=1)
     interp = Interpreter(module, imported_globals=imported_globals)
-    assert interp.call(module.export_func_index("get_copy"), []) == [
-        -0x0123_4567_89AB_CDF0
-    ]
+    assert interp.call(module.export_func_index("get_copy"), []) == [-0x0123_4567_89AB_CDF0]
 
 
 def test_wasm_mvp_imported_linear_memory():

@@ -90,6 +90,8 @@ def _make_memory_manager() -> tuple[MemoryManager, Scheduler]:
     manager = MemoryManager(scheduler)
     manager.init_manager(pool_base=0x20020000, pool_size=0x40000)
     return manager, scheduler
+
+
 from test_support import (
     PcOnlyCompiler,
     compile_test_block,

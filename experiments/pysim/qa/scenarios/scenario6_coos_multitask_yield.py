@@ -133,12 +133,8 @@ def test_scenario_coos_multitask():
     interp_coos = Interpreter(
         module, InterpreterBindings.with_memory_and_functions(wasi_ctx.guest_memory, host_funcs)
     )
-    t_prod = sysv.scheduler.spawn(
-        "producer_task", make_wasm_task_coro(interp_coos, fn_prod, [N])
-    )
-    t_cons = sysv.scheduler.spawn(
-        "consumer_task", make_wasm_task_coro(interp_coos, fn_cons, [N])
-    )
+    t_prod = sysv.scheduler.spawn("producer_task", make_wasm_task_coro(interp_coos, fn_prod, [N]))
+    t_cons = sysv.scheduler.spawn("consumer_task", make_wasm_task_coro(interp_coos, fn_cons, [N]))
     sysv.scheduler.run_until_idle()
     prod_task = sysv.scheduler.get_task(t_prod)
     cons_task = sysv.scheduler.get_task(t_cons)

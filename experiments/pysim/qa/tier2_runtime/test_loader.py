@@ -396,8 +396,7 @@ def test_load_49_rejects_overaligned_memory_access():
     from wasm_reader import parse
 
     wasm_bytes = wat_to_wasm(
-        "(module (memory 1) (func (param i32) (result i32) "
-        "local.get 0 i32.load align=8))"
+        "(module (memory 1) (func (param i32) (result i32) local.get 0 i32.load align=8))"
     )
     with expect_assertion("memory alignment exceeds the natural alignment"):
         parse(wasm_bytes)
@@ -410,7 +409,7 @@ def test_load_50_resolves_imported_global_offsets_for_active_segments():
     module = parse(
         wat_to_wasm(
             '(module (import "host" "base" (global i32)) '
-            '(memory 1) (table 4 funcref) (func $f) '
+            "(memory 1) (table 4 funcref) (func $f) "
             '(data (global.get 0) "D") (elem (global.get 0) func $f))'
         )
     )
@@ -426,9 +425,7 @@ def test_load_51_keeps_unreachable_polymorphism_inside_its_control_frame():
     """An unreachable outer frame must not make a nested block type-polymorphic."""
     from wasm_reader import parse
 
-    wasm_bytes = wat_to_wasm(
-        "(module (func (unreachable) (block (drop (i32.eqz (nop))))))"
-    )
+    wasm_bytes = wat_to_wasm("(module (func (unreachable) (block (drop (i32.eqz (nop))))))")
     with expect_assertion("WASM operand stack underflow"):
         parse(wasm_bytes)
 

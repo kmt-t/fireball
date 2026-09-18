@@ -515,9 +515,7 @@ if __name__ == "__main__":
         module_float = parse(wasm_float_bytes)
         sysv_float = System()
         sysv_float.start_hal_driver(
-            DummyDriver(
-                sysv_float.wasi_hal_bindings.stdout_uri, transport=sysv_float.transport
-            )
+            DummyDriver(sysv_float.wasi_hal_bindings.stdout_uri, transport=sysv_float.transport)
         )
         wasi_ctx_float = WasiHostContext(sysv_float)
         host_funcs_float = wasi_ctx_float.build_interpreter_host_functions(module_float)

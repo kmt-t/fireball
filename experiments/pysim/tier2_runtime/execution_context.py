@@ -35,7 +35,9 @@ class WASMContext:
         self.fault: int | None = None
         self.stack_capacity = stack_capacity
         self.stack: NativeValueStack = NativeValueStack(capacity=stack_capacity)
-        self.local_stack: NativeValueStack = NativeValueStack(capacity=n_locals * WASM_LOCAL_SLOT_WORDS)
+        self.local_stack: NativeValueStack = NativeValueStack(
+            capacity=n_locals * WASM_LOCAL_SLOT_WORDS
+        )
         self.local_stack.set_size(n_locals * WASM_LOCAL_SLOT_WORDS)
         self.memory = memory
         if memory is not None:
@@ -70,7 +72,6 @@ class WASMContext:
         if self._c_mem is not None:
             return ctypes.c_void_p(ctypes.addressof(self._c_mem))
         return ctypes.c_void_p(0)
-
 
     class _LocalsView:
         __slots__ = ("_ctx",)

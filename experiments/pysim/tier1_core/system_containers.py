@@ -29,6 +29,7 @@ def freeze_sequence(items: Iterable[T]) -> tuple[T, ...]:
 
     return tuple(items)
 
+
 # ---------------------------------------------------------------------------
 # 1. BitView (fireball::bit_view<Bits>)
 # ---------------------------------------------------------------------------
@@ -83,9 +84,7 @@ class BitView:
         """
 
         if not (0 <= first <= last <= self.count):
-            assert False, (
-                f"a view may only ever shrink (0 <= {first} <= {last} <= {self.count})"
-            )
+            assert False, f"a view may only ever shrink (0 <= {first} <= {last} <= {self.count})"
         return BitView(self.storage, self.bits, self.origin + first * self.bits, last - first)
 
 
@@ -178,7 +177,7 @@ class MutableBitStorage:
         )
 
 
- # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
 # 2. ReadOnly storage/view matrix: FlatSet
 # ---------------------------------------------------------------------------
 
@@ -434,7 +433,9 @@ class ReadOnlyRadixBinaryTreeStorage(Generic[ValT]):
         paired = tuple(sorted(zip(keys, values, strict=False), key=lambda p: p[0]))
         s_keys = tuple(p[0] for p in paired)
         s_vals = tuple(p[1] for p in paired)
-        table = tuple(build_radix_table(s_keys, radix_shift=radix_shift, key_transform=key_transform))
+        table = tuple(
+            build_radix_table(s_keys, radix_shift=radix_shift, key_transform=key_transform)
+        )
         return cls(
             keys=s_keys,
             values=s_vals,
@@ -625,7 +626,11 @@ class MutableFlatMapStorage(Generic[KeyT, ValT]):
 
     def insert(self, key: KeyT, value: ValT) -> bool:
         idx = bisect.bisect_left(
-            self._buffer, key, 0, self._count, key=lambda entry: entry[0] if entry is not None else key
+            self._buffer,
+            key,
+            0,
+            self._count,
+            key=lambda entry: entry[0] if entry is not None else key,
         )
         if idx < self._count and self._buffer[idx] is not None and self._buffer[idx][0] == key:
             self._buffer[idx] = (key, value)
@@ -640,7 +645,11 @@ class MutableFlatMapStorage(Generic[KeyT, ValT]):
 
     def remove(self, key: KeyT) -> ValT | None:
         idx = bisect.bisect_left(
-            self._buffer, key, 0, self._count, key=lambda entry: entry[0] if entry is not None else key
+            self._buffer,
+            key,
+            0,
+            self._count,
+            key=lambda entry: entry[0] if entry is not None else key,
         )
         if idx >= self._count or self._buffer[idx] is None or self._buffer[idx][0] != key:
             return None
@@ -692,7 +701,11 @@ class MutableRadixBinaryTreeStorage(Sequence[tuple[int, ValT]], Generic[ValT]):
 
     def insert(self, key: int, value: ValT) -> bool:
         idx = bisect.bisect_left(
-            self._buffer, key, 0, self._count, key=lambda entry: entry[0] if entry is not None else key
+            self._buffer,
+            key,
+            0,
+            self._count,
+            key=lambda entry: entry[0] if entry is not None else key,
         )
         if idx < self._count and self._buffer[idx] is not None and self._buffer[idx][0] == key:
             self._buffer[idx] = (key, value)
@@ -708,7 +721,11 @@ class MutableRadixBinaryTreeStorage(Sequence[tuple[int, ValT]], Generic[ValT]):
 
     def remove(self, key: int) -> ValT | None:
         idx = bisect.bisect_left(
-            self._buffer, key, 0, self._count, key=lambda entry: entry[0] if entry is not None else key
+            self._buffer,
+            key,
+            0,
+            self._count,
+            key=lambda entry: entry[0] if entry is not None else key,
         )
         if idx >= self._count or self._buffer[idx] is None or self._buffer[idx][0] != key:
             return None

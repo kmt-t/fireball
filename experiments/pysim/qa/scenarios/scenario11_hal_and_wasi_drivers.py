@@ -55,15 +55,25 @@ def test_scenario_hal_and_wasi_drivers():
     tx_view = sysv.pool.view(tx, 0, 28)
     tx_view[:] = b"stdout-chunk-1stdout-chunk-2"
     assert stdio.feed_stdin(b"stdin-chunk-1stdin-chunk-2") == 26
-    assert stdio.dispatch(
-        WasiIpcCmd.STREAM_READ_BUFFER,
-        ReadOnlyFlatMapView(((ARG_BUFFER_HANDLE, rx.buffer_id), (ARG_OFFSET, 0), (ARG_MAX_LEN, 64))),
-    ) == 26
+    assert (
+        stdio.dispatch(
+            WasiIpcCmd.STREAM_READ_BUFFER,
+            ReadOnlyFlatMapView(
+                ((ARG_BUFFER_HANDLE, rx.buffer_id), (ARG_OFFSET, 0), (ARG_MAX_LEN, 64))
+            ),
+        )
+        == 26
+    )
     assert bytes(sysv.pool.view(rx, 0, 26)) == b"stdin-chunk-1stdin-chunk-2"
-    assert stdio.dispatch(
-        WasiIpcCmd.STREAM_WRITE_BUFFER,
-        ReadOnlyFlatMapView(((ARG_BUFFER_HANDLE, tx.buffer_id), (ARG_OFFSET, 0), (ARG_LENGTH, 28))),
-    ) == 28
+    assert (
+        stdio.dispatch(
+            WasiIpcCmd.STREAM_WRITE_BUFFER,
+            ReadOnlyFlatMapView(
+                ((ARG_BUFFER_HANDLE, tx.buffer_id), (ARG_OFFSET, 0), (ARG_LENGTH, 28))
+            ),
+        )
+        == 28
+    )
     assert stdio.drain_stdout() == b"stdout-chunk-1stdout-chunk-2"
     sysv.shutdown()
     print("    [Phase A.1] HAL Standard I/O Driver (stdin/stdout streaming) [PASS]")

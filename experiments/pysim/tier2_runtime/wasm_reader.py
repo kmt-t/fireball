@@ -228,12 +228,12 @@ def _parse_functype(data: memoryview, off: int) -> tuple[FuncType, int]:
         assert results.push_back(_read_value_type(data, off))
         off += 1
     assert off <= len(data)
-    return FuncType(params=params, results=results, offset=record_offset, size=off - record_offset), off
+    return FuncType(
+        params=params, results=results, offset=record_offset, size=off - record_offset
+    ), off
 
 
-def _parse_type_section(
-    data: memoryview, off: int, end: int, callbacks: _ParseCallbacks
-) -> None:
+def _parse_type_section(data: memoryview, off: int, end: int, callbacks: _ParseCallbacks) -> None:
     n, off = decode_unsigned(data, off)
     for _ in range(n):
         ft, off = _parse_functype(data, off)
@@ -242,9 +242,7 @@ def _parse_type_section(
     assert off == end, "type section length mismatch"
 
 
-def _parse_import_section(
-    data: memoryview, off: int, end: int, callbacks: _ParseCallbacks
-) -> None:
+def _parse_import_section(data: memoryview, off: int, end: int, callbacks: _ParseCallbacks) -> None:
     n, off = decode_unsigned(data, off)
     for _ in range(n):
         mod_len, off = decode_unsigned(data, off)
@@ -328,9 +326,7 @@ def _parse_limits(
     return minimum, maximum, off
 
 
-def _parse_memory_section(
-    data: memoryview, off: int, end: int, callbacks: _ParseCallbacks
-) -> None:
+def _parse_memory_section(data: memoryview, off: int, end: int, callbacks: _ParseCallbacks) -> None:
     module = callbacks.module
     n, off = decode_unsigned(data, off)
     assert n <= 1, "only single linear memory is supported"
@@ -342,9 +338,7 @@ def _parse_memory_section(
     assert off == end, "memory section length mismatch"
 
 
-def _parse_table_section(
-    data: memoryview, off: int, end: int, callbacks: _ParseCallbacks
-) -> None:
+def _parse_table_section(data: memoryview, off: int, end: int, callbacks: _ParseCallbacks) -> None:
     n, off = decode_unsigned(data, off)
     for _ in range(n):
         elem_type = data[off]
@@ -370,9 +364,7 @@ def _parse_element_section(
     module.stream_element_initializers(validate_element, (), resolve_globals=False)
 
 
-def _parse_global_section(
-    data: memoryview, off: int, end: int, callbacks: _ParseCallbacks
-) -> None:
+def _parse_global_section(data: memoryview, off: int, end: int, callbacks: _ParseCallbacks) -> None:
     module = callbacks.module
     n, off = decode_unsigned(data, off)
     for _ in range(n):
@@ -426,9 +418,7 @@ def _parse_global_section(
     assert off == end, "global section length mismatch"
 
 
-def _parse_export_section(
-    data: memoryview, off: int, end: int, callbacks: _ParseCallbacks
-) -> None:
+def _parse_export_section(data: memoryview, off: int, end: int, callbacks: _ParseCallbacks) -> None:
     n, off = decode_unsigned(data, off)
     for _ in range(n):
         name_len, off = decode_unsigned(data, off)
@@ -490,17 +480,13 @@ def _parse_code_section(
     assert off == end, "code section length mismatch"
 
 
-def _parse_start_section(
-    data: memoryview, off: int, end: int, callbacks: _ParseCallbacks
-) -> None:
+def _parse_start_section(data: memoryview, off: int, end: int, callbacks: _ParseCallbacks) -> None:
     func_idx, off = decode_unsigned(data, off)
     callbacks.on_start(func_idx)
     assert off == end, "start section length mismatch"
 
 
-def _parse_data_section(
-    data: memoryview, off: int, end: int, callbacks: _ParseCallbacks
-) -> None:
+def _parse_data_section(data: memoryview, off: int, end: int, callbacks: _ParseCallbacks) -> None:
     module = callbacks.module
     callbacks.on_data_section(off, end - off)
     assert module.memory is not None, "data segment requires linear memory"
@@ -611,14 +597,14 @@ class _SelectAnalysisState:
 
 
 _SelectAnalysisHandler = Callable[[_SelectAnalysisState, int, int, int], None]
-_SELECT_ANALYSIS_HANDLERS: StaticVector[_SelectAnalysisHandler | None] = StaticVector(
-    capacity=256
-)
+_SELECT_ANALYSIS_HANDLERS: StaticVector[_SelectAnalysisHandler | None] = StaticVector(capacity=256)
 for _ in range(256):
     _SELECT_ANALYSIS_HANDLERS.append(None)
 
 
-def _select_analysis_handler(*opcodes: int) -> Callable[[_SelectAnalysisHandler], _SelectAnalysisHandler]:
+def _select_analysis_handler(
+    *opcodes: int,
+) -> Callable[[_SelectAnalysisHandler], _SelectAnalysisHandler]:
     def register(handler: _SelectAnalysisHandler) -> _SelectAnalysisHandler:
         for opcode in opcodes:
             _SELECT_ANALYSIS_HANDLERS[opcode] = handler
@@ -627,10 +613,19 @@ def _select_analysis_handler(*opcodes: int) -> Callable[[_SelectAnalysisHandler]
     return register
 
 
-@_select_analysis_handler(op.UNREACHABLE, op.BLOCK, op.LOOP, op.IF, op.ELSE, op.END,
-                          op.BR, op.BR_IF, op.BR_TABLE, op.RETURN)
-def _analyze_control(state: _SelectAnalysisState, opcode: int, offset: int,
-                     operand: int) -> None:
+@_select_analysis_handler(
+    op.UNREACHABLE,
+    op.BLOCK,
+    op.LOOP,
+    op.IF,
+    op.ELSE,
+    op.END,
+    op.BR,
+    op.BR_IF,
+    op.BR_TABLE,
+    op.RETURN,
+)
+def _analyze_control(state: _SelectAnalysisState, opcode: int, offset: int, operand: int) -> None:
     if opcode == op.UNREACHABLE:
         state.mark_unreachable()
         return
@@ -638,8 +633,11 @@ def _analyze_control(state: _SelectAnalysisState, opcode: int, offset: int,
         if opcode == op.IF:
             state.pop(I32)
         blocktype = state.code[offset + 1]
-        assert blocktype == 0x40 or blocktype == I32 or blocktype == I64 or (
-            blocktype == F32 or blocktype == F64
+        assert (
+            blocktype == 0x40
+            or blocktype == I32
+            or blocktype == I64
+            or (blocktype == F32 or blocktype == F64)
         ), "invalid MVP block type"
         result_type = None if blocktype == 0x40 else blocktype
         frame = _AnalysisControlFrame(
@@ -704,8 +702,7 @@ def _analyze_control(state: _SelectAnalysisState, opcode: int, offset: int,
 
 
 @_select_analysis_handler(op.DROP, op.SELECT)
-def _analyze_stack_ops(state: _SelectAnalysisState, opcode: int, offset: int,
-                       operand: int) -> None:
+def _analyze_stack_ops(state: _SelectAnalysisState, opcode: int, offset: int, operand: int) -> None:
     if opcode == op.DROP:
         value_type = state.pop()
         if value_type == I64 or value_type == F64:
@@ -725,10 +722,8 @@ def _analyze_stack_ops(state: _SelectAnalysisState, opcode: int, offset: int,
     state.push(selected_type)
 
 
-@_select_analysis_handler(op.LOCAL_GET, op.LOCAL_SET, op.LOCAL_TEE,
-                          op.GLOBAL_GET, op.GLOBAL_SET)
-def _analyze_variables(state: _SelectAnalysisState, opcode: int, offset: int,
-                       operand: int) -> None:
+@_select_analysis_handler(op.LOCAL_GET, op.LOCAL_SET, op.LOCAL_TEE, op.GLOBAL_GET, op.GLOBAL_SET)
+def _analyze_variables(state: _SelectAnalysisState, opcode: int, offset: int, operand: int) -> None:
     if opcode == op.LOCAL_GET:
         assert operand < len(state.locals_types)
         state.push(state.locals_types[operand])
@@ -751,28 +746,49 @@ def _analyze_variables(state: _SelectAnalysisState, opcode: int, offset: int,
 
 
 @_select_analysis_handler(op.I32_CONST, op.I64_CONST, op.F32_CONST, op.F64_CONST)
-def _analyze_constants(state: _SelectAnalysisState, opcode: int, offset: int,
-                       operand: int) -> None:
-    value_type = I32 if opcode == op.I32_CONST else I64 if opcode == op.I64_CONST else (
-        F32 if opcode == op.F32_CONST else F64
+def _analyze_constants(state: _SelectAnalysisState, opcode: int, offset: int, operand: int) -> None:
+    value_type = (
+        I32
+        if opcode == op.I32_CONST
+        else I64
+        if opcode == op.I64_CONST
+        else (F32 if opcode == op.F32_CONST else F64)
     )
     state.push(value_type)
 
 
 def _memory_alignment_exponent(opcode: int) -> int:
-    if (opcode == op.I32_LOAD or opcode == op.F32_LOAD or opcode == op.I32_STORE
-            or opcode == op.F32_STORE):
+    if (
+        opcode == op.I32_LOAD
+        or opcode == op.F32_LOAD
+        or opcode == op.I32_STORE
+        or opcode == op.F32_STORE
+    ):
         return 2
-    if (opcode == op.I64_LOAD or opcode == op.F64_LOAD or opcode == op.I64_STORE
-            or opcode == op.F64_STORE):
+    if (
+        opcode == op.I64_LOAD
+        or opcode == op.F64_LOAD
+        or opcode == op.I64_STORE
+        or opcode == op.F64_STORE
+    ):
         return 3
-    if (opcode == op.I32_LOAD8_S or opcode == op.I32_LOAD8_U or opcode == op.I64_LOAD8_S
-            or opcode == op.I64_LOAD8_U or opcode == op.I32_STORE8
-            or opcode == op.I64_STORE8):
+    if (
+        opcode == op.I32_LOAD8_S
+        or opcode == op.I32_LOAD8_U
+        or opcode == op.I64_LOAD8_S
+        or opcode == op.I64_LOAD8_U
+        or opcode == op.I32_STORE8
+        or opcode == op.I64_STORE8
+    ):
         return 0
-    if (opcode == op.I32_LOAD16_S or opcode == op.I32_LOAD16_U or opcode == op.I64_LOAD16_S
-            or opcode == op.I64_LOAD16_U or opcode == op.I32_STORE16
-            or opcode == op.I64_STORE16):
+    if (
+        opcode == op.I32_LOAD16_S
+        or opcode == op.I32_LOAD16_U
+        or opcode == op.I64_LOAD16_S
+        or opcode == op.I64_LOAD16_U
+        or opcode == op.I32_STORE16
+        or opcode == op.I64_STORE16
+    ):
         return 1
     assert opcode == op.I64_LOAD32_S or opcode == op.I64_LOAD32_U or opcode == op.I64_STORE32
     return 2
@@ -786,8 +802,7 @@ def _validate_memory_alignment(state: _SelectAnalysisState, opcode: int, offset:
 
 
 @_select_analysis_handler(*range(op.I32_LOAD, op.I64_LOAD32_U + 1))
-def _analyze_load(state: _SelectAnalysisState, opcode: int, offset: int,
-                  operand: int) -> None:
+def _analyze_load(state: _SelectAnalysisState, opcode: int, offset: int, operand: int) -> None:
     assert state.module.memory is not None, "load requires linear memory"
     _validate_memory_alignment(state, opcode, offset)
     state.pop(I32)
@@ -803,14 +818,16 @@ def _analyze_load(state: _SelectAnalysisState, opcode: int, offset: int,
 
 
 @_select_analysis_handler(*range(op.I32_STORE, op.I64_STORE32 + 1))
-def _analyze_store(state: _SelectAnalysisState, opcode: int, offset: int,
-                   operand: int) -> None:
+def _analyze_store(state: _SelectAnalysisState, opcode: int, offset: int, operand: int) -> None:
     assert state.module.memory is not None, "store requires linear memory"
     _validate_memory_alignment(state, opcode, offset)
     if opcode == op.I32_STORE or opcode == op.I32_STORE8 or opcode == op.I32_STORE16:
         state.pop(I32)
-    elif opcode == op.I64_STORE or opcode == op.I64_STORE8 or opcode == op.I64_STORE16 or (
-        opcode == op.I64_STORE32
+    elif (
+        opcode == op.I64_STORE
+        or opcode == op.I64_STORE8
+        or opcode == op.I64_STORE16
+        or (opcode == op.I64_STORE32)
     ):
         state.pop(I64)
     elif opcode == op.F32_STORE:
@@ -822,8 +839,9 @@ def _analyze_store(state: _SelectAnalysisState, opcode: int, offset: int,
 
 
 @_select_analysis_handler(op.MEMORY_SIZE, op.MEMORY_GROW)
-def _analyze_memory_size_grow(state: _SelectAnalysisState, opcode: int, offset: int,
-                              operand: int) -> None:
+def _analyze_memory_size_grow(
+    state: _SelectAnalysisState, opcode: int, offset: int, operand: int
+) -> None:
     assert state.module.memory is not None, "memory instruction requires linear memory"
     if opcode == op.MEMORY_GROW:
         state.pop(I32)
@@ -831,10 +849,10 @@ def _analyze_memory_size_grow(state: _SelectAnalysisState, opcode: int, offset: 
 
 
 @_select_analysis_handler(op.CALL, op.CALL_INDIRECT)
-def _analyze_call(state: _SelectAnalysisState, opcode: int, offset: int,
-                  operand: int) -> None:
-    function_type = (state.module.func_type(operand) if opcode == op.CALL
-                     else state.module.type_at(operand))
+def _analyze_call(state: _SelectAnalysisState, opcode: int, offset: int, operand: int) -> None:
+    function_type = (
+        state.module.func_type(operand) if opcode == op.CALL else state.module.type_at(operand)
+    )
     if opcode == op.CALL_INDIRECT:
         assert len(state.module.tables) > 0, "CALL_INDIRECT requires a table"
         _, table_index_end = decode_unsigned(state.code, offset + 1)
@@ -851,8 +869,9 @@ def _analyze_call(state: _SelectAnalysisState, opcode: int, offset: int,
 
 
 @_select_analysis_handler(*range(0x45, 0x67))
-def _analyze_comparison(state: _SelectAnalysisState, opcode: int, offset: int,
-                        operand: int) -> None:
+def _analyze_comparison(
+    state: _SelectAnalysisState, opcode: int, offset: int, operand: int
+) -> None:
     if opcode == op.I32_EQZ:
         state.pop(I32)
     elif opcode >= 0x46 and opcode <= 0x4F:
@@ -873,8 +892,9 @@ def _analyze_comparison(state: _SelectAnalysisState, opcode: int, offset: int,
 
 
 @_select_analysis_handler(*range(0x67, 0x79), op.I32_EXTEND8_S, op.I32_EXTEND16_S)
-def _analyze_i32_operation(state: _SelectAnalysisState, opcode: int, offset: int,
-                           operand: int) -> None:
+def _analyze_i32_operation(
+    state: _SelectAnalysisState, opcode: int, offset: int, operand: int
+) -> None:
     if opcode <= 0x69 or opcode == op.I32_EXTEND8_S or opcode == op.I32_EXTEND16_S:
         state.pop(I32)
     else:
@@ -883,10 +903,12 @@ def _analyze_i32_operation(state: _SelectAnalysisState, opcode: int, offset: int
     state.push(I32)
 
 
-@_select_analysis_handler(*range(0x79, 0x8B), op.I64_EXTEND8_S, op.I64_EXTEND16_S,
-                          op.I64_EXTEND32_S)
-def _analyze_i64_operation(state: _SelectAnalysisState, opcode: int, offset: int,
-                           operand: int) -> None:
+@_select_analysis_handler(
+    *range(0x79, 0x8B), op.I64_EXTEND8_S, op.I64_EXTEND16_S, op.I64_EXTEND32_S
+)
+def _analyze_i64_operation(
+    state: _SelectAnalysisState, opcode: int, offset: int, operand: int
+) -> None:
     if opcode <= 0x7B or opcode >= op.I64_EXTEND8_S:
         state.pop(I64)
     else:
@@ -896,38 +918,39 @@ def _analyze_i64_operation(state: _SelectAnalysisState, opcode: int, offset: int
 
 
 @_select_analysis_handler(*range(0x8B, 0x92))
-def _analyze_f32_unary(state: _SelectAnalysisState, opcode: int, offset: int,
-                       operand: int) -> None:
+def _analyze_f32_unary(state: _SelectAnalysisState, opcode: int, offset: int, operand: int) -> None:
     state.pop(F32)
     state.push(F32)
 
 
 @_select_analysis_handler(*range(0x92, 0x99))
-def _analyze_f32_binary(state: _SelectAnalysisState, opcode: int, offset: int,
-                        operand: int) -> None:
+def _analyze_f32_binary(
+    state: _SelectAnalysisState, opcode: int, offset: int, operand: int
+) -> None:
     state.pop(F32)
     state.pop(F32)
     state.push(F32)
 
 
 @_select_analysis_handler(*range(0x99, 0xA0))
-def _analyze_f64_unary(state: _SelectAnalysisState, opcode: int, offset: int,
-                       operand: int) -> None:
+def _analyze_f64_unary(state: _SelectAnalysisState, opcode: int, offset: int, operand: int) -> None:
     state.pop(F64)
     state.push(F64)
 
 
 @_select_analysis_handler(*range(0xA0, 0xA7))
-def _analyze_f64_binary(state: _SelectAnalysisState, opcode: int, offset: int,
-                        operand: int) -> None:
+def _analyze_f64_binary(
+    state: _SelectAnalysisState, opcode: int, offset: int, operand: int
+) -> None:
     state.pop(F64)
     state.pop(F64)
     state.push(F64)
 
 
 @_select_analysis_handler(*range(0xA7, 0xC0))
-def _analyze_conversion(state: _SelectAnalysisState, opcode: int, offset: int,
-                        operand: int) -> None:
+def _analyze_conversion(
+    state: _SelectAnalysisState, opcode: int, offset: int, operand: int
+) -> None:
     if opcode == op.I32_WRAP_I64:
         state.pop(I64)
         state.push(I32)

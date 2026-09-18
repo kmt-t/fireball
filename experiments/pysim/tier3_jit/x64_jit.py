@@ -140,14 +140,14 @@ def _store_tos_local(offset: int) -> bytes:
 def _store_register_to_sp(code: bytearray, location: int, slot: int) -> None:
     assert location == _STACK_LOCATION_TOS or location == _STACK_LOCATION_NOS
     assert slot >= 0
-    code += (_STORE_TOS_TO_SP if location == _STACK_LOCATION_TOS else _STORE_NOS_TO_SP)
+    code += _STORE_TOS_TO_SP if location == _STACK_LOCATION_TOS else _STORE_NOS_TO_SP
     code += (slot * 4).to_bytes(4, "little")
 
 
 def _load_register_from_sp(code: bytearray, location: int, slot: int) -> None:
     assert location == _STACK_LOCATION_TOS or location == _STACK_LOCATION_NOS
     assert slot >= 0
-    code += (_LOAD_TOS_FROM_SP if location == _STACK_LOCATION_TOS else _LOAD_NOS_FROM_SP)
+    code += _LOAD_TOS_FROM_SP if location == _STACK_LOCATION_TOS else _LOAD_NOS_FROM_SP
     code += (slot * 4).to_bytes(4, "little")
 
 
@@ -285,7 +285,9 @@ def _emit_register_shift(code: bytearray, operation: int) -> None:
         code += bytes((0x41, 0xD3, 0xE9))
 
 
-def _emit_register_pop(code: bytearray, stack_locations: StaticVector[int], spilled_words: int) -> int:
+def _emit_register_pop(
+    code: bytearray, stack_locations: StaticVector[int], spilled_words: int
+) -> int:
     """Pop TOS and promote the next compile-time location into TOS."""
     assert stack_locations
     assert stack_locations[-1] == _STACK_LOCATION_TOS
@@ -465,9 +467,7 @@ class TraceCompiler:
                     if local_widths[local_index] != 1:
                         return None
                     arg = local_index * WASM_LOCAL_SLOT_BYTES
-                spilled_words = _emit_register_push(
-                    code, op, arg, stack_locations, spilled_words
-                )
+                spilled_words = _emit_register_push(code, op, arg, stack_locations, spilled_words)
             elif op == I64_CONST or op == F32_CONST or op == F64_CONST:
                 assert arg is not None
                 if stack_locations:
@@ -618,10 +618,7 @@ class TraceCompiler:
             loops_to=loops_to,
             has_return_val=bool(stack_locations) or helper_index >= 0,
             result_words=(
-                2
-                if helper_index >= 0
-                and (helper_index <= 2 or 7 <= helper_index <= 10)
-                else 1
+                2 if helper_index >= 0 and (helper_index <= 2 or 7 <= helper_index <= 10) else 1
             ),
             code_blob=bytes(full_blob),
             entry_body_patch_offset=JIT_X64_TRACE_HEADER_BYTES + 2,

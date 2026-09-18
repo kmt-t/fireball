@@ -129,9 +129,7 @@ class JITTraceHeader:
 
     @classmethod
     def from_bytes(cls, data: bytes | bytearray, offset: int = 0) -> "JITTraceHeader":
-        values = struct.unpack_from(
-            "<IHBBIIIIIIQII", data, offset
-        )
+        values = struct.unpack_from("<IHBBIIIIIIQII", data, offset)
         return cls(*values[:6], *values[6:11])
 
 
@@ -751,9 +749,9 @@ class CopyPatchJITEngine:
             emit_stencil(self.stencils["epilogue_return"])
             chain_jump_pos = self.byte_write_pos
             if chain_target_variant_id is not None:
-                assert self.emit_variant_reconciliation_glue(
-                    variant_id, chain_target_variant_id
-                ), "chain target variant cannot be reconstructed from the shared stack"
+                assert self.emit_variant_reconciliation_glue(variant_id, chain_target_variant_id), (
+                    "chain target variant cannot be reconstructed from the shared stack"
+                )
             rel_to_chain = chain_jump_pos - (bne_pos + 4)
             patched_bne = asm.b_cond_w(Cond.NE, rel_to_chain)
             self.byte_cache[bne_pos : bne_pos + len(patched_bne)] = patched_bne

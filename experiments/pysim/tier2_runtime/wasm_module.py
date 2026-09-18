@@ -188,31 +188,17 @@ class DataSegment:
 
 @dataclass
 class Module:
-    types: StaticVector[FuncType] = field(
-        default_factory=lambda: StaticVector(capacity=0)
-    )
-    imports: StaticVector[Import] = field(
-        default_factory=lambda: StaticVector(capacity=0)
-    )
+    types: StaticVector[FuncType] = field(default_factory=lambda: StaticVector(capacity=0))
+    imports: StaticVector[Import] = field(default_factory=lambda: StaticVector(capacity=0))
     global_import_count: int = 0
-    functions: StaticVector[Function] = field(
-        default_factory=lambda: StaticVector(capacity=0)
-    )
-    exports: StaticVector[Export] = field(
-        default_factory=lambda: StaticVector(capacity=0)
-    )
+    functions: StaticVector[Function] = field(default_factory=lambda: StaticVector(capacity=0))
+    exports: StaticVector[Export] = field(default_factory=lambda: StaticVector(capacity=0))
     memory: Memory | None = None
     memory_import: Import | None = None
-    globals: StaticVector[Global] = field(
-        default_factory=lambda: StaticVector(capacity=0)
-    )
-    tables: StaticVector[Table] = field(
-        default_factory=lambda: StaticVector(capacity=0)
-    )
+    globals: StaticVector[Global] = field(default_factory=lambda: StaticVector(capacity=0))
+    tables: StaticVector[Table] = field(default_factory=lambda: StaticVector(capacity=0))
     table_import_count: int = 0
-    elements: StaticVector[Element] = field(
-        default_factory=lambda: StaticVector(capacity=0)
-    )
+    elements: StaticVector[Element] = field(default_factory=lambda: StaticVector(capacity=0))
     data_segments: StaticVector[DataSegment] = field(
         default_factory=lambda: StaticVector(capacity=0)
     )
@@ -222,9 +208,7 @@ class Module:
     data_section_offset: int = 0
     data_section_size: int = 0
     block_storage: ReadOnlyRadixBinaryTreeStorage[BasicBlock] | None = None
-    blocks: StaticVector[BasicBlock] = field(
-        default_factory=lambda: StaticVector(capacity=0)
-    )
+    blocks: StaticVector[BasicBlock] = field(default_factory=lambda: StaticVector(capacity=0))
     opcode_benefit_table: OpcodeBenefitTable | None = None
     source: memoryview | None = None
 
@@ -428,6 +412,7 @@ class Module:
             slots = initial
 
         if self.element_section_size != 0:
+
             def write_element(segment_table_index: int, slot: int, function_index: int) -> None:
                 if segment_table_index == table_index:
                     assert 0 <= slot < len(slots), "element segment exceeds table bounds"
@@ -489,8 +474,7 @@ class Module:
         for exp in self.exports:
             if (
                 exp.kind == 0
-                and self.source[exp.name_offset : exp.name_offset + exp.name_size]
-                == name_bytes
+                and self.source[exp.name_offset : exp.name_offset + exp.name_size] == name_bytes
             ):
                 return exp.index
         assert False, f"no exported function named {name!r}"
@@ -498,15 +482,17 @@ class Module:
     def import_module_name(self, import_index: int) -> str:
         assert self.source is not None
         imp = self.imports[import_index]
-        return self.source[imp.module_offset : imp.module_offset + imp.module_size].tobytes().decode(
-            "utf-8"
+        return (
+            self.source[imp.module_offset : imp.module_offset + imp.module_size]
+            .tobytes()
+            .decode("utf-8")
         )
 
     def import_field_name(self, import_index: int) -> str:
         assert self.source is not None
         imp = self.imports[import_index]
-        return self.source[imp.name_offset : imp.name_offset + imp.name_size].tobytes().decode(
-            "utf-8"
+        return (
+            self.source[imp.name_offset : imp.name_offset + imp.name_size].tobytes().decode("utf-8")
         )
 
     def locals_layout(self, func_index: int) -> StaticVector[int]:
@@ -548,9 +534,12 @@ class Module:
                             frame_depth=frame_depth,
                             byte_span=byte_span,
                             jit_score=score_opcodes(
-                                (opcode for opcode, _ in iter_block_ops(
-                                    code, head_pc & 0xFFFF, byte_span
-                                )),
+                                (
+                                    opcode
+                                    for opcode, _ in iter_block_ops(
+                                        code, head_pc & 0xFFFF, byte_span
+                                    )
+                                ),
                                 self.opcode_benefit_table,
                             ),
                         )
@@ -564,9 +553,7 @@ class Module:
 
         sorted_blocks = all_blocks
         inv_keys: StaticVector[int] = StaticVector(capacity=len(sorted_blocks))
-        entries: StaticVector[tuple[int, BasicBlock]] = StaticVector(
-            capacity=len(sorted_blocks)
-        )
+        entries: StaticVector[tuple[int, BasicBlock]] = StaticVector(capacity=len(sorted_blocks))
         for block in sorted_blocks:
             inverse_key = bswap32(block.head_pc)
             inv_keys.append(inverse_key)
@@ -652,13 +639,13 @@ def _read_init_offset(
             )
             offset = 0
         else:
-            assert global_index < len(global_values), (
-                f"{expression_name} global index out of range"
-            )
+            assert global_index < len(global_values), f"{expression_name} global index out of range"
             offset = global_values[global_index] & 0xFFFF_FFFF
     else:
         assert False, f"{expression_name} offset must use i32.const or global.get"
-    assert off < end and data[off] == op.END, f"{expression_name} offset expression must end with 0x0B"
+    assert off < end and data[off] == op.END, (
+        f"{expression_name} offset expression must end with 0x0B"
+    )
     return offset, off + 1
 
 

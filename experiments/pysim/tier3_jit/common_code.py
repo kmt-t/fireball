@@ -6,7 +6,6 @@ import ctypes
 import sys
 from collections.abc import Callable
 
-import x64_stencils as st
 from config import (
     JIT_CACHE_ABSOLUTE_ADDRESS_POOL_BYTES,
     JIT_CACHE_COMMON_CODE_BYTES,
@@ -77,6 +76,32 @@ def gen_pic_epilogue() -> bytes:
     return bytes(code)
 
 
+def gen_helper_entry() -> bytes:
+    """Generate one fixed entry for a helper contract."""
+
+    code = bytearray()
+    if IS_WINDOWS:
+        code += bytes((0x4C, 0x89, 0xE9))  # mov rcx, r13
+        code += bytes((0x4C, 0x89, 0xE2))  # mov rdx, r12
+        code += bytes((0x4D, 0x89, 0xD0))  # mov r8, r10
+    else:
+        code += bytes((0x4C, 0x89, 0xEF))  # mov rdi, r13
+        code += bytes((0x4C, 0x89, 0xE6))  # mov rsi, r12
+        code += bytes((0x4D, 0x89, 0xD2))  # mov rdx, r10
+        code += bytes((0x44, 0x89, 0xC9))  # mov ecx, r9d
+    code += bytes((0x48, 0x8B, 0x80, 0x28, 0x00, 0x00, 0x00))
+    if IS_WINDOWS:
+        code += bytes((0x5F,))  # pop rdi
+    else:
+        code += bytes((0x5D,))  # pop rbp
+    code += bytes((0x41, 0x5F))  # pop r15
+    code += bytes((0x41, 0x5E))  # pop r14
+    code += bytes((0x41, 0x5D))  # pop r13
+    code += bytes((0x41, 0x5C))  # pop r12
+    code += bytes((0x5B, 0xFF, 0xE0))  # pop rbx; jmp rax
+    return bytes(code)
+
+
 def helper_entry_offset(helper_index: int) -> int:
     """Return the fixed common-code offset for one helper contract."""
 
@@ -135,8 +160,8 @@ class JITCodeCacheRegion:
         "common_code_bytes",
         "epilogue_offset",
         "epilogue_size",
-         "helper_offset",
-         "helper_size",
+        "helper_offset",
+        "helper_size",
         "prologue_offset",
         "prologue_size",
         "region_bytes",
@@ -150,9 +175,9 @@ class JITCodeCacheRegion:
 
         prologue = gen_pic_prologue()
         epilogue = gen_pic_epilogue()
-        helper = st.HEADER_HELPER_TAIL_JUMP.code
+        helper = gen_helper_entry()
         i32_helper_entry = gen_i32_helper_entry()
-        assert len(helper) == JIT_TRACE_HELPER_ENTRY_BYTES
+        assert 0 < len(helper) <= JIT_TRACE_HELPER_ENTRY_BYTES
         assert len(i32_helper_entry) == JIT_TRACE_HELPER_ENTRY_BYTES
         self.prologue_offset = 0
         self.prologue_size = len(prologue)
@@ -179,6 +204,7 @@ class JITCodeCacheRegion:
         common = bytearray(self.common_code_bytes)
         common[self.prologue_offset : self.prologue_offset + self.prologue_size] = prologue
         common[self.epilogue_offset : self.epilogue_offset + self.epilogue_size] = epilogue
+        common[COMMON_HELPER_OFFSET : COMMON_HELPER_OFFSET + len(helper)] = helper
         for helper_index in range(JIT_TRACE_WIDE_HELPER_COUNT):
             helper_offset = helper_entry_offset(helper_index)
             common[helper_offset : helper_offset + len(helper)] = helper

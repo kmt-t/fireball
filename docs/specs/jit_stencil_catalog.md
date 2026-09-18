@@ -27,15 +27,15 @@
 
 ## 3. ステンシル・カタログ (Thumb-2 Stencil Catalog)
 
-### 3.1 プロローグ & エピローグ・ステンシル (Prologue, Epilogue & Spill Flush)
+### 3.1 プロローグ・ステンシルと共通終了コード (Prologue Stencil & Common Epilogue)
 <!-- traceability: {ContextPointerRegister} {EnvironmentPointer} {JIT_RuntimeAPI_Fallback} {ADR_TosCacheAsymmetry} {JIT_LazyChaining} -->
 
 トレース境界には、性質の異なる 2 種類のエントリと 2 種類のエグジットが存在し、両者を混同してはならない。
 
 - **新規エントリ（共通プロローグ / AAPCS 準拠開始プロローグ `STENCIL_PROLOGUE_FULL`）**: Interpreter／RuntimeEngineから`exec_trace`へ移行するときは必ず通過する。継続渡し4論理引数（`R0=ctx, R1=sp, R2=local_base, R3=tos`）を受け、callee-savedレジスタを退避し、開始時SPをAAPCSの8-byte境界に保つ。入口variantの割り当てを整え、`R3: tos`をJITスタックキャッシュTOSとして使う。Interpreterから内部chain entryへ直接入ってはならない。
 - **トレースチェインエピローグ**: 各基本ブロック末尾で必須とする。dirtyなスタックキャッシュ（`R3: TOS`、必要なら`R4: NOS`、`R5: NNOS`）を共有オペランド領域へflushし、`ctx->ip`と`ctx->sp_offset`を同期する。チェイン継続時はAAPCSフレームを維持し、後続variantの互換性を判定する。互換ならchain entryへ、非互換なら共有オペランド領域から再構成するsetup codeを経て後続traceへ進む。これは関数復帰するAAPCS準拠終了エピローグとは別物である。
-- **AAPCS 準拠終了エピローグ**: RuntimeEngine／Interpreter境界へ戻るtrace終端で使用する。共有状態を同期し、callee-savedレジスタを復元してreturnまたは規定のtail transferを行う。JITからInterpreterへの移行、trap、WASM `return`直前の境界で使い、WASM戻り値そのものは共有オペランド領域に置く（`{GOTCHA-JITC-07}`）。
-- **チェイン出口**: 後続traceが常駐・解決済みでもトレースチェインエピローグを省略しない。共有状態のflush/sync後にvariantを判定し、必要なsetupを挟む。AAPCS準拠終了エピローグによるcallee-saved復元はInterpreter／RuntimeEngineへ戻る場合だけ行う。
+- **AAPCS 準拠終了コード**: RuntimeEngine／Interpreter境界へ戻るtrace終端で使用する。共有状態を同期し、callee-savedレジスタを復元してreturnまたは規定のtail transferを行う。これはステンシル表から除外し、固定共通コード領域で生成する。JITからInterpreterへの移行、trap、WASM `return`直前の境界で使い、WASM戻り値そのものは共有オペランド領域に置く（`{GOTCHA-JITC-07}`）。
+- **チェイン出口**: 後続traceが常駐・解決済みでもトレースチェインエピローグを省略しない。共有状態のflush/sync後にvariantを判定し、必要なsetupを挟む。AAPCS準拠終了コードによるcallee-saved復元はInterpreter／RuntimeEngineへ戻る場合だけ行う。
 
 #### AAPCS 準拠開始プロローグ — `STENCIL_PROLOGUE_FULL` (Callee-saved 全域退避 + LR、新規エントリ専用)
 - **入力状態**: 継続渡し4論理引数規約 (`R0=ctx, R1=sp, R2=local_base, R3=tos`)
@@ -47,7 +47,7 @@
 - **バイナリ列 (4 Bytes)**: `2D E9 70 4F`
 - チェイン・エントリはこのステンシルの直後（トレース先頭 + 4 Bytes）を指す。Interpreter／RuntimeEngineからの入口は必ずAAPCS準拠開始プロローグの先頭である。内部chainは共有状態を同期してからこのentryへ進み、既存のAAPCSフレームを保持する。
 
-#### `STENCIL_EPILOGUE_FLUSH_D1` (最終境界: TOS 書き戻し + alignment解除 + 復帰)
+#### 共通終了コード D1 (最終境界: TOS 書き戻し + alignment解除 + 復帰)
 - **Thumb-2 命令列**:
   ```asm
   str   r3, [r1, #0x00]    ; [Offset 0x00] RELOC_IMM8_OFFSET (TOS 書き戻し)
@@ -55,7 +55,7 @@
   ```
 - **バイナリ列 (6 Bytes)**: `0B 60 BD E8 70 8F`
 
-#### `STENCIL_EPILOGUE_FLUSH_D2` (TOS & NOS 書き戻し + Callee-saved 復元 & リターン)
+#### 共通終了コード D2 (TOS & NOS 書き戻し + Callee-saved 復元 & リターン)
 - **Thumb-2 命令列**:
   ```asm
   str   r3, [r1, #0x00]    ; [Offset 0x00] RELOC_IMM8_OFFSET (TOS 書き戻し)
@@ -64,7 +64,7 @@
   ```
 - **バイナリ列 (8 Bytes)**: `0B 60 4C 60 BD E8 70 8F`
 
-#### `STENCIL_EPILOGUE_FLUSH_D3` (TOS & NOS & NNOS 書き戻し + Callee-saved 復元 & リターン)
+#### 共通終了コード D3 (TOS & NOS & NNOS 書き戻し + Callee-saved 復元 & リターン)
 - **Thumb-2 命令列**:
   ```asm
   str   r3, [r1, #0x00]    ; TOS 書き戻し
@@ -87,7 +87,7 @@
   ; variant互換性を判定し、必要ならsetup codeを実行
   bx    r12                                  ; AAPCSフレームを維持してchain entryへ分岐
 <interp_fallback>:
-  ; STENCIL_EPILOGUE_FLUSH_Dn: cache flush + ctx sync + padding解除 + callee-saved復元
+  ; 共通終了コード Dn: cache flush + ctx sync + padding解除 + callee-saved復元
   ```
 - **特徴**:
   - **初期状態（未チェイン）**: ヘッダの `chain_target_addr` は `0`。`cbz`でAAPCS準拠終了エピローグへ分岐し、共有状態を同期してInterpreter／RuntimeEngineへ戻る。
@@ -133,7 +133,7 @@
   ```
 - **バイナリ列 (12 Bytes)**: `2D E9 0F 50 00 F0 00 F8 BD E8 0F 50`
 
-この12バイトの呼出しコードは共通コード領域へ一度だけ配置する。各トレースは委譲先アドレスと共通入口の選択値だけをヘッダへ保持し、呼出しコードを複製しない。
+この12バイトの呼出しコードはヘルパー契約ごとに共通コード領域へ配置する。各トレースは委譲先アドレスと対応入口の選択値だけをヘッダへ保持し、呼出しコードを複製しない。
 
 ---
 
@@ -362,4 +362,4 @@
 
 `i64` の除算・剰余・ビットシフト、および `f32`/`f64` 浮動小数点演算は、32-bit MCU（ARMv8-M / Cortex-M33）において `libgcc`（`__divdi3`, `__adddf3`, `__muldf3` 等）を呼び出すコードを生成する必要がある。
 
-JIT コンパイラは、これら複雑な命令に対してインラインステンシルを展開せず、共通コード領域に一度だけ配置したランタイムヘルパー関数呼出しコードへ委譲する。各トレースには呼出しコードを複製しない。これにより、JIT ステンシルカタログを極小サイズ（ROM 予算 8KB）に保ち、FPU 有無のビルド差異をランタイムヘルパー関数内部に局所化する。
+JIT コンパイラは、これら複雑な命令に対してインラインステンシルを展開せず、ヘルパー契約ごとに共通コード領域へ配置したランタイムヘルパー関数呼出し入口へ委譲する。各トレースには呼出しコードを複製しない。これにより、JIT ステンシルカタログを極小サイズ（ROM 予算 8KB）に保ち、FPU 有無のビルド差異をランタイムヘルパー関数内部に局所化する。

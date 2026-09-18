@@ -53,10 +53,9 @@ class Relocation(IntEnum):
     TRAP = 4
     ADDR = 5
     IMM64 = 6
-    HELPER_DISP = 7
 
 
-RELOCATION_COUNT = 8
+RELOCATION_COUNT = 7
 NO_RELOCATION = -1
 _EMPTY_RELOC_ENTRIES: tuple[tuple[Relocation, int], ...] = ()
 _EMPTY_RELOC_OFFSETS: tuple[int, ...] = (NO_RELOCATION,) * RELOCATION_COUNT
@@ -91,14 +90,12 @@ _SENTINEL_TRAP = bytes((0xA2, 0xA2, 0xA2, 0xA2))
 _SENTINEL_DISP = bytes((0xA3, 0xA3, 0xA3, 0xA3))
 _SENTINEL_ADDR64 = bytes((0xA4,) * 8)
 _SENTINEL_IMM64 = bytes((0xA6,) * 8)
-_SENTINEL_HELPER_DISP = bytes((0xA5,) * 4)
 _RELOC_SENTINELS: tuple[tuple[Relocation, bytes], ...] = (
     (Relocation.MAX_ADDR, _SENTINEL_MAX_ADDR),
     (Relocation.TRAP, _SENTINEL_TRAP),
     (Relocation.DISP, _SENTINEL_DISP),
     (Relocation.ADDR, _SENTINEL_ADDR64),
     (Relocation.IMM64, _SENTINEL_IMM64),
-    (Relocation.HELPER_DISP, _SENTINEL_HELPER_DISP),
 )
 
 
@@ -551,56 +548,6 @@ def _gen_global_set() -> Generator[int, None, None]:
     yield from (0x89, 0x18)
 
 
-def _gen_context_helper_tail_jump() -> Generator[int, None, None]:
-    """Legacy context-selected helper stencil kept for stencil-level tests.
-
-    Runtime traces use ``HEADER_HELPER_TAIL_JUMP``; this stencil remains in the
-    catalog only for the independent encoding tests.
-    """
-
-    if IS_WINDOWS:
-        # Windows x64 ABI: rcx=ctx, rdx=sp, r8=local_base, r9=tos.
-        yield from (0x4C, 0x89, 0xE9)  # mov rcx, r13
-        yield from (0x4C, 0x89, 0xE2)  # mov rdx, r12
-        yield from (0x4D, 0x89, 0xD0)  # mov r8, r10
-    else:
-        # System V AMD64 ABI: rdi=ctx, rsi=sp, rdx=local_base, rcx=tos.
-        yield from (0x4C, 0x89, 0xEF)  # mov rdi, r13
-        yield from (0x4C, 0x89, 0xE6)  # mov rsi, r12
-        yield from (0x4D, 0x89, 0xD2)  # mov rdx, r10
-        yield from (0x44, 0x89, 0xC9)  # mov ecx, r9d
-
-    # mov rax, [r13 + helper_slot_offset]
-    yield from (0x49, 0x8B, 0x85)
-    yield from _SENTINEL_HELPER_DISP
-    yield from _gen_restore_unwind_only()
-    yield from (0xFF, 0xE0)  # jmp rax
-
-
-def _gen_header_helper_tail_jump() -> Generator[int, None, None]:
-    """Tail-jump to the helper pointer stored in the trace header.
-
-    RAX contains the trace-header address on entry.  The common stub loads
-    the per-trace CPS function pointer before restoring the JIT frame.
-    """
-
-    if IS_WINDOWS:
-        yield from (0x4C, 0x89, 0xE9)
-        yield from (0x4C, 0x89, 0xE2)
-        yield from (0x4D, 0x89, 0xD0)
-    else:
-        yield from (0x4C, 0x89, 0xEF)
-        yield from (0x4C, 0x89, 0xE6)
-        yield from (0x4D, 0x89, 0xD2)
-        yield from (0x44, 0x89, 0xC9)
-
-    # mov rax, [rax + x64 trace_header.helper_target_addr]
-    yield from (0x48, 0x8B, 0x80)
-    yield from (0x28, 0x00, 0x00, 0x00)
-    yield from _gen_restore_unwind_only()
-    yield from (0xFF, 0xE0)
-
-
 # ---------------------------------------------------------------------------
 # Stencil table -- every generator above is drained exactly once here.
 # ---------------------------------------------------------------------------
@@ -661,7 +608,3 @@ BR_IF = _materialize(_gen_br_if(), ((Relocation.REL32, 5),))
 CALL = _materialize(_gen_call(), ((Relocation.REL32, 1),))
 UNREACHABLE = _materialize(_gen_unreachable())
 TRAP = _materialize(_gen_trap())
-CONTEXT_HELPER_TAIL_JUMP = _materialize_auto(
-    _gen_context_helper_tail_jump()
-)
-HEADER_HELPER_TAIL_JUMP = _materialize_auto(_gen_header_helper_tail_jump())

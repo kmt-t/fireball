@@ -41,10 +41,10 @@ string, since hand-deriving the same encoding twice reproduces the same
 mistake twice. This is what caught four real REX-byte / relocation-offset
 bugs during development; run this file whenever a stencil changes.
 Each test builds PROLOGUE + <stencil(s) under test, with relocations
-patched> + EPILOGUE_RETURN_I32, executes it via ctypes, and asserts on the
+patched> + a test-only return path, executes it via ctypes, and asserts on the
 real return value -- a testing-only convenience for checking one stencil's
 math in isolation. x64_jit.py's actual compile_trace() never uses
-EPILOGUE_RETURN_I32 for a real trace: a trace's residual value is VM
+this test-only return path for a real trace: a trace's residual value is VM
 operand-stack state, not a C return value, so production traces write it to
 `sp` (`SPILL_RESULT_TO_SP`) and always return void
 ({ADR_TosCacheAsymmetry}, GOTCHA-JITC-07).

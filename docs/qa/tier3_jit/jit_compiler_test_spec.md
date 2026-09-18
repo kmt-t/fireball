@@ -21,7 +21,7 @@ Copy-and-Patchエンジンによるネイティブコード生成、4論理引�
 | TEST-JITC-05 | 命令キャッシュ同期バリア | パッチ完了後 | コンパイル完了を確認 | `__DSB()`/`__ISB()`相当のバリアが発行される | {JIT_CopyAndPatch} |
 | TEST-JITC-06 | インタープリタ⇔JIT境界でのレジスタ書き戻しコスト | JITトレースから脱出 | 脱出処理を確認 | 値キャッシュの共有オペランド領域への書戻しが対象ABIで定める有界コストに収まる |  `{ADR_TosCacheAsymmetry}` |
 | TEST-JITC-07 | x64整数除算・剰余のヘルパー委譲 | i32除算・剰余を含むトレース | x64向けコンパイルと実行を確認 | 2つの32ビット整数を対象ABIの引数レジスタからヘルパーへ渡し、ヘルパーが結果領域ポインタへ1ワードを書き込んで対象ABIの終了処理へ戻る | `{JIT_RuntimeAPI_Fallback}` |
-| TEST-JITC-08 | ヘルパー呼出しコードの共通配置 | ARMv8-Mまたはx64のヘルパー委譲 | 共通コード領域とトレース本体のバイト数を確認 | ARMv8-MのAAPCS呼出しコードは12バイト、x64整数ヘルパー直接入口は32バイトであり、いずれも共通コード領域へ一度だけ配置する。各トレースには共通入口へ遷移する経路だけを置く | [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) `{JIT_MultiBuffer_Cache}` |
+| TEST-JITC-08 | ヘルパー呼出しコードの共通配置 | ARMv8-Mまたはx64のヘルパー委譲 | 共通コード領域とトレース本体のバイト数を確認 | ARMv8-MのAAPCS呼出しコードは契約ごとに共通コード領域へ配置し、x64整数ヘルパー直接入口は契約ごとに32バイトの固定スロットへ配置する。各トレースには対応入口へ遷移する経路だけを置く | [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) `{JIT_MultiBuffer_Cache}` |
 
 ### レジスタ規約とTOS/NOS非対称性
 

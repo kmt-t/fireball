@@ -303,12 +303,12 @@ def test_x64_division_and_remainder_use_helper_boundary() -> None:
 
         return _I32_HELPER_TYPE(helper)
 
-    for operation, left, right, expected in (
+    for helper_slot, (operation, left, right, expected) in enumerate((
         (I32_DIV_S, 0xFFFF_FFF9, 2, 0xFFFF_FFFD),
         (I32_DIV_U, 0xFFFF_FFF0, 2, 0x7FFF_FFF8),
         (I32_REM_S, 0xFFFF_FFF9, 2, 0xFFFF_FFFF),
         (I32_REM_U, 0xFFFF_FFF0, 3, 0),
-    ):
+    )):
         helper = make_helper(operation)
         trace = compiler.compile_trace(
             0,
@@ -320,7 +320,7 @@ def test_x64_division_and_remainder_use_helper_boundary() -> None:
             helper_target_addr=ctypes.cast(helper, ctypes.c_void_p).value or 0,
         )
         assert trace is not None
-        assert trace.header.common_helper_offset == 352
+        assert trace.header.common_helper_offset == 352 + helper_slot * 32
         ctx = WASMContext()
         trace.invoke(ctx)
         assert ctx.stack[0] == expected, (operation, ctx.stack[0], expected)

@@ -427,7 +427,6 @@ class TraceCompiler:
         spilled_words = 0
         helper_words = 0
         helper_index = -1
-        typed_i32_helper = False
         saw_op = False
         for op, arg in instructions:
             saw_op = True
@@ -443,7 +442,6 @@ class TraceCompiler:
                     assert stack_locations[0] == _STACK_LOCATION_NOS
                     assert stack_locations[1] == _STACK_LOCATION_TOS
                     stack_locations.clear()
-                    typed_i32_helper = True
                 else:
                     assert not stack_locations
                     assert helper_words == 4 or helper_words == 2

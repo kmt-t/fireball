@@ -2,7 +2,7 @@
 
 <!-- traceability: {ContextPointerRegister} {PositionIndependentCode} {JIT_RuntimeAPI_Fallback} -->
 
-この文書は、Tier 2ランタイムがTier 3 JITへ提供する、複雑な処理をCヘルパーへ委譲するためのABI契約を定義する。JITトレースはトレースヘッダに共通領域オフセットとトレース固有の委譲先関数アドレスを保持し、共通コード領域に一度だけ配置した対象ABIの呼出しコードを選択する。実行コンテキストはこのルーティング情報を保持しない。
+この文書は、Tier 2ランタイムがTier 3 JITへ提供する、複雑な処理をCヘルパーへ委譲するためのABI契約を定義する。JITトレースはトレースヘッダに共通領域オフセットとトレース固有の委譲先関数アドレスを保持し、共通コード領域にヘルパー契約ごとに配置した呼出し入口を選択する。実行コンテキストはこのルーティング情報を保持しない。
 
 `execution_context` と関連するビュー型のC++ ABIは、固定フィールド順・サイズ・オフセットを持つ標準レイアウト構造体として定義する。インタープリタ単独実行とインタープリタからJITへの遷移で `ctx` のABI型を変えない。構造体は所有権を持たず、コード・関数表・結果配列は `address + length` の非所有ビューとして渡すため、呼び出し側が呼び出し完了まで対象領域の寿命を保証する。 `{ExecutionContext_Layout}` `{META_ZeroCostAbstraction}`
 
@@ -14,7 +14,7 @@
 | :--- | :--- | :--- | :--- |
 | `+0x3C` | 4バイト | reserved | 64bitポインタのアライメント |
 
-トレースヘッダの `helper_target_addr` は、当該トレースが委譲する関数のアドレスである。共通ヘルパー入口はヘッダアドレスを受け取り、このフィールドをロードして対象ABIの関数呼出し規則で呼び出す。共通領域のオフセットは `common_prologue_offset`、`common_epilogue_offset`、`common_helper_offset`、`absolute_pool_offset` で解決する。共通領域に置く呼出しコードはトレースごとに複製しない。 `{PositionIndependentCode}`
+トレースヘッダの `helper_target_addr` は、当該トレースが委譲する関数のアドレスである。ヘルパー契約別入口はヘッダアドレスを受け取り、このフィールドをロードして対象ABIの関数呼出し規則で呼び出す。共通領域のオフセットは `common_prologue_offset`、`common_epilogue_offset`、`common_helper_offset`、`absolute_pool_offset` で解決する。共通領域に置く呼出しコードはトレースごとに複製しない。 `{PositionIndependentCode}`
 
 `fireball_execution_context_native` は、32bitのゲスト状態フィールド16個からなる64バイトの標準レイアウトである。`fireball_const_buffer_view_native`、`fireball_wasm_function_view_native`、`fireball_wasm_module_view_native` は、WASMコードと関数メタデータを渡す非所有の標準レイアウト構造体である。文字列、`std::vector`、仮想関数、例外はこの境界に含めない。 `{ExecutionContext_Layout}` `{META_NoStdVector}`
 
@@ -52,7 +52,7 @@ x64では、整数除算・剰余の4命令は、2つの入力を整数引数レ
 | `+0x10` | `chain_target_addr` | 8バイト | 直接チェイン先のネイティブアドレス |
 | `+0x18` | `common_prologue_offset` | 4バイト | 共通開始処理の領域内オフセット |
 | `+0x1C` | `common_epilogue_offset` | 4バイト | 共通終了処理の領域内オフセット |
-| `+0x20` | `common_helper_offset` | 4バイト | 共通ヘルパー処理の領域内オフセット |
+| `+0x20` | `common_helper_offset` | 4バイト | ヘルパー契約別入口の領域内オフセット |
 | `+0x24` | `helper_index` | 4バイト | 委譲処理の識別番号 |
 | `+0x28` | `helper_target_addr` | 8バイト | トレース固有ヘルパーのネイティブアドレス |
 | `+0x30` | `absolute_pool_offset` | 4バイト | 共通アドレス領域のオフセット |
@@ -60,4 +60,4 @@ x64では、整数除算・剰余の4命令は、2つの入力を整数引数レ
 
 ヘッダ全体は56バイトであり、可変長のコード列は `+0x38` から始まる。`chain_target_addr` の更新はコード領域の書込みを伴うため、対象環境のW^X更新手順と命令同期を経てから実行可能状態へ戻す。解決済みの直接チェイン先は入口保存処理を重ねて実行しない位置を指し、未解決または無効化された場合は共通終了処理へ分岐する。
 
-`common_helper_offset` は通常のヘルパー直接入口 `+0x30` または、型別のAAPCS直接入口を指す。ARMv8-Mの外部関数呼出しコードは12バイトであり、共通コード領域へ一度だけ配置する。x64の整数除算・剰余では32バイトの直接入口を共通コード領域の `+0x160` に配置し、トレース本体には関数引数の組み替えや呼出し用のスタック領域確保を置かない。
+`common_helper_offset` はヘルパー契約に対応する個別入口を指す。コンテキスト型入口は `+0x30` に置き、x64のi32整数除算・剰余は `+0x160` から32バイト単位で4入口、wideヘルパーは `+0x200` から32バイト単位で11入口を置く。ARMv8-MのAAPCS外部関数呼出し入口も契約ごとに共通コード領域へ配置する。トレース本体には関数引数の組み替えや呼出し用のスタック領域確保を置かない。

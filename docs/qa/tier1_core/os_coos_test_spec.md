@@ -34,7 +34,7 @@
 | TEST-COOS-05 | 1チャネル1待機者の強制（同方向多重待機は不可能） | (1) Aが送信待機中(SEND) または<br>(2) Bが受信待機中(RECV) | (1) 別タスクCが同チャネルへ`channel_send`<br>(2) 別タスクDが同チャネルへ`channel_recv` | 到達不能ケースとして`assert`で即座に検出される（設計違反フェイルファスト） | 直交表 ケース5/6 |
 | TEST-COOS-06 | CSP Handoffは待機相手へ直接切り替える | ランデブー成立、ハンドオフ回数が上限未満 | ランデブー完了時の結果を観測 | 結果が直接切替を示し、切替先が待機相手である | `{CSP_Handoff}` |
 | TEST-COOS-07 | 連続ハンドオフ上限後のスケジューラ復帰 | `max_handoffs=2` とし、2タスク間で2回の直接ハンドオフを完了 | 3回目のランデブーを成立させる | 操作結果が `YIELD` となり、連続回数が0へ戻る。これは制御譲渡とカウンタの検証であり、READYキュー順序、全タスクの公平性、実時間応答上限は検証しない | `{GOTCHA-SCHED-01}`, `{Challenge_CspHandoffStarvation}` |
-| TEST-COOS-08 | 割り込み通知を協調境界で処理して待機タスクを起床する | タスクが`vector_id`待ち | 固定5ワードの`interrupt-event`を`notify_interrupt`へ渡し、スケジューラにイベントを処理させる | 通知イベントが協調境界で処理され、対応する待機タスクがREADYとなって再開する | 直交表 ケース8, `{GLOBAL_InterruptWakeup}` |
+| TEST-COOS-08 | 割り込み通知を協調境界で処理して待機タスクを起床する | vSoCランタイムタスクが`vector_id`待ち | 固定5ワードの`interrupt-event`を`notify_interrupt`へ渡し、スケジューラにイベントを処理させる | 通知イベントが協調境界で処理され、5ワードを対応する待機タスクへ引き渡したうえでREADYとなって再開する | 直交表 ケース8, `{GLOBAL_InterruptWakeup}` |
 | TEST-COOS-09 | 割り込みイベントFIFO満杯時のドロップ | FIFO満杯 | 原因レコードを追加で`notify_interrupt` | イベントがドロップされ、ドロップカウンタがインクリメントされる（os_scheduler.md `notify-interrupt`の挙動と共通） | os_scheduler.md `notify-interrupt` |
 | TEST-COOS-10 | READYタスクがない場合のアイドル検出 | 少なくとも1タスクがブロック中で、READYキューと割り込みイベントFIFOが空 | スケジューラを実行する | アイドルフックが呼び出される | `os_coos.md` §4.1, pysim `test_coos_10_idle_detection_when_all_blocked` |
 | TEST-COOS-11 | ランデブー完了時の単一所有 | 送信側Aが値を保持して待機中 | 受信側Bを到着させ、ランデブー直後の両タスクを確認 | Aの値がクリアされ、Bが値を保持する | [`coos_channel_model.py`](docs/components/tier1_core/formal/coos_channel_model.py), pysim `test_coos_11_no_double_ownership_sanity` |

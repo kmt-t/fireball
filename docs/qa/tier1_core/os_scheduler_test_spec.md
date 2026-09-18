@@ -17,7 +17,7 @@
 | TEST-SCHED-04 | block/unblockサイクル | タスクがBLOCKされる原因(reason)付きでblock | block直後にunblock_taskを呼ぶ | BLOCKED→READYに遷移し、READYキュー末尾に追加される | `os_scheduler.md` 状態遷移図 |
 | TEST-SCHED-05 | 終了(StopIteration)でTERMINATED | コルーチンが正常終了 | run_cycle/run_until_idle を実行 | タスク状態がTERMINATEDになり、以後READYキューにもBLOCKEDリストにも現れない | `os_scheduler.md` terminate |
 | TEST-SCHED-06 | 全タスクBLOCKEDでアイドル検出 | 全タスクをblock | 1サイクル実行 | `schedule_next` が `None` を返し、`idle_handler`（設定済みの場合）が呼び出される | `{GLOBAL_IdleDetection}` |
-| TEST-SCHED-07 | 割り込み通知によるREADY復帰 | タスクが`vector_id`待ちでBLOCKED | 固定5ワードの`interrupt-event`を`notify_interrupt`へ渡す | 呼び出し直後はFIFOに投入されるのみで対象タスクの状態は変化せず、イベントループがイベントを処理した時点で対象タスクのみREADYキュー末尾に追加される（他のBLOCKEDタスクは無関係） | `{GLOBAL_InterruptWakeup}` |
+| TEST-SCHED-07 | 割り込み通知によるREADY復帰 | vSoCランタイムタスクが`vector_id`待ちでBLOCKED | 固定5ワードの`interrupt-event`を`notify_interrupt`へ渡す | 呼び出し直後はFIFOに投入されるのみで対象タスクの状態は変化せず、イベントループがイベントを処理した時点で5ワードを対象タスクへ引き渡し、対象タスクのみREADYキュー末尾に追加する（他のBLOCKEDタスクは無関係） | `{GLOBAL_InterruptWakeup}` |
 | TEST-SCHED-08 | イベント駆動起床はO(1)（線形スキャン禁止） | 多数のBLOCKEDタスクが異なるevent_keyで待機 | 1つのevent_keyのみnotify | notifyされたevent_keyのタスクのみが起床し、他のBLOCKEDタスクの状態には一切触れない（実装が全BLOCKEDタスクを走査していないことをコード/モックで確認） | `{ADR_EventDrivenWakeQueue}` |
 | TEST-SCHED-09 | 最大タスク数の上限 | `FB_CONF_MAX_TASKS`（既定16）に達するまでspawn | 上限+1個目をspawn | 拒否される（アサーション相当のエラー） | scheduler_concept.py `assert len(self.tasks) < self.max_tasks` |
 | TEST-SCHED-10 | 重複task_idの拒否 | 既存のtask_idを再度spawn | 同一IDでspawn | 拒否される | scheduler_concept.py `assert task_id not in self.tasks` |

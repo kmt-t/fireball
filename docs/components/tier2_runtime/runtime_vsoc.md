@@ -464,15 +464,15 @@ sequenceDiagram
 | 事後条件 | `HANDLED`なら配送を終了し、`PASS_THROUGH`だけが子ノードへ進み、`REJECT`は診断記録後に終了する。 |
 | 不変条件 | ISRからゲスト関数を直接呼び出さず、REJECTを原因とする再帰的なFAULT配送を行わない。 |
 | エラー時の挙動 | 未登録ノード、無効な関数インデックス、WASMシグネチャ不一致は登録または配送を拒否し、下位ノードへ流さない。 |
-| 補足 | vMMIOのvIRQ登録値は保留表へ書き込み、Safepointで検証済みの関数インデックスを原子的に反映する。WASIの`poll-check`/`poll-wait`とは別経路である。 |
+| 補足 | `fireball_call(VIRQ_REGISTER/VIRQ_UNREGISTER)` の要求を保留表へ書き込み、Safepointで検証済みの関数インデックスを原子的に反映する。イベント本体はCOOS FIFOから受け取り、WASIの`poll-check`/`poll-wait`とは別経路である。 |
 
 #### `register-virq-dispatcher`
 <!-- traceability: {META_ConfigurableSystem} -->
 | 項目 | 内容 |
 | :--- | :--- |
-| 機能概要 | vMMIOのvIRQ固定スロットへ書き込まれたゲスト関数インデックスを検証し、次のSafepointで有効化する。 |
-| シグネチャ | `register-virq-dispatcher(node-id: u32, function-index: u32) -> registration-result` |
-| 引数 | `node-id`: root・4分類・静的デバイスのいずれか、`function-index`: WASM関数テーブルのインデックス |
+| 機能概要 | `fireball_call` から受けたvIRQ登録要求を検証し、次のSafepointで有効化する。ゲストからvMMIO固定スロットへ直接書き込む経路は存在しない。 |
+| シグネチャ | `register-virq-dispatcher(node-id: u32, function-index: u32) -> registration-result`<br>`unregister-virq-dispatcher(node-id: u32) -> registration-result` |
+| 引数 | `register`: `node-id` はroot・4分類・静的デバイスのいずれか、`function-index` はWASM関数テーブルのインデックス。`unregister`: `node-id` のみ |
 | 事前条件 | `node-id`がホスト設定の静的ノードで、関数が`(u32,u32,u32,u32,u32) -> u32`の期待シグネチャを満たすこと。 |
 | 事後条件 | 保留登録として記録され、Safepointで有効表へ原子的に反映される。 |
 | 不変条件 | 実行中のゲストからはSafepoint前の登録変更が観測できない。親子関係と原因源表は変更できない。 |

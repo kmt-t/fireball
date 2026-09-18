@@ -149,12 +149,14 @@ vMMIO管理下のアドレスへの汎用 host-call 操作である。IPCR/SHM/D
 | `0x20` | `VDMA_START` | `src`, `dst`, `byte_count` | `0` | DMA転送開始 |
 
 ### 6.5. IRQ (`0x30`-`0x3F`)
-<!-- traceability: {CooperativeMultitasking} {META_RestrictedPhysicalAccess} {VDMA} -->
-vIRQ は vMMIO の専用ページと COOS の汎用 `interrupt-event` を通じて配送する。システムコールから `REG_IRQ_FLAGS` を読み書きする旧方式は採用せず、WASIのpoll APIにも接続しない。
+<!-- traceability: {CooperativeMultitasking} {GLOBAL_InterruptWakeup} {TaskPollInterruptEvent} -->
+vIRQの登録・解除は同期的な `fireball_call` の制御要求として受け付ける。登録要求はvSoCの保留表へ記録され、次のSafepointで検証済みの登録表へ原子的に反映する。物理割り込みの非同期通知とゲスト関数への配送は `fireball_call` の呼出し中には行わず、ISR → COOS FIFO → vSoC Safepoint → vIRQ階層の経路で行う。`REG_IRQ_FLAGS` の読み書き、vIRQ固定スロットへのゲストからの直接store、およびWASIのpoll APIへの接続は採用しない。
 
 | ID | 名前 | 引数 | 戻り値 | 説明 |
 | :--- | :--- | :--- | :--- | :--- |
-| `0x30`〜`0x3F` | `IRQ_RESERVED` | — | — | 旧フラグ操作を再導入せず、原因付きvIRQ配送はvMMIO vIRQページで行うため予約 |
+| `0x30` | `VIRQ_REGISTER` | `node_id`, `function_index` | `0` またはWASI errno | vIRQ静的ノードへのゲスト関数登録を保留する。関数シグネチャとノードはvSoCが検証する |
+| `0x31` | `VIRQ_UNREGISTER` | `node_id` | `0` またはWASI errno | vIRQ静的ノードの登録解除を保留する。次のSafepointで有効表から除去する |
+| `0x32`〜`0x3F` | `IRQ_RESERVED` | — | `WasiErrno.NOSYS` | 未定義のIRQ制御要求。旧フラグ操作を再導入しない |
 
 ### 6.6. IPC (`0x40`-`0x4F`)
 <!-- traceability: {CSPCommunication} {IPC_HandleBased} -->
@@ -203,7 +205,7 @@ WASIの引数レイアウトとエラー変換は、`libfireball` が `runtime_s
 | | `mmio_bulk_write`| `0x15` | 一括 MMIO 書き込み |
 | | `trigger_set_pin` (`FB_SYSCALL_TRIGGER_SET_PIN`) | `0x16` | GPIOピン出力設定（ゲストアダプタ経路） |
 | **VDMA** | `vdma_start` | `0x20` | 仮想 DMA 転送開始 |
-| **IRQ** | `IRQ_RESERVED` | `0x30`〜`0x3F` | 旧フラグ操作を再導入しないため予約。原因付きvIRQ配送はvMMIO vIRQページで行う |
+| **IRQ** | `VIRQ_REGISTER` / `VIRQ_UNREGISTER` | `0x30` / `0x31` | vIRQ登録・解除の保留要求。非同期イベントの配送はCOOS FIFOとvSoC Safepointが行う |
 | **IPC** | `ipc_send` | `0x40` | IPC メッセージ送信 |
 | | `ipc_recv` | `0x41` | IPC メッセージ受信 |
 | | `ipc_lookup` | `0x42` | サービス/デバイス URI 検索 |
@@ -240,26 +242,26 @@ WASIの引数レイアウトとエラー変換は、`libfireball` が `runtime_s
 ## 9. ホストからゲストへの非同期通知メカニズム
 <!-- traceability: {Asynchronous_Notification} -->
 
-ホスト側で非同期に発生したイベント（例: ハードウェア割り込みの完了、タイマーイベント、非同期I/Oの完了など）をゲストに通知するために、`fireball_call`とは独立したメカニズムを定義する。
+ホスト側で非同期に発生したイベント（例: ハードウェア割り込みの完了、タイマーイベント、非同期I/Oの完了など）をゲストに通知するために、`fireball_call` の同期制御要求とは独立したメカニズムを定義する。vIRQの登録・解除だけは `fireball_call` の制御要求として行い、イベント本体の通知・配送はこの非同期経路で行う。
 
 ### 9.1. 仮想割り込み
 <!-- traceability: {Asynchronous_Notification} -->
-ホストは、ゲストに対して**仮想割り込み**をトリガーすることで、イベントの発生を通知する。これはvSoCの`notify_virtual_interrupt`機能を利用する。
+ホストは、COOSの固定長 `interrupt-event` を経由して**仮想割り込み**を通知する。vSoCは協調境界のSafepointでイベントを受け取り、登録済みのvIRQ階層へ配送する。これは `fireball_call` の同期的な戻り値やWASI `pollable` では表現しない。
 
-#### 9.1.1. 仮想割り込みID 一覧表
+#### 9.1.1. vIRQ原因源識別子
 <!-- traceability: {Asynchronous_Notification} -->
-これらのIDは、WASI 0.3p のポーリング相当操作を `libfireball` が利用する際の通知トリガーとして使用される。
+vIRQの `vector_id` はホスト設定の原因源表で固定する。WASIのpollable IDやゲストが自由に割り当てる通知IDとしては扱わない。具体的なノード階層と原因源表は [`runtime_vmmio.md`](docs/components/tier2_runtime/runtime_vmmio.md) が定義する。
 
-| 仮想割り込み識別子名 | 値 (ID) | 説明 | 主な用途 |
+| 原因源 | `vector_id` | 説明 | 主な用途 |
 | :--- | :--- | :--- | :--- |
-| `reserved` | `0x00` | 予約済み | システム内部 |
-| `trigger_event` | `0x01` | 高速トリガーイベント | GPIO / エッジ通知 |
-| `timer_expired` | `0x02` | タイマー満了 | WASI Clocks 用 |
-| `stream_ready` | `0x03` | ストリーム準備完了 | WASI I/O 用 |
+| デバイス `n` | `0x0100 + n` | デバイス原因を集約する | デバイスディスパッチャ |
+| SYSTEM | `0x1000` | COOS・システム制御由来 | SYSTEM分類 |
+| RUNTIME | `0x2000` | vSoC・実行制御由来 | RUNTIME分類 |
+| FAULT | `0x3000` | vMMIO違反などのフォールト | FAULT分類 |
 
 #### 9.1.2. 仮想割り込みペイロード
 <!-- traceability: {Asynchronous_Notification} -->
-仮想割り込みに関する詳細な情報（例えば、UARTから受信したデータ、タイマーID、非同期操作の結果コードなど）は、vMMIOレジスタや共有メモリ上の事前に定義された領域を介してゲストに伝達される。ゲストは割り込みハンドラ内でこれらの情報を読み取り、適切な非同期イベント処理を行う。
+仮想割り込みの詳細情報は、COOSが保持する固定5ワードの `interrupt-event` としてvSoCへ引き渡す。`vector_id`、`source_id`、`cause_code`、`payload0`、`payload1`の順序を維持し、vSoCはSafepointでこのレコードをvIRQ階層へ渡す。イベント本体をvMMIOレジスタ、共有メモリ、WASI `pollable`へ別経路で複製せず、ISRやCOOSからゲスト関数を直接呼び出さない。
 
 ## 10. メモリ安全性
 <!-- traceability: {Challenge_SyscallMemorySafety} {OwnershipTransfer} {FastAddressCheck} -->

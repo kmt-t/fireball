@@ -359,23 +359,23 @@ graph LR
 ### 4.8 原因付き vIRQ ディスパッチ
 <!-- traceability: {META_ConfigurableSystem} {GLOBAL_InterruptWakeup} -->
 
-vIRQ は、物理割り込みをゲストへ直接配送するための専用 vMMIO ページである。ゲストは [`libfireball.md`](docs/components/tier3_platform/libfireball.md) のラッパーを通じて、固定スロットへ WASM 関数インデックスを登録する。登録値は vSoC が検証し、Safepoint で原子的に反映する。`REG_IRQ_FLAGS` のポーリングは vIRQ の配送経路ではない。
+vIRQは、物理割り込みの原因源表と有効な登録状態を保持する静的vMMIOページである。ゲストの登録・解除要求は [`libfireball.md`](docs/components/tier3_platform/libfireball.md) が `fireball_call(VIRQ_REGISTER/VIRQ_UNREGISTER)` へ変換する。ゲストは固定スロットへ直接書き込まず、vSoCが要求を検証してSafepointで原子的に反映する。`REG_IRQ_FLAGS` のポーリングはvIRQの配送経路ではない。
 
 #### vIRQ ページ配置と固定スロット
 
-vIRQ ページは `FB_CONF_VMMIO_VIRQ_BASE`（`0xC000_3000`）から `FB_CONF_VMMIO_VIRQ_PAGE_SIZE`（4KB）を占有する。登録書込みは保留値として扱い、現在有効な関数インデックスを実行中のゲストから途中で観測できないようにする。
+vIRQページは `FB_CONF_VMMIO_VIRQ_BASE`（`0xC000_3000`）から `FB_CONF_VMMIO_VIRQ_PAGE_SIZE`（4KB）を占有する。原因源表と有効登録表は読み取り専用の参照スナップショットとして公開し、登録・解除の書込みは拒否する。host callによる登録要求は保留値として扱い、現在有効な関数インデックスを実行中のゲストから途中で観測できないようにする。
 
 | オフセット | 領域 | アクセス | 内容 |
 | :--- | :--- | :--- | :--- |
 | `0x000` – `0x0FF` | 静的原因源表 | R | 16バイトの原因源記述子。`vector_id`、分類ノード、`source_id`、属性を保持する |
-| `0x100` | root 登録スロット | R/W | root ディスパッチャの WASM 関数インデックス |
-| `0x104` | DEVICE 登録スロット | R/W | DEVICE 分類ディスパッチャの WASM 関数インデックス |
-| `0x108` | SYSTEM 登録スロット | R/W | SYSTEM 分類ディスパッチャの WASM 関数インデックス |
-| `0x10C` | RUNTIME 登録スロット | R/W | RUNTIME 分類ディスパッチャの WASM 関数インデックス |
-| `0x110` | FAULT 登録スロット | R/W | FAULT 分類ディスパッチャの WASM 関数インデックス |
-| `0x120` – `0x13F` | デバイス登録スロット | R/W | `device_index` ごとのデバイスディスパッチャ。最大 `FB_CONF_HAL_MAX_DEVICES` 件 |
+| `0x100` | root 登録スロット | R | root ディスパッチャの有効なWASM関数インデックス |
+| `0x104` | DEVICE 登録スロット | R | DEVICE 分類ディスパッチャの有効なWASM関数インデックス |
+| `0x108` | SYSTEM 登録スロット | R | SYSTEM 分類ディスパッチャの有効なWASM関数インデックス |
+| `0x10C` | RUNTIME 登録スロット | R | RUNTIME 分類ディスパッチャの有効なWASM関数インデックス |
+| `0x110` | FAULT 登録スロット | R | FAULT 分類ディスパッチャの有効なWASM関数インデックス |
+| `0x120` – `0x13F` | デバイス登録スロット | R | `device_index` ごとの有効なデバイスディスパッチャ。最大 `FB_CONF_HAL_MAX_DEVICES` 件 |
 
-登録値 `0xFFFF_FFFF` は未登録を示す固定値である。固定スロットの範囲外、未登録値以外の不正な関数インデックス、または期待シグネチャを満たさない関数は vSoC が拒否する。登録対象は root、4分類、各デバイスの静的ノードに限り、親子関係と原因源表はホスト設定で固定する。
+登録値 `0xFFFF_FFFF` は未登録を示す固定値である。`VIRQ_REGISTER` / `VIRQ_UNREGISTER` 以外の登録操作、範囲外ノード、未登録値以外の不正な関数インデックス、または期待シグネチャを満たさない関数はvSoCが拒否する。登録対象はroot、4分類、各デバイスの静的ノードに限り、親子関係と原因源表はホスト設定で固定する。
 
 #### 静的ノードと原因源表
 

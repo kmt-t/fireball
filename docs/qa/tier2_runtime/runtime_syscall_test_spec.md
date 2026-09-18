@@ -38,11 +38,13 @@
 | TEST-SYS-21 | VDMA host call の転送先がSHM(FC=14)の場合の所有権チェック | `dst`がSHMアドレスで、呼び出し元が非所有者 | `VDMA_START`を呼ぶ | 転送要求は host call で受け、転送先の共通vMMIO権限ゲートにより拒否される | runtime_vmmio.md |
 | TEST-SYS-22 | VDMA完了時の仮想割り込み通知（該当する場合） | 完了通知が要求されている | 転送完了後の状態を確認 | `IRQ_VDMA_DONE`相当が立つ | runtime_vmmio.md  |
 
-### IRQ予約領域 (`0x30`-`0x3F`)
+### IRQ (`0x30`-`0x3F`)
 
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| TEST-SYS-30 | 予約済みIRQ IDの安全な拒否 | `0x30`〜`0x3F`が予約済み | `fireball_call(0x30,...)`および範囲末尾のIDを呼び出す | `WasiErrno.NOSYS`相当を返し、`REG_IRQ_FLAGS`を読み書きしない。原因付きvIRQ配送はvMMIOの専用ページ経由でのみ行われる | runtime_syscall.md (IRQ), GOTCHA-SYS-01 |
+| TEST-SYS-30 | `VIRQ_REGISTER` host call | 静的ノードと期待シグネチャの関数が存在 | `fireball_call(0x30, node_id, function_index,...)` | `0`を返して登録を保留し、ゲストからvMMIO固定スロットへ直接書き込まない | runtime_syscall.md (IRQ), runtime_vsoc.md |
+| TEST-SYS-31 | `VIRQ_UNREGISTER` host call | 有効または保留中の登録が存在 | `fireball_call(0x31, node_id,...)` | `0`を返して解除を保留し、次のSafepointで無効化する | runtime_syscall.md (IRQ), runtime_vsoc.md |
+| TEST-SYS-32 | 不正vIRQ登録要求 | 範囲外ノード、無効関数、または`0x32`以降の未定義IRQ ID | 各要求を呼び出す | `WasiErrno`相当のエラーまたは`NOSYS`を返し、有効登録・`REG_IRQ_FLAGS`を変更しない | runtime_syscall.md (IRQ), GOTCHA-SYS-01 |
 
 ### IPC (`0x40`-`0x4F`)
 

@@ -138,8 +138,9 @@ flowchart TD
         YieldPoint["Current Task reaches cooperative boundary"] --> Drain["COOS Scheduler: drain_interrupts()"]
         Drain --> CheckRing{"Is Ring Buffer empty?"}
         CheckRing -- "No (event pending)" --> Pop["Pop interrupt-event from FIFO"]
-        Pop --> Lookup["Lookup Task waiting for vector_id"]
-        Lookup --> Wake["Mark Target Task as READY in Ring Queue"]
+        Pop --> Lookup["Lookup vSoC task waiting for vector_id"]
+        Lookup --> Handoff["Copy 5-word event into task pending slot"]
+        Handoff --> Wake["Mark Target Task as READY in Ring Queue"]
         Wake --> CheckRing
         CheckRing -- "Yes" --> Snapshot["Snapshot RUNNING and READY tasks for current generation"]
         Snapshot --> SchedNext["Dispatch next READY Task via Round-Robin"]
@@ -221,7 +222,7 @@ COOS の動的スケジューリングおよび同期通信の基本アルゴリ
 
 - **CSP Handoff (直接スイッチ)**: `send`/`recv` 時に相手タスクが既に待機状態であった場合、スケジューラを介さず即座に相手タスクへ実行権を移譲する。
 - **直接コンテキストスイッチ (Direct Context Switch)**: コルーチンの対称遷移（Symmetric Transfer）により、コールスタックを消費せずに相手タスクのコルーチンハンドルへ直接ジャンプする。OSスケジューラのキュー処理オーバーヘッドを完全にバイパスし、極小スタック（2KB）環境下でもスタックオーバーフローを起こさない決定論的 $O(1)$ スイッチを実現する。実測は [`direct_context_switch_bench.py`](docs/components/tier1_core/benchmarks/direct_context_switch_bench.py) を参照。
-- **割り込みウェイクアップ (Interrupt Wakeup)**: 外部イベントが発生した際、割り込みサービスルーチン（ISR）から `notify_interrupt(interrupt-event)` が呼び出され、固定長FIFOへ原因レコードを投函する。**実装の勘所と設計理由 (`GOTCHA-COOS-03`)**: ISR コンテキスト内ではタスク状態や優先度キューを一切直接書き換えない。ISR で直接キュー操作やコルーチン起床を行うと、ハードウェア割り込み無効化区間（クリティカルセクション）が肥大化し、最高優先度割り込みの応答レイテンシが劣化するだけでなく、多重割り込み時のロック競合を引き起こす。そのため、ISR は固定長FIFOへの原子的なイベント記録と再スケジュール要求世代の更新だけを行い、スケジューラが各協調境界（`run_step` 開始時）でこれをドレイン（`drain_interrupts`）して初めて、`vector_id`に対応する待機タスクを READY 状態へ遷移させて実行可能キュー末尾に投入する。FIFO満杯または待機先が未登録の場合はドロップし、ドロップ数を記録する。要求が保留中の間に到着したイベントは同じ世代へ集約し、FIFO上の原因レコードは個別に処理する。 `{ADR_InterruptRescheduleGeneration}`
+- **割り込みウェイクアップ (Interrupt Wakeup)**: 外部イベントが発生した際、割り込みサービスルーチン（ISR）から `notify_interrupt(interrupt-event)` が呼び出され、固定長FIFOへ原因レコードを投函する。**実装の勘所と設計理由 (`GOTCHA-COOS-03`)**: ISR コンテキスト内ではタスク状態や優先度キューを一切直接書き換えない。ISR で直接キュー操作やコルーチン起床を行うと、ハードウェア割り込み無効化区間（クリティカルセクション）が肥大化し、最高優先度割り込みの応答レイテンシが劣化するだけでなく、多重割り込み時のロック競合を引き起こす。そのため、ISR は固定長FIFOへの原子的なイベント記録と再スケジュール要求世代の更新だけを行い、スケジューラが各協調境界（`run_step` 開始時）でこれをドレイン（`drain_interrupts`）して初めて、`vector_id`に対応するvSoCランタイム待機タスクへ5ワードのイベント本体を移し、そのタスクをREADY状態へ遷移させて実行可能キュー末尾に投入する。COOSはvIRQ階層の評価やゲスト関数呼出しを行わない。FIFO満杯または待機先が未登録の場合はドロップし、ドロップ数を記録する。要求が保留中の間に到着したイベントは同じ世代へ集約し、FIFO上の原因レコードは個別に処理する。 `{ADR_InterruptRescheduleGeneration}`
 - **Idle Detection**: 全ての実行中タスクがブロック状態にあり、かつイベントキューが空（割り込みや外部イベントによる起床待ちのみ）の場合にアイドル状態と判定する。この条件が成立した時のみ、登録済みの `idle_hook` コールバック群をREADYリング外の専用Idleタスクとして呼び出す。個々のコールバック（ログフラッシュ等）が実際にいつ・何を処理するかはコールバック側の内部実装事項であり、COOS はそれを規定・関知しない（登録・起動機構のみを提供する）。ログフラッシュの具体的なトリガー条件は [`runtime_logging.md`](docs/components/tier2_runtime/runtime_logging.md) を正本とする。
 - **Memory Management**: タスク生成時に独立したメモリパーティションを割り当てる。
 

@@ -3,8 +3,8 @@ experiments/pysim/tier2_runtime/vmmio.py
 vMMIO FlatMap Page Table & Direct-Mapped TLB simulation.
 - RAM Bypass Flag (Bit 31): O(1) linear-RAM fast path, no table lookup
 - FlatMap PTE storage: maps 20-bit VPN -> PTE (64 entries)
-- Direct-mapped Software TLB[32] keyed by Folding XOR Hash over 20-bit VPN:
-  folds 20 -> 10 -> 5 and selects a 5-bit slot index (0..31)
+- Direct-mapped Software TLB[16] keyed by Folding XOR Hash over 20-bit VPN:
+  folds 20 -> 10 -> 5 -> 4 and selects a 4-bit slot index (0..15)
 - Tier 1 linear RAM: Bit31 bypass PLUS a size-comparison bound check (no mask, no
   power-of-two constraint on guest_ram_size) — traps to the interpreter on OOB
 - PTE permission check (VALID/READ/WRITE/EXEC + Owner ID) on every access,
@@ -29,6 +29,10 @@ if TYPE_CHECKING:
 # docs/components/tier1_core/system_config.md {META_FlatMapIndexed}: max PTE
 # count the FlatMap page table can hold.
 FB_CONF_VMMIO_MAX_PTES = 64
+# Direct-mapped software TLB slot count ({DirectMappedTLB16}). Sized well
+# below FB_CONF_VMMIO_MAX_PTES since the TLB is a small hot-path cache in
+# front of the FlatMap table, not a full mirror of it.
+FB_CONF_VMMIO_TLB_SIZE = 16
 
 
 class VmmioStatus(IntEnum):
@@ -171,7 +175,7 @@ class TLBSlot:
 
 class VMMIOController:
     """
-    FlatMap Page Table (vpn -> PTE, 64 entries) with a direct-mapped 32-entry
+    FlatMap Page Table (vpn -> PTE, 64 entries) with a direct-mapped 16-entry
     software TLB.
         TLB hits provide O(1) hot-path access, while TLB misses look up the FlatMap.
     """
@@ -198,10 +202,10 @@ class VMMIOController:
         self.ptes: MutableFlatMapStorage[int, VmmioPte] = MutableFlatMapStorage(
             capacity=FB_CONF_VMMIO_MAX_PTES
         )
-        # Direct-mapped TLB: 32 slots, keyed by a repeatedly folded XOR over
+        # Direct-mapped TLB: 16 slots, keyed by a repeatedly folded XOR over
         # the 20-bit VPN.
-        self.tlb: StaticVector[TLBSlot] = StaticVector(capacity=32)
-        for _ in range(32):
+        self.tlb: StaticVector[TLBSlot] = StaticVector(capacity=FB_CONF_VMMIO_TLB_SIZE)
+        for _ in range(FB_CONF_VMMIO_TLB_SIZE):
             self.tlb.append(TLBSlot())
         self.tlb_hits = 0
         self.tlb_misses = 0
@@ -343,7 +347,7 @@ class VMMIOController:
         )
 
     def flush_tlb(self) -> None:
-        """In-place flush of all 32 TLB slots without reallocation."""
+        """In-place flush of all 16 TLB slots without reallocation."""
         for slot in self.tlb:
             slot.vpn = 0xFFFF_FFFF
             slot.pte = None
@@ -360,13 +364,14 @@ class VMMIOController:
     @staticmethod
     def tlb_index(vpn: int) -> int:
         """
-        Fold the 20-bit VPN 20 -> 10 -> 5 with two XORs and select a 5-bit
-        slot for the 32-entry TLB.
+        Fold the 20-bit VPN 20 -> 10 -> 5 -> 4 with three XORs and select a
+        4-bit slot for the 16-entry TLB.
         """
 
         temp = vpn ^ (vpn >> 10)
         temp = temp ^ (temp >> 5)
-        return temp & 0x1F
+        temp = temp ^ (temp >> 1)
+        return temp & 0xF
 
     def _lookup_pte(self, addr: VmmioAddress) -> VmmioPte | None:
         """Returns the PTE from TLB (O(1)) or falls back to FlatMap."""

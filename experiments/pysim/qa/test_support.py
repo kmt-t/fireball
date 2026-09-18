@@ -15,8 +15,8 @@ from runtime_engine import BasicBlock, JITTrace
 from system_containers import (
     ReadOnlyRadixBinaryTreeStorage,
     StaticVector,
-    bswap32,
     build_radix_table,
+    fold_mix32,
 )
 from wasm_module import Function, FuncType, Module, WasmOperand
 from x64_jit import TraceCompiler
@@ -100,13 +100,17 @@ def make_pc_only_module(pcs: tuple[int, ...]) -> Module:
         ),
         capacity=len(pcs),
     )
-    inverse_keys = tuple(bswap32(block.head_pc) for block in blocks)
     module.blocks = blocks
+    # block_storage's own arrays are sorted by the radix key -- independent
+    # of `blocks`' caller-given order, matching wasm_module.py's real
+    # construction (see build_basic_block_index).
+    radix_sorted = tuple(sorted(blocks, key=lambda block: fold_mix32(block.head_pc)))
+    inverse_keys = tuple(fold_mix32(block.head_pc) for block in radix_sorted)
     module.block_storage = ReadOnlyRadixBinaryTreeStorage(
         keys=inverse_keys,
-        values=blocks,
+        values=radix_sorted,
         radix_table=build_radix_table(inverse_keys, radix_shift=28),
         radix_shift=28,
-        entries=tuple(zip(inverse_keys, blocks, strict=True)),
+        entries=tuple(zip(inverse_keys, radix_sorted, strict=True)),
     )
     return module

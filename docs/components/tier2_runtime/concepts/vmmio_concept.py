@@ -4,7 +4,7 @@ Reference Concept Implementation: vMMIO FlatMap Page Table & Direct-Mapped TLB
 Implementation Invariants & Gotchas:
 - GOTCHA-VMMIO-01: Guest RAM access (Bit 31 == 0) completely bypasses TLB with direct
   base addition and bound check, preserving peak memory throughput.
-- GOTCHA-VMMIO-02: Folding XOR hash uniformly diffuses all 20 VPN bits across 32 slots,
+- GOTCHA-VMMIO-02: Folding XOR hash uniformly diffuses all 20 VPN bits across 16 slots,
   preventing inter-device cache conflict and TLB thrashing.
 - GOTCHA-VMMIO-03: Shared memory revocation unmaps the PTE and immediately
   flushes TLB entry, blocking subsequent access with TRAP_UNREGISTERED_PAGE.
@@ -186,8 +186,8 @@ class VMMIOController:
         self.allocator = ShmVirtualAddressAllocator()
         # FlatMap PTE storage: vpn (20-bit) -> PTE
         self.ptes: dict[int, StaticDevicePTE | Stage3PTE] = {}
-        # Direct-mapped TLB: 32 slots, keyed by a 5-bit Folding XOR Hash over 20-bit VPN.
-        self.tlb: list[TLBSlot] = [TLBSlot(vpn=0xFFFF_FFFF, pte=None) for _ in range(32)]
+        # Direct-mapped TLB: 16 slots, keyed by a 4-bit Folding XOR Hash over 20-bit VPN.
+        self.tlb: list[TLBSlot] = [TLBSlot(vpn=0xFFFF_FFFF, pte=None) for _ in range(16)]
         self.tlb_hits = 0
         self.tlb_misses = 0
         self.dynamic_guest_id: int | None = None
@@ -302,11 +302,12 @@ class VMMIOController:
     @staticmethod
     def tlb_index(vpn: int) -> int:
         """
-        5-bit Folding XOR Hash over 20-bit VPN: 20 -> 10 -> 5.
+        4-bit Folding XOR Hash over 20-bit VPN: 20 -> 10 -> 5 -> 4.
         """
         temp = vpn ^ (vpn >> 10)
         temp = temp ^ (temp >> 5)
-        return temp & 0x1F
+        temp = temp ^ (temp >> 1)
+        return temp & 0xF
 
     def _lookup_pte(self, addr: VmmioAddress) -> StaticDevicePTE | Stage3PTE | None:
         """Returns the PTE from TLB (O(1)) or falls back to FlatMap."""
@@ -633,7 +634,7 @@ def test_permission_checks_enforced_even_on_tlb_hit() -> None:
 def test_tlb_slot_conflict_eviction() -> None:
     """Tests direct-mapped TLB eviction when two distinct VPNs hash to the same slot."""
     ctrl = VMMIOController()
-    # Find two distinct VPNs in FC=14 that collide on the same 5-bit hash
+    # Find two distinct VPNs in FC=14 that collide on the same 4-bit hash
     vpn_a = 0xE0000
     target_slot = ctrl.tlb_index(vpn_a)
     vpn_b: int | None = None
@@ -642,7 +643,7 @@ def test_tlb_slot_conflict_eviction() -> None:
         if ctrl.tlb_index(cand_vpn) == target_slot:
             vpn_b = cand_vpn
             break
-    assert vpn_b is not None, "must find a colliding VPN within 32 pages"
+    assert vpn_b is not None, "must find a colliding VPN within 64 candidate pages"
 
     ctrl.map_shm_page(vpn=vpn_a, phys_page=0x1000)
     ctrl.map_shm_page(vpn=vpn_b, phys_page=0x2000)

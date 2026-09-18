@@ -28,8 +28,8 @@ from system_containers import (
     ReadOnlyFlatMapStorage,
     ReadOnlyRadixBinaryTreeStorage,
     StaticVector,
-    bswap32,
     build_radix_table,
+    fold_mix32,
 )
 
 if TYPE_CHECKING:
@@ -545,24 +545,35 @@ class Module:
                         )
                     )
 
-        all_blocks.sort(key=lambda block: bswap32(block.head_pc))
+        # `all_blocks` is already in ascending head_pc order here (functions
+        # walked in order, extract_basic_blocks yields blocks in bytecode
+        # order within each). `self.blocks` keeps that natural, meaningful
+        # order for callers that index or iterate it directly -- it must
+        # not be re-ordered by an internal cache detail. `block_storage`'s
+        # own key/entry arrays are sorted separately, only for its radix
+        # lookup's internal use.
         self.blocks = all_blocks
         if not all_blocks:
             self.block_storage = None
             return
 
-        sorted_blocks = all_blocks
-        inv_keys: StaticVector[int] = StaticVector(capacity=len(sorted_blocks))
-        entries: StaticVector[tuple[int, BasicBlock]] = StaticVector(capacity=len(sorted_blocks))
-        for block in sorted_blocks:
-            inverse_key = bswap32(block.head_pc)
+        radix_sorted_blocks: StaticVector[BasicBlock] = StaticVector.of(
+            sorted(all_blocks, key=lambda block: fold_mix32(block.head_pc)),
+            capacity=len(all_blocks),
+        )
+        inv_keys: StaticVector[int] = StaticVector(capacity=len(radix_sorted_blocks))
+        entries: StaticVector[tuple[int, BasicBlock]] = StaticVector(
+            capacity=len(radix_sorted_blocks)
+        )
+        for block in radix_sorted_blocks:
+            inverse_key = fold_mix32(block.head_pc)
             inv_keys.append(inverse_key)
             entries.append((inverse_key, block))
         radix_shift = 28
         radix_table = build_radix_table(inv_keys, radix_shift=radix_shift)
         self.block_storage = ReadOnlyRadixBinaryTreeStorage[BasicBlock](
             keys=inv_keys,
-            values=sorted_blocks,
+            values=radix_sorted_blocks,
             radix_table=radix_table,
             radix_shift=radix_shift,
             entries=entries,
@@ -572,7 +583,7 @@ class Module:
         """Looks up a BasicBlock by UnifiedPC via the loader's Radix tree (O(1) + O(log n))."""
         if self.block_storage is None:
             return None
-        return self.block_storage.view().find(bswap32(pc))
+        return self.block_storage.view().find(fold_mix32(pc))
 
     @property
     def total_basic_blocks(self) -> int:

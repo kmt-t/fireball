@@ -373,6 +373,21 @@ def bswap32(v: int) -> int:
     return ((v & 0xFF) << 24) | ((v & 0xFF00) << 8) | ((v >> 8) & 0xFF00) | ((v >> 24) & 0xFF)
 
 
+def fold_mix32(v: int) -> int:
+    """
+    Bijective 32-bit multiplicative mixer (Fibonacci hashing, `0x9E3779B1`
+    is the odd golden-ratio constant). Unlike `bswap32`, which only
+    relocates whole bytes, multiplication carries entropy from every input
+    bit into the high bits of the product, so a composite key such as
+    UnifiedPC (`func_index << 16 | offset`) can't have one field (e.g.
+    `func_index`) silently excluded from the radix prefix the way a byte
+    permutation can. The high bits of the product are the well-mixed ones,
+    matching `ReadOnlyRadixBinaryTreeStorage`'s `radix_shift`-from-the-top
+    prefix extraction.
+    """
+    return (v * 0x9E3779B1) & 0xFFFF_FFFF
+
+
 FB_CONF_MAX_RADIX_TABLE_SIZE = 256  # Embedded constraint: max 8-bit radix prefix
 
 

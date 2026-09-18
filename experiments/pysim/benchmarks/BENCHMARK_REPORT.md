@@ -2,7 +2,7 @@
 
 本レポートは、Fireball Hypervisor の全層（Tier 1 Core OS / Tier 2 Runtime / Tier 3 JIT & Platform）を具象化した `pysim` における全 5 つのベンチマークスイートの実測測定結果、JIT トレースチェイニング動作診断、および C++23 実機実装への移植性・性能予測をまとめた詳細レポートです。
 
-Section 1〜5は 2026-09-18 に、JIT Direct-Mapped Folding XORキャッシュを4スロットから16スロットへ拡張した変更（`{DirectMappedJIT16}`, `experiments/pysim/tier1_core/config.py`）の直後に同一ワークスペースで再測定した結果である。Pythonプロセス、OSスケジューリング、およびPythonハンドラ本体呼出しの影響を含むため、絶対値ではなく同一環境での比較値として扱う。5.1節のネイティブCPS経路の数値のみ2026-09-17測定の既存値を保持する（本変更では未再測定のため）。
+Section 1〜5は 2026-09-18 に、JIT Direct-Mapped Folding XORキャッシュを4→16スロットへ拡張した変更（`{DirectMappedJIT16}`）と、vMMIOソフトウェアTLBを32→16スロットへ縮小した変更（`{DirectMappedTLB16}`, いずれも `experiments/pysim/tier1_core/config.py` / `tier2_runtime/vmmio.py`）の両方を適用した状態で、同一ワークスペースで再測定した結果である。Pythonプロセス、OSスケジューリング、およびPythonハンドラ本体呼出しの影響を含むため、絶対値ではなく同一環境での比較値として扱う。5.1節のネイティブCPS経路の数値のみ2026-09-17測定の既存値を保持する（本変更では未再測定のため）。
 
 ---
 
@@ -38,7 +38,21 @@ Section 1〜5は 2026-09-18 に、JIT Direct-Mapped Folding XORキャッシュ�
 | JIT lookupキャッシュ ヒット率 | 71.78% | 91.76%（実アクセス系列再生シミュレーション値） |
 | RAM増分 | — | 両キャッシュ合計 約+192B（予算余裕 約5.7KBに対し誤差域） |
 
-pysimユニットテスト25/25、統合シナリオ12/12、`check-src.ps1 -group pysim` はすべて成功した。以下のSection 2〜4は、この変更を適用した状態での全ベンチマーク一括実行（`benchmarks/run_all.py`）の実測値である。
+pysimユニットテスト25/25、統合シナリオ12/12、`check-src.ps1 -group pysim` はすべて成功した。
+
+### 1.2 2026-09-18 vMMIOソフトウェアTLB 32→16スロット縮小後の再測定
+
+`vmmio.py` のTLBはget_block/JITキャッシュと異なりホスト側のwasmバイナリサイズに比例せず、固定の20-bit VPN空間を対象とする独立したキャッシュである。既存の32エントリは過大と判断し、16エントリへ縮小した。フォールド段数は2段から3段へ増える（`temp ^= temp >> 1` を追加し `& 0xF` で4-bit選択）ため、縮小方向では計算コストがわずかに増える（XOR+シフト1組の追加、依然O(1)）。
+
+| 区分 | 変更前（32スロット） | 変更後（16スロット） |
+| :--- | :--- | :--- |
+| RAM | 256 B（32エントリ×8B） | 128 B（16エントリ×8B、-128 B） |
+| フォールド段数 | 2段（20→10→5, `& 0x1F`） | 3段（20→10→5→4, `& 0xF`） |
+| `TLB Miss -> FlatMap Walk`区間（33ページ循環、単独計測） | 大半ヒット | `tlb_hits=0` / `tlb_misses=150,000`（16エントリに対し33ページが常時超過するため毎回ミス） |
+
+33ページ循環という同一の測定条件のまま16エントリへ縮小したため、この区間は意図どおりFlatMap二分探索へのフォールバック経路を毎回踏む、より厳密な計測になった。pysimユニットテスト25/25、統合シナリオ12/12は本変更後も成功を維持した。
+
+以下のSection 2〜5は、4→16スロットのJITキャッシュと32→16スロットのvMMIO TLBの両方を適用した状態での全ベンチマーク一括実行（`benchmarks/run_all.py`）の実測値である。
 
 ---
 
@@ -51,85 +65,85 @@ pysimユニットテスト25/25、統合シナリオ12/12、`check-src.ps1 -grou
 
 [Section 1: Linear Memory & Guest RAM Access]
 --------------------------------------------------------------------------------
-  * Raw Bytearray 32-bit R/W (Baseline): 4.35 M ops/s  (230.1 ns/op)
-  * 8-bit Byte R/W Throughput:          15.56 M ops/s
-  * 16-bit Half-Word R/W Throughput:     3.86 M ops/s
-  * Single-CMP Bound Check Overhead:    7.41 M ops/s  (135.0 ns/op)
-  * vMMIO Fast Bypass (Bit 31 == 0):    1.52 M ops/s  (656.0 ns/op)
-  * Linear RAM Bandwidth:               5.81 MB/s
+  * Raw Bytearray 32-bit R/W (Baseline): 3.91 M ops/s  (255.9 ns/op)
+  * 8-bit Byte R/W Throughput:          16.44 M ops/s
+  * 16-bit Half-Word R/W Throughput:     4.19 M ops/s
+  * Single-CMP Bound Check Overhead:    7.47 M ops/s  (133.9 ns/op)
+  * vMMIO Fast Bypass (Bit 31 == 0):    1.72 M ops/s  (581.2 ns/op)
+  * Linear RAM Bandwidth:               6.56 MB/s
 
 [Section 2: vMMIO Virtual Devices & Address Translation]
 --------------------------------------------------------------------------------
-  * Direct-Mapped TLB Hit (O(1)):       0.53 M ops/s  (1898.0 ns/hit)
-  * Folding XOR Hash Calculation:       4.93 M ops/s  (203.0 ns/op)
-  * TLB Miss -> FlatMap Walk (O(logN)): 0.38 M ops/s  (2623.4 ns/walk)
-  * TLB Hit / FlatMap Walk Ratio:        1.38x
-  * Static Syscall Dispatch (FC=0xC):   0.61 M ops/s  (1652.3 ns/dispatch)
-  * RBAC Task Isolation Verification:   0.61 M ops/s  (1649.9 ns/check)
+  * Direct-Mapped TLB Hit (O(1)):       0.41 M ops/s  (2445.1 ns/hit)
+  * Folding XOR Hash Calculation:       3.55 M ops/s  (281.9 ns/op)
+  * TLB Miss -> FlatMap Walk (O(logN)): 0.19 M ops/s  (5174.8 ns/walk)
+  * TLB Hit / FlatMap Walk Ratio:        2.12x
+  * Static Syscall Dispatch (FC=0xC):   0.58 M ops/s  (1710.0 ns/dispatch)
+  * RBAC Task Isolation Verification:   0.57 M ops/s  (1740.8 ns/check)
 
 [Section 3: JIT Compiler & Runtime Dispatch]
 --------------------------------------------------------------------------------
-  * Copy-and-Patch Compile Speed:       13,302 Traces/sec  (75.18 us/trace)
-  * Compile Cost per WASM Instruction:  18794.1 ns/opcode
-  * 2-Bit Card Marking O(1) Check:      0.68 M ops/s  (1478.7 ns/check)
-  * Sparse JIT Entry Binary Search:      0.79 M ops/s  (1271.2 ns/lookup)
-  * Arithmetic Loop (100,000 iters):    Interp: 6082.13 ms | JIT: 1192.23 ms
+  * Copy-and-Patch Compile Speed:       12,933 Traces/sec  (77.32 us/trace)
+  * Compile Cost per WASM Instruction:  19330.4 ns/opcode
+  * 2-Bit Card Marking O(1) Check:      0.74 M ops/s  (1353.0 ns/check)
+  * Sparse JIT Entry Binary Search:      0.78 M ops/s  (1275.3 ns/lookup)
+  * Arithmetic Loop (100,000 iters):    Interp: 5993.58 ms | JIT: 1148.85 ms
   * Differential Result Check:          Interp=704,982,704 | JIT=704,982,704 (MATCH)
-  * Measured JIT Speedup:               5.10x faster
-  * PIC Trace-Header Helper Tail Jump:  0.12 M ops/s  (8049.2 ns/dispatch; 10,000 calls)
+  * Measured JIT Speedup:               5.22x faster
+  * PIC Trace-Header Helper Tail Jump:  0.14 M ops/s  (7187.9 ns/dispatch; 10,000 calls)
 
 [Section 4: JIT Cache Metabolism & Corner Cases]
 --------------------------------------------------------------------------------
   * Oldest-Only Promotion Invariant:    [PASS] (Warm hits=0 promos, Oldest hit=+1 promo)
-  * Small Working Set (N=8 <= Active):  Hit Rate = 100.00%  (1.92 M lookups/s)
-  * Medium Working Set (N=24 <= 3Bank): Hit Rate = 100.00%  (1.16 M lookups/s)
-  * Large Working Set (N=100 Thrash):   Hit Rate = 92.44%  (0.12 M lookups/s)
-  * Cache Metabolism & Churn Rate:      63,551 Evictions / Sec (4976 generations)
+  * Small Working Set (N=8 <= Active):  Hit Rate = 100.00%  (2.15 M lookups/s)
+  * Medium Working Set (N=24 <= 3Bank): Hit Rate = 100.00%  (1.28 M lookups/s)
+  * Large Working Set (N=100 Thrash):   Hit Rate = 92.44%  (0.15 M lookups/s)
+  * Cache Metabolism & Churn Rate:      69,123 Evictions / Sec (4976 generations)
   * Dangling Chain Unlinking Safety:    [PASS] (All evicted traces unlinked cleanly)
   * Multi-Module UnifiedPC Collision:   [PASS] (Immunity verified between func_0 and func_1)
 
 [Section 5: 3D Raytracing Ambient Occlusion (AO-Bench)]
 --------------------------------------------------------------------------------
   * Resolution & Sampling:              32 x 16 (1,600 rays / frame)
-  * Tier 2 (Threaded CPS):              7466.05 ms  (214 Rays / Sec)
-  * Tier 3 (Hybrid + JIT):              7028.35 ms  (228 Rays / Sec)
-  * Measured Speedup:                   1.06x faster
+  * Tier 2 (Threaded CPS):              7046.33 ms  (227 Rays / Sec)
+  * Tier 3 (Hybrid + JIT):              6062.16 ms  (264 Rays / Sec)
+  * Measured Speedup:                   1.16x faster
   * JIT Chained Invocations:            15,482 / 82,053 (18.9%)
   * Active JIT Cache Bank Traces:       15 compiled traces
 ================================================================================
-[PASS] All benchmarks completed successfully in 25.31 seconds.
+[PASS] All benchmarks completed successfully in 24.15 seconds.
 ```
 
-Section 5の速度比はプロセス起動やOSスケジューリングの影響で実行毎に変動する（同日の別実行では1.16xも観測）。`bench_aobench.py --debug`（Section 4本文参照）では 6628.59 ms / 7680.15 ms = 1.16x だった。いずれも4スロット時代の1.00x前後から明確に改善しており、単発ノイズでは説明できない一貫した変化である。
+Section 2のTLB系指標はvMMIO TLBの32→16スロット縮小を反映している。`TLB Miss -> FlatMap Walk`のスループットは0.38→0.19 M ops/sへ低下した。これは意図した結果で、16スロットのTLBに対して測定区間が33ページを循環させるため、この区間だけを見ればほぼ毎回ミスしてFlatMap二分探索へ落ちるようになったためである（詳細は3.2.1節）。Section 5の速度比はプロセス起動やOSスケジューリングの影響で実行毎に変動する（1.06x〜1.16xの範囲で観測）。いずれも4スロット時代の1.00x前後から明確に改善しており、単発ノイズでは説明できない一貫した変化である。
 
 ---
 
 ## 3. ベンチマーク別詳細評価
 
 ### 3.1 Linear Memory & Guest RAM Access
-- **境界チェック最適化**: 符号なし単一比較（`unsigned(addr + size) <= ram_size`）による境界判定は 7.41 M ops/s（135.0 ns/op）を記録。
-- **vMMIO Fast Bypass**: アドレス最上位ビット判定（`addr & 0x8000_0000 == 0`）により、仮想デバイスを介さない通常のリニア RAM アクセスを $O(1)$ で直接バイパスし、1.52 M ops/s を記録。
+- **境界チェック最適化**: 符号なし単一比較（`unsigned(addr + size) <= ram_size`）による境界判定は 7.47 M ops/s（133.9 ns/op）を記録。
+- **vMMIO Fast Bypass**: アドレス最上位ビット判定（`addr & 0x8000_0000 == 0`）により、仮想デバイスを介さない通常のリニア RAM アクセスを $O(1)$ で直接バイパスし、1.72 M ops/s を記録。
 
 ### 3.2 vMMIO Virtual Devices & Address Translation
-- **Direct-Mapped Folding XOR TLB**: Folding XOR ハッシュ計算は 4.93 M ops/s（203.0 ns）。ウォームアップ後のTLBヒットは 0.53 M ops/s（1898.0 ns）、33ページ作業集合によるFlatMap経路は 0.38 M ops/s（2623.4 ns）で、同一実行内の比率は 1.38x となった。ヒット計測区間は `tlb_hits == iterations` かつ `tlb_misses == 0` をassertしている。
-- **RBAC & ゼロコピー所有権分離**: タスク間共有メモリ（FC=14）およびシステムコールディスパッチにおける RBAC 検証オーバーヘッドは 0.61 M ops/s（1649.9 ns/check）。`VmmioStatus.OWNER_MISMATCH` を全150,000回検出するassertを通過し、メモリ安全性を確認。
+- **Direct-Mapped Folding XOR TLB**: Folding XOR ハッシュ計算は 3.55 M ops/s（281.9 ns）。ウォームアップ後のTLBヒットは 0.41 M ops/s（2445.1 ns）、33ページ作業集合によるFlatMap経路は 0.19 M ops/s（5174.8 ns）で、同一実行内の比率は 2.12x となった。ヒット計測区間は `tlb_hits == iterations` かつ `tlb_misses == 0` をassertしている。TLBを32→16スロットへ縮小したため、Folding XORハッシュ計算自体も2段から3段のXORへ増え（わずかに低下）、FlatMap経路の相対的な速さ（比率上昇）は16エントリでのミス頻発を反映する（3.2.1節）。
+- **RBAC & ゼロコピー所有権分離**: タスク間共有メモリ（FC=14）およびシステムコールディスパッチにおける RBAC 検証オーバーヘッドは 0.57 M ops/s（1740.8 ns/check）。`VmmioStatus.OWNER_MISMATCH` を全150,000回検出するassertを通過し、メモリ安全性を確認。
 
 #### 3.2.1 TLB比較測定の妥当性注記
-ベンチマークのPTE格納表を64件、TLBを32件として分離した。初期化は静的1ページ・SHM33ページ・passthrough16ページの計50件を登録し、全登録処理で容量超過を `assert` する。`TLB Miss -> FlatMap Walk` は32エントリを超える33ページの有効な作業集合を循環させる測定であり、実測カウンタは `tlb_hits=590,877`、`tlb_misses=9,123`、PTE登録件数は50件だった。これは33ページ中のハッシュ衝突を含むリフィル挙動の測定で、毎回のアクセスを強制ミスさせる値ではない。
+ベンチマークのPTE格納表を64件、TLBを16件として分離した。初期化は静的1ページ・SHM33ページ・passthrough16ページの計50件を登録し、全登録処理で容量超過を `assert` する。`TLB Miss -> FlatMap Walk` は16エントリを超える33ページの有効な作業集合を循環させる測定であり、`run_all()` 完走後の累積カウンタは `tlb_hits=450,000`、`tlb_misses=150,001`、PTE登録件数は50件だった。33ページは16スロットの2倍を超えるため、この区間単体では毎回のアクセスがTLBミスとなり（区間内訳: `tlb_hits=0`、`tlb_misses=150,000`）、FlatMap二分探索へのリフィル経路を毎回厳密に踏む。累積ヒット数はセクション2.1（TLBヒット専用ウォームアップ）およびセクション2.5（RBAC検証で同一SHMアドレスへ反復アクセス）由来である。
 
 ### 3.3 JIT Compiler & Runtime Dispatch
-- **Copy-and-Patch 高速コンパイル**: ネイティブステンシルのメモリコピーと固定パッチ位置への書き込みを 13,302 Traces/sec（75.18 us/trace）で実行。4命令ブロック換算で 18,794.1 ns/opcode であり、コードバッファ確保も含む。
-- **疎なJITエントリ検索**: ソート済みJITエントリを二分探索し、0.79 M ops/s（1,271.2 ns/lookup）を計測した。JIT用Radix索引は使用しない。
-- **算術演算ループ差分検証**: 100,000 反復の算術ホットループにおいて、Tier 2 インタープリタ（6082.13 ms）に対して Tier 3 JIT（1192.23 ms）が **5.10x 高速化**を達成し、演算結果（`704,982,704`）が完全一致（Exact Match）。この単純ループは1トレースにチェインしきるため、4→16スロット化による変化は測定ノイズの範囲に留まる（実行毎の変動要因は下記）。
-- **Cヘルパー境界**: トレースヘッダの `helper_target_addr` を共通ヘルパー領域から読み、JITフレーム復元後に末尾ジャンプする経路は 8,049.2 ns/dispatch。pysimの `ctypes` コールバックを含むABI回帰値であり、組込みCの性能値ではない。
+- **Copy-and-Patch 高速コンパイル**: ネイティブステンシルのメモリコピーと固定パッチ位置への書き込みを 12,933 Traces/sec（77.32 us/trace）で実行。4命令ブロック換算で 19,330.4 ns/opcode であり、コードバッファ確保も含む。
+- **疎なJITエントリ検索**: ソート済みJITエントリを二分探索し、0.78 M ops/s（1,275.3 ns/lookup）を計測した。JIT用Radix索引は使用しない。
+- **算術演算ループ差分検証**: 100,000 反復の算術ホットループにおいて、Tier 2 インタープリタ（5993.58 ms）に対して Tier 3 JIT（1148.85 ms）が **5.22x 高速化**を達成し、演算結果（`704,982,704`）が完全一致（Exact Match）。この単純ループは1トレースにチェインしきるため、4→16スロット化による変化は測定ノイズの範囲に留まる（実行毎の変動要因は下記）。
+- **Cヘルパー境界**: トレースヘッダの `helper_target_addr` を共通ヘルパー領域から読み、JITフレーム復元後に末尾ジャンプする経路は 7,187.9 ns/dispatch。pysimの `ctypes` コールバックを含むABI回帰値であり、組込みCの性能値ではない。
 
 実行ごとにOSスケジューリング等で時間が変動するため、単発値を絶対性能とは扱わず、同一実行条件内の比較値として扱う。
 
 ### 3.4 JIT Cache Metabolism & 3面ローテーション
 - **3面リングバッファ代謝 (Active / Warm / Oldest)**:
-  - Small Working Set（$N=8 \le$ Active 容量）: ヒット率 **100.00%**（1.92 M lookups/s）。
-  - Medium Working Set（$N=24 \le$ 3Bank 合計容量）: ヒット率 **100.00%**（1.16 M lookups/s）。
-  - Large Working Set（$N=100$ スラッシング負荷）: ヒット率 **92.44%**（0.12 M lookups/s）を維持。この計測はバンク常駐性（3面ローテーション）を対象とし、Direct-Mapped Folding XORキャッシュの4→16スロット化とは別軸のため数値は変化しない。
+  - Small Working Set（$N=8 \le$ Active 容量）: ヒット率 **100.00%**（2.15 M lookups/s）。
+  - Medium Working Set（$N=24 \le$ 3Bank 合計容量）: ヒット率 **100.00%**（1.28 M lookups/s）。
+  - Large Working Set（$N=100$ スラッシング負荷）: ヒット率 **92.44%**（0.15 M lookups/s）を維持。この計測はバンク常駐性（3面ローテーション）を対象とし、Direct-Mapped Folding XORキャッシュの4→16スロット化とは別軸のため数値は変化しない。
 - **不変条件検証**:
   - `Oldest-Only Promotion Invariant`: Warm ヒットではプロモーション（Active へのコピー）を発生させず、Oldest ヒット時のみ昇格させることで無駄なキャッシュコピーを完全抑止。
   - `Dangling Chain Unlinking Safety`: バンク破棄時に破棄対象トレースを指す先行トレースの `chain_next` を $O(k)$ 有界時間でアンリンクし、ダングリングポインタを完全防止。

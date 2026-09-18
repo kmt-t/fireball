@@ -101,7 +101,7 @@ invoke_subagent(
 - **対象**: [`architecture_overview.md`](../../../docs/architecture/architecture_overview.md) の「Pillar 2: 3段直接 JIT 検索パイプライン」「Pillar 3: 共通2KB領域＋3面世代交代回転コードキャッシュ」 ↔ `jit_runtime.md`, `jit_compiler.md`, `runtime_vsoc.md`, `vsoc_cache_coherency_model.py`, `jit_cache_model.py`
 - **検証観点**:
   1. 世代交代コードキャッシュのバンク構成、役割分担、および昇格規則が、形式モデルおよび下位 JIT ランタイム仕様と論理的に完全一致しているか。
-  2. 3段ディスパッチパイプライン（カード判定、4スロットFolding XOR、疎なソート配列二分探索）の計算量、探索手順、および境界条件の整合性。JIT用Radix索引が設けられていないことも確認する。
+  2. 3段ディスパッチパイプライン（カード判定、16スロットFolding XOR、疎なソート配列二分探索）の計算量、探索手順、および境界条件の整合性。JIT用Radix索引が設けられていないことも確認する。
   3. MPU W^X 保護遷移プロトコルおよびキャッシュバリア（DSB/ISB）発行タイミングの整合性。
   4. トレースチェイニングおよびコンパイル順序（LIFO逆順コンパイル等）による即時チェイニング成立保証の記述整合性。
   5. 最上位概要の JIT・キャッシュ・ディスパッチ関連図（Mermaid）と本文記述・下位仕様の完全一致性（図の陳腐化・追随漏れの排除）。

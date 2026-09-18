@@ -122,12 +122,12 @@ Fireball の実行コアは、以下の 6 つの物理メカニズムによっ�
 - **呼出し境界の論理規約**: 実行コンテキスト、オペランド領域の現在位置、ローカル値領域の開始位置、スタック頂点値を継続引数として渡す。物理レジスタ名と退避規則は対象アーキテクチャのABIで定義する。基本ブロック末尾の状態同期と直接チェインの省略条件も対象ABIごとに定める。 `{JIT_RegisterMapping}`
 
 ### 3.2 Pillar 2: 3段直接 JIT 検索パイプライン (3-Stage Direct JIT Lookup Pipeline)
-<!-- traceability: {SimpleJITArchitecture} {JIT_MultiBuffer_Cache} {META_BinarySearch} {DirectMappedJIT4} -->
+<!-- traceability: {SimpleJITArchitecture} {JIT_MultiBuffer_Cache} {META_BinarySearch} {DirectMappedJIT16} -->
 
 | 段階 | 検索対象 | 計算量 | 判定・遷移 |
 |---:|---|---:|---|
 | 1 | カードマーキング表（`bit_view<2>`） | $O(1)$ | 4バイト単位の2-bit状態表を参照する。`COMPILED` でなければインタープリタへフォールバックする（Fast Exit）。 |
-| 2 | Direct-Mapped Folding XOR キャッシュ（4 entries） | $O(1)$ | 4エントリのダイレクトマップキャッシュを照合する。ヒット時はトレース実行アドレスを返却して探索を終了する。 |
+| 2 | Direct-Mapped Folding XOR キャッシュ（16 entries） | $O(1)$ | 16エントリのダイレクトマップキャッシュを照合する。ヒット時はトレース実行アドレスを返却して探索を終了する。 |
 | 3 | ソート済みJITエントリ配列 | $O(\log n)$ | Fast Cache miss時に各バンクのJITエントリを二分探索し、ネイティブ実行アドレスを特定する。Radix表は設けない。 |
 
 - **検索構造の契約**: バンク内のキーは昇順に保持し、二分探索で検索する。組込み実装と参照モデルは、この検索計算量の契約を共有する。

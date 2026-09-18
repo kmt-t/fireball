@@ -41,9 +41,7 @@ if TYPE_CHECKING:
     from execution_context import WASMContext
 
 
-NativeTraceFn = Callable[
-    [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, int], int | None
-]
+NativeTraceFn = Callable[[ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, int], int | None]
 TraceArgument = ctypes.c_void_p
 
 
@@ -64,9 +62,11 @@ _CARD_STATE_NAMES = ("UNEXECUTED", "EXECUTED", "HOT", "COMPILED")
 # gives a merge/loop head only a handful of real predecessors (a loop
 # back-edge plus its fallthrough entry, or a few br_table cases), so this
 # is sized generously against that, matching this file's other small
-# FB_CONF-style bounds (JITMultiBufferCache.NUM_FAST_SLOTS=4,
+# FB_CONF-style bounds (JITMultiBufferCache.NUM_FAST_SLOTS=16,
 # RuntimeEngine.compile_queue_capacity=4).
 FB_CONF_MAX_INBOUND_SOURCES = JIT_CACHE_MAX_INBOUND_SOURCES
+
+
 class HotspotBitmap:
     """Per-function 2-bit card state with one owned storage per function."""
 
@@ -492,9 +492,7 @@ class JITCacheBank:
 
     @property
     def traces(self) -> StaticVector[tuple[int, JITTrace]]:
-        traces: StaticVector[tuple[int, JITTrace]] = StaticVector(
-            capacity=self.entry_capacity
-        )
+        traces: StaticVector[tuple[int, JITTrace]] = StaticVector(capacity=self.entry_capacity)
         for pc, trace in zip(self._keys, self._values, strict=True):
             if trace is not None:
                 traces.append((pc, trace))
@@ -577,7 +575,7 @@ class JITMultiBufferCache:
         self.promotions = 0
         self.evictions = 0
         self.on_evict: Callable[[StaticVector[int]], None] | None = None
-        # Direct-mapped 4-slot cache keyed by a repeatedly folded XOR over
+        # Direct-mapped 16-slot cache keyed by a repeatedly folded XOR over
         # UnifiedPC.
         self._fast_slots: StaticVector[tuple[int, JITTrace] | None] = StaticVector(
             capacity=self.NUM_FAST_SLOTS
@@ -586,11 +584,10 @@ class JITMultiBufferCache:
             self._fast_slots.append(None)
 
     def _hash_slot(self, pc: int) -> int:
-        """Fold a 32-bit UnifiedPC with four XORs and select two bits."""
+        """Fold a 32-bit UnifiedPC with three XORs and select four bits."""
         temp = pc ^ (pc >> 16)
         temp = temp ^ (temp >> 8)
         temp = temp ^ (temp >> 4)
-        temp = temp ^ (temp >> 2)
         return temp & (self.NUM_FAST_SLOTS - 1)
 
     @property
@@ -632,11 +629,7 @@ class JITMultiBufferCache:
 
     @staticmethod
     def _chain_eligible(source: JITTrace) -> bool:
-        return (
-            source.next_pc is not None
-            and source.loops_to is None
-            and not source.has_return_val
-        )
+        return source.next_pc is not None and source.loops_to is None and not source.has_return_val
 
     def _set_chain_target(self, source: JITTrace, target: JITTrace | None) -> None:
         source.header.chain_target_addr = (
@@ -732,9 +725,7 @@ class JITMultiBufferCache:
         # these sources in the bank that used to hold the promoted trace,
         # never finds them there anymore, and never unlinks them to the
         # interpreter fallback once this trace is eventually purged for real.
-        following_sources: StaticVector[int] = StaticVector(
-            capacity=FB_CONF_MAX_INBOUND_SOURCES
-        )
+        following_sources: StaticVector[int] = StaticVector(capacity=FB_CONF_MAX_INBOUND_SOURCES)
         for src_pc in old_oldest.inbound_sources:
             src_trace = self.find_trace(src_pc)
             if src_trace is not None and src_trace.chain_next == head_pc:

@@ -7,10 +7,10 @@
 -->
 
 ## 1. コンセプト
-<!-- traceability: {SimpleJITArchitecture} {JIT_MultiBuffer_Cache} {JIT_OldestOnly_Promote} {META_AccessDictionary} {META_BinarySearch} {LowLatencyJIT} {HistoryBuffer} {GLOBAL_PeriodicTask} {DirectMappedJIT4} {Runtime_BumpAllocator} -->
+<!-- traceability: {SimpleJITArchitecture} {JIT_MultiBuffer_Cache} {JIT_OldestOnly_Promote} {META_AccessDictionary} {META_BinarySearch} {LowLatencyJIT} {HistoryBuffer} {GLOBAL_PeriodicTask} {DirectMappedJIT16} {Runtime_BumpAllocator} -->
 JIT ランタイム管理は、WASM PC とネイティブコードの紐付け検索を担当する。3面世代交代コードキャッシュのローテーションも担当する。ホットスポット検出も一括して担う。
 
-インタープリタ実行ループ内の検索は3段で構成する。第1段はカードマーキング表 (`bit_view<2>`) による $O(1)$ 事前判定、第2段はDirect-Mapped Folding XORキャッシュ（4スロット）による $O(1)$ 検索、第3段は各バンクのソート済みJITエントリ配列に対する二分探索である。エントリ数が少ないためRadix表は設けず、補助索引のメモリと更新処理を持たない。
+インタープリタ実行ループ内の検索は3段で構成する。第1段はカードマーキング表 (`bit_view<2>`) による $O(1)$ 事前判定、第2段はDirect-Mapped Folding XORキャッシュ（16スロット）による $O(1)$ 検索、第3段は各バンクのソート済みJITエントリ配列に対する二分探索である。エントリ数が少ないためRadix表は設けず、補助索引のメモリと更新処理を持たない。
 
 3面コードキャッシュはデータ用バンプアロケータとは異なる。データRAM（`RW + XN`）とは分離されている。MPU W^X 制御された専用実行可能セクションから確保される。専用コードアロケータによりハードウェア保護境界が厳格に保たれる。
 
@@ -61,7 +61,7 @@ JITサブシステムは、以下の2つの独立した設計書に責務を分�
 ```mermaid
 flowchart TD
     Search[Search Request WASM PC] --> Stage1[Stage 1: Card Marking bit_view check O1]
-    Stage1 -->|COMPILED| Stage2[Stage 2: Direct-Mapped Folding XOR Cache 4 slots O1]
+    Stage1 -->|COMPILED| Stage2[Stage 2: Direct-Mapped Folding XOR Cache 16 slots O1]
     Stage1 -->|NOT COMPILED| Interp[Interpreter Fast-Exit]
     Stage2 -->|Hit| Exec[exec_trace native code]
     Stage2 -->|Miss| Stage3[Stage 3: Binary Search in sorted bank entries O log n]
@@ -74,7 +74,7 @@ flowchart TD
 #### JITエントリインデックス（JitEntryIndex）クラス
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
-| 高速スロット配列 | 2-bit スロット選択を行う Folding XOR Hash による Direct-Mapped キャッシュ | 固定長配列 | 4スロット (`{DirectMappedJIT4}`) |
+| 高速スロット配列 | 4-bit スロット選択を行う Folding XOR Hash による Direct-Mapped キャッシュ | 固定長配列 | 16スロット (`{DirectMappedJIT16}`) |
 | エントリ配列 | `head_pc` 昇順のJITエントリを保持する | 固定長ソート配列 | 二分探索 $O(\log n)$。Radix索引なし |
 | カードマーキング表 | カードごとの 2-bit 状態表 | 密ビュー | `fireball::bit_view<2>` |
 | 被チェイン逆引きテーブル | バンクごとの被チェイン元 JIT エントリインデックス配列 | 固定長配列の配列 | `FB_CONF_JIT_MAX_INBOUND_CHAINS_PER_BANK` |
@@ -84,9 +84,9 @@ flowchart TD
 
 ### 4.1 アルゴリズム
 1. **カードマーキング確認 ($O(1)$)**: カードマーキング表 (`bit_view<2>`) を $O(1)$ で確認する。状態が `COMPILED` でなければ即座に終了する。
-2. **Direct-Mapped Folding XOR キャッシュ確認 ($O(1)$, `{DirectMappedJIT4}`)**:
+2. **Direct-Mapped Folding XOR キャッシュ確認 ($O(1)$, `{DirectMappedJIT16}`)**:
    - `UnifiedPC` を 32→16→8→4 ビットと3回の XOR で折りたたむ。
-   - さらに `temp = temp ^ (temp >> 2)` を行い、`slot = temp & 0x03` を計算して4スロットの高速テーブルを照合する。
+   - `slot = temp & 0x0F` を計算して16スロットの高速テーブルを照合する。
    - スロットのタグが `head_pc` と一致（Hit）した場合、バンク検索をバイパスして $O(1)$ でトレースを返す。
 3. **バンク内二分探索 ($O(\log n)$)**:
    - キャッシュミス時、Active / Warm / Oldest の順に各バンクの `head_pc` 昇順配列を二分探索する。JITエントリ数が少ないためRadix表は持たない。
@@ -113,7 +113,7 @@ flowchart TD
    - **設計理由**: 二重コンパイルによるキャッシュ容量の浪費と CPU 時間の損失を完全に防止する。
 
 #### 3段高速検索パイプライン手順（手順アクティビティ図）
-<!-- traceability: {JIT_MultiBuffer_Cache} {LowLatencyJIT} {DirectMappedJIT4} {META_BinarySearch} -->
+<!-- traceability: {JIT_MultiBuffer_Cache} {LowLatencyJIT} {DirectMappedJIT16} {META_BinarySearch} -->
 実行時 PC からネイティブ `exec_trace` アドレスを特定する3段探索パイプラインを示す。
 
 ```mermaid
@@ -151,7 +151,7 @@ sequenceDiagram
     Note over Mgr: GOTCHA-JITR-03: Trigger 3-Bank Rotation
     Note over Mgr: Shift roles: Oldest -> New Active, Warm -> Oldest, Active -> Warm
 
-    Mgr->>Mgr: Invalidate Direct-Mapped Folding XOR Cache (4 slots)
+    Mgr->>Mgr: Invalidate Direct-Mapped Folding XOR Cache (16 slots)
     Note over Mgr: GOTCHA-JITR-05: Clear fast cache to prevent stale/dangling references
 
     Mgr->>Inbound: Inspect registered inbound source traces (k entries)
@@ -241,7 +241,7 @@ flowchart TD
 ## 6. 制約達成の方策
 
 ### 6.1 性能制約
-- **方策**: カードマーキング表と4スロットFolding XORキャッシュの $O(1)$ 事前検索後、キャッシュミス時に少数のソート済みJITエントリを二分探索する（$O(\log n)$）。Radix索引は設けず、固定容量配列と二分探索を共通の検索契約とする。
+- **方策**: カードマーキング表と16スロットFolding XORキャッシュの $O(1)$ 事前検索後、キャッシュミス時に少数のソート済みJITエントリを二分探索する（$O(\log n)$）。Radix索引は設けず、固定容量配列と二分探索を共通の検索契約とする。
 
 ### 6.2 メモリ制約
 <!-- traceability: {JIT_MultiBuffer_Cache} {JIT_OldestOnly_Promote} -->

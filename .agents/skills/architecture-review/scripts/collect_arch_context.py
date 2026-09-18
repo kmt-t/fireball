@@ -65,7 +65,7 @@ DOMAINS = {
         "name": "JIT Pipeline, Cache & Dispatch",
         "description": "8KB contiguous JIT region with fixed common code plus three rotating banks, sparse-key binary-search dispatch, trace chaining, LIFO compile",
         "keywords": [
-            "DirectMappedJIT4",
+            "DirectMappedJIT16",
             "META_BinarySearch",
             "JIT_CopyAndPatch",
             "JIT_MultiBuffer_Cache",

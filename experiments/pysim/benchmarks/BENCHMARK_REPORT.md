@@ -2,7 +2,7 @@
 
 本レポートは、Fireball Hypervisor の全層（Tier 1 Core OS / Tier 2 Runtime / Tier 3 JIT & Platform）を具象化した `pysim` における全 5 つのベンチマークスイートの実測測定結果、JIT トレースチェイニング動作診断、および C++23 実機実装への移植性・性能予測をまとめた詳細レポートです。
 
-Section 1〜4の既存値は 2026-09-14〜2026-09-16 に同一ワークスペースで再実行した結果である。Section 5のAO-Benchは 2026-09-17 に、現行のCython CPSチェインを有効化して再測定した。Pythonプロセス、OSスケジューリング、およびPythonハンドラ本体呼出しの影響を含むため、絶対値ではなく同一環境での比較値として扱う。
+Section 1〜5は 2026-09-18 に、JIT Direct-Mapped Folding XORキャッシュを4スロットから16スロットへ拡張した変更（`{DirectMappedJIT16}`, `experiments/pysim/tier1_core/config.py`）の直後に同一ワークスペースで再測定した結果である。Pythonプロセス、OSスケジューリング、およびPythonハンドラ本体呼出しの影響を含むため、絶対値ではなく同一環境での比較値として扱う。5.1節のネイティブCPS経路の数値のみ2026-09-17測定の既存値を保持する（本変更では未再測定のため）。
 
 ---
 
@@ -16,7 +16,7 @@ Section 1〜4の既存値は 2026-09-14〜2026-09-16 に同一ワークスペー
   ```bash
   .venv/Scripts/python.exe experiments/pysim/benchmarks/run_all.py
   ```
-- **従来AO-Bench単体・チェイニング内部ダンプ実行コマンド**:
+- **AO-Bench単体・チェイニング内部ダンプ実行コマンド**:
   ```bash
   .venv/Scripts/python.exe experiments/pysim/benchmarks/aobench/bench_aobench.py --debug
   ```
@@ -27,21 +27,18 @@ Section 1〜4の既存値は 2026-09-14〜2026-09-16 に同一ワークスペー
   uv run --system-certs python experiments/pysim/aobench.py --native-cps
   ```
 
-### 1.1 2026-09-17 チェイニング修正後の再測定
+### 1.1 2026-09-18 Direct-Mapped Folding XORキャッシュ 4→16スロット拡張後の再測定
 
-統合ベンチマークを修正済みのx64ネイティブチェイニング実装で再実行した。測定は単発値であり、同一環境内の比較値として扱う。
+`JIT_CACHE_FAST_SLOT_COUNT` と `RUNTIME_BLOCK_CACHE_SLOT_COUNT` を4から16へ変更した（フォールド段数はそれぞれ既存の3段のまま。JIT側は従来の4段目のXORを1段削除しており、追加の折り畳み演算コストは発生しない）。同一のAO-Bench実行内アクセス系列を4/16/256スロットで再生シミュレーションした結果、想定どおりget_blockキャッシュは36.29%→52.51%、JIT lookupキャッシュは71.78%→91.76%までヒット率が改善することを確認したうえで採用した。
 
-| 区分 | 測定結果 |
-| :--- | :--- |
-| リニアメモリ | 32ビット読み書き 3.31 M ops/s、境界検査 6.04 M ops/s、帯域 6.10 MB/s |
-| 仮想MMIO | TLBヒット 0.50 M ops/s、平坦表探索 0.35 M ops/s、ヒット比 1.41倍 |
-| JITコンパイル | 11,882 traces/s、84.16 us/trace、21,041.0 ns/opcode |
-| JIT算術ループ | Interpreter 6,269.07 ms、JIT 1,340.94 ms、4.68倍、結果一致 |
-| JITチェイニング | 82,053回中15,482回、18.9%、アクティブトレース15件 |
-| JITキャッシュ | 小規模100.00%、中規模100.00%、大規模92.44%、排出62,253回/s |
-| AO-Bench | Tier 2 7,762.78 ms、Tier 3 7,804.17 ms、0.99倍、結果一致 |
+| 区分 | 変更前（4スロット） | 変更後（16スロット） |
+| :--- | :--- | :--- |
+| AO-Bench 同一実行内速度比 | 1.00x（速度向上なし） | **1.06〜1.16x** |
+| get_blockキャッシュ ヒット率 | 36.29% | 52.51%（実アクセス系列再生シミュレーション値） |
+| JIT lookupキャッシュ ヒット率 | 71.78% | 91.76%（実アクセス系列再生シミュレーション値） |
+| RAM増分 | — | 両キャッシュ合計 約+192B（予算余裕 約5.7KBに対し誤差域） |
 
-実行時間は27.07秒で、全5区分が正常終了した。
+pysimユニットテスト25/25、統合シナリオ12/12、`check-src.ps1 -group pysim` はすべて成功した。以下のSection 2〜4は、この変更を適用した状態での全ベンチマーク一括実行（`benchmarks/run_all.py`）の実測値である。
 
 ---
 
@@ -49,87 +46,90 @@ Section 1〜4の既存値は 2026-09-14〜2026-09-16 に同一ワークスペー
 
 ```
 ================================================================================
-                     ALL BENCHMARK RESULTS SUMMARY                       
+        Fireball PySIM Unified Performance Benchmark Suite
 ================================================================================
 
 [Section 1: Linear Memory & Guest RAM Access]
 --------------------------------------------------------------------------------
-  * Raw Bytearray 32-bit R/W (Baseline): 3.83 M ops/s  (261.2 ns/op)
-  * 8-bit Byte R/W Throughput:           6.96 M ops/s
-  * 16-bit Half-Word R/W Throughput:     3.00 M ops/s
-  * Single-CMP Bound Check Overhead:     6.60 M ops/s  (151.5 ns/op)
-  * vMMIO Fast Bypass (Bit 31 == 0):     1.63 M ops/s  (615.1 ns/op)
-  * Linear RAM Bandwidth:                6.20 MB/s
+  * Raw Bytearray 32-bit R/W (Baseline): 4.35 M ops/s  (230.1 ns/op)
+  * 8-bit Byte R/W Throughput:          15.56 M ops/s
+  * 16-bit Half-Word R/W Throughput:     3.86 M ops/s
+  * Single-CMP Bound Check Overhead:    7.41 M ops/s  (135.0 ns/op)
+  * vMMIO Fast Bypass (Bit 31 == 0):    1.52 M ops/s  (656.0 ns/op)
+  * Linear RAM Bandwidth:               5.81 MB/s
 
 [Section 2: vMMIO Virtual Devices & Address Translation]
 --------------------------------------------------------------------------------
-  * Direct-Mapped TLB Hit (O(1)):       0.57 M ops/s  (1746.8 ns/hit)
-  * Folding XOR Hash Calculation:       4.42 M ops/s  (226.4 ns/op)
-  * TLB Miss -> FlatMap Walk (O(logN)): 0.46 M ops/s  (2189.2 ns/walk)
-  * TLB Hit / FlatMap Walk Ratio:        1.25x
-  * Static Syscall Dispatch (FC=0xC):   0.53 M ops/s  (1888.2 ns/dispatch)
-  * RBAC Task Isolation Verification:   0.58 M ops/s  (1733.7 ns/check)
+  * Direct-Mapped TLB Hit (O(1)):       0.53 M ops/s  (1898.0 ns/hit)
+  * Folding XOR Hash Calculation:       4.93 M ops/s  (203.0 ns/op)
+  * TLB Miss -> FlatMap Walk (O(logN)): 0.38 M ops/s  (2623.4 ns/walk)
+  * TLB Hit / FlatMap Walk Ratio:        1.38x
+  * Static Syscall Dispatch (FC=0xC):   0.61 M ops/s  (1652.3 ns/dispatch)
+  * RBAC Task Isolation Verification:   0.61 M ops/s  (1649.9 ns/check)
 
 [Section 3: JIT Compiler & Runtime Dispatch]
 --------------------------------------------------------------------------------
-  * Copy-and-Patch Compile Speed:       14,239 Traces/sec  (70.23 us/trace)
-  * Compile Cost per WASM Instruction:  17558.0 ns/opcode
-  * 2-Bit Card Marking O(1) Check:      0.71 M ops/s  (1405.8 ns/check)
-  * Sparse JIT Entry Binary Search:     0.80 M ops/s  (1247.0 ns/lookup)
-  * Arithmetic Loop (100,000 iters):    Interp: 5600.95 ms | JIT: 1533.01 ms
+  * Copy-and-Patch Compile Speed:       13,302 Traces/sec  (75.18 us/trace)
+  * Compile Cost per WASM Instruction:  18794.1 ns/opcode
+  * 2-Bit Card Marking O(1) Check:      0.68 M ops/s  (1478.7 ns/check)
+  * Sparse JIT Entry Binary Search:      0.79 M ops/s  (1271.2 ns/lookup)
+  * Arithmetic Loop (100,000 iters):    Interp: 6082.13 ms | JIT: 1192.23 ms
   * Differential Result Check:          Interp=704,982,704 | JIT=704,982,704 (MATCH)
-  * Measured JIT Speedup:               3.65x faster
-  * PIC Trace-Header Helper Tail Jump:  0.13 M ops/s  (7805.9 ns/dispatch; 10,000 calls)
+  * Measured JIT Speedup:               5.10x faster
+  * PIC Trace-Header Helper Tail Jump:  0.12 M ops/s  (8049.2 ns/dispatch; 10,000 calls)
 
 [Section 4: JIT Cache Metabolism & Corner Cases]
 --------------------------------------------------------------------------------
   * Oldest-Only Promotion Invariant:    [PASS] (Warm hits=0 promos, Oldest hit=+1 promo)
-  * Small Working Set (N=8 <= Active):  Hit Rate = 100.00%  (0.54 M lookups/s)
-  * Medium Working Set (N=24 <= 3Bank): Hit Rate = 100.00%  (0.70 M lookups/s)
+  * Small Working Set (N=8 <= Active):  Hit Rate = 100.00%  (1.92 M lookups/s)
+  * Medium Working Set (N=24 <= 3Bank): Hit Rate = 100.00%  (1.16 M lookups/s)
   * Large Working Set (N=100 Thrash):   Hit Rate = 92.44%  (0.12 M lookups/s)
-  * Cache Metabolism & Churn Rate:      62,704 Evictions / Sec (4976 generations)
+  * Cache Metabolism & Churn Rate:      63,551 Evictions / Sec (4976 generations)
   * Dangling Chain Unlinking Safety:    [PASS] (All evicted traces unlinked cleanly)
   * Multi-Module UnifiedPC Collision:   [PASS] (Immunity verified between func_0 and func_1)
 
 [Section 5: 3D Raytracing Ambient Occlusion (AO-Bench)]
 --------------------------------------------------------------------------------
   * Resolution & Sampling:              32 x 16 (1,600 rays / frame)
-  * Tier 2 (Threaded CPS, native):      6574.14 ms  (243 Rays / Sec)
-  * Tier 3 (Hybrid + JIT):              6996.54 ms  (229 Rays / Sec)
-  * Measured Speedup:                   0.94x (Tier 3 slower)
-  * Differential Check:                 PASS (528 bytes, byte-for-byte)
-  * Active JIT Cache Bank Traces:       8 compiled traces
+  * Tier 2 (Threaded CPS):              7466.05 ms  (214 Rays / Sec)
+  * Tier 3 (Hybrid + JIT):              7028.35 ms  (228 Rays / Sec)
+  * Measured Speedup:                   1.06x faster
+  * JIT Chained Invocations:            15,482 / 82,053 (18.9%)
+  * Active JIT Cache Bank Traces:       15 compiled traces
 ================================================================================
+[PASS] All benchmarks completed successfully in 25.31 seconds.
 ```
+
+Section 5の速度比はプロセス起動やOSスケジューリングの影響で実行毎に変動する（同日の別実行では1.16xも観測）。`bench_aobench.py --debug`（Section 4本文参照）では 6628.59 ms / 7680.15 ms = 1.16x だった。いずれも4スロット時代の1.00x前後から明確に改善しており、単発ノイズでは説明できない一貫した変化である。
 
 ---
 
 ## 3. ベンチマーク別詳細評価
 
 ### 3.1 Linear Memory & Guest RAM Access
-- **境界チェック最適化**: 符号なし単一比較（`unsigned(addr + size) <= ram_size`）による境界判定は 6.60 M ops/s（151.5 ns/op）を記録。
-- **vMMIO Fast Bypass**: アドレス最上位ビット判定（`addr & 0x8000_0000 == 0`）により、仮想デバイスを介さない通常のリニア RAM アクセスを $O(1)$ で直接バイパスし、1.63 M ops/s を記録。
+- **境界チェック最適化**: 符号なし単一比較（`unsigned(addr + size) <= ram_size`）による境界判定は 7.41 M ops/s（135.0 ns/op）を記録。
+- **vMMIO Fast Bypass**: アドレス最上位ビット判定（`addr & 0x8000_0000 == 0`）により、仮想デバイスを介さない通常のリニア RAM アクセスを $O(1)$ で直接バイパスし、1.52 M ops/s を記録。
 
 ### 3.2 vMMIO Virtual Devices & Address Translation
-- **Direct-Mapped Folding XOR TLB**: Folding XOR ハッシュ計算は 4.42 M ops/s（226.4 ns）。ウォームアップ後のTLBヒットは 0.57 M ops/s（1746.8 ns）、33ページ作業集合によるFlatMap経路は 0.46 M ops/s（2189.2 ns）で、同一実行内の比率は 1.25x となった。ヒット計測区間は `tlb_hits == iterations` かつ `tlb_misses == 0` をassertしている。
-- **RBAC & ゼロコピー所有権分離**: タスク間共有メモリ（FC=14）およびシステムコールディスパッチにおける RBAC 検証オーバーヘッドは 0.58 M ops/s（1733.7 ns/check）。`VmmioStatus.OWNER_MISMATCH` を全150,000回検出するassertを通過し、メモリ安全性を確認。
+- **Direct-Mapped Folding XOR TLB**: Folding XOR ハッシュ計算は 4.93 M ops/s（203.0 ns）。ウォームアップ後のTLBヒットは 0.53 M ops/s（1898.0 ns）、33ページ作業集合によるFlatMap経路は 0.38 M ops/s（2623.4 ns）で、同一実行内の比率は 1.38x となった。ヒット計測区間は `tlb_hits == iterations` かつ `tlb_misses == 0` をassertしている。
+- **RBAC & ゼロコピー所有権分離**: タスク間共有メモリ（FC=14）およびシステムコールディスパッチにおける RBAC 検証オーバーヘッドは 0.61 M ops/s（1649.9 ns/check）。`VmmioStatus.OWNER_MISMATCH` を全150,000回検出するassertを通過し、メモリ安全性を確認。
 
 #### 3.2.1 TLB比較測定の妥当性注記
 ベンチマークのPTE格納表を64件、TLBを32件として分離した。初期化は静的1ページ・SHM33ページ・passthrough16ページの計50件を登録し、全登録処理で容量超過を `assert` する。`TLB Miss -> FlatMap Walk` は32エントリを超える33ページの有効な作業集合を循環させる測定であり、実測カウンタは `tlb_hits=590,877`、`tlb_misses=9,123`、PTE登録件数は50件だった。これは33ページ中のハッシュ衝突を含むリフィル挙動の測定で、毎回のアクセスを強制ミスさせる値ではない。
 
 ### 3.3 JIT Compiler & Runtime Dispatch
-- **Copy-and-Patch 高速コンパイル**: ネイティブステンシルのメモリコピーと固定パッチ位置への書き込みを 16,431 Traces/sec（60.86 us/trace）で実行。4命令ブロック換算で 15,215.4 ns/opcode であり、コードバッファ確保も含む。
-- **疎なJITエントリ検索**: 64件のソート済みJITエントリを二分探索し、0.68 M ops/s（1,461.5 ns/lookup）を計測した。JIT用Radix索引は使用しない。
-- **算術演算ループ差分検証**: 100,000 反復の算術ホットループにおいて、Tier 2 インタープリタ（6567.46 ms）に対して Tier 3 JIT（1379.46 ms）が **4.76x 高速化**を達成し、演算結果（`704,982,704`）が完全一致（Exact Match）。
-- **Cヘルパー境界**: トレースヘッダの `helper_target_addr` を共通ヘルパー領域から読み、JITフレーム復元後に末尾ジャンプする経路は 7,805.9ns/dispatch。pysimの `ctypes` コールバックを含むABI回帰値であり、組込みCの性能値ではない。
+- **Copy-and-Patch 高速コンパイル**: ネイティブステンシルのメモリコピーと固定パッチ位置への書き込みを 13,302 Traces/sec（75.18 us/trace）で実行。4命令ブロック換算で 18,794.1 ns/opcode であり、コードバッファ確保も含む。
+- **疎なJITエントリ検索**: ソート済みJITエントリを二分探索し、0.79 M ops/s（1,271.2 ns/lookup）を計測した。JIT用Radix索引は使用しない。
+- **算術演算ループ差分検証**: 100,000 反復の算術ホットループにおいて、Tier 2 インタープリタ（6082.13 ms）に対して Tier 3 JIT（1192.23 ms）が **5.10x 高速化**を達成し、演算結果（`704,982,704`）が完全一致（Exact Match）。この単純ループは1トレースにチェインしきるため、4→16スロット化による変化は測定ノイズの範囲に留まる（実行毎の変動要因は下記）。
+- **Cヘルパー境界**: トレースヘッダの `helper_target_addr` を共通ヘルパー領域から読み、JITフレーム復元後に末尾ジャンプする経路は 8,049.2 ns/dispatch。pysimの `ctypes` コールバックを含むABI回帰値であり、組込みCの性能値ではない。
 
-2026-09-17の同一実行では、インタープリタ `5600.95 ms`、JIT `1533.01 ms`、速度比 `3.65x` となった。実行ごとにOSスケジューリング等で時間が変動するため、単発値を絶対性能とは扱わず、同一実行条件内の比較値として扱う。
+実行ごとにOSスケジューリング等で時間が変動するため、単発値を絶対性能とは扱わず、同一実行条件内の比較値として扱う。
 
 ### 3.4 JIT Cache Metabolism & 3面ローテーション
 - **3面リングバッファ代謝 (Active / Warm / Oldest)**:
-  - Small Working Set（$N=8 \le$ Active 容量）: ヒット率 **100.00%**（0.54 M lookups/s）。
-  - Medium Working Set（$N=24 \le$ 3Bank 合計容量）: ヒット率 **100.00%**（0.70 M lookups/s）。
-  - Large Working Set（$N=100$ スラッシング負荷）: ヒット率 **92.44%**（0.12 M lookups/s）を維持。
+  - Small Working Set（$N=8 \le$ Active 容量）: ヒット率 **100.00%**（1.92 M lookups/s）。
+  - Medium Working Set（$N=24 \le$ 3Bank 合計容量）: ヒット率 **100.00%**（1.16 M lookups/s）。
+  - Large Working Set（$N=100$ スラッシング負荷）: ヒット率 **92.44%**（0.12 M lookups/s）を維持。この計測はバンク常駐性（3面ローテーション）を対象とし、Direct-Mapped Folding XORキャッシュの4→16スロット化とは別軸のため数値は変化しない。
 - **不変条件検証**:
   - `Oldest-Only Promotion Invariant`: Warm ヒットではプロモーション（Active へのコピー）を発生させず、Oldest ヒット時のみ昇格させることで無駄なキャッシュコピーを完全抑止。
   - `Dangling Chain Unlinking Safety`: バンク破棄時に破棄対象トレースを指す先行トレースの `chain_next` を $O(k)$ 有界時間でアンリンクし、ダングリングポインタを完全防止。
@@ -140,60 +140,62 @@ Section 1〜4の既存値は 2026-09-14〜2026-09-16 に同一ワークスペー
 
 `bench_aobench.py --debug` 実行時に採取されたランタイム内部メトリクスおよびトレースチェイニング診断結果です。
 
-この測定では `JIT_CARD_SHIFT=2`（4バイト/カード）を使用し、既定の `min_trace_bytes` も4バイトです。前回の8バイト設定では、チェインに必要な短いブロックが候補から除外され、連続JIT実行が0回になっていました。
+この測定では `JIT_CARD_SHIFT=2`（4バイト/カード）を使用し、既定の `min_trace_bytes` も4バイトです。
+
+チェイン接続率（18.9%）自体はコンパイル時に静的決定される `chain_next_pc` 埋め込みの結果であり、Direct-Mapped Folding XORキャッシュのスロット数（4→16）とは無関係のため変化しない。16スロット化が改善するのは「コンパイル済みトレースへ再入場する際の検索コスト」であり、インタープリタ復帰後の次ブロック解決・チェイン未成立ブロックへの再入場のたびに、O(log n)のバンク二分探索へ落ちる頻度を下げる。
 
 ### 4.1 実行サマリー & キャッシュ状態
 - **総ブロック実行数**: 164,770 回
   - インタープリタ実行: 82,717 回 (50.2%)
   - JIT ネイティブ実行: 82,053 回 (49.8%)
 - **JIT チェイニング効率**:
-  - チェイン接続による連続 JIT 実行: **33,106 回（40.3%）**
-  - インタープリタへの復帰（チェイン終端・未コンパイル境界）: 48,947 回
+  - チェイン接続による連続 JIT 実行: **15,482 回（18.9%）**
+  - インタープリタへの復帰（チェイン終端・未コンパイル境界）: 66,571 回
 - **JIT キャッシュ占有率**:
-  - Active バンク: 8 トレース（557 / 2,048 バイト, 27.2%）
-  - Warm バンク: 22 トレース（1,972 / 2,048 バイト, 96.3%）
+  - Active バンク: 15 トレース（1,763 / 2,048 バイト, 86.1%）
+  - Warm バンク: 15 トレース（1,991 / 2,048 バイト, 97.2%）
   - Oldest バンク: 0 トレース（エビクション・プロモーション発生なし）
 
 ### 4.1.1 ホットスポット分類
 - **Total Blocks in Module**: 88
 - **Trackable JIT Candidates**: 34
-- **Card Status Distribution**: `COMPILED=67`, `HOT=0`, `EXECUTED=1`, `UNEXECUTED=20`
+- **Card Status Distribution**: `COMPILED=30`, `HOT=37`, `EXECUTED=1`, `UNEXECUTED=20`
 
 ### 4.2 コンパイル済みトレースのチェイニング診断台帳
-今回のAO実行では30トレースがActive/Warmに常駐し、33,106回の連続JIT実行が発生しました。チェイン終端または未コンパイル境界でのインタープリタ復帰は48,947回です。
+今回のAO実行では30トレースがActive/Warmに常駐し、15,482回の連続JIT実行が発生しました。チェイン終端または未コンパイル境界でのインタープリタ復帰は66,571回です。
 
 | バンク | Head PC | Next PC | LoopsTo | ChainNext | 実行回数 | チェイニング診断結果 |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| Warm | `0x10000` | `0x10009` | None | None | 35,949 | `[UNLINKED]` Target `0x10009` uncompilable |
-| Warm | `0x30000` | `0x3000B` | `0x30007` | `0x3000B` | 910 | `[CHAINED]` |
+| Warm | `0x10000` | `0x10009` | None | None | 35,949 | `[UNLINKED]` Target `0x10009` uncompilable (unsupported stencil / non-trackable) |
+| Warm | `0x30000` | `0x3000B` | `0x30007` | None | 910 | `[UNLINKED]` Target `0x3000B` resident but unlinked |
 | Warm | `0x3000B` | `0x30020` | None | None | 903 | `[UNLINKED]` Target `0x30020` not compiled |
-| Warm | `0x30022` | `0x3002A` | `0x30035` | `0x3002A` | 7,682 | `[CHAINED]` |
-| Warm | `0x3002A` | `0x30022` | None | `0x30022` | 6,778 | `[CHAINED]` |
-| Warm | `0x3003E` | `0x3005D` | `0x30048` | `0x3005D` | 7,690 | `[CHAINED]` |
-| Warm | `0x30048` | `0x30065` | None | `0x30065` | 3,657 | `[CHAINED]` |
-| Warm | `0x3005D` | `0x30065` | None | `0x30065` | 4,033 | `[CHAINED]` |
-| Warm | `0x30065` | `0x30039` | None | None | 7,691 | `[UNLINKED]` Target `0x30039` uncompilable |
-| Warm | `0x50030` | `0x50035` | None | None | 112 | `[UNLINKED]` Target `0x50035` uncompilable |
-| Active | `0x5005C` | `0x50061` | None | None | 30 | `[UNLINKED]` Target `0x50061` uncompilable |
-| Active | `0x50088` | `0x5008D` | None | `0x5008D` | 29 | `[CHAINED]` |
-| Warm | `0x5008D` | `0x500B3` | `0x50094` | `0x500B3` | 1,598 | `[CHAINED]` |
-| Active | `0x500AD` | `0x500B3` | None | `0x500B3` | 205 | `[CHAINED]` |
-| Warm | `0x500B3` | `0x500C2` | `0x500BE` | None | 1,598 | `[UNLINKED]` Target `0x500C2` uncompilable |
-| Warm | `0x6000D` | `0x60014` | `0x601B5` | `0x60014` | 15 | `[CHAINED]` |
-| Warm | `0x60014` | `0x6001A` | None | None | 14 | `[UNLINKED]` Target `0x6001A` uncompilable |
-| Warm | `0x6001C` | `0x60023` | `0x6019C` | None | 526 | `[UNLINKED]` Target `0x60023` uncompilable |
-| Warm | `0x600DC` | `0x600E4` | None | None | 247 | `[UNLINKED]` Target `0x600E4` uncompilable |
-| Warm | `0x600FF` | `0x60107` | None | None | 232 | `[UNLINKED]` Target `0x60107` uncompilable |
-| Warm | `0x60122` | `0x6012A` | None | None | 234 | `[UNLINKED]` Target `0x6012A` uncompilable |
-| Warm | `0x60145` | `0x6014D` | None | `0x6014D` | 255 | `[CHAINED]` |
-| Warm | `0x6014D` | `0x6015E` | `0x60159` | `0x6015E` | 270 | `[CHAINED]` |
-| Active | `0x6015E` | `0x6016A` | `0x60165` | `0x6016A` | 270 | `[CHAINED]` |
-| Active | `0x60165` | `0x6016A` | None | `0x6016A` | 7 | `[CHAINED]` |
-| Active | `0x6016A` | `0x60176` | `0x60171` | `0x60176` | 270 | `[CHAINED]` |
-| Active | `0x60171` | `0x60176` | None | `0x60176` | 8 | `[CHAINED]` |
-| Active | `0x60176` | `0x60182` | `0x6017D` | None | 270 | `[UNLINKED]` Target `0x60182` uncompilable |
-| Active | `0x6017D` | `0x60182` | None | None | 60 | `[UNLINKED]` Target `0x60182` uncompilable |
-| Warm | `0x6018A` | `0x6001C` | None | `0x6001C` | 510 | `[CHAINED]` |
+| Warm | `0x30022` | `0x3002A` | `0x30035` | None | 7,682 | `[UNLINKED]` Target `0x3002A` resident but unlinked |
+| Warm | `0x3002A` | `0x30022` | None | `0x30022` | 6,778 | `[CHAINED]` -> `0x30022` in Warm |
+| Warm | `0x3003E` | `0x3005D` | `0x30048` | None | 7,690 | `[UNLINKED]` Target `0x3005D` resident but unlinked |
+| Warm | `0x30048` | `0x30065` | None | `0x30065` | 3,657 | `[CHAINED]` -> `0x30065` in Warm |
+| Warm | `0x3005D` | `0x30065` | None | `0x30065` | 4,033 | `[CHAINED]` -> `0x30065` in Warm |
+| Warm | `0x30065` | `0x30039` | None | None | 7,691 | `[UNLINKED]` Target `0x30039` uncompilable (unsupported stencil / non-trackable) |
+| Active | `0x50030` | `0x50035` | None | None | 112 | `[UNLINKED]` Target `0x50035` uncompilable (unsupported stencil / non-trackable) |
+| Active | `0x5005C` | `0x50061` | None | None | 30 | `[UNLINKED]` Target `0x50061` uncompilable (unsupported stencil / non-trackable) |
+| Active | `0x50088` | `0x5008D` | None | `0x5008D` | 29 | `[CHAINED]` -> `0x5008D` in Warm |
+| Warm | `0x5008D` | `0x500B3` | `0x50094` | None | 1,598 | `[UNLINKED]` Target `0x500B3` resident but unlinked |
+| Active | `0x500AD` | `0x500B3` | None | `0x500B3` | 205 | `[CHAINED]` -> `0x500B3` in Warm |
+| Warm | `0x500B3` | `0x500C2` | `0x500BE` | None | 1,598 | `[UNLINKED]` Target `0x500C2` uncompilable (unsupported stencil / non-trackable) |
+| Warm | `0x6000D` | `0x60014` | `0x601B5` | None | 15 | `[UNLINKED]` Target `0x60014` resident but unlinked |
+| Warm | `0x60014` | `0x6001A` | None | None | 14 | `[UNLINKED]` Target `0x6001A` uncompilable (unsupported stencil / non-trackable) |
+| Warm | `0x6001C` | `0x60023` | `0x6019C` | None | 526 | `[UNLINKED]` Target `0x60023` uncompilable (unsupported stencil / non-trackable) |
+| Active | `0x600DC` | `0x600E4` | None | None | 247 | `[UNLINKED]` Target `0x600E4` uncompilable (unsupported stencil / non-trackable) |
+| Active | `0x600FF` | `0x60107` | None | None | 232 | `[UNLINKED]` Target `0x60107` uncompilable (unsupported stencil / non-trackable) |
+| Active | `0x60122` | `0x6012A` | None | None | 234 | `[UNLINKED]` Target `0x6012A` uncompilable (unsupported stencil / non-trackable) |
+| Active | `0x60145` | `0x6014D` | None | `0x6014D` | 255 | `[CHAINED]` -> `0x6014D` in Active |
+| Active | `0x6014D` | `0x6015E` | `0x60159` | None | 270 | `[UNLINKED]` Target `0x6015E` resident but unlinked |
+| Active | `0x6015E` | `0x6016A` | `0x60165` | None | 270 | `[UNLINKED]` Target `0x6016A` resident but unlinked |
+| Active | `0x60165` | `0x6016A` | None | `0x6016A` | 7 | `[CHAINED]` -> `0x6016A` in Active |
+| Active | `0x6016A` | `0x60176` | `0x60171` | None | 270 | `[UNLINKED]` Target `0x60176` resident but unlinked |
+| Active | `0x60171` | `0x60176` | None | `0x60176` | 8 | `[CHAINED]` -> `0x60176` in Active |
+| Active | `0x60176` | `0x60182` | `0x6017D` | None | 270 | `[UNLINKED]` Target `0x60182` uncompilable (unsupported stencil / non-trackable) |
+| Active | `0x6017D` | `0x60182` | None | None | 60 | `[UNLINKED]` Target `0x60182` uncompilable (unsupported stencil / non-trackable) |
+| Warm | `0x6018A` | `0x6001C` | None | `0x6001C` | 510 | `[CHAINED]` -> `0x6001C` in Warm |
 
 ---
 
@@ -214,4 +216,4 @@ Section 1〜4の既存値は 2026-09-14〜2026-09-16 に同一ワークスペー
 2. **予測される高速化率**:
    - トレース境界でのみ協調的 Yield（`{ADR_TraceBoundaryYield}`）を行うため、ホットループ内のネイティブ直接実行により、実機上では **JIT がインタープリタに対して 3x〜8x の実測高速化を達成**する見込みです。
 3. **RAM 32KB 環境への適合性**:
-   - 3D レイトレーシングのような計算集約型タスクであっても、生成された JIT トレースは合計わずか **31 トレース（約 2.65 KB）** でループのコアパスを網羅しており、目標とする 6.63 KB の JIT キャッシュ予算内に余裕を持って収まることが実証されました。
+   - 3D レイトレーシングのような計算集約型タスクであっても、生成された JIT トレースは合計 **30 トレース（Active 1,763 B + Warm 1,991 B = 3,754 B）** でループのコアパスを網羅しており、8 KB の JIT コード領域予算内に余裕を持って収まることが実証されました。

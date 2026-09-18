@@ -43,9 +43,10 @@ import time
 
 import wasmtime
 from debugger import DebuggerManager
+from execution_context import WASMContext
 from gdb_server import GDBServer
 from interpreter import Interpreter, InterpreterBindings
-from legacy_runtime_engine import IntegratedHybridEngine, WASMContext
+from runtime_test_driver import RuntimeEngineDebugDriver
 from system import System
 from wasi import WasiHostContext
 from wasm_reader import parse
@@ -227,7 +228,7 @@ def test_scenario_comprehensive_storage_and_debugger():
       )
     )
     """
-    engine = IntegratedHybridEngine(compiler=TraceCompiler())
+    engine = RuntimeEngineDebugDriver(jit_compiler=TraceCompiler())
     debug_mod = engine.load_wasm(bytes(wasmtime.wat2wasm(debug_wat)))
     block100, block110, block120 = debug_mod.blocks[0], debug_mod.blocks[1], debug_mod.blocks[2]
     blocks = {block100.head_pc: block100, block110.head_pc: block110, block120.head_pc: block120}

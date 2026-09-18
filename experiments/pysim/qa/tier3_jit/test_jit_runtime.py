@@ -659,8 +659,8 @@ def test_jitr_block_capacity_from_wasm_loader_and_no_set():
 # ===========================================================================
 # 8. RuntimeEngine._invoke_trace: branch/skip resolution and interpreter
 #    hand-off correctness -- covers the compiled-trace <-> interpreter
-#    boundary that `run_step`/`IntegratedHybridEngine` tests never exercise,
-#    since RuntimeEngine.run() is a separate driver with its own
+#    boundary that block-at-a-time debugger tests never exercise,
+#    since RuntimeEngine.run() is the integrated execution driver with its own
 #    _invoke_trace (see jit_runtime.md's tiered execution loop).
 # ===========================================================================
 

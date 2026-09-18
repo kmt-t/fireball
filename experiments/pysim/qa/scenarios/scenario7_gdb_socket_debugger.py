@@ -37,14 +37,15 @@ import time
 
 import wasmtime
 from debugger import DebuggerManager
+from execution_context import WASMContext
 from gdb_server import GDBServer
-from legacy_runtime_engine import IntegratedHybridEngine, WASMContext
+from runtime_test_driver import RuntimeEngineDebugDriver
 from x64_jit import TraceCompiler
 
 
 def wat_to_wasm(wat_text: str) -> bytes:
     """Compiles WAT source to a real WASM binary via wasmtime -- how this
-    scenario feeds real bytecode into IntegratedHybridEngine.load_wasm
+    scenario feeds real bytecode into RuntimeEngine.load_wasm
     instead of hand-building op tuples."""
     return bytes(wasmtime.wat2wasm(wat_text))
 
@@ -121,7 +122,7 @@ def test_scenario_gdb_socket_debugger():
       )
     )
     """
-    engine = IntegratedHybridEngine(compiler=TraceCompiler())
+    engine = RuntimeEngineDebugDriver(jit_compiler=TraceCompiler())
     mod = engine.load_wasm(wat_to_wasm(wat))
     block10, block20, block30 = mod.blocks[0], mod.blocks[1], mod.blocks[2]
     blocks = {block10.head_pc: block10, block20.head_pc: block20, block30.head_pc: block30}

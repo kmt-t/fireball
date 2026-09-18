@@ -81,6 +81,15 @@ from wasm_module import WASM_LOCAL_SLOT_BYTES, WASM_LOCAL_SLOT_WORDS
 I32_MASK = 0xFFFFFFFF
 
 
+def _test_epilogue_return_i32() -> bytes:
+    """Build the test harness return path; it is not a production stencil."""
+
+    code = bytearray((0x58, 0x48, 0x63, 0xC0))  # pop rax; movsxd rax, eax
+    code += bytes((0x5F,)) if sys.platform == "win32" else bytes((0x5D,))
+    code += bytes((0x41, 0x5F, 0x41, 0x5E, 0x41, 0x5D, 0x41, 0x5C, 0x5B, 0xC3))
+    return bytes(code)
+
+
 def _to_i32(v: int) -> int:
     v &= I32_MASK
     return v - (1 << 32) if v & 0x8000_0000 else v
@@ -136,7 +145,7 @@ def run_i32(
     for stencil, patches in body_stencils_with_patches:
         emit(code, stencil, **patches)
 
-    code += st.EPILOGUE_RETURN_I32.code
+    code += _test_epilogue_return_i32()
     buf = ExecutableBuffer(max(len(code), 64))
     try:
         buf.write(0, bytes(code))
@@ -183,7 +192,7 @@ def run_i32_checked(
         ):
             trap_relocs.append(base + stencil.reloc_offsets[int(st.Relocation.TRAP)])
 
-    code += st.EPILOGUE_RETURN_I32.code
+    code += _test_epilogue_return_i32()
     trap_offset = len(code)
     code += st.TRAP.code
     for reloc in trap_relocs:

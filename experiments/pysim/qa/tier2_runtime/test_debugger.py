@@ -55,9 +55,10 @@ docs/qa/tier2_runtime/debug_manager_test_spec.md (TEST-DBG-01 ~ TEST-DBG-15).
 
 from control_flow import extract_basic_blocks
 from debugger import DebuggerManager, GDBRspProtocol
+from execution_context import WASMContext
 from helpers import wat_to_wasm
-from legacy_runtime_engine import IntegratedHybridEngine, WASMContext
 from runtime_engine import BasicBlock
+from runtime_test_driver import RuntimeEngineDebugDriver
 from test_support import compile_test_block
 from wasm_opcodes import I32_CONST
 from x64_jit import TraceCompiler
@@ -135,7 +136,7 @@ def test_dbg_04_05_read_memory_and_bounds_check():
 
 def test_dbg_06_07_write_memory_flush_jit_and_bounds_check():
     """TEST-DBG-06, TEST-DBG-07: 'M' command writes memory, flushes JIT cache, and checks bounds."""
-    engine = IntegratedHybridEngine(compiler=TraceCompiler(), code_lengths=(2,))
+    engine = RuntimeEngineDebugDriver(jit_compiler=TraceCompiler(), code_lengths=(2,))
     dbg = DebuggerManager(engine=engine)
     dbg.attach()
     rsp = GDBRspProtocol(dbg)
@@ -152,7 +153,7 @@ def test_dbg_06_07_write_memory_flush_jit_and_bounds_check():
         frame_depth=frame_depth,
         byte_span=byte_span,
     )
-    trace = compile_test_block(engine.compiler, code, block, ())
+    trace = compile_test_block(engine.jit_compiler, code, block, ())
     engine.cache.insert(trace)
     assert engine.cache.active.has_trace(head_pc)
     # In-bounds write: "M0,4:deadbeef"
@@ -168,7 +169,7 @@ def test_dbg_06_07_write_memory_flush_jit_and_bounds_check():
 
 def test_dbg_08_09_breakpoints_and_hit():
     """TEST-DBG-08, TEST-DBG-09: 'Z0' and 'z0' manage breakpoints; 'c' halts on hit."""
-    engine = IntegratedHybridEngine()
+    engine = RuntimeEngineDebugDriver()
     dbg = DebuggerManager(engine=engine)
     dbg.attach()
     rsp = GDBRspProtocol(dbg)
@@ -217,7 +218,7 @@ def test_dbg_08_09_breakpoints_and_hit():
 
 def test_dbg_10_11_single_step_and_termination():
     """TEST-DBG-10, TEST-DBG-11: 's' single-steps one instruction; ends with W00."""
-    engine = IntegratedHybridEngine()
+    engine = RuntimeEngineDebugDriver()
     dbg = DebuggerManager(engine=engine)
     dbg.attach()
     rsp = GDBRspProtocol(dbg)
@@ -252,7 +253,7 @@ def test_dbg_10_11_single_step_and_termination():
 
 def test_dbg_12_to_15_integrated_profiler_and_assertions():
     """TEST-DBG-12 ~ TEST-DBG-15: Integrated Profiler PC sampling and memory assertions ({Debug_Integrated})."""
-    engine = IntegratedHybridEngine()
+    engine = RuntimeEngineDebugDriver()
     dbg = DebuggerManager(engine=engine)
     dbg.attach()
     rsp = GDBRspProtocol(dbg)

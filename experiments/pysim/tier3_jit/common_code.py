@@ -14,7 +14,11 @@ from config import (
     JIT_TRACE_COMMON_EPILOGUE_OFFSET,
     JIT_TRACE_COMMON_HELPER_OFFSET,
     JIT_TRACE_COMMON_PROLOGUE_OFFSET,
+    JIT_TRACE_HELPER_ENTRY_BYTES,
+    JIT_TRACE_TYPED_I32_HELPER_COUNT,
     JIT_TRACE_TYPED_I32_HELPER_OFFSET,
+    JIT_TRACE_WIDE_HELPER_COUNT,
+    JIT_TRACE_WIDE_HELPER_OFFSET,
     JIT_X64_CHAIN_TARGET_OFFSET,
     JIT_X64_TRACE_HEADER_BYTES,
 )
@@ -27,7 +31,6 @@ IS_WINDOWS = sys.platform == "win32"
 COMMON_PROLOGUE_OFFSET = JIT_TRACE_COMMON_PROLOGUE_OFFSET
 COMMON_EPILOGUE_OFFSET = JIT_TRACE_COMMON_EPILOGUE_OFFSET
 COMMON_HELPER_OFFSET = JIT_TRACE_COMMON_HELPER_OFFSET
-COMMON_TYPED_I32_HELPER_OFFSET = JIT_TRACE_TYPED_I32_HELPER_OFFSET
 COMMON_ABSOLUTE_POOL_OFFSET = 80
 TRACE_ENTRY_STUB_BYTES = 15
 TRACE_BODY_OFFSET = JIT_X64_TRACE_HEADER_BYTES + TRACE_ENTRY_STUB_BYTES
@@ -59,6 +62,31 @@ def gen_pic_prologue() -> bytes:
         code += bytes((0x44, 0x89, 0xC9))  # mov r9d, ecx
     code += bytes((0xFF, 0xE0))  # jmp rax (body address supplied by entry stub)
     return bytes(code)
+
+
+def gen_pic_epilogue() -> bytes:
+    """Generate the fixed common-code return path, outside the stencil table."""
+
+    code = bytearray((0x31, 0xC0))  # xor eax, eax
+    code += bytes((0x5F,)) if IS_WINDOWS else bytes((0x5D,))
+    code += bytes((0x41, 0x5F))  # pop r15
+    code += bytes((0x41, 0x5E))  # pop r14
+    code += bytes((0x41, 0x5D))  # pop r13
+    code += bytes((0x41, 0x5C))  # pop r12
+    code += bytes((0x5B, 0xC3))  # pop rbx; ret
+    return bytes(code)
+
+
+def helper_entry_offset(helper_index: int) -> int:
+    """Return the fixed common-code offset for one helper contract."""
+
+    if 0 <= helper_index < JIT_TRACE_WIDE_HELPER_COUNT:
+        return JIT_TRACE_WIDE_HELPER_OFFSET + helper_index * JIT_TRACE_HELPER_ENTRY_BYTES
+    typed_index = helper_index - 11
+    if 0 <= typed_index < JIT_TRACE_TYPED_I32_HELPER_COUNT:
+        return JIT_TRACE_TYPED_I32_HELPER_OFFSET + typed_index * JIT_TRACE_HELPER_ENTRY_BYTES
+    assert False, f"unsupported helper index: {helper_index}"
+    return 0
 
 
 def _align(value: int, alignment: int) -> int:
@@ -107,8 +135,8 @@ class JITCodeCacheRegion:
         "common_code_bytes",
         "epilogue_offset",
         "epilogue_size",
-        "helper_offset",
-        "helper_size",
+         "helper_offset",
+         "helper_size",
         "prologue_offset",
         "prologue_size",
         "region_bytes",
@@ -121,36 +149,46 @@ class JITCodeCacheRegion:
         self.buffer = ExecutableBuffer(self.region_bytes)
 
         prologue = gen_pic_prologue()
-        epilogue = st.EPILOGUE_RETURN_VOID.code
+        epilogue = gen_pic_epilogue()
         helper = st.HEADER_HELPER_TAIL_JUMP.code
         i32_helper_entry = gen_i32_helper_entry()
-        assert len(i32_helper_entry) == 32
+        assert len(helper) == JIT_TRACE_HELPER_ENTRY_BYTES
+        assert len(i32_helper_entry) == JIT_TRACE_HELPER_ENTRY_BYTES
         self.prologue_offset = 0
         self.prologue_size = len(prologue)
         self.epilogue_offset = COMMON_EPILOGUE_OFFSET
         self.epilogue_size = len(epilogue)
-        self.helper_offset = COMMON_HELPER_OFFSET
-        self.helper_size = len(helper)
+        self.helper_offset = JIT_TRACE_WIDE_HELPER_OFFSET
+        self.helper_size = JIT_TRACE_HELPER_ENTRY_BYTES
         self.absolute_pool_offset = COMMON_ABSOLUTE_POOL_OFFSET
         self.absolute_pool_size = JIT_CACHE_ABSOLUTE_ADDRESS_POOL_BYTES
         assert self.prologue_offset + self.prologue_size <= self.epilogue_offset
         assert self.epilogue_offset + self.epilogue_size <= self.helper_offset
-        assert self.helper_offset + self.helper_size <= self.common_code_bytes
         assert self.absolute_pool_offset + self.absolute_pool_size <= self.common_code_bytes
-        assert COMMON_TYPED_I32_HELPER_OFFSET + len(i32_helper_entry) <= self.common_code_bytes
+        assert (
+            JIT_TRACE_WIDE_HELPER_OFFSET
+            + JIT_TRACE_WIDE_HELPER_COUNT * JIT_TRACE_HELPER_ENTRY_BYTES
+            <= self.common_code_bytes
+        )
+        assert (
+            JIT_TRACE_TYPED_I32_HELPER_OFFSET
+            + JIT_TRACE_TYPED_I32_HELPER_COUNT * JIT_TRACE_HELPER_ENTRY_BYTES
+            <= self.common_code_bytes
+        )
 
         common = bytearray(self.common_code_bytes)
         common[self.prologue_offset : self.prologue_offset + self.prologue_size] = prologue
         common[self.epilogue_offset : self.epilogue_offset + self.epilogue_size] = epilogue
-        common[self.helper_offset : self.helper_offset + self.helper_size] = helper
-        typed_i32_exit = COMMON_TYPED_I32_HELPER_OFFSET + len(i32_helper_entry) - 4
-        typed_i32_displacement = COMMON_EPILOGUE_OFFSET - (typed_i32_exit + 4)
-        i32_helper_entry = bytearray(i32_helper_entry)
-        i32_helper_entry[-4:] = typed_i32_displacement.to_bytes(4, "little", signed=True)
-        common[
-            COMMON_TYPED_I32_HELPER_OFFSET :
-            COMMON_TYPED_I32_HELPER_OFFSET + len(i32_helper_entry)
-        ] = i32_helper_entry
+        for helper_index in range(JIT_TRACE_WIDE_HELPER_COUNT):
+            helper_offset = helper_entry_offset(helper_index)
+            common[helper_offset : helper_offset + len(helper)] = helper
+        for helper_index in range(11, 15):
+            helper_offset = helper_entry_offset(helper_index)
+            entry = bytearray(i32_helper_entry)
+            entry[-4:] = (
+                COMMON_EPILOGUE_OFFSET - (helper_offset + len(entry))
+            ).to_bytes(4, "little", signed=True)
+            common[helper_offset : helper_offset + len(entry)] = entry
         self.buffer.write(0, bytes(common))
 
     def install_trace(
@@ -177,9 +215,9 @@ class JITCodeCacheRegion:
         patched = bytearray(blob)
         common_prologue = int.from_bytes(patched[0x18:0x1C], "little")
         common_epilogue = int.from_bytes(patched[0x1C:0x20], "little")
-        common_helper = int.from_bytes(patched[0x20:0x24], "little")
         assert common_prologue < self.common_code_bytes
         assert common_epilogue < self.common_code_bytes
+        common_helper = int.from_bytes(patched[0x20:0x24], "little")
         assert common_helper < self.common_code_bytes
         base = self.buffer.base
         assert base is not None
@@ -258,5 +296,7 @@ __all__ = (
     "TRACE_BODY_OFFSET",
     "TRACE_ENTRY_STUB_BYTES",
     "JITCodeCacheRegion",
+    "helper_entry_offset",
+    "gen_pic_epilogue",
     "gen_pic_prologue",
 )

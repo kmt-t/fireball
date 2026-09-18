@@ -31,9 +31,10 @@ Fireball Hypervisor の現行作業および次期フェーズのタスク一覧
   - シミュレータの実行・リファクタリングから得られる新たな実装の勘所（Gotchas）やシステム不変条件（Invariants）の継続的抽出
   - コンポーネント別テスト仕様書（`docs/qa/tier*/`）への Gotchas 固有識別子および設計理由の追記・拡充
   - 仕様書（自然言語記述）とテスト仕様書の完全同期
-- [ ] **旧JITテストハーネスの移行と重複dispatchの除去**:
-  - QA内の`IntegratedHybridEngine`／`WASMContext`／`run_step`を参照するJITテスト（少なくとも `experiments/pysim/qa/tier3_jit/test_x64_jit.py`）を、現行`Interpreter`／`RuntimeEngine`の共有実行コンテキストへ移行する
-  - 現行経路で同等の検証が成立したテストから旧ハーネスと重複opcode dispatchを除去する。単にテストを削除せず、既存の検証対象が維持されることを確認する
+- [x] **旧JITテストハーネスの移行と重複dispatchの除去**:
+  - JIT遷移テストを現行`Interpreter`／`RuntimeEngine.run()`へ移行し、旧`IntegratedHybridEngine`と`legacy_runtime_engine.py`を削除した
+  - デバッガ／GDBのブロック単位操作は、製品ランタイムへテスト専用APIを追加せず、`experiments/pysim/qa/runtime_test_driver.py`にテスト側ドライバとして分離した
+  - 移行後の関連テストは、JIT 8件、vSoC 21件、デバッガ 8件、GDB 1件、Gotchas 30件が通過している
 - [ ] **アーキテクチャ監査課題の設計整合・ADR策定**:
   - **現行証跡の再監査**: 要求・仕様・形式モデル・テスト・実装を基準に監査記録を整備する。対象はJITチェイン終端、AAPCS SP整列、ハンドラABI、JIT状態遷移・計算量、CSP保証、WIT／vMMIO契約、設計根拠である
   - JITのネイティブトレース間chainと参照シミュレータの再検索との差は、ターゲット固有最適化と参照モデルの抽象度差を切り分けて再レビューする

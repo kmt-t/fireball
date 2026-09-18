@@ -19,9 +19,9 @@ from collections.abc import Iterable, Sequence
 
 import x64_stencils as st
 from common_code import (
-    COMMON_TYPED_I32_HELPER_OFFSET,
     TRACE_ENTRY_STUB_BYTES,
     JITCodeCacheRegion,
+    helper_entry_offset,
 )
 from config import JIT_CACHE_ACTIVE_OFFSET_BYTES, JIT_X64_TRACE_HEADER_BYTES
 from jit_cache import JITTrace, JITTraceHeader
@@ -605,8 +605,8 @@ class TraceCompiler:
         if tail_context_helper:
             helper_index = -1
         header.helper_index = helper_index
-        if typed_i32_helper:
-            header.common_helper_offset = COMMON_TYPED_I32_HELPER_OFFSET
+        if helper_index >= 0:
+            header.common_helper_offset = helper_entry_offset(helper_index)
         header.helper_target_addr = helper_target_addr
         total_size = JIT_X64_TRACE_HEADER_BYTES + len(code)
         header.trace_byte_size = total_size

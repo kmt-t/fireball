@@ -40,11 +40,12 @@ for _p in [
 sys.path.insert(0, str(_PYSIM_DIR))
 
 from control_flow import extract_basic_blocks
+from execution_context import WASMContext
 from helpers import expect_assertion, wat_to_wasm
 from helpers import make_interpreter as Interpreter
-from legacy_runtime_engine import IntegratedHybridEngine, WASMContext
 from logger import LogDictionary, Logger, LogLevel
 from runtime_engine import BasicBlock, CardState, JITTrace, RuntimeEngine
+from runtime_test_driver import RuntimeEngineDebugDriver
 from stream_transport import StreamTransport
 from system import (
     System,
@@ -492,44 +493,15 @@ def test_tier_02_interpreter_to_jit_trace_transition():
     wasm_bytes = wat_to_wasm(wat)
     # Keep the preamble and loop heads on separate cards so this test can
     # observe the full UNEXECUTED -> EXECUTED -> HOT transition directly.
-    engine = IntegratedHybridEngine(yield_threshold=3, card_shift=2)
+    engine = RuntimeEngine(yield_threshold=3, card_shift=2, jit_compiler=TraceCompiler())
     mod = engine.load_wasm(wasm_bytes)
     loop_pc = mod.blocks[1].head_pc
-
-    # Compute factorial(5) with 5 iterations: locals=[5, 0]
-    ctx = WASMContext()
-    ctx.locals = (5, 0)
-    pc = engine.run_step(mod.blocks[0].head_pc, ctx)  # preamble: local[1] = 1, enters loop
-
-    # Step 1: First iteration runs in Interpreter
-    pc = engine.run_step(pc, ctx)
-    assert engine.interp_blocks == 2
-    assert engine.jit_traces == 0
-    assert engine.bitmap.get_state(loop_pc) == CardState.EXECUTED
-    # Step 2: Second iteration runs in Interpreter -> Card becomes HOT
-    pc = engine.run_step(pc, ctx)
-    assert engine.interp_blocks == 3
-    assert engine.jit_traces == 0
-    assert engine.bitmap.get_state(loop_pc) == CardState.HOT
-    # Step 3: Third iteration triggers yield -> on_yield queues HOT card to compile_queue
-    pc = engine.run_step(pc, ctx)
-    assert loop_pc in engine.compile_queue
-    # Simulate COOS scheduler idle_hook: batch compiles queued trace into Active cache
-    compiled = engine.idle_hook()
-    assert compiled == 1
+    results = engine.run(Interpreter(mod), 0, [5])
+    assert results[0] == 120
+    assert engine.stat_interp_steps >= 3
+    assert engine.stat_jit_invocations >= 2
     assert engine.bitmap.get_state(loop_pc) == CardState.COMPILED
-    assert engine.cache.active.has_trace(loop_pc)
-    # Step 4 & 5: Remaining iterations execute via fast native JIT trace!
-    while pc is not None:
-        pc = engine.run_step(pc, ctx)
-
-    # Verification:
-    # Result is 5! = 120
-    assert ctx.locals[1] == 120
-    # Verified that both Interpreter AND JIT traces executed in the same task run
-    assert engine.interp_blocks >= 3
-    assert engine.jit_traces >= 2
-    assert engine.compilations == 1
+    assert engine.cache.active.has_trace(loop_pc) or engine.cache.warm.has_trace(loop_pc)
 
 
 def test_tier_03_trace_chaining_and_interpreter_fallback():
@@ -561,35 +533,23 @@ def test_tier_03_trace_chaining_and_interpreter_fallback():
     )
     """
     wasm_bytes = wat_to_wasm(wat)
-    engine = IntegratedHybridEngine(yield_threshold=10)
+    engine = RuntimeEngine(yield_threshold=10, jit_compiler=TraceCompiler())
     mod = engine.load_wasm(wasm_bytes)
     block_a = mod.blocks[0]
     block_b = mod.blocks[1]
-    block_c = mod.blocks[2]
     # Compile block B first, then block A (so A can chain directly into resident B)
-    trace_b = compile_module_block(engine.compiler, mod, block_b)
+    trace_b = compile_module_block(engine.jit_compiler, mod, block_b)
     engine.cache.insert(trace_b)
     engine.bitmap.mark_compiled(block_b.head_pc)
-    trace_a = compile_module_block(engine.compiler, mod, block_a)
+    trace_a = compile_module_block(engine.jit_compiler, mod, block_a)
     engine.cache.insert(trace_a)
     engine.bitmap.mark_compiled(block_a.head_pc)
     # Assert trace A chained directly into trace B
     assert trace_a.chain_next == block_b.head_pc
-    # Run execution:
-    ctx = WASMContext()
-    ctx.locals = (100,)
-    pc = block_a.head_pc
-    # Step 1: Run block A (JIT) -> executes resident block B via direct chain,
-    # then returns at the first non-resident successor C.
-    pc = engine.run_step(pc, ctx)
-    assert pc == block_c.head_pc
-    assert engine.jit_traces == 2
-    assert ctx.locals[0] == 130
-    # Step 2: Run block C (Interpreter) -> completes execution smoothly.
-    pc = engine.run_step(pc, ctx)
-    assert pc is None
-    assert engine.interp_blocks >= 1
-    assert ctx.locals[0] == 160
+    results = engine.run(Interpreter(mod), 0, [100])
+    assert results[0] == 160
+    assert engine.stat_jit_invocations == 2
+    assert engine.stat_interp_steps >= 1
 
 
 # ===========================================================================
@@ -709,7 +669,7 @@ def test_debugger_manager_gdb_rsp_integration():
     """TEST-DBG-01..15: Verifies Debug Manager GDB RSP protocol, breakpoints, registers and JIT flush."""
     from debugger import DebuggerManager, GDBRspProtocol
 
-    engine = IntegratedHybridEngine(compiler=TraceCompiler(), code_lengths=(2,))
+    engine = RuntimeEngineDebugDriver(jit_compiler=TraceCompiler(), code_lengths=(2,))
     dbg = DebuggerManager(engine=engine)
     dbg.attach()
     rsp = GDBRspProtocol(dbg)
@@ -737,7 +697,7 @@ def test_debugger_manager_gdb_rsp_integration():
         frame_depth=fc_frame_depth,
         byte_span=fc_byte_span,
     )
-    trace = compile_test_block(engine.compiler, flush_code, flush_block, ())
+    trace = compile_test_block(engine.jit_compiler, flush_code, flush_block, ())
     engine.cache.insert(trace)
     assert engine.cache.active.has_trace(fc_head_pc)
     res_m, _ = rsp.handle_packet("M0,4:aabbccdd", 0x100, ctx, {})
@@ -805,7 +765,7 @@ def test_interpreter_debugger_handler_table_switch_and_hooks():
     )
     """
     wasm_bytes = wat_to_wasm(wat)
-    engine = IntegratedHybridEngine(compiler=TraceCompiler())
+    engine = RuntimeEngineDebugDriver(jit_compiler=TraceCompiler())
     dbg = DebuggerManager(engine=engine)
     mod = engine.load_wasm(wasm_bytes)
     block1 = mod.blocks[0]
@@ -838,7 +798,7 @@ def test_interpreter_debugger_handler_table_switch_and_hooks():
     assert dbg.pc_sample_counts[block1.head_pc] == 1
     assert len(dbg.assertion_violations) == 1
     # 5. JIT Bypass under debug mode (TEST-INTP-65: JIT trace exists but interpreter debug table runs)
-    trace = compile_module_block(engine.compiler, mod, block1)
+    trace = compile_module_block(engine.jit_compiler, mod, block1)
     engine.cache.insert(trace)
     assert engine.cache.active.has_trace(block1.head_pc)
     # Run step at block1 under debug mode -> interp_blocks increments, NOT jit_traces

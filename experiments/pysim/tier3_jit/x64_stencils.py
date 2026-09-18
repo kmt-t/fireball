@@ -201,20 +201,6 @@ def _gen_prologue() -> Generator[int, None, None]:
         yield from (0x49, 0x89, 0xF3)
 
 
-def _gen_epilogue_return_i32() -> Generator[int, None, None]:
-    # pop rax             58
-    yield 0x58
-    # movsxd rax, eax  (sign-extend the i32 result into rax)  48 63 C0
-    yield from (0x48, 0x63, 0xC0)
-    yield from _gen_restore_callee_saved_and_ret()
-
-
-def _gen_epilogue_return_void() -> Generator[int, None, None]:
-    # xor eax, eax        31 C0
-    yield from (0x31, 0xC0)
-    yield from _gen_restore_callee_saved_and_ret()
-
-
 def _gen_spill_result_to_sp() -> Generator[int, None, None]:
     # A compiled trace's residual value is WASM VM state (the operand stack's
     # top), not a C return value -- it has no relationship to the callee's
@@ -225,13 +211,6 @@ def _gen_spill_result_to_sp() -> Generator[int, None, None]:
     yield 0x58
     # mov [r12], eax          41 89 04 24
     yield from (0x41, 0x89, 0x04, 0x24)
-
-
-def _gen_restore_callee_saved_and_ret() -> Generator[int, None, None]:
-    # pop rdi / r15 / r14 / r13 / r12 / rbx -- exact reverse of the
-    # prologue's push order -- then ret.
-    yield from _gen_restore_unwind_only()
-    yield 0xC3  # ret
 
 
 def _gen_local_get() -> Generator[int, None, None]:
@@ -627,8 +606,6 @@ def _gen_header_helper_tail_jump() -> Generator[int, None, None]:
 # ---------------------------------------------------------------------------
 
 PROLOGUE = _materialize(_gen_prologue())
-EPILOGUE_RETURN_I32 = _materialize(_gen_epilogue_return_i32())
-EPILOGUE_RETURN_VOID = _materialize(_gen_epilogue_return_void())
 SPILL_RESULT_TO_SP = _materialize(_gen_spill_result_to_sp())
 LOCAL_GET = _materialize(_gen_local_get(), ((Relocation.DISP, 3),))
 LOCAL_SET = _materialize(_gen_local_set(), ((Relocation.DISP, 4),))

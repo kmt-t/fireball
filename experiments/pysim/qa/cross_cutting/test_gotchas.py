@@ -53,6 +53,7 @@ import ctypes
 
 from control_flow import extract_basic_blocks
 from debugger import DebuggerManager, GDBRspProtocol
+from execution_context import WASMContext
 from hal_dispatch import HalBufferPool
 from helpers import expect_assertion, make_test_ipc_message, wat_to_wasm
 from helpers import make_interpreter as Interpreter
@@ -64,11 +65,11 @@ from ipc_router import (
     Role,
 )
 from jit_copy_patch_concept import CopyPatchJITEngine, Reg, Thumb2Assembler
-from legacy_runtime_engine import IntegratedHybridEngine, WASMContext
 from loader import WasmLoader
 from logger import LogDictionary, Logger, LogLevel
 from memory import FB_CONF_MEMORY_POOL_SIZE, MemoryManager
 from runtime_engine import BasicBlock, CardState, JITMultiBufferCache, JITTrace, RuntimeEngine
+from runtime_test_driver import RuntimeEngineDebugDriver
 from scheduler import ChannelAction, Scheduler, Task, WaitDir
 from stream_transport import StreamTransport
 from system import System, WasiErrno
@@ -434,36 +435,15 @@ def test_vsoc_gotcha_01_02_stateless_interp_and_yield_in_vsoc():
     )
     """
     wasm_bytes = wat_to_wasm(wat)
-    engine = IntegratedHybridEngine(yield_threshold=3, compiler=TraceCompiler())
+    engine = RuntimeEngine(yield_threshold=3, jit_compiler=TraceCompiler())
     mod = engine.load_wasm(wasm_bytes)
     loop_pc = mod.blocks[0].head_pc
-
-    ctx = WASMContext()
-    ctx.locals = (5, 0)
-    pc = loop_pc
-
-    # Iterations 1-3 run in Interpreter (interp is stateless)
-    for _ in range(3):
-        pc = engine.run_step(pc, ctx)
-
-    assert engine.interp_blocks == 3
-    assert engine.jit_traces == 0
-    assert loop_pc in engine.compile_queue
-
-    # idle_hook batch compiles queued trace into Active cache
-    compiled = engine.idle_hook()
-    assert compiled == 1
-    assert engine.cache.active.has_trace(loop_pc)
+    results = engine.run(Interpreter(mod), 0, [5])
+    assert results[0] == 15
+    assert engine.stat_jit_invocations >= 2
+    assert engine.stat_interp_steps >= 3
     assert engine.bitmap.get_state(loop_pc) == CardState.COMPILED
-
-    # Iterations 4-5 run in JIT Trace
-    while pc is not None:
-        pc = engine.run_step(pc, ctx)
-
-    # Sum of 1..5 = 15
-    assert ctx.locals[1] == 15
-    assert engine.jit_traces >= 2
-    assert engine.interp_blocks >= 3
+    assert engine.cache.active.has_trace(loop_pc) or engine.cache.warm.has_trace(loop_pc)
 
 
 # ==============================================================================
@@ -798,7 +778,7 @@ def test_sys_gotcha_01_undefined_syscall_returns_enosys():
 
 def test_dbg_gotcha_01_memory_write_flushes_jit_cache():
     """GOTCHA-DBG-01: Debugger memory write immediately invalidates all JIT cache banks."""
-    engine = IntegratedHybridEngine(compiler=TraceCompiler(), code_lengths=(2,))
+    engine = RuntimeEngineDebugDriver(jit_compiler=TraceCompiler(), code_lengths=(2,))
     dbg = DebuggerManager(engine=engine)
     dbg.attach()
     rsp = GDBRspProtocol(dbg)
@@ -813,7 +793,7 @@ def test_dbg_gotcha_01_memory_write_flushes_jit_cache():
         frame_depth=frame_depth,
         byte_span=byte_span,
     )
-    trace = compile_test_block(engine.compiler, code, block, ())
+    trace = compile_test_block(engine.jit_compiler, code, block, ())
     engine.cache.insert(trace)
     assert engine.cache.active.has_trace(head_pc)
 

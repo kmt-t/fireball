@@ -39,7 +39,7 @@ experiments/pysim/qa/tier3_jit/test_x64_jit.py
 Spec-compliant tests for Fireball Trace-based Copy-and-Patch JIT Compiler (x64_jit.py).
 Verifies:
 1. Exact CPS 4-argument calling convention: (void* ctx, void* sp, void* local_base, uint32_t tos)
-2. 56-byte x64 physical JITTraceHeader layout at offset +0x00
+2. 52-byte x64 physical JITTraceHeader layout at offset +0x00
 3. Shared common-area entry/exit routing
 4. Direct trace chaining and hybrid tiering transitions
 (docs/components/tier3_jit/jit_compiler.md and docs/components/tier2_runtime/runtime_interpreter.md)
@@ -415,7 +415,7 @@ def test_trace_header_helper_tail_jump_uses_per_trace_pointer():
 
     raw_blob = trace._exec_buf.read(trace.code_offset, trace.size_bytes)
     helper_addr_bytes = helper_addr.to_bytes(8, "little")
-    assert raw_blob[0x28:0x30] == helper_addr_bytes
+    assert raw_blob[0x24:0x2C] == helper_addr_bytes
 
 
 def test_trace_chaining_between_traces():

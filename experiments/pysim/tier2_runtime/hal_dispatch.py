@@ -299,7 +299,7 @@ class HalDriver:
     def register_command(self, command_id: int, callback: HalCommandCallback) -> None:
         """Registers one driver command callback before the task is started."""
         assert self._find_command(command_id) is None, f"duplicate HAL command {command_id:#x}"
-        assert self._command_bindings.push_back(HalCommandBinding(command_id, callback))
+        self._command_bindings.append(HalCommandBinding(command_id, callback))
         self._command_bindings.sort(key=lambda binding: binding.command_id)
 
     def _find_command(self, command_id: int) -> HalCommandCallback | None:
@@ -391,7 +391,7 @@ def make_hal_ipc_message(
     """Builds a standardized IPCMessage for communicating with HalTask."""
     entries: StaticVector[tuple[int, int]] = StaticVector(capacity=len(params) + 1)
     for entry in params:
-        assert entries.push_back(entry)
-    assert entries.push_back((ARG_CMD_ID, cmd_id))
+        entries.append(entry)
+    entries.append((ARG_CMD_ID, cmd_id))
     entries.sort(key=lambda kv: kv[0])
     return IPCMessage.from_entries(entries, memory_manager=memory_manager)

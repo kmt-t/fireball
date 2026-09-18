@@ -105,7 +105,8 @@ class WASMContext:
             self.locals[i] = v
 
     def push(self, val: int) -> bool:
-        assert self.stack.push_back(val & 0xFFFF_FFFF)
+        pushed = self.stack.push_back(val & 0xFFFF_FFFF)
+        assert pushed
         return True
 
     def pop(self) -> int:

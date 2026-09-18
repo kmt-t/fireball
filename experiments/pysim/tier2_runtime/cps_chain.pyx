@@ -135,7 +135,7 @@ def run_cps_call(owner, call_state):
                 result_value = frame.values.pop_f64()
             else:
                 result_value = frame.values.pop_i32()
-            assert results.push_back(result_value)
+            results.append(result_value)
         call_state.cont = None
         call_state.finished = True
         call_state.results = results
@@ -222,7 +222,7 @@ def run_cps_step(owner, call_state, stop_at_boundary):
                     else:
                         result_value = frame.values.pop_i32()
                     assert result_value is not None
-                    assert results.push_back(result_value)
+                    results.append(result_value)
                 call_state.cont = None
                 call_state.finished = True
                 call_state.results = results

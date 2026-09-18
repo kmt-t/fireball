@@ -36,6 +36,7 @@ FB_WASM_PAGE_SIZE = 65536  # 64KB WASM page size
 FB_CONF_MPU_R6_SHARED_MEMORY_BASE = 0x2008_0000
 FB_TASK_ID_FLIGHT = 0xFF  # Flight sentinel during IPC transfer (8-bit PTE owner_id compliant)
 FB_TASK_ID_KERNEL = 0x00
+FB_INVALID_SHM_ID = -1
 
 
 class RecoveryAction(Enum):
@@ -346,22 +347,28 @@ class SharedBlock:
     def release(self) -> int:
         """Revoke sender access and prepare for transfer (marks FLIGHT)."""
         assert self._is_active, "Cannot release inactive SharedBlock"
-        assert self.owner == self._manager.current_task_id, (
-            "GOTCHA-MEM-02: non-owner cannot release SharedBlock"
-        )
+        if not self._is_active:
+            return FB_INVALID_SHM_ID
+        owner_valid = self.owner == self._manager.current_task_id
+        assert owner_valid, "GOTCHA-MEM-02: non-owner cannot release SharedBlock"
+        if not owner_valid:
+            return FB_INVALID_SHM_ID
         if self._manager is not None:
             self._is_active = False
             self._is_in_flight = True
             self._manager._set_shared_owner(self.page_idx, FB_TASK_ID_FLIGHT)
         return self.shm_id
 
-    def move_to(self, new_owner: int) -> SharedBlock:
+    def move_to(self, new_owner: int) -> SharedBlock | None:
         """
         Simulates C++23 move semantics (std::move / rvalue reference &&).
         Invalidates this SharedBlock handle (disallowing subsequent access from sender)
         and returns an active SharedBlock handle owned by new_owner.
         """
-        assert self._is_active, "Cannot move inactive or already moved SharedBlock"
+        valid = self._is_active and new_owner > 0
+        assert valid, "Cannot move inactive or invalid-owner SharedBlock"
+        if not valid:
+            return None
         self._is_active = False
         self._is_in_flight = False
 

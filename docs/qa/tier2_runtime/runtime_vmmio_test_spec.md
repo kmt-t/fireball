@@ -5,7 +5,7 @@
 正本: [`runtime_vmmio.md`](docs/components/tier2_runtime/runtime_vmmio.md)
 参考実装: [`vmmio_concept.py`](docs/components/tier2_runtime/concepts/vmmio_concept.py)
 
-Bit31によるRAM/vMMIO高速分岐、64件のFlatMap PTE + 16エントリDirect-Mapped TLB、Stage1/2/3の3段階セキュリティゲート、SHM所有権チェック、TLB無効化を検証する。システムコールとVDMAのhost-call transportは本書の対象外とし、`runtime_syscall_test_spec.md`で検証する。
+Bit31によるRAM/vMMIO高速分岐、64件のFlatMap PTE + 32エントリDirect-Mapped TLB、Stage1/2/3の3段階セキュリティゲート、SHM所有権チェック、TLB無効化を検証する。システムコールとVDMAのhost-call transportは本書の対象外とし、`runtime_syscall_test_spec.md`で検証する。
 
 ## 2. 直交表マトリクス（Pairwise / Combinatorial Matrix）
 
@@ -86,7 +86,7 @@ Bit31によるRAM/vMMIO高速分岐、64件のFlatMap PTE + 16エントリDirect
 | GOTCHA ID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | GOTCHA-VMMIO-01 | Bit 31 RAM 高速バイパスのテーブル完全非参照 | `addr < 0x8000_0000` の任意のアドレス | `access(addr)` を実行 | ページテーブル走査（FlatMap walk）および TLB 検索・更新を一切行わず即座に `OK_GUEST_RAM` を返す（`tlb_hits` / `tlb_misses` が不変）。**実装の勘所**: ゲスト RAM アクセス時に誤って TLB 検索フックを挟むと、実行時メモリアクセスの最頻パスで深刻な性能低下を引き起こす | `runtime_vmmio.md` {GOTCHA-VMMIO-01} |
-| GOTCHA-VMMIO-02 | Direct-Mapped TLB の 4-bit Folding XOR Hash | 同一下位ページ番号を持つ異なる FC（FC=12 静的デバイス, FC=14 SHM, FC=15 パススルー） | 各ページの `tlb_index` を算出 | `vpn` を 20→10→5→4 bit と3回の XORで折りたたみ（`temp = vpn ^ (vpn >> 10); temp = temp ^ (temp >> 5); temp = temp ^ (temp >> 1); temp & 0xF`）ことで、異なるFCの同一下位ページを分散する。**実装の勘所**: 単純な下位マスクを用いると、静的デバイス（FC=12）と SHM（FC=14）の同一番号ページが同一スロットで常に衝突・スラッシングを起こす | `runtime_vmmio.md` {GOTCHA-VMMIO-02} |
+| GOTCHA-VMMIO-02 | Direct-Mapped TLB の 5-bit Folding XOR Hash | 同一下位ページ番号を持つ異なる FC（FC=12 静的デバイス, FC=14 SHM, FC=15 パススルー） | 各ページの `tlb_index` を算出 | `vpn` を 20→10→5 bit と2回の XORで折りたたみ（`temp = vpn ^ (vpn >> 10); temp = temp ^ (temp >> 5); temp & 0x1F`）ことで、異なるFCの同一下位ページを分散する。**実装の勘所**: 単純な下位マスクを用いると、静的デバイス（FC=12）と SHM（FC=14）の同一番号ページが同一スロットで常に衝突・スラッシングを起こす | `runtime_vmmio.md` {GOTCHA-VMMIO-02} |
 | GOTCHA-VMMIO-03 | SHM Revoke 後の未マッピング遮断と TLB 即時破棄 | SHM ページ（FC=14）が TLB にキャッシュされた状態 | `revoke_shm(vpn)` を実行 | 対象 TLB スロットが無効化され、FlatMap からも削除されるためアクセスが即座に `TRAP_UNREGISTERED_PAGE` で拒絶される。**実装の勘所**: PTE のアンマップを行っても TLB の該当スロットをフラッシュし忘れると、旧所有者が in-flight 中（ランデブー待ち）に TLB ヒット経由でデータを不正読み書きできる重大な脆弱性となる | `runtime_vmmio.md` {GOTCHA-VMMIO-03} |
 
 ## 3. テスト検証実績と網羅状況

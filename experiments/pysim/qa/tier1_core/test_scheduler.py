@@ -33,7 +33,14 @@ for _p in [
         sys.path.insert(0, _sp)
 
 from helpers import expect_assertion
-from scheduler import BoundedReadyQueue, ChannelAction, Scheduler, Task, TaskState
+from scheduler import (
+    BoundedReadyQueue,
+    ChannelAction,
+    ChannelTransferMode,
+    Scheduler,
+    Task,
+    TaskState,
+)
 
 
 def _activate_task(scheduler: Scheduler, task: Task) -> None:
@@ -91,7 +98,7 @@ def test_sched_04_shared_block_move_semantics_csp_rendezvous():
     sched = Scheduler()
     mm = MemoryManager(sched)
     mm.init_manager(pool_base=0x20020000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
-    ch = sched.create_channel()
+    ch = sched.create_channel(transfer_mode=ChannelTransferMode.MOVABLE)
 
     t1 = sched.get_task(sched.spawn("sender", task_id=1))
     t2 = sched.get_task(sched.spawn("receiver", task_id=2))
@@ -129,7 +136,7 @@ def test_sched_04_shared_block_move_semantics_csp_rendezvous():
         sb.write_bytes(0, b"Fail")
 
     # Sub-case 2: Receiver waits first, Sender arrives second
-    ch2 = sched.create_channel()
+    ch2 = sched.create_channel(transfer_mode=ChannelTransferMode.MOVABLE)
     _activate_task(sched, t1)
     sb2 = mm.allocate_shared(size=64).unwrap()
     sb2.write_bytes(0, b"Subcase 2 Move!")

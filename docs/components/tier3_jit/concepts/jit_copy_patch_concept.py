@@ -90,7 +90,6 @@ class JITTraceHeader:
         common_prologue_offset: int = 0,
         common_epilogue_offset: int = 32,
         common_helper_offset: int = 48,
-        helper_index: int = 0xFFFF_FFFF,
         helper_target_addr: int = 0,
         absolute_pool_offset: int = 80,
     ):
@@ -103,7 +102,6 @@ class JITTraceHeader:
         self.common_prologue_offset = common_prologue_offset
         self.common_epilogue_offset = common_epilogue_offset
         self.common_helper_offset = common_helper_offset
-        self.helper_index = helper_index
         self.helper_target_addr = helper_target_addr
         self.absolute_pool_offset = absolute_pool_offset
 
@@ -121,7 +119,7 @@ class JITTraceHeader:
             self.common_prologue_offset,
             self.common_epilogue_offset,
             self.common_helper_offset,
-            self.helper_index,
+            0,
             self.helper_target_addr,
             self.absolute_pool_offset,
             0,
@@ -130,7 +128,14 @@ class JITTraceHeader:
     @classmethod
     def from_bytes(cls, data: bytes | bytearray, offset: int = 0) -> "JITTraceHeader":
         values = struct.unpack_from("<IHBBIIIIIIQII", data, offset)
-        return cls(*values[:6], *values[6:11])
+        return cls(
+            *values[:6],
+            common_prologue_offset=values[6],
+            common_epilogue_offset=values[7],
+            common_helper_offset=values[8],
+            helper_target_addr=values[10],
+            absolute_pool_offset=values[11],
+        )
 
 
 _REG_NAME_TO_ENUM = {r.name.lower(): r for r in Reg}

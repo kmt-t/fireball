@@ -164,9 +164,11 @@ class ControlFrameWindow:
             self._storage.set_size(self._base)
             values.truncate(result_start)
             if outer_result_arity >= 1:
-                assert values.push_back(result0)
+                pushed = values.push_back(result0)
+                assert pushed
             if outer_result_arity >= 2:
-                assert values.push_back(result1)
+                pushed = values.push_back(result1)
+                assert pushed
             return None
         target_index = frame_count - depth - 1
         target = self[target_index]
@@ -183,9 +185,11 @@ class ControlFrameWindow:
         result1 = values.raw_at(result_start + 1) if result_arity >= 2 else 0
         values.truncate(saved_height)
         if result_arity >= 1:
-            assert values.push_back(result0)
+            pushed = values.push_back(result0)
+            assert pushed
         if result_arity >= 2:
-            assert values.push_back(result1)
+            pushed = values.push_back(result1)
+            assert pushed
         if int(target.kind) == int(ControlFrameKind.LOOP):
             self._storage.set_size(self._base + target_index + 1)
             return int(target.start) + 2

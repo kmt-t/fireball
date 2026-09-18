@@ -94,7 +94,7 @@ class DebuggerManager:
 
     def add_memory_assertion(self, addr: int, expected: int, desc: str = "") -> None:
         """Registers a dynamic memory assertion hook ({Debug_Integrated})."""
-        assert self.memory_assertions.push_back((addr, expected))
+        self.memory_assertions.append((addr, expected))
 
     def sample_pc(self, pc: int) -> None:
         """Samples PC execution frequency ({Debug_Integrated})."""
@@ -114,7 +114,7 @@ class DebuggerManager:
             if addr < len(memory):
                 val = memory[addr]
                 if val != expected:
-                    assert self._assertion_violations.push_back((addr, expected, val))
+                    self._assertion_violations.append((addr, expected, val))
 
     @property
     def assertion_violations(self) -> StaticVector[str]:
@@ -204,7 +204,7 @@ class GDBRspProtocol:
                 hex_data = args
                 regs: StaticVector[int] = StaticVector(capacity=20)
                 for i in range(0, len(hex_data), 8):
-                    assert regs.push_back(int(hex_data[i : i + 8], 16))
+                    regs.append(int(hex_data[i : i + 8], 16))
                 new_pc = self.dbg.write_virtual_registers(regs, ctx)
                 return self.format_packet("OK"), new_pc
             except Exception:

@@ -218,14 +218,14 @@ def _parse_functype(data: memoryview, off: int) -> tuple[FuncType, int]:
     nparams, off = decode_unsigned(data, off)
     params = StaticVector[int](capacity=nparams)
     for _ in range(nparams):
-        assert params.push_back(_read_value_type(data, off))
+        params.append(_read_value_type(data, off))
         off += 1
 
     nresults, off = decode_unsigned(data, off)
     assert nresults <= 1, "MVP functions have at most one result"
     results = StaticVector[int](capacity=nresults)
     for _ in range(nresults):
-        assert results.push_back(_read_value_type(data, off))
+        results.append(_read_value_type(data, off))
         off += 1
     assert off <= len(data)
     return FuncType(
@@ -561,7 +561,7 @@ class _SelectAnalysisState:
         assert function_type.results is not None and len(function_type.results) <= 1
         function_result = function_type.results[0] if function_type.results else None
         outer = _AnalysisControlFrame(0, function_result, function_result, -1, False)
-        assert self.controls.push_back(outer)
+        self.controls.append(outer)
 
     def pop(self, expected_type: int | None = None) -> int | None:
         frame = self.controls[-1]
@@ -574,7 +574,7 @@ class _SelectAnalysisState:
         return actual_type
 
     def push(self, value_type: int) -> None:
-        assert self.values.push_back(value_type)
+        self.values.append(value_type)
 
     def pop_label(self, depth: int) -> int | None:
         assert 0 <= depth < len(self.controls), "WASM branch depth out of range"
@@ -647,7 +647,7 @@ def _analyze_control(state: _SelectAnalysisState, opcode: int, offset: int, oper
             opcode,
             False,
         )
-        assert state.controls.push_back(frame)
+        state.controls.append(frame)
         return
     if opcode == op.ELSE:
         frame = state.controls[-1]
@@ -706,7 +706,7 @@ def _analyze_stack_ops(state: _SelectAnalysisState, opcode: int, offset: int, op
     if opcode == op.DROP:
         value_type = state.pop()
         if value_type == I64 or value_type == F64:
-            assert state.drop_widths.push_back((offset, 2))
+            state.drop_widths.append((offset, 2))
         return
     state.pop(I32)
     right_type = state.pop()
@@ -718,7 +718,7 @@ def _analyze_stack_ops(state: _SelectAnalysisState, opcode: int, offset: int, op
     if selected_type is None:
         selected_type = I32
     if selected_type == I64 or selected_type == F64:
-        assert state.select_widths.push_back((offset, 2))
+        state.select_widths.append((offset, 2))
     state.push(selected_type)
 
 

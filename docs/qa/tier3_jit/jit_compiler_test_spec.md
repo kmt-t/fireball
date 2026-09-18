@@ -36,9 +36,9 @@ Copy-and-Patchエンジンによるネイティブコード生成、4論理引�
 
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| TEST-JITC-20 | x64ヘッダサイズは固定56バイト | x64向けに生成したトレース | ヘッダを解析 | `+0x00 head_wasm_pc(u32)`, `+0x04 trace_byte_size(u16)`, `+0x06 flags(u8)`, `+0x07 variant_id(u8)`, `+0x08 chain_next_pc(u32)`, `+0x10 chain_target_addr(u64)`, `+0x28 helper_target_addr(u64)`を含む56バイト構造 | [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) |
+| TEST-JITC-20 | x64ヘッダサイズは固定52バイト | x64向けに生成したトレース | ヘッダを解析 | `+0x00 head_wasm_pc(u32)`, `+0x04 trace_byte_size(u16)`, `+0x06 flags(u8)`, `+0x07 variant_id(u8)`, `+0x08 chain_next_pc(u32)`, `+0x10 chain_target_addr(u64)`, `+0x24 helper_target_addr(u64)`を含む52バイト構造 | [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) |
 | TEST-JITC-21 | flagsビットの意味 | PROMOTED済み/LOOP_HEADERのトレース | flagsを確認 | `0x01: PROMOTED`, `0x02: LOOP_HEADER`が正しく設定される | 同上 |
-| TEST-JITC-22 | x64ネイティブコード列は+0x38から展開 | x64向けに生成したトレース | メモリレイアウトを確認 | 56バイトヘッダ直後(+0x38)からx64命令列が始まる。ARMv8-MのThumb-2配置は別の物理仕様で検証する | [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) |
+| TEST-JITC-22 | x64ネイティブコード列は+0x34から展開 | x64向けに生成したトレース | メモリレイアウトを確認 | 52バイトヘッダ直後(+0x34)からx64命令列が始まる。ARMv8-MのThumb-2配置は別の物理仕様で検証する | [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) |
 | TEST-JITC-23 | `variant_id`とレジスタ割り当ての対応 | 命令テンプレートごとに異なる値キャッシュ常駐数 | variant選択とチェイン遷移を確認 | `variant_id`は命令テンプレートのレジスタ割り当て状態を表し、互換variantへは直接遷移し、非互換variantへは共有オペランド領域から再構成して遷移する | `{JIT_RegisterMapping}` |
 | TEST-JITC-24 | AAPCS 準拠開始プロローグの新規入口 | Interpreter／RuntimeEngineから新規JITトレースへ遷移 | 入口アドレスと生成コードを確認 | 4論理引数を受け、callee-savedレジスタを退避し、入口variantを準備してからJIT本体へ進む。内部chain entryへ直接入らない | `jit_stencil_catalog.md` `STENCIL_PROLOGUE_FULL`, `{AAPCS_FastCall}` |
 
@@ -91,7 +91,7 @@ Copy-and-Patchエンジンによるネイティブコード生成、4論理引�
 
 - **TEST-JITC-01〜08 (Copy-and-Patch)**: 単一パスによる命令テンプレートのコピー＆パッチ、必須リロケーションホール、x64整数演算のヘルパー委譲、および共通呼出しコードのバイト数と共有配置を検証対象とする。x64側の実行検証は完了し、ARMv8-M側は実機検証を残す。
 - **TEST-JITC-10 (4論理引数規約)**: `(ctx, sp, local_base, tos)` を物理レジスタにマップし、インタープリタと共通のシグネチャで直接 C 関数呼び出しできることを実証済み。
-- **TEST-JITC-20〜22 (x64 56バイト物理ヘッダ)**: x64の `jit_trace_header`（`head_wasm_pc`, `trace_byte_size`, `flags`, `variant_id`, `chain_next_pc`, `chain_target_addr`, `helper_target_addr`）が `+0x00` に配置され、ネイティブ命令列が `+0x38` から展開されることを実証済み。ARMv8-MのThumb-2配置は別カタログの契約で扱う。
+- **TEST-JITC-20〜22 (x64 52バイト物理ヘッダ)**: x64の `jit_trace_header`（`head_wasm_pc`, `trace_byte_size`, `flags`, `variant_id`, `chain_next_pc`, `chain_target_addr`, `helper_target_addr`）が `+0x00` に配置され、ネイティブ命令列が `+0x34` から展開されることを実証済み。ARMv8-MのThumb-2配置は別カタログの契約で扱う。
 - **TEST-JITC-40 (PIC 位置独立性)**: トレースバイナリを別のメモリ領域・オフセットへコピーして再コンパイルなしで直接実行し、完全同一の演算結果を返すことを実証済み。
 - **TEST-JITC-42 (3面キャッシュ代謝 & 有界アンリンク)**: 3面マルチバッファキャッシュのローテーション、破棄バンク全体の消去、および被チェイン逆引きテーブルに基づく `O(n + k log n)` 処理を実証済み。
 - **TEST-JITC-43 (ホストコール ABI)**: 0〜6引数のホスト関数呼び出しにおけるスタックアライメントおよびCaller-savedレジスタの完全保護を実証済み。

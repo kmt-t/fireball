@@ -17,7 +17,15 @@ from enum import IntEnum
 
 from logging_interface import Logger, LogLevel
 from memory_interface import MemoryManager, SharedBlock
-from scheduler import Channel, ChannelAction, ChannelPayload, Scheduler, Task, WaitDir
+from scheduler import (
+    Channel,
+    ChannelAction,
+    ChannelPayload,
+    ChannelTransferMode,
+    Scheduler,
+    Task,
+    WaitDir,
+)
 from system_containers import ReadOnlyFlatMapView, StaticVector
 
 LOG_EVT_IPC_RBAC_DENIED = 0x0201
@@ -167,6 +175,14 @@ class IPCMessage:
             self.ownership == OwnershipState.SENDER_OWNS
             or self.ownership == OwnershipState.RECEIVER_OWNS
         ), f"Cannot access IPCMessage entries while ownership is {self.ownership.name}!"
+
+    def move_to(self, new_owner: int) -> IPCMessage | None:
+        """Complete the explicit CSP move phase for an in-flight message."""
+        valid = self.ownership == OwnershipState.IN_FLIGHT and new_owner > 0
+        assert valid
+        if not valid:
+            return None
+        return self
 
     @property
     def block(self) -> SharedBlock | None:
@@ -442,7 +458,13 @@ class IPCRouter:
         for row in FB_CONF_ROUTER_ROLE_MATRIX:
             channels: StaticVector[Channel | None] = StaticVector(capacity=len(row))
             for allowed in row:
-                channels.append(self.scheduler.create_channel() if allowed else None)
+                channels.append(
+                    self.scheduler.create_channel(
+                        transfer_mode=ChannelTransferMode.MOVABLE
+                    )
+                    if allowed
+                    else None
+                )
             self._edge_channels.append(channels)
 
     def _grant_for_task(self, shm_id: int, task: Task) -> bool:
@@ -579,7 +601,13 @@ class IPCRouter:
 
         # Revoke phase: prepare message's own SharedBlock and any entry-embedded shm_id for transfer
         if message._block is not None:
-            message._in_flight_shm_id = message._block.release()
+            released_shm_id = message._block.release()
+            if released_shm_id < 0:
+                return (
+                    IPCStatus.ERR_INVALID_OWNERSHIP,
+                    "message SharedBlock is not owned by the sending task",
+                )
+            message._in_flight_shm_id = released_shm_id
 
         for k, val in entries_to_grant:
             sk, _, _ = unpack_key32(k)
@@ -636,7 +664,7 @@ class IPCRouter:
         for row in self._edge_channels:
             ch = row[int(current_role)]
             if ch is not None:
-                assert channels.push_back(ch)
+                channels.append(ch)
         if len(channels) == 0:
             return (IPCStatus.ERR_PERMISSION_DENIED, None)
 

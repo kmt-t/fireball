@@ -108,7 +108,8 @@ def test_native_value_stack_owns_the_fixed_storage():
     assert isinstance(stack.native, ValueStackNative)
     assert stack.push_i32(-1)
     assert stack.push_f32(1.5)
-    assert not stack.push_back(3)
+    pushed = stack.push_back(3)
+    assert not pushed
     assert stack.native.size == 2
     assert stack.value_ptr().value % NATIVE_STACK_ALIGNMENT_BYTES == 0
     assert stack.read_i32(0) == -1
@@ -160,7 +161,10 @@ def test_native_value_stack_owns_the_fixed_storage():
 def test_native_control_stack_owns_flat_frame_records():
     stack = NativeControlStack(capacity=2)
     assert stack.capacity == 2
-    assert stack.push_back(ControlFrameKind.LOOP, start=3, match_end=12, stack_height=4)
+    pushed = stack.push_back(
+        ControlFrameKind.LOOP, start=3, match_end=12, stack_height=4
+    )
+    assert pushed
     assert stack.native.size == 1
     assert isinstance(stack.native, ControlStackNative)
     restored = stack[-1]
@@ -172,7 +176,8 @@ def test_native_control_stack_owns_flat_frame_records():
         restored.result_arity,
     ) == (3, 12, 4, 0)
     assert stack.pop_back().kind == int(ControlFrameKind.LOOP)
-    assert stack.push_back(ControlFrameKind.BLOCK, start=4, match_end=8, stack_height=0)
+    pushed = stack.push_back(ControlFrameKind.BLOCK, start=4, match_end=8, stack_height=0)
+    assert pushed
     stack.truncate(0)
     assert len(stack) == 0
     with expect_assertion():
@@ -181,13 +186,14 @@ def test_native_control_stack_owns_flat_frame_records():
 
 def test_control_frame_branch_preserves_label_result_slots():
     storage = NativeControlStack(capacity=2)
-    assert storage.push_back(
+    pushed = storage.push_back(
         ControlFrameKind.BLOCK,
         start=0,
         match_end=4,
         stack_height=1,
         result_arity=2,
     )
+    assert pushed
     window = ControlFrameWindow(storage, base=0)
     values = NativeValueStack(capacity=8)
     assert values.extend((99, 10, 20, 77))
@@ -198,10 +204,13 @@ def test_control_frame_branch_preserves_label_result_slots():
 
 def test_control_frame_window_rewinds_multiple_frames_with_one_size_update():
     storage = NativeControlStack(capacity=4)
-    assert storage.push_back(ControlFrameKind.BLOCK, start=0, match_end=4, stack_height=0)
+    pushed = storage.push_back(ControlFrameKind.BLOCK, start=0, match_end=4, stack_height=0)
+    assert pushed
     window = ControlFrameWindow(storage, base=0)
-    assert window.push_back(ControlFrameKind.IF, start=4, match_end=8, stack_height=0)
-    assert window.push_back(ControlFrameKind.LOOP, start=8, match_end=12, stack_height=0)
+    pushed = window.push_back(ControlFrameKind.IF, start=4, match_end=8, stack_height=0)
+    assert pushed
+    pushed = window.push_back(ControlFrameKind.LOOP, start=8, match_end=12, stack_height=0)
+    assert pushed
     assert len(window) == 3
 
     window.truncate(0)

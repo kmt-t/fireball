@@ -240,7 +240,7 @@ JIT トレースとインタープリタが共有オペランド領域上で相�
 
 #### JIT トレース物理メモリレイアウト (`jit_trace_header`)
 <!-- traceability: {JIT_LazyChaining} {SimpleJITArchitecture} {PositionIndependentCode} -->
-物理配置は対象ごとのABI契約へ委譲する。Windows x64およびSystem V AMD64の56バイト配置は [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) に定義し、ARMv8-MのThumb-2配置と命令列は [`jit_stencil_catalog.md`](docs/specs/jit_stencil_catalog.md) に定義する。これらの配置を一つの共通ヘッダとして扱ってはならない。
+物理配置は対象ごとのABI契約へ委譲する。Windows x64およびSystem V AMD64の52バイト配置は [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) に定義し、ARMv8-MのThumb-2配置と命令列は [`jit_stencil_catalog.md`](docs/specs/jit_stencil_catalog.md) に定義する。これらの配置を一つの共通ヘッダとして扱ってはならない。
 
 #### `constexpr_assembler` (DSL)
 <!-- traceability: {JIT_Encoder} {META_ZeroCostAbstraction} -->

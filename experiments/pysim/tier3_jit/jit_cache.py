@@ -232,7 +232,7 @@ class HistoryRing:
 
 class JITTraceHeader:
     """
-    x64-specific 56-byte fixed physical memory layout:
+    x64-specific 52-byte fixed physical memory layout:
         +0x00 head_wasm_pc(u32)
         +0x04 trace_byte_size(u16)
         +0x06 flags(u8) [0x01: PROMOTED, 0x02: LOOP_HEADER]
@@ -243,10 +243,9 @@ class JITTraceHeader:
         +0x18 common_prologue_offset(u32)
         +0x1C common_epilogue_offset(u32)
         +0x20 common_helper_offset(u32)
-        +0x24 helper_index(u32)
-        +0x28 helper_target_addr(u64)
-        +0x30 absolute_pool_offset(u32)
-        +0x34 reserved(u32)
+        +0x24 helper_target_addr(u64)
+        +0x2C absolute_pool_offset(u32)
+        +0x30 reserved(u32)
     """
 
     __slots__ = (
@@ -258,7 +257,6 @@ class JITTraceHeader:
         "common_prologue_offset",
         "flags",
         "head_wasm_pc",
-        "helper_index",
         "helper_target_addr",
         "trace_byte_size",
         "variant_id",
@@ -273,7 +271,6 @@ class JITTraceHeader:
         trace_byte_size: int = JIT_TRACE_DEFAULT_BYTES,
         flags: int = 0,
         variant_id: int = 0,
-        helper_index: int = -1,
         helper_target_addr: int = 0,
     ):
         self.head_wasm_pc = head_wasm_pc & 0xFFFF_FFFF
@@ -286,7 +283,6 @@ class JITTraceHeader:
         self.common_prologue_offset = COMMON_PROLOGUE_OFFSET
         self.common_epilogue_offset = COMMON_EPILOGUE_OFFSET
         self.common_helper_offset = COMMON_HELPER_OFFSET
-        self.helper_index = helper_index
         assert 0 <= helper_target_addr <= 0xFFFF_FFFF_FFFF_FFFF
         self.helper_target_addr = helper_target_addr
         self.absolute_pool_offset = COMMON_ABSOLUTE_POOL_OFFSET
@@ -295,7 +291,7 @@ class JITTraceHeader:
         import struct
 
         return struct.pack(
-            "<IHBBIIQIIIIQII",
+            "<IHBBIIQIIIQII",
             self.head_wasm_pc,
             self.trace_byte_size,
             self.flags,
@@ -306,7 +302,6 @@ class JITTraceHeader:
             self.common_prologue_offset,
             self.common_epilogue_offset,
             self.common_helper_offset,
-            self.helper_index & 0xFFFF_FFFF,
             self.helper_target_addr,
             self.absolute_pool_offset,
             0,
@@ -361,7 +356,6 @@ class JITTrace:
         helper_exit_patch_offset: int = -1,
         chain_header_patch_offset: int = -1,
         chain_fallback_patch_offset: int = -1,
-        helper_index: int = -1,
         helper_target_addr: int = 0,
     ):
         self.head_pc = head_pc
@@ -386,7 +380,6 @@ class JITTrace:
         self.header = JITTraceHeader(
             head_wasm_pc=head_pc,
             trace_byte_size=size_bytes,
-            helper_index=helper_index,
             helper_target_addr=helper_target_addr,
         )
         self.chain_next: int | None = None
@@ -652,7 +645,7 @@ class JITMultiBufferCache:
         source.header.chain_next_pc = target.head_pc
         self._set_chain_target(source, target)
         if not target_bank.inbound_sources.contains(source.head_pc):
-            assert target_bank.inbound_sources.push_back(source.head_pc)
+            target_bank.inbound_sources.append(source.head_pc)
 
     def _unlink_chain(self, source: JITTrace) -> None:
         source.chain_next = None

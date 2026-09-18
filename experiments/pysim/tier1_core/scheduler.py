@@ -20,7 +20,7 @@ from __future__ import annotations
 from collections.abc import Callable, Generator, Iterator, Sequence
 from contextlib import contextmanager
 from enum import IntEnum
-from typing import Protocol
+from typing import Protocol, cast
 
 from interrupt_event import InterruptEvent
 from system_containers import RingBuffer, StaticVector
@@ -60,6 +60,19 @@ class ChannelPayload(Protocol):
     """Opaque rendezvous payload; ownership is transferred by the caller."""
 
     pass
+
+
+class MovableChannelPayload(ChannelPayload, Protocol):
+    """Payload whose channel performs an explicit move-only handoff."""
+
+    def move_to(self, new_owner: int) -> ChannelPayload | None: ...
+
+
+class ChannelTransferMode(IntEnum):
+    """Selects the payload contract enforced by a rendezvous channel."""
+
+    BORROWED = 0
+    MOVABLE = 1
 
 
 class BoundedReadyQueue:
@@ -228,10 +241,21 @@ class Channel:
     - waiter_dir: WaitDir (NONE, SEND, RECV)
     """
 
-    __slots__ = ("scheduler", "waiter_dir", "waiter_group", "waiter_task")
+    __slots__ = (
+        "scheduler",
+        "transfer_mode",
+        "waiter_dir",
+        "waiter_group",
+        "waiter_task",
+    )
 
-    def __init__(self, scheduler: "Scheduler | None" = None):
+    def __init__(
+        self,
+        scheduler: "Scheduler | None" = None,
+        transfer_mode: ChannelTransferMode = ChannelTransferMode.BORROWED,
+    ):
         self.scheduler = scheduler
+        self.transfer_mode = transfer_mode
         self.waiter_task: Task | None = None
         self.waiter_dir: WaitDir = WaitDir.NONE
         # Set only while waiter_task is a receiver waiting via
@@ -427,13 +451,17 @@ class Scheduler:
             if task.coro is not None:
                 self._ready_coro_count += 1
 
-    def create_channel(self) -> Channel:
+    def create_channel(
+        self,
+        transfer_mode: ChannelTransferMode = ChannelTransferMode.BORROWED,
+    ) -> Channel:
         """
         Creates an unbuffered synchronous CSP rendezvous channel (ADR_RendezvousChannel).
         Call channel.send(data) or channel.recv() directly on the returned Channel.
         """
-        channel = Channel(scheduler=self)
-        assert self._channels.push_back(channel), (
+        channel = Channel(scheduler=self, transfer_mode=transfer_mode)
+        channel_added = self._channels.push_back(channel)
+        assert channel_added, (
             f"Channel capacity exceeded (max {FB_CONF_MAX_CHANNELS})"
         )
         return channel
@@ -497,9 +525,10 @@ class Scheduler:
                             WaitDir.NONE,
                             None,
                         )
-            try:
-                val = data.move_to(receiver.task_id)
-            except AttributeError:
+            if ch.transfer_mode == ChannelTransferMode.MOVABLE:
+                movable = cast(MovableChannelPayload, data)
+                val = movable.move_to(receiver.task_id)
+            else:
                 val = data
             receiver.received_val = val
             receiver.state = TaskState.READY
@@ -524,10 +553,10 @@ class Scheduler:
             val = sender.pending_val
             sender.pending_val = None  # Prevent double ownership
             ch.waiter_task, ch.waiter_dir = None, WaitDir.NONE
-            try:
-                val = val.move_to(receiver.task_id)
-            except AttributeError:
-                pass
+            assert val is not None
+            if ch.transfer_mode == ChannelTransferMode.MOVABLE:
+                movable = cast(MovableChannelPayload, val)
+                val = movable.move_to(receiver.task_id)
             receiver.received_val = val
             sender.state = TaskState.READY
             receiver.state = TaskState.READY
@@ -556,10 +585,10 @@ class Scheduler:
                 val = sender.pending_val
                 sender.pending_val = None
                 ch.waiter_task, ch.waiter_dir = None, WaitDir.NONE
-                try:
-                    val = val.move_to(receiver.task_id)
-                except AttributeError:
-                    pass
+                assert val is not None
+                if ch.transfer_mode == ChannelTransferMode.MOVABLE:
+                    movable = cast(MovableChannelPayload, val)
+                    val = movable.move_to(receiver.task_id)
                 receiver.received_val = val
                 sender.state = TaskState.READY
                 receiver.state = TaskState.READY
@@ -638,7 +667,8 @@ class Scheduler:
         task.waiting_irq = irq_id
 
     def set_idle_hook(self, fn: Callable[[], None]) -> None:
-        assert self.idle_hooks.push_back(fn), (
+        hook_added = self.idle_hooks.push_back(fn)
+        assert hook_added, (
             f"Idle hooks capacity exceeded (max {FB_CONF_MAX_IDLE_HOOKS})"
         )
 

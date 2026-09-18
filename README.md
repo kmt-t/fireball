@@ -33,7 +33,7 @@ You need Clang, CMake, Ninja, and Python (with `uv` recommended) to build and ve
   - CMake (3.25+)
   - Ninja
 - **Python Runtime & Package Management**:
-  - Python 3.11+ / 3.14+ ([`uv`](https://github.com/astral-sh/uv) recommended)
+  - Python 3.11+ (CI verified; [`uv`](https://github.com/astral-sh/uv) recommended)
 - **Python Dependencies**:
   Install all required Python modules using [requirements.txt](requirements.txt):
   ```bash
@@ -45,8 +45,8 @@ You need Clang, CMake, Ninja, and Python (with `uv` recommended) to build and ve
   ```
   Key modules include:
   - **Verification Engine (`spec-integrator`)**: `pyModelChecking` (CTL/LTL formal verification), `mistune` (Markdown AST parser), `pyyaml`, `requests`, `urllib3`, `mermaidx`.
-  - **Simulator & JIT Machine Code (`experiments/pysim`)**: `wasmtime` (WASM reference runtime for differential testing), `unicorn` (CPU emulator for Thumb-2 instruction trace verification).
-  - **Testing & Code Formatting**: `pytest`, `pytest-cov`, `ruff` (fast linter and formatter).
+  - **Simulator & JIT Machine Code (`experiments/pysim`)**: `wasmtime` (WASM reference runtime for differential testing).
+  - **Testing, Formatting & Static Typing**: `pytest`, `pytest-cov`, `ruff`, `mypy`, `pyright`.
 
 ### 2. Verification & Quality Gates
 Fireball enforces an automated verification pipeline (`spec-integrator`) ensuring static formatting, keyword traceability, tier hierarchy encapsulation, pyModelChecking formal verification, WIT interface types, evidence backing, verification obligations, and consistency baselines (see `tools/README.md`):

@@ -171,6 +171,14 @@ powershell tools/check-src.ps1 -group pysim
 
 # Python 直接実行
 uv run --system-certs --with wasmtime python experiments/pysim/qa/scenarios/run_all.py
+
+# Python 最適化モード（assert 副作用の回帰検査）
+uv run --system-certs --with wasmtime python -O experiments/pysim/qa/run_all.py
+uv run --system-certs --with wasmtime python -O experiments/pysim/qa/scenarios/run_all.py
+
+# 製品Tierの静的型検査
+mypy --config-file mypy.ini
+pyright --project pyrightconfig.json
 ```
 
 ### 全単体テストの実行
@@ -194,7 +202,7 @@ powershell experiments/pysim/tier3_jit/build_native.ps1
 ```
 
 ### （任意）インタープリタホットパスの Cython Pure-Python モードアクセラレータ
-`experiments/pysim/tier2_runtime/leb128.py`・`interpreter.py`・`runtime_engine.py` のディスパッチループ（`Interpreter.step()`）と最頻出ハンドラ（`local.get`/`local.set`/`i32.const`/`i32.add`/`i32.sub`/`i32.ge_s`/`br_if` 等）、および `_to_i32`/`_to_u32` 等のラップ関数は、Cython Pure-Python モード（`@cython.locals(...)` によるローカル変数の C 型付け）で書かれている。`import cython` は未ビルド時は無害な no-op シムとして動作するため、この 3 ファイルは常に素の Python として動作し、動作は一切変わらない。ビルドすると同じディレクトリに `.pyd`/`.so` が生成され、Python の import 解決が同名の `.py` より優先して読み込むため、他コードの変更なしに透過的に高速化される。`bench_jit.py` のインタープリタ実行時間が実測で無型コンパイル比 ~15〜20% 改善する（更なる高速化には `_HANDLERS` テーブル経由の多態的呼び出し自体の再設計が必要）。
+`experiments/pysim/tier2_runtime/leb128.py`・`interpreter.py` のディスパッチループ（`Interpreter.step()`）と最頻出ハンドラ（`local.get`/`local.set`/`i32.const`/`i32.add`/`i32.sub`/`i32.ge_s`/`br_if` 等）、および `_to_i32`/`_to_u32` 等のラップ関数は、Cython Pure-Python モード（`@cython.locals(...)` によるローカル変数の C 型付け）で書かれている。Cython パッケージは型注釈・デコレータの実行に必要なため、`requirements.txt` から必ずインストールする。未ビルド時は通常の Python 実装として動作し、ビルドすると同じディレクトリに `.pyd`/`.so` が生成され、Python の import 解決が同名の `.py` より優先して読み込むため、他コードの変更なしに透過的に高速化される。`bench_jit.py` のインタープリタ実行時間が実測で無型コンパイル比 ~15〜20% 改善する（更なる高速化には `_HANDLERS` テーブル経由の多態的呼び出し自体の再設計が必要）。
 ```bash
 # Windows: clang-cl + Visual Studio Build Tools + Windows SDK が必要
 powershell experiments/pysim/tier2_runtime/build_native.ps1

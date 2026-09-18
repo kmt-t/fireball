@@ -42,7 +42,7 @@ JIT_CACHE_FAST_SLOT_COUNT: int = 16
 JIT_CACHE_MAX_INBOUND_SOURCES: int = 32
 # The x64 simulator has its own header layout.  The 64-bit chain target is
 # aligned as a native pointer, so it is not the ARM header layout.
-JIT_X64_TRACE_HEADER_BYTES: int = 56
+JIT_X64_TRACE_HEADER_BYTES: int = 52
 JIT_X64_CHAIN_TARGET_OFFSET: int = 0x10
 JIT_X64_HELPER_TARGET_OFFSET: int = 0x28
 # Compatibility name for existing simulator-wide capacity calculations.

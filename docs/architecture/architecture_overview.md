@@ -161,7 +161,7 @@ Fireball の実行コアは、以下の 6 つの物理メカニズムによっ�
 | 経路・検査 | 処理 | 拒否・所有権条件 |
 |---|---|---|
 | Fast-path (Bit 31 = 0) | ゲストRAMアクセスとしてベースポインタを加算する。開始アドレスと末尾（`addr + width - 1`）を `mem_size` と比較する。 | 境界外アクセスを拒否する。 |
-| vMMIO-path (Bit 31 = 1) | VPN（20 bits）に対して 4-bit Folding XOR（20→10→5→4）を計算し、16エントリ TLB を直接参照する。ミス時は `flat_map_view` を二分探索する。 | — |
+| vMMIO-path (Bit 31 = 1) | VPN（20 bits）に対して 5-bit Folding XOR（20→10→5）を計算し、32エントリ TLB を直接参照する。ミス時は `flat_map_view` を二分探索する。 | — |
 | HAL DYNAMIC (FC=13) | HALが用意した固定長バッファをvMMIOへ動的マップする。 | DYNAMICマッピングを保持できるゲストを1つに限定し、別ゲストからのバインド要求を拒否する。 |
 | SHM所有権検査とunmap | PTE未登録・Revoke後のアクセスは `TRAP_UNREGISTERED_PAGE` とする。Revokeは旧PTEを削除してTLBを無効化する。 | owner_idが現在タスクと異なる場合やFLIGHT中は `OWNER_MISMATCH` trapで拒否する。HAL DYNAMICバッファは同時マップ可能なゲストを1つに限定する。 |
 

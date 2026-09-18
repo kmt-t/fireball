@@ -2,7 +2,7 @@
 experiments/pysim/tier3_jit/x64_jit.py
 Pure Trace-based Copy-and-Patch JIT Compiler for Fireball.
 Compiles individual HOT BasicBlocks / Traces into Position-Independent Code (PIC)
-with 56-byte x64 fixed headers (JITTraceHeader) and direct trace chaining.
+    with 52-byte x64 fixed headers (JITTraceHeader) and direct trace chaining.
 Conforms strictly to docs/components/tier3_jit/jit_compiler.md and
 docs/components/tier2_runtime/runtime_interpreter.md.
 CPS 4-argument calling convention:
@@ -221,7 +221,7 @@ def _emit_register_push(
     else:
         assert operation == LOCAL_GET
         code += _load_tos_local(int(arg))
-    assert stack_locations.push_back(_STACK_LOCATION_TOS)
+    stack_locations.append(_STACK_LOCATION_TOS)
     return spilled_words
 
 
@@ -302,7 +302,7 @@ def _emit_register_pop(
     stack_locations.pop_back()
     assert spilled_words > 0
     spilled_words -= 1
-    assert stack_locations.push_back(_STACK_LOCATION_TOS)
+    stack_locations.append(_STACK_LOCATION_TOS)
     return spilled_words
 
 
@@ -325,7 +325,7 @@ def _emit_register_binary_with_spill(
     _emit_register_binary(code, operation)
     stack_locations.pop_back()
     stack_locations.pop_back()
-    assert stack_locations.push_back(_STACK_LOCATION_TOS)
+    stack_locations.append(_STACK_LOCATION_TOS)
     return spilled_words
 
 
@@ -333,8 +333,8 @@ class TraceCompiler:
     """
     True Copy-and-Patch Trace Compiler for BasicBlocks producing Position-Independent Code (PIC).
         Appends machine-code stencils into continuous executable memory (`exec_memory.py`),
-        emitting 56-byte physical headers (JITTraceHeader) at offset 0x00 and
-        a small entry stub at offset 0x38.  The stub and all exits route via
+        emitting 52-byte physical headers (JITTraceHeader) at offset 0x00 and
+        a small entry stub at offset 0x34.  The stub and all exits route via
         the common AAPCS area selected by header offsets.
     """
 
@@ -534,7 +534,7 @@ class TraceCompiler:
                 _emit_register_shift(code, op)
                 stack_locations.pop_back()
                 stack_locations.pop_back()
-                assert stack_locations.push_back(_STACK_LOCATION_TOS)
+                stack_locations.append(_STACK_LOCATION_TOS)
             else:
                 return None
 
@@ -602,7 +602,6 @@ class TraceCompiler:
 
         if tail_context_helper:
             helper_index = -1
-        header.helper_index = helper_index
         if helper_index >= 0:
             header.common_helper_offset = helper_entry_offset(helper_index)
         header.helper_target_addr = helper_target_addr
@@ -628,7 +627,6 @@ class TraceCompiler:
             helper_exit_patch_offset=helper_exit_patch_offset,
             chain_header_patch_offset=chain_header_patch_offset,
             chain_fallback_patch_offset=chain_fallback_patch_offset,
-            helper_index=helper_index,
             helper_target_addr=helper_target_addr,
         )
         trace.header = header

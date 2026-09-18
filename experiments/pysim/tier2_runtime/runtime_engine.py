@@ -76,7 +76,7 @@ def _empty_block_slots() -> StaticVector[tuple[int, BasicBlock | None] | None]:
         capacity=RUNTIME_BLOCK_CACHE_SLOT_COUNT
     )
     for _ in range(RUNTIME_BLOCK_CACHE_SLOT_COUNT):
-        assert slots.push_back(None)
+        slots.append(None)
     return slots
 
 

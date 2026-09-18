@@ -41,7 +41,8 @@ ItemT = TypeVar("ItemT")
 
 
 def _push_or_assert(target: StaticVector[ItemT], item: ItemT, label: str) -> None:
-    assert target.push_back(item), f"{label} capacity exceeded"
+    pushed = target.push_back(item)
+    assert pushed, f"{label} capacity exceeded"
 
 
 FB_CONF_MAX_WASM_PAGES = 16
@@ -455,7 +456,7 @@ class ModuleView:
         index: int,
     ) -> DecodedEntity:
         entity = DecodedEntity(kind, start_offset, end_offset, index)
-        assert self.entity_registry.push_back(entity)
+        self.entity_registry.append(entity)
         return entity
 
     def build_indexes(self) -> None:

@@ -344,17 +344,16 @@ def test_jitr_31_to_35_trace_chaining_and_ok_unlinking():
     assert not cache.oldest.has_trace(0x200)
 
 
-def test_jitc_20_trace_header_56byte_x64_physical_layout():
+def test_jitc_20_trace_header_52byte_x64_physical_layout():
     """TEST-JITC-20: x64 header carries native-width chain and helper pointers."""
     hdr = JITTraceHeader(head_wasm_pc=0x12345678, trace_byte_size=128, flags=0x01, variant_id=0x02)
     hdr.chain_next_pc = 0x87654321
     hdr.chain_target_addr = 0x20001000
-    hdr.helper_index = 3
     hdr.helper_target_addr = 0x0123456789ABCDEF
     raw = hdr.pack()
-    assert len(raw) == 56
+    assert len(raw) == 52
 
-    fields = struct.unpack("<IHBBIIQIIIIQII", raw)
+    fields = struct.unpack("<IHBBIIQIIIQII", raw)
     pc, size, flags, var, next_pc, reserved, target = fields[:7]
     assert pc == 0x12345678
     assert size == 128
@@ -364,8 +363,9 @@ def test_jitc_20_trace_header_56byte_x64_physical_layout():
     assert target == 0x20001000
     assert reserved == 0
     assert fields[7:10] == (0, 32, 48)
-    assert fields[10] == 3
-    assert fields[11] == 0x0123456789ABCDEF
+    assert fields[10] == 0x0123456789ABCDEF
+    assert fields[11] == 80
+    assert fields[12] == 0
 
 
 def test_jitr_native_header_chain_executes_successor_body_once():
@@ -1286,7 +1286,7 @@ if __name__ == "__main__":
     test_jitr_promote_transfers_inbound_sources_avoiding_dangling_chain()
     test_jitr_bitmap_checked_before_cache_lookup()
     test_jitr_31_to_35_trace_chaining_and_ok_unlinking()
-    test_jitc_20_trace_header_56byte_x64_physical_layout()
+    test_jitc_20_trace_header_52byte_x64_physical_layout()
     test_hotspot_05_3bank_cache_rotation_and_eviction_resets_card()
     test_hotspot_06_short_blocks_never_tracked_avoiding_card_aliasing()
     test_hotspot_07_idle_hook_skips_recompiling_an_already_resident_trace()

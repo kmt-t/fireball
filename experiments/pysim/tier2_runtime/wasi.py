@@ -514,7 +514,7 @@ class WasiHostContext:
 
             wrapped = make_wrapper(handler, nparams)
             t = c_func_type(wrapped)
-            assert self._keepalive_trampolines.push_back(t)
+            self._keepalive_trampolines.append(t)
             addr = ctypes.cast(t, ctypes.c_void_p).value
             assert addr is not None
             trampolines[idx] = addr

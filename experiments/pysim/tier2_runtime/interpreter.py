@@ -382,17 +382,17 @@ def _encode_public_args(
     for value, value_type in zip(values, param_types, strict=True):
         if value_type == I64:
             raw = int(value) & I64_MASK
-            assert raw_args.push_back(raw & I32_MASK)
-            assert raw_args.push_back(raw >> 32)
+            raw_args.append(raw & I32_MASK)
+            raw_args.append(raw >> 32)
         elif value_type == F32:
             bits = struct.unpack("<I", struct.pack("<f", float(value)))[0]
-            assert raw_args.push_back(bits)
+            raw_args.append(bits)
         elif value_type == F64:
             bits = struct.unpack("<Q", struct.pack("<d", float(value)))[0]
-            assert raw_args.push_back(bits & I32_MASK)
-            assert raw_args.push_back(bits >> 32)
+            raw_args.append(bits & I32_MASK)
+            raw_args.append(bits >> 32)
         else:
-            assert raw_args.push_back(int(value) & I32_MASK)
+            raw_args.append(int(value) & I32_MASK)
     return raw_args
 
 
@@ -527,7 +527,7 @@ class InterpreterContext:
         local_slot_count = frame.local_slot_count
         assert len(raw_args) == frame.param_packed_slot_count
         assert frame_offset + local_slot_count <= self.local_stack.capacity
-        assert self.call_frame_offsets.push_back(frame_offset)
+        self.call_frame_offsets.append(frame_offset)
         if not self.call_frame_stack.push_back(frame):
             self.call_frame_offsets.pop_back()
             assert False, "call-frame stack capacity exceeded"
@@ -707,7 +707,7 @@ _BASIC_BLOCK_BOUNDARY: bytes = bytes(
 def _handler(opcode: int) -> Callable[[_HandlerFn], _HandlerFn]:
     def register(fn: _HandlerFn) -> _HandlerFn:
         while len(_HANDLERS) <= opcode:
-            assert _HANDLERS.push_back(None)
+            _HANDLERS.append(None)
         _HANDLERS[opcode] = fn
         return fn
 
@@ -956,20 +956,24 @@ class Interpreter:
         assert frame is not None and locals_arr is not None
         ip = call_state._ip
         tos = call_state._tos
+        code = frame.code
+        code_len = len(code)
+        ctx = call_state.context
+        values = frame.values
         while True:
             if ip == RETURN_SENTINEL_IP:
                 break
-            assert 0 <= ip < len(frame.code)
-            opcode = frame.code[ip]
+            assert 0 <= ip < code_len
+            opcode = code[ip]
             handler = _HANDLERS[opcode]
             assert handler is not None, f"interpreter: unhandled opcode 0x{opcode:02X}"
-            call_state.context.bind_handler_state(ip, frame)
-            trap = handler(call_state.context, frame.values, locals_arr, tos)
+            ctx.bind_handler_state(ip, frame)
+            trap = handler(ctx, values, locals_arr, tos)
             if trap is not None:
                 self._abort_call(call_state, trap)
                 return None
-            ip = int(call_state.context.native_context.ip)
-            if ip >= len(frame.code):
+            ip = int(ctx.native_context.ip)
+            if ip >= code_len:
                 ip = RETURN_SENTINEL_IP
 
         func_type = self.module.func_type(call_state.func_index)
@@ -986,7 +990,7 @@ class Interpreter:
                 result_value = frame.values.pop_f64()
             else:
                 result_value = frame.values.pop_i32()
-            assert results.push_back(result_value)
+            results.append(result_value)
         call_state.cont = None
         call_state.finished = True
         call_state.results = results
@@ -1066,7 +1070,7 @@ class Interpreter:
             else:
                 assert value_type == I32
                 argument = _to_i32(int(value))
-            assert host_args.push_back(argument)
+            host_args.append(argument)
         result = handler(*host_args)
         results: StaticVector[WasmNumber] = StaticVector(capacity=4)
         if ft.results:
@@ -1080,7 +1084,7 @@ class Interpreter:
                 result_value = float(result)
             else:
                 result_value = _to_i32(int(result))
-            assert results.push_back(result_value)
+            results.append(result_value)
         return results, None
 
     def _build_frame(
@@ -1133,8 +1137,9 @@ class Interpreter:
             tos = call_state._tos
             assert frame is not None and locals_arr is not None
             if ip != RETURN_SENTINEL_IP:
-                assert 0 <= ip < len(frame.code)
-                op = frame.code[ip]
+                code = frame.code
+                assert 0 <= ip < len(code)
+                op = code[ip]
                 if op == CALL or op == CALL_INDIRECT:
                     trap = self._enter_or_resolve_call(call_state, op, ip, frame, locals_arr, tos)
                     if trap is not None:
@@ -1146,17 +1151,24 @@ class Interpreter:
                 is_boundary = _BASIC_BLOCK_BOUNDARY[op] != 0
                 handler = _HANDLERS[op]
                 assert handler is not None, f"interpreter: unhandled opcode 0x{op:02X}"
-                call_state.context.bind_handler_state(ip, frame)
-                trap = handler(call_state.context, frame.values, locals_arr, tos)
+                # `context` and `values` are fixed for this frame's whole
+                # lifetime (set once in CallFrame/InterpreterCall.__init__,
+                # never reassigned) -- hoisted so this hottest of all loops
+                # pays the attribute-lookup cost once per instruction
+                # instead of four (context) and three (values) times.
+                ctx = call_state.context
+                values = frame.values
+                ctx.bind_handler_state(ip, frame)
+                trap = handler(ctx, values, locals_arr, tos)
                 if trap is not None:
                     self._abort_call(call_state, trap)
                     return call_state
-                next_ip = int(call_state.context.native_context.ip)
-                result_frame = call_state.context.call_frame_stack[-1]
+                next_ip = int(ctx.native_context.ip)
+                result_frame = ctx.call_frame_stack[-1]
                 assert result_frame is frame
                 result_locals = locals_arr
-                next_tos = frame.values.raw_top() if frame.values else 0
-                if next_ip >= len(frame.code):
+                next_tos = values.raw_top() if values else 0
+                if next_ip >= len(code):
                     next_ip = RETURN_SENTINEL_IP
                 call_state._ip = next_ip
                 call_state._frame = result_frame
@@ -1195,7 +1207,7 @@ class Interpreter:
                     else:
                         result_value = frame.values.pop_i32()
                     assert result_value is not None
-                    assert results.push_back(result_value)
+                    results.append(result_value)
                 call_state.cont = None
                 call_state.finished = True
                 call_state.results = results
@@ -1264,9 +1276,9 @@ class Interpreter:
                 else:
                     value = frame.values.pop_i32()
                 assert value is not None
-                assert popped_args.push_back(value)
+                popped_args.append(value)
             for index in range(len(popped_args) - 1, -1, -1):
-                assert call_args.push_back(popped_args[index])
+                call_args.append(popped_args[index])
             results, trap = self._call_import(callee_func_index, call_args)
             if trap is not None:
                 return trap
@@ -1294,7 +1306,7 @@ class Interpreter:
             for _ in range(value_slot_width(value_type)):
                 value = frame.values.pop_back()
                 assert value is not None
-                assert popped_raw_args.push_back(value)
+                popped_raw_args.append(value)
         popped_raw_args.reverse_in_place()
         resume_tos = frame.values[-1] if frame.values else 0
         resume_cont = (next_ip, frame, locals_arr, resume_tos)
@@ -1522,13 +1534,16 @@ def _h_select(
         a_high = frame.values.pop_back()
         a_low = frame.values.pop_back()
         assert b_high is not None and b_low is not None and a_high is not None and a_low is not None
-        assert frame.values.push_back(a_low if c != 0 else b_low)
-        assert frame.values.push_back(a_high if c != 0 else b_high)
+        pushed_low = frame.values.push_back(a_low if c != 0 else b_low)
+        assert pushed_low
+        pushed_high = frame.values.push_back(a_high if c != 0 else b_high)
+        assert pushed_high
     else:
         b = frame.values.pop_back()
         a = frame.values.pop_back()
         assert a is not None and b is not None
-        assert frame.values.push_back(a if c != 0 else b)
+        pushed = frame.values.push_back(a if c != 0 else b)
+        assert pushed
     ctx.native_context.ip = ip + 1
     return None
 
@@ -1638,10 +1653,13 @@ def _h_global_get(
     value = env.globals[idx]
     value_type = env.module.globals[idx].vtype
     if value_type == I64 or value_type == F64:
-        assert frame.values.push_back(value & I32_MASK)
-        assert frame.values.push_back((value >> 32) & I32_MASK)
+        pushed_low = frame.values.push_back(value & I32_MASK)
+        assert pushed_low
+        pushed_high = frame.values.push_back((value >> 32) & I32_MASK)
+        assert pushed_high
     else:
-        assert frame.values.push_back(value & I32_MASK)
+        pushed = frame.values.push_back(value & I32_MASK)
+        assert pushed
     ctx.native_context.ip = next_ip
     return None
 
@@ -1712,7 +1730,8 @@ def _h_i32_load(
         value, trap = _vmmio_load(env, addr, 4, signed=True)
         if trap is not None:
             return trap
-        assert frame.values.push_back(value)
+        pushed = frame.values.push_back(value)
+        assert pushed
     else:
         if env.memory is None or addr + 4 > len(env.memory):
             return Trap(TrapCode.MEMORY_OUT_OF_BOUNDS, addr)
@@ -1732,7 +1751,8 @@ def _h_i32_load8_s(
         value, trap = _vmmio_load(env, addr, 1, signed=True)
         if trap is not None:
             return trap
-        assert frame.values.push_back(value)
+        pushed = frame.values.push_back(value)
+        assert pushed
     else:
         if env.memory is None or addr + 1 > len(env.memory):
             return Trap(TrapCode.MEMORY_OUT_OF_BOUNDS, addr)
@@ -1752,7 +1772,8 @@ def _h_i32_load8_u(
         value, trap = _vmmio_load(env, addr, 1, signed=False)
         if trap is not None:
             return trap
-        assert frame.values.push_back(value)
+        pushed = frame.values.push_back(value)
+        assert pushed
     else:
         if env.memory is None or addr + 1 > len(env.memory):
             return Trap(TrapCode.MEMORY_OUT_OF_BOUNDS, addr)
@@ -1772,7 +1793,8 @@ def _h_i32_load16_s(
         value, trap = _vmmio_load(env, addr, 2, signed=True)
         if trap is not None:
             return trap
-        assert frame.values.push_back(value)
+        pushed = frame.values.push_back(value)
+        assert pushed
     else:
         if env.memory is None or addr + 2 > len(env.memory):
             return Trap(TrapCode.MEMORY_OUT_OF_BOUNDS, addr)
@@ -1792,7 +1814,8 @@ def _h_i32_load16_u(
         value, trap = _vmmio_load(env, addr, 2, signed=False)
         if trap is not None:
             return trap
-        assert frame.values.push_back(value)
+        pushed = frame.values.push_back(value)
+        assert pushed
     else:
         if env.memory is None or addr + 2 > len(env.memory):
             return Trap(TrapCode.MEMORY_OUT_OF_BOUNDS, addr)
@@ -3682,7 +3705,8 @@ def _h_i32_extend8_s(
 ) -> _HandlerResult:
     ip, frame, env = _handler_state(ctx, sp)
     value = _to_u32(frame.values.pop_back()) & 0xFF
-    assert frame.values.push_back(_to_i32(value - 0x100 if value & 0x80 else value))
+    pushed = frame.values.push_back(_to_i32(value - 0x100 if value & 0x80 else value))
+    assert pushed
     ctx.native_context.ip = ip + 1
     return None
 
@@ -3693,7 +3717,8 @@ def _h_i32_extend16_s(
 ) -> _HandlerResult:
     ip, frame, env = _handler_state(ctx, sp)
     value = _to_u32(frame.values.pop_back()) & 0xFFFF
-    assert frame.values.push_back(_to_i32(value - 0x10000 if value & 0x8000 else value))
+    pushed = frame.values.push_back(_to_i32(value - 0x10000 if value & 0x8000 else value))
+    assert pushed
     ctx.native_context.ip = ip + 1
     return None
 
@@ -3853,4 +3878,4 @@ def _h_f64_reinterpret_i64(
 # materializing an iterator or a temporary tuple. The table is then read by
 # every interpreter dispatch step, so this storage is required runtime state.
 while len(_HANDLERS) < 256:
-    assert _HANDLERS.push_back(None)
+    _HANDLERS.append(None)

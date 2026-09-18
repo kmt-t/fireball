@@ -907,7 +907,8 @@ class StaticVector(Generic[T]):
     def append(self, item: T) -> None:
         """Append one item and fail fast when the fixed capacity is exhausted."""
 
-        assert self.push_back(item)
+        pushed = self.push_back(item)
+        assert pushed
 
     def extend(self, items: Sequence[T]) -> bool:
         item_count = len(items)

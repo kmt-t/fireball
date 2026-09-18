@@ -41,6 +41,26 @@ jobs:
       run: |
         ./tools/check-src.sh -g pysim
 
+    - name: Run PySim Static Type Checks
+      run: |
+        .venv/bin/mypy --config-file mypy.ini
+        .venv/bin/pyright --project pyrightconfig.json
+
+    - name: Run PySim Unit Tests with Python Optimizations
+      run: |
+        uv run --system-certs --with wasmtime python -O experiments/pysim/qa/run_all.py
+
+    - name: Run PySim Integration Scenarios with Python Optimizations
+      run: |
+        uv run --system-certs --with wasmtime python -O experiments/pysim/qa/scenarios/run_all.py
+
+    - name: Reject assert-wrapped mutating container operations
+      run: |
+        if rg -n 'assert[^\n]*\.push_back\s*\(' experiments/pysim/tier1_core experiments/pysim/tier1_interface experiments/pysim/tier2_runtime experiments/pysim/tier3_jit; then
+          echo 'Found a mutating push_back call inside assert.'
+          exit 1
+        fi
+
   lint:
     name: Spec Quality Gates & Verification (Manual)
     if: github.event_name == 'workflow_dispatch'

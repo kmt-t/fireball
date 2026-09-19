@@ -97,6 +97,8 @@
 | TEST-INTP-70 | 命令オブジェクト非生成とバイト直接フェッチ | WASM関数実行 | 実行ループのフェッチ処理を確認 | `frame.code[ip]` から $O(1)$ で直接バイトを読み出し、中間 `Instr` オブジェクトを生成しない | `runtime_interpreter.md` `{DirectBytecodeExecution}` |
 | TEST-INTP-71 | 足し算による次PC進行と即値のその場デコード | 算術・即値命令実行 | `ip` の遷移を確認 | 命令長または即値長を加算した `ip + len` で直接進行し、二分探索マップ（FlatMapView）を走査しない | `runtime_interpreter.md` |
 | TEST-INTP-72 | 静的制御表によるブロック境界解決 | `block/loop/if` 構文の実行 | 分岐および終了時の遷移を確認 | モジュールロード時に事前計算された静的 `control_map`（`blocks`, `br_tables`）を参照し、実行時の全命令再デコードを行わない | `runtime_interpreter.md` |
+| TEST-INTP-73 | フレームごとのスロット幅の決定 | i32のみ、f32のみ、i64を含む、f64ローカルを含む、ローカルなしの関数 | ロード後の幅マップ（ローカルごとの幅を2ビットで保持）のスロット幅と `local_slot_count_cache` を確認し、各関数を実行する | i32/f32のみは1ワード、i64/f64を含むと2ワードになる。ローカルなしは1ワードでスロット数は0である。全ローカルの幅がスロット幅以下である。実行結果が正しい | GOTCHA-INTP-22 |
+| TEST-INTP-74 | 32ビットのみのフレームによるローカル値領域の節約 | 16個のローカルを持つ再帰関数。一方はi32のみ、他方はf64ローカルを1個含む | 同じ再帰深さで実行する | i32のみの版は、1フレーム16ワードで7フレームが128ワードに収まり、成功する。f64を含む版は、1フレーム34ワードで7フレームが128ワードを超え、容量超過で停止する | GOTCHA-INTP-22 |
 
 ### 実装の勘所・不変条件（Gotchas & Implementation Invariants）
 
@@ -130,7 +132,7 @@
 | GOTCHA-INTP-19 | 小さい`ControlMap`キャッシュは4エントリ固定、キーは32bit値をXORで4bitへ折りたたむ | 過大なキャッシュ、異なるハッシュ式、未定義の置換で局所性と決定性が崩れる | `temp = v ^ (v >> 16)`、`temp ^= temp >> 8`、`temp ^= temp >> 4`、`temp ^= temp >> 2`、`temp &= 0x3`を使い、キャッシュ挿入失敗は`assert`する | 実装済み・既存テスト済み |
 | GOTCHA-INTP-20 | テスト専用のインタープリタ起動・検査コードを本番インタープリタへ混ぜない | 本番コードがテスト都合のAPIや特殊セットアップを持ち、Tier境界とROM/RAM責務が崩れる | テスト側が`Interpreter.start()`／`step()`を使って状態を組み立て、本番側は実行責務だけを持つ | 方針反映・要配置監査 |
 | GOTCHA-INTP-21 | インタープリタの`fireball_call` importはhost callとして直接実行する | WASMが`fireball:host/trap`の`fireball_call`を呼ぶ | IDと6引数をimportへ渡して戻り値を読む | 実行エンジンがホストハンドラを直接呼び、戻り値をWASMへ返す。SYSCTL doorbell、vMMIO syscall vector table、`REG_SYSCALL_*`は使用しない | `runtime_vmmio.md`、`runtime_syscall.md` |
-| GOTCHA-INTP-22 | 固定8バイトローカルスロット | 混在型の関数引数・ローカル（i32, i64, f64等） | ロード済みFunctionの幅メタデータと呼び出し結果を確認する | アドレスは `local_base + local_index * 8` から直接計算し、オフセット表を実行時に参照しない。i32/f32は1ワード、i64/f64は2ワードで、wide値は8バイト境界を満たす | `runtime_interpreter.md`、`wasm_module.py` |
+| GOTCHA-INTP-22 | フレームごとのローカルスロット幅 | 混在型の関数引数・ローカル（i32, i64, f64等）を持つ関数と、i32/f32だけの関数 | ロード済みFunctionの幅メタデータ、スロット幅、呼び出し結果を確認する | スロット幅は、フレーム内で最大の変数サイズで決まる。i32/f32だけのフレームは4バイト、i64/f64を含むフレームは8バイトである。アドレスは `local_base + local_index * スロット幅` から直接計算し、オフセット表を実行時に参照しない。i32/f32は1ワード、i64/f64は2ワードで、wide値はスロット境界を満たす。同一フレーム内でスロット幅は混在しない | `runtime_interpreter.md`、`wasm_module.py` |
 
 ## 3. テスト検証実績と網羅状況
 

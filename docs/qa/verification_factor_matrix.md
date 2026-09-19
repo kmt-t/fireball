@@ -40,7 +40,7 @@
 | Tier 2 Runtime | `runtime_vmmio` | `vmmio_concept.py` | `vmmio_mapping_model.py` | `runtime_vmmio_test_spec.md` | `test_vmmio.py`, `test_syscall.py` | 10, 11 | required |
 | Tier 2 Runtime | `runtime_vsoc` | `runtime_engine_concept.py` | `vsoc_cache_coherency_model.py`, `vsoc_state_model.py` | `runtime_vsoc_test_spec.md` | `test_vsoc.py`, `test_recovery.py` | 4, 5, 6, 8, 10 | required |
 | Tier 3 JIT | `jit_compiler` | `jit_copy_patch_concept.py`, `jit_assembler_constexpr_concept.py`, `stack_cache_concept.py` | `jit_cache_model.py` | `jit_compiler_test_spec.md` | `test_x64_asm.py`, `test_x64_stencils.py`, `test_x64_jit.py` | 4, 5, 8 | required |
-| Tier 3 JIT | `jit_runtime` | `stack_cache_concept.py` | `jit_cache_model.py` | `jit_runtime_test_spec.md` | `test_jit_runtime.py`, `test_x64_jit.py` | 4, 5, 8 | required |
+| Tier 3 JIT | `jit_runtime` | `stack_cache_concept.py` | `jit_cache_model.py` | `jit_runtime_test_spec.md` | `test_jit_runtime.py`, `test_x64_jit.py`, `test_jit_differential.py` | 4, 5, 8 | required |
 | Tier 3 Platform | `libfireball` | N/A（ゲスト公開契約） | N/A（WASI 契約テストで検証） | `libfireball_test_spec.md` | `test_syscall.py`, `test_hal.py` | 2, 11, 12 | contract_only |
 | Tier 3 Platform | `platform_driver` | `platform_driver_concept.py` | `interrupt_boundary_model.py` | `platform_driver_test_spec.md` | `test_hal.py` | 10, 11 | required |
 
@@ -206,7 +206,7 @@
 | 因子 | 直接確認する不変条件 | 主テスト | 失敗時の扱い |
 | :--- | :--- | :--- | :--- |
 | `engine` | Interpreter と JIT が同じ Native スタック状態を観測する | `test_interpreter.py`, `test_x64_jit.py`, `test_wasm_differential.py` | `assert` で停止 |
-| `cache` | hit、eviction、flush 後の実行経路が一意になる | `test_jit_runtime.py`, `test_x64_jit.py` | `assert` で停止 |
+| `cache` | hit、eviction、flush 後の実行経路が一意になる | `test_jit_runtime.py`, `test_x64_jit.py`, `test_jit_differential.py` | `assert` で停止 |
 | `mem_width` | WASM の幅、符号拡張、境界、grow 後の位置が一致する | `test_interpreter.py`, `test_loader.py`, `test_syscall.py` | `assert` で停止 |
 | `storage` | storage が所有し、view は非所有である。所有権を共有しない | `test_containers.py`, `test_memory.py`, `test_ipc_router.py` | `assert` で停止 |
 | `host_call` | WASI、IPC、HAL の責務境界とバッファ権限が混ざらない | `test_syscall.py`, `test_ipc_router.py`, `test_hal.py` | `assert` で停止 |
@@ -221,7 +221,7 @@
 | 文書 | [check-doc.ps1](tools/check-doc.ps1) | [docs](docs)、各Markdown | 既存の文書8ゲートに加え、本表ゲートも合格 |
 | ソース | [check-src.ps1](tools/check-src.ps1) | [pysim](experiments/pysim)、各Python | pysim 規約、import Tier、テスト実行、本表ゲートが合格 |
 | 形式検証 | [check-src.ps1](tools/check-src.ps1) | コンポーネント配下の各形式モデル | `pyModelChecking` 実行、guards 変異検査、モデル件数一致 |
-| 単体テスト | `uv run --project tools/spec-integrator --with wasmtime python` [run_all.py](experiments/pysim/qa/run_all.py) | 25 suite | 25/25 合格、AssertionError を成功扱いしない |
+| 単体テスト | `uv run --project tools/spec-integrator --with wasmtime python` [run_all.py](experiments/pysim/qa/run_all.py) | 27 suite | 27/27 合格、AssertionError を成功扱いしない |
 | 結合シナリオ | `uv run --project tools/spec-integrator --with wasmtime python` [run_all.py](experiments/pysim/qa/scenarios/run_all.py) | 12 scenarios | 12/12 合格、全シナリオをランナーから実行 |
 | ペアワイズ | `test_pairwise_combinations.py` | 7因子、26ケース | 288組を100%被覆し、各ケースの状態・副作用を直接 assert |
 

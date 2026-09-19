@@ -26,6 +26,7 @@
 | TEST-SCHED-13 | READY循環リストの両端操作と定員境界 | 容量4のREADYキューを用意する | 先頭取り出し、末尾追加、先頭追加、任意タスクの除去を行う | FIFO順と循環する前後リンクを保つ。満杯時は追加を拒否し、既存タスクの順序を変えない。各リンク操作はキュー長に依存しない | `{ADR_IntrusiveTcbList}` |
 | TEST-SCHED-14 | 割り込み再スケジュール世代の一巡 | READYタスクA・Bが存在し、割り込み通知を1回以上受け付ける | FIFOをドレインし、A・Bを順にディスパッチする | `reschedule_generation`は保留バーストごとに1回だけ進み、各対象タスクの`last_seen_generation`が一度ずつ更新される。全対象の観測後に`reschedule_pending`が解除される | `{ADR_InterruptRescheduleGeneration}` |
 | TEST-SCHED-15 | 一巡中に生成されたタスクの対象外化 | 世代要求が保留中にタスクCをspawnする | 現在世代の対象マスクを確定してCをディスパッチする | Cは現在世代の`round_target_mask`に含まれず、C自身の通常の協調実行を開始する。既存対象の観測完了を待つ | `{ADR_InterruptRescheduleGeneration}` |
+| TEST-SCHED-16 | 終了タスクのTCBスロット返却 | TCBが満杯で、一部のタスクが終了済み。別の場合として、全タスクが生存している | 新しいタスクをspawnする | 終了済みの最古のスロットが返却され、生成が成功する。生存タスクは回収されない。全タスクが生存している場合は、容量超過で停止する。新しいタスクIDは、過去のIDと重複しない | `{CooperativeMultitasking}` |
 
 ### 実装の勘所・不変条件（Gotchas & Implementation Invariants）
 

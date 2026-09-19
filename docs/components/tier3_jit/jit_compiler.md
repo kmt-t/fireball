@@ -86,7 +86,7 @@ WASM バイトコードにおける制御フロー命令は、その内部動作
    - **処理モデル**: `bkpt #0x00` を直接展開し、ハードウェアフォールトまたはデバッガトラップへ直結させる。
 
 ##### 3.3.2 JIT コンパイル対象命令セット仕様台帳（JIT Supported Opcode Specification）
-<!-- traceability: {JIT_CopyAndPatch} {JIT_ZeroCompileCostTheorem} {JIT_RegisterMapping} {PositionIndependentCode} -->
+<!-- traceability: {JIT_CopyAndPatch} {JIT_ZeroCompileCostTheorem} {JIT_RegisterMapping} {PositionIndependentCode} {GOTCHA-JITC-04} {GOTCHA-JITC-06} -->
 JIT ネイティブ実行対象命令（計 54 命令）の内訳は以下の通りである。スタック 5、デリミタ 4、定数 2、変数 6、32bit算術・論理 17、32bit比較 11、メモリ 9 の計54命令である。
 
 全54命令の展開形式は概念コード [`jit_copy_patch_concept.py`](docs/components/tier3_jit/concepts/jit_copy_patch_concept.py) のテストで検証する。形式モデル `jit_cache_model.py` はキャッシュの W^X やチェイニング不変条件を検証する。
@@ -226,8 +226,8 @@ JIT トレースとインタープリタは境界において4つの論理引数
 | | `s0/fp` | `FP` (フレームポインタ) | 不可侵 | システム固定 |
 
 #### トレース境界不変条件とスタックフレーム整合性 (Trace Boundary Invariants)
-<!-- traceability: {LowLatencyJIT} {PositionIndependentCode} {JIT_RuntimeAPI_Fallback} -->
-JIT トレースとインタープリタが共有オペランド領域上で相互運用するため、以下の3つの不変条件を厳格に保持する。
+<!-- traceability: {LowLatencyJIT} {PositionIndependentCode} {JIT_RuntimeAPI_Fallback} {GOTCHA-JITC-03} -->
+JIT トレースとインタープリタが共有オペランド領域上で相互運用するため、以下の4つの不変条件を厳格に保持する。
 
 1. **スタック自己完結性不変条件 (Stack Self-Containment Invariant)**:
    - JIT コンパイル対象とする BasicBlock は、**命令走査中の累積スタック深さが 0 未満（`stack_depth < 0`）に落ちない自己完結ブロックのみ**とする。
@@ -237,6 +237,10 @@ JIT トレースとインタープリタが共有オペランド領域上で相�
 3. **制御フロー・コール境界のインタープリタ委譲不変条件 (Control & Call Delegation Invariant)**:
 - スタック巻き戻しを伴う分岐（`BR`, `BR_IF`）および構文デリミタ（`BLOCK`, `LOOP`, `ELSE`, `END`）は、JIT トレース内にインライン展開する。
 - 一方、`CALL`, `CALL_INDIRECT`, `RETURN` 等の境界命令はインライン展開しない。トレース境界でインタープリタへ制御を返す。
+4. **押し出し量の申告不変条件 (Spill Declaration Invariant)**:
+   - TOSとNOSに載らない3個目以降の値は、共有オペランド領域の `sp` 相対の位置へ押し出す。
+   - コンパイラは、トレースが書き込む最大ワード数を `stack_words` としてトレースへ記録する。ヘルパー呼び出しと結果の語数も含める。
+   - トレースは、押し出しで `[sp, sp + stack_words)` の外へ書き込まない。
 
 #### JIT トレース物理メモリレイアウト (`jit_trace_header`)
 <!-- traceability: {JIT_LazyChaining} {SimpleJITArchitecture} {PositionIndependentCode} -->
@@ -508,7 +512,7 @@ sequenceDiagram
   - **トレース境界の2種類のエントリと2種類のエグジット**: 境界の性質は「真の脱出/新規進入」と「直接チェイン」の2系統に分かれる。混同してはならない。物理的な命令列は対象アーキテクチャの仕様で定める。
      - **新規エントリ / 真の脱出**: インタープリタから初めて呼び出される場合は対象ABIの開始処理を通過する。真の脱出では、共有オペランド領域と実行コンテキストを同期し、対象ABIの終了処理で復帰する。VMの値とCの戻り値は別の契約として扱う。
   - **チェイン・エントリ / 直接チェイン分岐**: 後続トレースが常駐し、対象ABIの状態引継ぎ条件を満たす場合だけ後続本体へ直接分岐する。入口保存処理を重ねず、未解決または状態不一致の場合は対象ABIの終了経路からインタープリタへ戻る。
-  - **固定ローカルスロットの直接アクセス (`ContextPointerRegister`)**: 各論理ローカルは固定スロットに配置される。ローカル領域の基底を起点とする固定オフセットを命令生成時に直接埋め込む。実行時のオフセット表参照やベースアドレス再計算は行わない。
+  - **固定ローカルスロットの直接アクセス (`ContextPointerRegister`)**: 各論理ローカルは、フレームのスロット幅の固定スロットに配置される。スロット幅は関数ごとに決まり、i32/f32だけの関数は4バイト、i64/f64を含む関数は8バイトである。ローカル領域の基底を起点とする `local index × スロット幅` を、命令生成時に直接埋め込む。実行時のオフセット表参照やベースアドレス再計算は行わない。
 
 - **決定事項**:
   - **背景**: 16ビットの `code_offset` をそのまま使用すると、コードキャッシュが64KBに制限される。将来的に外部メモリ等を活用してキャッシュを拡張（例：512KB）する場合、このビット幅がボトルネックとなる。

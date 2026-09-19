@@ -549,7 +549,7 @@ class _SelectAnalysisState:
         self.module = module
         self.function = module.functions[function_index - len(module.imports)]
         self.code = module.code_for(function_index)
-        self.locals_types = module.locals_layout(function_index)
+        self.locals_types = module.local_types(function_index)
         self.values: StaticVector[int | None] = StaticVector(capacity=len(self.code) + 1)
         self.controls: StaticVector[_AnalysisControlFrame] = StaticVector(
             capacity=min(33, len(self.code) + 1)

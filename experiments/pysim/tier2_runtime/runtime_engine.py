@@ -33,8 +33,10 @@ from config import (
     RUNTIME_DEBUG_TRACE_REPORT_CAPACITY,
 )
 from control_flow import iter_block_ops
+from interop_abi import NativeValueStack
 from interpreter import (
     RETURN_SENTINEL_IP,
+    CallFrame,
     Interpreter,
     InterpreterCall,
     WasmNumber,
@@ -50,7 +52,8 @@ from virq import (
     VirqDispatcher,
     VirqDispatchResult,
 )
-from wasm_module import BasicBlock, Module, WasmOperand
+from wasm_module import BasicBlock, LocalWidthMap, Module, WasmOperand
+from wasm_opcodes import BLOCK, END, IF, LOOP
 
 try:
     import native_trace_call as _native_trace_call
@@ -90,7 +93,7 @@ class _JitCompiler(Protocol):
         next_pc: int | None,
         loops_to: int | None,
         byte_span: int,
-        local_widths: Sequence[int],
+        local_widths: LocalWidthMap,
     ) -> JITTrace | None: ...
 
 
@@ -269,14 +272,26 @@ class RuntimeEngine:
         assert self.module is not None
         function_index = pc >> 16
         function = self.module.functions[function_index - len(self.module.imports)]
-        assert function.local_widths_cache is not None
+        assert function.local_width_map_cache is not None
+        code = self.module.code_for(function_index)
+        next_pc = block.next_pc
+        loops_to = block.loops_to
+        # block/loop/if push a control frame that a trace never pushes.  A trace that
+        # ends at one is terminal: it neither chains nor skips the opcode, so the
+        # interpreter runs it and the frame stack stays an exact prefix ({GOTCHA-INTP-06}).
+        # An `if` condition stays on the operand stack as the trace's residual value.
+        terminator_offset = (pc & 0xFFFF) + block.byte_span
+        terminator = code[terminator_offset] if terminator_offset < len(code) else END
+        if terminator == BLOCK or terminator == LOOP or terminator == IF:
+            next_pc = None
+            loops_to = None
         return self.jit_compiler.compile_trace(
             pc,
-            iter_block_ops(self.module.code_for(function_index), pc & 0xFFFF, block.byte_span),
-            block.next_pc,
-            block.loops_to,
+            iter_block_ops(code, pc & 0xFFFF, block.byte_span),
+            next_pc,
+            loops_to,
             block.byte_span,
-            function.local_widths_cache,
+            function.local_width_map_cache,
         )
 
     def register_module_blocks(self, module: Module) -> None:
@@ -661,6 +676,10 @@ class RuntimeEngine:
             if block_here is not None and self.trackable.is_marked(pc):
                 if self.bitmap.get_state(pc) == COMPILED:
                     trace = self.cache.lookup(pc)
+                    if trace is not None and not self._trace_fits_operand_stack(
+                        call_state._frame.values, trace
+                    ):
+                        trace = None
 
             if trace is not None:
                 # Native x64 chaining follows the linked bodies without
@@ -686,7 +705,10 @@ class RuntimeEngine:
                     self.stat_trace_exits_to_interp += 1
             else:
                 self.stat_interp_steps += 1
-                if pc is not None and self.trackable.is_marked(pc):
+                # Only a real block head may enter the hot-block history: a resume point
+                # inside a block (e.g. after a call returns) can share a 4-byte card with a
+                # trackable head, but it has no block to compile.
+                if block_here is not None and self.trackable.is_marked(pc):
                     if self.record_block_head(pc):
                         self.idle_hook(budget=idle_budget)
                 call_state = interp.step(call_state)
@@ -745,6 +767,10 @@ class RuntimeEngine:
             if block_here is not None and self.trackable.is_marked(pc):
                 if self.bitmap.get_state(pc) == compiled:
                     trace = self.cache.lookup(pc)
+                    if trace is not None and not self._trace_fits_operand_stack(
+                        call_state._frame.values, trace
+                    ):
+                        trace = None
 
             if trace is not None:
                 chain_count = 1
@@ -764,7 +790,10 @@ class RuntimeEngine:
                 call_state = self._invoke_trace(interp, call_state, trace)
             else:
                 self.stat_interp_steps += 1
-                if pc is not None and self.trackable.is_marked(pc):
+                # Only a real block head may enter the hot-block history: a resume point
+                # inside a block (e.g. after a call returns) can share a 4-byte card with a
+                # trackable head, but it has no block to compile.
+                if block_here is not None and self.trackable.is_marked(pc):
                     if self.record_block_head(pc):
                         self.idle_hook(budget=idle_budget)
                         yield None
@@ -777,6 +806,40 @@ class RuntimeEngine:
             assert False, call_state.trap.code
         assert call_state.results is not None
         return call_state.results
+
+    def _trace_fits_operand_stack(self, values: NativeValueStack, trace: JITTrace) -> bool:
+        """Whether every trace of the chain can spill and store within the operand stack.
+
+        A native trace writes raw words upward from `sp` with no bound check of its own, so
+        the engine checks the widest trace of the chain against the remaining capacity and
+        leaves the block to the interpreter, which traps an overflow, when it would not fit.
+        """
+        words = trace.stack_words
+        chained = trace
+        while chained.chain_next is not None:
+            successor = self.cache.find_trace(chained.chain_next)
+            assert successor is not None
+            chained = successor
+            if chained.stack_words > words:
+                words = chained.stack_words
+        return len(values) + words <= values.capacity
+
+    def _resume_frame_depth(self, frame: CallFrame, function_index: int, ip: int) -> int:
+        """Control-frame count the interpreter must hold when it resumes at `ip`.
+
+        A block head records it.  Any other position is enclosed by every structured
+        opener that starts before it and whose matching `end` has not yet executed.
+        """
+        block = self.get_block((function_index << 16) | ip)
+        if block is not None:
+            return block.frame_depth
+        depth = 0
+        for start, control in frame.control_map.blocks.view().entries:
+            if start >= ip:
+                break
+            if ip <= control[0]:
+                depth += 1
+        return depth
 
     def _invoke_trace(
         self, interp: Interpreter, call_state: InterpreterCall, trace: JITTrace
@@ -792,10 +855,9 @@ class RuntimeEngine:
         frame = call_state._frame
         locals_arr = call_state._locals
         assert frame is not None and locals_arr is not None
-        # The current x64 trace emitters support i32 locals only.  This is
-        # validated once while creating the common interpreter frame; the
-        # storage itself remains raw and is shared with both tiers.
-        assert frame.local_i32_only
+        # Every local owns one fixed 8-byte slot regardless of its type, so a trace
+        # addresses locals by index in any frame.  The compiler rejects blocks that
+        # touch an i64/f64 local, so a resident trace only reads and writes i32 locals.
         result_slot = len(frame.values)
         locals_ptr = frame.context.local_stack.value_ptr(frame.frame_offset)
         result_ptr = frame.values.value_ptr(result_slot)
@@ -851,6 +913,13 @@ class RuntimeEngine:
                 # same implicit return boundary as Interpreter.step() reaches
                 # after executing the final END opcode.
                 next_ip = RETURN_SENTINEL_IP
+        # A trace never pops the control frames of the `end`/`br` it skips, so the stack
+        # may be deeper than the resume point requires.  Drop the stale innermost frames
+        # here: a resume point that is not a block head gets no other truncation.
+        if next_ip != RETURN_SENTINEL_IP:
+            depth = self._resume_frame_depth(frame, call_state.func_index, next_ip)
+            if depth < len(frame.frames):
+                frame.frames.truncate(depth)
         call_state._ip = next_ip
         call_state._frame = frame
         call_state._locals = locals_arr

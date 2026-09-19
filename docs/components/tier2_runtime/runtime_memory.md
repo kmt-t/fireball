@@ -85,7 +85,7 @@ flowchart TD
 物理メモリマネージャは4KBの仮想予約スロットごとに、予約番号、物理バック領域の基点、所有者、実サイズを通知する。4KBはアドレス予約とアクセス判定の単位であり、4KB分の物理RAMを確保する意味ではない。所有者が変わる場合は `on_owner_changed` を発火し、仮想化層側は旧PTEをアンマップしてTLBエントリをフラッシュする。`claim` またはロールバックが `on_map_page` を発火した後に、仮想化層側が予約VPNを物理基点へ対応付ける。PTEは要求サイズを保持し、その範囲を超えるアクセスを拒否する。
 
 ### 6.3 ページ単位権限分離仕様（Page-Granular Permission Isolation）
-<!-- traceability: {PageGranularPermissionIsolation} {META_FaultIsolation} -->
+<!-- traceability: {PageGranularPermissionIsolation} {META_FaultIsolation} {GOTCHA-MEM-01} -->
 Cortex-M33の物理SRAMアドレス確保とFC=14仮想アドレス予約は独立する。`FB_PAGE_SIZE = 4096`はFC=14の仮想予約スロット幅であり、物理割当の粒度・最小量ではない。共有メモリの物理使用量は`FB_CONF_SHM_SIZE = 1024`バイトの予算内で、要求されたサイズだけを確保する。
 
 1. **独立した仮想予約**: `allocate_shared(size)`はcurrent taskを所有者として認証し、1〜`FB_CONF_SHM_SIZE`バイトを受け付ける。ブロックごとに4KBの仮想スロットを予約するが、この予約は物理メモリ使用量へ加算しない。同じタスクのブロックも異なる仮想スロットを使う。
@@ -93,7 +93,7 @@ Cortex-M33の物理SRAMアドレス確保とFC=14仮想アドレス予約は独�
 3. **境界検査と所有権移譲**: 各仮想スロットは1ブロックだけを指し、PTEは実サイズを保持する。`offset >= size`は境界trapとする。IPCのRevoke/Grantではそのブロックの仮想スロットを単位に旧マッピングを外し、所有者台帳が一致した場合だけ新所有者へ対応付ける。
 
 ### 6.4 共有メモリライフサイクルと権限遷移プロトコル（物理実装）
-<!-- traceability: {OwnershipTransfer} {META_FaultIsolation} -->
+<!-- traceability: {OwnershipTransfer} {META_FaultIsolation} {GOTCHA-MEM-02} -->
 [`system_memory.md`](docs/components/tier1_interface/system_memory.md) の ライフサイクルフェーズ遷移表に対応する、物理メモリマネージャ自身の動作を以下に示す。依存性逆転（DIP）の設計方針に従い、各フェーズでのページテーブル（PTE）更新・TLB フラッシュの実行は仮想化層（vMMIO コントローラ）の自律的な責務であり、本コンポーネントはライフサイクル通知の発火のみを行う。vMMIO 側の具体的な PTE/TLB 挙動は [`runtime_vmmio.md`](docs/components/tier2_runtime/runtime_vmmio.md) を正本とする。
 
 | ステップ | フェーズ | 送信元(Task A) | 受信先(Task B) | 物理メモリマネージャの動作 |

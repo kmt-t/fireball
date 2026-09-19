@@ -90,12 +90,12 @@ class _CountingCompiler:
         next_pc: int | None,
         loops_to: int | None,
         byte_span: int,
-        local_widths: Sequence[int],
+        local_types: Sequence[int],
     ) -> JITTrace | None:
         self.compiles += 1
         start = time.perf_counter_ns()
         trace = self.inner.compile_trace(
-            head_pc, instructions, next_pc, loops_to, byte_span, local_widths
+            head_pc, instructions, next_pc, loops_to, byte_span, local_types
         )
         self.compile_ns += time.perf_counter_ns() - start
         return trace

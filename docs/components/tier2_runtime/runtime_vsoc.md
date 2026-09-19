@@ -88,7 +88,7 @@ vSoC全体の可変な実行時状態を保持する構造体。
 | JITコードアロケータ | MPU W^X 保護（ライト・実行権限排他）が適用されたセクションから 3-Bank コードキャッシュを切り出す専用アロケータ。 | `jit_code_allocator` 構造体 |
 
 #### vSoCランタイム環境
-<!-- traceability: {ContextPointerRegister} {EnvironmentPointer} {MemoryBoundaryCheck} {ExecutionContext_Layout} {VsocRuntime_Layout} -->
+<!-- traceability: {ContextPointerRegister} {EnvironmentPointer} {MemoryBoundaryCheck} {ExecutionContext_Layout} {VsocRuntime_Layout} {GOTCHA-VSOC-03} -->
 vSoCの実行環境情報は `execution_context` の論理フィールドとして保持する。固定ABIではリニアメモリ、グローバル領域、命令ハンドラ表の参照をそれぞれ独立したフィールドに置き、別の環境構造体を特定オフセットへ埋め込まない。JITトレースとインタープリタは同じ論理状態を参照する。境界で渡す第4論理引数はスタック頂点値であり、物理レジスタへの割当は対象ABIで定義する。`memory.grow` で動的に伸長するリニアメモリの実体や、モジュール横断で共有されるグローバル変数配列など、単一の呼び出しコンテキストを超えて生存する状態を保持する。
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |

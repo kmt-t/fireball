@@ -15,7 +15,7 @@ CPS 4-argument calling convention:
 from __future__ import annotations
 
 import ctypes
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable
 
 import x64_stencils as st
 from common_code import (
@@ -27,7 +27,8 @@ from config import JIT_CACHE_ACTIVE_OFFSET_BYTES, JIT_X64_TRACE_HEADER_BYTES
 from jit_cache import JITTrace, JITTraceHeader
 from system_containers import ReadOnlyFlatMapView, StaticVector
 from wasm_module import (
-    WASM_LOCAL_SLOT_BYTES,
+    WASM_RAW_WORD_BYTES,
+    LocalWidthMap,
     WasmOperand,
 )
 from wasm_opcodes import (
@@ -402,7 +403,7 @@ class TraceCompiler:
         next_pc: int | None,
         loops_to: int | None,
         byte_span: int,
-        local_widths: Sequence[int],
+        local_widths: LocalWidthMap,
         *,
         tail_context_helper: bool = False,
         helper_target_addr: int = 0,
@@ -416,6 +417,9 @@ class TraceCompiler:
         initializes or uses RSP as a WASM operand stack.
         """
         assert byte_span > 0
+        # The frame's widest local sets the slot stride (4 bytes when every local is 32-bit),
+        # so a local's displacement from R2 is `index * slot_bytes`.
+        slot_bytes = local_widths.slot_words * WASM_RAW_WORD_BYTES
         header = JITTraceHeader(head_wasm_pc=head_pc)
         header.chain_next_pc = next_pc or 0
         # mov rax, <body address>; jmp <header.common_prologue_offset>
@@ -427,10 +431,13 @@ class TraceCompiler:
         # written to the shared Native operand stack at [R12 + slot * 4].
         stack_locations: StaticVector[int] = StaticVector(capacity=byte_span + 1)
         spilled_words = 0
+        max_spilled_words = 0
         helper_words = 0
         helper_index = -1
         saw_op = False
         for op, arg in instructions:
+            if spilled_words > max_spilled_words:
+                max_spilled_words = spilled_words
             saw_op = True
             helper_index = _complex_helper_index(op)
             if helper_index >= 0:
@@ -464,9 +471,9 @@ class TraceCompiler:
                     assert arg is not None
                     local_index = int(arg)
                     assert 0 <= local_index < len(local_widths)
-                    if local_widths[local_index] != 1:
+                    if local_widths.words(local_index) != 1:
                         return None
-                    arg = local_index * WASM_LOCAL_SLOT_BYTES
+                    arg = local_index * slot_bytes
                 spilled_words = _emit_register_push(code, op, arg, stack_locations, spilled_words)
             elif op == I64_CONST or op == F32_CONST or op == F64_CONST:
                 assert arg is not None
@@ -485,17 +492,17 @@ class TraceCompiler:
                     assert arg is not None
                     local_index = int(arg)
                     assert 0 <= local_index < len(local_widths)
-                    if local_widths[local_index] != 1:
+                    if local_widths.words(local_index) != 1:
                         return None
-                    code += _store_tos_local(local_index * WASM_LOCAL_SLOT_BYTES)
+                    code += _store_tos_local(local_index * slot_bytes)
                 spilled_words = _emit_register_pop(code, stack_locations, spilled_words)
             elif op == LOCAL_TEE:
                 assert arg is not None
                 local_index = int(arg)
                 assert 0 <= local_index < len(local_widths)
-                if local_widths[local_index] != 1 or not stack_locations:
+                if local_widths.words(local_index) != 1 or not stack_locations:
                     return None
-                code += _store_tos_local(local_index * WASM_LOCAL_SLOT_BYTES)
+                code += _store_tos_local(local_index * slot_bytes)
             elif op == I32_EQZ:
                 if not stack_locations or stack_locations[-1] != _STACK_LOCATION_TOS:
                     return None
@@ -610,15 +617,19 @@ class TraceCompiler:
         # Combine the fixed header and the PIC entry/body stream.  Relocation
         # sites are patched only when this blob is installed into a region.
         full_blob = bytearray(header.pack()) + code
+        result_words = (
+            2 if helper_index >= 0 and (helper_index <= 2 or 7 <= helper_index <= 10) else 1
+        )
+        if spilled_words > max_spilled_words:
+            max_spilled_words = spilled_words
         trace = JITTrace(
             head_pc=head_pc,
             size_bytes=total_size,
             next_pc=next_pc,
             loops_to=loops_to,
             has_return_val=bool(stack_locations) or helper_index >= 0,
-            result_words=(
-                2 if helper_index >= 0 and (helper_index <= 2 or 7 <= helper_index <= 10) else 1
-            ),
+            result_words=result_words,
+            stack_words=max(max_spilled_words, helper_words, result_words),
             code_blob=bytes(full_blob),
             entry_body_patch_offset=JIT_X64_TRACE_HEADER_BYTES + 2,
             entry_prologue_patch_offset=JIT_X64_TRACE_HEADER_BYTES + 11,

@@ -34,6 +34,7 @@ for _p in [
         sys.path.insert(0, _sp)
 
 import wasmtime
+from common_code import TRACE_ENTRY_STUB_BYTES
 from config import (
     FB_CONF_JIT_CACHE_SIZE,
     JIT_CACHE_ABSOLUTE_ADDRESS_POOL_BYTES,
@@ -66,6 +67,7 @@ from runtime_engine import (
 )
 from system_containers import ReadOnlyRadixBinaryTreeStorage, StaticVector
 from test_support import PcOnlyCompiler, make_pc_only_functions_module, make_pc_only_module
+from wasm_module import I32, LocalWidthMap
 from wasm_opcodes import BR_TABLE, I32_ADD, I32_CONST, LOCAL_GET, LOCAL_SET
 from wasm_reader import parse
 from x64_jit import TraceCompiler
@@ -378,7 +380,7 @@ def test_jitr_native_header_chain_executes_successor_body_once():
         0x200,
         None,
         8,
-        (1,),
+        LocalWidthMap((I32,)),
     )
     target = compiler.compile_trace(
         0x200,
@@ -386,7 +388,7 @@ def test_jitr_native_header_chain_executes_successor_body_once():
         None,
         None,
         12,
-        (1,),
+        LocalWidthMap((I32,)),
     )
     assert source is not None and target is not None
 
@@ -1497,6 +1499,118 @@ def test_gotcha_jitr_09_aging_never_drops_compiled_or_hot():
     assert engine.bitmap.get_state(pc_exec) == CardState.UNEXECUTED
 
 
+CHAIN_STRESS_TRACES = 14
+CHAIN_STRESS_HEAD = 0x100
+CHAIN_STRESS_STRIDE = 0x10
+CHAIN_STRESS_EXIT_PC = 0x9990
+
+
+def _chain_stress_compile(compiler: TraceCompiler, index: int) -> JITTrace:
+    """Trace `index` adds `1 << index` to local 0 and falls through to trace `index + 1`."""
+    head_pc = CHAIN_STRESS_HEAD + index * CHAIN_STRESS_STRIDE
+    is_last = index == CHAIN_STRESS_TRACES - 1
+    next_pc = CHAIN_STRESS_EXIT_PC if is_last else head_pc + CHAIN_STRESS_STRIDE
+    trace = compiler.compile_trace(
+        head_pc,
+        ((LOCAL_GET, 0), (I32_CONST, 1 << index), (I32_ADD, None), (LOCAL_SET, 0)),
+        next_pc,
+        None,
+        12,
+        LocalWidthMap((I32,)),
+    )
+    assert trace is not None
+    return trace
+
+
+def _chain_stress_check_links(cache: JITMultiBufferCache) -> None:
+    """Every chain pointer, Python and native, must name a resident trace's live entry."""
+    for bank in cache.banks:
+        for pc, trace in bank.traces:
+            assert trace.head_pc == pc
+            assert trace.raw_addr is not None and trace.code_offset is not None
+            native = int.from_bytes(
+                cache.common_code.buffer.read(trace.code_offset + JIT_X64_CHAIN_TARGET_OFFSET, 8),
+                "little",
+            )
+            assert native == trace.header.chain_target_addr, "native header diverged from Python"
+            holders = sum(1 for other in cache.banks if other.has_trace(pc))
+            assert holders == 1, f"trace {pc:#x} resident in {holders} banks"
+            if trace.chain_next is None:
+                assert native == 0, f"unchained trace {pc:#x} keeps a native jump"
+                continue
+            target = cache.find_trace(trace.chain_next)
+            assert target is not None, f"{pc:#x} chains into evicted {trace.chain_next:#x}"
+            assert target.raw_addr is not None
+            assert native == target.raw_addr + TRACE_ENTRY_STUB_BYTES, (
+                f"{pc:#x} jumps to a stale entry of {trace.chain_next:#x}"
+            )
+
+
+def _chain_stress_run(cache: JITMultiBufferCache, start: JITTrace) -> None:
+    """Run the chain natively; the touched traces must equal the Python chain walk."""
+    expected_mask = 0
+    walked = start
+    while True:
+        expected_mask |= 1 << ((walked.head_pc - CHAIN_STRESS_HEAD) // CHAIN_STRESS_STRIDE)
+        if walked.chain_next is None:
+            break
+        successor = cache.find_trace(walked.chain_next)
+        assert successor is not None
+        walked = successor
+    context = WASMContext()
+    context.locals = (0,)
+    start.execute(context.context_ptr, context.sp_ptr, context.locals_ptr, 0)
+    assert context.locals[0] == expected_mask, (
+        f"native chain ran {context.locals[0]:#x}, chain pointers say {expected_mask:#x}"
+    )
+    assert walked.next_pc is not None
+    assert context.native_context.ip == walked.next_pc
+
+
+def test_jitr_62_chain_links_stay_valid_across_rotation_and_promotion():
+    """
+    TEST-JITR-62: randomized insert / promote / rotate sequences over a chain of
+    traces keep every chain pointer on a live entry.
+
+    After every step, each `chain_next` names a resident trace, the Python header and the
+    native header agree, and no trace is resident in two banks.  Every trace looked up is
+    then run natively; the traces the native chain touches match the pointers' walk, so a
+    jump to a promoted trace's old code cannot pass.
+    """
+    import random
+
+    compiler = TraceCompiler()
+    promoted_total = 0
+    evicted_total = 0
+    chained_runs = 0
+    for seed in range(40):
+        rng = random.Random(seed)
+        cache = JITMultiBufferCache(bank_capacity=512)
+        for _ in range(90):
+            index = rng.randrange(CHAIN_STRESS_TRACES)
+            pc = CHAIN_STRESS_HEAD + index * CHAIN_STRESS_STRIDE
+            action = rng.randrange(10)
+            if action < 5:
+                if cache.find_trace(pc) is None:
+                    assert cache.insert(_chain_stress_compile(compiler, index))
+            elif action < 9:
+                found = cache.lookup(pc)
+                if found is not None:
+                    assert found is cache.find_trace(pc)
+                    assert cache.find_bank(pc) is not cache.oldest, "promotion left it in Oldest"
+                    _chain_stress_check_links(cache)
+                    _chain_stress_run(cache, found)
+                    chained_runs += found.chain_next is not None
+            else:
+                cache.rotate()
+            _chain_stress_check_links(cache)
+        promoted_total += cache.promotions
+        evicted_total += cache.evictions
+    assert promoted_total > 0, "sequences never promoted a trace"
+    assert evicted_total > 0, "sequences never evicted a trace"
+    assert chained_runs > 0, "sequences never ran a chained trace"
+
+
 if __name__ == "__main__":
     test_hotspot_01_2bit_card_marking_state_transitions()
     test_jitr_01_card_marking_granularity()
@@ -1535,4 +1649,5 @@ if __name__ == "__main__":
     test_jitr_aging_cursor_wraps_and_bounds_each_step()
     test_jitr_aging_processes_every_set_function_of_a_byte_and_ignores_imports()
     test_gotcha_jitr_09_aging_never_drops_compiled_or_hot()
-    print("[PASS] All 37 JIT Runtime & Cache tests passed.")
+    test_jitr_62_chain_links_stay_valid_across_rotation_and_promotion()
+    print("[PASS] All 38 JIT Runtime & Cache tests passed.")

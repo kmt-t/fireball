@@ -105,7 +105,7 @@ flowchart TD
 ```
 
 #### 割り込み要求世代の一巡手順（手順アクティビティ図）
-<!-- traceability: {ADR_InterruptRescheduleGeneration} {GLOBAL_InterruptWakeup} {TaskPollInterruptEvent} -->
+<!-- traceability: {ADR_InterruptRescheduleGeneration} {GLOBAL_InterruptWakeup} {TaskPollInterruptEvent} {GOTCHA-SCHED-02} -->
 割り込み要求を検知した後、要求世代を対象タスクが一度ずつ観測するまで協調的に再スケジュールする手順を示す。
 
 ```mermaid
@@ -299,8 +299,8 @@ stateDiagram-v2
 | 引数 | - `name`: タスク名称。生存期間がプログラム起動から終了まで静的に保証されたヌル終端文字列（`const char*`）。動的ヒープ確保を避けるため、内部でのコピーは行わず、ポインタ参照のみを保持する。<br>- `entry`: WASMエントリポイントとなる関数ポインタ型 `wasm_entry_t`（C++での型エイリアス定義は `using wasm_entry_t = void(*)(void*);`。コルーチン生成時に初期コルーチンフレームの起動先として紐付けられる）。 | 引数定義 |
 | 戻り値 | 成功時は静的に割り当てられたタスクIDである `os_task_id_t` を返し、失敗時はエラーコードを示す `os_result_t` （例：`ERR_NO_MEMORY` = TCBプール領域満杯でメモリ確保不可、`ERR_MAX_TASKS_REACHED` = 登録タスク数がシステム上限に到達、`ERR_INVALID_ARG` = 引数不正）を返す `result<os_task_id_t, os_result_t>` 型。動的ヒープ確保は一切行われず、静的メモリ内の固定長配列（`std::array<TCB, FB_CONF_MAX_TASKS>`）から空きスロットが割り当てられる。 | 結果型 |
 | 事前条件 | スケジューラが初期化済みであること。管理タスク数上限（scheduler_config）に達していないこと。 | 条件 |
-| 事後条件 | 新しいタスクが実行可能キューの末尾に追加される。 | 状態変化 |
-| 不変条件 | 生成されたシステムタスクIDはシステム内で一意であること。 | 制約 |
+| 事後条件 | 新しいタスクが実行可能キューの末尾に追加される。TCBが満杯の場合は、終了済みタスクの中で最古のスロットを先に返却する。 | 状態変化 |
+| 不変条件 | 生成されたシステムタスクIDはシステム内で一意であること。スロットを再利用しても、過去のタスクIDを再び割り当てない。 | 制約 |
 
 #### タスク生成（spawn_task - ネイティブタスク用）
 <!-- traceability: {CooperativeMultitasking} {GLOBAL_UseCpp20Coroutine} -->

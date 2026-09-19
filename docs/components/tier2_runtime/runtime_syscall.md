@@ -95,7 +95,7 @@ world fireball {
 散在ギャザー（iovec 配列）の各バッファ要素（`buf + len`）は、実際の出力ストリームへの書き込みを開始する前に全数事前検証される。途中の要素に境界外アドレスが含まれている場合、先行する正常要素であっても 1 バイトも出力ストリームへ書き込まず即座に `EFAULT` を返却する。これにより、異常終了時に中途半端なデータが出力先に漏洩・残存することを防止する。
 
 ### 5.2. 戻り値
-<!-- traceability: {Syscall_Return_Value} {Errorcode_To_Strategy} -->
+<!-- traceability: {Syscall_Return_Value} {Errorcode_To_Strategy} {GOTCHA-SYS-01} -->
 `fireball_call`は `u32` 型の値を返す。成功時は `0` を返し、失敗時は非0の定義されたエラーコード（WASIの `errno_t` に準拠）を返す。エラーコードの詳細は `{Syscall_Mapping}` の各定義および別紙参照。ゲスト側の `libfireball` は必要に応じてこの値をWASIの戻り値へ変換する。
 
 **未定義 Syscall ID の非パニック安全復帰 (`GOTCHA-SYS-01`)**:
@@ -264,7 +264,7 @@ vIRQの `vector_id` はホスト設定の原因源表で固定する。WASIのpo
 仮想割り込みの詳細情報は、COOSが保持する固定5ワードの `interrupt-event` としてvSoCへ引き渡す。`vector_id`、`source_id`、`cause_code`、`payload0`、`payload1`の順序を維持し、vSoCはSafepointでこのレコードをvIRQ階層へ渡す。イベント本体をvMMIOレジスタ、共有メモリ、WASI `pollable`へ別経路で複製せず、ISRやCOOSからゲスト関数を直接呼び出さない。
 
 ## 10. メモリ安全性
-<!-- traceability: {Challenge_SyscallMemorySafety} {OwnershipTransfer} {FastAddressCheck} -->
+<!-- traceability: {Challenge_SyscallMemorySafety} {OwnershipTransfer} {FastAddressCheck} {GOTCHA-SYS-02} {GOTCHA-SYS-03} -->
 `fireball_call` を介してゲストメモリへのポインタが渡される場合でも、アクセスしてはならない領域は仮想アドレス空間から物理的に **unmap（マッピング解除）** されている。他タスク所有の SHM 領域や転送中（`IN_FLIGHT`）のページ、未割当領域へのアクセスは、ソフトウェア的な許可チェックを待つまでもなく、PTE / TLB 不在による未登録ページトラップ（`TRAP_UNREGISTERED_PAGE`）としてハードウェア・仮想化境界で即座に遮断される。ゲストRAM（リニアメモリ）も単一の境界比較（`FastAddressCheck`）で保護されるため、ホスト側での二重のポインタ検証（`vsoc_validate_ptr` 等）は完全に不要であり、ゼロオーバーヘッドのメモリ安全性が保証される。
 
 ## 11. トラップ状態プロトコル

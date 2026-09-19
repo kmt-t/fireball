@@ -98,7 +98,7 @@ Key-Valueペアを複数集約した通信の基本単位である。メッセ�
 | サービスURI | サービスを一意に特定するための正規化された文字列 | 文字列ビュー | - |
 | セキュリティロール | サービスに割り当てられた権限レベル。アクセス制御と CSP チャネル選択の両方に利用 | ビットフラグ | - |
 
-※ 待ち受けチャネルはレジストリエントリに個別の ID として保持しない。`FB_CONF_ROUTER_ROLE_MATRIX`（9x9）の ALLOW セル 1 つにつき、専用の CSP チャネル（`fireball::channel<ipc_message>`、バッファなし同期ランデブー）が 1 本ずつ静的に対応付けられる。チャネルは `(sender_role, target_role)` の組から一意に導出される。1 本のチャネルは 1 対の送受信方向にのみ使用する。同一の受信ロールへ複数の送信ロールから送る場合でも、エッジごとに別個のチャネルを割り当てる。HAL の各エンドポイントインスタンスは専用ロール（`HAL_UART`, `HAL_STDOUT`, `HAL_GPIO`, `HAL_TIMER`, `HAL_I2C`, `HAL_SPI`）を個別に持つ。単一ロールでは、同種インスタンスが複数存在する場合にメッセージの宛先を区別できないためである。
+※ 待ち受けチャネルはレジストリエントリに個別の ID として保持しない。`FB_CONF_ROUTER_ROLE_MATRIX`（10x10）の ALLOW セル 1 つにつき、専用の CSP チャネル（`fireball::channel<ipc_message>`、バッファなし同期ランデブー）が 1 本ずつ静的に対応付けられる。チャネルは `(sender_role, target_role)` の組から一意に導出される。1 本のチャネルは 1 対の送受信方向にのみ使用する。同一の受信ロールへ複数の送信ロールから送る場合でも、エッジごとに別個のチャネルを割り当てる。HAL の各エンドポイントインスタンスは専用ロール（`HAL_UART`, `HAL_STDOUT`, `HAL_GPIO`, `HAL_TIMER`, `HAL_I2C`, `HAL_SPI`, `HAL_LOGGER`）を個別に持つ。単一ロールでは、同種インスタンスが複数存在する場合にメッセージの宛先を区別できないためである。
 
 ## 4. 動的モデル
 
@@ -118,7 +118,7 @@ Key-Valueペアを複数集約した通信の基本単位である。メッセ�
 
 
 #### 3段階 IPC ルーティング & 所有権移譲プロトコル（責務シーケンス図）
-<!-- traceability: {OwnershipTransfer} {IPC_ZeroCopy} {ADR_RendezvousChannel} {URIAbstraction} -->
+<!-- traceability: {OwnershipTransfer} {IPC_ZeroCopy} {ADR_RendezvousChannel} {URIAbstraction} {GOTCHA-IPCR-01} {GOTCHA-IPCR-02} -->
 Caller、IPC Router、COOS Channel、vMMIO/MemoryManager、Callee の各責務と 3 段階ルーティング（URI探索 $	o$ RBAC $	o$ CSPランデブー/権限移譲）を示す。
 
 ```mermaid
@@ -176,6 +176,7 @@ class Role(IntEnum):
     HAL_I2C = 6
     HAL_SPI = 7
     DEBUGGER = 8
+    HAL_LOGGER = 9
 
 
 _ROLE_NAMES = (
@@ -188,6 +189,7 @@ _ROLE_NAMES = (
     "HAL_I2C",
     "HAL_SPI",
     "DEBUGGER",
+    "HAL_LOGGER",
 )
 
 
@@ -265,6 +267,7 @@ _REGISTRY_ENTRIES = sorted(
         ("fireball://dbg/manager/0", Role.DEBUGGER),
         ("fireball://hal/gpio/0", Role.HAL_GPIO),
         ("fireball://hal/i2c/0", Role.HAL_I2C),
+        ("fireball://hal/logger/0", Role.HAL_LOGGER),
         ("fireball://hal/spi/0", Role.HAL_SPI),
         ("fireball://hal/timer/0", Role.HAL_TIMER),
         ("fireball://hal/uart/0", Role.HAL_UART),
@@ -273,7 +276,7 @@ _REGISTRY_ENTRIES = sorted(
 )
 _REGISTRY = FlatMapView(_REGISTRY_ENTRIES)
 
-# Stage 2: FB_CONF_ROUTER_ROLE_MATRIX (9x9, rows=sender, cols=target); every
+# Stage 2: FB_CONF_ROUTER_ROLE_MATRIX (10x10, rows=sender, cols=target); every
 # DENY cell is listed explicitly, matching the C++ constexpr array exactly.
 # Every HAL_* role is a leaf (all-DENY row) -- endpoint instances never
 # initiate an IPC send themselves (see "全 DENY 行・列の意味" below).
@@ -284,6 +287,7 @@ _HAL_ROLES = (
     Role.HAL_TIMER,
     Role.HAL_I2C,
     Role.HAL_SPI,
+    Role.HAL_LOGGER,
 )
 
 
@@ -301,6 +305,7 @@ _ROLE_MATRIX = (
     _role_row(frozenset()),  # from HAL_I2C (leaf)
     _role_row(frozenset()),  # from HAL_SPI (leaf)
     _role_row(frozenset({Role.CORE_SERVICE, *_HAL_ROLES})),  # from DEBUGGER
+    _role_row(frozenset()),  # from HAL_LOGGER (leaf)
 )
 
 
@@ -417,27 +422,28 @@ flowchart TD
 | :--- | :--- | :--- | :--- |
 | **Stage 1: URI Lookup** | `fireball::flat_map_view` による二分探索 | O(log N) | N = サービス数（通常 ≤ 16）。動的確保なし。 |
 | **Stage 2: Access Control** | TCB から取得した送信元ロールと対象ロールのマトリックス参照 `role_matrix[tcb_role][target_role]` | O(1) | 事前計算済みの2次元配列による静的検査。引数による自己申告ロールは完全排除（偽装防止）。 |
-| **Stage 3: Channel Grant** | `(sender_role, target_role)` エッジに対応する専用 CSP チャネルオブジェクトを返却 | O(1) | チャネルはロールの組から直接導出（9x9 配列参照）。送信側はこれを保持して直接 `send(channel, msg)` を実行。 |
+| **Stage 3: Channel Grant** | `(sender_role, target_role)` エッジに対応する専用 CSP チャネルオブジェクトを返却 | O(1) | チャネルはロールの組から直接導出（10x10 配列参照）。送信側はこれを保持して直接 `send(channel, msg)` を実行。 |
 
 #### ロール間通信許可マトリクス (FB_CONF_ROUTER_ROLE_MATRIX)
 <!-- traceability: {RoleBasedAccessControl} -->
 
-本表は `{META_ConfigurableSystem}` の `FB_CONF_ROUTER_ROLE_MATRIX` (9x9 `constexpr` 配列) を**そのまま**表現したものであり、全 DENY の行・列も省略しない。省略すると「そのロールの権限が未定義」と読めてしまい、C++ 定義との差分が生じるためである。HAL は単一の共有ロールではなく、エンドポイントインスタンスごとに専用ロール（`HAL_UART`, `HAL_STDOUT`, `HAL_GPIO`, `HAL_TIMER`, `HAL_I2C`, `HAL_SPI`）を持つ。単一ロールでは、同種インスタンスが複数存在する場合に宛先を区別できないためである。
+本表は `{META_ConfigurableSystem}` の `FB_CONF_ROUTER_ROLE_MATRIX` (10x10 `constexpr` 配列) を**そのまま**表現したものであり、全 DENY の行・列も省略しない。省略すると「そのロールの権限が未定義」と読めてしまい、C++ 定義との差分が生じるためである。HAL は単一の共有ロールではなく、エンドポイントインスタンスごとに専用ロール（`HAL_UART`, `HAL_STDOUT`, `HAL_GPIO`, `HAL_TIMER`, `HAL_I2C`, `HAL_SPI`, `HAL_LOGGER`）を持つ。単一ロールでは、同種インスタンスが複数存在する場合に宛先を区別できないためである。
 
-| 送信元ロール (Sender) \ 送信先ロール (Target) | RUNTIME | CORE_SERVICE | HAL_UART | HAL_STDOUT | HAL_GPIO | HAL_TIMER | HAL_I2C | HAL_SPI | DEBUGGER |
-| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| **RUNTIME** | DENY | ALLOW | ALLOW | ALLOW | ALLOW | ALLOW | ALLOW | ALLOW | DENY |
-| **CORE_SERVICE** | DENY | DENY | ALLOW | ALLOW | ALLOW | ALLOW | ALLOW | ALLOW | DENY |
-| **HAL_UART** | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY |
-| **HAL_STDOUT** | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY |
-| **HAL_GPIO** | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY |
-| **HAL_TIMER** | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY |
-| **HAL_I2C** | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY |
-| **HAL_SPI** | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY |
-| **DEBUGGER** | DENY | ALLOW | ALLOW | ALLOW | ALLOW | ALLOW | ALLOW | ALLOW | DENY |
+| 送信元ロール (Sender) \ 送信先ロール (Target) | RUNTIME | CORE_SERVICE | HAL_UART | HAL_STDOUT | HAL_GPIO | HAL_TIMER | HAL_I2C | HAL_SPI | DEBUGGER | HAL_LOGGER |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| **RUNTIME** | DENY | ALLOW | ALLOW | ALLOW | ALLOW | ALLOW | ALLOW | ALLOW | DENY | ALLOW |
+| **CORE_SERVICE** | DENY | DENY | ALLOW | ALLOW | ALLOW | ALLOW | ALLOW | ALLOW | DENY | ALLOW |
+| **HAL_UART** | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY |
+| **HAL_STDOUT** | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY |
+| **HAL_GPIO** | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY |
+| **HAL_TIMER** | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY |
+| **HAL_I2C** | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY |
+| **HAL_SPI** | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY |
+| **DEBUGGER** | DENY | ALLOW | ALLOW | ALLOW | ALLOW | ALLOW | ALLOW | ALLOW | DENY | ALLOW |
+| **HAL_LOGGER** | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY |
 
 **全 DENY 行・列の意味**:
-- **HAL_\* の全 6 ロール行が全 DENY**: HAL は通信グラフの葉であり、自発的な送信を一切行わない。デバイス側の事象は ISR による割り込み通知（`{GLOBAL_InterruptWakeup}`）として上位へ伝わり、IPC の送信としては表現されない。単一の "PLATFORM_HAL" ロールをデバイスごとに 6 分割したのは、アクセス制御の意味論を変えるためではない。CSP の「1 チャネル 1 待機者」制約下で複数の同種インスタンスを区別可能にするためである。各行の全 DENY 性質そのものは変わらない。
+- **HAL_\* の全 7 ロール行が全 DENY**: HAL は通信グラフの葉であり、自発的な送信を一切行わない。デバイス側の事象は ISR による割り込み通知（`{GLOBAL_InterruptWakeup}`）として上位へ伝わり、IPC の送信としては表現されない。単一の "PLATFORM_HAL" ロールをデバイスごとに 7 分割したのは、アクセス制御の意味論を変えるためではない。CSP の「1 チャネル 1 待機者」制約下で複数の同種インスタンスを区別可能にするためである。各行の全 DENY 性質そのものは変わらない。
 - **RUNTIME 列が全 DENY**: RUNTIME（ゲスト実行をホストするランタイムタスク。ゲスト自身のコードが直接 IPC に触れるわけではない）を宛先とする IPC は存在しない。RUNTIME への応答は、RUNTIME 自身が発した要求に対する返信としてのみ返る。
 - **DEBUGGER 列が全 DENY**: DEBUGGER 自身を宛先とする IPC 送信経路は存在しない（デバッガタスクへの通知は RSP トランスポート経由であり、本ルータの管轄外）。
 

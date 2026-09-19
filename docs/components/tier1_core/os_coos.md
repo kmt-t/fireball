@@ -52,7 +52,7 @@ graph TD
 <!-- traceability: {GLOBAL_Policy_Memory} -->
 
 #### CSPチャネル（channel）
-<!-- traceability: {CSPCommunication} {GLOBAL_Policy_Memory} {ADR_RendezvousChannel} {IPC_ZeroCopy} {OwnershipTransfer} {ADR_SharedBlockRaii} -->
+<!-- traceability: {CSPCommunication} {GLOBAL_Policy_Memory} {ADR_RendezvousChannel} {IPC_ZeroCopy} {OwnershipTransfer} {ADR_SharedBlockRaii} {GOTCHA-COOS-01} {GOTCHA-COOS-02} -->
 タスク間の同期と通信を仲介するデータ構造。ホーアCSPの定義どおり **チャネル自身は値を保持しない**（）。送信側は相手が現れるまで自身のフレーム上で転送リソース（`shared_block` 等のムーブ専用オブジェクト）を保持したまま待機し、ランデブー成立の瞬間に所有権が受信側へ移る。有界かつ安全なメモリ管理を規定する に従い、リソースは共有メモリアリーナから事前割り当てされた実体（共有メモリスライス等）の右辺値ムーブ（`&&`）によってのみ移譲される（ゼロコピー所有権移譲、）。参照実装ではチャネル生成時に転送モード（借用値またはムーブ専用値）を固定し、受信時にペイロードの実行時属性を調べて転送方式を推測してはならない。
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
@@ -208,7 +208,7 @@ def handoff_or_yield(target: Task) -> CoroutineHandle:
 ## 4. 動的モデル
 
 ### 4.1 アルゴリズム
-<!-- traceability: {CSP_Handoff} {DirectContextSwitch} {GLOBAL_IdleDetection} {GLOBAL_StrictMemoryLimit} {GLOBAL_IndependentHeap} {GLOBAL_InterruptWakeup} -->
+<!-- traceability: {CSP_Handoff} {DirectContextSwitch} {GLOBAL_IdleDetection} {GLOBAL_StrictMemoryLimit} {GLOBAL_IndependentHeap} {GLOBAL_InterruptWakeup} {GOTCHA-COOS-03} -->
 
 COOS の動的スケジューリングおよび同期通信の基本アルゴリズムを以下に定義する。
 

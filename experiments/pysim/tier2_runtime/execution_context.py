@@ -9,7 +9,6 @@ from collections.abc import Iterator
 
 from interop_abi import ExecutionContextNative, NativeValueStack
 from jit_abi import JIT_CONTEXT_SIZE_BYTES
-from wasm_module import WASM_LOCAL_SLOT_WORDS
 
 
 class WASMContext:
@@ -20,6 +19,7 @@ class WASMContext:
         "_c_mem",
         "_cached_locals_view",
         "fault",
+        "local_slot_words",
         "local_stack",
         "memory",
         "stack",
@@ -30,15 +30,17 @@ class WASMContext:
         self,
         memory: bytearray | None = None,
         stack_capacity: int = 64,
+        local_slot_words: int = 1,
     ):
+        """`local_slot_words` is the local-slot stride (1: 4-byte slots, 2: 8-byte slots)."""
+        assert local_slot_words == 1 or local_slot_words == 2
         n_locals = 16
+        self.local_slot_words = local_slot_words
         self.fault: int | None = None
         self.stack_capacity = stack_capacity
         self.stack: NativeValueStack = NativeValueStack(capacity=stack_capacity)
-        self.local_stack: NativeValueStack = NativeValueStack(
-            capacity=n_locals * WASM_LOCAL_SLOT_WORDS
-        )
-        self.local_stack.set_size(n_locals * WASM_LOCAL_SLOT_WORDS)
+        self.local_stack: NativeValueStack = NativeValueStack(capacity=n_locals * local_slot_words)
+        self.local_stack.set_size(n_locals * local_slot_words)
         self.memory = memory
         if memory is not None:
             self._c_mem = (ctypes.c_char * len(memory)).from_buffer(memory)
@@ -81,14 +83,14 @@ class WASMContext:
 
         def __getitem__(self, idx: int) -> int:
             assert 0 <= idx < len(self)
-            return self._ctx.local_stack[idx * WASM_LOCAL_SLOT_WORDS]
+            return self._ctx.local_stack[idx * self._ctx.local_slot_words]
 
         def __setitem__(self, idx: int, val: int) -> None:
             assert 0 <= idx < len(self)
-            self._ctx.local_stack[idx * WASM_LOCAL_SLOT_WORDS] = val
+            self._ctx.local_stack[idx * self._ctx.local_slot_words] = val
 
         def __len__(self) -> int:
-            return len(self._ctx.local_stack) // WASM_LOCAL_SLOT_WORDS
+            return len(self._ctx.local_stack) // self._ctx.local_slot_words
 
         def __iter__(self) -> Iterator[int]:
             for index in range(len(self)):

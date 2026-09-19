@@ -350,7 +350,7 @@
 
 #### ローカル変数アクセスの基底ポインタと静的オフセット畳み込み (`ContextPointerRegister`)
 <!-- traceability: {ContextPointerRegister} -->
-ローカル変数アクセス（`local.get`/`local.set`/`local.tee`）は、JIT 専用のローカル変数基底レジスタ（`R2 = local_base`）経由（`[R2, #offset]`）として解決される。追加のベースレジスタを消費することなく極小フットプリントで実行可能である。`R2` は `local_base`（`local_param`）として JIT トレース内で固定される役割レジスタであり、`R3 = tos` および `mem_base`/`mem_size`（`R8`/`R9`）と同様に他ステンシルのスクラッチ用途と衝突させない（`jit_copy_patch_concept.py` を正本とする。※レジスタ分離検証は [jit_compiler_test_spec.md](docs/qa/tier3_jit/jit_compiler_test_spec.md) `GOTCHA-JITC-01` を参照）。
+ローカル変数アクセス（`local.get`/`local.set`/`local.tee`）は、JIT 専用のローカル変数基底レジスタ（`R2 = local_base`）経由（`[R2, #offset]`）として解決される。`offset` は、`local index × フレームのスロット幅`（4 / 8 / 16バイト）である。追加のベースレジスタを消費することなく極小フットプリントで実行可能である。`R2` は `local_base`（`local_param`）として JIT トレース内で固定される役割レジスタであり、`R3 = tos` および `mem_base`/`mem_size`（`R8`/`R9`）と同様に他ステンシルのスクラッチ用途と衝突させない（`jit_copy_patch_concept.py` を正本とする。※レジスタ分離検証は [jit_compiler_test_spec.md](docs/qa/tier3_jit/jit_compiler_test_spec.md) `GOTCHA-JITC-01` を参照）。
 
 > [!NOTE]
 > **現状は静的割当であり、動的なバリアント選択はまだ実装されていない**: `jit_copy_patch_concept.py` の `compile_trace()` は WASM 命令ごとに1つの固定ステンシルしか持たず（例: `i32.const` は常に特別処理で `R4` へ直接書き込み、`i32_const_d0`/`i32_const_d1` のどちらのステンシルも実際には参照しない）、実行時のキャッシュ深度に応じて `_d0`/`_d1`/`_d2` を動的に選び分けるロジックはまだ存在しない。したがって同一トレース内で連続する命令のレジスタ配置が食い違う状況も現状は発生しない。上表の `variant_id` は、(1) 将来その動的選択を実装する際の ID 体系、および (2) その際に必要となる命令間引き継ぎ互換性判定・グルー挿入（`_order_register_moves`/`emit_variant_reconciliation_glue` を参照、`jit_copy_patch_concept.py` 内の再利用可能なユーティリティとして検証済み実装が既に存在する）の両方に使われる、正本の割当表である。

@@ -219,6 +219,60 @@ def test_sched_06_ready_queue_intrusive_ring_two_ended_fifo():
         assert task.ready_prev is expected_after_remove[(index - 1) % len(expected_after_remove)]
 
 
+def test_sched_07_terminated_task_returns_its_tcb_slot_on_spawn():
+    """TEST-SCHED-16: a full table reclaims terminated tasks; live tasks are never reclaimed."""
+
+    def quick():
+        return
+        yield
+
+    sched = Scheduler(max_tasks=4)
+    first = [sched.spawn(f"t{i}", quick()) for i in range(4)]
+    sched.run_to_completion()
+    assert all(sched.get_task(i).state == TaskState.TERMINATED for i in first)
+
+    # The table is full of terminated tasks, so a new task takes the oldest slot.
+    fifth = sched.spawn("t4", quick())
+    assert sched.get_task(first[0]) is None
+    assert all(sched.get_task(i) is not None for i in first[1:])
+    assert sched.get_task(fifth) is not None
+
+    # Lifetime spawns exceed the table size when tasks finish in between.
+    sched.run_to_completion()
+    later = [sched.spawn(f"u{i}", quick()) for i in range(3)]
+    sched.run_to_completion()
+    assert len(later) == 3
+    assert all(sched.get_task(i) is not None for i in later)
+
+    # Four live tasks still fill the table: nothing is reclaimed from them.
+    busy = Scheduler(max_tasks=4)
+
+    def waiting():
+        yield None
+        yield None
+
+    for i in range(4):
+        busy.spawn(f"w{i}", waiting())
+    with expect_assertion("capacity exceeded"):
+        busy.spawn("w_overflow")
+
+
+def test_sched_08_task_ids_stay_unique_after_a_slot_is_reclaimed():
+    """TEST-SCHED-16: a reclaimed slot never hands its old task ID to a new task."""
+
+    def quick():
+        return
+        yield
+
+    sched = Scheduler(max_tasks=2)
+    ids = [sched.spawn("a", quick()), sched.spawn("b", quick())]
+    sched.run_to_completion()
+    ids.append(sched.spawn("c", quick()))
+    sched.run_to_completion()
+    ids.append(sched.spawn("d", quick()))
+    assert len(set(ids)) == 4
+
+
 if __name__ == "__main__":
     test_sched_01_pure_round_robin_fifo()
     test_sched_02_task_capacity_limit()
@@ -226,4 +280,6 @@ if __name__ == "__main__":
     test_sched_04_shared_block_move_semantics_csp_rendezvous()
     test_sched_05_queue_and_detached_task_lifecycle()
     test_sched_06_ready_queue_intrusive_ring_two_ended_fifo()
-    print("[PASS] All 6 Round-Robin Scheduler tests passed.")
+    test_sched_07_terminated_task_returns_its_tcb_slot_on_spawn()
+    test_sched_08_task_ids_stay_unique_after_a_slot_is_reclaimed()
+    print("[PASS] All 8 Round-Robin Scheduler tests passed.")

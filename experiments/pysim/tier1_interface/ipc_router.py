@@ -119,6 +119,7 @@ class Role(IntEnum):
     HAL_I2C = 6
     HAL_SPI = 7
     DEBUGGER = 8
+    HAL_LOGGER = 9
 
 
 class ServiceDescriptor(tuple):
@@ -345,8 +346,9 @@ def kv_entries_to_bytes(entries: Sequence[tuple[int, int]], max_len: int | None 
 # comparison is a bounded, allocation-free lexicographic compare.
 #
 # URI -> Role is many-to-one, not 1:1: "fireball://hal/uart/0" and
-# "fireball://hal/stdout/0" are kept on distinct HAL_UART/HAL_STDOUT
-# roles here because each URI resolves to an independent endpoint instance;
+# "fireball://hal/stdout/0" and "fireball://hal/logger/0" are kept on distinct
+# HAL_UART/HAL_STDOUT/HAL_LOGGER roles here because each URI resolves to an
+# independent endpoint instance;
 # an implementation may alias a URI only when it intentionally shares the
 # same endpoint instance, without changing the routing table shape.
 _SERVICE_ENTRIES: tuple[tuple[str, "ServiceDescriptor"], ...] = (
@@ -354,6 +356,7 @@ _SERVICE_ENTRIES: tuple[tuple[str, "ServiceDescriptor"], ...] = (
     ("fireball://dbg/manager/0", ServiceDescriptor(Role.DEBUGGER)),
     (FB_URI_HAL_GPIO, ServiceDescriptor(Role.HAL_GPIO)),
     (FB_URI_HAL_I2C, ServiceDescriptor(Role.HAL_I2C)),
+    (FB_URI_HAL_LOGGER, ServiceDescriptor(Role.HAL_LOGGER)),
     (FB_URI_HAL_SPI, ServiceDescriptor(Role.HAL_SPI)),
     (FB_URI_HAL_STDOUT, ServiceDescriptor(Role.HAL_STDOUT)),
     (FB_URI_HAL_TIMER, ServiceDescriptor(Role.HAL_TIMER)),
@@ -375,6 +378,7 @@ _HAL_ROLES: tuple[Role, ...] = (
     Role.HAL_TIMER,
     Role.HAL_I2C,
     Role.HAL_SPI,
+    Role.HAL_LOGGER,
 )
 
 
@@ -395,6 +399,7 @@ FB_CONF_ROUTER_ROLE_MATRIX: tuple[StaticVector[bool], ...] = (
             Role.HAL_TIMER,
             Role.HAL_I2C,
             Role.HAL_SPI,
+            Role.HAL_LOGGER,
         )
     ),  # from RUNTIME
     _role_row(_HAL_ROLES),  # from CORE_SERVICE
@@ -413,8 +418,10 @@ FB_CONF_ROUTER_ROLE_MATRIX: tuple[StaticVector[bool], ...] = (
             Role.HAL_TIMER,
             Role.HAL_I2C,
             Role.HAL_SPI,
+            Role.HAL_LOGGER,
         )
     ),  # from DEBUGGER
+    _role_row(()),  # from HAL_LOGGER (leaf)
 )
 
 

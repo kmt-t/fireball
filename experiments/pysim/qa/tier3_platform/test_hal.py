@@ -5,6 +5,7 @@ Unit tests for Tier 3 Platform: HAL Drivers & HalBufferPool
 Traceability: hal_dispatch_test_spec.md / platform_driver_test_spec.md
 """
 
+import io
 import sys
 import time
 from pathlib import Path
@@ -41,7 +42,9 @@ from hal_dispatch import (
     WasiIpcCmd,
 )
 from helpers import expect_assertion
-from ipc_router import FB_URI_HAL_STDOUT
+from ipc_router import FB_URI_HAL_LOGGER, FB_URI_HAL_STDOUT
+from logger import LogLevel
+from logger_driver import FileLogSink, LoggerDriver
 from scheduler import Scheduler
 from stream_transport import StreamTransport
 from system import (
@@ -234,6 +237,61 @@ def test_wasi_dummy_clock_time_get_writes_timestamp():
     assert int.from_bytes(memory[0:8], "little") > 0
 
 
+def test_hal_15_logger_driver_separates_log_from_stdout():
+    """TEST-HAL-15: system logs go to the logger driver's sink, never to guest stdout."""
+    sysv = System()
+    try:
+        sysv.start_hal_driver(
+            DummyDriver(sysv.wasi_hal_bindings.stdout_uri, transport=sysv.transport)
+        )
+        backing = io.BytesIO()
+        sink = FileLogSink(backing)
+        sysv.start_logger_driver(LoggerDriver(FB_URI_HAL_LOGGER, sink), sink)
+
+        sysv.dictionary.register(0x300, "TEST_LOG: v=%d")
+        assert sysv.logger.log_event(LogLevel.INFO, 0x300, 7) == "QUEUED"
+        assert sysv.logger.flush() == 1
+        assert sysv.transport.write(memoryview(b"guest-out\n")) == 10
+
+        assert backing.getvalue().endswith(b"TEST_LOG: v=7\n")
+        assert sink.bytes_written == len(backing.getvalue())
+        assert sysv.transport.drain_output() == b"guest-out\n"
+
+        with expect_assertion():
+            sysv.start_logger_driver(
+                LoggerDriver(FB_URI_HAL_STDOUT, FileLogSink(io.BytesIO())), sink
+            )
+    finally:
+        sysv.shutdown()
+
+
+def test_hal_15_logger_driver_write_buffer_command_reaches_sink():
+    from hal_dispatch import ARG_BUFFER_HANDLE, ARG_LENGTH, ARG_OFFSET
+
+    scheduler = Scheduler()
+    task_id = scheduler.spawn("logger_guest")
+    scheduler.current_task = scheduler.get_task(task_id)
+    vmmio = VMMIOController(guest_ram_size=8192, scheduler=scheduler)
+    pool = HalBufferPool(scheduler, vmmio)
+    pool.bind_runtime()
+    backing = io.BytesIO()
+    driver = LoggerDriver(FB_URI_HAL_LOGGER, FileLogSink(backing))
+    driver.bind_buffer_pool(pool)
+    try:
+        tx = pool.buffer(0)
+        pool.view(tx, 0, 6)[:] = b"log-ab"
+        assert driver.is_supported(WasiIpcCmd.STREAM_WRITE_BUFFER) == 1
+        assert driver.is_supported(WasiIpcCmd.STREAM_READ_BUFFER) == 0
+        params = ReadOnlyFlatMapView(
+            [(ARG_BUFFER_HANDLE, tx.buffer_id), (ARG_OFFSET, 0), (ARG_LENGTH, 6)]
+        )
+        assert driver.dispatch(WasiIpcCmd.STREAM_WRITE_BUFFER, params) == 6
+        assert backing.getvalue() == b"log-ab"
+        assert driver.dispatch(WasiIpcCmd.STREAM_FLUSH, params) == 0
+    finally:
+        pool.close_all()
+
+
 if __name__ == "__main__":
     test_hal_01_stream_transport_uses_fixed_buffers()
     test_hal_02_dummy_stdio_driver_streams_stdin_and_stdout()
@@ -244,4 +302,6 @@ if __name__ == "__main__":
     test_wasi_dummy_fd_write_updates_stdout_and_count()
     test_wasi_dummy_fd_seek_writes_new_offset()
     test_wasi_dummy_clock_time_get_writes_timestamp()
-    print("[PASS] All 9 HAL Drivers & HalBufferPool tests passed.")
+    test_hal_15_logger_driver_separates_log_from_stdout()
+    test_hal_15_logger_driver_write_buffer_command_reaches_sink()
+    print("[PASS] All 11 HAL Drivers & HalBufferPool tests passed.")

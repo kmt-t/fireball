@@ -24,7 +24,7 @@
 - **探索する型と探索しない型を分ける**: `bit_view` は疎なキー空間に対する探索構造ではなく、密な添字空間に対するビット詰め表である。キー列を持たない `flat_map_view` の特殊形として表現することは技術的には可能だが、「`flat_*_view` なら二分探索するもの」という読み手の期待を裏切り、カードマーキング表があたかも探索対象であるかのような誤解を生む。**カードマーキングは探索しない。添字がそのまま問いである。**
 
 ### 非所有ビューと実体ストレージの体系化マトリクス (Storage & View Matrix)
-<!-- traceability: {GLOBAL_Policy_Memory} {META_NoStdVector} {GLOBAL_StaticScalability} -->
+<!-- traceability: {GLOBAL_Policy_Memory} {META_NoStdVector} {GLOBAL_StaticScalability} {GOTCHA-CONT-04} -->
 メモリ所有権とビューを厳格に分離し、要素の追加（`insert`）や削除（`remove`）等の変更操作はすべて **可変ストレージ（Mutable Storage）** の責務とする。非所有ビュー（View）は探索・走査に専念し、一切の変更操作を提供しない。また、下位互換用のエイリアスは全廃し、正規のクラス名のみを直接使用する。
 
 所有権は単一のストレージインスタンスだけが持つ。ストレージ所有側は同じ実体を指すviewをメンバとして二重保持せず、必要な処理の呼び出し時に借用する。別インスタンスが所有ストレージを検索する場合だけ、所有者から非所有viewを受け取る。view単独を所有型として扱ったり、同じ実体に複数の所有者を作ったりしてはならない。
@@ -108,7 +108,7 @@ AoS（Array of Structures）構造に基づく、昇順ソート済みの (Key, 
 | エントリ配列区間 | 昇順ソート済みの (Key, Value) ペア配列への読み取り専用ビュー（二分探索対象） | データ範囲 | `std::span<const flat_map_entry<Key, Value>>` |
 
 #### 疎集合ビュー（flat_set_view）
-<!-- traceability: {META_BinarySearch} {META_ZeroCostAbstraction} {FlatViewNarrowing} -->
+<!-- traceability: {META_BinarySearch} {META_ZeroCostAbstraction} {FlatViewNarrowing} {GOTCHA-CONT-03} -->
 ソート済みキー列のみに対する非所有ビュー。値列を持たない。
 
 **型分離の設計理由と不変条件 (`GOTCHA-CONT-03`)**:
@@ -126,7 +126,7 @@ AoS（Array of Structures）構造に基づく、昇順ソート済みの (Key, 
 - **添字の取り違えを型で防ぐ**: 生の開始・終了インデックス対を返す設計では、呼び出し側が誤った配列と組み合わせても検出できない。ビューは区間を 1 つの値として束ねるため、この誤りが表現できない。
 
 #### ビット詰めビュー（bit_view）
-<!-- traceability: {PackedBitView} {GLOBAL_StrictMemoryLimit} {META_ZeroCostAbstraction} -->
+<!-- traceability: {PackedBitView} {GLOBAL_StrictMemoryLimit} {META_ZeroCostAbstraction} {GOTCHA-CONT-01} -->
 1 要素が 1 バイト未満の密な状態表を指す非所有ビュー。**探索を行わない**——添字による直接参照のみであり、`{META_AccessDictionary}`（データの索引化に基づく検索最適化）の対象外である。
 
 ビューが保持する状態は、裏打ちバイト列 `storage_`、論理要素 0 のビット位置 `origin_`、および論理要素数 `count_` の3メンバである。`storage_` は `put()` を許すため可変バイト列ビューだが、ビュー自身は記憶域を所有せず、区間情報も不変である。
@@ -485,7 +485,7 @@ sequenceDiagram
 | 不変条件 | ビューは決して広がらない。この単調性により多段絞り込みが安全に合成できる |
 
 #### 添字区間による絞り込み（slice）
-<!-- traceability: {FlatViewNarrowing} {PackedBitView} -->
+<!-- traceability: {FlatViewNarrowing} {PackedBitView} {GOTCHA-CONT-02} -->
 
 | 項目 | 内容 |
 | :--- | :--- |

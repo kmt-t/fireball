@@ -26,6 +26,8 @@ WASIアダプタとHALドライバのURI結線は、物理ドライバ実装と�
 | `uart_uri` | `fireball://hal/uart/0` |
 | `logger_uri` | `fireball://hal/logger/0` |
 
+`logger_uri` には、ロガー専用の HAL ドライバを結線する。このドライバは標準出力用ドライバとは別の出力先を持つ。
+
 ## 3. 静的モデル
 
 ### 3.1 データ構造
@@ -43,6 +45,7 @@ flowchart TD
     IPCR -->|CSP Rendezvous| T4["hal_task: Role.HAL_I2C"] --> I2C[I2C Driver: fireball://hal/i2c/0]
     IPCR -->|CSP Rendezvous| T5["hal_task: Role.HAL_SPI"] --> SPI[SPI Driver: fireball://hal/spi/0]
     IPCR -->|CSP Rendezvous| T6["hal_task: Role.HAL_TIMER"] --> Timer[Timer Driver: fireball://hal/timer/0]
+    IPCR -->|CSP Rendezvous| T7["hal_task: Role.HAL_LOGGER"] --> Log[Logger Driver: fireball://hal/logger/0]
     UART --> RSP[RSP Parser]
     RTT --> RSP
     RSP --> Queue[debug_command_queue]
@@ -148,7 +151,7 @@ sequenceDiagram
 ## 5. インターフェース定義
 
 ### 5.1 物理実装の勘所・不変条件
-<!-- traceability: {HAL_Interface} {IPC_ZeroCopy} -->
+<!-- traceability: {HAL_Interface} {IPC_ZeroCopy} {BufferedLogging} {GOTCHA-HAL-02} {GOTCHA-HAL-03} -->
 [`hal_dispatch.md`](docs/components/tier2_runtime/hal_dispatch.md) の で定義された契約API（`read`, `write`, `transfer`, `get-buffer`）を、以下の物理不変条件に従って実装する。
 
 **静的固定長バッファプールの境界厳格検査 (`GOTCHA-HAL-01`)**:
@@ -156,6 +159,13 @@ sequenceDiagram
 **設計理由と不変条件**: 固定スロットは共有メモリの所有権を持たず、HALの`acquire`/`release`も存在しない。Runtime以外のゲストがDYNAMICマッピングを取得すること、また`offset + length`がスロット境界を越えることは`HalBufferTrap`で即時停止させる。
 
 `stream-read` / `stream-write` を処理するHALドライバは、コマンドに含まれる `hal_buf_id` を使って所有ゲストのバッファスロットへHALサブシステム権限でアクセスする。ゲスト所有権の検査はゲスト側の公開ビューで行い、ドライバ側は同じ固定スロットの境界検査だけを通過して読み書きする。したがって、標準入出力のストリーミングにドライバ専用の複製バッファや生ポインタは存在しない。
+
+**ロガー出力の分離**:
+ロガーは、専用ロール `HAL_LOGGER` の HAL ドライバ（`fireball://hal/logger/0`）を通じてログを出力する。
+このドライバは、標準出力用ドライバとバッファを共有しない。
+ログ行は、ゲストの標準出力へ混入しない。
+ホスト実行では、出力先の実体をホストファイルとする。出力先は、ドライバ起動時に呼び出し側が渡す。
+**設計理由**: 標準出力とログが同じ固定長バッファを共有すると、システムの警告ログがゲスト出力の途中に割り込む。この混入は、ゲスト出力の完全性検証を困難にする。
 
 **UART トランスポートの双方向独立性 (`GOTCHA-HAL-02`)**:
 UART デバイスドライバにおける送信リングバッファと受信リングバッファは、メモリ領域・ポインタ共に完全に独立したデータ構造として管理される。送受信でバッファや状態変数を不用意に共有・使い回すことを禁止し、全二重シリアル通信時における送受信ポインタ競合やデータ化けを防止する。
@@ -186,4 +196,4 @@ UART および SEGGER RTT の双方において同一の RSP パケットエン�
 - **固定長スロット境界保護**: 要求サイズが 256 バイトを超える場合の即時拒絶（`GOTCHA-HAL-01`）。
 
 ### 7.2 テスト仕様書との連携
-本コンポーネントの物理実装テストケース（TEST-HAL-03, TEST-HAL-05〜TEST-HAL-08, GOTCHA-HAL-01〜03）は、[`platform_driver_test_spec.md`](docs/qa/tier3_platform/platform_driver_test_spec.md) を正本として定義する。HAL契約レベルのテストケース（TEST-HAL-01, TEST-HAL-02, TEST-HAL-04, TEST-HAL-09〜TEST-HAL-13）は [`hal_dispatch_test_spec.md`](docs/qa/tier2_runtime/hal_dispatch_test_spec.md) を参照する。
+本コンポーネントの物理実装テストケース（TEST-HAL-03, TEST-HAL-05〜TEST-HAL-08, TEST-HAL-15, GOTCHA-HAL-01〜03）は、[`platform_driver_test_spec.md`](docs/qa/tier3_platform/platform_driver_test_spec.md) を正本として定義する。HAL契約レベルのテストケース（TEST-HAL-01, TEST-HAL-02, TEST-HAL-04, TEST-HAL-09〜TEST-HAL-13）は [`hal_dispatch_test_spec.md`](docs/qa/tier2_runtime/hal_dispatch_test_spec.md) を参照する。

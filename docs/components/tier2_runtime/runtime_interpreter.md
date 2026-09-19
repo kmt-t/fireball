@@ -24,7 +24,7 @@ Interpreter は、WASM命令をスレッドインタープリタ方式で実行�
 - **`Interpreter`**: WASM命令の実行、コンテキスト管理、外部環境との連携をカプセル化した主要クラスである。
 - **`execution_context`**: 仮想CPUレジスタ、3本の値スタック情報、リニアメモリ情報を保持する構造体（計64バイト）である。JIT共通領域とヘルパーはトレースヘッダが保持する。
 - **`オペランドスタック`（オペランドスタック）**: WASM のオペランド値のみを保持する固定容量スタックである。コールチェーン全体を貫く1本の連続バッファとして動作する。呼び出しを跨いでもスタックは連続して配置される。
-- **`ローカル値領域`（ローカル変数スタック）**: コールチェーン全体で共有する固定容量の、型情報を持たない32ビットワード領域である。型タグ、実行時オブジェクト、関数実行記述子を格納しない。論理ローカル1個につき `WASM_LOCAL_ALIGNMENT_BYTES` の固定スロットを割り当てる。アクセス先は `local_base + slot * WASM_LOCAL_ALIGNMENT_BYTES` から直接計算する。
+- **`ローカル値領域`（ローカル変数スタック）**: コールチェーン全体で共有する固定容量の、型情報を持たない32ビットワード領域である。型タグ、実行時オブジェクト、関数実行記述子を格納しない。論理ローカル1個につき、そのフレームのスロット幅の固定スロットを割り当てる。スロット幅は、フレーム内で最大の変数サイズで決める。i32/f32だけのフレームは4バイト、i64/f64を含むフレームは8バイトとする。v128を含む場合は16バイトとする。同一フレーム内でスロット幅を混在させない。アクセス先は `local_base + local_index * スロット幅` から直接計算する。
 - **制御ブロック復帰情報領域**: `block`/`loop`/`if` の入れ子構造を管理する固定容量領域である。
 - **関数実行記述子領域**: 関数ごとの実行メタデータを保持する独立した固定容量領域である。各記述子は`ローカル値領域`内のフレーム開始位置を保持し、`ローカル値領域`にはローカル値だけを置く。
 - **`interpreter_config`**: 3本のスタック容量やyield閾値などの不変な構成情報である。
@@ -77,7 +77,7 @@ graph TD
 | ハンドラテーブル | 命令ハンドラへのジャンプテーブル | テーブルポインタ | 関数ポインタの配列 |
 
 #### 実行コンテキスト（execution_context）
-<!-- traceability: {PositionIndependentCode} {ContextPointerRegister} {MemoryBoundaryCheck} {EnvironmentPointer} {AAPCS_FastCall} -->
+<!-- traceability: {PositionIndependentCode} {ContextPointerRegister} {MemoryBoundaryCheck} {EnvironmentPointer} {AAPCS_FastCall} {GOTCHA-INTP-09} {GOTCHA-INTP-11} -->
 WASMゲストの全実行状態を管理する。JIT/Interpreter 共通の仮想CPUレジスタ群として設計する。
 
 **独立した固定構造体としての配置**:
@@ -127,10 +127,19 @@ ARMv8-Mのステンシルで採用するTOSおよびNOSのライトバック・�
 モジュール間を跨ぐ相互関数呼び出しでは、統一 PC（Unified PC: `(func_index << 16) | bytecode_offset`）を採用する。モジュール相対オフセットではなく、システム全体で一意に決定される値とする。これにより複数モジュールが共存する環境下でも、PC の単一比較のみで分岐先コードブロックを特定できる。JIT トレースのモジュール横断インライン化を極低オーバーヘッドで実現する。
 
 #### 関数呼出し記述子
-<!-- traceability: {PositionIndependentCode} {ContextPointerRegister} {MemoryBoundaryCheck} {EnvironmentPointer} {AAPCS_FastCall} -->
-関数実行記述子は、関数インデックス、コード、制御マップ、環境、および`ローカル値領域`の開始32ビットワード位置を結び付ける実行時メタデータであり、独立した記述子領域に格納する。ローカル値は現在の空き位置から確保し、記述子に保存した開始位置から参照する。`オペランドスタック`と`ローカル値領域`は型情報を持たない32ビットワード列であり、記述子、戻りPC、型情報を格納しない。論理ローカルは`WASM_LOCAL_ALIGNMENT_BYTES`固定スロットで保持する。値の有効ワードは関数シグネチャに従う。i32/f32は1ワード、i64/f64は2ワードを占有する。
+<!-- traceability: {PositionIndependentCode} {ContextPointerRegister} {MemoryBoundaryCheck} {EnvironmentPointer} {AAPCS_FastCall} {GOTCHA-INTP-13} {GOTCHA-INTP-14} -->
+関数実行記述子は、関数インデックス、コード、制御マップ、環境、および`ローカル値領域`の開始32ビットワード位置を結び付ける実行時メタデータであり、独立した記述子領域に格納する。ローカル値は現在の空き位置から確保し、記述子に保存した開始位置から参照する。`オペランドスタック`と`ローカル値領域`は型情報を持たない32ビットワード列であり、記述子、戻りPC、型情報を格納しない。論理ローカルは、フレームごとに決まるスロット幅の固定スロットで保持する。スロット幅は、関数のロード時に、ローカルの最大の変数サイズから求める。値の有効ワードは関数シグネチャに従う。i32/f32は1ワード、i64/f64は2ワードを占有する。
 
-`local.get`, `local.set`, `local.tee` は型を解釈しない。local index から `slot * WASM_LOCAL_ALIGNMENT_BYTES` を直接計算する。必要な 1 または 2 ワードをオペランドスタックとの間で生コピーする。型付き演算や ABI 境界の読み書きのみが、既知の型に応じて値を解釈する。オペランドスタックはコール境界を跨いで連続する。`call`, `call_indirect`, import, host call, 関数復帰は、常に Interpreter/RuntimeEngine 境界で処理する。JIT トレースが関数呼出し記述子の積み下ろしや host call helper の呼出しを代行することはない。
+`local.get`, `local.set`, `local.tee` は型を解釈しない。local index にフレームのスロット幅を掛けて、アドレスを直接計算する。必要な 1 または 2 ワードをオペランドスタックとの間で生コピーする。型付き演算や ABI 境界の読み書きのみが、既知の型に応じて値を解釈する。オペランドスタックはコール境界を跨いで連続する。`call`, `call_indirect`, import, host call, 関数復帰は、常に Interpreter/RuntimeEngine 境界で処理する。JIT トレースが関数呼出し記述子の積み下ろしや host call helper の呼出しを代行することはない。
+
+**フレームごとのローカルスロット幅 (`{GOTCHA-INTP-22}`)**:
+スロット幅は、フレーム内で最大の変数サイズで決める。
+i32/f32だけのフレームは4バイト、i64/f64を含むフレームは8バイト、v128を含むフレームは16バイトとする。
+同一フレーム内でスロット幅を混在させない。混在させると、ローカルのアドレスがローカル番号だけで決まらなくなる。
+幅は、関数のロード時に一度だけ求める。実行中に変更しない。
+幅は、ローカルごとに2ビットのビットマップとして保持する。型の配列は保持しない。型はオペコードが決めるためである。
+JITは、関数ごとのスロット幅から `local index × スロット幅` を求め、命令生成時に埋め込む。i32のみのフレームに限定しない。
+**設計理由**: i32/f32が大半のフレームで、ローカル値領域の使用量を半分にする。固定容量のRAM予算を節約するためである。
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
@@ -138,12 +147,12 @@ ARMv8-Mのステンシルで採用するTOSおよびNOSのライトバック・�
 | コード参照 | 現在実行するWASM命令列 | 非所有参照 | Flash/ROM上のコードを参照 |
 | 制御マップ | block/loop/if の静的な飛び先表 | 非所有参照 | ロード時に構築した表を共有 |
 | ローカル値領域開始スロット | 当該関数のローカル値の先頭 | 32bitオフセット | 固定長ローカル配列内の物理スロット位置 |
-| ローカルスロット | local index ごとの固定領域 | `WASM_LOCAL_ALIGNMENT_BYTES` 固定 | `local_base + local_index * WASM_LOCAL_ALIGNMENT_BYTES` から直接計算 |
+| ローカルスロット | local index ごとの固定領域 | フレームごとに4 / 8 / 16バイト | `local_base + local_index * スロット幅` から直接計算 |
 
 呼出し時は関数呼出し記述子を独立領域へ積み、引数を含むローカル値をローカル値領域の現在位置から確保する。復帰時は呼出し先の記述子を取り除き、ローカル値領域を保存位置まで一括で戻す。ABIへ渡す値配列には記述子、型タグや可変長コンテナを含めない。 `{CallFrame_Layout}`
 
 #### 制御ブロック復帰情報
-<!-- traceability: {PositionIndependentCode} {ContextPointerRegister} {MemoryBoundaryCheck} {EnvironmentPointer} {AAPCS_FastCall} -->
+<!-- traceability: {PositionIndependentCode} {ContextPointerRegister} {MemoryBoundaryCheck} {EnvironmentPointer} {AAPCS_FastCall} {GOTCHA-INTP-19} -->
 制御ブロック復帰情報は、`block/loop/if` 命令による入れ子構造とジャンプ先を管理する。専用の固定容量領域へ積む。`loop/block/if` の分岐は JIT トレースが直接解決できる（`{TraceBoundaryInvariant}`, `{JIT_RuntimeAPI_Fallback}`）。そのため、構文の開始や終了に対応する情報の積み下ろしを JIT が代行しない場合がある。この領域は他の領域と物理的に独立している。したがって積み下ろし漏れが生じても、他の領域の記録位置が乱れることはない。
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
@@ -177,9 +186,15 @@ ARMv8-Mのステンシルで採用するTOSおよびNOSのライトバック・�
    - 制御構造の入れ子は静的な性質である。モジュールロード時に各ベーシックブロックの分岐先（`next_pc` / `loops_to`）としてあらかじめ解決しておく。
    - 実行時はその解決済みの値を直接使用する。フレームスタックを都度たどって再計算しない。
    - フレームスタックの深さ切り詰めは安全策としてのみ機能させる。JIT が `END` を代行し続けることでスタックが無制限に伸びるのを防ぐ。
+   - `block`, `loop`, `if` 命令で終わるブロックのトレースは、終端トレースとして扱う。この命令はインタープリタが実行し、フレームの積み漏れを起こさない。
+   - このトレースは、ネイティブチェインの対象にしない。`if` の条件値は、トレースの残余値としてオペランドスタックに残す。
+   - トレースの実行後、再開位置が要求する深さまで制御フレームを切り詰める。再開位置がブロック先頭なら、そのブロックが記録する深さを使う。
+   - 再開位置がブロック先頭でない場合は、開始がその位置より前にあり、対応する `END` がその位置以降にある構造命令の数を深さとする。
+   - 降ろし漏れで残った古いフレームは、この切り詰めで取り除く。ブロック先頭でない位置には、ブロック先頭での切り詰めが働かないためである。
+   - ホットブロックの履歴へ記録する位置は、ブロック先頭に限る。ブロック先頭と同じカードに入る非先頭の位置は、記録しない。
 
 #### 分岐脱出時のフレームプルーニングと TOS 復元手順（手順アクティビティ図）
-<!-- traceability: {GOTCHA-INTP-01} {GOTCHA-INTP-02} {GOTCHA-INTP-03} {CallFrame_Layout} -->
+<!-- traceability: {GOTCHA-INTP-01} {GOTCHA-INTP-02} {GOTCHA-INTP-03} {CallFrame_Layout} {GOTCHA-INTP-16} -->
 `br / br_if / br_table` 命令によるネスト脱出時に、中間フレームを破棄しつつ戻り値を TOS レジスタへ復元する手順を示す。フレームスタックが信頼できる純粋インタープリタ実行経路、または静的解析結果がないフォールバック経路で使用する。JIT トレース境界を跨ぐ場面（`{GOTCHA-INTP-06}`）では深さ探索を行わず、事前解決済みのラベルPCや `exec_trace` を直接使用する。
 
 ```mermaid
@@ -219,7 +234,7 @@ flowchart TD
 | Yield 閾値 | 次の yield までに実行を許可する命令（トレース）数 | 回数 | 32bit符号なし |
 
 #### オプコードハンドラ / トレース実行（opcode_handler / exec_trace）
-<!-- traceability: {JIT_RuntimeAPI_Fallback} {ContextPointerRegister} {EnvironmentPointer} {JIT_RegisterMapping} {ADR_TosCacheAsymmetry} {AAPCS_FastCall} -->
+<!-- traceability: {JIT_RuntimeAPI_Fallback} {ContextPointerRegister} {EnvironmentPointer} {JIT_RegisterMapping} {ADR_TosCacheAsymmetry} {AAPCS_FastCall} {GOTCHA-INTP-07} {GOTCHA-INTP-08} -->
 命令ハンドラおよびJITトレースは、継続渡しによる同一の4つの論理引数を持つ。実行コンテキスト、オペランド領域の現在位置、ローカル値領域の開始位置、スタック頂点値を渡し、物理レジスタと退避規則は対象ABIで定義する。
 
 インタープリタハンドラは次回呼び出し用の4引数とトラップ状態を結果として返す。次のPCは `ctx` に保持する。JITトレースは末尾ジャンプで継続し、結果レコードを返さない。
@@ -243,7 +258,7 @@ ARMv8-MのJITトレースでは `R4` と `R5` を次段の値のキャッシュ�
 ## 4. 動的モデル
 
 ### 4.1 アルゴリズム
-<!-- traceability: {ThreadedInterpreter} {JIT_RuntimeAPI_Fallback} {Interpreter_LazyJITSwitch} {LowLatencyJIT} {SimpleJITArchitecture} {Challenge_ApproximateYield} {Debug_Integrated} {ContextPointerRegister} {ADR_TosCacheAsymmetry} {ADR_TraceBoundaryYield} {ADR_InterruptRescheduleGeneration} -->
+<!-- traceability: {ThreadedInterpreter} {JIT_RuntimeAPI_Fallback} {Interpreter_LazyJITSwitch} {LowLatencyJIT} {SimpleJITArchitecture} {Challenge_ApproximateYield} {Debug_Integrated} {ContextPointerRegister} {ADR_TosCacheAsymmetry} {ADR_TraceBoundaryYield} {ADR_InterruptRescheduleGeneration} {GOTCHA-INTP-15} -->
 - **Threaded Dispatch with Continuation Passing Style**:
   - 命令ハンドラを連鎖させるテーブルディスパッチ方式で分岐コストを極小化する。
   - ハンドラ関数型は4つの論理引数に統一する。結果レコードで次の継続情報とトラップ状態を返す。
@@ -393,7 +408,7 @@ sequenceDiagram
 本コンポーネントは vSoC の内部ライブラリとして利用され、直接のIPCインターフェースは持たない。
 
 ### 5.3 関連コンポーネントとの連携
-<!-- traceability: {META_RecoveryStrategy} -->
+<!-- traceability: {META_RecoveryStrategy} {GOTCHA-INTP-18} {GOTCHA-INTP-20} {GOTCHA-INTP-21} -->
 | コンポーネント | 連携内容 | 参照データ構造 |
 | :--- | :--- | :--- |
 | **WASM Loader** | WASMバイナリの索引情報（関数、命令、即値）の提供 | [`runtime_loader.md`](docs/components/tier2_runtime/runtime_loader.md#モジュールビューmodule_view) |
@@ -409,12 +424,12 @@ sequenceDiagram
 - **方策**: 直接末尾呼び出しによる分岐削減と、ホットスポット検出による JIT 移行を組み合わせる。
 
 ### 6.2 メモリ制約と方策
-<!-- traceability: {ThreadedInterpreter} -->
+<!-- traceability: {ThreadedInterpreter} {GOTCHA-INTP-12} -->
 - **目標**: 64KB RAM環境で動作可能とする。
 - **方策**: `execution_context` と関数呼出し記述子を最小化し、スタック領域を固定サイズ化する。
 
 ### 6.3 安全性制約と方策
-<!-- traceability: {META_FaultIsolation} {MemoryBoundaryCheck} -->
+<!-- traceability: {META_FaultIsolation} {MemoryBoundaryCheck} {GOTCHA-INTP-10} {GOTCHA-INTP-17} -->
 - **目標**: ゲストの暴走を確実に隔離する。
 - **方策**: `sp_boundary` と `memory_size` による境界チェックを実施する。Safepointでの `interrupt-event` 保留処理により安全な割り込み処理を行う。
 

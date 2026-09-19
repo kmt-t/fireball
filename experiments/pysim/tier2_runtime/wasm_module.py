@@ -25,6 +25,8 @@ from config import (
 from jit_scoring import OpcodeBenefitTable
 from leb128 import decode_signed, decode_unsigned
 from system_containers import (
+    BitView,
+    MutableBitStorage,
     ReadOnlyFlatMapStorage,
     ReadOnlyRadixBinaryTreeStorage,
     StaticVector,
@@ -65,10 +67,6 @@ F32 = 0x7D
 F64 = 0x7C
 WASM_RAW_WORD_BYTES = 4
 WASM_VALUE_SLOT_BYTES = 8
-WASM_LOCAL_ALIGNMENT_BYTES = WASM_VALUE_SLOT_BYTES
-WASM_LOCAL_SLOT_BYTES = WASM_LOCAL_ALIGNMENT_BYTES
-WASM_LOCAL_SLOT_WORDS = WASM_LOCAL_SLOT_BYTES // WASM_RAW_WORD_BYTES
-assert WASM_LOCAL_SLOT_BYTES % WASM_RAW_WORD_BYTES == 0
 
 
 def value_slot_width(value_type: int) -> int:
@@ -76,6 +74,49 @@ def value_slot_width(value_type: int) -> int:
 
     assert value_type == I32 or value_type == I64 or value_type == F32 or value_type == F64
     return 2 if value_type == I64 or value_type == F64 else 1
+
+
+LOCAL_WIDTH_BITS = 2
+
+
+class LocalWidthMap:
+    """Raw width of every local of one function, packed at 2 bits per local.
+
+    A code `c` stands for `1 << c` raw 32-bit words: 0 is 4 bytes (i32/f32), 1 is 8 bytes
+    (i64/f64), and 2 is 16 bytes (v128).  The widest local decides `slot_words`, the stride of
+    every local slot in the frame; widths are never mixed inside a frame, so a local's address
+    is `base + index * slot_words`.  No per-local type is kept: opcodes carry the types.
+    """
+
+    __slots__ = ("_storage", "_view", "count", "slot_words")
+
+    def __init__(self, params: Sequence[int], extra: Sequence[int] = ()) -> None:
+        count = len(params) + len(extra)
+        self._storage = MutableBitStorage(count, bits=LOCAL_WIDTH_BITS)
+        self.count = count
+        slot_words = 1
+        index = 0
+        for value_type in params:
+            slot_words = self._record(index, value_type, slot_words)
+            index += 1
+        for value_type in extra:
+            slot_words = self._record(index, value_type, slot_words)
+            index += 1
+        self.slot_words = slot_words
+        self._view: BitView = self._storage.view()
+
+    def _record(self, index: int, value_type: int, slot_words: int) -> int:
+        width = value_slot_width(value_type)
+        self._storage.put(index, width.bit_length() - 1)
+        return width if width > slot_words else slot_words
+
+    def words(self, index: int) -> int:
+        """Raw words of local `index`: its own width, not the frame's slot stride."""
+        assert 0 <= index < self.count
+        return 1 << self._view.at(index)
+
+    def __len__(self) -> int:
+        return self.count
 
 
 @dataclass
@@ -101,13 +142,11 @@ class Function:
     control_map: ControlMap | None = None
     select_widths: ReadOnlyFlatMapStorage[int, int] | None = None
     drop_widths: ReadOnlyFlatMapStorage[int, int] | None = None
-    # Params + locals_extra and their raw widths are immutable load-time
-    # metadata. The execution path uses the fixed local-slot stride directly;
-    # no per-call physical-offset table is needed.
-    locals_layout_cache: StaticVector[int] | None = None
-    local_widths_cache: StaticVector[int] | None = None
+    # The width map (2 bits per local, params then locals_extra) and the slot count are
+    # immutable load-time metadata; a local's own type is not kept.  The execution path uses the
+    # map's frame slot stride (`slot_words`) directly; no per-call offset table is needed.
+    local_width_map_cache: LocalWidthMap | None = None
     local_slot_count_cache: int | None = None
-    local_i32_only_cache: bool | None = None
     param_packed_slot_count_cache: int | None = None
     param_count_cache: int | None = None
     result_arity_cache: int | None = None
@@ -245,24 +284,16 @@ class Module:
         self.tables = StaticVector(capacity=table_count + import_count)
 
     def prepare_function_layouts(self) -> None:
-        """Precompute fixed-width local slots and parameter widths at module load."""
+        """Precompute each frame's local-slot width and the parameter widths at module load."""
 
         for function in self.functions:
             assert 0 <= function.type_index < len(self.types)
             function_type = self.type_at(function.type_index)
             local_count = len(function_type.params) + len(function.locals_extra)
             assert local_count <= FB_CONF_MAX_LOCALS
-            local_layout_storage: StaticVector[int] = StaticVector(capacity=local_count)
-            assert local_layout_storage.extend(function_type.params)
-            assert local_layout_storage.extend(function.locals_extra)
-            local_widths: StaticVector[int] = StaticVector(capacity=local_count)
-            for value_type in local_layout_storage:
-                local_widths.append(value_slot_width(value_type))
-            local_slot_count = len(local_layout_storage) * WASM_LOCAL_SLOT_WORDS
-            function.locals_layout_cache = local_layout_storage
-            function.local_widths_cache = local_widths
-            function.local_slot_count_cache = local_slot_count
-            function.local_i32_only_cache = all(width == 1 for width in local_widths)
+            width_map = LocalWidthMap(function_type.params, function.locals_extra)
+            function.local_width_map_cache = width_map
+            function.local_slot_count_cache = local_count * width_map.slot_words
             function.param_count_cache = len(function_type.params)
             function.param_packed_slot_count_cache = sum(
                 value_slot_width(value_type) for value_type in function_type.params
@@ -495,19 +526,22 @@ class Module:
             self.source[imp.name_offset : imp.name_offset + imp.name_size].tobytes().decode("utf-8")
         )
 
-    def locals_layout(self, func_index: int) -> StaticVector[int]:
+    def local_types(self, func_index: int) -> StaticVector[int]:
         """
         Params followed by declared locals -- WASM addresses both with a
                 single local index space starting at 0. Imports have no body, so
-                their "layout" is just their parameters.
+                their locals are just their parameters.  The vector is built for the
+                validator and dropped afterwards: execution never needs a local's type.
         """
 
         ft = self.func_type(func_index)
         if self.is_import(func_index):
             return ft.params
         local = self.functions[func_index - len(self.imports)]
-        assert local.locals_layout_cache is not None
-        return local.locals_layout_cache
+        types: StaticVector[int] = StaticVector(capacity=len(ft.params) + len(local.locals_extra))
+        assert types.extend(ft.params)
+        assert types.extend(local.locals_extra)
+        return types
 
     def build_basic_block_index(self) -> None:
         """Build the immutable block and instruction indexes during loading."""

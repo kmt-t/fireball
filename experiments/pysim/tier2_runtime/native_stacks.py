@@ -16,7 +16,7 @@ from interop_abi import (
     ControlStackNative,
     NativeValueStack,
 )
-from wasm_module import WASM_LOCAL_SLOT_WORDS
+from wasm_module import LocalWidthMap
 
 
 class ControlFrameKind(IntEnum):
@@ -200,28 +200,21 @@ class ControlFrameWindow:
 class LocalStackWindow:
     """Typed access methods over one frame's raw Native local slots."""
 
-    __slots__ = ("_base", "_local_count", "_slot_count", "_storage", "_widths")
+    __slots__ = ("_base", "_slot_count", "_storage", "_widths")
 
-    def __init__(
-        self,
-        storage: NativeValueStack,
-        base: int,
-        widths: tuple[int, ...],
-        slot_count: int,
-    ):
-        assert all(width == 1 or width == 2 for width in widths)
-        assert slot_count == len(widths) * WASM_LOCAL_SLOT_WORDS
+    def __init__(self, storage: NativeValueStack, base: int, widths: LocalWidthMap):
+        """`widths` holds each local's raw width and the frame's slot stride (`slot_words`)."""
+        assert widths.slot_words == 1 or widths.slot_words == 2
         self._storage = storage
         self._base = base
-        self._local_count = len(widths)
         self._widths = widths
-        self._slot_count = slot_count
+        self._slot_count = len(widths) * widths.slot_words
 
     def __len__(self) -> int:
-        return self._local_count
+        return len(self._widths)
 
     def _local_index(self, index: int) -> int:
-        local_count = self._local_count
+        local_count = len(self._widths)
         normalized = index if index >= 0 else local_count + index
         if not 0 <= normalized < local_count:
             assert False, "local stack index out of range"
@@ -229,7 +222,7 @@ class LocalStackWindow:
 
     def _slot_index(self, index: int) -> int:
         normalized = self._local_index(index)
-        return self._base + normalized * WASM_LOCAL_SLOT_WORDS
+        return self._base + normalized * self._widths.slot_words
 
     def raw_slot(self, index: int) -> int:
         """Return the absolute raw-slot position for a logical local."""
@@ -240,8 +233,8 @@ class LocalStackWindow:
         """Return one logical local's absolute slot and raw width together."""
 
         normalized = self._local_index(index)
-        start = normalized * WASM_LOCAL_SLOT_WORDS
-        width = self._widths[normalized]
+        start = normalized * self._widths.slot_words
+        width = self._widths.words(normalized)
         assert start + width <= self._slot_count
         assert width == 1 or width == 2
         return self._base + start, width
@@ -250,8 +243,8 @@ class LocalStackWindow:
         """Return the raw slot count without interpreting the value."""
 
         normalized = self._local_index(index)
-        width = self._widths[normalized]
-        assert normalized * WASM_LOCAL_SLOT_WORDS + width <= self._slot_count
+        width = self._widths.words(normalized)
+        assert normalized * self._widths.slot_words + width <= self._slot_count
         assert width == 1 or width == 2
         return width
 

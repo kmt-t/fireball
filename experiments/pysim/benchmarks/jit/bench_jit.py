@@ -32,6 +32,7 @@ from execution_context import WASMContext
 from interpreter import Interpreter, InterpreterBindings
 from runtime_engine import HotspotBitmap, RuntimeEngine
 from system_containers import ReadOnlyFlatMapView
+from wasm_module import I32, LocalWidthMap
 from wasm_reader import parse
 from x64_jit import TraceCompiler
 
@@ -59,7 +60,7 @@ class JITCompilerBenchmark:
                 next_pc,
                 loops_to,
                 byte_span,
-                (1,),
+                LocalWidthMap((I32,)),
             )
         t1 = time.perf_counter()
         results["jit_compile_traces_per_sec"] = compile_count / (t1 - t0)
@@ -154,7 +155,7 @@ class JITCompilerBenchmark:
             None,
             None,
             4,
-            (1,),
+            LocalWidthMap((I32,)),
             tail_context_helper=True,
             helper_target_addr=helper_addr,
         )

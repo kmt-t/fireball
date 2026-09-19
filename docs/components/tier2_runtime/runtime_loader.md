@@ -17,7 +17,7 @@ WASMローダは、ROM上のWASM32バイナリをパースし、実行環境が�
 ## 3. 静的モデル
 
 ### 3.1 データ構造
-<!-- traceability: {MultiModule_Support} {META_AccessDictionary} -->
+<!-- traceability: {MultiModule_Support} {META_AccessDictionary} {GOTCHA-LOAD-04} -->
 - **`WasmLoader`**: WASMバイナリのパース、検証、およびロード済みモジュールの管理を一括して行う主要クラス。
 - **`module_view`**: ROM上のバイナリデータへの参照と、構築された索引群を保持する読み取り専用の構造体。
 - **`module_registry`**: ロード済みの `module_view` を名前で管理するための内部リスト。
@@ -128,7 +128,7 @@ ROM上の読み取り専用バイト列ビューをラップし、カレント�
 ## 4. 動的モデル
 
 ### 4.1 アルゴリズム
-<!-- traceability: {ZeroCopyIndexing} {META_AccessDictionary} {META_BumpAllocator} -->
+<!-- traceability: {ZeroCopyIndexing} {META_AccessDictionary} {META_BumpAllocator} {GOTCHA-LOAD-03} -->
 - **バイナリパース & トランザクション保護 (`GOTCHA-LOAD-02`, )**:
   ROM上のデータを `BinaryStream` でラップし、`read_leb128`（最大 5/10 バイトガード）等を用いて境界チェックを行いながら順次読み取る。パース開始前に `bump_allocator::save()` でアロケータ位置を記憶し、パースや検証が失敗した場合は `bump_allocator::restore()` により確保途中の RAM 領域を完全にロールバックする。
   **設計理由と不変条件**: WASM バイナリの検証エラー（セクション長不整合、未定義型参照、リソース上限超過等）が発生した際、途中まで確保した内部メタデータやインデックス領域が残留すると、静的バンプアロケータの物理メモリが永久に枯渇・リークする。そのため、検証失敗時は例外なくアロケータ位置を開始前のスナップショットへ完全に巻き戻し、不正バイナリによるリソース断片化をゼロにする。

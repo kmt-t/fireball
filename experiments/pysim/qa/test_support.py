@@ -18,7 +18,7 @@ from system_containers import (
     build_radix_table,
     fold_mix32,
 )
-from wasm_module import Function, FuncType, Module, WasmOperand
+from wasm_module import Function, FuncType, LocalWidthMap, Module, WasmOperand
 from x64_jit import TraceCompiler
 
 
@@ -40,7 +40,7 @@ class PcOnlyCompiler:
         next_pc: int | None,
         loops_to: int | None,
         byte_span: int,
-        local_widths: Sequence[int],
+        local_types: Sequence[int],
     ) -> JITTrace | None:
         return self._fn(pc)
 
@@ -49,9 +49,9 @@ def compile_test_block(
     compiler: TraceCompiler,
     code: bytes,
     block: BasicBlock,
-    local_widths: Sequence[int],
+    local_types: Sequence[int],
 ) -> JITTrace | None:
-    """Test-only adapter that prepares the production compiler's full inputs."""
+    """Test-only adapter: `local_types` are the locals' value types, params first."""
 
     return compiler.compile_trace(
         block.head_pc,
@@ -59,7 +59,7 @@ def compile_test_block(
         block.next_pc,
         block.loops_to,
         block.byte_span,
-        local_widths,
+        LocalWidthMap(local_types),
     )
 
 
@@ -70,9 +70,14 @@ def compile_module_block(
 
     function_index = block.head_pc >> 16
     function = module.functions[function_index - len(module.imports)]
-    assert function.local_widths_cache is not None
-    return compile_test_block(
-        compiler, module.code_for(function_index), block, function.local_widths_cache
+    assert function.local_width_map_cache is not None
+    return compiler.compile_trace(
+        block.head_pc,
+        iter_block_ops(module.code_for(function_index), block.head_pc & 0xFFFF, block.byte_span),
+        block.next_pc,
+        block.loops_to,
+        block.byte_span,
+        function.local_width_map_cache,
     )
 
 

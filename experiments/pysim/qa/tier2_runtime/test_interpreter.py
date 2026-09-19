@@ -90,8 +90,8 @@ def test_intp_03_control_frame_enum_and_opcode_attribute_table():
     assert not opcode_has_attribute(I32_ADD, OpcodeAttribute.BASIC_BLOCK_BOUNDARY)
 
 
-def test_intp_04_locals_use_fixed_eight_byte_slots():
-    """Each logical local uses a fixed 8-byte slot; wide values stay aligned."""
+def test_intp_04_wide_frame_uses_eight_byte_slots():
+    """A frame holding an i64/f64 local gives every local an 8-byte slot; wide values stay aligned."""
     function = Function(
         type_index=0,
         locals_extra=(I32, I64),
@@ -103,7 +103,10 @@ def test_intp_04_locals_use_fixed_eight_byte_slots():
     )
 
     assert function.param_packed_slot_count_cache == 5
-    assert tuple(function.local_widths_cache) == (1, 2, 2, 1, 2)
+    widths = function.local_width_map_cache
+    assert widths is not None
+    assert tuple(widths.words(i) for i in range(len(widths))) == (1, 2, 2, 1, 2)
+    assert widths.slot_words == 2
     assert function.local_slot_count_cache == 10
     assert Interpreter(module).call(0, [7, 42, 3.5]) == [42]
 
@@ -588,9 +591,11 @@ def test_intp_70_to_72_direct_bytecode_execution():
     assert frame.control_map is not None
     assert frame.control_map is module.functions[0].control_map
     assert context.call_frame_stack[-1] is frame
-    assert context.local_offset == 4
+    # Two i32 locals: the frame uses 4-byte slots, so it occupies two raw words.
+    assert frame.local_widths.slot_words == 1
+    assert context.local_offset == 2
     assert context.native_context.local_offset == context.local_offset
-    assert len(context.local_stack) == 4
+    assert len(context.local_stack) == 2
     context.end_call_frame(frame)
     assert context.local_offset == 0
     assert context.native_context.local_offset == 0
@@ -834,6 +839,75 @@ def test_wasm_mvp_host_function_arguments_keep_declared_types():
     assert received == [4294967297, 1.5, -2.25, 4]
 
 
+def test_intp_73_slot_width_follows_the_widest_local_in_each_frame():
+    """TEST-INTP-73: 4-byte slots for all-32-bit frames, 8-byte slots once any local is 64-bit."""
+    from wasm_module import F32, LocalWidthMap
+
+    assert LocalWidthMap(()).slot_words == 1
+    assert LocalWidthMap((I32, F32, I32)).slot_words == 1
+    assert LocalWidthMap((I32, I64), (I32,)).slot_words == 2
+    assert LocalWidthMap((F64,)).slot_words == 2
+    mixed = LocalWidthMap((I32, I64), (F32, F64))
+    assert tuple(mixed.words(i) for i in range(4)) == (1, 2, 1, 2)
+
+    def only(func_type: FuncType, extra: tuple[int, ...]) -> Function:
+        return Function(type_index=0, locals_extra=extra, code=bytes((0x0B,)))
+
+    cases = (
+        (FuncType(params=(I32, I32), results=()), (I32,), 1, 3),
+        (FuncType(params=(F32,), results=()), (), 1, 1),
+        (FuncType(params=(I32,), results=()), (F64,), 2, 4),
+        (FuncType(params=(I64, I32), results=()), (), 2, 4),
+        (FuncType(params=(), results=()), (), 1, 0),
+    )
+    for func_type, extra, expected_words, expected_slots in cases:
+        function = only(func_type, extra)
+        Module(types=(func_type,), functions=(function,))
+        assert function.local_width_map_cache is not None
+        assert function.local_width_map_cache.slot_words == expected_words
+        assert function.local_slot_count_cache == expected_slots
+        widths = function.local_width_map_cache
+        assert all(widths.words(i) <= expected_words for i in range(len(widths)))
+
+    narrow = Function(type_index=0, locals_extra=(I32,), code=bytes((0x20, 0, 0x20, 1, 0x6A, 0x0B)))
+    narrow_module = Module(
+        types=(FuncType(params=(I32, I32), results=(I32,)),), functions=(narrow,)
+    )
+    assert Interpreter(narrow_module).call(0, [30, 12]) == [42]
+    wide = Function(type_index=0, locals_extra=(I64,), code=bytes((0x20, 1, 0x0B)))
+    wide_module = Module(types=(FuncType(params=(I32, I64), results=(I64,)),), functions=(wide,))
+    assert Interpreter(wide_module).call(0, [1, 5_000_000_000]) == [5_000_000_000]
+
+
+def test_intp_74_all_32bit_frames_use_half_the_local_stack():
+    """TEST-INTP-74: the same recursion needs half the local stack in an all-32-bit frame."""
+    locals_i32 = " ".join(f"(local $v{i} i32)" for i in range(15))
+
+    def recursion(extra: str) -> bytes:
+        return wat_to_wasm(
+            f"""
+(module
+  (func $rec (param $n i32) (result i32) {locals_i32} {extra}
+    (if (result i32) (i32.eqz (local.get $n))
+      (then (i32.const 0))
+      (else (i32.add (i32.const 1) (call $rec (i32.sub (local.get $n) (i32.const 1)))))))
+  (export "rec" (func $rec)))"""
+        )
+
+    local_stack_words = 128  # NATIVE_VALUE_STACK_CAPACITY
+    narrow_module = parse(recursion(""))
+    assert narrow_module.functions[0].local_slot_count_cache == 16
+    # Sixteen 4-byte slots per frame: seven frames use 112 of the 128 raw words.
+    assert 7 * 16 <= local_stack_words
+    assert Interpreter(narrow_module).call(0, [6]) == [6]
+    wide_module = parse(recursion("(local $w f64)"))
+    assert wide_module.functions[0].local_slot_count_cache == 34
+    # Seventeen 8-byte slots per frame: the same depth needs 238 raw words and must stop.
+    assert 7 * 34 > local_stack_words
+    with expect_assertion():
+        Interpreter(wide_module).call(0, [6])
+
+
 # ===========================================================================
 # Test Runner
 # ===========================================================================
@@ -852,7 +926,7 @@ if __name__ == "__main__":
 
 if __name__ == "__main__":
     test_intp_01_02_cps_handlers_and_dispatch_table()
-    test_intp_04_locals_use_fixed_eight_byte_slots()
+    test_intp_04_wide_frame_uses_eight_byte_slots()
     test_wasm_01_to_06_unsupported_features_rejected()
     test_wasm_10_to_15_control_flow_and_calls()
     test_wasm_20_21_drop_and_select()

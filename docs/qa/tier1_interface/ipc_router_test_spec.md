@@ -30,6 +30,7 @@ URIベースのサービス検索（3段パイプライン）、ロールベー�
 | TEST-IPCR-17 | 受信側のガード付き外部選択（select）: 複数エッジからの受信 | `CORE_SERVICE`は`RUNTIME`と`DEBUGGER`の双方からALLOW（RBACマトリックス） | 受信側を先にブロックさせた後、`DEBUGGER`から送信 | `receive()` を呼ぶだけで `DEBUGGER` からのメッセージを受信できる（送信元ロールやURIの事前指定不要） | 「Rendezvous」, 「receive_message」, ipc_router_concept.py `test_receive_selects_whichever_allowed_sender_is_ready`, [`scheduler.py`](experiments/pysim/tier1_core/scheduler.py) `channel_select_recv` |
 | TEST-IPCR-18 | select解決後の敗退エッジの解除（1チャネル1待機者の維持） | TEST-IPCR-17の状態で`DEBUGGER`エッジが成立した直後 | 成立しなかった`RUNTIME`→`CORE_SERVICE`エッジの状態を確認し、続けて新規の受信側・送信側でそのエッジを使用する | 敗退エッジの待機者登録が解除されており（`waiter_dir == NONE`）、後続の`RUNTIME`→`CORE_SERVICE`ランデブーが独立して正常に成立する（stale waiterとして残らない） | [`scheduler.py`](experiments/pysim/tier1_core/scheduler.py) `channel_send`のSelectGroup解除処理, [`test_ipc_router.py`](experiments/pysim/qa/tier1_interface/test_ipc_router.py) `test_ipc_04_select_recv_picks_first_ready_sender_and_clears_group` |
 | TEST-IPCR-19 | メッセージ配列データ所有権とビュー提供 | エントリ配列構築 | メッセージ構築 | IPCメッセージはキー・バリュー対のソート配列を所有し、非所有ビューでペイロードを提供する（バルク転送時は共有メモリブロックのRAII所有権をカプセル化） | 「IPCメッセージ」, `test_ipc_05_message_storage_ownership_separation` |
+| TEST-IPCR-20 | ロガー用HALロールの登録とRBAC | `HAL_LOGGER`ロールを追加した10x10行列 | `fireball://hal/logger/0`を検索し、行列の形状と`HAL_LOGGER`の行・列を確認する | URIは`HAL_LOGGER`ロールへ解決される。行列は10x10であり、`HAL_LOGGER`の行は全DENYである。`RUNTIME`・`CORE_SERVICE`・`DEBUGGER`から`HAL_LOGGER`への送信はALLOWである | `{RoleBasedAccessControl}`, `{IPCRegistry}` |
 
 ### 実装の勘所・不変条件（Gotchas & Implementation Invariants）
 

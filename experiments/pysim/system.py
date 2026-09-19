@@ -38,7 +38,7 @@ from ipc_router import (
 if TYPE_CHECKING:
     from debugger import DebuggerManager
     from gdb_server import GDBServer
-    from hal_dispatch import HalDriver, HalTask
+    from hal_dispatch import HalDriver, HalTask, StreamSink
     from interpreter import BasicBlock, WASMContext
     from wasi import WasiHostContext
 
@@ -700,6 +700,17 @@ class System:
         task_id, task = driver.start(self.ipc, self.scheduler, desc.role)
         assert self._hal_task_storage.insert(uri_key, task)
         self._hal_task_index = ReadOnlyFlatMapStorage.create(self._hal_task_storage.view().entries)
+        return task_id
+
+    def start_logger_driver(self, driver: HalDriver, sink: StreamSink) -> int:
+        """Starts the logger HAL device task and routes buffered log output to `sink`.
+
+        The scheduler, IPC router, and WASI logger share one Logger, so a single
+        rebinding moves every component's log output off the stdout transport.
+        """
+        assert driver.uri == self.wasi_hal_bindings.logger_uri, "not the logger HAL URI"
+        task_id = self.start_hal_driver(driver)
+        self.logger.transport = sink
         return task_id
 
     def hal_task_for(self, uri: str) -> HalTask | None:

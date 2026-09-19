@@ -34,6 +34,8 @@ for _p in [
 
 from helpers import expect_assertion, make_test_ipc_message
 from ipc_router import (
+    FB_CONF_ROUTER_ROLE_MATRIX,
+    FB_URI_HAL_LOGGER,
     DataType,
     IPCMessage,
     IPCRouter,
@@ -398,6 +400,35 @@ def test_ipc_07_message_in_shm_and_payload_shm_transfer():
         sysv.shutdown()
 
 
+def test_ipc_08_logger_hal_role_registration_and_rbac():
+    """TEST-IPCR-20: the logger HAL URI resolves to its own leaf role in a 10x10 matrix."""
+    sched = Scheduler()
+    router = _make_router(sched)
+    entry = router.find_service(FB_URI_HAL_LOGGER)
+    assert entry is not None
+    assert entry.role == Role.HAL_LOGGER
+
+    role_count = len(Role)
+    assert role_count == 10
+    assert len(FB_CONF_ROUTER_ROLE_MATRIX) == role_count
+    assert all(len(row) == role_count for row in FB_CONF_ROUTER_ROLE_MATRIX)
+    assert not any(FB_CONF_ROUTER_ROLE_MATRIX[Role.HAL_LOGGER]), "HAL roles are leaves"
+    for sender in (Role.RUNTIME, Role.CORE_SERVICE, Role.DEBUGGER):
+        assert FB_CONF_ROUTER_ROLE_MATRIX[sender][Role.HAL_LOGGER], sender.name
+    for sender in (Role.HAL_UART, Role.HAL_STDOUT, Role.HAL_LOGGER):
+        assert not FB_CONF_ROUTER_ROLE_MATRIX[sender][Role.HAL_LOGGER], sender.name
+
+    runtime_id = sched.spawn("runtime", role=Role.RUNTIME)
+    sched.current_task = sched.get_task(runtime_id)
+    status, channel = router.lookup(FB_URI_HAL_LOGGER)
+    assert status == IPCStatus.COMPLETED and channel is not None
+
+    hal_id = sched.spawn("hal_sender", role=Role.HAL_UART)
+    sched.current_task = sched.get_task(hal_id)
+    status, channel = router.lookup(FB_URI_HAL_LOGGER)
+    assert status == IPCStatus.ERR_PERMISSION_DENIED and channel is None
+
+
 # ===========================================================================
 # 9. fireball_call Full Syscall Surface (runtime_syscall_test_spec.md)
 # ===========================================================================
@@ -411,4 +442,5 @@ if __name__ == "__main__":
     test_ipc_05_message_storage_ownership_and_access_check()
     test_ipc_06_router_create_channel_authorization()
     test_ipc_07_message_in_shm_and_payload_shm_transfer()
-    print("[PASS] All 7 IPC Router & Shared Block Transfer tests passed.")
+    test_ipc_08_logger_hal_role_registration_and_rbac()
+    print("[PASS] All 8 IPC Router & Shared Block Transfer tests passed.")

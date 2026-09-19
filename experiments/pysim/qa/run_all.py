@@ -105,6 +105,11 @@ TEST_SUITES = [
         TEST_DIR / "tier3_jit" / "test_jit_runtime.py",
     ),
     ("Tier 3 JIT", "x64 Copy-and-Patch JIT", TEST_DIR / "tier3_jit" / "test_x64_jit.py"),
+    (
+        "Tier 3 JIT",
+        "JIT Differential (wasmtime / Tier 2 / Tier 3)",
+        TEST_DIR / "tier3_jit" / "test_jit_differential.py",
+    ),
     # --- Cross-Cutting ---
     (
         "Cross-Cutting",
@@ -115,6 +120,11 @@ TEST_SUITES = [
         "Cross-Cutting",
         "Implementation Gotchas & Invariants",
         TEST_DIR / "cross_cutting" / "test_gotchas.py",
+    ),
+    (
+        "Cross-Cutting",
+        "Entry Point (main.py)",
+        TEST_DIR / "cross_cutting" / "test_entrypoint.py",
     ),
 ]
 

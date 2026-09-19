@@ -54,7 +54,7 @@ from helpers import make_interpreter as Interpreter
 from helpers import wat_to_wasm
 from runtime_engine import BasicBlock, RuntimeEngine
 from test_support import compile_module_block, compile_test_block
-from wasm_module import WASM_LOCAL_SLOT_WORDS
+from wasm_module import I32, I64, LocalWidthMap
 from wasm_opcodes import (
     F32_ADD,
     F32_CONST,
@@ -71,11 +71,22 @@ from wasm_opcodes import (
     I32_CONST,
     I32_DIV_S,
     I32_DIV_U,
+    I32_EQ,
+    I32_GE_S,
+    I32_GT_S,
+    I32_LE_U,
+    I32_LT_S,
+    I32_LT_U,
     I32_MUL,
+    I32_NE,
+    I32_OR,
     I32_REM_S,
     I32_REM_U,
     I32_SHL,
+    I32_SHR_S,
+    I32_SHR_U,
     I32_SUB,
+    I32_XOR,
     I64_ADD,
     I64_CONST,
     I64_MUL,
@@ -167,7 +178,7 @@ def test_complex_helpers_use_shared_value_slots_for_wide_values():
             3,
             None,
             3,
-            (),
+            LocalWidthMap(()),
             helper_target_addr=addresses[helper_indices[op]],
         )
         assert trace is not None
@@ -184,7 +195,7 @@ def test_complex_helpers_use_shared_value_slots_for_wide_values():
             3,
             None,
             3,
-            (),
+            LocalWidthMap(()),
             helper_target_addr=addresses[helper_indices[op]],
         )
         assert trace is not None
@@ -202,7 +213,7 @@ def test_complex_helpers_use_shared_value_slots_for_wide_values():
             3,
             None,
             3,
-            (),
+            LocalWidthMap(()),
             helper_target_addr=addresses[helper_indices[op]],
         )
         assert trace is not None
@@ -254,7 +265,7 @@ def test_trace_compiler_cps_4arg_and_pic():
         frame_depth=frame_depth,
         byte_span=byte_span,
     )
-    trace = compile_test_block(compiler, code, block, (1, 1))
+    trace = compile_test_block(compiler, code, block, (I32, I32))
     # 1. Header and common-area offsets
     assert trace.header.head_wasm_pc == head_pc
     assert trace.size_bytes >= 48
@@ -270,7 +281,8 @@ def test_trace_compiler_cps_4arg_and_pic():
         0,
     )
     assert res is None
-    assert locals_arr[WASM_LOCAL_SLOT_WORDS] == 40
+    # Two i32 locals give a 4-byte slot stride, so local 1 is raw word 1.
+    assert locals_arr[1] == 40
     # 3. The installed entry is a header-selected jump into the common prefix.
     assert trace.code_offset == 2048
     assert trace._exec_buf.read(0, 22) == trace._exec_buf.read(0, 22)
@@ -327,7 +339,7 @@ def test_x64_division_and_remainder_use_helper_boundary() -> None:
             3,
             None,
             3,
-            (),
+            LocalWidthMap(()),
             helper_target_addr=ctypes.cast(helper, ctypes.c_void_p).value or 0,
         )
         assert trace is not None
@@ -367,7 +379,7 @@ def test_trace_compiler_bitwise_and_shifts_pic():
         frame_depth=frame_depth,
         byte_span=byte_span,
     )
-    trace = compile_test_block(compiler, code, block, (1, 1, 1, 1))
+    trace = compile_test_block(compiler, code, block, (I32, I32, I32, I32))
     ctx = WASMContext()
     ctx.locals = (0x0F, 0x07, 0, 0)
     trace.invoke(ctx)
@@ -405,7 +417,7 @@ def test_trace_header_helper_tail_jump_uses_per_trace_pointer():
         next_pc,
         loops_to,
         byte_span,
-        (1,),
+        LocalWidthMap((I32,)),
         tail_context_helper=True,
         helper_target_addr=helper_addr,
     )
@@ -552,6 +564,157 @@ def test_jit_chaining_uses_loader_resolved_successors():
     engine2.bitmap.mark_compiled(block_b2.head_pc)
 
     assert trace_a2.chain_next == block_b2.head_pc
+
+
+def test_trace_local_addressing_follows_frame_slot_width():
+    """TEST-JITC-59: local displacement is index * slot width, set by the frame's widest local."""
+    code = bytes([LOCAL_GET, 0, LOCAL_SET, 2])
+    head_pc, next_pc, loops_to, frame_depth, byte_span = extract_basic_blocks(code)[0]
+    block = BasicBlock(
+        head_pc=head_pc,
+        next_pc=next_pc,
+        loops_to=loops_to,
+        frame_depth=frame_depth,
+        byte_span=byte_span,
+    )
+    for types, slot_words in (((I32, I32, I32), 1), ((I32, I64, I32), 2)):
+        trace = compile_test_block(TraceCompiler(), code, block, types)
+        assert trace is not None
+        locals_arr = (ctypes.c_uint32 * (3 * slot_words))()
+        locals_arr[0] = 7
+        trace.fn(
+            ctypes.c_void_p(0), ctypes.c_void_p(0), ctypes.cast(locals_arr, ctypes.c_void_p), 0
+        )
+        assert locals_arr[2 * slot_words] == 7, f"types {types}"
+        assert sum(locals_arr) == 14, "no other slot may change"
+
+
+# ---------------------------------------------------------------------------
+# Register cache: values pushed beyond TOS/NOS spill to the shared operand stack
+# ---------------------------------------------------------------------------
+
+_M32 = 0xFFFFFFFF
+_SENTINEL = 0xDEADBEEF
+
+
+def _s32(value: int) -> int:
+    value &= _M32
+    return value - (1 << 32) if value & 0x80000000 else value
+
+
+# op -> reference semantics over unsigned 32-bit operands (left, right).
+_SPILL_OPS = {
+    I32_ADD: lambda a, b: (a + b) & _M32,
+    I32_SUB: lambda a, b: (a - b) & _M32,
+    I32_MUL: lambda a, b: (a * b) & _M32,
+    I32_AND: lambda a, b: a & b,
+    I32_OR: lambda a, b: a | b,
+    I32_XOR: lambda a, b: a ^ b,
+    I32_SHL: lambda a, b: (a << (b & 31)) & _M32,
+    I32_SHR_U: lambda a, b: a >> (b & 31),
+    I32_SHR_S: lambda a, b: (_s32(a) >> (b & 31)) & _M32,
+    I32_EQ: lambda a, b: int(a == b),
+    I32_NE: lambda a, b: int(a != b),
+    I32_LT_S: lambda a, b: int(_s32(a) < _s32(b)),
+    I32_LT_U: lambda a, b: int(a < b),
+    I32_GT_S: lambda a, b: int(_s32(a) > _s32(b)),
+    I32_LE_U: lambda a, b: int(a <= b),
+    I32_GE_S: lambda a, b: int(_s32(a) >= _s32(b)),
+}
+
+
+def _random_rpn(seed: int, max_depth: int) -> tuple[list[tuple[int, int | None]], list[int]]:
+    """A straight-line i32 expression that peaks at `max_depth` values and ends with one."""
+    import random
+
+    rng = random.Random(seed)
+    locals_values = [rng.randrange(1 << 32) for _ in range(4)]
+    program: list[tuple[int, int | None]] = []
+    depth = 0
+    peak = 0
+    while peak < max_depth or depth > 1:
+        push = depth < 2 or (depth < max_depth and rng.random() < 0.6 and peak < max_depth)
+        if push:
+            if rng.random() < 0.5:
+                program.append((I32_CONST, rng.randrange(-(1 << 31), 1 << 31)))
+            else:
+                program.append((LOCAL_GET, rng.randrange(4)))
+            depth += 1
+            peak = max(peak, depth)
+        else:
+            program.append((rng.choice(list(_SPILL_OPS)), None))
+            depth -= 1
+    return program, locals_values
+
+
+def _reference(program, locals_values) -> tuple[int, int]:
+    """Evaluate the program; return (result, peak number of values beyond the top two)."""
+    stack: list[int] = []
+    peak_spill = 0
+    for op, arg in program:
+        if op == I32_CONST:
+            stack.append(int(arg) & _M32)
+        elif op == LOCAL_GET:
+            stack.append(locals_values[int(arg)])
+        else:
+            right, left = stack.pop(), stack.pop()
+            stack.append(_SPILL_OPS[op](left, right))
+        peak_spill = max(peak_spill, len(stack) - 2)
+    assert len(stack) == 1
+    return stack[0], peak_spill
+
+
+def _run_spill_trace(program, locals_values, sp_index: int, total: int = 96):
+    """Run the compiled program at `sp_index` in a sentinel-filled operand stack buffer."""
+    trace = TraceCompiler().compile_trace(
+        0, program, None, None, len(program) * 3, LocalWidthMap((I32,) * 4)
+    )
+    assert trace is not None, "a straight-line i32 expression must compile"
+    words = (ctypes.c_uint32 * total)(*([_SENTINEL] * total))
+    locals_arr = (ctypes.c_uint32 * 4)(*locals_values)
+    trace.fn(
+        ctypes.c_void_p(0),
+        ctypes.c_void_p(ctypes.addressof(words) + 4 * sp_index),
+        ctypes.cast(locals_arr, ctypes.c_void_p),
+        0,
+    )
+    return trace, words
+
+
+def test_register_cache_spill_matches_reference_and_stays_in_bounds():
+    """TEST-JITC-60: spilled NOS/NNOS values keep their order and never leave the trace's words."""
+    checked_deep = 0
+    for seed in range(240):
+        max_depth = 3 + seed % 9
+        program, locals_values = _random_rpn(seed, max_depth)
+        expected, peak_spill = _reference(program, locals_values)
+        sp_index = 3 + seed % 7
+        trace, words = _run_spill_trace(program, locals_values, sp_index)
+        assert words[sp_index] == expected, f"seed {seed}: {words[sp_index]:#x} != {expected:#x}"
+        assert trace.stack_words == max(peak_spill, 1), f"seed {seed}: stack_words"
+        touched = [i for i in range(len(words)) if words[i] != _SENTINEL]
+        assert all(sp_index <= i < sp_index + trace.stack_words for i in touched), (
+            f"seed {seed}: wrote outside [{sp_index}, {sp_index + trace.stack_words}): {touched}"
+        )
+        checked_deep += peak_spill >= 3
+    assert checked_deep > 40, "too few programs spilled three or more values"
+
+
+def test_register_cache_deep_non_commutative_chain_keeps_operand_order():
+    """TEST-JITC-61: a right-nested chain reloads each spilled operand as the left operand."""
+    depth = 11
+    program = [(I32_CONST, 100 + 7 * i) for i in range(depth)] + [(I32_SUB, None)] * (depth - 1)
+    expected, peak_spill = _reference(program, [0, 0, 0, 0])
+    assert peak_spill == depth - 2
+    # c0 - (c1 - (c2 - ... - c10)): the alternating sum of the constants.
+    assert expected == sum((-1) ** i * (100 + 7 * i) for i in range(depth)) & _M32
+    trace, words = _run_spill_trace(program, [0, 0, 0, 0], sp_index=5)
+    assert words[5] == expected
+    assert trace.stack_words == depth - 2
+    shifts = [(I32_CONST, 1), (I32_CONST, 3), (I32_CONST, 2), (I32_SHL, None), (I32_SHL, None)]
+    reference, _ = _reference(shifts, [0, 0, 0, 0])
+    _, shift_words = _run_spill_trace(shifts, [0, 0, 0, 0], sp_index=2)
+    assert shift_words[2] == reference == 1 << ((3 << 2) & 31)
 
 
 ALL_TESTS = sorted(

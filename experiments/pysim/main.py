@@ -27,12 +27,11 @@ for _p in (
     _sp = str(_p)
     sys.path.insert(0, _sp)
 
-from hal_dispatch import HalBufferTrap
 from interpreter import Interpreter, InterpreterBindings
 from logger import LogLevel
 from recovery import RecoveryManager, RecoveryStrategy, Result
 from runtime_engine import RuntimeEngine
-from system import ShmSlice, System
+from system import System
 from system_containers import StaticVector
 from wasm_reader import parse
 from x64_jit import TraceCompiler
@@ -56,56 +55,53 @@ def task_console_writer(sysv: System):
     """
     A guest running wasi:cli/stdout's `print` with a string built at
         runtime -- a value the build-time dictionary could never have known
-        about. Proves the console raw-byte output path actually carries it.
+        about. Proves the raw-byte stdout path actually carries it.
     """
 
     computed = f"guest computed pi ~= {355 / 113:.6f} at runtime"
-    n = sysv.console.write((computed + "\n").encode("utf-8"))
+    n = sysv.transport.write(memoryview((computed + "\n").encode("utf-8")))
     print(f"  [console-writer] wrote {n} raw bytes the dictionary never registered")
     yield
 
 
 def task_bus_owner(sysv: System):
     """
-    Acquires a real SHM buffer, does a zero-copy bus transfer within its
-        own ownership, and then tries two things that must fail: handing a
-        bounds-violating slice to itself, and touching another task's handle.
+    Binds the HAL buffer pool as the runtime, moves bytes between two of its
+        fixed slots, and checks that a slice past the slot bound is refused.
     """
 
-    master = sysv.bus_master()
+    sysv.pool.bind_runtime()
     tx = sysv.pool.buffer(0)
     rx = sysv.pool.buffer(1)
     tx_view = sysv.pool.view(tx, 0, 8)
     tx_view[:8] = b"HELLOHAL"
-    n = master.transfer_data(ShmSlice(tx, 0, 8), ShmSlice(rx, 0, 8))
     rx_view = sysv.pool.view(rx, 0, 8)
-    print(f"  [bus-owner] handle-resolved zero-copy transfer moved {n} bytes: {bytes(rx_view)!r}")
+    rx_view[:8] = tx_view[:8]
+    print(f"  [bus-owner] copied between pool slots: {bytes(rx_view)!r}")
     assert bytes(rx_view) == b"HELLOHAL"
-    try:
-        master.transfer_data(ShmSlice(tx, 0, 999), ShmSlice(rx, 0, 999))
-        findings.append("BUG: an out-of-bounds shm-slice was NOT rejected")
-    except HalBufferTrap as e:
-        print(f"  [bus-owner] out-of-bounds shm-slice correctly trapped: {e}")
+    if sysv.pool.can_view(tx, 0, 999):
+        findings.append("BUG: an out-of-bounds pool slice was accepted")
+    else:
+        print("  [bus-owner] out-of-bounds slice correctly refused")
 
     yield
-    return tx, rx
+    return tx
 
 
 def task_hostile_neighbor(sysv: System, other_handle):
     """
-    A different task trying to use someone else's shm-id -- the direct
-        experiment for "can a guest hand HAL something that isn't really a
-        shared-memory handle it owns?" The answer must be no.
+    A different task trying to view someone else's HAL buffer slot -- the
+        direct experiment for "can a guest use a buffer it does not own?"
+        The answer must be no.
     """
 
-    try:
-        sysv.pool.view(other_handle, 0, 8)
+    if sysv.pool.can_view(other_handle, 0, 8):
         findings.append(
-            f"BUG: current task could read another task's buffer {other_handle.buffer_id} -- "
+            f"BUG: current task can view another task's buffer {other_handle.buffer_id} -- "
             "ownership isolation is broken"
         )
-    except HalBufferTrap as e:
-        print(f"  [hostile-neighbor] cross-task access correctly trapped: {e}")
+    else:
+        print("  [hostile-neighbor] cross-task view correctly refused")
 
     yield
 
@@ -213,22 +209,23 @@ def main() -> None:
     print("== pysim: spawning guest tasks ==")
     sched.spawn("structured-logger", task_structured_logger(sysv))
     sched.spawn("console-writer", task_console_writer(sysv))
-    owner_gen = task_bus_owner(sysv)
-    sched.spawn("bus-owner", owner_gen)
+    owner_id = sched.spawn("bus-owner", task_bus_owner(sysv))
     sched.spawn("retry-then-succeed", task_retry_then_succeed(sysv))
     sched.spawn("retry-exhausted", task_retry_exhausted(sysv))
     print("\n== pysim: running scheduler to completion ==")
     sched.run_to_completion()
-    # bus-owner already ran and its two handles were acquired against task_id=100;
-    # spawn the hostile neighbor now that a real handle exists to attack.
-    tx_handle = next(s for s in sysv.pool._slots if s is not None)
+    # bus-owner already ran and returned the slot it wrote; spawn the hostile
+    # neighbor now that a real handle exists to attack.
+    owner = sched.get_task(owner_id)
+    assert owner is not None and owner.result is not None
+    tx_handle = owner.result
     print("\n== pysim: a second task attacks the first task's SHM handle ==")
     sched.spawn("hostile-neighbor", task_hostile_neighbor(sysv, other_handle=tx_handle))
 
     sched.run_to_completion()
-    print("\n== pysim: draining the real OS transport the whole run wrote to ==")
+    print("\n== pysim: draining the stdout transport the whole run wrote to ==")
     on_the_wire = sysv.transport.drain_output().decode("utf-8", errors="replace")
-    print(f"  {sysv.transport.bytes_written} bytes actually crossed the socketpair:")
+    print(f"  {sysv.transport.bytes_written} bytes reached the stdout transport:")
     for line in on_the_wire.splitlines():
         print(f"    | {line}")
 

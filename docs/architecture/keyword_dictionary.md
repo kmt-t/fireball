@@ -179,11 +179,19 @@ OSスケジューラ（`os_coos`, `os_scheduler`）、静的コンテナ（`syst
 | `{ServiceSelfReboot}` | `requirement_list.md` | `system_config.md` | 異常検知時におけるサービス自己再起動シーケンス | - |
 | `{SelfReboot_via_Event}` | `requirement_list.md` | `system_config.md` | イベント通知契機による協調的セルフリブート | - |
 
-#### 4.1.2 Tier 1 Core 設計の勘所 (GOTCHA) (1 件)
+#### 4.1.2 Tier 1 Core 設計の勘所 (GOTCHA) (9 件)
 
 | キーワード | 定義元正本 | 対象コンポーネント | 仕様概要・検証内容 | 対応テストケースID（キーワードではない） |
 | :--- | :--- | :--- | :--- | :--- |
 | `{GOTCHA-SCHED-01}` | `os_scheduler.md` | `os_scheduler_test_spec.md` | 連続直接ハンドオフ上限到達時、直接遷移を打ち切りタスクをREADYキュー末尾へ戻してメイン巡回ループへ制御を戻す（全タスクの公平性・実時間応答は保証しない） | TEST-COOS-07 |
+| `{GOTCHA-COOS-01}` | `os_coos.md` | `os_coos_test_spec.md` | チャネルは送信値を保持せず、値は送信側のフレームだけが持つ。受信側の到着時に直接移譲して二重所有を排除する | TEST-COOS-11 |
+| `{GOTCHA-COOS-02}` | `os_coos.md` | `os_coos_test_spec.md` | 1チャネル1待機者の制約。同方向の多重待機はプログラミングエラーとしてアサーションで停止する | TEST-COOS-05 |
+| `{GOTCHA-COOS-03}` | `os_coos.md` | `os_coos_test_spec.md` | 割り込みサービスルーチンは通知だけを行い、待機タスクの状態は協調境界でスケジューラが更新する | TEST-COOS-08 |
+| `{GOTCHA-SCHED-02}` | `os_scheduler.md` | `os_scheduler_test_spec.md` | 割り込み再スケジュール保留中は、直接ハンドオフが可能な操作でも直接遷移せず、YIELDでスケジューラへ戻る | TEST-COOS-16 |
+| `{GOTCHA-CONT-01}` | `system_containers.md` | `system_containers_test_spec.md` | `bit_view` のビット幅は8の約数（1・2・4）に限り、要素がバイト境界をまたがない | TEST-CONT-05, TEST-CONT-07 |
+| `{GOTCHA-CONT-02}` | `system_containers.md` | `system_containers_test_spec.md` | ビューの `slice` は単調縮小だけを許し、親ビューの境界を超えて拡張しない | TEST-CONT-02, TEST-CONT-03 |
+| `{GOTCHA-CONT-03}` | `system_containers.md` | `system_containers_test_spec.md` | `flat_set_view` は値を保持せず、ポインタと長さだけで構成する。値なしの `flat_map_view` として実装しない | TEST-CONT-04, TEST-CONT-10 |
+| `{GOTCHA-CONT-04}` | `system_containers.md` | `system_containers_test_spec.md` | 可変ストレージは動的再確保をせず、固定長バッファ内でインプレースにシフトする。借用中の非所有ビューは件数の更新に追従する | TEST-CONT-11, TEST-CONT-14 |
 
 ---
 
@@ -214,6 +222,13 @@ OSスケジューラ（`os_coos`, `os_scheduler`）、静的コンテナ（`syst
 | `{WIT_First}` | `requirement_list.md` | `interface_wit.md` | 実装コードに先行してWITインターフェース契約を定義する開発スタンス |
 | `{Type_Vocabulary}` | `requirement_list.md` | `interface_wit.md` | システム全体で整合した標準型ボキャブラリの策定 |
 | `{TypeSafeMessaging}` | `requirement_list.md` | `ipc_router.md` | メッセージペイロードの静的型安全性とアライメント保証 |
+
+#### 4.2.2 Tier 1 Interface 設計の勘所 (GOTCHA) (2 件)
+
+| キーワード | 定義元正本 | 対象コンポーネント | 仕様概要・検証内容 | 対応テストケースID（キーワードではない） |
+| :--- | :--- | :--- | :--- | :--- |
+| `{GOTCHA-IPCR-01}` | `ipc_router.md` | `ipc_router_test_spec.md` | 単一待機者制約。待機中のエッジへの二重送信は、キュー満杯エラーではなくアサーションで停止する | TEST-IPCR-08 |
+| `{GOTCHA-IPCR-02}` | `ipc_router.md` | `ipc_router_test_spec.md` | 事前検証（RBAC・URI・サイズ）を Revoke より先に行い、拒否時の所有状態を `SENDER_OWNS` のまま保つ | TEST-IPCR-05, TEST-IPCR-15 |
 
 ---
 
@@ -263,7 +278,7 @@ WASM 実行エンジン（`runtime_vsoc`）、継続渡しスレッドインタ�
 | `{Syscall_Return_Value}` | `requirement_list.md` | `runtime_syscall.md` | システムコール実行結果・エラーコードの規格化された返却規約 | - |
 | `{Trap_Interface}` | `requirement_list.md` | `runtime_syscall.md` | ゲスト不正動作検知時のトラップ発行と安全停止インターフェース | - |
 
-#### 4.3.2 Tier 2 Runtime 設計の勘所 (GOTCHA) (18 件)
+#### 4.3.2 Tier 2 Runtime 設計の勘所 (GOTCHA) (46 件)
 
 | キーワード | 定義元正本 | 対象コンポーネント | 仕様概要・検証内容 | 対応テストケースID（キーワードではない） |
 | :--- | :--- | :--- | :--- | :--- |
@@ -275,6 +290,7 @@ WASM 実行エンジン（`runtime_vsoc`）、継続渡しスレッドインタ�
 | `{GOTCHA-INTP-04}` | `runtime_interpreter.md` | `runtime_interpreter_test_spec.md` | 統一プログラムカウンタ（Unified PC: `(func_index << 16) | bytecode_offset`）による複数モジュール空間の衝突防止 | TEST-INTP-97 |
 | `{GOTCHA-INTP-05}` | `runtime_interpreter.md` | `runtime_interpreter_test_spec.md` | 実行時の命令オブジェクト生成・二分探索排除と生のバイト列からの直接フェッチ・静的制御表解決 | TEST-INTP-70, TEST-INTP-72 |
 | `{GOTCHA-INTP-06}` | `runtime_interpreter.md` | `runtime_interpreter_test_spec.md` | JIT 代行分岐脱出での制御フレーム内容不正利用防止——フレームスタックの中身を信用せず静的解決済みアドレスを直接使用 | TEST-INTP-99 |
+| `{GOTCHA-INTP-22}` | `runtime_interpreter.md` | `runtime_interpreter_test_spec.md` | フレームごとのローカルスロット幅——フレーム内の最大の変数サイズ（4 / 8 / 16バイト）で決め、同一フレーム内で混在させない | TEST-INTP-73, TEST-INTP-74, TEST-JITC-59, TEST-JITR-60 |
 | `{GOTCHA-LOAD-01}` | `runtime_loader.md` | `runtime_loader_test_spec.md` | ハッシュ衝突時のシンボル誤認防止——ハッシュ一致後に ROM 上の文字列を1回比較し完全一致を確認する | TEST-LOAD-01 |
 | `{GOTCHA-LOAD-02}` | `runtime_loader.md` | `runtime_loader_test_spec.md` | 検証失敗時のバンプアロケータ完全ロールバック——パース失敗時にバンプポインタをロード開始前の位置へ巻き戻しメモリリークを防ぐ | TEST-LOAD-02 |
 | `{GOTCHA-VMMIO-01}` | `runtime_vmmio.md` | `runtime_vmmio_test_spec.md` | Bit 31 RAM 高速バイパス経路はページテーブル走査・TLB検索を一切行わない | TEST-VMMIO-01 |
@@ -285,6 +301,34 @@ WASM 実行エンジン（`runtime_vsoc`）、継続渡しスレッドインタ�
 | `{GOTCHA-DBG-04}` | `debug_manager.md` | `debug_manager_test_spec.md` | 協調スケジューラ下での RSP 応答分割送出と複数 yield 跨ぎ耐性（長小応答 g の分割バッファ蓄積） | TEST-DBG-04 |
 | `{GOTCHA-MEM-03}` | `runtime_memory.md` | `runtime_memory_test_spec.md` | 送信中状態（FB_TASK_ID_FLIGHT）は TLB を即時破棄し送受信双方からのアクセスを遮断する。転送失敗時は rollback_transfer() で送信元 owner_id へ復元する。転送完了は相手タスクの到達を前提とし、CSPの公平性・有界応答時間を保証しない。 | TEST-MEM-10b, TEST-MEM-10c |
 | `{GOTCHA-MEM-04}` | `runtime_memory.md` | `runtime_memory_test_spec.md` | W^X 切り替えは命令単位ではなくトランザクションバッチ化し、パッチ完了時に一括で RO+X とキャッシュバリア（DSB/ISB）を発行する | TEST-MEM-24 |
+| `{GOTCHA-DBG-02}` | `debug_manager.md` | `debug_manager_test_spec.md` | デバッグ有効時は、インタープリタのハンドラテーブルをデバッグ版へ切り替える。命令ハンドラ内に `debug_enabled` の分岐を置かない | TEST-DBG-12, TEST-DBG-13 |
+| `{GOTCHA-INTP-07}` | `runtime_interpreter.md` | `runtime_interpreter_test_spec.md` | ハンドラテーブルの要素は、4論理引数 `(ctx, sp, local_base, tos)` を直接受ける関数とし、ラッパーによる二重ディスパッチを置かない | TEST-INTP-01, TEST-INTP-02 |
+| `{GOTCHA-INTP-08}` | `runtime_interpreter.md` | `runtime_interpreter_test_spec.md` | 継続結果は、次のハンドラの4引数を必ず返し、トラップ状態を同じ結果に含める | TEST-INTP-01, TEST-INTP-05 |
+| `{GOTCHA-INTP-09}` | `runtime_interpreter.md` | `runtime_interpreter_test_spec.md` | 次PCは戻り値の別フィールドではなく、実行コンテキストの `ip` に保持する | TEST-INTP-01 |
+| `{GOTCHA-INTP-10}` | `runtime_interpreter.md` | `runtime_interpreter_test_spec.md` | 命令実行中のトラップは例外を制御フローに使わず、`InterpreterCall.trap` へ集約する | TEST-INTP-31, TEST-INTP-43 |
+| `{GOTCHA-INTP-11}` | `runtime_interpreter.md` | `runtime_interpreter_test_spec.md` | インタープリタとJITは、同一の実行コンテキストと共有値領域を使い、JIT専用のバッファを持たない | TEST-INTP-03, TEST-INTP-15 |
+| `{GOTCHA-INTP-12}` | `runtime_interpreter.md` | `runtime_interpreter_test_spec.md` | ネイティブ値スタックは型タグを持たないバイナリスロット列とし、型は操作側が知る | TEST-INTP-15 |
+| `{GOTCHA-INTP-13}` | `runtime_interpreter.md` | `runtime_interpreter_test_spec.md` | スロット幅は、i32/f32を1個、i64/f64を2個の32ビットスロットとし、ローカルオフセット・引数搬送・スタック操作が同じ規則に従う | TEST-INTP-30, TEST-INTP-73 |
+| `{GOTCHA-INTP-14}` | `runtime_interpreter.md` | `runtime_interpreter_test_spec.md` | 関数呼出し記述子は、関数番号から関数メタデータを一度だけ取得して紐付け、実行時にコード検索をしない | TEST-INTP-70, TEST-INTP-72 |
+| `{GOTCHA-INTP-15}` | `runtime_interpreter.md` | `runtime_interpreter_test_spec.md` | `local.get`／`local.set`／`local.tee` は型解釈をせず、既知のスロット幅のバイナリコピーだけを行う | TEST-INTP-12, TEST-INTP-18 |
+| `{GOTCHA-INTP-16}` | `runtime_interpreter.md` | `runtime_interpreter_test_spec.md` | スタックの巻き戻しは、記録した長さへ一括で切り詰める。要素ごとの pop ループを置かない | TEST-INTP-20, TEST-INTP-23 |
+| `{GOTCHA-INTP-17}` | `runtime_interpreter.md` | `runtime_interpreter_test_spec.md` | 不正な引数・未初期化状態・無効なフレームは、リカバリーせず `assert` で停止する | TEST-INTP-10, TEST-INTP-11 |
+| `{GOTCHA-INTP-18}` | `runtime_interpreter.md` | `runtime_interpreter_test_spec.md` | 実行時引数のセットアップと外部資源の注入は呼び出し側の責務とし、インタープリタはJIT専用の初期化を行わない | - |
+| `{GOTCHA-INTP-19}` | `runtime_interpreter.md` | `runtime_interpreter_test_spec.md` | 小さい制御表キャッシュは4エントリ固定とし、32ビットのキーをXORの折りたたみで選ぶ | TEST-INTP-72 |
+| `{GOTCHA-INTP-20}` | `runtime_interpreter.md` | `runtime_interpreter_test_spec.md` | テスト専用のインタープリタ起動・検査コードを本番のインタープリタへ混ぜない | - |
+| `{GOTCHA-INTP-21}` | `runtime_interpreter.md` | `runtime_interpreter_test_spec.md` | `fireball_call` import はホスト呼び出しとして直接実行し、SYSCTLドアベルやvMMIOシステムコールベクタ表を使わない | TEST-VSOC-40 |
+| `{GOTCHA-LOAD-03}` | `runtime_loader.md` | `runtime_loader_test_spec.md` | バンプアロケータはLIFOでだけ回収できる。逆順以外のアンロードは、レジストリから外しても領域を再利用できない | TEST-LOAD-25 |
+| `{GOTCHA-LOAD-04}` | `runtime_loader.md` | `runtime_loader_test_spec.md` | 基本ブロックのメタ情報は、ローダが読み取り専用ストレージとして一度だけ構築し、実行環境がそれを借用する | TEST-LOAD-48 |
+| `{GOTCHA-LOG-01}` | `runtime_logging.md` | `runtime_logging_test_spec.md` | ログAPIは、固定長辞書オフセットと32ビットのスカラー引数4個だけを受け付け、実行時文字列のポインタを渡す手段を持たない | TEST-LOG-01, TEST-LOG-09 |
+| `{GOTCHA-LOG-02}` | `runtime_logging.md` | `runtime_logging_test_spec.md` | リングバッファが満杯のときは最古のエントリを上書きし、呼び出し側をブロックしない | TEST-LOG-04 |
+| `{GOTCHA-LOG-03}` | `runtime_logging.md` | `runtime_logging_test_spec.md` | フラッシュは、DMAバッチの境界でだけ割り込み保留を確認し、保留があればループを抜けてスケジューラへ戻る | TEST-LOG-07 |
+| `{GOTCHA-LOG-04}` | `runtime_logging.md` | `runtime_logging_test_spec.md` | トラップ診断は、呼出しフレームの解体前に統一PCとトラップ原因コードを確定してロガーへ渡す | TEST-LOG-12, TEST-LOG-13 |
+| `{GOTCHA-MEM-01}` | `runtime_memory.md` | `runtime_memory_test_spec.md` | 4KBの仮想予約スロットを物理SHM予算から分離し、物理バック領域は要求サイズだけを消費する | TEST-MEM-14 |
+| `{GOTCHA-MEM-02}` | `runtime_memory.md` | `runtime_memory_test_spec.md` | 共有ブロックは所有タスクIDを保持し、呼び出し元のタスクが所有者と異なる場合は解放と参照を拒否する | TEST-MEM-16 |
+| `{GOTCHA-SYS-01}` | `runtime_syscall.md` | `runtime_syscall_test_spec.md` | 未定義のシステムコールIDは、停止やパニックをせず、WASIの `NOSYS` を返して復帰する | TEST-SYS-16, TEST-SYS-90 |
+| `{GOTCHA-SYS-02}` | `runtime_syscall.md` | `runtime_syscall_test_spec.md` | ゲストメモリのオフセットは、ホスト側のアクセス前に境界を検査する。判定式は、加算のオーバーフローを避ける形にする | TEST-SYS-15, TEST-SYS-92 |
+| `{GOTCHA-SYS-03}` | `runtime_syscall.md` | `runtime_syscall_test_spec.md` | WASI iovec配列は、全要素を事前に検証してから出力する。途中の要素が不正なら1バイトも出力せず `EFAULT` を返す | TEST-SYS-80 |
+| `{GOTCHA-VSOC-03}` | `runtime_vsoc.md` | `runtime_vsoc_test_spec.md` | `vsoc_runtime` は独立した構造体ではなく、実行コンテキストの内部に配置する。`exec_trace` は4引数で委譲する | TEST-VSOC-02 |
 
 ---
 
@@ -311,7 +355,7 @@ Copy-and-Patch JIT コンパイラ（`jit_compiler`）および 3 面循環キ�
 | `{JIT_RuntimeAPI_Fallback}` | `requirement_list.md` | `jit_runtime.md` | 複雑命令・トラップ発生時のインタープリタランタイムヘルパー安全フォールバック | - |
 | `{JIT_ZeroCompileCostTheorem}` | `requirement_list.md` | `jit_runtime.md` | メモリコピーとオフセット加算のみで完了するゼロコンパイルコスト定理の保証 | - |
 
-#### 4.4.2 Tier 3 JIT 設計の勘所 (GOTCHA) (11 件)
+#### 4.4.2 Tier 3 JIT 設計の勘所 (GOTCHA) (14 件)
 
 | キーワード | 定義元正本 | 対象コンポーネント | 仕様概要・検証内容 | 対応テストケースID（キーワードではない） |
 | :--- | :--- | :--- | :--- | :--- |
@@ -327,6 +371,9 @@ Copy-and-Patch JIT コンパイラ（`jit_compiler`）および 3 面循環キ�
 | `{GOTCHA-JITR-07}` | `jit_runtime.md` | `jit_runtime_test_spec.md` | 短小ブロック判定の符号（後方分岐ブロックの誤除外）——後続アドレスとの差分ではなく命令バイト数から直接判定 | TEST-JITR-07 |
 | `{GOTCHA-JITR-08}` | `jit_runtime.md` | `jit_runtime_test_spec.md` | return直前のJIT終了とInterpreter復帰——JITはsentinelを生成せずエピローグで状態同期してInterpreterへ戻る | TEST-JITR-10 |
 | `{GOTCHA-JITR-09}` | `jit_runtime.md` | `jit_runtime_test_spec.md` | エイジングスイープは `EXECUTED` のカードだけを戻し、`COMPILED`（常駐トレース）と `HOT`（コンパイル待ち列）を変更しない | TEST-JITR-16 |
+| `{GOTCHA-JITC-03}` | `jit_compiler.md` | `jit_compiler_test_spec.md` | 基本ブロック末尾で、値キャッシュを共有オペランド領域へ書き戻し、実行コンテキストの `ip` と `sp_offset` を同期する | TEST-JITC-12 |
+| `{GOTCHA-JITC-04}` | `jit_compiler.md` | `jit_compiler_test_spec.md` | メモリアクセスの前に、開始アドレスとアクセス末尾の境界を検査する。境界外では副作用なしでトラップへ分岐し、アドレスを巡回させない | TEST-JITC-41 |
+| `{GOTCHA-JITC-06}` | `jit_compiler.md` | `jit_compiler_test_spec.md` | ARMの `MLS` 命令は `Rd = Ra - Rn × Rm` の順序で剰余を算出する。オペランド順序を逆にすると剰余が負になる | - |
 
 ---
 
@@ -341,11 +388,13 @@ Copy-and-Patch JIT コンパイラ（`jit_compiler`）および 3 面循環キ�
 | `{Fast_Path_GPIO}` | `requirement_list.md` | `platform_driver.md` | コンテキストスイッチを介さず直接ポート操作を行う GPIO 高速パス |
 | `{PhysicalPassthrough}` | `requirement_list.md` | `platform_driver.md` | 認可された特定周辺ペリフェラルへのゼロオーバーヘッド直接物理パススルー |
 
-#### 4.5.2 Tier 3 Platform 設計の勘所 (GOTCHA) (1 件)
+#### 4.5.2 Tier 3 Platform 設計の勘所 (GOTCHA) (3 件)
 
 | キーワード | 定義元正本 | 対象コンポーネント | 仕様概要・検証内容 | 対応テストケースID（キーワードではない） |
 | :--- | :--- | :--- | :--- | :--- |
 | `{GOTCHA-HAL-01}` | `platform_driver.md` | `platform_driver_test_spec.md` | HalBufferPool は固定サイズを超えるスライス要求を即座にエラー/アサーション違反で拒絶する（隣接バッファ汚染防止） | TEST-HAL-06 |
+| `{GOTCHA-HAL-02}` | `platform_driver.md` | `platform_driver_test_spec.md` | UARTパイプトランスポートは、送信と受信を互いに干渉させず、EOFやバッファ満杯でもブロックせずに制御を返す | - |
+| `{GOTCHA-HAL-03}` | `platform_driver.md` | `platform_driver_test_spec.md` | 単調増加タイマーの経過時間は差分 `t2 - t1` で求め、32ビットカウンタのラップアラウンドを逆行と誤判定しない | - |
 
 ---
 

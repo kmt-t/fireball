@@ -93,7 +93,7 @@ verification_matrix:
     concept_files: 17
     formal_models: 17
     test_specs: 21
-    pysim_unit_suites: 25
+    pysim_unit_suites: 27
     scenarios: 12
     pairwise_factors: 7
     pairwise_cases: 26

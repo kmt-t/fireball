@@ -16,6 +16,7 @@
 | TEST-HAL-06 | HAL固定バッファプール(vMMIO/DYNAMIC)物理マッピングと境界検査 | - | 最初のRuntimeで`bind_runtime`を行い、固定スロットを選択する。別Runtimeでもバインドを試み、さらに256バイトを超えるスライスを要求 | 最初のRuntimeの固定スロットだけがFC=13 DYNAMIC領域へマップされ、別Runtimeのバインドは拒絶される。上限超過スライスも拒絶される（`GOTCHA-HAL-01`） | 「固定スロット」, runtime_vmmio.md |
 | TEST-HAL-07 | RSPトランスポートの選択可能性 | - | UART/RTTそれぞれで接続 | 双方の物理層でRSPパケット送受信が可能 | - |
 | TEST-HAL-08 | RSPチェックサム検証とACK/NAK | 正常/不正なチェックサムのパケット | 受信処理 | 一致時ACK(`+`)、不一致時NAK(`-`)を返す | 「コマンド取得」 |
+| TEST-HAL-15 | ロガー出力の分離 | ロガー用HALドライバ（`fireball://hal/logger/0`）と標準出力用ドライバの双方を起動 | システムログを1行出力してフラッシュし、ゲストの標準出力へ別のバイト列を書く。さらにHALバッファ経由の`STREAM_WRITE_BUFFER`を実行する | ログ行はロガー用ドライバの出力先だけに現れ、標準出力にはゲストのバイト列だけが残る。ロガーのURI以外のドライバは`start_logger_driver`が拒否する | `{BufferedLogging}`, `{HAL_Interface}` |
 
 ### 実装の勘所・不変条件（Gotchas & Implementation Invariants）
 

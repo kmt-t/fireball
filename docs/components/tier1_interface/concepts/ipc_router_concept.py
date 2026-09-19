@@ -39,6 +39,7 @@ class Role(IntEnum):
     HAL_I2C = 6
     HAL_SPI = 7
     DEBUGGER = 8
+    HAL_LOGGER = 9
 
 
 _ROLE_NAMES = (
@@ -51,6 +52,7 @@ _ROLE_NAMES = (
     "HAL_I2C",
     "HAL_SPI",
     "DEBUGGER",
+    "HAL_LOGGER",
 )
 
 
@@ -131,6 +133,7 @@ _REGISTRY_ENTRIES = sorted(
         ("fireball://dbg/manager/0", Role.DEBUGGER),
         ("fireball://hal/gpio/0", Role.HAL_GPIO),
         ("fireball://hal/i2c/0", Role.HAL_I2C),
+        ("fireball://hal/logger/0", Role.HAL_LOGGER),
         ("fireball://hal/spi/0", Role.HAL_SPI),
         ("fireball://hal/timer/0", Role.HAL_TIMER),
         ("fireball://hal/uart/0", Role.HAL_UART),
@@ -139,7 +142,7 @@ _REGISTRY_ENTRIES = sorted(
 )
 _REGISTRY = FlatMapView(_REGISTRY_ENTRIES)
 
-# Stage 2: FB_CONF_ROUTER_ROLE_MATRIX (9x9, rows=sender, cols=target); every
+# Stage 2: FB_CONF_ROUTER_ROLE_MATRIX (10x10, rows=sender, cols=target); every
 # DENY cell is listed explicitly, matching the C++ constexpr array exactly.
 # Every HAL_* role is a leaf (all-DENY row) -- endpoint instances never
 # initiate an IPC send themselves (ipc_router.md "全 DENY 行・列の意味").
@@ -150,6 +153,7 @@ _HAL_ROLES = (
     Role.HAL_TIMER,
     Role.HAL_I2C,
     Role.HAL_SPI,
+    Role.HAL_LOGGER,
 )
 
 
@@ -167,6 +171,7 @@ _ROLE_MATRIX = (
     _role_row(frozenset()),  # from HAL_I2C (leaf)
     _role_row(frozenset()),  # from HAL_SPI (leaf)
     _role_row(frozenset({Role.CORE_SERVICE, *_HAL_ROLES})),  # from DEBUGGER
+    _role_row(frozenset()),  # from HAL_LOGGER (leaf)
 )
 
 

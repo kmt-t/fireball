@@ -98,6 +98,7 @@ from test_support import (
     make_pc_only_module,
 )
 from vmmio import TrapCode, VMMIOController, VmmioStatus
+from wasm_module import I32
 from wasm_opcodes import I32_ADD, I32_CONST, LOCAL_GET, LOCAL_SET
 from wasm_reader import parse
 from x64_jit import TraceCompiler
@@ -250,7 +251,7 @@ def test_jitc_gotcha_01_02_03_conventions():
         frame_depth=frame_depth,
         byte_span=byte_span,
     )
-    trace = compile_test_block(compiler, code, block, (1,))
+    trace = compile_test_block(compiler, code, block, (I32,))
     assert trace.header.head_wasm_pc == head_pc
     assert trace.size_bytes >= 16
 

@@ -464,6 +464,14 @@ class Scheduler:
         finally:
             self.current_task = previous
 
+    def _reclaim_terminated_slot(self) -> bool:
+        """Free the oldest terminated task's TCB slot; return whether one was freed."""
+        for index in range(len(self._all)):
+            if self._all[index].state == TaskState.TERMINATED:
+                self._all.pop_at(index)
+                return True
+        return False
+
     def spawn(
         self,
         name: str,
@@ -472,6 +480,10 @@ class Scheduler:
         role: int = 0,
     ) -> int:
         """Spawn a new task within FB_CONF_MAX_TASKS bounds."""
+        # os_scheduler.md: a terminated task returns its TCB slot.  The slot is reclaimed here,
+        # when the table is full, so a finished task's result stays readable until then.
+        if len(self._all) >= self.max_tasks:
+            self._reclaim_terminated_slot()
         if len(self._all) >= self.max_tasks:
             if self.logger is not None:
                 self.logger.log_event(

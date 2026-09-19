@@ -403,6 +403,7 @@ class JITTrace:
         "raw_addr",
         "result_words",
         "size_bytes",
+        "stack_words",
     )
 
     def __init__(
@@ -414,6 +415,7 @@ class JITTrace:
         loops_to: int | None = None,
         has_return_val: bool = False,
         result_words: int = 1,
+        stack_words: int = 1,
         buf: ctypes.Array[ctypes.c_ubyte] | None = None,
         native_fn: NativeTraceFn | None = None,
         raw_addr: int | None = None,
@@ -446,6 +448,11 @@ class JITTrace:
         self.has_return_val = has_return_val
         assert result_words > 0
         self.result_words = result_words
+        # Raw words the trace may write from `sp` upward: spilled cache entries, raw
+        # constants for helpers, and the residual value.  RuntimeEngine runs the trace only
+        # when that many words fit in the operand stack.
+        assert stack_words >= 1
+        self.stack_words = stack_words
         self.header = JITTraceHeader(
             head_wasm_pc=head_pc,
             trace_byte_size=size_bytes,

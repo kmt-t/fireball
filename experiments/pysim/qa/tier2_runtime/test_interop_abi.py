@@ -35,6 +35,7 @@ from interop_abi import (
 )
 from interpreter import ControlFrameKind, InterpreterContext, NativeControlStack
 from native_stacks import ControlFrameWindow, LocalStackWindow
+from wasm_module import F32, F64, I32, I64, LocalWidthMap
 
 
 def test_native_layout_matches_x64_jit_context():
@@ -229,7 +230,7 @@ def test_runtime_contexts_expose_native_stack_records():
 def test_local_stack_window_uses_fixed_slot_offsets_and_typed_accessors():
     storage = NativeValueStack(capacity=8)
     assert storage.extend((0, 0, 0, 0, 0, 0, 0, 0))
-    window = LocalStackWindow(storage, base=0, widths=(1, 2, 1, 2), slot_count=8)
+    window = LocalStackWindow(storage, base=0, widths=LocalWidthMap((I32, I64, F32, F64)))
     assert len(window) == 4
     assert window.raw_slot(2) == 4
     assert window.raw_width(1) == 2

@@ -80,7 +80,7 @@ ROM 領域は、コンパイル時に静的に確定する不変ルックアッ�
 | - **WASM 命令ハンドラテーブル** | 1,024 B | 256 命令 $\times$ 4B（インタープリタ継続渡し関数ポインタ配列） |
 | - **JIT Stencil カタログ (Thumb-2)** | ~4,500 B | Copy-and-Patch 用の Thumb-2 機械語バイナリテンプレート群 |
 | - **IPC サービスレジストリ** | ~512 B | ソート済み `flat_map_entry<std::string_view, registry_entry>` 定数配列 |
-| - **IPC RBAC 権限マトリックス** | 81 B | 9 $\times$ 9 ロール間通信可否 `bool` 配列（ビットパックなし、1セル1バイト、`constexpr`） |
+| - **IPC RBAC 権限マトリックス** | 100 B | 10 $\times$ 10 ロール間通信可否 `bool` 配列（ビットパックなし、1セル1バイト、`constexpr`） |
 | - **ログ辞書 (LogDictionary)** | ~1,500 B | ビルド時登録の `printf` フォーマット文字列テーブル（`{DictionaryBasedIPC}`） |
 | - **vMMIO 静的領域定義テーブル** | ~128 B | 静的デバイス領域（FC=12等）のベース・サイズ・アクセス権限定義 |
 | - **WASM ゲストバイナリ (Zero-Copy)** | (可変) | Flash 上のバイト列を直接パース・実行（RAM 展開不要） |

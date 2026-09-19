@@ -76,9 +76,11 @@ import random
 import x64_stencils as st
 from exec_memory import ExecutableBuffer
 from helpers import expect_assertion
-from wasm_module import WASM_LOCAL_SLOT_BYTES, WASM_LOCAL_SLOT_WORDS
 
 I32_MASK = 0xFFFFFFFF
+# The stencils take an explicit displacement; these tests use the 4-byte stride of an all-i32 frame.
+LOCAL_SLOT_WORDS = 1
+LOCAL_SLOT_BYTES = LOCAL_SLOT_WORDS * 4
 
 
 def _test_epilogue_return_i32() -> bytes:
@@ -150,10 +152,10 @@ def run_i32(
     try:
         buf.write(0, bytes(code))
         n_locals = max(len(locals_values or []), 1)
-        LocalsArray = ctypes.c_uint32 * (n_locals * WASM_LOCAL_SLOT_WORDS)
+        LocalsArray = ctypes.c_uint32 * (n_locals * LOCAL_SLOT_WORDS)
         locals_arr = LocalsArray()
         for i, v in enumerate(locals_values or []):
-            locals_arr[i * WASM_LOCAL_SLOT_WORDS] = v
+            locals_arr[i * LOCAL_SLOT_WORDS] = v
 
         mem_ptr = 0
         c_mem = None
@@ -203,10 +205,10 @@ def run_i32_checked(
     try:
         buf.write(0, bytes(code))
         n_locals = max(len(locals_values or []), 1)
-        LocalsArray = ctypes.c_uint32 * (n_locals * WASM_LOCAL_SLOT_WORDS)
+        LocalsArray = ctypes.c_uint32 * (n_locals * LOCAL_SLOT_WORDS)
         locals_arr = LocalsArray()
         for i, v in enumerate(locals_values or []):
-            locals_arr[i * WASM_LOCAL_SLOT_WORDS] = v
+            locals_arr[i * LOCAL_SLOT_WORDS] = v
 
         mem_ptr = 0
         c_mem = None
@@ -252,7 +254,7 @@ def test_epilogue_sign_extends_negative_i32_into_the_i64_return_value():
 
 
 def test_local_get_reads_the_correct_slot_by_index():
-    code = [(st.LOCAL_GET, {"disp": 1 * WASM_LOCAL_SLOT_BYTES})]
+    code = [(st.LOCAL_GET, {"disp": 1 * LOCAL_SLOT_BYTES})]
     assert run_i32(code, locals_values=[111, 222, 333]) == 222
 
 
@@ -285,8 +287,8 @@ def test_local_get_set_tee_at_a_nonzero_locals_array_offset():
 
     code = [
         const_(555),
-        (st.LOCAL_SET, {"disp": 2 * WASM_LOCAL_SLOT_BYTES}),
-        (st.LOCAL_GET, {"disp": 2 * WASM_LOCAL_SLOT_BYTES}),
+        (st.LOCAL_SET, {"disp": 2 * LOCAL_SLOT_BYTES}),
+        (st.LOCAL_GET, {"disp": 2 * LOCAL_SLOT_BYTES}),
     ]
     assert run_i32(code, locals_values=[0, 0, 0, 0]) == 555
 

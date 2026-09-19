@@ -22,6 +22,7 @@
 | [verification_factor_matrix.md](docs/qa/verification_factor_matrix.md) | 検証因子、必要成果物、テスト仕様、シナリオの対応マトリクス |
 | [wasm_core_mvp_test_results.md](docs/qa/wasm_core_mvp_test_results.md) | 選定したMVP互換WASTテストのファイル別成功・skip件数と集計上の制約 |
 | [pairwise_factors.csv](docs/qa/specs/pairwise_factors.csv) | 直交表テストで使う因子と水準の正本 |
+| [README.md](docs/qa/bug_table/README.md) | `bug_table/` の索引。テストや計測で見つかった不具合の一覧と、不具合ごとの詳細記録 |
 
 ## テスト仕様書
 

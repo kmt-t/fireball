@@ -73,7 +73,6 @@ from wasm_module import (
     F64,
     I32,
     I64,
-    WASM_LOCAL_SLOT_WORDS,
     Memory,
     Module,
     value_slot_width,
@@ -616,8 +615,8 @@ class InterpreterContext:
             assert False, "local stack capacity exceeded"
         raw_offset = 0
         for index in range(frame.param_count):
-            width = frame.local_widths[index]
-            local_offset = frame_offset + index * WASM_LOCAL_SLOT_WORDS
+            width = frame.local_widths.words(index)
+            local_offset = frame_offset + index * frame.local_widths.slot_words
             for word in range(width):
                 self.local_stack.write_raw_at(local_offset + word, raw_args[raw_offset])
                 raw_offset += 1
@@ -672,8 +671,8 @@ class CallFrame:
         "func_index",
         "has_nested_calls",
         "local_count",
-        "local_i32_only",
         "local_slot_count",
+        "local_types",
         "local_widths",
         "param_count",
         "param_packed_slot_count",
@@ -692,10 +691,8 @@ class CallFrame:
         assert module is not None
         assert not module.is_import(func_index)
         function = module.functions[func_index - len(module.imports)]
-        local_widths = function.local_widths_cache
-        local_i32_only = function.local_i32_only_cache
+        local_widths = function.local_width_map_cache
         assert local_widths is not None
-        assert local_i32_only is not None
         self.context = context
         self.values = context.operand_stack
         self.control_base = len(context.control_frame_stack)
@@ -718,12 +715,10 @@ class CallFrame:
         self.param_packed_slot_count = param_packed_slot_count
         self.result_arity = result_arity
         assert self.result_arity <= 2, "multi-value function results exceed native return width"
-        self.local_i32_only = local_i32_only
         self._locals = _LocalStackWindow(
             context.local_stack,
             frame_offset,
             local_widths,
-            len(local_widths) * WASM_LOCAL_SLOT_WORDS,
         )
         self.code = context.module.code_for(func_index)
         assert function.control_map is not None
@@ -1204,7 +1199,7 @@ class Interpreter:
         """
         fn = self.module.functions[func_index - len(self.module.imports)]
         param_packed_slot_count = fn.param_packed_slot_count_cache
-        assert fn.local_i32_only_cache is not None
+        assert fn.local_width_map_cache is not None
         assert param_packed_slot_count is not None
         assert len(raw_args) == param_packed_slot_count
         if fn.control_map is None:

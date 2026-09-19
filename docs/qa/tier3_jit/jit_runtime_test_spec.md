@@ -104,6 +104,16 @@ JITトレース検索時の内部状態と期待される挙動を検証する�
 | TEST-JITR-50 | `br_table`全分岐先のInterpreter境界 | 既定先を含む3分岐先を持つ関数 | 各selectorでInterpreter専用とJIT有効RuntimeEngineを実行する | 直前のJITトレースは`br_table`命令PCで終了し、分岐命令自体はInterpreterが解決する。case 0/1/defaultの全結果が一致する | `{JIT_RuntimeAPI_Fallback}`, pysim `test_jitr_br_table_falls_back_and_preserves_every_target` |
 | TEST-JITR-51 | 異種型混在時のDROP幅とJIT安全フォールバック | 共有operand stack上にi32/f32/i64/f64値を積み、広幅値を`drop`する関数 | JITコンパイル可否とJIT有効RuntimeEngineの結果を検証する | i64/f64のDROPが2 raw wordを除去する。未対応の混在トレースはコンパイルされずInterpreterへ委譲し、後続i32演算とreturn値を保つ | `{ADR_TosCacheAsymmetry}`, pysim `test_jitr_mixed_typed_stack_declines_jit_without_losing_drop_widths` |
 | TEST-JITR-52 | 混在型callee戻り値とJIT/Interpreter共有stack境界 | i32/f32/i64/f64を返すcalleeを順に呼び、i32 calleeをJIT hotにするcaller | callerをJIT有効RuntimeEngineで反復実行する | 各callee結果は正しいraw幅で共有stackへ戻り、i64/f64 drop後のi32計算結果が保たれる。途中のJIT callee復帰で関数末尾PCをreturn sentinelへ正規化する | `runtime_interpreter.md` 関数復帰, `{JIT_RuntimeAPI_Fallback}`, pysim `test_jitr_mixed_typed_callee_returns_keep_the_shared_stack_synchronized` |
+| TEST-JITR-53 | `block`で終わるコンパイル済みブロックが制御フレームの積みを飛ばさない | 先頭ブロックだけをコンパイルし、続くループの分岐はインタープリタが実行する関数 | 関数を繰り返し呼び、wasmtime、Tier 2、Tier 3の結果を比較する | 3実行系の結果が一致し、Tier 3でコンパイル済みトレースが実行される。積み漏れによる`assert`停止が起きない | `{TraceBoundaryInvariant}`, `{GOTCHA-INTP-06}` |
+| TEST-JITR-54 | ブロック先頭でない再開位置がコンパイルキューへ入らない | 短い`br_if`ブロックの不成立経路が`end`へ落ち、その`end`が後続の長いブロックと同じ4バイトカードに入る。コード配置を4通りにずらす | 各配置で3実行系の結果を比較する | 全配置で結果が一致し、ブロックが存在しないPCのコンパイル要求で停止しない | `{TraceBoundaryInvariant}` |
+| TEST-JITR-55 | 再開位置で古い制御フレームを切り詰める | ネストした`br`の脱出と、ループを抜けた直後の`br 0`（ブロック先頭でも構造命令でもない位置）を持つ関数 | 3実行系の結果を比較する | 結果が一致し、ループへ戻る無限ループや誤った分岐先が発生しない | `{GOTCHA-INTP-06}` |
+| TEST-JITR-56 | 広い型のローカルを持つフレームでのJIT実行 | i32専用のホットループと、同一関数内のf64ローカルを持つ関数 | 3実行系の結果を比較する | ローカルは型に関係なく固定スロットを持つため、f64ローカルの存在でトレース実行が停止しない | `{TraceBoundaryInvariant}` |
+| TEST-JITR-57 | `if`で終わるホットブロック | 条件式で終わるブロックを持つホットループ | 3実行系の結果を比較する | `if`をインタープリタが実行し、条件値がオペランドスタックに残る。結果が一致する | `{TraceBoundaryInvariant}` |
+| TEST-JITR-58 | 生成した構造化制御フローの3実行系差分 | シード固定で生成した60本のblock/loop/if/br入れ子 | 3実行系の結果を比較し、JIT実行回数とチェイン回数を確認する | 全プログラムの結果が一致し、JITとネイティブチェインが実際に使われる | `{TraceBoundaryInvariant}`, `{JIT_LazyChaining}` |
+| TEST-JITR-59 | clang生成カーネルスイートの3実行系差分 | `suite.wasm`の16カーネル（呼び出し、`br_table`、f64、i64、サブワードメモリを含む） | 各カーネルの結果を3実行系で比較する | 全カーネルの結果が一致する | `{JIT_CopyAndPatch}`, `{ThreadedInterpreter}` |
+| TEST-JITR-60 | スロット幅の異なるフレームの混在実行 | 4バイトスロットの関数と、i64ローカルを含む8バイトスロットの関数が、同一のホットループから交互に呼ばれる | 3実行系の結果を比較し、両関数のトレースが存在することを確認する | 結果が一致する。2つの関数のトレースが同時に実行される | `{ContextPointerRegister}`, `{TraceBoundaryInvariant}` |
+| TEST-JITR-61 | オペランドスタックの容量を超える押し出しの拒否 | 深さ40の加算列を持つ関数を、30個の値が保留中の状態から呼ぶ。合計が容量（64ワード）を超える | Tier 2とJIT有効のエンジンの両方で実行する | どちらも容量超過の `assert` で停止する。トレースは、容量に収まる呼び出しでは実行される。収まらない呼び出しは、インタープリタが停止する。JITは容量外へ書き込まない | `{TraceBoundaryInvariant}` |
+| TEST-JITR-62 | 退避・昇格・ローテーション後のチェイン再リンク | 14本の連鎖トレースと、容量の小さい3面キャッシュ。乱数で、挿入・参照（昇格）・ローテーションを繰り返す（40シード、各90手） | 各手の後にリンクを検査し、参照したトレースをネイティブ実行する | すべてのチェインポインタが、常駐トレースの有効な入口を指す。Pythonのヘッダとネイティブのヘッダが一致する。同一トレースが複数の面に常駐しない。ネイティブ実行が通ったトレースの集合は、ポインタをたどった集合と一致する | `{JIT_MultiBuffer_Cache}`, `{GOTCHA-JITR-02}` |
 
 ### 実装の勘所・不変条件（Gotchas & Implementation Invariants）
 

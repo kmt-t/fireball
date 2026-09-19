@@ -1,6 +1,6 @@
 # Fireball キーワード台帳 (Keyword Dictionary & Registry)
 
-この文書は、Fireball プロジェクトにおける**全仕様・アーキテクチャ・コンポーネント・リンクキーワード（全 215 件）の正本台帳**である。
+この文書は、Fireball プロジェクトにおける**全仕様・アーキテクチャ・コンポーネント・リンクキーワード（全 217 件）の正本台帳**である。
 
 章節項番号（`§3.3` 等）や見出し文字列、ファイルパスによる直接参照は、仕様改訂やリファクタリングに伴う見出し変更・章番号ズレによって容易に陳腐化・リンク切れを起こす。これを防ぐため、Fireball では中括弧で囲まれた一意なキーワード（`{...}`）をアンカーとして定義し、すべての設計書・テスト仕様書・結合テスト・形式検証モデルを機械的に相互リンクする。
 
@@ -326,6 +326,7 @@ Copy-and-Patch JIT コンパイラ（`jit_compiler`）および 3 面循環キ�
 | `{GOTCHA-JITR-06}` | `jit_runtime.md` | `jit_runtime_test_spec.md` | JIT脱出後の制御フレーム内容不正利用防止——静的解決済みの後続アドレス・分岐先アドレスを直接使用 | TEST-JITR-06 |
 | `{GOTCHA-JITR-07}` | `jit_runtime.md` | `jit_runtime_test_spec.md` | 短小ブロック判定の符号（後方分岐ブロックの誤除外）——後続アドレスとの差分ではなく命令バイト数から直接判定 | TEST-JITR-07 |
 | `{GOTCHA-JITR-08}` | `jit_runtime.md` | `jit_runtime_test_spec.md` | return直前のJIT終了とInterpreter復帰——JITはsentinelを生成せずエピローグで状態同期してInterpreterへ戻る | TEST-JITR-10 |
+| `{GOTCHA-JITR-09}` | `jit_runtime.md` | `jit_runtime_test_spec.md` | エイジングスイープは `EXECUTED` のカードだけを戻し、`COMPILED`（常駐トレース）と `HOT`（コンパイル待ち列）を変更しない | TEST-JITR-16 |
 
 ---
 
@@ -350,7 +351,7 @@ Copy-and-Patch JIT コンパイラ（`jit_compiler`）および 3 面循環キ�
 
 ## 5. ドキュメント構造・内部連携用 リンクキーワード (LINK)
 
-ドキュメント間の物理メモリレイアウト整合、低層ディスパッチ規約、内部バイパス・状態連携のための専用リンクアンカー（全 43 件）。
+ドキュメント間の物理メモリレイアウト整合、低層ディスパッチ規約、内部バイパス・状態連携のための専用リンクアンカー（全 44 件）。
 
 ### 5.1 物理メモリレイアウト・実行環境アンカー (4 件)
 
@@ -376,7 +377,7 @@ Copy-and-Patch JIT コンパイラ（`jit_compiler`）および 3 面循環キ�
 
 ---
 
-### 5.3 内部バイパス・最適化・状態連携アンカー (37 件)
+### 5.3 内部バイパス・最適化・状態連携アンカー (38 件)
 
 複数コンポーネント間の連携経路、最適化バイパス、非同期状態同期を紐付けるアンカー。
 
@@ -394,6 +395,7 @@ Copy-and-Patch JIT コンパイラ（`jit_compiler`）および 3 面循環キ�
 | `{HAL_PeripheralDrivers}` | `platform_driver.md` | `platform_driver.md` | 標準入出力ストリーム、Timer ダミードライバ | Scenario 11 (TEST-INT-100〜TEST-INT-102) |
 | `{ISR_Safety}` | `os_coos.md` | `os_coos_test_spec.md` | ISRコンテキストとスケジューラ境界の分離——ISRはイベントキューへの記録のみ行い、run_step 開始時の割り込みドレインで初めてタスクがREADYへ遷移する | TEST-COOS-03 |
 | `{InterruptibleFlush}` | `runtime_logging.md` | `runtime_logging_test_spec.md` | flush 実行中に interrupt_pending() が真を返した時点で全フラッシュを強行せずループを抜けてスケジューラへ制御を戻す | TEST-LOG-03 |
+| `{JIT_CardAgingSweep}` | `jit_runtime.md` | `jit_runtime.md` | 3面キャッシュのローテーションごとに関数更新表（関数につき1ビット）を8関数単位で巡回し、値が0でない単位の処理数または走査バイト数の上限で打ち切り、ビットの立った関数の `EXECUTED` のカードだけを `UNEXECUTED` へ戻す増分エイジング | TEST-JITR-16, TEST-JITR-17, TEST-JITR-18, TEST-JITR-19 |
 | `{JIT_CandidateBitmap}` | `runtime_loader.md` | `runtime_loader.md` | WASMロード時にJITコンパイル対象と判定された基本ブロックをCard単位1bitでマーキングするJIT候補ビットマップ（非候補カードでのtouchスキップ連携） | TEST-LOAD-49, TEST-LOAD-50 |
 | `{JIT_StaticBenefitScoring}` | `runtime_loader.md` | `runtime_loader.md` | 128B BitView<4>のint4_tテーブルによる機械語短縮数ベースの静的基本ブロック適格性スコアリング（閾値9点判定） | TEST-LOAD-49 |
 | `{JitBranchChainingHandler}` | `jit_compiler.md` | `jit_compiler.md` | JIT 専用チェイニングハンドラと純粋インタープリタ分岐ハンドラの分離 | Scenario 4, 5 |

@@ -114,3 +114,51 @@ def make_pc_only_module(pcs: tuple[int, ...]) -> Module:
         entries=tuple(zip(inverse_keys, radix_sorted, strict=True)),
     )
     return module
+
+
+def make_pc_only_functions_module(blocks_per_function: tuple[tuple[int, ...], ...]) -> Module:
+    """Build test-only loader metadata for tests that need several functions.
+
+    Function `f` owns one block at every code offset in `blocks_per_function[f]`;
+    the tuple may be empty (a function without blocks).
+    """
+
+    assert blocks_per_function
+    functions = []
+    heads = []
+    for func_index, offsets in enumerate(blocks_per_function):
+        assert all(offset < 0x1_0000 for offset in offsets)
+        functions.append(
+            Function(type_index=0, locals_extra=(), code=bytes(max(offsets, default=0) + 1))
+        )
+        heads.extend((func_index << 16) | offset for offset in offsets)
+    assert heads
+    module = Module(
+        types=(FuncType(params=(), results=()),),
+        functions=tuple(functions),
+    )
+    blocks = StaticVector.of(
+        tuple(
+            BasicBlock(
+                head_pc=pc,
+                next_pc=pc + 1,
+                loops_to=None,
+                frame_depth=0,
+                byte_span=1,
+                jit_score=0,
+            )
+            for pc in sorted(heads)
+        ),
+        capacity=len(heads),
+    )
+    module.blocks = blocks
+    radix_sorted = tuple(sorted(blocks, key=lambda block: fold_mix32(block.head_pc)))
+    inverse_keys = tuple(fold_mix32(block.head_pc) for block in radix_sorted)
+    module.block_storage = ReadOnlyRadixBinaryTreeStorage(
+        keys=inverse_keys,
+        values=radix_sorted,
+        radix_table=build_radix_table(inverse_keys, radix_shift=28),
+        radix_shift=28,
+        entries=tuple(zip(inverse_keys, radix_sorted, strict=True)),
+    )
+    return module

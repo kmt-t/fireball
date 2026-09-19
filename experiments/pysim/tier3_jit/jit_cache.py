@@ -9,7 +9,7 @@ from __future__ import annotations
 import bisect
 import ctypes
 from collections.abc import Callable
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 from common_code import (
     COMMON_ABSOLUTE_POOL_OFFSET,
@@ -99,6 +99,10 @@ class HotspotBitmap:
         _, offset = self._split_pc(pc)
         return offset >> self.card_shift
 
+    def function_of(self, pc: int) -> int:
+        """Return the function index of a PC."""
+        return self._split_pc(pc)[0]
+
     def get_state(self, pc: int) -> int:
         func_idx, offset = self._split_pc(pc)
         assert func_idx < len(self.func_storages)
@@ -146,6 +150,71 @@ class HotspotBitmap:
         card = offset >> self.card_shift
         assert card < storage.count
         storage.put(card, CardState.UNEXECUTED)
+
+    def decay_executed_function(self, func_idx: int) -> int:
+        """
+        Aging sweep step {JIT_CardAgingSweep}: every EXECUTED card of the
+        function goes back to UNEXECUTED. Returns the number of cards decayed.
+
+        GOTCHA-JITR-09: HOT (a pending compile-queue request) and COMPILED (a
+        resident trace) are never touched -- the compile queue and the cache
+        are the authorities for those two states, not the sweep.
+        """
+        assert func_idx < len(self.func_storages)
+        storage = self.func_storages[func_idx]
+        view = storage.view()
+        decayed = 0
+        for card in range(storage.count):
+            if view.at(card) == CardState.EXECUTED:
+                storage.put(card, CardState.UNEXECUTED)
+                decayed += 1
+        return decayed
+
+
+class FunctionUpdateBitmap:
+    """
+    1 bit per FUNCTION (`bit_view<1>`), swept 8 functions (one storage byte) at a
+    time. {JIT_CardAgingSweep}
+
+    A function's bit is set when one of its cards went UNEXECUTED -> EXECUTED
+    since the aging cursor last cleared it. Invariant: bit == 0  =>  the
+    function has no EXECUTED card. The sweep therefore only visits functions
+    whose bit is set, and it skips a zero byte without counting it as
+    processed. A function without code (an import) never gets its bit set.
+    """
+
+    __slots__ = ("cursor", "function_count", "storage")
+
+    # One storage byte covers eight 1-bit entries.
+    UNIT_FUNCTIONS: ClassVar[int] = 8
+
+    def __init__(self, function_count: int = 0):
+        assert function_count >= 0
+        self.function_count = function_count
+        self.storage = MutableBitStorage(count=max(1, function_count), bits=1)
+        # Byte position of the aging cursor, wrapping at `unit_count`.
+        self.cursor = 0
+
+    @property
+    def unit_count(self) -> int:
+        return (self.function_count + self.UNIT_FUNCTIONS - 1) // self.UNIT_FUNCTIONS
+
+    def mark(self, func_idx: int) -> None:
+        assert 0 <= func_idx < self.function_count
+        self.storage.put(func_idx, 1)
+
+    def unmark(self, func_idx: int) -> None:
+        assert 0 <= func_idx < self.function_count
+        self.storage.put(func_idx, 0)
+
+    def is_marked(self, func_idx: int) -> bool:
+        assert 0 <= func_idx < self.function_count
+        return self.storage.view().at(func_idx) != 0
+
+    def unit(self, byte: int) -> int:
+        """The eight update bits of functions 8*byte .. 8*byte+7 (bit k = function + k)."""
+        assert 0 <= byte < self.unit_count
+        return self.storage.buffer[byte]
 
 
 class BlockCardMask:
@@ -547,6 +616,7 @@ class JITMultiBufferCache:
         "evictions",
         "oldest_idx",
         "on_evict",
+        "on_rotate",
         "promotions",
         "warm_idx",
     )
@@ -568,6 +638,9 @@ class JITMultiBufferCache:
         self.promotions = 0
         self.evictions = 0
         self.on_evict: Callable[[StaticVector[int]], None] | None = None
+        # Called once at the end of every rotate() (never by flush_all()); the
+        # runtime engine runs one {JIT_CardAgingSweep} step from it.
+        self.on_rotate: Callable[[], int] | None = None
         # Direct-mapped 16-slot cache keyed by a repeatedly folded XOR over
         # UnifiedPC.
         self._fast_slots: StaticVector[tuple[int, JITTrace] | None] = StaticVector(
@@ -797,6 +870,8 @@ class JITMultiBufferCache:
             self._fast_slots.append(None)
         if self.on_evict and purged_pcs:
             self.on_evict(purged_pcs)
+        if self.on_rotate:
+            self.on_rotate()
         return purged_pcs
 
     def flush_all(self) -> None:

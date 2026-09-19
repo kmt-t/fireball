@@ -4,6 +4,12 @@ from __future__ import annotations
 
 JIT_CARD_SHIFT: int = 2
 JIT_CARD_BYTES: int = 1 << JIT_CARD_SHIFT
+# Aging sweep of the card table ({JIT_CardAgingSweep}); the public spelling is
+# FB_CONF_JIT_AGING_STEP_UNITS / FB_CONF_JIT_AGING_STEP_SCAN_BYTES in system_config.md.
+# A step ends after this many non-zero update-bitmap bytes (8 functions each) are
+# processed, or after this many bytes (zero bytes included) are scanned.
+FB_CONF_JIT_AGING_STEP_UNITS: int = 2
+FB_CONF_JIT_AGING_STEP_SCAN_BYTES: int = 8
 
 # Fixed capacities and physical cache dimensions used by the simulator.
 FB_CONF_MAX_TYPES: int = 256

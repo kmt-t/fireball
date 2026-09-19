@@ -146,7 +146,7 @@ experiments/pysim/
 
 ## 4. パフォーマンス & ベンチマーク評価 (Performance & Benchmark Evaluation)
 
-`experiments/pysim/benchmarks/` 配下には、リニアメモリアクセス、vMMIO アドレス変換、Copy-and-Patch JIT コンパイラ、JIT キャッシュ代謝（3面ローテーション）、および 3D レイトレーシング Ambient Occlusion (AO-Bench) の全 5 系統のベンチマークスイートが用意されています。
+`experiments/pysim/benchmarks/` 配下には、リニアメモリアクセス、vMMIO アドレス変換、Copy-and-Patch JIT コンパイラ、JIT キャッシュ代謝（3面ローテーション）、JIT カードエイジング（キャッシュ圧迫下のコールド関数混入）、および 3D レイトレーシング Ambient Occlusion (AO-Bench) の全 6 系統のベンチマークスイートが用意されています。
 
 実測測定値、ホットスポット解析、JIT トレースチェイニング診断、および C++23 実機実装への性能予測の詳細レポートは、以下を参照してください：
 

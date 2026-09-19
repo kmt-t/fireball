@@ -113,6 +113,10 @@ class HotspotBitmap:
             self.func_storages.extend([None] * (func_idx + 1 - len(self.func_storages)))
         card_count = max(1, (code_len + (1 << self.card_shift) - 1) >> self.card_shift)
         storage = bytearray((card_count + 3) // 4)
+        previous = self.func_storages[func_idx]
+        if previous is not None:
+            # Growing a function's table must keep the states already recorded.
+            storage[: len(previous)] = previous
         self.func_storages[func_idx] = storage
         return BitView(storage, bits=2, origin=0, count=card_count)
 
@@ -183,6 +187,69 @@ class HotspotBitmap:
             card = offset >> self.card_shift
             if card < view.size():  # type: ignore[union-attr]
                 view.put(card, CardState.UNEXECUTED)  # type: ignore[union-attr]
+
+    def function_of(self, pc: int) -> int:
+        return self._split_pc(pc)[0]
+
+    def decay_executed_function(self, func_idx: int) -> int:
+        """
+        Aging sweep step `{JIT_CardAgingSweep}`: every EXECUTED card of the
+        function goes back to UNEXECUTED. Returns the number of cards decayed.
+
+        HOT (compile-queue request) and COMPILED (resident trace) cards are
+        never touched: the cache is the authority on residency and the
+        compile queue is the authority on pending requests (GOTCHA-JITR-09).
+        """
+        if func_idx >= len(self.func_storages) or self.func_storages[func_idx] is None:
+            return 0
+        storage = self.func_storages[func_idx]
+        view = BitView(storage, bits=2, origin=0, count=len(storage) * 4)
+        decayed = 0
+        for card in range(view.size()):
+            if view.at(card) == CardState.EXECUTED:
+                view.put(card, CardState.UNEXECUTED)
+                decayed += 1
+        return decayed
+
+
+class FunctionUpdateBitmap:
+    """
+    1 bit per FUNCTION (`bit_view<1>`), swept 8 functions (one byte) at a time.
+    `{JIT_CardAgingSweep}`
+
+    A function's bit is set when one of its cards went UNEXECUTED -> EXECUTED
+    since the aging cursor last cleared it. Invariant: bit == 0  =>  the
+    function has no EXECUTED card. The sweep therefore only visits functions
+    whose bit is set, and it skips a zero byte without counting it as processed.
+    """
+
+    UNIT_FUNCTIONS = 8  # one byte
+
+    def __init__(self) -> None:
+        self.storage = bytearray()
+        self.function_count = 0
+        self.cursor = 0  # byte position of the aging cursor
+
+    @property
+    def unit_count(self) -> int:
+        return (self.function_count + self.UNIT_FUNCTIONS - 1) // self.UNIT_FUNCTIONS
+
+    def mark(self, func_idx: int) -> None:
+        if func_idx >= self.function_count:  # the table grows lazily in this concept
+            self.function_count = func_idx + 1
+            self.storage.extend(bytes(self.unit_count - len(self.storage)))
+        self.storage[func_idx >> 3] |= 1 << (func_idx & 7)
+
+    def unmark(self, func_idx: int) -> None:
+        self.storage[func_idx >> 3] &= ~(1 << (func_idx & 7)) & 0xFF
+
+    def is_marked(self, func_idx: int) -> bool:
+        return func_idx < self.function_count and bool(
+            (self.storage[func_idx >> 3] >> (func_idx & 7)) & 1
+        )
+
+    def unit(self, byte: int) -> int:
+        return self.storage[byte]
 
 
 # ==============================================================================
@@ -431,6 +498,10 @@ class JITCandidateBitmap:
         card_count = max(1, (code_len + (1 << self.card_shift) - 1) >> self.card_shift)
         # 1 bit per card -> (card_count + 7) // 8 bytes
         storage = bytearray((card_count + 7) // 8)
+        previous = self.func_tables[func_idx]
+        if previous is not None:
+            # Growing a function's table must keep the candidate bits already set.
+            storage[: len(previous.storage)] = previous.storage
         view = BitView(storage, bits=1, origin=0, count=card_count)
         self.func_tables[func_idx] = view
         return view
@@ -573,6 +644,8 @@ class JITMultiBufferCache:
         self.promotions = 0
         self.evictions = 0
         self.on_evict: Callable[[list[int]], None] | None = None
+        # Called once at the end of every rotate(); the engine runs one aging step from it.
+        self.on_rotate: Callable[[], int] | None = None
 
     @property
     def active(self) -> JITCacheBank:
@@ -700,6 +773,8 @@ class JITMultiBufferCache:
         )
         if purged and self.on_evict:
             self.on_evict(purged)  # let the bitmap mark the cards re-compilable
+        if self.on_rotate:
+            self.on_rotate()
 
     def _resolve_bank_inbound(self, bank: JITCacheBank) -> None:
         """
@@ -926,6 +1001,8 @@ class IntegratedRuntimeEngine:
         card_shift: int = 2,
         min_trace_bytes: int | None = None,
         candidate_threshold: int = 9,
+        aging_step_units: int = 2,  # FB_CONF_JIT_AGING_STEP_UNITS
+        aging_scan_bytes: int = 8,  # FB_CONF_JIT_AGING_STEP_SCAN_BYTES
     ):
         self.bitmap = HotspotBitmap(card_shift=card_shift)
         self.candidate_bitmap = JITCandidateBitmap(card_shift=card_shift)
@@ -938,12 +1015,21 @@ class IntegratedRuntimeEngine:
         self.yield_threshold = yield_threshold
         self.trace_counter = 0
         self.blocks: dict[int, BasicBlock] = {}
+        self.update_bitmap = FunctionUpdateBitmap()
+        assert aging_step_units >= 1 and aging_scan_bytes >= 1
+        self.aging_step_units = aging_step_units
+        self.aging_scan_bytes = aging_scan_bytes
+        self.aging_steps = 0  # aging sweeps run (one per bank rotation)
+        self.aging_processed = 0  # cards decayed
+        self.aging_units_processed = 0  # non-zero bytes processed
+        self.aging_bytes_scanned = 0  # bytes examined, zero bytes included
         self.interp_blocks = 0
         self.jit_traces = 0
         self.compilations = 0
         self.yields = 0
         # Purged traces must make their cards re-compilable again.
         self.cache.on_evict = lambda pcs: [self.bitmap.mark_evicted(pc) for pc in pcs]
+        self.cache.on_rotate = self.age_step
         # A card's 2-bit state can only ever describe ONE block: if two
         # distinct block heads shared a card, compiling one would falsely
         # read back as "already compiled" for the other, and evicting one
@@ -977,6 +1063,45 @@ class IntegratedRuntimeEngine:
         for pc in self.history.drain():
             if self.bitmap.get_state(pc) == CardState.HOT and pc not in self.compile_queue:
                 self.compile_queue.append(pc)
+
+    # --- Aging sweep  [jit_runtime.md {JIT_CardAgingSweep}] ---
+    def age_step(self) -> int:
+        """
+        One aging step, run once per bank rotation. Walk the function update
+        bitmap from the cursor one byte (8 functions) at a time. A zero byte is
+        skipped and does not count; a non-zero byte is processed (every function
+        whose bit is set has its EXECUTED cards decayed to UNEXECUTED, and its
+        bit is cleared) and counts as one unit. The step ends after
+        `aging_step_units` units, after `aging_scan_bytes` bytes have been
+        scanned (zero bytes included), or after one full pass over the table,
+        whichever comes first. Returns the number of cards decayed.
+        """
+        bm = self.update_bitmap
+        self.aging_steps += 1
+        if bm.unit_count == 0:
+            return 0
+        decayed = 0
+        units = 0
+        scanned = 0
+        scan_limit = min(self.aging_scan_bytes, bm.unit_count)
+        while units < self.aging_step_units and scanned < scan_limit:
+            bits = bm.unit(bm.cursor)
+            if bits:
+                while bits:
+                    lowest = bits & -bits
+                    func_idx = (
+                        bm.cursor * FunctionUpdateBitmap.UNIT_FUNCTIONS + lowest.bit_length() - 1
+                    )
+                    decayed += self.bitmap.decay_executed_function(func_idx)
+                    bm.unmark(func_idx)
+                    bits ^= lowest
+                units += 1
+            bm.cursor = (bm.cursor + 1) % bm.unit_count
+            scanned += 1
+        self.aging_processed += decayed
+        self.aging_units_processed += units
+        self.aging_bytes_scanned += scanned
+        return decayed
 
     # --- Batch compilation  [set_idle_hook / register_periodic_callback] ---
     def idle_hook(self, budget: int = 4) -> int:
@@ -1057,7 +1182,9 @@ class IntegratedRuntimeEngine:
                 if self.candidate_bitmap.is_candidate(pc):
                     est_bytes = len(block.ops) * CopyPatchCompiler.BYTES_PER_INSTRUCTION
                     if est_bytes >= self.min_trace_bytes:
-                        self.bitmap.touch(pc)
+                        if self.bitmap.touch(pc) == CardState.EXECUTED:
+                            # UNEXECUTED -> EXECUTED: the only way a card becomes EXECUTED.
+                            self.update_bitmap.mark(self.bitmap.function_of(pc))
                         self.history.record(pc)
                 self.interp_blocks += 1
                 self._interpret(block, ctx)
@@ -1546,6 +1673,162 @@ def test_interpreter_bypasses_touch_for_non_candidate() -> None:
     assert eng.bitmap.get_state(0x200) == CardState.UNEXECUTED
     assert len(eng.history.buf) == 0, "history recording must be bypassed for non-candidate"
     assert eng.interp_blocks == 1
+
+
+def _pc(i: int, func: int = 0) -> int:
+    """Block i of function `func`; every block's card is distinct (card = 8 * i)."""
+    return (func << 16) | (0x20 * i)
+
+
+def _aging_engine(counts: dict[int, int], **kw) -> IntegratedRuntimeEngine:
+    """Engine with `counts[f]` candidate blocks (12 bytes each) in function f."""
+    # The expectations below fix the sweep parameters; they do not follow the tuned defaults.
+    kw.setdefault("aging_step_units", 1)
+    kw.setdefault("aging_scan_bytes", 16)
+    eng = IntegratedRuntimeEngine(yield_threshold=10_000, **kw)
+    for func, n in counts.items():
+        for i in range(n):
+            eng.register_block(BasicBlock(_pc(i, func), [("i32.const", 1)] * 2, next_pc=None))
+    return eng
+
+
+def _run_once(eng: IntegratedRuntimeEngine, i: int, func: int = 0) -> None:
+    eng.run(_pc(i, func), WASMContext(), max_blocks=1)
+
+
+def _full_lap(eng: IntegratedRuntimeEngine) -> None:
+    # Every step processes at least one non-zero byte while any exists.
+    for _ in range(eng.update_bitmap.unit_count):
+        eng.age_step()
+
+
+def test_aging_decays_only_executed_cards() -> None:
+    """The sweep turns every EXECUTED card of a marked function into UNEXECUTED, never HOT or COMPILED."""
+    eng = _aging_engine({0: 4, 1: 1})
+    _run_once(eng, 0)  # function 0: EXECUTED
+    _run_once(eng, 1)
+    _run_once(eng, 1)  # function 0: HOT
+    _run_once(eng, 2)
+    _run_once(eng, 2)  # function 0: HOT -> forced COMPILED below (resident trace stand-in)
+    _run_once(eng, 3)  # function 0: EXECUTED
+    _run_once(eng, 0, 1)  # function 1: EXECUTED
+    eng.bitmap.mark_compiled(_pc(2))
+    assert eng.bitmap.get_state(_pc(1)) == CardState.HOT
+    _full_lap(eng)
+    for pc in (_pc(0), _pc(3), _pc(0, 1)):
+        assert eng.bitmap.get_state(pc) == CardState.UNEXECUTED, f"{pc:#x} must decay"
+    assert eng.bitmap.get_state(_pc(1)) == CardState.HOT, "HOT belongs to the compile queue"
+    assert eng.bitmap.get_state(_pc(2)) == CardState.COMPILED, "COMPILED belongs to the cache"
+    assert not eng.update_bitmap.is_marked(0) and not eng.update_bitmap.is_marked(1)
+    # A decayed card restarts its warm-up: one touch gives EXECUTED, not HOT.
+    _run_once(eng, 0)
+    assert eng.bitmap.get_state(_pc(0)) == CardState.EXECUTED
+
+
+def test_update_bitmap_covers_every_executed_card() -> None:
+    """Invariant: bit == 0  =>  the function has no EXECUTED card, under arbitrary touches and sweeps."""
+    eng = _aging_engine(dict.fromkeys(range(20), 2), aging_step_units=1)
+    seed = 12345
+    for _ in range(400):
+        seed = (seed * 1103515245 + 12345) & 0x7FFF_FFFF
+        if seed % 5 == 0:
+            eng.age_step()
+        else:
+            _run_once(eng, (seed >> 4) % 2, (seed >> 8) % 20)
+        for func in range(20):
+            if not eng.update_bitmap.is_marked(func):
+                for i in range(2):
+                    assert eng.bitmap.get_state(_pc(i, func)) != CardState.EXECUTED, (
+                        f"function {func} has an EXECUTED card but its update bit is clear"
+                    )
+
+
+def test_aging_is_paced_by_rotations() -> None:
+    """Only a bank rotation (explicit or caused by a full bank) advances the sweep."""
+    eng = _aging_engine(dict.fromkeys(range(41), 1))
+    _run_once(eng, 0, 24)  # a dirty function in byte 3 makes each step observable
+    _run_once(eng, 0, 40)  # a later dirty function keeps the table long enough not to wrap
+    assert eng.idle_hook() == 0  # empty queue
+    eng.compile_queue = [_pc(0, 5)]  # a real compile
+    assert eng.idle_hook() == 1
+    eng.bitmap.mark_compiled(_pc(0, 0))  # COMPILED-card skip
+    eng.compile_queue = [_pc(0, 0)]
+    eng.idle_hook()
+    assert eng.aging_steps == 0 and eng.update_bitmap.cursor == 0, "compilation does not age"
+
+    eng.cache.begin_patch()
+    eng.cache.rotate()
+    eng.cache.commit_patch()
+    assert eng.aging_steps == 1
+    assert eng.update_bitmap.cursor == 4, "the dirty byte was processed and the cursor moved on"
+    assert eng.bitmap.get_state(_pc(0, 24)) == CardState.UNEXECUTED
+    assert eng.bitmap.get_state(_pc(0, 40)) == CardState.EXECUTED, "byte 5 lies beyond this step"
+
+    eng.cache.begin_patch()
+    inserted = 0
+    while eng.aging_steps == 1:  # a full bank rotates by itself
+        assert inserted < 30
+        eng.cache.insert(JITTrace(_pc(0, 6 + inserted), lambda ctx: "COMPLETED", 512))
+        inserted += 1
+    eng.cache.commit_patch()
+    assert eng.aging_steps == 2 and inserted >= 2
+
+
+def test_aging_visits_only_updated_functions_and_wraps() -> None:
+    """Zero bytes do not count, a step ends after N non-zero bytes or one full pass, and the cursor wraps."""
+    eng = _aging_engine(dict.fromkeys(range(18), 1))
+    _run_once(eng, 0, 0)  # byte 0
+    _run_once(eng, 0, 17)  # byte 2, so the table is 3 bytes long
+    assert eng.age_step() == 1 and eng.update_bitmap.cursor == 1
+    assert eng.bitmap.get_state(_pc(0, 0)) == CardState.UNEXECUTED
+    assert eng.bitmap.get_state(_pc(0, 17)) == CardState.EXECUTED
+    assert eng.age_step() == 1, "the zero byte 1 is skipped, byte 2 is processed"
+    assert eng.update_bitmap.cursor == 0, "byte 2 was the last byte: the cursor wraps"
+    assert eng.bitmap.get_state(_pc(0, 17)) == CardState.UNEXECUTED
+    scanned_before = eng.aging_bytes_scanned
+    assert eng.age_step() == 0, "nothing is dirty"
+    assert eng.aging_bytes_scanned - scanned_before == 3, "one full pass, then the step ends"
+    assert eng.update_bitmap.cursor == 0, "a full pass returns the cursor to where it started"
+    assert eng.aging_units_processed == 2
+
+    # Two non-zero bytes per step; the zero byte in between does not count.
+    wide = _aging_engine(dict.fromkeys(range(18), 1), aging_step_units=2)
+    _run_once(wide, 0, 0)
+    _run_once(wide, 0, 17)
+    assert wide.age_step() == 2 and wide.aging_units_processed == 2
+    assert wide.update_bitmap.cursor == 0, "the step ended right after the second unit (byte 2)"
+    assert wide.bitmap.get_state(_pc(0, 0)) == CardState.UNEXECUTED
+    assert wide.bitmap.get_state(_pc(0, 17)) == CardState.UNEXECUTED
+
+
+def test_aging_step_stops_at_the_scan_byte_limit() -> None:
+    """A step also ends once `aging_scan_bytes` bytes are scanned, zero bytes included."""
+    eng = _aging_engine({160: 1}, aging_step_units=100, aging_scan_bytes=4)
+    _run_once(eng, 0, 160)  # byte 20: the table is 21 bytes long
+    for expected_byte in (4, 8, 12, 16, 20):
+        assert eng.age_step() == 0, "a limited scan must not reach the dirty byte yet"
+        assert eng.update_bitmap.cursor == expected_byte
+    assert eng.aging_bytes_scanned == 20
+    assert eng.age_step() == 1, "the dirty byte (20) lies inside the sixth scan window"
+    assert eng.update_bitmap.cursor == 3, (
+        "byte 20 ended the table, then bytes 0-2 filled the window"
+    )
+    assert eng.bitmap.get_state(_pc(0, 160)) == CardState.UNEXECUTED
+
+
+def test_aging_processes_every_set_function_of_a_byte() -> None:
+    """One non-zero byte is one unit: every function whose bit is set in it is processed at once."""
+    eng = _aging_engine({0: 2, 1: 2, 9: 1})
+    _run_once(eng, 1, 0)  # function 0, byte 0
+    _run_once(eng, 0, 1)  # function 1, byte 0
+    _run_once(eng, 0, 9)  # function 9, byte 1
+    assert eng.age_step() == 2, "the EXECUTED cards of functions 0 and 1 decay in one step"
+    assert eng.update_bitmap.cursor == 1 and eng.aging_units_processed == 1
+    assert eng.bitmap.get_state(_pc(1, 0)) == CardState.UNEXECUTED
+    assert eng.bitmap.get_state(_pc(0, 1)) == CardState.UNEXECUTED
+    assert eng.bitmap.get_state(_pc(0, 9)) == CardState.EXECUTED, "function 9 belongs to byte 1"
+    assert eng.age_step() == 1
+    assert eng.bitmap.get_state(_pc(0, 9)) == CardState.UNEXECUTED
 
 
 if __name__ == "__main__":

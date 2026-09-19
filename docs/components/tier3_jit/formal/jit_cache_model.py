@@ -4,7 +4,7 @@ pyModelChecking による JIT 3面キャッシュ代謝・MPU W^X・遅延チェ
 """
 
 from pyModelChecking import Kripke
-from pyModelChecking.CTL import AF, AG, And, AtomicProposition, Imply, Not
+from pyModelChecking.CTL import AF, AG, And, AtomicProposition, Imply, Not, Or
 
 BACKS = [
     "components/tier2_runtime/concepts/runtime_engine_concept.py",
@@ -14,8 +14,10 @@ BACKS = [
 ]
 
 
-def build_model(*, guards: bool = True) -> Kripke:
+def build_model(*, guards: bool = True, aging_guard: bool = True) -> Kripke:
     """
+    aging_guard: False のとき、エイジングスイープに関する変異だけを有効化する
+    （guards=True のまま単独で変異検査を行うための独立スイッチ）。guards=False は全変異を含む。
     JIT 3面キャッシュ代謝・遅延チェイニング安全性・2-bit Hotspot FSM・MPU W^X 統合形式検証モデル
     遅延チェイニング安全性モデル (第13信 §89 準拠):
     - 状態は 3つ組 (age_source, age_target, linked) で表現
@@ -57,6 +59,10 @@ def build_model(*, guards: bool = True) -> Kripke:
         "s_bad_permanent_deopt",
         "s_bad_compile_failure_retry",
         "s_dangling_chain",  # guards=False で ch_s0_t1_l1 から到達するダングリング違反状態 (src=2, tgt=3, linked=1)
+        # --- エイジングスイープ違反状態（{JIT_CardAgingSweep}） ---
+        "s_bad_aged_compiled",  # スイープが COMPILED（常駐トレース）を戻した
+        "s_bad_aged_hot",  # スイープが HOT（コンパイル待ち列）を戻した
+        "s_bad_aging_stall",  # EXECUTED がスイープされず永久に残る
     ]
     S0 = {"s_idle", "ch_s0_t0_l1", "ch_s0_t1_l1"}
     R = [
@@ -80,6 +86,8 @@ def build_model(*, guards: bool = True) -> Kripke:
         ("c_compiled", "s_active_exec"),
         ("c_compiled", "c_evicted"),
         ("c_evicted", "c_unexecuted"),
+        # --- エイジングスイープ: EXECUTED だけを UNEXECUTED へ戻す ---
+        ("c_executed", "c_unexecuted"),
         # --- 遅延チェイニング共通遷移 ---
         ("ch_s0_t0_l1", "ch_s1_t1_l1"),
         ("ch_s1_t1_l1", "ch_s2_t2_l0"),
@@ -94,7 +102,18 @@ def build_model(*, guards: bool = True) -> Kripke:
         ("s_bad_permanent_deopt", "s_bad_permanent_deopt"),
         ("s_bad_compile_failure_retry", "s_bad_compile_failure_retry"),
         ("s_dangling_chain", "s_dangling_chain"),
+        ("s_bad_aged_compiled", "s_bad_aged_compiled"),
+        ("s_bad_aged_hot", "s_bad_aged_hot"),
+        ("s_bad_aging_stall", "s_bad_aging_stall"),
     ]
+    if not guards or not aging_guard:
+        # エイジング変異（独立検査可能）:
+        # 1. スイープが COMPILED まで戻す（常駐トレースのカードを失う）
+        R.append(("c_compiled", "s_bad_aged_compiled"))
+        # 2. スイープが HOT まで戻す（コンパイル待ち列と状態が食い違う）
+        R.append(("c_hot", "s_bad_aged_hot"))
+        # 3. スイープが EXECUTED を巡回しない（減衰が起きない）
+        R.append(("c_executed", "s_bad_aging_stall"))
     if guards:
         # ガード有効時: ch_s0_t1_l1 は掃引により ch_s1_t2_l0 (unlinked) へ安全遷移
         R.append(("ch_s0_t1_l1", "ch_s1_t2_l0"))
@@ -139,6 +158,9 @@ def build_model(*, guards: bool = True) -> Kripke:
         "s_bad_permanent_deopt": {"bad_permanent_deopt", "evicted"},
         "s_bad_compile_failure_retry": {"compile_failed", "compile_retry_enabled"},
         "s_dangling_chain": {"dangling_chain", "bad_chain", "linked"},
+        "s_bad_aged_compiled": {"bad_aged_compiled", "unexecuted"},
+        "s_bad_aged_hot": {"bad_aged_hot", "unexecuted"},
+        "s_bad_aging_stall": {"executed", "aging_stalled"},
     }
     return Kripke(S=S, S0=S0, R=R, L=L)
 
@@ -209,6 +231,38 @@ def properties():
             "violation": AtomicProposition("bad_permanent_deopt"),
             "expect": True,  # キャッシュ破棄(Eviction)後は UNEXECUTED を経て EXECUTED(再コンパイル可能)へ復帰する (TEST-JITR-04)
         },
+        {
+            "name": "aging_never_drops_compiled",
+            "kind": "safety",
+            "logic": "CTL",
+            "formula": AG(Not(AtomicProposition("bad_aged_compiled"))),
+            "violation": AtomicProposition("bad_aged_compiled"),
+            "expect": True,  # エイジングスイープは COMPILED（常駐トレース）を戻さない (GOTCHA-JITR-09)
+            "isolated_mutation": "aging",
+        },
+        {
+            "name": "aging_never_drops_hot",
+            "kind": "safety",
+            "logic": "CTL",
+            "formula": AG(Not(AtomicProposition("bad_aged_hot"))),
+            "violation": AtomicProposition("bad_aged_hot"),
+            "expect": True,  # エイジングスイープは HOT（コンパイル待ち列）を戻さない (GOTCHA-JITR-09)
+            "isolated_mutation": "aging",
+        },
+        {
+            "name": "executed_card_eventually_ages_or_promotes",
+            "kind": "liveness",
+            "logic": "CTL",
+            "formula": AG(
+                Imply(
+                    AtomicProposition("executed"),
+                    AF(Or(AtomicProposition("unexecuted"), AtomicProposition("hot"))),
+                )
+            ),
+            "violation": AtomicProposition("aging_stalled"),
+            "expect": True,  # EXECUTED は有限回のローテーションの内に減衰するか HOT へ進む
+            "isolated_mutation": "aging",
+        },
     ]
 
 
@@ -230,3 +284,15 @@ if __name__ == "__main__":
         violated = not km_mut.S0.issubset(res_mut)
         assert violated, f"Mutation for {prop['name']} was NOT detected!"
         print(f"  [PASS (Refuted as expected)] {prop['name']}")
+
+    print("=== Isolated Mutation Testing: aging sweep only (guards=True, aging_guard=False) ===")
+    km_aging = build_model(guards=True, aging_guard=False)
+    for prop in properties():
+        res_aging = modelcheck(km_aging, prop["formula"])
+        holds = km_aging.S0.issubset(res_aging)
+        if prop.get("isolated_mutation") == "aging":
+            assert not holds, f"Aging mutation for {prop['name']} was NOT detected!"
+            print(f"  [PASS (Refuted by aging mutation only)] {prop['name']}")
+        else:
+            assert holds, f"Aging mutation leaked into unrelated property {prop['name']}!"
+            print(f"  [PASS (Unaffected)] {prop['name']}")

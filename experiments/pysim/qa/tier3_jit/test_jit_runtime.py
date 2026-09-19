@@ -65,7 +65,7 @@ from runtime_engine import (
     RuntimeEngine,
 )
 from system_containers import ReadOnlyRadixBinaryTreeStorage, StaticVector
-from test_support import PcOnlyCompiler, make_pc_only_module
+from test_support import PcOnlyCompiler, make_pc_only_functions_module, make_pc_only_module
 from wasm_opcodes import BR_TABLE, I32_ADD, I32_CONST, LOCAL_GET, LOCAL_SET
 from wasm_reader import parse
 from x64_jit import TraceCompiler
@@ -1276,6 +1276,227 @@ def test_jitr_runtime_engine_surfaces_guest_trap_at_sync_boundary():
         assert False, "RuntimeEngine.run returned normally after a guest trap"
 
 
+def _pc(i, func=0):
+    """Block i of function `func`; every block's card is distinct (card = 8 * i)."""
+    return (func << 16) | (0x20 * i)
+
+
+def _aging_engine(counts, compile_fn=None, **engine_kwargs):
+    """RuntimeEngine over a PC-only module with `counts[f]` blocks in function f."""
+
+    def default_compile(pc):
+        return JITTrace(pc, lambda: 0, size_bytes=64)
+
+    # The expectations below fix the sweep parameters; they do not follow the tuned defaults.
+    engine_kwargs.setdefault("aging_step_units", 1)
+    engine_kwargs.setdefault("aging_scan_bytes", 16)
+    engine = RuntimeEngine(
+        jit_compiler=PcOnlyCompiler(compile_fn if compile_fn is not None else default_compile),
+        **engine_kwargs,
+    )
+    module = make_pc_only_functions_module(
+        tuple(tuple(0x20 * i for i in range(count)) for count in counts)
+    )
+    engine.register_module_blocks(module)
+    return engine, module
+
+
+def _touch_via_yield(engine, pc):
+    """Record one block head and let the yield handler touch its card."""
+    engine.ring.record(pc)
+    engine.on_yield()
+
+
+def _aging_full_lap(engine):
+    # Every step processes at least one non-zero byte while any exists.
+    for _ in range(engine.update_bitmap.unit_count):
+        engine.age_step()
+
+
+def test_jitr_aging_decays_only_executed_cards():
+    """TEST-JITR-16: the sweep turns every EXECUTED card of a marked function into UNEXECUTED, never HOT/COMPILED."""
+    engine, _module = _aging_engine((4, 1))
+    _touch_via_yield(engine, _pc(0))  # function 0: EXECUTED
+    _touch_via_yield(engine, _pc(1))
+    _touch_via_yield(engine, _pc(1))  # function 0: HOT, queued
+    _touch_via_yield(engine, _pc(2))
+    _touch_via_yield(engine, _pc(2))  # function 0: HOT, queued
+    _touch_via_yield(engine, _pc(3))  # function 0: EXECUTED
+    _touch_via_yield(engine, _pc(0, 1))  # function 1: EXECUTED
+    engine.bitmap.mark_compiled(_pc(2))  # stand-in for a resident trace
+    assert engine.bitmap.get_state(_pc(1)) == CardState.HOT
+    queued = len(engine.compile_queue)
+
+    _aging_full_lap(engine)
+
+    for pc in (_pc(0), _pc(3), _pc(0, 1)):
+        assert engine.bitmap.get_state(pc) == CardState.UNEXECUTED, f"{pc:#x} must decay"
+    assert engine.bitmap.get_state(_pc(1)) == CardState.HOT, "HOT belongs to the compile queue"
+    assert engine.bitmap.get_state(_pc(2)) == CardState.COMPILED, "COMPILED belongs to the cache"
+    assert len(engine.compile_queue) == queued
+    assert not engine.update_bitmap.is_marked(0) and not engine.update_bitmap.is_marked(1)
+    # A decayed card restarts its warm-up: one touch gives EXECUTED, not HOT.
+    _touch_via_yield(engine, _pc(0))
+    assert engine.bitmap.get_state(_pc(0)) == CardState.EXECUTED
+
+
+def test_jitr_update_bitmap_covers_every_executed_card():
+    """TEST-JITR-17: an update bit of 0 implies the function has no EXECUTED card, under arbitrary touches and sweeps."""
+    engine, _module = _aging_engine((2,) * 20)
+    seed = 12345
+    for _ in range(400):
+        seed = (seed * 1103515245 + 12345) & 0x7FFF_FFFF
+        if seed % 5 == 0:
+            engine.age_step()
+        else:
+            _touch_via_yield(engine, _pc((seed >> 4) % 2, (seed >> 8) % 20))
+        for func in range(20):
+            if not engine.update_bitmap.is_marked(func):
+                for index in range(2):
+                    state = engine.bitmap.get_state(_pc(index, func))
+                    assert state != CardState.EXECUTED, (
+                        f"function {func} has an EXECUTED card but its update bit is clear"
+                    )
+
+
+def test_jitr_aging_advances_once_per_rotation():
+    """TEST-JITR-18: only a bank rotation (explicit or caused by a full bank) advances the sweep."""
+    fail_pc = _pc(0, 4)
+
+    def compile_fn(pc):
+        return None if pc == fail_pc else JITTrace(pc, lambda: 0, size_bytes=64)
+
+    engine, _module = _aging_engine((1,) * 41, compile_fn)  # 6 update-bitmap bytes
+    _touch_via_yield(engine, _pc(0, 24))  # a dirty function in byte 3 makes each step observable
+    _touch_via_yield(engine, _pc(0, 40))  # a later dirty function in byte 5
+
+    assert engine.idle_hook() == 0  # empty queue
+    engine.compile_queue.push_back(_pc(0, 5))  # a successful compile
+    assert engine.idle_hook() == 1
+    engine.bitmap.mark_compiled(_pc(0, 0))  # COMPILED-card skip
+    engine.compile_queue.push_back(_pc(0, 0))
+    assert engine.idle_hook() == 0
+    engine.compile_queue.push_back(fail_pc)  # a failed compile
+    assert engine.idle_hook() == 0
+    assert engine.aging_steps == 0 and engine.update_bitmap.cursor == 0, (
+        "compilation, whatever its outcome, does not age"
+    )
+
+    engine.cache.flush_all()
+    assert engine.aging_steps == 0, "an explicit flush is not a rotation"
+
+    engine.cache.rotate()
+    assert engine.aging_steps == 1
+    assert engine.update_bitmap.cursor == 4, "the dirty byte was processed and the cursor moved on"
+    assert engine.bitmap.get_state(_pc(0, 24)) == CardState.UNEXECUTED
+    assert engine.bitmap.get_state(_pc(0, 40)) == CardState.EXECUTED, "byte 5 lies beyond this step"
+
+    inserted = 0
+    while engine.aging_steps == 1:  # a full bank rotates by itself
+        assert inserted < 30
+        engine.cache.insert(JITTrace(_pc(0, 6 + inserted), lambda: 0, size_bytes=512))
+        inserted += 1
+    assert engine.aging_steps == 2 and inserted >= 2
+
+
+def test_jitr_aging_cursor_wraps_and_bounds_each_step():
+    """TEST-JITR-19: zero bytes do not count, a step ends at N units or O scanned bytes, the cursor wraps."""
+    engine, _module = _aging_engine((1,) * 18)  # a 3-byte table
+    _touch_via_yield(engine, _pc(0, 0))  # byte 0
+    _touch_via_yield(engine, _pc(0, 17))  # byte 2
+    assert engine.age_step() == 1 and engine.update_bitmap.cursor == 1
+    assert engine.bitmap.get_state(_pc(0, 0)) == CardState.UNEXECUTED
+    assert engine.bitmap.get_state(_pc(0, 17)) == CardState.EXECUTED
+    assert engine.age_step() == 1, "the zero byte 1 is skipped, byte 2 is processed"
+    assert engine.update_bitmap.cursor == 0, "byte 2 was the last byte: the cursor wraps"
+    assert engine.bitmap.get_state(_pc(0, 17)) == CardState.UNEXECUTED
+    scanned_before = engine.aging_bytes_scanned
+    assert engine.age_step() == 0, "nothing is dirty"
+    assert engine.aging_bytes_scanned - scanned_before == 3, "one full pass, then the step ends"
+    assert engine.update_bitmap.cursor == 0, "a full pass returns the cursor to where it started"
+    assert engine.aging_units_processed == 2
+
+    # Two non-zero bytes per step; the zero byte in between does not count.
+    wide, _ = _aging_engine((1,) * 18, aging_step_units=2)
+    _touch_via_yield(wide, _pc(0, 0))
+    _touch_via_yield(wide, _pc(0, 17))
+    assert wide.age_step() == 2 and wide.aging_units_processed == 2
+    assert wide.update_bitmap.cursor == 0, "the step ended right after the second unit (byte 2)"
+    assert wide.bitmap.get_state(_pc(0, 0)) == CardState.UNEXECUTED
+    assert wide.bitmap.get_state(_pc(0, 17)) == CardState.UNEXECUTED
+
+    # The scan-byte limit ends a step even when no unit was processed.
+    limited, _ = _aging_engine((1,) * 170, aging_step_units=100, aging_scan_bytes=4)  # 22 bytes
+    _touch_via_yield(limited, _pc(0, 160))  # byte 20
+    for expected_byte in (4, 8, 12, 16, 20):
+        assert limited.age_step() == 0, "a limited scan must not reach the dirty byte yet"
+        assert limited.update_bitmap.cursor == expected_byte
+    assert limited.aging_bytes_scanned == 20
+    assert limited.age_step() == 1, "the dirty byte lies inside the sixth scan window"
+    assert limited.update_bitmap.cursor == 2, "bytes 20, 21, then 0 and 1 filled the window"
+    assert limited.bitmap.get_state(_pc(0, 160)) == CardState.UNEXECUTED
+
+
+def test_jitr_aging_processes_every_set_function_of_a_byte_and_ignores_imports():
+    """TEST-JITR-19: one non-zero byte is one unit; an import function never gets its bit set."""
+    engine, _module = _aging_engine((2, 2, 0, 0, 0, 0, 0, 0, 0, 1))  # 10 functions, 2 bytes
+    _touch_via_yield(engine, _pc(1, 0))  # function 0, byte 0
+    _touch_via_yield(engine, _pc(0, 1))  # function 1, byte 0
+    _touch_via_yield(engine, _pc(0, 9))  # function 9, byte 1
+    assert engine.age_step() == 2, "the EXECUTED cards of functions 0 and 1 decay in one step"
+    assert engine.update_bitmap.cursor == 1 and engine.aging_units_processed == 1
+    assert engine.bitmap.get_state(_pc(1, 0)) == CardState.UNEXECUTED
+    assert engine.bitmap.get_state(_pc(0, 1)) == CardState.UNEXECUTED
+    assert engine.bitmap.get_state(_pc(0, 9)) == CardState.EXECUTED, "function 9 belongs to byte 1"
+    assert engine.age_step() == 1
+    assert engine.bitmap.get_state(_pc(0, 9)) == CardState.UNEXECUTED
+
+    wat = """
+    (module
+      (import "env" "h" (func $h))
+      (func (export "a") (i32.const 1) (drop) (i32.const 2) (drop))
+      (func (export "b") (i32.const 3) (drop) (i32.const 4) (drop))
+    )
+    """
+    wasm_engine = RuntimeEngine(
+        jit_compiler=PcOnlyCompiler(lambda pc: None), aging_step_units=1, aging_scan_bytes=16
+    )
+    module = wasm_engine.load_wasm(bytes(wasmtime.wat2wasm(wat)))
+    update = wasm_engine.update_bitmap
+    assert update.function_count == 3 and update.unit_count == 1
+    pc_a = module.blocks[0].head_pc
+    pc_b = module.blocks[len(module.blocks) - 1].head_pc
+    assert pc_a >> 16 == 1 and pc_b >> 16 == 2
+    _touch_via_yield(wasm_engine, pc_a)
+    _touch_via_yield(wasm_engine, pc_b)
+    assert not update.is_marked(0), "an import function has no cards, so its bit is never set"
+    assert update.is_marked(1) and update.is_marked(2)
+    assert wasm_engine.age_step() == 2, "both functions share byte 0 and are processed together"
+    assert wasm_engine.bitmap.get_state(pc_a) == CardState.UNEXECUTED
+    assert wasm_engine.bitmap.get_state(pc_b) == CardState.UNEXECUTED
+
+
+def test_gotcha_jitr_09_aging_never_drops_compiled_or_hot():
+    """GOTCHA-JITR-09: the sweep keeps a resident trace's card COMPILED and a queued card HOT."""
+    pc_res, pc_hot, pc_exec = _pc(0), _pc(1), _pc(2)
+    engine, _module = _aging_engine((3,))
+    engine.compile_queue.push_back(pc_res)
+    assert engine.idle_hook(budget=1) == 1
+    assert engine.cache.find_trace(pc_res) is not None
+    assert engine.bitmap.get_state(pc_res) == CardState.COMPILED
+    _touch_via_yield(engine, pc_hot)
+    _touch_via_yield(engine, pc_hot)  # HOT, queued
+    _touch_via_yield(engine, pc_exec)  # EXECUTED
+
+    _aging_full_lap(engine)
+
+    assert engine.bitmap.get_state(pc_res) == CardState.COMPILED, "a resident trace stays reachable"
+    assert engine.cache.lookup(pc_res) is not None
+    assert engine.bitmap.get_state(pc_hot) == CardState.HOT
+    assert engine.compile_queue.contains(pc_hot), "the pending request keeps its HOT card"
+    assert engine.bitmap.get_state(pc_exec) == CardState.UNEXECUTED
+
+
 if __name__ == "__main__":
     test_hotspot_01_2bit_card_marking_state_transitions()
     test_jitr_01_card_marking_granularity()
@@ -1308,4 +1529,10 @@ if __name__ == "__main__":
     test_jitr_runtime_engine_preserves_typed_top_level_results()
     test_jitr_host_import_stays_on_interpreter_runtime_boundary()
     test_jitr_runtime_engine_surfaces_guest_trap_at_sync_boundary()
-    print("[PASS] All 31 JIT Runtime & Cache tests passed.")
+    test_jitr_aging_decays_only_executed_cards()
+    test_jitr_update_bitmap_covers_every_executed_card()
+    test_jitr_aging_advances_once_per_rotation()
+    test_jitr_aging_cursor_wraps_and_bounds_each_step()
+    test_jitr_aging_processes_every_set_function_of_a_byte_and_ignores_imports()
+    test_gotcha_jitr_09_aging_never_drops_compiled_or_hot()
+    print("[PASS] All 37 JIT Runtime & Cache tests passed.")

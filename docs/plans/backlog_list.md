@@ -35,6 +35,10 @@ Fireball Hypervisor の現行作業および次期フェーズのタスク一覧
   - JIT遷移テストを現行`Interpreter`／`RuntimeEngine.run()`へ移行し、旧`IntegratedHybridEngine`と旧ランタイムエンジンを削除した
   - デバッガ／GDBのブロック単位操作は、製品ランタイムへテスト専用APIを追加せず、[`runtime_test_driver.py`](experiments/pysim/qa/runtime_test_driver.py)にテスト側ドライバとして分離した
   - 移行後の関連テストは、JIT 8件、vSoC 21件、デバッガ 8件、GDB 1件、Gotchas 30件が通過している
+- [x] **カード状態のエイジング（`{JIT_CardAgingSweep}`）**:
+  - 3面キャッシュのローテーションごとに関数更新表（関数につき1ビット）を8関数単位で巡回し、`EXECUTED` のカードだけを `UNEXECUTED` へ戻す方式を、仕様・形式モデル・コンセプトコード・pysim・テスト仕様へ同期した
+  - 巡回は、値が0でないバイトの処理数（`FB_CONF_JIT_AGING_STEP_UNITS`）または走査バイト数（`FB_CONF_JIT_AGING_STEP_SCAN_BYTES`）で打ち切る。既定値は仮値であり、aobench 等の実測で調整する
+  - 関数更新表は関数数ビット（⌈関数数/8⌉ バイト）である。RAM 予算への影響は Step 2.4 で確認する
 - [ ] **アーキテクチャ監査課題の設計整合・ADR策定**:
   - **現行証跡の再監査**: 要求・仕様・形式モデル・テスト・実装を基準に監査記録を整備する。対象はJITチェイン終端、AAPCS SP整列、ハンドラABI、JIT状態遷移・計算量、CSP保証、WIT／vMMIO契約、設計根拠である
   - JITのネイティブトレース間chainと参照シミュレータの再検索との差は、ターゲット固有最適化と参照モデルの抽象度差を切り分けて再レビューする

@@ -39,6 +39,12 @@ JITサブシステムは、以下の2つの独立した設計書に責務を分�
   - `2: HOT` (コンパイル要求中)
   - `3: COMPILED` (コンパイル済み / オンデマンド許可)
 - **コンパイル対象可否マスク (Trackable Mask)**: ブロックの静的適格性を管理する 1 ビット状態表である。ロード時に一度だけマークされる。`next_pc` を持ち、かつバイト長が `min_trace_bytes` 以上のブロックを対象とする。密ビュー `fireball::bit_view<1>` として独立バッファで参照する。実行時のディスパッチはこの 1 ビットのみを参照する。ブロックの静的メタデータを再走査する必要がない。 `{TrackableBlockMask}`
+- **関数更新表 (Function Update Bitmap)**: 関数添字ごとの 1 ビット状態表である。前回の巡回以降に、その関数のカードが `UNEXECUTED` から `EXECUTED` へ遷移した関数だけに 1 を立てる。密ビュー `fireball::bit_view<1>` として独立バッファで参照する。
+  - サイズは、モジュールの関数数と同じビット数である。
+  - 関数添字は、touch した PC の上位 16 ビットから直接決まる。カードや基本ブロックの解決は要らない。
+  - 巡回は 8 関数を 1 バイトとして行う。値が 0 のバイトは 1 回の比較で読み飛ばす。
+  - コードを持たない関数（import 関数）のビットは立たない。
+- **エイジングカーソル**: 関数更新表のバイト位置を保持する整数である。モジュール登録時に 0 で初期化し、表の末尾に達したら先頭へ戻る。
 - **JITエントリ表**: 各バンクの `head_pc` 順に並ぶ固定容量配列である。検索は二分探索（$O(\log n)$）とし、削除済み枠は無効項目として扱う。エントリが少ないためRadix索引を設けない。
 - **JITコード領域 (8KB)**: 4KBページ2枚分の連続領域である。先頭2KBは開始処理、終了処理、対象ABIのヘルパー呼出しコード、および絶対アドレスプールを置く非エビクション領域とし、残る2KBずつを`Bank 0 (Active)`, `Bank 1 (Warm)`, `Bank 2 (Oldest)`に割り当てる。トレースヘッダのサイズと物理欄は対象ABIで定義し、共通領域オフセットとエントリ・終了ジャンプ先を保持する。MPUの`W^X`制御対象であり、共通コード領域はflushやバンクローテーションでも維持する。
   共通領域内の固定オフセットは次のとおりである。オフセットはコード領域先頭からの値であり、トレースヘッダのフィールド位置とは別の値である。
@@ -77,6 +83,7 @@ flowchart TD
 | 高速スロット配列 | 4-bit スロット選択を行う Folding XOR Hash による Direct-Mapped キャッシュ | 固定長配列 | 16スロット (`{DirectMappedJIT16}`) |
 | エントリ配列 | `head_pc` 昇順のJITエントリを保持する | 固定長ソート配列 | 二分探索 $O(\log n)$。Radix索引なし |
 | カードマーキング表 | カードごとの 2-bit 状態表 | 密ビュー | `fireball::bit_view<2>` |
+| 関数更新表 | 前回の巡回以降に `EXECUTED` のカードが生じた関数の印 | 密ビュー | `fireball::bit_view<1>`、関数数ビット |
 | 被チェイン逆引きテーブル | バンクごとの被チェイン元 JIT エントリインデックス配列 | 固定長配列の配列 | `FB_CONF_JIT_MAX_INBOUND_CHAINS_PER_BANK` |
 | 履歴バッファ | 判定契機までの一時的な実行記録 | リングバッファ | `offset` の配列 `{HistoryBuffer}` |
 
@@ -104,6 +111,7 @@ flowchart TD
    - パージ直前に、被チェイン逆引きテーブルに登録されたソースエントリ（$k$ 件）のみを参照する。
    - 昇格済みなら再チェイニングし、完全破棄なら復帰スタブへアンパッチする。全件走査は行わない。
    - `rotate()` および `flush_all()` 実行時には Folding XOR 高速キャッシュを無効化する。古いバンクへの誤参照を防止する（`{GOTCHA-JITR-05}`）。
+   - ローテーションのたびに、エイジングスイープを 1 ステップ実行する（手順10）。`flush_all()` では実行しない。
    - 参照実装のバンク破棄は、破棄対象の$n$項目の消去と被チェイン元$k$件の照合を伴うため、実際の処理量は$O(n + k\log n)$である。固定容量$n_max$と被チェイン件数上限$k_max$により停止量は上限化されるが、$O(k)$とは表現しない。ターゲット実装はバンク破棄の方法を別途定義する。
 8. **トレース昇格時のインバウンドソース付け替え (`{GOTCHA-JITR-02}`)**:
    - Oldest バンクのトレースが再実行されて新 Active バンクへ昇格した際、チェイン先アドレスを新バンクへ更新する。
@@ -111,6 +119,47 @@ flowchart TD
 9. **キュー処理時のキャッシュ再確認と二重コンパイル抑止 (`{GOTCHA-JITR-01}`)**:
    - コンパイル待ち列から取り出した PC が、既に 3 面キャッシュに常駐済みであれば再コンパイルを行わない。カード状態のみ `COMPILED` へ同期する。
    - **設計理由**: 二重コンパイルによるキャッシュ容量の浪費と CPU 時間の損失を完全に防止する。
+10. **エイジングスイープ (`{JIT_CardAgingSweep}`)**:
+   - 目的は、`EXECUTED` のまま長く残ったカードを `UNEXECUTED` へ戻すことである。時間的に離れた2回の実行が `HOT` を成立させる状況を防ぐ。
+   - 契機は、3 面キャッシュのローテーション（`rotate()`）である。ローテーション 1 回につき 1 ステップを実行する。バンク満杯による自動ローテーションも含む。コンパイルの成否や `flush_all()` では実行しない。
+   - ローテーションは、キャッシュ圧迫の直接の指標である。追い出しが起きない間は、エイジングも止めてよい。
+   - 1 回の実行では、エイジングカーソルから 8 関数（1 バイト）単位で関数更新表を進める。
+   - 値が 0 でないバイトを `FB_CONF_JIT_AGING_STEP_UNITS` 個処理した時点で、1 回の実行を終える。
+   - 走査したバイトが `FB_CONF_JIT_AGING_STEP_SCAN_BYTES` 個に達した時点でも、1 回の実行を終える。値が 0 のバイトも走査数に数える。
+   - 値が 0 のバイトは処理数に数えず、読み飛ばす。表を 1 周しても終了条件に達しない場合は、1 周した時点で終える。
+   - 処理するバイトでは、ビットが立った関数だけを扱う。
+   - 処理する関数では、その関数のカードマーキング表を先頭から末尾まで走査し、`EXECUTED` のカードをすべて `UNEXECUTED` へ戻す。その後、当該関数のビットを 0 にする。
+   - `HOT` と `COMPILED` のカードには触れない。`HOT` はコンパイル待ち列と対応し、`COMPILED` は常駐トレースと対応するためである。
+   - 走査後にカーソルを進める。表の末尾に達したら先頭へ戻る。
+   - **ビットを立てる契機**: カードが `UNEXECUTED` から `EXECUTED` へ遷移した時点で、そのカードの関数のビットを立てる。この遷移はカード状態の更新（touch）の中だけで起きる。遷移が起きた場合を除き、ホットパスへ処理を追加しない。
+   - **設計理由**: 前回の巡回以降に `EXECUTED` のカードが生じていない関数は、`EXECUTED` のカードを持たない。更新表を持つことで、その関数のカード表の走査を省く。
+   - **上限**: 1 回の実行で走査するバイトは最大 $\min(O, \lceil F / 8 \rceil)$ 個である。処理する関数は最大 $8 \times U$ 個である（$F$: 関数数、$U$: `FB_CONF_JIT_AGING_STEP_UNITS`、$O$: `FB_CONF_JIT_AGING_STEP_SCAN_BYTES`）。
+   - **処理量**: 1 関数の処理量は、その関数のカードマーキング表の大きさに比例する。1 回の実行の最大処理量は、$8 \times U$ 個の関数のカード表の合計である。
+   - **有限性**: ビットが立った関数は、高々 $\lceil \lceil F / 8 \rceil / O \rceil + \lceil \lceil F / 8 \rceil / U \rceil$ 回のローテーションの内に処理される。1 周に要するローテーションは、少なくとも $\lceil \lceil F / 8 \rceil / O \rceil$ 回である。
+   - **保持期間**: カーソルが通過する直前に `EXECUTED` になったカードは、ほぼ直後に減衰する。1 周に要するローテーション数の下限は走査上限が決め、値が 0 でないバイトが多いほど 1 周は長くなる。減衰は関数単位なので、同じ関数の `EXECUTED` のカードは同時に減衰する。`HOT` の閾値（2回の実行）はこの範囲で満たす必要がある。
+
+#### エイジングスイープ手順（手順アクティビティ図）
+<!-- traceability: {JIT_CardAgingSweep} {TrackableBlockMask} {GOTCHA-JITR-09} -->
+ローテーションごとに実行する巡回手順を示す。
+
+```mermaid
+flowchart TD
+    Start(["Bank rotation finished"]) --> Init["Set units_done = 0, scanned = 0"]
+    Init --> More{"units_done < FB_CONF_JIT_AGING_STEP_UNITS and scanned < min(FB_CONF_JIT_AGING_STEP_SCAN_BYTES, ceil(F / 8))?"}
+    More -- "No" --> Done(["Return to rotation"])
+    More -- "Yes" --> Read["Read function update bitmap byte at cursor"]
+    Read --> Zero{"Byte == 0?"}
+    Zero -- "Yes" --> Advance["Advance cursor (wrap at end) and scanned = scanned + 1"]
+    Zero -- "No" --> Bit["Take next set bit: function f"]
+    Bit --> Scan["Scan card marking table of function f"]
+    Scan --> Decay["Set every EXECUTED card to UNEXECUTED (HOT / COMPILED unchanged)"]
+    Decay --> Clear["Clear bit f"]
+    Clear --> Rest{"Set bits remain in byte?"}
+    Rest -- "Yes" --> Bit
+    Rest -- "No" --> Count["units_done = units_done + 1"]
+    Count --> Advance
+    Advance --> More
+```
 
 #### 3段高速検索パイプライン手順（手順アクティビティ図）
 <!-- traceability: {JIT_MultiBuffer_Cache} {LowLatencyJIT} {DirectMappedJIT16} {META_BinarySearch} -->
@@ -135,7 +184,7 @@ flowchart TD
 ```
 
 #### 3面世代交代ローテーションと被チェイン局所アンリンク（責務シーケンス図）
-<!-- traceability: {GOTCHA-JITR-02} {GOTCHA-JITR-03} {JIT_MultiBuffer_Cache} {JIT_LazyChaining} -->
+<!-- traceability: {GOTCHA-JITR-02} {GOTCHA-JITR-03} {JIT_MultiBuffer_Cache} {JIT_LazyChaining} {JIT_CardAgingSweep} -->
 Active バンク満杯時の世代交代において、局所アンリンクと再チェイニングの連携シーケンスを示す。
 
 ```mermaid
@@ -169,6 +218,9 @@ sequenceDiagram
 
     Mgr->>Oldest: Clear metadata & wipe allocation offset = 0
     Note over Oldest: O(n + k log n), bounded by configured bank and inbound capacities
+
+    Mgr->>Mgr: Run one aging sweep step (JIT_CardAgingSweep)
+    Note over Mgr: Card states only. HOT and COMPILED cards are never modified (GOTCHA-JITR-09)
 ```
 
 ### 4.2 状態遷移図
@@ -179,9 +231,12 @@ stateDiagram-v2
     EXECUTED --> HOT: Threshold reached
     HOT --> COMPILED: Compilation done
     COMPILED --> UNEXECUTED: Cache evicted
+    EXECUTED --> UNEXECUTED: Aging sweep
 ```
 
 キャッシュ破棄（Eviction）時は `EXECUTED` ではなく `UNEXECUTED` へリセットする（TEST-JITR-04）。
+
+エイジングスイープが `UNEXECUTED` へ戻せる状態は `EXECUTED` だけである。`HOT` と `COMPILED` は変更しない（`{GOTCHA-JITR-09}`）。
 
 コンパイル失敗時はカードを`COMPILED`にせず、独立したTrackable Maskの対象bitを解除する。これはカード状態の遷移ではなく再試行対象の除外であり、eviction後に候補性を保ったままhotnessを取り直す動作とは異なる。
 
@@ -220,6 +275,7 @@ flowchart TD
 - **関数終了の定数時間解決 (`{GOTCHA-JITR-08}`)**: `RETURN` で終わるブロックでは命令列を再走査しない。実行時の命令デコードやオブジェクト生成は一切禁止されている（`{DirectBytecodeExecution}`）。コード長という単一の数値で関数の終わりを表す。復帰処理はインタープリタへ委ねる。
 - **制御フレームの整合 (`{GOTCHA-JITR-06}`)**: JITトレース実行は制御フレーム操作を経由しない。そのためインタープリタ実行時に積まれたフレームが残留することがある。フレーム深さの巻き戻しだけでは正しさを保証できない。したがってインタープリタ復帰時の分岐解決は、フレームスタックの中身を参照しない。静的解析済みの後続アドレスや分岐先アドレスを直接使用する。フレーム深さの切り詰めはスタック肥大化防止の安全策としてのみ機能させる。
 - **短小判定の符号 (`{GOTCHA-JITR-07}`)**: ブロックの足切り判定は自身の命令バイト数で行う。後続アドレスとの差分で代用すると、後方分岐ブロックで差分が負になり、高頻度ブロックが永久に除外されてしまう。
+- **エイジングと常駐状態の分離 (`{GOTCHA-JITR-09}`)**: エイジングスイープは `EXECUTED` のカードだけを変更する。`COMPILED` まで戻すと、常駐トレースのカードが `UNEXECUTED` になり、lookup が常駐コードを見逃す。`HOT` まで戻すと、コンパイル待ち列の要求とカード状態が食い違う。常駐性の正本はキャッシュ、待ち列の正本は待ち列であり、スイープはどちらも書き換えない。
 
 ## 5. インターフェース定義
 
@@ -252,7 +308,10 @@ flowchart TD
 ### 7.1 検証対象の不変条件
 - **3面キャッシュ代謝の有界性**: 循環ローテーションによる Oldest パージと新 Active 再利用を検証する。
 - **局所アンリンク安全性**: 被チェインソース$k$件だけを逆引き表から処理する。バンク再利用は全$n$項目の消去とバンク検索を伴い、$O(n + k\log n)$である。固定容量により有界だが$O(k)$のみとは主張しない。
-- **カード状態単調性**: `UNEXECUTED` から `COMPILED` への単調遷移を保証する。パージ時のみ `UNEXECUTED` へリセットする。
+- **カード状態の遷移規則**: 昇格は `UNEXECUTED`、`EXECUTED`、`HOT`、`COMPILED` の順だけで進む。`UNEXECUTED` へ戻す経路は、パージ時のリセットとエイジングスイープの2つに限る。
+- **エイジング安全性**: エイジングスイープは `HOT` と `COMPILED` のカードを変更しない。`COMPILED` のカードは常駐トレースと対応し続ける（`{GOTCHA-JITR-09}`）。
+- **更新表の包含性**: 関数更新表のビットが 0 の関数は、`EXECUTED` のカードを持たない。`EXECUTED` になる経路は `UNEXECUTED` からの遷移だけである。
+- **エイジングの有限性**: 関数更新表のビットが立った関数の `EXECUTED` のカードは、有限回のローテーションの内に、走査されて減衰するか `HOT` へ進む。
 
 ### 7.2 テスト仕様書との連携
 本コンポーネントのテストケースおよび直交表は、[`jit_runtime_test_spec.md`](docs/qa/tier3_jit/jit_runtime_test_spec.md) を正本として定義する。形式検証モデルは `formal/jit_cache_model.py` を参照する。

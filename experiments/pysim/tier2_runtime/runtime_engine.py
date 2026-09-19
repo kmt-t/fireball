@@ -25,6 +25,8 @@ from collections.abc import Generator, Iterable, Sequence
 from typing import Protocol, TextIO
 
 from config import (
+    FB_CONF_JIT_AGING_STEP_SCAN_BYTES,
+    FB_CONF_JIT_AGING_STEP_UNITS,
     JIT_CARD_SHIFT,
     RUNTIME_BLOCK_CACHE_SLOT_COUNT,
     RUNTIME_DEBUG_REPORT_LINE_CAPACITY,
@@ -113,6 +115,7 @@ from tier3_jit.jit_cache import (
     _CARD_STATE_NAMES,
     BlockCardMask,
     CardState,
+    FunctionUpdateBitmap,
     HistoryRing,
     HotspotBitmap,
     JITCacheBank,
@@ -125,6 +128,7 @@ from tier3_jit.jit_cache import (
 __all__ = (
     "BlockCardMask",
     "CardState",
+    "FunctionUpdateBitmap",
     "HistoryRing",
     "HotspotBitmap",
     "JITCacheBank",
@@ -143,6 +147,11 @@ class RuntimeEngine:
         "_fast_block_slots",
         "_virq",
         "_virq_interp",
+        "aging_bytes_scanned",
+        "aging_scan_bytes",
+        "aging_step_units",
+        "aging_steps",
+        "aging_units_processed",
         "bitmap",
         "cache",
         "candidate_threshold",
@@ -160,6 +169,7 @@ class RuntimeEngine:
         "stat_jit_invocations",
         "stat_trace_exits_to_interp",
         "trackable",
+        "update_bitmap",
         "yield_threshold",
     )
 
@@ -175,6 +185,8 @@ class RuntimeEngine:
         block_capacity: int = 64,
         debug: bool = False,
         reschedule_observer: _RescheduleObserver | None = None,
+        aging_step_units: int = FB_CONF_JIT_AGING_STEP_UNITS,
+        aging_scan_bytes: int = FB_CONF_JIT_AGING_STEP_SCAN_BYTES,
     ):
         debug_env = os.environ.get("FIREBALL_DEBUG", "").lower()
         self.debug = debug or debug_env == "1" or debug_env == "true" or debug_env == "yes"
@@ -186,10 +198,18 @@ class RuntimeEngine:
         assert candidate_threshold >= 0
         self.candidate_threshold = candidate_threshold
         self.trackable = BlockCardMask(card_shift=card_shift, code_lengths=code_lengths)
+        assert aging_step_units >= 1 and aging_scan_bytes >= 1
+        self.aging_step_units = aging_step_units
+        self.aging_scan_bytes = aging_scan_bytes
+        self.aging_steps: int = 0
+        self.aging_units_processed: int = 0
+        self.aging_bytes_scanned: int = 0
+        self.update_bitmap = FunctionUpdateBitmap(function_count=len(code_lengths))
         self.ring = HistoryRing()
         self.reschedule_observer = reschedule_observer
         self.cache = JITMultiBufferCache()
         self.cache.on_evict = self._handle_eviction
+        self.cache.on_rotate = self.age_step
         self.jit_compiler = jit_compiler
         self.compile_queue_capacity = compile_queue_capacity
         # LIFO queue: drain_compile_queue() (below) always empties it again
@@ -268,6 +288,7 @@ class RuntimeEngine:
         card_shift = self.bitmap.card_shift
         self.bitmap = HotspotBitmap(card_shift=card_shift, code_lengths=code_lengths)
         self.trackable = BlockCardMask(card_shift=card_shift, code_lengths=code_lengths)
+        self.update_bitmap = FunctionUpdateBitmap(function_count=len(code_lengths))
         self._virq = VirqDispatcher(module, self._invoke_virq)
         self._fast_block_slots = _empty_block_slots()
         # `byte_span >= min_trace_bytes` and the static score are pure
@@ -352,11 +373,50 @@ class RuntimeEngine:
         drained_pcs = self.ring.drain()
         for pc in drained_pcs:
             new_state = self.bitmap.touch(pc)
+            if new_state == CardState.EXECUTED:
+                # UNEXECUTED -> EXECUTED is the only way a card becomes EXECUTED.
+                self.update_bitmap.mark(self.bitmap.function_of(pc))
             if new_state == CardState.HOT and not self.compile_queue.contains(pc):
                 self.compile_queue.push_back(pc)
                 # JIT compile queue overflow: compile all on the spot!
                 if len(self.compile_queue) >= self.compile_queue_capacity:
                     self.drain_compile_queue()
+
+    def age_step(self) -> int:
+        """
+        One aging step {JIT_CardAgingSweep}, run once per bank rotation.
+
+        Walk the function update bitmap from the cursor one byte (8 functions)
+        at a time. A zero byte is skipped and does not count; a non-zero byte
+        is processed (every function whose bit is set has its EXECUTED cards
+        decayed to UNEXECUTED, and its bit is cleared) and counts as one unit.
+        The step ends after `aging_step_units` units, after `aging_scan_bytes`
+        bytes have been scanned (zero bytes included), or after one full pass
+        over the table, whichever comes first. HOT and COMPILED cards are never
+        modified (GOTCHA-JITR-09). Returns the number of cards decayed.
+        """
+        update = self.update_bitmap
+        self.aging_steps += 1
+        if update.unit_count == 0:
+            return 0
+        decayed = 0
+        units = 0
+        scanned = 0
+        scan_limit = min(self.aging_scan_bytes, update.unit_count)
+        while units < self.aging_step_units and scanned < scan_limit:
+            bits = update.unit(update.cursor)
+            if bits != 0:
+                for bit in range(FunctionUpdateBitmap.UNIT_FUNCTIONS):
+                    if (bits >> bit) & 1:
+                        func_idx = update.cursor * FunctionUpdateBitmap.UNIT_FUNCTIONS + bit
+                        decayed += self.bitmap.decay_executed_function(func_idx)
+                        update.unmark(func_idx)
+                units += 1
+            update.cursor = 0 if update.cursor + 1 == update.unit_count else update.cursor + 1
+            scanned += 1
+        self.aging_units_processed += units
+        self.aging_bytes_scanned += scanned
+        return decayed
 
     def idle_hook(self, budget: int = 4) -> int:
         """

@@ -33,6 +33,7 @@ for _p in [
 
 from bench_aobench import run_aobench
 from bench_jit import JITCompilerBenchmark
+from bench_jit_aging import JITAgingBenchmark
 from bench_jit_cache_metabolism import JITCacheMetabolismBenchmark
 from bench_linear_memory import LinearMemoryBenchmark
 from bench_vmmio import VMMIOBenchmark
@@ -45,27 +46,31 @@ def main():
     t_start = time.perf_counter()
 
     # 1. Linear Memory
-    print("\n>>> [1/5] Running Linear Memory Benchmark...")
+    print("\n>>> [1/6] Running Linear Memory Benchmark...")
     lin_bench = LinearMemoryBenchmark(ram_size=65536)
     lin_res = lin_bench.run_all(iterations=250_000)
 
     # 2. vMMIO
-    print("\n>>> [2/5] Running vMMIO & Address Translation Benchmark...")
+    print("\n>>> [2/6] Running vMMIO & Address Translation Benchmark...")
     vmmio_bench = VMMIOBenchmark()
     vmmio_res = vmmio_bench.run_all(iterations=150_000)
 
     # 3. JIT Compiler
-    print("\n>>> [3/5] Running JIT Compiler & Runtime Benchmark...")
+    print("\n>>> [3/6] Running JIT Compiler & Runtime Benchmark...")
     jit_bench = JITCompilerBenchmark()
     jit_res = jit_bench.run_all(iterations=100_000)
 
     # 4. JIT Cache Metabolism & Corner Cases
-    print("\n>>> [4/5] Running JIT Cache Metabolism & Corner Cases Benchmark...")
+    print("\n>>> [4/6] Running JIT Cache Metabolism & Corner Cases Benchmark...")
     metab_bench = JITCacheMetabolismBenchmark(bank_capacity=1024)
     metab_res = metab_bench.run_all()
 
-    # 5. AO-Bench
-    print("\n>>> [5/5] Running 3D Ambient Occlusion Raytracing (AO-Bench)...")
+    # 5. JIT Card Aging under cache pressure
+    print("\n>>> [5/6] Running JIT Card Aging Benchmark (Cold-Function Pollution)...")
+    aging_res = JITAgingBenchmark().run_all()
+
+    # 6. AO-Bench
+    print("\n>>> [6/6] Running 3D Ambient Occlusion Raytracing (AO-Bench)...")
     ao_res = run_aobench()
 
     t_total = time.perf_counter() - t_start
@@ -160,7 +165,19 @@ def main():
         "  * Multi-Module UnifiedPC Collision:   [PASS] (Immunity verified between func_0 and func_1)"
     )
 
-    print("\n[Section 5: 3D Raytracing Ambient Occlusion (AO-Bench)]")
+    print("\n[Section 5: JIT Card Aging under Cache Pressure]")
+    print("-" * 80)
+    if aging_res is None:
+        print("  * [SKIP] wasmtime (WAT compiler) is not installed.")
+    else:
+        for r in aging_res:
+            print(
+                f"  * {r.label:<30} compiles={r.compiles:5d}  purged={r.purged:5d}  "
+                f"rotations={r.rotations:4d}  JIT share={r.jit_share_pct:5.1f}%  "
+                f"time={r.time_ms:6.0f} ms  compile={r.compile_ms:6.1f} ms  aging={r.aging_ms:5.2f} ms"
+            )
+
+    print("\n[Section 6: 3D Raytracing Ambient Occlusion (AO-Bench)]")
     print("-" * 80)
     print(
         f"  * Resolution & Sampling:              {ao_res['width']} x {ao_res['height']} ({ao_res['total_rays']:,} rays / frame)"

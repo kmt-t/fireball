@@ -1008,6 +1008,15 @@ class Interpreter:
     def call(self, func_index: int, args: Sequence[WasmNumber]) -> StaticVector[WasmNumber]:
         """Runs a function to completion in one call."""
         call_state = self.start(func_index, args)
+        return self._complete_call(call_state)
+
+    def _complete_call(self, call_state: InterpreterCall) -> StaticVector[WasmNumber]:
+        """Template hook for alternate execution drivers.
+
+        The public call contract, call-state construction, trap publication, and result
+        validation stay owned by the interpreter.  Tiered execution may override only the
+        driver hook while preserving the exact same call boundary as the base interpreter.
+        """
         if not call_state.finished:
             frame = call_state._frame
             assert frame is not None

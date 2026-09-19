@@ -20,8 +20,8 @@
 - ロール `HAL_LOGGER`（値9）を追加した。既存ロールの値は変えていない。
 - ロール間通信許可マトリクスを9x9から10x10へ広げた。
 - `fireball://hal/logger/0` をサービステーブルへ登録した。
-- ロガー用HALドライバ [`logger_driver.py`](experiments/pysim/tier3_platform/logger_driver.py) を追加した。
-- `System.start_logger_driver` で、ロガーの出力先をこのドライバへ切り替える。
+- 当時の修正ではロガー用HALドライバを追加した（後に、実際の出力経路に接続されていないため廃止した）。
+- 当時の `System.start_logger_driver` による出力先切り替えは廃止し、現在は `System` 生成時に `FileLogSink` を直接注入する。
 
 ## 3. 検証
 

@@ -38,10 +38,12 @@ from interpreter import (
     RETURN_SENTINEL_IP,
     CallFrame,
     Interpreter,
+    InterpreterBindings,
     InterpreterCall,
     WasmNumber,
 )
 from jit_scoring import JIT_CANDIDATE_THRESHOLD
+from logger import Logger
 from recovery import Result
 from system_containers import StaticVector
 from virq import (
@@ -54,6 +56,7 @@ from virq import (
 )
 from wasm_module import BasicBlock, LocalWidthMap, Module, WasmOperand
 from wasm_opcodes import BLOCK, END, IF, LOOP
+from vmmio import VMMIOController
 
 try:
     import native_trace_call as _native_trace_call
@@ -139,6 +142,7 @@ __all__ = (
     "JITMultiBufferCache",
     "JITTrace",
     "JITTraceHeader",
+    "JITInterpreter",
     "RuntimeEngine",
 )
 
@@ -644,15 +648,16 @@ class RuntimeEngine:
         args: Sequence[int],
         idle_budget: int = 4,
     ) -> StaticVector[WasmNumber]:
-        """
-        Drives `interp` to completion. Execution proceeds block-by-block for
-        interpretation, or in a continuous native loop until chaining ends for JIT traces.
-        """
+        """Compatibility entry point for callers that still own the Interpreter."""
         if self.module is None and interp.module is not None:
             self.register_module_blocks(interp.module)
         self._virq_interp = interp
+        return self._drive_call(interp, interp.start(func_index, args), idle_budget)
 
-        call_state = interp.start(func_index, args)
+    def _drive_call(
+        self, interp: Interpreter, call_state: InterpreterCall, idle_budget: int
+    ) -> StaticVector[WasmNumber]:
+        """Template execution driver shared by RuntimeEngine and JITInterpreter."""
         COMPILED = CardState.COMPILED
 
         while not call_state.finished:
@@ -925,3 +930,34 @@ class RuntimeEngine:
         call_state._locals = locals_arr
         call_state._tos = frame.values.raw_top() if frame.values else 0
         return call_state
+
+
+class JITInterpreter(Interpreter):
+    """Interpreter with the RuntimeEngine execution driver substituted at the template hook."""
+
+    __slots__ = ("idle_budget", "runtime_engine")
+
+    def __init__(
+        self,
+        module: Module,
+        bindings: InterpreterBindings,
+        runtime_engine: RuntimeEngine,
+        vmmio: VMMIOController | None = None,
+        phys_mem: bytearray | None = None,
+        logger: Logger | None = None,
+        idle_budget: int = 4,
+    ):
+        assert idle_budget >= 1
+        self.runtime_engine = runtime_engine
+        self.idle_budget = idle_budget
+        if runtime_engine.module is None:
+            runtime_engine.register_module_blocks(module)
+        else:
+            assert runtime_engine.module is module
+        super().__init__(module, bindings, vmmio=vmmio, phys_mem=phys_mem, logger=logger)
+
+    def _complete_call(self, call_state: InterpreterCall) -> StaticVector[WasmNumber]:
+        """Run the same call state through the tiered driver and preserve Interpreter.call's contract."""
+
+        self.runtime_engine._virq_interp = self
+        return self.runtime_engine._drive_call(self, call_state, self.idle_budget)

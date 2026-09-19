@@ -3,10 +3,10 @@ docs/components/tier2_runtime/concepts/runtime_engine_concept.py
 Reference Concept Implementation: Integrated WASM Tiered Tracing Runtime Engine
 
 Execution model (per jit_compiler.md §4.1 / runtime_interpreter.md §4.1,
-ADR-INTERP-01 {ADR_TraceBoundaryYield}): the Interpreter is never a coroutine
-and never touches the JIT cache or history ring itself -- it only executes
-and returns a PC. vSoC (this RuntimeEngine, driving `step()`) owns all of
-the below.
+ADR-INTERP-01 {ADR_TraceBoundaryYield}): Interpreter.call() owns the common
+call-state, completion, trap, and result contract. The base Interpreter drives
+step() directly; JITInterpreter overrides only the execution driver and lets
+this RuntimeEngine own the JIT cache and history ring.
 
   vSoC's step() loop, driving the Interpreter
     -> calls exec_trace(pc); the Interpreter/JIT trace runs until the next

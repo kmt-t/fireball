@@ -55,10 +55,12 @@ from config import (
 from execution_context import WASMContext
 from helpers import make_interpreter as Interpreter
 from helpers import wat_to_wasm
+from interpreter import InterpreterBindings
 from runtime_engine import (
     CardState,
     HistoryRing,
     HotspotBitmap,
+    JITInterpreter,
     JITCacheBank,
     JITMultiBufferCache,
     JITTrace,
@@ -716,6 +718,37 @@ def test_jitr_br_if_loop_exit_jit_result_correct():
     assert len(engine.cache.active.traces) > 0, (
         "the loop must have actually gotten hot enough to compile"
     )
+
+
+def test_jit_interpreter_uses_interpreter_call_template_method():
+    """The JIT variant must preserve Interpreter.call's public call boundary."""
+    wat = """
+    (module
+      (func (export "sum_to") (param $n i32) (result i32)
+        (local $i i32) (local $acc i32)
+        (block $exit
+          (loop $top
+            (br_if $exit (i32.ge_s (local.get $i) (local.get $n)))
+            (local.set $acc (i32.add (local.get $acc) (local.get $i)))
+            (local.set $i (i32.add (local.get $i) (i32.const 1)))
+            (br $top)
+          )
+        )
+        (local.get $acc)
+      )
+    )
+    """
+    module = parse(wat_to_wasm(wat))
+    function_index = module.export_func_index("sum_to")
+    expected = Interpreter(module).call(function_index, [50])
+    jit_interpreter = JITInterpreter(
+        module,
+        InterpreterBindings.empty(),
+        RuntimeEngine(jit_compiler=TraceCompiler(), yield_threshold=8),
+    )
+
+    assert jit_interpreter.call(function_index, [50]) == expected
+    assert jit_interpreter.runtime_engine.stat_jit_invocations > 0
 
 
 def test_jitr_backward_branch_block_byte_span_not_disqualified():

@@ -148,11 +148,12 @@ class System:
         (reused from ipc_router_concept.py) with its fixed 3-service registry.
     """
 
-    def __init__(self):
+    def __init__(self, logger_transport: StreamSink | None = None):
         self.wasi_hal_bindings = DEFAULT_WASI_HAL_BINDINGS
         self.transport = StreamTransport()
         self.dictionary = LogDictionary()
-        self.logger = Logger(self.transport, self.dictionary, min_level=LogLevel.DEBUG)
+        log_transport = logger_transport if logger_transport is not None else self.transport
+        self.logger = Logger(log_transport, self.dictionary, min_level=LogLevel.DEBUG)
         self.scheduler = Scheduler(logger=self.logger)
         # --- vMMIO: real FlatMap+TLB dispatch, this file's own byte
         # storage behind it (vmmio_concept.access() deliberately stops at the
@@ -700,17 +701,6 @@ class System:
         task_id, task = driver.start(self.ipc, self.scheduler, desc.role)
         assert self._hal_task_storage.insert(uri_key, task)
         self._hal_task_index = ReadOnlyFlatMapStorage.create(self._hal_task_storage.view().entries)
-        return task_id
-
-    def start_logger_driver(self, driver: HalDriver, sink: StreamSink) -> int:
-        """Starts the logger HAL device task and routes buffered log output to `sink`.
-
-        The scheduler, IPC router, and WASI logger share one Logger, so a single
-        rebinding moves every component's log output off the stdout transport.
-        """
-        assert driver.uri == self.wasi_hal_bindings.logger_uri, "not the logger HAL URI"
-        task_id = self.start_hal_driver(driver)
-        self.logger.transport = sink
         return task_id
 
     def hal_task_for(self, uri: str) -> HalTask | None:

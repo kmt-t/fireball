@@ -26,7 +26,7 @@ WASIアダプタとHALドライバのURI結線は、物理ドライバ実装と�
 | `uart_uri` | `fireball://hal/uart/0` |
 | `logger_uri` | `fireball://hal/logger/0` |
 
-`logger_uri` には、ロガー専用の HAL ドライバを結線する。このドライバは標準出力用ドライバとは別の出力先を持つ。
+`logger_uri` は WASI/IPC のログ要求を識別する契約値として保持する。pysim のホストファイル出力は HAL ドライバではなく、`System` に `FileLogSink` を直接注入して `Logger.flush()` から出力する。
 
 ## 3. 静的モデル
 
@@ -45,7 +45,6 @@ flowchart TD
     IPCR -->|CSP Rendezvous| T4["hal_task: Role.HAL_I2C"] --> I2C[I2C Driver: fireball://hal/i2c/0]
     IPCR -->|CSP Rendezvous| T5["hal_task: Role.HAL_SPI"] --> SPI[SPI Driver: fireball://hal/spi/0]
     IPCR -->|CSP Rendezvous| T6["hal_task: Role.HAL_TIMER"] --> Timer[Timer Driver: fireball://hal/timer/0]
-    IPCR -->|CSP Rendezvous| T7["hal_task: Role.HAL_LOGGER"] --> Log[Logger Driver: fireball://hal/logger/0]
     UART --> RSP[RSP Parser]
     RTT --> RSP
     RSP --> Queue[debug_command_queue]
@@ -161,10 +160,9 @@ sequenceDiagram
 `stream-read` / `stream-write` を処理するHALドライバは、コマンドに含まれる `hal_buf_id` を使って所有ゲストのバッファスロットへHALサブシステム権限でアクセスする。ゲスト所有権の検査はゲスト側の公開ビューで行い、ドライバ側は同じ固定スロットの境界検査だけを通過して読み書きする。したがって、標準入出力のストリーミングにドライバ専用の複製バッファや生ポインタは存在しない。
 
 **ロガー出力の分離**:
-ロガーは、専用ロール `HAL_LOGGER` の HAL ドライバ（`fireball://hal/logger/0`）を通じてログを出力する。
-このドライバは、標準出力用ドライバとバッファを共有しない。
+ロガーは `Logger.flush()` が注入された `FileLogSink` へ直接書き込む。`FileLogSink` は HAL ドライバでも標準出力用ドライバのバッファでもない。
 ログ行は、ゲストの標準出力へ混入しない。
-ホスト実行では、出力先の実体をホストファイルとする。出力先は、ドライバ起動時に呼び出し側が渡す。
+ホスト実行では、出力先の実体をホストファイルとする。出力先は `System` の生成時に呼び出し側が渡す。
 **設計理由**: 標準出力とログが同じ固定長バッファを共有すると、システムの警告ログがゲスト出力の途中に割り込む。この混入は、ゲスト出力の完全性検証を困難にする。
 
 **UART トランスポートの双方向独立性 (`GOTCHA-HAL-02`)**:
@@ -196,4 +194,4 @@ UART および SEGGER RTT の双方において同一の RSP パケットエン�
 - **固定長スロット境界保護**: 要求サイズが 256 バイトを超える場合の即時拒絶（`GOTCHA-HAL-01`）。
 
 ### 7.2 テスト仕様書との連携
-本コンポーネントの物理実装テストケース（TEST-HAL-03, TEST-HAL-05〜TEST-HAL-08, TEST-HAL-15, GOTCHA-HAL-01〜03）は、[`platform_driver_test_spec.md`](docs/qa/tier3_platform/platform_driver_test_spec.md) を正本として定義する。HAL契約レベルのテストケース（TEST-HAL-01, TEST-HAL-02, TEST-HAL-04, TEST-HAL-09〜TEST-HAL-13）は [`hal_dispatch_test_spec.md`](docs/qa/tier2_runtime/hal_dispatch_test_spec.md) を参照する。
+本コンポーネントの物理実装テストケース（TEST-HAL-03, TEST-HAL-05〜TEST-HAL-08, TEST-HAL-15, GOTCHA-HAL-01〜03）は、[`platform_driver_test_spec.md`](docs/qa/tier3_platform/platform_driver_test_spec.md) を正本として定義する。HAL契約レベルのテストケース（TEST-HAL-01, TEST-HAL-02, TEST-HAL-04, TEST-HAL-09〜TEST-HAL-13）は [`hal_dispatch_test_spec.md`](docs/qa/tier2_runtime/hal_dispatch_test_spec.md) を参照する。TEST-HAL-15 は物理HALドライバの起動ではなく、ホスト側ファイルSinkの直接注入と標準出力分離を確認する。

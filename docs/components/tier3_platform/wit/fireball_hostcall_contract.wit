@@ -14,10 +14,26 @@ interface trap {
     ) -> u32;
 }
 
+/// 仮想割り込みの登録・解除ホストコール
+interface virq {
+    /// 静的vIRQノードへのゲスト関数登録を保留する
+    register: func(node-id: u32, function-index: u32) -> u32;
+    /// 静的vIRQノードの登録解除を保留する
+    unregister: func(node-id: u32) -> u32;
+}
+
+/// 仮想DMA転送ホストコール
+interface vdma {
+    /// ゲストまたはvMMIO管理下の領域間で転送を開始する
+    start: func(source: u32, destination: u32, byte-count: u32) -> u32;
+}
+
 /// Fireball hostcall contract.
 ///
 /// URI ResolverおよびHALバッファ操作は
 /// `fireball_hal_contract.wit` に分離する。
 world fireball-hostcall {
     import trap;
+    import virq;
+    import vdma;
 }

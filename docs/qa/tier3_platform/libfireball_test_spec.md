@@ -1,6 +1,6 @@
 # libfireball ゲストアダプタ テスト仕様書
 
-本書は、WASM ゲストへ組み込む `libfireball` の host-call 境界テストを定義する。ゲストライブラリは `fireball:host/trap` の import を通じてホストへ接続し、SYSCTL／VDMAの vMMIO レジスタを使用しない。vIRQの登録・解除もhost callで行い、イベント本体の配送だけをISR → COOS FIFO → vSoC Safepointの非同期経路で行う。Tier 2 のホスト側 `runtime_syscall`、`hal_dispatch` と Tier 3 の物理ドライバは、それぞれのテスト仕様書を正本とする。
+本書は、WASM ゲストへ組み込む `libfireball` の host-call 境界テストを定義する。汎用システムコールは `fireball:host/trap`、vIRQは `fireball:host/virq`、vDMAは `fireball:host/vdma` の専用importを通じてホストへ接続し、SYSCTL／VDMAの vMMIO レジスタを使用しない。vIRQのイベント本体の配送だけをISR → COOS FIFO → vSoC Safepointの非同期経路で行う。Tier 2 のホスト側 `runtime_syscall`、`hal_dispatch` と Tier 3 の物理ドライバは、それぞれのテスト仕様書を正本とする。
 
 | テストケースID | テスト内容 | 前提条件 | 手順 | 期待結果 |
 | :--- | :--- | :--- | :--- | :--- |
@@ -12,11 +12,13 @@
 | TEST-LIBFB-06 | `clock_time_get` の時刻変換 | HALの単調時刻が取得可能 | `clock_time_get`を呼び出す | HAL の単調時刻が Preview1 の戻り値へ変換される |
 | TEST-LIBFB-07 | HAL エラーの errno 変換 | HALがエラーを返す | 対応するラッパーを呼び出す | HAL の失敗結果が Preview1 の errno へ一貫して変換される |
 | TEST-LIBFB-08 | ライブラリの配置 | libfireballをロード済み | タスク・サービス登録を確認する | `libfireball` がサービスや COOS タスクとして登録されない |
-| TEST-LIBFB-09 | vIRQ登録host call | 静的root・分類・デバイスノードが公開されている | `fireball_virq_register` が `fireball_call(VIRQ_REGISTER, node_id, function_index, ...)` を発行する | vSoCの保留登録へ渡され、範囲外ノードは拒否される。vMMIO固定スロットへの直接書込みは発生しない |
-| TEST-LIBFB-10 | vIRQ解除host call | 有効または保留中の登録が存在する | `fireball_virq_unregister` が `fireball_call(VIRQ_UNREGISTER, node_id, ...)` を発行する | 解除が保留され、次のSafepointで無効化される |
+| TEST-LIBFB-09 | vIRQ登録host call | 静的root・分類・デバイスノードが公開されている | `fireball_virq_register` が `fireball:host/virq.register(node_id, function_index)` を発行する | vSoCの保留登録へ渡され、範囲外ノードは拒否される。vMMIO固定スロットへの直接書込みは発生しない |
+| TEST-LIBFB-10 | vIRQ解除host call | 有効または保留中の登録が存在する | `fireball_virq_unregister` が `fireball:host/virq.unregister(node_id)` を発行する | 解除が保留され、次のSafepointで無効化される |
 | TEST-LIBFB-11 | vIRQ関数シグネチャ拒否 | 不一致シグネチャのWASM関数 | 登録ラッパーから登録を試みる | vSoCが拒否し、有効な登録を変更しない |
 | TEST-LIBFB-12 | Safepoint反映と原因5引数 | 登録Aと保留登録B、原因レコード | Safepoint前後で同じ原因を配送する | Safepoint前後で呼ばれる関数が原子的に切り替わり、5ワードが順序を保って渡る |
 | TEST-LIBFB-13 | 階層結果の変換 | root・分類・デバイス関数が登録済み | `HANDLED`、`PASS_THROUGH`、`REJECT`を返す | `HANDLED`は終了、`PASS_THROUGH`だけが子へ進み、`REJECT`は再帰配送されない |
 | TEST-LIBFB-14 | WASIポーリング非干渉 | `poll-check`/`poll-wait`ハンドルが存在 | vIRQ登録・配送とポーリングを実行する | vIRQ操作がWASI poll APIを追加・変更せず、両経路が独立して完了する |
+| TEST-LIBFB-15 | vDMA転送host call | source/destinationと転送長が有効 | `fireball_vdma_start` が `fireball:host/vdma.start(source, destination, byte_count)` を発行する | vSoCの転送要求へ渡され、VDMAレジスタへの書込みは発生しない |
+| TEST-LIBFB-16 | vDMA権限拒否 | 転送先が未許可または所有権外 | `fireball_vdma_start` を発行する | 共通vMMIO権限ゲートで拒否され、転送状態を変更しない |
 
 実装着手時には、各行をゲスト側の実行テストへ結線し、Tier 2/3 の既存テストと同じ境界を重複実装しない。

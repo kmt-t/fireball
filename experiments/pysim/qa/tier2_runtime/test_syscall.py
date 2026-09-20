@@ -192,7 +192,7 @@ def test_syscall_04_vdma_host_call_transfer():
         guest_mem[0:4] = struct.pack("<I", 0x11223344)
         sysv.bind_runtime(guest_mem)
         dst = FB_CONF_VSOC_PASSTHROUGH_BASE + 0x1000
-        assert sysv.fireball_call(FbSyscallId.VDMA_START, 0, dst, 4, 0, 0, 0) == WasiErrno.SUCCESS
+        assert sysv.vdma_start_host_call(0, dst, 4) == WasiErrno.SUCCESS
         assert sysv.phys_mem[0x1000:0x1004] == struct.pack("<I", 0x11223344)
         status, _ = sysv.vmmio.access(0xC000_2000, is_write=False)
         assert status == TrapCode.UNREGISTERED_PAGE
@@ -214,12 +214,12 @@ def test_syscall_05_virq_registration_host_calls():
     sysv.start_runtime_task(name="test_runtime_task")
     try:
         sysv.runtime_engine.register_module_blocks(_make_syscall_virq_module())
-        assert sysv.fireball_call(FbSyscallId.VIRQ_REGISTER, 0, 0, 0, 0, 0, 0) == WasiErrno.SUCCESS
+        assert sysv.virq_register_host_call(0, 0) == WasiErrno.SUCCESS
         sysv.runtime_engine.commit_virq_safepoint()
         assert (
-            sysv.fireball_call(FbSyscallId.VIRQ_UNREGISTER, 0, 0, 0, 0, 0, 0) == WasiErrno.SUCCESS
+            sysv.virq_unregister_host_call(0) == WasiErrno.SUCCESS
         )
-        assert sysv.fireball_call(FbSyscallId.VIRQ_REGISTER, 14, 0, 0, 0, 0, 0) == WasiErrno.INVAL
+        assert sysv.virq_register_host_call(14, 0) == WasiErrno.INVAL
     finally:
         sysv.shutdown()
 

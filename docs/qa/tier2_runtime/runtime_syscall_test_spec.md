@@ -6,7 +6,7 @@
 関連正本: [`runtime_vmmio.md`](docs/components/tier2_runtime/runtime_vmmio.md)（vMMIOアドレス空間と対象アドレスの保護）、[`system_config.md`](docs/components/tier1_core/system_config.md)（アドレス定数）
 参考実装: [`syscall_concept.py`](docs/components/tier2_runtime/concepts/syscall_concept.py)
 
-`fireball_call(id, arg0..arg5) -> u32` の host-call ID 空間（System/vMMIO Generic/VDMA/IRQ/IPC/WASI）と、WASI `errno_t` 準拠の戻り値規約を検証する。host call の搬送に SYSCTL／VDMA の vMMIO レジスタを使用しないことも検証する。
+`fireball_call(id, arg0..arg5) -> u32` の host-call ID 空間（System/vMMIO Generic/IPC/WASI）と、WASI `errno_t` 準拠の戻り値規約を検証する。vIRQ/vDMAは専用host callとして別契約で検証する。host call の搬送に SYSCTL／VDMA の vMMIO レジスタを使用しないことも検証する。
 
 ## 2. テストケース一覧
 
@@ -30,21 +30,21 @@
 | TEST-SYS-15 | `MMIO_BULK_READ`のゲスト書き込み先境界チェック | `dest_offset`がゲストメモリ範囲外 | 呼び出す | `ERR_OUT_OF_BOUNDS`相当を返し、ゲストメモリ外への書き込みが発生しない | fb_offset_t, `test_syscall_15_mmio_bulk_read_dest_offset_out_of_bounds` |
 | TEST-SYS-16 | `TRIGGER_SET_PIN`(0x16)のpysim実験実装での安全なNOSYS復帰 | - | `fireball_call(0x16, pin, value, ...)` | 専用GPIOレジスタ配線が未実装のためディスパッチテーブル未登録であり、`GOTCHA-SYS-01`の規定通り`WasiErrno.NOSYS`(52)を安全に返す（クラッシュ・パニックしない） | runtime_syscall.md (MMIO), GOTCHA-SYS-01 |
 
-### VDMA (`0x20`-`0x2F`)
+### 専用 vDMA host call
 
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| TEST-SYS-20 | `VDMA_START` host call 成功 | `src`/`dst`が共に許可アドレス | `fireball_call(0x20, src, dst, byte_count,...)` | `0`を返し、`byte_count`バイトが転送される。VDMAレジスタへのアクセスは発生しない | runtime_syscall.md, runtime_vmmio.md |
-| TEST-SYS-21 | VDMA host call の転送先がSHM(FC=14)の場合の所有権チェック | `dst`がSHMアドレスで、呼び出し元が非所有者 | `VDMA_START`を呼ぶ | 転送要求は host call で受け、転送先の共通vMMIO権限ゲートにより拒否される | runtime_vmmio.md |
-| TEST-SYS-22 | VDMA完了時の仮想割り込み通知（該当する場合） | 完了通知が要求されている | 転送完了後の状態を確認 | `IRQ_VDMA_DONE`相当が立つ | runtime_vmmio.md  |
+| TEST-SYS-20 | `fireball:host/vdma.start` 成功 | `source`/`destination`が共に許可アドレス | `fireball_vdma_start(source, destination, byte_count)` | `0`を返し、`byte_count`バイトが転送される。VDMAレジスタへのアクセスは発生しない | runtime_syscall.md, runtime_vmmio.md |
+| TEST-SYS-21 | vDMA専用host callの転送先がSHM(FC=14)の場合の所有権チェック | `destination`がSHMアドレスで、呼び出し元が非所有者 | `fireball:host/vdma.start`を呼ぶ | 転送要求は専用host callで受け、転送先の共通vMMIO権限ゲートにより拒否される | runtime_vmmio.md |
+| TEST-SYS-22 | vDMA完了時の仮想割り込み通知（該当する場合） | 完了通知が要求されている | 転送完了後の状態を確認 | `IRQ_VDMA_DONE`相当が立つ | runtime_vmmio.md  |
 
-### IRQ (`0x30`-`0x3F`)
+### 専用 vIRQ host call
 
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| TEST-SYS-30 | `VIRQ_REGISTER` host call | 静的ノードと期待シグネチャの関数が存在 | `fireball_call(0x30, node_id, function_index,...)` | `0`を返して登録を保留し、ゲストからvMMIO固定スロットへ直接書き込まない | runtime_syscall.md (IRQ), runtime_vsoc.md |
-| TEST-SYS-31 | `VIRQ_UNREGISTER` host call | 有効または保留中の登録が存在 | `fireball_call(0x31, node_id,...)` | `0`を返して解除を保留し、次のSafepointで無効化する | runtime_syscall.md (IRQ), runtime_vsoc.md |
-| TEST-SYS-32 | 不正vIRQ登録要求 | 範囲外ノード、無効関数、または`0x32`以降の未定義IRQ ID | 各要求を呼び出す | `WasiErrno`相当のエラーまたは`NOSYS`を返し、有効登録・`REG_IRQ_FLAGS`を変更しない | runtime_syscall.md (IRQ), GOTCHA-SYS-01 |
+| TEST-SYS-30 | `fireball:host/virq.register` host call | 静的ノードと期待シグネチャの関数が存在 | `fireball_virq_register(node_id, function_index)` | `0`を返して登録を保留し、ゲストからvMMIO固定スロットへ直接書き込まない | runtime_syscall.md, runtime_vsoc.md |
+| TEST-SYS-31 | `fireball:host/virq.unregister` host call | 有効または保留中の登録が存在 | `fireball_virq_unregister(node_id)` | `0`を返して解除を保留し、次のSafepointで無効化する | runtime_syscall.md, runtime_vsoc.md |
+| TEST-SYS-32 | 不正vIRQ登録要求 | 範囲外ノード、無効関数、または専用host callの不正引数 | 各専用host callを呼び出す | `WasiErrno`相当のエラーを返し、有効登録・`REG_IRQ_FLAGS`を変更しない | runtime_syscall.md, GOTCHA-SYS-01 |
 
 ### IPC (`0x40`-`0x4F`)
 

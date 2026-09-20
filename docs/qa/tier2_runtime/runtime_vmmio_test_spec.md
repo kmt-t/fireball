@@ -79,7 +79,7 @@ Bit31によるRAM/vMMIO高速分岐、64件のFlatMap PTE + 32エントリDirect
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | TEST-VMMIO-30 | VDMA制御ページの非提供 | VDMAレジスタアドレスへアクセスする | `0xC000_2000`をvMMIO `access`する | VDMA制御ページは未登録として `TRAP_UNREGISTERED_PAGE` になる | {VDMA}, runtime_syscall_test_spec.md |
-| TEST-VMMIO-31 | VDMA転送の検証範囲 | VDMA host call を発行する | `VDMA_START`の転送結果と転送先権限を確認する | host call による転送と共通vMMIO権限ゲートを検証する | {VDMA}, runtime_syscall_test_spec.md |
+| TEST-VMMIO-31 | VDMA転送の検証範囲 | vDMA専用host callを発行する | `fireball:host/vdma.start`の転送結果と転送先権限を確認する | 専用host callによる転送と共通vMMIO権限ゲートを検証する | {VDMA}, runtime_syscall_test_spec.md |
 
 ### 実装の勘所・不変条件（Gotchas & Implementation Invariants）
 

@@ -5,7 +5,7 @@
 正本: [`interface_wit.md`](docs/components/tier3_platform/interface_wit.md)
 参考実装: なし（WIT定義そのものはコンセプトコードを持たない。`recovery-strategy-category` の実験的実装はバージョン管理外の `experiments/pysim` ディレクトリに置かれているが、本書の検証対象外である）。
 
-`recovery-strategy-category`（ignore/retry/restart/panic）、低レベルトラップインターフェース（`fireball-call`）、コンソール生バイト出力経路に関する契約を検証する。個別デバイスのIPCコマンドID実装（GPIO/タイマー/バス等）は [`hal_dispatch_test_spec.md`](docs/qa/tier2_runtime/hal_dispatch_test_spec.md) / [`platform_driver_test_spec.md`](docs/qa/tier3_platform/platform_driver_test_spec.md) の責務とする。
+`recovery-strategy-category`（ignore/retry/restart/panic）、低レベルトラップインターフェース（`fireball-call`）、vIRQ/vDMA専用ホストコール、コンソール生バイト出力経路に関する契約を検証する。個別デバイスのIPCコマンドID実装（GPIO/タイマー/バス等）は [`hal_dispatch_test_spec.md`](docs/qa/tier2_runtime/hal_dispatch_test_spec.md) / [`platform_driver_test_spec.md`](docs/qa/tier3_platform/platform_driver_test_spec.md) の責務とする。
 
 ## 2. テストケース一覧
 
@@ -25,6 +25,13 @@
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | TEST-WIT-10 | `fireball-call`のkebab-case→snake_caseマッピング | - | C++バインディング生成物を確認 | `fireball_call`として公開される | {WIT_Interface_Spec} |
 | TEST-WIT-11 | Trigger(GPIO)の直接マッピング | `FB_SYSCALL_TRIGGER_SET_PIN`等 | `fireball_call`に直接該当IDを渡す | ハンドルルックアップを経由せず直接操作される | {WIT_Interface_Spec} |
+
+### vIRQ / vDMA 専用ホストコール
+
+| テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| TEST-WIT-12 | vIRQ専用importの分離 | `fireball:host/virq` が公開されている | `register` / `unregister` を呼び出す | 汎用 `fireball_call` のIDディスパッチを経由せず、vSoCの保留表へ渡される | `fireball_hostcall_contract.wit` |
+| TEST-WIT-13 | vDMA専用importの分離 | `fireball:host/vdma` が公開されている | `start` を呼び出す | 汎用 `fireball_call` のIDディスパッチやVDMA vMMIOレジスタを経由せず、転送要求へ渡される | `fireball_hostcall_contract.wit` |
 
 ### コンソール生バイト出力経路 (`fireball://hal/stdout/0`)
 

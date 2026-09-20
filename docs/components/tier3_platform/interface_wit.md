@@ -126,7 +126,19 @@ WIT内では `fireball-call` という kebab-case 名で定義されるが、C++
 
 - `fireball-call(id: u32, arg0: u32, arg1: u32, arg2: u32, arg3: u32, arg4: u32, arg5: u32) -> u32`
 
-### 4.2. 高応答トリガーインターフェース
+### 4.2. vIRQ / vDMA 専用ホストコール
+<!-- traceability: {GLOBAL_InterruptWakeup} {VDMA} -->
+
+vIRQの登録・解除とvDMA転送は、汎用 `fireball-call` のIDディスパッチへ統合しない。WITの [`fireball_hostcall_contract.wit`](wit/fireball_hostcall_contract.wit) が公開する専用importを直接呼び出す。
+
+| WIT interface | 操作 | 役割 |
+| :--- | :--- | :--- |
+| `fireball:host/virq` | `register` / `unregister` | 静的vIRQノードへの登録変更を保留し、vSoCのSafepointで反映する |
+| `fireball:host/vdma` | `start` | 転送元・転送先・転送長を指定してvDMA転送を開始する |
+
+専用ホストコールはWASM importから対応ハンドラへ同期接続するが、SYSCTL／VDMAのvMMIOレジスタや汎用 `fireball_call` のID空間は使用しない。vIRQのイベント本体はISR → COOS FIFO → vSoC Safepoint → vIRQ階層の非同期経路で配送する。
+
+### 4.3. 高応答トリガーインターフェース
 <!-- traceability: {Syscall_Mapping} -->
 GPIO のような割り込み応答性・ビットバンギング等の要求から、URI Resolver 経由のハンドルルックアップを介さず、`fireball-call` に直接マッピングされた ID を通じて操作するものとする。ゲスト側の呼び出しラッパーはTier 3で定義し、本書では raw host-call 契約だけを扱う。
 

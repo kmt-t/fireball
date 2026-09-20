@@ -113,8 +113,6 @@ world fireball-hostcall {
 | :--- | :--- | :--- |
 | System | `0x00`-`0x0F` | 実行制御 |
 | vMMIO Generic | `0x10`-`0x1F` | vMMIOレジスタの汎用読み書き |
-| VDMA | `0x20`-`0x2F` | 仮想DMA操作 |
-| IRQ | `0x30`-`0x3F` | 仮想割り込み管理 |
 | IPC | `0x40`-`0x4F` | ハンドル解決およびCSPメッセージ通信 |
 | WASI | `0x80`-`0xBF` | WASI互換レイヤー |
 
@@ -141,25 +139,19 @@ vMMIO管理下のアドレスへの汎用 host-call 操作である。IPCR/SHM/D
 | `0x15` | `MMIO_BULK_WRITE` | `addr` (`fb_val_t`: 物理アドレス), `src_offset` (`fb_offset_t`: ゲスト物理ベース相対), `byte_count` (`fb_val_t`: 転送バイト数) | `0` (エラー時は `ERR_OUT_OF_BOUNDS`, `ERR_ACCESS_DENIED` または `ERR_INVALID_SIZE`) | バルク書き込み（ゲストメモリから書込） `{META_RestrictedPhysicalAccess}` |
 | `0x16` | `TRIGGER_SET_PIN` | `pin` (`fb_val_t`), `value` (`fb_val_t`: 0/1) | `0` (エラー時は `ERR_OUT_OF_BOUNDS` または `ERR_ACCESS_DENIED`) | GPIOピン出力設定（`{Fast_Path_GPIO}` の host-call 経路、`FB_SYSCALL_TRIGGER_SET_PIN`）。**pysim実験実装での状態**: 専用GPIOハンドラが未実装のため、`fireball_call` は `GOTCHA-SYS-01` の規定通り安全に `WasiErrno.NOSYS` を返す。高速な実機GPIOアクセスは別契約の直接vMMIOストアで行う。 |
 
-### 6.4. VDMA (`0x20`-`0x2F`)
-<!-- traceability: {VDMA} -->
-仮想DMA操作を実行する host-call ハンドラである。VDMA レジスタへの vMMIO 書き込みには変換しない。
+### 6.4. 専用ホストコール（vIRQ / vDMA）
+<!-- traceability: {VDMA} {GLOBAL_InterruptWakeup} {TaskPollInterruptEvent} -->
+vIRQとvDMAは汎用 `fireball_call` のID空間には含めない。ゲストから見えるWITの専用importとして、機能ごとに型付きのホストコールを公開する。専用ホストコールもWASM importからC++ハンドラへ同期接続するが、`fireball_call` のIDディスパッチやvMMIOレジスタ経路は使用しない。
 
-| ID | 名前 | 引数 | 戻り値 | 説明 |
+| WIT import | 操作 | 引数 | 戻り値 | 説明 |
 | :--- | :--- | :--- | :--- | :--- |
-| `0x20` | `VDMA_START` | `src`, `dst`, `byte_count` | `0` | DMA転送開始 |
+| `fireball:host/virq` | `register` | `node-id`, `function-index` | `u32` | vIRQ静的ノードへのゲスト関数登録を保留する。関数シグネチャとノードはvSoCが検証する |
+| `fireball:host/virq` | `unregister` | `node-id` | `u32` | vIRQ静的ノードの登録解除を保留する。次のSafepointで有効表から除去する |
+| `fireball:host/vdma` | `start` | `source`, `destination`, `byte-count` | `u32` | 仮想DMA転送を開始する。VDMAレジスタへのvMMIO書き込みには変換しない |
 
-### 6.5. IRQ (`0x30`-`0x3F`)
-<!-- traceability: {CooperativeMultitasking} {GLOBAL_InterruptWakeup} {TaskPollInterruptEvent} -->
-vIRQの登録・解除は同期的な `fireball_call` の制御要求として受け付ける。登録要求はvSoCの保留表へ記録され、次のSafepointで検証済みの登録表へ原子的に反映する。物理割り込みの非同期通知とゲスト関数への配送は `fireball_call` の呼出し中には行わず、ISR → COOS FIFO → vSoC Safepoint → vIRQ階層の経路で行う。`REG_IRQ_FLAGS` の読み書き、vIRQ固定スロットへのゲストからの直接store、およびWASIのpoll APIへの接続は採用しない。
+vIRQのイベント本体は専用host callの呼出し中には配送せず、ISR → COOS FIFO → vSoC Safepoint → vIRQ階層の非同期経路で処理する。`REG_IRQ_FLAGS` の読み書き、vIRQ固定スロットへのゲストからの直接store、およびWASIのpoll APIへの接続は採用しない。
 
-| ID | 名前 | 引数 | 戻り値 | 説明 |
-| :--- | :--- | :--- | :--- | :--- |
-| `0x30` | `VIRQ_REGISTER` | `node_id`, `function_index` | `0` またはWASI errno | vIRQ静的ノードへのゲスト関数登録を保留する。関数シグネチャとノードはvSoCが検証する |
-| `0x31` | `VIRQ_UNREGISTER` | `node_id` | `0` またはWASI errno | vIRQ静的ノードの登録解除を保留する。次のSafepointで有効表から除去する |
-| `0x32`〜`0x3F` | `IRQ_RESERVED` | — | `WasiErrno.NOSYS` | 未定義のIRQ制御要求。旧フラグ操作を再導入しない |
-
-### 6.6. IPC (`0x40`-`0x4F`)
+### 6.5. IPC (`0x40`-`0x4F`)
 <!-- traceability: {CSPCommunication} {IPC_HandleBased} -->
 CSPチャネルおよびハンドルベースのプロセス間通信。
 URIによる名前解決後の接続確立（`lookup`）によって取得した `handle_id` を用いて、以降は直接メッセージパッシングを行う（）。メッセージの送受信は、ホーアのCSPモデルに基づくゼロコピー所有権移譲を伴う同期通信として処理される（）。
@@ -170,7 +162,7 @@ URIによる名前解決後の接続確立（`lookup`）によって取得した
 | `0x41` | `IPC_RECV` | `handle_id`, `buf_offset`, `buf_len` | `recv_len` / errno | メッセージ受信（buf_offset: 受信バッファの相対オフセット）。指定したハンドルからメッセージを受け取る（バッファが空の場合はコルーチンがサスペンドされる）。 |
 | `0x42` | `IPC_LOOKUP` | `uri_offset`, `uri_len` | `handle_id` / errno | 名前解決とハンドル取得（uri_offset: URI文字列の相対オフセット）。URI文字列の相対オフセットから通信ハンドルを返却する。 |
 
-### 6.7. WASI (`0x80`-`0xBF`)
+### 6.6. WASI (`0x80`-`0xBF`)
 <!-- traceability: {WASI_Implementation} -->
 WASI互換レイヤー。Tier 3 の `libfireball` が `wasi-libc` 等のゲスト側呼び出しをこれらのIDに変換する。本ドキュメントはホスト側のシステムコールIDとディスパッチ仕様に限定し、高レベルのゲストバインディングは Tier 3 の `libfireball` 仕様を正本とする。
 WASIの引数レイアウトとエラー変換は、`libfireball` が `runtime_syscall.md` のABI契約に従って実施する。ホスト側ディスパッチはゲストラッパーの呼び出し順序を知らない。
@@ -205,8 +197,6 @@ WASIの引数レイアウトとエラー変換は、`libfireball` が `runtime_s
 | | `mmio_bulk_read` | `0x14` | 一括 MMIO 読み出し |
 | | `mmio_bulk_write`| `0x15` | 一括 MMIO 書き込み |
 | | `trigger_set_pin` (`FB_SYSCALL_TRIGGER_SET_PIN`) | `0x16` | GPIOピン出力設定（ゲストアダプタ経路） |
-| **VDMA** | `vdma_start` | `0x20` | 仮想 DMA 転送開始 |
-| **IRQ** | `VIRQ_REGISTER` / `VIRQ_UNREGISTER` | `0x30` / `0x31` | vIRQ登録・解除の保留要求。非同期イベントの配送はCOOS FIFOとvSoC Safepointが行う |
 | **IPC** | `ipc_send` | `0x40` | IPC メッセージ送信 |
 | | `ipc_recv` | `0x41` | IPC メッセージ受信 |
 | | `ipc_lookup` | `0x42` | サービス/デバイス URI 検索 |
@@ -243,11 +233,11 @@ WASIの引数レイアウトとエラー変換は、`libfireball` が `runtime_s
 ## 9. ホストからゲストへの非同期通知メカニズム
 <!-- traceability: {Asynchronous_Notification} -->
 
-ホスト側で非同期に発生したイベント（例: ハードウェア割り込みの完了、タイマーイベント、非同期I/Oの完了など）をゲストに通知するために、`fireball_call` の同期制御要求とは独立したメカニズムを定義する。vIRQの登録・解除だけは `fireball_call` の制御要求として行い、イベント本体の通知・配送はこの非同期経路で行う。
+ホスト側で非同期に発生したイベント（例: ハードウェア割り込みの完了、タイマーイベント、非同期I/Oの完了など）をゲストに通知するために、同期ホストコールとは独立したメカニズムを定義する。vIRQの登録・解除は `fireball:host/virq` の専用host callで行い、イベント本体の通知・配送はこの非同期経路で行う。
 
 ### 9.1. 仮想割り込み
 <!-- traceability: {Asynchronous_Notification} -->
-ホストは、COOSの固定長 `interrupt-event` を経由して**仮想割り込み**を通知する。vSoCは協調境界のSafepointでイベントを受け取り、登録済みのvIRQ階層へ配送する。これは `fireball_call` の同期的な戻り値やWASI `pollable` では表現しない。
+ホストは、COOSの固定長 `interrupt-event` を経由して**仮想割り込み**を通知する。vSoCは協調境界のSafepointでイベントを受け取り、登録済みのvIRQ階層へ配送する。これは `fireball:host/virq` の同期的な戻り値やWASI `pollable` では表現しない。
 
 #### 9.1.1. vIRQ原因源識別子
 <!-- traceability: {Asynchronous_Notification} -->

@@ -234,7 +234,12 @@ class WasiHostContext:
         self.sysv.bind_runtime(self.guest_memory)
         self.bindings = bindings if bindings is not None else sysv.wasi_hal_bindings
         self.core03p = Wasi03pEngine(sysv, self.bindings)
-        self.libfireball = Libfireball(sysv.fireball_call)
+        self.libfireball = Libfireball(
+            sysv.fireball_call,
+            sysv.virq_register_host_call,
+            sysv.virq_unregister_host_call,
+            sysv.vdma_start_host_call,
+        )
         self.sysv.wasi_context = self
         self._keepalive_trampolines: StaticVector[Callable[..., int]] = StaticVector(
             capacity=FB_CONF_MAX_IMPORTS

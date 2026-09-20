@@ -2,8 +2,8 @@
 
 The adapter models the statically linked guest library described by
 ``docs/components/tier3_platform/libfireball.md``.  It carries no vMMIO
-register state: every operation is a synchronous import call to the supplied
-fixed-arity host function.
+register state: generic syscalls use the supplied fixed-arity host function,
+while vIRQ and vDMA use their dedicated typed host-call functions.
 """
 
 from __future__ import annotations
@@ -12,18 +12,33 @@ from collections.abc import Callable
 from typing import Final
 
 U32_MAX: Final[int] = 0xFFFF_FFFF
-VIRQ_REGISTER: Final[int] = 0x30
-VIRQ_UNREGISTER: Final[int] = 0x31
 FireballHostCall = Callable[[int, int, int, int, int, int, int], int]
+FireballVirqRegisterHostCall = Callable[[int, int], int]
+FireballVirqUnregisterHostCall = Callable[[int], int]
+FireballVdmaHostCall = Callable[[int, int, int], int]
 
 
 class Libfireball:
-    """Fixed-arity ``fireball_call0`` through ``fireball_call6`` bindings."""
+    """Generic syscall and dedicated vIRQ/vDMA host-call bindings."""
 
-    __slots__ = ("_host_call",)
+    __slots__ = (
+        "_host_call",
+        "_virq_register_host_call",
+        "_virq_unregister_host_call",
+        "_vdma_host_call",
+    )
 
-    def __init__(self, host_call: FireballHostCall):
+    def __init__(
+        self,
+        host_call: FireballHostCall,
+        virq_register_host_call: FireballVirqRegisterHostCall,
+        virq_unregister_host_call: FireballVirqUnregisterHostCall,
+        vdma_host_call: FireballVdmaHostCall,
+    ):
         self._host_call = host_call
+        self._virq_register_host_call = virq_register_host_call
+        self._virq_unregister_host_call = virq_unregister_host_call
+        self._vdma_host_call = vdma_host_call
 
     @staticmethod
     def _validate_u32(value: int) -> None:
@@ -90,9 +105,25 @@ class Libfireball:
         return self._call(syscall_id, arg0, arg1, arg2, arg3, arg4, arg5)
 
     def fireball_virq_register(self, node_id: int, function_index: int) -> int:
-        """Stages a vIRQ guest handler through the VIRQ_REGISTER host call."""
-        return self.fireball_call2(VIRQ_REGISTER, node_id, function_index)
+        """Stages a vIRQ guest handler through the dedicated host call."""
+        self._validate_u32(node_id)
+        self._validate_u32(function_index)
+        result = self._virq_register_host_call(node_id, function_index)
+        assert 0 <= result <= U32_MAX, "vIRQ host-call result must be u32"
+        return result
 
     def fireball_virq_unregister(self, node_id: int) -> int:
-        """Stages removal of a vIRQ guest handler through the host call ABI."""
-        return self.fireball_call1(VIRQ_UNREGISTER, node_id)
+        """Stages removal of a vIRQ guest handler through the dedicated host call."""
+        self._validate_u32(node_id)
+        result = self._virq_unregister_host_call(node_id)
+        assert 0 <= result <= U32_MAX, "vIRQ host-call result must be u32"
+        return result
+
+    def fireball_vdma_start(self, source: int, destination: int, byte_count: int) -> int:
+        """Starts a virtual DMA transfer through the dedicated host call."""
+        self._validate_u32(source)
+        self._validate_u32(destination)
+        self._validate_u32(byte_count)
+        result = self._vdma_host_call(source, destination, byte_count)
+        assert 0 <= result <= U32_MAX, "vDMA host-call result must be u32"
+        return result

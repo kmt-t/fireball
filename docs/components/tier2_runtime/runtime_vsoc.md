@@ -464,13 +464,13 @@ sequenceDiagram
 | 事後条件 | `HANDLED`なら配送を終了し、`PASS_THROUGH`だけが子ノードへ進み、`REJECT`は診断記録後に終了する。 |
 | 不変条件 | ISRからゲスト関数を直接呼び出さず、REJECTを原因とする再帰的なFAULT配送を行わない。 |
 | エラー時の挙動 | 未登録ノード、無効な関数インデックス、WASMシグネチャ不一致は登録または配送を拒否し、下位ノードへ流さない。 |
-| 補足 | `fireball_call(VIRQ_REGISTER/VIRQ_UNREGISTER)` の要求を保留表へ書き込み、Safepointで検証済みの関数インデックスを原子的に反映する。イベント本体はCOOS FIFOから受け取り、WASIの`poll-check`/`poll-wait`とは別経路である。 |
+| 補足 | `fireball:host/virq` の `register` / `unregister` 要求を保留表へ書き込み、Safepointで検証済みの関数インデックスを原子的に反映する。イベント本体はCOOS FIFOから受け取り、WASIの`poll-check`/`poll-wait`とは別経路である。 |
 
 #### `register-virq-dispatcher`
 <!-- traceability: {META_ConfigurableSystem} -->
 | 項目 | 内容 |
 | :--- | :--- |
-| 機能概要 | `fireball_call` から受けたvIRQ登録要求を検証し、次のSafepointで有効化する。ゲストからvMMIO固定スロットへ直接書き込む経路は存在しない。 |
+| 機能概要 | `fireball:host/virq` から受けたvIRQ登録要求を検証し、次のSafepointで有効化する。ゲストからvMMIO固定スロットへ直接書き込む経路は存在しない。 |
 | シグネチャ | `register-virq-dispatcher(node-id: u32, function-index: u32) -> registration-result`<br>`unregister-virq-dispatcher(node-id: u32) -> registration-result` |
 | 引数 | `register`: `node-id` はroot・4分類・静的デバイスのいずれか、`function-index` はWASM関数テーブルのインデックス。`unregister`: `node-id` のみ |
 | 事前条件 | `node-id`がホスト設定の静的ノードで、関数が`(u32,u32,u32,u32,u32) -> u32`の期待シグネチャを満たすこと。 |
@@ -495,11 +495,13 @@ sequenceDiagram
 
 WASMゲストからホストサービスを呼び出すための最小限のインターフェースを提供する。
 
-Fireballでは、標準WASIのゲスト側アダプタを `libfireball` として提供し、WASM import の host call でホストサービスへ接続する。システムコールとVDMAの要求搬送に vMMIO レジスタは使用しない。
+Fireballでは、標準WASIのゲスト側アダプタを `libfireball` として提供し、WASM import の host call でホストサービスへ接続する。汎用システムコール、vIRQ、vDMAの要求搬送に vMMIO レジスタは使用しない。
 
 - **host-call import**: `uint32_t fireball_call(uint32_t id, uint32_t arg0, uint32_t arg1, ... uint32_t arg5)`
   - ゲストはこの関数をインポートし、統合システムコールID `id`（上位16bit: `service_id`, 下位16bit: `command_id`）および最大6つの汎用引数を指定して呼び出す（`{Syscall_Mapping}` を正本とする）。
   - **host call は vMMIO レジスタ経路ではない**。上記シグネチャはゲストから見た WASM import ABI であり、ゲストは通常の関数呼び出しとして引数を渡す。実行エンジンは引数をホスト側ハンドラへ直接渡し、戻り値を WASM の結果値へ返す。※整合性検証は [runtime_vsoc_test_spec.md](docs/qa/tier2_runtime/runtime_vsoc_test_spec.md) `TEST-VSOC-40` を参照。
+- **専用host-call import**: `fireball:host/virq` と `fireball:host/vdma`
+  - vIRQの `register` / `unregister` とvDMAの `start` は、汎用 `fireball_call` のIDディスパッチを経由せず、専用WASM importから対応ハンドラへ直接接続する。
 - **WASI互換性**: ゲスト側で `wasi-libc` と Tier 3 のゲストアダプタをリンクし、Tier 2 の `runtime_syscall` と `hal_dispatch` が定義する公開契約へ接続することで実現する。
 
 ### 5.3 マルチモジュール対応

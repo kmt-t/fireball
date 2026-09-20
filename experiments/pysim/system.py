@@ -1,7 +1,8 @@
 """
 experiments/pysim/system.py
 Wires HAL + Logger/ConsoleOutput + the recovery-strategy engine + the real
-fireball_call syscall surface into one running system.
+generic fireball_call and dedicated vIRQ/vDMA host-call surfaces into one
+running system.
 fireball_call's host-call ID space and error-code convention adhere
 strictly to the architectural specifications:
 - `docs/components/tier2_runtime/runtime_syscall.md` defines the real ID table
@@ -91,9 +92,6 @@ class FbSyscallId(IntEnum):
     # instead reachable through the IPC-based HAL_GPIO device (fireball://
     # device/gpio/0), not through fireball_call directly.
     TRIGGER_SET_PIN = 0x16
-    VDMA_START = 0x20
-    VIRQ_REGISTER = 0x30
-    VIRQ_UNREGISTER = 0x31
     IPC_SEND = 0x40
     IPC_RECV = 0x41
     IPC_LOOKUP = 0x42
@@ -249,18 +247,6 @@ class System:
                 lambda a0, a1, a2, a3, a4, a5: int(self._mmio_bulk_write(a0, a1, a2)),
             ),
             (
-                FbSyscallId.VDMA_START,
-                lambda a0, a1, a2, a3, a4, a5: int(self._vdma_start(a0, a1, a2)),
-            ),
-            (
-                FbSyscallId.VIRQ_REGISTER,
-                lambda a0, a1, a2, a3, a4, a5: int(self._virq_register(a0, a1)),
-            ),
-            (
-                FbSyscallId.VIRQ_UNREGISTER,
-                lambda a0, a1, a2, a3, a4, a5: int(self._virq_unregister(a0)),
-            ),
-            (
                 FbSyscallId.IPC_SEND,
                 lambda a0, a1, a2, a3, a4, a5: int(self._ipc_send(a0, a1, a2)),
             ),
@@ -380,6 +366,28 @@ class System:
         if handler is not None:
             return handler(arg0, arg1, arg2, arg3, arg4, arg5)
         return int(WasiErrno.NOSYS)
+
+    # --- dedicated vIRQ/vDMA host calls -------------------------------
+    def virq_register_host_call(self, node_id: int, function_index: int) -> int:
+        """Handles the dedicated ``fireball:host/virq.register`` import."""
+        assert self.scheduler.current_task is not None, (
+            "virq_register_host_call requires an active scheduler task"
+        )
+        return int(self._virq_register(node_id, function_index))
+
+    def virq_unregister_host_call(self, node_id: int) -> int:
+        """Handles the dedicated ``fireball:host/virq.unregister`` import."""
+        assert self.scheduler.current_task is not None, (
+            "virq_unregister_host_call requires an active scheduler task"
+        )
+        return int(self._virq_unregister(node_id))
+
+    def vdma_start_host_call(self, source: int, destination: int, byte_count: int) -> int:
+        """Handles the dedicated ``fireball:host/vdma.start`` import."""
+        assert self.scheduler.current_task is not None, (
+            "vdma_start_host_call requires an active scheduler task"
+        )
+        return int(self._vdma_start(source, destination, byte_count))
 
     # --- guest memory (fb_offset_t resolution) -------------------------
     def _guest_ram_ok(self, offset: int, length: int) -> bool:

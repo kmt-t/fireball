@@ -301,7 +301,7 @@ FlatMap ページテーブル、ダイレクトマップ
 
 ### 4.2 仮想DMAとの境界
 <!-- traceability: {VDMA} -->
-VDMA は `fireball_call(VDMA_START, src, dst, byte_count, ...)` の host call として実行する。VDMA の要求設定、開始、完了値は vMMIO レジスタへ書き込まない。
+VDMA は `fireball:host/vdma.start(source, destination, byte-count)` の専用host callとして実行する。VDMA の要求設定、開始、完了値は vMMIO レジスタへ書き込まない。
 
 転送元と転送先は、ゲストリニアメモリまたは vMMIO 管理下のマッピングを指定できる。後者のアドレス権限と所有権は `VmmioController` の共通アクセスゲートで検査するが、VDMA の制御要求自体は vMMIO のデバイスページを通らない。
 
@@ -322,7 +322,7 @@ PASSTHROUGH アドレス変換:
 
 ### 4.4 Host call で扱う機能
 <!-- traceability: {Trap_Interface} {VDMA} -->
-システム制御、システムコール、WASI、IPC、および VDMA は `fireball:host/trap` の import host call で実行する。これらの要求を vMMIO の SYSCTL／VDMA レジスタへ変換する経路は存在しない。vMMIO はゲストの load/store によるデバイス・共有メモリ・passthrough アクセスだけを扱う。
+システム制御、システムコール、WASI、IPCは `fireball:host/trap` のimport host callで実行し、vDMAは `fireball:host/vdma` の専用importで実行する。これらの要求を vMMIO の SYSCTL／VDMA レジスタへ変換する経路は存在しない。vMMIO はゲストの load/store によるデバイス・共有メモリ・passthrough アクセスだけを扱う。
 
 ### 4.6 HAL DYNAMICバッファマッピング (FC=13)
 <!-- traceability: {HAL_Interface} {IPC_ZeroCopy} -->
@@ -359,7 +359,7 @@ graph LR
 ### 4.8 原因付き vIRQ ディスパッチ
 <!-- traceability: {META_ConfigurableSystem} {GLOBAL_InterruptWakeup} -->
 
-vIRQは、物理割り込みの原因源表と有効な登録状態を保持する静的vMMIOページである。ゲストの登録・解除要求は [`libfireball.md`](docs/components/tier3_platform/libfireball.md) が `fireball_call(VIRQ_REGISTER/VIRQ_UNREGISTER)` へ変換する。ゲストは固定スロットへ直接書き込まず、vSoCが要求を検証してSafepointで原子的に反映する。`REG_IRQ_FLAGS` のポーリングはvIRQの配送経路ではない。
+vIRQは、物理割り込みの原因源表と有効な登録状態を保持する静的vMMIOページである。ゲストの登録・解除要求は [`libfireball.md`](docs/components/tier3_platform/libfireball.md) が `fireball:host/virq.register` / `fireball:host/virq.unregister` へ変換する。ゲストは固定スロットへ直接書き込まず、vSoCが要求を検証してSafepointで原子的に反映する。`REG_IRQ_FLAGS` のポーリングはvIRQの配送経路ではない。
 
 #### vIRQ ページ配置と固定スロット
 
@@ -375,7 +375,7 @@ vIRQページは `FB_CONF_VMMIO_VIRQ_BASE`（`0xC000_3000`）から `FB_CONF_VMM
 | `0x110` | FAULT 登録スロット | R | FAULT 分類ディスパッチャの有効なWASM関数インデックス |
 | `0x120` – `0x13F` | デバイス登録スロット | R | `device_index` ごとの有効なデバイスディスパッチャ。最大 `FB_CONF_HAL_MAX_DEVICES` 件 |
 
-登録値 `0xFFFF_FFFF` は未登録を示す固定値である。`VIRQ_REGISTER` / `VIRQ_UNREGISTER` 以外の登録操作、範囲外ノード、未登録値以外の不正な関数インデックス、または期待シグネチャを満たさない関数はvSoCが拒否する。登録対象はroot、4分類、各デバイスの静的ノードに限り、親子関係と原因源表はホスト設定で固定する。
+登録値 `0xFFFF_FFFF` は未登録を示す固定値である。`virq.register` / `virq.unregister` 以外の登録操作、範囲外ノード、未登録値以外の不正な関数インデックス、または期待シグネチャを満たさない関数はvSoCが拒否する。登録対象はroot、4分類、各デバイスの静的ノードに限り、親子関係と原因源表はホスト設定で固定する。
 
 #### 静的ノードと原因源表
 

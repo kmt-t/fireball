@@ -44,8 +44,8 @@ Loader/Interpreter/JIT/vMMIO/Debuggerを統合する`vsoc_harness`（静的DI）
 
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| TEST-VSOC-50 | 静的vIRQノードの登録 | root・4分類・デバイスの固定ノード | `fireball_call(VIRQ_REGISTER, node_id, function_index,...)` を実行 | 静的ノードだけが受け付けられ、親子関係と原因源表は変更されない | `runtime_vsoc.md` `register-virq-dispatcher` |
-| TEST-VSOC-51 | WASM関数シグネチャ拒否 | 登録対象に不一致シグネチャの関数 | host call経由で登録 | `(u32,u32,u32,u32,u32) -> u32` 以外は拒否され、有効登録を上書きしない | `runtime_vsoc.md` `register-virq-dispatcher` |
+| TEST-VSOC-50 | 静的vIRQノードの登録 | root・4分類・デバイスの固定ノード | `fireball:host/virq.register(node_id, function_index)` を実行 | 静的ノードだけが受け付けられ、親子関係と原因源表は変更されない | `runtime_vsoc.md` `register-virq-dispatcher` |
+| TEST-VSOC-51 | WASM関数シグネチャ拒否 | 登録対象に不一致シグネチャの関数 | `fireball:host/virq.register` 経由で登録 | `(u32,u32,u32,u32,u32) -> u32` 以外は拒否され、有効登録を上書きしない | `runtime_vsoc.md` `register-virq-dispatcher` |
 | TEST-VSOC-52 | Safepoint前の登録変更不可視性 | 有効登録A、保留登録B | Safepoint前とSafepoint後に同じイベントを配送 | 前半はA、Safepoint後はBだけが観測され、途中状態は観測されない | `{JIT_Safepoint}` |
 | TEST-VSOC-53 | 原因レコードの階層伝播 | root/category/deviceに登録済み関数 | `PASS_THROUGH`を返すイベントを配送 | `root → 分類 → デバイス → ゲスト関数`の順に1回ずつ呼ばれる | `runtime_vsoc.md` `dispatch-interrupt-event` |
 | TEST-VSOC-54 | HANDLEDとREJECTの終端 | 各階層の関数が結果を返す | `HANDLED`または`REJECT`を返す | `HANDLED`は子へ進まず、`REJECT`は診断後に終了し、FAULTへ再帰配送しない | `runtime_vsoc.md` `dispatch-interrupt-event` |
@@ -65,7 +65,7 @@ Loader/Interpreter/JIT/vMMIO/Debuggerを統合する`vsoc_harness`（静的DI）
 
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| TEST-VSOC-40 | `fireball_call` host-call の引数個数とパッキング | システムコール発行 | import host call の受け渡しを検証 | `fireball_call(id, arg0..arg5)`（計7引数）として統一され、6つの汎用引数がvMMIOレジスタを経由せずホストハンドラへ直接渡る | `{Syscall_Mapping}` |
+| TEST-VSOC-40 | `fireball_call` host-call の引数個数とパッキング | 汎用システムコール発行 | `fireball:host/trap` import の受け渡しを検証 | `fireball_call(id, arg0..arg5)`（計7引数）として統一され、6つの汎用引数がvMMIOレジスタを経由せずホストハンドラへ直接渡る。vIRQ/vDMA専用host callはこのABIに含めない | `{Syscall_Mapping}` |
 
 ### 実装の勘所・不変条件（Gotchas & Implementation Invariants）
 

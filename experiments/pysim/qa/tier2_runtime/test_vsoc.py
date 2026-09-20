@@ -303,7 +303,7 @@ def test_runtime_engine_cooperative_run_yields_at_reschedule_boundary():
 
 
 def test_virq_unregisters_dispatcher_at_safepoint():
-    """VIRQ_UNREGISTER removes an active handler only at the next safepoint."""
+    """The dedicated vIRQ unregister host call takes effect at the next safepoint."""
     dispatcher = VirqDispatcher(_make_virq_module(), lambda _index, _v, _s, _c, _p0, _p1: 0)
     assert dispatcher.register_dispatcher(int(VirqNode.ROOT), 0).is_ok
     dispatcher.commit_safepoint()

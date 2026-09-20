@@ -3,7 +3,7 @@
 ## 1. 目的と対象範囲
 <!-- traceability: {Wasm32Only} {LowLatencyJIT} {ThreadedInterpreter} {JIT_CopyAndPatch} -->
 
-正本: [`jit_compiler.md`](docs/components/tier3_jit/jit_compiler.md), [`wasm_instruction_set.md`](docs/specs/wasm_instruction_set.md)
+正本: [`jit_compiler.md`](docs/components/tier3_executer/jit_compiler.md), [`wasm_instruction_set.md`](docs/specs/wasm_instruction_set.md)
 参考実装: [`bench_aobench.py`](experiments/pysim/benchmarks/aobench/bench_aobench.py)
 
 組込み WASM 実行環境上で動作する実機 3D Ambient Occlusion レイトレーシングベンチマーク（AO-Bench, Q8.8 固定小数点数演算）を通じて、実ワークロードにおける Tier 2 スレッド化インタープリタおよび Tier 3 Copy-and-Patch JIT の総合演算性能、レイ描画スループット、および差分検証（Differential Check）を実施する。
@@ -23,7 +23,7 @@
    - `aobench.wasm`（Q8.8 固定小数点数版）を `wasm_reader.parse()` で解析。
 2. **Tier 2 インタープリタ実行**:
    - `Interpreter.call()` で 32x16 グリッドを描画し、WASI stdout 出力文字列および所要時間を記録。
-3. **Tier 3 JIT ハイブリッド実行**:
+3. **Tier 3 Executer ハイブリッド実行**:
    - 2-bit カードマーキングによりホットスポットを検知し、`idle_hook` 経由で JIT トレースをコンパイルして実行。
 4. **差分照合**:
    - 両エンジンの描画結果を完全照合（Exact byte-for-byte match）し、不変性を確認。

@@ -1,5 +1,5 @@
 """
-docs/components/tier3_jit/formal/jit_cache_model.py
+docs/components/tier3_executer/formal/jit_cache_model.py
 pyModelChecking による JIT 3面キャッシュ代謝・MPU W^X・遅延チェイニング安全性・2-bit Hotspot FSM の形式検証（証明・変異検査対応）モデル
 """
 
@@ -8,8 +8,8 @@ from pyModelChecking.CTL import AF, AG, And, AtomicProposition, Imply, Not, Or
 
 BACKS = [
     "components/tier2_runtime/concepts/runtime_engine_concept.py",
-    "components/tier3_jit/jit_compiler.md",
-    "components/tier3_jit/jit_runtime.md",
+    "components/tier3_executer/jit_compiler.md",
+    "components/tier3_executer/jit_runtime.md",
     "components/tier2_runtime/runtime_memory.md",
 ]
 

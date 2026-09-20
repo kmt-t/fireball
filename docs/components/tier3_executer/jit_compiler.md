@@ -3,7 +3,7 @@
      formal: formal/jit_cache_model.py
      benchmark: benchmarks/zero_runtime_overhead_bench.py
      concept: concepts/jit_copy_patch_concept.py
-     test: docs/qa/tier3_jit/jit_compiler_test_spec.md
+     test: docs/qa/tier3_executer/jit_compiler_test_spec.md
 -->
 
 ## 1. コンセプト
@@ -12,14 +12,14 @@ JIT Compiler は、WASMバイトコードを実行時にネイティブコード
 
 ## 2. アーキテクチャ分類
 <!-- traceability: {META_3TierSeparation} {JIT_CopyAndPatch} -->
-本コンポーネントは **Tier 3 (詳細リーフコンポーネント: Leaf Component)** に属する。vSoC (`runtime_vsoc.md`) から分解された JIT コンパイルパイプラインを担当する。事前生成テンプレートのコピー＆パッチ結合、および C++ `constexpr` 命令エンコードを担当する。ランタイム側のエントリ検索・キャッシュ管理・ホットスポット検出は [`jit_runtime.md`](docs/components/tier3_jit/jit_runtime.md) が担当する。
+本コンポーネントは **Tier 3 (詳細リーフコンポーネント: Leaf Component)** に属する。vSoC (`runtime_vsoc.md`) から分解された JIT コンパイルパイプラインを担当する。事前生成テンプレートのコピー＆パッチ結合、および C++ `constexpr` 命令エンコードを担当する。ランタイム側のエントリ検索・キャッシュ管理・ホットスポット検出は [`jit_runtime.md`](docs/components/tier3_executer/jit_runtime.md) が担当する。
 
 ### 2.1 JIT サブシステムのデコンポジション
 <!-- traceability: {JIT_Encoder} {JIT_CopyAndPatch} {SimpleJITArchitecture} {JIT_MultiBuffer_Cache} -->
 JITサブシステムは、以下の2つの独立した設計書に責務を分離して構成される。
 
-- **[jit_compiler.md](docs/components/tier3_jit/jit_compiler.md)**: 命令テンプレートを用いたネイティブコード生成（Copy-and-Patch Engine）および静的な命令エンコード DSL（constexpr Assembler）を担当する。
-- **[jit_runtime.md](docs/components/tier3_jit/jit_runtime.md)**: 実行履歴監視・ホットスポット判定、PC-アドレス変換検索、および 3面キャッシュローテーションを担当する。
+- **[jit_compiler.md](docs/components/tier3_executer/jit_compiler.md)**: 命令テンプレートを用いたネイティブコード生成（Copy-and-Patch Engine）および静的な命令エンコード DSL（constexpr Assembler）を担当する。
+- **[jit_runtime.md](docs/components/tier3_executer/jit_runtime.md)**: 実行履歴監視・ホットスポット判定、PC-アドレス変換検索、および 3面キャッシュローテーションを担当する。
 
 ## 3. 静的モデル
 
@@ -89,7 +89,7 @@ WASM バイトコードにおける制御フロー命令は、その内部動作
 <!-- traceability: {JIT_CopyAndPatch} {JIT_ZeroCompileCostTheorem} {JIT_RegisterMapping} {PositionIndependentCode} {GOTCHA-JITC-04} {GOTCHA-JITC-06} -->
 JIT ネイティブ実行対象命令（計 54 命令）の内訳は以下の通りである。スタック 5、デリミタ 4、定数 2、変数 6、32bit算術・論理 17、32bit比較 11、メモリ 9 の計54命令である。
 
-全54命令の展開形式は概念コード [`jit_copy_patch_concept.py`](docs/components/tier3_jit/concepts/jit_copy_patch_concept.py) のテストで検証する。形式モデル `jit_cache_model.py` はキャッシュの W^X やチェイニング不変条件を検証する。
+全54命令の展開形式は概念コード [`jit_copy_patch_concept.py`](docs/components/tier3_executer/concepts/jit_copy_patch_concept.py) のテストで検証する。形式モデル `jit_cache_model.py` はキャッシュの W^X やチェイニング不変条件を検証する。
 
 | カテゴリ | WASM Opcode (Hex) | 命令名 | JIT ネイティブ展開形式 (Thumb-2) | スタック/レジスタ効果 | 生成バイト数 |
 | :--- | :--- | :--- | :--- | :--- | :--- |
@@ -273,7 +273,7 @@ JIT トレースとインタープリタが共有オペランド領域上で相�
 
 #### JIT トレース検索 & 3面キャッシュ代謝オーケストレーション
 <!-- traceability: {JIT_MultiBuffer_Cache} {JIT_OldestOnly_Promote} -->
-3段JIT検索および連続8KBキャッシュ領域の管理は[`jit_runtime.md`](docs/components/tier3_jit/jit_runtime.md)を正本とする。コンパイラコアは生成したトレースの登録と命令同期を同コンポーネントへ委譲する。
+3段JIT検索および連続8KBキャッシュ領域の管理は[`jit_runtime.md`](docs/components/tier3_executer/jit_runtime.md)を正本とする。コンパイラコアは生成したトレースの登録と命令同期を同コンポーネントへ委譲する。
 
 #### トレース・チェイニング（連鎖実行）と専用分岐ハンドラ分離
 <!-- traceability: {JIT_LazyChaining} -->
@@ -497,7 +497,7 @@ sequenceDiagram
 - **W^X メモリ保護**: JIT パッチ書き込み時の `RW+XN` と実行時の `RO+X` の分離（`jit_cache_model.py`, `TEST-JITC-42`）。
 
 ### 7.2 テスト仕様書との連携
-本コンポーネントの単体テストケースは [`jit_compiler_test_spec.md`](docs/qa/tier3_jit/jit_compiler_test_spec.md) を正本として定義する。3面キャッシュの直交表は [`jit_runtime_test_spec.md`](docs/qa/tier3_jit/jit_runtime_test_spec.md) を正本とする。
+本コンポーネントの単体テストケースは [`jit_compiler_test_spec.md`](docs/qa/tier3_executer/jit_compiler_test_spec.md) を正本として定義する。3面キャッシュの直交表は [`jit_runtime_test_spec.md`](docs/qa/tier3_executer/jit_runtime_test_spec.md) を正本とする。
 
 ## 8. 設計判断 (ADR)
 <!-- traceability: {ADR_ScalableCodeOffset} {ADR_SafeQueuingOnHotMiss} {ADR_TosCacheAsymmetry} {JIT_LazyChaining} {GOTCHA-JITC-07} -->

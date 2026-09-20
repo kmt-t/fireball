@@ -3,8 +3,8 @@
 ## 1. 目的と対象範囲
 
 正本: [`wasm_instruction_set.md`](docs/specs/wasm_instruction_set.md)
-関連: [`interpreter.md`](docs/components/tier3_plugins/interpreter.md)（インタープリタ側実装）, [`jit_compiler.md`](docs/components/tier3_jit/jit_compiler.md)（JIT側実装）
-参考実装: [`interpreter_concept.py`](docs/components/tier3_plugins/concepts/interpreter_concept.py)
+関連: [`interpreter.md`](docs/components/tier3_executer/interpreter.md)（インタープリタ側実装）, [`jit_compiler.md`](docs/components/tier3_executer/jit_compiler.md)（JIT側実装）
+参考実装: [`interpreter_concept.py`](docs/components/tier3_executer/concepts/interpreter_concept.py)
 
 インタープリタ・JIT双方が対応すべきWASM MVPオプコード物理マトリクスを、命令カテゴリごとに検証する。本書は個々のオプコードのスタック遷移・トラップ条件を横断的に一覧化する（実行エンジンごとの内部実装詳細は`interpreter_test_spec.md`/`jit_compiler_test_spec.md`を参照）。
 

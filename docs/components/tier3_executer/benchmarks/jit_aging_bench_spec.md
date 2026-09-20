@@ -3,7 +3,7 @@
 ## 1. 目的と対象範囲
 <!-- traceability: {JIT_CardAgingSweep} {JIT_MultiBuffer_Cache} {JIT_OldestOnly_Promote} {LowLatencyJIT} -->
 
-正本: [`jit_runtime.md`](docs/components/tier3_jit/jit_runtime.md)（エイジングスイープ）
+正本: [`jit_runtime.md`](docs/components/tier3_executer/jit_runtime.md)（エイジングスイープ）
 参考実装: [`bench_jit_aging.py`](experiments/pysim/benchmarks/jit/bench_jit_aging.py)
 
 本ベンチマークは、エイジングスイープが不要なコンパイルと追い出しを抑えるかを測定する。

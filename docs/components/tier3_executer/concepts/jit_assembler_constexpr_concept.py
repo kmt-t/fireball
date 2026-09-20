@@ -1,5 +1,5 @@
 """
-docs/components/tier3_jit/concepts/jit_assembler_constexpr_concept.py
+docs/components/tier3_executer/concepts/jit_assembler_constexpr_concept.py
 Reference Concept Implementation: Full-Set C++20 constexpr Thumb-2 Assembler DSL & Static Validator
 - Type-safe Register Enums (R0-R15, Low Regs R0-R7, High Regs R8-R15)
 - Compile-time instruction encoding & range validation (static_assert emulation)

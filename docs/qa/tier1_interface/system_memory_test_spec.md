@@ -49,7 +49,7 @@
 ## 3. テスト検証実績と網羅状況
 
 - 仕様書に定義された各テストケース（契約レベルの不変条件・境界条件・エラー処理）の検証手順と期待結果を定義。
-- TEST-MEM-26〜30（ランタイム用バンプアロケータ・JITキャッシュアロケータの契約レベル振る舞い）は本書で契約として定義済みだが、対応する実行可能テスト（concept code / pysim）は [`runtime_loader.md`](docs/components/tier2_runtime/runtime_loader.md) および [`jit_runtime.md`](docs/components/tier3_jit/jit_runtime.md) 側の実装完了後にそれぞれの正本テスト仕様書へ追加される（現状は契約定義のみで実行時検証は未着手であることを明示する。サイレントな欠落ではなく既知の追跡対象とする）。
+- TEST-MEM-26〜30（ランタイム用バンプアロケータ・JITキャッシュアロケータの契約レベル振る舞い）は本書で契約として定義済みだが、対応する実行可能テスト（concept code / pysim）は [`runtime_loader.md`](docs/components/tier2_runtime/runtime_loader.md) および [`jit_runtime.md`](docs/components/tier3_executer/jit_runtime.md) 側の実装完了後にそれぞれの正本テスト仕様書へ追加される（現状は契約定義のみで実行時検証は未着手であることを明示する。サイレントな欠落ではなく既知の追跡対象とする）。
 
 ## 4. 未検証・スコープ外
 

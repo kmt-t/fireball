@@ -1,7 +1,7 @@
 """
 experiments/pysim/benchmarks/jit/bench_jit_aging.py
 JIT Card Aging Benchmark: cold-function pollution under JIT cache pressure.
-Conforms to docs/components/tier3_jit/benchmarks/jit_aging_bench_spec.md (BENCHMARK-AGING-01 ~ BENCHMARK-AGING-03).
+Conforms to docs/components/tier3_executer/benchmarks/jit_aging_bench_spec.md (BENCHMARK-AGING-01 ~ BENCHMARK-AGING-03).
 
 Workload (a few hot functions, many cold ones):
   * A small set of hot functions runs a short arithmetic loop on every pass. Their

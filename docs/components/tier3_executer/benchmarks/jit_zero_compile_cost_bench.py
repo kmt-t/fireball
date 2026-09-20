@@ -1,5 +1,5 @@
 """
-docs/components/tier3_jit/benchmarks/jit_zero_compile_cost_bench.py
+docs/components/tier3_executer/benchmarks/jit_zero_compile_cost_bench.py
 Empirical backing for {JIT_ZeroCompileCostTheorem} (requires/requirement_list.md),
 whose verification method is declared as "ベンチマーク" (Benchmark). This benchmarks
 the linear compile-time scaling of the Copy-and-Patch compilation pipeline.

@@ -1,5 +1,5 @@
 """
-docs/components/tier3_plugins/concepts/interpreter_concept.py
+docs/components/tier3_executer/concepts/interpreter_concept.py
 Reference Concept Implementation: Exhaustive WASM MVP (v1) Stack Interpreter with Independent Runtime Stacks
 - Complete WASM MVP opcode set matching docs/specs/wasm_instruction_set.md
 - OperandStack, LocalStack, and ControlFrame use independent value regions;

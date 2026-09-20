@@ -4,7 +4,7 @@ A minimal reference interpreter for the wasm_opcodes subset, used as the
 correctness oracle the JIT's output is checked against -- mirroring the
 real project's own "interpreter + JIT, cross-checked" architecture
 (docs/components/tier2_runtime/runtime_interpreter.md /
-docs/components/tier3_jit/jit_compiler.md), just without the ARM/Copy-and-
+docs/components/tier3_executer/jit_compiler.md), just without the ARM/Copy-and-
 Patch specifics.
 Execution model: `docs/specs/wasm_instruction_set.md` §1 mandates a real
 **threaded interpreter** (`{ThreadedInterpreter}`). Every handler in this

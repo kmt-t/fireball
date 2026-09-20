@@ -3,7 +3,7 @@
 ## 1. 目的と対象範囲
 <!-- traceability: {JIT_CopyAndPatch} {JIT_ZeroCompileCostTheorem} {LowLatencyJIT} {META_AccessDictionary} {META_BinarySearch} {ThreadedInterpreter} -->
 
-正本: [`jit_compiler.md`](docs/components/tier3_jit/jit_compiler.md), [`jit_runtime.md`](docs/components/tier3_jit/jit_runtime.md)
+正本: [`jit_compiler.md`](docs/components/tier3_executer/jit_compiler.md), [`jit_runtime.md`](docs/components/tier3_executer/jit_runtime.md)
 参考実装: [`bench_jit.py`](experiments/pysim/benchmarks/jit/bench_jit.py)
 
 Copy-and-Patch方式によるJITコンパイル速度（トレース結合＋リロケーションパッチ）、2-bitカードマーキング表（`bit_view<2>`）による$O(1)$ホットスポット事前判定、少数の疎なJITエントリをソート配列から二分探索するlookup時間、およびインタープリタ対JITネイティブ実行のスループット比を計測する。

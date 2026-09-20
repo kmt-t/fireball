@@ -1,233 +1,179 @@
 #!/usr/bin/env python3
-"""
-collect_arch_context.py
-
-Parses docs/architecture/architecture_overview.md, extracts metadata keywords,
-cross-references with keyword_dictionary.md, and outputs relevant specification,
-formal model, WIT, and concept code files grouped by audit domain.
-"""
+"""architecture_overview.md の Tier・責務・依存関係監査用コンテキストを収集する。"""
 
 from __future__ import annotations
 
 import argparse
 import json
-import re
-import sys
 from pathlib import Path
-
-_SCRIPT_DIR = Path(__file__).resolve().parent
-_SKILL_DIR = _SCRIPT_DIR.parent
-_REPO_ROOT = _SKILL_DIR.parent.parent
+from typing import TypedDict
 
 
-def find_repo_root() -> Path:
-    cur = Path(__file__).resolve().parent
-    while cur != cur.parent:
-        if (cur / "docs").is_dir() and (cur / "AGENTS.md").is_file():
-            return cur
-        cur = cur.parent
-    return _REPO_ROOT
+REPO_ROOT = Path(__file__).resolve().parents[4]
+ARCHITECTURE_PATH = REPO_ROOT / "docs" / "architecture" / "architecture_overview.md"
 
 
-# Domain mapping for architecture overview review
-DOMAINS = {
-    "abi": {
-        "name": "ABI, Context & Memory Layout",
-        "description": "execution_context layout, registers, CPS calling convention, frames",
-        "keywords": [
-            "ContextPointerRegister",
-            "EnvironmentPointer",
-            "JIT_RegisterMapping",
-            "ADR_TosCacheAsymmetry",
-            "AAPCS_FastCall",
-            "ExecutionContext_Layout",
-            "CallFrame_Layout",
-            "ControlFrame_Layout",
-            "VsocRuntime_Layout",
-            "GOTCHA-JITC-01",
-            "GOTCHA-JITC-02",
-        ],
-        "primary_docs": [
-            "docs/architecture/architecture_overview.md",
-            "docs/components/tier2_runtime/runtime_interpreter.md",
-            "docs/components/tier2_runtime/runtime_vsoc.md",
-            "docs/components/tier3_jit/jit_compiler.md",
-            "docs/specs/jit_stencil_catalog.md",
-        ],
-        "wit_files": [
-            "docs/components/tier2_runtime/wit/vsoc_runtime.wit",
-        ],
-        "concept_files": [
-            "docs/components/tier3_jit/concepts/jit_copy_patch_concept.py",
-        ],
+class TierDefinition(TypedDict):
+    label: str
+    directory: str
+
+
+class ComponentEntry(TypedDict):
+    name: str
+    path: str
+    exists: bool
+
+
+class TierContext(TypedDict):
+    label: str
+    directory: str
+    components: list[ComponentEntry]
+
+
+class ArchitectureContext(TypedDict):
+    architecture_document: str
+    tiers: dict[str, TierContext]
+    graph_nodes: list[str]
+    component_links: list[str]
+    missing_links: list[str]
+    unlinked_components: list[str]
+    unknown_links: list[str]
+
+
+TIERS: dict[str, TierDefinition] = {
+    "tier1_core": {"label": "Tier 1 Core", "directory": "docs/components/tier1_core"},
+    "tier1_interface": {
+        "label": "Tier 1 Interface",
+        "directory": "docs/components/tier1_interface",
     },
-    "jit": {
-        "name": "JIT Pipeline, Cache & Dispatch",
-        "description": "8KB contiguous JIT region with fixed common code plus three rotating banks, sparse-key binary-search dispatch, trace chaining, LIFO compile",
-        "keywords": [
-            "DirectMappedJIT16",
-            "META_BinarySearch",
-            "JIT_CopyAndPatch",
-            "JIT_MultiBuffer_Cache",
-            "JIT_OldestOnly_Promote",
-            "SimpleJITArchitecture",
-            "GOTCHA-JITR-02",
-            "GOTCHA-JITR-03",
-        ],
-        "primary_docs": [
-            "docs/architecture/architecture_overview.md",
-            "docs/components/tier3_jit/jit_runtime.md",
-            "docs/components/tier3_jit/jit_compiler.md",
-            "docs/components/tier2_runtime/runtime_vsoc.md",
-        ],
-        "formal_models": [
-            "docs/components/tier2_runtime/formal/vsoc_cache_coherency_model.py",
-            "docs/components/tier3_jit/formal/jit_cache_model.py",
-        ],
-        "concept_files": [
-            # jit_runtime.md explicitly delegates the integrated runtime concept
-            # to the Tier 2 runtime component. Keep the architecture context
-            # collector aligned with that documented evidence location.
-            "docs/components/tier2_runtime/concepts/runtime_engine_concept.py",
-        ],
+    "tier2_runtime": {
+        "label": "Tier 2 Runtime",
+        "directory": "docs/components/tier2_runtime",
     },
-    "ipc_mem": {
-        "name": "CSP Communication, Shared Memory & Memory Safety",
-        "description": "Symmetric direct handoff, bufferless rendezvous, move-only SharedBlock, folding XOR TLB, unmap security",
-        "keywords": [
-            "ADR_RendezvousChannel",
-            "CSP_Handoff",
-            "DirectContextSwitch",
-            "FastAddressCheck",
-            "META_RestrictedPhysicalAccess",
-            "LowLatencyLookup",
-            "IPC_ZeroCopy",
-            "TypeSafeMessaging",
-            "ADR_SharedBlockRaii",
-            "GOTCHA-COOS-01",
-            "GOTCHA-COOS-02",
-            "GOTCHA-MEM-03",
-        ],
-        "primary_docs": [
-            "docs/architecture/architecture_overview.md",
-            "docs/components/tier1_core/os_coos.md",
-            "docs/components/tier1_interface/ipc_router.md",
-            "docs/components/tier2_runtime/runtime_vmmio.md",
-            "docs/components/tier1_interface/system_memory.md",
-            "docs/components/tier2_runtime/runtime_memory.md",
-        ],
-        "formal_models": [
-            "docs/components/tier1_core/formal/coos_channel_model.py",
-            "docs/components/tier1_interface/formal/csp_handoff_model.py",
-        ],
-        "concept_files": [
-            "docs/components/tier1_core/concepts/coos_concept.py",
-            "docs/components/tier1_interface/concepts/ipc_router_concept.py",
-            "docs/components/tier2_runtime/concepts/vmmio_concept.py",
-            "docs/components/tier2_runtime/concepts/runtime_memory_concept.py",
-        ],
+    "tier3_executer": {
+        "label": "Tier 3 Executer",
+        "directory": "docs/components/tier3_executer",
     },
-    "traceability": {
-        "name": "Requirements, WIT & Keyword Traceability",
-        "description": "Requirement list consistency, WIT specifications, keyword dictionary anchors",
-        "keywords": [
-            "GLOBAL_ComponentHarness",
-            "META_StaticDI",
-            "META_ZeroOverhead",
-            "UnifiedAccessModel",
-            "Challenge_SyscallMemorySafety",
-        ],
-        "primary_docs": [
-            "docs/architecture/architecture_overview.md",
-            "docs/architecture/keyword_dictionary.md",
-            "docs/architecture/document_structure.md",
-            "docs/requires/requirement_list.md",
-        ],
-        "wit_files": [
-            "docs/components/tier1_interface/wit/ipc_router.wit",
-            "docs/components/tier2_runtime/wit/vsoc_runtime.wit",
-        ],
+    "tier3_plugins": {
+        "label": "Tier 3 Plugins",
+        "directory": "docs/components/tier3_plugins",
+    },
+    "tier3_platform": {
+        "label": "Tier 3 Platform",
+        "directory": "docs/components/tier3_platform",
     },
 }
 
 
-def extract_keywords(file_path: Path) -> list[str]:
-    if not file_path.is_file():
-        return []
-    content = file_path.read_text(encoding="utf-8")
-    return sorted(set(re.findall(r"\{([A-Za-z0-9_]+)\}", content)))
+def read_architecture() -> str:
+    return ARCHITECTURE_PATH.read_text(encoding="utf-8")
+
+
+def collect_components(tier_name: str) -> list[ComponentEntry]:
+    tier = TIERS[tier_name]
+    directory = REPO_ROOT / tier["directory"]
+    documents = sorted(path for path in directory.glob("*.md") if path.is_file())
+    return [
+        {
+            "name": document.stem,
+            "path": document.relative_to(REPO_ROOT).as_posix(),
+            "exists": True,
+        }
+        for document in documents
+    ]
+
+
+def extract_component_links(text: str) -> list[str]:
+    links: set[str] = set()
+    for token in text.split("]("):
+        if not token.startswith("docs/components/"):
+            continue
+        link = token.split(")", 1)[0].split("#", 1)[0]
+        if link.endswith(".md"):
+            links.add(link)
+    return sorted(links)
+
+
+def extract_graph_nodes(text: str) -> list[str]:
+    nodes: set[str] = set()
+    for line in text.splitlines():
+        stripped = line.strip()
+        if '["' not in stripped or not stripped.endswith('"]'):
+            continue
+        nodes.add(stripped.split('["', 1)[1][:-2])
+    return sorted(nodes)
+
+
+
+def build_context(selected_tier: str | None) -> ArchitectureContext:
+    tier_names = [selected_tier] if selected_tier else list(TIERS)
+    architecture_text = read_architecture()
+    tiers: dict[str, TierContext] = {}
+    component_paths: set[str] = set()
+
+    for tier_name in tier_names:
+        components = collect_components(tier_name)
+        tiers[tier_name] = {
+            "label": TIERS[tier_name]["label"],
+            "directory": TIERS[tier_name]["directory"],
+            "components": components,
+        }
+        component_paths.update(component["path"] for component in components)
+
+    links = extract_component_links(architecture_text)
+    missing_links = sorted(
+        link for link in links if not (REPO_ROOT / link).is_file()
+    )
+    unlinked_components = sorted(component_paths.difference(links))
+    unknown_links = sorted(set(links).difference(component_paths))
+
+    return {
+        "architecture_document": ARCHITECTURE_PATH.relative_to(REPO_ROOT).as_posix(),
+        "tiers": tiers,
+        "graph_nodes": extract_graph_nodes(architecture_text),
+        "component_links": links,
+        "missing_links": missing_links,
+        "unlinked_components": unlinked_components,
+        "unknown_links": unknown_links,
+    }
+
+
+def parse_arguments() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Collect architecture Tier and component-link context."
+    )
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Print machine-readable JSON.",
+    )
+    parser.add_argument(
+        "--tier",
+        choices=sorted(TIERS),
+        help="Collect one Tier instead of the full component inventory.",
+    )
+    return parser.parse_args()
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Collect architectural review context files.")
-    parser.add_argument(
-        "--domain",
-        choices=["abi", "jit", "ipc_mem", "traceability", "all"],
-        default="all",
-        help="Audit domain to filter context (default: all)",
-    )
-    parser.add_argument("--json", action="store_true", help="Output results as JSON")
-    args = parser.parse_args()
+    arguments = parse_arguments()
+    context = build_context(arguments.tier)
+    if arguments.json:
+        print(json.dumps(context, ensure_ascii=False, indent=2))
+        return 0
 
-    repo_root = find_repo_root()
-    arch_doc = repo_root / "docs" / "architecture" / "architecture_overview.md"
-
-    if not arch_doc.is_file():
-        print(f"Error: {arch_doc} not found", file=sys.stderr)
-        return 1
-
-    extracted_kw = extract_keywords(arch_doc)
-
-    selected_domains = DOMAINS.keys() if args.domain == "all" else [args.domain]
-
-    result: dict[str, object] = {
-        "architecture_doc": str(arch_doc.relative_to(repo_root)).replace("\\", "/"),
-        "total_keywords_in_arch": len(extracted_kw),
-        "domains": {},
-    }
-
-    for d_key in selected_domains:
-        d_info = DOMAINS[d_key]
-        domain_entry: dict[str, object] = {
-            "name": d_info["name"],
-            "description": d_info["description"],
-            "tracked_keywords": d_info["keywords"],
-            "files": {},
-        }
-
-        for category in ["primary_docs", "wit_files", "formal_models", "concept_files"]:
-            file_list = d_info.get(category, [])
-            resolved_files = []
-            for f_rel in file_list:
-                f_path = repo_root / f_rel
-                resolved_files.append(
-                    {
-                        "path": str(f_path).replace("\\", "/"),
-                        "exists": f_path.is_file(),
-                    }
-                )
-            if resolved_files:
-                domain_entry["files"][category] = resolved_files
-
-        result["domains"][d_key] = domain_entry
-
-    if args.json:
-        print(json.dumps(result, indent=2, ensure_ascii=False))
-    else:
-        print(f"=== Architecture Context Overview for '{arch_doc.name}' ===")
-        print(f"Total Keywords: {len(extracted_kw)}")
-        for d_key, d_data in result["domains"].items():
-            print(f"\n--- Domain: {d_data['name']} ({d_key}) ---")
-            print(f"Description: {d_data['description']}")
-            print(f"Tracked Keywords: {', '.join(d_data['tracked_keywords'])}")
-            for cat, files in d_data["files"].items():
-                print(f"  {cat}:")
-                for f in files:
-                    status = "EXISTS" if f["exists"] else "MISSING"
-                    print(f"    - [{status}] {f['path']}")
-
+    print(f"architecture: {context['architecture_document']}")
+    for tier_name, tier in context["tiers"].items():
+        print(f"{tier_name}:")
+        for component in tier["components"]:
+            print(f"  - {component['path']}")
+    print(f"graph_nodes: {len(context['graph_nodes'])}")
+    print(f"component_links: {len(context['component_links'])}")
+    print(f"missing_links: {len(context['missing_links'])}")
+    print(f"unlinked_components: {len(context['unlinked_components'])}")
+    print(f"unknown_links: {len(context['unknown_links'])}")
     return 0
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    raise SystemExit(main())

@@ -2,7 +2,7 @@
 
 ## 1. 目的と対象範囲
 
-本書は、Fireball ハイパーバイザの全 Tier（Tier 1 Core、Tier 2 Runtime、Tier 3 Platform & JIT）における各コンポーネント間の結合動作を、独立したリアル WASM バイトコード（WAT より生成されたバイナリ）を用いて包括的に検証する**システム結合テストシナリオ（End-to-End Component Integration Test Scenarios）**の仕様を定義する。
+本書は、Fireball ハイパーバイザの全 Tier（Tier 1 Core、Tier 2 Runtime、Tier 3 Executer、Tier 3 Plugins、Tier 3 Platform）における各コンポーネント間の結合動作を、独立したリアル WASM バイトコード（WAT より生成されたバイナリ）を用いて包括的に検証する**システム結合テストシナリオ（End-to-End Component Integration Test Scenarios）**の仕様を定義する。
 
 ### 1.1 本番実装と参照実装の位置づけ
 
@@ -15,7 +15,7 @@
   - アーキテクチャの早期妥当性確認、状態遷移の探索、および Gotchas（実装上の勘所・不変条件）の抽出を目的とした Python 製の参照シミュレータ（`experiments/pysim`）。
   - 各シナリオには、この参照実装上で動作する実行可能なリファレンススクリプト（`experiments/pysim/qa/scenarios/`）が提供されており、仕様が実行可能（Executable Specification）であることを実証している。
 
-- **対象 Tier**: Tier 1 Core (`os_coos`, `os_scheduler`, `system_config`, `system_containers`, `system_memory`), Tier 1 Interface (`interface_wit`, `ipc_router`, `system_service`), Tier 2 Runtime (`runtime_vsoc`, `runtime_loader`, `runtime_interpreter`, `runtime_vmmio`, `debug_manager`, `runtime_memory`, `runtime_logging`, `runtime_syscall`, `hal_dispatch`), Tier 3 Platform & JIT (`platform_driver`, `libfireball`, `jit_compiler`, `jit_runtime`)
+- **対象 Tier**: Tier 1 Core (`os_coos`, `os_scheduler`, `system_config`, `system_containers`, `system_memory`), Tier 1 Interface (`interface_wit`, `ipc_router`, `system_service`), Tier 2 Runtime (`runtime_vsoc`, `runtime_loader`, `runtime_vmmio`, `runtime_memory`, `runtime_logging`, `runtime_syscall`, `hal_dispatch`), Tier 3 Executer (`interpreter`, `jit_compiler`, `jit_runtime`), Tier 3 Plugins (`debugger`, `guest_profiler`), Tier 3 Platform (`platform_driver`, `libfireball`)
 - **参照実装テストスイート**: `experiments/pysim/qa/scenarios/`
 - **参照テストランナー**: [`run_all.py`](experiments/pysim/qa/scenarios/run_all.py)
 
@@ -32,17 +32,17 @@
 | | [`system_service.md`](docs/components/tier1_interface/system_service.md) | システムサービス呼び出し、WASI トランスポート | Scenario 2, 11, 12 |
 | **Tier 2 Runtime** | [`runtime_vsoc.md`](docs/components/tier2_runtime/runtime_vsoc.md) | 統合 ExecEnv、モジュールリンク、共有メモリ | Scenario 1, 4, 6, 8 |
 | | [`runtime_loader.md`](docs/components/tier2_runtime/runtime_loader.md) | WASM バイナリパース、Active Data/Elem セグメント | Scenario 1, 8 |
-| | [`interpreter.md`](docs/components/tier3_plugins/interpreter.md) | 継続渡し4論理引数ディスパッチ、全幅メモリ、深い再帰、制御フレーム | Scenario 1〜12 |
+| **Tier 3 Executer** | [`interpreter.md`](docs/components/tier3_executer/interpreter.md) | 継続渡し4論理引数ディスパッチ、全幅メモリ、深い再帰、制御フレーム | Scenario 1〜12 |
 | | [`runtime_vmmio.md`](docs/components/tier2_runtime/runtime_vmmio.md) | Bit 31 RAM Bypass、FlatMap PTE、TLB[32]、仮想デバイス | Scenario 10 |
-| | [`debugger.md`](docs/components/tier3_plugins/debugger.md) | GDB RSP TCP ソケット接続、ブレークポイント、レジスタ/メモリ改変 | Scenario 7, 8 |
+| **Tier 3 Plugins** | [`debugger.md`](docs/components/tier3_plugins/debugger.md) | GDB RSP TCP ソケット接続、ブレークポイント、レジスタ/メモリ改変 | Scenario 7, 8 |
 | | [`runtime_memory.md`](docs/components/tier2_runtime/runtime_memory.md) | リニアメモリページ拡張（`memory.grow`）、MPU 領域保護 | Scenario 1, 4, 8, 10 |
 | | [`runtime_logging.md`](docs/components/tier2_runtime/runtime_logging.md) | 構造化ロギング、LogDictionary、UART 出力 | Scenario 9 |
 | | [`runtime_syscall.md`](docs/components/tier2_runtime/runtime_syscall.md) | `fireball_call` ABI、syscallディスパッチ、ゲスト境界検証 | Scenario 2, 10, 11, 12 |
 | | [`hal_dispatch.md`](docs/components/tier2_runtime/hal_dispatch.md) | WASI親和性のあるURI、バッファ、ストリーム、クロック、ポーリングIF | Scenario 2, 11, 12 |
 | **Tier 3 Platform** | [`libfireball.md`](docs/components/tier3_platform/libfireball.md) | WASI Preview1からFireball公開IFへのゲスト側変換 | Scenario 2, 11, 12 |
 | **Tier 3 Platform** | [`platform_driver.md`](docs/components/tier3_platform/platform_driver.md) | GPIO, I2C, SPI, Timer, StreamTransport | Scenario 2, 7, 9, 11, 12 |
-| **Tier 3 JIT** | [`jit_compiler.md`](docs/components/tier3_jit/jit_compiler.md) | Copy-and-Patch JIT 生成、PIC トレース、差分検証 | Scenario 4, 5, 8 |
-| | [`jit_runtime.md`](docs/components/tier3_jit/jit_runtime.md) | 3面キャッシュ代謝、2-bit Card Marking、UnifiedPC + 少数エントリ二分探索 | Scenario 4, 5 |
+| **Tier 3 Executer** | [`jit_compiler.md`](docs/components/tier3_executer/jit_compiler.md) | Copy-and-Patch JIT 生成、PIC トレース、差分検証 | Scenario 4, 5, 8 |
+| | [`jit_runtime.md`](docs/components/tier3_executer/jit_runtime.md) | 3面キャッシュ代謝、2-bit Card Marking、UnifiedPC + 少数エントリ二分探索 | Scenario 4, 5 |
 
 ### 1.3 仕様キーワード・不変条件カバレッジ追跡表 (Requirements Traceability Matrix: RTM)
 
@@ -129,7 +129,7 @@
 
 ---
 
-### シナリオ 4: Tier 2 Runtime + Tier 3 JIT Hybrid Compilation
+### シナリオ 4: Tier 2 Runtime + Tier 3 Executer Hybrid Compilation
 - **対象コンポーネント**: `runtime_interpreter`, `runtime_engine` (CardMarking, HistoryRing), `jit_compiler`, `jit_runtime`
 - **参照実装スクリプト (Reference Script)**: [`scenario4_hybrid_jit_loop.py`](experiments/pysim/qa/scenarios/scenario4_hybrid_jit_loop.py)
 - **WAT シナリオ**:
@@ -300,7 +300,7 @@
  Python 製の参照シミュレータ環境（`experiments/pysim`）を用いて全 12 シナリオの実動検証が完了している。
 
 - **全 12 シナリオ**: **12/12 PASSED**
-- **全 18 コンポーネント 100% カバレッジ**: Tier 1 Core、Tier 1 Interface、Tier 2 Runtime、Tier 3 Platform & JIT の全コンポーネントを実動検証。
+- **全 18 コンポーネント 100% カバレッジ**: Tier 1 Core、Tier 1 Interface、Tier 2 Runtime、Tier 3 Executer、Tier 3 Plugins、Tier 3 Platform の全コンポーネントを実動検証。
 - **完全差分検証**: 全シナリオにおいて、純粋インタープリタ実行と JIT 実行の出力がバイト単位・値単位で 100% 一致。
 - **HAL & WASI 完全スタック**: 標準入出力ストリーム / Timer ダミードライバおよび WASI In-Memory VFS / Random / Clock が完全実動。
 

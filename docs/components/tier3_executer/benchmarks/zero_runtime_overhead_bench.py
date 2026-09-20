@@ -1,5 +1,5 @@
 """
-docs/components/tier3_jit/benchmarks/zero_runtime_overhead_bench.py
+docs/components/tier3_executer/benchmarks/zero_runtime_overhead_bench.py
 Empirical backing for {ZeroRuntimeOverhead} (requires/requirement_list.md, cited
 from jit_assembler_constexpr.md), whose verification method is declared as
 "ベンチマーク" (Benchmark).

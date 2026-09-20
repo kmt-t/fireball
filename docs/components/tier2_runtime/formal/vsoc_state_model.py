@@ -8,7 +8,7 @@ from pyModelChecking.CTL import AF, AG, And, AtomicProposition, Imply, Not
 
 BACKS = [
     "components/tier2_runtime/runtime_vsoc.md",
-    "components/tier3_plugins/interpreter.md",
+    "components/tier3_executer/interpreter.md",
 ]
 
 

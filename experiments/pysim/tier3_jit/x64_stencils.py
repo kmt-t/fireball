@@ -2,8 +2,8 @@
 experiments/pysim/tier3_jit/x64_stencils.py
 x64 Copy-and-Patch stencils, mirroring the real design's split between
 compile-time template construction and runtime copy+patch
-(docs/components/tier3_jit/jit_compiler.md,
-docs/components/tier3_jit/concepts/jit_copy_patch_concept.py's `Stencil`).
+(docs/components/tier3_executer/jit_compiler.md,
+docs/components/tier3_executer/concepts/jit_copy_patch_concept.py's `Stencil`).
 The real system builds each stencil once via a C++20 `constexpr` function,
 baking a fixed byte array into ROM; the JIT then only ever copies that byte
 array and patches a few relocation slots into it. Python has no constexpr,

@@ -4,7 +4,7 @@ Integrated WASM Tiered Tracing Runtime Engine for pysim.
 Coordinates the Tier 2 interpreter, vSoC execution, and the Tier 3 JIT
 service through the 2-bit card-marking, history, and cache interfaces.
 mirroring docs/components/tier2_runtime/runtime_vsoc.md and
-docs/components/tier3_jit/jit_compiler.md.
+docs/components/tier3_executer/jit_compiler.md.
 Execution model:
   Interpreter execution:
     -> at basic-block head PCs: record card index into HistoryRing

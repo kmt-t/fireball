@@ -40,15 +40,15 @@
 | Tier 1 Interface | System Service | [system_service_test_spec.md](docs/qa/tier1_interface/system_service_test_spec.md) |
 | Tier 3 Plugins | Debugger | [debugger_test_spec.md](docs/qa/tier3_plugins/debugger_test_spec.md) |
 | Tier 2 Runtime | HAL Dispatch | [hal_dispatch_test_spec.md](docs/qa/tier2_runtime/hal_dispatch_test_spec.md) |
-| Tier 3 Plugins | Interpreter | [interpreter_test_spec.md](docs/qa/tier3_plugins/interpreter_test_spec.md) |
+| Tier 3 Executer | Interpreter | [interpreter_test_spec.md](docs/qa/tier3_executer/interpreter_test_spec.md) |
 | Tier 2 Runtime | Loader | [runtime_loader_test_spec.md](docs/qa/tier2_runtime/runtime_loader_test_spec.md) |
 | Tier 2 Runtime | Logging | [runtime_logging_test_spec.md](docs/qa/tier2_runtime/runtime_logging_test_spec.md) |
 | Tier 2 Runtime | Memory | [runtime_memory_test_spec.md](docs/qa/tier2_runtime/runtime_memory_test_spec.md) |
 | Tier 2 Runtime | Syscall | [runtime_syscall_test_spec.md](docs/qa/tier2_runtime/runtime_syscall_test_spec.md) |
 | Tier 2 Runtime | vMMIO | [runtime_vmmio_test_spec.md](docs/qa/tier2_runtime/runtime_vmmio_test_spec.md) |
 | Tier 2 Runtime | vSoC | [runtime_vsoc_test_spec.md](docs/qa/tier2_runtime/runtime_vsoc_test_spec.md) |
-| Tier 3 JIT | JIT Compiler | [jit_compiler_test_spec.md](docs/qa/tier3_jit/jit_compiler_test_spec.md) |
-| Tier 3 JIT | JIT Runtime | [jit_runtime_test_spec.md](docs/qa/tier3_jit/jit_runtime_test_spec.md) |
+| Tier 3 Executer | JIT Compiler | [jit_compiler_test_spec.md](docs/qa/tier3_executer/jit_compiler_test_spec.md) |
+| Tier 3 Executer | JIT Runtime | [jit_runtime_test_spec.md](docs/qa/tier3_executer/jit_runtime_test_spec.md) |
 | Tier 3 Platform | libfireball | [libfireball_test_spec.md](docs/qa/tier3_platform/libfireball_test_spec.md) |
 | Tier 3 Platform | Platform Driver | [platform_driver_test_spec.md](docs/qa/tier3_platform/platform_driver_test_spec.md) |
 | Cross-cutting Specs | WASM Instruction Set | [wasm_instruction_set_test_spec.md](docs/qa/specs/wasm_instruction_set_test_spec.md) |

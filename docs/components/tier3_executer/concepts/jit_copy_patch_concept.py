@@ -1,5 +1,5 @@
 """
-docs/components/tier3_jit/concepts/jit_copy_patch_concept.py
+docs/components/tier3_executer/concepts/jit_copy_patch_concept.py
 Reference Concept Implementation: Full-Set Copy-and-Patch JIT Engine & MPU W^X Transaction Protocol
 - Exhaustive binary stencil library matching docs/specs/jit_stencil_catalog.md & wasm_instruction_set.md
 - Multi-dimensional register variants (Depth 0/1/2/3, R2 local_base, R8/R9 mem_base/mem_size, Callee-saved R4-R6, R8-R11)
@@ -12,7 +12,7 @@ import os
 import struct
 import sys
 
-BACKS = ["components/tier3_jit/jit_compiler.md"]
+BACKS = ["components/tier3_executer/jit_compiler.md"]
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from jit_assembler_constexpr_concept import Cond, Reg, Thumb2Assembler

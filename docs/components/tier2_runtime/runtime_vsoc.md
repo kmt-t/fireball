@@ -442,7 +442,7 @@ sequenceDiagram
 <!-- traceability: {META_RecoveryStrategy} -->
 | 項目 | 内容 |
 | :--- | :--- |
-| 機能概要 | ゲストのプログラム実行を再開し、コルーチンの `yield` またはトラップが発生するまで継続する。内部で [`interpreter.md`](docs/components/tier3_plugins/interpreter.md) の `run_step` または JIT コードへディスパッチする。 |
+| 機能概要 | ゲストのプログラム実行を再開し、コルーチンの `yield` またはトラップが発生するまで継続する。内部で [`interpreter.md`](docs/components/tier3_executer/interpreter.md) の `run_step` または JIT コードへディスパッチする。 |
 | シグネチャ | `step() -> result<execution-state-category, sys-recovery-strategy>` |
 | 引数 | `ctx`: vsoc_context, `harness`: vsoc_harness |
 | 期待する結果 | 正常：一定期間の実行後に制御が戻る。異常：トラップ発生。 |

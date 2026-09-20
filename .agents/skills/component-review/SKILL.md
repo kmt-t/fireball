@@ -36,7 +36,7 @@ graph TD
 
 ### Step 1: 垂直エビデンスチェーンの収集
 
-レビュー対象のコンポーネント名（例: `os_coos`, `runtime_interpreter`, `jit_compiler`）または仕様書パスが指定されたら、付属の収集スクリプトを実行して関連ファイルを取得します。
+レビュー対象のコンポーネント名（例: `os_coos`, `interpreter`, `jit_compiler`）または仕様書パスが指定されたら、付属の収集スクリプトを実行して関連ファイルを取得します。
 
 ```powershell
 uv run python .agents/skills/component-review/scripts/collect_chain.py <component_name> --json

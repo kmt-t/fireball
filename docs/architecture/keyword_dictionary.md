@@ -16,7 +16,7 @@
 | :--- | :--- | :--- | :--- |
 | **META** | `{META_*}` | システム横断的な非機能要求、共通設計思想、アーキテクチャ哲学。 | `document_structure.md` |
 | **GLOBAL** | `{GLOBAL_*}` | システム全体（多数の仕様書）にまたがって適用される広域ポリシー、プラットフォーム要件。 | `document_structure.md`, `requirement_list.md` |
-| **ARCHITECTURE** | `{ADR_*}`, `{Challenge_*}`, 原則名 | 全体アーキテクチャ決定（ADR）、設計上の挑戦課題・制約（Challenge）、およびクリーンアーキテクチャ等の共通設計原則。 | `requirement_list.md`, `architecture_overview.md` |
+| **ARCHITECTURE** | `{ADR_*}`, `{Challenge_*}`, 原則名 | 全体アーキテクチャ決定（ADR）、設計上の挑戦課題・制約（Challenge）、およびクリーンアーキテクチャ等の共通設計原則。 | `requirement_list.md`, `document_structure.md` |
 | **COMPONENT & GOTCHA** | 各コンポーネント名, `{GOTCHA-<COMPONENT>-<連番>}` | 各コンポーネント（Tier 1〜3）の具体的な機能・インターフェース仕様要求、および実装・テスト上の勘所・落とし穴（GOTCHA）。 | `requirement_list.md`, 各コンポーネント設計書 |
 | **LINK** | `{*_Layout}`, `{*_FastCall}`, 機構名 | コンポーネント間・ドキュメント間の物理メモリレイアウト整合、低層ディスパッチ規約、内部バイパス・状態連携のための専用リンクアンカー。 | `keyword_dictionary.md`, 各コンポーネント設計書 |
 
@@ -48,10 +48,10 @@
 
 | キーワード | 定義元正本 | 対象コンポーネント | 仕様概要・検証内容 |
 | :--- | :--- | :--- | :--- |
-| `{META_3TierSeparation}` | `document_structure.md` | `architecture_overview.md` | 設計複雑度に応じた3階層のデコンポジション（分解）とカプセル化された依存関係管理 |
+| `{META_3TierSeparation}` | `document_structure.md` | `-` | 設計複雑度に応じた3階層のデコンポジション（分解）とカプセル化された依存関係管理 |
 | `{META_ContractImplSplit}` | `document_structure.md` | `system_memory.md` | 抽象契約を上位Tier、物理実装を下位Tierへ意図的に分割するデコンポジションパターン |
-| `{META_AI_Native_Dev}` | `document_structure.md` | `architecture_overview.md` | 定型的な実装はLLMを活用し、設計と形式検証の品質を重視する開発方針 |
-| `{META_ServiceIsWasmResident}` | `document_structure.md` | `architecture_overview.md` | 「サービス」はWASM上で実行される常駐タスクを指し、HAL・ロギング等のネイティブ常駐基盤機能（サブシステム）とは区別する |
+| `{META_AI_Native_Dev}` | `document_structure.md` | `-` | 定型的な実装はLLMを活用し、設計と形式検証の品質を重視する開発方針 |
+| `{META_ServiceIsWasmResident}` | `document_structure.md` | `-` | 「サービス」はWASM上で実行される常駐タスクを指し、HAL・ロギング等のネイティブ常駐基盤機能（サブシステム）とは区別する |
 | `{META_AccessDictionary}` | `document_structure.md` | `jit_runtime.md` | データの索引化と、それを用いたランタイムアクセスの最適化 |
 | `{META_BinarySearch}` | `document_structure.md` | `system_containers.md` | 静的ソート済み配列に対する $O(\log N)$ の高速二分探索 |
 | `{META_BumpAllocator}` | `document_structure.md` | `runtime_memory.md` | メモリ断片化を防ぎ高速な領域確保と一括解放を行うバンプアロケータ |
@@ -62,12 +62,12 @@
 | `{META_NoStdVector}` | `document_structure.md` | `system_containers.md` | 動的ヒープ再配置を行う std::vector の禁止と固定長カスタムコンテナの強制 |
 | `{META_RecoveryStrategy}` | `document_structure.md` | `interface_wit.md` | エラーコードの代わりに自己修復リカバリー動作（Retry/Panic等）を返す |
 | `{META_RestrictedPhysicalAccess}` | `document_structure.md` | `platform_driver.md` | 物理ハードウェアリソースへの直接アクセスを許可テーブルで厳格に制限 |
-| `{META_Risk_Tiering}` | `document_structure.md` | `architecture_overview.md` | リスクベースの設計階層化。重要度・不確実性に応じた検証レベル調整 |
+| `{META_Risk_Tiering}` | `document_structure.md` | `-` | リスクベースの設計階層化。重要度・不確実性に応じた検証レベル調整 |
 | `{META_SpecificationFirst}` | `document_structure.md` | `interface_wit.md` | 実装に先立ち形式仕様や契約を先行定義する仕様駆動開発方針 |
 | `{META_StaticDI}` | `document_structure.md` | `ipc_router.md` | コンパイル時設定・静的バインディングによる依存性の注入（DI） |
 | `{META_Static_Resolution}` | `document_structure.md` | `runtime_vmmio.md` | 実行時解決を排しコンパイル時・初期化時に静的決定してオーバーヘッド最小化 |
-| `{META_ZeroCostAbstraction}` | `document_structure.md` | `architecture_overview.md` | 抽象化のコストを実行時に支払わないC++ゼロコスト抽象化の徹底 |
-| `{META_ZeroOverhead}` | `document_structure.md` | `architecture_overview.md` | ゼロオーバーヘッド原則。余分な仮想関数テーブルや動的バインディングの排除 |
+| `{META_ZeroCostAbstraction}` | `document_structure.md` | `-` | 抽象化のコストを実行時に支払わないC++ゼロコスト抽象化の徹底 |
+| `{META_ZeroOverhead}` | `document_structure.md` | `-` | ゼロオーバーヘッド原則。余分な仮想関数テーブルや動的バインディングの排除 |
 
 ---
 
@@ -77,7 +77,7 @@
 
 | キーワード | 定義元正本 | 対象コンポーネント | 仕様概要・検証内容 |
 | :--- | :--- | :--- | :--- |
-| `{GLOBAL_ComponentHarness}` | `document_structure.md` | `architecture_overview.md` | テスト・検証・サブコンポーネント統合のための共通ハーネスパターン |
+| `{GLOBAL_ComponentHarness}` | `document_structure.md` | `-` | テスト・検証・サブコンポーネント統合のための共通ハーネスパターン |
 | `{GLOBAL_IdleDetection}` | `document_structure.md` | `os_coos.md` | アイドル状態の検出と、登録済みコールバックの起動（呼び出し先の内部処理内容には関与しない） |
 | `{GLOBAL_IndependentHeap}` | `document_structure.md` | `system_memory.md` | 各コンポーネントが互いに独立したヒープメモリ領域を確保する設計 |
 | `{GLOBAL_InterruptWakeup}` | `document_structure.md` | `os_coos.md` | 割り込み契機による待機タスクのウェイクアップ・復帰処理 |
@@ -98,19 +98,19 @@ Fireball の全体構造、依存性の方向、リソース予算、品質保�
 
 | キーワード | 定義元正本 | 対象コンポーネント | 仕様概要・検証内容 | 対応テストケースID（キーワードではない） |
 | :--- | :--- | :--- | :--- | :--- |
-| `{CleanArchitecture}` | `requirement_list.md` | `architecture_overview.md` | Clean Architecture の依存ルールに基づく内側への単方向依存・上位Tier優先原則 | - |
-| `{ConceptHarnessDI}` | `requirement_list.md` | `architecture_overview.md` | テスト・形式検証容易性のための依存性注入ハーネス設計 | - |
+| `{CleanArchitecture}` | `requirement_list.md` | `-` | Clean Architecture の依存ルールに基づく内側への単方向依存・上位Tier優先原則 | - |
+| `{ConceptHarnessDI}` | `requirement_list.md` | `-` | テスト・形式検証容易性のための依存性注入ハーネス設計 | - |
 | `{ConsolidatedHeap}` | `requirement_list.md` | `system_memory.md` | システム全体の静的統合ヒープ管理によるメモリ枯渇の排除 | - |
 | `{EliminateDataRace}` | `requirement_list.md` | `os_coos.md` | シングルスレッド協調マルチタスクによるデータ競合の構造的排除 | - |
 | `{Errorcode_To_Strategy}` | `requirement_list.md` | `interface_wit.md` | 数値エラーコードを廃止し、呼び出し側が判断可能な自己修復ストラテジを返却 | - |
-| `{FaultTolerant}` | `requirement_list.md` | `architecture_overview.md` | 部分障害の局所化・安全停止・自動再起動によるフォールトトレラント性 | - |
-| `{IoC}` | `requirement_list.md` | `architecture_overview.md` | 制御の反転によるコンポーネント間結合の疎結合化 | - |
-| `{LowOverhead}` | `requirement_list.md` | `architecture_overview.md` | 超低消費リソース・高速起動のためのオーバーヘッド最小化 | - |
+| `{FaultTolerant}` | `requirement_list.md` | `-` | 部分障害の局所化・安全停止・自動再起動によるフォールトトレラント性 | - |
+| `{IoC}` | `requirement_list.md` | `-` | 制御の反転によるコンポーネント間結合の疎結合化 | - |
+| `{LowOverhead}` | `requirement_list.md` | `-` | 超低消費リソース・高速起動のためのオーバーヘッド最小化 | - |
 | `{NotRTOS}` | `requirement_list.md` | `os_coos.md` | リアルタイム性（プリエンプション）よりもメモリ効率と決定論的移植性を最優先 | - |
 | `{Pairwise_Combinatorial_Testing}` | `verification_factor_matrix.md` | `[verification_factor_matrix.md](docs/qa/verification_factor_matrix.md)` | 因子CSV、自動採番ケース、成果物連鎖、7因子288組の全2因子間ペアを100%網羅する検証マトリクス | TEST-PAIR-01〜TEST-PAIR-26 |
-| `{Resource_Estimation_Model}` | `requirement_list.md` | `architecture_overview.md` | メモリ・ROM・サイクルバジェットのリソース見積もり予測モデル | - |
-| `{Size_20KSLOC}` | `requirement_list.md` | `architecture_overview.md` | コメントとテストコードを除く製品ソースコードを20 KSLOC以内に収める制約 | - |
-| `{ZeroRuntimeOverhead}` | `requirement_list.md` | `architecture_overview.md` | インライン展開と直接ディスパッチによる実行時オーバーヘッドゼロの達成 | - |
+| `{Resource_Estimation_Model}` | `requirement_list.md` | `-` | メモリ・ROM・サイクルバジェットのリソース見積もり予測モデル | - |
+| `{Size_20KSLOC}` | `requirement_list.md` | `-` | コメントとテストコードを除く製品ソースコードを20 KSLOC以内に収める制約 | - |
+| `{ZeroRuntimeOverhead}` | `requirement_list.md` | `-` | インライン展開と直接ディスパッチによる実行時オーバーヘッドゼロの達成 | - |
 
 ---
 
@@ -332,11 +332,11 @@ WASM 実行基盤（`runtime_vsoc`）、ランタイムプラグイン構成契�
 
 ---
 
-### 4.4 Tier 3 JIT: JIT コンパイラ・ランタイム・ゲストアダプタ・プラットフォームドライバ
+### 4.4 Tier 3 Executer: インタープリタ・JIT コンパイラ・ランタイム
 
-Copy-and-Patch JIT コンパイラ（`jit_compiler`）および 3 面循環キャッシュ・ホットスポット管理（`jit_runtime`）の機能要求と設計の勘所。
+インタープリタ（`interpreter`）との協調条件、Copy-and-Patch JIT コンパイラ（`jit_compiler`）および 3 面循環キャッシュ・ホットスポット管理（`jit_runtime`）の機能要求と設計の勘所。
 
-#### 4.4.1 Tier 3 JIT 要求キーワード (14 件)
+#### 4.4.1 Tier 3 Executer JIT 要求キーワード (14 件)
 
 | キーワード | 定義元正本 | 対象コンポーネント | 仕様概要・検証内容 | 対応テストケースID（キーワードではない） |
 | :--- | :--- | :--- | :--- | :--- |
@@ -355,7 +355,7 @@ Copy-and-Patch JIT コンパイラ（`jit_compiler`）および 3 面循環キ�
 | `{JIT_RuntimeAPI_Fallback}` | `requirement_list.md` | `jit_runtime.md` | 複雑命令・トラップ発生時のインタープリタランタイムヘルパー安全フォールバック | - |
 | `{JIT_ZeroCompileCostTheorem}` | `requirement_list.md` | `jit_runtime.md` | メモリコピーとオフセット加算のみで完了するゼロコンパイルコスト定理の保証 | - |
 
-#### 4.4.2 Tier 3 JIT 設計の勘所 (GOTCHA) (14 件)
+#### 4.4.2 Tier 3 Executer JIT 設計の勘所 (GOTCHA) (14 件)
 
 | キーワード | 定義元正本 | 対象コンポーネント | 仕様概要・検証内容 | 対応テストケースID（キーワードではない） |
 | :--- | :--- | :--- | :--- | :--- |
@@ -408,10 +408,10 @@ Copy-and-Patch JIT コンパイラ（`jit_compiler`）および 3 面循環キ�
 
 | キーワード | 定義元正本 | 対象コンポーネント | 仕様概要・検証内容 | 対応テストケースID（キーワードではない） |
 | :--- | :--- | :--- | :--- | :--- |
-| `{ExecutionContext_Layout}` | `architecture_overview.md` | `interpreter.md` | execution_context Tier 2標準ABI 64バイト配置（16個の32bit状態フィールド。ターゲット物理配置は各ABIで定義） | Scenario 1〜12 |
-| `{CallFrame_Layout}` | `interpreter.md` | `architecture_overview.md` | 固定容量の独立した関数呼出し記述子領域。各記述子はローカル値領域内の開始位置を保持し、ローカル値領域はローカル値だけを格納する | Scenario 3, 8 |
-| `{ControlFrame_Layout}` | `interpreter.md` | `architecture_overview.md` | 制御ブロックの復帰情報を20バイトで保持し、オペランド領域およびローカル値領域とは独立した専用の固定容量領域へ配置する | Scenario 3 |
-| `{VsocRuntime_Layout}` | `architecture_overview.md` | `runtime_vsoc.md` | execution_context 内のリニアメモリ、グローバル領域、ハンドラ表に関する論理環境フィールド配置 | Scenario 1〜12 |
+| `{ExecutionContext_Layout}` | `jit_abi.md` | `interpreter.md` | execution_context Tier 2標準ABI 64バイト配置（16個の32bit状態フィールド。ターゲット物理配置は各ABIで定義） | Scenario 1〜12 |
+| `{CallFrame_Layout}` | `interpreter.md` | `interpreter.md` | 固定容量の独立した関数呼出し記述子領域。各記述子はローカル値領域内の開始位置を保持し、ローカル値領域はローカル値だけを格納する | Scenario 3, 8 |
+| `{ControlFrame_Layout}` | `interpreter.md` | `interpreter.md` | 制御ブロックの復帰情報を20バイトで保持し、オペランド領域およびローカル値領域とは独立した専用の固定容量領域へ配置する | Scenario 3 |
+| `{VsocRuntime_Layout}` | `runtime_vsoc.md` | `runtime_vsoc.md` | execution_context 内のリニアメモリ、グローバル領域、ハンドラ表に関する論理環境フィールド配置 | Scenario 1〜12 |
 
 ---
 
@@ -421,7 +421,7 @@ Copy-and-Patch JIT コンパイラ（`jit_compiler`）および 3 面循環キ�
 
 | キーワード | 定義元正本 | 対象コンポーネント | 仕様概要・検証内容 | 対応テストケースID（キーワードではない） |
 | :--- | :--- | :--- | :--- | :--- |
-| `{AAPCS_FastCall}` | `architecture_overview.md` | `interpreter.md` | 継続渡し4論理引数の契約とAAPCS対象でのレジスタマッピング規約 | Scenario 1〜12 |
+| `{AAPCS_FastCall}` | `interpreter.md` | `interpreter.md` | 継続渡し4論理引数の契約とAAPCS対象でのレジスタマッピング規約 | Scenario 1〜12 |
 | `{CPS_4Args}` | `interpreter.md` | `interpreter.md` | ctx, sp, local_base, tos による4論理引数の継続渡しディスパッチ規約 | Scenario 1〜12 |
 
 ---

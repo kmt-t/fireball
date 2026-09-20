@@ -9,7 +9,7 @@ Every case runs the same WASM on three independent executors and requires identi
 
 The targeted cases each pin one defect found by the large profiling workload
 (docs/qa/bug_table/); the generated and clang-suite cases widen the coverage.
-Traceability: docs/qa/tier3_jit/jit_runtime_test_spec.md (TEST-JITR-53 .. TEST-JITR-61).
+Traceability: docs/qa/tier3_executer/jit_runtime_test_spec.md (TEST-JITR-53 .. TEST-JITR-61).
 """
 
 from __future__ import annotations

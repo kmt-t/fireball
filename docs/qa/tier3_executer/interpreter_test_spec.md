@@ -2,7 +2,7 @@
 
 ## 1. 目的と対象範囲
 
-正本: [`interpreter.md`](docs/components/tier3_plugins/interpreter.md), [`wasm_instruction_set.md`](docs/specs/wasm_instruction_set.md)
+正本: [`interpreter.md`](docs/components/tier3_executer/interpreter.md), [`wasm_instruction_set.md`](docs/specs/wasm_instruction_set.md)
 `{ThreadedInterpreter}`（4論理引数の継続渡しハンドラ方式）、独立した3本の値領域と関数呼出し記述子領域、ラベルアリティに基づくスタックプルーニング、i32/i64演算、境界チェック付きメモリアクセス、Safepointポーリングを検証する。
 
 ## 2. テストケース一覧
@@ -34,8 +34,8 @@
 | TEST-INTP-11 | オペランド領域アンダーフロートラップ | 空のオペランド領域でpop | pop操作 | `WASMTrap("STACK_UNDERFLOW")`相当 | interpreter_concept.py `ExecutionContext.pop` |
 | TEST-INTP-12 | 再帰呼び出し（call）とローカル値領域 | `fact(n)`のような再帰関数 | `execute_function`で呼び出す | 各呼び出しごとに新しいローカル値領域の区画が割り当てられ、ローカル変数が互いに独立する | interpreter_concept.py `test_full_wasm_recursive_factorial` |
 | TEST-INTP-13 | 戻り値の受け渡し | 関数が1個の結果を返す | `return`実行後の呼び出し元スタック | 呼び出し元のスタックに正しく結果が積まれる | interpreter_concept.py `execute_function` |
-| TEST-INTP-14 | オペランド領域とローカル値領域の容量独立性 | オペランド領域の残容量が1、ローカル値領域に空きがある | 既存のオペランド値を保持したまま引数付き関数を呼び出す | ローカル値領域へ引数を積め、関数結果と呼び出し元オペランド領域の値が正しく保持される | interpreter_concept.py `test_independent_operand_and_local_stacks`, [`interpreter_stack_model.py`](docs/components/tier3_plugins/formal/interpreter_stack_model.py) |
-| TEST-INTP-15 | 3本の値領域・関数呼出し記述子分離・関数復帰結果の形式検証 | 通常モデルと`guards=False`変異モデル | [`interpreter_stack_model.py`](docs/components/tier3_plugins/formal/interpreter_stack_model.py)を実行 | 通常モデルでは値領域独立性、関数呼出し記述子とローカル値の分離、関数結果保持の3性質が成立し、各変異モデルでは対応性質が反証される | [`interpreter_stack_model.py`](docs/components/tier3_plugins/formal/interpreter_stack_model.py) |
+| TEST-INTP-14 | オペランド領域とローカル値領域の容量独立性 | オペランド領域の残容量が1、ローカル値領域に空きがある | 既存のオペランド値を保持したまま引数付き関数を呼び出す | ローカル値領域へ引数を積め、関数結果と呼び出し元オペランド領域の値が正しく保持される | interpreter_concept.py `test_independent_operand_and_local_stacks`, [`interpreter_stack_model.py`](docs/components/tier3_executer/formal/interpreter_stack_model.py) |
+| TEST-INTP-15 | 3本の値領域・関数呼出し記述子分離・関数復帰結果の形式検証 | 通常モデルと`guards=False`変異モデル | [`interpreter_stack_model.py`](docs/components/tier3_executer/formal/interpreter_stack_model.py)を実行 | 通常モデルでは値領域独立性、関数呼出し記述子とローカル値の分離、関数結果保持の3性質が成立し、各変異モデルでは対応性質が反証される | [`interpreter_stack_model.py`](docs/components/tier3_executer/formal/interpreter_stack_model.py) |
 | TEST-INTP-16 | ネストしたcalleeの戻り値と関数呼出し記述子の復帰 | callerがcalleeを呼び、calleeがi32/i64/f32/f64を返す | calleeの`return`処理を実行 | 戻り値は共有オペランド領域へ残り、calleeの関数呼出し記述子が取り除かれ、call helperが復帰sentinelを消費してcallerへ戻る。C/AAPCS戻り値レジスタや専用戻り値バッファは使用しない | `interpreter.md` 関数復帰の番兵 |
 | TEST-INTP-17 | トップレベル復帰のRETURN sentinel | 最外周WASM関数がreturnする | return handlerとRuntimeEngineを実行 | sentinelはInterpreterのreturn handlerだけが生成し、RuntimeEngineが実行完了を判定する。JITはsentinelを生成しない | `interpreter.md` 関数復帰の番兵 |
 | TEST-INTP-18 | 関数呼出し記述子とローカル値領域の分離 | callerが引数付きcalleeを呼び出す | call helperでcalleeの実行区画を開始し、calleeから復帰する | 記述子は独立した領域に置かれ、`frame_offset`がローカル値領域の開始ワード位置を示す。ローカル値領域にはローカル値だけが入り、復帰時に記述子を取り除いて`local_offset`とローカル値領域の長さを保存位置へ戻す | `interpreter.md` 関数呼び出し境界、`interpreter_concept.py`、`test_interpreter.py` TEST-INTP-70 |

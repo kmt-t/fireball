@@ -1,9 +1,9 @@
-# Interpreter プラグイン設計書 {VERIFY_FORMAL} {VERIFY_LLM}
+# Interpreter 実行系設計書 {VERIFY_FORMAL} {VERIFY_LLM}
 <!-- evidence:
      formal: ../tier2_runtime/formal/vsoc_state_model.py
      formal: formal/interpreter_stack_model.py
      concept: concepts/interpreter_concept.py
-     test: docs/qa/tier3_plugins/interpreter_test_spec.md
+     test: docs/qa/tier3_executer/interpreter_test_spec.md
 -->
 
 ## 1. コンセプト
@@ -241,7 +241,7 @@ flowchart TD
 
 インタープリタハンドラは次回呼び出し用の4引数とトラップ状態を結果として返す。次のPCは `ctx` に保持する。JITトレースは末尾ジャンプで継続し、結果レコードを返さない。
 
-命令実行中のWASMトラップは、例外を送出せず、継続引数とトラップ情報を含む結果として返す。トラップを受け取った実行器は全アクティブフレームを破棄して実行結果を確定する。以後の命令は実行しない。同期的な公開APIは、確定済みトラップを正常な戻り値（特に`None`）と混同せず、呼び出し側へ明示する。これはハンドラ内部の実行経路とは分離する。追加仕様の一覧と判定項目は [interpreter_test_spec.md](docs/qa/tier3_plugins/interpreter_test_spec.md#追加gotcha一覧マージ判定用) に集約する。
+命令実行中のWASMトラップは、例外を送出せず、継続引数とトラップ情報を含む結果として返す。トラップを受け取った実行器は全アクティブフレームを破棄して実行結果を確定する。以後の命令は実行しない。同期的な公開APIは、確定済みトラップを正常な戻り値（特に`None`）と混同せず、呼び出し側へ明示する。これはハンドラ内部の実行経路とは分離する。追加仕様の一覧と判定項目は [interpreter_test_spec.md](docs/qa/tier3_executer/interpreter_test_spec.md#追加gotcha一覧マージ判定用) に集約する。
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
@@ -305,7 +305,7 @@ ARMv8-MのJITトレースでは `R4` と `R5` を次段の値のキャッシュ�
   - 命令実行境界で Tier 2 `runtime_observability.md` の観測イベントを発行する。ブレークポイントによる実行制御は Debugger プラグインへ、コールグラフ集計と時間計算は Guest Profiler プラグインへ委譲する。
 
 #### WASM インタープリタのコンセプトコード
-実行可能な概念モデルは [`interpreter_concept.py`](docs/components/tier3_plugins/concepts/interpreter_concept.py) に分離する。本文書には実装言語のコードを埋め込まず、WASM実行契約と固定レイアウトのみを規定する。
+実行可能な概念モデルは [`interpreter_concept.py`](docs/components/tier3_executer/concepts/interpreter_concept.py) に分離する。本文書には実装言語のコードを埋め込まず、WASM実行契約と固定レイアウトのみを規定する。
 
 #### 統合 Tiered ランタイムエンジン・コンセプトコード
 インタープリタ実行、Hotspot検出、Copy-and-Patch JIT、3面キャッシュ、MPU W^X を統合した自己完結実行シミュレーションは [`runtime_engine_concept.py`](docs/components/tier2_runtime/concepts/runtime_engine_concept.py) を参照する。

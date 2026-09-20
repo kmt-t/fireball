@@ -3,7 +3,7 @@ experiments/pysim/tier3_jit/x64_jit.py
 Pure Trace-based Copy-and-Patch JIT Compiler for Fireball.
 Compiles individual HOT BasicBlocks / Traces into Position-Independent Code (PIC)
     with 52-byte x64 fixed headers (JITTraceHeader) and direct trace chaining.
-Conforms strictly to docs/components/tier3_jit/jit_compiler.md and
+Conforms strictly to docs/components/tier3_executer/jit_compiler.md and
 docs/components/tier2_runtime/runtime_interpreter.md.
 CPS 4-argument calling convention:
   RCX (R0): void* ctx            -- execution_context

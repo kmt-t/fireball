@@ -32,7 +32,7 @@
 | Tier 3 Plugins | `debugger` | `debugger_concept.py` | N/A（RSP の境界テストで直接検証） | `debugger_test_spec.md` | `test_debugger.py`, `test_gdb_remote.py` | 7, 8 | required |
 | Tier 2 Runtime | `hal_dispatch` | N/A（WIT/ディスパッチ契約） | `hal_dispatch_contract_model.py` | `hal_dispatch_test_spec.md` | `test_hal.py`, `test_syscall.py` | 10, 11 | contract_only |
 | Tier 2 Runtime | `jit_abi` | N/A（ABI 契約） | N/A（ABI の実レイアウトテストで検証） | N/A（`interface_wit_test_spec.md` に統合） | `test_interop_abi.py`, `test_x64_jit.py` | 4, 5, 8 | contract_only |
-| Tier 3 Plugins | `interpreter` | `interpreter_concept.py` | `interpreter_stack_model.py` | `interpreter_test_spec.md` | `test_interpreter.py`, `test_wasm_differential.py`, `test_gotchas.py` | 1〜12 | required |
+| Tier 3 Executer | `interpreter` | `interpreter_concept.py` | `interpreter_stack_model.py` | `interpreter_test_spec.md` | `test_interpreter.py`, `test_wasm_differential.py`, `test_gotchas.py` | 1〜12 | required |
 | Tier 2 Runtime | `runtime_loader` | `loader_concept.py` | `loader_verification_model.py` | `runtime_loader_test_spec.md` | `test_loader.py` | 1, 3, 5, 8, 12 | required |
 | Tier 2 Runtime | `runtime_logging` | `logging_concept.py` | `logging_flush_model.py` | `runtime_logging_test_spec.md` | `test_logging.py` | 9 | required |
 | Tier 2 Runtime | `runtime_memory` | `runtime_memory_concept.py` | `runtime_memory_model.py` | `runtime_memory_test_spec.md` | `test_memory.py`, `test_vmmio.py` | 1, 4, 8, 10 | required |
@@ -42,8 +42,8 @@
 | Tier 2 Runtime | `runtime_plugin_architecture` | N/A（プラグイン構成契約） | N/A（契約段階） | N/A（契約段階） | N/A | N/A | contract_only |
 | Tier 2 Runtime | `runtime_observability` | N/A（VM観測契約） | N/A（契約段階） | N/A（契約段階） | N/A | N/A | contract_only |
 | Tier 3 Plugins | `guest_profiler` | N/A（VM観測イベント契約を利用） | N/A（契約段階） | `guest_profiler_test_spec.md` | N/A | N/A | contract_only |
-| Tier 3 JIT | `jit_compiler` | `jit_copy_patch_concept.py`, `jit_assembler_constexpr_concept.py`, `stack_cache_concept.py` | `jit_cache_model.py` | `jit_compiler_test_spec.md` | `test_x64_asm.py`, `test_x64_stencils.py`, `test_x64_jit.py` | 4, 5, 8 | required |
-| Tier 3 JIT | `jit_runtime` | `stack_cache_concept.py` | `jit_cache_model.py` | `jit_runtime_test_spec.md` | `test_jit_runtime.py`, `test_x64_jit.py`, `test_jit_differential.py` | 4, 5, 8 | required |
+| Tier 3 Executer | `jit_compiler` | `jit_copy_patch_concept.py`, `jit_assembler_constexpr_concept.py`, `stack_cache_concept.py` | `jit_cache_model.py` | `jit_compiler_test_spec.md` | `test_x64_asm.py`, `test_x64_stencils.py`, `test_x64_jit.py` | 4, 5, 8 | required |
+| Tier 3 Executer | `jit_runtime` | `stack_cache_concept.py` | `jit_cache_model.py` | `jit_runtime_test_spec.md` | `test_jit_runtime.py`, `test_x64_jit.py`, `test_jit_differential.py` | 4, 5, 8 | required |
 | Tier 3 Platform | `libfireball` | N/A（ゲスト公開契約） | N/A（WASI 契約テストで検証） | `libfireball_test_spec.md` | `test_syscall.py`, `test_hal.py` | 2, 11, 12 | contract_only |
 | Tier 3 Platform | `platform_driver` | `platform_driver_concept.py` | `interrupt_boundary_model.py` | `platform_driver_test_spec.md` | `test_hal.py` | 10, 11 | required |
 
@@ -66,7 +66,7 @@
 | Tier 3 Plugins | [debugger.md](docs/components/tier3_plugins/debugger.md) |
 | Tier 2 Runtime | [hal_dispatch.md](docs/components/tier2_runtime/hal_dispatch.md) |
 | Tier 2 Runtime | [jit_abi.md](docs/components/tier2_runtime/jit_abi.md) |
-| Tier 3 Plugins | [interpreter.md](docs/components/tier3_plugins/interpreter.md) |
+| Tier 3 Executer | [interpreter.md](docs/components/tier3_executer/interpreter.md) |
 | Tier 3 Plugins | [guest_profiler.md](docs/components/tier3_plugins/guest_profiler.md) |
 | Tier 2 Runtime | [runtime_plugin_architecture.md](docs/components/tier2_runtime/runtime_plugin_architecture.md) |
 | Tier 2 Runtime | [runtime_observability.md](docs/components/tier2_runtime/runtime_observability.md) |
@@ -76,8 +76,8 @@
 | Tier 2 Runtime | [runtime_syscall.md](docs/components/tier2_runtime/runtime_syscall.md) |
 | Tier 2 Runtime | [runtime_vmmio.md](docs/components/tier2_runtime/runtime_vmmio.md) |
 | Tier 2 Runtime | [runtime_vsoc.md](docs/components/tier2_runtime/runtime_vsoc.md) |
-| Tier 3 JIT | [jit_compiler.md](docs/components/tier3_jit/jit_compiler.md) |
-| Tier 3 JIT | [jit_runtime.md](docs/components/tier3_jit/jit_runtime.md) |
+| Tier 3 Executer | [jit_compiler.md](docs/components/tier3_executer/jit_compiler.md) |
+| Tier 3 Executer | [jit_runtime.md](docs/components/tier3_executer/jit_runtime.md) |
 | Tier 3 Platform | [libfireball.md](docs/components/tier3_platform/libfireball.md) |
 | Tier 3 Platform | [platform_driver.md](docs/components/tier3_platform/platform_driver.md) |
 
@@ -91,16 +91,16 @@
 | concept | [ipc_router_concept.py](docs/components/tier1_interface/concepts/ipc_router_concept.py) |
 | concept | [service_concept.py](docs/components/tier1_interface/concepts/service_concept.py) |
 | concept | [debugger_concept.py](docs/components/tier3_plugins/concepts/debugger_concept.py) |
-| concept | [interpreter_concept.py](docs/components/tier3_plugins/concepts/interpreter_concept.py) |
+| concept | [interpreter_concept.py](docs/components/tier3_executer/concepts/interpreter_concept.py) |
 | concept | [loader_concept.py](docs/components/tier2_runtime/concepts/loader_concept.py) |
 | concept | [logging_concept.py](docs/components/tier2_runtime/concepts/logging_concept.py) |
 | concept | [runtime_engine_concept.py](docs/components/tier2_runtime/concepts/runtime_engine_concept.py) |
 | concept | [runtime_memory_concept.py](docs/components/tier2_runtime/concepts/runtime_memory_concept.py) |
 | concept | [syscall_concept.py](docs/components/tier2_runtime/concepts/syscall_concept.py) |
 | concept | [vmmio_concept.py](docs/components/tier2_runtime/concepts/vmmio_concept.py) |
-| concept | [jit_assembler_constexpr_concept.py](docs/components/tier3_jit/concepts/jit_assembler_constexpr_concept.py) |
-| concept | [jit_copy_patch_concept.py](docs/components/tier3_jit/concepts/jit_copy_patch_concept.py) |
-| concept | [stack_cache_concept.py](docs/components/tier3_jit/concepts/stack_cache_concept.py) |
+| concept | [jit_assembler_constexpr_concept.py](docs/components/tier3_executer/concepts/jit_assembler_constexpr_concept.py) |
+| concept | [jit_copy_patch_concept.py](docs/components/tier3_executer/concepts/jit_copy_patch_concept.py) |
+| concept | [stack_cache_concept.py](docs/components/tier3_executer/concepts/stack_cache_concept.py) |
 | concept | [platform_driver_concept.py](docs/components/tier3_platform/concepts/platform_driver_concept.py) |
 | formal | [coos_channel_model.py](docs/components/tier1_core/formal/coos_channel_model.py) |
 | formal | [system_config_model.py](docs/components/tier1_core/formal/system_config_model.py) |
@@ -109,7 +109,7 @@
 | formal | [system_memory_model.py](docs/components/tier1_interface/formal/system_memory_model.py) |
 | formal | [wit_resource_lifecycle_model.py](docs/components/tier1_interface/formal/wit_resource_lifecycle_model.py) |
 | formal | [hal_dispatch_contract_model.py](docs/components/tier2_runtime/formal/hal_dispatch_contract_model.py) |
-| formal | [interpreter_stack_model.py](docs/components/tier3_plugins/formal/interpreter_stack_model.py) |
+| formal | [interpreter_stack_model.py](docs/components/tier3_executer/formal/interpreter_stack_model.py) |
 | formal | [loader_verification_model.py](docs/components/tier2_runtime/formal/loader_verification_model.py) |
 | formal | [logging_flush_model.py](docs/components/tier2_runtime/formal/logging_flush_model.py) |
 | formal | [runtime_memory_model.py](docs/components/tier2_runtime/formal/runtime_memory_model.py) |
@@ -117,7 +117,7 @@
 | formal | [vmmio_mapping_model.py](docs/components/tier2_runtime/formal/vmmio_mapping_model.py) |
 | formal | [vsoc_cache_coherency_model.py](docs/components/tier2_runtime/formal/vsoc_cache_coherency_model.py) |
 | formal | [vsoc_state_model.py](docs/components/tier2_runtime/formal/vsoc_state_model.py) |
-| formal | [jit_cache_model.py](docs/components/tier3_jit/formal/jit_cache_model.py) |
+| formal | [jit_cache_model.py](docs/components/tier3_executer/formal/jit_cache_model.py) |
 | formal | [interrupt_boundary_model.py](docs/components/tier3_platform/formal/interrupt_boundary_model.py) |
 | test spec | [os_coos_test_spec.md](docs/qa/tier1_core/os_coos_test_spec.md) |
 | test spec | [os_scheduler_test_spec.md](docs/qa/tier1_core/os_scheduler_test_spec.md) |
@@ -130,15 +130,15 @@
 | test spec | [debugger_test_spec.md](docs/qa/tier3_plugins/debugger_test_spec.md) |
 | test spec | [guest_profiler_test_spec.md](docs/qa/tier3_plugins/guest_profiler_test_spec.md) |
 | test spec | [hal_dispatch_test_spec.md](docs/qa/tier2_runtime/hal_dispatch_test_spec.md) |
-| test spec | [interpreter_test_spec.md](docs/qa/tier3_plugins/interpreter_test_spec.md) |
+| test spec | [interpreter_test_spec.md](docs/qa/tier3_executer/interpreter_test_spec.md) |
 | test spec | [runtime_loader_test_spec.md](docs/qa/tier2_runtime/runtime_loader_test_spec.md) |
 | test spec | [runtime_logging_test_spec.md](docs/qa/tier2_runtime/runtime_logging_test_spec.md) |
 | test spec | [runtime_memory_test_spec.md](docs/qa/tier2_runtime/runtime_memory_test_spec.md) |
 | test spec | [runtime_syscall_test_spec.md](docs/qa/tier2_runtime/runtime_syscall_test_spec.md) |
 | test spec | [runtime_vmmio_test_spec.md](docs/qa/tier2_runtime/runtime_vmmio_test_spec.md) |
 | test spec | [runtime_vsoc_test_spec.md](docs/qa/tier2_runtime/runtime_vsoc_test_spec.md) |
-| test spec | [jit_compiler_test_spec.md](docs/qa/tier3_jit/jit_compiler_test_spec.md) |
-| test spec | [jit_runtime_test_spec.md](docs/qa/tier3_jit/jit_runtime_test_spec.md) |
+| test spec | [jit_compiler_test_spec.md](docs/qa/tier3_executer/jit_compiler_test_spec.md) |
+| test spec | [jit_runtime_test_spec.md](docs/qa/tier3_executer/jit_runtime_test_spec.md) |
 | test spec | [libfireball_test_spec.md](docs/qa/tier3_platform/libfireball_test_spec.md) |
 | test spec | [platform_driver_test_spec.md](docs/qa/tier3_platform/platform_driver_test_spec.md) |
 

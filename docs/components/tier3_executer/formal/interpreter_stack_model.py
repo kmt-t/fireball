@@ -1,5 +1,5 @@
 """
-docs/components/tier3_plugins/formal/interpreter_stack_model.py
+docs/components/tier3_executer/formal/interpreter_stack_model.py
 pyModelChecking による Interpreter の OperandStack・LocalStack・control_frame
 独立性および関数復帰時の結果値保持の形式検証（証明・変異検査対応）モデル
 """
@@ -8,7 +8,7 @@ from pyModelChecking import Kripke
 from pyModelChecking.CTL import AF, AG, AtomicProposition, Imply, Not
 
 BACKS = [
-    "components/tier3_plugins/interpreter.md",
+    "components/tier3_executer/interpreter.md",
 ]
 
 

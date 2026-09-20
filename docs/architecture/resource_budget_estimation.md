@@ -22,7 +22,7 @@
 | Tier 1 Core | 1,786 | 約2.1〜2.2 KSLOC |
 | Tier 1 Interface | 759 | 約0.9〜1.0 KSLOC |
 | Tier 2 Runtime | 12,644 | 約14.5〜15.8 KSLOC |
-| Tier 3 JIT | 2,336 | 約2.7〜2.9 KSLOC |
+| Tier 3 Executer | 2,336 | 約2.7〜2.9 KSLOC |
 | Tier 3 Platform | 345 | 約0.4 KSLOC |
 | 共通入口（`system.py`、`__init__.py`） | 831 | 約1.0 KSLOC |
 | **合計** | **18,701** | **約21.5〜23.4 KSLOC** |

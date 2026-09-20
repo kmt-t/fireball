@@ -3,7 +3,7 @@
      formal: formal/jit_cache_model.py
      benchmark: benchmarks/jit_zero_compile_cost_bench.py
      concept: ../tier2_runtime/concepts/runtime_engine_concept.py
-     test: docs/qa/tier3_jit/jit_runtime_test_spec.md
+     test: docs/qa/tier3_executer/jit_runtime_test_spec.md
 -->
 
 ## 1. コンセプト
@@ -18,13 +18,13 @@ JIT ランタイム管理は、WASM PC とネイティブコードの紐付け�
 
 ## 2. アーキテクチャ分類
 <!-- traceability: {META_3TierSeparation} {SimpleJITArchitecture} -->
-本コンポーネントは **Tier 3 (詳細リーフコンポーネント: Leaf Component)** に属する。JIT サブシステムのうち実行時検索、3面コードキャッシュ管理、局所アンリンク、ホットスポット検出を担当する。コード生成コアは [`jit_compiler.md`](docs/components/tier3_jit/jit_compiler.md) が担当する。
+本コンポーネントは **Tier 3 (詳細リーフコンポーネント: Leaf Component)** に属する。JIT サブシステムのうち実行時検索、3面コードキャッシュ管理、局所アンリンク、ホットスポット検出を担当する。コード生成コアは [`jit_compiler.md`](docs/components/tier3_executer/jit_compiler.md) が担当する。
 
 ### 2.1 JIT サブシステムのデコンポジション
 <!-- traceability: {JIT_Encoder} {JIT_CopyAndPatch} -->
 JITサブシステムは、以下の2つの独立した設計書に責務を分離して構成される。
-- **[jit_compiler.md](docs/components/tier3_jit/jit_compiler.md)**: 命令テンプレートを用いたネイティブコード生成および静的命令エンコードを担当する。
-- **[jit_runtime.md](docs/components/tier3_jit/jit_runtime.md)**: 実行履歴監視、ホットスポット判定、PC-アドレス変換検索、3面キャッシュローテーションを担当する。 `{SimpleJITArchitecture}` `{JIT_MultiBuffer_Cache}`
+- **[jit_compiler.md](docs/components/tier3_executer/jit_compiler.md)**: 命令テンプレートを用いたネイティブコード生成および静的命令エンコードを担当する。
+- **[jit_runtime.md](docs/components/tier3_executer/jit_runtime.md)**: 実行履歴監視、ホットスポット判定、PC-アドレス変換検索、3面キャッシュローテーションを担当する。 `{SimpleJITArchitecture}` `{JIT_MultiBuffer_Cache}`
 
 ## 3. 静的モデル
 
@@ -318,4 +318,4 @@ flowchart TD
 - **エイジングの有限性**: 関数更新表のビットが立った関数の `EXECUTED` のカードは、有限回のローテーションの内に、走査されて減衰するか `HOT` へ進む。
 
 ### 7.2 テスト仕様書との連携
-本コンポーネントのテストケースおよび直交表は、[`jit_runtime_test_spec.md`](docs/qa/tier3_jit/jit_runtime_test_spec.md) を正本として定義する。形式検証モデルは `formal/jit_cache_model.py` を参照する。
+本コンポーネントのテストケースおよび直交表は、[`jit_runtime_test_spec.md`](docs/qa/tier3_executer/jit_runtime_test_spec.md) を正本として定義する。形式検証モデルは `formal/jit_cache_model.py` を参照する。

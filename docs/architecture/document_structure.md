@@ -36,8 +36,8 @@ Tier は単なる「OSやハードウェアの実行レイヤ」ではなく、*
            │  深層コンポーネント・プラットフォーム具象化への分解
            ▼
 [ Tier 3: リーフ / プラットフォームコンポーネント (Leaf & Platform Components) ] ─ (How - Leaf / Physical)
-  · Runtime Plugins (interpreter, debugger, guest_profiler) — Tier 2 の実行・観測契約を実装するプラグイン
-  · JIT Subsystem (jit_compiler, jit_runtime) — vSoC の実行エンジンから分解された JIT コアおよびランタイム
+  · Runtime Executer (interpreter, jit_compiler, jit_runtime) — vSoC の実行契約を実装するインタープリタおよびJIT実行系
+  · Runtime Plugins (debugger, guest_profiler) — Tier 2 の実行・観測契約を実装する交換可能プラグイン
   · Platform (platform_driver) — ドライバ物理実装（UART/SEGGER RTT 物理レジスタ操作、RSPエンコード/デコード）のみ
   · Guest Adapter (libfireball) — WASMゲストへ組み込むWASI／Fireball ABIアダプタ。物理ドライバやCOOSタスクは実装しない
 
@@ -59,7 +59,7 @@ Tier は単なる「OSやハードウェアの実行レイヤ」ではなく、*
 | **Tier 0** | `docs/requires/` | システム要求仕様書 (`requirement_list.md`) | **最上位要求 (Why)**<br>システム全体が満たすべき受入基準・機能要求。 |
 | **Tier 1** | `docs/components/tier1_core/`<br>`docs/components/tier1_interface/` | スケジューラ、チャネル通信、システムサービス、独立したインターフェース契約、IPCルータ、共有静的コンテナ語彙等のコア仕様書 | **粗粒度主要コンポーネント (What)**<br>要求（Tier 0）を直接受け取る。単一仕様書で状態遷移・ポリシーを自己完結して記述可能なシステム要素。契約/実装分割パターン（`{META_ContractImplSplit}`）では抽象契約側を担う。 |
 | **Tier 2** | `docs/components/tier2_runtime/` | Runtime のライフサイクル・プラグイン構成・VM観測フック、WASMローダー、vMMIO、メモリマネージャ実装（`runtime_memory.md`）、HAL抽象化層（`hal_dispatch.md`）、ホストコール契約（`runtime_syscall.md`）等のサブコンポーネント仕様書 | **分解されたサブコンポーネント (How - Subsystem)**<br>Tier 1 で扱うには状態空間やアルゴリズムが複雑化するため、独立した責務としてブレークダウンされた要素。契約/実装分割パターン（`{META_ContractImplSplit}`）では実装側を担う場合がある。 |
-| **Tier 3** | `docs/components/tier3_plugins/`<br>`docs/components/tier3_platform/`<br>`docs/components/tier3_jit/` | Runtime プラグイン（`interpreter.md`、`debugger.md`、`guest_profiler.md`）、HALドライバ実装（`platform_driver.md`）、ゲストアダプタ（`libfireball.md`）、JITコンパイラ一式（コード生成コア `jit_compiler.md`、ランタイム管理 `jit_runtime.md`）| **詳細リーフ / 物理コンポーネント (How - Leaf)**<br>Tier 2 からさらに責務が切り出された具象コンポーネント、ハードウェア抽象化層の最終物理実装、またはゲストへ組み込むABIアダプタ。 |
+| **Tier 3** | `docs/components/tier3_executer/`<br>`docs/components/tier3_plugins/`<br>`docs/components/tier3_platform/` | 実行系（`interpreter.md`、`jit_compiler.md`、`jit_runtime.md`）、交換可能プラグイン（`debugger.md`、`guest_profiler.md`）、HALドライバ実装（`platform_driver.md`）、ゲストアダプタ（`libfireball.md`）| **詳細リーフ / 物理コンポーネント (How - Leaf)**<br>Tier 2 からさらに責務が切り出された具象コンポーネント、ハードウェア抽象化層の最終物理実装、またはゲストへ組み込むABIアダプタ。 |
 | **Specs** | `docs/specs/` | WASM命令セット、WASI Preview 1 ABI、GDB RSP、JITステンシルカタログ等の規格マトリクス | **横串物理規格・具象カタログ (How - Physical Specs)**<br>コンポーネントを横断して統一される具象バイナリ列、ABI、パケット形式、命令セットマトリクス。各ファイル冒頭にアーキテクチャ分類（Tierラベル）を明示する。 |
 | **QA** | `docs/qa/` | Tier別のテスト仕様書、検証データ、テスト実行結果、品質ゲート結果、ベンチマーク結果などの横断的品質資料 | **横断的品質保証 (Quality Assurance)**<br>コンポーネントの設計正本や実行可能テストを置き換えず、テスト仕様書と検証データは `tier1_core/` 等のTier別または `specs/` のサブディレクトリへ集約する。実行結果には範囲、環境、成否、未実行項目を記録する。 |
 | **Meta** | `docs/architecture/`<br>`docs/plans/` | 全体アーキテクチャ、設計方針、開発計画 | **全Tier横断メタ設計**<br>Hypervisor の機能コンポーネント自体には属さない共通ポリシー・計画。 |
@@ -72,7 +72,7 @@ Tier は単なる「OSやハードウェアの実行レイヤ」ではなく、*
 
 ### 2.1 デコンポジション基準（いつ下位 Tier へ分解するか）
 1. **単一責務・複雑度制御の原則**: コンポーネントが複数の独立した状態機械・アルゴリズムを持つ場合、単一仕様書に肥大化させず、サブコンポーネントとして分解して Tier を 1 つ下げる。
-   - 判定基準は「単一仕様書に自己完結して書けるか」であり、「親から分解された」という記述の有無ではない。vSoC の Loader/vMMIO は Tier 2 のサブコンポーネントとして残す。Interpreter、Debugger、Profiler は交換可能な具体実装であるため `tier3_plugins/` の Tier 3 プラグインへ分離する。JIT は実行時コード生成の責務分離として、コード生成コア（`jit_compiler.md`）とランタイム制御（`jit_runtime.md`）の 2 ファイルで Tier 3 に位置する。
+   - 判定基準は「単一仕様書に自己完結して書けるか」であり、「親から分解された」という記述の有無ではない。vSoC の Loader/vMMIO は Tier 2 のサブコンポーネントとして残す。Interpreter は `tier3_executer/` の実行系、Debugger と Profiler は交換可能な `tier3_plugins/` のプラグインへ分離する。JIT は実行時コード生成の責務分離として、コード生成コア（`jit_compiler.md`）とランタイム制御（`jit_runtime.md`）の 2 ファイルで Tier 3 Executer に位置する。
 2. **検証可能性（Verification Tractability）の維持**: 形式検証（pyModelChecking等）において状態空間が爆発しない単位に状態遷移モデルを区切る。
 3. **親コンポーネントのカプセル化**: 分解元（上位Tier）は、分解先（下位Tier）の内部実装パラメータに依存せず、抽象インターフェースのみで統合する。
 4. **契約（Interface / What）と実装（Implementation / How）の意図的分割（`{META_ContractImplSplit}`）**: 上記1〜3とは独立した、意図的な分割基準として、単一コンポーネントが「上位Tierが定義すべき抽象契約（インターフェース仕様、ポリシー、不変条件）」と「下位Tierが担うべき物理実装（具体的なアルゴリズム・データ構造・アロケータ実装）」の双方を含む場合、これらを別ファイル・別Tierへ明示的に分割する。判定基準は「単一仕様書に自己完結して書けるか」（項目1）ではなく、「契約と実装が異なる抽象度を持ち、クリーンアーキテクチャの依存方向規則と準同型にすることで実装詳細の変更が契約に波及しない構造を作れるか」である。 `{META_ContractImplSplit}`
@@ -208,7 +208,7 @@ Tier は単なる「OSやハードウェアの実行レイヤ」ではなく、*
 | [`system_memory_model.py`](docs/components/tier1_interface/formal/system_memory_model.py) | - 共有ブロックの二重所有禁止<br>- 5プール総予算超過禁止<br>- 所有権移譲またはロールバックの有限完了 | - `components/tier1_interface/system_memory.md` |
 | [`csp_handoff_model.py`](docs/components/tier1_interface/formal/csp_handoff_model.py) | - 所有権移譲と Drop ハンドラによる二重所有・リーク防止 | - `components/tier1_interface/ipc_router.md` |
 | [`hal_dispatch_contract_model.py`](docs/components/tier2_runtime/formal/hal_dispatch_contract_model.py) | - HALアクセスのIPCルーティング強制<br>- 生ポインタ転送禁止<br>- 事前拒否時の所有権保全 | - `components/tier2_runtime/hal_dispatch.md` |
-| [`vsoc_cache_coherency_model.py`](docs/components/tier2_runtime/formal/vsoc_cache_coherency_model.py) | - vSoC JIT キャッシュ整合性・Debugger 介入安全性・ローテーション有界性 | - `components/tier2_runtime/runtime_vsoc.md`<br>- `components/tier3_plugins/debugger.md`<br>- `components/tier3_jit/jit_compiler.md`<br>- `components/tier2_runtime/runtime_memory.md` |
-| [`vsoc_state_model.py`](docs/components/tier2_runtime/formal/vsoc_state_model.py) | - vSoC 実行状態<br>- Safepoint ポーリング応答性<br>- 割り込み/デバッグフォールバック | - `components/tier2_runtime/runtime_vsoc.md`<br>- `components/tier2_runtime/runtime_vmmio.md`<br>- `components/tier3_plugins/interpreter.md`<br>- `components/tier3_plugins/debugger.md`<br>- `components/tier3_platform/platform_driver.md`<br>- `components/tier1_core/system_config.md` |
-| [`jit_cache_model.py`](docs/components/tier3_jit/formal/jit_cache_model.py) | - 3面キャッシュ代謝<br>- MPU W^X 保護<br>- 遅延チェイニング局所アンリンク安全性<br>- 2-bit Hotspot FSM | - `components/tier3_jit/jit_compiler.md`<br>- `components/tier3_jit/jit_runtime.md`<br>- `components/tier2_runtime/runtime_memory.md` |
+| [`vsoc_cache_coherency_model.py`](docs/components/tier2_runtime/formal/vsoc_cache_coherency_model.py) | - vSoC JIT キャッシュ整合性・Debugger 介入安全性・ローテーション有界性 | - `components/tier2_runtime/runtime_vsoc.md`<br>- `components/tier3_plugins/debugger.md`<br>- `components/tier3_executer/jit_compiler.md`<br>- `components/tier2_runtime/runtime_memory.md` |
+| [`vsoc_state_model.py`](docs/components/tier2_runtime/formal/vsoc_state_model.py) | - vSoC 実行状態<br>- Safepoint ポーリング応答性<br>- 割り込み/デバッグフォールバック | - `components/tier2_runtime/runtime_vsoc.md`<br>- `components/tier2_runtime/runtime_vmmio.md`<br>- `components/tier3_executer/interpreter.md`<br>- `components/tier3_plugins/debugger.md`<br>- `components/tier3_platform/platform_driver.md`<br>- `components/tier1_core/system_config.md` |
+| [`jit_cache_model.py`](docs/components/tier3_executer/formal/jit_cache_model.py) | - 3面キャッシュ代謝<br>- MPU W^X 保護<br>- 遅延チェイニング局所アンリンク安全性<br>- 2-bit Hotspot FSM | - `components/tier3_executer/jit_compiler.md`<br>- `components/tier3_executer/jit_runtime.md`<br>- `components/tier2_runtime/runtime_memory.md` |
 | [`runtime_memory_model.py`](docs/components/tier2_runtime/formal/runtime_memory_model.py) | - ページ所有者分離<br>- 異種タスクの同一ページ混在禁止<br>- 所有権転送の完了性 | - `components/tier2_runtime/runtime_memory.md` |

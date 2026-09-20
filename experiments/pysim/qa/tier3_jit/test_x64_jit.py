@@ -42,7 +42,7 @@ Verifies:
 2. 52-byte x64 physical JITTraceHeader layout at offset +0x00
 3. Shared common-area entry/exit routing
 4. Direct trace chaining and hybrid tiering transitions
-(docs/components/tier3_jit/jit_compiler.md and docs/components/tier2_runtime/runtime_interpreter.md)
+(docs/components/tier3_executer/jit_compiler.md and docs/components/tier2_runtime/runtime_interpreter.md)
 """
 
 import ctypes

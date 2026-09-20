@@ -1,9 +1,9 @@
-# Interpreter コンポーネント設計書 {VERIFY_FORMAL} {VERIFY_LLM}
+# Interpreter プラグイン設計書 {VERIFY_FORMAL} {VERIFY_LLM}
 <!-- evidence:
-     formal: formal/vsoc_state_model.py
+     formal: ../tier2_runtime/formal/vsoc_state_model.py
      formal: formal/interpreter_stack_model.py
      concept: concepts/interpreter_concept.py
-     test: docs/qa/tier2_runtime/runtime_interpreter_test_spec.md
+     test: docs/qa/tier3_plugins/interpreter_test_spec.md
 -->
 
 ## 1. コンセプト
@@ -16,7 +16,7 @@ Interpreter は、WASM命令をスレッドインタープリタ方式で実行�
 
 ## 2. アーキテクチャ分類
 <!-- traceability: {META_3TierSeparation} -->
-本コンポーネントは **Tier 2 (分解されたサブコンポーネント: Decomposed Subcomponent)** に属する。vSoC (`runtime_vsoc.md`) から分解されたサブコンポーネントである。WASM バイトコードの逐次実行を担当する。JIT との共用実行コンテキスト管理も担当する。
+本コンポーネントは **Tier 3 (プラグイン・リーフコンポーネント: Plugin Leaf Component)** に属する。Tier 2 のランタイム実行契約を実装し、WASM バイトコードの逐次実行を担当する。JIT との共用実行コンテキストは Tier 2 契約を介して利用する。
 
 ## 3. 静的モデル
 
@@ -241,7 +241,7 @@ flowchart TD
 
 インタープリタハンドラは次回呼び出し用の4引数とトラップ状態を結果として返す。次のPCは `ctx` に保持する。JITトレースは末尾ジャンプで継続し、結果レコードを返さない。
 
-命令実行中のWASMトラップは、例外を送出せず、継続引数とトラップ情報を含む結果として返す。トラップを受け取った実行器は全アクティブフレームを破棄して実行結果を確定する。以後の命令は実行しない。同期的な公開APIは、確定済みトラップを正常な戻り値（特に`None`）と混同せず、呼び出し側へ明示する。これはハンドラ内部の実行経路とは分離する。追加仕様の一覧と判定項目は [runtime_interpreter_test_spec.md](docs/qa/tier2_runtime/runtime_interpreter_test_spec.md#追加gotcha一覧マージ判定用) に集約する。
+命令実行中のWASMトラップは、例外を送出せず、継続引数とトラップ情報を含む結果として返す。トラップを受け取った実行器は全アクティブフレームを破棄して実行結果を確定する。以後の命令は実行しない。同期的な公開APIは、確定済みトラップを正常な戻り値（特に`None`）と混同せず、呼び出し側へ明示する。これはハンドラ内部の実行経路とは分離する。追加仕様の一覧と判定項目は [interpreter_test_spec.md](docs/qa/tier3_plugins/interpreter_test_spec.md#追加gotcha一覧マージ判定用) に集約する。
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
@@ -260,7 +260,7 @@ ARMv8-MのJITトレースでは `R4` と `R5` を次段の値のキャッシュ�
 ## 4. 動的モデル
 
 ### 4.1 アルゴリズム
-<!-- traceability: {ThreadedInterpreter} {JIT_RuntimeAPI_Fallback} {Interpreter_LazyJITSwitch} {LowLatencyJIT} {SimpleJITArchitecture} {Challenge_ApproximateYield} {Debug_Integrated} {ContextPointerRegister} {ADR_TosCacheAsymmetry} {ADR_TraceBoundaryYield} {ADR_InterruptRescheduleGeneration} {GOTCHA-INTP-15} -->
+<!-- traceability: {ThreadedInterpreter} {JIT_RuntimeAPI_Fallback} {Interpreter_LazyJITSwitch} {LowLatencyJIT} {SimpleJITArchitecture} {Challenge_ApproximateYield} {ContextPointerRegister} {ADR_TosCacheAsymmetry} {ADR_TraceBoundaryYield} {ADR_InterruptRescheduleGeneration} {GOTCHA-INTP-15} -->
 - **Threaded Dispatch with Continuation Passing Style**:
   - 命令ハンドラを連鎖させるテーブルディスパッチ方式で分岐コストを極小化する。
   - ハンドラ関数型は4つの論理引数に統一する。結果レコードで次の継続情報とトラップ状態を返す。
@@ -301,17 +301,17 @@ ARMv8-MのJITトレースでは `R4` と `R5` を次段の値のキャッシュ�
   - トレースの切れ目でのみインタープリタの命令ハンドラが呼び出し元（vSoC）へ制御を返す。
   - `yield_threshold` の判定と `co_yield` の発行は vSoC 自身が行う。割り込み時の再スケジュール世代が未観測の場合も、vSoCは同じトレース境界で世代観測を完了させてから`co_yield`を発行する。
   - インタープリタはコルーチンではなく単なる関数である。トレース境界での自然なレジスタ・スタック整合によりステート退避を極小化する。
-- **デバッグ・プロファイラフック**:
-  - 命令実行前後でブレークポイント判定、実行時PC頻度サンプリング、メモリ/レジスタの動的アサーション検証を行い、Debugger/Profiler に制御を委譲する。
+- **VM観測フック**:
+  - 命令実行境界で Tier 2 `runtime_observability.md` の観測イベントを発行する。ブレークポイントによる実行制御は Debugger プラグインへ、コールグラフ集計と時間計算は Guest Profiler プラグインへ委譲する。
 
 #### WASM インタープリタのコンセプトコード
-実行可能な概念モデルは [`interpreter_concept.py`](docs/components/tier2_runtime/concepts/interpreter_concept.py) に分離する。本文書には実装言語のコードを埋め込まず、WASM実行契約と固定レイアウトのみを規定する。
+実行可能な概念モデルは [`interpreter_concept.py`](docs/components/tier3_plugins/concepts/interpreter_concept.py) に分離する。本文書には実装言語のコードを埋め込まず、WASM実行契約と固定レイアウトのみを規定する。
 
 #### 統合 Tiered ランタイムエンジン・コンセプトコード
 インタープリタ実行、Hotspot検出、Copy-and-Patch JIT、3面キャッシュ、MPU W^X を統合した自己完結実行シミュレーションは [`runtime_engine_concept.py`](docs/components/tier2_runtime/concepts/runtime_engine_concept.py) を参照する。
 
 ### 4.2 状態遷移図
-<!-- traceability: {ThreadedInterpreter} {JIT_RuntimeAPI_Fallback} {Interpreter_LazyJITSwitch} {LowLatencyJIT} {SimpleJITArchitecture} {Challenge_ApproximateYield} {Debug_Integrated} -->
+<!-- traceability: {ThreadedInterpreter} {JIT_RuntimeAPI_Fallback} {Interpreter_LazyJITSwitch} {LowLatencyJIT} {SimpleJITArchitecture} {Challenge_ApproximateYield} -->
 ```mermaid
 stateDiagram-v2
     [*] --> Ready
@@ -324,7 +324,7 @@ stateDiagram-v2
 ```
 
 ### 4.3 内部シーケンス
-<!-- traceability: {ThreadedInterpreter} {JIT_RuntimeAPI_Fallback} {Interpreter_LazyJITSwitch} {LowLatencyJIT} {SimpleJITArchitecture} {Challenge_ApproximateYield} {Debug_Integrated} -->
+<!-- traceability: {ThreadedInterpreter} {JIT_RuntimeAPI_Fallback} {Interpreter_LazyJITSwitch} {LowLatencyJIT} {SimpleJITArchitecture} {Challenge_ApproximateYield} -->
 #### Interpreter 実行シーケンス
 ```mermaid
 sequenceDiagram
@@ -480,7 +480,7 @@ sequenceDiagram
   3. **有界レイテンシ**: 組み込み WASM の基本ブロック長は通常数命令から数十命令である。トレース境界での yield でリアルタイム応答性を満たす。
   4. **責務の分離**: インタープリタは実行のみを担当する。JIT キャッシュやスケジューリング判断は vSoC の責務とする。
 - **影響範囲**:
-  - `runtime_interpreter.md`, `runtime_vsoc.md`, `os_coos.md`, `jit_compiler.md`
+  - `interpreter.md`, `runtime_vsoc.md`, `os_coos.md`, `jit_compiler.md`
 
 ### ADR-INTERP-02: i64 / f32 / f64 の Libgcc ランタイムヘルパー連携 (`{Libgcc_Runtime_Helper}`)
 
@@ -494,7 +494,7 @@ sequenceDiagram
   2. **ハードウェア差異の隠蔽**: FPU 搭載環境と非搭載環境のビルド切り替えをヘルパー実装内に局所化する。
   3. **保守性と検証容易性**: `libgcc` との ABI 境界がハンドラ単位で隔離され、テストおよび形式検証が容易になる。
 - **影響範囲**:
-  - `runtime_interpreter.md`, `jit_compiler.md`, `wasm_instruction_set.md`, `jit_stencil_catalog.md`
+  - `interpreter.md`, `jit_compiler.md`, `wasm_instruction_set.md`, `jit_stencil_catalog.md`
 
 ### ADR-INTERP-03: 制御フレームを専用スタックへ分離
 
@@ -509,7 +509,7 @@ sequenceDiagram
   3. **メモリ管理の明確化**: 3本の固定容量バッファに分離し、それぞれ個別にオーバーフローを検知する。
   4. **コールフレームとの責務差**: 関数呼び出しは常にインタープリタへ戻る境界である。本問題はループやブロック特有のものである。
 - **影響範囲**:
-  - `runtime_interpreter.md`, `jit_runtime.md`
+  - `interpreter.md`, `jit_runtime.md`
 
 ### ADR-INTERP-04: オペランドスタックを ローカル値領域 から分離
 
@@ -524,4 +524,4 @@ sequenceDiagram
   3. **独立した境界検査**: 3本のスタックが独立してオーバーフローを検知する。
   4. **メモリ予算のトレードオフ**: バッファが分かれるため個別の容量設計を要するが、安全性を優先する。
 - **影響範囲**:
-  - `runtime_interpreter.md`
+  - `interpreter.md`

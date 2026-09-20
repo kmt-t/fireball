@@ -38,9 +38,9 @@
 | Tier 1 Interface | IPC Router | [ipc_router_test_spec.md](docs/qa/tier1_interface/ipc_router_test_spec.md) |
 | Tier 1 Interface | System Memory | [system_memory_test_spec.md](docs/qa/tier1_interface/system_memory_test_spec.md) |
 | Tier 1 Interface | System Service | [system_service_test_spec.md](docs/qa/tier1_interface/system_service_test_spec.md) |
-| Tier 2 Runtime | Debug Manager | [debug_manager_test_spec.md](docs/qa/tier2_runtime/debug_manager_test_spec.md) |
+| Tier 3 Plugins | Debugger | [debugger_test_spec.md](docs/qa/tier3_plugins/debugger_test_spec.md) |
 | Tier 2 Runtime | HAL Dispatch | [hal_dispatch_test_spec.md](docs/qa/tier2_runtime/hal_dispatch_test_spec.md) |
-| Tier 2 Runtime | Interpreter | [runtime_interpreter_test_spec.md](docs/qa/tier2_runtime/runtime_interpreter_test_spec.md) |
+| Tier 3 Plugins | Interpreter | [interpreter_test_spec.md](docs/qa/tier3_plugins/interpreter_test_spec.md) |
 | Tier 2 Runtime | Loader | [runtime_loader_test_spec.md](docs/qa/tier2_runtime/runtime_loader_test_spec.md) |
 | Tier 2 Runtime | Logging | [runtime_logging_test_spec.md](docs/qa/tier2_runtime/runtime_logging_test_spec.md) |
 | Tier 2 Runtime | Memory | [runtime_memory_test_spec.md](docs/qa/tier2_runtime/runtime_memory_test_spec.md) |

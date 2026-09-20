@@ -57,7 +57,7 @@ Copy-and-Patchエンジンによるネイティブコード生成、4論理引�
 | TEST-JITC-41 | ゲストメモリ境界チェックのインライン埋め込み | メモリアクセス命令を含むトレース | コンパイル | 開始アドレスを `CMP addr, mem_size; BHS.W <trap>` で検査し、2バイト以上のアクセスは `addr + width - 1` も同じ比較で検査して、境界外で安全にトラップする | `{MemoryBoundaryCheck}` `{FastAddressCheck}` |
 | TEST-JITC-42 | キャッシュ溢れの3面ローテーション処理 | キャッシュ容量超過 | コンパイル試行 | Oldestバンクを破棄して再利用し、被チェイン元の解除を行う。解除対象の探索に加えて破棄バンク全体の消去を行うため、処理量は`O(k + n)`である | 「Cache Capacity Check」, `{JIT_LazyChaining}` |
 | TEST-JITC-43 | ホストコール (WASI / fireball_call) のJIT境界 | 0〜6引数のimport／host call | トレース実行 | host call直前で対象ABIの終了処理を実行し、共有オペランド領域と実行コンテキストを同期してInterpreter／RuntimeEngineへ委譲する。JIT内で対象ABIと無関係なhost call stubを実行しない |  `{JIT_RuntimeAPI_Fallback}` |
-| TEST-JITC-44 | 境界委譲後のコンテキスト保持 | 複雑命令またはimport／host call | 境界復帰後に実行を継続 | 共有実行コンテキスト、共有オペランド領域、ローカル値領域を正本として状態が保持され、JIT専用戻り値バッファや専用オペランド領域が生成されない | [`runtime_interpreter.md`](docs/components/tier2_runtime/runtime_interpreter.md) `{PositionIndependentCode}` |
+| TEST-JITC-44 | 境界委譲後のコンテキスト保持 | 複雑命令またはimport／host call | 境界復帰後に実行を継続 | 共有実行コンテキスト、共有オペランド領域、ローカル値領域を正本として状態が保持され、JIT専用戻り値バッファや専用オペランド領域が生成されない | [`interpreter.md`](docs/components/tier3_plugins/interpreter.md) `{PositionIndependentCode}` |
 | TEST-JITC-45 | 複数型Cヘルパーのワード配置 | `i64/f32/f64` 定数と算術命令 | JITトレースを実行 | `i64/f64` は2ワード、`f32` は1ワードで演算結果が共有オペランド領域へ保存される | [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) |
 
 ### トレース境界不変条件とハンドラ委譲

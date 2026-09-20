@@ -2,7 +2,7 @@
 docs/components/tier2_runtime/concepts/runtime_engine_concept.py
 Reference Concept Implementation: Integrated WASM Tiered Tracing Runtime Engine
 
-Execution model (per jit_compiler.md §4.1 / runtime_interpreter.md §4.1,
+Execution model (per jit_compiler.md §4.1 / interpreter.md §4.1,
 ADR-INTERP-01 {ADR_TraceBoundaryYield}): Interpreter.call() owns the common
 call-state, completion, trap, and result contract. The base Interpreter drives
 step() directly; JITInterpreter overrides only the execution driver and lets
@@ -932,7 +932,7 @@ def make_native_executor(listing: list[str]) -> Callable:
 
 
 # ==============================================================================
-# 5. Execution context  [runtime_interpreter.md §3.3]
+# 5. Execution context  [interpreter.md §3.3]
 # ==============================================================================
 
 
@@ -1048,7 +1048,7 @@ class IntegratedRuntimeEngine:
             block, self.benefit_table, threshold=self.candidate_threshold
         )
 
-    # --- Cooperative yield  [runtime_interpreter.md §4.1 概算Yield] ---
+    # --- Cooperative yield  [interpreter.md §4.1 概算Yield] ---
     def _tick_and_maybe_yield(self) -> bool:
         self.trace_counter += 1
         if self.trace_counter < self.yield_threshold:

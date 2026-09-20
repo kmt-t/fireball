@@ -1,11 +1,11 @@
-# Debug Manager テスト仕様書 (Test Specification)
+# Debugger プラグイン テスト仕様書 (Test Specification)
 
 ## 1. 目的と対象範囲
 
-正本: [`debug_manager.md`](docs/components/tier2_runtime/debug_manager.md)
+正本: [`debugger.md`](docs/components/tier3_plugins/debugger.md)
 関連正本: [`gdb_rsp_protocol.md`](docs/specs/gdb_rsp_protocol.md)
 
-GDB RSPコマンド処理（`?`, `g/G`, `m/M`, `Z0/z0`, `s`, `c`）、ブレークポイント管理（`fireball::flat_set_view`）、インタープリタ・ハンドラテーブル切り替え（`DebuggerLabelTableSwitch`）、JITキャッシュ協調無効化（`{Debugger_Jit_Flush}`）、統合プロファイラ（PCサンプリング & メモリアサーション `{Debug_Integrated}`）、および仮想レジスタセットを検証する。
+GDB RSP コマンド処理（`?`, `g/G`, `m/M`, `Z0/z0`, `s`, `c`）、ブレークポイント管理（`fireball::flat_set_view`）、インタープリタ・ハンドラテーブル切り替え（`DebuggerLabelTableSwitch`）、JIT キャッシュ協調無効化（`{Debugger_Jit_Flush}`）、および仮想レジスタセットを検証する。
 
 ## 2. テストケース一覧
 
@@ -30,31 +30,28 @@ GDB RSPコマンド処理（`?`, `g/G`, `m/M`, `Z0/z0`, `s`, `c`）、ブレー�
 | TEST-DBG-10 | 単一命令ステップ実行 (`s`) | 停止状態 | `s` 送信 | ちょうど 1 命令だけ実行され、PC が進んだ状態で再び `S05` で停止する |  `{RSPMinimalSet}` |
 | TEST-DBG-11 | プログラム正常終了 | 終端命令実行 | `c` 送信 | プログラム終了時に `W00`（正常終了）が返却される | 状態遷移図 |
 
-### デバッガ協調 & 統合プロファイラ
+### デバッガ協調
 
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | TEST-DBG-12 | デバッグ無効時のゼロオーバーヘッド | デバッガ未接続 | 通常実行 | インタープリタのハンドラテーブル切り替えが発生せず、最高速実行が維持される | `{DebuggerLabelTableSwitch}` |
 | TEST-DBG-13 | アタッチ時の JIT バイパス（インタープリタフォールバック） | デバッガアタッチ | 実行 | JIT 直接ジャンプをバイパスし、インタープリタのデバッグハンドラで 1 命令ずつ安全に実行される |  `{DebuggerLabelTableSwitch}` |
-| TEST-DBG-14 | 統合プロファイラの PC サンプリング | プロファイラ有効 | 実行 | 実行された各 PC のサンプリング回数が正しく記録・集計される |  `{Debug_Integrated}` |
-| TEST-DBG-15 | 動的メモリアサーション検証 | メモリアサーション登録 | 実行 | 期待値と異なる値がメモリに書き込まれた際に違反が即座に検知・記録される |  `{Debug_Integrated}` |
-
 ### 実ソケット GDB RSP リモート接続・対話セッション
 
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| TEST-DBG-20 | TCP ソケットリッスンとクライアント接続 | GDBServer 起動 | クライアントが TCP 接続し `?` 送信 | `+` ACK と `$S05#b8` が返り、対話デバッグセッションが確立される | [`gdb_server.py`](experiments/pysim/tier2_runtime/gdb_server.py), [`scenario7_gdb_socket_debugger.py`](experiments/pysim/qa/scenarios/scenario7_gdb_socket_debugger.py) |
-| TEST-DBG-21 | ソケット経由の仮想レジスタ読み書き | セッション接続中 | `g` および `G` パケット送信 | TCP ストリーム経由で 20 個の仮想レジスタが正しく取得・変更される | [`gdb_rsp_protocol.md`](docs/specs/gdb_rsp_protocol.md), [`debug_manager.md`](docs/components/tier2_runtime/debug_manager.md) |
+| TEST-DBG-20 | TCP ソケットリッスンとクライアント接続 | GDBServer 起動 | クライアントが TCP 接続し `?` 送信 | `+` ACK と `$S05#b8` が返り、対話デバッグセッションが確立される | [`gdb_rsp_protocol.md`](docs/specs/gdb_rsp_protocol.md), [`debugger.md`](docs/components/tier3_plugins/debugger.md) |
+| TEST-DBG-21 | ソケット経由の仮想レジスタ読み書き | セッション接続中 | `g` および `G` パケット送信 | TCP ストリーム経由で 20 個の仮想レジスタが正しく取得・変更される | [`gdb_rsp_protocol.md`](docs/specs/gdb_rsp_protocol.md), [`debugger.md`](docs/components/tier3_plugins/debugger.md) |
 | TEST-DBG-22 | ソケット経由のメモリ検査・書き換えと JIT Flush | セッション接続中 | `m` および `M` パケット送信 | TCP ストリーム経由でメモリが読み書きされ、JIT キャッシュ全バンクが無効化される | `{Debugger_Jit_Flush}` |
-| TEST-DBG-23 | ソケット経由のブレークポイント停止とステップ | セッション接続中 | `Z0` 設定後 `c` / `s` 送信 | 指定 PC で正確にトラップ停止し、単歩ステップ実行で 1 命令進む | [`debug_manager.md`](docs/components/tier2_runtime/debug_manager.md) |
-| TEST-DBG-24 | プログラム完走通知とソケット正常切断 | ブレークポイント解除 | `c` 送信後クローズ | 終了パケット `$W00#b7` を受信し、サーバーソケットがクリーンに終了・デタッチされる | [`gdb_server.py`](experiments/pysim/tier2_runtime/gdb_server.py) |
+| TEST-DBG-23 | ソケット経由のブレークポイント停止とステップ | セッション接続中 | `Z0` 設定後 `c` / `s` 送信 | 指定 PC で正確にトラップ停止し、単歩ステップ実行で 1 命令進む | [`debugger.md`](docs/components/tier3_plugins/debugger.md) |
+| TEST-DBG-24 | プログラム完走通知とソケット正常切断 | ブレークポイント解除 | `c` 送信後クローズ | 終了パケット `$W00#b7` を受信し、サーバーソケットがクリーンに終了・デタッチされる | [`gdb_rsp_protocol.md`](docs/specs/gdb_rsp_protocol.md), [`debugger.md`](docs/components/tier3_plugins/debugger.md) |
 
 ### 実装の勘所・不変条件（Gotchas & Implementation Invariants）
 
 | GOTCHA ID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| GOTCHA-DBG-01 | メモリ書き込み時の JIT キャッシュ即時フラッシュ（不整合防止） | JIT コンパイル済みトレースが存在 | デバッガからメモリ書き込み（`M` パケット）を実行 | 該当アドレスの書き換えと同時に JIT キャッシュ全バンクが無効化（`invalidate_all_banks()`）され、古いネイティブコードの実行が遮断される。**実装の勘所**: メモリを書き換えても JIT キャッシュをフラッシュしないと、変更前の古いコードがそのまま実行され続け、ブレークポイントやパッチが無視される | `debug_manager.md` , `{Debugger_Jit_Flush}` |
-| GOTCHA-DBG-02 | デバッグ有効化時のハンドラテーブル切替（JIT バイパス保証） | 通常高速実行モード中 | デバッガをアタッチ | インタープリタの関数ポインタテーブルが通常版からデバッグ版へ切り替わり、JIT 昇格が抑止されて 1 命令ごとのトラップフックが確実に駆動される。**実装の勘所**: 命令ハンドラ内に `if (debug_enabled)` の条件分岐を設けると、デバッグ無効時の最頻実行パスで分岐予測ミスとオーバーヘッドが恒常的に発生する | `debug_manager.md` , `{DebuggerLabelTableSwitch}` |
+| GOTCHA-DBG-01 | メモリ書き込み時の JIT キャッシュ即時フラッシュ（不整合防止） | JIT コンパイル済みトレースが存在 | デバッガからメモリ書き込み（`M` パケット）を実行 | 該当アドレスの書き換えと同時に JIT キャッシュ全バンクが無効化（`invalidate_all_banks()`）され、古いネイティブコードの実行が遮断される。**実装の勘所**: メモリを書き換えても JIT キャッシュをフラッシュしないと、変更前の古いコードがそのまま実行され続け、ブレークポイントやパッチが無視される | `debugger.md` , `{Debugger_Jit_Flush}` |
+| GOTCHA-DBG-02 | デバッグ有効化時のハンドラテーブル切替（JIT バイパス保証） | 通常高速実行モード中 | デバッガをアタッチ | インタープリタの関数ポインタテーブルが通常版からデバッグ版へ切り替わり、JIT 昇格が抑止されて 1 命令ごとのトラップフックが確実に駆動される。**実装の勘所**: 命令ハンドラ内に `if (debug_enabled)` の条件分岐を設けると、デバッグ無効時の最頻実行パスで分岐予測ミスとオーバーヘッドが恒常的に発生する | `debugger.md` , `{DebuggerLabelTableSwitch}` |
 | GOTCHA-DBG-03 | GDB RSP チェックサム照合と再送制御（通信化け耐性） | GDB リモートセッション接続中 | チェックサムが不一致の破損パケットを送信 | サーバーはパケットを破棄し、NAK（`-`）を返信してクライアントに再送を要求する。**実装の勘所**: チェックサム検証を怠って破損パケットを解釈すると、誤ったメモリアドレスや不正レジスタ値が書き込まれてデバッグ対象がクラッシュする | [`gdb_rsp_protocol.md`](docs/specs/gdb_rsp_protocol.md) |
 | GOTCHA-DBG-04 | 協調スケジューラ下での RSP 応答分割送出と複数 yield 跨ぎ耐性 | COOS 協調スケジューラ上で GDBServer タスクが動作中 | 長小応答パケット（`g` 等）を要求し、クライアント側で完全な RSP フレーム（`$...#xx`）を受信 | ACK（`+`）送出とペイロード本体（`$...#xx`）が同一送信キューに積まれ、ノンブロッキング送信と複数 yield 跨ぎでのドレイン処理により完全な応答が送出・受信される。**実装の勘所**: 組み込みの協調スケジューラ下では、ノンブロッキングソケットでの `sendall()` 使用は部分送信の脱落を招くため禁止され、送信キュー（`tx_buffer`）を用いた `send()` のフラグメント状態管理と yield 境界での確実なフラッシュが必須となる。また、ACK（`+`）と本体ペイロードを別々のシステムコールで即時送信すると TCP セグメントが不必要に分割され、1回の `scheduler.step()` で全応答が送出しきれず複数 yield にまたがることが必然となる。テスト側やクライアント側も「1パケット = 1回の yield/recv で即時完了」と決め打ちせず、フレーム終端記号（`#` + 2 hex）までのバッファリング受信を前提とする設計が要求される | [`gdb_rsp_protocol.md`](docs/specs/gdb_rsp_protocol.md) `{GOTCHA-DBG-04}` |
 
@@ -62,8 +59,8 @@ GDB RSPコマンド処理（`?`, `g/G`, `m/M`, `Z0/z0`, `s`, `c`）、ブレー�
 
 - **GDB RSP 通信 & 仮想レジスタ (TEST-DBG-01〜07)**: `?`, `g`, `G`, `m`, `M`, `Z0`, `z0` のパケット解析・応答およびレジスタ/メモリ操作を検証。
 - **実行制御 (TEST-DBG-08〜11)**: ブレークポイント停止、ステップ実行、正常終了通知を検証。
-- **JIT 協調 & プロファイラ (TEST-DBG-12〜15)**: メモリ書き換え時の JIT キャッシュ無効化（`{Debugger_Jit_Flush}`）、インタープリタ切り替え（`{DebuggerLabelTableSwitch}`）、PC サンプリングおよびメモリアサーションを検証。
-- **実ソケット GDB リモート対話セッション (TEST-DBG-20〜24)**: [`test_gdb_remote.py`](experiments/pysim/qa/tier2_runtime/test_gdb_remote.py) および [`scenario7_gdb_socket_debugger.py`](experiments/pysim/qa/scenarios/scenario7_gdb_socket_debugger.py) により、実 TCP ソケットを介した 10 ステップの GDB RSP リモート対話デバッグセッションを実証済み。
+- **JIT 協調 (TEST-DBG-12〜13)**: メモリ書き換え時の JIT キャッシュ無効化（`{Debugger_Jit_Flush}`）とインタープリタ切り替え（`{DebuggerLabelTableSwitch}`）を検証する。
+- **実ソケット GDB リモート対話セッション (TEST-DBG-20〜24)**: GDB RSP の TCP 接続、パケット交換、実行制御、終了通知を検証する。
 
 ## 4. 未検証・スコープ外
 

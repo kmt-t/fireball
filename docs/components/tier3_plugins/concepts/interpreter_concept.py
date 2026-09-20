@@ -1,10 +1,10 @@
 """
-docs/components/tier2_runtime/concepts/interpreter_concept.py
+docs/components/tier3_plugins/concepts/interpreter_concept.py
 Reference Concept Implementation: Exhaustive WASM MVP (v1) Stack Interpreter with Independent Runtime Stacks
 - Complete WASM MVP opcode set matching docs/specs/wasm_instruction_set.md
 - OperandStack, LocalStack, and ControlFrame use independent value regions;
   CallFrame descriptors live separately and retain their LocalStack base offset
-  (runtime_interpreter.md §3, ADR-INTERP-04)
+  (interpreter.md §3, ADR-INTERP-04)
 - Direct-Threaded __fastcall Continuation Passing Style (CPS) 4-argument dispatch (ctx, sp, local_base, tos)
 - Full stack pruning (Label Arity handling) on br / br_if / br_table
 - 64-bit integer arithmetic, memory loads/stores (8/16/32/64-bit), and type conversions

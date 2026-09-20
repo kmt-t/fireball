@@ -1,5 +1,5 @@
 """
-docs/components/tier2_runtime/concepts/debugger_concept.py
+docs/components/tier3_plugins/concepts/debugger_concept.py
 Reference Concept Implementation: Debugger Manager & GDB RSP Interpreter Fallback
 `{RSPMinimalSet}` `{DebuggerLabelTableSwitch}` `{MemoryIsolation}` `{Debug_Integrated}` `{ContextPointerRegister}`
 

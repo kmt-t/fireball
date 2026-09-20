@@ -112,7 +112,7 @@ COOS、IPC、およびインタープリタ実行時トラップにおいて、�
 | `0x0203` | IPC | `ERROR` | `IPC: message too large (kv_count=%d, max=%d)` | `kv_count`, `max_kv_pairs`, 0, 0 | 許可された最大 KV ペア数（`FB_CONF_ROUTER_MAX_KV_PAIRS`、`system_config.md` 正本）を超過したメッセージ |
 | `0x0204` | IPC | `ERROR` | `IPC: invalid ownership state (current_state=%d, op=%d)` | `ownership_state`, `operation`, 0, 0 | 送信側が所有権を持たないメッセージの送信試行 |
 | `0x0205` | IPC | `ERROR` | `IPC: channel waiter collision (channel=%d, dir=%d)` | `channel_idx`, `wait_dir`, 0, 0 | チャネル待機不変条件違反（詳細は `ipc_router.md` 正本） |
-| `0x0301` | インタープリタ | `ERROR` | `TRAP: local stack capacity exceeded (pc=0x%08X)` | `unified_pc`, 0, 0, 0 | ローカル値領域の固定容量超過（詳細は `runtime_interpreter.md` 正本） |
+| `0x0301` | インタープリタ | `ERROR` | `TRAP: local stack capacity exceeded (pc=0x%08X)` | `unified_pc`, 0, 0, 0 | ローカル値領域の固定容量超過（詳細は `interpreter.md` 正本） |
 | `0x0302` | インタープリタ | `ERROR` | `TRAP: call frame capacity exceeded (pc=0x%08X)` | `unified_pc`, 0, 0, 0 | 呼出しフレーム記述子領域の固定容量超過 |
 | `0x0303` | インタープリタ | `ERROR` | `TRAP: call stack capacity exceeded (pc=0x%08X)` | `unified_pc`, 0, 0, 0 | 呼出しネスト深さ上限（`FB_CONF_MAX_NESTING_DEPTH`、`system_config.md` 正本）超過 |
 | `0x0304` | インタープリタ | `ERROR` | `TRAP: operand stack capacity exceeded (pc=0x%08X)` | `unified_pc`, 0, 0, 0 | オペランドスタック領域の固定容量超過 |
@@ -130,7 +130,7 @@ COOS、IPC、およびインタープリタ実行時トラップにおいて、�
 | `0x0310` | インタープリタ | `ERROR` | `TRAP: integer division overflow (pc=0x%08X)` | `unified_pc`, 0, 0, 0 | `INT_MIN / -1` 相当の符号付き除算オーバーフロー |
 | `0x0311` | インタープリタ | `ERROR` | `TRAP: invalid float-to-integer conversion (pc=0x%08X)` | `unified_pc`, 0, 0, 0 | NaN・範囲外浮動小数点数の整数変換 (`trunc`) |
 
-`0x03xx` 帯はインタープリタ実行時トラップ専用であり、イベントIDはトラップ原因コード（`runtime_interpreter.md` の `trap_code`）に `0x0300` を加算した値に固定する（`GOTCHA-LOG-04`）。トラップ原因コードとログ辞書エントリが機械的に 1 対 1 対応するため、原因コードを追加した際にログ辞書エントリの登録漏れが生じない。`unified_pc` は `(func_index << 16) | bytecode_offset`（`{GOTCHA-INTP-04}`）であり、複数モジュールを跨いでも発生関数と命令位置を一意に特定できる。
+`0x03xx` 帯はインタープリタ実行時トラップ専用であり、イベントIDはトラップ原因コード（`interpreter.md` の `trap_code`）に `0x0300` を加算した値に固定する（`GOTCHA-LOG-04`）。トラップ原因コードとログ辞書エントリが機械的に 1 対 1 対応するため、原因コードを追加した際にログ辞書エントリの登録漏れが生じない。`unified_pc` は `(func_index << 16) | bytecode_offset`（`{GOTCHA-INTP-04}`）であり、複数モジュールを跨いでも発生関数と命令位置を一意に特定できる。
 
 ### 4.3 COOS Idle Hook 連携 (Flush Protocol)
 <!-- traceability: {GLOBAL_IdleDetection} -->

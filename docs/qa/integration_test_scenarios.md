@@ -32,9 +32,9 @@
 | | [`system_service.md`](docs/components/tier1_interface/system_service.md) | システムサービス呼び出し、WASI トランスポート | Scenario 2, 11, 12 |
 | **Tier 2 Runtime** | [`runtime_vsoc.md`](docs/components/tier2_runtime/runtime_vsoc.md) | 統合 ExecEnv、モジュールリンク、共有メモリ | Scenario 1, 4, 6, 8 |
 | | [`runtime_loader.md`](docs/components/tier2_runtime/runtime_loader.md) | WASM バイナリパース、Active Data/Elem セグメント | Scenario 1, 8 |
-| | [`runtime_interpreter.md`](docs/components/tier2_runtime/runtime_interpreter.md) | 継続渡し4論理引数ディスパッチ、全幅メモリ、深い再帰、制御フレーム | Scenario 1〜12 |
+| | [`interpreter.md`](docs/components/tier3_plugins/interpreter.md) | 継続渡し4論理引数ディスパッチ、全幅メモリ、深い再帰、制御フレーム | Scenario 1〜12 |
 | | [`runtime_vmmio.md`](docs/components/tier2_runtime/runtime_vmmio.md) | Bit 31 RAM Bypass、FlatMap PTE、TLB[32]、仮想デバイス | Scenario 10 |
-| | [`debug_manager.md`](docs/components/tier2_runtime/debug_manager.md) | GDB RSP TCP ソケット接続、ブレークポイント、レジスタ/メモリ改変 | Scenario 7, 8 |
+| | [`debugger.md`](docs/components/tier3_plugins/debugger.md) | GDB RSP TCP ソケット接続、ブレークポイント、レジスタ/メモリ改変 | Scenario 7, 8 |
 | | [`runtime_memory.md`](docs/components/tier2_runtime/runtime_memory.md) | リニアメモリページ拡張（`memory.grow`）、MPU 領域保護 | Scenario 1, 4, 8, 10 |
 | | [`runtime_logging.md`](docs/components/tier2_runtime/runtime_logging.md) | 構造化ロギング、LogDictionary、UART 出力 | Scenario 9 |
 | | [`runtime_syscall.md`](docs/components/tier2_runtime/runtime_syscall.md) | `fireball_call` ABI、syscallディスパッチ、ゲスト境界検証 | Scenario 2, 10, 11, 12 |
@@ -66,11 +66,11 @@
 | `DirectMappedTLB32` | `runtime_vmmio.md` | 20-bit VPN の 5-bit Folding XOR Hash による32エントリ Direct-Mapped TLB キャッシュ | `TEST-INT-92` | ✅ PASS |
 | `OwnerMismatchTrap` | `runtime_vmmio.md` | タスク間共有メモリ（FC=0xE）の所有権移動に伴うアンマップによる未登録ページフォルト（`TRAP_UNREGISTERED_PAGE`）遮断 | `TEST-INT-93` | ✅ PASS |
 | `ActiveDataSegments` | `runtime_loader.md` | モジュールロード時のアクティブデータセグメント自動リニアメモリ展開 | `TEST-INT-01` | ✅ PASS |
-| `CPS_4Args` | `runtime_interpreter.md` | `ctx, sp, local_base, tos` 4論理引数による継続関数ポインタディスパッチ | `TEST-INT-01`〜`TEST-INT-105` | ✅ PASS |
-| `SignZeroExtension` | `runtime_interpreter.md` | 8/16/32-bit メモリ読み書きにおける符号付き・符号なしゼロ/符号拡張の完全性 | `TEST-INT-70` | ✅ PASS |
-| `ControlFrameCleanup` | `runtime_interpreter.md` | `br_table` / `block` / `loop` / `if` 偽分岐時のスタックフレーム不変性・リーク防止 | `TEST-INT-20`, `TEST-INT-22` | ✅ PASS |
-| `RSPMinimalSet` | `debug_manager.md`, `gdb_rsp_protocol.md` | GDB RSP 最小コマンドセット（`?`, `g/G`, `m/M`, `Z0/z0`, `s`, `c`）の実ソケット対話 | `TEST-INT-60`〜`TEST-INT-64` | ✅ PASS |
-| `Debugger_Jit_Flush` | `debug_manager.md`, `jit_runtime.md` | デバッガからのメモリ書き込み（`M` パケット）時の JIT キャッシュ全バンク即時無効化 | `TEST-INT-62`, `TEST-INT-72` | ✅ PASS |
+| `CPS_4Args` | `interpreter.md` | `ctx, sp, local_base, tos` 4論理引数による継続関数ポインタディスパッチ | `TEST-INT-01`〜`TEST-INT-105` | ✅ PASS |
+| `SignZeroExtension` | `interpreter.md` | 8/16/32-bit メモリ読み書きにおける符号付き・符号なしゼロ/符号拡張の完全性 | `TEST-INT-70` | ✅ PASS |
+| `ControlFrameCleanup` | `interpreter.md` | `br_table` / `block` / `loop` / `if` 偽分岐時のスタックフレーム不変性・リーク防止 | `TEST-INT-20`, `TEST-INT-22` | ✅ PASS |
+| `RSPMinimalSet` | `debugger.md`, `gdb_rsp_protocol.md` | GDB RSP 最小コマンドセット（`?`, `g/G`, `m/M`, `Z0/z0`, `s`, `c`）の実ソケット対話 | `TEST-INT-60`〜`TEST-INT-64` | ✅ PASS |
+| `Debugger_Jit_Flush` | `debugger.md`, `jit_runtime.md` | デバッガからのメモリ書き込み（`M` パケット）時の JIT キャッシュ全バンク即時無効化 | `TEST-INT-62`, `TEST-INT-72` | ✅ PASS |
 | `HAL_PeripheralDrivers` | `platform_driver.md` | GPIO（入出力・エッジIRQ）、I2C（LM75）、SPI（EEPROM）、Timer | `TEST-INT-100`〜`TEST-INT-102` | ✅ PASS |
 | `WASI_InMemVFS` | `libfireball.md` | WASI互換アダプタ（`fd_seek`, `fd_read`, `fd_write`, `random_get`, `clock_time_get`） | `TEST-INT-103`〜`TEST-INT-105` | ✅ PASS |
 | `CopyAndPatch_JIT` | `jit_compiler.md` | ステンシル展開による高速 Copy-and-Patch JIT コード生成 | `TEST-INT-30`, `TEST-INT-40` | ✅ PASS |

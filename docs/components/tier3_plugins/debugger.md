@@ -1,24 +1,23 @@
-# Debug Manager コンポーネント設計書 {VERIFY_FORMAL} {VERIFY_LLM}
+# Debugger プラグイン設計書 {VERIFY_FORMAL} {VERIFY_LLM}
 <!-- evidence:
-     formal: formal/vsoc_cache_coherency_model.py
+     formal: ../tier2_runtime/formal/vsoc_cache_coherency_model.py
      concept: concepts/debugger_concept.py
-     test: docs/qa/tier2_runtime/debug_manager_test_spec.md
+     test: docs/qa/tier3_plugins/debugger_test_spec.md
 -->
 
 ## 1. コンセプト
-<!-- traceability: {RSPMinimalSet} {DebuggerLabelTableSwitch} {MemoryIsolation} {Debug_Standard_Env} {RSP_Transport_Selectable} {Debug_Integrated} {Debugger_Jit_Flush} -->
-デバッガおよび GDB Server は、VSCode等の外部ツールからのデバッグを可能にするため、COOS 上の**独立した協調タスク（`gdbserver_task`）**として常駐し、GDB Remote Serial Protocol (RSP) に基づく非同期・協調的な実行制御を行う。標準環境として VSCode, UART, J-Link をサポートする。また に準拠し、GDB RSP制御に加えて、**実行時プロファイラ機能（ホットスポットサンプリングや実行頻度計測）** および **動的テストツール機能（命令トレース・実行時メモリ/レジスタアサーション）** を内蔵する。RSPパケットの送受信待ち時は COOS スケジューラへ `yield` することで、ゲストタスクや HAL タスクの実行を阻害しない。JITキャッシュの無効化はアタッチ中常時ではなく、デバッガがメモリを書き換えた場合にのみ発生する（`runtime_vsoc.md` の を正本とする）。
+<!-- traceability: {RSPMinimalSet} {DebuggerLabelTableSwitch} {MemoryIsolation} {Debug_Standard_Env} {RSP_Transport_Selectable} {Debugger_Jit_Flush} -->
+デバッガおよび GDB Server は、VSCode等の外部ツールからのデバッグを可能にするため、COOS 上の**独立した協調タスク（`gdbserver_task`）**として常駐し、GDB Remote Serial Protocol (RSP) に基づく非同期・協調的な実行制御を行う。標準環境として VSCode、UART、J-Link をサポートする。RSP パケットの送受信待ち時は COOS スケジューラへ `yield` することで、ゲストタスクや HAL タスクの実行を阻害しない。JIT キャッシュの無効化はアタッチ中常時ではなく、デバッガがメモリを書き換えた場合にのみ発生する。
 
 ## 2. アーキテクチャ分類
 <!-- traceability: {META_3TierSeparation} {RSPMinimalSet} -->
-本コンポーネントは **Tier 2 (分解されたサブコンポーネント: Decomposed Subcomponent)** に属し、vSoC (`runtime_vsoc.md`) から分解されたデバッグ状態制御、プロファイラ集計、ブレークポイント管理、および COOS 協調タスクとして稼働する GDB RSP 通信・コマンドディスパッチを担当する。具象的なプロトコル仕様は [gdb_rsp_protocol.md](docs/specs/gdb_rsp_protocol.md) を正本とする。
+本コンポーネントは **Tier 3 (プラグイン・リーフコンポーネント: Plugin Leaf Component)** に属し、Tier 2 の `ExecutionControl` 契約を実装する。デバッグ状態制御、ブレークポイント管理、および COOS 協調タスクとして稼働する GDB RSP 通信・コマンドディスパッチを担当する。具象的なプロトコル仕様は [gdb_rsp_protocol.md](docs/specs/gdb_rsp_protocol.md) を正本とする。
 
 ## 3. 静的モデル
 
 ### 3.1 データ構造
 - **`GDBServerTask` / `Debugger`**: COOS 協調タスクとして動作し、GDB RSP プロトコル制御ロジック、デバッグ状態、およびブレークポイント管理をカプセル化した主要クラス。
 - **`RspParser` / `RspSerializer`**: GDB RSP コマンドの構文解析（例: `g`, `m addr,len`, `Z0,addr,kind`）およびレスポンスペイロードの生成を行うクラス。
-- **`Profiler` / `DynamicTestTool`**: 命令実行サンプリングカウンタ、PC実行頻度マップ、および動的アサーションフックテーブル。 `{Debug_Integrated}`
 - **`debug_config`**: 最大ブレークポイント数やポート番号などの不変の設定。
 
 ### 3.2 内部ブロック図
@@ -34,7 +33,6 @@ graph TD
     subgraph Debugger_Core
         Engine[Debugger]
         RspParser[GDB Command Parser / Response Serializer]
-        Profiler[Profiler & Test Tool Engine]
     end
 
     subgraph External
@@ -48,14 +46,13 @@ graph TD
     Engine -- uses --> RspParser
     Engine -- holds reference --> ECtx
     Engine -- manages --> BP[breakpoint flat_set_view]
-    Profiler -- samples --> ECtx
 ```
 
 ### 3.3 主要なクラス・構造体・配列・定数
 
 #### デバッガ（Debugger）クラス
-<!-- traceability: {META_NoStdVector} {Debug_Integrated} {RSPMinimalSet} -->
-依存関係（実行コンテキスト、HAL）と内部状態（ブレークポイント、プロファイラサンプリング、現在状態）をカプセル化する。
+<!-- traceability: {META_NoStdVector} {RSPMinimalSet} -->
+依存関係（実行コンテキスト、HAL）と内部状態（ブレークポイント、現在状態）をカプセル化する。
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
@@ -65,7 +62,6 @@ graph TD
 | デバッグ状態 | デバッガの現在の動作モード（実行中、中断中など）。 | 列挙型 | `debug_state` |
 | ブレークポイントリスト | 設定されているブレークポイントのアドレス一覧。昇順ソート済みの固定長配列（`FB_CONF_DEBUG_MAX_BREAKPOINTS` 件）として保持し、実行時の判定は `fireball::flat_set_view<address>` の `contains()` で行う。 | 固定長配列 + 集合ビュー | `{FlatViewNarrowing}` |
 | RSPパケットバッファ | フレーミングされた 1 パケットの ASCII ペイロード | 固定長配列 | 256 Bytes (`FB_CONF_RSP_PACKET_MAX`) |
-| プロファイラバッファ | サンプリングされたPC頻度とホットスポット統計。PCの昇順ソート済み固定長配列（`FB_CONF_DEBUG_MAX_PC_SAMPLES` 件）として保持し、`fireball::flat_map_view<address, count>` で参照する。 | 固定長配列 + マップビュー | `FB_CONF_DEBUG_MAX_PC_SAMPLES` |
 | `last_stop_reason` | 直近の停止要因。 | ID値 | 信号番号等 |
 
 #### 仮想レジスタセット（virtual_register_set）
@@ -75,7 +71,7 @@ GDB等の外部クライアントに提示する WASM 仮想レジスタ番号�
 ## 4. 動的モデル
 
 ### 4.1 アルゴリズム
-<!-- traceability: {DebuggerLabelTableSwitch} {RSPMinimalSet} {Debug_Integrated} {GOTCHA-DBG-02} -->
+<!-- traceability: {DebuggerLabelTableSwitch} {RSPMinimalSet} {GOTCHA-DBG-02} -->
 1. **コマンド取得とチェックサム照合 (`GOTCHA-DBG-03`)**:
    - HAL層が `$`〜`#`のパケットフレーミングとチェックサム検証（一致時 ACK (`+`)、不一致時 NAK (`-`)）を完了させた上で供給する `debug_command` を、コマンドキューから取得する。
    **設計理由と不変条件**: GDB RSP はシリアル通信等の低信頼通信路での利用を想定しているため、パケット末尾の 2 桁の 16 進チェックサムを厳格に照合する。万一チェックサムが不一致であった場合は一切のコマンド解釈・実行を行わず、直ちに NAK（`-`）を返信してホスト側の GDB クライアントへ再送を要求する。
@@ -87,12 +83,9 @@ GDB等の外部クライアントに提示する WASM 仮想レジスタ番号�
    **設計理由と不変条件**: 通常実行時のインタープリタハンドラ内に `if (debug_enabled)` やブレークポイント検査の条件分岐を埋め込むと、非デバッグ時の実行性能が恒常的に数〜十数% 劣化する。そのため、通常実行時は分岐ゼロの高速ハンドラテーブルを使用し、デバッグセッション開始時にのみ関数ポインタテーブルをアトミックに差し替えることで、非デバッグ時のオーバーヘッドを完全にゼロに保つ。
 4. **ステップ実行**:
    - インタープリタを「1命令実行」モードで呼び出し、実行後に `Stopped` 状態へ遷移して停止理由（SIGTRAP）を通知。
-5. **プロファイリング & 動的テスト**:
-   - 実行中 PC をサンプリング記録し、外部ツールへプロファイルサマリを出力。メモリアサーションを検証。
-
 #### デバッガ・インタープリタ結合コンセプトコード (`concepts/debugger_concept.py`)
-デバッガとインタープリタの結合、GDB RSP パケット処理、統一スタック検査、プロファイラサンプリングの参照実装：
-[`debugger_concept.py`](docs/components/tier2_runtime/concepts/debugger_concept.py)
+デバッガとインタープリタの結合、GDB RSP パケット処理、統一スタック検査の参照実装：
+[`debugger_concept.py`](docs/components/tier3_plugins/concepts/debugger_concept.py)
 
 
 #### GDB メモリ書き換え時の JIT キャッシュ即時フラッシュ（責務シーケンス図）
@@ -219,4 +212,4 @@ sequenceDiagram
 
 ### 7.2 テスト仕様書との連携
 
-GDB RSP、ブレークポイント、ハンドラテーブル切替、およびJITキャッシュ協調のテストケースは [`debug_manager_test_spec.md`](docs/qa/tier2_runtime/debug_manager_test_spec.md) を正本とする。
+GDB RSP、ブレークポイント、ハンドラテーブル切替、およびJITキャッシュ協調のテストケースは [`debugger_test_spec.md`](docs/qa/tier3_plugins/debugger_test_spec.md) を正本とする。

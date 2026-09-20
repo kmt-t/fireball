@@ -233,7 +233,7 @@ ARM Cortex-M33 (ARMv8-M Mainline) における物理レジスタの厳格な役�
 |---|---|---|
 | 固定容量の関数実行記述子領域 | 関数メタデータへの参照とローカル値領域の開始位置 | オペランド領域とローカル値領域の値配列に記述子、戻りPC、型情報を埋め込まない。記述子の物理サイズ・ABI配置はターゲット実装で定義する。 |
 
-詳細正本: `runtime_interpreter.md`。 `{CallFrame_Layout}`
+詳細正本: `interpreter.md`。 `{CallFrame_Layout}`
 
 #### 制御ブロック復帰情報（独立固定容量領域、1件20バイト）
 
@@ -246,7 +246,7 @@ ARM Cortex-M33 (ARMv8-M Mainline) における物理レジスタの厳格な役�
 | `+0x10` | `result_arity` | u16 | ブロック戻り値数 |
 | `+0x12` | `reserved` | u16 | C構造体末尾のアライメント用パディング |
 
-制御ブロック（`block`, `loop`, `if`）の巻き戻し・分岐先脱出を管理する。詳細正本: `runtime_interpreter.md`。 `{ControlFrame_Layout}`
+制御ブロック（`block`, `loop`, `if`）の巻き戻し・分岐先脱出を管理する。詳細正本: `interpreter.md`。 `{ControlFrame_Layout}`
 
 ---
 

@@ -134,7 +134,7 @@ HAL が管轄するすべてのハードウェアドライバおよびコンソ�
 <!-- traceability: {WASI_Implementation} {URIAbstraction} {TypeSafeMessaging} {META_ZeroCostAbstraction} -->
 
 #### HAL の公開契約
-Fireball の HAL は、WASI 0.3p と親和性のある汎用インターフェースとして URI 解決、固定バッファスロット参照、ストリーム、クロック、ポーリングを提供する。`resolver` WIT の型と関数は [`interface_wit.md`](docs/components/tier1_interface/interface_wit.md) の契約に従う。
+Fireball の HAL は、WASI 0.3p と親和性のある汎用インターフェースとして URI 解決、固定バッファスロット参照、ストリーム、クロック、ポーリングを提供する。`resolver` WIT の型と関数は [`interface_wit.md`](docs/components/tier3_platform/interface_wit.md) の契約に従う。
 
 #### ゲスト側アダプタ
 既存の WASI Preview1 バイナリとの互換性を提供する `fd_write` 等の変換は、Tier 3 のゲストアダプタが担当する。`hal_dispatch` は Preview1 ABI、ゲスト iovec の走査、errno 変換の順序を定義せず、変換後の HAL 操作だけを処理する。

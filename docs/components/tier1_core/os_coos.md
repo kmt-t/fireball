@@ -3,6 +3,7 @@
      formal: formal/coos_channel_model.py
      benchmark: benchmarks/direct_context_switch_bench.py
      concept: concepts/coos_concept.py
+     wit: wit/coos_system_contract.wit
      test: ../../qa/tier1_core/os_coos_test_spec.md
 -->
 

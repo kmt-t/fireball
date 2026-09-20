@@ -24,16 +24,25 @@ class ComponentEntry(TypedDict):
     exists: bool
 
 
+class WitEntry(TypedDict):
+    name: str
+    path: str
+    exists: bool
+
+
 class TierContext(TypedDict):
     label: str
     directory: str
     components: list[ComponentEntry]
+    wit_contracts: list[WitEntry]
 
 
 class ArchitectureContext(TypedDict):
     architecture_document: str
     tiers: dict[str, TierContext]
     graph_nodes: list[str]
+    wit_contracts: dict[str, list[WitEntry]]
+    ambiguous_wit_names: list[str]
     component_links: list[str]
     missing_links: list[str]
     unlinked_components: list[str]
@@ -83,6 +92,20 @@ def collect_components(tier_name: str) -> list[ComponentEntry]:
     ]
 
 
+def collect_wit_contracts(tier_name: str) -> list[WitEntry]:
+    tier = TIERS[tier_name]
+    directory = REPO_ROOT / tier["directory"] / "wit"
+    documents = sorted(path for path in directory.glob("*.wit") if path.is_file())
+    return [
+        {
+            "name": document.stem,
+            "path": document.relative_to(REPO_ROOT).as_posix(),
+            "exists": True,
+        }
+        for document in documents
+    ]
+
+
 def extract_component_links(text: str) -> list[str]:
     links: set[str] = set()
     for token in text.split("]("):
@@ -110,15 +133,19 @@ def build_context(selected_tier: str | None) -> ArchitectureContext:
     architecture_text = read_architecture()
     tiers: dict[str, TierContext] = {}
     component_paths: set[str] = set()
+    wit_contracts: dict[str, list[WitEntry]] = {}
 
     for tier_name in tier_names:
         components = collect_components(tier_name)
+        contracts = collect_wit_contracts(tier_name)
         tiers[tier_name] = {
             "label": TIERS[tier_name]["label"],
             "directory": TIERS[tier_name]["directory"],
             "components": components,
+            "wit_contracts": contracts,
         }
         component_paths.update(component["path"] for component in components)
+        wit_contracts[tier_name] = contracts
 
     links = extract_component_links(architecture_text)
     missing_links = sorted(
@@ -126,11 +153,19 @@ def build_context(selected_tier: str | None) -> ArchitectureContext:
     )
     unlinked_components = sorted(component_paths.difference(links))
     unknown_links = sorted(set(links).difference(component_paths))
+    ambiguous_wit_names = sorted(
+        contract["path"]
+        for contracts in wit_contracts.values()
+        for contract in contracts
+        if contract["name"] in {"fireball", "memory", "runtime", "interface"}
+    )
 
     return {
         "architecture_document": ARCHITECTURE_PATH.relative_to(REPO_ROOT).as_posix(),
         "tiers": tiers,
         "graph_nodes": extract_graph_nodes(architecture_text),
+        "wit_contracts": wit_contracts,
+        "ambiguous_wit_names": ambiguous_wit_names,
         "component_links": links,
         "missing_links": missing_links,
         "unlinked_components": unlinked_components,
@@ -168,6 +203,8 @@ def main() -> int:
         for component in tier["components"]:
             print(f"  - {component['path']}")
     print(f"graph_nodes: {len(context['graph_nodes'])}")
+    print(f"wit_contracts: {sum(len(contracts) for contracts in context['wit_contracts'].values())}")
+    print(f"ambiguous_wit_names: {len(context['ambiguous_wit_names'])}")
     print(f"component_links: {len(context['component_links'])}")
     print(f"missing_links: {len(context['missing_links'])}")
     print(f"unlinked_components: {len(context['unlinked_components'])}")

@@ -28,10 +28,11 @@ vMMIOアドレス空間（Stage 2/3）に対しては、どちらのパスも最
 
 ## 4. `fireball_call` WIT定義
 <!-- traceability: {WIT_Interface_Spec} -->
-`fireball_call`のWIT (WebAssembly Interface Type) 定義は以下の通りである。詳細は [`interface_wit.md`](docs/components/tier1_interface/interface_wit.md) を参照のこと。
+`fireball_call`のWIT (WebAssembly Interface Type) 定義は以下の通りである。詳細は [`interface_wit.md`](docs/components/tier3_platform/interface_wit.md) を参照のこと。
+WITシグネチャの正本は [`fireball_hostcall_contract.wit`](docs/components/tier3_platform/wit/fireball_hostcall_contract.wit) である。
 
 ```wit
-package fireball:host;
+package fireball:host@0.1.0;
 
 interface trap {
   /// Performs a low-level host call with one fixed seven-word ABI.
@@ -46,7 +47,7 @@ interface trap {
   ) -> u32;
 }
 
-world fireball {
+world fireball-hostcall {
   import trap;
   // 高レベルのWASI/HAL操作は、Tier 2 HALの公開抽象IFへ接続される。
 }

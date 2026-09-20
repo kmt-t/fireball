@@ -1,5 +1,5 @@
 """
-docs/components/tier1_interface/formal/wit_resource_lifecycle_model.py
+docs/components/tier3_platform/formal/wit_resource_lifecycle_model.py
 pyModelChecking による WIT インターフェースの
 (1) `hal-buffer-slice`（Runtimeの`bind_runtime`でマップされるHAL固定スロット）は
     `unbind_runtime`された後、決して操作が実行されないこと
@@ -11,7 +11,7 @@ pyModelChecking による WIT インターフェースの
 from pyModelChecking import Kripke
 from pyModelChecking.CTL import AF, AG, AtomicProposition, Imply, Not
 
-BACKS = ["components/tier1_interface/interface_wit.md"]
+BACKS = ["components/tier3_platform/interface_wit.md"]
 
 
 def build_model(*, guards: bool = True) -> Kripke:

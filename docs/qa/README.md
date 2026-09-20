@@ -34,7 +34,7 @@
 | Tier 1 Core | Scheduler | [os_scheduler_test_spec.md](docs/qa/tier1_core/os_scheduler_test_spec.md) |
 | Tier 1 Core | System Config | [system_config_test_spec.md](docs/qa/tier1_core/system_config_test_spec.md) |
 | Tier 1 Core | System Containers | [system_containers_test_spec.md](docs/qa/tier1_core/system_containers_test_spec.md) |
-| Tier 1 Interface | WIT Interface | [interface_wit_test_spec.md](docs/qa/tier1_interface/interface_wit_test_spec.md) |
+| Tier 3 Platform | WIT Interface | [interface_wit_test_spec.md](docs/qa/tier3_platform/interface_wit_test_spec.md) |
 | Tier 1 Interface | IPC Router | [ipc_router_test_spec.md](docs/qa/tier1_interface/ipc_router_test_spec.md) |
 | Tier 1 Interface | System Memory | [system_memory_test_spec.md](docs/qa/tier1_interface/system_memory_test_spec.md) |
 | Tier 1 Interface | System Service | [system_service_test_spec.md](docs/qa/tier1_interface/system_service_test_spec.md) |

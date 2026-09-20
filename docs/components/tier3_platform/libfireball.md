@@ -102,7 +102,7 @@ sequenceDiagram
 ### 4.5 vIRQ登録ラッパー
 <!-- traceability: {GLOBAL_InterruptWakeup} {META_ConfigurableSystem} -->
 
-`libfireball` は、ゲストが静的なvIRQノードへWASM関数インデックスを登録・解除するための薄いラッパーを提供する。ラッパーは [`runtime_syscall.md`](docs/components/tier2_runtime/runtime_syscall.md) の `VIRQ_REGISTER` / `VIRQ_UNREGISTER` を `fireball_call` で発行する。vMMIOのvIRQページは原因源表と有効登録の参照スナップショットであり、ゲストの登録制御には使用しない。`fireball.wit` のリソースや WASI の `pollable` 型には追加しない。
+`libfireball` は、ゲストが静的なvIRQノードへWASM関数インデックスを登録・解除するための薄いラッパーを提供する。ラッパーは [`runtime_syscall.md`](docs/components/tier2_runtime/runtime_syscall.md) の `VIRQ_REGISTER` / `VIRQ_UNREGISTER` を `fireball_call` で発行する。vMMIOのvIRQページは原因源表と有効登録の参照スナップショットであり、ゲストの登録制御には使用しない。[`fireball_hostcall_contract.wit`](wit/fireball_hostcall_contract.wit) のリソースや WASI の `pollable` 型には追加しない。
 
 | ゲスト側関数 | 動作 | エラー処理 |
 | :--- | :--- | :--- |

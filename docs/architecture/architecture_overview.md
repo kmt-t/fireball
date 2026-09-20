@@ -10,11 +10,11 @@
 | :--- | :--- | :--- |
 | **Tier 0** | システムが満たす受入要求を定義する。 | [`requirement_list.md`](docs/requires/requirement_list.md) |
 | **Tier 1 Core** | 協調実行、静的設定、基盤コンテナを定義する。 | [`tier1_core/`](docs/components/tier1_core/) |
-| **Tier 1 Interface** | WIT、IPC、サービス、メモリ契約を定義する。 | [`tier1_interface/`](docs/components/tier1_interface/) |
+| **Tier 1 Interface** | IPC、サービス、メモリ契約を定義する。 | [`tier1_interface/`](docs/components/tier1_interface/) |
 | **Tier 2 Runtime** | Runtime のライフサイクル、ローダ、仮想メモリ、HAL抽象、システムコール、プラグイン接続契約を定義する。 | [`tier2_runtime/`](docs/components/tier2_runtime/) |
 | **Tier 3 Executer** | Interpreter と JIT の具体的な実行系を定義する。 | [`tier3_executer/`](docs/components/tier3_executer/) |
 | **Tier 3 Plugins** | Debugger と Guest Profiler の交換可能な実装を定義する。 | [`tier3_plugins/`](docs/components/tier3_plugins/) |
-| **Tier 3 Platform** | HAL の物理ドライバとゲスト側アダプタを定義する。 | [`tier3_platform/`](docs/components/tier3_platform/) |
+| **Tier 3 Platform** | ゲスト公開WIT、ゲスト側アダプタ、HAL の物理ドライバを定義する。 | [`tier3_platform/`](docs/components/tier3_platform/) |
 
 `docs/specs/` は複数Tierから参照する外部規格・ABI・命令カタログを置く。`docs/qa/` は各コンポーネントのテスト仕様と横断検証資料を置く。これらは実行コンポーネントのTierには含めない。
 
@@ -31,7 +31,6 @@ flowchart LR
     containers["system_containers"]
   end
   subgraph T1I["Tier 1 Interface"]
-    wit["interface_wit"]
     ipc["ipc_router"]
     memory_contract["system_memory"]
     service["system_service"]
@@ -58,6 +57,7 @@ flowchart LR
     profiler["guest_profiler"]
   end
   subgraph T3H["Tier 3 Platform"]
+    wit["interface_wit"]
     driver["platform_driver"]
     libfireball["libfireball"]
   end
@@ -65,9 +65,7 @@ flowchart LR
   scheduler --> coos
   ipc --> coos
   ipc --> memory_contract
-  ipc --> wit
   service --> ipc
-  service --> wit
   memory --> memory_contract
   memory --> config
   loader --> containers
@@ -75,10 +73,8 @@ flowchart LR
   vmmio --> memory
   vmmio --> config
   hal --> ipc
-  hal --> wit
   syscall --> hal
   syscall --> vmmio
-  syscall --> wit
   logging --> coos
   logging --> containers
   vsoc --> coos
@@ -128,7 +124,6 @@ flowchart LR
 
 | コンポーネント | 責務 | 詳細 |
 | :--- | :--- | :--- |
-| `interface_wit` | 公開WITと型契約 | [`interface_wit.md`](docs/components/tier1_interface/interface_wit.md) |
 | `ipc_router` | URIルーティングとCSPメッセージ配送 | [`ipc_router.md`](docs/components/tier1_interface/ipc_router.md) |
 | `system_memory` | メモリプールと所有権の抽象契約 | [`system_memory.md`](docs/components/tier1_interface/system_memory.md) |
 | `system_service` | システムサービスの公開契約 | [`system_service.md`](docs/components/tier1_interface/system_service.md) |
@@ -167,5 +162,6 @@ flowchart LR
 
 | コンポーネント | 責務 | 詳細 |
 | :--- | :--- | :--- |
+| `interface_wit` | ゲストへ公開するWITと型契約 | [`interface_wit.md`](docs/components/tier3_platform/interface_wit.md) |
 | `platform_driver` | 物理デバイスのHALドライバ実装 | [`platform_driver.md`](docs/components/tier3_platform/platform_driver.md) |
 | `libfireball` | ゲストへ組み込むWASI／Fireball ABIアダプタ | [`libfireball.md`](docs/components/tier3_platform/libfireball.md) |

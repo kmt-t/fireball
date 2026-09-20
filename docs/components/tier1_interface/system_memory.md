@@ -3,7 +3,7 @@
      contract-only: true
      formal: formal/system_memory_model.py
      test: docs/qa/tier1_interface/system_memory_test_spec.md
-     wit: wit/memory.wit
+     wit: wit/system_memory_contract.wit
 -->
 
 ## 1. コンセプト
@@ -40,7 +40,7 @@
 <!-- traceability: {GLOBAL_Policy_Memory} -->
 本コンポーネントの公開APIは `{META_StaticDI}` が定義する `co_mem` インターフェース契約そのものである。実装側（`runtime_memory.md`）は本契約をそのまま実現し、契約自体（メソッド名・引数・戻り値の意味）に食い違いがあれば本節を正とする。
 
-WITインターフェース名は kebab-case で定義されるが、C++の公開APIバインディングにおいては、`fireball` 名前空間の下に `snake_case`（例: `fireball::co_mem::host_alloc`）として実装・公開される。以下の各シグネチャは [`memory.wit`](docs/components/tier1_interface/wit/memory.wit) の `interface memory` を一言一句正本として引用する。プール基点アドレス・サイズの静的構成（5.2節）は `system_config.md` の `FB_CONF_*` 定数群を正本とし、本契約は実行時初期化 API を持たない（`{Size_20KSLOC}` の製品ソースコード規模を抑える方針に基づき、起動シーケンス内の静的構成のみで足りるため）。
+WITインターフェース名は kebab-case で定義されるが、C++の公開APIバインディングにおいては、`fireball` 名前空間の下に `snake_case`（例: `fireball::co_mem::host_alloc`）として実装・公開される。以下の各シグネチャは [`system_memory_contract.wit`](docs/components/tier1_interface/wit/system_memory_contract.wit) の `interface memory` を一言一句正本として引用する。プール基点アドレス・サイズの静的構成（5.2節）は `system_config.md` の `FB_CONF_*` 定数群を正本とし、本契約は実行時初期化 API を持たない（`{Size_20KSLOC}` の製品ソースコード規模を抑える方針に基づき、起動シーケンス内の静的構成のみで足りるため）。
 
 ### 4.1 ホスト用ヒープ（`host-heap`）
 <!-- traceability: {GLOBAL_Policy_Memory} {System_Allocator} -->
@@ -68,7 +68,7 @@ WITインターフェース名は kebab-case で定義されるが、C++の公�
 | 機能概要 | COOS がタスクを起動する際に、タスク固有の静的メモリパーティションを貸与する。**汎用ヒープAPIではない**: `{CooperativeMultitasking}`が明示するとおり、サイズ引数を取る動的確保も汎用ポインタの返却も提供せず、コンパイル時に確定した固定長パーティションのみを貸し出す。各タスクへの貸与サイズはタスク種別・搭載予定モジュール規模に応じて `system_config.md` の `FB_CONF_TASK_HEAP_SIZES` ROM配列でスロットごとに個別設定される（呼び出し元がサイズを指定するのではなく、あくまでコンパイル時に確定した値を参照するのみ）。 |
 | シグネチャ | `acquire-task-heap() -> result<partition-slice, memory-error>`<br>(C++マッピング: `fireball::co_mem::acquire_task_heap`) |
 | 引数 | なし。所有者はスケジューラの実行中タスクから決定される |
-| 戻り値 | 成功時は `partition-slice`（`memory.wit` `types.partition-slice`。基点アドレス・サイズ・所有タスクを持つ非所有ビュー相当のレコード）。失敗時は `memory-error` |
+| 戻り値 | 成功時は `partition-slice`（`system_memory_contract.wit` `types.partition-slice`。基点アドレス・サイズ・所有タスクを持つ非所有ビュー相当のレコード）。失敗時は `memory-error` |
 | 事前条件 | COOS のタスク起動シーケンス内から呼び出されること |
 | 事後条件 | 返却された `partition-slice` の範囲は他タスクのパーティションと重複しない |
 
@@ -81,7 +81,7 @@ WITインターフェース名は kebab-case で定義されるが、C++の公�
 | 不変条件 | 所有者以外からの呼び出しは無効（返却されない） |
 
 #### 型付きプールスロットの貸与・返却（`acquire-slot` / `release-slot`）
-タスクヒープと同様に固定長・静的確保のみを行う、型付きスロット単位の貸与契約。**このAPIは `memory.wit` には現れない**: WIT はジェネリクスを表現できないため、`pool-ref<T>` はコンポーネント境界を越えない C++ 側のみの型付きラッパーとして提供される（WIT 側は `acquire-task-heap` の汎用パーティションを型無しで貸与し、型安全性は C++ テンプレートが実現する）。**主要な用途の一つ**: COOS タスクの C++20 コルーチンフレーム確保。`promise_type::operator new`/`operator delete` が本APIを介してホスト用ヒープではなくカーネルプール（`FB_CONF_KERNEL_HEAP_SIZE`）内の静的スロットからフレームを確保することで、`malloc`/`new` を用いずにコルーチンを起動する（`{CooperativeMultitasking}` `{GLOBAL_UseCpp20Coroutine}`、詳細は [`os_scheduler.md`](docs/components/tier1_core/os_scheduler.md) `spawn_task` を正本とする）。
+タスクヒープと同様に固定長・静的確保のみを行う、型付きスロット単位の貸与契約。**このAPIは `system_memory_contract.wit` には現れない**: WIT はジェネリクスを表現できないため、`pool-ref<T>` はコンポーネント境界を越えない C++ 側のみの型付きラッパーとして提供される（WIT 側は `acquire-task-heap` の汎用パーティションを型無しで貸与し、型安全性は C++ テンプレートが実現する）。**主要な用途の一つ**: COOS タスクの C++20 コルーチンフレーム確保。`promise_type::operator new`/`operator delete` が本APIを介してホスト用ヒープではなくカーネルプール（`FB_CONF_KERNEL_HEAP_SIZE`）内の静的スロットからフレームを確保することで、`malloc`/`new` を用いずにコルーチンを起動する（`{CooperativeMultitasking}` `{GLOBAL_UseCpp20Coroutine}`、詳細は [`os_scheduler.md`](docs/components/tier1_core/os_scheduler.md) `spawn_task` を正本とする）。
 
 | 項目 | 内容 |
 | :--- | :--- |
@@ -98,7 +98,7 @@ WITインターフェース名は kebab-case で定義されるが、C++の公�
 | 機能概要 | IPC転送用の共有メモリブロックを割り当てる。4KBのFC=14仮想予約スロットは物理SHM容量とは独立し、物理バック領域は指定サイズ分だけ消費する。 |
 | シグネチャ | `allocate-shared(size-bytes: byte-count) -> result<shm-handle, memory-error>` |
 | 引数 | `size-bytes`: 割り当てサイズ |
-| 戻り値 | 成功時は `shm-handle`（`memory.wit` `types.shm-handle`。ハンドル値・物理バック領域の基点アドレス・サイズ・所有タスクを持つレコード）。FC=14のゲスト仮想アドレスはハンドルの予約ページ番号から別途求める。C++ 実装はこれを RAII 所有権付きの `shared_block` ラッパーで包み、デストラクタでの自動解放を保証する（`{ADR_SharedBlockRaii}`）。失敗時は `memory-error` |
+| 戻り値 | 成功時は `shm-handle`（`system_memory_contract.wit` `types.shm-handle`。ハンドル値・物理バック領域の基点アドレス・サイズ・所有タスクを持つレコード）。FC=14のゲスト仮想アドレスはハンドルの予約ページ番号から別途求める。C++ 実装はこれを RAII 所有権付きの `shared_block` ラッパーで包み、デストラクタでの自動解放を保証する（`{ADR_SharedBlockRaii}`）。失敗時は `memory-error` |
 | 補足 | なお、HAL デバイス通信用のバッファは本共有メモリとは直交し、HAL 自身が管轄する固定長の HALバッファプールから切り出される。 |
 
 #### 所有権要求（claim）
@@ -106,7 +106,7 @@ WITインターフェース名は kebab-case で定義されるが、C++の公�
 | :--- | :--- |
 | 機能概要 | 移譲済み共有メモリハンドルから、実行中タスクの所有権を確立する。 |
 | シグネチャ | `claim(handle: address) -> result<shm-handle, memory-error>` |
-| 引数 | `handle`: 共有メモリハンドル値（`{Syscall_Mapping}` / `memory.wit` の `shm-handle.handle` と同一の `(page_idx << 8) \| slot_idx` 形式。慣用的に `shm-id` とも呼ぶ） |
+| 引数 | `handle`: 共有メモリハンドル値（`{Syscall_Mapping}` / `system_memory_contract.wit` の `shm-handle.handle` と同一の `(page_idx << 8) \| slot_idx` 形式。慣用的に `shm-id` とも呼ぶ） |
 | 戻り値 | 成功時は `shm-handle`（C++ 実装は `shared_block` ラッパーとして返す） |
 | 事前条件 | 対象ハンドルが移譲済みで、実行中タスクへの所有権確立が許可されていること |
 

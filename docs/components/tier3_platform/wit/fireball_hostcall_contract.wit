@@ -1,0 +1,23 @@
+package fireball:host@0.1.0;
+
+/// 低レベル・ホストコール・インターフェース
+interface trap {
+    /// Fireball固有の高速ホスト呼び出し
+    fireball-call: func(
+        id: u32,
+        arg0: u32,
+        arg1: u32,
+        arg2: u32,
+        arg3: u32,
+        arg4: u32,
+        arg5: u32
+    ) -> u32;
+}
+
+/// Fireball hostcall contract.
+///
+/// URI ResolverおよびHALバッファ操作は
+/// `fireball_hal_contract.wit` に分離する。
+world fireball-hostcall {
+    import trap;
+}

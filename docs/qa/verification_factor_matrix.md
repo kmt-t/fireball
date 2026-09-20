@@ -25,7 +25,7 @@
 | Tier 1 Core | `os_scheduler` | `scheduler_concept.py` | N/A（決定的キュー操作はテストで直接検証） | `os_scheduler_test_spec.md` | `test_scheduler.py` | 6, 9 | required |
 | Tier 1 Core | `system_config` | N/A（静的設定の正本） | `system_config_model.py` | `system_config_test_spec.md` | `test_scheduler.py`, `test_memory.py` | 1, 10 | required |
 | Tier 1 Core | `system_containers` | `flat_view_concept.py` | N/A（コンテナ不変条件を直接検証） | `system_containers_test_spec.md` | `test_containers.py` | 1, 4, 5, 8, 9 | required |
-| Tier 1 Interface | `interface_wit` | N/A（WIT 契約） | N/A（WIT の構文・契約検証） | `interface_wit_test_spec.md` | `test_interop_abi.py` | 2, 11, 12 | contract_only |
+| Tier 3 Platform | `interface_wit` | N/A（WIT 契約） | N/A（WIT の構文・契約検証） | `interface_wit_test_spec.md` | `test_interop_abi.py` | 2, 11, 12 | contract_only |
 | Tier 1 Interface | `ipc_router` | `ipc_router_concept.py` | `csp_handoff_model.py` | `ipc_router_test_spec.md` | `test_ipc_router.py` | 9 | required |
 | Tier 1 Interface | `system_memory` | N/A（所有権契約） | `system_memory_model.py` | `system_memory_test_spec.md` | `test_memory.py` | 1, 8, 10 | contract_only |
 | Tier 1 Interface | `system_service` | `service_concept.py` | `service_fault_isolation_model.py`, `wit_resource_lifecycle_model.py` | `system_service_test_spec.md` | `test_ipc_router.py`, `test_vsoc.py` | 2, 6, 9, 11 | required |
@@ -59,7 +59,7 @@
 | Tier 1 Core | [os_scheduler.md](docs/components/tier1_core/os_scheduler.md) |
 | Tier 1 Core | [system_config.md](docs/components/tier1_core/system_config.md) |
 | Tier 1 Core | [system_containers.md](docs/components/tier1_core/system_containers.md) |
-| Tier 1 Interface | [interface_wit.md](docs/components/tier1_interface/interface_wit.md) |
+| Tier 3 Platform | [interface_wit.md](docs/components/tier3_platform/interface_wit.md) |
 | Tier 1 Interface | [ipc_router.md](docs/components/tier1_interface/ipc_router.md) |
 | Tier 1 Interface | [system_memory.md](docs/components/tier1_interface/system_memory.md) |
 | Tier 1 Interface | [system_service.md](docs/components/tier1_interface/system_service.md) |
@@ -107,7 +107,7 @@
 | formal | [csp_handoff_model.py](docs/components/tier1_interface/formal/csp_handoff_model.py) |
 | formal | [service_fault_isolation_model.py](docs/components/tier1_interface/formal/service_fault_isolation_model.py) |
 | formal | [system_memory_model.py](docs/components/tier1_interface/formal/system_memory_model.py) |
-| formal | [wit_resource_lifecycle_model.py](docs/components/tier1_interface/formal/wit_resource_lifecycle_model.py) |
+| formal | [wit_resource_lifecycle_model.py](docs/components/tier3_platform/formal/wit_resource_lifecycle_model.py) |
 | formal | [hal_dispatch_contract_model.py](docs/components/tier2_runtime/formal/hal_dispatch_contract_model.py) |
 | formal | [interpreter_stack_model.py](docs/components/tier3_executer/formal/interpreter_stack_model.py) |
 | formal | [loader_verification_model.py](docs/components/tier2_runtime/formal/loader_verification_model.py) |
@@ -123,7 +123,7 @@
 | test spec | [os_scheduler_test_spec.md](docs/qa/tier1_core/os_scheduler_test_spec.md) |
 | test spec | [system_config_test_spec.md](docs/qa/tier1_core/system_config_test_spec.md) |
 | test spec | [system_containers_test_spec.md](docs/qa/tier1_core/system_containers_test_spec.md) |
-| test spec | [interface_wit_test_spec.md](docs/qa/tier1_interface/interface_wit_test_spec.md) |
+| test spec | [interface_wit_test_spec.md](docs/qa/tier3_platform/interface_wit_test_spec.md) |
 | test spec | [ipc_router_test_spec.md](docs/qa/tier1_interface/ipc_router_test_spec.md) |
 | test spec | [system_memory_test_spec.md](docs/qa/tier1_interface/system_memory_test_spec.md) |
 | test spec | [system_service_test_spec.md](docs/qa/tier1_interface/system_service_test_spec.md) |

@@ -15,7 +15,7 @@
   - アーキテクチャの早期妥当性確認、状態遷移の探索、および Gotchas（実装上の勘所・不変条件）の抽出を目的とした Python 製の参照シミュレータ（`experiments/pysim`）。
   - 各シナリオには、この参照実装上で動作する実行可能なリファレンススクリプト（`experiments/pysim/qa/scenarios/`）が提供されており、仕様が実行可能（Executable Specification）であることを実証している。
 
-- **対象 Tier**: Tier 1 Core (`os_coos`, `os_scheduler`, `system_config`, `system_containers`, `system_memory`), Tier 1 Interface (`interface_wit`, `ipc_router`, `system_service`), Tier 2 Runtime (`runtime_vsoc`, `runtime_loader`, `runtime_vmmio`, `runtime_memory`, `runtime_logging`, `runtime_syscall`, `hal_dispatch`), Tier 3 Executer (`interpreter`, `jit_compiler`, `jit_runtime`), Tier 3 Plugins (`debugger`, `guest_profiler`), Tier 3 Platform (`platform_driver`, `libfireball`)
+- **対象 Tier**: Tier 1 Core (`os_coos`, `os_scheduler`, `system_config`, `system_containers`, `system_memory`), Tier 1 Interface (`ipc_router`, `system_service`), Tier 2 Runtime (`runtime_vsoc`, `runtime_loader`, `runtime_vmmio`, `runtime_memory`, `runtime_logging`, `runtime_syscall`, `hal_dispatch`), Tier 3 Executer (`interpreter`, `jit_compiler`, `jit_runtime`), Tier 3 Plugins (`debugger`, `guest_profiler`), Tier 3 Platform (`interface_wit`, `platform_driver`, `libfireball`)
 - **参照実装テストスイート**: `experiments/pysim/qa/scenarios/`
 - **参照テストランナー**: [`run_all.py`](experiments/pysim/qa/scenarios/run_all.py)
 
@@ -27,7 +27,7 @@
 | **Tier 1 Core** | [`os_scheduler.md`](docs/components/tier1_core/os_scheduler.md) | Fuel / `yield_every` 境界中断、DIRECT_SWITCH | Scenario 6, 9 |
 | **Tier 1 Core** | [`system_config.md`](docs/components/tier1_core/system_config.md) | システム静的定数、スタック・RAM容量制約 | Scenario 1, 10 |
 | **Tier 1 Core** | [`system_containers.md`](docs/components/tier1_core/system_containers.md) | `RadixBinaryTreeView` (bswap32), `FlatMapView`, `RingBuffer` | Scenario 1, 4, 5, 9 |
-| **Tier 1 Interface** | [`interface_wit.md`](docs/components/tier1_interface/interface_wit.md) | 公開WIT、URI Resolver、型シグネチャ整合 | Scenario 2, 11, 12 |
+| **Tier 3 Platform** | [`interface_wit.md`](docs/components/tier3_platform/interface_wit.md) | 公開WIT、URI Resolver、型シグネチャ整合 | Scenario 2, 11, 12 |
 | | [`ipc_router.md`](docs/components/tier1_interface/ipc_router.md) | 3段階ルーティング、RBAC、Zero-Copy 所有権移譲 | Scenario 9 |
 | | [`system_service.md`](docs/components/tier1_interface/system_service.md) | システムサービス呼び出し、WASI トランスポート | Scenario 2, 11, 12 |
 | **Tier 2 Runtime** | [`runtime_vsoc.md`](docs/components/tier2_runtime/runtime_vsoc.md) | 統合 ExecEnv、モジュールリンク、共有メモリ | Scenario 1, 4, 6, 8 |

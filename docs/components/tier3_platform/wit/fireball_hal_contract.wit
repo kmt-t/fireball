@@ -1,6 +1,6 @@
 package fireball:host@0.1.0;
 
-/// 共通リカバリー戦略とエラー型定義
+/// HAL契約で共有するリカバリー戦略と型
 interface types {
     /// 障害時のリカバリー戦略カテゴリ
     enum recovery-strategy-category {
@@ -31,13 +31,12 @@ interface types {
     }
 }
 
-/// WASI 0.3p / IPC 動的インターフェース取得・HALバッファ解決 (URI Resolver)
+/// WASI 0.3p / IPC 動的インターフェース取得・HALバッファ解決（URI Resolver）
 interface resolver {
     use types.{hal-buffer-slice, operation-result, recovery-strategy-category};
 
-    /// IPC 宛先 URI (e.g. "fireball://hal/uart/0", "fireball://hal/gpio/0", "fireball://hal/timer/0", "fireball://hal/i2c/0", "fireball://hal/stdout/0") から通信チャネルハンドルを取得
+    /// IPC 宛先 URI から通信チャネルハンドルを取得
     get-interface: func(uri: string) -> result<u32, recovery-strategy-category>;
-    /// HALバッファプール（vMMIO/DYNAMIC）バッファの確保
     /// HALが保持する固定バッファスロットのビューを取得
     get-buffer: func(slot-index: u32) -> result<hal-buffer-slice, recovery-strategy-category>;
     /// ストリームからHALバッファへ読み込む
@@ -58,22 +57,13 @@ interface resolver {
     poll-wait: func(handle: u32) -> operation-result;
 }
 
-/// 低レベル・ホストコール・インターフェース
-interface trap {
-    fireball-call: func(id: u32, arg0: u32, arg1: u32, arg2: u32, arg3: u32, arg4: u32, arg5: u32) -> u32;
-}
-
-/// Fireball ハイパーバイザ Host World (HAL と WASI 0.3p の親和性)
+/// Fireball HAL contract.
 ///
-/// GPIO・タイマー・バス・ストリーム・コンソール個別の WIT リソースは定義しない。
-/// HAL は WASI 0.3p と親和性のある汎用IFであり、`resolver.get-interface(uri)` で対象デバイス/HALを
-/// 解決し、`get-buffer` で得た `hal-buffer-slice` に対して
-/// IPC コマンドID（`hal_dispatch.md` §5.2 を正本とする）を発行することで、
-/// あらゆる WASI 0.3p 相当の読み書き・バス転送・非同期通知（poll）を一本化して表現する。
-world fireball {
+/// 個別デバイスのWITリソースは定義せず、URI Resolver、固定バッファ
+/// スライス、ストリーム・クロック・ポーリング操作を公開する。
+world fireball-hal {
     import types;
     import resolver;
-    import trap;
 
     export resolver;
 }

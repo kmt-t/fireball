@@ -5,7 +5,7 @@
 
 ## 0. アーキテクチャ分類
 <!-- traceability: {META_3TierSeparation} -->
-本仕様書は **Tier 3（横串物理仕様・具象カタログ: Cross-cutting Physical Specs & Catalogs）** に分類される（[`document_structure.md`](docs/architecture/document_structure.md) を正本とする）。WASI 0.1p ABI はゲスト側アダプタ `libfireball` が利用する物理仕様として `docs/specs/` に置く。Fireball のネイティブ実行基盤である WASI 0.3p / Component Model は、専用の WIT リソース型ではなく URI Resolver + HAL バッファプール + IPC コマンドID による汎用機構として実現される。公開契約は Tier 1 の [`interface_wit.md`](docs/components/tier1_interface/interface_wit.md)、HAL操作は Tier 2 の [`hal_dispatch.md`](docs/components/tier2_runtime/hal_dispatch.md)、ゲスト側変換は Tier 3 の `libfireball` 仕様を正本とする。
+本仕様書は **Tier 3（横串物理仕様・具象カタログ: Cross-cutting Physical Specs & Catalogs）** に分類される（[`document_structure.md`](docs/architecture/document_structure.md) を正本とする）。WASI 0.1p ABI はゲスト側アダプタ `libfireball` が利用する物理仕様として `docs/specs/` に置く。Fireball のネイティブ実行基盤である WASI 0.3p / Component Model は、専用の WIT リソース型ではなく URI Resolver + HAL バッファプール + IPC コマンドID による汎用機構として実現される。公開契約は Tier 3 の [`interface_wit.md`](docs/components/tier3_platform/interface_wit.md)、HAL操作は Tier 2 の [`hal_dispatch.md`](docs/components/tier2_runtime/hal_dispatch.md)、ゲスト側変換は Tier 3 の `libfireball` 仕様を正本とする。
 
 ## 1. 概要と基本思想
 <!-- traceability: {Type_Vocabulary} {TypeSafeMessaging} {META_ZeroCostAbstraction} -->

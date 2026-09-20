@@ -291,7 +291,7 @@ sequenceDiagram
 ### 5.1 公開API
 外部から利用可能なオブジェクト指向APIを定義する。
 
-以下で用いる `operation-result` は [`fireball.wit`](docs/components/tier1_interface/wit/fireball.wit) の `types.operation-result` 型別名であり、成功値または `recovery-strategy-category` を返す。
+以下で用いる `operation-result` は [`fireball_hal_contract.wit`](docs/components/tier3_platform/wit/fireball_hal_contract.wit) の `types.operation-result` 型別名であり、成功値または `recovery-strategy-category` を返す。
 
 #### 準備（prepare）
 

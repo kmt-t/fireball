@@ -2,7 +2,7 @@
 
 ## 1. 目的と対象範囲
 
-正本: [`interface_wit.md`](docs/components/tier1_interface/interface_wit.md)
+正本: [`interface_wit.md`](docs/components/tier3_platform/interface_wit.md)
 参考実装: なし（WIT定義そのものはコンセプトコードを持たない。`recovery-strategy-category` の実験的実装はバージョン管理外の `experiments/pysim` ディレクトリに置かれているが、本書の検証対象外である）。
 
 `recovery-strategy-category`（ignore/retry/restart/panic）、低レベルトラップインターフェース（`fireball-call`）、コンソール生バイト出力経路に関する契約を検証する。個別デバイスのIPCコマンドID実装（GPIO/タイマー/バス等）は [`hal_dispatch_test_spec.md`](docs/qa/tier2_runtime/hal_dispatch_test_spec.md) / [`platform_driver_test_spec.md`](docs/qa/tier3_platform/platform_driver_test_spec.md) の責務とする。

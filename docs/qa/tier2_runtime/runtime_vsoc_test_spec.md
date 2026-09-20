@@ -49,7 +49,7 @@ Loader/Interpreter/JIT/vMMIO/Debuggerを統合する`vsoc_harness`（静的DI）
 | TEST-VSOC-52 | Safepoint前の登録変更不可視性 | 有効登録A、保留登録B | Safepoint前とSafepoint後に同じイベントを配送 | 前半はA、Safepoint後はBだけが観測され、途中状態は観測されない | `{JIT_Safepoint}` |
 | TEST-VSOC-53 | 原因レコードの階層伝播 | root/category/deviceに登録済み関数 | `PASS_THROUGH`を返すイベントを配送 | `root → 分類 → デバイス → ゲスト関数`の順に1回ずつ呼ばれる | `runtime_vsoc.md` `dispatch-interrupt-event` |
 | TEST-VSOC-54 | HANDLEDとREJECTの終端 | 各階層の関数が結果を返す | `HANDLED`または`REJECT`を返す | `HANDLED`は子へ進まず、`REJECT`は診断後に終了し、FAULTへ再帰配送しない | `runtime_vsoc.md` `dispatch-interrupt-event` |
-| TEST-VSOC-55 | WASIポーリングとの分離 | vIRQイベントとHALポーリングハンドルが同時に存在 | 両経路を独立して処理 | vIRQ配送が`poll-check`/`poll-wait`を起動せず、ポーリングがvIRQ登録を変更しない | [`interface_wit.md`](docs/components/tier1_interface/interface_wit.md) のポーリング契約 |
+| TEST-VSOC-55 | WASIポーリングとの分離 | vIRQイベントとHALポーリングハンドルが同時に存在 | 両経路を独立して処理 | vIRQ配送が`poll-check`/`poll-wait`を起動せず、ポーリングがvIRQ登録を変更しない | [`interface_wit.md`](docs/components/tier3_platform/interface_wit.md) のポーリング契約 |
 | TEST-VSOC-56 | 再スケジュール世代境界での再開可能実行 | COOSの世代観測コールバックが次のトレース境界でyieldを要求 | `run_cooperative()`を1スライス進めてから再開する | vSoCは命令途中ではなくトレース境界で`None`を返して制御をCOOSへ戻し、同じ実行コンテキストから再開して結果を保持する | `{ADR_InterruptRescheduleGeneration}` `{ADR_TraceBoundaryYield}` |
 | TEST-VSOC-23 | ブレークポイントヒットでDebugging状態へ | 任意の実行状態 | ブレークポイント到達 | `(any)→Debugging` | - |
 | TEST-VSOC-24 | resume(interp)でJITキャッシュflush | Debugging状態 | `resume(interp)`を呼ぶ | JITキャッシュがflushされ、PCを保持したままInterpreterRunへ | `{VSOC_Lifecycle}` |
@@ -81,6 +81,6 @@ Loader/Interpreter/JIT/vMMIO/Debuggerを統合する`vsoc_harness`（静的DI）
 
 ## 4. 未検証・スコープ外
 
-- [`vsoc_runtime.wit`](docs/components/tier2_runtime/wit/vsoc_runtime.wit)によるWIT型定義そのものとの整合性。
+- [`runtime_vsoc_contract.wit`](docs/components/tier2_runtime/wit/runtime_vsoc_contract.wit)によるWIT型定義そのものとの整合性。
 - Cortex-M33実機でのSafepointチェック周期の精度（`{Challenge_ApproximateYield}`は仕様上も「検討中」の未解決課題）。
 - マルチコア環境でのメモリ可視性（「既知の制限」でスコープ外と明記）。

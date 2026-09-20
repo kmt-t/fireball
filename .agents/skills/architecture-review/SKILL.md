@@ -47,6 +47,8 @@ python .agents/skills/architecture-review/scripts/collect_arch_context.py --json
 - Tier が document_structure.md の配置規則と一致している。
 - 契約・抽象化を定義する文書と具体実装を定義する文書の階層が逆転していない。
 - Interpreter と JIT は tier3_executer、Debugger と Guest Profiler は tier3_plugins、物理ドライバとゲスト側アダプタは tier3_platform に分類されている。
+- 各 Tier の外部契約に対応する WIT ファイルが、その Tier の `wit/` 配下に存在する。
+- WIT ファイル名から、契約対象と公開方向（例: `system_memory_contract.wit`、`runtime_vsoc_contract.wit`、`fireball_hostcall_contract.wit`、`fireball_hal_contract.wit`）を判別できる。
 - Tier の昇格・降格に、責務または依存方向上の根拠がある。
 
 ### 3. 責務境界監査
@@ -75,6 +77,7 @@ python .agents/skills/architecture-review/scripts/collect_arch_context.py --json
 - リンクの相対パスが実ファイルを指す。
 - 廃止された Tier 名、コンポーネント名、旧ファイル名が残っていない。
 - 新しいコンポーネント文書が一覧・図・リンクのいずれかから漏れていない。
+- コンポーネント文書の `wit:` 証跡が実在し、WIT ファイル名と契約対象が一致している。
 
 ## 判定
 
@@ -90,4 +93,5 @@ python .agents/skills/architecture-review/scripts/collect_arch_context.py --json
 - 各コンポーネントの責務が重複せず、詳細仕様の正本が明確である。
 - 依存図に循環、逆方向依存、未接続ノードがない。
 - 概要書のすべてのコンポーネントリンクが存在する。
+- 各 Tier の契約 WIT が対応する Tier の `wit/` 配下に整理されている。
 - architecture_overview.md が構造情報だけを持ち、下位仕様を再掲していない。

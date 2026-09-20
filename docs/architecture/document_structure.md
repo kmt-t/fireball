@@ -19,7 +19,7 @@ Tier は単なる「OSやハードウェアの実行レイヤ」ではなく、*
            ▼
 [ Tier 1: 主要システムコンポーネント (Primary Components) ] ─ (What)
   · COOS (os_coos, os_scheduler)
-  · Interface (ipc_router, system_service, interface_wit)
+  · Interface (ipc_router, system_service)
   · System Core (system_config, system_containers)
   · Memory Contract (system_memory) — パーティション貸与ポリシー・独立ヒープ不変条件の抽象契約（`co_mem`）
            │
@@ -57,9 +57,9 @@ Tier は単なる「OSやハードウェアの実行レイヤ」ではなく、*
 | レイヤー | ディレクトリ | 定義される設計書 | 複雑度・責務の範囲 |
 | :--- | :--- | :--- | :--- |
 | **Tier 0** | `docs/requires/` | システム要求仕様書 (`requirement_list.md`) | **最上位要求 (Why)**<br>システム全体が満たすべき受入基準・機能要求。 |
-| **Tier 1** | `docs/components/tier1_core/`<br>`docs/components/tier1_interface/` | スケジューラ、チャネル通信、システムサービス、独立したインターフェース契約、IPCルータ、共有静的コンテナ語彙等のコア仕様書 | **粗粒度主要コンポーネント (What)**<br>要求（Tier 0）を直接受け取る。単一仕様書で状態遷移・ポリシーを自己完結して記述可能なシステム要素。契約/実装分割パターン（`{META_ContractImplSplit}`）では抽象契約側を担う。 |
+| **Tier 1** | `docs/components/tier1_core/`<br>`docs/components/tier1_interface/` | スケジューラ、チャネル通信、システムサービス、ホスト内部のインターフェース契約、IPCルータ、共有静的コンテナ語彙等のコア仕様書 | **粗粒度主要コンポーネント (What)**<br>要求（Tier 0）を直接受け取る。単一仕様書で状態遷移・ポリシーを自己完結して記述可能なシステム要素。契約/実装分割パターン（`{META_ContractImplSplit}`）では抽象契約側を担う。 |
 | **Tier 2** | `docs/components/tier2_runtime/` | Runtime のライフサイクル・プラグイン構成・VM観測フック、WASMローダー、vMMIO、メモリマネージャ実装（`runtime_memory.md`）、HAL抽象化層（`hal_dispatch.md`）、ホストコール契約（`runtime_syscall.md`）等のサブコンポーネント仕様書 | **分解されたサブコンポーネント (How - Subsystem)**<br>Tier 1 で扱うには状態空間やアルゴリズムが複雑化するため、独立した責務としてブレークダウンされた要素。契約/実装分割パターン（`{META_ContractImplSplit}`）では実装側を担う場合がある。 |
-| **Tier 3** | `docs/components/tier3_executer/`<br>`docs/components/tier3_plugins/`<br>`docs/components/tier3_platform/` | 実行系（`interpreter.md`、`jit_compiler.md`、`jit_runtime.md`）、交換可能プラグイン（`debugger.md`、`guest_profiler.md`）、HALドライバ実装（`platform_driver.md`）、ゲストアダプタ（`libfireball.md`）| **詳細リーフ / 物理コンポーネント (How - Leaf)**<br>Tier 2 からさらに責務が切り出された具象コンポーネント、ハードウェア抽象化層の最終物理実装、またはゲストへ組み込むABIアダプタ。 |
+| **Tier 3** | `docs/components/tier3_executer/`<br>`docs/components/tier3_plugins/`<br>`docs/components/tier3_platform/` | 実行系（`interpreter.md`、`jit_compiler.md`、`jit_runtime.md`）、交換可能プラグイン（`debugger.md`、`guest_profiler.md`）、ゲスト公開WIT（`interface_wit.md`）、HALドライバ実装（`platform_driver.md`）、ゲストアダプタ（`libfireball.md`）| **詳細リーフ / 物理コンポーネント (How - Leaf)**<br>Tier 2 からさらに責務が切り出された具象コンポーネント、ゲストから見える公開契約、ハードウェア抽象化層の最終物理実装、またはゲストへ組み込むABIアダプタ。 |
 | **Specs** | `docs/specs/` | WASM命令セット、WASI Preview 1 ABI、GDB RSP、JITステンシルカタログ等の規格マトリクス | **横串物理規格・具象カタログ (How - Physical Specs)**<br>コンポーネントを横断して統一される具象バイナリ列、ABI、パケット形式、命令セットマトリクス。各ファイル冒頭にアーキテクチャ分類（Tierラベル）を明示する。 |
 | **QA** | `docs/qa/` | Tier別のテスト仕様書、検証データ、テスト実行結果、品質ゲート結果、ベンチマーク結果などの横断的品質資料 | **横断的品質保証 (Quality Assurance)**<br>コンポーネントの設計正本や実行可能テストを置き換えず、テスト仕様書と検証データは `tier1_core/` 等のTier別または `specs/` のサブディレクトリへ集約する。実行結果には範囲、環境、成否、未実行項目を記録する。 |
 | **Meta** | `docs/architecture/`<br>`docs/plans/` | 全体アーキテクチャ、設計方針、開発計画 | **全Tier横断メタ設計**<br>Hypervisor の機能コンポーネント自体には属さない共通ポリシー・計画。 |
@@ -89,7 +89,21 @@ Tier は単なる「OSやハードウェアの実行レイヤ」ではなく、*
    - 上位コンポーネントが下位の機能を束ねる場合（例: vSoC ハーネス）、必ず定義されたインターフェース（Stateless Interface / Harness）を介して統合すること。
 3. **契約/実装分割ペアの参照関係**: `{META_ContractImplSplit}` の契約/実装分割パターンを適用したコンポーネント（例: `components/tier1_interface/system_memory.md` ↔ `components/tier2_runtime/runtime_memory.md`、HAL の抽象化層 ↔ ドライバ実装）では、実装側ファイルが契約側ファイルを冒頭の `<!-- evidence: ... -->` またはトレーサビリティコメントで明示的に参照し、「どの上位契約を実装しているか」を宣言すること。契約側ファイルは実装側の具象データ構造・アロケータ実装詳細を記述しない（項目2の逆流禁止に従う）。
 
-### 2.3 矛盾が見つかった場合の解決規則（Clean Architecture の依存ルールに基づく）
+### 2.3 Tier 契約の WIT 化と配置規則
+
+各 Tier の外部公開契約は、Markdown だけで定義せず、対応する Tier の `wit/` 配下に WIT ファイルを置く。Markdown のコンポーネント設計書は、WIT の型・関数・リソースが表現できない設計意図、事前条件、事後条件、依存関係、検証方法を補足する。契約のシグネチャと型語彙の正本は WIT とする。
+
+| Tier | WIT 契約の対象 | 配置例 |
+| :--- | :--- | :--- |
+| **Tier 1 Core** | COOS、スケジューラ、ログ等の基盤契約 | `docs/components/tier1_core/wit/coos_system_contract.wit` |
+| **Tier 1 Interface** | IPC ルータ、システムメモリ等のホスト内部契約 | `docs/components/tier1_interface/wit/ipc_router_contract.wit`、`system_memory_contract.wit` |
+| **Tier 2 Runtime** | vSoC Runtime、HAL、システムコール、観測、プラグイン接続等の Runtime 契約 | `docs/components/tier2_runtime/wit/runtime_vsoc_contract.wit` および各契約 WIT |
+| **Tier 3 Executer / Plugins** | Tier 2 の WIT 契約を実装する Interpreter、JIT、Debugger、Guest Profiler | 対応する Tier 2 WIT を正本として利用し、同じ契約を重複定義しない。Tier 3 固有の外部契約だけ各 Tier の `wit/` に置く |
+| **Tier 3 Platform** | ゲスト公開 WIT、ゲストアダプタ、物理ドライバ境界 | `docs/components/tier3_platform/wit/fireball_hostcall_contract.wit`、`fireball_hal_contract.wit` |
+
+WIT ファイル名は契約対象と公開方向を表す名前にする。`fireball.wit`、`memory.wit` のように対象が判別できない汎用名は禁止する。複数の契約ファイルを持つコンポーネント設計書は `evidence` ブロックの `wit: wit/*.wit` で対象ディレクトリ内の正本ファイル群を参照する。
+
+### 2.4 矛盾が見つかった場合の解決規則（Clean Architecture の依存ルールに基づく）
 
 下位 Tier の文書が、それが参照・具体化しているはずの上位 Tier の文書と矛盾している場合、**常に上位 Tier 側が正**である。Clean Architecture の依存ルールにおいて、方針（policy）は内側の層が定義し、詳細（detail）は外側の層がそれに従って実装するのであって、逆向きに詳細が方針を決めることはない。本プロジェクトの Tier 構造ではこれが「上位 Tier ほど粗粒度の方針を、下位 Tier ほど具体化された詳細を記述する」という Tier 配置に対応するため、下位が上位と食い違うのは常に**下位側の記述誤り・追随漏れ**であり、上位側を下位に合わせて書き換えることはしない。
 

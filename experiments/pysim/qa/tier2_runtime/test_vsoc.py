@@ -726,12 +726,10 @@ def test_guest_wasi_03_interpreter_proc_exit():
 
 
 def test_debugger_manager_gdb_rsp_integration():
-    """TEST-DBG-01..15: Verifies Debug Manager GDB RSP protocol, breakpoints, registers and JIT flush."""
+    """TEST-DBG-01..15: Verifies interpreter-only Debug Manager GDB RSP behavior."""
     from tier3_plugins.debugger.debugger import DebuggerManager, GDBRspProtocol
 
-    engine = RuntimeEngineDebugDriver(
-        jit_runtime=JITRuntimeManager(jit_compiler=TraceCompiler(), code_lengths=(2,))
-    )
+    engine = RuntimeEngineDebugDriver()
     dbg = DebuggerManager(engine=engine)
     dbg.attach()
     rsp = GDBRspProtocol(dbg)
@@ -744,28 +742,10 @@ def test_debugger_manager_gdb_rsp_integration():
     # 2. Virtual registers read/write
     res_g, _ = rsp.handle_packet("g", 0x100, ctx, {})
     assert len(res_g[1 : res_g.index("#")]) == 160
-    # 3. Memory write & JIT flush ({Debugger_Jit_Flush}) -- real WASM bytecode
-    # (`i32.const 42`) with the same loader metadata passed to the compiler
-    # path production JIT compilation uses; the exact head_pc doesn't matter here,
-    # only that inserting a trace and then flushing it round-trips.
-    flush_code = bytes([I32_CONST, 42])
-    fc_head_pc, fc_next_pc, fc_loops_to, fc_frame_depth, fc_byte_span = extract_basic_blocks(
-        flush_code
-    )[0]
-    flush_block = BasicBlock(
-        head_pc=fc_head_pc,
-        next_pc=fc_next_pc,
-        loops_to=fc_loops_to,
-        frame_depth=fc_frame_depth,
-        byte_span=fc_byte_span,
-    )
-    trace = compile_test_block(engine.jit_runtime.jit_compiler, flush_code, flush_block, ())
-    engine.jit_runtime.cache.insert(trace)
-    assert engine.jit_runtime.cache.active.has_trace(fc_head_pc)
+    # 3. Memory write in the interpreter-only debug configuration.
     res_m, _ = rsp.handle_packet("M0,4:aabbccdd", 0x100, ctx, {})
     assert res_m.startswith("$OK#")
     assert bytes(mem[0:4]) == bytes.fromhex("aabbccdd")
-    assert not engine.jit_runtime.cache.active.has_trace(fc_head_pc)  # Flushed!
     # 4. Breakpoint & Stepping -- two real basic blocks split by a `block`/`end`,
     # loaded through a real Module so run_block_interpret's op-stream derivation
     # (from raw bytecode) has a function to decode against.
@@ -803,8 +783,8 @@ def test_debugger_manager_gdb_rsp_integration():
     assert ctx.locals[0] == 22
 
 
-def test_interpreter_debugger_handler_table_switch_and_hooks():
-    """TEST-INTP-60..65: Verifies Interpreter DebuggerLabelTableSwitch, JIT bypass, PC sampling and assertions."""
+def test_interpreter_debugger_attachment_and_hooks():
+    """TEST-INTP-60..65: Verifies interpreter-only debug execution, PC sampling and assertions."""
     from tier3_plugins.debugger.debugger import DebuggerManager
 
     wat = """
@@ -827,22 +807,22 @@ def test_interpreter_debugger_handler_table_switch_and_hooks():
     )
     """
     wasm_bytes = wat_to_wasm(wat)
-    engine = RuntimeEngineDebugDriver(jit_runtime=JITRuntimeManager(jit_compiler=TraceCompiler()))
+    engine = RuntimeEngineDebugDriver()
     dbg = DebuggerManager(engine=engine)
     mod = engine.load_wasm(wasm_bytes)
     block1 = mod.blocks[0]
     block2 = mod.blocks[1]
-    # 1. Normal mode (TEST-INTP-60: zero overhead, normal handler table)
-    assert engine.handler_table == "normal"
+    # 1. Normal interpreter composition (TEST-INTP-60: zero JIT/debugger overhead)
+    assert engine.handler_table == "interpreter"
     assert engine.debugger is None
     ctx_normal = WASMContext()
     ctx_normal.locals = (5,)
     next_pc = engine.run_step(block1.head_pc, ctx_normal)
     assert next_pc == block2.head_pc
     assert ctx_normal.locals[0] == 6
-    # 2. Attach debugger (TEST-INTP-61: switches to debug handler table)
+    # 2. Attach debugger (TEST-INTP-61: keeps the interpreter execution path)
     dbg.attach()
-    assert engine.handler_table == "debug"
+    assert engine.handler_table == "interpreter"
     assert engine.debugger is dbg
     # 3. Breakpoint hit (TEST-INTP-62: halts before execution)
     dbg.add_breakpoint(block2.head_pc)
@@ -859,19 +839,16 @@ def test_interpreter_debugger_handler_table_switch_and_hooks():
     # 4. Profiler & Assertions (TEST-INTP-63, TEST-INTP-64)
     assert dbg.pc_sample_counts[block1.head_pc] == 1
     assert len(dbg.assertion_violations) == 1
-    # 5. JIT Bypass under debug mode (TEST-INTP-65: JIT trace exists but interpreter debug table runs)
-    trace = compile_module_block(engine.jit_runtime.jit_compiler, mod, block1)
-    engine.jit_runtime.cache.insert(trace)
-    assert engine.jit_runtime.cache.active.has_trace(block1.head_pc)
-    # Run step at block1 under debug mode -> interp_blocks increments, NOT jit_traces
+    # 5. Attached execution remains interpreter-only (TEST-INTP-65)
+    assert engine.jit_runtime is None
     interp_before = engine.interp_blocks
     jit_before = engine.jit_traces
     engine.run_step(block1.head_pc, ctx_debug)
     assert engine.interp_blocks == interp_before + 1
-    assert engine.jit_traces == jit_before  # JIT bypassed!
+    assert engine.jit_traces == jit_before
     # Detach
     dbg.detach()
-    assert engine.handler_table == "normal"
+    assert engine.handler_table == "interpreter"
 
 
 def test_wasm_loader_and_radix_binary_tree_view_indexes():

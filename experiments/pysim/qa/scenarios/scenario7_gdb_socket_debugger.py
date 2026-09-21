@@ -28,7 +28,7 @@ Tests:
 - Virtual register read/write (20 registers: PC, SP, FP, TOS, Locals 0..15)
 - Guest linear memory inspection and live patching ('m', 'M')
 - Breakpoint insertion ('Z0'), hit trapping (SIGTRAP S05), and removal ('z0')
-- JIT cache invalidation on debugger memory write ({Debugger_Jit_Flush})
+- Interpreter-only execution while the debugger is attached
 - Single-stepping ('s') and continue-to-exit ('c', 'W00')
 """
 
@@ -40,8 +40,6 @@ from tier3_plugins.debugger.debugger import DebuggerManager
 from execution_context import WASMContext
 from tier3_plugins.debugger.gdb_server import GDBServer
 from runtime_test_driver import RuntimeEngineDebugDriver
-from tier3_executer.jit.x64_jit import TraceCompiler
-from tier3_executer.jit.jit_manager import JITRuntimeManager
 
 
 def wat_to_wasm(wat_text: str) -> bytes:
@@ -123,7 +121,7 @@ def test_scenario_gdb_socket_debugger():
       )
     )
     """
-    engine = RuntimeEngineDebugDriver(jit_runtime=JITRuntimeManager(jit_compiler=TraceCompiler()))
+    engine = RuntimeEngineDebugDriver()
     mod = engine.load_wasm(wat_to_wasm(wat))
     block10, block20, block30 = mod.blocks[0], mod.blocks[1], mod.blocks[2]
     blocks = {block10.head_pc: block10, block20.head_pc: block20, block30.head_pc: block30}
@@ -167,7 +165,7 @@ def test_scenario_gdb_socket_debugger():
         g_payload = "G" + "".join(f"{r:08x}" for r in new_regs)
         resp = client.send_raw_packet(g_payload)
         assert resp == "OK" and ctx.locals[0] == 100
-        # Step 7: Write memory ('M') & verify JIT cache flush
+        # Step 7: Write memory ('M') in interpreter-only debug mode
         resp = client.send_raw_packet("M0,4:50415443")
         assert resp == "OK" and ctx.memory[0:4] == b"PATC"
         # Step 8: Single-step execution ('s') -> Execute block20, land at block30's head

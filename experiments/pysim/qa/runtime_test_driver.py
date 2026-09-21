@@ -84,9 +84,14 @@ _HANDLERS = _build_handlers()
 
 
 class RuntimeEngineDebugDriver(RuntimeEngine):
-    """Test-only debugger driver backed by the production ``RuntimeEngine``."""
+    """Test-only debugger driver backed by the production ``RuntimeEngine``.
 
-    __slots__ = ("_debug_mode", "debugger")
+    Debugger stepping always uses the interpreter.  A supplied JIT runtime is
+    retained only by unrelated runtime tests; it is never an execution path
+    for an attached debugger.
+    """
+
+    __slots__ = ("debugger",)
 
     def __init__(
         self,
@@ -97,12 +102,11 @@ class RuntimeEngineDebugDriver(RuntimeEngine):
             jit_runtime=jit_runtime,
             debug=debug,
         )
-        self._debug_mode = False
         self.debugger: _Debugger | None = None
 
     @property
     def handler_table(self) -> str:
-        return "debug" if self._debug_mode else "normal"
+        return "interpreter"
 
     @property
     def interp_blocks(self) -> int:
@@ -113,16 +117,13 @@ class RuntimeEngineDebugDriver(RuntimeEngine):
         return self.stat_jit_invocations
 
     def attach_debugger(self, debugger: _Debugger) -> None:
+        assert self.jit_runtime is None, (
+            "debugger-enabled runtime must use interpreter-only execution"
+        )
         self.debugger = debugger
-        self._debug_mode = True
 
     def detach_debugger(self) -> None:
         self.debugger = None
-        self._debug_mode = False
-
-    def flush_jit_cache(self) -> None:
-        if self.jit_runtime is not None:
-            self.jit_runtime.flush_all()
 
     def _next_pc(self, block: BasicBlock, ctx: WASMContext) -> int | None:
         if ctx.fault is not None:

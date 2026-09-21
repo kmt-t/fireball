@@ -627,7 +627,7 @@ class System:
         host: str = "127.0.0.1",
         port: int = 0,
     ) -> tuple[int, int]:
-        """Spawns the GDB Server Task on the COOS scheduler (debug_manager.md).
+        """Spawns the GDB Server Task on the COOS scheduler (debugger.md).
         GDBServer runs as a cooperative task communicating via non-blocking TCP socket.
         Returns: (task_id, bound_port).
         """

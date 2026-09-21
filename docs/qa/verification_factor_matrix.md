@@ -156,6 +156,8 @@
 | F6 `scheduler` | 実行制御 | `noint`, `yield`, `multi` |
 | F7 `debugger` | デバッガ状態 | `detached`, `inspect`, `active` |
 
+構成制約として、`F7=inspect` または `F7=active` の場合は `F1=interp` だけを実行構成として許可する。`F1=jit` または `F1=hybrid` との組み合わせは有効なワークロードとして実行せず、`RuntimeComposer` の構成時 `assert` による拒否を検証する。ペアワイズ実行データにはこの禁止組み合わせも負の構成テストとして含める。
+
 ### 3.1 ペアワイズ完全被覆
 
 26ケースの各行は7因子を一度ずつ持ち、全因子対の組を少なくとも一度含む。組数は次のとおりである。
@@ -218,7 +220,7 @@
 | `storage` | storage が所有し、view は非所有である。所有権を共有しない | `test_containers.py`, `test_memory.py`, `test_ipc_router.py` | `assert` で停止 |
 | `host_call` | WASI、IPC、HAL の責務境界とバッファ権限が混ざらない | `test_syscall.py`, `test_ipc_router.py`, `test_hal.py` | `assert` で停止 |
 | `scheduler` | current task はスケジューラだけが変更し、yield 後に継続状態を保持する | `test_scheduler.py`, `test_coos.py`, `test_vsoc.py` | `assert` で停止 |
-| `debugger` | 読み取り、書き込み、breakpoint、JIT flush の境界が明示される | `test_debugger.py`, `test_gdb_remote.py` | `assert` で停止 |
+| `debugger` | 読み取り、書き込み、breakpoint、およびInterpreter-only構成の境界が明示される | `test_debugger.py`, `test_gdb_remote.py`, `test_runtime_composer.py` | `assert` で停止 |
 
 ## 6. 検証ゲートマトリクス
 
@@ -230,7 +232,7 @@
 | 形式検証 | [check-src.ps1](tools/check-src.ps1) | コンポーネント配下の各形式モデル | `pyModelChecking` 実行、guards 変異検査、モデル件数一致 |
 | 単体テスト | `uv run --project tools/spec-integrator --with wasmtime python` [run_all.py](experiments/pysim/qa/run_all.py) | 30 suite | 30/30 合格、AssertionError を成功扱いしない |
 | 結合シナリオ | `uv run --project tools/spec-integrator --with wasmtime python` [run_all.py](experiments/pysim/qa/scenarios/run_all.py) | 12 scenarios | 12/12 合格、全シナリオをランナーから実行 |
-| ペアワイズ | `test_pairwise_combinations.py` | 7因子、26ケース | 288組を100%被覆し、各ケースの状態・副作用を直接 assert |
+| ペアワイズ | `test_pairwise_combinations.py` | 7因子、26ケース | 288組を100%被覆し、許可構成は状態・副作用を直接assert、禁止構成は合成時assertを直接検証 |
 
 ### 6.1 実行順序
 

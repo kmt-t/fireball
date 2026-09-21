@@ -119,7 +119,7 @@ graph LR
 | `{RSPMinimalSet}` | VSCodeデバッグに必要な最小限のGDB RSPコマンドセットのみを実装する。 | 高 | デモ |
 | `{BufferedLogging}` | ログ出力をリングバッファに一時保存し、アイドル時にまとめて物理ポートへ転送する。 | 中 | テスト |
 | `{RSP_Transport_Selectable}` | RSPパケットのトランスポート層（UART/RTT等）を選択可能とする。 | 高 | テスト |
-| `{DebuggerLabelTableSwitch}` | デバッグ時にインタープリタのハンドラテーブルをデバッグ用に切り替える。 | 高 | レビュー |
+| `{DebuggerInterpreterComposition}` | デバッグ実行をインタープリタとデバッガの静的構成に固定する。 | 高 | レビュー |
 
 #### 3.1.5 共通基盤・実装パターン
 | キーワード | 内容 | 優先度 | 検証方法 |
@@ -130,7 +130,6 @@ graph LR
 | `{vMMIO_TLB}` | ソフトウェアTLBによるvMMIOアクセスの高速化。 | 中 | レビュー |
 | `{ZeroCopyIndexing}` | LoaderによるWASMセクションのゼロコピー索引化。 | 高 | テスト |
 | `{JIT_Safepoint}` | JITコード内の非同期割込チェックポイント。 | 中 | レビュー |
-| `{Debugger_Jit_Flush}` | 介入時のJITキャッシュフラッシュ。 | 高 | レビュー |
 | `{WASI_Async_Bridge}` | 同期WASIと非同期IPCの連携ブリッジ。 | 高 | テスト |
 | `{ConceptHarnessDI}` | C++20/23 Conceptsを用いた静的依存性注入。 | 高 | レビュー |
 | `{FlatViewNarrowing}` | ソート済み静的コンテナに対し、粗索引で探索区間を非所有ビュー(`fireball::flat_map_view` / `fireball::flat_set_view`) へ狭めてから二分探索することで、比較回数と参照範囲を削減する。絞り込みは単調縮小であり多段に合成できる。 | 高 | レビュー |
@@ -191,12 +190,12 @@ graph LR
 | :--- | :--- | :--- |
 | `{Challenge_ApproximateYield}` | トレース数ベースの概算Yieldの精度とスターベーション対策。 | 検討中 |
 | `{Challenge_InterruptSafety}` | 割り込みハンドラとタスク間の競合回避と安全なウェイクアップ。 → ISRは固定5ワードの原因イベントをFIFOへ投函するのみとし、実処理はCOOSの協調境界とvSoCのSafepointで実行する方策を採用（`platform_driver.md`）。 | 決定済 |
-| `{Challenge_JITCacheEfficiency}` | 小規模メモリ環境におけるJITキャッシュの代謝とヒット率の最適化。 → 3面リングローテーション（Active/Warm/Oldest）と世代Cookieによる代謝方式を採用し、形式検証済み（`runtime_vsoc.md` {Safepoint_JIT_Flush}, `components/tier2_runtime/formal/vsoc_cache_coherency_model.py`）。 | 決定済 |
+| `{Challenge_JITCacheEfficiency}` | 小規模メモリ環境におけるJITキャッシュの代謝とヒット率の最適化。 → 3面リングローテーション（Active/Warm/Oldest）と世代Cookieによる代謝方式を採用し、形式検証済み（`runtime_vsoc.md` {JIT_Safepoint}, `components/tier2_runtime/formal/vsoc_cache_coherency_model.py`）。 | 決定済 |
 | `{Challenge_WasiFdWriteLoop}` | WASI `fd_write` の実装レイヤー分離とバッファ管理。 → `libfireball`側でベクタをループし1ベクタごとに `fireball_call` を発行する設計を採用（`runtime_syscall.md` {Syscall_Mapping}）。 | 決定済 |
 | `{Challenge_SyscallMemorySafety}` | ゲストメモリアクセス時のセキュリティ保護方式。 → アクセス不可な領域は仮想アドレス空間から物理的に unmap され未マッピングトラップ（`TRAP_UNREGISTERED_PAGE`）で遮断されるため、別途の `vsoc_validate_ptr` は導入しない（`runtime_syscall.md` {Syscall_Mapping}）。 | 決定済 |
 | `{Challenge_CoosBlockedList}` | `BLOCKED` タスクリストの管理コストとリアルタイム性のトレードオフ。 → `{ADR_EventDrivenWakeQueue}` として決定。 | 決定済 |
 | `{Challenge_CspHandoffStarvation}` | COOS の CSP Handoff 連鎖（IPCルータ含む）が特定のタスクセット間で閉じ、他タスクが実行機会を失うスターベーションリスク。緩和策は `FB_CONF_MAX_CONSECUTIVE_HANDOFFS` による連鎖の有界化。 | 検討中 |
-| `{Challenge_DebuggerResource}` | 極小メモリ環境でのデバッグ用バッファ確保とJIT併用の制約。 | 検討中 |
+| `{Challenge_DebuggerResource}` | 極小メモリ環境でのデバッグ用バッファ確保、インタープリタ専用デバッグ構成、およびJIT同時構成拒否の制約。 | 決定済 |
 | `{ADR_ScalableCodeOffset}` | コードキャッシュ拡張時の 16 ビット `code_offset` 上限（64KB）を越えるための表現形式決定。 | 決定済 |
 | `{ADR_SafeQueuingOnHotMiss}` | ホットスポット検出時の二重コンパイル要求防止策。 | 決定済 |
 | `{ADR_TosCacheAsymmetry}` | スタックトップキャッシュ（`R4`/`R5`）を JIT トレース内部に限定し、インタープリタは保持しない非対称規約の採用。 | 決定済 |

@@ -546,7 +546,7 @@ sequenceDiagram
 | vMMIO PTE表 (`runtime_vmmio`) | `flat_map_view` | 仮想ページ番号 (VPN) から PTE への変換 | ファンクションコード (FC) による Tier 区分 |
 | vMMIO 許可アドレス (`system_config_details`) | `flat_set_view` | 物理アドレスが許可範囲に属するかの判定 | なし（`FB_CONF_VMMIO_ALLOWED_ADDRS` で有界） |
 | IPCルータ (`ipc_router`) | `flat_map_view` | サービスURI からチャネルIDへの解決 | URI スキーマ・ドメインの前方一致 |
-| デバッガ (`debug_manager`) | `flat_set_view` | 実行中PCがブレークポイントかの判定 | なし（件数が `FB_CONF_DEBUG_MAX_BREAKPOINTS` で有界） |
+| デバッガ (`debugger`) | `flat_set_view` | 実行中PCがブレークポイントかの判定 | なし（件数が `FB_CONF_DEBUG_MAX_BREAKPOINTS` で有界） |
 
 ## 6. 制約達成の方策
 

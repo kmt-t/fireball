@@ -1,6 +1,6 @@
 """
 docs/components/tier2_runtime/formal/vsoc_cache_coherency_model.py
-pyModelChecking による vSoC JIT キャッシュ整合性・Debugger 介入安全性・
+pyModelChecking による vSoC JIT キャッシュ整合性・
 共有メモリ権限剥奪時 TLB フラッシュ（GOTCHA-VMMIO-03）・常駐トレース二重コンパイル抑止（GOTCHA-JITR-01）
 およびローテーションリソース有界性の形式検証（証明・変異検査対応）モデル
 """
@@ -10,7 +10,6 @@ from pyModelChecking.CTL import AF, AG, AtomicProposition, Imply, Not
 
 BACKS = [
     "components/tier2_runtime/runtime_vsoc.md",
-    "components/tier3_plugins/debugger.md",
     "components/tier3_executer/jit_compiler.md",
     "components/tier2_runtime/runtime_memory.md",
 ]
@@ -18,19 +17,18 @@ BACKS = [
 
 def build_model(*, guards: bool = True) -> Kripke:
     """
-    JIT キャッシュ世代管理・デバッガ flush 因果順序・共有メモリ Revoke 連動・バンク回収の保護証明モデル
+    JIT キャッシュ世代管理・共有メモリ Revoke 連動・バンク回収の保護証明モデル
     - s_interp: インタープリタ実行中（JIT キャッシュは参照のみ）
     - s_exec_fresh: 現行世代 (generation cookie 一致) の JIT トレースを実行中
     - s_check_resident: GOTCHA-JITR-01: コンパイル前にキャッシュ常駐を確認中
     - s_skip_compile: 既に常駐済みのためコンパイルを抑止して直接実行へ
     - s_rotate: Active 満杯による 3面リングローテーション実行中
     - s_reclaimed: Oldest バンクの Purge とエントリ表スロット回収が完了
-    - s_dbg_write: デバッガがゲストメモリを書き換え、全既存トレースが陳腐化 (dirty)
     - s_shm_revoke: GOTCHA-VMMIO-03: 共有メモリ権限剥奪トランザクション発生 (dirty)
-    - s_safepoint: Safepoint でデバッガ介入または Revoke フラグを検出
+    - s_safepoint: Safepoint で Revoke フラグを検出
     - s_flushing: 全バンク無効化および TLB フラッシュ実行中
     - s_flushed: flush 完了、キャッシュ整合性回復
-    - s_exec_stale: 違反状態（デバッガ書き込み後、flush 完了前に旧世代コードを実行した状態）
+    - s_exec_stale: 違反状態（Revoke 後、flush 完了前に旧世代コードを実行した状態）
     - s_gen_regressed: 違反状態（generation cookie がバンク間で逆行・不一致になった状態）
     - s_leaked_bank: 違反状態（ローテーションでバンクを破棄したがエントリ表スロットを回収しなかった状態）
     - s_flush_stalled: 違反状態（dirty のまま flush が永久に完了しない状態）
@@ -44,7 +42,6 @@ def build_model(*, guards: bool = True) -> Kripke:
         "s_skip_compile",
         "s_rotate",
         "s_reclaimed",
-        "s_dbg_write",
         "s_shm_revoke",
         "s_safepoint",
         "s_flushing",
@@ -69,10 +66,6 @@ def build_model(*, guards: bool = True) -> Kripke:
         ("s_interp", "s_rotate"),
         ("s_rotate", "s_reclaimed"),
         ("s_reclaimed", "s_interp"),
-        # デバッガ書き込み ➔ Safepoint ➔ flush
-        ("s_interp", "s_dbg_write"),
-        ("s_exec_fresh", "s_dbg_write"),
-        ("s_dbg_write", "s_safepoint"),
         # GOTCHA-VMMIO-03: 共有メモリ Revoke ➔ Safepoint ➔ flush
         ("s_interp", "s_shm_revoke"),
         ("s_exec_fresh", "s_shm_revoke"),
@@ -90,7 +83,6 @@ def build_model(*, guards: bool = True) -> Kripke:
     if not guards:
         # ガード無効時（変異検査）:
         # 1. Safepoint での generation cookie 照合を省くと、旧世代コードへ再突入
-        R = [*R, ("s_dbg_write", "s_exec_stale")]
         R = [*R, ("s_shm_revoke", "s_exec_stale")]
         # 2. generation cookie を個別更新にすると単調性が壊れる
         R = [*R, ("s_flushing", "s_gen_regressed")]
@@ -108,7 +100,6 @@ def build_model(*, guards: bool = True) -> Kripke:
         "s_skip_compile": {"compile_suppressed", "gen_consistent"},
         "s_rotate": {"rotating", "gen_consistent"},
         "s_reclaimed": {"reclaimed", "gen_consistent", "all_banks_accounted"},
-        "s_dbg_write": {"dirty", "debug_pending", "gen_consistent"},
         "s_shm_revoke": {"dirty", "revoke_pending", "gen_consistent"},
         "s_safepoint": {"dirty", "safepoint", "gen_consistent"},
         "s_flushing": {"dirty", "flushing", "gen_consistent"},
@@ -138,12 +129,12 @@ def properties():
     flushed = AtomicProposition("flushed")
     return [
         {
-            "name": "debugger_memory_write_invalidates_stale_traces",
+            "name": "shared_memory_revoke_invalidates_stale_traces",
             "kind": "safety",
             "logic": "CTL",
             "formula": AG(Not(bad_stale)),
             "violation": bad_stale,
-            "expect": True,  # デバッガ書き込み後や Revoke 後に旧世代コードが実行されることはない
+            "expect": True,  # Revoke 後に旧世代コードが実行されることはない
         },
         {
             "name": "generation_monotonicity_across_banks",
@@ -167,7 +158,7 @@ def properties():
             "logic": "CTL",
             "formula": AG(Imply(dirty, AF(flushed))),
             "violation": bad_stall,
-            "expect": True,  # デバッグ書き込みや Revoke で汚れたキャッシュは必ず有界時間内に flush される
+            "expect": True,  # Revoke で汚れたキャッシュは必ず有界時間内に flush される
         },
         {
             "name": "resident_trace_duplicate_compile_suppression",

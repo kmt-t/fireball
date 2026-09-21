@@ -1,10 +1,10 @@
 """
 docs/components/tier3_plugins/concepts/debugger_concept.py
-Reference Concept Implementation: Debugger Manager & GDB RSP Interpreter Fallback
-`{RSPMinimalSet}` `{DebuggerLabelTableSwitch}` `{MemoryIsolation}` `{Debug_Integrated}` `{ContextPointerRegister}`
+Reference Concept Implementation: Debugger Manager & GDB RSP Interpreter Composition
+`{RSPMinimalSet}` `{DebuggerInterpreterComposition}` `{MemoryIsolation}` `{Debug_Integrated}` `{ContextPointerRegister}`
 
 Architecture:
-- JIT Fallback: When debugger attaches, JIT execution is bypassed and execution falls back to the Interpreter.
+- Static Debug Composition: A debug runtime is composed from the Interpreter and Debugger before execution; attaching does not switch handlers or manage a JIT cache.
 - Unified Stack Inspection: Inspects execution_context, CallFrames, locals, and operand stack from stack_bot.
 - GDB Remote Serial Protocol (RSP): Minimal packet parser & responses ($g, $m, $M, $Z0, $z0, $s, $c, $?).
 - Integrated Profiler & Test Tool: PC sampling counter and memory/register assertion hooks ({Debug_Integrated}).
@@ -126,8 +126,8 @@ class WASMInterpreter:
 
 class DebuggerManager:
     """
-    Debugger Controller managing GDB RSP, Breakpoints, and Interpreter Fallback.
-    `{RSPMinimalSet}` `{DebuggerLabelTableSwitch}` `{Debug_Integrated}`
+    Debugger Controller managing GDB RSP, Breakpoints, and the statically composed Interpreter runtime.
+    `{RSPMinimalSet}` `{DebuggerInterpreterComposition}` `{Debug_Integrated}`
     """
 
     def __init__(self, ctx: ExecutionContext, interpreter: WASMInterpreter):
@@ -142,8 +142,8 @@ class DebuggerManager:
 
     def attach(self) -> None:
         """
-        Attaches debugger, disables JIT (Interpreter Fallback), and switches to debug table.
-        `{DebuggerLabelTableSwitch}`
+        Attaches the debugger to an interpreter-only runtime composition.
+        `{DebuggerInterpreterComposition}`
         """
         self.attached = True
         self.ctx.is_debug_mode = True
@@ -179,7 +179,7 @@ class DebuggerManager:
                     self.assertion_violations.append(msg)
 
     def step_instruction(self, bytecode: list[tuple[str, object]]) -> str:
-        """Single-steps one instruction via Interpreter Fallback."""
+        """Single-steps one instruction through the composed Interpreter."""
         if not self.attached:
             raise RuntimeError("Debugger not attached")
         self._sample_pc()

@@ -42,7 +42,7 @@ Simulates a real GDB client session connecting to Fireball GDBServer:
 5. Insert breakpoint ('Z0')
 6. Continue execution ('c') & hit breakpoint
 7. Write virtual registers ('G')
-8. Write memory ('M') & verify JIT cache flush
+8. Write memory ('M') in interpreter-only debug mode
 9. Single-step execution ('s')
 10. Remove breakpoint ('z0')
 11. Continue to program termination ('W00')
@@ -75,8 +75,6 @@ from execution_context import WASMContext
 from tier3_plugins.debugger.gdb_server import GDBServer
 from helpers import wat_to_wasm
 from runtime_test_driver import RuntimeEngineDebugDriver
-from tier3_executer.jit.x64_jit import TraceCompiler
-from tier3_executer.jit.jit_manager import JITRuntimeManager
 
 
 class GDBClientHelper:
@@ -151,7 +149,7 @@ def test_gdb_remote_socket_session():
       )
     )
     """
-    engine = RuntimeEngineDebugDriver(jit_runtime=JITRuntimeManager(jit_compiler=TraceCompiler()))
+    engine = RuntimeEngineDebugDriver()
     mod = engine.load_wasm(wat_to_wasm(wat))
     block10, block20, block30 = mod.blocks[0], mod.blocks[1], mod.blocks[2]
     blocks = {block10.head_pc: block10, block20.head_pc: block20, block30.head_pc: block30}
@@ -206,7 +204,7 @@ def test_gdb_remote_socket_session():
         assert resp == "OK", f"Expected OK, got {resp}"
         assert ctx.locals[0] == 100
         print("    [Step 6] Write virtual register 'G' (Local0 = 100) -> OK [PASS]")
-        # Step 7: Write memory ('M') & verify JIT cache flush
+        # Step 7: Write memory ('M') in interpreter-only debug mode
         resp = client.send_raw_packet("M0,4:50415443")  # Write "PATC"
         assert resp == "OK", f"Expected OK, got {resp}"
         assert ctx.memory[0:4] == b"PATC"

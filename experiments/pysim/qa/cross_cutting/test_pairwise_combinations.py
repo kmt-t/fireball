@@ -32,7 +32,7 @@ for _p in [
 """
 test_pairwise_combinations.py: Comprehensive 2-Way All-Pairs Combinatorial Test Suite.
 Verifies that all 26 orthogonal test cases (covering 100% of the 288 2-way factor interactions)
-execute seamlessly and preserve all architectural invariants across Tier 1, Tier 2, and Tier 3.
+execute or reject their explicitly forbidden composition while preserving architectural invariants.
 """
 
 import wasmtime
@@ -130,6 +130,46 @@ WAT_TEMPLATE = """
 from tier3_platform.drivers.hal.dummy import DummyDriver
 from hal_dispatch import ARG_BUFFER_HANDLE, ARG_LENGTH, ARG_OFFSET, WasiIpcCmd
 from fixtures.uvwasi_reference import UvwasiReferenceContext
+from helpers import expect_assertion
+from runtime_composer import (
+    RuntimeComposer,
+    RuntimeCompositionConfig,
+    RuntimeExecutionKind,
+    RuntimeFactories,
+    RuntimePluginSelection,
+)
+from runtime_events import RuntimeEvent
+
+
+class _CompositionExecutor:
+    def call(self, func_index: int, args: tuple[int, ...]) -> int:
+        return func_index
+
+
+class _CompositionObserver:
+    def on_runtime_event(self, event: RuntimeEvent) -> None:
+        return None
+
+
+def _assert_debugger_jit_composition_rejected(case_id: str) -> None:
+    """JIT を含むデバッグ構成は実行せず、合成時 assert で拒否する。"""
+
+    factories = RuntimeFactories(
+        interpreter=_CompositionExecutor,
+        jit=_CompositionExecutor,
+        logger=_CompositionObserver,
+        debugger=_CompositionObserver,
+        profiler=_CompositionObserver,
+    )
+    with expect_assertion("debugger-enabled runtime must use interpreter-only execution"):
+        RuntimeComposer.compose(
+            RuntimeCompositionConfig(
+                execution=RuntimeExecutionKind.JIT,
+                plugins=RuntimePluginSelection(debugger=True),
+            ),
+            factories,
+        )
+    print(f"    [PASS] {case_id}: rejected Debugger + JIT composition")
 
 
 def run_single_pairwise_case(case_id: str, case_tuple: tuple[str, ...]) -> None:
@@ -142,6 +182,9 @@ def run_single_pairwise_case(case_id: str, case_tuple: tuple[str, ...]) -> None:
         sched_mode,
         dbg_mode,
     ) = case_tuple
+    if engine_mode in ("jit", "hybrid") and dbg_mode in ("inspect", "active"):
+        _assert_debugger_jit_composition_rejected(case_id)
+        return
     # 1. Setup host system and services
     sysv = System()
     wasi_ctx = WasiHostContext(sysv, guest_memory=bytearray(2 * 65536))
@@ -274,7 +317,7 @@ def test_all_pairwise_combinations():
         print(f"    [PASS] {case_id}: {case_tuple}")
     assert tuple(executed_case_ids) == expected_case_ids
     print(
-        f"[PASS] All {len(PAIRWISE_CASES)} Pairwise Combinations passed with 100% 2-way interaction coverage."
+        f"[PASS] All {len(PAIRWISE_CASES)} Pairwise Combinations executed or rejected as specified with 100% 2-way interaction coverage."
     )
 
 

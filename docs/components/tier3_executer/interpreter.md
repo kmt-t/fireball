@@ -372,7 +372,7 @@ sequenceDiagram
 | 事後条件 | `opcode_handler_table` が正しく配置される。 |
 | 不変条件 | 初期化後に設定値を変更できないこと。 |
 | エラー時の挙動 | メモリ確保失敗時は初期化を中断し、エラー値を返す。 |
-| 補足 | デバッグモードが指定された場合は `debug_handler_table` を使用するように構成する。 |
+| 補足 | デバッグ構成でも同じインタープリタハンドラテーブルを使用し、デバッガは実行境界から停止・ステップを制御する。 |
 
 #### 実行ステップ (`run_step`)
 <!-- traceability: {META_RecoveryStrategy} -->
@@ -416,7 +416,7 @@ sequenceDiagram
 | :--- | :--- | :--- |
 | **WASM Loader** | WASMバイナリの索引情報（関数、命令、即値）の提供 | [`runtime_loader.md`](docs/components/tier2_runtime/runtime_loader.md#モジュールビューmodule_view) |
 | **JIT Compiler** | ホットスポット情報の共有と実行エンジンの切り替え | `execution_context`, 履歴バッファ |
-| **Debugger** | ブレークポイント判定と実行状態の可視化 | `debug_handler_table`, `execution_context` |
+| **Debugger** | インタープリタ実行境界でのブレークポイント判定と実行状態の可視化 | `execution_context` |
 | **vSoC** | 実行制御（step）と協調型マルチタスク（yield）の管理 | `execution_context` |
 
 ## 6. 制約達成の方策

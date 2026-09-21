@@ -17,13 +17,12 @@ Loader/Interpreter/JIT/vMMIO/Debuggerを統合する`vsoc_harness`（静的DI）
 | TEST-VSOC-02 | `exec_trace`の統一呼び出し規約 | インタープリタ実行/JIT実行の双方 | `step()`を呼ぶ | 呼び出し側は実行エンジンの種別を意識しない（同一の4論理引数 `(ctx, sp, local_base, tos)` シグネチャ） | 「実行エンジン委譲」, `{AAPCS_FastCall}` |
 | TEST-VSOC-03 | `register-hook`はvMMIOへの薄い転送 | - | `register-hook`を呼ぶ | `harness.vmmio`経由で`runtime_vmmio.md`の同名APIへそのまま転送され、事前/事後条件はvmmio層が正本 | register-hook |
 
-### Safepoint/JITキャッシュ協調 ({Safepoint_JIT_Flush})
+### Safepoint/JITキャッシュ協調 ({JIT_Safepoint})
 
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | TEST-VSOC-10 | Safepointはループ背進辺/関数呼出前/メモリアクセス後に埋め込まれる | JIT生成コード | コード生成を確認 | `{JIT_Safepoint}` の3箇所すべてにチェックが入る | `{JIT_Safepoint}` |
 | TEST-VSOC-11 | 保留interrupt-eventの構成 | - | 保留イベント構造を確認 | `vector_id`、`source_id`、`cause_code`、`payload0`、`payload1`の固定5ワードで保持される | `{JIT_Safepoint}` |
-| TEST-VSOC-12 | デバッガのメモリ書き換えでキャッシュFlush | デバッガがメモリ変更 | `request_debugger_interrupt`相当を呼ぶ | 次のSafepointでフラグ検出され、Active/Warm/Oldest全バンクのメタデータが破棄される(generation cookie increment) | `{Debugger_Jit_Flush}` |
 | TEST-VSOC-13 | IRQ/JITレース不在 | JIT実行中に割り込み発生 | 形式検証プロパティを確認 | Safepoint同期を経ずに割り込み処理が開始されない(`AG(Not(handling_irq & jit_mode))`) | irq_jit_race_freedom_proof |
 | TEST-VSOC-14 | flush完了性 | dirty状態になったキャッシュ | 形式検証プロパティを確認 | `AG(dirty -> AF(flushed))`（dirtyになったflushは必ず完了する） | [`vsoc_cache_coherency_model.py`](docs/components/tier2_runtime/formal/vsoc_cache_coherency_model.py) `dirty_cache_always_flushes_promptly` |
 | TEST-VSOC-15 | 世代の逆行不在 | 3面ローテーション | 各バンクのgeneration cookieを確認 | 全バンク一括更新され、逆行・不一致が生じない | [`vsoc_cache_coherency_model.py`](docs/components/tier2_runtime/formal/vsoc_cache_coherency_model.py) `generation_monotonicity_across_banks` |
@@ -37,8 +36,8 @@ Loader/Interpreter/JIT/vMMIO/Debuggerを統合する`vsoc_harness`（静的DI）
 | TEST-VSOC-20 | ロード失敗でError状態 | 不正なWASM | `prepare(module)` | `Loading→Error`に遷移 | `{VSOC_Lifecycle}` |
 | TEST-VSOC-21 | yield閾値到達でReadyへ復帰 | InterpreterRun中 | トレース数が閾値超過 | `InterpreterRun→Ready`、ホットスポット検出結果がJITキューに投入される | - |
 | TEST-VSOC-22 | Safepointで原因付き割り込みイベント検出時はインタープリタへフォールバック | JitRun中 | `interrupt-event`が保留される | `JitRun→SafepointCheck→Ready`（インタープリタへ） | - |
-| TEST-VSOC-23 | デバッガ接続時のJIT無効化 | JITトレース常駐中にdebugger attach | 接続処理と次回`step()`を実行 | JIT cache全バンクをflushし、PCを保持したままInterpreter専用で実行する | `{Debugger_Jit_Flush}` |
-| TEST-VSOC-24 | デバッガ切断後のJIT再有効化 | debugger detach後、候補ブロックが存在 | 切断後に実行を再開 | JITを再有効化するが、カードは`UNEXECUTED`からhotnessを再計測し、閾値到達後に再コンパイルする | `{Debugger_Jit_Flush}` `{TrackableBlockMask}` |
+| TEST-VSOC-23 | デバッガとJITの同時構成拒否 | `RuntimeCompositionConfig(execution=JIT, debugger=True)` | ランタイム構成を合成する | 構成時 `assert` で拒否され、デバッガがJITキャッシュを操作する経路は生成されない | `{DebuggerInterpreterComposition}` |
+| TEST-VSOC-24 | アタッチ中のインタープリタ専用実行 | `Interpreter + Debugger` 構成 | デバッガをアタッチして `step()` または `continue` を実行する | PCを保持したままインタープリタだけが実行され、JITの動的切替とキャッシュ操作は発生しない | `{DebuggerInterpreterComposition}` |
 
 ### vIRQ登録と原因付き階層配送
 
@@ -52,14 +51,14 @@ Loader/Interpreter/JIT/vMMIO/Debuggerを統合する`vsoc_harness`（静的DI）
 | TEST-VSOC-55 | WASIポーリングとの分離 | vIRQイベントとHALポーリングハンドルが同時に存在 | 両経路を独立して処理 | vIRQ配送が`poll-check`/`poll-wait`を起動せず、ポーリングがvIRQ登録を変更しない | [`interface_wit.md`](docs/components/tier3_platform/interface_wit.md) のポーリング契約 |
 | TEST-VSOC-56 | 再スケジュール世代境界での再開可能実行 | COOSの世代観測コールバックが次のトレース境界でyieldを要求 | `run_cooperative()`を1スライス進めてから再開する | vSoCは命令途中ではなくトレース境界で`None`を返して制御をCOOSへ戻し、同じ実行コンテキストから再開して結果を保持する | `{ADR_InterruptRescheduleGeneration}` `{ADR_TraceBoundaryYield}` |
 | TEST-VSOC-23 | ブレークポイントヒットでDebugging状態へ | 任意の実行状態 | ブレークポイント到達 | `(any)→Debugging` | - |
-| TEST-VSOC-24 | resume(interp)でJITキャッシュflush | Debugging状態 | `resume(interp)`を呼ぶ | JITキャッシュがflushされ、PCを保持したままInterpreterRunへ | `{VSOC_Lifecycle}` |
+| TEST-VSOC-24 | resume(interp)でインタープリタ実行を継続 | Debugging状態 | `resume(interp)`を呼ぶ | PCを保持したままInterpreterRunへ遷移し、JITキャッシュ操作を行わない | `{VSOC_Lifecycle}` |
 
 ### マルチモジュール動的リンク
 
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | TEST-VSOC-30 | インポートセクションからのシンボル解決 | 複数モジュールロード済み | `resolve_symbol(module_name, func_name)` | Module Registryを介して正しく解決される | `{MultiModule_Support}` |
-| TEST-VSOC-31 | インタープリタテーブルへのパッチ | シンボル解決成功 | `patch_interp_table(func_addr)` | 呼び出し先アドレスが正しくパッチされる | {Debugger_Jit_Flush} |
+| TEST-VSOC-31 | インタープリタテーブルへのパッチ | シンボル解決成功 | `patch_interp_table(func_addr)` | 呼び出し先アドレスが正しくパッチされる | `interpreter.md` |
 
 ### `fireball_call`シグネチャの整合性
 

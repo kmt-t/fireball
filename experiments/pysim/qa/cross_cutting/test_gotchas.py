@@ -71,6 +71,7 @@ from memory import FB_CONF_MEMORY_POOL_SIZE, MemoryManager
 from tier3_executer.jit.jit_cache import CardState, JITMultiBufferCache, JITTrace
 from tier3_executer.jit.jit_manager import JITRuntimeManager
 from runtime_test_driver import RuntimeEngineDebugDriver
+from runtime_events import RuntimeEvent
 from scheduler import ChannelAction, Scheduler, Task, WaitDir
 from tier3_platform.drivers.hal.stream import StreamTransport
 from system import System, WasiErrno
@@ -781,35 +782,40 @@ def test_sys_gotcha_01_undefined_syscall_returns_enosys():
     assert res == int(WasiErrno.NOSYS), f"Expected NOSYS (52), got {res}"
 
 
-def test_dbg_gotcha_01_memory_write_flushes_jit_cache():
-    """GOTCHA-DBG-01: Debugger memory write immediately invalidates all JIT cache banks."""
-    engine = RuntimeEngineDebugDriver(
-        jit_runtime=JITRuntimeManager(jit_compiler=TraceCompiler(), code_lengths=(2,))
+def test_dbg_gotcha_01_debugger_and_jit_composition_is_rejected():
+    """GOTCHA-DBG-01: Debugger and JIT cannot be enabled in one runtime composition."""
+    from helpers import expect_assertion
+    from runtime_composer import (
+        RuntimeComposer,
+        RuntimeCompositionConfig,
+        RuntimeExecutionKind,
+        RuntimeFactories,
+        RuntimePluginSelection,
     )
-    dbg = DebuggerManager(engine=engine)
-    dbg.attach()
-    rsp = GDBRspProtocol(dbg)
-    ctx = WASMContext(memory=bytearray(64))
 
-    code = bytes([I32_CONST, 10])
-    head_pc, next_pc, loops_to, frame_depth, byte_span = extract_basic_blocks(code)[0]
-    block = BasicBlock(
-        head_pc=head_pc,
-        next_pc=next_pc,
-        loops_to=loops_to,
-        frame_depth=frame_depth,
-        byte_span=byte_span,
-    )
-    trace = compile_test_block(engine.jit_runtime.jit_compiler, code, block, ())
-    engine.jit_runtime.cache.insert(trace)
-    assert engine.jit_runtime.cache.active.has_trace(head_pc)
+    class _Executor:
+        def call(self, func_index: int, args: tuple[int, ...]) -> int:
+            return func_index + sum(args)
 
-    res, _ = rsp.handle_packet("M0,4:deadbeef", 0, ctx, {})
-    assert res.startswith("$OK#")
-    assert bytes(ctx.memory[0:4]) == bytes.fromhex("deadbeef")
-    assert not engine.jit_runtime.cache.active.has_trace(head_pc), (
-        "JIT cache must be flushed upon debugger memory write"
+    class _Observer:
+        def on_runtime_event(self, event: RuntimeEvent) -> None:
+            return None
+
+    factories = RuntimeFactories(
+        interpreter=_Executor,
+        jit=_Executor,
+        logger=_Observer,
+        debugger=_Observer,
+        profiler=_Observer,
     )
+    with expect_assertion("debugger-enabled runtime must use interpreter-only execution"):
+        RuntimeComposer.compose(
+            RuntimeCompositionConfig(
+                execution=RuntimeExecutionKind.JIT,
+                plugins=RuntimePluginSelection(debugger=True),
+            ),
+            factories,
+        )
 
 
 def test_load_gotcha_01_non_existent_symbol_fast_rejection():

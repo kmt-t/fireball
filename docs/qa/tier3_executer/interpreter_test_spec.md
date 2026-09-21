@@ -79,14 +79,14 @@
 | TEST-INTP-50 | ループ背進辺でのSafepointポーリング | `safepoint_pending = True`かつ無限ループ | 実行 | `br`がループ先頭へ戻る直前に`SAFEPOINT_YIELD`を返して中断する | interpreter_concept.py `test_cooperative_safepoint` |
 | TEST-INTP-51 | Safepoint未発生時は通常続行 | `interrupt_flag = False` | ループ実行 | ポーリングは行われるが中断されない | interpreter_concept.py `poll_safepoint` |
 
-### デバッガハンドラとハンドラテーブル切り替え ({DebuggerLabelTableSwitch})
+### デバッグ構成とインタープリタ専用実行 ({DebuggerInterpreterComposition})
 
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| TEST-INTP-60 | デバッグ未アタッチ時のゼロオーバーヘッド | デバッガ未接続 (`is_debug_mode=False`) | 通常実行 | インタープリタは標準ハンドラテーブル（`normal_handler_table`）を使用し、デバッグフックやテーブル分岐のオーバーヘッドなしで最高速実行される | `{DebuggerLabelTableSwitch}` |
-| TEST-INTP-61 | デバッガアタッチ時のハンドラテーブル切り替え | デバッガ接続 (`is_debug_mode=True`) | 実行 | インタープリタの有効ハンドラがデバッグ用テーブル（`debug_handler_table`）へ動的に切り替わり、命令実行ごとにデバッグフックが呼び出される | `{DebuggerLabelTableSwitch}` |
-| TEST-INTP-62 | デバッグハンドラでのブレークポイント検知・停止 | PC=0x100 にブレークポイント設定 | 実行継続 | インタープリタが命令実行前にブレークポイントを検知し、実行を中断して停止状態（SIGTRAP）へ遷移する | `{DebuggerLabelTableSwitch}` |
-| TEST-INTP-65 | デバッグアタッチ時のJITバイパス（インタープリタフォールバック） | JITキャッシュにトレースが存在 | デバッグアタッチ下で実行 | JIT直接ジャンプをバイパスし、インタープリタのデバッグハンドラで1命令ずつ安全にステップ制御される | `{DebuggerLabelTableSwitch}` |
+| TEST-INTP-60 | デバッグ未アタッチ時のゼロオーバーヘッド | デバッガ未接続 (`is_debug_mode=False`) | 通常構成を実行 | 通常構成はデバッガを保持せず、インタープリタの命令意味論へデバッグ分岐を追加しない | `{DebuggerInterpreterComposition}` |
+| TEST-INTP-61 | デバッグ構成の実行器固定 | `RuntimeCompositionConfig(execution=INTERPRETER, debugger=True)` | 構成を合成して実行 | デバッガ付き構成はインタープリタだけを生成し、JIT実行器を生成しない | `{DebuggerInterpreterComposition}` |
+| TEST-INTP-62 | アタッチ中のブレークポイント検知・停止 | インタープリタとデバッガが接続され、PC=0x100 にブレークポイント設定 | 実行継続 | インタープリタ実行境界でブレークポイントを検知し、実行を中断して停止状態（SIGTRAP）へ遷移する | `{DebuggerInterpreterComposition}` |
+| TEST-INTP-65 | アタッチ中のインタープリタ専用実行 | デバッグ構成でデバッガアタッチ中 | `step` または `continue` を実行 | アタッチ中は常にインタープリタが実行され、JITへの動的切替もハンドラテーブル切替も発生しない | `{DebuggerInterpreterComposition}` |
 
 ### ROM/Flash バイトコード直接デコードと命令オブジェクト生成ゼロ ({DirectBytecodeExecution})
 
@@ -139,7 +139,7 @@
 - **ラベルアリティ & プルーニング (TEST-INTP-20〜23)**: ブロック脱出、ループ背進辺、多重ネスト br_table。
 - **i64全演算 & メモリアクセス (TEST-INTP-30〜43)**: 64bit算術・シフト・ビットカウント・境界外トラップ。
 - **Safepointポーリング (TEST-INTP-50〜51)**: ループ背進辺での協調的ポーリング。
-- **デバッガハンドラ (TEST-INTP-60〜62, 65)**: ハンドラテーブル切り替え（`{DebuggerLabelTableSwitch}`）、ブレークポイント停止、JITバイパス。
+- **デバッグ構成 (TEST-INTP-60〜62, 65)**: インタープリタ専用構成、ブレークポイント停止、およびアタッチ中のJIT不使用。
 
 ## 4. 未検証・スコープ外
 

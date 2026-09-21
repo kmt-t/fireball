@@ -988,7 +988,7 @@ class Interpreter:
     def attach_debugger(self, debugger: DebuggerAttachment) -> None:
         """
         Records the attached debugger. Unlike the legacy block harness's
-        {DebuggerLabelTableSwitch}, the threaded interpreter's `_HANDLERS`
+        {DebuggerInterpreterComposition}, the threaded interpreter's `_HANDLERS`
         dispatch table is a single fixed table with no separate debug/normal
         variant to switch between -- breakpoint/step behavior for
         interpreter-only execution is driven by DebuggerManager itself.
@@ -997,13 +997,6 @@ class Interpreter:
 
     def detach_debugger(self) -> None:
         self.debugger = None
-
-    def flush_jit_cache(self) -> None:
-        """
-        No-op: a bare `Interpreter` never owns a JIT cache -- only a
-        `RuntimeEngine` wrapping one does. Exists so `DebuggerManager` can
-        treat interpreter-only and tiered execution uniformly.
-        """
 
     def call(self, func_index: int, args: Sequence[WasmNumber]) -> StaticVector[WasmNumber]:
         """Runs a function to completion in one call."""

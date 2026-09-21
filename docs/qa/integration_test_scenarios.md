@@ -70,7 +70,7 @@
 | `SignZeroExtension` | `interpreter.md` | 8/16/32-bit メモリ読み書きにおける符号付き・符号なしゼロ/符号拡張の完全性 | `TEST-INT-70` | ✅ PASS |
 | `ControlFrameCleanup` | `interpreter.md` | `br_table` / `block` / `loop` / `if` 偽分岐時のスタックフレーム不変性・リーク防止 | `TEST-INT-20`, `TEST-INT-22` | ✅ PASS |
 | `RSPMinimalSet` | `debugger.md`, `gdb_rsp_protocol.md` | GDB RSP 最小コマンドセット（`?`, `g/G`, `m/M`, `Z0/z0`, `s`, `c`）の実ソケット対話 | `TEST-INT-60`〜`TEST-INT-64` | ✅ PASS |
-| `Debugger_Jit_Flush` | `debugger.md`, `jit_runtime.md` | デバッガからのメモリ書き込み（`M` パケット）時の JIT キャッシュ全バンク即時無効化 | `TEST-INT-62`, `TEST-INT-72` | ✅ PASS |
+| `DebuggerInterpreterComposition` | `debugger.md`, `runtime_vsoc.md`, `runtime_composer.py` | デバッグ実行をInterpreter + Debuggerに固定し、Debugger + JITの同時構成をassertで拒否 | `TEST-DBG-13`, `TEST-VSOC-23` | ✅ PASS |
 | `HAL_PeripheralDrivers` | `platform_driver.md` | GPIO（入出力・エッジIRQ）、I2C（LM75）、SPI（EEPROM）、Timer | `TEST-INT-100`〜`TEST-INT-102` | ✅ PASS |
 | `WASI_InMemVFS` | `libfireball.md` | WASI互換アダプタ（`fd_seek`, `fd_read`, `fd_write`, `random_get`, `clock_time_get`） | `TEST-INT-103`〜`TEST-INT-105` | ✅ PASS |
 | `CopyAndPatch_JIT` | `jit_compiler.md` | ステンシル展開による高速 Copy-and-Patch JIT コード生成 | `TEST-INT-30`, `TEST-INT-40` | ✅ PASS |
@@ -176,40 +176,40 @@
 ---
 
 ### シナリオ 7: GDB Remote Serial Protocol (RSP) Socket Debugger
-- **対象コンポーネント**: `debug_manager`, `gdb_rsp_protocol`, `runtime_engine` (JIT Cache Flush), `interpreter`
+- **対象コンポーネント**: `debugger`, `runtime_vsoc`, `interpreter`
 - **参照実装スクリプト (Reference Script)**: [`scenario7_gdb_socket_debugger.py`](experiments/pysim/qa/scenarios/scenario7_gdb_socket_debugger.py)
 - **通信シナリオ**:
   - GDB サーバー（`GDBServer`）が実 TCP ソケットでリッスン
   - GDB クライアントからの接続、パケット送受信（`?`, `g`, `G`, `m`, `M`, `Z0`, `z0`, `s`, `c`）
   - 仮想レジスタ（PC, SP, FP, TOS, Locals）の読み出し・動的書き換え
   - ブレークポイント設定とヒット時の `$S05`（SIGTRAP）停止
-  - メモリ書き換え時の JIT キャッシュ自動 Flush（`{Debugger_Jit_Flush}`）
+  - デバッグ構成のInterpreter-only実行とDebugger + JIT同時構成の拒否（`{DebuggerInterpreterComposition}`）
   - 単歩ステップ実行（`s`）と正常終了（`$W00`）
 
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | TEST-INT-60 | TCP ソケット接続と停止理由クエリ | GDBServer 稼働中 | `?` パケット送信 | クライアント接続が受理され、`$S05#b8`（SIGTRAP）が返却される | `RSPMinimalSet` |
 | TEST-INT-61 | 20 仮想レジスタ読み出し・書き換え | 停止中 | `g` および `G` パケット送信 | 160文字 HEX 列で全仮想レジスタが正しく取得・変更される | `RSPMinimalSet` |
-| TEST-INT-62 | メモリ検査・書き換えと JIT Flush | 停止中 | `m` および `M` パケット送信 | 指定オフセットのバイト列が読み書きされ、JIT キャッシュ全バンクが無効化される | `Debugger_Jit_Flush` |
+| TEST-INT-62 | メモリ検査・書き換え | 停止中 | `m` および `M` パケット送信 | 指定オフセットのバイト列が読み書きされ、JITキャッシュ操作は発生しない | `RSPMinimalSet`, `MemoryBoundaryCheck` |
 | TEST-INT-63 | ブレークポイント停止とステップ実行 | 実行中 | `Z0` でブレークポイント設定後 `c` / `s` | 指定 PC で正確にトラップ停止し、単歩ステップ実行で 1 命令進む | `RSPMinimalSet` |
 | TEST-INT-64 | プログラム正常完走とデタッチ | ブレークポイント解除済み | `c` パケット送信 | プログラムが最後まで完走し、`$W00#b7`（終了）が返る | `RSPMinimalSet` |
 
 ---
 
 ### シナリオ 8: Storage Coverage (Globals / Locals / Memory Full-Width) & GDB Debugger
-- **対象コンポーネント**: `interpreter`, `debug_manager`, `gdb_rsp_protocol`, `runtime_loader`
+- **対象コンポーネント**: `interpreter`, `debugger`, `runtime_loader`
 - **参照実装スクリプト (Reference Script)**: [`scenario8_comprehensive_storage_coverage.py`](experiments/pysim/qa/scenarios/scenario8_comprehensive_storage_coverage.py)
 - **WAT & デバッグシナリオ**:
   - 全幅メモリアクセス: `i32.store8`/`load8_u`/`load8_s`, `i32.store16`/`load16_u`/`load16_s`, `i32.store`/`load`
   - 可変グローバル変数（`global.get`, `global.set`）と呼び出し間状態永続性
   - ローカル変数パイプライン演算（`local.get`, `local.set`, パラメータ保持）
-  - リアルタイム GDB RSP ソケット経由でのブレークポイント捕捉、ローカル変数改変、リニアメモリ書き換えと JIT キャッシュ無効化
+  - リアルタイム GDB RSP ソケット経由でのブレークポイント捕捉、ローカル変数改変、およびインタープリタ実行中のリニアメモリ書き換え
 
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | TEST-INT-70 | 全幅メモリ読み書きと符号/ゼロ拡張 | モジュールロード完了 | `test_memory_widths()` 実行 | 8/16/32-bit の符号/ゼロ拡張が正しく反映され期待値 `65757` を返す | `SignZeroExtension` |
 | TEST-INT-71 | グローバル変数パイプライン演算 | 初期値 100 | `pipeline_process(5, 200)` | メモリ配列との乗算累積が正確に実行され、グローバル値が `550` $\to$ `1000` へ更新保持される | `ThreadedInterpreter` |
-| TEST-INT-72 | デバッガからのストレージ動的改変 | ブレークポイント停止中 | `G` でローカル変数変更、`M` でメモリパッチ | 実行コンテキストとリニアメモリが即座に更新され、後続ステップに正確に反映される | `RSPMinimalSet`, `Debugger_Jit_Flush` |
+| TEST-INT-72 | デバッガからのストレージ動的改変 | ブレークポイント停止中 | `G` でローカル変数変更、`M` でメモリパッチ | 実行コンテキストとリニアメモリが即座に更新され、後続ステップに正確に反映される | `RSPMinimalSet`, `MemoryBoundaryCheck` |
 | TEST-INT-73 | ストレージ改変後の単歩ステップと完走 | 改変完了後 | `s` でステップ実行後 `c` で完走 | 改変後のローカル変数とメモリに基づき正確に完走（結果 `150`）し正常終了する | `RSPMinimalSet` |
 
 ---

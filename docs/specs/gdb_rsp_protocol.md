@@ -1,15 +1,15 @@
 # GDB Remote Serial Protocol 物理仕様書 (Supported GDB RSP Protocol) {VERIFY_LLM}
 
 ## 1. 概要と基本思想
-<!-- traceability: {DebuggerLabelTableSwitch} {Debug_Integrated} {META_ZeroCostAbstraction} -->
+<!-- traceability: {DebuggerInterpreterComposition} {Debug_Integrated} {META_ZeroCostAbstraction} -->
 本仕様書は、Fireball Hypervisor が UART / デバッグシリアル経由でホスト GDB クライアントに提供する **GDB Remote Serial Protocol (RSP)** のパケットフォーマット、サポートコマンドセット、および WASM 仮想レジスタ番号マッピングを定義する正本である。
 
-デバッグセッション確立時、Hypervisor は JIT 実行を無効化し、インタープリタのラベルテーブル切り替え（）により全命令境界でブレークポイント判定（`flat_set_view` 参照）とステップ実行を実現する。
+デバッグ実行用のランタイムは、起動時にインタープリタとデバッガを静的に構成する。デバッグセッションのアタッチ中は常にインタープリタだけを実行し、インタープリタのハンドラテーブルは切り替えない。デバッガはJITキャッシュを管理せず、ゲストメモリを書き換えてもキャッシュ無効化を要求しない。
 
 ---
 
 ## 2. パケット構造とチェックサム規約
-<!-- traceability: {DebuggerLabelTableSwitch} -->
+<!-- traceability: {DebuggerInterpreterComposition} -->
 
 GDB RSP パケットは ASCII 文字列で送受信され、以下のフレーム構造を持つ：
 
@@ -38,7 +38,7 @@ $<payload>#<checksum>
 | **メモリ書込** | `M <addr_hex>,<length_hex>:<hex_data>` | `OK` または `E01` | ゲストリニアメモリ、または統合スタックの指定範囲へバイト列を書き込み。 |
 | **継続実行** | `c` [ `<addr_hex>` ] | (停止時に `T05...` を返却) | 実行を再開。ブレークポイント到達または割り込みまでインタープリタ実行。 |
 | **単一ステップ実行** | `s` [ `<addr_hex>` ] | `T05thread:01;` | WASM 命令を 1 命令だけ実行して即座に停止。 |
-| **ブレークポイント設定**| `Z0,<addr_hex>,<kind>` | `OK` または `E01` | ソフトウェアブレークポイントを登録（`debug_manager` の `flat_set_view` に PC を挿入）。 |
+| **ブレークポイント設定**| `Z0,<addr_hex>,<kind>` | `OK` または `E01` | ソフトウェアブレークポイントを登録（`debugger` の `flat_set_view` に PC を挿入）。 |
 | **ブレークポイント削除**| `z0,<addr_hex>,<kind>` | `OK` または `E01` | ソフトウェアブレークポイントを削除（`flat_set_view` から PC を削除）。 |
 | **機能クエリ** | `qSupported` | `PacketSize=256;qXfer:features:read+` | パケットバッファ最大長（256 Bytes）および XML ターゲット記述サポートを通知。 |
 | **プロセス終了** | `k` | (接続切断) | デバッグ対象タスクを終了し、初期状態へリセット。 |
@@ -46,7 +46,7 @@ $<payload>#<checksum>
 ---
 
 ## 4. WASM 仮想レジスタ番号マッピング (GDB Target XML Map)
-<!-- traceability: {ContextPointerRegister} {DebuggerLabelTableSwitch} -->
+<!-- traceability: {ContextPointerRegister} {DebuggerInterpreterComposition} -->
 
 GDB クライアントが参照するレジスタ番号（Target Description XML）と、Fireball 統合スタック上の物理オフセットの対応：
 

@@ -266,8 +266,7 @@ WASM 実行基盤（`runtime_vsoc`）、ランタイムプラグイン構成契�
 | `{Debug_Standard_Env}` | `requirement_list.md` | `debugger.md` | 標準的なGDBクライアントから透過的に接続可能なデバッグ環境 | - |
 | `{RSPMinimalSet}` | `requirement_list.md` | `debugger.md` | GDB RSP 最小コマンドセット（?, g/G, m/M, Z0/z0, s, c）の実ソケット対話 | Scenario 7, 8 (TEST-INT-60〜TEST-INT-64) |
 | `{RSP_Transport_Selectable}` | `requirement_list.md` | `debugger.md` | UART/TCP 等のトランスポート層を切り替え可能な GDB RSP 設計 | - |
-| `{DebuggerLabelTableSwitch}` | `requirement_list.md` | `debugger.md` | デバッガアタッチ時のインタープリタハンドラテーブル動的切り替え | Scenario 7 |
-| `{Debugger_Jit_Flush}` | `requirement_list.md` | `debugger.md` | デバッガからのメモリ書き込み（M パケット）時の JIT キャッシュ全バンク即時無効化 | Scenario 7, 8 (TEST-INT-62, TEST-INT-72) |
+| `{DebuggerInterpreterComposition}` | `requirement_list.md` | `debugger.md` | デバッグ実行をインタープリタとデバッガの静的構成に固定する | Scenario 7 |
 | `{MemoryIsolation}` | `requirement_list.md` | `runtime_memory.md` | MPU によるコード領域・スタック領域・共有メモリ領域のハードウェア保護 | - |
 | `{System_Allocator}` | `requirement_list.md` | `runtime_memory.md` | システム基盤用 dlmalloc アロケータ（`system_allocator`）。システムコンテナ内部ストレージの動的確保・個別解放 | - |
 | `{Shm_Allocator}` | `requirement_list.md` | `runtime_memory.md` | IPC 共有メモリ領域（MPU Region 6）用 dlmalloc アロケータ。可変長 shared_block の切り出し・RAII解放時合体 | - |
@@ -296,12 +295,12 @@ WASM 実行基盤（`runtime_vsoc`）、ランタイムプラグイン構成契�
 | `{GOTCHA-VMMIO-01}` | `runtime_vmmio.md` | `runtime_vmmio_test_spec.md` | Bit 31 RAM 高速バイパス経路はページテーブル走査・TLB検索を一切行わない | TEST-VMMIO-01 |
 | `{GOTCHA-VMMIO-02}` | `runtime_vmmio.md` | `runtime_vmmio_test_spec.md` | Direct-Mapped TLB の 5-bit Folding XOR Hash（単純な下位マスクでは異なるFCの同一下位ページが衝突する） | TEST-VMMIO-14 |
 | `{GOTCHA-VMMIO-03}` | `runtime_vmmio.md` | `runtime_vmmio_test_spec.md` | SHM Revoke 時、PTEをアンマップし対象TLBスロットを即時破棄してin-flightアクセスを TRAP_UNREGISTERED_PAGE で遮断する | TEST-VMMIO-22, TEST-VMMIO-23 |
-| `{GOTCHA-DBG-01}` | `debugger.md` | `debugger_test_spec.md` | デバッガからのメモリ書き込み（M パケット）実行と同時に JIT キャッシュ全バンクを即時無効化する（{Debugger_Jit_Flush} の勘所） | TEST-DBG-06 |
+| `{GOTCHA-DBG-01}` | `debugger.md` | `debugger_test_spec.md` | デバッガとJITの同時構成を構成時assertで拒否し、デバッガからJITキャッシュを操作する経路を生成しない | test_runtime_composer.py, test_gotchas.py |
 | `{GOTCHA-DBG-03}` | `debugger.md` | `debugger_test_spec.md` | GDB RSP チェックサム不一致パケットはサーバーが破棄しNAK（-）を返して再送を要求する | TEST-DBG-03 |
 | `{GOTCHA-DBG-04}` | `debugger.md` | `debugger_test_spec.md` | 協調スケジューラ下での RSP 応答分割送出と複数 yield 跨ぎ耐性（長小応答 g の分割バッファ蓄積） | TEST-DBG-04 |
 | `{GOTCHA-MEM-03}` | `runtime_memory.md` | `runtime_memory_test_spec.md` | 送信中状態（FB_TASK_ID_FLIGHT）は TLB を即時破棄し送受信双方からのアクセスを遮断する。転送失敗時は rollback_transfer() で送信元 owner_id へ復元する。転送完了は相手タスクの到達を前提とし、CSPの公平性・有界応答時間を保証しない。 | TEST-MEM-10b, TEST-MEM-10c |
 | `{GOTCHA-MEM-04}` | `runtime_memory.md` | `runtime_memory_test_spec.md` | W^X 切り替えは命令単位ではなくトランザクションバッチ化し、パッチ完了時に一括で RO+X とキャッシュバリア（DSB/ISB）を発行する | TEST-MEM-24 |
-| `{GOTCHA-DBG-02}` | `debugger.md` | `debugger_test_spec.md` | デバッグ有効時は、インタープリタのハンドラテーブルをデバッグ版へ切り替える。命令ハンドラ内に `debug_enabled` の分岐を置かない | TEST-DBG-12, TEST-DBG-13 |
+| `{GOTCHA-DBG-02}` | `debugger.md` | `debugger_test_spec.md` | デバッグ有効時はインタープリタとデバッガを静的に構成し、アタッチ中もインタープリタだけを実行する。ハンドラテーブルを切り替えない | TEST-DBG-12, TEST-DBG-13 |
 | `{GOTCHA-INTP-07}` | `interpreter.md` | `interpreter_test_spec.md` | ハンドラテーブルの要素は、4論理引数 `(ctx, sp, local_base, tos)` を直接受ける関数とし、ラッパーによる二重ディスパッチを置かない | TEST-INTP-01, TEST-INTP-02 |
 | `{GOTCHA-INTP-08}` | `interpreter.md` | `interpreter_test_spec.md` | 継続結果は、次のハンドラの4引数を必ず返し、トラップ状態を同じ結果に含める | TEST-INTP-01, TEST-INTP-05 |
 | `{GOTCHA-INTP-09}` | `interpreter.md` | `interpreter_test_spec.md` | 次PCは戻り値の別フィールドではなく、実行コンテキストの `ip` に保持する | TEST-INTP-01 |

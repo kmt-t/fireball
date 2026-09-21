@@ -126,7 +126,7 @@ vSoCの動作パラメータを定義する。
 ## 4. 動的モデル
 
 ### 4.1 アルゴリズム
-<!-- traceability: {ThreadedInterpreter} {JIT_CopyAndPatch} {Challenge_ApproximateYield} {JIT_Safepoint} {Debugger_Jit_Flush} {ContextPointerRegister} -->
+<!-- traceability: {ThreadedInterpreter} {JIT_CopyAndPatch} {Challenge_ApproximateYield} {JIT_Safepoint} {ContextPointerRegister} -->
 
 
 vSoC コアエンジンの実行委譲、協調イールド、および外部介入制御の基本アルゴリズムを以下に定義する。
@@ -135,8 +135,8 @@ vSoC コアエンジンの実行委譲、協調イールド、および外部介
 | :--- | :--- | :--- | :--- | :--- |
 | **実行エンジン委譲とステートレス化** | `step()` 実行時 | `exec_trace`を4論理引数のプレーン関数としてディスパッチ | コルーチン化禁止による `[[clang::musttail]]` 阻害・スタック消費の防止（`GOTCHA-VSOC-01`） | |
 | **概算Yield (Approximate Yield)** | トレース境界脱出時 | `yield_threshold` を基準に vSoC が一括して `co_yield` 判定 | 命令ハンドラ内カウンタ埋め込みを排除し最速ホットパスを維持（`GOTCHA-VSOC-02`） | |
-| **JIT Safepoint** | ループバック（バックエッジ）到達時 | 保留中の割り込みイベント（原因レコード）・ブレークポイントを確認し、必要時フォールバック | JIT実行中の非同期イベント・Ctrl+Cへの即時応答性担保 | |
-| **デバッガ介入時キャッシュフラッシュ** | デバッガによるメモリ/変数書き換え時 | Tier 2は注入済み`JITRuntime`の`flush_all()`を呼び、Tier 3がJITキャッシュ（Active/Warm/Oldest）を一括無効化 | JIT コードと変更後メモリの整合性完全維持 | |
+| **JIT Safepoint** | ループバック（バックエッジ）到達時 | 保留中の割り込みイベント（原因レコード）を確認し、必要時フォールバック | JIT実行中の非同期イベント・Ctrl+Cへの即時応答性担保 | |
+| **デバッガとJITの構成排他** | デバッグ構成の合成時 | Tier 2の構成器は `Interpreter + Debugger` を選択し、`Debugger + JIT` の同時構成を `assert` で拒否する | デバッガがJITキャッシュを管理する経路を生成しない | `{DebuggerInterpreterComposition}` |
 | **1ランタイム1ゲスト・専用バンプ一括解放（W^Xコード分離）** | ランタイム生成時およびアンロード時 | 専用データアリーナ（RAM/XN）からコンテナストレージを確保し、専用W^XセクションからJITコードを確保。破棄時に $O(1)$ 一括リセット | 完全障害隔離、内部断片化ゼロ、ハードウェア実行保護（W^X/XN分離）の厳格維持 | `{OneRuntimeOneGuest}` `{Runtime_BumpAllocator}` |
 
 - **1ランタイム1ゲストのライフサイクル管理と専用バンプ一括解放 (`{OneRuntimeOneGuest}`, `{Runtime_BumpAllocator}`)**:
@@ -221,7 +221,7 @@ sequenceDiagram
 ```
 
 ### 4.2 状態遷移図 (SysML SMD: vSoC Engine ライフサイクル)
-<!-- traceability: {VSOC_Lifecycle} {ThreadedInterpreter} {JIT_CopyAndPatch} {Challenge_ApproximateYield} {JIT_Safepoint} {Debugger_Jit_Flush} -->
+<!-- traceability: {VSOC_Lifecycle} {ThreadedInterpreter} {JIT_CopyAndPatch} {Challenge_ApproximateYield} {JIT_Safepoint} {DebuggerInterpreterComposition} -->
 
 vSoC Engine の実行制御と JIT/Interpreter 切り替えの状態遷移（）を以下に示す。
 
@@ -268,7 +268,7 @@ stateDiagram-v2
 | **InterpreterRun** | インタープリタによるバイトコード逐次実行 | オプコード実行、ホットスポット検出 |
 | **JitRun** | JIT生成ネイティブコード実行 | ネイティブコード直接実行、Safepoint チェック |
 | **SafepointCheck** | JIT 実行中の割り込み確認ポイント | フラグチェック、中断判定 |
-| **Debugging** | デバッガによる停止中 | メモリ検査、変数書き換え、キャッシュ flush |
+| **Debugging** | デバッガによる停止中 | メモリ検査、変数書き換え。JITキャッシュは管理しない |
 | **Error** | エラー発生（復帰可能） | トラップハンドラ実行、状態リセット |
 | **Idle** | 停止・待機状態 | スケジューラに制御戻す |
 
@@ -283,8 +283,8 @@ stateDiagram-v2
 | JitRun → SafepointCheck | [loop back edge] | JIT ループバックエッジ | 保留中の`interrupt-event`確認 | SafepointCheck |
 | SafepointCheck → JitRun | [no event] | 保留イベントなし | JIT 実行継続 | JitRun |
 | SafepointCheck → Ready | [interrupt pending] | 原因付きイベント有り | インタープリタ フォールバック | Ready |
-| (any) → Debugging | breakpoint [debugger] | RSP ブレークポイント | デバッガコマンド待ち | Debugging |
-| Debugging → InterpreterRun | resume(interp) | 再開要求（インタープリタ） | JIT キャッシュをflushし、PCを保持してInterpreter専用で再開 | InterpreterRun |
+| InterpreterRun → Debugging | breakpoint [debugger] | RSP ブレークポイント | デバッガコマンド待ち | Debugging |
+| Debugging → InterpreterRun | resume(interp) | 再開要求（インタープリタ） | PCを保持してInterpreter専用で再開 | InterpreterRun |
 | (any) → Error | trap() | ページフォルト / 不正オプコード | トラップハンドラ実行 | Error |
 | Error → Ready | recover() | リカバリ可能 | コンテキストリセット | Ready |
 
@@ -293,7 +293,7 @@ stateDiagram-v2
 - **Approximate Yield (`{ADR_TraceBoundaryYield}`)**: インタープリタ/JITトレース側での命令単位の精密中断は行わず、トレースの切れ目（基本ブロック末尾・ループ境界・関数境界）で制御が戻ってくるたびに、vSoC が概算的にタスク切り替えを判定して `co_yield` を発行する
 
 ### 4.2.1 Safepoint と JIT キャッシュ協調モデル
-<!-- traceability: {JIT_Safepoint} {Challenge_JITCacheEfficiency} {Debugger_Jit_Flush} -->
+<!-- traceability: {JIT_Safepoint} {Challenge_JITCacheEfficiency} {DebuggerInterpreterComposition} -->
 
 JIT実行中の非同期割り込み対応とキャッシュ一貫性を保証するため、以下の協調メカニズムを採用する。
 
@@ -306,7 +306,7 @@ JIT生成ネイティブコードには、以下のポイントで割り込み�
 | :--- | :--- | :--- | :--- |
 | **ループバックエッジ** | 無限ループ検出と割り込み確認 | 保留イベント確認 + 条件分岐 | ~2-3 機械語命令 |
 | **関数呼び出し前** | 外部サービス呼び出し時の割り込み確認 | 保留イベントチェック | ~1-2 命令 |
-| **メモリアクセス後** | キャッシュ無効化（debugger flush）の確認 | 世代番号（generation cookie）検証 | ~1 命令 |
+| **メモリアクセス後** | 実行世代の整合性確認 | 世代番号（generation cookie）検証 | ~1 命令 |
 
 **保留イベントの構造:**
 ```
@@ -328,7 +328,6 @@ JIT コード領域（合計8KB `FB_CONF_JIT_CACHE_SIZE`）を4KBページ2枚�
 | **Normal (JitRun)** | Active が書込・実行中、Warm/Oldest が観測 | 新規 JIT コンパイルが Active へ追加 | 既存コードは保持 |
 | **co_yield (Rotation)** | 世代ローテーション | Active → Warm → Oldest へスライド | Warm バンクでは無償観測 |
 | **Oldest Evaluation** | Oldest lookup hit または破棄判定 | Oldest で lookup にヒットしたトレースは追加hotness判定なしに新 Active へ即時昇格 | 未ヒット（Cold）コードは Purge 破棄。Warm hitは昇格しない |
-| **Debugger Flush** | Interrupt Flag[2] 検出 | デバッガメモリ変更を検知 | Active/Warm/Oldestを無効化し、共通コード領域を保持 |
 
 **可変バンク内レイアウト（共通コード領域の後ろに連続配置）:**
 ```
@@ -349,26 +348,21 @@ Region 4全体は`0x2004_0000`から始まる連続8KBであり、共通コー�
 
 共通コードへの分岐はターゲット別ステンシルとrelocationで生成し、命令形式の到達範囲をコンパイル時に検査する。RISC-VのB-type条件分岐は偶数変位−4,096〜+4,094バイト、JALは±1MiBであるため、8KB領域内でも遠い条件分岐は近傍のrelay veneerから共通コードへ分岐する（[RISC-V Unprivileged ISA](https://docs.riscv.org/reference/isa/v20240411/unpriv/rv32.html)）。ARMも選択したThumb分岐形式に応じて到達範囲を検査する。
 
-#### Debugger 介入時のキャッシュ一貫性
-<!-- traceability: {Debugger_Jit_Flush} {Debug_Integrated} -->
+#### Debugger と JIT の構成排他
+<!-- traceability: {DebuggerInterpreterComposition} {Debug_Integrated} -->
 
-デバッガがゲストメモリを変更した場合の処理フロー：
+デバッグ実行とJIT実行は同一ランタイムへ同時に構成しない。構成器は次の条件を `assert` で検査する。
 
-1. **Debugger Writes Memory**: `gdb_write_memory(addr, data)` → `fireball::vsoc::request_debugger_interrupt(ctx)` を呼び出し、保留中のデバッガイベントを記録
-2. **Safepoint Detection**: JIT実行の SafepointCheck で `fireball::vsoc::has_debugger_interrupt(ctx)` を検査
-3. **Cache Flush Trigger**: イベント検出時、即座に以下を実行：
-   - Active/Warm/Oldestのメタデータを破棄（generation cookie インクリメント）。固定共通コード領域は保持
-   - 登録済みの exec_trace ポインタを無効化
-   - 次回 `step()` で Interpreter モードへフォールバック
-4. **Resume**: デバッガが再開コマンドを発行 → `InterpreterRun` 状態に遷移し、JITを無効化したままInterpreter専用で実行
-5. **Debugger Detach**: デバッガ接続が解除された時点でJITを再有効化し、候補ブロックのカードを`UNEXECUTED`として扱い、hotnessを最初から再計測して再コンパイルする
+1. デバッグ構成は `Interpreter + Debugger` を生成する。
+2. JIT実行器を含む構成へデバッガを追加しようとした場合は構成を拒否する。
+3. デバッガのアタッチ・デタッチはJITキャッシュを操作せず、実行器の動的切替も行わない。
 
 #### 形式検証 (pyModelChecking) 検証対象
 
 本節で述べた Safepoint 協調とキャッシュ一貫性の性質は、6.1 の表に列挙したプロパティとして形式検証されている。個々のモデルファイルとプロパティ名の対応は **[6.1 検証対象の不変条件](#61-検証対象の不変条件)** を正本とする。
 
 ### 4.3 内部シーケンス
-<!-- traceability: {ThreadedInterpreter} {JIT_CopyAndPatch} {Challenge_ApproximateYield} {JIT_Safepoint} {Debugger_Jit_Flush} -->
+<!-- traceability: {ThreadedInterpreter} {JIT_CopyAndPatch} {Challenge_ApproximateYield} {JIT_Safepoint} {DebuggerInterpreterComposition} -->
 #### WASM実行およびJIT遷移シーケンス
 
 <!-- traceability: {JIT_CopyAndPatch} {Interpreter_LazyJITSwitch} {Challenge_JITCacheEfficiency} -->
@@ -534,7 +528,7 @@ Fireballでは、標準WASIのゲスト側アダプタを `libfireball` とし�
 
 ### 6.1 検証対象の不変条件
 
-<!-- traceability: {JIT_Safepoint} {Challenge_JITCacheEfficiency} {Debugger_Jit_Flush} {GLOBAL_InterruptWakeup} -->
+<!-- traceability: {JIT_Safepoint} {Challenge_JITCacheEfficiency} {DebuggerInterpreterComposition} {GLOBAL_InterruptWakeup} -->
 
 各不変条件は、下表のモデルファイル内の**プロパティ名で特定できる形**で証明されている。すべてのプロパティは `build_model(guards=False)` による変異検査を伴い、「ガードを外すと違反状態が到達可能になる」ことを示すことで、空虚な真（vacuous truth）でないことを保証する。
 
@@ -542,22 +536,22 @@ Fireballでは、標準WASIのゲスト側アダプタを `libfireball` とし�
 | :--- | :--- | :--- |
 | **Safepoint応答性** | 実行中のタスクは必ず Safepoint に到達し、保留中の`interrupt-event`が検出されること。| [`vsoc_state_model.py`](docs/components/tier2_runtime/formal/vsoc_state_model.py) `safepoint_reachable_definitively` |
 | **IRQ/JIT レース不在** | Safepoint 同期を経ずに JIT ネイティブ実行中の割り込み処理が始まらないこと。| [`vsoc_state_model.py`](docs/components/tier2_runtime/formal/vsoc_state_model.py) `irq_jit_race_freedom_proof` |
-| **Debugger安全性** | デバッガがメモリを変更した後、キャッシュ flush が完了するまで旧世代コードが実行されないこと。| [`vsoc_cache_coherency_model.py`](docs/components/tier2_runtime/formal/vsoc_cache_coherency_model.py) `debugger_memory_write_invalidates_stale_traces` |
+| **Debugger構成排他** | デバッガとJITを同時に有効化した構成を生成しないこと。| `RuntimeComposer` の構成時 `assert` |
 | **キャッシュ整合性** | generation cookie が全バンク一括で更新され、バンク間で世代が逆行・不一致にならないこと。| [`vsoc_cache_coherency_model.py`](docs/components/tier2_runtime/formal/vsoc_cache_coherency_model.py) `generation_monotonicity_across_banks` |
 | **リソース有界性** | 3面ローテーション時、Purge とエントリ表スロット回収が不可分に行われ、未回収スロットが蓄積しないこと。 | [`vsoc_cache_coherency_model.py`](docs/components/tier2_runtime/formal/vsoc_cache_coherency_model.py) `bounded_cache_rotation_memory` |
-| **flush 完了性** | デバッガ介入で dirty になったキャッシュの flush は必ず完了すること。| [`vsoc_cache_coherency_model.py`](docs/components/tier2_runtime/formal/vsoc_cache_coherency_model.py) `dirty_cache_always_flushes_promptly` |
+| **Revoke後のflush完了性** | 共有メモリ権限剥奪で dirty になったキャッシュの flush は必ず完了すること。| [`vsoc_cache_coherency_model.py`](docs/components/tier2_runtime/formal/vsoc_cache_coherency_model.py) `dirty_cache_always_flushes_promptly` |
 | **重複コンパイル抑止** | 常駐済みトレースに対する二重コンパイルを抑止しキャッシュを浪費しないこと。| [`vsoc_cache_coherency_model.py`](docs/components/tier2_runtime/formal/vsoc_cache_coherency_model.py) `resident_trace_duplicate_compile_suppression` |
 | **状態一貫性** | vSoC Engine ライフサイクル（4.2）の各遷移後に状態が整合していること。 | 直交表 / レビュー（形式検証対象外） |
 
 ### 6.2 モデル分割の理由
 
-実行エンジンの状態機械（`vsoc_state_model.py`）と、キャッシュ寿命の関心事（`vsoc_cache_coherency_model.py`）は**別モデルに分割している**。世代スタンプとリソース回収を実行状態機械に合成すると状態空間が積になって爆発し、`document_structure.md` が定めるデコンポジション基準「検証可能性 (Verification Tractability) の維持」に反するためである。両モデルは `s_safepoint` / `s_dbg_write` という同一の観測点を共有しており、この点で接続される。
+実行エンジンの状態機械（`vsoc_state_model.py`）と、キャッシュ寿命の関心事（`vsoc_cache_coherency_model.py`）は**別モデルに分割している**。世代スタンプとリソース回収を実行状態機械に合成すると状態空間が積になって爆発し、`document_structure.md` が定めるデコンポジション基準「検証可能性 (Verification Tractability) の維持」に反するためである。両モデルは `s_safepoint` という同一の観測点を共有しており、この点で接続される。デバッガはこのキャッシュ整合性モデルの対象外である。
 
 ### 6.3 検証モデル概要（vsoc_cache_coherency_model.py）
 
 **状態変数（抽象化）:**
 ```
-phase       : {interp, exec_fresh, rotate, reclaimed, dbg_write, safepoint, flushing, flushed}
+phase       : {interp, exec_fresh, rotate, reclaimed, shm_revoke, safepoint, flushing, flushed}
 gen_status  : {gen_consistent, gen_regressed}          -- 全バンク一括更新か否か
 bank_status : {all_banks_accounted, leaked}            -- Purge と回収の不可分性
 code_status : {fresh, stale_code}                      -- 実行中コードの世代妥当性
@@ -568,10 +562,10 @@ code_status : {fresh, stale_code}                      -- 実行中コードの�
 **遷移:**
 - 通常実行: `interp → exec_fresh → interp`
 - ローテーション: `interp → rotate → reclaimed → interp`（Purge と回収は不可分）
-- デバッガ介入: `(interp | exec_fresh) → dbg_write → safepoint → flushing → flushed → interp`
+- 共有メモリ Revoke: `(interp | exec_fresh) → shm_revoke → safepoint → flushing → flushed → interp`
 
 **証明される不変式:**
-- `AG(¬stale_code)`   — flush 完了前の旧世代コード実行は到達不能
+- `AG(¬stale_code)`   — Revoke 後の flush 完了前に旧世代コードを実行する状態は到達不能
 - `AG(¬gen_regressed)` — 世代の逆行・バンク間不一致は到達不能
 - `AG(¬leaked)`       — 未回収スロットの蓄積は到達不能
 - `AG(dirty → AF(flushed))` — dirty になった flush は必ず完了する

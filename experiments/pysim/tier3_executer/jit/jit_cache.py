@@ -882,7 +882,7 @@ class JITMultiBufferCache:
         return purged_pcs
 
     def flush_all(self) -> None:
-        """Invalidates all JIT cache banks and unlinks chains ({Debugger_Jit_Flush})."""
+        """Invalidates all JIT cache banks and unlinks chains."""
         for bank in self.banks:
             for _, trace in bank.traces:
                 if trace.chain_next is not None:

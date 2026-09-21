@@ -25,6 +25,7 @@ from runtime_composer import (
 )
 from runtime_events import RuntimeEvent, RuntimeEventKind
 from system_containers import StaticVector
+from helpers import expect_assertion
 
 
 class _Executor:
@@ -116,6 +117,44 @@ def test_selected_plugins_receive_one_shared_event_stream() -> None:
     assert logger.instance.events[0].kind == RuntimeEventKind.FUNCTION_ENTER
     assert logger.instance.events[1].kind == RuntimeEventKind.FUNCTION_EXIT
     assert logger.instance.events[0].runtime_id == 9
+
+
+def test_debugger_composition_constructs_interpreter_only_runtime() -> None:
+    interpreter = _Executor()
+    jit = _Executor()
+    factories, logger, debugger, profiler = _factories(interpreter, jit)
+    runtime = RuntimeComposer.compose(
+        RuntimeCompositionConfig(
+            execution=RuntimeExecutionKind.INTERPRETER,
+            plugins=RuntimePluginSelection(debugger=True),
+        ),
+        factories,
+    )
+
+    assert isinstance(runtime, RuntimeWithPlugins)
+    assert runtime.call(7, (3,)) == 10
+    assert interpreter.calls == 1
+    assert jit.calls == 0
+    assert logger.calls == 0
+    assert debugger.calls == 1
+    assert profiler.calls == 0
+
+
+def test_debugger_cannot_be_composed_with_jit() -> None:
+    interpreter = _Executor()
+    jit = _Executor()
+    factories, _, _, _ = _factories(interpreter, jit)
+
+    with expect_assertion("debugger-enabled runtime must use interpreter-only execution"):
+        RuntimeComposer.compose(
+            RuntimeCompositionConfig(
+                execution=RuntimeExecutionKind.JIT,
+                plugins=RuntimePluginSelection(debugger=True),
+            ),
+            factories,
+        )
+    assert interpreter.calls == 0
+    assert jit.calls == 0
 
 
 ALL_TESTS = tuple(

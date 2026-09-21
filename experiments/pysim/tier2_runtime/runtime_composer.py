@@ -136,13 +136,16 @@ class RuntimeComposer:
     ) -> ComposedRuntime[ResultT, ArgumentT]:
         """無効プラグインを生成せず、選択済みの具象 Runtime だけを返す。"""
 
+        selection = config.plugins
+        if selection.debugger:
+            assert config.execution == RuntimeExecutionKind.INTERPRETER, (
+                "debugger-enabled runtime must use interpreter-only execution"
+            )
         if config.execution == RuntimeExecutionKind.INTERPRETER:
             executor = factories.interpreter()
         else:
             assert config.execution == RuntimeExecutionKind.JIT
             executor = factories.jit()
-
-        selection = config.plugins
         if not selection.logger and not selection.debugger and not selection.profiler:
             return RuntimeWithoutPlugins(executor)
 

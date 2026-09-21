@@ -1,14 +1,13 @@
 """
 experiments/pysim/tier3_plugins/debugger/debugger.py
 Debugger Manager & GDB RSP Protocol Engine for Fireball.
-Conforms strictly to docs/components/tier2_runtime/debug_manager.md
+Conforms strictly to docs/components/tier3_plugins/debugger.md
 and docs/specs/gdb_rsp_protocol.md.
 Implements:
 1. GDB RSP Minimal Command Set (?, g, G, m, M, Z0, z0, s, c) ({RSPMinimalSet})
 2. Virtual Register Mapping (0:pc, 1:sp, 2:fp, 3:tos, 4..19:local0..15)
 3. Breakpoint Management via sorted ReadOnlyFlatSetView semantics ({FlatViewNarrowing})
-4. JIT Cache Invalidation on Memory Write ({Debugger_Jit_Flush})
-5. Integrated Profiler (PC sampling frequency & memory assertions) ({Debug_Integrated})
+4. Integrated Profiler (PC sampling frequency & memory assertions) ({Debug_Integrated})
 """
 
 from __future__ import annotations
@@ -35,8 +34,6 @@ class _DebuggerEngine(Protocol):
 
     def detach_debugger(self) -> None: ...
 
-    def flush_jit_cache(self) -> None: ...
-
     def run_block_interpret(self, block: BasicBlock, ctx: WASMContext) -> int | None: ...
 
 
@@ -62,7 +59,7 @@ class DebuggerManager:
         )
 
     def attach(self) -> None:
-        """Attaches debugger, halting execution and enabling interpreter debug handler table ({DebuggerLabelTableSwitch})."""
+        """Attaches debugger and halts an interpreter-only debug runtime."""
         self.attached = True
         self.halted = True
         self.stop_signal = 5
@@ -70,7 +67,7 @@ class DebuggerManager:
             self.engine.attach_debugger(self)
 
     def detach(self) -> None:
-        """Detaches debugger and restores normal zero-overhead execution."""
+        """Detaches debugger without switching execution engines or touching JIT state."""
         self.attached = False
         self.halted = False
         if self.engine is not None:
@@ -123,11 +120,6 @@ class DebuggerManager:
         for addr, expected, actual in self._assertion_violations:
             violations.append(f"ASSERTION_FAILED: addr 0x{addr:X} expected {expected} got {actual}")
         return violations
-
-    def flush_jit_cache(self) -> None:
-        """Invalidates all JIT cache banks when memory is rewritten by debugger ({Debugger_Jit_Flush})."""
-        if self.engine is not None:
-            self.engine.flush_jit_cache()
 
     def require_execution_engine(self) -> _DebuggerEngine:
         """Returns the injected execution engine; construction is an outer-layer responsibility."""
@@ -228,7 +220,7 @@ class GDBRspProtocol:
                 return self.format_packet(mem_bytes.hex()), current_pc
             except Exception:
                 return self.format_packet("E01"), current_pc
-        # M addr,len:XX... - Write Memory & Flush JIT Cache ({Debugger_Jit_Flush})
+        # M addr,len:XX... - Write Guest Memory
         elif cmd == "M":
             try:
                 header, hex_data = args.split(":")
@@ -239,8 +231,6 @@ class GDBRspProtocol:
                 if ctx.memory is None or addr + len(data) > len(ctx.memory) or len(data) != length:
                     return self.format_packet("E01"), current_pc
                 ctx.memory[addr : addr + length] = data
-                # Invalidate JIT cache on memory rewrite ({Debugger_Jit_Flush})
-                self.dbg.flush_jit_cache()
                 return self.format_packet("OK"), current_pc
             except Exception:
                 return self.format_packet("E01"), current_pc
@@ -286,7 +276,7 @@ class GDBRspProtocol:
                     return self.format_packet("W00"), pc
                 self.dbg.sample_pc(pc)
                 block = blocks[pc]
-                # Run step in interpreter fallback mode
+                # Run one block in the statically composed interpreter
                 pc = engine.run_block_interpret(block, ctx)
                 self.dbg.verify_assertions(ctx.memory)
                 if pc is not None and self.dbg.has_breakpoint(pc):

@@ -1,13 +1,12 @@
-# Debugger プラグイン設計書 {VERIFY_FORMAL} {VERIFY_LLM}
+# Debugger プラグイン設計書 {VERIFY_LLM}
 <!-- evidence:
-     formal: ../tier2_runtime/formal/vsoc_cache_coherency_model.py
      concept: concepts/debugger_concept.py
      test: docs/qa/tier3_plugins/debugger_test_spec.md
 -->
 
 ## 1. コンセプト
-<!-- traceability: {RSPMinimalSet} {DebuggerLabelTableSwitch} {MemoryIsolation} {Debug_Standard_Env} {RSP_Transport_Selectable} {Debugger_Jit_Flush} -->
-デバッガおよび GDB Server は、VSCode等の外部ツールからのデバッグを可能にするため、COOS 上の**独立した協調タスク（`gdbserver_task`）**として常駐し、GDB Remote Serial Protocol (RSP) に基づく非同期・協調的な実行制御を行う。標準環境として VSCode、UART、J-Link をサポートする。RSP パケットの送受信待ち時は COOS スケジューラへ `yield` することで、ゲストタスクや HAL タスクの実行を阻害しない。JIT キャッシュの無効化はアタッチ中常時ではなく、デバッガがメモリを書き換えた場合にのみ発生する。
+<!-- traceability: {RSPMinimalSet} {DebuggerInterpreterComposition} {MemoryIsolation} {Debug_Standard_Env} {RSP_Transport_Selectable} -->
+デバッガおよび GDB Server は、VSCode等の外部ツールからのデバッグを可能にするため、COOS 上の**独立した協調タスク（`gdbserver_task`）**として常駐し、GDB Remote Serial Protocol (RSP) に基づく非同期・協調的な実行制御を行う。標準環境として VSCode、UART、J-Link をサポートする。RSP パケットの送受信待ち時は COOS スケジューラへ `yield` することで、ゲストタスクや HAL タスクの実行を阻害しない。デバッグ実行のランタイム構成は起動時にインタープリタとデバッガへ固定し、アタッチ中は常にインタープリタだけを実行する。デバッガはJITキャッシュを管理しない。
 
 ## 2. アーキテクチャ分類
 <!-- traceability: {META_3TierSeparation} {RSPMinimalSet} -->
@@ -71,16 +70,16 @@ GDB等の外部クライアントに提示する WASM 仮想レジスタ番号�
 ## 4. 動的モデル
 
 ### 4.1 アルゴリズム
-<!-- traceability: {DebuggerLabelTableSwitch} {RSPMinimalSet} {GOTCHA-DBG-02} -->
+<!-- traceability: {DebuggerInterpreterComposition} {RSPMinimalSet} {GOTCHA-DBG-02} -->
 1. **コマンド取得とチェックサム照合 (`GOTCHA-DBG-03`)**:
    - HAL層が `$`〜`#`のパケットフレーミングとチェックサム検証（一致時 ACK (`+`)、不一致時 NAK (`-`)）を完了させた上で供給する `debug_command` を、コマンドキューから取得する。
    **設計理由と不変条件**: GDB RSP はシリアル通信等の低信頼通信路での利用を想定しているため、パケット末尾の 2 桁の 16 進チェックサムを厳格に照合する。万一チェックサムが不一致であった場合は一切のコマンド解釈・実行を行わず、直ちに NAK（`-`）を返信してホスト側の GDB クライアントへ再送を要求する。
-2. **コマンドディスパッチと JIT キャッシュ即時フラッシュ (`GOTCHA-DBG-01`, `{Debugger_Jit_Flush}`)**:
+2. **コマンドディスパッチとゲストメモリ書き換え (`MemoryBoundaryCheck`)**:
    - 取得したコマンド（`?`, `g/G`, `m/M`, `c`, `s`, `Z0/z0` 等）の GDB コマンド構文を解析し、ディスパッチする。
-   **設計理由と不変条件**: メモリ書き込みコマンド（`M` パケット）によってゲスト RAM 上のバイト列やコード領域が書き換えられた場合、直ちに JIT キャッシュの全バンク（Active / Warm / Oldest）を無効化（`invalidate_all_banks()`）する。書き換え前の古いネイティブコードが JIT キャッシュに残存していると、デバッガでパッチを当てた処理が反映されず、自己書き換えコード的不整合を引き起こすためである。
-3. **ハンドラテーブル切替によるゼロオーバーヘッド・デバッグ (`GOTCHA-DBG-02`, )**:
-   - デバッガアタッチ中は命令粒度の実行制御のためインタープリタのハンドラテーブルをデバッグ用テーブル（`debug_handler_table`）へ切り替えて 1 命令ずつステップ実行またはブレークポイントまで連続実行する。
-   **設計理由と不変条件**: 通常実行時のインタープリタハンドラ内に `if (debug_enabled)` やブレークポイント検査の条件分岐を埋め込むと、非デバッグ時の実行性能が恒常的に数〜十数% 劣化する。そのため、通常実行時は分岐ゼロの高速ハンドラテーブルを使用し、デバッグセッション開始時にのみ関数ポインタテーブルをアトミックに差し替えることで、非デバッグ時のオーバーヘッドを完全にゼロに保つ。
+   **設計理由と不変条件**: メモリ書き込みコマンド（`M` パケット）は、境界検査に成功した場合だけゲストリニアメモリを更新する。デバッガはJITキャッシュを保持せず、キャッシュの無効化や世代管理を担当しない。
+3. **デバッグ構成でのインタープリタ専用実行 (`GOTCHA-DBG-02`)**:
+   - デバッグ実行は `Interpreter + Debugger` の静的構成で生成し、JIT実行器を構成しない。アタッチ中の `step` と `continue` は同じインタープリタの命令意味論を通り、デバッグ専用ハンドラテーブルへの切替は行わない。
+   **設計理由と不変条件**: JITをアタッチ時に停止・再開する動的モード切替を実行経路へ持ち込まず、デバッグ時の命令境界、ブレークポイント、および停止状態をインタープリタの境界で一貫して観測する。通常のJIT実行構成はデバッガを含まないため、通常実行のホットパスにもデバッグ分岐を追加しない。
 4. **ステップ実行**:
    - インタープリタを「1命令実行」モードで呼び出し、実行後に `Stopped` 状態へ遷移して停止理由（SIGTRAP）を通知。
 #### デバッガ・インタープリタ結合コンセプトコード (`concepts/debugger_concept.py`)
@@ -88,9 +87,9 @@ GDB等の外部クライアントに提示する WASM 仮想レジスタ番号�
 [`debugger_concept.py`](docs/components/tier3_plugins/concepts/debugger_concept.py)
 
 
-#### GDB メモリ書き換え時の JIT キャッシュ即時フラッシュ（責務シーケンス図）
-<!-- traceability: {GOTCHA-DBG-01} {GOTCHA-DBG-03} {Debugger_Jit_Flush} {RSPChecksumVerify} -->
-GDB ホストからのチェックサム検証付きパケット受信、ゲストメモリ更新、および JIT キャッシュ全バンク即時フラッシュの責務連携を示す。
+#### GDB メモリ書き換え（責務シーケンス図）
+<!-- traceability: {MemoryBoundaryCheck} {GOTCHA-DBG-03} {RSPChecksumVerify} -->
+GDB ホストからのチェックサム検証付きパケット受信とゲストメモリ更新の責務連携を示す。
 
 ```mermaid
 sequenceDiagram
@@ -99,7 +98,6 @@ sequenceDiagram
     participant HAL as HAL UART (RSP Framer)
     participant Dbg as Debugger
     participant RAM as Guest RAM / Flash
-    participant JIT as JIT Code Cache (Active/Warm/Oldest)
 
     Host->>HAL: '$M<addr>,<len>:<data>#<chksum>'
     Note over HAL: GOTCHA-DBG-03: Compute 2-digit Hex Checksum
@@ -109,10 +107,6 @@ sequenceDiagram
         HAL-->>Host: '+' (ACK)
         HAL->>Dbg: Push verified command (WRITE_MEMORY, addr, data)
         Dbg->>RAM: Write new bytes into Guest RAM
-        Note over Dbg,JIT: GOTCHA-DBG-01: Memory modified -> Stale JIT traces invalid!
-        Dbg->>JIT: invalidate_all_banks()
-        Note over JIT: Increment generation cookie & wipe Active/Warm/Oldest
-        JIT-->>Dbg: Cache flushed: fallback to Interpreter
         Dbg-->>HAL: PacketResponse('OK')
         HAL-->>Host: '$OK#9a'
     end
@@ -190,9 +184,9 @@ sequenceDiagram
 ## 6. 制約達成の方策
 
 ### 6.1 性能制約と方策
-<!-- traceability: {DebuggerLabelTableSwitch} -->
-- **目標**: デバッグ無効時のオーバーヘッドをゼロにする。
-- **方策**: デバッガ無効時はインタープリタのハンドラテーブルを切り替えず、通常の高速実行を維持する。
+<!-- traceability: {DebuggerInterpreterComposition} -->
+- **目標**: デバッグ実行中の命令意味論をインタープリタへ固定し、通常実行のJITホットパスへデバッグ分岐を追加しない。
+- **方策**: デバッグ構成は `Interpreter + Debugger` として静的に合成する。通常構成はデバッガを含まず、アタッチ時のJIT切替やハンドラテーブル切替を行わない。
 
 ### 6.2 メモリ制約と方策
 <!-- traceability: {MemoryIsolation} {META_NoStdVector} -->
@@ -206,10 +200,14 @@ sequenceDiagram
 
 ## 7. 形式検証・テスト仕様との対応
 
-### 7.1 JITキャッシュ無効化の形式検証
+### 7.1 デバッガとJITの同時構成拒否
 
-デバッガによるゲストメモリ書き換え後に旧世代のJITコードを実行しないことは、[`vsoc_cache_coherency_model.py`](docs/components/tier2_runtime/formal/vsoc_cache_coherency_model.py) の `debugger_memory_write_invalidates_stale_traces` として検証する。通常モデルでは性質が成立し、`guards=False` の変異モデルでは旧世代コード実行状態が到達可能になり、性質が反証される。
+デバッグ構成は `Interpreter + Debugger` に限定する。`RuntimeComposer` が `Debugger + JIT` の同時構成を受け取った場合は `assert` で拒否し、デバッガがJITキャッシュを操作する経路を持たない。
 
 ### 7.2 テスト仕様書との連携
 
-GDB RSP、ブレークポイント、ハンドラテーブル切替、およびJITキャッシュ協調のテストケースは [`debugger_test_spec.md`](docs/qa/tier3_plugins/debugger_test_spec.md) を正本とする。
+GDB RSP、ブレークポイント、インタープリタ専用デバッグ構成、およびメモリ境界検査のテストケースは [`debugger_test_spec.md`](docs/qa/tier3_plugins/debugger_test_spec.md) を正本とする。
+
+## 8. 設計判断と参考実装
+
+デバッグ実行を `Interpreter + Debugger` に静的限定し、`Debugger + JIT` は構成時に拒否する。デバッガはJITキャッシュを所有せず、メモリ書き換え時のキャッシュ無効化も担当しない。参考実装は [`debugger_concept.py`](docs/components/tier3_plugins/concepts/debugger_concept.py) とする。

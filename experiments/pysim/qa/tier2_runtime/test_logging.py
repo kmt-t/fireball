@@ -33,7 +33,7 @@ for _p in [
         sys.path.insert(0, _sp)
 
 from helpers import expect_assertion, make_interpreter, wat_to_wasm
-from tier3_executer.interpreter import TRAP_LOG_EVENTS, TrapCode
+from tier3_executer.interpreter.interpreter import TRAP_LOG_EVENTS, TrapCode
 from interrupt_event import InterruptEvent
 from ipc_router import (
     IPCMessage,

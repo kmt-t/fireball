@@ -27,14 +27,14 @@ for _p in (
     _sp = str(_p)
     sys.path.insert(0, _sp)
 
-from tier3_executer.interpreter import Interpreter, InterpreterBindings
+from tier3_executer.interpreter.interpreter import Interpreter, InterpreterBindings
 from tier2_runtime.logger import LogLevel
 from recovery import RecoveryManager, RecoveryStrategy, Result
 from runtime_engine import RuntimeEngine
 from system import System
 from system_containers import StaticVector
 from wasm_reader import parse
-from tier3_executer.x64_jit import TraceCompiler
+from tier3_executer.jit.x64_jit import TraceCompiler
 
 findings: StaticVector[str] = StaticVector(capacity=8)
 
@@ -169,10 +169,10 @@ FACTORIAL_WASM = (
 
 
 def demo_wasmjit_hybrid_execution(sysv: System) -> None:
-    """Demonstrates Tier 2 Interpreter -> 2-bit Card Marking -> Tier 3 JIT trace compilation & execution.
+    """Demonstrates Tier 3 Interpreter -> 2-bit Card Marking -> Tier 3 JIT trace compilation & execution.
 
     Flow:
-        1. WASM module begins execution via Tier 2 Interpreter (direct threaded dispatch).
+        1. WASM module begins execution via Tier 3 Interpreter (direct threaded dispatch).
         2. Hot basic-blocks are detected and queued to LIFO compile_queue upon yield.
         3. COOS scheduler idle_hook compiles queued traces into Active JIT cache and chains them.
         4. Execution seamlessly transitions from Interpreter into native JIT traces,

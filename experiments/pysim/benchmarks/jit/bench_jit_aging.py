@@ -40,11 +40,11 @@ for _p in [
         sys.path.insert(0, _sp)
 
 from config import FB_CONF_JIT_AGING_STEP_SCAN_BYTES, FB_CONF_JIT_AGING_STEP_UNITS
-from tier3_executer.interpreter import Interpreter, InterpreterBindings
+from tier3_executer.interpreter.interpreter import Interpreter, InterpreterBindings
 from runtime_engine import JITTrace, RuntimeEngine
 from wasm_module import WasmOperand
 from wasm_reader import parse
-from tier3_executer.x64_jit import TraceCompiler
+from tier3_executer.jit.x64_jit import TraceCompiler
 
 try:
     import wasmtime

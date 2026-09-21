@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Builds optional Cython pure-python-mode acceleration for pysim's hottest
-# interpreter modules (Linux/WSL, clang). See leb128.py / interpreter.py's
+# Builds optional Cython pure-python-mode acceleration for Tier 2 runtime
+# modules (Linux/WSL, clang). See leb128.py / runtime_engine.py's
 # `@cython.locals(...)`-annotated functions for what this compiles.
 # Requires: `uv pip install cython` (already in requirements.txt) and clang
 # on PATH.
@@ -18,8 +18,8 @@ mkdir -p "${native_build_dir}"
 PY_INC=$(uv run python -c "import sysconfig; print(sysconfig.get_path('include'))")
 PY_LDLIB=$(uv run python -c "import sysconfig; print(sysconfig.get_config_var('LIBDIR') or '')")
 
-# Dependency order: see build_native.ps1's comment.
-for mod in leb128 interpreter runtime_engine; do
+# The Tier 3 interpreter has its own build entry point.
+for mod in leb128 runtime_engine; do
     generated_c="${native_build_dir}/${mod}.c"
     echo ">>> Transpiling ${mod}.py -> ${generated_c} (Cython)"
     uv run cython "${mod}.py" -3 -o "${generated_c}"

@@ -8,7 +8,7 @@ Genuine 3D Ambient Occlusion Benchmark (AO-Bench):
    - Hit point P and 4 hemisphere sample rays per hit for Ambient Occlusion shading.
    - Occlusion integration and ASCII gradation mapping.
 3. Compiled to .wasm binary using OSS wasmtime.wat2wasm.
-4. Directly parsed with Fireball wasm_reader.py and executed on Tier 2 Threaded CPS Interpreter.
+4. Directly parsed with Fireball wasm_reader.py and executed on the Tier 3 Threaded CPS Interpreter.
 5. Flushes rendered ASCII output via WASI fd_write and reports exact ray count & throughput.
 """
 
@@ -40,7 +40,7 @@ except ImportError:
     wasmtime = None
 
 from dummy_drivers import DummyDriver
-from tier3_executer.interpreter_cps import BACKEND, NATIVE_AVAILABLE, Interpreter, InterpreterBindings
+from tier3_executer.interpreter.interpreter_cps import BACKEND, NATIVE_AVAILABLE, Interpreter, InterpreterBindings
 from system import System
 from wasi import WasiHostContext
 from wasm_reader import parse
@@ -405,7 +405,7 @@ def run_aobench():
     print(f"    -> Parsed Module: {len(module.functions)} functions, {len(module.exports)} exports")
     # 3. Setup System & WASI Context
     from runtime_engine import RuntimeEngine
-    from tier3_executer.x64_jit import TraceCompiler
+    from tier3_executer.jit.x64_jit import TraceCompiler
 
     # 3. Setup System & WASI Context for Tier 2 Baseline
     sysv = System()
@@ -413,9 +413,9 @@ def run_aobench():
     wasi_ctx = WasiHostContext(sysv)
     host_funcs = wasi_ctx.build_interpreter_host_functions(module)
     module.init_memory_data(wasi_ctx.guest_memory, ())
-    # 4. Tier 2: Pure Threaded CPS Interpreter Execution
+    # 4. Tier 3: Pure Threaded CPS Interpreter Execution
     print(
-        f"\n[*] Step 3: Executing on Tier 2 Threaded CPS Interpreter "
+        f"\n[*] Step 3: Executing on Tier 3 Threaded CPS Interpreter "
         f"(backend={BACKEND}, {WIDTH}x{HEIGHT}, {AO_SAMPLES} samples/hit)..."
     )
     interp_t2 = Interpreter(
@@ -466,7 +466,7 @@ def run_aobench():
     expected_bytes = (WIDTH + 1) * HEIGHT  # (32 chars + 1 newline) * 16 rows = 528 bytes
     is_valid_size = len(render_output.encode("utf-8")) == expected_bytes
     assert is_identical, (
-        "CRITICAL: Tier 3 JIT output diverges from Tier 2 Interpreter reference output!"
+        "CRITICAL: Tier 3 JIT output diverges from Tier 3 Interpreter reference output!"
     )
     assert has_no_nul, "CRITICAL: Output contains corrupted NUL bytes!"
     assert is_valid_size, (
@@ -484,7 +484,7 @@ def run_aobench():
     print("  * Differential Check:       PASS (Tier 2 & Tier 3 match byte-for-byte)")
     print("--------------------------------------------------------------------------------")
     print(
-        f"  * Tier 2 (Threaded CPS):    {t2_time_ms:.2f} ms / frame  ({t2_rays_per_sec:,.0f} Rays / Sec)"
+        f"  * Tier 3 Interpreter (Threaded CPS): {t2_time_ms:.2f} ms / frame  ({t2_rays_per_sec:,.0f} Rays / Sec)"
     )
     print(
         f"  * Tier 3 (Hybrid + JIT):    {t3_time_ms:.2f} ms / frame  ({t3_rays_per_sec:,.0f} Rays / Sec)"

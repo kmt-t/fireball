@@ -34,7 +34,7 @@ from config import (
 )
 from control_flow import iter_block_ops
 from interop_abi import NativeValueStack
-from tier3_executer.interpreter import (
+from tier3_executer.interpreter.interpreter import (
     RETURN_SENTINEL_IP,
     CallFrame,
     Interpreter,
@@ -59,9 +59,9 @@ from wasm_opcodes import BLOCK, END, IF, LOOP
 from vmmio import VMMIOController
 
 try:
-    import native_trace_call as _native_trace_call
+    import tier3_executer.jit.native_trace_call as _native_trace_call
 except ImportError:
-    # Optional accelerator (see tier3_executer/native_trace_call.pyx and build scripts):
+    # Optional accelerator (see tier3_executer/jit/native_trace_call.pyx and build scripts):
     # not built -- _invoke_trace falls back to the ctypes.CFUNCTYPE path below.
     _native_trace_call = None
 
@@ -117,7 +117,7 @@ class _RescheduleObserver(Protocol):
     def observe_reschedule_generation(self) -> bool: ...
 
 
-from tier3_executer.jit_cache import (
+from tier3_executer.jit.jit_cache import (
     _CARD_STATE_NAMES,
     BlockCardMask,
     CardState,

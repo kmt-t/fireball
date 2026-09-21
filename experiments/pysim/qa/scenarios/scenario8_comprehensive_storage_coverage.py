@@ -31,7 +31,7 @@ Tests exhaustive read/write operations across all WASM storage tiers:
    - 32-bit: i32.store, i32.load
    - Dynamic Memory Growth: memory.grow, memory.size, boundary accesses
 4. High-Coverage JIT Differential Verification:
-   - Tier 2 Interpreter vs Tier 3 JIT execution differential equality
+   - Tier 3 Interpreter vs Tier 3 JIT execution differential equality
 5. Interactive GDB RSP Live Debugging:
    - Breakpoint trapping, virtual register inspection/mutation (g, G)
    - Memory inspection/patching (m, M) with JIT cache flush
@@ -42,15 +42,15 @@ import socket
 import time
 
 import wasmtime
-from tier3_plugins.debugger import DebuggerManager
+from tier3_plugins.debugger.debugger import DebuggerManager
 from execution_context import WASMContext
-from tier3_plugins.gdb_server import GDBServer
-from tier3_executer.interpreter import Interpreter, InterpreterBindings
+from tier3_plugins.debugger.gdb_server import GDBServer
+from tier3_executer.interpreter.interpreter import Interpreter, InterpreterBindings
 from runtime_test_driver import RuntimeEngineDebugDriver
 from system import System
 from wasi import WasiHostContext
 from wasm_reader import parse
-from tier3_executer.x64_jit import TraceCompiler
+from tier3_executer.jit.x64_jit import TraceCompiler
 
 SCENARIO8_WAT = """
 (module

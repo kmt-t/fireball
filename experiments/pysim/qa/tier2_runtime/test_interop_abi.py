@@ -39,7 +39,7 @@ from interop_abi import (
     WasmRunRequestNative,
     WasmRunResultNative,
 )
-from tier3_executer.interpreter import ControlFrameKind, InterpreterContext, NativeControlStack
+from tier3_executer.interpreter.interpreter import ControlFrameKind, InterpreterContext, NativeControlStack
 from native_stacks import ControlFrameWindow, LocalStackWindow
 from wasm_module import F32, F64, I32, I64, LocalWidthMap
 

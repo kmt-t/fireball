@@ -183,7 +183,7 @@ def main():
         f"  * Resolution & Sampling:              {ao_res['width']} x {ao_res['height']} ({ao_res['total_rays']:,} rays / frame)"
     )
     print(
-        f"  * Tier 2 (Threaded CPS):              {ao_res['t2_time_ms']:.2f} ms  ({ao_res['t2_rays_per_sec']:,.0f} Rays / Sec)"
+        f"  * Tier 3 Interpreter (Threaded CPS): {ao_res['t2_time_ms']:.2f} ms  ({ao_res['t2_rays_per_sec']:,.0f} Rays / Sec)"
     )
     print(
         f"  * Tier 3 (Hybrid + JIT):              {ao_res['t3_time_ms']:.2f} ms  ({ao_res['t3_rays_per_sec']:,.0f} Rays / Sec)"

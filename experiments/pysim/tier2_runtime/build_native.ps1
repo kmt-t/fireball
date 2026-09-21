@@ -1,5 +1,5 @@
-# Builds optional Cython pure-python-mode acceleration for pysim's hottest
-# interpreter modules (Windows / clang-cl). See leb128.py / interpreter.py's
+# Builds optional Cython pure-python-mode acceleration for Tier 2 runtime
+# modules (Windows / clang-cl). See leb128.py / runtime_engine.py's
 # `@cython.locals(...)`-annotated functions for what this compiles.
 # Requires: `uv pip install cython` (already in requirements.txt), clang-cl
 # on PATH, and a Visual Studio Build Tools + Windows SDK install (for the
@@ -18,11 +18,9 @@ Set-Location $scriptDir
 $nativeBuildDir = Join-Path $env:TEMP "fireball-pysim-native"
 New-Item -ItemType Directory -Force $nativeBuildDir | Out-Null
 
-# Compile in dependency order: leb128 has no local deps; interpreter and
-# runtime_engine import other pysim modules at the Python level (normal
-# dynamic import, not a C link), so order between them doesn't matter, but
-# leb128 must exist first since it's cimport-free pure Python either way.
-$modules = @("leb128", "interpreter", "runtime_engine")
+# Compile in dependency order. These modules remain Tier 2 runtime support;
+# the Tier 3 interpreter has its own build entry point.
+$modules = @("leb128", "runtime_engine")
 
 $vswhere = "C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe"
 $vsDir = & $vswhere -latest -products '*' -property installationPath

@@ -17,7 +17,7 @@ for _p in [
     if _sp not in sys.path:
         sys.path.insert(0, _sp)
 
-"""Integration Scenario 3: Tier 2 Interpreter + Recursion & Indirect Table Dispatch.
+"""Integration Scenario 3: Tier 3 Interpreter + Recursion & Indirect Table Dispatch.
 
 Tests:
 - Deep recursive stack unwinding with UnifiedStack CallFrames
@@ -26,7 +26,7 @@ Tests:
 """
 
 import wasmtime
-from tier3_executer.interpreter import Interpreter, InterpreterBindings
+from tier3_executer.interpreter.interpreter import Interpreter, InterpreterBindings
 from system import System
 from wasi import WasiHostContext
 from wasm_reader import parse

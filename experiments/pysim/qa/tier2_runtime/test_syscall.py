@@ -538,7 +538,7 @@ def test_wasi_jit_trampoline_invokes_the_registered_handler():
 
 
 # ===========================================================================
-# 10. WASM Instruction Set & Interpreter (runtime_interpreter_test_spec.md, wasm_instruction_set_test_spec.md)
+# 10. WASM Instruction Set & Interpreter (interpreter_test_spec.md, wasm_instruction_set_test_spec.md)
 # ===========================================================================
 
 

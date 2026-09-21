@@ -27,7 +27,7 @@ Tests:
 """
 
 import wasmtime
-from tier3_executer.interpreter import Interpreter, InterpreterBindings
+from tier3_executer.interpreter.interpreter import Interpreter, InterpreterBindings
 from system import System
 from wasi import WasiHostContext
 from wasm_reader import parse

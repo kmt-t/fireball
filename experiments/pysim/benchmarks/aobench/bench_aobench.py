@@ -26,12 +26,12 @@ for _p in [
         sys.path.insert(0, _sp)
 
 from dummy_drivers import DummyDriver
-from tier3_executer.interpreter import Interpreter, InterpreterBindings
+from tier3_executer.interpreter.interpreter import Interpreter, InterpreterBindings
 from runtime_engine import RuntimeEngine
 from system import System
 from wasi import WasiHostContext
 from wasm_reader import parse
-from tier3_executer.x64_jit import TraceCompiler
+from tier3_executer.jit.x64_jit import TraceCompiler
 
 
 def run_aobench(debug: bool = False) -> dict[str, int | float]:
@@ -120,7 +120,7 @@ def main():
         f"  * Resolution:               {res['width']} x {res['height']} ({res['total_rays']:,} total rays)"
     )
     print(
-        f"  * Tier 2 (Threaded CPS):    {res['t2_time_ms']:.2f} ms  ({res['t2_rays_per_sec']:,.0f} Rays / Sec)"
+        f"  * Tier 3 Interpreter (Threaded CPS): {res['t2_time_ms']:.2f} ms  ({res['t2_rays_per_sec']:,.0f} Rays / Sec)"
     )
     print(
         f"  * Tier 3 (Hybrid + JIT):    {res['t3_time_ms']:.2f} ms  ({res['t3_rays_per_sec']:,.0f} Rays / Sec)"

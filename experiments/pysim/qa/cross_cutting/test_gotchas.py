@@ -52,12 +52,12 @@ for _p in [
 import ctypes
 
 from control_flow import extract_basic_blocks
-from tier3_plugins.debugger import DebuggerManager, GDBRspProtocol
+from tier3_plugins.debugger.debugger import DebuggerManager, GDBRspProtocol
 from execution_context import WASMContext
 from hal_dispatch import HalBufferPool
 from helpers import expect_assertion, make_test_ipc_message, wat_to_wasm
 from helpers import make_interpreter as Interpreter
-from tier3_executer.interpreter import _HANDLERS
+from tier3_executer.interpreter.interpreter import _HANDLERS
 from ipc_router import (
     IPCRouter,
     IPCStatus,
@@ -101,7 +101,7 @@ from vmmio import TrapCode, VMMIOController, VmmioStatus
 from wasm_module import I32
 from wasm_opcodes import I32_ADD, I32_CONST, LOCAL_GET, LOCAL_SET
 from wasm_reader import parse
-from tier3_executer.x64_jit import TraceCompiler
+from tier3_executer.jit.x64_jit import TraceCompiler
 
 # ==============================================================================
 # 1. Interpreter Gotchas (GOTCHA-INTP-01 ~ 04)

@@ -55,7 +55,7 @@
   - ROM バイト列ゼロコピー LEB128 デコーダ・セクションインデックス構築 `{ROMParsing}` `{META_AccessDictionary}`
   - バリデータ (V1〜V6) `{LightweightVerifier}`
   - 不正バイナリ検証失敗時のバンプポインタ完全ロールバック
-- **Phase 1.2: WASM Stackless Fast Interpreter (`runtime_interpreter`)**
+- **Phase 1.2: WASM Stackless Fast Interpreter (`interpreter`)**
   - `execution_context` と独立した3本の領域（オペランド領域、ローカル値領域、制御ブロック復帰情報領域） `{ContextPointerRegister}`
   - 継続渡し4論理引数（`[[clang::musttail]]`）スレッド化ディスパッチャ `{ThreadedInterpreter}`
   - 全コア命令ハンドラ（算術・制御・メモリ境界トラップ） `{MemoryBoundaryCheck}`

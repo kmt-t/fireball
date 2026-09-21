@@ -43,10 +43,10 @@ from ipc_router import (
 )
 
 if TYPE_CHECKING:
-    from tier3_plugins.debugger import DebuggerManager
-    from tier3_plugins.gdb_server import GDBServer
+    from tier3_plugins.debugger.debugger import DebuggerManager
+    from tier3_plugins.debugger.gdb_server import GDBServer
     from hal_dispatch import HalDriver, HalTask, StreamSink
-    from tier3_executer.interpreter import BasicBlock, WASMContext
+    from tier3_executer.interpreter.interpreter import BasicBlock, WASMContext
 
 from loader import fnv1a_32
 from tier2_runtime.logger import LogDictionary, Logger, LogLevel
@@ -631,7 +631,7 @@ class System:
         GDBServer runs as a cooperative task communicating via non-blocking TCP socket.
         Returns: (task_id, bound_port).
         """
-        from tier3_plugins.gdb_server import GDBServer
+        from tier3_plugins.debugger.gdb_server import GDBServer
 
         gdb_srv = GDBServer(dbg, host=host, port=port)
         bound_port = gdb_srv.bind_socket()

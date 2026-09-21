@@ -85,7 +85,7 @@ Fireball Hypervisor の現行作業および次期フェーズのタスク一覧
 - [ ] **Loader 単体テストスイート (`tests/test_loader.cxx`)**:
   - 正常系 WASM バイナリおよび各種不正バイナリの拒絶テスト
 
-### Phase 1.2: WASM Stackless Fast Interpreter (`runtime_interpreter`)
+### Phase 1.2: WASM Stackless Fast Interpreter (`interpreter`)
 - [ ] **`execution_context` & 独立3バッファスタック (`inc/runtime/interpreter.hxx`)**:
   - オペランド領域・ローカル値領域・制御ブロック復帰情報領域の独立管理・ローカル変数基底 R2 渡し `{ContextPointerRegister}`
 - [ ] **コア命令ハンドラ群 (`src/runtime/opcode_handlers.cxx`)**:

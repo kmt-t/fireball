@@ -57,14 +57,14 @@ TEST_SUITES = [
     ("Tier 2 Runtime", "WASM Loader & Segments", TEST_DIR / "tier2_runtime" / "test_loader.py"),
     ("Tier 2 Runtime", "JIT Candidate Scoring", TEST_DIR / "tier2_runtime" / "test_jit_scoring.py"),
     (
-        "Tier 2 Runtime",
+        "Tier 3 Executer",
         "WASM Interpreter & Instructions",
-        TEST_DIR / "tier3_executer" / "test_interpreter.py",
+        TEST_DIR / "tier3_executer" / "interpreter" / "test_interpreter.py",
     ),
     (
-        "Tier 2 Runtime",
+        "Tier 3 Executer",
         "CPS Interpreter Python/Native Compatibility",
-        TEST_DIR / "tier3_executer" / "test_cps_interpreter.py",
+        TEST_DIR / "tier3_executer" / "interpreter" / "test_cps_interpreter.py",
     ),
     (
         "Tier 2 Runtime",
@@ -90,10 +90,26 @@ TEST_SUITES = [
     ("Tier 2 Runtime", "vSoC Multitasking & Pipeline", TEST_DIR / "tier2_runtime" / "test_vsoc.py"),
     ("Tier 2 Runtime", "Runtime Static Composition", TEST_DIR / "tier2_runtime" / "test_runtime_composer.py"),
     # --- Tier 3 Plugins ---
-    ("Tier 3 Plugins", "Debug Manager Core", TEST_DIR / "tier3_plugins" / "test_debugger.py"),
-    ("Tier 3 Plugins", "GDB RSP Remote Session", TEST_DIR / "tier3_plugins" / "test_gdb_remote.py"),
-    ("Tier 3 Plugins", "Guest Profiler", TEST_DIR / "tier3_plugins" / "test_guest_profiler.py"),
-    ("Tier 3 Plugins", "Runtime Event Logger", TEST_DIR / "tier3_plugins" / "test_runtime_event_logger.py"),
+    (
+        "Tier 3 Plugins",
+        "Debug Manager Core",
+        TEST_DIR / "tier3_plugins" / "debugger" / "test_debugger.py",
+    ),
+    (
+        "Tier 3 Plugins",
+        "GDB RSP Remote Session",
+        TEST_DIR / "tier3_plugins" / "debugger" / "test_gdb_remote.py",
+    ),
+    (
+        "Tier 3 Plugins",
+        "Guest Profiler",
+        TEST_DIR / "tier3_plugins" / "profiler" / "test_guest_profiler.py",
+    ),
+    (
+        "Tier 3 Plugins",
+        "Runtime Event Logger",
+        TEST_DIR / "tier3_plugins" / "logger" / "test_runtime_event_logger.py",
+    ),
     # --- Tier 3: Platform ---
     (
         "Tier 3 Platform",
@@ -102,18 +118,30 @@ TEST_SUITES = [
     ),
     ("Tier 3 Platform", "HAL Drivers & ShmPool", TEST_DIR / "tier3_platform" / "test_hal.py"),
     # --- Tier 3: Executer ---
-    ("Tier 3 Executer", "x64 Assembler", TEST_DIR / "tier3_executer" / "test_x64_asm.py"),
-    ("Tier 3 Executer", "x64 Stencils Catalog", TEST_DIR / "tier3_executer" / "test_x64_stencils.py"),
+    (
+        "Tier 3 Executer",
+        "x64 Assembler",
+        TEST_DIR / "tier3_executer" / "jit" / "test_x64_asm.py",
+    ),
+    (
+        "Tier 3 Executer",
+        "x64 Stencils Catalog",
+        TEST_DIR / "tier3_executer" / "jit" / "test_x64_stencils.py",
+    ),
     (
         "Tier 3 Executer",
         "JIT Hotspot Profiler & 3-Bank Cache",
-        TEST_DIR / "tier3_executer" / "test_jit_runtime.py",
+        TEST_DIR / "tier3_executer" / "jit" / "test_jit_runtime.py",
     ),
-    ("Tier 3 Executer", "x64 Copy-and-Patch JIT", TEST_DIR / "tier3_executer" / "test_x64_jit.py"),
+    (
+        "Tier 3 Executer",
+        "x64 Copy-and-Patch JIT",
+        TEST_DIR / "tier3_executer" / "jit" / "test_x64_jit.py",
+    ),
     (
         "Tier 3 Executer",
         "JIT Differential (wasmtime / Tier 2 / Tier 3)",
-        TEST_DIR / "tier3_executer" / "test_jit_differential.py",
+        TEST_DIR / "tier3_executer" / "jit" / "test_jit_differential.py",
     ),
     # --- Cross-Cutting ---
     (

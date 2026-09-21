@@ -39,7 +39,7 @@ for _p in [
 
 from helpers import make_interpreter as Interpreter
 from helpers import wat_to_wasm
-from tier3_executer.interpreter import Trap
+from tier3_executer.interpreter.interpreter import Trap
 from wasm_reader import parse
 
 

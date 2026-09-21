@@ -28,12 +28,12 @@ Tests:
 from bisect import bisect_left
 
 import wasmtime
-from tier3_executer.interpreter import Interpreter, InterpreterBindings
+from tier3_executer.interpreter.interpreter import Interpreter, InterpreterBindings
 from runtime_engine import RuntimeEngine
 from system import System
 from wasi import WasiHostContext
 from wasm_reader import parse
-from tier3_executer.x64_jit import TraceCompiler
+from tier3_executer.jit.x64_jit import TraceCompiler
 
 SCENARIO5_WAT = """
 (module

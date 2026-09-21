@@ -33,7 +33,7 @@ except ImportError:
 
 import wasm_opcodes as op
 from dummy_drivers import DummyDriver
-from tier3_executer.interpreter import Interpreter, InterpreterBindings
+from tier3_executer.interpreter.interpreter import Interpreter, InterpreterBindings
 from system import System
 from wasi import WasiHostContext
 from wasm_reader import parse

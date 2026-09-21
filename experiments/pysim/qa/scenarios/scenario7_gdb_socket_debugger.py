@@ -36,11 +36,11 @@ import socket
 import time
 
 import wasmtime
-from tier3_plugins.debugger import DebuggerManager
+from tier3_plugins.debugger.debugger import DebuggerManager
 from execution_context import WASMContext
-from tier3_plugins.gdb_server import GDBServer
+from tier3_plugins.debugger.gdb_server import GDBServer
 from runtime_test_driver import RuntimeEngineDebugDriver
-from tier3_executer.x64_jit import TraceCompiler
+from tier3_executer.jit.x64_jit import TraceCompiler
 
 
 def wat_to_wasm(wat_text: str) -> bytes:

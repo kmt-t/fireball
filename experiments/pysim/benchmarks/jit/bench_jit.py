@@ -29,12 +29,12 @@ for _p in [
 import wasm_opcodes as op
 from control_flow import extract_basic_blocks, iter_block_ops
 from execution_context import WASMContext
-from tier3_executer.interpreter import Interpreter, InterpreterBindings
+from tier3_executer.interpreter.interpreter import Interpreter, InterpreterBindings
 from runtime_engine import HotspotBitmap, RuntimeEngine
 from system_containers import ReadOnlyFlatMapView
 from wasm_module import I32, LocalWidthMap
 from wasm_reader import parse
-from tier3_executer.x64_jit import TraceCompiler
+from tier3_executer.jit.x64_jit import TraceCompiler
 
 
 class JITCompilerBenchmark:
@@ -94,7 +94,7 @@ class JITCompilerBenchmark:
         fn_idx = module.export_func_index("heavy_loop")
         LOOP_COUNT = 100_000
 
-        # Pure Tier 2 Interpreter run
+        # Pure Tier 3 Interpreter run
         interp_pure = Interpreter(module, InterpreterBindings.empty())
         t0 = time.perf_counter()
         res_interp = interp_pure.call(fn_idx, [LOOP_COUNT])

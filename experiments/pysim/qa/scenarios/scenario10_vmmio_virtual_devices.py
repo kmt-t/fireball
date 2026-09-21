@@ -35,8 +35,8 @@ try:
 except ImportError:
     wasmtime = None
 
-from tier3_executer.interpreter import Interpreter, InterpreterBindings
-from tier3_executer.interpreter import TrapCode as InterpreterTrapCode
+from tier3_executer.interpreter.interpreter import Interpreter, InterpreterBindings
+from tier3_executer.interpreter.interpreter import TrapCode as InterpreterTrapCode
 from scheduler import Scheduler
 from vmmio import (
     FC_STATIC_DEVICE,

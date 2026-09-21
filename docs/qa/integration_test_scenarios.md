@@ -82,7 +82,7 @@
 ## 2. 結合テストシナリオ一覧
 
 ### シナリオ 1: Tier 1 Core + Tier 2 Loader & Linear Memory
-- **対象コンポーネント**: `runtime_loader`, `runtime_interpreter`, `system_containers` (RadixBinaryTreeView, FlatMapView)
+- **対象コンポーネント**: `runtime_loader`, `interpreter`, `system_containers` (RadixBinaryTreeView, FlatMapView)
 - **参照実装スクリプト (Reference Script)**: [`scenario1_loader_and_memory.py`](experiments/pysim/qa/scenarios/scenario1_loader_and_memory.py)
 - **WAT シナリオ**:
   - アクティブデータセグメント（Active Data Segments）による ROM 文字列・バイナリ配列の初期配置
@@ -99,7 +99,7 @@
 ---
 
 ### シナリオ 2: Tier 2 Runtime + System Call & WASI I/O
-- **対象コンポーネント**: `runtime_interpreter`, `runtime_syscall`, `hal_dispatch`, `libfireball`
+- **対象コンポーネント**: `interpreter`, `runtime_syscall`, `hal_dispatch`, `libfireball`
 - **参照実装スクリプト (Reference Script)**: [`scenario2_wasi_syscall_io.py`](experiments/pysim/qa/scenarios/scenario2_wasi_syscall_io.py)
 - **WAT シナリオ**:
   - WASI 標準 ABI（`wasi_snapshot_preview1`）による `fd_write` および `proc_exit` のインポート解決
@@ -113,8 +113,8 @@
 
 ---
 
-### シナリオ 3: Tier 2 Interpreter + Recursion & Indirect Table Dispatch
-- **対象コンポーネント**: `runtime_interpreter`（統合値領域、関数呼出し記述子）
+### シナリオ 3: Tier 3 Interpreter + Recursion & Indirect Table Dispatch
+- **対象コンポーネント**: `interpreter`（統合値領域、関数呼出し記述子）
 - **参照実装スクリプト (Reference Script)**: [`scenario3_recursion_and_tables.py`](experiments/pysim/qa/scenarios/scenario3_recursion_and_tables.py)
 - **WAT シナリオ**:
   - 再帰フィボナッチ関数（`fib(12)`）による深いコールスタック構築と巻き戻し
@@ -130,7 +130,7 @@
 ---
 
 ### シナリオ 4: Tier 2 Runtime + Tier 3 Executer Hybrid Compilation
-- **対象コンポーネント**: `runtime_interpreter`, `runtime_engine` (CardMarking, HistoryRing), `jit_compiler`, `jit_runtime`
+- **対象コンポーネント**: `interpreter`, `runtime_engine` (CardMarking, HistoryRing), `jit_compiler`, `jit_runtime`
 - **参照実装スクリプト (Reference Script)**: [`scenario4_hybrid_jit_loop.py`](experiments/pysim/qa/scenarios/scenario4_hybrid_jit_loop.py)
 - **WAT シナリオ**:
   - エラトステネスの篩（素数計算: 1000 未満の素数探索）
@@ -161,7 +161,7 @@
 ---
 
 ### シナリオ 6: COOS Cooperative Multitasking & Fuel-Limited Quantum Stepping
-- **対象コンポーネント**: `os_scheduler`, `os_coos`, `runtime_interpreter`
+- **対象コンポーネント**: `os_scheduler`, `os_coos`, `interpreter`
 - **参照実装スクリプト (Reference Script)**: [`scenario6_coos_multitask_yield.py`](experiments/pysim/qa/scenarios/scenario6_coos_multitask_yield.py)
 - **WAT シナリオ**:
   - プロデューサ・タスク（メモリへ 100 件のデータ書き込み）
@@ -176,7 +176,7 @@
 ---
 
 ### シナリオ 7: GDB Remote Serial Protocol (RSP) Socket Debugger
-- **対象コンポーネント**: `debug_manager`, `gdb_rsp_protocol`, `runtime_engine` (JIT Cache Flush), `runtime_interpreter`
+- **対象コンポーネント**: `debug_manager`, `gdb_rsp_protocol`, `runtime_engine` (JIT Cache Flush), `interpreter`
 - **参照実装スクリプト (Reference Script)**: [`scenario7_gdb_socket_debugger.py`](experiments/pysim/qa/scenarios/scenario7_gdb_socket_debugger.py)
 - **通信シナリオ**:
   - GDB サーバー（`GDBServer`）が実 TCP ソケットでリッスン
@@ -197,7 +197,7 @@
 ---
 
 ### シナリオ 8: Storage Coverage (Globals / Locals / Memory Full-Width) & GDB Debugger
-- **対象コンポーネント**: `runtime_interpreter`, `debug_manager`, `gdb_rsp_protocol`, `runtime_loader`
+- **対象コンポーネント**: `interpreter`, `debug_manager`, `gdb_rsp_protocol`, `runtime_loader`
 - **参照実装スクリプト (Reference Script)**: [`scenario8_comprehensive_storage_coverage.py`](experiments/pysim/qa/scenarios/scenario8_comprehensive_storage_coverage.py)
 - **WAT & デバッグシナリオ**:
   - 全幅メモリアクセス: `i32.store8`/`load8_u`/`load8_s`, `i32.store16`/`load16_u`/`load16_s`, `i32.store`/`load`
@@ -249,7 +249,7 @@
 ---
 
 ### シナリオ 11: HAL Peripheral Drivers & WASI Preview 1 Full Dummy Stack
-- **対象コンポーネント**: `platform_driver`, `interface_wit`, `hal_dispatch`, `libfireball`, `runtime_syscall`, `runtime_interpreter`
+- **対象コンポーネント**: `platform_driver`, `interface_wit`, `hal_dispatch`, `libfireball`, `runtime_syscall`, `interpreter`
 - **参照実装スクリプト (Reference Script)**: [`scenario11_hal_and_wasi_drivers.py`](experiments/pysim/qa/scenarios/scenario11_hal_and_wasi_drivers.py)
 - **検証シナリオ**:
   - **HAL 周辺機器ダミードライバ**:

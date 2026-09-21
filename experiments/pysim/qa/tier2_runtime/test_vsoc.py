@@ -74,7 +74,7 @@ from wasi import WasiHostContext
 from wasm_module import I32, Function, FuncType, Module
 from wasm_opcodes import I32_CONST
 from wasm_reader import parse
-from tier3_executer.x64_jit import TraceCompiler
+from tier3_executer.jit.x64_jit import TraceCompiler
 
 
 def _make_virq_module() -> Module:
@@ -375,7 +375,7 @@ def _recv_rsp_frame(client: socket.socket, sysv: System, max_steps: int = 32) ->
 
 def test_gdbserver_task_coos_cooperative_execution():
     """TEST-DBG-01, GOTCHA-DBG-04: GDBServer operates as an independent task on COOS and handles multi-yield RSP packets."""
-    from tier3_plugins.debugger import DebuggerManager
+    from tier3_plugins.debugger.debugger import DebuggerManager
 
     sysv = System()
     dbg = DebuggerManager()
@@ -724,7 +724,7 @@ def test_guest_wasi_03_interpreter_proc_exit():
 
 def test_debugger_manager_gdb_rsp_integration():
     """TEST-DBG-01..15: Verifies Debug Manager GDB RSP protocol, breakpoints, registers and JIT flush."""
-    from tier3_plugins.debugger import DebuggerManager, GDBRspProtocol
+    from tier3_plugins.debugger.debugger import DebuggerManager, GDBRspProtocol
 
     engine = RuntimeEngineDebugDriver(jit_compiler=TraceCompiler(), code_lengths=(2,))
     dbg = DebuggerManager(engine=engine)
@@ -800,7 +800,7 @@ def test_debugger_manager_gdb_rsp_integration():
 
 def test_interpreter_debugger_handler_table_switch_and_hooks():
     """TEST-INTP-60..65: Verifies Interpreter DebuggerLabelTableSwitch, JIT bypass, PC sampling and assertions."""
-    from tier3_plugins.debugger import DebuggerManager
+    from tier3_plugins.debugger.debugger import DebuggerManager
 
     wat = """
     (module

@@ -36,14 +36,14 @@ execute seamlessly and preserve all architectural invariants across Tier 1, Tier
 """
 
 import wasmtime
-from tier3_plugins.debugger import DebuggerManager
+from tier3_plugins.debugger.debugger import DebuggerManager
 from helpers import make_interpreter as Interpreter
 from runtime_engine import RuntimeEngine
 from system import System
 from system_containers import ReadOnlyFlatMapView
 from wasi import WasiHostContext
 from wasm_reader import parse
-from tier3_executer.x64_jit import TraceCompiler
+from tier3_executer.jit.x64_jit import TraceCompiler
 
 PAIRWISE_CASES = [
     # (engine, cache, mem_width, storage, host_call, scheduler, debugger)

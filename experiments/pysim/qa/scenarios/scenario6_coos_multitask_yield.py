@@ -27,7 +27,7 @@ Tests:
 """
 
 import wasmtime
-from tier3_executer.interpreter import Interpreter, InterpreterBindings
+from tier3_executer.interpreter.interpreter import Interpreter, InterpreterBindings
 from scheduler import ChannelAction
 from system import System
 from system_containers import StaticVector

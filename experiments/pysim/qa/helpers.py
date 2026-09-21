@@ -34,7 +34,7 @@ for _p in [
         sys.path.insert(0, _sp)
 
 
-from tier3_executer.interpreter import Interpreter, InterpreterBindings, WasmNumber
+from tier3_executer.interpreter.interpreter import Interpreter, InterpreterBindings, WasmNumber
 from ipc_router import IPCMessage
 from tier2_runtime.logger import Logger
 from memory import MemoryManager

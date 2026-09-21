@@ -448,7 +448,7 @@ sequenceDiagram
   - フレームリーク防止: `if` 条件不成立時に無効なブロックフレームがスタックへ残留しない（`{GOTCHA-INTP-03}`）。
 - **変異検査 (`guards=False`)**: ガード条件を意図的に無効化した変異体を作成する。Kripke 構造上で特性式が反証されることを確認済みである。
 
-### 7.2 状態遷移と実行境界モデル (`formal/vsoc_state_model.py`)
+### 7.2 状態遷移と実行境界モデル ([`vsoc_state_model.py`](docs/components/tier2_runtime/formal/vsoc_state_model.py))
 インタープリタ実行、トレース境界での Yield 判定、OSR フォールバック、トラップ処理の決定論的遷移を検証する。
 - **検証特性 (CTL/LTL)**:
   - 活性 (Liveness): 実行可能状態から有限ステップでディスパッチまたは Yield へ到達する。

@@ -14,6 +14,10 @@ from system_containers import StaticVector
 from vmmio import VMMIOController
 from wasm_module import Module
 
+from .jit_manager import JITCompiler, JITRuntimeManager
+
+__all__ = ("JITCompiler", "JITInterpreter", "JITRuntimeManager")
+
 
 class JITInterpreter(Interpreter):
     """Interpreter の共通 ``call`` 境界だけを継承し、実行ドライバをJITへ差し替える。"""
@@ -31,6 +35,7 @@ class JITInterpreter(Interpreter):
         idle_budget: int = 4,
     ):
         assert idle_budget >= 1
+        assert runtime_engine.jit_runtime is not None
         self.runtime_engine = runtime_engine
         self.idle_budget = idle_budget
         if runtime_engine.module is None:

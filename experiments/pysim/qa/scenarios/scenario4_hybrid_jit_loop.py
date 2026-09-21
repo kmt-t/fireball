@@ -30,6 +30,7 @@ Tests:
 import wasmtime
 from tier3_executer.interpreter.interpreter import Interpreter, InterpreterBindings
 from runtime_engine import RuntimeEngine
+from tier3_executer.jit.jit_manager import JITRuntimeManager
 from system import System
 from wasi import WasiHostContext
 from wasm_reader import parse
@@ -116,7 +117,9 @@ def test_scenario_hybrid_jit():
     funcs_t3 = wasi_t3.build_interpreter_host_functions(module)
     module.init_memory_data(wasi_t3.guest_memory, ())
     trace_compiler = TraceCompiler()
-    runtime_engine = RuntimeEngine(jit_compiler=trace_compiler, yield_threshold=16)
+    runtime_engine = RuntimeEngine(
+        jit_runtime=JITRuntimeManager(jit_compiler=trace_compiler, yield_threshold=16)
+    )
     runtime_engine.register_module_blocks(module)
     interp_t3 = Interpreter(
         module, InterpreterBindings.with_memory_and_functions(wasi_t3.guest_memory, funcs_t3)
@@ -125,9 +128,9 @@ def test_scenario_hybrid_jit():
 
     assert res_t3 == [168], f"Tier 3 prime count mismatch: expected 168, got {res_t3}"
     assert res_t2 == res_t3, "Tier 2 and Tier 3 calculation diverged!"
-    assert len(runtime_engine.cache.active.traces) > 0, "No JIT traces were compiled"
+    assert len(runtime_engine.jit_runtime.cache.active.traces) > 0, "No JIT traces were compiled"
     print(
-        f"    [PASS] Scenario 4 (Hybrid JIT) verified with {len(runtime_engine.cache.active.traces)} hot JIT traces."
+        f"    [PASS] Scenario 4 (Hybrid JIT) verified with {len(runtime_engine.jit_runtime.cache.active.traces)} hot JIT traces."
     )
 
 

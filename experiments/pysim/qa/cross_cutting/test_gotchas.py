@@ -68,7 +68,8 @@ from jit_copy_patch_concept import CopyPatchJITEngine, Reg, Thumb2Assembler
 from loader import WasmLoader
 from tier2_runtime.logger import LogDictionary, Logger, LogLevel
 from memory import FB_CONF_MEMORY_POOL_SIZE, MemoryManager
-from runtime_engine import BasicBlock, CardState, JITMultiBufferCache, JITTrace, RuntimeEngine
+from tier3_executer.jit.jit_cache import CardState, JITMultiBufferCache, JITTrace
+from tier3_executer.jit.jit_manager import JITRuntimeManager
 from runtime_test_driver import RuntimeEngineDebugDriver
 from scheduler import ChannelAction, Scheduler, Task, WaitDir
 from stream_transport import StreamTransport
@@ -95,10 +96,11 @@ def _make_memory_manager() -> tuple[MemoryManager, Scheduler]:
 from test_support import (
     PcOnlyCompiler,
     compile_test_block,
+    make_runtime_engine,
     make_pc_only_module,
 )
 from vmmio import TrapCode, VMMIOController, VmmioStatus
-from wasm_module import I32
+from wasm_module import BasicBlock, I32
 from wasm_opcodes import I32_ADD, I32_CONST, LOCAL_GET, LOCAL_SET
 from wasm_reader import parse
 from tier3_executer.jit.x64_jit import TraceCompiler
@@ -352,17 +354,17 @@ def test_jitr_gotcha_01_idle_hook_skips_recompiling_already_resident_trace():
 
     wat = '(module (func (export "f") i32.const 1 drop i32.const 2 drop return))'
     wasm_bytes = wat_to_wasm(wat)
-    engine = RuntimeEngine(jit_compiler=PcOnlyCompiler(fake_compile), card_shift=3)
+    engine = make_runtime_engine(jit_compiler=PcOnlyCompiler(fake_compile), card_shift=3)
     mod = engine.load_wasm(wasm_bytes)
     pc = mod.blocks[0].head_pc
-    engine.cache.insert(JITTrace(pc, lambda: 0, size_bytes=64))
-    engine.compile_queue.push_back(pc)
+    engine.jit_runtime.cache.insert(JITTrace(pc, lambda: 0, size_bytes=64))
+    engine.jit_runtime.compile_queue.push_back(pc)
 
     compiled = engine.idle_hook(budget=4)
 
     assert compiled == 0, "a pc already resident in the cache must not be recompiled"
     assert compile_calls == []
-    assert engine.bitmap.get_state(pc) == CardState.COMPILED
+    assert engine.jit_runtime.bitmap.get_state(pc) == CardState.COMPILED
 
 
 def test_jitr_gotcha_02_promotion_transfers_inbound_sources():
@@ -397,17 +399,17 @@ def test_jitr_gotcha_03_lifo_reverse_compilation_order():
         compiled_traces.append(pc)
         return t
 
-    engine = RuntimeEngine(jit_compiler=PcOnlyCompiler(dummy_compiler), code_lengths=(0x400,))
+    engine = make_runtime_engine(jit_compiler=PcOnlyCompiler(dummy_compiler), code_lengths=(0x400,))
     engine.register_module_blocks(make_pc_only_module((0x100, 0x200, 0x300)))
-    engine.compile_queue = StaticVector.of(
-        [0x100, 0x200, 0x300], capacity=engine.compile_queue_capacity
+    engine.jit_runtime.compile_queue = StaticVector.of(
+        [0x100, 0x200, 0x300], capacity=engine.jit_runtime.compile_queue_capacity
     )
     count = engine.idle_hook(budget=2)
     assert count == 2
     assert compiled_traces == [0x300, 0x200], "LIFO compilation order required"
-    assert engine.cache.active.has_trace(0x300)
-    assert engine.cache.active.has_trace(0x200)
-    assert not engine.cache.active.has_trace(0x100)
+    assert engine.jit_runtime.cache.active.has_trace(0x300)
+    assert engine.jit_runtime.cache.active.has_trace(0x200)
+    assert not engine.jit_runtime.cache.active.has_trace(0x100)
 
 
 # ==============================================================================
@@ -438,15 +440,15 @@ def test_vsoc_gotcha_01_02_stateless_interp_and_yield_in_vsoc():
     )
     """
     wasm_bytes = wat_to_wasm(wat)
-    engine = RuntimeEngine(yield_threshold=3, jit_compiler=TraceCompiler())
+    engine = make_runtime_engine(yield_threshold=3, jit_compiler=TraceCompiler())
     mod = engine.load_wasm(wasm_bytes)
     loop_pc = mod.blocks[0].head_pc
     results = engine.run(Interpreter(mod), 0, [5])
     assert results[0] == 15
     assert engine.stat_jit_invocations >= 2
     assert engine.stat_interp_steps >= 3
-    assert engine.bitmap.get_state(loop_pc) == CardState.COMPILED
-    assert engine.cache.active.has_trace(loop_pc) or engine.cache.warm.has_trace(loop_pc)
+    assert engine.jit_runtime.bitmap.get_state(loop_pc) == CardState.COMPILED
+    assert engine.jit_runtime.cache.active.has_trace(loop_pc) or engine.jit_runtime.cache.warm.has_trace(loop_pc)
 
 
 # ==============================================================================
@@ -781,7 +783,9 @@ def test_sys_gotcha_01_undefined_syscall_returns_enosys():
 
 def test_dbg_gotcha_01_memory_write_flushes_jit_cache():
     """GOTCHA-DBG-01: Debugger memory write immediately invalidates all JIT cache banks."""
-    engine = RuntimeEngineDebugDriver(jit_compiler=TraceCompiler(), code_lengths=(2,))
+    engine = RuntimeEngineDebugDriver(
+        jit_runtime=JITRuntimeManager(jit_compiler=TraceCompiler(), code_lengths=(2,))
+    )
     dbg = DebuggerManager(engine=engine)
     dbg.attach()
     rsp = GDBRspProtocol(dbg)
@@ -796,14 +800,14 @@ def test_dbg_gotcha_01_memory_write_flushes_jit_cache():
         frame_depth=frame_depth,
         byte_span=byte_span,
     )
-    trace = compile_test_block(engine.jit_compiler, code, block, ())
-    engine.cache.insert(trace)
-    assert engine.cache.active.has_trace(head_pc)
+    trace = compile_test_block(engine.jit_runtime.jit_compiler, code, block, ())
+    engine.jit_runtime.cache.insert(trace)
+    assert engine.jit_runtime.cache.active.has_trace(head_pc)
 
     res, _ = rsp.handle_packet("M0,4:deadbeef", 0, ctx, {})
     assert res.startswith("$OK#")
     assert bytes(ctx.memory[0:4]) == bytes.fromhex("deadbeef")
-    assert not engine.cache.active.has_trace(head_pc), (
+    assert not engine.jit_runtime.cache.active.has_trace(head_pc), (
         "JIT cache must be flushed upon debugger memory write"
     )
 

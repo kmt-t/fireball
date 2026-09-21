@@ -63,7 +63,7 @@ _CARD_STATE_NAMES = ("UNEXECUTED", "EXECUTED", "HOT", "COMPILED")
 # back-edge plus its fallthrough entry, or a few br_table cases), so this
 # is sized generously against that, matching this file's other small
 # FB_CONF-style bounds (JITMultiBufferCache.NUM_FAST_SLOTS=16,
-# RuntimeEngine.compile_queue_capacity=4).
+# JITRuntimeManager.compile_queue_capacity=4).
 FB_CONF_MAX_INBOUND_SOURCES = JIT_CACHE_MAX_INBOUND_SOURCES
 
 

@@ -1,6 +1,6 @@
 # WIT インターフェース仕様書 (WASI 準拠版) {VERIFY_WIT} {VERIFY_LLM} {VERIFY_FORMAL}
 <!-- evidence:
-     wit: docs/components/tier3_platform/wit/*.wit
+     wit: docs/components/tier3_platform/wit
      formal: formal/wit_resource_lifecycle_model.py
      test: docs/qa/tier3_platform/interface_wit_test_spec.md
 -->

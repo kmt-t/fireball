@@ -95,13 +95,13 @@ Tier は単なる「OSやハードウェアの実行レイヤ」ではなく、*
 
 | Tier | WIT 契約の対象 | 配置例 |
 | :--- | :--- | :--- |
-| **Tier 1 Core** | COOS、スケジューラ、ログ等の基盤契約 | `docs/components/tier1_core/wit/coos_system_contract.wit` |
-| **Tier 1 Interface** | IPC ルータ、システムメモリ等のホスト内部契約 | `docs/components/tier1_interface/wit/ipc_router_contract.wit`、`system_memory_contract.wit` |
-| **Tier 2 Runtime** | vSoC Runtime、HAL、システムコール、観測、プラグイン接続等の Runtime 契約 | `docs/components/tier2_runtime/wit/runtime_vsoc_contract.wit` および各契約 WIT |
+| **Tier 1 Core** | COOS、スケジューラ、ログ等の基盤契約 | [`coos_system_contract.wit`](docs/components/tier1_core/wit/coos_system_contract.wit) |
+| **Tier 1 Interface** | IPC ルータ、システムメモリ等のホスト内部契約 | [`ipc_router_contract.wit`](docs/components/tier1_interface/wit/ipc_router_contract.wit)、[`system_memory_contract.wit`](docs/components/tier1_interface/wit/system_memory_contract.wit) |
+| **Tier 2 Runtime** | vSoC Runtime、HAL、システムコール、観測、プラグイン接続等の Runtime 契約 | [`runtime_vsoc_contract.wit`](docs/components/tier2_runtime/wit/runtime_vsoc_contract.wit) および各契約 WIT |
 | **Tier 3 Executer / Plugins** | Tier 2 の WIT 契約を実装する Interpreter、JIT、Debugger、Guest Profiler | 対応する Tier 2 WIT を正本として利用し、同じ契約を重複定義しない。Tier 3 固有の外部契約だけ各 Tier の `wit/` に置く |
-| **Tier 3 Platform** | ゲスト公開 WIT、ゲストアダプタ、物理ドライバ境界 | `docs/components/tier3_platform/wit/fireball_hostcall_contract.wit`、`fireball_hal_contract.wit` |
+| **Tier 3 Platform** | ゲスト公開 WIT、ゲストアダプタ、物理ドライバ境界 | [`fireball_hostcall_contract.wit`](docs/components/tier3_platform/wit/fireball_hostcall_contract.wit)、[`fireball_hal_contract.wit`](docs/components/tier3_platform/wit/fireball_hal_contract.wit) |
 
-WIT ファイル名は契約対象と公開方向を表す名前にする。`fireball.wit`、`memory.wit` のように対象が判別できない汎用名は禁止する。複数の契約ファイルを持つコンポーネント設計書は `evidence` ブロックの `wit: wit/*.wit` で対象ディレクトリ内の正本ファイル群を参照する。
+WIT ファイル名は契約対象と公開方向を表す名前にする。`fireball`、`memory` のように対象が判別できない汎用名は禁止する。複数の契約ファイルを持つコンポーネント設計書は `evidence` ブロックで対象ディレクトリ内の正本ファイル群を参照する。
 
 ### 2.4 矛盾が見つかった場合の解決規則（Clean Architecture の依存ルールに基づく）
 

@@ -405,6 +405,7 @@ def run_aobench():
     print(f"    -> Parsed Module: {len(module.functions)} functions, {len(module.exports)} exports")
     # 3. Setup System & WASI Context
     from runtime_engine import RuntimeEngine
+    from tier3_executer.jit.jit_manager import JITRuntimeManager
     from tier3_executer.jit.x64_jit import TraceCompiler
 
     # 3. Setup System & WASI Context for Tier 2 Baseline
@@ -447,7 +448,10 @@ def run_aobench():
     module.init_memory_data(wasi_ctx_t3.guest_memory, ())
     trace_compiler = TraceCompiler()
     debug = "--debug" in sys.argv
-    runtime_engine = RuntimeEngine(jit_compiler=trace_compiler, yield_threshold=16, debug=debug)
+    runtime_engine = RuntimeEngine(
+        jit_runtime=JITRuntimeManager(jit_compiler=trace_compiler, yield_threshold=16),
+        debug=debug,
+    )
     runtime_engine.register_module_blocks(module)
     interp_t3 = Interpreter(
         module,
@@ -491,7 +495,7 @@ def run_aobench():
     )
     print(f"  * Measured Speedup Ratio:   {speedup_ratio:.2f}x faster")
     print(
-        f"  * JIT Traces Compiled:      {len(runtime_engine.cache.active.traces)} traces in Active cache bank"
+        f"  * JIT Traces Compiled:      {len(runtime_engine.jit_runtime.cache.active.traces)} traces in Active cache bank"
     )
     print("================================================================================")
     print(

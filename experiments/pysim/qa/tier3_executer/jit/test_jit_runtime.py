@@ -57,7 +57,8 @@ from helpers import make_interpreter as Interpreter
 from helpers import wat_to_wasm
 from tier3_executer.interpreter.interpreter import InterpreterBindings
 from tier3_executer.jit.jit_runtime import JITInterpreter
-from runtime_engine import (
+from runtime_engine import RuntimeEngine
+from tier3_executer.jit.jit_cache import (
     CardState,
     HistoryRing,
     HotspotBitmap,
@@ -65,10 +66,14 @@ from runtime_engine import (
     JITMultiBufferCache,
     JITTrace,
     JITTraceHeader,
-    RuntimeEngine,
 )
 from system_containers import ReadOnlyRadixBinaryTreeStorage, StaticVector
-from test_support import PcOnlyCompiler, make_pc_only_functions_module, make_pc_only_module
+from test_support import (
+    PcOnlyCompiler,
+    make_pc_only_functions_module,
+    make_pc_only_module,
+    make_runtime_engine,
+)
 from wasm_module import I32, LocalWidthMap
 from wasm_opcodes import BR_TABLE, I32_ADD, I32_CONST, LOCAL_GET, LOCAL_SET
 from wasm_reader import parse
@@ -172,19 +177,19 @@ def test_hotspot_03_lifo_compile_queue_batch_drain():
         compiled_traces.append(pc)
         return t
 
-    engine = RuntimeEngine(jit_compiler=PcOnlyCompiler(dummy_compiler), code_lengths=(0x400,))
+    engine = make_runtime_engine(jit_compiler=PcOnlyCompiler(dummy_compiler), code_lengths=(0x400,))
     engine.register_module_blocks(make_pc_only_module((0x100, 0x200, 0x300)))
-    engine.compile_queue = StaticVector.of(
-        [0x100, 0x200, 0x300], capacity=engine.compile_queue_capacity
+    engine.jit_runtime.compile_queue = StaticVector.of(
+        [0x100, 0x200, 0x300], capacity=engine.jit_runtime.compile_queue_capacity
     )
     count = engine.idle_hook(budget=2)
     assert count == 2
     assert compiled_traces == [0x300, 0x200], (
         "LIFO compilation order required {JIT_ReverseCompilationOrder}"
     )
-    assert engine.cache.active.has_trace(0x300)
-    assert engine.cache.active.has_trace(0x200)
-    assert not engine.cache.active.has_trace(0x100)
+    assert engine.jit_runtime.cache.active.has_trace(0x300)
+    assert engine.jit_runtime.cache.active.has_trace(0x200)
+    assert not engine.jit_runtime.cache.active.has_trace(0x100)
 
 
 def test_hotspot_04_3bank_cache_oldest_only_promotion():
@@ -299,7 +304,7 @@ def test_jitr_bitmap_checked_before_cache_lookup():
         return
     module = parse(wasm_bytes)
     fn_idx = module.export_func_index("sum_to")
-    engine = RuntimeEngine(jit_compiler=TraceCompiler(), yield_threshold=8)
+    engine = make_runtime_engine(jit_compiler=TraceCompiler(), yield_threshold=8)
     engine.register_module_blocks(module)
     interp = Interpreter(module)
 
@@ -307,7 +312,7 @@ def test_jitr_bitmap_checked_before_cache_lookup():
     real_lookup = JITMultiBufferCache.lookup
 
     def spy(cache, pc):
-        lookup_calls.append((pc, engine.bitmap.get_state(pc)))
+        lookup_calls.append((pc, engine.jit_runtime.bitmap.get_state(pc)))
         return real_lookup(cache, pc)
 
     JITMultiBufferCache.lookup = spy
@@ -467,17 +472,17 @@ def test_hotspot_06_short_blocks_never_tracked_avoiding_card_aliasing():
     )
     """
     wasm_bytes = bytes(wasmtime.wat2wasm(wat))
-    engine = RuntimeEngine(jit_compiler=PcOnlyCompiler(lambda pc: None))
-    assert engine.min_trace_bytes == 4
+    engine = make_runtime_engine(jit_compiler=PcOnlyCompiler(lambda pc: None))
+    assert engine.jit_runtime.min_trace_bytes == 4
     mod = engine.load_wasm(wasm_bytes)
     h0 = mod.blocks[0].head_pc
     h1 = mod.blocks[1].head_pc
-    for _ in range(engine.yield_threshold * 2):
+    for _ in range(engine.jit_runtime.yield_threshold * 2):
         engine.record_block_head(h0)
         engine.record_block_head(h1)
-    assert engine.bitmap.get_state(h0) == CardState.UNEXECUTED
-    assert engine.bitmap.get_state(h1) == CardState.UNEXECUTED
-    assert engine.compile_queue == [], "short blocks must never reach the compile queue"
+    assert engine.jit_runtime.bitmap.get_state(h0) == CardState.UNEXECUTED
+    assert engine.jit_runtime.bitmap.get_state(h1) == CardState.UNEXECUTED
+    assert engine.jit_runtime.compile_queue == [], "short blocks must never reach the compile queue"
 
 
 def test_hotspot_07_idle_hook_skips_recompiling_an_already_resident_trace():
@@ -496,17 +501,17 @@ def test_hotspot_07_idle_hook_skips_recompiling_an_already_resident_trace():
 
     wat = '(module (func (export "f") i32.const 1 drop i32.const 2 drop return))'
     wasm_bytes = bytes(wasmtime.wat2wasm(wat))
-    engine = RuntimeEngine(jit_compiler=PcOnlyCompiler(fake_compile), card_shift=3)
+    engine = make_runtime_engine(jit_compiler=PcOnlyCompiler(fake_compile), card_shift=3)
     mod = engine.load_wasm(wasm_bytes)
     pc = mod.blocks[0].head_pc
-    engine.cache.insert(JITTrace(pc, lambda: 0, size_bytes=64))
-    engine.compile_queue.push_back(pc)
+    engine.jit_runtime.cache.insert(JITTrace(pc, lambda: 0, size_bytes=64))
+    engine.jit_runtime.compile_queue.push_back(pc)
 
     compiled = engine.idle_hook(budget=4)
 
     assert compiled == 0, "a pc already resident in the cache must not be recompiled"
     assert compile_calls == []
-    assert engine.bitmap.get_state(pc) == CardState.COMPILED
+    assert engine.jit_runtime.bitmap.get_state(pc) == CardState.COMPILED
 
 
 def test_jitr_compile_queue_overflow_compiles_on_the_spot():
@@ -525,7 +530,7 @@ def test_jitr_compile_queue_overflow_compiles_on_the_spot():
     )
     """
     wasm_bytes = bytes(wasmtime.wat2wasm(wat))
-    engine = RuntimeEngine(
+    engine = make_runtime_engine(
         jit_compiler=PcOnlyCompiler(fake_compile),
         card_shift=3,
         compile_queue_capacity=3,
@@ -533,23 +538,23 @@ def test_jitr_compile_queue_overflow_compiles_on_the_spot():
     mod = engine.load_wasm(wasm_bytes)
     pcs = [b.head_pc for b in mod.blocks]
     for pc in pcs:
-        engine.bitmap.touch(pc)
-        engine.bitmap.touch(pc)
-        assert engine.bitmap.get_state(pc) == CardState.HOT
+        engine.jit_runtime.bitmap.touch(pc)
+        engine.jit_runtime.bitmap.touch(pc)
+        assert engine.jit_runtime.bitmap.get_state(pc) == CardState.HOT
 
     for pc in pcs:
-        engine.ring.record(pc)
+        engine.jit_runtime.ring.record(pc)
     engine.on_yield()
 
     assert len(compile_calls) == 3
-    assert len(engine.compile_queue) == 0
+    assert len(engine.jit_runtime.compile_queue) == 0
     for pc in pcs:
-        assert engine.bitmap.get_state(pc) == CardState.COMPILED
+        assert engine.jit_runtime.bitmap.get_state(pc) == CardState.COMPILED
 
 
 def test_jitr_compile_failure_unmarks_candidate_without_faking_compiled():
     """TEST-JITR-14: failed compilation permanently clears only candidate eligibility."""
-    engine = RuntimeEngine(
+    engine = make_runtime_engine(
         jit_compiler=PcOnlyCompiler(lambda _pc: None),
         card_shift=2,
         min_trace_bytes=1,
@@ -559,15 +564,15 @@ def test_jitr_compile_failure_unmarks_candidate_without_faking_compiled():
     engine.register_module_blocks(module)
     pc = module.blocks[0].head_pc
 
-    assert engine.trackable.is_marked(pc)
-    assert engine.bitmap.touch(pc) == CardState.EXECUTED
-    assert engine.bitmap.touch(pc) == CardState.HOT
-    engine.compile_queue.push_back(pc)
+    assert engine.jit_runtime.trackable.is_marked(pc)
+    assert engine.jit_runtime.bitmap.touch(pc) == CardState.EXECUTED
+    assert engine.jit_runtime.bitmap.touch(pc) == CardState.HOT
+    engine.jit_runtime.compile_queue.push_back(pc)
 
     assert engine.idle_hook(budget=1) == 0
-    assert engine.bitmap.get_state(pc) == CardState.HOT
-    assert not engine.trackable.is_marked(pc)
-    assert not engine.compile_queue
+    assert engine.jit_runtime.bitmap.get_state(pc) == CardState.HOT
+    assert not engine.jit_runtime.trackable.is_marked(pc)
+    assert not engine.jit_runtime.compile_queue
     assert not engine.record_block_head(pc), "a failed candidate must never be re-queued"
 
 
@@ -645,7 +650,7 @@ def test_jitr_block_capacity_from_wasm_loader_and_no_set():
     assert len(mod.blocks) == 2
 
     # 2. RuntimeEngine binds loader-owned blocks and resolves them seamlessly
-    engine = RuntimeEngine()
+    engine = make_runtime_engine()
     engine.register_module_blocks(mod)
     first_block = mod.blocks[0]
     assert engine.get_block(first_block.head_pc) is first_block
@@ -704,7 +709,7 @@ def test_jitr_br_if_loop_exit_jit_result_correct():
         return
     module = parse(wasm_bytes)
     fn_idx = module.export_func_index("sum_to")
-    engine = RuntimeEngine(jit_compiler=TraceCompiler(), yield_threshold=8)
+    engine = make_runtime_engine(jit_compiler=TraceCompiler(), yield_threshold=8)
     engine.register_module_blocks(module)
     interp = Interpreter(module)
 
@@ -715,7 +720,7 @@ def test_jitr_br_if_loop_exit_jit_result_correct():
         f"expected [{sum(range(n))}] -- the compiled loop-exit trace's "
         "condition must gate the branch, not be discarded"
     )
-    assert len(engine.cache.active.traces) > 0, (
+    assert len(engine.jit_runtime.cache.active.traces) > 0, (
         "the loop must have actually gotten hot enough to compile"
     )
 
@@ -744,7 +749,7 @@ def test_jit_interpreter_uses_interpreter_call_template_method():
     jit_interpreter = JITInterpreter(
         module,
         InterpreterBindings.empty(),
-        RuntimeEngine(jit_compiler=TraceCompiler(), yield_threshold=8),
+        make_runtime_engine(jit_compiler=TraceCompiler(), yield_threshold=8),
     )
 
     assert jit_interpreter.call(function_index, [50]) == expected
@@ -788,14 +793,14 @@ def test_jitr_backward_branch_block_byte_span_not_disqualified():
     fn_idx = module.export_func_index("sum_to")
     # Use the production 4-byte card so both deliberately short loop blocks
     # remain eligible.
-    engine = RuntimeEngine(jit_compiler=TraceCompiler(), yield_threshold=8, card_shift=2)
+    engine = make_runtime_engine(jit_compiler=TraceCompiler(), yield_threshold=8, card_shift=2)
     engine.register_module_blocks(module)
     interp = Interpreter(module)
 
     n = 50
     results = engine.run(interp, fn_idx, [n])
     assert results == [sum(range(n))]
-    compiled_heads = {pc for pc, _ in engine.cache.active.traces}
+    compiled_heads = {pc for pc, _ in engine.jit_runtime.cache.active.traces}
     assert len(compiled_heads) >= 2, (
         f"only {len(compiled_heads)} block(s) compiled ({[hex(pc) for pc in compiled_heads]}) -- "
         "the backward-branching loop body must compile too, not just the forward condition check"
@@ -839,7 +844,7 @@ def test_jitr_if_then_skipped_when_condition_false_after_jit():
         return
     module = parse(wasm_bytes)
     fn_idx = module.export_func_index("abs_sum")
-    engine = RuntimeEngine(jit_compiler=TraceCompiler(), yield_threshold=4)
+    engine = make_runtime_engine(jit_compiler=TraceCompiler(), yield_threshold=4)
     engine.register_module_blocks(module)
     interp = Interpreter(module)
 
@@ -850,7 +855,7 @@ def test_jitr_if_then_skipped_when_condition_false_after_jit():
         f"abs_sum({n}) via JIT-driven RuntimeEngine.run() = {results}, expected [{expected}] -- "
         "an unconditionally-taken then-body (or an unconditionally-skipped one) throws this off"
     )
-    assert len(engine.cache.active.traces) > 0, (
+    assert len(engine.jit_runtime.cache.active.traces) > 0, (
         "the if-condition-check block must have gotten hot enough to compile"
     )
 
@@ -903,7 +908,7 @@ def test_jitr_nested_loop_in_if_frame_stack_reconciliation():
         return
     module = parse(wasm_bytes)
     fn_idx = module.export_func_index("nested")
-    engine = RuntimeEngine(jit_compiler=TraceCompiler(), yield_threshold=4)
+    engine = make_runtime_engine(jit_compiler=TraceCompiler(), yield_threshold=4)
     engine.register_module_blocks(module)
     interp = Interpreter(module)
 
@@ -916,7 +921,7 @@ def test_jitr_nested_loop_in_if_frame_stack_reconciliation():
         "a desynced frame.frames misresolves the outer loop's `br` once JIT skips the inner "
         "loop/if exit without popping the frames the interpreter pushed for them"
     )
-    assert len(engine.cache.active.traces) > 0, (
+    assert len(engine.jit_runtime.cache.active.traces) > 0, (
         "the inner loop's exit-condition block must have compiled"
     )
 
@@ -960,7 +965,7 @@ def test_jitr_return_terminated_block_jit_result_correct():
     fn_idx = module.export_func_index("f")
     # The tail is intentionally compact; use the smaller test card so its
     # RETURN-terminated block remains a valid JIT candidate.
-    engine = RuntimeEngine(jit_compiler=TraceCompiler(), yield_threshold=2, card_shift=2)
+    engine = make_runtime_engine(jit_compiler=TraceCompiler(), yield_threshold=2, card_shift=2)
     engine.register_module_blocks(module)
     interp = Interpreter(module)
 
@@ -969,7 +974,7 @@ def test_jitr_return_terminated_block_jit_result_correct():
     assert results == [n * 3], (
         f"f({n}) via JIT-driven RuntimeEngine.run() = {results}, expected [{n * 3}]"
     )
-    assert len(engine.cache.active.traces) > 0, (
+    assert len(engine.jit_runtime.cache.active.traces) > 0, (
         "the RETURN-terminated tail block must have compiled"
     )
 
@@ -980,7 +985,7 @@ def test_jitr_terminal_trace_returns_to_interpreter_return_handler():
     from wasm_opcodes import RETURN
 
     module = parse(wat_to_wasm("(module (func (result i32) i32.const 7 return))"))
-    engine = RuntimeEngine(
+    engine = make_runtime_engine(
         jit_compiler=TraceCompiler(),
         card_shift=0,
         min_trace_bytes=1,
@@ -989,7 +994,7 @@ def test_jitr_terminal_trace_returns_to_interpreter_return_handler():
     engine.register_module_blocks(module)
     block = engine.get_block(0)
     assert block is not None
-    trace = engine._compile_trace(block.head_pc, block)
+    trace = engine.jit_runtime._compile_trace(block.head_pc, block)
     assert trace is not None
     assert trace.next_pc is None
 
@@ -1047,7 +1052,7 @@ def test_jitr_nested_wasm_call_keeps_callee_result_on_shared_operand_stack():
         )
         return
     module = parse(wasm_bytes)
-    engine = RuntimeEngine(
+    engine = make_runtime_engine(
         jit_compiler=TraceCompiler(),
         yield_threshold=4,
         card_shift=2,
@@ -1058,7 +1063,7 @@ def test_jitr_nested_wasm_call_keeps_callee_result_on_shared_operand_stack():
 
     caller = module.export_func_index("caller")
     assert engine.run(interp, caller, [20]) == [2]
-    assert any(pc >> 16 == 0 for pc, _ in engine.cache.active.traces), (
+    assert any(pc >> 16 == 0 for pc, _ in engine.jit_runtime.cache.active.traces), (
         "the repeatedly called callee should be eligible for JIT execution"
     )
 
@@ -1086,9 +1091,9 @@ def test_jitr_if_else_loop_matches_interpreter_after_jit_compilation():
     """
     module = parse(wat_to_wasm(wat))
     function_index = module.export_func_index("alternating_sum")
-    interpreter_engine = RuntimeEngine()
+    interpreter_engine = make_runtime_engine()
     interpreter_engine.register_module_blocks(module)
-    jit_engine = RuntimeEngine(jit_compiler=TraceCompiler(), yield_threshold=4)
+    jit_engine = make_runtime_engine(jit_compiler=TraceCompiler(), yield_threshold=4)
     jit_engine.register_module_blocks(module)
     interpreter = Interpreter(module)
     jit_interpreter = Interpreter(module)
@@ -1127,9 +1132,9 @@ def test_jitr_br_table_falls_back_and_preserves_every_target():
     )
     """
     module = parse(wat_to_wasm(wat))
-    interpreter_engine = RuntimeEngine()
+    interpreter_engine = make_runtime_engine()
     interpreter_engine.register_module_blocks(module)
-    jit_engine = RuntimeEngine(
+    jit_engine = make_runtime_engine(
         jit_compiler=TraceCompiler(),
         yield_threshold=1,
         card_shift=0,
@@ -1152,7 +1157,7 @@ def test_jitr_br_table_falls_back_and_preserves_every_target():
         None,
     )
     assert predecessor is not None
-    trace = jit_engine._compile_trace(predecessor.head_pc, predecessor)
+    trace = jit_engine.jit_runtime._compile_trace(predecessor.head_pc, predecessor)
     assert trace is not None
     assert trace.next_pc == table_pc
 
@@ -1183,7 +1188,7 @@ def test_jitr_mixed_typed_stack_declines_jit_without_losing_drop_widths():
                 return))"""
         )
     )
-    engine = RuntimeEngine(
+    engine = make_runtime_engine(
         jit_compiler=TraceCompiler(),
         yield_threshold=1,
         card_shift=0,
@@ -1193,12 +1198,12 @@ def test_jitr_mixed_typed_stack_declines_jit_without_losing_drop_widths():
     engine.register_module_blocks(module)
     mixed_block = engine.get_block(module.blocks[0].head_pc)
     assert mixed_block is not None
-    assert engine._compile_trace(mixed_block.head_pc, mixed_block) is None
+    assert engine.jit_runtime._compile_trace(mixed_block.head_pc, mixed_block) is None
     result = engine.run(Interpreter(module), 0, [])
 
     assert list(result) == [12]
     assert engine.stat_jit_invocations == 0
-    assert len(engine.cache.active.traces) == 0
+    assert len(engine.jit_runtime.cache.active.traces) == 0
 
 
 def test_jitr_mixed_typed_callee_returns_keep_the_shared_stack_synchronized():
@@ -1225,7 +1230,7 @@ def test_jitr_mixed_typed_callee_returns_keep_the_shared_stack_synchronized():
                 return))"""
         )
     )
-    engine = RuntimeEngine(
+    engine = make_runtime_engine(
         jit_compiler=TraceCompiler(),
         yield_threshold=1,
         card_shift=0,
@@ -1235,7 +1240,7 @@ def test_jitr_mixed_typed_callee_returns_keep_the_shared_stack_synchronized():
     engine.register_module_blocks(module)
     interpreter = Interpreter(module)
     actual = [list(engine.run(interpreter, 4, [])) for _ in range(6)]
-    compiled_heads = {pc for pc, _ in engine.cache.active.traces}
+    compiled_heads = {pc for pc, _ in engine.jit_runtime.cache.active.traces}
 
     assert actual == [[12]] * 6
     assert 1 << 16 in compiled_heads
@@ -1253,7 +1258,7 @@ def test_jitr_runtime_engine_preserves_typed_top_level_results():
               (func (result f64) f64.const 8.5 return))"""
         )
     )
-    engine = RuntimeEngine(
+    engine = make_runtime_engine(
         jit_compiler=TraceCompiler(),
         yield_threshold=1,
         card_shift=0,
@@ -1280,7 +1285,7 @@ def test_jitr_host_import_stays_on_interpreter_runtime_boundary():
               (func (result i32) i32.const 41 call $increment i32.const 1 i32.add))"""
         )
     )
-    engine = RuntimeEngine(
+    engine = make_runtime_engine(
         jit_compiler=TraceCompiler(),
         card_shift=0,
         min_trace_bytes=1,
@@ -1289,7 +1294,7 @@ def test_jitr_host_import_stays_on_interpreter_runtime_boundary():
     engine.register_module_blocks(module)
     call_block = engine.get_block(0x1_0000)
     assert call_block is not None
-    assert engine._compile_trace(call_block.head_pc, call_block) is None
+    assert engine.jit_runtime._compile_trace(call_block.head_pc, call_block) is None
 
     host_functions = StaticVector.of((lambda value: int(value) + 1,), capacity=1)
     interp = Interpreter(module, host_functions=host_functions)
@@ -1299,7 +1304,7 @@ def test_jitr_host_import_stays_on_interpreter_runtime_boundary():
 def test_jitr_runtime_engine_surfaces_guest_trap_at_sync_boundary():
     """TEST-JITR-48: RuntimeEngine.run must not expose a guest trap as a None result."""
     module = parse(wat_to_wasm("(module (func (result i32) i32.const 1 i32.const 0 i32.div_s))"))
-    engine = RuntimeEngine()
+    engine = make_runtime_engine()
     engine.register_module_blocks(module)
     interp = Interpreter(module)
 
@@ -1325,7 +1330,7 @@ def _aging_engine(counts, compile_fn=None, **engine_kwargs):
     # The expectations below fix the sweep parameters; they do not follow the tuned defaults.
     engine_kwargs.setdefault("aging_step_units", 1)
     engine_kwargs.setdefault("aging_scan_bytes", 16)
-    engine = RuntimeEngine(
+    engine = make_runtime_engine(
         jit_compiler=PcOnlyCompiler(compile_fn if compile_fn is not None else default_compile),
         **engine_kwargs,
     )
@@ -1338,13 +1343,13 @@ def _aging_engine(counts, compile_fn=None, **engine_kwargs):
 
 def _touch_via_yield(engine, pc):
     """Record one block head and let the yield handler touch its card."""
-    engine.ring.record(pc)
+    engine.jit_runtime.ring.record(pc)
     engine.on_yield()
 
 
 def _aging_full_lap(engine):
     # Every step processes at least one non-zero byte while any exists.
-    for _ in range(engine.update_bitmap.unit_count):
+    for _ in range(engine.jit_runtime.update_bitmap.unit_count):
         engine.age_step()
 
 
@@ -1358,21 +1363,21 @@ def test_jitr_aging_decays_only_executed_cards():
     _touch_via_yield(engine, _pc(2))  # function 0: HOT, queued
     _touch_via_yield(engine, _pc(3))  # function 0: EXECUTED
     _touch_via_yield(engine, _pc(0, 1))  # function 1: EXECUTED
-    engine.bitmap.mark_compiled(_pc(2))  # stand-in for a resident trace
-    assert engine.bitmap.get_state(_pc(1)) == CardState.HOT
-    queued = len(engine.compile_queue)
+    engine.jit_runtime.bitmap.mark_compiled(_pc(2))  # stand-in for a resident trace
+    assert engine.jit_runtime.bitmap.get_state(_pc(1)) == CardState.HOT
+    queued = len(engine.jit_runtime.compile_queue)
 
     _aging_full_lap(engine)
 
     for pc in (_pc(0), _pc(3), _pc(0, 1)):
-        assert engine.bitmap.get_state(pc) == CardState.UNEXECUTED, f"{pc:#x} must decay"
-    assert engine.bitmap.get_state(_pc(1)) == CardState.HOT, "HOT belongs to the compile queue"
-    assert engine.bitmap.get_state(_pc(2)) == CardState.COMPILED, "COMPILED belongs to the cache"
-    assert len(engine.compile_queue) == queued
-    assert not engine.update_bitmap.is_marked(0) and not engine.update_bitmap.is_marked(1)
+        assert engine.jit_runtime.bitmap.get_state(pc) == CardState.UNEXECUTED, f"{pc:#x} must decay"
+    assert engine.jit_runtime.bitmap.get_state(_pc(1)) == CardState.HOT, "HOT belongs to the compile queue"
+    assert engine.jit_runtime.bitmap.get_state(_pc(2)) == CardState.COMPILED, "COMPILED belongs to the cache"
+    assert len(engine.jit_runtime.compile_queue) == queued
+    assert not engine.jit_runtime.update_bitmap.is_marked(0) and not engine.jit_runtime.update_bitmap.is_marked(1)
     # A decayed card restarts its warm-up: one touch gives EXECUTED, not HOT.
     _touch_via_yield(engine, _pc(0))
-    assert engine.bitmap.get_state(_pc(0)) == CardState.EXECUTED
+    assert engine.jit_runtime.bitmap.get_state(_pc(0)) == CardState.EXECUTED
 
 
 def test_jitr_update_bitmap_covers_every_executed_card():
@@ -1386,9 +1391,9 @@ def test_jitr_update_bitmap_covers_every_executed_card():
         else:
             _touch_via_yield(engine, _pc((seed >> 4) % 2, (seed >> 8) % 20))
         for func in range(20):
-            if not engine.update_bitmap.is_marked(func):
+            if not engine.jit_runtime.update_bitmap.is_marked(func):
                 for index in range(2):
-                    state = engine.bitmap.get_state(_pc(index, func))
+                    state = engine.jit_runtime.bitmap.get_state(_pc(index, func))
                     assert state != CardState.EXECUTED, (
                         f"function {func} has an EXECUTED card but its update bit is clear"
                     )
@@ -1406,32 +1411,32 @@ def test_jitr_aging_advances_once_per_rotation():
     _touch_via_yield(engine, _pc(0, 40))  # a later dirty function in byte 5
 
     assert engine.idle_hook() == 0  # empty queue
-    engine.compile_queue.push_back(_pc(0, 5))  # a successful compile
+    engine.jit_runtime.compile_queue.push_back(_pc(0, 5))  # a successful compile
     assert engine.idle_hook() == 1
-    engine.bitmap.mark_compiled(_pc(0, 0))  # COMPILED-card skip
-    engine.compile_queue.push_back(_pc(0, 0))
+    engine.jit_runtime.bitmap.mark_compiled(_pc(0, 0))  # COMPILED-card skip
+    engine.jit_runtime.compile_queue.push_back(_pc(0, 0))
     assert engine.idle_hook() == 0
-    engine.compile_queue.push_back(fail_pc)  # a failed compile
+    engine.jit_runtime.compile_queue.push_back(fail_pc)  # a failed compile
     assert engine.idle_hook() == 0
-    assert engine.aging_steps == 0 and engine.update_bitmap.cursor == 0, (
+    assert engine.jit_runtime.aging_steps == 0 and engine.jit_runtime.update_bitmap.cursor == 0, (
         "compilation, whatever its outcome, does not age"
     )
 
-    engine.cache.flush_all()
-    assert engine.aging_steps == 0, "an explicit flush is not a rotation"
+    engine.jit_runtime.cache.flush_all()
+    assert engine.jit_runtime.aging_steps == 0, "an explicit flush is not a rotation"
 
-    engine.cache.rotate()
-    assert engine.aging_steps == 1
-    assert engine.update_bitmap.cursor == 4, "the dirty byte was processed and the cursor moved on"
-    assert engine.bitmap.get_state(_pc(0, 24)) == CardState.UNEXECUTED
-    assert engine.bitmap.get_state(_pc(0, 40)) == CardState.EXECUTED, "byte 5 lies beyond this step"
+    engine.jit_runtime.cache.rotate()
+    assert engine.jit_runtime.aging_steps == 1
+    assert engine.jit_runtime.update_bitmap.cursor == 4, "the dirty byte was processed and the cursor moved on"
+    assert engine.jit_runtime.bitmap.get_state(_pc(0, 24)) == CardState.UNEXECUTED
+    assert engine.jit_runtime.bitmap.get_state(_pc(0, 40)) == CardState.EXECUTED, "byte 5 lies beyond this step"
 
     inserted = 0
-    while engine.aging_steps == 1:  # a full bank rotates by itself
+    while engine.jit_runtime.aging_steps == 1:  # a full bank rotates by itself
         assert inserted < 30
-        engine.cache.insert(JITTrace(_pc(0, 6 + inserted), lambda: 0, size_bytes=512))
+        engine.jit_runtime.cache.insert(JITTrace(_pc(0, 6 + inserted), lambda: 0, size_bytes=512))
         inserted += 1
-    assert engine.aging_steps == 2 and inserted >= 2
+    assert engine.jit_runtime.aging_steps == 2 and inserted >= 2
 
 
 def test_jitr_aging_cursor_wraps_and_bounds_each_step():
@@ -1439,37 +1444,37 @@ def test_jitr_aging_cursor_wraps_and_bounds_each_step():
     engine, _module = _aging_engine((1,) * 18)  # a 3-byte table
     _touch_via_yield(engine, _pc(0, 0))  # byte 0
     _touch_via_yield(engine, _pc(0, 17))  # byte 2
-    assert engine.age_step() == 1 and engine.update_bitmap.cursor == 1
-    assert engine.bitmap.get_state(_pc(0, 0)) == CardState.UNEXECUTED
-    assert engine.bitmap.get_state(_pc(0, 17)) == CardState.EXECUTED
+    assert engine.age_step() == 1 and engine.jit_runtime.update_bitmap.cursor == 1
+    assert engine.jit_runtime.bitmap.get_state(_pc(0, 0)) == CardState.UNEXECUTED
+    assert engine.jit_runtime.bitmap.get_state(_pc(0, 17)) == CardState.EXECUTED
     assert engine.age_step() == 1, "the zero byte 1 is skipped, byte 2 is processed"
-    assert engine.update_bitmap.cursor == 0, "byte 2 was the last byte: the cursor wraps"
-    assert engine.bitmap.get_state(_pc(0, 17)) == CardState.UNEXECUTED
-    scanned_before = engine.aging_bytes_scanned
+    assert engine.jit_runtime.update_bitmap.cursor == 0, "byte 2 was the last byte: the cursor wraps"
+    assert engine.jit_runtime.bitmap.get_state(_pc(0, 17)) == CardState.UNEXECUTED
+    scanned_before = engine.jit_runtime.aging_bytes_scanned
     assert engine.age_step() == 0, "nothing is dirty"
-    assert engine.aging_bytes_scanned - scanned_before == 3, "one full pass, then the step ends"
-    assert engine.update_bitmap.cursor == 0, "a full pass returns the cursor to where it started"
-    assert engine.aging_units_processed == 2
+    assert engine.jit_runtime.aging_bytes_scanned - scanned_before == 3, "one full pass, then the step ends"
+    assert engine.jit_runtime.update_bitmap.cursor == 0, "a full pass returns the cursor to where it started"
+    assert engine.jit_runtime.aging_units_processed == 2
 
     # Two non-zero bytes per step; the zero byte in between does not count.
     wide, _ = _aging_engine((1,) * 18, aging_step_units=2)
     _touch_via_yield(wide, _pc(0, 0))
     _touch_via_yield(wide, _pc(0, 17))
-    assert wide.age_step() == 2 and wide.aging_units_processed == 2
-    assert wide.update_bitmap.cursor == 0, "the step ended right after the second unit (byte 2)"
-    assert wide.bitmap.get_state(_pc(0, 0)) == CardState.UNEXECUTED
-    assert wide.bitmap.get_state(_pc(0, 17)) == CardState.UNEXECUTED
+    assert wide.age_step() == 2 and wide.jit_runtime.aging_units_processed == 2
+    assert wide.jit_runtime.update_bitmap.cursor == 0, "the step ended right after the second unit (byte 2)"
+    assert wide.jit_runtime.bitmap.get_state(_pc(0, 0)) == CardState.UNEXECUTED
+    assert wide.jit_runtime.bitmap.get_state(_pc(0, 17)) == CardState.UNEXECUTED
 
     # The scan-byte limit ends a step even when no unit was processed.
     limited, _ = _aging_engine((1,) * 170, aging_step_units=100, aging_scan_bytes=4)  # 22 bytes
     _touch_via_yield(limited, _pc(0, 160))  # byte 20
     for expected_byte in (4, 8, 12, 16, 20):
         assert limited.age_step() == 0, "a limited scan must not reach the dirty byte yet"
-        assert limited.update_bitmap.cursor == expected_byte
-    assert limited.aging_bytes_scanned == 20
+        assert limited.jit_runtime.update_bitmap.cursor == expected_byte
+    assert limited.jit_runtime.aging_bytes_scanned == 20
     assert limited.age_step() == 1, "the dirty byte lies inside the sixth scan window"
-    assert limited.update_bitmap.cursor == 2, "bytes 20, 21, then 0 and 1 filled the window"
-    assert limited.bitmap.get_state(_pc(0, 160)) == CardState.UNEXECUTED
+    assert limited.jit_runtime.update_bitmap.cursor == 2, "bytes 20, 21, then 0 and 1 filled the window"
+    assert limited.jit_runtime.bitmap.get_state(_pc(0, 160)) == CardState.UNEXECUTED
 
 
 def test_jitr_aging_processes_every_set_function_of_a_byte_and_ignores_imports():
@@ -1479,12 +1484,12 @@ def test_jitr_aging_processes_every_set_function_of_a_byte_and_ignores_imports()
     _touch_via_yield(engine, _pc(0, 1))  # function 1, byte 0
     _touch_via_yield(engine, _pc(0, 9))  # function 9, byte 1
     assert engine.age_step() == 2, "the EXECUTED cards of functions 0 and 1 decay in one step"
-    assert engine.update_bitmap.cursor == 1 and engine.aging_units_processed == 1
-    assert engine.bitmap.get_state(_pc(1, 0)) == CardState.UNEXECUTED
-    assert engine.bitmap.get_state(_pc(0, 1)) == CardState.UNEXECUTED
-    assert engine.bitmap.get_state(_pc(0, 9)) == CardState.EXECUTED, "function 9 belongs to byte 1"
+    assert engine.jit_runtime.update_bitmap.cursor == 1 and engine.jit_runtime.aging_units_processed == 1
+    assert engine.jit_runtime.bitmap.get_state(_pc(1, 0)) == CardState.UNEXECUTED
+    assert engine.jit_runtime.bitmap.get_state(_pc(0, 1)) == CardState.UNEXECUTED
+    assert engine.jit_runtime.bitmap.get_state(_pc(0, 9)) == CardState.EXECUTED, "function 9 belongs to byte 1"
     assert engine.age_step() == 1
-    assert engine.bitmap.get_state(_pc(0, 9)) == CardState.UNEXECUTED
+    assert engine.jit_runtime.bitmap.get_state(_pc(0, 9)) == CardState.UNEXECUTED
 
     wat = """
     (module
@@ -1493,11 +1498,11 @@ def test_jitr_aging_processes_every_set_function_of_a_byte_and_ignores_imports()
       (func (export "b") (i32.const 3) (drop) (i32.const 4) (drop))
     )
     """
-    wasm_engine = RuntimeEngine(
+    wasm_engine = make_runtime_engine(
         jit_compiler=PcOnlyCompiler(lambda pc: None), aging_step_units=1, aging_scan_bytes=16
     )
     module = wasm_engine.load_wasm(bytes(wasmtime.wat2wasm(wat)))
-    update = wasm_engine.update_bitmap
+    update = wasm_engine.jit_runtime.update_bitmap
     assert update.function_count == 3 and update.unit_count == 1
     pc_a = module.blocks[0].head_pc
     pc_b = module.blocks[len(module.blocks) - 1].head_pc
@@ -1507,29 +1512,29 @@ def test_jitr_aging_processes_every_set_function_of_a_byte_and_ignores_imports()
     assert not update.is_marked(0), "an import function has no cards, so its bit is never set"
     assert update.is_marked(1) and update.is_marked(2)
     assert wasm_engine.age_step() == 2, "both functions share byte 0 and are processed together"
-    assert wasm_engine.bitmap.get_state(pc_a) == CardState.UNEXECUTED
-    assert wasm_engine.bitmap.get_state(pc_b) == CardState.UNEXECUTED
+    assert wasm_engine.jit_runtime.bitmap.get_state(pc_a) == CardState.UNEXECUTED
+    assert wasm_engine.jit_runtime.bitmap.get_state(pc_b) == CardState.UNEXECUTED
 
 
 def test_gotcha_jitr_09_aging_never_drops_compiled_or_hot():
     """GOTCHA-JITR-09: the sweep keeps a resident trace's card COMPILED and a queued card HOT."""
     pc_res, pc_hot, pc_exec = _pc(0), _pc(1), _pc(2)
     engine, _module = _aging_engine((3,))
-    engine.compile_queue.push_back(pc_res)
+    engine.jit_runtime.compile_queue.push_back(pc_res)
     assert engine.idle_hook(budget=1) == 1
-    assert engine.cache.find_trace(pc_res) is not None
-    assert engine.bitmap.get_state(pc_res) == CardState.COMPILED
+    assert engine.jit_runtime.cache.find_trace(pc_res) is not None
+    assert engine.jit_runtime.bitmap.get_state(pc_res) == CardState.COMPILED
     _touch_via_yield(engine, pc_hot)
     _touch_via_yield(engine, pc_hot)  # HOT, queued
     _touch_via_yield(engine, pc_exec)  # EXECUTED
 
     _aging_full_lap(engine)
 
-    assert engine.bitmap.get_state(pc_res) == CardState.COMPILED, "a resident trace stays reachable"
-    assert engine.cache.lookup(pc_res) is not None
-    assert engine.bitmap.get_state(pc_hot) == CardState.HOT
-    assert engine.compile_queue.contains(pc_hot), "the pending request keeps its HOT card"
-    assert engine.bitmap.get_state(pc_exec) == CardState.UNEXECUTED
+    assert engine.jit_runtime.bitmap.get_state(pc_res) == CardState.COMPILED, "a resident trace stays reachable"
+    assert engine.jit_runtime.cache.lookup(pc_res) is not None
+    assert engine.jit_runtime.bitmap.get_state(pc_hot) == CardState.HOT
+    assert engine.jit_runtime.compile_queue.contains(pc_hot), "the pending request keeps its HOT card"
+    assert engine.jit_runtime.bitmap.get_state(pc_exec) == CardState.UNEXECUTED
 
 
 CHAIN_STRESS_TRACES = 14

@@ -44,7 +44,9 @@ from execution_context import WASMContext
 from helpers import expect_assertion, wat_to_wasm
 from helpers import make_interpreter as Interpreter
 from tier2_runtime.logger import LogDictionary, Logger, LogLevel
-from runtime_engine import BasicBlock, CardState, JITTrace, RuntimeEngine
+from runtime_engine import RuntimeEngine
+from tier3_executer.jit.jit_cache import CardState, JITTrace
+from tier3_executer.jit.jit_manager import JITRuntimeManager
 from runtime_test_driver import RuntimeEngineDebugDriver
 from stream_transport import StreamTransport
 from system import (
@@ -58,6 +60,7 @@ from test_support import (
     PcOnlyCompiler,
     compile_module_block,
     compile_test_block,
+    make_runtime_engine,
     make_pc_only_module,
 )
 from virq import (
@@ -71,7 +74,7 @@ from virq import (
     VirqNode,
 )
 from wasi import WasiHostContext
-from wasm_module import I32, Function, FuncType, Module
+from wasm_module import BasicBlock, I32, Function, FuncType, Module
 from wasm_opcodes import I32_CONST
 from wasm_reader import parse
 from tier3_executer.jit.x64_jit import TraceCompiler
@@ -261,7 +264,7 @@ def test_virq_55_does_not_enter_wasi_polling_path():
 
 def test_runtime_engine_registers_virq_dispatchers_through_bound_module():
     """The runtime facade delegates vIRQ registration to its module-bound dispatcher."""
-    engine = RuntimeEngine()
+    engine = make_runtime_engine()
     unavailable = engine.register_virq_dispatcher(int(VirqNode.ROOT), 0)
     assert not unavailable.is_ok
     assert unavailable.error == RegistrationError.MODULE_UNAVAILABLE
@@ -287,7 +290,7 @@ def test_runtime_engine_cooperative_run_yields_at_reschedule_boundary():
         """
     )
     observer = _OneShotRescheduleObserver()
-    engine = RuntimeEngine(reschedule_observer=observer)
+    engine = make_runtime_engine(reschedule_observer=observer)
     module = engine.load_wasm(wasm_bytes)
     driver = engine.run_cooperative(Interpreter(module), 0, [])
     assert next(driver) is None
@@ -451,23 +454,23 @@ def test_idle_01_jit_batch_compilation_on_idle():
         compiled_log.append(pc)
         return JITTrace(head_pc=pc, native_fn=lambda: pc, size_bytes=64)
 
-    engine = RuntimeEngine(jit_compiler=PcOnlyCompiler(mock_compiler), code_lengths=(0x400,))
+    engine = make_runtime_engine(jit_compiler=PcOnlyCompiler(mock_compiler), code_lengths=(0x400,))
     engine.register_module_blocks(make_pc_only_module((0x100, 0x200, 0x300)))
-    engine.bitmap.touch(0x100)
-    engine.bitmap.touch(0x100)  # HOT
-    engine.bitmap.touch(0x200)
-    engine.bitmap.touch(0x200)  # HOT
-    engine.compile_queue = StaticVector.of(
-        [0x100, 0x200], capacity=engine.compile_queue_capacity
+    engine.jit_runtime.bitmap.touch(0x100)
+    engine.jit_runtime.bitmap.touch(0x100)  # HOT
+    engine.jit_runtime.bitmap.touch(0x200)
+    engine.jit_runtime.bitmap.touch(0x200)  # HOT
+    engine.jit_runtime.compile_queue = StaticVector.of(
+        [0x100, 0x200], capacity=engine.jit_runtime.compile_queue_capacity
     )  # Enqueued
     # COOS idle_hook fires with budget 2
     count = engine.idle_hook(budget=2)
     assert count == 2
     assert compiled_log == [0x200, 0x100], "LIFO compilation order required"
-    assert engine.bitmap.get_state(0x100) == CardState.COMPILED
-    assert engine.bitmap.get_state(0x200) == CardState.COMPILED
-    assert engine.cache.active.has_trace(0x100)
-    assert engine.cache.active.has_trace(0x200)
+    assert engine.jit_runtime.bitmap.get_state(0x100) == CardState.COMPILED
+    assert engine.jit_runtime.bitmap.get_state(0x200) == CardState.COMPILED
+    assert engine.jit_runtime.cache.active.has_trace(0x100)
+    assert engine.jit_runtime.cache.active.has_trace(0x200)
 
 
 def test_idle_02_logging_flush_on_idle():
@@ -493,7 +496,7 @@ def test_idle_02_logging_flush_on_idle():
 def test_tier_01_interpreter_to_jit_cooperative_flow():
     """TEST-TIER-01: End-to-end integration of cooperative WASM execution on COOS with idle JIT compilation and log flush."""
     sysv = System()
-    sysv.runtime_engine = RuntimeEngine(code_lengths=(0x1001,))
+    sysv.runtime_engine = make_runtime_engine(code_lengths=(0x1001,))
     sysv.dictionary.register(0x10, "wasm iteration=%d")
     executed_steps = []
 
@@ -550,15 +553,15 @@ def test_tier_02_interpreter_to_jit_trace_transition():
     wasm_bytes = wat_to_wasm(wat)
     # Keep the preamble and loop heads on separate cards so this test can
     # observe the full UNEXECUTED -> EXECUTED -> HOT transition directly.
-    engine = RuntimeEngine(yield_threshold=3, card_shift=2, jit_compiler=TraceCompiler())
+    engine = make_runtime_engine(yield_threshold=3, card_shift=2, jit_compiler=TraceCompiler())
     mod = engine.load_wasm(wasm_bytes)
     loop_pc = mod.blocks[1].head_pc
     results = engine.run(Interpreter(mod), 0, [5])
     assert results[0] == 120
     assert engine.stat_interp_steps >= 3
     assert engine.stat_jit_invocations >= 2
-    assert engine.bitmap.get_state(loop_pc) == CardState.COMPILED
-    assert engine.cache.active.has_trace(loop_pc) or engine.cache.warm.has_trace(loop_pc)
+    assert engine.jit_runtime.bitmap.get_state(loop_pc) == CardState.COMPILED
+    assert engine.jit_runtime.cache.active.has_trace(loop_pc) or engine.jit_runtime.cache.warm.has_trace(loop_pc)
 
 
 def test_tier_03_trace_chaining_and_interpreter_fallback():
@@ -590,17 +593,17 @@ def test_tier_03_trace_chaining_and_interpreter_fallback():
     )
     """
     wasm_bytes = wat_to_wasm(wat)
-    engine = RuntimeEngine(yield_threshold=10, jit_compiler=TraceCompiler())
+    engine = make_runtime_engine(yield_threshold=10, jit_compiler=TraceCompiler())
     mod = engine.load_wasm(wasm_bytes)
     block_a = mod.blocks[0]
     block_b = mod.blocks[1]
     # Compile block B first, then block A (so A can chain directly into resident B)
-    trace_b = compile_module_block(engine.jit_compiler, mod, block_b)
-    engine.cache.insert(trace_b)
-    engine.bitmap.mark_compiled(block_b.head_pc)
-    trace_a = compile_module_block(engine.jit_compiler, mod, block_a)
-    engine.cache.insert(trace_a)
-    engine.bitmap.mark_compiled(block_a.head_pc)
+    trace_b = compile_module_block(engine.jit_runtime.jit_compiler, mod, block_b)
+    engine.jit_runtime.cache.insert(trace_b)
+    engine.jit_runtime.bitmap.mark_compiled(block_b.head_pc)
+    trace_a = compile_module_block(engine.jit_runtime.jit_compiler, mod, block_a)
+    engine.jit_runtime.cache.insert(trace_a)
+    engine.jit_runtime.bitmap.mark_compiled(block_a.head_pc)
     # Assert trace A chained directly into trace B
     assert trace_a.chain_next == block_b.head_pc
     results = engine.run(Interpreter(mod), 0, [100])
@@ -726,7 +729,9 @@ def test_debugger_manager_gdb_rsp_integration():
     """TEST-DBG-01..15: Verifies Debug Manager GDB RSP protocol, breakpoints, registers and JIT flush."""
     from tier3_plugins.debugger.debugger import DebuggerManager, GDBRspProtocol
 
-    engine = RuntimeEngineDebugDriver(jit_compiler=TraceCompiler(), code_lengths=(2,))
+    engine = RuntimeEngineDebugDriver(
+        jit_runtime=JITRuntimeManager(jit_compiler=TraceCompiler(), code_lengths=(2,))
+    )
     dbg = DebuggerManager(engine=engine)
     dbg.attach()
     rsp = GDBRspProtocol(dbg)
@@ -754,13 +759,13 @@ def test_debugger_manager_gdb_rsp_integration():
         frame_depth=fc_frame_depth,
         byte_span=fc_byte_span,
     )
-    trace = compile_test_block(engine.jit_compiler, flush_code, flush_block, ())
-    engine.cache.insert(trace)
-    assert engine.cache.active.has_trace(fc_head_pc)
+    trace = compile_test_block(engine.jit_runtime.jit_compiler, flush_code, flush_block, ())
+    engine.jit_runtime.cache.insert(trace)
+    assert engine.jit_runtime.cache.active.has_trace(fc_head_pc)
     res_m, _ = rsp.handle_packet("M0,4:aabbccdd", 0x100, ctx, {})
     assert res_m.startswith("$OK#")
     assert bytes(mem[0:4]) == bytes.fromhex("aabbccdd")
-    assert not engine.cache.active.has_trace(fc_head_pc)  # Flushed!
+    assert not engine.jit_runtime.cache.active.has_trace(fc_head_pc)  # Flushed!
     # 4. Breakpoint & Stepping -- two real basic blocks split by a `block`/`end`,
     # loaded through a real Module so run_block_interpret's op-stream derivation
     # (from raw bytecode) has a function to decode against.
@@ -822,7 +827,7 @@ def test_interpreter_debugger_handler_table_switch_and_hooks():
     )
     """
     wasm_bytes = wat_to_wasm(wat)
-    engine = RuntimeEngineDebugDriver(jit_compiler=TraceCompiler())
+    engine = RuntimeEngineDebugDriver(jit_runtime=JITRuntimeManager(jit_compiler=TraceCompiler()))
     dbg = DebuggerManager(engine=engine)
     mod = engine.load_wasm(wasm_bytes)
     block1 = mod.blocks[0]
@@ -855,9 +860,9 @@ def test_interpreter_debugger_handler_table_switch_and_hooks():
     assert dbg.pc_sample_counts[block1.head_pc] == 1
     assert len(dbg.assertion_violations) == 1
     # 5. JIT Bypass under debug mode (TEST-INTP-65: JIT trace exists but interpreter debug table runs)
-    trace = compile_module_block(engine.jit_compiler, mod, block1)
-    engine.cache.insert(trace)
-    assert engine.cache.active.has_trace(block1.head_pc)
+    trace = compile_module_block(engine.jit_runtime.jit_compiler, mod, block1)
+    engine.jit_runtime.cache.insert(trace)
+    assert engine.jit_runtime.cache.active.has_trace(block1.head_pc)
     # Run step at block1 under debug mode -> interp_blocks increments, NOT jit_traces
     interp_before = engine.interp_blocks
     jit_before = engine.jit_traces

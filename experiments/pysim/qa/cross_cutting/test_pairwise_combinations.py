@@ -38,7 +38,7 @@ execute seamlessly and preserve all architectural invariants across Tier 1, Tier
 import wasmtime
 from tier3_plugins.debugger.debugger import DebuggerManager
 from helpers import make_interpreter as Interpreter
-from runtime_engine import RuntimeEngine
+from test_support import make_runtime_engine
 from system import System
 from system_containers import ReadOnlyFlatMapView
 from wasi import WasiHostContext
@@ -157,7 +157,7 @@ def run_single_pairwise_case(case_id: str, case_tuple: tuple[str, ...]) -> None:
     # 3. Setup Runtime Engine & JIT
     trace_compiler = TraceCompiler() if engine_mode in ("jit", "hybrid") else None
     runtime_engine = (
-        RuntimeEngine(jit_compiler=trace_compiler, yield_threshold=4)
+        make_runtime_engine(jit_compiler=trace_compiler, yield_threshold=4)
         if engine_mode in ("jit", "hybrid")
         else None
     )
@@ -176,11 +176,11 @@ def run_single_pairwise_case(case_id: str, case_tuple: tuple[str, ...]) -> None:
 
     # 4. Apply Cache mode
     if runtime_engine and cache_mode == "flush":
-        runtime_engine.cache.flush_all()
+        runtime_engine.jit_runtime.cache.flush_all()
     elif runtime_engine and cache_mode == "evict":
         # Rotate banks
-        runtime_engine.cache.rotate()
-        runtime_engine.cache.rotate()
+        runtime_engine.jit_runtime.cache.rotate()
+        runtime_engine.jit_runtime.cache.rotate()
 
     # 5. Apply Memory width / grow
     if mem_width == "grow":

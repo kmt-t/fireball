@@ -30,6 +30,7 @@ from bisect import bisect_left
 import wasmtime
 from tier3_executer.interpreter.interpreter import Interpreter, InterpreterBindings
 from runtime_engine import RuntimeEngine
+from tier3_executer.jit.jit_manager import JITRuntimeManager
 from system import System
 from wasi import WasiHostContext
 from wasm_reader import parse
@@ -115,7 +116,9 @@ def test_scenario_multimodule_unified_pc():
     funcs_t3 = wasi_t3.build_interpreter_host_functions(module)
     module.init_memory_data(wasi_t3.guest_memory, ())
     trace_compiler = TraceCompiler()
-    runtime_engine = RuntimeEngine(jit_compiler=trace_compiler, yield_threshold=16)
+    runtime_engine = RuntimeEngine(
+        jit_runtime=JITRuntimeManager(jit_compiler=trace_compiler, yield_threshold=16)
+    )
     runtime_engine.register_module_blocks(module)
     interp_t3 = Interpreter(
         module, InterpreterBindings.with_memory_and_functions(wasi_t3.guest_memory, funcs_t3)
@@ -123,13 +126,13 @@ def test_scenario_multimodule_unified_pc():
     res_t3 = runtime_engine.run(interp_t3, fn_idx, [ITERS])
 
     assert res_t2 == res_t3, f"Calculations diverged: T2={res_t2} vs T3={res_t3}"
-    assert len(runtime_engine.cache.active.traces) > 0, "No JIT traces compiled"
+    assert len(runtime_engine.jit_runtime.cache.active.traces) > 0, "No JIT traces compiled"
     # 3. Verify that traces belong to multiple distinct functions via UnifiedPC
-    func_indices_in_jit = {(pc >> 16) for pc, _ in runtime_engine.cache.active.traces}
+    func_indices_in_jit = {(pc >> 16) for pc, _ in runtime_engine.jit_runtime.cache.active.traces}
     print(f"    -> Compiled JIT traces belong to functions: {func_indices_in_jit}")
     assert len(func_indices_in_jit) >= 2, "Traces should span across multiple functions"
     # 4. Verify sparse JIT entry lookup by binary search across compiled UnifiedPCs
-    sorted_pairs = sorted(runtime_engine.cache.active.traces, key=lambda x: x[0])
+    sorted_pairs = sorted(runtime_engine.jit_runtime.cache.active.traces, key=lambda x: x[0])
     keys = tuple(pc for pc, _ in sorted_pairs)
     vals = tuple(trace for _, trace in sorted_pairs)
     for k, v in zip(keys, vals, strict=False):
@@ -138,7 +141,7 @@ def test_scenario_multimodule_unified_pc():
         assert found is v, f"JIT binary lookup failed for UnifiedPC 0x{k:08X}"
 
     print(
-        f"    [PASS] Scenario 5 (Multi-Function UnifiedPC) verified with {len(runtime_engine.cache.active.traces)} traces."
+        f"    [PASS] Scenario 5 (Multi-Function UnifiedPC) verified with {len(runtime_engine.jit_runtime.cache.active.traces)} traces."
     )
 
 

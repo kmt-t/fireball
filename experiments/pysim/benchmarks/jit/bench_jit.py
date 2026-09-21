@@ -30,7 +30,9 @@ import wasm_opcodes as op
 from control_flow import extract_basic_blocks, iter_block_ops
 from execution_context import WASMContext
 from tier3_executer.interpreter.interpreter import Interpreter, InterpreterBindings
-from runtime_engine import HotspotBitmap, RuntimeEngine
+from runtime_engine import RuntimeEngine
+from tier3_executer.jit.jit_cache import HotspotBitmap
+from tier3_executer.jit.jit_manager import JITRuntimeManager
 from system_containers import ReadOnlyFlatMapView
 from wasm_module import I32, LocalWidthMap
 from wasm_reader import parse
@@ -102,7 +104,9 @@ class JITCompilerBenchmark:
         interp_time_ms = (t1 - t0) * 1000
 
         # Tier 3 Native JIT run
-        runtime_engine = RuntimeEngine(jit_compiler=self.compiler, yield_threshold=16)
+        runtime_engine = RuntimeEngine(
+            jit_runtime=JITRuntimeManager(jit_compiler=self.compiler, yield_threshold=16)
+        )
         runtime_engine.register_module_blocks(module)
         interp_jit = Interpreter(module, InterpreterBindings.empty())
 

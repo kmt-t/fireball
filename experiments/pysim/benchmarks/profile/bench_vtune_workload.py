@@ -51,6 +51,7 @@ from tier2_runtime.logger import LogDictionary, Logger, LogLevel
 from file_log_sink import FileLogSink
 from memory import FB_CONF_MEMORY_POOL_SIZE, MemoryManager
 from runtime_engine import RuntimeEngine
+from tier3_executer.jit.jit_manager import JITRuntimeManager
 from scheduler import ChannelAction, Scheduler
 from system import System
 from system_containers import StaticVector
@@ -157,7 +158,9 @@ def _new_interpreter_guest() -> tuple[Module, Interpreter]:
 
 def _new_jit_guest() -> tuple[Module, Interpreter]:
     module, bindings = _new_guest()
-    engine = RuntimeEngine(jit_compiler=TraceCompiler(), yield_threshold=16)
+    engine = RuntimeEngine(
+        jit_runtime=JITRuntimeManager(jit_compiler=TraceCompiler(), yield_threshold=16)
+    )
     return module, JITInterpreter(module, bindings, engine)
 
 
@@ -336,7 +339,9 @@ def phase_ao_interp(scale: float, kernels: list[str] | None, oracle: bool) -> Ph
 def phase_ao_jit(scale: float, kernels: list[str] | None, oracle: bool) -> PhaseResult:
     width, height = _ao_size(scale)
     module, sysv, interp, sink = _ao_guest("ao_jit")
-    engine = RuntimeEngine(jit_compiler=TraceCompiler(), yield_threshold=16)
+    engine = RuntimeEngine(
+        jit_runtime=JITRuntimeManager(jit_compiler=TraceCompiler(), yield_threshold=16)
+    )
     engine.register_module_blocks(module)
     t0 = time.perf_counter()
     engine.run(interp, module.export_func_index("main"), [width, height])

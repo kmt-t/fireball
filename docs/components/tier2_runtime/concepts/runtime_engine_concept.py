@@ -5,8 +5,10 @@ Reference Concept Implementation: Integrated WASM Tiered Tracing Runtime Engine
 Execution model (per jit_compiler.md §4.1 / interpreter.md §4.1,
 ADR-INTERP-01 {ADR_TraceBoundaryYield}): Interpreter.call() owns the common
 call-state, completion, trap, and result contract. The base Interpreter drives
-step() directly; JITInterpreter overrides only the execution driver and lets
-this RuntimeEngine own the JIT cache and history ring.
+step() directly; JITInterpreter overrides only the execution driver. This file
+is an integrated executable concept model. The production pysim implementation
+injects the Tier 3 JITRuntimeManager into RuntimeEngine; RuntimeEngine does not
+own the JIT cache or history ring.
 
   vSoC's step() loop, driving the Interpreter
     -> calls exec_trace(pc); the Interpreter/JIT trace runs until the next

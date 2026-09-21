@@ -38,7 +38,7 @@ for _p in [
 import wasmtime
 from helpers import expect_assertion, make_interpreter, wat_to_wasm
 from tier3_executer.interpreter.interpreter import Interpreter
-from runtime_engine import RuntimeEngine
+from test_support import make_runtime_engine
 from wasm_module import Module
 from wasm_reader import parse
 from tier3_executer.jit.x64_jit import TraceCompiler
@@ -75,12 +75,12 @@ def _tier3(
     `compile_only` narrows the trackable-block bitmap to the given block heads, so every
     other block stays on the interpreter.
     """
-    engine = RuntimeEngine(yield_threshold=3, candidate_threshold=0, jit_compiler=TraceCompiler())
+    engine = make_runtime_engine(yield_threshold=3, candidate_threshold=0, jit_compiler=TraceCompiler())
     module = engine.load_wasm(wasm)
     if compile_only is not None:
-        engine.trackable.clear()
+        engine.jit_runtime.trackable.clear()
         for head_pc in compile_only:
-            engine.trackable.mark(head_pc)
+            engine.jit_runtime.trackable.mark(head_pc)
     result = engine.run(_guest(module), module.export_func_index(export), args)
     return result[0] & MASK32, engine
 
@@ -296,7 +296,7 @@ def test_jitr_60_frames_with_different_slot_widths_run_side_by_side():
         1,
         2,
     )
-    compiled_functions = {trace.head_pc >> 16 for _key, trace in engine.cache.active.traces}
+    compiled_functions = {trace.head_pc >> 16 for _key, trace in engine.jit_runtime.cache.active.traces}
     assert compiled_functions >= {0, 1}, f"traces exist only for functions {compiled_functions}"
 
 
@@ -329,7 +329,7 @@ def test_jitr_61_a_trace_that_would_overflow_the_operand_stack_runs_on_the_inter
     interpreter_module = parse(wasm)
     with expect_assertion():
         _guest(interpreter_module).call(interpreter_module.export_func_index("main"), [])
-    engine = RuntimeEngine(yield_threshold=3, candidate_threshold=0, jit_compiler=TraceCompiler())
+    engine = make_runtime_engine(yield_threshold=3, candidate_threshold=0, jit_compiler=TraceCompiler())
     module = engine.load_wasm(wasm)
     with expect_assertion():
         engine.run(_guest(module), module.export_func_index("main"), [])

@@ -52,9 +52,9 @@ from control_flow import extract_basic_blocks
 from execution_context import WASMContext
 from helpers import make_interpreter as Interpreter
 from helpers import wat_to_wasm
-from runtime_engine import BasicBlock, RuntimeEngine
-from test_support import compile_module_block, compile_test_block
-from wasm_module import I32, I64, LocalWidthMap
+from runtime_engine import RuntimeEngine
+from test_support import compile_module_block, compile_test_block, make_runtime_engine
+from wasm_module import BasicBlock, I32, I64, LocalWidthMap
 from wasm_opcodes import (
     F32_ADD,
     F32_CONST,
@@ -452,17 +452,17 @@ def test_trace_chaining_between_traces():
     )
     """
     wasm_bytes = wat_to_wasm(wat)
-    engine = RuntimeEngine(yield_threshold=10, jit_compiler=TraceCompiler())
+    engine = make_runtime_engine(yield_threshold=10, jit_compiler=TraceCompiler())
     mod = engine.load_wasm(wasm_bytes)
     block_a = mod.blocks[0]
     block_b = mod.blocks[1]
     # Compile trace B first, then A (enabling immediate forward chaining)
-    trace_b = compile_module_block(engine.jit_compiler, mod, block_b)
-    engine.cache.insert(trace_b)
-    engine.bitmap.mark_compiled(block_b.head_pc)
-    trace_a = compile_module_block(engine.jit_compiler, mod, block_a)
-    engine.cache.insert(trace_a)
-    engine.bitmap.mark_compiled(block_a.head_pc)
+    trace_b = compile_module_block(engine.jit_runtime.jit_compiler, mod, block_b)
+    engine.jit_runtime.cache.insert(trace_b)
+    engine.jit_runtime.bitmap.mark_compiled(block_b.head_pc)
+    trace_a = compile_module_block(engine.jit_runtime.jit_compiler, mod, block_a)
+    engine.jit_runtime.cache.insert(trace_a)
+    engine.jit_runtime.bitmap.mark_compiled(block_a.head_pc)
     assert trace_a.chain_next == block_b.head_pc
     results = engine.run(Interpreter(mod), 0, [10])
     assert results[0] == 30
@@ -492,14 +492,14 @@ def test_hybrid_interpreter_to_jit_trace_elevation():
     )
     """
     wasm_bytes = wat_to_wasm(wat)
-    engine = RuntimeEngine(yield_threshold=3, jit_compiler=TraceCompiler())
+    engine = make_runtime_engine(yield_threshold=3, jit_compiler=TraceCompiler())
     mod = engine.load_wasm(wasm_bytes)
     loop_pc = mod.blocks[0].head_pc
     results = engine.run(Interpreter(mod), 0, [5])
     assert results[0] == 15
     assert engine.stat_jit_invocations >= 2
     assert engine.stat_interp_steps >= 3
-    assert engine.cache.active.has_trace(loop_pc) or engine.cache.warm.has_trace(loop_pc)
+    assert engine.jit_runtime.cache.active.has_trace(loop_pc) or engine.jit_runtime.cache.warm.has_trace(loop_pc)
 
 
 def test_jit_chaining_uses_loader_resolved_successors():
@@ -524,19 +524,19 @@ def test_jit_chaining_uses_loader_resolved_successors():
     )
     """
     wasm_bytes = wat_to_wasm(wat)
-    engine = RuntimeEngine(yield_threshold=10, jit_compiler=TraceCompiler())
+    engine = make_runtime_engine(yield_threshold=10, jit_compiler=TraceCompiler())
     mod = engine.load_wasm(wasm_bytes)
     block_a = mod.blocks[0]
     block_b = mod.blocks[1]
 
     # 1. Backward chaining: compile B (target) first, then A (source).
-    trace_b = compile_module_block(engine.jit_compiler, mod, block_b)
-    engine.cache.insert(trace_b)
-    engine.bitmap.mark_compiled(block_b.head_pc)
+    trace_b = compile_module_block(engine.jit_runtime.jit_compiler, mod, block_b)
+    engine.jit_runtime.cache.insert(trace_b)
+    engine.jit_runtime.bitmap.mark_compiled(block_b.head_pc)
 
-    trace_a = compile_module_block(engine.jit_compiler, mod, block_a)
-    engine.cache.insert(trace_a)
-    engine.bitmap.mark_compiled(block_a.head_pc)
+    trace_a = compile_module_block(engine.jit_runtime.jit_compiler, mod, block_a)
+    engine.jit_runtime.cache.insert(trace_a)
+    engine.jit_runtime.bitmap.mark_compiled(block_a.head_pc)
 
     # chain_next successfully bypassed block delimiter and connected to block B's head!
     assert trace_a.chain_next == block_b.head_pc
@@ -547,21 +547,21 @@ def test_jit_chaining_uses_loader_resolved_successors():
     assert engine.stat_jit_invocations == 2
 
     # 2. Forward chaining test:
-    engine2 = RuntimeEngine(yield_threshold=10, jit_compiler=TraceCompiler())
+    engine2 = make_runtime_engine(yield_threshold=10, jit_compiler=TraceCompiler())
     mod2 = engine2.load_wasm(wasm_bytes)
     block_a2 = mod2.blocks[0]
     block_b2 = mod2.blocks[1]
 
-    trace_a2 = compile_module_block(engine2.jit_compiler, mod2, block_a2)
-    engine2.cache.insert(trace_a2)
-    engine2.bitmap.mark_compiled(block_a2.head_pc)
+    trace_a2 = compile_module_block(engine2.jit_runtime.jit_compiler, mod2, block_a2)
+    engine2.jit_runtime.cache.insert(trace_a2)
+    engine2.jit_runtime.bitmap.mark_compiled(block_a2.head_pc)
     assert trace_a2.chain_next is None  # B is not resident yet
 
     # Now insert B: forward chaining must inspect resident trace A, resolve its delimiter,
     # and patch trace_a2.chain_next = block_b2.head_pc!
-    trace_b2 = compile_module_block(engine2.jit_compiler, mod2, block_b2)
-    engine2.cache.insert(trace_b2)
-    engine2.bitmap.mark_compiled(block_b2.head_pc)
+    trace_b2 = compile_module_block(engine2.jit_runtime.jit_compiler, mod2, block_b2)
+    engine2.jit_runtime.cache.insert(trace_b2)
+    engine2.jit_runtime.bitmap.mark_compiled(block_b2.head_pc)
 
     assert trace_a2.chain_next == block_b2.head_pc
 

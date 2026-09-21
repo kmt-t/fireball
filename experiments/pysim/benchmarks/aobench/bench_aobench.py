@@ -28,6 +28,7 @@ for _p in [
 from dummy_drivers import DummyDriver
 from tier3_executer.interpreter.interpreter import Interpreter, InterpreterBindings
 from runtime_engine import RuntimeEngine
+from tier3_executer.jit.jit_manager import JITRuntimeManager
 from system import System
 from wasi import WasiHostContext
 from wasm_reader import parse
@@ -74,7 +75,10 @@ def run_aobench(debug: bool = False) -> dict[str, int | float]:
     funcs_t3 = wasi_ctx_t3.build_interpreter_host_functions(module)
     module.init_memory_data(wasi_ctx_t3.guest_memory, ())
     trace_compiler = TraceCompiler()
-    runtime_engine = RuntimeEngine(jit_compiler=trace_compiler, yield_threshold=16, debug=debug)
+    runtime_engine = RuntimeEngine(
+        jit_runtime=JITRuntimeManager(jit_compiler=trace_compiler, yield_threshold=16),
+        debug=debug,
+    )
     runtime_engine.register_module_blocks(module)
     interp_t3 = Interpreter(
         module,
@@ -106,7 +110,7 @@ def run_aobench(debug: bool = False) -> dict[str, int | float]:
         "jit_invocations": runtime_engine.stat_jit_invocations,
         "chain_invocations": runtime_engine.stat_chain_hits,
         "trace_exits_to_interp": runtime_engine.stat_trace_exits_to_interp,
-        "compiled_traces": len(runtime_engine.cache.active.traces),
+        "compiled_traces": len(runtime_engine.jit_runtime.cache.active.traces),
     }
 
 

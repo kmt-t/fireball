@@ -8,14 +8,12 @@ production runtime.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable
 from typing import Protocol
 
-from config import JIT_CARD_SHIFT
 from control_flow import iter_block_ops
 from execution_context import WASMContext
-from jit_scoring import JIT_CANDIDATE_THRESHOLD
-from runtime_engine import RuntimeEngine, _JitCompiler
+from runtime_engine import JITRuntime, RuntimeEngine
 from system_containers import StaticVector
 from wasm_module import BasicBlock, WasmOperand
 from wasm_opcodes import I32_ADD, I32_CONST, I32_MUL, I32_SUB, LOCAL_GET, LOCAL_SET, LOCAL_TEE
@@ -92,25 +90,11 @@ class RuntimeEngineDebugDriver(RuntimeEngine):
 
     def __init__(
         self,
-        jit_compiler: _JitCompiler | None = None,
-        yield_threshold: int = 16,
-        card_shift: int = JIT_CARD_SHIFT,
-        code_lengths: Sequence[int] = (),
-        min_trace_bytes: int | None = None,
-        candidate_threshold: int = JIT_CANDIDATE_THRESHOLD,
-        compile_queue_capacity: int = 4,
-        block_capacity: int = 64,
+        jit_runtime: JITRuntime | None = None,
         debug: bool = False,
     ) -> None:
         super().__init__(
-            jit_compiler=jit_compiler,
-            yield_threshold=yield_threshold,
-            card_shift=card_shift,
-            code_lengths=code_lengths,
-            min_trace_bytes=min_trace_bytes,
-            candidate_threshold=candidate_threshold,
-            compile_queue_capacity=compile_queue_capacity,
-            block_capacity=block_capacity,
+            jit_runtime=jit_runtime,
             debug=debug,
         )
         self._debug_mode = False
@@ -137,7 +121,8 @@ class RuntimeEngineDebugDriver(RuntimeEngine):
         self._debug_mode = False
 
     def flush_jit_cache(self) -> None:
-        self.cache.flush_all()
+        if self.jit_runtime is not None:
+            self.jit_runtime.flush_all()
 
     def _next_pc(self, block: BasicBlock, ctx: WASMContext) -> int | None:
         if ctx.fault is not None:

@@ -484,7 +484,7 @@ Stage 3 アクセス（FC=14/15）において毎回 FlatMap の二分探索を�
 | 機能概要 | 既に定義（ROM）されている領域に対して、ホスト側のハンドラの実装アドレスを紐づける。 |
 | シグネチャ | `register-hook(hook-id: hook-category, handler-addr: mem-address) -> operation-result` |
 | 引数と役割 | `hook-id`: 対象の領域カテゴリ（FC/ページ番号等の組み合わせを識別）<br>`handler-addr`: ハンドラ関数の物理アドレス |
-| 事前条件 | `hook-id` が [`runtime_vsoc.md`](runtime_vsoc.md) で定義された有効なIDであること。未登録であること。 |
+| 事前条件 | `hook-id` が [`runtime_vsoc.md`](docs/components/tier2_runtime/runtime_vsoc.md) で定義された有効なIDであること。未登録であること。 |
 | 事後条件 | フックレジストリにエントリが追加される。 |
 | 不変条件 | アドレスマップ定義自体は変更されない。 |
 | エラー時の挙動 | 無効なIDの場合はエラーを返す。二重登録は拒否する。 |

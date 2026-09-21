@@ -41,7 +41,9 @@ for _p in [
 
 from config import FB_CONF_JIT_AGING_STEP_SCAN_BYTES, FB_CONF_JIT_AGING_STEP_UNITS
 from tier3_executer.interpreter.interpreter import Interpreter, InterpreterBindings
-from runtime_engine import JITTrace, RuntimeEngine
+from runtime_engine import RuntimeEngine
+from tier3_executer.jit.jit_cache import JITTrace
+from tier3_executer.jit.jit_manager import JITRuntimeManager
 from wasm_module import WasmOperand
 from wasm_reader import parse
 from tier3_executer.jit.x64_jit import TraceCompiler
@@ -172,10 +174,14 @@ class JITAgingBenchmark:
             settings["aging_step_units"] = units
         if scan_bytes is not None:
             settings["aging_scan_bytes"] = scan_bytes
-        engine = RuntimeEngine(jit_compiler=compiler, yield_threshold=16, **settings)
+        engine = RuntimeEngine(
+            jit_runtime=JITRuntimeManager(
+                jit_compiler=compiler, yield_threshold=16, **settings
+            )
+        )
         engine.register_module_blocks(module)
         hook = _RotationHook(engine, aging)
-        engine.cache.on_rotate = hook
+        engine.jit_runtime.cache.on_rotate = hook
         interp = Interpreter(module, InterpreterBindings.empty())
         hot = [module.export_func_index(f"h{i}") for i in range(self.hot_functions)]
         cold = [module.export_func_index(f"c{i}") for i in range(self.cold_functions)]
@@ -201,11 +207,11 @@ class JITAgingBenchmark:
             compile_ms=compile_ms,
             aging_ms=aging_ms,
             compiles=compiler.compiles,
-            purged=engine.cache.evictions,
+            purged=engine.jit_runtime.cache.evictions,
             rotations=hook.rotations,
-            promotions=engine.cache.promotions,
+            promotions=engine.jit_runtime.cache.promotions,
             jit_share_pct=100.0 * jit / total if total > 0 else 0.0,
-            aging_steps=engine.aging_steps,
+            aging_steps=engine.jit_runtime.aging_steps,
             checksum=checksum & 0xFFFF_FFFF,
         )
 

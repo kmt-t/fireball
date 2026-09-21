@@ -13,7 +13,7 @@ vSoC (Virtual System-on-Chip) は WASM 実行環境の統合マネージャで�
 各サブコンポーネントを統合する環境としての役割を担う。`execution_context` 内のリニアメモリ情報やグローバル変数テーブル（`vsoc_runtime` 領域）を介して実行環境を提供する。
 本システムは **1ランタイム1ゲストの直交分離原則 ()** を採用する。各 vSoC インスタンスは厳密に 1 つのゲストモジュールのみを担当する。
 各ランタイムは**自身専用の固定長データバンプアロケータ ()** を所有する。モジュール内の全システムコンテナストレージ（RAM/XN）の確保を一元管理する。アンロード時にはこれらを $O(1)$ で一括リセットし、メモリ断片化を根絶する。
-JIT ネイティブコードキャッシュ（3-Bank）は、専用の実行可能セクションから**専用の JIT コードアロケータ**により確保する。このセクションには MPU の W^X（ライト・実行権限排他）制御を適用する。データ用バンプアロケータ（RAM/XN）とはハードウェア保護ドメインを厳格に分離する。
+JIT ネイティブコードキャッシュ（3-Bank）は、Tier 3 `JITRuntimeManager` が専用の実行可能セクションから**専用の JIT コードアロケータ**により確保する。Tier 2 vSoC/`RuntimeEngine` は `JITRuntime` 契約を注入して実行境界を提供するだけであり、キャッシュ・ホットスポット・コンパイル待ち列の状態を所有しない。このセクションには MPU の W^X（ライト・実行権限排他）制御を適用する。データ用バンプアロケータ（RAM/XN）とはハードウェア保護ドメインを厳格に分離する。
 
 ## 2. アーキテクチャ分類
 <!-- traceability: {META_3TierSeparation} {GLOBAL_ComponentHarness} {META_StaticDI} {OneRuntimeOneGuest} -->
@@ -26,7 +26,7 @@ JIT ネイティブコードキャッシュ（3-Bank）は、専用の実行可�
 ### 3.1 データ構造
 <!-- traceability: {META_StaticDI} {Runtime_BumpAllocator} {GLOBAL_InterruptWakeup} -->
 - **`vsoc_harness`**: vSoCが依存する各種エンジン（Loader, Interpreter, JIT等）のインターフェースを集約した構造体。
-- **`vsoc_context`**: 現在の実行状態、仮想割り込み、JITキャッシュの管理状態、専用データバンプアロケータおよびJITコードアロケータなど、可変なランタイム状態。
+- **`vsoc_context`**: 現在の実行状態、仮想割り込み、Tier 3 `JITRuntime` 契約への参照、専用データバンプアロケータおよびJITコードアロケータなど、可変なランタイム状態。JITキャッシュの内部状態は保持しない。
 - **`vsoc_config`**: メモリ割り当てやJIT有効化フラグなどの不変な構成情報。
 
 ### 3.2 内部ブロック図
@@ -44,6 +44,7 @@ graph TD
         Loader["wasm_loader"]
         Interp["interpreter"]
         JIT["jit_compiler"]
+        JITRuntime["jit_runtime (Tier 3)"]
         vMMIO["vmmio_controller"]
         Debug["debugger"]
     end
@@ -51,13 +52,15 @@ graph TD
     Harness -- points to --> Loader
     Harness -- points to --> Interp
     Harness -- points to --> JIT
+    Harness -- calls contract --> JITRuntime
     Harness -- points to --> vMMIO
     Harness -- points to --> Debug
     Harness -- operates on --> Context
     Context -- owns --> Alloc
     Context -- owns --> JitAlloc
     Loader -- allocates containers from --> Alloc
-    JIT -- allocates code banks from --> JitAlloc
+    JITRuntime -- owns cache state --> JitAlloc
+    JITRuntime -- invokes compiler --> JIT
 ```
 
 ### 3.3 主要なクラス・構造体・配列・定数
@@ -70,7 +73,8 @@ graph TD
 | :--- | :--- | :--- |
 | WASMローダ | WASMモジュールのロードと解析を担うコンポーネントへの参照。 | `WasmLoader*` |
 | インタープリタ | WASMバイトコードを逐次実行するエンジンへの参照。 | `Interpreter*` |
-| JITコンパイラ | ホットスポットをネイティブコードに変換するエンジンへの参照。 | `JitCompiler*` |
+| JITランタイム契約 | Tier 3のホットスポット管理・トレース検索・キャッシュ無効化を呼び出す契約への参照。 | `JitRuntime*` |
+| JITコンパイラ | ホットスポットをネイティブコードに変換するTier 3実装への参照。 | `JitCompiler*` |
 | デバッガ | RSPプロトコルを介したデバッグ機能を提供するコンポーネントへの参照。 | `Debugger*` |
 | vMMIO | 仮想的なメモリマップドI/Oを制御するコンポーネントへの参照。 | `VmmioController*` |
 
@@ -81,8 +85,7 @@ vSoC全体の可変な実行時状態を保持する構造体。
 | :--- | :--- | :--- |
 | 実行状態 | 現在のvSoCの実行状態（停止、実行中、ブレークポイント等）。 | `VsocState` 列挙型 |
 | 割り込みイベント状態 | COOSから受け取った固定5ワードの`interrupt-event`とvIRQ配送状態。 | `interrupt_event` + 固定長状態 |
-| JITキャッシュ状態 | 現在アクティブなJITコードキャッシュの管理情報。 | `JitCacheManager` 構造体 |
-| JITキャッシュ状態 | 現在アクティブなJITコードキャッシュの管理情報。 | `JitCacheManager` 構造体 |
+| JITランタイム契約 | Tier 3 `JITRuntimeManager` の呼出し先。 | `JitRuntime*` |
 | WASMモジュール参照 | 現在ロードされているWASMモジュールのインスタンスへのポインタ。 | `WasmModule*` |
 | 専用データバンプアロケータ | モジュール内の全システムコンテナストレージ（RAM/XN）を切り出す専用アロケータ。アンロード時に一括リセットされる。 | `bump_allocator` インスタンス |
 | JITコードアロケータ | MPU W^X 保護（ライト・実行権限排他）が適用されたセクションから 3-Bank コードキャッシュを切り出す専用アロケータ。 | `jit_code_allocator` 構造体 |
@@ -133,7 +136,7 @@ vSoC コアエンジンの実行委譲、協調イールド、および外部介
 | **実行エンジン委譲とステートレス化** | `step()` 実行時 | `exec_trace`を4論理引数のプレーン関数としてディスパッチ | コルーチン化禁止による `[[clang::musttail]]` 阻害・スタック消費の防止（`GOTCHA-VSOC-01`） | |
 | **概算Yield (Approximate Yield)** | トレース境界脱出時 | `yield_threshold` を基準に vSoC が一括して `co_yield` 判定 | 命令ハンドラ内カウンタ埋め込みを排除し最速ホットパスを維持（`GOTCHA-VSOC-02`） | |
 | **JIT Safepoint** | ループバック（バックエッジ）到達時 | 保留中の割り込みイベント（原因レコード）・ブレークポイントを確認し、必要時フォールバック | JIT実行中の非同期イベント・Ctrl+Cへの即時応答性担保 | |
-| **デバッガ介入時キャッシュフラッシュ** | デバッガによるメモリ/変数書き換え時 | 該当タスクの JIT キャッシュ（Active/Warm/Oldest 全面）を一括無効化 | JIT コードと変更後メモリの整合性完全維持 | |
+| **デバッガ介入時キャッシュフラッシュ** | デバッガによるメモリ/変数書き換え時 | Tier 2は注入済み`JITRuntime`の`flush_all()`を呼び、Tier 3がJITキャッシュ（Active/Warm/Oldest）を一括無効化 | JIT コードと変更後メモリの整合性完全維持 | |
 | **1ランタイム1ゲスト・専用バンプ一括解放（W^Xコード分離）** | ランタイム生成時およびアンロード時 | 専用データアリーナ（RAM/XN）からコンテナストレージを確保し、専用W^XセクションからJITコードを確保。破棄時に $O(1)$ 一括リセット | 完全障害隔離、内部断片化ゼロ、ハードウェア実行保護（W^X/XN分離）の厳格維持 | `{OneRuntimeOneGuest}` `{Runtime_BumpAllocator}` |
 
 - **1ランタイム1ゲストのライフサイクル管理と専用バンプ一括解放 (`{OneRuntimeOneGuest}`, `{Runtime_BumpAllocator}`)**:
@@ -161,6 +164,7 @@ sequenceDiagram
     participant Mem as MemoryManager
     participant DataAlloc as bump_allocator (Data RAM)
     participant JitAlloc as jit_code_allocator (W^X JIT)
+    participant JitRuntime as JITRuntimeManager (Tier 3)
     participant Loader as WASM Loader
     participant Mod as WASM Module
 
@@ -182,7 +186,8 @@ sequenceDiagram
 
     Note over Sched,Mod: ランタイム破棄・モジュールアンロード手順 ($O(1)$ 一括解放)
     Sched->>vSoC: terminate()
-    vSoC->>vSoC: Invalidate JIT Cache (3-Bank Flush)
+    vSoC->>JitRuntime: flush_all()
+    JitRuntime->>JitRuntime: Invalidate 3-Bank Cache
     vSoC->>JitAlloc: reset() / release JIT code section
     vSoC->>Mem: release_jit_code_section(jit_section_id)
     vSoC->>DataAlloc: reset() / bulk deallocate data arena (O(1))

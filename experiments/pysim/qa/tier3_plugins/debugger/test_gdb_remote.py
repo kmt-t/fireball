@@ -76,6 +76,7 @@ from tier3_plugins.debugger.gdb_server import GDBServer
 from helpers import wat_to_wasm
 from runtime_test_driver import RuntimeEngineDebugDriver
 from tier3_executer.jit.x64_jit import TraceCompiler
+from tier3_executer.jit.jit_manager import JITRuntimeManager
 
 
 class GDBClientHelper:
@@ -150,7 +151,7 @@ def test_gdb_remote_socket_session():
       )
     )
     """
-    engine = RuntimeEngineDebugDriver(jit_compiler=TraceCompiler())
+    engine = RuntimeEngineDebugDriver(jit_runtime=JITRuntimeManager(jit_compiler=TraceCompiler()))
     mod = engine.load_wasm(wat_to_wasm(wat))
     block10, block20, block30 = mod.blocks[0], mod.blocks[1], mod.blocks[2]
     blocks = {block10.head_pc: block10, block20.head_pc: block20, block30.head_pc: block30}

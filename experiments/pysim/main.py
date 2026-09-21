@@ -31,6 +31,7 @@ from tier3_executer.interpreter.interpreter import Interpreter, InterpreterBindi
 from tier2_runtime.logger import LogLevel
 from recovery import RecoveryManager, RecoveryStrategy, Result
 from runtime_engine import RuntimeEngine
+from tier3_executer.jit.jit_manager import JITRuntimeManager
 from system import System
 from system_containers import StaticVector
 from wasm_reader import parse
@@ -183,9 +184,11 @@ def demo_wasmjit_hybrid_execution(sysv: System) -> None:
     mod = parse(FACTORIAL_WASM)
     interp = Interpreter(mod, InterpreterBindings.empty())
     engine = RuntimeEngine(
-        jit_compiler=TraceCompiler(),
-        yield_threshold=3,
-        candidate_threshold=0,
+        jit_runtime=JITRuntimeManager(
+            jit_compiler=TraceCompiler(),
+            yield_threshold=3,
+            candidate_threshold=0,
+        ),
     )
 
     print("  [Stage 1-3] Running through RuntimeEngine (Interpreter/JIT boundaries)...")

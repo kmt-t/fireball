@@ -10,16 +10,70 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Sequence
 
+from config import (
+    FB_CONF_JIT_AGING_STEP_SCAN_BYTES,
+    FB_CONF_JIT_AGING_STEP_UNITS,
+    JIT_CARD_SHIFT,
+)
 from control_flow import iter_block_ops
-from runtime_engine import BasicBlock, JITTrace
+from jit_scoring import JIT_CANDIDATE_THRESHOLD
+from runtime_engine import RuntimeEngine, _RescheduleObserver
 from system_containers import (
     ReadOnlyRadixBinaryTreeStorage,
     StaticVector,
     build_radix_table,
     fold_mix32,
 )
-from wasm_module import Function, FuncType, LocalWidthMap, Module, WasmOperand
+from wasm_module import BasicBlock, Function, FuncType, LocalWidthMap, Module, WasmOperand
+from tier3_executer.jit.jit_cache import JITTrace
+from tier3_executer.jit.jit_manager import JITCompiler, JITRuntimeManager
 from tier3_executer.jit.x64_jit import TraceCompiler
+
+
+def make_runtime_engine(
+    jit_compiler: JITCompiler | None = None,
+    debug: bool = False,
+    yield_threshold: int = 16,
+    card_shift: int = JIT_CARD_SHIFT,
+    code_lengths: Sequence[int] = (),
+    min_trace_bytes: int | None = None,
+    candidate_threshold: int = JIT_CANDIDATE_THRESHOLD,
+    compile_queue_capacity: int = 4,
+    aging_step_units: int = FB_CONF_JIT_AGING_STEP_UNITS,
+    aging_scan_bytes: int = FB_CONF_JIT_AGING_STEP_SCAN_BYTES,
+    reschedule_observer: _RescheduleObserver | None = None,
+) -> RuntimeEngine:
+    """Compose a Tier 2 engine with the Tier 3 JIT manager for tests."""
+
+    if (
+        jit_compiler is None
+        and not code_lengths
+        and yield_threshold == 16
+        and card_shift == JIT_CARD_SHIFT
+        and min_trace_bytes is None
+        and candidate_threshold == JIT_CANDIDATE_THRESHOLD
+        and compile_queue_capacity == 4
+        and aging_step_units == FB_CONF_JIT_AGING_STEP_UNITS
+        and aging_scan_bytes == FB_CONF_JIT_AGING_STEP_SCAN_BYTES
+        and reschedule_observer is None
+    ):
+        return RuntimeEngine(debug=debug)
+    manager = JITRuntimeManager(
+        jit_compiler=jit_compiler,
+        yield_threshold=yield_threshold,
+        card_shift=card_shift,
+        code_lengths=code_lengths,
+        min_trace_bytes=min_trace_bytes,
+        candidate_threshold=candidate_threshold,
+        compile_queue_capacity=compile_queue_capacity,
+        aging_step_units=aging_step_units,
+        aging_scan_bytes=aging_scan_bytes,
+    )
+    return RuntimeEngine(
+        jit_runtime=manager,
+        debug=debug,
+        reschedule_observer=reschedule_observer,
+    )
 
 
 class PcOnlyCompiler:

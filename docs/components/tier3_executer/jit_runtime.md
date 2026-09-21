@@ -7,7 +7,7 @@
 -->
 
 ## 1. コンセプト
-<!-- traceability: {SimpleJITArchitecture} {JIT_MultiBuffer_Cache} {JIT_OldestOnly_Promote} {META_AccessDictionary} {META_BinarySearch} {LowLatencyJIT} {HistoryBuffer} {GLOBAL_PeriodicTask} {DirectMappedJIT16} {Runtime_BumpAllocator} -->
+<!-- traceability: {SimpleJITArchitecture} {JIT_MultiBuffer_Cache} {JIT_OldestOnly_Promote} {META_AccessDictionary} {META_BinarySearch} {LowLatencyJIT} {LowOverhead} {HistoryBuffer} {GLOBAL_PeriodicTask} {DirectMappedJIT16} {Runtime_BumpAllocator} -->
 JIT ランタイム管理は、WASM PC とネイティブコードの紐付け検索を担当する。3面世代交代コードキャッシュのローテーションも担当する。ホットスポット検出も一括して担う。
 
 実行入口は Tier 3 `Interpreter` のテンプレートメソッド契約と共有する。`JITInterpreter` は `Interpreter.call()` の呼出状態・完了・トラップ・結果検証を継承し、実行ドライバだけを `RuntimeEngine` のJIT／Interpreter統合経路へ差し替える。これにより、Interpreter と JIT の実行経路は同じ公開 `call()` 境界で比較できる。
@@ -25,6 +25,23 @@ JIT ランタイム管理は、WASM PC とネイティブコードの紐付け�
 JITサブシステムは、以下の2つの独立した設計書に責務を分離して構成される。
 - **[jit_compiler.md](docs/components/tier3_executer/jit_compiler.md)**: 命令テンプレートを用いたネイティブコード生成および静的命令エンコードを担当する。
 - **[jit_runtime.md](docs/components/tier3_executer/jit_runtime.md)**: 実行履歴監視、ホットスポット判定、PC-アドレス変換検索、3面キャッシュローテーションを担当する。 `{SimpleJITArchitecture}` `{JIT_MultiBuffer_Cache}`
+
+### 2.2 実装責務と依存方向
+<!-- traceability: {META_ContractImplSplit} {META_StaticDI} {META_3TierSeparation} -->
+Tier 2 の `RuntimeEngine` は、JITの内部状態を所有しない。[`runtime_engine.py`](experiments/pysim/tier2_runtime/runtime_engine.py) の `JITRuntime` 契約を介して、モジュール登録、基本ブロック解決、ホットスポット記録、イールド処理、トレース検索、チェイン解決、およびキャッシュ無効化を呼び出す。Tier 2 はカード表、履歴リング、コンパイル待ち列、キャッシュバンク、直接マップ索引の型へ依存しない。
+
+Tier 3 の実装は次の責務に分ける。
+
+| 実装 | 所有する責務 | 依存先 |
+| :--- | :--- | :--- |
+| [`jit_manager.py`](experiments/pysim/tier3_executer/jit/jit_manager.py) の `JITRuntimeManager` | ホットスポットカード、候補マスク、履歴リング、関数更新表、コンパイル待ち列、ブロック索引、コンパイル起動、トレース検索、チェイン解決 | Tier 2 `JITRuntime` の呼出し形、Loaderの`Module`/`BasicBlock`情報 |
+| [`jit_cache.py`](experiments/pysim/tier3_executer/jit/jit_cache.py) | 3面コードキャッシュ、バンク回転、Oldest昇格、局所アンリンク、エントリ索引 | `JITRuntimeManager` からの所有・通知 |
+| [`x64_jit.py`](experiments/pysim/tier3_executer/jit/x64_jit.py) | トレースのコード生成とコンパイラ実装 | `JITCompiler` 契約、JIT ABI |
+| [`runtime_engine.py`](experiments/pysim/tier2_runtime/runtime_engine.py) | Interpreter/JITの実行境界、vIRQ、実行統計、Tier 3契約の呼出し | `JITRuntime` 契約のみ |
+
+`RuntimeEngine` の生成時に `JITRuntimeManager` を静的に注入する。実行中に実装を差し替える動的プラグイン機構は持たず、構成に選んだTier 3実装だけを実行経路へ合成する。JITを無効にする場合は`JITRuntime`を注入せず、Interpreter経路だけを使用する。
+
+なお、evidenceに記載する [`runtime_engine_concept.py`](docs/components/tier2_runtime/concepts/runtime_engine_concept.py) は、複数コンポーネントを一つの実行可能モデルで検証するための統合概念コードである。製品実装の責務配置は本節の `JITRuntimeManager` と `RuntimeEngine` の分離を正本とする。
 
 ## 3. 静的モデル
 
@@ -284,6 +301,14 @@ flowchart TD
 ## 5. インターフェース定義
 
 ### 5.1 公開API
+
+#### Tier 2実行境界（JITRuntime）
+| 項目 | 内容 |
+| :--- | :--- |
+| 機能概要 | Tier 2実行ループへ、Tier 3のブロック解決、履歴記録、トレース検索、チェイン情報、キャッシュ無効化を提供する。 |
+| 実装 | `RuntimeEngine` の `JITRuntime` Protocol と `JITRuntimeManager` |
+| 構成 | `RuntimeEngine(jit_runtime=JITRuntimeManager(...))` による静的依存性注入 |
+| 不変条件 | Tier 2はTier 3のカード表・キュー・キャッシュ実装へ直接アクセスしない。 |
 
 #### 検索（lookup）
 | 項目 | 内容 |

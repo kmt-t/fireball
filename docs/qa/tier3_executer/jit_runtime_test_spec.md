@@ -6,6 +6,7 @@
 関連正本: [`jit_compiler.md`](docs/components/tier3_executer/jit_compiler.md)（{JIT_LazyChaining}、{JIT_CopyAndPatch}はjit_runtimeと共同責務）
 統合参考実装: [`runtime_engine_concept.py`](docs/components/tier2_runtime/concepts/runtime_engine_concept.py)。スタックキャッシュ固有の参考実装は [`stack_cache_concept.py`](docs/components/tier3_executer/concepts/stack_cache_concept.py) とする。
 3面キャッシュ・ホットスポット・チェイニングの統合ケースは `runtime_engine_concept.py` および pysim のJITランタイムテストを参照し、スタックキャッシュ固有ケースは `stack_cache_concept.py` で検証する。
+製品pysimの状態所有実装は [`jit_manager.py`](experiments/pysim/tier3_executer/jit/jit_manager.py) の `JITRuntimeManager` であり、[`runtime_engine.py`](experiments/pysim/tier2_runtime/runtime_engine.py) は `JITRuntime` 契約を呼び出す実行境界だけを持つ。
 
 WASM PC→ネイティブコードの3段検索（カードマーキング→Folding XOR高速キャッシュ→ソート済みバンク内二分探索）、2-bitホットスポット検出、連続8KB JIT領域（非エビクション共通コード2KB + Active/Warm/Oldest各2KB）、Oldest-Only Promotion、局所チェイン解決、MPU W^X保護を検証する。
 

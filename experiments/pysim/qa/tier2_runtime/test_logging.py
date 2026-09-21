@@ -20,12 +20,12 @@ for _p in [
     _PYSIM_DIR / "tier1_core",
     _PYSIM_DIR / "tier1_interface",
     _PYSIM_DIR / "tier2_runtime",
-    _PYSIM_DIR / "tier3_jit",
+    _PYSIM_DIR / "tier3_executer",
     _PYSIM_DIR / "tier3_platform",
     _REPO_ROOT / "docs" / "components" / "tier1_core" / "concepts",
     _REPO_ROOT / "docs" / "components" / "tier1_interface" / "concepts",
     _REPO_ROOT / "docs" / "components" / "tier2_runtime" / "concepts",
-    _REPO_ROOT / "docs" / "components" / "tier3_jit" / "concepts",
+    _REPO_ROOT / "docs" / "components" / "tier3_executer" / "concepts",
     _REPO_ROOT / "docs" / "components" / "tier3_platform" / "concepts",
 ]:
     _sp = str(_p)
@@ -33,13 +33,13 @@ for _p in [
         sys.path.insert(0, _sp)
 
 from helpers import expect_assertion, make_interpreter, wat_to_wasm
-from interpreter import TRAP_LOG_EVENTS, TrapCode
+from tier3_executer.interpreter import TRAP_LOG_EVENTS, TrapCode
 from interrupt_event import InterruptEvent
 from ipc_router import (
     IPCMessage,
     Role,
 )
-from logger import STANDARD_DIAGNOSTIC_EVENTS, ConsoleOutput, LogDictionary, Logger, LogLevel
+from tier2_runtime.logger import STANDARD_DIAGNOSTIC_EVENTS, ConsoleOutput, LogDictionary, Logger, LogLevel
 from stream_transport import StreamTransport
 from system import (
     System,

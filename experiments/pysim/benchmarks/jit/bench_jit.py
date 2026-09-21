@@ -19,7 +19,7 @@ for _p in [
     _PYSIM_DIR / "tier1_core",
     _PYSIM_DIR / "tier1_interface",
     _PYSIM_DIR / "tier2_runtime",
-    _PYSIM_DIR / "tier3_jit",
+    _PYSIM_DIR / "tier3_executer",
     _PYSIM_DIR / "tier3_platform",
 ]:
     _sp = str(_p)
@@ -29,12 +29,12 @@ for _p in [
 import wasm_opcodes as op
 from control_flow import extract_basic_blocks, iter_block_ops
 from execution_context import WASMContext
-from interpreter import Interpreter, InterpreterBindings
+from tier3_executer.interpreter import Interpreter, InterpreterBindings
 from runtime_engine import HotspotBitmap, RuntimeEngine
 from system_containers import ReadOnlyFlatMapView
 from wasm_module import I32, LocalWidthMap
 from wasm_reader import parse
-from x64_jit import TraceCompiler
+from tier3_executer.x64_jit import TraceCompiler
 
 
 class JITCompilerBenchmark:

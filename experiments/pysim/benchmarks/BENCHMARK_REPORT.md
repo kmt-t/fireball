@@ -10,7 +10,7 @@ Section 1〜5は 2026-09-18 に、JIT Direct-Mapped Folding XORキャッシュ�
 
 - **プラットフォーム**: Windows (AMD64)
 - **ランタイム**: Python 3.14 (pysim) / Cython CPS 4-argument C-Calling Convention
-- **Cython実行状況**: `tier3_jit/native_trace_call.pyd` をJITのネイティブ呼び出し経路で使用。AO-BenchのTier 2は `cps_chain.pyx` をclang-clでビルドした `_interpreter_cps_native.pyd` によるネイティブCPSチェインを使用し、命令意味論は既存Pythonハンドラ本体を呼び出して測定。
+- **Cython実行状況**: `tier3_executer/native_trace_call.pyd` をJITのネイティブ呼び出し経路で使用。AO-BenchのTier 2は `cps_chain.pyx` をclang-clでビルドした `_interpreter_cps_native.pyd` によるネイティブCPSチェインを使用し、命令意味論は既存Pythonハンドラ本体を呼び出して測定。
 - **ローカル領域レイアウト**: `WASM_LOCAL_ALIGNMENT_BYTES` を基準に8バイト固定スロットへ統一。Native value stack の物理容量は `NATIVE_VALUE_STACK_CAPACITY`（128 raw words）。
 - **実行コマンド**:
   ```bash

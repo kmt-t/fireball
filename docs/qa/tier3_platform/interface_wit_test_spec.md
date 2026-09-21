@@ -32,6 +32,8 @@
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | TEST-WIT-12 | vIRQ専用importの分離 | `fireball:host/virq` が公開されている | `register` / `unregister` を呼び出す | 汎用 `fireball_call` のIDディスパッチを経由せず、vSoCの保留表へ渡される | `fireball_hostcall_contract.wit` |
 | TEST-WIT-13 | vDMA専用importの分離 | `fireball:host/vdma` が公開されている | `start` を呼び出す | 汎用 `fireball_call` のIDディスパッチやVDMA vMMIOレジスタを経由せず、転送要求へ渡される | `fireball_hostcall_contract.wit` |
+| TEST-WIT-14 | Core Wasm C ABI写像 | `libfireball`をCore Wasmへ静的リンクする | WIT操作とmodule／field名を照合する | `fireball_call`、`virq_register`、`virq_unregister`、`vdma_start`が`fireball` moduleの別fieldへ一意に写像される |
+| TEST-WIT-15 | HAL worldの公開方向 | ゲストが`fireball-hal` worldを利用する | worldのimport／exportを確認する | `types`と`resolver`はホスト提供importであり、ゲスト実装を要求するexportが存在しない |
 
 ### コンソール生バイト出力経路 (`fireball://hal/stdout/0`)
 

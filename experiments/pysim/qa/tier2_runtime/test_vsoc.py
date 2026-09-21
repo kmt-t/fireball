@@ -23,19 +23,19 @@ for _p in [
     _PYSIM_DIR / "tier1_core",
     _PYSIM_DIR / "tier1_interface",
     _PYSIM_DIR / "tier2_runtime",
-    _PYSIM_DIR / "tier3_jit",
+    _PYSIM_DIR / "tier3_executer",
     _PYSIM_DIR / "tier3_platform",
     _REPO_ROOT / "docs" / "components" / "tier1_core" / "concepts",
     _REPO_ROOT / "docs" / "components" / "tier1_interface" / "concepts",
     _REPO_ROOT / "docs" / "components" / "tier2_runtime" / "concepts",
-    _REPO_ROOT / "docs" / "components" / "tier3_jit" / "concepts",
+    _REPO_ROOT / "docs" / "components" / "tier3_executer" / "concepts",
     _REPO_ROOT / "docs" / "components" / "tier3_platform" / "concepts",
 ]:
     _sp = str(_p)
     if _sp not in sys.path:
         sys.path.insert(0, _sp)
 
-# Keep the product Tier 3 package ahead of tests/tier3_jit when importing
+# Keep the product Tier 3 package ahead of tests/tier3_executer when importing
 # runtime_engine's qualified Tier 3 modules.
 sys.path.insert(0, str(_PYSIM_DIR))
 
@@ -43,7 +43,7 @@ from control_flow import extract_basic_blocks
 from execution_context import WASMContext
 from helpers import expect_assertion, wat_to_wasm
 from helpers import make_interpreter as Interpreter
-from logger import LogDictionary, Logger, LogLevel
+from tier2_runtime.logger import LogDictionary, Logger, LogLevel
 from runtime_engine import BasicBlock, CardState, JITTrace, RuntimeEngine
 from runtime_test_driver import RuntimeEngineDebugDriver
 from stream_transport import StreamTransport
@@ -74,7 +74,7 @@ from wasi import WasiHostContext
 from wasm_module import I32, Function, FuncType, Module
 from wasm_opcodes import I32_CONST
 from wasm_reader import parse
-from x64_jit import TraceCompiler
+from tier3_executer.x64_jit import TraceCompiler
 
 
 def _make_virq_module() -> Module:
@@ -375,7 +375,7 @@ def _recv_rsp_frame(client: socket.socket, sysv: System, max_steps: int = 32) ->
 
 def test_gdbserver_task_coos_cooperative_execution():
     """TEST-DBG-01, GOTCHA-DBG-04: GDBServer operates as an independent task on COOS and handles multi-yield RSP packets."""
-    from debugger import DebuggerManager
+    from tier3_plugins.debugger import DebuggerManager
 
     sysv = System()
     dbg = DebuggerManager()
@@ -724,7 +724,7 @@ def test_guest_wasi_03_interpreter_proc_exit():
 
 def test_debugger_manager_gdb_rsp_integration():
     """TEST-DBG-01..15: Verifies Debug Manager GDB RSP protocol, breakpoints, registers and JIT flush."""
-    from debugger import DebuggerManager, GDBRspProtocol
+    from tier3_plugins.debugger import DebuggerManager, GDBRspProtocol
 
     engine = RuntimeEngineDebugDriver(jit_compiler=TraceCompiler(), code_lengths=(2,))
     dbg = DebuggerManager(engine=engine)
@@ -800,7 +800,7 @@ def test_debugger_manager_gdb_rsp_integration():
 
 def test_interpreter_debugger_handler_table_switch_and_hooks():
     """TEST-INTP-60..65: Verifies Interpreter DebuggerLabelTableSwitch, JIT bypass, PC sampling and assertions."""
-    from debugger import DebuggerManager
+    from tier3_plugins.debugger import DebuggerManager
 
     wat = """
     (module

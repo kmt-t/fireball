@@ -58,12 +58,12 @@ experiments/pysim/
 │   ├── logger.py          # 構造化ログカタログ & アイドルフラッシュ
 │   ├── memory.py          # Tier 1メモリ契約のTier 2実装
 │   ├── hal_dispatch.py    # HAL抽象ディスパッチ
-│   ├── wasi.py            # WASIホスト境界
+│   ├── wasi.py            # WASIホストimport境界
 │   ├── recovery.py        # リカバリ戦略
 │   ├── debugger.py        # 統合デバッガコントローラ
 │   └── gdb_server.py      # GDB Remote Serial Protocol (RSP) ソケットサーバー
 │
-├── tier3_jit/             # Tier 3 JIT コンパイラ & ネイティブ生成
+├── tier3_executer/             # Tier 3 JIT コンパイラ & ネイティブ生成
 │   ├── jit_cache.py       # ホットスポット状態・トレース記述子・3面キャッシュ
 │   ├── x64_jit.py         # Copy-and-Patch JIT コンパイラ (x64)
 │   ├── x64_asm.py         # constexpr x64 アセンブラ
@@ -191,13 +191,13 @@ uv run --system-certs --with wasmtime python experiments/pysim/aobench.py
 ```
 
 ### （任意）JIT トレース呼び出しの Cython ネイティブアクセラレータ
-`RuntimeEngine._invoke_trace` は既定で `ctypes.CFUNCTYPE`（libffi トランポリン、~1.1us/call）経由でコンパイル済みトレースを呼ぶ。`experiments/pysim/tier3_jit/native_trace_call.pyx` をビルドすると、同じ CPS 4引数呼び出し規約のまま生の C 関数ポインタ呼び出しに置き換わり、`bench_jit.py` の JIT 対インタープリタ比が実測で ~1.2x → ~1.8x に改善する。未ビルドでも自動的に ctypes 経路へフォールバックするため、素の Python 環境（`.pyd`/`.so` なし）でも通常どおり動作する。
+`RuntimeEngine._invoke_trace` は既定で `ctypes.CFUNCTYPE`（libffi トランポリン、~1.1us/call）経由でコンパイル済みトレースを呼ぶ。`experiments/pysim/tier3_executer/native_trace_call.pyx` をビルドすると、同じ CPS 4引数呼び出し規約のまま生の C 関数ポインタ呼び出しに置き換わり、`bench_jit.py` の JIT 対インタープリタ比が実測で ~1.2x → ~1.8x に改善する。未ビルドでも自動的に ctypes 経路へフォールバックするため、素の Python 環境（`.pyd`/`.so` なし）でも通常どおり動作する。
 ```bash
 # Windows: clang-cl + Visual Studio Build Tools + Windows SDK が必要
-powershell experiments/pysim/tier3_jit/build_native.ps1
+powershell experiments/pysim/tier3_executer/build_native.ps1
 
 # Linux/WSL: clang が必要
-./experiments/pysim/tier3_jit/build_native.sh
+./experiments/pysim/tier3_executer/build_native.sh
 ```
 
 ### （任意）インタープリタホットパスの Cython Pure-Python モードアクセラレータ
@@ -211,7 +211,7 @@ powershell experiments/pysim/tier2_runtime/build_native.ps1
 ```
 
 ### （任意）Cython C-level CPSハンドラ実験
-`experiments/pysim/tier2_runtime/interpreter_cps.py` は実インタープリタの通常Python版とCython CPSチェインの共通入口である。`cps_chain.pyx` が既存 `interpreter.py` の全ハンドラを4引数C関数ポインタ経由で連鎖し、通常命令の末尾継続には `[[clang::musttail]]` を使用する。分岐・呼出し・戻りはチェイン境界として既存インタープリタへ戻るため、AO-Bench全体を同じ入口で検証できる。
+`experiments/pysim/tier3_executer/interpreter_cps.py` は実インタープリタの通常Python版とCython CPSチェインの共通入口である。`cps_chain.pyx` が `interpreter.py` の全ハンドラを4引数C関数ポインタ経由で連鎖し、通常命令の末尾継続には `[[clang::musttail]]` を使用する。分岐・呼出し・戻りはチェイン境界として既存インタープリタへ戻るため、AO-Bench全体を同じ入口で検証できる。
 ```bash
 # Windows: clang-cl + Visual Studio Build Tools + Windows SDK が必要
 powershell experiments/pysim/tier2_runtime/build_interpreter_cps_native.ps1

@@ -12,7 +12,7 @@ for _p in [
     _PYSIM_DIR / "tier1_core",
     _PYSIM_DIR / "tier1_interface",
     _PYSIM_DIR / "tier2_runtime",
-    _PYSIM_DIR / "tier3_jit",
+    _PYSIM_DIR / "tier3_executer",
     _PYSIM_DIR / "tier3_platform",
 ]:
     _sp = str(_p)
@@ -35,8 +35,8 @@ try:
 except ImportError:
     wasmtime = None
 
-from interpreter import Interpreter, InterpreterBindings
-from interpreter import TrapCode as InterpreterTrapCode
+from tier3_executer.interpreter import Interpreter, InterpreterBindings
+from tier3_executer.interpreter import TrapCode as InterpreterTrapCode
 from scheduler import Scheduler
 from vmmio import (
     FC_STATIC_DEVICE,

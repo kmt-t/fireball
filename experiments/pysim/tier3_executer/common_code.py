@@ -21,7 +21,7 @@ from config import (
     JIT_X64_CHAIN_TARGET_OFFSET,
     JIT_X64_TRACE_HEADER_BYTES,
 )
-from exec_memory import ExecutableBuffer
+from .exec_memory import ExecutableBuffer
 
 IS_WINDOWS = sys.platform == "win32"
 

@@ -14,13 +14,13 @@ for _p in [
     _PYSIM_DIR / "tier1_core",
     _PYSIM_DIR / "tier1_interface",
     _PYSIM_DIR / "tier2_runtime",
-    _PYSIM_DIR / "tier3_jit",
+    _PYSIM_DIR / "tier3_executer",
     _PYSIM_DIR / "tier3_platform",
     _TEST_FILE.parent,
     _REPO_ROOT / "docs" / "components" / "tier1_core" / "concepts",
     _REPO_ROOT / "docs" / "components" / "tier1_interface" / "concepts",
     _REPO_ROOT / "docs" / "components" / "tier2_runtime" / "concepts",
-    _REPO_ROOT / "docs" / "components" / "tier3_jit" / "concepts",
+    _REPO_ROOT / "docs" / "components" / "tier3_executer" / "concepts",
     _REPO_ROOT / "docs" / "components" / "tier3_platform" / "concepts",
 ]:
     _sp = str(_p)
@@ -35,7 +35,7 @@ while not (_PYSIM_DIR / "tier1_core").is_dir():
     _PYSIM_DIR = _PYSIM_DIR.parent
 
 """
-experiments/pysim/qa/tier3_jit/test_x64_jit.py
+experiments/pysim/qa/tier3_executer/test_x64_jit.py
 Spec-compliant tests for Fireball Trace-based Copy-and-Patch JIT Compiler (x64_jit.py).
 Verifies:
 1. Exact CPS 4-argument calling convention: (void* ctx, void* sp, void* local_base, uint32_t tos)
@@ -94,7 +94,7 @@ from wasm_opcodes import (
     LOCAL_GET,
     LOCAL_SET,
 )
-from x64_jit import TraceCompiler
+from tier3_executer.x64_jit import TraceCompiler
 
 _HELPER_TYPE = ctypes.CFUNCTYPE(
     None,

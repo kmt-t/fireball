@@ -23,10 +23,16 @@ import os
 import struct
 import time
 from collections.abc import Mapping
-from enum import IntEnum
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING
 
 from hal_dispatch import HalBufferPool
+from hostcall import (
+    FbSyscallId,
+    RuntimeHostCallGateway,
+    SyscallHandler,
+    WasiErrno,
+    WasiPreview1Host,
+)
 from ipc_router import (
     IPCMessage,
     IPCRouter,
@@ -37,14 +43,13 @@ from ipc_router import (
 )
 
 if TYPE_CHECKING:
-    from debugger import DebuggerManager
-    from gdb_server import GDBServer
+    from tier3_plugins.debugger import DebuggerManager
+    from tier3_plugins.gdb_server import GDBServer
     from hal_dispatch import HalDriver, HalTask, StreamSink
-    from interpreter import BasicBlock, WASMContext
-    from wasi import WasiHostContext
+    from tier3_executer.interpreter import BasicBlock, WASMContext
 
 from loader import fnv1a_32
-from logger import LogDictionary, Logger, LogLevel
+from tier2_runtime.logger import LogDictionary, Logger, LogLevel
 from memory import (
     FB_CONF_MEMORY_POOL_SIZE,
     MemoryManager,
@@ -53,7 +58,6 @@ from runtime_engine import DispatchResult, RuntimeEngine
 from scheduler import FB_CONF_MAX_TASKS, Channel, Scheduler, Task, TaskState
 from stream_transport import StreamTransport
 from system_containers import MutableFlatMapStorage, ReadOnlyFlatMapStorage, StaticVector
-from virq import RegistrationError
 from vmmio import (
     FC_STATIC_DEVICE,
     TrapCode,
@@ -63,70 +67,6 @@ from vmmio import (
 )
 from wasi_hal_bindings import DEFAULT_WASI_HAL_BINDINGS
 from wasm_module import BasicBlock
-
-
-class FbSyscallId(IntEnum):
-    """
-    runtime_syscall.md's real per-category ID table (not a subset picked
-        for convenience -- every ID this experiment can plausibly back with real
-        behavior is included; ones it can't yet still route here and fail with
-        a real WASI errno (NOSYS), not silently vanish -- see TRIGGER_SET_PIN
-        below for the one currently-reserved exception).
-    """
-
-    RESERVED = 0x00
-    SYS_YIELD = 0x01
-    SYS_HALT = 0x02
-    SYS_RESET = 0x03
-    MMIO_READ32 = 0x10
-    MMIO_WRITE32 = 0x11
-    MMIO_READ8 = 0x12
-    MMIO_WRITE8 = 0x13
-    MMIO_BULK_READ = 0x14
-    MMIO_BULK_WRITE = 0x15
-    # Reserved: registered per runtime_syscall.md's ID table, but this
-    # experiment has no dedicated GPIO vMMIO register to back a real pin
-    # write with, so it is deliberately left out of syscall_handlers below
-    # and falls through fireball_call's NOSYS path (see GOTCHA-SYS-01 /
-    # test_syscall.py's test for this exact ID). GPIO in this experiment is
-    # instead reachable through the IPC-based HAL_GPIO device (fireball://
-    # device/gpio/0), not through fireball_call directly.
-    TRIGGER_SET_PIN = 0x16
-    IPC_SEND = 0x40
-    IPC_RECV = 0x41
-    IPC_LOOKUP = 0x42
-    WASI_FD_WRITE = 0x80
-    WASI_FD_READ = 0x81
-    WASI_FD_CLOSE = 0x82
-    WASI_CLOCK_TIME_GET = 0x83
-    WASI_PROC_EXIT = 0x84
-    WASI_RANDOM_GET = 0x85
-
-
-class WasiErrno(IntEnum):
-    """
-    runtime_syscall.md's calling convention section: `fireball_call` returns 0 on success, else a
-        "WASIのerrno_t に準拠" error code -- the real wasi_snapshot_preview1
-        numeric table, not a project-invented sentinel. Only the subset this
-        file actually returns is enumerated; values match the real table's
-        fixed alphabetical-after-e2big numbering exactly, so adding more later
-        is just adding more real entries, never renumbering these.
-    """
-
-    SUCCESS = 0
-    AGAIN = 6
-    BADF = 8
-    FAULT = 21
-    INVAL = 28
-    IO = 29
-    NOENT = 44
-    NOMEM = 48
-    NOSYS = 52
-    PERM = 63
-    NOTCAPABLE = 76
-
-
-SyscallHandler = Callable[[int, int, int, int, int, int], int]
 
 
 # runtime_vmmio.md §4.3: real static-device addresses.
@@ -201,7 +141,7 @@ class System:
         )
         self.gdb_server: GDBServer | None = None
         self._gdb_task_id: int | None = None
-        self.wasi_context: WasiHostContext | None = None
+        self.wasi_context: WasiPreview1Host | None = None
         # Build the small fireball_call dispatch table as read-only storage.
         syscall_entries: tuple[tuple[int, SyscallHandler], ...] = (
             (
@@ -284,8 +224,14 @@ class System:
             ),
         )
         syscall_entries = sorted(syscall_entries, key=lambda x: int(x[0]))
-        self._syscall_handlers: ReadOnlyFlatMapStorage[int, SyscallHandler] = (
+        syscall_handlers: ReadOnlyFlatMapStorage[int, SyscallHandler] = (
             ReadOnlyFlatMapStorage.create(syscall_entries)
+        )
+        self.host_calls = RuntimeHostCallGateway(
+            self.scheduler,
+            syscall_handlers,
+            self.runtime_engine,
+            self._vdma_start,
         )
 
     def _on_idle(self) -> None:
@@ -325,6 +271,10 @@ class System:
         self._bound_runtime_task = task
         self.pool.bind_runtime()
 
+    def attach_wasi_context(self, context: WasiPreview1Host) -> None:
+        """Connect the Tier 2 Preview 1 host implementation used by syscall handlers."""
+        self.wasi_context = context
+
     def unbind_runtime(self) -> None:
         """Unmaps the fixed HAL DYNAMIC buffers from the bound Runtime."""
         self.pool.unbind_runtime()
@@ -359,35 +309,7 @@ class System:
                 generic u32 args, dispatched via the small read-only flat map storage.
         """
 
-        assert self.scheduler.current_task is not None, (
-            "fireball_call requires an active scheduler task"
-        )
-        handler = self._syscall_handlers.view().find(syscall_id)
-        if handler is not None:
-            return handler(arg0, arg1, arg2, arg3, arg4, arg5)
-        return int(WasiErrno.NOSYS)
-
-    # --- dedicated vIRQ/vDMA host calls -------------------------------
-    def virq_register_host_call(self, node_id: int, function_index: int) -> int:
-        """Handles the dedicated ``fireball:host/virq.register`` import."""
-        assert self.scheduler.current_task is not None, (
-            "virq_register_host_call requires an active scheduler task"
-        )
-        return int(self._virq_register(node_id, function_index))
-
-    def virq_unregister_host_call(self, node_id: int) -> int:
-        """Handles the dedicated ``fireball:host/virq.unregister`` import."""
-        assert self.scheduler.current_task is not None, (
-            "virq_unregister_host_call requires an active scheduler task"
-        )
-        return int(self._virq_unregister(node_id))
-
-    def vdma_start_host_call(self, source: int, destination: int, byte_count: int) -> int:
-        """Handles the dedicated ``fireball:host/vdma.start`` import."""
-        assert self.scheduler.current_task is not None, (
-            "vdma_start_host_call requires an active scheduler task"
-        )
-        return int(self._vdma_start(source, destination, byte_count))
+        return self.host_calls.fireball_call(syscall_id, arg0, arg1, arg2, arg3, arg4, arg5)
 
     # --- guest memory (fb_offset_t resolution) -------------------------
     def _guest_ram_ok(self, offset: int, length: int) -> bool:
@@ -544,25 +466,6 @@ class System:
             return WasiErrno.FAULT
         dst_backing[dst_off : dst_off + count] = bytes(src_backing[src_off : src_off + count])
         return WasiErrno.SUCCESS
-
-    # --- vIRQ registration host calls ------------------------------------
-    @staticmethod
-    def _virq_errno(error: RegistrationError | None) -> WasiErrno:
-        if error == RegistrationError.MODULE_UNAVAILABLE:
-            return WasiErrno.NOSYS
-        return WasiErrno.INVAL
-
-    def _virq_register(self, node_id: int, function_index: int) -> WasiErrno:
-        result = self.runtime_engine.register_virq_dispatcher(node_id, function_index)
-        if result.is_ok:
-            return WasiErrno.SUCCESS
-        return self._virq_errno(result.error)
-
-    def _virq_unregister(self, node_id: int) -> WasiErrno:
-        result = self.runtime_engine.unregister_virq_dispatcher(node_id)
-        if result.is_ok:
-            return WasiErrno.SUCCESS
-        return self._virq_errno(result.error)
 
     # --- IPC (real IPCRouter: URI lookup, RBAC, CSP rendezvous handoff) ---
     def _ipc_lookup(self, uri_offset: int, uri_len: int) -> int:
@@ -728,7 +631,7 @@ class System:
         GDBServer runs as a cooperative task communicating via non-blocking TCP socket.
         Returns: (task_id, bound_port).
         """
-        from gdb_server import GDBServer
+        from tier3_plugins.gdb_server import GDBServer
 
         gdb_srv = GDBServer(dbg, host=host, port=port)
         bound_port = gdb_srv.bind_socket()

@@ -9,7 +9,7 @@ Fireball Hypervisor の現行作業および次期フェーズのタスク一覧
 
 現行リポジトリの判定は次のとおりである。
 
-- Phase 0 は Step 2 を継続中である。pysim のユニットテストは **27/27**、統合シナリオは **12/12** が通過している。
+- Phase 0 は Step 2 を継続中である。pysim のユニットテストは **30/30**、統合シナリオは **12/12** が通過している。
 - テストの実行基盤は整っているが、旧 JIT テストハーネス参照の除去、Gotchas の文書同期、網羅性向上は未完了である。
 - C++23 本実装は Phase 1 着手前であり、現状は `main`、allocator、backtrace の基盤に留まる。Loader、Interpreter、JIT、vSoC の実装および C++ 単体テストは未着手である。
 - アーキテクチャの整合性は、要求・設計・形式モデル・テスト・実装の現行証跡に基づいて確認する。
@@ -46,8 +46,8 @@ Fireball Hypervisor の現行作業および次期フェーズのタスク一覧
   - **インタープリタ概念コードの移植性是正**: 残存する広すぎる型注釈を具体化し、ホスト再帰呼び出しを組み込み実装方針に適合させる
 - [ ] **Step 2.3: ユニットテストコードの網羅性・品質強化**:
   - エッジケース・異常系・直交表組み合わせテストの拡充
-  - テストランナー（[`run_all.py`](experiments/pysim/qa/run_all.py)）に登録された **27 スイート**の高速・高信頼実行を維持する。2026-09-19 の実行結果は **27/27 PASSED** である
-  - 統合シナリオランナーに登録された **12 シナリオ**の実行結果も **12/12 PASSED** である。[`verification_factor_matrix.md`](docs/qa/verification_factor_matrix.md) の suite 数表記は **27 suite / 27/27 合格**へ同期済みである
+  - テストランナー（[`run_all.py`](experiments/pysim/qa/run_all.py)）に登録された **30 スイート**の高速・高信頼実行を維持する。2026-09-21 の実行結果は **30/30 PASSED** である
+  - 統合シナリオランナーに登録された **12 シナリオ**の実行結果も **12/12 PASSED** である。[`verification_factor_matrix.md`](docs/qa/verification_factor_matrix.md) の suite 数表記は **30 suite / 30/30 合格**へ同期済みである
 - [ ] **Step 2.4: 物理リソース予算（最小構成 RAM 32KB / ROM 96KB）の厳密な再見積もり**:
   - 詳細正本: [`resource_budget_estimation.md`](docs/architecture/resource_budget_estimation.md)
   - **RAM (32KB)**: 統合物理メモリプール 23.55KB + OSスタック/静的変数 ~3.5KB $\to$ 静的合計 **~27.05 KB** (余裕 ~5.72 KB / 17.4%) の実機適合確認 `{Resource_Estimation_Model}`

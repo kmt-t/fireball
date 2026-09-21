@@ -21,12 +21,12 @@ for _p in [
     _PYSIM_DIR / "tier1_core",
     _PYSIM_DIR / "tier1_interface",
     _PYSIM_DIR / "tier2_runtime",
-    _PYSIM_DIR / "tier3_jit",
+    _PYSIM_DIR / "tier3_executer",
     _PYSIM_DIR / "tier3_platform",
     _REPO_ROOT / "docs" / "components" / "tier1_core" / "concepts",
     _REPO_ROOT / "docs" / "components" / "tier1_interface" / "concepts",
     _REPO_ROOT / "docs" / "components" / "tier2_runtime" / "concepts",
-    _REPO_ROOT / "docs" / "components" / "tier3_jit" / "concepts",
+    _REPO_ROOT / "docs" / "components" / "tier3_executer" / "concepts",
     _REPO_ROOT / "docs" / "components" / "tier3_platform" / "concepts",
 ]:
     _sp = str(_p)
@@ -34,9 +34,9 @@ for _p in [
         sys.path.insert(0, _sp)
 
 
-from interpreter import Interpreter, InterpreterBindings, WasmNumber
+from tier3_executer.interpreter import Interpreter, InterpreterBindings, WasmNumber
 from ipc_router import IPCMessage
-from logger import Logger
+from tier2_runtime.logger import Logger
 from memory import MemoryManager
 from scheduler import Scheduler
 from system_containers import StaticVector

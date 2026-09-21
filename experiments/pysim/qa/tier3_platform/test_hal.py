@@ -22,12 +22,12 @@ for _p in [
     _PYSIM_DIR / "tier1_core",
     _PYSIM_DIR / "tier1_interface",
     _PYSIM_DIR / "tier2_runtime",
-    _PYSIM_DIR / "tier3_jit",
+    _PYSIM_DIR / "tier3_executer",
     _PYSIM_DIR / "tier3_platform",
     _REPO_ROOT / "docs" / "components" / "tier1_core" / "concepts",
     _REPO_ROOT / "docs" / "components" / "tier1_interface" / "concepts",
     _REPO_ROOT / "docs" / "components" / "tier2_runtime" / "concepts",
-    _REPO_ROOT / "docs" / "components" / "tier3_jit" / "concepts",
+    _REPO_ROOT / "docs" / "components" / "tier3_executer" / "concepts",
     _REPO_ROOT / "docs" / "components" / "tier3_platform" / "concepts",
 ]:
     _sp = str(_p)
@@ -43,7 +43,7 @@ from hal_dispatch import (
 )
 from helpers import expect_assertion
 from ipc_router import FB_URI_HAL_STDOUT
-from logger import LogLevel
+from tier2_runtime.logger import LogLevel
 from file_log_sink import FileLogSink
 from scheduler import Scheduler
 from stream_transport import StreamTransport

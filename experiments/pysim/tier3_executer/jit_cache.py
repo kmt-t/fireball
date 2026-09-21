@@ -11,7 +11,7 @@ import ctypes
 from collections.abc import Callable
 from typing import TYPE_CHECKING, ClassVar
 
-from common_code import (
+from .common_code import (
     COMMON_ABSOLUTE_POOL_OFFSET,
     COMMON_EPILOGUE_OFFSET,
     COMMON_HELPER_OFFSET,

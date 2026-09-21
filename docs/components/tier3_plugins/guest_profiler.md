@@ -6,13 +6,13 @@
 
 ## 1. コンセプト
 <!-- traceability: {META_3TierSeparation} {META_ContractImplSplit} {META_StaticDI} {GLOBAL_Policy_Memory} -->
-本コンポーネントは、Tier 2 の [`runtime_observability.md`](docs/components/tier2_runtime/runtime_observability.md) が定義する VM イベントを受信し、ゲスト関数のコールグラフと実行時間を集計してログへ出力する Tier 3 プラグインである。
+本コンポーネントは、Tier 2 の [`runtime_observability.md`](docs/components/tier2_runtime/runtime_observability.md) が定義する Runtime イベントを受信し、ゲスト関数のコールグラフと実行時間を集計してログへ出力する Tier 3 プラグインである。
 
-プロファイラは VM の実行状態を変更しない。停止、再開、ステップ、メモリ書込みは Debugger プラグインの責務であり、プロファイラは観測シンクとしてのみ Runtime へ接続する。
+プロファイラは Runtime の実行状態を変更しない。停止、再開、ステップ、メモリ書込みは Debugger プラグインの責務であり、プロファイラは観測シンクとしてのみ Runtime へ接続する。
 
 ## 2. アーキテクチャ分類
 <!-- traceability: {META_3TierSeparation} {META_ContractImplSplit} -->
-本コンポーネントは **Tier 3 (プラグイン・リーフコンポーネント: Plugin Leaf Component)** に属する。固定長の観測状態、コールグラフ集計、時間計算、ログ搬送を担当する。VM のフック位置、イベントレコードの意味、実行方式の識別は Tier 2 の `runtime_observability.md` を正本とする。
+本コンポーネントは **Tier 3 (プラグイン・リーフコンポーネント: Plugin Leaf Component)** に属する。固定長の観測状態、コールグラフ集計、時間計算、ログ搬送を担当する。Runtime のフック位置、イベントレコードの意味、実行方式の識別は Tier 2 の `runtime_observability.md` を正本とする。
 
 ## 3. 静的モデル
 
@@ -26,7 +26,7 @@
 ### 3.2 内部ブロック図
 ```mermaid
 graph TD
-    Events[Tier 2 vm_event] --> Sink[Profiler Event Sink]
+    Events[Tier 2 runtime_event] --> Sink[Profiler Event Sink]
     Sink --> Stack[Fixed Function Stack]
     Sink --> Edges[Fixed Call Edge Table]
     Sink --> Times[Timing Statistics]
@@ -53,7 +53,7 @@ graph TD
 
 - 通常イベントは、容量不足時に破棄し、欠落カウンタを増加させる。
 - `trap`、`debug_stop`、終了要約は通常イベントと別の予約容量を使用する。
-- 搬送が遅い場合は既定で VM を停止しない。厳密計測が必要な構成だけが停止方針を選択できる。
+- 搬送が遅い場合は既定で Runtime を停止しない。厳密計測が必要な構成だけが停止方針を選択できる。
 - 欠落または集計表の容量超過が発生した場合、該当する統計値へ推定値フラグを設定する。
 
 ### 4.3 終了処理
@@ -64,7 +64,7 @@ Runtime が正常復帰、トラップ、デバッグ停止、構成エラーの
 ### 5.1 イベント受信
 | 項目 | 内容 |
 | :--- | :--- |
-| 機能概要 | Tier 2 の `vm_event` を受信して固定容量のプロファイル状態へ反映する。 |
+| 機能概要 | Tier 2 の `runtime_event` を受信して固定容量のプロファイル状態へ反映する。 |
 | 事前条件 | イベント種別、関数識別子、時刻、呼出相関が Tier 2 契約を満たしている。 |
 | 期待する結果 | コールグラフ、時間統計、欠落統計のいずれかが更新される。 |
 | 不変条件 | Runtime の PC、スタック、メモリ、停止状態を変更しない。 |
@@ -84,7 +84,7 @@ Runtime が正常復帰、トラップ、デバッグ停止、構成エラーの
 
 ### 6.1 性能制約と方策
 - イベント受信時にコールグラフ探索やログ文字列生成を行わない。
-- 観測無効時は NullObserver を静的結線し、プロファイラ状態を生成しない。
+- 観測無効時は Observer を静的結線せず、プロファイラ状態を生成しない。
 - 関数識別子と呼出相関だけでスタックと辺を更新し、ゲストメモリを参照しない。
 
 ### 6.2 メモリ制約と方策

@@ -1,5 +1,5 @@
 """
-experiments/pysim/tier3_jit/x64_jit.py
+experiments/pysim/tier3_executer/x64_jit.py
 Pure Trace-based Copy-and-Patch JIT Compiler for Fireball.
 Compiles individual HOT BasicBlocks / Traces into Position-Independent Code (PIC)
     with 52-byte x64 fixed headers (JITTraceHeader) and direct trace chaining.
@@ -17,14 +17,14 @@ from __future__ import annotations
 import ctypes
 from collections.abc import Iterable
 
-import x64_stencils as st
-from common_code import (
+from . import x64_stencils as st
+from .common_code import (
     TRACE_ENTRY_STUB_BYTES,
     JITCodeCacheRegion,
     helper_entry_offset,
 )
 from config import JIT_CACHE_ACTIVE_OFFSET_BYTES, JIT_X64_TRACE_HEADER_BYTES
-from jit_cache import JITTrace, JITTraceHeader
+from .jit_cache import JITTrace, JITTraceHeader
 from system_containers import ReadOnlyFlatMapView, StaticVector
 from wasm_module import (
     WASM_RAW_WORD_BYTES,

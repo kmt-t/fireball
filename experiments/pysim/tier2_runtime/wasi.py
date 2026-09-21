@@ -1,9 +1,9 @@
 """
-experiments/pysim/tier3_platform/wasi.py
-HAL = WASI 0.3p Unified Core Engine and WASI 0.1p Compatibility Adapter.
-Implements docs/components/tier1_interface/interface_wit.md,
-docs/components/tier2_runtime/hal_dispatch.md (contract) / docs/components/tier3_platform/platform_driver.md (impl), and
-docs/specs/wasi_preview1_abi.md.
+experiments/pysim/tier2_runtime/wasi.py
+Host-side WASI 0.3p core and WASI 0.1p compatibility import adapter.
+Implements docs/components/tier2_runtime/hal_dispatch.md and
+docs/specs/wasi_preview1_abi.md against the guest-visible WIT contracts in
+docs/components/tier3_platform/interface_wit.md.
 
 - WASI 0.3p (Core): URI-based dynamic interface resolver (resolver.get-interface),
   resource handle tables, streams (wasi:io), clocks (wasi:clocks), CLI (wasi:cli),
@@ -16,8 +16,9 @@ from __future__ import annotations
 
 import ctypes
 import struct
-from collections.abc import Callable
+from collections.abc import Callable, Generator
 from dataclasses import dataclass
+from typing import Protocol
 
 from config import FB_CONF_MAX_IMPORTS
 from hal_dispatch import (
@@ -27,11 +28,16 @@ from hal_dispatch import (
     ARG_OFFSET,
     FB_CONF_HAL_BUFFER_SIZE,
     HalBufferHandle,
+    HalBufferPool,
+    HalTask,
     WasiIpcCmd,
 )
-from libfireball import Libfireball
+from hostcall import FbSyscallId, FireballHostCallPort, WasiPreview1Host
+from ipc_router import IPCRouter
 from loader import fnv1a_32
-from system import FbSyscallId, System
+from tier2_runtime.logger import Logger
+from memory import MemoryManager
+from scheduler import ChannelAction, Scheduler
 from system_containers import (
     ReadOnlyFlatMapStorage,
     ReadOnlyFlatMapView,
@@ -42,6 +48,29 @@ from wasi_bindings import WasiHalBindings
 from wasm_module import Module
 
 WasiValue = int
+
+
+class WasiRuntimeHost(Protocol):
+    """Runtime services required by the host-side WASI import adapter."""
+
+    __slots__ = ()
+
+    host_calls: FireballHostCallPort
+    ipc: IPCRouter
+    logger: Logger
+    memory_manager: MemoryManager
+    pool: HalBufferPool
+    scheduler: Scheduler
+    wasi_hal_bindings: WasiHalBindings
+
+    def bind_runtime(self, memory: bytearray | None) -> None:
+        """Bind guest linear memory and HAL slots to the active runtime."""
+
+    def attach_wasi_context(self, context: WasiPreview1Host) -> None:
+        """Attach the Preview 1 host callbacks used by generic syscalls."""
+
+    def hal_task_for(self, uri: str) -> HalTask | None:
+        """Resolve the HAL task registered for one URI."""
 
 
 # ==============================================================================
@@ -82,7 +111,9 @@ class WasiInterfaceVTable:
 class Wasi03pEngine:
     """WASI 0.3p Core Engine providing Hierarchical URI Resolution, IPC Command Dispatch, and the HAL buffer pool."""
 
-    def __init__(self, sysv: System, bindings: WasiHalBindings | None = None):
+    __slots__ = ("sysv", "bindings", "_interface_storage")
+
+    def __init__(self, sysv: WasiRuntimeHost, bindings: WasiHalBindings | None = None):
         self.sysv = sysv
         self.bindings = bindings if bindings is not None else sysv.wasi_hal_bindings
         self._interface_storage: ReadOnlyFlatMapStorage[int, WasiInterfaceVTable]
@@ -161,7 +192,7 @@ class Wasi03pEngine:
         caller_task = self.sysv.scheduler.current_task
         assert caller_task is not None, "WASI IPC requires an active runtime task"
 
-        def sender_coro():
+        def sender_coro() -> Generator[tuple[ChannelAction, None], None, None]:
             status, channel = self.sysv.ipc.lookup(uri)
             assert status == IPCStatus.COMPLETED
             assert channel is not None
@@ -223,9 +254,18 @@ class WasiHostContext:
     Transparently adapts wasi_snapshot_preview1 function calls to WASI 0.3p / HAL Core.
     """
 
+    __slots__ = (
+        "sysv",
+        "guest_memory",
+        "bindings",
+        "core03p",
+        "_keepalive_trampolines",
+        "_import_storage",
+    )
+
     def __init__(
         self,
-        sysv: System,
+        sysv: WasiRuntimeHost,
         guest_memory: bytearray | None = None,
         bindings: WasiHalBindings | None = None,
     ):
@@ -234,13 +274,7 @@ class WasiHostContext:
         self.sysv.bind_runtime(self.guest_memory)
         self.bindings = bindings if bindings is not None else sysv.wasi_hal_bindings
         self.core03p = Wasi03pEngine(sysv, self.bindings)
-        self.libfireball = Libfireball(
-            sysv.fireball_call,
-            sysv.virq_register_host_call,
-            sysv.virq_unregister_host_call,
-            sysv.vdma_start_host_call,
-        )
-        self.sysv.wasi_context = self
+        self.sysv.attach_wasi_context(self)
         self._keepalive_trampolines: StaticVector[Callable[..., int]] = StaticVector(
             capacity=FB_CONF_MAX_IMPORTS
         )
@@ -263,7 +297,10 @@ class WasiHostContext:
                 # WASI 0.3p Dynamic URI Interface Resolver import
                 ("wasi:resolver", "get_interface", self.wasi03p_get_interface),
                 ("fireball", "get_interface", self.wasi03p_get_interface),
-                ("fireball", "fireball_call", self.fireball_call),
+                ("fireball", "fireball_call", sysv.host_calls.fireball_call),
+                ("fireball", "virq_register", sysv.host_calls.virq_register),
+                ("fireball", "virq_unregister", sysv.host_calls.virq_unregister),
+                ("fireball", "vdma_start", sysv.host_calls.vdma_start),
                 ("fireball", "fd_write", self.fd_write),
             ),
             capacity=FB_CONF_MAX_IMPORTS,
@@ -423,7 +460,7 @@ class WasiHostContext:
 
     def fd_close(self, fd: int) -> int:
         """Adapts wasi_snapshot_preview1:fd_close to WASI 0.3p wasi:io/streams:close."""
-        return int(self.sysv.fireball_call(FbSyscallId.WASI_FD_CLOSE, fd, 0, 0, 0, 0, 0))
+        return int(self.sysv.host_calls.fireball_call(FbSyscallId.WASI_FD_CLOSE, fd, 0, 0, 0, 0, 0))
 
     def clock_time_get(self, clock_id: int, precision: int, time_ptr: int) -> int:
         """
@@ -442,24 +479,16 @@ class WasiHostContext:
         return 0
 
     def proc_exit(self, exit_code: int) -> int:
-        return int(self.sysv.fireball_call(FbSyscallId.WASI_PROC_EXIT, exit_code, 0, 0, 0, 0, 0))
+        return int(
+            self.sysv.host_calls.fireball_call(FbSyscallId.WASI_PROC_EXIT, exit_code, 0, 0, 0, 0, 0)
+        )
 
     def random_get(self, buf_ptr: int, buf_len: int) -> int:
         return int(
-            self.sysv.fireball_call(FbSyscallId.WASI_RANDOM_GET, buf_ptr, buf_len, 0, 0, 0, 0)
+            self.sysv.host_calls.fireball_call(
+                FbSyscallId.WASI_RANDOM_GET, buf_ptr, buf_len, 0, 0, 0, 0
+            )
         )
-
-    def fireball_call(
-        self,
-        sys_id: int,
-        a0: int,
-        a1: int,
-        a2: int,
-        a3: int,
-        a4: int,
-        a5: int,
-    ) -> int:
-        return self.libfireball.fireball_call6(sys_id, a0, a1, a2, a3, a4, a5)
 
     def get_handler_for_import(
         self, module_name: str, field_name: str
@@ -511,8 +540,8 @@ class WasiHostContext:
             c_ret = ctypes.c_uint32  # WASI returns errno as u32
             c_func_type = ctypes.CFUNCTYPE(c_ret, *c_args)
 
-            def make_wrapper(h: Callable[..., int], np: int):
-                def wrapper(*args):
+            def make_wrapper(h: Callable[..., int], np: int) -> Callable[..., int]:
+                def wrapper(*args: int) -> int:
                     return h(*args[:np]) & 0xFFFF_FFFF
 
                 return wrapper

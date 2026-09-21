@@ -20,5 +20,6 @@
 | TEST-LIBFB-14 | WASIポーリング非干渉 | `poll-check`/`poll-wait`ハンドルが存在 | vIRQ登録・配送とポーリングを実行する | vIRQ操作がWASI poll APIを追加・変更せず、両経路が独立して完了する |
 | TEST-LIBFB-15 | vDMA転送host call | source/destinationと転送長が有効 | `fireball_vdma_start` が `fireball:host/vdma.start(source, destination, byte_count)` を発行する | vSoCの転送要求へ渡され、VDMAレジスタへの書込みは発生しない |
 | TEST-LIBFB-16 | vDMA権限拒否 | 転送先が未許可または所有権外 | `fireball_vdma_start` を発行する | 共通vMMIO権限ゲートで拒否され、転送状態を変更しない |
+| TEST-LIBFB-17 | host-call portの単一借用 | 4操作を実装するhost-call portが存在する | `Libfireball`を構築して汎用・vIRQ・vDMAラッパーを呼ぶ | すべての呼出しが同じportへ渡り、個別の関数参照を保持しない |
 
 実装着手時には、各行をゲスト側の実行テストへ結線し、Tier 2/3 の既存テストと同じ境界を重複実装しない。

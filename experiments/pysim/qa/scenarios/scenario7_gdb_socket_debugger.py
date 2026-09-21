@@ -12,7 +12,7 @@ for _p in [
     _PYSIM_DIR / "tier1_core",
     _PYSIM_DIR / "tier1_interface",
     _PYSIM_DIR / "tier2_runtime",
-    _PYSIM_DIR / "tier3_jit",
+    _PYSIM_DIR / "tier3_executer",
     _PYSIM_DIR / "tier3_platform",
     _PYSIM_DIR / "tests",
 ]:
@@ -36,11 +36,11 @@ import socket
 import time
 
 import wasmtime
-from debugger import DebuggerManager
+from tier3_plugins.debugger import DebuggerManager
 from execution_context import WASMContext
-from gdb_server import GDBServer
+from tier3_plugins.gdb_server import GDBServer
 from runtime_test_driver import RuntimeEngineDebugDriver
-from x64_jit import TraceCompiler
+from tier3_executer.x64_jit import TraceCompiler
 
 
 def wat_to_wasm(wat_text: str) -> bytes:

@@ -104,7 +104,7 @@ sequenceDiagram
 ### 4.5 vIRQ登録ラッパー
 <!-- traceability: {GLOBAL_InterruptWakeup} {META_ConfigurableSystem} -->
 
-`libfireball` は、ゲストが静的なvIRQノードへWASM関数インデックスを登録・解除するための薄いラッパーを提供する。ラッパーは [`fireball_hostcall_contract.wit`](wit/fireball_hostcall_contract.wit) の `fireball:host/virq` 専用host callを発行する。vMMIOのvIRQページは原因源表と有効登録の参照スナップショットであり、ゲストの登録制御には使用しない。WASIの `pollable` 型にも追加しない。
+`libfireball` は、ゲストが静的なvIRQノードへWASM関数インデックスを登録・解除するための薄いラッパーを提供する。ラッパーは [`fireball_hostcall_contract.wit`](docs/components/tier3_platform/wit/fireball_hostcall_contract.wit) の `fireball:host/virq` 専用host callを発行する。vMMIOのvIRQページは原因源表と有効登録の参照スナップショットであり、ゲストの登録制御には使用しない。WASIの `pollable` 型にも追加しない。
 
 | ゲスト側関数 | 動作 | エラー処理 |
 | :--- | :--- | :--- |
@@ -151,4 +151,10 @@ sequenceDiagram
 
 ## 6. 検証と実装時期
 
-参照実装は [`libfireball.py`](experiments/pysim/tier3_platform/libfireball.py) の `Libfireball` である。汎用システムコールは固定7引数のhost-call関数へ接続し、`fireball_call0`〜`fireball_call6` の不足引数を `0` で埋めて直接呼び出す。vIRQ/vDMAラッパーは専用host-call importへ接続し、登録・解除・転送の検証はTier 2の `runtime_syscall` / `runtime_vsoc` テスト、ゲスト側の結線は [`libfireball_test_spec.md`](docs/qa/tier3_platform/libfireball_test_spec.md) で行う。実機向けC/C++ゲストライブラリは、各WIT importを静的バインディングへ移植する。
+ゲストライブラリはWIT import集合を表す単一のTier 2 host-call portだけに依存する。個々の関数参照は重複保持しない。
+
+汎用システムコールは固定7引数のhost-call関数へ接続する。`fireball_call0`〜`fireball_call6`は不足引数を`0`で埋めて直接呼び出す。vIRQ/vDMAラッパーは専用host-call importへ接続する。
+
+登録・解除・転送の検証はTier 2の`runtime_syscall` / `runtime_vsoc`テストで行う。ゲスト側の結線は [`libfireball_test_spec.md`](docs/qa/tier3_platform/libfireball_test_spec.md) で検証する。
+
+実機向けC/C++ゲストライブラリは実行時portを保持しない。各WIT importの静的リンクシンボルをinline wrapperから直接呼び出す。

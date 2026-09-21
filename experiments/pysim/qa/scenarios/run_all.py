@@ -19,12 +19,12 @@ PYTHON_PATHS = [
     PYSIM_ROOT / "tier1_core",
     PYSIM_ROOT / "tier1_interface",
     PYSIM_ROOT / "tier2_runtime",
-    PYSIM_ROOT / "tier3_jit",
+    PYSIM_ROOT / "tier3_executer",
     PYSIM_ROOT / "tier3_platform",
     REPO_ROOT / "docs" / "components" / "tier1_core" / "concepts",
     REPO_ROOT / "docs" / "components" / "tier1_interface" / "concepts",
     REPO_ROOT / "docs" / "components" / "tier2_runtime" / "concepts",
-    REPO_ROOT / "docs" / "components" / "tier3_jit" / "concepts",
+    REPO_ROOT / "docs" / "components" / "tier3_executer" / "concepts",
     REPO_ROOT / "docs" / "components" / "tier3_platform" / "concepts",
 ]
 for p in PYTHON_PATHS:

@@ -2,8 +2,8 @@
 Unit Test Suite Runner for pysim.
 Executes all unit tests in strict architectural tier order:
 1. Tier 1 Core & Interface (foundational kernel, containers, logging, IPC)
-2. Tier 2 Runtime (loader, interpreter, syscall, vMMIO, vSoC, debugger)
-3. Tier 3 Platform & JIT (memory MPU, HAL, x64 asm/stencils, JIT compiler/runtime)
+2. Tier 2 Runtime (loader, syscall, vMMIO, vSoC, runtime composition)
+3. Tier 3 Executer and Plugins (interpreter, JIT, debugger, profiler)
 4. Cross-Cutting Verification (pairwise combinations, gotchas & invariants)
 """
 
@@ -23,12 +23,13 @@ for p in [
     PYSIM_ROOT / "tier1_core",
     PYSIM_ROOT / "tier1_interface",
     PYSIM_ROOT / "tier2_runtime",
-    PYSIM_ROOT / "tier3_jit",
+    PYSIM_ROOT / "tier3_executer",
+    PYSIM_ROOT / "tier3_plugins",
     PYSIM_ROOT / "tier3_platform",
     REPO_ROOT / "docs" / "components" / "tier1_core" / "concepts",
     REPO_ROOT / "docs" / "components" / "tier1_interface" / "concepts",
     REPO_ROOT / "docs" / "components" / "tier2_runtime" / "concepts",
-    REPO_ROOT / "docs" / "components" / "tier3_jit" / "concepts",
+    REPO_ROOT / "docs" / "components" / "tier3_executer" / "concepts",
     REPO_ROOT / "docs" / "components" / "tier3_platform" / "concepts",
 ]:
     sp = str(p)
@@ -58,12 +59,12 @@ TEST_SUITES = [
     (
         "Tier 2 Runtime",
         "WASM Interpreter & Instructions",
-        TEST_DIR / "tier2_runtime" / "test_interpreter.py",
+        TEST_DIR / "tier3_executer" / "test_interpreter.py",
     ),
     (
         "Tier 2 Runtime",
         "CPS Interpreter Python/Native Compatibility",
-        TEST_DIR / "tier2_runtime" / "test_cps_interpreter.py",
+        TEST_DIR / "tier3_executer" / "test_cps_interpreter.py",
     ),
     (
         "Tier 2 Runtime",
@@ -87,8 +88,12 @@ TEST_SUITES = [
         TEST_DIR / "tier2_runtime" / "test_recovery.py",
     ),
     ("Tier 2 Runtime", "vSoC Multitasking & Pipeline", TEST_DIR / "tier2_runtime" / "test_vsoc.py"),
-    ("Tier 2 Runtime", "Debug Manager Core", TEST_DIR / "tier2_runtime" / "test_debugger.py"),
-    ("Tier 2 Runtime", "GDB RSP Remote Session", TEST_DIR / "tier2_runtime" / "test_gdb_remote.py"),
+    ("Tier 2 Runtime", "Runtime Static Composition", TEST_DIR / "tier2_runtime" / "test_runtime_composer.py"),
+    # --- Tier 3 Plugins ---
+    ("Tier 3 Plugins", "Debug Manager Core", TEST_DIR / "tier3_plugins" / "test_debugger.py"),
+    ("Tier 3 Plugins", "GDB RSP Remote Session", TEST_DIR / "tier3_plugins" / "test_gdb_remote.py"),
+    ("Tier 3 Plugins", "Guest Profiler", TEST_DIR / "tier3_plugins" / "test_guest_profiler.py"),
+    ("Tier 3 Plugins", "Runtime Event Logger", TEST_DIR / "tier3_plugins" / "test_runtime_event_logger.py"),
     # --- Tier 3: Platform ---
     (
         "Tier 3 Platform",
@@ -96,19 +101,19 @@ TEST_SUITES = [
         TEST_DIR / "tier3_platform" / "test_memory.py",
     ),
     ("Tier 3 Platform", "HAL Drivers & ShmPool", TEST_DIR / "tier3_platform" / "test_hal.py"),
-    # --- Tier 3: JIT ---
-    ("Tier 3 JIT", "x64 Assembler", TEST_DIR / "tier3_jit" / "test_x64_asm.py"),
-    ("Tier 3 JIT", "x64 Stencils Catalog", TEST_DIR / "tier3_jit" / "test_x64_stencils.py"),
+    # --- Tier 3: Executer ---
+    ("Tier 3 Executer", "x64 Assembler", TEST_DIR / "tier3_executer" / "test_x64_asm.py"),
+    ("Tier 3 Executer", "x64 Stencils Catalog", TEST_DIR / "tier3_executer" / "test_x64_stencils.py"),
     (
-        "Tier 3 JIT",
+        "Tier 3 Executer",
         "JIT Hotspot Profiler & 3-Bank Cache",
-        TEST_DIR / "tier3_jit" / "test_jit_runtime.py",
+        TEST_DIR / "tier3_executer" / "test_jit_runtime.py",
     ),
-    ("Tier 3 JIT", "x64 Copy-and-Patch JIT", TEST_DIR / "tier3_jit" / "test_x64_jit.py"),
+    ("Tier 3 Executer", "x64 Copy-and-Patch JIT", TEST_DIR / "tier3_executer" / "test_x64_jit.py"),
     (
-        "Tier 3 JIT",
+        "Tier 3 Executer",
         "JIT Differential (wasmtime / Tier 2 / Tier 3)",
-        TEST_DIR / "tier3_jit" / "test_jit_differential.py",
+        TEST_DIR / "tier3_executer" / "test_jit_differential.py",
     ),
     # --- Cross-Cutting ---
     (

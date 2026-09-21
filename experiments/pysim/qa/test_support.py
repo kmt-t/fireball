@@ -19,7 +19,7 @@ from system_containers import (
     fold_mix32,
 )
 from wasm_module import Function, FuncType, LocalWidthMap, Module, WasmOperand
-from x64_jit import TraceCompiler
+from tier3_executer.x64_jit import TraceCompiler
 
 
 class PcOnlyCompiler:

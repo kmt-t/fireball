@@ -23,12 +23,12 @@ for _p in [
     _PYSIM_DIR / "tier1_core",
     _PYSIM_DIR / "tier1_interface",
     _PYSIM_DIR / "tier2_runtime",
-    _PYSIM_DIR / "tier3_jit",
+    _PYSIM_DIR / "tier3_executer",
     _PYSIM_DIR / "tier3_platform",
     _REPO_ROOT / "docs" / "components" / "tier1_core" / "concepts",
     _REPO_ROOT / "docs" / "components" / "tier1_interface" / "concepts",
     _REPO_ROOT / "docs" / "components" / "tier2_runtime" / "concepts",
-    _REPO_ROOT / "docs" / "components" / "tier3_jit" / "concepts",
+    _REPO_ROOT / "docs" / "components" / "tier3_executer" / "concepts",
     _REPO_ROOT / "docs" / "components" / "tier3_platform" / "concepts",
 ]:
     _sp = str(_p)
@@ -82,7 +82,9 @@ def test_syscall_02_host_call_system_control():
         from wasi import WasiHostContext
 
         host = WasiHostContext(sysv, guest_memory=bytearray(64))
-        assert host.fireball_call(FbSyscallId.SYS_YIELD, 0, 0, 0, 0, 0, 0) == WasiErrno.SUCCESS
+        fireball_call = host.get_handler_for_import("fireball", "fireball_call")
+        assert fireball_call is not None
+        assert fireball_call(FbSyscallId.SYS_YIELD, 0, 0, 0, 0, 0, 0) == WasiErrno.SUCCESS
         assert sysv.fireball_call(FbSyscallId.SYS_RESET, 0, 0, 0, 0, 0, 0) == WasiErrno.SUCCESS
         assert sysv.reset_requested
         assert sysv.fireball_call(FbSyscallId.SYS_HALT, 0, 0, 0, 0, 0, 0) == WasiErrno.SUCCESS
@@ -190,9 +192,13 @@ def test_syscall_04_vdma_host_call_transfer():
     try:
         guest_mem = bytearray(64)
         guest_mem[0:4] = struct.pack("<I", 0x11223344)
-        sysv.bind_runtime(guest_mem)
+        from wasi import WasiHostContext
+
+        host = WasiHostContext(sysv, guest_memory=guest_mem)
+        vdma_start = host.get_handler_for_import("fireball", "vdma_start")
+        assert vdma_start is not None
         dst = FB_CONF_VSOC_PASSTHROUGH_BASE + 0x1000
-        assert sysv.vdma_start_host_call(0, dst, 4) == WasiErrno.SUCCESS
+        assert vdma_start(0, dst, 4) == WasiErrno.SUCCESS
         assert sysv.phys_mem[0x1000:0x1004] == struct.pack("<I", 0x11223344)
         status, _ = sysv.vmmio.access(0xC000_2000, is_write=False)
         assert status == TrapCode.UNREGISTERED_PAGE
@@ -214,12 +220,17 @@ def test_syscall_05_virq_registration_host_calls():
     sysv.start_runtime_task(name="test_runtime_task")
     try:
         sysv.runtime_engine.register_module_blocks(_make_syscall_virq_module())
-        assert sysv.virq_register_host_call(0, 0) == WasiErrno.SUCCESS
+        from wasi import WasiHostContext
+
+        host = WasiHostContext(sysv, guest_memory=bytearray(64))
+        virq_register = host.get_handler_for_import("fireball", "virq_register")
+        virq_unregister = host.get_handler_for_import("fireball", "virq_unregister")
+        assert virq_register is not None
+        assert virq_unregister is not None
+        assert virq_register(0, 0) == WasiErrno.SUCCESS
         sysv.runtime_engine.commit_virq_safepoint()
-        assert (
-            sysv.virq_unregister_host_call(0) == WasiErrno.SUCCESS
-        )
-        assert sysv.virq_register_host_call(14, 0) == WasiErrno.INVAL
+        assert virq_unregister(0) == WasiErrno.SUCCESS
+        assert virq_register(14, 0) == WasiErrno.INVAL
     finally:
         sysv.shutdown()
 

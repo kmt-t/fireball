@@ -11,7 +11,7 @@ for _path in (
     _PYSIM_DIR / "tier1_core",
     _PYSIM_DIR / "tier1_interface",
     _PYSIM_DIR / "tier2_runtime",
-    _PYSIM_DIR / "tier3_jit",
+    _PYSIM_DIR / "tier3_executer",
 ):
     _path_text = str(_path)
     if _path_text not in sys.path:

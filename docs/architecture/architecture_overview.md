@@ -9,12 +9,12 @@
 | Tier | 役割 | 配置・正本 |
 | :--- | :--- | :--- |
 | **Tier 0** | システムが満たす受入要求を定義する。 | [`requirement_list.md`](docs/requires/requirement_list.md) |
-| **Tier 1 Core** | 協調実行、静的設定、基盤コンテナを定義する。 | [`tier1_core/`](docs/components/tier1_core/) |
-| **Tier 1 Interface** | IPC、サービス、メモリ契約を定義する。 | [`tier1_interface/`](docs/components/tier1_interface/) |
-| **Tier 2 Runtime** | Runtime のライフサイクル、ローダ、仮想メモリ、HAL抽象、システムコール、プラグイン接続契約を定義する。 | [`tier2_runtime/`](docs/components/tier2_runtime/) |
-| **Tier 3 Executer** | Interpreter と JIT の具体的な実行系を定義する。 | [`tier3_executer/`](docs/components/tier3_executer/) |
-| **Tier 3 Plugins** | Debugger と Guest Profiler の交換可能な実装を定義する。 | [`tier3_plugins/`](docs/components/tier3_plugins/) |
-| **Tier 3 Platform** | ゲスト公開WIT、ゲスト側アダプタ、HAL の物理ドライバを定義する。 | [`tier3_platform/`](docs/components/tier3_platform/) |
+| **Tier 1 Core** | 協調実行、静的設定、基盤コンテナを定義する。 | [`tier1_core`](docs/components/tier1_core/) |
+| **Tier 1 Interface** | IPC、サービス、メモリ契約を定義する。 | [`tier1_interface`](docs/components/tier1_interface/) |
+| **Tier 2 Runtime** | Runtime のライフサイクル、ローダ、仮想メモリ、HAL抽象、システムコール、プラグイン接続契約を定義する。 | [`tier2_runtime`](docs/components/tier2_runtime/) |
+| **Tier 3 Executer** | Interpreter と JIT の具体的な実行系を定義する。 | [`tier3_executer`](docs/components/tier3_executer/) |
+| **Tier 3 Plugins** | Debugger と Guest Profiler の交換可能な実装を定義する。 | [`tier3_plugins`](docs/components/tier3_plugins/) |
+| **Tier 3 Platform** | ゲスト公開WIT、ゲスト側アダプタ、HAL の物理ドライバを定義する。 | [`tier3_platform`](docs/components/tier3_platform/) |
 
 `docs/specs/` は複数Tierから参照する外部規格・ABI・命令カタログを置く。`docs/qa/` は各コンポーネントのテスト仕様と横断検証資料を置く。これらは実行コンポーネントのTierには含めない。
 
@@ -139,7 +139,7 @@ flowchart LR
 | `runtime_syscall` | ゲストからホストへのシステムコール境界 | [`runtime_syscall.md`](docs/components/tier2_runtime/runtime_syscall.md) |
 | `hal_dispatch` | HAL公開IFとホストデバイス仲介 | [`hal_dispatch.md`](docs/components/tier2_runtime/hal_dispatch.md) |
 | `runtime_plugin_architecture` | 実行系・観測系プラグインの接続契約 | [`runtime_plugin_architecture.md`](docs/components/tier2_runtime/runtime_plugin_architecture.md) |
-| `runtime_observability` | VMイベントと観測フックの共通契約 | [`runtime_observability.md`](docs/components/tier2_runtime/runtime_observability.md) |
+| `runtime_observability` | Runtimeイベントと観測フックの共通契約 | [`runtime_observability.md`](docs/components/tier2_runtime/runtime_observability.md) |
 | `runtime_logging` | Runtimeイベントのログ配送 | [`runtime_logging.md`](docs/components/tier2_runtime/runtime_logging.md) |
 | `jit_abi` | Tier 3 Executerへ提供するJIT ABI契約 | [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) |
 

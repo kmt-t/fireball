@@ -10,7 +10,7 @@ for _p in [
     _PYSIM_DIR / "tier1_core",
     _PYSIM_DIR / "tier1_interface",
     _PYSIM_DIR / "tier2_runtime",
-    _PYSIM_DIR / "tier3_jit",
+    _PYSIM_DIR / "tier3_executer",
     _PYSIM_DIR / "tier3_platform",
 ]:
     _sp = str(_p)
@@ -33,7 +33,7 @@ except ImportError:
 
 import wasm_opcodes as op
 from dummy_drivers import DummyDriver
-from interpreter import Interpreter, InterpreterBindings
+from tier3_executer.interpreter import Interpreter, InterpreterBindings
 from system import System
 from wasi import WasiHostContext
 from wasm_reader import parse

@@ -14,13 +14,13 @@ for _p in [
     _PYSIM_DIR / "tier1_core",
     _PYSIM_DIR / "tier1_interface",
     _PYSIM_DIR / "tier2_runtime",
-    _PYSIM_DIR / "tier3_jit",
+    _PYSIM_DIR / "tier3_executer",
     _PYSIM_DIR / "tier3_platform",
     _TEST_FILE.parent,
     _REPO_ROOT / "docs" / "components" / "tier1_core" / "concepts",
     _REPO_ROOT / "docs" / "components" / "tier1_interface" / "concepts",
     _REPO_ROOT / "docs" / "components" / "tier2_runtime" / "concepts",
-    _REPO_ROOT / "docs" / "components" / "tier3_jit" / "concepts",
+    _REPO_ROOT / "docs" / "components" / "tier3_executer" / "concepts",
     _REPO_ROOT / "docs" / "components" / "tier3_platform" / "concepts",
 ]:
     _sp = str(_p)
@@ -31,7 +31,7 @@ import sys
 from pathlib import Path
 
 """
-experiments/pysim/qa/tier3_jit/test_x64_asm.py
+experiments/pysim/qa/tier3_executer/test_x64_asm.py
 Spec-first tests for x64_asm.py: every encoder is assembled into a real
 executable buffer and run on the CPU, never just re-derived by hand a
 second time. Supports Windows x64 ABI and Linux System V AMD64 ABI.
@@ -49,7 +49,7 @@ for _p in [
     _PYSIM_DIR / "tier1_core",
     _PYSIM_DIR / "tier1_interface",
     _PYSIM_DIR / "tier2_runtime",
-    _PYSIM_DIR / "tier3_jit",
+    _PYSIM_DIR / "tier3_executer",
     _PYSIM_DIR / "tier3_platform",
 ]:
     _sp = str(_p)
@@ -59,8 +59,8 @@ for _p in [
 import ctypes
 import ctypes as _ct
 
-import x64_asm as asm
-from exec_memory import ExecutableBuffer
+import tier3_executer.x64_asm as asm
+from tier3_executer.exec_memory import ExecutableBuffer
 
 IS_WINDOWS = sys.platform == "win32"
 ARG0 = "rcx" if IS_WINDOWS else "rdi"

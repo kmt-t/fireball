@@ -8,12 +8,17 @@ from pathlib import Path
 _TEST_FILE = Path(__file__).resolve()
 _PYSIM_DIR = _TEST_FILE.parents[2]
 
-for _path in (_PYSIM_DIR / "tier1_core", _PYSIM_DIR / "tier2_runtime"):
+for _path in (
+    _PYSIM_DIR,
+    _PYSIM_DIR / "tier1_core",
+    _PYSIM_DIR / "tier2_runtime",
+    _PYSIM_DIR / "tier3_executer",
+):
     if str(_path) not in sys.path:
         sys.path.insert(0, str(_path))
 
-from interpreter import _HANDLERS
-from interpreter_cps import BACKEND, HANDLER_COUNT, NATIVE_AVAILABLE
+from tier3_executer.interpreter import _HANDLERS
+from tier3_executer.interpreter_cps import BACKEND, HANDLER_COUNT, NATIVE_AVAILABLE
 
 
 def test_cps_entry_is_python_compatible() -> None:

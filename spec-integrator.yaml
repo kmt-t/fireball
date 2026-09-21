@@ -93,7 +93,7 @@ verification_matrix:
     concept_files: 17
     formal_models: 17
     test_specs: 22
-    pysim_unit_suites: 27
+    pysim_unit_suites: 30
     scenarios: 12
     pairwise_factors: 7
     pairwise_cases: 26
@@ -528,13 +528,12 @@ pysim_imports:
         - "tier2_runtime/**/*.py"
       exclude:
         - "tier2_runtime/runtime_engine.py"
-        - "tier2_runtime/wasi.py"
     - tier: 3
       paths:
         - "tier2_runtime/runtime_engine.py"
-        - "tier2_runtime/wasi.py"
         - "system.py"
         - "main.py"
         - "aobench.py"
-        - "tier3_jit/**/*.py"
+        - "tier3_executer/**/*.py"
+        - "tier3_plugins/**/*.py"
         - "tier3_platform/**/*.py"

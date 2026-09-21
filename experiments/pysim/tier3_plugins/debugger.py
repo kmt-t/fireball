@@ -1,5 +1,5 @@
 """
-experiments/pysim/tier2_runtime/debugger.py
+experiments/pysim/tier3_plugins/debugger.py
 Debugger Manager & GDB RSP Protocol Engine for Fireball.
 Conforms strictly to docs/components/tier2_runtime/debug_manager.md
 and docs/specs/gdb_rsp_protocol.md.
@@ -19,6 +19,7 @@ from typing import Protocol
 
 from config import FB_CONF_DEBUG_MAX_ASSERTIONS, FB_CONF_DEBUG_MAX_BREAKPOINTS
 from execution_context import WASMContext
+from runtime_events import RuntimeEvent, RuntimeEventKind
 from system_containers import MutableFlatMapStorage, ReadOnlyFlatMapView, StaticVector
 from wasm_module import BasicBlock
 
@@ -153,6 +154,12 @@ class DebuggerManager:
             if 4 + i < len(regs):
                 ctx.locals[i] = regs[4 + i]
         return new_pc
+
+    def on_runtime_event(self, event: RuntimeEvent) -> None:
+        """観測プラグイン契約。停止イベントだけをデバッガ状態へ反映する。"""
+        if event.kind == RuntimeEventKind.DEBUG_STOP:
+            self.halted = True
+            self.stop_signal = 5
 
 
 class GDBRspProtocol:

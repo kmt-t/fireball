@@ -22,25 +22,26 @@ for _p in [
     _PYSIM_DIR / "tier1_core",
     _PYSIM_DIR / "tier1_interface",
     _PYSIM_DIR / "tier2_runtime",
-    _PYSIM_DIR / "tier3_jit",
+    _PYSIM_DIR / "tier3_executer",
     _PYSIM_DIR / "tier3_platform",
+    _TESTS_DIR / "tier2_runtime",
     _REPO_ROOT / "docs" / "components" / "tier1_core" / "concepts",
     _REPO_ROOT / "docs" / "components" / "tier1_interface" / "concepts",
     _REPO_ROOT / "docs" / "components" / "tier2_runtime" / "concepts",
-    _REPO_ROOT / "docs" / "components" / "tier3_jit" / "concepts",
+    _REPO_ROOT / "docs" / "components" / "tier3_executer" / "concepts",
     _REPO_ROOT / "docs" / "components" / "tier3_platform" / "concepts",
 ]:
     _sp = str(_p)
     if _sp not in sys.path:
         sys.path.insert(0, _sp)
 
-# Keep the product Tier 3 package ahead of tests/tier3_jit when importing
+# Keep the product Tier 3 package ahead of tests/tier3_executer when importing
 # runtime_engine's qualified Tier 3 modules.
 sys.path.insert(0, str(_PYSIM_DIR))
 
 from helpers import expect_assertion, wat_to_wasm
 from helpers import make_interpreter as Interpreter
-from interpreter import InterpreterContext, Trap, WasmNumber
+from tier3_executer.interpreter import InterpreterContext, Trap, WasmNumber
 from system_containers import StaticVector
 from vmmio import TrapCode
 from wasm_module import F64, I32, I64, Function, FuncType, Memory, Module
@@ -51,7 +52,7 @@ def test_intp_01_02_cps_handlers_and_dispatch_table():
     """TEST-INTP-01, 02: Opcode handlers use the direct raw signature and array dispatch."""
     import inspect
 
-    from interpreter import _HANDLERS
+    from tier3_executer.interpreter import _HANDLERS
 
     # Direct 256-element fixed-capacity table (no dynamic dict lookup)
     assert type(_HANDLERS) is StaticVector
@@ -77,7 +78,7 @@ def test_intp_01_02_cps_handlers_and_dispatch_table():
 def test_intp_03_control_frame_enum_and_opcode_attribute_table():
     """TEST-INTP-03: Control-frame kinds and loader opcode metadata are typed and shared."""
     from control_flow import OpcodeAttribute, opcode_has_attribute
-    from interpreter import ControlFrameKind, NativeControlStack
+    from tier3_executer.interpreter import ControlFrameKind, NativeControlStack
     from wasm_opcodes import BR_IF, CALL, I32_ADD, LOOP
 
     control_stack = NativeControlStack(capacity=1)
@@ -129,7 +130,7 @@ def test_intp_04_control_map_uses_four_entry_locality_caches():
 
 def test_intp_05_handler_returns_trap_outcome():
     """A WASM trap is an explicit handler outcome, not an absent continuation."""
-    from interpreter import _HANDLERS
+    from tier3_executer.interpreter import _HANDLERS
     from wasm_opcodes import UNREACHABLE
 
     module = parse(wat_to_wasm("(module (func unreachable))"))
@@ -151,7 +152,7 @@ def test_intp_05_handler_returns_trap_outcome():
 
 def test_intp_17_return_publishes_explicit_sentinel_before_frame_pop():
     """TEST-INTP-17: RETURN publishes the sentinel; the next step completes it."""
-    from interpreter import RETURN_SENTINEL_IP, RETURN_SENTINEL_PC
+    from tier3_executer.interpreter import RETURN_SENTINEL_IP, RETURN_SENTINEL_PC
 
     module = parse(wat_to_wasm("(module (func (result i32) i32.const 7 return))"))
     interp = Interpreter(module)
@@ -187,7 +188,7 @@ def test_intp_18_typed_block_results_keep_wide_native_slots():
 
 def test_intp_16_nested_return_consumes_sentinel_and_restores_caller():
     """TEST-INTP-16: nested return restores the caller on the shared stack."""
-    from interpreter import RETURN_SENTINEL_IP
+    from tier3_executer.interpreter import RETURN_SENTINEL_IP
 
     module = parse(
         wat_to_wasm(

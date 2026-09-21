@@ -14,13 +14,14 @@ for _p in [
     _PYSIM_DIR / "tier1_core",
     _PYSIM_DIR / "tier1_interface",
     _PYSIM_DIR / "tier2_runtime",
-    _PYSIM_DIR / "tier3_jit",
+    _PYSIM_DIR / "tier3_executer",
+    _PYSIM_DIR / "tier3_plugins",
     _PYSIM_DIR / "tier3_platform",
     _TEST_FILE.parent,
     _REPO_ROOT / "docs" / "components" / "tier1_core" / "concepts",
     _REPO_ROOT / "docs" / "components" / "tier1_interface" / "concepts",
     _REPO_ROOT / "docs" / "components" / "tier2_runtime" / "concepts",
-    _REPO_ROOT / "docs" / "components" / "tier3_jit" / "concepts",
+    _REPO_ROOT / "docs" / "components" / "tier3_executer" / "concepts",
     _REPO_ROOT / "docs" / "components" / "tier3_platform" / "concepts",
 ]:
     _sp = str(_p)
@@ -39,7 +40,7 @@ for _p in [
     _PYSIM_DIR / "tier1_core",
     _PYSIM_DIR / "tier1_interface",
     _PYSIM_DIR / "tier2_runtime",
-    _PYSIM_DIR / "tier3_jit",
+    _PYSIM_DIR / "tier3_executer",
     _PYSIM_DIR / "tier3_platform",
 ]:
     _sp = str(_p)
@@ -54,14 +55,14 @@ docs/qa/tier2_runtime/debug_manager_test_spec.md (TEST-DBG-01 ~ TEST-DBG-15).
 """
 
 from control_flow import extract_basic_blocks
-from debugger import DebuggerManager, GDBRspProtocol
+from tier3_plugins.debugger import DebuggerManager, GDBRspProtocol
 from execution_context import WASMContext
 from helpers import wat_to_wasm
 from runtime_engine import BasicBlock
 from runtime_test_driver import RuntimeEngineDebugDriver
 from test_support import compile_test_block
 from wasm_opcodes import I32_CONST
-from x64_jit import TraceCompiler
+from tier3_executer.x64_jit import TraceCompiler
 
 
 def test_dbg_01_query_halt_reason():

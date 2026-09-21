@@ -1,6 +1,6 @@
 # WIT インターフェース仕様書 (WASI 準拠版) {VERIFY_WIT} {VERIFY_LLM} {VERIFY_FORMAL}
 <!-- evidence:
-     wit: wit/*.wit
+     wit: docs/components/tier3_platform/wit/*.wit
      formal: formal/wit_resource_lifecycle_model.py
      test: docs/qa/tier3_platform/interface_wit_test_spec.md
 -->
@@ -8,7 +8,7 @@
 ## 1. 目的
 
 <!-- traceability: {WIT_Interface_Purpose} {WIT_First} {WIT_Common_Types} {URIAbstraction} -->
-本ドキュメントは、Fireballプロジェクトにおいてゲスト（WASM）環境に公開されるシステムコールおよびハードウェア抽象化層（HAL）のインターフェース仕様を定義する。ゲスト側のWASI互換アダプタはTier 3に属し、本書はその依存先となる公開WIT契約を定義する。WITは、低レベルホストコールを [`fireball_hostcall_contract.wit`](wit/fireball_hostcall_contract.wit)、HALの型とURI Resolverを [`fireball_hal_contract.wit`](wit/fireball_hal_contract.wit) に分割して定義する。
+本ドキュメントは、Fireballプロジェクトにおいてゲスト（WASM）環境に公開されるシステムコールおよびハードウェア抽象化層（HAL）のインターフェース仕様を定義する。ゲスト側のWASI互換アダプタはTier 3に属し、本書はその依存先となる公開WIT契約を定義する。WITは、低レベルホストコールを [`fireball_hostcall_contract.wit`](docs/components/tier3_platform/wit/fireball_hostcall_contract.wit)、HALの型とURI Resolverを [`fireball_hal_contract.wit`](docs/components/tier3_platform/wit/fireball_hal_contract.wit) に分割して定義する。
 
 **HAL は WASI 0.3 Preview (WASI 0.3p / Component Model) と親和性のある抽象IFである。** GPIO・タイマー・バス通信・ストリーム・コンソール出力等の個別デバイス/HALごとに専用の WIT リソース型を定義することはしない。ゲストは階層型 URI から対象を動的に解決する **URI Resolver** と、ゼロコピー転送用の **HALバッファプール** の2つの汎用機構のみを介して、あらゆる WASI 0.3p 相当の読み書き・バス転送・非同期通知を行う。個々のデバイス/HALの振る舞いは、IPCコマンドID（[`hal_dispatch.md`](docs/components/tier2_runtime/hal_dispatch.md) の URI 命名規則・IPC コマンド仕様節を正本とする）によって決定される。レガシーな WASI 0.1p (`wasi_snapshot_preview1`) ABI は、これらの公開IFを呼び出すTier 3ゲストアダプタとして提供する。
 
@@ -129,7 +129,7 @@ WIT内では `fireball-call` という kebab-case 名で定義されるが、C++
 ### 4.2. vIRQ / vDMA 専用ホストコール
 <!-- traceability: {GLOBAL_InterruptWakeup} {VDMA} -->
 
-vIRQの登録・解除とvDMA転送は、汎用 `fireball-call` のIDディスパッチへ統合しない。WITの [`fireball_hostcall_contract.wit`](wit/fireball_hostcall_contract.wit) が公開する専用importを直接呼び出す。
+vIRQの登録・解除とvDMA転送は、汎用 `fireball-call` のIDディスパッチへ統合しない。WITの [`fireball_hostcall_contract.wit`](docs/components/tier3_platform/wit/fireball_hostcall_contract.wit) が公開する専用importを直接呼び出す。
 
 | WIT interface | 操作 | 役割 |
 | :--- | :--- | :--- |
@@ -137,6 +137,19 @@ vIRQの登録・解除とvDMA転送は、汎用 `fireball-call` のIDディス�
 | `fireball:host/vdma` | `start` | 転送元・転送先・転送長を指定してvDMA転送を開始する |
 
 専用ホストコールはWASM importから対応ハンドラへ同期接続するが、SYSCTL／VDMAのvMMIOレジスタや汎用 `fireball_call` のID空間は使用しない。vIRQのイベント本体はISR → COOS FIFO → vSoC Safepoint → vIRQ階層の非同期経路で配送する。
+
+FireballのC ABIアダプタをCore Wasmへ静的リンクする場合、WIT名を次のmodule／field名へ写像する。この対応は、ゲスト側アダプタとホスト側import resolverの共通契約である。
+
+この写像は、Component ModelのCanonical ABI名を置き換える規則ではない。`libfireball`が提供するCore Wasm向けの明示的なアダプタ規約である。
+
+| WIT操作 | Core Wasm module | Core Wasm field |
+| :--- | :--- | :--- |
+| `trap.fireball-call` | `fireball` | `fireball_call` |
+| `virq.register` | `fireball` | `virq_register` |
+| `virq.unregister` | `fireball` | `virq_unregister` |
+| `vdma.start` | `fireball` | `vdma_start` |
+
+各操作の戻り値は`u32`であり、`0`は成功、非0はWASI errno互換の失敗を表す。
 
 ### 4.3. 高応答トリガーインターフェース
 <!-- traceability: {Syscall_Mapping} -->

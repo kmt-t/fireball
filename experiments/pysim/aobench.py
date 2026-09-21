@@ -26,7 +26,7 @@ for _p in (
     _PYSIM_DIR / "tier1_core",
     _PYSIM_DIR / "tier1_interface",
     _PYSIM_DIR / "tier2_runtime",
-    _PYSIM_DIR / "tier3_jit",
+    _PYSIM_DIR / "tier3_executer",
     _PYSIM_DIR / "tier3_platform",
 ):
     _sp = str(_p)
@@ -40,7 +40,7 @@ except ImportError:
     wasmtime = None
 
 from dummy_drivers import DummyDriver
-from interpreter_cps import BACKEND, NATIVE_AVAILABLE, Interpreter, InterpreterBindings
+from tier3_executer.interpreter_cps import BACKEND, NATIVE_AVAILABLE, Interpreter, InterpreterBindings
 from system import System
 from wasi import WasiHostContext
 from wasm_reader import parse
@@ -405,7 +405,7 @@ def run_aobench():
     print(f"    -> Parsed Module: {len(module.functions)} functions, {len(module.exports)} exports")
     # 3. Setup System & WASI Context
     from runtime_engine import RuntimeEngine
-    from x64_jit import TraceCompiler
+    from tier3_executer.x64_jit import TraceCompiler
 
     # 3. Setup System & WASI Context for Tier 2 Baseline
     sysv = System()

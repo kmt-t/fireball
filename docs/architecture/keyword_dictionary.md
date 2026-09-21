@@ -234,7 +234,7 @@ OSスケジューラ（`os_coos`, `os_scheduler`）、静的コンテナ（`syst
 
 ### 4.3 Tier 2 Runtime: vSoC・ランタイム契約・ローダ・vMMIO・HAL公開IF
 
-WASM 実行基盤（`runtime_vsoc`）、ランタイムプラグイン構成契約（`runtime_plugin_architecture`）、VM 観測フック契約（`runtime_observability`）、ゼロコピーローダ（`runtime_loader`）、仮想メモリ管理（`runtime_vmmio`）、ロギングサブシステム（`runtime_logging`）、システムコールランタイム（`runtime_syscall`）の機能要求と設計の勘所。インタープリタ、デバッガ、ゲストプロファイラの具体実装は Tier 3 Plugins で管理する。
+WASM 実行基盤（`runtime_vsoc`）、ランタイムプラグイン構成契約（`runtime_plugin_architecture`）、Runtime 観測フック契約（`runtime_observability`）、ゼロコピーローダ（`runtime_loader`）、仮想メモリ管理（`runtime_vmmio`）、ロギングサブシステム（`runtime_logging`）、システムコールランタイム（`runtime_syscall`）の機能要求と設計の勘所。インタープリタ、デバッガ、ゲストプロファイラの具体実装は Tier 3 Plugins で管理する。
 
 #### 4.3.1 Tier 2 Runtime 要求キーワード (37 件)
 

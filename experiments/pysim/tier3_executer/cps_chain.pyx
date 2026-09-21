@@ -8,11 +8,11 @@ The opcode semantics remain in interpreter.py.  This module owns only the
 typed C function-pointer chain and the two interpreter execution runners.
 """
 
-import interpreter as _python_interpreter
+import tier3_executer.interpreter as _python_interpreter
 import wasm_opcodes as _ops
 from system_containers import StaticVector
 from wasm_module import I32, I64, F32, F64
-from interpreter import RETURN_SENTINEL_IP, _BASIC_BLOCK_BOUNDARY
+from tier3_executer.interpreter import RETURN_SENTINEL_IP, _BASIC_BLOCK_BOUNDARY
 
 CALL = getattr(_ops, "CALL")
 CALL_INDIRECT = getattr(_ops, "CALL_INDIRECT")

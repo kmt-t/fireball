@@ -1,5 +1,5 @@
 """
-experiments/pysim/tier3_jit/x64_stencils.py
+experiments/pysim/tier3_executer/x64_stencils.py
 x64 Copy-and-Patch stencils, mirroring the real design's split between
 compile-time template construction and runtime copy+patch
 (docs/components/tier3_executer/jit_compiler.md,

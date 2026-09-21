@@ -5,9 +5,9 @@
 
 ## 1. コンセプト
 <!-- traceability: {META_3TierSeparation} {META_ContractImplSplit} {META_StaticDI} {GLOBAL_ComponentHarness} {ZeroRuntimeOverhead} -->
-本コンポーネントは、WASM ランタイムを構成する実行エンジンと補助エンジンの交換契約を定義する。System は不変な構成情報を保持し、SystemBuilder は構成情報に従って実装を静的に結線する。Runtime はゲスト実行のライフサイクルと共有状態を管理し、Tier 3 のプラグインは個別の実行方式・観測方式・物理接続を実装する。
+本コンポーネントは、WASM ランタイムを構成する実行エンジンと補助エンジンの交換契約を定義する。System は不変な構成情報を保持する。Runtime は構成情報から実装を静的に合成する。Tier 3 のプラグインは個別の実行方式、観測方式、物理接続を実装する。
 
-本契約は、インタープリタ、JIT ランタイム、JIT コード生成器、デバッガ、ゲストプロファイラ、WASI バックエンドを同じランタイムへ混在させることを目的としない。各機能を独立したスロットへ結線し、未使用機能は Null 実装へ置換する。これにより、RuntimeEngine が実装方式の詳細を抱え込むことを防止する。
+本契約は、インタープリタ、JIT ランタイム、JIT コード生成器、デバッガ、ゲストプロファイラ、WASI バックエンドを同じランタイムへ混在させることを目的としない。Runtime は各機能を独立したスロットへ静的に結線する。無効な機能は Null オブジェクトとして実行時に保持せず、構成合成時に除外する。これにより、Runtime が実装方式の詳細と不要な weave 処理を抱え込むことを防止する。
 
 インタープリタと JIT は同じ公開 `call` 境界を共有する。基底実行契約が呼出前処理、引数検証、トラップ確定、結果検証、呼出後処理を担当し、実行方式固有の処理だけをテンプレートフックへ委譲する。JIT はこのフックをオーバーライドして実行経路を差し替えるが、呼出状態の所有権と失敗時の意味は変更しない。
 
@@ -19,10 +19,10 @@ System と Runtime の責務は次のように分離する。
 
 | 要素 | 責務 | 保持してよい情報 | 保持してはならない情報 |
 | :--- | :--- | :--- | :--- |
-| `SystemConfig` | 構成値と資源予算の定義 | メモリ領域、機能有効化、プラグイン型、容量上限 | 実行中の PC、JIT キャッシュ状態、プロファイル結果 |
-| `SystemBuilder` | 静的な依存結線と初期化順序の確定 | プラグインインスタンス、ハーネス、初期化結果 | 実行ループ、ゲスト状態の更新 |
+| `SystemConfig` | 構成値と資源予算の定義 | メモリ領域、機能選択、容量上限 | 実行中の PC、JIT キャッシュ状態、プロファイル結果 |
 | `System` | 起動、停止、ゲスト登録の薄いファサード | `SystemConfig` への不変参照、構成済み Runtime | 命令デコード、JIT 判定、イベント集計 |
-| `Runtime` | 一ゲストの実行ライフサイクルと共有状態の管理 | 実行コンテキスト、プラグイン契約、観測境界 | Tier 3 のキャッシュ・ログ・物理ドライバの内部状態 |
+| `RuntimeComposer` | 静的 DI による実装合成と初期化順序の確定 | 選択済みの具体型、合成済みハーネス、初期化結果 | 実行ループ、ゲスト状態の更新 |
+| `Runtime` | 一ゲストの実行ライフサイクルと共有状態の管理 | 実行コンテキスト、合成済み契約、観測境界 | Tier 3 のキャッシュ・ログ・物理ドライバの内部状態 |
 | Tier 3 plugin | 交換可能な具体機能の実装 | 自身の固定長状態と専用領域 | 他プラグインの内部データ、System の再構成 |
 
 ## 3. 静的モデル
@@ -30,21 +30,22 @@ System と Runtime の責務は次のように分離する。
 ### 3.1 構成要素
 <!-- traceability: {META_StaticDI} {GLOBAL_ComponentHarness} -->
 - **`system_config`**: 起動前に確定する不変構成である。実行時のプラグイン交換を提供しない。
-- **`system_builder`**: `system_config` とコンパイル時のプラグイン型から、Runtime のハーネスを構築する合成ルートである。
+- **`runtime_composer`**: `system_config` とコンパイル時のプラグイン型から、Runtime のハーネスを構築する Tier 2 の合成ルートである。
 - **`runtime_harness`**: Runtime が利用する実行、JIT、デバッグ、観測、WASI の契約参照をまとめた静的ハーネスである。
+- **静的 weave**: `runtime_composer` が有効なアスペクトだけを `runtime_harness` へ合成する。無効なアスペクトの状態、フック、WIT 境界、翻訳単位は合成結果に含めない。
 - **`runtime_context`**: 一ゲストに専有される可変状態である。実行コンテキスト、メモリ境界、トラップ、停止理由、観測統計の所有権を保持する。
 - **`execution_strategy`**: 命令列を実行する Tier 3 実装の契約である。Interpreter と JIT の共通呼出境界から利用する。
 - **`jit_runtime_plugin`**: ホットスポット検出、コードキャッシュ、コンパイル要求、ネイティブ実行可否を担当する契約である。
 - **`jit_compiler_plugin`**: WASM の実行単位を対象アーキテクチャのコードへ変換する契約である。
 - **`debugger_plugin`**: 停止、再開、ブレークポイント、レジスタ・メモリ観測を担当する契約である。実行状態を変更できる唯一の補助プラグインとする。
-- **`profiler_plugin`**: VM 観測イベントを読み取り、関数コールグラフと実行時間を集計する契約である。実行状態を変更しない。
+- **`profiler_plugin`**: Runtime 観測イベントを読み取り、関数コールグラフと実行時間を集計する契約である。実行状態を変更しない。
 - **`wasi_plugin`**: ゲストの WASI 呼出をホスト契約へ変換する契約である。WASI ABI の具体的な実装方式は Tier 3 が選択する。
 
 ### 3.2 内部ブロック図
 ```mermaid
 graph TD
-    Config[SystemConfig<br/>不変構成] --> Builder[SystemBuilder<br/>静的結線]
-    Builder --> System[System<br/>薄いファサード]
+    Config[SystemConfig<br/>不変構成] --> Composer[RuntimeComposer<br/>静的 DI と合成]
+    Composer --> System[System<br/>薄いファサード]
     System --> Runtime[Runtime<br/>一ゲストの実行管理]
     Runtime --> Harness[RuntimeHarness<br/>Tier 2 契約束]
     Harness --> Exec[ExecutionStrategy<br/>Interpreter / JIT]
@@ -60,37 +61,45 @@ graph TD
 
 ### 3.3 プラグインスロット
 <!-- traceability: {META_ContractImplSplit} {META_StaticDI} -->
-| スロット | Tier 2 が定義する契約 | Tier 3 が実装する責務 | Null 実装の意味 |
+| スロット | Tier 2 が定義する契約 | Tier 3 が実装する責務 | 無効構成の意味 |
 | :--- | :--- | :--- | :--- |
 | Execution | 共通 `call` と実行ステップの完了結果 | インタープリタまたは JIT 実行 | 許可しない。必ず一つを結線する |
 | JIT runtime | コンパイル要求、検索、フォールバック、無効化 | ホットスポットとコードキャッシュ | JIT を使用しない。常に Interpreter へ戻す |
 | JIT compiler | 実行単位のコード生成結果 | x64、Thumb2 等のコード生成 | コンパイル要求を未対応として返す |
 | Debugger | 停止、再開、観測、書込みの境界 | GDB RSP 等のプロトコルと停止処理 | デバッグ要求を無効化する |
-| Profiler | VM イベントの受信と終了通知 | コールグラフ、実行時間、ログ出力 | イベントを破棄し、生成コードを持たない |
+| Profiler | VM イベントの受信と終了通知 | コールグラフ、実行時間、ログ出力 | フック、イベント生成、状態、呼出しを合成しない |
 | WASI | ゲスト呼出とホスト結果の変換境界 | Preview 1、Component Model、uvwasi 等 | WASI import を未対応として返す |
 
 ## 4. 動的モデル
 
 ### 4.1 初期化と終了
-プラグインの初期化順序は固定する。RuntimeContext、観測シンク、実行戦略、JIT 補助、デバッガ、WASI の順に構築し、失敗時は逆順で終了する。プラグインが未使用であっても Null 実装を結線するため、Runtime の分岐は構成時に解決する。
+`runtime_composer` は、RuntimeContext、観測シンク、実行戦略、JIT 補助、デバッガ、WASI の順に有効な実装だけを構築する。失敗時は逆順で終了する。無効なスロットは初期化せず、Runtime の実行経路へ Null オブジェクトや有効性分岐を残さない。
 
 ```mermaid
 sequenceDiagram
-    participant S as SystemBuilder
+    participant C as RuntimeComposer
     participant R as Runtime
     participant O as Observer
     participant E as ExecutionStrategy
     participant P as Optional Plugins
-    S->>R: RuntimeContext を構築
-    R->>O: 観測境界を初期化
+    C->>R: RuntimeContext を構築
+    alt 観測有効
+        R->>O: 観測境界を初期化
+    else 観測無効
+        Note over R: 観測 weave を生成しない
+    end
     R->>E: Interpreter または JIT を初期化
-    R->>P: Debugger / Profiler / WASI を初期化
-    R-->>S: 構成済み Runtime
-    S->>R: guest をロード
-    R->>O: module_load
+    R->>P: 有効な Debugger / Profiler / WASI を初期化
+    R-->>C: 構成済み Runtime
+    C->>R: guest をロード
+    opt 観測有効
+        R->>O: module_load
+    end
     R->>E: call
     E-->>R: 完了、トラップ、停止
-    R->>O: 終了イベント
+    opt 観測有効
+        R->>O: 終了イベント
+    end
 ```
 
 ### 4.2 共通呼出テンプレート
@@ -107,9 +116,11 @@ sequenceDiagram
 
 ### 4.3 プラグインの置換規則
 - 置換単位はスロット単位とする。一つの Tier 3 実装が別スロットの内部状態を兼務してはならない。
-- 実装選択は `SystemConfig` と `SystemBuilder` が行う。ゲスト実行中の型差し替えは行わない。
+- 実装選択と weave は `RuntimeComposer` が行う。ゲスト実行中の型差し替えは行わない。
+- `RuntimeComposer` は静的 DI で選択済みの具体型を結線する。実行ホットパスの weave は `constexpr` 条件で特殊化する。
+- 無効なアスペクトに対応する `constexpr` 条件は偽でなければならない。このとき、イベントペイロード計算、フック呼出し、Null 判定、状態領域を翻訳単位へ生成してはならない。
 - JIT runtime と JIT compiler は別スロットとする。JIT runtime は compiler が未接続でも Interpreter へフォールバックできる。
-- Profiler は `VmObserver` としてイベントを読む。Profiler から Runtime の実行メソッドを呼び出してはならない。
+- Profiler は `RuntimeObserver` としてイベントを読む。Profiler から Runtime の実行メソッドを呼び出してはならない。
 - Debugger の停止・再開・メモリ書込みは `ExecutionControl` 契約を使う。Profiler の観測契約へ書込み操作を追加してはならない。
 - WASI のホスト呼出は `HostCallBoundary` を通す。WASI 実装は HAL、IPC、uvwasi のいずれかを選択できるが、Runtime は選択先を直接参照しない。
 
@@ -118,9 +129,9 @@ sequenceDiagram
 ### 5.1 ランタイム生成
 | 項目 | 内容 |
 | :--- | :--- |
-| 機能概要 | 不変構成と静的プラグイン結線から、一ゲスト専用 Runtime を生成する。 |
+| 機能概要 | RuntimeComposer が不変構成と静的 DI から、一ゲスト専用 Runtime を合成する。 |
 | 事前条件 | 全プラグインの資源上限、実行方式、メモリ領域が構成済みである。 |
-| 期待する結果 | 全スロットが具象または Null 実装で満たされた Runtime が得られる。 |
+| 期待する結果 | 必須スロットが具象実装で満たされ、無効スロットを含まない Runtime が得られる。 |
 | エラー時の挙動 | 必須スロット不足、資源予算超過、依存不整合を初期化失敗として返す。部分初期化は終了処理後に破棄する。 |
 | 不変条件 | Runtime 生成後にプラグイン型と資源領域は変更されない。 |
 
@@ -146,9 +157,10 @@ sequenceDiagram
 <!-- traceability: {GLOBAL_Policy_Memory} {ZeroRuntimeOverhead} {META_StaticDI} -->
 
 ### 6.1 性能制約と方策
-- 実行ホットパスのプラグイン選択は静的結線またはインライン可能な関数境界で解決する。
+- RuntimeComposer は静的 DI で実装を合成する。実行ホットパスのプラグイン選択を実行時に行ってはならない。
 - 実行中の文字列検索、動的レジストリ検索、仮想関数による全称ディスパッチを要求しない。
-- 観測を無効化した構成では NullObserver の処理をコンパイル時に除去できる形にする。
+- weave 箇所は `constexpr` 条件で特殊化する。条件が偽のアスペクトでは、フック本体だけでなく呼出し、引数評価、ペイロード構築、状態領域を除去する。
+- リンカの未参照コード除去や LTO は補助に留める。RuntimeComposer は、不要な実装を参照せず翻訳単位へ含めないことで除去を保証する。
 
 ### 6.2 メモリ制約と方策
 - 全プラグインの状態容量、イベントリング容量、JIT コード領域、デバッガバッファを `SystemConfig` の予算へ登録する。
@@ -165,7 +177,8 @@ sequenceDiagram
 ### 7.1 検証対象の不変条件
 | 不変条件 | 説明 | 範囲 | 検証方法 |
 | :--- | :--- | :--- | :--- |
-| スロット完全性 | 必須スロットが必ず具象または Null 実装で満たされる。 | 構成 | TODO(未決): 構成モデルの CTL 検証 |
+| スロット完全性 | 必須スロットが必ず具象実装で満たされ、無効スロットが実行経路に存在しない。 | 構成 | TODO(未決): 構成モデルの CTL 検証 |
+| weave 除去 | 無効アスペクトのフック、状態、呼出し、WIT 境界、翻訳単位が合成結果に存在しない。 | 構成・生成物 | TODO(未決): 生成物検査と map file 検査 |
 | 依存方向 | Tier 2 契約が Tier 3 の内部型を参照しない。 | 文書・型 | TODO(未決): DocGraph と静的検査 |
 | 共通呼出同値性 | Interpreter と JIT の完了理由、トラップ、結果検証が同じ意味を持つ。 | 実行 | TODO(未決): 直交表と状態モデル |
 | 終了完全性 | 初期化済みの全プラグインが終了処理を一度だけ受ける。 | ライフサイクル | TODO(未決): CTL 変異検査 |
@@ -174,7 +187,7 @@ sequenceDiagram
 本仕様はプラグイン境界とライフサイクルを定義する。各プラグインのキャッシュアルゴリズム、WASI ABI、デバッグパケット形式、イベント集計アルゴリズムは本仕様の検証対象外であり、対応する Tier 3 仕様へ委譲する。
 
 ## 8. 設計上の未決事項
-- プラグイン型を C++ のテンプレート引数で固定する方式と、生成済みハーネス構造体で固定する方式の選択。
+- `RuntimeComposer` の構成入力を、C++ のテンプレート引数、生成済みハーネス構造体、または両者の組合せのいずれにするか。
 - JIT runtime と JIT compiler のコンパイル要求を同期呼出だけにするか、固定長要求キューを許可するかの選択。
 - WASI 評価用の uvwasi 接続を、製品 WASI プラグインとは別の Tier 3 実装として登録する方式。
 - プロファイラの観測損失を構成エラーにする厳密モードと、欠落数をログへ残して継続する計測モードの選択。

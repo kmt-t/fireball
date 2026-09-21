@@ -1,5 +1,5 @@
 """
-experiments/pysim/qa/tier3_jit/test_jit_differential.py
+experiments/pysim/qa/tier3_executer/test_jit_differential.py
 Differential tests for the Tier 3 hybrid engine (interpreter + Copy-and-Patch JIT).
 
 Every case runs the same WASM on three independent executors and requires identical results:
@@ -28,7 +28,7 @@ for _p in [
     _PYSIM_DIR / "tier1_core",
     _PYSIM_DIR / "tier1_interface",
     _PYSIM_DIR / "tier2_runtime",
-    _PYSIM_DIR / "tier3_jit",
+    _PYSIM_DIR / "tier3_executer",
     _PYSIM_DIR / "tier3_platform",
 ]:
     _sp = str(_p)
@@ -37,11 +37,11 @@ for _p in [
 
 import wasmtime
 from helpers import expect_assertion, make_interpreter, wat_to_wasm
-from interpreter import Interpreter
+from tier3_executer.interpreter import Interpreter
 from runtime_engine import RuntimeEngine
 from wasm_module import Module
 from wasm_reader import parse
-from x64_jit import TraceCompiler
+from tier3_executer.x64_jit import TraceCompiler
 
 MASK32 = 0xFFFFFFFF
 SUITE_WASM = _PYSIM_DIR / "benchmarks" / "profile" / "guest" / "suite.wasm"

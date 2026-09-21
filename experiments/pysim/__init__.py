@@ -13,7 +13,7 @@ for p in (
     _PKG_ROOT / "tier1_core",
     _PKG_ROOT / "tier1_interface",
     _PKG_ROOT / "tier2_runtime",
-    _PKG_ROOT / "tier3_jit",
+    _PKG_ROOT / "tier3_executer",
     _PKG_ROOT / "tier3_platform",
 ):
     sp = str(p)

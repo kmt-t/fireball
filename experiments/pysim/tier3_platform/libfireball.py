@@ -8,37 +8,23 @@ while vIRQ and vDMA use their dedicated typed host-call functions.
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from typing import Final
 
+from hostcall import FireballHostCallPort
+
 U32_MAX: Final[int] = 0xFFFF_FFFF
-FireballHostCall = Callable[[int, int, int, int, int, int, int], int]
-FireballVirqRegisterHostCall = Callable[[int, int], int]
-FireballVirqUnregisterHostCall = Callable[[int], int]
-FireballVdmaHostCall = Callable[[int, int, int], int]
 
 
 class Libfireball:
     """Generic syscall and dedicated vIRQ/vDMA host-call bindings."""
 
-    __slots__ = (
-        "_host_call",
-        "_virq_register_host_call",
-        "_virq_unregister_host_call",
-        "_vdma_host_call",
-    )
+    __slots__ = ("_host_calls",)
 
     def __init__(
         self,
-        host_call: FireballHostCall,
-        virq_register_host_call: FireballVirqRegisterHostCall,
-        virq_unregister_host_call: FireballVirqUnregisterHostCall,
-        vdma_host_call: FireballVdmaHostCall,
+        host_calls: FireballHostCallPort,
     ):
-        self._host_call = host_call
-        self._virq_register_host_call = virq_register_host_call
-        self._virq_unregister_host_call = virq_unregister_host_call
-        self._vdma_host_call = vdma_host_call
+        self._host_calls = host_calls
 
     @staticmethod
     def _validate_u32(value: int) -> None:
@@ -61,7 +47,7 @@ class Libfireball:
         self._validate_u32(arg3)
         self._validate_u32(arg4)
         self._validate_u32(arg5)
-        result = self._host_call(syscall_id, arg0, arg1, arg2, arg3, arg4, arg5)
+        result = self._host_calls.fireball_call(syscall_id, arg0, arg1, arg2, arg3, arg4, arg5)
         assert 0 <= result <= U32_MAX, "fireball host-call result must be u32"
         return result
 
@@ -108,14 +94,14 @@ class Libfireball:
         """Stages a vIRQ guest handler through the dedicated host call."""
         self._validate_u32(node_id)
         self._validate_u32(function_index)
-        result = self._virq_register_host_call(node_id, function_index)
+        result = self._host_calls.virq_register(node_id, function_index)
         assert 0 <= result <= U32_MAX, "vIRQ host-call result must be u32"
         return result
 
     def fireball_virq_unregister(self, node_id: int) -> int:
         """Stages removal of a vIRQ guest handler through the dedicated host call."""
         self._validate_u32(node_id)
-        result = self._virq_unregister_host_call(node_id)
+        result = self._host_calls.virq_unregister(node_id)
         assert 0 <= result <= U32_MAX, "vIRQ host-call result must be u32"
         return result
 
@@ -124,6 +110,6 @@ class Libfireball:
         self._validate_u32(source)
         self._validate_u32(destination)
         self._validate_u32(byte_count)
-        result = self._vdma_host_call(source, destination, byte_count)
+        result = self._host_calls.vdma_start(source, destination, byte_count)
         assert 0 <= result <= U32_MAX, "vDMA host-call result must be u32"
         return result

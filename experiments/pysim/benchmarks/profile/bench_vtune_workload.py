@@ -36,7 +36,7 @@ for _p in [
     _PYSIM_DIR / "tier1_core",
     _PYSIM_DIR / "tier1_interface",
     _PYSIM_DIR / "tier2_runtime",
-    _PYSIM_DIR / "tier3_jit",
+    _PYSIM_DIR / "tier3_executer",
     _PYSIM_DIR / "tier3_platform",
 ]:
     _sp = str(_p)
@@ -44,19 +44,20 @@ for _p in [
         sys.path.insert(0, _sp)
 
 from dummy_drivers import DummyDriver
-from interpreter import Interpreter, InterpreterBindings
+from tier3_executer.interpreter import Interpreter, InterpreterBindings
+from tier3_executer.jit_runtime import JITInterpreter
 from ipc_router import DataType, IPCMessage, IPCRouter, IPCStatus, Role, ScopeKind, pack_key32
-from logger import LogDictionary, Logger, LogLevel
+from tier2_runtime.logger import LogDictionary, Logger, LogLevel
 from file_log_sink import FileLogSink
 from memory import FB_CONF_MEMORY_POOL_SIZE, MemoryManager
-from runtime_engine import JITInterpreter, RuntimeEngine
+from runtime_engine import RuntimeEngine
 from scheduler import ChannelAction, Scheduler
 from system import System
 from system_containers import StaticVector
 from wasi import WasiHostContext
 from wasm_module import Module
 from wasm_reader import parse
-from x64_jit import TraceCompiler
+from tier3_executer.x64_jit import TraceCompiler
 
 SUITE_WASM_PATH = Path(__file__).resolve().parent / "guest" / "suite.wasm"
 AO_WASM_PATH = _PYSIM_DIR / "aobench.wasm"

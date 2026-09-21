@@ -10,11 +10,11 @@ except ImportError:
     _native_interpreter: ModuleType | None = None
 
 if _native_interpreter is None:
-    from interpreter import _HANDLERS, Interpreter, InterpreterBindings
+    from tier3_executer.interpreter import _HANDLERS, Interpreter, InterpreterBindings
 
     HANDLER_COUNT = sum(1 for handler in _HANDLERS if handler is not None)
 else:
-    import interpreter as _python_interpreter
+    import tier3_executer.interpreter as _python_interpreter
 
     class Interpreter(_python_interpreter.Interpreter):
         """Use the direct .pyx CPS runner for every bytecode dispatch."""

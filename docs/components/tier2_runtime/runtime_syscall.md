@@ -47,9 +47,19 @@ interface trap {
   ) -> u32;
 }
 
+interface virq {
+  register: func(node-id: u32, function-index: u32) -> u32;
+  unregister: func(node-id: u32) -> u32;
+}
+
+interface vdma {
+  start: func(source: u32, destination: u32, byte-count: u32) -> u32;
+}
+
 world fireball-hostcall {
   import trap;
-  // 高レベルのWASI/HAL操作は、Tier 2 HALの公開抽象IFへ接続される。
+  import virq;
+  import vdma;
 }
 ```
 
@@ -137,7 +147,7 @@ vMMIO管理下のアドレスへの汎用 host-call 操作である。IPCR/SHM/D
 | `0x13` | `MMIO_WRITE8` | `addr` (`fb_val_t`: 物理アドレス), `value` (`fb_val_t`: 8bit値) | `0` (エラー時は `ERR_OUT_OF_BOUNDS` または `ERR_ACCESS_DENIED`) | 8bit書き込み |
 | `0x14` | `MMIO_BULK_READ` | `addr` (`fb_val_t`: 物理アドレス), `dest_offset` (`fb_offset_t`: ゲスト物理ベース相対), `byte_count` (`fb_val_t`: 転送バイト数) | `0` (エラー時は `ERR_OUT_OF_BOUNDS`, `ERR_ACCESS_DENIED` または `ERR_INVALID_SIZE`) | バルク読み出し（ゲストメモリへコピー） `{META_RestrictedPhysicalAccess}` |
 | `0x15` | `MMIO_BULK_WRITE` | `addr` (`fb_val_t`: 物理アドレス), `src_offset` (`fb_offset_t`: ゲスト物理ベース相対), `byte_count` (`fb_val_t`: 転送バイト数) | `0` (エラー時は `ERR_OUT_OF_BOUNDS`, `ERR_ACCESS_DENIED` または `ERR_INVALID_SIZE`) | バルク書き込み（ゲストメモリから書込） `{META_RestrictedPhysicalAccess}` |
-| `0x16` | `TRIGGER_SET_PIN` | `pin` (`fb_val_t`), `value` (`fb_val_t`: 0/1) | `0` (エラー時は `ERR_OUT_OF_BOUNDS` または `ERR_ACCESS_DENIED`) | GPIOピン出力設定（`{Fast_Path_GPIO}` の host-call 経路、`FB_SYSCALL_TRIGGER_SET_PIN`）。**pysim実験実装での状態**: 専用GPIOハンドラが未実装のため、`fireball_call` は `GOTCHA-SYS-01` の規定通り安全に `WasiErrno.NOSYS` を返す。高速な実機GPIOアクセスは別契約の直接vMMIOストアで行う。 |
+| `0x16` | `TRIGGER_SET_PIN` | `pin` (`fb_val_t`), `value` (`fb_val_t`: 0/1) | `0` (エラー時は `ERR_OUT_OF_BOUNDS` または `ERR_ACCESS_DENIED`) | GPIOピン出力設定（`{Fast_Path_GPIO}` の host-call 経路、`FB_SYSCALL_TRIGGER_SET_PIN`）。未実装環境は`GOTCHA-SYS-01`に従って`WasiErrno.NOSYS`を返す。高速な実機GPIOアクセスは別契約の直接vMMIOストアで行う。 |
 
 ### 6.4. 専用ホストコール（vIRQ / vDMA）
 <!-- traceability: {VDMA} {GLOBAL_InterruptWakeup} {TaskPollInterruptEvent} -->
@@ -145,9 +155,9 @@ vIRQとvDMAは汎用 `fireball_call` のID空間には含めない。ゲスト�
 
 | WIT import | 操作 | 引数 | 戻り値 | 説明 |
 | :--- | :--- | :--- | :--- | :--- |
-| `fireball:host/virq` | `register` | `node-id`, `function-index` | `u32` | vIRQ静的ノードへのゲスト関数登録を保留する。関数シグネチャとノードはvSoCが検証する |
-| `fireball:host/virq` | `unregister` | `node-id` | `u32` | vIRQ静的ノードの登録解除を保留する。次のSafepointで有効表から除去する |
-| `fireball:host/vdma` | `start` | `source`, `destination`, `byte-count` | `u32` | 仮想DMA転送を開始する。VDMAレジスタへのvMMIO書き込みには変換しない |
+| `fireball:host/virq` | `register` | `node-id`, `function-index` | `u32`（WASI errno互換） | vIRQ静的ノードへのゲスト関数登録を保留する。関数シグネチャとノードはvSoCが検証する |
+| `fireball:host/virq` | `unregister` | `node-id` | `u32`（WASI errno互換） | vIRQ静的ノードの登録解除を保留する。次のSafepointで有効表から除去する |
+| `fireball:host/vdma` | `start` | `source`, `destination`, `byte-count` | `u32`（WASI errno互換） | 仮想DMA転送を開始する。VDMAレジスタへのvMMIO書き込みには変換しない |
 
 vIRQのイベント本体は専用host callの呼出し中には配送せず、ISR → COOS FIFO → vSoC Safepoint → vIRQ階層の非同期経路で処理する。`REG_IRQ_FLAGS` の読み書き、vIRQ固定スロットへのゲストからの直接store、およびWASIのpoll APIへの接続は採用しない。
 

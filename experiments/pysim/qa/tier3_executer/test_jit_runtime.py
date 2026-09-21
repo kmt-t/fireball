@@ -21,12 +21,12 @@ for _p in [
     _PYSIM_DIR / "tier1_core",
     _PYSIM_DIR / "tier1_interface",
     _PYSIM_DIR / "tier2_runtime",
-    _PYSIM_DIR / "tier3_jit",
+    _PYSIM_DIR / "tier3_executer",
     _PYSIM_DIR / "tier3_platform",
     _REPO_ROOT / "docs" / "components" / "tier1_core" / "concepts",
     _REPO_ROOT / "docs" / "components" / "tier1_interface" / "concepts",
     _REPO_ROOT / "docs" / "components" / "tier2_runtime" / "concepts",
-    _REPO_ROOT / "docs" / "components" / "tier3_jit" / "concepts",
+    _REPO_ROOT / "docs" / "components" / "tier3_executer" / "concepts",
     _REPO_ROOT / "docs" / "components" / "tier3_platform" / "concepts",
 ]:
     _sp = str(_p)
@@ -34,7 +34,7 @@ for _p in [
         sys.path.insert(0, _sp)
 
 import wasmtime
-from common_code import TRACE_ENTRY_STUB_BYTES
+from tier3_executer.common_code import TRACE_ENTRY_STUB_BYTES
 from config import (
     FB_CONF_JIT_CACHE_SIZE,
     JIT_CACHE_ABSOLUTE_ADDRESS_POOL_BYTES,
@@ -55,12 +55,12 @@ from config import (
 from execution_context import WASMContext
 from helpers import make_interpreter as Interpreter
 from helpers import wat_to_wasm
-from interpreter import InterpreterBindings
+from tier3_executer.interpreter import InterpreterBindings
+from tier3_executer.jit_runtime import JITInterpreter
 from runtime_engine import (
     CardState,
     HistoryRing,
     HotspotBitmap,
-    JITInterpreter,
     JITCacheBank,
     JITMultiBufferCache,
     JITTrace,
@@ -72,7 +72,7 @@ from test_support import PcOnlyCompiler, make_pc_only_functions_module, make_pc_
 from wasm_module import I32, LocalWidthMap
 from wasm_opcodes import BR_TABLE, I32_ADD, I32_CONST, LOCAL_GET, LOCAL_SET
 from wasm_reader import parse
-from x64_jit import TraceCompiler
+from tier3_executer.x64_jit import TraceCompiler
 
 
 def test_jitr_00_cache_region_is_two_pages_with_fixed_common_area():
@@ -976,7 +976,7 @@ def test_jitr_return_terminated_block_jit_result_correct():
 
 def test_jitr_terminal_trace_returns_to_interpreter_return_handler():
     """TEST-JITR-44: a terminal JIT trace resumes at RETURN, not at the sentinel."""
-    from interpreter import RETURN_SENTINEL_IP
+    from tier3_executer.interpreter import RETURN_SENTINEL_IP
     from wasm_opcodes import RETURN
 
     module = parse(wat_to_wasm("(module (func (result i32) i32.const 7 return))"))

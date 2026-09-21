@@ -64,6 +64,4 @@ interface resolver {
 world fireball-hal {
     import types;
     import resolver;
-
-    export resolver;
 }

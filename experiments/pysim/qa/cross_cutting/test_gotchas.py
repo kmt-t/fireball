@@ -14,13 +14,13 @@ for _p in [
     _PYSIM_DIR / "tier1_core",
     _PYSIM_DIR / "tier1_interface",
     _PYSIM_DIR / "tier2_runtime",
-    _PYSIM_DIR / "tier3_jit",
+    _PYSIM_DIR / "tier3_executer",
     _PYSIM_DIR / "tier3_platform",
     _TEST_FILE.parent,
     _REPO_ROOT / "docs" / "components" / "tier1_core" / "concepts",
     _REPO_ROOT / "docs" / "components" / "tier1_interface" / "concepts",
     _REPO_ROOT / "docs" / "components" / "tier2_runtime" / "concepts",
-    _REPO_ROOT / "docs" / "components" / "tier3_jit" / "concepts",
+    _REPO_ROOT / "docs" / "components" / "tier3_executer" / "concepts",
     _REPO_ROOT / "docs" / "components" / "tier3_platform" / "concepts",
 ]:
     _sp = str(_p)
@@ -41,9 +41,9 @@ for _p in [
     _PYSIM_DIR / "tier1_core",
     _PYSIM_DIR / "tier1_interface",
     _PYSIM_DIR / "tier2_runtime",
-    _PYSIM_DIR / "tier3_jit",
+    _PYSIM_DIR / "tier3_executer",
     _PYSIM_DIR / "tier3_platform",
-    REPO_ROOT / "docs" / "components" / "tier3_jit" / "concepts",
+    REPO_ROOT / "docs" / "components" / "tier3_executer" / "concepts",
 ]:
     _sp = str(_p)
     if _sp not in sys.path:
@@ -52,12 +52,12 @@ for _p in [
 import ctypes
 
 from control_flow import extract_basic_blocks
-from debugger import DebuggerManager, GDBRspProtocol
+from tier3_plugins.debugger import DebuggerManager, GDBRspProtocol
 from execution_context import WASMContext
 from hal_dispatch import HalBufferPool
 from helpers import expect_assertion, make_test_ipc_message, wat_to_wasm
 from helpers import make_interpreter as Interpreter
-from interpreter import _HANDLERS
+from tier3_executer.interpreter import _HANDLERS
 from ipc_router import (
     IPCRouter,
     IPCStatus,
@@ -66,7 +66,7 @@ from ipc_router import (
 )
 from jit_copy_patch_concept import CopyPatchJITEngine, Reg, Thumb2Assembler
 from loader import WasmLoader
-from logger import LogDictionary, Logger, LogLevel
+from tier2_runtime.logger import LogDictionary, Logger, LogLevel
 from memory import FB_CONF_MEMORY_POOL_SIZE, MemoryManager
 from runtime_engine import BasicBlock, CardState, JITMultiBufferCache, JITTrace, RuntimeEngine
 from runtime_test_driver import RuntimeEngineDebugDriver
@@ -101,7 +101,7 @@ from vmmio import TrapCode, VMMIOController, VmmioStatus
 from wasm_module import I32
 from wasm_opcodes import I32_ADD, I32_CONST, LOCAL_GET, LOCAL_SET
 from wasm_reader import parse
-from x64_jit import TraceCompiler
+from tier3_executer.x64_jit import TraceCompiler
 
 # ==============================================================================
 # 1. Interpreter Gotchas (GOTCHA-INTP-01 ~ 04)

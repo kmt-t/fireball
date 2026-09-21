@@ -32,7 +32,7 @@ for _p in [
     _PYSIM_DIR / "tier1_core",
     _PYSIM_DIR / "tier1_interface",
     _PYSIM_DIR / "tier2_runtime",
-    _PYSIM_DIR / "tier3_jit",
+    _PYSIM_DIR / "tier3_executer",
     _PYSIM_DIR / "tier3_platform",
 ]:
     _sp = str(_p)
@@ -40,11 +40,11 @@ for _p in [
         sys.path.insert(0, _sp)
 
 from config import FB_CONF_JIT_AGING_STEP_SCAN_BYTES, FB_CONF_JIT_AGING_STEP_UNITS
-from interpreter import Interpreter, InterpreterBindings
+from tier3_executer.interpreter import Interpreter, InterpreterBindings
 from runtime_engine import JITTrace, RuntimeEngine
 from wasm_module import WasmOperand
 from wasm_reader import parse
-from x64_jit import TraceCompiler
+from tier3_executer.x64_jit import TraceCompiler
 
 try:
     import wasmtime

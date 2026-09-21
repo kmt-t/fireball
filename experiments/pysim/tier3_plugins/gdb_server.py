@@ -1,5 +1,5 @@
 """
-experiments/pysim/tier2_runtime/gdb_server.py
+experiments/pysim/tier3_plugins/gdb_server.py
 GDB Remote Serial Protocol (RSP) TCP Server for Fireball Hypervisor.
 Provides real TCP socket listening, packet frame encoding/decoding,
 ACK/NACK negotiation, and execution dispatch to GDBRspProtocol.
@@ -11,7 +11,7 @@ import socket
 import threading
 from collections.abc import Generator, Mapping
 
-from debugger import DebuggerManager, GDBRspProtocol
+from tier3_plugins.debugger import DebuggerManager, GDBRspProtocol
 from execution_context import WASMContext
 from scheduler import ChannelAction
 from wasm_module import BasicBlock

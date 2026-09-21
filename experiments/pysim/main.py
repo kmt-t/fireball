@@ -21,20 +21,20 @@ for _p in (
     _PYSIM_DIR / "tier1_core",
     _PYSIM_DIR / "tier1_interface",
     _PYSIM_DIR / "tier2_runtime",
-    _PYSIM_DIR / "tier3_jit",
+    _PYSIM_DIR / "tier3_executer",
     _PYSIM_DIR / "tier3_platform",
 ):
     _sp = str(_p)
     sys.path.insert(0, _sp)
 
-from interpreter import Interpreter, InterpreterBindings
-from logger import LogLevel
+from tier3_executer.interpreter import Interpreter, InterpreterBindings
+from tier2_runtime.logger import LogLevel
 from recovery import RecoveryManager, RecoveryStrategy, Result
 from runtime_engine import RuntimeEngine
 from system import System
 from system_containers import StaticVector
 from wasm_reader import parse
-from x64_jit import TraceCompiler
+from tier3_executer.x64_jit import TraceCompiler
 
 findings: StaticVector[str] = StaticVector(capacity=8)
 

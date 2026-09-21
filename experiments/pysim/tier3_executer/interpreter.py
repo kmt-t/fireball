@@ -1,5 +1,5 @@
 """
-experiments/pysim/tier2_runtime/interpreter.py
+experiments/pysim/tier3_executer/interpreter.py
 A minimal reference interpreter for the wasm_opcodes subset, used as the
 correctness oracle the JIT's output is checked against -- mirroring the
 real project's own "interpreter + JIT, cross-checked" architecture
@@ -59,7 +59,7 @@ from interop_abi import (
     NativeValueStack,
 )
 from leb128 import decode_signed, decode_unsigned
-from logger import Logger, LogLevel
+from tier2_runtime.logger import Logger, LogLevel
 from native_stacks import (
     ControlFrameKind,
     NativeControlStack,

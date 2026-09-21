@@ -5,7 +5,7 @@
 正本: [`guest_profiler.md`](docs/components/tier3_plugins/guest_profiler.md)
 関連正本: [`runtime_observability.md`](docs/components/tier2_runtime/runtime_observability.md)
 
-Tier 2 の VM 観測イベントを受信し、ゲスト関数のコールグラフ、実行時間、欠落状態を集計する Tier 3 プラグインを検証する。Debugger の停止・再開・ステップ処理は本仕様の対象外とする。
+Tier 2 の Runtime 観測イベントを受信し、ゲスト関数のコールグラフ、実行時間、欠落状態を集計する Tier 3 プラグインを検証する。Debugger の停止・再開・ステップ処理は本仕様の対象外とする。
 
 ## 2. テストケース一覧
 

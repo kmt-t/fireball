@@ -7,6 +7,8 @@
 
 ホーアCSPに基づく**バッファなし同期ランデブーチャネル**（`{ADR_RendezvousChannel}`）と、直接コンテキストスイッチ（CSP Handoff）、割り込みイベント駆動起床、アイドル検知の振る舞いを定義する。
 
+## 2. テストケース一覧
+
 ### 2.1 CSP通信と状態遷移 直交表マトリクス
 <!-- traceability: {CSP_Handoff} {ADR_RendezvousChannel} {GLOBAL_InterruptWakeup} -->
 

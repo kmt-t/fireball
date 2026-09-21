@@ -7,7 +7,9 @@
 
 Bit31によるRAM/vMMIO高速分岐、64件のFlatMap PTE + 32エントリDirect-Mapped TLB、Stage1/2/3の3段階セキュリティゲート、SHM所有権チェック、TLB無効化を検証する。システムコールとVDMAのhost-call transportは本書の対象外とし、`runtime_syscall_test_spec.md`で検証する。
 
-## 2. 直交表マトリクス（Pairwise / Combinatorial Matrix）
+## 2. テストケース一覧
+
+### 2.1 直交表マトリクス（Pairwise / Combinatorial Matrix）
 
 メモリアクセスディスパッチにおける主要因子（アドレス領域 × アクセス種別 × TLB状態 × 権限状態）の組み合わせ網羅性を定義する。
 
@@ -26,7 +28,7 @@ Bit31によるRAM/vMMIO高速分岐、64件のFlatMap PTE + 32エントリDirect
 
 ---
 
-## 3. テストケース一覧
+### 2.2 テストケース詳細一覧
 
 ### アドレス分解・高速バイパス ({FastAddressCheck})
 

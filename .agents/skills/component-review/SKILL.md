@@ -51,6 +51,8 @@ uv run python .agents/skills/component-review/scripts/collect_chain.py <componen
 - `contract_only`: `true` の場合、独立インターフェイス契約としてコンセプト実装層を持たないことを明示
 - `missing_evidences`: 仕様書ヘッダーで参照されているが存在しないファイル（未結線・リンク切れ）
 
+収集後に、仕様書へ [`docs/components/FORMAT.md`](../../../docs/components/FORMAT.md)、テスト仕様書へ [`docs/qa/FORMAT.md`](../../../docs/qa/FORMAT.md) を適用する。親FORMATの見出し構成、必須要素、表の列、および禁止事項を先に確認する。対象文書の設計意図と親FORMATが一致しない場合は、正本の設計意図を確定し、FORMATが古ければFORMATを改定してから対象文書を合わせる。対象文書だけをFORMAT違反のまま合格扱いにしない。
+
 ---
 
 ### Step 2: 3体の専門サブエージェントの並行起動
@@ -131,7 +133,8 @@ invoke_subagent(
 2. **重要度（Severity）の判定**:
    - `CRITICAL`: 形式検証違反、変異検査の無効化、仕様とコードの真っ向矛盾、`Any` 使用。
    - `MAJOR`: 直交表テストの未実装、GOTCHA 検証欠落、仕様書への実装言語用語漏洩、図や例示コードの本文との矛盾・陳腐化。
-   - `MINOR`: 図の記法揺れ、Docstring 不足、軽微な命名差異。
+    - `MINOR`: 図の記法揺れ、Docstring 不足、軽微な命名差異。
+    - `MAJOR`: 仕様書またはテスト仕様書が、適用対象の親 `FORMAT.md` の見出し構成、必須要素、表形式、または禁止事項に違反している。
 3. **総合判定**:
    - `PASS`: CRITICAL および MAJOR な指摘が 0 件。
    - `WARN`: CRITICAL は 0 件だが、MAJOR な改善指摘が存在する。
@@ -164,6 +167,7 @@ invoke_subagent(
 | **2. コンセプトコード** | Concept Code Auditor | PASS/WARN/FAIL | モデル忠実度、型安全性(Anyゼロ)、サボり排除 |
 | **3. 単体テスト・Gotcha** | Test & Gotcha Verifier | PASS/WARN/FAIL | 直交表網羅性、GOTCHA検証、アサーション妥当性 |
 | **4. 層間垂直一貫性** | Synthesizer (Parent) | PASS/WARN/FAIL | 垂直トレーサビリティ、用語・定数一致、層間矛盾 |
+| **5. 親FORMAT準拠** | Synthesizer (Parent) | PASS/WARN/FAIL | 仕様書・テスト仕様書と親FORMATの構成・必須要素の一致 |
 
 ---
 

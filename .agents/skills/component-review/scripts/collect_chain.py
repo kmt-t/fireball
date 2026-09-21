@@ -27,6 +27,18 @@ class ChainArtifacts(TypedDict):
     benchmark: list[str]
     contract_only: bool
     missing_evidences: list[str]
+    format_checks: dict[str, "FormatCheck"]
+
+
+class FormatCheck(TypedDict):
+    document: str
+    format: str
+    format_exists: bool
+    required_sections: list[str]
+    actual_sections: list[str]
+    section_order_matches: bool
+    missing_sections: list[str]
+    unexpected_sections: list[str]
 
 
 def parse_evidence_block(content: str) -> dict[str, list[str]]:
@@ -48,6 +60,34 @@ def parse_evidence_block(content: str) -> dict[str, list[str]]:
             if val:
                 result.setdefault(key, []).append(val)
     return result
+
+
+def top_level_sections(path: Path) -> list[str]:
+    sections: list[str] = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.startswith("## "):
+            continue
+        heading = line[3:].strip()
+        if " " in heading:
+            heading = heading.split(" ", 1)[1].strip()
+        sections.append(heading)
+    return sections
+
+
+def check_format(repo_root: Path, document: Path, format_path: Path) -> FormatCheck:
+    format_exists = format_path.is_file()
+    required_sections = top_level_sections(format_path) if format_exists else []
+    actual_sections = top_level_sections(document)
+    return {
+        "document": str(document.relative_to(repo_root)).replace("\\", "/"),
+        "format": str(format_path.relative_to(repo_root)).replace("\\", "/"),
+        "format_exists": format_exists,
+        "required_sections": required_sections,
+        "actual_sections": actual_sections,
+        "section_order_matches": actual_sections == required_sections,
+        "missing_sections": sorted(set(required_sections).difference(actual_sections)),
+        "unexpected_sections": sorted(set(actual_sections).difference(required_sections)),
+    }
 
 
 def find_component_files(repo_root: Path, target: str) -> ChainArtifacts:
@@ -150,6 +190,19 @@ def find_component_files(repo_root: Path, target: str) -> ChainArtifacts:
         return [str(p.relative_to(repo_root)).replace("\\", "/") for p in deduped]
 
     rel_spec = str(spec_file.relative_to(repo_root)).replace("\\", "/")
+    format_checks: dict[str, FormatCheck] = {
+        "specification": check_format(
+            repo_root,
+            spec_file,
+            repo_root / "docs" / "components" / "FORMAT.md",
+        )
+    }
+    for test_spec in test_spec_files:
+        format_checks[f"test_spec:{test_spec.stem}"] = check_format(
+            repo_root,
+            test_spec,
+            repo_root / "docs" / "qa" / "FORMAT.md",
+        )
 
     return {
         "component": component_name,
@@ -162,6 +215,7 @@ def find_component_files(repo_root: Path, target: str) -> ChainArtifacts:
         "benchmark": to_rel(benchmark_files),
         "contract_only": contract_only,
         "missing_evidences": missing_evidences,
+        "format_checks": format_checks,
     }
 
 
@@ -196,6 +250,9 @@ def main() -> int:
         print(f"  [Benchmarks]       : {', '.join(data['benchmark'])}")
     if data["missing_evidences"]:
         print(f"  [! Missing Links]  : {', '.join(data['missing_evidences'])}")
+    for name, check in data["format_checks"].items():
+        status = "PASS" if check["section_order_matches"] else "FAIL"
+        print(f"  [FORMAT {status}]     : {name} -> {check['format']}")
 
     return 0
 

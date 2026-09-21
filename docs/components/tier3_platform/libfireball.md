@@ -13,8 +13,8 @@
 ## 2. 責務と依存方向
 
 1. `fireball-call0`〜`fireball-call6` を呼び出すゲスト側バインディングを提供する。
-2. WASI Preview1 の `fd_write`、`fd_read`、`fd_close`、`clock_time_get`、`proc_exit`、`random_get` を Fireball の公開 ABI へ変換する。
-3. ストリーム、クロック、ポーリング、GPIO、バス操作は、Tier 2 HAL の URI 解決・バッファ・コマンド境界を利用する。
+2. WASI Preview1 の標準出力とログ出力を Fireball の公開 ABI へ変換する。
+3. 標準出力とログ出力以外の WASI Preview1 操作は、Tier 3 の uvwasi ドライバへ委譲する。
 4. `fireball:host/virq` の `register` / `unregister` を発行するvIRQ登録・解除ラッパーを提供する。ただし、原因源表・親子関係・シグネチャ検証・Safepoint反映はTier 2に委譲する。
 5. `fireball:host/vdma` の `start` を発行するvDMA転送ラッパーを提供する。ただし、転送先権限・所有権・完了通知はTier 2に委譲する。
 6. 物理レジスタ、IPC ロール、COOS タスク、HAL ドライバの内部構造を知らない。
@@ -57,19 +57,20 @@ graph LR
 
 | Preview1 関数 | 公開 Fireball IF | 変換方針 |
 | :--- | :--- | :--- |
-| `fd_write` | `get-interface` + 固定バッファスロット + `stream-write` | iovec を順に処理し、全要素を先に検証する |
-| `fd_read` | `get-interface` + 固定バッファスロット + `stream-read` | 読み出し結果をゲストの iovec へ反映する |
-| `fd_close` | `stream-close` | 解決済みストリームを閉じる |
-| `fd_seek` | ゲスト側の仮想FD状態 | 仮想ファイル位置を更新する |
-| `clock_time_get` | `clock-get-now` | WASI の時刻表現へ変換する |
+| `fd_write(fd=1)` | `get-interface` + 固定バッファスロット + `stream-write` | iovec を全要素検証後に標準出力へ送る |
+| `fd_write(fd=2)` | Fireball logger sink | iovec を全要素検証後にログへ送る |
+| `fd_write(fd≠1,2)` | `WasiPreview1Backend.fd_write` | uvwasiへ委譲する |
+| `fd_read` | `WasiPreview1Backend.fd_read` | uvwasiへ委譲する |
+| `fd_close` | `WasiPreview1Backend.fd_close` | uvwasiへ委譲する |
+| `clock_time_get` | `WasiPreview1Backend.clock_time_get` | uvwasiへ委譲する |
 | `proc_exit` | `fireball_call` host call の終了操作 | ゲストの終了状態を通知する |
-| `random_get` | HAL の URI 解決とストリーム操作 | 乱数デバイスからバッファへ取得する |
+| `random_get` | `WasiPreview1Backend.random_get` | uvwasiへ委譲する |
 
 Preview1 の errno と Fireball の戻り値の対応は `runtime_syscall.md` の契約に従う。HAL のデバイス固有コマンドや物理ドライバ型は、このライブラリの公開 API に含めない。
 
 ### 4.3 WASI／HAL プロトコル変換シーケンス
 
-`libfireball` はゲスト側の同期的な WASI 呼び出しを、Tier 2 HAL のハンドル・バッファ・ストリーム操作へ変換する。HAL の内部コマンド ID、IPC ロール、物理ドライバ呼び出しはこのシーケンスの外部契約である。
+`libfireball` はゲスト側の同期的な標準出力・ログ呼び出しを、Tier 2 HAL のハンドル・バッファ・ストリーム操作へ変換する。その他の Preview 1 呼び出しは uvwasi ドライバへ委譲する。HAL の内部コマンド ID、IPC ロール、物理ドライバ呼び出しはこのシーケンスの外部契約である。
 
 ```mermaid
 sequenceDiagram
@@ -95,7 +96,9 @@ sequenceDiagram
     L-->>G: WASI errno, nwritten
 ```
 
-`fd_read` は同じ境界を逆方向に通り、`clock_time_get` は `get-interface` 後に `clock-get-now` を呼び出す。非同期操作は `poll-check` または `poll-wait` の完了結果を WASI 側の待機 APIへ変換する。
+`fd_read`、`fd_close`、`clock_time_get`、`random_get` および標準出力・ログ以外の
+`fd_write` は、ゲストメモリの境界を確認したうえで uvwasi ドライバへ委譲する。
+`proc_exit` だけはゲスト終了状態をランタイムへ伝える Fireball host call とする。
 
 ### 4.4 非同期操作
 

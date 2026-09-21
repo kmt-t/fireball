@@ -41,7 +41,7 @@ from helpers import make_interpreter as Interpreter
 from test_support import make_runtime_engine
 from system import System
 from system_containers import ReadOnlyFlatMapView
-from wasi import WasiHostContext
+from tier3_platform.drivers.wasi.context import WasiHostContext
 from wasm_reader import parse
 from tier3_executer.jit.x64_jit import TraceCompiler
 
@@ -127,9 +127,9 @@ WAT_TEMPLATE = """
 )
 """
 
-from dummy_drivers import DummyDriver
+from tier3_platform.drivers.hal.dummy import DummyDriver
 from hal_dispatch import ARG_BUFFER_HANDLE, ARG_LENGTH, ARG_OFFSET, WasiIpcCmd
-from wasi_dummy_fs import WasiDummyContext
+from fixtures.uvwasi_reference import UvwasiReferenceContext
 
 
 def run_single_pairwise_case(case_id: str, case_tuple: tuple[str, ...]) -> None:
@@ -145,7 +145,7 @@ def run_single_pairwise_case(case_id: str, case_tuple: tuple[str, ...]) -> None:
     # 1. Setup host system and services
     sysv = System()
     wasi_ctx = WasiHostContext(sysv, guest_memory=bytearray(2 * 65536))
-    wasi_dummy = WasiDummyContext()
+    wasi_dummy = UvwasiReferenceContext()
     stdio = DummyDriver(sysv.wasi_hal_bindings.stdout_uri, transport=sysv.transport)
     sysv.start_hal_driver(stdio)
     # 2. Parse WASM Module

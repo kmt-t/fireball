@@ -15,16 +15,22 @@
 <!-- traceability: {META_3TierSeparation} -->
 本コンポーネントは **Tier 3 (プラットフォーム / リーフコンポーネント: Leaf Component)** に属し、ハードウェアとハイパーバイザの物理境界を抽象化する物理ドライバ実装を担当する。抽象化層（URI Resolver、コマンドプロトコル）は Tier 2 の [hal_dispatch.md](docs/components/tier2_runtime/hal_dispatch.md) が担う。
 
-### 2.1 WASI-HAL結線設定
+### 2.1 WASIドライバ結線設定
 
-WASIアダプタとHALドライバのURI結線は、物理ドライバ実装とは別のTier 3設定ファイル [wasi_hal_bindings.py](experiments/pysim/tier3_platform/wasi_hal_bindings.py) で選択する。Tier 2はURIをハードコードせず、Tier 1の `WasiHalBindings` 契約を通じて注入された値だけを利用する。
+WASIアダプタとHALドライバのURI結線は、物理ドライバ実装とは別のTier 3設定ファイル [`bindings.py`](experiments/pysim/tier3_platform/drivers/hal/bindings.py) で選択する。Tier 2はURIをハードコードせず、Tier 1の `WasiHalBindings` 契約を通じて注入された値だけを利用する。WASI Preview 1 の標準出力とFireballログ以外の操作は、[`uvwasi.py`](experiments/pysim/tier3_platform/drivers/wasi/uvwasi.py) を通じてuvwasiへ委譲する。
+
+ドライバ構成の合成は [`platform_config.py`](experiments/pysim/tier3_platform/drivers/platform_config.py) が担う。`PlatformDriverConfiguration` は標準出力、ロガー、WASIバックエンドを一つの静的構成として保持する。
 
 | 結線 | 既定URI |
 | :--- | :--- |
 | `stdout_uri` | `fireball://hal/stdout/0` |
-| `timer_uri` | `fireball://hal/timer/0` |
-| `uart_uri` | `fireball://hal/uart/0` |
 | `logger_uri` | `fireball://hal/logger/0` |
+
+WASIの結線設定は標準出力とログだけを対象とする。WASI Preview 1 の
+`fd_read`、`fd_close`、`clock_time_get`、`random_get` および標準出力・ログ以外の
+`fd_write` は、[`uvwasi.py`](experiments/pysim/tier3_platform/drivers/wasi/uvwasi.py) の
+`WasiPreview1Backend` へ委譲する。
+タイマーやUARTのURIをWASI結線へ追加してはならない。
 
 `logger_uri` は WASI/IPC のログ要求を識別する契約値として保持する。pysim のホストファイル出力は HAL ドライバではなく、`System` に `FileLogSink` を直接注入して `Logger.flush()` から出力する。
 

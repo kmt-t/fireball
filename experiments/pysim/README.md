@@ -58,7 +58,6 @@ experiments/pysim/
 │   ├── logger.py          # 構造化ログカタログ & アイドルフラッシュ
 │   ├── memory.py          # Tier 1メモリ契約のTier 2実装
 │   ├── hal_dispatch.py    # HAL抽象ディスパッチ
-│   ├── wasi.py            # WASIホストimport境界
 │   ├── recovery.py        # リカバリ戦略
 │   ├── debugger.py        # 統合デバッガコントローラ
 │   └── gdb_server.py      # GDB Remote Serial Protocol (RSP) ソケットサーバー
@@ -71,8 +70,11 @@ experiments/pysim/
 │   └── exec_memory.py     # MPU W^X トランザクション & 実行可能メモリ (mprotect/VirtualProtect)
 │
 ├── tier3_platform/        # Tier 3 Platform & ハードウェア依存部
-│   ├── dummy_drivers.py      # HAL ダミードライバ (標準入出力/時刻)
-│   └── wasi_dummy_fs.py   # インメモリ VFS ファイルシステム
+│   └── drivers/           # 静的DIで合成する交換可能なドライバ群
+│       ├── platform_config.py # プラットフォームドライバ構成
+│       ├── hal/           # HAL標準I/OとHAL結線
+│       ├── logging/       # ホスト側ログSink
+│       └── wasi/          # Fireball console/log + uvwasi adapter
 │
 ├── qa/                    # 単体テスト・統合シナリオなど品質保証コード
 │   ├── run_all.py         # 全単体テスト一括実行ドライバ
@@ -122,7 +124,7 @@ experiments/pysim/
    - 3段階ルーティング（Stage 1 URI検索 → Stage 2 RBAC判定 → Stage 3 Zero-Copy CSP Rendezvous 所有権移譲）、RBAC拒否・メッセージサイズ超過の事前拒絶、構造化ログのアイドルフラッシュ。
 10. **Scenario 10: vMMIO Virtual Devices & Address Translation (`qa/scenarios/scenario10_vmmio_virtual_devices.py`)**:
     - 2段階ダイレクトデコードページテーブル、Bit 31 ゲスト RAM バイパス、Direct-Mapped ソフトウェア TLB（Folding XOR Hash）、タスク間共有メモリ（FC=0xE）の所有権検証と `TRAP_OWNER_MISMATCH` 遮断、パススルー物理アクセス。
-11. **Scenario 11: HAL & WASI Dummy Drivers (`qa/scenarios/scenario11_hal_and_wasi_drivers.py`)**:
+11. **Scenario 11: HAL & uvwasi Drivers (`qa/scenarios/scenario11_hal_and_wasi_drivers.py`)**:
    - HAL 標準入出力ストリーム（stdin/stdout）と Timer、および WASI Preview 1（fd_read, fd_write, fd_seek, random_get, clock_time_get）。
 12. **Scenario 12: WASI 0.3p URI Resolver (`qa/scenarios/scenario12_wasi03p_uri_resolver.py`)**:
    - 階層型 URI 解決、ドライバ能力照会、HAL バッファ経由の IPC コマンド、および WASI 0.1p アダプタ委譲。

@@ -25,12 +25,12 @@ for _p in [
     if _sp not in sys.path:
         sys.path.insert(0, _sp)
 
-from dummy_drivers import DummyDriver
+from tier3_platform.drivers.hal.dummy import DummyDriver
 from tier3_executer.interpreter.interpreter import Interpreter, InterpreterBindings
 from runtime_engine import RuntimeEngine
 from tier3_executer.jit.jit_manager import JITRuntimeManager
 from system import System
-from wasi import WasiHostContext
+from tier3_platform.drivers.wasi.context import WasiHostContext
 from wasm_reader import parse
 from tier3_executer.jit.x64_jit import TraceCompiler
 

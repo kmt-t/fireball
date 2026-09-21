@@ -4,17 +4,15 @@ Integration Scenario 12: WASI 0.3p Hierarchical URI Resolver, IPC Driver Command
 
 Tests:
 1. Hierarchical IPC URI interface resolution via `resolver.get-interface`:
-   - "fireball://hal/stdout/0" (standard input/output stream via HAL buffer pool)
-   - "fireball://hal/timer/0" (Monotonic hardware timer)
-   - "fireball://hal/stdout/0" (standard input/output)
+   - "fireball://hal/stdout/0" (standard output stream via HAL buffer pool)
    - "fireball://hal/logger/0" (System logger)
-   - Standard WASI 0.3p aliases ("wasi:io/streams@0.3.0", "wasi:clocks/monotonic-clock@0.3.0")
+   - Standard WASI 0.3p stream and CLI aliases
 2. Driver Capability Query Protocol (`CMD_QUERY_CAPS` = 0x00):
-   - Querying supported / unsupported commands on standard I/O and Timer drivers.
+   - Querying the standard output driver.
 3. WASI 0.3p IPC Driver Command Protocol dispatching via the HAL task:
    - Stream: `CMD_STREAM_WRITE_BUFFER`
-   - Clock: `CMD_CLOCK_GET_NOW`
-4. WASI 0.1p (`wasi_snapshot_preview1`) adapter delegating to WASI 0.3p buffer-pool streams and clocks
+4. WASI 0.1p (`wasi_snapshot_preview1`) adapter delegating stdout to Fireball and
+   other operations to an injected uvwasi-compatible backend.
 """
 
 from __future__ import annotations
@@ -39,7 +37,8 @@ for _p in [
     if _sp not in sys.path:
         sys.path.insert(0, _sp)
 
-from dummy_drivers import DummyDriver
+from tier3_platform.drivers.hal.dummy import DummyDriver
+from fixtures.uvwasi_reference import UvwasiReferenceContext
 from hal_dispatch import (
     ARG_BUFFER_HANDLE,
     ARG_LENGTH,
@@ -48,10 +47,10 @@ from hal_dispatch import (
 )
 from system import System
 from system_containers import ReadOnlyFlatMapView
-from wasi import Wasi03pEngine, WasiHostContext, WasiIpcCmd
-
-_EMPTY_PARAMS = ReadOnlyFlatMapView(())
-
+from tier3_platform.drivers.platform_config import PlatformDriverConfiguration
+from tier3_platform.drivers.hal.bindings import DEFAULT_WASI_HAL_BINDINGS
+from tier3_platform.drivers.hal.stream import StreamTransport
+from tier3_platform.drivers.wasi.context import Wasi03pEngine, WasiHostContext, WasiIpcCmd
 
 def _params(*pairs: tuple[int, int]) -> ReadOnlyFlatMapView[int, int]:
     """Builds a parameter ReadOnlyFlatMapView from packed pairs, matching
@@ -64,19 +63,24 @@ def test_wasi03p_hierarchical_uri_and_ipc_commands():
     print(
         "[*] Running Scenario 12: WASI 0.3p Hierarchical URI Resolver, Capability Query & IPC Commands..."
     )
-    sysv = System()
+    stdout_transport = StreamTransport()
+    sysv = System(
+        drivers=PlatformDriverConfiguration(
+            wasi_hal_bindings=DEFAULT_WASI_HAL_BINDINGS,
+            stdout_transport=stdout_transport,
+            logger_transport=stdout_transport,
+            wasi_backend=UvwasiReferenceContext(),
+        )
+    )
     engine = Wasi03pEngine(sysv)
     runtime_task = sysv.start_runtime_task(name="scenario12_runtime")
     sysv.pool.bind_runtime()
     sysv.start_hal_driver(DummyDriver(sysv.wasi_hal_bindings.stdout_uri, transport=sysv.transport))
-    sysv.start_hal_driver(DummyDriver("fireball://hal/timer/0", stream_enabled=False))
 
     # 1. Test Hierarchical IPC URIs Resolution
     hierarchical_uris = [
-        "fireball://hal/timer/0",
         "fireball://hal/stdout/0",
         "fireball://hal/logger/0",
-        "wasi:clocks/monotonic-clock@0.3.0",
         "wasi:io/streams@0.3.0",
         "wasi:cli/stdout@0.3.0",
     ]
@@ -88,40 +92,17 @@ def test_wasi03p_hierarchical_uri_and_ipc_commands():
 
     # 2. Test Driver Capability Query (CMD_QUERY_CAPS = 0x00)
     print("    [Testing Capability Query: CMD_QUERY_CAPS]...")
-    # UART capability check
-    uart_supports_stream = engine.dispatch_command(
+    stdout_supports_stream = engine.dispatch_command(
         "fireball://hal/stdout/0",
         WasiIpcCmd.QUERY_CAPS,
         _params((ARG_QUERY_CMD_ID, WasiIpcCmd.STREAM_WRITE_BUFFER)),
     )
-    assert uart_supports_stream == 1, "UART must support STREAM_WRITE_BUFFER"
-
-    # Timer capability check
-    timer_supports_clock = engine.dispatch_command(
-        "fireball://hal/timer/0",
-        WasiIpcCmd.QUERY_CAPS,
-        _params((ARG_QUERY_CMD_ID, WasiIpcCmd.CLOCK_GET_NOW)),
-    )
-    timer_supports_stream = engine.dispatch_command(
-        "fireball://hal/timer/0",
-        WasiIpcCmd.QUERY_CAPS,
-        _params((ARG_QUERY_CMD_ID, WasiIpcCmd.STREAM_WRITE_BUFFER)),
-    )
-    assert timer_supports_clock == 1, "Timer must support CLOCK_GET_NOW"
-    assert timer_supports_stream == 0, "Timer must NOT support STREAM_WRITE_BUFFER"
+    assert stdout_supports_stream == 1, "stdout must support STREAM_WRITE_BUFFER"
 
     print("    [CAPABILITY QUERY] All driver capability checks passed successfully.")
     sysv.scheduler.current_task = runtime_task
 
-    # 3. Test WASI 0.3p IPC Command Protocol: Clock / Timer (0x10)
-    now_ns = engine.dispatch_command(
-        "fireball://hal/timer/0", WasiIpcCmd.CLOCK_GET_NOW, _EMPTY_PARAMS
-    )
-    assert now_ns is not None and now_ns > 0, "Expected valid monotonic timestamp"
-    print(f"    [IPC CMD:CLOCK_GET_NOW] now_ns={now_ns}")
-    sysv.scheduler.current_task = runtime_task
-
-    # 4. Test WASI 0.3p IPC Command Protocol: Stream Write via HAL buffer (0x01)
+    # 3. Test WASI 0.3p IPC Command Protocol: Stream Write via HAL buffer (0x01)
     buffer_handle = sysv.pool.buffer(0)
     buffer_view = sysv.pool.view(buffer_handle, offset=0, length=24)
     msg = b"IPC-CMD-SHM-STREAM-OK!"
@@ -137,9 +118,9 @@ def test_wasi03p_hierarchical_uri_and_ipc_commands():
         ),
     )
     assert nwritten == len(msg)
-    out_uart = sysv.transport.drain_output().decode("utf-8")
-    assert out_uart.startswith("IPC-CMD-SHM-STREAM-OK!"), f"UART SHM output mismatch: {out_uart}"
-    print(f"    [IPC CMD:STREAM_WRITE_BUFFER] Written {nwritten} bytes -> {out_uart}")
+    out_stdout = sysv.transport.drain_output().decode("utf-8")
+    assert out_stdout.startswith("IPC-CMD-SHM-STREAM-OK!"), f"stdout output mismatch: {out_stdout}"
+    print(f"    [IPC CMD:STREAM_WRITE_BUFFER] Written {nwritten} bytes -> {out_stdout}")
 
     # 4.b Test the same IPC path with a directly-built params ReadOnlyFlatMapView.
     fmap_view = _params(
@@ -151,10 +132,10 @@ def test_wasi03p_hierarchical_uri_and_ipc_commands():
         "fireball://hal/stdout/0", WasiIpcCmd.STREAM_WRITE_BUFFER, fmap_view
     )
     assert nwritten_fmap == len(msg)
-    out_uart_fmap = sysv.transport.drain_output().decode("utf-8")
-    assert out_uart_fmap.startswith("IPC-CMD-SHM-STREAM-OK!")
+    out_stdout_fmap = sysv.transport.drain_output().decode("utf-8")
+    assert out_stdout_fmap.startswith("IPC-CMD-SHM-STREAM-OK!")
     print(
-        f"    [IPC ReadOnlyFlatMapView DISPATCH] Written {nwritten_fmap} bytes -> {out_uart_fmap}"
+        f"    [IPC ReadOnlyFlatMapView DISPATCH] Written {nwritten_fmap} bytes -> {out_stdout_fmap}"
     )
 
     # 4.c Confirm the dedicated HAL task processed both commands.
@@ -188,7 +169,7 @@ def test_wasi03p_hierarchical_uri_and_ipc_commands():
         f"{ipc_msg_64.entries}"
     )
 
-    # 6. Test WASI 0.1p Wrapper Delegation
+    # 5. Test WASI 0.1p Wrapper Delegation
     wasi_ctx = WasiHostContext(sysv)
     uri_bytes = b"fireball://hal/stdout/0"
     wasi_ctx.guest_memory[100 : 100 + len(uri_bytes)] = uri_bytes

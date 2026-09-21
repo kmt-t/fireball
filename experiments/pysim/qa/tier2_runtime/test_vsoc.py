@@ -42,13 +42,14 @@ sys.path.insert(0, str(_PYSIM_DIR))
 from control_flow import extract_basic_blocks
 from execution_context import WASMContext
 from helpers import expect_assertion, wat_to_wasm
+from fixtures.platform_drivers import create_reference_platform_drivers
 from helpers import make_interpreter as Interpreter
 from tier2_runtime.logger import LogDictionary, Logger, LogLevel
 from runtime_engine import RuntimeEngine
 from tier3_executer.jit.jit_cache import CardState, JITTrace
 from tier3_executer.jit.jit_manager import JITRuntimeManager
 from runtime_test_driver import RuntimeEngineDebugDriver
-from stream_transport import StreamTransport
+from tier3_platform.drivers.hal.stream import StreamTransport
 from system import (
     System,
 )
@@ -73,7 +74,7 @@ from virq import (
     VirqFaultCode,
     VirqNode,
 )
-from wasi import WasiHostContext
+from tier3_platform.drivers.wasi.context import WasiHostContext
 from wasm_module import BasicBlock, I32, Function, FuncType, Module
 from wasm_opcodes import I32_CONST
 from wasm_reader import parse
@@ -324,9 +325,9 @@ def test_virq_unregisters_dispatcher_at_safepoint():
 
 def test_hal_task_ipc_communication():
     """TEST-HAL-01: HAL operates as a distinct task on COOS and handles commands via IPC rendezvous."""
-    from dummy_drivers import DummyDriver
+    from tier3_platform.drivers.hal.dummy import DummyDriver
     from hal_dispatch import ARG_BUFFER_HANDLE, ARG_LENGTH, ARG_OFFSET
-    from wasi import Wasi03pEngine, WasiIpcCmd
+    from tier3_platform.drivers.wasi.context import Wasi03pEngine, WasiIpcCmd
 
     sysv = System()
     try:
@@ -635,7 +636,7 @@ def test_guest_wasi_01_interpreter_fd_write():
     mod = parse(wasm_bytes)
     sysv = System()
     try:
-        from dummy_drivers import DummyDriver
+        from tier3_platform.drivers.hal.dummy import DummyDriver
 
         ctx = WasiHostContext(sysv)
         sysv.start_hal_driver(
@@ -676,12 +677,11 @@ def test_guest_wasi_02_interpreter_clock_and_random():
         print("    [SKIP] wasmtime not installed, skipping test_guest_wasi_02")
         return
     mod = parse(wasm_bytes)
-    sysv = System()
+    sysv = System(drivers=create_reference_platform_drivers())
     try:
-        from dummy_drivers import DummyDriver
+        from tier3_platform.drivers.hal.dummy import DummyDriver
 
         ctx = WasiHostContext(sysv)
-        sysv.start_hal_driver(DummyDriver(sysv.wasi_hal_bindings.timer_uri, stream_enabled=False))
         host_funcs = ctx.build_interpreter_host_functions(mod)
         mod.init_memory_data(ctx.guest_memory, ())
         interp = Interpreter(mod, memory=ctx.guest_memory, host_functions=host_funcs)

@@ -1,6 +1,6 @@
 """
-experiments/pysim/tier3_platform/wasi_dummy_fs.py
-Comprehensive In-Memory WASI Preview 1 Dummy Driver for Fireball.
+experiments/pysim/qa/fixtures/uvwasi_reference.py
+Test-only uvwasi reference fixture for Fireball.
 Provides deterministic virtual file system and environment services:
 - FD 0 (stdin), FD 1 (stdout), FD 2 (stderr)
 - In-memory virtual file descriptors (fd_read, fd_write, fd_seek, fd_close, fd_fdstat_get)
@@ -66,7 +66,7 @@ class VirtualFile:
         return self.cursor
 
 
-class WasiDummyContext:
+class UvwasiReferenceContext:
     """Simulates the host environment implementing WASI Preview 1 calls."""
 
     def __init__(self):
@@ -142,6 +142,12 @@ class WasiDummyContext:
         memory[nwritten_ptr : nwritten_ptr + 4] = total_written.to_bytes(4, "little")
         return WasiErrno.SUCCESS
 
+    def fd_close(self, fd: int) -> int:
+        if fd < 3 or self.files.view().find(fd) is None:
+            return WasiErrno.BADF
+        self.files.remove(fd)
+        return WasiErrno.SUCCESS
+
     def fd_seek(
         self, fd: int, offset: int, whence: int, memory: bytearray, newoffset_ptr: int
     ) -> int:
@@ -168,3 +174,7 @@ class WasiDummyContext:
         now_ns = time.time_ns() if clock_id == 0 else time.monotonic_ns()
         memory[time_ptr : time_ptr + 8] = now_ns.to_bytes(8, "little")
         return WasiErrno.SUCCESS
+
+    def close(self) -> None:
+        """Release the test fixture state."""
+

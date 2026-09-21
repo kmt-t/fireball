@@ -40,7 +40,7 @@ from ipc_router import (
     Role,
 )
 from tier2_runtime.logger import STANDARD_DIAGNOSTIC_EVENTS, ConsoleOutput, LogDictionary, Logger, LogLevel
-from stream_transport import StreamTransport
+from tier3_platform.drivers.hal.stream import StreamTransport
 from system import (
     System,
 )

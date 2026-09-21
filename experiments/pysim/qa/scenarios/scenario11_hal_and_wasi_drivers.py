@@ -19,27 +19,27 @@ for _p in [
     if _sp not in sys.path:
         sys.path.insert(0, _sp)
 
-"""Integration Scenario 11: HAL Stream/Timer Drivers & WASI Preview 1 Dummy Stack.
+"""Integration Scenario 11: HAL Stream/Timer Drivers & uvwasi Reference Stack.
 
 Tests:
 1. HAL Dummy Drivers:
    - Standard I/O: full-duplex stdin/stdout streaming
    - Timer: High-resolution monotonic clock (monotonic_ns) and tick advancement
-2. WASI Preview 1 In-Memory Virtual Stack:
+2. uvwasi-compatible in-memory reference stack:
    - File I/O: Virtual file descriptors (fd_read, fd_write, fd_seek: SET/CUR/END)
    - Standard Streams: stdin buffered reading, stdout/stderr capture
    - System Utilities: random_get (entropy pool fill), clock_time_get (monotonic/realtime timestamp)
 """
 
-from dummy_drivers import DummyDriver
+from tier3_platform.drivers.hal.dummy import DummyDriver
 from hal_dispatch import ARG_BUFFER_HANDLE, ARG_LENGTH, ARG_MAX_LEN, ARG_OFFSET, WasiIpcCmd
 from system import System
 from system_containers import ReadOnlyFlatMapView
-from wasi_dummy_fs import WasiDummyContext, WasiErrno, WasiWhence
+from fixtures.uvwasi_reference import UvwasiReferenceContext, WasiErrno, WasiWhence
 
 
 def test_scenario_hal_and_wasi_drivers():
-    print("[*] Running Scenario 11: HAL Dummy Drivers & WASI Preview 1 Dummy Stack...")
+    print("[*] Running Scenario 11: HAL Drivers & uvwasi Reference Stack...")
     # -------------------------------------------------------------------------
     # Part A: HAL Peripheral Dummy Drivers Verification
     # -------------------------------------------------------------------------
@@ -85,9 +85,9 @@ def test_scenario_hal_and_wasi_drivers():
     assert timer.get_monotonic_ns() >= t0
     print("    [Phase A.2] HAL Timer Driver (Monotonic Clock & Ticks) [PASS]")
     # -------------------------------------------------------------------------
-    # Part B: WASI Preview 1 In-Memory Dummy Stack Verification
+    # Part B: uvwasi-compatible reference stack verification
     # -------------------------------------------------------------------------
-    wasi_vfs = WasiDummyContext()
+    wasi_vfs = UvwasiReferenceContext()
     guest_mem = bytearray(4096)
     # 1. WASI stdin read (fd_read on FD 0)
     # Setup iovec at offset 0: buf_ptr = 100, buf_len = 12

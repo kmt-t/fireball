@@ -32,7 +32,7 @@ from tier3_executer.interpreter.interpreter import Interpreter, InterpreterBindi
 from runtime_engine import RuntimeEngine
 from tier3_executer.jit.jit_manager import JITRuntimeManager
 from system import System
-from wasi import WasiHostContext
+from tier3_platform.drivers.wasi.context import WasiHostContext
 from wasm_reader import parse
 from tier3_executer.jit.x64_jit import TraceCompiler
 

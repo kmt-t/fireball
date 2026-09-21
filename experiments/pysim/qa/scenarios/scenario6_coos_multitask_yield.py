@@ -31,7 +31,7 @@ from tier3_executer.interpreter.interpreter import Interpreter, InterpreterBindi
 from scheduler import ChannelAction
 from system import System
 from system_containers import StaticVector
-from wasi import WasiHostContext
+from tier3_platform.drivers.wasi.context import WasiHostContext
 from wasm_reader import parse
 
 SCENARIO6_WAT = """

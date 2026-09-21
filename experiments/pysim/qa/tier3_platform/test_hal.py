@@ -34,7 +34,7 @@ for _p in [
     if _sp not in sys.path:
         sys.path.insert(0, _sp)
 
-from dummy_drivers import DummyDriver, Timer
+from tier3_platform.drivers.hal.dummy import DummyDriver, Timer
 from hal_dispatch import (
     FB_CONF_HAL_BUFFER_SIZE,
     FB_CONF_HAL_MAX_BUFFERS,
@@ -44,9 +44,9 @@ from hal_dispatch import (
 from helpers import expect_assertion
 from ipc_router import FB_URI_HAL_STDOUT
 from tier2_runtime.logger import LogLevel
-from file_log_sink import FileLogSink
+from tier3_platform.drivers.logging.file_sink import FileLogSink
 from scheduler import Scheduler
-from stream_transport import StreamTransport
+from tier3_platform.drivers.hal.stream import StreamTransport
 from system import (
     System,
 )
@@ -54,7 +54,7 @@ from system_containers import (
     ReadOnlyFlatMapView,
 )
 from vmmio import TrapCode, VMMIOController, VmmioStatus
-from wasi_dummy_fs import WasiDummyContext, WasiErrno, WasiWhence
+from fixtures.uvwasi_reference import UvwasiReferenceContext, WasiErrno, WasiWhence
 
 
 def test_hal_01_stream_transport_uses_fixed_buffers():
@@ -178,7 +178,7 @@ def test_hal_05_hal_buffer_slice_bounds_and_guest_mapping():
 def test_hal_task_ipc_communication():
     """TEST-HAL-01: HAL operates as a distinct task on COOS and handles commands via IPC rendezvous."""
     from hal_dispatch import ARG_BUFFER_HANDLE, ARG_LENGTH, ARG_OFFSET
-    from wasi import Wasi03pEngine, WasiIpcCmd
+    from tier3_platform.drivers.wasi.context import Wasi03pEngine, WasiIpcCmd
 
     sysv = System()
     try:
@@ -210,7 +210,7 @@ def test_hal_task_ipc_communication():
 
 
 def test_wasi_dummy_fd_write_updates_stdout_and_count():
-    context = WasiDummyContext()
+    context = UvwasiReferenceContext()
     memory = bytearray(96)
     payload = b"out"
     memory[32 : 32 + len(payload)] = payload
@@ -222,7 +222,7 @@ def test_wasi_dummy_fd_write_updates_stdout_and_count():
 
 
 def test_wasi_dummy_fd_seek_writes_new_offset():
-    context = WasiDummyContext()
+    context = UvwasiReferenceContext()
     memory = bytearray(32)
 
     assert context.fd_seek(3, 4, WasiWhence.SET, memory, 8) == WasiErrno.SUCCESS
@@ -230,7 +230,7 @@ def test_wasi_dummy_fd_seek_writes_new_offset():
 
 
 def test_wasi_dummy_clock_time_get_writes_timestamp():
-    context = WasiDummyContext()
+    context = UvwasiReferenceContext()
     memory = bytearray(16)
 
     assert context.clock_time_get(1, 0, memory, 0) == WasiErrno.SUCCESS

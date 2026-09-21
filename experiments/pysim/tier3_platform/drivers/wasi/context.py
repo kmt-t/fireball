@@ -1,15 +1,8 @@
-"""
-experiments/pysim/tier2_runtime/wasi.py
-Host-side WASI 0.3p core and WASI 0.1p compatibility import adapter.
-Implements docs/components/tier2_runtime/hal_dispatch.md and
-docs/specs/wasi_preview1_abi.md against the guest-visible WIT contracts in
-docs/components/tier3_platform/interface_wit.md.
+"""Tier 3 WASI and Fireball host-call driver adapters.
 
-- WASI 0.3p (Core): URI-based dynamic interface resolver (resolver.get-interface),
-  resource handle tables, streams (wasi:io), clocks (wasi:clocks), CLI (wasi:cli),
-  and hardware peripherals (fireball:hal/*).
-- WASI 0.1p (Adapter): wasi_snapshot_preview1 ABI as a zero-cost wrapper delegating
-  directly to WASI 0.3p resources.
+Fireball owns the guest-visible stdout and logger paths. Other WASI Preview 1
+operations are delegated to the configured uvwasi backend; ``proc_exit``
+remains a Fireball host call so the runtime can record guest termination.
 """
 
 from __future__ import annotations
@@ -24,7 +17,6 @@ from config import FB_CONF_MAX_IMPORTS
 from hal_dispatch import (
     ARG_BUFFER_HANDLE,
     ARG_LENGTH,
-    ARG_MAX_LEN,
     ARG_OFFSET,
     FB_CONF_HAL_BUFFER_SIZE,
     HalBufferHandle,
@@ -46,6 +38,7 @@ from system_containers import (
 )
 from wasi_bindings import WasiHalBindings
 from wasm_module import Module
+from tier3_platform.drivers.wasi.uvwasi import WasiPreview1Backend
 
 WasiValue = int
 
@@ -62,6 +55,7 @@ class WasiRuntimeHost(Protocol):
     pool: HalBufferPool
     scheduler: Scheduler
     wasi_hal_bindings: WasiHalBindings
+    wasi_backend: WasiPreview1Backend
 
     def bind_runtime(self, memory: bytearray | None) -> None:
         """Bind guest linear memory and HAL slots to the active runtime."""
@@ -74,7 +68,7 @@ class WasiRuntimeHost(Protocol):
 
 
 # ==============================================================================
-# WASI 0.3p Core Subsystem (HAL = WASI 0.3p)
+# Fireball-owned WASI 0.3p URI and HAL bridge
 # ==============================================================================
 @dataclass(frozen=True, slots=True)
 class WasiInterfaceVTable:
@@ -109,7 +103,7 @@ class WasiInterfaceVTable:
 
 
 class Wasi03pEngine:
-    """WASI 0.3p Core Engine providing Hierarchical URI Resolution, IPC Command Dispatch, and the HAL buffer pool."""
+    """Provide Fireball URI resolution, IPC dispatch, and the HAL buffer pool."""
 
     __slots__ = ("sysv", "bindings", "_interface_storage")
 
@@ -121,27 +115,12 @@ class Wasi03pEngine:
 
     def _setup_standard_interfaces(self) -> None:
         """
-        Registers standard WASI 0.3p and Fireball HAL interfaces with
-        Hierarchical URIs. The registry itself is a read-only flat-map storage keyed by
+        Registers Fireball-owned stdout/logger and WASI stream aliases with
+        hierarchical URIs. The registry itself is a read-only flat-map storage keyed by
         URI (std::string_view in C++) -- system_containers.md names this
         exact case ("the IPC registry") as flat_map_view's string-key use,
         so a sorted array here, not a dict, is the spec-sanctioned shape.
         """
-        uart_iface = WasiInterfaceVTable(
-            close=lambda: self._send_simple(self.bindings.uart_uri, WasiIpcCmd.STREAM_CLOSE),
-            write_buffer=lambda handle, offset, length: self._write_buffer(
-                self.bindings.uart_uri, handle, offset, length
-            ),
-            read_buffer=lambda handle, offset, length: self._read_buffer(
-                self.bindings.uart_uri, handle, offset, length
-            ),
-            flush=lambda: self._send_simple(self.bindings.uart_uri, WasiIpcCmd.STREAM_FLUSH),
-        )
-        timer_iface = WasiInterfaceVTable(
-            get_now=lambda: self._clock_get_now(self.bindings.timer_uri),
-            get_resolution=lambda: 1_000_000,  # 1ms
-            subscribe=lambda nanos: 1,  # pollable handle
-        )
         console_iface = WasiInterfaceVTable(
             write_buffer=lambda handle, offset, length: self._write_buffer(
                 self.bindings.stdout_uri, handle, offset, length
@@ -153,13 +132,9 @@ class Wasi03pEngine:
 
         entries: StaticVector[tuple[int, WasiInterfaceVTable]] = StaticVector.of(
             (
-                (fnv1a_32(self.bindings.uart_uri), uart_iface),
-                (fnv1a_32(self.bindings.stdout_uri), uart_iface),
-                (fnv1a_32("wasi:io/streams@0.3.0"), uart_iface),
-                (fnv1a_32("wasi:io/streams"), uart_iface),
-                (fnv1a_32(self.bindings.timer_uri), timer_iface),
-                (fnv1a_32("wasi:clocks/monotonic-clock@0.3.0"), timer_iface),
-                (fnv1a_32("wasi:clocks/monotonic-clock"), timer_iface),
+                (fnv1a_32(self.bindings.stdout_uri), console_iface),
+                (fnv1a_32("wasi:io/streams@0.3.0"), console_iface),
+                (fnv1a_32("wasi:io/streams"), console_iface),
                 (fnv1a_32("wasi:cli/stdout@0.3.0"), console_iface),
                 (fnv1a_32("wasi:cli/stdout"), console_iface),
                 (fnv1a_32(self.bindings.logger_uri), logger_iface),
@@ -227,31 +202,14 @@ class Wasi03pEngine:
         result = self.send_ipc_command(uri, WasiIpcCmd.STREAM_WRITE_BUFFER, params)
         return int(result)
 
-    def _read_buffer(self, uri: str, handle: HalBufferHandle, offset: int, max_len: int) -> int:
-        params = ReadOnlyFlatMapView(
-            sorted(
-                (
-                    (ARG_BUFFER_HANDLE, handle.buffer_id),
-                    (ARG_OFFSET, offset),
-                    (ARG_MAX_LEN, max_len),
-                )
-            )
-        )
-        result = self.send_ipc_command(uri, WasiIpcCmd.STREAM_READ_BUFFER, params)
-        return int(result)
-
-    def _clock_get_now(self, uri: str) -> int:
-        result = self.send_ipc_command(uri, WasiIpcCmd.CLOCK_GET_NOW, ReadOnlyFlatMapView(()))
-        return int(result)
-
-
-# ==============================================================================
+# ============================================================================== 
 # WASI 0.1p Compatibility Layer (Adapter Pattern wrapping WASI 0.3p)
 # ==============================================================================
 class WasiHostContext:
     """
     WASI Preview 1 Host Context and ABI Adapter.
-    Transparently adapts wasi_snapshot_preview1 function calls to WASI 0.3p / HAL Core.
+    Adapts Fireball-owned stdout/logger calls and delegates the remaining
+    wasi_snapshot_preview1 functions to uvwasi.
     """
 
     __slots__ = (
@@ -259,6 +217,7 @@ class WasiHostContext:
         "guest_memory",
         "bindings",
         "core03p",
+        "uvwasi",
         "_keepalive_trampolines",
         "_import_storage",
     )
@@ -268,12 +227,14 @@ class WasiHostContext:
         sysv: WasiRuntimeHost,
         guest_memory: bytearray | None = None,
         bindings: WasiHalBindings | None = None,
+        uvwasi: WasiPreview1Backend | None = None,
     ):
         self.sysv = sysv
         self.guest_memory = guest_memory if guest_memory is not None else bytearray(64 * 1024)
         self.sysv.bind_runtime(self.guest_memory)
         self.bindings = bindings if bindings is not None else sysv.wasi_hal_bindings
         self.core03p = Wasi03pEngine(sysv, self.bindings)
+        self.uvwasi = uvwasi if uvwasi is not None else sysv.wasi_backend
         self.sysv.attach_wasi_context(self)
         self._keepalive_trampolines: StaticVector[Callable[..., int]] = StaticVector(
             capacity=FB_CONF_MAX_IMPORTS
@@ -343,16 +304,18 @@ class WasiHostContext:
         return 1 if iface is not None else 0
 
     # --------------------------------------------------------------------------
-    # WASI 0.1p (Preview 1) Adapted Handlers (Delegating to WASI 0.3p Streams/Clocks)
+    # WASI 0.1p (Preview 1) adapted handlers
     # --------------------------------------------------------------------------
     def fd_write(self, fd: int, iovs_ptr: int, iovs_len: int, nwritten_ptr: int) -> int:
         """
-        Adapts wasi_snapshot_preview1:fd_write to WASI 0.3p wasi:io/streams:write.
-        Every guest-memory offset is validated before the first write, so an
-        invalid later iovec cannot expose output from an earlier one.
+        Routes Fireball stdout/logger writes through the Fireball HAL and
+        delegates all other descriptors to uvwasi. Every guest-memory offset
+        is validated before the first Fireball write.
         """
-        if fd != 1 and fd != 2:
-            return 8  # EBADF
+        if fd == 2:
+            return self._fd_write_log(iovs_ptr, iovs_len, nwritten_ptr)
+        if fd != 1:
+            return self.uvwasi.fd_write(fd, self.guest_memory, iovs_ptr, iovs_len, nwritten_ptr)
         mem = self.guest_memory
         mem_len = len(mem)
         if iovs_len < 0 or nwritten_ptr < 0 or nwritten_ptr > mem_len - 4:
@@ -403,80 +366,40 @@ class WasiHostContext:
         struct.pack_into("<I", mem, nwritten_ptr, total_written)
         return 0  # SUCCESS
 
-    def fd_read(self, fd: int, iovs_ptr: int, iovs_len: int, nread_ptr: int) -> int:
-        """Adapts wasi_snapshot_preview1:fd_read to WASI 0.3p wasi:io/streams:read."""
-        if fd != 0:
-            return 8  # EBADF
+    def _fd_write_log(self, iovs_ptr: int, iovs_len: int, nwritten_ptr: int) -> int:
+        """Routes stderr bytes to the Fireball logger sink, not to stdout."""
         mem = self.guest_memory
         mem_len = len(mem)
-        if iovs_len < 0 or nread_ptr < 0 or nread_ptr > mem_len - 4:
-            return 21  # EFAULT
+        if iovs_len < 0 or nwritten_ptr < 0 or nwritten_ptr > mem_len - 4:
+            return 21
         if iovs_ptr < 0 or iovs_ptr > mem_len or iovs_len > (mem_len - iovs_ptr) // 8:
-            return 21  # EFAULT
-
+            return 21
         for i in range(iovs_len):
-            iov_offset = iovs_ptr + (i * 8)
-            base, length = struct.unpack_from("<II", mem, iov_offset)
+            base, length = struct.unpack_from("<II", mem, iovs_ptr + i * 8)
             if base > mem_len or length > mem_len - base:
-                return 21  # EFAULT
-
-        total_read = 0
-        handle = self.sysv.pool.buffer(1)
+                return 21
+        total_written = 0
         for i in range(iovs_len):
-            iov_offset = iovs_ptr + (i * 8)
-            base, length = struct.unpack_from("<II", mem, iov_offset)
-            remaining = length
-            destination_offset = base
-            while remaining:
-                chunk_len = min(remaining, FB_CONF_HAL_BUFFER_SIZE)
-                result = self.core03p.send_ipc_command(
-                    self.bindings.stdout_uri,
-                    WasiIpcCmd.STREAM_READ_BUFFER,
-                    ReadOnlyFlatMapView(
-                        sorted(
-                            (
-                                (ARG_BUFFER_HANDLE, handle.buffer_id),
-                                (ARG_OFFSET, 0),
-                                (ARG_MAX_LEN, chunk_len),
-                            )
-                        )
-                    ),
-                )
-                read_count = int(result)
-                assert 0 <= read_count <= chunk_len
-                if read_count == 0:
-                    remaining = 0
-                    break
-                view = self.sysv.pool.view(handle, 0, read_count)
-                mem[destination_offset : destination_offset + read_count] = view
-                total_read += read_count
-                destination_offset += read_count
-                remaining -= read_count
-                if read_count < chunk_len:
-                    break
-
-        struct.pack_into("<I", mem, nread_ptr, total_read)
+            base, length = struct.unpack_from("<II", mem, iovs_ptr + i * 8)
+            written = self.sysv.logger.transport.write(memoryview(mem)[base : base + length])
+            assert written == length
+            total_written += written
+        struct.pack_into("<I", mem, nwritten_ptr, total_written)
         return 0
 
+    def fd_read(self, fd: int, iovs_ptr: int, iovs_len: int, nread_ptr: int) -> int:
+        """Delegate wasi_snapshot_preview1:fd_read to uvwasi."""
+        return self.uvwasi.fd_read(fd, self.guest_memory, iovs_ptr, iovs_len, nread_ptr)
+
     def fd_close(self, fd: int) -> int:
-        """Adapts wasi_snapshot_preview1:fd_close to WASI 0.3p wasi:io/streams:close."""
-        return int(self.sysv.host_calls.fireball_call(FbSyscallId.WASI_FD_CLOSE, fd, 0, 0, 0, 0, 0))
+        """Delegate wasi_snapshot_preview1:fd_close to uvwasi."""
+        return self.uvwasi.fd_close(fd)
 
     def clock_time_get(self, clock_id: int, precision: int, time_ptr: int) -> int:
         """
-        Adapts wasi_snapshot_preview1:clock_time_get to WASI 0.3p
-        wasi:clocks:get-now. The write into guest memory is bounds-checked
-        before use, and get-now never raises, so no exception can occur
-        here -- no try/except needed (exceptions unavailable as control
-        flow once disabled in the target C++ build).
+        Delegate wasi_snapshot_preview1:clock_time_get to uvwasi.
         """
-        mem = self.guest_memory
-        assert 0 <= time_ptr <= len(mem) - 8
-        now_ns = self.core03p.send_ipc_command(
-            self.bindings.timer_uri, WasiIpcCmd.CLOCK_GET_NOW, ReadOnlyFlatMapView(())
-        )
-        struct.pack_into("<Q", mem, time_ptr, int(now_ns))
-        return 0
+        return self.uvwasi.clock_time_get(clock_id, precision, self.guest_memory, time_ptr)
 
     def proc_exit(self, exit_code: int) -> int:
         return int(
@@ -484,11 +407,8 @@ class WasiHostContext:
         )
 
     def random_get(self, buf_ptr: int, buf_len: int) -> int:
-        return int(
-            self.sysv.host_calls.fireball_call(
-                FbSyscallId.WASI_RANDOM_GET, buf_ptr, buf_len, 0, 0, 0, 0
-            )
-        )
+        """Delegate wasi_snapshot_preview1:random_get to uvwasi."""
+        return self.uvwasi.random_get(self.guest_memory, buf_ptr, buf_len)
 
     def get_handler_for_import(
         self, module_name: str, field_name: str

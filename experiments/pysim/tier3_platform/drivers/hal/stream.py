@@ -52,3 +52,5 @@ class StreamTransport:
     def close(self) -> None:
         self._input_len = 0
         self._output_len = 0
+
+

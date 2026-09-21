@@ -11,6 +11,4 @@ class WasiHalBindings:
     """WASIアダプタが利用するHALエンドポイントURIの注入値。"""
 
     stdout_uri: Final[str]
-    timer_uri: Final[str]
-    uart_uri: Final[str]
     logger_uri: Final[str]

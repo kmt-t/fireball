@@ -240,7 +240,7 @@ def test_intp_06_memory_traps_are_handler_results():
 def test_intp_07_host_call_and_vmmio_separation():
     """Interpreter imports dispatch directly to host calls, not SYSCTL vMMIO."""
     from system import FbSyscallId, System, WasiErrno
-    from wasi import WasiHostContext
+    from tier3_platform.drivers.wasi.context import WasiHostContext
 
     sysv = System()
     try:

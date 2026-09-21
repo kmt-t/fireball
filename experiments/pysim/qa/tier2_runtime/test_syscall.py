@@ -36,6 +36,8 @@ for _p in [
         sys.path.insert(0, _sp)
 
 from helpers import wat_to_wasm
+from fixtures.platform_drivers import create_reference_platform_drivers
+from fixtures.uvwasi_reference import UvwasiReferenceContext
 from ipc_router import (
     IPCMessage,
     IPCStatus,
@@ -79,7 +81,7 @@ def test_syscall_02_host_call_system_control():
     sysv.start_runtime_task(name="test_runtime_task")
     try:
         assert sysv.fireball_call(FbSyscallId.SYS_YIELD, 0, 0, 0, 0, 0, 0) == WasiErrno.SUCCESS
-        from wasi import WasiHostContext
+        from tier3_platform.drivers.wasi.context import WasiHostContext
 
         host = WasiHostContext(sysv, guest_memory=bytearray(64))
         fireball_call = host.get_handler_for_import("fireball", "fireball_call")
@@ -192,7 +194,7 @@ def test_syscall_04_vdma_host_call_transfer():
     try:
         guest_mem = bytearray(64)
         guest_mem[0:4] = struct.pack("<I", 0x11223344)
-        from wasi import WasiHostContext
+        from tier3_platform.drivers.wasi.context import WasiHostContext
 
         host = WasiHostContext(sysv, guest_memory=guest_mem)
         vdma_start = host.get_handler_for_import("fireball", "vdma_start")
@@ -220,7 +222,7 @@ def test_syscall_05_virq_registration_host_calls():
     sysv.start_runtime_task(name="test_runtime_task")
     try:
         sysv.runtime_engine.register_module_blocks(_make_syscall_virq_module())
-        from wasi import WasiHostContext
+        from tier3_platform.drivers.wasi.context import WasiHostContext
 
         host = WasiHostContext(sysv, guest_memory=bytearray(64))
         virq_register = host.get_handler_for_import("fireball", "virq_register")
@@ -320,12 +322,12 @@ def test_syscall_06_ipc_lookup_send_recv():
 
 
 def test_syscall_07_wasi_fd_write():
-    """TEST-SYS-80: WASI_FD_WRITE writes single iovec to UART stdout and reports written bytes."""
+    """TEST-SYS-80: WASI_FD_WRITE writes one iovec to standard output and reports its size."""
     sysv = System()
     sysv.start_runtime_task(name="test_runtime_task")
     try:
-        from dummy_drivers import DummyDriver
-        from wasi import WasiHostContext
+        from tier3_platform.drivers.hal.dummy import DummyDriver
+        from tier3_platform.drivers.wasi.context import WasiHostContext
 
         guest_mem = bytearray(64)
         message = b"hello from wasm\n"
@@ -348,8 +350,8 @@ def test_wasi_01_fd_write_scatter_gather():
     sysv = System()
     sysv.start_runtime_task(name="test_runtime_task")
     try:
-        from dummy_drivers import DummyDriver
-        from wasi import WasiHostContext
+        from tier3_platform.drivers.hal.dummy import DummyDriver
+        from tier3_platform.drivers.wasi.context import WasiHostContext
 
         guest_mem = bytearray(128)
         chunk1 = b"FIREBALL_"
@@ -379,7 +381,7 @@ def test_wasi_01b_fd_write_prevalidates_all_iovecs():
     sysv = System()
     sysv.start_runtime_task(name="test_runtime_task")
     try:
-        from wasi import WasiHostContext
+        from tier3_platform.drivers.wasi.context import WasiHostContext
 
         guest_mem = bytearray(128)
         guest_mem[32:35] = b"bad"
@@ -397,11 +399,13 @@ def test_wasi_01b_fd_write_prevalidates_all_iovecs():
 
 def test_wasi_02_fd_read_eof():
     """TEST-SYS-81: WASI_FD_READ reports 0 bytes read (EOF) without crashing."""
-    sysv = System()
+    backend = UvwasiReferenceContext()
+    backend.stdin_pos = len(backend.stdin_buffer)
+    sysv = System(drivers=create_reference_platform_drivers(backend))
     sysv.start_runtime_task(name="test_runtime_task")
     try:
-        from dummy_drivers import DummyDriver
-        from wasi import WasiHostContext
+        from tier3_platform.drivers.hal.dummy import DummyDriver
+        from tier3_platform.drivers.wasi.context import WasiHostContext
 
         guest_mem = bytearray(64)
         struct.pack_into("<II", guest_mem, 0, 16, 32)
@@ -417,10 +421,13 @@ def test_wasi_02_fd_read_eof():
 
 
 def test_wasi_03_fd_close():
-    """TEST-SYS-82: WASI_FD_CLOSE returns SUCCESS for any fd."""
-    sysv = System()
+    """TEST-SYS-82: WASI_FD_CLOSE closes a uvwasi-managed descriptor."""
+    from tier3_platform.drivers.wasi.context import WasiHostContext
+
+    sysv = System(drivers=create_reference_platform_drivers())
     sysv.start_runtime_task(name="test_runtime_task")
     try:
+        WasiHostContext(sysv, guest_memory=bytearray(64))
         assert sysv.fireball_call(FbSyscallId.WASI_FD_CLOSE, 3, 0, 0, 0, 0, 0) == WasiErrno.SUCCESS
     finally:
         sysv.shutdown()
@@ -428,11 +435,13 @@ def test_wasi_03_fd_close():
 
 def test_wasi_04_clock_time_get_monotonic():
     """TEST-SYS-83: WASI_CLOCK_TIME_GET writes monotonic 64-bit nanosecond timestamp to guest memory."""
-    sysv = System()
+    from tier3_platform.drivers.wasi.context import WasiHostContext
+
+    sysv = System(drivers=create_reference_platform_drivers())
     sysv.start_runtime_task(name="test_runtime_task")
     try:
         guest_mem = bytearray(64)
-        sysv.bind_runtime(guest_mem)
+        WasiHostContext(sysv, guest_memory=guest_mem)
         assert (
             sysv.fireball_call(FbSyscallId.WASI_CLOCK_TIME_GET, 0, 0, 16, 0, 0, 0)
             == WasiErrno.SUCCESS
@@ -467,11 +476,13 @@ def test_wasi_05_proc_exit():
 
 def test_wasi_06_random_get():
     """TEST-SYS-85: WASI_RANDOM_GET fills guest buffer with cryptographically secure random bytes."""
-    sysv = System()
+    from tier3_platform.drivers.wasi.context import WasiHostContext
+
+    sysv = System(drivers=create_reference_platform_drivers())
     sysv.start_runtime_task(name="test_runtime_task")
     try:
         guest_mem = bytearray(64)
-        sysv.bind_runtime(guest_mem)
+        WasiHostContext(sysv, guest_memory=guest_mem)
         assert (
             sysv.fireball_call(FbSyscallId.WASI_RANDOM_GET, 8, 16, 0, 0, 0, 0) == WasiErrno.SUCCESS
         )
@@ -484,10 +495,10 @@ def test_wasi_06_random_get():
 
 def test_wasi_07_invalid_fd_returns_badf():
     """TEST-SYS-91: WASI_FD_WRITE to invalid fd (e.g. fd=99) returns EBADF."""
-    sysv = System()
+    sysv = System(drivers=create_reference_platform_drivers())
     sysv.start_runtime_task(name="test_runtime_task")
     try:
-        from wasi import WasiHostContext
+        from tier3_platform.drivers.wasi.context import WasiHostContext
 
         guest_mem = bytearray(64)
         struct.pack_into("<II", guest_mem, 0, 16, 8)
@@ -503,7 +514,7 @@ def test_wasi_08_out_of_bounds_offset_returns_fault():
     sysv = System()
     sysv.start_runtime_task(name="test_runtime_task")
     try:
-        from wasi import WasiHostContext
+        from tier3_platform.drivers.wasi.context import WasiHostContext
 
         guest_mem = bytearray(64)
         WasiHostContext(sysv, guest_memory=guest_mem)
@@ -516,7 +527,7 @@ def test_wasi_08_out_of_bounds_offset_returns_fault():
 
 def test_wasi_jit_trampoline_invokes_the_registered_handler():
     """The JIT trampoline resolves and invokes the same WASI host handler."""
-    from wasi import WasiHostContext
+    from tier3_platform.drivers.wasi.context import WasiHostContext
     from wasm_reader import parse
 
     module = parse(

@@ -43,19 +43,19 @@ for _p in [
     if _sp not in sys.path:
         sys.path.insert(0, _sp)
 
-from dummy_drivers import DummyDriver
+from tier3_platform.drivers.hal.dummy import DummyDriver
 from tier3_executer.interpreter.interpreter import Interpreter, InterpreterBindings
 from tier3_executer.jit.jit_runtime import JITInterpreter
 from ipc_router import DataType, IPCMessage, IPCRouter, IPCStatus, Role, ScopeKind, pack_key32
 from tier2_runtime.logger import LogDictionary, Logger, LogLevel
-from file_log_sink import FileLogSink
+from tier3_platform.drivers.logging.file_sink import FileLogSink
 from memory import FB_CONF_MEMORY_POOL_SIZE, MemoryManager
 from runtime_engine import RuntimeEngine
 from tier3_executer.jit.jit_manager import JITRuntimeManager
 from scheduler import ChannelAction, Scheduler
 from system import System
 from system_containers import StaticVector
-from wasi import WasiHostContext
+from tier3_platform.drivers.wasi.context import WasiHostContext
 from wasm_module import Module
 from wasm_reader import parse
 from tier3_executer.jit.x64_jit import TraceCompiler

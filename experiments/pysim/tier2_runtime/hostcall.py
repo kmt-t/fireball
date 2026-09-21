@@ -74,7 +74,7 @@ class VirqRegistrationPort(Protocol):
 
 
 class WasiPreview1Host(Protocol):
-    """Narrow callback surface used by generic WASI syscall handlers."""
+    """Preview 1 callback surface used by the Fireball host-call handlers."""
 
     __slots__ = ()
 
@@ -83,6 +83,18 @@ class WasiPreview1Host(Protocol):
 
     def fd_read(self, fd: int, iovs_ptr: int, iovs_len: int, nread_ptr: int) -> int:
         """Handle one Preview 1 fd_read import."""
+
+    def fd_close(self, fd: int) -> int:
+        """Handle one Preview 1 fd_close import."""
+
+    def clock_time_get(self, clock_id: int, precision: int, time_ptr: int) -> int:
+        """Handle one Preview 1 clock_time_get import."""
+
+    def proc_exit(self, exit_code: int) -> int:
+        """Handle one Preview 1 proc_exit import."""
+
+    def random_get(self, buf_ptr: int, buf_len: int) -> int:
+        """Handle one Preview 1 random_get import."""
 
 
 class FireballHostCallPort(Protocol):

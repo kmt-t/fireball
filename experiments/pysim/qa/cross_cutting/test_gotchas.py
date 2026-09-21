@@ -72,7 +72,7 @@ from tier3_executer.jit.jit_cache import CardState, JITMultiBufferCache, JITTrac
 from tier3_executer.jit.jit_manager import JITRuntimeManager
 from runtime_test_driver import RuntimeEngineDebugDriver
 from scheduler import ChannelAction, Scheduler, Task, WaitDir
-from stream_transport import StreamTransport
+from tier3_platform.drivers.hal.stream import StreamTransport
 from system import System, WasiErrno
 from system_containers import BitView, MutableFlatMapStorage, ReadOnlyFlatMapView, StaticVector
 

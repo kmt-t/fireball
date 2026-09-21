@@ -39,10 +39,10 @@ try:
 except ImportError:
     wasmtime = None
 
-from dummy_drivers import DummyDriver
+from tier3_platform.drivers.hal.dummy import DummyDriver
 from tier3_executer.interpreter.interpreter_cps import BACKEND, NATIVE_AVAILABLE, Interpreter, InterpreterBindings
 from system import System
-from wasi import WasiHostContext
+from tier3_platform.drivers.wasi.context import WasiHostContext
 from wasm_reader import parse
 
 # ---------------------------------------------------------------------------

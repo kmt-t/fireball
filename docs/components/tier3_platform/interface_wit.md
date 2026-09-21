@@ -18,7 +18,7 @@
 - **URI Resolver メソッド**: `resolver.get-interface(uri: string)` により、URI 文字列からインターフェースハンドルを取得可能とする。個別デバイスの WIT リソース型は存在しない——ハンドルに対する操作はすべて IPC コマンドID経由で行う。
 - **HALバッファプール（vMMIO/DYNAMIC）ゼロコピー I/O**: デバイス通信のデータ送受信は、Runtimeが`bind_runtime`でマップした固定スロット（vMMIO/DYNAMIC 領域の `hal-buffer-slice`）を通じてゼロコピー／極低レイテンシで実行される。 `{META_RestrictedPhysicalAccess}`
 - **IPC 宛先 URI と階層命名規則**: URI は、`fireball://hal/<type>/<instance>`（例: `fireball://hal/uart/0`, `fireball://hal/gpio/0`, `fireball://hal/timer/0`, `fireball://hal/i2c/0`, `fireball://hal/stdout/0`）の**階層型 URI 命名規則**に従い、**IPC ルータ（`ipc_router`）でHALサブシステムと通信するための宛先 URI** として機能する。
-- **WASI 0.1p 互換ラッパー (Adapter Pattern)**: 既存の WASI Preview 1 (`fd_write`, `fd_read`, `clock_time_get`, `proc_exit` 等) は、Tier 3ゲストアダプタが上記の URI Resolver + HALバッファプール機構へ変換する。
+- **WASI 0.1p 互換ラッパー (Adapter Pattern)**: WASI Preview 1 の標準出力とログ出力は、Tier 3ゲストアダプタが上記の URI Resolver + HALバッファプール機構へ変換する。その他の Preview 1 操作は Tier 3 の uvwasi ドライバへ委譲し、`proc_exit` は Fireball host call でランタイムへ通知する。
 - **Stateless Interface**: リソースハンドルを通じた操作を行い、ホスト側で状態を管理する。
 
 ## 3. 共通データ構造
@@ -166,7 +166,7 @@ GPIO のような割り込み応答性・ビットバンギング等の要求か
 
 標準入出力の物理出力はHALドライバが担当する。ドライバはHAL固定スロットを読み取り、注入された物理トランスポートへ出力する。内部ロガーとは辞書・リングバッファを経由しない別経路であり、両者は排他的に出力順序が保証されるわけではない（インターリーブし得る）。
 
-ゲスト側アダプタが `fireball_call(WASI_FD_WRITE, ...)`（`runtime_syscall.md` 正本）を発行し、ゲストの `print`/`eprint` 呼び出しをこの `fireball://hal/stdout/0` 経路へ変換する。ホスト側のディスパッチとHAL操作は、それぞれ `runtime_syscall.md` と `hal_dispatch.md` の契約に従う。
+ゲスト側アダプタが `fireball_call(WASI_FD_WRITE, ...)`（`runtime_syscall.md` 正本）を発行し、ゲストの `print` 呼び出しをこの `fireball://hal/stdout/0` 経路へ変換する。`eprint` は Fireball logger sink へ分離する。`fd_read`、`fd_close`、`clock_time_get`、`random_get` および標準出力・ログ以外の `fd_write` は uvwasi ドライバへ委譲する。ホスト側のディスパッチとHAL操作は、それぞれ `runtime_syscall.md` と `hal_dispatch.md` の契約に従う。
 
 ## 6. 非同期通知メカニズム
 

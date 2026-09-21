@@ -43,7 +43,7 @@ from ipc_router import (
 from tier2_runtime.logger import LogDictionary, Logger, LogLevel
 from memory import FB_CONF_MEMORY_POOL_SIZE, MemoryManager
 from scheduler import Scheduler
-from stream_transport import StreamTransport
+from tier3_platform.drivers.hal.stream import StreamTransport
 
 # kv_pair key_ids (ipc_router.md §3.3): Functional scope, UINT32 values.
 _KEY_CMD = pack_key32(ScopeKind.FUNCTIONAL, DataType.UINT32, key_id=1)

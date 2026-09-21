@@ -12,7 +12,7 @@ from hal_dispatch import (
     HalDriver,
     WasiIpcCmd,
 )
-from stream_transport import StreamTransport
+from tier3_platform.drivers.hal.stream import StreamTransport
 from system_containers import ReadOnlyFlatMapView
 
 
@@ -101,3 +101,4 @@ class DummyDriver(HalDriver):
 
     def _get_resolution(self, params: ReadOnlyFlatMapView) -> int:
         return 1_000_000
+

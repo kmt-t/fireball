@@ -19,9 +19,7 @@ logger is internal-only).
 
 from __future__ import annotations
 
-import os
 import struct
-import time
 from collections.abc import Mapping
 from typing import TYPE_CHECKING
 
@@ -56,7 +54,10 @@ from memory import (
 )
 from runtime_engine import DispatchResult, RuntimeEngine
 from scheduler import FB_CONF_MAX_TASKS, Channel, Scheduler, Task, TaskState
-from stream_transport import StreamTransport
+from tier3_platform.drivers.platform_config import (
+    PlatformDriverConfiguration,
+    create_default_platform_drivers,
+)
 from system_containers import MutableFlatMapStorage, ReadOnlyFlatMapStorage, StaticVector
 from vmmio import (
     FC_STATIC_DEVICE,
@@ -65,7 +66,6 @@ from vmmio import (
     VMMIOController,
     VmmioStatus,
 )
-from wasi_hal_bindings import DEFAULT_WASI_HAL_BINDINGS
 from wasm_module import BasicBlock
 
 
@@ -86,12 +86,17 @@ class System:
         (reused from ipc_router_concept.py) with its fixed 3-service registry.
     """
 
-    def __init__(self, logger_transport: StreamSink | None = None):
-        self.wasi_hal_bindings = DEFAULT_WASI_HAL_BINDINGS
-        self.transport = StreamTransport()
+    def __init__(
+        self,
+        logger_transport: StreamSink | None = None,
+        drivers: PlatformDriverConfiguration | None = None,
+    ):
+        self.drivers = drivers if drivers is not None else create_default_platform_drivers(logger_transport)
+        self.wasi_hal_bindings = self.drivers.wasi_hal_bindings
+        self.wasi_backend = self.drivers.wasi_backend
+        self.transport = self.drivers.stdout_transport
         self.dictionary = LogDictionary()
-        log_transport = logger_transport if logger_transport is not None else self.transport
-        self.logger = Logger(log_transport, self.dictionary, min_level=LogLevel.DEBUG)
+        self.logger = Logger(self.drivers.logger_transport, self.dictionary, min_level=LogLevel.DEBUG)
         self.scheduler = Scheduler(logger=self.logger)
         # --- vMMIO: real FlatMap+TLB dispatch, this file's own byte
         # storage behind it (vmmio_concept.access() deliberately stops at the
@@ -212,7 +217,7 @@ class System:
             ),
             (
                 FbSyscallId.WASI_CLOCK_TIME_GET,
-                lambda a0, a1, a2, a3, a4, a5: int(self._wasi_clock_time_get(a2)),
+                lambda a0, a1, a2, a3, a4, a5: int(self._wasi_clock_time_get(a0, a1, a2)),
             ),
             (
                 FbSyscallId.WASI_PROC_EXIT,
@@ -579,15 +584,12 @@ class System:
         return WasiErrno(result)
 
     def _wasi_fd_close(self, fd: int) -> WasiErrno:
-        return WasiErrno.SUCCESS
+        assert self.wasi_context is not None, "WASI fd_close requires a bound WASI context"
+        return WasiErrno(self.wasi_context.fd_close(fd))
 
-    def _wasi_clock_time_get(self, time_ptr: int) -> WasiErrno:
-        # wasi:clocks/monotonic-clock (interface_wit.md 5.1/5.6): backed by
-        # the real host monotonic clock, same as hal.py's Timer.
-        now_ns = time.monotonic_ns()
-        if not self._write_guest(time_ptr, struct.pack("<Q", now_ns)):
-            return WasiErrno.FAULT
-        return WasiErrno.SUCCESS
+    def _wasi_clock_time_get(self, clock_id: int, precision: int, time_ptr: int) -> WasiErrno:
+        assert self.wasi_context is not None, "WASI clock_time_get requires a bound WASI context"
+        return WasiErrno(self.wasi_context.clock_time_get(clock_id, precision, time_ptr))
 
     def _wasi_proc_exit(self, exit_code: int) -> WasiErrno:
         self.halted = True
@@ -595,10 +597,8 @@ class System:
         return WasiErrno.SUCCESS
 
     def _wasi_random_get(self, buf_ptr: int, buf_len: int) -> WasiErrno:
-        data = os.urandom(buf_len)
-        if not self._write_guest(buf_ptr, data):
-            return WasiErrno.FAULT
-        return WasiErrno.SUCCESS
+        assert self.wasi_context is not None, "WASI random_get requires a bound WASI context"
+        return WasiErrno(self.wasi_context.random_get(buf_ptr, buf_len))
 
     def start_hal_driver(self, driver: HalDriver) -> int:
         """Registers and starts one driver-owned HAL device task."""
@@ -653,4 +653,5 @@ class System:
         for _, task in self._hal_task_index.entries:
             task.running = False
         self.pool.close_all()
+        self.wasi_backend.close()
         self.transport.close()

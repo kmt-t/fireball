@@ -1,0 +1,7 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -29,2 +29,2 @@
+-set(TARGET_TRIPLE "wasm32-wasip1" CACHE STRING "WASI target to test")
++set(TARGET_TRIPLE "wasm32-wasi" CACHE STRING "WASI target to test")
+ set(CMAKE_C_COMPILER_TARGET ${TARGET_TRIPLE})

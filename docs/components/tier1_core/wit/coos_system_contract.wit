@@ -81,7 +81,7 @@ interface scheduler {
     /// 実行権を自発的にスケジューラへ譲渡する
     yield-task: func();
 
-    /// 汎用割り込みイベントをISRコンテキストから固定長FIFOへ投函する
+    /// 汎用割り込みイベントをISRコンテキストから固定長ロックフリーFIFOへ投函する
     notify-interrupt: func(event: interrupt-event);
 
     /// アイドル時フックコールバックの登録（システムアイドル時のログフラッシュ等）

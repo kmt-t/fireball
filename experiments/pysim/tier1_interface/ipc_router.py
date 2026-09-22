@@ -23,7 +23,6 @@ from scheduler import (
     ChannelPayload,
     ChannelTransferMode,
     Scheduler,
-    Task,
     WaitDir,
 )
 from system_containers import ReadOnlyFlatMapView, StaticVector
@@ -38,6 +37,7 @@ LOG_EVT_IPC_CHANNEL_COLLISION = 0x0205
 # ipc_router.md {3.3}: a message is a static, fixed-size buffer of at most 8
 # kv_pair entries.
 FB_CONF_ROUTER_MAX_KV_PAIRS = 8
+IPC_RESPONSE_PENDING = 0xFFFF_FFFF
 
 # Canonical HAL endpoint URIs. The registry and upper runtime layers import
 # these constants instead of duplicating endpoint spelling.
@@ -47,7 +47,6 @@ FB_URI_HAL_TIMER = "fireball://hal/timer/0"
 FB_URI_HAL_GPIO = "fireball://hal/gpio/0"
 FB_URI_HAL_I2C = "fireball://hal/i2c/0"
 FB_URI_HAL_SPI = "fireball://hal/spi/0"
-FB_URI_HAL_LOGGER = "fireball://hal/logger/0"
 
 
 class ScopeKind(IntEnum):
@@ -99,15 +98,9 @@ class Role(IntEnum):
     can be plain constexpr-style arrays indexed by role value instead of a
     hash map.
 
-    Each HAL_* role is bound to exactly one endpoint instance and one
-    dedicated receiver task (ipc_router.md {ISR_Safety} + "1 channel = 1 waiter"):
-    a single shared PLATFORM_HAL role could not distinguish which of several
-    same-type endpoint instances a message was meant for,
-    since only the receiving task's role -- not the URI -- selects a channel.
-    Multiple URIs MAY alias the same role when they are genuinely the same
-    physical endpoint; the registry below is a URI -> Role table, not
-    1:1, so aliasing one role to several URIs is a matter of adding rows,
-    not restructuring this enum.
+    Role identifies only the device kind.  The URI registry identifies the
+    configured device instance; an instance ID is never encoded into this
+    enum or into the RBAC matrix.
     """
 
     RUNTIME = 0
@@ -119,21 +112,25 @@ class Role(IntEnum):
     HAL_I2C = 6
     HAL_SPI = 7
     DEBUGGER = 8
-    HAL_LOGGER = 9
 
 
 class ServiceDescriptor(tuple):
-    """registry_entry (ipc_router.md §3.3): a service's security role. The
+    """registry_entry: device kind plus its configured instance ID. The
     listening channel is not a single fixed ID here -- each (sender_role,
     this role) edge of the RBAC DAG gets its own dedicated CSP channel (see
     _EDGE_CHANNEL_NAMES), since a Channel is a strict 1:1 pairing."""
 
-    def __new__(cls, role: Role):
-        return super().__new__(cls, (role,))
+    def __new__(cls, role: Role, device_id: int = 0):
+        assert device_id >= 0
+        return super().__new__(cls, (role, device_id))
 
     @property
     def role(self) -> Role:
         return self[0]
+
+    @property
+    def device_id(self) -> int:
+        return self[1]
 
 
 class OwnershipState(IntEnum):
@@ -165,10 +162,74 @@ class IPCMessage:
     def __init__(
         self,
         block: SharedBlock | None = None,
+        *,
+        memory_manager: MemoryManager | None = None,
     ):
         self.ownership = OwnershipState.SENDER_OWNS
         self._block: SharedBlock | None = block
+        self._memory_manager = memory_manager
         self._in_flight_shm_id: int | None = None
+        self._in_flight_resource_ids: StaticVector[int] = StaticVector(
+            capacity=FB_CONF_ROUTER_MAX_KV_PAIRS
+        )
+        self._sender_id = IPC_RESPONSE_PENDING
+        self._response_code = IPC_RESPONSE_PENDING
+        self._reply_channel: Channel | None = None
+
+    def stamp_sender(self, sender_id: int) -> None:
+        """Stamp the scheduler TCB and revoke all sender SHM access."""
+        assert sender_id > 0, "IPC sender task IDs must be positive"
+        assert self.ownership == OwnershipState.SENDER_OWNS
+        assert self._reply_channel is None, "message is still bound to a reply channel"
+        self._prepare_shared_transfer()
+        self._sender_id = sender_id
+        self._response_code = IPC_RESPONSE_PENDING
+        self.ownership = OwnershipState.IN_FLIGHT
+
+    def prepare_reply(self) -> None:
+        """Revoke receiver SHM access before the scheduler returns the reply."""
+        assert self.ownership == OwnershipState.RECEIVER_OWNS
+        self._prepare_shared_transfer()
+        self.ownership = OwnershipState.IN_FLIGHT
+
+    def _prepare_shared_transfer(self) -> None:
+        """Move the message and embedded resource pages into scheduler flight."""
+        assert self._memory_manager is not None, "IPC transfer requires a memory manager"
+        entries = self.entries
+        self._in_flight_resource_ids.clear()
+        if self._block is not None:
+            released_shm_id = self._block.release()
+            assert released_shm_id >= 0, "message SharedBlock must belong to current task"
+            self._in_flight_shm_id = released_shm_id
+        for key, value in entries:
+            scope, _, _ = unpack_key32(key)
+            if scope == ScopeKind.RESOURCE and value >= 0:
+                assert self._memory_manager.revoke_shared(value), (
+                    "RESOURCE handle must be backed by an allocated SHM block"
+                )
+                self._in_flight_resource_ids.append(value)
+
+    @property
+    def sender_id(self) -> int:
+        """Return the scheduler-authenticated sender TCB ID."""
+        self._check_ownership()
+        assert self._sender_id != IPC_RESPONSE_PENDING, "message has not been sent"
+        return self._sender_id
+
+    @property
+    def response_code(self) -> int:
+        """Return the receiver's response code after a reply is available."""
+        self._check_ownership()
+        return self._response_code
+
+    def set_response_code(self, response_code: int) -> None:
+        """Set a non-pending response code while the receiver owns the message."""
+        self._check_ownership()
+        assert self.ownership == OwnershipState.RECEIVER_OWNS, (
+            "only the receiver may set an IPC response code"
+        )
+        assert 0 <= response_code < IPC_RESPONSE_PENDING
+        self._response_code = response_code
 
     def _check_ownership(self) -> None:
         """Ensures the caller task/context currently holds ownership of the message."""
@@ -178,11 +239,21 @@ class IPCMessage:
         ), f"Cannot access IPCMessage entries while ownership is {self.ownership.name}!"
 
     def move_to(self, new_owner: int) -> IPCMessage | None:
-        """Complete the explicit CSP move phase for an in-flight message."""
+        """Grant message and embedded resource pages to the scheduler target TCB."""
         valid = self.ownership == OwnershipState.IN_FLIGHT and new_owner > 0
         assert valid
         if not valid:
             return None
+        assert self._memory_manager is not None, "IPC transfer requires a memory manager"
+        if self._in_flight_shm_id is not None:
+            assert self._memory_manager.grant_shared(self._in_flight_shm_id)
+            result = self._memory_manager.claim(self._in_flight_shm_id)
+            assert not result.is_err, "message SharedBlock grant must be claimable"
+            self._block = result.unwrap()
+            self._in_flight_shm_id = None
+        for shm_id in self._in_flight_resource_ids:
+            assert self._memory_manager.grant_shared(shm_id)
+        self._in_flight_resource_ids.clear()
         return self
 
     @property
@@ -237,7 +308,7 @@ class IPCMessage:
             "test callers must construct the adapter on the test side"
         )
         sb = memory_manager.allocate_shared(size=256).unwrap()
-        msg = cls(sb)
+        msg = cls(sb, memory_manager=memory_manager)
         if entries:
             msg.write_entries(entries)
         return msg
@@ -345,18 +416,13 @@ def kv_entries_to_bytes(entries: Sequence[tuple[int, int]], max_len: int | None 
 # used as the flat_map_view key directly (no hashing): std::string_view
 # comparison is a bounded, allocation-free lexicographic compare.
 #
-# URI -> Role is many-to-one, not 1:1: "fireball://hal/uart/0" and
-# "fireball://hal/stdout/0" and "fireball://hal/logger/0" are kept on distinct
-# HAL_UART/HAL_STDOUT/HAL_LOGGER roles here because each URI resolves to an
-# independent endpoint instance;
-# an implementation may alias a URI only when it intentionally shares the
-# same endpoint instance, without changing the routing table shape.
+# URI -> Role is many-to-one.  Role identifies only the device kind; the URI
+# identifies the configured endpoint instance.
 _SERVICE_ENTRIES: tuple[tuple[str, "ServiceDescriptor"], ...] = (
     ("fireball://core/coos/0", ServiceDescriptor(Role.CORE_SERVICE)),
     ("fireball://dbg/manager/0", ServiceDescriptor(Role.DEBUGGER)),
     (FB_URI_HAL_GPIO, ServiceDescriptor(Role.HAL_GPIO)),
     (FB_URI_HAL_I2C, ServiceDescriptor(Role.HAL_I2C)),
-    (FB_URI_HAL_LOGGER, ServiceDescriptor(Role.HAL_LOGGER)),
     (FB_URI_HAL_SPI, ServiceDescriptor(Role.HAL_SPI)),
     (FB_URI_HAL_STDOUT, ServiceDescriptor(Role.HAL_STDOUT)),
     (FB_URI_HAL_TIMER, ServiceDescriptor(Role.HAL_TIMER)),
@@ -378,7 +444,6 @@ _HAL_ROLES: tuple[Role, ...] = (
     Role.HAL_TIMER,
     Role.HAL_I2C,
     Role.HAL_SPI,
-    Role.HAL_LOGGER,
 )
 
 
@@ -399,7 +464,6 @@ FB_CONF_ROUTER_ROLE_MATRIX: tuple[StaticVector[bool], ...] = (
             Role.HAL_TIMER,
             Role.HAL_I2C,
             Role.HAL_SPI,
-            Role.HAL_LOGGER,
         )
     ),  # from RUNTIME
     _role_row(_HAL_ROLES),  # from CORE_SERVICE
@@ -418,26 +482,24 @@ FB_CONF_ROUTER_ROLE_MATRIX: tuple[StaticVector[bool], ...] = (
             Role.HAL_TIMER,
             Role.HAL_I2C,
             Role.HAL_SPI,
-            Role.HAL_LOGGER,
         )
     ),  # from DEBUGGER
-    _role_row(()),  # from HAL_LOGGER (leaf)
 )
 
 
 class IPCStatus(IntEnum):
     """
-    Outcome of IPCRouter.send()/recv(). Blocking is never part of this
-    vocabulary: send()/recv() are generators that wait out a CSP block
-    internally (see their docstrings) and only ever finish with COMPLETED or
-    one of Stage 1/2's own rejections -- a caller never has to ask "did this
-    block" any more than a normal blocking syscall makes its caller ask that.
+    Outcome of IPCRouter.send()/recv()/reply(). A successful send means that
+    the request rendezvous and its response rendezvous both completed. The
+    sender remains suspended between those two scheduler events.
     """
 
     COMPLETED = 0
     ERR_NOT_FOUND = 1
     ERR_PERMISSION_DENIED = 2
     ERR_MSG_TOO_LARGE = 3
+    ERR_INVALID_OWNERSHIP = 4
+    ERR_INVALID_RESPONSE = 5
 
 
 class IPCRouter:
@@ -458,25 +520,27 @@ class IPCRouter:
         # Non-owning view borrowing ROM-resident AoS storage array (_SERVICE_ENTRIES)
         self.registry = ReadOnlyFlatMapView(_SERVICE_ENTRIES)
 
-        # Pre-allocate one dedicated CSP rendezvous channel per allowed edge in the RBAC matrix
-        self._edge_channels: StaticVector[StaticVector[Channel | None]] = StaticVector(
-            capacity=len(FB_CONF_ROUTER_ROLE_MATRIX)
+        # Pre-allocate one dedicated CSP rendezvous channel per allowed
+        # (sender role, destination URI) edge. Role is only the device kind;
+        # the service handle keeps same-kind instances isolated.
+        self._service_channels: StaticVector[StaticVector[Channel | None]] = StaticVector(
+            capacity=len(_SERVICE_ENTRIES)
         )
-        for row in FB_CONF_ROUTER_ROLE_MATRIX:
-            channels: StaticVector[Channel | None] = StaticVector(capacity=len(row))
-            for allowed in row:
+        for _uri, descriptor in _SERVICE_ENTRIES:
+            channels: StaticVector[Channel | None] = StaticVector(capacity=len(Role))
+            for sender_role in Role:
+                allowed = FB_CONF_ROUTER_ROLE_MATRIX[int(sender_role)][int(descriptor.role)]
                 channels.append(
-                    self.scheduler.create_channel(transfer_mode=ChannelTransferMode.MOVABLE)
+                    self.scheduler.create_channel(
+                        transfer_mode=ChannelTransferMode.MOVABLE,
+                        sender_stamper=IPCMessage.stamp_sender,
+                        reply_stamper=IPCMessage.prepare_reply,
+                        request_reply=True,
+                    )
                     if allowed
                     else None
                 )
-            self._edge_channels.append(channels)
-
-    def _grant_for_task(self, shm_id: int, task: Task) -> bool:
-        """Run the grant under the scheduler-selected receiver context."""
-        assert task is not None, "Grant requires a scheduler-registered receiver"
-        with self.scheduler.task_context(task):
-            return self.memory_manager.grant_shared(shm_id)
+            self._service_channels.append(channels)
 
     def lookup_service_handle(self, uri: str) -> int:
         """Resolves URI to integer service handle via ReadOnlyFlatMapView binary search (O(log N))."""
@@ -494,8 +558,11 @@ class IPCRouter:
         return self.get_service_descriptor(handle)
 
     def channel_for_edge(self, sender_role: Role, target_role: Role) -> Channel | None:
-        """The dedicated CSP Channel for one specific (sender_role, target_role) RBAC edge."""
-        return self._edge_channels[int(sender_role)][int(target_role)]
+        """Return the first configured instance channel for compatibility with unit probes."""
+        for service_handle, (_uri, descriptor) in enumerate(_SERVICE_ENTRIES):
+            if descriptor.role == target_role:
+                return self._service_channels[service_handle][int(sender_role)]
+        return None
 
     def lookup(self, destination_uri: str) -> tuple[IPCStatus, Channel | None]:
         """
@@ -528,7 +595,7 @@ class IPCRouter:
                 )
             return (IPCStatus.ERR_PERMISSION_DENIED, None)
 
-        return (IPCStatus.COMPLETED, self._edge_channels[int(sender_role)][int(desc.role)])
+        return (IPCStatus.COMPLETED, self._service_channels[handle][int(sender_role)])
 
     def create_channel(
         self,
@@ -543,19 +610,21 @@ class IPCRouter:
 
     def send(
         self, channel: Channel, message: IPCMessage
-    ) -> Generator[tuple[ChannelAction, None], None, tuple[IPCStatus, ChannelPayload | None]]:
+    ) -> Generator[tuple[ChannelAction, None], None, tuple[IPCStatus, IPCMessage | None]]:
         """
-        Stage 3: synchronous CSP send on the pre-authorized Channel object.
+        Stage 3: synchronous CSP request/reply on the pre-authorized Channel.
         Zero-copy: `message` itself is never duplicated, only its `ownership`
-        flag and reference move.
+        flag and reference move. The sender remains blocked until the receiver
+        replies with the same message object.
         Caller role is verified against the channel's allowed edges.
         """
         current = self.scheduler.current_task
         assert current is not None, "IPC send requires an active scheduler task"
         sender_role = Role(current.role)
         channel_allowed = False
-        for allowed_channel in self._edge_channels[int(sender_role)]:
-            if allowed_channel is not None and allowed_channel is channel:
+        for service_channels in self._service_channels:
+            allowed_channel = service_channels[int(sender_role)]
+            if allowed_channel is channel:
                 channel_allowed = True
                 break
         if not channel_allowed:
@@ -570,7 +639,7 @@ class IPCRouter:
                 )
             return (
                 IPCStatus.ERR_PERMISSION_DENIED,
-                f"Role {sender_role.name} not authorized to send on this channel",
+                None,
             )
 
         if message.ownership != OwnershipState.SENDER_OWNS:
@@ -598,60 +667,29 @@ class IPCRouter:
                 )
             return (
                 IPCStatus.ERR_MSG_TOO_LARGE,
-                f"message has {len(message)} KV pairs, exceeds {FB_CONF_ROUTER_MAX_KV_PAIRS}",
+                None,
             )
 
-        # Synchronous CSP send directly on the Channel endpoint
-        entries_to_grant = message.entries
-
-        # Revoke phase: prepare message's own SharedBlock and any entry-embedded shm_id for transfer
-        if message._block is not None:
-            released_shm_id = message._block.release()
-            if released_shm_id < 0:
-                return (
-                    IPCStatus.ERR_INVALID_OWNERSHIP,
-                    "message SharedBlock is not owned by the sending task",
-                )
-            message._in_flight_shm_id = released_shm_id
-
-        for k, val in entries_to_grant:
-            sk, _, _ = unpack_key32(k)
-            if sk == ScopeKind.RESOURCE and val >= 0:
-                slot = self.memory_manager.shm_slots.view().find(val)
-                if slot is not None and slot.allocated:
-                    assert self.memory_manager.revoke_shared(val), (
-                        "RESOURCE handle must be backed by an allocated SHM block"
-                    )
-
-        receiver_task = channel.waiter_task if channel.waiter_dir == WaitDir.RECV else None
-        message.ownership = OwnershipState.IN_FLIGHT
-        action, target = channel.send(message)
-        was_blocked = action == ChannelAction.BLOCK
-        if was_blocked:
+        assert channel.waiter_dir != WaitDir.SEND, (
+            "one waiter per channel: a second sender cannot overwrite a pending request"
+        )
+        assert channel.reply_sender_task is None and channel.reply_payload is None, (
+            "one request/reply transaction per channel"
+        )
+        action, _ = channel.send(message)
+        message._reply_channel = channel
+        if action == ChannelAction.BLOCK:
             yield (ChannelAction.BLOCK, None)
-        message.ownership = OwnershipState.RECEIVER_OWNS
 
-        # Grant phase: update PTE ownership and claim receiver-side SharedBlock
-        # A blocked sender has no authenticated receiver target yet. The receiver
-        # coroutine performs this phase after the rendezvous; repeating it here
-        # would overwrite the grant with an invented task id.
-        if not was_blocked:
-            recv_task = receiver_task
-            if recv_task is None and target is not None:
-                recv_task = self.scheduler.get_task(target)
-
-            if message._in_flight_shm_id is not None:
-                self._grant_for_task(message._in_flight_shm_id, recv_task)
-                # Keep the id until the receiver claims the newly granted
-                # block and replaces the released sender-side view.
-
-            # Grant any shm_id passed in entries (ScopeKind.RESOURCE)
-            for k, val in entries_to_grant:
-                sk, _, _ = unpack_key32(k)
-                if sk == ScopeKind.RESOURCE and val >= 0:
-                    self._grant_for_task(val, recv_task)
-
-        return (IPCStatus.COMPLETED, target)
+        response_action, response = channel.wait_reply()
+        if response_action == ChannelAction.BLOCK:
+            yield (ChannelAction.BLOCK, None)
+            response_action, response = channel.wait_reply()
+        assert response_action != ChannelAction.BLOCK
+        assert response is message, "CSP reply must return the original IPC message"
+        message._reply_channel = None
+        message.ownership = OwnershipState.SENDER_OWNS
+        return (IPCStatus.COMPLETED, message)
 
     def recv(
         self,
@@ -665,33 +703,52 @@ class IPCRouter:
         assert receiver is not None, "IPC receive requires an active scheduler task"
         current_role = Role(receiver.role)
 
-        channels: StaticVector[Channel] = StaticVector(capacity=len(Role))
-        for row in self._edge_channels:
-            ch = row[int(current_role)]
-            if ch is not None:
-                channels.append(ch)
+        channels: StaticVector[Channel] = StaticVector(capacity=len(_SERVICE_ENTRIES))
+        if receiver.service_handle is not None:
+            assert 0 <= receiver.service_handle < len(_SERVICE_ENTRIES)
+            service_channels = self._service_channels[receiver.service_handle]
+            for sender_role in Role:
+                ch = service_channels[int(sender_role)]
+                if ch is not None:
+                    channels.append(ch)
+        else:
+            for service_handle, (_uri, descriptor) in enumerate(_SERVICE_ENTRIES):
+                if descriptor.role != current_role:
+                    continue
+                service_channels = self._service_channels[service_handle]
+                for sender_role in Role:
+                    ch = service_channels[int(sender_role)]
+                    if ch is not None:
+                        channels.append(ch)
         if len(channels) == 0:
             return (IPCStatus.ERR_PERMISSION_DENIED, None)
 
-        action, target = self.scheduler.channel_select_recv(channels)
+        action, _ = self.scheduler.channel_select_recv(channels)
         if action == ChannelAction.BLOCK:
             yield (ChannelAction.BLOCK, None)
         message: IPCMessage = receiver.received_val
         receiver.received_val = None
         message.ownership = OwnershipState.RECEIVER_OWNS
-
-        # Grant phase: if message's own SHM block or entry-embedded shm_id are present, grant to receiver
-        if message._in_flight_shm_id is not None:
-            self.memory_manager.grant_shared(message._in_flight_shm_id)
-            res = self.memory_manager.claim(message._in_flight_shm_id)
-            if not res.is_err:
-                message._block = res.unwrap()
-            message._in_flight_shm_id = None
-
-        # Grant any shm_id passed in entries (ScopeKind.RESOURCE)
-        for k, val in message.entries:
-            sk, _, _ = unpack_key32(k)
-            if sk == ScopeKind.RESOURCE and val >= 0:
-                self.memory_manager.grant_shared(val)
+        assert self.scheduler.get_task(message.sender_id) is not None, (
+            "IPC sender TCB must remain registered during a request"
+        )
 
         return (IPCStatus.COMPLETED, message)
+
+    def reply(
+        self, message: IPCMessage, response_code: int | None = None
+    ) -> IPCStatus:
+        """Return the received message, optionally extended, to its sender."""
+        receiver = self.scheduler.current_task
+        assert receiver is not None, "IPC reply requires an active scheduler task"
+        assert message.ownership == OwnershipState.RECEIVER_OWNS
+        assert message._reply_channel is not None, "message is not awaiting a reply"
+        assert message.sender_id != receiver.task_id, "a task cannot reply to itself"
+        if response_code is not None:
+            message.set_response_code(response_code)
+        assert message.response_code != IPC_RESPONSE_PENDING, (
+            "receiver must set a response code before replying"
+        )
+        channel = message._reply_channel
+        channel.reply(message)
+        return IPCStatus.COMPLETED

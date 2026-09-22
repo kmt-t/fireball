@@ -34,7 +34,14 @@ for _p in [
 
 from helpers import expect_assertion
 from interrupt_event import InterruptEvent
-from scheduler import ChannelAction, Scheduler, Task, TaskState, WaitDir
+from scheduler import (
+    ChannelAction,
+    LockFreeInterruptEventQueue,
+    Scheduler,
+    Task,
+    TaskState,
+    WaitDir,
+)
 
 
 def _activate_task(scheduler: Scheduler, task: Task) -> None:
@@ -195,6 +202,23 @@ def test_coos_09_interrupt_queue_overflow_drops():
     # 17th notification must drop
     assert not sched.notify_interrupt(InterruptEvent(17, 0, 0, 0, 0))
     assert sched.dropped_irqs == 1
+
+
+def test_coos_17_interrupt_queue_is_bounded_lock_free_spsc():
+    """TEST-SCHED-17: ISR/COOS FIFO uses monotonic producer/consumer indices."""
+    queue = LockFreeInterruptEventQueue(capacity=2)
+    first = InterruptEvent(1, 0, 0, 0, 0)
+    second = InterruptEvent(2, 0, 0, 0, 0)
+    third = InterruptEvent(3, 0, 0, 0, 0)
+
+    assert queue.push(first)
+    assert queue.push(second)
+    assert not queue.push(third)
+    assert queue.pop() == first
+    assert queue.push(third)
+    assert queue.pop() == second
+    assert queue.pop() == third
+    assert queue.pop() is None
 
 
 def test_coos_13_interrupt_reschedule_generation_round():
@@ -366,9 +390,10 @@ if __name__ == "__main__":
     test_coos_07_consecutive_handoff_limit_yields()
     test_coos_08_interrupt_notification_and_drain()
     test_coos_09_interrupt_queue_overflow_drops()
+    test_coos_17_interrupt_queue_is_bounded_lock_free_spsc()
     test_coos_10_idle_detection_when_all_blocked()
     test_coos_11_no_double_ownership_sanity()
     test_coos_12_task_killed_removes_csp_and_irq_wait_registrations()
     test_coos_13_interrupt_reschedule_generation_round()
     test_coos_14_pending_generation_ends_direct_handoff_chain()
-    print("[PASS] All 14 COOS Rendezvous & Handoff tests passed.")
+    print("[PASS] All 15 COOS Rendezvous & Handoff tests passed.")

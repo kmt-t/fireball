@@ -5,11 +5,11 @@
      test: docs/qa/tier3_platform/platform_driver_test_spec.md
 -->
 
-本コンポーネントは、Tier 2 の抽象契約 [`hal_dispatch.md`](docs/components/tier2_runtime/hal_dispatch.md)（URI Resolver、コマンドプロトコル、ゼロコピー転送インターフェース）の物理ドライバ実装である。契約と実装の記述に食い違いがあれば `hal_dispatch.md` を正とする（`{META_ContractImplSplit}` 契約/実装分割パターン）。
+本コンポーネントは、Tier 2 の抽象契約 [`hal_dispatch.md`](docs/components/tier2_runtime/hal_dispatch.md)（URI Resolver、コマンドプロトコル、ゼロコピー転送インターフェース）の物理ドライバ実装である。RSP Parserは含めず、UARTやSEGGER RTTなどの物理トランスポートだけを提供する。契約と実装の記述に食い違いがあれば `hal_dispatch.md` を正とする（`{META_ContractImplSplit}` 契約/実装分割パターン）。
 
 ## 1. コンセプト
 <!-- traceability: {Challenge_InterruptSafety} {TaskPollInterruptEvent} {RSPMinimalSet} {Fast_Path_GPIO} -->
-[`hal_dispatch.md`](docs/components/tier2_runtime/hal_dispatch.md) が定義する `hal_task` コマンドディスパッチ契約を実現するため、UART・SEGGER RTT・GPIO・I2C・SPI・Timer の物理レジスタ操作ドライバ群を実装する。物理割り込みは原因付きイベントの通知とタスクウェイクアップによって安全に処理される。また、デバッグ用の GDB Remote Serial Protocol (RSP) のパケット物理エンコード/デコード（RSP Parser）を担い、解析済みデバッグコマンドを `debug_command_queue` へ供給する。
+[`hal_dispatch.md`](docs/components/tier2_runtime/hal_dispatch.md) が定義する `hal_task` コマンドディスパッチ契約を実現するため、UART・SEGGER RTT・GPIO・I2C・SPI・Timer の物理レジスタ操作ドライバ群を実装する。物理割り込み発生時、ISRは原因情報を固定5ワードの`interrupt-event`へ変換し、COOSの`notify_interrupt(event)`で固定長ロックフリーFIFOへ投函する。GDB Remote Serial Protocol (RSP) のパケット解析とデバッグコマンド生成は Tier 3 debugger が担当する。
 
 ## 2. アーキテクチャ分類
 <!-- traceability: {META_3TierSeparation} -->
@@ -24,7 +24,6 @@ WASIアダプタとHALドライバのURI結線は、物理ドライバ実装と�
 | 結線 | 既定URI |
 | :--- | :--- |
 | `stdout_uri` | `fireball://hal/stdout/0` |
-| `logger_uri` | `fireball://hal/logger/0` |
 
 WASIの結線設定は標準出力とログだけを対象とする。WASI Preview 1 の
 `fd_read`、`fd_close`、`clock_time_get`、`random_get` および標準出力・ログ以外の
@@ -32,13 +31,13 @@ WASIの結線設定は標準出力とログだけを対象とする。WASI Previ
 `WasiPreview1Backend` へ委譲する。
 タイマーやUARTのURIをWASI結線へ追加してはならない。
 
-`logger_uri` は WASI/IPC のログ要求を識別する契約値として保持する。pysim のホストファイル出力は HAL ドライバではなく、`System` に `FileLogSink` を直接注入して `Logger.flush()` から出力する。
+診断ログはHAL URIを経由せず、`System`へ注入する専用Sinkへ`Logger.flush()`から直接出力する。既定構成は標準出力SinkをログSinkとして再利用しない。デバッガのRSP物理通信も、`DebuggerSink`契約を満たす専用Sinkとして`PlatformDriverConfiguration`へ注入する。既定実装はホスト評価用TCP Sinkであり、UART、J-Link、テスト用メモリSinkなどへ差し替えられる。RSPのフレーミング解析とコマンド解釈はDebuggerプラグインが担当し、Sinkはバイト転送だけを担当する。
 
 ## 3. 静的モデル
 
 ### 3.1 データ構造
 - **デバイスレジストリ（物理実体）**: 管理対象のデバイス情報を保持する静的配列。
-- **HALバッファプール（物理実体）**: デバイス通信用に使用する、HALが管理する固定長バッファプール。**vMMIOの DYNAMIC 領域（コンパイル時に事前予約された専用ページプール）に配置され、安全かつ有界に管理される。バッファは共有メモリの所有権を持たず、`bind_runtime`した単一RuntimeとHALドライバがアクセスする。**
+- **HALバッファプール（物理実体）**: デバイス通信用に使用する、HALが管理する固定長バッファプール。**vMMIOの DYNAMIC 領域へI/O操作中だけ対象スロットをマップし、安全かつ有界に管理する。バッファは共有メモリの所有権を持たず、マッピング中のゲストとHALドライバがアクセスする。**
 - **RSPパケットバッファ**: RSPパケットの送受信に使用する固定長バッファ。
 
 ### 3.2 内部ブロック図
@@ -51,13 +50,12 @@ flowchart TD
     IPCR -->|CSP Rendezvous| T4["hal_task: Role.HAL_I2C"] --> I2C[I2C Driver: fireball://hal/i2c/0]
     IPCR -->|CSP Rendezvous| T5["hal_task: Role.HAL_SPI"] --> SPI[SPI Driver: fireball://hal/spi/0]
     IPCR -->|CSP Rendezvous| T6["hal_task: Role.HAL_TIMER"] --> Timer[Timer Driver: fireball://hal/timer/0]
-    UART --> RSP[RSP Parser]
-    RTT --> RSP
-    RSP --> Queue[debug_command_queue]
-    Queue --> Debugger[Debugger Task]
+    UART --> Raw[Raw RSP Transport]
+    RTT --> Raw
+    Raw --> Debugger[Debugger Plugin / RSP Parser]
 ```
 
-各 `hal_task` インスタンスは Tier 2 [`hal_dispatch.md`](docs/components/tier2_runtime/hal_dispatch.md) が定義する契約に従い、1 インスタンスにつき 1 物理ドライバのみを専有する（1 タスクが複数デバイスの URI を見て振り分けることはない）。ドライバは起動前に受け付けるコマンドIDとコールバックを登録し、自身の `hal_task` を起動する。HAL共通層によるデバイス列挙・代理起動は行わない。RTT はデバッグトランスポートの代替経路であり、UART 同様 RSP Parser へ接続される（`{RSP_Transport_Selectable}`）。
+各 `hal_task` インスタンスは Tier 2 [`hal_dispatch.md`](docs/components/tier2_runtime/hal_dispatch.md) が定義する契約に従い、1 インスタンスにつき 1 物理ドライバのみを専有する（1 タスクが複数デバイスの URI を見て振り分けることはない）。ドライバは起動前に受け付けるコマンドIDとコールバックを登録し、自身の `hal_task` を起動する。HAL共通層によるデバイス列挙・代理起動は行わない。RTT はUARTと同じRaw RSPトランスポート契約へ接続し、RSPの解析はDebugger Pluginへ渡す（`{RSP_Transport_Selectable}`）。
 
 ### 3.3 主要なクラス・構造体・配列・定数
 
@@ -89,7 +87,7 @@ flowchart TD
 
 ### 4.1 割り込み処理の物理実装
 <!-- traceability: {RSP_Transport_Selectable} {TaskPollInterruptEvent} {GLOBAL_InterruptWakeup} -->
-- **割り込み通知（push）**: 物理割り込み発生時、ISRは原因情報を固定5ワードの`interrupt-event`へ変換し、COOSの`notify_interrupt(event)`で固定長FIFOへ投函するのみとする。物理デバイスの複数原因は、上位のイベント源マッピングで同じデバイス系統へ集約する。**ISRがタスク状態を直接書き換えることはない。**実際のREADY遷移は、スケジューラが協調境界でFIFOをドレインする際に行われる（を正本とする）。この非同期境界の分離は、[`interrupt_boundary_model.py`](docs/components/tier3_platform/formal/interrupt_boundary_model.py) に定義されたCTL検証項目 `isr_does_not_update_task_state_directly` および `interrupt_event_reaches_scheduler_boundary` として証明されている性質である。
+- **割り込み通知（event）**: 物理割り込み発生時、ISRは原因情報を固定5ワードの`interrupt-event`へ変換し、COOSの`notify_interrupt(event)`で固定長ロックフリーFIFOへ投函する。**ISRはイベント投函以外のタスク状態変更を行わない。**実際のREADY遷移は、スケジューラが協調境界でFIFOをドレインする際に行われる。この非同期境界の分離は、[`interrupt_boundary_model.py`](docs/components/tier3_platform/formal/interrupt_boundary_model.py) に定義されたCTL検証項目 `isr_does_not_update_task_state_directly` および `interrupt_event_reaches_scheduler_boundary` として証明されている性質である。
 - **割り込み配送**: COOSから渡された`interrupt-event`は、vSoCがSafepointで受け取り、ゲスト配送またはドロップを行う。vIRQの分類・デバイスノード・ゲスト関数登録はvSoCとvMMIOの契約に従い、物理ドライバはゲスト関数を直接呼び出さない。
 
 #### HalBufferPool 固定スロット・境界検査手順（手順アクティビティ図）
@@ -98,15 +96,15 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    Start(["Runtime: bind_runtime()"])
-    Start --> MapSlots["Map all fixed slots in HalBufferPool to vMMIO DYNAMIC"]
-    MapSlots --> SingleRuntime{"Already bound to another Runtime?"}
-    SingleRuntime -- "Yes" --> Reject(["Reject: HalBufferTrap"])
-    SingleRuntime -- "No" --> Select["Runtime selects slot by buffer_id"]
+    Start(["Guest: map-buffer(slot-index)"])
+    Start --> MapSlot["Map selected slot to vMMIO DYNAMIC"]
+    MapSlot --> Busy{"Another I/O is mapped?"}
+    Busy -- "Yes" --> Reject(["Return: BUSY / retry"])
+    Busy -- "No" --> Select["Select slot by buffer_id"]
     Select --> Bounds{"offset + length <= FB_CONF_HAL_BUFFER_SIZE (256B)?"}
     Bounds -- "No" --> Trap(["GOTCHA-HAL-01 Trap: HalBufferTrap"])
     Bounds -- "Yes" --> Access["Runtime and HAL driver access the same fixed slot"]
-    Access --> Unbind(["Runtime: unbind_runtime() -> unmap all slots"])
+    Access --> Unmap(["Guest: unmap-buffer(handle)"])
 ```
 
 ### 4.2 状態遷移図（物理デバイス状態）
@@ -121,35 +119,19 @@ stateDiagram-v2
     Error --> Ready: reset
 ```
 
-### 4.3 内部シーケンス (RSP パーサとデバッグキュー)
-<!-- traceability: {RSPMinimalSet} {RSP_Transport_Selectable} -->
-本コンポーネントは、ホスト PC 上の GDB / LLDB / VSCode デバッガと通信するための GDB RSP パケット物理処理を担当する：
-
-1. **RSP パケット受信**: UART または RTT ドライバ経由でシリアルデータ（`$<packet-data>#<checksum>`）を受信する。
-2. **パケット検証 & ACK**: 2桁の 16進チェックサムを検証し、一致すれば `+`（ACK）、不一致なら `-`（NACK）を即座に応答する。
-3. **コマンド解析 (RSP Parser)**:
-   - `$g` / `$G`: レジスタ一括読み出し / 書き込み
-   - `$m<addr>,<len>` / `$M<addr>,<len>:<data>`: ゲストメモリ読み出し / 書き込み
-   - `$s` / `$c`: シングルステップ実行 / 実行再開（Continue）
-   - `$Z0,<addr>,<kind>` / `$z0,<addr>,<kind>`: ソフトウェアブレークポイント設定 / 解除
-   - `$?`: 停止理由問い合わせ (Stop Reply)
-4. **デバッグコマンドキュー投入**: 解析済みコマンドを `debug_command` 構造体に変換し、`debug_command_queue` へ Push。デバッガタスクがこれを Pop して vSoC / インタープリタ / JIT の実行を制御する。
+### 4.3 物理デバッグトランスポート
+<!-- traceability: {RSP_Transport_Selectable} -->
+本コンポーネントは、UARTまたはSEGGER RTTから受信したRSPバイト列をDebugger Pluginへ渡し、Pluginが生成したRSP応答バイト列を物理媒体へ送信する。チェックサム検証、ACK/NACK、コマンド解析、およびデバッグコマンドキューの管理は本コンポーネントの責務ではない。
 
 ```mermaid
 sequenceDiagram
     participant Host as GDB / VSCode
     participant UART as UART/RTT Driver
-    participant RSP as RSP Parser (Tier3)
-    participant Q as debug_command_queue
-    participant Dbg as Debugger Task (Tier 2)
+    participant Dbg as Debugger Plugin (Tier 3)
 
-    Host->>UART: Send "$g#67" (Read Registers)
-    UART->>RSP: Raw Packet Bytes
-    RSP->>RSP: Verify Checksum & Parse
-    RSP-->>Host: Send "+" (ACK)
-    RSP->>Q: Push(CMD_READ_REGISTERS)
-    Note over Q,Dbg: IPC Notification / Task Wakeup
-    Dbg->>Q: Pop Command & Read CPU Context
+    Host->>UART: Send RSP bytes
+    UART->>Dbg: Raw packet bytes
+    Dbg->>Dbg: Parse and execute RSP command
     Dbg->>UART: Send "$<reg-values>#<cksum>"
 ```
 
@@ -157,13 +139,13 @@ sequenceDiagram
 
 ### 5.1 物理実装の勘所・不変条件
 <!-- traceability: {HAL_Interface} {IPC_ZeroCopy} {BufferedLogging} {GOTCHA-HAL-02} {GOTCHA-HAL-03} -->
-[`hal_dispatch.md`](docs/components/tier2_runtime/hal_dispatch.md) の で定義された契約API（`read`, `write`, `transfer`, `get-buffer`）を、以下の物理不変条件に従って実装する。
+[`hal_dispatch.md`](docs/components/tier2_runtime/hal_dispatch.md) で定義された契約API（`stream-read`, `stream-write`, `map-buffer`, `unmap-buffer`）を、以下の物理不変条件に従って実装する。
 
 **静的固定長バッファプールの境界厳格検査 (`GOTCHA-HAL-01`)**:
-`HalBufferPool` は、`FB_CONF_HAL_MAX_BUFFERS` 個の固定サイズスロット（`FB_CONF_HAL_BUFFER_SIZE` = 256 バイト）を保持する。Runtimeの`bind_runtime`で全スロットをvMMIO DYNAMICへマップし、`get-buffer(buffer_id)`でスロットを選択する。HALは常に全スロットへアクセスでき、Runtimeは一度に一つだけバインドできる。`unbind_runtime`は全スロットのマッピングを解除する。
-**設計理由と不変条件**: 固定スロットは共有メモリの所有権を持たず、HALの`acquire`/`release`も存在しない。Runtime以外のゲストがDYNAMICマッピングを取得すること、また`offset + length`がスロット境界を越えることは`HalBufferTrap`で即時停止させる。
+`HalBufferPool` は、`FB_CONF_HAL_MAX_BUFFERS` 個の固定サイズスロット（`FB_CONF_HAL_BUFFER_SIZE` = 256 バイト）を保持する。ゲストの`map-buffer(buffer_id)`が選択した1スロットだけをvMMIO DYNAMICへマップし、I/O完了時の`unmap-buffer(handle)`で解除する。マッピング競合は`BUSY`を返し、境界超過や不正なハンドルだけを`HalBufferTrap`で即時停止させる。
+**設計理由と不変条件**: 固定スロットは共有メモリの所有権を持たず、HALの`acquire`/`release`も存在しない。HALドライバは専用Sinkとしてマッピング中のスロットだけを参照する。
 
-`stream-read` / `stream-write` を処理するHALドライバは、コマンドに含まれる `hal_buf_id` を使って所有ゲストのバッファスロットへHALサブシステム権限でアクセスする。ゲスト所有権の検査はゲスト側の公開ビューで行い、ドライバ側は同じ固定スロットの境界検査だけを通過して読み書きする。したがって、標準入出力のストリーミングにドライバ専用の複製バッファや生ポインタは存在しない。
+`stream-read` / `stream-write` を処理するHALドライバは、コマンドに含まれる `hal-buffer-id` を使って現在のI/Oでマップされたバッファスロットへ専用Sink経由でアクセスする。ゲスト側のマッピングは操作完了時に解除し、ドライバ側は同じ固定スロットの境界検査だけを通過して読み書きする。したがって、標準入出力のストリーミングにドライバ専用の複製バッファや生ポインタは存在しない。
 
 **ロガー出力の分離**:
 ロガーは `Logger.flush()` が注入された `FileLogSink` へ直接書き込む。`FileLogSink` は HAL ドライバでも標準出力用ドライバのバッファでもない。
@@ -177,9 +159,9 @@ UART デバイスドライバにおける送信リングバッファと受信リ
 **単調増加タイマーの差分計算安全性 (`GOTCHA-HAL-03`)**:
 32-bit ハードウェアカウンタ（SysTick / タイマー）による経過時間計測は、絶対時刻比較（`t2 > t1`）ではなく、必ず符号なし差分減算（`elapsed = t2 - t1`）により評価する。32-bit カウンタが 0xFFFFFFFF から 0x00000000 へラップアラウンドした場合であっても、2の補数演算のモジュロ代数によりアンダーフロー減算が正しく正確な経過時間を導出し、タイマーの単調増加性を保証する。
 
-### 5.4 RSP デバッグトランスポート仕様
+### 5.4 RSP 物理トランスポート仕様
 <!-- traceability: {RSP_Transport_Selectable} -->
-UART および SEGGER RTT の双方において同一の RSP パケットエンコード/デコード処理を提供し、デバッガタスク（Tier 2）との間で透過的なリモートデバッグを実現する。
+UART および SEGGER RTT は同一のRaw RSPバイトトランスポート契約を提供する。RSPパケットのエンコード、デコード、解析、およびデバッガ状態の管理は Tier 3 debugger の正本とする。
 
 ## 6. 制約達成の方策
 

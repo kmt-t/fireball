@@ -29,6 +29,7 @@ class FbSyscallId(IntEnum):
     IPC_SEND = 0x40
     IPC_RECV = 0x41
     IPC_LOOKUP = 0x42
+    IPC_REPLY = 0x43
     WASI_FD_WRITE = 0x80
     WASI_FD_READ = 0x81
     WASI_FD_CLOSE = 0x82

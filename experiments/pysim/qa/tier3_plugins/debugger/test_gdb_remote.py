@@ -70,7 +70,7 @@ for _p in [
 import socket
 import time
 
-from tier3_plugins.debugger.debugger import DebuggerManager
+from tier3_plugins.debugger.debugger import DebuggerManager, GDBRspProtocol
 from execution_context import WASMContext
 from tier3_plugins.debugger.gdb_server import GDBServer
 from helpers import wat_to_wasm
@@ -115,6 +115,71 @@ class GDBClientHelper:
             self.sock.sendall(b"+")
             return response_payload
         return ""
+
+
+class _MemoryDebuggerConnection:
+    """In-memory bidirectional connection used to verify sink substitution."""
+
+    def __init__(self, incoming: bytes):
+        self.incoming = bytearray(incoming)
+        self.outgoing = bytearray()
+        self.closed = False
+
+    def setblocking(self, flag: bool) -> None:
+        del flag
+
+    def recv(self, buffer_size: int) -> bytes:
+        if not self.incoming:
+            raise BlockingIOError
+        count = min(buffer_size, len(self.incoming))
+        data = bytes(self.incoming[:count])
+        del self.incoming[:count]
+        return data
+
+    def send(self, data: bytes | bytearray | memoryview) -> int:
+        payload = bytes(data)
+        self.outgoing.extend(payload)
+        return len(payload)
+
+    def close(self) -> None:
+        self.closed = True
+
+
+class _MemoryDebuggerSink:
+    """Test-only platform driver replacing the TCP RSP transport."""
+
+    def __init__(self, connection: _MemoryDebuggerConnection):
+        self.connection = connection
+        self.accepted = False
+        self.closed = False
+
+    def bind(self) -> int:
+        return 1
+
+    def set_nonblocking(self, enabled: bool) -> None:
+        del enabled
+
+    def accept(self) -> _MemoryDebuggerConnection | None:
+        if self.accepted:
+            return None
+        self.accepted = True
+        return self.connection
+
+    def close(self) -> None:
+        self.closed = True
+
+
+def test_debugger_sink_is_replaceable() -> None:
+    """TEST-DBG-25: RSP processing is independent of the physical sink."""
+    connection = _MemoryDebuggerConnection(GDBRspProtocol.format_packet("?").encode("latin1"))
+    sink = _MemoryDebuggerSink(connection)
+    server = GDBServer(DebuggerManager(), transport=sink)
+    task = server.run_task(0, WASMContext(), {})
+    next(task)
+    assert bytes(connection.outgoing) == b"+$S05#b8"
+    task.close()
+    assert connection.closed
+    assert sink.closed
 
 
 def test_gdb_remote_socket_session():
@@ -239,4 +304,5 @@ def test_gdb_remote_socket_session():
 
 
 if __name__ == "__main__":
+    test_debugger_sink_is_replaceable()
     test_gdb_remote_socket_session()

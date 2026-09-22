@@ -82,12 +82,14 @@ IPC通信の最小単位。1つのメッセージで8個のペアを送信でき
 
 #### IPCメッセージ（message）
 <!-- traceability: {TypeSafeMessaging} {META_FlatMapIndexed} {OwnershipTransfer} {ADR_SharedBlockRaii} -->
-Key-Valueペアを複数集約した通信の基本単位である。メッセージ自身が共有メモリ（`fireball::shared_block`）上に実体化される。内部の固定長 `uint64_t` 配列をストレージとして直接利用する。動的メモリ確保を伴わない物理メモリ上のKey-Valueペア配列と、`fireball::flat_map_view` による二分探索を採用する。上位32ビットをキー、下位32ビットを値とし、メッセージ内のキー検索を $O(\log N)$ で行う。エントリやペイロードへのアクセス時には所有権（`SENDER_OWNS` または `RECEIVER_OWNS`）を検証する。`IN_FLIGHT` 中のアクセスは禁止する。タスクを跨ぐバルクデータは、別の共有メモリ（`fireball::shared_block`）の `shm_id` をエントリ値に格納して伝送できる。IPCルータのランデブー完了時に、自動で vMMIO PTE の権限付け替え（`grant_shared`）が行われる。
+Key-Valueペアを複数集約した要求・応答の基本単位である。メッセージ自身が共有メモリ（`fireball::shared_block`）上に実体化される。内部の固定長 `uint64_t` 配列をストレージとして直接利用する。動的メモリ確保を伴わない物理メモリ上のKey-Valueペア配列と、`fireball::flat_map_view` による二分探索を採用する。上位32ビットをキー、下位32ビットを値とし、メッセージ内のキー検索を $O(\log N)$ で行う。エントリやペイロードへのアクセス時には所有権（`SENDER_OWNS` または `RECEIVER_OWNS`）を検証する。`IN_FLIGHT` 中のアクセスは禁止する。タスクを跨ぐバルクデータは、別の共有メモリ（`fireball::shared_block`）の `shm_id` をエントリ値に格納して伝送できる。要求・応答ランデブーごとに、自動で vMMIO PTE の権限付け替え（`grant_shared`）が行われる。`sender_id` は COOS Scheduler が送信元 TCB の `task_id` から設定し、ゲストまたはルータの引数は採用しない。`response_code` は受信側が設定し、`0xffffffff` は応答待ちを表す。受信側は同じメッセージへ応答データを追加して返却できる。
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
 | メッセージ本体ブロック | メッセージ自身を格納する共有メモリブロック。内部は `uint64_t` 配列 | `fireball::shared_block` | 1個（固定長） |
 | KVマップ (Key-Valueペア配列) | 共有メモリ上に配置されるKey-Valueペアの `uint64_t` 配列。自前で所有しアクセス時に所有権検証 | ソート済み固定長 `uint64_t` 配列 + `fireball::flat_map_view` | 最大8個固定（1エントリ `uint64_t` 1要素） |
+| `sender_id` | Scheduler が現在実行中の送信元 TCB から設定する認証済みタスクID | `u32` | 送信時に設定。ゲスト入力による指定・変更は禁止 |
+| `response_code` | 受信側が設定する要求処理結果。`0xffffffff` は応答待ち | `u32` | 応答前は pending、応答時は別の値 |
 | リソース共有メモリ | エントリ値（`ScopeKind.RESOURCE`）に埋め込まれるタスク間バルク転送用RAII共有メモリ。チャネルが所有権を自動Grant | `fireball::shared_block` (オプション) | 任意個数（エントリの値） |
 
 #### レジストリエントリ（registry_entry）
@@ -97,9 +99,10 @@ Key-Valueペアを複数集約した通信の基本単位である。メッセ�
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
 | サービスURI | サービスを一意に特定するための正規化された文字列 | 文字列ビュー | - |
-| セキュリティロール | サービスに割り当てられた権限レベル。アクセス制御と CSP チャネル選択の両方に利用 | ビットフラグ | - |
+| セキュリティロール | サービスのデバイス種別に割り当てられた権限レベル | ビットフラグ | - |
+| デバイスインスタンスID | 同じデバイス種別の物理インスタンスをURI内で識別する番号 | 整数 | URIの`<instance-id>` |
 
-※ 待ち受けチャネルはレジストリエントリに個別の ID として保持しない。`FB_CONF_ROUTER_ROLE_MATRIX`（10x10）の ALLOW セル 1 つにつき、専用の CSP チャネル（`fireball::channel<ipc_message>`、バッファなし同期ランデブー）が 1 本ずつ静的に対応付けられる。チャネルは `(sender_role, target_role)` の組から一意に導出される。1 本のチャネルは 1 対の送受信方向にのみ使用する。同一の受信ロールへ複数の送信ロールから送る場合でも、エッジごとに別個のチャネルを割り当てる。HAL の各エンドポイントインスタンスは専用ロール（`HAL_UART`, `HAL_STDOUT`, `HAL_GPIO`, `HAL_TIMER`, `HAL_I2C`, `HAL_SPI`, `HAL_LOGGER`）を個別に持つ。単一ロールでは、同種インスタンスが複数存在する場合にメッセージの宛先を区別できないためである。
+※ 待ち受けチャネルはレジストリエントリのデバイスインスタンスへ対応付ける。`FB_CONF_ROUTER_ROLE_MATRIX`（9x9）の ALLOW セルはデバイス種別間の権限を定義し、URIのインスタンスIDが同じ種別の宛先を区別する。1 本のチャネルは 1 対の送受信方向と1デバイスインスタンスにのみ使用する。RoleへインスタンスIDを追加してはならない。
 
 ## 4. 動的モデル
 
@@ -107,10 +110,11 @@ Key-Valueペアを複数集約した通信の基本単位である。メッセ�
 <!-- traceability: {LowLatencyLookup} {META_AccessDictionary} {META_FlatMapIndexed} {OwnershipTransfer} {IPC_ZeroCopy} -->
 - **サービス検索**: `fireball::flat_map_view` を用いて、URI文字列からチャンネルIDを $O(\log N)$ で取得する。
 - **メッセージ内検索**: メッセージ本体をソート済み配列とし `fireball::flat_map_view` で引くことで、受信側でのパラメータ検索を高速化する。
-- **所有権移譲 (Zero-Copy CSP Handoff)**:
-    1. **Revoke**: URI 検索・RBAC 判定・サイズ制限チェックをすべて通過した後に実行する。送信側タスクの権限を無効化し、リソースを `IN_FLIGHT` 状態にする。この時点で送信は完了確約状態（committed）となる。キューがないため、満杯による差し戻しは原理的に発生しない。共有メモリ転送時は、送信側の `shm.release()` と連動して送信元 vMMIO PTE を unmap する。TLB を即時フラッシュし、双方の不正アクセスを遮断する。
-    2. **Rendezvous**: 送信側は専用 CSP チャネル 1 本上でバッファなし同期ハンドオフを行う。受信側は自ロールへの全 ALLOW エッジを同時に待ち受ける。相手側が待機していれば即座にハンドオフが成立する。未到達の場合は協調スケジューラ上でブロックし、相手到達時に成立する。バッファを持たないため、キュー満杯エラーは発生しない。
-    3. **Grant**: ランデブー成立の瞬間に受信側タスクへ権限を付与し、`RECEIVER_OWNS` へ遷移させる。共有メモリ転送時は所有権変更通知により旧 PTE をアンマップする。受信側が `claim(shared_block)` を完了した時点で新しい PTE を登録する。
+- **要求・応答を伴う所有権移譲 (Zero-Copy CSP Handoff)**:
+    1. **Request Revoke**: URI 検索・RBAC 判定・サイズ制限チェックをすべて通過した後に実行する。送信側タスクの権限を無効化し、リソースを `IN_FLIGHT` 状態にする。Scheduler は現在実行中の送信元 TCB の `task_id` を `sender_id` へ設定する。
+    2. **Request Rendezvous / Grant**: 送信側は専用 CSP チャネル 1 本上でバッファなし同期ハンドオフを行う。受信側が自ロールへの全 ALLOW エッジを待ち受け、到達した要求を `RECEIVER_OWNS` で取得する。受信側が未到達の場合は送信側を協調スケジューラ上でブロックする。
+    3. **Response**: 受信側は要求を処理し、`response_code` を pending 以外へ設定する。要求をそのままエコーするか、追加KVを同じメッセージへ書き込んで `reply` を呼ぶ。共有メモリの所有権を送信元へ戻す。
+    4. **Sender Unblock**: Scheduler は要求時に記録した送信元 TCBだけを起床し、同じメッセージを `SENDER_OWNS` で返す。応答完了まで同一エッジへの次の送信は許可しない。
 - **送信前チェックの失敗とロールバック境界**:
     - URI 未登録、RBAC 拒否、KV ペア数超過はいずれも Revoke 前段の静的検査である。
     - これらの失敗時、メッセージ所有権は送信側のまま維持され、回復処理を要しない。
@@ -118,8 +122,9 @@ Key-Valueペアを複数集約した通信の基本単位である。メッセ�
     - 転送中に相手タスクが異常終了した場合、物理メモリ層の回復機構が送信元タスクへの再マッピングを復元する。
 
 
-#### 3段階 IPC ルーティング & 所有権移譲プロトコル（責務シーケンス図）
+#### IPC 要求・応答ルーティング & 所有権移譲プロトコル（責務シーケンス図）
 <!-- traceability: {OwnershipTransfer} {IPC_ZeroCopy} {ADR_RendezvousChannel} {URIAbstraction} {GOTCHA-IPCR-01} {GOTCHA-IPCR-02} -->
+共有メモリのRevoke/Grantと送信元TCBの`sender_id`刻印は、CSPチャネルがSchedulerへ委譲する転送スタンパの責務である。IPC RouterはURI探索、RBAC、チャネル選択だけを担当する。
 Caller、IPC Router、COOS Channel、vMMIO/MemoryManager、Callee の各責務と 3 段階ルーティング（URI探索 $	o$ RBAC $	o$ CSPランデブー/権限移譲）を示す。
 
 ```mermaid
@@ -127,6 +132,7 @@ sequenceDiagram
     autonumber
     actor Caller as Caller Task
     participant Router as IPC Router
+    participant Sched as COOS Scheduler
     participant Mem as MemoryManager / vMMIO
     participant Ch as COOS Channel (Role Edge)
     actor Callee as Callee Task
@@ -142,19 +148,26 @@ sequenceDiagram
 
         Note over Caller,Mem: [Transfer Phase] Stage 3 Hot Path via Channel Object
         Caller->>Router: send(Channel, msg_block, [shm_id])
-        Router->>Caller: Revoke access (msg.ownership = IN_FLIGHT)
+        Ch->>Sched: invoke sender_stamper(msg, current TCB task_id)
+        Sched->>Router: stamp sender_id and enter IN_FLIGHT
         opt Bulk Shared Memory Transfer
-            Router->>Mem: release(shm_id)
+            Sched->>Mem: release message SHM and revoke resource SHM
             Mem->>Mem: Unmap Caller PTE & Flush TLB (TRAP_UNREGISTERED_PAGE)
         end
         Router->>Ch: channel_send(msg_block)
         Ch->>Callee: Synchronous CSP Rendezvous (Direct Handoff to Callee receive())
         opt Bulk Shared Memory Transfer
-            Ch->>Mem: grant_shared(shm_id)
-            Mem->>Mem: Map Callee PTE
+        Sched->>Mem: grant_shared/claim under Callee TCB
+        Mem->>Mem: Map Callee PTE
         end
         Ch->>Callee: Grant access (msg.ownership = RECEIVER_OWNS)
         Note over Callee: Callee reads parameters safely via FlatMapView
+        Callee->>Callee: Set response_code and optionally append response KV
+        Callee->>Ch: reply(same msg)
+        Ch->>Caller: Response rendezvous / wake exact sender TCB
+        Ch->>Sched: invoke reply_stamper and move under Sender TCB
+        Sched->>Mem: release receiver SHM and grant/claim Sender SHM
+        Note over Caller: Sender resumes with SENDER_OWNS and response_code
     end
 ```
 
@@ -177,7 +190,6 @@ class Role(IntEnum):
     HAL_I2C = 6
     HAL_SPI = 7
     DEBUGGER = 8
-    HAL_LOGGER = 9
 
 
 _ROLE_NAMES = (
@@ -190,7 +202,6 @@ _ROLE_NAMES = (
     "HAL_I2C",
     "HAL_SPI",
     "DEBUGGER",
-    "HAL_LOGGER",
 )
 
 
@@ -268,7 +279,6 @@ _REGISTRY_ENTRIES = sorted(
         ("fireball://dbg/manager/0", Role.DEBUGGER),
         ("fireball://hal/gpio/0", Role.HAL_GPIO),
         ("fireball://hal/i2c/0", Role.HAL_I2C),
-        ("fireball://hal/logger/0", Role.HAL_LOGGER),
         ("fireball://hal/spi/0", Role.HAL_SPI),
         ("fireball://hal/timer/0", Role.HAL_TIMER),
         ("fireball://hal/uart/0", Role.HAL_UART),
@@ -277,7 +287,7 @@ _REGISTRY_ENTRIES = sorted(
 )
 _REGISTRY = FlatMapView(_REGISTRY_ENTRIES)
 
-# Stage 2: FB_CONF_ROUTER_ROLE_MATRIX (10x10, rows=sender, cols=target); every
+# Stage 2: FB_CONF_ROUTER_ROLE_MATRIX (9x9, rows=sender, cols=target); every
 # DENY cell is listed explicitly, matching the C++ constexpr array exactly.
 # Every HAL_* role is a leaf (all-DENY row) -- endpoint instances never
 # initiate an IPC send themselves (see "全 DENY 行・列の意味" below).
@@ -288,7 +298,6 @@ _HAL_ROLES = (
     Role.HAL_TIMER,
     Role.HAL_I2C,
     Role.HAL_SPI,
-    Role.HAL_LOGGER,
 )
 
 
@@ -306,7 +315,6 @@ _ROLE_MATRIX = (
     _role_row(frozenset()),  # from HAL_I2C (leaf)
     _role_row(frozenset()),  # from HAL_SPI (leaf)
     _role_row(frozenset({Role.CORE_SERVICE, *_HAL_ROLES})),  # from DEBUGGER
-    _role_row(frozenset()),  # from HAL_LOGGER (leaf)
 )
 
 
@@ -422,29 +430,28 @@ flowchart TD
 | ステージ | 処理 | 複雑度 | 制約 |
 | :--- | :--- | :--- | :--- |
 | **Stage 1: URI Lookup** | `fireball::flat_map_view` による二分探索 | O(log N) | N = サービス数（通常 ≤ 16）。動的確保なし。 |
-| **Stage 2: Access Control** | TCB から取得した送信元ロールと対象ロールのマトリックス参照 `role_matrix[tcb_role][target_role]` | O(1) | 事前計算済みの2次元配列による静的検査。引数による自己申告ロールは完全排除（偽装防止）。 |
-| **Stage 3: Channel Grant** | `(sender_role, target_role)` エッジに対応する専用 CSP チャネルオブジェクトを返却 | O(1) | チャネルはロールの組から直接導出（10x10 配列参照）。送信側はこれを保持して直接 `send(channel, msg)` を実行。 |
+| **Stage 2: Access Control** | TCB から取得した送信元ロールと対象デバイス種別のマトリックス参照 `role_matrix[tcb_role][target_role]` | O(1) | 事前計算済みの2次元配列による静的検査。引数による自己申告ロールは完全排除（偽装防止）。 |
+| **Stage 3: Channel Grant** | `(sender_role, service_handle)` エッジに対応する専用 CSP チャネルオブジェクトを返却 | O(1) | RBACはロールの組、宛先インスタンスはURIのサービスハンドルで確定する。送信側はこれを保持して直接 `send(channel, msg)` を実行。 |
 
 #### ロール間通信許可マトリクス (FB_CONF_ROUTER_ROLE_MATRIX)
 <!-- traceability: {RoleBasedAccessControl} -->
 
-本表は `{META_ConfigurableSystem}` の `FB_CONF_ROUTER_ROLE_MATRIX` (10x10 `constexpr` 配列) を**そのまま**表現したものであり、全 DENY の行・列も省略しない。省略すると「そのロールの権限が未定義」と読めてしまい、C++ 定義との差分が生じるためである。HAL は単一の共有ロールではなく、エンドポイントインスタンスごとに専用ロール（`HAL_UART`, `HAL_STDOUT`, `HAL_GPIO`, `HAL_TIMER`, `HAL_I2C`, `HAL_SPI`, `HAL_LOGGER`）を持つ。単一ロールでは、同種インスタンスが複数存在する場合に宛先を区別できないためである。
+本表は `{META_ConfigurableSystem}` の `FB_CONF_ROUTER_ROLE_MATRIX` (9x9 `constexpr` 配列) を**そのまま**表現したものであり、全 DENY の行・列も省略しない。省略すると「そのロールの権限が未定義」と読めてしまい、C++ 定義との差分が生じるためである。HAL Roleはデバイス種別（`HAL_UART`, `HAL_STDOUT`, `HAL_GPIO`, `HAL_TIMER`, `HAL_I2C`, `HAL_SPI`）だけを表し、同種インスタンスはURIのインスタンスIDとサービスハンドルで区別する。
 
-| 送信元ロール (Sender) \ 送信先ロール (Target) | RUNTIME | CORE_SERVICE | HAL_UART | HAL_STDOUT | HAL_GPIO | HAL_TIMER | HAL_I2C | HAL_SPI | DEBUGGER | HAL_LOGGER |
+| 送信元ロール (Sender) \ 送信先ロール (Target) | RUNTIME | CORE_SERVICE | HAL_UART | HAL_STDOUT | HAL_GPIO | HAL_TIMER | HAL_I2C | HAL_SPI | DEBUGGER |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| **RUNTIME** | DENY | ALLOW | ALLOW | ALLOW | ALLOW | ALLOW | ALLOW | ALLOW | DENY | ALLOW |
-| **CORE_SERVICE** | DENY | DENY | ALLOW | ALLOW | ALLOW | ALLOW | ALLOW | ALLOW | DENY | ALLOW |
+| **RUNTIME** | DENY | ALLOW | ALLOW | ALLOW | ALLOW | ALLOW | ALLOW | ALLOW | DENY |
+| **CORE_SERVICE** | DENY | DENY | ALLOW | ALLOW | ALLOW | ALLOW | ALLOW | ALLOW | DENY |
 | **HAL_UART** | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY |
 | **HAL_STDOUT** | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY |
 | **HAL_GPIO** | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY |
 | **HAL_TIMER** | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY |
 | **HAL_I2C** | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY |
 | **HAL_SPI** | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY |
-| **DEBUGGER** | DENY | ALLOW | ALLOW | ALLOW | ALLOW | ALLOW | ALLOW | ALLOW | DENY | ALLOW |
-| **HAL_LOGGER** | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY |
+| **DEBUGGER** | DENY | ALLOW | ALLOW | ALLOW | ALLOW | ALLOW | ALLOW | ALLOW | DENY |
 
 **全 DENY 行・列の意味**:
-- **HAL_\* の全 7 ロール行が全 DENY**: HAL は通信グラフの葉であり、自発的な送信を一切行わない。デバイス側の事象は ISR による割り込み通知（`{GLOBAL_InterruptWakeup}`）として上位へ伝わり、IPC の送信としては表現されない。単一の "PLATFORM_HAL" ロールをデバイスごとに 7 分割したのは、アクセス制御の意味論を変えるためではない。CSP の「1 チャネル 1 待機者」制約下で複数の同種インスタンスを区別可能にするためである。各行の全 DENY 性質そのものは変わらない。
+- **HAL_* の全6ロール行が全 DENY**: HAL は通信グラフの葉であり、自発的な送信を一切行わない。デバイス側の事象は ISR による割り込み通知（`{GLOBAL_InterruptWakeup}`）として上位へ伝わり、IPC の送信としては表現されない。同種インスタンスの区別はURIとサービスハンドルで行い、Roleをインスタンスごとに増やさない。
 - **RUNTIME 列が全 DENY**: RUNTIME（ゲスト実行をホストするランタイムタスク。ゲスト自身のコードが直接 IPC に触れるわけではない）を宛先とする IPC は存在しない。RUNTIME への応答は、RUNTIME 自身が発した要求に対する返信としてのみ返る。
 - **DEBUGGER 列が全 DENY**: DEBUGGER 自身を宛先とする IPC 送信経路は存在しない（デバッガタスクへの通知は RSP トランスポート経由であり、本ルータの管轄外）。
 
@@ -495,18 +502,19 @@ stateDiagram-v2
 | **Service Lookup** | URI文字列をレジストリで検索 | `fireball::flat_map_view` による $O(\log N)$ 二分探索 |
 | **Permission Check** | 送信側ロールと受信側ロールのマトリックスで許可判定 | ロールマトリックス参照 |
 | **Message Routing** | 送信メッセージの転送処理 | エッジ専用 CSP チャネルへのディスパッチ |
-| **Ownership Transfer** | ゼロコピー CSP ハンドオフの所有権移譲フロー | 3段階：Revoke → Rendezvous → Grant |
-| **Revoke** | 送信側の権限を無効化、In-flight 状態へ遷移 | リソースロック設定（この時点で送信は完了確約） |
+| **Ownership Transfer** | ゼロコピー CSP の要求・応答所有権移譲フロー | 要求 Revoke → Rendezvous → Grant、応答 Revoke → Rendezvous → Grant |
+| **Revoke** | 現所有者の権限を無効化、In-flight 状態へ遷移 | リソースロック設定（要求または応答の再送は不可） |
 | **Rendezvous** | バッファなし同期ハンドオフ。相手が既に待機していれば即座に、いなければ協調スケジューラ上でブロックして待つ | CSP チャネル上での 1 対 1 ハンドオフ（キューは存在しないため満杯状態も存在しない） |
-| **Grant** | 受信側にリソースの権限を付与 | 所有権ハンドシェイク完了 |
-| **Complete** | ルーティング完了 | メッセージ処理の次ステップへ |
+| **Grant** | 次の所有者にリソースの権限を付与 | 所有権ハンドシェイク完了 |
+| **Response** | 受信側が応答コードと必要な追加KVを設定して同じメッセージを返す | 送信元TCBの応答待ちを解除 |
+| **Complete** | 応答を送信側が取得 | 次の要求を開始可能 |
 | **Service Not Found** | 指定 URI が未登録 | エラー応答を呼び出し側に返却 |
 | **Permission Denied** | 送信側ロールと受信側ロールの組がロールマトリックスで拒否 | エラー応答（`ERR_PERMISSION_DENIED`）を呼び出し側に返却 |
 
 ### 4.2.1 所有権移譲状態機械 (Ownership Transfer State Machine)
 <!-- traceability: {OwnershipTransfer} {IPC_ZeroCopy} -->
 
-メッセージの所有権は、送信側 → ルータ → 受信側という 3 段階で遷移する。以下の状態機械は、所有権の状態を形式的に定義する。
+メッセージの所有権は、送信側 → 受信側 → 送信側という要求・応答の往復で遷移する。以下の状態機械は、所有権の状態を形式的に定義する。
 
 ```mermaid
 stateDiagram-v2
@@ -523,8 +531,13 @@ stateDiagram-v2
     InFlight --> GrantPhase: peer already waiting / immediate handoff
 
     GrantPhase --> ReceiverOwned: grant_receiver_access / ownership transfer complete
+    ReceiverOwned --> ResponsePhase: set response_code / optional append
+    ResponsePhase --> ResponseWait: sender not waiting yet / keep transaction
+    ResponsePhase --> SenderGrantPhase: sender waits / response handoff
+    ResponseWait --> SenderGrantPhase: wake exact sender TCB
+    SenderGrantPhase --> SenderOwned: grant_sender_access / sender unblocked
 
-    ReceiverOwned --> [*]: receiver_drop / cleanup
+    SenderOwned --> [*]: sender_drop / cleanup
 ```
 
 **所有権状態の説明:**
@@ -536,7 +549,10 @@ stateDiagram-v2
 | **InFlight** (`IN_FLIGHT`) | Router / チャネル | いずれもアクセス禁止 | 仲介中 | チャネルが一時保管、送受信側いずれもアクセス禁止。SHM: 送信元 PTE unmap ＆ TLB フラッシュ済み（未登録ページ遮断） |
 | **RendezvousWait** | (移譲中) | In-flight 継続 | 協調ブロック中 | 相手側タスクがまだ到達しておらず、協調スケジューラ上でブロック中。タイムアウトや失敗はなく、相手の到達を待つのみ |
 | **GrantPhase** | (移譲中) | Receiver 取得中 | 遷移中 | 受信側にアクセス権を付与中。SHM: 所有権変更通知で旧 PTE を unmap、`claim()` 後に受信側 PTE を map |
-| **ReceiverOwned** (`RECEIVER_OWNS`) | Receiver | Full (R/W) | 安定 | 受信側が完全な制御を持つ。SHM: 受信側で `claim(shared_block)` 完了 |
+| **ReceiverOwned** (`RECEIVER_OWNS`) | Receiver | Full (R/W) | 安定 | 受信側が完全な制御を持つ。SHM: 受信側で `claim(shared_block)` 完了。応答コード設定と追加KV書込みが可能 |
+| **ResponsePhase** | Receiver | 送信側アクセス禁止 | 遷移中 | `response_code` を設定し、同じメッセージを応答チャネルへ返す準備を行う |
+| **ResponseWait** | チャネル | 双方アクセス禁止 | 応答待ち | 送信側TCBが応答を待つ。応答はキュー化せず、要求と一対一で保持する |
+| **SenderGrantPhase** | (移譲中) | 遷移中 | 遷移中 | 応答メッセージと共有メモリを送信元へ再付与する |
 
 ### 4.3 メッセージライフサイクルと所有権管理 (SysML Parametric Diagram 相当)
 
@@ -547,12 +563,14 @@ stateDiagram-v2
 | **初期** | 送信側で生成 | 送信側所有 (`SENDER_OWNS`) | RUNNING | BLOCKED/READY | 送信側 PTE map 済み |
 | **Revoke** | チャネルへ到達、送信確約 | 移譲中 (`IN_FLIGHT`) へ遷移 | **アクセス権剥奪（送信ロック）** | 待機中または未到達 | `shm.release()` 連動、送信元 PTE unmap ＆ TLB フラッシュ |
 | **Rendezvous** | 相手の到達を待機（即座または協調ブロック） | 移譲中 (`IN_FLIGHT`) 継続 | **送信ロック継続** | 到達済みなら即完了、未到達ならブロック中 | 単一スロットのハンドオフ管理（キューなし、両者アクセス禁止・unmap遮断） |
-| **Grant（成功）** | ランデブー成立 | 受信側へ移譲 (`RECEIVER_OWNS`) | **送信ロック解除（手放し完了）** | **所有権付与（受信完了）** | 所有権変更通知で旧 PTE を無効化、受信側 `claim()` 完了後に PTE map |
+| **Grant（要求）** | ランデブー成立 | 受信側へ移譲 (`RECEIVER_OWNS`) | **応答待ちでブロック** | **所有権付与（受信完了）** | 所有権変更通知で旧 PTE を無効化、受信側 `claim()` 完了後に PTE map |
+| **Response** | 受信側が処理し応答コード・追加KVを設定 | 移譲中 (`IN_FLIGHT`) | **応答を待機** | **送信元TCBを応答待ちへ起床** | 受信側 `release()` 後に送信元へ Grant |
+| **Grant（応答）** | 同一メッセージを返却 | 送信側へ移譲 (`SENDER_OWNS`) | **応答取得、再開** | **応答済み** | 送信元 `claim()` 完了後に PTE map |
 
 **注記:**
-- **In-flight 状態**: メッセージがチャネル上でランデブー成立待ちの状態で、送信側は操作できない状態。ダングリング参照を防止。
+- **In-flight 状態**: 要求または応答がチャネル上でランデブー成立待ちの状態で、送受信側は操作できない状態。ダングリング参照を防止。
 - **所有権移譲とゼロコピー (`IPC_ZeroCopy`)**: チャネルの所有権移譲（Grant）では、メモリデータの物理コピーは発生しない。ゲストRAM上のメッセージバッファを指す相対オフセットポインタの所有権を、送信側から受信側へ移転する。これにより極小レイテンシのゼロコピー転送を実現する。
-- **キューが存在しないことの帰結**: 本 API はバッファなし同期ランデブーである。受信側が Kill された場合に回収すべき未受領メッセージは存在しない。In-flight 状態のメッセージは、常に送信側タスク自身のスタック上に留まる。送信側タスクの終了処理がそのまま資源回収を兼ねる。
+- **キューが存在しないことの帰結**: 本 API はバッファなし同期ランデブーである。応答も要求と一対一であり、応答キューは存在しない。受信側が応答しない場合、送信側は応答待ちでブロックし続ける。タイムアウトや強制解除は上位レイヤの責務である。
 
 ### 4.3.1 二分探索による O(log N) 低遅延ルックアップ
 <!-- traceability: {LowLatencyLookup} {META_AccessDictionary} {META_FlatMapIndexed} -->
@@ -594,6 +612,7 @@ sequenceDiagram
 sequenceDiagram
     participant Tx as <<block>> Sender Task
     participant R as <<block>> IPC Router
+    participant S as <<block>> COOS Scheduler
     participant Ch as <<block>> CSP Channel (edge)
     participant Rx as <<block>> Receiver Task
 
@@ -601,9 +620,10 @@ sequenceDiagram
     Tx->>R: send(Channel, msg) with resource ownership
     activate R
 
-    Note over R: [Revoke Phase]
-    R->>R: Mark message "In-flight"
-    R->>R: Lock sender's resource access
+    Note over S: [Revoke Phase]
+    Ch->>S: sender_stamper(msg, current TCB task_id)
+    S->>S: Stamp sender_id and mark message "In-flight"
+    S->>S: Revoke message/resource SHM from sender TCB
 
     Note over R: [Rendezvous Phase]
     R->>Ch: channel_send(msg)
@@ -628,9 +648,9 @@ sequenceDiagram
     Ch-->>R: return msg (rendezvous completes,<br/>sender task resumed if it was blocked)
     deactivate Ch
 
-    Note over R: [Grant Phase]
-    R->>Rx: Grant ownership to receiver (RECEIVER_OWNS)
-    R->>Tx: Release sender lock
+    Note over S: [Grant Phase]
+    S->>S: Move payload under receiver TCB
+    S->>Rx: Grant ownership to receiver (RECEIVER_OWNS)
     deactivate R
 
     Rx-->>Rx: Use resource (now owned)
@@ -638,9 +658,10 @@ sequenceDiagram
 ```
 
 **フロー説明:**
-1. **Revoke**: 送信側がルータへ到達した瞬間（URI 検索・RBAC・サイズチェックをすべて通過した後）に、メッセージ状態を「In-flight」に変更し、送信側からのアクセス権（読み書き権限）を無効化（ロック）する。これにより送信は完了確約状態となり、キュー満杯のような事後的な失敗は原理的に存在しない。
+1. **Request Revoke**: URI検索・RBAC・サイズチェックを通過した`channel_send`で、COOS Schedulerのsender stamperが現在実行中の送信元TCBの`task_id`を`sender_id`へ設定し、メッセージSHMと埋込みリソースSHMを`IN_FLIGHT`へ移す。IPC Routerは所有権を直接変更しない。要求が確定した後、送信側は応答取得まで完了しない。
 2. **Rendezvous**: `(sender_role, target_role)` エッジ専用の CSP チャネル上でバッファなしの同期ハンドオフを試みる。受信側タスクが既に待機していれば即座に完了し、まだ到達していなければ送信側タスクは協調スケジューラ上でブロックし、受信側が到達した瞬間にランデブーが成立する。メッセージはバッファに滞留しない——値を保持するのは「相手が既に待っているか」という 1 ビットの状態のみである。
-3. **Grant**: ランデブーが成立した瞬間に、受信側に対して所有権（アクセス権）を付与（有効化）し、メッセージの In-flight 状態を解除して送信側ロックを物理的にリリースする。
+3. **Request Grant**: ランデブーが成立した瞬間に、COOS Schedulerが受信先TCBの実行コンテキストでメッセージSHMを`grant_shared`/`claim`し、埋込みリソースSHMをGrantする。受信側はメッセージを処理し、`response_code`を設定する。
+4. **Response Revoke / Grant**: 受信側の`reply`でCOOS Schedulerのreply stamperが受信側SHMを`IN_FLIGHT`へ移し、記録済みの`sender_id`のTCBの実行コンテキストでSHMをGrantする。SchedulerはそのTCBだけを起床し、応答完了後に送信側が`SENDER_OWNS`を取得する。
 
 ## 5. インターフェース定義
 
@@ -675,15 +696,26 @@ sequenceDiagram
 
 **COOS の CSP チャネルと同一の機構**: 本 API は COOS が定めるバッファなし同期ランデブーそのものである。`(sender_role, target_role)` の RBAC エッジ 1 本につき専用の CSP チャネルを持つ。値を保持するバッファが存在しないため、キュー満杯状態は原理的に発生しない。送信ホットパスから URI 探索を排除し、認可済み `Channel` オブジェクトを直接操作する。
 
-割り込み時の再スケジュール要求が保留されている場合、IPCルータはCOOSの要求世代を参照して直接ハンドオフを制限する。ランデブー成立に必要な一回の直接ハンドオフだけを許可し、遷移先タスクが世代を観測した後は追加のハンドオフ連鎖を行わず、協調スケジューラへ制御を戻す。所有権の `Sender → In-flight → Receiver` 遷移はこの制限によって変更しない。
+割り込み時の再スケジュール要求が保留されている場合、IPCルータはCOOSの要求世代を参照して直接ハンドオフを制限する。ランデブー成立に必要な一回の直接ハンドオフだけを許可し、遷移先タスクが世代を観測した後は追加のハンドオフ連鎖を行わず、協調スケジューラへ制御を戻す。所有権の要求 `Sender → In-flight → Receiver` と応答 `Receiver → In-flight → Sender` の遷移はこの制限によって変更しない。
 
 | 項目 | 内容 |
 | :--- | :--- |
-| 機能概要 | 事前認可された `Channel` オブジェクト上で、リソースの所有権を Revoke/Rendezvous/Grant の順で移譲する。呼び出し元 TCB ロールがチャネルの送信元エッジと一致することを検証する。相手が未到達の場合は協調スケジューラ上でブロックし、相手到達時に必ず完了する（キューが存在しないため失敗して差し戻る経路はない）。 |
-| シグネチャ | `route_message(channel: 通信チャネルオブジェクト, msg: ipc-message) -> operation-result` |
+| 機能概要 | 事前認可された `Channel` オブジェクト上で要求を送信し、受信側の応答まで送信側をブロックする。応答は受信側が同じメッセージへ応答コードを設定し、エコーまたは追加KV付きで返す。呼び出し元 TCB ロールがチャネルの送信元エッジと一致することを検証する。 |
+| シグネチャ | `route_message(channel: 通信チャネルオブジェクト, msg: ipc-message) -> result<ipc-message, operation-result>` |
 | 引数 | `channel`: 認可済み通信チャネルオブジェクト<br>`msg`: 送信メッセージ (`ipc-message`) |
-| 戻り値 | 操作結果を示す `operation-result`（成功時は `COMPLETED` を返し、メッセージのKey-Valueペア数が8個の静的制限を超えている場合は `ERR_MSG_TOO_LARGE`、ロール不一致の場合は `ERR_PERMISSION_DENIED` を返す） |
+| 戻り値 | 成功時は応答コードと応答データを含む同一 `ipc-message` を返す。メッセージのKey-Valueペア数が8個の静的制限を超えている場合は `ERR_MSG_TOO_LARGE`、ロール不一致の場合は `ERR_PERMISSION_DENIED` を返す。 |
 | エラー時の挙動 | `ERR_MSG_TOO_LARGE`/`ERR_PERMISSION_DENIED` はいずれも Revoke より前段の静的チェックであり、これらで失敗した場合メッセージの所有権は送信側から一度も動いていない（Rollback のような事後的な回復処理を必要としない）。Revoke 後は失敗経路が存在せず、相手の到達を待つのみである。 |
+
+#### メッセージ応答（reply_message）
+<!-- traceability: {OwnershipTransfer} {IPC_ZeroCopy} {ADR_RendezvousChannel} {CSP_Handoff} -->
+
+受信側はメッセージを処理した後、`response_code` を pending 以外へ設定して `reply_message` を呼ぶ。要求メッセージを変更しなければエコー応答になり、追加KVを書き込めば追加データ付き応答になる。応答は要求を保持している送信元 TCBだけへ渡される。送信元が応答待ちになる前に応答された場合も、Scheduler がチャネル内の一時的な応答状態を保持して送信元の待機開始時に直ちに取得させる。
+
+| 項目 | 内容 |
+| :--- | :--- |
+| シグネチャ | `reply_message(message: ipc-message, response_code: u32) -> operation-result` |
+| 前提条件 | 呼び出し元が `RECEIVER_OWNS` を持ち、`response_code != 0xffffffff` であること |
+| 事後条件 | メッセージは `IN_FLIGHT` を経由して元の `sender_id` の TCBへ戻り、送信側の待機が解除される。同一エッジ上の新規要求は応答完了後にだけ許可される。 |
 
 #### メッセージ受信（receive_message）
 <!-- traceability: {OwnershipTransfer} {IPC_ZeroCopy} {ADR_RendezvousChannel} {CSP_Handoff} -->
@@ -715,9 +747,9 @@ IPCのプリミティブ性を隠蔽し、依存性の逆転 (IoC) を実現す�
 
 | 不変条件 | 説明 | 検証方法 |
 | :--- | :--- | :--- |
-| **所有権単調性** | リソース所有権が Sender → In-flight → Receiver と一方向に移譲され、二重所有が発生しないこと。`{OwnershipTransfer}` | `formal/csp_handoff_model.py` CTL 安全性検証 (`AG(Not(sender_owns & receiver_owns))` ➔ True) |
+| **所有権単調性** | 要求は Sender → In-flight → Receiver、応答は Receiver → In-flight → Sender の順に移譲され、二重所有が発生しないこと。`{OwnershipTransfer}` | `formal/csp_handoff_model.py` CTL 安全性検証 (`AG(Not(sender_owns & receiver_owns))` ➔ True) |
 | **デッドロック不在** | クライアント・サーバ規律（非循環チャネル依存）により、Send/Recv の循環待ちデッドロックが発生しないこと。`{RoleBasedAccessControl}` | 設計レビュー（自動の機械的閉路検査ツールは無し） |
-| **In-flight待機の安全性** | 相手が未到達なら送信側はIn-flightで待機し、相手の到達後にだけRendezvous/Grantへ進む。相手タスクの到達・有限時間内の応答はCSP単独では保証しない。`{ADR_RendezvousChannel}` | `formal/csp_handoff_model.py`で待機状態の自己ループを含めて検査。`AG(in_flight -> AF(not in_flight))`の無条件証明は行わない |
+| **要求・応答待機の安全性** | 相手が未到達なら送信側は要求In-flightで待機し、受信後は応答コード設定と応答ハンドオフが完了するまで送信側をブロックする。相手タスクの到達・有限時間内の応答はCSP単独では保証しない。`{ADR_RendezvousChannel}` | `formal/csp_handoff_model.py`で要求待機・応答待機の自己ループを含めて検査。無条件の有限応答時間は証明しない |
 | **単一待機者制約** | 1 本の CSP チャネルは同時に高々 1 つの送信待機または受信待機しか保持しない（キューではない）こと。 | `formal/csp_handoff_model.py` 不変式検証（二重待機の禁止） |
 
 ### 6.2 検証対象のプロパティ

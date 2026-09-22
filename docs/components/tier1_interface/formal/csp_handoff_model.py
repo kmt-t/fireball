@@ -19,7 +19,9 @@ def build_model(*, guards: bool = True) -> Kripke:
     - s_preflight_rejected: 事前検証拒否、送信元が所有権を完全保持して終了 (sender_owns)
     - s_in_flight: Revoke 済み・チャネル上でランデブーを試みる (in_flight)
     - s_awaiting_peer: 受信者がまだ到達しておらずブロック中 (in_flight)
-    - s_receiver_holds: 受信者が所有権取得 (receiver_owns)
+    - s_receiver_holds: 受信者が要求メッセージの所有権取得 (receiver_owns)
+    - s_awaiting_reply: 受信者が処理中、送信者は応答待ち
+    - s_reply_in_flight: 応答コード付き同一メッセージを送信元へ返却中
     - s_both_owns: 違反状態（二重所有の競合状態）
     - s_orphaned: 違反状態（単一待機者制約が破られ、ブロック中のメッセージが上書き迷子）
     - s_preflight_leak: 違反状態（検証前に先に Revoke してしまい、検証拒否時に in-flight のままリーク）
@@ -31,6 +33,9 @@ def build_model(*, guards: bool = True) -> Kripke:
         "s_in_flight",
         "s_awaiting_peer",
         "s_receiver_holds",
+        "s_awaiting_reply",
+        "s_reply_in_flight",
+        "s_sender_unblocked_early",
         "s_both_owns",
         "s_orphaned",
         "s_preflight_leak",
@@ -52,12 +57,17 @@ def build_model(*, guards: bool = True) -> Kripke:
         ("s_awaiting_peer", "s_awaiting_peer"),
         # ブロック中の送信者に受信者が到達して Grant
         ("s_awaiting_peer", "s_receiver_holds"),
-        # 受信者処理完了 ➔ 送信者へ（次のメッセージに備える）
-        ("s_receiver_holds", "s_sender_holds"),
+        # 受信者は応答コードを設定するまで要求を保持する
+        ("s_receiver_holds", "s_awaiting_reply"),
+        ("s_awaiting_reply", "s_awaiting_reply"),
+        # 応答ランデブー後にだけ送信元へ所有権を戻す
+        ("s_awaiting_reply", "s_reply_in_flight"),
+        ("s_reply_in_flight", "s_sender_holds"),
         # 違反状態の自己ループ
         ("s_both_owns", "s_both_owns"),
         ("s_orphaned", "s_orphaned"),
         ("s_preflight_leak", "s_preflight_leak"),
+        ("s_sender_unblocked_early", "s_sender_unblocked_early"),
     ]
     if not guards:
         # ガード無効時（変異検査）:
@@ -67,6 +77,8 @@ def build_model(*, guards: bool = True) -> Kripke:
         R = [*R, ("s_awaiting_peer", "s_orphaned")]
         # 3. GOTCHA-IPCR-02: 検証前に先に Revoke してしまうと、検証失敗時にリソースが in-flight でリーク
         R = [*R, ("s_preflight_check", "s_preflight_leak")]
+        # 4. 応答待ちを省略すると、応答コード pending のまま送信元へ戻る
+        R = [*R, ("s_receiver_holds", "s_sender_unblocked_early")]
 
     L = {
         "s_sender_holds": {"sender_owns"},
@@ -75,6 +87,9 @@ def build_model(*, guards: bool = True) -> Kripke:
         "s_in_flight": {"in_flight"},
         "s_awaiting_peer": {"in_flight"},
         "s_receiver_holds": {"receiver_owns"},
+        "s_awaiting_reply": {"receiver_owns", "response_pending"},
+        "s_reply_in_flight": {"in_flight", "response_ready"},
+        "s_sender_unblocked_early": {"sender_owns", "response_pending", "early_reply"},
         "s_both_owns": {"sender_owns", "receiver_owns"},  # 違反状態
         "s_orphaned": {"in_flight", "leaked"},  # 違反状態
         "s_preflight_leak": {"in_flight", "leaked", "preflight_leaked"},  # 違反状態
@@ -86,6 +101,9 @@ def properties():
     bad = And(AtomicProposition("sender_owns"), AtomicProposition("receiver_owns"))
     orphaned = AtomicProposition("leaked")
     preflight_leaked = AtomicProposition("preflight_leaked")
+    sender_replied_before_response = And(
+        AtomicProposition("sender_owns"), AtomicProposition("response_pending")
+    )
     return [
         {
             "name": "double_ownership_freedom_proof",
@@ -110,6 +128,14 @@ def properties():
             "formula": AG(Not(preflight_leaked)),
             "violation": preflight_leaked,
             "expect": True,  # GOTCHA-IPCR-02: 事前検証前にRevokeしてしまうリークは到達不能
+        },
+        {
+            "name": "sender_unblocks_only_after_response",
+            "kind": "safety",
+            "logic": "CTL",
+            "formula": AG(Not(sender_replied_before_response)),
+            "violation": sender_replied_before_response,
+            "expect": True,
         },
     ]
 

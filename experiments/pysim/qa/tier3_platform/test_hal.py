@@ -38,6 +38,7 @@ from tier3_platform.drivers.hal.dummy import DummyDriver, Timer
 from hal_dispatch import (
     FB_CONF_HAL_BUFFER_SIZE,
     FB_CONF_HAL_MAX_BUFFERS,
+    HalBufferMapStatus,
     HalBufferPool,
     WasiIpcCmd,
 )
@@ -76,17 +77,19 @@ def test_hal_02_dummy_stdio_driver_streams_stdin_and_stdout():
     assert scheduler.current_task is not None
     vmmio = VMMIOController(guest_ram_size=8192, scheduler=scheduler)
     pool = HalBufferPool(scheduler, vmmio)
-    pool.bind_runtime()
     driver = DummyDriver(FB_URI_HAL_STDOUT)
     driver.bind_buffer_pool(pool)
     try:
         rx = pool.buffer(0)
         tx = pool.buffer(1)
+        assert pool.map_for_io(tx.buffer_id) == HalBufferMapStatus.MAPPED
         tx_view = pool.view(tx, 0, 10)
         tx_view[:] = b"out-1out-2"
+        pool.unmap_after_io(tx.buffer_id)
         assert driver.is_supported(WasiIpcCmd.STREAM_WRITE_BUFFER) == 1
         assert driver.is_supported(0xFFFF) == 0
         assert driver.feed_stdin(b"in-1in-2") == 8
+        assert pool.map_for_io(rx.buffer_id) == HalBufferMapStatus.MAPPED
         assert (
             driver.dispatch(
                 WasiIpcCmd.STREAM_READ_BUFFER,
@@ -97,6 +100,8 @@ def test_hal_02_dummy_stdio_driver_streams_stdin_and_stdout():
             == 8
         )
         assert bytes(pool.view(rx, 0, 8)) == b"in-1in-2"
+        pool.unmap_after_io(rx.buffer_id)
+        assert pool.map_for_io(tx.buffer_id) == HalBufferMapStatus.MAPPED
         assert (
             driver.dispatch(
                 WasiIpcCmd.STREAM_WRITE_BUFFER,
@@ -107,6 +112,7 @@ def test_hal_02_dummy_stdio_driver_streams_stdin_and_stdout():
             == 10
         )
         assert driver.drain_stdout() == b"out-1out-2"
+        pool.unmap_after_io(tx.buffer_id)
     finally:
         pool.close_all()
         driver.transport.close()
@@ -126,7 +132,6 @@ def test_hal_04_hal_buffer_pool_maps_fixed_slots():
     scheduler.current_task = scheduler.get_task(task_id)
     vmmio = VMMIOController(guest_ram_size=8192, scheduler=scheduler)
     pool = HalBufferPool(scheduler, vmmio)
-    pool.bind_runtime()
     try:
         handles = [pool.buffer(i) for i in range(FB_CONF_HAL_MAX_BUFFERS)]
         assert len(handles) == FB_CONF_HAL_MAX_BUFFERS
@@ -143,27 +148,26 @@ def test_hal_05_hal_buffer_slice_bounds_and_guest_mapping():
     scheduler.current_task = scheduler.get_task(owner_id)
     vmmio = VMMIOController(guest_ram_size=8192, scheduler=scheduler)
     pool = HalBufferPool(scheduler, vmmio)
-    pool.bind_runtime()
     try:
         scheduler.current_task = scheduler.get_task(other_id)
-        with expect_assertion("HAL DYNAMIC mapping supports one runtime only"):
-            pool.bind_runtime()
         scheduler.current_task = scheduler.get_task(owner_id)
         h = pool.buffer(0)
+        assert pool.map_for_io(h.buffer_id) == HalBufferMapStatus.MAPPED
         status, _ = vmmio.access(h.virtual_address, is_write=False)
         assert status == VmmioStatus.OK_PHYSICAL
         view = pool.view(h, 0, 16)
         assert len(view) == 16
         assert pool.can_view(h, 0, 16)
         scheduler.current_task = scheduler.get_task(other_id)
+        assert pool.map_for_io(h.buffer_id) == HalBufferMapStatus.BUSY
         assert not pool.can_view(h, 0, 16)
-        with expect_assertion("DYNAMIC mapping is not bound"):
+        with expect_assertion("DYNAMIC buffer is not mapped for this guest"):
             pool.view(h, 0, 16)
         scheduler.current_task = scheduler.get_task(owner_id)
-        pool.unbind_runtime()
+        pool.unmap_after_io(h.buffer_id)
         assert not pool.can_view(h, 0, 16)
-        pool.bind_runtime()
-        pool.close_all()
+        assert pool.map_for_io(h.buffer_id) == HalBufferMapStatus.MAPPED
+        pool.unmap_after_io(h.buffer_id)
         status, _ = vmmio.access(h.virtual_address, is_write=False)
         assert status == TrapCode.UNREGISTERED_PAGE
     finally:
@@ -184,8 +188,8 @@ def test_hal_task_ipc_communication():
     try:
         runtime_task = sysv.start_runtime_task(name="hal_ipc_guest")
         sysv.scheduler.current_task = runtime_task
-        sysv.pool.bind_runtime()
         buffer_handle = sysv.pool.buffer(0)
+        assert sysv.pool.map_for_io(buffer_handle.buffer_id) == HalBufferMapStatus.MAPPED
         buffer_view = sysv.pool.view(buffer_handle, 0, 128)
         buffer_view[:] = b"x" * 128
         sysv.start_hal_driver(
@@ -205,6 +209,7 @@ def test_hal_task_ipc_communication():
         assert stdio_task is not None
         assert stdio_task.processed_count == 1
         assert stdio_task.last_handled_cmd == WasiIpcCmd.STREAM_WRITE_BUFFER
+        sysv.pool.unmap_after_io(buffer_handle.buffer_id)
     finally:
         sysv.shutdown()
 
@@ -241,7 +246,7 @@ def test_hal_15_file_log_sink_receives_internal_logs():
     """System logs go to the injected file sink, never to guest stdout."""
     backing = io.BytesIO()
     sink = FileLogSink(backing)
-    sysv = System(logger_transport=sink)
+    sysv = System(logger_sink=sink)
     try:
         sysv.start_hal_driver(
             DummyDriver(sysv.wasi_hal_bindings.stdout_uri, transport=sysv.transport)

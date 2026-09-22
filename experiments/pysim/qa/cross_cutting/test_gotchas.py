@@ -766,12 +766,12 @@ def test_hal_gotcha_01_hal_buffer_pool_bounds_violation_rejected():
 
     vmmio = VMMIOController(guest_ram_size=8192, scheduler=scheduler)
     pool = HalBufferPool(scheduler, vmmio)
-    pool.bind_runtime()
     handle = pool.buffer(0)
+    assert pool.map_for_io(handle.buffer_id).name == "MAPPED"
     assert handle.capacity == 256
     with expect_assertion("escapes fixed buffer"):
         pool.view(handle, 0, 257)
-    pool.close_all()
+    pool.unmap_after_io(handle.buffer_id)
 
 
 def test_sys_gotcha_01_undefined_syscall_returns_enosys():

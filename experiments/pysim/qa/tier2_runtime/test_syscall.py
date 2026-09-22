@@ -271,6 +271,7 @@ def test_syscall_06_ipc_lookup_send_recv():
         def hal_receiver():
             status, msg = yield from sysv.ipc.recv()
             sent.append(msg)
+            assert sysv.ipc.reply(msg, 0) == IPCStatus.COMPLETED
 
         recv_id = sysv.scheduler.spawn("hal_receiver", hal_receiver(), role=Role.HAL_GPIO)
         sysv.scheduler.run_until_idle()
@@ -316,6 +317,10 @@ def test_syscall_06_ipc_lookup_send_recv():
         recv_len = sysv.fireball_call(FbSyscallId.IPC_RECV, core_handle, 96, 32, 0, 0, 0)
         assert recv_len == len(reply)
         assert bytes(guest_mem[96 : 96 + recv_len]) == reply
+        assert (
+            sysv.fireball_call(FbSyscallId.IPC_REPLY, core_handle, 0, 0, 0, 0, 0)
+            == WasiErrno.SUCCESS
+        )
         assert sent_status == [IPCStatus.COMPLETED]
     finally:
         sysv.shutdown()

@@ -8,8 +8,8 @@ Implementation Invariants & Gotchas:
   Values stay in sender frame until receiver handoff, eliminating double-ownership.
 - GOTCHA-COOS-02: 1-channel-1-waiter constraint triggers assertion on duplicate wait
   direction (no queues, no priority inversion, no dynamic allocation).
-- GOTCHA-COOS-03: ISR interrupt notification queue is non-blocking (drain_interrupts
-  wakes tasks deterministically at scheduler yield points).
+- GOTCHA-COOS-03: ISR interrupt notification queue is a bounded lock-free SPSC
+  ring (drain_interrupts wakes tasks deterministically at scheduler yield points).
 - ADR_InterruptRescheduleGeneration: an accepted interrupt starts one cooperative
   reschedule generation. Each task in the fixed round snapshot observes it once.
 - GOTCHA-SCHED-01: Consecutive direct handoff bound (FB_CONF_MAX_CONSECUTIVE_HANDOFFS)
@@ -25,7 +25,7 @@ from enum import IntEnum
 from typing import Protocol, cast
 
 from interrupt_event import InterruptEvent
-from system_containers import RingBuffer, StaticVector
+from system_containers import StaticVector
 
 FB_CONF_MAX_TASKS = 16
 FB_CONF_MAX_CHANNELS = FB_CONF_MAX_TASKS * 4
@@ -44,6 +44,51 @@ LOG_EVT_COOS_IRQ_OVERFLOW = 0x0104
 class SchedulerLogLevel(IntEnum):
     WARN = 2
     ERROR = 3
+
+
+class LockFreeInterruptEventQueue:
+    """Bounded SPSC ring used by ISR producer and COOS consumer.
+
+    The producer owns ``_tail`` and the consumer owns ``_head``.  A producer
+    publishes an event before advancing ``_tail``; the consumer clears a slot
+    before advancing ``_head``.  The C++ implementation maps these two
+    publications to release/acquire atomics and never takes a mutex.
+    """
+
+    __slots__ = ("_capacity", "_head", "_slots", "_tail")
+
+    def __init__(self, capacity: int) -> None:
+        assert capacity > 0
+        self._capacity = capacity
+        self._slots: StaticVector[InterruptEvent | None] = StaticVector(capacity=capacity)
+        for _ in range(capacity):
+            self._slots.append(None)
+        self._head = 0
+        self._tail = 0
+
+    def push(self, event: InterruptEvent) -> bool:
+        """Publish one event without blocking or overwriting an unread event."""
+        tail = self._tail
+        if tail - self._head >= self._capacity:
+            return False
+        self._slots[tail % self._capacity] = event
+        self._tail = tail + 1
+        return True
+
+    def pop(self) -> InterruptEvent | None:
+        """Consume the oldest published event without blocking."""
+        head = self._head
+        if head == self._tail:
+            return None
+        index = head % self._capacity
+        event = self._slots[index]
+        self._slots[index] = None
+        self._head = head + 1
+        assert event is not None
+        return event
+
+    def __len__(self) -> int:
+        return self._tail - self._head
 
 
 class _SchedulerLogger(Protocol):
@@ -68,6 +113,10 @@ class MovableChannelPayload(ChannelPayload, Protocol):
     """Payload whose channel performs an explicit move-only handoff."""
 
     def move_to(self, new_owner: int) -> ChannelPayload | None: ...
+
+
+SenderStamper = Callable[[ChannelPayload, int], None]
+ReplyStamper = Callable[[ChannelPayload], None]
 
 
 class ChannelTransferMode(IntEnum):
@@ -236,27 +285,46 @@ class SelectGroup:
 
 
 class Channel:
-    """Bufferless synchronous CSP rendezvous channel (ADR_RendezvousChannel).
+    """Bufferless synchronous CSP channel.
 
     Fields defined in os_coos.md 3.3:
     - waiter_task: Task | None (single waiting task or None)
     - waiter_dir: WaitDir (NONE, SEND, RECV)
+
+    Channels configured with ``request_reply`` keep a completed request
+    associated with its sender until the receiver publishes a reply. This
+    keeps one request/reply transaction on that CSP edge and makes the
+    sender's unblock part of the scheduler protocol; ordinary CSP channels
+    remain one-way.
     """
 
     __slots__ = (
         "scheduler",
+        "request_reply",
+        "sender_stamper",
+        "reply_stamper",
         "transfer_mode",
         "waiter_dir",
         "waiter_group",
         "waiter_task",
+        "reply_sender_task",
+        "reply_waiter_task",
+        "reply_payload",
+        "reply_value",
     )
 
     def __init__(
         self,
         scheduler: "Scheduler | None" = None,
         transfer_mode: ChannelTransferMode = ChannelTransferMode.BORROWED,
+        sender_stamper: SenderStamper | None = None,
+        reply_stamper: ReplyStamper | None = None,
+        request_reply: bool = False,
     ):
         self.scheduler = scheduler
+        self.request_reply = request_reply
+        self.sender_stamper = sender_stamper
+        self.reply_stamper = reply_stamper
         self.transfer_mode = transfer_mode
         self.waiter_task: Task | None = None
         self.waiter_dir: WaitDir = WaitDir.NONE
@@ -265,6 +333,10 @@ class Channel:
         # walks group.channels to clear waiter_task from the non-winning
         # channels, preserving the one-waiter-per-channel invariant.
         self.waiter_group: SelectGroup | None = None
+        self.reply_sender_task: Task | None = None
+        self.reply_waiter_task: Task | None = None
+        self.reply_payload: ChannelPayload | None = None
+        self.reply_value: ChannelPayload | None = None
 
     def send(self, data: ChannelPayload) -> tuple[ChannelAction, ChannelPayload | None]:
         """Synchronous CSP send on this channel."""
@@ -276,6 +348,16 @@ class Channel:
         assert self.scheduler is not None, "Channel not attached to a scheduler"
         return self.scheduler.channel_recv(self)
 
+    def wait_reply(self) -> tuple[ChannelAction, ChannelPayload | None]:
+        """Wait for the reply belonging to the current request sender."""
+        assert self.scheduler is not None, "Channel not attached to a scheduler"
+        return self.scheduler.channel_wait_reply(self)
+
+    def reply(self, data: ChannelPayload) -> tuple[ChannelAction, ChannelPayload | None]:
+        """Publish the response for the current request transaction."""
+        assert self.scheduler is not None, "Channel not attached to a scheduler"
+        return self.scheduler.channel_reply(self, data)
+
 
 class Task:
     """A single coroutine-based task with explicit cooperative lifecycle state."""
@@ -285,12 +367,14 @@ class Task:
         "last_seen_generation",
         "name",
         "pending_interrupt_event",
+        "pending_reply",
         "pending_val",
         "ready_next",
         "ready_prev",
         "received_val",
         "result",
         "role",
+        "service_handle",
         "state",
         "task_id",
         "waiting_irq",
@@ -302,15 +386,20 @@ class Task:
         name: str,
         coro: Generator[ChannelPayload, None, None] | None = None,
         role: int = 0,
+        service_handle: int | None = None,
     ):
         self.task_id = task_id
         self.name = name
         self.coro = coro
         self.role = role
+        self.service_handle = service_handle
         self.state = TaskState.READY
         self.ready_prev: Task | None = None
         self.ready_next: Task | None = None
         self.pending_val: ChannelPayload | None = None
+        # Generic task-owned reply slot. Tier 2 uses it for the IPC_REPLY ABI;
+        # the scheduler does not depend on the IPC message representation.
+        self.pending_reply: ChannelPayload | None = None
         self.received_val: ChannelPayload | None = None
         self.result: ChannelPayload | None = None
         self.pending_interrupt_event: InterruptEvent | None = None
@@ -357,7 +446,7 @@ class Scheduler:
         self.idle_hooks: StaticVector[Callable[[], None]] = StaticVector(
             capacity=FB_CONF_MAX_IDLE_HOOKS
         )
-        self.interrupt_event_queue: RingBuffer[InterruptEvent] = RingBuffer(
+        self.interrupt_event_queue = LockFreeInterruptEventQueue(
             capacity=FB_CONF_INTERRUPT_QUEUE_SIZE
         )
         self.dropped_irqs = 0
@@ -478,6 +567,7 @@ class Scheduler:
         coro: Generator[ChannelPayload, None, None] | None = None,
         task_id: int | None = None,
         role: int = 0,
+        service_handle: int | None = None,
     ) -> int:
         """Spawn a new task within FB_CONF_MAX_TASKS bounds."""
         # os_scheduler.md: a terminated task returns its TCB slot.  The slot is reclaimed here,
@@ -514,7 +604,7 @@ class Scheduler:
             assigned_id = self._next_id
             self._next_id += 1
 
-        task = Task(assigned_id, name, coro, role=role)
+        task = Task(assigned_id, name, coro, role=role, service_handle=service_handle)
         # A task created during an active generation belongs to the next round.
         task.last_seen_generation = self.reschedule_generation
         self._all.push_back(task)
@@ -545,12 +635,21 @@ class Scheduler:
     def create_channel(
         self,
         transfer_mode: ChannelTransferMode = ChannelTransferMode.BORROWED,
+        sender_stamper: SenderStamper | None = None,
+        reply_stamper: ReplyStamper | None = None,
+        request_reply: bool = False,
     ) -> Channel:
         """
         Creates an unbuffered synchronous CSP rendezvous channel (ADR_RendezvousChannel).
         Call channel.send(data) or channel.recv() directly on the returned Channel.
         """
-        channel = Channel(scheduler=self, transfer_mode=transfer_mode)
+        channel = Channel(
+            scheduler=self,
+            transfer_mode=transfer_mode,
+            sender_stamper=sender_stamper,
+            reply_stamper=reply_stamper,
+            request_reply=request_reply,
+        )
         channel_added = self._channels.push_back(channel)
         assert channel_added, f"Channel capacity exceeded (max {FB_CONF_MAX_CHANNELS})"
         return channel
@@ -571,20 +670,27 @@ class Scheduler:
         task.pending_interrupt_event = None
         self._remove_round_target(task)
         for channel in self._channels:
-            if channel.waiter_task is not task:
-                continue
-            group = channel.waiter_group
-            channel.waiter_task = None
-            channel.waiter_dir = WaitDir.NONE
-            channel.waiter_group = None
-            if group is not None:
-                for other in group.channels:
-                    if other.waiter_task is task:
-                        other.waiter_task = None
-                        other.waiter_dir = WaitDir.NONE
-                        other.waiter_group = None
-            task.pending_val = None
-            break
+            if channel.waiter_task is task:
+                group = channel.waiter_group
+                channel.waiter_task = None
+                channel.waiter_dir = WaitDir.NONE
+                channel.waiter_group = None
+                if group is not None:
+                    for other in group.channels:
+                        if other.waiter_task is task:
+                            other.waiter_task = None
+                            other.waiter_dir = WaitDir.NONE
+                            other.waiter_group = None
+                task.pending_val = None
+            if channel.reply_waiter_task is task:
+                assert channel.reply_sender_task is task
+                assert channel.reply_value is None
+                channel.reply_waiter_task = None
+            if channel.reply_sender_task is task:
+                assert channel.reply_waiter_task is None
+                assert channel.reply_value is None
+                channel.reply_sender_task = None
+                channel.reply_payload = None
 
         task.received_val = None
         if task.coro is not None:
@@ -598,10 +704,19 @@ class Scheduler:
     def channel_send(
         self, channel: Channel, data: ChannelPayload
     ) -> tuple[ChannelAction, ChannelPayload | None]:
-        """Synchronous CSP send with atomic ownership handoff directly on Channel."""
+        """Synchronous CSP request send with authenticated sender stamping."""
         ch = channel
         sender = self.current_task
         assert sender is not None, "channel_send requires active running task"
+        if ch.request_reply:
+            assert ch.reply_sender_task is None, (
+                "one waiter per channel: separate channels are required while previous sender awaits a reply"
+            )
+            assert ch.reply_payload is None and ch.reply_value is None, (
+                "a channel cannot accept a new request while a reply is pending"
+            )
+        if ch.sender_stamper is not None:
+            ch.sender_stamper(data, sender.task_id)
         if ch.waiter_dir == WaitDir.RECV:
             receiver = ch.waiter_task
             assert receiver is not None
@@ -617,11 +732,10 @@ class Scheduler:
                             WaitDir.NONE,
                             None,
                         )
-            if ch.transfer_mode == ChannelTransferMode.MOVABLE:
-                movable = cast(MovableChannelPayload, data)
-                val = movable.move_to(receiver.task_id)
-            else:
-                val = data
+            val = self._move_payload(ch, data, receiver)
+            if ch.request_reply:
+                ch.reply_sender_task = sender
+                ch.reply_payload = data
             receiver.received_val = val
             receiver.state = TaskState.READY
             sender.state = TaskState.READY
@@ -631,6 +745,9 @@ class Scheduler:
         )
         ch.waiter_task, ch.waiter_dir = sender, WaitDir.SEND
         sender.pending_val = data
+        if ch.request_reply:
+            ch.reply_sender_task = sender
+            ch.reply_payload = data
         sender.state = TaskState.SUSPENDED_CSP
         self._remove_round_target(sender)
         self._complete_reschedule_if_ready()
@@ -648,9 +765,10 @@ class Scheduler:
             sender.pending_val = None  # Prevent double ownership
             ch.waiter_task, ch.waiter_dir = None, WaitDir.NONE
             assert val is not None
-            if ch.transfer_mode == ChannelTransferMode.MOVABLE:
-                movable = cast(MovableChannelPayload, val)
-                val = movable.move_to(receiver.task_id)
+            val = self._move_payload(ch, val, receiver)
+            if ch.request_reply:
+                ch.reply_sender_task = sender
+                ch.reply_payload = val
             receiver.received_val = val
             sender.state = TaskState.READY
             receiver.state = TaskState.READY
@@ -682,9 +800,10 @@ class Scheduler:
                 sender.pending_val = None
                 ch.waiter_task, ch.waiter_dir = None, WaitDir.NONE
                 assert val is not None
-                if ch.transfer_mode == ChannelTransferMode.MOVABLE:
-                    movable = cast(MovableChannelPayload, val)
-                    val = movable.move_to(receiver.task_id)
+                val = self._move_payload(ch, val, receiver)
+                if ch.request_reply:
+                    ch.reply_sender_task = sender
+                    ch.reply_payload = val
                 receiver.received_val = val
                 sender.state = TaskState.READY
                 receiver.state = TaskState.READY
@@ -700,6 +819,66 @@ class Scheduler:
         self._remove_round_target(receiver)
         self._complete_reschedule_if_ready()
         return (ChannelAction.BLOCK, None)
+
+    def channel_wait_reply(
+        self, channel: Channel
+    ) -> tuple[ChannelAction, ChannelPayload | None]:
+        """Block the authenticated request sender until its response arrives."""
+        ch = channel
+        sender = self.current_task
+        assert sender is not None, "channel_wait_reply requires active running task"
+        assert ch.request_reply, "channel is not configured for request/reply"
+        assert ch.reply_sender_task is sender, "current task is not this channel's request sender"
+        if ch.reply_value is not None:
+            value = ch.reply_value
+            ch.reply_value = None
+            ch.reply_sender_task = None
+            ch.reply_payload = None
+            sender.received_val = None
+            return (ChannelAction.YIELD, value)
+        assert ch.reply_waiter_task is None, "one reply waiter per channel"
+        assert sender.received_val is None, "sender already has an unconsumed channel value"
+        ch.reply_waiter_task = sender
+        sender.state = TaskState.SUSPENDED_CSP
+        self._remove_round_target(sender)
+        self._complete_reschedule_if_ready()
+        return (ChannelAction.BLOCK, None)
+
+    def channel_reply(
+        self, channel: Channel, data: ChannelPayload
+    ) -> tuple[ChannelAction, ChannelPayload | None]:
+        """Publish one response and wake the exact authenticated request sender."""
+        ch = channel
+        receiver = self.current_task
+        assert receiver is not None, "channel_reply requires active running task"
+        assert ch.request_reply, "channel is not configured for request/reply"
+        sender = ch.reply_sender_task
+        assert sender is not None, "reply requires an active request transaction"
+        assert ch.reply_payload is data, "reply must return the received message object"
+        assert ch.reply_value is None, "a request can receive only one reply"
+        if ch.reply_stamper is not None:
+            ch.reply_stamper(data)
+        data = self._move_payload(ch, data, sender)
+        ch.reply_value = data
+        if ch.reply_waiter_task is None:
+            return (ChannelAction.YIELD, None)
+        assert ch.reply_waiter_task is sender
+        ch.reply_waiter_task = None
+        sender.received_val = data
+        sender.state = TaskState.READY
+        return self._handoff_or_yield(sender)
+
+    def _move_payload(
+        self, channel: Channel, data: ChannelPayload, target: Task
+    ) -> ChannelPayload:
+        """Move a payload while the scheduler authenticates the target TCB."""
+        if channel.transfer_mode != ChannelTransferMode.MOVABLE:
+            return data
+        movable = cast(MovableChannelPayload, data)
+        with self.task_context(target):
+            moved = movable.move_to(target.task_id)
+        assert moved is not None, "movable CSP payload rejected by target TCB"
+        return moved
 
     def _handoff_or_yield(self, target_task: Task) -> tuple[ChannelAction, ChannelPayload | None]:
         """CSP direct handoff or scheduler yield upon consecutive threshold."""
@@ -734,7 +913,7 @@ class Scheduler:
 
     def notify_interrupt(self, event: InterruptEvent) -> bool:
         """Non-blocking ISR notification of a fixed five-word event."""
-        if len(self.interrupt_event_queue) >= FB_CONF_INTERRUPT_QUEUE_SIZE:
+        if not self.interrupt_event_queue.push(event):
             self.dropped_irqs += 1
             if self.logger is not None:
                 self.logger.log_event(
@@ -746,7 +925,6 @@ class Scheduler:
                     0,
                 )
             return False
-        self.interrupt_event_queue.push(event)
         if not self.reschedule_pending:
             self.reschedule_generation += 1
             self.reschedule_pending = True

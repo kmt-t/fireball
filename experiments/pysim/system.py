@@ -7,7 +7,7 @@ fireball_call's host-call ID space and error-code convention adhere
 strictly to the architectural specifications:
 - `docs/components/tier2_runtime/runtime_syscall.md` defines the real ID table
 - `docs/components/tier2_runtime/runtime_vmmio.md` defines the vMMIO address layout
-- `docs/components/tier1_interface/ipc_router.md` defines the URI-routed, zero-copy message queue
+- `docs/components/tier1_interface/ipc_router.md` defines the URI-routed, zero-copy request/reply CSP
 This module uses self-contained simulation modules (`vmmio.py`, `ipc_router.py`,
 `tier2_runtime/memory.py`) mirroring the authoritative concept models, and provides
     the actual byte-level storage and wire-level u32 handle numbering
@@ -88,15 +88,15 @@ class System:
 
     def __init__(
         self,
-        logger_transport: StreamSink | None = None,
+        logger_sink: StreamSink | None = None,
         drivers: PlatformDriverConfiguration | None = None,
     ):
-        self.drivers = drivers if drivers is not None else create_default_platform_drivers(logger_transport)
+        self.drivers = drivers if drivers is not None else create_default_platform_drivers(logger_sink)
         self.wasi_hal_bindings = self.drivers.wasi_hal_bindings
         self.wasi_backend = self.drivers.wasi_backend
         self.transport = self.drivers.stdout_transport
         self.dictionary = LogDictionary()
-        self.logger = Logger(self.drivers.logger_transport, self.dictionary, min_level=LogLevel.DEBUG)
+        self.logger = Logger(self.drivers.logger_sink, self.dictionary, min_level=LogLevel.DEBUG)
         self.scheduler = Scheduler(logger=self.logger)
         # --- vMMIO: real FlatMap+TLB dispatch, this file's own byte
         # storage behind it (vmmio_concept.access() deliberately stops at the
@@ -193,7 +193,7 @@ class System:
             ),
             (
                 FbSyscallId.IPC_SEND,
-                lambda a0, a1, a2, a3, a4, a5: int(self._ipc_send(a0, a1, a2)),
+                lambda a0, a1, a2, a3, a4, a5: int(self._ipc_send(a0, a1, a2, a3)),
             ),
             (
                 FbSyscallId.IPC_RECV,
@@ -202,6 +202,10 @@ class System:
             (
                 FbSyscallId.IPC_LOOKUP,
                 lambda a0, a1, a2, a3, a4, a5: self._ipc_lookup(a0, a1),
+            ),
+            (
+                FbSyscallId.IPC_REPLY,
+                lambda a0, a1, a2, a3, a4, a5: int(self._ipc_reply(a0, a1)),
             ),
             (
                 FbSyscallId.WASI_FD_WRITE,
@@ -274,15 +278,13 @@ class System:
         assert task.role == role, "Guest binding role must match the current scheduler task"
         self.scheduler.require_active_task(task)
         self._bound_runtime_task = task
-        self.pool.bind_runtime()
 
     def attach_wasi_context(self, context: WasiPreview1Host) -> None:
         """Connect the Tier 2 Preview 1 host implementation used by syscall handlers."""
         self.wasi_context = context
 
     def unbind_runtime(self) -> None:
-        """Unmaps the fixed HAL DYNAMIC buffers from the bound Runtime."""
-        self.pool.unbind_runtime()
+        """Unbinds guest linear memory; DYNAMIC mappings are operation-scoped."""
         self._bound_runtime_task = None
 
     def dispatch_current_interrupt(self) -> DispatchResult | None:
@@ -492,7 +494,9 @@ class System:
             return WasiErrno.NOMEM
         return len(self._channel_table)
 
-    def _ipc_send(self, handle_id: int, msg_offset: int, msg_len: int) -> WasiErrno:
+    def _ipc_send(
+        self, handle_id: int, msg_offset: int, msg_len: int, response_code_ptr: int = 0
+    ) -> WasiErrno:
         if handle_id < 1 or handle_id > len(self._channel_table):
             return WasiErrno.BADF
         channel = self._channel_table[handle_id - 1]
@@ -510,24 +514,34 @@ class System:
         try:
             next(gen)
             # Counterpart is not ready yet: attach and step cooperatively
+            task.result = None
             task.coro = gen
-            self.scheduler.attach(task)
+            if task.state == TaskState.READY:
+                self.scheduler.attach(task)
             while (
-                task.state != TaskState.TERMINATED
-                and task.state != TaskState.READY
-                and task.coro is not None
+                task.result is None
+                and task.coro is gen
             ):
                 self.scheduler.step()
-            status, _ = task.result if task.result else (IPCStatus.COMPLETED, None)
+            status, response = task.result if task.result else (IPCStatus.COMPLETED, None)
+            task.result = None
+            task.coro = None
+            task.state = TaskState.READY
+            self.scheduler.current_task = task
         except StopIteration as e:
             # Direct O(1) rendezvous handoff (atomic ownership transfer)
             try:
-                status, _ = e.value
+                status, response = e.value
             except (TypeError, ValueError):
-                status = IPCStatus.COMPLETED
+                status, response = IPCStatus.COMPLETED, None
             self.scheduler.run_until_idle()
 
         if status == IPCStatus.COMPLETED:
+            if response_code_ptr != 0:
+                if response is None or not self._write_guest(
+                    response_code_ptr, response.response_code.to_bytes(4, "little")
+                ):
+                    return WasiErrno.FAULT
             return WasiErrno.SUCCESS
         if status == IPCStatus.ERR_PERMISSION_DENIED:
             return WasiErrno.PERM
@@ -541,15 +555,20 @@ class System:
         try:
             next(gen)
             # Counterpart is not ready yet: attach and step cooperatively
+            task.result = None
             task.coro = gen
-            self.scheduler.attach(task)
+            if task.state == TaskState.READY:
+                self.scheduler.attach(task)
             while (
-                task.state != TaskState.TERMINATED
-                and task.state != TaskState.READY
-                and task.coro is not None
+                task.result is None
+                and task.coro is gen
             ):
                 self.scheduler.step()
             status, msg = task.result if task.result else (IPCStatus.COMPLETED, None)
+            task.result = None
+            task.coro = None
+            task.state = TaskState.READY
+            self.scheduler.current_task = task
         except StopIteration as e:
             # Direct O(1) rendezvous handoff
             try:
@@ -568,7 +587,20 @@ class System:
         n = len(data)
         if not self._write_guest(buf_offset, data):
             return int(WasiErrno.FAULT)
+        task.pending_reply = msg
         return n
+
+    def _ipc_reply(self, handle_id: int, response_code: int) -> WasiErrno:
+        """Reply to the most recent IPC_RECV message on the current task."""
+        task = self.scheduler.current_task
+        assert task is not None, "IPC reply requires an active scheduler task"
+        pending = task.pending_reply
+        if pending is None:
+            return WasiErrno.INVAL
+        status = self.ipc.reply(pending, response_code)
+        task.pending_reply = None
+        self.scheduler.run_until_idle()
+        return WasiErrno.SUCCESS if status == IPCStatus.COMPLETED else WasiErrno.IO
 
     # --- WASI (interface_wit.md §5.5-5.6) --------------------------------
     def _wasi_fd_write(self, fd: int, iovs_ptr: int, iovs_len: int, nwritten_ptr: int) -> WasiErrno:
@@ -609,7 +641,9 @@ class System:
         assert self._hal_task_index.view().find(uri_key) is None, (
             f"duplicate HAL driver URI: {driver.uri}"
         )
-        task_id, task = driver.start(self.ipc, self.scheduler, desc.role)
+        task_id, task = driver.start(
+            self.ipc, self.scheduler, desc.role, self.ipc.lookup_service_handle(driver.uri)
+        )
         assert self._hal_task_storage.insert(uri_key, task)
         self._hal_task_index = ReadOnlyFlatMapStorage.create(self._hal_task_storage.view().entries)
         return task_id
@@ -633,7 +667,12 @@ class System:
         """
         from tier3_plugins.debugger.gdb_server import GDBServer
 
-        gdb_srv = GDBServer(dbg, host=host, port=port)
+        gdb_srv = GDBServer(
+            dbg,
+            host=host,
+            port=port,
+            transport=self.drivers.debugger_sink,
+        )
         bound_port = gdb_srv.bind_socket()
         self.gdb_server = gdb_srv
         task_id = self.scheduler.spawn(

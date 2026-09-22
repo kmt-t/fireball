@@ -85,10 +85,17 @@ class HalError(Exception):
 class HalBufferTrap(HalError):
     """
     A guest touched an unmapped or stale HAL buffer-pool handle, or a slice
-        escaped the handle's acquired bounds. DYNAMIC buffers do not carry
-        shared-memory task ownership; the mapped-guest boundary is checked
+        escaped the handle's fixed bounds. DYNAMIC buffers do not carry
+        shared-memory ownership; the mapped-guest boundary is checked
         separately from the HAL driver's privileged view.
     """
+
+
+class HalBufferMapStatus(IntEnum):
+    """Result of one guest-scoped DYNAMIC buffer mapping request."""
+
+    MAPPED = 0
+    BUSY = 1
 
 
 # ---------------------------------------------------------------------------
@@ -128,10 +135,9 @@ class HalBufferPool:
     """
     FB_CONF_HAL_MAX_BUFFERS fixed-size slots of
         FB_CONF_HAL_BUFFER_SIZE bytes each: a static pool, not a dynamic
-        allocator. The pool is MMIO'd into the vMMIO DYNAMIC region when the
-        single runtime mapping is bound. There is no acquire/release lifecycle;
-        HAL owns all slots for the lifetime of the system. The HAL driver may
-        access every slot, while the one mapped guest may access the same slots.
+        allocator. One selected slot is MMIO'd into the vMMIO DYNAMIC region
+        only for the duration of one I/O operation. The HAL driver may access
+        that live slot while the operation is being serviced.
     """
 
     def __init__(self, scheduler: Scheduler, vmmio: VMMIOController):
@@ -147,47 +153,45 @@ class HalBufferPool:
                     _storage=bytearray(FB_CONF_HAL_BUFFER_SIZE),
                 )
             )
-        self._mapped_runtime_task: int | None = None
+        self._mapped_task_id: int | None = None
+        self._mapped_buffer_id: int | None = None
 
-    def bind_runtime(self) -> None:
-        """Binds and maps the fixed DYNAMIC buffer array to one runtime task."""
+    def map_for_io(self, buffer_id: int) -> HalBufferMapStatus:
+        """Map one buffer for the current guest's one I/O operation."""
+        assert 0 <= buffer_id < len(self._slots), f"buffer {buffer_id} does not exist"
         task_id = self.current_task_id
-        if self._mapped_runtime_task is None:
-            self._mapped_runtime_task = task_id
-            for slot_idx, handle in enumerate(self._slots):
-                self._vmmio.map_dynamic_page(handle.virtual_address >> VMMIO_PAGE_SHIFT, slot_idx)
-            return
-        assert self._mapped_runtime_task == task_id, "HAL DYNAMIC mapping supports one runtime only"
+        if self._mapped_task_id is not None:
+            return HalBufferMapStatus.BUSY
+        handle = self._slots[buffer_id]
+        self._vmmio.map_dynamic_page(handle.virtual_address >> VMMIO_PAGE_SHIFT, buffer_id)
+        self._mapped_task_id = task_id
+        self._mapped_buffer_id = buffer_id
+        return HalBufferMapStatus.MAPPED
 
     @property
     def current_task_id(self) -> int:
         return self._scheduler.current_task_id
 
     def buffer(self, buffer_id: int) -> HalBufferHandle:
-        """Returns one fixed HAL buffer visible to the mapped guest."""
-        task_id = self.current_task_id
-        assert self._mapped_runtime_task == task_id, (
-            "HAL DYNAMIC mapping is not bound to this runtime"
-        )
+        """Returns the opaque handle for one fixed slot."""
         assert 0 <= buffer_id < len(self._slots)
         return self._slots[buffer_id]
 
-    def unbind_runtime(self) -> None:
-        """Unmaps all fixed DYNAMIC buffers from the currently bound Runtime."""
+    def unmap_after_io(self, buffer_id: int) -> None:
+        """Unmap the slot after the current guest I/O operation completes."""
         task_id = self.current_task_id
-        assert self._mapped_runtime_task == task_id, (
-            "HAL DYNAMIC mapping is not bound to this runtime"
-        )
-        for handle in self._slots:
-            self._vmmio.unmap_dynamic_page(handle.virtual_address >> VMMIO_PAGE_SHIFT)
-        self._mapped_runtime_task = None
+        assert self._mapped_task_id == task_id, "DYNAMIC mapping is not owned by this guest"
+        assert self._mapped_buffer_id == buffer_id, "DYNAMIC buffer mapping does not match"
+        handle = self._slots[buffer_id]
+        self._vmmio.unmap_dynamic_page(handle.virtual_address >> VMMIO_PAGE_SHIFT)
+        self._mapped_task_id = None
+        self._mapped_buffer_id = None
 
     def _resolve(self, handle: HalBufferHandle) -> HalBufferHandle:
         task_id = self.current_task_id
-        assert self._mapped_runtime_task == task_id, (
-            "HAL DYNAMIC mapping is not bound to this runtime"
-        )
+        assert self._mapped_task_id == task_id, "DYNAMIC buffer is not mapped for this guest"
         assert 0 <= handle.buffer_id < len(self._slots), f"buffer {handle.buffer_id} does not exist"
+        assert self._mapped_buffer_id == handle.buffer_id, "DYNAMIC buffer is not mapped for this operation"
         record = self._slots[handle.buffer_id]
         assert record.buffer_id == handle.buffer_id, "stale HAL buffer handle"
         return record
@@ -201,6 +205,7 @@ class HalBufferPool:
         """
         assert buffer_id >= 0
         assert buffer_id < len(self._slots), f"buffer {buffer_id} does not exist"
+        assert self._mapped_buffer_id == buffer_id, "DYNAMIC buffer is not mapped for this operation"
         record = self._slots[buffer_id]
         assert record.buffer_id == buffer_id, f"buffer {buffer_id} does not exist"
         assert 0 <= offset <= record.capacity
@@ -210,11 +215,12 @@ class HalBufferPool:
         return memoryview(record._storage)[offset : offset + length]
 
     def close_all(self) -> None:
-        if self._mapped_runtime_task is None:
+        if self._mapped_buffer_id is None:
             return
-        for handle in self._slots:
-            self._vmmio.unmap_dynamic_page(handle.virtual_address >> VMMIO_PAGE_SHIFT)
-        self._mapped_runtime_task = None
+        handle = self._slots[self._mapped_buffer_id]
+        self._vmmio.unmap_dynamic_page(handle.virtual_address >> VMMIO_PAGE_SHIFT)
+        self._mapped_task_id = None
+        self._mapped_buffer_id = None
 
     def can_view(self, handle: HalBufferHandle, offset: int, length: int) -> bool:
         """
@@ -224,7 +230,7 @@ class HalBufferPool:
         in the target C++ build).
         """
         task_id = self.current_task_id
-        if self._mapped_runtime_task != task_id:
+        if self._mapped_task_id != task_id or self._mapped_buffer_id != handle.buffer_id:
             return False
         if handle.buffer_id < 0 or handle.buffer_id >= len(self._slots):
             return False
@@ -328,10 +334,14 @@ class HalDriver:
         assert callback is not None, f"unregistered HAL command {cmd_id:#x}"
         return callback(params)
 
-    def start(self, ipc: IPCRouter, scheduler: Scheduler, role: Role) -> tuple[int, HalTask]:
+    def start(
+        self, ipc: IPCRouter, scheduler: Scheduler, role: Role, service_handle: int
+    ) -> tuple[int, HalTask]:
         """Starts this driver's dedicated HAL task and returns its task handle."""
         task = HalTask(ipc, self)
-        task_id = scheduler.spawn(f"hal_task[{self.uri}]", task.run(), role=role)
+        task_id = scheduler.spawn(
+            f"hal_task[{self.uri}]", task.run(), role=role, service_handle=service_handle
+        )
         return task_id, task
 
 
@@ -379,6 +389,8 @@ class HalTask:
 
             self.last_result = self.driver.dispatch(cmd_id, msg.payload)
             self.last_handled_cmd = cmd_id
+            msg.append(ARG_RESULT, self.last_result)
+            self.ipc.reply(msg, self.last_result)
             yield (ChannelAction.YIELD, None)
 
 

@@ -20,6 +20,7 @@ from hal_dispatch import (
     ARG_OFFSET,
     FB_CONF_HAL_BUFFER_SIZE,
     HalBufferHandle,
+    HalBufferMapStatus,
     HalBufferPool,
     HalTask,
     WasiIpcCmd,
@@ -87,6 +88,8 @@ class WasiInterfaceVTable:
     read: Callable[..., WasiValue] | None = None
     close: Callable[..., WasiValue] | None = None
     write_buffer: Callable[..., WasiValue] | None = None
+    map_buffer: Callable[..., WasiValue] | None = None
+    unmap_buffer: Callable[..., WasiValue] | None = None
     read_buffer: Callable[..., WasiValue] | None = None
     flush: Callable[..., WasiValue] | None = None
     get_now: Callable[..., WasiValue] | None = None
@@ -126,10 +129,6 @@ class Wasi03pEngine:
                 self.bindings.stdout_uri, handle, offset, length
             ),
         )
-        logger_iface = WasiInterfaceVTable(
-            log=lambda msg: self.sysv.logger.debug(msg),
-        )
-
         entries: StaticVector[tuple[int, WasiInterfaceVTable]] = StaticVector.of(
             (
                 (fnv1a_32(self.bindings.stdout_uri), console_iface),
@@ -137,7 +136,6 @@ class Wasi03pEngine:
                 (fnv1a_32("wasi:io/streams"), console_iface),
                 (fnv1a_32("wasi:cli/stdout@0.3.0"), console_iface),
                 (fnv1a_32("wasi:cli/stdout"), console_iface),
-                (fnv1a_32(self.bindings.logger_uri), logger_iface),
             ),
             capacity=FB_CONF_MAX_IMPORTS,
         )
@@ -166,6 +164,7 @@ class Wasi03pEngine:
 
         caller_task = self.sysv.scheduler.current_task
         assert caller_task is not None, "WASI IPC requires an active runtime task"
+        response_codes: StaticVector[int] = StaticVector(capacity=1)
 
         def sender_coro() -> Generator[tuple[ChannelAction, None], None, None]:
             status, channel = self.sysv.ipc.lookup(uri)
@@ -174,15 +173,16 @@ class Wasi03pEngine:
             msg = make_hal_ipc_message(
                 cmd_id, params.entries, memory_manager=self.sysv.memory_manager
             )
-            yield from self.sysv.ipc.send(channel, msg)
+            status, response = yield from self.sysv.ipc.send(channel, msg)
+            assert status == IPCStatus.COMPLETED and response is not None
+            response_codes.append(response.response_code)
 
         self.sysv.scheduler.spawn("wasi_ipc_sender", sender_coro(), role=Role.RUNTIME)
         self.sysv.scheduler.run_until_idle()
         self.sysv.scheduler.require_active_task(caller_task)
 
-        target_task = self.sysv.hal_task_for(uri)
-        assert target_task is not None, f"HAL driver is not started: {uri}"
-        return target_task.last_result
+        assert response_codes, "HAL IPC sender must receive exactly one response"
+        return response_codes[0]
 
     # Resource methods: Tier 2 only builds and sends HAL commands.
     def _send_simple(self, uri: str, cmd_id: WasiIpcCmd) -> int:
@@ -190,6 +190,9 @@ class Wasi03pEngine:
         return int(result)
 
     def _write_buffer(self, uri: str, handle: HalBufferHandle, offset: int, length: int) -> int:
+        map_status = self.sysv.pool.map_for_io(handle.buffer_id)
+        if map_status == HalBufferMapStatus.BUSY:
+            return int(WasiErrno.AGAIN)
         params = ReadOnlyFlatMapView(
             sorted(
                 (
@@ -200,7 +203,20 @@ class Wasi03pEngine:
             )
         )
         result = self.send_ipc_command(uri, WasiIpcCmd.STREAM_WRITE_BUFFER, params)
+        self.sysv.pool.unmap_after_io(handle.buffer_id)
         return int(result)
+
+    def map_buffer(self, slot_index: int) -> HalBufferHandle | None:
+        """Map one fixed slot for the current guest I/O operation."""
+        handle = self.sysv.pool.buffer(slot_index)
+        if self.sysv.pool.map_for_io(slot_index) == HalBufferMapStatus.BUSY:
+            return None
+        return handle
+
+    def unmap_buffer(self, handle: HalBufferHandle) -> int:
+        """End the guest operation that owns one mapped slot."""
+        self.sysv.pool.unmap_after_io(handle.buffer_id)
+        return int(WasiErrno.SUCCESS)
 
 # ============================================================================== 
 # WASI 0.1p Compatibility Layer (Adapter Pattern wrapping WASI 0.3p)
@@ -342,6 +358,9 @@ class WasiHostContext:
             while remaining:
                 chunk_len = min(remaining, FB_CONF_HAL_BUFFER_SIZE)
                 handle = self.sysv.pool.buffer(0)
+                if self.sysv.pool.map_for_io(handle.buffer_id) == HalBufferMapStatus.BUSY:
+                    struct.pack_into("<I", mem, nwritten_ptr, total_written)
+                    return int(WasiErrno.AGAIN)
                 view = self.sysv.pool.view(handle, 0, chunk_len)
                 view[:] = mem[source_offset : source_offset + chunk_len]
                 result = self.core03p.send_ipc_command(
@@ -358,6 +377,7 @@ class WasiHostContext:
                     ),
                 )
                 written = int(result)
+                self.sysv.pool.unmap_after_io(handle.buffer_id)
                 assert written == chunk_len
                 total_written += written
                 source_offset += chunk_len

@@ -32,6 +32,7 @@ from tier2_runtime.logger import LogLevel
 from recovery import RecoveryManager, RecoveryStrategy, Result
 from runtime_engine import RuntimeEngine
 from tier3_executer.jit.jit_manager import JITRuntimeManager
+from tier3_platform.drivers.hal.stream import DedicatedLogSink
 from system import System
 from system_containers import StaticVector
 from wasm_reader import parse
@@ -67,23 +68,27 @@ def task_console_writer(sysv: System):
 
 def task_bus_owner(sysv: System):
     """
-    Binds the HAL buffer pool as the runtime, moves bytes between two of its
-        fixed slots, and checks that a slice past the slot bound is refused.
+    Maps one HAL buffer at a time, moves bytes between two fixed slots, and
+        checks that a slice past the slot bound is refused.
     """
 
-    sysv.pool.bind_runtime()
     tx = sysv.pool.buffer(0)
     rx = sysv.pool.buffer(1)
+    assert sysv.pool.map_for_io(tx.buffer_id).name == "MAPPED"
     tx_view = sysv.pool.view(tx, 0, 8)
     tx_view[:8] = b"HELLOHAL"
+    payload = bytes(tx_view)
+    sysv.pool.unmap_after_io(tx.buffer_id)
+    assert sysv.pool.map_for_io(rx.buffer_id).name == "MAPPED"
     rx_view = sysv.pool.view(rx, 0, 8)
-    rx_view[:8] = tx_view[:8]
+    rx_view[:8] = payload
     print(f"  [bus-owner] copied between pool slots: {bytes(rx_view)!r}")
     assert bytes(rx_view) == b"HELLOHAL"
     if sysv.pool.can_view(tx, 0, 999):
         findings.append("BUG: an out-of-bounds pool slice was accepted")
     else:
         print("  [bus-owner] out-of-bounds slice correctly refused")
+    sysv.pool.unmap_after_io(rx.buffer_id)
 
     yield
     return tx
@@ -204,7 +209,8 @@ def demo_wasmjit_hybrid_execution(sysv: System) -> None:
 
 
 def main() -> None:
-    sysv = System()
+    logger_sink = DedicatedLogSink()
+    sysv = System(logger_sink=logger_sink)
     sched = sysv.scheduler
     sched.set_idle_hook(
         lambda: print(f"  [idle_hook] flushed {sysv.logger.flush()} log entr(y/ies)")
@@ -230,6 +236,12 @@ def main() -> None:
     on_the_wire = sysv.transport.drain_output().decode("utf-8", errors="replace")
     print(f"  {sysv.transport.bytes_written} bytes reached the stdout transport:")
     for line in on_the_wire.splitlines():
+        print(f"    | {line}")
+
+    print("\n== pysim: draining the dedicated logger sink ==")
+    log_wire = logger_sink.drain_output().decode("utf-8", errors="replace")
+    print(f"  {logger_sink.bytes_written} bytes reached the dedicated logger sink:")
+    for line in log_wire.splitlines():
         print(f"    | {line}")
 
     demo_wasmjit_hybrid_execution(sysv)

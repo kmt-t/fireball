@@ -10,7 +10,7 @@
 
 ## 2. アーキテクチャ分類
 <!-- traceability: {META_3TierSeparation} {RSPMinimalSet} -->
-本コンポーネントは **Tier 3 (プラグイン・リーフコンポーネント: Plugin Leaf Component)** に属し、Tier 2 の `ExecutionControl` 契約を実装する。デバッグ状態制御、ブレークポイント管理、および COOS 協調タスクとして稼働する GDB RSP 通信・コマンドディスパッチを担当する。具象的なプロトコル仕様は [gdb_rsp_protocol.md](docs/specs/gdb_rsp_protocol.md) を正本とする。
+本コンポーネントは **Tier 3 (プラグイン・リーフコンポーネント: Plugin Leaf Component)** に属し、Tier 2 の `ExecutionControl` 契約を実装する。デバッグ状態制御、ブレークポイント管理、および COOS 協調タスクとして稼働する GDB RSP 通信・コマンドディスパッチを担当する。RSPの物理バイト転送は、Tier 3 platform が提供する注入可能な `DebuggerSink`へ委譲する。具象的なプロトコル仕様は [gdb_rsp_protocol.md](docs/specs/gdb_rsp_protocol.md) を正本とする。
 
 ## 3. 静的モデル
 
@@ -56,7 +56,7 @@ graph TD
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
 | 実行コンテキスト | 操作対象となるWASM実行状態への参照（プライベートメンバ）。 | 構造体への参照 | `execution_context` (非所有) |
-| HALトランスポート | RSPパケットの送受信を担うHAL抽象化レイヤへの参照。 | 構造体への参照 | `hal_transport` (非所有) |
+| デバッガSink | RSPバイト列の送受信を担う、Tier 3 platformから注入された物理Sinkへの参照。 | 構造体への参照 | `DebuggerSink` (非所有) |
 | `cmd_queue` | HALから供給されるコマンドキュー。 | 構造体への参照 | `debug_command_queue` |
 | デバッグ状態 | デバッガの現在の動作モード（実行中、中断中など）。 | 列挙型 | `debug_state` |
 | ブレークポイントリスト | 設定されているブレークポイントのアドレス一覧。昇順ソート済みの固定長配列（`FB_CONF_DEBUG_MAX_BREAKPOINTS` 件）として保持し、実行時の判定は `fireball::flat_set_view<address>` の `contains()` で行う。 | 固定長配列 + 集合ビュー | `{FlatViewNarrowing}` |
@@ -83,7 +83,7 @@ GDB等の外部クライアントに提示する WASM 仮想レジスタ番号�
 4. **ステップ実行**:
    - インタープリタを「1命令実行」モードで呼び出し、実行後に `Stopped` 状態へ遷移して停止理由（SIGTRAP）を通知。
 #### デバッガ・インタープリタ結合コンセプトコード (`concepts/debugger_concept.py`)
-デバッガとインタープリタの結合、GDB RSP パケット処理、統一スタック検査の参照実装：
+デバッガとインタープリタの結合、注入された物理Sinkを介したGDB RSP パケット処理、統一スタック検査の参照実装：
 [`debugger_concept.py`](docs/components/tier3_plugins/concepts/debugger_concept.py)
 
 
@@ -154,7 +154,7 @@ sequenceDiagram
 | :--- | :--- |
 | 機能概要 | 実行中のWASMエンジンに対してデバッグ機能を有効化し、初期停止状態（Stopped）へ移行させる。 |
 | シグネチャ | `attach(exec_ctx: 可変参照, transport: 構造体への参照) -> 結果型` |
-| 引数 | `exec_ctx`: 操作対象コンテキスト<br>`transport`: HAL通信路 |
+| 引数 | `exec_ctx`: 操作対象コンテキスト<br>`transport`: 注入された`DebuggerSink` |
 | 戻り値 | 結果型 |
 | 期待する結果 | 正常：デバッガがコンテキストを掌握し、GDB等のツールによる操作が可能になる。 |
 
@@ -178,8 +178,8 @@ sequenceDiagram
 | 期待する結果 | 正常：一命令実行後に再び `Stopped` 状態になる。 |
 
 ### 5.2 URI/IPCインターフェース
-- **コマンド入力**: HAL層からの内部関数呼び出し、または共有メモリ上のキュー経由。
-- **レスポンス出力**: HAL層のRSPトランスポートへ解析結果を返却。
+- **コマンド入力**: 注入された`DebuggerSink`から取得した生バイト列をDebuggerプラグインがRSPとして解析する。
+- **レスポンス出力**: 解析結果を同じ`DebuggerSink`へ生バイト列として返却する。Sink実体はTCP、UART、J-Link、テスト用メモリなどから構成時に選択する。
 
 ## 6. 制約達成の方策
 

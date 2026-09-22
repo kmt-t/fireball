@@ -40,7 +40,7 @@ from ipc_router import (
     Role,
 )
 from tier2_runtime.logger import STANDARD_DIAGNOSTIC_EVENTS, ConsoleOutput, LogDictionary, Logger, LogLevel
-from tier3_platform.drivers.hal.stream import StreamTransport
+from tier3_platform.drivers.hal.stream import DedicatedLogSink, StreamTransport
 from system import (
     System,
 )
@@ -98,7 +98,8 @@ def test_log_03_dictionary_storage_ownership_separation():
 
 def test_log_04_coos_and_ipc_diagnostic_logging():
     """TEST-LOG-04: COOS and IPC emit strict diagnostic log events upon anomalies/boundary conditions."""
-    sysv = System()
+    logger_sink = DedicatedLogSink()
+    sysv = System(logger_sink=logger_sink)
     try:
         # 1. COOS Duplicate Task ID -> 0x0103
         def dummy_coro():
@@ -147,7 +148,7 @@ def test_log_04_coos_and_ipc_diagnostic_logging():
 
         # Flush logger to UART (in addition to idle hooks)
         sysv.logger.flush()
-        wire = sysv.transport.drain_output().decode()
+        wire = logger_sink.drain_output().decode()
 
         # Verify all diagnostic strings were formatted and transmitted
         assert "COOS: duplicate task id rejected" in wire

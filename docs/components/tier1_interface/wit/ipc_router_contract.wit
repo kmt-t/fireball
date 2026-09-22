@@ -32,6 +32,17 @@ interface types {
         err-permission-denied,
         err-message-too-large,
         err-invalid-ownership,
+        err-invalid-response,
+    }
+
+    /// 要求・応答で共有する固定長メッセージ。
+    /// sender-id はゲスト入力を採用せず、COOS Scheduler の sender stamper が送信元 TCB から設定する。
+    /// sender stamper と reply stamper はメッセージ本体および埋込みSHMを Revoke し、Scheduler が対象TCBで Grant/Claim する。
+    /// response-code の 0xffffffff は応答待ちを表し、受信側が別の u32 値へ更新する。
+    record ipc-message {
+        sender-id: u32,
+        response-code: u32,
+        entries: list<kv-pair>,
     }
 }
 
@@ -48,11 +59,14 @@ interface router {
     /// 登録済みWASMサービス/HALエンドポイントのURIからチャネルハンドルを解決する（現在実行中タスクのロールでRBAC検証）
     lookup-service: func(uri: string) -> result<u32, ipc-status>;
 
-    /// 宛先チャネルへ最大8個のKVペアメッセージを送信する（現在実行中タスクからゼロコピー同期CSPハンドオフ）
-    route-message: func(channel: u32, entries: list<kv-pair>) -> ipc-status;
+    /// 宛先チャネルへ要求を送り、受信側の応答まで送信側をブロックする
+    route-message: func(channel: u32, message: ipc-message) -> result<ipc-message, ipc-status>;
 
-    /// 自タスクのロール宛てに許可された全エッジからメッセージを受信する（現在実行中タスクによる外部選択・所有権移譲）
-    receive-message: func() -> result<list<kv-pair>, ipc-status>;
+    /// 自タスクのロール宛てに許可された全エッジからメッセージを受信する
+    receive-message: func() -> result<ipc-message, ipc-status>;
+
+    /// 応答コードを設定した同一メッセージを送信元へ返す。entries の変更はそのまま応答データになる。
+    reply-message: func(message: ipc-message) -> ipc-status;
 }
 
 /// IPC ルータ ワールド

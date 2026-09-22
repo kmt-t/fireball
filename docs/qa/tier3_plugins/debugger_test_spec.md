@@ -45,6 +45,7 @@ GDB RSP コマンド処理（`?`, `g/G`, `m/M`, `Z0/z0`, `s`, `c`）、ブレー
 | TEST-DBG-22 | ソケット経由のメモリ検査・書き換え | セッション接続中 | `m` および `M` パケット送信 | TCP ストリーム経由でメモリが読み書きされる。JITキャッシュ操作は発生しない | `{MemoryBoundaryCheck}` |
 | TEST-DBG-23 | ソケット経由のブレークポイント停止とステップ | セッション接続中 | `Z0` 設定後 `c` / `s` 送信 | 指定 PC で正確にトラップ停止し、単歩ステップ実行で 1 命令進む | [`debugger.md`](docs/components/tier3_plugins/debugger.md) |
 | TEST-DBG-24 | プログラム完走通知とソケット正常切断 | ブレークポイント解除 | `c` 送信後クローズ | 終了パケット `$W00#b7` を受信し、サーバーソケットがクリーンに終了・デタッチされる | [`gdb_rsp_protocol.md`](docs/specs/gdb_rsp_protocol.md), [`debugger.md`](docs/components/tier3_plugins/debugger.md) |
+| TEST-DBG-25 | デバッガSinkの静的差し替え | `DebuggerSink`互換のテスト用物理Sinkを構成 | TCPを使わず同じRSPバイト列をSinkへ入出力する | GDBServerはRSP解析を維持したまま物理Sinkだけを差し替えられ、デバッガの状態制御と応答が同一になる | `{RSP_Transport_Selectable}`, [`debugger.md`](docs/components/tier3_plugins/debugger.md) |
 
 ### 実装の勘所・不変条件（Gotchas & Implementation Invariants）
 

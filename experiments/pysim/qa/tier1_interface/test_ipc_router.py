@@ -35,7 +35,6 @@ for _p in [
 from helpers import expect_assertion, make_test_ipc_message
 from ipc_router import (
     FB_CONF_ROUTER_ROLE_MATRIX,
-    FB_URI_HAL_LOGGER,
     DataType,
     IPCMessage,
     IPCRouter,
@@ -124,12 +123,17 @@ def test_ipc_02_e2e_shared_block_transfer():
         def client_app_task():
             status, ch = sysv.ipc.lookup("fireball://hal/gpio/0")
             assert status == IPCStatus.COMPLETED and ch is not None
-            status, _ = yield from sysv.ipc.send(ch, msg)
+            status, response = yield from sysv.ipc.send(ch, msg)
+            assert response is msg
             sent.append(status)
 
         def gpio_receiver():
             status, recv_msg = yield from sysv.ipc.recv()
             received.append(recv_msg)
+            assert recv_msg.sender_id == 2
+            assert recv_msg.response_code == 0xFFFF_FFFF
+            recv_msg.append(0x100, 0xCAFE)
+            assert sysv.ipc.reply(recv_msg, 0) == IPCStatus.COMPLETED
 
         sysv.scheduler.spawn("client_app", client_app_task(), task_id=2, role=Role.RUNTIME)
         sysv.scheduler.current_task = sysv.scheduler.get_task(2)
@@ -157,10 +161,12 @@ def test_ipc_02_e2e_shared_block_transfer():
         recv_shm_id = recv_msg[_KEY_SHM_ID]
         assert recv_shm_id == sb.shm_id
 
-        sysv.scheduler.current_task = sysv.scheduler.get_task(1)
+        sysv.scheduler.current_task = sysv.scheduler.get_task(2)
         recv_sb = sysv.memory_manager.claim(recv_shm_id).unwrap()
-        assert recv_sb.get_owner() == 1
+        assert recv_sb.get_owner() == 2
         assert recv_sb.get_address() == addr
+        assert msg.response_code == 0
+        assert msg.get(0x100) == 0xCAFE
     finally:
         sysv.shutdown()
 
@@ -211,6 +217,9 @@ def test_ipc_04_select_recv_picks_first_ready_sender_and_clears_group():
     def core_receiver():
         status, msg = yield from router.recv()
         received.append((status, msg))
+        assert msg.sender_id > 0
+        msg.append(2, 100)
+        assert router.reply(msg, 0x10) == IPCStatus.COMPLETED
 
     def debugger_sender():
         status, ch = router.lookup("fireball://core/coos/0")
@@ -250,6 +259,7 @@ def test_ipc_04_select_recv_picks_first_ready_sender_and_clears_group():
     def core_receiver2():
         status, msg = yield from router.recv()
         received2.append((status, msg))
+        assert router.reply(msg, 0) == IPCStatus.COMPLETED
 
     def runtime_sender():
         status, ch = router.lookup("fireball://core/coos/0")
@@ -318,9 +328,10 @@ def test_ipc_06_router_create_channel_authorization():
     ch_denied = router.create_channel("fireball://debugger/control")
     assert ch_denied is None, "HAL_GPIO -> DEBUGGER must be denied by RBAC"
 
-    # Communication over the authorized channel
-    msg = make_test_ipc_message([(1, 42)], memory_manager=router.memory_manager)
     sched.current_task = sched.get_task(runtime_task_id)
+    # Communication over the authorized channel; the scheduler stamper also
+    # authenticates that the current task owns the message SHM.
+    msg = make_test_ipc_message([(1, 42)], memory_manager=router.memory_manager)
     action, _ = ch_hal.send(msg)
     assert action == ChannelAction.BLOCK
     assert ch_hal.waiter_dir == WaitDir.SEND
@@ -347,6 +358,7 @@ def test_ipc_07_message_in_shm_and_payload_shm_transfer():
         def hal_receiver():
             status, recv_msg = yield from sysv.ipc.recv()
             received.append(recv_msg)
+            assert sysv.ipc.reply(recv_msg, 0) == IPCStatus.COMPLETED
 
         sysv.scheduler.spawn(
             "hal_receiver", hal_receiver(), task_id=receiver_id, role=Role.HAL_GPIO
@@ -370,7 +382,7 @@ def test_ipc_07_message_in_shm_and_payload_shm_transfer():
         entries = [(k_payload_id, payload_shm_id), (k_payload_len, 768)]
 
         # Construct message backed by msg_sb and write entries into its memory block!
-        msg = IPCMessage(msg_sb)
+        msg = IPCMessage(msg_sb, memory_manager=sysv.memory_manager)
         msg.write_entries(entries)
         assert msg.block is msg_sb
         assert msg[k_payload_id] == payload_shm_id
@@ -382,51 +394,22 @@ def test_ipc_07_message_in_shm_and_payload_shm_transfer():
         assert received and received[0] is msg
         recv_msg = received[0]
 
-        # 1. Message's own SHM block is granted to receiver!
+        # 1. The reply returns the message's own SHM block to the sender.
         assert recv_msg.block is not None
-        assert recv_msg.block.get_owner() == receiver_id
+        assert recv_msg.block.get_owner() == sender_id
 
-        # 2. Payload SHM ID in entries was also automatically granted to receiver!
+        # 2. The payload SHM ID is also granted back to the sender.
         retrieved_shm_id = recv_msg.get_by_key_id(0x14, ScopeKind.RESOURCE)
         assert retrieved_shm_id == payload_shm_id
 
-        # Receiver claims the payload SharedBlock
-        sysv.scheduler.current_task = sysv.scheduler.get_task(receiver_id)
+        # Sender claims the payload SharedBlock after the response.
+        sysv.scheduler.current_task = sysv.scheduler.get_task(sender_id)
         recv_payload_sb = recv_msg.claim_resource(sysv.memory_manager, key_id=0x14)
         assert recv_payload_sb is not None
-        assert recv_payload_sb.get_owner() == receiver_id
+        assert recv_payload_sb.get_owner() == sender_id
         assert recv_payload_sb.shm_id == payload_shm_id
     finally:
         sysv.shutdown()
-
-
-def test_ipc_08_logger_hal_role_registration_and_rbac():
-    """TEST-IPCR-20: the logger HAL URI resolves to its own leaf role in a 10x10 matrix."""
-    sched = Scheduler()
-    router = _make_router(sched)
-    entry = router.find_service(FB_URI_HAL_LOGGER)
-    assert entry is not None
-    assert entry.role == Role.HAL_LOGGER
-
-    role_count = len(Role)
-    assert role_count == 10
-    assert len(FB_CONF_ROUTER_ROLE_MATRIX) == role_count
-    assert all(len(row) == role_count for row in FB_CONF_ROUTER_ROLE_MATRIX)
-    assert not any(FB_CONF_ROUTER_ROLE_MATRIX[Role.HAL_LOGGER]), "HAL roles are leaves"
-    for sender in (Role.RUNTIME, Role.CORE_SERVICE, Role.DEBUGGER):
-        assert FB_CONF_ROUTER_ROLE_MATRIX[sender][Role.HAL_LOGGER], sender.name
-    for sender in (Role.HAL_UART, Role.HAL_STDOUT, Role.HAL_LOGGER):
-        assert not FB_CONF_ROUTER_ROLE_MATRIX[sender][Role.HAL_LOGGER], sender.name
-
-    runtime_id = sched.spawn("runtime", role=Role.RUNTIME)
-    sched.current_task = sched.get_task(runtime_id)
-    status, channel = router.lookup(FB_URI_HAL_LOGGER)
-    assert status == IPCStatus.COMPLETED and channel is not None
-
-    hal_id = sched.spawn("hal_sender", role=Role.HAL_UART)
-    sched.current_task = sched.get_task(hal_id)
-    status, channel = router.lookup(FB_URI_HAL_LOGGER)
-    assert status == IPCStatus.ERR_PERMISSION_DENIED and channel is None
 
 
 # ===========================================================================
@@ -442,5 +425,4 @@ if __name__ == "__main__":
     test_ipc_05_message_storage_ownership_and_access_check()
     test_ipc_06_router_create_channel_authorization()
     test_ipc_07_message_in_shm_and_payload_shm_transfer()
-    test_ipc_08_logger_hal_role_registration_and_rbac()
-    print("[PASS] All 8 IPC Router & Shared Block Transfer tests passed.")
+    print("[PASS] All IPC Router & Shared Block Transfer tests passed.")

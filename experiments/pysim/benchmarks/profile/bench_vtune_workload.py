@@ -243,7 +243,7 @@ def phase_os_mix(scale: float, kernels: list[str] | None, oracle: bool) -> Phase
     runs: list[KernelRun] = []
     seconds = 0.0
     log_path, sink = _open_log("os_mix")
-    sysv = System(logger_transport=sink)
+    sysv = System(logger_sink=sink)
     sysv.dictionary.register(0x200, "KERNEL_DONE: idx=%d result=%d")
 
     def guest(index: int, name: str, units: int):
@@ -301,7 +301,7 @@ def _ao_size(scale: float) -> tuple[int, int]:
 def _ao_guest(phase: str):
     module = parse(AO_WASM_PATH.read_bytes())
     _, sink = _open_log(phase)
-    sysv = System(logger_transport=sink)  # keep system logs out of the guest's stdout stream
+    sysv = System(logger_sink=sink)  # keep system logs out of the guest's stdout stream
     wasi_ctx = WasiHostContext(sysv)
     sysv.start_hal_driver(DummyDriver(sysv.wasi_hal_bindings.stdout_uri, transport=sysv.transport))
     funcs = wasi_ctx.build_interpreter_host_functions(module)
@@ -396,6 +396,7 @@ def phase_ipc(scale: float, kernels: list[str] | None, oracle: bool) -> PhaseRes
             assert msg[_KEY_SEQ] == seq, (msg[_KEY_SEQ], seq)
             recv_sum[0] = (recv_sum[0] + msg[_KEY_VAL]) & MASK32
             received[0] += 1
+            assert router.reply(msg, 0) == IPCStatus.COMPLETED
             if received[0] % 8 == 0:
                 logger.flush()
 

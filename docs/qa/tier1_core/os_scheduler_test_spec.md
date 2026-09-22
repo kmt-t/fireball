@@ -27,6 +27,7 @@
 | TEST-SCHED-14 | 割り込み再スケジュール世代の一巡 | READYタスクA・Bが存在し、割り込み通知を1回以上受け付ける | FIFOをドレインし、A・Bを順にディスパッチする | `reschedule_generation`は保留バーストごとに1回だけ進み、各対象タスクの`last_seen_generation`が一度ずつ更新される。全対象の観測後に`reschedule_pending`が解除される | `{ADR_InterruptRescheduleGeneration}` |
 | TEST-SCHED-15 | 一巡中に生成されたタスクの対象外化 | 世代要求が保留中にタスクCをspawnする | 現在世代の対象マスクを確定してCをディスパッチする | Cは現在世代の`round_target_mask`に含まれず、C自身の通常の協調実行を開始する。既存対象の観測完了を待つ | `{ADR_InterruptRescheduleGeneration}` |
 | TEST-SCHED-16 | 終了タスクのTCBスロット返却 | TCBが満杯で、一部のタスクが終了済み。別の場合として、全タスクが生存している | 新しいタスクをspawnする | 終了済みの最古のスロットが返却され、生成が成功する。生存タスクは回収されない。全タスクが生存している場合は、容量超過で停止する。新しいタスクIDは、過去のIDと重複しない | `{CooperativeMultitasking}` |
+| TEST-SCHED-17 | 割り込みFIFOのロックフリー性と容量境界 | ISR producerとCOOS consumerが同一の固定長SPSC FIFOを使用 | producerが満杯まで投入し、consumerが順に取り出し、空きスロットへ再投入する | mutex／スピンロックなしでFIFO順序を保ち、満杯時は既存イベントを上書きせず`false`を返し、consumer後に再利用できる | `{GLOBAL_InterruptWakeup}` |
 
 ### 実装の勘所・不変条件（Gotchas & Implementation Invariants）
 

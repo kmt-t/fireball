@@ -108,6 +108,7 @@ def test_scenario_ipc_router_and_logging():
         # committing to just one sender_role upfront.
         status, msg = yield from router.recv()
         received.append(msg)
+        assert router.reply(msg, 0) == IPCStatus.COMPLETED
 
     sched.spawn("coos_receiver", coos_receiver(), role=Role.CORE_SERVICE)
     sched.spawn("client_app", client_app_task(), role=Role.RUNTIME)
@@ -116,14 +117,14 @@ def test_scenario_ipc_router_and_logging():
     results = {name: (status, msg) for name, status, msg in sent}
     status1, msg1 = results["1_rendezvous"]
     assert status1 == IPCStatus.COMPLETED
-    assert msg1.ownership == OwnershipState.RECEIVER_OWNS, (
-        "ownership transfers atomically the instant the rendezvous completes"
+    assert msg1.ownership == OwnershipState.SENDER_OWNS, (
+        "request/reply returns ownership to the sender after the receiver replies"
     )
     assert received == [msg1]
     assert received[0][_KEY_CMD] == _CMD_START_TASK
     assert received[0][_KEY_TASK_ID] == 10
     print(
-        "    [Stage 1.1] IPC CSP Rendezvous (blocking recv -> sender handoff) -> RECEIVER_OWNS [PASS]"
+        "    [Stage 1.1] IPC CSP Request/Reply (receiver handoff -> sender unblock) -> SENDER_OWNS [PASS]"
     )
 
     status2, msg2 = results["2_permission_denied"]

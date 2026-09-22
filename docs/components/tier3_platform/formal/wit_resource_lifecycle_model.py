@@ -1,8 +1,8 @@
 """
 docs/components/tier3_platform/formal/wit_resource_lifecycle_model.py
 pyModelChecking による WIT インターフェースの
-(1) `hal-buffer-slice`（Runtimeの`bind_runtime`でマップされるHAL固定スロット）は
-    `unbind_runtime`された後、決して操作が実行されないこと
+(1) `hal-buffer-slice`（ゲストの`map-buffer`でマップされるHAL固定スロット）は
+    `unmap-buffer`された後、決して操作が実行されないこと
 (2) ホストがトリガーした仮想割り込みは、対応する汎用ポーリングハンドル（`POLL_CHECK`/`POLL_WAIT`
     で ready 確認する u32 ハンドル）が必ずいずれ ready になり届くこと
 の形式検証（証明・変異検査対応）モデル
@@ -18,9 +18,9 @@ def build_model(*, guards: bool = True) -> Kripke:
     """
     WIT リソースライフサイクル・非同期通知の変異検査対応保護証明モデル
     - s_idle: ゲストが待機中（バッファ未確保、割り込みなし）
-    - s_resource_active: `bind_runtime` により `hal-buffer-slice` 固定スロットがマップ済み
+    - s_resource_active: `map-buffer` により `hal-buffer-slice` 固定スロットがマップ済み
     - s_op_call / s_op_performed: 有効なハンドルへの操作（IPCコマンドID発行）呼び出し・実行
-    - s_resource_dropped: `unbind_runtime` により固定スロットがアンマップ済み
+    - s_resource_dropped: `unmap-buffer` により固定スロットがアンマップ済み
     - s_op_call_on_dropped: 返却済みハンドルへの操作呼び出し
     - s_op_rejected: 操作が正しく拒否される（実行されない、`HalBufferTrap` 相当）
     - s_interrupt_triggered: ホストが仮想割り込みをトリガー

@@ -5,15 +5,15 @@
      contract-only: true
 -->
 
-本コンポーネントは、Tier 3 の物理ドライバ実装（UART/SEGGER RTT 物理レジスタ操作、RSPパケットのバイト列エンコード/デコード）が実現すべき抽象契約（URI Resolver、コマンドプロトコル、ゼロコピー転送インターフェース）を定義する（`{META_ContractImplSplit}` 契約/実装分割パターン）。Tier 2 は物理ドライバの実装詳細を参照しない。
+本コンポーネントは、Tier 3 の物理ドライバ実装（UART/SEGGER RTT の物理トランスポート）が実現すべき抽象契約（URI Resolver、コマンドプロトコル、ゼロコピー転送インターフェース）を定義する（`{META_ContractImplSplit}` 契約/実装分割パターン）。RSP Parser は Tier 3 debugger の責務であり、本コンポーネントはRSPを解析しない。
 
 ## 1. コンセプト
 <!-- traceability: {IPCRouter} {URIAbstraction} {TypeSafeMessaging} {IPC_ZeroCopy} -->
-HAL (Hardware Abstraction Layer) は、COOS 上で稼働する独立したタスク（`hal_task`）として常駐し、物理ハードウェアおよび仮想ペリフェラルへのアクセスを抽象化して提供する。**デバイス／HALインスタンス 1 つにつき `hal_task` インスタンス 1 つが専用に対応する**（1 タスクは正確に 1 つの物理ドライバのみを所有する）。これは IPC ルータの「1 チャネル 1 待機者」制約（`{ADR_RendezvousChannel}`）に由来する契約であり、単一の共有タスクが複数の同種デバイスインスタンス（例: 物理 UART と、別登録されたコンソール出力ストリーム）を URI 単位で振り分けることはできない——受信側チャネルの選択はロール（IPC ルータの `Role`）でのみ行われ、メッセージ内の URI 情報では行われないためである。上位層（Runtime, Debugger, Guest 等）からの直接関数呼び出しは行わず、通信はすべて IPC ルータ（`ipc_router`）を介した CSP rendezvous メッセージパッシングによって行われる。ペリフェラル・ストリーム・GPIO 等は階層型 URI（`fireball://hal/<driver-type>/<instance-id>`）経由で動的にバインド・解決され、解決されたインスタンスごとに専用ロール・専用チャネル・専用 `hal_task` が対応付けられる。
+HAL (Hardware Abstraction Layer) は、COOS 上で稼働する独立したタスク（`hal_task`）として常駐し、物理ハードウェアおよび仮想ペリフェラルへのアクセスを抽象化して提供する。デバイスインスタンス 1 つにつき `hal_task` インスタンス 1 つが対応する（1 タスクは正確に 1 つの物理ドライバのみを所有する）。`Role` はデバイス種別だけを表し、インスタンスは階層型URI（`fireball://hal/<driver-type>/<instance-id>`）で識別する。上位層（Runtime, Debugger, Guest 等）からの直接関数呼び出しは行わず、通信はすべて IPC ルータ（`ipc_router`）を介した CSP rendezvous メッセージパッシングによって行われる。
 
-各 `hal_task` インスタンスは IPC ルータ（`ipc_router`）から自身が担当する 1 インスタンス宛ての WASI 0.3p ドライバ通信コマンド（`CMD_STREAM_*`, `CMD_CLOCK_*`, `CMD_GPIO_*`, `CMD_BUS_*`）を受信し、HALバッファプール（物理実体は Tier 3 の vMMIO/DYNAMIC 領域）のバッファスライス（`hal-buffer-slice`、本コンポーネントから見た不透明ハンドル）を介してゼロコピーで高速データ転送を実行する。DYNAMIC領域はマルチゲスト構成でも同時にマップできるゲストを1つに限定する。
+各 `hal_task` インスタンスは IPC ルータ（`ipc_router`）から自身が担当する 1 インスタンス宛ての WASI 0.3p ドライバ通信コマンド（`CMD_STREAM_*`, `CMD_CLOCK_*`, `CMD_GPIO_*`, `CMD_BUS_*`）を受信し、HALバッファプール（物理実体は Tier 3 の vMMIO/DYNAMIC 領域）のバッファスライス（`hal-buffer-slice`、本コンポーネントから見た不透明ハンドル）を介してゼロコピーで高速データ転送を実行する。DYNAMIC領域は各I/O操作の実行期間だけ対象スロットをマップし、競合時は`BUSY`を返す。
 
-`hal-buffer-slice` は共有メモリの所有権トークンではなく、HALが管理する固定スロットの有効なハンドルである。DYNAMIC領域をバインドした単一Runtimeだけが公開ビューから読み書きでき、HALドライバはHALサブシステム権限でliveなスロットを常時参照できる。バッファ単位の`acquire-buffer`/`release-buffer`は存在せず、Runtimeの`bind_runtime`/`unbind_runtime`が全固定スロットのマッピングを管理する。ドライバとの転送は常にハンドル、オフセット、長さで指定し、ドライバへ生ポインタや独立したストリーム用データバッファを渡さない。
+`hal-buffer-slice` は共有メモリの所有権トークンではなく、HALが管理する固定スロットの有効なハンドルである。ゲストはI/O開始時に`map-buffer`で対象スロットをDYNAMIC領域へマップし、I/O完了時に`unmap-buffer`で解除する。別ゲストまたは別操作がマッピング中なら`BUSY`（WASI Preview 1では`EAGAIN`）を返す。HALドライバはマッピング中のスロットを専用Sink経由で参照する。ドライバとの転送は常にハンドル、オフセット、長さで指定し、ドライバへ生ポインタや独立したストリーム用データバッファを渡さない。
 
 ## 2. アーキテクチャ分類
 <!-- traceability: {META_3TierSeparation} {IPCRouter} {URIAbstraction} {META_StaticDI} -->
@@ -23,7 +23,7 @@ HAL (Hardware Abstraction Layer) は、COOS 上で稼働する独立したタス
 
 ### 3.1 データ構造
 - **デバイスレジストリ（契約）**: 階層 URI からドライバインスタンスへの解決契約。物理的なデバイス情報配列の実体は Tier 3 を正本とする。
-- **HALバッファプール（契約）**: HALが常時保持する固定スロットを識別する不透明ハンドル（`hal-buf-id` / `hal-buffer-slice`）の契約。物理的な固定長バッファプールの配置（vMMIO DYNAMIC 領域）は Tier 3 を正本とする。
+- **HALバッファプール（契約）**: HALが保持する固定スロットを識別する不透明ハンドル（`hal-buffer-id` / `hal-buffer-slice`）と、操作期間だけマッピングする契約。物理的な固定長バッファプールの配置（vMMIO DYNAMIC 領域）は Tier 3 を正本とする。
 
 #### ドライバ登録と起動
 物理ドライバはHAL共通層へ受け付けるコマンドIDとコールバックを登録し、自身の `hal_task` を起動する。HAL共通層がUART等のデバイスを列挙したり、ドライバタスクを代理起動したりしない。
@@ -38,8 +38,8 @@ HAL (Hardware Abstraction Layer) は、COOS 上で稼働する独立したタス
 ```mermaid
 flowchart TD
     Client[Runtime / Guest / Debugger Task] -->|resolver.get-interface URI| IPCR[IPC Router: URI Resolver]
-    IPCR -->|resolve URI to dedicated Role/Channel| Select{Role selection<br/>1 instance = 1 Role = 1 Channel}
-    Select -->|CSP Rendezvous| HT1["hal_task #1<br/>Role.HAL_UART"]
+    IPCR -->|resolve URI to device kind and instance| Select{URI instance selection<br/>Role = device kind}
+    Select -->|CSP Rendezvous| HT1["hal_task #1<br/>Role.HAL_UART + URI instance"]
     Select -->|CSP Rendezvous| HT2["hal_task #2<br/>Role.HAL_GPIO"]
     Select -->|CSP Rendezvous| HT3["hal_task #N<br/>Role.HAL_*"]
     HT1 -->|command dispatch, no IPC| D1[Tier3: platform_driver.md<br/>UART Driver]
@@ -51,13 +51,13 @@ flowchart TD
 
 #### HAL サーバタスク（hal_task）
 <!-- traceability: {META_3TierSeparation} {IPCRouter} -->
-COOS 上で独立して実行される協調タスク。**1 タスクインスタンスにつき 1 物理ドライバインスタンスのみを所有する**契約であり、複数デバイスをまたぐ URI ベースのディスパッチテーブルを内部に持たない。上位層からの直接関数呼び出しを禁止し、IPC ルータ（自身に割り当てられた専用ロール宛てのチャネル）経由で CSP rendezvous 受信ループ（`ipc.recv`）を実行してコマンドをディスパッチする契約。ドライバから物理ハードウェアへのアクセスは通常のメソッド呼び出しであり、二段目の IPC は発生しない。
+COOS 上で独立して実行される協調タスク。**1 タスクインスタンスにつき 1 物理ドライバインスタンスのみを所有する**契約であり、複数デバイスをまたぐ URI ベースのディスパッチテーブルを内部に持たない。上位層からの直接関数呼び出しを禁止し、IPC ルータ（URIのサービスハンドルで選択されたインスタンスチャネル）経由で CSP rendezvous 受信ループ（`ipc.recv`）を実行してコマンドをディスパッチする契約。ドライバから物理ハードウェアへのアクセスは通常のメソッド呼び出しであり、二段目の IPC は発生しない。
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
 | タスクコルーチン | COOS スケジューラ上で、自インスタンス宛ての IPC 受信を待機・処理する実行体 | コルーチン | 1 デバイス／HALインスタンスにつき 1 タスクスロット |
 | 所有ドライバ | このタスクが専有する単一の物理ドライバインスタンス（Tier 3 の [`platform_driver.md`](docs/components/tier3_platform/platform_driver.md) を正本とする） | ドライバインスタンス | 1 タスク = 1 ドライバ（1:1） |
-| セキュリティロール | IPC ルータで検証される、このインスタンス専用の権限ロール | ロール | `Role.HAL_*`（デバイス／HALインスタンスごとに個別のロール値。例: `Role.HAL_UART`, `Role.HAL_GPIO`） |
+| セキュリティロール | IPC ルータで検証されるデバイス種別の権限ロール | ロール | `Role.HAL_*`（インスタンスIDはURIで識別。例: `Role.HAL_UART`, `Role.HAL_GPIO`） |
 
 #### HAL構成（hal_config、契約レベル定数）
 <!-- traceability: {META_ConfigurableSystem} -->
@@ -73,9 +73,9 @@ HAL全体の制限値を定義する。物理値は Tier 3 で確定される。
 
 ### 4.1 コマンドルーティング（契約）
 <!-- traceability: {TaskPollInterruptEvent} {GLOBAL_InterruptWakeup} -->
-デバイスインスタンスへの振り分けは、本コンポーネントの内部ディスパッチではなく IPC ルータの Stage 1（URI 解決）で完結する契約とする——`resolver.get-interface(uri)` が URI を専用ロールへ解決し、専用チャネル経由で対応する `hal_task` インスタンスへ直接ランデブーするため、`hal_task` 自身がコマンドに埋め込まれたデバイス ID を見て複数ドライバから振り分ける処理を持つ必要はない。`hal_task` が担うのは、受信した `read`/`write`/`control` コマンドを自身が専有する単一の物理ドライバへそのまま委譲する契約のみである。物理ドライバへの委譲実装は Tier 3 を正本とする。
+デバイスインスタンスへの振り分けは、本コンポーネントの内部ディスパッチではなく IPC ルータの Stage 1（URI 解決）で完結する契約とする。`resolver.get-interface(uri)` はURIからデバイス種別Roleとインスタンスを解決し、対応する`hal_task`へランデブーする。`hal_task` が担うのは、受信した `read`/`write`/`control` コマンドを自身が専有する単一の物理ドライバへそのまま委譲する契約のみである。物理ドライバへの委譲実装は Tier 3 を正本とする。
 
-割り込み通知の責務分担（ISR → 固定5ワードの`notify_interrupt` → COOS FIFO → vSoC Safepoint配送）の抽象契約は を正本とする。WASIの`poll-check`/`poll-wait`は操作完了待機の別経路であり、vIRQの原因イベントを表さない。物理割り込みハンドラの実装は Tier 3 [`platform_driver.md`](docs/components/tier3_platform/platform_driver.md) を参照。
+割り込み通知の責務分担（ISR → 固定5ワードイベント生成 → COOSの固定長ロックフリーFIFO → vSoC Safepoint配送）の抽象契約は [`runtime_vmmio.md`](docs/components/tier2_runtime/runtime_vmmio.md) を正本とする。WASIの`poll-check`/`poll-wait`は操作完了待機の別経路であり、vIRQの原因イベントを表さない。物理割り込みハンドラの実装は Tier 3 [`platform_driver.md`](docs/components/tier3_platform/platform_driver.md) を参照。
 
 ## 5. インターフェース定義
 
@@ -87,7 +87,8 @@ HAL の公開境界は、WASI 0.3p の interface / stream / pollable に対応�
 | 操作 | シグネチャ | 役割 |
 | :--- | :--- | :--- |
 | `get-interface` | `get-interface(uri: string) -> result<u32, recovery-strategy-category>` | URI からデバイスまたはHALのインターフェースハンドルを取得する |
-| `get-buffer` | `get-buffer(slot-index: u32) -> result<hal-buffer-slice, recovery-strategy-category>` | HALが保持する固定スロットを選択する。所有権移譲や解放は行わない |
+| `map-buffer` | `map-buffer(slot-index: u32) -> result<hal-buffer-slice, recovery-strategy-category>` | 対象スロットを今回のI/O期間だけDYNAMICへマップする。競合時は`BUSY`を返す |
+| `unmap-buffer` | `unmap-buffer(handle: u32) -> operation-result` | 今回のI/Oを終了し、対象スロットをDYNAMICからアンマップする |
 | `stream-read` | `stream-read(handle: u32, buffer: hal-buffer-slice) -> operation-result` | ストリームから HAL バッファへ読み込む |
 | `stream-write` | `stream-write(handle: u32, buffer: hal-buffer-slice) -> operation-result` | HAL バッファからストリームへ書き込む |
 | `stream-flush` | `stream-flush(handle: u32) -> operation-result` | ストリームの保留データを送出する |
@@ -148,12 +149,12 @@ Fireball の HAL は、WASI 0.3p と親和性のある汎用インターフェ�
 
 ### 6.2 安全性制約と方策
 - **目標**: ゼロコピー転送における境界安全性を契約として保証する。
-- **方策**: HALバッファハンドル（`hal-buf-id`）経由のみでデータを受け渡し、生ポインタの直接受け渡し経路を契約上排除する。物理的な境界検査（`GOTCHA-HAL-01`）は Tier 3 を正本とする。
+- **方策**: HALバッファハンドル（`hal-buffer-id`）経由のみでデータを受け渡し、生ポインタの直接受け渡し経路を契約上排除する。物理的な境界検査（`GOTCHA-HAL-01`）は Tier 3 を正本とする。
 
 ## 7. 形式検証・テスト仕様との対応
 
 ### 7.1 検証対象の不変条件
-- **ゼロコピー転送安全性**: 生ポインタ渡しを行わず、HALバッファハンドル（`hal-buf-id` / `hal-buffer-slice`）による境界検証を経由すること（`TEST-HAL-02`, `TEST-HAL-12`）。物理検証は Tier 3 を正本とする。
+- **ゼロコピー転送安全性**: 生ポインタ渡しを行わず、HALバッファハンドル（`hal-buffer-id` / `hal-buffer-slice`）による境界検証を経由すること（`TEST-HAL-02`, `TEST-HAL-12`）。物理検証は Tier 3 を正本とする。
 - **IPCルーティングと事前検査**: デバイスアクセスはIPCルータを迂回せず、バッファ転送は生ポインタを使わず、事前検査で拒否された要求は所有権を先取りして剥奪しないことを [`hal_dispatch_contract_model.py`](docs/components/tier2_runtime/formal/hal_dispatch_contract_model.py) でCTL検証する。`guards=False` では各違反経路が反証されることを確認する。
 
 ### 7.2 テスト仕様書との連携

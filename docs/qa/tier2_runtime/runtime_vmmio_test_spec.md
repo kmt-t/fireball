@@ -71,7 +71,7 @@ Bit31によるRAM/vMMIO高速分岐、64件のFlatMap PTE + 32エントリDirect
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | TEST-VMMIO-40 | vIRQページと静的原因源表 | `0xC000_3000`の専用ページを有効化 | 原因源表を読み出す | 固定表が`vector_id`、分類、`source_id`、属性を持ち、動的に追加・削除できない | `runtime_vmmio.md` §4.7 |
-| TEST-VMMIO-41 | 原因レコードの固定形式 | 物理イベントを原因源へ変換 | 5ワードのイベントを生成してCOOSへ渡す | `vector_id`、`source_id`、`cause_code`、`payload0`、`payload1`の順序・値が保持され、ポインタや可変長領域を含まない | `runtime_vmmio.md` §4.7 |
+| TEST-VMMIO-41 | 原因レコードの固定形式 | 物理イベントを原因源へ変換 | 5ワードのイベントを生成してCOOSへ渡す | `vector_id`、`source_id`、`cause_code`、`payload0`、`payload1`の順序・値が保持され、ポインタや可変長領域を含まない | `runtime_vmmio.md` |
 | TEST-VMMIO-42 | vIRQ登録スロットの範囲検証 | root・4分類・デバイスの静的スロット | 範囲外スロットへ書き込む | vSoCが拒否し、保留表・有効表を変更しない | `runtime_vmmio.md` §4.7 |
 | TEST-VMMIO-43 | 物理デバイスの原因集約 | 1デバイスに複数の`source_id`/`cause_code` | 複数原因を順に発生させる | 1つのデバイスディスパッチャへ集約され、原因値で振り分けられる | `runtime_vmmio.md` §4.7 |
 | TEST-VMMIO-44 | 未登録vIRQノードのドロップ | 原因源は有効だが対象ノード未登録 | イベントをCOOSへ投入してドレイン | ゲスト関数を呼び出さず、診断カウンタだけを更新する | `runtime_vmmio.md` §4.7 |

@@ -49,7 +49,7 @@ from runtime_engine import RuntimeEngine
 from tier3_executer.jit.jit_cache import CardState, JITTrace
 from tier3_executer.jit.jit_manager import JITRuntimeManager
 from runtime_test_driver import RuntimeEngineDebugDriver
-from tier3_platform.drivers.hal.stream import StreamTransport
+from tier3_platform.drivers.hal.stream import DedicatedLogSink, StreamTransport
 from system import (
     System,
 )
@@ -332,8 +332,8 @@ def test_hal_task_ipc_communication():
     sysv = System()
     try:
         runtime_task = sysv.start_runtime_task(name="hal_ipc_guest")
-        sysv.pool.bind_runtime()
         buffer_handle = sysv.pool.buffer(0)
+        assert sysv.pool.map_for_io(buffer_handle.buffer_id).name == "MAPPED"
         sysv.pool.view(buffer_handle, 0, 128)[:] = b"x" * 128
         sysv.scheduler.current_task = runtime_task
         sysv.start_hal_driver(
@@ -353,6 +353,7 @@ def test_hal_task_ipc_communication():
         assert stdio_task is not None
         assert stdio_task.processed_count == 1
         assert stdio_task.last_handled_cmd == WasiIpcCmd.STREAM_WRITE_BUFFER
+        sysv.pool.unmap_after_io(buffer_handle.buffer_id)
     finally:
         sysv.shutdown()
 
@@ -496,7 +497,8 @@ def test_idle_02_logging_flush_on_idle():
 
 def test_tier_01_interpreter_to_jit_cooperative_flow():
     """TEST-TIER-01: End-to-end integration of cooperative WASM execution on COOS with idle JIT compilation and log flush."""
-    sysv = System()
+    logger_sink = DedicatedLogSink()
+    sysv = System(logger_sink=logger_sink)
     sysv.runtime_engine = make_runtime_engine(code_lengths=(0x1001,))
     sysv.dictionary.register(0x10, "wasm iteration=%d")
     executed_steps = []
@@ -522,7 +524,7 @@ def test_tier_01_interpreter_to_jit_cooperative_flow():
     assert "task_step_0" in executed_steps
     assert "monitor_step_0" in executed_steps
     # Verify deferred logs were flushed by idle_hook
-    wire = sysv.transport.drain_output().decode("utf-8")
+    wire = logger_sink.drain_output().decode("utf-8")
     assert "wasm iteration=0" in wire
     assert "wasm iteration=4" in wire
 

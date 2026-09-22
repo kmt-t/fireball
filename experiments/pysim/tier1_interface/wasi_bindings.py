@@ -8,7 +8,6 @@ from typing import Final
 
 @dataclass(frozen=True, slots=True)
 class WasiHalBindings:
-    """WASIアダプタが利用するHALエンドポイントURIの注入値。"""
+    """WASIアダプタが利用する標準出力エンドポイントの注入値。"""
 
     stdout_uri: Final[str]
-    logger_uri: Final[str]

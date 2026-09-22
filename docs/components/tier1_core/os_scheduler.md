@@ -21,8 +21,8 @@ COOSスケジューラは、協調型OS COOS（[`os_coos.md`](docs/components/ti
 - **`Scheduler`**: タスクのREADYキュー管理、実行順序制御、およびコルーチン実行をカプセル化した主要クラス。各タスクの実行状態を外部から可視化・検査するための監査用インターフェースを提供する。
 - **`task_context`**: 各タスクの実行状態（READY/BLOCKED/RUNNING等の待機状態）、スタック境界、コルーチンハンドル、および最後に観測した再スケジュール要求世代を集約したデータ構造。
 - **`scheduler_config`**: 最大タスク数、タイムアウト閾値、および各タスクの割り当てリソース制限からなる不変の静的設定。
-- **`reschedule_generation`**: 割り込み通知を契機に更新する単調増加の要求世代。要求が保留中の間に到着した追加イベントは同じ世代へ集約し、イベント本体は固定長FIFOで個別に保持する。
-- **`reschedule_pending`**: 未完了の協調再スケジュール要求を示す原子的な状態。要求世代の一巡完了とFIFOの空を確認するまで解除しない。
+- **`reschedule_generation`**: 割り込み通知を契機に更新する単調増加の要求世代。要求が保留中の間に到着した追加イベントは同じ世代へ集約し、イベント本体は固定長ロックフリーFIFOで個別に保持する。
+- **`reschedule_pending`**: 未完了の協調再スケジュール要求を示す原子的な状態。要求世代の一巡完了とロックフリーFIFOの空を確認するまで解除しない。
 - **`round_target_mask`**: 協調再スケジュール開始時点で実行対象となるRUNNINGおよびREADYタスクを示す固定長ビットマップ。新規生成タスクは現在の一巡の対象に含めない。
 
 ### 3.2 内部ブロック図
@@ -77,7 +77,7 @@ flowchart TD
 - **アイドル状態の検知**: 全ての管理タスクが「待機状態（BLOCKED/SUSPENDED_CSP）」となった場合にアイドル・ハンドラ（Periodic Task、ログフラッシュ、JITバッチコンパイル等）を実行する。
 - **割り込み処理**: HALからの原因付き`interrupt-event`通知（`notify_interrupt(event)`）を受信し、固定長FIFOから回収する。`vector_id`に対応するvSoCランタイム待機タスクへイベント本体を引き渡したうえで、そのタスクをREADYキュー末尾に追加する。COOSはvIRQ階層の評価やゲスト関数呼出しを行わない。
 - **割り込み時の協調再スケジュール (`ADR_InterruptRescheduleGeneration`)**:
-    - ISRは`interrupt-event`を固定長FIFOへ投入し、要求が保留されていない場合だけ`reschedule_generation`を一世代進める。ISRはタスク状態、READYキュー、および`round_target_mask`を変更しない。
+    - ISRは`interrupt-event`を固定長ロックフリーFIFOへ投入し、要求が保留されていない場合だけ`reschedule_generation`を一世代進める。ISRはタスク状態、READYキュー、および`round_target_mask`を変更しない。FIFO操作はmutexやスピンロックを取得しない。
     - スケジューラは最初の協調境界でFIFOをドレインし、イベント本体を対象タスクの保留割り込みスロットへ移してから、割り込みで起床したタスクをREADYキューへ追加する。その後、RUNNINGおよびREADYタスクを`round_target_mask`へ記録する。
     - タスクがディスパッチまたは許可された直接ハンドオフで実行を開始したとき、`task_context.last_seen_generation`が現在世代と異なる場合は現在世代へ更新し、直ちに協調的な`YIELD`へ遷移する。タスクごとの更新は一世代につき一回だけ行う。
     - `round_target_mask`に含まれる全タスクが現在世代を観測した時点で一巡を完了する。完了時に新しい割り込み要求が保留されている場合は、要求を消去せず次の世代の一巡へ移行する。要求を解除する場合は、対象世代と現在世代が一致し、かつFIFOが空であることを原子的に確認する。
@@ -342,12 +342,12 @@ stateDiagram-v2
 #### `notify-interrupt` (内部 API)
 | 項目 | 内容 |
 | :--- | :--- |
-| 機能概要 | ISRから呼び出され、固定長FIFOへ汎用`interrupt-event`を投入する。 |
+| 機能概要 | ISRから呼び出され、固定長ロックフリーFIFOへ汎用`interrupt-event`を投入する。 |
 | シグネチャ | `notify_interrupt(event: interrupt_event) -> void` |
 | 引数 | `event`: `vector_id`、`source_id`、`cause_code`、`payload0`、`payload1`からなる固定5ワードの原因レコード |
 | 事前条件 | ISR コンテキスト内からのみ呼び出されること。 |
 | 事後条件 | FIFOへの`interrupt-event`投入に成功した場合、FIFO満杯でなければ、要求が保留されていない場合に`reschedule_generation`を更新し、`reschedule_pending`を設定する。FIFO満杯の場合はイベントをドロップし、ドロップカウントだけをインクリメントする。ドレイン時に`vector_id`の待機先が未登録ならイベントをドロップし、登録済みの待機タスクだけをBLOCKEDからREADYへ遷移させてREADYキュー末尾へ挿入する。 |
-| 設計注記 | 割り込み通知は原因情報を保持したままイベント化され、スケジューラのメインループで安全に処理される。ISRは軽量に、イベント投入、要求世代の更新、およびドロップカウンタの更新だけを行う。タスク状態とREADYキューは協調境界でだけ変更する。 |
+| 設計注記 | 割り込み通知は原因情報を保持したままイベント化され、SPSCロックフリーFIFOへ公開される。ISRはmutex・スピンロックを取得せず、イベント投入、要求世代の更新、およびドロップカウンタの更新だけを行う。スケジューラは協調境界でFIFOをドレインし、タスク状態とREADYキューを変更する。 |
 
 #### 再スケジュール世代の観測（内部契約）
 <!-- traceability: {ADR_InterruptRescheduleGeneration} {TaskPollInterruptEvent} -->

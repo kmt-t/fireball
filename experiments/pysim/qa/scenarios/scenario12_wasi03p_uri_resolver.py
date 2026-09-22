@@ -5,7 +5,6 @@ Integration Scenario 12: WASI 0.3p Hierarchical URI Resolver, IPC Driver Command
 Tests:
 1. Hierarchical IPC URI interface resolution via `resolver.get-interface`:
    - "fireball://hal/stdout/0" (standard output stream via HAL buffer pool)
-   - "fireball://hal/logger/0" (System logger)
    - Standard WASI 0.3p stream and CLI aliases
 2. Driver Capability Query Protocol (`CMD_QUERY_CAPS` = 0x00):
    - Querying the standard output driver.
@@ -49,7 +48,7 @@ from system import System
 from system_containers import ReadOnlyFlatMapView
 from tier3_platform.drivers.platform_config import PlatformDriverConfiguration
 from tier3_platform.drivers.hal.bindings import DEFAULT_WASI_HAL_BINDINGS
-from tier3_platform.drivers.hal.stream import StreamTransport
+from tier3_platform.drivers.hal.stream import DedicatedLogSink, StreamTransport
 from tier3_platform.drivers.wasi.context import Wasi03pEngine, WasiHostContext, WasiIpcCmd
 
 def _params(*pairs: tuple[int, int]) -> ReadOnlyFlatMapView[int, int]:
@@ -68,19 +67,17 @@ def test_wasi03p_hierarchical_uri_and_ipc_commands():
         drivers=PlatformDriverConfiguration(
             wasi_hal_bindings=DEFAULT_WASI_HAL_BINDINGS,
             stdout_transport=stdout_transport,
-            logger_transport=stdout_transport,
+            logger_sink=DedicatedLogSink(),
             wasi_backend=UvwasiReferenceContext(),
         )
     )
     engine = Wasi03pEngine(sysv)
     runtime_task = sysv.start_runtime_task(name="scenario12_runtime")
-    sysv.pool.bind_runtime()
     sysv.start_hal_driver(DummyDriver(sysv.wasi_hal_bindings.stdout_uri, transport=sysv.transport))
 
     # 1. Test Hierarchical IPC URIs Resolution
     hierarchical_uris = [
         "fireball://hal/stdout/0",
-        "fireball://hal/logger/0",
         "wasi:io/streams@0.3.0",
         "wasi:cli/stdout@0.3.0",
     ]
@@ -104,6 +101,7 @@ def test_wasi03p_hierarchical_uri_and_ipc_commands():
 
     # 3. Test WASI 0.3p IPC Command Protocol: Stream Write via HAL buffer (0x01)
     buffer_handle = sysv.pool.buffer(0)
+    assert sysv.pool.map_for_io(buffer_handle.buffer_id).name == "MAPPED"
     buffer_view = sysv.pool.view(buffer_handle, offset=0, length=24)
     msg = b"IPC-CMD-SHM-STREAM-OK!"
     buffer_view[0 : len(msg)] = msg
@@ -118,6 +116,7 @@ def test_wasi03p_hierarchical_uri_and_ipc_commands():
         ),
     )
     assert nwritten == len(msg)
+    sysv.pool.unmap_after_io(buffer_handle.buffer_id)
     out_stdout = sysv.transport.drain_output().decode("utf-8")
     assert out_stdout.startswith("IPC-CMD-SHM-STREAM-OK!"), f"stdout output mismatch: {out_stdout}"
     print(f"    [IPC CMD:STREAM_WRITE_BUFFER] Written {nwritten} bytes -> {out_stdout}")
@@ -128,10 +127,12 @@ def test_wasi03p_hierarchical_uri_and_ipc_commands():
         (ARG_OFFSET, 0),
         (ARG_BUFFER_HANDLE, buffer_handle.buffer_id),
     )
+    assert sysv.pool.map_for_io(buffer_handle.buffer_id).name == "MAPPED"
     nwritten_fmap = engine.dispatch_command(
         "fireball://hal/stdout/0", WasiIpcCmd.STREAM_WRITE_BUFFER, fmap_view
     )
     assert nwritten_fmap == len(msg)
+    sysv.pool.unmap_after_io(buffer_handle.buffer_id)
     out_stdout_fmap = sysv.transport.drain_output().decode("utf-8")
     assert out_stdout_fmap.startswith("IPC-CMD-SHM-STREAM-OK!")
     print(

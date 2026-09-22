@@ -274,8 +274,8 @@ def run_single_pairwise_case(case_id: str, case_tuple: tuple[str, ...]) -> None:
         payload = f"pairwise:{case_id}".encode("ascii")
         if sysv.scheduler.current_task is None:
             sysv.start_runtime_task(name="pairwise_hal_guest")
-        sysv.pool.bind_runtime()
         buffer_handle = sysv.pool.buffer(0)
+        assert sysv.pool.map_for_io(buffer_handle.buffer_id).name == "MAPPED"
         sysv.pool.view(buffer_handle, 0, len(payload))[:] = payload
         assert stdio.dispatch(
             WasiIpcCmd.STREAM_WRITE_BUFFER,
@@ -288,6 +288,7 @@ def run_single_pairwise_case(case_id: str, case_tuple: tuple[str, ...]) -> None:
             ),
         ) == len(payload)
         assert stdio.drain_stdout() == payload
+        sysv.pool.unmap_after_io(buffer_handle.buffer_id)
 
 
 def test_all_pairwise_combinations():

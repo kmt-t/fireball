@@ -1,49 +1,52 @@
 """
 experiments/pysim/tier3_plugins/debugger/gdb_server.py
-GDB Remote Serial Protocol (RSP) TCP Server for Fireball Hypervisor.
-Provides real TCP socket listening, packet frame encoding/decoding,
+GDB Remote Serial Protocol (RSP) server for Fireball Hypervisor.
+Provides replaceable physical transport handling, packet frame encoding/decoding,
 ACK/NACK negotiation, and execution dispatch to GDBRspProtocol.
 """
 
 from __future__ import annotations
 
-import socket
 import threading
 from collections.abc import Generator, Mapping
 
 from tier3_plugins.debugger.debugger import DebuggerManager, GDBRspProtocol
 from execution_context import WASMContext
 from scheduler import ChannelAction
+from tier3_platform.drivers.debugger.transport import (
+    DebuggerConnection,
+    DebuggerSink,
+    SocketDebuggerSink,
+)
 from wasm_module import BasicBlock
 
 
 class GDBServer:
-    """TCP Server implementing GDB Remote Serial Protocol (RSP) wire interface."""
+    """RSP server using an injected Tier 3 physical debugger transport."""
 
-    def __init__(self, dbg: DebuggerManager, host: str = "127.0.0.1", port: int = 0):
+    def __init__(
+        self,
+        dbg: DebuggerManager,
+        host: str = "127.0.0.1",
+        port: int = 0,
+        transport: DebuggerSink | None = None,
+    ):
         self.dbg = dbg
         self.rsp = GDBRspProtocol(dbg)
-        self.host = host
-        self.port = port
-        self._server_sock: socket.socket | None = None
-        self._client_sock: socket.socket | None = None
+        self.transport = transport if transport is not None else SocketDebuggerSink(host, port)
+        self._client_sock: DebuggerConnection | None = None
         self._thread: threading.Thread | None = None
         self._running = False
         self.actual_port: int = 0
 
     def bind_socket(self) -> int:
-        """Binds TCP socket and returns bound port."""
-        if self._server_sock is None:
-            self._server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            self._server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            self._server_sock.bind((self.host, self.port))
-            self._server_sock.listen(1)
-            self.actual_port = self._server_sock.getsockname()[1]
-            self._running = True
+        """Binds the injected debugger transport and returns its endpoint ID."""
+        self.actual_port = self.transport.bind()
+        self._running = True
         return self.actual_port
 
     def start(self, current_pc: int, ctx: WASMContext, blocks: Mapping[int, BasicBlock]) -> int:
-        """Starts TCP listener in a background thread and returns bound port."""
+        """Starts a blocking transport loop in a background thread."""
         port = self.bind_socket()
         self._thread = threading.Thread(
             target=self._server_loop,
@@ -59,12 +62,11 @@ class GDBServer:
     ) -> Generator[tuple[str, None], None, None]:
         """
         COOS cooperative task coroutine for GDBServer.
-        Listens and processes RSP packets asynchronously using non-blocking socket
+        Listens and processes RSP packets asynchronously using a non-blocking sink
         and yields execution back to COOS scheduler when waiting for I/O.
         """
         self.bind_socket()
-        assert self._server_sock is not None
-        self._server_sock.setblocking(False)
+        self.transport.set_nonblocking(True)
         current_pc = start_pc
         buffer = ""
         tx_buffer = bytearray()
@@ -80,14 +82,13 @@ class GDBServer:
         try:
             # 1. Accept client non-blockingly
             while self._running and self._client_sock is None:
-                try:
-                    client, _ = self._server_sock.accept()
+                client = self.transport.accept()
+                if client is not None:
                     client.setblocking(False)
                     self._client_sock = client
                     self.dbg.attach()
                     break
-                except (BlockingIOError, TimeoutError):
-                    yield (ChannelAction.YIELD, None)
+                yield (ChannelAction.YIELD, None)
 
             # 2. Main packet dispatch loop
             while self._running and self._client_sock is not None:
@@ -130,18 +131,12 @@ class GDBServer:
             self.stop()
 
     def stop(self) -> None:
-        """Stops the TCP server and closes all sockets."""
+        """Stops the server and closes the injected connection and transport."""
         self._running = False
         if self._client_sock:
-            try:
-                self._client_sock.close()
-            except Exception:
-                pass
-        if self._server_sock:
-            try:
-                self._server_sock.close()
-            except Exception:
-                pass
+            self._client_sock.close()
+            self._client_sock = None
+        self.transport.close()
         if self._thread and self._thread.is_alive():
             self._thread.join(timeout=1.0)
 
@@ -150,17 +145,15 @@ class GDBServer:
     ) -> None:
         """Accepts a client connection and processes RSP packets until disconnected."""
         try:
-            self._server_sock.settimeout(2.0)
+            self.transport.set_nonblocking(False)
             while self._running:
-                try:
-                    client, _ = self._server_sock.accept()
+                client = self.transport.accept()
+                if client is not None:
+                    client.setblocking(True)
                     self._client_sock = client
                     break
-                except TimeoutError:
-                    continue
-            if not self._running or not self._client_sock:
+            if not self._running or self._client_sock is None:
                 return
-            self._client_sock.settimeout(2.0)
             current_pc = start_pc
             self.dbg.attach()
             buffer = ""
@@ -183,20 +176,28 @@ class GDBServer:
                     packet_str = buffer[dollar_idx : hash_idx + 3]
                     buffer = buffer[hash_idx + 3 :]
                     # Send immediate ACK
-                    self._client_sock.sendall(b"+")
+                    self._send_all(b"+")
                     # Handle packet via GDBRspProtocol
                     response, current_pc = self.rsp.handle_packet(
                         packet_str, current_pc, ctx, blocks
                     )
                     # Send response packet
                     if response:
-                        self._client_sock.sendall(response.encode("latin1"))
+                        self._send_all(response.encode("latin1"))
         except Exception:
             pass
         finally:
-            if self._client_sock:
-                try:
-                    self._client_sock.close()
-                except Exception:
-                    pass
+            if self._client_sock is not None:
+                self._client_sock.close()
+                self._client_sock = None
+            self.transport.close()
             self.dbg.detach()
+
+    def _send_all(self, data: bytes) -> None:
+        """Send a complete response through an injected connection sink."""
+        assert self._client_sock is not None
+        remaining = memoryview(data)
+        while remaining:
+            sent = self._client_sock.send(remaining)
+            assert sent > 0, "Debugger transport returned a zero-byte send"
+            remaining = remaining[sent:]

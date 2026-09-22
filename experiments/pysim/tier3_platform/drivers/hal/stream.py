@@ -54,3 +54,30 @@ class StreamTransport:
         self._output_len = 0
 
 
+class DedicatedLogSink:
+    """固定容量の診断ログ専用Sink。標準出力とは別の蓄積領域を持つ。"""
+
+    def __init__(self, capacity: int = FB_CONF_STDIO_BUFFER_SIZE) -> None:
+        assert capacity > 0
+        self._output = bytearray(capacity)
+        self._output_len = 0
+        self.bytes_written = 0
+
+    def write(self, data: memoryview) -> int:
+        """診断ログを専用バッファへ書き込む。"""
+        written = len(data)
+        assert written <= len(self._output) - self._output_len
+        self._output[self._output_len : self._output_len + written] = data
+        self._output_len += written
+        self.bytes_written += written
+        return written
+
+    def drain_output(self) -> bytes:
+        """蓄積済みログをホスト側へ取り出す。"""
+        data = bytes(self._output[: self._output_len])
+        self._output_len = 0
+        return data
+
+    def close(self) -> None:
+        self._output_len = 0
+

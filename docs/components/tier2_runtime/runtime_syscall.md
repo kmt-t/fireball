@@ -168,9 +168,10 @@ URIによる名前解決後の接続確立（`lookup`）によって取得した
 
 | ID | 名前 | 引数 | 戻り値 | 説明 |
 | :--- | :--- | :--- | :--- | :--- |
-| `0x40` | `IPC_SEND` | `handle_id`, `msg_offset`, `msg_len` | `0` / errno | メッセージ送信（msg_offset: 送信メッセージ構造体の相対オフセット）。指定したハンドルを介してムーブセマンティクスによる送信を行う。 |
-| `0x41` | `IPC_RECV` | `handle_id`, `buf_offset`, `buf_len` | `recv_len` / errno | メッセージ受信（buf_offset: 受信バッファの相対オフセット）。指定したハンドルからメッセージを受け取る（バッファが空の場合はコルーチンがサスペンドされる）。 |
+| `0x40` | `IPC_SEND` | `handle_id`, `msg_offset`, `msg_len`, `response_code_ptr` | `0` / errno | メッセージ要求を送り、応答までコルーチンをサスペンドする。応答コードは指定ポインタへ `u32` で書き戻す。応答メッセージは同一オブジェクトを返す。 |
+| `0x41` | `IPC_RECV` | `handle_id`, `buf_offset`, `buf_len` | `recv_len` / errno | メッセージ要求を受信する。受信後は応答待ち状態となり、`IPC_REPLY` で応答するまで送信側はブロックされる。 |
 | `0x42` | `IPC_LOOKUP` | `uri_offset`, `uri_len` | `handle_id` / errno | 名前解決とハンドル取得（uri_offset: URI文字列の相対オフセット）。URI文字列の相対オフセットから通信ハンドルを返却する。 |
+| `0x43` | `IPC_REPLY` | `handle_id`, `response_code` | errno | 現在の受信タスクが直前の `IPC_RECV` で取得した同一メッセージを、応答コード付きで送信元へ返す。返信先はメッセージに結び付いた送信元TCBで確定し、`handle_id` はABI対称性のための引数で返信先選択には使わない。IPCルータAPIでは受信後のKV追加も応答データになる。 |
 
 ### 6.6. WASI (`0x80`-`0xBF`)
 <!-- traceability: {WASI_Implementation} -->

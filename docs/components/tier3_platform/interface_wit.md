@@ -16,7 +16,7 @@
 
 <!-- traceability: {CleanArchitecture} {META_SpecificationFirst} {META_Risk_Tiering} {URIAbstraction} -->
 - **URI Resolver メソッド**: `resolver.get-interface(uri: string)` により、URI 文字列からインターフェースハンドルを取得可能とする。個別デバイスの WIT リソース型は存在しない——ハンドルに対する操作はすべて IPC コマンドID経由で行う。
-- **HALバッファプール（vMMIO/DYNAMIC）ゼロコピー I/O**: デバイス通信のデータ送受信は、Runtimeが`bind_runtime`でマップした固定スロット（vMMIO/DYNAMIC 領域の `hal-buffer-slice`）を通じてゼロコピー／極低レイテンシで実行される。 `{META_RestrictedPhysicalAccess}`
+- **HALバッファプール（vMMIO/DYNAMIC）ゼロコピー I/O**: デバイス通信のデータ送受信は、ゲストがI/O開始時に`map-buffer`で選択し、完了時に`unmap-buffer`で解除する固定スロット（vMMIO/DYNAMIC 領域の `hal-buffer-slice`）を通じてゼロコピー／極低レイテンシで実行される。 `{META_RestrictedPhysicalAccess}`
 - **IPC 宛先 URI と階層命名規則**: URI は、`fireball://hal/<type>/<instance>`（例: `fireball://hal/uart/0`, `fireball://hal/gpio/0`, `fireball://hal/timer/0`, `fireball://hal/i2c/0`, `fireball://hal/stdout/0`）の**階層型 URI 命名規則**に従い、**IPC ルータ（`ipc_router`）でHALサブシステムと通信するための宛先 URI** として機能する。
 - **WASI 0.1p 互換ラッパー (Adapter Pattern)**: WASI Preview 1 の標準出力とログ出力は、Tier 3ゲストアダプタが上記の URI Resolver + HALバッファプール機構へ変換する。その他の Preview 1 操作は Tier 3 の uvwasi ドライバへ委譲し、`proc_exit` は Fireball host call でランタイムへ通知する。
 - **Stateless Interface**: リソースハンドルを通じた操作を行い、ホスト側で状態を管理する。
@@ -36,8 +36,10 @@ interface resolver {
 
     /// IPC 宛先 URI から通信チャネルハンドルを取得
     get-interface: func(uri: string) -> result<u32, recovery-strategy-category>;
-    /// HALが保持する固定バッファスロットのビューを取得
-    get-buffer: func(slot-index: u32) -> result<hal-buffer-slice, recovery-strategy-category>;
+    /// HALが保持する固定バッファスロットを今回のI/Oだけマップ
+    map-buffer: func(slot-index: u32) -> result<hal-buffer-slice, recovery-strategy-category>;
+    /// 今回のI/Oを終了し、DYNAMIC領域のマッピングを解除
+    unmap-buffer: func(handle: u32) -> operation-result;
     /// ストリームからHALバッファへ読み込む
     stream-read: func(handle: u32, buffer: hal-buffer-slice) -> operation-result;
     /// HALバッファからストリームへ書き込む
@@ -63,7 +65,7 @@ interface resolver {
 flowchart TD
     Guest[Guest WASM Application] -->|WASI call| Lib[libfireball guest adapter]
     Lib -->|resolver.get-interface| Res[URI Resolver / IPC Router]
-    Lib -->|get-buffer| HBP[HAL Fixed Buffer Pool]
+    Lib -->|map-buffer / unmap-buffer| HBP[HAL Fixed Buffer Pool]
     Lib -->|stream / clock / poll operation| W3Core[HAL public IF]
     W3Core --> UART[fireball://hal/uart/0]
     W3Core --> GPIO[fireball://hal/gpio/0]
@@ -190,7 +192,7 @@ WIT識別子は WASI 標準および `wasm-tools` の制約により `kebab-case
 | :--- | :--- | :--- |
 | **Object** (Record, Resource) | `性質-責務名` | `hal-buffer-slice`, `ipc-message` |
 | **Enum** (Type) | `性質-カテゴリ` | `sys-log-level`, `recovery-strategy-category` |
-| **Method** (Function) | `動詞` または `動詞-機能` | `get-interface`, `get-buffer` |
+| **Method** (Function) | `動詞` または `動詞-機能` | `get-interface`, `map-buffer`, `unmap-buffer` |
 | **Field / Enum Case** | `kebab-case` | `max-latency`, `retry` |
 
 ### 8.1 設計上の留意点

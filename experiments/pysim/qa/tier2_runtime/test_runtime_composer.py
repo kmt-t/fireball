@@ -5,8 +5,10 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+_TESTS_DIR = Path(__file__).resolve().parents[1]
 _PYSIM_DIR = Path(__file__).resolve().parents[2]
 for _path in (
+    _TESTS_DIR,
     _PYSIM_DIR,
     _PYSIM_DIR / "tier1_core",
     _PYSIM_DIR / "tier2_runtime",

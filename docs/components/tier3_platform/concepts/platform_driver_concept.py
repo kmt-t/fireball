@@ -40,16 +40,15 @@ class InterruptEvent:
         )
 
 
-class InterruptFifo:
-    """Fixed-capacity FIFO used between ISR notification and scheduler drain."""
+class LockFreeInterruptFifo:
+    """Bounded SPSC FIFO used between ISR notification and scheduler drain."""
 
     def __init__(self, capacity: int) -> None:
         if capacity <= 0:
             raise ValueError("FIFO capacity must be positive")
         self._slots: list[InterruptEvent | None] = [None] * capacity
-        self._read_index = 0
-        self._write_index = 0
-        self._size = 0
+        self._head = 0
+        self._tail = 0
 
     @property
     def capacity(self) -> int:
@@ -57,23 +56,24 @@ class InterruptFifo:
 
     @property
     def pending_count(self) -> int:
-        return self._size
+        return self._tail - self._head
 
     def push(self, event: InterruptEvent) -> bool:
-        if self._size == self.capacity:
+        tail = self._tail
+        if tail - self._head >= self.capacity:
             return False
-        self._slots[self._write_index] = event
-        self._write_index = (self._write_index + 1) % self.capacity
-        self._size += 1
+        self._slots[tail % self.capacity] = event
+        self._tail = tail + 1
         return True
 
     def pop(self) -> InterruptEvent | None:
-        if self._size == 0:
+        head = self._head
+        if head == self._tail:
             return None
-        event = self._slots[self._read_index]
-        self._slots[self._read_index] = None
-        self._read_index = (self._read_index + 1) % self.capacity
-        self._size -= 1
+        index = head % self.capacity
+        event = self._slots[index]
+        self._slots[index] = None
+        self._head = head + 1
         return event
 
 
@@ -81,7 +81,7 @@ class PlatformDriverConcept:
     """HAL interrupt boundary with no ISR-side task-state mutation."""
 
     def __init__(self, fifo_capacity: int = 4) -> None:
-        self._fifo = InterruptFifo(fifo_capacity)
+        self._fifo = LockFreeInterruptFifo(fifo_capacity)
         self._task_ready = False
 
     @property

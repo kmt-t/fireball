@@ -5,8 +5,10 @@ Implementation Invariants & Gotchas:
 - GOTCHA-IPCR-01: Duplicate send on an already-waiting CSP channel triggers an assertion
   error, stopping illegal concurrent access (no queue exists in pure CSP).
 - GOTCHA-IPCR-02: Preflight validation failure preserves sender ownership; permissions
-  and destination must be fully verified before revoking resource ownership.
+and destination must be fully verified before revoking resource ownership.
 """
+
+from __future__ import annotations
 
 import os
 import sys
@@ -20,15 +22,11 @@ sys.path.insert(
 from flat_view_concept import FlatMapView
 
 _EMPTY_ENTRIES: list[tuple[int, int]] = []
+IPC_RESPONSE_PENDING = 0xFFFF_FFFF
 
 
 class Role(IntEnum):
-    """Each HAL_* role is bound to exactly one endpoint/service instance and one
-    dedicated CSP channel (ipc_router.md {ADR_RendezvousChannel}): a single
-    shared role could not distinguish which of several same-type instances
-    (e.g. the physical UART vs. a separately-registered console stream) a
-    message was meant for, since only the receiving task's role -- never the
-    URI -- selects a channel."""
+    """HAL_* roles identify device kinds; URI entries identify instances."""
 
     RUNTIME = 0
     CORE_SERVICE = 1
@@ -39,7 +37,6 @@ class Role(IntEnum):
     HAL_I2C = 6
     HAL_SPI = 7
     DEBUGGER = 8
-    HAL_LOGGER = 9
 
 
 _ROLE_NAMES = (
@@ -52,7 +49,6 @@ _ROLE_NAMES = (
     "HAL_I2C",
     "HAL_SPI",
     "DEBUGGER",
-    "HAL_LOGGER",
 )
 
 
@@ -75,6 +71,30 @@ class IPCMessage:
         else:
             self._entries = _EMPTY_ENTRIES
         self.ownership = OwnershipState.SENDER_OWNS
+        self._sender_id = IPC_RESPONSE_PENDING
+        self.response_code = IPC_RESPONSE_PENDING
+        self.reply_channel: Channel | None = None
+
+    def stamp_sender(self, sender_id: int) -> None:
+        """The scheduler supplies the authenticated TCB identity."""
+        assert sender_id > 0
+        assert self.ownership == OwnershipState.SENDER_OWNS
+        assert self.reply_channel is None
+        self._sender_id = sender_id
+        self.response_code = IPC_RESPONSE_PENDING
+        self.ownership = OwnershipState.IN_FLIGHT
+
+    @property
+    def sender_id(self) -> int:
+        self._check_ownership()
+        assert self._sender_id != IPC_RESPONSE_PENDING
+        return self._sender_id
+
+    def set_response_code(self, response_code: int) -> None:
+        self._check_ownership()
+        assert self.ownership == OwnershipState.RECEIVER_OWNS
+        assert 0 <= response_code < IPC_RESPONSE_PENDING
+        self.response_code = response_code
 
     def _check_ownership(self) -> None:
         assert self.ownership in (
@@ -118,8 +138,16 @@ class Channel:
 
     def recv(self) -> IPCMessage | None:
         message = self._in_flight
-        self._in_flight = None
+        if message is None or message.ownership != OwnershipState.IN_FLIGHT:
+            return None
         return message
+
+    def reply(self, message: IPCMessage) -> None:
+        assert self._in_flight is message
+        assert message.ownership == OwnershipState.RECEIVER_OWNS
+        assert message.response_code != IPC_RESPONSE_PENDING
+        message.ownership = OwnershipState.SENDER_OWNS
+        self._in_flight = None
 
 
 # Stage 1: registry (URI -> role), a sorted array searched via flat_map_view --
@@ -133,7 +161,6 @@ _REGISTRY_ENTRIES = sorted(
         ("fireball://dbg/manager/0", Role.DEBUGGER),
         ("fireball://hal/gpio/0", Role.HAL_GPIO),
         ("fireball://hal/i2c/0", Role.HAL_I2C),
-        ("fireball://hal/logger/0", Role.HAL_LOGGER),
         ("fireball://hal/spi/0", Role.HAL_SPI),
         ("fireball://hal/timer/0", Role.HAL_TIMER),
         ("fireball://hal/uart/0", Role.HAL_UART),
@@ -142,7 +169,7 @@ _REGISTRY_ENTRIES = sorted(
 )
 _REGISTRY = FlatMapView(_REGISTRY_ENTRIES)
 
-# Stage 2: FB_CONF_ROUTER_ROLE_MATRIX (10x10, rows=sender, cols=target); every
+# Stage 2: FB_CONF_ROUTER_ROLE_MATRIX (9x9, rows=sender, cols=target); every
 # DENY cell is listed explicitly, matching the C++ constexpr array exactly.
 # Every HAL_* role is a leaf (all-DENY row) -- endpoint instances never
 # initiate an IPC send themselves (ipc_router.md "全 DENY 行・列の意味").
@@ -153,7 +180,6 @@ _HAL_ROLES = (
     Role.HAL_TIMER,
     Role.HAL_I2C,
     Role.HAL_SPI,
-    Role.HAL_LOGGER,
 )
 
 
@@ -171,13 +197,13 @@ _ROLE_MATRIX = (
     _role_row(frozenset()),  # from HAL_I2C (leaf)
     _role_row(frozenset()),  # from HAL_SPI (leaf)
     _role_row(frozenset({Role.CORE_SERVICE, *_HAL_ROLES})),  # from DEBUGGER
-    _role_row(frozenset()),  # from HAL_LOGGER (leaf)
 )
 
 
 class IPCRouter:
-    def __init__(self, current_task_role: Role = Role.RUNTIME):
+    def __init__(self, current_task_role: Role = Role.RUNTIME, current_task_id: int = 1):
         self.current_task_role = current_task_role
+        self.current_task_id = current_task_id
         # Stage 3: one dedicated CSP channel per ALLOW edge of the RBAC
         # matrix -- a Channel is a strict 1:1 pairing, so distinct senders
         # to the same target role cannot share one.
@@ -213,10 +239,11 @@ class IPCRouter:
             "Sender must own the message before sending"
         )
 
-        # Revoke: commit to the handoff. No queue exists to be full.
-        message.ownership = OwnershipState.IN_FLIGHT
+        # The production scheduler stamps the TCB identity at the CSP send boundary.
+        message.stamp_sender(self.current_task_id)
         channel.send(message)
-        return ("COMPLETED", f"{_ROLE_NAMES[self.current_task_role]}: in-flight")
+        message.reply_channel = channel
+        return ("COMPLETED", message)
 
     def receive(self) -> IPCMessage | None:
         """
@@ -234,8 +261,17 @@ class IPCRouter:
             message = channel.recv()
             if message is not None:
                 message.ownership = OwnershipState.RECEIVER_OWNS
+                message.reply_channel = channel
                 return message
         return None
+
+    def reply(self, message: IPCMessage, response_code: int) -> str:
+        assert message.ownership == OwnershipState.RECEIVER_OWNS
+        assert message.reply_channel is not None
+        message.set_response_code(response_code)
+        message.reply_channel.reply(message)
+        message.reply_channel = None
+        return "COMPLETED"
 
 
 # ==============================================================================

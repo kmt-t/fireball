@@ -122,7 +122,7 @@ sequenceDiagram
 - JIT runtime と JIT compiler は別スロットとする。JIT runtime は compiler が未接続でも Interpreter へフォールバックできる。
 - Profiler は `RuntimeObserver` としてイベントを読む。Profiler から Runtime の実行メソッドを呼び出してはならない。
 - Debugger の停止・再開・メモリ書込みは `ExecutionControl` 契約を使う。Profiler の観測契約へ書込み操作を追加してはならない。
-- WASI のホスト呼出は `HostCallBoundary` を通す。WASI 実装は HAL、IPC、uvwasi のいずれかを選択できるが、Runtime は選択先を直接参照しない。
+- WASI のホスト呼出は `HostCallBoundary` を通す。製品ターゲットのWASI実装はこの境界の下位プラットフォーム実装を選択し、uvwasiはホスト上の評価構成だけで使用する。Runtimeはuvwasiを直接参照しない。
 
 ## 5. インターフェース定義
 
@@ -189,5 +189,4 @@ sequenceDiagram
 ## 8. 設計上の未決事項
 - `RuntimeComposer` の構成入力を、C++ のテンプレート引数、生成済みハーネス構造体、または両者の組合せのいずれにするか。
 - JIT runtime と JIT compiler のコンパイル要求を同期呼出だけにするか、固定長要求キューを許可するかの選択。
-- WASI 評価用の uvwasi 接続を、製品 WASI プラグインとは別の Tier 3 実装として登録する方式。
 - プロファイラの観測損失を構成エラーにする厳密モードと、欠落数をログへ残して継続する計測モードの選択。

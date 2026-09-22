@@ -137,7 +137,7 @@ Static Devices (Stage 2) 向け。PTE には Device Type やパーミッショ�
 
 #### Stage 3 ページテーブルエントリ
 <!-- traceability: {META_Static_Resolution} {OwnershipTransfer} -->
-SHM (FC=14) および Passthrough (FC=15) 向け。PTEにはページ保護フラグとSHM所有タスクIDを保持し、SHMでは別メタデータとして物理バック基点と実サイズを保持する。SHMアクセスではスケジューラの現在タスクIDと`owner_id`を照合し、Revokeまたは所有権変更時はPTEをアンマップしてTLBをフラッシュする。DYNAMIC (FC=13) はHALバッファプールの単一ゲストバインドで保護する。
+SHM (FC=14) および Passthrough (FC=15) 向け。PTEにはページ保護フラグとSHM所有タスクIDを保持し、SHMでは別メタデータとして物理バック基点と実サイズを保持する。SHMアクセスではスケジューラの現在タスクIDと`owner_id`を照合し、Revokeまたは所有権変更時はPTEをアンマップしてTLBをフラッシュする。DYNAMIC (FC=13) はHALバッファプールの操作期間マッピングで保護する。
 
 ```
 32-bit Stage 3 permission PTE (mapping metadata is held beside it):
@@ -326,10 +326,9 @@ PASSTHROUGH アドレス変換:
 
 ### 4.6 HAL DYNAMICバッファマッピング (FC=13)
 <!-- traceability: {HAL_Interface} {IPC_ZeroCopy} -->
-HALが用意した固定長バッファは vMMIO の DYNAMIC 領域へマップする。DYNAMIC のマップ権はRuntime単位で管理し、マルチゲスト構成では同時に1つのRuntimeだけがこの領域を保持できる。別Runtimeの `bind_runtime` は拒否し、固定バッファにタスク所有権を設定しない。
+HALが用意した固定長バッファは vMMIO の DYNAMIC 領域へ、ゲストの各I/O操作の実行期間だけマップする。ゲストは `map-buffer(slot-index)` で対象スロットを選択し、操作完了後に `unmap-buffer(handle)` を呼ぶ。マッピング中のスロットがある場合は新しい要求へ `BUSY` を返し、呼び出し側が再試行する。契約違反・境界破損・不正なアンマップだけを `assert` またはトラップの対象とする。
 
-HALが保持する固定バッファは、DYNAMICゲストのバインド時にDYNAMICページへ一括マップする。これは共有メモリの所有権移譲ではなく、HAL固定スロットの静的マッピングである。DYNAMICをバインドした単一ゲストとHALドライバが同じliveバッファへアクセスし、ゲストに直接ポインタを渡さず、バッファIDと固定スロットから算出した仮想アドレスだけをインターフェース境界に渡す。
-Runtime終了時は `unbind_runtime` で全固定スロットを一括アンマップし、対応するTLBエントリをフラッシュしてから、次のRuntimeを結線できる。個別バッファの`acquire`/`release`は存在しない。
+これは共有メモリの所有権移譲ではなく、HAL固定スロットの一時的なvMMIOマッピングである。マッピング中はゲストとHALドライバが同じliveバッファへアクセスする。ゲストへ生ポインタを渡さず、バッファID、固定スロットの仮想アドレス、オフセット、および長さだけをインターフェース境界へ渡す。poll-waitを導入する場合のマッピング保持期間は、非同期操作の仕様決定時に定義する。
 
 ### 4.7 共有メモリマッピング (FC=14)
 <!-- traceability: {OwnershipTransfer} -->
@@ -423,7 +422,7 @@ vIRQページは `FB_CONF_VMMIO_VIRQ_BASE`（`0xC000_3000`）から `FB_CONF_VMM
 
 #### 物理割り込みからゲスト配送まで
 
-ISR はディスパッチャを実行せず、原因レコードを構築して COOS の汎用受付へ渡す。COOS は固定長FIFOへの投入、満杯時のドロップ、協調境界でのドレイン、待機タスクの起床を所有する。vSoC は Safepoint でイベントを受け取り、登録済みの vIRQ ノードを `root → 分類 → デバイス → ゲスト関数` の順に評価する。WASI の `poll-check` / `poll-wait` はこの経路に参加しない。
+ISR は原因情報を固定5ワードの`interrupt-event`へ変換し、COOSの`notify_interrupt(event)`で固定長ロックフリーFIFOへ投函する。COOS はFIFOへの投入、満杯時のドロップ、協調境界でのドレイン、待機タスクの起床を所有する。vSoC は Safepoint でイベントを受け取り、登録済みの vIRQ ノードを `root → 分類 → デバイス → ゲスト関数` の順に評価する。WASI の `poll-check` / `poll-wait` はこの経路に参加しない。
 
 ```mermaid
 sequenceDiagram
@@ -436,8 +435,7 @@ sequenceDiagram
     participant Device as device dispatcher
     participant Guest as guest function
 
-    ISR->>VMMIO: physical IRQ + source state
-    VMMIO->>COOS: notify-interrupt(interrupt-event[5 words])
+    ISR->>COOS: notify-interrupt(interrupt-event[5 words])
     COOS->>COOS: enqueue FIFO / drop if full
     COOS->>VSOC: drain event at cooperative boundary
     VSOC->>VSOC: commit pending registrations atomically

@@ -17,10 +17,11 @@ def build_model(*, guards: bool = True) -> Kripke:
         "s_direct_access",
         "s_raw_pointer",
         "s_early_revoke",
-        "s_dynamic_bind_runtime_a",
-        "s_dynamic_bound_runtime_a",
-        "s_dynamic_bound_runtime_b",
-        "s_dynamic_rejected",
+        "s_dynamic_map_a",
+        "s_dynamic_io_a",
+        "s_dynamic_unmapped",
+        "s_dynamic_busy",
+        "s_dynamic_persistent",
     ]
     initial_states = {"s_request"}
     relations = [
@@ -33,11 +34,13 @@ def build_model(*, guards: bool = True) -> Kripke:
         ("s_direct_access", "s_direct_access"),
         ("s_raw_pointer", "s_raw_pointer"),
         ("s_early_revoke", "s_early_revoke"),
-        ("s_preflight", "s_dynamic_bind_runtime_a"),
-        ("s_dynamic_bind_runtime_a", "s_dynamic_bound_runtime_a"),
-        ("s_dynamic_bound_runtime_a", "s_dynamic_rejected"),
-        ("s_dynamic_rejected", "s_request"),
-        ("s_dynamic_bound_runtime_b", "s_dynamic_bound_runtime_b"),
+        ("s_preflight", "s_dynamic_map_a"),
+        ("s_dynamic_map_a", "s_dynamic_io_a"),
+        ("s_dynamic_io_a", "s_dynamic_unmapped"),
+        ("s_dynamic_unmapped", "s_request"),
+        ("s_dynamic_map_a", "s_dynamic_busy"),
+        ("s_dynamic_busy", "s_request"),
+        ("s_dynamic_persistent", "s_dynamic_persistent"),
     ]
     if not guards:
         relations = [
@@ -45,7 +48,7 @@ def build_model(*, guards: bool = True) -> Kripke:
             ("s_preflight", "s_direct_access"),
             ("s_preflight", "s_raw_pointer"),
             ("s_preflight", "s_early_revoke"),
-            ("s_dynamic_bound_runtime_a", "s_dynamic_bound_runtime_b"),
+            ("s_dynamic_unmapped", "s_dynamic_persistent"),
         ]
 
     labels = {
@@ -57,10 +60,11 @@ def build_model(*, guards: bool = True) -> Kripke:
         "s_direct_access": {"direct_access"},
         "s_raw_pointer": {"raw_pointer"},
         "s_early_revoke": {"early_revoke"},
-        "s_dynamic_bind_runtime_a": {"dynamic_bind_pending"},
-        "s_dynamic_bound_runtime_a": {"dynamic_bound_one_runtime"},
-        "s_dynamic_bound_runtime_b": {"dynamic_multi_runtime"},
-        "s_dynamic_rejected": {"dynamic_bind_rejected"},
+        "s_dynamic_map_a": {"dynamic_map_pending"},
+        "s_dynamic_io_a": {"dynamic_io_active"},
+        "s_dynamic_unmapped": {"dynamic_unmapped"},
+        "s_dynamic_busy": {"dynamic_busy"},
+        "s_dynamic_persistent": {"dynamic_persistent"},
     }
     return Kripke(S=states, S0=initial_states, R=relations, L=labels)
 
@@ -93,11 +97,11 @@ def properties():
             "expect": True,
         },
         {
-            "name": "dynamic_mapping_is_bound_to_one_guest",
+            "name": "dynamic_mapping_is_operation_scoped",
             "kind": "safety",
             "logic": "CTL",
-            "formula": AG(Not(AtomicProposition("dynamic_multi_runtime"))),
-            "violation": AtomicProposition("dynamic_multi_runtime"),
+            "formula": AG(Not(AtomicProposition("dynamic_persistent"))),
+            "violation": AtomicProposition("dynamic_persistent"),
             "expect": True,
         },
     ]

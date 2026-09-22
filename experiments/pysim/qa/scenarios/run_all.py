@@ -3,7 +3,6 @@ Fireball Full Component Integration Test Suite Runner.
 Executes all 12 integration test scenarios end-to-end against genuine WASM bytecode.
 """
 
-import os
 import subprocess
 import sys
 import time
@@ -12,32 +11,6 @@ from pathlib import Path
 SCENARIO_DIR = Path(__file__).resolve().parent
 PYSIM_ROOT = SCENARIO_DIR.parent.parent
 REPO_ROOT = PYSIM_ROOT.parent.parent
-
-PYTHON_PATHS = [
-    PYSIM_ROOT,
-    PYSIM_ROOT / "qa",
-    PYSIM_ROOT / "tier1_core",
-    PYSIM_ROOT / "tier1_interface",
-    PYSIM_ROOT / "tier2_runtime",
-    PYSIM_ROOT / "tier3_executer",
-    PYSIM_ROOT / "tier3_platform",
-    REPO_ROOT / "docs" / "components" / "tier1_core" / "concepts",
-    REPO_ROOT / "docs" / "components" / "tier1_interface" / "concepts",
-    REPO_ROOT / "docs" / "components" / "tier2_runtime" / "concepts",
-    REPO_ROOT / "docs" / "components" / "tier3_executer" / "concepts",
-    REPO_ROOT / "docs" / "components" / "tier3_platform" / "concepts",
-]
-for p in PYTHON_PATHS:
-    sp = str(p)
-    if sp not in sys.path:
-        sys.path.insert(0, sp)
-
-SCENARIO_ENV = os.environ.copy()
-existing_pythonpath = SCENARIO_ENV.get("PYTHONPATH")
-pythonpath_entries = [str(p) for p in PYTHON_PATHS]
-if existing_pythonpath:
-    pythonpath_entries.append(existing_pythonpath)
-SCENARIO_ENV["PYTHONPATH"] = os.pathsep.join(pythonpath_entries)
 
 SCENARIOS = [
     (
@@ -102,11 +75,10 @@ def run_all_scenarios():
         print(f"\n>>> Running {name} ({script_path.name})...")
         t0 = time.perf_counter()
         res = subprocess.run(
-            [sys.executable, str(script_path)],
+            [sys.executable, "-m", "pytest", "-q", str(script_path), "-s"],
             capture_output=True,
             text=True,
             cwd=str(REPO_ROOT),
-            env=SCENARIO_ENV,
         )
         t1 = time.perf_counter()
         elapsed_ms = (t1 - t0) * 1000

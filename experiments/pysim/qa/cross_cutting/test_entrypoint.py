@@ -15,18 +15,6 @@ _TEST_FILE = Path(__file__).resolve()
 _TESTS_DIR = _TEST_FILE.parent.parent
 _PYSIM_DIR = _TESTS_DIR.parent
 
-for _p in [
-    _TESTS_DIR,
-    _PYSIM_DIR,
-    _PYSIM_DIR / "tier1_core",
-    _PYSIM_DIR / "tier1_interface",
-    _PYSIM_DIR / "tier2_runtime",
-    _PYSIM_DIR / "tier3_executer",
-    _PYSIM_DIR / "tier3_platform",
-]:
-    _sp = str(_p)
-    if _sp not in sys.path:
-        sys.path.insert(0, _sp)
 
 
 def test_entrypoint_01_main_runs_every_demo_and_finds_no_violation():

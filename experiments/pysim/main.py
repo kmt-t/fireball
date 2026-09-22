@@ -16,16 +16,6 @@ _PYSIM_DIR = Path(__file__).resolve().parent
 while not (_PYSIM_DIR / "tier1_core").is_dir():
     _PYSIM_DIR = _PYSIM_DIR.parent
 
-for _p in (
-    _PYSIM_DIR,
-    _PYSIM_DIR / "tier1_core",
-    _PYSIM_DIR / "tier1_interface",
-    _PYSIM_DIR / "tier2_runtime",
-    _PYSIM_DIR / "tier3_executer",
-    _PYSIM_DIR / "tier3_platform",
-):
-    _sp = str(_p)
-    sys.path.insert(0, _sp)
 
 from tier3_executer.interpreter.interpreter import Interpreter, InterpreterBindings
 from tier2_runtime.logger import LogLevel

@@ -10,15 +10,9 @@ and destination must be fully verified before revoking resource ownership.
 
 from __future__ import annotations
 
-import os
-import sys
 from collections.abc import Sequence
 from enum import IntEnum
 
-sys.path.insert(
-    0,
-    os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "tier1_core", "concepts"),
-)
 from flat_view_concept import FlatMapView
 
 _EMPTY_ENTRIES: list[tuple[int, int]] = []

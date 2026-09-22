@@ -3,28 +3,6 @@
 from __future__ import annotations
 
 import ctypes
-import sys
-from pathlib import Path
-
-_TEST_FILE = Path(__file__).resolve()
-_PYSIM_DIR = _TEST_FILE.parents[2]
-_REPO_ROOT = _PYSIM_DIR.parent.parent
-for _path in (
-    _PYSIM_DIR,
-    _PYSIM_DIR / "tier1_core",
-    _PYSIM_DIR / "tier2_runtime",
-    _REPO_ROOT,
-):
-    if str(_path) not in sys.path:
-        sys.path.insert(0, str(_path))
-
-# Keep the product package ahead of the similarly named QA package.  The
-# helper module is added after product roots so ``tier3_executer`` resolves to
-# the implementation rather than ``qa/tier3_executer``.
-_qa_path = str(_PYSIM_DIR / "qa")
-if _qa_path not in sys.path:
-    sys.path.append(_qa_path)
-
 from execution_context import WASMContext
 from helpers import expect_assertion
 from interop_abi import (

@@ -8,13 +8,10 @@ Reference Concept Implementation: Full-Set Copy-and-Patch JIT Engine & MPU W^X T
 - Comprehensive verification of all supported WASM opcodes
 """
 
-import os
 import struct
-import sys
 
 BACKS = ["components/tier3_executer/jit_compiler.md"]
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from jit_assembler_constexpr_concept import Cond, Reg, Thumb2Assembler
 
 

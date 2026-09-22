@@ -18,14 +18,17 @@ from hal_dispatch import (
     ARG_BUFFER_HANDLE,
     ARG_LENGTH,
     ARG_OFFSET,
+    ARG_RESULT_HI,
+    ARG_RESULT_LO,
     FB_CONF_HAL_BUFFER_SIZE,
     HalBufferHandle,
     HalBufferMapStatus,
     HalBufferPool,
+    HalCommandResponse,
     HalTask,
     WasiIpcCmd,
 )
-from hostcall import FbSyscallId, FireballHostCallPort, WasiPreview1Host
+from hostcall import FbSyscallId, FireballHostCallPort, WasiErrno, WasiPreview1Host
 from ipc_router import IPCRouter
 from loader import fnv1a_32
 from tier2_runtime.logger import Logger
@@ -152,9 +155,12 @@ class Wasi03pEngine:
         vtable directly; URI resolution and command execution are separate
         IPC operations.
         """
-        return self.send_ipc_command(uri, cmd_id, params)
+        response = self.send_ipc_command(uri, cmd_id, params)
+        return response.value if response.response_code == WasiErrno.SUCCESS else response.response_code
 
-    def send_ipc_command(self, uri: str, cmd_id: int, params: ReadOnlyFlatMapView) -> WasiValue:
+    def send_ipc_command(
+        self, uri: str, cmd_id: int, params: ReadOnlyFlatMapView
+    ) -> HalCommandResponse:
         """
         Sends an IPC Driver Command to the HAL Server Task via IPCRouter ({hal_dispatch.md}).
         HAL operates as a distinct task and communicates strictly over IPC rendezvous.
@@ -164,7 +170,7 @@ class Wasi03pEngine:
 
         caller_task = self.sysv.scheduler.current_task
         assert caller_task is not None, "WASI IPC requires an active runtime task"
-        response_codes: StaticVector[int] = StaticVector(capacity=1)
+        responses: StaticVector[HalCommandResponse] = StaticVector(capacity=1)
 
         def sender_coro() -> Generator[tuple[ChannelAction, None], None, None]:
             status, channel = self.sysv.ipc.lookup(uri)
@@ -175,19 +181,27 @@ class Wasi03pEngine:
             )
             status, response = yield from self.sysv.ipc.send(channel, msg)
             assert status == IPCStatus.COMPLETED and response is not None
-            response_codes.append(response.response_code)
+            result_lo = response.get(ARG_RESULT_LO, 0)
+            result_hi = response.get(ARG_RESULT_HI, 0)
+            assert result_lo is not None and result_hi is not None
+            responses.append(
+                HalCommandResponse(
+                    response_code=response.response_code,
+                    value=result_lo | (result_hi << 32),
+                )
+            )
 
         self.sysv.scheduler.spawn("wasi_ipc_sender", sender_coro(), role=Role.RUNTIME)
         self.sysv.scheduler.run_until_idle()
         self.sysv.scheduler.require_active_task(caller_task)
 
-        assert response_codes, "HAL IPC sender must receive exactly one response"
-        return response_codes[0]
+        assert responses, "HAL IPC sender must receive exactly one response"
+        return responses[0]
 
     # Resource methods: Tier 2 only builds and sends HAL commands.
     def _send_simple(self, uri: str, cmd_id: WasiIpcCmd) -> int:
         result = self.send_ipc_command(uri, cmd_id, ReadOnlyFlatMapView(()))
-        return int(result)
+        return int(result.value if result.response_code == WasiErrno.SUCCESS else result.response_code)
 
     def _write_buffer(self, uri: str, handle: HalBufferHandle, offset: int, length: int) -> int:
         map_status = self.sysv.pool.map_for_io(handle.buffer_id)
@@ -204,7 +218,7 @@ class Wasi03pEngine:
         )
         result = self.send_ipc_command(uri, WasiIpcCmd.STREAM_WRITE_BUFFER, params)
         self.sysv.pool.unmap_after_io(handle.buffer_id)
-        return int(result)
+        return int(result.value if result.response_code == WasiErrno.SUCCESS else result.response_code)
 
     def map_buffer(self, slot_index: int) -> HalBufferHandle | None:
         """Map one fixed slot for the current guest I/O operation."""
@@ -376,7 +390,10 @@ class WasiHostContext:
                         )
                     ),
                 )
-                written = int(result)
+                if result.response_code != WasiErrno.SUCCESS:
+                    self.sysv.pool.unmap_after_io(handle.buffer_id)
+                    return int(result.response_code)
+                written = result.value
                 self.sysv.pool.unmap_after_io(handle.buffer_id)
                 assert written == chunk_len
                 total_written += written

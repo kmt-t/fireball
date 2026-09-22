@@ -11,11 +11,8 @@ bypasses the READY-queue append/pop pair that a queue-mediated handoff would
 otherwise pay, for every handoff within the consecutive-handoff bound.
 """
 
-import os
-import sys
 import time
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "concepts"))
 from coos_concept import ChannelAction, COOSKernel
 
 

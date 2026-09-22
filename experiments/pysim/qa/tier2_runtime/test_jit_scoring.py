@@ -6,16 +6,6 @@ import sys
 from pathlib import Path
 
 _PYSIM_DIR = Path(__file__).resolve().parents[2]
-for _path in (
-    _PYSIM_DIR,
-    _PYSIM_DIR / "tier1_core",
-    _PYSIM_DIR / "tier1_interface",
-    _PYSIM_DIR / "tier2_runtime",
-    _PYSIM_DIR / "tier3_executer",
-):
-    _path_text = str(_path)
-    if _path_text not in sys.path:
-        sys.path.insert(0, _path_text)
 
 from jit_scoring import (
     JIT_CANDIDATE_THRESHOLD,

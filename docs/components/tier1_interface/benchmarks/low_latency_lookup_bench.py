@@ -10,14 +10,8 @@ registry lookup. This measures the real mechanism the claim rests on directly:
 reimplemented, so this cannot silently drift from the real code.
 """
 
-import os
-import sys
 import time
 
-sys.path.insert(
-    0,
-    os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "tier1_core", "concepts"),
-)
 from flat_view_concept import FlatMapView
 
 

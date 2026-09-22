@@ -38,15 +38,6 @@ class LogEntry:
     timestamp_tick: int = 0
 
 
-import sys
-from pathlib import Path
-
-_DIR = Path(__file__).resolve().parent
-_TIER1_CORE_CONCEPTS = _DIR.parent.parent / "tier1_core" / "concepts"
-for _p in (_DIR, _TIER1_CORE_CONCEPTS):
-    if str(_p) not in sys.path:
-        sys.path.insert(0, str(_p))
-
 from flat_view_concept import FlatMapView
 
 

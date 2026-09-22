@@ -12,11 +12,8 @@ drives the real compile_trace() (../concepts/jit_copy_patch_concept.py) and
 checks compile time scales linearly with trace length rather than blowing up.
 """
 
-import os
-import sys
 import time
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "concepts"))
 from jit_copy_patch_concept import CopyPatchJITEngine
 
 

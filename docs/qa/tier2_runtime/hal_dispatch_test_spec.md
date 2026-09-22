@@ -15,7 +15,7 @@ IPCルータ経由の全アクセス契約、`hal-buffer-id`による生ポイ�
 | TEST-HAL-04 | vIRQ配送とWASIポーリングの分離 | ゲスト実行エンジンが動作中 | Safepoint到達と`poll-check`/`poll-wait`を個別に実行 | vSoCは`interrupt-event`をvIRQ階層へ配送し、HALは操作完了ポーリングを提供する。どちらも他方を起動・変更しない | `runtime_vsoc.md`、{WASI_Implementation} |
 | TEST-HAL-09 | ゼロコピー転送(bus_master/streaming)の契約保証 | tx/rx共にHALバッファ | `map-buffer`で必要なスロットをマップし、`transfer(tx, rx)`後に`unmap-buffer`する | CPUを介さずバッファ間データ移動が完了し、I/O終了後にDYNAMICマッピングが残らない（物理DMA実装はplatform_driver側） | 「ゼロコピー転送」 |
 | TEST-HAL-10 | `control`はIPCオーバーヘッドを伴う非高速パス | デバイス固有操作 | `control(id, cmd, params)` | `ipc-message`経由で処理され、`{Fast_Path_GPIO}`の高速パスではないことが明示される | 「非標準制御」 |
-| TEST-HAL-11 | `CMD_CLOCK_GET_NOW`の単位契約 | - | 発行する | ナノ秒単位のu64を返す契約であることを確認する | `hal_dispatch.md` 階層型 URI 命名規則 & WASI 0.3p IPC コマンド仕様 |
+| TEST-HAL-11 | `CMD_CLOCK_GET_NOW`の応答契約 | - | 発行し、`response_code`と`ARG_RESULT_LO`/`ARG_RESULT_HI`を読む | `response_code=0`であり、2つのKVを`lo \| (hi << 32)`で復元した値がナノ秒単位のu64になることを確認する | `hal_dispatch.md` 階層型 URI 命名規則 & WASI 0.3p IPC コマンド仕様 |
 | TEST-HAL-12 | `CMD_BUS_TRANSFER_BUFFER`はHALバッファハンドルのみ受理 | ゲストのリニアメモリポインタを渡そうとする | 無効・期限切れ・マッピングされていない`hal-buffer-id`を渡す | 有効なHALバッファとして解決されず、ゲストのリニアメモリを指すポインタを直接渡す経路も存在しない。不正ハンドルはassert対象である | 「ゲストのリニアメモリ上のポインタを直接渡すことはできない」 |
 | TEST-HAL-13 | バス受信コマンドの返却バイト数契約 | 送信側からのデータがある | 受信コマンドを発行する | 実際に転送したバイト数を返す契約であることを確認する | - |
 

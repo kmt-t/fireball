@@ -88,7 +88,7 @@ ninja
 ### 3. Python Reference Simulator (`experiments/pysim/`)
 ```bash
 # Run all 12 end-to-end integration scenarios
-uv run --system-certs --with wasmtime python experiments/pysim/scenarios/run_all.py
+uv run --system-certs --with wasmtime python experiments/pysim/qa/scenarios/run_all.py
 
 # Run 3D AO-Bench (Ambient Occlusion) benchmark
 uv run --system-certs --with wasmtime python experiments/pysim/aobench.py

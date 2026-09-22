@@ -82,14 +82,14 @@ IPC通信の最小単位。1つのメッセージで8個のペアを送信でき
 
 #### IPCメッセージ（message）
 <!-- traceability: {TypeSafeMessaging} {META_FlatMapIndexed} {OwnershipTransfer} {ADR_SharedBlockRaii} -->
-Key-Valueペアを複数集約した要求・応答の基本単位である。メッセージ自身が共有メモリ（`fireball::shared_block`）上に実体化される。内部の固定長 `uint64_t` 配列をストレージとして直接利用する。動的メモリ確保を伴わない物理メモリ上のKey-Valueペア配列と、`fireball::flat_map_view` による二分探索を採用する。上位32ビットをキー、下位32ビットを値とし、メッセージ内のキー検索を $O(\log N)$ で行う。エントリやペイロードへのアクセス時には所有権（`SENDER_OWNS` または `RECEIVER_OWNS`）を検証する。`IN_FLIGHT` 中のアクセスは禁止する。タスクを跨ぐバルクデータは、別の共有メモリ（`fireball::shared_block`）の `shm_id` をエントリ値に格納して伝送できる。要求・応答ランデブーごとに、自動で vMMIO PTE の権限付け替え（`grant_shared`）が行われる。`sender_id` は COOS Scheduler が送信元 TCB の `task_id` から設定し、ゲストまたはルータの引数は採用しない。`response_code` は受信側が設定し、`0xffffffff` は応答待ちを表す。受信側は同じメッセージへ応答データを追加して返却できる。
+Key-Valueペアを複数集約した要求・応答の基本単位である。メッセージ自身が共有メモリ（`fireball::shared_block`）上に実体化される。内部の固定長 `uint64_t` 配列をストレージとして直接利用する。動的メモリ確保を伴わない物理メモリ上のKey-Valueペア配列と、`fireball::flat_map_view` による二分探索を採用する。上位32ビットをキー、下位32ビットを値とし、メッセージ内のキー検索を $O(\log N)$ で行う。エントリやペイロードへのアクセス時には所有権（`SENDER_OWNS` または `RECEIVER_OWNS`）を検証する。`IN_FLIGHT` 中のアクセスは禁止する。タスクを跨ぐバルクデータは、別の共有メモリ（`fireball::shared_block`）の `shm_id` をエントリ値に格納して伝送できる。要求・応答ランデブーごとに、自動で vMMIO PTE の権限付け替え（`grant_shared`）が行われる。`sender_id` は COOS Scheduler が送信元 TCB の `task_id` から設定し、ゲストまたはルータの引数は採用しない。`response_code` は受信側が設定する状態または errno 専用の `u32` であり、`0xffffffff` は応答待ちを表す。操作の戻り値やデータは同じメッセージのKVへ追加して返却し、64bit値は下位32bit・上位32bitの2キーへ分割する。
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
 | メッセージ本体ブロック | メッセージ自身を格納する共有メモリブロック。内部は `uint64_t` 配列 | `fireball::shared_block` | 1個（固定長） |
 | KVマップ (Key-Valueペア配列) | 共有メモリ上に配置されるKey-Valueペアの `uint64_t` 配列。自前で所有しアクセス時に所有権検証 | ソート済み固定長 `uint64_t` 配列 + `fireball::flat_map_view` | 最大8個固定（1エントリ `uint64_t` 1要素） |
 | `sender_id` | Scheduler が現在実行中の送信元 TCB から設定する認証済みタスクID | `u32` | 送信時に設定。ゲスト入力による指定・変更は禁止 |
-| `response_code` | 受信側が設定する要求処理結果。`0xffffffff` は応答待ち | `u32` | 応答前は pending、応答時は別の値 |
+| `response_code` | 受信側が設定する状態または errno。操作データは応答KVへ格納する。`0xffffffff` は応答待ち | `u32` | 応答前は pending、応答時は状態値 |
 | リソース共有メモリ | エントリ値（`ScopeKind.RESOURCE`）に埋め込まれるタスク間バルク転送用RAII共有メモリ。チャネルが所有権を自動Grant | `fireball::shared_block` (オプション) | 任意個数（エントリの値） |
 
 #### レジストリエントリ（registry_entry）

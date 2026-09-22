@@ -8,14 +8,6 @@ from pathlib import Path
 _TEST_FILE = Path(__file__).resolve()
 _PYSIM_DIR = _TEST_FILE.parents[3]
 
-for _path in (
-    _PYSIM_DIR,
-    _PYSIM_DIR / "tier1_core",
-    _PYSIM_DIR / "tier2_runtime",
-    _PYSIM_DIR / "tier3_executer",
-):
-    if str(_path) not in sys.path:
-        sys.path.insert(0, str(_path))
 
 from tier3_executer.interpreter.interpreter import _HANDLERS
 from tier3_executer.interpreter.interpreter_cps import BACKEND, HANDLER_COUNT, NATIVE_AVAILABLE

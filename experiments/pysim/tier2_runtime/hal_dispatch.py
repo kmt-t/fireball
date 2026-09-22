@@ -345,7 +345,20 @@ class HalDriver:
         return task_id, task
 
 
-ARG_RESULT = pack_key32(ScopeKind.FUNCTIONAL, DataType.UINT32, key_id=0xFF)
+ARG_RESULT_LO = pack_key32(ScopeKind.FUNCTIONAL, DataType.UINT32, key_id=0xFF)
+ARG_RESULT_HI = pack_key32(ScopeKind.FUNCTIONAL, DataType.UINT32, key_id=0xFE)
+
+
+@dataclass(frozen=True, slots=True)
+class HalCommandResponse:
+    """Separates the command status from its optional 64-bit result value."""
+
+    response_code: int
+    value: int
+
+    def __post_init__(self) -> None:
+        assert self.response_code >= 0
+        assert 0 <= self.value <= 0xFFFF_FFFF_FFFF_FFFF
 
 
 class HalTask:
@@ -368,6 +381,7 @@ class HalTask:
         self.running = True
         self.last_handled_cmd: int | None = None
         self.last_result: HalResult = None
+        self.last_response_code = 0
         self.processed_count: int = 0
 
     def run(self):
@@ -389,8 +403,11 @@ class HalTask:
 
             self.last_result = self.driver.dispatch(cmd_id, msg.payload)
             self.last_handled_cmd = cmd_id
-            msg.append(ARG_RESULT, self.last_result)
-            self.ipc.reply(msg, self.last_result)
+            self.last_response_code = 0
+            result_value = self.last_result & 0xFFFF_FFFF_FFFF_FFFF
+            msg.append(ARG_RESULT_LO, result_value & 0xFFFF_FFFF)
+            msg.append(ARG_RESULT_HI, result_value >> 32)
+            self.ipc.reply(msg, self.last_response_code)
             yield (ChannelAction.YIELD, None)
 
 

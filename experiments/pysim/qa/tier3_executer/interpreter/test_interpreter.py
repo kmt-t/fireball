@@ -15,29 +15,9 @@ _TESTS_DIR = _TEST_FILE.parents[2]
 _PYSIM_DIR = _TESTS_DIR.parent
 _REPO_ROOT = _PYSIM_DIR.parent.parent
 
-for _p in [
-    _TESTS_DIR,
-    _TEST_FILE.parent,
-    _PYSIM_DIR,
-    _PYSIM_DIR / "tier1_core",
-    _PYSIM_DIR / "tier1_interface",
-    _PYSIM_DIR / "tier2_runtime",
-    _PYSIM_DIR / "tier3_executer",
-    _PYSIM_DIR / "tier3_platform",
-    _TESTS_DIR / "tier2_runtime",
-    _REPO_ROOT / "docs" / "components" / "tier1_core" / "concepts",
-    _REPO_ROOT / "docs" / "components" / "tier1_interface" / "concepts",
-    _REPO_ROOT / "docs" / "components" / "tier2_runtime" / "concepts",
-    _REPO_ROOT / "docs" / "components" / "tier3_executer" / "concepts",
-    _REPO_ROOT / "docs" / "components" / "tier3_platform" / "concepts",
-]:
-    _sp = str(_p)
-    if _sp not in sys.path:
-        sys.path.insert(0, _sp)
 
 # Keep the product Tier 3 package ahead of tests/tier3_executer when importing
 # runtime_engine's qualified Tier 3 modules.
-sys.path.insert(0, str(_PYSIM_DIR))
 
 from helpers import expect_assertion, wat_to_wasm
 from helpers import make_interpreter as Interpreter
@@ -521,7 +501,7 @@ def test_wasm_f32_arithmetic_min_max_and_precision():
 def test_wasm_loader_and_radix_binary_tree_view_indexes():
     """TEST-LOAD-01..47: Verifies WASM Loader zero-copy indexing, verification, and ReadOnlyRadixBinaryTreeView file offset & hash symbol indexes."""
     from loader import WasmLoader
-    from test_loader import _build_test_wasm_binary
+    from experiments.pysim.qa.tier2_runtime.test_loader import _build_test_wasm_binary
 
     loader = WasmLoader()
     wasm_bytes = _build_test_wasm_binary(export_names=["zeta", "alpha", "beta"])

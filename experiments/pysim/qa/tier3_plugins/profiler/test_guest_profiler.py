@@ -6,14 +6,6 @@ import sys
 from pathlib import Path
 
 _PYSIM_DIR = Path(__file__).resolve().parents[3]
-for _path in (
-    _PYSIM_DIR,
-    _PYSIM_DIR / "tier1_core",
-    _PYSIM_DIR / "tier2_runtime",
-    _PYSIM_DIR / "tier3_plugins",
-):
-    if str(_path) not in sys.path:
-        sys.path.insert(0, str(_path))
 
 from tier3_plugins.profiler.guest_profiler import GuestProfiler
 from runtime_events import RuntimeEvent, RuntimeEventKind

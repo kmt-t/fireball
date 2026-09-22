@@ -7,14 +7,6 @@ from pathlib import Path
 
 _TESTS_DIR = Path(__file__).resolve().parents[1]
 _PYSIM_DIR = Path(__file__).resolve().parents[2]
-for _path in (
-    _TESTS_DIR,
-    _PYSIM_DIR,
-    _PYSIM_DIR / "tier1_core",
-    _PYSIM_DIR / "tier2_runtime",
-):
-    if str(_path) not in sys.path:
-        sys.path.insert(0, str(_path))
 
 from runtime_composer import (
     RuntimeComposer,

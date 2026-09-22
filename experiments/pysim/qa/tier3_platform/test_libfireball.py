@@ -7,14 +7,6 @@ import pytest
 
 _TEST_FILE = Path(__file__).resolve()
 _PYSIM_DIR = _TEST_FILE.parents[2]
-for _path in (
-    _PYSIM_DIR,
-    _PYSIM_DIR / "tier2_runtime",
-    _PYSIM_DIR / "tier3_platform",
-):
-    _path_text = str(_path)
-    if _path_text not in sys.path:
-        sys.path.insert(0, _path_text)
 
 from libfireball import Libfireball
 

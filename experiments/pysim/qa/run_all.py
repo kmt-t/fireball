@@ -18,24 +18,6 @@ TEST_DIR = Path(__file__).resolve().parent
 PYSIM_ROOT = TEST_DIR.parent
 REPO_ROOT = PYSIM_ROOT.parent.parent
 
-for p in [
-    PYSIM_ROOT,
-    PYSIM_ROOT / "tier1_core",
-    PYSIM_ROOT / "tier1_interface",
-    PYSIM_ROOT / "tier2_runtime",
-    PYSIM_ROOT / "tier3_executer",
-    PYSIM_ROOT / "tier3_plugins",
-    PYSIM_ROOT / "tier3_platform",
-    REPO_ROOT / "docs" / "components" / "tier1_core" / "concepts",
-    REPO_ROOT / "docs" / "components" / "tier1_interface" / "concepts",
-    REPO_ROOT / "docs" / "components" / "tier2_runtime" / "concepts",
-    REPO_ROOT / "docs" / "components" / "tier3_executer" / "concepts",
-    REPO_ROOT / "docs" / "components" / "tier3_platform" / "concepts",
-]:
-    sp = str(p)
-    if sp not in sys.path:
-        sys.path.insert(0, sp)
-
 # Ordered test suites reflecting the architecture dependency layers
 TEST_SUITES = [
     # --- Tier 1: Core ---
@@ -179,7 +161,7 @@ def run_all_tests():
 
         t0 = time.perf_counter()
         res = subprocess.run(
-            [sys.executable, str(script_path)],
+            [sys.executable, "-m", "pytest", "-q", str(script_path), "-s"],
             capture_output=True,
             text=True,
             cwd=str(REPO_ROOT),

@@ -16,28 +16,9 @@ _TESTS_DIR = _TEST_FILE.parent.parent
 _PYSIM_DIR = _TESTS_DIR.parent
 _REPO_ROOT = _PYSIM_DIR.parent.parent
 
-for _p in [
-    _TESTS_DIR,
-    _TEST_FILE.parent,
-    _PYSIM_DIR,
-    _PYSIM_DIR / "tier1_core",
-    _PYSIM_DIR / "tier1_interface",
-    _PYSIM_DIR / "tier2_runtime",
-    _PYSIM_DIR / "tier3_executer",
-    _PYSIM_DIR / "tier3_platform",
-    _REPO_ROOT / "docs" / "components" / "tier1_core" / "concepts",
-    _REPO_ROOT / "docs" / "components" / "tier1_interface" / "concepts",
-    _REPO_ROOT / "docs" / "components" / "tier2_runtime" / "concepts",
-    _REPO_ROOT / "docs" / "components" / "tier3_executer" / "concepts",
-    _REPO_ROOT / "docs" / "components" / "tier3_platform" / "concepts",
-]:
-    _sp = str(_p)
-    if _sp not in sys.path:
-        sys.path.insert(0, _sp)
 
 # Keep the product Tier 3 package ahead of tests/tier3_executer when importing
 # runtime_engine's qualified Tier 3 modules.
-sys.path.insert(0, str(_PYSIM_DIR))
 
 from control_flow import extract_basic_blocks
 from execution_context import WASMContext
@@ -341,14 +322,15 @@ def test_hal_task_ipc_communication():
         )
         engine = Wasi03pEngine(sysv)
         # Send command via IPC
-        nwritten = engine.send_ipc_command(
+        response = engine.send_ipc_command(
             "fireball://hal/stdout/0",
             WasiIpcCmd.STREAM_WRITE_BUFFER,
             ReadOnlyFlatMapView(
                 [(ARG_BUFFER_HANDLE, buffer_handle.buffer_id), (ARG_LENGTH, 128), (ARG_OFFSET, 0)]
             ),
         )
-        assert nwritten == 128
+        assert response.response_code == 0
+        assert response.value == 128
         stdio_task = sysv.hal_task_for("fireball://hal/stdout/0")
         assert stdio_task is not None
         assert stdio_task.processed_count == 1
@@ -856,7 +838,7 @@ def test_interpreter_debugger_attachment_and_hooks():
 def test_wasm_loader_and_radix_binary_tree_view_indexes():
     """TEST-LOAD-01..47: Verifies WASM Loader zero-copy indexing, verification, and ReadOnlyRadixBinaryTreeView file offset & hash symbol indexes."""
     from loader import WasmLoader
-    from test_loader import _build_test_wasm_binary
+    from experiments.pysim.qa.tier2_runtime.test_loader import _build_test_wasm_binary
 
     loader = WasmLoader()
     wasm_bytes = _build_test_wasm_binary(export_names=["zeta", "alpha", "beta"])

@@ -15,10 +15,6 @@ instruction count reduction as the measured evidence, instead of only printing i
 as a side effect of an unrelated test run.
 """
 
-import os
-import sys
-
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "concepts"))
 from stack_cache_concept import LOOP_OPS, NAIVE, StackCachingCompiler
 
 

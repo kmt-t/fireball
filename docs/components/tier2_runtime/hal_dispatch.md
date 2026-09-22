@@ -112,7 +112,7 @@ HAL が管轄するすべてのハードウェアドライバおよびコンソ�
 - `fireball://hal/rtt/0`: SEGGER RTT デバッグ通信ドライバ
 - `fireball://hal/stdout/0`: 標準入出力HALストリーム
 
-各ドライバは IPC ルータ経由で以下の `kv_pair` コマンドを受信し、HALバッファプール（`hal-buffer-slice`、不透明ハンドル）と連携してハードウェア処理を実行する：
+各ドライバは IPC ルータ経由で以下の `kv_pair` コマンドを受信し、HALバッファプール（`hal-buffer-slice`、不透明ハンドル）と連携してハードウェア処理を実行する。応答の `response_code` は状態または errno 専用で、成功時は `0` とする。操作の戻り値は応答メッセージのKVへ格納し、64bit値は `ARG_RESULT_LO`（下位32bit）と `ARG_RESULT_HI`（上位32bit）へ分割する。受信側は `ARG_RESULT_LO | (ARG_RESULT_HI << 32)` で復元する：
 
 | 分類 | コマンド名 | コマンド ID | 引数 (`kv_pair` / Buffer) | 戻り値 | 説明 |
 | :--- | :--- | :--- | :--- | :--- | :--- |
@@ -121,7 +121,7 @@ HAL が管轄するすべてのハードウェアドライバおよびコンソ�
 | | `CMD_STREAM_READ_BUFFER` | `0x02` | `buffer_handle`, `offset`, `max_len` | `read_bytes` | デバイスからHALバッファプールへデータを読み込み |
 | | `CMD_STREAM_FLUSH` | `0x03` | なし | `0` (SUCCESS) | デバイス送信バッファのフラッシュ |
 | | `CMD_STREAM_CLOSE` | `0x04` | なし | `0` (SUCCESS) | ストリームチャネルのクローズ |
-| **Clock/Timer** | `CMD_CLOCK_GET_NOW` | `0x10` | なし | `now_ns` (64bit) | 単調増加時刻（SysTick/Timer ナノ秒）を取得 |
+| **Clock/Timer** | `CMD_CLOCK_GET_NOW` | `0x10` | なし | `response_code=0` + `ARG_RESULT_LO`/`ARG_RESULT_HI` (`now_ns`, 64bit) | 単調増加時刻（SysTick/Timer ナノ秒）を取得 |
 | | `CMD_CLOCK_SUBSCRIBE` | `0x11` | `nanos` (64bit) | `pollable_handle` | 指定ナノ秒後に発火する非同期イベントを予約 |
 | | `CMD_CLOCK_GET_RES` | `0x12` | なし | `resolution_ns` | クロック分解能（ナノ秒）を取得 |
 | **GPIO/Trigger** | `CMD_GPIO_SET_PIN` | `0x20` | `pin_no`, `val` (0/1) | `0` (SUCCESS) | GPIO ピンの出力レベルを設定 |

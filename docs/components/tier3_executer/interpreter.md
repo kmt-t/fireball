@@ -128,6 +128,8 @@ WASMゲストの全実行状態を管理する。JIT/Interpreter 共通の仮想
 | CallStackオフセット (call_offset) | CallFrame配列の現在の深さ | 32bit符号なし | 4バイト（`execution_context` の `+0x6C`） |
 `execution_context` 構造体の実体は、既存の16個の32ビット状態ワードに、実行中のコードビュー、Native制御スタックビュー、およびNative CallStackビューを加えた固定長メモリである。コード、制御スタック、CallStackは非所有ポインタとしてコンテキスト自身から参照し、C++ハンドラが別の呼出し状態やTLSを参照しない構造にする。3本の値領域とCallStackの開始・終端・オフセットは独立したフィールドとして保持する。この設計により、いずれか1本の領域の伸縮が他の記録位置へ影響することを物理的に排除する。JITの複雑処理の委譲先アドレスとヘルパー契約別入口の選択値は、対象ABIのトレースヘッダから参照する。バイトオフセットの物理配置は `{ExecutionContext_Layout}` に従う。
 
+Native `CallFrame` の `control_map` は、コードオフセットで直接引ける固定配列 `fireball_control_map_entry_native[]` を指す。各エントリは対応する `end`、`else`、命令後PC、ブロック結果アリティ、および `drop/select` の生ワード幅を保持する。したがって、ネイティブハンドラはPythonオブジェクトや動的検索を経由せず、ローカル幅表と制御表を `CallFrame` から直接参照できる。
+
 **スタック頂点値の保持と同期不変条件 (`{GOTCHA-INTP-01}`)**:
 オペランドスタックの最上位要素は、対象アーキテクチャが定める方式で保持する。ARMv8-MのJITステンシルでは物理レジスタによるキャッシュを用いるが、x64の実行環境では共有オペランド領域へ残余値を書き戻す方式を用いる。関数呼び出し、外部システムコール、JIT遷移などの境界では、対象ABIが定める同期処理を行う。
 
@@ -356,9 +358,9 @@ sequenceDiagram
     end
     loop トレース内実行 (Direct-Threaded)
         I->>I: dispatch(opcode) via [[clang::musttail]]
-        opt 64bit/浮動小数点等の委譲
-            I->>R: call(fireball_rt_*)
-            R-->>I: result
+        opt 外部状態または未対応命令
+            I->>R: call(runtime boundary)
+            R-->>I: result / fallback state
         end
     end
     Note over I: 制御命令 / トレース境界でループ脱出
@@ -418,7 +420,7 @@ sequenceDiagram
 #### 継続渡しハンドラの実行境界
 <!-- traceability: {ThreadedInterpreter} {ContextPointerRegister} {InterpreterContextStackless} -->
 
-命令意味論はWASM命令ハンドラに保持し、直線的に継続できる命令列だけを同一の4つの論理引数で連鎖させる。`block`、`loop`、`if`、分岐、呼出し、戻り、およびトラップは実行境界として扱い、必要な状態を共有領域と実行コンテキストへ同期して通常の処理へ戻る。連鎖経路を無効にしても、通常経路の命令意味論と状態遷移は変わらない。
+命令意味論はWASM命令ハンドラに保持し、C++の固定ハンドラ表から同一の4つの論理引数で末尾連鎖させる。`block`、`loop`、`if`、`br`、`br_if`、`local.get/set/tee`、`drop`、`select`、`return`、i32/i64の数値命令、およびf32/f64の定数・比較・算術・丸め・平方根・reinterpret/変換はネイティブハンドラ内で完結させ、命令ごとのPython復帰を行わない。`call`、`call_indirect`、import/host呼出し、グローバル・リニアメモリなど外部状態を伴う命令だけを、共有状態同期後のInterpreter/RuntimeEngine境界へ委譲する。フォールバックは未対応命令または検証済みメタデータ欠落時に限定し、連鎖経路を無効にしても通常経路の命令意味論と状態遷移は変わらない。
 
 ### 5.2 URI/IPCインターフェース
 <!-- traceability: {META_RecoveryStrategy} -->

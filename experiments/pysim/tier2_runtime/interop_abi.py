@@ -127,6 +127,20 @@ class WasmRunResultNative(ctypes.Structure):
     )
 
 
+class ControlMapEntryNative(ctypes.Structure):
+    """Flat control opener metadata consumed by the native interpreter."""
+
+    __slots__ = ()
+
+    _fields_ = (
+        ("match_end", ctypes.c_uint32),
+        ("else_offset", ctypes.c_uint32),
+        ("next_pc", ctypes.c_uint32),
+        ("result_arity", ctypes.c_uint32),
+        ("operand_width", ctypes.c_uint32),
+    )
+
+
 class ValueStackNative(ctypes.Structure):
     """Fixed-capacity raw WASM value stack shared with the embedded runtime."""
 
@@ -520,6 +534,7 @@ assert ctypes.sizeof(WasmFunctionViewNative) == 24
 assert ctypes.sizeof(WasmModuleViewNative) == 24
 assert ctypes.sizeof(WasmRunRequestNative) == 48
 assert ctypes.sizeof(WasmRunResultNative) == 24
+assert ctypes.sizeof(ControlMapEntryNative) == 20
 assert ctypes.sizeof(ValueStackNative) == 520
 assert ValueStackNative.size.offset == 512
 assert ctypes.sizeof(ControlFrameNative) == 20
@@ -539,6 +554,7 @@ __all__ = (
     "NATIVE_CALL_STACK_CAPACITY",
     "NATIVE_VALUE_STACK_CAPACITY",
     "ConstBufferViewNative",
+    "ControlMapEntryNative",
     "ControlFrameNative",
     "ControlStackNative",
     "CallFrameNative",

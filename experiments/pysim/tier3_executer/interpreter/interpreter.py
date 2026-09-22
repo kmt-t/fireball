@@ -55,6 +55,7 @@ from control_flow import (
 from interop_abi import (
     NATIVE_VALUE_STACK_CAPACITY,
     CallFrameNative,
+    ControlMapEntryNative,
     ExecutionContextNative,
     NativeValueStack,
 )
@@ -774,6 +775,7 @@ class CallFrame:
         "local_slot_count",
         "local_types",
         "local_widths",
+        "_native_control_map",
         "param_count",
         "param_packed_slot_count",
         "result_arity",
@@ -823,6 +825,30 @@ class CallFrame:
         self.code = context.module.code_for(func_index)
         assert function.control_map is not None
         self.control_map = function.control_map
+        control_map_array_type = ControlMapEntryNative * len(self.code)
+        native_control_map = control_map_array_type()
+        for index in range(len(self.code)):
+            native_control_map[index].match_end = 0xFFFF_FFFF
+            native_control_map[index].else_offset = 0xFFFF_FFFF
+            native_control_map[index].next_pc = 0xFFFF_FFFF
+            native_control_map[index].result_arity = 0
+            native_control_map[index].operand_width = 1
+        for start, control in self.control_map.blocks.view().entries:
+            match_end, else_offset, result_arity = control
+            _, next_pc = decode_signed(self.code, start + 1)
+            native_control_map[start].match_end = match_end
+            native_control_map[start].else_offset = (
+                0xFFFF_FFFF if else_offset is None else else_offset
+            )
+            native_control_map[start].next_pc = next_pc
+            native_control_map[start].result_arity = result_arity
+        if function.drop_widths is not None:
+            for start, width in function.drop_widths.view().entries:
+                native_control_map[start].operand_width = width
+        if function.select_widths is not None:
+            for start, width in function.select_widths.view().entries:
+                native_control_map[start].operand_width = width
+        self._native_control_map = native_control_map
         self.env = env
         # Set by RuntimeEngine.run() right before each interp.step() call,
         # from that step's BasicBlock's own statically-computed next_pc /
@@ -841,7 +867,7 @@ class CallFrame:
             func_index=self.func_index,
             code=_native_buffer_address(self.code),
             code_size=len(self.code),
-            control_map=0,
+            control_map=ctypes.addressof(native_control_map),
             local_base=self.frame_offset,
             local_count=self.local_count,
             local_slot_count=self.local_slot_count,

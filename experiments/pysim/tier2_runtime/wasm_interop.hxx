@@ -17,6 +17,14 @@ extern "C" {
 struct fireball_control_stack_native;
 struct fireball_call_stack_native;
 
+typedef struct fireball_control_map_entry_native {
+  uint32_t match_end;
+  uint32_t else_offset;
+  uint32_t next_pc;
+  uint32_t result_arity;
+  uint32_t operand_width;
+} fireball_control_map_entry_native;
+
 typedef struct fireball_execution_context_native {
   uint32_t ip;
   uint32_t sp_base;
@@ -87,7 +95,7 @@ typedef struct fireball_call_frame_native {
   uint32_t func_index;
   const uint8_t *code;
   uint32_t code_size;
-  const uint32_t *control_map;
+  const fireball_control_map_entry_native *control_map;
   uint32_t local_base;
   uint32_t local_count;
   uint32_t local_slot_count;
@@ -164,11 +172,14 @@ using call_stack_native = ::fireball_call_stack_native;
 using value_stack_native = ::fireball_value_stack_native;
 using control_frame_native = ::fireball_control_frame_native;
 using control_stack_native = ::fireball_control_stack_native;
+using control_map_entry_native = ::fireball_control_map_entry_native;
 
 static_assert(sizeof(void *) == sizeof(uint64_t));
 
 static_assert(__is_standard_layout(execution_context_native));
 static_assert(__is_trivially_copyable(execution_context_native));
+static_assert(__is_standard_layout(control_map_entry_native));
+static_assert(__is_trivially_copyable(control_map_entry_native));
 static_assert(__is_standard_layout(const_buffer_view_native));
 static_assert(__is_trivially_copyable(const_buffer_view_native));
 static_assert(__is_standard_layout(wasm_function_view_native));
@@ -205,6 +216,7 @@ static_assert(offsetof(execution_context_native, call_stack) == 0x60);
 static_assert(offsetof(execution_context_native, call_base) == 0x68);
 static_assert(offsetof(execution_context_native, call_offset) == 0x6c);
 static_assert(sizeof(const_buffer_view_native) == 16);
+static_assert(sizeof(control_map_entry_native) == 20);
 static_assert(sizeof(wasm_function_view_native) == 24);
 static_assert(sizeof(wasm_module_view_native) == 24);
 static_assert(sizeof(wasm_run_request_native) == 48);

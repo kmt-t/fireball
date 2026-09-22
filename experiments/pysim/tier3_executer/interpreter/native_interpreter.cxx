@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <bit>
+#include <array>
 #include <cmath>
 #include <initializer_list>
 #include <limits>
@@ -42,8 +43,8 @@ using handler_fn = FIREBALL_CPS_CALL step_result (*)(
 using binary_operation_fn = bool (*)(std::uint32_t, std::uint32_t, std::uint32_t&,
                                      std::uint32_t&);
 
-handler_fn handler_table[256] = {};
-binary_operation_fn binary_operation_table[256] = {};
+const std::array<handler_fn, 256>& handler_table_data();
+const std::array<binary_operation_fn, 256>& binary_operation_table_data();
 
 constexpr step_result fallback(std::uint32_t ip) {
   return {kFallback, ip, 0};
@@ -427,11 +428,6 @@ bool evaluate_rem_u(std::uint32_t lhs, std::uint32_t rhs, std::uint32_t& result,
   return true;
 }
 
-template <std::uint32_t (*Operation)(std::uint32_t, std::uint32_t)>
-void install_binary_operation(std::uint8_t opcode) {
-  binary_operation_table[opcode] = evaluate_plain<Operation>;
-}
-
 using i64_binary_operation_fn = bool (*)(std::uint64_t, std::uint64_t, std::uint64_t&,
                                          std::uint32_t&);
 using i64_unary_operation_fn = std::uint64_t (*)(std::uint64_t);
@@ -440,13 +436,13 @@ using f64_binary_operation_fn = double (*)(double, double);
 using f32_unary_operation_fn = float (*)(float);
 using f64_unary_operation_fn = double (*)(double);
 
-i64_binary_operation_fn i64_binary_table[256] = {};
-i64_unary_operation_fn i64_unary_table[256] = {};
-f32_binary_operation_fn f32_binary_table[256] = {};
-f64_binary_operation_fn f64_binary_table[256] = {};
-f32_unary_operation_fn f32_unary_table[256] = {};
-f64_unary_operation_fn f64_unary_table[256] = {};
-bool numeric_result_is_bool[256] = {};
+const std::array<i64_binary_operation_fn, 256>& i64_binary_table_data();
+const std::array<i64_unary_operation_fn, 256>& i64_unary_table_data();
+const std::array<f32_binary_operation_fn, 256>& f32_binary_table_data();
+const std::array<f64_binary_operation_fn, 256>& f64_binary_table_data();
+const std::array<f32_unary_operation_fn, 256>& f32_unary_table_data();
+const std::array<f64_unary_operation_fn, 256>& f64_unary_table_data();
+const std::array<bool, 256>& numeric_result_is_bool_data();
 
 template <std::uint64_t (*Operation)(std::uint64_t, std::uint64_t)>
 bool evaluate_i64_plain(std::uint64_t lhs, std::uint64_t rhs, std::uint64_t& result,
@@ -640,7 +636,7 @@ double f64_nearest(double a) { return std::nearbyint(a); }
 double f64_sqrt(double a) { return std::sqrt(a); }
 
 using conversion_operation_fn = bool (*)(execution_context&, std::uint32_t*, std::uint32_t&);
-conversion_operation_fn conversion_table[256] = {};
+const std::array<conversion_operation_fn, 256>& conversion_table_data();
 
 template <typename T>
 bool truncate_i32(T value, bool is_signed, std::uint32_t& result) {
@@ -821,7 +817,7 @@ FIREBALL_CPS_CALL step_result binary_i32(
     execution_context* context, std::uint32_t* sp, std::uint32_t* local_base, std::uint32_t) {
   auto& current = *context;
   const std::uint8_t opcode = current.code[current.ip];
-  const auto operation = binary_operation_table[opcode];
+  const auto operation = binary_operation_table_data()[opcode];
   if (operation == nullptr) return fallback(current.ip);
   std::uint32_t rhs = 0;
   std::uint32_t lhs = 0;
@@ -881,11 +877,11 @@ FIREBALL_CPS_CALL step_result h_i64_unary(
     execution_context* context, std::uint32_t* sp, std::uint32_t* local_base,
     std::uint32_t) {
   auto& current = *context;
-  const auto operation = i64_unary_table[current.code[current.ip]];
+  const auto operation = i64_unary_table_data()[current.code[current.ip]];
   std::uint64_t value = 0;
   if (operation == nullptr || !pop_u64(current, sp, value)) return fallback(current.ip);
   const auto result = operation(value);
-  if (numeric_result_is_bool[current.code[current.ip]]) {
+  if (numeric_result_is_bool_data()[current.code[current.ip]]) {
     if (!push(current, sp, static_cast<std::uint32_t>(result))) return fallback(current.ip);
   } else if (!push_u64(current, sp, result)) {
     return fallback(current.ip);
@@ -898,7 +894,7 @@ FIREBALL_CPS_CALL step_result h_i64_binary(
     execution_context* context, std::uint32_t* sp, std::uint32_t* local_base,
     std::uint32_t) {
   auto& current = *context;
-  const auto operation = i64_binary_table[current.code[current.ip]];
+  const auto operation = i64_binary_table_data()[current.code[current.ip]];
   std::uint64_t rhs = 0;
   std::uint64_t lhs = 0;
   if (operation == nullptr || !pop_u64(current, sp, rhs) || !pop_u64(current, sp, lhs)) {
@@ -907,7 +903,7 @@ FIREBALL_CPS_CALL step_result h_i64_binary(
   std::uint64_t result = 0;
   std::uint32_t trap_code = 0;
   if (!operation(lhs, rhs, result, trap_code)) return trap(trap_code);
-  if (numeric_result_is_bool[current.code[current.ip]]) {
+  if (numeric_result_is_bool_data()[current.code[current.ip]]) {
     if (!push(current, sp, static_cast<std::uint32_t>(result))) return fallback(current.ip);
   } else if (!push_u64(current, sp, result)) {
     return fallback(current.ip);
@@ -920,7 +916,7 @@ FIREBALL_CPS_CALL step_result h_f32_unary(
     execution_context* context, std::uint32_t* sp, std::uint32_t* local_base,
     std::uint32_t) {
   auto& current = *context;
-  const auto operation = f32_unary_table[current.code[current.ip]];
+  const auto operation = f32_unary_table_data()[current.code[current.ip]];
   float value = 0.0f;
   if (operation == nullptr || !pop_f32(current, sp, value) ||
       !push_f32(current, sp, operation(value))) {
@@ -934,14 +930,14 @@ FIREBALL_CPS_CALL step_result h_f32_binary(
     execution_context* context, std::uint32_t* sp, std::uint32_t* local_base,
     std::uint32_t) {
   auto& current = *context;
-  const auto operation = f32_binary_table[current.code[current.ip]];
+  const auto operation = f32_binary_table_data()[current.code[current.ip]];
   float rhs = 0.0f;
   float lhs = 0.0f;
   if (operation == nullptr || !pop_f32(current, sp, rhs) || !pop_f32(current, sp, lhs)) {
     return fallback(current.ip);
   }
   const auto result = operation(lhs, rhs);
-  if (numeric_result_is_bool[current.code[current.ip]]) {
+  if (numeric_result_is_bool_data()[current.code[current.ip]]) {
     if (!push(current, sp, static_cast<std::uint32_t>(result))) return fallback(current.ip);
   } else if (!push_f32(current, sp, result)) {
     return fallback(current.ip);
@@ -954,7 +950,7 @@ FIREBALL_CPS_CALL step_result h_f64_unary(
     execution_context* context, std::uint32_t* sp, std::uint32_t* local_base,
     std::uint32_t) {
   auto& current = *context;
-  const auto operation = f64_unary_table[current.code[current.ip]];
+  const auto operation = f64_unary_table_data()[current.code[current.ip]];
   double value = 0.0;
   if (operation == nullptr || !pop_f64(current, sp, value) ||
       !push_f64(current, sp, operation(value))) {
@@ -968,14 +964,14 @@ FIREBALL_CPS_CALL step_result h_f64_binary(
     execution_context* context, std::uint32_t* sp, std::uint32_t* local_base,
     std::uint32_t) {
   auto& current = *context;
-  const auto operation = f64_binary_table[current.code[current.ip]];
+  const auto operation = f64_binary_table_data()[current.code[current.ip]];
   double rhs = 0.0;
   double lhs = 0.0;
   if (operation == nullptr || !pop_f64(current, sp, rhs) || !pop_f64(current, sp, lhs)) {
     return fallback(current.ip);
   }
   const auto result = operation(lhs, rhs);
-  if (numeric_result_is_bool[current.code[current.ip]]) {
+  if (numeric_result_is_bool_data()[current.code[current.ip]]) {
     if (!push(current, sp, static_cast<std::uint32_t>(result))) return fallback(current.ip);
   } else if (!push_f64(current, sp, result)) {
     return fallback(current.ip);
@@ -988,7 +984,7 @@ FIREBALL_CPS_CALL step_result h_conversion(
     execution_context* context, std::uint32_t* sp, std::uint32_t* local_base,
     std::uint32_t) {
   auto& current = *context;
-  const auto operation = conversion_table[current.code[current.ip]];
+  const auto operation = conversion_table_data()[current.code[current.ip]];
   std::uint32_t trap_code = 0;
   if (operation == nullptr || !operation(current, sp, trap_code)) {
     return trap_code == 0 ? fallback(current.ip) : trap(trap_code);
@@ -1269,208 +1265,296 @@ FIREBALL_CPS_CALL step_result dispatch(
     return complete();
   }
   current.stack_checkpoint = current.sp_offset;
-  const auto handler = handler_table[current.code[current.ip]];
+  const auto handler = handler_table_data()[current.code[current.ip]];
   if (handler == nullptr) {
     return fallback(current.ip);
   }
   [[clang::musttail]] return handler(context, sp, local_base, tos);
 }
 
-void initialize_handler_table() {
-  static bool initialized = false;
-  if (initialized) return;
-  initialized = true;
-  handler_table[0x00] = h_unreachable;
-  handler_table[0x01] = h_nop;
-  handler_table[0x02] = h_block;
-  handler_table[0x03] = h_block;
-  handler_table[0x04] = h_if;
-  handler_table[0x05] = h_else;
-  handler_table[0x0B] = h_end;
-  handler_table[0x0C] = h_br;
-  handler_table[0x0D] = h_br_if;
-  handler_table[0x0F] = h_return;
-  handler_table[0x1A] = h_drop;
-  handler_table[0x1B] = h_select;
-  handler_table[0x20] = h_local_get;
-  handler_table[0x21] = h_local_set;
-  handler_table[0x22] = h_local_tee;
-  handler_table[0x42] = h_i64_const;
-  handler_table[0x43] = h_f32_const;
-  handler_table[0x44] = h_f64_const;
-  handler_table[0x41] = h_i32_const;
-  handler_table[0x45] = h_unary_eqz;
-  handler_table[0x67] = h_unary_clz;
-  handler_table[0x68] = h_unary_ctz;
-  handler_table[0x69] = h_unary_popcnt;
-  handler_table[0xC0] = h_unary_extend8;
-  handler_table[0xC1] = h_unary_extend16;
-  handler_table[0x50] = h_i64_unary;
-  handler_table[0x79] = h_i64_unary;
-  handler_table[0x7A] = h_i64_unary;
-  handler_table[0x7B] = h_i64_unary;
-  handler_table[0xC2] = h_i64_unary;
-  handler_table[0xC3] = h_i64_unary;
-  handler_table[0xC4] = h_i64_unary;
+constexpr auto make_binary_operation_table() {
+  std::array<binary_operation_fn, 256> table{};
+  table[0x46] = evaluate_plain<op_eq>;
+  table[0x47] = evaluate_plain<op_ne>;
+  table[0x48] = evaluate_plain<op_lt_s>;
+  table[0x49] = evaluate_plain<op_lt_u>;
+  table[0x4A] = evaluate_plain<op_gt_s>;
+  table[0x4B] = evaluate_plain<op_gt_u>;
+  table[0x4C] = evaluate_plain<op_le_s>;
+  table[0x4D] = evaluate_plain<op_le_u>;
+  table[0x4E] = evaluate_plain<op_ge_s>;
+  table[0x4F] = evaluate_plain<op_ge_u>;
+  table[0x6A] = evaluate_plain<op_add>;
+  table[0x6B] = evaluate_plain<op_sub>;
+  table[0x6C] = evaluate_plain<op_mul>;
+  table[0x6D] = evaluate_div_s;
+  table[0x6E] = evaluate_div_u;
+  table[0x6F] = evaluate_rem_s;
+  table[0x70] = evaluate_rem_u;
+  table[0x71] = evaluate_plain<op_and>;
+  table[0x72] = evaluate_plain<op_or>;
+  table[0x73] = evaluate_plain<op_xor>;
+  table[0x74] = evaluate_plain<op_shl>;
+  table[0x75] = evaluate_plain<op_shr_s>;
+  table[0x76] = evaluate_plain<op_shr_u>;
+  table[0x77] = evaluate_plain<op_rotl>;
+  table[0x78] = evaluate_plain<op_rotr>;
+  return table;
+}
+
+constexpr auto make_i64_unary_table() {
+  std::array<i64_unary_operation_fn, 256> table{};
+  table[0x50] = i64_eqz;
+  table[0x79] = i64_clz;
+  table[0x7A] = i64_ctz;
+  table[0x7B] = i64_popcnt;
+  table[0xC2] = i64_extend8;
+  table[0xC3] = i64_extend16;
+  table[0xC4] = i64_extend32;
+  return table;
+}
+
+constexpr auto make_i64_binary_table() {
+  std::array<i64_binary_operation_fn, 256> table{};
+  table[0x51] = evaluate_i64_plain<i64_eq>;
+  table[0x52] = evaluate_i64_plain<i64_ne>;
+  table[0x53] = evaluate_i64_plain<i64_lt_s>;
+  table[0x54] = evaluate_i64_plain<i64_lt_u>;
+  table[0x55] = evaluate_i64_plain<i64_gt_s>;
+  table[0x56] = evaluate_i64_plain<i64_gt_u>;
+  table[0x57] = evaluate_i64_plain<i64_le_s>;
+  table[0x58] = evaluate_i64_plain<i64_le_u>;
+  table[0x59] = evaluate_i64_plain<i64_ge_s>;
+  table[0x5A] = evaluate_i64_plain<i64_ge_u>;
+  table[0x7C] = evaluate_i64_plain<i64_add>;
+  table[0x7D] = evaluate_i64_plain<i64_sub>;
+  table[0x7E] = evaluate_i64_plain<i64_mul>;
+  table[0x7F] = i64_div_s;
+  table[0x80] = i64_div_u;
+  table[0x81] = i64_rem_s;
+  table[0x82] = i64_rem_u;
+  table[0x83] = evaluate_i64_plain<i64_and>;
+  table[0x84] = evaluate_i64_plain<i64_or>;
+  table[0x85] = evaluate_i64_plain<i64_xor>;
+  table[0x86] = evaluate_i64_plain<i64_shl>;
+  table[0x87] = evaluate_i64_plain<i64_shr_s>;
+  table[0x88] = evaluate_i64_plain<i64_shr_u>;
+  table[0x89] = evaluate_i64_plain<i64_rotl>;
+  table[0x8A] = evaluate_i64_plain<i64_rotr>;
+  return table;
+}
+
+constexpr auto make_f32_binary_table() {
+  std::array<f32_binary_operation_fn, 256> table{};
+  table[0x5B] = f32_eq;
+  table[0x5C] = f32_ne;
+  table[0x5D] = f32_lt;
+  table[0x5E] = f32_gt;
+  table[0x5F] = f32_le;
+  table[0x60] = f32_ge;
+  table[0x92] = f32_add;
+  table[0x93] = f32_sub;
+  table[0x94] = f32_mul;
+  table[0x95] = f32_div;
+  table[0x96] = f32_min;
+  table[0x97] = f32_max;
+  table[0x98] = f32_copysign;
+  return table;
+}
+
+constexpr auto make_f64_binary_table() {
+  std::array<f64_binary_operation_fn, 256> table{};
+  table[0x61] = f64_eq;
+  table[0x62] = f64_ne;
+  table[0x63] = f64_lt;
+  table[0x64] = f64_gt;
+  table[0x65] = f64_le;
+  table[0x66] = f64_ge;
+  table[0xA0] = f64_add;
+  table[0xA1] = f64_sub;
+  table[0xA2] = f64_mul;
+  table[0xA3] = f64_div;
+  table[0xA4] = f64_min;
+  table[0xA5] = f64_max;
+  table[0xA6] = f64_copysign;
+  return table;
+}
+
+constexpr auto make_f32_unary_table() {
+  std::array<f32_unary_operation_fn, 256> table{};
+  table[0x8B] = f32_abs;
+  table[0x8C] = f32_neg;
+  table[0x8D] = f32_ceil;
+  table[0x8E] = f32_floor;
+  table[0x8F] = f32_trunc;
+  table[0x90] = f32_nearest;
+  table[0x91] = f32_sqrt;
+  return table;
+}
+
+constexpr auto make_f64_unary_table() {
+  std::array<f64_unary_operation_fn, 256> table{};
+  table[0x99] = f64_abs;
+  table[0x9A] = f64_neg;
+  table[0x9B] = f64_ceil;
+  table[0x9C] = f64_floor;
+  table[0x9D] = f64_trunc;
+  table[0x9E] = f64_nearest;
+  table[0x9F] = f64_sqrt;
+  return table;
+}
+
+constexpr auto make_numeric_result_is_bool() {
+  std::array<bool, 256> table{};
+  table[0x50] = true;
+  for (const auto opcode : {0x51, 0x52, 0x53, 0x54, 0x55, 0x56, 0x57, 0x58, 0x59, 0x5A,
+                            0x5B, 0x5C, 0x5D, 0x5E, 0x5F, 0x60, 0x61, 0x62, 0x63, 0x64,
+                            0x65, 0x66}) {
+    table[opcode] = true;
+  }
+  return table;
+}
+
+constexpr auto make_conversion_table() {
+  std::array<conversion_operation_fn, 256> table{};
+  table[0xA7] = conversion_i32_wrap_i64;
+  table[0xA8] = conversion_truncate_i32<float, true>;
+  table[0xA9] = conversion_truncate_i32<float, false>;
+  table[0xAA] = conversion_truncate_i32<double, true>;
+  table[0xAB] = conversion_truncate_i32<double, false>;
+  table[0xAC] = conversion_i64_extend_i32_s;
+  table[0xAD] = conversion_i64_extend_i32_u;
+  table[0xAE] = conversion_truncate_i64<float, true>;
+  table[0xAF] = conversion_truncate_i64<float, false>;
+  table[0xB0] = conversion_truncate_i64<double, true>;
+  table[0xB1] = conversion_truncate_i64<double, false>;
+  table[0xB2] = conversion_f32_convert_i32_s;
+  table[0xB3] = conversion_f32_convert_i32_u;
+  table[0xB4] = conversion_f32_convert_i64_s;
+  table[0xB5] = conversion_f32_convert_i64_u;
+  table[0xB6] = conversion_f32_demote_f64;
+  table[0xB7] = conversion_f64_convert_i32_s;
+  table[0xB8] = conversion_f64_convert_i32_u;
+  table[0xB9] = conversion_f64_convert_i64_s;
+  table[0xBA] = conversion_f64_convert_i64_u;
+  table[0xBB] = conversion_f64_promote_f32;
+  table[0xBC] = conversion_identity;
+  table[0xBD] = conversion_identity;
+  table[0xBE] = conversion_identity;
+  table[0xBF] = conversion_identity;
+  return table;
+}
+
+constexpr auto make_handler_table() {
+  std::array<handler_fn, 256> table{};
+  table[0x00] = h_unreachable;
+  table[0x01] = h_nop;
+  table[0x02] = h_block;
+  table[0x03] = h_block;
+  table[0x04] = h_if;
+  table[0x05] = h_else;
+  table[0x0B] = h_end;
+  table[0x0C] = h_br;
+  table[0x0D] = h_br_if;
+  table[0x0F] = h_return;
+  table[0x1A] = h_drop;
+  table[0x1B] = h_select;
+  table[0x20] = h_local_get;
+  table[0x21] = h_local_set;
+  table[0x22] = h_local_tee;
+  table[0x41] = h_i32_const;
+  table[0x42] = h_i64_const;
+  table[0x43] = h_f32_const;
+  table[0x44] = h_f64_const;
+  table[0x45] = h_unary_eqz;
+  for (const auto opcode : {0x46, 0x47, 0x48, 0x49, 0x4A, 0x4B, 0x4C, 0x4D, 0x4E, 0x4F,
+                            0x6A, 0x6B, 0x6C, 0x6D, 0x6E, 0x6F, 0x70, 0x71, 0x72, 0x73,
+                            0x74, 0x75, 0x76, 0x77, 0x78}) {
+    table[opcode] = h_binary;
+  }
+  table[0x50] = h_i64_unary;
   for (const auto opcode : {0x51, 0x52, 0x53, 0x54, 0x55, 0x56, 0x57, 0x58, 0x59, 0x5A,
                             0x7C, 0x7D, 0x7E, 0x7F, 0x80, 0x81, 0x82, 0x83, 0x84, 0x85,
                             0x86, 0x87, 0x88, 0x89, 0x8A}) {
-    handler_table[opcode] = h_i64_binary;
+    table[opcode] = h_i64_binary;
   }
   for (const auto opcode : {0x5B, 0x5C, 0x5D, 0x5E, 0x5F, 0x60, 0x92, 0x93, 0x94, 0x95,
                             0x96, 0x97, 0x98}) {
-    handler_table[opcode] = h_f32_binary;
+    table[opcode] = h_f32_binary;
   }
   for (const auto opcode : {0x61, 0x62, 0x63, 0x64, 0x65, 0x66, 0xA0, 0xA1, 0xA2, 0xA3,
                             0xA4, 0xA5, 0xA6}) {
-    handler_table[opcode] = h_f64_binary;
+    table[opcode] = h_f64_binary;
   }
+  for (const auto opcode : {0x79, 0x7A, 0x7B, 0xC2, 0xC3, 0xC4}) {
+    table[opcode] = h_i64_unary;
+  }
+  table[0x67] = h_unary_clz;
+  table[0x68] = h_unary_ctz;
+  table[0x69] = h_unary_popcnt;
+  table[0xC0] = h_unary_extend8;
+  table[0xC1] = h_unary_extend16;
   for (const auto opcode : {0x8B, 0x8C, 0x8D, 0x8E, 0x8F, 0x90, 0x91}) {
-    handler_table[opcode] = h_f32_unary;
+    table[opcode] = h_f32_unary;
   }
   for (const auto opcode : {0x99, 0x9A, 0x9B, 0x9C, 0x9D, 0x9E, 0x9F}) {
-    handler_table[opcode] = h_f64_unary;
+    table[opcode] = h_f64_unary;
   }
   for (const auto opcode : {0xA7, 0xA8, 0xA9, 0xAA, 0xAB, 0xAC, 0xAD, 0xAE, 0xAF, 0xB0,
                             0xB1, 0xB2, 0xB3, 0xB4, 0xB5, 0xB6, 0xB7, 0xB8, 0xB9, 0xBA,
                             0xBB, 0xBC, 0xBD, 0xBE, 0xBF}) {
-    handler_table[opcode] = h_conversion;
+    table[opcode] = h_conversion;
   }
-  install_binary_operation<op_eq>(0x46);
-  install_binary_operation<op_ne>(0x47);
-  install_binary_operation<op_lt_s>(0x48);
-  install_binary_operation<op_lt_u>(0x49);
-  install_binary_operation<op_gt_s>(0x4A);
-  install_binary_operation<op_gt_u>(0x4B);
-  install_binary_operation<op_le_s>(0x4C);
-  install_binary_operation<op_le_u>(0x4D);
-  install_binary_operation<op_ge_s>(0x4E);
-  install_binary_operation<op_ge_u>(0x4F);
-  install_binary_operation<op_add>(0x6A);
-  install_binary_operation<op_sub>(0x6B);
-  install_binary_operation<op_mul>(0x6C);
-  binary_operation_table[0x6D] = evaluate_div_s;
-  binary_operation_table[0x6E] = evaluate_div_u;
-  binary_operation_table[0x6F] = evaluate_rem_s;
-  binary_operation_table[0x70] = evaluate_rem_u;
-  install_binary_operation<op_and>(0x71);
-  install_binary_operation<op_or>(0x72);
-  install_binary_operation<op_xor>(0x73);
-  install_binary_operation<op_shl>(0x74);
-  install_binary_operation<op_shr_s>(0x75);
-  install_binary_operation<op_shr_u>(0x76);
-  install_binary_operation<op_rotl>(0x77);
-  install_binary_operation<op_rotr>(0x78);
-  i64_unary_table[0x50] = i64_eqz;
-  i64_unary_table[0x79] = i64_clz;
-  i64_unary_table[0x7A] = i64_ctz;
-  i64_unary_table[0x7B] = i64_popcnt;
-  i64_unary_table[0xC2] = i64_extend8;
-  i64_unary_table[0xC3] = i64_extend16;
-  i64_unary_table[0xC4] = i64_extend32;
-  numeric_result_is_bool[0x50] = true;
-  i64_binary_table[0x51] = evaluate_i64_plain<i64_eq>;
-  i64_binary_table[0x52] = evaluate_i64_plain<i64_ne>;
-  i64_binary_table[0x53] = evaluate_i64_plain<i64_lt_s>;
-  i64_binary_table[0x54] = evaluate_i64_plain<i64_lt_u>;
-  i64_binary_table[0x55] = evaluate_i64_plain<i64_gt_s>;
-  i64_binary_table[0x56] = evaluate_i64_plain<i64_gt_u>;
-  i64_binary_table[0x57] = evaluate_i64_plain<i64_le_s>;
-  i64_binary_table[0x58] = evaluate_i64_plain<i64_le_u>;
-  i64_binary_table[0x59] = evaluate_i64_plain<i64_ge_s>;
-  i64_binary_table[0x5A] = evaluate_i64_plain<i64_ge_u>;
-  for (const auto opcode : {0x51, 0x52, 0x53, 0x54, 0x55, 0x56, 0x57, 0x58, 0x59, 0x5A}) {
-    numeric_result_is_bool[opcode] = true;
-  }
-  i64_binary_table[0x7C] = evaluate_i64_plain<i64_add>;
-  i64_binary_table[0x7D] = evaluate_i64_plain<i64_sub>;
-  i64_binary_table[0x7E] = evaluate_i64_plain<i64_mul>;
-  i64_binary_table[0x7F] = i64_div_s;
-  i64_binary_table[0x80] = i64_div_u;
-  i64_binary_table[0x81] = i64_rem_s;
-  i64_binary_table[0x82] = i64_rem_u;
-  i64_binary_table[0x83] = evaluate_i64_plain<i64_and>;
-  i64_binary_table[0x84] = evaluate_i64_plain<i64_or>;
-  i64_binary_table[0x85] = evaluate_i64_plain<i64_xor>;
-  i64_binary_table[0x86] = evaluate_i64_plain<i64_shl>;
-  i64_binary_table[0x87] = evaluate_i64_plain<i64_shr_s>;
-  i64_binary_table[0x88] = evaluate_i64_plain<i64_shr_u>;
-  i64_binary_table[0x89] = evaluate_i64_plain<i64_rotl>;
-  i64_binary_table[0x8A] = evaluate_i64_plain<i64_rotr>;
-  f32_binary_table[0x5B] = f32_eq;
-  f32_binary_table[0x5C] = f32_ne;
-  f32_binary_table[0x5D] = f32_lt;
-  f32_binary_table[0x5E] = f32_gt;
-  f32_binary_table[0x5F] = f32_le;
-  f32_binary_table[0x60] = f32_ge;
-  f32_binary_table[0x92] = f32_add;
-  f32_binary_table[0x93] = f32_sub;
-  f32_binary_table[0x94] = f32_mul;
-  f32_binary_table[0x95] = f32_div;
-  f32_binary_table[0x96] = f32_min;
-  f32_binary_table[0x97] = f32_max;
-  f32_binary_table[0x98] = f32_copysign;
-  f64_binary_table[0x61] = f64_eq;
-  f64_binary_table[0x62] = f64_ne;
-  f64_binary_table[0x63] = f64_lt;
-  f64_binary_table[0x64] = f64_gt;
-  f64_binary_table[0x65] = f64_le;
-  f64_binary_table[0x66] = f64_ge;
-  f64_binary_table[0xA0] = f64_add;
-  f64_binary_table[0xA1] = f64_sub;
-  f64_binary_table[0xA2] = f64_mul;
-  f64_binary_table[0xA3] = f64_div;
-  f64_binary_table[0xA4] = f64_min;
-  f64_binary_table[0xA5] = f64_max;
-  f64_binary_table[0xA6] = f64_copysign;
-  for (const auto opcode : {0x5B, 0x5C, 0x5D, 0x5E, 0x5F, 0x60, 0x61, 0x62, 0x63, 0x64,
-                            0x65, 0x66}) {
-    numeric_result_is_bool[opcode] = true;
-  }
-  f32_unary_table[0x8B] = f32_abs;
-  f32_unary_table[0x8C] = f32_neg;
-  f32_unary_table[0x8D] = f32_ceil;
-  f32_unary_table[0x8E] = f32_floor;
-  f32_unary_table[0x8F] = f32_trunc;
-  f32_unary_table[0x90] = f32_nearest;
-  f32_unary_table[0x91] = f32_sqrt;
-  f64_unary_table[0x99] = f64_abs;
-  f64_unary_table[0x9A] = f64_neg;
-  f64_unary_table[0x9B] = f64_ceil;
-  f64_unary_table[0x9C] = f64_floor;
-  f64_unary_table[0x9D] = f64_trunc;
-  f64_unary_table[0x9E] = f64_nearest;
-  f64_unary_table[0x9F] = f64_sqrt;
-  conversion_table[0xA7] = conversion_i32_wrap_i64;
-  conversion_table[0xA8] = conversion_truncate_i32<float, true>;
-  conversion_table[0xA9] = conversion_truncate_i32<float, false>;
-  conversion_table[0xAA] = conversion_truncate_i32<double, true>;
-  conversion_table[0xAB] = conversion_truncate_i32<double, false>;
-  conversion_table[0xAC] = conversion_i64_extend_i32_s;
-  conversion_table[0xAD] = conversion_i64_extend_i32_u;
-  conversion_table[0xAE] = conversion_truncate_i64<float, true>;
-  conversion_table[0xAF] = conversion_truncate_i64<float, false>;
-  conversion_table[0xB0] = conversion_truncate_i64<double, true>;
-  conversion_table[0xB1] = conversion_truncate_i64<double, false>;
-  conversion_table[0xB2] = conversion_f32_convert_i32_s;
-  conversion_table[0xB3] = conversion_f32_convert_i32_u;
-  conversion_table[0xB4] = conversion_f32_convert_i64_s;
-  conversion_table[0xB5] = conversion_f32_convert_i64_u;
-  conversion_table[0xB6] = conversion_f32_demote_f64;
-  conversion_table[0xB7] = conversion_f64_convert_i32_s;
-  conversion_table[0xB8] = conversion_f64_convert_i32_u;
-  conversion_table[0xB9] = conversion_f64_convert_i64_s;
-  conversion_table[0xBA] = conversion_f64_convert_i64_u;
-  conversion_table[0xBB] = conversion_f64_promote_f32;
-  conversion_table[0xBC] = conversion_identity;
-  conversion_table[0xBD] = conversion_identity;
-  conversion_table[0xBE] = conversion_identity;
-  conversion_table[0xBF] = conversion_identity;
-  for (const auto opcode : {0x46, 0x47, 0x48, 0x49, 0x4A, 0x4B, 0x4C, 0x4D, 0x4E, 0x4F,
-                            0x6A, 0x6B, 0x6C, 0x6D, 0x6E, 0x6F, 0x70, 0x71, 0x72, 0x73,
-                            0x74, 0x75, 0x76, 0x77, 0x78}) {
-    handler_table[opcode] = h_binary;
-  }
+  return table;
+}
+
+constexpr auto kHandlerTable = make_handler_table();
+constexpr auto kBinaryOperationTable = make_binary_operation_table();
+constexpr auto kI64BinaryTable = make_i64_binary_table();
+constexpr auto kI64UnaryTable = make_i64_unary_table();
+constexpr auto kF32BinaryTable = make_f32_binary_table();
+constexpr auto kF64BinaryTable = make_f64_binary_table();
+constexpr auto kF32UnaryTable = make_f32_unary_table();
+constexpr auto kF64UnaryTable = make_f64_unary_table();
+constexpr auto kNumericResultIsBool = make_numeric_result_is_bool();
+constexpr auto kConversionTable = make_conversion_table();
+
+const std::array<handler_fn, 256>& handler_table_data() { return kHandlerTable; }
+
+const std::array<binary_operation_fn, 256>& binary_operation_table_data() {
+  return kBinaryOperationTable;
+}
+
+const std::array<i64_binary_operation_fn, 256>& i64_binary_table_data() {
+  return kI64BinaryTable;
+}
+
+const std::array<i64_unary_operation_fn, 256>& i64_unary_table_data() {
+  return kI64UnaryTable;
+}
+
+const std::array<f32_binary_operation_fn, 256>& f32_binary_table_data() {
+  return kF32BinaryTable;
+}
+
+const std::array<f64_binary_operation_fn, 256>& f64_binary_table_data() {
+  return kF64BinaryTable;
+}
+
+const std::array<f32_unary_operation_fn, 256>& f32_unary_table_data() {
+  return kF32UnaryTable;
+}
+
+const std::array<f64_unary_operation_fn, 256>& f64_unary_table_data() {
+  return kF64UnaryTable;
+}
+
+const std::array<bool, 256>& numeric_result_is_bool_data() {
+  return kNumericResultIsBool;
+}
+
+const std::array<conversion_operation_fn, 256>& conversion_table_data() {
+  return kConversionTable;
 }
 
 struct buffer_guard {
@@ -1540,7 +1624,6 @@ PyObject* run_step(PyObject*, PyObject* args) {
     return nullptr;
   }
 
-  initialize_handler_table();
   auto* execution_context =
       static_cast<fireball_execution_context_native*>(context_buffer.view.buf);
   auto* control_stack = static_cast<fireball_control_stack_native*>(control_buffer.view.buf);

@@ -145,12 +145,12 @@ vSoC コアエンジンの実行委譲、協調イールド、および外部介
   一方、JIT コンパイラは MPU の `W^X` 保護が適用された JIT セクションから専用アロケータを用いてネイティブトレースを確保する。
   モジュール終了・アンロード時は、JIT キャッシュを無効化（3-Bank Flush）する。その上でバンプアロケータのアリーナごと $O(1)$ で一括リセットして返還し、JIT コードセクションも解放する。
   個別の `free()` や複雑なデストラクタ走査は一切行わない。これにより動的メモリ断片化や他モジュールからのダングリング参照を原理的に根絶する。
-- **実行エンジン委譲とステートレス化 (`GOTCHA-VSOC-01`, , )**:
+- **実行エンジン委譲とステートレス化 (`GOTCHA-VSOC-01`)**:
   vSoC は `step()` において現在の PC に対応する `exec_trace` を呼び出す。シグネチャは `void __fastcall (execution_context* ctx, uint32_t* sp, uint32_t* local_base, uint32_t tos)` である。
   `exec_trace` はインタープリタのディスパッチャまたは JIT コードを指す。実行コンテキスト、オペランド領域の現在位置、ローカル値領域の開始位置、スタック頂点値を4つの論理引数として渡し、物理レジスタへの割当は対象ABIに従う。
   **設計理由と不変条件**: インタープリタおよび JIT トレース自身を C++20 コルーチン化することは厳禁とする。コルーチン化すると、命令ディスパッチごとにフレームの割り当てや退避・復帰が発生する。さらにコンパイラの末尾呼び出し最適化（`[[clang::musttail]]`）が阻害され、スタックを急速に消費してしまう。
   そのためインタープリタは完全ステートレスな `void` プレーン関数として設計する。次に実行すべき PC は `execution_context.ip`（`R0` の `+0x00`）へ書き戻し、vSoC のメインループへ戻る規約とする。
-- **概算Yield と明示的イールド点 (`GOTCHA-VSOC-02`, )**:
+- **概算Yield と明示的イールド点 (`GOTCHA-VSOC-02`)**:
 
 #### ランタイム生成とモジュールアンロードのライフサイクル（責務シーケンス図）
 <!-- traceability: {OneRuntimeOneGuest} {Runtime_BumpAllocator} {META_FaultIsolation} -->
@@ -223,7 +223,7 @@ sequenceDiagram
 ### 4.2 状態遷移図 (SysML SMD: vSoC Engine ライフサイクル)
 <!-- traceability: {VSOC_Lifecycle} {ThreadedInterpreter} {JIT_CopyAndPatch} {Challenge_ApproximateYield} {JIT_Safepoint} {DebuggerInterpreterComposition} -->
 
-vSoC Engine の実行制御と JIT/Interpreter 切り替えの状態遷移（）を以下に示す。
+vSoC Engine の実行制御と JIT/Interpreter 切り替えの状態遷移を以下に示す。
 
 ```mermaid
 stateDiagram-v2

@@ -144,6 +144,20 @@ llm_judge:
       severity: "ERROR"
       prompt_file: "tools/spec-integrator/prompts/checks/cross_doc_consistency.prompt"
 
+    - id: "keyword_definition_integrity"
+      name: "Keyword Definition Source, Placement, and Meaning"
+      mode: ["cluster"]
+      enabled: true
+      severity: "ERROR"
+      prompt_file: "tools/spec-integrator/prompts/checks/keyword_definition_integrity.prompt"
+
+    - id: "keyword_reference_traceability"
+      name: "Keyword Reference Role and Traceability Links"
+      mode: ["cluster"]
+      enabled: true
+      severity: "ERROR"
+      prompt_file: "tools/spec-integrator/prompts/checks/keyword_reference_traceability.prompt"
+
     - id: "internal_consistency"
       name: "Internal Document Consistency"
       mode: ["single"]

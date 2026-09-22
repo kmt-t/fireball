@@ -17,6 +17,7 @@ from wasm_module import WASM_VALUE_SLOT_BYTES
 
 NATIVE_VALUE_STACK_CAPACITY = 128
 NATIVE_CONTROL_STACK_CAPACITY = 32
+NATIVE_CALL_STACK_CAPACITY = 32
 NATIVE_STACK_ALIGNMENT_BYTES = WASM_VALUE_SLOT_BYTES
 
 
@@ -42,6 +43,14 @@ class ExecutionContextNative(ctypes.Structure):
         ("globals_limit", ctypes.c_uint32),
         ("handler_table", ctypes.c_uint32),
         ("reserved0", ctypes.c_uint32),
+        ("code", ctypes.c_void_p),
+        ("code_size", ctypes.c_uint32),
+        ("control_stack", ctypes.c_void_p),
+        ("control_base", ctypes.c_uint32),
+        ("stack_checkpoint", ctypes.c_uint32),
+        ("call_stack", ctypes.c_void_p),
+        ("call_base", ctypes.c_uint32),
+        ("call_offset", ctypes.c_uint32),
     )
 
 
@@ -144,6 +153,45 @@ class ControlFrameNative(ctypes.Structure):
     )
 
 
+class CallFrameNative(ctypes.Structure):
+    """Flat Native activation descriptor stored in the context call stack."""
+
+    __slots__ = ()
+
+    _fields_ = (
+        ("func_index", ctypes.c_uint32),
+        ("code", ctypes.c_void_p),
+        ("code_size", ctypes.c_uint32),
+        ("control_map", ctypes.c_void_p),
+        ("local_base", ctypes.c_uint32),
+        ("local_count", ctypes.c_uint32),
+        ("local_slot_count", ctypes.c_uint32),
+        ("slot_words", ctypes.c_uint32),
+        ("local_width_map", ctypes.c_void_p),
+        ("local_width_count", ctypes.c_uint32),
+        ("param_count", ctypes.c_uint32),
+        ("param_packed_slot_count", ctypes.c_uint32),
+        ("result_arity", ctypes.c_uint32),
+        ("control_base", ctypes.c_uint32),
+        ("return_ip", ctypes.c_uint32),
+        ("return_func_index", ctypes.c_uint32),
+        ("boundary_next_pc", ctypes.c_uint32),
+        ("boundary_loops_to", ctypes.c_uint32),
+    )
+
+
+class CallStackNative(ctypes.Structure):
+    """Fixed-capacity Native activation stack."""
+
+    __slots__ = ()
+
+    _fields_ = (
+        ("frames", CallFrameNative * NATIVE_CALL_STACK_CAPACITY),
+        ("size", ctypes.c_uint32),
+        ("reserved0", ctypes.c_uint32),
+    )
+
+
 class ControlStackNative(ctypes.Structure):
     """Fixed-capacity Native control-frame stack."""
 
@@ -165,13 +213,14 @@ class NativeValueStack:
     performed by the WASM opcode handler, not stored beside each slot.
     """
 
-    __slots__ = ("_capacity", "_native", "_values_address")
+    __slots__ = ("_capacity", "_native", "_values_address", "_values_view")
 
     def __init__(self, capacity: int = NATIVE_VALUE_STACK_CAPACITY):
         assert 0 <= capacity <= NATIVE_VALUE_STACK_CAPACITY
         self._capacity = capacity
         self._native = ValueStackNative()
         self._values_address = ctypes.addressof(self._native) + ValueStackNative.values.offset
+        self._values_view = memoryview(self._native.values)
         assert self._values_address % NATIVE_STACK_ALIGNMENT_BYTES == 0
 
     @property
@@ -446,12 +495,26 @@ class NativeValueStack:
         assert 0 <= start <= self._capacity
         return ctypes.c_void_p(self._values_address + start * 4)
 
+    @property
+    def raw_view(self) -> memoryview:
+        """Return the cached zero-copy byte view used by native execution."""
+
+        return self._values_view
+
 
 assert ctypes.sizeof(ctypes.c_void_p) == 8
 assert ctypes.sizeof(ExecutionContextNative) == JIT_CONTEXT_SIZE_BYTES
 assert ExecutionContextNative.mem_base.offset == 0x28
 assert ExecutionContextNative.handler_table.offset == 0x38
 assert ExecutionContextNative.reserved0.offset == 0x3C
+assert ExecutionContextNative.code.offset == 0x40
+assert ExecutionContextNative.code_size.offset == 0x48
+assert ExecutionContextNative.control_stack.offset == 0x50
+assert ExecutionContextNative.control_base.offset == 0x58
+assert ExecutionContextNative.stack_checkpoint.offset == 0x5C
+assert ExecutionContextNative.call_stack.offset == 0x60
+assert ExecutionContextNative.call_base.offset == 0x68
+assert ExecutionContextNative.call_offset.offset == 0x6C
 assert ctypes.sizeof(ConstBufferViewNative) == 16
 assert ctypes.sizeof(WasmFunctionViewNative) == 24
 assert ctypes.sizeof(WasmModuleViewNative) == 24
@@ -462,14 +525,24 @@ assert ValueStackNative.size.offset == 512
 assert ctypes.sizeof(ControlFrameNative) == 20
 assert ctypes.sizeof(ControlStackNative) == 648
 assert ControlStackNative.size.offset == 640
+assert CallFrameNative.func_index.offset == 0
+assert CallFrameNative.code.offset == 8
+assert CallFrameNative.control_map.offset == 24
+assert CallFrameNative.local_width_map.offset == 48
+assert ctypes.sizeof(CallFrameNative) == 96
+assert ctypes.sizeof(CallStackNative) == 3080
+assert CallStackNative.size.offset == 3072
 
 
 __all__ = (
     "NATIVE_CONTROL_STACK_CAPACITY",
+    "NATIVE_CALL_STACK_CAPACITY",
     "NATIVE_VALUE_STACK_CAPACITY",
     "ConstBufferViewNative",
     "ControlFrameNative",
     "ControlStackNative",
+    "CallFrameNative",
+    "CallStackNative",
     "ExecutionContextNative",
     "NativeValueStack",
     "ValueStackNative",

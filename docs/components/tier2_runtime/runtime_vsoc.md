@@ -101,7 +101,7 @@ vSoCの実行環境情報は `execution_context` の論理フィールドとし�
 | グローバル変数基底 | WASM `global` 配列（4バイト単位でインデックス付け）の開始アドレス | アドレス値 | 32bit符号なし（`execution_context` の `+0x30`） |
 | グローバル変数終端 | WASM `global` 配列の終端アドレス | アドレス値 | 32bit符号なし（`execution_context` の `+0x34`） |
 
-`execution_context` の実体は計64バイト（`+0x00`〜`+0x3F`）である。内訳は16個の32ビットフィールドであり、JITの委譲先関数アドレスと共通呼出し入口の選択値はトレースヘッダへ置く。
+`execution_context` の既存状態領域は64バイト（`+0x00`〜`+0x3F`）であり、コードビュー、Native制御スタックビュー、境界チェックポイント、およびNative CallStackビューを含むx86-64の実体は112バイト（`+0x00`〜`+0x6F`）である。JITの委譲先関数アドレスと共通呼出し入口の選択値はトレースヘッダへ置く。
 オペランド領域、ローカル値領域、制御ブロック復帰情報領域は、それぞれ専用の境界オフセット対を持つ独立領域である。いずれか1本の伸縮が他の記録位置へ影響することはない（ADR-INTERP-03）。
 JIT の複雑処理委譲先はトレースヘッダの `helper_target_addr` からトレースごとにロードする。対象ABIの呼出しコードはヘルパー契約ごとに共通コード領域へ配置し、ヘッダの対応入口選択値で呼び出す。JITコード内へ委譲先の絶対アドレスを埋め込まない。型定義の正本は [`runtime_vsoc_contract.wit`](docs/components/tier2_runtime/wit/runtime_vsoc_contract.wit) であり、固定ABIの物理配置は [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) に従う。 `{PositionIndependentCode}`
 

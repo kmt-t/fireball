@@ -16,15 +16,17 @@
 | TEST-INTP-03 | Interpreter handlerとJIT traceの引数ABI | JITトレース生成 | handlerとtrace entryの型・引数配置を比較 | 両者は`ctx, sp, local_base, tos`の4引数配置を共有するが、Interpreter handlerは`handler_result`、JIT trace entryは`void`を返し、関数ポインタ型は分離される | `{ContextPointerRegister}` `{AAPCS_FastCall}` `{PositionIndependentCode}` |
 | TEST-INTP-04 | JITトレースからインタープリタへのシームレスフォールバック | 未コンパイルのブロックへ分岐 | トレース実行完了 | トレース末尾でインタープリタへスムーズに復帰し、後続ブロックをインタープリタが継続実行する | `{JIT_LazyChaining}` `{JIT_RuntimeAPI_Fallback}` |
 
-### Python互換の継続チェイン実験
+### Python互換の継続入口とネイティブ境界
 
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| TEST-INTP-05 | Python／ネイティブ継続入口互換 | ネイティブ拡張の有無が異なる環境 | 同じWASMモジュールを通常入口と継続入口で実行 | 公開API、戻り値、トラップ、フレーム状態が一致し、未ビルド時もPython入口が動作する | `interpreter.py`, `interpreter_cps.py` |
-| TEST-INTP-06 | C関数ポインタによる4引数チェイン | `cps_chain.pyx`をビルド済み | ネイティブ継続入口を実行 | `(ctx, sp, local_base, tos)`の関数ポインタ表から通常命令の次ハンドラへ継続する | `cps_chain.pyx`, `interpreter.md` |
-| TEST-INTP-07 | 通常命令のmusttail継続 | Clang 17+でネイティブ拡張をビルド済み | 算術・メモリ・浮動小数点命令を連続実行 | ハンドラ末尾の `[[clang::musttail]]` 継続呼出しで基本ブロック内を実行する | `{ThreadedInterpreter}` |
+| TEST-INTP-05 | C++ CPS handler入口 | ネイティブ拡張をClangでビルド済み | 4論理引数相当のcontext・operand・local・TOSをnative viewで渡して実行 | C++ handler tableからC++ handlerへ直接継続し、Pythonには境界結果だけを返す | `interpreter.py`, `native_interpreter.cxx` |
+| TEST-INTP-06 | C++ handler tableとstepループ | `_interpreter_native`をビルド済み | code・operand stack・local stackを`memoryview`で`run_step`へ渡す | C++の固定256スロット表がi32直線区間を連続実行し、境界でPCとstack sizeを返す。未対応opcodeはスタックを変更せずPythonへ戻る | `tier3_executer/interpreter/native_interpreter.cxx` |
+| TEST-INTP-07 | C++インタープリタのPython境界 | ネイティブ拡張をClangでビルド済み | 同じWASMモジュールを通常入口で実行 | code・operand・local・controlのnative recordをPython wrapperが保持し、Pythonには境界結果だけを返す | `interpreter.py`, `interop_abi.py`, `native_stacks.py` |
+| TEST-INTP-08 | JITトレースのC++ 4引数ブリッジ | `native_trace_call`をビルド済み | `(ctx, sp, local_base, tos)`の関数ポインタ入口を実行 | ctypes経路と同一のトレース結果になり、ブリッジ実行中はPythonハンドラへ戻らない | `tier3_executer/jit/native_trace_call.cxx` |
+| TEST-INTP-09 | ロード時LEB128の実行系分離 | WASMロード処理を実行可能 | モジュールロード後の実行経路を確認 | LEB128デコーダはロード時だけ使用され、Tier 3実行ホットパスへ入らない | `tier2_runtime/leb128.py` |
 | TEST-INTP-08 | ジャンプ・分岐境界 | `br`、`br_if`、`br_table`、`call`を含むWASM | 境界命令を実行 | ジャンプ・分岐は継続チェインせず、既存フレーム処理へ戻って正しいPC・制御スタックを保つ | `{InterpreterContextStackless}` |
-| TEST-INTP-09 | AO-Bench全命令差分 | wasmtimeとTier 2/Tier 3を利用可能 | `aobench.py --native-cps`を実行 | Float32 sanity、全AO出力、Tier 2/Tier 3の528バイト出力が完全一致する | `{META_RecoveryStrategy}` |
+| TEST-INTP-09 | AO-Bench全命令差分 | wasmtimeとTier 2/Tier 3を利用可能 | `aobench.py`を実行 | Float32 sanity、全AO出力、Tier 2/Tier 3の528バイト出力が完全一致する | `{META_RecoveryStrategy}` |
 
 ### 3本の独立スタック・関数呼び出し ({ContextPointerRegister})
 
@@ -97,6 +99,7 @@
 | TEST-INTP-72 | 静的制御表によるブロック境界解決 | `block/loop/if` 構文の実行 | 分岐および終了時の遷移を確認 | モジュールロード時に事前計算された静的 `control_map`（`blocks`, `br_tables`）を参照し、実行時の全命令再デコードを行わない | `interpreter.md` |
 | TEST-INTP-73 | フレームごとのスロット幅の決定 | i32のみ、f32のみ、i64を含む、f64ローカルを含む、ローカルなしの関数 | ロード後の幅マップ（ローカルごとの幅を2ビットで保持）のスロット幅と `local_slot_count_cache` を確認し、各関数を実行する | i32/f32のみは1ワード、i64/f64を含むと2ワードになる。ローカルなしは1ワードでスロット数は0である。全ローカルの幅がスロット幅以下である。実行結果が正しい | GOTCHA-INTP-22 |
 | TEST-INTP-74 | 32ビットのみのフレームによるローカル値領域の節約 | 16個のローカルを持つ再帰関数。一方はi32のみ、他方はf64ローカルを1個含む | 同じ再帰深さで実行する | i32のみの版は、1フレーム16ワードで7フレームが128ワードに収まり、成功する。f64を含む版は、1フレーム34ワードで7フレームが128ワードを超え、容量超過で停止する | GOTCHA-INTP-22 |
+| TEST-INTP-75 | Native CallFrameの固定ABIと積載順序 | 関数を1つ開始し、Native CallStackが空 | `_build_frame` 後にコンテキストと最上位CallFrameを検査する | `call_stack` がコンテキストへ接続され、CallFrameが関数番号、コードビュー、ローカル幅・スロット数、引数個数、制御ベースの順序で保持される。終了後はCallStack深さと`call_offset`が0へ戻る | `interpreter.md` `{CallFrame_Layout}` `{ExecutionContext_Layout}` |
 
 ### 実装の勘所・不変条件（Gotchas & Implementation Invariants）
 

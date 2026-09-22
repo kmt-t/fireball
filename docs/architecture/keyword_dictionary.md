@@ -407,7 +407,7 @@ WASM 実行基盤（`runtime_vsoc`）、ランタイムプラグイン構成契�
 
 | キーワード | 定義元正本 | 対象コンポーネント | 仕様概要・検証内容 | 対応テストケースID（キーワードではない） |
 | :--- | :--- | :--- | :--- | :--- |
-| `{ExecutionContext_Layout}` | `jit_abi.md` | `interpreter.md` | execution_context Tier 2標準ABI 64バイト配置（16個の32bit状態フィールド。ターゲット物理配置は各ABIで定義） | Scenario 1〜12 |
+| `{ExecutionContext_Layout}` | `jit_abi.md` | `interpreter.md` | execution_context Tier 2標準ABI。既存64バイト状態領域と、x86-64で追加するコード／制御スタック／CallStackビューを含む112バイト配置 | Scenario 1〜12 |
 | `{CallFrame_Layout}` | `interpreter.md` | `interpreter.md` | 固定容量の独立した関数呼出し記述子領域。各記述子はローカル値領域内の開始位置を保持し、ローカル値領域はローカル値だけを格納する | Scenario 3, 8 |
 | `{ControlFrame_Layout}` | `interpreter.md` | `interpreter.md` | 制御ブロックの復帰情報を20バイトで保持し、オペランド領域およびローカル値領域とは独立した専用の固定容量領域へ配置する | Scenario 3 |
 | `{VsocRuntime_Layout}` | `runtime_vsoc.md` | `runtime_vsoc.md` | execution_context 内のリニアメモリ、グローバル領域、ハンドラ表に関する論理環境フィールド配置 | Scenario 1〜12 |

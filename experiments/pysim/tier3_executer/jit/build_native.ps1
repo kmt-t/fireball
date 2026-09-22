@@ -1,6 +1,5 @@
-# Builds the optional native_trace_call Cython accelerator (Windows / clang-cl).
-# See native_trace_call.pyx for what this replaces. Requires: `uv pip install cython`
-# (already in requirements.txt), clang-cl on PATH, and a Visual Studio Build Tools +
+# Builds the optional native_trace_call C++ accelerator (Windows / clang-cl).
+# Requires clang-cl on PATH and a Visual Studio Build Tools +
 # Windows SDK install (for the MSVC headers/import libs clang-cl targets).
 $ErrorActionPreference = "Stop"
 
@@ -18,21 +17,17 @@ $pyInc = & uv run python -c "import sysconfig; print(sysconfig.get_path('include
 $pyLibDir = & uv run python -c "import sys, os; print(os.path.join(sys.base_prefix, 'libs'))"
 $nativeBuildDir = Join-Path $env:TEMP "fireball-pysim-native"
 New-Item -ItemType Directory -Force -Path $nativeBuildDir | Out-Null
-$generatedC = Join-Path $nativeBuildDir "native_trace_call.c"
+$sourceCpp = Join-Path $scriptDir "native_trace_call.cxx"
 $generatedPyd = Join-Path $nativeBuildDir "native_trace_call.pyd"
 
-Write-Host ">>> Transpiling native_trace_call.pyx -> .c (Cython)" -ForegroundColor Yellow
-& uv run cython native_trace_call.pyx -3 -o $generatedC
-if ($LASTEXITCODE -ne 0) { throw "cython transpile failed" }
-
-Write-Host ">>> Compiling native_trace_call.c -> .pyd (clang-cl)" -ForegroundColor Yellow
-& clang-cl.exe /O2 /LD /EHsc `
+Write-Host ">>> Compiling native_trace_call.cxx -> .pyd (clang-cl)" -ForegroundColor Yellow
+& clang-cl.exe /TP /O2 /LD /EHsc `
     "-I$pyInc" `
     "-I$vsDir\VC\Tools\MSVC\$msvcVer\include" `
     "-I$sdkRoot\Include\$sdkVer\ucrt" `
     "-I$sdkRoot\Include\$sdkVer\shared" `
     "-I$sdkRoot\Include\$sdkVer\um" `
-    $generatedC /Fe:$generatedPyd `
+    $sourceCpp /Fe:$generatedPyd `
     /link `
     "/LIBPATH:$pyLibDir" `
     "/LIBPATH:$vsDir\VC\Tools\MSVC\$msvcVer\lib\x64" `

@@ -45,7 +45,6 @@ from dataclasses import dataclass
 from enum import IntEnum
 from typing import Protocol
 
-import cython
 from config import FB_CONF_MAX_VALUE_STACK
 from control_flow import (
     FB_CONF_MAX_NESTING_DEPTH,
@@ -55,18 +54,20 @@ from control_flow import (
 )
 from interop_abi import (
     NATIVE_VALUE_STACK_CAPACITY,
+    CallFrameNative,
     ExecutionContextNative,
     NativeValueStack,
 )
 from leb128 import decode_signed, decode_unsigned
-from tier2_runtime.logger import Logger, LogLevel
 from native_stacks import (
     ControlFrameKind,
+    NativeCallFrameStack,
     NativeControlStack,
     _ControlFrameWindow,
     _LocalStackWindow,
 )
 from system_containers import StaticVector
+from tier2_runtime.logger import Logger, LogLevel
 from vmmio import VMMIOController, VmmioStatus
 from wasm_module import (
     F32,
@@ -77,6 +78,8 @@ from wasm_module import (
     Module,
     value_slot_width,
 )
+
+from . import _interpreter_native
 from wasm_opcodes import (
     BLOCK,
     BR,
@@ -266,13 +269,11 @@ RETURN_SENTINEL_IP = -1
 RETURN_SENTINEL_PC = 0xFFFF_FFFF
 
 
-@cython.locals(v=cython.longlong)
 def _to_i32(v: int) -> int:
     v &= I32_MASK
     return v - (1 << 32) if v & 0x8000_0000 else v
 
 
-@cython.locals(v=cython.longlong)
 def _to_u32(v: int) -> int:
     return v & I32_MASK
 
@@ -545,13 +546,62 @@ class InterpreterBindings:
         )
 
 
+class _CallFrameStack:
+    """Python identity view backed by the native fixed-capacity call stack."""
+
+    __slots__ = ("_frames", "_native")
+
+    def __init__(self, native: NativeCallFrameStack, capacity: int):
+        self._native = native
+        self._frames: StaticVector[CallFrame] = StaticVector(capacity=capacity)
+
+    @property
+    def native(self) -> NativeCallFrameStack:
+        return self._native
+
+    @property
+    def raw_view(self) -> memoryview:
+        return self._native.raw_view
+
+    def __len__(self) -> int:
+        assert len(self._frames) == len(self._native)
+        return len(self._frames)
+
+    def __bool__(self) -> bool:
+        return len(self) != 0
+
+    def __getitem__(self, index: int) -> CallFrame:
+        assert len(self._frames) == len(self._native)
+        frame = self._frames[index]
+        assert frame is not None
+        return frame
+
+    def push_back(self, frame: CallFrame) -> bool:
+        assert len(self._frames) == len(self._native)
+        if not self._native.push_back(frame.native):
+            return False
+        if not self._frames.push_back(frame):
+            self._native.pop_back()
+            return False
+        return True
+
+    def pop_back(self) -> CallFrame:
+        assert len(self._frames) == len(self._native)
+        native_frame = self._native.pop_back()
+        frame = self._frames.pop_back()
+        assert frame is not None
+        assert frame.native.func_index == native_frame.func_index
+        return frame
+
+
 class InterpreterContext:
     """Execution-context-owned stacks shared by the complete call chain."""
 
     __slots__ = (
         "_c_context",
         "_context_ptr",
-        "call_frame_offsets",
+        "_context_view",
+        "_call_stack_native",
         "call_frame_stack",
         "control_frame_stack",
         "local_offset",
@@ -562,21 +612,24 @@ class InterpreterContext:
 
     def __init__(self, module: Module | None = None):
         # The interpreter and JIT share the same Native ABI record. Runtime
-        # value, local, and control stacks are Native fixed-capacity records;
-        # activation metadata remains a Python-side simulator detail.
+        # Value, local, control, and call-frame stacks are Native
+        # fixed-capacity records. Python objects are identity wrappers only.
         self._c_context = ExecutionContextNative()
         self._context_ptr = ctypes.cast(ctypes.pointer(self._c_context), ctypes.c_void_p)
+        self._context_view = memoryview(self._c_context)
         self.operand_stack: NativeValueStack = NativeValueStack(FB_CONF_MAX_VALUE_STACK)
         self.local_stack: NativeValueStack = NativeValueStack(FB_CONF_MAX_LOCAL_STACK)
         self.local_offset = 0
         self.module = module
-        self.call_frame_offsets: StaticVector[int] = StaticVector(
-            capacity=FB_CONF_MAX_NESTING_DEPTH
-        )
-        self.call_frame_stack: StaticVector[CallFrame] = StaticVector(
-            capacity=FB_CONF_MAX_NESTING_DEPTH
+        self._call_stack_native = NativeCallFrameStack(FB_CONF_MAX_NESTING_DEPTH)
+        self.call_frame_stack = _CallFrameStack(
+            self._call_stack_native,
+            FB_CONF_MAX_NESTING_DEPTH,
         )
         self.control_frame_stack: NativeControlStack = NativeControlStack(FB_CONF_MAX_NESTING_DEPTH)
+        self._c_context.call_stack = self._call_stack_native.address
+        self._c_context.call_base = 0
+        self._c_context.call_offset = 0
 
     @property
     def context_ptr(self) -> ctypes.c_void_p:
@@ -587,6 +640,16 @@ class InterpreterContext:
     def native_context(self) -> ExecutionContextNative:
         """Return the shared Native ABI record used by interpreter and JIT."""
         return self._c_context
+
+    @property
+    def native_call_stack(self) -> NativeCallFrameStack:
+        """Return the fixed Native CallFrame stack behind ``call_frame_stack``."""
+        return self._call_stack_native
+
+    @property
+    def context_view(self) -> memoryview:
+        """Return the zero-copy execution-context ABI record view."""
+        return self._context_view
 
     def begin_call_frame(
         self,
@@ -605,13 +668,10 @@ class InterpreterContext:
         local_slot_count = frame.local_slot_count
         assert len(raw_args) == frame.param_packed_slot_count
         assert frame_offset + local_slot_count <= self.local_stack.capacity
-        self.call_frame_offsets.append(frame_offset)
         if not self.call_frame_stack.push_back(frame):
-            self.call_frame_offsets.pop_back()
             assert False, "call-frame stack capacity exceeded"
         if not self.local_stack.push_zeroed(local_slot_count):
             self.call_frame_stack.pop_back()
-            self.call_frame_offsets.pop_back()
             assert False, "local stack capacity exceeded"
         raw_offset = 0
         for index in range(frame.param_count):
@@ -623,19 +683,18 @@ class InterpreterContext:
         assert raw_offset == len(raw_args)
         self.local_offset += local_slot_count
         self._c_context.local_offset = self.local_offset
+        self._c_context.call_offset = len(self.call_frame_stack)
         return frame
 
     def end_call_frame(self, frame: CallFrame) -> None:
         """Pop the active frame and its locals from the context stacks."""
-        assert self.call_frame_offsets
-        assert self.call_frame_offsets[-1] == frame.frame_offset
         assert self.call_frame_stack
         assert self.call_frame_stack[-1] is frame
         self.local_stack.truncate(frame.frame_offset)
         self.local_offset = frame.frame_offset
         self._c_context.local_offset = self.local_offset
-        self.call_frame_offsets.pop_back()
         self.call_frame_stack.pop_back()
+        self._c_context.call_offset = len(self.call_frame_stack)
 
     def bind_handler_state(self, ip: int, frame: CallFrame) -> None:
         """Publish the current native handler state in the execution context."""
@@ -644,10 +703,50 @@ class InterpreterContext:
         self._c_context.ip = ip
 
 
-def _read_memarg(code: cython.const[cython.uchar][:], ip: int) -> tuple[int, int]:
+def _read_memarg(code: bytes, ip: int) -> tuple[int, int]:
     align, off = decode_unsigned(code, ip + 1)
     mem_offset, next_ip = decode_unsigned(code, off)
     return mem_offset, next_ip
+
+
+class _PyBuffer(ctypes.Structure):
+    """Minimal CPython buffer record used to obtain a read-only view address."""
+
+    _fields_ = (
+        ("buf", ctypes.c_void_p),
+        ("obj", ctypes.c_void_p),
+        ("len", ctypes.c_ssize_t),
+        ("itemsize", ctypes.c_ssize_t),
+        ("format", ctypes.c_char_p),
+        ("ndim", ctypes.c_int),
+        ("shape", ctypes.c_void_p),
+        ("strides", ctypes.c_void_p),
+        ("suboffsets", ctypes.c_void_p),
+        ("internal", ctypes.c_void_p),
+    )
+
+
+def _native_buffer_address(view: memoryview) -> int:
+    """Return a non-owning buffer address for both writable and ROM views."""
+
+    if view.nbytes == 0:
+        return 0
+    try:
+        return ctypes.addressof(ctypes.c_ubyte.from_buffer(view))
+    except (TypeError, ValueError):
+        descriptor = _PyBuffer()
+        get_buffer = ctypes.pythonapi.PyObject_GetBuffer
+        get_buffer.argtypes = (ctypes.py_object, ctypes.POINTER(_PyBuffer), ctypes.c_int)
+        get_buffer.restype = ctypes.c_int
+        release_buffer = ctypes.pythonapi.PyBuffer_Release
+        release_buffer.argtypes = (ctypes.POINTER(_PyBuffer),)
+        release_buffer.restype = None
+        assert get_buffer(view, ctypes.byref(descriptor), 0) == 0
+        try:
+            assert descriptor.buf is not None
+            return int(descriptor.buf)
+        finally:
+            release_buffer(ctypes.byref(descriptor))
 
 
 class CallFrame:
@@ -660,6 +759,7 @@ class CallFrame:
     __slots__ = (
         "_frames",
         "_locals",
+        "_native",
         "boundary_loops_to",
         "boundary_next_pc",
         "code",
@@ -737,10 +837,36 @@ class CallFrame:
         # owning RuntimeEngine, so that path is byte-for-byte unchanged.
         self.boundary_next_pc: int | None = None
         self.boundary_loops_to: int | None = None
+        self._native = CallFrameNative(
+            func_index=self.func_index,
+            code=_native_buffer_address(self.code),
+            code_size=len(self.code),
+            control_map=0,
+            local_base=self.frame_offset,
+            local_count=self.local_count,
+            local_slot_count=self.local_slot_count,
+            slot_words=self.local_widths.slot_words,
+            local_width_map=_native_buffer_address(self.local_widths.raw_view),
+            local_width_count=self.local_count,
+            param_count=self.param_count,
+            param_packed_slot_count=self.param_packed_slot_count,
+            result_arity=self.result_arity,
+            control_base=self.control_base,
+            return_ip=0xFFFF_FFFF,
+            return_func_index=0xFFFF_FFFF,
+            boundary_next_pc=0xFFFF_FFFF,
+            boundary_loops_to=0xFFFF_FFFF,
+        )
 
     @property
     def context_ptr(self) -> ctypes.c_void_p:
         return self.context.context_ptr
+
+    @property
+    def native(self) -> CallFrameNative:
+        """Return the flat native activation descriptor stored on the call stack."""
+
+        return self._native
 
     @property
     def frames(self) -> _ControlFrameWindow:
@@ -1043,6 +1169,29 @@ class Interpreter:
             if ip == RETURN_SENTINEL_IP:
                 break
             assert 0 <= ip < code_len
+
+            native_status, native_ip, native_size, native_trap = _interpreter_native.run_step(
+                code,
+                ctx.context_view,
+                values.raw_view,
+                locals_arr._storage.raw_view,
+                ctx.control_frame_stack.raw_view,
+                len(values),
+                ip,
+                locals_arr._slot_count,
+                frame.control_base,
+            )
+            values.set_size(native_size)
+            if native_status == 1:
+                ip = RETURN_SENTINEL_IP
+                break
+            if native_status == 2:
+                trap = Trap(TrapCode(native_trap))
+                self._abort_call(call_state, trap, ip)
+                return None
+            assert native_status == 0
+            ip = int(native_ip)
+            ctx.native_context.ip = ip
             opcode = code[ip]
             handler = _HANDLERS[opcode]
             assert handler is not None, f"interpreter: unhandled opcode 0x{opcode:02X}"
@@ -1214,7 +1363,6 @@ class Interpreter:
         )
         return frame, frame.locals
 
-    @cython.locals(ip=cython.Py_ssize_t, op=cython.uchar)
     def step(self, call_state: InterpreterCall) -> InterpreterCall:
         """
         Executes one basic block (up to the next boundary instruction) and returns
@@ -1224,7 +1372,6 @@ class Interpreter:
         """
         return self._step(call_state, stop_at_boundary=True)
 
-    @cython.locals(ip=cython.Py_ssize_t, op=cython.uchar, stop_at_boundary=cython.bint)
     def _step(self, call_state: InterpreterCall, stop_at_boundary: bool) -> InterpreterCall:
         """Run until a boundary or completion, depending on the driving caller."""
         while True:
@@ -1413,6 +1560,8 @@ class Interpreter:
             )
         except Trap as trap:
             return trap
+        callee_frame.native.return_ip = next_ip
+        callee_frame.native.return_func_index = call_state.func_index
         if not call_state.call_stack.push_back((call_state.func_index, resume_cont)):
             return Trap(TrapCode.CALL_STACK_CAPACITY)
         call_state.func_index = callee_func_index
@@ -1528,7 +1677,6 @@ def _h_end(
 
 
 @_handler(BR)
-@cython.locals(depth=cython.Py_ssize_t)
 def _h_br(
     ctx: InterpreterContext, sp: NativeValueStack, local_base: _LocalStackWindow, tos: int
 ) -> _HandlerResult:
@@ -1545,7 +1693,6 @@ def _h_br(
 
 
 @_handler(BR_IF)
-@cython.locals(depth=cython.Py_ssize_t, next_ip=cython.Py_ssize_t, cond=cython.longlong)
 def _h_br_if(
     ctx: InterpreterContext, sp: NativeValueStack, local_base: _LocalStackWindow, tos: int
 ) -> _HandlerResult:
@@ -1646,7 +1793,6 @@ def _h_select(
 
 
 @_handler(LOCAL_GET)
-@cython.locals(idx=cython.Py_ssize_t, next_ip=cython.Py_ssize_t)
 def _h_local_get(
     ctx: InterpreterContext, sp: NativeValueStack, local_base: _LocalStackWindow, tos: int
 ) -> _HandlerResult:
@@ -1663,7 +1809,6 @@ def _h_local_get(
 
 
 @_handler(LOCAL_SET)
-@cython.locals(idx=cython.Py_ssize_t, next_ip=cython.Py_ssize_t)
 def _h_local_set(
     ctx: InterpreterContext, sp: NativeValueStack, local_base: _LocalStackWindow, tos: int
 ) -> _HandlerResult:
@@ -1680,7 +1825,6 @@ def _h_local_set(
 
 
 @_handler(LOCAL_TEE)
-@cython.locals(idx=cython.Py_ssize_t, next_ip=cython.Py_ssize_t)
 def _h_local_tee(
     ctx: InterpreterContext, sp: NativeValueStack, local_base: _LocalStackWindow, tos: int
 ) -> _HandlerResult:
@@ -1697,7 +1841,6 @@ def _h_local_tee(
 
 
 @_handler(I32_CONST)
-@cython.locals(val=cython.longlong, next_ip=cython.Py_ssize_t)
 def _h_i32_const(
     ctx: InterpreterContext, sp: NativeValueStack, local_base: _LocalStackWindow, tos: int
 ) -> _HandlerResult:
@@ -2134,7 +2277,6 @@ def _h_i32_le_u(
 
 
 @_handler(I32_GE_S)
-@cython.locals(a=cython.longlong, b=cython.longlong)
 def _h_i32_ge_s(
     ctx: InterpreterContext, sp: NativeValueStack, local_base: _LocalStackWindow, tos: int
 ) -> _HandlerResult:
@@ -2208,7 +2350,6 @@ def _h_i32_popcnt(
 
 
 @_handler(I32_ADD)
-@cython.locals(a=cython.longlong, b=cython.longlong)
 def _h_i32_add(
     ctx: InterpreterContext, sp: NativeValueStack, local_base: _LocalStackWindow, tos: int
 ) -> _HandlerResult:
@@ -2221,7 +2362,6 @@ def _h_i32_add(
 
 
 @_handler(I32_SUB)
-@cython.locals(a=cython.longlong, b=cython.longlong)
 def _h_i32_sub(
     ctx: InterpreterContext, sp: NativeValueStack, local_base: _LocalStackWindow, tos: int
 ) -> _HandlerResult:
@@ -2234,7 +2374,6 @@ def _h_i32_sub(
 
 
 @_handler(I32_MUL)
-@cython.locals(a=cython.longlong, b=cython.longlong)
 def _h_i32_mul(
     ctx: InterpreterContext, sp: NativeValueStack, local_base: _LocalStackWindow, tos: int
 ) -> _HandlerResult:

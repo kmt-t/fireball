@@ -356,6 +356,16 @@ class RuntimeEngine:
                 frame_here.frames.truncate(block_here.frame_depth)
             frame_here.boundary_next_pc = block_here.next_pc if block_here is not None else None
             frame_here.boundary_loops_to = block_here.loops_to if block_here is not None else None
+            frame_here.native.boundary_next_pc = (
+                block_here.next_pc
+                if block_here is not None and block_here.next_pc is not None
+                else 0xFFFF_FFFF
+            )
+            frame_here.native.boundary_loops_to = (
+                block_here.loops_to
+                if block_here is not None and block_here.loops_to is not None
+                else 0xFFFF_FFFF
+            )
 
             trace = self.jit_runtime.lookup(pc) if self.jit_runtime is not None else None
             if trace is not None and not self._trace_fits_operand_stack(
@@ -442,6 +452,16 @@ class RuntimeEngine:
                 frame_here.frames.truncate(block_here.frame_depth)
             frame_here.boundary_next_pc = block_here.next_pc if block_here is not None else None
             frame_here.boundary_loops_to = block_here.loops_to if block_here is not None else None
+            frame_here.native.boundary_next_pc = (
+                block_here.next_pc
+                if block_here is not None and block_here.next_pc is not None
+                else 0xFFFF_FFFF
+            )
+            frame_here.native.boundary_loops_to = (
+                block_here.loops_to
+                if block_here is not None and block_here.loops_to is not None
+                else 0xFFFF_FFFF
+            )
 
             trace = self.jit_runtime.lookup(pc) if self.jit_runtime is not None else None
             if trace is not None and not self._trace_fits_operand_stack(

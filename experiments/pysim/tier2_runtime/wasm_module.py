@@ -115,6 +115,12 @@ class LocalWidthMap:
         assert 0 <= index < self.count
         return 1 << self._view.at(index)
 
+    @property
+    def raw_view(self) -> memoryview:
+        """Return the packed two-bit local-width map as a zero-copy byte view."""
+
+        return memoryview(self._storage.buffer)
+
     def __len__(self) -> int:
         return self.count
 

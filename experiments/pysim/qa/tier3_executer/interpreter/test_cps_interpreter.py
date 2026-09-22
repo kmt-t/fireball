@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-"""Cross-backend tests for the optional native CPS handler probe."""
+"""Tests for the native C++ CPS handler entry point."""
 
 import sys
 from pathlib import Path
@@ -9,17 +9,38 @@ _TEST_FILE = Path(__file__).resolve()
 _PYSIM_DIR = _TEST_FILE.parents[3]
 
 
+from interop_abi import ExecutionContextNative, NativeValueStack
+from native_stacks import NativeControlStack
 from tier3_executer.interpreter.interpreter import _HANDLERS
-from tier3_executer.interpreter.interpreter_cps import BACKEND, HANDLER_COUNT, NATIVE_AVAILABLE
+from tier3_executer.interpreter import _interpreter_native
 
 
-def test_cps_entry_is_python_compatible() -> None:
-    assert BACKEND in ("python", "native")
-    assert NATIVE_AVAILABLE == (BACKEND == "native")
-
-
-def test_native_cps_chain_covers_interpreter_handler_table() -> None:
-    assert HANDLER_COUNT == sum(1 for handler in _HANDLERS if handler is not None)
+def test_native_cps_entry_uses_four_logical_arguments() -> None:
+    stack = NativeValueStack()
+    locals_stack = NativeValueStack()
+    control_stack = NativeControlStack()
+    context = ExecutionContextNative()
+    code = memoryview(bytearray((0x41, 3, 0x41, 4, 0x6A, 0x0B)))
+    status, next_ip, stack_size, trap_code = _interpreter_native.run_step(
+        code,
+        memoryview(context),
+        stack.raw_view,
+        locals_stack.raw_view,
+        control_stack.raw_view,
+        0,
+        0,
+        0,
+        0,
+    )
+    assert (status, next_ip, stack_size, trap_code) == (1, 0xFFFF_FFFF, 1, 0)
+    assert stack.raw_at(0) == 7
+    assert context.code_size == len(code)
+    assert context.control_stack != 0
+    assert context.control_base == 0
+    assert context.stack_checkpoint == 1
+    assert context.ip == len(code)
+    assert context.sp_offset == 1
+    assert context.cf_offset == 0
 
 
 ALL_TESTS = sorted(
@@ -32,4 +53,4 @@ if __name__ == "__main__":
     for test in ALL_TESTS:
         test()
         print(f"[PASS] {test.__name__}")
-    print(f"[PASS] All {len(ALL_TESTS)} CPS backend tests passed ({BACKEND}).")
+    print(f"[PASS] All {len(ALL_TESTS)} native C++ CPS tests passed.")

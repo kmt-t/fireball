@@ -2,4 +2,4 @@
 
 from __future__ import annotations
 
-JIT_CONTEXT_SIZE_BYTES: int = 64
+JIT_CONTEXT_SIZE_BYTES: int = 112

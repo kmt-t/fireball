@@ -192,8 +192,8 @@ uv run --system-certs --with wasmtime python experiments/pysim/qa/run_all.py
 uv run --system-certs --with wasmtime python experiments/pysim/aobench.py
 ```
 
-### （任意）JIT トレース呼び出しの Cython ネイティブアクセラレータ
-`RuntimeEngine._invoke_trace` は既定で `ctypes.CFUNCTYPE`（libffi トランポリン、~1.1us/call）経由でコンパイル済みトレースを呼ぶ。`experiments/pysim/tier3_executer/jit/native_trace_call.pyx` をビルドすると、同じ CPS 4引数呼び出し規約のまま生の C 関数ポインタ呼び出しに置き換わり、`bench_jit.py` の JIT 対インタープリタ比が実測で ~1.2x → ~1.8x に改善する。未ビルドでも自動的に ctypes 経路へフォールバックするため、素の Python 環境（`.pyd`/`.so` なし）でも通常どおり動作する。
+### （任意）JIT トレース呼び出しのC++ネイティブブリッジ
+`RuntimeEngine._invoke_trace` は既定で `ctypes.CFUNCTYPE`（libffiトランポリン）経由でコンパイル済みトレースを呼ぶ。`tier3_executer/jit/native_trace_call.cxx`をビルドすると、同じCPS 4引数ABIの生関数ポインタ呼び出しへ切り替わる。ブリッジはCPython APIの薄い入口だけを持ち、トレース本体はGILを解放して実行する。未ビルド時は自動的にctypes経路へフォールバックする。
 ```bash
 # Windows: clang-cl + Visual Studio Build Tools + Windows SDK が必要
 powershell experiments/pysim/tier3_executer/jit/build_native.ps1
@@ -202,25 +202,16 @@ powershell experiments/pysim/tier3_executer/jit/build_native.ps1
 ./experiments/pysim/tier3_executer/jit/build_native.sh
 ```
 
-### （任意）Tier 3 インタープリタホットパスの Cython Pure-Python モードアクセラレータ
-`experiments/pysim/tier3_executer/interpreter/interpreter.py` のディスパッチループ（`Interpreter.step()`）と最頻出ハンドラ（`local.get`/`local.set`/`i32.const`/`i32.add`/`i32.sub`/`i32.ge_s`/`br_if` 等）、および `_to_i32`/`_to_u32` 等のラップ関数は、Cython Pure-Python モード（`@cython.locals(...)` によるローカル変数の C 型付け）で書かれている。Cython パッケージは型注釈・デコレータの実行に必要なため、`requirements.txt` から必ずインストールする。未ビルド時は通常の Python 実装として動作し、ビルドすると同じディレクトリに `.pyd`/`.so` が生成され、Python の import 解決が同名の `.py` より優先して読み込むため、他コードの変更なしに透過的に高速化される。`bench_jit.py` のインタープリタ実行時間が実測で無型コンパイル比 ~15〜20% 改善する（更なる高速化には `_HANDLERS` テーブル経由の多態的呼び出し自体の再設計が必要）。
-```bash
-# Windows: clang-cl + Visual Studio Build Tools + Windows SDK が必要
-powershell experiments/pysim/tier3_executer/interpreter/build_cython.ps1
+### Tier 3インタープリタの境界
+`tier3_executer/interpreter/native_interpreter.cxx`は、本番インタープリタに対応するC++の固定256スロットハンドラ表とCPS step入口を持つ。handlerは`ctx, sp, local_base, tos`の4論理引数を共有し、Windows x64では`__fastcall`、組み込みARMではAAPCSとして宣言する。Python側はネイティブ実行コンテキスト、operand/local/controlの固定領域を`memoryview`で渡し、C++が命令列とスタックを境界命令まで連続実行する。`bytes`のコピーや整数アドレス化は行わない。
 
-# Linux/WSL: clang が必要
-./experiments/pysim/tier3_executer/interpreter/build_cython.sh
-```
-
-### （任意）Cython C-level CPSハンドラ実験
-`experiments/pysim/tier3_executer/interpreter/interpreter_cps.py` は実インタープリタの通常Python版とCython CPSチェインの共通入口である。`cps_chain.pyx` が `interpreter.py` の全ハンドラを4引数C関数ポインタ経由で連鎖し、通常命令の末尾継続には `[[clang::musttail]]` を使用する。分岐・呼出し・戻りはチェイン境界として既存インタープリタへ戻るため、AO-Bench全体を同じ入口で検証できる。
+型幅とロード時control mapをnative contextへ反映するまで、i64/f32/f64を含み得る`local.*`、`drop`、`select`、制御・call・memory系はC++で1ワード扱いせず、現在のPCでPythonハンドラへフォールバックする。C++側で完結するi32定数・比較・算術・ビット演算は、Pythonのハンドラ呼び出しとスタック操作なしで連続実行する。このフォールバックは後方互換層ではなく、仕様で定義された実行境界である。Tier 3実行にはC++拡張のビルドを必須とする。
 ```bash
 # Windows: clang-cl + Visual Studio Build Tools + Windows SDK が必要
 powershell experiments/pysim/tier3_executer/interpreter/build_native.ps1
-$env:PYTHONPATH = "$env:TEMP/fireball-pysim-native-cps"
-powershell experiments/pysim/aobench.py --native-cps
 
 # Linux/WSL: clang が必要
 ./experiments/pysim/tier3_executer/interpreter/build_native.sh
-PYTHONPATH=/tmp/fireball-pysim-native uv run --system-certs python experiments/pysim/aobench.py --native-cps
 ```
+
+実行ホットパスは`native_interpreter.cxx`のhandler tableと`run_step`であり、LEB128はロード時デコーダの責務で実行時境界には入らない。旧Cython/CPS互換入口は提供しない。

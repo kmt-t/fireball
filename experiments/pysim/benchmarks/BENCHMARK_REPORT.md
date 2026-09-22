@@ -9,8 +9,8 @@ Section 1〜5は 2026-09-18 に、JIT Direct-Mapped Folding XORキャッシュ�
 ## 1. 測定環境・実行構成
 
 - **プラットフォーム**: Windows (AMD64)
-- **ランタイム**: Python 3.14 (pysim) / Cython CPS 4-argument C-Calling Convention
-- **Cython実行状況**: `tier3_executer/jit/native_trace_call.pyd` をJITのネイティブ呼び出し経路で使用。AO-BenchのTier 3 Interpreterは `cps_chain.pyx` をclang-clでビルドした `_interpreter_cps_native.pyd` によるネイティブCPSチェインを使用し、命令意味論は既存Pythonハンドラ本体を呼び出して測定。
+- **ランタイム**: Python 3.14 (pysim) / 4引数CPS ABI
+- **ネイティブ実行状況**: `tier3_executer/jit/native_trace_call.pyd` をJITのネイティブ呼び出し経路で使用。LEB128は任意のPythran AOTカーネルを使用し、インタープリタのクラス主体のディスパッチはPython実装として測定。
 - **ローカル領域レイアウト**: `WASM_LOCAL_ALIGNMENT_BYTES` を基準に8バイト固定スロットへ統一。Native value stack の物理容量は `NATIVE_VALUE_STACK_CAPACITY`（128 raw words）。
 - **実行コマンド**:
   ```bash
@@ -20,11 +20,10 @@ Section 1〜5は 2026-09-18 に、JIT Direct-Mapped Folding XORキャッシュ�
   ```bash
   .venv/Scripts/python.exe experiments/pysim/benchmarks/aobench/bench_aobench.py --debug
   ```
-- **今回のネイティブCPS AO-Bench実行コマンド**:
+- **ネイティブJITブリッジの実行コマンド**:
   ```powershell
-  powershell -ExecutionPolicy Bypass -File experiments/pysim/tier3_executer/interpreter/build_native.ps1
-  $env:PYTHONPATH = "$env:TEMP\fireball-pysim-native-cps"
-  uv run --system-certs python experiments/pysim/aobench.py --native-cps
+  powershell -ExecutionPolicy Bypass -File experiments/pysim/tier3_executer/jit/build_native.ps1
+  uv run --system-certs python experiments/pysim/aobench.py
   ```
 
 ### 1.1 2026-09-18 Direct-Mapped Folding XORキャッシュ 4→16スロット拡張後の再測定
@@ -221,8 +220,8 @@ Section 5の速度比はプロセス起動やOSスケジューリングの影響
 ## 5. シミュレータ性能特性と C++23 実機実装への予測
 
 ### 5.1 Python シミュレータ上での特性分析
-2026-09-17の現行ネイティブCPS経路では、Tier 2が `7235.07 ms`、Tier 3が `7545.16 ms`、速度比は `0.96x` となった。Tier 2は `cps_chain.pyx` の4引数C関数ポインタチェインを通過し、各命令の意味論は既存Pythonハンドラ本体で実行した。Tier 3の共有8KBコード領域へのトレース再配置後も、描画結果は528バイトで完全一致した。今回の単一測定では共有コード領域の実行経路がTier 3の速度向上を示さず、性能値は同一環境での比較値として扱う。
-1. **Cython CPSチェイン境界**:
+2026-09-17の旧ネイティブCPS経路では、Tier 2が `7235.07 ms`、Tier 3が `7545.16 ms`、速度比は `0.96x` となった。各命令の意味論は既存Pythonハンドラ本体で実行した。Tier 3の共有8KBコード領域へのトレース再配置後も、描画結果は528バイトで完全一致した。今回の単一測定値は同一環境での比較値としてのみ扱う。
+1. **JITトレースのC++ブリッジ境界**:
    - 通常命令ではC関数ポインタ表から次ハンドラへ継続し、基本ブロック境界およびジャンプ・分岐・呼出し・戻りでインタープリタ境界へ戻る。今回の統合ベンチマーク出力ではCPS継続回数は個別に公開していないため、チェイン率は主張しない。
 2. **オンデマンド・コンパイルと動的解決**:
    - Tier 3ではホットスポット到達時の Copy-and-Patch コンパイル処理が同一スレッド内で逐次実行されるため、フレーム所要時間に含まれる。

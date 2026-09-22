@@ -572,6 +572,19 @@ def test_intp_70_to_72_direct_bytecode_execution():
     assert frame.control_map is not None
     assert frame.control_map is module.functions[0].control_map
     assert context.call_frame_stack[-1] is frame
+    assert context.native_context.call_stack == context.native_call_stack.address
+    assert context.native_context.call_offset == 1
+    native_frame = context.native_call_stack[-1]
+    assert native_frame.func_index == 0
+    assert native_frame.code != 0
+    assert native_frame.code_size == len(frame.code)
+    assert native_frame.local_base == frame.frame_offset
+    assert native_frame.local_count == frame.local_count
+    assert native_frame.local_slot_count == frame.local_slot_count
+    assert native_frame.slot_words == frame.local_widths.slot_words
+    assert native_frame.local_width_map != 0
+    assert native_frame.param_count == frame.param_count
+    assert native_frame.param_packed_slot_count == frame.param_packed_slot_count
     # Two i32 locals: the frame uses 4-byte slots, so it occupies two raw words.
     assert frame.local_widths.slot_words == 1
     assert context.local_offset == 2
@@ -580,6 +593,8 @@ def test_intp_70_to_72_direct_bytecode_execution():
     context.end_call_frame(frame)
     assert context.local_offset == 0
     assert context.native_context.local_offset == 0
+    assert context.native_context.call_offset == 0
+    assert not context.native_call_stack
     assert len(context.local_stack) == 0
 
     # 2. TEST-INTP-71 & TEST-INTP-72: Execution proceeds by direct byte reading and ip addition

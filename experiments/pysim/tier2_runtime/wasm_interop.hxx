@@ -14,6 +14,9 @@
 extern "C" {
 #endif
 
+struct fireball_control_stack_native;
+struct fireball_call_stack_native;
+
 typedef struct fireball_execution_context_native {
   uint32_t ip;
   uint32_t sp_base;
@@ -31,6 +34,14 @@ typedef struct fireball_execution_context_native {
   uint32_t globals_limit;
   uint32_t handler_table;
   uint32_t reserved0;
+  const uint8_t *code;
+  uint32_t code_size;
+  struct fireball_control_stack_native *control_stack;
+  uint32_t control_base;
+  uint32_t stack_checkpoint;
+  struct fireball_call_stack_native *call_stack;
+  uint32_t call_base;
+  uint32_t call_offset;
 } fireball_execution_context_native;
 
 typedef struct fireball_const_buffer_view_native {
@@ -71,6 +82,37 @@ typedef struct fireball_wasm_run_result_native {
   uint32_t reserved0;
   uint64_t *results;
 } fireball_wasm_run_result_native;
+
+typedef struct fireball_call_frame_native {
+  uint32_t func_index;
+  const uint8_t *code;
+  uint32_t code_size;
+  const uint32_t *control_map;
+  uint32_t local_base;
+  uint32_t local_count;
+  uint32_t local_slot_count;
+  uint32_t slot_words;
+  const uint8_t *local_width_map;
+  uint32_t local_width_count;
+  uint32_t param_count;
+  uint32_t param_packed_slot_count;
+  uint32_t result_arity;
+  uint32_t control_base;
+  uint32_t return_ip;
+  uint32_t return_func_index;
+  uint32_t boundary_next_pc;
+  uint32_t boundary_loops_to;
+} fireball_call_frame_native;
+
+enum {
+  FIREBALL_NATIVE_CALL_STACK_CAPACITY = 32,
+};
+
+typedef struct fireball_call_stack_native {
+  fireball_call_frame_native frames[FIREBALL_NATIVE_CALL_STACK_CAPACITY];
+  uint32_t size;
+  uint32_t reserved0;
+} fireball_call_stack_native;
 
 enum {
   FIREBALL_NATIVE_VALUE_STACK_CAPACITY = 128,
@@ -117,6 +159,8 @@ using wasm_function_view_native = ::fireball_wasm_function_view_native;
 using wasm_module_view_native = ::fireball_wasm_module_view_native;
 using wasm_run_request_native = ::fireball_wasm_run_request_native;
 using wasm_run_result_native = ::fireball_wasm_run_result_native;
+using call_frame_native = ::fireball_call_frame_native;
+using call_stack_native = ::fireball_call_stack_native;
 using value_stack_native = ::fireball_value_stack_native;
 using control_frame_native = ::fireball_control_frame_native;
 using control_stack_native = ::fireball_control_stack_native;
@@ -142,12 +186,24 @@ static_assert(__is_standard_layout(control_frame_native));
 static_assert(__is_trivially_copyable(control_frame_native));
 static_assert(__is_standard_layout(control_stack_native));
 static_assert(__is_trivially_copyable(control_stack_native));
+static_assert(__is_standard_layout(call_frame_native));
+static_assert(__is_trivially_copyable(call_frame_native));
+static_assert(__is_standard_layout(call_stack_native));
+static_assert(__is_trivially_copyable(call_stack_native));
 
-static_assert(sizeof(execution_context_native) == 64);
+static_assert(sizeof(execution_context_native) == 112);
 static_assert(offsetof(execution_context_native, ip) == 0x00);
 static_assert(offsetof(execution_context_native, mem_base) == 0x28);
 static_assert(offsetof(execution_context_native, handler_table) == 0x38);
 static_assert(offsetof(execution_context_native, reserved0) == 0x3c);
+static_assert(offsetof(execution_context_native, code) == 0x40);
+static_assert(offsetof(execution_context_native, code_size) == 0x48);
+static_assert(offsetof(execution_context_native, control_stack) == 0x50);
+static_assert(offsetof(execution_context_native, control_base) == 0x58);
+static_assert(offsetof(execution_context_native, stack_checkpoint) == 0x5c);
+static_assert(offsetof(execution_context_native, call_stack) == 0x60);
+static_assert(offsetof(execution_context_native, call_base) == 0x68);
+static_assert(offsetof(execution_context_native, call_offset) == 0x6c);
 static_assert(sizeof(const_buffer_view_native) == 16);
 static_assert(sizeof(wasm_function_view_native) == 24);
 static_assert(sizeof(wasm_module_view_native) == 24);
@@ -160,6 +216,14 @@ static_assert(sizeof(control_frame_native) == 20);
 static_assert(sizeof(control_stack_native) == 648);
 static_assert(offsetof(control_stack_native, frames) == 0);
 static_assert(offsetof(control_stack_native, size) == 640);
+static_assert(sizeof(call_frame_native) == 96);
+static_assert(offsetof(call_frame_native, func_index) == 0);
+static_assert(offsetof(call_frame_native, code) == 8);
+static_assert(offsetof(call_frame_native, control_map) == 24);
+static_assert(offsetof(call_frame_native, local_width_map) == 48);
+static_assert(sizeof(call_stack_native) == 3080);
+static_assert(offsetof(call_stack_native, frames) == 0);
+static_assert(offsetof(call_stack_native, size) == 3072);
 
 } // namespace fireball::runtime
 #endif

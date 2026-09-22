@@ -29,9 +29,9 @@ try:
 except ImportError:
     wasmtime = None
 
-from tier3_platform.drivers.hal.dummy import DummyDriver
-from tier3_executer.interpreter.interpreter_cps import BACKEND, NATIVE_AVAILABLE, Interpreter, InterpreterBindings
 from system import System
+from tier3_executer.interpreter.interpreter import Interpreter, InterpreterBindings
+from tier3_platform.drivers.hal.dummy import DummyDriver
 from tier3_platform.drivers.wasi.context import WasiHostContext
 from wasm_reader import parse
 
@@ -407,7 +407,7 @@ def run_aobench():
     # 4. Tier 3: Pure Threaded CPS Interpreter Execution
     print(
         f"\n[*] Step 3: Executing on Tier 3 Threaded CPS Interpreter "
-        f"(backend={BACKEND}, {WIDTH}x{HEIGHT}, {AO_SAMPLES} samples/hit)..."
+        f"(backend=native-cpp-cps, {WIDTH}x{HEIGHT}, {AO_SAMPLES} samples/hit)..."
     )
     interp_t2 = Interpreter(
         module, InterpreterBindings.with_memory_and_functions(wasi_ctx.guest_memory, host_funcs)
@@ -497,11 +497,6 @@ def run_aobench():
 
 
 if __name__ == "__main__":
-    if "--native-cps" in sys.argv:
-        assert NATIVE_AVAILABLE, (
-            "--native-cps requires the optional _interpreter_cps_native extension; "
-            "build it with build_interpreter_cps_native.ps1 first"
-        )
     # Verify Float32 Ambient Occlusion Raytracer if wasmtime is available
     if wasmtime is not None:
         print("[*] Running Float32 Ambient Occlusion Benchmark...")

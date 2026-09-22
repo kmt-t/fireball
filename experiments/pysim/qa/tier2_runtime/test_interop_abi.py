@@ -23,10 +23,18 @@ from wasm_module import F32, F64, I32, I64, LocalWidthMap
 
 
 def test_native_layout_matches_x64_jit_context():
-    assert ctypes.sizeof(ExecutionContextNative) == 64
+    assert ctypes.sizeof(ExecutionContextNative) == 112
     assert ExecutionContextNative.mem_base.offset == 0x28
     assert ExecutionContextNative.handler_table.offset == 0x38
     assert ExecutionContextNative.reserved0.offset == 0x3C
+    assert ExecutionContextNative.code.offset == 0x40
+    assert ExecutionContextNative.code_size.offset == 0x48
+    assert ExecutionContextNative.control_stack.offset == 0x50
+    assert ExecutionContextNative.control_base.offset == 0x58
+    assert ExecutionContextNative.stack_checkpoint.offset == 0x5C
+    assert ExecutionContextNative.call_stack.offset == 0x60
+    assert ExecutionContextNative.call_base.offset == 0x68
+    assert ExecutionContextNative.call_offset.offset == 0x6C
 
     ctx = ExecutionContextNative()
     ctx.ip = 0x1234
@@ -83,7 +91,7 @@ def test_interpreter_and_jit_contexts_share_native_record_type():
     )
     assert jit_context.context_ptr.value == ctypes.addressof(jit_context.native_context)
     assert memory_context.mem_ptr.value != 0
-    assert ctypes.sizeof(memory_context.native_context) == 64
+    assert ctypes.sizeof(memory_context.native_context) == 112
 
 
 def test_native_value_stack_owns_the_fixed_storage():

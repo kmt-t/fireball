@@ -8,10 +8,14 @@ adapter implementation.
 
 from __future__ import annotations
 
+import ctypes
 from enum import IntEnum
 
 from interop_abi import (
+    NATIVE_CALL_STACK_CAPACITY,
     NATIVE_CONTROL_STACK_CAPACITY,
+    CallFrameNative,
+    CallStackNative,
     ControlFrameNative,
     ControlStackNative,
     NativeValueStack,
@@ -28,12 +32,13 @@ class ControlFrameKind(IntEnum):
 class NativeControlStack:
     """Python access shim over the fixed Native control-frame record."""
 
-    __slots__ = ("_capacity", "_native")
+    __slots__ = ("_capacity", "_native", "_native_view")
 
     def __init__(self, capacity: int = NATIVE_CONTROL_STACK_CAPACITY):
         assert 0 <= capacity <= NATIVE_CONTROL_STACK_CAPACITY
         self._capacity = capacity
         self._native = ControlStackNative()
+        self._native_view = memoryview(self._native)
 
     @property
     def capacity(self) -> int:
@@ -42,6 +47,12 @@ class NativeControlStack:
     @property
     def native(self) -> ControlStackNative:
         return self._native
+
+    @property
+    def raw_view(self) -> memoryview:
+        """Return the zero-copy native control-frame record view."""
+
+        return self._native_view
 
     def __len__(self) -> int:
         return int(self._native.size)
@@ -94,6 +105,79 @@ class NativeControlStack:
 
     def set_size(self, size: int) -> None:
         """Set the native control-stack pointer without walking frames."""
+
+        assert 0 <= size <= self._capacity
+        self._native.size = size
+
+
+class NativeCallFrameStack:
+    """Python access shim over the context-owned Native call-frame stack."""
+
+    __slots__ = ("_capacity", "_native", "_native_address", "_native_view")
+
+    def __init__(self, capacity: int = NATIVE_CALL_STACK_CAPACITY):
+        assert 0 <= capacity <= NATIVE_CALL_STACK_CAPACITY
+        self._capacity = capacity
+        self._native = CallStackNative()
+        self._native_view = memoryview(self._native)
+        self._native_address = ctypes.addressof(self._native)
+
+    @property
+    def capacity(self) -> int:
+        return self._capacity
+
+    @property
+    def native(self) -> CallStackNative:
+        return self._native
+
+    @property
+    def address(self) -> int:
+        return self._native_address
+
+    @property
+    def raw_view(self) -> memoryview:
+        """Return the zero-copy native call-stack record view."""
+
+        return self._native_view
+
+    def __len__(self) -> int:
+        return int(self._native.size)
+
+    def __bool__(self) -> bool:
+        return self._native.size != 0
+
+    def _index(self, index: int) -> int:
+        size = int(self._native.size)
+        normalized = index if index >= 0 else size + index
+        if not 0 <= normalized < size:
+            assert False, "native call-frame stack index out of range"
+        return normalized
+
+    def __getitem__(self, index: int) -> CallFrameNative:
+        return self._native.frames[self._index(index)]
+
+    def push_back(self, frame: CallFrameNative) -> bool:
+        size = int(self._native.size)
+        if size >= self._capacity:
+            return False
+        self._native.frames[size] = frame
+        self._native.size = size + 1
+        return True
+
+    def pop_back(self) -> CallFrameNative:
+        if not self:
+            assert False, "native call-frame stack underflow"
+        index = int(self._native.size) - 1
+        frame = self._native.frames[index]
+        self._native.size = index
+        return frame
+
+    def truncate(self, size: int) -> None:
+        assert 0 <= size <= len(self)
+        self._native.size = size
+
+    def set_size(self, size: int) -> None:
+        """Set the native call-stack pointer after an interpreter transition."""
 
         assert 0 <= size <= self._capacity
         self._native.size = size

@@ -1,11 +1,12 @@
 # Fireball Terminology & Spelling Variance Checker (PowerShell)
 # Indexes embeddings, links similar terms, judges variance via LLM, and outputs report.
 param(
-    [switch]$quick,          # Quick mode: static Levenshtein & embeddings only (skips LLM judge)
+    [switch]$quick,          # Skip the LLM judge; missing embeddings may still use the embedding API
     [int]$maxPairs = 20,     # Max pairs to judge with LLM
     [float]$threshold = 0.80,# Cosine similarity threshold
-    [string]$backend = "",   # LLM backend override (sakura, openrouter, ollama, mock)
-    [string]$model = "",     # Model override
+    [string]$backend = "",   # LLM backend override (jev, openrouter, sakura, ollama, mock)
+    [string]$model = "",     # LLM model override
+    [string]$embeddingModel = "", # Embedding model override
     [string]$config = "spec-integrator.yaml",
     [switch]$h,
     [switch]$help
@@ -19,11 +20,12 @@ Usage:
   powershell tools/llm-word.ps1 [OPTIONS]
 
 Options:
-  -quick              Run fast static check only (TF-IDF + Levenshtein + Embedding cache; skips LLM).
+  -quick              Skip LLM judgment; missing embeddings may still call the configured API.
   -maxPairs <N>       Maximum number of candidate pairs to judge via LLM (default: 20, 0 for unlimited).
   -threshold <F>      Cosine similarity threshold for linking (default: 0.80).
-  -backend <name>     LLM backend override (sakura, openrouter, ollama, mock).
-  -model <name>       LLM / Embedding model name override.
+  -backend <name>     LLM backend override (jev, openrouter, sakura, ollama, mock).
+  -model <name>       LLM model name override.
+  -embeddingModel <name> Embedding model name override.
   -config <path>      Path to configuration file (default: spec-integrator.yaml).
   -h, -help           Show this help message.
 "@
@@ -42,6 +44,7 @@ $cmdArgs = @("run", "--system-certs", "--project", "tools/spec-integrator",
 if ($quick) { $cmdArgs += "--quick" }
 if ($backend) { $cmdArgs += @("--backend", $backend) }
 if ($model) { $cmdArgs += @("--model", $model) }
+if ($embeddingModel) { $cmdArgs += @("--embedding-model", $embeddingModel) }
 
 & uv @cmdArgs
 exit $LASTEXITCODE

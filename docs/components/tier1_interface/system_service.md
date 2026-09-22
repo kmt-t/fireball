@@ -100,7 +100,7 @@ sequenceDiagram
     L-->>G: WASI result
 ```
 
-ゲストWASMタスクと `libfireball`、およびHAL間は、メモリ空間がメモリパーティションによって相互に保護されている。`libfireball` がゲストメモリ上のデータ（例: `fd_write` で書き込むバッファ）を公開IFへ渡す際は、ホストが提供するメモリ境界検証と、IPCルータ（`IPCRouter`）が仲介する所有権移譲ベースのゼロコピー通信によって安全にHALへ引き渡される。 `{META_FaultIsolation}` `{IPCRouter}`
+ゲスト WASM タスク、`libfireball`、HAL のメモリ空間は、メモリパーティションによって相互に保護される。`libfireball` がゲストメモリ上のデータを公開 IF へ渡す場合、ホストがメモリ境界を検証する。対象には `fd_write` が書き込むバッファなどがある。IPC ルータ（`IPCRouter`）が所有権移譲ベースのゼロコピー通信を仲介し、データを安全に HAL へ渡す。
 
 ### 4.4 WASI API と HAL IF の境界
 <!-- traceability: {META_FaultIsolation} {IPCRouter} -->

@@ -118,8 +118,12 @@ evidence:
 
 llm_judge:
   tag: "{VERIFY_LLM}"
-  default_backend: "sakura"
+  default_backend: "jev"
   backends:
+    jev:
+      api_key_env: "OPENROUTER_API_KEY"
+      endpoint: "https://openrouter.ai/api/alpha/decisions"
+      model: "typesafe/jev-1.13"
     sakura:
       api_key_env: "SAKURA_API_KEY"
       model: "preview/Qwen3.6-35B-A3B"
@@ -212,7 +216,8 @@ llm_judge:
 
 terminology:
   enabled: true
-  embedding_model: "multilingual-e5-large"
+  embedding_model: "intfloat/multilingual-e5-large"
+  embedding_backend: "openrouter"
   similarity_threshold: 0.80
   confidence_threshold: 0.60
   max_terms: 1000

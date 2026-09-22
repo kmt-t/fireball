@@ -28,9 +28,11 @@
 
 - [x] **メモリマネージャ分割**: 旧・物理メモリ設計書（Tier3、単一ファイル）を [`system_memory.md`](docs/components/tier1_interface/system_memory.md)（Tier1 Interface契約）と [`runtime_memory.md`](docs/components/tier2_runtime/runtime_memory.md)（Tier2実装）に分割
 - [x] **HAL分割**: 旧・HAL設計書（Tier3、単一ファイル）を [`hal_dispatch.md`](docs/components/tier2_runtime/hal_dispatch.md)（Tier2契約：URI Resolver・コマンドプロトコル）と [`platform_driver.md`](docs/components/tier3_platform/platform_driver.md)（Tier3実装：物理ドライバ）に分割
-- [x] **HAL＝WASI 0.3p統合**: per-device WITリソース（trigger/timer/bus/streaming/console）を廃止し、URI解決 + HALバッファプール + IPCコマンドIDの汎用機構に一本化（[`interface_wit.md`](docs/components/tier3_platform/interface_wit.md) 全面改訂、公開契約を `fireball_hostcall_contract.wit`（hostcall）と `fireball_hal_contract.wit`（HAL型・Resolver）へ分割）
-- [x] **IPCルータのHALデバイスインスタンス別ロール化**: 「1チャネル1待機者」制約下で複数の同種HALインスタンスを区別するため、単一の共有 HAL ロールをデバイス/サービスインスタンスごとの専用ロール（`HAL_UART`/`HAL_STDOUT`/`HAL_GPIO`/`HAL_TIMER`/`HAL_I2C`/`HAL_SPI`）に分割し、`FB_CONF_ROUTER_ROLE_MATRIX` を4x4→9x9へ拡張。`hal_task` を「1タスク=1ドライバインスタンス」設計に変更（pysim・`system_config.md`・`ipc_router.md`・`hal_dispatch.md`・`platform_driver.md` を同期）。当初は重複GPIOエイリアスURI（`fireball://hal/gpio/0`）用に`HAL_GPIO_LEGACY`ロールも追加していたが不要と判断し削除、`fireball://device/gpio/0`の`HAL_GPIO`ロールへ統一
-- [x] **サービス/サブシステム用語の復元**: WASMで実行される常駐タスクを「サービス」、HAL/Loggingのようなネイティブ常駐インフラを「サブシステム」と呼び分ける規約（`{META_ServiceIsWasmResident}`）を `architecture_overview.md` / `document_structure.md` に明文化し、IPCルータのWIT定義ファイル名の「サブシステム」誤用（[`ipc_router_contract.wit`](docs/components/tier1_interface/wit/ipc_router_contract.wit) へ改名）等を是正
+- [x] **HAL＝WASI 0.3p統合**: per-device WITリソース（trigger/timer/bus/streaming/console）を廃止した。URI解決、HALバッファプール、IPCコマンドIDを使う汎用機構に一本化した。公開契約を `fireball_hostcall_contract.wit`（hostcall）と `fireball_hal_contract.wit`（HAL型・Resolver）に分割し、[`interface_wit.md`](docs/components/tier3_platform/interface_wit.md) を全面改訂した。
+- [x] **IPCルータのHALデバイスインスタンス別ロール化**: 「1チャネル1待機者」の制約下で、同種のHALインスタンスを区別できるようにした。共有 HAL ロールを、各デバイス／サービス向けの `HAL_UART`、`HAL_STDOUT`、`HAL_GPIO`、`HAL_TIMER`、`HAL_I2C`、`HAL_SPI` に分割した。`FB_CONF_ROUTER_ROLE_MATRIX` を4x4から9x9へ拡張し、`hal_task` を「1タスク=1ドライバインスタンス」に変更した。pysim と `system_config.md`、`ipc_router.md`、`hal_dispatch.md`、`platform_driver.md` を同期した。
+  当初は `fireball://hal/gpio/0` 用の `HAL_GPIO_LEGACY` ロールも追加したが、不要と判断して削除した。`fireball://device/gpio/0` の `HAL_GPIO` ロールへ統一した。
+- [x] **サービス/サブシステム用語の復元**: WASM 上の常駐タスクを「サービス」と呼ぶ。HAL や Logging のようなネイティブ常駐インフラは「サブシステム」と呼ぶ。この規約（`{META_ServiceIsWasmResident}`）を `architecture_overview.md` と `document_structure.md` に明記した。
+  IPC ルータのWIT定義ファイル名にあった「サブシステム」の誤用も是正した。ファイル名を [`ipc_router_contract.wit`](docs/components/tier1_interface/wit/ipc_router_contract.wit) に変更した。
 - [x] **`docs/specs/` の Tier分類**: `spec-integrator.yaml` に `tier: "meta"` エントリを追加し `docs/specs/**` を階層ゲートの逆依存チェック対象外（メタ）として分類
 - [x] **component-review / architecture-review スキル改訂**: CL-06（Tier間波及チェック）・CL-07（キーワード定義/参照配置）を評価基準に追加、`architecture-review` の対象ファイルリストのスクリプト内ハードコードパスを更新
 

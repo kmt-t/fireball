@@ -3,7 +3,7 @@
 ## 1. 目的と対象範囲
 
 正本: [`interpreter.md`](docs/components/tier3_executer/interpreter.md), [`wasm_instruction_set.md`](docs/specs/wasm_instruction_set.md)
-`{ThreadedInterpreter}`（4論理引数の継続渡しハンドラ方式）、独立した3本の値領域と関数呼出し記述子領域、ラベルアリティに基づくスタックプルーニング、i32/i64演算、境界チェック付きメモリアクセス、Safepointポーリングを検証する。
+`{ThreadedInterpreter}` は、4論理引数の継続渡しハンドラ方式を示す。本書では、独立した3本の値領域と関数呼出し記述子領域も検証する。ラベルアリティに基づくスタックプルーニング、i32/i64演算、境界チェック付きメモリアクセス、Safepointポーリングも対象とする。
 
 ## 2. テストケース一覧
 
@@ -24,9 +24,9 @@
 | TEST-INTP-06 | C++ handler tableとstepループ | `_interpreter_native`をビルド済み | code・operand stack・local stackを`memoryview`で`run_step`へ渡す | C++の固定256スロット表がi32直線区間を連続実行し、境界でPCとstack sizeを返す。未対応opcodeはスタックを変更せずPythonへ戻る | `tier3_executer/interpreter/native_interpreter.cxx` |
 | TEST-INTP-07 | C++インタープリタのPython境界 | ネイティブ拡張をClangでビルド済み | 同じWASMモジュールを通常入口で実行 | code・operand・local・controlのnative recordをPython wrapperが保持し、Pythonには境界結果だけを返す | `interpreter.py`, `interop_abi.py`, `native_stacks.py` |
 | TEST-INTP-08 | JITトレースのC++ 4引数ブリッジ | `native_trace_call`をビルド済み | `(ctx, sp, local_base, tos)`の関数ポインタ入口を実行 | ctypes経路と同一のトレース結果になり、ブリッジ実行中はPythonハンドラへ戻らない | `tier3_executer/jit/native_trace_call.cxx` |
-| TEST-INTP-09 | ロード時LEB128の実行系分離 | WASMロード処理を実行可能 | モジュールロード後の実行経路を確認 | LEB128デコーダはロード時だけ使用され、Tier 3実行ホットパスへ入らない | `tier2_runtime/leb128.py` |
-| TEST-INTP-08 | ジャンプ・分岐境界 | `br`、`br_if`、`br_table`、`call`を含むWASM | 境界命令を実行 | ジャンプ・分岐は継続チェインせず、既存フレーム処理へ戻って正しいPC・制御スタックを保つ | `{InterpreterContextStackless}` |
-| TEST-INTP-09 | AO-Bench全命令差分 | wasmtimeとTier 2/Tier 3を利用可能 | `aobench.py`を実行 | Float32 sanity、全AO出力、Tier 2/Tier 3の528バイト出力が完全一致する | `{META_RecoveryStrategy}` |
+| TEST-INTP-09 | ロード時LEB128の実行系分離 | WASMロード処理を実行可能 | モジュールロード後の実行経路を確認 | LEB128デコーダはロード時だけ使用され、Tier 3実行ホットパスへ入らない | [`leb128.py`](experiments/pysim/tier2_runtime/leb128.py) |
+| TEST-INTP-27 | ジャンプ・分岐境界 | `br`、`br_if`、`br_table`、`call`を含むWASM | 境界命令を実行 | ジャンプ・分岐は継続チェインせず、既存フレーム処理へ戻って正しいPC・制御スタックを保つ | `{InterpreterContextStackless}` |
+| TEST-INTP-28 | AO-Bench全命令差分 | wasmtimeとTier 2/Tier 3を利用可能 | `aobench.py`を実行 | Float32 sanity、全AO出力、Tier 2/Tier 3の528バイト出力が完全一致する | `{META_RecoveryStrategy}` |
 
 ### 3本の独立スタック・関数呼び出し ({ContextPointerRegister})
 

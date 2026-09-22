@@ -24,7 +24,9 @@
 
 トレースヘッダの `helper_target_addr` は、当該トレースが委譲する関数のアドレスである。ヘルパー契約別入口はヘッダアドレスを受け取り、このフィールドをロードして対象ABIの関数呼出し規則で呼び出す。共通領域のオフセットは `common_prologue_offset`、`common_epilogue_offset`、`common_helper_offset`、`absolute_pool_offset` で解決する。共通領域に置く呼出しコードはトレースごとに複製しない。 `{PositionIndependentCode}`
 
-`fireball_execution_context_native` は、32bitのゲスト状態フィールド16個とコード／制御スタック／CallStackの非所有ビューからなるx86-64で112バイトの標準レイアウトである。`fireball_call_frame_native` は関数コード、ローカル幅、引数搬送、戻り境界を持つ96バイトの固定記述子であり、`fireball_call_stack_native` は32個の記述子を保持する固定長配列である。`fireball_const_buffer_view_native`、`fireball_wasm_function_view_native`、`fireball_wasm_module_view_native` は、WASMコードと関数メタデータを渡す非所有の標準レイアウト構造体である。文字列、`std::vector`、仮想関数、例外はこの境界に含めない。 `{ExecutionContext_Layout}` `{META_NoStdVector}`
+`fireball_execution_context_native` は、32ビットのゲスト状態フィールド16個を持つ。コード、制御スタック、CallStack の非所有ビューも含む。x86-64 でのサイズは112バイトである。標準レイアウトを維持する。
+
+`fireball_call_frame_native` は、関数コード、ローカル幅、引数搬送、戻り境界を持つ96バイトの固定記述子である。`fireball_call_stack_native` は、32個の記述子を保持する固定長配列である。`fireball_const_buffer_view_native`、`fireball_wasm_function_view_native`、`fireball_wasm_module_view_native` は、WASM コードと関数メタデータを渡す非所有の標準レイアウト構造体である。この境界に文字列、`std::vector`、仮想関数、例外を含めない。 `{ExecutionContext_Layout}` `{META_NoStdVector}`
 
 実行時のオペランド領域、ローカル値領域、制御ブロック復帰情報領域は、固定容量の構造体と配列として配置する。値領域は `WASM_VALUE_SLOT_BYTES` の境界に配置した型情報を持たない32ビットワード配列で、WASM の i32/f32 は1スロット、i64/f64 は2スロットを使用する。ローカル値は、フレームごとのスロット幅（4 / 8 / 16バイト）の固定スロットとし、JIT/インタープリタともスロット番号とスロット幅からアドレスを直接計算する。スロット幅は、フレーム内で最大の変数サイズで決める。JITはこの幅を命令生成時に埋め込む。したがってローカルオフセット表を保持・参照する必要はなく、i64/f64の有効ワードも自然に境界へ置かれる。値の型タグは記録せず、型を知っているハンドラが対応する読み書きメソッドを選択する。制御ブロックの復帰情報は、構造種別、開始位置、終了位置、保存済みスタック長、結果個数を持つ20バイトの固定長レコード配列として保持する。 `{META_NoStdVector}`
 

@@ -25,7 +25,7 @@ Options:
   --max-keywords <N>    Maximum keywords to assess (default: 15, 0 for unlimited).
   -a, --exhaustive      Assess all keywords without limit.
   --min-references <N>  Minimum referencing sections required to include a keyword (default: 0).
-  --backend <name>      LLM backend override (openrouter, sakura, ollama, mock).
+  --backend <name>      LLM backend override (jev, openrouter, sakura, ollama, mock).
   --model <name>        LLM model name override.
   -c, --config <path>   Path to configuration file (default: spec-integrator.yaml).
   -h, --help            Show this help message.

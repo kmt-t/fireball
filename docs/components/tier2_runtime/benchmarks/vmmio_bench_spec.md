@@ -6,7 +6,9 @@
 正本: [`runtime_vmmio.md`](docs/components/tier2_runtime/runtime_vmmio.md)
 参考実装: [`bench_vmmio.py`](experiments/pysim/benchmarks/vmmio/bench_vmmio.py)
 
-vMMIO 仮想アドレス空間（Bit 31 == 1, Stage 2/3）における、64件のPTE格納表とダイレクトマップ方式ソフトウェア TLB（32エントリ, Folding XOR Hash）の $O(1)$ キャッシュヒット性能、TLB ミス時の FlatMap（ソート済み PTE 配列, `fireball::flat_map_view`）二分探索ルックアップ時間、および各 Function Code（FC=12 静的デバイス / FC=14 SHM / FC=15 PASSTHROUGH）のディスパッチレイテンシを計測する。
+本ベンチマークは、vMMIO 仮想アドレス空間（Bit 31 == 1、Stage 2 / 3）を対象とする。64件の PTE 表と、32エントリのダイレクトマップ型ソフトウェア TLB（Folding XOR Hash）を測定する。TLB のキャッシュヒットは $O(1)$ 性能を計測する。
+
+TLB ミス時は、ソート済み PTE 配列（FlatMap、`fireball::flat_map_view`）の二分探索時間を測定する。Function Code ごとのディスパッチレイテンシも測る。対象は FC=12（静的デバイス）、FC=14（SHM）、FC=15（PASSTHROUGH）である。
 
 ## 2. ベンチマーク測定項目一覧
 

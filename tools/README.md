@@ -89,12 +89,13 @@ GiNZA の構文解析は、冗長性や意味の正しさを判定しない。�
 
 | 目的 | Windows | Linux / WSL | 区分 |
 | :--- | :--- | :--- | :--- |
-| 用語候補の静的確認 | <code>powershell tools/llm-word.ps1 -quick</code> | <code>./tools/llm-word.sh --quick</code> | LLM 不使用 |
-| 用語揺れの意味判定 | <code>powershell tools/llm-word.ps1</code> | <code>./tools/llm-word.sh</code> | API 利用 |
-| キーワードのリスク評価 | <code>powershell tools/risk.ps1</code> | <code>./tools/risk.sh</code> | API 利用 |
-| 文書単体のレビュー | <code>powershell tools/llm-single-review.ps1 -file &lt;path&gt;</code> | <code>./tools/llm-single-review.sh --file &lt;path&gt;</code> | API 利用 |
-| キーワード島のレビュー | <code>powershell tools/llm-keyword-review.ps1 -keyword &lt;name&gt;</code> | <code>./tools/llm-keyword-review.sh --keyword &lt;name&gt;</code> | API 利用 |
-| {VERIFY_LLM} 義務の履行 | <code>powershell tools/llm-judge.ps1</code> | <code>./tools/llm-judge.sh</code> | API 利用・判定を記録 |
+| 用語候補の静的確認 | <code>powershell tools/llm-word.ps1 -quick</code> | <code>./tools/llm-word.sh --quick</code> | LLM 判定なし（未作成の埋め込みがあれば API 利用） |
+| 用語揺れの意味判定 | <code>powershell tools/llm-word.ps1</code> | <code>./tools/llm-word.sh</code> | OpenRouter 経由の Jev を既定で使用 |
+| キーワードのリスク評価 | <code>powershell tools/risk.ps1</code> | <code>./tools/risk.sh</code> | OpenRouter 経由の Jev を既定で使用 |
+| 文書単体のレビュー | <code>powershell tools/llm-single-review.ps1 -file &lt;path&gt;</code> | <code>./tools/llm-single-review.sh --file &lt;path&gt;</code> | OpenRouter 経由の Jev を既定で使用 |
+| キーワード島のレビュー | <code>powershell tools/llm-keyword-review.ps1 -keyword &lt;name&gt;</code> | <code>./tools/llm-keyword-review.sh --keyword &lt;name&gt;</code> | OpenRouter 経由の Jev を既定で使用 |
+| {VERIFY_LLM} 義務の履行 | <code>powershell tools/llm-judge.ps1</code> | <code>./tools/llm-judge.sh</code> | Jev を既定で使用し、判定を記録 |
 
 API 利用を伴う監査は、ユーザーの明示指示がある場合だけ実行する。
 <code>{VERIFY_LLM}</code> の義務は <code>llm-judge</code> で記録付きで履行する。詳細なオプションは [spec-integrator のリファレンス](spec-integrator/README.md) を参照する。
+既定の Jev 判定には <code>OPENROUTER_API_KEY</code> が必要である。Jev は型付きの判定と確率を返し、説明文や引用箇所を生成しない。文章による所見が必要なレビューでは <code>--backend openrouter</code> または設定済みの別のチャット型バックエンドを指定する。<code>llm-word</code> の候補抽出では同じキーを使って OpenRouter の多言語埋め込みモデルも呼び出す。

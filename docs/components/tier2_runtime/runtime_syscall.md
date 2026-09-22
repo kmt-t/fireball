@@ -11,7 +11,7 @@
 
 ## 2. アーキテクチャ分類
 <!-- traceability: {META_3TierSeparation} -->
-本コンポーネントは **Tier 2 (分解されたサブコンポーネント: Decomposed Subcomponent)** に属する。`fireball_call` はゲスト（WASM）からのみ呼び出される、ゲストをホストする vSoC ランタイムの機能であり、Tier 1 のコアコンポーネント（COOS、IPC ルータ等）が依存する汎用プリミティブではない。
+本コンポーネントは **Tier 2 (分解されたサブコンポーネント: Decomposed Subcomponent)** に属する。`fireball_call` はゲスト（WASM）からのみ呼び出される。これはゲストをホストする vSoC ランタイムの機能である。Tier 1 のコアコンポーネント（COOS、IPC ルータ等）が依存する汎用プリミティブではない。
 
 ## 3. 背景
 <!-- traceability: {UnifiedAccessModel} -->
@@ -100,17 +100,19 @@ world fireball-hostcall {
   * `buf_len`: データのバイト長（`uint32_t` / 4バイト）
 
 **境界検査先行と整数オーバーフロー防止 (`GOTCHA-SYS-02`)**:
-ゲスト空間のアドレス `fb_offset_t` は、カーネル側で物理アドレスに解決される前に必ず境界チェックを行う。整数オーバーフロー攻撃（`offset + size` の加算結果が 32bit を超えて小さな値にラップし、境界チェックをすり抜ける脆弱性）を完全に防ぐため、境界検査式は必ず `offset > guest_memory_size or size > guest_memory_size - offset` の減算形式で先行評価し、違反時はメモリアクセス前に即座に WASI `errno_t` の `EFAULT` で拒絶する（具体的な数値は `{Syscall_Mapping}` の WASI 準拠定義を正本とする）。
+ゲスト空間のアドレス `fb_offset_t` は、物理アドレスへの解決前に必ず境界を検査する。`offset + size` は32ビットを超えると小さな値に折り返す。この整数オーバーフローを利用した境界検査の回避を防ぐ。
+
+境界検査には、`offset > guest_memory_size or size > guest_memory_size - offset` の減算形式を使う。この式を先に評価する。違反時はメモリアクセス前に WASI `errno_t` の `EFAULT` で拒絶する。エラー値の正本は [`wasi_preview1_abi.md`](docs/specs/wasi_preview1_abi.md) とする。
 
 **WASI iovec 散在ギャザーの全要素事前検証 (`GOTCHA-SYS-03`)**:
 散在ギャザー（iovec 配列）の各バッファ要素（`buf + len`）は、実際の出力ストリームへの書き込みを開始する前に全数事前検証される。途中の要素に境界外アドレスが含まれている場合、先行する正常要素であっても 1 バイトも出力ストリームへ書き込まず即座に `EFAULT` を返却する。これにより、異常終了時に中途半端なデータが出力先に漏洩・残存することを防止する。
 
 ### 5.2. 戻り値
 <!-- traceability: {Syscall_Return_Value} {Errorcode_To_Strategy} {GOTCHA-SYS-01} -->
-`fireball_call`は `u32` 型の値を返す。成功時は `0` を返し、失敗時は非0の定義されたエラーコード（WASIの `errno_t` に準拠）を返す。エラーコードの詳細は `{Syscall_Mapping}` の各定義および別紙参照。ゲスト側の `libfireball` は必要に応じてこの値をWASIの戻り値へ変換する。
+`fireball_call` は `u32` 型の値を返す。成功時は `0` を返し、失敗時は WASI `errno_t` に準拠した非0のエラーコードを返す。エラーコードの定義は [`wasi_preview1_abi.md`](docs/specs/wasi_preview1_abi.md) を参照する。ゲスト側の `libfireball` は必要に応じて値を WASI の戻り値へ変換する。
 
 **未定義 Syscall ID の非パニック安全復帰 (`GOTCHA-SYS-01`)**:
-未定義または予約済みのシステムコール ID が呼び出された場合、ホスト側はアボートやカーネルパニックを発生させず、WASI 準拠の `WasiErrno.NOSYS`（52）を返却して安全に復帰する。これにより、新機能の有無を動的に問い合わせるゲストランタイムや標準ライブラリ（WASI libc 等）がフォールバック機構を安全に機能させることができる。
+未定義または予約済みのシステムコール ID が呼び出された場合、ホスト側はアボートやカーネルパニックを起こさない。WASI 準拠の `WasiErrno.NOSYS`（52）を返して安全に復帰する。この動作により、新機能の有無を問い合わせるゲストランタイムや WASI libc 等の標準ライブラリはフォールバックできる。
 
 ## 6. システムコールID
 システムコールIDは、`fireball_call` が実行する特定のホスト操作を識別する。カテゴリ別に管理される。vMMIO の通常アクセスそのものは WASM の load/store 経路で扱い、host call による vMMIO レジスタ操作へ置き換えない。
@@ -267,7 +269,9 @@ vIRQの `vector_id` はホスト設定の原因源表で固定する。WASIのpo
 
 ## 10. メモリ安全性
 <!-- traceability: {Challenge_SyscallMemorySafety} {OwnershipTransfer} {FastAddressCheck} {GOTCHA-SYS-02} {GOTCHA-SYS-03} -->
-`fireball_call` を介してゲストメモリへのポインタが渡される場合でも、アクセスしてはならない領域は仮想アドレス空間から物理的に **unmap（マッピング解除）** されている。他タスク所有の SHM 領域や転送中（`IN_FLIGHT`）のページ、未割当領域へのアクセスは、ソフトウェア的な許可チェックを待つまでもなく、PTE / TLB 不在による未登録ページトラップ（`TRAP_UNREGISTERED_PAGE`）としてハードウェア・仮想化境界で即座に遮断される。ゲストRAM（リニアメモリ）も単一の境界比較（`FastAddressCheck`）で保護されるため、ホスト側での二重のポインタ検証（`vsoc_validate_ptr` 等）は完全に不要であり、ゼロオーバーヘッドのメモリ安全性が保証される。
+`fireball_call` を介してゲストメモリへのポインタを渡す場合も、アクセス禁止領域は仮想アドレス空間から物理的に **unmap（マッピング解除）** する。他タスク所有の SHM 領域、転送中（`IN_FLIGHT`）のページ、未割当領域には PTE / TLB が存在しない。これらへのアクセスは、未登録ページトラップ（`TRAP_UNREGISTERED_PAGE`）としてハードウェア・仮想化境界で遮断する。
+
+ゲスト RAM（リニアメモリ）は、単一の境界比較（`FastAddressCheck`）で保護する。そのためホスト側の二重ポインタ検証（`vsoc_validate_ptr` 等）は不要である。ゼロオーバーヘッドのメモリ安全性を保証する。
 
 ## 11. トラップ状態プロトコル
 <!-- traceability: {Trap_Interface} -->

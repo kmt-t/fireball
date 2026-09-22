@@ -2,7 +2,7 @@
 
 ## 1. 概要と基本思想
 <!-- traceability: {DebuggerInterpreterComposition} {Debug_Integrated} {META_ZeroCostAbstraction} -->
-本仕様書は、Fireball Hypervisor が UART / デバッグシリアル経由でホスト GDB クライアントに提供する **GDB Remote Serial Protocol (RSP)** のパケットフォーマット、サポートコマンドセット、および WASM 仮想レジスタ番号マッピングを定義する正本である。
+本仕様書は、Fireball Hypervisor がホスト GDB クライアントへ提供する **GDB Remote Serial Protocol (RSP)** の正本である。UART またはデバッグシリアルで使用するパケット形式とサポートコマンドを定義する。WASM 仮想レジスタ番号のマッピングも定義する。
 
 デバッグ実行用のランタイムは、起動時にインタープリタとデバッガを静的に構成する。デバッグセッションのアタッチ中は常にインタープリタだけを実行し、インタープリタのハンドラテーブルは切り替えない。デバッガはJITキャッシュを管理せず、ゲストメモリを書き換えてもキャッシュ無効化を要求しない。
 

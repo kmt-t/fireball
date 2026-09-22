@@ -2,7 +2,9 @@
 
 ## 1. 目的と対象範囲
 
-本書は、Fireball ハイパーバイザの全 Tier（Tier 1 Core、Tier 2 Runtime、Tier 3 Executer、Tier 3 Plugins、Tier 3 Platform）における各コンポーネント間の結合動作を、独立したリアル WASM バイトコード（WAT より生成されたバイナリ）を用いて包括的に検証する**システム結合テストシナリオ（End-to-End Component Integration Test Scenarios）**の仕様を定義する。
+本書は、Fireball ハイパーバイザの全 Tier におけるコンポーネント間の結合動作を定義する。対象 Tier は Tier 1 Core、Tier 2 Runtime、Tier 3 Executer、Tier 3 Plugins、Tier 3 Platform である。
+
+独立したリアル WASM バイトコード（WAT から生成したバイナリ）を用いて結合動作を検証する。本書は**システム結合テストシナリオ（End-to-End Component Integration Test Scenarios）**の正本である。
 
 ### 1.1 本番実装と参照実装の位置づけ
 
@@ -15,7 +17,13 @@
   - アーキテクチャの早期妥当性確認、状態遷移の探索、および Gotchas（実装上の勘所・不変条件）の抽出を目的とした Python 製の参照シミュレータ（`experiments/pysim`）。
   - 各シナリオには、この参照実装上で動作する実行可能なリファレンススクリプト（`experiments/pysim/qa/scenarios/`）が提供されており、仕様が実行可能（Executable Specification）であることを実証している。
 
-- **対象 Tier**: Tier 1 Core (`os_coos`, `os_scheduler`, `system_config`, `system_containers`, `system_memory`), Tier 1 Interface (`ipc_router`, `system_service`), Tier 2 Runtime (`runtime_vsoc`, `runtime_loader`, `runtime_vmmio`, `runtime_memory`, `runtime_logging`, `runtime_syscall`, `hal_dispatch`), Tier 3 Executer (`interpreter`, `jit_compiler`, `jit_runtime`), Tier 3 Plugins (`debugger`, `guest_profiler`), Tier 3 Platform (`interface_wit`, `platform_driver`, `libfireball`)
+- **対象 Tier**:
+  - Tier 1 Core: `os_coos`, `os_scheduler`, `system_config`, `system_containers`
+  - Tier 1 Interface: `ipc_router`, `system_service`, `system_memory`
+  - Tier 2 Runtime: `runtime_vsoc`, `runtime_loader`, `runtime_vmmio`, `runtime_memory`, `runtime_logging`, `runtime_syscall`, `hal_dispatch`
+  - Tier 3 Executer: `interpreter`, `jit_compiler`, `jit_runtime`
+  - Tier 3 Plugins: `debugger`, `guest_profiler`
+  - Tier 3 Platform: `interface_wit`, `platform_driver`, `libfireball`
 - **参照実装テストスイート**: `experiments/pysim/qa/scenarios/`
 - **参照テストランナー**: [`run_all.py`](experiments/pysim/qa/scenarios/run_all.py)
 
@@ -166,7 +174,7 @@
 - **WAT シナリオ**:
   - プロデューサ・タスク（メモリへ 100 件のデータ書き込み）
   - コンシューマ・タスク（メモリから 100 件のデータを読み込み合計 50,500 を算出）
-  - Fuel 制限（`quantum=16`）による決定論的な中断の繰り返し。中断・再開の意思決定はランタイム（vSoC / COOS）側の責務であり、Fireball インタープリタ（`Interpreter`）自身はコルーチンではない——`step()` は境界に達するたびに値を返却し、そのつど中断（`co_yield`）するかどうかを決定するのは呼び出し側（ランタイム）である
+  - Fuel 制限（`quantum=16`）により、決定論的な中断を繰り返す。中断と再開はランタイム（vSoC / COOS）の責務である。Fireball インタープリタ（`Interpreter`）自体はコルーチンではない。`step()` は境界ごとに値を返す。各境界で中断（`co_yield`）するかは、呼び出し側のランタイムが決める。
 
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |

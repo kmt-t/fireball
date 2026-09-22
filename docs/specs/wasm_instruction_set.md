@@ -6,9 +6,13 @@
 
 ## 1. 概要と適用方針
 <!-- traceability: {ThreadedInterpreter} {JIT_CopyAndPatch} {Wasm32Only} {META_ZeroCostAbstraction} -->
-本仕様書は、Fireball Hypervisor（インタープリタおよび Copy-and-Patch JIT コンパイラ）がサポートする **WASM MVP (v1, 32-bit)** 命令セットの物理マトリクスを定義する正本である。
+本仕様書は、Fireball Hypervisor がサポートする **WASM MVP (v1, 32-bit)** 命令セットの物理マトリクスを定義する。対象はインタープリタと Copy-and-Patch JIT コンパイラである。
 
-全バイトコードは Cortex-M33（ARMv8-M）ターゲットにおける継続渡し4論理引数（`R0: ctx`, `R1: sp`, `R2: local_base`, `R3: tos`）のハンドラ、および JIT Stencil テンプレート（同じ `R0`〜`R3` の論理引数マッピングを共有し、トレース内部でも `R3` をそのまま TOS キャッシュとして流用する。加えて Callee-saved 任意割当プール `R4-R6, R8-R11`（`R4`: NOS（次段キャッシュ）、`R5`: NNOS（第3段キャッシュ）、`R6`: 一時スクラッチ、メモリアクセス時は `R8`/`R9` を `mem_base`/`mem_size` に固定）、`R12`: 一時スクラッチ）へのマッピングを一意に確定する。基本ブロック末尾では、スタックがプッシュされた場合に `TOS, NOS, NNOS` をスタック（`[R1, #offset]`）へフラッシュし、コンテキスト `R0` の `ip`（+0x00）および `sp_offset`（+0x0C）を同期する。
+全バイトコードは Cortex-M33（ARMv8-M）を対象とする。ハンドラには継続渡しの4論理引数（`R0: ctx`, `R1: sp`, `R2: local_base`, `R3: tos`）を割り当てる。JIT Stencil テンプレートも同じ論理引数マッピングを共有し、`R3` を TOS キャッシュとして使う。
+
+Callee-saved の任意割当レジスタは `R4-R6, R8-R11` とする。`R4` は NOS、`R5` は NNOS、`R6` は一時スクラッチに使う。メモリアクセス時は `R8` と `R9` をそれぞれ `mem_base` と `mem_size` に固定する。`R12` も一時スクラッチに使う。
+
+基本ブロック末尾では、スタックへ積まれた `TOS, NOS, NNOS` を `[R1, #offset]` へフラッシュする。コンテキスト `R0` の `ip`（+0x00）と `sp_offset`（+0x0C）も同期する。
 
 ---
 

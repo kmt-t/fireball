@@ -6,7 +6,9 @@
 
 ## 1. コンセプト
 <!-- traceability: {RSPMinimalSet} {DebuggerInterpreterComposition} {MemoryIsolation} {Debug_Standard_Env} {RSP_Transport_Selectable} -->
-デバッガおよび GDB Server は、VSCode等の外部ツールからのデバッグを可能にするため、COOS 上の**独立した協調タスク（`gdbserver_task`）**として常駐し、GDB Remote Serial Protocol (RSP) に基づく非同期・協調的な実行制御を行う。標準環境として VSCode、UART、J-Link をサポートする。RSP パケットの送受信待ち時は COOS スケジューラへ `yield` することで、ゲストタスクや HAL タスクの実行を阻害しない。デバッグ実行のランタイム構成は起動時にインタープリタとデバッガへ固定し、アタッチ中は常にインタープリタだけを実行する。デバッガはJITキャッシュを管理しない。
+デバッガと GDB Server は、COOS 上の**独立した協調タスク（`gdbserver_task`）**として常駐する。これにより VSCode 等の外部ツールからデバッグできる。実行制御は GDB Remote Serial Protocol（RSP）に基づき、非同期かつ協調的に行う。標準環境として VSCode、UART、J-Link をサポートする。
+
+RSP パケットの送受信待ちでは、COOS スケジューラへ `yield` する。ゲストタスクや HAL タスクの実行を阻害しない。デバッグ実行のランタイム構成は、起動時にインタープリタとデバッガへ固定する。アタッチ中は常にインタープリタだけを実行し、デバッガは JIT キャッシュを管理しない。
 
 ## 2. アーキテクチャ分類
 <!-- traceability: {META_3TierSeparation} {RSPMinimalSet} -->

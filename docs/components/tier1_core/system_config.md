@@ -77,7 +77,9 @@ static_assert(FB_CONF_GUEST_RAM_SIZE == FB_CONF_TASK_HEAP_SIZES[0]);
 
 ##### PMSAv8 MPU 物理アドレスマップ
 <!-- traceability: {META_FaultIsolation} {WasmPageAlignment} -->
-以下は [`runtime_memory.md`](docs/components/tier2_runtime/runtime_memory.md) §7.1 の PMSAv8 MPU 8リージョン配分（`PMSAv8MPU`）が用いる静的ベースアドレスの正本である。Cortex-M33 の一般的な SRAM 配置慣行（`0x2000_0000` 起点）・ペリフェラル配置慣行（`0x4000_0000` 起点）に従う**想定実機ターゲットのアドレスマップ**であり、上記「メモリ総量」節が定義する評価用最小構成（`FB_CONF_MEMORY_POOL_SIZE` = 23,552 Bytes）とは異なるスケールを表す（実機の物理 SRAM 総容量は本表のリージョン間隔を確保できる規模を想定し、評価用最小構成はその一部を静的に占有するに過ぎない）。
+以下は [`runtime_memory.md`](docs/components/tier2_runtime/runtime_memory.md) §7.1 の PMSAv8 MPU 8リージョン配分（`PMSAv8MPU`）が使う静的ベースアドレスの正本である。**想定実機ターゲットのアドレスマップ**は、Cortex-M33 の一般的な SRAM 配置（起点 `0x2000_0000`）とペリフェラル配置（起点 `0x4000_0000`）に従う。
+
+このアドレスマップは、「メモリ総量」節が定義する評価用最小構成（`FB_CONF_MEMORY_POOL_SIZE` = 23,552 Bytes）とは異なるスケールを表す。実機は、本表のリージョン間隔を確保できる物理 SRAM 容量を想定する。評価用最小構成は、その一部だけを静的に占有する。
 
 | マクロ名 | 対象リージョン | 値 | 導出元 |
 | :--- | :--- | :--- | :--- |

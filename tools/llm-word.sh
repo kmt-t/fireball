@@ -12,6 +12,7 @@ MAX_PAIRS=20
 THRESHOLD="0.80"
 BACKEND=""
 MODEL=""
+EMBEDDING_MODEL=""
 CONFIG="spec-integrator.yaml"
 
 usage() {
@@ -22,11 +23,12 @@ Usage:
   ./tools/llm-word.sh [OPTIONS]
 
 Options:
-  --quick             Run fast static check only (TF-IDF + Levenshtein + Embedding cache; skips LLM).
+  --quick             Skip LLM judgment; missing embeddings may still call the configured API.
   --max-pairs <N>     Maximum number of candidate pairs to judge via LLM (default: 20, 0 for unlimited).
   --threshold <F>     Cosine similarity threshold for linking (default: 0.80).
-  --backend <name>    LLM backend override (sakura, openrouter, ollama, mock).
-  --model <name>      LLM / Embedding model name override.
+  --backend <name>    LLM backend override (jev, openrouter, sakura, ollama, mock).
+  --model <name>      LLM model name override.
+  --embedding-model <name> Embedding model name override.
   -c, --config <path> Path to configuration file (default: spec-integrator.yaml).
   -h, --help          Show this help message.
 EOF
@@ -40,6 +42,7 @@ while [[ $# -gt 0 ]]; do
         --threshold)    THRESHOLD="$2"; shift 2 ;;
         --backend)      BACKEND="$2"; shift 2 ;;
         --model)        MODEL="$2"; shift 2 ;;
+        --embedding-model) EMBEDDING_MODEL="$2"; shift 2 ;;
         -c|--config)    CONFIG="$2"; shift 2 ;;
         -h|--help)      usage ;;
         *) echo "Unknown option: $1"; usage ;;
@@ -53,5 +56,6 @@ CMD_ARGS=("run" "--system-certs" "--project" "tools/spec-integrator"
 if [[ -n "$QUICK" ]]; then CMD_ARGS+=("$QUICK"); fi
 if [[ -n "$BACKEND" ]]; then CMD_ARGS+=("--backend" "$BACKEND"); fi
 if [[ -n "$MODEL" ]]; then CMD_ARGS+=("--model" "$MODEL"); fi
+if [[ -n "$EMBEDDING_MODEL" ]]; then CMD_ARGS+=("--embedding-model" "$EMBEDDING_MODEL"); fi
 
 exec uv "${CMD_ARGS[@]}"

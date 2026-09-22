@@ -7,7 +7,9 @@
 
 ## 1. コンセプト
 <!-- traceability: {META_RestrictedPhysicalAccess} {vMMIO_TrapAndEmulate} {PhysicalPassthrough} {DynamicMmap} {UnifiedAccessModel} {FastAddressCheck} {Fast_Path_GPIO} {META_FlatMapIndexed} {META_NoStdVector} {GLOBAL_Policy_Memory} -->
-vMMIO (Virtual Memory-Mapped I/O) は、ホストが仲介するリソース（物理レジスタ（GPIO等）、共有メモリ、システムコール用バッファなど）へのアクセスを統一的に扱うアクセス層である。ホスト-ゲスト間境界を横切るアクセスのうち、vMMIOアドレス空間（Bit 31 == 1、下記 Stage 2/3）を経由するものはすべてこの層で仲介される。一方、ゲスト専用RAM（Stage 1: Bit 31 == 0）はvMMIO管理対象外とし、境界チェックのみで完結する高速バイパス経路を別途持つ（詳細は後述）。
+vMMIO（Virtual Memory-Mapped I/O）は、ホストが仲介するリソースへのアクセスを統一的に扱う層である。対象には物理レジスタ（GPIO 等）、共有メモリ、システムコール用バッファがある。
+
+ホストとゲストの境界を越え、vMMIO アドレス空間（Bit 31 == 1、Stage 2 / 3）を経由するアクセスは、この層が仲介する。ゲスト専用 RAM（Stage 1: Bit 31 == 0）は vMMIO の管理対象外である。ゲスト専用 RAM には、境界検査だけで完結する高速バイパス経路を設ける。詳細は後述する。
 
 WASM ゲストのリニアメモリは、標準仕様に準拠して **64KB ページ単位 (65,536 bytes)** で管理する論理空間である。RAM < 64KB の極小組込み環境（Cortex-M 等）に適合するため、物理実装としては **64KB 未満の部分ページ（例: 8KB, 16KB）** の割り当ても許容する。境界超過アクセスは即座にトラップする。ホスト/デバイス側の vMMIO 領域は **1ページ（4KB）** 単位で管理する。
 

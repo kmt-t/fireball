@@ -142,7 +142,9 @@ JIT コードキャッシュ（Region 4）は、実行可能（Execute）と書�
 
 #### トランザクションバッチ化によるレイテンシ両立 (`GOTCHA-MEM-04`)
 <!-- traceability: {GOTCHA-MEM-04} {GLOBAL_Policy_Memory} {META_RestrictedPhysicalAccess} -->
-命令パッチごとに個別 MPU 切替を行うとバリアオーバーヘッドが増大するため、`begin_jit_patch()`/`commit_jit_patch()` は 1 コンパイル単位（トレースまたは基本ブロック）につき 1 回ずつのみ呼び出される契約とする。1 命令ごとに切り替えを行うと、その都度 ARM D-Cache クリーン、I-Cache インバリデート、および DSB/ISB メモリバリア命令の発行が必要になり、パイプラインフラッシュの累積により JIT コンパイル性能が致命的に悪化するためである。具体的な呼び出しタイミング・トレース生成手順は [`jit_compiler.md`](docs/components/tier3_executer/jit_compiler.md) を正本とする。
+命令パッチごとに MPU を切り替えると、バリアのオーバーヘッドが増大する。`begin_jit_patch()` / `commit_jit_patch()` は、1コンパイル単位（トレースまたは基本ブロック）につき各1回だけ呼び出す。
+
+命令ごとに切り替える場合、毎回 ARM D-Cache のクリーン、I-Cache の無効化、DSB / ISB メモリバリアの発行が必要になる。パイプラインフラッシュが累積し、JIT コンパイル性能が大きく低下する。具体的な呼び出し時点とトレース生成手順は [`jit_compiler.md`](docs/components/tier3_executer/jit_compiler.md) を正本とする。
 
 ### 7.3 アライメントおよび境界制約 (PMSAv8)
 - **PMSAv8 アライメント**: PMSAv7 と異なり、$2^n$ 乗サイズ境界制約は存在しない。Base アドレス（`RBAR`）および Limit アドレス（`RLAR`）は **32 バイトアライメント**（下位 5 ビットが `0`）を満たせば任意サイズで設定可能。

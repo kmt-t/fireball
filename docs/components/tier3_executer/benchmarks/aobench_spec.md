@@ -6,7 +6,9 @@
 正本: [`jit_compiler.md`](docs/components/tier3_executer/jit_compiler.md), [`wasm_instruction_set.md`](docs/specs/wasm_instruction_set.md)
 参考実装: [`bench_aobench.py`](experiments/pysim/benchmarks/aobench/bench_aobench.py)
 
-組込み WASM 実行環境上で動作する実機 3D Ambient Occlusion レイトレーシングベンチマーク（AO-Bench, Q8.8 固定小数点数演算）を通じて、実ワークロードにおける Tier 2 スレッド化インタープリタおよび Tier 3 Copy-and-Patch JIT の総合演算性能、レイ描画スループット、および差分検証（Differential Check）を実施する。
+本仕様は、組み込み WASM 実行環境上の3D Ambient Occlusion レイトレーシング（AO-Bench）を対象とする。ベンチマークは Q8.8 固定小数点数演算を使う。
+
+実ワークロードで Tier 2 スレッド化インタープリタと Tier 3 Copy-and-Patch JIT の総合演算性能およびレイ描画スループットを測定する。両実行系の出力を差分検証（Differential Check）する。
 
 ## 2. ベンチマーク測定項目一覧
 

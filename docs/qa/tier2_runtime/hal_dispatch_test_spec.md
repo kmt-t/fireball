@@ -3,7 +3,10 @@
 ## 1. 目的と対象範囲
 
 正本: [hal_dispatch.md](docs/components/tier2_runtime/hal_dispatch.md)
-IPCルータ経由の全アクセス契約、`hal-buffer-id`による生ポインタ渡し禁止契約、操作期間だけ行う`map-buffer`/`unmap-buffer`契約、ゼロコピー転送契約、およびGPIOのvMMIO高速経路とIPC制御の区別を検証する。物理的なバッファプール配置やRSPトランスポートの実装詳細は [`platform_driver_test_spec.md`](docs/qa/tier3_platform/platform_driver_test_spec.md) の責務とする。
+
+本書は IPC ルータ経由のアクセス契約を検証する。`hal-buffer-id` による生ポインタ渡し禁止、操作中だけ行う `map-buffer` / `unmap-buffer`、ゼロコピー転送も対象である。GPIO の vMMIO 高速経路と IPC 制御の違いも確認する。
+
+物理バッファプールの配置と RSP トランスポートの実装詳細は対象外である。これらは [`platform_driver_test_spec.md`](docs/qa/tier3_platform/platform_driver_test_spec.md) を正本とする。
 
 ## 2. テストケース一覧
 
@@ -25,5 +28,6 @@ IPCルータ経由の全アクセス契約、`hal-buffer-id`による生ポイ�
 
 ## 4. 未検証・スコープ外
 
-- 物理割り込み処理（TEST-HAL-03）、GPIO vMMIO高速パスの物理実装（TEST-HAL-05）、HALバッファプールの物理配置（TEST-HAL-06）、RSPトランスポート物理層（TEST-HAL-07, TEST-HAL-08）、GOTCHA（物理実装の勘所）は [`platform_driver_test_spec.md`](docs/qa/tier3_platform/platform_driver_test_spec.md) を参照。
+- 物理割り込み処理（TEST-HAL-03）と GPIO vMMIO 高速パスの物理実装（TEST-HAL-05）は、[`platform_driver_test_spec.md`](docs/qa/tier3_platform/platform_driver_test_spec.md) を参照する。
+- HAL バッファプールの物理配置（TEST-HAL-06）と RSP トランスポート物理層（TEST-HAL-07、TEST-HAL-08）も同仕様書を参照する。物理実装の勘所（GOTCHA）の正本も同仕様書である。
 - 実ハードウェア（UART/RTT/GPIO/I2C）そのものの電気的特性。

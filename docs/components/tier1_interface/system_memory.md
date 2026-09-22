@@ -8,7 +8,7 @@
 
 ## 1. コンセプト
 <!-- traceability: {META_3TierSeparation} {GLOBAL_Policy_Memory} {ConsolidatedHeap} {GLOBAL_IndependentHeap} {GLOBAL_StrictMemoryLimit} -->
-メモリマネージャ（`memory-manager`）は、システム全体の統合物理メモリプール（`ConsolidatedHeap`）を基礎とし、が定める5つの独立した静的アロケーションプールを貸与するという抽象契約（`co_mem`）を定義する。各プールは用途・ライフサイクル・アロケータ方式が異なり、互いに物理的・領域的に完全に独立している（`GLOBAL_IndependentHeap`）ため、特定のプールでのメモリ不足が他のプールを道連れにしてクラッシュすることを防止する。
+メモリマネージャ（`memory-manager`）は、システム全体の統合物理メモリプール（`ConsolidatedHeap`）を基礎とする。5つの独立した静的アロケーションプールを貸与する抽象契約（`co_mem`）を定義する。各プールは用途、ライフサイクル、アロケータ方式が異なる。プール間は物理的にも領域的にも独立している。特定プールのメモリ不足が他のプールへ波及することを防ぐ。
 
 本コンポーネントが定義する5つのプールは以下の通りである。それぞれの詳細は「4. インターフェース設計」を参照。
 
@@ -40,7 +40,9 @@
 <!-- traceability: {GLOBAL_Policy_Memory} -->
 本コンポーネントの公開APIは `{META_StaticDI}` が定義する `co_mem` インターフェース契約そのものである。実装側（`runtime_memory.md`）は本契約をそのまま実現し、契約自体（メソッド名・引数・戻り値の意味）に食い違いがあれば本節を正とする。
 
-WITインターフェース名は kebab-case で定義されるが、C++の公開APIバインディングにおいては、`fireball` 名前空間の下に `snake_case`（例: `fireball::co_mem::host_alloc`）として実装・公開される。以下の各シグネチャは [`system_memory_contract.wit`](docs/components/tier1_interface/wit/system_memory_contract.wit) の `interface memory` を一言一句正本として引用する。プール基点アドレス・サイズの静的構成（5.2節）は `system_config.md` の `FB_CONF_*` 定数群を正本とし、本契約は実行時初期化 API を持たない（`{Size_20KSLOC}` の製品ソースコード規模を抑える方針に基づき、起動シーケンス内の静的構成のみで足りるため）。
+WIT インターフェース名は kebab-case で定義する。C++ の公開 API バインディングは、`fireball` 名前空間の下で `snake_case` として実装・公開する（例: `fireball::co_mem::host_alloc`）。
+
+各シグネチャは [`system_memory_contract.wit`](docs/components/tier1_interface/wit/system_memory_contract.wit) の `interface memory` を正本として引用する。プールの基点アドレスとサイズの静的構成（5.2節）は、`system_config.md` の `FB_CONF_*` 定数群を正本とする。本契約は実行時初期化 API を持たない。製品ソースコード規模を抑える方針に基づき、起動時の静的構成だけで要件を満たすためである。
 
 ### 4.1 ホスト用ヒープ（`host-heap`）
 <!-- traceability: {GLOBAL_Policy_Memory} {System_Allocator} -->
@@ -81,7 +83,10 @@ WITインターフェース名は kebab-case で定義されるが、C++の公�
 | 不変条件 | 所有者以外からの呼び出しは無効（返却されない） |
 
 #### 型付きプールスロットの貸与・返却（`acquire-slot` / `release-slot`）
-タスクヒープと同様に固定長・静的確保のみを行う、型付きスロット単位の貸与契約。**このAPIは `system_memory_contract.wit` には現れない**: WIT はジェネリクスを表現できないため、`pool-ref<T>` はコンポーネント境界を越えない C++ 側のみの型付きラッパーとして提供される（WIT 側は `acquire-task-heap` の汎用パーティションを型無しで貸与し、型安全性は C++ テンプレートが実現する）。**主要な用途の一つ**: COOS タスクの C++20 コルーチンフレーム確保。`promise_type::operator new`/`operator delete` が本APIを介してホスト用ヒープではなくカーネルプール（`FB_CONF_KERNEL_HEAP_SIZE`）内の静的スロットからフレームを確保することで、`malloc`/`new` を用いずにコルーチンを起動する（`{CooperativeMultitasking}` `{GLOBAL_UseCpp20Coroutine}`、詳細は [`os_scheduler.md`](docs/components/tier1_core/os_scheduler.md) `spawn_task` を正本とする）。
+<!-- traceability: {CooperativeMultitasking} {GLOBAL_UseCpp20Coroutine} -->
+この契約は、タスクヒープと同様に固定長・静的確保のみを行う。貸与単位は型付きスロットである。**この API は `system_memory_contract.wit` には現れない**。WIT はジェネリクスを表現できないため、`pool-ref<T>` はコンポーネント境界を越えない C++ 側の型付きラッパーとして提供する。WIT 側は `acquire-task-heap` の汎用パーティションを型なしで貸与し、型安全性は C++ テンプレートが担う。
+
+**主要な用途の一つ**は、COOS タスクの C++20 コルーチンフレーム確保である。`promise_type::operator new` / `operator delete` は本 API を介して、カーネルプール（`FB_CONF_KERNEL_HEAP_SIZE`）内の静的スロットからフレームを確保する。ホスト用ヒープの `malloc` / `new` を使わずにコルーチンを起動する。詳細は [`os_scheduler.md`](docs/components/tier1_core/os_scheduler.md) の `spawn_task` を正本とする。
 
 | 項目 | 内容 |
 | :--- | :--- |
@@ -121,7 +126,7 @@ WITインターフェース名は kebab-case で定義されるが、C++の公�
 
 ### 4.4 ランタイム用バンプアロケータ（`runtime-bump-allocator`）
 <!-- traceability: {Runtime_BumpAllocator} {OneRuntimeOneGuest} -->
-1ランタイム1ゲストの直交分離原則（）により、各ランタイムは独立した専用バンプアロケータアリーナを所有する。WASM モジュールのロード時に使用するシステムコンテナストレージ（`module_view`、シンボルテーブル等）はこのアリーナから一括確保され、ランタイム（またはモジュール）のアンロード時に個別解放なしで $O(1)$ 決定論的に一括解放される。
+1ランタイム1ゲストの直交分離原則に従い、各ランタイムは専用のバンプアロケータアリーナを所有する。アリーナはランタイムごとに独立する。WASM モジュールのロード時に使うシステムコンテナストレージ（`module_view`、シンボルテーブル等）は、このアリーナから一括確保する。ランタイムまたはモジュールのアンロード時は、個別解放を行わず $O(1)$ で決定論的に一括解放する。
 
 | 項目 | 内容 |
 | :--- | :--- |
@@ -165,7 +170,8 @@ JITコード生成専用に予約された連続固定長リージョン（`FB_C
 
 ### 5.1 性能制約と不変条件
 - **目標**: 決定論的 $O(1)$ または有界 $O(\log n)$ のメモリ割り当て・解放。
-- **方策**: 契約としては5プールそれぞれの貸与単位（動的ブロック・固定長パーティション/型付きスロット・可変長共有ブロック・バンプアリーナ・固定長JITリージョン）のみを規定し、具体的な計算量保証の実現手段（dlmalloc アリーナ、バンプアロケータ等）は [`runtime_memory.md`](docs/components/tier2_runtime/runtime_memory.md) を正本とする。型付きスロットは「タスクヒープ」プール内部の貸与単位のバリエーション（型安全な C++ 専用ラッパー）であり、独立した6番目のプールではない。
+- **方策**: 契約では、5プールそれぞれの貸与単位だけを規定する。単位は動的ブロック、固定長パーティションまたは型付きスロット、可変長共有ブロック、バンプアリーナ、固定長 JIT リージョンである。
+  計算量保証を実現する具体的な方式（dlmalloc アリーナ、バンプアロケータ等）は、[`runtime_memory.md`](docs/components/tier2_runtime/runtime_memory.md) を正本とする。型付きスロットは「タスクヒープ」プール内の貸与単位の一種である。これは型安全な C++ 専用ラッパーであり、独立した6番目のプールではない。
 
 ### 5.2 メモリ制約と方策
 <!-- traceability: {GLOBAL_StrictMemoryLimit} {GLOBAL_IndependentHeap} -->
@@ -182,7 +188,7 @@ JITコード生成専用に予約された連続固定長リージョン（`FB_C
 <!-- traceability: {GLOBAL_Policy_Memory} {META_FaultIsolation} {OwnershipTransfer} -->
 
 ### 6.1 所有権追跡仕様
-各共有メモリブロックは `memory-info.owner` で割り当て元 task-id を追跡する。本コンポーネントが提供する `acquire-task-heap`/`acquire-slot`/`release-task-heap`/`release-slot` や `RAII`/`drop` による解放は、無秩序なシステム全体の野良ヒープ確保ではなく、用途別に事前確保された独立プールから有界に切り出し、使用後に返却・合体する安全なメモリ管理契約を指す。具体的なアロケータ（`shm_allocator`, `system_allocator` 等）は `runtime_memory.md` を正本とする。 `{GLOBAL_Policy_Memory}`
+各共有メモリブロックは `memory-info.owner` で割り当て元の task-id を追跡する。本コンポーネントは `acquire-task-heap` / `acquire-slot` / `release-task-heap` / `release-slot` を提供する。`RAII` / `drop` による解放は、システム全体の無秩序なヒープ確保を意味しない。用途別に事前確保した独立プールから有界に切り出し、使用後に返却・合体する契約である。具体的なアロケータ（`shm_allocator`、`system_allocator` 等）は `runtime_memory.md` を正本とする。
 
 - **自動設定**: `acquire-task-heap` / `acquire-slot` / `allocate-shared` 時に、スケジューラが認証した実行中タスクIDを所有者として自動設定する。呼び出し側が task-id を申告する引数は持たない。
 - **所有者限定操作**: `release-task-heap`/`release-slot` は所有者タスクのみが実行可能。

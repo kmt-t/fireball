@@ -5,13 +5,15 @@
      contract-only: true
 -->
 
-本コンポーネントは、Tier 3 の物理ドライバ実装（UART/SEGGER RTT の物理トランスポート）が実現すべき抽象契約（URI Resolver、コマンドプロトコル、ゼロコピー転送インターフェース）を定義する（`{META_ContractImplSplit}` 契約/実装分割パターン）。RSP Parser は Tier 3 debugger の責務であり、本コンポーネントはRSPを解析しない。
+本コンポーネントは、Tier 3 の物理ドライバが実現する抽象契約を定義する。対象は UART / SEGGER RTT の物理トランスポートである。契約には URI Resolver、コマンドプロトコル、ゼロコピー転送インターフェースを含む。この配置は `{META_ContractImplSplit}` の契約/実装分割パターンに従う。RSP Parser は Tier 3 debugger の責務である。本コンポーネントは RSP を解析しない。
 
 ## 1. コンセプト
 <!-- traceability: {IPCRouter} {URIAbstraction} {TypeSafeMessaging} {IPC_ZeroCopy} -->
 HAL (Hardware Abstraction Layer) は、COOS 上で稼働する独立したタスク（`hal_task`）として常駐し、物理ハードウェアおよび仮想ペリフェラルへのアクセスを抽象化して提供する。デバイスインスタンス 1 つにつき `hal_task` インスタンス 1 つが対応する（1 タスクは正確に 1 つの物理ドライバのみを所有する）。`Role` はデバイス種別だけを表し、インスタンスは階層型URI（`fireball://hal/<driver-type>/<instance-id>`）で識別する。上位層（Runtime, Debugger, Guest 等）からの直接関数呼び出しは行わず、通信はすべて IPC ルータ（`ipc_router`）を介した CSP rendezvous メッセージパッシングによって行われる。
 
-各 `hal_task` インスタンスは IPC ルータ（`ipc_router`）から自身が担当する 1 インスタンス宛ての WASI 0.3p ドライバ通信コマンド（`CMD_STREAM_*`, `CMD_CLOCK_*`, `CMD_GPIO_*`, `CMD_BUS_*`）を受信し、HALバッファプール（物理実体は Tier 3 の vMMIO/DYNAMIC 領域）のバッファスライス（`hal-buffer-slice`、本コンポーネントから見た不透明ハンドル）を介してゼロコピーで高速データ転送を実行する。DYNAMIC領域は各I/O操作の実行期間だけ対象スロットをマップし、競合時は`BUSY`を返す。
+各 `hal_task` インスタンスは、IPC ルータ（`ipc_router`）から自身が担当する1インスタンス宛ての WASI 0.3p ドライバ通信コマンドを受信する。対象コマンドは `CMD_STREAM_*`、`CMD_CLOCK_*`、`CMD_GPIO_*`、`CMD_BUS_*` である。HAL バッファプールのバッファスライス（`hal-buffer-slice`）を介して、ゼロコピーの高速データ転送を実行する。このスライスは、本コンポーネントから見た不透明ハンドルである。物理実体は Tier 3 の vMMIO / DYNAMIC 領域にある。
+
+DYNAMIC 領域は、各 I/O 操作の実行期間だけ対象スロットをマップする。競合時は `BUSY` を返す。
 
 `hal-buffer-slice` は共有メモリの所有権トークンではなく、HALが管理する固定スロットの有効なハンドルである。ゲストはI/O開始時に`map-buffer`で対象スロットをDYNAMIC領域へマップし、I/O完了時に`unmap-buffer`で解除する。別ゲストまたは別操作がマッピング中なら`BUSY`（WASI Preview 1では`EAGAIN`）を返す。HALドライバはマッピング中のスロットを専用Sink経由で参照する。ドライバとの転送は常にハンドル、オフセット、長さで指定し、ドライバへ生ポインタや独立したストリーム用データバッファを渡さない。
 

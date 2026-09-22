@@ -32,7 +32,7 @@ Options:
   --check <id>          Run only a specific check ID.
   --list-checks         List all configured single/cluster review checks and exit.
   --dry-run             Display prompts without calling the LLM backend or persisting results.
-  --backend <name>      LLM backend override (openrouter, sakura, ollama, mock).
+  --backend <name>      LLM backend override (jev, openrouter, sakura, ollama, mock).
   --model <name>        LLM model name override.
   -c, --config <path>   Path to configuration file (default: spec-integrator.yaml).
   -h, --help            Show this help message.

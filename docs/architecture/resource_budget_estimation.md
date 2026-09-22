@@ -3,7 +3,9 @@
 ## 1. 目的
 
 <!-- traceability: {Resource_Estimation_Model} {Size_20KSLOC} {GLOBAL_StrictMemoryLimit} {ConsolidatedHeap} {ROMParsing} {META_ZeroCostAbstraction} -->
-本ドキュメントは、Python リファレンスシミュレータ（`experiments/pysim`）の検証結果および各コンポーネントのアルゴリズムに基づき、Clang 17+ 組み込み C++（静的配置、ゼロ動的アロケーション、AoS `flat_map_view`、`[[clang::musttail]]`）へ本実装した際の**実装規模（LOC）**および**物理リソース予算（ROM / RAM）**の厳密な見積もりを定義するアーキテクチャ仕様書である。
+本ドキュメントは、Python リファレンスシミュレータ（`experiments/pysim`）の検証結果と各コンポーネントのアルゴリズムに基づく。Clang 17+ の組み込み C++ へ本実装した際の**実装規模（LOC）**と**物理リソース予算（ROM / RAM）**を見積もる仕様書である。
+
+見積もりは静的配置とゼロ動的アロケーションを前提とする。AoS `flat_map_view` と `[[clang::musttail]]` の採用も前提に含める。
 
 `backlog_list.md` の物理リソース予算の厳密な再見積もりタスクにおける正本ドキュメントとして、ROM（`.rodata` / `.text`）に配置可能な不変データと、RAM（SRAM / `.data` / `.bss`）に配置すべき可変状態・バッファ・スタックを厳密に区別して算出する。
 

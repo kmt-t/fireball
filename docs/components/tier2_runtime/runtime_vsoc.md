@@ -545,7 +545,9 @@ Fireballでは、標準WASIのゲスト側アダプタを `libfireball` とし�
 
 ### 6.2 モデル分割の理由
 
-実行エンジンの状態機械（`vsoc_state_model.py`）と、キャッシュ寿命の関心事（`vsoc_cache_coherency_model.py`）は**別モデルに分割している**。世代スタンプとリソース回収を実行状態機械に合成すると状態空間が積になって爆発し、`document_structure.md` が定めるデコンポジション基準「検証可能性 (Verification Tractability) の維持」に反するためである。両モデルは `s_safepoint` という同一の観測点を共有しており、この点で接続される。デバッガはこのキャッシュ整合性モデルの対象外である。
+実行エンジンの状態機械（`vsoc_state_model.py`）とキャッシュ寿命（`vsoc_cache_coherency_model.py`）は、**別モデルに分割している**。世代スタンプとリソース回収を実行状態機械へ統合すると、状態空間が積になり爆発する。これは `document_structure.md` が定める「検証可能性 (Verification Tractability) の維持」に反する。
+
+両モデルは共通の観測点 `s_safepoint` を持ち、この点で接続する。デバッガはキャッシュ整合性モデルの対象外である。
 
 ### 6.3 検証モデル概要（vsoc_cache_coherency_model.py）
 

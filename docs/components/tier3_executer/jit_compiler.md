@@ -249,7 +249,7 @@ JIT トレースとインタープリタが共有オペランド領域上で相�
 
 #### ネイティブトレースコンパイラ (`native_trace_call.cxx`)
 <!-- traceability: {JIT_Encoder} {META_ZeroCostAbstraction} -->
-Clang 17+でビルドするC++実装であり、x64 Copy-and-Patchトレースの命令バイト列を単一パスで生成する。固定長のネイティブ配列を使用し、実行時のヒープ確保、Pythonバイトコード生成、動的なSTLコンテナを使用しない。Python C APIは入力イテレータ、`memoryview`、結果タプルの境界に限定する。
+Clang 17+でビルドするC++実装であり、x64 Copy-and-Patchトレースの命令バイト列を単一パスで生成する。固定命令列は `constexpr std::array<std::uint8_t, N>` ステンシルとしてコンパイル時に確定し、実行時はステンシルのコピーと即値・相対オフセットのパッチだけを行う。固定長のネイティブ配列を使用し、実行時のヒープ確保、Pythonバイトコード生成、動的なSTLコンテナを使用しない。Python C APIは入力イテレータ、`memoryview`、結果タプルの境界に限定する。
 
 | 構造体 | 機能 | ビット幅 |
 | :--- | :--- | :--- |

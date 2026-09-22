@@ -4,7 +4,6 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
-#include <initializer_list>
 
 namespace {
 
@@ -85,21 +84,80 @@ struct trace_builder {
     body[body_size++] = value;
     return true;
   }
-  bool bytes(std::initializer_list<std::uint8_t> values) {
-    for (const auto value : values) if (!byte(value)) return false;
-    return true;
-  }
   bool u32(std::uint32_t value) {
     for (int shift = 0; shift < 32; shift += 8)
       if (!byte(static_cast<std::uint8_t>(value >> shift))) return false;
     return true;
   }
-  bool u64(std::uint64_t value) {
-    for (int shift = 0; shift < 64; shift += 8)
-      if (!byte(static_cast<std::uint8_t>(value >> shift))) return false;
-    return true;
-  }
 };
+
+template <std::size_t N>
+bool append_stencil(trace_builder& builder, const std::array<std::uint8_t, N>& stencil) {
+  if (builder.body_size + N > builder.body.size()) return false;
+  for (std::size_t index = 0; index < N; ++index) {
+    builder.body[builder.body_size + index] = stencil[index];
+  }
+  builder.body_size += N;
+  return true;
+}
+
+template <std::size_t N>
+bool append_u32_patch(trace_builder& builder, const std::array<std::uint8_t, N>& stencil,
+                     std::uint32_t value) {
+  return append_stencil(builder, stencil) && builder.u32(value);
+}
+
+constexpr std::array<std::uint8_t, 2> kLoadImmStencil = {0x41, 0xB9};
+constexpr std::array<std::uint8_t, 3> kLoadLocalStencil = {0x45, 0x8B, 0x8A};
+constexpr std::array<std::uint8_t, 3> kStoreLocalStencil = {0x45, 0x89, 0x8A};
+constexpr std::array<std::uint8_t, 4> kStoreTosStencil = {0x45, 0x89, 0x8C, 0x24};
+constexpr std::array<std::uint8_t, 4> kStoreNosStencil = {0x45, 0x89, 0x9C, 0x24};
+constexpr std::array<std::uint8_t, 4> kLoadTosStencil = {0x45, 0x8B, 0x8C, 0x24};
+constexpr std::array<std::uint8_t, 4> kLoadNosStencil = {0x45, 0x8B, 0x9C, 0x24};
+constexpr std::array<std::uint8_t, 3> kMoveNosFromTosStencil = {0x45, 0x89, 0xCB};
+constexpr std::array<std::uint8_t, 3> kI32AddStencil = {0x45, 0x01, 0xD9};
+constexpr std::array<std::uint8_t, 6> kI32SubStencil = {
+    0x45, 0x29, 0xCB, 0x45, 0x89, 0xD9};
+constexpr std::array<std::uint8_t, 4> kI32MulStencil = {0x45, 0x0F, 0xAF, 0xCB};
+constexpr std::array<std::uint8_t, 3> kI32AndStencil = {0x45, 0x21, 0xD9};
+constexpr std::array<std::uint8_t, 3> kI32OrStencil = {0x45, 0x09, 0xD9};
+constexpr std::array<std::uint8_t, 3> kI32XorStencil = {0x45, 0x31, 0xD9};
+constexpr std::array<std::uint8_t, 10> kI32EqzStencil = {
+    0x45, 0x85, 0xC9, 0x0F, 0x94, 0xC0, 0x44, 0x0F, 0xB6, 0xC8};
+constexpr std::array<std::uint8_t, 6> kShiftPrefixStencil = {
+    0x44, 0x89, 0xC9, 0x45, 0x89, 0xD9};
+constexpr std::array<std::uint8_t, 3> kI32ShlStencil = {0x41, 0xD3, 0xE1};
+constexpr std::array<std::uint8_t, 3> kI32ShrSStencil = {0x41, 0xD3, 0xF9};
+constexpr std::array<std::uint8_t, 3> kI32ShrUStencil = {0x41, 0xD3, 0xE9};
+constexpr std::array<std::uint8_t, 15> kEntryStencil = {
+    0x48, 0xB8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0xE9, 0x00, 0x00, 0x00, 0x00};
+constexpr std::array<std::uint8_t, 12> kHelperTailStencil = {
+    0x48, 0x8D, 0x05, 0x00, 0x00, 0x00, 0x00, 0xE9, 0x00, 0x00, 0x00, 0x00};
+constexpr std::array<std::uint8_t, 4> kPublishNextPcStencil = {0x41, 0xC7, 0x45, 0x00};
+constexpr std::array<std::uint8_t, 7> kChainHeaderStencil = {
+    0x48, 0x8D, 0x05, 0x00, 0x00, 0x00, 0x00};
+constexpr std::array<std::uint8_t, 7> kChainLoadTestStencil = {
+    0x48, 0x8B, 0x50, 0x10, 0x48, 0x85, 0xD2};
+constexpr std::array<std::uint8_t, 6> kChainFallbackStencil = {
+    0x0F, 0x84, 0x00, 0x00, 0x00, 0x00};
+constexpr std::array<std::uint8_t, 2> kChainJumpStencil = {0xFF, 0xE2};
+constexpr std::array<std::uint8_t, 5> kExitJumpStencil = {0xE9, 0x00, 0x00, 0x00, 0x00};
+
+constexpr std::array<std::uint8_t, 10> make_compare_stencil(std::uint8_t condition) {
+  return {0x45, 0x39, 0xCB, 0x0F, condition, 0xC0, 0x44, 0x0F, 0xB6, 0xC8};
+}
+
+constexpr auto kI32EqStencil = make_compare_stencil(0x94);
+constexpr auto kI32NeStencil = make_compare_stencil(0x95);
+constexpr auto kI32LtSStencil = make_compare_stencil(0x9C);
+constexpr auto kI32LtUStencil = make_compare_stencil(0x92);
+constexpr auto kI32GtSStencil = make_compare_stencil(0x9F);
+constexpr auto kI32GtUStencil = make_compare_stencil(0x97);
+constexpr auto kI32LeSStencil = make_compare_stencil(0x9E);
+constexpr auto kI32LeUStencil = make_compare_stencil(0x96);
+constexpr auto kI32GeSStencil = make_compare_stencil(0x9D);
+constexpr auto kI32GeUStencil = make_compare_stencil(0x93);
 
 bool is_binary(int op) {
   return op == kI32Add || op == kI32Sub || op == kI32Mul || op == kI32And ||
@@ -138,27 +196,23 @@ int local_words(const Py_buffer& map, unsigned int count, int index) {
 }
 
 bool load_imm(trace_builder& b, std::uint32_t value) {
-  return b.bytes({0x41, 0xB9}) && b.u32(value);
+  return append_u32_patch(b, kLoadImmStencil, value);
 }
 bool load_local(trace_builder& b, std::uint32_t offset) {
-  return b.bytes({0x45, 0x8B, 0x8A}) && b.u32(offset);
+  return append_u32_patch(b, kLoadLocalStencil, offset);
 }
 bool store_local(trace_builder& b, std::uint32_t offset) {
-  return b.bytes({0x45, 0x89, 0x8A}) && b.u32(offset);
+  return append_u32_patch(b, kStoreLocalStencil, offset);
 }
 bool store_sp(trace_builder& b, std::int32_t location, int slot) {
   if (slot < 0 || (location != kTos && location != kNos)) return false;
-  if (location == kTos) {
-    if (!b.bytes({0x45, 0x89, 0x8C, 0x24})) return false;
-  } else if (!b.bytes({0x45, 0x89, 0x9C, 0x24})) return false;
-  return b.u32(static_cast<std::uint32_t>(slot * 4));
+  return append_u32_patch(b, location == kTos ? kStoreTosStencil : kStoreNosStencil,
+                          static_cast<std::uint32_t>(slot * 4));
 }
 bool load_sp(trace_builder& b, std::int32_t location, int slot) {
   if (slot < 0 || (location != kTos && location != kNos)) return false;
-  if (location == kTos) {
-    if (!b.bytes({0x45, 0x8B, 0x8C, 0x24})) return false;
-  } else if (!b.bytes({0x45, 0x8B, 0x9C, 0x24})) return false;
-  return b.u32(static_cast<std::uint32_t>(slot * 4));
+  return append_u32_patch(b, location == kTos ? kLoadTosStencil : kLoadNosStencil,
+                          static_cast<std::uint32_t>(slot * 4));
 }
 
 bool emit_push(trace_builder& b, int op, std::uint64_t arg, std::uint32_t slot_bytes) {
@@ -167,7 +221,8 @@ bool emit_push(trace_builder& b, int op, std::uint64_t arg, std::uint32_t slot_b
     b.locations[b.location_count - 2] = b.spilled_words++;
   } else if (b.location_count >= 2 && b.locations[b.location_count - 2] < 0) return false;
   if (b.location_count > 0) {
-    if (b.locations[b.location_count - 1] != kTos || !b.bytes({0x45, 0x89, 0xCB})) return false;
+    if (b.locations[b.location_count - 1] != kTos ||
+        !append_stencil(b, kMoveNosFromTosStencil)) return false;
     b.locations[b.location_count - 1] = kNos;
   }
   if (op == kI32Const) {
@@ -181,20 +236,23 @@ bool emit_push(trace_builder& b, int op, std::uint64_t arg, std::uint32_t slot_b
 }
 
 bool emit_binary(trace_builder& b, int op) {
-  if (op == kI32Add) return b.bytes({0x45, 0x01, 0xD9});
-  if (op == kI32Sub) return b.bytes({0x45, 0x29, 0xCB, 0x45, 0x89, 0xD9});
-  if (op == kI32Mul) return b.bytes({0x45, 0x0F, 0xAF, 0xCB});
-  if (op == kI32And) return b.bytes({0x45, 0x21, 0xD9});
-  if (op == kI32Or) return b.bytes({0x45, 0x09, 0xD9});
-  if (op == kI32Xor) return b.bytes({0x45, 0x31, 0xD9});
-  std::uint8_t cc = 0;
-  if (op == kI32Eq) cc = 0x94; else if (op == kI32Ne) cc = 0x95;
-  else if (op == kI32LtS) cc = 0x9C; else if (op == kI32LtU) cc = 0x92;
-  else if (op == kI32GtS) cc = 0x9F; else if (op == kI32GtU) cc = 0x97;
-  else if (op == kI32LeS) cc = 0x9E; else if (op == kI32LeU) cc = 0x96;
-  else if (op == kI32GeS) cc = 0x9D; else if (op == kI32GeU) cc = 0x93;
-  else return false;
-  return b.bytes({0x45, 0x39, 0xCB, 0x0F, cc, 0xC0, 0x44, 0x0F, 0xB6, 0xC8});
+  if (op == kI32Add) return append_stencil(b, kI32AddStencil);
+  if (op == kI32Sub) return append_stencil(b, kI32SubStencil);
+  if (op == kI32Mul) return append_stencil(b, kI32MulStencil);
+  if (op == kI32And) return append_stencil(b, kI32AndStencil);
+  if (op == kI32Or) return append_stencil(b, kI32OrStencil);
+  if (op == kI32Xor) return append_stencil(b, kI32XorStencil);
+  if (op == kI32Eq) return append_stencil(b, kI32EqStencil);
+  if (op == kI32Ne) return append_stencil(b, kI32NeStencil);
+  if (op == kI32LtS) return append_stencil(b, kI32LtSStencil);
+  if (op == kI32LtU) return append_stencil(b, kI32LtUStencil);
+  if (op == kI32GtS) return append_stencil(b, kI32GtSStencil);
+  if (op == kI32GtU) return append_stencil(b, kI32GtUStencil);
+  if (op == kI32LeS) return append_stencil(b, kI32LeSStencil);
+  if (op == kI32LeU) return append_stencil(b, kI32LeUStencil);
+  if (op == kI32GeS) return append_stencil(b, kI32GeSStencil);
+  if (op == kI32GeU) return append_stencil(b, kI32GeUStencil);
+  return false;
 }
 
 bool emit_pop(trace_builder& b) {
@@ -225,10 +283,10 @@ bool emit_binary_spill(trace_builder& b, int op) {
 }
 
 bool emit_shift(trace_builder& b, int op) {
-  if (!b.bytes({0x44, 0x89, 0xC9, 0x45, 0x89, 0xD9})) return false;
-  if (op == kI32Shl) return b.bytes({0x41, 0xD3, 0xE1});
-  if (op == kI32ShrS) return b.bytes({0x41, 0xD3, 0xF9});
-  if (op == kI32ShrU) return b.bytes({0x41, 0xD3, 0xE9});
+  if (!append_stencil(b, kShiftPrefixStencil)) return false;
+  if (op == kI32Shl) return append_stencil(b, kI32ShlStencil);
+  if (op == kI32ShrS) return append_stencil(b, kI32ShrSStencil);
+  if (op == kI32ShrU) return append_stencil(b, kI32ShrUStencil);
   return false;
 }
 
@@ -313,7 +371,7 @@ bool compile_operations(trace_builder& b, PyObject* instructions, const Py_buffe
            store_local(b, static_cast<std::uint32_t>(index * slot_bytes));
     } else if (op == kI32Eqz) {
       ok = b.location_count != 0 && b.locations[b.location_count - 1] == kTos &&
-           b.bytes({0x45, 0x85, 0xC9, 0x0F, 0x94, 0xC0, 0x44, 0x0F, 0xB6, 0xC8});
+           append_stencil(b, kI32EqzStencil);
     } else if (is_binary(op)) {
       ok = emit_binary_spill(b, op);
     } else if (op == kI32Shl || op == kI32ShrS || op == kI32ShrU) {
@@ -363,7 +421,7 @@ PyObject* compile_trace(PyObject*, PyObject* args) {
   if (PyObject_GetBuffer(width_object, &width_buffer.view, PyBUF_SIMPLE) != 0) return nullptr;
   width_buffer.active = true;
   trace_builder b;
-  if (!b.bytes({0x48, 0xB8}) || !b.u64(0) || !b.bytes({0xE9}) || !b.u32(0)) {
+  if (!append_stencil(b, kEntryStencil)) {
     PyErr_SetString(PyExc_MemoryError, "native JIT body buffer exhausted");
     return nullptr;
   }
@@ -377,27 +435,30 @@ PyObject* compile_trace(PyObject*, PyObject* args) {
   if (tail) {
     if (b.helper_index >= 0 || b.location_count != 0 || helper_target == 0) Py_RETURN_NONE;
     const auto base = b.body_size;
-    if (!b.bytes({0x48, 0x8D, 0x05}) || !b.u32(0) || !b.bytes({0xE9}) || !b.u32(0)) Py_RETURN_NONE;
+    if (!append_stencil(b, kHelperTailStencil)) Py_RETURN_NONE;
     helper_header = static_cast<int>(kTraceHeaderBytes + base + 3);
     helper_exit = static_cast<int>(kTraceHeaderBytes + base + 8);
   } else if (b.helper_index >= 0) {
     if (helper_target == 0 || b.location_count != 0) Py_RETURN_NONE;
     const auto base = b.body_size;
-    if (!b.bytes({0x48, 0x8D, 0x05}) || !b.u32(0) || !b.bytes({0xE9}) || !b.u32(0)) Py_RETURN_NONE;
+    if (!append_stencil(b, kHelperTailStencil)) Py_RETURN_NONE;
     helper_header = static_cast<int>(kTraceHeaderBytes + base + 3);
     helper_exit = static_cast<int>(kTraceHeaderBytes + base + 8);
   } else {
     if (b.location_count != 0 && !store_sp(b, kTos, 0)) Py_RETURN_NONE;
     if (has_next && !has_loops) {
-      if (!b.bytes({0x41, 0xC7, 0x45, 0x00}) || !b.u32(static_cast<std::uint32_t>(next_pc))) Py_RETURN_NONE;
+      if (!append_u32_patch(b, kPublishNextPcStencil, static_cast<std::uint32_t>(next_pc))) {
+        Py_RETURN_NONE;
+      }
       chain_header = static_cast<int>(kTraceHeaderBytes + b.body_size + 3);
-      if (!b.bytes({0x48, 0x8D, 0x05}) || !b.u32(0) ||
-          !b.bytes({0x48, 0x8B, 0x50, 0x10, 0x48, 0x85, 0xD2})) Py_RETURN_NONE;
+      if (!append_stencil(b, kChainHeaderStencil) ||
+          !append_stencil(b, kChainLoadTestStencil)) Py_RETURN_NONE;
       chain_fallback = static_cast<int>(kTraceHeaderBytes + b.body_size + 2);
-      if (!b.bytes({0x0F, 0x84}) || !b.u32(0) || !b.bytes({0xFF, 0xE2})) Py_RETURN_NONE;
+      if (!append_stencil(b, kChainFallbackStencil) ||
+          !append_stencil(b, kChainJumpStencil)) Py_RETURN_NONE;
     } else {
       exit_patch = static_cast<int>(kTraceHeaderBytes + b.body_size + 1);
-      if (!b.bytes({0xE9}) || !b.u32(0)) Py_RETURN_NONE;
+      if (!append_stencil(b, kExitJumpStencil)) Py_RETURN_NONE;
     }
   }
   if (tail) b.helper_index = -1;

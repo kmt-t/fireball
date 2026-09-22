@@ -8,23 +8,24 @@
 
 ## 1. コンセプト
 <!-- traceability: {LowLatencyJIT} {JIT_CopyAndPatch} {JIT_ZeroCompileCostTheorem} {SimpleJITArchitecture} {JIT_Encoder} {PositionIndependentCode} {SinglePassCompilation} -->
-JIT Compiler は、WASMバイトコードを実行時にネイティブコードへ変換し、実行速度を向上させる。Execution Engine (`executor`) の一部として機能する。極小リソース環境（RAM 32KB〜64KB）を対象とする。「Zero Compile Cost」方針に基づき、最適化を省いた高速な **Copy-and-Patch** 方式を採用する。命令テンプレートは C++ `constexpr` アセンブラによりビルド時に確定される。実行時は単純なメモリコピーと特定箇所への定数パッチのみを行う。
+JIT Compiler は、WASMバイトコードを実行時にネイティブコードへ変換し、実行速度を向上させる。Execution Engine (`executor`) の一部として機能する。極小リソース環境（RAM 32KB〜64KB）を対象とする。「Zero Compile Cost」方針に基づき、最適化を省いた高速な **Copy-and-Patch** 方式を採用する。実行時のx64トレース本体生成は `native_trace_call.cxx` のC++実装が担当し、命令バイト列、レジスタ配置、スタック退避、ランタイムヘルパー境界を単一パスで確定する。Python側は命令列とABIメタデータを渡し、生成済みバイト列を `JITTrace` とキャッシュへ登録するラッパーに限定する。
 
 ## 2. アーキテクチャ分類
 <!-- traceability: {META_3TierSeparation} {JIT_CopyAndPatch} -->
-本コンポーネントは **Tier 3 (詳細リーフコンポーネント: Leaf Component)** に属する。vSoC (`runtime_vsoc.md`) から分解された JIT コンパイルパイプラインを担当する。事前生成テンプレートのコピー＆パッチ結合、および C++ `constexpr` 命令エンコードを担当する。ランタイム側のエントリ検索・キャッシュ管理・ホットスポット検出は [`jit_runtime.md`](docs/components/tier3_executer/jit_runtime.md) が担当する。
+本コンポーネントは **Tier 3 (詳細リーフコンポーネント: Leaf Component)** に属する。vSoC (`runtime_vsoc.md`) から分解された JIT コンパイルパイプラインを担当する。C++ネイティブコンパイラによるCopy-and-Patch結合と、Pythonラッパーによる `JITTrace` 登録を担当する。ランタイム側のエントリ検索・キャッシュ管理・ホットスポット検出は [`jit_runtime.md`](docs/components/tier3_executer/jit_runtime.md) が担当する。
 
 ### 2.1 JIT サブシステムのデコンポジション
 <!-- traceability: {JIT_Encoder} {JIT_CopyAndPatch} {SimpleJITArchitecture} {JIT_MultiBuffer_Cache} -->
 JITサブシステムは、以下の2つの独立した設計書に責務を分離して構成される。
 
-- **[jit_compiler.md](docs/components/tier3_executer/jit_compiler.md)**: 命令テンプレートを用いたネイティブコード生成（Copy-and-Patch Engine）および静的な命令エンコード DSL（constexpr Assembler）を担当する。
+- **[jit_compiler.md](docs/components/tier3_executer/jit_compiler.md)**: C++ネイティブ実装による命令バイト列生成（Copy-and-Patch Engine）およびPython側のトレース登録を担当する。
 - **[jit_runtime.md](docs/components/tier3_executer/jit_runtime.md)**: 実行履歴監視・ホットスポット判定、PC-アドレス変換検索、および 3面キャッシュローテーションを担当する。
 
 ## 3. 静的モデル
 
 ### 3.1 データ構造
-- **`CopyAndPatchEngine`**: WASM命令に対応するネイティブ命令テンプレートを選択・コピーし、即値・分岐先・APIポインタをパッチ適用するクラス。
+- **`native_trace_call.cxx`**: C++で実装したx64トレースコンパイラである。Pythonの命令イテレータを一度だけ消費し、固定長バッファへネイティブ命令を生成する。未対応命令、型混在、ABI不整合はコンパイル結果を返さず、インタープリタ境界へ委譲する。
+- **`CopyAndPatchEngine`**: C++コンパイラが生成したネイティブ命令列をキャッシュへ配置し、即値・分岐先・APIポインタをパッチ適用する責務を表す論理コンポーネントである。
 - **共通コード領域**: 8KB JIT領域の先頭2KBを対象ABIの開始処理、終了処理、ヘルパー契約別入口、および絶対アドレスプールへ固定配置する。ヘルパー呼出しコードは契約ごとに一つずつ配置し、単一の汎用共通入口へ集約しない。x64の共通領域オフセットは開始処理`0x000`、終了処理`0x020`、コンテキスト型入口`0x030`、絶対アドレスプール`0x050`、i32整数ヘルパー入口群`0x160`（32バイト×4）、wideヘルパー入口群`0x200`（32バイト×11）である。絶対アドレスプールは256バイトである。トレース本体の3面ローテーションではこの領域を破棄しない。 `{JIT_MultiBuffer_Cache}`
 - **`constexpr_assembler`**: C++の `constexpr` 機能を活用し、ビルド時に Thumb-2 / RISC-V 命令バイナリを型安全に静的生成する DSL。
 - **命令テンプレート (`jit_template`)**: パッチスロットを含むネイティブ命令列の雛形（[jit_stencil_catalog.md](docs/specs/jit_stencil_catalog.md) 準拠）。
@@ -36,7 +37,7 @@ flowchart TD
     subgraph JIT_Compiler_Core
         Pipeline[jit_pipeline]
         Engine[CopyAndPatchEngine]
-        ConstAsm[constexpr Assembler]
+        NativeCompiler[C++ x64 Trace Compiler]
     end
 
     subgraph Runtime_Interface
@@ -45,7 +46,7 @@ flowchart TD
     end
 
     Pipeline --> Engine
-    ConstAsm -.->|build-time template generation| Engine
+    NativeCompiler -->|single-pass byte emission| Engine
     Engine -->|write native code + patch| Cache
     Pipeline -->|register entry| Runtime
 ```
@@ -246,9 +247,9 @@ JIT トレースとインタープリタが共有オペランド領域上で相�
 <!-- traceability: {JIT_LazyChaining} {SimpleJITArchitecture} {PositionIndependentCode} -->
 物理配置は対象ごとのABI契約へ委譲する。Windows x64およびSystem V AMD64の52バイト配置は [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) に定義し、ARMv8-MのThumb-2配置と命令列は [`jit_stencil_catalog.md`](docs/specs/jit_stencil_catalog.md) に定義する。これらの配置を一つの共通ヘッダとして扱ってはならない。
 
-#### `constexpr_assembler` (DSL)
+#### ネイティブトレースコンパイラ (`native_trace_call.cxx`)
 <!-- traceability: {JIT_Encoder} {META_ZeroCostAbstraction} -->
-ビルド時に Thumb-2 / RISC-V 命令バイナリを静的エンコードし、実行時の命令生成オーバーヘッドを完全排除する。
+Clang 17+でビルドするC++実装であり、x64 Copy-and-Patchトレースの命令バイト列を単一パスで生成する。固定長のネイティブ配列を使用し、実行時のヒープ確保、Pythonバイトコード生成、動的なSTLコンテナを使用しない。Python C APIは入力イテレータ、`memoryview`、結果タプルの境界に限定する。
 
 | 構造体 | 機能 | ビット幅 |
 | :--- | :--- | :--- |
@@ -260,8 +261,8 @@ JIT トレースとインタープリタが共有オペランド領域上で相�
 
 ### 4.1 アルゴリズム
 <!-- traceability: {JIT_CopyAndPatch} {JIT_RuntimeAPI_Fallback} {SinglePassCompilation} -->
-1. **トレース解析 & テンプレート選択**: WASM PC から始まる基本ブロックを 1 パス走査し、対応する事前生成ステンシルテンプレートを選択する。
-2. **メモリコピー & パッチ適用**: アクティブキャッシュへテンプレート命令列をコピーし、即値オペランドや相対分岐オフセットをインプレースでパッチする。
+1. **トレース解析 & ネイティブ命令生成**: WASM PC から始まる基本ブロックをC++コンパイラが1パス走査し、固定長の出力領域へ即値・レジスタ操作・退避操作を直接エンコードする。
+2. **メモリコピー & パッチ適用**: PythonラッパーがC++の生成結果をトレースヘッダと結合し、アクティブキャッシュへ配置した後、即値オペランドや相対分岐オフセットをインプレースでパッチする。
 3. **対象ABI境界フォールバック**: 複雑な命令はトレースヘッダで選択したヘルパー契約別の共通コード入口へ委譲し、ホスト関数呼び出しは対象ABIの終了処理を経てランタイムへ戻す。呼出しコードをトレース本体へ複製しない。
 4. **命令キャッシュ同期**: パッチ完了後、`__DSB()` および `__ISB()` バリアを発行して命令キャッシュを同期する。
 5. **インタープリタ連携とハンドラ直接呼び出し (Low-Overhead Interop & Direct Handler Call)**:

@@ -77,6 +77,8 @@ from wasm_opcodes import (
     LOCAL_TEE,
 )
 
+from . import native_trace_call as _native_trace_call
+
 I32_MASK = 0xFFFFFFFF
 
 # CPS 4-argument function pointer type matching interpreter opcode_handler
@@ -416,6 +418,81 @@ class TraceCompiler:
         compiler's proof of register placement.  The generated code never
         initializes or uses RSP as a WASM operand stack.
         """
+        native_result = _native_trace_call.compile_trace(
+            instructions,
+            next_pc,
+            loops_to,
+            byte_span,
+            local_widths.raw_view,
+            len(local_widths),
+            local_widths.slot_words,
+            tail_context_helper,
+            helper_target_addr,
+        )
+        if native_result is None:
+            return None
+        (
+            native_body,
+            helper_index,
+            helper_words,
+            max_spilled_words,
+            stack_location_count,
+            helper_header_patch_offset,
+            helper_exit_patch_offset,
+            exit_patch_offset,
+            chain_header_patch_offset,
+            chain_fallback_patch_offset,
+        ) = native_result
+        header = JITTraceHeader(head_wasm_pc=head_pc)
+        header.chain_next_pc = next_pc or 0
+        if helper_index >= 0:
+            header.common_helper_offset = helper_entry_offset(helper_index)
+        header.helper_target_addr = helper_target_addr
+        total_size = JIT_X64_TRACE_HEADER_BYTES + len(native_body)
+        header.trace_byte_size = total_size
+        full_blob = bytearray(header.pack()) + native_body
+        result_words = (
+            2 if helper_index >= 0 and (helper_index <= 2 or 7 <= helper_index <= 10) else 1
+        )
+        trace = JITTrace(
+            head_pc=head_pc,
+            size_bytes=total_size,
+            next_pc=next_pc,
+            loops_to=loops_to,
+            has_return_val=stack_location_count != 0 or helper_index >= 0,
+            result_words=result_words,
+            stack_words=max(max_spilled_words, helper_words, result_words),
+            code_blob=bytes(full_blob),
+            entry_body_patch_offset=JIT_X64_TRACE_HEADER_BYTES + 2,
+            entry_prologue_patch_offset=JIT_X64_TRACE_HEADER_BYTES + 11,
+            exit_patch_offset=exit_patch_offset,
+            helper_header_patch_offset=helper_header_patch_offset,
+            helper_exit_patch_offset=helper_exit_patch_offset,
+            chain_header_patch_offset=chain_header_patch_offset,
+            chain_fallback_patch_offset=chain_fallback_patch_offset,
+            helper_target_addr=helper_target_addr,
+        )
+        trace.header = header
+        assert JIT_CACHE_ACTIVE_OFFSET_BYTES + total_size <= self._standalone_region.region_bytes
+        trace.code_offset = JIT_CACHE_ACTIVE_OFFSET_BYTES
+        fn, raw_addr = self._standalone_region.install_trace(
+            trace.code_offset,
+            trace.code_blob,
+            trace.entry_body_patch_offset,
+            trace.entry_prologue_patch_offset,
+            trace.exit_patch_offset,
+            trace.helper_header_patch_offset,
+            trace.helper_exit_patch_offset,
+            trace.chain_header_patch_offset,
+            trace.chain_fallback_patch_offset,
+        )
+        trace.fn = fn
+        trace.raw_addr = raw_addr
+        trace._exec_buf = self._standalone_region.buffer
+        return trace
+
+        # Retained only as migration reference; native compilation above is
+        # the sole reachable JIT code-generation path.
         assert byte_span > 0
         # The frame's widest local sets the slot stride (4 bytes when every local is 32-bit),
         # so a local's displacement from R2 is `index * slot_bytes`.

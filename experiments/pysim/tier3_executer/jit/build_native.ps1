@@ -1,4 +1,5 @@
-# Builds the optional native_trace_call C++ accelerator (Windows / clang-cl).
+# Builds the native C++ x64 Copy-and-Patch JIT compiler and invocation bridge
+# (Windows / clang-cl).
 # Requires clang-cl on PATH and a Visual Studio Build Tools +
 # Windows SDK install (for the MSVC headers/import libs clang-cl targets).
 $ErrorActionPreference = "Stop"
@@ -20,7 +21,7 @@ New-Item -ItemType Directory -Force -Path $nativeBuildDir | Out-Null
 $sourceCpp = Join-Path $scriptDir "native_trace_call.cxx"
 $generatedPyd = Join-Path $nativeBuildDir "native_trace_call.pyd"
 
-Write-Host ">>> Compiling native_trace_call.cxx -> .pyd (clang-cl)" -ForegroundColor Yellow
+Write-Host ">>> Compiling native_trace_call.cxx (native JIT compiler) -> .pyd (clang-cl)" -ForegroundColor Yellow
 & clang-cl.exe /TP /O2 /LD /EHsc `
     "-I$pyInc" `
     "-I$vsDir\VC\Tools\MSVC\$msvcVer\include" `

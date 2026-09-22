@@ -56,4 +56,19 @@ else
     done < <(find docs -type f -name "*.md" | sort)
 fi
 
-exec uv "${CMD_ARGS[@]}"
+if uv "${CMD_ARGS[@]}"; then
+    DOC_EXIT=0
+else
+    DOC_EXIT=$?
+fi
+
+if bash "$SCRIPT_DIR/check-verification-matrix.sh" --config "$CONFIG"; then
+    MATRIX_EXIT=0
+else
+    MATRIX_EXIT=$?
+fi
+
+if [[ $DOC_EXIT -ne 0 || $MATRIX_EXIT -ne 0 ]]; then
+    exit 1
+fi
+exit 0

@@ -80,4 +80,19 @@ else
     fi
 fi
 
-exec uv "${CMD_ARGS[@]}"
+if uv "${CMD_ARGS[@]}"; then
+    SOURCE_EXIT=0
+else
+    SOURCE_EXIT=$?
+fi
+
+if bash "$SCRIPT_DIR/check-verification-matrix.sh" --config "$CONFIG"; then
+    MATRIX_EXIT=0
+else
+    MATRIX_EXIT=$?
+fi
+
+if [[ $SOURCE_EXIT -ne 0 || $MATRIX_EXIT -ne 0 ]]; then
+    exit 1
+fi
+exit 0

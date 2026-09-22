@@ -66,7 +66,7 @@ Windows は PowerShell、Linux / WSL は Bash の入口を使う。[files...] �
 | ドキュメント整形 | <code>powershell tools/format-doc.ps1 [files...]</code> | <code>./tools/format-doc.sh [files...]</code> |
 | ドキュメント検証 | <code>powershell tools/check-doc.ps1 [files...]</code> | <code>./tools/check-doc.sh [files...]</code> |
 | ソース検証 | <code>powershell tools/check-src.ps1 -group &lt;group&gt; [files...]</code> | <code>./tools/check-src.sh -g &lt;group&gt; [files...]</code> |
-| 検証マトリクスのみ | <code>powershell tools/check-verification-matrix.ps1</code> | <code>uv run --system-certs --project tools/spec-integrator python tools/check_verification_matrix.py spec-integrator.yaml</code> |
+| 検証マトリクスのみ | <code>powershell tools/check-verification-matrix.ps1</code> | <code>./tools/check-verification-matrix.sh</code> |
 | ソース整形 | <code>powershell tools/format-src.ps1 -group &lt;group&gt; [files...]</code> | <code>./tools/format-src.sh -g &lt;group&gt; [files...]</code> |
 | DocGraph・索引の更新 | <code>powershell tools/build.ps1</code> | <code>./tools/build.sh</code> |
 

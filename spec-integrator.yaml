@@ -165,6 +165,13 @@ llm_judge:
       severity: "ERROR"
       prompt_file: "tools/spec-integrator/prompts/checks/clarity_completeness.prompt"
 
+    - id: "obvious_typos_omissions"
+      name: "Obvious Typos and Missing Text"
+      mode: ["single", "cluster"]
+      enabled: true
+      severity: "WARNING"
+      prompt_file: "tools/spec-integrator/prompts/checks/obvious_typos_omissions.prompt"
+
     - id: "readability_structure"
       name: "Readable Procedure, Main-Line, and Supplementary-Condition Structure"
       mode: ["single", "cluster"]

@@ -1,6 +1,6 @@
 #!/bin/bash
-# Fireball LLM Single Document & High-Risk Island Reviewer (Bash)
-# Reviews single document section-by-section and related high-risk keyword islands.
+# Fireball LLM Single Document & High-Risk Keyword Link-Pair Reviewer (Bash)
+# Reviews single document section-by-section and related keyword definition/reference pairs.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -20,7 +20,7 @@ CONFIG="spec-integrator.yaml"
 
 usage() {
     cat <<'EOF'
-Fireball Single Document & High-Risk Island Review (LLM)
+Fireball Single Document & High-Risk Keyword Link-Pair Review (LLM)
 
 Usage:
   ./tools/llm-single-review.sh [OPTIONS]

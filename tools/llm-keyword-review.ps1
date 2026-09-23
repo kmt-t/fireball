@@ -1,5 +1,5 @@
-# Fireball LLM High-Risk Keyword Island Reviewer (PowerShell)
-# Reviews connected document islands associated with high-risk keywords.
+# Fireball LLM High-Risk Keyword Link-Pair Reviewer (PowerShell)
+# Reviews definition/reference section pairs for high-risk keywords.
 param(
     [string]$keyword = "",
     [int]$minRisk = 0,
@@ -15,16 +15,16 @@ param(
 
 if ($h -or $help) {
     Write-Host @"
-Fireball High-Risk Keyword Island Review (LLM)
+Fireball High-Risk Keyword Link-Pair Review (LLM)
 
 Usage:
   powershell tools/llm-keyword-review.ps1 [OPTIONS]
 
 Options:
-  -keyword <name>     Target a specific keyword's connected island.
+  -keyword <name>     Target definition/reference pairs for a keyword.
   -minRisk <N>        Minimum risk score filter for keywords (default from config).
   -check <id>         Run only a specific check ID.
-  -listChecks         List all available island review checks and exit.
+  -listChecks         List all available link-pair review checks and exit.
   -dryRun             Display prompt without calling LLM backend.
   -backend <name>     LLM backend override (jev, openrouter, sakura, ollama, mock).
   -model <name>       LLM model name override.

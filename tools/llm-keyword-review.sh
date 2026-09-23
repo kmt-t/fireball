@@ -1,6 +1,6 @@
 #!/bin/bash
-# Fireball LLM High-Risk Keyword Island Reviewer (Bash)
-# Reviews connected document islands associated with high-risk keywords.
+# Fireball LLM High-Risk Keyword Link-Pair Reviewer (Bash)
+# Reviews definition/reference section pairs for high-risk keywords.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -18,16 +18,16 @@ CONFIG="spec-integrator.yaml"
 
 usage() {
     cat <<'EOF'
-Fireball High-Risk Keyword Island Review (LLM)
+Fireball High-Risk Keyword Link-Pair Review (LLM)
 
 Usage:
   ./tools/llm-keyword-review.sh [OPTIONS]
 
 Options:
-  --keyword <name>      Target a specific keyword's connected island.
+  --keyword <name>      Target definition/reference pairs for a keyword.
   --min-risk <N>        Minimum risk score filter for keywords (default from config).
   --check <id>          Run only a specific check ID.
-  --list-checks         List all available island review checks and exit.
+  --list-checks         List all available link-pair review checks and exit.
   --dry-run             Display prompt without calling LLM backend.
   --backend <name>      LLM backend override (jev, openrouter, sakura, ollama, mock).
   --model <name>        LLM model name override.

@@ -1,9 +1,9 @@
 # Fireball Anchored LLM Semantic Judge Runner (PowerShell)
-# Audits all {VERIFY_LLM}-tagged documents (whole-document + cross-document island review)
+# Audits all {VERIFY_LLM}-tagged documents (whole-document + cross-document keyword link-pair review)
 # and persists anchored verdicts so the Obligation Verifier can discharge OBLIG-JUDGE-* / OBLIG-DOC-JUDGE-*.
 param(
     [int]$maxDocuments = 20,
-    [int]$maxSubgraphs = 20,
+    [int]$maxKeywordGroups = 20,
     [switch]$exhaustive,
     [string]$check = "",
     [switch]$listChecks,
@@ -24,10 +24,10 @@ Usage:
 
 Options:
   -maxDocuments <N>   Max tagged documents to audit in whole-document mode (default: 20, 0 for unlimited).
-  -maxSubgraphs <N>   Max document islands to audit in cluster mode (default: 20, 0 for unlimited).
-  -exhaustive         Ignore -maxDocuments/-maxSubgraphs and audit full coverage.
+  -maxKeywordGroups <N> Max keyword groups to audit as link pairs (default: 20, 0 for unlimited).
+  -exhaustive         Ignore -maxDocuments/-maxKeywordGroups and audit full coverage.
   -check <id>         Run only a specific check ID.
-  -listChecks         List all configured single/cluster review checks and exit.
+  -listChecks         List all configured single-section/link-pair review checks and exit.
   -dryRun             Display prompts without calling the LLM backend or persisting results.
   -backend <name>     LLM backend override (jev, openrouter, sakura, ollama, mock).
   -model <name>       LLM model name override.
@@ -45,7 +45,7 @@ Set-Location $repoRoot
 $cmdArgs = @("run", "--system-certs", "--project", "tools/spec-integrator",
              "python", "-m", "spec_integrator.cli", "llm-judge",
              "--config", $config, "--max-documents", "$maxDocuments",
-             "--max-subgraphs", "$maxSubgraphs")
+             "--max-keyword-groups", "$maxKeywordGroups")
 if ($exhaustive) { $cmdArgs += "-a" }
 if ($check) { $cmdArgs += @("--check", $check) }
 if ($listChecks) { $cmdArgs += "--list-checks" }

@@ -1,6 +1,6 @@
 #!/bin/bash
 # Fireball Anchored LLM Semantic Judge Runner (Bash)
-# Audits all {VERIFY_LLM}-tagged documents (whole-document + cross-document island review)
+# Audits all {VERIFY_LLM}-tagged documents (whole-document + cross-document keyword link-pair review)
 # and persists anchored verdicts so the Obligation Verifier can discharge OBLIG-JUDGE-* / OBLIG-DOC-JUDGE-*.
 set -euo pipefail
 
@@ -9,7 +9,7 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$REPO_ROOT"
 
 MAX_DOCUMENTS=20
-MAX_SUBGRAPHS=20
+MAX_KEYWORD_GROUPS=20
 EXHAUSTIVE=""
 CHECK=""
 LIST_CHECKS=""
@@ -27,10 +27,10 @@ Usage:
 
 Options:
   --max-documents <N>   Max tagged documents to audit in whole-document mode (default: 20, 0 for unlimited).
-  --max-subgraphs <N>   Max document islands to audit in cluster mode (default: 20, 0 for unlimited).
-  -a, --exhaustive      Ignore --max-documents/--max-subgraphs and audit full coverage.
+  --max-keyword-groups <N> Max keyword groups to audit as link pairs (default: 20, 0 for unlimited).
+  -a, --exhaustive      Ignore --max-documents/--max-keyword-groups and audit full coverage.
   --check <id>          Run only a specific check ID.
-  --list-checks         List all configured single/cluster review checks and exit.
+  --list-checks         List all configured single-section/link-pair review checks and exit.
   --dry-run             Display prompts without calling the LLM backend or persisting results.
   --backend <name>      LLM backend override (jev, openrouter, sakura, ollama, mock).
   --model <name>        LLM model name override.
@@ -43,7 +43,7 @@ EOF
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --max-documents)  MAX_DOCUMENTS="$2"; shift 2 ;;
-        --max-subgraphs)  MAX_SUBGRAPHS="$2"; shift 2 ;;
+        --max-keyword-groups)  MAX_KEYWORD_GROUPS="$2"; shift 2 ;;
         -a|--exhaustive)  EXHAUSTIVE="-a"; shift ;;
         --check)          CHECK="$2"; shift 2 ;;
         --list-checks)    LIST_CHECKS="--list-checks"; shift ;;
@@ -59,7 +59,7 @@ done
 CMD_ARGS=("run" "--system-certs" "--project" "tools/spec-integrator"
           "python" "-m" "spec_integrator.cli" "llm-judge"
           "--config" "$CONFIG" "--max-documents" "$MAX_DOCUMENTS"
-          "--max-subgraphs" "$MAX_SUBGRAPHS")
+          "--max-keyword-groups" "$MAX_KEYWORD_GROUPS")
 if [[ -n "$EXHAUSTIVE" ]]; then CMD_ARGS+=("$EXHAUSTIVE"); fi
 if [[ -n "$CHECK" ]]; then CMD_ARGS+=("--check" "$CHECK"); fi
 if [[ -n "$LIST_CHECKS" ]]; then CMD_ARGS+=("$LIST_CHECKS"); fi

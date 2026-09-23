@@ -132,28 +132,28 @@ llm_judge:
   checks:
     - id: "vertical_consistency"
       name: "Vertical Consistency (Definition vs. Designs)"
-      mode: ["cluster"]
+      mode: ["link_pair"]
       enabled: true
       severity: "ERROR"
       prompt_file: "tools/spec-integrator/prompts/checks/vertical_consistency.prompt"
 
     - id: "cross_doc_consistency"
       name: "Cross-Document Consistency (Pairwise Drift & Mismatches)"
-      mode: ["cluster"]
+      mode: ["link_pair"]
       enabled: true
       severity: "ERROR"
       prompt_file: "tools/spec-integrator/prompts/checks/cross_doc_consistency.prompt"
 
     - id: "keyword_definition_integrity"
       name: "Keyword Definition Source, Placement, and Meaning"
-      mode: ["cluster"]
+      mode: ["link_pair"]
       enabled: true
       severity: "ERROR"
       prompt_file: "tools/spec-integrator/prompts/checks/keyword_definition_integrity.prompt"
 
     - id: "keyword_reference_traceability"
       name: "Keyword Reference Role and Traceability Links"
-      mode: ["cluster"]
+      mode: ["link_pair"]
       enabled: true
       severity: "ERROR"
       prompt_file: "tools/spec-integrator/prompts/checks/keyword_reference_traceability.prompt"
@@ -167,70 +167,70 @@ llm_judge:
 
     - id: "numeric_agreement"
       name: "Numeric Agreement & Arithmetic"
-      mode: ["single", "cluster"]
+      mode: ["single", "link_pair"]
       enabled: true
       severity: "ERROR"
       prompt_file: "tools/spec-integrator/prompts/checks/numeric_agreement.prompt"
 
     - id: "clarity_completeness"
       name: "Clarity & Unresolved Ambiguity"
-      mode: ["single", "cluster"]
+      mode: ["single", "link_pair"]
       enabled: true
       severity: "ERROR"
       prompt_file: "tools/spec-integrator/prompts/checks/clarity_completeness.prompt"
 
     - id: "obvious_typos_omissions"
       name: "Obvious Typos and Missing Text"
-      mode: ["single", "cluster"]
+      mode: ["single", "link_pair"]
       enabled: true
       severity: "WARNING"
       prompt_file: "tools/spec-integrator/prompts/checks/obvious_typos_omissions.prompt"
 
     - id: "readability_structure"
       name: "Readable Procedure, Main-Line, and Supplementary-Condition Structure"
-      mode: ["single", "cluster"]
+      mode: ["single", "link_pair"]
       enabled: true
       severity: "WARNING"
       prompt_file: "tools/spec-integrator/prompts/checks/readability_structure.prompt"
 
     - id: "natural_language_standards"
       name: "Japanese Natural Language Standard"
-      mode: ["single", "cluster"]
+      mode: ["single", "link_pair"]
       enabled: true
       severity: "WARNING"
       prompt_file: "tools/spec-integrator/prompts/checks/natural_language_standards.prompt"
 
     - id: "diagram_standards"
       name: "Mermaid Diagram Appropriateness"
-      mode: ["single", "cluster"]
+      mode: ["single", "link_pair"]
       enabled: true
       severity: "WARNING"
       prompt_file: "tools/spec-integrator/prompts/checks/diagram_standards.prompt"
 
     - id: "claim_substantiation"
       name: "Claim-Evidence Substantiation & Unbacked Assertions"
-      mode: ["single", "cluster"]
+      mode: ["single", "link_pair"]
       enabled: true
       severity: "ERROR"
       prompt_file: "tools/spec-integrator/prompts/checks/claim_substantiation.prompt"
 
     - id: "reference_by_keyword_or_filename"
       name: "Reference by Keyword or File Path Only (No Fragile Chapter/Section Numbers)"
-      mode: ["single", "cluster"]
+      mode: ["single", "link_pair"]
       enabled: true
       severity: "ERROR"
       prompt_file: "tools/spec-integrator/prompts/checks/reference_by_keyword_or_filename.prompt"
 
     - id: "rationale_over_history"
       name: "Design Rationale Over Chronological History"
-      mode: ["single", "cluster"]
+      mode: ["single", "link_pair"]
       enabled: true
       severity: "WARNING"
       prompt_file: "tools/spec-integrator/prompts/checks/rationale_over_history.prompt"
 
     - id: "redundancy_and_duplication"
       name: "Redundancy & Duplication Audit (Permit Multi-perspective Descriptions)"
-      mode: ["cluster"]
+      mode: ["link_pair"]
       enabled: true
       severity: "WARNING"
       prompt_file: "tools/spec-integrator/prompts/checks/redundancy_and_duplication.prompt"

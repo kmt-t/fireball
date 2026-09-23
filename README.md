@@ -64,7 +64,7 @@ powershell -ExecutionPolicy Bypass -File tools/check-src.ps1 -group all   # Wind
 For Cloud LLM Semantic Audit (milestone / release gate — explicit user instruction only):
 ```powershell
 powershell -ExecutionPolicy Bypass -File tools/risk.ps1               # risk assessment
-powershell -ExecutionPolicy Bypass -File tools/llm-keyword-review.ps1 # high-risk island audit
+powershell -ExecutionPolicy Bypass -File tools/llm-keyword-review.ps1 # high-risk keyword link-pair audit
 ```
 
 ## How to Build

@@ -1,5 +1,5 @@
-# Fireball LLM Single Document & High-Risk Island Reviewer (PowerShell)
-# Reviews single document section-by-section and related high-risk keyword islands.
+# Fireball LLM Single Document & High-Risk Keyword Link-Pair Reviewer (PowerShell)
+# Reviews single document section-by-section and related keyword definition/reference pairs.
 param(
     [Alias("f")]
     [string]$file = "",
@@ -19,7 +19,7 @@ param(
 
 if ($h -or $help) {
     Write-Host @"
-Fireball Single Document & High-Risk Island Review (LLM)
+Fireball Single Document & High-Risk Keyword Link-Pair Review (LLM)
 
 Usage:
   powershell tools/llm-single-review.ps1 [OPTIONS]

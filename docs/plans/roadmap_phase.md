@@ -46,7 +46,7 @@
 ## Phase 1: vSoC First（C++23 実装 / 約3ヶ月）【待機中 / オーナー GO 待ち】
 <!-- traceability: {Interpreter_LazyJITSwitch} {LightweightVerifier} {META_AI_Native_Dev} -->
 
-スタンドアロン vSoC コア（Loader, Interpreter, JIT）を C++23 で実装し、ホストハーネス上で WAMR 比較ベンチマークを実施する。
+スタンドアロン vSoC コア（Loader, Interpreter, JIT）を C++23 で実装し、ホストハーネス上で WAMR 比較ベンチマークを実施する。プロジェクトの言語標準は C23/C++23 とする。
 **コンパイラ要件: Clang 17+ 必須（`[[clang::musttail]]` 前提、GCC/MSVC 非サポート）**。
 
 - **Phase 1.0: Core Utilities (`inc/common/`)**
@@ -79,7 +79,7 @@
 
 周辺コンポーネントの実装と C++23 統合。
 
-- **COOS カーネル**: スタックレス C++20 コルーチンスケジューラ、対称ハンドオフ (`os_scheduler.hxx`, `os_coos.hxx`)
+- **COOS カーネル**: C++23 で実装するスタックレスコルーチンスケジューラ（C++20 コルーチン機能を使用）、対称ハンドオフ (`os_scheduler.hxx`, `os_coos.hxx`)
 - **IPC ルータ**: 3段階ルーティング、ゼロコピー CSP チャネル & RAII 所有権移譲 (`ipc_router.hxx`) `{CSP_Handoff}`
 - **vMMIO コントローラ**: 多段ダイレクトデコードページテーブル & ソフトウェア TLB (`runtime_vmmio.hxx`) `FastAddressCheck`
 - **HAL & WASI ドライバ**: GPIO / I2C / SPI / Timer / WASI Preview 1、`HalBufferPool` (`hal_dispatch.hxx`, `platform_driver.hxx`, `platform_wasi.hxx`)

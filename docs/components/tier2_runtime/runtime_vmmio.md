@@ -33,7 +33,7 @@ FlatMap 単体での探索は $O(\log N)$ である。本アーキテクチャ�
 
 vMMIO領域（Stage 2/3）のセキュリティモデルは**PTEに埋め込まれた権限フィールドがゲート**である。アクセス権限は PTE に保持され、ルックアップと権限チェックを1パスで完結させる。ゲストRAM（Stage 1）はPTEを経由せず、`FastAddressCheck` による境界チェックのみをゲートとする別経路である。アクセス特性に応じてセキュリティゲートを以下の3段階に階層化する。
 
-1. **Stage 1 (ゲストRAMバイパス)**: ゲスト専用RAM領域（Bit 31 == 0、FC=0..7）。`addr >= guest_ram_size` による比較ベースの単一の高速境界チェック（`FastAddressCheck`）のみで高速処理し、境界外は即座にトラップする。
+1. **Stage 1 (ゲストRAMバイパス)**: ゲスト専用RAM領域（Bit 31 == 0、FC=0..7）。`addr >= guest_ram_size` による比較ベースの単一の高速境界チェック（FastAddressCheck）を行い、境界外は即座にトラップする。
 2. **Stage 2 (静的vMMIO, FC=12)**: コンパイル時にアドレスが確定するコアデバイス（IPCR、vIRQ等）。システムコールと VDMA の host call はこのアドレス空間を経由しない。
 3. **Stage 3 (動的vMMIO, FC=13-15)**: HAL DYNAMIC（FC=13, `0xD000_0000`）、SHM（FC=14, `0xE000_0000`）、PASSTHROUGH（FC=15, `0xF000_0000`）領域のアクセス。TLB または FlatMap を経由して PTE を解決し、エントリの権限フィールドで可否を判定する。DYNAMIC はマルチゲスト構成でも同時にマップできるゲストを1つに限定する。
 
@@ -139,7 +139,7 @@ Static Devices (Stage 2) 向け。PTE には Device Type やパーミッショ�
 
 #### Stage 3 ページテーブルエントリ
 <!-- traceability: {META_Static_Resolution} {OwnershipTransfer} -->
-SHM (FC=14) および Passthrough (FC=15) 向け。PTEにはページ保護フラグとSHM所有タスクIDを保持し、SHMでは別メタデータとして物理バック基点と実サイズを保持する。SHMアクセスではスケジューラの現在タスクIDと`owner_id`を照合し、Revokeまたは所有権変更時はPTEをアンマップしてTLBをフラッシュする。DYNAMIC (FC=13) はHALバッファプールの操作期間マッピングで保護する。
+SHM (FC=14) および Passthrough (FC=15) 向け。PTEにはページ保護フラグとSHM所有タスクIDを保持し、SHMでは別メタデータとして物理バック基点と実サイズを保持する。SHMアクセスではスケジューラの現在タスクIDと`owner_id`を照合し、所有者が一致しないアクセスは未登録ページフォルト（`TRAP_UNREGISTERED_PAGE`）として遮断する（`{OwnerMismatchTrap}`）。Revokeまたは所有権変更時はPTEをアンマップしてTLBをフラッシュする。DYNAMIC (FC=13) はHALバッファプールの操作期間マッピングで保護する。
 
 ```
 32-bit Stage 3 permission PTE (mapping metadata is held beside it):

@@ -8,6 +8,7 @@
 **適用範囲外の明記**: `runtime_logging.md` 冒頭は「本コンポーネントが扱うのはビルド時に辞書登録された固定フォーマットの内部状態ログのみである」と明示し、ゲストの `wasi:cli/stdout`/`stderr`（`print`/`eprint`）は別経路（`interface_wit.md` の `console-output` の位置づけ節、`fireball://hal/stdout/0`）で扱うとしている。したがって本テスト仕様書は **辞書ベースの内部ログ** のみを対象とし、生バイト出力は [`interface_wit_test_spec.md`](docs/qa/tier3_platform/interface_wit_test_spec.md) 側の責務とする。
 
 ## 2. テストケース一覧
+<!-- traceability: {DictionaryBasedIPC} -->
 
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
@@ -19,7 +20,7 @@
 | TEST-LOG-06 | idle_hookでのフラッシュ | ログを複数件queueした状態 | idle_hook相当（`flush()`）を呼ぶ | バッファ内の全エントリが`transport`（DMA相当）へ一括転送され、バッファが空になる | `{GLOBAL_IdleDetection}` |
 | TEST-LOG-07 | flush中の割り込み | `interrupt_pending`がバッチ完了後にTrueを返すコールバックを渡す | flushを実行 | 現在のバッチ（DMA転送）完了時点で処理を中断し、残りのエントリはバッファに残る | logging_concept.py `test_logger_flush_interruption` |
 | TEST-LOG-08 | tick（timestamp）の単調増加 | 複数回log_event | 各エントリのtimestamp_tickを確認 | 呼び出し順に単調増加する | LogEntry.timestamp_tick |
-| TEST-LOG-09 | ダングリングポインタ（実行時文字列）の禁止 | 実行時に構築した任意長文字列をdict_offset経由で渡そうとする | ログAPIの引数型を確認 | ログAPIは固定オフセット+u32引数4個のみを受け付け、任意長文字列やポインタ相当の値を安全に埋め込む手段が存在しないことを確認する（`{DictionaryBasedIPC}`の「実行時の辞書追加は不可」の裏付け） |  README `test_logger_cannot_carry_a_runtime_string_but_console_can` |
+| TEST-LOG-09 | ダングリングポインタ（実行時文字列）の禁止 | 実行時に構築した任意長文字列をdict_offset経由で渡そうとする | ログAPIの引数型を確認 | ログAPIは固定オフセット+u32引数4個のみを受け付け、任意長文字列やポインタ相当の値を安全に埋め込む手段が存在しないことを確認する（`DictionaryBasedIPC`の「実行時の辞書追加は不可」の裏付け） |  README `test_logger_cannot_carry_a_runtime_string_but_console_can` |
 | TEST-LOG-10 | IPC経由でのログ要求（`fireball://logging/system/0`） | IPCルータに`logging`宛のルートが存在する状態（ギャップ項目参照） | `handle_ipc_message`相当のペイロード（level/dict_offset/arg0-3のdict）でIPC_SENDする | ログが`log_event`と同じ結果でキューイングされる | logging_concept.py `handle_ipc_message`, `test_logger_ipc_message_handling` |
 | TEST-LOG-11 | ログ辞書ストレージ所有権分離 | 外部で実体ペア配列（ROM/静的バッファ）を定義 | ログ辞書初期化 | ログ辞書および非所有ビューが外部ストレージを参照し、実体を自己所有・複製しない | logging_concept.py `test_logger_storage_ownership_separation` |
 | TEST-LOG-12 | インタープリタ実行時トラップの診断ログ出力 | `Interpreter` にロガーを結線し、ゲストコードで整数ゼロ除算を実行 | トラップ発生後 `flush()` | `0x030F`（`TRAP: integer divide by zero`）がフォーマットされ `unified_pc` を伴って UART へ出力される | 4.2.1, `GOTCHA-LOG-04` |

@@ -30,13 +30,13 @@
 ## 3. ステンシル・カタログ (Thumb-2 Stencil Catalog)
 
 ### 3.1 プロローグ・ステンシルと共通終了コード (Prologue Stencil & Common Epilogue)
-<!-- traceability: {ContextPointerRegister} {EnvironmentPointer} {JIT_RuntimeAPI_Fallback} {ADR_TosCacheAsymmetry} {JIT_LazyChaining} -->
+<!-- traceability: {ADR_TosCacheAsymmetry} {ContextPointerRegister} {EnvironmentPointer} {GOTCHA-JITC-07} {JIT_LazyChaining} {JIT_RuntimeAPI_Fallback} -->
 
 トレース境界には、性質の異なる 2 種類のエントリと 2 種類のエグジットが存在し、両者を混同してはならない。
 
 - **新規エントリ（共通プロローグ / AAPCS 準拠開始プロローグ `STENCIL_PROLOGUE_FULL`）**: Interpreter／RuntimeEngineから`exec_trace`へ移行するときは必ず通過する。継続渡し4論理引数（`R0=ctx, R1=sp, R2=local_base, R3=tos`）を受け、callee-savedレジスタを退避し、開始時SPをAAPCSの8-byte境界に保つ。入口variantの割り当てを整え、`R3: tos`をJITスタックキャッシュTOSとして使う。Interpreterから内部chain entryへ直接入ってはならない。
 - **トレースチェインエピローグ**: 各基本ブロック末尾で必須とする。dirtyなスタックキャッシュ（`R3: TOS`、必要なら`R4: NOS`、`R5: NNOS`）を共有オペランド領域へflushし、`ctx->ip`と`ctx->sp_offset`を同期する。チェイン継続時はAAPCSフレームを維持し、後続variantの互換性を判定する。互換ならchain entryへ、非互換なら共有オペランド領域から再構成するsetup codeを経て後続traceへ進む。これは関数復帰するAAPCS準拠終了エピローグとは別物である。
-- **AAPCS 準拠終了コード**: RuntimeEngine／Interpreter境界へ戻るtrace終端で使用する。共有状態を同期し、callee-savedレジスタを復元してreturnまたは規定のtail transferを行う。これはステンシル表から除外し、固定共通コード領域で生成する。JITからInterpreterへの移行、trap、WASM `return`直前の境界で使い、WASM戻り値そのものは共有オペランド領域に置く（`{GOTCHA-JITC-07}`）。
+- **AAPCS 準拠終了コード**: RuntimeEngine／Interpreter境界へ戻るtrace終端で使用する。共有状態を同期し、callee-savedレジスタを復元してreturnまたは規定のtail transferを行う。これはステンシル表から除外し、固定共通コード領域で生成する。JITからInterpreterへの移行、trap、WASM `return`直前の境界で使い、WASM戻り値そのものは共有オペランド領域に置く（`GOTCHA-JITC-07`）。
 - **チェイン出口**: 後続traceが常駐・解決済みでもトレースチェインエピローグを省略しない。共有状態のflush/sync後にvariantを判定し、必要なsetupを挟む。AAPCS準拠終了コードによるcallee-saved復元はInterpreter／RuntimeEngineへ戻る場合だけ行う。
 
 #### AAPCS 準拠開始プロローグ — `STENCIL_PROLOGUE_FULL` (Callee-saved 全域退避 + LR、新規エントリ専用)

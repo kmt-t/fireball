@@ -10,16 +10,17 @@
 
 ## 2. テストケース一覧
 
-### 非サポート機能の拒否 ({Wasm32Only})
+### 非サポート機能の拒否 (Wasm32Only)
+<!-- traceability: {Wasm32Only} -->
 
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| TEST-WASM-01 | Wasm64/Memory64/Table64の拒否 | 該当構文を含むバイナリ | ロード | `ERR_WASM_UNSUPPORTED_FEATURE`で即時拒否 | `{Wasm32Only}` |
-| TEST-WASM-02 | SIMD(`0xFD`)の拒否 | SIMDプレフィックス命令 | ロード | 同上 | {Wasm32Only} |
-| TEST-WASM-03 | Threads/Atomics(`0xFE`)の拒否 | 該当命令 | ロード | 同上 | {Wasm32Only} |
-| TEST-WASM-04 | 参照型(`externref`/`funcref`をGC対象として)の拒否 | 該当構文 | ロード | 同上 | {Wasm32Only} |
-| TEST-WASM-05 | 例外処理(EH)命令の拒否 | 該当命令 | ロード | 同上 | {Wasm32Only} |
-| TEST-WASM-06 | Tail Call(`return_call`/`return_call_indirect`)の拒否 | 該当命令 | ロード | 同上 | {Wasm32Only} |
+| TEST-WASM-01 | Wasm64/Memory64/Table64の拒否 | 該当構文を含むバイナリ | ロード | `ERR_WASM_UNSUPPORTED_FEATURE`で即時拒否 | `Wasm32Only` |
+| TEST-WASM-02 | SIMD(`0xFD`)の拒否 | SIMDプレフィックス命令 | ロード | 同上 | Wasm32Only |
+| TEST-WASM-03 | Threads/Atomics(`0xFE`)の拒否 | 該当命令 | ロード | 同上 | Wasm32Only |
+| TEST-WASM-04 | 参照型(`externref`/`funcref`をGC対象として)の拒否 | 該当構文 | ロード | 同上 | Wasm32Only |
+| TEST-WASM-05 | 例外処理(EH)命令の拒否 | 該当命令 | ロード | 同上 | Wasm32Only |
+| TEST-WASM-06 | Tail Call(`return_call`/`return_call_indirect`)の拒否 | 該当命令 | ロード | 同上 | Wasm32Only |
 
 ### 制御フロー
 

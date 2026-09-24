@@ -1,4 +1,5 @@
-# 物理リソース予算 & C++ 実装規模見積もり仕様書 {Resource_Estimation_Model}
+# 物理リソース予算 & C++ 実装規模見積もり仕様書
+<!-- traceability: {Resource_Estimation_Model} -->
 
 ## 1. 目的
 
@@ -34,9 +35,10 @@
 ---
 
 ## 3. 物理リソース予算見積もり（ROM vs RAM）
+<!-- traceability: {ConsolidatedHeap} {GLOBAL_StrictMemoryLimit} {Resource_Estimation_Model} -->
 
-評価ターゲット環境：**最小構成 SRAM 32KB / Flash 96KB**（想定構成: SRAM 64KB / Flash 128KB、`{Resource_Estimation_Model}`、`requirement_list.md` の制約事項を正本とする）。
-動的ヒープ確保（`malloc` / `new`）を一切排除し、全メモリをコンパイル時に静的割り当て（`constexpr` / `.bss` / `.data`）する。 `{GLOBAL_StrictMemoryLimit}` `{ConsolidatedHeap}`
+評価ターゲット環境：**最小構成 SRAM 32KB / Flash 96KB**（想定構成: SRAM 64KB / Flash 128KB、`Resource_Estimation_Model`、`requirement_list.md` の制約事項を正本とする）。
+動的ヒープ確保（`malloc` / `new`）を一切排除し、全メモリをコンパイル時に静的割り当て（`constexpr` / `.bss` / `.data`）する。
 
 ### 3.1 RAM（SRAM: 可変状態・バッファ・スタック）予算内訳
 
@@ -72,8 +74,9 @@ RAM 領域は、主動作用の**統合物理メモリプール（`ConsolidatedH
 ---
 
 ### 3.2 ROM（Flash: 不変データ `.rodata` & 機械語コード `.text`）予算内訳
+<!-- traceability: {ROMParsing} -->
 
-ROM 領域は、コンパイル時に静的に確定する不変ルックアップテーブル・辞書（`.rodata`）と、ハイパーバイザ本体の機械語コード（`.text`）で構成される。WASM ゲストバイナリ自体は Flash 上のバイト列を直接パース・実行するため、RAM への展開を伴わない。 `{ROMParsing}`
+ROM 領域は、コンパイル時に静的に確定する不変ルックアップテーブル・辞書（`.rodata`）と、ハイパーバイザ本体の機械語コード（`.text`）で構成される。WASM ゲストバイナリ自体は Flash 上のバイト列を直接パース・実行するため、RAM への展開を伴わない。
 
 | データ実体 / テーブル名 | ROM サイズ | 配置理由・不変条件（なぜ ROM に置けるか） |
 | :--- | :---: | :--- |
@@ -97,9 +100,10 @@ ROM 領域は、コンパイル時に静的に確定する不変ルックアッ�
 ---
 
 ## 4. 予算整合性と成立性総評
+<!-- traceability: {Size_20KSLOC} -->
 
 1. **実装規模の成立性**:
-   - コード規模要求 `{Size_20KSLOC}` の上限は20 KSLOCである。pysim物理行数からの参考推定は約21.5〜23.4 KSLOCとなるため、SLOC定義でのC++実測まで予算達成を確定しない。
+   - コード規模要求 `Size_20KSLOC` の上限は20 KSLOCである。pysim物理行数からの参考推定は約21.5〜23.4 KSLOCとなるため、SLOC定義でのC++実測まで予算達成を確定しない。
 2. **RAM リソースの成立性**:
    - 統合物理プール（23,552 B）＋ システムスタック・静的変数（約 3,500 B）＝ 約 27,052 B。
    - 32KB SRAM の評価ターゲット環境において、約 5,716 B（約 17.4%）の余裕を確保する。

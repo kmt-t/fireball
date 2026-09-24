@@ -23,6 +23,7 @@ Fireball Hypervisor の現行作業および次期フェーズのタスク一覧
 現在は **Step 2（シミュレータコード品質向上、実装の勘所・Gotchas抽出、テスト設計・コードへの還元）** を集中的に推進中。
 
 ### 1. 現在進行中のタスク (ACTIVE: Step 2 推進中)
+<!-- traceability: {JIT_CardAgingSweep} {META_SpecificationFirst} {Size_20KSLOC} -->
 - [ ] **Step 2.1: pysim シミュレータコードの品質向上 & リファクタリング**:
   - `experiments/pysim/` 配下の各モジュール（Loader, Interpreter, JIT, COOS, vMMIO, HAL, GDB）のコード品質向上
   - 可読性・保守性・モジュール分離の洗練、不要・重複コードの排除、最新設計思想に沿った自然言語コメントの徹底
@@ -35,7 +36,7 @@ Fireball Hypervisor の現行作業および次期フェーズのタスク一覧
   - JIT遷移テストを現行`Interpreter`／`RuntimeEngine.run()`へ移行し、旧`IntegratedHybridEngine`と旧ランタイムエンジンを削除した
   - デバッガ／GDBのブロック単位操作は、製品ランタイムへテスト専用APIを追加せず、[`runtime_test_driver.py`](experiments/pysim/qa/runtime_test_driver.py)にテスト側ドライバとして分離した
   - 移行後の関連テストは、JIT 8件、vSoC 21件、デバッガ 8件、GDB 1件、Gotchas 30件が通過している
-- [x] **カード状態のエイジング（`{JIT_CardAgingSweep}`）**:
+- [x] **カード状態のエイジング（`JIT_CardAgingSweep`）**:
   - 3面キャッシュのローテーションごとに関数更新表（関数につき1ビット）を8関数単位で巡回し、`EXECUTED` のカードだけを `UNEXECUTED` へ戻す方式を、仕様・形式モデル・コンセプトコード・pysim・テスト仕様へ同期した
   - 巡回は、値が0でないバイトの処理数（`FB_CONF_JIT_AGING_STEP_UNITS`）または走査バイト数（`FB_CONF_JIT_AGING_STEP_SCAN_BYTES`）で打ち切る。既定値は仮値であり、aobench 等の実測で調整する
   - 関数更新表は関数数ビット（⌈関数数/8⌉ バイト）である。RAM 予算への影響は Step 2.4 で確認する
@@ -52,9 +53,9 @@ Fireball Hypervisor の現行作業および次期フェーズのタスク一覧
   - 詳細正本: [`resource_budget_estimation.md`](docs/architecture/resource_budget_estimation.md)
   - **RAM (32KB)**: 統合物理メモリプール 23.55KB + OSスタック/静的変数 ~3.5KB $\to$ 静的合計 **~27.05 KB** (余裕 ~5.72 KB / 17.4%) の実機適合確認 `{Resource_Estimation_Model}`
   - **ROM (96KB)**: 不変ルックアップテーブル/辞書 ~8.2KB + 機械語コード ~45〜55KB $\to$ 静的合計 **~53〜63 KB** (空き余白 ~33〜43 KB / 約34〜45%) の確認
-  - **コード規模 (20 KSLOC)**: コメントとテストを除く製品ソースコードの上限を20,000 SLOCとする `{Size_20KSLOC}`。最新pysimの18,701物理行からの参考推定は約21.5〜23.4 KSLOCであり、計測定義が異なるため、C++実測と同じSLOC条件で再見積もりする
+  - **コード規模 (20 KSLOC)**: コメントとテストを除く製品ソースコードの上限を20,000 SLOCとする `Size_20KSLOC`。最新pysimの18,701物理行からの参考推定は約21.5〜23.4 KSLOCであり、計測定義が異なるため、C++実測と同じSLOC条件で再見積もりする
 - [ ] **Step 2.5: オーナー（人間）による最終品質レビュー & Phase 1 GO 判定**:
-  - 仕様・シミュレータコード・テスト設計・バジェットを Freeze し、C++23 実装フェーズ（Phase 1）への移行を最終承認 `{META_SpecificationFirst}`
+  - 仕様・シミュレータコード・テスト設計・バジェットを Freeze し、C++23 実装フェーズ（Phase 1）への移行を最終承認
 
 ---
 
@@ -98,6 +99,7 @@ Fireball Hypervisor の現行作業および次期フェーズのタスク一覧
   - WebAssembly 公式 Core テストスイート（Spec Tests）サブセットのパス確認
 
 ### Phase 1.3: Copy-and-Patch JIT Compiler & Runtime (`jit_compiler`, `jit_runtime`)
+<!-- traceability: {Interpreter_LazyJITSwitch} -->
 - [ ] **ARM Thumb-2 / x86_64 ネイティブパッチステンシル (`inc/jit/stencils.hxx`)**:
   - 継続渡し4論理引数レジスタ規約準拠の事前コンパイル済みネイティブバイト列（RO-Data）とリロケーションテーブル `{JIT_CopyAndPatch}` `{ADR_TosCacheAsymmetry}`
 - [ ] **トリプルバッファ キャッシュマネージャ (`src/jit/cache_manager.cxx`)**:
@@ -105,7 +107,7 @@ Fireball Hypervisor の現行作業および次期フェーズのタスク一覧
   - MPU W^X バッチトランザクション管理（書き込み時 RW+XN / 実行時 RO+X）
   - 3段検索（カードマーキング → Folding XOR高速キャッシュ → 少数のソート済みJITエントリの二分探索。Radix索引なし）
 - [ ] **Safepoint 協調 & 透過的インタープリタ切り替え (`src/jit/safepoint.cxx`)**:
-  - JIT $\leftrightarrow$ インタープリタ間の Low-Overhead フォールバックおよびホットスポット検出 `{JIT_LazyChaining}` `{Interpreter_LazyJITSwitch}` `{JIT_RuntimeAPI_Fallback}`
+  - JIT $\leftrightarrow$ インタープリタ間の Low-Overhead フォールバックおよびホットスポット検出 `{JIT_LazyChaining}` `Interpreter_LazyJITSwitch` `{JIT_RuntimeAPI_Fallback}`
 - [ ] **JIT 単体テストスイート (`tests/test_jit.cxx`)**:
   - ホットスポットループの JIT トレース生成・実行・フォールバック検証
 

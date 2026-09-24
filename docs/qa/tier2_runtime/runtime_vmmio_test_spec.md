@@ -30,13 +30,14 @@ Bit31によるRAM/vMMIO高速分岐、64件のFlatMap PTE + 32エントリDirect
 
 ### 2.2 テストケース詳細一覧
 
-### アドレス分解・高速バイパス ({FastAddressCheck})
+### アドレス分解・高速バイパス
+<!-- traceability: {FastAddressCheck} {MemoryBoundaryCheck} -->
 
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| TEST-VMMIO-01 | Bit31==0はRAMバイパス | - | `access(addr)`、addr<0x8000_0000 | vMMIOテーブルに一切触れず`OK_GUEST_RAM`（TLB miss/hitカウンタが変化しない） | {FastAddressCheck}, `vmmio_concept.py` `test_ram_bypass_never_touches_page_table` |
-| TEST-VMMIO-02 | ゲストRAM境界チェック（比較、マスクなし） | `guest_ram_size`設定済み | 境界ちょうど（size-1）とその1バイト先をアクセス | size-1はOK、size以降は`OUT_OF_BOUNDS`（2の冪制約なし） | {FastAddressCheck}, `vmmio_concept.py` `test_linear_ram_bound_check_works_for_non_power_of_two_size` |
-| TEST-VMMIO-03 | 境界外アドレスの黙示的ラップアラウンド禁止 | 境界外アドレス | アクセス | 必ずトラップし、折り畳んで継続しない | {MemoryBoundaryCheck}, `vmmio_concept.py` `test_linear_ram_is_bounds_checked_not_waved_through` |
+| TEST-VMMIO-01 | Bit31==0はRAMバイパス | - | `access(addr)`、addr<0x8000_0000 | vMMIOテーブルに一切触れず`OK_GUEST_RAM`（TLB miss/hitカウンタが変化しない） | FastAddressCheck, `vmmio_concept.py` `test_ram_bypass_never_touches_page_table` |
+| TEST-VMMIO-02 | ゲストRAM境界チェック（比較、マスクなし） | `guest_ram_size`設定済み | 境界ちょうど（size-1）とその1バイト先をアクセス | size-1はOK、size以降は`OUT_OF_BOUNDS`（2の冪制約なし） | FastAddressCheck, `vmmio_concept.py` `test_linear_ram_bound_check_works_for_non_power_of_two_size` |
+| TEST-VMMIO-03 | 境界外アドレスの黙示的ラップアラウンド禁止 | 境界外アドレス | アクセス | 必ずトラップし、折り畳んで継続しない | MemoryBoundaryCheck, `vmmio_concept.py` `test_linear_ram_is_bounds_checked_not_waved_through` |
 
 ### FlatMap PTE + TLB ({META_FlatMapIndexed})
 

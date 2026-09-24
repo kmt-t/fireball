@@ -76,8 +76,9 @@ IPC通信の最小単位。1つのメッセージで8個のペアを送信でき
 | | `0b00011` | `uint16_t` / 16ビット即値 |
 
 ##### スコープ定義
-- **機能的IPC**: キーを、受信側が定義する関数やリクエスト種類を特定する識別子として使用する。 `{TypeSafeMessaging}`
-- **辞書参照IPC**: キーを、受信側が保持する静的な辞書内の文字列オフセットとして解釈する。 `{DictionaryBasedIPC}`
+<!-- traceability: {DictionaryBasedIPC} {TypeSafeMessaging} -->
+- **機能的IPC**: キーを、受信側が定義する関数やリクエスト種類を特定する識別子として使用する。
+- **辞書参照IPC**: キーを、受信側が保持する静的な辞書内の文字列オフセットとして解釈する。
 - **階層URIルーティング**: 各HALサブシステムは `fireball://hal/<type>/<instance>`（例: `fireball://hal/uart/0`, `fireball://hal/gpio/0` 等）の正規化URIで登録する。IPCルータを介して $O(\log N)$ でディスパッチする。
 
 #### IPCメッセージ（message）
@@ -743,12 +744,12 @@ IPCのプリミティブ性を隠蔽し、依存性の逆転 (IoC) を実現す�
 
 ### 6.1 検証対象の不変条件
 
-<!-- traceability: {IPC_ZeroCopy} -->
+<!-- traceability: {IPC_ZeroCopy} {RoleBasedAccessControl} -->
 
 | 不変条件 | 説明 | 検証方法 |
 | :--- | :--- | :--- |
 | **所有権単調性** | 要求は Sender → In-flight → Receiver、応答は Receiver → In-flight → Sender の順に移譲され、二重所有が発生しないこと。`{OwnershipTransfer}` | `formal/csp_handoff_model.py` CTL 安全性検証 (`AG(Not(sender_owns & receiver_owns))` ➔ True) |
-| **デッドロック不在** | クライアント・サーバ規律（非循環チャネル依存）により、Send/Recv の循環待ちデッドロックが発生しないこと。`{RoleBasedAccessControl}` | 設計レビュー（自動の機械的閉路検査ツールは無し） |
+| **デッドロック不在** | クライアント・サーバ規律（非循環チャネル依存）により、Send/Recv の循環待ちデッドロックが発生しないこと。`RoleBasedAccessControl` | 設計レビュー（自動の機械的閉路検査ツールは無し） |
 | **要求・応答待機の安全性** | 相手が未到達なら送信側は要求In-flightで待機し、受信後は応答コード設定と応答ハンドオフが完了するまで送信側をブロックする。相手タスクの到達・有限時間内の応答はCSP単独では保証しない。`{ADR_RendezvousChannel}` | `formal/csp_handoff_model.py`で要求待機・応答待機の自己ループを含めて検査。無条件の有限応答時間は証明しない |
 | **単一待機者制約** | 1 本の CSP チャネルは同時に高々 1 つの送信待機または受信待機しか保持しない（キューではない）こと。 | `formal/csp_handoff_model.py` 不変式検証（二重待機の禁止） |
 

@@ -53,6 +53,7 @@
 | | [`jit_runtime.md`](docs/components/tier3_executer/jit_runtime.md) | 3面キャッシュ代謝、2-bit Card Marking、UnifiedPC + 少数エントリ二分探索 | Scenario 4, 5 |
 
 ### 1.3 仕様キーワード・不変条件カバレッジ追跡表 (Requirements Traceability Matrix: RTM)
+<!-- traceability: {OwnerMismatchTrap} {TraceBoundaryInvariant} -->
 
 各コンポーネント設計書に定義されている仕様キーワード、アーキテクチャ不変条件（Invariants）、およびエッジケース要件に対する結合テスト（Scenario 1〜12）の実動網羅状況：
 
@@ -138,6 +139,7 @@
 ---
 
 ### シナリオ 4: Tier 2 Runtime + Tier 3 Executer Hybrid Compilation
+<!-- traceability: {TraceBoundaryInvariant} -->
 - **対象コンポーネント**: `interpreter`, `runtime_engine` (CardMarking, HistoryRing), `jit_compiler`, `jit_runtime`
 - **参照実装スクリプト (Reference Script)**: [`scenario4_hybrid_jit_loop.py`](experiments/pysim/qa/scenarios/scenario4_hybrid_jit_loop.py)
 - **WAT シナリオ**:
@@ -239,6 +241,7 @@
 ---
 
 ### シナリオ 10: Tier 2 Runtime vMMIO Virtual Devices & Address Translation
+<!-- traceability: {OwnerMismatchTrap} -->
 - **対象コンポーネント**: `runtime_vmmio`, `runtime_syscall`, `runtime_memory`, `system_config`
 - **参照実装スクリプト (Reference Script)**: [`scenario10_vmmio_virtual_devices.py`](experiments/pysim/qa/scenarios/scenario10_vmmio_virtual_devices.py)
 - **検証シナリオ**:

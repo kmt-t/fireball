@@ -8,13 +8,14 @@
 URIベースのサービス検索（3段パイプライン）、デバイス種別だけを表すロールとURIインスタンスの分離、ロールベースアクセス制御、ゼロコピー要求・応答（Request Revoke→Rendezvous→Grant→Response、バッファなし同期CSPハンドオフ）、Schedulerによる送信元TCB IDの認証、および受信側のガード付き外部選択（select、複数の許可された送信元エッジを同時に待ち受ける）を検証する。本APIはCOOSのCSPチャネル（`{ADR_RendezvousChannel}`）そのものであり、有界キューやDrop Handlerは存在しない。
 
 ## 2. テストケース一覧
+<!-- traceability: {IPCRegistry} {RoleBasedAccessControl} -->
 
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | TEST-IPCR-01 | レジストリは実際にFlatMapView（O(log N)二分探索） | - | `_REGISTRY`の型を確認 | `dict`ではなく`FlatMapView`のインスタンスである | ipc_router_concept.py `test_registry_is_a_real_flat_map_view_not_a_dict` |
 | TEST-IPCR-02 | URI Lookup成功 | 登録済みURI（例: `fireball://hal/gpio/0`） | `router.lookup(uri)` | `(COMPLETED, channel)` オブジェクトを返す | Stage 1, Stage 2 |
 | TEST-IPCR-03 | URI Lookup失敗 | 未登録URI | `router.lookup(uri)` を呼ぶ | `(ERR_NOT_FOUND, None)` を返し、メッセージ所有権は送信側のまま(`SENDER_OWNS`) | Error1, ipc_router_concept.py `test_unregistered_uri_is_rejected` |
-| TEST-IPCR-04 | ロールベースアクセス制御・許可 | `RUNTIME`→`HAL_GPIO`（許可） | `lookup(uri)` でチャネル取得後 `send(channel, msg)` | `COMPLETED`を返す | 表, `{RoleBasedAccessControl}` |
+| TEST-IPCR-04 | ロールベースアクセス制御・許可 | `RUNTIME`→`HAL_GPIO`（許可） | `lookup(uri)` でチャネル取得後 `send(channel, msg)` | `COMPLETED`を返す | 表, `RoleBasedAccessControl` |
 | TEST-IPCR-05 | ロールベースアクセス制御・拒否 & 偽装防止 | `RUNTIME`→`DEBUGGER`（拒否） | `lookup(uri)` を呼ぶ。また他ロールのチャネルを直接指定して `send(channel, msg)` を試行 | `ERR_PERMISSION_DENIED`を返し、TCB ロール検査により偽装送信も拒否され、所有権が送信側のまま維持される | Error2, ipc_router_concept.py `test_permission_denied` |
 | TEST-IPCR-06 | 全DENY行・列の意味の確認 | `HAL_*`（6ロールいずれか）を送信元にする | 任意の宛先へ`lookup` | 常に拒否される（HALは通信グラフの葉） | ipc_router.md「全DENY行・列の意味」 |
 | TEST-IPCR-07 | ゼロコピー要求・応答所有権移譲 | 許可されたURIへの送信 | `lookup`→`send(channel, msg)`→`receive()`→`reply(msg, response_code)` | Schedulerのsender/reply stamperが共有メモリのRevokeを行い、Schedulerが対象TCBの実行コンテキストでGrant/Claimする。要求で`SENDER_OWNS`→`IN_FLIGHT`→`RECEIVER_OWNS`、応答で`RECEIVER_OWNS`→`IN_FLIGHT`→`SENDER_OWNS`と遷移し、送信側は応答取得までブロックする | 「所有権移譲」, `{OwnershipTransfer}` |
@@ -30,7 +31,7 @@ URIベースのサービス検索（3段パイプライン）、デバイス種�
 | TEST-IPCR-17 | 受信側のガード付き外部選択（select）: 複数エッジからの受信 | `CORE_SERVICE`は`RUNTIME`と`DEBUGGER`の双方からALLOW（RBACマトリックス） | 受信側を先にブロックさせた後、`DEBUGGER`から送信 | `receive()` を呼ぶだけで `DEBUGGER` からのメッセージを受信できる（送信元ロールやURIの事前指定不要） | 「Rendezvous」, 「receive_message」, ipc_router_concept.py `test_receive_selects_whichever_allowed_sender_is_ready`, [`scheduler.py`](experiments/pysim/tier1_core/scheduler.py) `channel_select_recv` |
 | TEST-IPCR-18 | select解決後の敗退エッジの解除（1チャネル1待機者の維持） | TEST-IPCR-17の状態で`DEBUGGER`エッジが成立した直後 | 成立しなかった`RUNTIME`→`CORE_SERVICE`エッジの状態を確認し、続けて新規の受信側・送信側でそのエッジを使用する | 敗退エッジの待機者登録が解除されており（`waiter_dir == NONE`）、後続の`RUNTIME`→`CORE_SERVICE`ランデブーが独立して正常に成立する（stale waiterとして残らない） | [`scheduler.py`](experiments/pysim/tier1_core/scheduler.py) `channel_send`のSelectGroup解除処理, [`test_ipc_router.py`](experiments/pysim/qa/tier1_interface/test_ipc_router.py) `test_ipc_04_select_recv_picks_first_ready_sender_and_clears_group` |
 | TEST-IPCR-19 | メッセージ配列データ所有権とビュー提供 | エントリ配列構築 | メッセージ構築 | IPCメッセージはキー・バリュー対のソート配列を所有し、非所有ビューでペイロードを提供する（バルク転送時は共有メモリブロックのRAII所有権をカプセル化） | 「IPCメッセージ」, `test_ipc_05_message_storage_ownership_separation` |
-| TEST-IPCR-20 | デバイス種別RoleとURIインスタンスの分離 | 同じデバイス種別に複数のURIインスタンスを構成 | 各URIを検索し、Role・サービスハンドル・CSPチャネルを比較する | Roleは同じデバイス種別値を返し、インスタンスIDはRoleへ含まれない。サービスハンドルとチャネルはURIインスタンスごとに分離され、片方のI/Oが他方のチャネル状態を変更しない | `{RoleBasedAccessControl}`, `{IPCRegistry}` |
+| TEST-IPCR-20 | デバイス種別RoleとURIインスタンスの分離 | 同じデバイス種別に複数のURIインスタンスを構成 | 各URIを検索し、Role・サービスハンドル・CSPチャネルを比較する | Roleは同じデバイス種別値を返し、インスタンスIDはRoleへ含まれない。サービスハンドルとチャネルはURIインスタンスごとに分離され、片方のI/Oが他方のチャネル状態を変更しない | `RoleBasedAccessControl`, `IPCRegistry` |
 | TEST-IPCR-21 | 送り元IDのScheduler認証 | 送信元タスクと受信側タスクを異なるTCBで起動する | 送信要求を受信し、`sender_id`を確認する | `sender_id`はSchedulerの送信元TCB `task_id`と一致し、メッセージ入力やルータ引数から変更できない | `{OwnershipTransfer}` |
 | TEST-IPCR-22 | 応答コードのpending境界 | 受信直後のメッセージ | `response_code`を確認し、受信側がコードを設定して`reply`する | 受信直後は`0xffffffff`、reply後は設定値となり、pendingのままreplyできない | `{OwnershipTransfer}` |
 | TEST-IPCR-23 | エコー応答 | 受信側がKVを変更しない | `reply(message, code)`を実行する | 送信側は同じメッセージオブジェクトを受け取り、要求KVと応答コードを取得する | `{IPC_ZeroCopy}` |

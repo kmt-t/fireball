@@ -172,8 +172,8 @@ JITは、関数ごとのスロット幅から `local index × スロット幅` �
 呼出し時は関数呼出し記述子を独立領域へ積み、引数を含むローカル値をローカル値領域の現在位置から確保する。復帰時は呼出し先の記述子を取り除き、ローカル値領域を保存位置まで一括で戻す。ABIへ渡す値配列には記述子、型タグや可変長コンテナを含めない。 `{CallFrame_Layout}`
 
 #### 制御ブロック復帰情報
-<!-- traceability: {PositionIndependentCode} {ContextPointerRegister} {MemoryBoundaryCheck} {EnvironmentPointer} {AAPCS_FastCall} {GOTCHA-INTP-19} -->
-制御ブロック復帰情報は、`block/loop/if` 命令による入れ子構造とジャンプ先を管理する。専用の固定容量領域へ積む。`loop/block/if` の分岐は JIT トレースが直接解決できる（`{TraceBoundaryInvariant}`, `{JIT_RuntimeAPI_Fallback}`）。そのため、構文の開始や終了に対応する情報の積み下ろしを JIT が代行しない場合がある。この領域は他の領域と物理的に独立している。したがって積み下ろし漏れが生じても、他の領域の記録位置が乱れることはない。
+<!-- traceability: {AAPCS_FastCall} {ContextPointerRegister} {EnvironmentPointer} {GOTCHA-INTP-19} {MemoryBoundaryCheck} {PositionIndependentCode} {TraceBoundaryInvariant} -->
+制御ブロック復帰情報は、`block/loop/if` 命令による入れ子構造とジャンプ先を管理する。専用の固定容量領域へ積む。`loop/block/if` の分岐は JIT トレースが直接解決できる（`TraceBoundaryInvariant`, `{JIT_RuntimeAPI_Fallback}`）。そのため、構文の開始や終了に対応する情報の積み下ろしを JIT が代行しない場合がある。この領域は他の領域と物理的に独立している。したがって積み下ろし漏れが生じても、他の領域の記録位置が乱れることはない。
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
@@ -420,9 +420,17 @@ sequenceDiagram
 | 補足 | vSoCのSafepoint配送を補助するだけで、ゲスト関数の階層ディスパッチやWASIポーリングは担当しない。 |
 
 #### 継続渡しハンドラの実行境界
-<!-- traceability: {ThreadedInterpreter} {ContextPointerRegister} {InterpreterContextStackless} -->
+<!-- traceability: {ThreadedInterpreter} {ContextPointerRegister} -->
 
-命令意味論はWASM命令ハンドラに保持し、C++の固定ハンドラ表から同一の4つの論理引数で末尾連鎖させる。`block`、`loop`、`if`、`br`、`br_if`、`local.get/set/tee`、`drop`、`select`、`return`、i32/i64の数値命令、およびf32/f64の定数・比較・算術・丸め・平方根・reinterpret/変換はネイティブハンドラ内で完結させ、命令ごとのPython復帰を行わない。`call`、`call_indirect`、import/host呼出し、グローバル・リニアメモリなど外部状態を伴う命令だけを、共有状態同期後のInterpreter/RuntimeEngine境界へ委譲する。フォールバックは未対応命令または検証済みメタデータ欠落時に限定し、連鎖経路を無効にしても通常経路の命令意味論と状態遷移は変わらない。
+命令意味論はWASM命令ハンドラに保持し、C++の固定ハンドラ表から同一の4つの論理引数で末尾連鎖させる。末尾呼び出しで次のハンドラへ移るため、命令ごとにC++コールスタックを積み増さない（{InterpreterContextStackless}）。
+
+次の命令はネイティブハンドラ内で完結させ、命令ごとのPython復帰を行わない。
+
+- 制御・スタック命令: `block`、`loop`、`if`、`br`、`br_if`、`drop`、`select`、`return`。
+- ローカル変数命令: `local.get/set/tee`。
+- 数値命令: i32/i64の数値命令、およびf32/f64の定数・比較・算術・丸め・平方根・reinterpret/変換。
+
+外部状態を伴う `call`、`call_indirect`、import/host呼出し、グローバル、リニアメモリの各命令は、共有状態を同期してからInterpreter/RuntimeEngine境界へ委譲する。フォールバックは未対応命令または検証済みメタデータ欠落時に限定する。連鎖経路を無効にしても、通常経路の命令意味論と状態遷移は変わらない。
 
 ### 5.2 URI/IPCインターフェース
 <!-- traceability: {META_RecoveryStrategy} -->
@@ -456,7 +464,7 @@ sequenceDiagram
 
 ## 7. 形式検証 (Formal Verification)
 <!-- traceability: {ThreadedInterpreter} {InterpreterContextStackless} {PositionIndependentCode} -->
-本コンポーネントのスタック整合性および実行状態遷移は、Python `pyModelChecking` を用いた形式検証モデルによって数学的に証明されている。 `{VERIFY_FORMAL}`
+本コンポーネントのスタック整合性および実行状態遷移を、Python `pyModelChecking` を用いた形式検証モデルで検証する。検証対象の性質と結果を以下に示す。 `{VERIFY_FORMAL}`
 
 ### 7.1 スタック境界とプルーニング不変条件モデル (`formal/interpreter_stack_model.py`)
 3つの独立領域（オペランド領域、ローカル値領域、制御ブロック復帰情報領域）の境界独立性を検証する。分岐脱出（`br` / `br_if`）時のスタックプルーニング不変条件も検証する。

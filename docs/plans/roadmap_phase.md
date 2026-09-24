@@ -4,6 +4,7 @@
 品質課題および検証結果は検証パイプライン実行時に生成される `reports/doc_report.md` を参照。
 
 ## フェーズ概要
+<!-- traceability: {Size_20KSLOC} -->
 
 | フェーズ | 工期 | 目的 | 状態 |
 |---|---|---|:---:|
@@ -21,15 +22,16 @@
   1. シミュレータ（`experiments/pysim`）のコード品質向上、堅牢化、および全ユニットテストスイートの高信頼化
   2. 実装の勘所（Gotchas）の網羅的抽出とテスト仕様書（`docs/qa/tier*/`）へのフィードバック完了
   3. 物理リソース（最小構成 RAM 32KB / ROM 96KB）のバイト単位の再見積もりと整合性検証 `{Resource_Estimation_Model}`
-  4. 製品コード規模20 KSLOC以内の予算計画と、コメント・テストを除く同一SLOC定義による実測手順の確定 `{Size_20KSLOC}`
+  4. 製品コード規模20 KSLOC以内の予算計画と、コメント・テストを除く同一SLOC定義による実測手順の確定
   5. C++23 ヘッダ（`inc/**/*.hxx`）における構造体メモリレイアウト、アライメント、constexpr 設計、POD ハーネス設計の確定
   6. 人間（オーナー/アーキテクト）による最終レビューおよびフェーズ移行の GO 判定
 
 ---
 
 ## Phase 0: Quality Gate & Early Validation（進行中 / ACTIVE）
+<!-- traceability: {META_Risk_Tiering} {META_SpecificationFirst} -->
 
-仕様策定・形式検証・シミュレータ品質向上・Gotchasテスト還元。`{META_SpecificationFirst}` `{META_Risk_Tiering}`
+仕様策定・形式検証・シミュレータ品質向上・Gotchasテスト還元。
 
 | サブフェーズ / ステップ | 目的 | 状態 |
 |---|---|:---:|
@@ -42,8 +44,9 @@
 ---
 
 ## Phase 1: vSoC First（C++23 実装 / 約3ヶ月）【待機中 / オーナー GO 待ち】
+<!-- traceability: {Interpreter_LazyJITSwitch} {LightweightVerifier} {META_AI_Native_Dev} -->
 
-スタンドアロン vSoC コア（Loader, Interpreter, JIT）を C++23 で実装し、ホストハーネス上で WAMR 比較ベンチマークを実施する。`{META_AI_Native_Dev}`
+スタンドアロン vSoC コア（Loader, Interpreter, JIT）を C++23 で実装し、ホストハーネス上で WAMR 比較ベンチマークを実施する。
 **コンパイラ要件: Clang 17+ 必須（`[[clang::musttail]]` 前提、GCC/MSVC 非サポート）**。
 
 - **Phase 1.0: Core Utilities (`inc/common/`)**
@@ -53,7 +56,7 @@
   - 型安全非所有メモリビュー `binary_view` / `mutable_binary_view`
 - **Phase 1.1: WASM 32-bit Binary Loader (`runtime_loader`)**
   - ROM バイト列ゼロコピー LEB128 デコーダ・セクションインデックス構築 `{ROMParsing}` `{META_AccessDictionary}`
-  - バリデータ (V1〜V6) `{LightweightVerifier}`
+  - バリデータ (V1〜V6)
   - 不正バイナリ検証失敗時のバンプポインタ完全ロールバック
 - **Phase 1.2: WASM Stackless Fast Interpreter (`interpreter`)**
   - `execution_context` と独立した3本の領域（オペランド領域、ローカル値領域、制御ブロック復帰情報領域） `{ContextPointerRegister}`
@@ -64,7 +67,7 @@
   - ARM Thumb-2 / x86_64 ネイティブパッチステンシル & 事前コンパイルテンプレート `{JIT_CopyAndPatch}` `{ADR_TosCacheAsymmetry}`
   - 連続8KB JIT領域（共通コード2KB + Active/Warm/Oldest各2KB）と3面 MPU W^X 代謝マネージャ `{JIT_MultiBuffer_Cache}` `{JIT_OldestOnly_Promote}`
   - 3段検索（カードマーキング → Folding XOR高速キャッシュ → 少数のソート済みJITエントリの二分探索。Radix索引なし）
-  - Safepoint 協調 & JIT/インタープリタ透過切り替え `{JIT_LazyChaining}` `{Interpreter_LazyJITSwitch}` `{JIT_RuntimeAPI_Fallback}`
+  - Safepoint 協調 & JIT/インタープリタ透過切り替え `{JIT_LazyChaining}` `Interpreter_LazyJITSwitch` `{JIT_RuntimeAPI_Fallback}`
 - **Phase 1.4: Standalone vSoC Harness & WAMR Benchmark (`runtime_vsoc`)**
   - ホスト (x86_64 / Linux / macOS / Windows) 実行ハーネス
   - WAMR (Fast Interpreter) 比較ベンチマーク (CoreMark-PRO, aobench)
@@ -72,12 +75,13 @@
 ---
 
 ## Phase 2: Integration（周辺サブシステム統合 / 約4ヶ月）
+<!-- traceability: {GLOBAL_UseCpp20Coroutine} {FastAddressCheck} -->
 
 周辺コンポーネントの実装と C++23 統合。
 
-- **COOS カーネル**: スタックレス C++20 コルーチンスケジューラ、対称ハンドオフ (`os_scheduler.hxx`, `os_coos.hxx`) `{GLOBAL_UseCpp20Coroutine}`
+- **COOS カーネル**: スタックレス C++20 コルーチンスケジューラ、対称ハンドオフ (`os_scheduler.hxx`, `os_coos.hxx`)
 - **IPC ルータ**: 3段階ルーティング、ゼロコピー CSP チャネル & RAII 所有権移譲 (`ipc_router.hxx`) `{CSP_Handoff}`
-- **vMMIO コントローラ**: 多段ダイレクトデコードページテーブル & ソフトウェア TLB (`runtime_vmmio.hxx`) `{FastAddressCheck}`
+- **vMMIO コントローラ**: 多段ダイレクトデコードページテーブル & ソフトウェア TLB (`runtime_vmmio.hxx`) `FastAddressCheck`
 - **HAL & WASI ドライバ**: GPIO / I2C / SPI / Timer / WASI Preview 1、`HalBufferPool` (`hal_dispatch.hxx`, `platform_driver.hxx`, `platform_wasi.hxx`)
 - **GDB Server**: GDB リモートシリアルプロトコル（RSP）デバッガ、メモリ書き換え時 JIT キャッシュフラッシュ (`runtime_debugger.hxx`)
 

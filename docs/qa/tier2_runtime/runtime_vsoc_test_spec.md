@@ -10,11 +10,12 @@ Loader/Interpreter/JIT/vMMIO/Debuggerを統合する`vsoc_harness`（静的DI）
 ## 2. テストケース一覧
 
 ### ハーネス統合 (runtime_vsoc.md (Harness))
+<!-- traceability: {AAPCS_FastCall} -->
 
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | TEST-VSOC-01 | vSoCはTier3実装の内部ヘッダに依存しない | - | 依存関係を確認 | ハーネスに集約されたPOD関数ポインタ経由でのみ呼び出す（仮想関数・動的ディスパッチを使わない） | `{META_StaticDI}` |
-| TEST-VSOC-02 | `exec_trace`の統一呼び出し規約 | インタープリタ実行/JIT実行の双方 | `step()`を呼ぶ | 呼び出し側は実行エンジンの種別を意識しない（同一の4論理引数 `(ctx, sp, local_base, tos)` シグネチャ） | 「実行エンジン委譲」, `{AAPCS_FastCall}` |
+| TEST-VSOC-02 | `exec_trace`の統一呼び出し規約 | インタープリタ実行/JIT実行の双方 | `step()`を呼ぶ | 呼び出し側は実行エンジンの種別を意識しない（同一の4論理引数 `(ctx, sp, local_base, tos)` シグネチャ） | 「実行エンジン委譲」, `AAPCS_FastCall` |
 | TEST-VSOC-03 | `register-hook`はvMMIOへの薄い転送 | - | `register-hook`を呼ぶ | `harness.vmmio`経由で`runtime_vmmio.md`の同名APIへそのまま転送され、事前/事後条件はvmmio層が正本 | register-hook |
 
 ### Safepoint/JITキャッシュ協調 ({JIT_Safepoint})
@@ -30,10 +31,11 @@ Loader/Interpreter/JIT/vMMIO/Debuggerを統合する`vsoc_harness`（静的DI）
 | TEST-VSOC-17 | 形式検証の変異反証 | 通常モデルと`guards=False`モデル | `vsoc_state_model.py`を実行 | 通常モデルでは2つの性質が成立し、ガードを無効化した変異モデルでは両方の性質が失敗する | [`vsoc_state_model.py`](docs/components/tier2_runtime/formal/vsoc_state_model.py) |
 
 ### vSoC Engineライフサイクル
+<!-- traceability: {VSOC_Lifecycle} -->
 
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| TEST-VSOC-20 | ロード失敗でError状態 | 不正なWASM | `prepare(module)` | `Loading→Error`に遷移 | `{VSOC_Lifecycle}` |
+| TEST-VSOC-20 | ロード失敗でError状態 | 不正なWASM | `prepare(module)` | `Loading→Error`に遷移 | `VSOC_Lifecycle` |
 | TEST-VSOC-21 | yield閾値到達でReadyへ復帰 | InterpreterRun中 | トレース数が閾値超過 | `InterpreterRun→Ready`、ホットスポット検出結果がJITキューに投入される | - |
 | TEST-VSOC-22 | Safepointで原因付き割り込みイベント検出時はインタープリタへフォールバック | JitRun中 | `interrupt-event`が保留される | `JitRun→SafepointCheck→Ready`（インタープリタへ） | - |
 | TEST-VSOC-23 | デバッガとJITの同時構成拒否 | `RuntimeCompositionConfig(execution=JIT, debugger=True)` | ランタイム構成を合成する | 構成時 `assert` で拒否され、デバッガがJITキャッシュを操作する経路は生成されない | `{DebuggerInterpreterComposition}` |
@@ -54,10 +56,11 @@ Loader/Interpreter/JIT/vMMIO/Debuggerを統合する`vsoc_harness`（静的DI）
 | TEST-VSOC-26 | resume(interp)でインタープリタ実行を継続 | Debugging状態 | `resume(interp)`を呼ぶ | PCを保持したままInterpreterRunへ遷移し、JITキャッシュ操作を行わない | `{VSOC_Lifecycle}` |
 
 ### マルチモジュール動的リンク
+<!-- traceability: {MultiModule_Support} -->
 
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| TEST-VSOC-30 | インポートセクションからのシンボル解決 | 複数モジュールロード済み | `resolve_symbol(module_name, func_name)` | Module Registryを介して正しく解決される | `{MultiModule_Support}` |
+| TEST-VSOC-30 | インポートセクションからのシンボル解決 | 複数モジュールロード済み | `resolve_symbol(module_name, func_name)` | Module Registryを介して正しく解決される | `MultiModule_Support` |
 | TEST-VSOC-31 | インタープリタテーブルへのパッチ | シンボル解決成功 | `patch_interp_table(func_addr)` | 呼び出し先アドレスが正しくパッチされる | `interpreter.md` |
 
 ### `fireball_call`シグネチャの整合性

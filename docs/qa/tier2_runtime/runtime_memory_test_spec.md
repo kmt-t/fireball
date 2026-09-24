@@ -31,12 +31,13 @@
 | TEST-MEM-25 | PMSAv8の32バイトアライメント制約 | リージョン設定 | Base/Limitアドレスを確認 | 下位5bitが0（32バイト境界） | {MPU_WX_Enforcement}, `test_mem_25_pmsav8_32byte_alignment`（concept + pysim） |
 
 ### 実装の勘所・不変条件（Gotchas & Implementation Invariants）
+<!-- traceability: {OwnerMismatchTrap} -->
 
 | GOTCHA ID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | GOTCHA-MEM-01 | 4KB仮想予約と物理SHM予算の分離 | タスクAとタスクBが共有メモリブロックを要求 | `page_idx`、物理基点、実サイズ、`shm_allocated_bytes`を検証 | 異なるブロックは異なる4KB仮想予約スロットを使い、物理バック領域は要求サイズだけを消費する。4KBの仮想予約自体は4KB物理RAMの消費として計上しない | `runtime_memory.md` {PageGranularPermissionIsolation} |
 | GOTCHA-MEM-02 | RAII 解放時の所有者タスク検証（不正解放の完全遮断） | タスクAが共有ブロックを所有 | タスクBのコンテキストで該当ブロックの `release()`/`get_address()`/`get_size()` を試行 | `SharedBlock` は所有タスクIDを保持し、呼び出し元タスクIDとの不一致時に操作を拒否する（`runtime_memory_concept.py` `test_mem_gotcha_02_shared_block_release_owner_only`、pysim `test_mem_gotcha_02b_release_owner_only` で検証）。**実装の勘所**: 共有メモリ ID さえ知っていれば誰でも解放・アクセスできる素朴なアロケータ設計にすると、他タスクのブロックを勝手に解放・読み書きする悪意ある攻撃やバグを防げない | `runtime_memory.md` {OwnershipTransfer} |
-| GOTCHA-MEM-03 | 送信中状態のアンマップとロールバック保護 | 送信タスクが `release()` を実行 | 送信中ブロックに対する送受信双方からのアクセスを試行 | vMMIO から PTE がアンマップされ、TLB が即時破棄されているため、いかなるタスクからのアクセスも `TRAP_UNREGISTERED_PAGE` で遮断される。転送失敗時は `rollback_transfer()` により安全に送信元空間へ再マッピングされる。**実装の勘所**: 送信中リソースへの書き込みを許すと、受信側が破損データを読み取る TOCTOU（Time-of-Check to Time-of-Use）脆弱性が発生する | `runtime_memory.md` {OwnerMismatchTrap} |
+| GOTCHA-MEM-03 | 送信中状態のアンマップとロールバック保護 | 送信タスクが `release()` を実行 | 送信中ブロックに対する送受信双方からのアクセスを試行 | vMMIO から PTE がアンマップされ、TLB が即時破棄されているため、いかなるタスクからのアクセスも `TRAP_UNREGISTERED_PAGE` で遮断される。転送失敗時は `rollback_transfer()` により安全に送信元空間へ再マッピングされる。**実装の勘所**: 送信中リソースへの書き込みを許すと、受信側が破損データを読み取る TOCTOU（Time-of-Check to Time-of-Use）脆弱性が発生する | `runtime_memory.md` OwnerMismatchTrap |
 | GOTCHA-MEM-04 | W^X 切り替えのトランザクションバッチ化 | 複数命令からなる JIT トレースのパッチ | パッチ生成から完了まで | 命令生成中は一括して `RW+XN` に切り替え、完了時に一括して `RO+X` とキャッシュフラッシュ（DSB/ISB）を行う。命令ごとに切り替えることはしない。**実装の勘所**: 命令単位で MPU レジスタ書き換えとバリアを発行すると、パイプラインフラッシュが頻発してコンパイル性能が桁違いに悪化する | `runtime_memory.md` {MPU_WX_Enforcement} |
 
 ## 3. テスト検証実績と網羅状況

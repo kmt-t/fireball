@@ -25,13 +25,14 @@ Element/Data初期化定義を個別配列へ展開せず、パース時検証�
 | TEST-LOAD-07 | 検証失敗時の完全ロールバック | V1〜V6いずれかで失敗 | 失敗前後のアロケータwatermarkを比較 | `bump_allocator.offset`が失敗前の値に完全復元される | 「トランザクション保護」, loader_concept.py `test_wasm_loader_lifecycle_and_verification` |
 
 ### ゼロコピー索引化
+<!-- traceability: {META_BinarySearch} {ZeroCopyIndexing} -->
 
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| TEST-LOAD-10 | セクション内容をRAMへコピーしない | 正常なバイナリ | パース後、`section_view`の実装を確認 | 開始オフセットとサイズのみを保持し、内容の複製を持たない | 「Zero-Copy Indexing」, `{ZeroCopyIndexing}` |
+| TEST-LOAD-10 | セクション内容をRAMへコピーしない | 正常なバイナリ | パース後、`section_view`の実装を確認 | 開始オフセットとサイズのみを保持し、内容の複製を持たない | 「Zero-Copy Indexing」, `ZeroCopyIndexing` |
 | TEST-LOAD-11 | エクスポート名はROM参照 | エクスポート名を持つバイナリ | `exports_dict`の要素を確認 | 文字列はROM上の`string_view`相当であり、RAMコピーがない | - |
 | TEST-LOAD-12 | エクスポート名順ソート | 複数エクスポート（非アルファベット順で宣言） | パース後の`exports_dict`を確認 | 名前順にソートされている | 「名前順にソート」 |
-| TEST-LOAD-13 | ハッシュ＋RadixBinaryTreeView シンボル検索 | エクスポートシンボル登録済み | `lookup_export(name)` | FNV-1a ハッシュと RadixBinaryTreeView による $O(1)+O(\log n)$ 索引探索後、ROM上の元文字列を照合して正しい`ExportEntry`を返す。未登録名は`None` | 「シンボル検索」, `{META_AccessDictionary}`, `{META_BinarySearch}` |
+| TEST-LOAD-13 | ハッシュ＋RadixBinaryTreeView シンボル検索 | エクスポートシンボル登録済み | `lookup_export(name)` | FNV-1a ハッシュと RadixBinaryTreeView による $O(1)+O(\log n)$ 索引探索後、ROM上の元文字列を照合して正しい`ExportEntry`を返す。未登録名は`None` | 「シンボル検索」, `{META_AccessDictionary}`, `META_BinarySearch` |
 | TEST-LOAD-14 | 関数アクセサの遅延デコード | 任意の関数 | `get_function(idx).get_code_stream()` | localsベクタ宣言をスキップした実行本体ストリームを返す | function_accessor |
 | TEST-LOAD-15 | グローバルアクセサ | 任意のグローバル変数宣言 | `get_global(idx).get_metadata()` | (valtype, mutable)を正しく返す | global_accessor |
 | TEST-LOAD-16 | Element/Data初期化のストリーム処理 | ElementまたはDataセグメントを持つ正常なバイナリ | パース後に起動時初期化を実行 | 個別セグメント配列を生成せず、各定義がcallback経由でテーブルまたはメモリへ適用される。`global.get`のオフセットは起動時のグローバル値で解決される | `runtime_loader.md`「Element/Data初期化の2段階ストリーム処理」 |
@@ -72,13 +73,14 @@ Element/Data初期化定義を個別配列へ展開せず、パース時検証�
 | TEST-LOAD-50 | JITCandidateBitmap 非候補ブロックの touch/履歴バイパス | 非候補ブロック（カードビット 0）の実行 | `eng.run(cold_pc, ctx)` | インタープリタ実行は行われるが、HotspotBitmap.touch() および履歴リングへの記録が完全にバイパスされ、カード状態が UNEXECUTED のまま維持される | `{JIT_CandidateBitmap}` |
 
 ### 実装の勘所・不変条件（Gotchas & Implementation Invariants）
+<!-- traceability: {Loader_BasicBlockIndex} -->
 
 | GOTCHA ID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | GOTCHA-LOAD-01 | ハッシュ衝突時の文字列完全一致確認（シンボル誤認防止） | 同一ハッシュ値を持つ異なるシンボル名 | `lookup_export(name)` を実行 | ハッシュ値による探索後に ROM 上の文字列を 1 回比較し、異なる文字列であれば一致と誤判定しない。**実装の勘所**: ハッシュ値の一致のみでシンボル解決を完了させると、ハッシュ衝突時に無関係な関数を呼び出す致命的なセキュリティホールとなる | `runtime_loader.md` |
 | GOTCHA-LOAD-02 | 検証失敗時のアロケータ完全ロールバック（メモリリーク防止） | 不正なセクションサイズを含む WASM バイナリ | `prepare_module` を実行 | パース失敗時にバンプポインタがロード開始前の位置へ巻き戻され、消費メモリが 0 バイトに戻る。**実装の勘所**: 検証途中でエラーとなった際にメモリを解放しないと、不正バイナリを繰り返しロードすることで容易に DoS（メモリ枯渇）を引き起こせる | `runtime_loader.md` |
 | GOTCHA-LOAD-03 | バンプアロケータの LIFO アンロード制約 | 複数モジュールをロード（A $\to$ B） | 逆順以外（A から先）にアンロードを試行 | レジストリからは削除されるが、B が残っているため A のメモリ領域は再利用できない（逆順 B $\to$ A の場合のみ完全回収）。**実装の勘所**: 組み込みバンプアロケータはフラグメンテーションを防ぐ代わりに LIFO 回収を前提とするため、動的な順不同解放を期待してはならない | `runtime_loader.md` 「アンロード」 |
-| GOTCHA-LOAD-04 | ベーシックブロックメタ情報のローダ側不変保持とゼロコピー解決 | WASM モジュールロード | `mod.get_block(pc)` を実行 | 基本ブロック境界や制御スキップ情報は WASM バイトコードの静的プロパティであり実行時に変化しない。実行時エンジンが動的なミュータブル辞書やツリーで再構築するのではなく、ローダ側が `ReadOnlyRadixBinaryTreeStorage` を一度だけ構築・公開し、実行環境がそれを直接借用・参照する。**実装の勘所**: ランタイム側でブロック走査や動的アロケーションを行うと、JIT ホットスポット追跡時の毎ブロック検索で深刻なオーバーヘッドを招く | `runtime_loader.md` `{Loader_BasicBlockIndex}` |
+| GOTCHA-LOAD-04 | ベーシックブロックメタ情報のローダ側不変保持とゼロコピー解決 | WASM モジュールロード | `mod.get_block(pc)` を実行 | 基本ブロック境界や制御スキップ情報は WASM バイトコードの静的プロパティであり実行時に変化しない。実行時エンジンが動的なミュータブル辞書やツリーで再構築するのではなく、ローダ側が `ReadOnlyRadixBinaryTreeStorage` を一度だけ構築・公開し、実行環境がそれを直接借用・参照する。**実装の勘所**: ランタイム側でブロック走査や動的アロケーションを行うと、JIT ホットスポット追跡時の毎ブロック検索で深刻なオーバーヘッドを招く | `runtime_loader.md` `Loader_BasicBlockIndex` |
 
 ## 3. テスト検証実績と網羅状況
 

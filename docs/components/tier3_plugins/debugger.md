@@ -52,7 +52,7 @@ graph TD
 ### 3.3 主要なクラス・構造体・配列・定数
 
 #### デバッガ（Debugger）クラス
-<!-- traceability: {META_NoStdVector} {RSPMinimalSet} -->
+<!-- traceability: {FlatViewNarrowing} {META_NoStdVector} {RSPMinimalSet} -->
 依存関係（実行コンテキスト、HAL）と内部状態（ブレークポイント、現在状態）をカプセル化する。
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
@@ -61,13 +61,13 @@ graph TD
 | デバッガSink | RSPバイト列の送受信を担う、Tier 3 platformから注入された物理Sinkへの参照。 | 構造体への参照 | `DebuggerSink` (非所有) |
 | `cmd_queue` | HALから供給されるコマンドキュー。 | 構造体への参照 | `debug_command_queue` |
 | デバッグ状態 | デバッガの現在の動作モード（実行中、中断中など）。 | 列挙型 | `debug_state` |
-| ブレークポイントリスト | 設定されているブレークポイントのアドレス一覧。昇順ソート済みの固定長配列（`FB_CONF_DEBUG_MAX_BREAKPOINTS` 件）として保持し、実行時の判定は `fireball::flat_set_view<address>` の `contains()` で行う。 | 固定長配列 + 集合ビュー | `{FlatViewNarrowing}` |
+| ブレークポイントリスト | 設定されているブレークポイントのアドレス一覧。昇順ソート済みの固定長配列（`FB_CONF_DEBUG_MAX_BREAKPOINTS` 件）として保持し、実行時の判定は `fireball::flat_set_view<address>` の `contains()` で行う。 | 固定長配列 + 集合ビュー | `FlatViewNarrowing` |
 | RSPパケットバッファ | フレーミングされた 1 パケットの ASCII ペイロード | 固定長配列 | 256 Bytes (`FB_CONF_RSP_PACKET_MAX`) |
 | `last_stop_reason` | 直近の停止要因。 | ID値 | 信号番号等 |
 
 #### 仮想レジスタセット（virtual_register_set）
 <!-- traceability: {RSPMinimalSet} -->
-GDB等の外部クライアントに提示する WASM 仮想レジスタ番号マッピング（`0: pc`, `1: sp`, `2: fp`, `3: tos`, `4..19: local0..15`）は を正本とする。
+GDB等の外部クライアントに提示する WASM 仮想レジスタ番号マッピング（`0: pc`, `1: sp`, `2: fp`, `3: tos`, `4..19: local0..15`）は [`gdb_rsp_protocol.md`](docs/specs/gdb_rsp_protocol.md) を正本とする。
 
 ## 4. 動的モデル
 

@@ -21,10 +21,10 @@ JIT ランタイム管理は、WASM PC とネイティブコードの紐付け�
 本コンポーネントは **Tier 3 (詳細リーフコンポーネント: Leaf Component)** に属する。JIT サブシステムのうち実行時検索、3面コードキャッシュ管理、局所アンリンク、ホットスポット検出を担当する。コード生成コアは [`jit_compiler.md`](docs/components/tier3_executer/jit_compiler.md) が担当する。
 
 ### 2.1 JIT サブシステムのデコンポジション
-<!-- traceability: {JIT_Encoder} {JIT_CopyAndPatch} -->
+<!-- traceability: {JIT_CopyAndPatch} {JIT_Encoder} {SimpleJITArchitecture} -->
 JITサブシステムは、以下の2つの独立した設計書に責務を分離して構成される。
 - **[jit_compiler.md](docs/components/tier3_executer/jit_compiler.md)**: 命令テンプレートを用いたネイティブコード生成および静的命令エンコードを担当する。
-- **[jit_runtime.md](docs/components/tier3_executer/jit_runtime.md)**: 実行履歴監視、ホットスポット判定、PC-アドレス変換検索、3面キャッシュローテーションを担当する。 `{SimpleJITArchitecture}` `{JIT_MultiBuffer_Cache}`
+- **[jit_runtime.md](docs/components/tier3_executer/jit_runtime.md)**: 実行履歴監視、ホットスポット判定、PC-アドレス変換検索、3面キャッシュローテーションを担当する。 `SimpleJITArchitecture` `{JIT_MultiBuffer_Cache}`
 
 ### 2.2 実装責務と依存方向
 <!-- traceability: {META_ContractImplSplit} {META_StaticDI} {META_3TierSeparation} -->
@@ -46,6 +46,7 @@ Tier 3 の実装は次の責務に分ける。
 ## 3. 静的モデル
 
 ### 3.1 データ構造
+<!-- traceability: {JIT_ReverseCompilationOrder} -->
 - **統一プログラムカウンタ (`UnifiedPC` / `wasm_pc_t`)**: モジュール全体の全関数・全命令を一意に識別する 32ビット整数である。
   - **構造**: `(func_index << 16) | (bytecode_offset & 0xFFFF)`
     - **上位 16ビット (`func_index`)**: モジュール内の関数インデックス（0 〜 65,535）。
@@ -78,7 +79,7 @@ Tier 3 の実装は次の責務に分ける。
   | `0x200` | x64 wideヘルパー入口群 | 32バイト単位で11入口。ヘルパー契約ごとの引数を設定して関数を呼び出し、終了処理へ戻る |
 
   共通領域の参照値は各トレースヘッダへ格納する。ARMv8-MのAAPCS呼出し入口もヘルパー契約ごとに共通領域へ置く。トレースの入口・出口・ヘルパー遷移は、この参照値を用いて相対分岐先を決定する。
-- **オンデマンドコンパイルキュー (On-demand Compile Queue)**: `HOT` に達した命令オフセットを保持する固定容量 LIFO キューである。容量到達時にバッチコンパイルが即座に実行される。固定容量を上回ることはない。 `{JIT_ReverseCompilationOrder}` `{GLOBAL_Policy_Memory}`
+- **オンデマンドコンパイルキュー (On-demand Compile Queue)**: `HOT` に達した命令オフセットを保持する固定容量 LIFO キューである。容量到達時にバッチコンパイルが即座に実行される。固定容量を上回ることはない。 `JIT_ReverseCompilationOrder` `{GLOBAL_Policy_Memory}`
 - **バンク別被チェイン逆引きテーブル (Inbound Chain Index Table)**: 各キャッシュバンクへ向けた直接チェインリンク元の JIT エントリインデックスを保持する固定長配列である。
 - **実行履歴バッファ**: 短期間の実行履歴を一時的に保持するリングバッファである。 `{HistoryBuffer}`
 

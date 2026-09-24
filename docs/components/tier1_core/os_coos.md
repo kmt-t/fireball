@@ -16,12 +16,12 @@ COOSは、シングルスレッド環境向けのホーアCSPベースのグリ�
 本コンポーネントは **Tier 1 (主要システムコンポーネント: Primary Component)** に属し、システム要求定義（`requires/`）を受けて協調型タスク実行基盤およびCSPチャネル通信を提供する。
 
 ### 2.1 構成要素
-<!-- traceability: {META_3TierSeparation} {GLOBAL_ComponentHarness} -->
+<!-- traceability: {BufferedLogging} {GLOBAL_ComponentHarness} {GLOBAL_IdleDetection} {META_3TierSeparation} -->
 - **[`os_scheduler.md`](docs/components/tier1_core/os_scheduler.md)**: スケジューラ。タスクのライフサイクル、READYキュー管理、実行順序制御（詳細は [`os_scheduler.md`](docs/components/tier1_core/os_scheduler.md) を正本とする）。
 - **`co_csp`**: 通信エンジン。チャネルベースの同期と所有権移譲（本設計書が正本）。
 - **`co_mem`**: メモリマネージャ。タスク独立な静的メモリバッファプール（メモリパーティション）の管理。
 
-ロギングは COOS の構成要素ではなく、独立した Tier 2 コンポーネント [`runtime_logging.md`](docs/components/tier2_runtime/runtime_logging.md) が担う。COOS は `set_idle_hook` によりアイドル時のフラッシュ契機のみを提供する。 `{BufferedLogging}` `{GLOBAL_IdleDetection}`
+ロギングは COOS の構成要素ではなく、独立した Tier 2 コンポーネント [`runtime_logging.md`](docs/components/tier2_runtime/runtime_logging.md) が担う。COOS は `set_idle_hook` によりアイドル時のフラッシュ契機のみを提供する。
 
 ## 3. 静的モデル
 
@@ -74,7 +74,8 @@ graph TD
 Fireball はサービス URI とロールベースの直交設計により、「1 チャネル＝単一の待機者スロット」を静的に強制する。複数クライアントが同一サービスを利用する場合は、IPC ルータの受信選択（`select`）でチャネルを個別に分離する。
 
 ##### チャネル送受信動作の挙動定義
-チャネルを通じたCSPメッセージ通信の基本的な制御ロジックを以下に示す。 `{CSPCommunication}`
+<!-- traceability: {CSPCommunication} -->
+チャネルを通じたCSPメッセージ通信の基本的な制御ロジックを以下に示す。
 直接コンテキストスイッチ（CSP Handoff）は、呼び出しスタックの再帰的な蓄積を防ぐ。C++20 コルーチンの**対称遷移（Symmetric Transfer）**を採用し、`await_suspend` から `coroutine_handle` を返す。これにより、スタック深度を定数 $O(1)$ に保つ。
 
 連続直接ハンドオフ回数は `FB_CONF_MAX_CONSECUTIVE_HANDOFFS` で制限する。上限到達後は直接遷移せず、スケジューラのメインループへ制御を戻す。
@@ -345,7 +346,8 @@ stateDiagram-v2
 | メモリ管理 | タスク固有の静的パーティションを貸与・返却するコンポーネントへの参照 | 構造体への参照 | `co_mem` |
 
 ##### ハーネスによる依存性注入パターン
-システムハーネスは以下のようにコンポーネントへの参照を集約し、静的に注入される。 `{GLOBAL_ComponentHarness}`
+<!-- traceability: {GLOBAL_ComponentHarness} -->
+システムハーネスは以下のようにコンポーネントへの参照を集約し、静的に注入される。
 
 ```python
 # システムハーネスによる依存性注入パターン
@@ -364,12 +366,12 @@ C++23/20 コルーチンおよび静的アロケーションを前提とした�
 
 #### 1. 所有権管理 `shared_block` (RAII ムーブセマンティクス)
 <!-- traceability: {ADR_SharedBlockRaii} {GLOBAL_Policy_Memory} {IPC_ZeroCopy} {OwnershipTransfer} -->
-タスク間で受け渡される共有メモリブロックやメッセージリソースは、動的ヒープを使用せず、ムーブ専用（Move-only RAII）の所有権移譲を保証する `shared_block`（）によりカプセル化される。コピーコンストラクタおよびコピー代入演算子は明示的に削除（`delete`）され、CSPチャネルへの送受信時に右辺値参照（`&&`）を強制することで、コンパイル時に二重所有やデータ競合を完全に排除する。
+タスク間で受け渡される共有メモリブロックやメッセージリソースは、動的ヒープを使用せず、ムーブ専用（Move-only RAII）の所有権移譲を保証する `shared_block` によりカプセル化される。コピーコンストラクタおよびコピー代入演算子は明示的に削除（`delete`）され、CSPチャネルへの送受信時に右辺値参照（`&&`）を強制することで、コンパイル時に二重所有やデータ競合を完全に排除する。
 
 ```cpp
 namespace fireball {
 
-// ムーブセマンティクスのみを許可するRAII共有メモリリソース ()
+// ムーブセマンティクスのみを許可するRAII共有メモリリソース
 class shared_block {
  public:
   shared_block() noexcept = default;
@@ -418,7 +420,7 @@ class shared_block {
 ### 6.2 直交表: CSP通信と状態遷移
 <!-- traceability: {CSP_Handoff} {ADR_RendezvousChannel} {GLOBAL_InterruptWakeup} -->
 
-チャネル通信時のタスク状態とスケジューラの挙動を検証する。チャネルは値を保持しないため（）、状態は「待機者なし / 送信待機 / 受信待機」の3値のみを取り、バッファ満杯（Full）ケースは存在しない。割り込み通知はイベント駆動型として扱われる。
+チャネル通信時のタスク状態とスケジューラの挙動を検証する。チャネル通信はバッファを持たない同期ランデブー方式であるため、状態は「待機者なし / 送信待機 / 受信待機」の3値のみを取り、バッファ満杯（Full）ケースは存在しない。割り込み通知はイベント駆動型として扱われる。
 
 | ケース | 自タスク要求 | チャネル待機者 | 相手状態 | 期待される動作 (自) | 期待される動作 (他) |
 | :--- | :--- | :--- | :--- | :--- | :--- |

@@ -6,6 +6,7 @@
 `{ThreadedInterpreter}` は、4論理引数の継続渡しハンドラ方式を示す。本書では、独立した3本の値領域と関数呼出し記述子領域も検証する。ラベルアリティに基づくスタックプルーニング、i32/i64演算、境界チェック付きメモリアクセス、Safepointポーリングも対象とする。
 
 ## 2. テストケース一覧
+<!-- traceability: {InterpreterContextStackless} -->
 
 ### 継続渡しディスパッチ方式そのもの ({ThreadedInterpreter})
 
@@ -25,7 +26,7 @@
 | TEST-INTP-07 | C++インタープリタのPython境界 | ネイティブ拡張をClangでビルド済み | 同じWASMモジュールを通常入口で実行 | code・operand・local・controlのnative recordをPython wrapperが保持し、Pythonには境界結果だけを返す | `interpreter.py`, `interop_abi.py`, `native_stacks.py` |
 | TEST-INTP-08 | JITトレースのC++ 4引数ブリッジ | `native_trace_call`をビルド済み | `(ctx, sp, local_base, tos)`の関数ポインタ入口を実行 | ctypes経路と同一のトレース結果になり、ブリッジ実行中はPythonハンドラへ戻らない | `tier3_executer/jit/native_trace_call.cxx` |
 | TEST-INTP-09 | ロード時LEB128の実行系分離 | WASMロード処理を実行可能 | モジュールロード後の実行経路を確認 | LEB128デコーダはロード時だけ使用され、Tier 3実行ホットパスへ入らない | [`leb128.py`](experiments/pysim/tier2_runtime/leb128.py) |
-| TEST-INTP-27 | ジャンプ・分岐境界 | `br`、`br_if`、`br_table`、`call`を含むWASM | 境界命令を実行 | ジャンプ・分岐は継続チェインせず、既存フレーム処理へ戻って正しいPC・制御スタックを保つ | `{InterpreterContextStackless}` |
+| TEST-INTP-27 | ジャンプ・分岐境界 | `br`、`br_if`、`br_table`、`call`を含むWASM | 境界命令を実行 | ジャンプ・分岐は継続チェインせず、既存フレーム処理へ戻って正しいPC・制御スタックを保つ | InterpreterContextStackless |
 | TEST-INTP-28 | AO-Bench全命令差分 | wasmtimeとTier 2/Tier 3を利用可能 | `aobench.py`を実行 | Float32 sanity、全AO出力、Tier 2/Tier 3の528バイト出力が完全一致する | `{META_RecoveryStrategy}` |
 
 ### 3本の独立スタック・関数呼び出し ({ContextPointerRegister})
@@ -90,18 +91,20 @@
 | TEST-INTP-62 | アタッチ中のブレークポイント検知・停止 | インタープリタとデバッガが接続され、PC=0x100 にブレークポイント設定 | 実行継続 | インタープリタ実行境界でブレークポイントを検知し、実行を中断して停止状態（SIGTRAP）へ遷移する | `{DebuggerInterpreterComposition}` |
 | TEST-INTP-65 | アタッチ中のインタープリタ専用実行 | デバッグ構成でデバッガアタッチ中 | `step` または `continue` を実行 | アタッチ中は常にインタープリタが実行され、JITへの動的切替もハンドラテーブル切替も発生しない | `{DebuggerInterpreterComposition}` |
 
-### ROM/Flash バイトコード直接デコードと命令オブジェクト生成ゼロ ({DirectBytecodeExecution})
+### ROM/Flash バイトコード直接デコードと命令オブジェクト生成ゼロ (DirectBytecodeExecution)
+<!-- traceability: {CallFrame_Layout} {DirectBytecodeExecution} -->
 
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| TEST-INTP-70 | 命令オブジェクト非生成とバイト直接フェッチ | WASM関数実行 | 実行ループのフェッチ処理を確認 | `frame.code[ip]` から $O(1)$ で直接バイトを読み出し、中間 `Instr` オブジェクトを生成しない | `interpreter.md` `{DirectBytecodeExecution}` |
+| TEST-INTP-70 | 命令オブジェクト非生成とバイト直接フェッチ | WASM関数実行 | 実行ループのフェッチ処理を確認 | `frame.code[ip]` から $O(1)$ で直接バイトを読み出し、中間 `Instr` オブジェクトを生成しない | `interpreter.md` `DirectBytecodeExecution` |
 | TEST-INTP-71 | 足し算による次PC進行と即値のその場デコード | 算術・即値命令実行 | `ip` の遷移を確認 | 命令長または即値長を加算した `ip + len` で直接進行し、二分探索マップ（FlatMapView）を走査しない | `interpreter.md` |
 | TEST-INTP-72 | 静的制御表によるブロック境界解決 | `block/loop/if` 構文の実行 | 分岐および終了時の遷移を確認 | モジュールロード時に事前計算された静的 `control_map`（`blocks`, `br_tables`）を参照し、実行時の全命令再デコードを行わない | `interpreter.md` |
 | TEST-INTP-73 | フレームごとのスロット幅の決定 | i32のみ、f32のみ、i64を含む、f64ローカルを含む、ローカルなしの関数 | ロード後の幅マップ（ローカルごとの幅を2ビットで保持）のスロット幅と `local_slot_count_cache` を確認し、各関数を実行する | i32/f32のみは1ワード、i64/f64を含むと2ワードになる。ローカルなしは1ワードでスロット数は0である。全ローカルの幅がスロット幅以下である。実行結果が正しい | GOTCHA-INTP-22 |
 | TEST-INTP-74 | 32ビットのみのフレームによるローカル値領域の節約 | 16個のローカルを持つ再帰関数。一方はi32のみ、他方はf64ローカルを1個含む | 同じ再帰深さで実行する | i32のみの版は、1フレーム16ワードで7フレームが128ワードに収まり、成功する。f64を含む版は、1フレーム34ワードで7フレームが128ワードを超え、容量超過で停止する | GOTCHA-INTP-22 |
-| TEST-INTP-75 | Native CallFrameの固定ABIと積載順序 | 関数を1つ開始し、Native CallStackが空 | `_build_frame` 後にコンテキストと最上位CallFrameを検査する | `call_stack` がコンテキストへ接続され、CallFrameが関数番号、コードビュー、ローカル幅・スロット数、引数個数、制御ベースの順序で保持される。終了後はCallStack深さと`call_offset`が0へ戻る | `interpreter.md` `{CallFrame_Layout}` `{ExecutionContext_Layout}` |
+| TEST-INTP-75 | Native CallFrameの固定ABIと積載順序 | 関数を1つ開始し、Native CallStackが空 | `_build_frame` 後にコンテキストと最上位CallFrameを検査する | `call_stack` がコンテキストへ接続され、CallFrameが関数番号、コードビュー、ローカル幅・スロット数、引数個数、制御ベースの順序で保持される。終了後はCallStack深さと`call_offset`が0へ戻る | `interpreter.md` `CallFrame_Layout` `{ExecutionContext_Layout}` |
 
 ### 実装の勘所・不変条件（Gotchas & Implementation Invariants）
+<!-- traceability: {InterpreterContextStackless} {JIT_RuntimeAPI_Fallback} -->
 
 | GOTCHA ID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
@@ -110,7 +113,7 @@
 | GOTCHA-INTP-03 | if 条件偽（else節なし）での制御フレームリーク防止 | `if (cond=0)` で else 節なし | `if` 命令を実行 | `match_offset + 1` へジャンプする際、`_Frame("if")` がスタックに残らずフレームスタックの深さが不変に保たれる。**実装の勘所**: 条件成立時と同様にフレームを積んでからジャンプすると、対応する `END` 命令をスキップした際にフレームが回収されずスタックリークとなる | `interpreter.md` |
 | GOTCHA-INTP-04 | UnifiedPC による多重モジュール空間の衝突防止 | 複数モジュールがロードされ、同一オフセット（例: 0x0010）を持つ関数が存在 | 各モジュールの関数を実行 | JIT キャッシュ引き当てやデバッグブレークポイント判定において、`(func_index << 16) \| bytecode_offset` の32bit表現で一意に区別され、他モジュールの同一オフセットと決して誤衝突しない | `interpreter.md`, `{PositionIndependentCode}` |
 | GOTCHA-INTP-05 | 実行時の命令オブジェクト生成・二分探索排除 | 関数呼び出しおよび命令ステップ実行 | `_build_frame` および `step()` を実行 | `_build_frame` および `step()` の命令フェッチが、オフセット→命令の逆引きテーブルを一切経由せず、生のバイト列（`frame.code[ip]`）から直接デコードする。**実装の勘所**: WASM バイト列に対して実行時に中間オブジェクトをアロケーションしたり、可変長オフセットを埋めるために二分探索を挟むと、組み込み環境でメモリを枯渇させ、実行時間の半分以上を探索に浪費する | `interpreter.md` `{DirectBytecodeExecution}` |
-| GOTCHA-INTP-06 | JIT が代行した分岐脱出でのフレーム内容不正利用防止 | ループが if 文の中に入れ子になっており、内側ループの脱出条件がコンパイル済み | 内側・外側の双方のループが複数回実行されるまで駆動を継続する | 外側ループ自身の分岐が正しく外側ループの先頭へ解決され、結果値が期待通りになる。**実装の勘所**: `loop`/`block`/`if` の脱出を JIT トレースがインタープリタを介さずに直接解決すると、その脱出に対応するフレームの積み下ろしは一切行われない。以前インタープリタが直接その構文を実行していた際に積まれたフレームが回収されずに残留すると、後続の深さ相対な分岐命令が誤った階層を対象に解決してしまう。フレームスタックの深さを切り詰めるだけでは、逆方向（本来もっと積まれているべき）のズレは直せない。よって `br` / `br_if` / `else` の分岐先解決はフレームスタックの中身を一切信用せず、ベーシックブロック抽出時に静的解決済みの `next_pc` / `loops_to` を直接使う。深さの切り詰め自体は、JIT が `END` 通過を代行し続けることでスタックが際限なく伸びるのを防ぐ安全策としてのみ残す | `{InterpreterContextStackless}`, ADR-INTERP-03, `{JIT_RuntimeAPI_Fallback}` |
+| GOTCHA-INTP-06 | JIT が代行した分岐脱出でのフレーム内容不正利用防止 | ループが if 文の中に入れ子になっており、内側ループの脱出条件がコンパイル済み | 内側・外側の双方のループが複数回実行されるまで駆動を継続する | 外側ループ自身の分岐が正しく外側ループの先頭へ解決され、結果値が期待通りになる。**実装の勘所**: `loop`/`block`/`if` の脱出を JIT トレースがインタープリタを介さずに直接解決すると、その脱出に対応するフレームの積み下ろしは一切行われない。以前インタープリタが直接その構文を実行していた際に積まれたフレームが回収されずに残留すると、後続の深さ相対な分岐命令が誤った階層を対象に解決してしまう。フレームスタックの深さを切り詰めるだけでは、逆方向（本来もっと積まれているべき）のズレは直せない。よって `br` / `br_if` / `else` の分岐先解決はフレームスタックの中身を一切信用せず、ベーシックブロック抽出時に静的解決済みの `next_pc` / `loops_to` を直接使う。深さの切り詰め自体は、JIT が `END` 通過を代行し続けることでスタックが際限なく伸びるのを防ぐ安全策としてのみ残す | InterpreterContextStackless, ADR-INTERP-03, JIT_RuntimeAPI_Fallback |
 
 ### 追加GOTCHA一覧（マージ判定用）
 

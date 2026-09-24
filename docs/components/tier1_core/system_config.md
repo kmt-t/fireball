@@ -76,7 +76,7 @@ static_assert(FB_CONF_GUEST_RAM_SIZE == FB_CONF_TASK_HEAP_SIZES[0]);
 各ゲストVMスロット `i` の実際の物理配置（領域）は、`FB_CONF_GUEST_RAM_BASE` を起点に先行スロットのサイズを累積したオフセット（`sum(FB_CONF_TASK_HEAP_SIZES[0..i))`）に配置される。スロットの基点アドレスを個別に設定するコンフィグ項目は持たず、サイズ配列のみから一意に導出することで、パーティション間の重複を静的に排除する。
 
 ##### PMSAv8 MPU 物理アドレスマップ
-<!-- traceability: {META_FaultIsolation} {WasmPageAlignment} -->
+<!-- traceability: {FastAddressCheck} {META_FaultIsolation} {Shm_Allocator} {System_Allocator} {WasmPageAlignment} -->
 以下は [`runtime_memory.md`](docs/components/tier2_runtime/runtime_memory.md) §7.1 の PMSAv8 MPU 8リージョン配分（`PMSAv8MPU`）が使う静的ベースアドレスの正本である。**想定実機ターゲットのアドレスマップ**は、Cortex-M33 の一般的な SRAM 配置（起点 `0x2000_0000`）とペリフェラル配置（起点 `0x4000_0000`）に従う。
 
 このアドレスマップは、「メモリ総量」節が定義する評価用最小構成（`FB_CONF_MEMORY_POOL_SIZE` = 23,552 Bytes）とは異なるスケールを表す。実機は、本表のリージョン間隔を確保できる物理 SRAM 容量を想定する。評価用最小構成は、その一部だけを静的に占有する。
@@ -155,7 +155,7 @@ namespace fireball::config {
 | `FB_CONF_HAL_MAX_BUFFERS` | デバイス通信用バッファの最大数 | `4` | |
 
 #### 3.3.4 vSoC / vMMIO
-<!-- traceability: {JIT_MultiBuffer_Cache} {FastAddressCheck} {GLOBAL_StrictMemoryLimit} {vMMIO_Isolation} {META_ConfigurableSystem} {META_RestrictedPhysicalAccess} {META_FlatMapIndexed} {GLOBAL_StaticScalability} {JIT_CardAgingSweep} -->
+<!-- traceability: {JIT_MultiBuffer_Cache} {GLOBAL_StrictMemoryLimit} {vMMIO_Isolation} {META_ConfigurableSystem} {META_RestrictedPhysicalAccess} {META_FlatMapIndexed} {GLOBAL_StaticScalability} {JIT_CardAgingSweep} -->
 | マクロ名 | 説明 | デフォルト値 | 導出元 |
 | :--- | :--- | :--- | :--- |
 | `FB_CONF_JIT_ENABLED` | JITコンパイラ機能の有効化フラグ | `true` | |
@@ -183,14 +183,16 @@ namespace fireball::config {
 | `FB_CONF_VIRQ_MAX_NODES` | vIRQ静的ノード数（root + 4分類 + デバイスノード） | `1 + FB_CONF_VIRQ_CATEGORY_COUNT + FB_CONF_HAL_MAX_DEVICES` | |
 | `FB_CONF_VIRQ_MAX_SOURCES` | vIRQ静的原因源数（SYSTEM/RUNTIME/FAULT + デバイス源） | `3 + FB_CONF_HAL_MAX_DEVICES` | |
 
+ゲストRAMへのアクセスは、アドレスを有効サイズと比較するFastAddressCheckで保護する（{FastAddressCheck}）。境界外アドレスはトラップし、マスクで折り返して実行を継続しない。この判定はRAMサイズが2の冪であることを要求しない。
+
 #### 3.3.5 ロギング・デバッガ
-<!-- traceability: {BufferedLogging} {Challenge_DebuggerResource} -->
+<!-- traceability: {BufferedLogging} {Challenge_DebuggerResource} {Debug_Integrated} -->
 | マクロ名 | 説明 | デフォルト値 | 導出元 |
 | :--- | :--- | :--- | :--- |
 | `FB_CONF_LOG_BUFFER_SIZE` | ログメッセージ保持用のバッファサイズ (Bytes) | `512` | |
 | `FB_CONF_DEBUG_MAX_BREAKPOINTS` | 最大ブレークポイント数 | `8` | `{META_ConfigurableSystem}` |
 | `FB_CONF_DEBUG_PACKET_SIZE` | RSPパケットバッファサイズ | `1024` | |
-| `FB_CONF_DEBUG_MAX_PC_SAMPLES` | プロファイラバッファに保持可能なPCサンプリングエントリの最大件数 | `64` | `{Debug_Integrated}` `{META_NoStdVector}` |
+| `FB_CONF_DEBUG_MAX_PC_SAMPLES` | プロファイラバッファに保持可能なPCサンプリングエントリの最大件数 | `64` | `Debug_Integrated` `{META_NoStdVector}` |
 
 #### 3.3.6 タスクID型・予約値
 <!-- traceability: {GLOBAL_StaticScalability} -->
@@ -203,10 +205,9 @@ namespace fireball::config {
 
 #### 3.3.7 割り込みイベントFIFO
 <!-- traceability: {GLOBAL_InterruptWakeup} -->
-本節はタスクID節（3.3.6）の直後に置く割り込みイベントFIFOの唯一の定義であり、次のリカバリー戦略節を3.3.8とする。
 | マクロ名 | 説明 | デフォルト値 | 導出元 |
 | :--- | :--- | :--- | :--- |
-| `FB_CONF_INTERRUPT_QUEUE_SIZE` | COOSが所有する原因付き割り込みイベントFIFOの固定エントリ数。ISR producerとCOOS consumerのSPSCロックフリーリングで実装する | `16` | |
+| `FB_CONF_INTERRUPT_QUEUE_SIZE` | COOSが所有する原因付き割り込みイベントFIFOの固定エントリ数。ISR producerとCOOS consumerのSPSCロックフリーリングで実装する | `16` | [`requirement_list.md`](../../requires/requirement_list.md) |
 
 ```python
 # コンパイル時検証

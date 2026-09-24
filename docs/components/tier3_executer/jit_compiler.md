@@ -54,7 +54,7 @@ flowchart TD
 ### 3.3 主要なクラス・構造体・定数
 
 #### コンパイル単位とインタープリタ協調方針
-<!-- traceability: {LowLatencyJIT} {SimpleJITArchitecture} {PositionIndependentCode} -->
+<!-- traceability: {Libgcc_Runtime_Helper} {LowLatencyJIT} {PositionIndependentCode} {SimpleJITArchitecture} -->
 - **関数/モジュール一括コンパイルの完全禁止**: 極小リソース環境におけるコンパイル遅延とメモリ消費をゼロ化する。関数全体やモジュール全体の事前一括コンパイルは一切行わない。
 - **純粋ベーシックブロック/トレース単位コンパイル**: カードマーキング表で HOT（`10`）に達した直線命令列（基本ブロック / トレース）のみを対象とする。スケジューラのアイドル時等に Copy-and-Patch により 1 トレースずつオンデマンド生成する。
 - **制御フロー・スタック操作・演算の最適インライン展開方針 (`{JIT_RuntimeAPI_Fallback}`)**:
@@ -64,7 +64,7 @@ flowchart TD
     1. 関数間コール・フレーム生成: `call`, `call_indirect` (別フレームアロケーション、シグネチャ照合、WASI/ホスト呼出)
     2. 動的間接ジャンプテーブル: `br_table` (可変長ターゲット探索)
     3. システム・OS連携: `memory.grow`, `memory.copy`, `memory.fill`
-    4. ハードウェア非対応演算 (`{Libgcc_Runtime_Helper}`): FPU非搭載時の浮動小数点演算や 64ビット整数除算・剰余は、専用ランタイムヘルパー（`fireball_rt_*`）呼び出しへ委譲する。
+    4. ハードウェア非対応演算 (`Libgcc_Runtime_Helper`): FPU非搭載時の浮動小数点演算や 64ビット整数除算・剰余は、専用ランタイムヘルパー（`fireball_rt_*`）呼び出しへ委譲する。
     これら制御境界・システムコール・ハードウェア非対応演算のみをインタープリタの命令ハンドラまたはランタイムヘルパーへ委譲する。
 - **ハンドラ互換ディスパッチ**: JIT トレースエントリポイントはインタープリタ命令ハンドラと同一のシグネチャを持つ。ディスパッチテーブルから直接呼び出せる。
 
@@ -228,7 +228,7 @@ JIT トレースとインタープリタは境界において4つの論理引数
 
 #### トレース境界不変条件とスタックフレーム整合性 (Trace Boundary Invariants)
 <!-- traceability: {LowLatencyJIT} {PositionIndependentCode} {JIT_RuntimeAPI_Fallback} {GOTCHA-JITC-03} -->
-JIT トレースとインタープリタが共有オペランド領域上で相互運用するため、以下の4つの不変条件を厳格に保持する。
+JIT トレースとインタープリタが共有オペランド領域上で相互運用するため、トレース境界不変条件（`{TraceBoundaryInvariant}`）を含む以下の4つの不変条件を厳格に保持する。
 
 1. **スタック自己完結性不変条件 (Stack Self-Containment Invariant)**:
    - JIT コンパイル対象とする BasicBlock は、**命令走査中の累積スタック深さが 0 未満（`stack_depth < 0`）に落ちない自己完結ブロックのみ**とする。
@@ -477,17 +477,17 @@ sequenceDiagram
 <!-- traceability: {JIT_CopyAndPatch} {JIT_RegisterMapping} -->
 - **目標**: コンパイルレイテンシを最小化し、WAMRインタープリタを上回る実行速度を実現。
 - **方策**:
-    - : 複雑な最適化を省き、テンプレートコピーのみでコンパイルを完了。
-    - : `Context`, `StackTop`, `WASM_PC` を物理レジスタに固定し、メモリアクセスを削減。
+    - **コピー・パッチ方式**: 複雑な最適化を省き、テンプレートコピーのみでコンパイルを完了。
+    - **レジスタ割り当て**: `Context`, `StackTop`, `WASM_PC` を物理レジスタに固定し、メモリアクセスを削減。
     - `Card Marking (O(1)) + Binary Search`: カードマーキング表による $O(1)$ 事前フィルタと二分探索により、高速な検索を実現。
 
 ### 6.2 安全性制約と方策
 <!-- traceability: {PositionIndependentCode} {MemoryBoundaryCheck} {FastAddressCheck} {SimpleJITArchitecture} -->
 - **目標**: 不正なコード実行および W^X 違反の防止。
 - **方策**:
-    - : 生成コードを位置独立とし、配置場所の自由度を確保。
+    - **位置独立コード**: 生成コードを位置独立とし、配置場所の自由度を確保。
     - `Cache Capacity Check`: コード生成時にキャッシュ溢れを厳密にチェックし、溢れた場合は 3面リングローテーションにより Oldest バンクを破棄して再利用する。これはキャッシュ容量管理であり、（ゲストメモリアクセスの隔離）とは別の関心事である。
-    - : 生成コードに埋め込むゲストメモリアクセスの境界チェック。`FastAddressCheck` は `CMP addr, mem_size; BHS.W <trap>` で開始アドレスを検査する。1バイト超のアクセスでは `addr + width - 1` を `mem_size` と比較して末尾境界も検査する（マスク不使用）。境界外アクセスはインタープリタへトラップする。アドレスを暗黙に折り畳んで継続しない。
+    - **メモリ境界検査**: 生成コードに埋め込むゲストメモリアクセスの境界チェック。`FastAddressCheck` は `CMP addr, mem_size; BHS.W <trap>` で開始アドレスを検査する。1バイト超のアクセスでは `addr + width - 1` を `mem_size` と比較して末尾境界も検査する（マスク不使用）。境界外アクセスはインタープリタへトラップする。アドレスを暗黙に折り畳んで継続しない。
     - `MPU W^X 保護`: Cortex-M33 PMSAv8 MPU を用いる。JIT パッチ書き込み時は `RW+XN`、ネイティブ実行時は `RO+X` に切り替える。`__DSB(); __ISB();` バリアを発行する。書き込みと実行の同時許可（RWX）を物理的に排除する。形式モデル `formal/jit_cache_model.py` により変異検査付きで検証する。
 
 ## 7. 形式検証・テスト仕様との対応

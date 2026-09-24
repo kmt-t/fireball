@@ -34,16 +34,16 @@
 | TEST-MEM-13 | `query()`/`check_ownership()`が削除されている | - | APIサーフェスを確認 | これらのAPIは存在しない（`shared_block.get_size()`/`get_owner()`で代替） | ADR_MemoryManagerMinimalSurface |
 
 ### ランタイム用バンプアロケータ・JITキャッシュアロケータ（契約レベル）
-<!-- traceability: {Runtime_BumpAllocator} {JIT_MultiBuffer_Cache} -->
+<!-- traceability: {ADR_SharedBlockRaii} {JIT_MultiBuffer_Cache} {OneRuntimeOneGuest} {Runtime_BumpAllocator} -->
 
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| TEST-MEM-26 | `acquire-runtime-arena`は1ランタイム1アリーナを貸与する | 任意のランタイムID | 同一`runtime-id`で2回`acquire-runtime-arena` | 1回目は`runtime-arena`ハンドルを返す。2回目は`{OneRuntimeOneGuest}`により拒否されるか同一ハンドルを返す（実装は`runtime_loader.md`を正本とする） | , `{OneRuntimeOneGuest}` |
+| TEST-MEM-26 | `acquire-runtime-arena`は1ランタイム1アリーナを貸与する | 任意のランタイムID | 同一`runtime-id`で2回`acquire-runtime-arena` | 1回目は`runtime-arena`ハンドルを返す。2回目は`OneRuntimeOneGuest`により拒否されるか同一ハンドルを返す（実装は`runtime_loader.md`を正本とする） | , `OneRuntimeOneGuest` |
 | TEST-MEM-27 | `bump-alloc`は単調増加・非重複のアドレスを返す | アリーナ取得済み | 複数回`bump-alloc`を発行 | アドレスは単調増加し重複しない。アリーナ枯渇時は`memory-error`（`out-of-memory`）を返す | |
 | TEST-MEM-28 | `reset-runtime-arena`はO(1)でバンプポインタを先頭へ巻き戻す | N個確保済み | `reset-runtime-arena`後に再度`bump-alloc` | リセット後最初の`bump-alloc`はアリーナ基点アドレスを返す | |
 | TEST-MEM-29 | `release-runtime-arena`後は`bump-alloc`が拒否される | アリーナ返却済み | 返却済みアリーナへ`bump-alloc` | `memory-error`（`invalid-owner`）を返す | |
 | TEST-MEM-30 | `acquire-jit-cache`は起動時1回のみ許可される | - | 2回目の`acquire-jit-cache` | 2回目は拒否される（単一リージョン保証、`{GLOBAL_StrictMemoryLimit}`） | |
-| TEST-MEM-31 | WIT handleとC++ RAII所有権の境界 | WIT `shm-handle`をC++バインディングへ渡す | handle recordを複製しつつ所有権操作を実行 | recordの複製は所有権を複製しない。C++ `shared_block`はmove-onlyで、release成功後のsource wrapperは無効、claim成功時だけ受信側wrapperが所有者となる | `system_memory.md` §4.3, `{ADR_SharedBlockRaii}` |
+| TEST-MEM-31 | WIT handleとC++ RAII所有権の境界 | WIT `shm-handle`をC++バインディングへ渡す | handle recordを複製しつつ所有権操作を実行 | recordの複製は所有権を複製しない。C++ `shared_block`はmove-onlyで、release成功後のsource wrapperは無効、claim成功時だけ受信側wrapperが所有者となる | `system_memory.md` §4.3, `ADR_SharedBlockRaii` |
 | TEST-MEM-32 | JIT領域の連続性と固定区画 | `acquire-jit-cache`成功 | 返却された領域のサイズとページ連続性を検査 | 8,192バイトの連続領域（4KB物理ページ2枚）を返し、区画は共通コード2KB + Active/Warm/Oldest各2KB。共通領域をバンク管理へ渡さない | `system_config.md`, `runtime_memory.md` |
 
 ## 3. テスト検証実績と網羅状況

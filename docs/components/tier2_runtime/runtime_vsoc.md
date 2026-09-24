@@ -11,15 +11,15 @@
 <!-- traceability: {LowLatencyJIT} {MemoryIsolation} {META_FaultIsolation} {EnvironmentPointer} {OneRuntimeOneGuest} {Runtime_BumpAllocator} -->
 vSoC (Virtual System-on-Chip) は WASM 実行環境の統合マネージャである。Loader、Interpreter、JIT、vMMIO、Debugger を統括して実行制御を行う。
 各サブコンポーネントを統合する環境としての役割を担う。`execution_context` 内のリニアメモリ情報やグローバル変数テーブル（`vsoc_runtime` 領域）を介して実行環境を提供する。
-本システムは **1ランタイム1ゲストの直交分離原則 ()** を採用する。各 vSoC インスタンスは厳密に 1 つのゲストモジュールのみを担当する。
-各ランタイムは**自身専用の固定長データバンプアロケータ ()** を所有する。モジュール内の全システムコンテナストレージ（RAM/XN）の確保を一元管理する。アンロード時にはこれらを $O(1)$ で一括リセットし、メモリ断片化を根絶する。
+本システムは **1ランタイム1ゲストの直交分離原則** を採用する。各 vSoC インスタンスは厳密に 1 つのゲストモジュールのみを担当する。
+各ランタイムは**自身専用の固定長データバンプアロケータ**を所有する。モジュール内の全システムコンテナストレージ（RAM/XN）の確保を一元管理する。アンロード時にはこれらを $O(1)$ で一括リセットし、メモリ断片化を根絶する。
 JIT ネイティブコードキャッシュ（3-Bank）は、Tier 3 `JITRuntimeManager` が専用の実行可能セクションから**専用の JIT コードアロケータ**により確保する。Tier 2 vSoC/`RuntimeEngine` は `JITRuntime` 契約を注入して実行境界を提供するだけであり、キャッシュ・ホットスポット・コンパイル待ち列の状態を所有しない。このセクションには MPU の W^X（ライト・実行権限排他）制御を適用する。データ用バンプアロケータ（RAM/XN）とはハードウェア保護ドメインを厳格に分離する。
 
 ## 2. アーキテクチャ分類
 <!-- traceability: {META_3TierSeparation} {GLOBAL_ComponentHarness} {META_StaticDI} {OneRuntimeOneGuest} -->
 本コンポーネントは **Tier 2 (分解されたサブコンポーネント: Decomposed Subcomponent)** に属する。WASM 仮想実行環境として Loader、Interpreter、JIT、vMMIO、Debugger などのサブコンポーネント群を統合する。統合には**ハーネスパターン（`vsoc_harness`）による静的依存性逆転（Static Dependency Inversion）**を用いる。
 組み込みベアメタル環境では、仮想関数（vtable）や動的ディスパッチによるオーバーヘッドを容認しない。そのため Tier 2 の vSoC は Tier 3 具象エンジンの内部ヘッダに依存しない。ハーネスに集約された POD 関数ポインタやインスタンスを介して、ゼロオーバーヘッドで制御を委譲する。
-同一モジュールの複数インスタンス実行は、単一ランタイム内のマルチスレッドでは行わない。独立した別ランタイムの並行起動（）と COOS IPC 通信により直交化する。
+同一モジュールの複数インスタンス実行は、単一ランタイム内のマルチスレッドでは行わない。独立した別ランタイムを並行起動し、COOS IPC 通信で直交化する。
 
 ## 3. 静的モデル
 
@@ -91,13 +91,13 @@ vSoC全体の可変な実行時状態を保持する構造体。
 | JITコードアロケータ | MPU W^X 保護（ライト・実行権限排他）が適用されたセクションから 3-Bank コードキャッシュを切り出す専用アロケータ。 | `jit_code_allocator` 構造体 |
 
 #### vSoCランタイム環境
-<!-- traceability: {ContextPointerRegister} {EnvironmentPointer} {MemoryBoundaryCheck} {ExecutionContext_Layout} {VsocRuntime_Layout} {GOTCHA-VSOC-03} -->
+<!-- traceability: {ContextPointerRegister} {EnvironmentPointer} {MemoryBoundaryCheck} {FastAddressCheck} {ExecutionContext_Layout} {VsocRuntime_Layout} {GOTCHA-VSOC-03} -->
 vSoCの実行環境情報は `execution_context` の論理フィールドとして保持する。固定ABIではリニアメモリ、グローバル領域、命令ハンドラ表の参照をそれぞれ独立したフィールドに置き、別の環境構造体を特定オフセットへ埋め込まない。JITトレースとインタープリタは同じ論理状態を参照する。境界で渡す第4論理引数はスタック頂点値であり、物理レジスタへの割当は対象ABIで定義する。`memory.grow` で動的に伸長するリニアメモリの実体や、モジュール横断で共有されるグローバル変数配列など、単一の呼び出しコンテキストを超えて生存する状態を保持する。
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
 | リニアメモリ基底 | ゲストリニアメモリ（`memory.grow` で再割当されうる）の開始アドレス | アドレス値 | 32bit符号なし（`execution_context` の `+0x28`） |
-| リニアメモリサイズ | ゲストリニアメモリの現在の有効バイト数。`{FastAddressCheck}` の境界比較（`CMP addr, mem_size; BHS __trap`）に直接使う——マスクは使わないため2の冪制約もない | バイト数 | 32bit符号なし（`execution_context` の `+0x2C`） |
+| リニアメモリサイズ | ゲストリニアメモリの現在の有効バイト数。`FastAddressCheck` の境界比較（`CMP addr, mem_size; BHS __trap`）に直接使う。マスクを使わないため2の冪制約もない | バイト数 | 32bit符号なし（`execution_context` の `+0x2C`） |
 | グローバル変数基底 | WASM `global` 配列（4バイト単位でインデックス付け）の開始アドレス | アドレス値 | 32bit符号なし（`execution_context` の `+0x30`） |
 | グローバル変数終端 | WASM `global` 配列の終端アドレス | アドレス値 | 32bit符号なし（`execution_context` の `+0x34`） |
 
@@ -126,20 +126,19 @@ vSoCの動作パラメータを定義する。
 ## 4. 動的モデル
 
 ### 4.1 アルゴリズム
-<!-- traceability: {ThreadedInterpreter} {JIT_CopyAndPatch} {Challenge_ApproximateYield} {JIT_Safepoint} {ContextPointerRegister} -->
-
+<!-- traceability: {Challenge_ApproximateYield} {ContextPointerRegister} {GLOBAL_InterruptWakeup} {JIT_CopyAndPatch} {JIT_Safepoint} {OneRuntimeOneGuest} {ThreadedInterpreter} -->
 
 vSoC コアエンジンの実行委譲、協調イールド、および外部介入制御の基本アルゴリズムを以下に定義する。
 
 | アルゴリズム / 機構 | 契機・条件 | 動作内容 | 目的・安全性不変条件 | 関連キーワード |
 | :--- | :--- | :--- | :--- | :--- |
-| **実行エンジン委譲とステートレス化** | `step()` 実行時 | `exec_trace`を4論理引数のプレーン関数としてディスパッチ | コルーチン化禁止による `[[clang::musttail]]` 阻害・スタック消費の防止（`GOTCHA-VSOC-01`） | |
-| **概算Yield (Approximate Yield)** | トレース境界脱出時 | `yield_threshold` を基準に vSoC が一括して `co_yield` 判定 | 命令ハンドラ内カウンタ埋め込みを排除し最速ホットパスを維持（`GOTCHA-VSOC-02`） | |
-| **JIT Safepoint** | ループバック（バックエッジ）到達時 | 保留中の割り込みイベント（原因レコード）を確認し、必要時フォールバック | JIT実行中の非同期イベント・Ctrl+Cへの即時応答性担保 | |
+| **実行エンジン委譲とステートレス化** | `step()` 実行時 | `exec_trace`を4論理引数のプレーン関数としてディスパッチ | コルーチン化禁止による `[[clang::musttail]]` 阻害・スタック消費の防止（`GOTCHA-VSOC-01`） | `{ContextPointerRegister}` `{ThreadedInterpreter}` |
+| **概算Yield (Approximate Yield)** | トレース境界脱出時 | `yield_threshold` を基準に vSoC が一括して `co_yield` 判定 | 命令ハンドラ内カウンタ埋め込みを排除し最速ホットパスを維持（`GOTCHA-VSOC-02`） | `{Challenge_ApproximateYield}` |
+| **JIT Safepoint** | ループバック（バックエッジ）到達時 | 保留中の割り込みイベント（原因レコード）を確認し、必要時フォールバック | JIT実行中の非同期イベント・Ctrl+Cへの即時応答性担保 | `{GLOBAL_InterruptWakeup}` `{JIT_Safepoint}` |
 | **デバッガとJITの構成排他** | デバッグ構成の合成時 | Tier 2の構成器は `Interpreter + Debugger` を選択し、`Debugger + JIT` の同時構成を `assert` で拒否する | デバッガがJITキャッシュを管理する経路を生成しない | `{DebuggerInterpreterComposition}` |
 | **1ランタイム1ゲスト・専用バンプ一括解放（W^Xコード分離）** | ランタイム生成時およびアンロード時 | 専用データアリーナ（RAM/XN）からコンテナストレージを確保し、専用W^XセクションからJITコードを確保。破棄時に $O(1)$ 一括リセット | 完全障害隔離、内部断片化ゼロ、ハードウェア実行保護（W^X/XN分離）の厳格維持 | `{OneRuntimeOneGuest}` `{Runtime_BumpAllocator}` |
 
-- **1ランタイム1ゲストのライフサイクル管理と専用バンプ一括解放 (`{OneRuntimeOneGuest}`, `{Runtime_BumpAllocator}`)**:
+- **1ランタイム1ゲストのライフサイクル管理と専用バンプ一括解放 (`OneRuntimeOneGuest`, `{Runtime_BumpAllocator}`)**:
   vSoC インスタンス生成時、メモリマネージャから固定長 RAM パーティション（データアリーナ: `RW + XN`）と物理的に連続したJITコード用8KB領域（MPU `W^X` 制御）の貸与を受ける。ここで専用の `bump_allocator`（データ用）と `jit_code_allocator`（コード用）を初期化する。
   WASM ローダはデータ用バンプアロケータを受け取り、モジュール内の全システムコンテナストレージ（`ReadOnlyRadixBinaryTreeStorage`, `MutableBitStorage` 等）を順次切り出す。
   一方、JIT コンパイラは MPU の `W^X` 保護が適用された JIT セクションから専用アロケータを用いてネイティブトレースを確保する。
@@ -150,8 +149,6 @@ vSoC コアエンジンの実行委譲、協調イールド、および外部介
   `exec_trace` はインタープリタのディスパッチャまたは JIT コードを指す。実行コンテキスト、オペランド領域の現在位置、ローカル値領域の開始位置、スタック頂点値を4つの論理引数として渡し、物理レジスタへの割当は対象ABIに従う。
   **設計理由と不変条件**: インタープリタおよび JIT トレース自身を C++20 コルーチン化することは厳禁とする。コルーチン化すると、命令ディスパッチごとにフレームの割り当てや退避・復帰が発生する。さらにコンパイラの末尾呼び出し最適化（`[[clang::musttail]]`）が阻害され、スタックを急速に消費してしまう。
   そのためインタープリタは完全ステートレスな `void` プレーン関数として設計する。次に実行すべき PC は `execution_context.ip`（`R0` の `+0x00`）へ書き戻し、vSoC のメインループへ戻る規約とする。
-- **概算Yield と明示的イールド点 (`GOTCHA-VSOC-02`)**:
-
 #### ランタイム生成とモジュールアンロードのライフサイクル（責務シーケンス図）
 <!-- traceability: {OneRuntimeOneGuest} {Runtime_BumpAllocator} {META_FaultIsolation} -->
 COOS Scheduler、vSoC Engine、Platform MemoryManager、WASM Loader、WASM Module 間の生成・ストレージ確保と、$O(1)$ 一括解放手順を示す。
@@ -221,7 +218,7 @@ sequenceDiagram
 ```
 
 ### 4.2 状態遷移図 (SysML SMD: vSoC Engine ライフサイクル)
-<!-- traceability: {VSOC_Lifecycle} {ThreadedInterpreter} {JIT_CopyAndPatch} {Challenge_ApproximateYield} {JIT_Safepoint} {DebuggerInterpreterComposition} -->
+<!-- traceability: {ADR_TraceBoundaryYield} {Challenge_ApproximateYield} {DebuggerInterpreterComposition} {JIT_CopyAndPatch} {JIT_Safepoint} {ThreadedInterpreter} {VSOC_Lifecycle} -->
 
 vSoC Engine の実行制御と JIT/Interpreter 切り替えの状態遷移を以下に示す。
 
@@ -290,7 +287,7 @@ stateDiagram-v2
 
 **重要な設計ポイント:**
 
-- **Approximate Yield (`{ADR_TraceBoundaryYield}`)**: インタープリタ/JITトレース側での命令単位の精密中断は行わず、トレースの切れ目（基本ブロック末尾・ループ境界・関数境界）で制御が戻ってくるたびに、vSoC が概算的にタスク切り替えを判定して `co_yield` を発行する
+- **Approximate Yield (`ADR_TraceBoundaryYield`)**: インタープリタ/JITトレース側での命令単位の精密中断は行わず、トレースの切れ目（基本ブロック末尾・ループ境界・関数境界）で制御が戻ってくるたびに、vSoC が概算的にタスク切り替えを判定して `co_yield` を発行する
 
 ### 4.2.1 Safepoint と JIT キャッシュ協調モデル
 <!-- traceability: {JIT_Safepoint} {Challenge_JITCacheEfficiency} {DebuggerInterpreterComposition} -->
@@ -359,7 +356,7 @@ Region 4全体は`0x2004_0000`から始まる連続8KBであり、共通コー�
 
 #### 形式検証 (pyModelChecking) 検証対象
 
-本節で述べた Safepoint 協調とキャッシュ一貫性の性質は、6.1 の表に列挙したプロパティとして形式検証されている。個々のモデルファイルとプロパティ名の対応は **[6.1 検証対象の不変条件](#61-検証対象の不変条件)** を正本とする。
+本節で述べた Safepoint 協調とキャッシュ一貫性の性質は、検証対象の不変条件表に列挙したプロパティとして形式検証されている。個々のモデルファイルとプロパティ名の対応は **[検証対象の不変条件](#61-検証対象の不変条件)** を正本とする。
 
 ### 4.3 内部シーケンス
 <!-- traceability: {ThreadedInterpreter} {JIT_CopyAndPatch} {Challenge_ApproximateYield} {JIT_Safepoint} {DebuggerInterpreterComposition} -->

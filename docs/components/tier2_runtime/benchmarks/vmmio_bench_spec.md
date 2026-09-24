@@ -11,11 +11,12 @@
 TLB ミス時は、ソート済み PTE 配列（FlatMap、`fireball::flat_map_view`）の二分探索時間を測定する。Function Code ごとのディスパッチレイテンシも測る。対象は FC=12（静的デバイス）、FC=14（SHM）、FC=15（PASSTHROUGH）である。
 
 ## 2. ベンチマーク測定項目一覧
+<!-- traceability: {GOTCHA-VMMIO-02} -->
 
 | ベンチマーク ID | 測定項目 | 前提条件 / 設定 | 計測指標 | 目標性能 / 合格基準 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | **BENCHMARK-VMMIO-01** | Direct-Mapped TLB ヒット レイテンシ ($O(1)$) | 同一 SHM ページ (FC=14) への局所アクセス | ns/hit, M ops/sec | 完全 $O(1)$ で高速解決されること | [`runtime_vmmio.md`](docs/components/tier2_runtime/runtime_vmmio.md), [`bench_vmmio.py`](experiments/pysim/benchmarks/vmmio/bench_vmmio.py) |
-| **BENCHMARK-VMMIO-02** | Folding XOR ハッシュ計算オーバーヘッド | 20-bit VPN $\to$ 5-bit スロット | ns/op, M ops/sec | 均等分散かつ極低コストなビット演算 | [`runtime_vmmio.md`](docs/components/tier2_runtime/runtime_vmmio.md) `{GOTCHA-VMMIO-02}` |
+| **BENCHMARK-VMMIO-02** | Folding XOR ハッシュ計算オーバーヘッド | 20-bit VPN $\to$ 5-bit スロット | ns/op, M ops/sec | 均等分散かつ極低コストなビット演算 | [`runtime_vmmio.md`](docs/components/tier2_runtime/runtime_vmmio.md) `GOTCHA-VMMIO-02` |
 | **BENCHMARK-VMMIO-03** | TLB ミス $\to$ FlatMap 探索 & リフィル ($O(\log N)$) | 33ページ循環アクセス (32エントリTLB容量超過、全ページPTE登録済み) | ns/walk, M ops/sec | 二分探索による安定した PTE 解決 | `{META_FlatMapIndexed}` |
 | **BENCHMARK-VMMIO-04** | TLB 加速比 (Hit vs Miss) | TLB ヒット時間 vs FlatMap Walk 時間 | 加速倍率 (Ratio) | TLB ヒットが FlatMap walk より高速であること | [`runtime_vmmio.md`](docs/components/tier2_runtime/runtime_vmmio.md) `{META_RestrictedPhysicalAccess}` |
 | **BENCHMARK-VMMIO-05** | 静的デバイス (FC=12) システムコールディスパッチ | `map_static_device` 登録済みハンドラ | ns/dispatch | ハンドラ呼出オーバーヘッドが最小であること | [`runtime_vmmio.md`](docs/components/tier2_runtime/runtime_vmmio.md) |

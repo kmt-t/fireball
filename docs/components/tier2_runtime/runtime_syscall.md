@@ -166,7 +166,7 @@ vIRQのイベント本体は専用host callの呼出し中には配送せず、I
 ### 6.5. IPC (`0x40`-`0x4F`)
 <!-- traceability: {CSPCommunication} {IPC_HandleBased} -->
 CSPチャネルおよびハンドルベースのプロセス間通信。
-URIによる名前解決後の接続確立（`lookup`）によって取得した `handle_id` を用いて、以降は直接メッセージパッシングを行う（）。メッセージの送受信は、ホーアのCSPモデルに基づくゼロコピー所有権移譲を伴う同期通信として処理される（）。
+URIによる名前解決後の接続確立（`lookup`）によって取得した `handle_id` を用いて、以降は直接メッセージパッシングを行う。メッセージの送受信は、ホーアのCSPモデルに基づくゼロコピー所有権移譲を伴う同期通信として処理される。
 
 | ID | 名前 | 引数 | 戻り値 | 説明 |
 | :--- | :--- | :--- | :--- | :--- |
@@ -176,7 +176,7 @@ URIによる名前解決後の接続確立（`lookup`）によって取得した
 | `0x43` | `IPC_REPLY` | `handle_id`, `response_code` | errno | 現在の受信タスクが直前の `IPC_RECV` で取得した同一メッセージを、応答コード付きで送信元へ返す。返信先はメッセージに結び付いた送信元TCBで確定し、`handle_id` はABI対称性のための引数で返信先選択には使わない。IPCルータAPIでは受信後のKV追加も応答データになる。 |
 
 ### 6.6. WASI (`0x80`-`0xBF`)
-<!-- traceability: {WASI_Implementation} -->
+<!-- traceability: {Fast_Path_GPIO} {WASI_Implementation} -->
 WASI互換レイヤー。Tier 3 の `libfireball` が `wasi-libc` 等のゲスト側呼び出しをこれらのIDに変換する。本ドキュメントはホスト側のシステムコールIDとディスパッチ仕様に限定し、高レベルのゲストバインディングは Tier 3 の `libfireball` 仕様を正本とする。
 WASIの引数レイアウトとエラー変換は、`libfireball` が `runtime_syscall.md` のABI契約に従って実施する。ホスト側ディスパッチはゲストラッパーの呼び出し順序を知らない。
 
@@ -192,7 +192,7 @@ WASIの引数レイアウトとエラー変換は、`libfireball` が `runtime_s
 本カテゴリのIDは、Tier 3 の `libfireball` がWASI互換呼び出しから適切に発行する。ホスト側では本書のディスパッチ契約に従って処理する。
 
 > [!NOTE]
-> 最速のGPIOアクセスは `{Fast_Path_GPIO}` に従い vMMIO 空間への直接ストア（PASSTHROUGH領域経由、トラップ不要）を用いる。専用syscallは原則不要であるが、WASI互換用途では `libfireball` が MMIO Generic または `FB_SYSCALL_TRIGGER_SET_PIN` を介した呼び出しを提供できる。
+> 最速のGPIOアクセスは `Fast_Path_GPIO` に従い vMMIO 空間への直接ストア（PASSTHROUGH領域経由、トラップ不要）を用いる。専用syscallは原則不要であるが、WASI互換用途では `libfireball` が MMIO Generic または `FB_SYSCALL_TRIGGER_SET_PIN` を介した呼び出しを提供できる。
 
 ##### システムコール ID 定義一覧表 (`fb_syscall_id`)
 <!-- traceability: {Syscall_Mapping} -->

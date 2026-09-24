@@ -26,6 +26,7 @@
 | 8 | ISR通知 | - | `SUSPENDED_CSP`/`READY` | (継続) | **INT イベント投入 → yield点でドレイン → READY 遷移** | TEST-COOS-08 |
 
 ### 2.2 テストケース詳細一覧
+<!-- traceability: {Challenge_CspHandoffStarvation} {GOTCHA-SCHED-01} -->
 
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
@@ -35,7 +36,7 @@
 | TEST-COOS-04 | 送信者到着でランデブー成立（受信側視点） | Bが受信待機中(RECV) | タスクAが`channel_send`を呼ぶ | A・B双方がREADYに遷移し、値の所有権がAからBへ移る | 直交表 ケース2 |
 | TEST-COOS-05 | 1チャネル1待機者の強制（同方向多重待機は不可能） | (1) Aが送信待機中(SEND) または<br>(2) Bが受信待機中(RECV) | (1) 別タスクCが同チャネルへ`channel_send`<br>(2) 別タスクDが同チャネルへ`channel_recv` | 到達不能ケースとして`assert`で即座に検出される（設計違反フェイルファスト） | 直交表 ケース5/6 |
 | TEST-COOS-06 | CSP Handoffは待機相手へ直接切り替える | ランデブー成立、ハンドオフ回数が上限未満 | ランデブー完了時の結果を観測 | 結果が直接切替を示し、切替先が待機相手である | `{CSP_Handoff}` |
-| TEST-COOS-07 | 連続ハンドオフ上限後のスケジューラ復帰 | `max_handoffs=2` とし、2タスク間で2回の直接ハンドオフを完了 | 3回目のランデブーを成立させる | 操作結果が `YIELD` となり、連続回数が0へ戻る。これは制御譲渡とカウンタの検証であり、READYキュー順序、全タスクの公平性、実時間応答上限は検証しない | `{GOTCHA-SCHED-01}`, `{Challenge_CspHandoffStarvation}` |
+| TEST-COOS-07 | 連続ハンドオフ上限後のスケジューラ復帰 | `max_handoffs=2` とし、2タスク間で2回の直接ハンドオフを完了 | 3回目のランデブーを成立させる | 操作結果が `YIELD` となり、連続回数が0へ戻る。これは制御譲渡とカウンタの検証であり、READYキュー順序、全タスクの公平性、実時間応答上限は検証しない | `GOTCHA-SCHED-01`, `Challenge_CspHandoffStarvation` |
 | TEST-COOS-08 | 割り込み通知を協調境界で処理して待機タスクを起床する | vSoCランタイムタスクが`vector_id`待ち | 固定5ワードの`interrupt-event`を`notify_interrupt`へ渡し、スケジューラにイベントを処理させる | 通知イベントが協調境界で処理され、5ワードを対応する待機タスクへ引き渡したうえでREADYとなって再開する | 直交表 ケース8, `{GLOBAL_InterruptWakeup}` |
 | TEST-COOS-09 | 割り込みイベントFIFO満杯時のドロップ | FIFO満杯 | 原因レコードを追加で`notify_interrupt` | イベントがドロップされ、ドロップカウンタがインクリメントされる（os_scheduler.md `notify-interrupt`の挙動と共通） | os_scheduler.md `notify-interrupt` |
 | TEST-COOS-10 | READYタスクがない場合のアイドル検出 | 少なくとも1タスクがブロック中で、READYキューと割り込みイベントFIFOが空 | スケジューラを実行する | アイドルフックが呼び出される | `os_coos.md` §4.1, pysim `test_coos_10_idle_detection_when_all_blocked` |

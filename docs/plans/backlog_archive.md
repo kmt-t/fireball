@@ -23,6 +23,7 @@
 ---
 
 ## Phase 0.8: Tier再構成（契約/実装分割パターン導入） [DONE]
+<!-- traceability: {META_ServiceIsWasmResident} -->
 
 メモリマネージャ・HAL・WASIをクリーンアーキテクチャの依存方向規則と準同型な「契約（上位Tier）/実装（下位Tier）分割パターン」へ再配置した。実行プロンプトとして使われた plans 配下の一時ドキュメントは、全項目完了によりファイル自体が陳腐化（旧ファイル名への参照が spec-integrator の Evidence/Format ゲートを毎回失敗させる)したため削除し、要点のみ本アーカイブへ集約する。
 
@@ -31,7 +32,7 @@
 - [x] **HAL＝WASI 0.3p統合**: per-device WITリソース（trigger/timer/bus/streaming/console）を廃止した。URI解決、HALバッファプール、IPCコマンドIDを使う汎用機構に一本化した。公開契約を `fireball_hostcall_contract.wit`（hostcall）と `fireball_hal_contract.wit`（HAL型・Resolver）に分割し、[`interface_wit.md`](docs/components/tier3_platform/interface_wit.md) を全面改訂した。
 - [x] **IPCルータのHALデバイスインスタンス別ロール化**: 「1チャネル1待機者」の制約下で、同種のHALインスタンスを区別できるようにした。共有 HAL ロールを、各デバイス／サービス向けの `HAL_UART`、`HAL_STDOUT`、`HAL_GPIO`、`HAL_TIMER`、`HAL_I2C`、`HAL_SPI` に分割した。`FB_CONF_ROUTER_ROLE_MATRIX` を4x4から9x9へ拡張し、`hal_task` を「1タスク=1ドライバインスタンス」に変更した。pysim と `system_config.md`、`ipc_router.md`、`hal_dispatch.md`、`platform_driver.md` を同期した。
   当初は `fireball://hal/gpio/0` 用の `HAL_GPIO_LEGACY` ロールも追加したが、不要と判断して削除した。`fireball://device/gpio/0` の `HAL_GPIO` ロールへ統一した。
-- [x] **サービス/サブシステム用語の復元**: WASM 上の常駐タスクを「サービス」と呼ぶ。HAL や Logging のようなネイティブ常駐インフラは「サブシステム」と呼ぶ。この規約（`{META_ServiceIsWasmResident}`）を `architecture_overview.md` と `document_structure.md` に明記した。
+- [x] **サービス/サブシステム用語の復元**: WASM 上の常駐タスクを「サービス」と呼ぶ。HAL や Logging のようなネイティブ常駐インフラは「サブシステム」と呼ぶ。この規約（`META_ServiceIsWasmResident`）を `architecture_overview.md` と `document_structure.md` に明記した。
   IPC ルータのWIT定義ファイル名にあった「サブシステム」の誤用も是正した。ファイル名を [`ipc_router_contract.wit`](docs/components/tier1_interface/wit/ipc_router_contract.wit) に変更した。
 - [x] **`docs/specs/` の Tier分類**: `spec-integrator.yaml` に `tier: "meta"` エントリを追加し `docs/specs/**` を階層ゲートの逆依存チェック対象外（メタ）として分類
 - [x] **component-review / architecture-review スキル改訂**: CL-06（Tier間波及チェック）・CL-07（キーワード定義/参照配置）を評価基準に追加、`architecture-review` の対象ファイルリストのスクリプト内ハードコードパスを更新

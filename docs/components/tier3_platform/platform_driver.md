@@ -41,6 +41,7 @@ WASIの結線設定は標準出力とログだけを対象とする。WASI Previ
 - **RSPパケットバッファ**: RSPパケットの送受信に使用する固定長バッファ。
 
 ### 3.2 内部ブロック図
+<!-- traceability: {RSP_Transport_Selectable} -->
 ```mermaid
 flowchart TD
     IPCR["Tier1: ipc_router (URI resolved to dedicated Role/Channel)"]
@@ -55,7 +56,7 @@ flowchart TD
     Raw --> Debugger[Debugger Plugin / RSP Parser]
 ```
 
-各 `hal_task` インスタンスは Tier 2 [`hal_dispatch.md`](docs/components/tier2_runtime/hal_dispatch.md) が定義する契約に従い、1 インスタンスにつき 1 物理ドライバのみを専有する（1 タスクが複数デバイスの URI を見て振り分けることはない）。ドライバは起動前に受け付けるコマンドIDとコールバックを登録し、自身の `hal_task` を起動する。HAL共通層によるデバイス列挙・代理起動は行わない。RTT はUARTと同じRaw RSPトランスポート契約へ接続し、RSPの解析はDebugger Pluginへ渡す（`{RSP_Transport_Selectable}`）。
+各 `hal_task` インスタンスは Tier 2 [`hal_dispatch.md`](docs/components/tier2_runtime/hal_dispatch.md) が定義する契約に従い、1 インスタンスにつき 1 物理ドライバのみを専有する（1 タスクが複数デバイスの URI を見て振り分けることはない）。ドライバは起動前に受け付けるコマンドIDとコールバックを登録し、自身の `hal_task` を起動する。HAL共通層によるデバイス列挙・代理起動は行わない。RTT はUARTと同じRaw RSPトランスポート契約へ接続し、RSPの解析はDebugger Pluginへ渡す（`RSP_Transport_Selectable`）。
 
 ### 3.3 主要なクラス・構造体・配列・定数
 

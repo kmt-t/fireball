@@ -212,7 +212,7 @@ sequenceDiagram
 <!-- traceability: {DictionaryBasedIPC} -->
 - **URI**: `fireball://logging/system/0`
 - **メッセージ形式**: Key-Valueプロトコル。 `level`, `dict_offset`, `arg0`〜`arg3` を含む。
-- **不変条件**: 辞書オフセットは `kv_pair`（）の識別キー幅に合わせ 24bit、引数は各 32bit とする。24bit（最大16MB）は本プロジェクトの ROM 辞書サイズに対して十分な範囲である。
+- **不変条件**: 辞書オフセットは `kv_pair` の識別キー幅に合わせ 24bit、引数は各 32bit とする。24bit（最大16MB）は本プロジェクトの ROM 辞書サイズに対して十分な範囲である。
 
 ## 6. 制約達成の方策
 

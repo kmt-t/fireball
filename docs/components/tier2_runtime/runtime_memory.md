@@ -47,13 +47,14 @@ flowchart TD
 <!-- traceability: {GLOBAL_Policy_Memory} {GLOBAL_StrictMemoryLimit} {WasmPageAlignment} {META_BumpAllocator} {META_FaultIsolation} {OneRuntimeOneGuest} {Runtime_BumpAllocator} {System_Allocator} {Shm_Allocator} -->
 
 ### 5.1 性能制約と不変条件
+<!-- traceability: {META_BumpAllocator} {WasmPageAlignment} -->
 - **目標**: `system_memory.md` が要求する決定論的 $O(1)$ または有界 $O(\log n)$ のメモリ割り当て・解放および高速な境界判定を実現する。
 - **方策**:
-  - `{META_BumpAllocator}`: 固定長パーティションおよび型付きプールスロットによる断片化なき高速貸与。
+  - `META_BumpAllocator`: 固定長パーティションおよび型付きプールスロットによる断片化なき高速貸与。
   - `{Runtime_BumpAllocator}`: 1ランタイム1ゲストのモデルにおいて、各ランタイムに固定長 RAM パーティション（`RW + XN`）を一括貸与する。コンテナストレージはこのアリーナから順次切り出す。アンロード時は個別破棄なしに $O(1)$ でアリーナ全体を回収する。JIT コードキャッシュ（3-Bank）は MPU の `W^X` 制御下で別セクションとして管理する。
   - `{System_Allocator}`: システム層のコンテナストレージ向けに、固定長システムヒープアリーナを dlmalloc で運用する。動的な登録・破棄に対応し、$O(\log n)$ の有界レイテンシで個別解放と自動合体を提供する。
   - `{Shm_Allocator}`: 共有メモリ領域（MPU Region 6）を固定長アリーナとして dlmalloc で運用する。RAII 解放時の自動合体により、長時間の通信下でも断片化を最小化する。
-  - `{WasmPageAlignment}`: ゲスト RAM（Region 3）を **64KB アライメント**（`0x10000` 境界）に配置する。単一比較命令による $O(1)$ 高速境界検査と PMSAv8 リージョン境界を完全一致させる。
+  - `WasmPageAlignment`: ゲスト RAM（Region 3）を **64KB アライメント**（`0x10000` 境界）に配置する。単一比較命令による $O(1)$ 高速境界検査と PMSAv8 リージョン境界を完全一致させる。
 
 ### 5.2 メモリ制約と方策
 <!-- traceability: {GLOBAL_StrictMemoryLimit} {GLOBAL_IndependentHeap} {OneRuntimeOneGuest} {System_Allocator} {Shm_Allocator} -->
@@ -116,6 +117,7 @@ Cortex-M33の物理SRAMアドレス確保とFC=14仮想アドレス予約は独�
 <!-- traceability: {META_FaultIsolation} {WasmPageAlignment} {LowLatencyJIT} {System_Allocator} {Shm_Allocator} -->
 
 ### 7.1 Cortex-M33 PMSAv8 MPU リージョン配分
+<!-- traceability: {Shm_Allocator} -->
 Cortex-M33 (ARMv8-M Mainline) の PMSAv8 (Protected Memory System Architecture) に準拠し、ハードウェア MPU の 8 リージョン（最小標準構成）を以下のように静的に配分・構成する。 `{META_FaultIsolation}`
 
 | Region # | 対象領域 | 物理メモリ種別 | デフォルト属性 | 特権アクセス | ユーザーアクセス | 役割と保護目的 |
@@ -126,7 +128,7 @@ Cortex-M33 (ARMv8-M Mainline) の PMSAv8 (Protected Memory System Architecture) 
 | **3** | Guest WASM RAM | SRAM (Internal) | `RW + XN` | RW, NoExec | RW, NoExec | ゲスト WASM リニアメモリ（64KB 境界配置） |
 | **4** | **JIT Code Cache (8KB)** | SRAM (連続する4KBページ2枚) | **`RO + X`** | **RO, Exec** (パッチ時 `RW+XN`) | なし | 連続領域の固定レイアウト: 共通コード2KB + Active/Warm/Oldest各2KB。W^X保護。詳細管理は [`jit_compiler.md`](docs/components/tier3_executer/jit_compiler.md) / [`jit_runtime.md`](docs/components/tier3_executer/jit_runtime.md) を正本とする |
 | **5** | Peripheral MMIO | Device Memory | `RW + XN` | RW, NoExec | なし | ペリフェラルレジスタ（Device 属性） |
-| **6** | Shared Memory Buffers | SRAM (Internal) | `RW + XN` | RW, NoExec | RW, NoExec | `shm_allocator`（dlmalloc）による可変長 shared_block バッファ管理（4KBページ分離） `{Shm_Allocator}` |
+| **6** | Shared Memory Buffers | SRAM (Internal) | `RW + XN` | RW, NoExec | RW, NoExec | `shm_allocator`（dlmalloc）による可変長 shared_block バッファ管理（4KBページ分離） `Shm_Allocator` |
 | **7** | Stack Guard Band | - | `No Access` | 不可 | 不可 | スタックオーバーフロー検出用ガードバンド |
 
 ### 7.2 JIT W^X (Write XOR Execute) 切替プロトコル
@@ -147,8 +149,9 @@ JIT コードキャッシュ（Region 4）は、実行可能（Execute）と書�
 命令ごとに切り替える場合、毎回 ARM D-Cache のクリーン、I-Cache の無効化、DSB / ISB メモリバリアの発行が必要になる。パイプラインフラッシュが累積し、JIT コンパイル性能が大きく低下する。具体的な呼び出し時点とトレース生成手順は [`jit_compiler.md`](docs/components/tier3_executer/jit_compiler.md) を正本とする。
 
 ### 7.3 アライメントおよび境界制約 (PMSAv8)
+<!-- traceability: {WasmPageAlignment} -->
 - **PMSAv8 アライメント**: PMSAv7 と異なり、$2^n$ 乗サイズ境界制約は存在しない。Base アドレス（`RBAR`）および Limit アドレス（`RLAR`）は **32 バイトアライメント**（下位 5 ビットが `0`）を満たせば任意サイズで設定可能。
-- **WASM ページ境界**: ゲスト RAM (Region 3) は WASM ページサイズである **64KB アライメント**（`0x10000` 境界）に配置し、vMMIO 高速アドレス判定 (`FastAddressCheck`) と PMSAv8 リージョン境界を完全一致させる。 `{WasmPageAlignment}`
+- **WASM ページ境界**: ゲスト RAM (Region 3) は WASM ページサイズである **64KB アライメント**（`0x10000` 境界）に配置し、vMMIO 高速アドレス判定 (`FastAddressCheck`) と PMSAv8 リージョン境界を完全一致させる。 `WasmPageAlignment`
 
 ## 8. 形式検証・テスト仕様との対応
 
@@ -162,8 +165,8 @@ JIT コードキャッシュ（Region 4）は、実行可能（Execute）と書�
 本コンポーネントのテストケース（TEST-MEM-01〜TEST-MEM-25, GOTCHA-MEM-01〜04）は、[`runtime_memory_test_spec.md`](docs/qa/tier2_runtime/runtime_memory_test_spec.md) を正本として定義する。
 
 ## 9. 設計判断 (ADR)
-<!-- traceability: {ADR_PageGranularPermissionIsolation} -->
-このコンポーネントはページ権限分離ADRに従う。公開API設計に関する `{ADR_SharedBlockRaii}` / `{ADR_MemoryManagerMinimalSurface}` は契約側 [`system_memory.md`](docs/components/tier1_interface/system_memory.md) を正本とする。
+<!-- traceability: {ADR_MemoryManagerMinimalSurface} {ADR_PageGranularPermissionIsolation} {ADR_SharedBlockRaii} -->
+このコンポーネントはページ権限分離ADRに従う。公開API設計に関する `ADR_SharedBlockRaii` / `ADR_MemoryManagerMinimalSurface` は契約側 [`system_memory.md`](docs/components/tier1_interface/system_memory.md) を正本とする。
 
 - **決定事項**: (2026-09-02)
   - **背景**: vMMIO FC=14 の PTE および MPU は 4KB ページ単位でしかマッピング・権限（RW許可）を設定できない。同一ページ内に異なるタスクのスロットが混在すると、タスク間のメモリ隔離が破綻し、他タスクのデータが読み書きされる危険があった。

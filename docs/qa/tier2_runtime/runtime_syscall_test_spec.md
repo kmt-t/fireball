@@ -47,10 +47,11 @@
 | TEST-SYS-32 | 不正vIRQ登録要求 | 範囲外ノード、無効関数、または専用host callの不正引数 | 各専用host callを呼び出す | `WasiErrno`相当のエラーを返し、有効登録・`REG_IRQ_FLAGS`を変更しない | runtime_syscall.md, GOTCHA-SYS-01 |
 
 ### IPC (`0x40`-`0x4F`)
+<!-- traceability: {IPC_HandleBased} -->
 
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| TEST-SYS-40 | `IPC_LOOKUP`成功 | URIが登録済み | `fireball_call(0x42, uri_offset, uri_len,...)` | `handle_id`(u32)を返す | `{IPC_HandleBased}` |
+| TEST-SYS-40 | `IPC_LOOKUP`成功 | URIが登録済み | `fireball_call(0x42, uri_offset, uri_len,...)` | `handle_id`(u32)を返す | `IPC_HandleBased` |
 | TEST-SYS-41 | `IPC_LOOKUP`未登録URI | URI未登録 | 同上 | errno相当を返す | runtime_syscall.md (IPC) |
 | TEST-SYS-42 | `IPC_SEND`成功 | 有効なhandle_id | `fireball_call(0x40, handle_id, msg_offset, msg_len,...)` | 受信側が既に待機していれば即座に、まだ到達していなければ呼び出し元タスクのコルーチンが協調スケジューラ上でブロックし、受信側到達後に`0`を返す（キューは存在しないため、待機はブロックのみで失敗経路はない） | ipc_router.md |
 | TEST-SYS-43 | `IPC_SEND`宛先未登録／RBAC拒否／サイズ超過 | 未登録URIから得たhandle_id、または許可されないロール、または9個以上のkv_pair | 同上 | errno相当（`ERR_NOT_FOUND`/`ERR_PERMISSION_DENIED`/`ERR_MSG_TOO_LARGE`のいずれかに対応）を即座に返す。所有権は最初から送信側のまま動いていない | ipc_router.md  |

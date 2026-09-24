@@ -139,7 +139,8 @@ world fireball-hostcall {
 | `0x03` | `SYS_RESET` | — | `0` | ゲストリセット |
 
 ### 6.3. vMMIO Generic (`0x10`-`0x1F`)
-vMMIO管理下のアドレスへの汎用 host-call 操作である。IPCR/SHM/DYNAMIC/PASSTHROUGH等を対象とし、SYSCTL syscall doorbell と VDMA レジスタは対象に含めない。アクセス可否は、対象物理アドレスが `FB_CONF_VMMIO_ALLOWED_ADDRS`（[`system_config.md`](docs/components/tier1_core/system_config.md)）の許可範囲に属するかで判定される。この許可判定はタスク単位ではなく物理アドレス単位のグローバルなゲートであり、PTEに埋め込まれた権限フィールドが唯一の検証点となる（`runtime_vmmio.md` を正本とする）。SHM領域（FC=14）等、タスク間で所有権が移動するリソースの排他制御は `{RoleBasedAccessControl}` と IPCルータの所有権移譲によって別途行われ、vMMIOの物理アクセス許可判定とは独立している。 `{META_RestrictedPhysicalAccess}`
+<!-- traceability: {RoleBasedAccessControl} {META_RestrictedPhysicalAccess} {Fast_Path_GPIO} -->
+vMMIO管理下のアドレスへの汎用 host-call 操作である。IPCR/SHM/DYNAMIC/PASSTHROUGH等を対象とし、SYSCTL syscall doorbell と VDMA レジスタは対象に含めない。アクセス可否は、対象物理アドレスが `FB_CONF_VMMIO_ALLOWED_ADDRS`（[`system_config.md`](docs/components/tier1_core/system_config.md)）の許可範囲に属するかで判定される。この許可判定はタスク単位ではなく物理アドレス単位のグローバルなゲートであり、PTEに埋め込まれた権限フィールドが唯一の検証点となる（`runtime_vmmio.md` を正本とする）。SHM領域（FC=14）等、タスク間で所有権が移動するリソースの排他制御はRBACとIPCルータの所有権移譲によって別途行われ、vMMIOの物理アクセス許可判定とは独立している。
 
 | ID | 名前 | 引数 | 戻り値 | 説明 |
 | :--- | :--- | :--- | :--- | :--- |
@@ -147,9 +148,9 @@ vMMIO管理下のアドレスへの汎用 host-call 操作である。IPCR/SHM/D
 | `0x11` | `MMIO_WRITE32` | `addr` (`fb_val_t`: 物理アドレス), `value` (`fb_val_t`: 32bit値) | `0` (エラー時は `ERR_OUT_OF_BOUNDS` または `ERR_ACCESS_DENIED`) | 32bit書き込み |
 | `0x12` | `MMIO_READ8` | `addr` (`fb_val_t`: 物理アドレス) | `value` (`fb_val_t`: 8bit値、エラー時は `ERR_OUT_OF_BOUNDS`) | 8bit読み出し |
 | `0x13` | `MMIO_WRITE8` | `addr` (`fb_val_t`: 物理アドレス), `value` (`fb_val_t`: 8bit値) | `0` (エラー時は `ERR_OUT_OF_BOUNDS` または `ERR_ACCESS_DENIED`) | 8bit書き込み |
-| `0x14` | `MMIO_BULK_READ` | `addr` (`fb_val_t`: 物理アドレス), `dest_offset` (`fb_offset_t`: ゲスト物理ベース相対), `byte_count` (`fb_val_t`: 転送バイト数) | `0` (エラー時は `ERR_OUT_OF_BOUNDS`, `ERR_ACCESS_DENIED` または `ERR_INVALID_SIZE`) | バルク読み出し（ゲストメモリへコピー） `{META_RestrictedPhysicalAccess}` |
-| `0x15` | `MMIO_BULK_WRITE` | `addr` (`fb_val_t`: 物理アドレス), `src_offset` (`fb_offset_t`: ゲスト物理ベース相対), `byte_count` (`fb_val_t`: 転送バイト数) | `0` (エラー時は `ERR_OUT_OF_BOUNDS`, `ERR_ACCESS_DENIED` または `ERR_INVALID_SIZE`) | バルク書き込み（ゲストメモリから書込） `{META_RestrictedPhysicalAccess}` |
-| `0x16` | `TRIGGER_SET_PIN` | `pin` (`fb_val_t`), `value` (`fb_val_t`: 0/1) | `0` (エラー時は `ERR_OUT_OF_BOUNDS` または `ERR_ACCESS_DENIED`) | GPIOピン出力設定（`{Fast_Path_GPIO}` の host-call 経路、`FB_SYSCALL_TRIGGER_SET_PIN`）。未実装環境は`GOTCHA-SYS-01`に従って`WasiErrno.NOSYS`を返す。高速な実機GPIOアクセスは別契約の直接vMMIOストアで行う。 |
+| `0x14` | `MMIO_BULK_READ` | `addr` (`fb_val_t`: 物理アドレス), `dest_offset` (`fb_offset_t`: ゲスト物理ベース相対), `byte_count` (`fb_val_t`: 転送バイト数) | `0` (エラー時は `ERR_OUT_OF_BOUNDS`, `ERR_ACCESS_DENIED` または `ERR_INVALID_SIZE`) | バルク読み出し（ゲストメモリへコピー） |
+| `0x15` | `MMIO_BULK_WRITE` | `addr` (`fb_val_t`: 物理アドレス), `src_offset` (`fb_offset_t`: ゲスト物理ベース相対), `byte_count` (`fb_val_t`: 転送バイト数) | `0` (エラー時は `ERR_OUT_OF_BOUNDS`, `ERR_ACCESS_DENIED` または `ERR_INVALID_SIZE`) | バルク書き込み（ゲストメモリから書込） |
+| `0x16` | `TRIGGER_SET_PIN` | `pin` (`fb_val_t`), `value` (`fb_val_t`: 0/1) | `0` (エラー時は `ERR_OUT_OF_BOUNDS` または `ERR_ACCESS_DENIED`) | GPIOピン出力設定（Fast_Path_GPIOのhost-call経路、`FB_SYSCALL_TRIGGER_SET_PIN`）。未実装環境は`GOTCHA-SYS-01`に従って`WasiErrno.NOSYS`を返す。高速な実機GPIOアクセスは別契約の直接vMMIOストアで行う。 |
 
 ### 6.4. 専用ホストコール（vIRQ / vDMA）
 <!-- traceability: {VDMA} {GLOBAL_InterruptWakeup} {TaskPollInterruptEvent} -->
@@ -271,7 +272,7 @@ vIRQの `vector_id` はホスト設定の原因源表で固定する。WASIのpo
 <!-- traceability: {Challenge_SyscallMemorySafety} {OwnershipTransfer} {FastAddressCheck} {GOTCHA-SYS-02} {GOTCHA-SYS-03} -->
 `fireball_call` を介してゲストメモリへのポインタを渡す場合も、アクセス禁止領域は仮想アドレス空間から物理的に **unmap（マッピング解除）** する。他タスク所有の SHM 領域、転送中（`IN_FLIGHT`）のページ、未割当領域には PTE / TLB が存在しない。これらへのアクセスは、未登録ページトラップ（`TRAP_UNREGISTERED_PAGE`）としてハードウェア・仮想化境界で遮断する。
 
-ゲスト RAM（リニアメモリ）は、単一の境界比較（`FastAddressCheck`）で保護する。そのためホスト側の二重ポインタ検証（`vsoc_validate_ptr` 等）は不要である。ゼロオーバーヘッドのメモリ安全性を保証する。
+ゲスト RAM（リニアメモリ）は、単一の境界比較（`FastAddressCheck`）で保護する。そのためホスト側の二重ポインタ検証（`vsoc_validate_ptr` 等）は不要である。アクセスごとに必要な境界比較で保護し、同じ境界の重複検証を避ける。
 
 ## 11. トラップ状態プロトコル
 <!-- traceability: {Trap_Interface} -->

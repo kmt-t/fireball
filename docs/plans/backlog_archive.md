@@ -23,7 +23,6 @@
 ---
 
 ## Phase 0.8: Tier再構成（契約/実装分割パターン導入） [DONE]
-<!-- traceability: {META_ServiceIsWasmResident} -->
 
 メモリマネージャ・HAL・WASIをクリーンアーキテクチャの依存方向規則と準同型な「契約（上位Tier）/実装（下位Tier）分割パターン」へ再配置した。実行プロンプトとして使われた plans 配下の一時ドキュメントは、全項目完了によりファイル自体が陳腐化（旧ファイル名への参照が spec-integrator の Evidence/Format ゲートを毎回失敗させる)したため削除し、要点のみ本アーカイブへ集約する。
 

@@ -53,8 +53,8 @@ graph TD
 <!-- traceability: {GLOBAL_Policy_Memory} -->
 
 #### CSPチャネル（channel）
-<!-- traceability: {CSPCommunication} {GLOBAL_Policy_Memory} {ADR_RendezvousChannel} {IPC_ZeroCopy} {OwnershipTransfer} {ADR_SharedBlockRaii} {GOTCHA-COOS-01} {GOTCHA-COOS-02} -->
-チャネルは、タスク間の同期と通信を仲介するデータ構造である。ホーア CSP の定義どおり、**チャネル自身は値を保持しない**。送信側は相手が現れるまで、自身のフレーム上に転送リソースを保持する。対象には `shared_block` 等のムーブ専用オブジェクトを用いる。ランデブー成立時に、所有権を受信側へ移す。
+<!-- traceability: {GLOBAL_Policy_Memory} {ADR_RendezvousChannel} {IPC_ZeroCopy} {OwnershipTransfer} {ADR_SharedBlockRaii} {GOTCHA-COOS-01} {GOTCHA-COOS-02} -->
+チャネル（{CSPCommunication}）は、タスク間の同期と通信を仲介するデータ構造である。ホーア CSP の定義どおり、**チャネル自身は値を保持しない**。送信側は相手が現れるまで、自身のフレーム上に転送リソースを保持する。対象には `shared_block` 等のムーブ専用オブジェクトを用いる。ランデブー成立時に、所有権を受信側へ移す。
 
 有界で安全なメモリ管理方針に従い、リソースには共有メモリアリーナから事前割り当てした実体（共有メモリスライス等）を用いる。所有権は右辺値ムーブ（`&&`）によってのみ移譲する。これはゼロコピー所有権移譲である。参照実装はチャネル生成時に転送モード（借用値またはムーブ専用値）を固定する。受信時にペイロードの実行時属性から転送方式を推測してはならない。
 

@@ -348,8 +348,36 @@ graph LR
     Entry -- "PTE Absent / Unmapped" --> Trap["TRAP_UNREGISTERED_PAGE"]
 ```
 
-#### ライフサイクル（[`ipc_router.md`](docs/components/tier1_interface/ipc_router.md) の に従属）
+#### ライフサイクル（IPCルータの所有権移譲契約に従属）
 <!-- traceability: {OwnershipTransfer} -->
+
+共有メモリのRevokeから受信側への再マッピングまでのコンポーネント間の責務を示す。
+
+```mermaid
+sequenceDiagram
+    participant Sender as 送信タスク
+    participant Router as IPCルータ
+    participant Scheduler as COOS Scheduler / CSPチャネル
+    participant Memory as 物理メモリマネージャ
+    participant VMMIO as vMMIO
+    participant Receiver as 受信タスク
+
+    Sender->>Router: send(channel, shared_block)
+    Router->>Scheduler: channel_send(msg)
+    Scheduler->>Memory: release() / ownerをIN_FLIGHTへ変更
+    Memory->>VMMIO: on_owner_changed(..., IN_FLIGHT)
+    VMMIO->>VMMIO: 旧PTEを解除し、該当TLBを無効化
+    alt 受信タスクが待機中
+        Scheduler->>Receiver: ハンドオフ
+    else 受信タスクが未到達
+        Scheduler-->>Sender: 受信側到達まで送信タスクを停止
+        Receiver->>Scheduler: receive()で待機
+        Scheduler->>Receiver: ハンドオフ
+    end
+    Receiver->>Memory: claim(shm-id)
+    Memory->>VMMIO: on_map_page(..., receiver)
+    VMMIO-->>Receiver: 受信側アドレス空間へマッピング
+```
 
 1. **Alloc (`allocate-shared`)**: COOS / 物理メモリマネージャが4KB仮想予約スロットを1つ確保し、要求サイズ分だけSHM物理バック領域から割り当てる。vMMIOは物理基点・実サイズ・所有者をそのVPNへ登録する。
 2. **Revoke (`shm.release()`)**: 送信側がリソースを手放し、IPCルータが送信タスクの権限を無効化する。vMMIO から PTE をアンマップ（削除）し、TLB の該当エントリを即時フラッシュする。この時点で送信タスクからの旧アドレスアクセスは即座に `TRAP_UNREGISTERED_PAGE`（未登録ページフォルト）となり安全に遮断される。
@@ -456,7 +484,7 @@ Stage 3 アクセス（FC=14/15）において毎回 FlatMap の二分探索を�
 
 - **Guest RAM アクセス時の TLB 完全バイパス (`GOTCHA-VMMIO-01`)**:
   **設計理由と不変条件**: 最上位ビットが 0 のアドレス空間（`0x0000_0000`〜`0x7FFF_FFFF`）はゲスト RAM 専用領域である。全メモリアクセスの 99% 以上を占める最頻パスにおいて毎回 TLB ルックアップやハッシュ計算を行うと、実行性能が致命的に劣化する。そのため、最上位ビットが 0 のアクセスは TLB を一切参照せず、直接ゲストベースアドレス加算＋サイズ境界検査のみで即時メモリアクセスを完結させる。TLB は最上位ビットが 1 の vMMIO / ペリフェラル領域にのみ適用される。
-- **Folding XOR ハッシュによる機能コード（FC）の均等分散 (`GOTCHA-VMMIO-02`)**:
+- **Folding XOR ハッシュによる機能コード（FC）の均等分散 ({GOTCHA-VMMIO-02})**:
   - キー（VPN）: `raw >> 12`（20-bit）
   - HASH / インデックス計算: `temp = vpn ^ (vpn >> 10); temp = temp ^ (temp >> 5); tlb_idx = temp & 0x1F`（20→10→5 bit、2回の XOR）
   - **設計理由と不変条件**: 単純なビットマスクでは、同一オフセットを持つ異なる機能コード（FC=14 SHM と FC=15 PASSTHROUGH 等）が同一スロットに衝突する。上位の FC から下位ページまでの全 20 ビットを 5-bit 幅で折りたたんで XOR 合成する。これにより異なるデバイス領域間の競合を極小化し、32 スロットの利用効率を最大化する。

@@ -24,7 +24,7 @@
 - **探索する型と探索しない型を分ける**: `bit_view` は、疎なキー空間の探索構造ではない。密な添字空間を扱うビット詰め表である。キー列を持たない `flat_map_view` の特殊形として表すことは技術的には可能である。しかし、「`flat_*_view` は二分探索する」という期待を裏切る。カードマーキング表を探索対象と誤解させるおそれもある。**カードマーキングは探索しない。添字がそのまま問いである。**
 
 ### 非所有ビューと実体ストレージの体系化マトリクス (Storage & View Matrix)
-<!-- traceability: {GLOBAL_Policy_Memory} {GLOBAL_StaticScalability} {GOTCHA-CONT-04} {META_NoStdVector} {OneRuntimeOneGuest} {System_Allocator} -->
+<!-- traceability: {GLOBAL_Policy_Memory} {GLOBAL_StaticScalability} {META_NoStdVector} {OneRuntimeOneGuest} {System_Allocator} -->
 メモリ所有権とビューを厳格に分離し、要素の追加（`insert`）や削除（`remove`）等の変更操作はすべて **可変ストレージ（Mutable Storage）** の責務とする。非所有ビュー（View）は探索・走査に専念し、一切の変更操作を提供しない。また、下位互換用のエイリアスは全廃し、正規のクラス名のみを直接使用する。
 
 所有権は単一のストレージインスタンスだけが持つ。ストレージ所有側は同じ実体を指すviewをメンバとして二重保持せず、必要な処理の呼び出し時に借用する。別インスタンスが所有ストレージを検索する場合だけ、所有者から非所有viewを受け取る。view単独を所有型として扱ったり、同じ実体に複数の所有者を作ったりしてはならない。
@@ -39,7 +39,7 @@ Storage は実体を単独で所有し、生成時および変更時にキー順
 
 `BitView`、`ReadOnlyBitStorage`、`MutableBitStorage`、`RingBuffer`、`StaticVector` はこの検索コンテナ行列の対象外であり、密な状態表または順序付き逐次コンテナとして独立に定義する。
 
-**固定長配列と有効エントリカウント規約 (, )**:
+**固定長配列と有効エントリカウント規約 ({GOTCHA-CONT-04})**:
 - **固定長事前確保バッファ**: `mutable_*_storage` は、動的リサイズ（`std::vector` や `list.insert`/`append` 等のヒープ再確保）を完全に禁止する。インスタンス化時に `Capacity` サイズの内部バッファ（`_buffer = [None] * capacity`）を一括して事前確保する。
 - **有効エントリカウンタ (`count`)**: バッファ内に格納されている有効なエントリ数を整数値で追跡する（`0 ≤ count ≤ Capacity`）。
 - **容量上限到達時の動作**: 未登録キーの `insert` 呼び出し時、`count ≥ Capacity` であればメモリ再確保を行わず即座に `false` を返却する。既存キーの更新は `count` を増加させずインプレースで上書きし `true` を返却する。

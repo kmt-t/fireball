@@ -17,14 +17,7 @@ from __future__ import annotations
 import ctypes
 from collections.abc import Iterable
 
-from . import x64_stencils as st
-from .common_code import (
-    TRACE_ENTRY_STUB_BYTES,
-    JITCodeCacheRegion,
-    helper_entry_offset,
-)
 from config import JIT_CACHE_ACTIVE_OFFSET_BYTES, JIT_X64_TRACE_HEADER_BYTES
-from .jit_cache import JITTrace, JITTraceHeader
 from system_containers import ReadOnlyFlatMapView, StaticVector
 from wasm_module import (
     WASM_RAW_WORD_BYTES,
@@ -78,6 +71,13 @@ from wasm_opcodes import (
 )
 
 from . import native_trace_call as _native_trace_call
+from . import x64_stencils as st
+from .common_code import (
+    TRACE_ENTRY_STUB_BYTES,
+    JITCodeCacheRegion,
+    helper_entry_offset,
+)
+from .jit_cache import JITTrace, JITTraceHeader
 
 I32_MASK = 0xFFFFFFFF
 
@@ -471,6 +471,7 @@ class TraceCompiler:
             chain_header_patch_offset=chain_header_patch_offset,
             chain_fallback_patch_offset=chain_fallback_patch_offset,
             helper_target_addr=helper_target_addr,
+            native_loop_safe=helper_index < 0 and not tail_context_helper,
         )
         trace.header = header
         assert JIT_CACHE_ACTIVE_OFFSET_BYTES + total_size <= self._standalone_region.region_bytes

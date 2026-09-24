@@ -14,14 +14,21 @@ _PYSIM_DIR = Path(__file__).resolve().parent
 while not (_PYSIM_DIR / "tier1_core").is_dir():
     _PYSIM_DIR = _PYSIM_DIR.parent
 
-from tier3_platform.drivers.hal.dummy import DummyDriver
-from tier3_executer.interpreter.interpreter import Interpreter, InterpreterBindings
+_BENCH_DIR = Path(__file__).resolve().parents[1]
+if str(_BENCH_DIR) not in sys.path:
+    sys.path.insert(0, str(_BENCH_DIR))
+from _bootstrap import configure_import_paths
+
+configure_import_paths(_PYSIM_DIR, _BENCH_DIR)
+
 from runtime_engine import RuntimeEngine
-from tier3_executer.jit.jit_manager import JITRuntimeManager
 from system import System
+from tier3_executer.interpreter.interpreter import Interpreter, InterpreterBindings
+from tier3_executer.jit.jit_manager import JITRuntimeManager
+from tier3_executer.jit.x64_jit import TraceCompiler
+from tier3_platform.drivers.hal.dummy import DummyDriver
 from tier3_platform.drivers.wasi.context import WasiHostContext
 from wasm_reader import parse
-from tier3_executer.jit.x64_jit import TraceCompiler
 
 
 def run_aobench(debug: bool = False) -> dict[str, int | float]:

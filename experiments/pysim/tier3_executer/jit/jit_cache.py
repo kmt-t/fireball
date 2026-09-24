@@ -11,14 +11,6 @@ import ctypes
 from collections.abc import Callable
 from typing import TYPE_CHECKING, ClassVar
 
-from .common_code import (
-    COMMON_ABSOLUTE_POOL_OFFSET,
-    COMMON_EPILOGUE_OFFSET,
-    COMMON_HELPER_OFFSET,
-    COMMON_PROLOGUE_OFFSET,
-    TRACE_ENTRY_STUB_BYTES,
-    JITCodeCacheRegion,
-)
 from config import (
     JIT_CACHE_ACTIVE_OFFSET_BYTES,
     JIT_CACHE_BANK_CAPACITY_BYTES,
@@ -35,6 +27,15 @@ from system_containers import (
     MutableBitStorage,
     RingBuffer,
     StaticVector,
+)
+
+from .common_code import (
+    COMMON_ABSOLUTE_POOL_OFFSET,
+    COMMON_EPILOGUE_OFFSET,
+    COMMON_HELPER_OFFSET,
+    COMMON_PROLOGUE_OFFSET,
+    TRACE_ENTRY_STUB_BYTES,
+    JITCodeCacheRegion,
 )
 
 if TYPE_CHECKING:
@@ -399,6 +400,7 @@ class JITTrace:
         "helper_exit_patch_offset",
         "helper_header_patch_offset",
         "loops_to",
+        "native_loop_safe",
         "next_pc",
         "raw_addr",
         "result_words",
@@ -428,6 +430,7 @@ class JITTrace:
         chain_header_patch_offset: int = -1,
         chain_fallback_patch_offset: int = -1,
         helper_target_addr: int = 0,
+        native_loop_safe: bool = False,
     ):
         self.head_pc = head_pc
         self.fn = fn or native_fn  # Direct ctypes CFUNCTYPE function pointer or callable
@@ -445,6 +448,7 @@ class JITTrace:
         self.size_bytes = size_bytes
         self.next_pc = next_pc  # Unconditional fallthrough successor
         self.loops_to = loops_to  # Conditional loop backedge (never auto-chained)
+        self.native_loop_safe = native_loop_safe
         self.has_return_val = has_return_val
         assert result_words > 0
         self.result_words = result_words

@@ -38,8 +38,6 @@ constexpr int kI32Add = 0x6A;
 constexpr int kI32Sub = 0x6B;
 constexpr int kI32Mul = 0x6C;
 constexpr int kI32DivS = 0x6D;
-constexpr int kI32DivU = 0x6E;
-constexpr int kI32RemS = 0x6F;
 constexpr int kI32RemU = 0x70;
 constexpr int kI32And = 0x71;
 constexpr int kI32Or = 0x72;
@@ -48,15 +46,10 @@ constexpr int kI32Shl = 0x74;
 constexpr int kI32ShrS = 0x75;
 constexpr int kI32ShrU = 0x76;
 constexpr int kI64Add = 0x7C;
-constexpr int kI64Sub = 0x7D;
 constexpr int kI64Mul = 0x7E;
 constexpr int kF32Add = 0x92;
-constexpr int kF32Sub = 0x93;
-constexpr int kF32Mul = 0x94;
 constexpr int kF32Div = 0x95;
 constexpr int kF64Add = 0xA0;
-constexpr int kF64Sub = 0xA1;
-constexpr int kF64Mul = 0xA2;
 constexpr int kF64Div = 0xA3;
 
 struct buffer_guard {
@@ -415,7 +408,7 @@ PyObject* compile_trace(PyObject*, PyObject* args) {
   const bool has_next = next_object != Py_None;
   const bool has_loops = loops_object != Py_None;
   const auto next_pc = has_next ? PyLong_AsUnsignedLong(next_object) : 0u;
-  const auto loops_to = has_loops ? PyLong_AsUnsignedLong(loops_object) : 0u;
+  if (has_loops) static_cast<void>(PyLong_AsUnsignedLong(loops_object));
   if ((has_next || has_loops) && PyErr_Occurred()) return nullptr;
   buffer_guard width_buffer;
   if (PyObject_GetBuffer(width_object, &width_buffer.view, PyBUF_SIMPLE) != 0) return nullptr;
@@ -493,14 +486,51 @@ PyObject* invoke_trace(PyObject*, PyObject* args) {
   Py_RETURN_NONE;
 }
 
+PyObject* run_loop_cycle(PyObject*, PyObject* args) {
+  unsigned long long branch_addr = 0, body_addr = 0, ctx_addr = 0, sp_addr = 0;
+  unsigned long long local_base_addr = 0;
+  unsigned int tos = 0;
+  int continue_when_nonzero = 0;
+  if (!PyArg_ParseTuple(args, "KKKKKIp", &branch_addr, &body_addr, &ctx_addr, &sp_addr,
+                        &local_base_addr, &tos, &continue_when_nonzero)) {
+    return nullptr;
+  }
+  if (branch_addr == 0 || body_addr == 0 || ctx_addr == 0 || sp_addr == 0) {
+    PyErr_SetString(
+        PyExc_ValueError,
+        "native loop cycle requires non-zero code, context, and stack addresses");
+    return nullptr;
+  }
+
+  const auto branch = reinterpret_cast<trace_fn_t>(static_cast<std::uintptr_t>(branch_addr));
+  const auto body = reinterpret_cast<trace_fn_t>(static_cast<std::uintptr_t>(body_addr));
+  void* const ctx = reinterpret_cast<void*>(static_cast<std::uintptr_t>(ctx_addr));
+  void* const sp = reinterpret_cast<void*>(static_cast<std::uintptr_t>(sp_addr));
+  void* const local_base = reinterpret_cast<void*>(static_cast<std::uintptr_t>(local_base_addr));
+  const auto* const condition = static_cast<const volatile std::uint32_t*>(sp);
+
+  // The GIL stays held while resident cache pointers are in use. Pure native
+  // traces do not call into Python, and this also prevents another Python
+  // thread from rotating the code cache while the linked loop is running.
+  branch(ctx, sp, local_base, tos);
+  unsigned long long iterations = 0;
+  while ((*condition != 0) == (continue_when_nonzero != 0)) {
+    body(ctx, sp, local_base, tos);
+    ++iterations;
+  }
+  return PyLong_FromUnsignedLongLong(iterations);
+}
+
 PyMethodDef module_methods[] = {
     {"compile_trace", compile_trace, METH_VARARGS, "Compile one x64 trace in Native C++."},
     {"invoke_trace", invoke_trace, METH_VARARGS, "Call a JIT trace using the native ABI."},
+    {"run_loop_cycle", run_loop_cycle, METH_VARARGS,
+     "Run a linked native JIT loop cycle without returning to Python."},
     {nullptr, nullptr, 0, nullptr},
 };
 PyModuleDef module_definition = {PyModuleDef_HEAD_INIT, "native_trace_call",
                                  "Native x64 Copy-and-Patch compiler and ABI bridge.", -1,
-                                 module_methods};
+                                 module_methods, nullptr, nullptr, nullptr, nullptr};
 }  // namespace
 
 PyMODINIT_FUNC PyInit_native_trace_call() { return PyModule_Create(&module_definition); }

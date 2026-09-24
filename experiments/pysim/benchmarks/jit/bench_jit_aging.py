@@ -28,14 +28,21 @@ _PYSIM_DIR = Path(__file__).resolve().parent
 while not (_PYSIM_DIR / "tier1_core").is_dir():
     _PYSIM_DIR = _PYSIM_DIR.parent
 
+_BENCH_DIR = Path(__file__).resolve().parents[1]
+if str(_BENCH_DIR) not in sys.path:
+    sys.path.insert(0, str(_BENCH_DIR))
+from _bootstrap import configure_import_paths
+
+configure_import_paths(_PYSIM_DIR, _BENCH_DIR)
+
 from config import FB_CONF_JIT_AGING_STEP_SCAN_BYTES, FB_CONF_JIT_AGING_STEP_UNITS
-from tier3_executer.interpreter.interpreter import Interpreter, InterpreterBindings
 from runtime_engine import RuntimeEngine
+from tier3_executer.interpreter.interpreter import Interpreter, InterpreterBindings
 from tier3_executer.jit.jit_cache import JITTrace
 from tier3_executer.jit.jit_manager import JITRuntimeManager
+from tier3_executer.jit.x64_jit import TraceCompiler
 from wasm_module import WasmOperand
 from wasm_reader import parse
-from tier3_executer.jit.x64_jit import TraceCompiler
 
 try:
     import wasmtime
@@ -164,9 +171,7 @@ class JITAgingBenchmark:
         if scan_bytes is not None:
             settings["aging_scan_bytes"] = scan_bytes
         engine = RuntimeEngine(
-            jit_runtime=JITRuntimeManager(
-                jit_compiler=compiler, yield_threshold=16, **settings
-            )
+            jit_runtime=JITRuntimeManager(jit_compiler=compiler, yield_threshold=16, **settings)
         )
         engine.register_module_blocks(module)
         hook = _RotationHook(engine, aging)

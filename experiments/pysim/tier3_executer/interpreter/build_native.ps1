@@ -1,4 +1,4 @@
-# Build the optional native Tier 3 handler table (Windows / clang-cl).
+# Build the required native Tier 3 handler table (Windows / clang-cl).
 $ErrorActionPreference = "Stop"
 
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path

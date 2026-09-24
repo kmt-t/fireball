@@ -30,17 +30,15 @@ from config import (
     RUNTIME_DEBUG_REPORT_LINE_CAPACITY,
 )
 from interop_abi import NativeValueStack
+from recovery import Result
+from system_containers import StaticVector
 from tier3_executer.interpreter.interpreter import (
     RETURN_SENTINEL_IP,
     CallFrame,
     Interpreter,
-    InterpreterBindings,
     InterpreterCall,
     WasmNumber,
 )
-from tier2_runtime.logger import Logger
-from recovery import Result
-from system_containers import StaticVector
 from virq import (
     DispatchResult,
     InterruptEvent,
@@ -50,7 +48,6 @@ from virq import (
     VirqDispatchResult,
 )
 from wasm_module import BasicBlock, Module
-from vmmio import VMMIOController
 
 try:
     import tier3_executer.jit.native_trace_call as _native_trace_call
@@ -83,6 +80,7 @@ class JITTrace(Protocol):
     chain_next: int | None
     has_return_val: bool
     loops_to: int | None
+    native_loop_safe: bool
     next_pc: int | None
     raw_addr: int | None
     result_words: int
@@ -131,6 +129,7 @@ class JITRuntime(Protocol):
 
     def flush_all(self) -> None: ...
 
+
 __all__ = (
     "JITRuntime",
     "JITTrace",
@@ -151,6 +150,7 @@ class RuntimeEngine:
         "stat_chain_hits",
         "stat_interp_steps",
         "stat_jit_invocations",
+        "stat_native_loop_calls",
         "stat_trace_exits_to_interp",
     )
 
@@ -165,6 +165,7 @@ class RuntimeEngine:
         self.jit_runtime = jit_runtime
         self.stat_interp_steps: int = 0
         self.stat_jit_invocations: int = 0
+        self.stat_native_loop_calls: int = 0
         self.stat_chain_hits: int = 0
         self.stat_trace_exits_to_interp: int = 0
         self.reschedule_observer = reschedule_observer
@@ -314,7 +315,10 @@ class RuntimeEngine:
             f"    - Chained Invocations:     {self.stat_chain_hits:,} ({chain_pct:.1f}% of JIT runs)"
         )
         lines.append(f"    - Exits to Interpreter:    {self.stat_trace_exits_to_interp:,}")
-        lines.append("  * Tier 3 JIT manager:         " + ("attached" if self.jit_runtime is not None else "disabled"))
+        lines.append(
+            "  * Tier 3 JIT manager:         "
+            + ("attached" if self.jit_runtime is not None else "disabled")
+        )
         lines.append("=" * 80)
 
         output_str = "\n".join(lines) + "\n"
@@ -374,20 +378,42 @@ class RuntimeEngine:
                 trace = None
 
             if trace is not None:
-                # Native x64 chaining follows the linked bodies without
-                # returning to this loop between every successor.  Count the
-                # resident chain for diagnostics, then invoke its first body
-                # exactly once.
                 assert self.jit_runtime is not None
-                chain_count = self.jit_runtime.chain_length(trace)
-                chain_trace = self.jit_runtime.terminal_trace(trace)
-                self.stat_jit_invocations += chain_count
-                self.stat_chain_hits += chain_count - 1
-                if self.debug:
-                    chain_trace.exec_count += 1
-                    if chain_count > 1:
-                        trace.exec_count += 1
-                call_state = self._invoke_trace(interp, call_state, trace)
+                loop_plan = self._native_loop_cycle(trace, frame_here, block_here)
+                if loop_plan is not None:
+                    body_trace, continue_when_nonzero, body_chain_count = loop_plan
+                    assert _native_trace_call is not None
+                    assert trace.raw_addr is not None and body_trace.raw_addr is not None
+                    result_slot = len(frame_here.values)
+                    locals_ptr = frame_here.context.local_stack.value_ptr(frame_here.frame_offset)
+                    result_ptr = frame_here.values.value_ptr(result_slot)
+                    iterations = _native_trace_call.run_loop_cycle(
+                        trace.raw_addr,
+                        body_trace.raw_addr,
+                        frame_here.context_ptr.value,
+                        result_ptr.value,
+                        locals_ptr.value,
+                        0,
+                        continue_when_nonzero,
+                    )
+                    self.stat_native_loop_calls += 1
+                    self.stat_jit_invocations += 1 + iterations * body_chain_count
+                    self.stat_chain_hits += iterations * (body_chain_count - 1)
+                    call_state = self._resume_trace(call_state, trace)
+                else:
+                    # Ordinary native chaining follows linked bodies without
+                    # returning to Python between successors.
+                    chain_count = self.jit_runtime.chain_length(trace)
+                    chain_trace = self.jit_runtime.terminal_trace(trace)
+                    self.stat_jit_invocations += chain_count
+                    self.stat_chain_hits += chain_count - 1
+                    if self.debug:
+                        chain_trace.exec_count += 1
+                        if chain_count > 1:
+                            trace.exec_count += 1
+                    call_state = self._invoke_trace(
+                        interp, call_state, trace, terminal_trace=chain_trace
+                    )
                 if not call_state.finished:
                     self.stat_trace_exits_to_interp += 1
             else:
@@ -509,6 +535,75 @@ class RuntimeEngine:
             return False
         return len(values) + self.jit_runtime.max_chain_stack_words(trace) <= values.capacity
 
+    def _native_loop_cycle(
+        self, trace: JITTrace, frame: CallFrame, current_block: BasicBlock | None
+    ) -> tuple[JITTrace, bool, int] | None:
+        """Find a pure native branch/body chain that returns to its branch head."""
+        if (
+            self.debug
+            or _native_trace_call is None
+            or getattr(_native_trace_call, "run_loop_cycle", None) is None
+            or not trace.native_loop_safe
+            or trace.raw_addr is None
+            or not trace.has_return_val
+            or trace.result_words != 1
+            or trace.next_pc is None
+            or trace.loops_to is None
+            or trace.chain_next is not None
+            or self.jit_runtime is None
+            or current_block is None
+            or len(frame.frames) != current_block.frame_depth
+        ):
+            return None
+
+        selected: tuple[JITTrace, bool, int] | None = None
+        for continuation_pc, continue_when_nonzero in (
+            (trace.loops_to, True),
+            (trace.next_pc, False),
+        ):
+            body_trace = self.jit_runtime.find_trace(continuation_pc)
+            if (
+                body_trace is None
+                or body_trace.raw_addr is None
+                or not body_trace.native_loop_safe
+                or not self._trace_fits_operand_stack(frame.values, body_trace)
+            ):
+                continue
+
+            chain_count = self.jit_runtime.chain_length(body_trace)
+            if self.jit_runtime.terminal_trace(body_trace) is not trace:
+                continue
+
+            current = body_trace
+            chain_safe = True
+            for chain_index in range(chain_count):
+                block = self.jit_runtime.get_block(current.head_pc)
+                if (
+                    not current.native_loop_safe
+                    or current.raw_addr is None
+                    or block is None
+                    or block.frame_depth != current_block.frame_depth
+                ):
+                    chain_safe = False
+                    break
+                if chain_index + 1 == chain_count:
+                    chain_safe = current is trace
+                    break
+                if current.chain_next is None:
+                    chain_safe = False
+                    break
+                successor = self.jit_runtime.find_trace(current.chain_next)
+                if successor is None:
+                    chain_safe = False
+                    break
+                current = successor
+            if not chain_safe:
+                continue
+            if selected is not None:
+                return None
+            selected = (body_trace, continue_when_nonzero, chain_count)
+        return selected
+
     def _resume_frame_depth(self, frame: CallFrame, function_index: int, ip: int) -> int:
         """Control-frame count the interpreter must hold when it resumes at `ip`.
 
@@ -527,7 +622,11 @@ class RuntimeEngine:
         return depth
 
     def _invoke_trace(
-        self, interp: Interpreter, call_state: InterpreterCall, trace: JITTrace
+        self,
+        interp: Interpreter,
+        call_state: InterpreterCall,
+        trace: JITTrace,
+        terminal_trace: JITTrace | None = None,
     ) -> InterpreterCall:
         """
         Executes one compiled native x64 JIT trace and advances `call_state`
@@ -561,7 +660,19 @@ class RuntimeEngine:
         # chain in metadata so result width and the final WASM continuation
         # belong to the body that actually returned.
         assert self.jit_runtime is not None
-        terminal_trace = self.jit_runtime.terminal_trace(trace)
+        if terminal_trace is None:
+            terminal_trace = self.jit_runtime.terminal_trace(trace)
+
+        return self._resume_trace(call_state, terminal_trace)
+
+    def _resume_trace(
+        self, call_state: InterpreterCall, terminal_trace: JITTrace
+    ) -> InterpreterCall:
+        """Apply a native trace's terminal stack and WASM continuation state."""
+        frame = call_state._frame
+        locals_arr = call_state._locals
+        assert frame is not None and locals_arr is not None
+        result_slot = len(frame.values)
 
         res = frame.values.raw_at(result_slot) if terminal_trace.has_return_val else 0
         if terminal_trace.has_return_val and terminal_trace.loops_to is None:

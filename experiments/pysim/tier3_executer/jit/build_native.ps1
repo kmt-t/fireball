@@ -1,4 +1,4 @@
-# Builds the native C++ x64 Copy-and-Patch JIT compiler and invocation bridge
+# Builds the required native C++ x64 Copy-and-Patch JIT compiler and invocation bridge
 # (Windows / clang-cl).
 # Requires clang-cl on PATH and a Visual Studio Build Tools +
 # Windows SDK install (for the MSVC headers/import libs clang-cl targets).
@@ -22,7 +22,7 @@ $sourceCpp = Join-Path $scriptDir "native_trace_call.cxx"
 $generatedPyd = Join-Path $nativeBuildDir "native_trace_call.pyd"
 
 Write-Host ">>> Compiling native_trace_call.cxx (native JIT compiler) -> .pyd (clang-cl)" -ForegroundColor Yellow
-& clang-cl.exe /TP /O2 /LD /EHsc `
+& clang-cl.exe /TP /std:c++latest /O2 /LD /EHsc `
     "-I$pyInc" `
     "-I$vsDir\VC\Tools\MSVC\$msvcVer\include" `
     "-I$sdkRoot\Include\$sdkVer\ucrt" `

@@ -10,22 +10,34 @@ import ctypes
 import sys
 import time
 from pathlib import Path
+from statistics import median
 
 _PYSIM_DIR = Path(__file__).resolve().parent
 while not (_PYSIM_DIR / "tier1_core").is_dir():
     _PYSIM_DIR = _PYSIM_DIR.parent
 
+_BENCH_DIR = Path(__file__).resolve().parents[1]
+if str(_BENCH_DIR) not in sys.path:
+    sys.path.insert(0, str(_BENCH_DIR))
+from _bootstrap import configure_import_paths
+
+configure_import_paths(_PYSIM_DIR, _BENCH_DIR)
+
 import wasm_opcodes as op
 from control_flow import extract_basic_blocks, iter_block_ops
 from execution_context import WASMContext
-from tier3_executer.interpreter.interpreter import Interpreter, InterpreterBindings
 from runtime_engine import RuntimeEngine
+from system_containers import ReadOnlyFlatMapView, StaticVector
+from tier3_executer.interpreter.interpreter import (
+    Interpreter,
+    InterpreterBindings,
+    WasmNumber,
+)
 from tier3_executer.jit.jit_cache import HotspotBitmap
 from tier3_executer.jit.jit_manager import JITRuntimeManager
-from system_containers import ReadOnlyFlatMapView
+from tier3_executer.jit.x64_jit import TraceCompiler
 from wasm_module import I32, LocalWidthMap
 from wasm_reader import parse
-from tier3_executer.jit.x64_jit import TraceCompiler
 
 
 class JITCompilerBenchmark:
@@ -85,35 +97,85 @@ class JITCompilerBenchmark:
         fn_idx = module.export_func_index("heavy_loop")
         LOOP_COUNT = 100_000
 
-        # Pure Tier 3 Interpreter run
-        interp_pure = Interpreter(module, InterpreterBindings.empty())
-        t0 = time.perf_counter()
-        res_interp = interp_pure.call(fn_idx, [LOOP_COUNT])
-        t1 = time.perf_counter()
-        interp_time_ms = (t1 - t0) * 1000
+        # Keep the Python handler loop as the cross-platform reference baseline.
+        # Interpreter.call() can use _interpreter_native, so measure that path
+        # separately instead of silently changing the baseline when the extension
+        # happens to be installed on one host.
+        python_interpreter = Interpreter(module, InterpreterBindings.empty())
+        python_warmup = self._run_python_interpreter(python_interpreter, fn_idx, 1_000)
+        assert python_warmup[0] == 499_500
 
-        # Tier 3 Native JIT run
-        runtime_engine = RuntimeEngine(
-            jit_runtime=JITRuntimeManager(jit_compiler=self.compiler, yield_threshold=16)
+        python_times_ms: list[float] = []
+        native_times_ms: list[float] = []
+        jit_times_ms: list[float] = []
+        python_results: list[int] = []
+        native_results: list[int] = []
+        jit_results: list[int] = []
+        last_runtime_engine: RuntimeEngine | None = None
+
+        for _ in range(3):
+            interp_python = Interpreter(module, InterpreterBindings.empty())
+            t0 = time.perf_counter()
+            res_python = self._run_python_interpreter(interp_python, fn_idx, LOOP_COUNT)
+            t1 = time.perf_counter()
+            python_times_ms.append((t1 - t0) * 1000)
+            python_results.append(int(res_python[0]))
+
+            # Measure the Clang-built C++ threaded interpreter extension as a
+            # separate baseline from the Python handlers above.
+            interp_native = Interpreter(module, InterpreterBindings.empty())
+            t0 = time.perf_counter()
+            res_native = interp_native.call(fn_idx, [LOOP_COUNT])
+            t1 = time.perf_counter()
+            native_times_ms.append((t1 - t0) * 1000)
+            native_results.append(int(res_native[0]))
+
+            runtime_engine = RuntimeEngine(
+                jit_runtime=JITRuntimeManager(jit_compiler=self.compiler, yield_threshold=16)
+            )
+            runtime_engine.register_module_blocks(module)
+            interp_jit = Interpreter(module, InterpreterBindings.empty())
+
+            # Warm up and compile the hot traces before measuring native execution.
+            runtime_engine.run(interp_jit, fn_idx, [100])
+            runtime_engine.idle_hook(budget=10)
+
+            t0 = time.perf_counter()
+            res_jit = runtime_engine.run(interp_jit, fn_idx, [LOOP_COUNT])
+            t1 = time.perf_counter()
+            jit_times_ms.append((t1 - t0) * 1000)
+            jit_results.append(int(res_jit[0]))
+            last_runtime_engine = runtime_engine
+
+        assert python_results[0] == python_results[1] == python_results[2]
+        assert native_results[0] == native_results[1] == native_results[2]
+        assert jit_results[0] == jit_results[1] == jit_results[2]
+        assert python_results[0] == native_results[0] == jit_results[0]
+        assert last_runtime_engine is not None
+        assert last_runtime_engine.stat_jit_invocations > 0, "JIT benchmark did not execute a trace"
+        assert last_runtime_engine.stat_native_loop_calls > 0, (
+            "JIT benchmark did not enter the native loop path"
         )
-        runtime_engine.register_module_blocks(module)
-        interp_jit = Interpreter(module, InterpreterBindings.empty())
 
-        # Warmup and compile HOT traces
-        runtime_engine.run(interp_jit, fn_idx, [100])
-        runtime_engine.idle_hook(budget=10)
-
-        # Run compiled native execution
-        t0 = time.perf_counter()
-        res_jit = runtime_engine.run(interp_jit, fn_idx, [LOOP_COUNT])
-        t1 = time.perf_counter()
-        jit_time_ms = (t1 - t0) * 1000
-
-        results["interp_loop_time_ms"] = interp_time_ms
+        python_time_ms = median(python_times_ms)
+        native_time_ms = median(native_times_ms)
+        jit_time_ms = median(jit_times_ms)
+        results["interp_python_loop_time_ms"] = python_time_ms
+        results["interp_native_loop_time_ms"] = native_time_ms
         results["jit_loop_time_ms"] = jit_time_ms
-        results["jit_speedup_ratio"] = interp_time_ms / jit_time_ms if jit_time_ms > 0 else 1.0
-        results["interp_loop_result"] = res_interp[0]
-        results["jit_loop_result"] = res_jit[0]
+        results["jit_speedup_vs_python_ratio"] = (
+            python_time_ms / jit_time_ms if jit_time_ms > 0 else 1.0
+        )
+        results["jit_speedup_vs_native_ratio"] = (
+            native_time_ms / jit_time_ms if jit_time_ms > 0 else 1.0
+        )
+        results["interp_python_loop_result"] = python_results[0]
+        results["interp_native_loop_result"] = native_results[0]
+        results["jit_loop_result"] = jit_results[0]
+        results["jit_loop_trace_invocations"] = last_runtime_engine.stat_jit_invocations
+        results["jit_loop_native_calls"] = last_runtime_engine.stat_native_loop_calls
+        results["jit_loop_interpreter_steps"] = last_runtime_engine.stat_interp_steps
+        results["jit_loop_chain_hits"] = last_runtime_engine.stat_chain_hits
 
         # 3.5 PIC trace-header-owned helper tail dispatch.  This is the
         # terminal boundary used when a complex operation is implemented by C:
@@ -164,6 +226,18 @@ class JITCompilerBenchmark:
         results["context_helper_tail_invocations"] = helper_iterations
 
         return results
+
+    @staticmethod
+    def _run_python_interpreter(
+        interpreter: Interpreter, func_index: int, iteration_count: int
+    ) -> StaticVector[WasmNumber]:
+        """Run Python opcode handlers directly, bypassing the native step extension."""
+        call_state = interpreter.start(func_index, [iteration_count])
+        while not call_state.finished:
+            call_state = interpreter._step(call_state, stop_at_boundary=False)
+        assert call_state.trap is None, call_state.trap
+        assert call_state.results is not None
+        return call_state.results
 
     def _create_heavy_loop_binary(self) -> bytes:
         """Constructs a WASM binary with an intensive arithmetic loop: sum = sum + (i * 3) ^ 7."""
@@ -257,12 +331,38 @@ def main():
         f"  * Sparse JIT Entry Binary Search:      {res['jit_entry_lookup_mops']:.2f} M ops/s  ({res['jit_entry_lookup_ns']:.1f} ns/lookup)"
     )
     print(
-        f"  * Arithmetic Loop (100,000 iters):    Interp: {res['interp_loop_time_ms']:.2f} ms | JIT: {res['jit_loop_time_ms']:.2f} ms"
+        f"  * Arithmetic Loop (100,000 iters):    Python: {res['interp_python_loop_time_ms']:.2f} ms | Native interp: {res['interp_native_loop_time_ms']:.2f} ms | JIT: {res['jit_loop_time_ms']:.2f} ms"
     )
     print(
-        f"  * Differential Result Check:          Interp={res['interp_loop_result']:,} | JIT={res['jit_loop_result']:,} (MATCH)"
+        f"  * Differential Result Check:          Python={res['interp_python_loop_result']:,} | Native interp={res['interp_native_loop_result']:,} | JIT={res['jit_loop_result']:,} (MATCH)"
     )
-    print(f"  * Measured JIT Speedup:               {res['jit_speedup_ratio']:.2f}x faster")
+    if res["jit_speedup_vs_python_ratio"] >= 1.0:
+        print(
+            f"  * JIT vs Python handlers:              "
+            f"{res['jit_speedup_vs_python_ratio']:.2f}x faster"
+        )
+    else:
+        print(
+            f"  * JIT vs Python handlers:              "
+            f"{1.0 / res['jit_speedup_vs_python_ratio']:.2f}x slower"
+        )
+    if res["jit_speedup_vs_native_ratio"] >= 1.0:
+        print(
+            f"  * JIT vs native interpreter:           "
+            f"{res['jit_speedup_vs_native_ratio']:.2f}x faster"
+        )
+    else:
+        print(
+            f"  * JIT vs native interpreter:           "
+            f"{1.0 / res['jit_speedup_vs_native_ratio']:.2f}x slower"
+        )
+    print(
+        f"  * JIT Execution Coverage:             "
+        f"{res['jit_loop_trace_invocations']:,} trace invocations, "
+        f"{res['jit_loop_chain_hits']:,} chain hits, "
+        f"{res['jit_loop_interpreter_steps']:,} interpreter steps, "
+        f"{res['jit_loop_native_calls']:,} C++ loop calls"
+    )
     print(
         f"  * PIC Trace-Header Helper Tail Jump:  {res['context_helper_tail_mops']:.2f} M ops/s  ({res['context_helper_tail_ns']:.1f} ns/dispatch; {res['context_helper_tail_invocations']:,} calls)"
     )

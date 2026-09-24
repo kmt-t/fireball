@@ -9,12 +9,14 @@ Unified Master Runner for all PySIM Micro- & Macro-Benchmarks:
 
 from __future__ import annotations
 
-import sys
 import time
 from pathlib import Path
 
 _BENCH_DIR = Path(__file__).resolve().parent
 _PYSIM_DIR = _BENCH_DIR.parent
+from _bootstrap import configure_import_paths
+
+configure_import_paths(_PYSIM_DIR, _BENCH_DIR)
 
 from bench_aobench import run_aobench
 from bench_jit import JITCompilerBenchmark
@@ -118,12 +120,37 @@ def main():
         f"  * Sparse JIT Entry Binary Search:      {jit_res['jit_entry_lookup_mops']:.2f} M ops/s  ({jit_res['jit_entry_lookup_ns']:.1f} ns/lookup)"
     )
     print(
-        f"  * Arithmetic Loop (100,000 iters):    Interp: {jit_res['interp_loop_time_ms']:.2f} ms | JIT: {jit_res['jit_loop_time_ms']:.2f} ms"
+        f"  * Arithmetic Loop (100,000 iters):    Python: {jit_res['interp_python_loop_time_ms']:.2f} ms | Native interp: {jit_res['interp_native_loop_time_ms']:.2f} ms | JIT: {jit_res['jit_loop_time_ms']:.2f} ms"
     )
     print(
-        f"  * Differential Result Check:          Interp={jit_res['interp_loop_result']:,} | JIT={jit_res['jit_loop_result']:,} (MATCH)"
+        f"  * Differential Result Check:          Python={jit_res['interp_python_loop_result']:,} | Native interp={jit_res['interp_native_loop_result']:,} | JIT={jit_res['jit_loop_result']:,} (MATCH)"
     )
-    print(f"  * Measured JIT Speedup:               {jit_res['jit_speedup_ratio']:.2f}x faster")
+    if jit_res["jit_speedup_vs_python_ratio"] >= 1.0:
+        print(
+            f"  * JIT vs Python handlers:              "
+            f"{jit_res['jit_speedup_vs_python_ratio']:.2f}x faster"
+        )
+    else:
+        print(
+            f"  * JIT vs Python handlers:              "
+            f"{1.0 / jit_res['jit_speedup_vs_python_ratio']:.2f}x slower"
+        )
+    if jit_res["jit_speedup_vs_native_ratio"] >= 1.0:
+        print(
+            f"  * JIT vs native interpreter:           "
+            f"{jit_res['jit_speedup_vs_native_ratio']:.2f}x faster"
+        )
+    else:
+        print(
+            f"  * JIT vs native interpreter:           "
+            f"{1.0 / jit_res['jit_speedup_vs_native_ratio']:.2f}x slower"
+        )
+    print(
+        f"  * JIT Execution Coverage:             "
+        f"{jit_res['jit_loop_trace_invocations']:,} trace invocations, "
+        f"{jit_res['jit_loop_chain_hits']:,} chain hits, "
+        f"{jit_res['jit_loop_interpreter_steps']:,} interpreter steps"
+    )
     print(
         f"  * PIC Trace-Header Helper Tail Jump:  {jit_res['context_helper_tail_mops']:.2f} M ops/s  ({jit_res['context_helper_tail_ns']:.1f} ns/dispatch; {jit_res['context_helper_tail_invocations']:,} calls)"
     )

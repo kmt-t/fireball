@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build the optional native Tier 3 handler table (Linux/WSL, clang).
+# Build the required native Tier 3 handler table (Linux/WSL, Clang 17+).
 set -euo pipefail
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "${script_dir}"

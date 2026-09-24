@@ -14,7 +14,14 @@ _PYSIM_DIR = Path(__file__).resolve().parent
 while not (_PYSIM_DIR / "tier1_core").is_dir():
     _PYSIM_DIR = _PYSIM_DIR.parent
 
-from runtime_engine import (
+_BENCH_DIR = Path(__file__).resolve().parents[1]
+if str(_BENCH_DIR) not in sys.path:
+    sys.path.insert(0, str(_BENCH_DIR))
+from _bootstrap import configure_import_paths
+
+configure_import_paths(_PYSIM_DIR, _BENCH_DIR)
+
+from tier3_executer.jit.jit_cache import (
     JITMultiBufferCache,
     JITTrace,
 )

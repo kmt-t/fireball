@@ -155,12 +155,28 @@ experiments/pysim/
 👉 **[PySIM 統合ベンチマーク詳細レポート (`benchmarks/BENCHMARK_REPORT.md`)](benchmarks/BENCHMARK_REPORT.md)**
 
 ```bash
-# 全ベンチマーク一括実行
-uv run python experiments/pysim/benchmarks/run_all.py
+# uvキャッシュを一時領域へ置き、プロジェクトの .python-version / .venv を使う
+export UV_CACHE_DIR=/tmp/fireball-uv-cache
+
+# Linux/WSL: Tier 3 実行に必要なネイティブ拡張をビルド
+bash experiments/pysim/tier3_executer/interpreter/build_native.sh
+bash experiments/pysim/tier3_executer/jit/build_native.sh
+
+# 全ベンチマーク一括実行（wasmtime は JIT カードエイジング測定に使用）
+uv run --system-certs --with wasmtime python experiments/pysim/benchmarks/run_all.py
 
 # 3D AO-Bench 単体・ランタイム内部状態ダンプ
-uv run python experiments/pysim/benchmarks/aobench/bench_aobench.py --debug
+uv run --system-certs python experiments/pysim/benchmarks/aobench/bench_aobench.py --debug
+
+# Intel VTune / AMD uProf Hotspots用に算術ループの1経路だけを反復
+uv run --offline python -u experiments/pysim/benchmarks/jit/profile_arithmetic_path.py --path native-interpreter
 ```
+
+`uv run`はリポジトリの`.python-version`と`.venv`を使う。`--path` は `python-handler`、`native-interpreter`、`hybrid-jit` から選ぶ。通常の速度比較には `bench_jit.py` の中央値を使い、プロファイラ収集中の実行時間は比較に使わない。Linuxの`perf stat cycles:u`で動的WASM命令あたりのホストサイクル数を測る方法、Intel VTuneとAMD uProfの収集コマンドは[JITベンチマーク仕様書](../../docs/components/tier3_executer/benchmarks/jit_runtime_bench_spec.md)を参照する。
+
+Windows では `tier3_executer/interpreter/build_native.ps1` と `tier3_executer/jit/build_native.ps1` を実行してから、同じ `uv run` コマンドでベンチマークを実行します。
+
+算術ループはPythonハンドラ、C++インタープリタ拡張、JITの3経路を測定します。JITの速度比はPythonハンドラを基準に算出し、C++拡張の結果は別基準として表示します。これにより拡張の有無でOS間の比較条件が変わるのを防ぎます。
 
 ---
 
@@ -192,14 +208,14 @@ uv run --system-certs --with wasmtime python experiments/pysim/qa/run_all.py
 uv run --system-certs --with wasmtime python experiments/pysim/aobench.py
 ```
 
-### （任意）JIT トレース呼び出しのC++ネイティブブリッジ
-`RuntimeEngine._invoke_trace` は既定で `ctypes.CFUNCTYPE`（libffiトランポリン）経由でコンパイル済みトレースを呼ぶ。`tier3_executer/jit/native_trace_call.cxx`をビルドすると、同じCPS 4引数ABIの生関数ポインタ呼び出しへ切り替わる。ブリッジはCPython APIの薄い入口だけを持ち、トレース本体はGILを解放して実行する。未ビルド時は自動的にctypes経路へフォールバックする。
+### JIT ネイティブコンパイラと呼び出し経路
+`tier3_executer/jit/native_trace_call.cxx` は x64 Copy-and-Patch トレースのコンパイルを実装する。JIT コンパイラがこの拡張を直接 import するため、Tier 3 の JIT 実行にはビルドが必須である。同じ拡張はCPS 4引数ABIの生関数ポインタ呼び出しを提供する。同期 `RuntimeEngine.run()` では、条件分岐先から純ネイティブトレースのチェインが同じ分岐へ戻る場合に `run_loop_cycle` が反復をC++内で続け、各WASMループ反復ごとのPython実行制御を省く。協調実行の `run_cooperative()` はスケジューラ境界を保つため従来の経路を使う。未ビルド時の `_invoke_trace` は `ctypes.CFUNCTYPE` 経路へフォールバックし、この高速経路は使わない。Linux拡張には `-g` を付け、AMD uProfとIntel VTuneでC++ソース位置を解決できるようにする。
 ```bash
 # Windows: clang-cl + Visual Studio Build Tools + Windows SDK が必要
 powershell experiments/pysim/tier3_executer/jit/build_native.ps1
 
-# Linux/WSL: clang が必要
-./experiments/pysim/tier3_executer/jit/build_native.sh
+# Linux/WSL: Clang 17+ が必要
+bash experiments/pysim/tier3_executer/jit/build_native.sh
 ```
 
 ### Tier 3インタープリタの境界
@@ -211,7 +227,7 @@ powershell experiments/pysim/tier3_executer/jit/build_native.ps1
 powershell experiments/pysim/tier3_executer/interpreter/build_native.ps1
 
 # Linux/WSL: clang が必要
-./experiments/pysim/tier3_executer/interpreter/build_native.sh
+bash experiments/pysim/tier3_executer/interpreter/build_native.sh
 ```
 
 実行ホットパスは`native_interpreter.cxx`のhandler tableと`run_step`であり、LEB128はロード時デコーダの責務で実行時境界には入らない。旧Cython/CPS互換入口は提供しない。

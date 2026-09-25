@@ -2,15 +2,15 @@
 
 from __future__ import annotations
 
+from system_containers import StaticVector
 from tier2_runtime.logger import Logger
-from tier2_runtime.runtime_engine import RuntimeEngine
 from tier3_executer.interpreter.interpreter import (
     Interpreter,
     InterpreterBindings,
     InterpreterCall,
     WasmNumber,
 )
-from system_containers import StaticVector
+from tier3_executer.jit.runtime_engine import RuntimeEngine
 from vmmio import VMMIOController
 from wasm_module import Module
 
@@ -45,7 +45,6 @@ class JITInterpreter(Interpreter):
         super().__init__(module, bindings, vmmio=vmmio, phys_mem=phys_mem, logger=logger)
 
     def _complete_call(self, call_state: InterpreterCall) -> StaticVector[WasmNumber]:
-        """共通テンプレートの実行フックをTier 2 RuntimeEngineへ委譲する。"""
+        """共通テンプレートの実行フックをTier 3 RuntimeEngineへ委譲する。"""
 
-        self.runtime_engine._virq_interp = self
-        return self.runtime_engine._drive_call(self, call_state, self.idle_budget)
+        return self.runtime_engine.complete_call(self, call_state, self.idle_budget)

@@ -1,4 +1,3 @@
-import sys
 from pathlib import Path
 
 _PYSIM_DIR = Path(__file__).resolve().parent
@@ -17,13 +16,13 @@ Tests:
 """
 
 import wasmtime
-from tier3_executer.interpreter.interpreter import Interpreter, InterpreterBindings
-from runtime_engine import RuntimeEngine
-from tier3_executer.jit.jit_manager import JITRuntimeManager
 from system import System
+from tier3_executer.interpreter.interpreter import Interpreter, InterpreterBindings
+from tier3_executer.jit.jit_manager import JITRuntimeManager
+from tier3_executer.jit.runtime_engine import RuntimeEngine
+from tier3_executer.jit.x64_jit import TraceCompiler
 from tier3_platform.drivers.wasi.context import WasiHostContext
 from wasm_reader import parse
-from tier3_executer.jit.x64_jit import TraceCompiler
 
 SCENARIO4_WAT = """
 (module
@@ -113,7 +112,7 @@ def test_scenario_hybrid_jit():
     interp_t3 = Interpreter(
         module, InterpreterBindings.with_memory_and_functions(wasi_t3.guest_memory, funcs_t3)
     )
-    res_t3 = runtime_engine.run(interp_t3, fn_idx, [LIMIT])
+    res_t3 = runtime_engine.call(interp_t3, fn_idx, [LIMIT])
 
     assert res_t3 == [168], f"Tier 3 prime count mismatch: expected 168, got {res_t3}"
     assert res_t2 == res_t3, "Tier 2 and Tier 3 calculation diverged!"

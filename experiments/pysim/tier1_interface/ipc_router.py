@@ -20,7 +20,6 @@ from memory_interface import MemoryManager, SharedBlock
 from scheduler import (
     Channel,
     ChannelAction,
-    ChannelPayload,
     ChannelTransferMode,
     Scheduler,
     WaitDir,

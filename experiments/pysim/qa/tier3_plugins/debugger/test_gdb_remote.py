@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
 _TEST_FILE = Path(__file__).resolve()
@@ -9,7 +8,6 @@ _PYSIM_DIR = _TESTS_DIR.parent
 _REPO_ROOT = _PYSIM_DIR.parent.parent
 
 
-import sys
 from pathlib import Path
 
 """
@@ -29,7 +27,6 @@ Simulates a real GDB client session connecting to Fireball GDBServer:
 11. Continue to program termination ('W00')
 """
 
-import sys
 from pathlib import Path
 
 _PYSIM_DIR = Path(__file__).resolve().parent
@@ -40,11 +37,11 @@ while not (_PYSIM_DIR / "tier1_core").is_dir():
 import socket
 import time
 
-from tier3_plugins.debugger.debugger import DebuggerManager, GDBRspProtocol
 from execution_context import WASMContext
-from tier3_plugins.debugger.gdb_server import GDBServer
 from helpers import wat_to_wasm
 from runtime_test_driver import RuntimeEngineDebugDriver
+from tier3_plugins.debugger.debugger import DebuggerManager, GDBRspProtocol
+from tier3_plugins.debugger.gdb_server import GDBServer
 
 
 class GDBClientHelper:

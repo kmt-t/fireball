@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
 _TEST_FILE = Path(__file__).resolve()
@@ -9,7 +8,6 @@ _PYSIM_DIR = _TESTS_DIR.parent
 _REPO_ROOT = _PYSIM_DIR.parent.parent
 
 
-import sys
 from pathlib import Path
 
 _PYSIM_DIR = Path(__file__).resolve().parent
@@ -24,10 +22,10 @@ Strictly implements and verifies all test cases from:
 docs/qa/tier3_plugins/debugger_test_spec.md (TEST-DBG-01 ~ TEST-DBG-15).
 """
 
-from tier3_plugins.debugger.debugger import DebuggerManager, GDBRspProtocol
 from execution_context import WASMContext
 from helpers import wat_to_wasm
 from runtime_test_driver import RuntimeEngineDebugDriver
+from tier3_plugins.debugger.debugger import DebuggerManager, GDBRspProtocol
 
 
 def test_dbg_01_query_halt_reason():

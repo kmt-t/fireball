@@ -1,8 +1,7 @@
 # JIT ランタイム管理 コンポーネント設計書 {VERIFY_FORMAL} {VERIFY_LLM} {VERIFY_BENCHMARK}
 <!-- evidence:
      formal: formal/jit_cache_model.py
-     benchmark: benchmarks/jit_zero_compile_cost_bench.py
-     concept: ../tier2_runtime/concepts/runtime_engine_concept.py
+     benchmark: experiments/pysim/benchmarks/jit/bench_fast_cache.py
      test: docs/qa/tier3_executer/jit_runtime_test_spec.md
 -->
 
@@ -14,7 +13,7 @@ JIT ランタイム管理は、WASM PC とネイティブコードの紐付け�
 
 インタープリタ実行ループ内の検索は3段で構成する。第1段はカードマーキング表 (`bit_view<2>`) による $O(1)$ 事前判定、第2段はDirect-Mapped Folding XORキャッシュ（16スロット）による $O(1)$ 検索、第3段は各バンクのソート済みJITエントリ配列に対する二分探索である。エントリ数が少ないためRadix表は設けず、補助索引のメモリと更新処理を持たない。
 
-3面コードキャッシュはデータ用バンプアロケータとは異なる。データRAM（`RW + XN`）とは分離されている。MPU W^X 制御された専用実行可能セクションから確保される。専用コードアロケータによりハードウェア保護境界が厳格に保たれる。
+3面コードキャッシュはデータ用バンプアロケータとは別に管理する。x64参照構成では、実行可能バッファの書込権限と実行権限を同時に有効にしない。ARMv8-Mの物理配置と保護方式はTBDである。
 
 ## 2. アーキテクチャ分類
 <!-- traceability: {META_3TierSeparation} {SimpleJITArchitecture} -->
@@ -28,7 +27,7 @@ JITサブシステムは、以下の2つの独立した設計書に責務を分�
 
 ### 2.2 実装責務と依存方向
 <!-- traceability: {META_ContractImplSplit} {META_StaticDI} {META_3TierSeparation} -->
-Tier 2 の `RuntimeEngine` は、JITの内部状態を所有しない。[`runtime_engine.py`](experiments/pysim/tier2_runtime/runtime_engine.py) の `JITRuntime` 契約を介して、モジュール登録、基本ブロック解決、ホットスポット記録、イールド処理、トレース検索、チェイン解決、およびキャッシュ無効化を呼び出す。Tier 2 はカード表、履歴リング、コンパイル待ち列、キャッシュバンク、直接マップ索引の型へ依存しない。
+Tier 3 の `RuntimeEngine` は、Tier 2 の [`jit_runtime_contract.py`](experiments/pysim/tier2_runtime/jit_runtime_contract.py) が定義する `JITRuntime` 契約を介して、モジュール登録、基本ブロック解決、ホットスポット記録、イールド処理、トレース検索、チェイン解決、およびキャッシュ無効化を呼び出す。Tier 2 契約はカード表、履歴リング、コンパイル待ち列、キャッシュバンク、直接マップ索引の型へ依存しない。
 
 Tier 3 の実装は次の責務に分ける。
 
@@ -37,11 +36,13 @@ Tier 3 の実装は次の責務に分ける。
 | [`jit_manager.py`](experiments/pysim/tier3_executer/jit/jit_manager.py) の `JITRuntimeManager` | ホットスポットカード、候補マスク、履歴リング、関数更新表、コンパイル待ち列、ブロック索引、コンパイル起動、トレース検索、チェイン解決 | Tier 2 `JITRuntime` の呼出し形、Loaderの`Module`/`BasicBlock`情報 |
 | [`jit_cache.py`](experiments/pysim/tier3_executer/jit/jit_cache.py) | 3面コードキャッシュ、バンク回転、Oldest昇格、局所アンリンク、エントリ索引 | `JITRuntimeManager` からの所有・通知 |
 | [`x64_jit.py`](experiments/pysim/tier3_executer/jit/x64_jit.py) | トレースのコード生成とコンパイラ実装 | `JITCompiler` 契約、JIT ABI |
-| [`runtime_engine.py`](experiments/pysim/tier2_runtime/runtime_engine.py) | Interpreter/JITの実行境界、vIRQ、実行統計、Tier 3契約の呼出し | `JITRuntime` 契約のみ |
+| [`runtime_engine.py`](experiments/pysim/tier3_executer/jit/runtime_engine.py) | Interpreter/JITの実行境界、vIRQ、実行統計、トレース継続 | Tier 2 `JITRuntime`契約、Tier 3 Interpreter |
 
-`RuntimeEngine` の生成時に `JITRuntimeManager` を静的に注入する。実行中に実装を差し替える動的プラグイン機構は持たず、構成に選んだTier 3実装だけを実行経路へ合成する。JITを無効にする場合は`JITRuntime`を注入せず、Interpreter経路だけを使用する。
+このPython参照実装では `RuntimeEngine` の生成時に `JITRuntimeManager` を注入する。JIT有効時の検索はTier 3 managerが担う。C++製品構成ではTier 2の [`runtime_composer.hxx`](experiments/pysim/tier2_runtime/runtime_composer.hxx) がビルド構成から実行器とlookup方針を型として選ぶ。現時点のC++ヘッダとビルドprobeは構成の静的合成を検証するものであり、Python製JIT managerのlookup実装をC++へ移植したものではない。
 
-なお、evidenceに記載する [`runtime_engine_concept.py`](docs/components/tier2_runtime/concepts/runtime_engine_concept.py) は、複数コンポーネントを一つの実行可能モデルで検証するための統合概念コードである。製品実装の責務配置は本節の `JITRuntimeManager` と `RuntimeEngine` の分離を正本とする。
+Tier 3内部の依存は `JITInterpreter` → `RuntimeEngine` → `Interpreter` の向きに保つ。JIT実行管理はTier 2の `JITRuntime` 契約を実装し、InterpreterからJIT管理へ戻る依存を作らない。
+
+本コンポーネントには独立した概念モデルを置かない。現在の実行経路はC++ runtime、x64機械語実装、形式モデルおよびpysimテストで確認する。
 
 ## 3. 静的モデル
 
@@ -66,21 +67,23 @@ Tier 3 の実装は次の責務に分ける。
   - コードを持たない関数（import 関数）のビットは立たない。
 - **エイジングカーソル**: 関数更新表のバイト位置を保持する整数である。モジュール登録時に 0 で初期化し、表の末尾に達したら先頭へ戻る。
 - **JITエントリ表**: 各バンクの `head_pc` 順に並ぶ固定容量配列である。検索は二分探索（$O(\log n)$）とし、削除済み枠は無効項目として扱う。エントリが少ないためRadix索引を設けない。
-- **JITコード領域 (8KB)**: 4KBページ2枚分の連続領域である。先頭2KBは開始処理、終了処理、対象ABIのヘルパー呼出しコード、および絶対アドレスプールを置く非エビクション領域とし、残る2KBずつを`Bank 0 (Active)`, `Bank 1 (Warm)`, `Bank 2 (Oldest)`に割り当てる。トレースヘッダのサイズと物理欄は対象ABIで定義し、共通領域オフセットとエントリ・終了ジャンプ先を保持する。MPUの`W^X`制御対象であり、共通コード領域はflushやバンクローテーションでも維持する。
-  共通領域内の固定オフセットは次のとおりである。オフセットはコード領域先頭からの値であり、トレースヘッダのフィールド位置とは別の値である。
+- **x64参照コード領域 (8KB)**: シミュレータ構成では4KBページ2枚分の領域を使う。先頭2KBは開始処理、終了処理、x64ヘルパー呼出しコード、chain dispatcher、および絶対アドレスプールを置く非エビクション領域とし、残る2KBずつを`Bank 0 (Active)`, `Bank 1 (Warm)`, `Bank 2 (Oldest)`に割り当てる。x64トレースヘッダはtrace identityとchain/helper targetだけを保持する。共通コード領域はflushやバンクローテーションでも維持する。ARMv8-Mの領域容量、物理配置、保護方式、ヘッダ形式はすべてTBDである。
+  x64参照共通領域内の固定オフセットは次のとおりである。オフセットはコード領域先頭からの値であり、トレースヘッダのフィールド位置とは別の値である。
 
   | 共通領域オフセット | 配置物 | 容量・用途 |
   | :--- | :--- | :--- |
-  | `0x000` | 対象ABIの開始処理 | 4つの論理引数を受けてトレース本体へ移行する |
-  | `0x020` | 対象ABIの終了処理 | 共有状態を同期して呼び出し元へ復帰する |
+  | `0x000` | x64参照開始処理 | 4つの論理引数を受けてトレース本体へ移行する |
+  | `0x020` | x64参照終了処理 | 共有状態を同期して呼び出し元へ復帰する |
   | `0x030` | コンテキスト型ヘルパー入口 | トレースヘッダの関数アドレスを共通呼出しコードへ渡す |
   | `0x050` | 絶対アドレスプール | 256バイトの共通アドレス領域 |
   | `0x160` | x64 i32ヘルパー入口群 | 32バイト単位で4入口。2個の32ビット整数引数と結果領域ポインタで関数を呼び出し、終了処理へ戻る |
   | `0x200` | x64 wideヘルパー入口群 | 32バイト単位で11入口。ヘルパー契約ごとの引数を設定して関数を呼び出し、終了処理へ戻る |
+  | `0x400` | x64共通chain dispatcher | 32バイト。Traceヘッダのchain targetを読み、次trace bodyへtail-jumpする。未接続時は共通終了処理へ戻る |
 
-  共通領域の参照値は各トレースヘッダへ格納する。ARMv8-MのAAPCS呼出し入口もヘルパー契約ごとに共通領域へ置く。トレースの入口・出口・ヘルパー遷移は、この参照値を用いて相対分岐先を決定する。
+  chain dispatcherはopcode別の分岐handlerを共通化しない。分岐条件・control frame更新・後方分岐回数はC++ Interpreterの命令別handlerが処理する。handler実行後にC++ dispatcherが別traceを選ぶ遷移と、共通コードchain dispatcherがtarget bodyへtail-jumpするchainは別の経路である。Pythonはchain機械語を組み立てず、C++ `constexpr` assemblerで生成した固定命令列をx64参照構成の共通領域へ一度だけ配置する。ARMv8-Mの呼出し入口、配置方式、命令列はTBDである。
 - **オンデマンドコンパイルキュー (On-demand Compile Queue)**: `HOT` に達した命令オフセットを保持する固定容量 LIFO キューである。容量到達時にバッチコンパイルが即座に実行される。固定容量を上回ることはない。 `JIT_ReverseCompilationOrder` `{GLOBAL_Policy_Memory}`
-- **バンク別被チェイン逆引きテーブル (Inbound Chain Index Table)**: 各キャッシュバンクへ向けた直接チェインリンク元の JIT エントリインデックスを保持する固定長配列である。
+- **バンク別被チェイン逆引きテーブル (Inbound Chain Index Table)**: 各キャッシュバンクへ向けたchain元のJITエントリを保持する固定長配列である。cache回転・promote時に共通chain dispatcherが参照するtarget addressを更新または解除する。
+- **前方chainメタデータ**: Python cache metadataの`chain_next` / `next_pc`は直線後続traceの論理PCを保持する。x64物理ヘッダの`chain_target_addr`は共通chain dispatcherがtail-jumpするresident target bodyを保持する。後方branch linkは作らず、branch handlerへ制御を戻す。
 - **実行履歴バッファ**: 短期間の実行履歴を一時的に保持するリングバッファである。 `{HistoryBuffer}`
 
 ### 3.2 内部ブロック図
@@ -229,10 +232,10 @@ sequenceDiagram
         alt Target was Promoted to Active/Warm (GOTCHA-JITR-02)
             Source->>Source: Re-chain: Update chain_target_addr to Promoted Address
             Source->>Mgr: Transfer inbound registration to new Bank
-            Note over Source: Direct native jump maintained!
+            Note over Source: Common chain dispatcher uses the promoted target address
         else Target was Evicted (Not Promoted)
-            Source->>Source: Unlink: Patch chain_target_addr to Interpreter Fallback Stub
-            Note over Source: Safely reverts to interpreter on next branch
+            Source->>Source: Unlink: Set chain_target_addr to 0
+            Note over Source: Zero target returns through the common epilogue
         end
     end
 
@@ -273,31 +276,38 @@ stateDiagram-v2
 
 命令列長は、後続アドレスから自分自身の先頭アドレスを引いて求めてはならない。後方分岐ブロックでは差分が負になる。その結果「短すぎる」と誤判定される。命令列長はブロック自身の命令バイト数から直接求める。
 
+JIT trace終端の制御命令はC++ Interpreterの対応ハンドラで実行し、取得された後方分岐をそのハンドラ内で数える。C++ dispatcherは分岐後のPCから常駐トレースを検索し、JIT traceまたはC++ handlerを連続実行する。`FB_CONF_RUNTIME_YIELD_THRESHOLD` 到達時にdispatcherがyield statusを返し、RuntimeEngineからCOOS境界へ制御を戻す。C++ Interpreter単独経路も同じdispatcher・カウンタ・しきい値を使う。後方分岐カウンタは時間ではなく取得した後方分岐の回数である。非対応命令、外部呼出し、trap、関数完了は必要な早期境界となる。
+
+trace chainは直線後続traceが常駐する場合に限り、trace末尾から共通コード領域のchain dispatcherへ移り、dispatcherがTraceヘッダのtarget bodyへtail-jumpする経路を指す。未接続のtargetは0で表し、共通epilogueから実行境界へ戻る。opcode別handlerの呼出しや、C++ handler後にC++ dispatcherが別traceを選ぶ遷移はchainではない。chain dispatcherは命令を判定せず、分岐helperも持たない。
+
+常駐trace表とホットスポット候補PC表は、キャッシュ世代または候補マスク世代が変わったときだけ構築する。通常経路ではC++ dispatcherがこのsnapshotをlookupし、制御handler実行後もしきい値到達まではC++内で次のtraceまたはhandlerを選ぶ。`FB_CONF_RUNTIME_PROFILE_STATS`は既定で無効であり、OFF構成では診断カウンタ処理をC++拡張へ生成しない。`FB_CONF_JIT_HOTSPOT_PROFILING`は未コンパイル領域の動的ホットネス観測を選び、既定値は有効である。OFF構成では観測処理を生成せず、常駐traceのlookupとC++ handlerによる遷移だけを行う。どちらの値を変更した場合もC++拡張を再ビルドする。
+
 #### コンパイル済みトレース実行後の遷移手順（アクティビティ図）
 ```mermaid
 flowchart TD
-    Start(["コンパイル済みトレースを一つ実行する"]) --> HasCond{"分岐条件を持つ終端命令か？<br/>(BR_IF または IF で終わるブロック)"}
-    HasCond -- "はい" --> CheckCond{"条件は成立したか？"}
-    CheckCond -- "成立" --> TakeBranch["分岐先アドレスへ進む"]
-    CheckCond -- "不成立" --> TakeFallthrough["後続アドレスへ進む（条件の計算結果は破棄）"]
-    HasCond -- "いいえ<br/>(単純な素通り、またはRETURNで終端)" --> PushResult["戻り値があればオペランドスタックへ積む"] --> TakeFallthrough2["後続アドレスへ進む"]
-    TakeBranch --> HasNext{"進む先のアドレスは存在するか？"}
-    TakeFallthrough --> HasNext
-    TakeFallthrough2 --> HasNext
-    HasNext -- "いいえ（関数終了）" --> EndSentinel["コード末尾を指す番兵値へ進める"]
-    HasNext -- "はい" --> NormalAdvance["そのアドレスへ進める"]
-    EndSentinel --> Reconcile["制御フレームの深さを調整する"]
-    NormalAdvance --> Reconcile
-    Reconcile --> Dispatch["コンパイル済みならJITで続行、未済ならインタープリタへ委託"]
+    Start(["C++ dispatcherが現在PCを処理する"]) --> Lookup{"常駐JIT traceがあるか？"}
+    Lookup -- "ない" --> Handler["C++ Interpreterの命令別handlerを実行する"]
+    Lookup -- "ある" --> Entry["trace entryからtrace本体を実行する"]
+    Entry --> Chain["共通コード領域のchain dispatcher"]
+    Chain --> Target{"chain_target_addrが非0か？"}
+    Target -- "はい" --> Body["target trace bodyへtail-jumpする"]
+    Body --> Chain
+    Target -- "いいえ" --> Epilogue["共通epilogueからC++ dispatcherへ戻る"]
+    Epilogue --> Terminator{"終端opcodeの処理を続けられるか？"}
+    Terminator -- "制御終端" --> Handler
+    Terminator -- "fallback / trap / completion" --> Boundary["RuntimeBoundaryResultを返す"]
+    Handler --> Backedge{"取得済み後方辺数がしきい値へ到達したか？"}
+    Backedge -- "はい" --> Yield["yield statusをRuntimeEngine / COOSへ返す"]
+    Backedge -- "いいえ" --> Lookup
 ```
 
-- **分岐条件の扱い**: 分岐条件を持つ終端命令（`BR_IF`, `IF`）の計算結果は、オペランドスタックへ積まない。積むと後続演算が誤って消費してしまう。
-- **関数終了の定数時間解決 (`{GOTCHA-JITR-08}`)**: `RETURN` で終わるブロックでは命令列を再走査しない。実行時の命令デコードやオブジェクト生成は一切禁止されている（`{DirectBytecodeExecution}`）。コード長という単一の数値で関数の終わりを表す。復帰処理はインタープリタへ委ねる。
-- **制御フレームの整合 (`{GOTCHA-JITR-06}`)**: JITトレース実行は制御フレーム操作を経由しない。そのためインタープリタ実行時に積まれたフレームが残留することがある。フレーム深さの巻き戻しだけでは正しさを保証できない。したがってインタープリタ復帰時の分岐解決は、フレームスタックの中身を参照しない。静的解析済みの後続アドレスや分岐先アドレスを直接使用する。フレーム深さの切り詰めはスタック肥大化防止の安全策としてのみ機能させる。
+- **分岐条件の扱い**: `BR_IF` はJITトレースが残した条件値をC++ Interpreter handlerが消費する。`IF` も同じハンドラが条件を消費し、必要な制御frameを積む。
+- **関数終了の定数時間解決 (`{GOTCHA-JITR-08}`)**: `RETURN` で終わるブロックでは命令列を再走査しない。トレースは戻り値を共有operand stackへ確定した後、C++ Interpreterのreturn handlerを通る。
+- **制御フレームの整合 (`{GOTCHA-JITR-06}`)**: JIT trace bodyは制御終端命令（`RETURN`を含む）を実行しない。共通chain dispatcherからepilogue経由でC++ dispatcherへ戻った後、対応するC++ handlerを一度実行する。handlerが条件を消費し、制御frameを更新し、遷移先PCを決める。Python側で分岐を再計算しない。通常実行では同じC++ dispatcherが次PCをlookupし、後方分岐しきい値まで処理を続ける。
 - **短小判定の符号 (`{GOTCHA-JITR-07}`)**: ブロックの足切り判定は自身の命令バイト数で行う。後続アドレスとの差分で代用すると、後方分岐ブロックで差分が負になり、高頻度ブロックが永久に除外されてしまう。
 - **エイジングと常駐状態の分離 (`{GOTCHA-JITR-09}`)**: エイジングスイープは `EXECUTED` のカードだけを変更する。`COMPILED` まで戻すと、常駐トレースのカードが `UNEXECUTED` になり、lookup が常駐コードを見逃す。`HOT` まで戻すと、コンパイル待ち列の要求とカード状態が食い違う。常駐性の正本はキャッシュ、待ち列の正本は待ち列であり、スイープはどちらも書き換えない。
 - **押し出し量の事前確認**: ランタイムは、トレースを呼ぶ前に、連鎖先を含む最大の `stack_words` が空き容量に収まることを確認する。収まらない場合はトレースを使わず、インタープリタが実行する。インタープリタは、容量超過を `assert` で停止する。JITだけが容量外へ書き込む状態を作らないためである。
-- **連鎖の再リンク**: 昇格とローテーションの後も、すべての連鎖ポインタは、常駐トレースの有効な入口を指す。Pythonのヘッダとネイティブのヘッダは一致する。退避された後続へのポインタは、インタープリタへの復帰へ戻す（`{GOTCHA-JITR-02}`）。
+- **連鎖の再リンク**: 昇格とローテーションの後も、非0のchain targetは常駐トレースbodyの有効なアドレスを指す。Pythonのヘッダとネイティブのヘッダは一致する。後続が退避された場合は`chain_target_addr`を0にし、共通chain dispatcherから共通epilogueへ戻す。制御終端はC++ Interpreter handlerが処理し、通常のlookupはC++ dispatcherが続ける（`{GOTCHA-JITR-02}`）。
 
 ## 5. インターフェース定義
 
@@ -307,9 +317,17 @@ flowchart TD
 | 項目 | 内容 |
 | :--- | :--- |
 | 機能概要 | Tier 2実行ループへ、Tier 3のブロック解決、履歴記録、トレース検索、チェイン情報、キャッシュ無効化を提供する。 |
-| 実装 | `RuntimeEngine` の `JITRuntime` Protocol と `JITRuntimeManager` |
+| 実装 | Tier 2 `jit_runtime_contract.py` のProtocolとTier 3 `JITRuntimeManager` |
 | 構成 | `RuntimeEngine(jit_runtime=JITRuntimeManager(...))` による静的依存性注入 |
 | 不変条件 | Tier 2はTier 3のカード表・キュー・キャッシュ実装へ直接アクセスしない。 |
+
+#### RuntimeEngineの実行境界
+| 項目 | 内容 |
+| :--- | :--- |
+| `run(interpreter, call_state)` | C++ dispatcherを取得済み後方分岐数によるyield、fallback、trap、または完了まで進め、継続状態とYield要求を返す。Python側の協調実行ループは持たない。 |
+| `call(interpreter, func_index, args)` | `SYNCHRONOUS`構成用の同期アダプター。同じ`run()`を完了まで反復する。 |
+| `RuntimeDriveMode.COOS` | System/vSoCが選択する構成。未完了状態を同期アダプターへ渡すことを禁止し、COOSへのYield判定と発行をSystemに限定する。 |
+| 不変条件 | COOSと同期呼出しは別の命令実行実装を持たず、同じ`run()`境界を使う。ベンチマーク専用処理はRuntimeEngineに含めない。 |
 
 #### 検索（lookup）
 | 項目 | 内容 |

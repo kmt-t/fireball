@@ -299,18 +299,18 @@ class Channel:
     """
 
     __slots__ = (
-        "scheduler",
-        "request_reply",
-        "sender_stamper",
+        "reply_payload",
+        "reply_sender_task",
         "reply_stamper",
+        "reply_value",
+        "reply_waiter_task",
+        "request_reply",
+        "scheduler",
+        "sender_stamper",
         "transfer_mode",
         "waiter_dir",
         "waiter_group",
         "waiter_task",
-        "reply_sender_task",
-        "reply_waiter_task",
-        "reply_payload",
-        "reply_value",
     )
 
     def __init__(

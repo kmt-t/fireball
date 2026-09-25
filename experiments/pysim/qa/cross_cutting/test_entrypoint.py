@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import contextlib
 import io
-import sys
 from pathlib import Path
 
 _TEST_FILE = Path(__file__).resolve()

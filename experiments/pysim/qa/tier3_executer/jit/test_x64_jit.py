@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
 _TEST_FILE = Path(__file__).resolve()
@@ -9,7 +8,6 @@ _PYSIM_DIR = _TESTS_DIR.parent
 _REPO_ROOT = _PYSIM_DIR.parent.parent
 
 
-import sys
 from pathlib import Path
 
 _PYSIM_DIR = Path(__file__).resolve().parent
@@ -21,9 +19,9 @@ experiments/pysim/qa/tier3_executer/jit/test_x64_jit.py
 Spec-compliant tests for Fireball Trace-based Copy-and-Patch JIT Compiler (x64_jit.py).
 Verifies:
 1. Exact CPS 4-argument calling convention: (void* ctx, void* sp, void* local_base, uint32_t tos)
-2. 52-byte x64 physical JITTraceHeader layout at offset +0x00
+2. 24-byte x64 physical JITTraceHeader layout at offset +0x00
 3. Shared common-area entry/exit routing
-4. Direct trace chaining and hybrid tiering transitions
+4. Common-code trace chaining and hybrid tiering transitions
 (docs/components/tier3_executer/jit_compiler.md and docs/components/tier3_executer/interpreter.md)
 """
 
@@ -34,9 +32,11 @@ from control_flow import extract_basic_blocks
 from execution_context import WASMContext
 from helpers import make_interpreter as Interpreter
 from helpers import wat_to_wasm
-from runtime_engine import RuntimeEngine
 from test_support import compile_module_block, compile_test_block, make_runtime_engine
-from wasm_module import BasicBlock, I32, I64, LocalWidthMap
+from tier3_executer.jit.common_code import COMMON_CHAIN_DISPATCH_OFFSET
+from tier3_executer.jit.jit_cache import JITTrace
+from tier3_executer.jit.x64_jit import TraceCompiler
+from wasm_module import I32, I64, BasicBlock, LocalWidthMap
 from wasm_opcodes import (
     F32_ADD,
     F32_CONST,
@@ -76,7 +76,6 @@ from wasm_opcodes import (
     LOCAL_GET,
     LOCAL_SET,
 )
-from tier3_executer.jit.x64_jit import TraceCompiler
 
 _HELPER_TYPE = ctypes.CFUNCTYPE(
     None,
@@ -91,6 +90,22 @@ _I32_HELPER_TYPE = ctypes.CFUNCTYPE(
     ctypes.c_uint32,
     ctypes.POINTER(ctypes.c_uint32),
 )
+
+
+def _assert_trace_uses_common_chain_dispatcher(trace: JITTrace) -> None:
+    assert trace.code_offset is not None
+    assert trace.chain_dispatch_patch_offset >= 0
+    assert trace._exec_buf is not None
+    jump = trace._exec_buf.read(
+        trace.code_offset + trace.chain_dispatch_patch_offset - 1,
+        5,
+    )
+    assert jump[0] == 0xE9
+    displacement = int.from_bytes(jump[1:], "little", signed=True)
+    assert (
+        trace.code_offset + trace.chain_dispatch_patch_offset + 4 + displacement
+        == COMMON_CHAIN_DISPATCH_OFFSET
+    )
 
 
 def _make_raw_helpers() -> tuple[tuple[int, ...], tuple[ctypes._CFuncPtr, ...]]:
@@ -250,9 +265,7 @@ def test_trace_compiler_cps_4arg_and_pic():
     trace = compile_test_block(compiler, code, block, (I32, I32))
     # 1. Header and common-area offsets
     assert trace.header.head_wasm_pc == head_pc
-    assert trace.size_bytes >= 48
-    assert trace.header.common_prologue_offset == 0
-    assert trace.header.common_epilogue_offset == 32
+    assert trace.size_bytes >= 24
     # 2. Direct call via CPS 4-argument C function pointer fn(ctx, sp, local_base, tos)
     locals_arr = (ctypes.c_uint32 * 8)()
     locals_arr[0] = 5
@@ -409,11 +422,11 @@ def test_trace_header_helper_tail_jump_uses_per_trace_pointer():
 
     raw_blob = trace._exec_buf.read(trace.code_offset, trace.size_bytes)
     helper_addr_bytes = helper_addr.to_bytes(8, "little")
-    assert raw_blob[0x24:0x2C] == helper_addr_bytes
+    assert raw_blob[0x10:0x18] == helper_addr_bytes
 
 
 def test_trace_chaining_between_traces():
-    """TEST-JITC-04: Resident consecutive traces chain directly via chain_next."""
+    """TEST-JITC-04: Resident consecutive traces chain through common code."""
     wat = """
     (module
       (func (export "f") (param i32) (result i32)
@@ -446,13 +459,14 @@ def test_trace_chaining_between_traces():
     engine.jit_runtime.cache.insert(trace_a)
     engine.jit_runtime.bitmap.mark_compiled(block_a.head_pc)
     assert trace_a.chain_next == block_b.head_pc
-    results = engine.run(Interpreter(mod), 0, [10])
+    _assert_trace_uses_common_chain_dispatcher(trace_a)
+    results = engine.call(Interpreter(mod), 0, [10])
     assert results[0] == 30
     assert engine.stat_jit_invocations == 2
 
 
 def test_hybrid_interpreter_to_jit_trace_elevation():
-    """TEST-JITC-05: Hotspot loop starts in Interpreter -> JIT trace compiles on idle -> runs native."""
+    """TEST-JITR-64: Warm-up enters a JIT trace with C++ LOOP dispatch."""
     wat = """
     (module
       (func (export "sum") (param i32) (result i32)
@@ -477,11 +491,16 @@ def test_hybrid_interpreter_to_jit_trace_elevation():
     engine = make_runtime_engine(yield_threshold=3, jit_compiler=TraceCompiler())
     mod = engine.load_wasm(wasm_bytes)
     loop_pc = mod.blocks[0].head_pc
-    results = engine.run(Interpreter(mod), 0, [5])
+    results = engine.call(Interpreter(mod), 0, [5])
     assert results[0] == 15
-    assert engine.stat_jit_invocations >= 2
+    # The C++ dispatcher repeats the JIT body and invokes its C++ branch handler
+    # before returning at the count-based yield boundary.
+    assert engine.stat_jit_invocations > 1
+    assert engine.stat_native_control_handlers > 0
     assert engine.stat_interp_steps >= 3
-    assert engine.jit_runtime.cache.active.has_trace(loop_pc) or engine.jit_runtime.cache.warm.has_trace(loop_pc)
+    assert engine.jit_runtime.cache.active.has_trace(
+        loop_pc
+    ) or engine.jit_runtime.cache.warm.has_trace(loop_pc)
 
 
 def test_jit_chaining_uses_loader_resolved_successors():
@@ -511,7 +530,7 @@ def test_jit_chaining_uses_loader_resolved_successors():
     block_a = mod.blocks[0]
     block_b = mod.blocks[1]
 
-    # 1. Backward chaining: compile B (target) first, then A (source).
+    # Make B resident before compiling A so the native successor chain can be formed.
     trace_b = compile_module_block(engine.jit_runtime.jit_compiler, mod, block_b)
     engine.jit_runtime.cache.insert(trace_b)
     engine.jit_runtime.bitmap.mark_compiled(block_b.head_pc)
@@ -520,11 +539,12 @@ def test_jit_chaining_uses_loader_resolved_successors():
     engine.jit_runtime.cache.insert(trace_a)
     engine.jit_runtime.bitmap.mark_compiled(block_a.head_pc)
 
-    # chain_next successfully bypassed block delimiter and connected to block B's head!
+    # Logical successor metadata resolves past the block delimiter to B's head.
     assert trace_a.chain_next == block_b.head_pc
+    _assert_trace_uses_common_chain_dispatcher(trace_a)
 
-    # Execute from A: chains directly into B, (5 + 10) * 3 = 45
-    results = engine.run(Interpreter(mod), 0, [5])
+    # Execute from A: the common chain dispatcher tail-jumps into B; result is (5 + 10) * 3.
+    results = engine.call(Interpreter(mod), 0, [5])
     assert results[0] == 45
     assert engine.stat_jit_invocations == 2
 
@@ -539,8 +559,7 @@ def test_jit_chaining_uses_loader_resolved_successors():
     engine2.jit_runtime.bitmap.mark_compiled(block_a2.head_pc)
     assert trace_a2.chain_next is None  # B is not resident yet
 
-    # Now insert B: forward chaining must inspect resident trace A, resolve its delimiter,
-    # and patch trace_a2.chain_next = block_b2.head_pc!
+    # Inserting B resolves A's logical successor metadata and patches its native chain target.
     trace_b2 = compile_module_block(engine2.jit_runtime.jit_compiler, mod2, block_b2)
     engine2.jit_runtime.cache.insert(trace_b2)
     engine2.jit_runtime.bitmap.mark_compiled(block_b2.head_pc)

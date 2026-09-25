@@ -9,6 +9,7 @@ Executes all unit tests in strict architectural tier order:
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 import time
@@ -95,7 +96,7 @@ TEST_SUITES = [
     # --- Tier 3: Platform ---
     (
         "Tier 3 Platform",
-        "Physical Memory & MPU W^X",
+        "Physical Memory Software Contract",
         TEST_DIR / "tier3_platform" / "test_memory.py",
     ),
     ("Tier 3 Platform", "HAL Drivers & ShmPool", TEST_DIR / "tier3_platform" / "test_hal.py"),
@@ -152,6 +153,12 @@ def run_all_tests():
     passed = 0
     failed = 0
     current_tier = None
+    test_env = os.environ.copy()
+    python_paths = [str(REPO_ROOT), str(PYSIM_ROOT)]
+    existing_python_path = test_env.get("PYTHONPATH")
+    if existing_python_path:
+        python_paths.append(existing_python_path)
+    test_env["PYTHONPATH"] = os.pathsep.join(python_paths)
 
     for tier, name, script_path in TEST_SUITES:
         if tier != current_tier:
@@ -165,6 +172,7 @@ def run_all_tests():
             capture_output=True,
             text=True,
             cwd=str(REPO_ROOT),
+            env=test_env,
         )
         t1 = time.perf_counter()
         elapsed_ms = (t1 - t0) * 1000

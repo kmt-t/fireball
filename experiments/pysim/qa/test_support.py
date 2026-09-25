@@ -17,17 +17,17 @@ from config import (
 )
 from control_flow import iter_block_ops
 from jit_scoring import JIT_CANDIDATE_THRESHOLD
-from runtime_engine import RuntimeEngine, _RescheduleObserver
 from system_containers import (
     ReadOnlyRadixBinaryTreeStorage,
     StaticVector,
     build_radix_table,
     fold_mix32,
 )
-from wasm_module import BasicBlock, Function, FuncType, LocalWidthMap, Module, WasmOperand
 from tier3_executer.jit.jit_cache import JITTrace
 from tier3_executer.jit.jit_manager import JITCompiler, JITRuntimeManager
+from tier3_executer.jit.runtime_engine import RuntimeDriveMode, RuntimeEngine
 from tier3_executer.jit.x64_jit import TraceCompiler
+from wasm_module import BasicBlock, Function, FuncType, LocalWidthMap, Module, WasmOperand
 
 
 def make_runtime_engine(
@@ -41,9 +41,10 @@ def make_runtime_engine(
     compile_queue_capacity: int = 4,
     aging_step_units: int = FB_CONF_JIT_AGING_STEP_UNITS,
     aging_scan_bytes: int = FB_CONF_JIT_AGING_STEP_SCAN_BYTES,
-    reschedule_observer: _RescheduleObserver | None = None,
+    drive_mode: RuntimeDriveMode = RuntimeDriveMode.SYNCHRONOUS,
+    collect_runtime_stats: bool = True,
 ) -> RuntimeEngine:
-    """Compose a Tier 2 engine with the Tier 3 JIT manager for tests."""
+    """Compose a Tier 3 runtime engine with the Tier 3 JIT manager for tests."""
 
     if (
         jit_compiler is None
@@ -55,9 +56,9 @@ def make_runtime_engine(
         and compile_queue_capacity == 4
         and aging_step_units == FB_CONF_JIT_AGING_STEP_UNITS
         and aging_scan_bytes == FB_CONF_JIT_AGING_STEP_SCAN_BYTES
-        and reschedule_observer is None
+        and drive_mode == RuntimeDriveMode.SYNCHRONOUS
     ):
-        return RuntimeEngine(debug=debug)
+        return RuntimeEngine(debug=debug, collect_runtime_stats=collect_runtime_stats)
     manager = JITRuntimeManager(
         jit_compiler=jit_compiler,
         yield_threshold=yield_threshold,
@@ -72,7 +73,8 @@ def make_runtime_engine(
     return RuntimeEngine(
         jit_runtime=manager,
         debug=debug,
-        reschedule_observer=reschedule_observer,
+        drive_mode=drive_mode,
+        collect_runtime_stats=collect_runtime_stats,
     )
 
 
@@ -95,6 +97,8 @@ class PcOnlyCompiler:
         loops_to: int | None,
         byte_span: int,
         local_types: Sequence[int],
+        *,
+        loop_backedge_kind: int = 0,
     ) -> JITTrace | None:
         return self._fn(pc)
 

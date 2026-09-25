@@ -288,7 +288,7 @@ def breakpoint_set(sorted_pcs: Sequence[int]) -> FlatSetView[int]:
 
 def test_two_bit_card_marking_packs_four_cards_per_byte() -> None:
     """A 2-bit card state table must cost 2 bits per card, not 8. This is the
-    whole reason bit_view exists: at RAM 32KB a byte-per-card table is waste."""
+    whole reason bit_view exists: dense bit tables reduce storage for bounded state arrays."""
     store = bytearray(4)  # 4 bytes -> 16 cards at 2 bits each
     cards = card_marking_table(store, card_count=16)
     assert cards.size() == 16

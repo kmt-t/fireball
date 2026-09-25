@@ -1,14 +1,13 @@
 # JIT コンパイラ コンポーネント設計書 {VERIFY_FORMAL} {VERIFY_LLM} {VERIFY_BENCHMARK}
 <!-- evidence:
      formal: formal/jit_cache_model.py
-     benchmark: benchmarks/zero_runtime_overhead_bench.py
-     concept: concepts/jit_copy_patch_concept.py
+     benchmark: experiments/pysim/benchmarks/jit/bench_jit.py
      test: docs/qa/tier3_executer/jit_compiler_test_spec.md
 -->
 
 ## 1. コンセプト
 <!-- traceability: {LowLatencyJIT} {JIT_CopyAndPatch} {JIT_ZeroCompileCostTheorem} {SimpleJITArchitecture} {JIT_Encoder} {PositionIndependentCode} {SinglePassCompilation} -->
-JIT Compiler は、WASMバイトコードを実行時にネイティブコードへ変換し、実行速度を向上させる。Execution Engine (`executor`) の一部として機能する。極小リソース環境（RAM 32KB〜64KB）を対象とする。「Zero Compile Cost」方針に基づき、最適化を省いた高速な **Copy-and-Patch** 方式を採用する。実行時のx64トレース本体生成は `native_trace_call.cxx` のC++実装が担当し、命令バイト列、レジスタ配置、スタック退避、ランタイムヘルパー境界を単一パスで確定する。Python側は命令列とABIメタデータを渡し、生成済みバイト列を `JITTrace` とキャッシュへ登録するラッパーに限定する。
+JIT Compiler は、WASMバイトコードを実行時にネイティブコードへ変換し、実行速度を向上させる。Execution Engine (`executor`) の一部として機能する。「Zero Compile Cost」方針に基づき、最適化を省いた **Copy-and-Patch** 方式を採用する。確認済みのx64トレース本体生成は `native_trace_call.cxx` のC++実装が担当し、命令バイト列、レジスタ配置、スタック退避、ランタイムヘルパー境界を単一パスで確定する。Python側は命令列とABIメタデータを渡し、生成済みバイト列を `JITTrace` とキャッシュへ登録するラッパーに限定する。ARMv8-Mの物理実装と資源予算はTBDである。
 
 ## 2. アーキテクチャ分類
 <!-- traceability: {META_3TierSeparation} {JIT_CopyAndPatch} -->
@@ -26,10 +25,10 @@ JITサブシステムは、以下の2つの独立した設計書に責務を分�
 ### 3.1 データ構造
 - **`native_trace_call.cxx`**: C++で実装したx64トレースコンパイラである。Pythonの命令イテレータを一度だけ消費し、固定長バッファへネイティブ命令を生成する。未対応命令、型混在、ABI不整合はコンパイル結果を返さず、インタープリタ境界へ委譲する。
 - **`CopyAndPatchEngine`**: C++コンパイラが生成したネイティブ命令列をキャッシュへ配置し、即値・分岐先・APIポインタをパッチ適用する責務を表す論理コンポーネントである。
-- **共通コード領域**: 8KB JIT領域の先頭2KBを対象ABIの開始処理、終了処理、ヘルパー契約別入口、および絶対アドレスプールへ固定配置する。ヘルパー呼出しコードは契約ごとに一つずつ配置し、単一の汎用共通入口へ集約しない。x64の共通領域オフセットは開始処理`0x000`、終了処理`0x020`、コンテキスト型入口`0x030`、絶対アドレスプール`0x050`、i32整数ヘルパー入口群`0x160`（32バイト×4）、wideヘルパー入口群`0x200`（32バイト×11）である。絶対アドレスプールは256バイトである。トレース本体の3面ローテーションではこの領域を破棄しない。 `{JIT_MultiBuffer_Cache}`
-- **`constexpr_assembler`**: C++の `constexpr` 機能を活用し、ビルド時に Thumb-2 / RISC-V 命令バイナリを型安全に静的生成する DSL。
-- **命令テンプレート (`jit_template`)**: パッチスロットを含むネイティブ命令列の雛形（[jit_stencil_catalog.md](docs/specs/jit_stencil_catalog.md) 準拠）。
-- **JIT トレースヘッダ (`jit_trace_header`)**: キャッシュに書き込まれる各ネイティブトレースの先頭に配置されるルーティングメタデータ構造体。サイズ、WASM PC、論理的な後続PC、共通領域の参照、および必要なヘルパーアドレスを保持する。物理サイズと欄のオフセットは対象アーキテクチャごとに定義し、共通設計書で一つに固定しない。
+- **共通コード領域**: x64 JIT領域では開始処理、終了処理、helper契約別入口、chain dispatcherを共通領域へ配置する。命令別条件評価やhandler呼出しを単一dispatcherへ集約しない。x64の領域サイズと各offsetは [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) および [`jit_runtime.md`](docs/components/tier3_executer/jit_runtime.md) を正本とする。ARMv8-Mのサイズと配置はTBDである。 `{JIT_MultiBuffer_Cache}`
+- **`constexpr_assembler`**: C++の `constexpr` 機能を活用し、opcodeを判定しない共通chain dispatcherの固定命令列をビルド時に生成する。命令別handlerはC++ interpreter内で直接選択し、この共通dispatcherへ集約しない。実行時にPythonでchain機械語を組み立てない。
+- **命令テンプレート (`jit_template`)**: パッチスロットを含むネイティブ命令列の雛形（x64では `native_trace_call.cxx` のC++実装が生成する。ARMv8-Mの物理仕様はTBD）。
+- **JIT トレースヘッダ (`jit_trace_header`)**: キャッシュに書き込まれる各ネイティブトレースの先頭に配置される実行時メタデータ構造体。x64では24バイトで、trace identity、chain target、必要なhelper targetを保持する。共通コードoffsetと論理的な後続PCは重複格納しない。物理欄は対象ABIごとに定義する。
 
 ### 3.2 内部ブロック図
 ```mermaid
@@ -57,97 +56,19 @@ flowchart TD
 <!-- traceability: {Libgcc_Runtime_Helper} {LowLatencyJIT} {PositionIndependentCode} {SimpleJITArchitecture} -->
 - **関数/モジュール一括コンパイルの完全禁止**: 極小リソース環境におけるコンパイル遅延とメモリ消費をゼロ化する。関数全体やモジュール全体の事前一括コンパイルは一切行わない。
 - **純粋ベーシックブロック/トレース単位コンパイル**: カードマーキング表で HOT（`10`）に達した直線命令列（基本ブロック / トレース）のみを対象とする。スケジューラのアイドル時等に Copy-and-Patch により 1 トレースずつオンデマンド生成する。
-- **制御フロー・スタック操作・演算の最適インライン展開方針 (`{JIT_RuntimeAPI_Fallback}`)**:
-  - **JIT ネイティブ実行（インライン展開）対象（54命令）**:
-    高頻度な直線演算（定数、変数、算術、論理、比較、メモリアクセス）をインライン展開する。**構文デリミタ（0バイト消去・ヘッダ直結）**、および**スタック巻き戻しを伴う多段分岐（`br`, `br_if`）** も JIT ネイティブ命令としてインライン展開する。
-  - **インタープリタ委譲・ランタイムヘルパー対象（真のJIT境界命令）**:
-    1. 関数間コール・フレーム生成: `call`, `call_indirect` (別フレームアロケーション、シグネチャ照合、WASI/ホスト呼出)
-    2. 動的間接ジャンプテーブル: `br_table` (可変長ターゲット探索)
-    3. システム・OS連携: `memory.grow`, `memory.copy`, `memory.fill`
-    4. ハードウェア非対応演算 (`Libgcc_Runtime_Helper`): FPU非搭載時の浮動小数点演算や 64ビット整数除算・剰余は、専用ランタイムヘルパー（`fireball_rt_*`）呼び出しへ委譲する。
-    これら制御境界・システムコール・ハードウェア非対応演算のみをインタープリタの命令ハンドラまたはランタイムヘルパーへ委譲する。
-- **ハンドラ互換ディスパッチ**: JIT トレースエントリポイントはインタープリタ命令ハンドラと同一のシグネチャを持つ。ディスパッチテーブルから直接呼び出せる。
+- **制御フローとインタープリタ委譲 (`{JIT_RuntimeAPI_Fallback}`)**: 現行x64ランタイムでは、制御終端命令をトレース本体で実行しない。`BR`、`BR_IF`、`BR_TABLE`、`BLOCK`、`LOOP`、`IF`、`ELSE`、`END`、コール、returnは、終端PCから対応するC++ Interpreter handlerへ渡す。handlerが条件、フレーム、遷移先を確定し、C++ dispatcherは設定された後方分岐数まで次の常駐トレースまたはC++ handlerを実行する。通常実行は共通機械語LOOPヘルパーへ移らず、Interpreter handlerを飛ばす直接後方分岐を作らない。
+- **ハンドラABI**: JITトレース入口はInterpreter handlerと4論理引数の配置を共有するが、戻り値契約は異なる。Interpreter handlerは`handler_result`、JIT trace entryは`void`を返すため、関数ポインタ型を共有しない。
 
-##### 3.3.1 制御フローおよびスタック巻き戻しの命令別処理モデル
+##### 3.3.1 現行x64の制御終端処理とchain dispatcher
 <!-- traceability: {JIT_CopyAndPatch} {JIT_LazyChaining} {PositionIndependentCode} -->
-WASM バイトコードにおける制御フロー命令は、その内部動作（スタック操作、フレーム遷移、ジャンプ先解決）の観点から以下の 3 つのモデルに厳密に仕分けられ、JIT ネイティブ展開される。
 
-1. **構文デリミタ・ヘッダ埋め込みモデル（0バイト消去 & トレースヘッダ直結）**:
-   - **対象命令**: `block` (`0x02`), `loop` (`0x03`), `else` (`0x05`), `end` (`0x0B`)
-   - **構文デリミタ**: 制御命令はネイティブコードとしては 0 バイト（完全消去）とする。後続のフォールスルー先 PC はトレースヘッダ `chain_next_pc`（+0x08）に直接埋め込む。実行時の制御構文オーバーヘッドを完全ゼロ化する。
-2. **スタック巻き戻し即値更新 & 直接ジャンプモデル（Inlined SP Adjustment & Relative Branch）**:
-   - **対象命令**: `br` (`0x0C`), `br_if` (`0x0D`), `return` (`0x0F`)
-   - **スタック巻き戻しの本質**: WASM は検証済み静的型付きバイトコードである。任意の `br depth` / `br_if depth` における巻き戻し量 $\Delta$（スタック差分）は、**JIT コンパイル時に即値定数として完全確定** する。
-   - **ネイティブ展開コード**: スタック巻き戻しは単なるスタックポインタ（SP）の即値加算であり、インタープリタ委譲は不要である。
-     - `br`: `add sp, #(Δ * 4); b.w <rel_target>` の 2 命令で完結。
-     - `br_if`: `cmp r3, #0; it ne; addne sp, #(Δ * 4); bne.w <rel_target>` の 4 命令（多段脱出 `depth > 0` を含む）で完結。
-     - `return`: トレース末尾エピローグ（`pop.w {r4-r6, r8-r11, pc}`）を直接インライン展開。
-3. **境界トラップモデル（Trap Tail Emission）**:
-   - **対象命令**: `unreachable` (`0x00`)
-   - **処理モデル**: `bkpt #0x00` を直接展開し、ハードウェアフォールトまたはデバッガトラップへ直結させる。
+現行x64実行系では、制御終端をトレース本体から除外し、終端PCからC++ Interpreter handlerを実行する。`BR`、`BR_IF`、`BR_TABLE`、`BLOCK`、`LOOP`、`IF`、`ELSE`、`END`、call、returnの条件値、スタック巻き戻し、制御フレーム更新、遷移先決定はhandlerが所有する。取得された後方分岐数もbranch handlerがコンテキストへ記録する。C++ dispatcherは同一関数内の次PCでトレース表を検索し、しきい値到達までC++側で続行する。C++ Interpreter単独実行も同じdispatcherと `FB_CONF_RUNTIME_YIELD_THRESHOLD` を使う。
 
-##### 3.3.2 JIT コンパイル対象命令セット仕様台帳（JIT Supported Opcode Specification）
-<!-- traceability: {JIT_CopyAndPatch} {JIT_ZeroCompileCostTheorem} {JIT_RegisterMapping} {PositionIndependentCode} {GOTCHA-JITC-04} {GOTCHA-JITC-06} -->
-JIT ネイティブ実行対象命令（計 54 命令）の内訳は以下の通りである。スタック 5、デリミタ 4、定数 2、変数 6、32bit算術・論理 17、32bit比較 11、メモリ 9 の計54命令である。
+trace chainは、互換な直線後続traceが常駐する場合に共通コード領域のchain dispatcherがTraceヘッダからtarget bodyを読み、そこへtail-jumpする経路である。C++ handler実行後にC++ dispatcherが次traceを検索・起動する遷移はchainではない。chain dispatcherはopcodeごとのhandlerを共通化せず、分岐条件や制御frameを判定しない。
 
-全54命令の展開形式は概念コード [`jit_copy_patch_concept.py`](docs/components/tier3_executer/concepts/jit_copy_patch_concept.py) のテストで検証する。形式モデル `jit_cache_model.py` はキャッシュの W^X やチェイニング不変条件を検証する。
+##### 3.3.2 ARMv8-Mの物理仕様（TBD）
 
-| カテゴリ | WASM Opcode (Hex) | 命令名 | JIT ネイティブ展開形式 (Thumb-2) | スタック/レジスタ効果 | 生成バイト数 |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| **制御・スタック** | `0x00` | `unreachable` | `bkpt #0x00` | トラップ | 2 Bytes |
-| | `0x01` | `nop` | (0 Byte 消去) | なし | 0 Bytes |
-| | `0x0C` | `br` | `add sp, #imm; b.w <target>` | SP巻き戻し + 相対分岐 | 6〜8 Bytes |
-| | `0x0D` | `br_if` | `cmp r3, #0; it ne; addne sp, #imm; bne.w <target>` | 条件判定 + SP巻き戻し + 相対分岐 | 8〜10 Bytes |
-| | `0x0F` | `return` | `pop.w {r4-r6, r8-r11, pc}` | エピローグ展開・復帰 | 4 Bytes |
-| **構文デリミタ** | `0x02` | `block` | (0 Byte 消去・ヘッダ `chain_next_pc` 解決) | なし | 0 Bytes |
-| | `0x03` | `loop` | (0 Byte 消去・ヘッダ `chain_next_pc` 解決) | なし | 0 Bytes |
-| | `0x05` | `else` | (0 Byte 消去・ヘッダ `chain_next_pc` 解決) | なし | 0 Bytes |
-| | `0x0B` | `end` | (0 Byte 消去・ヘッダ `chain_next_pc` 解決) | なし | 0 Bytes |
-| **定数ロード** | `0x41` | `i32.const` | `movw r3, #imm16; movt r3, #imm16` | $\to$ R3 (TOS) | 8 Bytes |
-| | `0x42` | `i64.const` | `movw/movt r3, #imm; movw/movt r4, #imm` | $\to$ R3:R4 (LO:HI) | 16 Bytes |
-| **変数アクセス** | `0x20` | `local.get` | `ldr r3, [r2, #offset]` | $\to$ R3 (TOS) | 2 Bytes |
-| | `0x21` | `local.set` | `str r3, [r2, #offset]` | R3 $\to$ Local | 2 Bytes |
-| | `0x22` | `local.tee` | `str r3, [r2, #offset]` | R3 $\to$ Local (R3維持) | 2 Bytes |
-| | `0x23` | `global.get`| `ldr.w r12, [r0, #0x30]; ldr.w r3, [r12, #offset]` | $\to$ R3 (TOS) | 8 Bytes |
-| | `0x24` | `global.set`| `ldr.w r12, [r0, #0x30]; str.w r3, [r12, #offset]` | R3 $\to$ Global | 8 Bytes |
-| | `0x1B` | `select` | `cmp r3, #0; it ne; movne r4, r5; mov r3, r4` | 3値選択 $\to$ R3 | 8 Bytes |
-| **32bit 算術・論理** | `0x6A` | `i32.add` | `adds r3, r4, r3` | R4 + R3 $\to$ R3 | 2 Bytes |
-| | `0x6B` | `i32.sub` | `subs r3, r4, r3` | R4 - R3 $\to$ R3 | 2 Bytes |
-| | `0x6C` | `i32.mul` | `mul r3, r4, r3` | R4 * R3 $\to$ R3 | 4 Bytes |
-| | `0x6D` | `i32.div_s`| `cbz r3, <trap>; cmp r4, #0x80000000; it eq; cmpeq r3, #-1; beq <trap>; sdiv r3, r4, r3` | 符号付除算 | 14 Bytes |
-| | `0x6E` | `i32.div_u`| `cbz r3, <trap>; udiv r3, r4, r3` | 符号無除算 | 6 Bytes |
-| | `0x6F` | `i32.rem_s`| `cbz r3, <trap>; sdiv r12, r4, r3; mls r3, r12, r3, r4` | 符号付剰余 (`GOTCHA-JITC-06`) | 10 Bytes |
-| | `0x70` | `i32.rem_u`| `cbz r3, <trap>; udiv r12, r4, r3; mls r3, r12, r3, r4` | 符号無剰余 (`GOTCHA-JITC-06`) | 10 Bytes |
-| | `0x71` | `i32.and` | `ands r3, r4, r3` | R4 & R3 $\to$ R3 | 2 Bytes |
-| | `0x72` | `i32.or` | `orrs r3, r4, r3` | R4 \| R3 $\to$ R3 | 2 Bytes |
-| | `0x73` | `i32.xor` | `eors r3, r4, r3` | R4 ^ R3 $\to$ R3 | 2 Bytes |
-| | `0x74` | `i32.shl` | `lsl.w r3, r4, r3` | R4 << R3 $\to$ R3 | 4 Bytes |
-| | `0x75` | `i32.shr_s`| `asr.w r3, r4, r3` | R4 >> R3 (算術) $\to$ R3 | 4 Bytes |
-| | `0x76` | `i32.shr_u`| `lsr.w r3, r4, r3` | R4 >> R3 (論理) $\to$ R3 | 4 Bytes |
-| | `0x77` | `i32.rotl` | `rsb r12, r3, #32; ror.w r3, r4, r12` | 左循環シフト $\to$ R3 | 8 Bytes |
-| | `0x78` | `i32.rotr` | `ror.w r3, r4, r3` | 右循環シフト $\to$ R3 | 4 Bytes |
-| | `0x67` | `i32.clz` | `clz r3, r3` | 先頭ゼロカウント | 4 Bytes |
-| | `0x68` | `i32.ctz` | `rbit r3, r3; clz r3, r3` | 末尾ゼロカウント | 8 Bytes |
-| **32bit 比較演算** | `0x45` | `i32.eqz` | `cmp r3, #0; it eq; moveq r3, #1; it ne; movne r3, #0` | R3 == 0 | 10 Bytes |
-| | `0x46` | `i32.eq` | `cmp r4, r3; it eq; moveq r3, #1; it ne; movne r3, #0` | R4 == R3 | 10 Bytes |
-| | `0x47` | `i32.ne` | `cmp r4, r3; it ne; movne r3, #1; it eq; moveq r3, #0` | R4 != R3 | 10 Bytes |
-| | `0x48` | `i32.lt_s` | `cmp r4, r3; it lt; movlt r3, #1; it ge; movge r3, #0` | R4 < R3 (符号付) | 10 Bytes |
-| | `0x49` | `i32.lt_u` | `cmp r4, r3; it lo; movlo r3, #1; it hs; movhs r3, #0` | R4 < R3 (符号無) | 10 Bytes |
-| | `0x4A` | `i32.gt_s` | `cmp r4, r3; it gt; movgt r3, #1; it le; movle r3, #0` | R4 > R3 (符号付) | 10 Bytes |
-| | `0x4B` | `i32.gt_u` | `cmp r4, r3; it hi; movhi r3, #1; it ls; movls r3, #0` | R4 > R3 (符号無) | 10 Bytes |
-| | `0x4C` | `i32.le_s` | `cmp r4, r3; it le; movle r3, #1; it gt; movgt r3, #0` | R4 <= R3 (符号付) | 10 Bytes |
-| | `0x4D` | `i32.le_u` | `cmp r4, r3; it ls; movls r3, #1; it hi; movhi r3, #0` | R4 <= R3 (符号無) | 10 Bytes |
-| | `0x4E` | `i32.ge_s` | `cmp r4, r3; it ge; movge r3, #1; it lt; movlt r3, #0` | R4 >= R3 (符号付) | 10 Bytes |
-| | `0x4F` | `i32.ge_u` | `cmp r4, r3; it hs; movhs r3, #1; it lo; movlo r3, #0` | R4 >= R3 (符号無) | 10 Bytes |
-| **リニアメモリアクセス** | `0x28` | `i32.load` | `cmp r3, r9; bhs.w <trap>; add.w r12, r3, #3; cmp r12, r9; bhs.w <trap>; ldr.w r3, [r8, r3]` | 32bit ロード (`GOTCHA-JITC-04`) | 18 Bytes |
-| | `0x2C` | `i32.load8_s` | `cmp r3, r9; bhs.w <trap>; ldrsb.w r3, [r8, r3]`| 8bit 符号付ロード | 10 Bytes |
-| | `0x2D` | `i32.load8_u` | `cmp r3, r9; bhs.w <trap>; ldrb.w r3, [r8, r3]` | 8bit 符号無ロード | 10 Bytes |
-| | `0x2E` | `i32.load16_s`| `cmp r3, r9; bhs.w <trap>; add.w r12, r3, #1; cmp r12, r9; bhs.w <trap>; ldrsh.w r3, [r8, r3]`| 16bit 符号付ロード | 18 Bytes |
-| | `0x2F` | `i32.load16_u`| `cmp r3, r9; bhs.w <trap>; add.w r12, r3, #1; cmp r12, r9; bhs.w <trap>; ldrh.w r3, [r8, r3]` | 16bit 符号無ロード | 18 Bytes |
-| | `0x36` | `i32.store` | `cmp r4, r9; bhs.w <trap>; add.w r12, r4, #3; cmp r12, r9; bhs.w <trap>; str.w r3, [r8, r4]` | 32bit ストア (`GOTCHA-JITC-04`) | 18 Bytes |
-| | `0x3A` | `i32.store8` | `cmp r4, r9; bhs.w <trap>; strb.w r3, [r8, r4]` | 8bit ストア | 10 Bytes |
-| | `0x3B` | `i32.store16`| `cmp r4, r9; bhs.w <trap>; strh.w r3, [r8, r4]` | 16bit ストア | 10 Bytes |
-| | `0x3F` | `memory.size`| `ldr.w r3, [r0, #0x2C]; lsrs r3, r3, #16` | リニアメモリのページ数取得（バイト数を64KiB単位へ変換） | 8 Bytes |
+ARMv8-M向け命令Stencil、ABI、Trace header、共通コード領域とchain dispatcher、メモリ保護方式はすべてTBDとする。未確定項目は [`jit_stencil_catalog.md`](docs/specs/jit_stencil_catalog.md) に集約する。
 
 ##### 3.3.3 インタープリタ委譲命令台帳（Delegated Opcode Specification）
 <!-- traceability: {JIT_RuntimeAPI_Fallback} {Libgcc_Runtime_Helper} -->
@@ -158,7 +79,7 @@ JIT トレース内にインライン展開せず、トレース境界でイン�
 | **関数呼出・フレーム** | `0x10` | `call` | 関数呼出し記述子の生成、スタック境界検査、引数受け渡しを伴うためインタープリタへ委譲 |
 | | `0x11` | `call_indirect` | テーブル索引、型シグネチャ一致検査、動的ターゲット解決を伴うためインタープリタへ委譲 |
 | **動的分岐** | `0x0E` | `br_table` | 可変長ジャンプターゲットテーブル（ベクトル）の動的インデックス検索を伴うため委譲 |
-| **OS・メモリ管理** | `0x40` | `memory.grow` | ページテーブル再割り当て、MPU 領域再設定、vMMIO 更新を行うシステムサービス呼出のため委譲 |
+| **OS・メモリ管理** | `0x40` | `memory.grow` | 線形メモリ容量変更と実行環境更新を伴うシステムサービス呼出のため委譲 |
 | | `0xFC 0x0A` | `memory.copy` | バッファ重なり検査、メモリコピーランタイム呼び出しのため委譲 |
 | | `0xFC 0x0B` | `memory.fill` | メモリフィルランタイム呼び出しのため委譲 |
 | **Cヘルパー演算** | `0x7C`〜`0x7E` | `i64.add` / `i64.sub` / `i64.mul` | 各命令固有の64ビット整数引数契約へ委譲 |
@@ -167,64 +88,27 @@ JIT トレース内にインライン展開せず、トレース境界でイン�
 | | `0x6D`〜`0x70` | `i32.div_s` / `i32.div_u` / `i32.rem_s` / `i32.rem_u` | 2個の32ビット整数引数と結果領域ポインタを持つ関数契約へ委譲 |
 | **インタープリタ境界** | - | `i64.div_*`, `rem_*` | ゼロ除算・最小値オーバーフローのトラップ結果を返すABIを定義するまでインタープリタへ委譲 |
 
-**ABI 規約と境界チェック・バックパッチング (`GOTCHA-JITC-01`〜`05`)**:
+**ABI 規約と境界チェック・バックパッチング (`GOTCHA-JITC-01`, `03`〜`05`)**:
 - **スタック状態の同期**: JITトレース内では対象ABIが定める値保持方法を正本として演算する。基本ブロック終端、インタープリタ境界、トラップ時には共有オペランド領域と実行コンテキストを対象ABIの順序で同期する。キャッシュ値の破棄やダミー退避は禁止する。 `{ADR_TosCacheAsymmetry}` `{ExecutionContext_Layout}`
-- **レジスタ規約 (`GOTCHA-JITC-01`, `02`, `03`)**: JITトレースとインタープリタが共有するのは4つの論理引数であり、物理レジスタ規約は対象ABIごとに異なる。ARMv8-MはAAPCS、x64は [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) に従う。基本ブロック終端の状態同期と保護レジスタの保存・復元も対象ABIの規則を適用する。
+- **呼出し境界 (`GOTCHA-JITC-01`, `03`)**: JITトレースとインタープリタが共有するのは4つの論理引数である。確認済みx64の物理配置は [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) に従う。ARMv8-Mの物理ABI、レジスタ割当、保存・復元、境界同期はTBDとする。
 - **ヘルパー選択**: Cヘルパー演算は命令ごとに専用の関数契約を持つ。コンパイラは命令に対応する識別番号と関数アドレスをヘッダへ格納し、入力型・入力個数・結果の返却方法は対象関数ごとに適用する。共通ディスパッチャが演算種別を再判定する方式は採用しない。入力を一律に共有オペランド領域の32ビット列へ変換する規則も設けない。
-- **境界チェックとバックパッチング (`GOTCHA-JITC-04`, `05`)**: トレース内ジャンプおよびインタープリタ脱出境界において、PC 境界検証を必ず行う。前方参照へのジャンプオフセットはコード生成完了時にバックパッチングで不可分に書き込む。不正ジャンプを完全に防止する。
-- **ARM MLS 命令のオペランド配置制約 (`GOTCHA-JITC-06`)**: ARM Thumb-2 の積和減算命令 `MLS Rd, Rn, Rm, Ra`（$Rd = Ra - Rn \times Rm$）では、引かれる数が第4オペランド $Ra$ に配置されるハードウェア仕様を遵守する。通常の乗算命令との取り違えを防止する。
+- **境界チェックとバックパッチング (`GOTCHA-JITC-04`, `05`)**: トレース内ジャンプおよびインタープリタ脱出境界において、PC 境界検証を必ず行う。x64前方参照への相対オフセットはコード生成完了時にバックパッチングで書き込む。ARMv8-Mの命令列と適用方法はTBDとする。
 
 #### コピーアンドパッチエンジン（CopyAndPatchEngine）クラス
 <!-- traceability: {JIT_RegisterMapping} {ContextPointerRegister} {EnvironmentPointer} {ADR_TosCacheAsymmetry} {PositionIndependentCode} -->
-Interpreter opcode handlerと同じ4論理引数の引数レジスタ配置を使うが、戻り値契約は異なる。Interpreter handlerは`handler_result`を返し、JIT trace entryは`void`で終了・chainするため、関数ポインタ型を共用しない。
+Interpreter opcode handlerとJIT trace entryは4つの論理引数を共有するが、戻り値契約は異なる。Interpreter handlerは`handler_result`を返し、JIT trace entryは`void`で終了・chainするため、関数ポインタ型を共用しない。x64の物理配置は [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) を正本とし、ARMv8-Mの物理ABIはTBDとする。
 
-```c
-// Interpreter handlerとJIT trace entryは引数レジスタ配置のみ共有する。
-// コメントは「実機 ARM AAPCS レジスタ / 実機 RISC-V ABI レジスタ / x86-64 ホストシミュレータ __fastcall レジスタ」の対応を示す。
-// この4本は呼び出し境界でのみ使われ、jit_stencil_catalog.md のトレース本体内 assignable pool
-// (ARM R4-R6, R8-R11 / RISC-V s1-s7) とは物理レジスタが重ならない別の割り当てである。
-typedef handler_result (*interpreter_opcode_handler_t)(
-    execution_context* ctx,        // ARM R0 / RISC-V a0 / x86-64 RCX: 実行コンテキスト (x86-64では112バイト)
-    uint32_t*          sp,         // ARM R1 / RISC-V a1 / x86-64 RDX: オペランドスタックポインタ
-    void*              local_base, // ARM R2 / RISC-V a2 / x86-64 R8:  ローカル変数配列基底ポインタ
-    uint32_t           tos         // ARM R3 / RISC-V a3 / x86-64 R9:  スタックトップ値 (Top of Stack)
-);
-typedef void (*jit_trace_entry_t)(
-    execution_context* ctx,
-    uint32_t*          sp,
-    void*              local_base,
-    uint32_t           tos
-);
-```
+論理引数は `ctx`, `sp`, `local_base`, `tos` の順である。物理引数レジスタ、スタック配置、呼出し保存規則を定義する擬似コードは置かず、対象ABIの正本を参照する。
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
 | テンプレート辞書 | WASM命令に対応するJITテンプレートの検索索引 | アクセス辞書 | `jit_template_map` |
-| 命令テンプレート | WASM命令に対応するネイティブバイナリの雛形 | バイナリビュー | ROM参照（[jit_stencil_catalog.md](docs/specs/jit_stencil_catalog.md) 準拠。Thumb-2 のみを収録し、RISC-V の物理ステンシルは別カタログとして今後定義する） |
-| 位置独立性 (PIC) | 任意アドレス・キャッシュバンクで再コンパイル不要で動作 | 設計制約 | 命令列へのプロセス絶対アドレス埋め込み禁止。トレースヘッダの `helper_target_addr` と共通領域オフセット、`local_base` 相対、`R1(sp)` 相対、`rel32` 相対分岐を使用 |
+| 命令テンプレート | WASM命令に対応するネイティブバイナリの雛形 | バイナリビュー | x64はC++ constexpr生成コード。ARMv8-MはTBD |
+| 位置独立性 (PIC) | 任意アドレス・キャッシュバンクで再コンパイル不要で動作 | 設計制約 | x64ではプロセス絶対アドレスを命令列へ埋め込まず、トレースヘッダ、共通領域オフセット、基底相対アドレス、`rel32` 分岐を用いる。ARMv8-Mの方式はTBD |
 
-##### 物理レジスタマッピング一覧表
-<!-- traceability: {JIT_RegisterMapping} {AAPCS_FastCall} -->
-JIT トレースとインタープリタは境界において4つの論理引数を共有する。次表はARMv8-MとRISC-Vの物理レジスタ契約であり、x64の物理配置は [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) で定義する。トレース内部の値キャッシュとスクラッチレジスタは対象ABIごとに定める。
-
-| アーキテクチャ | 物理レジスタ | 規約上の役割 / 論理引数 | トレース内部での用途 | 退避・保護責務 |
-| :--- | :--- | :--- | :--- | :--- |
-| **ARM (Thumb-2)** | `R0` | `ctx` (実行コンテキスト) | 呼び出し境界引数（`mem_base/size` ピン留め・基本ブロック末尾同期起点） | Caller-saved |
-| | `R1` | `sp`（オペランド領域の位置） | 呼び出し境界引数（オペランド領域の頂点位置） | Caller-saved |
-| | `R2` | `local_base` (ローカル配列基底) | 呼び出し境界引数 | Caller-saved |
-| | `R3` | `tos` (Top of Stack) | 呼び出し境界引数（第4論理引数）。スタック最上段オペランド値。基本ブロック末尾でプッシュされた場合は `[R1, #offset]` へフラッシュ | Caller-saved |
-| | `R4` | - | `NOS` (Next on Stack 次段キャッシュ。基本ブロック末尾でプッシュされた場合は `[R1, #offset]` へフラッシュ) | Callee-saved |
-| | `R5` | - | `NNOS` (Next Next on Stack 第3段キャッシュ。基本ブロック末尾でプッシュされた場合は `[R1, #offset]` へフラッシュ) | Callee-saved |
-| | `R6` | - | 一時スクラッチ（トレース末尾でのコンテキストIP書き戻し等） | Callee-saved |
-| | `R7` | `FP` (フレームポインタ) | 不可侵 | システム固定 |
-| | `R8` | - | `mem_base` (ゲストリニアメモリ基底、`[R0, #0x28]` よりロード) | Callee-saved |
-| | `R9` | - | `mem_size` (ゲストリニアメモリ長、`[R0, #0x2C]` よりロード) | Callee-saved |
-| | `R10` | - | `safepoint` (ポーリングフラグ) | Callee-saved |
-| | `R11` | - | 汎用アサイナブルレジスタ | Callee-saved |
-| | `R12` | - | 一時スクラッチ (インタープリタ復帰 `BX r12`) | Caller-saved |
-| **RISC-V** | `a0`〜`a3` | `ctx, sp, local_base, tos` | 呼び出し境界引数（4論理引数） | Caller-saved |
-| | `s1`〜`s7` | - | トレース内部アサイナブルプール (`s1: NOS`, `s4: mem_base`, `s5: mem_size`) | Callee-saved |
-| | `s0/fp` | `FP` (フレームポインタ) | 不可侵 | システム固定 |
+##### 物理レジスタマッピング
+<!-- traceability: {JIT_RegisterMapping} {CPS_4Args} -->
+JITトレースとインタープリタは境界で4つの論理引数を共有する。x64の物理レジスタ・スタック契約は [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) を正本とし、本書では重複定義しない。ARMv8-Mの物理配置とトレース内レジスタ割当はTBDである。
 
 #### トレース境界不変条件とスタックフレーム整合性 (Trace Boundary Invariants)
 <!-- traceability: {LowLatencyJIT} {PositionIndependentCode} {JIT_RuntimeAPI_Fallback} {GOTCHA-JITC-03} -->
@@ -234,10 +118,12 @@ JIT トレースとインタープリタが共有オペランド領域上で相�
    - JIT コンパイル対象とする BasicBlock は、**命令走査中の累積スタック深さが 0 未満（`stack_depth < 0`）に落ちない自己完結ブロックのみ**とする。
    - 先頭で `local.set` や二項演算が先行し、呼び出し元のオペランドスタック上の値を前提とするブロックは JIT 化せず、インタープリタがスタック整合性を保持して安全に実行する。
 2. **トレース境界でのメモリ同期不変条件 (Memory Synchronization at Trace Boundary)**:
-- 基本ブロック末尾では、`TOS, NOS, NNOS` をスタックへフラッシュする。コンテキスト `R0` の `ip` および `sp_offset` を更新して状態を同期する。
+- x64では、後続traceが共通コード領域のchain dispatcher経由で実行される場合、現在traceが確定した共有状態を次traceが引き継ぐ。C++ Interpreter handlerへ戻る境界では共有オペランド領域と実行コンテキストを同期する。ARMv8-Mの値保持方法と同期手順はTBDである。
 3. **制御フロー・コール境界のインタープリタ委譲不変条件 (Control & Call Delegation Invariant)**:
-- スタック巻き戻しを伴う分岐（`BR`, `BR_IF`）および構文デリミタ（`BLOCK`, `LOOP`, `ELSE`, `END`）は、JIT トレース内にインライン展開する。
-- 一方、`CALL`, `CALL_INDIRECT`, `RETURN` 等の境界命令はインライン展開しない。トレース境界でインタープリタへ制御を返す。
+- `BR`, `BR_IF`, `BR_TABLE`、構文デリミタ（`BLOCK`, `LOOP`, `ELSE`, `END`）、コール、およびreturnの終端命令は、トレース本体から除外し、境界でC++インタープリタの対応ハンドラへ渡す。ハンドラ実行後にRuntimeEngineが次のトレースを検索する。
+- 通常実行では`BR` / `BR_IF` / `BR_TABLE`をC++ Interpreter handlerへ渡し、handler内で制御frameとoperand stackを更新する。C++ dispatcherは後方分岐カウンタが共通yieldしきい値へ届くまで、遷移先の常駐traceまたはC++ handlerを続けて実行する。このhandler後のC++ dispatcher継続はchainではない。
+- chainは直線後続traceが常駐する場合に限り、trace末尾から共通コード領域のchain dispatcherへ移り、dispatcherがTraceヘッダのtarget bodyへtail-jumpする経路である。未接続時は共通epilogueから実行境界へ戻る。opcode別の分岐処理を共通dispatcherに持ち込まず、制御handlerを飛ばさない。
+- C++ dispatcherはC++ Interpreter単独実行にも使い、Hybrid JITと同じ `FB_CONF_RUNTIME_YIELD_THRESHOLD` を使用する。後方分岐、前方分岐、`BR_TABLE`のいずれも対応handlerを経由し、トラップ・外部呼出し・非対応命令・関数完了は必要な早期境界としてRuntimeEngineへ返す。
 4. **押し出し量の申告不変条件 (Spill Declaration Invariant)**:
    - TOSとNOSに載らない3個目以降の値は、共有オペランド領域の `sp` 相対の位置へ押し出す。
    - コンパイラは、トレースが書き込む最大ワード数を `stack_words` としてトレースへ記録する。ヘルパー呼び出しと結果の語数も含める。
@@ -245,168 +131,97 @@ JIT トレースとインタープリタが共有オペランド領域上で相�
 
 #### JIT トレース物理メモリレイアウト (`jit_trace_header`)
 <!-- traceability: {JIT_LazyChaining} {SimpleJITArchitecture} {PositionIndependentCode} -->
-物理配置は対象ごとのABI契約へ委譲する。Windows x64およびSystem V AMD64の52バイト配置は [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) に定義し、ARMv8-MのThumb-2配置と命令列は [`jit_stencil_catalog.md`](docs/specs/jit_stencil_catalog.md) に定義する。これらの配置を一つの共通ヘッダとして扱ってはならない。
+物理配置は対象ごとのABI契約へ委譲する。Windows x64およびSystem V AMD64の24バイト配置は [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) に定義し、ARMv8-Mの物理配置と命令列はTBDである。これらの配置を一つの共通ヘッダとして扱ってはならない。
 
 #### ネイティブトレースコンパイラ (`native_trace_call.cxx`)
 <!-- traceability: {JIT_Encoder} {META_ZeroCostAbstraction} -->
 Clang 17+でビルドするC++実装であり、x64 Copy-and-Patchトレースの命令バイト列を単一パスで生成する。固定命令列は `constexpr std::array<std::uint8_t, N>` ステンシルとしてコンパイル時に確定し、実行時はステンシルのコピーと即値・相対オフセットのパッチだけを行う。固定長のネイティブ配列を使用し、実行時のヒープ確保、Pythonバイトコード生成、動的なSTLコンテナを使用しない。Python C APIは入力イテレータ、`memoryview`、結果タプルの境界に限定する。
 
-| 構造体 | 機能 | ビット幅 |
-| :--- | :--- | :--- |
-| `fireball::arm::add_imm` | Thumb-2 即値加算命令エンコーダ | 32bit |
-| `fireball::arm::ldr_imm` | Thumb-2 即値ロード命令エンコーダ | 32bit |
-| `fireball::riscv::i_type`| RISC-V I-Type 命令エンコーダ | 32bit |
+命令エンコーダと命令列はx64実装に限って定義する。ARMv8-M向けエンコーダ、命令列、relocation形式はTBDである。
 
 ## 4. 動的モデル
 
 ### 4.1 アルゴリズム
 <!-- traceability: {JIT_CopyAndPatch} {JIT_RuntimeAPI_Fallback} {SinglePassCompilation} -->
-1. **トレース解析 & ネイティブ命令生成**: WASM PC から始まる基本ブロックをC++コンパイラが1パス走査し、固定長の出力領域へ即値・レジスタ操作・退避操作を直接エンコードする。
-2. **メモリコピー & パッチ適用**: PythonラッパーがC++の生成結果をトレースヘッダと結合し、アクティブキャッシュへ配置した後、即値オペランドや相対分岐オフセットをインプレースでパッチする。
-3. **対象ABI境界フォールバック**: 複雑な命令はトレースヘッダで選択したヘルパー契約別の共通コード入口へ委譲し、ホスト関数呼び出しは対象ABIの終了処理を経てランタイムへ戻す。呼出しコードをトレース本体へ複製しない。
-4. **命令キャッシュ同期**: パッチ完了後、`__DSB()` および `__ISB()` バリアを発行して命令キャッシュを同期する。
-5. **インタープリタ連携とハンドラ直接呼び出し (Low-Overhead Interop & Direct Handler Call)**:
-- JIT トレースとインタープリタハンドラは同一の4論理引数を境界で共有し、物理レジスタへの割当は対象ABIで定める。
-   - JIT トレースは直線的な算術・ローカル変数演算、構文デリミタ消去、および SP 即値巻き戻しを伴う多段分岐（`br`, `br_if`）をネイティブインライン展開する。
-   - コールフレームや同期が必要な境界命令に達した場合、対象ABIの終了処理を経てRuntimeEngine／Interpreterへ戻る。JITトレース間の直接チェインは、対象ABIが定める状態引継ぎ条件を満たす場合だけ許可する。あるアーキテクチャの退避・復元やレジスタ名を他アーキテクチャへ適用してはならない。
-   - Cで実装する複雑処理へ委譲する場合は、対象トレースのヘッダ `helper_target_addr` に対象ABIと一致する関数ポインタを保持し、ヘルパー契約に対応する共通コード入口を選択する。引数の型・個数、結果の返却方法、共有オペランド領域との同期方法は、委譲先の関数契約で定義する。呼出しコードはトレース本体へ複製しない。 `{PositionIndependentCode}`
-   - 互換状態で直接チェインする場合はコンテキスト再構築を省略できる。真の脱出や非互換状態では対象ABIの同期・再構築を行う。 `{ADR_TosCacheAsymmetry}`
+1. **トレース解析とコード生成**: WASM命令をC++ x64コンパイラへ渡し、対応命令を単一パスで固定長出力領域へ生成する。未対応命令や不適格なトレースはコンパイル失敗として返す。
+2. **キャッシュ配置とrelocation**: JIT runtimeがtrace headerと生成bodyをキャッシュへ配置する。x64の相対分岐、helper target、chain dispatcher targetを登録時に確定する。Pythonラッパーを機械語生成経路には含めない。
+3. **実行可能メモリの確定**: x64の実行可能バッファ管理が書込み・実行権限の切替と必要な同期を行う。ARMv8-Mの権限機構、命令キャッシュ同期、バリア命令はTBDである。
+4. **制御終端の処理**: trace bodyは制御終端命令を実行せず、対応するC++ Interpreter handlerへ戻る。handlerが条件、control frame、遷移先を確定する。C++ dispatcherは設定された後方分岐数へ達するまで次の常駐traceまたはhandlerを続ける。
+5. **trace chain**: 互換な直線後続traceが常駐する場合だけ、trace末尾から共通コード領域のchain dispatcherへ進む。dispatcherがtrace headerのtarget bodyへtail-jumpする。C++ handler後にC++ dispatcherが別traceを選ぶ遷移はchainではない。
 
 #### JIT トレース検索 & 3面キャッシュ代謝オーケストレーション
 <!-- traceability: {JIT_MultiBuffer_Cache} {JIT_OldestOnly_Promote} -->
 3段JIT検索および連続8KBキャッシュ領域の管理は[`jit_runtime.md`](docs/components/tier3_executer/jit_runtime.md)を正本とする。コンパイラコアは生成したトレースの登録と命令同期を同コンポーネントへ委譲する。
 
-#### トレース・チェイニング（連鎖実行）と専用分岐ハンドラ分離
-<!-- traceability: {JIT_LazyChaining} -->
-Interpreter／RuntimeEngineからJITへ入るときは対象ABIの新規入口処理を通す。JITトレース間の直接チェインでは、対象ABIが定める状態引継ぎ条件を満たす場合に限り、後続トレースの入口保存処理を重ねない。RuntimeEngine／Interpreterへ抜けるときは対象ABIの終了処理で必要なレジスタと実行時状態を復元する。
+#### トレース・チェイニング（共通コード領域のchain dispatcher経由）
+<!-- traceability: {JIT_LazyChaining} {JIT_RuntimeAPI_Fallback} -->
+Interpreter／RuntimeEngineから最初のJIT traceへ入るときは対象ABIの入口処理を通す。互換な直線後続traceが常駐する場合、trace末尾は共通コード領域のchain dispatcherへ移る。dispatcherは現trace headerの `chain_target_addr` を読み、次traceのentry stubを再実行せずbodyへtail-jumpする。次headerを保護レジスタへ設定し直すため、複数traceのchainを継続できる。targetが未接続なら共通epilogueへ戻り、RuntimeEngine／Interpreter境界で処理を続ける。
+
+分岐opcodeのhandler実行とC++ dispatcher内で次の常駐traceを選ぶ遷移は、このmachine-code chainとは別である。共通chain dispatcherはopcodeを検査せず、命令ごとの条件評価とhandler呼出しを集約しない。chain回数を数える指標は共通chain dispatcherからtarget bodyへ移った回数とし、C++ handler後のdispatcher遷移を含めない。
+
+#### ホットスポット検出とコンパイル待ち列
+ホットスポット記録、しきい値、コンパイル待ち列、コンパイル時期、キャッシュ登録は [`jit_runtime.md`](docs/components/tier3_executer/jit_runtime.md) が正本である。本コンポーネントは受け取った適格なtraceをx64機械語へ変換し、登録情報を返す。
+
+#### トレース生成と登録
+<!-- traceability: {GOTCHA-JITC-01} {JIT_CopyAndPatch} {JIT_LazyChaining} -->
 
 ```mermaid
 flowchart TD
-    JITTrace[JIT Trace Body Exec] --> CheckState[Check target ABI state and chain target]
-    CheckState -->|Compatible and resident| DirectBranch[Direct branch to successor body]
-    CheckState -->|Requires reconciliation| Setup[Reconcile shared execution state]
-    Setup --> NextTrace[Successor trace under target ABI]
-    CheckState -->|Target absent or invalid| ExitEpilogue[Target ABI final exit]
-    ExitEpilogue --> InterpLoop[Return to RuntimeEngine / Interpreter]
-```
-
-1. **ハンドラの責務分離とヘッダ参照分岐**:
-   - **純粋インタープリタ用ハンドラ (`_h_br` 等)**: 単純にスタックを巻き戻して次の WASM PC を算出し、ディスパッチループへ戻る（JIT 探索やパッチのオーバーヘッドが完全ゼロ）。
-- **JITトレース末尾のヘッダ参照分岐**: 各基本ブロック末尾で対象ABIが定める共有状態同期を行い、対象ABIのヘッダ欄から直接チェイン先を判定する。ヘッダ欄のオフセットと同期手順は対象ABIの仕様を参照する。
-2. **ヘッダ直接リンク（Header-Driven Chaining without Code Patching）**:
-   - **初期コンパイル時**: `chain_target_addr`は未解決を表す。トレースチェインエピローグでflush/syncした後、対象ABIの終了処理を実行してRuntimeEngine／Interpreterへ戻る。
-   - **後続トレースコンパイル時**: 後続トレースがキャッシュ（Active/Warm）に生成されたとき、先行ヘッダの`chain_target_addr`へ後続のchain entryを登録する。
-   - **チェイン実行時**: `chain_target_addr`解決後の状態同期、入口保存処理の省略、およびvariant判定は対象ABIの規則に従う。互換状態は後続本体へ直接分岐し、非互換状態は共有オペランド領域から再構成してから後続トレースへ進む。
-3. **未コンパイル時の遅延昇格**:
-   - 分岐先が未コンパイル（`chain_target_addr == 0`）の場合、履歴領域へ分岐先PCを記録し、対象ABI準拠の終了処理でRuntimeEngine／Interpreterへ戻る。次回以降ホット化・コンパイルされた後にchainが確立する。
-4. **局所再チェイニングとアンリンク（O(k) Bounded Re-chaining & Unlinking）**:
-   - チェイニング確立時、ターゲットバンクの被チェイン逆引きテーブル（`inbound_chains`）にソースの JIT エントリインデックスを登録する。
-   - ターゲットが Active $\to$ Warm $\to$ Oldest へ推移する間、コードは有効に常駐する。チェイニングは維持され JIT 実行が継続する。
-   - Oldestバンクのローテーションは、被チェイン元$k$件の処理に加えて、破棄バンクの$n$個の項目を消去する。バンク検索も含む処理量は$O(n + k\log n)$であり、$O(k)$のみとは主張しない。
-   - **ターゲットが昇格（Promote）している場合**: 先行トレースヘッダの `chain_target_addr` を昇格先アドレスへ書き換える。昇格先バンクの `inbound_chains` へ登録を移譲する。ネイティブ直接チェイン実行を維持する。
-    - **ターゲットがキャッシュアウト（Evict）する場合**: 先行トレースヘッダの対象ABIのターゲット欄を `0` にリセットする。次回実行時は対象ABIの終了経路へ分岐し、インタープリタへ安全にフォールバックする。
-   - 逆引き表によりチェイン解決の対象を$k$件に限定するが、bank全体のclear処理は別途$O(n)$である。MPU W^X切り替え回数は設計上抑制する。
-5. **構文デリミタのトレースヘッダ直接埋め込みと直接チェイニング連携**:
-   - **制御構文デリミタの読み飛ばし**: WASM 基本ブロック末尾の制御命令（`BLOCK`, `LOOP`, `ELSE`, `END` 等）は、先行ブロックの実行完了と後続ブロックの先頭命令の間に位置する。JIT ネイティブ実行同士を直接チェイニング（`chain_next`）する際、先行ブロック終端 PC（delimiter PC）から制御構文を読み飛ばす。後続のフォールスルー先（fallthrough head PC）を解決する。
-   - **ヘッダ直接埋め込み（Inlined Chaining Header）**: JIT コンパイル時に後続のフォールスルー先 PC を静的に先読み解決する。トレースヘッダの `chain_next_pc`（+0x08）に直接埋め込む。これにより実行時の外部索引検索を排除する。メモリオーバーヘッドおよび解決レイテンシを $O(1)$ として直接チェイニングを確立する。
-   - **双方向チェイニング解決フロー**:
-     - **後方チェイニング (Backward Chaining)**: 新規トレース登録時、トレースヘッダの `succ = trace.chain_next_pc` を参照する。スキップ先が Active/Warm に常駐していれば `trace.chain_target_addr = succ_native_addr` を即座に接続する。
-     - **前方チェイニング (Forward Chaining)**: 常駐トレース `resident_t` の `chain_next_pc` が新登録トレースの `head_wasm_pc` と一致するか照合する。一致すれば `resident_t` の分岐先スロットを新トレースのチェインエントリへインプレースパッチする。
-
-#### 統合 Tiered ランタイムエンジン・コンセプトコード (`../tier2_runtime/concepts/runtime_engine_concept.py`)
-インタープリタ実行、2-bit Hotspot 検出、Copy-and-Patch JIT、3面キャッシュ、MPU W^X 保護を統合したシミュレーションは [`runtime_engine_concept.py`](docs/components/tier2_runtime/concepts/runtime_engine_concept.py) を参照する。
-
-#### ホットスポット判定 (yield 時)
-<!-- traceability: {JIT_LazyChaining} -->
-1. **履歴走査**: インタープリタの実行サイクル中に記録、蓄積された「実行履歴バッファ」を走査する。
-2. **状態更新**: カードマーキング表の状態が「頻出」に達した命令オフセットを「コンパイル待ち列」（固定容量 LIFO キュー、`{JIT_ReverseCompilationOrder}`）に投入する。容量到達時にバッチコンパイルを即座に実行して空にする。固定容量を上回ることはない。 `{GLOBAL_Policy_Memory}`
-3. **遅延チェイニング制御**: コンパイルキューへ投入されたトレースは、JITコード末尾にディスパッチャ・スタブが初期値としてチェイニングされる。インタープリタ環境へ復帰し遅延チェイニングを実現する。
-
-#### バッチコンパイル (周期実行またはアイドル時)
-<!-- traceability: {JIT_ReverseCompilationOrder} {GLOBAL_PeriodicTask} {GLOBAL_IdleDetection} -->
-1. **キューの取得**: 「コンパイル待ち列」から対象の命令オフセットを**逆順（LIFO）**で取り出す。
-2. **コンパイル実行**: 後続トレースを先にコンパイルする。先行トレースのリンク時にターゲットが既にキャッシュ内に存在する確率を上げる。これにより即時チェイニングを実現する。
-3. **補足**: COOSの `register_periodic_callback` または `set_idle_hook` により実行される。これにより、実行スレッドのブロッキング時間を抑える。
-
-
-#### Copy-and-Patch ステンシル結合 & バックパッチング手順（手順アクティビティ図）
-<!-- traceability: {GOTCHA-JITC-01} {GOTCHA-JITC-02} {GOTCHA-JITC-05} {JIT_CopyAndPatch} -->
-BasicBlock 走査、事前コンパイル済みステンシルのコピー、即値・レジスタパッチ、およびトレース末尾バックパッチングの決定論的手順を示す。
-
-```mermaid
-flowchart TD
-    Start(["Begin JIT Compilation of BasicBlock"]) --> InitEmit["Emit target-ABI jit_trace_header at trace_base"]
-    InitEmit --> LoopOps["Fetch Next WASM Opcode in Block"]
-
-    LoopOps --> SelectStencil["Select Precompiled Thumb-2 Stencil from ROM Catalog"]
-    SelectStencil --> CopyBytes["Copy Stencil Binary Bytes to JIT Code Cache"]
-    CopyBytes --> RelocImm{"Stencil has Relocation Holes (Immediates / Offsets)?"}
-
-    RelocImm -- "Yes" --> PatchReloc["In-place Patch Constants (e.g. imm_lo, imm_hi, slot_offset)"]
-    RelocImm -- "No" --> CheckLast{"Last Opcode in BasicBlock?"}
-    PatchReloc --> CheckLast
-
-    CheckLast -- "No" --> LoopOps
-    CheckLast -- "Yes" --> EmitExit["Emit Trace Boundary Guard & Register Spill Sequence"]
-    EmitExit --> Backpatch["Backpatch Relative Branch Offsets (B/BL/BX) to Exit Stub"]
-    Backpatch --> FinalizeSize["Write total trace_byte_size into Header (+0x04)"]
-    FinalizeSize --> Complete(["JIT Machine Code Ready for W^X Commit"])
+    Start(["HOT trace request"]) --> Scan["C++ x64 compiler scans WASM trace"]
+    Scan --> Supported{"All instructions supported?"}
+    Supported -- "No" --> Fallback["Keep interpreter execution"]
+    Supported -- "Yes" --> Emit["Emit x64 header and body"]
+    Emit --> Register["Runtime registers body and resolves helper and chain targets"]
+    Register --> Protect["x64 executable buffer commits code"]
+    Protect --> Ready(["Trace can be entered by C++ dispatcher"])
 ```
 
 ### 4.2 状態遷移図
 <!-- traceability: {JIT_LazyChaining} {JIT_ReverseCompilationOrder} {GLOBAL_PeriodicTask} {GLOBAL_IdleDetection} -->
 ```mermaid
 stateDiagram-v2
-    state "Interpreting" as Interp
-    state "Detecting (at yield)" as Detect
-    state "Background (Idle/Periodic)" as Background
-    state "Compiling" as Compile
+    state "C++ dispatcher lookup" as Lookup
+    state "x64 trace body" as Trace
+    state "C++ Interpreter handler" as Handler
+    state "Common-code chain dispatcher" as Chain
+    state "Runtime boundary" as Boundary
 
-    [*] --> Interp
-    Interp --> Detect: yield / trap
-    Detect --> Background: Queue populated
-    Detect --> Interp: No hotspot
-    Background --> Compile: Trigger
-    Compile --> Background: Done
-    Background --> Interp: Task Wakeup
+    [*] --> Lookup
+    Lookup --> Trace: resident trace
+    Lookup --> Handler: no resident trace
+    Trace --> Chain: eligible straight-line successor
+    Chain --> Trace: resident target body
+    Chain --> Boundary: no target
+    Trace --> Boundary: helper, trap, completion
+    Handler --> Lookup: continue below yield threshold
+    Handler --> Boundary: trap, call, completion, threshold
+    Boundary --> [*]
 ```
 
 ### 4.3 内部シーケンス
-<!-- traceability: {JIT_LazyChaining} {JIT_ReverseCompilationOrder} {GLOBAL_PeriodicTask} {GLOBAL_IdleDetection} -->
-#### JITコンパイルおよび検索シーケンス
-サイクル全体を駆動するのは常に vSoC (V) である。Interpreter (I) はディスパッチされた実行エンジンとして機能する。履歴処理やキャッシュ検索を自ら開始することはない（`{Interpreter_LazyJITSwitch}`）。
+<!-- traceability: {JIT_LazyChaining} {JIT_RuntimeAPI_Fallback} -->
+#### trace実行と制御終端処理
 ```mermaid
 sequenceDiagram
-    participant V as vSoC
-    participant D as Detector
-    participant E as Engine
+    participant R as RuntimeEngine C++ dispatcher
     participant C as Cache
-    participant S as JIT Searcher
-    participant I as Interpreter
+    participant T as x64 trace body
+    participant D as Common-code chain dispatcher
+    participant H as C++ Interpreter handler
+    participant O as COOS
 
-    Note over V, S: co_yield 時のバッチ処理（vSoC が駆動）
-    V->>D: Process History Buffer
-    D->>D: Update card marking table
-    D->>E: Push HOT PC to Queue
-    E->>C: Copy Template & Patch
-    E->>S: Register Entry (PC, Offset)
-
-    Note over V, S: 実行時の検索（vSoC の step() から毎回呼び出す）
-    V->>S: Lookup(PC)
-    alt Card state != COMPILED
-        S-->>V: Fallback (Fast Exit)
-        V->>I: exec_trace(pc) -- インタープリタへディスパッチ
-    else Card state == COMPILED
-        S->>S: Search Active/Warm/Oldest entries (Folding XOR Cache -> sorted-array Binary Search)
-        Note over S: 検索アルゴリズムおよび Oldest-Only 昇格規則の詳細はランタイム管理の正本 {JIT_MultiBuffer_Cache} を参照
-        alt Hit
-            S-->>V: Native Code Address
-        else Miss
-            S->>S: Enqueue PC in LIFO queue, card stays COMPILED
-            S-->>V: Fallback (Return NULL)
-            V->>I: exec_trace(pc) -- インタープリタへディスパッチ
-        end
+    R->>C: lookup current PC
+    alt Resident trace
+        C-->>R: trace entry
+        R->>T: enter trace
+        T->>D: transfer for eligible straight-line successor
+        D->>T: tail-jump to target body
+    else No resident trace
+        R->>H: execute handler at current PC
+        H-->>R: update shared state and branch count
     end
+    R->>R: continue until threshold or an early boundary
+    R->>O: return yield request at configured boundary
 ```
 
 ## 5. インターフェース定義
@@ -478,7 +293,7 @@ sequenceDiagram
 - **目標**: コンパイルレイテンシを最小化し、WAMRインタープリタを上回る実行速度を実現。
 - **方策**:
     - **コピー・パッチ方式**: 複雑な最適化を省き、テンプレートコピーのみでコンパイルを完了。
-    - **レジスタ割り当て**: `Context`, `StackTop`, `WASM_PC` を物理レジスタに固定し、メモリアクセスを削減。
+    - **レジスタ割り当て**: x64コード生成で使う物理レジスタと呼出し保存規則は [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) で定義する。ARMv8-Mの物理レジスタ割当はTBDである。
     - `Card Marking (O(1)) + Binary Search`: カードマーキング表による $O(1)$ 事前フィルタと二分探索により、高速な検索を実現。
 
 ### 6.2 安全性制約と方策
@@ -487,15 +302,15 @@ sequenceDiagram
 - **方策**:
     - **位置独立コード**: 生成コードを位置独立とし、配置場所の自由度を確保。
     - `Cache Capacity Check`: コード生成時にキャッシュ溢れを厳密にチェックし、溢れた場合は 3面リングローテーションにより Oldest バンクを破棄して再利用する。これはキャッシュ容量管理であり、（ゲストメモリアクセスの隔離）とは別の関心事である。
-    - **メモリ境界検査**: 生成コードに埋め込むゲストメモリアクセスの境界チェック。`FastAddressCheck` は `CMP addr, mem_size; BHS.W <trap>` で開始アドレスを検査する。1バイト超のアクセスでは `addr + width - 1` を `mem_size` と比較して末尾境界も検査する（マスク不使用）。境界外アクセスはインタープリタへトラップする。アドレスを暗黙に折り畳んで継続しない。
-    - `MPU W^X 保護`: Cortex-M33 PMSAv8 MPU を用いる。JIT パッチ書き込み時は `RW+XN`、ネイティブ実行時は `RO+X` に切り替える。`__DSB(); __ISB();` バリアを発行する。書き込みと実行の同時許可（RWX）を物理的に排除する。形式モデル `formal/jit_cache_model.py` により変異検査付きで検証する。
+    - **メモリ境界検査**: x64の対応済みゲストメモリアクセス命令は、アクセス前に幅を含めた境界を検査し、範囲外をWASM trapへ変換する。具体的な命令列はx64実装テストを正本とする。ARMv8-Mの命令列と検査方式はTBDである。
+    - **W^X 保護**: x64の実行可能バッファは書込みと実行を同時許可しない。ARMv8-Mの保護機構、属性遷移、命令キャッシュ同期はTBDである。形式モデル `formal/jit_cache_model.py` は抽象W^X状態遷移を検証し、物理機構は主張しない。
 
 ## 7. 形式検証・テスト仕様との対応
 
 ### 7.1 検証対象の不変条件
-- **位置独立性 (PIC)**: 生成された Thumb-2 / RISC-V バイナリが絶対アドレスに依存しないこと。任意のキャッシュバンクで再コンパイル不要で動作すること（`TEST-INT-40`, `TEST-JITC-40`）。
-    - **トレース境界メモリ同期**: ARMv8-Mではトレースチェインエピローグがキャッシュ中のスタックトップ（`R3: TOS`）・次段（`R4: NOS`）およびローカル変数を共有領域へ同期してから後続状態を判定する。x64では、互換状態で直接チェインする場合に限り、実装が書き戻した状態を引き継ぐ。この同期手順を対象ABIごとに分けて検証する（`TEST-INT-41`, `TEST-JITC-52`）。
-- **W^X メモリ保護**: JIT パッチ書き込み時の `RW+XN` と実行時の `RO+X` の分離（`jit_cache_model.py`, `TEST-JITC-42`）。
+- **位置独立性 (PIC)**: x64コードが任意のキャッシュバンクで再コンパイル不要で動作すること。ARMv8-Mの位置独立性と分岐範囲はTBD（`TEST-INT-40`, `TEST-JITC-40`）。
+    - **トレース境界メモリ同期**: ARMv8-Mの値キャッシュと境界同期方式はTBDである。x64では、互換状態の後続traceへ共通コード領域のchain dispatcher経由で移る場合に、実装が書き戻した状態を引き継ぐ。この同期手順を対象ABIごとに分けて検証する（`TEST-INT-41`, `TEST-JITC-52`）。
+- **W^X メモリ保護**: 抽象状態モデルとx64の実行可能バッファテストで書込み・実行の排他を確認する。ARMv8-Mの物理実装と実機検証はTBDである。
 
 ### 7.2 テスト仕様書との連携
 本コンポーネントの単体テストケースは [`jit_compiler_test_spec.md`](docs/qa/tier3_executer/jit_compiler_test_spec.md) を正本として定義する。3面キャッシュの直交表は [`jit_runtime_test_spec.md`](docs/qa/tier3_executer/jit_runtime_test_spec.md) を正本とする。
@@ -508,11 +323,11 @@ sequenceDiagram
   - **選択肢と評価**:
     - 案1: 継続渡しを 4 論理引数化しつつ、インタープリタ側も TOS をレジスタ保持する。
     - 案2: JIT からもレジスタキャッシュを廃し、両者ともオペランドをメモリ上でのみ扱う。スタックマシンに対する最大最適化を捨てることになり、低レイテンシ目標の達成が困難になる。
-    - 案3: 値キャッシュを使う場合でも、キャッシュの物理レジスタ、共有領域への書戻し、および実行コンテキストの更新方法を対象ABIごとに定義する。ARMv8-Mとx64のレジスタやスタック配置を共通仕様として扱わない。
+    - 案3: 値キャッシュを使う場合でも、キャッシュの物理レジスタ、共有領域への書戻し、および実行コンテキストの更新方法を対象ABIごとに定義する。ARMv8-Mのレジスタやスタック配置はTBDとし、x64の契約から推定しない。
   - **結論**: 論理的な4引数境界と共有状態の同期を共通契約とし、値キャッシュ、SP整列、保護レジスタの扱いは対象ABIで定義する。
-  - **トレース境界の2種類のエントリと2種類のエグジット**: 境界の性質は「真の脱出/新規進入」と「直接チェイン」の2系統に分かれる。混同してはならない。物理的な命令列は対象アーキテクチャの仕様で定める。
+  - **トレース境界の2種類のエントリと2種類のエグジット**: 境界の性質は「真の脱出/新規進入」と「共通コード領域のchain dispatcherを介した継続」の2系統に分かれる。混同してはならない。物理的な命令列は対象アーキテクチャの仕様で定める。
      - **新規エントリ / 真の脱出**: インタープリタから初めて呼び出される場合は対象ABIの開始処理を通過する。真の脱出では、共有オペランド領域と実行コンテキストを同期し、対象ABIの終了処理で復帰する。VMの値とCの戻り値は別の契約として扱う。
-  - **チェイン・エントリ / 直接チェイン分岐**: 後続トレースが常駐し、対象ABIの状態引継ぎ条件を満たす場合だけ後続本体へ直接分岐する。入口保存処理を重ねず、未解決または状態不一致の場合は対象ABIの終了経路からインタープリタへ戻る。
+  - **chain dispatcher経由の継続**: 直線後続traceが常駐し、対象ABIの状態引継ぎ条件を満たす場合、trace末尾から共通コード領域のchain dispatcherへ移り、dispatcherがTraceヘッダのtarget bodyへtail-jumpする。入口保存処理を重ねない。target未接続時は共通epilogueへ進み、C++ dispatcherへ戻る。
   - **固定ローカルスロットの直接アクセス (`ContextPointerRegister`)**: 各論理ローカルは、フレームのスロット幅の固定スロットに配置される。スロット幅は関数ごとに決まり、i32/f32だけの関数は4バイト、i64/f64を含む関数は8バイトである。ローカル領域の基底を起点とする `local index × スロット幅` を、命令生成時に直接埋め込む。実行時のオフセット表参照やベースアドレス再計算は行わない。
 
 - **決定事項**:

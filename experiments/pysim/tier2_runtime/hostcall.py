@@ -128,7 +128,7 @@ class FireballHostCallPort(Protocol):
 class RuntimeHostCallGateway:
     """Own the WIT-facing dispatch boundary and delegate domain work to Tier 2 ports."""
 
-    __slots__ = ("_scheduler", "_syscall_handlers", "_virq", "_vdma_transfer")
+    __slots__ = ("_scheduler", "_syscall_handlers", "_vdma_transfer", "_virq")
 
     def __init__(
         self,

@@ -12,13 +12,18 @@ import ctypes
 import struct
 from collections.abc import Iterator, Sequence
 
-from jit_abi import JIT_CONTEXT_SIZE_BYTES
+from jit_abi import (
+    JIT_CONTEXT_SIZE_BYTES,
+    JIT_LOOP_JUMP_COUNT_OFFSET_BYTES,
+    JIT_LOOP_JUMP_THRESHOLD_OFFSET_BYTES,
+)
 from wasm_module import WASM_VALUE_SLOT_BYTES
 
 NATIVE_VALUE_STACK_CAPACITY = 128
 NATIVE_CONTROL_STACK_CAPACITY = 32
 NATIVE_CALL_STACK_CAPACITY = 32
 NATIVE_STACK_ALIGNMENT_BYTES = WASM_VALUE_SLOT_BYTES
+EXECUTION_CONTEXT_FLAG_STOP_AT_BLOCK_BOUNDARY = 1 << 0
 
 
 class ExecutionContextNative(ctypes.Structure):
@@ -42,7 +47,7 @@ class ExecutionContextNative(ctypes.Structure):
         ("globals_base", ctypes.c_uint32),
         ("globals_limit", ctypes.c_uint32),
         ("handler_table", ctypes.c_uint32),
-        ("reserved0", ctypes.c_uint32),
+        ("runtime_flags", ctypes.c_uint32),
         ("code", ctypes.c_void_p),
         ("code_size", ctypes.c_uint32),
         ("control_stack", ctypes.c_void_p),
@@ -51,7 +56,17 @@ class ExecutionContextNative(ctypes.Structure):
         ("call_stack", ctypes.c_void_p),
         ("call_base", ctypes.c_uint32),
         ("call_offset", ctypes.c_uint32),
+        ("sp_capacity", ctypes.c_uint32),
+        ("loop_jump_count", ctypes.c_uint32),
+        ("loop_jump_threshold", ctypes.c_uint32),
     )
+
+
+assert ExecutionContextNative.loop_jump_count.offset == JIT_LOOP_JUMP_COUNT_OFFSET_BYTES
+assert (
+    ExecutionContextNative.loop_jump_threshold.offset
+    == JIT_LOOP_JUMP_THRESHOLD_OFFSET_BYTES
+)
 
 
 class ConstBufferViewNative(ctypes.Structure):
@@ -138,6 +153,8 @@ class ControlMapEntryNative(ctypes.Structure):
         ("next_pc", ctypes.c_uint32),
         ("result_arity", ctypes.c_uint32),
         ("operand_width", ctypes.c_uint32),
+        ("br_table_target_count", ctypes.c_uint32),
+        ("br_table_targets", ctypes.c_void_p),
     )
 
 
@@ -520,7 +537,7 @@ assert ctypes.sizeof(ctypes.c_void_p) == 8
 assert ctypes.sizeof(ExecutionContextNative) == JIT_CONTEXT_SIZE_BYTES
 assert ExecutionContextNative.mem_base.offset == 0x28
 assert ExecutionContextNative.handler_table.offset == 0x38
-assert ExecutionContextNative.reserved0.offset == 0x3C
+assert ExecutionContextNative.runtime_flags.offset == 0x3C
 assert ExecutionContextNative.code.offset == 0x40
 assert ExecutionContextNative.code_size.offset == 0x48
 assert ExecutionContextNative.control_stack.offset == 0x50
@@ -529,12 +546,13 @@ assert ExecutionContextNative.stack_checkpoint.offset == 0x5C
 assert ExecutionContextNative.call_stack.offset == 0x60
 assert ExecutionContextNative.call_base.offset == 0x68
 assert ExecutionContextNative.call_offset.offset == 0x6C
+assert ExecutionContextNative.sp_capacity.offset == 0x70
 assert ctypes.sizeof(ConstBufferViewNative) == 16
 assert ctypes.sizeof(WasmFunctionViewNative) == 24
 assert ctypes.sizeof(WasmModuleViewNative) == 24
 assert ctypes.sizeof(WasmRunRequestNative) == 48
 assert ctypes.sizeof(WasmRunResultNative) == 24
-assert ctypes.sizeof(ControlMapEntryNative) == 20
+assert ctypes.sizeof(ControlMapEntryNative) == 32
 assert ctypes.sizeof(ValueStackNative) == 520
 assert ValueStackNative.size.offset == 512
 assert ctypes.sizeof(ControlFrameNative) == 20
@@ -550,15 +568,15 @@ assert CallStackNative.size.offset == 3072
 
 
 __all__ = (
-    "NATIVE_CONTROL_STACK_CAPACITY",
     "NATIVE_CALL_STACK_CAPACITY",
+    "NATIVE_CONTROL_STACK_CAPACITY",
     "NATIVE_VALUE_STACK_CAPACITY",
-    "ConstBufferViewNative",
-    "ControlMapEntryNative",
-    "ControlFrameNative",
-    "ControlStackNative",
     "CallFrameNative",
     "CallStackNative",
+    "ConstBufferViewNative",
+    "ControlFrameNative",
+    "ControlMapEntryNative",
+    "ControlStackNative",
     "ExecutionContextNative",
     "NativeValueStack",
     "ValueStackNative",

@@ -5,7 +5,6 @@ Unit tests for Tier 1 Interface: IPC Router & Shared Block Transfer
 Traceability: ipc_router_test_spec.md
 """
 
-import sys
 from pathlib import Path
 
 # Setup paths
@@ -17,7 +16,6 @@ _REPO_ROOT = _PYSIM_DIR.parent.parent
 
 from helpers import expect_assertion, make_test_ipc_message
 from ipc_router import (
-    FB_CONF_ROUTER_ROLE_MATRIX,
     DataType,
     IPCMessage,
     IPCRouter,
@@ -27,7 +25,7 @@ from ipc_router import (
     ScopeKind,
     pack_key32,
 )
-from memory import FB_CONF_MEMORY_POOL_SIZE, MemoryManager
+from memory import FB_CONF_MEMORY_POOL_SIZE, FB_CONF_SHM_SIM_BASE, FB_CONF_SHM_SIZE, MemoryManager
 from scheduler import ChannelAction, Scheduler, TaskState, WaitDir
 from system import (
     System,
@@ -40,7 +38,7 @@ _CMD_PIN_HIGH = 1
 
 def _make_router(sched: Scheduler) -> IPCRouter:
     manager = MemoryManager(sched)
-    assert manager.init_manager(0x20020000, FB_CONF_MEMORY_POOL_SIZE).is_ok
+    assert manager.init_manager(0x00010000, FB_CONF_MEMORY_POOL_SIZE).is_ok
     return IPCRouter(sched, manager)
 
 
@@ -124,7 +122,7 @@ def test_ipc_02_e2e_shared_block_transfer():
         sb = sysv.memory_manager.allocate_shared(size=256).unwrap()
         assert sb.get_owner() == 2
         addr = sb.get_address()
-        assert addr >= 0x20020000
+        assert FB_CONF_SHM_SIM_BASE <= addr < FB_CONF_SHM_SIM_BASE + FB_CONF_SHM_SIZE
 
         # Sender puts shm_id directly in the message entry's value inside shared memory!
         msg = IPCMessage.from_entries(

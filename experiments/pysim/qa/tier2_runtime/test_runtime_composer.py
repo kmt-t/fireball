@@ -2,24 +2,23 @@
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
 _TESTS_DIR = Path(__file__).resolve().parents[1]
 _PYSIM_DIR = Path(__file__).resolve().parents[2]
 
+from helpers import expect_assertion
 from runtime_composer import (
     RuntimeComposer,
     RuntimeCompositionConfig,
     RuntimeExecutionKind,
     RuntimeFactories,
     RuntimePluginSelection,
-    RuntimeWithPlugins,
     RuntimeWithoutPlugins,
+    RuntimeWithPlugins,
 )
 from runtime_events import RuntimeEvent, RuntimeEventKind
 from system_containers import StaticVector
-from helpers import expect_assertion
 
 
 class _Executor:

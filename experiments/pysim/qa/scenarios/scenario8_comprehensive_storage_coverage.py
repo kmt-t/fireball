@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
 _PYSIM_DIR = Path(__file__).resolve().parent
@@ -30,13 +29,13 @@ import socket
 import time
 
 import wasmtime
-from tier3_plugins.debugger.debugger import DebuggerManager
 from execution_context import WASMContext
-from tier3_plugins.debugger.gdb_server import GDBServer
-from tier3_executer.interpreter.interpreter import Interpreter, InterpreterBindings
 from runtime_test_driver import RuntimeEngineDebugDriver
 from system import System
+from tier3_executer.interpreter.interpreter import Interpreter, InterpreterBindings
 from tier3_platform.drivers.wasi.context import WasiHostContext
+from tier3_plugins.debugger.debugger import DebuggerManager
+from tier3_plugins.debugger.gdb_server import GDBServer
 from wasm_reader import parse
 
 SCENARIO8_WAT = """

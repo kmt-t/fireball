@@ -49,6 +49,7 @@ class WASMContext:
         # This is the Python mirror of wasm_interop.hxx: a fixed-layout Native
         # structure, not a Python object graph.
         self._c_context = ExecutionContextNative()
+        self._c_context.sp_capacity = self.stack.capacity
         assert ctypes.sizeof(self._c_context) == JIT_CONTEXT_SIZE_BYTES
         self._cached_locals_view = self._LocalsView(self)
 

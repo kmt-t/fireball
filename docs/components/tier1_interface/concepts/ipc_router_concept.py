@@ -13,7 +13,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from enum import IntEnum
 
-from flat_view_concept import FlatMapView
+from docs.components.tier1_core.concepts.flat_view_concept import FlatMapView
 
 _EMPTY_ENTRIES: list[tuple[int, int]] = []
 IPC_RESPONSE_PENDING = 0xFFFF_FFFF

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
 _TEST_FILE = Path(__file__).resolve()
@@ -9,7 +8,6 @@ _PYSIM_DIR = _TESTS_DIR.parent
 _REPO_ROOT = _PYSIM_DIR.parent.parent
 
 
-import sys
 from pathlib import Path
 
 _PYSIM_DIR = Path(__file__).resolve().parent
@@ -19,38 +17,30 @@ while not (_PYSIM_DIR / "tier1_core").is_dir():
 REPO_ROOT = _PYSIM_DIR.parent.parent
 
 
-import ctypes
-
-from control_flow import extract_basic_blocks
-from tier3_plugins.debugger.debugger import DebuggerManager, GDBRspProtocol
-from execution_context import WASMContext
 from hal_dispatch import HalBufferPool
 from helpers import expect_assertion, make_test_ipc_message, wat_to_wasm
 from helpers import make_interpreter as Interpreter
-from tier3_executer.interpreter.interpreter import _HANDLERS
 from ipc_router import (
     IPCRouter,
     IPCStatus,
     OwnershipState,
     Role,
 )
-from jit_copy_patch_concept import CopyPatchJITEngine, Reg, Thumb2Assembler
 from loader import WasmLoader
-from tier2_runtime.logger import LogDictionary, Logger, LogLevel
 from memory import FB_CONF_MEMORY_POOL_SIZE, MemoryManager
-from tier3_executer.jit.jit_cache import CardState, JITMultiBufferCache, JITTrace
-from tier3_executer.jit.jit_manager import JITRuntimeManager
-from runtime_test_driver import RuntimeEngineDebugDriver
 from runtime_events import RuntimeEvent
 from scheduler import ChannelAction, Scheduler, Task, WaitDir
-from tier3_platform.drivers.hal.stream import StreamTransport
 from system import System, WasiErrno
 from system_containers import BitView, MutableFlatMapStorage, ReadOnlyFlatMapView, StaticVector
+from tier2_runtime.logger import LogDictionary, Logger, LogLevel
+from tier3_executer.interpreter.interpreter import _HANDLERS
+from tier3_executer.jit.jit_cache import CardState, JITMultiBufferCache, JITTrace
+from tier3_platform.drivers.hal.stream import StreamTransport
 
 
 def _make_router(sched: Scheduler) -> IPCRouter:
     manager = MemoryManager(sched)
-    assert manager.init_manager(0x20020000, FB_CONF_MEMORY_POOL_SIZE).is_ok
+    assert manager.init_manager(0x00010000, FB_CONF_MEMORY_POOL_SIZE).is_ok
     return IPCRouter(sched, manager)
 
 
@@ -60,21 +50,18 @@ def _make_memory_manager() -> tuple[MemoryManager, Scheduler]:
     scheduler.spawn("task_2", task_id=2)
     scheduler.current_task = scheduler.get_task(1)
     manager = MemoryManager(scheduler)
-    manager.init_manager(pool_base=0x20020000, pool_size=0x40000)
+    manager.init_manager(pool_base=0x00010000, pool_size=0x40000)
     return manager, scheduler
 
 
 from test_support import (
     PcOnlyCompiler,
-    compile_test_block,
-    make_runtime_engine,
     make_pc_only_module,
+    make_runtime_engine,
 )
-from vmmio import TrapCode, VMMIOController, VmmioStatus
-from wasm_module import BasicBlock, I32
-from wasm_opcodes import I32_ADD, I32_CONST, LOCAL_GET, LOCAL_SET
-from wasm_reader import parse
 from tier3_executer.jit.x64_jit import TraceCompiler
+from vmmio import TrapCode, VMMIOController, VmmioStatus
+from wasm_reader import parse
 
 # ==============================================================================
 # 1. Interpreter Gotchas (GOTCHA-INTP-01 ~ 04)
@@ -209,112 +196,6 @@ def test_intp_gotcha_04_unified_pc_multi_module():
 # ==============================================================================
 
 
-def test_jitc_gotcha_01_02_03_conventions():
-    """GOTCHA-JITC-01, 02, 03: Verify JIT conforms to CPS 4-arg convention, mem load offsets, and TOS unspilled."""
-    # 1. Test x64 JIT CPS 4-arg invocation -- real WASM bytecode for
-    # `local.get 0; i32.const 5; i32.add; local.set 0`, run through the same
-    # The test prepares loader metadata before calling the production API.
-    compiler = TraceCompiler()
-    code = bytes([LOCAL_GET, 0, I32_CONST, 5, I32_ADD, LOCAL_SET, 0])
-    head_pc, next_pc, loops_to, frame_depth, byte_span = extract_basic_blocks(code)[0]
-    block = BasicBlock(
-        head_pc=head_pc,
-        next_pc=next_pc,
-        loops_to=loops_to,
-        frame_depth=frame_depth,
-        byte_span=byte_span,
-    )
-    trace = compile_test_block(compiler, code, block, (I32,))
-    assert trace.header.head_wasm_pc == head_pc
-    assert trace.size_bytes >= 16
-
-    locals_arr = (ctypes.c_uint32 * 8)(10, 0)
-    trace.fn(
-        head_pc,
-        ctypes.c_void_p(0),
-        ctypes.cast(locals_arr, ctypes.c_void_p),
-        0,
-    )
-    assert locals_arr[0] == 15
-
-    # 2. Test Thumb-2 JIT Copy-Patch Engine: GOTCHA-JITC-01 (register isolation),
-    # GOTCHA-JITC-02 (mem_base/size loaded from [R0, #0x28] and [R0, #0x2C]),
-    # and GOTCHA-JITC-03 (Basic block end stack flush & IP/SP context sync).
-    engine = CopyPatchJITEngine()
-    ops = [("i32.const", 42), ("local.set", 4), ("i32.load", None)]
-    start_pos, count = engine.compile_trace(ops)
-    code = engine.execute_native(start_pos, count)
-
-    # GOTCHA-JITC-01: Shared CPS argument registers R0/R1/R2 are preserved and never used as scratch
-    # destination registers inside the trace body (R3 is TOS).
-    for inst in code:
-        mnemonic, _, operands = inst.partition(" ")
-        if mnemonic in (
-            "STR",
-            "STR.W",
-            "STRB.W",
-            "STRH.W",
-            "BX",
-            "PUSH",
-            "PUSH.W",
-            "POP",
-            "POP.W",
-            "CMP",
-            "BNE.W",
-            "BL",
-        ):
-            continue
-        dest = operands.split(",")[0].strip()
-        assert dest not in ("r0", "r1", "r2"), f"CPS argument register {dest} clobbered by {inst}"
-
-    # GOTCHA-JITC-02: mem_base and mem_size loaded from [R0, #0x28] and [R0, #0x2C]
-    assert code[1] == "LDR.W r8, [r0, #0x28]"
-    assert code[2] == "LDR.W r9, [r0, #0x2C]"
-
-    # GOTCHA-JITC-03: Basic block end flushes SP and IP to execution_context R0 (+0x0C and +0x00),
-    # and epilogue pops callee-saved registers {r4-r6, r8-r11, pc}.
-    assert "STR.W r1, [r0, #0x0C]" in code
-    assert "STR.W r6, [r0, #0x00]" in code
-    assert "POP.W {r4-r6, r8-r11, pc}" in code
-
-
-def test_jitc_gotcha_04_05_boundary_check_and_backpatch():
-    """GOTCHA-JITC-04, 05: Boundary check precedes memory access, and BHS.W is accurately backpatched."""
-    engine = CopyPatchJITEngine()
-    ops = [("i32.const", 10), ("i32.load", None), ("local.set", 4)]
-    start_pos, count = engine.compile_trace(ops)
-    code = engine.execute_native(start_pos, count)
-
-    # GOTCHA-JITC-04: CMP addr, r9 and BHS.W precede LDR.W
-    cmp_idx = -1
-    bhs_idx = -1
-    ldr_idx = -1
-    for idx, inst in enumerate(code):
-        if "CMP" in inst and "r9" in inst:
-            cmp_idx = idx
-        elif "BHS.W" in inst:
-            bhs_idx = idx
-        elif "LDR.W r3, [r8" in inst or "LDR.W r4, [r8" in inst:
-            ldr_idx = idx
-
-    assert 0 <= cmp_idx < bhs_idx < ldr_idx, "Boundary check does not precede memory load!"
-
-    # GOTCHA-JITC-05: Trap tail exists at the end with BX r12 fallback
-    assert code[-1] == "BX r12"
-
-
-def test_jitc_gotcha_06_arm_mls_instruction_ordering():
-    """GOTCHA-JITC-06: ARM MLS ordering Rd = Ra - Rn * Rm computes remainder correctly."""
-    asm = Thumb2Assembler()
-    encoded = asm.mls(Reg.R3, Reg.R12, Reg.R3, Reg.R4)
-    engine = CopyPatchJITEngine()
-    catalog_hex = engine.stencils["i32_rem_s_d2"].hex_bytes
-    assert len(encoded) == 4
-    assert len(catalog_hex) > 0
-    dividend, quotient, divisor = 17, 3, 5
-    assert dividend - quotient * divisor == 2
-
-
 def test_jitr_gotcha_01_idle_hook_skips_recompiling_already_resident_trace():
     """GOTCHA-JITR-01: idle_hook skips recompilation if trace is already resident in cache."""
     compile_calls = []
@@ -339,13 +220,13 @@ def test_jitr_gotcha_01_idle_hook_skips_recompiling_already_resident_trace():
 
 
 def test_jitr_gotcha_02_promotion_transfers_inbound_sources():
-    """GOTCHA-JITR-02: Promoting a trace from Oldest to Active preserves inbound sources avoiding dangling jump."""
+    """GOTCHA-JITR-02: Promotion preserves inbound sources for resident chain targets."""
     cache = JITMultiBufferCache(bank_capacity=512)
     t2 = JITTrace(head_pc=0x200, native_fn=lambda: 2, size_bytes=64)
     cache.insert(t2)  # t2 -> Active
     cache.rotate()  # t2's bank -> Warm
     t1 = JITTrace(head_pc=0x100, native_fn=lambda: 1, size_bytes=64, next_pc=0x200)
-    cache.insert(t1)  # t1 -> new Active, chains into Warm-resident t2
+    cache.insert(t1)  # t1 in Active records the Warm-resident t2 as its logical successor
     assert t1.chain_next == 0x200
     old_bank = cache.find_bank(0x200)
     assert 0x100 in old_bank.inbound_sources
@@ -362,7 +243,7 @@ def test_jitr_gotcha_02_promotion_transfers_inbound_sources():
 
 
 def test_jitr_gotcha_03_lifo_reverse_compilation_order():
-    """GOTCHA-JITR-03: Compile queue processes in LIFO order maximizing immediate forward chaining."""
+    """GOTCHA-JITR-03: LIFO compile order records later straight-line successors first."""
     compiled_traces = []
 
     def dummy_compiler(pc: int) -> JITTrace:
@@ -414,12 +295,14 @@ def test_vsoc_gotcha_01_02_stateless_interp_and_yield_in_vsoc():
     engine = make_runtime_engine(yield_threshold=3, jit_compiler=TraceCompiler())
     mod = engine.load_wasm(wasm_bytes)
     loop_pc = mod.blocks[0].head_pc
-    results = engine.run(Interpreter(mod), 0, [5])
+    results = engine.call(Interpreter(mod), 0, [5])
     assert results[0] == 15
     assert engine.stat_jit_invocations >= 2
     assert engine.stat_interp_steps >= 3
     assert engine.jit_runtime.bitmap.get_state(loop_pc) == CardState.COMPILED
-    assert engine.jit_runtime.cache.active.has_trace(loop_pc) or engine.jit_runtime.cache.warm.has_trace(loop_pc)
+    assert engine.jit_runtime.cache.active.has_trace(
+        loop_pc
+    ) or engine.jit_runtime.cache.warm.has_trace(loop_pc)
 
 
 # ==============================================================================

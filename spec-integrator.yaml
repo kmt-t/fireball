@@ -47,18 +47,15 @@ tiers:
 keywords:
   meta:
     pattern: "^META_[A-Za-z0-9_]+$"
-    defined_in: '(architecture/document_structure|architecture/keyword_dictionary)\.md'
+    defined_in: 'architecture/document_structure\.md'
   global:
     pattern: "^GLOBAL_[A-Za-z0-9_]+$"
-    defined_in: '(architecture/document_structure|architecture/keyword_dictionary)\.md'
+    defined_in: 'architecture/document_structure\.md'
   local:
-    # Allows hyphens: GOTCHA IDs use GOTCHA-<COMPONENT>-<number>, while test
-    # cases use TEST-<COMPONENT>-<number>; both are hyphenated, not underscored.
-    # Without this, every such keyword is
-    # structurally unable to ever resolve as "defined" regardless of where
-    # it's registered in keyword_dictionary.md.
+    # Allows hyphens in GOTCHA IDs. The keyword dictionary resolves each
+    # registered identifier to its exact source document.
     pattern: "^[A-Za-z0-9_-]+$"
-    defined_in: '(requires/.*|architecture/keyword_dictionary)\.md'
+    defined_in: 'requires/.*\.md'
 
 formal_verification:
   model_dir_name: "formal"
@@ -90,7 +87,7 @@ verification_matrix:
   pairwise_test: "experiments/pysim/qa/cross_cutting/test_pairwise_combinations.py"
   expected:
     component_specs: 25
-    concept_files: 17
+    concept_files: 13
     formal_models: 17
     test_specs: 22
     pysim_unit_suites: 30
@@ -118,8 +115,11 @@ evidence:
 
 llm_judge:
   tag: "{VERIFY_LLM}"
-  default_backend: "jev"
+  default_backend: "laya"
   backends:
+    laya:
+      endpoint: "http://127.0.0.1:8000/v1/systemone"
+      model: "multilingual"
     jev:
       api_key_env: "OPENROUTER_API_KEY"
       endpoint: "https://openrouter.ai/api/alpha/decisions"
@@ -237,8 +237,8 @@ llm_judge:
 
 terminology:
   enabled: true
-  embedding_model: "nvidia/nemotron-3-embed-1b:free"
-  embedding_backend: "openrouter"
+  embedding_model: "qwen3-embedding"
+  embedding_backend: "ollama"
   similarity_threshold: 0.80
   confidence_threshold: 0.60
   max_terms: 1000
@@ -434,8 +434,8 @@ semantic_topic:
   unlinked_warning_threshold: 0.88
   duplicate_warning_threshold: 0.93
   max_pairs: 1000
-  embedding_model: "nvidia/nemotron-3-embed-1b:free"
-  backend: "openrouter"
+  embedding_model: "qwen3-embedding"
+  backend: "ollama"
   batch_size: 16
 
 prose_readability:
@@ -552,11 +552,8 @@ pysim_imports:
     - tier: 2
       paths:
         - "tier2_runtime/**/*.py"
-      exclude:
-        - "tier2_runtime/runtime_engine.py"
     - tier: 3
       paths:
-        - "tier2_runtime/runtime_engine.py"
         - "system.py"
         - "main.py"
         - "aobench.py"

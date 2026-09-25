@@ -134,7 +134,7 @@ Fireball の Tier 構造では、上位 Tier が粗粒度の方針を示す。�
 | **グローバルキーワード (GLOBAL)** | `{GLOBAL_[Name]}` | システム全体（多数の仕様書）に適用される広域ポリシー、プラットフォーム要件。 | - 各仕様書の単体要求適合性 (`Traceability Gate`) で検証される。 |
 | **全体アーキテクチャ (ARCHITECTURE)** | `{ADR_*}` / `{Challenge_*}` / 原則名 | アーキテクチャ判定記録（ADR）、技術課題・制約（Challenge）、およびクリーンアーキテクチャ等の全体設計原則。 | - `requirement_list.md` または設計書で宣言され、下位層での遵守状況が検証される。 |
 | **コンポーネント要求 (COMPONENT & GOTCHA)** | 個別要求名 / `{GOTCHA-<COMPONENT>-<連番>}` | Tier 1〜3 の個別コンポーネント（スケジューラ、インタープリタ等）の機能要求、および設計・実装の勘所（GOTCHA）。 | - Traceability Gate による定義元・参照先追跡、およびテスト仕様書との紐付け検証対象となる。 |
-| **リンクアンカー (LINK)** | 意味のある連携契約は `{[Name]_Layout}` / `{CPS_*}` / 機構名。意味を持たない純粋リンクだけは `LINK-<連番>`。 | 物理メモリレイアウト整合、低層ディスパッチ規約、内部バイパス・状態連携のための専用リンクアンカー。 | - `keyword_dictionary.md` を正本とし、複数コンポーネント間の構造整合性を DocGraph 上で機械検証する。 |
+| **リンクアンカー (LINK)** | 意味のある連携契約は `{[Name]_Layout}` / `{CPS_*}` / 機構名。意味を持たない純粋リンクだけは `LINK-<連番>`。 | 物理メモリレイアウト整合、低層ディスパッチ規約、内部バイパス・状態連携のための専用リンクアンカー。 | - 定義は各仕様書の本文に置く。`keyword_dictionary.md` は所在を管理する索引とし、DocGraph で複数コンポーネント間の構造整合性を機械検証する。 |
 
 ---
 
@@ -186,12 +186,12 @@ Fireball の Tier 構造では、上位 Tier が粗粒度の方針を示す。�
 
 中括弧表記のキーワード（`{...}`）について、定義元正本と参照側コンポーネントとで記述箇所を厳格に区別する。`keyword_dictionary.md` は識別子と所在を管理する索引であり、定義にも参照にも数えない。
 
-- **定義元（Source of Truth）**: 定義内容を記述する仕様本文または表の中に `{Keyword}` をインラインで記述する。台帳の所在欄は定義内容ではなく、その正本のファイルを示すメタデータである。各キーワードのインライン定義は全文書を通じて必ず1箇所とし、0箇所または複数箇所はエラーとする。
-- **参照側（Reference / Traceability）**: 上位要求や他コンポーネントを参照・追跡する場合は、セクション見出し直下の HTML コメント `<!-- traceability: {Keyword1} {Keyword2} -->` 内に記述する。参照は複数の文書・セクションにあってよい。本文中に参照目的のキーワード列（例: `関連キーワード: {...}`）をインライン記述してはならない。未定義のキーワードを参照することはエラーとなる。
+- **定義元（Source of Truth）**: 定義内容を記述する仕様本文または表の中に `&#123;Keyword&#125;` をインラインで記述する。台帳の所在欄は定義内容ではなく、その正本のファイルを示すメタデータである。各キーワードのインライン定義は全文書を通じて必ず1箇所とし、0箇所または複数箇所はエラーとする。
+- **参照側（Reference / Traceability）**: 上位要求や他コンポーネントを参照・追跡する場合は、セクション見出し直下の HTML コメント `<!-- traceability: &#123;Keyword1&#125; &#123;Keyword2&#125; -->` 内に記述する。参照は複数の文書・セクションにあってよい。本文中に参照目的のキーワード列（例: `関連キーワード: &#123;...&#125;`）をインライン記述してはならない。未定義のキーワードを参照することはエラーとなる。
 
 ### 4.5 キーワードとテストケースIDの区別
 
-- `{Keyword}` は意味的なトレーサビリティアンカーであり、連番だけの名前を付けない。
+- `&#123;Keyword&#125;` は意味的なトレーサビリティアンカーであり、連番だけの名前を付けない。
 - `TEST-<コンポーネント>-<テスト番号>`（例: `TEST-INT-01`、`TEST-MEM-14`、`TEST-JITR-26`）はテスト仕様書のテストケースIDであり、キーワードではない。テスト仕様書や台帳では「テストケースID」と明記して、キーワードとの紐づけと区別する。
 - `GOTCHA-<COMPONENT>-<連番>` は、設計の勘所・不変条件を表す説明付きの固有IDとしてのみ許可する。対応する設計理由とテストケースを必ず併記する。
 - テストケースIDは `TEST-<コンポーネント>-<テスト番号>` とし、キーワードとは別欄で管理する。意味を持たない純粋な文書間リンクだけに `LINK-<連番>` を使う。
@@ -225,6 +225,6 @@ Fireball の Tier 構造では、上位 Tier が粗粒度の方針を示す。�
 | [`csp_handoff_model.py`](docs/components/tier1_interface/formal/csp_handoff_model.py) | - 所有権移譲と Drop ハンドラによる二重所有・リーク防止 | - `components/tier1_interface/ipc_router.md` |
 | [`hal_dispatch_contract_model.py`](docs/components/tier2_runtime/formal/hal_dispatch_contract_model.py) | - HALアクセスのIPCルーティング強制<br>- 生ポインタ転送禁止<br>- 事前拒否時の所有権保全 | - `components/tier2_runtime/hal_dispatch.md` |
 | [`vsoc_cache_coherency_model.py`](docs/components/tier2_runtime/formal/vsoc_cache_coherency_model.py) | - vSoC JIT キャッシュ整合性・Debugger 介入安全性・ローテーション有界性 | - `components/tier2_runtime/runtime_vsoc.md`<br>- `components/tier3_plugins/debugger.md`<br>- `components/tier3_executer/jit_compiler.md`<br>- `components/tier2_runtime/runtime_memory.md` |
-| [`vsoc_state_model.py`](docs/components/tier2_runtime/formal/vsoc_state_model.py) | - vSoC 実行状態<br>- Safepoint ポーリング応答性<br>- 割り込み/デバッグフォールバック | - `components/tier2_runtime/runtime_vsoc.md`<br>- `components/tier2_runtime/runtime_vmmio.md`<br>- `components/tier3_executer/interpreter.md`<br>- `components/tier3_plugins/debugger.md`<br>- `components/tier3_platform/platform_driver.md`<br>- `components/tier1_core/system_config.md` |
-| [`jit_cache_model.py`](docs/components/tier3_executer/formal/jit_cache_model.py) | - 3面キャッシュ代謝<br>- MPU W^X 保護<br>- 遅延チェイニング局所アンリンク安全性<br>- 2-bit Hotspot FSM | - `components/tier3_executer/jit_compiler.md`<br>- `components/tier3_executer/jit_runtime.md`<br>- `components/tier2_runtime/runtime_memory.md` |
+| [`vsoc_state_model.py`](docs/components/tier2_runtime/formal/vsoc_state_model.py) | - vSoC 実行状態<br>- COOS協調境界での応答性<br>- 割り込み/デバッグフォールバック | - `components/tier2_runtime/runtime_vsoc.md`<br>- `components/tier2_runtime/runtime_vmmio.md`<br>- `components/tier3_executer/interpreter.md`<br>- `components/tier3_plugins/debugger.md`<br>- `components/tier3_platform/platform_driver.md`<br>- `components/tier1_core/system_config.md` |
+| [`jit_cache_model.py`](docs/components/tier3_executer/formal/jit_cache_model.py) | - 3面キャッシュ代謝<br>- 抽象W^X状態不変条件<br>- 遅延チェイニング局所アンリンク安全性<br>- 2-bit Hotspot FSM | - `components/tier3_executer/jit_compiler.md`<br>- `components/tier3_executer/jit_runtime.md`<br>- `components/tier2_runtime/runtime_memory.md` |
 | [`runtime_memory_model.py`](docs/components/tier2_runtime/formal/runtime_memory_model.py) | - ページ所有者分離<br>- 異種タスクの同一ページ混在禁止<br>- 所有権転送の完了性 | - `components/tier2_runtime/runtime_memory.md` |

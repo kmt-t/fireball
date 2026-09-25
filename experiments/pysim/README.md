@@ -52,22 +52,24 @@ experiments/pysim/
 │   ├── leb128.py          # uleb128 / sleb128 デコーダ
 │   ├── control_flow.py    # 静的ブロック解析 & 制御構造デコーダ
 │   ├── loader.py          # WASM モジュールローダー & アクティブセグメント展開
-│   ├── interpreter.py     # 4引数継続ハンドラの参照インタープリタ (Threaded Interpreter)
-│   ├── runtime_engine.py  # vSoC実行制御とTier 3 JITサービス連携
+│   ├── jit_runtime_contract.py # Tier 2からTier 3 JITへの呼出し契約
+│   ├── interop_abi.py     # Interpreter/JIT共有Native ABI
 │   ├── vmmio.py           # 2段階ダイレクトデコード ページテーブル & ソフトウェア TLB
 │   ├── logger.py          # 構造化ログカタログ & アイドルフラッシュ
 │   ├── memory.py          # Tier 1メモリ契約のTier 2実装
 │   ├── hal_dispatch.py    # HAL抽象ディスパッチ
 │   ├── recovery.py        # リカバリ戦略
-│   ├── debugger.py        # 統合デバッガコントローラ
-│   └── gdb_server.py      # GDB Remote Serial Protocol (RSP) ソケットサーバー
+│   └── jit_abi.py         # 共有実行コンテキストABI定数
 │
-├── tier3_executer/             # Tier 3 JIT コンパイラ & ネイティブ生成
-│   ├── jit_cache.py       # ホットスポット状態・トレース記述子・3面キャッシュ
-│   ├── x64_jit.py         # Copy-and-Patch JIT コンパイラ (x64)
-│   ├── x64_asm.py         # constexpr x64 アセンブラ
-│   ├── x64_stencils.py    # 事前コンパイル済み JIT ネイティブステンシルカタログ
-│   └── exec_memory.py     # MPU W^X トランザクション & 実行可能メモリ (mprotect/VirtualProtect)
+├── tier3_executer/             # Tier 3 Interpreter/JIT実行系
+│   ├── interpreter/
+│   │   └── interpreter.py # WASM命令ハンドラと実行状態
+│   └── jit/
+│       ├── runtime_engine.py # Interpreter/JIT統合ドライバ
+│       ├── jit_runtime.py # JIT有効Interpreterと公開実行境界
+│       ├── jit_manager.py # ホットスポット・コンパイル待ち列・検索
+│       ├── jit_cache.py   # トレース記述子・3面キャッシュ
+│       └── x64_jit.py     # Copy-and-Patch JITコンパイラ
 │
 ├── tier3_platform/        # Tier 3 Platform & ハードウェア依存部
 │   └── drivers/           # 静的DIで合成する交換可能なドライバ群
@@ -115,7 +117,7 @@ experiments/pysim/
 5. **Scenario 5: Multi-Function UnifiedPC & Radix (`qa/scenarios/scenario5_multimodule_unified_pc.py`)**:
    - `UnifiedPC`（`func_idx << 16 | pc`）の乗算Foldingミックス（`fold_mix32`）RadixBinaryTreeView による $O(1)$ キャッシュ索引、複数関数にまたがる JIT トレース実行。
 6. **Scenario 6: COOS Cooperative Multitasking (`qa/scenarios/scenario6_coos_multitask_yield.py`)**:
-   - コルーチン協調マルチタスク、トレース境界での Yield 判定（`{ADR_TraceBoundaryYield}`）、Producer-Consumer CSP 直接ハンドオフ。
+   - コルーチン協調マルチタスク、トレース境界での Yield 判定（`{ADR_LoopBackedgeYield}`）、Producer-Consumer CSP 直接ハンドオフ。
 7. **Scenario 7: GDB Remote Debugger Socket Session (`qa/scenarios/scenario7_gdb_socket_debugger.py`)**:
    - 実際の TCP ソケット経由での GDB Remote Serial Protocol (RSP) 対話（`?`, `g`, `m`, `M`, `Z0`, `s`, `c`）、ブレークポイント停止と再開。
 8. **Scenario 8: Storage Coverage & GDB Debugger (`qa/scenarios/scenario8_comprehensive_storage_coverage.py`)**:
@@ -133,16 +135,14 @@ experiments/pysim/
 
 ## 3. 主要アーキテクチャの仕様準拠
 
-### A. トレース境界での協調的 Yield (`{ADR_TraceBoundaryYield}`)
-命令単位での精密な割り込みチェックを廃止し、**トレースの切れ目（基本ブロック末尾、ループバックエッジ、関数呼出/復帰、または JIT トレース脱出境界）でのみ `yield_threshold` を評価して `co_yield` を発行**します。ディスパッチループ内のオーバーヘッドをゼロ化し、最速の実行速度を達成しています。
+### A. LOOP後方分岐回数による協調的 Yield (`{ADR_LoopBackedgeYield}`)
+C++ InterpreterとHybrid JITは、同じ実行コンテキストのLOOP後方分岐回数を使う。取得した後方分岐ごとにC++ handlerが状態を更新し、回数がしきい値に達するまでC++ dispatcher内で実行を続ける。到達時に両経路は同じyield statusを返し、COOSへ制御を戻す。
 
-### B. i64 / f32 / f64 の Libgcc ランタイムヘルパー連携 (`{Libgcc_Runtime_Helper}`)
-32-bit 極小組み込み環境において、64-bit 整数演算（除算・剰余・ビットシフト）および浮動小数点（`f32`/`f64`）演算は、`libgcc` のヘルパー関数（`__divdi3`, `__adddf3` 等）を呼び出す専用ハンドラ（`fireball_rt_*`）経由で実行します。JIT コンパイラはこれらをインライン展開せずランタイムヘルパースタブ呼び出しに委譲することで、JIT ステンシルカタログの極小化（ROM 8KB 遵守）と FPU 有無のハードウェア差異の完全隠蔽を実現しています。
+### B. JITの共通helper呼出し契約
+x64参照構成のhelper入口と呼出規約は [`jit_runtime.md`](docs/components/tier3_executer/jit_runtime.md) と [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) に従う。ARMv8-Mの命令列、ABI、helper配置とROM/RAM使用量はTBDであり、x64の結果から推定しない。
 
-### C. 3D Ambient Occlusion ベンチマーク (`aobench.py`)
-- **Float32 レンダラー**: IEEE 754 単精度浮動小数点（`f32.add`, `f32.sub`, `f32.mul`, `f32.div`, `f32.sqrt` 等）を用いた 3D 球体・平面の交差判定と Ambient Occlusion シェーディング。
-- **Q8.8 固定小数点レンダラー**: 浮動小数点非搭載の極小環境向けに最適化された整数固定小数点レイトレーサー。
-- WASI `fd_write` 経由でコンソールへアスキーグラデーションを出力し、Tier 2（インタープリタ）と Tier 3（JIT）のバイト完全一致を差分検証。
+### C. Ambient Occlusion ベンチマーク (`aobench.py`)
+Float32経路とQ8.8固定小数点経路を同じ入力で実行する。WASI `fd_write`の出力と描画結果を比較し、Interpreter/JIT間で結果が一致することを確認する。このワークロードから特定の組み込みCPUや物理メモリ予算は推定しない。
 
 ---
 
@@ -158,18 +158,23 @@ experiments/pysim/
 # uvキャッシュを一時領域へ置き、プロジェクトの .python-version / .venv を使う
 export UV_CACHE_DIR=/tmp/fireball-uv-cache
 
+# 依存関係の初回導入または変更時
+uv sync
+export UV_OFFLINE=true
+export UV_NO_SYNC=true
+
 # Linux/WSL: Tier 3 実行に必要なネイティブ拡張をビルド
 bash experiments/pysim/tier3_executer/interpreter/build_native.sh
 bash experiments/pysim/tier3_executer/jit/build_native.sh
 
 # 全ベンチマーク一括実行（wasmtime は JIT カードエイジング測定に使用）
-uv run --system-certs --with wasmtime python experiments/pysim/benchmarks/run_all.py
+uv run --offline --no-sync python experiments/pysim/benchmarks/run_all.py
 
 # 3D AO-Bench 単体・ランタイム内部状態ダンプ
-uv run --system-certs python experiments/pysim/benchmarks/aobench/bench_aobench.py --debug
+uv run --offline --no-sync python experiments/pysim/benchmarks/aobench/bench_aobench.py --debug
 
 # Intel VTune / AMD uProf Hotspots用に算術ループの1経路だけを反復
-uv run --offline python -u experiments/pysim/benchmarks/jit/profile_arithmetic_path.py --path native-interpreter
+uv run --offline --no-sync python -u experiments/pysim/benchmarks/jit/profile_arithmetic_path.py --path native-interpreter
 ```
 
 `uv run`はリポジトリの`.python-version`と`.venv`を使う。`--path` は `python-handler`、`native-interpreter`、`hybrid-jit` から選ぶ。通常の速度比較には `bench_jit.py` の中央値を使い、プロファイラ収集中の実行時間は比較に使わない。Linuxの`perf stat cycles:u`で動的WASM命令あたりのホストサイクル数を測る方法、Intel VTuneとAMD uProfの収集コマンドは[JITベンチマーク仕様書](../../docs/components/tier3_executer/benchmarks/jit_runtime_bench_spec.md)を参照する。
@@ -187,29 +192,31 @@ Windows では `tier3_executer/interpreter/build_native.ps1` と `tier3_executer
 # Windows (PowerShell) — pysim ソース品質・テストを実行
 powershell tools/check-src.ps1 -group pysim
 
-# Python 直接実行
-uv run --system-certs --with wasmtime python experiments/pysim/qa/scenarios/run_all.py
+# uv 経由で全シナリオを実行
+uv run --offline --no-sync python experiments/pysim/qa/scenarios/run_all.py
 
 # Python 最適化モード（assert 副作用の回帰検査）
-uv run --system-certs --with wasmtime python -O experiments/pysim/qa/run_all.py
-uv run --system-certs --with wasmtime python -O experiments/pysim/qa/scenarios/run_all.py
+uv run --offline --no-sync python -O experiments/pysim/qa/run_all.py
+uv run --offline --no-sync python -O experiments/pysim/qa/scenarios/run_all.py
 
 # 製品Tierの静的型検査
-pyright --project pyrightconfig.json
+uv run --offline --no-sync pyright --project pyrightconfig.json
 ```
 
 ### 全単体テストの実行
 ```bash
-uv run --system-certs --with wasmtime python experiments/pysim/qa/run_all.py
+uv run --offline --no-sync python experiments/pysim/qa/run_all.py
 ```
 
 ### 3D AO-Bench ベンチマークの実行
 ```bash
-uv run --system-certs --with wasmtime python experiments/pysim/aobench.py
+uv run --offline --no-sync python experiments/pysim/aobench.py
 ```
 
 ### JIT ネイティブコンパイラと呼び出し経路
-`tier3_executer/jit/native_trace_call.cxx` は x64 Copy-and-Patch トレースのコンパイルを実装する。JIT コンパイラがこの拡張を直接 import するため、Tier 3 の JIT 実行にはビルドが必須である。同じ拡張はCPS 4引数ABIの生関数ポインタ呼び出しを提供する。同期 `RuntimeEngine.run()` では、条件分岐先から純ネイティブトレースのチェインが同じ分岐へ戻る場合に `run_loop_cycle` が反復をC++内で続け、各WASMループ反復ごとのPython実行制御を省く。協調実行の `run_cooperative()` はスケジューラ境界を保つため従来の経路を使う。未ビルド時の `_invoke_trace` は `ctypes.CFUNCTYPE` 経路へフォールバックし、この高速経路は使わない。Linux拡張には `-g` を付け、AMD uProfとIntel VTuneでC++ソース位置を解決できるようにする。
+`tier3_executer/jit/native_trace_call.cxx` は x64 Copy-and-Patch トレースのコンパイルを実装する。JIT コンパイラがこの拡張を直接 import するため、Tier 3 の JIT 実行にはビルドが必須である。実行時は `JITTrace` が所有するCPS 4引数ABIの関数ポインタをC++ dispatcherが呼ぶ。LOOP後方`BR` / `BR_IF`はC++ Interpreter handlerを通して制御状態を更新し、その取得回数を共通コンテキストに記録する。dispatcherは共有設定の回数に達するまでJIT traceとC++ handlerを連続実行してからRuntimeEngineへyieldを返す。C++ Interpreter単独経路も同じdispatcherと回数条件を使う。Linux拡張には `-g` を付け、AMD uProfとIntel VTuneでC++ソース位置を解決できるようにする。
+
+JIT chainはtrace末尾から共通コード領域のchain dispatcherへ入り、そこから次trace bodyへtail-jumpする経路を指す。C++ handler後にC++ dispatcherが常駐traceを起動する遷移はchainではない。`native_dispatch_trace_transitions`はC++ handlerからJIT traceへのdispatcher遷移数であり、chain指標ではない。現状、共通コードchain dispatcherの実行回数を数える専用指標はない。`FB_CONF_RUNTIME_PROFILE_STATS`は既定で無効であり、通常のClangビルドでは統計収集コードを除外する。QAまたは診断用拡張を作る場合は`FIREBALL_BUILD_RUNTIME_PROFILE_STATS=1 bash experiments/pysim/tier3_executer/interpreter/build_native.sh`を実行し、実行時の収集はQA補助または`--collect-runtime-stats`で選ぶ。通常ビルドは環境変数なしで行う。`FB_CONF_JIT_HOTSPOT_PROFILING`は動的compileに必要な候補block観測を制御する。コンパイル済みtraceの定常状態を測る場合は、warm-up後に候補観測を無効化できる。dispatch snapshotはcache世代が変わったときだけ再生成する。
 ```bash
 # Windows: clang-cl + Visual Studio Build Tools + Windows SDK が必要
 powershell experiments/pysim/tier3_executer/jit/build_native.ps1
@@ -219,9 +226,9 @@ bash experiments/pysim/tier3_executer/jit/build_native.sh
 ```
 
 ### Tier 3インタープリタの境界
-`tier3_executer/interpreter/native_interpreter.cxx`は、本番インタープリタに対応するC++の固定256スロットハンドラ表とCPS step入口を持つ。handlerは`ctx, sp, local_base, tos`の4論理引数を共有し、Windows x64では`__fastcall`、組み込みARMではAAPCSとして宣言する。Python側はネイティブ実行コンテキスト、operand/local/controlの固定領域を`memoryview`で渡し、C++が命令列とスタックを境界命令まで連続実行する。`bytes`のコピーや整数アドレス化は行わない。
+`tier3_executer/interpreter/native_interpreter.cxx`は、本番インタープリタに対応するC++の固定256スロットハンドラ表とstep／dispatch入口を持つ。handlerは`ctx, sp, local_base, tos`の4論理引数を共有し、ホストx64で検証したABIを使う。ARMv8-Mの物理引数配置と関数ABIはTBDであり、このシミュレータはARM適合を主張しない。Python側はネイティブ実行コンテキスト、operand/local/controlの固定領域を`memoryview`で渡し、C++ dispatcherがJIT traceとC++ handlerを後方分岐yield境界まで連続実行する。C++ Interpreter単独経路も同じ共有しきい値を使う。`bytes`のコピーや整数アドレス化は行わない。
 
-型幅とロード時control mapをnative contextへ反映するまで、i64/f32/f64を含み得る`local.*`、`drop`、`select`、制御・call・memory系はC++で1ワード扱いせず、現在のPCでPythonハンドラへフォールバックする。C++側で完結するi32定数・比較・算術・ビット演算は、Pythonのハンドラ呼び出しとスタック操作なしで連続実行する。このフォールバックは後方互換層ではなく、仕様で定義された実行境界である。Tier 3実行にはC++拡張のビルドを必須とする。
+C++実装済みの命令はC++ handlerが処理する。未対応命令や外部呼出しは現在のPCでPython境界へフォールバックし、trapと完了も境界statusとして返す。このフォールバックは後方互換層ではなく、実装が定める実行境界である。Tier 3実行にはC++拡張のビルドを必須とする。
 ```bash
 # Windows: clang-cl + Visual Studio Build Tools + Windows SDK が必要
 powershell experiments/pysim/tier3_executer/interpreter/build_native.ps1
@@ -230,4 +237,4 @@ powershell experiments/pysim/tier3_executer/interpreter/build_native.ps1
 bash experiments/pysim/tier3_executer/interpreter/build_native.sh
 ```
 
-実行ホットパスは`native_interpreter.cxx`のhandler tableと`run_step`であり、LEB128はロード時デコーダの責務で実行時境界には入らない。旧Cython/CPS互換入口は提供しない。
+実行ホットパスは`native_interpreter.cxx`のhandler tableと`run_native_dispatch`であり、LEB128はロード時デコーダの責務で実行時境界には入らない。旧Cython/CPS互換入口は提供しない。

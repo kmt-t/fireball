@@ -112,7 +112,7 @@ class _UvwasiOptions(ctypes.Structure):
 class UvwasiBackend:
     """ctypes adapter for the uvwasi embedder and Preview 1 APIs."""
 
-    __slots__ = ("_library", "_context", "_memory_array", "_closed")
+    __slots__ = ("_closed", "_context", "_library", "_memory_array")
 
     def __init__(self, library_path: str) -> None:
         assert library_path != ""

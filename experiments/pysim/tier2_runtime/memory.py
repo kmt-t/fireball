@@ -1,10 +1,9 @@
 """
 experiments/pysim/tier2_runtime/memory.py
-COOS Memory Manager & PMSAv8 MPU simulation.
-- Consolidated physical memory pool and fixed-size partition leasing
-- Typed slot pools with zero dynamic void* heap
-- RAII SharedBlock zero-copy ownership transfer linked with page table listeners
-- Cortex-M33 PMSAv8 8-region MPU allocation and JIT W^X transaction switching
+COOS Memory Manager simulation.
+- Fixed-size partition leasing and typed slot pools
+- RAII SharedBlock ownership transfer linked with virtual mapping listeners
+- ARMv8-M physical memory layout and MPU/W^X implementation are TBD.
 """
 
 from __future__ import annotations
@@ -24,16 +23,14 @@ T = TypeVar("T")
 
 # Configuration & Constants (FB_CONF_*)
 FB_CONF_MEMORY_POOL_SIZE = 23552  # system_config.md: sum of all sub-pools (bytes)
-FB_CONF_TASK_HEAP_SIZES = (
-    4096,
-)  # system_config.md FB_CONF_TASK_HEAP_SIZES: per-VM-slot ROM size table
+FB_CONF_TASK_HEAP_SIZES = (4096,)  # system_config.md: per-VM-slot partition-size table
 FB_CONF_MAX_TASKS = 16
 FB_CONF_MAX_SHM_PAGES = 32
 FB_PAGE_SIZE = 4096  # 4KB SHM page size
 FB_CONF_SHM_SIZE = 1024  # Physical SHM backing budget; virtual page slots are separate.
 FB_WASM_PAGE_SIZE = 65536  # 64KB WASM page size
-# system_config.md "PMSAv8 MPU 物理アドレスマップ" 節: Region 6 (Shared Memory Buffers) の基点
-FB_CONF_MPU_R6_SHARED_MEMORY_BASE = 0x2008_0000
+# Abstract address used only by the Python simulator; not an ARM physical address.
+FB_CONF_SHM_SIM_BASE = 0
 FB_TASK_ID_FLIGHT = 0xFF  # Flight sentinel during IPC transfer (8-bit PTE owner_id compliant)
 FB_TASK_ID_KERNEL = 0x00
 FB_INVALID_SHM_ID = -1
@@ -411,148 +408,14 @@ class SharedBlock:
         self.drop()
 
 
-class AccessPermission(Enum):
-    NO_ACCESS = 0
-    RO = 1
-    RW = 2
-
-
-@dataclass(slots=True)
-class MPURegion:
-    region_no: int
-    base_address: int
-    limit_address: int
-    ap: AccessPermission
-    xn: bool  # eXecute Never (True = Non-executable)
-    is_device: bool = False
-    enabled: bool = True
-
-    @property
-    def is_writable(self) -> bool:
-        return self.enabled and self.ap == AccessPermission.RW
-
-    @property
-    def is_executable(self) -> bool:
-        return self.enabled and not self.xn
-
-
-class PMSAv8MPU:
-    """Cortex-M33 PMSAv8 8-region Memory Protection Unit simulator."""
-
-    __slots__ = ("dsb_count", "isb_count", "patch_count", "patch_in_progress", "regions")
-
-    def __init__(self, pool_base: int = 0x20020000):
-        self.regions: tuple[MPURegion, ...] = ()
-        self.dsb_count = 0
-        self.isb_count = 0
-        self.patch_count = 0
-        self.patch_in_progress = False
-        self._setup_static_regions(pool_base)
-
-    def _setup_static_regions(self, pool_base: int) -> None:
-        # 8 statically allocated regions matching runtime_memory.md §7.1 Table.
-        # Base addresses (Regions 1/2/4/5/6/7) are system_config.md's
-        # FB_CONF_MPU_R*_BASE constants (PMSAv8 MPU 物理アドレスマップ節).
-        self.regions = (
-            MPURegion(
-                0,
-                0x00000000,
-                0x0007FFE0,
-                AccessPermission.RO,
-                xn=False,
-            ),
-            MPURegion(
-                1,
-                0x20000000,
-                0x20007FE0,
-                AccessPermission.RW,
-                xn=True,
-            ),
-            MPURegion(
-                2,
-                0x20008000,
-                0x2001FFE0,
-                AccessPermission.RW,
-                xn=True,
-            ),
-            MPURegion(
-                3,
-                pool_base,
-                pool_base + 0x000FFE0,
-                AccessPermission.RW,
-                xn=True,
-            ),
-            MPURegion(
-                4,
-                0x20040000,
-                0x2007FFE0,
-                AccessPermission.RO,
-                xn=False,
-            ),
-            MPURegion(
-                5,
-                0x40000000,
-                0x4003FFE0,
-                AccessPermission.RW,
-                xn=True,
-                is_device=True,
-            ),
-            MPURegion(
-                6,
-                FB_CONF_MPU_R6_SHARED_MEMORY_BASE,
-                0x200BFFE0,
-                AccessPermission.RW,
-                xn=True,
-            ),
-            MPURegion(
-                7,
-                0x200C0000,
-                0x200C0020,
-                AccessPermission.NO_ACCESS,
-                xn=True,
-            ),
-        )
-
-    def begin_jit_patch(self) -> None:
-        assert not self.patch_in_progress, "Nested JIT patch transaction is invalid"
-        r4 = self.regions[4]
-        r4.ap = AccessPermission.RW
-        r4.xn = True
-        self.dsb_count += 1
-        self.isb_count += 1
-        self.patch_in_progress = True
-
-    def commit_jit_patch(self) -> None:
-        assert self.patch_in_progress, "Cannot commit without begin_jit_patch"
-        r4 = self.regions[4]
-        r4.ap = AccessPermission.RO
-        r4.xn = False
-        self.dsb_count += 1
-        self.isb_count += 1
-        self.patch_in_progress = False
-
-    def patch_stencil(self) -> None:
-        """Record one instruction-stencil patch inside the active transaction."""
-        assert self.patch_in_progress, "Stencil patch requires an active JIT transaction"
-        self.patch_count += 1
-
-    def assert_no_rwx(self) -> None:
-        for r in self.regions:
-            if r.enabled:
-                assert not (r.is_writable and r.is_executable), (
-                    f"Invariant violation: Region {r.region_no} has RWX permissions"
-                )
-
-
 class MemoryManager:
     """Consolidated Physical Memory Manager, implementing the Tier 1 co_mem
-    contract (system_memory.md) via the Tier 2 physical realization
+    contract (system_memory.md) via the Tier 2 software simulation
     (runtime_memory.md)."""
 
     __slots__ = (
         "_page_mapping_callbacks",
         "_scheduler",
-        "mpu",
         "page_registry",
         "partition_owners",
         "pool_base",
@@ -571,7 +434,6 @@ class MemoryManager:
         self.total_allocated_bytes: int = 0
         self.page_registry = ShmPageRegistry()
         self._page_mapping_callbacks: PageMappingCallbacks | None = None
-        self.mpu: PMSAv8MPU | None = None
         self.partition_owners: MutableFlatMapStorage[int, PartitionView] = MutableFlatMapStorage(
             capacity=FB_CONF_MAX_TASKS
         )
@@ -641,7 +503,7 @@ class MemoryManager:
             for page in self.shm_pages:
                 if not page.allocated:
                     continue
-                page_start = page.physical_addr - FB_CONF_MPU_R6_SHARED_MEMORY_BASE
+                page_start = page.physical_addr - FB_CONF_SHM_SIM_BASE
                 page_end = page_start + page.allocated_bytes
                 if candidate < page_end and page_start < candidate + size:
                     conflict_end = page_end
@@ -658,7 +520,6 @@ class MemoryManager:
         self.pool_base = pool_base
         self.pool_size = pool_size
         self.total_allocated_bytes = 0
-        self.mpu = PMSAv8MPU(pool_base)
         return Result(value=True)
 
     def acquire_task_heap(self) -> Result[PartitionView]:
@@ -770,7 +631,7 @@ class MemoryManager:
         target_page.owner_id = caller_task_id
         target_page.allocated_bytes = size
         target_page.slot_count = 1
-        target_page.physical_addr = FB_CONF_MPU_R6_SHARED_MEMORY_BASE + physical_offset
+        target_page.physical_addr = FB_CONF_SHM_SIM_BASE + physical_offset
         self.total_allocated_bytes += size
         self.shm_allocated_bytes += size
 

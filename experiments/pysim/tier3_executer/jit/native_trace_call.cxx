@@ -5,15 +5,30 @@
 #include <cstddef>
 #include <cstdint>
 
+#ifndef FB_CONF_JIT_TRACE_COMMON_CHAIN_DISPATCH_OFFSET
+#error "JIT chain dispatcher offset must come from tier1_core/config.py"
+#endif
+#ifndef FB_CONF_JIT_TRACE_COMMON_CHAIN_DISPATCH_BYTES
+#error "JIT chain dispatcher size must come from tier1_core/config.py"
+#endif
+#ifndef FB_CONF_JIT_X64_TRACE_HEADER_BYTES
+#error "x64 JIT trace header size must come from tier1_core/config.py"
+#endif
+#ifndef FB_CONF_JIT_X64_CHAIN_TARGET_OFFSET
+#error "x64 JIT chain target offset must come from tier1_core/config.py"
+#endif
+#ifndef FB_CONF_JIT_TRACE_COMMON_EPILOGUE_OFFSET
+#error "JIT common epilogue offset must come from tier1_core/config.py"
+#endif
+
 namespace {
 
-using trace_fn_t = void (*)(void*, void*, void*, std::uint32_t);
-
-constexpr std::size_t kTraceHeaderBytes = 52;
+constexpr std::size_t kTraceHeaderBytes = FB_CONF_JIT_X64_TRACE_HEADER_BYTES;
 constexpr std::size_t kMaxBodyBytes = 8192;
 constexpr std::size_t kMaxStackLocations = 8192;
 constexpr std::int32_t kTos = -1;
 constexpr std::int32_t kNos = -2;
+constexpr std::size_t kTraceEntryStubBytes = 15;
 
 constexpr int kDrop = 0x1A;
 constexpr int kLocalGet = 0x20;
@@ -51,6 +66,104 @@ constexpr int kF32Add = 0x92;
 constexpr int kF32Div = 0x95;
 constexpr int kF64Add = 0xA0;
 constexpr int kF64Div = 0xA3;
+
+constexpr std::size_t kSharedDispatcherBytes = FB_CONF_JIT_TRACE_COMMON_CHAIN_DISPATCH_BYTES;
+constexpr std::size_t kCommonEpilogueOffset = FB_CONF_JIT_TRACE_COMMON_EPILOGUE_OFFSET;
+static_assert(kTraceHeaderBytes + kTraceEntryStubBytes <= 0x7Fu);
+static_assert(FB_CONF_JIT_X64_CHAIN_TARGET_OFFSET <= 0x7Fu);
+
+enum class assembler_label : std::size_t { fallback, count };
+
+struct relative_fixup {
+  std::size_t displacement_offset = 0;
+  assembler_label target = assembler_label::fallback;
+};
+
+class constexpr_x64_assembler {
+ public:
+  constexpr void emit(std::uint8_t value) {
+    if (size_ < bytes_.size()) bytes_[size_++] = value;
+  }
+
+  template <typename... Values>
+  constexpr void emit_bytes(Values... values) {
+    (emit(static_cast<std::uint8_t>(values)), ...);
+  }
+
+  constexpr void mark(assembler_label label) {
+    labels_[static_cast<std::size_t>(label)] = size_;
+  }
+
+  constexpr void jump_if(std::uint8_t condition, assembler_label target) {
+    emit_bytes(0x0F, condition);
+    const auto displacement_offset = size_;
+    emit_bytes(0, 0, 0, 0);
+    if (fixup_count_ < fixups_.size()) {
+      fixups_[fixup_count_++] = relative_fixup{displacement_offset, target};
+    }
+  }
+
+  constexpr std::size_t jump_to_offset(std::size_t target_offset) {
+    emit(0xE9);
+    const auto displacement_offset = size_;
+    emit_bytes(0, 0, 0, 0);
+    const auto next_offset = base_offset_ + size_;
+    const auto delta = static_cast<std::int64_t>(target_offset) -
+                       static_cast<std::int64_t>(next_offset);
+    write_i32(bytes_, displacement_offset, static_cast<std::int32_t>(delta));
+    return displacement_offset;
+  }
+
+  constexpr void set_base_offset(std::size_t base_offset) { base_offset_ = base_offset; }
+
+  constexpr std::size_t size() const { return size_; }
+
+  constexpr std::array<std::uint8_t, kSharedDispatcherBytes> finish() const {
+    auto result = bytes_;
+    for (std::size_t index = 0; index < fixup_count_; ++index) {
+      const auto fixup = fixups_[index];
+      const auto label_index = static_cast<std::size_t>(fixup.target);
+      const auto delta = static_cast<std::int64_t>(labels_[label_index]) -
+                         static_cast<std::int64_t>(fixup.displacement_offset + 4);
+      write_i32(result, fixup.displacement_offset, static_cast<std::int32_t>(delta));
+    }
+    return result;
+  }
+
+ private:
+  static constexpr void write_i32(std::array<std::uint8_t, kSharedDispatcherBytes>& target,
+                                  std::size_t offset, std::int32_t value) {
+    const auto bits = static_cast<std::uint32_t>(value);
+    for (std::size_t byte = 0; byte < 4; ++byte) {
+      target[offset + byte] = static_cast<std::uint8_t>((bits >> (byte * 8)) & 0xFFu);
+    }
+  }
+
+  std::array<std::uint8_t, kSharedDispatcherBytes> bytes_{};
+  std::array<std::size_t, static_cast<std::size_t>(assembler_label::count)> labels_{};
+  std::array<relative_fixup, 4> fixups_{};
+  std::size_t size_ = 0;
+  std::size_t fixup_count_ = 0;
+  std::size_t base_offset_ = 0;
+};
+
+constexpr std::array<std::uint8_t, kSharedDispatcherBytes> make_chain_dispatcher() {
+  constexpr_x64_assembler assembler;
+  assembler.set_base_offset(FB_CONF_JIT_TRACE_COMMON_CHAIN_DISPATCH_OFFSET);
+  assembler.emit_bytes(0x49, 0x8B, 0x56,
+                       FB_CONF_JIT_X64_CHAIN_TARGET_OFFSET);  // mov rdx, [r14+chain_target]
+  assembler.emit_bytes(0x48, 0x85, 0xD2);                       // test rdx, rdx
+  assembler.jump_if(0x84, assembler_label::fallback);          // jz fallback
+  assembler.emit_bytes(0x4C, 0x8D, 0x72,
+                       -static_cast<std::int8_t>(kTraceHeaderBytes + kTraceEntryStubBytes));
+  assembler.emit_bytes(0xFF, 0xE2);  // jmp rdx; R14 now names the next trace header
+  assembler.mark(assembler_label::fallback);
+  assembler.jump_to_offset(kCommonEpilogueOffset);
+  return assembler.finish();
+}
+
+inline constexpr auto kChainDispatcher = make_chain_dispatcher();
+static_assert(kChainDispatcher.size() == kSharedDispatcherBytes);
 
 struct buffer_guard {
   Py_buffer view{};
@@ -128,13 +241,8 @@ constexpr std::array<std::uint8_t, 15> kEntryStencil = {
 constexpr std::array<std::uint8_t, 12> kHelperTailStencil = {
     0x48, 0x8D, 0x05, 0x00, 0x00, 0x00, 0x00, 0xE9, 0x00, 0x00, 0x00, 0x00};
 constexpr std::array<std::uint8_t, 4> kPublishNextPcStencil = {0x41, 0xC7, 0x45, 0x00};
-constexpr std::array<std::uint8_t, 7> kChainHeaderStencil = {
-    0x48, 0x8D, 0x05, 0x00, 0x00, 0x00, 0x00};
-constexpr std::array<std::uint8_t, 7> kChainLoadTestStencil = {
-    0x48, 0x8B, 0x50, 0x10, 0x48, 0x85, 0xD2};
-constexpr std::array<std::uint8_t, 6> kChainFallbackStencil = {
-    0x0F, 0x84, 0x00, 0x00, 0x00, 0x00};
-constexpr std::array<std::uint8_t, 2> kChainJumpStencil = {0xFF, 0xE2};
+constexpr std::array<std::uint8_t, 5> kChainDispatchStencil = {
+    0xE9, 0x00, 0x00, 0x00, 0x00};
 constexpr std::array<std::uint8_t, 5> kExitJumpStencil = {0xE9, 0x00, 0x00, 0x00, 0x00};
 
 constexpr std::array<std::uint8_t, 10> make_compare_stencil(std::uint8_t condition) {
@@ -424,7 +532,7 @@ PyObject* compile_trace(PyObject*, PyObject* args) {
       (b.helper_index < 0 && b.helper_words != 0)) Py_RETURN_NONE;
 
   int helper_header = -1, helper_exit = -1, exit_patch = -1;
-  int chain_header = -1, chain_fallback = -1;
+  int chain_dispatch = -1;
   if (tail) {
     if (b.helper_index >= 0 || b.location_count != 0 || helper_target == 0) Py_RETURN_NONE;
     const auto base = b.body_size;
@@ -443,12 +551,8 @@ PyObject* compile_trace(PyObject*, PyObject* args) {
       if (!append_u32_patch(b, kPublishNextPcStencil, static_cast<std::uint32_t>(next_pc))) {
         Py_RETURN_NONE;
       }
-      chain_header = static_cast<int>(kTraceHeaderBytes + b.body_size + 3);
-      if (!append_stencil(b, kChainHeaderStencil) ||
-          !append_stencil(b, kChainLoadTestStencil)) Py_RETURN_NONE;
-      chain_fallback = static_cast<int>(kTraceHeaderBytes + b.body_size + 2);
-      if (!append_stencil(b, kChainFallbackStencil) ||
-          !append_stencil(b, kChainJumpStencil)) Py_RETURN_NONE;
+      chain_dispatch = static_cast<int>(kTraceHeaderBytes + b.body_size + 1);
+      if (!append_stencil(b, kChainDispatchStencil)) Py_RETURN_NONE;
     } else {
       exit_patch = static_cast<int>(kTraceHeaderBytes + b.body_size + 1);
       if (!append_stencil(b, kExitJumpStencil)) Py_RETURN_NONE;
@@ -456,7 +560,7 @@ PyObject* compile_trace(PyObject*, PyObject* args) {
   }
   if (tail) b.helper_index = -1;
   if (kTraceHeaderBytes + b.body_size > 0xFFFF) Py_RETURN_NONE;
-  PyObject* result = PyTuple_New(10);
+  PyObject* result = PyTuple_New(9);
   if (result == nullptr) return nullptr;
   PyTuple_SET_ITEM(result, 0, PyBytes_FromStringAndSize(reinterpret_cast<const char*>(b.body.data()),
                                                         static_cast<Py_ssize_t>(b.body_size)));
@@ -467,65 +571,32 @@ PyObject* compile_trace(PyObject*, PyObject* args) {
   PyTuple_SET_ITEM(result, 5, PyLong_FromLong(helper_header));
   PyTuple_SET_ITEM(result, 6, PyLong_FromLong(helper_exit));
   PyTuple_SET_ITEM(result, 7, PyLong_FromLong(exit_patch));
-  PyTuple_SET_ITEM(result, 8, PyLong_FromLong(chain_header));
-  PyTuple_SET_ITEM(result, 9, PyLong_FromLong(chain_fallback));
+  PyTuple_SET_ITEM(result, 8, PyLong_FromLong(chain_dispatch));
   return result;
 }
 
-PyObject* invoke_trace(PyObject*, PyObject* args) {
-  unsigned long long fn_addr = 0, ctx_addr = 0, sp_addr = 0, local_base_addr = 0;
-  unsigned int tos = 0;
-  if (!PyArg_ParseTuple(args, "KKKKI", &fn_addr, &ctx_addr, &sp_addr, &local_base_addr, &tos)) return nullptr;
-  if (fn_addr == 0) { PyErr_SetString(PyExc_ValueError, "trace function address must be non-zero"); return nullptr; }
-  const auto fn = reinterpret_cast<trace_fn_t>(static_cast<std::uintptr_t>(fn_addr));
-  Py_BEGIN_ALLOW_THREADS
-  fn(reinterpret_cast<void*>(static_cast<std::uintptr_t>(ctx_addr)),
-     reinterpret_cast<void*>(static_cast<std::uintptr_t>(sp_addr)),
-     reinterpret_cast<void*>(static_cast<std::uintptr_t>(local_base_addr)), tos);
-  Py_END_ALLOW_THREADS
-  Py_RETURN_NONE;
-}
-
-PyObject* run_loop_cycle(PyObject*, PyObject* args) {
-  unsigned long long branch_addr = 0, body_addr = 0, ctx_addr = 0, sp_addr = 0;
-  unsigned long long local_base_addr = 0;
-  unsigned int tos = 0;
-  int continue_when_nonzero = 0;
-  if (!PyArg_ParseTuple(args, "KKKKKIp", &branch_addr, &body_addr, &ctx_addr, &sp_addr,
-                        &local_base_addr, &tos, &continue_when_nonzero)) {
+PyObject* common_chain_dispatcher(PyObject*, PyObject*) {
+  PyObject* result = PyTuple_New(2);
+  if (result == nullptr) return nullptr;
+  PyObject* offset = PyLong_FromUnsignedLong(FB_CONF_JIT_TRACE_COMMON_CHAIN_DISPATCH_OFFSET);
+  PyObject* code = PyBytes_FromStringAndSize(
+      reinterpret_cast<const char*>(kChainDispatcher.data()),
+      static_cast<Py_ssize_t>(kChainDispatcher.size()));
+  if (offset == nullptr || code == nullptr) {
+    Py_XDECREF(offset);
+    Py_XDECREF(code);
+    Py_DECREF(result);
     return nullptr;
   }
-  if (branch_addr == 0 || body_addr == 0 || ctx_addr == 0 || sp_addr == 0) {
-    PyErr_SetString(
-        PyExc_ValueError,
-        "native loop cycle requires non-zero code, context, and stack addresses");
-    return nullptr;
-  }
-
-  const auto branch = reinterpret_cast<trace_fn_t>(static_cast<std::uintptr_t>(branch_addr));
-  const auto body = reinterpret_cast<trace_fn_t>(static_cast<std::uintptr_t>(body_addr));
-  void* const ctx = reinterpret_cast<void*>(static_cast<std::uintptr_t>(ctx_addr));
-  void* const sp = reinterpret_cast<void*>(static_cast<std::uintptr_t>(sp_addr));
-  void* const local_base = reinterpret_cast<void*>(static_cast<std::uintptr_t>(local_base_addr));
-  const auto* const condition = static_cast<const volatile std::uint32_t*>(sp);
-
-  // The GIL stays held while resident cache pointers are in use. Pure native
-  // traces do not call into Python, and this also prevents another Python
-  // thread from rotating the code cache while the linked loop is running.
-  branch(ctx, sp, local_base, tos);
-  unsigned long long iterations = 0;
-  while ((*condition != 0) == (continue_when_nonzero != 0)) {
-    body(ctx, sp, local_base, tos);
-    ++iterations;
-  }
-  return PyLong_FromUnsignedLongLong(iterations);
+  PyTuple_SET_ITEM(result, 0, offset);
+  PyTuple_SET_ITEM(result, 1, code);
+  return result;
 }
 
 PyMethodDef module_methods[] = {
     {"compile_trace", compile_trace, METH_VARARGS, "Compile one x64 trace in Native C++."},
-    {"invoke_trace", invoke_trace, METH_VARARGS, "Call a JIT trace using the native ABI."},
-    {"run_loop_cycle", run_loop_cycle, METH_VARARGS,
-     "Run a linked native JIT loop cycle without returning to Python."},
+    {"common_chain_dispatcher", common_chain_dispatcher, METH_NOARGS,
+     "Return the compile-time assembled shared chain dispatcher."},
     {nullptr, nullptr, 0, nullptr},
 };
 PyModuleDef module_definition = {PyModuleDef_HEAD_INIT, "native_trace_call",

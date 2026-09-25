@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
 _PYSIM_DIR = Path(__file__).resolve().parent
@@ -20,11 +19,11 @@ Tests:
    - System Utilities: random_get (entropy pool fill), clock_time_get (monotonic/realtime timestamp)
 """
 
-from tier3_platform.drivers.hal.dummy import DummyDriver
+from fixtures.uvwasi_reference import UvwasiReferenceContext, WasiErrno, WasiWhence
 from hal_dispatch import ARG_BUFFER_HANDLE, ARG_LENGTH, ARG_MAX_LEN, ARG_OFFSET, WasiIpcCmd
 from system import System
 from system_containers import ReadOnlyFlatMapView
-from fixtures.uvwasi_reference import UvwasiReferenceContext, WasiErrno, WasiWhence
+from tier3_platform.drivers.hal.dummy import DummyDriver
 
 
 def test_scenario_hal_and_wasi_drivers():

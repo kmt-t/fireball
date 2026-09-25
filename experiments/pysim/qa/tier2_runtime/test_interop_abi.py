@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ctypes
+
 from execution_context import WASMContext
 from helpers import expect_assertion
 from interop_abi import (
@@ -17,16 +18,22 @@ from interop_abi import (
     WasmRunRequestNative,
     WasmRunResultNative,
 )
-from tier3_executer.interpreter.interpreter import ControlFrameKind, InterpreterContext, NativeControlStack
 from native_stacks import ControlFrameWindow, LocalStackWindow
+from tier3_executer.interpreter.interpreter import (
+    ControlFrameKind,
+    InterpreterContext,
+    NativeControlStack,
+)
 from wasm_module import F32, F64, I32, I64, LocalWidthMap
 
 
 def test_native_layout_matches_x64_jit_context():
-    assert ctypes.sizeof(ExecutionContextNative) == 112
+    assert ctypes.sizeof(ExecutionContextNative) == 128
     assert ExecutionContextNative.mem_base.offset == 0x28
     assert ExecutionContextNative.handler_table.offset == 0x38
-    assert ExecutionContextNative.reserved0.offset == 0x3C
+    assert ExecutionContextNative.runtime_flags.offset == 0x3C
+    assert ExecutionContextNative.loop_jump_count.offset == 0x74
+    assert ExecutionContextNative.loop_jump_threshold.offset == 0x78
     assert ExecutionContextNative.code.offset == 0x40
     assert ExecutionContextNative.code_size.offset == 0x48
     assert ExecutionContextNative.control_stack.offset == 0x50
@@ -91,7 +98,7 @@ def test_interpreter_and_jit_contexts_share_native_record_type():
     )
     assert jit_context.context_ptr.value == ctypes.addressof(jit_context.native_context)
     assert memory_context.mem_ptr.value != 0
-    assert ctypes.sizeof(memory_context.native_context) == 112
+    assert ctypes.sizeof(memory_context.native_context) == 128
 
 
 def test_native_value_stack_owns_the_fixed_storage():

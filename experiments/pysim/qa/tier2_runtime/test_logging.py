@@ -5,7 +5,6 @@ Unit tests for Tier 2 Runtime: System Logging & Ring Buffer
 Traceability: runtime_logging_test_spec.md
 """
 
-import sys
 from pathlib import Path
 
 # Setup paths
@@ -16,18 +15,24 @@ _REPO_ROOT = _PYSIM_DIR.parent.parent
 
 
 from helpers import expect_assertion, make_interpreter, wat_to_wasm
-from tier3_executer.interpreter.interpreter import TRAP_LOG_EVENTS, TrapCode
 from interrupt_event import InterruptEvent
 from ipc_router import (
     IPCMessage,
     Role,
 )
-from tier2_runtime.logger import STANDARD_DIAGNOSTIC_EVENTS, ConsoleOutput, LogDictionary, Logger, LogLevel
-from tier3_platform.drivers.hal.stream import DedicatedLogSink, StreamTransport
 from system import (
     System,
 )
 from system_containers import MutableFlatMapStorage
+from tier2_runtime.logger import (
+    STANDARD_DIAGNOSTIC_EVENTS,
+    ConsoleOutput,
+    LogDictionary,
+    Logger,
+    LogLevel,
+)
+from tier3_executer.interpreter.interpreter import TRAP_LOG_EVENTS, TrapCode
+from tier3_platform.drivers.hal.stream import DedicatedLogSink, StreamTransport
 from wasm_reader import parse
 
 

@@ -1,4 +1,4 @@
-"""Shared non-evictable AAPCS code area for the fixed-size JIT cache region."""
+"""Shared non-evictable ABI and chain-dispatch code for the fixed JIT cache."""
 
 from __future__ import annotations
 
@@ -10,6 +10,8 @@ from config import (
     JIT_CACHE_ABSOLUTE_ADDRESS_POOL_BYTES,
     JIT_CACHE_COMMON_CODE_BYTES,
     JIT_CACHE_REGION_BYTES,
+    JIT_TRACE_COMMON_CHAIN_DISPATCH_BYTES,
+    JIT_TRACE_COMMON_CHAIN_DISPATCH_OFFSET,
     JIT_TRACE_COMMON_EPILOGUE_OFFSET,
     JIT_TRACE_COMMON_HELPER_OFFSET,
     JIT_TRACE_COMMON_PROLOGUE_OFFSET,
@@ -19,24 +21,27 @@ from config import (
     JIT_TRACE_WIDE_HELPER_COUNT,
     JIT_TRACE_WIDE_HELPER_OFFSET,
     JIT_X64_CHAIN_TARGET_OFFSET,
+    JIT_X64_HELPER_TARGET_OFFSET,
     JIT_X64_TRACE_HEADER_BYTES,
 )
+
+from . import native_trace_call
 from .exec_memory import ExecutableBuffer
 
 IS_WINDOWS = sys.platform == "win32"
 
-# These offsets are the only common-area locations that may be placed in a
-# trace header.  They remain stable for the lifetime of the cache region.
+# Fixed common-code entry offsets are selected by the build configuration.
 COMMON_PROLOGUE_OFFSET = JIT_TRACE_COMMON_PROLOGUE_OFFSET
 COMMON_EPILOGUE_OFFSET = JIT_TRACE_COMMON_EPILOGUE_OFFSET
 COMMON_HELPER_OFFSET = JIT_TRACE_COMMON_HELPER_OFFSET
 COMMON_ABSOLUTE_POOL_OFFSET = 80
+COMMON_CHAIN_DISPATCH_OFFSET = JIT_TRACE_COMMON_CHAIN_DISPATCH_OFFSET
 TRACE_ENTRY_STUB_BYTES = 15
 TRACE_BODY_OFFSET = JIT_X64_TRACE_HEADER_BYTES + TRACE_ENTRY_STUB_BYTES
 
 
 def gen_pic_prologue() -> bytes:
-    """Generate the AAPCS/CPS prologue template kept in common code."""
+    """Generate the x64 CPS prologue template kept in common code."""
 
     code = bytearray()
     code += bytes((0x53,))  # push rbx
@@ -59,6 +64,7 @@ def gen_pic_prologue() -> bytes:
         code += bytes((0x49, 0x89, 0xF4))  # mov r12, rsi
         code += bytes((0x49, 0x89, 0xFD))  # mov r13, rdi
         code += bytes((0x44, 0x89, 0xC9))  # mov r9d, ecx
+    code += bytes((0x4C, 0x8D, 0x70, (-TRACE_BODY_OFFSET) & 0xFF))  # lea r14, [rax-header]
     code += bytes((0xFF, 0xE0))  # jmp rax (body address supplied by entry stub)
     return bytes(code)
 
@@ -89,7 +95,7 @@ def gen_helper_entry() -> bytes:
         code += bytes((0x4C, 0x89, 0xE6))  # mov rsi, r12
         code += bytes((0x4D, 0x89, 0xD2))  # mov rdx, r10
         code += bytes((0x44, 0x89, 0xC9))  # mov ecx, r9d
-    code += bytes((0x48, 0x8B, 0x80, 0x24, 0x00, 0x00, 0x00))
+    code += bytes((0x48, 0x8B, 0x80)) + JIT_X64_HELPER_TARGET_OFFSET.to_bytes(4, "little")
     if IS_WINDOWS:
         code += bytes((0x5F,))  # pop rdi
     else:
@@ -119,7 +125,7 @@ def _align(value: int, alignment: int) -> int:
 
 
 def gen_i32_helper_entry() -> bytes:
-    """Generate the AAPCS direct entry for two i32 inputs and one result pointer."""
+    """Generate the x64 direct entry for two i32 inputs and one result pointer."""
 
     code = bytearray()
     if IS_WINDOWS:
@@ -127,7 +133,7 @@ def gen_i32_helper_entry() -> bytes:
         code += bytes((0x44, 0x89, 0xD9))
         code += bytes((0x44, 0x89, 0xCA))
         code += bytes((0x4D, 0x89, 0xE0))
-        code += bytes((0x4C, 0x8B, 0xB0, 0x24, 0x00, 0x00, 0x00))
+        code += bytes((0x4C, 0x8B, 0xB0)) + JIT_X64_HELPER_TARGET_OFFSET.to_bytes(4, "little")
         code += bytes((0x48, 0x83, 0xEC, 0x28))
         code += bytes((0x41, 0xFF, 0xD6))
         code += bytes((0x48, 0x83, 0xC4, 0x28))
@@ -136,7 +142,7 @@ def gen_i32_helper_entry() -> bytes:
         code += bytes((0x44, 0x89, 0xDF))
         code += bytes((0x44, 0x89, 0xCE))
         code += bytes((0x4C, 0x89, 0xE2))
-        code += bytes((0x4C, 0x8B, 0xB0, 0x24, 0x00, 0x00, 0x00))
+        code += bytes((0x4C, 0x8B, 0xB0)) + JIT_X64_HELPER_TARGET_OFFSET.to_bytes(4, "little")
         code += bytes((0x48, 0x83, 0xEC, 0x08))
         code += bytes((0x41, 0xFF, 0xD6))
         code += bytes((0x48, 0x83, 0xC4, 0x08))
@@ -147,7 +153,7 @@ def gen_i32_helper_entry() -> bytes:
 class JITCodeCacheRegion:
     """Own the contiguous 8KB executable region and its common 2KB prefix.
 
-    The AAPCS common prefix is written once and is deliberately outside the three
+    The x64 common prefix is written once and is deliberately outside the three
     rotating banks.  The remaining offsets are used by ``JITCacheBank`` for
     Active, Warm, and Oldest trace storage.  A single W^X buffer is shared by
     all installed traces in a cache instance.
@@ -157,6 +163,8 @@ class JITCodeCacheRegion:
         "absolute_pool_offset",
         "absolute_pool_size",
         "buffer",
+        "chain_dispatcher_offset",
+        "chain_dispatcher_size",
         "common_code_bytes",
         "epilogue_offset",
         "epilogue_size",
@@ -177,6 +185,11 @@ class JITCodeCacheRegion:
         epilogue = gen_pic_epilogue()
         helper = gen_helper_entry()
         i32_helper_entry = gen_i32_helper_entry()
+        generated_chain_dispatch_offset, chain_dispatcher = (
+            native_trace_call.common_chain_dispatcher()
+        )
+        assert generated_chain_dispatch_offset == COMMON_CHAIN_DISPATCH_OFFSET
+        assert len(chain_dispatcher) == JIT_TRACE_COMMON_CHAIN_DISPATCH_BYTES
         assert 0 < len(helper) <= JIT_TRACE_HELPER_ENTRY_BYTES
         assert len(i32_helper_entry) == JIT_TRACE_HELPER_ENTRY_BYTES
         self.prologue_offset = 0
@@ -185,6 +198,8 @@ class JITCodeCacheRegion:
         self.epilogue_size = len(epilogue)
         self.helper_offset = JIT_TRACE_WIDE_HELPER_OFFSET
         self.helper_size = JIT_TRACE_HELPER_ENTRY_BYTES
+        self.chain_dispatcher_offset = COMMON_CHAIN_DISPATCH_OFFSET
+        self.chain_dispatcher_size = len(chain_dispatcher)
         self.absolute_pool_offset = COMMON_ABSOLUTE_POOL_OFFSET
         self.absolute_pool_size = JIT_CACHE_ABSOLUTE_ADDRESS_POOL_BYTES
         assert self.prologue_offset + self.prologue_size <= self.epilogue_offset
@@ -200,11 +215,19 @@ class JITCodeCacheRegion:
             + JIT_TRACE_TYPED_I32_HELPER_COUNT * JIT_TRACE_HELPER_ENTRY_BYTES
             <= self.common_code_bytes
         )
+        assert self.chain_dispatcher_offset + self.chain_dispatcher_size <= self.common_code_bytes
+        assert self.chain_dispatcher_offset >= (
+            JIT_TRACE_WIDE_HELPER_OFFSET
+            + JIT_TRACE_WIDE_HELPER_COUNT * JIT_TRACE_HELPER_ENTRY_BYTES
+        )
 
         common = bytearray(self.common_code_bytes)
         common[self.prologue_offset : self.prologue_offset + self.prologue_size] = prologue
         common[self.epilogue_offset : self.epilogue_offset + self.epilogue_size] = epilogue
         common[COMMON_HELPER_OFFSET : COMMON_HELPER_OFFSET + len(helper)] = helper
+        common[
+            self.chain_dispatcher_offset : self.chain_dispatcher_offset + self.chain_dispatcher_size
+        ] = chain_dispatcher
         for helper_index in range(JIT_TRACE_WIDE_HELPER_COUNT):
             helper_offset = helper_entry_offset(helper_index)
             common[helper_offset : helper_offset + len(helper)] = helper
@@ -226,24 +249,24 @@ class JITCodeCacheRegion:
         exit_patch_offset: int,
         helper_header_patch_offset: int,
         helper_exit_patch_offset: int,
-        chain_header_patch_offset: int = -1,
-        chain_fallback_patch_offset: int = -1,
+        chain_dispatch_patch_offset: int = -1,
+        common_helper_offset: int = COMMON_HELPER_OFFSET,
     ) -> tuple[Callable[..., int | None], int]:
-        """Relocate and copy one trace using only offsets from its header.
+        """Relocate and copy one trace against fixed shared-code entry points.
 
-        The trace blob contains no inline AAPCS code.  Its entry stub and exit
-        stubs are patched against the common offsets serialized in the header,
-        so the context does not participate in code-cache routing.
+        The trace blob contains no inline ABI prologue or chain dispatcher. Its
+        entry and exit stubs are patched to common code offsets selected at
+        build time. The context does not participate in code-cache routing.
         """
 
         assert self.common_code_bytes <= offset < self.region_bytes
         assert offset + len(blob) <= self.region_bytes
         patched = bytearray(blob)
-        common_prologue = int.from_bytes(patched[0x18:0x1C], "little")
-        common_epilogue = int.from_bytes(patched[0x1C:0x20], "little")
+        common_prologue = COMMON_PROLOGUE_OFFSET
+        common_epilogue = COMMON_EPILOGUE_OFFSET
         assert common_prologue < self.common_code_bytes
         assert common_epilogue < self.common_code_bytes
-        common_helper = int.from_bytes(patched[0x20:0x24], "little")
+        common_helper = common_helper_offset
         assert common_helper < self.common_code_bytes
         base = self.buffer.base
         assert base is not None
@@ -265,16 +288,8 @@ class JITCodeCacheRegion:
             patch_rel32(entry_prologue_patch_offset, common_prologue)
         if exit_patch_offset >= 0:
             patch_rel32(exit_patch_offset, common_epilogue)
-        if chain_header_patch_offset >= 0:
-            header_addr = base + offset
-            next_ip = base + offset + chain_header_patch_offset + 4
-            displacement = header_addr - next_ip
-            assert -(1 << 31) <= displacement < (1 << 31)
-            patched[chain_header_patch_offset : chain_header_patch_offset + 4] = int(
-                displacement
-            ).to_bytes(4, "little", signed=True)
-        if chain_fallback_patch_offset >= 0:
-            patch_rel32(chain_fallback_patch_offset, common_epilogue)
+        if chain_dispatch_patch_offset >= 0:
+            patch_rel32(chain_dispatch_patch_offset, self.chain_dispatcher_offset)
         if helper_header_patch_offset >= 0:
             header_addr = base + offset
             next_ip = base + offset + helper_header_patch_offset + 4
@@ -316,6 +331,7 @@ class JITCodeCacheRegion:
 
 __all__ = (
     "COMMON_ABSOLUTE_POOL_OFFSET",
+    "COMMON_CHAIN_DISPATCH_OFFSET",
     "COMMON_EPILOGUE_OFFSET",
     "COMMON_HELPER_OFFSET",
     "COMMON_PROLOGUE_OFFSET",

@@ -6,21 +6,17 @@
 
 ## 1. 概要と適用方針
 <!-- traceability: {ThreadedInterpreter} {JIT_CopyAndPatch} {Wasm32Only} {META_ZeroCostAbstraction} -->
-本仕様書は、Fireball Hypervisor がサポートする **WASM MVP (v1, 32-bit)** 命令セットの物理マトリクスを定義する。対象はインタープリタと Copy-and-Patch JIT コンパイラである。
+本仕様書は、Fireball Hypervisor がサポートする **WASM MVP (v1, 32-bit)** の命令意味論とインタープリタ動作を定義する。ARMv8-M向けJITの物理命令列・レジスタ・ABI・メモリ保護方式はTBDとし、本書で確定しない。
 
-全バイトコードは Cortex-M33（ARMv8-M）を対象とする。ハンドラには継続渡しの4論理引数（`R0: ctx`, `R1: sp`, `R2: local_base`, `R3: tos`）を割り当てる。JIT Stencil テンプレートも同じ論理引数マッピングを共有し、`R3` を TOS キャッシュとして使う。
-
-Callee-saved の任意割当レジスタは `R4-R6, R8-R11` とする。`R4` は NOS、`R5` は NNOS、`R6` は一時スクラッチに使う。メモリアクセス時は `R8` と `R9` をそれぞれ `mem_base` と `mem_size` に固定する。`R12` も一時スクラッチに使う。
-
-基本ブロック末尾では、スタックへ積まれた `TOS, NOS, NNOS` を `[R1, #offset]` へフラッシュする。コンテキスト `R0` の `ip`（+0x00）と `sp_offset`（+0x0C）も同期する。
+x64で確認したInterpreter/JIT間の4論理引数契約と物理ABIは [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) を参照する。ARMv8-Mでは論理引数の物理配置、callee-save規則、値キャッシュ、トレース境界同期をすべてTBDとする。
 
 ---
 
 ## 2. 非サポート機能 (Explicit Non-Goals)
 <!-- traceability: {Wasm32Only} {GLOBAL_StrictMemoryLimit} -->
-32KB〜64KB RAM の極小組込み環境における決定論的リアルタイム性と極小フットプリントを維持するため、以下の WASM 拡張仕様は明示的にサポート対象外（Non-Goal）とし、ロード時にデコードエラー（`ERR_WASM_UNSUPPORTED_FEATURE`）として即座に拒否する：
+本プロジェクトが対象とするWASM MVPの範囲を明確にするため、以下のWASM拡張仕様はサポート対象外（Non-Goal）とし、ロード時にデコードエラー（`ERR_WASM_UNSUPPORTED_FEATURE`）として拒否する。対象プラットフォームのメモリ容量とは切り離して定める。
 - **Wasm64 / Memory64 / Table64**: 64-bit アドレス空間・テーブル（完全除外 ）。
-- **SIMD / Vector (`0xFD` プレフィックス)**: 128-bit ベクトル命令（Cortex-M33 非搭載）。
+- **SIMD / Vector (`0xFD` プレフィックス)**: 128-bit ベクトル命令（本実装の対象外）。
 - **Threads / Atomics (`0xFE` プレフィックス)**: 共有メモリ・アトミック命令（CSP ランデブー通信で代替）。
 - **Garbage Collection (GC) / Reference Types (`externref`, `funcref`)**: 動的GCヒープを排除。
 - **Exception Handling (EH)**: テーブル駆動例外ハンドリング。
@@ -33,43 +29,43 @@ Callee-saved の任意割当レジスタは `R4-R6, R8-R11` とする。`R4` は
 ### 3.1 制御フロー命令 (Control Flow)
 <!-- traceability: {ThreadedInterpreter} {JIT_RuntimeAPI_Fallback} {ContextPointerRegister} -->
 
-| Opcode | 命令名 | スタック遷移 | インタープリタ実装（継続渡し4論理引数） | JIT Stencil 提供 | 物理動作・備考 |
+| Opcode | 命令名 | スタック遷移 | インタープリタ実装（継続渡し4論理引数） | ARMv8-M JIT mapping (TBD) | ARMv8-M physical behavior (TBD) |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| `0x00` | `unreachable` | `[] -> []` | トラップハンドラへジャンプ | あり (Direct Trap) | `BKPT #0` またはトラップルーチン呼出 |
-| `0x01` | `nop` | `[] -> []` | `ip + 1` へ継続渡し | あり (Eliminated) | JIT 時は命令生成をスキップ（0 byte） |
-| `0x02` | `block` | `[] -> []` | 制御ブロックの復帰情報を記録 | あり (Label Bind) | 分岐先ラベルの記録のみ |
-| `0x03` | `loop` | `[] -> []` | ループ先頭 PC を記録してプッシュ | あり (Label Bind) | 後方ジャンプ先ターゲット |
-| `0x04` | `if` | `[i32] -> []` | 条件判定 $\to$ 偽なら else/end へ分岐 | あり (Conditional Branch) | `CBZ` / `CBNZ` または `BNE` |
-| `0x05` | `else` | `[] -> []` | 対応する end の直後へ無条件ジャンプ | あり (Unconditional Branch) | `B.W <end_label>` |
-| `0x0B` | `end` | `[] -> []` | 制御ブロックの復帰情報を取り除く | あり (Label Target) | スコープ終了ラベル |
-| `0x0C` | `br` | `[] -> []` | 指定深度のラベルへ無条件ジャンプ | あり (Branch) | `B.W <target_label>` |
-| `0x0D` | `br_if` | `[i32] -> []` | TOS $\ne 0$ ならラベルへジャンプ | あり (Branch Cond) | `CMP r3, #0; BNE.W <target>` |
-| `0x0E` | `br_table` | `[i32] -> []` | テーブルインデックス分岐 | あり (Jump Table) | `TBB` / `TBH` テーブル分岐 |
-| `0x10` | `call` | `[t1*] -> [t2*]`| 関数呼出し記述子を積んで関数を呼び出す | フォールバック (Runtime API / Interp Fallback) | JIT 複雑度低減のためランタイムへ委譲 |
-| `0x11` | `call_indirect`| `[t1*, i32] -> [t2*]`| 関数テーブル照合 $\to$ 間接呼出 | フォールバック (Runtime API / Interp Fallback) | 型シグネチャ照合＋ `vsoc_call_indirect` へ委譲 |
+| `0x00` | `unreachable` | `[] -> []` | トラップハンドラへジャンプ | TBD | TBD |
+| `0x01` | `nop` | `[] -> []` | `ip + 1` へ継続渡し | TBD | TBD |
+| `0x02` | `block` | `[] -> []` | 制御ブロックの復帰情報を記録 | TBD | TBD |
+| `0x03` | `loop` | `[] -> []` | ループ先頭 PC を記録してプッシュ | TBD | TBD |
+| `0x04` | `if` | `[i32] -> []` | 条件判定 $\to$ 偽なら else/end へ分岐 | TBD | TBD |
+| `0x05` | `else` | `[] -> []` | 対応する end の直後へ無条件ジャンプ | TBD | TBD |
+| `0x0B` | `end` | `[] -> []` | 制御ブロックの復帰情報を取り除く | TBD | TBD |
+| `0x0C` | `br` | `[] -> []` | 指定深度のラベルへ無条件ジャンプ | TBD | TBD |
+| `0x0D` | `br_if` | `[i32] -> []` | TOS $\ne 0$ ならラベルへジャンプ | TBD | TBD |
+| `0x0E` | `br_table` | `[i32] -> []` | テーブルインデックス分岐 | TBD | TBD |
+| `0x10` | `call` | `[t1*] -> [t2*]`| 関数呼出し記述子を積んで関数を呼び出す | TBD | TBD |
+| `0x11` | `call_indirect`| `[t1*, i32] -> [t2*]`| 関数テーブル照合 $\to$ 間接呼出 | TBD | TBD |
 
 ---
 
 ### 3.2 パラメトリック命令 (Parametric)
 <!-- traceability: {ContextPointerRegister} -->
 
-| Opcode | 命令名 | スタック遷移 | インタープリタ実装 | JIT Stencil 提供 | 物理動作・備考 |
+| Opcode | 命令名 | スタック遷移 | インタープリタ実装 | ARMv8-M JIT mapping (TBD) | ARMv8-M physical behavior (TBD) |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| `0x1A` | `drop` | `[t] -> []` | SP オフセットを 1 減算 | あり (Register Drop) | TOS キャッシュを破棄または NOS 昇格 |
-| `0x1B` | `select` | `[t, t, i32] -> [t]` | 条件に応じて 2 値から 1 つを選択 | あり (IT / CSEL) | Cortex-M33 `IT` ブロックまたは `MOVNE` |
+| `0x1A` | `drop` | `[t] -> []` | SP オフセットを 1 減算 | TBD | TBD |
+| `0x1B` | `select` | `[t, t, i32] -> [t]` | 条件に応じて 2 値から 1 つを選択 | TBD | TBD |
 
 ---
 
 ### 3.3 変数アクセス命令 (Variable Access)
 <!-- traceability: {ContextPointerRegister} {JIT_RegisterMapping} -->
 
-| Opcode | 命令名 | スタック遷移 | インタープリタ実装 | JIT Stencil 提供 | 物理動作・備考 |
+| Opcode | 命令名 | スタック遷移 | インタープリタ実装 | ARMv8-M JIT mapping (TBD) | ARMv8-M physical behavior (TBD) |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| `0x20` | `local.get` | `[] -> [t]` | ローカル配列 `[local_base + idx]` をロード | あり (Direct LDR / Mov) | `LDR r3, [r2, #offset]`（`r2=local_base` 起点の静的オフセット畳み込み——参照） |
-| `0x21` | `local.set` | `[t] -> []` | ローカル配列 `[local_base + idx]` へストア | あり (Direct STR / Mov) | `STR r3, [r2, #offset]` |
-| `0x22` | `local.tee` | `[t] -> [t]` | ローカルへ保存しつつスタックに残す | あり (STR & Keep) | `STR r3, [r2, #offset]` (TOS維持) |
-| `0x23` | `global.get` | `[] -> [t]` | グローバル配列 `[execution_context.globals_base + idx]` ロード | あり (LDR via globals_base) | `LDR.W r12, [r0, #0x30]; LDR.W r3, [r12, #glob_off]`（`{ExecutionContext_Layout}` 参照） |
-| `0x24` | `global.set` | `[t] -> []` | グローバル配列へストア | あり (STR via globals_base) | `LDR.W r12, [r0, #0x30]; STR.W r3, [r12, #glob_off]` |
+| `0x20` | `local.get` | `[] -> [t]` | ローカル配列 `[local_base + idx]` をロード | TBD | TBD |
+| `0x21` | `local.set` | `[t] -> []` | ローカル配列 `[local_base + idx]` へストア | TBD | TBD |
+| `0x22` | `local.tee` | `[t] -> [t]` | ローカルへ保存しつつスタックに残す | TBD | TBD |
+| `0x23` | `global.get` | `[] -> [t]` | グローバル配列 `[execution_context.globals_base + idx]` ロード | TBD | TBD |
+| `0x24` | `global.set` | `[t] -> []` | グローバル配列へストア | TBD | TBD |
 
 ---
 
@@ -78,72 +74,70 @@ Callee-saved の任意割当レジスタは `R4-R6, R8-R11` とする。`R4` は
 
 すべてのメモリアクセスは、リニアメモリ基底（`mem_base`）加算とアライメント・境界チェックを伴う。
 
-| Opcode | 命令名 | スタック遷移 | インタープリタ実装 | JIT Stencil 提供 | 物理動作・備考 |
+| Opcode | 命令名 | スタック遷移 | インタープリタ実装 | ARMv8-M JIT mapping (TBD) | ARMv8-M physical behavior (TBD) |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| `0x28` | `i32.load` | `[i32] -> [i32]` | 開始・終端 (`addr+3`) の境界チェック（比較+トラップ） $\to$ 32-bit ロード | あり (LDR.W) | `CMP r3, r9; BHS.W <trap>; ADD r12, r3, #3; CMP r12, r9; BHS.W <trap>; LDR r3, [r8, r3]` (`r8=mem_base, r9=mem_size`) |
-| `0x29` | `i64.load` | `[i32] -> [i64]` | 開始・終端 (`addr+7`) の境界チェック（比較+トラップ） $\to$ 64-bit ロード | あり (LDRD) | `CMP r3, r9; BHS.W <trap>; ADD r12, r3, #7; CMP r12, r9; BHS.W <trap>; LDRD r3, r4, [r8, r3]` |
-| `0x2A` | `f32.load` | `[i32] -> [f32]` | 開始・終端 (`addr+3`) の境界チェック（比較+トラップ） $\to$ 単精度ロード | あり (VLDR.32) | `CMP r3, r9; BHS.W <trap>; ADD r12, r3, #3; CMP r12, r9; BHS.W <trap>; VLDR s0, [r8, r3]` (FPU搭載時) |
-| `0x2B` | `f64.load` | `[i32] -> [f64]` | 開始・終端 (`addr+7`) の境界チェック（比較+トラップ） $\to$ 倍精度ロード | あり (VLDR.64) | `CMP r3, r9; BHS.W <trap>; ADD r12, r3, #7; CMP r12, r9; BHS.W <trap>; VLDR d0, [r8, r3]` (FPv5搭載時) |
-| `0x2C` | `i32.load8_s`| `[i32] -> [i32]` | 境界チェック（比較+トラップ） $\to$ 符号拡張 8-bit ロード | あり (LDRSB) | `CMP r3, r9; BHS.W <trap>; LDRSB r3, [r8, r3]` |
-| `0x2D` | `i32.load8_u`| `[i32] -> [i32]` | 境界チェック（比較+トラップ） $\to$ ゼロ拡張 8-bit ロード | あり (LDRB) | `CMP r3, r9; BHS.W <trap>; LDRB r3, [r8, r3]` |
-| `0x2E` | `i32.load16_s`| `[i32] -> [i32]`| 開始・終端 (`addr+1`) の境界チェック（比較+トラップ） $\to$ 符号拡張 16-bit ロード | あり (LDRSH) | `CMP r3, r9; BHS.W <trap>; ADD r12, r3, #1; CMP r12, r9; BHS.W <trap>; LDRSH r3, [r8, r3]` |
-| `0x2F` | `i32.load16_u`| `[i32] -> [i32]`| 開始・終端 (`addr+1`) の境界チェック（比較+トラップ） $\to$ ゼロ拡張 16-bit ロード | あり (LDRH) | `CMP r3, r9; BHS.W <trap>; ADD r12, r3, #1; CMP r12, r9; BHS.W <trap>; LDRH r3, [r8, r3]` |
-| `0x36` | `i32.store` | `[i32, i32] -> []` | 開始・終端 (`addr+3`) の境界チェック（比較+トラップ） $\to$ 32-bit メモリストア | あり (STR.W) | `CMP r4, r9; BHS.W <trap>; ADD r12, r4, #3; CMP r12, r9; BHS.W <trap>; STR r3, [r8, r4]` (`r3=val, r4=addr`) |
-| `0x37` | `i64.store` | `[i32, i64] -> []` | 開始・終端 (`addr+7`) の境界チェック（比較+トラップ） $\to$ 64-bit メモリストア | あり (STRD) | `CMP r3, r9; BHS.W <trap>; ADD r12, r3, #7; CMP r12, r9; BHS.W <trap>; STRD r4, r5, [r8, r3]`（値ペア高位語は `mem_base`/`mem_size` と衝突しない `r5` を使う） |
-| `0x38` | `f32.store` | `[i32, f32] -> []` | 開始・終端 (`addr+3`) の境界チェック（比較+トラップ） $\to$ 単精度メモリストア | あり (VSTR.32) | `CMP r3, r9; BHS.W <trap>; ADD r12, r3, #3; CMP r12, r9; BHS.W <trap>; VSTR s0, [r8, r3]` |
-| `0x39` | `f64.store` | `[i32, f64] -> []` | 開始・終端 (`addr+7`) の境界チェック（比較+トラップ） $\to$ 倍精度メモリストア | あり (VSTR.64) | `CMP r3, r9; BHS.W <trap>; ADD r12, r3, #7; CMP r12, r9; BHS.W <trap>; VSTR d0, [r8, r3]` |
-| `0x3A` | `i32.store8` | `[i32, i32] -> []` | 境界チェック（比較+トラップ） $\to$ 8-bit メモリストア | あり (STRB) | `CMP r4, r9; BHS.W <trap>; STRB r3, [r8, r4]` |
-| `0x3B` | `i32.store16`| `[i32, i32] -> []` | 開始・終端 (`addr+1`) の境界チェック（比較+トラップ） $\to$ 16-bit メモリストア | あり (STRH) | `CMP r4, r9; BHS.W <trap>; ADD r12, r4, #1; CMP r12, r9; BHS.W <trap>; STRH r3, [r8, r4]` |
-| `0x3F` | `memory.size`| `[] -> [i32]` | 現在のリニアメモリページ数を返す | あり (LDR + 64KiB単位変換 via execution_context.mem_size) | `LDR.W r3, [r0, #0x2C]; LSRS r3, r3, #16` |
-| `0x40` | `memory.grow`| `[i32] -> [i32]` | リニアメモリ拡張 (ランタイムAPI呼出) | あり (Runtime Call) | `BL vsoc_memory_grow` |
+| `0x28` | `i32.load` | `[i32] -> [i32]` | 開始・終端 (`addr+3`) の境界チェック（比較+トラップ） $\to$ 32-bit ロード | TBD | TBD |
+| `0x29` | `i64.load` | `[i32] -> [i64]` | 開始・終端 (`addr+7`) の境界チェック（比較+トラップ） $\to$ 64-bit ロード | TBD | TBD |
+| `0x2A` | `f32.load` | `[i32] -> [f32]` | 開始・終端 (`addr+3`) の境界チェック（比較+トラップ） $\to$ 単精度ロード | TBD | TBD |
+| `0x2B` | `f64.load` | `[i32] -> [f64]` | 開始・終端 (`addr+7`) の境界チェック（比較+トラップ） $\to$ 倍精度ロード | TBD | TBD |
+| `0x2C` | `i32.load8_s`| `[i32] -> [i32]` | 境界チェック（比較+トラップ） $\to$ 符号拡張 8-bit ロード | TBD | TBD |
+| `0x2D` | `i32.load8_u`| `[i32] -> [i32]` | 境界チェック（比較+トラップ） $\to$ ゼロ拡張 8-bit ロード | TBD | TBD |
+| `0x2E` | `i32.load16_s`| `[i32] -> [i32]`| 開始・終端 (`addr+1`) の境界チェック（比較+トラップ） $\to$ 符号拡張 16-bit ロード | TBD | TBD |
+| `0x2F` | `i32.load16_u`| `[i32] -> [i32]`| 開始・終端 (`addr+1`) の境界チェック（比較+トラップ） $\to$ ゼロ拡張 16-bit ロード | TBD | TBD |
+| `0x36` | `i32.store` | `[i32, i32] -> []` | 開始・終端 (`addr+3`) の境界チェック（比較+トラップ） $\to$ 32-bit メモリストア | TBD | TBD |
+| `0x37` | `i64.store` | `[i32, i64] -> []` | 開始・終端 (`addr+7`) の境界チェック（比較+トラップ） $\to$ 64-bit メモリストア | TBD | TBD |
+| `0x38` | `f32.store` | `[i32, f32] -> []` | 開始・終端 (`addr+3`) の境界チェック（比較+トラップ） $\to$ 単精度メモリストア | TBD | TBD |
+| `0x39` | `f64.store` | `[i32, f64] -> []` | 開始・終端 (`addr+7`) の境界チェック（比較+トラップ） $\to$ 倍精度メモリストア | TBD | TBD |
+| `0x3A` | `i32.store8` | `[i32, i32] -> []` | 境界チェック（比較+トラップ） $\to$ 8-bit メモリストア | TBD | TBD |
+| `0x3B` | `i32.store16`| `[i32, i32] -> []` | 開始・終端 (`addr+1`) の境界チェック（比較+トラップ） $\to$ 16-bit メモリストア | TBD | TBD |
+| `0x3F` | `memory.size`| `[] -> [i32]` | 現在のリニアメモリページ数を返す | TBD | TBD |
+| `0x40` | `memory.grow`| `[i32] -> [i32]` | リニアメモリ拡張 (ランタイムAPI呼出) | TBD | TBD |
 
 ---
 
 ### 3.5 整数算術・論理・比較命令 (Integer Arithmetic, Logic & Comparison)
 <!-- traceability: {JIT_CopyAndPatch} {META_ZeroCostAbstraction} -->
 
-| Opcode | 命令名 | スタック遷移 | インタープリタ実装 | JIT Stencil 提供 | 物理動作 (Cortex-M33 Thumb-2) |
+| Opcode | 命令名 | スタック遷移 | インタープリタ実装 | ARMv8-M JIT mapping (TBD) | ARMv8-M physical behavior (TBD) |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| `0x41` | `i32.const` | `[] -> [i32]` | 即値を TOS へプッシュ | あり (MOVW / MOV) | `MOVW r3, #imm16; MOVT r3, #imm16` |
-| `0x42` | `i64.const` | `[] -> [i64]` | 64-bit 即値をプッシュ | あり (2x MOV) | 2 レジスタへロード |
-| `0x45` | `i32.eqz` | `[i32] -> [i32]` | $x == 0$ 判定 | あり (CMP & IT) | `CMP r3, #0; IT EQ; MOVEQ r3, #1; IT NE; MOVNE r3, #0` |
-| `0x46` | `i32.eq` | `[i32, i32] -> [i32]` | $a == b$ 判定 | あり (CMP & IT) | `CMP r4, r3; IT EQ; MOVEQ r3, #1; IT NE; MOVNE r3, #0` |
-| `0x47` | `i32.ne` | `[i32, i32] -> [i32]` | $a \ne b$ 判定 | あり (CMP & IT) | `CMP r4, r3; IT NE; MOVNE r3, #1; IT EQ; MOVEQ r3, #0` |
-| `0x48` | `i32.lt_s` | `[i32, i32] -> [i32]` | 符号付き $a < b$ | あり (CMP & LT) | `CMP r4, r3; IT LT; MOVLT r3, #1; IT GE; MOVGE r3, #0` |
-| `0x49` | `i32.lt_u` | `[i32, i32] -> [i32]` | 符号なし $a < b$ | あり (CMP & LO) | `CMP r4, r3; IT LO; MOVLO r3, #1; IT HS; MOVHS r3, #0` |
-| `0x67` | `i32.clz` | `[i32] -> [i32]` | 先頭連続ゼロビット数 | あり (CLZ) | `CLZ r3, r3` |
-| `0x68` | `i32.ctz` | `[i32] -> [i32]` | 末尾連続ゼロビット数 | あり (RBIT & CLZ) | `RBIT r3, r3; CLZ r3, r3` |
-| `0x69` | `i32.popcnt`| `[i32] -> [i32]` | 立っているビット数 | あり (Inline SW) | 算術アルゴリズム展開 |
-| `0x6A` | `i32.add` | `[i32, i32] -> [i32]` | 加算 | あり (ADDS / ADD) | `ADDS r3, r4, r3` |
-| `0x6B` | `i32.sub` | `[i32, i32] -> [i32]` | 減算 | あり (SUBS / SUB) | `SUBS r3, r4, r3` |
-| `0x6C` | `i32.mul` | `[i32, i32] -> [i32]` | 乗算 | あり (MUL) | `MUL r3, r4, r3` |
-| `0x6D` | `i32.div_s` | `[i32, i32] -> [i32]` | 符号付き除算 (0除算トラップ)| あり (SDIV) | 0判定 $\to$ `SDIV r3, r4, r3` |
-| `0x6E` | `i32.div_u` | `[i32, i32] -> [i32]` | 符号なし除算 (0除算トラップ)| あり (UDIV) | 0判定 $\to$ `UDIV r3, r4, r3` |
-| `0x6F` | `i32.rem_s` | `[i32, i32] -> [i32]` | 符号付き剰余 (0除算トラップ)| あり (SDIV & MLS) | 0判定 $\to$ `SDIV r12, r4, r3; MLS r3, r12, r3, r4`（`GOTCHA-JITC-06`） |
-| `0x70` | `i32.rem_u` | `[i32, i32] -> [i32]` | 符号なし剰余 (0除算トラップ)| あり (UDIV & MLS) | 0判定 $\to$ `UDIV r12, r4, r3; MLS r3, r12, r3, r4`（`GOTCHA-JITC-06`） |
-| `0x71` | `i32.and` | `[i32, i32] -> [i32]` | ビット論理積 | あり (ANDS / AND) | `ANDS r3, r4, r3` |
-| `0x72` | `i32.or` | `[i32, i32] -> [i32]` | ビット論理和 | あり (ORRS / ORR) | `ORRS r3, r4, r3` |
-| `0x73` | `i32.xor` | `[i32, i32] -> [i32]` | ビット排他論理和 | あり (EORS / EOR) | `EORS r3, r4, r3` |
-| `0x74` | `i32.shl` | `[i32, i32] -> [i32]` | 左シフト | あり (LSL.W, 3オペランド) | `LSL.W r3, r4, r3` |
-| `0x75` | `i32.shr_s` | `[i32, i32] -> [i32]` | 算術右シフト | あり (ASR.W, 3オペランド) | `ASR.W r3, r4, r3` |
-| `0x76` | `i32.shr_u` | `[i32, i32] -> [i32]` | 論理右シフト | あり (LSR.W, 3オペランド) | `LSR.W r3, r4, r3` |
-| `0x77` | `i32.rotl` | `[i32, i32] -> [i32]` | 左循環シフト | あり (RSB & ROR.W) | `RSB r12, r3, #32; ROR.W r3, r4, r12` |
-| `0x78` | `i32.rotr` | `[i32, i32] -> [i32]` | 右循環シフト | あり (ROR.W, 3オペランド) | `ROR.W r3, r4, r3` |
+| `0x41` | `i32.const` | `[] -> [i32]` | 即値を TOS へプッシュ | TBD | TBD |
+| `0x42` | `i64.const` | `[] -> [i64]` | 64-bit 即値をプッシュ | TBD | TBD |
+| `0x45` | `i32.eqz` | `[i32] -> [i32]` | $x == 0$ 判定 | TBD | TBD |
+| `0x46` | `i32.eq` | `[i32, i32] -> [i32]` | $a == b$ 判定 | TBD | TBD |
+| `0x47` | `i32.ne` | `[i32, i32] -> [i32]` | $a \ne b$ 判定 | TBD | TBD |
+| `0x48` | `i32.lt_s` | `[i32, i32] -> [i32]` | 符号付き $a < b$ | TBD | TBD |
+| `0x49` | `i32.lt_u` | `[i32, i32] -> [i32]` | 符号なし $a < b$ | TBD | TBD |
+| `0x67` | `i32.clz` | `[i32] -> [i32]` | 先頭連続ゼロビット数 | TBD | TBD |
+| `0x68` | `i32.ctz` | `[i32] -> [i32]` | 末尾連続ゼロビット数 | TBD | TBD |
+| `0x69` | `i32.popcnt`| `[i32] -> [i32]` | 立っているビット数 | TBD | TBD |
+| `0x6A` | `i32.add` | `[i32, i32] -> [i32]` | 加算 | TBD | TBD |
+| `0x6B` | `i32.sub` | `[i32, i32] -> [i32]` | 減算 | TBD | TBD |
+| `0x6C` | `i32.mul` | `[i32, i32] -> [i32]` | 乗算 | TBD | TBD |
+| `0x6D` | `i32.div_s` | `[i32, i32] -> [i32]` | 符号付き除算 (0除算トラップ)| TBD | TBD |
+| `0x6E` | `i32.div_u` | `[i32, i32] -> [i32]` | 符号なし除算 (0除算トラップ)| TBD | TBD |
+| `0x6F` | `i32.rem_s` | `[i32, i32] -> [i32]` | 符号付き剰余 (0除算トラップ)| TBD | TBD |
+| `0x70` | `i32.rem_u` | `[i32, i32] -> [i32]` | 符号なし剰余 (0除算トラップ)| TBD | TBD |
+| `0x71` | `i32.and` | `[i32, i32] -> [i32]` | ビット論理積 | TBD | TBD |
+| `0x72` | `i32.or` | `[i32, i32] -> [i32]` | ビット論理和 | TBD | TBD |
+| `0x73` | `i32.xor` | `[i32, i32] -> [i32]` | ビット排他論理和 | TBD | TBD |
+| `0x74` | `i32.shl` | `[i32, i32] -> [i32]` | 左シフト | TBD | TBD |
+| `0x75` | `i32.shr_s` | `[i32, i32] -> [i32]` | 算術右シフト | TBD | TBD |
+| `0x76` | `i32.shr_u` | `[i32, i32] -> [i32]` | 論理右シフト | TBD | TBD |
+| `0x77` | `i32.rotl` | `[i32, i32] -> [i32]` | 左循環シフト | TBD | TBD |
+| `0x78` | `i32.rotr` | `[i32, i32] -> [i32]` | 右循環シフト | TBD | TBD |
 
 ---
 
 ### 3.6 64ビット整数・浮動小数点命令と Libgcc ランタイムヘルパー
 <!-- traceability: {Libgcc_Runtime_Helper} {JIT_RuntimeAPI_Fallback} {ThreadedInterpreter} -->
 
-32ビット極小組み込みマイコン（ARM Cortex-M33 等）において、64ビット整数除算・剰余・ビットシフトや、単精度・倍精度浮動小数点（`f32`/`f64`）演算は、ハードウェア命令が存在しないか、あるいはコンパイラランタイムライブラリ（`libgcc` の `__divdi3`, `__udivdi3`, `__adddf3`, `__muldf3`, `__fixdfsi` 等）を呼び出すコードが生成される。
+ARMv8-Mでの64-bit整数・浮動小数点命令の命令選択、libgcc等の依存、helper呼出し規約はすべてTBDである。
 
-Fireball では、これらの命令をインライン展開で肥大化させず、**ランタイムヘルパー関数 / 専用ハンドラ経由（/ ）で統一的にディスパッチ**する。
-
-| Opcode 群 | カテゴリ / 代表命令名 | スタック遷移 | インタープリタ実装 | JIT Stencil 方針 () | 物理動作・Libgcc 連携 |
+| Opcode 群 | カテゴリ / 代表命令名 | スタック遷移 | インタープリタ実装 | ARMv8-M JIT mapping (TBD) | ARMv8-M physical behavior (TBD) |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| `0x79`〜`0x8A` | **i64 算術・論理・シフト** (`i64.clz`, `i64.ctz`, `i64.popcnt`, `i64.add`, `i64.sub`, `i64.mul`, `i64.div_s/u`, `i64.rem_s/u`, `i64.and/or/xor`, `i64.shl`, `i64.shr_s/u`, `i64.rotl/r`) | `[i64, i64] -> [i64]` | C++ `int64_t` / `libgcc` 呼び出し | ランタイムヘルパー呼び出し (`fireball_rt_i64_*`) | `__divdi3`, `__udivdi3`, `__moddi3`, `__umoddi3`, `__ashldi3` 等の呼出 |
-| `0x50`〜`0x5A` | **i64 比較命令** (`i64.eqz`, `i64.eq`, `i64.ne`, `i64.lt_s/u`, `i64.gt_s/u`, `i64.le_s/u`, `i64.ge_s/u`) | `[i64, i64] -> [i32]` | 64-bit 比較ハンドラ | ランタイムヘルパー呼び出し (`fireball_rt_i64_cmp`) | 上位・下位 32-bit ワード順次比較 |
-| `0x8B`〜`0x98` | **f32 単精度浮動小数点** (`f32.add`, `f32.sub`, `f32.mul`, `f32.div`, `f32.sqrt`, `f32.min`, `f32.max`, `f32.ceil/floor/trunc/nearest`) | `[f32, f32] -> [f32]` | C++ `float` / ハードウェア FPU / soft-float | FPU 命令またはランタイムヘルパー | FPU 搭載時は単精度命令、非搭載時は `libgcc` soft-float |
-| `0x99`〜`0xA6` | **f64 倍精度浮動小数点** (`f64.add`, `f64.sub`, `f64.mul`, `f64.div`, `f64.sqrt`, `f64.min`, `f64.max`, `f64.ceil/floor/trunc/nearest`) | `[f64, f64] -> [f64]` | C++ `double` / `libgcc` soft-float | ランタイムヘルパー呼び出し (`fireball_rt_f64_*`) | `__adddf3`, `__subdf3`, `__muldf3`, `__divdf3` 等の呼出 |
-| `0x5B`〜`0x66` | **f32/f64 浮動小数点比較** (`f32/f64.eq`, `ne`, `lt`, `gt`, `le`, `ge`) | `[f*, f*] -> [i32]` | IEEE 754 準拠比較 | FPU 比較またはランタイムヘルパー | `__eqdf2`, `__ltdf2`, `__gtdf2` 等の呼出 |
-| `0xA7`〜`0xBF` | **型変換・再解釈命令** (`i32.wrap_i64`, `i64.extend_i32_*`, `i32/i64.trunc_f*`, `f32/f64.convert_i*`, `reinterpret`) | `[t1] -> [t2]` | 型変換・ビット再解釈ハンドラ | 単純変換はインライン、切捨/変換はヘルパー | `__fixsfsi`, `__fixdfdi`, `__floatsisf`, `__floatdidf` 等の呼出 |
+| `0x79`〜`0x8A` | **i64 算術・論理・シフト** (`i64.clz`, `i64.ctz`, `i64.popcnt`, `i64.add`, `i64.sub`, `i64.mul`, `i64.div_s/u`, `i64.rem_s/u`, `i64.and/or/xor`, `i64.shl`, `i64.shr_s/u`, `i64.rotl/r`) | `[i64, i64] -> [i64]` | C++ `int64_t` / `libgcc` 呼び出し | TBD | TBD |
+| `0x50`〜`0x5A` | **i64 比較命令** (`i64.eqz`, `i64.eq`, `i64.ne`, `i64.lt_s/u`, `i64.gt_s/u`, `i64.le_s/u`, `i64.ge_s/u`) | `[i64, i64] -> [i32]` | 64-bit 比較ハンドラ | TBD | TBD |
+| `0x8B`〜`0x98` | **f32 単精度浮動小数点** (`f32.add`, `f32.sub`, `f32.mul`, `f32.div`, `f32.sqrt`, `f32.min`, `f32.max`, `f32.ceil/floor/trunc/nearest`) | `[f32, f32] -> [f32]` | C++ `float` / ハードウェア FPU / soft-float | TBD | TBD |
+| `0x99`〜`0xA6` | **f64 倍精度浮動小数点** (`f64.add`, `f64.sub`, `f64.mul`, `f64.div`, `f64.sqrt`, `f64.min`, `f64.max`, `f64.ceil/floor/trunc/nearest`) | `[f64, f64] -> [f64]` | C++ `double` / `libgcc` soft-float | TBD | TBD |
+| `0x5B`〜`0x66` | **f32/f64 浮動小数点比較** (`f32/f64.eq`, `ne`, `lt`, `gt`, `le`, `ge`) | `[f*, f*] -> [i32]` | IEEE 754 準拠比較 | TBD | TBD |
+| `0xA7`〜`0xBF` | **型変換・再解釈命令** (`i32.wrap_i64`, `i64.extend_i32_*`, `i32/i64.trunc_f*`, `f32/f64.convert_i*`, `reinterpret`) | `[t1] -> [t2]` | 型変換・ビット再解釈ハンドラ | TBD | TBD |

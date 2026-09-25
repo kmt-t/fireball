@@ -19,8 +19,7 @@ logger is internal-only).
 
 from __future__ import annotations
 
-import struct
-from collections.abc import Mapping
+from collections.abc import Generator, Mapping, Sequence
 from typing import TYPE_CHECKING
 
 from hal_dispatch import HalBufferPool
@@ -41,24 +40,30 @@ from ipc_router import (
 )
 
 if TYPE_CHECKING:
+    from hal_dispatch import HalDriver, HalTask, StreamSink
+    from tier3_executer.interpreter.interpreter import (
+        BasicBlock,
+        Interpreter,
+        WASMContext,
+        WasmNumber,
+    )
     from tier3_plugins.debugger.debugger import DebuggerManager
     from tier3_plugins.debugger.gdb_server import GDBServer
-    from hal_dispatch import HalDriver, HalTask, StreamSink
-    from tier3_executer.interpreter.interpreter import BasicBlock, WASMContext
 
 from loader import fnv1a_32
-from tier2_runtime.logger import LogDictionary, Logger, LogLevel
 from memory import (
     FB_CONF_MEMORY_POOL_SIZE,
     MemoryManager,
 )
-from runtime_engine import DispatchResult, RuntimeEngine
-from scheduler import FB_CONF_MAX_TASKS, Channel, Scheduler, Task, TaskState
+from scheduler import FB_CONF_MAX_TASKS, Channel, ChannelAction, Scheduler, Task, TaskState
+from system_containers import MutableFlatMapStorage, ReadOnlyFlatMapStorage, StaticVector
+from tier2_runtime.logger import LogDictionary, Logger, LogLevel
+from tier3_executer.jit.runtime_engine import RuntimeDriveMode, RuntimeEngine
 from tier3_platform.drivers.platform_config import (
     PlatformDriverConfiguration,
     create_default_platform_drivers,
 )
-from system_containers import MutableFlatMapStorage, ReadOnlyFlatMapStorage, StaticVector
+from virq import DispatchResult
 from vmmio import (
     FC_STATIC_DEVICE,
     TrapCode,
@@ -67,7 +72,6 @@ from vmmio import (
     VmmioStatus,
 )
 from wasm_module import BasicBlock
-
 
 # runtime_vmmio.md §4.3: real static-device addresses.
 IPCR_BASE = 0xC000_1000
@@ -91,7 +95,9 @@ class System:
         logger_sink: StreamSink | None = None,
         drivers: PlatformDriverConfiguration | None = None,
     ):
-        self.drivers = drivers if drivers is not None else create_default_platform_drivers(logger_sink)
+        self.drivers = (
+            drivers if drivers is not None else create_default_platform_drivers(logger_sink)
+        )
         self.wasi_hal_bindings = self.drivers.wasi_hal_bindings
         self.wasi_backend = self.drivers.wasi_backend
         self.transport = self.drivers.stdout_transport
@@ -119,19 +125,16 @@ class System:
                 vpn=(FB_CONF_VSOC_PASSTHROUGH_BASE >> 12) + i, phys_page=i
             )
 
-        # Physical Memory Manager (system_memory.md contract / runtime_memory.md impl) with 64KB aligned pool
+        # Simulated Memory Manager with a 64KB-aligned pool base (WasmPageAlignment).
         # The scheduler is the sole source of the current task identity used by
         # ownership-sensitive memory operations.
         self.memory_manager = MemoryManager(self.scheduler)
         self.vmmio.register_to_memory_manager(self.memory_manager)
-        self.memory_manager.init_manager(pool_base=0x20020000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
+        self.memory_manager.init_manager(pool_base=0x00010000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
         self.ipc = IPCRouter(self.scheduler, logger=self.logger, memory_manager=self.memory_manager)
         self._channel_table: StaticVector[Channel] = StaticVector(capacity=FB_CONF_MAX_TASKS)
         # Direct 1-based index mapping over sorted self.ipc.registry.keys array (no dynamic dict)
-        self.runtime_engine = RuntimeEngine()
-        # Tier 2 observes COOS generations through an injected callback; it does
-        # not import the Tier 1 scheduler or know its concrete implementation.
-        self.runtime_engine.set_reschedule_observer(self.scheduler.observe_reschedule_generation)
+        self.runtime_engine = RuntimeEngine(drive_mode=RuntimeDriveMode.COOS)
         self.scheduler.set_idle_hook(self._on_idle)
         self.halted = False
         self.reset_requested = False
@@ -258,6 +261,26 @@ class System:
         self.scheduler.activate_task(task)
         return task
 
+    def run_guest(
+        self,
+        interp: Interpreter,
+        func_index: int,
+        args: Sequence[WasmNumber],
+        idle_budget: int = 4,
+    ) -> Generator[tuple[ChannelAction, None], None, StaticVector[WasmNumber]]:
+        """Drive one shared runtime boundary at a time and own COOS handoffs."""
+        call_state = interp.start(func_index, args)
+        while not call_state.finished:
+            boundary = self.runtime_engine.run(interp, call_state, idle_budget)
+            call_state = boundary.call_state
+            task = self.scheduler.current_task
+            assert task is not None, "guest execution requires an active COOS task"
+            generation_yield = self.scheduler.observe_reschedule_generation(task)
+            if not call_state.finished and (boundary.yield_requested or generation_yield):
+                self.runtime_engine.on_yield()
+                yield (ChannelAction.YIELD, None)
+        return self.runtime_engine.complete_call(interp, call_state, idle_budget)
+
     def bind_runtime(self, memory: bytearray | None, role: Role = Role.RUNTIME) -> None:
         """
         Must be called before invoking guest code that will use
@@ -288,14 +311,14 @@ class System:
         self._bound_runtime_task = None
 
     def dispatch_current_interrupt(self) -> DispatchResult | None:
-        """Dispatch the event handed to the active vSoC runtime task at a safepoint."""
+        """Dispatch the event handed to the active vSoC task at a COOS yield boundary."""
         task = self.scheduler.current_task
         assert task is not None, "interrupt dispatch requires an active task"
         assert task.role == Role.RUNTIME, "only the vSoC runtime task may dispatch interrupts"
         event = self.scheduler.consume_interrupt_event()
         if event is None:
             return None
-        self.runtime_engine.commit_virq_safepoint()
+        self.runtime_engine.commit_virq_registrations()
         return self.runtime_engine.dispatch_interrupt_event(event)
 
     # --- fireball_call ------------------------------------------------
@@ -518,10 +541,7 @@ class System:
             task.coro = gen
             if task.state == TaskState.READY:
                 self.scheduler.attach(task)
-            while (
-                task.result is None
-                and task.coro is gen
-            ):
+            while task.result is None and task.coro is gen:
                 self.scheduler.step()
             status, response = task.result if task.result else (IPCStatus.COMPLETED, None)
             task.result = None
@@ -559,10 +579,7 @@ class System:
             task.coro = gen
             if task.state == TaskState.READY:
                 self.scheduler.attach(task)
-            while (
-                task.result is None
-                and task.coro is gen
-            ):
+            while task.result is None and task.coro is gen:
                 self.scheduler.step()
             status, msg = task.result if task.result else (IPCStatus.COMPLETED, None)
             task.result = None

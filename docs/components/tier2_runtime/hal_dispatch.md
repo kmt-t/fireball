@@ -77,7 +77,7 @@ HAL全体の制限値を定義する。物理値は Tier 3 で確定される。
 <!-- traceability: {TaskPollInterruptEvent} {GLOBAL_InterruptWakeup} -->
 デバイスインスタンスへの振り分けは、本コンポーネントの内部ディスパッチではなく IPC ルータの Stage 1（URI 解決）で完結する契約とする。`resolver.get-interface(uri)` はURIからデバイス種別Roleとインスタンスを解決し、対応する`hal_task`へランデブーする。`hal_task` が担うのは、受信した `read`/`write`/`control` コマンドを自身が専有する単一の物理ドライバへそのまま委譲する契約のみである。物理ドライバへの委譲実装は Tier 3 を正本とする。
 
-割り込み通知の責務分担（ISR → 固定5ワードイベント生成 → COOSの固定長ロックフリーFIFO → vSoC Safepoint配送）の抽象契約は [`runtime_vmmio.md`](docs/components/tier2_runtime/runtime_vmmio.md) を正本とする。WASIの`poll-check`/`poll-wait`は操作完了待機の別経路であり、vIRQの原因イベントを表さない。物理割り込みハンドラの実装は Tier 3 [`platform_driver.md`](docs/components/tier3_platform/platform_driver.md) を参照。
+割り込み通知の責務分担（ISR → 固定5ワードイベント生成 → COOSの固定長ロックフリーFIFO → COOS協調境界でのvSoC配送）の抽象契約は [`runtime_vmmio.md`](docs/components/tier2_runtime/runtime_vmmio.md) を正本とする。WASIの`poll-check`/`poll-wait`は操作完了待機の別経路であり、vIRQの原因イベントを表さない。物理割り込みハンドラの実装は Tier 3 [`platform_driver.md`](docs/components/tier3_platform/platform_driver.md) を参照。
 
 ## 5. インターフェース定義
 

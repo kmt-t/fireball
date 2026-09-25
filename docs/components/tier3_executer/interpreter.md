@@ -22,7 +22,7 @@ Interpreter は、WASM命令をスレッドインタープリタ方式で実行�
 
 ### 3.1 データ構造
 - **`Interpreter`**: WASM命令の実行、コンテキスト管理、外部環境との連携をカプセル化した主要クラスである。
-- **`execution_context`**: 仮想CPUレジスタ、3本の値スタック情報、コードビュー、Native制御スタックビュー、およびNative CallStackビューを保持する構造体である。既存状態領域は64バイト、x86-64の実体は112バイトである。JIT共通領域とヘルパーはトレースヘッダが保持する。
+- **`execution_context`**: 仮想CPUレジスタ、3本の値スタック情報、コードビュー、Native制御スタックビュー、Native CallStackビュー、オペランドスタック論理容量、およびLOOP後方辺のyieldカウンタを保持する構造体である。既存状態領域は64バイト、x86-64の実体は128バイトである。JIT共通領域とヘルパーはトレースヘッダが保持する。
 - **`オペランドスタック`（オペランドスタック）**: WASM のオペランド値のみを保持する固定容量スタックである。コールチェーン全体を貫く1本の連続バッファとして動作する。呼び出しを跨いでもスタックは連続して配置される。
 - **`ローカル値領域`（ローカル変数スタック）**: コールチェーン全体で共有する固定容量の、型情報を持たない32ビットワード領域である。型タグ、実行時オブジェクト、関数実行記述子を格納しない。論理ローカル1個につき、そのフレームのスロット幅の固定スロットを割り当てる。スロット幅は、フレーム内で最大の変数サイズで決める。i32/f32だけのフレームは4バイト、i64/f64を含むフレームは8バイトとする。v128を含む場合は16バイトとする。同一フレーム内でスロット幅を混在させない。アクセス先は `local_base + local_index * スロット幅` から直接計算する。
 - **制御ブロック復帰情報領域**: `block`/`loop`/`if` の入れ子構造を管理する固定容量領域である。
@@ -54,7 +54,7 @@ graph TD
         Ctrl1["制御フレーム 1"]
     end
 
-    Engine[Interpreter Engine] -- R0: ctx --> Ctx
+    Engine[Interpreter Engine] -- execution_context --> Ctx
     Ctx -. "オフセットで参照" .-> Op1
     Ctx -. "オフセットで参照" .-> Loc1
     Ctx -. "オフセットで参照" .-> Ctrl1
@@ -79,11 +79,11 @@ graph TD
 | ハンドラテーブル | 命令ハンドラへのジャンプテーブル | テーブルポインタ | 関数ポインタの配列 |
 
 #### 実行コンテキスト（execution_context）
-<!-- traceability: {PositionIndependentCode} {ContextPointerRegister} {MemoryBoundaryCheck} {EnvironmentPointer} {AAPCS_FastCall} {GOTCHA-INTP-09} {GOTCHA-INTP-11} -->
+<!-- traceability: {PositionIndependentCode} {ContextPointerRegister} {MemoryBoundaryCheck} {EnvironmentPointer} {CPS_4Args} {GOTCHA-INTP-09} {GOTCHA-INTP-11} -->
 WASMゲストの全実行状態を管理する。JIT/Interpreter 共通の仮想CPUレジスタ群として設計する。
 
 **独立した固定構造体としての配置**:
-`execution_context` は、単体の固定サイズ構造体（x86-64では計112バイト）である。オペランド領域、ローカル値領域、制御ブロック復帰情報領域、関数呼出し記述子領域のいずれにもインライン配置されない。ハンドラとJITの境界では、実行コンテキスト、オペランド領域の現在位置、ローカル値領域の開始位置、スタック頂点値を4つの論理引数として渡す。これらの物理レジスタと退避規則は対象ABIで定義する。
+`execution_context` は、単体の固定サイズ構造体（x86-64では計128バイト）である。オペランド領域、ローカル値領域、制御ブロック復帰情報領域、関数呼出し記述子領域のいずれにもインライン配置されない。ハンドラとJITの境界では、実行コンテキスト、オペランド領域の現在位置、ローカル値領域の開始位置、スタック頂点値を4つの論理引数として渡す。これらの物理レジスタと退避規則は対象ABIで定義する。
 
 複雑命令をCへ委譲する場合の委譲先関数アドレスは、トレースヘッダへトレースごとに置く。対象ABIの呼出しコードはヘルパー契約ごとに共通コード領域へ配置し、トレースはヘッダに保持した対応入口の選択値を用いてそこへ遷移する。したがって、呼出し用のレジスタ変換、スタック領域確保、関数呼出し命令をトレースごとに複製しない。インタープリタの命令ディスパッチはこの共通呼出しコードを直接呼ばない。基本ブロック末尾では、対象ABIが定める値キャッシュの個数だけ共有オペランド領域へ書き戻す。その後、実行コンテキストの `ip`（`+0x00`）および `sp_offset`（`+0x0C`）を更新して状態を同期する。
 
@@ -96,7 +96,7 @@ WASMゲストの全実行状態を管理する。JIT/Interpreter 共通の仮想
 | ローカル値領域の開始位置 | 現在の関数呼出しに対応するローカル値領域の先頭 | 論理引数 | 第3引数。物理レジスタは対象ABIで定義する |
 | スタック頂点値 | `オペランドスタック` の最上位値 | 論理引数 | 第4引数。物理レジスタは対象ABIで定義する |
 
-##### `execution_context` 物理メモリレイアウト（x86-64では計112バイト）
+##### `execution_context` 物理メモリレイアウト（x86-64では計128バイト）
 
 `execution_context` 起点の `+0x00`〜`+0x3F` に配置される固定構造体メモリフィールド：
 
@@ -117,7 +117,7 @@ WASMゲストの全実行状態を管理する。JIT/Interpreter 共通の仮想
 | グローバル変数領域開始位置 (globals_base) | WASM global 配列の開始アドレス | メモリアドレス | 4バイト（`execution_context` の `+0x30`） |
 | グローバル変数領域終端位置 (globals_limit) | WASM global 配列の終端アドレス | メモリアドレス | 4バイト（`execution_context` の `+0x34`） |
 | ハンドラテーブル (handler_table) | 命令ハンドラへのジャンプテーブルポインタ | テーブルポインタ | 4バイト（`execution_context` の `+0x38`） |
-| 予約パディング (reserved) | 旧来の状態ワード領域を維持する予約領域 | 予約 | 4バイト（`execution_context` の `+0x3C`） |
+| 実行時フラグ (runtime_flags) | C++ Interpreterのブロック境界停止要求などを表すフラグ | ビット集合 | 4バイト（`execution_context` の `+0x3C`） |
 | コードビュー (code) | 現在のWASM命令列の非所有先頭アドレス | ポインタ | 8バイト（`execution_context` の `+0x40`） |
 | コードサイズ (code_size) | `code` の有効バイト数 | 32bit符号なし | 4バイト（`execution_context` の `+0x48`） |
 | 制御スタック (control_stack) | Native制御フレーム配列の非所有アドレス | ポインタ | 8バイト（`execution_context` の `+0x50`） |
@@ -126,22 +126,25 @@ WASMゲストの全実行状態を管理する。JIT/Interpreter 共通の仮想
 | CallStack (call_stack) | Native CallFrame配列の非所有アドレス | ポインタ | 8バイト（`execution_context` の `+0x60`） |
 | CallStackベース (call_base) | 現在の関数が所有するCallFrame窓の開始深さ | 32bit符号なし | 4バイト（`execution_context` の `+0x68`） |
 | CallStackオフセット (call_offset) | CallFrame配列の現在の深さ | 32bit符号なし | 4バイト（`execution_context` の `+0x6C`） |
-`execution_context` 構造体の実体は、既存の16個の32ビット状態ワードに、実行中のコードビュー、Native制御スタックビュー、およびNative CallStackビューを加えた固定長メモリである。コード、制御スタック、CallStackは非所有ポインタとしてコンテキスト自身から参照し、C++ハンドラが別の呼出し状態やTLSを参照しない構造にする。3本の値領域とCallStackの開始・終端・オフセットは独立したフィールドとして保持する。この設計により、いずれか1本の領域の伸縮が他の記録位置へ影響することを物理的に排除する。JITの複雑処理の委譲先アドレスとヘルパー契約別入口の選択値は、対象ABIのトレースヘッダから参照する。バイトオフセットの物理配置は `{ExecutionContext_Layout}` に従う。
+| オペランドスタック容量 (sp_capacity) | オペランドスタックに使用できる32bitワード数 | 32bit符号なし | 4バイト（`execution_context` の `+0x70`） |
+| LOOP後方分岐回数 (loop_jump_count) | 取得されたLOOP後方辺の累積回数。yield時にRuntimeEngineが0へ戻す | 32bit符号なし | 4バイト（`execution_context` の `+0x74`） |
+| LOOP後方分岐yieldしきい値 (loop_jump_threshold) | RuntimeEngineが設定する協調yieldまでの取得回数 | 32bit符号なし | 4バイト（`execution_context` の `+0x78`） |
+`execution_context` 構造体の実体は、既存の16個の32ビット状態ワードに、実行中のコードビュー、Native制御スタックビュー、Native CallStackビュー、および2個のLOOP後方辺状態ワードを加えた固定長メモリである。コード、制御スタック、CallStackは非所有ポインタとしてコンテキスト自身から参照し、C++ハンドラが別の呼出し状態やTLSを参照しない構造にする。3本の値領域とCallStackの開始・終端・オフセットは独立したフィールドとして保持する。この設計により、いずれか1本の領域の伸縮が他の記録位置へ影響することを物理的に排除する。JITの複雑処理の委譲先アドレスとヘルパー契約別入口の選択値は、対象ABIのトレースヘッダから参照する。バイトオフセットの物理配置は `{ExecutionContext_Layout}` に従う。
 
 Native `CallFrame` の `control_map` は、コードオフセットで直接引ける固定配列 `fireball_control_map_entry_native[]` を指す。各エントリは対応する `end`、`else`、命令後PC、ブロック結果アリティ、および `drop/select` の生ワード幅を保持する。したがって、ネイティブハンドラはPythonオブジェクトや動的検索を経由せず、ローカル幅表と制御表を `CallFrame` から直接参照できる。
 
 opcodeハンドラ、数値演算、および型変換のディスパッチ表は、C++の `constexpr std::array` として静的に確定する。実行時のテーブル初期化・書き込みを行わず、Clangの最適化ビルドでは読み取り専用イメージへ配置する。
 
 **スタック頂点値の保持と同期不変条件 (`{GOTCHA-INTP-01}`)**:
-オペランドスタックの最上位要素は、対象アーキテクチャが定める方式で保持する。ARMv8-MのJITステンシルでは物理レジスタによるキャッシュを用いるが、x64の実行環境では共有オペランド領域へ残余値を書き戻す方式を用いる。関数呼び出し、外部システムコール、JIT遷移などの境界では、対象ABIが定める同期処理を行う。
+オペランドスタックの論理状態はInterpreter/JIT境界で共有する。x64では共有オペランド領域を正本とする。ARMv8-Mでの値キャッシュ、物理レジスタ、境界同期はTBDであり、x64の方式から推定しない。
 
-ARMv8-Mのステンシルで採用するTOSおよびNOSのライトバック・キャッシュは、実行中はレジスタ上の値を正本として扱う。x64の実行環境を含む他の対象では、同じ論理状態を対象ABIの方式で共有領域へ反映する。インタープリタとJITの相互移行、外部呼出し、トラップ処理では、対象ABIが定める順序を保って状態を同期し、キャッシュ値を不当に破棄してはならない。
+ARMv8-Mの値キャッシュと状態同期方式はTBDである。x64では共有オペランド領域を正本とし、インタープリタとJITの相互移行、外部呼出し、トラップ処理で共有状態を同期する。
 
 **統一プログラムカウンタによる複数モジュール線形化 (`{GOTCHA-INTP-04}`)**:
 モジュール間を跨ぐ相互関数呼び出しでは、統一 PC（Unified PC: `(func_index << 16) | bytecode_offset`）を採用する。モジュール相対オフセットではなく、システム全体で一意に決定される値とする。これにより複数モジュールが共存する環境下でも、PC の単一比較のみで分岐先コードブロックを特定できる。JIT トレースのモジュール横断インライン化を極低オーバーヘッドで実現する。
 
 #### 関数呼出し記述子
-<!-- traceability: {PositionIndependentCode} {ContextPointerRegister} {MemoryBoundaryCheck} {EnvironmentPointer} {AAPCS_FastCall} {GOTCHA-INTP-13} {GOTCHA-INTP-14} -->
+<!-- traceability: {PositionIndependentCode} {ContextPointerRegister} {MemoryBoundaryCheck} {EnvironmentPointer} {CPS_4Args} {GOTCHA-INTP-13} {GOTCHA-INTP-14} -->
 関数実行記述子は、関数インデックス、コード、制御マップ、ローカル幅マップ、引数搬送情報、戻り境界、および`ローカル値領域`の開始32ビットワード位置を結び付ける実行時メタデータであり、Native CallStackへ固定容量で積む。ローカル値は現在の空き位置から確保し、記述子に保存した開始位置から参照する。`オペランドスタック`と`ローカル値領域`は型情報を持たない32ビットワード列であり、記述子、戻りPC、型情報を格納しない。論理ローカルは、フレームごとに決まるスロット幅の固定スロットで保持する。スロット幅は、関数のロード時に、ローカルの最大の変数サイズから求める。値の有効ワードは関数シグネチャに従う。i32/f32は1ワード、i64/f64は2ワードを占有する。
 
 `local.get`, `local.set`, `local.tee` は型を解釈しない。local index にフレームのスロット幅を掛けて、アドレスを直接計算する。必要な 1 または 2 ワードをオペランドスタックとの間で生コピーする。型付き演算や ABI 境界の読み書きのみが、既知の型に応じて値を解釈する。オペランドスタックはコール境界を跨いで連続する。`call`, `call_indirect`, import, host call, 関数復帰は、常に Interpreter/RuntimeEngine 境界で処理する。JIT トレースが関数呼出し記述子の積み下ろしや host call helper の呼出しを代行することはない。
@@ -172,8 +175,8 @@ JITは、関数ごとのスロット幅から `local index × スロット幅` �
 呼出し時は関数呼出し記述子を独立領域へ積み、引数を含むローカル値をローカル値領域の現在位置から確保する。復帰時は呼出し先の記述子を取り除き、ローカル値領域を保存位置まで一括で戻す。ABIへ渡す値配列には記述子、型タグや可変長コンテナを含めない。 `{CallFrame_Layout}`
 
 #### 制御ブロック復帰情報
-<!-- traceability: {AAPCS_FastCall} {ContextPointerRegister} {EnvironmentPointer} {GOTCHA-INTP-19} {MemoryBoundaryCheck} {PositionIndependentCode} {TraceBoundaryInvariant} -->
-制御ブロック復帰情報は、`block/loop/if` 命令による入れ子構造とジャンプ先を管理する。専用の固定容量領域へ積む。`loop/block/if` の分岐は JIT トレースが直接解決できる（`TraceBoundaryInvariant`, `{JIT_RuntimeAPI_Fallback}`）。そのため、構文の開始や終了に対応する情報の積み下ろしを JIT が代行しない場合がある。この領域は他の領域と物理的に独立している。したがって積み下ろし漏れが生じても、他の領域の記録位置が乱れることはない。
+<!-- traceability: {CPS_4Args} {ContextPointerRegister} {EnvironmentPointer} {GOTCHA-INTP-19} {MemoryBoundaryCheck} {PositionIndependentCode} {TraceBoundaryInvariant} -->
+制御ブロック復帰情報は、`block/loop/if` 命令による入れ子構造とジャンプ先を管理する。専用の固定容量領域へ積む。JIT trace bodyは制御終端命令を実行せず、JIT境界で再開したC++ Interpreter handlerがこの領域を更新する（`TraceBoundaryInvariant`, `{JIT_RuntimeAPI_Fallback}`）。この領域はoperand stackおよびlocal領域から物理的に独立している。
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
@@ -199,23 +202,16 @@ JITは、関数ごとのスロット幅から `local index × スロット幅` �
    - ブロックが戻り値を持つ場合は、分岐命令実行時に最上位に積まれていた戻り値のみを退避する。
    - プルーニング完了後に、正確にスタック頂点（TOS レジスタ）へ復元する。
    - 脱出先が `loop` の場合はループ本体先頭へ巻き戻してフレームを維持する。`block / if` の場合はフレームをポップしてブロック終端直後へ遷移する。
-3. **JIT 代行分岐脱出でのフレーム内容不正利用防止 (`{GOTCHA-INTP-06}`, ADR-INTERP-03)**:
-   - JIT トレースが分岐条件を直接解決した場合、フレームの積み下ろしは行われない。
-   - 以前インタープリタが積んだフレームが回収されずに残留することがある。
-   - したがって `br`, `br_if`, `else` の分岐先解決では、フレームスタックの内容（`kind`, ラベルPC, 結果アリティ, 保存済みスタック長）を信用しない。
-   - 制御構造の入れ子は静的な性質である。モジュールロード時に各ベーシックブロックの分岐先（`next_pc` / `loops_to`）としてあらかじめ解決しておく。
-   - 実行時はその解決済みの値を直接使用する。フレームスタックを都度たどって再計算しない。
-   - フレームスタックの深さ切り詰めは安全策としてのみ機能させる。JIT が `END` を代行し続けることでスタックが無制限に伸びるのを防ぐ。
-   - `block`, `loop`, `if` 命令で終わるブロックのトレースは、終端トレースとして扱う。この命令はインタープリタが実行し、フレームの積み漏れを起こさない。
-   - このトレースは、ネイティブチェインの対象にしない。`if` の条件値は、トレースの残余値としてオペランドスタックに残す。
-   - トレースの実行後、再開位置が要求する深さまで制御フレームを切り詰める。再開位置がブロック先頭なら、そのブロックが記録する深さを使う。
-   - 再開位置がブロック先頭でない場合は、開始がその位置より前にあり、対応する `END` がその位置以降にある構造命令の数を深さとする。
-   - 降ろし漏れで残った古いフレームは、この切り詰めで取り除く。ブロック先頭でない位置には、ブロック先頭での切り詰めが働かないためである。
-   - ホットブロックの履歴へ記録する位置は、ブロック先頭に限る。ブロック先頭と同じカードに入る非先頭の位置は、記録しない。
+3. **JIT 境界でのC++ handler実行 (`{GOTCHA-INTP-06}`, ADR-INTERP-03)**:
+   - JIT trace bodyは `block`, `loop`, `if`, `else`, `end`, `br`, `br_if`, `br_table` の終端命令を実行しない。
+   - RuntimeEngineは継続PCを終端命令に置き、停止境界を設定して、C++ Interpreter handlerを一度実行する。
+   - handlerが条件値を消費し、分岐対象の深さを制御frame stackから解決し、stackとframeを更新して遷移先PCを設定する。
+   - Python RuntimeEngineは条件、分岐先、frame深さを再計算しない。通常のnative dispatchでは、C++ dispatcherがhandler完了後に同じdispatch内で次PCをlookupする。debugger付きのstepwise経路ではRuntimeEngineが次のlookupを行う。
+   - この復帰処理は新しいtrace chaining対象を増やさず、OSの協調実行境界も移動しない。
 
 #### 分岐脱出時のフレームプルーニングと TOS 復元手順（手順アクティビティ図）
 <!-- traceability: {GOTCHA-INTP-01} {GOTCHA-INTP-02} {GOTCHA-INTP-03} {CallFrame_Layout} {GOTCHA-INTP-16} -->
-`br / br_if / br_table` 命令によるネスト脱出時に、中間フレームを破棄しつつ戻り値を TOS レジスタへ復元する手順を示す。フレームスタックが信頼できる純粋インタープリタ実行経路、または静的解析結果がないフォールバック経路で使用する。JIT トレース境界を跨ぐ場面（`{GOTCHA-INTP-06}`）では深さ探索を行わず、事前解決済みのラベルPCや `exec_trace` を直接使用する。
+`br / br_if / br_table` 命令によるネスト脱出時に、中間フレームを破棄しつつ戻り値をTOSへ復元する手順を示す。JITトレース境界でも同じC++ Interpreter handlerがこの制御フレーム操作を実行する（`{GOTCHA-INTP-06}`）。
 
 ```mermaid
 flowchart TD
@@ -254,7 +250,7 @@ flowchart TD
 | Yield 閾値 | 次の yield までに実行を許可する命令（トレース）数 | 回数 | 32bit符号なし |
 
 #### オプコードハンドラ / トレース実行（opcode_handler / exec_trace）
-<!-- traceability: {JIT_RuntimeAPI_Fallback} {ContextPointerRegister} {EnvironmentPointer} {JIT_RegisterMapping} {ADR_TosCacheAsymmetry} {AAPCS_FastCall} {GOTCHA-INTP-07} {GOTCHA-INTP-08} -->
+<!-- traceability: {JIT_RuntimeAPI_Fallback} {ContextPointerRegister} {EnvironmentPointer} {JIT_RegisterMapping} {ADR_TosCacheAsymmetry} {CPS_4Args} {GOTCHA-INTP-07} {GOTCHA-INTP-08} -->
 命令ハンドラおよびJITトレースは、継続渡しによる同一の4つの論理引数を持つ。実行コンテキスト、オペランド領域の現在位置、ローカル値領域の開始位置、スタック頂点値を渡し、物理レジスタと退避規則は対象ABIで定義する。
 
 インタープリタハンドラは次回呼び出し用の4引数とトラップ状態を結果として返す。次のPCは `ctx` に保持する。JITトレースは末尾ジャンプで継続し、結果レコードを返さない。
@@ -266,19 +262,19 @@ flowchart TD
 | 実行シグネチャ | インタープリタ命令ハンドラの継続渡し4論理引数シグネチャ | 関数ポインタ | `handler_result (execution_context*, value_area_position, local_area_position, value) noexcept`。物理呼出し規約は対象ABIで定義する |
 | ハンドラ結果 | 次の継続引数とトラップ状態 | 固定結果レコード | `ctx`、`sp`、`local_base`、`tos`、`trap_code`。次のPCは `ctx->ip` に格納し、`trap_code == 0` を正常、非0をトラップとする |
 | JITトレース入口 | インタープリタと同一の4つの論理引数を持つ末尾継続 | 関数ポインタ | `void (execution_context*, value_area_position, local_area_position, value) noexcept`。物理呼出し規約は対象ABIで定義する |
-| レジスタ割り当て | 対象ABIの引数レジスタマッピング | 対象ABI依存 | ARMv8-MはAAPCS、x64は [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) の規約に従う |
+| レジスタ割り当て | 対象ABIの引数レジスタマッピング | 対象ABI依存 | x64は [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) の規約に従い、ARMv8-MはTBD |
 
 WASM オプコードごとのスタック遷移およびハンドラ実装マトリクスは `{ThreadedInterpreter}` を参照する。
 
 **スタック頂点値の引渡しと対称性**:
 実行環境情報は `execution_context` に含め、独立した環境引数を追加しない。継続渡しの第4論理引数はスタック頂点値とする。これによりインタープリタとJITは論理的に同じ状態を境界で引き渡せるが、物理レジスタと値の保持方法は対象ABIに従う。
 
-ARMv8-MのJITトレースでは `R4` と `R5` を次段の値のキャッシュに割り当てる。x64の実行環境では対象トレースが共有オペランド領域へ残余値を書き戻す。いずれの場合も、トレース終了時には対象ABIが定める方法で実行コンテキストとオペランド領域を同期する。
+x64ではトレースが共有オペランド領域へ状態を書き戻す。ARMv8-Mのレジスタ割当とトレース境界同期はTBDである。
 
 ## 4. 動的モデル
 
 ### 4.1 アルゴリズム
-<!-- traceability: {ThreadedInterpreter} {JIT_RuntimeAPI_Fallback} {Interpreter_LazyJITSwitch} {LowLatencyJIT} {SimpleJITArchitecture} {Challenge_ApproximateYield} {ContextPointerRegister} {ADR_TosCacheAsymmetry} {ADR_TraceBoundaryYield} {ADR_InterruptRescheduleGeneration} {GOTCHA-INTP-15} -->
+<!-- traceability: {ThreadedInterpreter} {JIT_RuntimeAPI_Fallback} {Interpreter_LazyJITSwitch} {LowLatencyJIT} {SimpleJITArchitecture} {ContextPointerRegister} {ADR_TosCacheAsymmetry} {ADR_LoopBackedgeYield} {ADR_InterruptRescheduleGeneration} {GOTCHA-INTP-15} -->
 - **Threaded Dispatch with Continuation Passing Style**:
   - 命令ハンドラを連鎖させるテーブルディスパッチ方式で分岐コストを極小化する。
   - ハンドラ関数型は4つの論理引数に統一する。結果レコードで次の継続情報とトラップ状態を返す。
@@ -294,10 +290,9 @@ ARMv8-MのJITトレースでは `R4` と `R5` を次段の値のキャッシュ�
 - **WASM命令とRuntime API / Libgcc ヘルパー連携 (`Libgcc_Runtime_Helper`)**:
   - 各命令ハンドラはスタックボトム相対でオペランドとスタック長を更新する。
   - ハードウェア支援がない64ビット整数演算や浮動小数点演算は、専用ランタイムヘルパー（`fireball_rt_*`）経由で実行する。これによりFPUの有無や soft-float 差異を透過的に吸収する。
-- **ジャンプの高速化 (exec_trace)**:
-  - 制御命令によるジャンプ先を制御ブロック復帰情報内の実行先欄に保持する。
-  - この値はロード時の静的解析結果から書き込まれる。
-  - 深さ相対の分岐命令はその都度フレームを辿り直さず、事前計算済みの値をそのまま使用する（`{GOTCHA-INTP-06}`）。
+- **C++ handlerの分岐処理**:
+  - 深さ相対の分岐命令は、C++ handlerが指定深さの制御frameからloop先頭またはblock終端を得る。
+  - handlerはoperand stackを対象frameの保存高さとlabel arityへ合わせてから遷移先PCを設定する（`{GOTCHA-INTP-06}`）。
 - **スタック Pruning (Label Arity対応)**:
   - `br` 命令等の実行時、ジャンプ先の復帰情報に記録された結果個数に基づき、スタック上のオペランドを残してスタック長を保存済みスタック長まで巻き戻す。
 - **JIT更新戦略（Interpreterテンプレートの実行ドライバ差し替え）**:
@@ -311,13 +306,14 @@ ARMv8-MのJITトレースでは `R4` と `R5` を次段の値のキャッシュ�
   - インタープリタの return ハンドラが callee の `関数呼出し記述子` をポップする。
   - トップレベル復帰のみ専用の RETURN sentinel PC を生成し、RuntimeEngine が実行完了を判定する。
 - **Hotspot検知と JIT候補ビットマップによるバイパス (`JIT_CandidateBitmap`)**:
-  - インタープリタはトレース開始時の PC を戻り値としてのみ vSoC に伝える。
-  - HOT 判定を行うのは vSoC 側の責務である。
-  - `jit_candidate_bitmap` において該当ブロック先頭 PC が候補外（`0`）の場合、vSoC は追跡登録をバイパスする。コンパイル効果のないブロックの追跡オーバーヘッドを完全排除する。
-- **トレース境界での協調的Yield (`ADR_TraceBoundaryYield`)**:
+  - 通常のnative dispatchでは、C++ dispatcherが未コンパイルblockの観測を構成別に収集し、RuntimeEngineがその結果をTier 3 JITRuntimeへ渡して候補状態を更新する。
+  - JIT cache・候補mask・compile queueの所有者はTier 3 JITRuntimeManagerであり、C++ Interpreter handlerやvSoCはそれらを直接参照しない。
+  - `jit_candidate_bitmap`において該当block先頭PCが候補外（`0`）の場合、JITRuntimeManagerは追跡登録を省略する。compile効果のないblockの追跡overheadを抑える。
+- **トレース境界での協調的Yield (`ADR_LoopBackedgeYield`)**:
   - インタープリタは命令ごとの精密なカウンタ評価や中断を行わない。
-  - トレースの切れ目でのみインタープリタの命令ハンドラが呼び出し元（vSoC）へ制御を返す。
-  - `yield_threshold` の判定と `co_yield` の発行は vSoC 自身が行う。割り込み時の再スケジュール世代が未観測の場合も、vSoCは同じトレース境界で世代観測を完了させてから`co_yield`を発行する。
+  - C++ディスパッチャは常駐JITトレースとC++ Interpreter handlerを連続実行し、取得済み後方分岐数が `FB_CONF_RUNTIME_YIELD_THRESHOLD` に達した境界でRuntimeEngine／vSoCへ制御を返す。C++ InterpreterとHybrid JITは同じカウンタとしきい値を使う。
+  - 非対応命令、外部呼出し、トラップ、関数完了など、処理をC++内で続けられない境界では回数条件より先に制御を返す。
+  - `co_yield` の発行と割り込み時の再スケジュール世代の観測はvSoCの責務である。vSoCはyield境界で世代観測を完了させてから`co_yield`を発行する。
   - インタープリタはコルーチンではなく単なる関数である。トレース境界での自然なレジスタ・スタック整合によりステート退避を極小化する。
 - **VM観測フック**:
   - 命令実行境界で Tier 2 `runtime_observability.md` の観測イベントを発行する。ブレークポイントによる実行制御は Debugger プラグインへ、コールグラフ集計と時間計算は Guest Profiler プラグインへ委譲する。
@@ -326,10 +322,10 @@ ARMv8-MのJITトレースでは `R4` と `R5` を次段の値のキャッシュ�
 実行可能な概念モデルは [`interpreter_concept.py`](docs/components/tier3_executer/concepts/interpreter_concept.py) に分離する。本文書には実装言語のコードを埋め込まず、WASM実行契約と固定レイアウトのみを規定する。
 
 #### 統合 Tiered ランタイムエンジン・コンセプトコード
-インタープリタ実行、Hotspot検出、Copy-and-Patch JIT、3面キャッシュ、MPU W^X を統合した自己完結実行シミュレーションは [`runtime_engine_concept.py`](docs/components/tier2_runtime/concepts/runtime_engine_concept.py) を参照する。
+実行経路の統合検証は、C++ Interpreter/JITのpysimテストと [`vsoc_state_model.py`](docs/components/tier2_runtime/formal/vsoc_state_model.py) を参照する。ARMv8-Mの物理ABIとメモリ保護はTBDである。
 
 ### 4.2 状態遷移図
-<!-- traceability: {ThreadedInterpreter} {JIT_RuntimeAPI_Fallback} {Interpreter_LazyJITSwitch} {LowLatencyJIT} {SimpleJITArchitecture} {Challenge_ApproximateYield} -->
+<!-- traceability: {ThreadedInterpreter} {JIT_RuntimeAPI_Fallback} {Interpreter_LazyJITSwitch} {LowLatencyJIT} {SimpleJITArchitecture} {ADR_LoopBackedgeYield} -->
 ```mermaid
 stateDiagram-v2
     [*] --> Ready
@@ -342,7 +338,7 @@ stateDiagram-v2
 ```
 
 ### 4.3 内部シーケンス
-<!-- traceability: {ThreadedInterpreter} {JIT_RuntimeAPI_Fallback} {Interpreter_LazyJITSwitch} {LowLatencyJIT} {SimpleJITArchitecture} {Challenge_ApproximateYield} -->
+<!-- traceability: {ThreadedInterpreter} {JIT_RuntimeAPI_Fallback} {Interpreter_LazyJITSwitch} {LowLatencyJIT} {SimpleJITArchitecture} {ADR_LoopBackedgeYield} -->
 #### Interpreter 実行シーケンス
 ```mermaid
 sequenceDiagram
@@ -358,14 +354,14 @@ sequenceDiagram
         I->>D: pre_check(ctx)
         D-->>I: continue
     end
-    loop トレース内実行 (Direct-Threaded)
-        I->>I: dispatch(opcode) via [[clang::musttail]]
-        opt 外部状態または未対応命令
-            I->>R: call(runtime boundary)
-            R-->>I: result / fallback state
+    loop 取得済み後方分岐が共通しきい値へ達するまで
+        I->>I: C++ dispatcherでJIT traceまたはC++ handlerを実行
+        opt 外部呼出し、非対応命令、trap、関数完了
+            I->>R: return native boundary status
+            R-->>I: resume state / result
         end
     end
-    Note over I: 制御命令 / トレース境界でループ脱出
+    Note over I: しきい値到達時にyield statusを返しPython/COOS境界へ戻る
     opt デバッグ有効
         I->>D: post_check(ctx)
         D-->>I: continue
@@ -408,29 +404,29 @@ sequenceDiagram
 
 | 項目 | 内容 |
 | :--- | :--- |
-| 機能概要 | Safepointで受け取った汎用 `interrupt-event` を、実行コンテキストの保留イベント領域へ反映する。 |
+| 機能概要 | COOS協調境界で受け取った汎用 `interrupt-event` を、実行コンテキストの保留イベント領域へ反映する。 |
 | シグネチャ | `sync_interrupts(ctx: 可変参照, event: interrupt-event) -> void` |
 | 引数 | `ctx`: 実行コンテキスト (`execution_context`) への可変参照<br>`event`: `vector_id`、`source_id`、`cause_code`、`payload0`、`payload1` の固定5ワード |
 | 戻り値 | void (なし) |
-| 期待する結果 | `ctx` 内の保留イベントが更新され、vSoCのSafepoint処理で反映される。 |
+| 期待する結果 | `ctx` 内の保留イベントが更新され、vSoCのCOOS協調境界で反映される。 |
 | 事前条件 | `ctx` が有効な `execution_context` を指していること。 |
 | 事後条件 | フラグがアトミックに書き込まれる。 |
 | 不変条件 | 実行中の命令ハンドラから安全に参照可能であること。 |
 | エラー時の挙動 | 未登録イベントやFIFO満杯はCOOS側でドロップされる。vSoCから渡された不正なイベントは `recovery-strategy: ignore` とし、ゲスト実行コンテキストの破壊を防ぐ。 |
-| 補足 | vSoCのSafepoint配送を補助するだけで、ゲスト関数の階層ディスパッチやWASIポーリングは担当しない。 |
+| 補足 | vSoCのCOOS協調境界における配送を補助するだけで、ゲスト関数の階層ディスパッチやWASIポーリングは担当しない。 |
 
 #### 継続渡しハンドラの実行境界
 <!-- traceability: {ThreadedInterpreter} {ContextPointerRegister} -->
 
 命令意味論はWASM命令ハンドラに保持し、C++の固定ハンドラ表から同一の4つの論理引数で末尾連鎖させる。末尾呼び出しで次のハンドラへ移るため、命令ごとにC++コールスタックを積み増さない（{InterpreterContextStackless}）。
 
-次の命令はネイティブハンドラ内で完結させ、命令ごとのPython復帰を行わない。
+通常のブロック内命令はC++のネイティブハンドラ列で実行し、命令ごとのPython復帰を行わない。RuntimeEngineから基本ブロック境界を指定された場合、C++ディスパッチは指定先PCに到達した時点で状態を保存して戻る。ネイティブ表にない命令は同じPCとスタック状態を保ってPythonハンドラへフォールバックする。
 
 - 制御・スタック命令: `block`、`loop`、`if`、`br`、`br_if`、`drop`、`select`、`return`。
 - ローカル変数命令: `local.get/set/tee`。
 - 数値命令: i32/i64の数値命令、およびf32/f64の定数・比較・算術・丸め・平方根・reinterpret/変換。
 
-外部状態を伴う `call`、`call_indirect`、import/host呼出し、グローバル、リニアメモリの各命令は、共有状態を同期してからInterpreter/RuntimeEngine境界へ委譲する。フォールバックは未対応命令または検証済みメタデータ欠落時に限定する。連鎖経路を無効にしても、通常経路の命令意味論と状態遷移は変わらない。
+外部状態を伴う `call`、`call_indirect`、import/host呼出し、グローバル、リニアメモリの各命令は、共有状態を同期してからInterpreter/RuntimeEngine境界へ委譲する。ブロック境界停止用PCはPythonのフレーム状態とNative CallFrameの両方へ書き込み、C++ハンドラが同一の境界を判定する。`sp_capacity` は設定済みの論理容量を32bitワード単位で保持し、物理バッファの大きさまでスタックを伸ばさない。
 
 ### 5.2 URI/IPCインターフェース
 <!-- traceability: {META_RecoveryStrategy} -->
@@ -454,13 +450,13 @@ sequenceDiagram
 
 ### 6.2 メモリ制約と方策
 <!-- traceability: {ThreadedInterpreter} {GOTCHA-INTP-12} -->
-- **目標**: 64KB RAM環境で動作可能とする。
+- **目標**: 構成で定めるメモリ上限内で動作する。ARMv8-Mの物理容量適合性はTBDとする。
 - **方策**: `execution_context` と関数呼出し記述子を最小化し、スタック領域を固定サイズ化する。
 
 ### 6.3 安全性制約と方策
 <!-- traceability: {META_FaultIsolation} {MemoryBoundaryCheck} {GOTCHA-INTP-10} {GOTCHA-INTP-17} -->
 - **目標**: ゲストの暴走を確実に隔離する。
-- **方策**: `sp_boundary` と `memory_size` による境界チェックを実施する。Safepointでの `interrupt-event` 保留処理により安全な割り込み処理を行う。
+- **方策**: `sp_boundary` と `memory_size` による境界チェックを実施する。COOS協調境界での `interrupt-event` 保留処理により安全な割り込み処理を行う。
 
 ## 7. 形式検証 (Formal Verification)
 <!-- traceability: {ThreadedInterpreter} {InterpreterContextStackless} {PositionIndependentCode} -->
@@ -479,32 +475,33 @@ sequenceDiagram
 - **検証特性 (CTL/LTL)**:
   - 活性 (Liveness): 実行可能状態から有限ステップでディスパッチまたは Yield へ到達する。
   - 安全性 (Safety): 不正命令や範囲外アクセスが発生した場合、即座に Trap 状態へ遷移し、後続命令を実行しない。
-  - レジスタ同期: JIT とインタープリタの境界において、コンテキストレジスタ（R0〜R3）の状態が完全同期される。
+  - 境界状態同期: JIT とインタープリタの境界で4つの論理引数と共有実行状態が同期される。物理レジスタ配置は対象ABIに従い、ARMv8-MはTBDとする。
 
 ## 8. 設計判断 (ADR)
 
-### ADR-INTERP-01: トレース境界での協調的 Yield (`{ADR_TraceBoundaryYield}`)
+### ADR-INTERP-01: LOOP後方分岐回数による協調yield
+<!-- traceability: {ADR_LoopBackedgeYield} -->
 
 - **ステータス**: 承認 (Approved)
 - **コンテキスト**:
-  COOS 協調型マルチタスク環境において、ゲスト WASM のインタープリタ実行を中断する粒度と Safepoint ポーリング頻度を設計する。インタープリタ自身はコルーチンにしない。インタープリタは vSoC から呼ばれ、値を返して終了する関数とする。協調的中断（`co_yield`）を判断・発行する責務は常に呼び出し元の vSoC に置く。
+  COOS協調型マルチタスク環境で、C++ native dispatch loopがRuntimeEngineへyield statusを返す条件を定める。インタープリタ自身はコルーチンにせず、取得LOOP後方辺の共通しきい値までC++ handlerとdispatcherが実行を続ける。
 - **決定事項**:
-  インタープリタの命令ハンドラは、命令ごとの精密なイベント検査やカウンタ更新を行わない。トレースの切れ目（基本ブロック末尾、ループ境界、関数呼出・復帰、または JIT 脱出境界）でのみ vSoC へ制御を返す。vSoC は戻り値を受け取るたびに Yield 判定と JIT キャッシュ再判定（`{Interpreter_LazyJITSwitch}`）を行う。
+  取得されたLOOP後方分岐はC++ Interpreterの命令別handlerが処理し、共通contextの回数を更新する。C++ dispatcherは常駐JIT traceまたはC++ handlerを継続実行し、共有しきい値へ達した時点でRuntimeEngineへyield statusを返す。RuntimeEngineはJIT runtime処理を行い、Systemは協調境界で`co_yield`を発行する。各handler後にPythonやvSoCへ戻ってcacheを再判定してはならない。
 
 ### ADR-INTERP-02: 再スケジュール世代の観測境界 (`{ADR_InterruptRescheduleGeneration}`)
 
 - **ステータス**: 承認 (Approved)
 - **決定事項**:
-  インタープリタはCOOSの再スケジュール世代を命令ハンドラごとに参照しない。vSoCがトレース境界で現在世代とタスクの最終観測世代を比較し、未観測であれば観測済みとして記録した後に`co_yield`を発行する。
+  インタープリタとJIT handlerはCOOSの再スケジュール世代を命令ごとに参照しない。SystemはC++ dispatcherがyield statusを返した後の協調境界で現在世代とタスクの最終観測世代を比較し、未観測なら記録して`co_yield`を発行する。
 - **責務境界**:
-  インタープリタはWASM命令の実行とトレース境界への復帰だけを担う。世代の管理、READYキューの一巡判定、および割り込みイベントの配送はCOOSとvSoCの責務とする。
+  C++ InterpreterはWASM命令を処理し、C++ dispatcherはLOOP後方分岐しきい値到達時にRuntimeEngineへ戻る。世代の管理、READYキューの一巡判定、および割り込みイベントの配送はCOOSとSystemの責務とする。
 - **保証範囲**:
-  この方式は協調境界までの再スケジュールを保証する。命令列がトレース境界へ到達しない場合の強制プリエンプションや、割り込みからの実時間応答上限は保証しない。
+  この方式は取得後方辺しきい値に応じた協調yieldを保証する。LOOP後方辺へ到達しない命令列の強制プリエンプションや、割り込みからの実時間応答上限は保証しない。
 - **根拠とトレードオフ**:
-  1. **ディスパッチ性能の最大化**: 命令ハンドラ内での条件分岐を排除し、`[[clang::musttail]]` による高速ダイレクトスレッド実行を維持する。
-  2. **レジスタ・スタック整合性の保証**: トレース境界では TOS レジスタと3本の独立スタックが自然に整合するため、複雑なステート退避が不要となる。
-  3. **有界レイテンシ**: 組み込み WASM の基本ブロック長は通常数命令から数十命令である。トレース境界での yield でリアルタイム応答性を満たす。
-  4. **責務の分離**: インタープリタは実行のみを担当する。JIT キャッシュやスケジューリング判断は vSoC の責務とする。
+  1. **ディスパッチ性能の維持**: C++ handlerはopcode固有の状態更新だけを行い、vSoCやPythonへの復帰・イベント走査を挟まない。C++ dispatcherは後方分岐しきい値まで継続する。
+  2. **レジスタ・スタック整合性の保証**: C++ handlerとJIT traceの境界で共有実行コンテキストと3本の独立領域を同期する。
+  3. **有界な協調間隔**: 取得後方分岐回数のしきい値でdispatcherがRuntimeEngineへ戻る。これは時間ベースのプリエンプションや実時間応答上限を保証しない。
+  4. **責務の分離**: C++ handlerは命令意味論を担当し、C++ dispatcherはnative遷移と後方辺回数を担当する。JIT cacheとCOOS schedulingの管理はRuntimeEngineとSystemが担う。
 - **影響範囲**:
   - `interpreter.md`, `runtime_vsoc.md`, `os_coos.md`, `jit_compiler.md`
 
@@ -516,7 +513,7 @@ sequenceDiagram
 - **決定事項**:
   `i64`, `f32`, `f64` 演算命令は、インタープリタおよび JIT の双方で実行する。専用のランタイムヘルパー関数（`fireball_rt_*`）経由で実行する（`{Libgcc_Runtime_Helper}`）。
 - **根拠とトレードオフ**:
-  1. **JIT ステンシルの軽量化**: 複雑な演算ルーチンを JIT ステンシル内にインライン展開しない。ランタイムヘルパー呼び出しに委譲する。これにより JIT ROM サイズ予算（8KB）を維持する。
+  1. **JIT ステンシルの軽量化**: 複雑な演算ルーチンを JIT ステンシル内にインライン展開しない。ランタイムヘルパー呼び出しに委譲する。JITコード容量は対象構成で定め、ARMv8-Mの物理容量はTBDとする。
   2. **ハードウェア差異の隠蔽**: FPU 搭載環境と非搭載環境のビルド切り替えをヘルパー実装内に局所化する。
   3. **保守性と検証容易性**: `libgcc` との ABI 境界がハンドラ単位で隔離され、テストおよび形式検証が容易になる。
 - **影響範囲**:
@@ -526,12 +523,12 @@ sequenceDiagram
 
 - **ステータス**: 承認 (Approved)
 - **コンテキスト**:
-  当初の設計では全スタック要素を単一の統合バッファへ混在させていた。しかし制御命令の分岐は JIT トレースがインタープリタを介さずに直接解決できる。このとき制御フレームの積み下ろしは代行されない。同居しているとオペランドスタックの位置関係が壊れる危険があった。
+  当初の設計では全スタック要素を単一の統合バッファへ混在させていた。JIT trace bodyは制御終端命令を実行せず、C++ Interpreter handlerが専用制御フレームを積み下ろす。領域を分離しない場合、制御frame操作がoperand stackの位置関係を壊す危険がある。
 - **決定事項**:
   制御ブロック復帰情報をローカル値領域およびオペランド領域と完全に切り離す。専用の固定容量領域へ配置する。3本の領域の長さは互いに独立して管理する。
 - **根拠とトレードオフ**:
-  1. **JIT 動作時の物理的安全性**: JIT トレースが制御ブロック復帰情報を操作しなくても、専用領域へ分離されているためオペランド領域の値や位置が乱れることはない。
-  2. **静的分岐先解決の採用**: フレームの残留が生じても論理的破綻を防ぐ。分岐先解決はモジュールロード時の静的解析結果（事前計算済みのラベルPC）を直接使用する（`{GOTCHA-INTP-06}`）。
+  1. **JIT 動作時の物理的安全性**: JIT trace bodyは制御終端命令を実行せず、C++ Interpreter handlerが専用制御frameだけを更新する。各領域を分離することで、オペランド値や位置が乱れることを防ぐ。
+  2. **終端命令の一元処理**: JIT境界でもC++ Interpreter handlerが分岐とstack pruningを実行する。Python側の分岐再計算とInterpreterの状態遷移が二重化しない。
   3. **メモリ管理の明確化**: 3本の固定容量バッファに分離し、それぞれ個別にオーバーフローを検知する。
   4. **コールフレームとの責務差**: 関数呼び出しは常にインタープリタへ戻る境界である。本問題はループやブロック特有のものである。
 - **影響範囲**:

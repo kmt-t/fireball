@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
 _PYSIM_DIR = Path(__file__).resolve().parents[3]
 
-from tier3_plugins.profiler.guest_profiler import GuestProfiler
 from runtime_events import RuntimeEvent, RuntimeEventKind
+from tier3_plugins.profiler.guest_profiler import GuestProfiler
 
 
 def _event(kind: RuntimeEventKind, function_id: int, tick: int) -> RuntimeEvent:

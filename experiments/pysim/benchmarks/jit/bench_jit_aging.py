@@ -36,10 +36,10 @@ from _bootstrap import configure_import_paths
 configure_import_paths(_PYSIM_DIR, _BENCH_DIR)
 
 from config import FB_CONF_JIT_AGING_STEP_SCAN_BYTES, FB_CONF_JIT_AGING_STEP_UNITS
-from runtime_engine import RuntimeEngine
 from tier3_executer.interpreter.interpreter import Interpreter, InterpreterBindings
 from tier3_executer.jit.jit_cache import JITTrace
 from tier3_executer.jit.jit_manager import JITRuntimeManager
+from tier3_executer.jit.runtime_engine import RuntimeEngine
 from tier3_executer.jit.x64_jit import TraceCompiler
 from wasm_module import WasmOperand
 from wasm_reader import parse
@@ -89,11 +89,19 @@ class _CountingCompiler:
         loops_to: int | None,
         byte_span: int,
         local_types: Sequence[int],
+        *,
+        loop_backedge_kind: int = 0,
     ) -> JITTrace | None:
         self.compiles += 1
         start = time.perf_counter_ns()
         trace = self.inner.compile_trace(
-            head_pc, instructions, next_pc, loops_to, byte_span, local_types
+            head_pc,
+            instructions,
+            next_pc,
+            loops_to,
+            byte_span,
+            local_types,
+            loop_backedge_kind=loop_backedge_kind,
         )
         self.compile_ns += time.perf_counter_ns() - start
         return trace
@@ -171,7 +179,7 @@ class JITAgingBenchmark:
         if scan_bytes is not None:
             settings["aging_scan_bytes"] = scan_bytes
         engine = RuntimeEngine(
-            jit_runtime=JITRuntimeManager(jit_compiler=compiler, yield_threshold=16, **settings)
+            jit_runtime=JITRuntimeManager(jit_compiler=compiler, **settings)
         )
         engine.register_module_blocks(module)
         hook = _RotationHook(engine, aging)
@@ -184,10 +192,10 @@ class JITAgingBenchmark:
         t0 = time.perf_counter()
         for pass_index in range(self.passes):
             for func in hot:
-                checksum += engine.run(interp, func, [self.hot_iterations])[0]
+                checksum += engine.call(interp, func, [self.hot_iterations])[0]
             for j in range(cold_per_pass):
                 func = cold[(pass_index * cold_per_pass + j) % len(cold)]
-                checksum += engine.run(interp, func, [pass_index])[0]
+                checksum += engine.call(interp, func, [pass_index])[0]
         time_ms = (time.perf_counter() - t0) * 1000
 
         jit = engine.stat_jit_invocations

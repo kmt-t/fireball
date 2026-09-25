@@ -16,7 +16,7 @@ pysim のエントリポイント `main.py` が、起動時の import で失敗�
 ## 2. 再現手順
 
 ```bash
-.venv/Scripts/python.exe experiments/pysim/main.py
+uv run --offline --no-sync python experiments/pysim/main.py
 ```
 
 期待結果は、ゲストタスクの実行報告が出力されることである。

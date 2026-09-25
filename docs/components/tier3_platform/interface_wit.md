@@ -139,10 +139,10 @@ vIRQの登録・解除とvDMA転送は、汎用 `fireball-call` のIDディス�
 
 | WIT interface | 操作 | 役割 |
 | :--- | :--- | :--- |
-| `fireball:host/virq` | `register` / `unregister` | 静的vIRQノードへの登録変更を保留し、vSoCのSafepointで反映する |
+| `fireball:host/virq` | `register` / `unregister` | 静的vIRQノードへの登録変更を保留し、次のCOOS協調境界で反映する |
 | `fireball:host/vdma` | `start` | 転送元・転送先・転送長を指定してvDMA転送を開始する |
 
-専用ホストコールはWASM importから対応ハンドラへ同期接続するが、SYSCTL／VDMAのvMMIOレジスタや汎用 `fireball_call` のID空間は使用しない。vIRQのイベント本体はISR → COOS FIFO → vSoC Safepoint → vIRQ階層の非同期経路で配送する。
+専用ホストコールはWASM importから対応ハンドラへ同期接続するが、SYSCTL／VDMAのvMMIOレジスタや汎用 `fireball_call` のID空間は使用しない。vIRQのイベント本体はISR → COOS FIFO → COOS協調境界 → vSoC → vIRQ階層の非同期経路で配送する。
 
 FireballのC ABIアダプタをCore Wasmへ静的リンクする場合、WIT名を次のmodule／field名へ写像する。この対応は、ゲスト側アダプタとホスト側import resolverの共通契約である。
 
@@ -177,7 +177,7 @@ GPIO のような割り込み応答性・ビットバンギング等の要求か
 ## 6. 非同期通知メカニズム
 
 <!-- traceability: {Asynchronous_Notification} {WASI_Async_Bridge} -->
-WASIでは割り込みベクタを直接扱わず、汎用ポーリングコマンドによる操作完了待機としてモデル化する。専用の `pollable` リソース型は設けず、`resolver.get-interface`/IPCコマンド発行が返す `u32` ハンドルに対して `POLL_CHECK` / `POLL_WAIT`（`hal_dispatch.md` を正本とする）コマンドIDを発行することで、ready 状態を確認する。vMMIOのvIRQ原因付き階層ディスパッチは、COOSの汎用割り込みイベント契約とvSoCのSafepoint配送で処理し、WASI契約には追加しない。
+WASIでは割り込みベクタを直接扱わず、汎用ポーリングコマンドによる操作完了待機としてモデル化する。専用の `pollable` リソース型は設けず、`resolver.get-interface`/IPCコマンド発行が返す `u32` ハンドルに対して `POLL_CHECK` / `POLL_WAIT`（`hal_dispatch.md` を正本とする）コマンドIDを発行することで、ready 状態を確認する。vMMIOのvIRQ原因付き階層ディスパッチは、COOSの汎用割り込みイベント契約とCOOS協調境界での配送で処理し、WASI契約には追加しない。
 
 - **操作完了通知**: 物理デバイスの完了状態は、GPIOエッジ購読、タイマー満了購読、バス受信購読等のIPCコマンドが返す`u32`ポーリングハンドルに対する`POLL_CHECK`/`POLL_WAIT`で確認する。これはvIRQの原因レコード配送とは別の経路である。
 
@@ -186,7 +186,7 @@ WASI仕様と HAL の乖離および考慮点は以下の通り：
 
 1. **GPIO/Bus の不在**: WASI (CLI/Cloud) には GPIO や I2C/SPI の標準インターフェースがない。これらは専用 WIT リソース型を設けず、URI Resolver + HALバッファプール + IPCコマンドIDの汎用機構上で「Fireball 独自プロポーザル」として実現する。
 2. **リアルタイム性**: WASI 0.3p のポーリングモデルは非同期イベントの集約に利用できるが、極めて高速なリアルタイム応答が必要な場合、`fireball_call` (Trap) を併用する方が効率的である可能性がある。
-3. **リソース管理のオーバーヘッド**: 専用 WIT リソース型（ハンドル管理）を廃したことで、単純な `u32` ID渡し + IPCコマンドIDのみの薄い構成となり、64KB RAM 環境でのホスト側オーバーヘッドを最小化している。
+3. **リソース管理のオーバーヘッド**: 専用 WIT リソース型（ハンドル管理）を廃したことで、単純な `u32` ID渡しとIPCコマンドIDを使う構成となり、ホスト側の管理状態を抑える。
 
 ## 8. 命名規則 (Naming Conventions)
 

@@ -31,7 +31,6 @@ from hal_dispatch import (
 from hostcall import FbSyscallId, FireballHostCallPort, WasiErrno, WasiPreview1Host
 from ipc_router import IPCRouter
 from loader import fnv1a_32
-from tier2_runtime.logger import Logger
 from memory import MemoryManager
 from scheduler import ChannelAction, Scheduler
 from system_containers import (
@@ -40,9 +39,10 @@ from system_containers import (
     ReadOnlyRadixBinaryTreeStorage,
     StaticVector,
 )
+from tier2_runtime.logger import Logger
+from tier3_platform.drivers.wasi.uvwasi import WasiPreview1Backend
 from wasi_bindings import WasiHalBindings
 from wasm_module import Module
-from tier3_platform.drivers.wasi.uvwasi import WasiPreview1Backend
 
 WasiValue = int
 
@@ -111,7 +111,7 @@ class WasiInterfaceVTable:
 class Wasi03pEngine:
     """Provide Fireball URI resolution, IPC dispatch, and the HAL buffer pool."""
 
-    __slots__ = ("sysv", "bindings", "_interface_storage")
+    __slots__ = ("_interface_storage", "bindings", "sysv")
 
     def __init__(self, sysv: WasiRuntimeHost, bindings: WasiHalBindings | None = None):
         self.sysv = sysv
@@ -232,7 +232,7 @@ class Wasi03pEngine:
         self.sysv.pool.unmap_after_io(handle.buffer_id)
         return int(WasiErrno.SUCCESS)
 
-# ============================================================================== 
+# ==============================================================================
 # WASI 0.1p Compatibility Layer (Adapter Pattern wrapping WASI 0.3p)
 # ==============================================================================
 class WasiHostContext:
@@ -243,13 +243,13 @@ class WasiHostContext:
     """
 
     __slots__ = (
-        "sysv",
-        "guest_memory",
+        "_import_storage",
+        "_keepalive_trampolines",
         "bindings",
         "core03p",
+        "guest_memory",
+        "sysv",
         "uvwasi",
-        "_keepalive_trampolines",
-        "_import_storage",
     )
 
     def __init__(

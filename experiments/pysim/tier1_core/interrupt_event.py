@@ -7,7 +7,7 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True, slots=True)
 class InterruptEvent:
-    """Five u32 words carried from ISR notification to a vSoC safepoint."""
+    """Five u32 words carried from ISR notification to a vSoC COOS boundary."""
 
     vector_id: int
     source_id: int

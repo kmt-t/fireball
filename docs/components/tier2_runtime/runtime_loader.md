@@ -155,7 +155,7 @@ ROM上の読み取り専用バイト列ビューをラップし、カレント�
   **設計理由と不変条件**: 32-bit ハッシュ値による探索のみで関数解決を完了させると、万一のハッシュ衝突発生時に誤った関数がディスパッチされ、壊滅的な誤動作を引き起こす。そのため、ハッシュ探索で候補エントリがヒットした際は必ず ROM 上の元のシンボル名文字列と 1 回完全一致照合を行い、ハッシュ衝突によるシンボル誤認を完全に排除する。
 - **インポートテーブル検索と依存関係解決 (resolve_imports)**: インポートテーブルの各エントリに対し、インポート先モジュール名・フィールド名のハッシュ値で対象モジュールの `export_storage`から借用した`radix_binary_tree_view`を探索する。候補区間の索引探索は $O(1) + O(\log n)$、ROM上の元文字列による衝突照合を含む worst-case は $O(1) + O(\log n) + O(L)$ であり、照合後に依存関係を解決してモジュールを実行可能状態へ遷移させる。
 - **ファイル位置逆引き (lookup_by_file_offset)**: 任意のファイル内バイトオフセットから `entity_offset_storage`の借用`radix_binary_tree_view`を検索し、そのオフセットを包含するデコード済みエンティティ（セクション、関数、データ等）を即座に特定・返却する。
-- **メモリセクション検証**: Memory Section をパースし、論理ページサイズ（64KB単位）および初期要求ページ数を取得。物理割当が部分ページ（例: 8KB）の場合や複数ページ（`N * 64KB`）の場合でも、モジュール初期ページ要求とシステム物理予算（`FB_CONF_MAX_WASM_PAGES`）を照合し、実行時境界判定へ引き渡す。
+- **メモリセクション検証**: Memory Sectionをパースし、論理ページサイズ（64KB単位）と初期ページ数を取得する。初期ページ数を`FB_CONF_MAX_WASM_PAGES`と照合する。WASMリニアメモリの物理バック方式とARMv8-Mの容量対応はTBDとする。
 - **アンロードと専用バンプアロケータ一括回収 (`GOTCHA-LOAD-03`, `OneRuntimeOneGuest`, `{Runtime_BumpAllocator}`)**:
   `unload` はモジュールをアンロードし、親ランタイムの `bump_allocator` を一括リセットまたは返還する。
   **設計理由と不変条件**: 1ランタイム1ゲストの直交分離原則（`OneRuntimeOneGuest`）により、各ランタイムは専用バンプアロケータアリーナ（`{Runtime_BumpAllocator}`）を所有する。この分離により、ランタイム間でモジュールの生存期間が競合しない。
@@ -210,7 +210,7 @@ flowchart TD
     V4 -- "Yes" --> V5{"V5: Import/export type indices within Type section range?"}
 
     V5 -- "No" --> Rollback
-    V5 -- "Yes" --> V6{"V6: Initial memory size <= guest RAM physical budget?"}
+    V5 -- "Yes" --> V6{"V6: Initial pages <= FB_CONF_MAX_WASM_PAGES?"}
 
     V6 -- "No" --> Rollback
     V6 -- "Yes" --> Commit["Commit module_view to Registry"]
@@ -260,7 +260,7 @@ flowchart TD
 | V3 | セクション境界 | 各セクションのsizeがバイナリ末尾を超えない | reject |
 | V4 | セクション順 | Customセクション以外はID昇順 | reject |
 | V5 | インポート/エクスポート型整合 | 型インデックスがTypeセクション範囲内 | reject |
-| V6 | メモリセクション境界 | 初期要求メモリサイズ（初期ページ数 × 64KB、または部分ページ構成時は初期バイト数）がゲストRAM物理割り当て予算（`FB_CONF_GUEST_RAM_SIZE`）以下であること | reject |
+| V6 | 初期リニアメモリページ数 | 初期ページ数が`FB_CONF_MAX_WASM_PAGES`以下であること。ARMv8-Mの物理容量・配置はTBD | reject |
 
 ### 4.4 状態遷移図
 <!-- traceability: {ZeroCopyIndexing} {META_AccessDictionary} {META_ConfigurableSystem} {LightweightVerifier} -->

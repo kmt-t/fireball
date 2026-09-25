@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from tier2_runtime.logger import LOG_EVT_TRAP_BASE, LogLevel, Logger
 from runtime_events import RuntimeEvent
+from tier2_runtime.logger import LOG_EVT_TRAP_BASE, Logger, LogLevel
 
 RUNTIME_EVENT_LOG_BASE = LOG_EVT_TRAP_BASE + 0x100
 

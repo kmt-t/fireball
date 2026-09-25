@@ -25,7 +25,7 @@ def build_model(*, guards: bool = True) -> Kripke:
     - s_rotate: Active 満杯による 3面リングローテーション実行中
     - s_reclaimed: Oldest バンクの Purge とエントリ表スロット回収が完了
     - s_shm_revoke: GOTCHA-VMMIO-03: 共有メモリ権限剥奪トランザクション発生 (dirty)
-    - s_safepoint: Safepoint で Revoke フラグを検出
+    - s_coos_boundary: COOS協調境界で Revoke フラグを検出
     - s_flushing: 全バンク無効化および TLB フラッシュ実行中
     - s_flushed: flush 完了、キャッシュ整合性回復
     - s_exec_stale: 違反状態（Revoke 後、flush 完了前に旧世代コードを実行した状態）
@@ -43,7 +43,7 @@ def build_model(*, guards: bool = True) -> Kripke:
         "s_rotate",
         "s_reclaimed",
         "s_shm_revoke",
-        "s_safepoint",
+        "s_coos_boundary",
         "s_flushing",
         "s_flushed",
         # --- 違反状態 ---
@@ -66,11 +66,11 @@ def build_model(*, guards: bool = True) -> Kripke:
         ("s_interp", "s_rotate"),
         ("s_rotate", "s_reclaimed"),
         ("s_reclaimed", "s_interp"),
-        # GOTCHA-VMMIO-03: 共有メモリ Revoke ➔ Safepoint ➔ flush
+        # GOTCHA-VMMIO-03: 共有メモリ Revoke ➔ COOS協調境界 ➔ flush
         ("s_interp", "s_shm_revoke"),
         ("s_exec_fresh", "s_shm_revoke"),
-        ("s_shm_revoke", "s_safepoint"),
-        ("s_safepoint", "s_flushing"),
+        ("s_shm_revoke", "s_coos_boundary"),
+        ("s_coos_boundary", "s_flushing"),
         ("s_flushing", "s_flushed"),
         ("s_flushed", "s_interp"),
         # 違反状態の自己ループ
@@ -82,14 +82,14 @@ def build_model(*, guards: bool = True) -> Kripke:
     ]
     if not guards:
         # ガード無効時（変異検査）:
-        # 1. Safepoint での generation cookie 照合を省くと、旧世代コードへ再突入
+        # 1. COOS協調境界での generation cookie 照合を省くと、旧世代コードへ再突入
         R = [*R, ("s_shm_revoke", "s_exec_stale")]
         # 2. generation cookie を個別更新にすると単調性が壊れる
         R = [*R, ("s_flushing", "s_gen_regressed")]
         # 3. エントリ表スロット回収を怠るとリソースリーク
         R = [*R, ("s_rotate", "s_leaked_bank")]
         # 4. flush を遅延可能にすると dirty のまま未完了
-        R = [*R, ("s_safepoint", "s_flush_stalled")]
+        R = [*R, ("s_coos_boundary", "s_flush_stalled")]
         # 5. GOTCHA-JITR-01: キャッシュ常駐確認を怠ると二重コンパイルが発生
         R = [*R, ("s_check_resident", "s_duplicate_compile")]
 
@@ -101,7 +101,7 @@ def build_model(*, guards: bool = True) -> Kripke:
         "s_rotate": {"rotating", "gen_consistent"},
         "s_reclaimed": {"reclaimed", "gen_consistent", "all_banks_accounted"},
         "s_shm_revoke": {"dirty", "revoke_pending", "gen_consistent"},
-        "s_safepoint": {"dirty", "safepoint", "gen_consistent"},
+        "s_coos_boundary": {"dirty", "coos_boundary", "gen_consistent"},
         "s_flushing": {"dirty", "flushing", "gen_consistent"},
         "s_flushed": {
             "flushed",

@@ -159,10 +159,10 @@ vIRQとvDMAは汎用 `fireball_call` のID空間には含めない。ゲスト�
 | WIT import | 操作 | 引数 | 戻り値 | 説明 |
 | :--- | :--- | :--- | :--- | :--- |
 | `fireball:host/virq` | `register` | `node-id`, `function-index` | `u32`（WASI errno互換） | vIRQ静的ノードへのゲスト関数登録を保留する。関数シグネチャとノードはvSoCが検証する |
-| `fireball:host/virq` | `unregister` | `node-id` | `u32`（WASI errno互換） | vIRQ静的ノードの登録解除を保留する。次のSafepointで有効表から除去する |
+| `fireball:host/virq` | `unregister` | `node-id` | `u32`（WASI errno互換） | vIRQ静的ノードの登録解除を保留する。次のCOOS協調境界で有効表から除去する |
 | `fireball:host/vdma` | `start` | `source`, `destination`, `byte-count` | `u32`（WASI errno互換） | 仮想DMA転送を開始する。VDMAレジスタへのvMMIO書き込みには変換しない |
 
-vIRQのイベント本体は専用host callの呼出し中には配送せず、ISR → COOS FIFO → vSoC Safepoint → vIRQ階層の非同期経路で処理する。`REG_IRQ_FLAGS` の読み書き、vIRQ固定スロットへのゲストからの直接store、およびWASIのpoll APIへの接続は採用しない。
+vIRQのイベント本体は専用host callの呼出し中には配送せず、ISR → COOS FIFO → COOS協調境界 → vSoC → vIRQ階層の非同期経路で処理する。`REG_IRQ_FLAGS` の読み書き、vIRQ固定スロットへのゲストからの直接store、およびWASIのpoll APIへの接続は採用しない。
 
 ### 6.5. IPC (`0x40`-`0x4F`)
 <!-- traceability: {CSPCommunication} {IPC_HandleBased} -->
@@ -251,7 +251,7 @@ WASIの引数レイアウトとエラー変換は、`libfireball` が `runtime_s
 
 ### 9.1. 仮想割り込み
 <!-- traceability: {Asynchronous_Notification} -->
-ホストは、COOSの固定長 `interrupt-event` を経由して**仮想割り込み**を通知する。vSoCは協調境界のSafepointでイベントを受け取り、登録済みのvIRQ階層へ配送する。これは `fireball:host/virq` の同期的な戻り値やWASI `pollable` では表現しない。
+ホストは、COOSの固定長 `interrupt-event` を経由して**仮想割り込み**を通知する。COOSへ制御が戻る境界でvSoCがイベントを受け取り、登録済みのvIRQ階層へ配送する。これは `fireball:host/virq` の同期的な戻り値やWASI `pollable` では表現しない。
 
 #### 9.1.1. vIRQ原因源識別子
 <!-- traceability: {Asynchronous_Notification} -->
@@ -266,7 +266,7 @@ vIRQの `vector_id` はホスト設定の原因源表で固定する。WASIのpo
 
 #### 9.1.2. 仮想割り込みペイロード
 <!-- traceability: {Asynchronous_Notification} -->
-仮想割り込みの詳細情報は、COOSが保持する固定5ワードの `interrupt-event` としてvSoCへ引き渡す。`vector_id`、`source_id`、`cause_code`、`payload0`、`payload1`の順序を維持し、vSoCはSafepointでこのレコードをvIRQ階層へ渡す。イベント本体をvMMIOレジスタ、共有メモリ、WASI `pollable`へ別経路で複製せず、ISRやCOOSからゲスト関数を直接呼び出さない。
+仮想割り込みの詳細情報は、COOSが保持する固定5ワードの `interrupt-event` としてvSoCへ引き渡す。`vector_id`、`source_id`、`cause_code`、`payload0`、`payload1`の順序を維持し、COOSへ制御が戻る協調境界でvSoCがこのレコードをvIRQ階層へ渡す。イベント本体をvMMIOレジスタ、共有メモリ、WASI `pollable`へ別経路で複製せず、ISRやCOOSからゲスト関数を直接呼び出さない。
 
 ## 10. メモリ安全性
 <!-- traceability: {Challenge_SyscallMemorySafety} {OwnershipTransfer} {FastAddressCheck} {GOTCHA-SYS-02} {GOTCHA-SYS-03} -->

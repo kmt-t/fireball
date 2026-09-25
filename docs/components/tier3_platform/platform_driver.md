@@ -89,7 +89,7 @@ flowchart TD
 ### 4.1 割り込み処理の物理実装
 <!-- traceability: {RSP_Transport_Selectable} {TaskPollInterruptEvent} {GLOBAL_InterruptWakeup} -->
 - **割り込み通知（event）**: 物理割り込み発生時、ISRは原因情報を固定5ワードの`interrupt-event`へ変換し、COOSの`notify_interrupt(event)`で固定長ロックフリーFIFOへ投函する。**ISRはイベント投函以外のタスク状態変更を行わない。**実際のREADY遷移は、スケジューラが協調境界でFIFOをドレインする際に行われる。この非同期境界の分離は、[`interrupt_boundary_model.py`](docs/components/tier3_platform/formal/interrupt_boundary_model.py) に定義されたCTL検証項目 `isr_does_not_update_task_state_directly` および `interrupt_event_reaches_scheduler_boundary` として証明されている性質である。
-- **割り込み配送**: COOSから渡された`interrupt-event`は、vSoCがSafepointで受け取り、ゲスト配送またはドロップを行う。vIRQの分類・デバイスノード・ゲスト関数登録はvSoCとvMMIOの契約に従い、物理ドライバはゲスト関数を直接呼び出さない。
+- **割り込み配送**: COOSから渡された`interrupt-event`は、COOS協調境界でvSoCが受け取り、ゲスト配送またはドロップを行う。vIRQの分類・デバイスノード・ゲスト関数登録はvSoCとvMMIOの契約に従い、物理ドライバはゲスト関数を直接呼び出さない。
 
 #### HalBufferPool 固定スロット・境界検査手順（手順アクティビティ図）
 <!-- traceability: {GOTCHA-HAL-01} {HAL_Interface} {IPC_ZeroCopy} -->

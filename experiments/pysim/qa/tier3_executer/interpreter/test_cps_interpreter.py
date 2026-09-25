@@ -2,7 +2,6 @@ from __future__ import annotations
 
 """Tests for the native C++ CPS handler entry point."""
 
-import sys
 from pathlib import Path
 
 _TEST_FILE = Path(__file__).resolve()
@@ -11,7 +10,6 @@ _PYSIM_DIR = _TEST_FILE.parents[3]
 
 from interop_abi import ExecutionContextNative, NativeValueStack
 from native_stacks import NativeControlStack
-from tier3_executer.interpreter.interpreter import _HANDLERS
 from tier3_executer.interpreter import _interpreter_native
 
 
@@ -28,6 +26,7 @@ def test_native_cps_entry_uses_four_logical_arguments() -> None:
         locals_stack.raw_view,
         control_stack.raw_view,
         0,
+        stack.capacity,
         0,
         0,
         0,

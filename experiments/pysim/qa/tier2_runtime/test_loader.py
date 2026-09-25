@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
 _TEST_FILE = Path(__file__).resolve()
@@ -9,7 +8,6 @@ _PYSIM_DIR = _TESTS_DIR.parent
 _REPO_ROOT = _PYSIM_DIR.parent.parent
 
 
-import sys
 from pathlib import Path
 
 _PYSIM_DIR = Path(__file__).resolve().parent

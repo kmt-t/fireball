@@ -44,7 +44,5 @@
 - [x] **Step 1: コンセプトコード・初期テスト仕様・形式検証**: 全16コンセプトコードの仕様同期と`typing.Any`排除、全16形式検証モデルのCTL証明および`guards=False`変異検査、全22テストスイートのPASS
 - [x] **READYキューの計算量是正**: `BoundedReadyQueue`をタスク内リンクによる侵入型循環リストとし、末尾／先頭追加、先頭取り出し、任意タスクdetachをO(1)化した。FIFO順・リンク整合性・容量境界を検証した。CSPハンドオフ経路の線形検索は対象外として記録した
 - [x] **`Blocked`タスクの外部終了（`task_killed`）**: CSP/selectと割り込みの待機登録を解除し、終了タスクが再起床しないこと、未登録ID・終了済みタスクへの再要求、実行中タスク終了の拒否を検証した
-- [x] **WASM関数戻り値の共有オペランド領域化と復帰境界**: JITはC/AAPCS戻り値レジスタを使わず`return`直前でトレースを終了し、共有オペランド領域へ戻り値を残す。AAPCS準拠エピローグからInterpreterのreturnハンドラへ戻し、ハンドラだけがRETURN sentinelを生成する。呼出し先の関数復帰、sentinel消費、トップレベル完了判定、およびi32/i64/f32/f64を検証した
 - [x] **import／host callのInterpreter境界統一**: WASM内部callとimport／host callをInterpreter／RuntimeEngine境界で実行し、JIT専用stackやC戻り値経路を追加しないことを検証した
 - [x] **RuntimeEngine同期境界のTrap伝播**: 確定済み`InterpreterCall.trap`を呼び出し側へfail-fastで伝え、trap時に`None`を正常結果として返さないことを整数除算ゼロの回帰テストで確認した
-- [x] **JITキャッシュ物理配置と疎キー索引の確定**: キャッシュを4KBページ2枚の連続8KBとし、共通コード領域2KBとActive/Warm/Oldest各2KBへ分割した。JITエントリ数が少ないためRadix表を設けず、カード表／4スロットFolding XOR／ソート配列二分探索に統一した。PySim・コンセプト・仕様・ベンチマークを同期し、JIT関連単体テスト、JIT形式モデル、12統合シナリオを実行した。AR-05の昇格条件とchain抽象度は未解決として別管理する

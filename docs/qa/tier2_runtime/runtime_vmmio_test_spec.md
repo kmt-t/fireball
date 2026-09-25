@@ -99,5 +99,5 @@ Bit31によるRAM/vMMIO高速分岐、64件のFlatMap PTE + 32エントリDirect
 
 ## 4. 未検証・スコープ外
 
-- Cortex-M33実機でのTLB/FlatMapの実際のサイクル数（`{vMMIO_TLB}`の性能目標自体）。
+- ARMv8-M実機でのTLB/FlatMapサイクル数と性能目標の適用はTBD。
 - `register-hook` の完全な公開API契約。

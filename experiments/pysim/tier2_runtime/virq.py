@@ -3,7 +3,7 @@ Cause-carrying vIRQ dispatch for the vSoC reference runtime.
 
 The implementation follows runtime_vsoc.md and runtime_vmmio.md:
 the event is always five fixed u32 words, the node hierarchy is static,
-registrations become visible only at a safepoint, and dispatch never raises
+registrations become visible only at a COOS yield boundary, and dispatch never raises
 an exception.  Registration and dispatch failures are represented by result
 values and diagnostics.
 """
@@ -90,7 +90,7 @@ VirqInvoker = Callable[[int, int, int, int, int, int], int]
 
 
 class VirqDispatcher:
-    """Static vIRQ hierarchy with safepoint-committed guest registrations."""
+    """Static vIRQ hierarchy with boundary-committed guest registrations."""
 
     __slots__ = (
         "_active_functions",
@@ -156,7 +156,7 @@ class VirqDispatcher:
     def register_dispatcher(
         self, node_id: int, function_index: int
     ) -> Result[RegistrationStatus, RegistrationError]:
-        """Validate and retain a registration for the next safepoint."""
+        """Validate and retain a registration for the next COOS yield boundary."""
 
         if self._module is None:
             return Result.err(RegistrationError.MODULE_UNAVAILABLE)
@@ -170,7 +170,7 @@ class VirqDispatcher:
         return Result.ok(RegistrationStatus.PENDING)
 
     def unregister_dispatcher(self, node_id: int) -> Result[RegistrationStatus, RegistrationError]:
-        """Stage removal of a static vIRQ registration for the next safepoint."""
+        """Stage removal of a static vIRQ registration for the next COOS yield boundary."""
         if self._module is None:
             return Result.err(RegistrationError.MODULE_UNAVAILABLE)
         if not self._valid_node(node_id):
@@ -178,13 +178,13 @@ class VirqDispatcher:
         self._pending_functions[node_id] = INVALID_FUNCTION_INDEX
         return Result.ok(RegistrationStatus.PENDING)
 
-    def commit_safepoint(self) -> None:
+    def commit_pending_registrations(self) -> None:
         """Atomically publish the already validated pending registration table."""
 
         self._active_functions = freeze_sequence(self._pending_functions)
 
     def dispatch_interrupt_event(self, event: InterruptEvent) -> DispatchResult:
-        """Dispatch one event at a safepoint through the static hierarchy."""
+        """Dispatch one event at a COOS yield boundary through the static hierarchy."""
 
         self._last_path.clear()
         source = self._source_for(event)

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
 _PYSIM_DIR = Path(__file__).resolve().parents[2]

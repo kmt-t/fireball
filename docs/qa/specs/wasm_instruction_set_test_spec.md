@@ -6,7 +6,7 @@
 関連: [`interpreter.md`](docs/components/tier3_executer/interpreter.md)（インタープリタ側実装）, [`jit_compiler.md`](docs/components/tier3_executer/jit_compiler.md)（JIT側実装）
 参考実装: [`interpreter_concept.py`](docs/components/tier3_executer/concepts/interpreter_concept.py)
 
-インタープリタ・JIT双方が対応すべきWASM MVPオプコード物理マトリクスを、命令カテゴリごとに検証する。本書は個々のオプコードのスタック遷移・トラップ条件を横断的に一覧化する（実行エンジンごとの内部実装詳細は`interpreter_test_spec.md`/`jit_compiler_test_spec.md`を参照）。
+インタープリタ・JIT双方が対応すべきWASM MVPオプコードの意味論を、命令カテゴリごとに検証する。本書は個々のオプコードのスタック遷移・トラップ条件を横断的に一覧化する（実行エンジンごとの内部実装詳細は`interpreter_test_spec.md`/`jit_compiler_test_spec.md`を参照）。x64で確認した実装を対象とし、ARMv8-Mの物理命令列と実機受入れはTBDである。
 
 ## 2. テストケース一覧
 
@@ -68,9 +68,9 @@
 | TEST-WASM-51 | `i32.eqz`/`eq`/`ne`/`lt_s`/`lt_u`(以降gt/le/ge含む全10種) | 2値または1値 | 実行 | 比較結果(0/1)を返す。符号付き/符号なしを区別する | wasm_instruction_set.md (Integer Arithmetic) |
 | TEST-WASM-52 | `i32.clz`/`ctz`/`popcnt` | 既知のビットパターン | 実行 | 正しいビットカウント | wasm_instruction_set.md (Integer Arithmetic) |
 | TEST-WASM-53 | `i32.add`/`sub`/`mul` | - | 実行 | 32bitラップアラウンド | wasm_instruction_set.md (Integer Arithmetic) |
-| TEST-WASM-54 | `i32.div_s`/`div_u`のゼロ除算トラップ | 除数0 | 実行 | 0判定後にトラップ（SDIV/UDIVを実行しない） | wasm_instruction_set.md (Integer Arithmetic) |
-| TEST-WASM-55 | `i32.and`/`or`/`xor`/`shl`/`shr_s`/`shr_u` | - | 実行 | ビット演算・シフトが正しい。シフト量は実装依存のマスク幅 | wasm_instruction_set.md (Integer Arithmetic) |
-| TEST-WASM-56 | `i32.rotl`/`rotr` | - | 実行 | `RSB+ROR`相当（左右循環シフト）が正しい | wasm_instruction_set.md (Integer Arithmetic) |
+| TEST-WASM-54 | `i32.div_s`/`div_u`のゼロ除算トラップ | 除数0 | 実行 | ゼロ除算をWASM trapにし、演算結果をstackへ書かない | wasm_instruction_set.md (Integer Arithmetic) |
+| TEST-WASM-55 | `i32.and`/`or`/`xor`/`shl`/`shr_s`/`shr_u` | - | 実行 | ビット演算・シフトが正しい。i32のシフト量は下位5 bitだけを使う | wasm_instruction_set.md (Integer Arithmetic) |
+| TEST-WASM-56 | `i32.rotl`/`rotr` | - | 実行 | 左右循環シフトのWASM意味論に従う | wasm_instruction_set.md (Integer Arithmetic) |
 
 ## 3. テスト検証実績と網羅状況
 
@@ -78,5 +78,5 @@
 
 ## 4. 未検証・スコープ外
 
-- 本書自体の「物理動作・備考」列（Thumb-2実機命令列）は
-- f32/f64の算術演算子（wasm_instruction_set.md に該当行が存在せず、スコープが不明瞭。README「Missing spec coverage」参照）。
+- ARMv8-M向け物理命令列、ABI、メモリ保護、実機の受け入れ条件はTBDである。x64で確認した意味論・実装結果から推定しない。
+- f32/f64の全演算子の個別テスト網羅は本書では定義しない。WASM意味論の詳細は [`wasm_instruction_set.md`](docs/specs/wasm_instruction_set.md) を参照する。

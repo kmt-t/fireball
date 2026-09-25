@@ -4,7 +4,7 @@ param(
     [switch]$quick,          # Skip the LLM judge; missing embeddings may still use the embedding API
     [int]$maxPairs = 20,     # Max pairs to judge with LLM
     [float]$threshold = 0.80,# Cosine similarity threshold
-    [string]$backend = "",   # LLM backend override (jev, openrouter, sakura, ollama, mock)
+    [string]$backend = "",   # LLM backend override (laya, jev, openrouter, sakura, ollama, mock)
     [string]$model = "",     # LLM model override
     [string]$embeddingModel = "", # Embedding model override
     [string]$config = "spec-integrator.yaml",
@@ -23,7 +23,7 @@ Options:
   -quick              Skip LLM judgment; missing embeddings may still call the configured API.
   -maxPairs <N>       Maximum number of candidate pairs to judge via LLM (default: 20, 0 for unlimited).
   -threshold <F>      Cosine similarity threshold for linking (default: 0.80).
-  -backend <name>     LLM backend override (jev, openrouter, sakura, ollama, mock).
+  -backend <name>     LLM backend override (laya, jev, openrouter, sakura, ollama, mock).
   -model <name>       LLM model name override.
   -embeddingModel <name> Embedding model name override.
   -config <path>      Path to configuration file (default: spec-integrator.yaml).

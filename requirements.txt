@@ -1,5 +1,5 @@
-# Fireball Hypervisor - Python Dependencies
-# Install with: pip install -r requirements.txt (or: uv pip install -r requirements.txt)
+# Fireball Hypervisor - compatibility mirror of pyproject.toml dependencies
+# From the repository root, use `uv sync` to populate the project-local .venv.
 
 # ==============================================================================
 # 1. Document Quality & Formal Verification Pipeline (spec-integrator)
@@ -22,6 +22,6 @@ pythran>=0.19.0              # AOT C++ kernels for Tier 3 hot-path migration
 # ==============================================================================
 pytest>=8.0.0                # Unit and integration test framework
 pytest-cov>=4.1.0            # Test coverage reporting
-ruff>=0.8.0                  # Fast Python linter and code formatter (format_all)
+ruff>=0.16.8                 # Fast Python linter and code formatter (format_all)
 line_profiler>=4.1.0         # Line-by-line profiling for performance hotspots
 pyright>=1.1.390             # Static type checking for the product Tier modules

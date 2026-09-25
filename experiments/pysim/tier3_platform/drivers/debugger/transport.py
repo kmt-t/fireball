@@ -5,7 +5,6 @@ from __future__ import annotations
 import socket
 from typing import Protocol, TypeAlias
 
-
 SendBuffer: TypeAlias = bytes | bytearray | memoryview
 
 

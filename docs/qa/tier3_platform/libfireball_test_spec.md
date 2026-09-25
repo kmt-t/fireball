@@ -2,7 +2,7 @@
 
 ## 1. 目的と対象範囲
 
-本書は、WASM ゲストへ組み込む `libfireball` の host-call 境界テストを定義する。汎用システムコールは `fireball:host/trap`、vIRQは `fireball:host/virq`、vDMAは `fireball:host/vdma` の専用importを通じてホストへ接続し、SYSCTL／VDMAの vMMIO レジスタを使用しない。vIRQのイベント本体の配送だけをISR → COOS FIFO → vSoC Safepointの非同期経路で行う。Tier 2 のホスト側 `runtime_syscall`、`hal_dispatch` と Tier 3 の物理ドライバは、それぞれのテスト仕様書を正本とする。
+本書は、WASM ゲストへ組み込む `libfireball` の host-call 境界テストを定義する。汎用システムコールは `fireball:host/trap`、vIRQは `fireball:host/virq`、vDMAは `fireball:host/vdma` の専用importを通じてホストへ接続し、SYSCTL／VDMAの vMMIO レジスタを使用しない。vIRQのイベント本体はISR → COOS FIFO → COOS協調境界 → vSoCの順に配送する。Tier 2 のホスト側 `runtime_syscall`、`hal_dispatch` と Tier 3 の物理ドライバは、それぞれのテスト仕様書を正本とする。
 
 ## 2. テストケース一覧
 
@@ -17,9 +17,9 @@
 | TEST-LIBFB-07 | HAL エラーの errno 変換 | HALがエラーを返す | 対応するラッパーを呼び出す | HAL の失敗結果が Preview1 の errno へ一貫して変換される | `libfireball.md` |
 | TEST-LIBFB-08 | ライブラリの配置 | libfireballをロード済み | タスク・サービス登録を確認する | `libfireball` がサービスや COOS タスクとして登録されない | `libfireball.md` |
 | TEST-LIBFB-09 | vIRQ登録host call | 静的root・分類・デバイスノードが公開されている | `fireball_virq_register` が `fireball:host/virq.register(node_id, function_index)` を発行する | vSoCの保留登録へ渡され、範囲外ノードは拒否される。vMMIO固定スロットへの直接書込みは発生しない | `libfireball.md` |
-| TEST-LIBFB-10 | vIRQ解除host call | 有効または保留中の登録が存在する | `fireball_virq_unregister` が `fireball:host/virq.unregister(node_id)` を発行する | 解除が保留され、次のSafepointで無効化される | `libfireball.md` |
+| TEST-LIBFB-10 | vIRQ解除host call | 有効または保留中の登録が存在する | `fireball_virq_unregister` が `fireball:host/virq.unregister(node_id)` を発行する | 解除が保留され、次のCOOS協調境界で無効化される | `libfireball.md` |
 | TEST-LIBFB-11 | vIRQ関数シグネチャ拒否 | 不一致シグネチャのWASM関数 | 登録ラッパーから登録を試みる | vSoCが拒否し、有効な登録を変更しない | `libfireball.md` |
-| TEST-LIBFB-12 | Safepoint反映と原因5引数 | 登録Aと保留登録B、原因レコード | Safepoint前後で同じ原因を配送する | Safepoint前後で呼ばれる関数が原子的に切り替わり、5ワードが順序を保って渡る | `libfireball.md` |
+| TEST-LIBFB-12 | COOS協調境界での反映と原因5引数 | 登録Aと保留登録B、原因レコード | 協調境界の前後で同じ原因を配送する | 境界の前後で呼ばれる関数が原子的に切り替わり、5ワードが順序を保って渡る | `libfireball.md` |
 | TEST-LIBFB-13 | 階層結果の変換 | root・分類・デバイス関数が登録済み | `HANDLED`、`PASS_THROUGH`、`REJECT`を返す | `HANDLED`は終了、`PASS_THROUGH`だけが子へ進み、`REJECT`は再帰配送されない | `libfireball.md` |
 | TEST-LIBFB-14 | WASIポーリング非干渉 | `poll-check`/`poll-wait`ハンドルが存在 | vIRQ登録・配送とポーリングを実行する | vIRQ操作がWASI poll APIを追加・変更せず、両経路が独立して完了する | `libfireball.md` |
 | TEST-LIBFB-15 | vDMA転送host call | source/destinationと転送長が有効 | `fireball_vdma_start` が `fireball:host/vdma.start(source, destination, byte_count)` を発行する | vSoCの転送要求へ渡され、VDMAレジスタへの書込みは発生しない | `libfireball.md` |

@@ -7,7 +7,7 @@ Implementation Invariants & Gotchas:
 - GOTCHA-MEM-01: 4KB virtual reservation slots are isolated; physical SHM usage is charged by requested bytes.
 - GOTCHA-MEM-02: Strict ownership enforcement prevents non-owners from releasing or accessing blocks.
 - GOTCHA-MEM-03: In-flight blocks are unmapped from vMMIO and TLB is flushed immediately.
-- GOTCHA-MEM-04: JIT code cache W^X mode switching is batched per trace to minimize barrier latency.
+- ARMv8-M MPU/W^X realization is TBD and is not modeled as a conformance claim.
 """
 
 from __future__ import annotations
@@ -27,16 +27,14 @@ T = TypeVar("T")
 # -----------------------------------------------------------------------------
 
 FB_CONF_MEMORY_POOL_SIZE = 23552  # system_config.md: sum of all sub-pools (bytes)
-FB_CONF_TASK_HEAP_SIZES = (
-    4096,
-)  # system_config.md FB_CONF_TASK_HEAP_SIZES: per-VM-slot ROM size table
+FB_CONF_TASK_HEAP_SIZES = (4096,)  # system_config.md: per-VM-slot partition-size table
 FB_CONF_MAX_TASKS = 16
 FB_CONF_MAX_SHM_PAGES = 32
 FB_PAGE_SIZE = 4096  # 4KB SHM page size
 FB_CONF_SHM_SIZE = 1024  # Physical SHM backing budget; virtual slots are separate.
 FB_WASM_PAGE_SIZE = 65536  # 64KB WASM page size
-# system_config.md "PMSAv8 MPU 物理アドレスマップ" 節: Region 6 (Shared Memory Buffers) の基点
-FB_CONF_MPU_R6_SHARED_MEMORY_BASE = 0x2008_0000
+# Abstract address used only by this Python model; not an ARM physical address.
+FB_CONF_SHM_SIM_BASE = 0
 FB_TASK_ID_FLIGHT = 0xFF  # Flight sentinel during IPC transfer (8-bit PTE owner_id compliant)
 FB_TASK_ID_KERNEL = 0x00
 
@@ -238,163 +236,6 @@ class SharedBlock:
 
 
 # -----------------------------------------------------------------------------
-# PMSAv8 MPU Protection & W^X Switching (runtime_memory.md §7)
-# -----------------------------------------------------------------------------
-
-
-class AccessPermission(Enum):
-    NO_ACCESS = 0
-    RO = 1
-    RW = 2
-
-
-@dataclass
-class MPURegion:
-    region_no: int
-    name: str
-    base_address: int
-    limit_address: int
-    ap: AccessPermission
-    xn: bool  # eXecute Never (True = Non-executable)
-    is_device: bool = False
-    enabled: bool = True
-
-    @property
-    def is_writable(self) -> bool:
-        return self.enabled and self.ap == AccessPermission.RW
-
-    @property
-    def is_executable(self) -> bool:
-        return self.enabled and not self.xn
-
-
-class PMSAv8MPU:
-    """Cortex-M33 PMSAv8 8-region Memory Protection Unit simulator."""
-
-    def __init__(self, pool_base: int):
-        self.regions: list[MPURegion] = []
-        self.dsb_count = 0
-        self.isb_count = 0
-        self.patch_in_progress = False
-        self.patch_count = 0
-        self._setup_static_regions(pool_base)
-
-    def _setup_static_regions(self, pool_base: int) -> None:
-        # 8 statically allocated regions matching runtime_memory.md §7.1 Table.
-        # Base addresses (Regions 1/2/4/5/6/7) are system_config.md's
-        # FB_CONF_MPU_R*_BASE constants (PMSAv8 MPU 物理アドレスマップ節).
-        # All base/limit adhere to 32-byte alignment
-        self.regions = [
-            # Region 0: Flash / Kernel Code (RO + X)
-            MPURegion(
-                0,
-                "Flash_KernelCode",
-                0x00000000,
-                0x0007FFE0,
-                AccessPermission.RO,
-                xn=False,
-            ),
-            # Region 1: Kernel Data & BSS (RW + XN)
-            MPURegion(
-                1,
-                "Kernel_DataBSS",
-                0x20000000,
-                0x20007FE0,
-                AccessPermission.RW,
-                xn=True,
-            ),
-            # Region 2: Kernel Pool / Heap (RW + XN)
-            MPURegion(
-                2,
-                "Kernel_PoolHeap",
-                0x20008000,
-                0x2001FFE0,
-                AccessPermission.RW,
-                xn=True,
-            ),
-            # Region 3: Guest WASM RAM (RW + XN, 64KB aligned)
-            MPURegion(
-                3,
-                "Guest_WasmRAM",
-                pool_base,
-                pool_base + 0x000FFE0,
-                AccessPermission.RW,
-                xn=True,
-            ),
-            # Region 4: JIT Code Cache (RO + X default)
-            MPURegion(
-                4,
-                "JIT_CodeCache",
-                0x20040000,
-                0x2007FFE0,
-                AccessPermission.RO,
-                xn=False,
-            ),
-            # Region 5: Peripheral MMIO (RW + XN, Device)
-            MPURegion(
-                5,
-                "Peripheral_MMIO",
-                0x40000000,
-                0x4003FFE0,
-                AccessPermission.RW,
-                xn=True,
-                is_device=True,
-            ),
-            # Region 6: Shared Memory Buffers (RW + XN)
-            MPURegion(
-                6,
-                "Shared_Memory",
-                FB_CONF_MPU_R6_SHARED_MEMORY_BASE,
-                0x200BFFE0,
-                AccessPermission.RW,
-                xn=True,
-            ),
-            # Region 7: Stack Guard Band (No Access)
-            MPURegion(
-                7,
-                "Stack_Guard",
-                0x200C0000,
-                0x200C0020,
-                AccessPermission.NO_ACCESS,
-                xn=True,
-            ),
-        ]
-
-    def begin_jit_patch(self) -> None:
-        """Switch JIT Code Cache (Region 4) from RO+X to RW+XN."""
-        assert not self.patch_in_progress, "Nested JIT patch transaction is invalid"
-        r4 = self.regions[4]
-        r4.ap = AccessPermission.RW
-        r4.xn = True
-        self.dsb_count += 1
-        self.isb_count += 1
-        self.patch_in_progress = True
-
-    def commit_jit_patch(self) -> None:
-        """Restore JIT Code Cache (Region 4) from RW+XN back to RO+X."""
-        assert self.patch_in_progress, "Cannot commit without begin_jit_patch"
-        r4 = self.regions[4]
-        r4.ap = AccessPermission.RO
-        r4.xn = False
-        self.dsb_count += 1
-        self.isb_count += 1
-        self.patch_in_progress = False
-
-    def patch_stencil(self) -> None:
-        """Record one instruction-stencil patch inside the active transaction."""
-        assert self.patch_in_progress, "Stencil patch requires an active JIT transaction"
-        self.patch_count += 1
-
-    def assert_no_rwx(self) -> None:
-        """Verify the strict invariant: No region is ever RW and X simultaneously."""
-        for r in self.regions:
-            if r.enabled:
-                assert not (r.is_writable and r.is_executable), (
-                    f"Invariant violation: Region {r.region_no} ({r.name}) has RWX permissions"
-                )
-
-
-# -----------------------------------------------------------------------------
 # Consolidated Physical Memory Manager Component
 # -----------------------------------------------------------------------------
 
@@ -410,8 +251,7 @@ class MemoryManager:
         self.total_allocated_bytes: int = 0
         self.shm_allocated_bytes: int = 0
         self.vmmio_registry = VMMIOPTERegistry()
-        self.mpu: PMSAv8MPU | None = None
-        # Static partitions per task (fixed 64KB)
+        # Per-task pool partitions use configured sizes; these are not WASM pages.
         self.partition_owners: dict[int, PartitionView] = {}
         # Typed slot pools
         self.typed_slots: dict[type, list[PoolRef]] = {}
@@ -427,7 +267,6 @@ class MemoryManager:
         self.pool_size = pool_size
         self.total_allocated_bytes = 0
         self.shm_allocated_bytes = 0
-        self.mpu = PMSAv8MPU(pool_base)
         return Result(value=True)
 
     # --- Partition Management (§4 acquire-task-heap / release-task-heap) ---
@@ -533,7 +372,7 @@ class MemoryManager:
         page_idx = len(self.shm_slots)
         slot_idx = 0
         shm_id = (page_idx << 8) | slot_idx
-        base_addr = FB_CONF_MPU_R6_SHARED_MEMORY_BASE + self.shm_allocated_bytes
+        base_addr = FB_CONF_SHM_SIM_BASE + self.shm_allocated_bytes
         # Map page into vMMIO FC=14 table
         self.vmmio_registry.map_page(page_idx, base_addr, mapping_size=size)
         self.shm_slots[shm_id] = {
@@ -631,7 +470,7 @@ class HALFixedBufferManager:
 
 # =============================================================================
 # Test Suite: system_memory_test_spec.md (TEST-MEM-01 ~ TEST-MEM-13, contract-level) and
-# runtime_memory_test_spec.md (TEST-MEM-20 ~ TEST-MEM-25, physical implementation: MPU/W^X).
+# runtime_memory_test_spec.md: software-contract and virtual mapping cases.
 # TEST-MEM-14/15/16 (page-granular isolation, vMMIO FC=14 PTE/TLB sync, owner-mismatch
 # trap) are physical-implementation cases covered instead by pysim's real
 # MemoryManager/VMMIOController (experiments/pysim/qa/tier3_platform/
@@ -642,7 +481,7 @@ class HALFixedBufferManager:
 def test_mem_01_acquire_task_heap_fixed_size() -> None:
     """TEST-MEM-01: acquire-task-heap provides task-specific fixed partition (no arbitrary size)."""
     mm = MemoryManager()
-    mm.init_manager(pool_base=0x20020000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
+    mm.init_manager(pool_base=0x00010000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
     # Signature must only take owner (task_id), NOT a size parameter
     sig = inspect.signature(mm.acquire_task_heap)
     assert list(sig.parameters.keys()) == ["owner"], (
@@ -669,7 +508,7 @@ def test_mem_01b_acquire_slot_typed() -> None:
             self.state = "READY"
 
     mm = MemoryManager()
-    mm.init_manager(pool_base=0x20020000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
+    mm.init_manager(pool_base=0x00010000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
     res = mm.acquire_slot(owner=2, cls=TCB)
     assert res.is_ok
     ref = res.unwrap()
@@ -682,7 +521,7 @@ def test_mem_02_recovery_strategy_on_exhaustion() -> None:
     """TEST-MEM-02: Failure returns MemoryErrorResult with actionable recovery strategy."""
     mm = MemoryManager()
     # Small pool that fits only 1 partition
-    mm.init_manager(pool_base=0x20020000, pool_size=FB_CONF_TASK_HEAP_SIZES[0])
+    mm.init_manager(pool_base=0x00010000, pool_size=FB_CONF_TASK_HEAP_SIZES[0])
     r1 = mm.acquire_task_heap(owner=1)
     assert r1.is_ok
     # Second allocation must fail and return structured error
@@ -698,7 +537,7 @@ def test_mem_03_total_allocation_bound() -> None:
     """TEST-MEM-03: Total allocated bytes never exceeds FB_CONF_MEMORY_POOL_SIZE."""
     mm = MemoryManager()
     pool_size = FB_CONF_MEMORY_POOL_SIZE
-    mm.init_manager(pool_base=0x20020000, pool_size=pool_size)
+    mm.init_manager(pool_base=0x00010000, pool_size=pool_size)
     allocation_failed = False
     for i in range(1, 10):
         res = mm.acquire_task_heap(owner=i)
@@ -712,7 +551,7 @@ def test_mem_03_total_allocation_bound() -> None:
 def test_mem_04_owner_task_id_auto_set() -> None:
     """TEST-MEM-04: Caller task-id is automatically recorded on all allocations."""
     mm = MemoryManager()
-    mm.init_manager(pool_base=0x20020000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
+    mm.init_manager(pool_base=0x00010000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
     p_res = mm.acquire_task_heap(owner=5)
     assert p_res.unwrap().owner == 5
     s_res = mm.allocate_shared(caller_task_id=5, size=1024)
@@ -722,7 +561,7 @@ def test_mem_04_owner_task_id_auto_set() -> None:
 def test_mem_05_release_and_deallocate_owner_only() -> None:
     """TEST-MEM-05: release-task-heap / deallocate is permitted ONLY by owner task."""
     mm = MemoryManager()
-    mm.init_manager(pool_base=0x20020000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
+    mm.init_manager(pool_base=0x00010000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
     mm.acquire_task_heap(owner=3)
     assert 3 in mm.partition_owners
     # Rogue task 4 attempts to release task 3's partition
@@ -738,12 +577,12 @@ def test_mem_05_release_and_deallocate_owner_only() -> None:
 def test_mem_06_guest_ram_64kb_alignment() -> None:
     """TEST-MEM-06: pool_base and Guest WASM RAM is strictly 64KB aligned."""
     mm = MemoryManager()
-    aligned_base = 0x20020000
+    aligned_base = 0x00010000
     assert aligned_base % FB_WASM_PAGE_SIZE == 0
     res = mm.init_manager(pool_base=aligned_base, pool_size=FB_CONF_MEMORY_POOL_SIZE)
     assert res.is_ok
     # Unaligned base must assert / reject
-    unaligned_base = 0x20021000
+    unaligned_base = 0x00011000
     alignment_rejected = False
     try:
         mm.init_manager(pool_base=unaligned_base, pool_size=FB_CONF_MEMORY_POOL_SIZE)
@@ -756,7 +595,7 @@ def test_mem_06_guest_ram_64kb_alignment() -> None:
 def test_mem_07_allocate_shared_registers_vmmio_pte() -> None:
     """TEST-MEM-07: allocate-shared maps corresponding vMMIO FC=14 PTE."""
     mm = MemoryManager()
-    mm.init_manager(pool_base=0x20020000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
+    mm.init_manager(pool_base=0x00010000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
     res = mm.allocate_shared(caller_task_id=1, size=512)
     assert res.is_ok
     sb = res.unwrap()
@@ -766,7 +605,7 @@ def test_mem_07_allocate_shared_registers_vmmio_pte() -> None:
 def test_mem_08_claim_requires_valid_shm_id() -> None:
     """TEST-MEM-08: claim fails if shm_id is invalid or deallocated."""
     mm = MemoryManager()
-    mm.init_manager(pool_base=0x20020000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
+    mm.init_manager(pool_base=0x00010000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
     # Attempt claim with non-existent SHM ID
     c_res = mm.claim(receiver_task_id=2, shm_id=0x9999)
     assert c_res.is_err
@@ -776,7 +615,7 @@ def test_mem_08_claim_requires_valid_shm_id() -> None:
 def test_mem_09_hal_fixed_buffer_is_separate_from_shared_memory() -> None:
     """TEST-MEM-09: HAL fixed slots do not allocate or own SHM blocks."""
     mm = MemoryManager()
-    mm.init_manager(pool_base=0x20020000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
+    mm.init_manager(pool_base=0x00010000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
     hal = HALFixedBufferManager()
     slot, size = hal.get_buffer(0)
     assert slot == 0
@@ -788,7 +627,7 @@ def test_mem_09_hal_fixed_buffer_is_separate_from_shared_memory() -> None:
 def test_mem_10_shared_block_ownership_transfer() -> None:
     """TEST-MEM-10: allocate-shared -> release -> claim moves ownership cleanly without double-ownership."""
     mm = MemoryManager()
-    mm.init_manager(pool_base=0x20020000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
+    mm.init_manager(pool_base=0x00010000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
     # 1. Task A allocates: mapped in vMMIO
     sb_a = mm.allocate_shared(caller_task_id=1, size=1024).unwrap()
     assert sb_a.get_owner() == 1
@@ -807,7 +646,7 @@ def test_mem_10_shared_block_ownership_transfer() -> None:
 def test_mem_gotcha_02_shared_block_release_owner_only() -> None:
     """GOTCHA-MEM-02: non-owner task cannot release() or access another task's SharedBlock."""
     mm = MemoryManager()
-    mm.init_manager(pool_base=0x20020000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
+    mm.init_manager(pool_base=0x00010000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
     sb = mm.allocate_shared(caller_task_id=1, size=1024).unwrap()
     # Rogue task 2 attempts to release task 1's block
     release_rejected = False
@@ -838,7 +677,7 @@ def test_mem_gotcha_02_shared_block_release_owner_only() -> None:
 def test_mem_10b_shared_block_vmmio_pte_flight_and_claim() -> None:
     """TEST-MEM-10b: release() unmaps PTE; claim() remaps PTE to receiver."""
     mm = MemoryManager()
-    mm.init_manager(pool_base=0x20020000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
+    mm.init_manager(pool_base=0x00010000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
     sb = mm.allocate_shared(caller_task_id=1, size=1024).unwrap()
     page_idx = sb.page_idx
     assert mm.vmmio_registry.is_mapped(page_idx)
@@ -854,7 +693,7 @@ def test_mem_10b_shared_block_vmmio_pte_flight_and_claim() -> None:
 def test_mem_10c_rollback_transfer_restores_mapping() -> None:
     """TEST-MEM-10c: rollback_transfer() remaps PTE to original sender."""
     mm = MemoryManager()
-    mm.init_manager(pool_base=0x20020000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
+    mm.init_manager(pool_base=0x00010000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
     sb = mm.allocate_shared(caller_task_id=1, size=1024).unwrap()
     shm_id = sb.release(caller_task_id=1)
     assert not mm.vmmio_registry.is_mapped(sb.page_idx)
@@ -865,7 +704,7 @@ def test_mem_10c_rollback_transfer_restores_mapping() -> None:
 def test_mem_11_shared_block_raii_auto_deallocate() -> None:
     """TEST-MEM-11: SharedBlock RAII automatically deallocates buffer on drop."""
     mm = MemoryManager()
-    mm.init_manager(pool_base=0x20020000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
+    mm.init_manager(pool_base=0x00010000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
     initial_alloc = mm.total_allocated_bytes
     # Use context manager to trigger deterministic drop
     with mm.allocate_shared(caller_task_id=2, size=1024).unwrap() as sb:
@@ -919,73 +758,6 @@ def test_mem_13_query_and_check_ownership_are_removed() -> None:
     assert not hasattr(mm, "check_ownership"), "check_ownership() API must be removed"
 
 
-def test_mem_20_mpu_8_regions_static_allocation() -> None:
-    """TEST-MEM-20: 8 MPU regions match the PMSAv8 static allocation table."""
-    mpu = PMSAv8MPU(pool_base=0x20020000)
-    assert len(mpu.regions) == 8
-    # Region 0: Flash RO+X
-    assert mpu.regions[0].ap == AccessPermission.RO and not mpu.regions[0].xn
-    # Region 3: Guest RAM RW+XN
-    assert mpu.regions[3].ap == AccessPermission.RW and mpu.regions[3].xn
-    # Region 4: JIT Code Cache RO+X default
-    assert mpu.regions[4].ap == AccessPermission.RO and not mpu.regions[4].xn
-    # Region 7: Stack Guard No Access
-    assert mpu.regions[7].ap == AccessPermission.NO_ACCESS
-
-
-def test_mem_21_jit_code_cache_wx_switch_on_begin() -> None:
-    """TEST-MEM-21: begin_jit_patch switches JIT cache to RW+XN and issues DSB/ISB."""
-    mpu = PMSAv8MPU(pool_base=0x20020000)
-    assert mpu.regions[4].is_executable and not mpu.regions[4].is_writable
-    mpu.begin_jit_patch()
-    assert mpu.regions[4].is_writable and not mpu.regions[4].is_executable
-    assert mpu.dsb_count == 1
-    assert mpu.isb_count == 1
-
-
-def test_mem_22_jit_code_cache_wx_restore_on_commit() -> None:
-    """TEST-MEM-22: commit_jit_patch restores JIT cache to RO+X and issues barriers."""
-    mpu = PMSAv8MPU(pool_base=0x20020000)
-    mpu.begin_jit_patch()
-    mpu.commit_jit_patch()
-    assert mpu.regions[4].is_executable and not mpu.regions[4].is_writable
-    assert mpu.dsb_count == 2
-    assert mpu.isb_count == 2
-
-
-def test_mem_23_rwx_state_permanently_eliminated() -> None:
-    """TEST-MEM-23: RWX permissions are permanently eliminated in all MPU states."""
-    mpu = PMSAv8MPU(pool_base=0x20020000)
-    mpu.assert_no_rwx()
-    mpu.begin_jit_patch()
-    mpu.assert_no_rwx()
-    mpu.commit_jit_patch()
-    mpu.assert_no_rwx()
-
-
-def test_mem_24_transaction_batching_barrier_efficiency() -> None:
-    """TEST-MEM-24: Batching emits exactly 1 begin / 1 commit pair per compilation unit."""
-    mpu = PMSAv8MPU(pool_base=0x20020000)
-    # 10 patches applied in a single compilation unit
-    mpu.begin_jit_patch()
-    for _ in range(10):
-        mpu.patch_stencil()
-    mpu.commit_jit_patch()
-    assert mpu.patch_count == 10
-    assert mpu.dsb_count == 2, "Batching must only emit 2 barriers per compilation unit"
-    assert mpu.isb_count == 2
-
-
-def test_mem_25_pmsav8_32byte_alignment() -> None:
-    """TEST-MEM-25: All MPU base and limit addresses adhere to 32-byte alignment."""
-    mpu = PMSAv8MPU(pool_base=0x20020000)
-    for r in mpu.regions:
-        assert r.base_address % 32 == 0, f"Region {r.region_no} base must be 32-byte aligned"
-        assert (r.limit_address + 32) % 32 == 0 or r.limit_address % 32 == 0, (
-            f"Region {r.region_no} limit must be 32-byte aligned"
-        )
-
-
 # =============================================================================
 # Main Runner
 # =============================================================================
@@ -1008,12 +780,4 @@ if __name__ == "__main__":
     test_mem_11_shared_block_raii_auto_deallocate()
     test_mem_12_shm_id_kv_pair_encoding()
     test_mem_13_query_and_check_ownership_are_removed()
-    test_mem_20_mpu_8_regions_static_allocation()
-    test_mem_21_jit_code_cache_wx_switch_on_begin()
-    test_mem_22_jit_code_cache_wx_restore_on_commit()
-    test_mem_23_rwx_state_permanently_eliminated()
-    test_mem_24_transaction_batching_barrier_efficiency()
-    test_mem_25_pmsav8_32byte_alignment()
-    print(
-        "[PASS] All runtime memory concept tests (TEST-MEM-01 ~ TEST-MEM-25) passed successfully."
-    )
+    print("[PASS] All runtime memory software-contract concept tests passed successfully.")

@@ -5,7 +5,6 @@ Unit tests for Tier 1 Core: System Containers & Views
 Traceability: system_containers_test_spec.md
 """
 
-import sys
 from pathlib import Path
 
 # Setup paths

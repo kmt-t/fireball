@@ -15,7 +15,6 @@ Traceability: docs/qa/tier3_executer/jit_runtime_test_spec.md (TEST-JITR-53 .. T
 from __future__ import annotations
 
 import random
-import sys
 from pathlib import Path
 
 _TEST_FILE = Path(__file__).resolve()
@@ -25,11 +24,12 @@ _PYSIM_DIR = _TESTS_DIR.parent
 
 import wasmtime
 from helpers import expect_assertion, make_interpreter, wat_to_wasm
-from tier3_executer.interpreter.interpreter import Interpreter
 from test_support import make_runtime_engine
+from tier3_executer.interpreter.interpreter import Interpreter
+from tier3_executer.jit.runtime_engine import RuntimeEngine
+from tier3_executer.jit.x64_jit import TraceCompiler
 from wasm_module import Module
 from wasm_reader import parse
-from tier3_executer.jit.x64_jit import TraceCompiler
 
 MASK32 = 0xFFFFFFFF
 SUITE_WASM = _PYSIM_DIR / "benchmarks" / "profile" / "guest" / "suite.wasm"
@@ -69,7 +69,7 @@ def _tier3(
         engine.jit_runtime.trackable.clear()
         for head_pc in compile_only:
             engine.jit_runtime.trackable.mark(head_pc)
-    result = engine.run(_guest(module), module.export_func_index(export), args)
+    result = engine.call(_guest(module), module.export_func_index(export), args)
     return result[0] & MASK32, engine
 
 
@@ -320,7 +320,7 @@ def test_jitr_61_a_trace_that_would_overflow_the_operand_stack_runs_on_the_inter
     engine = make_runtime_engine(yield_threshold=3, candidate_threshold=0, jit_compiler=TraceCompiler())
     module = engine.load_wasm(wasm)
     with expect_assertion():
-        engine.run(_guest(module), module.export_func_index("main"), [])
+        engine.call(_guest(module), module.export_func_index("main"), [])
     assert engine.stat_jit_invocations > 0, "`work` never ran compiled before the overflow"
 
 
@@ -424,7 +424,7 @@ GENERATED_SEEDS = tuple(range(60))
 def test_jitr_58_generated_control_flow_matches_wasmtime_and_tier2():
     """TEST-JITR-58: seeded random block/loop/if/br nests agree on all three executors."""
     jit_invocations = 0
-    chain_hits = 0
+    native_control_handlers = 0
     for seed in GENERATED_SEEDS:
         wat = _Generator(seed).module()
         try:
@@ -432,9 +432,9 @@ def test_jitr_58_generated_control_flow_matches_wasmtime_and_tier2():
         except AssertionError as error:
             raise AssertionError(f"generated program seed={seed}: {error}\n{wat}") from error
         jit_invocations += engine.stat_jit_invocations
-        chain_hits += engine.stat_chain_hits
+        native_control_handlers += engine.stat_native_control_handlers
     assert jit_invocations > 200, f"generated programs barely used the JIT ({jit_invocations})"
-    assert chain_hits > 0, "generated programs never exercised native chaining"
+    assert native_control_handlers > 0, "generated programs never exercised C++ control handlers"
 
 
 # ---------------------------------------------------------------------------

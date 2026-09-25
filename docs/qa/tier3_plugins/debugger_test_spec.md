@@ -49,13 +49,14 @@ GDB RSP コマンド処理（`?`, `g/G`, `m/M`, `Z0/z0`, `s`, `c`）、ブレー
 | TEST-DBG-25 | デバッガSinkの静的差し替え | `DebuggerSink`互換のテスト用物理Sinkを構成 | TCPを使わず同じRSPバイト列をSinkへ入出力する | GDBServerはRSP解析を維持したまま物理Sinkだけを差し替えられ、デバッガの状態制御と応答が同一になる | `RSP_Transport_Selectable`, [`debugger.md`](docs/components/tier3_plugins/debugger.md) |
 
 ### 実装の勘所・不変条件（Gotchas & Implementation Invariants）
+<!-- traceability: {DebuggerInterpreterComposition} {RSPChecksumVerify} {GOTCHA-DBG-04} -->
 
 | GOTCHA ID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| GOTCHA-DBG-01 | デバッガとJITの同時構成拒否 | `RuntimeCompositionConfig(execution=JIT, debugger=True)` | ランタイム構成を合成する | 構成時 `assert` で拒否され、デバッガがJITキャッシュを操作する経路は生成されない | `debugger.md`, `{DebuggerInterpreterComposition}` |
-| GOTCHA-DBG-02 | アタッチ中のインタープリタ専用実行 | `Interpreter + Debugger` 構成 | デバッガをアタッチして実行する | アタッチ中もインタープリタだけが実行され、JIT実行器およびデバッグ専用ハンドラテーブルへの切替は発生しない | `debugger.md`, `{DebuggerInterpreterComposition}` |
+| GOTCHA-DBG-01 | デバッガとJITの同時構成拒否 | `RuntimeCompositionConfig(execution=JIT, debugger=True)` | ランタイム構成を合成する | 構成時 `assert` で拒否され、デバッガがJITキャッシュを操作する経路は生成されない | `debugger.md` |
+| GOTCHA-DBG-02 | アタッチ中のインタープリタ専用実行 | `Interpreter + Debugger` 構成 | デバッガをアタッチして実行する | アタッチ中もインタープリタだけが実行され、JIT実行器およびデバッグ専用ハンドラテーブルへの切替は発生しない | `debugger.md` |
 | GOTCHA-DBG-03 | GDB RSP チェックサム照合と再送制御（通信化け耐性） | GDB リモートセッション接続中 | チェックサムが不一致の破損パケットを送信 | サーバーはパケットを破棄し、NAK（`-`）を返信してクライアントに再送を要求する。**実装の勘所**: チェックサム検証を怠って破損パケットを解釈すると、誤ったメモリアドレスや不正レジスタ値が書き込まれてデバッグ対象がクラッシュする | [`gdb_rsp_protocol.md`](docs/specs/gdb_rsp_protocol.md) |
-| GOTCHA-DBG-04 | 協調スケジューラ下での RSP 応答分割送出と複数 yield 跨ぎ耐性 | COOS 協調スケジューラ上で GDBServer タスクが動作中 | 長い応答パケット（`g` 等）を要求し、クライアント側で完全な RSP フレーム（`$...#xx`）を受信 | ACK（`+`）とペイロード（`$...#xx`）を同じ送信キューへ積む。ノンブロッキング送信と複数 yield に跨るドレイン処理により、応答全体を送受信する。**実装の勘所**: 協調スケジューラ下で `sendall()` を使うと、部分送信が脱落する。`tx_buffer` で `send()` のフラグメント状態を管理し、yield 境界で確実にフラッシュする。ACK とペイロードを別々に即時送信すると、TCP セグメントが分割される。1回の `scheduler.step()` で応答全体を送れず、複数 yield に跨る。テスト側とクライアント側は1回の yield / recv で完了すると仮定しない。フレーム終端（`#` と2桁の16進数）まで受信をバッファする。 | [`gdb_rsp_protocol.md`](docs/specs/gdb_rsp_protocol.md) `{GOTCHA-DBG-04}` |
+| GOTCHA-DBG-04 | 協調スケジューラ下での RSP 応答分割送出と複数 yield 跨ぎ耐性 | COOS 協調スケジューラ上で GDBServer タスクが動作中 | 長い応答パケット（`g` 等）を要求し、クライアント側で完全な RSP フレーム（`$...#xx`）を受信 | ACK（`+`）とペイロード（`$...#xx`）を同じ送信キューへ積む。ノンブロッキング送信と複数 yield に跨るドレイン処理により、応答全体を送受信する。**実装の勘所**: 協調スケジューラ下で `sendall()` を使うと、部分送信が脱落する。`tx_buffer` で `send()` のフラグメント状態を管理し、yield 境界で確実にフラッシュする。ACK とペイロードを別々に即時送信すると、TCP セグメントが分割される。1回の `scheduler.step()` で応答全体を送れず、複数 yield に跨る。テスト側とクライアント側は1回の yield / recv で完了すると仮定しない。フレーム終端（`#` と2桁の16進数）まで受信をバッファする。 | [`debugger.md`](docs/components/tier3_plugins/debugger.md) |
 
 ## 3. テスト検証実績と網羅状況
 

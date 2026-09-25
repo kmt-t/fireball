@@ -38,12 +38,12 @@
 | Tier 2 Runtime | `runtime_memory` | `runtime_memory_concept.py` | `runtime_memory_model.py` | `runtime_memory_test_spec.md` | `test_memory.py`, `test_vmmio.py` | 1, 4, 8, 10 | required |
 | Tier 2 Runtime | `runtime_syscall` | `syscall_concept.py` | `syscall_trap_model.py` | `runtime_syscall_test_spec.md` | `test_syscall.py` | 2, 10, 11, 12 | required |
 | Tier 2 Runtime | `runtime_vmmio` | `vmmio_concept.py` | `vmmio_mapping_model.py` | `runtime_vmmio_test_spec.md` | `test_vmmio.py`, `test_syscall.py` | 10, 11 | required |
-| Tier 2 Runtime | `runtime_vsoc` | `runtime_engine_concept.py` | `vsoc_cache_coherency_model.py`, `vsoc_state_model.py` | `runtime_vsoc_test_spec.md` | `test_vsoc.py`, `test_recovery.py` | 4, 5, 6, 8, 10 | required |
+| Tier 2 Runtime | `runtime_vsoc` | N/A（旧統合モデルは現行C++ dispatcherと共通chain dispatcherを表現していないため削除。実装テストと形式モデルで検証） | `vsoc_cache_coherency_model.py`, `vsoc_state_model.py` | `runtime_vsoc_test_spec.md` | `test_vsoc.py`, `test_recovery.py` | 4, 5, 6, 8, 10 | required |
 | Tier 2 Runtime | `runtime_plugin_architecture` | N/A（プラグイン構成契約） | N/A（契約段階） | N/A（契約段階） | N/A | N/A | contract_only |
 | Tier 2 Runtime | `runtime_observability` | N/A（VM観測契約） | N/A（契約段階） | N/A（契約段階） | N/A | N/A | contract_only |
 | Tier 3 Plugins | `guest_profiler` | N/A（VM観測イベント契約を利用） | N/A（契約段階） | `guest_profiler_test_spec.md` | N/A | N/A | contract_only |
-| Tier 3 Executer | `jit_compiler` | `jit_copy_patch_concept.py`, `jit_assembler_constexpr_concept.py`, `stack_cache_concept.py` | `jit_cache_model.py` | `jit_compiler_test_spec.md` | `test_x64_asm.py`, `test_x64_stencils.py`, `test_x64_jit.py` | 4, 5, 8 | required |
-| Tier 3 Executer | `jit_runtime` | `stack_cache_concept.py` | `jit_cache_model.py` | `jit_runtime_test_spec.md` | `test_jit_runtime.py`, `test_x64_jit.py`, `test_jit_differential.py` | 4, 5, 8 | required |
+| Tier 3 Executer | `jit_compiler` | N/A (x64 implementation is tested directly; ARMv8-M is TBD) | `jit_cache_model.py` | `jit_compiler_test_spec.md` | `test_x64_asm.py`, `test_x64_stencils.py`, `test_x64_jit.py` | 4, 5, 8 | required |
+| Tier 3 Executer | `jit_runtime` | N/A (x64 runtime tests cover the confirmed path; ARMv8-M is TBD) | `jit_cache_model.py` | `jit_runtime_test_spec.md` | `test_jit_runtime.py`, `test_x64_jit.py`, `test_jit_differential.py` | 4, 5, 8 | required |
 | Tier 3 Platform | `libfireball` | N/A（ゲスト公開契約） | N/A（WASI 契約テストで検証） | `libfireball_test_spec.md` | `test_syscall.py`, `test_hal.py` | 2, 11, 12 | contract_only |
 | Tier 3 Platform | `platform_driver` | `platform_driver_concept.py` | `interrupt_boundary_model.py` | `platform_driver_test_spec.md` | `test_hal.py` | 10, 11 | required |
 
@@ -94,13 +94,9 @@
 | concept | [interpreter_concept.py](docs/components/tier3_executer/concepts/interpreter_concept.py) |
 | concept | [loader_concept.py](docs/components/tier2_runtime/concepts/loader_concept.py) |
 | concept | [logging_concept.py](docs/components/tier2_runtime/concepts/logging_concept.py) |
-| concept | [runtime_engine_concept.py](docs/components/tier2_runtime/concepts/runtime_engine_concept.py) |
 | concept | [runtime_memory_concept.py](docs/components/tier2_runtime/concepts/runtime_memory_concept.py) |
 | concept | [syscall_concept.py](docs/components/tier2_runtime/concepts/syscall_concept.py) |
 | concept | [vmmio_concept.py](docs/components/tier2_runtime/concepts/vmmio_concept.py) |
-| concept | [jit_assembler_constexpr_concept.py](docs/components/tier3_executer/concepts/jit_assembler_constexpr_concept.py) |
-| concept | [jit_copy_patch_concept.py](docs/components/tier3_executer/concepts/jit_copy_patch_concept.py) |
-| concept | [stack_cache_concept.py](docs/components/tier3_executer/concepts/stack_cache_concept.py) |
 | concept | [platform_driver_concept.py](docs/components/tier3_platform/concepts/platform_driver_concept.py) |
 | formal | [coos_channel_model.py](docs/components/tier1_core/formal/coos_channel_model.py) |
 | formal | [system_config_model.py](docs/components/tier1_core/formal/system_config_model.py) |

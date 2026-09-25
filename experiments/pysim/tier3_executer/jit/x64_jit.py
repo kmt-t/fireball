@@ -2,7 +2,7 @@
 experiments/pysim/tier3_executer/jit/x64_jit.py
 Pure Trace-based Copy-and-Patch JIT Compiler for Fireball.
 Compiles individual HOT BasicBlocks / Traces into Position-Independent Code (PIC)
-    with 52-byte x64 fixed headers (JITTraceHeader) and direct trace chaining.
+    with compact x64 fixed headers (JITTraceHeader) and common-code trace chaining.
 Conforms strictly to docs/components/tier3_executer/jit_compiler.md and
 docs/components/tier3_executer/interpreter.md.
 CPS 4-argument calling convention:
@@ -336,9 +336,9 @@ class TraceCompiler:
     """
     True Copy-and-Patch Trace Compiler for BasicBlocks producing Position-Independent Code (PIC).
         Appends machine-code stencils into continuous executable memory (`exec_memory.py`),
-        emitting 52-byte physical headers (JITTraceHeader) at offset 0x00 and
-        a small entry stub at offset 0x34.  The stub and all exits route via
-        the common AAPCS area selected by header offsets.
+        emitting compact physical headers (JITTraceHeader) at offset 0x00 and
+        a 15-byte entry stub immediately after each header. The stub and exits
+        route through common-code offsets selected by build configuration.
     """
 
     def __init__(self) -> None:
@@ -440,11 +440,9 @@ class TraceCompiler:
             helper_header_patch_offset,
             helper_exit_patch_offset,
             exit_patch_offset,
-            chain_header_patch_offset,
-            chain_fallback_patch_offset,
+            chain_dispatch_patch_offset,
         ) = native_result
         header = JITTraceHeader(head_wasm_pc=head_pc)
-        header.chain_next_pc = next_pc or 0
         if helper_index >= 0:
             header.common_helper_offset = helper_entry_offset(helper_index)
         header.helper_target_addr = helper_target_addr
@@ -468,10 +466,8 @@ class TraceCompiler:
             exit_patch_offset=exit_patch_offset,
             helper_header_patch_offset=helper_header_patch_offset,
             helper_exit_patch_offset=helper_exit_patch_offset,
-            chain_header_patch_offset=chain_header_patch_offset,
-            chain_fallback_patch_offset=chain_fallback_patch_offset,
+            chain_dispatch_patch_offset=chain_dispatch_patch_offset,
             helper_target_addr=helper_target_addr,
-            native_loop_safe=helper_index < 0 and not tail_context_helper,
         )
         trace.header = header
         assert JIT_CACHE_ACTIVE_OFFSET_BYTES + total_size <= self._standalone_region.region_bytes
@@ -484,8 +480,8 @@ class TraceCompiler:
             trace.exit_patch_offset,
             trace.helper_header_patch_offset,
             trace.helper_exit_patch_offset,
-            trace.chain_header_patch_offset,
-            trace.chain_fallback_patch_offset,
+            trace.chain_dispatch_patch_offset,
+            trace.header.common_helper_offset,
         )
         trace.fn = fn
         trace.raw_addr = raw_addr
@@ -499,8 +495,7 @@ class TraceCompiler:
         # so a local's displacement from R2 is `index * slot_bytes`.
         slot_bytes = local_widths.slot_words * WASM_RAW_WORD_BYTES
         header = JITTraceHeader(head_wasm_pc=head_pc)
-        header.chain_next_pc = next_pc or 0
-        # mov rax, <body address>; jmp <header.common_prologue_offset>
+        # mov rax, <body address>; jmp <common prologue>
         code = bytearray(bytes((0x48, 0xB8)) + (0).to_bytes(8, "little"))
         code += bytes((0xE9, 0, 0, 0, 0))
         assert len(code) == TRACE_ENTRY_STUB_BYTES
@@ -636,8 +631,7 @@ class TraceCompiler:
         # value -- {ExecutionContext_Layout} -- so it is written to memory
         # (via R12 / sp) rather than returned in RAX; the trace itself always
         # returns void.
-        chain_header_patch_offset = -1
-        chain_fallback_patch_offset = -1
+        chain_dispatch_patch_offset = -1
         if tail_context_helper:
             assert helper_index < 0
             assert not stack_locations
@@ -668,18 +662,8 @@ class TraceCompiler:
                 # pointer, so the x64 implementation publishes it as u32.
                 code += bytes((0x41, 0xC7, 0x45, 0x00))
                 code += (next_pc & I32_MASK).to_bytes(4, "little")
-                # lea rax, [rip + header]
-                chain_header_patch_offset = JIT_X64_TRACE_HEADER_BYTES + len(code) + 3
-                code += bytes((0x48, 0x8D, 0x05, 0, 0, 0, 0))
-                # mov rdx, [rax + x64 chain_target_addr]
-                code += bytes((0x48, 0x8B, 0x50, 0x10))
-                # test rdx, rdx; unresolved chains use the common epilogue
-                code += bytes((0x48, 0x85, 0xD2))
-                chain_fallback_patch_offset = JIT_X64_TRACE_HEADER_BYTES + len(code) + 2
-                code += bytes((0x0F, 0x84, 0, 0, 0, 0))
-                # A resolved target points past its entry stub, so the common
-                # prologue is not entered a second time.
-                code += bytes((0xFF, 0xE2))
+                chain_dispatch_patch_offset = JIT_X64_TRACE_HEADER_BYTES + len(code) + 1
+                code += bytes((0xE9, 0, 0, 0, 0))
                 exit_patch_offset = -1
             else:
                 exit_patch_offset = JIT_X64_TRACE_HEADER_BYTES + len(code) + 1
@@ -714,8 +698,7 @@ class TraceCompiler:
             exit_patch_offset=exit_patch_offset,
             helper_header_patch_offset=helper_header_patch_offset,
             helper_exit_patch_offset=helper_exit_patch_offset,
-            chain_header_patch_offset=chain_header_patch_offset,
-            chain_fallback_patch_offset=chain_fallback_patch_offset,
+            chain_dispatch_patch_offset=chain_dispatch_patch_offset,
             helper_target_addr=helper_target_addr,
         )
         trace.header = header
@@ -729,8 +712,8 @@ class TraceCompiler:
             trace.exit_patch_offset,
             trace.helper_header_patch_offset,
             trace.helper_exit_patch_offset,
-            trace.chain_header_patch_offset,
-            trace.chain_fallback_patch_offset,
+            trace.chain_dispatch_patch_offset,
+            trace.header.common_helper_offset,
         )
         trace.fn = fn
         trace.raw_addr = raw_addr

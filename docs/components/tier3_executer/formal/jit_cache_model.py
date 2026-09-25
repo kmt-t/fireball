@@ -1,13 +1,12 @@
 """
 docs/components/tier3_executer/formal/jit_cache_model.py
-pyModelChecking による JIT 3面キャッシュ代謝・MPU W^X・遅延チェイニング安全性・2-bit Hotspot FSM の形式検証（証明・変異検査対応）モデル
+pyModelChecking による JIT 3面キャッシュ代謝・抽象W^X状態・遅延チェイニング安全性・2-bit Hotspot FSM の形式検証（証明・変異検査対応）モデル
 """
 
 from pyModelChecking import Kripke
 from pyModelChecking.CTL import AF, AG, And, AtomicProposition, Imply, Not, Or
 
 BACKS = [
-    "components/tier2_runtime/concepts/runtime_engine_concept.py",
     "components/tier3_executer/jit_compiler.md",
     "components/tier3_executer/jit_runtime.md",
     "components/tier2_runtime/runtime_memory.md",
@@ -18,7 +17,7 @@ def build_model(*, guards: bool = True, aging_guard: bool = True) -> Kripke:
     """
     aging_guard: False のとき、エイジングスイープに関する変異だけを有効化する
     （guards=True のまま単独で変異検査を行うための独立スイッチ）。guards=False は全変異を含む。
-    JIT 3面キャッシュ代謝・遅延チェイニング安全性・2-bit Hotspot FSM・MPU W^X 統合形式検証モデル
+    JIT 3面キャッシュ代謝・遅延チェイニング安全性・2-bit Hotspot FSM・抽象W^X状態の統合形式検証モデル
     遅延チェイニング安全性モデル (第13信 §89 準拠):
     - 状態は 3つ組 (age_source, age_target, linked) で表現
       - age_source ∈ {0(Active), 1(Warm), 2(Oldest), 3(dead)}
@@ -66,7 +65,7 @@ def build_model(*, guards: bool = True, aging_guard: bool = True) -> Kripke:
     ]
     S0 = {"s_idle", "ch_s0_t0_l1", "ch_s0_t1_l1"}
     R = [
-        # --- MPU W^X & 3面キャッシュ代謝サイクル ---
+        # --- 抽象W^X状態 & 3面キャッシュ代謝サイクル ---
         ("s_idle", "s_compiling"),
         ("s_idle", "c_unexecuted"),
         ("s_compiling", "s_synced"),
@@ -121,7 +120,7 @@ def build_model(*, guards: bool = True, aging_guard: bool = True) -> Kripke:
         # ガード無効時（変異検査）:
         # 1. ダングリング掃引無効: ch_s0_t1_l1 が linked=1 のまま s_dangling_chain へ到達
         R.append(("ch_s0_t1_l1", "s_dangling_chain"))
-        # 2. MPU W^X ガード無効
+        # 2. 抽象W^Xガード無効
         R.append(("s_compiling", "s_bad_rwx"))
         # 3. Liveness ガード無効
         R.append(("s_synced", "s_deadlock"))
@@ -133,25 +132,25 @@ def build_model(*, guards: bool = True, aging_guard: bool = True) -> Kripke:
         R.append(("c_hot", "s_bad_compile_failure_retry"))
 
     L = {
-        "s_idle": {"clean", "mpu_ro_x", "idle"},
-        "s_compiling": {"writing", "mpu_rw_xn"},
-        "s_synced": {"synced", "mpu_ro_x"},
-        "s_active_exec": {"executing", "in_active", "mpu_ro_x"},
-        "s_warm_obs": {"executing", "in_warm", "mpu_ro_x"},
-        "s_oldest_eval": {"in_oldest", "mpu_ro_x"},
-        "c_unexecuted": {"unexecuted", "mpu_ro_x"},
-        "c_executed": {"executed", "recompilable", "mpu_ro_x"},
-        "c_hot": {"hot", "recompilable", "mpu_ro_x"},
-        "c_compiled": {"compiled", "mpu_ro_x"},
-        "c_compile_failed": {"hot", "compile_failed", "target_excluded", "mpu_ro_x"},
-        "c_evicted": {"evicted", "mpu_ro_x"},
-        "ch_s0_t0_l1": {"linked", "mpu_ro_x"},
-        "ch_s0_t1_l1": {"linked", "mpu_ro_x"},
-        "ch_s1_t1_l1": {"linked", "mpu_ro_x"},
-        "ch_s1_t2_l0": {"unlinked", "mpu_ro_x"},
-        "ch_s2_t2_l0": {"unlinked", "mpu_ro_x"},
-        "ch_s2_t3_l0": {"unlinked", "mpu_ro_x"},
-        "ch_s3_t3_l0": {"unlinked", "mpu_ro_x"},
+        "s_idle": {"clean", "ro_x", "idle"},
+        "s_compiling": {"writing", "rw_xn"},
+        "s_synced": {"synced", "ro_x"},
+        "s_active_exec": {"executing", "in_active", "ro_x"},
+        "s_warm_obs": {"executing", "in_warm", "ro_x"},
+        "s_oldest_eval": {"in_oldest", "ro_x"},
+        "c_unexecuted": {"unexecuted", "ro_x"},
+        "c_executed": {"executed", "recompilable", "ro_x"},
+        "c_hot": {"hot", "recompilable", "ro_x"},
+        "c_compiled": {"compiled", "ro_x"},
+        "c_compile_failed": {"hot", "compile_failed", "target_excluded", "ro_x"},
+        "c_evicted": {"evicted", "ro_x"},
+        "ch_s0_t0_l1": {"linked", "ro_x"},
+        "ch_s0_t1_l1": {"linked", "ro_x"},
+        "ch_s1_t1_l1": {"linked", "ro_x"},
+        "ch_s1_t2_l0": {"unlinked", "ro_x"},
+        "ch_s2_t2_l0": {"unlinked", "ro_x"},
+        "ch_s2_t3_l0": {"unlinked", "ro_x"},
+        "ch_s3_t3_l0": {"unlinked", "ro_x"},
         "s_bad_rwx": {"writing", "executing", "bad_rwx"},
         "s_deadlock": {"deadlock"},
         "s_bad_skip_hot": {"bad_skip_hot", "compiled"},
@@ -174,7 +173,7 @@ def properties():
             "logic": "CTL",
             "formula": AG(Not(bad_wx)),
             "violation": bad_wx,
-            "expect": True,  # MPU W^X 分離により書き込みと実行の同時有効状態は到達不能
+            "expect": True,  # 抽象W^X不変条件により書き込みと実行の同時有効状態は到達不能
         },
         {
             "name": "cache_liveness",

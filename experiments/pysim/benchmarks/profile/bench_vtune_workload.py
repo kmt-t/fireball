@@ -32,22 +32,22 @@ from pathlib import Path
 _BENCH_DIR = Path(__file__).resolve().parent.parent
 _PYSIM_DIR = _BENCH_DIR.parent
 
-from tier3_platform.drivers.hal.dummy import DummyDriver
-from tier3_executer.interpreter.interpreter import Interpreter, InterpreterBindings
-from tier3_executer.jit.jit_runtime import JITInterpreter
 from ipc_router import DataType, IPCMessage, IPCRouter, IPCStatus, Role, ScopeKind, pack_key32
-from tier2_runtime.logger import LogDictionary, Logger, LogLevel
-from tier3_platform.drivers.logging.file_sink import FileLogSink
 from memory import FB_CONF_MEMORY_POOL_SIZE, MemoryManager
-from runtime_engine import RuntimeEngine
-from tier3_executer.jit.jit_manager import JITRuntimeManager
 from scheduler import ChannelAction, Scheduler
 from system import System
 from system_containers import StaticVector
+from tier2_runtime.logger import LogDictionary, Logger, LogLevel
+from tier3_executer.interpreter.interpreter import Interpreter, InterpreterBindings
+from tier3_executer.jit.jit_manager import JITRuntimeManager
+from tier3_executer.jit.jit_runtime import JITInterpreter
+from tier3_executer.jit.runtime_engine import RuntimeEngine
+from tier3_executer.jit.x64_jit import TraceCompiler
+from tier3_platform.drivers.hal.dummy import DummyDriver
+from tier3_platform.drivers.logging.file_sink import FileLogSink
 from tier3_platform.drivers.wasi.context import WasiHostContext
 from wasm_module import Module
 from wasm_reader import parse
-from tier3_executer.jit.x64_jit import TraceCompiler
 
 SUITE_WASM_PATH = Path(__file__).resolve().parent / "guest" / "suite.wasm"
 AO_WASM_PATH = _PYSIM_DIR / "aobench.wasm"
@@ -148,7 +148,7 @@ def _new_interpreter_guest() -> tuple[Module, Interpreter]:
 def _new_jit_guest() -> tuple[Module, Interpreter]:
     module, bindings = _new_guest()
     engine = RuntimeEngine(
-        jit_runtime=JITRuntimeManager(jit_compiler=TraceCompiler(), yield_threshold=16)
+        jit_runtime=JITRuntimeManager(jit_compiler=TraceCompiler())
     )
     return module, JITInterpreter(module, bindings, engine)
 
@@ -329,11 +329,11 @@ def phase_ao_jit(scale: float, kernels: list[str] | None, oracle: bool) -> Phase
     width, height = _ao_size(scale)
     module, sysv, interp, sink = _ao_guest("ao_jit")
     engine = RuntimeEngine(
-        jit_runtime=JITRuntimeManager(jit_compiler=TraceCompiler(), yield_threshold=16)
+        jit_runtime=JITRuntimeManager(jit_compiler=TraceCompiler())
     )
     engine.register_module_blocks(module)
     t0 = time.perf_counter()
-    engine.run(interp, module.export_func_index("main"), [width, height])
+    engine.call(interp, module.export_func_index("main"), [width, height])
     seconds = time.perf_counter() - t0
     sysv.logger.flush()
     sink.close()
@@ -356,7 +356,7 @@ def phase_ipc(scale: float, kernels: list[str] | None, oracle: bool) -> PhaseRes
     count = _scaled(300_000, scale)
     sched = Scheduler()
     manager = MemoryManager(sched)
-    assert manager.init_manager(0x20020000, FB_CONF_MEMORY_POOL_SIZE).is_ok
+    assert manager.init_manager(0x00010000, FB_CONF_MEMORY_POOL_SIZE).is_ok
     router = IPCRouter(sched, manager)
     log_path, sink = _open_log("ipc")
     dictionary = LogDictionary()

@@ -45,7 +45,7 @@ from dataclasses import dataclass
 from enum import IntEnum
 from typing import Protocol
 
-from config import FB_CONF_MAX_VALUE_STACK
+from config import FB_CONF_MAX_VALUE_STACK, FB_CONF_RUNTIME_YIELD_THRESHOLD
 from control_flow import (
     FB_CONF_MAX_NESTING_DEPTH,
     OpcodeAttribute,
@@ -53,12 +53,14 @@ from control_flow import (
     opcode_has_attribute,
 )
 from interop_abi import (
+    EXECUTION_CONTEXT_FLAG_STOP_AT_BLOCK_BOUNDARY,
     NATIVE_VALUE_STACK_CAPACITY,
     CallFrameNative,
     ControlMapEntryNative,
     ExecutionContextNative,
     NativeValueStack,
 )
+from jit_runtime_contract import NativeBlockVisit, NativeTraceDispatchEntry
 from leb128 import decode_signed, decode_unsigned
 from native_stacks import (
     ControlFrameKind,
@@ -79,8 +81,6 @@ from wasm_module import (
     Module,
     value_slot_width,
 )
-
-from . import _interpreter_native
 from wasm_opcodes import (
     BLOCK,
     BR,
@@ -261,6 +261,15 @@ from wasm_opcodes import (
     UNREACHABLE,
 )
 
+from . import _interpreter_native
+
+NATIVE_RUNTIME_PROFILE_STATS_ENABLED = bool(
+    _interpreter_native.RUNTIME_PROFILE_STATS_ENABLED
+)
+NATIVE_JIT_HOTSPOT_PROFILING_ENABLED = bool(
+    _interpreter_native.JIT_HOTSPOT_PROFILING_ENABLED
+)
+
 I32_MASK = 0xFFFFFFFF
 PAGE_SIZE = 65536
 # Reserved execution-PC values.  `-1` is kept only in the local continuation
@@ -268,6 +277,8 @@ PAGE_SIZE = 65536
 # is a named reserved value consumed by RuntimeEngine before normal lookup.
 RETURN_SENTINEL_IP = -1
 RETURN_SENTINEL_PC = 0xFFFF_FFFF
+NATIVE_DISPATCH_YIELD = 5
+NATIVE_DISPATCH_OLDEST_TRACE = 4
 
 
 def _to_i32(v: int) -> int:
@@ -600,9 +611,9 @@ class InterpreterContext:
 
     __slots__ = (
         "_c_context",
+        "_call_stack_native",
         "_context_ptr",
         "_context_view",
-        "_call_stack_native",
         "call_frame_stack",
         "control_frame_stack",
         "local_offset",
@@ -631,6 +642,7 @@ class InterpreterContext:
         self._c_context.call_stack = self._call_stack_native.address
         self._c_context.call_base = 0
         self._c_context.call_offset = 0
+        self._c_context.sp_capacity = self.operand_stack.capacity
 
     @property
     def context_ptr(self) -> ctypes.c_void_p:
@@ -761,6 +773,8 @@ class CallFrame:
         "_frames",
         "_locals",
         "_native",
+        "_native_br_table_targets",
+        "_native_control_map",
         "boundary_loops_to",
         "boundary_next_pc",
         "code",
@@ -775,7 +789,6 @@ class CallFrame:
         "local_slot_count",
         "local_types",
         "local_widths",
-        "_native_control_map",
         "param_count",
         "param_packed_slot_count",
         "result_arity",
@@ -833,6 +846,8 @@ class CallFrame:
             native_control_map[index].next_pc = 0xFFFF_FFFF
             native_control_map[index].result_arity = 0
             native_control_map[index].operand_width = 1
+            native_control_map[index].br_table_target_count = 0
+            native_control_map[index].br_table_targets = 0
         for start, control in self.control_map.blocks.view().entries:
             match_end, else_offset, result_arity = control
             _, next_pc = decode_signed(self.code, start + 1)
@@ -848,6 +863,27 @@ class CallFrame:
         if function.select_widths is not None:
             for start, width in function.select_widths.view().entries:
                 native_control_map[start].operand_width = width
+        br_tables = self.control_map.br_tables.view().entries
+        target_count = 0
+        for _, (labels, _) in br_tables:
+            target_count += len(labels) + 1
+        target_array_type = ctypes.c_uint32 * target_count
+        native_br_table_targets = target_array_type()
+        target_offset = 0
+        for start, (labels, default_label) in br_tables:
+            entry = native_control_map[start]
+            entry.br_table_target_count = len(labels) + 1
+            entry.br_table_targets = (
+                ctypes.addressof(native_br_table_targets)
+                + target_offset * ctypes.sizeof(ctypes.c_uint32)
+            )
+            for label in labels:
+                native_br_table_targets[target_offset] = label
+                target_offset += 1
+            native_br_table_targets[target_offset] = default_label
+            target_offset += 1
+        assert target_offset == target_count
+        self._native_br_table_targets = native_br_table_targets
         self._native_control_map = native_control_map
         self.env = env
         # Set by RuntimeEngine.run() right before each interp.step() call,
@@ -901,6 +937,17 @@ class CallFrame:
     @property
     def locals(self) -> _LocalStackWindow:
         return self._locals
+
+    def set_runtime_boundary(self, next_pc: int | None, loops_to: int | None) -> None:
+        """Publish the current block exit targets to the native handlers."""
+        self.boundary_next_pc = next_pc
+        self.boundary_loops_to = loops_to
+        assert self.context.call_frame_stack
+        assert self.context.call_frame_stack[-1] is self
+        native_frame = self.context.call_frame_stack.native[-1]
+        assert native_frame.func_index == self.func_index
+        native_frame.boundary_next_pc = 0xFFFF_FFFF if next_pc is None else next_pc
+        native_frame.boundary_loops_to = 0xFFFF_FFFF if loops_to is None else loops_to
 
 
 # The interpreter call's resumable continuation: (next_ip, frame, local_base,
@@ -1181,12 +1228,11 @@ class Interpreter:
     def _call_without_nested_calls(
         self, call_state: InterpreterCall
     ) -> StaticVector[WasmNumber] | None:
-        """Complete a call without materializing CPS state at every instruction."""
+        """Run C++ handlers to completion, returning through Python at yield counts."""
         frame = call_state._frame
         locals_arr = call_state._locals
         assert frame is not None and locals_arr is not None
         ip = call_state._ip
-        tos = call_state._tos
         code = frame.code
         code_len = len(code)
         ctx = call_state.context
@@ -1196,39 +1242,38 @@ class Interpreter:
                 break
             assert 0 <= ip < code_len
 
-            native_status, native_ip, native_size, native_trap = _interpreter_native.run_step(
-                code,
-                ctx.context_view,
-                values.raw_view,
-                locals_arr._storage.raw_view,
-                ctx.control_frame_stack.raw_view,
-                len(values),
-                ip,
-                locals_arr._slot_count,
-                frame.control_base,
+            native_status = self.run_native_dispatch(
+                call_state,
+                (),
+                (),
+                FB_CONF_RUNTIME_YIELD_THRESHOLD,
+                0,
             )
-            values.set_size(native_size)
+            native_status = native_status[0]
             if native_status == 1:
                 ip = RETURN_SENTINEL_IP
                 break
             if native_status == 2:
-                trap = Trap(TrapCode(native_trap))
-                self._abort_call(call_state, trap, ip)
                 return None
+            if native_status == NATIVE_DISPATCH_YIELD:
+                ctx.native_context.loop_jump_count = 0
+                ip = call_state._ip
+                continue
             assert native_status == 0
-            ip = int(native_ip)
-            ctx.native_context.ip = ip
+            ip = call_state._ip
             opcode = code[ip]
             handler = _HANDLERS[opcode]
             assert handler is not None, f"interpreter: unhandled opcode 0x{opcode:02X}"
             ctx.bind_handler_state(ip, frame)
-            trap = handler(ctx, values, locals_arr, tos)
+            trap = handler(ctx, values, locals_arr, call_state._tos)
             if trap is not None:
                 self._abort_call(call_state, trap, ip)
                 return None
             ip = int(ctx.native_context.ip)
             if ip >= code_len:
                 ip = RETURN_SENTINEL_IP
+            call_state._ip = ip
+            call_state._tos = values.raw_top() if values else 0
 
         func_type = self.module.func_type(call_state.func_index)
         frame.frames.truncate(0)
@@ -1396,7 +1441,183 @@ class Interpreter:
         `.cont`, or `finished == True` with `.results` set once the outermost call
         actually returns.
         """
+        if self._try_native_step_to_boundary(call_state):
+            return call_state
         return self._step(call_state, stop_at_boundary=True)
+
+    def step_native_control(self, call_state: InterpreterCall) -> InterpreterCall:
+        """Execute one supported structured-control opcode through its C++ handler."""
+        frame = call_state._frame
+        locals_arr = call_state._locals
+        assert frame is not None and locals_arr is not None
+        assert call_state._ip != RETURN_SENTINEL_IP
+        if self.debugger is not None:
+            return self._step(call_state, stop_at_boundary=True)
+
+        context = call_state.context
+        native_status, native_ip, native_size, native_trap = (
+            _interpreter_native.run_control_step(
+                frame.code,
+                context.context_view,
+                frame.values.raw_view,
+                locals_arr._storage.raw_view,
+                context.control_frame_stack.raw_view,
+                len(frame.values),
+                frame.values.capacity,
+                call_state._ip,
+                frame.local_slot_count,
+                frame.control_base,
+            )
+        )
+
+        if native_status == 3 and native_ip >= len(frame.code):
+            native_ip = RETURN_SENTINEL_IP
+        frame.values.set_size(native_size)
+        context.native_context.ip = native_ip
+        call_state._ip = native_ip
+        call_state._tos = frame.values.raw_top() if frame.values else 0
+
+        if native_status == 3:
+            return call_state
+        if native_status == 1:
+            call_state._ip = RETURN_SENTINEL_IP
+            return self._step(call_state, stop_at_boundary=True)
+        if native_status == 2:
+            self._abort_call(call_state, Trap(TrapCode(native_trap)), native_ip)
+            return call_state
+        assert native_status == 0, f"unexpected native control status: {native_status}"
+        return self._step(call_state, stop_at_boundary=True)
+
+    def run_native_dispatch(
+        self,
+        call_state: InterpreterCall,
+        entries: tuple[NativeTraceDispatchEntry, ...],
+        trackable_blocks: tuple[int, ...],
+        yield_threshold: int,
+        execution_count: int,
+        collect_stats: bool = False,
+        collect_hotspots: bool = False,
+    ) -> tuple[int, int, int, int, int, int, int, tuple[NativeBlockVisit, ...]]:
+        """Run native traces and C++ handlers until a yield, fallback, or exit."""
+
+        assert not collect_stats or NATIVE_RUNTIME_PROFILE_STATS_ENABLED, (
+            "runtime profile stats were compiled out; rebuild with "
+            "FB_CONF_RUNTIME_PROFILE_STATS=True"
+        )
+        assert not collect_hotspots or NATIVE_JIT_HOTSPOT_PROFILING_ENABLED, (
+            "JIT hotspot profiling was compiled out; rebuild with "
+            "FB_CONF_JIT_HOTSPOT_PROFILING=True"
+        )
+        frame = call_state._frame
+        locals_arr = call_state._locals
+        assert frame is not None and locals_arr is not None
+        assert call_state._ip != RETURN_SENTINEL_IP
+        assert yield_threshold > 0
+        context = call_state.context
+        (
+            native_status,
+            native_ip,
+            native_size,
+            native_trap,
+            trace_count,
+            body_count,
+            dispatcher_trace_transitions,
+            control_handler_count,
+            eligible_block_visits,
+            interpreted_block_count,
+            visits,
+        ) = (
+            _interpreter_native.run_native_dispatch(
+                frame.code,
+                context.context_view,
+                frame.values.raw_view,
+                locals_arr._storage.raw_view,
+                context.control_frame_stack.raw_view,
+                entries,
+                trackable_blocks,
+                len(frame.values),
+                frame.values.capacity,
+                call_state._ip,
+                frame.frame_offset,
+                frame.local_slot_count,
+                frame.control_base,
+                call_state.func_index,
+                yield_threshold,
+                execution_count,
+                collect_stats,
+                collect_hotspots,
+            )
+        )
+        frame.values.set_size(native_size)
+        context.native_context.ip = native_ip
+        call_state._ip = RETURN_SENTINEL_IP if native_status == 1 else native_ip
+        call_state._tos = frame.values.raw_top() if frame.values else 0
+        if native_status == 2:
+            self._abort_call(call_state, Trap(TrapCode(native_trap)), native_ip)
+        return (
+            native_status,
+            trace_count,
+            body_count,
+            dispatcher_trace_transitions,
+            control_handler_count,
+            eligible_block_visits,
+            interpreted_block_count,
+            visits,
+        )
+
+    def _try_native_step_to_boundary(self, call_state: InterpreterCall) -> bool:
+        """Use native handlers up to the current block's next JIT boundary."""
+        frame = call_state._frame
+        locals_arr = call_state._locals
+        if frame is None or locals_arr is None or self.debugger is not None:
+            return False
+        if call_state._ip == RETURN_SENTINEL_IP:
+            return False
+        if frame.boundary_next_pc is None and frame.boundary_loops_to is None:
+            return False
+
+        pc = call_state.current_pc()
+        if pc == frame.boundary_next_pc or pc == frame.boundary_loops_to:
+            return False
+
+        context = call_state.context
+        previous_flags = int(context.native_context.runtime_flags)
+        context.native_context.runtime_flags = (
+            previous_flags | EXECUTION_CONTEXT_FLAG_STOP_AT_BLOCK_BOUNDARY
+        )
+        try:
+            native_status, native_ip, native_size, native_trap = _interpreter_native.run_step(
+                frame.code,
+                context.context_view,
+                frame.values.raw_view,
+                locals_arr._storage.raw_view,
+                context.control_frame_stack.raw_view,
+                len(frame.values),
+                frame.values.capacity,
+                call_state._ip,
+                frame.local_slot_count,
+                frame.control_base,
+            )
+        finally:
+            context.native_context.runtime_flags = previous_flags
+
+        if native_status == 3 and native_ip >= len(frame.code):
+            native_ip = RETURN_SENTINEL_IP
+        frame.values.set_size(native_size)
+        context.native_context.ip = native_ip
+        call_state._ip = native_ip
+        call_state._tos = frame.values.raw_top() if frame.values else 0
+
+        if native_status == 3:
+            return True
+        if native_status == 1:
+            call_state._ip = RETURN_SENTINEL_IP
+            return False
+        if native_status == 2:
+            self._abort_call(call_state, Trap(TrapCode(native_trap)), native_ip)
+            return True
+        assert native_status == 0, f"unexpected native interpreter status: {native_status}"
+        return False
 
     def _step(self, call_state: InterpreterCall, stop_at_boundary: bool) -> InterpreterCall:
         """Run until a boundary or completion, depending on the driving caller."""

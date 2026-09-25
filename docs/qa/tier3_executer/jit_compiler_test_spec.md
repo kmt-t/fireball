@@ -5,7 +5,7 @@
 
 正本: [`jit_compiler.md`](docs/components/tier3_executer/jit_compiler.md)
 
-物理レジスタ、スタック整列、命令列、およびヘッダ配置は対象アーキテクチャごとに検証する。以下のx64項目は [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) の契約を対象とし、ARMv8-Mの項目は [`jit_stencil_catalog.md`](docs/specs/jit_stencil_catalog.md) の契約を対象とする。
+本書の物理コード生成受け入れ条件は、[`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) とx64向け実装テストで確認する。ARMv8-MのABI、命令列、ヘッダ、メモリ保護、物理配置はすべてTBDであり、受け入れ条件を定めない。
 
 Copy-and-Patchエンジンによるネイティブコード生成、4論理引数の境界規約とJITトレース独自のTOS/NOSキャッシュの非対称性（`{ADR_TosCacheAsymmetry}`）、JITトレースヘッダのメモリレイアウト、`code_offset`スケーラビリティ（`ADR_ScalableCodeOffset`）、および位置独立性（`{PositionIndependentCode}`）を検証する。
 
@@ -16,33 +16,31 @@ Copy-and-Patchエンジンによるネイティブコード生成、4論理引�
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | TEST-JITC-01 | テンプレートのコピー＋パッチのみ（最適化なし） | 単純な直線コード（`i32.const`→`i32.add`等） | コンパイル | 生成ネイティブコードは事前定義テンプレートの連結+即値/分岐先パッチのみで構成される（IRを介した最適化パスが存在しない） | 「Zero Compile Cost」, `{SinglePassCompilation}` |
-| TEST-JITC-02 | 未対応命令のエラー | ステンシル未定義のWASM opcode | コンパイル | 明確なエラー（`NO_STENCIL_FOR`相当）で失敗し、無音の誤コンパイルをしない | runtime_engine_concept.py `CopyPatchCompiler.compile_trace`のraise |
-| TEST-JITC-03 | ステンシルの必須リロケーションホール検証 | 必要な`imm_lo`/`imm_hi`等を渡さない | `emit`を呼ぶ | `KeyError`相当で拒否される | runtime_engine_concept.py `test_stencil_requires_its_relocation_holes` |
-| TEST-JITC-04 | AAPCS境界フォールバック | 複雑な命令・import／host call | コンパイル | 境界命令の直前でトレースを終了し、ランタイムAPI呼び出しスタブをJITコード内に生成せずInterpreter／RuntimeEngineへ委譲する |  `{JIT_RuntimeAPI_Fallback}` |
-| TEST-JITC-05 | 命令キャッシュ同期バリア | パッチ完了後 | コンパイル完了を確認 | `__DSB()`/`__ISB()`相当のバリアが発行される | {JIT_CopyAndPatch} |
+| TEST-JITC-02 | 未対応命令のエラー | x64コンパイラが未対応のWASM opcode | コンパイル | 明確なcompile-failure結果を返し、無音の誤コンパイルをしない | [`test_x64_jit.py`](experiments/pysim/qa/tier3_executer/jit/test_x64_jit.py) |
+| TEST-JITC-03 | ステンシル即値とrelocation範囲 | x64の即値命令と相対分岐を含むtrace | コンパイル結果を実行し、境界値も確認する | x64のバイト列と実行結果が正しく、範囲外relocationはcompile failureとなる | [`test_x64_stencils.py`](experiments/pysim/qa/tier3_executer/jit/test_x64_stencils.py), [`test_x64_asm.py`](experiments/pysim/qa/tier3_executer/jit/test_x64_asm.py) |
+| TEST-JITC-04 | C++ Interpreter handlerへの境界フォールバック | 制御終端命令、複雑命令、import／host call | trace実行後のhandlerとRuntimeEngine境界を確認する | 制御終端命令は対応するC++ Interpreter handlerを通る。JIT内にopcode別handler dispatcherやhost call stubを生成しない | `{JIT_RuntimeAPI_Fallback}` |
+| TEST-JITC-05 | x64実行可能バッファのW^X確定 | パッチ完了後 | executable bufferの権限と実行結果を確認する | commit後は実行可能で書込み不可となり、ARMv8-Mの同期命令や保護機構は受入れ条件に含めない | [`test_x64_stencils.py`](experiments/pysim/qa/tier3_executer/jit/test_x64_stencils.py) |
 | TEST-JITC-06 | インタープリタ⇔JIT境界でのレジスタ書き戻しコスト | JITトレースから脱出 | 脱出処理を確認 | 値キャッシュの共有オペランド領域への書戻しが対象ABIで定める有界コストに収まる |  `{ADR_TosCacheAsymmetry}` |
 | TEST-JITC-07 | x64整数除算・剰余のヘルパー委譲 | i32除算・剰余を含むトレース | x64向けコンパイルと実行を確認 | 2つの32ビット整数を対象ABIの引数レジスタからヘルパーへ渡し、ヘルパーが結果領域ポインタへ1ワードを書き込んで対象ABIの終了処理へ戻る | `{JIT_RuntimeAPI_Fallback}` |
-| TEST-JITC-08 | ヘルパー呼出しコードの共通配置 | ARMv8-Mまたはx64のヘルパー委譲 | 共通コード領域とトレース本体のバイト数を確認 | ARMv8-MのAAPCS呼出しコードは契約ごとに共通コード領域へ配置し、x64整数ヘルパー直接入口は契約ごとに32バイトの固定スロットへ配置する。各トレースには対応入口へ遷移する経路だけを置く | [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) `{JIT_MultiBuffer_Cache}` |
+| TEST-JITC-08 | ヘルパー呼出しコードの共通配置 | ARMv8-Mまたはx64のヘルパー委譲 | 共通コード領域とトレース本体のバイト数を確認 | x64整数ヘルパー入口は契約ごとに32バイトの固定スロットへ配置する。ARMv8-Mのhelper入口と配置はTBD | [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) `{JIT_MultiBuffer_Cache}` |
 
 ### レジスタ規約とTOS/NOS非対称性
 
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| TEST-JITC-10 | インタープリタとJITが共有する4論理引数規約 | - | 両エンジンの呼び出し規約を比較 | 論理引数の順序は`ctx, sp, local_base, tos`で一致し、物理レジスタはARMv8-M、Windows x64、System V AMD64の各ABI定義に従う | `{AAPCS_FastCall}` |
-| TEST-JITC-11 | ARMv8-M JITトレース内部でのTOS/NOS/NNOSキャッシュ | ARMv8-M JITトレース生成 | 生成コードのレジスタ使用を確認 | 最上段、次段、第3段のキャッシュがARMv8-Mの対象レジスタへ割り当てられる | `{ADR_TosCacheAsymmetry}` |
-| TEST-JITC-12 | 基本ブロック末尾でのスタックフラッシュとコンテキスト同期 | トレース脱出・分岐 | 生成コードの末尾を確認 | 値キャッシュが共有オペランド領域へ書き戻され、実行コンテキストの`ip`（`+0x00`）および`sp_offset`（`+0x0C`）が同期される | 「トレース境界とチェイニングの安全性」 |
+| TEST-JITC-10 | インタープリタとJITが共有する4論理引数規約 | - | 両エンジンの呼び出し規約を比較 | 論理引数の順序は`ctx, sp, local_base, tos`で一致する。x64の物理配置は対象ABI定義に従い、ARMv8-Mの物理配置はTBD | `{CPS_4Args}` |
+| TEST-JITC-12 | 基本ブロック末尾でのスタックフラッシュとコンテキスト同期 | トレース脱出・分岐 | 生成コードの末尾を確認 | x64では共有オペランド領域と実行コンテキストがトレース境界で同期される。ARMv8-Mのレジスタ割当と同期方式はTBD | 「トレース境界とチェイニングの安全性」 |
 | TEST-JITC-13 | ローカル変数アクセスの静的オフセット畳み込み | 同一関数フレーム内のローカル変数アクセス | コンパイル | ローカル領域の基底を起点とする固定オフセットとして直接アクセスされる | 「ローカル変数アクセスの静的オフセット畳み込み」`{ContextPointerRegister}` |
 
 ### JITトレースヘッダ
-<!-- traceability: {AAPCS_FastCall} {JIT_RegisterMapping} -->
+<!-- traceability: {CPS_4Args} {JIT_RegisterMapping} -->
 
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| TEST-JITC-20 | x64ヘッダサイズは固定52バイト | x64向けに生成したトレース | ヘッダを解析 | `+0x00 head_wasm_pc(u32)`, `+0x04 trace_byte_size(u16)`, `+0x06 flags(u8)`, `+0x07 variant_id(u8)`, `+0x08 chain_next_pc(u32)`, `+0x10 chain_target_addr(u64)`, `+0x24 helper_target_addr(u64)`を含む52バイト構造 | [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) |
+| TEST-JITC-20 | x64ヘッダサイズは固定24バイト | x64向けに生成したトレース | ヘッダを解析 | `+0x00 head_wasm_pc(u32)`, `+0x04 trace_byte_size(u16)`, `+0x06 flags(u8)`, `+0x07 variant_id(u8)`, `+0x08 chain_target_addr(u64)`, `+0x10 helper_target_addr(u64)`を含む24バイト構造 | [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) |
 | TEST-JITC-21 | flagsビットの意味 | PROMOTED済み/LOOP_HEADERのトレース | flagsを確認 | `0x01: PROMOTED`, `0x02: LOOP_HEADER`が正しく設定される | 同上 |
-| TEST-JITC-22 | x64ネイティブコード列は+0x34から展開 | x64向けに生成したトレース | メモリレイアウトを確認 | 52バイトヘッダ直後(+0x34)からx64命令列が始まる。ARMv8-MのThumb-2配置は別の物理仕様で検証する | [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) |
+| TEST-JITC-22 | x64エントリstubは24バイトヘッダ直後に配置 | x64向けに生成したトレース | メモリレイアウトを確認 | 24バイトヘッダ直後(+0x18)から15バイトのentry stubが始まり、bodyはその直後(+0x27)から始まる。ARMv8-Mの配置はTBD | [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) |
 | TEST-JITC-23 | `variant_id`とレジスタ割り当ての対応 | 命令テンプレートごとに異なる値キャッシュ常駐数 | variant選択とチェイン遷移を確認 | `variant_id`は命令テンプレートのレジスタ割り当て状態を表し、互換variantへは直接遷移し、非互換variantへは共有オペランド領域から再構成して遷移する | `JIT_RegisterMapping` |
-| TEST-JITC-24 | AAPCS 準拠開始プロローグの新規入口 | Interpreter／RuntimeEngineから新規JITトレースへ遷移 | 入口アドレスと生成コードを確認 | 4論理引数を受け、callee-savedレジスタを退避し、入口variantを準備してからJIT本体へ進む。内部chain entryへ直接入らない | `jit_stencil_catalog.md` `STENCIL_PROLOGUE_FULL`, `AAPCS_FastCall` |
 
 ### ADR_ScalableCodeOffset
 
@@ -56,54 +54,50 @@ Copy-and-Patchエンジンによるネイティブコード生成、4論理引�
 
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| TEST-JITC-40 | 生成コードの位置独立性 (PIC) | 同一トレースバイナリを別のバッファ/オフセットにコピー | 実行 | 再コンパイルやリロケーション修正なしで完全に同一の結果を出力する | `{PositionIndependentCode}` |
-| TEST-JITC-41 | ゲストメモリ境界チェックのインライン埋め込み | メモリアクセス命令を含むトレース | コンパイル | 開始アドレスを `CMP addr, mem_size; BHS.W <trap>` で検査し、2バイト以上のアクセスは `addr + width - 1` も同じ比較で検査して、境界外で安全にトラップする | MemoryBoundaryCheck, FastAddressCheck |
-| TEST-JITC-42 | キャッシュ溢れの3面ローテーション処理 | キャッシュ容量超過 | コンパイル試行 | Oldestバンクを破棄して再利用し、被チェイン元の解除を行う。解除対象の探索に加えて破棄バンク全体の消去を行うため、処理量は`O(k + n)`である | 「Cache Capacity Check」, `{JIT_LazyChaining}` |
-| TEST-JITC-43 | ホストコール (WASI / fireball_call) のJIT境界 | 0〜6引数のimport／host call | トレース実行 | host call直前で対象ABIの終了処理を実行し、共有オペランド領域と実行コンテキストを同期してInterpreter／RuntimeEngineへ委譲する。JIT内で対象ABIと無関係なhost call stubを実行しない |  `{JIT_RuntimeAPI_Fallback}` |
-| TEST-JITC-44 | 境界委譲後のコンテキスト保持 | 複雑命令またはimport／host call | 境界復帰後に実行を継続 | 共有実行コンテキスト、共有オペランド領域、ローカル値領域を正本として状態が保持され、JIT専用戻り値バッファや専用オペランド領域が生成されない | [`interpreter.md`](docs/components/tier3_executer/interpreter.md) `{PositionIndependentCode}` |
+| TEST-JITC-40 | 生成コードの位置独立性 (PIC) | 同一トレースバイナリを別のバッファ/オフセットにコピー | 実行 | 再コンパイルやリロケーション修正なしで完全に同一の結果を出力する | `` |
+| TEST-JITC-41 | ゲストメモリ境界チェックと副作用抑止 | メモリアクセス命令を含むx64トレース | 境界内外のアクセスを実行 | 範囲外アクセスはメモリ副作用前に検出され、WASM trapとなる。ARMv8-Mの命令列とアドレス検査方式はTBD | MemoryBoundaryCheck, FastAddressCheck |
+| TEST-JITC-42 | キャッシュ溢れの3面ローテーション処理 | キャッシュ容量超過 | コンパイル試行 | Oldestバンクを破棄して再利用し、被チェイン元の解除を行う。解除対象の探索に加えて破棄バンク全体の消去を行うため、処理量は`O(k + n)`である | 「Cache Capacity Check」, `` |
+| TEST-JITC-43 | ホストコール (WASI / fireball_call) のJIT境界 | 0〜6引数のimport／host call | トレース実行 | host call直前で対象ABIの終了処理を実行し、共有オペランド領域と実行コンテキストを同期してInterpreter／RuntimeEngineへ委譲する。JIT内で対象ABIと無関係なhost call stubを実行しない |  `` |
+| TEST-JITC-44 | 境界委譲後のコンテキスト保持 | 複雑命令またはimport／host call | 境界復帰後に実行を継続 | 共有実行コンテキスト、共有オペランド領域、ローカル値領域を正本として状態が保持され、JIT専用戻り値バッファや専用オペランド領域が生成されない | [`interpreter.md`](docs/components/tier3_executer/interpreter.md) `` |
 | TEST-JITC-45 | 複数型Cヘルパーのワード配置 | `i64/f32/f64` 定数と算術命令 | JITトレースを実行 | `i64/f64` は2ワード、`f32` は1ワードで演算結果が共有オペランド領域へ保存される | [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) |
 
 ### トレース境界不変条件とハンドラ委譲
-<!-- traceability: {TraceBoundaryInvariant} -->
+<!-- traceability: {TraceBoundaryInvariant} {JIT_LazyChaining} {JIT_RuntimeAPI_Fallback} {ContextPointerRegister} -->
 
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | TEST-JITC-50 | スタック自己完結性検査 | 先頭で `local.set` や二項演算が先行するブロック | コンパイル試行 | 累積スタック深さが負になるため JIT 化を安全に拒否（`None` 返却）し、インタープリタ実行にフォールバックする | 「スタック自己完結性不変条件」 |
 | TEST-JITC-51 | 真の境界命令でのブロック終端 | `CALL`, `CALL_INDIRECT`, `BR_TABLE`, import／host call, `RETURN` を含む関数 | BasicBlock 抽出 | 各境界命令の直前で BasicBlock が終端され、共有状態を同期してInterpreter／RuntimeEngineへ安全に委譲される。JITは`RETURN sentinel`を生成しない | 「制御フロー・コール境界のインタープリタ委譲不変条件」 |
 | TEST-JITC-52 | トレース境界でのメモリ同期 | JIT トレース実行終了時 | レジスタおよびメモリ確認 | 対象ABIが定める値キャッシュを共有オペランド領域へ書き戻し、実行コンテキストの`ip`と`sp_offset`を同期する | 「メモリ同期不変条件」 |
-| TEST-JITC-53 | ヘッダ参照動的チェイン分岐と基本ブロック終端同期 | JIT基本ブロック末尾でのチェイン分岐 | 共有状態同期、状態識別と遷移を確認 | 互換状態では後続本体へ直接分岐し、非互換状態では対象ABIの再構成処理を通る。target未解決時は対象ABIの終了処理を経て復帰する | 「専用分岐ハンドラ分離」`{JIT_LazyChaining}` |
-| TEST-JITC-56 | 外部AAPCS call前のSP 8-byte整列 | 共通開始プロローグ後にexternal call stubを実行 | `SP mod 8`とpush/pop量を確認 | プロローグは8レジスタを32 bytes保存し、6レジスタのcaller-save退避は24 bytesとする。いずれも8の倍数であり、追加paddingなしに`BL`境界のSP 8-byte整列を維持する。最終エピローグは保存分を解除して元のSPを復元する | `jit_stencil_catalog.md` `STENCIL_PROLOGUE_FULL`, `STENCIL_EXTERNAL_CALL_STUB`; AAPCS32 |
-| TEST-JITC-54 | x64トレースヘッダによる直接チェイニング連携 | 構文デリミタを含むブロックとフォールスルー先後続ブロック | x64トレース登録とチェイニング実行 | コンパイル時に先読み解決されたフォールスルー先PCがx64ヘッダの`chain_next_pc`（`+0x08`）に格納され、常駐確認後に`chain_target_addr`（`+0x10`）が更新される | 「構文デリミタのトレースヘッダ直接埋め込みと直接チェイニング連携」`{JIT_LazyChaining}` |
-| TEST-JITC-55 | 全53命令語彙カバレッジと構文デリミタ消去 | JIT対象全53命令（境界命令の`CALL`, `CALL_INDIRECT`, import／host call, `BR_TABLE`, `RETURN`を除く） | 各命令のコンパイルと実行 | 全53命令が例外なくコンパイルされ、構文デリミタ（`BLOCK`, `LOOP`, `ELSE`, `END`, `NOP`）はコストゼロ（命令生成なし）で消去される | 「JIT コンパイル対象命令セット（語彙）一覧」 |
-| TEST-JITC-58 | SP即値巻き戻しを伴う多段分岐インライン展開 | ラベル脱出に伴うスタック巻き戻しを持つ `BR` / `BR_IF` | トレースコンパイルと実行 | 分岐直前に対象ABIのスタック位置更新および実行コンテキスト書き込みがインライン生成される | 「制御フロー・コール境界のインタープリタ委譲不変条件」 |
-| TEST-JITC-59 | フレームのスロット幅に従うローカルアドレス | ローカルを読み書きするブロック。全ローカルがi32のフレームと、i64ローカルを含むフレームの2通り | 各幅でコンパイルし、ローカル配列を指定して実行する | 書き込み先は `local index × スロット幅` になる。4バイトスロットでは3番目のローカルがワード2、8バイトスロットではワード4である。他のスロットは変化しない | `{ContextPointerRegister}` |
-| TEST-JITC-60 | 押し出された値の順序と書き込み範囲 | 乱数で生成した逆ポーランド式（最大深さ3〜11）。TOSとNOSに載らない値を持つ | 各式をコンパイルして実行し、参照実装と比較する。書き込まれたワードも検査する | 結果が参照実装と一致する。書き込みは `[sp, sp + stack_words)` に収まる。`stack_words` は、押し出しの最大ワード数（最小1）と等しい | `{ContextPointerRegister}`, TraceBoundaryInvariant |
+| TEST-JITC-53 | 制御分岐handlerとmachine-code chainの分離 | `BR`、`BR_IF`、`BR_TABLE`で終わるtraceと、直線後続trace | 終端handlerの実行とtrace末尾のmachine codeを確認 | 分岐条件・control frame・遷移先はC++ Interpreterの命令別handlerが処理する。trace末尾はopcode共通dispatcherへ集約せず、直線後続traceの場合に限り共有コード領域のchain dispatcherへ移る。handler後にC++ dispatcherがtraceを選ぶ遷移はchainとして数えない | [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) `` |
+| TEST-JITC-54 | x64共通コード領域chain dispatcher経由のtrace遷移 | 直線後続ブロックのtraceが常駐 | trace終端の相対分岐とchain targetを確認して実行 | trace末尾の`rel32`が共通コード領域のchain dispatcherを指す。dispatcherはヘッダ`+0x08`のtarget bodyへtail-jumpし、未接続なら共通epilogueへ戻る。C++ handler実行後のdispatcher遷移はchainに含めない | [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) `` |
+| TEST-JITC-55 | x64 JIT対応命令と制御終端のhandler経由 | x64 JITが対応する算術・ローカル命令、および`BR`/`BR_IF`/`BR_TABLE`等の制御終端 | 各traceの生成・実行とC++ handler呼出しを確認する | 対応命令はx64 trace bodyで実行され、制御終端はC++ Interpreter handlerが一度処理する。構文終端を無条件に消去せず、条件値やcontrol frameを更新する | ``, `test_x64_jit.py` |
+| TEST-JITC-58 | 分岐handlerによるstack巻き戻し | ラベル脱出に伴うスタック巻き戻しを持つ `BR` / `BR_IF` | 対応するC++ Interpreter handlerを通して実行する | handlerが条件値を消費し、stackとcontrol frameを更新する。JIT traceにbranch条件評価や分岐handlerをインライン展開しない | 「制御フロー・コール境界のインタープリタ委譲不変条件」 |
+| TEST-JITC-59 | フレームのスロット幅に従うローカルアドレス | ローカルを読み書きするブロック。全ローカルがi32のフレームと、i64ローカルを含むフレームの2通り | 各幅でコンパイルし、ローカル配列を指定して実行する | 書き込み先は `local index × スロット幅` になる。4バイトスロットでは3番目のローカルがワード2、8バイトスロットではワード4である。他のスロットは変化しない | `` |
+| TEST-JITC-60 | 押し出された値の順序と書き込み範囲 | 乱数で生成した逆ポーランド式（最大深さ3〜11）。TOSとNOSに載らない値を持つ | 各式をコンパイルして実行し、参照実装と比較する。書き込まれたワードも検査する | 結果が参照実装と一致する。書き込みは `[sp, sp + stack_words)` に収まる。`stack_words` は、押し出しの最大ワード数（最小1）と等しい | ``, TraceBoundaryInvariant |
 | TEST-JITC-61 | 右にネストした式の被演算子の復元 | 右にネストした `i32.sub` の連鎖と、シフトの連鎖（深さ11） | コンパイルして実行する | 押し出された値が、左被演算子として正しい順序で戻る。結果が参照実装と一致する | TraceBoundaryInvariant |
 
-| TEST-JITC-57 | 共通コード区画の存続と相対分岐解決 | 8KB JIT領域に境界stub／相対ジャンプstubを配置 | rotation・bank flush後もstubと参照先を確認し、生成時に分岐変位を検査 | 共通コード2KBは保持され、Active/Warm/Oldestだけが無効化される。直接条件分岐の範囲外はrelay veneer経由となり、変位超過コードを生成しない | system_config.md, jit_stencil_catalog.md, runtime_vsoc.md |
+| TEST-JITC-57 | x64共通コード区画とchain targetの有効性 | x64 JIT cacheでtraceをlinkし、対象バンクをrotate | chain targetと共通dispatcherを確認 | 共通コードはcache rotationで保持され、無効化されたtraceを指すtargetは0に戻る。ARMv8-Mの分岐範囲とrelay方式はTBD | `jit_abi.md`, `jit_runtime.md` |
 
 ### 実装の勘所・不変条件（Gotchas & Implementation Invariants）
 <!-- traceability: {MemoryBoundaryCheck} {FastAddressCheck} -->
 
 | GOTCHA ID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| GOTCHA-JITC-01 | 境界引数レジスタとJIT内部一時レジスタの物理競合防止 | トレース生成 | 各ステンシルのレジスタ割り当てを走査 | 境界の4論理引数（R0=ctx, R1=sp, R2=local_base, R3=tos）は呼び出し境界でのみ用いられ、JIT内部一時レジスタ（assignable pool: R4-R6, R8-R11）と物理的に一切重複しない。**実装の勘所**: x86-64 等のホストシミュレータ上の引数レジスタと実機Thumb-2のR8/R9（mem_base/mem_size）を混同して同一レジスタとして扱ってはならない | `{JIT_RegisterMapping}` |
-| GOTCHA-JITC-02 | ARMv8-Mのメモリ基底・サイズのロード起点（`execution_context` 統合） | メモリアクセス命令を含むARMv8-Mトレース | プロローグ命令列を検証 | `mem_base` と `mem_size` は、実行コンテキストの`+0x28`および`+0x2C`から一度だけロードされる。物理レジスタはAAPCS32の規約に従う | `{ExecutionContext_Layout}` `{JIT_RegisterMapping}` |
-| GOTCHA-JITC-03 | 基本ブロック末尾のスタックフラッシュとIP/SP同期 | ARMv8-Mトレースエピローグ生成 | エピローグ命令列を検証 | 基本ブロック末尾で値キャッシュを共有オペランド領域へ書き戻し、実行コンテキストの`ip`（`+0x00`）および`sp_offset`（`+0x0C`）を同期する。物理レジスタと書戻し順序はAAPCS32の規約に従う | `{ADR_TosCacheAsymmetry}` |
-| GOTCHA-JITC-04 | 境界チェック先行性と副作用ゼロ（Wrapping禁止） | メモリアクセス命令 | `addr + width - 1 >= mem_size` でトレース実行 | メモリアクセス（LDR/STR）前に開始アドレスとアクセス末尾が `CMP ..., r9; BHS.W <trap>` で評価され、境界外時はメモリ書き込みや値更新の副作用が一切発生せず即座にトラップテールへ分岐する。**実装の勘所**: マスク等でアドレスを巡回（Wrapping）させて継続実行することは安全上絶対に許容されない | MemoryBoundaryCheck, FastAddressCheck |
-| GOTCHA-JITC-05 | トラップ分岐（`BHS.W`）の2パスバックパッチ | トレース生成 | トラップ分岐命令のパッチ履歴を検証 | `BHS.W` の発行時点ではトラップテールのアドレスが未確定なため、オフセット0で仮発行した上で位置を記録し、エピローグ・トラップテール生成後に実アドレスへバックパッチされる。**実装の勘所**: 1パスで未確定アドレスへ分岐命令を発行すると未定義ジャンプを引き起こす | FastAddressCheck |
-| GOTCHA-JITC-06 | ARM MLS 命令のオペランド順序 | `i32.rem_s` / `i32.rem_u` を含むトレース | 生成されたネイティブコードを実行 | `mls r3, r12, r3, r4` が $Rd(r3) = Ra(r4) - Rn(r12) \times Rm(r3)$（被除数 - 商×除数 = 剰余）を算出する。**実装の勘所**: ARM MLS 命令は $Rd = Ra - (Rn \times Rm)$ という引数順序規約を持ち、$Ra - Rn \times Rm$ の順序を逆にすると負の剰余値を出力するバグとなる | `{JIT_CopyAndPatch}` |
-| GOTCHA-JITC-07 | トレース結果値と C 呼び出し規約の無関係性 | 残余値を持つトレース（`stack_depth == 1`） | エピローグ命令列と呼び出し元の受け取り方を検証 | トレースの残余値（VM オペランドスタックの状態）は `R1 (sp)` 経由でメモリへ書き込む。コンテキスト `R0` の `ip` と `sp_offset` を更新して終了する。呼び出し元は戻り値ではなく、このメモリ位置から残余値を読む。**実装の勘所**: ホストシミュレータは ctypes 経由で C 関数を呼び出す。そのため C の戻り値レジスタへ結果を載せたくなる。しかし、VM のオペランドスタックと呼び出し規約上の戻り値は無関係である。混同するとスタックに値が書き込まれず、分岐条件や結果値を常に0と誤読する。 | `{ADR_TosCacheAsymmetry}` |
+| GOTCHA-JITC-01 | 境界引数レジスタとJIT内部一時レジスタの物理競合防止 | トレース生成 | 各ステンシルのレジスタ割り当てを走査 | x64の物理レジスタ配置は対象ABIと一致すること。ARMv8-Mの物理レジスタ割当と競合条件はTBD | `{JIT_RegisterMapping}` |
+| GOTCHA-JITC-03 | trace境界の共有stackと実行状態同期 | JIT trace終端 | C++ Interpreter handlerへ復帰した状態を確認する | x64の共有状態は同期される。ARMv8-Mの物理保存先と同期方法はTBD | `{ADR_TosCacheAsymmetry}` |
+| GOTCHA-JITC-04 | 境界チェック先行性と副作用ゼロ（Wrapping禁止） | メモリアクセス命令 | `addr + width - 1 >= mem_size` でトレース実行 | メモリアクセス（LDR/STR）前にx64実装の範囲検査で評価され、境界外時はメモリ書き込みや値更新の副作用が一切発生せず即座にトラップテールへ分岐する。**実装の勘所**: マスク等でアドレスを巡回（Wrapping）させて継続実行することは安全上絶対に許容されない | MemoryBoundaryCheck, FastAddressCheck |
+| GOTCHA-JITC-07 | trace結果値とホスト関数戻り値の分離 | 残余値を持つtrace | 共通stackとC++ handler復帰後の値を確認する | WASM値は共有operand stackに残し、JIT traceのC戻り値として返さない。x64の物理配置は`jit_abi.md`に従い、ARMv8-Mの物理配置はTBD | `{ADR_TosCacheAsymmetry}` |
 
 ## 3. テスト検証実績と網羅状況
 
-- **TEST-JITC-01〜08 (Copy-and-Patch)**: 単一パスによる命令テンプレートのコピー＆パッチ、必須リロケーションホール、x64整数演算のヘルパー委譲、および共通呼出しコードのバイト数と共有配置を検証対象とする。x64側の実行検証は完了し、ARMv8-M側は実機検証を残す。
-- **TEST-JITC-10 (4論理引数規約)**: `(ctx, sp, local_base, tos)` を物理レジスタにマップし、インタープリタと共通のシグネチャで直接 C 関数呼び出しできることを実証済み。
-- **TEST-JITC-20〜22 (x64 52バイト物理ヘッダ)**: x64の `jit_trace_header`（`head_wasm_pc`, `trace_byte_size`, `flags`, `variant_id`, `chain_next_pc`, `chain_target_addr`, `helper_target_addr`）が `+0x00` に配置され、ネイティブ命令列が `+0x34` から展開されることを実証済み。ARMv8-MのThumb-2配置は別カタログの契約で扱う。
+- **TEST-JITC-01〜08 (Copy-and-Patch)**: 単一パスによる命令テンプレートのコピー＆パッチ、必須リロケーションホール、x64整数演算のヘルパー委譲、および共通呼出しコードのバイト数と共有配置を検証対象とする。x64の検証対象に限定する。ARMv8-Mの実装と検証はTBDである。
+- **TEST-JITC-10 (4論理引数規約)**: `(ctx, sp, local_base, tos)` の論理引数順序がInterpreterとJITで一致することを確認する。x64の物理配置は [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) が定める。
+- **TEST-JITC-20〜22 (x64 24バイト物理ヘッダ)**: x64の `jit_trace_header` はtrace識別情報とchain/helper targetだけを保持し、24バイト直後に15バイトのentry stub、さらにその後にnative bodyを配置する。ARMv8-Mの配置はTBDである。
 - **TEST-JITC-40 (PIC 位置独立性)**: トレースバイナリを別のメモリ領域・オフセットへコピーして再コンパイルなしで直接実行し、完全同一の演算結果を返すことを実証済み。
 - **TEST-JITC-42 (3面キャッシュ代謝 & 有界アンリンク)**: 3面マルチバッファキャッシュのローテーション、破棄バンク全体の消去、および被チェイン逆引きテーブルに基づく `O(n + k log n)` 処理を実証済み。
 - **TEST-JITC-43 (ホストコール ABI)**: 0〜6引数のホスト関数呼び出しにおけるスタックアライメントおよびCaller-savedレジスタの完全保護を実証済み。
 
 ## 4. 未検証・スコープ外
 
-- Thumb-2/RISC-V 実機ターゲットでの `constexpr` アセンブラ生成バイナリの実機検証。
+- ARMv8-Mの物理JIT仕様と実機検証はTBDであり、本書は受け入れ条件を定めない。

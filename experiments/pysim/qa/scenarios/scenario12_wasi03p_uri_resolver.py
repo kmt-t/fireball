@@ -17,7 +17,6 @@ Tests:
 from __future__ import annotations
 
 import struct
-import sys
 from pathlib import Path
 
 _PYSIM_DIR = Path(__file__).resolve().parent
@@ -25,7 +24,6 @@ while not (_PYSIM_DIR / "tier1_core").is_dir():
     _PYSIM_DIR = _PYSIM_DIR.parent
 
 
-from tier3_platform.drivers.hal.dummy import DummyDriver
 from fixtures.uvwasi_reference import UvwasiReferenceContext
 from hal_dispatch import (
     ARG_BUFFER_HANDLE,
@@ -35,10 +33,12 @@ from hal_dispatch import (
 )
 from system import System
 from system_containers import ReadOnlyFlatMapView
-from tier3_platform.drivers.platform_config import PlatformDriverConfiguration
 from tier3_platform.drivers.hal.bindings import DEFAULT_WASI_HAL_BINDINGS
+from tier3_platform.drivers.hal.dummy import DummyDriver
 from tier3_platform.drivers.hal.stream import DedicatedLogSink, StreamTransport
+from tier3_platform.drivers.platform_config import PlatformDriverConfiguration
 from tier3_platform.drivers.wasi.context import Wasi03pEngine, WasiHostContext, WasiIpcCmd
+
 
 def _params(*pairs: tuple[int, int]) -> ReadOnlyFlatMapView[int, int]:
     """Builds a parameter ReadOnlyFlatMapView from packed pairs, matching

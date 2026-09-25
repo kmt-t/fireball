@@ -16,7 +16,7 @@ i64またはf64のローカルを持つ関数で、コンパイル済みのJIT�
 ## 2. 再現手順
 
 ```bash
-.venv/Scripts/python.exe experiments/pysim/benchmarks/profile/bench_vtune_workload.py --phase suite_jit --kernel k_fmatmul:6
+uv run --offline --no-sync python experiments/pysim/benchmarks/profile/bench_vtune_workload.py --phase suite_jit --kernel k_fmatmul:6
 ```
 
 修正前の結果は、`AssertionError` である。
@@ -31,7 +31,7 @@ JITコンパイラは、幅が1でないローカルに触れるブロックだ�
 
 ## 4. 修正
 
-[`runtime_engine.py`](experiments/pysim/tier2_runtime/runtime_engine.py) の `_invoke_trace` から、この `assert` を削除した。
+[`runtime_engine.py`](experiments/pysim/tier3_executer/jit/runtime_engine.py) の `_invoke_trace` から、この `assert` を削除した。
 
 ## 5. 検証
 

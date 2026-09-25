@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
 _PYSIM_DIR = Path(__file__).resolve().parent
@@ -24,9 +23,9 @@ try:
 except ImportError:
     wasmtime = None
 
+from scheduler import Scheduler
 from tier3_executer.interpreter.interpreter import Interpreter, InterpreterBindings
 from tier3_executer.interpreter.interpreter import TrapCode as InterpreterTrapCode
-from scheduler import Scheduler
 from vmmio import (
     FC_STATIC_DEVICE,
     TrapCode,

@@ -23,6 +23,8 @@ typedef struct fireball_control_map_entry_native {
   uint32_t next_pc;
   uint32_t result_arity;
   uint32_t operand_width;
+  uint32_t br_table_target_count;
+  const uint32_t *br_table_targets;
 } fireball_control_map_entry_native;
 
 typedef struct fireball_execution_context_native {
@@ -41,7 +43,7 @@ typedef struct fireball_execution_context_native {
   uint32_t globals_base;
   uint32_t globals_limit;
   uint32_t handler_table;
-  uint32_t reserved0;
+  uint32_t runtime_flags;
   const uint8_t *code;
   uint32_t code_size;
   struct fireball_control_stack_native *control_stack;
@@ -50,6 +52,9 @@ typedef struct fireball_execution_context_native {
   struct fireball_call_stack_native *call_stack;
   uint32_t call_base;
   uint32_t call_offset;
+  uint32_t sp_capacity;
+  uint32_t loop_jump_count;
+  uint32_t loop_jump_threshold;
 } fireball_execution_context_native;
 
 typedef struct fireball_const_buffer_view_native {
@@ -202,11 +207,11 @@ static_assert(__is_trivially_copyable(call_frame_native));
 static_assert(__is_standard_layout(call_stack_native));
 static_assert(__is_trivially_copyable(call_stack_native));
 
-static_assert(sizeof(execution_context_native) == 112);
+static_assert(sizeof(execution_context_native) == 128);
 static_assert(offsetof(execution_context_native, ip) == 0x00);
 static_assert(offsetof(execution_context_native, mem_base) == 0x28);
 static_assert(offsetof(execution_context_native, handler_table) == 0x38);
-static_assert(offsetof(execution_context_native, reserved0) == 0x3c);
+static_assert(offsetof(execution_context_native, runtime_flags) == 0x3c);
 static_assert(offsetof(execution_context_native, code) == 0x40);
 static_assert(offsetof(execution_context_native, code_size) == 0x48);
 static_assert(offsetof(execution_context_native, control_stack) == 0x50);
@@ -215,8 +220,11 @@ static_assert(offsetof(execution_context_native, stack_checkpoint) == 0x5c);
 static_assert(offsetof(execution_context_native, call_stack) == 0x60);
 static_assert(offsetof(execution_context_native, call_base) == 0x68);
 static_assert(offsetof(execution_context_native, call_offset) == 0x6c);
+static_assert(offsetof(execution_context_native, sp_capacity) == 0x70);
+static_assert(offsetof(execution_context_native, loop_jump_count) == 0x74);
+static_assert(offsetof(execution_context_native, loop_jump_threshold) == 0x78);
 static_assert(sizeof(const_buffer_view_native) == 16);
-static_assert(sizeof(control_map_entry_native) == 20);
+static_assert(sizeof(control_map_entry_native) == 32);
 static_assert(sizeof(wasm_function_view_native) == 24);
 static_assert(sizeof(wasm_module_view_native) == 24);
 static_assert(sizeof(wasm_run_request_native) == 48);

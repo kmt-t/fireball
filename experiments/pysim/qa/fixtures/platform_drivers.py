@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from tier3_platform.drivers.platform_config import PlatformDriverConfiguration
+from fixtures.uvwasi_reference import UvwasiReferenceContext
 from tier3_platform.drivers.hal.bindings import DEFAULT_WASI_HAL_BINDINGS
 from tier3_platform.drivers.hal.stream import DedicatedLogSink, StreamTransport
-from fixtures.uvwasi_reference import UvwasiReferenceContext
+from tier3_platform.drivers.platform_config import PlatformDriverConfiguration
 
 
 def create_reference_platform_drivers(

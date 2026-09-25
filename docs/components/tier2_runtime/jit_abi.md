@@ -2,17 +2,17 @@
 
 <!-- traceability: {ContextPointerRegister} {PositionIndependentCode} {JIT_RuntimeAPI_Fallback} -->
 
-この文書は、Tier 2ランタイムがTier 3 Executerへ提供する、複雑な処理をCヘルパーへ委譲するためのABI契約を定義する。JITトレースはトレースヘッダに共通領域オフセットとトレース固有の委譲先関数アドレスを保持し、共通コード領域にヘルパー契約ごとに配置した呼出し入口を選択する。実行コンテキストはこのルーティング情報を保持しない。
+この文書は、Tier 2ランタイムがTier 3 Executerへ提供する、複雑な処理をCヘルパーへ委譲するためのABI契約を定義する。共通コード領域の入口offsetはビルド構成または配置時のrelocation情報で解決し、JIT trace headerにはtrace固有の委譲先関数アドレスだけを保持する。実行コンテキストはこのルーティング情報を保持しない。
 
-`execution_context` と関連するビュー型のC++ ABIは、固定フィールド順・サイズ・オフセットを持つ標準レイアウト構造体として定義する。インタープリタ単独実行とインタープリタからJITへの遷移で `ctx` のABI型を変えない。構造体は所有権を持たず、コード・関数表・結果配列は `address + length` の非所有ビューとして渡すため、呼び出し側が呼び出し完了まで対象領域の寿命を保証する。 `{ExecutionContext_Layout}` `{META_ZeroCostAbstraction}`
+確認済みx64実行構成の `execution_context` と関連ビュー型は、固定フィールド順・サイズ・オフセットを持つ標準レイアウト構造体として定義する。インタープリタ単独実行とインタープリタからJITへの遷移で `ctx` のABI型を変えない。構造体は所有権を持たず、コード・関数表・結果配列は `address + length` の非所有ビューとして渡すため、呼び出し側が呼び出し完了まで対象領域の寿命を保証する。ARMv8-Mの構造体配置、ポインタ幅、サイズ、offsetはすべてTBDである。 `{ExecutionContext_Layout}` `{META_ZeroCostAbstraction}`
 
 ## コンテキスト拡張
 
-既存の16個の32bit状態ワード（`+0x00`〜`+0x3F`）に、コードビュー、Native制御スタックビュー、境界フォールバック用チェックポイント、Native CallStackビューを続けて配置する。x86-64のコンテキスト全体は112バイトである。Cヘルパーアドレスはトレースごとのヘッダに置く。
+既存の16個の32bit状態ワード（`+0x00`〜`+0x3F`）に、コードビュー、Native制御スタックビュー、境界フォールバック用チェックポイント、Native CallStackビュー、オペランドスタック容量、およびLOOP後方分岐カウンタを続けて配置する。x86-64のコンテキスト全体は128バイトである。Cヘルパーアドレスはトレースごとのヘッダに置く。
 
 | オフセット | サイズ | フィールド | 用途 |
 | :--- | :--- | :--- | :--- |
-| `+0x3C` | 4バイト | reserved | 64bitポインタのアライメント |
+| `+0x3C` | 4バイト | runtime_flags | 実行時制御フラグ。Interpreterのブロック境界停止要求を含む |
 | `+0x40` | 8バイト | code | 現在のWASMコードの非所有アドレス |
 | `+0x48` | 4バイト | code_size | 現在のWASMコードのバイト数 |
 | `+0x50` | 8バイト | control_stack | Native制御スタックの非所有アドレス |
@@ -21,10 +21,17 @@
 | `+0x60` | 8バイト | call_stack | Native CallFrame配列の非所有アドレス |
 | `+0x68` | 4バイト | call_base | 現在のCallFrame窓の開始深さ |
 | `+0x6C` | 4バイト | call_offset | Native CallStackの現在の深さ |
+| `+0x70` | 4バイト | sp_capacity | オペランドスタックの論理容量（32bitワード数） |
+| `+0x74` | 4バイト | loop_jump_count | C++ Interpreterのbranch handlerが記録する、協調yieldまでの取得済み回数 |
+| `+0x78` | 4バイト | loop_jump_threshold | Tier 3が設定するLOOP後方分岐のyieldしきい値 |
 
-トレースヘッダの `helper_target_addr` は、当該トレースが委譲する関数のアドレスである。ヘルパー契約別入口はヘッダアドレスを受け取り、このフィールドをロードして対象ABIの関数呼出し規則で呼び出す。共通領域のオフセットは `common_prologue_offset`、`common_epilogue_offset`、`common_helper_offset`、`absolute_pool_offset` で解決する。共通領域に置く呼出しコードはトレースごとに複製しない。 `{PositionIndependentCode}`
+トレースヘッダの `helper_target_addr` は、当該トレースが委譲する関数のアドレスである。ヘルパー契約別入口はヘッダアドレスを受け取り、このフィールドをロードして対象ABIの関数呼出し規則で呼び出す。共通領域の開始・終了・helper・chain dispatcherオフセットはビルド構成または配置時のrelocation情報で解決し、トレースごとの物理ヘッダには保持しない。共通領域に置く呼出しコードはトレースごとに複製しない。 `{PositionIndependentCode}`
 
-`fireball_execution_context_native` は、32ビットのゲスト状態フィールド16個を持つ。コード、制御スタック、CallStack の非所有ビューも含む。x86-64 でのサイズは112バイトである。標準レイアウトを維持する。
+`fireball_execution_context_native` は、32ビットのゲスト状態フィールド16個を持つ。コード、制御スタック、CallStack の非所有ビュー、オペランドスタック容量、LOOP後方分岐カウンタとしきい値も含む。x86-64 でのサイズは128バイトである。標準レイアウトを維持する。
+
+## JITランタイム呼出し契約
+
+Tier 2は [`jit_runtime_contract.py`](experiments/pysim/tier2_runtime/jit_runtime_contract.py) で `JITRuntime` と `JITTrace` の呼出し形を定義する。Tier 3の実行ドライバはこの契約だけを通じてブロック情報、履歴記録、トレース検索、およびチェイン終端情報を取得する。契約はトレースキャッシュの配置・置換・リンク構造を公開しない。
 
 `fireball_call_frame_native` は、関数コード、ローカル幅、引数搬送、戻り境界を持つ96バイトの固定記述子である。`fireball_call_stack_native` は、32個の記述子を保持する固定長配列である。`fireball_const_buffer_view_native`、`fireball_wasm_function_view_native`、`fireball_wasm_module_view_native` は、WASM コードと関数メタデータを渡す非所有の標準レイアウト構造体である。この境界に文字列、`std::vector`、仮想関数、例外を含めない。 `{ExecutionContext_Layout}` `{META_NoStdVector}`
 
@@ -49,7 +56,7 @@ x64では、整数除算・剰余の4命令は、2つの入力を整数引数レ
 
 ## x64実行環境のトレースヘッダ
 
-以下はWindows x64およびSystem V AMD64で共通に使用する物理配置である。ARMv8-Mの配置と命令列は、Thumb-2ステンシル仕様で別に定義する。物理ポインタを格納する欄は64ビットとし、32ビットのWASM PC欄と混同しない。
+以下はWindows x64およびSystem V AMD64で共通に使用する物理配置である。ARMv8-Mの配置、命令列、ABIはすべてTBDであり、x64の確認結果から推定しない。物理ポインタを格納する欄は64ビットとし、32ビットのWASM PC欄と混同しない。
 
 | オフセット | フィールド | サイズ | 用途 |
 | :--- | :--- | ---: | :--- |
@@ -57,16 +64,11 @@ x64では、整数除算・剰余の4命令は、2つの入力を整数引数レ
 | `+0x04` | `trace_byte_size` | 2バイト | ヘッダを含むトレース全体の長さ |
 | `+0x06` | `flags` | 1バイト | 昇格・ループ先頭などの状態 |
 | `+0x07` | `variant_id` | 1バイト | レジスタ状態の識別子 |
-| `+0x08` | `chain_next_pc` | 4バイト | 論理的な直後のWASM PC |
-| `+0x0C` | `reserved` | 4バイト | 予約領域 |
-| `+0x10` | `chain_target_addr` | 8バイト | 直接チェイン先のネイティブアドレス |
-| `+0x18` | `common_prologue_offset` | 4バイト | 共通開始処理の領域内オフセット |
-| `+0x1C` | `common_epilogue_offset` | 4バイト | 共通終了処理の領域内オフセット |
-| `+0x20` | `common_helper_offset` | 4バイト | ヘルパー契約別入口の領域内オフセット |
-| `+0x24` | `helper_target_addr` | 8バイト | トレース固有ヘルパーのネイティブアドレス |
-| `+0x2C` | `absolute_pool_offset` | 4バイト | 共通アドレス領域のオフセット |
-| `+0x30` | `reserved` | 4バイト | 予約領域 |
+| `+0x08` | `chain_target_addr` | 8バイト | 共通chain dispatcherが読み取る次trace bodyのネイティブアドレス。未接続時は0 |
+| `+0x10` | `helper_target_addr` | 8バイト | trace固有のC helperアドレス |
 
-ヘッダ全体は52バイトであり、可変長のコード列は `+0x34` から始まる。`chain_target_addr` の更新はコード領域の書込みを伴うため、対象環境のW^X更新手順と命令同期を経てから実行可能状態へ戻す。解決済みの直接チェイン先は入口保存処理を重ねて実行しない位置を指し、未解決または無効化された場合は共通終了処理へ分岐する。
+ヘッダ全体は24バイトであり、traceのentry stubは `+0x18` から始まる。`chain_next` PCは実行時cache descriptorに保持し、物理ヘッダには重複して格納しない。`common_prologue_offset`、`common_epilogue_offset`、`common_helper_offset`、絶対アドレスpool位置はビルド構成または配置時のrelocation情報であり、traceごとに物理ヘッダへ保持しない。
 
-`common_helper_offset` はヘルパー契約に対応する個別入口を指す。コンテキスト型入口は `+0x30` に置き、x64のi32整数除算・剰余は `+0x160` から32バイト単位で4入口、wideヘルパーは `+0x200` から32バイト単位で11入口を置く。ARMv8-MのAAPCS外部関数呼出し入口も契約ごとに共通コード領域へ配置する。トレース本体には関数引数の組み替えや呼出し用のスタック領域確保を置かない。
+chainはtrace終端から共通コード領域のchain dispatcherへ移り、そのdispatcherが `chain_target_addr` のbodyへtail-jumpする経路を指す。dispatcherはWASM opcodeを判定しない。分岐命令の条件評価、control frame更新、後方分岐回数の記録はC++ Interpreterの命令別handlerが行い、そのhandler実行だけをchainとは呼ばない。chain targetの更新にはW^X手順を適用する。
+
+共通helper入口は契約ごとに個別配置し、trace bodyのexit rel32をinstallation時に選択した入口へpatchする。コンテキスト型入口は `0x030`、x64のi32整数除算・剰余は `0x160` から32バイト単位で4入口、wideヘルパーは `0x200` から32バイト単位で11入口を置く。ARMv8-Mのhelper呼出し入口と共通コード配置はTBDである。トレース本体には関数引数の組み替えや呼出し用のスタック領域確保を置かない。

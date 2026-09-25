@@ -29,11 +29,9 @@ from system_containers import (
     StaticVector,
 )
 
+from . import _jit_cache_native
 from .common_code import (
-    COMMON_ABSOLUTE_POOL_OFFSET,
-    COMMON_EPILOGUE_OFFSET,
     COMMON_HELPER_OFFSET,
-    COMMON_PROLOGUE_OFFSET,
     TRACE_ENTRY_STUB_BYTES,
     JITCodeCacheRegion,
 )
@@ -44,6 +42,7 @@ if TYPE_CHECKING:
 
 NativeTraceFn = Callable[[ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, int], int | None]
 TraceArgument = ctypes.c_void_p
+assert _jit_cache_native.FAST_SLOT_COUNT == JIT_CACHE_FAST_SLOT_COUNT
 
 
 class CardState:
@@ -302,29 +301,22 @@ class HistoryRing:
 
 class JITTraceHeader:
     """
-    x64-specific 52-byte fixed physical memory layout:
+    x64-specific 24-byte fixed physical memory layout:
         +0x00 head_wasm_pc(u32)
         +0x04 trace_byte_size(u16)
         +0x06 flags(u8) [0x01: PROMOTED, 0x02: LOOP_HEADER]
         +0x07 variant_id(u8)
-        +0x08 chain_next_pc(u32)
-        +0x0C reserved(u32)
-        +0x10 chain_target_addr(u64)
-        +0x18 common_prologue_offset(u32)
-        +0x1C common_epilogue_offset(u32)
-        +0x20 common_helper_offset(u32)
-        +0x24 helper_target_addr(u64)
-        +0x2C absolute_pool_offset(u32)
-        +0x30 reserved(u32)
+        +0x08 chain_target_addr(u64)
+        +0x10 helper_target_addr(u64)
+
+    The common helper entry is compiler metadata used by installation-time
+    relocation. Prologue, epilogue, and chain dispatcher offsets are fixed by
+    the build configuration and are not repeated in each trace header.
     """
 
     __slots__ = (
-        "absolute_pool_offset",
-        "chain_next_pc",
         "chain_target_addr",
-        "common_epilogue_offset",
         "common_helper_offset",
-        "common_prologue_offset",
         "flags",
         "head_wasm_pc",
         "helper_target_addr",
@@ -348,34 +340,25 @@ class JITTraceHeader:
         self.trace_byte_size = trace_byte_size & 0xFFFF
         self.flags = flags & 0xFF
         self.variant_id = variant_id & 0xFF
-        self.chain_next_pc: int | None = None
         self.chain_target_addr: int | None = None
-        self.common_prologue_offset = COMMON_PROLOGUE_OFFSET
-        self.common_epilogue_offset = COMMON_EPILOGUE_OFFSET
         self.common_helper_offset = COMMON_HELPER_OFFSET
         assert 0 <= helper_target_addr <= 0xFFFF_FFFF_FFFF_FFFF
         self.helper_target_addr = helper_target_addr
-        self.absolute_pool_offset = COMMON_ABSOLUTE_POOL_OFFSET
 
     def pack(self) -> bytes:
         import struct
 
-        return struct.pack(
-            "<IHBBIIQIIIQII",
+        packed = struct.pack(
+            "<IHBBQQ",
             self.head_wasm_pc,
             self.trace_byte_size,
             self.flags,
             self.variant_id,
-            self.chain_next_pc or 0,
-            0,
             self.chain_target_addr or 0,
-            self.common_prologue_offset,
-            self.common_epilogue_offset,
-            self.common_helper_offset,
             self.helper_target_addr,
-            self.absolute_pool_offset,
-            0,
         )
+        assert len(packed) == JIT_X64_TRACE_HEADER_BYTES
+        return packed
 
 
 class JITTrace:
@@ -384,8 +367,7 @@ class JITTrace:
     __slots__ = (
         "_exec_buf",
         "_keepalive",
-        "chain_fallback_patch_offset",
-        "chain_header_patch_offset",
+        "chain_dispatch_patch_offset",
         "chain_next",
         "code_blob",
         "code_offset",
@@ -400,7 +382,6 @@ class JITTrace:
         "helper_exit_patch_offset",
         "helper_header_patch_offset",
         "loops_to",
-        "native_loop_safe",
         "next_pc",
         "raw_addr",
         "result_words",
@@ -427,10 +408,8 @@ class JITTrace:
         exit_patch_offset: int = -1,
         helper_header_patch_offset: int = -1,
         helper_exit_patch_offset: int = -1,
-        chain_header_patch_offset: int = -1,
-        chain_fallback_patch_offset: int = -1,
+        chain_dispatch_patch_offset: int = -1,
         helper_target_addr: int = 0,
-        native_loop_safe: bool = False,
     ):
         self.head_pc = head_pc
         self.fn = fn or native_fn  # Direct ctypes CFUNCTYPE function pointer or callable
@@ -442,13 +421,11 @@ class JITTrace:
         self.exit_patch_offset = exit_patch_offset
         self.helper_header_patch_offset = helper_header_patch_offset
         self.helper_exit_patch_offset = helper_exit_patch_offset
-        self.chain_header_patch_offset = chain_header_patch_offset
-        self.chain_fallback_patch_offset = chain_fallback_patch_offset
+        self.chain_dispatch_patch_offset = chain_dispatch_patch_offset
         assert size_bytes >= JIT_X64_TRACE_HEADER_BYTES
         self.size_bytes = size_bytes
         self.next_pc = next_pc  # Unconditional fallthrough successor
         self.loops_to = loops_to  # Conditional loop backedge (never auto-chained)
-        self.native_loop_safe = native_loop_safe
         self.has_return_val = has_return_val
         assert result_words > 0
         self.result_words = result_words
@@ -620,11 +597,12 @@ class JITMultiBufferCache:
     """3-bank rotating JIT cache with bounded O(n + k log n) purge and XOR lookup."""
 
     __slots__ = (
-        "_fast_slots",
+        "_fast_cache",
         "active_idx",
         "banks",
         "code_region",
         "evictions",
+        "generation",
         "oldest_idx",
         "on_evict",
         "on_rotate",
@@ -648,24 +626,14 @@ class JITMultiBufferCache:
         self.active_idx, self.warm_idx, self.oldest_idx = 0, 1, 2
         self.promotions = 0
         self.evictions = 0
+        self.generation = 0
         self.on_evict: Callable[[StaticVector[int]], None] | None = None
         # Called once at the end of every rotate() (never by flush_all()); the
         # runtime engine runs one {JIT_CardAgingSweep} step from it.
         self.on_rotate: Callable[[], int] | None = None
         # Direct-mapped 16-slot cache keyed by a repeatedly folded XOR over
         # UnifiedPC.
-        self._fast_slots: StaticVector[tuple[int, JITTrace] | None] = StaticVector(
-            capacity=self.NUM_FAST_SLOTS
-        )
-        for _ in range(self.NUM_FAST_SLOTS):
-            self._fast_slots.append(None)
-
-    def _hash_slot(self, pc: int) -> int:
-        """Fold a 32-bit UnifiedPC with three XORs and select four bits."""
-        temp = pc ^ (pc >> 16)
-        temp = temp ^ (temp >> 8)
-        temp = temp ^ (temp >> 4)
-        return temp & (self.NUM_FAST_SLOTS - 1)
+        self._fast_cache = _jit_cache_native.FastCache()
 
     @property
     def active(self) -> JITCacheBank:
@@ -726,16 +694,17 @@ class JITMultiBufferCache:
         target_bank = self.find_bank(target.head_pc)
         assert target_bank is self.active or target_bank is self.warm
         source.chain_next = target.head_pc
-        source.header.chain_next_pc = target.head_pc
         self._set_chain_target(source, target)
         if not target_bank.inbound_sources.contains(source.head_pc):
             target_bank.inbound_sources.append(source.head_pc)
+        self.generation += 1
 
     def _unlink_chain(self, source: JITTrace) -> None:
         source.chain_next = None
         source.header.chain_target_addr = 0
         if source.code_offset is not None and source.raw_addr is not None:
             self.code_region.patch_header_u64(source.code_offset, 0)
+        self.generation += 1
 
     def _try_link_chain(self, source: JITTrace) -> None:
         if not self._chain_eligible(source):
@@ -765,26 +734,25 @@ class JITMultiBufferCache:
             trace.exit_patch_offset,
             trace.helper_header_patch_offset,
             trace.helper_exit_patch_offset,
-            trace.chain_header_patch_offset,
-            trace.chain_fallback_patch_offset,
+            trace.chain_dispatch_patch_offset,
+            trace.header.common_helper_offset,
         )
         trace.fn = fn
         trace.raw_addr = raw_addr
         trace._exec_buf = self.code_region.buffer
 
     def lookup(self, head_pc: int) -> JITTrace | None:
-        slot = self._hash_slot(head_pc)
-        cached = self._fast_slots[slot]
-        if cached is not None and cached[0] == head_pc:
-            return cached[1]
+        cached = self._fast_cache.lookup(head_pc)
+        if cached is not None:
+            return cached
 
         trace = self.active.get_trace(head_pc)
         if trace is not None:
-            self._fast_slots[slot] = (head_pc, trace)
+            self._fast_cache.store(head_pc, trace)
             return trace
         trace = self.warm.get_trace(head_pc)
         if trace is not None:
-            self._fast_slots[slot] = (head_pc, trace)
+            self._fast_cache.store(head_pc, trace)
             return trace
         trace = self.oldest.get_trace(head_pc)
         if trace is None:
@@ -809,6 +777,9 @@ class JITMultiBufferCache:
                 following_sources.append(src_pc)
         for src_pc in following_sources:
             old_oldest.inbound_sources.remove(src_pc)
+            src_trace = self.find_trace(src_pc)
+            if src_trace is not None:
+                self._unlink_chain(src_trace)
 
         if not self.active.allocate(trace):
             self.rotate()
@@ -825,7 +796,8 @@ class JITMultiBufferCache:
         self._try_link_chain(trace)
 
         self.promotions += 1
-        self._fast_slots[slot] = (head_pc, trace)
+        self._fast_cache.store(head_pc, trace)
+        self.generation += 1
         return trace
 
     def insert(self, trace: JITTrace) -> bool:
@@ -842,8 +814,8 @@ class JITMultiBufferCache:
                     res_succ = resident_t.next_pc
                     if res_succ == trace.head_pc:
                         self._link_chain(resident_t, trace)
-        slot = self._hash_slot(trace.head_pc)
-        self._fast_slots[slot] = (trace.head_pc, trace)
+        self._fast_cache.store(trace.head_pc, trace)
+        self.generation += 1
         return True
 
     def rotate(self) -> StaticVector[int]:
@@ -859,15 +831,12 @@ class JITMultiBufferCache:
         # Unlink inbound chains, then clear all slots in the bank being purged.
         for src_pc in old_oldest_bank.inbound_sources:
             src_trace = self.find_trace(src_pc)
-            if (
-                src_trace is not None
-                and src_trace.chain_next is not None
-                and old_oldest_bank.has_trace(src_trace.chain_next)
-            ):
+            target_pc = src_trace.chain_next if src_trace is not None else None
+            if target_pc is not None and old_oldest_bank.has_trace(target_pc):
                 # Check if target was promoted to Active
-                target_in_active = self.banks[new_warm].get_trace(
-                    src_trace.chain_next
-                ) or self.banks[self.active_idx].get_trace(src_trace.chain_next)
+                target_in_active = self.banks[new_warm].get_trace(target_pc) or self.banks[
+                    self.active_idx
+                ].get_trace(target_pc)
                 if target_in_active is None:
                     self._unlink_chain(src_trace)
 
@@ -876,13 +845,12 @@ class JITMultiBufferCache:
         self.active_idx = new_active
         self.warm_idx = new_warm
         self.oldest_idx = new_oldest
-        self._fast_slots = StaticVector(capacity=self.NUM_FAST_SLOTS)
-        for _ in range(self.NUM_FAST_SLOTS):
-            self._fast_slots.append(None)
+        self._fast_cache.clear()
         if self.on_evict and purged_pcs:
             self.on_evict(purged_pcs)
         if self.on_rotate:
             self.on_rotate()
+        self.generation += 1
         return purged_pcs
 
     def flush_all(self) -> None:
@@ -895,6 +863,5 @@ class JITMultiBufferCache:
             self.evictions += len(purged)
             if self.on_evict and purged:
                 self.on_evict(purged)
-        self._fast_slots = StaticVector(capacity=self.NUM_FAST_SLOTS)
-        for _ in range(self.NUM_FAST_SLOTS):
-            self._fast_slots.append(None)
+        self._fast_cache.clear()
+        self.generation += 1

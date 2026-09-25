@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import sys
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -29,9 +28,9 @@ from ipc_router import (
     ScopeKind,
     pack_key32,
 )
-from tier2_runtime.logger import LogDictionary, Logger, LogLevel
 from memory import FB_CONF_MEMORY_POOL_SIZE, MemoryManager
 from scheduler import Scheduler
+from tier2_runtime.logger import LogDictionary, Logger, LogLevel
 from tier3_platform.drivers.hal.stream import StreamTransport
 
 # kv_pair key_ids (ipc_router.md §3.3): Functional scope, UINT32 values.
@@ -55,7 +54,7 @@ def test_scenario_ipc_router_and_logging():
     # -------------------------------------------------------------------------
     sched = Scheduler()
     manager = MemoryManager(sched)
-    assert manager.init_manager(0x20020000, FB_CONF_MEMORY_POOL_SIZE).is_ok
+    assert manager.init_manager(0x00010000, FB_CONF_MEMORY_POOL_SIZE).is_ok
     router = IPCRouter(sched, manager)
 
     # IPC is inter-*task* communication: both parties below are genuine

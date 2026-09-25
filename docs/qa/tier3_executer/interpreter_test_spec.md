@@ -3,7 +3,7 @@
 ## 1. 目的と対象範囲
 
 正本: [`interpreter.md`](docs/components/tier3_executer/interpreter.md), [`wasm_instruction_set.md`](docs/specs/wasm_instruction_set.md)
-`{ThreadedInterpreter}` は、4論理引数の継続渡しハンドラ方式を示す。本書では、独立した3本の値領域と関数呼出し記述子領域も検証する。ラベルアリティに基づくスタックプルーニング、i32/i64演算、境界チェック付きメモリアクセス、Safepointポーリングも対象とする。
+`{ThreadedInterpreter}` は、4論理引数の継続渡しハンドラ方式を示す。本書では、独立した3本の値領域と関数呼出し記述子領域も検証する。ラベルアリティに基づくスタックプルーニング、i32/i64演算、境界チェック付きメモリアクセス、およびLOOP後方分岐回数による協調yield境界も対象とする。
 
 ## 2. テストケース一覧
 <!-- traceability: {InterpreterContextStackless} -->
@@ -14,7 +14,7 @@
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | TEST-INTP-01 | ハンドラのシグネチャと継続結果が4論理引数(`ctx, sp, local_base, tos`)である | 実装コードを確認 | 各opcodeハンドラの引数と結果を確認 | すべてのハンドラが同一の4引数シグネチャを持ち、継続時は次回呼び出し用の4引数とトラップ状態を返す。正常終了は継続なし、トラップは非NULLのトラップ情報で表す | wasm_instruction_set.md, interpreter.md |
 | TEST-INTP-02 | ハンドラテーブルによるディスパッチ | - | ディスパッチ機構を確認 | opcode→ハンドラ関数のテーブル参照で分岐し、線形if-elif連鎖ではない | 同上 |
-| TEST-INTP-03 | Interpreter handlerとJIT traceの引数ABI | JITトレース生成 | handlerとtrace entryの型・引数配置を比較 | 両者は`ctx, sp, local_base, tos`の4引数配置を共有するが、Interpreter handlerは`handler_result`、JIT trace entryは`void`を返し、関数ポインタ型は分離される | `{ContextPointerRegister}` `{AAPCS_FastCall}` `{PositionIndependentCode}` |
+| TEST-INTP-03 | Interpreter handlerとJIT traceの論理引数契約 | JITトレース生成 | handlerとtrace entryの型・引数配置を比較 | 両者は`ctx, sp, local_base, tos`の4論理引数を共有するが、Interpreter handlerは`handler_result`、JIT trace entryは`void`を返し、関数ポインタ型は分離される。x64の物理ABIは対象ABI定義に従い、ARMv8-Mの物理配置はTBD | `{ContextPointerRegister}` `{CPS_4Args}` `{PositionIndependentCode}` |
 | TEST-INTP-04 | JITトレースからインタープリタへのシームレスフォールバック | 未コンパイルのブロックへ分岐 | トレース実行完了 | トレース末尾でインタープリタへスムーズに復帰し、後続ブロックをインタープリタが継続実行する | `{JIT_LazyChaining}` `{JIT_RuntimeAPI_Fallback}` |
 
 ### Python互換の継続入口とネイティブ境界
@@ -39,7 +39,7 @@
 | TEST-INTP-13 | 戻り値の受け渡し | 関数が1個の結果を返す | `return`実行後の呼び出し元スタック | 呼び出し元のスタックに正しく結果が積まれる | interpreter_concept.py `execute_function` |
 | TEST-INTP-14 | オペランド領域とローカル値領域の容量独立性 | オペランド領域の残容量が1、ローカル値領域に空きがある | 既存のオペランド値を保持したまま引数付き関数を呼び出す | ローカル値領域へ引数を積め、関数結果と呼び出し元オペランド領域の値が正しく保持される | interpreter_concept.py `test_independent_operand_and_local_stacks`, [`interpreter_stack_model.py`](docs/components/tier3_executer/formal/interpreter_stack_model.py) |
 | TEST-INTP-15 | 3本の値領域・関数呼出し記述子分離・関数復帰結果の形式検証 | 通常モデルと`guards=False`変異モデル | [`interpreter_stack_model.py`](docs/components/tier3_executer/formal/interpreter_stack_model.py)を実行 | 通常モデルでは値領域独立性、関数呼出し記述子とローカル値の分離、関数結果保持の3性質が成立し、各変異モデルでは対応性質が反証される | [`interpreter_stack_model.py`](docs/components/tier3_executer/formal/interpreter_stack_model.py) |
-| TEST-INTP-16 | ネストしたcalleeの戻り値と関数呼出し記述子の復帰 | callerがcalleeを呼び、calleeがi32/i64/f32/f64を返す | calleeの`return`処理を実行 | 戻り値は共有オペランド領域へ残り、calleeの関数呼出し記述子が取り除かれ、call helperが復帰sentinelを消費してcallerへ戻る。C/AAPCS戻り値レジスタや専用戻り値バッファは使用しない | `interpreter.md` 関数復帰の番兵 |
+| TEST-INTP-16 | ネストしたcalleeの戻り値と関数呼出し記述子の復帰 | callerがcalleeを呼び、calleeがi32/i64/f32/f64を返す | calleeの`return`処理を実行 | 戻り値は共有オペランド領域へ残り、calleeの関数呼出し記述子が取り除かれ、call helperが復帰sentinelを消費してcallerへ戻る。ホストABIの戻り値規約とWASM共有領域の戻り値規約を混同しない。x64の物理ABIは定義済み、ARMv8-MはTBD | `interpreter.md` 関数復帰の番兵 |
 | TEST-INTP-17 | トップレベル復帰のRETURN sentinel | 最外周WASM関数がreturnする | return handlerとRuntimeEngineを実行 | sentinelはInterpreterのreturn handlerだけが生成し、RuntimeEngineが実行完了を判定する。JITはsentinelを生成しない | `interpreter.md` 関数復帰の番兵 |
 | TEST-INTP-18 | 関数呼出し記述子とローカル値領域の分離 | callerが引数付きcalleeを呼び出す | call helperでcalleeの実行区画を開始し、calleeから復帰する | 記述子は独立した領域に置かれ、`frame_offset`がローカル値領域の開始ワード位置を示す。ローカル値領域にはローカル値だけが入り、復帰時に記述子を取り除いて`local_offset`とローカル値領域の長さを保存位置へ戻す | `interpreter.md` 関数呼び出し境界、`interpreter_concept.py`、`test_interpreter.py` TEST-INTP-70 |
 
@@ -75,12 +75,12 @@
 | TEST-INTP-42 | `i64.store8/16/32` | 同上 | 各幅で書き込み | 指定幅のみ書き込まれ、他バイトは変化しない | interpreter_concept.py |
 | TEST-INTP-43 | 全幅共通の境界外トラップ | `addr + width > len(memory)` | 各load/store | `WASMTrap("OUT_OF_BOUNDS_MEMORY_ACCESS")` | interpreter_concept.py 全load/store |
 
-### Cooperative Safepoint (poll_safepoint)
+### LOOP後方分岐のyield threshold
 
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| TEST-INTP-50 | ループ背進辺でのSafepointポーリング | `safepoint_pending = True`かつ無限ループ | 実行 | `br`がループ先頭へ戻る直前に`SAFEPOINT_YIELD`を返して中断する | interpreter_concept.py `test_cooperative_safepoint` |
-| TEST-INTP-51 | Safepoint未発生時は通常続行 | `interrupt_flag = False` | ループ実行 | ポーリングは行われるが中断されない | interpreter_concept.py `poll_safepoint` |
+| TEST-INTP-50 | LOOP後方分岐回数による協調yield | 共通contextの後方分岐回数がしきい値未満 | C++ InterpreterまたはHybrid JITでループを実行 | C++ handlerが取得したLOOP後方分岐を数え、しきい値到達時に共通C++ dispatcherがyield statusを返す。handlerごとにPython/vSoCへ復帰しない | `runtime_vsoc.md`「後方分岐とyield回数」 |
+| TEST-INTP-51 | LOOP後方分岐yieldしきい値未満で実行継続 | 共通contextの後方分岐回数がしきい値未満 | ループを実行 | C++ dispatcherはhandlerと常駐JIT traceを同一実行内で継続し、しきい値前にRuntimeEngineやCOOSへyieldしない | `runtime_vsoc.md`「後方分岐とyield回数」 |
 
 ### デバッグ構成とインタープリタ専用実行 ({DebuggerInterpreterComposition})
 
@@ -102,18 +102,19 @@
 | TEST-INTP-73 | フレームごとのスロット幅の決定 | i32のみ、f32のみ、i64を含む、f64ローカルを含む、ローカルなしの関数 | ロード後の幅マップ（ローカルごとの幅を2ビットで保持）のスロット幅と `local_slot_count_cache` を確認し、各関数を実行する | i32/f32のみは1ワード、i64/f64を含むと2ワードになる。ローカルなしは1ワードでスロット数は0である。全ローカルの幅がスロット幅以下である。実行結果が正しい | GOTCHA-INTP-22 |
 | TEST-INTP-74 | 32ビットのみのフレームによるローカル値領域の節約 | 16個のローカルを持つ再帰関数。一方はi32のみ、他方はf64ローカルを1個含む | 同じ再帰深さで実行する | i32のみの版は、1フレーム16ワードで7フレームが128ワードに収まり、成功する。f64を含む版は、1フレーム34ワードで7フレームが128ワードを超え、容量超過で停止する | GOTCHA-INTP-22 |
 | TEST-INTP-75 | Native CallFrameの固定ABIと積載順序 | 関数を1つ開始し、Native CallStackが空 | `_build_frame` 後にコンテキストと最上位CallFrameを検査する | `call_stack` がコンテキストへ接続され、CallFrameが関数番号、コードビュー、ローカル幅・スロット数、引数個数、制御ベースの順序で保持される。終了後はCallStack深さと`call_offset`が0へ戻る | `interpreter.md` `CallFrame_Layout` `{ExecutionContext_Layout}` |
+| TEST-INTP-76 | C++ InterpreterのPython復帰回数境界 | C++ native extensionをビルド済みで、LOOP後方辺を持つWASM関数がある | `FB_CONF_RUNTIME_YIELD_THRESHOLD * 2 + 1` 回の取得済み後方分岐を実行し、native dispatchの復帰statusと最終結果を確認する | statusはしきい値到達ごとに `YIELD`、最後に `COMPLETE` の順で返る。Interpreterはyieldごとに回数を0へ戻して再開し、同じ共通しきい値を使うHybrid JITのPython/COOS復帰条件と一致する | `{ADR_LoopBackedgeYield}`, [`test_interpreter.py`](experiments/pysim/qa/tier3_executer/interpreter/test_interpreter.py) `test_native_interpreter_returns_to_python_at_loop_yield_counts` |
 
 ### 実装の勘所・不変条件（Gotchas & Implementation Invariants）
 <!-- traceability: {InterpreterContextStackless} {JIT_RuntimeAPI_Fallback} -->
 
 | GOTCHA ID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| GOTCHA-INTP-01 | 継続渡し第4論理引数 `tos`（R3）とスタックメモリの境界同期 | スタック空状態から複数回の push/pop | `i32.const` および二項演算を連続実行 | スタック空時は `tos=0`、値 push 時は旧 `tos` がスタックメモリへ退避され新値が `tos` に格納、値 pop 時はスタックメモリから次段値が `tos` に復元される。**実装の勘所**: `tos` は第4引数レジスタ `R3` に保持されるため、スタックメモリ（`[R1, #sp_offset]`）上の深さは「全オペランド数 - 1」となり、スタック空の境界条件でアンダーフロー誤検知や未定義値を発生させてはならない | `interpreter.md`「実行コンテキスト」, `{AAPCS_FastCall}` |
-| GOTCHA-INTP-02 | Label Arity スタック巻き戻し時の TOS 復元 | `block (result i32)` 内で値を push 後に `br 0` | ブロック脱出を実行 | ブロック開始時の深さまでスタックが巻き戻され、宣言アリティ分の結果値のうち最上位値が正しく `R3: tos` レジスタへ復元されて次ハンドラへ渡る。**実装の勘所**: スタックメモリを巻き戻しただけで `tos` レジスタを更新し忘れると、脱出前の破棄された値が `tos` に残り後続命令で不正計算となる | `interpreter.md` |
+| GOTCHA-INTP-01 | 継続渡し第4論理引数 `tos` とスタック領域の境界同期 | スタック空状態から複数回の push/pop | `i32.const` および二項演算を連続実行 | スタック空時は `tos=0`、値push時は旧`tos`がスタック領域へ退避され新値が`tos`に格納される。pop時は次段値が`tos`へ復元される。物理レジスタ割当は対象ABIに従い、ARMv8-MはTBD | `interpreter.md`「実行コンテキスト」, `{CPS_4Args}` |
+| GOTCHA-INTP-02 | Label Arity スタック巻き戻し時の TOS 復元 | `block (result i32)` 内で値をpush後に`br 0` | ブロック脱出を実行 | ブロック開始時の深さまでスタックが巻き戻され、宣言アリティ分の結果値のうち最上位値が論理`tos`へ復元されて次handlerへ渡る。破棄された値が`tos`に残ってはならない | `interpreter.md` |
 | GOTCHA-INTP-03 | if 条件偽（else節なし）での制御フレームリーク防止 | `if (cond=0)` で else 節なし | `if` 命令を実行 | `match_offset + 1` へジャンプする際、`_Frame("if")` がスタックに残らずフレームスタックの深さが不変に保たれる。**実装の勘所**: 条件成立時と同様にフレームを積んでからジャンプすると、対応する `END` 命令をスキップした際にフレームが回収されずスタックリークとなる | `interpreter.md` |
 | GOTCHA-INTP-04 | UnifiedPC による多重モジュール空間の衝突防止 | 複数モジュールがロードされ、同一オフセット（例: 0x0010）を持つ関数が存在 | 各モジュールの関数を実行 | JIT キャッシュ引き当てやデバッグブレークポイント判定において、`(func_index << 16) \| bytecode_offset` の32bit表現で一意に区別され、他モジュールの同一オフセットと決して誤衝突しない | `interpreter.md`, `{PositionIndependentCode}` |
 | GOTCHA-INTP-05 | 実行時の命令オブジェクト生成・二分探索排除 | 関数呼び出しおよび命令ステップ実行 | `_build_frame` および `step()` を実行 | `_build_frame` および `step()` の命令フェッチが、オフセット→命令の逆引きテーブルを一切経由せず、生のバイト列（`frame.code[ip]`）から直接デコードする。**実装の勘所**: WASM バイト列に対して実行時に中間オブジェクトをアロケーションしたり、可変長オフセットを埋めるために二分探索を挟むと、組み込み環境でメモリを枯渇させ、実行時間の半分以上を探索に浪費する | `interpreter.md` `{DirectBytecodeExecution}` |
-| GOTCHA-INTP-06 | JIT が代行した分岐脱出でのフレーム内容不正利用防止 | ループが if 文の中に入れ子になっており、内側ループの脱出条件がコンパイル済み | 内側・外側の双方のループが複数回実行されるまで駆動を継続する | 外側ループ自身の分岐が正しく外側ループの先頭へ解決され、結果値が期待通りになる。**実装の勘所**: `loop`/`block`/`if` の脱出を JIT トレースがインタープリタを介さずに直接解決すると、その脱出に対応するフレームの積み下ろしは一切行われない。以前インタープリタが直接その構文を実行していた際に積まれたフレームが回収されずに残留すると、後続の深さ相対な分岐命令が誤った階層を対象に解決してしまう。フレームスタックの深さを切り詰めるだけでは、逆方向（本来もっと積まれているべき）のズレは直せない。よって `br` / `br_if` / `else` の分岐先解決はフレームスタックの中身を一切信用せず、ベーシックブロック抽出時に静的解決済みの `next_pc` / `loops_to` を直接使う。深さの切り詰め自体は、JIT が `END` 通過を代行し続けることでスタックが際限なく伸びるのを防ぐ安全策としてのみ残す | InterpreterContextStackless, ADR-INTERP-03, JIT_RuntimeAPI_Fallback |
+| GOTCHA-INTP-06 | JIT終端命令のC++ Interpreter handler実行 | 入れ子のloop/ifを持つ関数で、内側の分岐条件ブロックがコンパイル済み | JIT実行後、条件分岐を複数回通過する | 終端命令PCからC++ handlerが呼ばれ、残余条件を消費し、実行中の制御frameに従って分岐・stack pruningを行う。結果はInterpreter専用実行と一致し、通常経路では同じC++ dispatcher内で次のJIT lookupが行われる。**実装の勘所**: Python側で条件や静的な遷移先を再計算すると、Interpreter handlerの状態遷移を迂回して制御frameがずれる。C++ handlerが分岐とframe操作を一元して行う | InterpreterContextStackless, ADR-INTERP-03, JIT_RuntimeAPI_Fallback, `test_jitr_br_if_loop_exit_jit_result_correct` |
 
 ### 追加GOTCHA一覧（マージ判定用）
 
@@ -142,9 +143,10 @@
 
 - **継続渡しディスパッチと3本の独立領域 (TEST-INTP-01〜14)**: 4論理引数、オペランド領域のアンダー／オーバーフロー、ローカル値領域上の再帰呼び出し、戻り値、容量独立性。
 - **Python互換のネイティブ継続実験 (TEST-INTP-05〜09)**: 通常Python入口、全175ハンドラを対象にしたC関数ポインタチェイン、musttail継続、分岐境界、AO-Bench差分の一致。
+- **ネイティブディスパッチのyield回数境界 (TEST-INTP-76)**: C++ InterpreterのPython復帰statusが共有後方分岐しきい値で返り、yieldごとの再開後に正しい結果へ到達すること。
 - **ラベルアリティ & プルーニング (TEST-INTP-20〜23)**: ブロック脱出、ループ背進辺、多重ネスト br_table。
 - **i64全演算 & メモリアクセス (TEST-INTP-30〜43)**: 64bit算術・シフト・ビットカウント・境界外トラップ。
-- **Safepointポーリング (TEST-INTP-50〜51)**: ループ背進辺での協調的ポーリング。
+- **LOOP後方分岐の協調yield (TEST-INTP-50〜51)**: 共通回数しきい値に達した時だけC++ dispatcherからRuntimeEngineへ戻る。
 - **デバッグ構成 (TEST-INTP-60〜62, 65)**: インタープリタ専用構成、ブレークポイント停止、およびアタッチ中のJIT不使用。
 
 ## 4. 未検証・スコープ外

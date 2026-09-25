@@ -33,16 +33,13 @@ You need Clang, CMake, Ninja, and Python (with `uv` recommended) to build and ve
   - CMake (3.25+)
   - Ninja
 - **Python Runtime & Package Management**:
-  - Python 3.11+ (CI verified; [`uv`](https://github.com/astral-sh/uv) recommended)
+  - Python 3.14.x for the repository `.venv`; [`uv`](https://github.com/astral-sh/uv) manages the environment.
 - **Python Dependencies**:
-  Install all required Python modules using [requirements.txt](requirements.txt):
+  Install the repository development dependencies from [pyproject.toml](pyproject.toml):
   ```bash
-  # Using uv (fast & recommended):
-  uv pip install -r requirements.txt
-
-  # Or using standard pip:
-  pip install -r requirements.txt
+  uv sync
   ```
+  `requirements.txt` remains a compatibility mirror for tools that require a requirements file.
   Key modules include:
   - **Verification Engine (`spec-integrator`)**: `pyModelChecking` (CTL/LTL formal verification), `mistune` (Markdown AST parser), `pyyaml`, `requests`, `urllib3`, `mermaidx`.
   - **Simulator & JIT Machine Code (`experiments/pysim`)**: `wasmtime` (WASM reference runtime for differential testing).
@@ -88,10 +85,10 @@ ninja
 ### 3. Python Reference Simulator (`experiments/pysim/`)
 ```bash
 # Run all 12 end-to-end integration scenarios
-uv run --system-certs --with wasmtime python experiments/pysim/qa/scenarios/run_all.py
+uv run --offline --no-sync python experiments/pysim/qa/scenarios/run_all.py
 
 # Run 3D AO-Bench (Ambient Occlusion) benchmark
-uv run --system-certs --with wasmtime python experiments/pysim/aobench.py
+uv run --offline --no-sync python experiments/pysim/aobench.py
 ```
 
 ## Documentation and Development Process

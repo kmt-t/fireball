@@ -5,7 +5,6 @@ Unit tests for Tier 2 Runtime: Virtual MMIO Controller
 Traceability: runtime_vmmio_test_spec.md
 """
 
-import sys
 from pathlib import Path
 
 # Setup paths

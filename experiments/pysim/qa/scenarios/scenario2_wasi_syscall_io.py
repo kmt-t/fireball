@@ -1,4 +1,3 @@
-import sys
 from pathlib import Path
 
 _PYSIM_DIR = Path(__file__).resolve().parent
@@ -21,9 +20,9 @@ except ImportError:
     wasmtime = None
 
 import wasm_opcodes as op
-from tier3_platform.drivers.hal.dummy import DummyDriver
-from tier3_executer.interpreter.interpreter import Interpreter, InterpreterBindings
 from system import System
+from tier3_executer.interpreter.interpreter import Interpreter, InterpreterBindings
+from tier3_platform.drivers.hal.dummy import DummyDriver
 from tier3_platform.drivers.wasi.context import WasiHostContext
 from wasm_reader import parse
 

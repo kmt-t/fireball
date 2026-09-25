@@ -10,7 +10,6 @@ from __future__ import annotations
 import threading
 from collections.abc import Generator, Mapping
 
-from tier3_plugins.debugger.debugger import DebuggerManager, GDBRspProtocol
 from execution_context import WASMContext
 from scheduler import ChannelAction
 from tier3_platform.drivers.debugger.transport import (
@@ -18,6 +17,7 @@ from tier3_platform.drivers.debugger.transport import (
     DebuggerSink,
     SocketDebuggerSink,
 )
+from tier3_plugins.debugger.debugger import DebuggerManager, GDBRspProtocol
 from wasm_module import BasicBlock
 
 

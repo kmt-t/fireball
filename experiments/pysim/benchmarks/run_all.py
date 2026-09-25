@@ -145,12 +145,15 @@ def main():
             f"  * JIT vs native interpreter:           "
             f"{1.0 / jit_res['jit_speedup_vs_native_ratio']:.2f}x slower"
         )
-    print(
-        f"  * JIT Execution Coverage:             "
-        f"{jit_res['jit_loop_trace_invocations']:,} trace invocations, "
-        f"{jit_res['jit_loop_chain_hits']:,} chain hits, "
-        f"{jit_res['jit_loop_interpreter_steps']:,} interpreter steps"
-    )
+    if jit_res["runtime_profile_stats_enabled"]:
+        print(
+            f"  * JIT Execution Coverage:             "
+            f"{jit_res['jit_loop_trace_invocations']:,} trace invocations, "
+            f"{jit_res['jit_loop_native_dispatch_trace_transitions']:,} dispatcher trace transitions, "
+            f"{jit_res['jit_loop_interpreter_steps']:,} interpreter steps"
+        )
+    else:
+        print("  * JIT Execution Coverage:             runtime stats compiled out")
     print(
         f"  * PIC Trace-Header Helper Tail Jump:  {jit_res['context_helper_tail_mops']:.2f} M ops/s  ({jit_res['context_helper_tail_ns']:.1f} ns/dispatch; {jit_res['context_helper_tail_invocations']:,} calls)"
     )
@@ -201,10 +204,13 @@ def main():
         f"  * Tier 3 (Hybrid + JIT):              {ao_res['t3_time_ms']:.2f} ms  ({ao_res['t3_rays_per_sec']:,.0f} Rays / Sec)"
     )
     print(f"  * Measured Speedup:                   {ao_res['speedup_ratio']:.2f}x faster")
-    print(
-        f"  * JIT Chained Invocations:            {ao_res['chain_invocations']:,} / "
-        f"{ao_res['jit_invocations']:,} ({ao_res['chain_invocations'] / ao_res['jit_invocations'] * 100.0:.1f}%)"
-    )
+    if ao_res["runtime_profile_stats_enabled"]:
+        print(
+            f"  * JIT trace transitions:              "
+            f"{ao_res['native_dispatch_trace_transitions']:,}"
+        )
+    else:
+        print("  * JIT trace transitions:              runtime stats compiled out")
     print(f"  * Active JIT Cache Bank Traces:       {ao_res['compiled_traces']} compiled traces")
     print("=" * 80)
     print(f"[PASS] All benchmarks completed successfully in {t_total:.2f} seconds.")

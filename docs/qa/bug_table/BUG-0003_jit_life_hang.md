@@ -14,7 +14,7 @@
 ## 2. 再現手順
 
 ```bash
-timeout 90 .venv/Scripts/python.exe experiments/pysim/benchmarks/profile/bench_vtune_workload.py --phase suite_jit --kernel k_life:1
+timeout 90 uv run --offline --no-sync python experiments/pysim/benchmarks/profile/bench_vtune_workload.py --phase suite_jit --kernel k_life:1
 ```
 
 実測結果は、90秒でタイムアウトした（終了コード124）。出力は空である。
@@ -34,4 +34,3 @@ BUG-0001と同じである。加えて、ハングのため自動実行の安全
 ## 5. 修正と検証
 
 BUG-0009の修正後、`k_life` は1単位と22単位の両方で終了し、wasmtimeと一致した。
-

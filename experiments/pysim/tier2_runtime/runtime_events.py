@@ -18,7 +18,7 @@ class RuntimeEventKind(IntEnum):
     JIT_EXIT = 6
     HOST_CALL_ENTER = 7
     HOST_CALL_EXIT = 8
-    SAFEPOINT = 9
+    COOS_BOUNDARY = 9
     TRAP = 10
     DEBUG_STOP = 11
 

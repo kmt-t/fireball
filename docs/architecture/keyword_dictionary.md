@@ -2,7 +2,7 @@
 
 この文書は、Fireball プロジェクトにおける**全仕様・アーキテクチャ・コンポーネント・リンクキーワード（全 270 件）の索引台帳**である。キーワードID、定義を記述する正本の所在、関連コンポーネント、および検証情報を管理する。
 
-章節項番号（`§3.3` 等）や見出し文字列による参照は、仕様改訂に伴う見出し変更・章番号ズレによって陳腐化しやすい。Fireball では本文中の `{Keyword}` を一意な定義・参照アンカーとして使い、この台帳はアンカーIDと定義元の所在を示す索引として機械的な相互参照を支援する。台帳のID表記はバッククォート付きの `Keyword` とし、台帳行を定義・参照として数えない。
+章節項番号（`§3.3` 等）や見出し文字列による参照は、仕様改訂に伴う見出し変更・章番号ズレによって陳腐化しやすい。Fireball では本文中の `&#123;Keyword&#125;` を一意な定義・参照アンカーとして使い、この台帳はアンカーIDと定義元の所在を示す索引として機械的な相互参照を支援する。台帳のID表記はバッククォート付きの `Keyword` とし、台帳行を定義・参照として数えない。
 
 ---
 
@@ -18,20 +18,20 @@
 | **GLOBAL** | `{GLOBAL_*}` | システム全体（多数の仕様書）にまたがって適用される広域ポリシー、プラットフォーム要件。 | `document_structure.md`, `requirement_list.md` |
 | **ARCHITECTURE** | `{ADR_*}`, `{Challenge_*}`, 原則名 | 全体アーキテクチャ決定（ADR）、設計上の挑戦課題・制約（Challenge）、およびクリーンアーキテクチャ等の共通設計原則。 | `requirement_list.md`, `document_structure.md` |
 | **COMPONENT & GOTCHA** | 各コンポーネント名, `{GOTCHA-<COMPONENT>-<連番>}` | 各コンポーネント（Tier 1〜3）の具体的な機能・インターフェース仕様要求、および実装・テスト上の勘所・落とし穴（GOTCHA）。 | `requirement_list.md`, 各コンポーネント設計書 |
-| **LINK** | `{*_Layout}`, `{*_FastCall}`, 機構名 | コンポーネント間・ドキュメント間の物理メモリレイアウト整合、低層ディスパッチ規約、内部バイパス・状態連携のための専用リンクアンカー。 | `keyword_dictionary.md`, 各コンポーネント設計書 |
+| **LINK** | `{*_Layout}`, `{*_FastCall}`, 機構名 | コンポーネント間・ドキュメント間の物理メモリレイアウト整合、低層ディスパッチ規約、内部バイパス・状態連携のための専用リンクアンカー。 | 各コンポーネント設計書 |
 
 ### 1.2 アンカー運用とトレーサビリティ検証ルール
 
 1. **章節項番号依存の禁止**: ドキュメント間の参照において「§3.3を参照」「第4章を参照」といった章番号依存の記述を禁止し、キーワードアンカーを用いて紐付ける。
 2. **定義は一箇所、参照は複数箇所**:
-   - **定義**: 定義内容を記述する正本の仕様本文または表に `{Keyword}` を直接インライン記述する。各キーワードにつき定義は全資料を通じて必ず一箇所とし、台帳のIDと概要は定義内容に数えない。
-   - **参照**: キーワードを参照・追跡する側は、セクション直下の HTML コメント `<!-- traceability: {Keyword1} {Keyword2} -->` に記述する。参照は複数の文書・セクションにあってよい。本文中にダミーの参照行（例: `関連キーワード: {...}`）をインライン記述してはならない。
+   - **定義**: 定義内容を記述する正本の仕様本文または表に `&#123;Keyword&#125;` を直接インライン記述する。各キーワードにつき定義は全資料を通じて必ず一箇所とし、台帳のIDと概要は定義内容に数えない。
+   - **参照**: キーワードを参照・追跡する側は、セクション直下の HTML コメント `<!-- traceability: &#123;Keyword1&#125; &#123;Keyword2&#125; -->` に記述する。参照は複数の文書・セクションにあってよい。本文中にダミーの参照行（例: `関連キーワード: &#123;...&#125;`）をインライン記述してはならない。
 3. **台帳一元管理と所在の記録**: すべてのキーワードIDと定義元ファイルを本台帳に登録する。所在欄は検索用のメタデータであり、キーワードの意味を定義する文章の代用にしない。
 4. **spec-integrator による完全検証**: [`check-doc.ps1`](tools/check-doc.ps1)（`spec-integrator` パイプライン）が全 Markdown 文書をパースし、`DocGraph` による静的リンク検証、トレーサビリティ検証、Tier 階層違反（逆流）検証を自動実行する。重複定義または未定義参照が検出された場合は、理由および `document_structure.md` / `keyword_dictionary.md` の確認案内を出力してエラーとする。
 
 ### 1.3 キーワードとテストケースIDの採番規則
 
-- **キーワードは意味を持つ名前にする**: `{Keyword}` は要求・設計判断・コンポーネント仕様・設計の勘所を表す意味的なアンカーであり、単なる連番を割り当てない。「接頭辞＋数字」だけのキーワードは新設禁止とする。
+- **キーワードは意味を持つ名前にする**: `&#123;Keyword&#125;` は要求・設計判断・コンポーネント仕様・設計の勘所を表す意味的なアンカーであり、単なる連番を割り当てない。「接頭辞＋数字」だけのキーワードは新設禁止とする。
 - **GOTCHA の形式**: `GOTCHA-<COMPONENT>-<連番>` は、実装の勘所・不変条件を表す固有IDとして使用してよい。ただし、台帳に設計理由を記載し、対応するテスト仕様書のテストケースIDと紐づけること。これは意味を持つ GOTCHA 分類のIDであり、汎用的な連番キーワードではない。
 - **純粋なリンクアンカーだけは `LINK-<連番>`**: 要求や設計内容を表さず、機械的な文書間リンクのためだけに必要なアンカーは `LINK-<連番>` とする。物理レイアウトやレジスタ規約など、それ自体に意味がある連携契約は、既存の `{ExecutionContext_Layout}` のような意味名を使用する。
 - **テストケースIDはキーワードと別物**: `TEST-<コンポーネント>-<テスト番号>`（例: `TEST-INT-01`、`TEST-MEM-14`、`TEST-JITR-26`）をテスト仕様書のテストケースIDに使用し、`{...}` で囲んだキーワードとして扱わない。台帳・仕様書では列名を「対応テストケースID（キーワードではない）」とし、キーワードとの紐づけを示す場合は、意味キーワードとテストケースIDを別欄・別表で記載する。
@@ -129,10 +129,10 @@ Fireball の全体構造、依存性の方向、リソース予算、品質保�
 | `ADR_PageGranularPermissionIsolation` | `runtime_memory.md` | `runtime_memory.md` | 共有メモリの独立した4KB仮想予約スロット単位での排他所有権管理とアクセス権限分離（PTEの`owner_id`とスケジューラの現在タスクIDを照合し、Revoke時はPTE/TLBを無効化） | TEST-MEM-14, TEST-MEM-15 |
 | `ADR_RendezvousChannel` | `requirement_list.md` | `os_coos.md` | チャネル通信における純粋ランデブー方式（バッファリングなし即時所有権移譲）採用 | - |
 | `ADR_SafeQueuingOnHotMiss` | `requirement_list.md` | `jit_runtime.md` | JIT キャッシュミス時の安全なキューイングとインタープリタ実行継続 | - |
-| `ADR_ScalableCodeOffset` | `requirement_list.md` | `jit_compiler.md` | 可変長コードオフセットによる Thumb-2 / AArch64 ジャンプ命令最適化 | - |
+| `ADR_ScalableCodeOffset` | `requirement_list.md` | `jit_compiler.md` | x64でコードキャッシュoffsetを整列単位へ縮約して保持する。ARMv8-Mの表現はTBD | - |
 | `ADR_SharedBlockRaii` | `requirement_list.md` | `system_memory.md` | RAII ガードによる共有メモリブロックの安全かつ確実なスコープ解放 | - |
 | `ADR_TosCacheAsymmetry` | `requirement_list.md` | `interpreter.md` | トップ・オブ・スタック（TOS）レジスタキャッシュの非対称同期アーキテクチャ | - |
-| `ADR_TraceBoundaryYield` | `interpreter.md` | `interpreter.md` | インタープリタの命令ハンドラが vSoC へ制御を返す頻度をトレース境界に限定する設計判断 | Scenario 6 (TEST-INT-50) |
+| `ADR_LoopBackedgeYield` | `runtime_vsoc.md` | `runtime_vsoc.md` | C++ dispatcherがInterpreterとJIT traceを共通LOOP後方辺しきい値まで実行し、到達時に協調yield statusを返す実行契約 | TEST-VSOC-10, TEST-VSOC-11 |
 
 ---
 
@@ -142,7 +142,6 @@ Fireball の全体構造、依存性の方向、リソース予算、品質保�
 
 | キーワードID | 定義元の所在（索引） | 対象コンポーネント | 仕様概要・検証内容 |
 | :--- | :--- | :--- | :--- |
-| `Challenge_ApproximateYield` | `requirement_list.md` | `runtime_vsoc.md` | 命令カウント概算に基づく Yield 判定の精度とレイテンシのトレードオフ解決 |
 | `Challenge_CoosBlockedList` | `requirement_list.md` | `os_scheduler.md` | ブロック状態タスクの走査オーバーヘッド抑制と O(1) 状態遷移の保証 |
 | `Challenge_CspHandoffStarvation` | `requirement_list.md` | `ipc_router.md` | 連続 CSP 直接ハンドオフを上限で打ち切り、スケジューラへ制御を戻す（全タスクの公平性・実時間応答を保証するものではない） |
 | `Challenge_DebuggerResource` | `requirement_list.md` | `debugger.md` | リソース制約の厳しい組み込み環境におけるデバッガ常駐 RAM/ROM 最小化 |
@@ -163,21 +162,21 @@ OSスケジューラ（`os_coos`, `os_scheduler`）、静的コンテナ（`syst
 
 | キーワードID | 定義元の所在（索引） | 対象コンポーネント | 仕様概要・検証内容 | 対応テストケースID（キーワードではない） |
 | :--- | :--- | :--- | :--- | :--- |
-| `CooperativeMultitasking` | `os_coos.md` | `os_coos.md` | コルーチン協調型マルチタスク実行エンジン | Scenario 6 (TEST-INT-50) |
-| `COOS_Deterministic` | `os_coos.md` | `os_coos.md` | 完全決定論的なタスク切り替えと実行順序保証 | - |
-| `COOS_Scheduling_Refine` | `os_coos.md` | `os_coos.md` | スケジューラディスパッチサイクルの最適化と省電力スタンバイ | - |
-| `COOS_Transparent` | `os_coos.md` | `os_coos.md` | タスクコンテキストを意識させない透過的コルーチン抽象化 | - |
+| `CooperativeMultitasking` | `requirement_list.md` | `os_coos.md` | コルーチン協調型マルチタスク実行エンジン | Scenario 6 (TEST-INT-50) |
+| `COOS_Deterministic` | `requirement_list.md` | `os_coos.md` | 完全決定論的なタスク切り替えと実行順序保証 | - |
+| `COOS_Scheduling_Refine` | `requirement_list.md` | `os_coos.md` | スケジューラディスパッチサイクルの最適化と省電力スタンバイ | - |
+| `COOS_Transparent` | `requirement_list.md` | `os_coos.md` | タスクコンテキストを意識させない透過的コルーチン抽象化 | - |
 | `CSPCommunication` | `os_coos.md` | `os_coos.md` | ホーアCSPに基づく所有権移譲ゼロコピーメッセージパッシング | Scenario 9 (TEST-INT-80) |
-| `CSP_Handoff` | `os_coos.md` | `os_coos.md` | チャネルランデブーによるタスク間所有権移譲と直接コンテキストスイッチ | - |
-| `DirectContextSwitch` | `os_scheduler.md` | `os_scheduler.md` | READYキューを経由しないコルーチン直接ジャンプ超低レイテンシ遷移 | Scenario 6, 9 (TEST-INT-50, TEST-INT-80) |
-| `LowOverheadSwitch` | `os_scheduler.md` | `os_scheduler.md` | レジスタ退避を最小限に抑えた超高速コンテキストスイッチ | - |
-| `TaskPollInterruptEvent` | `os_scheduler.md` | `os_scheduler.md` | タスク切り替え境界での原因付き割り込みイベント安全配送 | - |
-| `PackedBitView` | `system_containers.md` | `system_containers.md` | ビット単位でのパック構造とメモリ効率の高いフラットビットビュー | - |
-| `FlatViewNarrowing` | `system_containers.md` | `system_containers.md` | フラットビューのスコープ限定・スライシングによる安全な部分アクセス | - |
-| `LightweightVerifier` | `system_config.md` | `system_config.md` | 実行前バリデーションを行う軽量静的検証エンジン | - |
-| `ServiceFacade` | `system_config.md` | `system_config.md` | システム共通サービスへのアクセスを一元化するファサード | - |
-| `ServiceSelfReboot` | `system_config.md` | `system_config.md` | 異常検知時におけるサービス自己再起動シーケンス | - |
-| `SelfReboot_via_Event` | `system_config.md` | `system_config.md` | イベント通知契機による協調的セルフリブート | - |
+| `CSP_Handoff` | `requirement_list.md` | `os_coos.md` | チャネルランデブーによるタスク間所有権移譲と直接コンテキストスイッチ | - |
+| `DirectContextSwitch` | `requirement_list.md` | `os_scheduler.md` | READYキューを経由しないコルーチン直接ジャンプ超低レイテンシ遷移 | Scenario 6, 9 (TEST-INT-50, TEST-INT-80) |
+| `LowOverheadSwitch` | `requirement_list.md` | `os_scheduler.md` | レジスタ退避を最小限に抑えた超高速コンテキストスイッチ | - |
+| `TaskPollInterruptEvent` | `requirement_list.md` | `os_scheduler.md` | タスク切り替え境界での原因付き割り込みイベント安全配送 | - |
+| `PackedBitView` | `requirement_list.md` | `system_containers.md` | ビット単位でのパック構造とメモリ効率の高いフラットビットビュー | - |
+| `FlatViewNarrowing` | `requirement_list.md` | `system_containers.md` | フラットビューのスコープ限定・スライシングによる安全な部分アクセス | - |
+| `LightweightVerifier` | `requirement_list.md` | `system_config.md` | 実行前バリデーションを行う軽量静的検証エンジン | - |
+| `ServiceFacade` | `requirement_list.md` | `system_config.md` | システム共通サービスへのアクセスを一元化するファサード | - |
+| `ServiceSelfReboot` | `requirement_list.md` | `system_config.md` | 異常検知時におけるサービス自己再起動シーケンス | - |
+| `SelfReboot_via_Event` | `requirement_list.md` | `system_config.md` | イベント通知契機による協調的セルフリブート | - |
 
 #### 4.1.2 Tier 1 Core 設計の勘所 (GOTCHA) (9 件)
 
@@ -203,25 +202,25 @@ OSスケジューラ（`os_coos`, `os_scheduler`）、静的コンテナ（`syst
 
 | キーワードID | 定義元の所在（索引） | 対象コンポーネント | 仕様概要・検証内容 |
 | :--- | :--- | :--- | :--- |
-| `IPCRouter` | `ipc_router.md` | `ipc_router.md` | URIルーティングとRBAC認可を司る中央IPCルータ |
-| `IPC_HandleBased` | `ipc_router.md` | `ipc_router.md` | ハンドルベースのセキュアかつ高速なIPCエンドポイント管理 |
-| `URIAbstraction` | `ipc_router.md` | `ipc_router.md` | サービス識別子のURI抽象化による物理アドレス非依存通信 |
-| `IPCDI` | `ipc_router.md` | `ipc_router.md` | IPCチャネルへの依存性注入による疎結合コンポーネント接続 |
+| `IPCRouter` | `requirement_list.md` | `ipc_router.md` | URIルーティングとRBAC認可を司る中央IPCルータ |
+| `IPC_HandleBased` | `requirement_list.md` | `ipc_router.md` | ハンドルベースのセキュアかつ高速なIPCエンドポイント管理 |
+| `URIAbstraction` | `requirement_list.md` | `ipc_router.md` | サービス識別子のURI抽象化による物理アドレス非依存通信 |
+| `IPCDI` | `requirement_list.md` | `ipc_router.md` | IPCチャネルへの依存性注入による疎結合コンポーネント接続 |
 | `RoleBasedAccessControl` | `ipc_router.md` | `ipc_router.md` | ロールベースのIPCアクセス制御によるサービス保護 |
-| `OwnershipTransfer` | `ipc_router.md` | `ipc_router.md` | ゼロコピーメッセージの排他所有権完全移譲モデル |
-| `IPC_ZeroCopy` | `ipc_router.md` | `ipc_router.md` | ポインタ・記述子の受け渡しによるコピーレスIPC |
-| `IPC_Resource_Isolation` | `ipc_router.md` | `ipc_router.md` | タスク間での通信リソース枯渇波及を防ぐリソース隔離 |
-| `LowLatencyLookup` | `ipc_router.md` | `ipc_router.md` | ハッシュ/フラットマップによるURIルーティングの低レイテンシルックアップ |
-| `Asynchronous_Notification` | `ipc_router.md` | `ipc_router.md` | 非同期イベント通知とタスクウェイクアップの連携 |
-| `IPCRegistry` | `ipc_router.md` | `ipc_router.md` | コンパイル時または初期化時に確定する静的サービスレジストリ |
-| `WASI_Implementation` | `interface_wit.md` | `interface_wit.md` | WASI (Preview 1) システムインターフェースの最小サブセット実装 |
-| `WASI_Async_Bridge` | `interface_wit.md` | `interface_wit.md` | WASI 同期I/O呼び出しとCOOS協調マルチタスクの非同期ブリッジ |
-| `WIT_Interface_Spec` | `interface_wit.md` | `interface_wit.md` | WebAssembly Component Model WIT形式による型安全インターフェース定義 |
-| `WIT_Common_Types` | `interface_wit.md` | `interface_wit.md` | コンポーネント間で共通利用される標準型語彙定義 |
-| `WIT_Interface_Purpose` | `interface_wit.md` | `interface_wit.md` | 明確なインターフェース責務定義と自己修復ストラテジの結合 |
-| `WIT_First` | `interface_wit.md` | `interface_wit.md` | 実装コードに先行してWITインターフェース契約を定義する開発スタンス |
-| `Type_Vocabulary` | `interface_wit.md` | `interface_wit.md` | システム全体で整合した標準型ボキャブラリの策定 |
-| `TypeSafeMessaging` | `ipc_router.md` | `ipc_router.md` | メッセージペイロードの静的型安全性とアライメント保証 |
+| `OwnershipTransfer` | `requirement_list.md` | `ipc_router.md` | ゼロコピーメッセージの排他所有権完全移譲モデル |
+| `IPC_ZeroCopy` | `requirement_list.md` | `ipc_router.md` | ポインタ・記述子の受け渡しによるコピーレスIPC |
+| `IPC_Resource_Isolation` | `requirement_list.md` | `ipc_router.md` | タスク間での通信リソース枯渇波及を防ぐリソース隔離 |
+| `LowLatencyLookup` | `requirement_list.md` | `ipc_router.md` | ハッシュ/フラットマップによるURIルーティングの低レイテンシルックアップ |
+| `Asynchronous_Notification` | `requirement_list.md` | `ipc_router.md` | 非同期イベント通知とタスクウェイクアップの連携 |
+| `IPCRegistry` | `requirement_list.md` | `ipc_router.md` | コンパイル時または初期化時に確定する静的サービスレジストリ |
+| `WASI_Implementation` | `requirement_list.md` | `interface_wit.md` | WASI (Preview 1) システムインターフェースの最小サブセット実装 |
+| `WASI_Async_Bridge` | `requirement_list.md` | `interface_wit.md` | WASI 同期I/O呼び出しとCOOS協調マルチタスクの非同期ブリッジ |
+| `WIT_Interface_Spec` | `requirement_list.md` | `interface_wit.md` | WebAssembly Component Model WIT形式による型安全インターフェース定義 |
+| `WIT_Common_Types` | `requirement_list.md` | `interface_wit.md` | コンポーネント間で共通利用される標準型語彙定義 |
+| `WIT_Interface_Purpose` | `requirement_list.md` | `interface_wit.md` | 明確なインターフェース責務定義と自己修復ストラテジの結合 |
+| `WIT_First` | `requirement_list.md` | `interface_wit.md` | 実装コードに先行してWITインターフェース契約を定義する開発スタンス |
+| `Type_Vocabulary` | `requirement_list.md` | `interface_wit.md` | システム全体で整合した標準型ボキャブラリの策定 |
+| `TypeSafeMessaging` | `requirement_list.md` | `ipc_router.md` | メッセージペイロードの静的型安全性とアライメント保証 |
 
 #### 4.2.2 Tier 1 Interface 設計の勘所 (GOTCHA) (2 件)
 
@@ -240,55 +239,55 @@ WASM 実行基盤（`runtime_vsoc`）、ランタイムプラグイン構成契�
 
 | キーワードID | 定義元の所在（索引） | 対象コンポーネント | 仕様概要・検証内容 | 対応テストケースID（キーワードではない） |
 | :--- | :--- | :--- | :--- | :--- |
-| `EnvironmentPointer` | `runtime_vsoc.md` | `runtime_vsoc.md` | ゲスト実行環境 execution_context ポインタのレジスタ保持と統一参照 | - |
-| `WasmPageAlignment` | `runtime_vsoc.md` | `runtime_vsoc.md` | WASM 64KB ページ単位のアライメントとメモリ保護 | - |
-| `UnifiedAccessModel` | `runtime_vsoc.md` | `runtime_vsoc.md` | リニアメモリ・vMMIO・共有メモリの統一アドレス変換モデル | - |
-| `NativeAPI_Export` | `runtime_vsoc.md` | `runtime_vsoc.md` | ホストネイティブ関数をゲスト環境へ安全に公開するエクスポート機構 | - |
-| `MultiModule_Support` | `runtime_vsoc.md` | `runtime_vsoc.md` | 複数 WASM モジュールの独立インスタンス化と名前空間分離 | - |
-| `JIT_Safepoint` | `runtime_vsoc.md` | `runtime_vsoc.md` | JIT 生成コードおよびインタープリタ内の協調的セーフポイントポーリング | - |
-| `OneRuntimeOneGuest` | `runtime_vsoc.md` | `runtime_vsoc.md` | 1ランタイム1ゲストの直交分離。マルチインスタンスは独立ランタイム並行起動とIPC協調で実現 | - |
-| `Runtime_BumpAllocator` | `runtime_loader.md` | `runtime_loader.md` | ランタイム単位の固定長データバンプアロケータ所有。モジュール内のシステムコンテナストレージ確保とアンロード時 $O(1)$ 一括解放（W^Xコード分離） | - |
-| `ThreadedInterpreter` | `interpreter.md` | `interpreter.md` | 継続渡し4論理引数ディスパッチ、独立領域、レジスタ保持による高速命令実行 | Scenario 1〜12 |
-| `MemoryBoundaryCheck` | `interpreter.md` | `interpreter.md` | ゲストリニアメモリ境界外アクセスのトラップ遮断 | Scenario 1, 8, 10 |
-| `FastAddressCheck` | `system_config.md` | `system_config.md` | ゲストRAMの有効サイズとアドレスを比較し、境界外アクセスをマスクで折り返さず即時トラップする。vMMIO実装がこの契約に従う | - |
-| `Interpreter_LazyJITSwitch` | `interpreter.md` | `interpreter.md` | ホットスポット検出時のインタープリタからJITコードへの遅延遷移 | - |
+| `EnvironmentPointer` | `requirement_list.md` | `runtime_vsoc.md` | ゲスト実行環境 execution_context ポインタのレジスタ保持と統一参照 | - |
+| `WasmPageAlignment` | `requirement_list.md` | `runtime_vsoc.md` | WASM 64KB ページ単位のアライメントとメモリ保護 | - |
+| `UnifiedAccessModel` | `requirement_list.md` | `runtime_vsoc.md` | リニアメモリ・vMMIO・共有メモリの統一アドレス変換モデル | - |
+| `NativeAPI_Export` | `requirement_list.md` | `runtime_vsoc.md` | ホストネイティブ関数をゲスト環境へ安全に公開するエクスポート機構 | - |
+| `MultiModule_Support` | `requirement_list.md` | `runtime_vsoc.md` | 複数 WASM モジュールの独立インスタンス化と名前空間分離 | - |
+| `JIT_BackedgeYield` | `requirement_list.md` | `runtime_vsoc.md` | 取得したLOOP後方辺を共通回数しきい値までC++内で処理し、到達時にRuntimeEngineへyield statusを返す | - |
+| `OneRuntimeOneGuest` | `requirement_list.md` | `runtime_vsoc.md` | 1ランタイム1ゲストの直交分離。マルチインスタンスは独立ランタイム並行起動とIPC協調で実現 | - |
+| `Runtime_BumpAllocator` | `requirement_list.md` | `runtime_loader.md` | ランタイム単位の固定長データバンプアロケータ所有。モジュール内のシステムコンテナストレージ確保とアンロード時 $O(1)$ 一括解放（W^Xコード分離） | - |
+| `ThreadedInterpreter` | `requirement_list.md` | `interpreter.md` | 継続渡し4論理引数ディスパッチと独立領域による命令実行。物理ABIは対象ごとに定め、ARMv8-MはTBD | Scenario 1〜12 |
+| `MemoryBoundaryCheck` | `requirement_list.md` | `interpreter.md` | ゲストリニアメモリ境界外アクセスのトラップ遮断 | Scenario 1, 8, 10 |
+| `FastAddressCheck` | `requirement_list.md` | `runtime_vmmio.md` | ゲストRAMの有効サイズとアドレスを比較し、境界外アクセスをマスクで折り返さず即時トラップする。vMMIO実装がこの契約に従う | - |
+| `Interpreter_LazyJITSwitch` | `requirement_list.md` | `interpreter.md` | ホットスポット検出時のインタープリタからJITコードへの遅延遷移 | - |
 | `InterpreterContextStackless` | `interpreter.md` | `interpreter.md` | ホストC++コールスタックを消費しないスタックレスインタープリタ設計 | - |
-| `ROMParsing` | `runtime_loader.md` | `runtime_loader.md` | WASM バイナリの Zero-Copy ロード・直接解析 | Scenario 1 |
-| `SinglePassCompilation` | `runtime_loader.md` | `runtime_loader.md` | WASM ロード時における単一パスでのセクション解析・インデックス構築 | - |
-| `Wasm32Only` | `runtime_loader.md` | `runtime_loader.md` | wasm32 アーキテクチャに特化したフットプリント最適化 | - |
-| `ZeroCopyIndexing` | `runtime_loader.md` | `runtime_loader.md` | ROM上のバイナリ構造をコピーせず直接指すゼロコピーインデックス | - |
-| `vMMIO_TrapAndEmulate` | `runtime_vmmio.md` | `runtime_vmmio.md` | 仮想デバイスアクセス時のトラップ・ホストフック代理ディスパッチ | Scenario 10 (TEST-INT-91) |
-| `DynamicMmap` | `runtime_vmmio.md` | `runtime_vmmio.md` | 共有メモリID指定による外部バッファの動的 vMMIO マッピング | Scenario 10 |
-| `vMMIO_Isolation` | `runtime_vmmio.md` | `runtime_vmmio.md` | 仮想MMIO領域のタスク間排他と不正アクセスからの保護 | - |
-| `vMMIO_TLB` | `runtime_vmmio.md` | `runtime_vmmio.md` | Direct-Mapped TLB による仮想アドレスから物理アドレスへの高速変換 | - |
-| `VDMA` | `runtime_vmmio.md` | `runtime_vmmio.md` | 仮想ダイレクトメモリアクセス（vDMA）によるバルクデータ転送アクセラレーション | - |
-| `Debug_Integrated` | `debugger.md` | `debugger.md` | Runtime の実行制御契約へ接続された軽量デバッグ支援プラグイン | - |
-| `Debug_Standard_Env` | `debugger.md` | `debugger.md` | 標準的なGDBクライアントから透過的に接続可能なデバッグ環境 | - |
-| `RSPMinimalSet` | `debugger.md` | `debugger.md` | GDB RSP 最小コマンドセット（?, g/G, m/M, Z0/z0, s, c）の実ソケット対話 | Scenario 7, 8 (TEST-INT-60〜TEST-INT-64) |
-| `RSP_Transport_Selectable` | `debugger.md` | `debugger.md` | UART/TCP 等のトランスポート層を切り替え可能な GDB RSP 設計 | - |
-| `DebuggerInterpreterComposition` | `debugger.md` | `debugger.md` | デバッグ実行をインタープリタとデバッガの静的構成に固定する | Scenario 7 |
-| `MemoryIsolation` | `runtime_memory.md` | `runtime_memory.md` | MPU によるコード領域・スタック領域・共有メモリ領域のハードウェア保護 | - |
-| `System_Allocator` | `runtime_memory.md` | `runtime_memory.md` | システム基盤用 dlmalloc アロケータ（`system_allocator`）。システムコンテナ内部ストレージの動的確保・個別解放 | - |
-| `Shm_Allocator` | `runtime_memory.md` | `runtime_memory.md` | IPC 共有メモリ領域（MPU Region 6）用 dlmalloc アロケータ。可変長 shared_block の切り出し・RAII解放時合体 | - |
-| `HAL_Interface` | `hal_dispatch.md` | `hal_dispatch.md` | 物理ハードウェアと上位層を抽象化する統一 HAL インターフェース | - |
-| `BufferedLogging` | `runtime_logging.md` | `runtime_logging.md` | 実行時リングバッファ蓄積と COOS idle_hook での一括 UART フラッシュ | Scenario 9 (TEST-INT-82) |
-| `DictionaryBasedIPC` | `runtime_logging.md` | `runtime_logging.md` | 静的 LogDictionary、危険書式（%s/%p）の登録時静的拒絶 | Scenario 9 (TEST-INT-82) |
-| `Syscall_Mapping` | `runtime_syscall.md` | `runtime_syscall.md` | WASM システムコール番号から内部ハンドラへの決定論的マッピング | - |
-| `Syscall_Return_Value` | `runtime_syscall.md` | `runtime_syscall.md` | システムコール実行結果・エラーコードの規格化された返却規約 | - |
-| `Trap_Interface` | `runtime_syscall.md` | `runtime_syscall.md` | ゲスト不正動作検知時のトラップ発行と安全停止インターフェース | - |
+| `ROMParsing` | `requirement_list.md` | `runtime_loader.md` | WASM バイナリの Zero-Copy ロード・直接解析 | Scenario 1 |
+| `SinglePassCompilation` | `requirement_list.md` | `runtime_loader.md` | WASM ロード時における単一パスでのセクション解析・インデックス構築 | - |
+| `Wasm32Only` | `requirement_list.md` | `runtime_loader.md` | wasm32 アーキテクチャに特化したフットプリント最適化 | - |
+| `ZeroCopyIndexing` | `requirement_list.md` | `runtime_loader.md` | ROM上のバイナリ構造をコピーせず直接指すゼロコピーインデックス | - |
+| `vMMIO_TrapAndEmulate` | `requirement_list.md` | `runtime_vmmio.md` | 仮想デバイスアクセス時のトラップ・ホストフック代理ディスパッチ | Scenario 10 (TEST-INT-91) |
+| `DynamicMmap` | `requirement_list.md` | `runtime_vmmio.md` | 共有メモリID指定による外部バッファの動的 vMMIO マッピング | Scenario 10 |
+| `vMMIO_Isolation` | `requirement_list.md` | `runtime_vmmio.md` | 仮想MMIO領域のタスク間排他と不正アクセスからの保護 | - |
+| `vMMIO_TLB` | `requirement_list.md` | `runtime_vmmio.md` | Direct-Mapped TLB による仮想アドレスから物理アドレスへの高速変換 | - |
+| `VDMA` | `requirement_list.md` | `runtime_vmmio.md` | 仮想ダイレクトメモリアクセス（vDMA）によるバルクデータ転送アクセラレーション | - |
+| `Debug_Integrated` | `requirement_list.md` | `debugger.md` | Runtime の実行制御契約へ接続された軽量デバッグ支援プラグイン | - |
+| `Debug_Standard_Env` | `requirement_list.md` | `debugger.md` | 標準的なGDBクライアントから透過的に接続可能なデバッグ環境 | - |
+| `RSPMinimalSet` | `requirement_list.md` | `debugger.md` | GDB RSP 最小コマンドセット（?, g/G, m/M, Z0/z0, s, c）の実ソケット対話 | Scenario 7, 8 (TEST-INT-60〜TEST-INT-64) |
+| `RSP_Transport_Selectable` | `requirement_list.md` | `debugger.md` | UART/TCP 等のトランスポート層を切り替え可能な GDB RSP 設計 | - |
+| `DebuggerInterpreterComposition` | `requirement_list.md` | `debugger.md` | デバッグ実行をインタープリタとデバッガの静的構成に固定する | Scenario 7 |
+| `MemoryIsolation` | `requirement_list.md` | `runtime_memory.md` | ソフトウェア所有権と対象プラットフォームの保護機構によるコード・スタック・共有メモリの分離。ARMv8-Mの物理方式はTBD | - |
+| `System_Allocator` | `requirement_list.md` | `runtime_memory.md` | システム基盤用 dlmalloc アロケータ（`system_allocator`）。システムコンテナ内部ストレージの動的確保・個別解放 | - |
+| `Shm_Allocator` | `requirement_list.md` | `runtime_memory.md` | 固定長のIPC共有メモリアリーナ上で可変長shared_blockを切り出すdlmallocアロケータ。物理領域と保護方式はプラットフォーム仕様に従う | - |
+| `HAL_Interface` | `requirement_list.md` | `hal_dispatch.md` | 物理ハードウェアと上位層を抽象化する統一 HAL インターフェース | - |
+| `BufferedLogging` | `requirement_list.md` | `runtime_logging.md` | 実行時リングバッファ蓄積と COOS idle_hook での一括 UART フラッシュ | Scenario 9 (TEST-INT-82) |
+| `DictionaryBasedIPC` | `requirement_list.md` | `runtime_logging.md` | 静的 LogDictionary、危険書式（%s/%p）の登録時静的拒絶 | Scenario 9 (TEST-INT-82) |
+| `Syscall_Mapping` | `requirement_list.md` | `runtime_syscall.md` | WASM システムコール番号から内部ハンドラへの決定論的マッピング | - |
+| `Syscall_Return_Value` | `requirement_list.md` | `runtime_syscall.md` | システムコール実行結果・エラーコードの規格化された返却規約 | - |
+| `Trap_Interface` | `requirement_list.md` | `runtime_syscall.md` | ゲスト不正動作検知時のトラップ発行と安全停止インターフェース | - |
 
 #### 4.3.2 Tier 2 Runtime 設計の勘所 (GOTCHA) (46 件)
 
 | キーワードID | 定義元の所在（索引） | 対象コンポーネント | 仕様概要・検証内容 | 対応テストケースID（キーワードではない） |
 | :--- | :--- | :--- | :--- | :--- |
-| `GOTCHA-VSOC-01` | `runtime_vsoc.md` | `runtime_vsoc_test_spec.md` | JITキャッシュ再判定の主体分離——インタープリタ自身はJITキャッシュを保持・参照せず、トレース境界で vSoC の step() が再判定する | TEST-VSOC-01 |
-| `GOTCHA-VSOC-02` | `runtime_vsoc.md` | `runtime_vsoc_test_spec.md` | 概算Yieldの主体分離——インタープリタ/JITトレース自身は co_yield を発行せず、vSoC が戻り値を受けて yield_threshold を評価する | TEST-VSOC-02 |
-| `GOTCHA-INTP-01` | `interpreter.md` | `interpreter_test_spec.md` | 継続渡し第4論理引数 tos（R3）とスタックメモリの境界同期——スタック空時は tos=0、push/pop のたびに tos とスタックメモリ間で退避・復元する | TEST-INTP-01 |
+| `GOTCHA-VSOC-01` | `runtime_vsoc.md` | `runtime_vsoc_test_spec.md` | C++ Interpreter handler後の通常遷移はC++ dispatcher内で次PCを解決し、しきい値前にPython/vSoCへ戻らない。handler-mediated遷移はchainではない | TEST-VSOC-10 |
+| `GOTCHA-VSOC-02` | `runtime_vsoc.md` | `runtime_vsoc_test_spec.md` | C++ branch handlerは取得LOOP後方辺を数え、共通しきい値到達時だけC++ dispatcherがRuntimeEngineへyield statusを返す | TEST-VSOC-22 |
+| `GOTCHA-INTP-01` | `interpreter.md` | `interpreter_test_spec.md` | 継続渡し第4論理引数tosと共有スタック領域の境界同期。物理レジスタ配置は対象ABIに従い、ARMv8-MはTBD | TEST-INTP-01 |
 | `GOTCHA-INTP-02` | `interpreter.md` | `interpreter_test_spec.md` | Label Arity スタック巻き戻し時、宣言アリティ分の結果値のうち最上位値を tos レジスタへ正しく復元する | TEST-INTP-02 |
 | `GOTCHA-INTP-03` | `interpreter.md` | `interpreter_test_spec.md` | if 条件偽（else節なし）で分岐した際、制御フレームを積まずにジャンプし、フレームスタックの深さを不変に保つ | TEST-INTP-03 |
 | `GOTCHA-INTP-04` | `interpreter.md` | `interpreter_test_spec.md` | 統一プログラムカウンタ（Unified PC: `(func_index << 16) | bytecode_offset`）による複数モジュール空間の衝突防止 | TEST-INTP-97 |
 | `GOTCHA-INTP-05` | `interpreter.md` | `interpreter_test_spec.md` | 実行時の命令オブジェクト生成・二分探索排除と生のバイト列からの直接フェッチ・静的制御表解決 | TEST-INTP-70, TEST-INTP-72 |
-| `GOTCHA-INTP-06` | `interpreter.md` | `interpreter_test_spec.md` | JIT 代行分岐脱出での制御フレーム内容不正利用防止——フレームスタックの中身を信用せず静的解決済みアドレスを直接使用 | TEST-INTP-99 |
+| `GOTCHA-INTP-06` | `interpreter.md` | `interpreter_test_spec.md` | JIT終端命令をC++ Interpreter handlerへ戻し、条件と制御frameを正しく更新 | TEST-INTP-99 |
 | `GOTCHA-INTP-22` | `interpreter.md` | `interpreter_test_spec.md` | フレームごとのローカルスロット幅——フレーム内の最大の変数サイズ（4 / 8 / 16バイト）で決め、同一フレーム内で混在させない | TEST-INTP-73, TEST-INTP-74, TEST-JITC-59, TEST-JITR-60 |
 | `GOTCHA-LOAD-01` | `runtime_loader.md` | `runtime_loader_test_spec.md` | ハッシュ衝突時のシンボル誤認防止——ハッシュ一致後に ROM 上の文字列を1回比較し完全一致を確認する | TEST-LOAD-01 |
 | `GOTCHA-LOAD-02` | `runtime_loader.md` | `runtime_loader_test_spec.md` | 検証失敗時のバンプアロケータ完全ロールバック——パース失敗時にバンプポインタをロード開始前の位置へ巻き戻しメモリリークを防ぐ | TEST-LOAD-02 |
@@ -339,40 +338,38 @@ WASM 実行基盤（`runtime_vsoc`）、ランタイムプラグイン構成契�
 
 | キーワードID | 定義元の所在（索引） | 対象コンポーネント | 仕様概要・検証内容 | 対応テストケースID（キーワードではない） |
 | :--- | :--- | :--- | :--- | :--- |
-| `HistoryBuffer` | `jit_runtime.md` | `jit_runtime.md` | JIT ホットスポット検出のための短期実行履歴保持リングバッファ | - |
-| `JIT_CopyAndPatch` | `jit_compiler.md` | `jit_compiler.md` | ステンシル展開とバイナリパッチによる Copy-and-Patch 高速コード生成 | Scenario 4, 5, 8 (TEST-INT-30, TEST-INT-40) |
-| `JIT_Encoder` | `jit_compiler.md` | `jit_compiler.md` | ターゲット命令セット向けパッチ埋め込みコードエンコーダ | - |
-| `JIT_LazyChaining` | `jit_compiler.md` | `jit_compiler.md` | トレース実行完了時の後続ブロックへの遅延直接分岐チェイニング | - |
-| `JIT_ReverseCompilationOrder` | `jit_compiler.md` | `jit_compiler.md` | LIFO 逆順コンパイルによる後続ブロック事前解決と即時チェイニング | - |
-| `LowLatencyJIT` | `jit_compiler.md` | `jit_compiler.md` | 極小コンパイルレイテンシによるリアルタイムJITコード生成 | - |
-| `SimpleJITArchitecture` | `jit_compiler.md` | `jit_compiler.md` | IR（中間表現）生成を省きバイトコードから直結パッチするシンプル構造 | - |
-| `JIT_RegisterMapping` | `jit_compiler.md` | `jit_compiler.md` | 論理引数とVM状態を対象ABIの物理レジスタへ決定論的に対応付ける規約 | - |
-| `ContextPointerRegister` | `jit_compiler.md` | `jit_compiler.md` | execution_context の参照方法を対象ABIの物理レジスタ規約に従って定める契約 | - |
-| `PositionIndependentCode` | `jit_compiler.md` | `jit_compiler.md` | キャッシュバンク配置に依存しない位置独立コード（PIC）生成 | - |
-| `JIT_MultiBuffer_Cache` | `jit_runtime.md` | `jit_runtime.md` | 8KB連続領域（共通コード2KB＋Active / Warm / Oldest各2KB）による世代交代キャッシュ管理 | Scenario 4, 5 (TEST-INT-31) |
-| `JIT_OldestOnly_Promote` | `jit_runtime.md` | `jit_runtime.md` | 3面キャッシュにおいて Oldest バンクでヒットしたコードのみを Active バンクへ昇格させる Oldest 限定昇格ポリシー | Scenario 4, 5 (TEST-INT-31, TEST-INT-41) |
-| `JIT_RuntimeAPI_Fallback` | `jit_runtime.md` | `jit_runtime.md` | 複雑命令・トラップ発生時のインタープリタランタイムヘルパー安全フォールバック | - |
-| `JIT_ZeroCompileCostTheorem` | `jit_runtime.md` | `jit_runtime.md` | メモリコピーとオフセット加算のみで完了するゼロコンパイルコスト定理の保証 | - |
+| `HistoryBuffer` | `requirement_list.md` | `jit_runtime.md` | JIT ホットスポット検出のための短期実行履歴保持リングバッファ | - |
+| `JIT_CopyAndPatch` | `requirement_list.md` | `jit_compiler.md` | ステンシル展開とバイナリパッチによる Copy-and-Patch 高速コード生成 | Scenario 4, 5, 8 (TEST-INT-30, TEST-INT-40) |
+| `JIT_Encoder` | `requirement_list.md` | `jit_compiler.md` | ターゲット命令セット向けパッチ埋め込みコードエンコーダ | - |
+| `JIT_LazyChaining` | `requirement_list.md` | `jit_compiler.md` | 共通コード領域のchain dispatcherから常駐後続trace bodyへtail-jumpする遅延trace連鎖 | - |
+| `JIT_ReverseCompilationOrder` | `requirement_list.md` | `jit_compiler.md` | LIFO 逆順コンパイルによる後続ブロック事前解決と即時チェイニング | - |
+| `LowLatencyJIT` | `requirement_list.md` | `jit_compiler.md` | 極小コンパイルレイテンシによるリアルタイムJITコード生成 | - |
+| `SimpleJITArchitecture` | `requirement_list.md` | `jit_compiler.md` | IR（中間表現）生成を省きバイトコードから直結パッチするシンプル構造 | - |
+| `JIT_RegisterMapping` | `requirement_list.md` | `jit_compiler.md` | 論理引数とVM状態を対象ABIの物理レジスタへ決定論的に対応付ける規約 | - |
+| `ContextPointerRegister` | `requirement_list.md` | `jit_compiler.md` | execution_context の参照方法を対象ABIの物理レジスタ規約に従って定める契約 | - |
+| `PositionIndependentCode` | `requirement_list.md` | `jit_compiler.md` | キャッシュバンク配置に依存しない位置独立コード（PIC）生成 | - |
+| `JIT_MultiBuffer_Cache` | `requirement_list.md` | `jit_runtime.md` | 8KB連続領域（共通コード2KB＋Active / Warm / Oldest各2KB）による世代交代キャッシュ管理 | Scenario 4, 5 (TEST-INT-31) |
+| `JIT_OldestOnly_Promote` | `requirement_list.md` | `jit_runtime.md` | 3面キャッシュにおいて Oldest バンクでヒットしたコードのみを Active バンクへ昇格させる Oldest 限定昇格ポリシー | Scenario 4, 5 (TEST-INT-31, TEST-INT-41) |
+| `JIT_RuntimeAPI_Fallback` | `requirement_list.md` | `jit_runtime.md` | 複雑命令・トラップ発生時のインタープリタランタイムヘルパー安全フォールバック | - |
+| `JIT_ZeroCompileCostTheorem` | `requirement_list.md` | `jit_runtime.md` | メモリコピーとオフセット加算のみで完了するゼロコンパイルコスト定理の保証 | - |
 
 #### 4.4.2 Tier 3 Executer JIT 設計の勘所 (GOTCHA) (14 件)
 
 | キーワードID | 定義元の所在（索引） | 対象コンポーネント | 仕様概要・検証内容 | 対応テストケースID（キーワードではない） |
 | :--- | :--- | :--- | :--- | :--- |
-| `GOTCHA-JITC-01` | `jit_compiler.md` | `jit_compiler_test_spec.md` | 境界引数レジスタ（R0-R3）とJIT内部一時レジスタ（R4-R6, R8-R11）が呼び出し境界を越えて物理的に重複しない | TEST-JITC-01 |
-| `GOTCHA-JITC-02` | `jit_compiler.md` | `jit_compiler_test_spec.md` | ARMv8-Mのmem_base/mem_sizeはexecution_contextの`+0x28`/`+0x2C`から一度だけピン留めロードする。物理レジスタは対象ABIごとに定める | TEST-JITC-02 |
-| `GOTCHA-JITC-05` | `jit_compiler.md` | `jit_compiler_test_spec.md` | トラップ分岐（BHS.W）はアドレス未確定のままオフセット0で仮発行し、エピローグ生成後に実アドレスへ2パスバックパッチする | TEST-JITC-05 |
-| `GOTCHA-JITC-07` | `jit_compiler.md` | `jit_compiler_test_spec.md` | トレースの残余値（VM オペランドスタック状態）は `sp` 経由でメモリへ書き込み、トレースは常に void を返す——C/AAPCS の戻り値レジスタとは無関係 | TEST-JITC-07 |
+| `GOTCHA-JITC-01` | `jit_compiler.md` | `jit_compiler_test_spec.md` | InterpreterとJITは4論理引数を共有し、物理配置は対象ABIが定める。x64は確定済み、ARMv8-MはTBD | TEST-JITC-10 |
+| `GOTCHA-JITC-05` | `jit_compiler.md` | `jit_compiler_test_spec.md` | x64前方参照の相対分岐先はコード生成時に確定し、範囲検証後にpatchする。ARMv8-Mの方式はTBD | TEST-JITC-03 |
+| `GOTCHA-JITC-07` | `jit_compiler.md` | `jit_compiler_test_spec.md` | トレースはWASM戻り値を共有operand stackへ書き、JIT trace entryのホスト戻り値として返さない | TEST-JITC-07 |
 | `GOTCHA-JITR-01` | `jit_runtime.md` | `jit_runtime_test_spec.md` | キャッシュ常駐性の一次情報源（二重コンパイル防止）——キュー処理時にキャッシュ常駐を再確認して二重コンパイルを抑止 | TEST-JITR-08 |
 | `GOTCHA-JITR-02` | `jit_runtime.md` | `jit_runtime_test_spec.md` | Oldestバンクからの昇格時、被チェイン登録（inbound_sources）を昇格先バンクへ移管しダングリングジャンプを防ぐ | TEST-JITR-09 |
 | `GOTCHA-JITR-03` | `jit_runtime.md` | `jit_runtime_test_spec.md` | LIFO逆順コンパイル（後入れ先出し）により、先行ブロックコンパイル時点で後続ブロックが既にキャッシュ常駐し即時チェイニングが成立する | TEST-JITR-12 |
 | `GOTCHA-JITR-05` | `jit_runtime.md` | `jit_runtime_test_spec.md` | 3面ローテーション・フラッシュ時の Folding XOR 高速スロット無効化によるダングリング参照防止 | TEST-JITR-05 |
-| `GOTCHA-JITR-06` | `jit_runtime.md` | `jit_runtime_test_spec.md` | JIT脱出後の制御フレーム内容不正利用防止——静的解決済みの後続アドレス・分岐先アドレスを直接使用 | TEST-JITR-06 |
+| `GOTCHA-JITR-06` | `jit_runtime.md` | `jit_runtime_test_spec.md` | JIT終端命令の復帰でC++ Interpreter handlerを一度呼び、次PC lookupへ進む | TEST-JITR-06 |
 | `GOTCHA-JITR-07` | `jit_runtime.md` | `jit_runtime_test_spec.md` | 短小ブロック判定の符号（後方分岐ブロックの誤除外）——後続アドレスとの差分ではなく命令バイト数から直接判定 | TEST-JITR-07 |
 | `GOTCHA-JITR-08` | `jit_runtime.md` | `jit_runtime_test_spec.md` | return直前のJIT終了とInterpreter復帰——JITはsentinelを生成せずエピローグで状態同期してInterpreterへ戻る | TEST-JITR-10 |
 | `GOTCHA-JITR-09` | `jit_runtime.md` | `jit_runtime_test_spec.md` | エイジングスイープは `EXECUTED` のカードだけを戻し、`COMPILED`（常駐トレース）と `HOT`（コンパイル待ち列）を変更しない | TEST-JITR-16 |
 | `GOTCHA-JITC-03` | `jit_compiler.md` | `jit_compiler_test_spec.md` | 基本ブロック末尾で、値キャッシュを共有オペランド領域へ書き戻し、実行コンテキストの `ip` と `sp_offset` を同期する | TEST-JITC-12 |
 | `GOTCHA-JITC-04` | `jit_compiler.md` | `jit_compiler_test_spec.md` | メモリアクセスの前に、開始アドレスとアクセス末尾の境界を検査する。境界外では副作用なしでトラップへ分岐し、アドレスを巡回させない | TEST-JITC-41 |
-| `GOTCHA-JITC-06` | `jit_compiler.md` | `jit_compiler_test_spec.md` | ARMの `MLS` 命令は `Rd = Ra - Rn × Rm` の順序で剰余を算出する。オペランド順序を逆にすると剰余が負になる | - |
 
 ---
 
@@ -384,8 +381,8 @@ WASM 実行基盤（`runtime_vsoc`）、ランタイムプラグイン構成契�
 
 | キーワードID | 定義元の所在（索引） | 対象コンポーネント | 仕様概要・検証内容 |
 | :--- | :--- | :--- | :--- |
-| `Fast_Path_GPIO` | `platform_driver.md` | `platform_driver.md` | コンテキストスイッチを介さず直接ポート操作を行う GPIO 高速パス |
-| `PhysicalPassthrough` | `platform_driver.md` | `platform_driver.md` | 認可された特定周辺ペリフェラルへのゼロオーバーヘッド直接物理パススルー |
+| `Fast_Path_GPIO` | `requirement_list.md` | `platform_driver.md` | コンテキストスイッチを介さず直接ポート操作を行う GPIO 高速パス |
+| `PhysicalPassthrough` | `requirement_list.md` | `platform_driver.md` | 認可された特定周辺ペリフェラルへのゼロオーバーヘッド直接物理パススルー |
 
 #### 4.5.2 Tier 3 Platform 設計の勘所 (GOTCHA) (3 件)
 
@@ -407,7 +404,7 @@ WASM 実行基盤（`runtime_vsoc`）、ランタイムプラグイン構成契�
 
 | キーワードID | 定義元の所在（索引） | 対象コンポーネント | 仕様概要・検証内容 | 対応テストケースID（キーワードではない） |
 | :--- | :--- | :--- | :--- | :--- |
-| `ExecutionContext_Layout` | `jit_abi.md` | `interpreter.md` | execution_context Tier 2標準ABI。既存64バイト状態領域と、x86-64で追加するコード／制御スタック／CallStackビューを含む112バイト配置 | Scenario 1〜12 |
+| `ExecutionContext_Layout` | `jit_abi.md` | `interpreter.md` | execution_context Tier 2標準ABI。既存64バイト状態領域と、x86-64で追加するコード／制御スタック／CallStackビュー／operand容量／LOOP後方分岐カウンタを含む128バイト配置 | Scenario 1〜12 |
 | `CallFrame_Layout` | `interpreter.md` | `interpreter.md` | 固定容量の独立した関数呼出し記述子領域。各記述子はローカル値領域内の開始位置を保持し、ローカル値領域はローカル値だけを格納する | Scenario 3, 8 |
 | `ControlFrame_Layout` | `interpreter.md` | `interpreter.md` | 制御ブロックの復帰情報を20バイトで保持し、オペランド領域およびローカル値領域とは独立した専用の固定容量領域へ配置する | Scenario 3 |
 | `VsocRuntime_Layout` | `runtime_vsoc.md` | `runtime_vsoc.md` | execution_context 内のリニアメモリ、グローバル領域、ハンドラ表に関する論理環境フィールド配置 | Scenario 1〜12 |
@@ -420,7 +417,6 @@ WASM 実行基盤（`runtime_vsoc`）、ランタイムプラグイン構成契�
 
 | キーワードID | 定義元の所在（索引） | 対象コンポーネント | 仕様概要・検証内容 | 対応テストケースID（キーワードではない） |
 | :--- | :--- | :--- | :--- | :--- |
-| `AAPCS_FastCall` | `interpreter.md` | `interpreter.md` | 継続渡し4論理引数の契約とAAPCS対象でのレジスタマッピング規約 | Scenario 1〜12 |
 | `CPS_4Args` | `interpreter.md` | `interpreter.md` | ctx, sp, local_base, tos による4論理引数の継続渡しディスパッチ規約 | Scenario 1〜12 |
 
 ---
@@ -446,10 +442,8 @@ WASM 実行基盤（`runtime_vsoc`）、ランタイムプラグイン構成契�
 | `JIT_CardAgingSweep` | `jit_runtime.md` | `jit_runtime.md` | 3面キャッシュのローテーションごとに関数更新表（関数につき1ビット）を8関数単位で巡回し、値が0でない単位の処理数または走査バイト数の上限で打ち切り、ビットの立った関数の `EXECUTED` のカードだけを `UNEXECUTED` へ戻す増分エイジング | TEST-JITR-16, TEST-JITR-17, TEST-JITR-18, TEST-JITR-19 |
 | `JIT_CandidateBitmap` | `runtime_loader.md` | `runtime_loader.md` | WASMロード時にJITコンパイル対象と判定された基本ブロックをCard単位1bitでマーキングするJIT候補ビットマップ（非候補カードでのtouchスキップ連携） | TEST-LOAD-49, TEST-LOAD-50 |
 | `JIT_StaticBenefitScoring` | `runtime_loader.md` | `runtime_loader.md` | 128B BitView<4>のint4_tテーブルによる機械語短縮数ベースの静的基本ブロック適格性スコアリング（閾値9点判定） | TEST-LOAD-49 |
-| `JitBranchChainingHandler` | `jit_compiler.md` | `jit_compiler.md` | JIT 専用チェイニングハンドラと純粋インタープリタ分岐ハンドラの分離 | Scenario 4, 5 |
 | `Libgcc_Runtime_Helper` | `interpreter.md` | `interpreter.md` | i64 / f32 / f64 の libgcc 依存演算をランタイムヘルパー関数経由で実行する設計 | Scenario 1, 8 |
 | `Loader_BasicBlockIndex` | `runtime_loader.md` | `runtime_loader.md` | WASMローダによる全ベーシックブロックメタ情報（BasicBlock）の不変抽出と RadixBinaryTreeView（bswap32キー）索引の所有・公開 | TEST-LOAD-48 |
-| `MPU_WX_Enforcement` | `runtime_memory.md` | `runtime_memory.md` | JITコンパイル時のMPU属性切り替え（RW+XN ⇔ RO+X）とキャッシュコヒーレンシバリア発行のトランザクションバッチ化ポリシー | TEST-MEM-04 |
 | `MainLoopReturnGuarantee` | `os_coos.md` | `os_coos.md` | 形式モデル内での連続ハンドオフ上限到達後のメインループ復帰（実時間応答・全タスク公平性の保証ではない） | Scenario 6 |
 | `Orthogonal_Design` | `os_coos.md` | `os_coos_test_spec.md` | 1チャネル1待機者の強制——多重待機はプログラミングエラーとして即座にアサーション違反で停止する（待機列によるキューイングを設計上排除） | TEST-COOS-02 |
 | `OwnerMismatchTrap` | `runtime_vmmio.md` | `runtime_vmmio.md` | タスク間共有メモリ（FC=0xE）の所有権移動に伴うアンマップによる未登録ページフォルト（TRAP_UNREGISTERED_PAGE）遮断 | Scenario 10 (TEST-INT-93) |

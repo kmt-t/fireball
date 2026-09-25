@@ -8,7 +8,8 @@ Reference Concept Implementation: Exhaustive WASM MVP (v1) Stack Interpreter wit
 - Direct-Threaded __fastcall Continuation Passing Style (CPS) 4-argument dispatch (ctx, sp, local_base, tos)
 - Full stack pruning (Label Arity handling) on br / br_if / br_table
 - 64-bit integer arithmetic, memory loads/stores (8/16/32/64-bit), and type conversions
-- Cooperative safepoint polling at loop headers for deterministic yield
+- LOOP labels and backedge stack pruning follow WASM control-flow semantics
+- Cooperative yield thresholds are owned by the C++ native dispatcher, not opcode handlers
 """
 
 import struct
@@ -96,8 +97,6 @@ class ExecutionContext:
         self.globals: list[int] = [0] * 32
         self.memory: bytearray = bytearray(memory_size)
         self.mem_pages: int = memory_size // 65536
-        self.safepoint_pending: bool = False
-        self.safepoints_hit: int = 0
         self.funcs: list[list[tuple[str, int | object]]] = []
 
     def push(self, val: int) -> None:
@@ -311,10 +310,6 @@ def _h_br(
     depth = int(arg)
     target_ctrl = ctx.control_frame_stack[-(depth + 1)]
     ctx.prune_stack(target_ctrl.saved_sp, target_ctrl.result_arity)
-    if target_ctrl.is_loop:
-        if ctx.safepoint_pending:
-            ctx.safepoints_hit += 1
-            return ("SAFEPOINT_YIELD", None)
     for _ in range(depth + (0 if target_ctrl.is_loop else 1)):
         ctx.control_frame_stack.pop()
     return (None, target_ctrl.label_pc)
@@ -329,10 +324,6 @@ def _h_br_if(
     if cond != 0:
         target_ctrl = ctx.control_frame_stack[-(depth + 1)]
         ctx.prune_stack(target_ctrl.saved_sp, target_ctrl.result_arity)
-        if target_ctrl.is_loop:
-            if ctx.safepoint_pending:
-                ctx.safepoints_hit += 1
-                return ("SAFEPOINT_YIELD", None)
         for _ in range(depth + (0 if target_ctrl.is_loop else 1)):
             ctx.control_frame_stack.pop()
         return (None, target_ctrl.label_pc)
@@ -1467,22 +1458,6 @@ def test_memory_load_store_all_sizes() -> None:
     assert res == 0xEF + 0xCDEF
 
 
-def test_cooperative_safepoint() -> None:
-    """Test loop header safepoint interruption."""
-    ctx = ExecutionContext()
-    interp = WASMInterpreter()
-    infinite_loop_bytecode = [
-        ("loop", (0, 0)),
-        ("br", 0),
-        ("end", None),
-    ]
-    ctx.funcs = [infinite_loop_bytecode]
-    ctx.safepoint_pending = True
-    status = interp.execute_bytecode(ctx, infinite_loop_bytecode)
-    assert status == "SAFEPOINT_YIELD"
-    assert ctx.safepoints_hit == 1
-
-
 def test_br_table_and_parametric() -> None:
     """Test br_table multi-branching and select/drop parametric opcodes."""
     ctx = ExecutionContext()
@@ -1601,5 +1576,4 @@ if __name__ == "__main__":
     test_memory_load_store_all_sizes()
     test_signed_memory_and_division_clz_popcnt()
     test_globals_and_memory_grow()
-    test_cooperative_safepoint()
     print("[PASS] All Full-Set WASM MVP Interpreter concept tests passed successfully.")

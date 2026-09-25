@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
 import pytest
@@ -14,9 +13,9 @@ from libfireball import Libfireball
 class RecordingHostCalls:
     __slots__ = (
         "calls",
+        "vdma_calls",
         "virq_register_calls",
         "virq_unregister_calls",
-        "vdma_calls",
     )
 
     def __init__(self) -> None:

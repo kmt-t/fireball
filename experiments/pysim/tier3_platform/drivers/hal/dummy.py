@@ -12,8 +12,8 @@ from hal_dispatch import (
     HalDriver,
     WasiIpcCmd,
 )
-from tier3_platform.drivers.hal.stream import StreamTransport
 from system_containers import ReadOnlyFlatMapView
+from tier3_platform.drivers.hal.stream import StreamTransport
 
 
 class Timer:

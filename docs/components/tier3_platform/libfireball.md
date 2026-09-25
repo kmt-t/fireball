@@ -15,7 +15,7 @@
 1. `fireball-call0`〜`fireball-call6` を呼び出すゲスト側バインディングを提供する。
 2. WASI Preview1 の標準出力とログ出力を Fireball の公開 ABI へ変換する。
 3. 標準出力とログ出力以外の WASI Preview1 操作は、Tier 3 の uvwasi ドライバへ委譲する。
-4. `fireball:host/virq` の `register` / `unregister` を発行するvIRQ登録・解除ラッパーを提供する。ただし、原因源表・親子関係・シグネチャ検証・Safepoint反映はTier 2に委譲する。
+4. `fireball:host/virq` の `register` / `unregister` を発行するvIRQ登録・解除ラッパーを提供する。ただし、原因源表・親子関係・シグネチャ検証・COOS協調境界での反映はTier 2に委譲する。
 5. `fireball:host/vdma` の `start` を発行するvDMA転送ラッパーを提供する。ただし、転送先権限・所有権・完了通知はTier 2に委譲する。
 6. 物理レジスタ、IPC ロール、COOS タスク、HAL ドライバの内部構造を知らない。
 
@@ -112,7 +112,7 @@ sequenceDiagram
 | ゲスト側関数 | 動作 | エラー処理 |
 | :--- | :--- | :--- |
 | `fireball_virq_register(node_id, function_index)` | `fireball:host/virq.register(node_id, function_index)` を発行し、登録を保留状態にする | 静的ノード外、無効な関数インデックス、期待シグネチャ不一致は拒否 |
-| `fireball_virq_unregister(node_id)` | `fireball:host/virq.unregister(node_id)` を発行し、次のSafepointで無効化する | 静的ノード外は拒否 |
+| `fireball_virq_unregister(node_id)` | `fireball:host/virq.unregister(node_id)` を発行し、次のCOOS協調境界で無効化する | 静的ノード外は拒否 |
 
 期待するゲスト関数シグネチャは、原因レコード5ワードを受けて `HANDLED`、`PASS_THROUGH`、`REJECT` のいずれかを返す `(u32, u32, u32, u32, u32) -> u32` である。`libfireball` は関数テーブルの妥当性や親子関係を判定せず、vSoCの検証結果を受け取るだけとする。
 
@@ -132,8 +132,8 @@ sequenceDiagram
     L->>H: fireball:host/virq.register(node_id, function_index)
     H->>S: stage pending registration
     Note over S: Validate node, function index, and 5-word signature
-    S->>S: Safepoint: atomically commit registration
-    Note over G,S: Registration change is invisible before the Safepoint
+    S->>S: COOS boundary: atomically commit registration
+    Note over G,S: Registration change is invisible before the COOS boundary
     I-->>C: interrupt-event(vector_id, source_id, cause_code, payload0, payload1)
     C->>C: FIFO enqueue / drop if full or target absent
     C->>S: drain at cooperative boundary

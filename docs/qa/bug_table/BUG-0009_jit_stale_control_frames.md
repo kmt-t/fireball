@@ -14,7 +14,7 @@ Tier 3で、実行が終了しても結果がwasmtimeと食い違う。または
 ## 2. 再現手順
 
 ```bash
-.venv/Scripts/python.exe experiments/pysim/benchmarks/profile/bench_vtune_workload.py --phase suite_jit --kernel k_text:1
+uv run --offline --no-sync python experiments/pysim/benchmarks/profile/bench_vtune_workload.py --phase suite_jit --kernel k_text:1
 ```
 
 修正前の結果は、`k_text` の結果が `0x14de2611` になった。wasmtimeの結果は `0x610d4675` である。
@@ -49,7 +49,7 @@ Tier 3で、実行が終了しても結果がwasmtimeと食い違う。または
 
 ## 5. 修正
 
-[`runtime_engine.py`](experiments/pysim/tier2_runtime/runtime_engine.py) の `_invoke_trace` で、再開位置を確定する前に、制御フレームを再開位置の深さまで切り詰める。
+[`runtime_engine.py`](experiments/pysim/tier3_executer/jit/runtime_engine.py) の `_invoke_trace` で、再開位置を確定する前に、制御フレームを再開位置の深さまで切り詰める。
 
 深さは、次のとおり求める。
 

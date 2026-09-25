@@ -7,7 +7,6 @@ Traceability: runtime_syscall_test_spec.md
 
 import ctypes
 import struct
-import sys
 import time
 from pathlib import Path
 
@@ -18,9 +17,9 @@ _PYSIM_DIR = _TESTS_DIR.parent
 _REPO_ROOT = _PYSIM_DIR.parent.parent
 
 
-from helpers import wat_to_wasm
 from fixtures.platform_drivers import create_reference_platform_drivers
 from fixtures.uvwasi_reference import UvwasiReferenceContext
+from helpers import wat_to_wasm
 from ipc_router import (
     IPCMessage,
     IPCStatus,
@@ -213,7 +212,7 @@ def test_syscall_05_virq_registration_host_calls():
         assert virq_register is not None
         assert virq_unregister is not None
         assert virq_register(0, 0) == WasiErrno.SUCCESS
-        sysv.runtime_engine.commit_virq_safepoint()
+        sysv.runtime_engine.commit_virq_registrations()
         assert virq_unregister(0) == WasiErrno.SUCCESS
         assert virq_register(14, 0) == WasiErrno.INVAL
     finally:

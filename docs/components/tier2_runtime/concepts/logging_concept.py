@@ -38,7 +38,7 @@ class LogEntry:
     timestamp_tick: int = 0
 
 
-from flat_view_concept import FlatMapView
+from docs.components.tier1_core.concepts.flat_view_concept import FlatMapView
 
 
 class LogDictionary:

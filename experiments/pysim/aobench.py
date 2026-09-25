@@ -394,11 +394,11 @@ def run_aobench():
     module = parse(wasm_bytes)
     print(f"    -> Parsed Module: {len(module.functions)} functions, {len(module.exports)} exports")
     # 3. Setup System & WASI Context
-    from runtime_engine import RuntimeEngine
     from tier3_executer.jit.jit_manager import JITRuntimeManager
+    from tier3_executer.jit.runtime_engine import RuntimeEngine
     from tier3_executer.jit.x64_jit import TraceCompiler
 
-    # 3. Setup System & WASI Context for Tier 2 Baseline
+    # 3. Setup System & WASI Context for the Interpreter baseline
     sysv = System()
     sysv.start_hal_driver(DummyDriver(sysv.wasi_hal_bindings.stdout_uri, transport=sysv.transport))
     wasi_ctx = WasiHostContext(sysv)
@@ -439,7 +439,7 @@ def run_aobench():
     trace_compiler = TraceCompiler()
     debug = "--debug" in sys.argv
     runtime_engine = RuntimeEngine(
-        jit_runtime=JITRuntimeManager(jit_compiler=trace_compiler, yield_threshold=16),
+        jit_runtime=JITRuntimeManager(jit_compiler=trace_compiler),
         debug=debug,
     )
     runtime_engine.register_module_blocks(module)
@@ -448,7 +448,7 @@ def run_aobench():
         InterpreterBindings.with_memory_and_functions(wasi_ctx_t3.guest_memory, host_funcs_t3),
     )
     t0_t3 = time.perf_counter()
-    runtime_engine.run(interp_t3, main_func_idx, [WIDTH, HEIGHT])
+    runtime_engine.call(interp_t3, main_func_idx, [WIDTH, HEIGHT])
     t1_t3 = time.perf_counter()
     render_output_t3 = sysv_t3.transport.drain_output().decode("utf-8", errors="replace")
     t3_time_ms = (t1_t3 - t0_t3) * 1000
@@ -475,7 +475,7 @@ def run_aobench():
     print(
         f"  * Output Verified:          {len(render_output.encode('utf-8'))} bytes (Exact match: 33 B x 16 rows, 0 NULs)"
     )
-    print("  * Differential Check:       PASS (Tier 2 & Tier 3 match byte-for-byte)")
+    print("  * Differential Check:       PASS (Interpreter & Hybrid JIT match byte-for-byte)")
     print("--------------------------------------------------------------------------------")
     print(
         f"  * Tier 3 Interpreter (Threaded CPS): {t2_time_ms:.2f} ms / frame  ({t2_rays_per_sec:,.0f} Rays / Sec)"

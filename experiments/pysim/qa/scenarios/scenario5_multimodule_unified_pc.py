@@ -1,4 +1,3 @@
-import sys
 from pathlib import Path
 
 _PYSIM_DIR = Path(__file__).resolve().parent
@@ -17,13 +16,13 @@ Tests:
 from bisect import bisect_left
 
 import wasmtime
-from tier3_executer.interpreter.interpreter import Interpreter, InterpreterBindings
-from runtime_engine import RuntimeEngine
-from tier3_executer.jit.jit_manager import JITRuntimeManager
 from system import System
+from tier3_executer.interpreter.interpreter import Interpreter, InterpreterBindings
+from tier3_executer.jit.jit_manager import JITRuntimeManager
+from tier3_executer.jit.runtime_engine import RuntimeEngine
+from tier3_executer.jit.x64_jit import TraceCompiler
 from tier3_platform.drivers.wasi.context import WasiHostContext
 from wasm_reader import parse
-from tier3_executer.jit.x64_jit import TraceCompiler
 
 SCENARIO5_WAT = """
 (module
@@ -112,7 +111,7 @@ def test_scenario_multimodule_unified_pc():
     interp_t3 = Interpreter(
         module, InterpreterBindings.with_memory_and_functions(wasi_t3.guest_memory, funcs_t3)
     )
-    res_t3 = runtime_engine.run(interp_t3, fn_idx, [ITERS])
+    res_t3 = runtime_engine.call(interp_t3, fn_idx, [ITERS])
 
     assert res_t2 == res_t3, f"Calculations diverged: T2={res_t2} vs T3={res_t3}"
     assert len(runtime_engine.jit_runtime.cache.active.traces) > 0, "No JIT traces compiled"

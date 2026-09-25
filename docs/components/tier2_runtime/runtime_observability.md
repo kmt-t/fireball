@@ -28,7 +28,7 @@ Profiler と Debugger は目的を分離する。Profiler は Runtime 状態を�
 ### 3.2 イベントレコード契約
 | フィールド | 意味 | 制約 |
 | :--- | :--- | :--- |
-| イベント種別 | `module_load`、`function_enter`、`function_exit`、`interpreter_boundary`、`jit_enter`、`jit_exit`、`host_call_enter`、`host_call_exit`、`safepoint`、`trap`、`debug_stop` のいずれか | 固定幅の整数値。文字列を持たない |
+| イベント種別 | `module_load`、`function_enter`、`function_exit`、`interpreter_boundary`、`jit_enter`、`jit_exit`、`host_call_enter`、`host_call_exit`、`coos_boundary`、`trap`、`debug_stop` のいずれか | 固定幅の整数値。文字列を持たない |
 | Runtime 識別子 | 発行元 Runtime を識別する | 一実行中は不変 |
 | モジュール識別子 | ゲストモジュールを識別する | ロード時に確定 |
 | 関数識別子 | ゲスト関数を識別する | 関数イベントでは必須 |
@@ -64,7 +64,7 @@ graph TD
 | `jit_enter` | JIT コードへ制御を渡す直前 | 関数識別子、PC、時刻 | ネイティブ実行時間を区別する |
 | `jit_exit` | JIT コードから共通終了処理へ戻るとき | 関数識別子、終了理由、時刻 | JIT 実行区間を閉じる |
 | `host_call_enter` / `host_call_exit` | ゲストとホスト契約の境界を越えるとき | ホスト呼出識別子、呼出相関、時刻 | WASI・HAL 等の待ち時間を区別する |
-| `safepoint` | 割込み、yield、デバッガ確認、予算確認を行う位置 | PC、時刻、状態フラグ | 応答性と停止可能性を確認する |
+| `coos_boundary` | COOSへ制御を返して割込みイベント、yield、実行状態を処理する協調境界 | PC、時刻、状態フラグ | COOS協調境界での応答性を確認する |
 | `trap` | ゲストトラップが確定したとき | PC、トラップ理由、呼出相関、時刻 | 未完了フレームを確定する |
 | `debug_stop` | Debugger が停止を確定したとき | PC、停止理由、時刻 | 実行停止と観測記録を対応付ける |
 

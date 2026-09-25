@@ -3,28 +3,29 @@
 ## 1. 目的と対象範囲
 
 正本: [`runtime_vsoc.md`](docs/components/tier2_runtime/runtime_vsoc.md)
-参考実装: [`runtime_engine_concept.py`](docs/components/tier2_runtime/concepts/runtime_engine_concept.py)（統合シミュレーションとして`jit_runtime_test_spec.md`と一部重複。本書はvSoC固有の統合責務——ハーネスによる静的DI、Safepoint/デバッガ協調、マルチモジュールリンク——に焦点を当てる）
+参考実装: [`runtime_engine.py`](experiments/pysim/tier3_executer/jit/runtime_engine.py) および [`test_vsoc.py`](experiments/pysim/qa/tier2_runtime/test_vsoc.py)。本書はvSoC固有の統合責務——ハーネスによる静的DI、割り込み/デバッガ協調、マルチモジュールリンク——に焦点を当てる。
 
-Loader/Interpreter/JIT/vMMIO/Debuggerを統合する`vsoc_harness`（静的DI）、`exec_trace`委譲、Safepoint/JITキャッシュ協調モデル、マルチモジュール動的リンクを検証する。
+Loader/Interpreter/JIT/vMMIO/Debuggerを統合する`vsoc_harness`（静的DI）、C++ native dispatchのyield境界、JITキャッシュ協調モデル、マルチモジュール動的リンクを検証する。
 
 ## 2. テストケース一覧
 
 ### ハーネス統合 (runtime_vsoc.md (Harness))
-<!-- traceability: {AAPCS_FastCall} -->
+<!-- traceability: {CPS_4Args} -->
 
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | TEST-VSOC-01 | vSoCはTier3実装の内部ヘッダに依存しない | - | 依存関係を確認 | ハーネスに集約されたPOD関数ポインタ経由でのみ呼び出す（仮想関数・動的ディスパッチを使わない） | `{META_StaticDI}` |
-| TEST-VSOC-02 | `exec_trace`の統一呼び出し規約 | インタープリタ実行/JIT実行の双方 | `step()`を呼ぶ | 呼び出し側は実行エンジンの種別を意識しない（同一の4論理引数 `(ctx, sp, local_base, tos)` シグネチャ） | 「実行エンジン委譲」, `AAPCS_FastCall` |
+| TEST-VSOC-02 | `exec_trace`の統一論理引数契約 | インタープリタ実行/JIT実行の双方 | 実行入口を確認する | 呼び出し側は実行エンジンの種別を意識しない（同一の4論理引数 `(ctx, sp, local_base, tos)`）。x64物理配置はABI定義に従い、ARMv8-MはTBD | 「実行エンジン委譲」 |
 | TEST-VSOC-03 | `register-hook`はvMMIOへの薄い転送 | - | `register-hook`を呼ぶ | `harness.vmmio`経由で`runtime_vmmio.md`の同名APIへそのまま転送され、事前/事後条件はvmmio層が正本 | register-hook |
 
-### Safepoint/JITキャッシュ協調 ({JIT_Safepoint})
+### LOOP後方分岐yieldとJITキャッシュ協調
+<!-- traceability: {JIT_BackedgeYield} {ADR_LoopBackedgeYield} -->
 
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| TEST-VSOC-10 | Safepointはループ背進辺/関数呼出前/メモリアクセス後に埋め込まれる | JIT生成コード | コード生成を確認 | `{JIT_Safepoint}` の3箇所すべてにチェックが入る | `{JIT_Safepoint}` |
-| TEST-VSOC-11 | 保留interrupt-eventの構成 | - | 保留イベント構造を確認 | `vector_id`、`source_id`、`cause_code`、`payload0`、`payload1`の固定5ワードで保持される | `{JIT_Safepoint}` |
-| TEST-VSOC-13 | IRQ/JITレース不在 | JIT実行中に割り込み発生 | 形式検証プロパティを確認 | Safepoint同期を経ずに割り込み処理が開始されない(`AG(Not(handling_irq & jit_mode))`) | irq_jit_race_freedom_proof |
+| TEST-VSOC-10 | C++ dispatchのLOOP後方分岐は有限回数で協調境界へ戻る | 同一フレームLOOP後方分岐と有限の`FB_CONF_RUNTIME_YIELD_THRESHOLD` | C++ branch handler回数、後続trace実行、yield境界を検証する | 各取得済み後方分岐でC++ Interpreter handlerが制御状態を更新する。しきい値到達まではC++ dispatcherが実行を続け、到達後にRuntimeEngineがyield要求を返す。C++ Interpreter単独経路も同じ条件を使う | pysim `test_jitr_loop_backedge_stays_in_cpp_until_coos_yield` |
+| TEST-VSOC-11 | 保留interrupt-eventの構成 | - | 保留イベント構造を確認 | `vector_id`、`source_id`、`cause_code`、`payload0`、`payload1`の固定5ワードで保持される | `{GLOBAL_InterruptWakeup}` |
+| TEST-VSOC-13 | IRQ/JITレース不在 | JIT実行中に割り込みイベントが待機 | 形式検証プロパティを確認 | JITネイティブ実行中は割り込みハンドラを開始せず、COOS協調境界から配送する(`AG(Not(handling_irq & jit_mode))`) | irq_jit_race_freedom_proof |
 | TEST-VSOC-14 | flush完了性 | dirty状態になったキャッシュ | 形式検証プロパティを確認 | `AG(dirty -> AF(flushed))`（dirtyになったflushは必ず完了する） | [`vsoc_cache_coherency_model.py`](docs/components/tier2_runtime/formal/vsoc_cache_coherency_model.py) `dirty_cache_always_flushes_promptly` |
 | TEST-VSOC-15 | 世代の逆行不在 | 3面ローテーション | 各バンクのgeneration cookieを確認 | 全バンク一括更新され、逆行・不一致が生じない | [`vsoc_cache_coherency_model.py`](docs/components/tier2_runtime/formal/vsoc_cache_coherency_model.py) `generation_monotonicity_across_banks` |
 | TEST-VSOC-16 | Purgeと回収の不可分性 | ローテーション時 | Oldestバンクのpurge処理を確認 | Purgeとエントリ表スロット回収が同一トランザクションで行われ、未回収スロットが蓄積しない | [`vsoc_cache_coherency_model.py`](docs/components/tier2_runtime/formal/vsoc_cache_coherency_model.py) `bounded_cache_rotation_memory` |
@@ -36,8 +37,8 @@ Loader/Interpreter/JIT/vMMIO/Debuggerを統合する`vsoc_harness`（静的DI）
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | TEST-VSOC-20 | ロード失敗でError状態 | 不正なWASM | `prepare(module)` | `Loading→Error`に遷移 | `VSOC_Lifecycle` |
-| TEST-VSOC-21 | yield閾値到達でReadyへ復帰 | InterpreterRun中 | トレース数が閾値超過 | `InterpreterRun→Ready`、ホットスポット検出結果がJITキューに投入される | - |
-| TEST-VSOC-22 | Safepointで原因付き割り込みイベント検出時はインタープリタへフォールバック | JitRun中 | `interrupt-event`が保留される | `JitRun→SafepointCheck→Ready`（インタープリタへ） | - |
+| TEST-VSOC-21 | LOOP後方分岐しきい値到達でRuntimeEngine境界へ復帰 | C++ InterpreterまたはHybrid JIT実行中 | 共通回数しきい値まで取得後方辺を実行する | しきい値到達後にC++ dispatchがyield statusを返す。ホットスポット記録とcompile queue処理はRuntimeEngine境界で行う | `{JIT_BackedgeYield}` |
+| TEST-VSOC-22 | LOOPしきい値到達時にC++ handlerを通ってCOOSへ戻る | 同一制御フレームのLOOP後方分岐を実行するJITトレース | `loop_jump_count`が`FB_CONF_RUNTIME_YIELD_THRESHOLD`へ達するまで実行する | C++ dispatcherは取得済み後方辺ごとにC++ Interpreter handlerを実行し、共通しきい値に達した後にyield statusを返す。RuntimeEngineは`yield_requested`を返し、`System.run_guest()`は`on_yield()`後にCOOSへ制御を返す。イベント配送はCOOS境界の別処理として行う | TEST-VSOC-10, `{ADR_LoopBackedgeYield}` |
 | TEST-VSOC-23 | デバッガとJITの同時構成拒否 | `RuntimeCompositionConfig(execution=JIT, debugger=True)` | ランタイム構成を合成する | 構成時 `assert` で拒否され、デバッガがJITキャッシュを操作する経路は生成されない | `{DebuggerInterpreterComposition}` |
 | TEST-VSOC-24 | アタッチ中のインタープリタ専用実行 | `Interpreter + Debugger` 構成 | デバッガをアタッチして `step()` または `continue` を実行する | PCを保持したままインタープリタだけが実行され、JITの動的切替とキャッシュ操作は発生しない | `{DebuggerInterpreterComposition}` |
 
@@ -47,11 +48,11 @@ Loader/Interpreter/JIT/vMMIO/Debuggerを統合する`vsoc_harness`（静的DI）
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | TEST-VSOC-50 | 静的vIRQノードの登録 | root・4分類・デバイスの固定ノード | `fireball:host/virq.register(node_id, function_index)` を実行 | 静的ノードだけが受け付けられ、親子関係と原因源表は変更されない | `runtime_vsoc.md` `register-virq-dispatcher` |
 | TEST-VSOC-51 | WASM関数シグネチャ拒否 | 登録対象に不一致シグネチャの関数 | `fireball:host/virq.register` 経由で登録 | `(u32,u32,u32,u32,u32) -> u32` 以外は拒否され、有効登録を上書きしない | `runtime_vsoc.md` `register-virq-dispatcher` |
-| TEST-VSOC-52 | Safepoint前の登録変更不可視性 | 有効登録A、保留登録B | Safepoint前とSafepoint後に同じイベントを配送 | 前半はA、Safepoint後はBだけが観測され、途中状態は観測されない | `{JIT_Safepoint}` |
+| TEST-VSOC-52 | COOS協調境界前の登録変更不可視性 | 有効登録A、保留登録B | C++のyield statusを受け取る前後に同じイベントを配送 | yield前はA、次のCOOS協調境界で変更反映後はBだけが観測され、途中状態は観測されない | `{GLOBAL_InterruptWakeup}` |
 | TEST-VSOC-53 | 原因レコードの階層伝播 | root/category/deviceに登録済み関数 | `PASS_THROUGH`を返すイベントを配送 | `root → 分類 → デバイス → ゲスト関数`の順に1回ずつ呼ばれる | `runtime_vsoc.md` `dispatch-interrupt-event` |
 | TEST-VSOC-54 | HANDLEDとREJECTの終端 | 各階層の関数が結果を返す | `HANDLED`または`REJECT`を返す | `HANDLED`は子へ進まず、`REJECT`は診断後に終了し、FAULTへ再帰配送しない | `runtime_vsoc.md` `dispatch-interrupt-event` |
 | TEST-VSOC-55 | WASIポーリングとの分離 | vIRQイベントとHALポーリングハンドルが同時に存在 | 両経路を独立して処理 | vIRQ配送が`poll-check`/`poll-wait`を起動せず、ポーリングがvIRQ登録を変更しない | [`interface_wit.md`](docs/components/tier3_platform/interface_wit.md) のポーリング契約 |
-| TEST-VSOC-56 | 再スケジュール世代境界での再開可能実行 | COOSの世代観測コールバックが次のトレース境界でyieldを要求 | `run_cooperative()`を1スライス進めてから再開する | vSoCは命令途中ではなくトレース境界で`None`を返して制御をCOOSへ戻し、同じ実行コンテキストから再開して結果を保持する | `{ADR_InterruptRescheduleGeneration}` `{ADR_TraceBoundaryYield}` |
+| TEST-VSOC-56 | 再スケジュール世代境界でのCOOS再開可能実行 | C++ dispatch中にCOOSの再スケジュール世代が更新され、LOOP後方分岐yieldしきい値にも達する | `System.run_guest()`をCOOSタスクとして実行し、別タスクの実行後にゲストを再開する | 再スケジュール世代はhandlerごとに読まず、後方分岐しきい値でC++ dispatchが戻った後にCOOS境界で観測する。同じ実行コンテキストから再開して結果を保持し、別タスクはゲスト完了前に実行される | `{ADR_InterruptRescheduleGeneration}` `{ADR_LoopBackedgeYield}` |
 | TEST-VSOC-25 | ブレークポイントヒットでDebugging状態へ | 任意の実行状態 | ブレークポイント到達 | `(any)→Debugging` | - |
 | TEST-VSOC-26 | resume(interp)でインタープリタ実行を継続 | Debugging状態 | `resume(interp)`を呼ぶ | PCを保持したままInterpreterRunへ遷移し、JITキャッシュ操作を行わない | `{VSOC_Lifecycle}` |
 
@@ -70,13 +71,13 @@ Loader/Interpreter/JIT/vMMIO/Debuggerを統合する`vsoc_harness`（静的DI）
 | TEST-VSOC-40 | `fireball_call` host-call の引数個数とパッキング | 汎用システムコール発行 | `fireball:host/trap` import の受け渡しを検証 | `fireball_call(id, arg0..arg5)`（計7引数）として統一され、6つの汎用引数がvMMIOレジスタを経由せずホストハンドラへ直接渡る。vIRQ/vDMA専用host callはこのABIに含めない | `{Syscall_Mapping}` |
 
 ### 実装の勘所・不変条件（Gotchas & Implementation Invariants）
-<!-- traceability: {GOTCHA-VSOC-01} {GOTCHA-VSOC-02} {GOTCHA-VSOC-03} {Interpreter_LazyJITSwitch} {ADR_TraceBoundaryYield} {ExecutionContext_Layout} {EnvironmentPointer} {VsocRuntime_Layout} -->
+<!-- traceability: {GOTCHA-VSOC-01} {GOTCHA-VSOC-02} {GOTCHA-VSOC-03} {Interpreter_LazyJITSwitch} {ADR_LoopBackedgeYield} {ExecutionContext_Layout} {EnvironmentPointer} {VsocRuntime_Layout} -->
 
 | GOTCHA ID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| GOTCHA-VSOC-01 | JITキャッシュ再判定の主体分離（インタープリタ完全ステートレス） | インタープリタ実行中ブロックから次のホットブロックへ遷移 | `step()` の実行ループを確認 | インタープリタ自身は JIT キャッシュを一切保持・参照せず、トレース境界で制御が vSoC に戻るたびに vSoC の `step()` 内でキャッシュを再判定して JIT 実行へ切り替える。**実装の勘所**: インタープリタ内部に JIT キャッシュ参照コードを埋め込むと、ハンドラがステートフルになりデバッグ切り替えやキャッシュフラッシュの同期が破綻する | `Interpreter_LazyJITSwitch` |
-| GOTCHA-VSOC-02 | 概算Yieldの主体分離（コルーチン責務の局所化） | JIT トレースまたはインタープリタ実行中 | トレース終了時の制御フローを確認 | インタープリタおよび JIT トレース自身は `co_yield` を発行せず `void` で関数復帰し、`execution_context.ip` を読み取った vSoC 自身が `yield_threshold` を評価して `co_yield` を発行する。**実装の勘所**: インタープリタをコルーチン化すると命令ディスパッチの `[[clang::musttail]]` 直結が不可能になり性能が崩壊する | `ADR_TraceBoundaryYield` |
-| GOTCHA-VSOC-03 | `execution_context` 内包レイアウトと委譲シグネチャ | WASM スタック初期化 | コンテキストオフセットを確認 | `vsoc_runtime`（`mem_base` `+0x28`, `mem_size` `+0x2C`, `globals_base` `+0x30`, `globals_limit` `+0x34`）は独立構造体ではなく `execution_context` の内部に配置され、Tier 2 ABIはJITヘルパー配列を含む152バイトである。`exec_trace` 呼び出し時は `(ctx, sp, local_base, tos)` の4引数で委譲される。**実装の勘所**: コンテキスト外にポインタを分散させると、レジスタ圧迫とキャッシュミスが増加する | `ExecutionContext_Layout`, `EnvironmentPointer`, `VsocRuntime_Layout` |
+| GOTCHA-VSOC-01 | C++ Interpreter handler後のdispatch | C++ handlerが分岐後のPCを確定した状態 | native dispatchの制御遷移を確認する | C++ dispatcherが同一native dispatch内で次PCのtraceまたはhandlerを実行し、Python/vSoCへ命令ごとに戻らない。このhandler-mediated遷移をchainと呼ばない | `{JIT_BackedgeYield}`, `test_native_interpreter_returns_to_python_at_loop_yield_counts` |
+| GOTCHA-VSOC-02 | 共通LOOP後方分岐yield条件 | C++ Interpreter単独またはHybrid JIT経路 | branch回数とdispatch statusを確認する | 共通contextのLOOP後方分岐数が共通しきい値に達した時だけC++ dispatcherがyield statusを返す。両経路の復帰条件は一致する | - |
+| GOTCHA-VSOC-03 | `execution_context` 内包レイアウトと委譲シグネチャ | WASM スタック初期化 | コンテキストオフセットを確認 | `vsoc_runtime`（`mem_base` `+0x28`, `mem_size` `+0x2C`, `globals_base` `+0x30`, `globals_limit` `+0x34`）は独立構造体ではなく `execution_context` の内部に配置され、x86-64 Tier 2 ABIはLOOPカウンタとしきい値を含む128バイトである。`exec_trace` 呼び出し時は `(ctx, sp, local_base, tos)` の4引数で委譲される。**実装の勘所**: コンテキスト外にポインタを分散させると、レジスタ圧迫とキャッシュミスが増加する | `ExecutionContext_Layout`, `EnvironmentPointer`, `VsocRuntime_Layout` |
 
 ## 3. テスト検証実績と網羅状況
 
@@ -85,5 +86,5 @@ Loader/Interpreter/JIT/vMMIO/Debuggerを統合する`vsoc_harness`（静的DI）
 ## 4. 未検証・スコープ外
 
 - [`runtime_vsoc_contract.wit`](docs/components/tier2_runtime/wit/runtime_vsoc_contract.wit)によるWIT型定義そのものとの整合性。
-- Cortex-M33実機でのSafepointチェック周期の精度（`{Challenge_ApproximateYield}`は仕様上も「検討中」の未解決課題）。
+- ARMv8-M実機でのLOOP分岐回数しきい値と壁時計応答時間の対応（ハードウェア仕様・実測条件はTBD）。
 - マルチコア環境でのメモリ可視性（「既知の制限」でスコープ外と明記）。

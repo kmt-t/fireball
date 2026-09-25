@@ -24,17 +24,20 @@ from _bootstrap import configure_import_paths
 configure_import_paths(_PYSIM_DIR, _BENCH_DIR)
 
 import wasm_opcodes as op
+from config import FB_CONF_RUNTIME_YIELD_THRESHOLD
 from control_flow import extract_basic_blocks, iter_block_ops
 from execution_context import WASMContext
-from runtime_engine import RuntimeEngine
 from system_containers import ReadOnlyFlatMapView, StaticVector
 from tier3_executer.interpreter.interpreter import (
+    NATIVE_RUNTIME_PROFILE_STATS_ENABLED,
     Interpreter,
     InterpreterBindings,
     WasmNumber,
 )
 from tier3_executer.jit.jit_cache import HotspotBitmap
 from tier3_executer.jit.jit_manager import JITRuntimeManager
+from tier3_executer.jit.jit_runtime import JITInterpreter
+from tier3_executer.jit.runtime_engine import RuntimeEngine
 from tier3_executer.jit.x64_jit import TraceCompiler
 from wasm_module import I32, LocalWidthMap
 from wasm_reader import parse
@@ -112,6 +115,7 @@ class JITCompilerBenchmark:
         native_results: list[int] = []
         jit_results: list[int] = []
         last_runtime_engine: RuntimeEngine | None = None
+        last_jit_interpreter: JITInterpreter | None = None
 
         for _ in range(3):
             interp_python = Interpreter(module, InterpreterBindings.empty())
@@ -131,31 +135,43 @@ class JITCompilerBenchmark:
             native_results.append(int(res_native[0]))
 
             runtime_engine = RuntimeEngine(
-                jit_runtime=JITRuntimeManager(jit_compiler=self.compiler, yield_threshold=16)
+                jit_runtime=JITRuntimeManager(
+                    jit_compiler=self.compiler,
+                    yield_threshold=FB_CONF_RUNTIME_YIELD_THRESHOLD,
+                )
             )
             runtime_engine.register_module_blocks(module)
-            interp_jit = Interpreter(module, InterpreterBindings.empty())
+            interp_jit = JITInterpreter(
+                module, InterpreterBindings.empty(), runtime_engine
+            )
 
             # Warm up and compile the hot traces before measuring native execution.
-            runtime_engine.run(interp_jit, fn_idx, [100])
+            interp_jit.call(fn_idx, [100])
             runtime_engine.idle_hook(budget=10)
+            runtime_engine.reset_stats()
 
             t0 = time.perf_counter()
-            res_jit = runtime_engine.run(interp_jit, fn_idx, [LOOP_COUNT])
+            res_jit = interp_jit.call(fn_idx, [LOOP_COUNT])
             t1 = time.perf_counter()
             jit_times_ms.append((t1 - t0) * 1000)
             jit_results.append(int(res_jit[0]))
             last_runtime_engine = runtime_engine
+            last_jit_interpreter = interp_jit
 
         assert python_results[0] == python_results[1] == python_results[2]
         assert native_results[0] == native_results[1] == native_results[2]
         assert jit_results[0] == jit_results[1] == jit_results[2]
         assert python_results[0] == native_results[0] == jit_results[0]
         assert last_runtime_engine is not None
-        assert last_runtime_engine.stat_jit_invocations > 0, "JIT benchmark did not execute a trace"
-        assert last_runtime_engine.stat_native_loop_calls > 0, (
-            "JIT benchmark did not enter the native loop path"
-        )
+        assert last_jit_interpreter is not None
+        if NATIVE_RUNTIME_PROFILE_STATS_ENABLED:
+            last_runtime_engine.collect_runtime_stats = True
+            last_runtime_engine.reset_stats()
+            diagnostic_result = last_jit_interpreter.call(fn_idx, [LOOP_COUNT])
+            assert int(diagnostic_result[0]) == jit_results[0]
+            assert last_runtime_engine.stat_jit_invocations > 0, (
+                "diagnostic run did not execute a JIT trace"
+            )
 
         python_time_ms = median(python_times_ms)
         native_time_ms = median(native_times_ms)
@@ -172,10 +188,14 @@ class JITCompilerBenchmark:
         results["interp_python_loop_result"] = python_results[0]
         results["interp_native_loop_result"] = native_results[0]
         results["jit_loop_result"] = jit_results[0]
-        results["jit_loop_trace_invocations"] = last_runtime_engine.stat_jit_invocations
-        results["jit_loop_native_calls"] = last_runtime_engine.stat_native_loop_calls
-        results["jit_loop_interpreter_steps"] = last_runtime_engine.stat_interp_steps
-        results["jit_loop_chain_hits"] = last_runtime_engine.stat_chain_hits
+        results["runtime_profile_stats_enabled"] = int(NATIVE_RUNTIME_PROFILE_STATS_ENABLED)
+        if NATIVE_RUNTIME_PROFILE_STATS_ENABLED:
+            results["jit_loop_trace_invocations"] = last_runtime_engine.stat_jit_invocations
+            results["jit_loop_interpreter_steps"] = last_runtime_engine.stat_interp_steps
+            results["jit_loop_native_dispatch_trace_transitions"] = (
+                last_runtime_engine.stat_native_dispatch_trace_transitions
+            )
+        results["runtime_yield_threshold"] = FB_CONF_RUNTIME_YIELD_THRESHOLD
 
         # 3.5 PIC trace-header-owned helper tail dispatch.  This is the
         # terminal boundary used when a complex operation is implemented by C:
@@ -334,6 +354,9 @@ def main():
         f"  * Arithmetic Loop (100,000 iters):    Python: {res['interp_python_loop_time_ms']:.2f} ms | Native interp: {res['interp_native_loop_time_ms']:.2f} ms | JIT: {res['jit_loop_time_ms']:.2f} ms"
     )
     print(
+        f"  * Native return boundary:              every {res['runtime_yield_threshold']} taken LOOP backedges"
+    )
+    print(
         f"  * Differential Result Check:          Python={res['interp_python_loop_result']:,} | Native interp={res['interp_native_loop_result']:,} | JIT={res['jit_loop_result']:,} (MATCH)"
     )
     if res["jit_speedup_vs_python_ratio"] >= 1.0:
@@ -356,13 +379,15 @@ def main():
             f"  * JIT vs native interpreter:           "
             f"{1.0 / res['jit_speedup_vs_native_ratio']:.2f}x slower"
         )
-    print(
-        f"  * JIT Execution Coverage:             "
-        f"{res['jit_loop_trace_invocations']:,} trace invocations, "
-        f"{res['jit_loop_chain_hits']:,} chain hits, "
-        f"{res['jit_loop_interpreter_steps']:,} interpreter steps, "
-        f"{res['jit_loop_native_calls']:,} C++ loop calls"
-    )
+    if res["runtime_profile_stats_enabled"]:
+        print(
+            f"  * JIT Execution Coverage:             "
+            f"{res['jit_loop_trace_invocations']:,} trace invocations, "
+            f"{res['jit_loop_native_dispatch_trace_transitions']:,} dispatcher trace transitions, "
+            f"{res['jit_loop_interpreter_steps']:,} interpreter steps"
+        )
+    else:
+        print("  * JIT Execution Coverage:             runtime stats compiled out")
     print(
         f"  * PIC Trace-Header Helper Tail Jump:  {res['context_helper_tail_mops']:.2f} M ops/s  ({res['context_helper_tail_ns']:.1f} ns/dispatch; {res['context_helper_tail_invocations']:,} calls)"
     )

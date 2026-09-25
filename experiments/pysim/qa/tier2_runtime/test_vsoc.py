@@ -7,7 +7,6 @@ Traceability: runtime_vsoc_test_spec.md
 
 import socket
 import struct
-import sys
 from pathlib import Path
 
 # Setup paths
@@ -20,17 +19,12 @@ _REPO_ROOT = _PYSIM_DIR.parent.parent
 # Keep the product Tier 3 package ahead of tests/tier3_executer when importing
 # runtime_engine's qualified Tier 3 modules.
 
-from control_flow import extract_basic_blocks
 from execution_context import WASMContext
-from helpers import expect_assertion, wat_to_wasm
 from fixtures.platform_drivers import create_reference_platform_drivers
+from helpers import expect_assertion, wat_to_wasm
 from helpers import make_interpreter as Interpreter
-from tier2_runtime.logger import LogDictionary, Logger, LogLevel
-from runtime_engine import RuntimeEngine
-from tier3_executer.jit.jit_cache import CardState, JITTrace
-from tier3_executer.jit.jit_manager import JITRuntimeManager
 from runtime_test_driver import RuntimeEngineDebugDriver
-from tier3_platform.drivers.hal.stream import DedicatedLogSink, StreamTransport
+from scheduler import ChannelAction, Scheduler, Task, TaskState
 from system import (
     System,
 )
@@ -41,10 +35,14 @@ from system_containers import (
 from test_support import (
     PcOnlyCompiler,
     compile_module_block,
-    compile_test_block,
-    make_runtime_engine,
     make_pc_only_module,
+    make_runtime_engine,
 )
+from tier2_runtime.logger import LogDictionary, Logger, LogLevel
+from tier3_executer.jit.jit_cache import CardState, JITTrace
+from tier3_executer.jit.x64_jit import TraceCompiler
+from tier3_platform.drivers.hal.stream import DedicatedLogSink, StreamTransport
+from tier3_platform.drivers.wasi.context import WasiHostContext
 from virq import (
     DispatchResult,
     InterruptEvent,
@@ -55,11 +53,8 @@ from virq import (
     VirqFaultCode,
     VirqNode,
 )
-from tier3_platform.drivers.wasi.context import WasiHostContext
-from wasm_module import BasicBlock, I32, Function, FuncType, Module
-from wasm_opcodes import I32_CONST
+from wasm_module import I32, Function, FuncType, Module
 from wasm_reader import parse
-from tier3_executer.jit.x64_jit import TraceCompiler
 
 
 def _make_virq_module() -> Module:
@@ -81,18 +76,7 @@ def _virq_event(vector_id: int, source_id: int = 0) -> InterruptEvent:
     return InterruptEvent(vector_id, source_id, 7, 11, 13)
 
 
-class _OneShotRescheduleObserver:
-    """Test double for the scheduler-owned generation boundary callback."""
-
-    def __init__(self) -> None:
-        self.polls = 0
-
-    def observe_reschedule_generation(self) -> bool:
-        self.polls += 1
-        return self.polls == 1
-
-
-def test_virq_50_static_nodes_and_safepoint_registration():
+def test_virq_50_static_nodes_and_boundary_registration():
     """TEST-VSOC-50: only the fixed root/category/device nodes are mutable."""
     dispatcher = VirqDispatcher(_make_virq_module(), lambda _index, _v, _s, _c, _p0, _p1: 1)
 
@@ -105,7 +89,7 @@ def test_virq_50_static_nodes_and_safepoint_registration():
     assert not invalid.is_ok and invalid.error == RegistrationError.NODE_OUT_OF_RANGE
     assert dispatcher.active_functions[int(VirqNode.ROOT)] == 0xFFFF_FFFF
 
-    dispatcher.commit_safepoint()
+    dispatcher.commit_pending_registrations()
     assert dispatcher.active_functions[int(VirqNode.ROOT)] == 0
     assert dispatcher.active_functions[VirqNode.device(2)] == 1
     assert dispatcher.source_table[3].vector_id == 0x0100
@@ -116,7 +100,7 @@ def test_virq_51_rejects_wrong_wasm_signature_without_overwrite():
     """TEST-VSOC-51: a signature mismatch does not replace an active registration."""
     dispatcher = VirqDispatcher(_make_virq_module(), lambda _index, _v, _s, _c, _p0, _p1: 0)
     accepted = dispatcher.register_dispatcher(int(VirqNode.ROOT), 0)
-    dispatcher.commit_safepoint()
+    dispatcher.commit_pending_registrations()
     rejected = dispatcher.register_dispatcher(int(VirqNode.ROOT), 3)
 
     assert accepted.is_ok
@@ -125,8 +109,8 @@ def test_virq_51_rejects_wrong_wasm_signature_without_overwrite():
     assert dispatcher.active_functions[int(VirqNode.ROOT)] == 0
 
 
-def test_virq_52_pending_registration_is_invisible_until_safepoint():
-    """TEST-VSOC-52: the active table changes only at the safepoint commit."""
+def test_virq_52_pending_registration_is_invisible_until_boundary():
+    """TEST-VSOC-52: the active table changes only at the COOS boundary commit."""
     calls = StaticVector[tuple[int, InterruptEvent]](capacity=4)
 
     def invoke(
@@ -147,11 +131,11 @@ def test_virq_52_pending_registration_is_invisible_until_safepoint():
 
     dispatcher = VirqDispatcher(_make_virq_module(), invoke)
     dispatcher.register_dispatcher(int(VirqNode.ROOT), 0)
-    dispatcher.commit_safepoint()
+    dispatcher.commit_pending_registrations()
     dispatcher.register_dispatcher(int(VirqNode.ROOT), 1)
 
     first = dispatcher.dispatch_interrupt_event(_virq_event(0x1000))
-    dispatcher.commit_safepoint()
+    dispatcher.commit_pending_registrations()
     second = dispatcher.dispatch_interrupt_event(_virq_event(0x1000))
 
     assert first == DispatchResult(VirqDispatchResult.HANDLED)
@@ -178,7 +162,7 @@ def test_virq_53_dispatches_fixed_event_through_static_hierarchy():
     dispatcher.register_dispatcher(int(VirqNode.ROOT), 0)
     dispatcher.register_dispatcher(int(VirqNode.DEVICE), 1)
     dispatcher.register_dispatcher(VirqNode.device(0), 2)
-    dispatcher.commit_safepoint()
+    dispatcher.commit_pending_registrations()
 
     result = dispatcher.dispatch_interrupt_event(_virq_event(0x0100, source_id=0))
 
@@ -207,7 +191,7 @@ def test_virq_54_handled_and_reject_are_terminal():
     dispatcher.register_dispatcher(int(VirqNode.ROOT), 0)
     dispatcher.register_dispatcher(int(VirqNode.DEVICE), 1)
     dispatcher.register_dispatcher(VirqNode.device(0), 2)
-    dispatcher.commit_safepoint()
+    dispatcher.commit_pending_registrations()
 
     modes.extend(
         (
@@ -237,7 +221,7 @@ def test_virq_55_does_not_enter_wasi_polling_path():
         lambda _index, _v, _s, _c, _p0, _p1: int(VirqDispatchResult.HANDLED),
     )
     dispatcher.register_dispatcher(int(VirqNode.ROOT), 0)
-    dispatcher.commit_safepoint()
+    dispatcher.commit_pending_registrations()
 
     result = dispatcher.dispatch_interrupt_event(_virq_event(0x2000))
     assert result.outcome == VirqDispatchResult.HANDLED
@@ -260,44 +244,124 @@ def test_runtime_engine_registers_virq_dispatchers_through_bound_module():
     assert invalid.error == RegistrationError.FUNCTION_SIGNATURE_INVALID
 
 
-def test_runtime_engine_cooperative_run_yields_at_reschedule_boundary():
-    """TEST-VSOC-56: vSoC returns a resumable slice when COOS requests a generation yield."""
+def test_runtime_engine_run_advances_one_trace_boundary():
+    """RuntimeEngine.run advances one trace boundary and preserves resumable state."""
     wasm_bytes = wat_to_wasm(
         """
         (module
-          (func (export "f") (result i32)
-            i32.const 7
+          (func (export "count") (param $count i32) (result i32)
+            (local $index i32)
+            (block $exit
+              (loop $loop
+                local.get $index
+                local.get $count
+                i32.ge_s
+                br_if $exit
+                local.get $index
+                i32.const 1
+                i32.add
+                local.set $index
+                br $loop
+              )
+            )
+            local.get $index
           )
         )
         """
     )
-    observer = _OneShotRescheduleObserver()
-    engine = make_runtime_engine(reschedule_observer=observer)
+    engine = make_runtime_engine()
     module = engine.load_wasm(wasm_bytes)
-    driver = engine.run_cooperative(Interpreter(module), 0, [])
-    assert next(driver) is None
-    try:
-        next(driver)
-    except StopIteration as done:
-        result = done.value
-    else:
-        assert False, "cooperative runtime must complete after the resumed slice"
-    assert result is not None
-    assert result[0] == 7
-    assert observer.polls >= 2
+    interpreter = Interpreter(module)
+    call_state = interpreter.start(0, (2,))
+    boundary = engine.run(interpreter, call_state)
+    assert not boundary.call_state.finished
+    results = engine.complete_call(interpreter, boundary.call_state)
+    assert results == [2]
 
 
-def test_virq_unregisters_dispatcher_at_safepoint():
-    """The dedicated vIRQ unregister host call takes effect at the next safepoint."""
+def test_system_coos_runtime_rejects_synchronous_guest_execution():
+    """A COOS-bound vSoC cannot silently run a guest to completion synchronously."""
+    module = parse(wat_to_wasm('(module (func (export "entry")))'))
+    system = System()
+
+    with expect_assertion("COOS runtime calls must be advanced by System at each trace boundary"):
+        system.runtime_engine.call(Interpreter(module), module.export_func_index("entry"), ())
+
+
+def test_system_guest_interpreter_returns_to_coos_and_resumes():
+    """System hands off after one interpreter boundary and resumes the same call."""
+
+    wasm_bytes = wat_to_wasm(
+        """
+        (module
+          (func (export "count") (param $count i32) (result i32)
+            (local $index i32)
+            (block $exit
+              (loop $loop
+                local.get $index
+                local.get $count
+                i32.ge_s
+                br_if $exit
+                local.get $index
+                i32.const 1
+                i32.add
+                local.set $index
+                br $loop
+              )
+            )
+            local.get $index
+          )
+        )
+        """
+    )
+    system = System()
+    module = parse(wasm_bytes)
+    interpreter = Interpreter(module)
+    monitor_observed_guest_ready: list[bool] = []
+
+    def monitor_task():
+        guest_task = system.scheduler.get_task(guest_task_id)
+        assert guest_task is not None
+        assert guest_task.state == TaskState.READY
+        monitor_observed_guest_ready.append(True)
+        yield (ChannelAction.YIELD, None)
+
+    polls = 0
+
+    def observe_at_second_boundary(scheduler: Scheduler, task: Task | None = None) -> bool:
+        nonlocal polls
+        polls += 1
+        return polls == 2
+
+    from unittest.mock import patch
+
+    with patch.object(Scheduler, "observe_reschedule_generation", observe_at_second_boundary):
+        guest_task_id = system.scheduler.spawn(
+            "guest",
+            system.run_guest(interpreter, module.export_func_index("count"), (100,)),
+        )
+        system.scheduler.spawn("monitor", monitor_task())
+        system.scheduler.run_until_idle()
+
+    guest_task = system.scheduler.get_task(guest_task_id)
+    assert guest_task is not None
+    assert guest_task.state == TaskState.TERMINATED
+    assert guest_task.result == [100]
+    assert monitor_observed_guest_ready == [True]
+    assert polls > 2
+
+
+def test_virq_unregisters_dispatcher_at_coos_boundary():
+    """The dedicated vIRQ unregister host call takes effect at the next COOS boundary."""
     dispatcher = VirqDispatcher(_make_virq_module(), lambda _index, _v, _s, _c, _p0, _p1: 0)
     assert dispatcher.register_dispatcher(int(VirqNode.ROOT), 0).is_ok
-    dispatcher.commit_safepoint()
+    dispatcher.commit_pending_registrations()
     assert dispatcher.unregister_dispatcher(int(VirqNode.ROOT)).is_ok
     assert (
         dispatcher.dispatch_interrupt_event(_virq_event(0x2000)).outcome
         == VirqDispatchResult.HANDLED
     )
-    dispatcher.commit_safepoint()
+    dispatcher.commit_pending_registrations()
     assert (
         dispatcher.dispatch_interrupt_event(_virq_event(0x2000)).outcome
         == VirqDispatchResult.PASS_THROUGH
@@ -306,8 +370,8 @@ def test_virq_unregisters_dispatcher_at_safepoint():
 
 def test_hal_task_ipc_communication():
     """TEST-HAL-01: HAL operates as a distinct task on COOS and handles commands via IPC rendezvous."""
-    from tier3_platform.drivers.hal.dummy import DummyDriver
     from hal_dispatch import ARG_BUFFER_HANDLE, ARG_LENGTH, ARG_OFFSET
+    from tier3_platform.drivers.hal.dummy import DummyDriver
     from tier3_platform.drivers.wasi.context import Wasi03pEngine, WasiIpcCmd
 
     sysv = System()
@@ -541,12 +605,14 @@ def test_tier_02_interpreter_to_jit_trace_transition():
     engine = make_runtime_engine(yield_threshold=3, card_shift=2, jit_compiler=TraceCompiler())
     mod = engine.load_wasm(wasm_bytes)
     loop_pc = mod.blocks[1].head_pc
-    results = engine.run(Interpreter(mod), 0, [5])
+    results = engine.call(Interpreter(mod), 0, [5])
     assert results[0] == 120
     assert engine.stat_interp_steps >= 3
     assert engine.stat_jit_invocations >= 2
     assert engine.jit_runtime.bitmap.get_state(loop_pc) == CardState.COMPILED
-    assert engine.jit_runtime.cache.active.has_trace(loop_pc) or engine.jit_runtime.cache.warm.has_trace(loop_pc)
+    assert engine.jit_runtime.cache.active.has_trace(
+        loop_pc
+    ) or engine.jit_runtime.cache.warm.has_trace(loop_pc)
 
 
 def test_tier_03_trace_chaining_and_interpreter_fallback():
@@ -591,7 +657,7 @@ def test_tier_03_trace_chaining_and_interpreter_fallback():
     engine.jit_runtime.bitmap.mark_compiled(block_a.head_pc)
     # Assert trace A chained directly into trace B
     assert trace_a.chain_next == block_b.head_pc
-    results = engine.run(Interpreter(mod), 0, [100])
+    results = engine.call(Interpreter(mod), 0, [100])
     assert results[0] == 160
     assert engine.stat_jit_invocations == 2
     assert engine.stat_interp_steps >= 1
@@ -663,8 +729,6 @@ def test_guest_wasi_02_interpreter_clock_and_random():
     mod = parse(wasm_bytes)
     sysv = System(drivers=create_reference_platform_drivers())
     try:
-        from tier3_platform.drivers.hal.dummy import DummyDriver
-
         ctx = WasiHostContext(sysv)
         host_funcs = ctx.build_interpreter_host_functions(mod)
         mod.init_memory_data(ctx.guest_memory, ())
@@ -838,6 +902,7 @@ def test_interpreter_debugger_attachment_and_hooks():
 def test_wasm_loader_and_radix_binary_tree_view_indexes():
     """TEST-LOAD-01..47: Verifies WASM Loader zero-copy indexing, verification, and ReadOnlyRadixBinaryTreeView file offset & hash symbol indexes."""
     from loader import WasmLoader
+
     from experiments.pysim.qa.tier2_runtime.test_loader import _build_test_wasm_binary
 
     loader = WasmLoader()

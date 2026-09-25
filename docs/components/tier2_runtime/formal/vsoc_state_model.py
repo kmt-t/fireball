@@ -1,6 +1,6 @@
 """
 docs/components/tier2_runtime/formal/vsoc_state_model.py
-pyModelChecking による vSoC 実行状態・Safepoint 応答性・IRQ/JIT 境界の形式検証（証明・変異検査対応）モデル
+pyModelChecking model for cooperative JIT LOOP backedge yielding and IRQ/JIT safety.
 """
 
 from pyModelChecking import Kripke
@@ -13,65 +13,63 @@ BACKS = [
 
 
 def build_model(*, guards: bool = True) -> Kripke:
-    """
-    vSoC 実行エンジン・割り込み Safepoint・IRQ/JIT 境界の保護証明・変異検査対応モデル
-    - s_interpreter_run: インタープリタ実行中 (interp_mode, running)
-    - s_jit_run: JIT ネイティブ実行中 (jit_mode, running)
-    - s_safepoint_check: Safepoint ポーリング確認 (safepoint)
-    - s_interrupt_handling: 割り込みイベント処理 (handling_irq)
-    - s_debugger_paused: デバッガ一時停止 (paused, debug_safe)
-    - s_bad_irq_jit: 違反状態（割り込み処理中に JIT が無同期で直接暴走した状態）
-    - s_safepoint_starved: 違反状態（バックエッジに Safepoint が埋め込まれず、JIT ネイティブ
-      ループが Safepoint に到達しないまま実行を続ける状態）
+    """Model bounded native LOOP exits and interrupt delivery at COOS boundaries.
+
+    The two backedge-count states abstract any finite configured threshold. A
+    taken LOOP edge advances the count; threshold arrival returns through the
+    C++ interpreter handler and exposes a COOS boundary. The native helper does
+    not inspect pending interrupt events itself.
     """
     S = [
         "s_interpreter_run",
         "s_jit_run",
-        "s_safepoint_check",
+        "s_loop_backedge_count_1",
+        "s_loop_backedge_count_2",
+        "s_coos_boundary",
         "s_interrupt_handling",
         "s_debugger_paused",
         "s_bad_irq_jit",
-        "s_safepoint_starved",
+        "s_yield_starved",
     ]
     S0 = {"s_interpreter_run"}
     R = [
-        # インタープリタから Hot 判定で JIT 実行へ
         ("s_interpreter_run", "s_jit_run"),
-        # インタープリタ実行中の Safepoint 確認
-        ("s_interpreter_run", "s_safepoint_check"),
-        # JIT 実行中の Safepoint ポーリング
-        ("s_jit_run", "s_safepoint_check"),
-        # Safepoint で通常実行継続
-        ("s_safepoint_check", "s_jit_run"),
-        # Safepoint で割り込み検知 ➔ ハンドラへ
-        ("s_safepoint_check", "s_interrupt_handling"),
-        # Safepoint でブレークポイント検知 ➔ デバッガ停止へ
-        ("s_safepoint_check", "s_debugger_paused"),
-        # 割り込み完了後 ➔ インタープリタ/スケジューラへ
+        ("s_interpreter_run", "s_coos_boundary"),
+        ("s_jit_run", "s_loop_backedge_count_1"),
+        ("s_loop_backedge_count_1", "s_loop_backedge_count_2"),
+        # The second abstract count reaches the finite configured threshold.
+        ("s_loop_backedge_count_2", "s_coos_boundary"),
+        # COOS may resume the guest or dispatch an event after the boundary.
+        ("s_coos_boundary", "s_interpreter_run"),
+        ("s_coos_boundary", "s_interrupt_handling"),
         ("s_interrupt_handling", "s_interpreter_run"),
-        # デバッガ再開 ➔ インタープリタへ
+        # A configured debugger can pause the interpreter at a debug boundary.
+        ("s_interpreter_run", "s_debugger_paused"),
         ("s_debugger_paused", "s_interpreter_run"),
-        # 違反状態の自己ループ
         ("s_bad_irq_jit", "s_bad_irq_jit"),
-        ("s_safepoint_starved", "s_safepoint_starved"),
+        ("s_yield_starved", "s_yield_starved"),
     ]
     if not guards:
-        # ガード無効時（変異検査）:
-        # 1. Safepoint 同期を介さず JIT 実行中に直接割り込みを処理すると IRQ/JIT レース違反へ突入
+        # Mutation 1: permit interrupt handling to start during native JIT.
         R = [*R, ("s_jit_run", "s_bad_irq_jit")]
-        # 2. バックエッジへの Safepoint 埋め込みを省くと、JIT ネイティブループは
-        #    Safepoint へ到達しないまま実行を続け、割り込みに永久に応答しなくなる
-        R = [*R, ("s_jit_run", "s_safepoint_starved")]
+        # Mutation 2: remove the finite-count route back to the COOS boundary.
+        R = [
+            edge
+            for edge in R
+            if edge != ("s_loop_backedge_count_2", "s_coos_boundary")
+        ]
+        R = [*R, ("s_loop_backedge_count_2", "s_yield_starved")]
 
     L = {
         "s_interpreter_run": {"running", "interp_mode"},
         "s_jit_run": {"running", "jit_mode"},
-        "s_safepoint_check": {"safepoint"},
+        "s_loop_backedge_count_1": {"running", "jit_mode", "loop_counter"},
+        "s_loop_backedge_count_2": {"running", "jit_mode", "loop_counter"},
+        "s_coos_boundary": {"coos_boundary"},
         "s_interrupt_handling": {"handling_irq"},
         "s_debugger_paused": {"paused", "debug_safe"},
-        "s_bad_irq_jit": {"handling_irq", "jit_mode"},  # 違反状態
-        # 違反状態: running のまま safepoint に永久に到達しない
-        "s_safepoint_starved": {"running", "jit_mode", "safepoint_starved"},
+        "s_bad_irq_jit": {"handling_irq", "jit_mode"},
+        "s_yield_starved": {"running", "jit_mode", "yield_starved"},
     }
     return Kripke(S=S, S0=S0, R=R, L=L)
 
@@ -85,22 +83,20 @@ def properties():
             "logic": "CTL",
             "formula": AG(Not(bad)),
             "violation": bad,
-            "expect": True,  # Safepoint 同期により割り込み中の JIT レースは到達不能
+            "expect": True,
         },
         {
-            "name": "safepoint_reachable_definitively",
+            "name": "jit_backedge_yields_to_coos",
             "kind": "liveness",
             "logic": "CTL",
             "formula": AG(
                 Imply(
-                    AtomicProposition("running"),
-                    AF(AtomicProposition("safepoint")),
+                    AtomicProposition("jit_mode"),
+                    AF(AtomicProposition("coos_boundary")),
                 )
             ),
-            # 実行中のまま Safepoint へ永久に到達しない状態が違反。
-            # guards=False（バックエッジ Safepoint 撤去）でのみ到達可能になることを変異検査で示す。
-            "violation": AtomicProposition("safepoint_starved"),
-            "expect": True,  # 実行中タスクは必ず Safepoint に到達する (AF)
+            "violation": AtomicProposition("yield_starved"),
+            "expect": True,
         },
     ]
 

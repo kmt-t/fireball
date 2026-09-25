@@ -76,7 +76,7 @@ class RuntimeWithoutPlugins(Generic[ResultT, ArgumentT]):
 class RuntimeWithPlugins(Generic[ResultT, ArgumentT]):
     """有効なプラグインだけを固定ベクタへ結線した合成結果。"""
 
-    __slots__ = ("executor", "observers", "runtime_id", "tick", "call_id")
+    __slots__ = ("call_id", "executor", "observers", "runtime_id", "tick")
 
     def __init__(
         self,
@@ -124,7 +124,11 @@ class RuntimeWithPlugins(Generic[ResultT, ArgumentT]):
 
 
 class RuntimeComposer:
-    """不変構成から Runtime の具象形を起動時に一度だけ合成する。"""
+    """不変構成から Runtime の具象形を起動時に一度だけ選ぶ参照モデル。
+
+    Python版は構成合成の振る舞いを確認するモデルであり、未選択コードを
+    バイナリから除去する保証は runtime_composer.hxx のC++構成に置く。
+    """
 
     __slots__ = ()
 

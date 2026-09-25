@@ -9,7 +9,6 @@ _PYSIM_DIR = _TESTS_DIR.parent
 _REPO_ROOT = _PYSIM_DIR.parent.parent
 
 
-import sys
 from pathlib import Path
 
 """
@@ -19,7 +18,6 @@ executable buffer and run on the CPU, never just re-derived by hand a
 second time. Supports Windows x64 ABI and Linux System V AMD64 ABI.
 """
 
-import sys
 from pathlib import Path
 
 _PYSIM_DIR = Path(__file__).resolve().parent

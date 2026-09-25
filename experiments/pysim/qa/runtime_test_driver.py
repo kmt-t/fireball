@@ -13,8 +13,9 @@ from typing import Protocol
 
 from control_flow import iter_block_ops
 from execution_context import WASMContext
-from runtime_engine import JITRuntime, RuntimeEngine
+from jit_runtime_contract import JITRuntime
 from system_containers import StaticVector
+from tier3_executer.jit.runtime_engine import RuntimeEngine
 from wasm_module import BasicBlock, WasmOperand
 from wasm_opcodes import I32_ADD, I32_CONST, I32_MUL, I32_SUB, LOCAL_GET, LOCAL_SET, LOCAL_TEE
 

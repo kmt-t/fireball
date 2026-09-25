@@ -21,7 +21,7 @@ FB_CONF_MAX_FUNCTIONS = 256
 FB_CONF_MAX_EXPORTS = 64
 FB_CONF_MAX_GLOBALS = 32
 FB_CONF_MAX_IMPORTS = 32
-FB_CONF_MAX_WASM_PAGES = 16  # System physical budget limit for linear memory pages (64KB each)
+FB_CONF_MAX_WASM_PAGES = 16  # Simulator configuration limit for linear memory pages (64KB each)
 FB_CONF_WASM_PAGE_SIZE = 65536
 
 BACKS = ["components/tier2_runtime/runtime_loader.md"]
@@ -803,7 +803,7 @@ class WasmLoader:
             if mem.initial_pages > self.max_wasm_pages:
                 raise WasmVerifyError(
                     f"V6 Verification Failed: Memory initial pages {mem.initial_pages} "
-                    f"exceeds system physical budget {self.max_wasm_pages} pages"
+                    f"exceeds configured simulator limit {self.max_wasm_pages} pages"
                 )
 
         # Sort exports_dict by export name for deterministic layout

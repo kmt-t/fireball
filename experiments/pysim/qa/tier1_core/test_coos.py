@@ -5,7 +5,6 @@ Unit tests for Tier 1 Core: COOS Rendezvous & Handoff
 Traceability: os_coos_test_spec.md
 """
 
-import sys
 from pathlib import Path
 
 # Setup paths

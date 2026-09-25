@@ -8,14 +8,21 @@ from typing import Protocol
 from config import (
     FB_CONF_JIT_AGING_STEP_SCAN_BYTES,
     FB_CONF_JIT_AGING_STEP_UNITS,
+    FB_CONF_JIT_HOTSPOT_PROFILING,
+    FB_CONF_MAX_BASIC_BLOCKS,
+    FB_CONF_RUNTIME_YIELD_THRESHOLD,
+    JIT_CACHE_BANK_CAPACITY_BYTES,
+    JIT_CACHE_BANK_COUNT,
     JIT_CARD_SHIFT,
+    JIT_X64_TRACE_HEADER_BYTES,
     RUNTIME_BLOCK_CACHE_SLOT_COUNT,
 )
-from control_flow import iter_block_ops
+from control_flow import is_control_terminator, iter_block_ops
 from jit_scoring import JIT_CANDIDATE_THRESHOLD
-from system_containers import StaticVector
+from system_containers import StaticVector, freeze_sequence
+from tier2_runtime.jit_runtime_contract import NativeBlockVisit, NativeTraceDispatchEntry
 from wasm_module import BasicBlock, LocalWidthMap, Module, WasmOperand
-from wasm_opcodes import BLOCK, END, IF, LOOP
+from wasm_opcodes import END
 
 from .jit_cache import (
     BlockCardMask,
@@ -75,6 +82,10 @@ class JITRuntimeManager:
 
     __slots__ = (
         "_fast_block_slots",
+        "_native_dispatch_cache_entries",
+        "_native_dispatch_cache_key",
+        "_native_dispatch_cache_trackable_blocks",
+        "_trackable_generation",
         "aging_bytes_scanned",
         "aging_scan_bytes",
         "aging_step_units",
@@ -85,6 +96,8 @@ class JITRuntimeManager:
         "candidate_threshold",
         "compile_queue",
         "compile_queue_capacity",
+        "exec_counter",
+        "hotspot_profiling_enabled",
         "jit_compiler",
         "min_trace_bytes",
         "module",
@@ -92,13 +105,12 @@ class JITRuntimeManager:
         "trackable",
         "update_bitmap",
         "yield_threshold",
-        "exec_counter",
     )
 
     def __init__(
         self,
         jit_compiler: JITCompiler | None = None,
-        yield_threshold: int = 16,
+        yield_threshold: int = FB_CONF_RUNTIME_YIELD_THRESHOLD,
         card_shift: int = JIT_CARD_SHIFT,
         code_lengths: Sequence[int] = (),
         min_trace_bytes: int | None = None,
@@ -106,8 +118,9 @@ class JITRuntimeManager:
         compile_queue_capacity: int = 4,
         aging_step_units: int = FB_CONF_JIT_AGING_STEP_UNITS,
         aging_scan_bytes: int = FB_CONF_JIT_AGING_STEP_SCAN_BYTES,
+        hotspot_profiling_enabled: bool = FB_CONF_JIT_HOTSPOT_PROFILING,
     ):
-        assert yield_threshold >= 1
+        assert 1 <= yield_threshold <= 0xFFFFFFFF
         assert candidate_threshold >= 0
         assert compile_queue_capacity >= 1
         assert aging_step_units >= 1 and aging_scan_bytes >= 1
@@ -117,6 +130,7 @@ class JITRuntimeManager:
         self.aging_step_units = aging_step_units
         self.aging_scan_bytes = aging_scan_bytes
         self.jit_compiler = jit_compiler
+        self.hotspot_profiling_enabled = hotspot_profiling_enabled
         self.min_trace_bytes = min_trace_bytes if min_trace_bytes is not None else (1 << card_shift)
         self.bitmap = HotspotBitmap(card_shift=card_shift, code_lengths=code_lengths)
         self.trackable = BlockCardMask(card_shift=card_shift, code_lengths=code_lengths)
@@ -128,6 +142,10 @@ class JITRuntimeManager:
         self.compile_queue: StaticVector[int] = StaticVector(capacity=compile_queue_capacity)
         self.module: Module | None = None
         self._fast_block_slots = _empty_block_slots()
+        self._native_dispatch_cache_entries: tuple[NativeTraceDispatchEntry, ...] = ()
+        self._native_dispatch_cache_trackable_blocks: tuple[int, ...] = ()
+        self._native_dispatch_cache_key: tuple[int, int, int, bool] | None = None
+        self._trackable_generation = 0
         self.exec_counter = 0
         self.aging_steps = 0
         self.aging_units_processed = 0
@@ -160,6 +178,8 @@ class JITRuntimeManager:
                 and block.jit_score >= self.candidate_threshold
             ):
                 self.trackable.mark(block.head_pc)
+        self._trackable_generation += 1
+        self._native_dispatch_cache_key = None
 
     def get_block(self, pc: int) -> BasicBlock | None:
         """Resolve a block through the fixed direct-mapped Tier 3 index cache."""
@@ -188,12 +208,14 @@ class JITRuntimeManager:
         loops_to = block.loops_to
         terminator_offset = (pc & 0xFFFF) + block.byte_span
         terminator = code[terminator_offset] if terminator_offset < len(code) else END
-        # A trace never pushes a structured control frame.  Leave its delimiter
-        # for the interpreter so the frame stack remains an exact prefix.
-        if terminator == BLOCK or terminator == LOOP or terminator == IF:
+        # Control instructions stay with the C++ Interpreter handler. A
+        # straight-line successor may use the shared common-code chain dispatcher.
+        if is_control_terminator(terminator):
             next_pc = None
             loops_to = None
-        return self.jit_compiler.compile_trace(
+        else:
+            loops_to = None
+        trace = self.jit_compiler.compile_trace(
             pc,
             iter_block_ops(code, pc & 0xFFFF, block.byte_span),
             next_pc,
@@ -201,6 +223,126 @@ class JITRuntimeManager:
             block.byte_span,
             function.local_width_map_cache,
         )
+        return trace
+
+    def native_dispatch_state(
+        self, function_index: int
+    ) -> tuple[tuple[NativeTraceDispatchEntry, ...], tuple[int, ...]]:
+        """Return a cached C++ dispatch snapshot, rebuilding after state changes."""
+
+        cache_key = (
+            function_index,
+            self.cache.generation,
+            self._trackable_generation,
+            self.hotspot_profiling_enabled,
+        )
+        if cache_key == self._native_dispatch_cache_key:
+            return (
+                self._native_dispatch_cache_entries,
+                self._native_dispatch_cache_trackable_blocks,
+            )
+
+        active = self.cache.active.traces
+        warm = self.cache.warm.traces
+        oldest = self.cache.oldest.traces
+        entries: StaticVector[NativeTraceDispatchEntry] = StaticVector(
+            capacity=JIT_CACHE_BANK_COUNT * self.cache.active.entry_capacity
+        )
+        active_index = 0
+        warm_index = 0
+        oldest_index = 0
+        no_pc = 0xFFFF_FFFF
+        module = self.module
+        assert module is not None
+        while active_index < len(active) or warm_index < len(warm) or oldest_index < len(oldest):
+            active_item = active[active_index] if active_index < len(active) else None
+            warm_item = warm[warm_index] if warm_index < len(warm) else None
+            oldest_item = oldest[oldest_index] if oldest_index < len(oldest) else None
+            selected = active_item
+            selected_bank = 0
+            if warm_item is not None and (selected is None or warm_item[0] < selected[0]):
+                selected = warm_item
+                selected_bank = 1
+            if oldest_item is not None and (selected is None or oldest_item[0] < selected[0]):
+                selected = oldest_item
+                selected_bank = 2
+            if selected_bank == 0:
+                active_index += 1
+            elif selected_bank == 1:
+                warm_index += 1
+            else:
+                oldest_index += 1
+            assert selected is not None
+            head_pc, trace = selected
+            if head_pc >> 16 != function_index:
+                continue
+            block = self.get_block(head_pc)
+            assert block is not None and trace.raw_addr is not None
+            entries.append(
+                (
+                    head_pc,
+                    trace.raw_addr,
+                    block.byte_span,
+                    trace.result_words,
+                    int(trace.has_return_val),
+                    trace.stack_words,
+                    block.frame_depth,
+                    no_pc if block.next_pc is None else block.next_pc,
+                    no_pc if block.loops_to is None else block.loops_to,
+                    no_pc if trace.chain_next is None else trace.chain_next,
+                    self.max_chain_stack_words(trace),
+                    int(selected_bank == 2),
+                )
+            )
+        trackable_heads: StaticVector[int] = StaticVector(capacity=FB_CONF_MAX_BASIC_BLOCKS)
+        if self.hotspot_profiling_enabled:
+            for block in module.blocks:
+                if block.head_pc >> 16 == function_index and self.trackable.is_marked(
+                    block.head_pc
+                ):
+                    trackable_heads.append(block.head_pc)
+        self._native_dispatch_cache_entries = freeze_sequence(entries)
+        self._native_dispatch_cache_trackable_blocks = freeze_sequence(trackable_heads)
+        self._native_dispatch_cache_key = cache_key
+        return (
+            self._native_dispatch_cache_entries,
+            self._native_dispatch_cache_trackable_blocks,
+        )
+
+    def set_hotspot_profiling_enabled(self, enabled: bool) -> None:
+        """Select whether future native dispatches collect JIT hotness observations."""
+
+        if self.hotspot_profiling_enabled == enabled:
+            return
+        self.hotspot_profiling_enabled = enabled
+        if not enabled:
+            self.exec_counter = 0
+            self.ring.drain()
+            self.compile_queue.clear()
+        self._native_dispatch_cache_key = None
+
+    def record_native_block_visits(
+        self, visits: tuple[NativeBlockVisit, ...], total_visits: int
+    ) -> bool:
+        """Replay bounded C++ block observations into the hotspot/card state."""
+
+        if not self.hotspot_profiling_enabled:
+            assert not visits and total_visits == 0
+            return False
+        assert total_visits >= 0
+        retained_visits = 0
+        for pc, count in visits:
+            assert self.trackable.is_marked(pc)
+            assert 1 <= count <= 2
+            retained_visits += count
+            for _ in range(count):
+                self.ring.record(pc)
+        assert total_visits >= retained_visits
+        self.exec_counter += total_visits
+        if self.exec_counter >= self.yield_threshold:
+            self.on_yield()
+            return True
+        return False
 
     def is_trackable(self, pc: int) -> bool:
         """Return whether the loader-selected candidate bit is set."""
@@ -215,6 +357,8 @@ class JITRuntimeManager:
     def record_block_head(self, pc: int) -> bool:
         """Record one candidate execution and report a yield threshold hit."""
 
+        if not self.hotspot_profiling_enabled:
+            return False
         if not self.trackable.is_marked(pc):
             return False
         self.ring.record(pc)
@@ -285,6 +429,7 @@ class JITRuntimeManager:
                 compiled_count += 1
             else:
                 self.trackable.unmark(pc)
+                self._trackable_generation += 1
         return compiled_count
 
     def drain_compile_queue(self) -> int:
@@ -295,6 +440,8 @@ class JITRuntimeManager:
     def lookup(self, pc: int) -> JITTrace | None:
         """Apply the candidate/card filter and look up one resident trace."""
 
+        if not self.hotspot_profiling_enabled:
+            return self.cache.lookup(pc)
         if not self.trackable.is_marked(pc):
             return None
         if self.bitmap.get_state(pc) != CardState.COMPILED:
@@ -320,6 +467,7 @@ class JITRuntimeManager:
         """Remove a permanently unsupported block from the candidate mask."""
 
         self.trackable.unmark(pc)
+        self._trackable_generation += 1
 
     def chain_length(self, trace: JITTrace) -> int:
         """Return the number of resident bodies reached by a native chain."""
@@ -348,16 +496,28 @@ class JITRuntimeManager:
         return current
 
     def max_chain_stack_words(self, trace: JITTrace) -> int:
-        """Return the largest raw stack write required by a resident chain."""
-
+        """Bound stack writes across resident forward trace chains."""
+        resident_limit = (
+            JIT_CACHE_BANK_COUNT * JIT_CACHE_BANK_CAPACITY_BYTES // JIT_X64_TRACE_HEADER_BYTES
+        )
+        pending: StaticVector[JITTrace] = StaticVector(capacity=resident_limit)
+        visited: StaticVector[int] = StaticVector(capacity=resident_limit)
+        pending.append(trace)
         words = trace.stack_words
-        current = trace
-        while current.chain_next is not None:
-            successor = self.cache.find_trace(current.chain_next)
-            assert successor is not None
-            current = successor
-            if current.stack_words > words:
-                words = current.stack_words
+        while pending:
+            current = pending.pop_back()
+            if visited.contains(current.head_pc):
+                continue
+            visited.append(current.head_pc)
+            words = max(words, current.stack_words)
+            if current.chain_next is not None:
+                successor = self.cache.find_trace(current.chain_next)
+                assert successor is not None
+                if not visited.contains(successor.head_pc) and not any(
+                    item.head_pc == successor.head_pc for item in pending
+                ):
+                    pending.append(successor)
+            assert len(visited) <= resident_limit
         return words
 
     def flush_all(self) -> None:

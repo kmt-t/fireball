@@ -214,7 +214,7 @@ JITコード生成専用に予約された連続固定長リージョン（`FB_C
 - **障害時回復**: 所有権移譲が完了しない場合、`rollback_transfer(handle)` を現在実行中の送信タスクから呼び出して元の所有者へ戻し、リソースのダングリングを防止する。
 
 ### 6.3 共有ページマッピング・所有権変更通知フック
-<!-- traceability: {OwnershipTransfer} {VmmioShmDelegation} {META_FaultIsolation} -->
+<!-- traceability: {OwnershipTransfer} {META_FaultIsolation} -->
 Tier 1 は、共有メモリ予約の外部マッピング管理者がライフサイクルを監視するための汎用コールバック口 `PageMappingCallbacks` を提供する。`page_idx` は4KB単位の仮想予約スロット番号であり、物理アドレスや物理ページ番号ではない。これは vMMIO、PTE、TLB を契約へ持ち込むものではなく、予約と物理バック領域の対応・所有権状態を通知する依存性逆転用ポートである。
 
 | コールバック | シグネチャ | 発火条件 | 契約上の意味 |
@@ -226,8 +226,8 @@ Tier 1 は、共有メモリ予約の外部マッピング管理者がライフ�
 `on_owner_changed` はメモリマネージャが所有者台帳を更新した後に一度だけ発火し、登録側は旧マッピングをアンマップする。新しい所有ビューは、所有権確立後の `on_map_page`（`claim` または `rollback_transfer`）で明示的に再登録する。コールバックの呼び出し側が task-id を引数で自己申告することはない。
 
 ## 7. 設計判断 (ADR)
-<!-- traceability: {ADR_MemoryManagerMinimalSurface} {ADR_PageGranularPermissionIsolation} {ADR_SharedBlockRaii} -->
-このコンポーネントのADRは、セクション直下のトレーサビリティコメントで参照する。物理実装に関する `ADR_PageGranularPermissionIsolation` は [`runtime_memory.md`](docs/components/tier2_runtime/runtime_memory.md) を正本とする。
+<!-- traceability: {ADR_MemoryManagerMinimalSurface} {ADR_SharedBlockRaii} -->
+この節では共有メモリ契約の公開面と所有権規則を定める。ページテーブルとTLBの物理操作は本契約に含めない。
 
 - **決定事項**: (2026-02-17)
   - **背景**: IPC転送用の共有メモリを、単なる`shm-id`（整数）として扱うか、所有権を持つリソース型として扱うかを決定する必要があった。

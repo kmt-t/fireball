@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import csv
-import sys
 from itertools import combinations
 from pathlib import Path
 
@@ -18,14 +17,14 @@ execute or reject their explicitly forbidden composition while preserving archit
 """
 
 import wasmtime
-from tier3_plugins.debugger.debugger import DebuggerManager
 from helpers import make_interpreter as Interpreter
-from test_support import make_runtime_engine
 from system import System
 from system_containers import ReadOnlyFlatMapView
-from tier3_platform.drivers.wasi.context import WasiHostContext
-from wasm_reader import parse
+from test_support import make_runtime_engine
 from tier3_executer.jit.x64_jit import TraceCompiler
+from tier3_platform.drivers.wasi.context import WasiHostContext
+from tier3_plugins.debugger.debugger import DebuggerManager
+from wasm_reader import parse
 
 PAIRWISE_CASES = [
     # (engine, cache, mem_width, storage, host_call, scheduler, debugger)
@@ -109,9 +108,8 @@ WAT_TEMPLATE = """
 )
 """
 
-from tier3_platform.drivers.hal.dummy import DummyDriver
-from hal_dispatch import ARG_BUFFER_HANDLE, ARG_LENGTH, ARG_OFFSET, WasiIpcCmd
 from fixtures.uvwasi_reference import UvwasiReferenceContext
+from hal_dispatch import ARG_BUFFER_HANDLE, ARG_LENGTH, ARG_OFFSET, WasiIpcCmd
 from helpers import expect_assertion
 from runtime_composer import (
     RuntimeComposer,
@@ -121,6 +119,7 @@ from runtime_composer import (
     RuntimePluginSelection,
 )
 from runtime_events import RuntimeEvent
+from tier3_platform.drivers.hal.dummy import DummyDriver
 
 
 class _CompositionExecutor:
@@ -223,7 +222,7 @@ def run_single_pairwise_case(case_id: str, case_tuple: tuple[str, ...]) -> None:
         res = interp.call(fn_idx, [n_iters])
     elif sched_mode in ("yield", "multi"):
         if runtime_engine:
-            res = runtime_engine.run(interp, fn_idx, [n_iters], idle_budget=2)
+            res = runtime_engine.call(interp, fn_idx, [n_iters], idle_budget=2)
         else:
             call_state = interp.start(fn_idx, [n_iters])
             while not call_state.finished:

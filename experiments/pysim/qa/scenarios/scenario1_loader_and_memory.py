@@ -1,4 +1,3 @@
-import sys
 from pathlib import Path
 
 _PYSIM_DIR = Path(__file__).resolve().parent
@@ -16,8 +15,8 @@ Tests:
 """
 
 import wasmtime
-from tier3_executer.interpreter.interpreter import Interpreter, InterpreterBindings
 from system import System
+from tier3_executer.interpreter.interpreter import Interpreter, InterpreterBindings
 from tier3_platform.drivers.wasi.context import WasiHostContext
 from wasm_reader import parse
 

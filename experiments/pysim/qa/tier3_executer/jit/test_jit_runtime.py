@@ -17,7 +17,6 @@ _REPO_ROOT = _PYSIM_DIR.parent.parent
 
 
 import wasmtime
-from tier3_executer.jit.common_code import TRACE_ENTRY_STUB_BYTES
 from config import (
     FB_CONF_JIT_CACHE_SIZE,
     JIT_CACHE_ABSOLUTE_ADDRESS_POOL_BYTES,
@@ -28,7 +27,6 @@ from config import (
     JIT_CACHE_COMMON_CODE_OFFSET_BYTES,
     JIT_CACHE_OLDEST_OFFSET_BYTES,
     JIT_CACHE_PAGE_BYTES,
-    JIT_CACHE_REGION_BASE_ADDRESS,
     JIT_CACHE_REGION_BYTES,
     JIT_CACHE_REGION_PAGE_COUNT,
     JIT_CACHE_WARM_OFFSET_BYTES,
@@ -38,9 +36,17 @@ from config import (
 from execution_context import WASMContext
 from helpers import make_interpreter as Interpreter
 from helpers import wat_to_wasm
+from system_containers import ReadOnlyRadixBinaryTreeStorage, StaticVector
+from test_support import (
+    PcOnlyCompiler,
+    make_pc_only_functions_module,
+    make_pc_only_module,
+    make_runtime_engine,
+)
 from tier3_executer.interpreter.interpreter import InterpreterBindings
-from tier3_executer.jit.jit_runtime import JITInterpreter
-from runtime_engine import RuntimeEngine
+from tier3_executer.jit.common_code import (
+    TRACE_ENTRY_STUB_BYTES,
+)
 from tier3_executer.jit.jit_cache import (
     CardState,
     HistoryRing,
@@ -50,17 +56,12 @@ from tier3_executer.jit.jit_cache import (
     JITTrace,
     JITTraceHeader,
 )
-from system_containers import ReadOnlyRadixBinaryTreeStorage, StaticVector
-from test_support import (
-    PcOnlyCompiler,
-    make_pc_only_functions_module,
-    make_pc_only_module,
-    make_runtime_engine,
-)
+from tier3_executer.jit.jit_runtime import JITInterpreter
+from tier3_executer.jit.runtime_engine import RuntimeEngine
+from tier3_executer.jit.x64_jit import TraceCompiler
 from wasm_module import I32, LocalWidthMap
 from wasm_opcodes import BR_TABLE, I32_ADD, I32_CONST, LOCAL_GET, LOCAL_SET
 from wasm_reader import parse
-from tier3_executer.jit.x64_jit import TraceCompiler
 
 
 def test_jitr_00_cache_region_is_two_pages_with_fixed_common_area():
@@ -76,7 +77,6 @@ def test_jitr_00_cache_region_is_two_pages_with_fixed_common_area():
     assert JIT_CACHE_ACTIVE_OFFSET_BYTES == 2048
     assert JIT_CACHE_WARM_OFFSET_BYTES == 4096
     assert JIT_CACHE_OLDEST_OFFSET_BYTES == 6144
-    assert JIT_CACHE_REGION_BASE_ADDRESS % JIT_CACHE_REGION_BYTES == 0
     assert (
         JIT_CACHE_COMMON_CODE_BYTES + JIT_CACHE_BANK_COUNT * JIT_CACHE_BANK_CAPACITY_BYTES
         == JIT_CACHE_REGION_BYTES
@@ -84,7 +84,7 @@ def test_jitr_00_cache_region_is_two_pages_with_fixed_common_area():
 
 
 def test_jitr_00_common_apccs_area_survives_rotation_and_flush():
-    """AAPCS stencils stay in the shared 2KB prefix while banks rotate."""
+    """x64 common helper stubs stay in the shared 2KB prefix while banks rotate; ARMv8-M placement is TBD."""
     cache = JITMultiBufferCache()
     common = cache.common_code
     assert common.region_bytes == JIT_CACHE_REGION_BYTES
@@ -257,7 +257,7 @@ def test_jitr_promote_transfers_inbound_sources_avoiding_dangling_chain():
 
 def test_jitr_bitmap_checked_before_cache_lookup():
     """
-    RuntimeEngine.run() must check the O(1) card bitmap before ever calling
+    RuntimeEngine.call() must check the O(1) card bitmap before ever calling
     cache.lookup(): most blocks are never compiled, so a miss must be
     rejected in O(1) without touching the cache's per-bank search, or the
     miss penalty on the overwhelmingly common path would dwarf the win a
@@ -300,7 +300,7 @@ def test_jitr_bitmap_checked_before_cache_lookup():
 
     JITMultiBufferCache.lookup = spy
     try:
-        engine.run(interp, fn_idx, [50])
+        engine.call(interp, fn_idx, [50])
     finally:
         JITMultiBufferCache.lookup = real_lookup
 
@@ -315,13 +315,13 @@ def test_jitr_bitmap_checked_before_cache_lookup():
 
 
 def test_jitr_31_to_35_trace_chaining_and_ok_unlinking():
-    """TEST-JITR-31..35: Direct chaining into resident Active/Warm successors and O(k) unlinking on Oldest purge."""
+    """TEST-JITR-31..35: Successor metadata for resident traces and O(k) unlinking on Oldest purge."""
     cache = JITMultiBufferCache(bank_capacity=512)
     # t1 falls through to t2
     t2 = JITTrace(head_pc=0x200, native_fn=lambda: 2, size_bytes=64)
     cache.insert(t2)  # t2 in Active
     t1 = JITTrace(head_pc=0x100, native_fn=lambda: 1, size_bytes=64, next_pc=0x200)
-    cache.insert(t1)  # t1 chains directly into resident t2 (Active)
+    cache.insert(t1)  # t1 records t2 as its logical successor in Active
     assert t1.chain_next == 0x200
     # Rotate 1: t1, t2 -> Warm
     cache.rotate()
@@ -336,28 +336,22 @@ def test_jitr_31_to_35_trace_chaining_and_ok_unlinking():
     assert not cache.oldest.has_trace(0x200)
 
 
-def test_jitc_20_trace_header_52byte_x64_physical_layout():
-    """TEST-JITC-20: x64 header carries native-width chain and helper pointers."""
+def test_jitc_20_trace_header_24byte_x64_physical_layout():
+    """TEST-JITC-20: x64 header stores only trace identity and native targets."""
     hdr = JITTraceHeader(head_wasm_pc=0x12345678, trace_byte_size=128, flags=0x01, variant_id=0x02)
-    hdr.chain_next_pc = 0x87654321
     hdr.chain_target_addr = 0x20001000
     hdr.helper_target_addr = 0x0123456789ABCDEF
     raw = hdr.pack()
-    assert len(raw) == 52
+    assert len(raw) == 24
 
-    fields = struct.unpack("<IHBBIIQIIIQII", raw)
-    pc, size, flags, var, next_pc, reserved, target = fields[:7]
+    fields = struct.unpack("<IHBBQQ", raw)
+    pc, size, flags, var, target, helper_target = fields
     assert pc == 0x12345678
     assert size == 128
     assert flags == 0x01
     assert var == 0x02
-    assert next_pc == 0x87654321
     assert target == 0x20001000
-    assert reserved == 0
-    assert fields[7:10] == (0, 32, 48)
-    assert fields[10] == 0x0123456789ABCDEF
-    assert fields[11] == 80
-    assert fields[12] == 0
+    assert helper_target == 0x0123456789ABCDEF
 
 
 def test_jitr_native_header_chain_executes_successor_body_once():
@@ -560,59 +554,72 @@ def test_jitr_compile_failure_unmarks_candidate_without_faking_compiled():
 
 
 def test_jitr_26_direct_mapped_folding_xor_jit_cache():
-    """TEST-JITR-26 & GOTCHA-JITR-05: Direct-Mapped Folding XOR JIT Cache[4] O(1) hit and rotation invalidation."""
+    """TEST-JITR-26 & GOTCHA-JITR-05: Native fixed-slot lookup and rotation invalidation."""
     cache = JITMultiBufferCache(bank_capacity=1024)
     # PC with function index 1, offset 0x20 -> (1 << 16) | 0x20 = 0x00010020
     pc1 = 0x00010020
-    pc2 = 0x00020020
+    pc2 = 0x00000003
     t1 = JITTrace(head_pc=pc1, native_fn=lambda: 10, size_bytes=64)
+    t2 = JITTrace(head_pc=pc2, native_fn=lambda: 20, size_bytes=64)
 
-    # 1. Verify hash slot folds UnifiedPC 32 -> 16 -> 8 -> 4 with 3 XORs
-    h1 = cache._hash_slot(pc1)
-    h2 = cache._hash_slot(pc2)
-    temp_h1 = pc1 ^ (pc1 >> 16)
-    temp_h1 = temp_h1 ^ (temp_h1 >> 8)
-    temp_h1 = temp_h1 ^ (temp_h1 >> 4)
-    temp_h1 = temp_h1 ^ (temp_h1 >> 2)
-    expected_h1 = temp_h1 & 0x03
-    assert h1 == expected_h1
-    assert h1 != h2, "Different function index should produce distinct hash slot"
+    # 1. These PCs collide after exactly three folds and 16 slots. A fourth
+    # fold produces a different slot for pc1 and would hide the old mismatch.
+    def slot_after_three_folds(pc: int) -> int:
+        folded = pc ^ (pc >> 16)
+        folded ^= folded >> 8
+        folded ^= folded >> 4
+        return folded & (cache.NUM_FAST_SLOTS - 1)
 
-    # 2. Insert populates fast slot
+    def slot_after_four_folds(pc: int) -> int:
+        folded = pc ^ (pc >> 16)
+        folded ^= folded >> 8
+        folded ^= folded >> 4
+        folded ^= folded >> 2
+        return folded & (cache.NUM_FAST_SLOTS - 1)
+
+    assert slot_after_three_folds(pc1) == slot_after_three_folds(pc2)
+    assert slot_after_four_folds(pc1) != slot_after_four_folds(pc2)
+
+    # The native fixed table owns one strong reference and replaces collisions.
+    cache._fast_cache.store(pc1, t1)
+    t2_refcount = sys.getrefcount(t2)
+    cache._fast_cache.store(pc2, t2)
+    assert sys.getrefcount(t2) == t2_refcount + 1
+    assert cache._fast_cache.lookup(pc1) is None
+    assert cache._fast_cache.lookup(pc2) is t2
+    cache._fast_cache.clear()
+    assert sys.getrefcount(t2) == t2_refcount
+
+    # 2. Insert populates the native fast slot.
     cache.insert(t1)
-    assert cache._fast_slots[h1] == (pc1, t1)
+    assert cache._fast_cache.lookup(pc1) is t1
 
-    # 3. Lookup hits fast slot
+    # 3. Lookup hits the fast slot.
     assert cache.lookup(pc1) is t1
 
-    # 4. Rotation invalidates fast slot (GOTCHA-JITR-05)
+    # 4. Rotation invalidates native slots (GOTCHA-JITR-05).
     cache.rotate()  # t1 moves to Warm
-    for slot in cache._fast_slots:
-        assert slot is None, (
-            "All fast slots must be cleared on rotate to prevent dangling old bank references"
-        )
+    assert cache._fast_cache.lookup(pc1) is None
 
-    # 5. Lookup refills fast slot from Warm (without promotion)
+    # 5. Lookup refills from Warm (without promotion).
     assert cache.lookup(pc1) is t1
     assert cache.promotions == 0
-    assert cache._fast_slots[h1] == (pc1, t1)
+    assert cache._fast_cache.lookup(pc1) is t1
 
-    # 6. Rotate again: t1 moves to Oldest
+    # 6. Rotate again: t1 moves to Oldest.
     cache.rotate()
-    for slot in cache._fast_slots:
-        assert slot is None
+    assert cache._fast_cache.lookup(pc1) is None
 
-    # 7. Lookup from Oldest: must trigger promotion to Active and update fast slot
+    # 7. Lookup from Oldest promotes to Active and fills the fast slot.
     promoted = cache.lookup(pc1)
     assert promoted is t1
     assert cache.promotions == 1
     assert cache.active.has_trace(pc1)
-    assert cache._fast_slots[h1] == (pc1, t1)
+    assert cache._fast_cache.lookup(pc1) is t1
 
-    # 8. Flush all clears fast slots
+    # 8. Flush releases all native fast-slot references.
     cache.flush_all()
-    for slot in cache._fast_slots:
-        assert slot is None
+    assert cache._fast_cache.lookup(pc1) is None
 
 
 def test_jitr_block_capacity_from_wasm_loader_and_no_set():
@@ -655,7 +662,7 @@ def test_jitr_block_capacity_from_wasm_loader_and_no_set():
 # 8. RuntimeEngine._invoke_trace: branch/skip resolution and interpreter
 #    hand-off correctness -- covers the compiled-trace <-> interpreter
 #    boundary that block-at-a-time debugger tests never exercise,
-#    since RuntimeEngine.run() is the integrated execution driver with its own
+#    since RuntimeEngine.call() is the integrated execution driver with its own
 #    _invoke_trace (see jit_runtime.md's tiered execution loop).
 # ===========================================================================
 
@@ -697,15 +704,249 @@ def test_jitr_br_if_loop_exit_jit_result_correct():
     interp = Interpreter(module)
 
     n = 50
-    results = engine.run(interp, fn_idx, [n])
+    results = engine.call(interp, fn_idx, [n])
     assert results == [sum(range(n))], (
-        f"sum_to({n}) via JIT-driven RuntimeEngine.run() = {results}, "
+        f"sum_to({n}) via JIT-driven RuntimeEngine.call() = {results}, "
         f"expected [{sum(range(n))}] -- the compiled loop-exit trace's "
         "condition must gate the branch, not be discarded"
     )
     assert len(engine.jit_runtime.cache.active.traces) > 0, (
         "the loop must have actually gotten hot enough to compile"
     )
+    assert engine.stat_native_control_handlers > 0, (
+        "JIT br_if terminators must run through C++ interpreter handlers"
+    )
+
+
+def test_jitr_loop_backedge_stays_in_cpp_until_coos_yield():
+    """TEST-JITR-63: C++ runs LOOP handlers until the taken-backedge threshold."""
+    wat = """
+    (module
+      (func (export "sum") (param i32) (result i32)
+        (local i32)
+        (loop $loop
+          local.get 1
+          local.get 0
+          i32.add
+          local.set 1
+          local.get 0
+          i32.const 1
+          i32.sub
+          local.tee 0
+          br_if $loop
+        )
+        local.get 1
+      )
+    )
+    """
+    module = parse(wat_to_wasm(wat))
+    function_index = module.export_func_index("sum")
+    engine = make_runtime_engine(jit_compiler=TraceCompiler(), yield_threshold=2)
+    engine.register_module_blocks(module)
+    loop_block = next(
+        block
+        for block in module.blocks
+        if block.loops_to == block.head_pc and block.head_pc >> 16 == function_index
+    )
+    trace = engine.jit_runtime._compile_trace(loop_block.head_pc, loop_block)
+    assert trace is not None
+    assert trace.next_pc is None
+    assert trace.chain_next is None
+    assert engine.jit_runtime.cache.insert(trace)
+    engine.jit_runtime.bitmap.mark_compiled(loop_block.head_pc)
+    interpreter = Interpreter(module)
+    call_state = interpreter.start(function_index, [5])
+    first_boundary = engine.run(interpreter, call_state)
+    assert first_boundary.yield_requested
+    assert first_boundary.call_state.current_pc() == loop_block.head_pc
+    assert engine.stat_native_control_handlers >= 2
+    assert engine.stat_jit_invocations >= 2
+    assert engine.stat_native_dispatch_trace_transitions > 0
+    assert first_boundary.call_state._frame is not None
+    assert first_boundary.call_state._frame.context.native_context.loop_jump_count == 0
+
+    results = engine.complete_call(interpreter, first_boundary.call_state)
+    assert list(results) == [15]
+
+
+def test_jitr_native_dispatch_snapshot_is_cached_and_hotspot_collection_is_configurable():
+    """Stable trace snapshots are reused, and steady-state runs can skip profiling."""
+    module = parse(
+        wat_to_wasm(
+            """(module
+              (func (export "sum") (param i32) (result i32)
+                (local i32)
+                (loop $loop
+                  local.get 1
+                  local.get 0
+                  i32.add
+                  local.set 1
+                  local.get 0
+                  i32.const 1
+                  i32.sub
+                  local.tee 0
+                  br_if $loop
+                )
+                local.get 1))"""
+        )
+    )
+    engine = make_runtime_engine(jit_compiler=TraceCompiler())
+    engine.register_module_blocks(module)
+    function_index = module.export_func_index("sum")
+    manager = engine.jit_runtime
+
+    initial_entries, initial_trackable = manager.native_dispatch_state(function_index)
+    cached_entries, cached_trackable = manager.native_dispatch_state(function_index)
+    assert cached_entries is initial_entries
+    assert cached_trackable is initial_trackable
+    assert initial_entries == ()
+    assert initial_trackable
+
+    loop_block = next(
+        block
+        for block in module.blocks
+        if block.loops_to == block.head_pc and block.head_pc >> 16 == function_index
+    )
+    trace = manager._compile_trace(loop_block.head_pc, loop_block)
+    assert trace is not None and manager.cache.insert(trace)
+    manager.mark_compiled(loop_block.head_pc)
+    compiled_entries, compiled_trackable = manager.native_dispatch_state(function_index)
+    assert len(compiled_entries) == 1
+    assert compiled_entries is not initial_entries
+    assert compiled_trackable == initial_trackable
+
+    manager.set_hotspot_profiling_enabled(False)
+    steady_entries, steady_trackable = manager.native_dispatch_state(function_index)
+    assert steady_entries == compiled_entries
+    assert steady_trackable == ()
+    assert manager.lookup(loop_block.head_pc) is trace
+    assert not manager.record_block_head(loop_block.head_pc)
+    assert not manager.record_native_block_visits((), 0)
+    manager.cache.rotate()
+    manager.cache.rotate()
+    oldest_entries, _ = manager.native_dispatch_state(function_index)
+    oldest_entry = next(entry for entry in oldest_entries if entry[0] == loop_block.head_pc)
+    assert oldest_entry[11] == 1
+    assert list(engine.call(Interpreter(module), function_index, [5])) == [15]
+    assert manager.cache.active.has_trace(loop_block.head_pc)
+
+
+def test_jitr_cross_frame_loop_branch_skips_special_link_but_keeps_trace_body():
+    """A legal branch across a nested frame uses the C++ handler, not the common helper."""
+    module = parse(
+        wat_to_wasm(
+            """(module
+              (func (export "count_down") (param $n i32) (result i32)
+                (loop $top
+                  (local.get $n)
+                  (i32.const 1)
+                  (i32.sub)
+                  (local.set $n)
+                  (block $inner
+                    (local.get $n)
+                    (br_if $top)
+                  )
+                )
+                (local.get $n)))"""
+        )
+    )
+    function_index = module.export_func_index("count_down")
+    engine = make_runtime_engine(jit_compiler=TraceCompiler())
+    engine.register_module_blocks(module)
+    branch_block = next(
+        block
+        for block in module.blocks
+        if block.loops_to is not None and block.head_pc >> 16 == function_index
+    )
+    target_block = engine.get_block(branch_block.loops_to)
+    assert target_block is not None
+    assert target_block.frame_depth < branch_block.frame_depth
+    trace = engine.jit_runtime._compile_trace(branch_block.head_pc, branch_block)
+    assert trace is not None
+    assert trace.next_pc is None
+    assert engine.jit_runtime.insert_trace(trace)
+    engine.jit_runtime.mark_compiled(branch_block.head_pc)
+
+    result = engine.call(Interpreter(module), function_index, [3])
+
+    assert list(result) == [0]
+    if engine.collect_runtime_stats:
+        assert engine.stat_native_control_handlers > 0
+        assert engine.stat_native_dispatch_trace_transitions > 0
+
+
+def test_interpreter_only_runtime_uses_the_shared_backedge_yield_threshold():
+    """A non-JIT RuntimeEngine returns to COOS at the same counted boundary."""
+    module = parse(
+        wat_to_wasm(
+            """
+            (module
+              (func (export "sum") (param $n i32) (result i32)
+                (local $sum i32)
+                (block $exit
+                  (loop $top
+                    (br_if $exit (i32.eqz (local.get $n)))
+                    (local.set $sum (i32.add (local.get $sum) (local.get $n)))
+                    (local.set $n (i32.sub (local.get $n) (i32.const 1)))
+                    (br $top)
+                  )
+                )
+                (local.get $sum)
+              )
+            )
+            """
+        )
+    )
+    function_index = module.export_func_index("sum")
+    engine = RuntimeEngine(yield_threshold=2)
+    engine.register_module_blocks(module)
+    interpreter = Interpreter(module)
+    first = engine.run(interpreter, interpreter.start(function_index, [5]))
+
+    assert first.yield_requested
+    loop_head_pc = next(
+        block.next_pc
+        for block in module.blocks
+        if block.next_pc is not None and block.next_pc < block.head_pc
+    )
+    assert first.call_state.current_pc() == (function_index << 16) | loop_head_pc
+    if engine.collect_runtime_stats:
+        assert engine.stat_native_control_handlers >= 2
+    assert list(engine.complete_call(interpreter, first.call_state)) == [15]
+
+
+def test_runtime_profile_counters_are_disabled_by_default_without_changing_results():
+    """Production defaults omit diagnostic counts while preserving dispatch semantics."""
+    module = parse(
+        wat_to_wasm(
+            """(module
+              (func (export "sum") (param i32) (result i32)
+                (local i32)
+                (loop $loop
+                  local.get 1
+                  local.get 0
+                  i32.add
+                  local.set 1
+                  local.get 0
+                  i32.const 1
+                  i32.sub
+                  local.tee 0
+                  br_if $loop
+                )
+                local.get 1))"""
+        )
+    )
+    engine = RuntimeEngine(yield_threshold=2)
+    function_index = module.export_func_index("sum")
+    engine.register_module_blocks(module)
+    result = engine.call(Interpreter(module), function_index, [5])
+
+    assert list(result) == [15]
+    assert not engine.collect_runtime_stats
+    assert engine.stat_interp_steps == 0
+    assert engine.stat_jit_invocations == 0
+    assert engine.stat_native_control_handlers == 0
+    assert engine.stat_native_dispatch_trace_transitions == 0
 
 
 def test_jit_interpreter_uses_interpreter_call_template_method():
@@ -781,7 +1022,7 @@ def test_jitr_backward_branch_block_byte_span_not_disqualified():
     interp = Interpreter(module)
 
     n = 50
-    results = engine.run(interp, fn_idx, [n])
+    results = engine.call(interp, fn_idx, [n])
     assert results == [sum(range(n))]
     compiled_heads = {pc for pc, _ in engine.jit_runtime.cache.active.traces}
     assert len(compiled_heads) >= 2, (
@@ -832,10 +1073,10 @@ def test_jitr_if_then_skipped_when_condition_false_after_jit():
     interp = Interpreter(module)
 
     n = 20
-    results = engine.run(interp, fn_idx, [n])
+    results = engine.call(interp, fn_idx, [n])
     expected = sum(abs(i - 5) for i in range(n))
     assert results == [expected], (
-        f"abs_sum({n}) via JIT-driven RuntimeEngine.run() = {results}, expected [{expected}] -- "
+        f"abs_sum({n}) via JIT-driven RuntimeEngine.call() = {results}, expected [{expected}] -- "
         "an unconditionally-taken then-body (or an unconditionally-skipped one) throws this off"
     )
     assert len(engine.jit_runtime.cache.active.traces) > 0, (
@@ -896,11 +1137,11 @@ def test_jitr_nested_loop_in_if_frame_stack_reconciliation():
     interp = Interpreter(module)
 
     n = 20
-    results = engine.run(interp, fn_idx, [n])
+    results = engine.call(interp, fn_idx, [n])
     even_count = sum(1 for i in range(n) if i % 2 == 0)
     expected = even_count * 3
     assert results == [expected], (
-        f"nested({n}) via JIT-driven RuntimeEngine.run() = {results}, expected [{expected}] -- "
+        f"nested({n}) via JIT-driven RuntimeEngine.call() = {results}, expected [{expected}] -- "
         "a desynced frame.frames misresolves the outer loop's `br` once JIT skips the inner "
         "loop/if exit without popping the frames the interpreter pushed for them"
     )
@@ -953,9 +1194,9 @@ def test_jitr_return_terminated_block_jit_result_correct():
     interp = Interpreter(module)
 
     n = 20
-    results = engine.run(interp, fn_idx, [n])
+    results = engine.call(interp, fn_idx, [n])
     assert results == [n * 3], (
-        f"f({n}) via JIT-driven RuntimeEngine.run() = {results}, expected [{n * 3}]"
+        f"f({n}) via JIT-driven RuntimeEngine.call() = {results}, expected [{n * 3}]"
     )
     assert len(engine.jit_runtime.cache.active.traces) > 0, (
         "the RETURN-terminated tail block must have compiled"
@@ -963,9 +1204,8 @@ def test_jitr_return_terminated_block_jit_result_correct():
 
 
 def test_jitr_terminal_trace_returns_to_interpreter_return_handler():
-    """TEST-JITR-44: a terminal JIT trace resumes at RETURN, not at the sentinel."""
+    """TEST-JITR-44: a terminal trace invokes the C++ RETURN handler once."""
     from tier3_executer.interpreter.interpreter import RETURN_SENTINEL_IP
-    from wasm_opcodes import RETURN
 
     module = parse(wat_to_wasm("(module (func (result i32) i32.const 7 return))"))
     engine = make_runtime_engine(
@@ -987,13 +1227,9 @@ def test_jitr_terminal_trace_returns_to_interpreter_return_handler():
     assert not call_state.finished
     assert call_state.cont is not None
     return_ip, frame, _, _ = call_state.cont
-    assert frame.code[return_ip] == RETURN
+    assert return_ip == RETURN_SENTINEL_IP
     assert frame.values.raw_top() == 7
 
-    call_state = interp.step(call_state)
-    assert not call_state.finished
-    assert call_state.cont is not None
-    assert call_state.cont[0] == RETURN_SENTINEL_IP
     call_state = interp.step(call_state)
     assert call_state.finished
     assert call_state.results == [7]
@@ -1045,7 +1281,7 @@ def test_jitr_nested_wasm_call_keeps_callee_result_on_shared_operand_stack():
     interp = Interpreter(module)
 
     caller = module.export_func_index("caller")
-    assert engine.run(interp, caller, [20]) == [2]
+    assert engine.call(interp, caller, [20]) == [2]
     assert any(pc >> 16 == 0 for pc, _ in engine.jit_runtime.cache.active.traces), (
         "the repeatedly called callee should be eligible for JIT execution"
     )
@@ -1083,16 +1319,16 @@ def test_jitr_if_else_loop_matches_interpreter_after_jit_compilation():
 
     inputs = (0, 1, 2, 17, 30)
     expected = [sum(i if i % 2 == 0 else -i for i in range(n)) for n in inputs]
-    reference = [list(interpreter_engine.run(interpreter, function_index, [n])) for n in inputs]
-    actual = [list(jit_engine.run(jit_interpreter, function_index, [n])) for n in inputs]
+    reference = [list(interpreter_engine.call(interpreter, function_index, [n])) for n in inputs]
+    actual = [list(jit_engine.call(jit_interpreter, function_index, [n])) for n in inputs]
 
     assert reference == [[value] for value in expected]
     assert actual == reference
     assert jit_engine.stat_jit_invocations > 0
 
 
-def test_jitr_br_table_falls_back_and_preserves_every_target():
-    """TEST-JITR-50: BR_TABLE stays at the interpreter boundary for all targets."""
+def test_jitr_br_table_uses_native_handler_and_preserves_every_target():
+    """TEST-JITR-50: BR_TABLE uses its C++ handler for every target."""
     from control_flow import iter_scan_instrs
 
     wat = """
@@ -1142,15 +1378,19 @@ def test_jitr_br_table_falls_back_and_preserves_every_target():
     assert predecessor is not None
     trace = jit_engine.jit_runtime._compile_trace(predecessor.head_pc, predecessor)
     assert trace is not None
-    assert trace.next_pc == table_pc
+    assert trace.next_pc is None
+    assert trace.loops_to is None
 
     interpreter = Interpreter(module)
     jit_interpreter = Interpreter(module)
     for selector, expected in ((0, 10), (1, 20), (2, 30), (3, 30)):
-        reference = list(interpreter_engine.run(interpreter, 0, [selector]))
-        actual = list(jit_engine.run(jit_interpreter, 0, [selector]))
+        reference = list(interpreter_engine.call(interpreter, 0, [selector]))
+        actual = list(jit_engine.call(jit_interpreter, 0, [selector]))
         assert reference == [expected]
         assert actual == reference
+    assert jit_engine.stat_native_control_handlers > 0, (
+        "BR_TABLE terminators must run through C++ interpreter handlers"
+    )
 
 
 def test_jitr_mixed_typed_stack_declines_jit_without_losing_drop_widths():
@@ -1182,7 +1422,7 @@ def test_jitr_mixed_typed_stack_declines_jit_without_losing_drop_widths():
     mixed_block = engine.get_block(module.blocks[0].head_pc)
     assert mixed_block is not None
     assert engine.jit_runtime._compile_trace(mixed_block.head_pc, mixed_block) is None
-    result = engine.run(Interpreter(module), 0, [])
+    result = engine.call(Interpreter(module), 0, [])
 
     assert list(result) == [12]
     assert engine.stat_jit_invocations == 0
@@ -1222,7 +1462,7 @@ def test_jitr_mixed_typed_callee_returns_keep_the_shared_stack_synchronized():
     )
     engine.register_module_blocks(module)
     interpreter = Interpreter(module)
-    actual = [list(engine.run(interpreter, 4, [])) for _ in range(6)]
+    actual = [list(engine.call(interpreter, 4, [])) for _ in range(6)]
     compiled_heads = {pc for pc, _ in engine.jit_runtime.cache.active.traces}
 
     assert actual == [[12]] * 6
@@ -1254,7 +1494,7 @@ def test_jitr_runtime_engine_preserves_typed_top_level_results():
     expected = ([7], [70], [7.5], [8.5])
     for function_index, values in enumerate(expected):
         for _ in range(3):
-            result = engine.run(interp, function_index, [])
+            result = engine.call(interp, function_index, [])
         assert list(result) == list(values)
     assert engine.stat_jit_invocations > 0
 
@@ -1281,22 +1521,22 @@ def test_jitr_host_import_stays_on_interpreter_runtime_boundary():
 
     host_functions = StaticVector.of((lambda value: int(value) + 1,), capacity=1)
     interp = Interpreter(module, host_functions=host_functions)
-    assert engine.run(interp, 1, []) == [43]
+    assert engine.call(interp, 1, []) == [43]
 
 
 def test_jitr_runtime_engine_surfaces_guest_trap_at_sync_boundary():
-    """TEST-JITR-48: RuntimeEngine.run must not expose a guest trap as a None result."""
+    """TEST-JITR-48: RuntimeEngine.call must not expose a guest trap as a None result."""
     module = parse(wat_to_wasm("(module (func (result i32) i32.const 1 i32.const 0 i32.div_s))"))
     engine = make_runtime_engine()
     engine.register_module_blocks(module)
     interp = Interpreter(module)
 
     try:
-        engine.run(interp, 0, [])
+        engine.call(interp, 0, [])
     except AssertionError as trap:
         assert trap.args == (15,)
     else:
-        assert False, "RuntimeEngine.run returned normally after a guest trap"
+        assert False, "RuntimeEngine.call returned normally after a guest trap"
 
 
 def _pc(i, func=0):
@@ -1353,11 +1593,19 @@ def test_jitr_aging_decays_only_executed_cards():
     _aging_full_lap(engine)
 
     for pc in (_pc(0), _pc(3), _pc(0, 1)):
-        assert engine.jit_runtime.bitmap.get_state(pc) == CardState.UNEXECUTED, f"{pc:#x} must decay"
-    assert engine.jit_runtime.bitmap.get_state(_pc(1)) == CardState.HOT, "HOT belongs to the compile queue"
-    assert engine.jit_runtime.bitmap.get_state(_pc(2)) == CardState.COMPILED, "COMPILED belongs to the cache"
+        assert engine.jit_runtime.bitmap.get_state(pc) == CardState.UNEXECUTED, (
+            f"{pc:#x} must decay"
+        )
+    assert engine.jit_runtime.bitmap.get_state(_pc(1)) == CardState.HOT, (
+        "HOT belongs to the compile queue"
+    )
+    assert engine.jit_runtime.bitmap.get_state(_pc(2)) == CardState.COMPILED, (
+        "COMPILED belongs to the cache"
+    )
     assert len(engine.jit_runtime.compile_queue) == queued
-    assert not engine.jit_runtime.update_bitmap.is_marked(0) and not engine.jit_runtime.update_bitmap.is_marked(1)
+    assert not engine.jit_runtime.update_bitmap.is_marked(
+        0
+    ) and not engine.jit_runtime.update_bitmap.is_marked(1)
     # A decayed card restarts its warm-up: one touch gives EXECUTED, not HOT.
     _touch_via_yield(engine, _pc(0))
     assert engine.jit_runtime.bitmap.get_state(_pc(0)) == CardState.EXECUTED
@@ -1410,9 +1658,13 @@ def test_jitr_aging_advances_once_per_rotation():
 
     engine.jit_runtime.cache.rotate()
     assert engine.jit_runtime.aging_steps == 1
-    assert engine.jit_runtime.update_bitmap.cursor == 4, "the dirty byte was processed and the cursor moved on"
+    assert engine.jit_runtime.update_bitmap.cursor == 4, (
+        "the dirty byte was processed and the cursor moved on"
+    )
     assert engine.jit_runtime.bitmap.get_state(_pc(0, 24)) == CardState.UNEXECUTED
-    assert engine.jit_runtime.bitmap.get_state(_pc(0, 40)) == CardState.EXECUTED, "byte 5 lies beyond this step"
+    assert engine.jit_runtime.bitmap.get_state(_pc(0, 40)) == CardState.EXECUTED, (
+        "byte 5 lies beyond this step"
+    )
 
     inserted = 0
     while engine.jit_runtime.aging_steps == 1:  # a full bank rotates by itself
@@ -1431,12 +1683,18 @@ def test_jitr_aging_cursor_wraps_and_bounds_each_step():
     assert engine.jit_runtime.bitmap.get_state(_pc(0, 0)) == CardState.UNEXECUTED
     assert engine.jit_runtime.bitmap.get_state(_pc(0, 17)) == CardState.EXECUTED
     assert engine.age_step() == 1, "the zero byte 1 is skipped, byte 2 is processed"
-    assert engine.jit_runtime.update_bitmap.cursor == 0, "byte 2 was the last byte: the cursor wraps"
+    assert engine.jit_runtime.update_bitmap.cursor == 0, (
+        "byte 2 was the last byte: the cursor wraps"
+    )
     assert engine.jit_runtime.bitmap.get_state(_pc(0, 17)) == CardState.UNEXECUTED
     scanned_before = engine.jit_runtime.aging_bytes_scanned
     assert engine.age_step() == 0, "nothing is dirty"
-    assert engine.jit_runtime.aging_bytes_scanned - scanned_before == 3, "one full pass, then the step ends"
-    assert engine.jit_runtime.update_bitmap.cursor == 0, "a full pass returns the cursor to where it started"
+    assert engine.jit_runtime.aging_bytes_scanned - scanned_before == 3, (
+        "one full pass, then the step ends"
+    )
+    assert engine.jit_runtime.update_bitmap.cursor == 0, (
+        "a full pass returns the cursor to where it started"
+    )
     assert engine.jit_runtime.aging_units_processed == 2
 
     # Two non-zero bytes per step; the zero byte in between does not count.
@@ -1444,7 +1702,9 @@ def test_jitr_aging_cursor_wraps_and_bounds_each_step():
     _touch_via_yield(wide, _pc(0, 0))
     _touch_via_yield(wide, _pc(0, 17))
     assert wide.age_step() == 2 and wide.jit_runtime.aging_units_processed == 2
-    assert wide.jit_runtime.update_bitmap.cursor == 0, "the step ended right after the second unit (byte 2)"
+    assert wide.jit_runtime.update_bitmap.cursor == 0, (
+        "the step ended right after the second unit (byte 2)"
+    )
     assert wide.jit_runtime.bitmap.get_state(_pc(0, 0)) == CardState.UNEXECUTED
     assert wide.jit_runtime.bitmap.get_state(_pc(0, 17)) == CardState.UNEXECUTED
 
@@ -1456,7 +1716,9 @@ def test_jitr_aging_cursor_wraps_and_bounds_each_step():
         assert limited.jit_runtime.update_bitmap.cursor == expected_byte
     assert limited.jit_runtime.aging_bytes_scanned == 20
     assert limited.age_step() == 1, "the dirty byte lies inside the sixth scan window"
-    assert limited.jit_runtime.update_bitmap.cursor == 2, "bytes 20, 21, then 0 and 1 filled the window"
+    assert limited.jit_runtime.update_bitmap.cursor == 2, (
+        "bytes 20, 21, then 0 and 1 filled the window"
+    )
     assert limited.jit_runtime.bitmap.get_state(_pc(0, 160)) == CardState.UNEXECUTED
 
 
@@ -1467,10 +1729,15 @@ def test_jitr_aging_processes_every_set_function_of_a_byte_and_ignores_imports()
     _touch_via_yield(engine, _pc(0, 1))  # function 1, byte 0
     _touch_via_yield(engine, _pc(0, 9))  # function 9, byte 1
     assert engine.age_step() == 2, "the EXECUTED cards of functions 0 and 1 decay in one step"
-    assert engine.jit_runtime.update_bitmap.cursor == 1 and engine.jit_runtime.aging_units_processed == 1
+    assert (
+        engine.jit_runtime.update_bitmap.cursor == 1
+        and engine.jit_runtime.aging_units_processed == 1
+    )
     assert engine.jit_runtime.bitmap.get_state(_pc(1, 0)) == CardState.UNEXECUTED
     assert engine.jit_runtime.bitmap.get_state(_pc(0, 1)) == CardState.UNEXECUTED
-    assert engine.jit_runtime.bitmap.get_state(_pc(0, 9)) == CardState.EXECUTED, "function 9 belongs to byte 1"
+    assert engine.jit_runtime.bitmap.get_state(_pc(0, 9)) == CardState.EXECUTED, (
+        "function 9 belongs to byte 1"
+    )
     assert engine.age_step() == 1
     assert engine.jit_runtime.bitmap.get_state(_pc(0, 9)) == CardState.UNEXECUTED
 
@@ -1513,10 +1780,14 @@ def test_gotcha_jitr_09_aging_never_drops_compiled_or_hot():
 
     _aging_full_lap(engine)
 
-    assert engine.jit_runtime.bitmap.get_state(pc_res) == CardState.COMPILED, "a resident trace stays reachable"
+    assert engine.jit_runtime.bitmap.get_state(pc_res) == CardState.COMPILED, (
+        "a resident trace stays reachable"
+    )
     assert engine.jit_runtime.cache.lookup(pc_res) is not None
     assert engine.jit_runtime.bitmap.get_state(pc_hot) == CardState.HOT
-    assert engine.jit_runtime.compile_queue.contains(pc_hot), "the pending request keeps its HOT card"
+    assert engine.jit_runtime.compile_queue.contains(pc_hot), (
+        "the pending request keeps its HOT card"
+    )
     assert engine.jit_runtime.bitmap.get_state(pc_exec) == CardState.UNEXECUTED
 
 
@@ -1642,7 +1913,7 @@ if __name__ == "__main__":
     test_jitr_promote_transfers_inbound_sources_avoiding_dangling_chain()
     test_jitr_bitmap_checked_before_cache_lookup()
     test_jitr_31_to_35_trace_chaining_and_ok_unlinking()
-    test_jitc_20_trace_header_52byte_x64_physical_layout()
+    test_jitc_20_trace_header_24byte_x64_physical_layout()
     test_hotspot_05_3bank_cache_rotation_and_eviction_resets_card()
     test_hotspot_06_short_blocks_never_tracked_avoiding_card_aliasing()
     test_hotspot_07_idle_hook_skips_recompiling_an_already_resident_trace()
@@ -1658,7 +1929,7 @@ if __name__ == "__main__":
     test_jitr_terminal_trace_returns_to_interpreter_return_handler()
     test_jitr_nested_wasm_call_keeps_callee_result_on_shared_operand_stack()
     test_jitr_if_else_loop_matches_interpreter_after_jit_compilation()
-    test_jitr_br_table_falls_back_and_preserves_every_target()
+    test_jitr_br_table_uses_native_handler_and_preserves_every_target()
     test_jitr_mixed_typed_stack_declines_jit_without_losing_drop_widths()
     test_jitr_mixed_typed_callee_returns_keep_the_shared_stack_synchronized()
     test_jitr_runtime_engine_preserves_typed_top_level_results()

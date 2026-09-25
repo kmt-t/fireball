@@ -9,7 +9,6 @@ Run with:  uv run --project ../.. python main.py     (from this directory)
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
 _PYSIM_DIR = Path(__file__).resolve().parent
@@ -17,16 +16,16 @@ while not (_PYSIM_DIR / "tier1_core").is_dir():
     _PYSIM_DIR = _PYSIM_DIR.parent
 
 
-from tier3_executer.interpreter.interpreter import Interpreter, InterpreterBindings
-from tier2_runtime.logger import LogLevel
 from recovery import RecoveryManager, RecoveryStrategy, Result
-from runtime_engine import RuntimeEngine
-from tier3_executer.jit.jit_manager import JITRuntimeManager
-from tier3_platform.drivers.hal.stream import DedicatedLogSink
 from system import System
 from system_containers import StaticVector
-from wasm_reader import parse
+from tier2_runtime.logger import LogLevel
+from tier3_executer.interpreter.interpreter import Interpreter, InterpreterBindings
+from tier3_executer.jit.jit_manager import JITRuntimeManager
+from tier3_executer.jit.runtime_engine import RuntimeEngine
 from tier3_executer.jit.x64_jit import TraceCompiler
+from tier3_platform.drivers.hal.stream import DedicatedLogSink
+from wasm_reader import parse
 
 findings: StaticVector[str] = StaticVector(capacity=8)
 
@@ -187,15 +186,17 @@ def demo_wasmjit_hybrid_execution(sysv: System) -> None:
     )
 
     print("  [Stage 1-3] Running through RuntimeEngine (Interpreter/JIT boundaries)...")
-    result = engine.run(interp, 0, (6,))
+    result = engine.call(interp, 0, (6,))
     result_val = result[0]
     print(f"  [Result] fact(6) = {result_val} (expected 720) [OK]")
-    print(
-        f"  [Stats] Total Interp Blocks={engine.stat_interp_steps}, "
-        f"JIT Traces={engine.stat_jit_invocations}"
-    )
+    if engine.collect_runtime_stats:
+        print(
+            f"  [Stats] Total Interp Blocks={engine.stat_interp_steps}, "
+            f"JIT Traces={engine.stat_jit_invocations}"
+        )
+    else:
+        print("  [Stats] Runtime counters are disabled in this build.")
     assert result_val == 720
-    assert engine.stat_interp_steps >= 1
 
 
 def main() -> None:

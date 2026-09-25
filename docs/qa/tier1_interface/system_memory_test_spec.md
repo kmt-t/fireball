@@ -5,7 +5,7 @@
 正本: [`system_memory.md`](docs/components/tier1_interface/system_memory.md)
 参考実装: [`runtime_memory_concept.py`](docs/components/tier2_runtime/concepts/runtime_memory_concept.py)（実装は Tier 2 側にあるが、本書は契約（`co_mem`）レベルの振る舞いのみを検証する）
 
-パーティション貸与ポリシー、型付きスロット貸与、共有ブロックのRAII所有権契約、および公開APIの最小面（`{ADR_MemoryManagerMinimalSurface}`）を検証する。ハードウェア（MPU/PMSAv8）や dlmalloc アリーナの物理実装は [`runtime_memory_test_spec.md`](docs/qa/tier2_runtime/runtime_memory_test_spec.md) の責務とする。
+パーティション貸与ポリシー、型付きスロット貸与、共有ブロックのRAII所有権契約、および公開APIの最小面（`{ADR_MemoryManagerMinimalSurface}`）を検証する。物理メモリ保護方式とARMv8-Mでの実装はTBDとし、Tier 2の実装仕様が確定した後に受け入れ条件を定める。
 
 ## 2. テストケース一覧
 
@@ -44,7 +44,7 @@
 | TEST-MEM-29 | `release-runtime-arena`後は`bump-alloc`が拒否される | アリーナ返却済み | 返却済みアリーナへ`bump-alloc` | `memory-error`（`invalid-owner`）を返す | |
 | TEST-MEM-30 | `acquire-jit-cache`は起動時1回のみ許可される | - | 2回目の`acquire-jit-cache` | 2回目は拒否される（単一リージョン保証、`{GLOBAL_StrictMemoryLimit}`） | |
 | TEST-MEM-31 | WIT handleとC++ RAII所有権の境界 | WIT `shm-handle`をC++バインディングへ渡す | handle recordを複製しつつ所有権操作を実行 | recordの複製は所有権を複製しない。C++ `shared_block`はmove-onlyで、release成功後のsource wrapperは無効、claim成功時だけ受信側wrapperが所有者となる | `system_memory.md` §4.3, `ADR_SharedBlockRaii` |
-| TEST-MEM-32 | JIT領域の連続性と固定区画 | `acquire-jit-cache`成功 | 返却された領域のサイズとページ連続性を検査 | 8,192バイトの連続領域（4KB物理ページ2枚）を返し、区画は共通コード2KB + Active/Warm/Oldest各2KB。共通領域をバンク管理へ渡さない | `system_config.md`, `runtime_memory.md` |
+| TEST-MEM-32 | x64参照JIT領域の連続性と固定区画 | `acquire-jit-cache`成功 | シミュレーション領域の容量と区画境界を検査 | 現行pysim構成は8,192バイトを共通コード2KB + Active/Warm/Oldest各2KBに分ける。共通領域をバンク管理へ渡さない。この容量・ページ単位をARMv8-Mの物理要件とはしない | `system_config.md`, `runtime_memory.md` |
 
 ## 3. テスト検証実績と網羅状況
 
@@ -53,5 +53,5 @@
 
 ## 4. 未検証・スコープ外
 
-- ページ単位権限分離（TEST-MEM-14〜16）、MPU/W^X（TEST-MEM-20〜25）、GOTCHA（物理実装の勘所）は [`runtime_memory_test_spec.md`](docs/qa/tier2_runtime/runtime_memory_test_spec.md) を参照。
+- 共有メモリのソフトウェア所有権・vMMIO通知（TEST-MEM-14〜16）は [`runtime_memory_test_spec.md`](docs/qa/tier2_runtime/runtime_memory_test_spec.md) を参照する。ARMv8-Mの物理メモリ保護と実機受け入れ条件はTBDである。
 - vMMIO PTE / TLB の具体的な物理挙動（マッピング登録・アンマップ・再マッピング）は本書のスコープ外であり、`runtime_memory_test_spec.md` を正本とする（本契約はvMMIO等の内部シンボル・アドレス体系を一切参照しないため）。

@@ -9,7 +9,6 @@ operations between Fireball's interpreter and wasmtime (WebAssembly Reference).
 
 import math
 import struct
-import sys
 from pathlib import Path
 
 # Setup search paths

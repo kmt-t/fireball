@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
 _PYSIM_DIR = Path(__file__).resolve().parents[3]
 
+from runtime_events import RuntimeEvent, RuntimeEventKind
 from tier2_runtime.logger import LogDictionary, Logger, LogLevel
 from tier3_plugins.logger.logger import RuntimeEventLogger
-from runtime_events import RuntimeEvent, RuntimeEventKind
 
 
 class _Sink:

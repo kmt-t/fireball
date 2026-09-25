@@ -6,7 +6,6 @@ Traceability: hal_dispatch_test_spec.md / platform_driver_test_spec.md
 """
 
 import io
-import sys
 import time
 from pathlib import Path
 
@@ -17,7 +16,7 @@ _PYSIM_DIR = _TESTS_DIR.parent
 _REPO_ROOT = _PYSIM_DIR.parent.parent
 
 
-from tier3_platform.drivers.hal.dummy import DummyDriver, Timer
+from fixtures.uvwasi_reference import UvwasiReferenceContext, WasiErrno, WasiWhence
 from hal_dispatch import (
     FB_CONF_HAL_BUFFER_SIZE,
     FB_CONF_HAL_MAX_BUFFERS,
@@ -27,18 +26,18 @@ from hal_dispatch import (
 )
 from helpers import expect_assertion
 from ipc_router import FB_URI_HAL_STDOUT
-from tier2_runtime.logger import LogLevel
-from tier3_platform.drivers.logging.file_sink import FileLogSink
 from scheduler import Scheduler
-from tier3_platform.drivers.hal.stream import StreamTransport
 from system import (
     System,
 )
 from system_containers import (
     ReadOnlyFlatMapView,
 )
+from tier2_runtime.logger import LogLevel
+from tier3_platform.drivers.hal.dummy import DummyDriver, Timer
+from tier3_platform.drivers.hal.stream import StreamTransport
+from tier3_platform.drivers.logging.file_sink import FileLogSink
 from vmmio import TrapCode, VMMIOController, VmmioStatus
-from fixtures.uvwasi_reference import UvwasiReferenceContext, WasiErrno, WasiWhence
 
 
 def test_hal_01_stream_transport_uses_fixed_buffers():

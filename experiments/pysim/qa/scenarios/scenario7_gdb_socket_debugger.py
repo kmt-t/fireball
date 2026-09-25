@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
 _PYSIM_DIR = Path(__file__).resolve().parent
@@ -24,10 +23,10 @@ import socket
 import time
 
 import wasmtime
-from tier3_plugins.debugger.debugger import DebuggerManager
 from execution_context import WASMContext
-from tier3_plugins.debugger.gdb_server import GDBServer
 from runtime_test_driver import RuntimeEngineDebugDriver
+from tier3_plugins.debugger.debugger import DebuggerManager
+from tier3_plugins.debugger.gdb_server import GDBServer
 
 
 def wat_to_wasm(wat_text: str) -> bytes:

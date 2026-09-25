@@ -9,7 +9,6 @@ _PYSIM_DIR = _TESTS_DIR.parent
 _REPO_ROOT = _PYSIM_DIR.parent.parent
 
 
-import sys
 from pathlib import Path
 
 """
@@ -32,7 +31,6 @@ operand-stack state, not a C return value, so production traces write it to
 ({ADR_TosCacheAsymmetry}, GOTCHA-JITC-07).
 """
 
-import sys
 from pathlib import Path
 
 _PYSIM_DIR = Path(__file__).resolve().parent
@@ -44,8 +42,8 @@ import ctypes
 import random
 
 import tier3_executer.jit.x64_stencils as st
-from tier3_executer.jit.exec_memory import ExecutableBuffer
 from helpers import expect_assertion
+from tier3_executer.jit.exec_memory import ExecutableBuffer
 
 I32_MASK = 0xFFFFFFFF
 # The stencils take an explicit displacement; these tests use the 4-byte stride of an all-i32 frame.

@@ -11,7 +11,7 @@ vMMIO（Virtual Memory-Mapped I/O）は、ホストが仲介するリソース�
 
 ホストとゲストの境界を越え、vMMIO アドレス空間（Bit 31 == 1、Stage 2 / 3）を経由するアクセスは、この層が仲介する。ゲスト専用 RAM（Stage 1: Bit 31 == 0）は vMMIO の管理対象外である。ゲスト専用 RAM には、境界検査だけで完結する高速バイパス経路を設ける。詳細は後述する。
 
-WASM ゲストのリニアメモリは、標準仕様に準拠して **64KB ページ単位 (65,536 bytes)** で管理する論理空間である。RAM < 64KB の極小組込み環境（Cortex-M 等）に適合するため、物理実装としては **64KB 未満の部分ページ（例: 8KB, 16KB）** の割り当ても許容する。境界超過アクセスは即座にトラップする。ホスト/デバイス側の vMMIO 領域は **1ページ（4KB）** 単位で管理する。
+WASM ゲストのリニアメモリは標準仕様に従い、**64KBページ（65,536 bytes）** 単位で管理する論理空間である。vMMIO Stage 1の`guest_ram_size`はシミュレータのゲストアドレス窓に対する境界判定値であり、WASMリニアメモリのページ数を表さない。リニアメモリの物理バック方式とARMv8-Mの容量対応はTBDとする。境界超過アクセスは即座にトラップする。ホスト/デバイス側のvMMIO領域は**1ページ（4KB）**単位で管理する。
 
 本アーキテクチャでは、PTE（Page Table Entry）の保存にシステム設計規約に準拠した **64件固定の静的ソート済み配列と、それを引く `fireball::flat_map_view`** を採用する。仮想ページ番号（VPN）から PTE へのマッピングをフラットに保持・管理する。PTE登録が64件を超える場合は、契約違反として `assert` で停止する。
 
@@ -21,7 +21,7 @@ FlatMap 単体での探索は $O(\log N)$ である。本アーキテクチャ�
 
 1. **リニアアドレス空間フィルタ（高速バイパス & 境界チェック）**:
    32ビットゲストアドレスの最上位ビット（Bit 31）が `0` の場合、そのアドレスは vMMIO 管理対象外として、Stage 1（ゲストRAM）への直接アクセスとして高速バイパス（O(1) 処理）を実行する。
-   - **統一境界チェック**: 比較命令ベースの単一の高速境界チェックである（マスクは用いない）。`guest_ram_size`（`vsoc_runtime.mem-size`）と直接比較する。`addr >= guest_ram_size` なら境界外として即座に `ERR_OUT_OF_BOUNDS` トラップを発生させる。マスク方式と異なり `guest_ram_size` に2の冪の制約はない。部分ページ（例: 8KB, 16KB）や複数 64KB ページのいずれも、同一の比較命令1つで判定できる。トラップは必須であり、境界外アドレスのラップアラウンド継続は許容しない。JIT トレース側も同一の比較・トラップ方式を採り、トラップ時はインタープリタへフォールバックする。
+   - **統一境界チェック**: 比較命令ベースの単一の高速境界チェックである（マスクは用いない）。`guest_ram_size`（`vsoc_runtime.mem-size`）と直接比較する。`addr >= guest_ram_size` なら境界外として即座に `ERR_OUT_OF_BOUNDS` トラップを発生させる。`guest_ram_size` に2の冪の制約はない。論理WASMページやシミュレーション容量にかかわらず、同一の比較契約を使う。トラップは必須であり、境界外アドレスのラップアラウンド継続は許容しない。JIT トレース側も同一の比較・トラップ方式を採り、トラップ時はインタープリタへフォールバックする。
 2. **FlatMap PTE 管理**:
    最上位ビット（Bit 31）が `1` のアドレス空間を vMMIO 領域（`0x8000_0000` – `0xFFFF_FFFF`）とする。
    - 仮想ページ番号（VPN = `raw >> 12`）をキーとして、FlatMap（`vmmio_ptes`）に PTE を格納する。
@@ -151,7 +151,7 @@ SHM (FC=14) および Passthrough (FC=15) 向け。PTEにはページ保護フ�
 [7:0]   OWNER_TASK_ID (SHM only; DYNAMIC uses pool guest binding)
 ```
 
-**FC=14（SHM）のマッピングは、共有メモリマネージャの予約スロットイベント購読により駆動される。4KB仮想スロット番号、物理バック基点、実サイズは独立したマッピングメタデータとして保持する。4KBの仮想予約は同量の物理RAM確保を意味しない。vMMIOはイベントに応じてPTE・サイズメタデータを登録または削除し、対応TLBをフラッシュする。**
+**FC=14（SHM）のマッピングは、共有メモリマネージャの予約スロットイベント購読により駆動される。4KB仮想スロット番号、物理バック基点、実サイズは独立したマッピングメタデータとして保持する。4KBの仮想予約は同量の物理RAM確保を意味しない。vMMIOはイベントに応じてPTE・サイズメタデータを登録または削除し、対応TLBをフラッシュする。** {VmmioShmDelegation}
 
 #### 仮想アドレス割り当てアルゴリズム（ビット並列連続ビットマップ方式）
 <!-- traceability: {META_Static_Resolution} -->
@@ -388,7 +388,7 @@ sequenceDiagram
 ### 4.8 原因付き vIRQ ディスパッチ
 <!-- traceability: {META_ConfigurableSystem} {GLOBAL_InterruptWakeup} -->
 
-vIRQは、物理割り込みの原因源表と有効な登録状態を保持する静的vMMIOページである。ゲストの登録・解除要求は [`libfireball.md`](docs/components/tier3_platform/libfireball.md) が `fireball:host/virq.register` / `fireball:host/virq.unregister` へ変換する。ゲストは固定スロットへ直接書き込まず、vSoCが要求を検証してSafepointで原子的に反映する。`REG_IRQ_FLAGS` のポーリングはvIRQの配送経路ではない。
+vIRQは、物理割り込みの原因源表と有効な登録状態を保持する静的vMMIOページである。ゲストの登録・解除要求は [`libfireball.md`](docs/components/tier3_platform/libfireball.md) が `fireball:host/virq.register` / `fireball:host/virq.unregister` へ変換する。ゲストは固定スロットへ直接書き込まず、vSoCが要求を検証して次のCOOS協調境界で原子的に反映する。`REG_IRQ_FLAGS` のポーリングはvIRQの配送経路ではない。
 
 #### vIRQ ページ配置と固定スロット
 
@@ -452,14 +452,14 @@ vIRQページは `FB_CONF_VMMIO_VIRQ_BASE`（`0xC000_3000`）から `FB_CONF_VMM
 
 #### 物理割り込みからゲスト配送まで
 
-ISR は原因情報を固定5ワードの`interrupt-event`へ変換し、COOSの`notify_interrupt(event)`で固定長ロックフリーFIFOへ投函する。COOS はFIFOへの投入、満杯時のドロップ、協調境界でのドレイン、待機タスクの起床を所有する。vSoC は Safepoint でイベントを受け取り、登録済みの vIRQ ノードを `root → 分類 → デバイス → ゲスト関数` の順に評価する。WASI の `poll-check` / `poll-wait` はこの経路に参加しない。
+ISR は原因情報を固定5ワードの`interrupt-event`へ変換し、COOSの`notify_interrupt(event)`で固定長ロックフリーFIFOへ投函する。COOS はFIFOへの投入、満杯時のドロップ、協調境界でのドレイン、待機タスクの起床を所有する。COOSへ制御が戻る境界でvSoCがイベントを受け取り、登録済みのvIRQノードを`root → 分類 → デバイス → ゲスト関数`の順に評価する。WASIの`poll-check` / `poll-wait`はこの経路に参加しない。
 
 ```mermaid
 sequenceDiagram
     participant ISR as Physical ISR
     participant VMMIO as vMMIO source mapper
     participant COOS as COOS interrupt FIFO
-    participant VSOC as vSoC Safepoint
+    participant VSOC as vSoC at COOS boundary
     participant Root as root dispatcher
     participant Class as category dispatcher
     participant Device as device dispatcher

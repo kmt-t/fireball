@@ -9,13 +9,12 @@ from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 
 import wasmtime
-
-from tier3_executer.interpreter.interpreter import Interpreter, InterpreterBindings, WasmNumber
 from ipc_router import IPCMessage
-from tier2_runtime.logger import Logger
 from memory import MemoryManager
 from scheduler import Scheduler
 from system_containers import StaticVector
+from tier2_runtime.logger import Logger
+from tier3_executer.interpreter.interpreter import Interpreter, InterpreterBindings, WasmNumber
 from vmmio import VMMIOController
 from wasm_module import Memory, Module
 
@@ -97,7 +96,7 @@ def make_test_ipc_message(
         task = scheduler.get_task(task_id)
         assert task is not None
         manager = MemoryManager(scheduler)
-        assert manager.init_manager(0x20020000, FB_CONF_MEMORY_POOL_SIZE).is_ok
+        assert manager.init_manager(0x00010000, FB_CONF_MEMORY_POOL_SIZE).is_ok
         with scheduler.task_context(task):
             return IPCMessage.from_entries(entries, memory_manager=manager)
     message = IPCMessage.from_entries(entries, memory_manager=memory_manager)

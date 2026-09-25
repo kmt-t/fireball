@@ -21,10 +21,14 @@ from _bootstrap import configure_import_paths
 
 configure_import_paths(_PYSIM_DIR, _BENCH_DIR)
 
-from runtime_engine import RuntimeEngine
 from system import System
-from tier3_executer.interpreter.interpreter import Interpreter, InterpreterBindings
+from tier3_executer.interpreter.interpreter import (
+    NATIVE_RUNTIME_PROFILE_STATS_ENABLED,
+    Interpreter,
+    InterpreterBindings,
+)
 from tier3_executer.jit.jit_manager import JITRuntimeManager
+from tier3_executer.jit.runtime_engine import RuntimeEngine
 from tier3_executer.jit.x64_jit import TraceCompiler
 from tier3_platform.drivers.hal.dummy import DummyDriver
 from tier3_platform.drivers.wasi.context import WasiHostContext
@@ -72,7 +76,7 @@ def run_aobench(debug: bool = False) -> dict[str, int | float]:
     module.init_memory_data(wasi_ctx_t3.guest_memory, ())
     trace_compiler = TraceCompiler()
     runtime_engine = RuntimeEngine(
-        jit_runtime=JITRuntimeManager(jit_compiler=trace_compiler, yield_threshold=16),
+        jit_runtime=JITRuntimeManager(jit_compiler=trace_compiler),
         debug=debug,
     )
     runtime_engine.register_module_blocks(module)
@@ -82,7 +86,7 @@ def run_aobench(debug: bool = False) -> dict[str, int | float]:
     )
 
     t0_t3 = time.perf_counter()
-    runtime_engine.run(interp_t3, main_fn, [WIDTH, HEIGHT])
+    runtime_engine.call(interp_t3, main_fn, [WIDTH, HEIGHT])
     t1_t3 = time.perf_counter()
     render_output_t3 = sysv_t3.transport.drain_output().decode("utf-8", errors="replace")
     t3_time_ms = (t1_t3 - t0_t3) * 1000
@@ -92,7 +96,16 @@ def run_aobench(debug: bool = False) -> dict[str, int | float]:
     # Differential Check
     assert render_output == render_output_t3, "Tier 3 output diverged from Tier 2!"
 
-    return {
+    # Collect diagnostic path counters after the timed run so profiling code
+    # does not contribute to the reported execution time.
+    if NATIVE_RUNTIME_PROFILE_STATS_ENABLED:
+        runtime_engine.collect_runtime_stats = True
+        runtime_engine.reset_stats()
+        runtime_engine.call(interp_t3, main_fn, [WIDTH, HEIGHT])
+        diagnostic_output = sysv_t3.transport.drain_output().decode("utf-8", errors="replace")
+        assert diagnostic_output == render_output_t3
+
+    result: dict[str, int | float] = {
         "width": WIDTH,
         "height": HEIGHT,
         "total_rays": total_rays,
@@ -102,12 +115,21 @@ def run_aobench(debug: bool = False) -> dict[str, int | float]:
         "t2_rays_per_sec": t2_rays_per_sec,
         "t3_rays_per_sec": t3_rays_per_sec,
         "speedup_ratio": speedup_ratio,
-        "interp_blocks": runtime_engine.stat_interp_steps,
-        "jit_invocations": runtime_engine.stat_jit_invocations,
-        "chain_invocations": runtime_engine.stat_chain_hits,
-        "trace_exits_to_interp": runtime_engine.stat_trace_exits_to_interp,
+        "runtime_profile_stats_enabled": int(NATIVE_RUNTIME_PROFILE_STATS_ENABLED),
         "compiled_traces": len(runtime_engine.jit_runtime.cache.active.traces),
     }
+    if NATIVE_RUNTIME_PROFILE_STATS_ENABLED:
+        result.update(
+            {
+                "interp_blocks": runtime_engine.stat_interp_steps,
+                "jit_invocations": runtime_engine.stat_jit_invocations,
+                "native_dispatch_trace_transitions": (
+                    runtime_engine.stat_native_dispatch_trace_transitions
+                ),
+                "trace_exits_to_interp": runtime_engine.stat_trace_exits_to_interp,
+            }
+        )
+    return result
 
 
 def main():
@@ -126,10 +148,12 @@ def main():
         f"  * Tier 3 (Hybrid + JIT):    {res['t3_time_ms']:.2f} ms  ({res['t3_rays_per_sec']:,.0f} Rays / Sec)"
     )
     print(f"  * Measured Speedup:         {res['speedup_ratio']:.2f}x faster")
-    print(
-        f"  * JIT Chained Invocations: {res['chain_invocations']:,} / {res['jit_invocations']:,}"
-        f" ({res['chain_invocations'] / res['jit_invocations'] * 100.0:.1f}%)"
-    )
+    if res["runtime_profile_stats_enabled"]:
+        print(
+            f"  * JIT trace transitions: {res['native_dispatch_trace_transitions']:,}"
+        )
+    else:
+        print("  * JIT trace transitions: runtime stats compiled out")
     print(f"  * Active JIT Traces:        {res['compiled_traces']} compiled traces")
     print("=" * 80)
     print("[PASS] 3D Ambient Occlusion benchmark completed successfully.")

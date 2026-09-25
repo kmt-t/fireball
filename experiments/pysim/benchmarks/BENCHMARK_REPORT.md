@@ -1,6 +1,6 @@
 # PySIM 統合ベンチマーク詳細レポート (PySIM Performance Benchmark Report)
 
-本レポートは、Fireball Hypervisor の全層（Tier 1 Core OS / Tier 2 Runtime / Tier 3 JIT & Platform）を具象化した `pysim` における全 6 系統のベンチマークスイートの実測結果、JIT トレースチェイニング動作診断、および C++23 実機実装への移植性・性能予測をまとめた詳細レポートです。2026-09-18のWindows測定値は歴史データとして残し、最新のLinux測定値をSection 6に記録します。
+本レポートは、Fireball Hypervisor の全層（Tier 1 Core OS / Tier 2 Runtime / Tier 3 JIT & Platform）を具象化した `pysim` における全 6 系統のベンチマークスイートの実測結果、JITトレース遷移の診断、およびC++23実機実装への移植性・性能予測をまとめる。2026-09-18のWindows測定値と旧Linux測定値は履歴データとして残す。Linuxの旧cycles測定は6.6節、直接マップキャッシュC++化後の測定は6.7節、旧RuntimeEngine境界測定は6.8節、最初にyield条件を揃えたLinux測定は6.9節、hotspot profiling切替は6.10節、共通code chain dispatcher更新後のcycles測定は6.11節に記録する。chainはtrace末尾から共通コード領域のchain dispatcherが次trace bodyへtail-jumpする経路を指す。過去に記録した`chain hit`・`JIT Chained Invocations`値は、測定当時の実装とカウンタ定義による履歴値であり、現行chain回数との比較には使わない。現行コードに共通chain dispatcher専用の実行カウンタはない。
 
 Section 1〜5は 2026-09-18 に、JIT Direct-Mapped Folding XORキャッシュを4スロットから16スロットへ拡張した変更（`{DirectMappedJIT16}`, `experiments/pysim/tier1_core/config.py`）の直後に同一ワークスペースで再測定した結果である。Pythonプロセス、OSスケジューリング、およびPythonハンドラ本体呼出しの影響を含むため、絶対値ではなく同一環境での比較値として扱う。5.1節のネイティブCPS経路の数値のみ2026-09-17測定の既存値を保持する（本変更では未再測定のため）。
 
@@ -14,16 +14,16 @@ Section 1〜5は 2026-09-18 に、JIT Direct-Mapped Folding XORキャッシュ�
 - **ローカル領域レイアウト**: `WASM_LOCAL_ALIGNMENT_BYTES` を基準に8バイト固定スロットへ統一。Native value stack の物理容量は `NATIVE_VALUE_STACK_CAPACITY`（128 raw words）。
 - **実行コマンド**:
   ```bash
-  .venv/Scripts/python.exe experiments/pysim/benchmarks/run_all.py
+  uv run --offline --no-sync python experiments/pysim/benchmarks/run_all.py
   ```
 - **AO-Bench単体・チェイニング内部ダンプ実行コマンド**:
   ```bash
-  .venv/Scripts/python.exe experiments/pysim/benchmarks/aobench/bench_aobench.py --debug
+  uv run --offline --no-sync python experiments/pysim/benchmarks/aobench/bench_aobench.py --debug
   ```
 - **ネイティブJITブリッジの実行コマンド**:
   ```powershell
   powershell -ExecutionPolicy Bypass -File experiments/pysim/tier3_executer/jit/build_native.ps1
-  uv run --system-certs python experiments/pysim/aobench.py
+  uv run --offline --no-sync python experiments/pysim/aobench.py
   ```
 
 ### 1.1 2026-09-18 Direct-Mapped Folding XORキャッシュ 4→16スロット拡張後の再測定
@@ -93,7 +93,7 @@ pysimユニットテスト25/25、統合シナリオ12/12、`check-src.ps1 -grou
   * Tier 3 Interpreter (Threaded CPS): 7466.05 ms  (214 Rays / Sec)
   * Tier 3 (Hybrid + JIT):              7028.35 ms  (228 Rays / Sec)
   * Measured Speedup:                   1.06x faster
-  * JIT Chained Invocations:            15,482 / 82,053 (18.9%)
+  * Legacy JIT trace transitions:       15,482 / 82,053 (18.9%; old metric)
   * Active JIT Cache Bank Traces:       15 compiled traces
 ================================================================================
 [PASS] All benchmarks completed successfully in 25.31 seconds.
@@ -119,7 +119,7 @@ Section 5の速度比はプロセス起動やOSスケジューリングの影響
 ### 3.3 JIT Compiler & Runtime Dispatch
 - **Copy-and-Patch 高速コンパイル**: ネイティブステンシルのメモリコピーと固定パッチ位置への書き込みを 13,302 Traces/sec（75.18 us/trace）で実行。4命令ブロック換算で 18,794.1 ns/opcode であり、コードバッファ確保も含む。
 - **疎なJITエントリ検索**: ソート済みJITエントリを二分探索し、0.79 M ops/s（1,271.2 ns/lookup）を計測した。JIT用Radix索引は使用しない。
-- **算術演算ループ差分検証**: 100,000 反復の算術ホットループにおいて、Tier 2 インタープリタ（6082.13 ms）に対して Tier 3 JIT（1192.23 ms）が **5.10x 高速化**を達成し、演算結果（`704,982,704`）が完全一致（Exact Match）。この単純ループは1トレースにチェインしきるため、4→16スロット化による変化は測定ノイズの範囲に留まる（実行毎の変動要因は下記）。
+- **算術演算ループ差分検証（旧Windows測定）**: 100,000 反復の算術ホットループにおいて、Tier 2 インタープリタ（6082.13 ms）に対して Tier 3 JIT（1192.23 ms）が **5.10x 高速化**し、演算結果（`704,982,704`）が一致した。この旧実装のループ測定値は現行の共通code chain dispatcher経路の性能値ではなく、chain回数を示す根拠にも使わない。
 - **Cヘルパー境界**: トレースヘッダの `helper_target_addr` を共通ヘルパー領域から読み、JITフレーム復元後に末尾ジャンプする経路は 8,049.2 ns/dispatch。pysimの `ctypes` コールバックを含むABI回帰値であり、組込みCの性能値ではない。
 
 実行ごとにOSスケジューリング等で時間が変動するため、単発値を絶対性能とは扱わず、同一実行条件内の比較値として扱う。
@@ -150,25 +150,26 @@ Section 5の速度比はプロセス起動やOSスケジューリングの影響
   - 既定値でコンパイル数が約 50% 減り、総時間は約 26% 短くなる（1,065 ms から 791 ms）。
   - 設定値によって効果が大きく変わる。U=8 O=32 では、コンパイル数と総時間が理想に近づく。
 - **エイジングの処理時間**: 既定値では 1 ステップあたり約 63 us で、総時間の約 0.5% である。これは Python 実装（カード表を 1 枚ずつ走査する参照実装）の値であり、C++ 実装の値を表さない。
-- **未評価**: コールド関数の間隔と関数数の組み合わせは、1 つの構成だけを測定している。実機（Cortex-M33）でのコンパイル時間への影響は測定していない。
+- **未評価**: コールド関数の間隔と関数数の組み合わせは、1 つの構成だけを測定している。ARMv8-Mのコンパイル時間、コード配置、実機性能はTBDである。
 
 ---
 
-## 4. 3D AO-Bench & JIT トレースチェイニング内部診断
+## 4. 3D AO-Bench & 旧JITトレース遷移診断
 
-`bench_aobench.py --debug` 実行時に採取されたランタイム内部メトリクスおよびトレースチェイニング診断結果です。
+`bench_aobench.py --debug` 実行時に採取されたランタイム内部メトリクスおよび旧実装のtrace-link診断結果です。表のchain接続状態と18.9%の値は当時の実装・指標であり、現行共通code chain dispatcherの実行回数を表さない。
 
 この測定では `JIT_CARD_SHIFT=2`（4バイト/カード）を使用し、既定の `min_trace_bytes` も4バイトです。
 
-チェイン接続率（18.9%）自体はコンパイル時に静的決定される `chain_next_pc` 埋め込みの結果であり、Direct-Mapped Folding XORキャッシュのスロット数（4→16）とは無関係のため変化しない。16スロット化が改善するのは「コンパイル済みトレースへ再入場する際の検索コスト」であり、インタープリタ復帰後の次ブロック解決・チェイン未成立ブロックへの再入場のたびに、O(log n)のバンク二分探索へ落ちる頻度を下げる。
+当時の接続率（18.9%）は旧実装のtrace-link状態から算出した値であり、現行x64物理ヘッダに`chain_next_pc`は存在しない。16スロット化が改善するのは「コンパイル済みトレースへ再入場する際の検索コスト」であり、履歴の接続率を現行chain dispatcherのヒット率と見なさない。
 
 ### 4.1 実行サマリー & キャッシュ状態
 - **総ブロック実行数**: 164,770 回
   - インタープリタ実行: 82,717 回 (50.2%)
   - JIT ネイティブ実行: 82,053 回 (49.8%)
-- **JIT チェイニング効率**:
-  - チェイン接続による連続 JIT 実行: **15,482 回（18.9%）**
-  - インタープリタへの復帰（チェイン終端・未コンパイル境界）: 66,571 回
+- **旧JIT trace-link診断**:
+  - 当時「chain」と記録された連続JIT遷移: **15,482 回（18.9%）**
+  - 当時の計測でInterpreter境界へ戻った回数: 66,571 回
+  - いずれも現行共通code chain dispatcherの実行回数ではない。
 - **JIT キャッシュ占有率**:
   - Active バンク: 15 トレース（1,763 / 2,048 バイト, 86.1%）
   - Warm バンク: 15 トレース（1,991 / 2,048 バイト, 97.2%）
@@ -179,8 +180,8 @@ Section 5の速度比はプロセス起動やOSスケジューリングの影響
 - **Trackable JIT Candidates**: 34
 - **Card Status Distribution**: `COMPILED=30`, `HOT=37`, `EXECUTED=1`, `UNEXECUTED=20`
 
-### 4.2 コンパイル済みトレースのチェイニング診断台帳
-今回のAO実行では30トレースがActive/Warmに常駐し、15,482回の連続JIT実行が発生しました。チェイン終端または未コンパイル境界でのインタープリタ復帰は66,571回です。
+### 4.2 旧実装のコンパイル済みtrace-link台帳
+当時のAO実行では30トレースがActive/Warmに常駐し、15,482回の連続JIT実行と記録された。以下は旧実装の診断結果であり、現行共通code chain dispatcher専用カウンタによる計測ではない。
 
 | バンク | Head PC | Next PC | LoopsTo | ChainNext | 実行回数 | チェイニング診断結果 |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
@@ -226,17 +227,9 @@ Section 5の速度比はプロセス起動やOSスケジューリングの影響
 2. **オンデマンド・コンパイルと動的解決**:
    - Tier 3ではホットスポット到達時の Copy-and-Patch コンパイル処理が同一スレッド内で逐次実行されるため、フレーム所要時間に含まれる。
 
-### 5.2 C++23 実機実装（Cortex-M33 / x64）での予測
-実機 C++23 実装においては、アーキテクチャ設計により上記ボトルネックが消滅します：
-1. **同一レジスタ規約・ゼロオーバーヘッド遷移**:
-   - インタープリタハンドラと JIT トレースは、完全に同一の `__fastcall` CPS 4引数レジスタ規約（`R0: ctx`, `R1: sp`, `R2: local_base`, `R3: tos`）で直結されます。
-   - `[[clang::musttail]]` または単一の直接ジャンプ命令（`JMP` / `BX`）によって、C++実装ではFFIではなく同一ABIの末尾遷移になります。サイクル数0をpysimから主張するものではありません。
-2. **予測される高速化率**:
-   - トレース境界でのみ協調的 Yield（`{ADR_TraceBoundaryYield}`）を行うため、ホットループ内のネイティブ直接実行により、実機上では **JIT がインタープリタに対して 3x〜8x の実測高速化を達成**する見込みです。
-3. **RAM 32KB 環境への適合性**:
-   - 3D レイトレーシングのような計算集約型タスクであっても、生成された JIT トレースは合計 **30 トレース（Active 1,763 B + Warm 1,991 B = 3,754 B）** でループのコアパスを網羅しており、8 KB の JIT コード領域予算内に余裕を持って収まることが実証されました。
+### 5.2 ARMv8-M実機性能・資源見積り（TBD）
 
----
+ARMv8-Mの速度、RAM/ROM適合性、JIT命令列、実機サイクル数はTBDである。x64の測定結果はARMv8-Mへ外挿しない。
 
 ## 6. 2026-09-24 Linux 全ベンチマーク再測定
 
@@ -244,12 +237,12 @@ Section 5の速度比はプロセス起動やOSスケジューリングの影響
 
 - **環境**: Ubuntu 26.04.1 x86-64、CPython 3.14.6、uv 0.12.18、Clang 21.1.8。
 - **拡張**: `_interpreter_native` と `native_trace_call` を Clang でビルドした。後者はJITコンパイラが必須 import する拡張であり、インタープリタ拡張とともに事前ビルドする。
-- **実行**: `uv run --system-certs --with wasmtime python experiments/pysim/benchmarks/run_all.py` を別プロセスで4回実行した。以下は4回の中央値である。
+- **実行**: リポジトリ内の`.venv`を`uv run --python .venv/bin/python`で指定し、オフラインで実行した。依存同期と一時依存の導入は行っていない。
 - **VTune**: Intel VTune Profiler 2026.4.0 の Hotspots をソフトウェアサンプリングで収集した。その収集時の `kernel.yama.ptrace_scope` は0だった。`perf_event_paranoid=4` とサンプリングドライバの未導入により、当時はハードウェアイベントとマイクロアーキテクチャ解析を利用できなかった。
 
 ### 6.2 ベンチマーク結果
 
-| 系統 | 指標 | 4回の中央値 |
+| 系統 | 指標 | 報告値 |
 | :--- | :--- | :--- |
 | リニアメモリ | 32-bit 読み書き | 9.58 M ops/s（104.4 ns/op） |
 | リニアメモリ | vMMIO RAM バイパス | 3.96 M ops/s（15.09 MB/s） |
@@ -257,22 +250,24 @@ Section 5の速度比はプロセス起動やOSスケジューリングの影響
 | vMMIO | 静的デバイス dispatch / RBAC 検証 | 1.49 / 1.49 M ops/s |
 | JIT | Copy-and-Patch コンパイル | 55,212 traces/s（18.12 µs/trace） |
 | JIT | 2-bit カード判定 / 疎lookup | 1.67 / 2.04 M ops/s |
-| JIT | 算術ループ 100,000 回 | Pythonハンドラ 4,464.66 ms / C++インタープリタ 5.39 ms / JIT 639.55 ms |
+| JIT | 算術ループ 100,000 回 | Pythonハンドラ 4,385.38 ms / C++インタープリタ 5.55 ms / Hybrid JIT 713.25 ms（3プロセス中央値） |
 | JIT | 3バンク大作業集合 hit rate | 92.44% |
 | JITエイジング | 既定設定（U=2, O=8） | 499 compiles、471 purges、62 rotations、518.5 ms |
 | AO-Bench | インタープリタ / Hybrid JIT | 5,557.60 / 5,121.67 ms（1.09x） |
 
 ### 6.3 測定値の解釈
 
-算術ループは各経路を同一プロセス内で3回測定し、その中央値を取り、さらに4プロセス分の中央値を報告した。Pythonハンドラ実装に対してJITは約6.98倍速く、Windowsで記録した5.10倍と同じ傾向だった。C++インタープリタ拡張は中央値5.39 msで、JITの639.55 msより約118.8倍速かった。元のLinux比較はこのC++拡張を「インタープリタ」として使い、WindowsのPythonハンドラ測定と異なる基準を比べていた。修正後の測定では3経路すべてが `704,982,704` を返した。JIT trace invocationは200,187回、chain hitは100,093回、インタープリタstepは21回で、JITコードが実行されたことも確認した。
+6.2節の算術ループ値は直接マップキャッシュC++化前の基準値であり、`bench_jit.py`を別プロセスで3回起動し、各プロセス内3回測定の中央値をさらに中央値化した。3経路すべてで`704,982,704`が一致した。Pythonハンドラに対してHybrid JITは約6.15倍速いが、C++インタープリタはHybrid JITより約128.5倍速かった。この差だけでは遅さの原因を特定できない。特に、PythonのJIT lookupが支配要因だとは判断しない。
 
-このJIT所要時間は、Pythonの `RuntimeEngine` によるトレース検索・実行制御を含む。C++インタープリタ拡張単体より大幅に遅い値から、C++ JIT本体の算術速度や製品ランタイム全体のC++性能は判断できない。組み込みC++ランタイムの性能を評価するには、実行制御・トレース検索・キャッシュ管理まで含むC++単独ベンチマークが別途必要である。本レポートの値はpysim上のホスト性能として扱う。
+JIT経路は各C++トレース呼出しの後にPythonの`RuntimeEngine`へ復帰し、Tier 3 managerから次の実行先を選ぶ。6.2節の旧診断計測では、trace body実行2,000,196回、旧定義のchain hit 1,000,093回、RuntimeEngine復帰1,000,103回、Interpreter step 48回だった。これらの旧chain hit値は現行の共通code chain dispatcher計数ではない。チェイニング適格性とスケジューラへの協調yield条件は変更していない。C++ Tier 2 composerのビルド検査は構成型選択を検証する。pysimの実際の実行ドライバとJIT lookupは引き続きPythonにある。
 
 AO-Benchは描画結果が一致し、今回の環境ではHybrid JITが約1.09x高速だった。ワークロードにより結果が異なるため、算術ループ側のホストディスパッチとJITトレースの実コストを別途プロファイルする必要がある。
 
-### 6.4 VTune Hotspots の利用状況
+### 6.4 VTune Hotspots の利用状況（現行コードは未収集）
 
 VTune Hotspots はPythonを含むプロセスツリー向けのソフトウェアサンプリングを選択できる。使用版の既定サンプリング間隔は10 msである。
+
+以下のVTuneサンプル表は以前の実装を対象にした記録である。直接マップキャッシュC++化後の再収集も開始できなかった。`kernel.yama.ptrace_scope=0`を確認して再試行したが、VTuneはloopback network interfaceが利用できないと報告した。現行コードのHotspots結果は未取得である。
 
 算術ループの各実行経路だけを反復する [`profile_arithmetic_path.py`](jit/profile_arithmetic_path.py) を追加した。各回で期待結果を照合し、Hybrid JITではトレース実行回数も検査する。Pythonハンドラ、C++インタープリタ拡張、Hybrid JITを別々の収集対象にできる。
 
@@ -300,63 +295,175 @@ for path in python-handler native-interpreter hybrid-jit; do
   result_dir="/tmp/pysim-vtune-${run_id}-${path}"
   "$VTUNE" -collect hotspots -knob sampling-mode=sw \
     -knob enable-stack-collection=true -result-dir "$result_dir" -- \
-    uv run --offline python -u \
+    uv run --offline --no-sync python -u \
     experiments/pysim/benchmarks/jit/profile_arithmetic_path.py --path "$path"
   "$VTUNE" -report hotspots -result-dir "$result_dir" \
     -report-output "/tmp/pysim-vtune-${run_id}-${path}-hotspots.txt"
 done
 ```
 
-### 6.5 条件付きネイティブループ継続と AMD uProf
+### 6.5 AMD uProf Hotspots / IBS（直接マップC++化前）
 
-Python の `_drive_call` は条件分岐トレースから毎回復帰し、次の基本ブロックを検索していた。算術ループでは、分岐の継続先が純ネイティブトレースであり、そのネイティブチェインが同じ分岐トレースへ戻る場合に限り、C++拡張の `run_loop_cycle` 内で条件評価とチェイン呼出しを繰り返すようにした。分岐先が未コンパイル、ヘルパー呼出しを含む、または制御フレーム深さが一致しない場合は従来の `RuntimeEngine` 経路へ戻る。ループ終了時は既存の分岐・スタック復帰処理を一度だけ適用する。
+AMD uProf 5.3.521.0で直接マップキャッシュC++化前のHybrid JIT経路を各12回実行し、HotspotsとIBSを個別に収集した。CPUはAMD Ryzen 5 5500GT with Radeon Graphics（Family 25 / Model 80）、CPythonは3.14.6である。各収集で結果`704,982,704`を照合し、trace body 2,400,198回、旧定義のchain hit 1,200,093回、RuntimeEngine復帰1,200,105回、Interpreter step 54回を記録した。このchain値は現行共通code chain dispatcherの計数ではない。
 
-この最適化は同期 `RuntimeEngine.run()` の経路に限る。協調実行の `run_cooperative()` はトレース境界でスケジューラへ制御を返す既存経路を維持する。C++側は実行中コードキャッシュの更新を防ぐためGILを保持するので、同期実行中は他のPythonスレッドも停止する。
+Hotspotsは10 ms間隔で9.862秒を採取した。全体CPU時間9.32秒のうち、上位CPythonアドレスはシンボル未解決であり、`PyCField_get`は自己時間0.10秒、子を含め0.32秒だった。IBSは約10秒でPythonプロセスから612個の`IBS_ALL_OPS`サンプルを得た。内訳の上位はC++ `run_native_step` 147サンプル、`h_br_if` 48サンプルだった。サンプル数は関数別の精密なコスト比較には不足し、生成JIT機械語の命令別内訳も解決されていない。IBSレポートにはカーネル`kallsyms`アドレス不一致警告が出た。
 
-Clang拡張を `-O2 -g` でビルドし、uvから同じPython 3.14.6を起動した。4つの独立プロセスで `bench_jit.py` を実行し、各プロセス内3回測定の中央値を取得した。
-
-| 経路 | 4プロセスの値 | 中央値 |
-| :--- | :--- | :--- |
-| Pythonハンドラ | 4390.21 / 4474.25 / 4458.06 / 4441.79 ms | 4449.93 ms |
-| C++インタープリタ | 5.41 / 5.47 / 5.65 / 6.01 ms | 5.56 ms |
-| Hybrid JIT | 0.46 / 0.46 / 0.47 / 0.48 ms | 0.465 ms |
-
-全測定で `704,982,704` が一致した。各プロセスで `native_loop_calls=1` を確認した。Hybrid JITは前節の未最適化値639.55 msから約1,375倍短縮し、C++インタープリタより約12.0倍速かった。JITトレース実行数200,187、チェインヒット100,093、インタープリタstep 21は維持された。プロファイル用4反復でもC++ループ経路への進入を4回確認した。別のWASMループで条件が真のときに後方分岐する経路もC++継続に入り、`sum_to(1000) = 499,500` を返した。ここで移したのはループ継続中の実行制御であり、コンパイル、初回検索、ループ終了後のWASM境界処理は引き続きPython側にある。
-
-AMD uProf 5.3.521.0で同じ算術ループを1,200回実行し、時間ベースHotspotsとIBSを別々に収集した。両プロファイルで結果値を検証した。Hotspotsの上位は未解決領域0.27秒（生成JITコードを含むと推測するが、内訳は未確認）とC++ `run_loop_cycle` 0.16秒で、Python関数の各サンプルは0.01秒以下だった。IBSでは最多の関数がC++ `run_loop_cycle`（339 `IBS_ALL_OPS` サンプル）で、189サンプルがC++のループ条件行に対応した。JIT生成コードは動的コード用シンボル登録をしていないため、機械語内部の命令別内訳は未解決である。IBS翻訳時にはカーネルの `kallsyms` アドレス不一致警告も出たが、ユーザープロセスのC++拡張シンボルと行番号は解決された。
-
-測定機は AMD Ryzen 5 5500GT with Radeon Graphics（Family 25 / Model 80）である。この結果はLinux x86_64ホスト上のpysim測定であり、組込みターゲットの実行時間やROM・RAM使用量を示すものではない。
-
-実行したコマンドは次のとおりである。プロファイルデータは `/tmp/pysim-uprof-jit-cpp` と `/tmp/pysim-uprof-jit-ibs-final` に保存した。
+レポートは`/tmp/pysim-uprof-current-hotspots`と`/tmp/pysim-uprof-current-ibs`に保存した。再実行コマンドは次のとおりである。
 
 ```bash
 export UV_CACHE_DIR=/tmp/fireball-uv-cache
 export UV_OFFLINE=true
+export UV_NO_SYNC=true
 UPROF=/opt/AMDuProf_5.3-521/bin/AMDuProfCLI
-"$UPROF" profile --config hotspots -g --detail \
-  -o /tmp/pysim-uprof-jit-cpp \
-  /home/t-matsu/.local/bin/uv run --offline python -u \
-  experiments/pysim/benchmarks/jit/profile_arithmetic_path.py \
-  --path hybrid-jit --repetitions 1200
-"$UPROF" profile --config ibs -g --detail \
-  -o /tmp/pysim-uprof-jit-ibs-final \
-  /home/t-matsu/.local/bin/uv run --offline python -u \
-  experiments/pysim/benchmarks/jit/profile_arithmetic_path.py \
-  --path hybrid-jit --repetitions 1200
+for config in hotspots ibs; do
+  "$UPROF" profile --config "$config" -g --detail \
+    -o "/tmp/pysim-uprof-current-${config}" \
+    uv run --offline --no-sync python \
+    experiments/pysim/benchmarks/jit/profile_arithmetic_path.py \
+    --path hybrid-jit --repetitions 12
+done
 ```
 
-### 6.6 動的 WASM 命令あたりのホストCPUサイクル数
+### 6.6 動的 WASM 命令あたりのホストCPUサイクル数（直接マップC++化前）
 
-Linuxの`perf stat`で`cycles:u`を1イベントだけ計測した。ホストは同じAMD Ryzen 5 5500GT with Radeon Graphics、論理CPU 2へ固定した状態である。実行時の`perf`は7.0.14、`kernel.perf_event_paranoid`は1だった。FIFO制御で各試行の呼び出しバッチ中だけカウンタを有効にし、準備とJITウォームアップは除いた。各試行で結果`704,982,704`を確認し、Hybrid JITではC++ループ継続呼び出し数も反復回数と一致した。
+Linuxの`perf stat`で`cycles:u`を1イベントだけ計測した旧スナップショットである。再計測日は2026-09-24。ホストはAMD Ryzen 5 5500GT with Radeon Graphics、論理CPU 2へ固定した状態である。実行時の`perf`は7.0.14、`kernel.perf_event_paranoid`は1だった。FIFO制御で各試行の呼び出しバッチ中だけカウンタを有効にし、準備とJITウォームアップは除いた。全試行で結果`704,982,704`を確認した。Hybrid JITの10呼出しでは2,000,196 trace body実行、旧定義のchain hit 1,000,093回、1,000,103回のRuntimeEngine復帰、48回のInterpreter stepを記録した。このchain値を現行code chainの回数として扱わない。
 
 `heavy_loop(100000)` は動的に1,300,012 WASM opcodeを実行する。これは初期化4命令、block/loop 2命令、ループ条件4命令を100,001回、ループ本体9命令を100,000回、終了時2命令の合計である。サイクル数を`wasm_dynamic_instructions`で割り、1 WASM opcodeあたりの平均ホストサイクル数を求めた。各行は独立プロセス3回の試行値と中央値である。
 
 | 経路 | 反復数 / 試行 | 動的 WASM opcode / 試行 | 3試行のcycles/opcode | 中央値 |
 | :--- | ---: | ---: | :--- | ---: |
-| Pythonハンドラ | 1 | 1,300,012 | 15,017.9 / 14,748.5 / 14,332.0 | 14,748.5 |
-| C++インタープリタ | 128 | 166,401,536 | 17.573 / 17.559 / 18.032 | 17.573 |
-| Hybrid JIT | 1,000 | 1,300,012,000 | 1.398 / 1.575 / 1.402 | 1.402 |
+| Pythonハンドラ | 1 | 1,300,012 | 14,577.0 / 14,658.4 / 14,718.8 | 14,658.4 |
+| C++インタープリタ | 128 | 166,401,536 | 17.945 / 18.657 / 21.743 | 18.657 |
+| Hybrid JIT | 10 | 13,000,120 | 2,353.8 / 2,384.3 / 2,422.4 | 2,384.3 |
 
-この測定ではHybrid JITの中央値は、C++インタープリタの約12.5分の1のホストサイクル/opcodeだった。値にはPython側の呼出し・ディスパッチ・実行制御も含み、JITが複数のWASM命令をまとめて実行する分を動的WASM opcode数で正規化している。CPU・周波数・OSが異なる値は直接比較せず、組込みCPUの性能値にも読み替えない。
+この旧構成ではHybrid JITがC++インタープリタより約128倍のホストサイクル/opcodeを要した。JIT trace終端ごとにRuntimeEngineへ復帰し、次のlookupをPython製Tier 3 managerが行う経路は残る。C++制御handlerの直接呼出しは対象テストとIBSサンプルで確認したが、10回の計測で約100万回のRuntimeEngine復帰があり、実行ループ全体のコストが支配的である。値にはPython側の呼出し・検索・実行制御も含まれ、JITが複数のWASM命令をまとめて実行する分を動的WASM opcode数で正規化している。CPU・周波数・OSが異なる値は直接比較せず、組込みCPUの性能値にも読み替えない。
 
 同じ測定を再現するコマンドは[JITベンチマーク仕様書](../../docs/components/tier3_executer/benchmarks/jit_runtime_bench_spec.md)の「Linux ホストサイクル数 / 動的 WASM 命令」に記載した。
+
+### 6.7 JIT 直接マップキャッシュのC++化後
+
+固定16スロットのFolded-XOR直接マップ検索と値の所有をC++拡張へ移した後、`bench_jit.py`をuv経由でCPU 2に固定して3プロセス実行した。各プロセス内の3試行中央値を、下表でさらにプロセス間中央値化した。拡張はClangで再ビルド済みであり、算術結果は全経路で`704,982,704`と一致した。
+
+| 経路 | 各プロセスの中央値 (ms) | 3プロセス中央値 | Pythonハンドラからの速度比 |
+| :--- | :--- | ---: | ---: |
+| Pythonハンドラ | 6,037.96 / 6,113.20 / 5,223.27 | 6,037.96 ms | 1.00x |
+| C++インタープリタ | 5.96 / 7.86 / 6.00 | 6.00 ms | 約1,006x |
+| Hybrid JIT | 1,195.19 / 1,103.65 / 973.78 | 1,103.65 ms | 約5.47x |
+
+CPUを固定しても試行間の時間差が大きい。6.2節の以前の値はCPU固定なしの別測定なので、この2つの測定からC++化による総合性能の増減を結論づけない。Hybrid JITの中央値はC++インタープリタの約184倍の時間を要したが、総実行時間の差だけから原因は特定できない。Hybrid JITはこの測定で200,187回のトレース本体を実行し、そのうち100,093回を当時のmetadata-based「ネイティブチェイン」指標で記録した。この値は現行共通chain dispatcherの実行回数ではない。Interpreter stepは21回だった。cycles/opcodeとuProfプロファイルも未取得である。`kernel.yama.ptrace_scope=0`でも、ホスト設定`kernel.perf_event_paranoid=4`がLinux perfとAMD uProfを拒否した。AMD uProfのHotspotsには3以下、IBSには1以下が必要である。これらの権限設定はベンチマーク実行中に変更していない。
+
+算術ループの3プロセス測定は次の手順で再実行できる。
+
+```bash
+export UV_CACHE_DIR=/tmp/fireball-uv-cache
+export UV_OFFLINE=true
+export UV_NO_SYNC=true
+for trial in 1 2 3; do
+  taskset -c 2 uv run --offline --no-sync python \
+    experiments/pysim/benchmarks/jit/bench_jit.py
+done
+```
+
+固定PCのヒットだけを測る局所ベンチ [`bench_fast_cache.py`](jit/bench_fast_cache.py) では、CPU 2へ固定し、1,000,000 lookupを5回行った中央値がC++ `FastCache`で62.1 ns、Python `StaticVector`のタプルスロットで173.8 nsだった（比0.358）。両経路が同一のtrace objectを返すことを各試行後に確認した。これは直接マップのヒット処理だけを比較した合成測定であり、フルループでの速度向上や残るボトルネックを示す値ではない。再測定は次のコマンドで行う。
+
+```bash
+UV_CACHE_DIR=/tmp/fireball-uv-cache UV_OFFLINE=true UV_NO_SYNC=true \
+  taskset -c 2 uv run --offline --no-sync python \
+  experiments/pysim/benchmarks/jit/bench_fast_cache.py
+```
+
+### 6.8 共通RuntimeEngine境界への統合後の測定（2026-09-25）
+
+> この節は後方分岐しきい値でC++ dispatchを続ける実装より前の履歴値である。旧測定ではtrace境界ごとにRuntimeEngineへ復帰しており、以下の現行6.9節との速度・cycles比較には使わない。
+
+`RuntimeEngine.run()`を1トレース境界だけ進める共通処理にし、同期呼出しは`SYNCHRONOUS`構成、COOS実行は`COOS`構成に分けた。COOS側は`System.run_guest()`が同じ境界処理の後に世代観測とYieldを行う。ベンチマークのHybrid JIT経路は仕様どおり`JITInterpreter.call()`を通し、C++インタープリタ経路は`Interpreter.call()`を通した。COOSスケジューラはこの算術ループ比較へ混ぜていない。
+
+実行環境はUbuntu 26.04.1、AMD Ryzen 5 5500GT with Radeon Graphics（Family 25 / Model 80）、uv経由のCPython 3.14.6である。拡張は作業ツリーにあるClangビルドを使用した。`kernel.perf_event_paranoid=1`、`kernel.yama.ptrace_scope=0`を確認し、全Python実行は`uv run --offline --no-sync`で行った。
+
+仕様の3経路ベンチマークを1プロセスで実行した結果を示す。各経路はプロセス内の3測定値の中央値である。
+
+| 経路 | 100,000反復の実行時間 | 結果 |
+| :--- | ---: | ---: |
+| Pythonハンドラ | 4,513.81 ms | `704,982,704` |
+| C++インタープリタ | 5.89 ms | `704,982,704` |
+| Hybrid JIT | 970.14 ms | `704,982,704` |
+
+同じベンチマーク中のHybrid JITは200,187回のトレース起動、100,093回の旧定義のチェインヒット、21回のInterpreter stepを記録した。個別のcycles計測ではHybrid JITを10回実行し、2,000,196回のトレース起動、1,000,093回の旧定義のチェインヒット、1,000,103回のRuntimeEngine復帰、48回のInterpreter stepを記録した。ここでのチェイン値は現行共通code chain dispatcherの実行回数ではない。
+
+`perf stat`で`cycles:u`を各呼出しバッチだけ有効にし、3独立プロセスから算出した動的WASM命令あたりの値は以下のとおりである。各列の平均と中央値は3試行のcycles/opcodeから算出した。
+
+| 経路 | 反復数 / 試行 | 動的WASM opcode / 試行 | 3試行のcycles/opcode | 平均 | 中央値 |
+| :--- | ---: | ---: | :--- | ---: | ---: |
+| Pythonハンドラ | 1 | 1,300,012 | 14,234.30 / 14,179.93 / 14,327.59 | 14,247.27 | 14,234.30 |
+| C++インタープリタ | 128 | 166,401,536 | 17.78 / 17.87 / 18.27 | 17.97 | 17.87 |
+| Hybrid JIT | 10 | 13,000,120 | 3,083.58 / 3,062.58 / 3,148.36 | 3,098.17 | 3,083.58 |
+
+この計測ではHybrid JITはC++インタープリタの約172倍のcycles/opcodeを要した。一方、Hybrid JITのサイクル数はPythonハンドラより約4.6倍少ない。perfカウンタの分母は同一WASM入力から計算した動的命令数であり、JITがまとめて実行した命令も数えている。これはpysimプロセスのホストCPU上の測定値で、組込みCPUの性能値ではない。
+
+AMD uProf 5.3.521.0のHotspotsをHybrid JIT 12回で取得した。報告されたプロセスCPU時間は11.17秒で、Python実行ファイルに11.02秒、`_jit_cache_native.so`に0.02秒、`_interpreter_native.so`に0.01秒だった。Python実行ファイル内の関数シンボルは大半がアドレス表示となる。uProfは`uv`をTarget Pathとして記録したが、対象PythonプロセスのCPU時間を計上した。このため、サンプルはPython側の実行が大半を占めることを示す粗い根拠としてのみ扱い、特定のRuntimeEngineメソッドやlookup関数のコストには割り当てない。詳細レポートは`/tmp/pysim-uprof-hotspots.dcsJU9/hotspots/report.csv`にある。IBSはこの更新後コードでは未収集である。
+
+実測から確認できる差は、通常のC++ Interpreter呼出しが`_call_without_nested_calls()`でnative `run_step`とPython handlerを進める一方、Hybrid JITは各JIT traceの終端後に約10万回RuntimeEngineへ復帰し、Python側で次境界のlookup・スタック適合確認・実行先選択を行うことである。JIT終端の制御命令はC++ Interpreter handlerを呼ぶが、uProfのmodule集計では`_interpreter_native.so`は0.01秒、Python実行ファイルは11.02秒だった。したがって測定はC++制御handler自体が主因という仮説を支持せず、Python側の境界実行とTier 3 manager lookupが有力候補である。ただしuProfの関数シンボル解決が不十分なため、その候補間の内訳は未確定である。チェイニング対象やOS協調境界は変更していない。
+
+再現コマンドは[JITベンチマーク仕様書](../../docs/components/tier3_executer/benchmarks/jit_runtime_bench_spec.md)のLinux `perf stat`節を使う。通常の速度値は`bench_jit.py`、cycles/opcodeは同仕様のFIFO制御手順から取得する。
+
+### 6.9 C++ dispatchの後方分岐yield境界を揃えた測定（2026-09-25）
+
+> この節は診断カウンタの収集が常時有効で、dispatcher snapshotのキャッシュとhotspot profiling切替を入れる前の履歴値である。chain hit 0は当時のmachine-code direct-linkカウンタであり、現行chain定義の実行回数ではない。同一dispatcher内のtrace継続回数は別に数えていない。最新条件との速度比較には6.10節を使う。
+
+C++ InterpreterとHybrid JITの両方を`FB_CONF_RUNTIME_YIELD_THRESHOLD=16`で実行し、C++ handlerが取得済み後方分岐を数え、16回ごとにnative dispatchからPythonへ戻るよう揃えた。Hybrid JITは同じC++ dispatcher内で常駐traceとInterpreter handlerを進める。C++ Interpreter単独経路も同じ回数条件を使う。未対応命令・外部呼出し・trap・関数完了は意味上必要な早期境界である。この旧スナップショットでは旧machine-code direct-linkカウンタが0だった。これは現行chain dispatcherの実行回数を測っていない。
+
+ベンチマークはClang拡張を再ビルドした後、`uv run --offline --no-sync`とCPU 2固定で3独立プロセス実行した。各プロセス内3試行の中央値を採り、さらに3プロセスの中央値を示す。ホストはAMD Ryzen 5 5500GT with Radeon Graphics、Linux x86-64である。全経路のWASM結果は`704,982,704`で一致した。
+
+| 経路 | 100,000反復の実行時間 | Python handlerからの速度比 | 結果 |
+| :--- | ---: | ---: | :--- |
+| Pythonハンドラ | 4,489.13 ms | 1.00x | `704,982,704` |
+| C++ Interpreter | 13.82 ms | 324.75x | `704,982,704` |
+| Hybrid JIT | 96.60 ms | 46.47x | `704,982,704` |
+
+この測定でHybrid JITはC++ Interpreterより6.99倍遅かった。各試行でtrace invocationは200,187回、旧machine-code direct-linkカウンタは0回、Interpreter stepは21回だった。結果は今回の同一条件でC++ InterpreterとHybrid JITの復帰条件を揃えたうえでの実測であり、C++ dispatch構成でもHybrid JITがまだC++ Interpreterより遅いことを示す。時間値だけから残る原因は特定しない。旧direct-linkカウンタは現行chain実行回数ではない。
+
+`cycles:u`は取得していない。現在の`kernel.perf_event_paranoid`は4であり、Linux perfのハードウェアカウンタ利用を阻むため、カーネル設定は変更せず実時間測定だけを行った。Intel VTune・AMD uProfの手順は仕様書に残している。サイクル/opcodeが必要な場合は、管理者設定を許可値へ変更した後、同じFIFO制御手順で再計測する。
+
+### 6.10 Hotspot観測を構成で切り替えた算術ループ測定（2026-09-25）
+
+JITコンパイラ本体はClangでビルドしたC++拡張であり、今回の算術ループ測定は常駐traceを事前に準備してコンパイル処理を計時区間から除いた。調べたかったのはPython側JIT managerの動的hotspot観測と、RuntimeEngineの境界処理である。診断カウンタ`FB_CONF_RUNTIME_PROFILE_STATS`は既定OFFとし、速度・cyclesの計時中も無効にした。dispatcher snapshotはcache世代またはtrackable mask世代の変更時だけ構築し、`max_chain_stack_words`と候補PC表を各yieldで再走査する処理を除いた。
+
+Hotspot profilingのON/OFFを切り替え、各プロセスで100,000反復を10回実行した。各試行でWASM結果`704,982,704`、動的命令13,000,120、LOOP後方分岐yieldしきい値16を確認した。統計カウンタは計時中OFFである。AMD Ryzen 5 5500GT、Linux x86-64、CPython 3.14.6、CPU 2固定で実行した。
+
+| Hotspot profiling | 3試行の実時間（10回分） | 中央値（1反復あたり） | cycles/opcode（3試行） | 平均 | 中央値 |
+| :--- | :--- | ---: | :--- | ---: | ---: |
+| 有効 | 316.745 / 326.225 / 328.620 ms | 32.62 ms | 98.68 / 101.30 / 99.15 | 99.71 | 99.15 |
+| 無効（trace準備後） | 213.722 / 216.413 / 205.360 ms | 21.37 ms | 65.27 / 65.93 / 66.06 | 65.76 | 65.93 |
+
+profile観測を無効にした場合、10反復バッチの中央値は34.5%短縮し、cycles/opcode中央値は33.5%減少した。無効化しても常駐trace実行、C++分岐handler、後方分岐しきい値16でのCOOS復帰は維持される。一方、未コンパイルblockの観測、hotness yield、新しい動的コンパイル判断は止まる。これは診断カウンタや外部VTune/uProfのON/OFFではなく、JITの動的hotspot観測機能のON/OFF比較である。
+
+同じCPU・しきい値・命令列で取得した3経路の`cycles:u`を示す。全経路で統計カウンタをOFFにして各経路の正解値を照合した。
+
+| 経路 | 反復数 / 試行 | 動的WASM opcode / 試行 | 3試行のcycles/opcode | 平均 | 中央値 |
+| :--- | ---: | ---: | :--- | ---: | ---: |
+| Python handler | 1 | 1,300,012 | 14,864.24 / 15,234.33 / 15,441.71 | 15,180.09 | 15,234.33 |
+| C++ Interpreter | 128 | 166,401,536 | 44.14 / 43.84 / 44.16 | 44.05 | 44.14 |
+| Hybrid JIT、hotspot有効 | 10 | 13,000,120 | 98.68 / 101.30 / 99.15 | 99.71 | 99.15 |
+| Hybrid JIT、hotspot無効 | 10 | 13,000,120 | 65.27 / 65.93 / 66.06 | 65.76 | 65.93 |
+
+hotspot観測無効後もHybrid JITはC++ Interpreterよりcycles/opcode中央値で1.49倍遅い。よってhotspot観測の負荷は大きいが、JITとC++ Interpreterの差をすべて説明しない。uProfの関数シンボルが十分に解決されなかったため、残差を個別関数へ割り当てない。
+
+計時区間外で取得したPython `cProfile`は候補を絞る補助証拠である。観測有効時は`RuntimeEngine._run_jit_boundary`が6,260回、Tier 3 managerの`lookup`が6,258回呼ばれ、lookupの累積時間は約0.043秒だった。観測無効時は候補マスク・カード状態を調べる処理を通らない。cProfileの実時間値は通常性能比較に使わない。snapshot cacheを入れる前は`native_dispatch_state`が6,258回呼ばれ累積0.297秒、そのうち`max_chain_stack_words`が0.111秒だった。変更後、このsnapshot再構築は世代が変わらない通常境界で再実行しない。
+
+意味上の遷移数はON/OFFで同じだった。診断実行10反復分ではtrace invocation 2,000,010回、C++ handler後に同一dispatcher内で次のJIT traceへ進んだ回数1,937,510回、RuntimeEngine境界62,510回だった。この1,937,510は`native_dispatch_trace_transitions`に対応するC++ dispatcher指標であり、chainではない。現行chainはtrace末尾から共通コード領域へ入り、chain dispatcherが次trace bodyへtail-jumpする経路である。その専用カウンタはなく、この節の診断実行ではchain回数を取得していない。
+
+### 6.11 共通code chain dispatcher更新後のcycles測定（2026-09-25）
+
+共通コード領域にchain dispatcherを配置し、trace末尾から共通入口へ相対分岐する更新後のコードを測定した。Intel/AMD共通の`perf stat cycles:u`で、CPU 2へ固定し、FIFO制御により実行バッチ中だけカウンタを有効にした。ホストはAMD Ryzen 5 5500GT with Radeon Graphics、Linux x86-64、`perf` 7.0.14、`kernel.perf_event_paranoid=1`である。Clang拡張は通常設定でビルドし、診断カウンタはコンパイルから除外した。hotspot profilingは既定の有効設定、後方分岐yieldしきい値は16である。
+
+Python handlerは100,000反復を1回、C++ Interpreterは128回、Hybrid JITは10回実行した。各呼出しの動的命令数は1,300,012で、全試行の結果は`704,982,704`だった。C++ InterpreterとHybrid JITは共通しきい値16を使った。
+
+| 経路 | 実時間（試行ごと、バッチを1呼出しへ換算） | cycles/opcode（3試行） | 平均 cycles/opcode | 中央値 |
+| :--- | :--- | :--- | ---: | ---: |
+| Python handler | 4,458.128 / 4,599.736 / 4,667.609 ms | 14,441.92 / 14,948.81 / 15,141.12 | 14,843.95 | 14,948.81 |
+| C++ Interpreter | 14.566 / 15.425 / 14.547 ms | 47.26 / 49.84 / 46.99 | 48.03 | 47.26 |
+| Hybrid JIT、hotspot有効 | 31.579 / 30.839 / 31.112 ms | 101.98 / 99.73 / 100.76 | 100.82 | 100.76 |
+
+この条件ではHybrid JITはC++ Interpreterより中央値cycles/opcodeで2.13倍多く、呼出し時間で2.14倍遅かった。Python handlerと比べると約147.8倍短い。今回の算術ループは分岐をC++ Interpreter handlerへ委譲する計測であり、共通code chain dispatcherの通過回数や性能を測っていない。chain dispatcher経路の動作はJIT QAで検証したが、専用実行カウンタはなく、chain回数とchain単体の性能値は未取得である。
+
+再現には[JITベンチマーク仕様書](../../docs/components/tier3_executer/benchmarks/jit_runtime_bench_spec.md)のLinux `perf stat`手順を使う。今回の計測値は、共通dispatcher更新後に同じ算術ループ条件で取り直した値であり、6.10節以前の履歴値と混ぜない。

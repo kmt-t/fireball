@@ -6,7 +6,6 @@ Traceability: interpreter_test_spec.md, wasm_instruction_set_test_spec.md
 """
 
 import struct
-import sys
 from pathlib import Path
 
 # Setup paths
@@ -21,8 +20,8 @@ _REPO_ROOT = _PYSIM_DIR.parent.parent
 
 from helpers import expect_assertion, wat_to_wasm
 from helpers import make_interpreter as Interpreter
-from tier3_executer.interpreter.interpreter import InterpreterContext, Trap, WasmNumber
 from system_containers import StaticVector
+from tier3_executer.interpreter.interpreter import InterpreterContext, Trap, WasmNumber
 from vmmio import TrapCode
 from wasm_module import F64, I32, I64, Function, FuncType, Memory, Module
 from wasm_reader import parse
@@ -164,6 +163,52 @@ def test_intp_18_typed_block_results_keep_wide_native_slots():
     assert interp.call(0, []) == [42]
     assert interp.call(1, []) == [1.5]
     assert interp.call(2, []) == [2.5]
+
+
+def test_native_interpreter_returns_to_python_at_loop_yield_counts(monkeypatch):
+    """Native Interpreter returns at the configured backedge count, as Hybrid JIT does."""
+    from config import FB_CONF_RUNTIME_YIELD_THRESHOLD
+    from tier3_executer.interpreter import interpreter as interpreter_module
+
+    module = parse(
+        wat_to_wasm(
+            """
+            (module
+              (func (export "sum_to") (param $n i32) (result i32)
+                (local $sum i32)
+                (block $exit
+                  (loop $top
+                    (br_if $exit (i32.eqz (local.get $n)))
+                    (local.set $sum (i32.add (local.get $sum) (local.get $n)))
+                    (local.set $n (i32.sub (local.get $n) (i32.const 1)))
+                    (br $top)
+                  )
+                )
+                (local.get $sum)
+              )
+            )
+            """
+        )
+    )
+    function_index = module.export_func_index("sum_to")
+    native_dispatch = interpreter_module._interpreter_native.run_native_dispatch
+    returned_statuses: list[int] = []
+
+    def record_native_dispatch(*args):
+        result = native_dispatch(*args)
+        returned_statuses.append(result[0])
+        return result
+
+    monkeypatch.setattr(
+        interpreter_module._interpreter_native,
+        "run_native_dispatch",
+        record_native_dispatch,
+    )
+    iteration_count = FB_CONF_RUNTIME_YIELD_THRESHOLD * 2 + 1
+    results = Interpreter(module).call(function_index, [iteration_count])
+
+    assert results == [sum(range(1, iteration_count + 1))]
+    assert returned_statuses == [5, 5, 1]
 
 
 def test_intp_16_nested_return_consumes_sentinel_and_restores_caller():
@@ -501,6 +546,7 @@ def test_wasm_f32_arithmetic_min_max_and_precision():
 def test_wasm_loader_and_radix_binary_tree_view_indexes():
     """TEST-LOAD-01..47: Verifies WASM Loader zero-copy indexing, verification, and ReadOnlyRadixBinaryTreeView file offset & hash symbol indexes."""
     from loader import WasmLoader
+
     from experiments.pysim.qa.tier2_runtime.test_loader import _build_test_wasm_binary
 
     loader = WasmLoader()

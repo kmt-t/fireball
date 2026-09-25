@@ -16,12 +16,7 @@
  * runtime, subsystem, service, guest).
  *
  * Error Handling:
- *   - Allocation failures report an error with a backtrace using the
- *     THROW_NESTED_BACKTRACE macro.
- *   - When __cpp_exceptions is defined, this throws std::bad_alloc with a
- * nested exception_with_backtrace.
- *   - When exceptions are disabled, this prints the backtrace and calls
- * std::terminate().
+ *   - Allocation failures report an error with a backtrace and terminate.
  *   - nothrow variants return nullptr on allocation failure.
  *
  * Alignment Support:

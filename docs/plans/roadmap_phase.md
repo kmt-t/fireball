@@ -11,7 +11,7 @@
 | **Phase 0: Quality Gate & Early Validation** | 約6ヶ月 | 仕様品質検証・動的図解・形式検証・シミュレータコード品質向上・Gotchasテスト還元 | **進行中 (ACTIVE: Step 2 推進中)** |
 | **Phase 1: vSoC First (C++23 実装)** | 約3ヶ月 | 基礎ユーティリティ・スタンドアロンvSoCコア実装（Loader/Interpreter/JIT） | **待機中 (PENDING: オーナーGO待ち)** |
 | **Phase 2: Integration (周辺統合)** | 約4ヶ月 | 周辺サブシステム実装・統合（COOS/IPC/vMMIO/HAL/GDB） | 未着手 |
-| **Phase 3: PoC (実機移植・評価)** | 約2ヶ月 | ターゲットボード移植（Cortex-M33/Zephyr）・性能評価 | 未着手 |
+| **Phase 3: PoC (実機移植・評価)** | 約2ヶ月 | ARMv8-M候補ボードの仕様確定後に移植・性能評価（対象はTBD） | 未着手 |
 | **Phase 4: OSS & Production** | 継続 | OSSリリース整備・エコシステム対応・ドキュメント公開 | 未着手 |
 
 **Phase 0 を品質ゲート・早期検証・シミュレータ改善に集中させる理由:**
@@ -21,7 +21,7 @@
 - **C++ 実装着手（Phase 1）前の必須要件**:
   1. シミュレータ（`experiments/pysim`）のコード品質向上、堅牢化、および全ユニットテストスイートの高信頼化
   2. 実装の勘所（Gotchas）の網羅的抽出とテスト仕様書（`docs/qa/tier*/`）へのフィードバック完了
-  3. 物理リソース（最小構成 RAM 32KB / ROM 96KB）のバイト単位の再見積もりと整合性検証 `{Resource_Estimation_Model}`
+  3. ARMv8-Mの対象CPU・ボード確定後に物理リソース予算を作成し、構成との整合性を検証する。現時点では対象と予算をTBDとする `{Resource_Estimation_Model}`
   4. 製品コード規模20 KSLOC以内の予算計画と、コメント・テストを除く同一SLOC定義による実測手順の確定
   5. C++23 ヘッダ（`inc/**/*.hxx`）における構造体メモリレイアウト、アライメント、constexpr 設計、POD ハーネス設計の確定
   6. 人間（オーナー/アーキテクト）による最終レビューおよびフェーズ移行の GO 判定
@@ -38,7 +38,7 @@
 | **Step 0: Bonsai Design & Documentation** | 静的・動的設計ペアリング、自然言語仕様徹底、Mermaid動的図解（シーケンス図／アクティビティ図）、ルール体系刷新 | **DONE** |
 | **Step 1: Early Validation** | 全16コンセプトコード（`Any`完全排除）、テスト仕様書、pyModelChecking形式検証（CTL論理式＋`guards=False`変異検査） | **DONE** |
 | **Step 2: Reference Simulation & Gotchas Feedback** | `experiments/pysim` シミュレータコードの品質向上・リファクタリング、未検証エッジケース・Gotchasの抽出、テスト仕様書およびユニットテストスイートへの還元 | **進行中 (ACTIVE)** |
-| **Step 2.4: Resource Budget & Header Review** | RAM 32KB / ROM 96KB と製品コード20 KSLOCの再見積もり（[`resource_budget_estimation.md`](docs/architecture/resource_budget_estimation.md)）・C++23ヘッダレイアウト確認 | **待機中** |
+| **Step 2.4: Resource Budget & Header Review** | ARMv8-Mの物理予算（TBD）と製品コード20 KSLOCの再見積もり（[`resource_budget_estimation.md`](docs/architecture/resource_budget_estimation.md)）・C++23ヘッダレイアウト確認 | **待機中** |
 | **Step 2.5: Gate Review & Go Decision** | オーナー（人間）による最終品質レビュー・Freeze・Phase 1 GO判定 | **待機中** |
 
 ---
@@ -64,10 +64,10 @@
   - 全コア命令ハンドラ（算術・制御・メモリ境界トラップ） `{MemoryBoundaryCheck}`
   - 分岐脱出時のフレームプルーニングと TOS レジスタ復元
 - **Phase 1.3: Copy-and-Patch JIT Compiler & Runtime (`jit_compiler`, `jit_runtime`)**
-  - ARM Thumb-2 / x86_64 ネイティブパッチステンシル & 事前コンパイルテンプレート `{JIT_CopyAndPatch}` `{ADR_TosCacheAsymmetry}`
-  - 連続8KB JIT領域（共通コード2KB + Active/Warm/Oldest各2KB）と3面 MPU W^X 代謝マネージャ `{JIT_MultiBuffer_Cache}` `{JIT_OldestOnly_Promote}`
+  - x64 JIT契約を検証する。ARMv8-MのABIと物理命令生成はTBDとする。
+  - x64で検証したJIT領域と3面キャッシュ契約を管理する。ARMv8-Mの物理配置と保護方式はTBD。
   - 3段検索（カードマーキング → Folding XOR高速キャッシュ → 少数のソート済みJITエントリの二分探索。Radix索引なし）
-  - Safepoint 協調 & JIT/インタープリタ透過切り替え `{JIT_LazyChaining}` `Interpreter_LazyJITSwitch` `{JIT_RuntimeAPI_Fallback}`
+  - C++ native dispatchによるInterpreter/JIT継続とLOOP後方分岐回数yieldを実装・検証する `{JIT_BackedgeYield}` `{JIT_RuntimeAPI_Fallback}`
 - **Phase 1.4: Standalone vSoC Harness & WAMR Benchmark (`runtime_vsoc`)**
   - ホスト (x86_64 / Linux / macOS / Windows) 実行ハーネス
   - WAMR (Fast Interpreter) 比較ベンチマーク (CoreMark-PRO, aobench)
@@ -91,8 +91,8 @@
 
 実機ターゲットボード移植と最終検証。
 
-- **ターゲットボード移植**: ARM Cortex-M33 (nRF5340 / STM32U5 / micro:bit v2 / Zephyr OS)
-- **実機性能・リアルタイム性評価**: sub-µs 割り込み応答、想定構成 64KB RAM 適合、CoreMark 測定
+- **ターゲットボード移植**: ARMv8-Mの対象CPU、ボード、OSはTBD
+- **実機性能・リアルタイム性評価**: 測定基準、RAM/ROM上限、割込み応答条件はTBD
 
 ---
 

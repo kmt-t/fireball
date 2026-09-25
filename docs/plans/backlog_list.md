@@ -41,18 +41,17 @@ Fireball Hypervisor の現行作業および次期フェーズのタスク一覧
   - 巡回は、値が0でないバイトの処理数（`FB_CONF_JIT_AGING_STEP_UNITS`）または走査バイト数（`FB_CONF_JIT_AGING_STEP_SCAN_BYTES`）で打ち切る。既定値は仮値であり、aobench 等の実測で調整する
   - 関数更新表は関数数ビット（⌈関数数/8⌉ バイト）である。RAM 予算への影響は Step 2.4 で確認する
 - [ ] **アーキテクチャ監査課題の設計整合・ADR策定**:
-  - **現行証跡の再監査**: 要求・仕様・形式モデル・テスト・実装を基準に監査記録を整備する。対象はJITチェイン終端、AAPCS SP整列、ハンドラABI、JIT状態遷移・計算量、CSP保証、WIT／vMMIO契約、設計根拠である
+  - **現行証跡の再監査**: 要求・仕様・形式モデル・テスト・実装を基準に監査記録を整備する。対象はJITチェイン終端、C++ハンドラABI、JIT状態遷移・計算量、CSP保証、WIT／vMMIO契約、設計根拠である
   - JITのネイティブトレース間chainと参照シミュレータの再検索との差は、ターゲット固有最適化と参照モデルの抽象度差を切り分けて再レビューする
-  - **JITトレースヘッダ更新と MPU W^X 保護（RO+X）のハードウェア整合化**: Cortex-M33 PMSAv8 において RO 領域（Region 4）への書き込みが MemManage Fault となる制約の解消。パッチトランザクション相乗りモデル（`begin_jit_patch` 内一括更新）またはヘッダ・データスロットの RAM 領域（Region 3）分離配置モデルの策定
+  - ARMv8-Mの物理ABI、命令生成、trace layout、MPU/W^X、メモリ配置、ROM/RAM予算、実機検証条件は、x64のJIT契約検証後に新規設計する。現時点ではすべてTBD。
   - **インタープリタ概念コードの移植性是正**: 残存する広すぎる型注釈を具体化し、ホスト再帰呼び出しを組み込み実装方針に適合させる
 - [ ] **Step 2.3: ユニットテストコードの網羅性・品質強化**:
   - エッジケース・異常系・直交表組み合わせテストの拡充
   - テストランナー（[`run_all.py`](experiments/pysim/qa/run_all.py)）に登録された **30 スイート**の高速・高信頼実行を維持する。2026-09-21 の実行結果は **30/30 PASSED** である
   - 統合シナリオランナーに登録された **12 シナリオ**の実行結果も **12/12 PASSED** である。[`verification_factor_matrix.md`](docs/qa/verification_factor_matrix.md) の suite 数表記は **30 suite / 30/30 合格**へ同期済みである
-- [ ] **Step 2.4: 物理リソース予算（最小構成 RAM 32KB / ROM 96KB）の厳密な再見積もり**:
+- [ ] **Step 2.4: ARMv8-M物理リソース予算の策定（TBD）**:
   - 詳細正本: [`resource_budget_estimation.md`](docs/architecture/resource_budget_estimation.md)
-  - **RAM (32KB)**: 統合物理メモリプール 23.55KB + OSスタック/静的変数 ~3.5KB $\to$ 静的合計 **~27.05 KB** (余裕 ~5.72 KB / 17.4%) の実機適合確認 `{Resource_Estimation_Model}`
-  - **ROM (96KB)**: 不変ルックアップテーブル/辞書 ~8.2KB + 機械語コード ~45〜55KB $\to$ 静的合計 **~53〜63 KB** (空き余白 ~33〜43 KB / 約34〜45%) の確認
+  - 対象CPU・ボード、ROM/RAM容量、割込みstack、JIT領域、メモリ保護方式を確定してから物理予算を見積もる。現行のシミュレータ設定値は予算根拠にしない。
   - **コード規模 (20 KSLOC)**: コメントとテストを除く製品ソースコードの上限を20,000 SLOCとする `Size_20KSLOC`。最新pysimの18,701物理行からの参考推定は約21.5〜23.4 KSLOCであり、計測定義が異なるため、C++実測と同じSLOC条件で再見積もりする
 - [ ] **Step 2.5: オーナー（人間）による最終品質レビュー & Phase 1 GO 判定**:
   - 仕様・シミュレータコード・テスト設計・バジェットを Freeze し、C++23 実装フェーズ（Phase 1）への移行を最終承認
@@ -90,7 +89,7 @@ Fireball Hypervisor の現行作業および次期フェーズのタスク一覧
 - [ ] **`execution_context` & 独立3バッファスタック (`inc/runtime/interpreter.hxx`)**:
   - オペランド領域・ローカル値領域・制御ブロック復帰情報領域の独立管理・ローカル変数基底 R2 渡し `{ContextPointerRegister}`
 - [ ] **コア命令ハンドラ群 (`src/runtime/opcode_handlers.cxx`)**:
-  - 継続渡し4論理引数シグネチャ（R0=ctx, R1=sp, R2=local_base, R3=tos） `{ThreadedInterpreter}`
+  - 継続渡し4論理引数シグネチャ（`ctx`, `sp`, `local_base`, `tos`）。物理配置は対象ABIで決める `{CPS_4Args}`
   - 算術・比較・変換・制御・メモリ操作ハンドラと `MemoryBoundaryCheck` トラップ `{MemoryBoundaryCheck}`
   - 分岐脱出時のフレームプルーニングと TOS 復元 (`GOTCHA-INTP-02`)
 - [ ] **スレッド化ディスパッチャ (`src/runtime/dispatch.cxx`)**:
@@ -100,14 +99,7 @@ Fireball Hypervisor の現行作業および次期フェーズのタスク一覧
 
 ### Phase 1.3: Copy-and-Patch JIT Compiler & Runtime (`jit_compiler`, `jit_runtime`)
 <!-- traceability: {Interpreter_LazyJITSwitch} -->
-- [ ] **ARM Thumb-2 / x86_64 ネイティブパッチステンシル (`inc/jit/stencils.hxx`)**:
-  - 継続渡し4論理引数レジスタ規約準拠の事前コンパイル済みネイティブバイト列（RO-Data）とリロケーションテーブル `{JIT_CopyAndPatch}` `{ADR_TosCacheAsymmetry}`
-- [ ] **トリプルバッファ キャッシュマネージャ (`src/jit/cache_manager.cxx`)**:
-  - 連続8KB領域のうち可変バンクは2KB × 3面（Oldest 破棄・昇格）。先頭2KBの共通コード領域は非エビクション `{JIT_MultiBuffer_Cache}` `{JIT_OldestOnly_Promote}`
-  - MPU W^X バッチトランザクション管理（書き込み時 RW+XN / 実行時 RO+X）
-  - 3段検索（カードマーキング → Folding XOR高速キャッシュ → 少数のソート済みJITエントリの二分探索。Radix索引なし）
-- [ ] **Safepoint 協調 & 透過的インタープリタ切り替え (`src/jit/safepoint.cxx`)**:
-  - JIT $\leftrightarrow$ インタープリタ間の Low-Overhead フォールバックおよびホットスポット検出 `{JIT_LazyChaining}` `Interpreter_LazyJITSwitch` `{JIT_RuntimeAPI_Fallback}`
+- [ ] **ARMv8-M実装仕様策定（TBD）**: 物理ABI、命令列、trace layout、dispatcher、メモリ保護、資源予算、実機検証条件をすべて未確定として扱う。
 - [ ] **JIT 単体テストスイート (`tests/test_jit.cxx`)**:
   - ホットスポットループの JIT トレース生成・実行・フォールバック検証
 
@@ -132,8 +124,8 @@ Fireball Hypervisor の現行作業および次期フェーズのタスク一覧
 
 ## Phase 3: PoC（ターゲットボード移植 / 将来予定）
 
-- [ ] **Cortex-M33 実機移植**: BBC micro:bit v2 / nRF5340 / STM32U5 / Zephyr OS 環境への移植
-- [ ] **実機性能・リアルタイム性評価**: sub-µs GPIO 割り込み応答および想定構成 64KB RAM 適合検証
+- [ ] **ARMv8-M実機移植**: 対象ボード、OS、実機仕様はTBD。
+- [ ] **ARMv8-M実機性能・リアルタイム性評価**: 測定基準と資源上限はTBD。
 
 ---
 

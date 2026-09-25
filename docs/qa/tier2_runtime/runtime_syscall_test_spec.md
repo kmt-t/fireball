@@ -43,7 +43,7 @@
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | TEST-SYS-30 | `fireball:host/virq.register` host call | 静的ノードと期待シグネチャの関数が存在 | `fireball_virq_register(node_id, function_index)` | `0`を返して登録を保留し、ゲストからvMMIO固定スロットへ直接書き込まない | runtime_syscall.md, runtime_vsoc.md |
-| TEST-SYS-31 | `fireball:host/virq.unregister` host call | 有効または保留中の登録が存在 | `fireball_virq_unregister(node_id)` | `0`を返して解除を保留し、次のSafepointで無効化する | runtime_syscall.md, runtime_vsoc.md |
+| TEST-SYS-31 | `fireball:host/virq.unregister` host call | 有効または保留中の登録が存在 | `fireball_virq_unregister(node_id)` | `0`を返して解除を保留し、次のCOOS協調境界で無効化する | runtime_syscall.md, runtime_vsoc.md |
 | TEST-SYS-32 | 不正vIRQ登録要求 | 範囲外ノード、無効関数、または専用host callの不正引数 | 各専用host callを呼び出す | `WasiErrno`相当のエラーを返し、有効登録・`REG_IRQ_FLAGS`を変更しない | runtime_syscall.md, GOTCHA-SYS-01 |
 
 ### IPC (`0x40`-`0x4F`)

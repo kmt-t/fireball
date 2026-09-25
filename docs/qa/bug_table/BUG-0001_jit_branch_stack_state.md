@@ -21,7 +21,7 @@ Tier 3（インタープリタとJITの併用）でclang生成のWASMを実行�
 ## 2. 再現手順
 
 ```bash
-.venv/Scripts/python.exe experiments/pysim/benchmarks/profile/bench_vtune_workload.py --phase suite_jit --kernel k_sha256:8
+uv run --offline --no-sync python experiments/pysim/benchmarks/profile/bench_vtune_workload.py --phase suite_jit --kernel k_sha256:8
 ```
 
 期待結果は、`[PASS]` と、Tier 2およびwasmtimeと一致する結果である。
@@ -65,7 +65,7 @@ Tier 3（インタープリタとJITの併用）でclang生成のWASMを実行�
 
 ## 7. 修正
 
-[`runtime_engine.py`](experiments/pysim/tier2_runtime/runtime_engine.py) の `_compile_trace` を変更した。
+[`runtime_engine.py`](experiments/pysim/tier3_executer/jit/runtime_engine.py) の `_compile_trace` を変更した。
 
 - `block`、`loop`、`if` で終わるブロックのトレースは、終端トレースとして扱う。
 - 終端トレースは、ネイティブチェインの対象にならない。
@@ -77,4 +77,3 @@ Tier 3（インタープリタとJITの併用）でclang生成のWASMを実行�
 - `TEST-JITR-53`（修正前は停止、修正後は通過）と `TEST-JITR-59` を追加した。
 - 修正前に停止していた5カーネル（`k_sha256`、`k_sort`、`k_matmul`、`k_lz`、`k_fir`）が、wasmtimeと一致した。
 - 全17カーネルの通し実行は、Tier 2と同一のチェックサム（`0xC09373A7`）になった。
-

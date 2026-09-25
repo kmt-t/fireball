@@ -5,7 +5,6 @@ Unit tests for Tier 1 Core: Round-Robin Scheduler
 Traceability: os_scheduler_test_spec.md
 """
 
-import sys
 from pathlib import Path
 
 # Setup paths
@@ -80,7 +79,7 @@ def test_sched_04_shared_block_move_semantics_csp_rendezvous():
 
     sched = Scheduler()
     mm = MemoryManager(sched)
-    mm.init_manager(pool_base=0x20020000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
+    mm.init_manager(pool_base=0x00010000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
     ch = sched.create_channel(transfer_mode=ChannelTransferMode.MOVABLE)
 
     t1 = sched.get_task(sched.spawn("sender", task_id=1))

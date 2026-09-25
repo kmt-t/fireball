@@ -273,6 +273,16 @@ def opcode_has_attribute(opcode: int, attribute: OpcodeAttribute) -> bool:
     return (packed & int(attribute)) != 0
 
 
+def is_control_terminator(opcode: int) -> bool:
+    """Return whether native dispatch must delegate this block boundary."""
+
+    assert 0 <= opcode < 256
+    attributes = OPCODE_ATTRIBUTES.at(opcode)
+    return (attributes & int(OpcodeAttribute.BASIC_BLOCK_BOUNDARY)) != 0 and (
+        attributes & int(OpcodeAttribute.CALL)
+    ) == 0
+
+
 _MEMARG_OPCODES = _opcode_table(
     I32_LOAD,
     I32_LOAD8_S,

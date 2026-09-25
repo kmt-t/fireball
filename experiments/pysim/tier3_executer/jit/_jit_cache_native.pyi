@@ -1,0 +1,9 @@
+from jit_runtime_contract import JITTrace
+
+FAST_SLOT_COUNT: int
+
+
+class FastCache:
+    def lookup(self, head_pc: int) -> JITTrace | None: ...
+    def store(self, head_pc: int, trace: JITTrace) -> None: ...
+    def clear(self) -> None: ...

@@ -5,7 +5,6 @@ Unit tests for Tier 2 Runtime: Fault Recovery Strategies
 Traceability: system_recovery_spec
 """
 
-import sys
 from pathlib import Path
 
 # Setup paths

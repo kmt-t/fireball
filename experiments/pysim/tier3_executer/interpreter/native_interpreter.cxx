@@ -11,12 +11,26 @@
 #include <initializer_list>
 #include <limits>
 
+#ifndef FB_CONF_NATIVE_JIT_TRACE_CAPACITY
+#error "Native JIT dispatch capacity must come from tier1_core/config.py"
+#endif
+#ifndef FB_CONF_NATIVE_JIT_BLOCK_CAPACITY
+#error "Native JIT block-observation capacity must come from tier1_core/config.py"
+#endif
+#ifndef FB_CONF_RUNTIME_PROFILE_STATS
+#error "Runtime profile stats selection must come from tier1_core/config.py"
+#endif
+#ifndef FB_CONF_JIT_HOTSPOT_PROFILING
+#error "JIT hotspot profiling selection must come from tier1_core/config.py"
+#endif
+
+static_assert(FB_CONF_RUNTIME_PROFILE_STATS == 0 || FB_CONF_RUNTIME_PROFILE_STATS == 1);
+static_assert(FB_CONF_JIT_HOTSPOT_PROFILING == 0 || FB_CONF_JIT_HOTSPOT_PROFILING == 1);
+
 namespace {
 
 #if defined(_WIN32)
 #define FIREBALL_CPS_CALL __fastcall
-#elif defined(__arm__) && defined(__clang__)
-#define FIREBALL_CPS_CALL __attribute__((pcs("aapcs")))
 #else
 #define FIREBALL_CPS_CALL
 #endif
@@ -24,6 +38,11 @@ namespace {
 constexpr std::uint32_t kFallback = 0;
 constexpr std::uint32_t kComplete = 1;
 constexpr std::uint32_t kTrap = 2;
+constexpr std::uint32_t kBlockBoundary = 3;
+constexpr std::uint32_t kOldestTraceHit = 4;
+constexpr std::uint32_t kStopAtBlockBoundaryFlag = 1u << 0;
+constexpr std::uint32_t kStopAfterControlFlag = 1u << 1;
+constexpr std::uint32_t kDispatchYield = 5;
 constexpr std::uint32_t kTrapUnreachable = 9;
 constexpr std::uint32_t kTrapDivideByZero = 15;
 constexpr std::uint32_t kTrapIntegerOverflow = 16;
@@ -48,6 +67,10 @@ const std::array<binary_operation_fn, 256>& binary_operation_table_data();
 
 constexpr step_result fallback(std::uint32_t ip) {
   return {kFallback, ip, 0};
+}
+
+constexpr step_result block_boundary(std::uint32_t ip) {
+  return {kBlockBoundary, ip, 0};
 }
 
 constexpr step_result complete() { return {kComplete, kSentinel, 0}; }
@@ -124,7 +147,7 @@ bool pop_u64(execution_context& current, std::uint32_t* sp, std::uint64_t& value
 }
 
 bool push_u64(execution_context& current, std::uint32_t* sp, std::uint64_t value) {
-  if (current.sp_offset > 126) return false;
+  if (current.sp_capacity < 2 || current.sp_offset > current.sp_capacity - 2) return false;
   sp[current.sp_offset++] = static_cast<std::uint32_t>(value);
   sp[current.sp_offset++] = static_cast<std::uint32_t>(value >> 32);
   return true;
@@ -163,6 +186,25 @@ const fireball_call_frame_native* active_frame(const execution_context& current)
     return nullptr;
   }
   return &current.call_stack->frames[current.call_stack->size - 1];
+}
+
+bool is_requested_block_boundary(const execution_context& current) {
+  if ((current.runtime_flags & kStopAtBlockBoundaryFlag) == 0) return false;
+  const auto* frame = active_frame(current);
+  if (frame == nullptr) return false;
+  const auto pc = (frame->func_index << 16) | (current.ip & 0xFFFFu);
+  return pc == frame->boundary_next_pc || pc == frame->boundary_loops_to;
+}
+
+bool should_stop_after_control(const execution_context& current) {
+  return (current.runtime_flags & kStopAfterControlFlag) != 0;
+}
+
+void record_loop_backedge(execution_context& current, std::uint32_t source_ip,
+                          std::uint32_t target_ip) {
+  if (target_ip < source_ip && current.loop_jump_count < UINT32_MAX) {
+    ++current.loop_jump_count;
+  }
 }
 
 const fireball_control_map_entry_native* control_entry(
@@ -210,6 +252,7 @@ bool branch(execution_context& current, std::uint32_t* sp, std::uint32_t depth,
     result_arity = target_kind == 1u ? 0u : target.result_arity;
   }
   if (result_arity > 2 || saved_height > current.sp_offset ||
+      result_arity > current.sp_capacity - saved_height ||
       result_arity > current.sp_offset - saved_height) {
     return false;
   }
@@ -243,7 +286,7 @@ bool pop(execution_context& current, std::uint32_t* sp, std::uint32_t& value) {
 }
 
 bool push(execution_context& current, std::uint32_t* sp, std::uint32_t value) {
-  if (current.sp_offset >= 128) {
+  if (current.sp_offset >= current.sp_capacity) {
     return false;
   }
   sp[current.sp_offset++] = value;
@@ -1008,7 +1051,11 @@ FIREBALL_CPS_CALL step_result h_else(
   }
   const auto frame = current.control_stack->frames[current.control_stack->size - 1];
   current.control_stack->size -= 1;
-  current.ip = frame.match_end + 1;
+  const auto* call_frame = active_frame(current);
+  current.ip = call_frame != nullptr && call_frame->boundary_next_pc != kSentinel
+                   ? call_frame->boundary_next_pc & 0xFFFFu
+                   : frame.match_end + 1;
+  if (should_stop_after_control(current)) return block_boundary(current.ip);
   [[clang::musttail]] return dispatch(context, sp, local_base, top_value(current, sp));
 }
 
@@ -1028,6 +1075,7 @@ FIREBALL_CPS_CALL step_result h_block(
   frame.stack_height = current.sp_offset;
   frame.result_arity = static_cast<std::uint16_t>(entry->result_arity);
   current.ip = entry->next_pc;
+  if (should_stop_after_control(current)) return block_boundary(current.ip);
   [[clang::musttail]] return dispatch(context, sp, local_base, top_value(current, sp));
 }
 
@@ -1042,6 +1090,7 @@ FIREBALL_CPS_CALL step_result h_if(
   }
   if (condition == 0 && entry->else_offset == kSentinel) {
     current.ip = entry->match_end + 1;
+    if (should_stop_after_control(current)) return block_boundary(current.ip);
     [[clang::musttail]] return dispatch(context, sp, local_base, top_value(current, sp));
   }
   if (current.control_stack->size >= FIREBALL_NATIVE_CONTROL_STACK_CAPACITY) {
@@ -1054,6 +1103,7 @@ FIREBALL_CPS_CALL step_result h_if(
   frame.stack_height = current.sp_offset;
   frame.result_arity = static_cast<std::uint16_t>(entry->result_arity);
   current.ip = condition == 0 ? entry->else_offset + 1 : entry->next_pc;
+  if (should_stop_after_control(current)) return block_boundary(current.ip);
   [[clang::musttail]] return dispatch(context, sp, local_base, top_value(current, sp));
 }
 
@@ -1061,6 +1111,7 @@ FIREBALL_CPS_CALL step_result h_br(
     execution_context* context, std::uint32_t* sp, std::uint32_t* local_base,
     std::uint32_t) {
   auto& current = *context;
+  const auto source_ip = current.ip;
   auto operand_ip = current.ip + 1;
   std::uint32_t depth = 0;
   std::uint32_t next_ip = 0;
@@ -1068,7 +1119,13 @@ FIREBALL_CPS_CALL step_result h_br(
     return fallback(current.ip);
   }
   if (next_ip == kSentinel) return complete();
+  const auto* call_frame = active_frame(current);
+  if (call_frame != nullptr && call_frame->boundary_next_pc != kSentinel) {
+    next_ip = call_frame->boundary_next_pc & 0xFFFFu;
+  }
+  record_loop_backedge(current, source_ip, next_ip);
   current.ip = next_ip;
+  if (should_stop_after_control(current)) return block_boundary(current.ip);
   [[clang::musttail]] return dispatch(context, sp, local_base, top_value(current, sp));
 }
 
@@ -1076,6 +1133,7 @@ FIREBALL_CPS_CALL step_result h_br_if(
     execution_context* context, std::uint32_t* sp, std::uint32_t* local_base,
     std::uint32_t) {
   auto& current = *context;
+  const auto source_ip = current.ip;
   auto operand_ip = current.ip + 1;
   std::uint32_t depth = 0;
   std::uint32_t condition = 0;
@@ -1084,12 +1142,19 @@ FIREBALL_CPS_CALL step_result h_br_if(
   }
   if (condition == 0) {
     current.ip = operand_ip;
+    if (should_stop_after_control(current)) return block_boundary(current.ip);
     [[clang::musttail]] return dispatch(context, sp, local_base, top_value(current, sp));
   }
   std::uint32_t next_ip = 0;
   if (!branch(current, sp, depth, next_ip)) return fallback(current.ip);
   if (next_ip == kSentinel) return complete();
+  const auto* call_frame = active_frame(current);
+  if (call_frame != nullptr && call_frame->boundary_loops_to != kSentinel) {
+    next_ip = call_frame->boundary_loops_to & 0xFFFFu;
+  }
+  record_loop_backedge(current, source_ip, next_ip);
   current.ip = next_ip;
+  if (should_stop_after_control(current)) return block_boundary(current.ip);
   [[clang::musttail]] return dispatch(context, sp, local_base, top_value(current, sp));
 }
 
@@ -1191,13 +1256,44 @@ FIREBALL_CPS_CALL step_result h_end(
     current.control_stack->size -= 1;
   }
   current.ip += 1;
+  if (should_stop_after_control(current)) return block_boundary(current.ip);
   [[clang::musttail]] return dispatch(context, sp, local_base, top_value(current, sp));
 }
 
 FIREBALL_CPS_CALL step_result h_return(
     execution_context* context, std::uint32_t*, std::uint32_t*, std::uint32_t) {
+  if (should_stop_after_control(*context)) return block_boundary(kSentinel);
   context->ip = kSentinel;
   return complete();
+}
+
+FIREBALL_CPS_CALL step_result h_br_table(
+    execution_context* context, std::uint32_t* sp, std::uint32_t* local_base,
+    std::uint32_t) {
+  auto& current = *context;
+  const auto source_ip = current.ip;
+  auto operand_ip = current.ip + 1;
+  std::uint32_t target_count = 0;
+  std::uint32_t selector = 0;
+  const auto* table = control_entry(current, source_ip);
+  if (table == nullptr || table->br_table_targets == nullptr ||
+      !read_u32(current, operand_ip, target_count) || !pop(current, sp, selector) ||
+      target_count + 1 != table->br_table_target_count) {
+    return fallback(current.ip);
+  }
+
+  const auto selected_index = selector < target_count ? selector : target_count;
+  const auto selected_depth = table->br_table_targets[selected_index];
+
+  std::uint32_t next_ip = 0;
+  if (!branch(current, sp, selected_depth, next_ip)) return fallback(current.ip);
+  if (next_ip == kSentinel) return complete();
+  record_loop_backedge(current, source_ip, next_ip);
+  current.ip = next_ip;
+  if (should_stop_after_control(current)) {
+    return block_boundary(current.ip);
+  }
+  [[clang::musttail]] return dispatch(context, sp, local_base, top_value(current, sp));
 }
 
 FIREBALL_CPS_CALL step_result h_unreachable(
@@ -1261,6 +1357,7 @@ FIREBALL_CPS_CALL step_result dispatch(
   std::uint32_t tos) {
   auto& current = *context;
   current.cf_offset = current.control_stack->size;
+  if (is_requested_block_boundary(current)) return block_boundary(current.ip);
   if (current.ip >= current.code_size) {
     return complete();
   }
@@ -1456,6 +1553,7 @@ constexpr auto make_handler_table() {
   table[0x0B] = h_end;
   table[0x0C] = h_br;
   table[0x0D] = h_br_if;
+  table[0x0E] = h_br_table;
   table[0x0F] = h_return;
   table[0x1A] = h_drop;
   table[0x1B] = h_select;
@@ -1521,6 +1619,551 @@ constexpr auto kConversionTable = make_conversion_table();
 
 const std::array<handler_fn, 256>& handler_table_data() { return kHandlerTable; }
 
+struct buffer_guard {
+  Py_buffer view{};
+  bool active = false;
+
+  ~buffer_guard() {
+    if (active) {
+      PyBuffer_Release(&view);
+    }
+  }
+};
+
+struct native_trace_descriptor {
+  std::uint32_t head_pc;
+  std::uintptr_t entry_address;
+  std::uint32_t byte_span;
+  std::uint32_t result_words;
+  std::uint32_t has_return_value;
+  std::uint32_t stack_words;
+  std::uint32_t frame_depth;
+  std::uint32_t next_pc;
+  std::uint32_t loops_to;
+  std::uint32_t chain_next_pc;
+  std::uint32_t chain_stack_words;
+  std::uint32_t promote_on_hit;
+};
+
+constexpr std::uint32_t kNoPc = 0xFFFF'FFFFu;
+constexpr std::uint32_t kNativeTraceDispatchEntryWords = 12;
+
+using native_trace_entry_fn = void (*)(void*, std::uint32_t*, std::uint32_t*, std::uint32_t);
+
+bool read_dispatch_entry(PyObject* value, native_trace_descriptor& output) {
+  PyObject* sequence = PySequence_Fast(value, "native trace entry must be a sequence");
+  if (sequence == nullptr) return false;
+  if (PySequence_Fast_GET_SIZE(sequence) != kNativeTraceDispatchEntryWords) {
+    PyErr_SetString(PyExc_ValueError, "native trace entry has an invalid field count");
+    Py_DECREF(sequence);
+    return false;
+  }
+  auto* fields = PySequence_Fast_ITEMS(sequence);
+  const auto head_pc = PyLong_AsUnsignedLong(fields[0]);
+  const auto entry_address = PyLong_AsUnsignedLongLong(fields[1]);
+  const auto byte_span = PyLong_AsUnsignedLong(fields[2]);
+  const auto result_words = PyLong_AsUnsignedLong(fields[3]);
+  const auto has_return_value = PyLong_AsUnsignedLong(fields[4]);
+  const auto stack_words = PyLong_AsUnsignedLong(fields[5]);
+  const auto frame_depth = PyLong_AsUnsignedLong(fields[6]);
+  const auto next_pc = PyLong_AsUnsignedLong(fields[7]);
+  const auto loops_to = PyLong_AsUnsignedLong(fields[8]);
+  const auto chain_next_pc = PyLong_AsUnsignedLong(fields[9]);
+  const auto chain_stack_words = PyLong_AsUnsignedLong(fields[10]);
+  const auto promote_on_hit = PyLong_AsUnsignedLong(fields[11]);
+  const bool conversion_failed = PyErr_Occurred() != nullptr;
+  if (!conversion_failed && head_pc <= UINT32_MAX && byte_span <= UINT32_MAX &&
+      result_words <= UINT32_MAX && has_return_value <= 1 && stack_words <= UINT32_MAX &&
+      frame_depth <= UINT32_MAX && next_pc <= UINT32_MAX && loops_to <= UINT32_MAX &&
+      chain_next_pc <= UINT32_MAX && chain_stack_words <= UINT32_MAX &&
+      promote_on_hit <= 1 && entry_address != 0) {
+    output = native_trace_descriptor{
+        static_cast<std::uint32_t>(head_pc), static_cast<std::uintptr_t>(entry_address),
+        static_cast<std::uint32_t>(byte_span), static_cast<std::uint32_t>(result_words),
+        static_cast<std::uint32_t>(has_return_value), static_cast<std::uint32_t>(stack_words),
+        static_cast<std::uint32_t>(frame_depth), static_cast<std::uint32_t>(next_pc),
+        static_cast<std::uint32_t>(loops_to), static_cast<std::uint32_t>(chain_next_pc),
+        static_cast<std::uint32_t>(chain_stack_words),
+        static_cast<std::uint32_t>(promote_on_hit)};
+  } else if (!conversion_failed) {
+    PyErr_SetString(PyExc_ValueError, "native trace entry field is outside its ABI range");
+  }
+  Py_DECREF(sequence);
+  return !conversion_failed && !PyErr_Occurred();
+}
+
+bool is_control_terminator(std::uint8_t opcode) {
+  return opcode == 0x02 || opcode == 0x03 || opcode == 0x04 || opcode == 0x05 ||
+         opcode == 0x0B || opcode == 0x0C || opcode == 0x0D || opcode == 0x0E ||
+         opcode == 0x0F;
+}
+
+const native_trace_descriptor* find_dispatch_entry(
+    const std::array<native_trace_descriptor, FB_CONF_NATIVE_JIT_TRACE_CAPACITY>& entries,
+    std::size_t count, std::uint32_t pc) {
+  std::size_t low = 0;
+  std::size_t high = count;
+  while (low < high) {
+    const auto middle = low + (high - low) / 2;
+    if (entries[middle].head_pc < pc) {
+      low = middle + 1;
+    } else {
+      high = middle;
+    }
+  }
+  return low < count && entries[low].head_pc == pc ? &entries[low] : nullptr;
+}
+
+std::size_t find_trackable_block_index(
+    const std::array<std::uint32_t, FB_CONF_NATIVE_JIT_BLOCK_CAPACITY>& block_heads,
+    std::size_t count, std::uint32_t pc) {
+  std::size_t low = 0;
+  std::size_t high = count;
+  while (low < high) {
+    const auto middle = low + (high - low) / 2;
+    if (block_heads[middle] < pc) {
+      low = middle + 1;
+    } else {
+      high = middle;
+    }
+  }
+  return low < count && block_heads[low] == pc ? low : count;
+}
+
+template <bool CollectStats>
+const native_trace_descriptor* terminal_dispatch_entry(
+    const std::array<native_trace_descriptor, FB_CONF_NATIVE_JIT_TRACE_CAPACITY>& entries,
+    std::size_t count, const native_trace_descriptor* start, std::uint32_t& body_count) {
+  auto* current = start;
+  for (std::size_t depth = 0; depth < count; ++depth) {
+    if constexpr (CollectStats) ++body_count;
+    if (current->chain_next_pc == kNoPc) return current;
+    const auto* next = find_dispatch_entry(entries, count, current->chain_next_pc);
+    if (next == nullptr || next->head_pc == current->head_pc) return nullptr;
+    current = next;
+  }
+  return nullptr;
+}
+
+template <bool CollectStats, bool CollectHotspots>
+PyObject* run_native_dispatch_impl(PyObject*, PyObject* args) {
+  PyObject* code_object = nullptr;
+  PyObject* context_object = nullptr;
+  PyObject* stack_object = nullptr;
+  PyObject* locals_object = nullptr;
+  PyObject* control_object = nullptr;
+  PyObject* entries_object = nullptr;
+  PyObject* trackable_blocks_object = nullptr;
+  unsigned int stack_size = 0;
+  unsigned int stack_capacity = 0;
+  unsigned int initial_ip = 0;
+  unsigned int local_base = 0;
+  unsigned int local_slots = 0;
+  unsigned int control_base = 0;
+  unsigned int function_index = 0;
+  unsigned int yield_threshold = 0;
+  unsigned int execution_count = 0;
+  int collect_stats_arg = 0;
+  int collect_hotspots_arg = 0;
+  if (!PyArg_ParseTuple(args, "OOOOOOOIIIIIIIIIpp", &code_object, &context_object, &stack_object,
+                        &locals_object, &control_object, &entries_object,
+                        &trackable_blocks_object, &stack_size,
+                        &stack_capacity, &initial_ip, &local_base, &local_slots, &control_base,
+                        &function_index, &yield_threshold, &execution_count,
+                        &collect_stats_arg, &collect_hotspots_arg)) {
+    return nullptr;
+  }
+  if ((collect_stats_arg != 0) != CollectStats ||
+      (collect_hotspots_arg != 0) != CollectHotspots) {
+    PyErr_SetString(PyExc_RuntimeError, "native dispatcher feature specialization mismatch");
+    return nullptr;
+  }
+  if (yield_threshold == 0) {
+    PyErr_SetString(PyExc_ValueError, "native JIT dispatch yield threshold must be positive");
+    return nullptr;
+  }
+
+  buffer_guard code_buffer;
+  if (PyObject_GetBuffer(code_object, &code_buffer.view, PyBUF_SIMPLE) != 0) return nullptr;
+  code_buffer.active = true;
+  buffer_guard context_buffer;
+  if (PyObject_GetBuffer(context_object, &context_buffer.view, PyBUF_SIMPLE) != 0) return nullptr;
+  context_buffer.active = true;
+  buffer_guard stack_buffer;
+  if (PyObject_GetBuffer(stack_object, &stack_buffer.view, PyBUF_SIMPLE) != 0) return nullptr;
+  stack_buffer.active = true;
+  buffer_guard locals_buffer;
+  if (PyObject_GetBuffer(locals_object, &locals_buffer.view, PyBUF_SIMPLE) != 0) return nullptr;
+  locals_buffer.active = true;
+  buffer_guard control_buffer;
+  if (PyObject_GetBuffer(control_object, &control_buffer.view, PyBUF_SIMPLE) != 0) return nullptr;
+  control_buffer.active = true;
+
+  const auto context_bytes = static_cast<Py_ssize_t>(sizeof(fireball_execution_context_native));
+  const auto stack_bytes = static_cast<Py_ssize_t>(128 * sizeof(std::uint32_t));
+  const auto local_bytes = static_cast<Py_ssize_t>((local_base + local_slots) * sizeof(std::uint32_t));
+  const auto control_bytes = static_cast<Py_ssize_t>(sizeof(fireball_control_stack_native));
+  if (stack_capacity > 128 || stack_size > stack_capacity ||
+      context_buffer.view.len < context_bytes || stack_buffer.view.len < stack_bytes ||
+      locals_buffer.view.len < local_bytes || control_buffer.view.len < control_bytes ||
+      initial_ip > static_cast<unsigned int>(code_buffer.view.len) || function_index > 0xFFFFu) {
+    PyErr_SetString(PyExc_ValueError, "invalid native JIT dispatch buffer or execution state");
+    return nullptr;
+  }
+
+  // Only the prefix below entry_count is initialized and read by dispatch.
+  std::array<native_trace_descriptor, FB_CONF_NATIVE_JIT_TRACE_CAPACITY> entries;
+  PyObject* sequence = PySequence_Fast(entries_object, "native trace table must be a sequence");
+  if (sequence == nullptr) return nullptr;
+  const auto entry_count = PySequence_Fast_GET_SIZE(sequence);
+  if (entry_count < 0 ||
+      static_cast<std::size_t>(entry_count) > FB_CONF_NATIVE_JIT_TRACE_CAPACITY) {
+    PyErr_SetString(PyExc_ValueError, "native trace table exceeds its build-time capacity");
+    Py_DECREF(sequence);
+    return nullptr;
+  }
+  auto** raw_entries = PySequence_Fast_ITEMS(sequence);
+  bool entries_valid = true;
+  for (Py_ssize_t index = 0; index < entry_count; ++index) {
+    if (!read_dispatch_entry(raw_entries[index], entries[static_cast<std::size_t>(index)])) {
+      entries_valid = false;
+      break;
+    }
+    const auto& current = entries[static_cast<std::size_t>(index)];
+    if ((current.head_pc >> 16) != function_index ||
+        (index > 0 && entries[static_cast<std::size_t>(index - 1)].head_pc >= current.head_pc) ||
+        current.byte_span == 0 || current.result_words == 0 || current.stack_words == 0 ||
+        current.frame_depth > FIREBALL_NATIVE_CONTROL_STACK_CAPACITY) {
+      PyErr_SetString(PyExc_ValueError, "native trace table is unsorted or has invalid metadata");
+      entries_valid = false;
+      break;
+    }
+  }
+  Py_DECREF(sequence);
+  if (!entries_valid) return nullptr;
+
+  // Only the prefix below trackable_count is initialized and read by dispatch.
+  std::array<std::uint32_t, FB_CONF_NATIVE_JIT_BLOCK_CAPACITY> trackable_blocks;
+  PyObject* trackable_sequence =
+      PySequence_Fast(trackable_blocks_object, "trackable block table must be a sequence");
+  if (trackable_sequence == nullptr) return nullptr;
+  const auto trackable_count = PySequence_Fast_GET_SIZE(trackable_sequence);
+  if (trackable_count < 0 ||
+      static_cast<std::size_t>(trackable_count) > FB_CONF_NATIVE_JIT_BLOCK_CAPACITY) {
+    PyErr_SetString(PyExc_ValueError, "trackable block table exceeds its build-time capacity");
+    Py_DECREF(trackable_sequence);
+    return nullptr;
+  }
+  auto** raw_trackable_blocks = PySequence_Fast_ITEMS(trackable_sequence);
+  bool trackable_blocks_valid = true;
+  for (Py_ssize_t index = 0; index < trackable_count; ++index) {
+    const auto pc = PyLong_AsUnsignedLong(raw_trackable_blocks[index]);
+    if (PyErr_Occurred() != nullptr || pc > UINT32_MAX || (pc >> 16) != function_index ||
+        (index > 0 && trackable_blocks[static_cast<std::size_t>(index - 1)] >= pc)) {
+      if (PyErr_Occurred() == nullptr) {
+        PyErr_SetString(PyExc_ValueError, "trackable block table is unsorted or invalid");
+      }
+      trackable_blocks_valid = false;
+      break;
+    }
+    trackable_blocks[static_cast<std::size_t>(index)] = static_cast<std::uint32_t>(pc);
+  }
+  Py_DECREF(trackable_sequence);
+  if (!trackable_blocks_valid) return nullptr;
+
+  auto* execution_context =
+      static_cast<fireball_execution_context_native*>(context_buffer.view.buf);
+  auto* control_stack = static_cast<fireball_control_stack_native*>(control_buffer.view.buf);
+  auto* stack = static_cast<std::uint32_t*>(stack_buffer.view.buf);
+  auto* local_stack = static_cast<std::uint32_t*>(locals_buffer.view.buf);
+  auto* locals = local_stack + local_base;
+  const auto* code = static_cast<const std::uint8_t*>(code_buffer.view.buf);
+  const auto code_size = static_cast<std::uint32_t>(code_buffer.view.len);
+  if (control_stack->size > FIREBALL_NATIVE_CONTROL_STACK_CAPACITY ||
+      control_base > control_stack->size || execution_context->call_stack == nullptr ||
+      execution_context->call_stack->size == 0 ||
+      execution_context->call_stack->size > FIREBALL_NATIVE_CALL_STACK_CAPACITY ||
+      execution_context->call_stack->frames[execution_context->call_stack->size - 1].func_index !=
+          function_index) {
+    PyErr_SetString(PyExc_ValueError, "invalid native JIT dispatch call or control stack");
+    return nullptr;
+  }
+  auto& call_frame =
+      execution_context->call_stack->frames[execution_context->call_stack->size - 1];
+  execution_context->sp_capacity = stack_capacity;
+  execution_context->ip = initial_ip;
+  execution_context->code = code;
+  execution_context->code_size = code_size;
+  execution_context->control_stack = control_stack;
+  execution_context->control_base = control_base;
+  execution_context->sp_offset = stack_size;
+  execution_context->cf_offset = control_stack->size;
+  execution_context->stack_checkpoint = stack_size;
+  execution_context->loop_jump_threshold = yield_threshold;
+
+  auto current_pc = (function_index << 16) | initial_ip;
+  std::uint32_t trace_count = 0;
+  std::uint32_t status = kFallback;
+  std::uint32_t trap_code = 0;
+  std::uint32_t body_count = 0;
+  std::uint32_t dispatcher_trace_transitions = 0;
+  std::uint32_t control_handler_count = 0;
+  std::uint32_t eligible_block_visits = 0;
+  std::uint32_t interpreted_block_count = 0;
+  bool control_handler_pending_trace = false;
+  std::array<std::uint8_t,
+             CollectHotspots ? FB_CONF_NATIVE_JIT_BLOCK_CAPACITY : 0>
+      observed_visit_counts{};
+  while (true) {
+    const auto* start = find_dispatch_entry(entries, static_cast<std::size_t>(entry_count), current_pc);
+    if (start != nullptr && start->promote_on_hit != 0) {
+      if constexpr (CollectStats) {
+        if (control_handler_pending_trace) ++dispatcher_trace_transitions;
+      }
+      execution_context->ip = current_pc & 0xFFFFu;
+      status = kOldestTraceHit;
+      break;
+    }
+    if (start == nullptr || stack_size + start->chain_stack_words > stack_capacity) {
+      if constexpr (CollectStats) ++interpreted_block_count;
+      const auto interpreter_ip = current_pc & 0xFFFFu;
+      bool hotness_yield = false;
+      if constexpr (CollectHotspots) {
+        const auto block_index = find_trackable_block_index(
+            trackable_blocks, static_cast<std::size_t>(trackable_count), current_pc);
+        if (block_index < static_cast<std::size_t>(trackable_count)) {
+          ++eligible_block_visits;
+          auto& visit_count = observed_visit_counts[block_index];
+          if (visit_count < 2) ++visit_count;
+          hotness_yield = execution_count + eligible_block_visits >= yield_threshold;
+        }
+      }
+      call_frame.boundary_next_pc = kNoPc;
+      call_frame.boundary_loops_to = kNoPc;
+      execution_context->ip = interpreter_ip;
+      execution_context->sp_offset = stack_size;
+      execution_context->stack_checkpoint = stack_size;
+      const auto previous_flags = execution_context->runtime_flags;
+      execution_context->runtime_flags =
+          (previous_flags & ~kStopAtBlockBoundaryFlag) | kStopAfterControlFlag;
+      const auto result = dispatch(execution_context, stack, local_stack,
+                                   top_value(*execution_context, stack));
+      execution_context->runtime_flags = previous_flags;
+      if (result.kind == kFallback) {
+        execution_context->sp_offset = execution_context->stack_checkpoint;
+        execution_context->ip = result.next_ip;
+        stack_size = execution_context->sp_offset;
+        status = kFallback;
+        break;
+      }
+      if (result.kind == kTrap) {
+        trap_code = result.trap_code;
+        stack_size = execution_context->sp_offset;
+        status = kTrap;
+        break;
+      }
+      stack_size = execution_context->sp_offset;
+      if (result.kind == kComplete || result.next_ip == kNoPc ||
+          result.next_ip >= code_size) {
+        execution_context->ip = kNoPc;
+        status = kComplete;
+        break;
+      }
+      if (result.kind != kBlockBoundary) {
+        PyErr_SetString(PyExc_RuntimeError, "native interpreter returned an invalid status");
+        return nullptr;
+      }
+      if constexpr (CollectStats) {
+        ++control_handler_count;
+        control_handler_pending_trace = true;
+      }
+      execution_context->ip = result.next_ip;
+      stack_size = execution_context->sp_offset;
+      const auto next_pc = (function_index << 16) | result.next_ip;
+      if (execution_context->loop_jump_count >= yield_threshold) {
+        current_pc = next_pc;
+        status = kDispatchYield;
+        break;
+      }
+      current_pc = next_pc;
+      if constexpr (CollectHotspots) {
+        if (hotness_yield) {
+          status = kDispatchYield;
+          break;
+        }
+      }
+      continue;
+    }
+    std::uint32_t chain_body_count = 0;
+    const auto* terminal = terminal_dispatch_entry<CollectStats>(
+        entries, static_cast<std::size_t>(entry_count), start, chain_body_count);
+    if (terminal == nullptr) {
+      PyErr_SetString(PyExc_RuntimeError, "native trace chain target is absent from its snapshot");
+      return nullptr;
+    }
+    if (stack_size + terminal->stack_words > stack_capacity ||
+        terminal->frame_depth > FIREBALL_NATIVE_CONTROL_STACK_CAPACITY - control_base) {
+      execution_context->ip = start->head_pc & 0xFFFFu;
+      status = kFallback;
+      break;
+    }
+
+    if constexpr (CollectStats) {
+      if (control_handler_pending_trace) {
+        ++dispatcher_trace_transitions;
+        control_handler_pending_trace = false;
+      }
+    }
+
+    const auto expected_frames = control_base + terminal->frame_depth;
+    if (control_stack->size > expected_frames) control_stack->size = expected_frames;
+    if (control_stack->size < control_base) {
+      PyErr_SetString(PyExc_ValueError, "native JIT trace depth is below its control base");
+      return nullptr;
+    }
+    call_frame.boundary_next_pc = terminal->next_pc;
+    call_frame.boundary_loops_to = terminal->loops_to;
+    const auto trace_entry = reinterpret_cast<native_trace_entry_fn>(start->entry_address);
+    trace_entry(execution_context, stack + stack_size, locals, 0);
+    if constexpr (CollectStats) {
+      ++trace_count;
+      body_count += chain_body_count;
+    }
+    if (terminal->has_return_value != 0) stack_size += terminal->result_words;
+    execution_context->sp_offset = stack_size;
+
+    const auto terminal_ip = (terminal->head_pc & 0xFFFFu) + terminal->byte_span;
+    if (terminal_ip >= code_size) {
+      execution_context->ip = kNoPc;
+      status = kComplete;
+      break;
+    }
+    const auto opcode = code[terminal_ip];
+    if (!is_control_terminator(opcode)) {
+      execution_context->ip = terminal_ip;
+      status = kFallback;
+      break;
+    }
+
+    execution_context->ip = terminal_ip;
+    execution_context->stack_checkpoint = stack_size;
+    const auto previous_flags = execution_context->runtime_flags;
+    execution_context->runtime_flags |= kStopAfterControlFlag;
+    const auto handler = handler_table_data()[opcode];
+    if constexpr (CollectStats) ++control_handler_count;
+    const auto result = handler == nullptr
+                            ? fallback(terminal_ip)
+                            : handler(execution_context, stack, local_stack,
+                                      top_value(*execution_context, stack));
+    execution_context->runtime_flags = previous_flags;
+    if (result.kind == kFallback) {
+      execution_context->sp_offset = execution_context->stack_checkpoint;
+      execution_context->ip = result.next_ip;
+      status = kFallback;
+      break;
+    }
+    if (result.kind == kTrap) {
+      trap_code = result.trap_code;
+      status = kTrap;
+      break;
+    }
+    if (result.kind == kComplete || result.next_ip == kNoPc || result.next_ip >= code_size) {
+      execution_context->ip = kNoPc;
+      status = kComplete;
+      break;
+    }
+    if (result.kind != kBlockBoundary) {
+      PyErr_SetString(PyExc_RuntimeError, "native control handler returned an invalid status");
+      return nullptr;
+    }
+    if constexpr (CollectStats) control_handler_pending_trace = true;
+    execution_context->ip = result.next_ip;
+    stack_size = execution_context->sp_offset;
+    const auto next_pc = (function_index << 16) | result.next_ip;
+    if (execution_context->loop_jump_count >= yield_threshold) {
+      current_pc = next_pc;
+      status = kDispatchYield;
+      break;
+    }
+    current_pc = next_pc;
+  }
+  Py_ssize_t observed_count = 0;
+  if constexpr (CollectHotspots) {
+    for (Py_ssize_t index = 0; index < trackable_count; ++index) {
+      if (observed_visit_counts[static_cast<std::size_t>(index)] != 0) ++observed_count;
+    }
+  }
+  PyObject* visits = PyTuple_New(observed_count);
+  if (visits == nullptr) return nullptr;
+  Py_ssize_t visit_index = 0;
+  if constexpr (CollectHotspots) {
+    for (Py_ssize_t index = 0; index < trackable_count; ++index) {
+      const auto count = observed_visit_counts[static_cast<std::size_t>(index)];
+      if (count == 0) continue;
+      PyObject* visit = Py_BuildValue("II", trackable_blocks[static_cast<std::size_t>(index)], count);
+      if (visit == nullptr) {
+        Py_DECREF(visits);
+        return nullptr;
+      }
+      PyTuple_SET_ITEM(visits, visit_index++, visit);
+    }
+  }
+  if (visit_index != observed_count) {
+    Py_DECREF(visits);
+    PyErr_SetString(PyExc_RuntimeError, "native block observation count is inconsistent");
+    return nullptr;
+  }
+  PyObject* result = Py_BuildValue(
+      "IIIIIIIIIIO", status, execution_context->ip, stack_size, trap_code, trace_count,
+      body_count, dispatcher_trace_transitions, control_handler_count, eligible_block_visits,
+      interpreted_block_count, visits);
+  Py_DECREF(visits);
+  return result;
+}
+
+PyObject* run_native_dispatch(PyObject* self, PyObject* args) {
+  if (!PyTuple_Check(args) || PyTuple_GET_SIZE(args) != 18) {
+    PyErr_SetString(PyExc_TypeError, "native dispatcher expects 18 arguments");
+    return nullptr;
+  }
+  const auto collect_stats = PyObject_IsTrue(PyTuple_GET_ITEM(args, 16));
+  if (collect_stats < 0) return nullptr;
+  const auto collect_hotspots = PyObject_IsTrue(PyTuple_GET_ITEM(args, 17));
+  if (collect_hotspots < 0) return nullptr;
+
+#if FB_CONF_RUNTIME_PROFILE_STATS == 0
+  if (collect_stats != 0) {
+    PyErr_SetString(PyExc_RuntimeError,
+                    "runtime profile stats were compiled out by configuration");
+    return nullptr;
+  }
+#endif
+#if FB_CONF_JIT_HOTSPOT_PROFILING == 0
+  if (collect_hotspots != 0) {
+    PyErr_SetString(PyExc_RuntimeError,
+                    "JIT hotspot profiling was compiled out by configuration");
+    return nullptr;
+  }
+#endif
+
+#if FB_CONF_RUNTIME_PROFILE_STATS == 1
+  if (collect_stats != 0) {
+#if FB_CONF_JIT_HOTSPOT_PROFILING == 1
+    return collect_hotspots != 0 ? run_native_dispatch_impl<true, true>(self, args)
+                                 : run_native_dispatch_impl<true, false>(self, args);
+#else
+    return run_native_dispatch_impl<true, false>(self, args);
+#endif
+  }
+#endif
+#if FB_CONF_JIT_HOTSPOT_PROFILING == 1
+  return collect_hotspots != 0 ? run_native_dispatch_impl<false, true>(self, args)
+                               : run_native_dispatch_impl<false, false>(self, args);
+#else
+  return run_native_dispatch_impl<false, false>(self, args);
+#endif
+}
+
 const std::array<binary_operation_fn, 256>& binary_operation_table_data() {
   return kBinaryOperationTable;
 }
@@ -1557,30 +2200,20 @@ const std::array<conversion_operation_fn, 256>& conversion_table_data() {
   return kConversionTable;
 }
 
-struct buffer_guard {
-  Py_buffer view{};
-  bool active = false;
-
-  ~buffer_guard() {
-    if (active) {
-      PyBuffer_Release(&view);
-    }
-  }
-};
-
-PyObject* run_step(PyObject*, PyObject* args) {
+PyObject* run_native_step(PyObject* args, bool direct_control) {
   PyObject* code_object = nullptr;
   PyObject* context_object = nullptr;
   PyObject* stack_object = nullptr;
   PyObject* locals_object = nullptr;
   PyObject* control_object = nullptr;
   unsigned int stack_size = 0;
+  unsigned int stack_capacity = 0;
   unsigned int ip = 0;
   unsigned int local_slots = 0;
   unsigned int control_base = 0;
-  if (!PyArg_ParseTuple(args, "OOOOOIIII", &code_object, &context_object, &stack_object,
-                        &locals_object, &control_object, &stack_size, &ip, &local_slots,
-                        &control_base)) {
+  if (!PyArg_ParseTuple(args, "OOOOOIIIII", &code_object, &context_object, &stack_object,
+                        &locals_object, &control_object, &stack_size, &stack_capacity, &ip,
+                        &local_slots, &control_base)) {
     return nullptr;
   }
   buffer_guard code_buffer;
@@ -1616,17 +2249,24 @@ PyObject* run_step(PyObject*, PyObject* args) {
   const auto context_bytes = static_cast<Py_ssize_t>(sizeof(fireball_execution_context_native));
   const auto control_bytes = static_cast<Py_ssize_t>(sizeof(fireball_control_stack_native));
   const auto local_bytes = static_cast<Py_ssize_t>(local_slots * sizeof(std::uint32_t));
-  if (stack_size > 128 || context_buffer.view.len < context_bytes ||
+  if (stack_capacity > 128 || stack_size > stack_capacity ||
+      context_buffer.view.len < context_bytes ||
       stack_buffer.view.len < stack_bytes || control_buffer.view.len < control_bytes ||
       locals_buffer.view.len < local_bytes ||
       ip > static_cast<unsigned int>(code_size)) {
-    PyErr_SetString(PyExc_ValueError, "invalid native interpreter buffer");
+    PyErr_Format(PyExc_ValueError,
+                 "invalid native interpreter buffer (stack %u/%u, context %zd/%zd, "
+                 "values %zd/%zd, control %zd/%zd, locals %zd/%zd, ip %u/%zd)",
+                 stack_size, stack_capacity, context_buffer.view.len, context_bytes,
+                 stack_buffer.view.len, stack_bytes, control_buffer.view.len, control_bytes,
+                 locals_buffer.view.len, local_bytes, ip, code_size);
     return nullptr;
   }
 
   auto* execution_context =
       static_cast<fireball_execution_context_native*>(context_buffer.view.buf);
   auto* control_stack = static_cast<fireball_control_stack_native*>(control_buffer.view.buf);
+  execution_context->sp_capacity = stack_capacity;
   if (control_base > control_stack->size || control_stack->size > 32) {
     PyErr_SetString(PyExc_ValueError, "invalid native control stack window");
     return nullptr;
@@ -1649,22 +2289,69 @@ PyObject* run_step(PyObject*, PyObject* args) {
   execution_context->sp_offset = stack_size;
   execution_context->cf_offset = control_stack->size;
   execution_context->stack_checkpoint = stack_size;
-  const step_result result =
-      dispatch(execution_context, stack, locals, top_value(*execution_context, stack));
+  step_result result{};
+  if (direct_control) {
+    if (ip >= static_cast<unsigned int>(code_size)) {
+      PyErr_SetString(PyExc_ValueError, "native control step requires a bytecode opcode");
+      return nullptr;
+    }
+    const auto opcode = raw_code[ip];
+    switch (opcode) {
+      case 0x02:
+      case 0x03:
+      case 0x04:
+      case 0x05:
+      case 0x0B:
+      case 0x0C:
+      case 0x0D:
+      case 0x0E:
+      case 0x0F:
+        break;
+      default:
+        PyErr_SetString(PyExc_ValueError, "opcode is not a native control terminator");
+        return nullptr;
+    }
+    const auto previous_flags = execution_context->runtime_flags;
+    execution_context->runtime_flags |= kStopAfterControlFlag;
+    const auto handler = handler_table_data()[opcode];
+    result = handler == nullptr
+                 ? fallback(ip)
+                 : handler(execution_context, stack, locals,
+                           top_value(*execution_context, stack));
+    execution_context->runtime_flags = previous_flags;
+  } else {
+    result = dispatch(execution_context, stack, locals,
+                      top_value(*execution_context, stack));
+  }
   if (result.kind == kFallback) {
     execution_context->sp_offset = execution_context->stack_checkpoint;
     execution_context->ip = result.next_ip;
     return Py_BuildValue("IIII", kFallback, result.next_ip, execution_context->sp_offset, 0);
   }
+  if (result.kind == kBlockBoundary) {
+    execution_context->ip = result.next_ip;
+    return Py_BuildValue("IIII", kBlockBoundary, result.next_ip,
+                         execution_context->sp_offset, 0);
+  }
   if (result.kind == kTrap) {
-    return Py_BuildValue("IIII", kTrap, kSentinel, execution_context->sp_offset,
+    return Py_BuildValue("IIII", kTrap, execution_context->ip, execution_context->sp_offset,
                          result.trap_code);
   }
   return Py_BuildValue("IIII", kComplete, kSentinel, execution_context->sp_offset, 0);
 }
 
+PyObject* run_step(PyObject*, PyObject* args) { return run_native_step(args, false); }
+
+PyObject* run_control_step(PyObject*, PyObject* args) {
+  return run_native_step(args, true);
+}
+
 PyMethodDef module_methods[] = {
     {"run_step", run_step, METH_VARARGS, "Run the native CPS handler table until a boundary."},
+    {"run_control_step", run_control_step, METH_VARARGS,
+     "Run one structured-control opcode through its native handler."},
+    {"run_native_dispatch", run_native_dispatch, METH_VARARGS,
+     "Run native JIT traces and C++ interpreter handlers until a yield or exit."},
     {nullptr, nullptr, 0, nullptr},
 };
 
@@ -1682,4 +2369,15 @@ PyModuleDef module_definition = {
 
 }  // namespace
 
-PyMODINIT_FUNC PyInit__interpreter_native() { return PyModule_Create(&module_definition); }
+PyMODINIT_FUNC PyInit__interpreter_native() {
+  PyObject* module = PyModule_Create(&module_definition);
+  if (module == nullptr) return nullptr;
+  if (PyModule_AddIntConstant(module, "RUNTIME_PROFILE_STATS_ENABLED",
+                              FB_CONF_RUNTIME_PROFILE_STATS) < 0 ||
+      PyModule_AddIntConstant(module, "JIT_HOTSPOT_PROFILING_ENABLED",
+                              FB_CONF_JIT_HOTSPOT_PROFILING) < 0) {
+    Py_DECREF(module);
+    return nullptr;
+  }
+  return module;
+}

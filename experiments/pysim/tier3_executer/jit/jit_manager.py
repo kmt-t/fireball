@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ctypes
 from collections.abc import Iterable, Sequence
 from typing import Protocol
 
@@ -19,8 +20,13 @@ from config import (
 )
 from control_flow import is_control_terminator, iter_block_ops
 from jit_scoring import JIT_CANDIDATE_THRESHOLD
-from system_containers import StaticVector, freeze_sequence
-from tier2_runtime.jit_runtime_contract import NativeBlockVisit, NativeTraceDispatchEntry
+from system_containers import StaticVector
+from tier2_runtime.jit_runtime_contract import (
+    EMPTY_NATIVE_DISPATCH_SNAPSHOT,
+    NativeBlockVisit,
+    NativeDispatchSnapshot,
+    NativeTraceDispatchEntry,
+)
 from wasm_module import BasicBlock, LocalWidthMap, Module, WasmOperand
 from wasm_opcodes import END
 
@@ -82,9 +88,8 @@ class JITRuntimeManager:
 
     __slots__ = (
         "_fast_block_slots",
-        "_native_dispatch_cache_entries",
         "_native_dispatch_cache_key",
-        "_native_dispatch_cache_trackable_blocks",
+        "_native_dispatch_cache_snapshot",
         "_trackable_generation",
         "aging_bytes_scanned",
         "aging_scan_bytes",
@@ -142,8 +147,7 @@ class JITRuntimeManager:
         self.compile_queue: StaticVector[int] = StaticVector(capacity=compile_queue_capacity)
         self.module: Module | None = None
         self._fast_block_slots = _empty_block_slots()
-        self._native_dispatch_cache_entries: tuple[NativeTraceDispatchEntry, ...] = ()
-        self._native_dispatch_cache_trackable_blocks: tuple[int, ...] = ()
+        self._native_dispatch_cache_snapshot = EMPTY_NATIVE_DISPATCH_SNAPSHOT
         self._native_dispatch_cache_key: tuple[int, int, int, bool] | None = None
         self._trackable_generation = 0
         self.exec_counter = 0
@@ -227,8 +231,8 @@ class JITRuntimeManager:
 
     def native_dispatch_state(
         self, function_index: int
-    ) -> tuple[tuple[NativeTraceDispatchEntry, ...], tuple[int, ...]]:
-        """Return a cached C++ dispatch snapshot, rebuilding after state changes."""
+    ) -> NativeDispatchSnapshot:
+        """Return cached ctypes buffers that the C++ dispatcher reads directly."""
 
         cache_key = (
             function_index,
@@ -237,17 +241,14 @@ class JITRuntimeManager:
             self.hotspot_profiling_enabled,
         )
         if cache_key == self._native_dispatch_cache_key:
-            return (
-                self._native_dispatch_cache_entries,
-                self._native_dispatch_cache_trackable_blocks,
-            )
+            return self._native_dispatch_cache_snapshot
 
         active = self.cache.active.traces
         warm = self.cache.warm.traces
         oldest = self.cache.oldest.traces
-        entries: StaticVector[NativeTraceDispatchEntry] = StaticVector(
-            capacity=JIT_CACHE_BANK_COUNT * self.cache.active.entry_capacity
-        )
+        trace_capacity = JIT_CACHE_BANK_COUNT * self.cache.active.entry_capacity
+        entries = (NativeTraceDispatchEntry * trace_capacity)()
+        entry_count = 0
         active_index = 0
         warm_index = 0
         oldest_index = 0
@@ -278,36 +279,42 @@ class JITRuntimeManager:
                 continue
             block = self.get_block(head_pc)
             assert block is not None and trace.raw_addr is not None
-            entries.append(
-                (
-                    head_pc,
-                    trace.raw_addr,
-                    block.byte_span,
-                    trace.result_words,
-                    int(trace.has_return_val),
-                    trace.stack_words,
-                    block.frame_depth,
-                    no_pc if block.next_pc is None else block.next_pc,
-                    no_pc if block.loops_to is None else block.loops_to,
-                    no_pc if trace.chain_next is None else trace.chain_next,
-                    self.max_chain_stack_words(trace),
-                    int(selected_bank == 2),
-                )
+            assert entry_count < trace_capacity
+            entries[entry_count] = NativeTraceDispatchEntry(
+                head_pc,
+                trace.raw_addr,
+                block.byte_span,
+                trace.result_words,
+                int(trace.has_return_val),
+                trace.stack_words,
+                block.frame_depth,
+                no_pc if block.next_pc is None else block.next_pc,
+                no_pc if block.loops_to is None else block.loops_to,
+                no_pc if trace.chain_next is None else trace.chain_next,
+                self.max_chain_stack_words(trace),
+                int(selected_bank == 2),
             )
-        trackable_heads: StaticVector[int] = StaticVector(capacity=FB_CONF_MAX_BASIC_BLOCKS)
+            entry_count += 1
+        trackable_heads = (ctypes.c_uint32 * FB_CONF_MAX_BASIC_BLOCKS)()
+        trackable_count = 0
         if self.hotspot_profiling_enabled:
             for block in module.blocks:
                 if block.head_pc >> 16 == function_index and self.trackable.is_marked(
                     block.head_pc
                 ):
-                    trackable_heads.append(block.head_pc)
-        self._native_dispatch_cache_entries = freeze_sequence(entries)
-        self._native_dispatch_cache_trackable_blocks = freeze_sequence(trackable_heads)
-        self._native_dispatch_cache_key = cache_key
-        return (
-            self._native_dispatch_cache_entries,
-            self._native_dispatch_cache_trackable_blocks,
+                    assert trackable_count < FB_CONF_MAX_BASIC_BLOCKS
+                    trackable_heads[trackable_count] = block.head_pc
+                    trackable_count += 1
+        observed_visit_counts = (ctypes.c_uint8 * FB_CONF_MAX_BASIC_BLOCKS)()
+        self._native_dispatch_cache_snapshot = NativeDispatchSnapshot(
+            entries,
+            entry_count,
+            trackable_heads,
+            trackable_count,
+            observed_visit_counts,
         )
+        self._native_dispatch_cache_key = cache_key
+        return self._native_dispatch_cache_snapshot
 
     def set_hotspot_profiling_enabled(self, enabled: bool) -> None:
         """Select whether future native dispatches collect JIT hotness observations."""

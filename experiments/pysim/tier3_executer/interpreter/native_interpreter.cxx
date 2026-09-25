@@ -8,8 +8,10 @@
 #include <bit>
 #include <array>
 #include <cmath>
+#include <cstring>
 #include <initializer_list>
 #include <limits>
+#include <type_traits>
 
 #ifndef FB_CONF_NATIVE_JIT_TRACE_CAPACITY
 #error "Native JIT dispatch capacity must come from tier1_core/config.py"
@@ -1645,52 +1647,23 @@ struct native_trace_descriptor {
   std::uint32_t promote_on_hit;
 };
 
+constexpr std::size_t align_up(std::size_t value, std::size_t alignment) {
+  return ((value + alignment - 1) / alignment) * alignment;
+}
+
+static_assert(std::is_standard_layout_v<native_trace_descriptor>);
+static_assert(offsetof(native_trace_descriptor, entry_address) ==
+              align_up(sizeof(std::uint32_t), alignof(std::uintptr_t)));
+static_assert(offsetof(native_trace_descriptor, byte_span) ==
+              offsetof(native_trace_descriptor, entry_address) + sizeof(std::uintptr_t));
+static_assert(sizeof(native_trace_descriptor) ==
+              align_up(offsetof(native_trace_descriptor, promote_on_hit) +
+                           sizeof(std::uint32_t),
+                       alignof(native_trace_descriptor)));
+
 constexpr std::uint32_t kNoPc = 0xFFFF'FFFFu;
-constexpr std::uint32_t kNativeTraceDispatchEntryWords = 12;
 
 using native_trace_entry_fn = void (*)(void*, std::uint32_t*, std::uint32_t*, std::uint32_t);
-
-bool read_dispatch_entry(PyObject* value, native_trace_descriptor& output) {
-  PyObject* sequence = PySequence_Fast(value, "native trace entry must be a sequence");
-  if (sequence == nullptr) return false;
-  if (PySequence_Fast_GET_SIZE(sequence) != kNativeTraceDispatchEntryWords) {
-    PyErr_SetString(PyExc_ValueError, "native trace entry has an invalid field count");
-    Py_DECREF(sequence);
-    return false;
-  }
-  auto* fields = PySequence_Fast_ITEMS(sequence);
-  const auto head_pc = PyLong_AsUnsignedLong(fields[0]);
-  const auto entry_address = PyLong_AsUnsignedLongLong(fields[1]);
-  const auto byte_span = PyLong_AsUnsignedLong(fields[2]);
-  const auto result_words = PyLong_AsUnsignedLong(fields[3]);
-  const auto has_return_value = PyLong_AsUnsignedLong(fields[4]);
-  const auto stack_words = PyLong_AsUnsignedLong(fields[5]);
-  const auto frame_depth = PyLong_AsUnsignedLong(fields[6]);
-  const auto next_pc = PyLong_AsUnsignedLong(fields[7]);
-  const auto loops_to = PyLong_AsUnsignedLong(fields[8]);
-  const auto chain_next_pc = PyLong_AsUnsignedLong(fields[9]);
-  const auto chain_stack_words = PyLong_AsUnsignedLong(fields[10]);
-  const auto promote_on_hit = PyLong_AsUnsignedLong(fields[11]);
-  const bool conversion_failed = PyErr_Occurred() != nullptr;
-  if (!conversion_failed && head_pc <= UINT32_MAX && byte_span <= UINT32_MAX &&
-      result_words <= UINT32_MAX && has_return_value <= 1 && stack_words <= UINT32_MAX &&
-      frame_depth <= UINT32_MAX && next_pc <= UINT32_MAX && loops_to <= UINT32_MAX &&
-      chain_next_pc <= UINT32_MAX && chain_stack_words <= UINT32_MAX &&
-      promote_on_hit <= 1 && entry_address != 0) {
-    output = native_trace_descriptor{
-        static_cast<std::uint32_t>(head_pc), static_cast<std::uintptr_t>(entry_address),
-        static_cast<std::uint32_t>(byte_span), static_cast<std::uint32_t>(result_words),
-        static_cast<std::uint32_t>(has_return_value), static_cast<std::uint32_t>(stack_words),
-        static_cast<std::uint32_t>(frame_depth), static_cast<std::uint32_t>(next_pc),
-        static_cast<std::uint32_t>(loops_to), static_cast<std::uint32_t>(chain_next_pc),
-        static_cast<std::uint32_t>(chain_stack_words),
-        static_cast<std::uint32_t>(promote_on_hit)};
-  } else if (!conversion_failed) {
-    PyErr_SetString(PyExc_ValueError, "native trace entry field is outside its ABI range");
-  }
-  Py_DECREF(sequence);
-  return !conversion_failed && !PyErr_Occurred();
-}
 
 bool is_control_terminator(std::uint8_t opcode) {
   return opcode == 0x02 || opcode == 0x03 || opcode == 0x04 || opcode == 0x05 ||
@@ -1699,8 +1672,7 @@ bool is_control_terminator(std::uint8_t opcode) {
 }
 
 const native_trace_descriptor* find_dispatch_entry(
-    const std::array<native_trace_descriptor, FB_CONF_NATIVE_JIT_TRACE_CAPACITY>& entries,
-    std::size_t count, std::uint32_t pc) {
+    const native_trace_descriptor* entries, std::size_t count, std::uint32_t pc) {
   std::size_t low = 0;
   std::size_t high = count;
   while (low < high) {
@@ -1715,8 +1687,7 @@ const native_trace_descriptor* find_dispatch_entry(
 }
 
 std::size_t find_trackable_block_index(
-    const std::array<std::uint32_t, FB_CONF_NATIVE_JIT_BLOCK_CAPACITY>& block_heads,
-    std::size_t count, std::uint32_t pc) {
+    const std::uint32_t* block_heads, std::size_t count, std::uint32_t pc) {
   std::size_t low = 0;
   std::size_t high = count;
   while (low < high) {
@@ -1732,8 +1703,8 @@ std::size_t find_trackable_block_index(
 
 template <bool CollectStats>
 const native_trace_descriptor* terminal_dispatch_entry(
-    const std::array<native_trace_descriptor, FB_CONF_NATIVE_JIT_TRACE_CAPACITY>& entries,
-    std::size_t count, const native_trace_descriptor* start, std::uint32_t& body_count) {
+    const native_trace_descriptor* entries, std::size_t count,
+    const native_trace_descriptor* start, std::uint32_t& body_count) {
   auto* current = start;
   for (std::size_t depth = 0; depth < count; ++depth) {
     if constexpr (CollectStats) ++body_count;
@@ -1754,6 +1725,9 @@ PyObject* run_native_dispatch_impl(PyObject*, PyObject* args) {
   PyObject* control_object = nullptr;
   PyObject* entries_object = nullptr;
   PyObject* trackable_blocks_object = nullptr;
+  PyObject* observed_visit_counts_object = nullptr;
+  unsigned int entry_count = 0;
+  unsigned int trackable_count = 0;
   unsigned int stack_size = 0;
   unsigned int stack_capacity = 0;
   unsigned int initial_ip = 0;
@@ -1765,12 +1739,12 @@ PyObject* run_native_dispatch_impl(PyObject*, PyObject* args) {
   unsigned int execution_count = 0;
   int collect_stats_arg = 0;
   int collect_hotspots_arg = 0;
-  if (!PyArg_ParseTuple(args, "OOOOOOOIIIIIIIIIpp", &code_object, &context_object, &stack_object,
-                        &locals_object, &control_object, &entries_object,
-                        &trackable_blocks_object, &stack_size,
-                        &stack_capacity, &initial_ip, &local_base, &local_slots, &control_base,
-                        &function_index, &yield_threshold, &execution_count,
-                        &collect_stats_arg, &collect_hotspots_arg)) {
+  if (!PyArg_ParseTuple(args, "OOOOOOOOIIIIIIIIIIIpp", &code_object, &context_object,
+                        &stack_object, &locals_object, &control_object, &entries_object,
+                        &trackable_blocks_object, &observed_visit_counts_object, &entry_count,
+                        &trackable_count, &stack_size, &stack_capacity, &initial_ip, &local_base,
+                        &local_slots, &control_base, &function_index, &yield_threshold,
+                        &execution_count, &collect_stats_arg, &collect_hotspots_arg)) {
     return nullptr;
   }
   if ((collect_stats_arg != 0) != CollectStats ||
@@ -1798,6 +1772,21 @@ PyObject* run_native_dispatch_impl(PyObject*, PyObject* args) {
   buffer_guard control_buffer;
   if (PyObject_GetBuffer(control_object, &control_buffer.view, PyBUF_SIMPLE) != 0) return nullptr;
   control_buffer.active = true;
+  buffer_guard entries_buffer;
+  if (PyObject_GetBuffer(entries_object, &entries_buffer.view, PyBUF_SIMPLE) != 0) return nullptr;
+  entries_buffer.active = true;
+  buffer_guard trackable_blocks_buffer;
+  if (PyObject_GetBuffer(trackable_blocks_object, &trackable_blocks_buffer.view,
+                         PyBUF_SIMPLE) != 0) {
+    return nullptr;
+  }
+  trackable_blocks_buffer.active = true;
+  buffer_guard observed_visit_counts_buffer;
+  if (PyObject_GetBuffer(observed_visit_counts_object, &observed_visit_counts_buffer.view,
+                         PyBUF_SIMPLE) != 0) {
+    return nullptr;
+  }
+  observed_visit_counts_buffer.active = true;
 
   const auto context_bytes = static_cast<Py_ssize_t>(sizeof(fireball_execution_context_native));
   const auto stack_bytes = static_cast<Py_ssize_t>(128 * sizeof(std::uint32_t));
@@ -1806,70 +1795,54 @@ PyObject* run_native_dispatch_impl(PyObject*, PyObject* args) {
   if (stack_capacity > 128 || stack_size > stack_capacity ||
       context_buffer.view.len < context_bytes || stack_buffer.view.len < stack_bytes ||
       locals_buffer.view.len < local_bytes || control_buffer.view.len < control_bytes ||
+      entry_count > FB_CONF_NATIVE_JIT_TRACE_CAPACITY ||
+      trackable_count > FB_CONF_NATIVE_JIT_BLOCK_CAPACITY ||
+      entries_buffer.view.len <
+          static_cast<Py_ssize_t>(entry_count * sizeof(native_trace_descriptor)) ||
+      trackable_blocks_buffer.view.len <
+          static_cast<Py_ssize_t>(trackable_count * sizeof(std::uint32_t)) ||
+      observed_visit_counts_buffer.view.len < static_cast<Py_ssize_t>(trackable_count) ||
       initial_ip > static_cast<unsigned int>(code_buffer.view.len) || function_index > 0xFFFFu) {
     PyErr_SetString(PyExc_ValueError, "invalid native JIT dispatch buffer or execution state");
     return nullptr;
   }
 
-  // Only the prefix below entry_count is initialized and read by dispatch.
-  std::array<native_trace_descriptor, FB_CONF_NATIVE_JIT_TRACE_CAPACITY> entries;
-  PyObject* sequence = PySequence_Fast(entries_object, "native trace table must be a sequence");
-  if (sequence == nullptr) return nullptr;
-  const auto entry_count = PySequence_Fast_GET_SIZE(sequence);
-  if (entry_count < 0 ||
-      static_cast<std::size_t>(entry_count) > FB_CONF_NATIVE_JIT_TRACE_CAPACITY) {
-    PyErr_SetString(PyExc_ValueError, "native trace table exceeds its build-time capacity");
-    Py_DECREF(sequence);
+  // These ctypes-owned ABI buffers stay pinned for the call and are read in place.
+  const auto* entries = static_cast<const native_trace_descriptor*>(entries_buffer.view.buf);
+  const auto* trackable_blocks =
+      static_cast<const std::uint32_t*>(trackable_blocks_buffer.view.buf);
+  auto* observed_visit_counts =
+      static_cast<std::uint8_t*>(observed_visit_counts_buffer.view.buf);
+  if ((entry_count != 0 &&
+       reinterpret_cast<std::uintptr_t>(entries) % alignof(native_trace_descriptor) != 0) ||
+      (trackable_count != 0 &&
+       reinterpret_cast<std::uintptr_t>(trackable_blocks) % alignof(std::uint32_t) != 0) ||
+      (trackable_count != 0 &&
+       reinterpret_cast<std::uintptr_t>(observed_visit_counts) % alignof(std::uint8_t) != 0)) {
+    PyErr_SetString(PyExc_ValueError, "native dispatch buffer has invalid alignment");
     return nullptr;
   }
-  auto** raw_entries = PySequence_Fast_ITEMS(sequence);
-  bool entries_valid = true;
-  for (Py_ssize_t index = 0; index < entry_count; ++index) {
-    if (!read_dispatch_entry(raw_entries[index], entries[static_cast<std::size_t>(index)])) {
-      entries_valid = false;
-      break;
-    }
-    const auto& current = entries[static_cast<std::size_t>(index)];
-    if ((current.head_pc >> 16) != function_index ||
-        (index > 0 && entries[static_cast<std::size_t>(index - 1)].head_pc >= current.head_pc) ||
-        current.byte_span == 0 || current.result_words == 0 || current.stack_words == 0 ||
-        current.frame_depth > FIREBALL_NATIVE_CONTROL_STACK_CAPACITY) {
-      PyErr_SetString(PyExc_ValueError, "native trace table is unsorted or has invalid metadata");
-      entries_valid = false;
-      break;
-    }
-  }
-  Py_DECREF(sequence);
-  if (!entries_valid) return nullptr;
 
-  // Only the prefix below trackable_count is initialized and read by dispatch.
-  std::array<std::uint32_t, FB_CONF_NATIVE_JIT_BLOCK_CAPACITY> trackable_blocks;
-  PyObject* trackable_sequence =
-      PySequence_Fast(trackable_blocks_object, "trackable block table must be a sequence");
-  if (trackable_sequence == nullptr) return nullptr;
-  const auto trackable_count = PySequence_Fast_GET_SIZE(trackable_sequence);
-  if (trackable_count < 0 ||
-      static_cast<std::size_t>(trackable_count) > FB_CONF_NATIVE_JIT_BLOCK_CAPACITY) {
-    PyErr_SetString(PyExc_ValueError, "trackable block table exceeds its build-time capacity");
-    Py_DECREF(trackable_sequence);
-    return nullptr;
-  }
-  auto** raw_trackable_blocks = PySequence_Fast_ITEMS(trackable_sequence);
-  bool trackable_blocks_valid = true;
-  for (Py_ssize_t index = 0; index < trackable_count; ++index) {
-    const auto pc = PyLong_AsUnsignedLong(raw_trackable_blocks[index]);
-    if (PyErr_Occurred() != nullptr || pc > UINT32_MAX || (pc >> 16) != function_index ||
-        (index > 0 && trackable_blocks[static_cast<std::size_t>(index - 1)] >= pc)) {
-      if (PyErr_Occurred() == nullptr) {
-        PyErr_SetString(PyExc_ValueError, "trackable block table is unsorted or invalid");
-      }
-      trackable_blocks_valid = false;
-      break;
+  for (unsigned int index = 0; index < entry_count; ++index) {
+    const auto& current = entries[index];
+    if ((current.head_pc >> 16) != function_index ||
+        (index > 0 && entries[index - 1].head_pc >= current.head_pc) ||
+        current.byte_span == 0 || current.result_words == 0 || current.stack_words == 0 ||
+        current.frame_depth > FIREBALL_NATIVE_CONTROL_STACK_CAPACITY ||
+        current.has_return_value > 1 || current.promote_on_hit > 1 ||
+        current.entry_address == 0) {
+      PyErr_SetString(PyExc_ValueError, "native trace table is unsorted or has invalid metadata");
+      return nullptr;
     }
-    trackable_blocks[static_cast<std::size_t>(index)] = static_cast<std::uint32_t>(pc);
   }
-  Py_DECREF(trackable_sequence);
-  if (!trackable_blocks_valid) return nullptr;
+  for (unsigned int index = 0; index < trackable_count; ++index) {
+    const auto pc = trackable_blocks[index];
+    if ((pc >> 16) != function_index ||
+        (index > 0 && trackable_blocks[index - 1] >= pc)) {
+      PyErr_SetString(PyExc_ValueError, "trackable block table is unsorted or invalid");
+      return nullptr;
+    }
+  }
 
   auto* execution_context =
       static_cast<fireball_execution_context_native*>(context_buffer.view.buf);
@@ -1911,11 +1884,13 @@ PyObject* run_native_dispatch_impl(PyObject*, PyObject* args) {
   std::uint32_t eligible_block_visits = 0;
   std::uint32_t interpreted_block_count = 0;
   bool control_handler_pending_trace = false;
-  std::array<std::uint8_t,
-             CollectHotspots ? FB_CONF_NATIVE_JIT_BLOCK_CAPACITY : 0>
-      observed_visit_counts{};
+  if constexpr (CollectHotspots) {
+    if (trackable_count != 0) {
+      std::memset(observed_visit_counts, 0, trackable_count * sizeof(std::uint8_t));
+    }
+  }
   while (true) {
-    const auto* start = find_dispatch_entry(entries, static_cast<std::size_t>(entry_count), current_pc);
+    const auto* start = find_dispatch_entry(entries, entry_count, current_pc);
     if (start != nullptr && start->promote_on_hit != 0) {
       if constexpr (CollectStats) {
         if (control_handler_pending_trace) ++dispatcher_trace_transitions;
@@ -1929,9 +1904,9 @@ PyObject* run_native_dispatch_impl(PyObject*, PyObject* args) {
       const auto interpreter_ip = current_pc & 0xFFFFu;
       bool hotness_yield = false;
       if constexpr (CollectHotspots) {
-        const auto block_index = find_trackable_block_index(
-            trackable_blocks, static_cast<std::size_t>(trackable_count), current_pc);
-        if (block_index < static_cast<std::size_t>(trackable_count)) {
+        const auto block_index = find_trackable_block_index(trackable_blocks, trackable_count,
+                                                             current_pc);
+        if (block_index < trackable_count) {
           ++eligible_block_visits;
           auto& visit_count = observed_visit_counts[block_index];
           if (visit_count < 2) ++visit_count;
@@ -1996,7 +1971,7 @@ PyObject* run_native_dispatch_impl(PyObject*, PyObject* args) {
     }
     std::uint32_t chain_body_count = 0;
     const auto* terminal = terminal_dispatch_entry<CollectStats>(
-        entries, static_cast<std::size_t>(entry_count), start, chain_body_count);
+        entries, entry_count, start, chain_body_count);
     if (terminal == nullptr) {
       PyErr_SetString(PyExc_RuntimeError, "native trace chain target is absent from its snapshot");
       return nullptr;
@@ -2089,18 +2064,18 @@ PyObject* run_native_dispatch_impl(PyObject*, PyObject* args) {
   }
   Py_ssize_t observed_count = 0;
   if constexpr (CollectHotspots) {
-    for (Py_ssize_t index = 0; index < trackable_count; ++index) {
-      if (observed_visit_counts[static_cast<std::size_t>(index)] != 0) ++observed_count;
+    for (unsigned int index = 0; index < trackable_count; ++index) {
+      if (observed_visit_counts[index] != 0) ++observed_count;
     }
   }
   PyObject* visits = PyTuple_New(observed_count);
   if (visits == nullptr) return nullptr;
   Py_ssize_t visit_index = 0;
   if constexpr (CollectHotspots) {
-    for (Py_ssize_t index = 0; index < trackable_count; ++index) {
-      const auto count = observed_visit_counts[static_cast<std::size_t>(index)];
+    for (unsigned int index = 0; index < trackable_count; ++index) {
+      const auto count = observed_visit_counts[index];
       if (count == 0) continue;
-      PyObject* visit = Py_BuildValue("II", trackable_blocks[static_cast<std::size_t>(index)], count);
+      PyObject* visit = Py_BuildValue("II", trackable_blocks[index], count);
       if (visit == nullptr) {
         Py_DECREF(visits);
         return nullptr;
@@ -2122,13 +2097,13 @@ PyObject* run_native_dispatch_impl(PyObject*, PyObject* args) {
 }
 
 PyObject* run_native_dispatch(PyObject* self, PyObject* args) {
-  if (!PyTuple_Check(args) || PyTuple_GET_SIZE(args) != 18) {
-    PyErr_SetString(PyExc_TypeError, "native dispatcher expects 18 arguments");
+  if (!PyTuple_Check(args) || PyTuple_GET_SIZE(args) != 21) {
+    PyErr_SetString(PyExc_TypeError, "native dispatcher expects 21 arguments");
     return nullptr;
   }
-  const auto collect_stats = PyObject_IsTrue(PyTuple_GET_ITEM(args, 16));
+  const auto collect_stats = PyObject_IsTrue(PyTuple_GET_ITEM(args, 19));
   if (collect_stats < 0) return nullptr;
-  const auto collect_hotspots = PyObject_IsTrue(PyTuple_GET_ITEM(args, 17));
+  const auto collect_hotspots = PyObject_IsTrue(PyTuple_GET_ITEM(args, 20));
   if (collect_hotspots < 0) return nullptr;
 
 #if FB_CONF_RUNTIME_PROFILE_STATS == 0

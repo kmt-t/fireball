@@ -795,12 +795,13 @@ def test_jitr_native_dispatch_snapshot_is_cached_and_hotspot_collection_is_confi
     function_index = module.export_func_index("sum")
     manager = engine.jit_runtime
 
-    initial_entries, initial_trackable = manager.native_dispatch_state(function_index)
-    cached_entries, cached_trackable = manager.native_dispatch_state(function_index)
-    assert cached_entries is initial_entries
-    assert cached_trackable is initial_trackable
-    assert initial_entries == ()
-    assert initial_trackable
+    initial_snapshot = manager.native_dispatch_state(function_index)
+    cached_snapshot = manager.native_dispatch_state(function_index)
+    assert cached_snapshot is initial_snapshot
+    assert cached_snapshot.entries is initial_snapshot.entries
+    assert cached_snapshot.trackable_blocks is initial_snapshot.trackable_blocks
+    assert initial_snapshot.entry_count == 0
+    assert initial_snapshot.trackable_count > 0
 
     loop_block = next(
         block
@@ -810,23 +811,30 @@ def test_jitr_native_dispatch_snapshot_is_cached_and_hotspot_collection_is_confi
     trace = manager._compile_trace(loop_block.head_pc, loop_block)
     assert trace is not None and manager.cache.insert(trace)
     manager.mark_compiled(loop_block.head_pc)
-    compiled_entries, compiled_trackable = manager.native_dispatch_state(function_index)
-    assert len(compiled_entries) == 1
-    assert compiled_entries is not initial_entries
-    assert compiled_trackable == initial_trackable
+    compiled_snapshot = manager.native_dispatch_state(function_index)
+    assert compiled_snapshot.entry_count == 1
+    assert compiled_snapshot is not initial_snapshot
+    assert compiled_snapshot.trackable_count == initial_snapshot.trackable_count
+    assert compiled_snapshot.entries[0].head_pc == loop_block.head_pc
+    assert compiled_snapshot.entries[0].entry_address == trace.raw_addr
 
     manager.set_hotspot_profiling_enabled(False)
-    steady_entries, steady_trackable = manager.native_dispatch_state(function_index)
-    assert steady_entries == compiled_entries
-    assert steady_trackable == ()
+    steady_snapshot = manager.native_dispatch_state(function_index)
+    assert steady_snapshot.entry_count == compiled_snapshot.entry_count
+    assert steady_snapshot.entries[0].head_pc == compiled_snapshot.entries[0].head_pc
+    assert steady_snapshot.trackable_count == 0
     assert manager.lookup(loop_block.head_pc) is trace
     assert not manager.record_block_head(loop_block.head_pc)
     assert not manager.record_native_block_visits((), 0)
     manager.cache.rotate()
     manager.cache.rotate()
-    oldest_entries, _ = manager.native_dispatch_state(function_index)
-    oldest_entry = next(entry for entry in oldest_entries if entry[0] == loop_block.head_pc)
-    assert oldest_entry[11] == 1
+    oldest_snapshot = manager.native_dispatch_state(function_index)
+    oldest_entry = next(
+        oldest_snapshot.entries[index]
+        for index in range(oldest_snapshot.entry_count)
+        if oldest_snapshot.entries[index].head_pc == loop_block.head_pc
+    )
+    assert oldest_entry.promote_on_hit == 1
     assert list(engine.call(Interpreter(module), function_index, [5])) == [15]
     assert manager.cache.active.has_trace(loop_block.head_pc)
 

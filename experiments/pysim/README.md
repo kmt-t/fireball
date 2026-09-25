@@ -226,7 +226,7 @@ bash experiments/pysim/tier3_executer/jit/build_native.sh
 ```
 
 ### Tier 3インタープリタの境界
-`tier3_executer/interpreter/native_interpreter.cxx`は、本番インタープリタに対応するC++の固定256スロットハンドラ表とstep／dispatch入口を持つ。handlerは`ctx, sp, local_base, tos`の4論理引数を共有し、ホストx64で検証したABIを使う。ARMv8-Mの物理引数配置と関数ABIはTBDであり、このシミュレータはARM適合を主張しない。Python側はネイティブ実行コンテキスト、operand/local/controlの固定領域を`memoryview`で渡し、C++ dispatcherがJIT traceとC++ handlerを後方分岐yield境界まで連続実行する。C++ Interpreter単独経路も同じ共有しきい値を使う。`bytes`のコピーや整数アドレス化は行わない。
+`tier3_executer/interpreter/native_interpreter.cxx`は、本番インタープリタに対応するC++の固定256スロットハンドラ表とstep／dispatch入口を持つ。handlerは`ctx, sp, local_base, tos`の4論理引数を共有し、ホストx64で検証したABIを使う。ARMv8-Mの物理引数配置と関数ABIはTBDであり、このシミュレータはARM適合を主張しない。Python側はネイティブ実行コンテキスト、operand/local/controlの固定領域を`memoryview`で渡し、JITのdispatch metadataは`NativeTraceDispatchEntry`の`ctypes.Structure`配列として渡す。C++ dispatcherは配列をコピーせず、Python所有bufferを直接読み、JIT traceとC++ handlerを後方分岐yield境界まで連続実行する。C++ Interpreter単独経路も同じ共有しきい値を使う。`bytes`のコピーや整数アドレス化は行わない。
 
 C++実装済みの命令はC++ handlerが処理する。未対応命令や外部呼出しは現在のPCでPython境界へフォールバックし、trapと完了も境界statusとして返す。このフォールバックは後方互換層ではなく、実装が定める実行境界である。Tier 3実行にはC++拡張のビルドを必須とする。
 ```bash

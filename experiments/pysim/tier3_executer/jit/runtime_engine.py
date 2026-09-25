@@ -31,9 +31,13 @@ from config import (
 )
 from control_flow import OpcodeAttribute, opcode_has_attribute
 from interop_abi import NativeValueStack
-from jit_runtime_contract import JITRuntime, JITTrace
 from recovery import Result
 from system_containers import StaticVector
+from tier2_runtime.jit_runtime_contract import (
+    EMPTY_NATIVE_DISPATCH_SNAPSHOT,
+    JITRuntime,
+    JITTrace,
+)
 from tier3_executer.interpreter.interpreter import (
     NATIVE_DISPATCH_OLDEST_TRACE,
     NATIVE_DISPATCH_YIELD,
@@ -349,8 +353,7 @@ class RuntimeEngine:
             _visits,
         ) = interp.run_native_dispatch(
             call_state,
-            (),
-            (),
+            EMPTY_NATIVE_DISPATCH_SNAPSHOT,
             self.yield_threshold,
             0,
             collect_stats=self.collect_runtime_stats,
@@ -432,9 +435,7 @@ class RuntimeEngine:
         native_status = 0
         hotness_yield = False
         while True:
-            entries, trackable_blocks = self.jit_runtime.native_dispatch_state(
-                call_state.func_index
-            )
+            dispatch_snapshot = self.jit_runtime.native_dispatch_state(call_state.func_index)
             (
                 native_status,
                 _dispatch_count,
@@ -446,8 +447,7 @@ class RuntimeEngine:
                 block_visits,
             ) = interp.run_native_dispatch(
                 call_state,
-                entries,
-                trackable_blocks,
+                dispatch_snapshot,
                 self.jit_runtime.yield_threshold,
                 self.jit_runtime.exec_counter,
                 collect_stats=self.collect_runtime_stats,

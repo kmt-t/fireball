@@ -113,8 +113,9 @@ flowchart TD
 ## 4. 動的モデル
 
 ### 4.1 アルゴリズム
+<!-- traceability: {DirectMappedJIT16} -->
 1. **カードマーキング確認 ($O(1)$)**: カードマーキング表 (`bit_view<2>`) を $O(1)$ で確認する。状態が `COMPILED` でなければ即座に終了する。
-2. **Direct-Mapped Folding XOR キャッシュ確認 ($O(1)$, `{DirectMappedJIT16}`)**:
+2. **Direct-Mapped Folding XOR キャッシュ確認 ($O(1)$)**:
    - `UnifiedPC` を 32→16→8→4 ビットと3回の XOR で折りたたむ。
    - `slot = temp & 0x0F` を計算して16スロットの高速テーブルを照合する。
    - スロットのタグが `head_pc` と一致（Hit）した場合、バンク検索をバイパスして $O(1)$ でトレースを返す。
@@ -247,6 +248,7 @@ sequenceDiagram
 ```
 
 ### 4.2 状態遷移図
+<!-- traceability: {GOTCHA-JITR-09} -->
 ```mermaid
 stateDiagram-v2
     [*] --> UNEXECUTED
@@ -259,12 +261,12 @@ stateDiagram-v2
 
 キャッシュ破棄（Eviction）時は `EXECUTED` ではなく `UNEXECUTED` へリセットする（TEST-JITR-04）。
 
-エイジングスイープが `UNEXECUTED` へ戻せる状態は `EXECUTED` だけである。`HOT` と `COMPILED` は変更しない（`{GOTCHA-JITR-09}`）。
+エイジングスイープが `UNEXECUTED` へ戻せる状態は `EXECUTED` だけである。`HOT` と `COMPILED` は変更しない。
 
 コンパイル失敗時はカードを`COMPILED`にせず、独立したTrackable Maskの対象bitを解除する。これはカード状態の遷移ではなく再試行対象の除外であり、eviction後に候補性を保ったままhotnessを取り直す動作とは異なる。
 
 ### 4.3 トレース実行時の分岐解決とインタープリタ復帰
-<!-- traceability: {JIT_RuntimeAPI_Fallback} {DirectBytecodeExecution} -->
+<!-- traceability: {JIT_RuntimeAPI_Fallback} {DirectBytecodeExecution} {GOTCHA-JITR-02} -->
 制御フロー・コール境界のインタープリタ委譲不変条件を示す。ロード時の静的解析で各基本ブロックに付帯情報を持たせる。これにより実行時の分岐解決を定数時間で行う。
 
 | 付帯情報 | 意味 |
@@ -281,6 +283,8 @@ JIT trace終端の制御命令はC++ Interpreterの対応ハンドラで実行�
 trace chainは直線後続traceが常駐する場合に限り、trace末尾から共通コード領域のchain dispatcherへ移り、dispatcherがTraceヘッダのtarget bodyへtail-jumpする経路を指す。未接続のtargetは0で表し、共通epilogueから実行境界へ戻る。opcode別handlerの呼出しや、C++ handler後にC++ dispatcherが別traceを選ぶ遷移はchainではない。chain dispatcherは命令を判定せず、分岐helperも持たない。
 
 常駐trace表とホットスポット候補PC表は、キャッシュ世代または候補マスク世代が変わったときだけ構築する。通常経路ではC++ dispatcherがこのsnapshotをlookupし、制御handler実行後もしきい値到達まではC++内で次のtraceまたはhandlerを選ぶ。`FB_CONF_RUNTIME_PROFILE_STATS`は既定で無効であり、OFF構成では診断カウンタ処理をC++拡張へ生成しない。`FB_CONF_JIT_HOTSPOT_PROFILING`は未コンパイル領域の動的ホットネス観測を選び、既定値は有効である。OFF構成では観測処理を生成せず、常駐traceのlookupとC++ handlerによる遷移だけを行う。どちらの値を変更した場合もC++拡張を再ビルドする。
+
+`NativeTraceDispatchEntry`はC++ `native_trace_descriptor`と同じフィールド順・アラインメントを持つ`ctypes.Structure`である。Tier 3 managerが固定容量のtrace descriptor、候補PC、観測回数配列を`NativeDispatchSnapshot`として所有し、C++ dispatcherは呼び出し中だけbuffer viewを保持して有効なprefixを直接読む。Python tupleからC++配列への呼び出しごとの変換は行わない。ホストx64の最大容量では従来のローカル配列が19,400バイトのdispatcherスタック枠を使っていたが、この配列領域をmanager所有のctypesバッファへ移し、呼び出し間で再利用する。これはメモリ総量の削減ではなく、dispatcherのホストスタック使用量を減らし、ABIデータをPythonから参照可能にする配置変更である。
 
 #### コンパイル済みトレース実行後の遷移手順（アクティビティ図）
 ```mermaid
@@ -307,7 +311,7 @@ flowchart TD
 - **短小判定の符号 (`{GOTCHA-JITR-07}`)**: ブロックの足切り判定は自身の命令バイト数で行う。後続アドレスとの差分で代用すると、後方分岐ブロックで差分が負になり、高頻度ブロックが永久に除外されてしまう。
 - **エイジングと常駐状態の分離 (`{GOTCHA-JITR-09}`)**: エイジングスイープは `EXECUTED` のカードだけを変更する。`COMPILED` まで戻すと、常駐トレースのカードが `UNEXECUTED` になり、lookup が常駐コードを見逃す。`HOT` まで戻すと、コンパイル待ち列の要求とカード状態が食い違う。常駐性の正本はキャッシュ、待ち列の正本は待ち列であり、スイープはどちらも書き換えない。
 - **押し出し量の事前確認**: ランタイムは、トレースを呼ぶ前に、連鎖先を含む最大の `stack_words` が空き容量に収まることを確認する。収まらない場合はトレースを使わず、インタープリタが実行する。インタープリタは、容量超過を `assert` で停止する。JITだけが容量外へ書き込む状態を作らないためである。
-- **連鎖の再リンク**: 昇格とローテーションの後も、非0のchain targetは常駐トレースbodyの有効なアドレスを指す。Pythonのヘッダとネイティブのヘッダは一致する。後続が退避された場合は`chain_target_addr`を0にし、共通chain dispatcherから共通epilogueへ戻す。制御終端はC++ Interpreter handlerが処理し、通常のlookupはC++ dispatcherが続ける（`{GOTCHA-JITR-02}`）。
+- **連鎖の再リンク**: 昇格とローテーションの後も、非0のchain targetは常駐トレースbodyの有効なアドレスを指す。Pythonのヘッダとネイティブのヘッダは一致する。後続が退避された場合は`chain_target_addr`を0にし、共通chain dispatcherから共通epilogueへ戻す。制御終端はC++ Interpreter handlerが処理し、通常のlookupはC++ dispatcherが続ける。
 
 ## 5. インターフェース定義
 
@@ -354,10 +358,11 @@ flowchart TD
 ## 7. 形式検証・テスト仕様との対応
 
 ### 7.1 検証対象の不変条件
+<!-- traceability: {GOTCHA-JITR-09} -->
 - **3面キャッシュ代謝の有界性**: 循環ローテーションによる Oldest パージと新 Active 再利用を検証する。
 - **局所アンリンク安全性**: 被チェインソース$k$件だけを逆引き表から処理する。バンク再利用は全$n$項目の消去とバンク検索を伴い、$O(n + k\log n)$である。固定容量により有界だが$O(k)$のみとは主張しない。
 - **カード状態の遷移規則**: 昇格は `UNEXECUTED`、`EXECUTED`、`HOT`、`COMPILED` の順だけで進む。`UNEXECUTED` へ戻す経路は、パージ時のリセットとエイジングスイープの2つに限る。
-- **エイジング安全性**: エイジングスイープは `HOT` と `COMPILED` のカードを変更しない。`COMPILED` のカードは常駐トレースと対応し続ける（`{GOTCHA-JITR-09}`）。
+- **エイジング安全性**: エイジングスイープは `HOT` と `COMPILED` のカードを変更しない。`COMPILED` のカードは常駐トレースと対応し続ける。
 - **更新表の包含性**: 関数更新表のビットが 0 の関数は、`EXECUTED` のカードを持たない。`EXECUTED` になる経路は `UNEXECUTED` からの遷移だけである。
 - **エイジングの有限性**: 関数更新表のビットが立った関数の `EXECUTED` のカードは、有限回のローテーションの内に、走査されて減衰するか `HOT` へ進む。
 

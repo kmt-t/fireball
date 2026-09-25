@@ -60,7 +60,6 @@ from interop_abi import (
     ExecutionContextNative,
     NativeValueStack,
 )
-from jit_runtime_contract import NativeBlockVisit, NativeTraceDispatchEntry
 from leb128 import decode_signed, decode_unsigned
 from native_stacks import (
     ControlFrameKind,
@@ -70,6 +69,11 @@ from native_stacks import (
     _LocalStackWindow,
 )
 from system_containers import StaticVector
+from tier2_runtime.jit_runtime_contract import (
+    EMPTY_NATIVE_DISPATCH_SNAPSHOT,
+    NativeBlockVisit,
+    NativeDispatchSnapshot,
+)
 from tier2_runtime.logger import Logger, LogLevel
 from vmmio import VMMIOController, VmmioStatus
 from wasm_module import (
@@ -1244,8 +1248,7 @@ class Interpreter:
 
             native_status = self.run_native_dispatch(
                 call_state,
-                (),
-                (),
+                EMPTY_NATIVE_DISPATCH_SNAPSHOT,
                 FB_CONF_RUNTIME_YIELD_THRESHOLD,
                 0,
             )
@@ -1491,14 +1494,13 @@ class Interpreter:
     def run_native_dispatch(
         self,
         call_state: InterpreterCall,
-        entries: tuple[NativeTraceDispatchEntry, ...],
-        trackable_blocks: tuple[int, ...],
+        snapshot: NativeDispatchSnapshot,
         yield_threshold: int,
         execution_count: int,
         collect_stats: bool = False,
         collect_hotspots: bool = False,
     ) -> tuple[int, int, int, int, int, int, int, tuple[NativeBlockVisit, ...]]:
-        """Run native traces and C++ handlers until a yield, fallback, or exit."""
+        """Run native traces and C++ handlers over Python-owned ctypes buffers."""
 
         assert not collect_stats or NATIVE_RUNTIME_PROFILE_STATS_ENABLED, (
             "runtime profile stats were compiled out; rebuild with "
@@ -1533,8 +1535,11 @@ class Interpreter:
                 frame.values.raw_view,
                 locals_arr._storage.raw_view,
                 context.control_frame_stack.raw_view,
-                entries,
-                trackable_blocks,
+                snapshot.entries,
+                snapshot.trackable_blocks,
+                snapshot.observed_visit_counts,
+                snapshot.entry_count,
+                snapshot.trackable_count,
                 len(frame.values),
                 frame.values.capacity,
                 call_state._ip,

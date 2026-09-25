@@ -7,9 +7,72 @@ from typing import Protocol, TypeAlias
 
 from wasm_module import BasicBlock, Module
 
-NativeTraceDispatchEntry: TypeAlias = tuple[
-    int, int, int, int, int, int, int, int, int, int, int, int
-]
+
+class NativeTraceDispatchEntry(ctypes.Structure):
+    """ctypes mirror of one native C++ trace-dispatch descriptor."""
+
+    __slots__ = ()
+
+    _fields_ = (
+        ("head_pc", ctypes.c_uint32),
+        ("entry_address", ctypes.c_void_p),
+        ("byte_span", ctypes.c_uint32),
+        ("result_words", ctypes.c_uint32),
+        ("has_return_value", ctypes.c_uint32),
+        ("stack_words", ctypes.c_uint32),
+        ("frame_depth", ctypes.c_uint32),
+        ("next_pc", ctypes.c_uint32),
+        ("loops_to", ctypes.c_uint32),
+        ("chain_next_pc", ctypes.c_uint32),
+        ("chain_stack_words", ctypes.c_uint32),
+        ("promote_on_hit", ctypes.c_uint32),
+    )
+
+
+class NativeDispatchSnapshot:
+    """Python-owned fixed buffers shared directly with the C++ dispatcher."""
+
+    __slots__ = (
+        "entries",
+        "entry_count",
+        "observed_visit_counts",
+        "trackable_blocks",
+        "trackable_count",
+    )
+
+    entries: ctypes.Array
+    entry_count: int
+    trackable_blocks: ctypes.Array
+    trackable_count: int
+    observed_visit_counts: ctypes.Array
+
+    def __init__(
+        self,
+        entries: ctypes.Array,
+        entry_count: int,
+        trackable_blocks: ctypes.Array,
+        trackable_count: int,
+        observed_visit_counts: ctypes.Array,
+    ) -> None:
+        assert 0 <= entry_count <= len(entries)
+        assert 0 <= trackable_count <= len(trackable_blocks)
+        assert len(observed_visit_counts) >= trackable_count
+        self.entries = entries
+        self.entry_count = entry_count
+        self.trackable_blocks = trackable_blocks
+        self.trackable_count = trackable_count
+        self.observed_visit_counts = observed_visit_counts
+
+
+EMPTY_NATIVE_DISPATCH_SNAPSHOT = NativeDispatchSnapshot(
+    (NativeTraceDispatchEntry * 0)(),
+    0,
+    (ctypes.c_uint32 * 0)(),
+    0,
+    (ctypes.c_uint8 * 0)(),
+)
+
+
 NativeBlockVisit: TypeAlias = tuple[int, int]
 
 
@@ -58,7 +121,7 @@ class JITRuntime(Protocol):
 
     def native_dispatch_state(
         self, function_index: int
-    ) -> tuple[tuple[NativeTraceDispatchEntry, ...], tuple[int, ...]]: ...
+    ) -> NativeDispatchSnapshot: ...
 
     def record_native_block_visits(
         self, visits: tuple[NativeBlockVisit, ...], total_visits: int
@@ -79,4 +142,11 @@ class JITRuntime(Protocol):
     def flush_all(self) -> None: ...
 
 
-__all__ = ("JITRuntime", "JITTrace", "NativeBlockVisit", "NativeTraceDispatchEntry")
+__all__ = (
+    "EMPTY_NATIVE_DISPATCH_SNAPSHOT",
+    "JITRuntime",
+    "JITTrace",
+    "NativeBlockVisit",
+    "NativeDispatchSnapshot",
+    "NativeTraceDispatchEntry",
+)

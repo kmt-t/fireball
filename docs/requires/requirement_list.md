@@ -129,7 +129,7 @@ graph LR
 | `{COOS_Scheduling_Refine}` | スケジューリングアルゴリズムの継続的な改善と最適化。 | 中 | レビュー |
 | `{vMMIO_TLB}` | ソフトウェアTLBによるvMMIOアクセスの高速化。 | 中 | レビュー |
 | `{ZeroCopyIndexing}` | LoaderによるWASMセクションのゼロコピー索引化。 | 高 | テスト |
-| `{JIT_BackedgeYield}` | C++ Interpreter handlerが取得したLOOP後方辺を共通回数しきい値までC++ dispatcher内で処理し、到達時にRuntimeEngineへyield statusを返す。handler自身はPythonやCOOSへ戻らず、割り込みイベントを読み取らない。 | 中 | レビュー |
+| `{JIT_BackedgeYield}` | C++ Interpreter handlerが取得したLOOP後方辺を共通回数しきい値までC++ dispatcher内で処理し、到達時にRuntimeEngineへyield statusを返す。handler自身はCOOSへ制御を戻さず、割り込みイベントを読み取らない。 | 中 | レビュー |
 | `{WASI_Async_Bridge}` | 同期WASIと非同期IPCの連携ブリッジ。 | 高 | テスト |
 | `{ConceptHarnessDI}` | C++20/23 Conceptsを用いた静的依存性注入。 | 高 | レビュー |
 | `{FlatViewNarrowing}` | ソート済み静的コンテナに対し、粗索引で探索区間を非所有ビュー(`fireball::flat_map_view` / `fireball::flat_set_view`) へ狭めてから二分探索することで、比較回数と参照範囲を削減する。絞り込みは単調縮小であり多段に合成できる。 | 高 | レビュー |

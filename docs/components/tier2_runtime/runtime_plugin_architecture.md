@@ -30,7 +30,7 @@ System と Runtime の責務は次のように分離する。
 ### 3.1 構成要素
 <!-- traceability: {META_StaticDI} {GLOBAL_ComponentHarness} -->
 - **`system_config`**: 起動前に確定する不変構成である。実行時のプラグイン交換を提供しない。
-- **`runtime_composer`**: `system_config` とコンパイル時のプラグイン型から、Runtime のハーネスを構築する Tier 2 の合成ルートである。pysim の参照実装は [`runtime_composer.py`](experiments/pysim/tier2_runtime/runtime_composer.py)、C++ の構成合成は [`runtime_composer.hxx`](experiments/pysim/tier2_runtime/runtime_composer.hxx) に置く。
+- **`runtime_composer`**: `system_config` とコンパイル時のプラグイン型から、Runtime のハーネスを構築する Tier 2 の合成ルートである。構成選択と依存の結線はコンパイル時に確定する。
 - **`runtime_harness`**: Runtime が利用する実行、JIT、デバッグ、観測、WASI の契約参照をまとめた静的ハーネスである。
 - **静的 weave**: `runtime_composer` が有効なアスペクトだけを `runtime_harness` へ合成する。無効なアスペクトの状態、フック、WIT 境界、翻訳単位は合成結果に含めない。
 - **`runtime_context`**: 一ゲストに専有される可変状態である。実行コンテキスト、メモリ境界、トラップ、停止理由、観測統計の所有権を保持する。
@@ -72,7 +72,7 @@ graph TD
 | Profiler | VM イベントの受信と終了通知 | コールグラフ、実行時間、ログ出力 | フック、イベント生成、状態、呼出しを合成しない |
 | WASI | ゲスト呼出とホスト結果の変換境界 | Preview 1、Component Model、uvwasi 等 | WASI import を未対応として返す |
 
-Python の `RuntimeComposer` は参照シミュレータとして起動時に生成器を選ぶ。Python の実行ファイルから未選択コードを除去する保証には使わない。C++ の構成除去は `FB_CONF_JIT_ENABLED` を翻訳単位共通のビルド定義として固定し、`runtime_composer.hxx` の前処理分岐で行う。JIT 無効ビルドでは JIT 型と lookup 契約を宣言しない。JIT 有効ビルドでは Tier 2 が選んだlookup型だけを `runtime_composer` のテンプレート引数に渡し、JIT executorへ静的に結線する。現行のC++ build probeはこの型選択と呼出経路を検証する。Python pysimのキャッシュ検索自体は引き続きTier 3 managerの実装である。
+`FB_CONF_JIT_ENABLED` は翻訳単位共通のビルド定義として固定し、JIT無効構成ではJIT型とlookup契約を生成しない。JIT有効構成ではTier 2が選んだlookup型だけを `runtime_composer` のテンプレート引数に渡し、JIT executorへ静的に結線する。構成で除外された処理に実行時選択分岐を残さない。
 
 ## 4. 動的モデル
 

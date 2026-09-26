@@ -20,7 +20,7 @@ from __future__ import annotations
 import statistics
 import sys
 import time
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable
 from dataclasses import dataclass, replace
 from pathlib import Path
 
@@ -36,12 +36,16 @@ from _bootstrap import configure_import_paths
 configure_import_paths(_PYSIM_DIR, _BENCH_DIR)
 
 from config import FB_CONF_JIT_AGING_STEP_SCAN_BYTES, FB_CONF_JIT_AGING_STEP_UNITS
-from tier3_executer.interpreter.interpreter import Interpreter, InterpreterBindings
+from tier3_executer.interpreter.interpreter import (
+    NATIVE_RUNTIME_PROFILE_STATS_ENABLED,
+    Interpreter,
+    InterpreterBindings,
+)
 from tier3_executer.jit.jit_cache import JITTrace
 from tier3_executer.jit.jit_manager import JITRuntimeManager
 from tier3_executer.jit.runtime_engine import RuntimeEngine
 from tier3_executer.jit.x64_jit import TraceCompiler
-from wasm_module import WasmOperand
+from wasm_module import LocalWidthMap, WasmOperand
 from wasm_reader import parse
 
 try:
@@ -88,9 +92,7 @@ class _CountingCompiler:
         next_pc: int | None,
         loops_to: int | None,
         byte_span: int,
-        local_types: Sequence[int],
-        *,
-        loop_backedge_kind: int = 0,
+        local_widths: LocalWidthMap,
     ) -> JITTrace | None:
         self.compiles += 1
         start = time.perf_counter_ns()
@@ -100,8 +102,7 @@ class _CountingCompiler:
             next_pc,
             loops_to,
             byte_span,
-            local_types,
-            loop_backedge_kind=loop_backedge_kind,
+            local_widths,
         )
         self.compile_ns += time.perf_counter_ns() - start
         return trace
@@ -136,7 +137,7 @@ class AgingResult:
     purged: int
     rotations: int
     promotions: int
-    jit_share_pct: float
+    jit_share_pct: float | None
     aging_steps: int
     checksum: int
 
@@ -179,7 +180,8 @@ class JITAgingBenchmark:
         if scan_bytes is not None:
             settings["aging_scan_bytes"] = scan_bytes
         engine = RuntimeEngine(
-            jit_runtime=JITRuntimeManager(jit_compiler=compiler, **settings)
+            jit_runtime=JITRuntimeManager(jit_compiler=compiler, **settings),
+            collect_runtime_stats=NATIVE_RUNTIME_PROFILE_STATS_ENABLED,
         )
         engine.register_module_blocks(module)
         hook = _RotationHook(engine, aging)
@@ -212,7 +214,9 @@ class JITAgingBenchmark:
             purged=engine.jit_runtime.cache.evictions,
             rotations=hook.rotations,
             promotions=engine.jit_runtime.cache.promotions,
-            jit_share_pct=100.0 * jit / total if total > 0 else 0.0,
+            jit_share_pct=(100.0 * jit / total if total > 0 else 0.0)
+            if engine.collect_runtime_stats
+            else None,
             aging_steps=engine.jit_runtime.aging_steps,
             checksum=checksum & 0xFFFF_FFFF,
         )
@@ -302,8 +306,9 @@ def main() -> None:
         f"{'Time(ms)':>10}{'Compile(ms)':>12}{'Aging(ms)':>10}"
     )
     for r in results:
+        jit_share = f"{r.jit_share_pct:.1f}%" if r.jit_share_pct is not None else "N/A"
         print(
-            f"  {r.label:<30}{r.compiles:>9}{r.purged:>8}{r.rotations:>10}{r.jit_share_pct:>9.1f}%"
+            f"  {r.label:<30}{r.compiles:>9}{r.purged:>8}{r.rotations:>10}{jit_share:>10}"
             f"{r.time_ms:>10.0f}{r.compile_ms:>12.1f}{r.aging_ms:>10.2f}"
         )
     no_aging = next(r for r in results if r.label == "no aging")

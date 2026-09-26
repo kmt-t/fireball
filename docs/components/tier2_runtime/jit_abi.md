@@ -8,19 +8,19 @@
 
 ## コンテキスト拡張
 
-既存の16個の32bit状態ワード（`+0x00`〜`+0x3F`）に、コードビュー、Native制御スタックビュー、境界フォールバック用チェックポイント、Native CallStackビュー、オペランドスタック容量、およびLOOP後方分岐カウンタを続けて配置する。x86-64のコンテキスト全体は128バイトである。Cヘルパーアドレスはトレースごとのヘッダに置く。
+既存の16個の32bit状態ワード（`+0x00`〜`+0x3F`）に、コードビュー、制御スタックビュー、境界フォールバック用チェックポイント、CallStackビュー、オペランドスタック容量、およびLOOP後方分岐カウンタを続けて配置する。x86-64のコンテキスト全体は128バイトである。Cヘルパーアドレスはトレースごとのヘッダに置く。
 
 | オフセット | サイズ | フィールド | 用途 |
 | :--- | :--- | :--- | :--- |
 | `+0x3C` | 4バイト | runtime_flags | 実行時制御フラグ。Interpreterのブロック境界停止要求を含む |
 | `+0x40` | 8バイト | code | 現在のWASMコードの非所有アドレス |
 | `+0x48` | 4バイト | code_size | 現在のWASMコードのバイト数 |
-| `+0x50` | 8バイト | control_stack | Native制御スタックの非所有アドレス |
+| `+0x50` | 8バイト | control_stack | 制御スタックの非所有アドレス |
 | `+0x58` | 4バイト | control_base | 現在の関数の制御フレーム窓の開始深さ |
 | `+0x5C` | 4バイト | stack_checkpoint | 境界フォールバック時のoperand stack高さ |
-| `+0x60` | 8バイト | call_stack | Native CallFrame配列の非所有アドレス |
+| `+0x60` | 8バイト | call_stack | CallFrame配列の非所有アドレス |
 | `+0x68` | 4バイト | call_base | 現在のCallFrame窓の開始深さ |
-| `+0x6C` | 4バイト | call_offset | Native CallStackの現在の深さ |
+| `+0x6C` | 4バイト | call_offset | CallStackの現在の深さ |
 | `+0x70` | 4バイト | sp_capacity | オペランドスタックの論理容量（32bitワード数） |
 | `+0x74` | 4バイト | loop_jump_count | C++ Interpreterのbranch handlerが記録する、協調yieldまでの取得済み回数 |
 | `+0x78` | 4バイト | loop_jump_threshold | Tier 3が設定するLOOP後方分岐のyieldしきい値 |
@@ -31,7 +31,7 @@
 
 ## JITランタイム呼出し契約
 
-Tier 2は [`jit_runtime_contract.py`](experiments/pysim/tier2_runtime/jit_runtime_contract.py) で `JITRuntime` と `JITTrace` の呼出し形を定義する。Tier 3の実行ドライバはこの契約だけを通じてブロック情報、履歴記録、トレース検索、およびチェイン終端情報を取得する。契約はトレースキャッシュの配置・置換・リンク構造を公開しない。
+Tier 2のJIT runtime APIは、Tier 3実行器にモジュール登録、基本ブロック情報、履歴記録、トレース検索、およびchain終端情報を提供する。APIはトレースキャッシュの配置・置換・リンク構造を公開しない。
 
 `fireball_call_frame_native` は、関数コード、ローカル幅、引数搬送、戻り境界を持つ96バイトの固定記述子である。`fireball_call_stack_native` は、32個の記述子を保持する固定長配列である。`fireball_const_buffer_view_native`、`fireball_wasm_function_view_native`、`fireball_wasm_module_view_native` は、WASM コードと関数メタデータを渡す非所有の標準レイアウト構造体である。この境界に文字列、`std::vector`、仮想関数、例外を含めない。 `{ExecutionContext_Layout}` `{META_NoStdVector}`
 

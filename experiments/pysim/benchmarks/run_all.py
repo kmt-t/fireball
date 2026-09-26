@@ -186,9 +186,10 @@ def main():
         print("  * [SKIP] wasmtime (WAT compiler) is not installed.")
     else:
         for r in aging_res:
+            jit_share = f"{r.jit_share_pct:5.1f}%" if r.jit_share_pct is not None else "N/A"
             print(
                 f"  * {r.label:<30} compiles={r.compiles:5d}  purged={r.purged:5d}  "
-                f"rotations={r.rotations:4d}  JIT share={r.jit_share_pct:5.1f}%  "
+                f"rotations={r.rotations:4d}  JIT share={jit_share}  "
                 f"time={r.time_ms:6.0f} ms  compile={r.compile_ms:6.1f} ms  aging={r.aging_ms:5.2f} ms"
             )
 
@@ -203,7 +204,12 @@ def main():
     print(
         f"  * Tier 3 (Hybrid + JIT):              {ao_res['t3_time_ms']:.2f} ms  ({ao_res['t3_rays_per_sec']:,.0f} Rays / Sec)"
     )
-    print(f"  * Measured Speedup:                   {ao_res['speedup_ratio']:.2f}x faster")
+    if ao_res["speedup_ratio"] >= 1.0:
+        print(f"  * JIT vs interpreter:                 {ao_res['speedup_ratio']:.2f}x faster")
+    else:
+        print(
+            f"  * JIT vs interpreter:                 {1.0 / ao_res['speedup_ratio']:.2f}x slower"
+        )
     if ao_res["runtime_profile_stats_enabled"]:
         print(
             f"  * JIT trace transitions:              "

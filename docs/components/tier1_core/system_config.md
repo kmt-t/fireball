@@ -35,48 +35,26 @@ graph TD
 
 #### 3.3.1 メモリ管理
 <!-- traceability: {GLOBAL_IndependentHeap} {GLOBAL_StrictMemoryLimit} {ConsolidatedHeap} {ContextPointerRegister} {GLOBAL_StaticScalability} {IPC_ZeroCopy} -->
-表中のメモリ値とアドレスはpysimの初期シミュレーション構成である。要求の最小・想定RAM/ROM容量は [`requirement_list.md`](docs/requires/requirement_list.md) の制約事項を正本とする。本表はその容量条件への適合を示さない。ARMv8-Mの具体的な物理配置、メモリ保護、実機資源使用量はTBDとする。
+本表は製品のネイティブ構成項目を定義する。要求で定まる制約は [`requirement_list.md`](docs/requires/requirement_list.md) を正本とし、対象構成で値が確定していない項目はTBDとする。シミュレータの初期値やメモリ集計を製品の既定値として扱わない。
 
 | マクロ名 | 説明 | デフォルト値 | 導出元 |
 | :--- | :--- | :--- | :--- |
-| `FB_CONF_TASK_HEAP_SIZES` | ゲストVMスロットごとに個別設定する固定パーティションサイズの定数配列（要素数 `FB_CONF_MAX_GUEST_VMS`）。pysimの初期値は`4096`で、WASMリニアメモリのページサイズを定める設定ではない | `[4096]` | |
-| `FB_CONF_RUNTIME_HEAP_SIZE` | ホスト（WASMランタイム）実行専用の独立静的プールサイズ | `2048` | |
-| `FB_CONF_KERNEL_HEAP_SIZE` | COOSカーネル（スケジューラ、CSP、TCB、共有メモリ）用静的プールサイズ | `4096` | |
-| `FB_CONF_SUBSYS_HEAP_SIZE` | IPCルータ・HAL・ログバッファ用静的プールサイズ | `3072` | |
-| `FB_CONF_INTERP_STACK_SIZE` | インタープリタ統合スタック（`execution_context` + フレーム/オペランド）総容量 | `2048` | |
-| `FB_CONF_JIT_CACHE_SIZE` | x64参照シミュレーション用のJITコードキャッシュ容量 | `8192` | `{JIT_MultiBuffer_Cache}` |
+| `FB_CONF_TASK_HEAP_SIZES` | ゲストVMスロットごとに個別設定する固定パーティションサイズの定数配列（要素数 `FB_CONF_MAX_GUEST_VMS`）。WASMリニアメモリのページ数とは別の設定である | 対象構成で定義 | |
+| `FB_CONF_RUNTIME_HEAP_SIZE` | ホスト（WASMランタイム）実行専用の独立静的プールサイズ | 対象構成で定義 | |
+| `FB_CONF_KERNEL_HEAP_SIZE` | COOSカーネル（スケジューラ、CSP、TCB、共有メモリ）用静的プールサイズ | 対象構成で定義 | |
+| `FB_CONF_SUBSYS_HEAP_SIZE` | IPCルータ・HAL・ログバッファ用静的プールサイズ | 対象構成で定義 | |
+| `FB_CONF_INTERP_STACK_SIZE` | インタープリタ統合スタック（`execution_context` + フレーム/オペランド）総容量 | 対象構成で定義 | |
+| `FB_CONF_JIT_CACHE_SIZE` | x64参照構成のJITコードキャッシュ容量 | `8192` (x64参照構成) | `{JIT_MultiBuffer_Cache}` |
 | `FB_CONF_MAX_GUEST_VMS` | 同時にロード可能なゲストVMの最大数 | `1` | |
-| `FB_CONF_SHM_SIZE` | ゼロコピーIPCで使用する静的共有メモリの総バイト数（カーネル用プールの内数） | `1024` | |
-| `FB_CONF_MAX_SHM_PAGES` | FC=14で予約する4KB仮想アドレススロット数。物理SHMバイト予算とは独立 | `32` | |
-| `FB_CONF_MEMORY_POOL_SIZE` | pysimの全パーティションを切り出すシミュレーションプールの総サイズ | `23552` | |
+| `FB_CONF_SHM_SIZE` | ゼロコピーIPCで使用する静的共有メモリの総バイト数（カーネル用プールの内数） | 対象構成で定義 | |
+| `FB_CONF_MAX_SHM_PAGES` | FC=14で予約する仮想アドレススロット数。物理SHMバイト予算とは独立 | 対象構成で定義 | |
+| `FB_CONF_MEMORY_POOL_SIZE` | 管理対象の静的メモリプール総量 | 要求と対象構成で定義 | |
 
-##### メモリ総量と個別プールの依存関係
-シミュレーションプール（`FB_CONF_MEMORY_POOL_SIZE` = 23,552 Bytes）は、以下の pysim 設定値の総和として完全に一致する。この集計は製品の静的割当量でもARMv8-Mの物理メモリ予算でもなく、要求の容量条件への適合を示さない。
-- カーネルプール (`FB_CONF_KERNEL_HEAP_SIZE`): 4,096 Bytes（共有メモリの物理バック領域 `FB_CONF_SHM_SIZE` 1,024 Bytes を内包。FC=14の仮想予約スロットは物理消費量に加算しない）
-- ランタイムプール (`FB_CONF_RUNTIME_HEAP_SIZE`): 2,048 Bytes
-- サブシステムプール (`FB_CONF_SUBSYS_HEAP_SIZE`): 3,072 Bytes
-- JITコードキャッシュ (`FB_CONF_JIT_CACHE_SIZE`): 8,192 Bytes (共通コード2KB + 可変バンク2KB × 3面)
-- インタープリタ統合スタック (`FB_CONF_INTERP_STACK_SIZE`): 2,048 Bytes
-- ゲストタスクRAM (`sum(FB_CONF_TASK_HEAP_SIZES)`、スロット別ROM配列の総和): `[4096]` の総和 = 4,096 Bytes
-- **合計**: 4,096 + 2,048 + 3,072 + 8,192 + 2,048 + 4,096 = **23,552 Bytes**
-
-```text
-// pysim consistency only; ARM layout/usage TBD; target capacity requirements are separate.
-static_assert(FB_CONF_KERNEL_HEAP_SIZE
-            + FB_CONF_RUNTIME_HEAP_SIZE
-            + FB_CONF_SUBSYS_HEAP_SIZE
-            + FB_CONF_JIT_CACHE_SIZE
-            + FB_CONF_INTERP_STACK_SIZE
-            + sum(FB_CONF_TASK_HEAP_SIZES)
-            == FB_CONF_MEMORY_POOL_SIZE);
-static_assert(FB_CONF_TASK_HEAP_SIZES.size() == FB_CONF_MAX_GUEST_VMS);
-static_assert(FB_CONF_GUEST_RAM_SIZE == FB_CONF_TASK_HEAP_SIZES[0]);
-```
-シミュレーション上のゲストVMスロット `i` は、`FB_CONF_GUEST_RAM_BASE` を起点に先行スロットのサイズを累積したオフセット（`sum(FB_CONF_TASK_HEAP_SIZES[0..i))`）へ配置する。ARMv8-Mでの物理配置と重複検査方法はTBDとする。
+`FB_CONF_TASK_HEAP_SIZES` の要素数は `FB_CONF_MAX_GUEST_VMS` と一致させる。各要素が表す物理配置と、各プールを要求上限内へ収める具体的な割当式は対象構成で定義する。
 
 ##### ARMv8-M 物理構成（TBD）
 
-ARMv8-Mの対象ボード、SRAM/ROM/周辺アドレス、メモリ保護方式、領域数・属性・配置、JITコードキャッシュの物理配置と実装時の資源使用量はTBDとする。要求のRAM/ROM容量条件は [`requirement_list.md`](docs/requires/requirement_list.md) に従い、上表のシミュレーション設定値から適合性を推定しない。
+ARMv8-Mの対象ボード、SRAM/ROM/周辺アドレス、メモリ保護方式、領域数・属性・配置、JITコードキャッシュの物理配置と実装時の資源使用量はTBDとする。要求のRAM/ROM容量条件は [`requirement_list.md`](docs/requires/requirement_list.md) に従う。
 
 #### 3.3.2 IPCルータ
 <!-- traceability: {META_ConfigurableSystem} {IPC_ZeroCopy} -->
@@ -137,8 +115,8 @@ namespace fireball::config {
 | :--- | :--- | :--- | :--- |
 | `FB_CONF_JIT_ENABLED` | JITコンパイラ機能の有効化フラグ | `true` | |
 | `FB_CONF_WASM_PAGE_SIZE` | WASM標準論理ページサイズ (64KB, 65,536 Bytes) | `65536` | |
-| `FB_CONF_MAX_WASM_PAGES` | pysim Loaderが許可する初期WASMリニアメモリの最大ページ数 | `16` | |
-| `FB_CONF_JIT_CACHE_PAGE_SIZE` | x64参照シミュレーション用JITコード領域のページ単位 | `4096` | |
+| `FB_CONF_MAX_WASM_PAGES` | 初期WASMリニアメモリに許可する最大ページ数 | 対象構成で定義 | |
+| `FB_CONF_JIT_CACHE_PAGE_SIZE` | x64参照構成で使用するJITコード領域のページ単位 | `4096` (x64参照構成) | |
 | `FB_CONF_JIT_COMMON_CODE_SIZE` | 相対ジャンプ等の非エビクション共通コード領域 | `2048` | |
 | `FB_CONF_JIT_BANK_SIZE` | 各エビクション対象バンクのサイズ | `2048` | |
 | `FB_CONF_JIT_CACHE_SIZE` | 連続JIT領域（共通コード2KB + 3バンク×2KB） | `8192` | |
@@ -151,11 +129,10 @@ namespace fireball::config {
 | `FB_CONF_JIT_AGING_STEP_UNITS` | 3面キャッシュのローテーション1回ごとに処理する関数更新表の非ゼロバイト数（1バイト = 8関数） | `2` | |
 | `FB_CONF_JIT_AGING_STEP_SCAN_BYTES` | 3面キャッシュのローテーション1回ごとに走査する関数更新表のバイト数の上限（値が0のバイトも数える） | `8` | |
 
-`FB_CONF_RUNTIME_PROFILE_STATS` と `FB_CONF_JIT_HOTSPOT_PROFILING` は C++ interpreter 拡張のビルド時構成である。`false` の機能は Clang のコンパイル定義で除外し、実行時フラグによる選択分岐や対応するテンプレート実装を生成しない。値を変更した場合は [build_native.sh](experiments/pysim/tier3_executer/interpreter/build_native.sh) を再実行する。Runtime の引数で、ビルドから除外した機能を有効にすることはできない。
 | `FB_CONF_GUEST_RAM_BASE` | ゲストRAMの開始アドレス（64KB境界配置） | `0x00000000` | |
-| `FB_CONF_GUEST_RAM_SIZE` | pysimのvMMIO Stage 1アドレス窓の境界判定サイズ。WASMリニアメモリのページ数とは別の設定である | `4096` | |
+| `FB_CONF_GUEST_RAM_SIZE` | vMMIO Stage 1アドレス窓の境界判定サイズ。WASMリニアメモリのページ数とは別の設定である | 対象構成で定義 | |
 | `FB_CONF_VMMIO_BASE` | vMMIO領域の開始アドレス (Bit 31 == 1) | `0x80000000` | |
-| `FB_CONF_VSOC_PASSTHROUGH_BASE` | pysimのゲスト仮想PASSTHROUGH領域（FC=15）の開始アドレス。実デバイスへの物理対応付けは対象プラットフォームで設定し、ARMv8-MはTBD | `0xF0000000` (pysim only) | |
+| `FB_CONF_VSOC_PASSTHROUGH_BASE` | ゲスト仮想PASSTHROUGH領域（FC=15）の開始アドレス。実デバイスへの物理対応付けは対象プラットフォームで設定する | 対象構成で定義 | |
 | `FB_CONF_VMMIO_MAX_REGIONS` | 登録可能な最大vMMIO領域数 | `8` | |
 | `FB_CONF_VMMIO_MAX_PTES` | FlatMap ページテーブルに保持可能な PTE の最大件数 | `64` | |
 | `FB_CONF_VMMIO_ALLOWED_ADDRS` | ゲストからのアクセスを許可する物理アドレス範囲 | `constexpr`構造体配列 | |
@@ -164,6 +141,8 @@ namespace fireball::config {
 | `FB_CONF_VIRQ_CATEGORY_COUNT` | vIRQの固定分類ノード数（DEVICE/SYSTEM/RUNTIME/FAULT） | `4` | |
 | `FB_CONF_VIRQ_MAX_NODES` | vIRQ静的ノード数（root + 4分類 + デバイスノード） | `1 + FB_CONF_VIRQ_CATEGORY_COUNT + FB_CONF_HAL_MAX_DEVICES` | |
 | `FB_CONF_VIRQ_MAX_SOURCES` | vIRQ静的原因源数（SYSTEM/RUNTIME/FAULT + デバイス源） | `3 + FB_CONF_HAL_MAX_DEVICES` | |
+
+`FB_CONF_RUNTIME_PROFILE_STATS` と `FB_CONF_JIT_HOTSPOT_PROFILING` はビルド時構成である。`false` の機能はコンパイル時に除外し、実行時フラグによる選択分岐や対応する実装を生成しない。Runtimeの引数でビルドから除外した機能を有効にすることはできない。
 
 vMMIO Stage 1アドレス窓へのアクセスは、有効サイズとの比較で保護する（`FastAddressCheck`）。境界外アドレスはトラップし、マスクで折り返して実行を継続しない。この判定は窓サイズが2の冪であることを要求しない。WASMリニアメモリは独立したページ数契約に従う。
 

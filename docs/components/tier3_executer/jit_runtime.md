@@ -27,22 +27,22 @@ JITサブシステムは、以下の2つの独立した設計書に責務を分�
 
 ### 2.2 実装責務と依存方向
 <!-- traceability: {META_ContractImplSplit} {META_StaticDI} {META_3TierSeparation} -->
-Tier 3 の `RuntimeEngine` は、Tier 2 の [`jit_runtime_contract.py`](experiments/pysim/tier2_runtime/jit_runtime_contract.py) が定義する `JITRuntime` 契約を介して、モジュール登録、基本ブロック解決、ホットスポット記録、イールド処理、トレース検索、チェイン解決、およびキャッシュ無効化を呼び出す。Tier 2 契約はカード表、履歴リング、コンパイル待ち列、キャッシュバンク、直接マップ索引の型へ依存しない。
+Tier 3 の `RuntimeEngine` は Tier 2 の JIT runtime API を介して、モジュール登録、基本ブロック解決、ホットスポット記録、yield処理、トレース検索、chain解決、およびキャッシュ無効化を呼び出す。APIはカード表、履歴リング、コンパイル待ち列、キャッシュバンク、直接マップ索引の内部表現を公開しない。
 
 Tier 3 の実装は次の責務に分ける。
 
 | 実装 | 所有する責務 | 依存先 |
 | :--- | :--- | :--- |
-| [`jit_manager.py`](experiments/pysim/tier3_executer/jit/jit_manager.py) の `JITRuntimeManager` | ホットスポットカード、候補マスク、履歴リング、関数更新表、コンパイル待ち列、ブロック索引、コンパイル起動、トレース検索、チェイン解決 | Tier 2 `JITRuntime` の呼出し形、Loaderの`Module`/`BasicBlock`情報 |
-| [`jit_cache.py`](experiments/pysim/tier3_executer/jit/jit_cache.py) | 3面コードキャッシュ、バンク回転、Oldest昇格、局所アンリンク、エントリ索引 | `JITRuntimeManager` からの所有・通知 |
-| [`x64_jit.py`](experiments/pysim/tier3_executer/jit/x64_jit.py) | トレースのコード生成とコンパイラ実装 | `JITCompiler` 契約、JIT ABI |
-| [`runtime_engine.py`](experiments/pysim/tier3_executer/jit/runtime_engine.py) | Interpreter/JITの実行境界、vIRQ、実行統計、トレース継続 | Tier 2 `JITRuntime`契約、Tier 3 Interpreter |
+| JIT runtime manager | ホットスポットカード、候補マスク、履歴リング、関数更新表、コンパイル待ち列、ブロック索引、コンパイル起動、トレース検索、chain解決 | Tier 2 JIT runtime API、Loaderのモジュール・基本ブロック情報 |
+| Trace cache | 3面コードキャッシュ、バンク回転、Oldest昇格、局所アンリンク、エントリ索引 | JIT runtime managerからの所有・通知 |
+| Native trace compiler | トレースのコード生成とコンパイラ実装 | JIT compiler契約、JIT ABI |
+| RuntimeEngine | Interpreter/JITの実行境界、vIRQ、実行統計、トレース継続 | Tier 2 JIT runtime API、Tier 3 Interpreter |
 
-このPython参照実装では `RuntimeEngine` の生成時に `JITRuntimeManager` を注入する。JIT有効時の検索はTier 3 managerが担う。C++製品構成ではTier 2の [`runtime_composer.hxx`](experiments/pysim/tier2_runtime/runtime_composer.hxx) がビルド構成から実行器とlookup方針を型として選ぶ。現時点のC++ヘッダとビルドprobeは構成の静的合成を検証するものであり、Python製JIT managerのlookup実装をC++へ移植したものではない。
+Runtime compositionはビルド構成から実行器とlookup方針を静的に選ぶ。JIT runtime managerはTier 2 APIを実装し、Interpreterはこの実装詳細へ依存しない。
 
 Tier 3内部の依存は `JITInterpreter` → `RuntimeEngine` → `Interpreter` の向きに保つ。JIT実行管理はTier 2の `JITRuntime` 契約を実装し、InterpreterからJIT管理へ戻る依存を作らない。
 
-本コンポーネントには独立した概念モデルを置かない。現在の実行経路はC++ runtime、x64機械語実装、形式モデルおよびpysimテストで確認する。
+本コンポーネントには独立した概念モデルを置かない。実行経路はネイティブランタイム、x64機械語実装、形式モデルおよび対応するテスト仕様で確認する。
 
 ## 3. 静的モデル
 
@@ -80,10 +80,10 @@ Tier 3内部の依存は `JITInterpreter` → `RuntimeEngine` → `Interpreter` 
   | `0x200` | x64 wideヘルパー入口群 | 32バイト単位で11入口。ヘルパー契約ごとの引数を設定して関数を呼び出し、終了処理へ戻る |
   | `0x400` | x64共通chain dispatcher | 32バイト。Traceヘッダのchain targetを読み、次trace bodyへtail-jumpする。未接続時は共通終了処理へ戻る |
 
-  chain dispatcherはopcode別の分岐handlerを共通化しない。分岐条件・control frame更新・後方分岐回数はC++ Interpreterの命令別handlerが処理する。handler実行後にC++ dispatcherが別traceを選ぶ遷移と、共通コードchain dispatcherがtarget bodyへtail-jumpするchainは別の経路である。Pythonはchain機械語を組み立てず、C++ `constexpr` assemblerで生成した固定命令列をx64参照構成の共通領域へ一度だけ配置する。ARMv8-Mの呼出し入口、配置方式、命令列はTBDである。
+  chain dispatcherはopcode別の分岐handlerを共通化しない。分岐条件・control frame更新・後方分岐回数はC++ Interpreterの命令別handlerが処理する。handler実行後にC++ dispatcherが別traceを選ぶ遷移と、共通コードchain dispatcherがtarget bodyへtail-jumpするchainは別の経路である。C++ `constexpr` assemblerで生成した固定命令列をx64参照構成の共通領域へ一度だけ配置する。ARMv8-Mの呼出し入口、配置方式、命令列はTBDである。
 - **オンデマンドコンパイルキュー (On-demand Compile Queue)**: `HOT` に達した命令オフセットを保持する固定容量 LIFO キューである。容量到達時にバッチコンパイルが即座に実行される。固定容量を上回ることはない。 `JIT_ReverseCompilationOrder` `{GLOBAL_Policy_Memory}`
 - **バンク別被チェイン逆引きテーブル (Inbound Chain Index Table)**: 各キャッシュバンクへ向けたchain元のJITエントリを保持する固定長配列である。cache回転・promote時に共通chain dispatcherが参照するtarget addressを更新または解除する。
-- **前方chainメタデータ**: Python cache metadataの`chain_next` / `next_pc`は直線後続traceの論理PCを保持する。x64物理ヘッダの`chain_target_addr`は共通chain dispatcherがtail-jumpするresident target bodyを保持する。後方branch linkは作らず、branch handlerへ制御を戻す。
+- **前方chainメタデータ**: 実行時cache metadataの`chain_next` / `next_pc`は直線後続traceの論理PCを保持する。x64物理ヘッダの`chain_target_addr`は共通chain dispatcherがtail-jumpするresident target bodyを保持する。後方branch linkは作らず、branch handlerへ制御を戻す。
 - **実行履歴バッファ**: 短期間の実行履歴を一時的に保持するリングバッファである。 `{HistoryBuffer}`
 
 ### 3.2 内部ブロック図
@@ -284,7 +284,7 @@ trace chainは直線後続traceが常駐する場合に限り、trace末尾か�
 
 常駐trace表とホットスポット候補PC表は、キャッシュ世代または候補マスク世代が変わったときだけ構築する。通常経路ではC++ dispatcherがこのsnapshotをlookupし、制御handler実行後もしきい値到達まではC++内で次のtraceまたはhandlerを選ぶ。`FB_CONF_RUNTIME_PROFILE_STATS`は既定で無効であり、OFF構成では診断カウンタ処理をC++拡張へ生成しない。`FB_CONF_JIT_HOTSPOT_PROFILING`は未コンパイル領域の動的ホットネス観測を選び、既定値は有効である。OFF構成では観測処理を生成せず、常駐traceのlookupとC++ handlerによる遷移だけを行う。どちらの値を変更した場合もC++拡張を再ビルドする。
 
-`NativeTraceDispatchEntry`はC++ `native_trace_descriptor`と同じフィールド順・アラインメントを持つ`ctypes.Structure`である。Tier 3 managerが固定容量のtrace descriptor、候補PC、観測回数配列を`NativeDispatchSnapshot`として所有し、C++ dispatcherは呼び出し中だけbuffer viewを保持して有効なprefixを直接読む。Python tupleからC++配列への呼び出しごとの変換は行わない。ホストx64の最大容量では従来のローカル配列が19,400バイトのdispatcherスタック枠を使っていたが、この配列領域をmanager所有のctypesバッファへ移し、呼び出し間で再利用する。これはメモリ総量の削減ではなく、dispatcherのホストスタック使用量を減らし、ABIデータをPythonから参照可能にする配置変更である。
+常駐trace descriptor、候補PC、および観測回数は固定容量の実行時テーブルとして管理する。C++ dispatcherは有効要素数を受け取り、テーブルを直接参照して観測回数を更新する。テーブルはcache世代または候補mask世代が変化したときに再構築し、dispatcherの呼び出しごとに最大容量分をスタック上へ複製しない。テーブルの具体的な所有型はこの契約で規定しない。
 
 #### コンパイル済みトレース実行後の遷移手順（アクティビティ図）
 ```mermaid
@@ -307,11 +307,11 @@ flowchart TD
 
 - **分岐条件の扱い**: `BR_IF` はJITトレースが残した条件値をC++ Interpreter handlerが消費する。`IF` も同じハンドラが条件を消費し、必要な制御frameを積む。
 - **関数終了の定数時間解決 (`{GOTCHA-JITR-08}`)**: `RETURN` で終わるブロックでは命令列を再走査しない。トレースは戻り値を共有operand stackへ確定した後、C++ Interpreterのreturn handlerを通る。
-- **制御フレームの整合 (`{GOTCHA-JITR-06}`)**: JIT trace bodyは制御終端命令（`RETURN`を含む）を実行しない。共通chain dispatcherからepilogue経由でC++ dispatcherへ戻った後、対応するC++ handlerを一度実行する。handlerが条件を消費し、制御frameを更新し、遷移先PCを決める。Python側で分岐を再計算しない。通常実行では同じC++ dispatcherが次PCをlookupし、後方分岐しきい値まで処理を続ける。
+- **制御フレームの整合 (`{GOTCHA-JITR-06}`)**: JIT trace bodyは制御終端命令（`RETURN`を含む）を実行しない。共通chain dispatcherからepilogue経由でC++ dispatcherへ戻った後、対応するC++ handlerを一度実行する。handlerが条件を消費し、制御frameを更新し、遷移先PCを決める。通常実行では同じC++ dispatcherが次PCをlookupし、後方分岐しきい値まで処理を続ける。
 - **短小判定の符号 (`{GOTCHA-JITR-07}`)**: ブロックの足切り判定は自身の命令バイト数で行う。後続アドレスとの差分で代用すると、後方分岐ブロックで差分が負になり、高頻度ブロックが永久に除外されてしまう。
 - **エイジングと常駐状態の分離 (`{GOTCHA-JITR-09}`)**: エイジングスイープは `EXECUTED` のカードだけを変更する。`COMPILED` まで戻すと、常駐トレースのカードが `UNEXECUTED` になり、lookup が常駐コードを見逃す。`HOT` まで戻すと、コンパイル待ち列の要求とカード状態が食い違う。常駐性の正本はキャッシュ、待ち列の正本は待ち列であり、スイープはどちらも書き換えない。
 - **押し出し量の事前確認**: ランタイムは、トレースを呼ぶ前に、連鎖先を含む最大の `stack_words` が空き容量に収まることを確認する。収まらない場合はトレースを使わず、インタープリタが実行する。インタープリタは、容量超過を `assert` で停止する。JITだけが容量外へ書き込む状態を作らないためである。
-- **連鎖の再リンク**: 昇格とローテーションの後も、非0のchain targetは常駐トレースbodyの有効なアドレスを指す。Pythonのヘッダとネイティブのヘッダは一致する。後続が退避された場合は`chain_target_addr`を0にし、共通chain dispatcherから共通epilogueへ戻す。制御終端はC++ Interpreter handlerが処理し、通常のlookupはC++ dispatcherが続ける。
+- **連鎖の再リンク**: 昇格とローテーションの後も、非0のchain targetは常駐トレースbodyの有効なアドレスを指す。cache metadataとネイティブtrace headerの値は一致する。後続が退避された場合は`chain_target_addr`を0にし、共通chain dispatcherから共通epilogueへ戻す。制御終端はC++ Interpreter handlerが処理し、通常のlookupはC++ dispatcherが続ける。
 
 ## 5. インターフェース定義
 
@@ -321,30 +321,27 @@ flowchart TD
 | 項目 | 内容 |
 | :--- | :--- |
 | 機能概要 | Tier 2実行ループへ、Tier 3のブロック解決、履歴記録、トレース検索、チェイン情報、キャッシュ無効化を提供する。 |
-| 実装 | Tier 2 `jit_runtime_contract.py` のProtocolとTier 3 `JITRuntimeManager` |
-| 構成 | `RuntimeEngine(jit_runtime=JITRuntimeManager(...))` による静的依存性注入 |
+| 構成 | Tier 2実行境界とTier 3 JITランタイムを静的に結合する。 |
 | 不変条件 | Tier 2はTier 3のカード表・キュー・キャッシュ実装へ直接アクセスしない。 |
 
 #### RuntimeEngineの実行境界
 | 項目 | 内容 |
 | :--- | :--- |
-| `run(interpreter, call_state)` | C++ dispatcherを取得済み後方分岐数によるyield、fallback、trap、または完了まで進め、継続状態とYield要求を返す。Python側の協調実行ループは持たない。 |
-| `call(interpreter, func_index, args)` | `SYNCHRONOUS`構成用の同期アダプター。同じ`run()`を完了まで反復する。 |
-| `RuntimeDriveMode.COOS` | System/vSoCが選択する構成。未完了状態を同期アダプターへ渡すことを禁止し、COOSへのYield判定と発行をSystemに限定する。 |
-| 不変条件 | COOSと同期呼出しは別の命令実行実装を持たず、同じ`run()`境界を使う。ベンチマーク専用処理はRuntimeEngineに含めない。 |
+| 実行 | C++ dispatcherを取得済み後方分岐数によるyield、fallback、trap、または完了まで進め、継続状態とyield要求を返す。協調yield時は実行境界へ制御を返す。 |
+| 同期呼出し | 完了まで実行境界を反復する。同じ命令実行経路を使用する。 |
+| COOS駆動 | System/vSoCが協調実行構成を選択する。yield判定とCOOSへの制御返却はSystemに限定する。 |
+| 不変条件 | COOS駆動と同期呼出しは別の命令実行実装を持たず、同じ実行境界を使う。計測用処理は製品ランタイムに含めない。 |
 
 #### 検索（lookup）
 | 項目 | 内容 |
 | :--- | :--- |
-| 機能概要 | 命令オフセットに対応するネイティブコードアドレス（`exec_trace` 型）を返す。 |
-| シグネチャ | `lookup(pc: wasm_pc_t) -> result<exec_trace, jit_lookup_result_t>` |
-| 戻り値 | 成功時はネイティブ実行エントリ、失敗時はエラーコードを返す。 |
+| 機能概要 | 命令オフセットに対応するネイティブコードのエントリを返す。 |
+| 戻り値 | 成功時はネイティブ実行エントリ、失敗時はlookup結果を返す。 |
 
-#### エントリ登録（register_entry）
+#### エントリ登録
 | 項目 | 内容 |
 | :--- | :--- |
-| 機能概要 | 命令オフセットとネイティブ実行コードアドレスを登録し、索引を更新する。 |
-| シグネチャ | `register_entry(pc: wasm_pc_t, native_entry: exec_trace) -> void` |
+| 機能概要 | 命令オフセットとネイティブコードのエントリを登録し、索引を更新する。 |
 
 ## 6. 制約達成の方策
 

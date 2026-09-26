@@ -147,11 +147,12 @@ def main():
     print(
         f"  * Tier 3 (Hybrid + JIT):    {res['t3_time_ms']:.2f} ms  ({res['t3_rays_per_sec']:,.0f} Rays / Sec)"
     )
-    print(f"  * Measured Speedup:         {res['speedup_ratio']:.2f}x faster")
+    if res["speedup_ratio"] >= 1.0:
+        print(f"  * JIT vs interpreter:       {res['speedup_ratio']:.2f}x faster")
+    else:
+        print(f"  * JIT vs interpreter:       {1.0 / res['speedup_ratio']:.2f}x slower")
     if res["runtime_profile_stats_enabled"]:
-        print(
-            f"  * JIT trace transitions: {res['native_dispatch_trace_transitions']:,}"
-        )
+        print(f"  * JIT trace transitions: {res['native_dispatch_trace_transitions']:,}")
     else:
         print("  * JIT trace transitions: runtime stats compiled out")
     print(f"  * Active JIT Traces:        {res['compiled_traces']} compiled traces")

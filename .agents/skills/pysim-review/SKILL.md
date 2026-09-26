@@ -1,6 +1,6 @@
 ---
 name: pysim-review
-description: experiments/pysim 配下の Python ソースコードを、組み込み C++23 への移植可能性およびプロジェクト設計規約の観点から徹底レビューするスキル。仕様書一致性、型注釈・Any禁止、set/dict/list排除・システムコンテナ強制、例外送出禁止、計算量・決定論性、設定値・定数の一元管理、不要な後方互換コードの排除、ROM/RAM配置可能性（不変性）、余計なメモリ使用の排除、デッドコード排除、文書階層に基づくコンポーネント分割の評価軸を専門サブエージェントで並行監査する。
+description: experiments/pysim 配下の Python ソースコードを、組み込み C++23 への移植可能性およびプロジェクト設計規約の観点からレビューするスキル。仕様書とpysim実装の境界監査、製品仕様へのシミュレータ実装詳細混入の検出、型注釈・Any禁止、コンテナ・計算量・決定論性・ROM/RAM配置・メモリ使用・デッドコード・Tier責務を監査する。
 ---
 
 # pysim ソースコードレビュースキル (pysim Review Skill)
@@ -34,6 +34,7 @@ graph TD
 
 1. **仕様書との一致性 (Specification Parity & Invariants)**:
    - `docs/components/**` のアーキテクチャ・状態機械・Gotchas（勘所）と一致しているか。
+   - 下記「製品仕様とpysim実装の境界監査」を実施し、pysimの実装方法を製品仕様や製品要求として書いていないか確認する。
    - 仕様書の文章修正を提案する場合は `.agents/rules/documentation-standards.md` の段落型（定義・契約、動作・手順、理由・設計判断、検証）に従い、役割が切り替わる位置で分ける。句点や文字数だけで機械的に改段落せず、情報を保持する。
 2. **型が書いてあるか (Strict Static Typing & No Any)**:
    - すべての引数・戻り値・属性に具象型が明記されているか。`typing.Any` と `object` が 0 件か。`T | None` / `Optional[T]` 以外のUnionがないか。製品コードに `raise` がないか（`except` は許可）。製品クラスの実行時メンバーへ `str` または文字列要素を含むコンテナを持たせず、ROM上の範囲・整数ID・固定長数値で表現しているか。文字列リテラル初期値、`ClassVar`、`Final` のクラス定数はROM配置可能なため許可する。
@@ -61,11 +62,31 @@ graph TD
    - experiments/pysim/qa/ のテスト配置とテスト対象を確認する。ただしテストの配置だけを仕様の根拠にせず、仕様書・実装・テストの三者が同じコンポーネント境界を示しているかで判定する。
    - 将来のリファクタリング予定は欠陥の免除理由にせず、現状の境界違反として報告する。一方、単なるテストハーネスや共有試験補助コードは、製品コンポーネントへの混入と区別して根拠を示す。
 
+### 製品仕様とpysim実装の境界監査
+
+- `docs/requires/**` と `docs/components/**` はFireball製品の要求・ネイティブ設計を定義する正本とする。`experiments/pysim/**` のPythonクラス、ファイル構成、オブジェクト寿命、CPython呼出し、Python用buffer配置を、製品の責務・ABI・メモリ配置・実行経路として記述しない。
+- 製品仕様の本文・表・状態図では、`ctypes`、`ctypes.Structure`、`PyObject`、CPython API、Python `memoryview`、Python配列・tuple・dict、および `experiments/pysim/` の実装パスを候補検索し、文脈ごとに判定する。
+- 製品仕様に記載されたクラス名、メソッド名、列挙子、引数形、型名は、要求・WIT・ABI・ネイティブ側の公開契約に定義があるか確認する。`experiments/pysim/` または `docs/components/**/concepts/` にしか定義がないシンボル、Python風シグネチャ、Pythonの依存注入式を製品APIとして記述している場合は、実装詳細の漏れとして報告する。語彙が両方に現れる場合も、製品側の定義元を確認する。
+- Pythonを使う形式検証・コンセプトコード、またはpysimを実行するベンチマーク／QAへのリンクは、検証手段や参考実装だと明示し、要求・設計の根拠として扱わない場合に限り許可する。証跡リンクを製品仕様の定義元にしない。
+- ネイティブ製品だけを記述する文書では、`Native CallFrame` のように製品内で自明な修飾語を付けず、仕様上の正規名（例: `CallFrame`）を用いる。`fireball_call_frame_native` のように公開ABIで定義された正確な識別子はそのまま保持する。
+- 実装の現状やpysimコードから未記載の製品要件を推測しない。要求・WIT・既存のネイティブ契約の根拠がない場合は仕様を追加せず、未確定事項として報告する。要求は要求として扱い、pysim実装から正当化を要求しない。
+- レビュー結果には、漏れを見つけたファイル・行、シミュレータ固有と判断した根拠、製品契約として残す情報と削除・一般化すべき実装詳細を分けて記録する。
+
 ---
 
 横断監査として、仕様の不変条件・境界・副作用を `assert` が直接検証しているかも確認します。`print`・非空判定・固定件数だけの代理検証、無条件 `pass`、検証失敗の握りつぶし、テスト自身が送出した `AssertionError` の自己捕捉は指摘対象です。pysim では不具合を検出した時点で停止することを優先します。
 
 ## 運用手順 (Workflow)
+
+### Step 0: 製品仕様とpysim実装の境界確認
+
+`docs/architecture/document_structure.md` と対応する要求・WIT・コンポーネント仕様を読み、製品の正本を確認します。続けて製品仕様からシミュレータ実装詳細が漏れていないか候補検索し、文脈ごとに分類します。候補のAPI名・型名はpysim側の定義元だけで終わらず、製品側の契約定義も検索して突き合わせます。
+
+```bash
+rg -n -i 'ctypes|PyObject|CPython|memoryview|experiments/pysim|Native CallFrame|RuntimeDriveMode|JITRuntimeManager|PlatformDriverConfiguration|WasiHalBindings' docs/requires docs/components --glob '*.md' --glob '!**/formal/**' --glob '!**/concepts/**'
+```
+
+一致は一律削除せず、形式検証・コンセプト・ベンチマーク・QAの証跡と、要求や製品設計として書かれた実装詳細を区別します。Python実装にしか存在しない公開APIらしき識別子も検索し、製品側の定義元の有無を確認します。後者は製品のネイティブ契約に書き換えるか、正本に根拠がなければ除去してレビュー所見に残します。
 
 ### Step 1: 静的アンチパターンスキャンの実行
 

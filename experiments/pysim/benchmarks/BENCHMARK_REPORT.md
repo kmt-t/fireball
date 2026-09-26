@@ -1,6 +1,6 @@
 # PySIM 統合ベンチマーク詳細レポート (PySIM Performance Benchmark Report)
 
-本レポートは、Fireball Hypervisor の全層（Tier 1 Core OS / Tier 2 Runtime / Tier 3 JIT & Platform）を具象化した `pysim` における全 6 系統のベンチマークスイートの実測結果、JITトレース遷移の診断、およびC++23実機実装への移植性・性能予測をまとめる。2026-09-18のWindows測定値と旧Linux測定値は履歴データとして残す。Linuxの旧cycles測定は6.6節、直接マップキャッシュC++化後の測定は6.7節、旧RuntimeEngine境界測定は6.8節、最初にyield条件を揃えたLinux測定は6.9節、hotspot profiling切替は6.10節、共通code chain dispatcher更新後のcycles測定は6.11節に記録する。chainはtrace末尾から共通コード領域のchain dispatcherが次trace bodyへtail-jumpする経路を指す。過去に記録した`chain hit`・`JIT Chained Invocations`値は、測定当時の実装とカウンタ定義による履歴値であり、現行chain回数との比較には使わない。現行コードに共通chain dispatcher専用の実行カウンタはない。
+本レポートは、Fireball Hypervisor の全層（Tier 1 Core OS / Tier 2 Runtime / Tier 3 JIT & Platform）を具象化した `pysim` における全 6 系統のベンチマークスイートの実測結果、JITトレース遷移の診断、およびC++23実機実装への移植性・性能予測をまとめる。2026-09-18のWindows測定値と旧Linux測定値は履歴データとして残す。Linuxの旧cycles測定は6.6節、直接マップキャッシュC++化後の測定は6.7節、旧RuntimeEngine境界測定は6.8節、最初にyield条件を揃えたLinux測定は6.9節、hotspot profiling切替は6.10節、共通code chain dispatcher更新後のcycles測定は6.11節に記録する。現行コードで取り直した全6系統の結果は6.12節に記録する。chainはtrace末尾から共通コード領域のchain dispatcherが次trace bodyへtail-jumpする経路を指す。過去に記録した`chain hit`・`JIT Chained Invocations`値は、測定当時の実装とカウンタ定義による履歴値であり、現行chain回数との比較には使わない。現行コードに共通chain dispatcher専用の実行カウンタはない。
 
 Section 1〜5は 2026-09-18 に、JIT Direct-Mapped Folding XORキャッシュを4スロットから16スロットへ拡張した変更（`{DirectMappedJIT16}`, `experiments/pysim/tier1_core/config.py`）の直後に同一ワークスペースで再測定した結果である。Pythonプロセス、OSスケジューリング、およびPythonハンドラ本体呼出しの影響を含むため、絶対値ではなく同一環境での比較値として扱う。5.1節のネイティブCPS経路の数値のみ2026-09-17測定の既存値を保持する（本変更では未再測定のため）。
 
@@ -467,3 +467,48 @@ Python handlerは100,000反復を1回、C++ Interpreterは128回、Hybrid JITは
 この条件ではHybrid JITはC++ Interpreterより中央値cycles/opcodeで2.13倍多く、呼出し時間で2.14倍遅かった。Python handlerと比べると約147.8倍短い。今回の算術ループは分岐をC++ Interpreter handlerへ委譲する計測であり、共通code chain dispatcherの通過回数や性能を測っていない。chain dispatcher経路の動作はJIT QAで検証したが、専用実行カウンタはなく、chain回数とchain単体の性能値は未取得である。
 
 再現には[JITベンチマーク仕様書](../../docs/components/tier3_executer/benchmarks/jit_runtime_bench_spec.md)のLinux `perf stat`手順を使う。今回の計測値は、共通dispatcher更新後に同じ算術ループ条件で取り直した値であり、6.10節以前の履歴値と混ぜない。
+
+### 6.12 現行コードでの全6系統再測定（2026-09-25）
+
+AMD Ryzen 5 5500GT、Linux 7.0.0-34-generic x86-64、CPython 3.14.6、uv 0.12.18で測定した。既存のネイティブ拡張を使用し、実行統計はコンパイル時に無効だった。CPU固定とハードウェアカウンタ収集は行っていない。次のコマンドで6系統が完走し、実行時間は32.77秒だった。
+
+```bash
+UV_CACHE_DIR=/tmp/fireball-uv-cache uv run --offline --no-sync python experiments/pysim/benchmarks/run_all.py
+```
+
+| 系統 | 指標 | 今回の実測値 |
+| :--- | :--- | :--- |
+| リニアメモリ | 32-bit読み書き / vMMIO RAMバイパス | 9.23 / 3.98 M ops/s（バイパス帯域15.18 MB/s） |
+| vMMIO | TLB hit / FlatMap経路 | 1.34 / 1.16 M ops/s（同一実行内比1.16x） |
+| JIT | Copy-and-Patchコンパイル | 59,801 traces/s（16.72 µs/trace） |
+| JIT | 算術ループ100,000反復 | Python handler 4,399.24 ms / C++ Interpreter 14.47 ms / Hybrid JIT 29.83 ms |
+| JITキャッシュ | 大作業集合のhit rate | 92.44% |
+| JITエイジング | 既定設定（U=2、O=8） | 656 compiles / 605 purges / 50 rotations / 453 ms |
+| AO-Bench | Interpreter / Hybrid JIT（全スイート中の1回） | 5,733.03 / 6,326.06 ms（Hybrid JITは約1.10倍の時間） |
+
+算術ループの3経路はすべて`704,982,704`を返した。Hybrid JITはPython handlerより147.48倍速く、C++ Interpreterより2.06倍の時間を要した。これらは同一ホストのpysim実行時間であり、組み込みCPUの性能値ではない。
+
+JITエイジングは各変種3回の中央値である。コンパイル数などの計数値は各変種の3回で一致した。統計無効の拡張ではJIT実行割合を取得できないため、0%とはせず`N/A`と表示した。
+
+別途、`FIREBALL_BUILD_RUNTIME_PROFILE_STATS=1`でネイティブInterpreter拡張をビルドし、JITエイジング単体を実行した。既定設定のJIT実行割合は80.6%だった。コンパイル数656件、追い出し605件、ローテーション50回は統計無効の測定と一致した。統計有効時の実行時間は計測条件が異なるため、下表の総時間と混ぜない。
+
+| 変種 | compiles | purges | rotations | 総時間 (ms) | コンパイル時間 (ms) | エイジング時間 (ms) |
+| :--- | ---: | ---: | ---: | ---: | ---: | ---: |
+| ホット関数のみ | 16 | 0 | 0 | 178 | 0.5 | 0.00 |
+| エイジングなし | 741 | 693 | 58 | 461 | 18.6 | 0.00 |
+| U=1、O=4 | 656 | 608 | 50 | 444 | 16.4 | 0.74 |
+| U=2、O=8（既定値） | 656 | 605 | 50 | 453 | 17.4 | 1.22 |
+| U=8、O=32 | 257 | 210 | 20 | 394 | 6.8 | 1.79 |
+
+既定設定のコンパイル数はエイジングなしより11.5%少なかった。総時間の差は今回8 msであり、単発の時間差を設定の性能効果として確定しない。
+
+AO-Benchは全スイート実行時の1回に加え、`uv run --offline --no-sync python experiments/pysim/benchmarks/aobench/bench_aobench.py`を2回実行した。毎回1,600 raysの描画結果がInterpreterとHybrid JITで一致し、JITキャッシュのActiveバンクは4トレースだった。
+
+| 試行 | Interpreter (ms) | Hybrid JIT (ms) | Hybrid JIT / Interpreter |
+| :--- | ---: | ---: | ---: |
+| 全スイート内 | 5,733.03 | 6,326.06 | 1.103x |
+| AO単独1回目 | 5,741.89 | 6,305.45 | 1.098x |
+| AO単独2回目 | 5,732.67 | 6,323.02 | 1.103x |
+| 中央値 | 5,733.03 | 6,323.02 | 1.103x |
+
+この3試行ではHybrid JITがInterpreterより約10%遅かった。9月24日の別実装・別実行では逆方向の値だったため、旧値との単純な増減評価はしない。実行統計は無効であり、JIT trace遷移数とJIT実行割合は未取得である。

@@ -17,9 +17,9 @@
 
 ### 2.1 WASIドライバ結線設定
 
-WASIアダプタとHALドライバのURI結線は、物理ドライバ実装とは別のTier 3設定ファイル [`bindings.py`](experiments/pysim/tier3_platform/drivers/hal/bindings.py) で選択する。Tier 2はURIをハードコードせず、Tier 1の `WasiHalBindings` 契約を通じて注入された値だけを利用する。WASI Preview 1 の標準出力とFireballログ以外の操作は、[`uvwasi.py`](experiments/pysim/tier3_platform/drivers/wasi/uvwasi.py) を通じてuvwasiへ委譲する。
+WASIアダプタとHALドライバのURI結線はTier 3の静的構成で選択する。Tier 2はURIをハードコードせず、Tier 1のWASI/HAL結線契約を通じて注入された値だけを利用する。標準出力とFireballログ以外のWASI Preview 1操作は、選択したWASIバックエンドへ委譲する。
 
-ドライバ構成の合成は [`platform_config.py`](experiments/pysim/tier3_platform/drivers/platform_config.py) が担う。`PlatformDriverConfiguration` は標準出力、ロガー、WASIバックエンドを一つの静的構成として保持する。
+ドライバ構成は標準出力、ロガー、WASIバックエンドを一つの静的構成として保持する。
 
 | 結線 | 既定URI |
 | :--- | :--- |
@@ -27,11 +27,10 @@ WASIアダプタとHALドライバのURI結線は、物理ドライバ実装と�
 
 WASIの結線設定は標準出力とログだけを対象とする。WASI Preview 1 の
 `fd_read`、`fd_close`、`clock_time_get`、`random_get` および標準出力・ログ以外の
-`fd_write` は、[`uvwasi.py`](experiments/pysim/tier3_platform/drivers/wasi/uvwasi.py) の
-`WasiPreview1Backend` へ委譲する。
+`fd_write` は、構成で選択されたWASI Preview 1バックエンドへ委譲する。
 タイマーやUARTのURIをWASI結線へ追加してはならない。
 
-診断ログはHAL URIを経由せず、`System`へ注入する専用Sinkへ`Logger.flush()`から直接出力する。既定構成は標準出力SinkをログSinkとして再利用しない。デバッガのRSP物理通信も、`DebuggerSink`契約を満たす専用Sinkとして`PlatformDriverConfiguration`へ注入する。既定実装はホスト評価用TCP Sinkであり、UART、J-Link、テスト用メモリSinkなどへ差し替えられる。RSPのフレーミング解析とコマンド解釈はDebuggerプラグインが担当し、Sinkはバイト転送だけを担当する。
+診断ログはHAL URIを経由せず、`System`へ注入する専用Sinkへ`Logger.flush()`から直接出力する。標準出力SinkはログSinkとして再利用しない。デバッガのRSP物理通信は、`DebuggerSink`契約を満たす専用Sinkをプラットフォーム構成から注入する。既定の転送方式はここでは定めない。RSPのフレーミング解析とコマンド解釈はDebuggerプラグインが担当し、Sinkはバイト転送だけを担当する。
 
 ## 3. 静的モデル
 

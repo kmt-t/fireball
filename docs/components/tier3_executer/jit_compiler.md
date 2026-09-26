@@ -7,26 +7,26 @@
 
 ## 1. コンセプト
 <!-- traceability: {LowLatencyJIT} {JIT_CopyAndPatch} {JIT_ZeroCompileCostTheorem} {SimpleJITArchitecture} {JIT_Encoder} {PositionIndependentCode} {SinglePassCompilation} -->
-JIT Compiler は、WASMバイトコードを実行時にネイティブコードへ変換し、実行速度を向上させる。Execution Engine (`executor`) の一部として機能する。「Zero Compile Cost」方針に基づき、最適化を省いた **Copy-and-Patch** 方式を採用する。確認済みのx64トレース本体生成は `native_trace_call.cxx` のC++実装が担当し、命令バイト列、レジスタ配置、スタック退避、ランタイムヘルパー境界を単一パスで確定する。Python側は命令列とABIメタデータを渡し、生成済みバイト列を `JITTrace` とキャッシュへ登録するラッパーに限定する。ARMv8-Mの物理実装と資源予算はTBDである。
+JIT Compiler は、WASMバイトコードを実行時にネイティブコードへ変換し、実行速度を向上させる。Execution Engine (`executor`) の一部として機能する。「Zero Compile Cost」方針に基づき、最適化を省いた **Copy-and-Patch** 方式を採用する。確認済みのx64トレース本体生成は `native_trace_call.cxx` のC++実装が担当し、命令バイト列、レジスタ配置、スタック退避、ランタイムヘルパー境界を単一パスで確定する。生成結果はトレースdescriptorと実行可能コード領域へ登録する。ARMv8-Mの物理実装と資源予算はTBDである。
 
 ## 2. アーキテクチャ分類
 <!-- traceability: {META_3TierSeparation} {JIT_CopyAndPatch} -->
-本コンポーネントは **Tier 3 (詳細リーフコンポーネント: Leaf Component)** に属する。vSoC (`runtime_vsoc.md`) から分解された JIT コンパイルパイプラインを担当する。C++ネイティブコンパイラによるCopy-and-Patch結合と、Pythonラッパーによる `JITTrace` 登録を担当する。ランタイム側のエントリ検索・キャッシュ管理・ホットスポット検出は [`jit_runtime.md`](docs/components/tier3_executer/jit_runtime.md) が担当する。
+本コンポーネントは **Tier 3 (詳細リーフコンポーネント: Leaf Component)** に属する。vSoC (`runtime_vsoc.md`) から分解された JIT コンパイルパイプラインを担当し、Copy-and-Patchによるネイティブコード生成と生成結果のキャッシュ登録を行う。ランタイム側のエントリ検索・キャッシュ管理・ホットスポット検出は [`jit_runtime.md`](docs/components/tier3_executer/jit_runtime.md) が担当する。
 
 ### 2.1 JIT サブシステムのデコンポジション
 <!-- traceability: {JIT_Encoder} {JIT_CopyAndPatch} {SimpleJITArchitecture} {JIT_MultiBuffer_Cache} -->
 JITサブシステムは、以下の2つの独立した設計書に責務を分離して構成される。
 
-- **[jit_compiler.md](docs/components/tier3_executer/jit_compiler.md)**: C++ネイティブ実装による命令バイト列生成（Copy-and-Patch Engine）およびPython側のトレース登録を担当する。
+- **[jit_compiler.md](docs/components/tier3_executer/jit_compiler.md)**: C++ネイティブ実装による命令バイト列生成（Copy-and-Patch Engine）およびトレース登録を担当する。
 - **[jit_runtime.md](docs/components/tier3_executer/jit_runtime.md)**: 実行履歴監視・ホットスポット判定、PC-アドレス変換検索、および 3面キャッシュローテーションを担当する。
 
 ## 3. 静的モデル
 
 ### 3.1 データ構造
-- **`native_trace_call.cxx`**: C++で実装したx64トレースコンパイラである。Pythonの命令イテレータを一度だけ消費し、固定長バッファへネイティブ命令を生成する。未対応命令、型混在、ABI不整合はコンパイル結果を返さず、インタープリタ境界へ委譲する。
+- **`native_trace_call.cxx`**: C++で実装したx64トレースコンパイラである。WASM命令列とABIメタデータを一度走査し、固定長バッファへネイティブ命令を生成する。未対応命令、型混在、ABI不整合はコンパイル失敗として返し、実行器が規定のインタープリタ経路を選ぶ。
 - **`CopyAndPatchEngine`**: C++コンパイラが生成したネイティブ命令列をキャッシュへ配置し、即値・分岐先・APIポインタをパッチ適用する責務を表す論理コンポーネントである。
 - **共通コード領域**: x64 JIT領域では開始処理、終了処理、helper契約別入口、chain dispatcherを共通領域へ配置する。命令別条件評価やhandler呼出しを単一dispatcherへ集約しない。x64の領域サイズと各offsetは [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) および [`jit_runtime.md`](docs/components/tier3_executer/jit_runtime.md) を正本とする。ARMv8-Mのサイズと配置はTBDである。 `{JIT_MultiBuffer_Cache}`
-- **`constexpr_assembler`**: C++の `constexpr` 機能を活用し、opcodeを判定しない共通chain dispatcherの固定命令列をビルド時に生成する。命令別handlerはC++ interpreter内で直接選択し、この共通dispatcherへ集約しない。実行時にPythonでchain機械語を組み立てない。
+- **`constexpr_assembler`**: C++の `constexpr` 機能を活用し、opcodeを判定しない共通chain dispatcherの固定命令列をビルド時に生成する。命令別handlerはC++ interpreter内で直接選択し、この共通dispatcherへ集約しない。
 - **命令テンプレート (`jit_template`)**: パッチスロットを含むネイティブ命令列の雛形（x64では `native_trace_call.cxx` のC++実装が生成する。ARMv8-Mの物理仕様はTBD）。
 - **JIT トレースヘッダ (`jit_trace_header`)**: キャッシュに書き込まれる各ネイティブトレースの先頭に配置される実行時メタデータ構造体。x64では24バイトで、trace identity、chain target、必要なhelper targetを保持する。共通コードoffsetと論理的な後続PCは重複格納しない。物理欄は対象ABIごとに定義する。
 
@@ -135,7 +135,7 @@ JIT トレースとインタープリタが共有オペランド領域上で相�
 
 #### ネイティブトレースコンパイラ (`native_trace_call.cxx`)
 <!-- traceability: {JIT_Encoder} {META_ZeroCostAbstraction} -->
-Clang 17+でビルドするC++実装であり、x64 Copy-and-Patchトレースの命令バイト列を単一パスで生成する。固定命令列は `constexpr std::array<std::uint8_t, N>` ステンシルとしてコンパイル時に確定し、実行時はステンシルのコピーと即値・相対オフセットのパッチだけを行う。固定長のネイティブ配列を使用し、実行時のヒープ確保、Pythonバイトコード生成、動的なSTLコンテナを使用しない。Python C APIは入力イテレータ、`memoryview`、結果タプルの境界に限定する。
+Clang 17+でビルドするC++実装であり、x64 Copy-and-Patchトレースの命令バイト列を単一パスで生成する。固定命令列は `constexpr std::array<std::uint8_t, N>` ステンシルとしてコンパイル時に確定し、実行時はステンシルのコピーと即値・相対オフセットのパッチだけを行う。固定長のネイティブ配列を使用し、実行時のヒープ確保や動的なSTLコンテナを使用しない。入力ビュー、出力buffer、およびコンパイル結果の契約はJIT ABIに従う。
 
 命令エンコーダと命令列はx64実装に限って定義する。ARMv8-M向けエンコーダ、命令列、relocation形式はTBDである。
 
@@ -144,7 +144,7 @@ Clang 17+でビルドするC++実装であり、x64 Copy-and-Patchトレース�
 ### 4.1 アルゴリズム
 <!-- traceability: {JIT_CopyAndPatch} {JIT_RuntimeAPI_Fallback} {SinglePassCompilation} -->
 1. **トレース解析とコード生成**: WASM命令をC++ x64コンパイラへ渡し、対応命令を単一パスで固定長出力領域へ生成する。未対応命令や不適格なトレースはコンパイル失敗として返す。
-2. **キャッシュ配置とrelocation**: JIT runtimeがtrace headerと生成bodyをキャッシュへ配置する。x64の相対分岐、helper target、chain dispatcher targetを登録時に確定する。Pythonラッパーを機械語生成経路には含めない。
+2. **キャッシュ配置とrelocation**: JIT runtimeがtrace headerと生成bodyをキャッシュへ配置する。x64の相対分岐、helper target、chain dispatcher targetを登録時に確定する。
 3. **実行可能メモリの確定**: x64の実行可能バッファ管理が書込み・実行権限の切替と必要な同期を行う。ARMv8-Mの権限機構、命令キャッシュ同期、バリア命令はTBDである。
 4. **制御終端の処理**: trace bodyは制御終端命令を実行せず、対応するC++ Interpreter handlerへ戻る。handlerが条件、control frame、遷移先を確定する。C++ dispatcherは設定された後方分岐数へ達するまで次の常駐traceまたはhandlerを続ける。
 5. **trace chain**: 互換な直線後続traceが常駐する場合だけ、trace末尾から共通コード領域のchain dispatcherへ進む。dispatcherがtrace headerのtarget bodyへtail-jumpする。C++ handler後にC++ dispatcherが別traceを選ぶ遷移はchainではない。

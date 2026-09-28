@@ -4,7 +4,7 @@
 
 - `docs/requires/requirement_list.md`: 要求仕様の正本
 - `docs/architecture/document_structure.md`: 文書階層、メタキーワード、traceability の正本
-- `docs/architecture/keyword_dictionary.md`: リンク用メタキーワード・アンカー台帳の正本
+- キーワード定義宣言と参照コメント: 各仕様・設計文書内に置くトレーサビリティ情報
 - `docs/plans/backlog_list.md`: 現在の作業単位
 - `docs/plans/roadmap_phase.md`: 全体フェーズ
 - `docs/components/**`: コンポーネント設計書（Tier 1〜3）
@@ -30,13 +30,13 @@
 - Python（シミュレータ・概念コード・形式検証・テスト）は `typing.Any` を完全禁止し、具体型・代数的データ型を用いる。
 - pysim は fail-fast の参照シミュレータとし、不変条件・境界・契約違反は `assert` で即時検出する。テストは代理指標だけでなく状態・副作用を直接 `assert` し、テスト自身の `AssertionError` を捕捉して成功扱いにしない。
 - pysim の製品コードはTier依存方向を厳守し、ランタイム固有処理をCOOS・IPC等の汎用層へimportしない。Tierと対象ファイルの対応は `spec-integrator.yaml` の `pysim_imports` を正本とし、`powershell tools/check-src.ps1 -group pysim` の `spec-integrator` 検査でローカルimportの解決先と依存方向を検査する。
-- ドキュメント本文は日本語（自然言語・一文一義・常体徹底）、コード名・API 名・キーワード・URI は英語。
+- ドキュメント本文は日本語（自然言語・一文一義・常体徹底）、コード名・API 名・キーワード・URI は英語。ルートの `README.md` は読者向け案内文書として英語で記述する。
 - 複雑な動的アルゴリズムの図は、責務重視＝シーケンス図（`sequenceDiagram`）、手順重視＝アクティビティ図（`flowchart TD`）とする。
 - 形式検証は Python `pyModelChecking`（Kripke 構造・CTL/LTL）で記述・実行し、`guards=False` 変異検査を必須とする。
 
 ## 検証・フォーマット
 
-- 具体的な検証コマンドは `tools/README.md` および `.agents/skills/document-validation/` を正本とする。
+- 具体的な検証コマンドは `tools/README.md` を正本とする。
 - **回帰テストは関係あるファイルのみに絞る**：変更したファイルおよび直接関連する単体テスト・概念コードのみを実行する。
 - **自動フォーマット（コミット前実行）**：
   - ドキュメント: `powershell tools/format-doc.ps1` (Linux/WSL: `./tools/format-doc.sh`)
@@ -57,7 +57,8 @@
 ## エージェント入口
 
 - エージェント共通のルール正本は `AGENTS.md` および `.agents/rules/**`。
-- ドキュメント品質自動検証スキル（8大品質ゲート自動パイプライン）は `.agents/skills/document-validation/` を参照。
-- 最上位アーキテクチャレビュースキル（`architecture_overview.md` ↔ 下位仕様・形式モデル・WITの垂直一貫性・並行サブエージェント監査）は `.agents/skills/architecture-review/` を参照。
-- コンポーネントレビュースキル（各コンポーネントの仕様→形式検証→コード→テストの4層設計チェーン垂直一貫性・並行サブエージェント監査）は `.agents/skills/component-review/` を参照。
-- pysim ソースコードレビュースキル（組み込み C++ 移植性・8大評価軸監査）は `.agents/skills/pysim-review/` を参照。
+- ドキュメント品質の検証入口と品質ゲートは `tools/README.md` を参照。
+- 最上位アーキテクチャレビュースキル（Tier分類・責務境界・依存方向・契約配置・一覧とリンクの整合性）は `.agents/skills/architecture-review/` を参照。
+- コンポーネントレビュースキル（仕様→形式検証→コンセプトコード→テストの4層チェーンと垂直一貫性）は `.agents/skills/component-review/` を参照。
+- pysim ソースコードレビュースキル（組み込み C++ 移植性・型・メモリ・計算量・Tier境界の9評価軸）は `.agents/skills/pysim-review/` を参照。
+- pysim 計測・最適化スキル（Intel VTune / AMD uProf・ターゲット資源予算）は `.agents/skills/pysim-optimization/` を参照。

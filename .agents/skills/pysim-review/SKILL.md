@@ -1,203 +1,43 @@
 ---
 name: pysim-review
-description: experiments/pysim 配下の Python ソースコードを、組み込み C++23 への移植可能性およびプロジェクト設計規約の観点からレビューするスキル。仕様書とpysim実装の境界監査、製品仕様へのシミュレータ実装詳細混入の検出、型注釈・Any禁止、コンテナ・計算量・決定論性・ROM/RAM配置・メモリ使用・デッドコード・Tier責務を監査する。
+description: experiments/pysim の実装を仕様・組込み移植性・型・メモリ・計算量・Tier境界に照らしてレビューするときに使う。
 ---
 
-# pysim ソースコードレビュースキル (pysim Review Skill)
+# pysim Review
 
-`experiments/pysim/` は、通常の `new` / `delete`、`malloc` / `free` / `realloc` / `calloc`、標準の動的 STL コンテナを禁止し、placement/in-place `new` とプロジェクトで提供する独自ヒープ API・独自コンテナを許可する組み込み C++23 の設計を、Python 上で事前実証する参照シミュレータです。`pysim` 自身では、Python 標準の `dict` / `set` / `list` を禁止し、固定容量のシステムコンテナを使用します。参照モデルは fail-fast を原則とし、不変条件・境界・契約違反を `assert` で即時検出します。製品コードでは明示的な `raise` を使用せず、`try` / `except` による捕捉は許可します。
+## 目的
 
-評価ターゲットは最小構成の SRAM 32KB / Flash 96KB であり、これは目安ではなくレビューのハード制約である。回避可能なメタデータ複製、キャッシュ、文字列本体、二重バッファ、一時オブジェクト、未使用フィールドは、1バイトでも残っていれば不適合として扱う。要求がコードから明示されていない場合も、このターゲット制約を読み取って判定し、Pythonの利便性を理由に緩和しない。
+experiments/pysim/ の参照シミュレータと製品仕様の整合性、および組込み C++23 への移植可能性を確認する。評価条件と違反の重大度は [pysim review rubric](references/pysim_review_rubric.md)、実装規約は [Python coding standards](../../rules/coding-standards-python.md) を正本とする。
 
-本スキルは、**「組み込み C++ に 1 対 1 で移植可能であること」** を前提に、ユーザー指定の **9大評価軸** を専門サブエージェント群を活用して厳格に監査します。
+## 対象
 
-```mermaid
-graph TD
-    Target["レビュー対象指定<br/>(ファイル / モジュール / ディレクトリ)"] --> Step1["Step 1: 静的アンチパターンスキャン<br/>(scripts/scan_pysim_anti_patterns.py)"]
-    Step1 --> Step2["Step 2: 2体の専門サブエージェント並行召喚<br/>(invoke_subagent)"]
+ユーザーが指定したファイル、モジュール、ディレクトリと、直接関係する要求・コンポーネント仕様・テスト・設定を調べる。広いシステム境界を扱う場合は、[document structure](../../../docs/architecture/document_structure.md) と [architecture overview](../../../docs/architecture/architecture_overview.md) を先に確認する。
 
-    subgraph ParallelAudit["並行専門監査 (Parallel Audit)"]
-       A1["Subagent 1: spec-complexity-auditor<br/>- 1. 仕様書との一致性・Gotchas同期<br/>- 4. 計算量・設定値管理 (O(1)/定数一元化)<br/>- 5. 後方互換性がないか (不要なフォールバックの排除)<br/>- 8. デッドコードがないか (未使用関数/変数/到達不能分岐)<br/>- 9. 文書階層に基づくコンポーネント分割"]
-       A2["Subagent 2: type-memory-auditor<br/>- 2. 型が書いてあるか (Any禁止・完全型付け)<br/>- 3. set、dict、listを使っていないか (システムコンテナ強制)<br/>- 6. ROM/RAM配置可能性 (リードオンリーデータのROM化)<br/>- 7. 余計なメモリを使用していないか (__slots__/二重管理排除)"]
-    end
+## 手順
 
-    Step2 --> A1
-    Step2 --> A2
-    A1 --> Step3["Step 3: 結果統合と C++ 移植性判定<br/>(Parent Synthesizer)"]
-    A2 --> Step3
-    Step3 --> Output["Step 4: 構造化レビューレポート出力<br/>(PASS / WARN / FAIL)"]
-```
+1. **製品側の正本を確定する**: 対応する要求、WIT、コンポーネント仕様から製品の責務、API、ABI、メモリ契約を確認する。
+2. **仕様とシミュレータの境界を監査する**: Python固有のクラス、ファイル構成、寿命、APIを製品仕様の根拠としていないか確認する。識別子や型名はpysimだけで判断せず、製品側の定義を探す。製品側に根拠がない要件を実装から推測しない。
+3. **機械チェックを行う**: 対象範囲を指定して AST スキャナを実行し、続けて spec-integrator.yaml の pysim_imports 設定を使うソースチェックを確認する。
 
----
+   ~~~bash
+   uv run python .agents/skills/pysim-review/scripts/scan_pysim_anti_patterns.py <target_path> --json
+   ./tools/check-src.sh -g pysim
+   ~~~
 
-## 9大評価軸と監査観点
+   スキャン結果を実ファイルと照合し、設定上の除外範囲を確認する。
+4. **ルーブリックを適用する**: [pysim review rubric](references/pysim_review_rubric.md) の9評価軸をすべて確認する。状態・副作用・境界を直接検査するテストかも確認する。
+5. **所見をまとめる**: 仕様上の違反、実装詳細の漏れ、推定、未確認事項を区別し、対象コードと製品側の正本の両方を引用する。
 
-1. **仕様書との一致性 (Specification Parity & Invariants)**:
-   - `docs/components/**` のアーキテクチャ・状態機械・Gotchas（勘所）と一致しているか。
-   - 下記「製品仕様とpysim実装の境界監査」を実施し、pysimの実装方法を製品仕様や製品要求として書いていないか確認する。
-   - 仕様書の文章修正を提案する場合は `.agents/rules/documentation-standards.md` の段落型（定義・契約、動作・手順、理由・設計判断、検証）に従い、役割が切り替わる位置で分ける。句点や文字数だけで機械的に改段落せず、情報を保持する。
-2. **型が書いてあるか (Strict Static Typing & No Any)**:
-   - すべての引数・戻り値・属性に具象型が明記されているか。`typing.Any` と `object` が 0 件か。`T | None` / `Optional[T]` 以外のUnionがないか。製品コードに `raise` がないか（`except` は許可）。製品クラスの実行時メンバーへ `str` または文字列要素を含むコンテナを持たせず、ROM上の範囲・整数ID・固定長数値で表現しているか。文字列リテラル初期値、`ClassVar`、`Final` のクラス定数はROM配置可能なため許可する。
-3. **set、dict、listを使っていないか (No Built-in Containers: set/dict/list)**:
-   - 素の `dict`/`set`/`list`（リテラル、コンストラクタ、型注釈、内包表記を含む）が製品コードで使われていないか。`BitView`, `ReadOnlyFlatMapView`, `ReadOnlyRadixBinaryTreeView`, `StaticVector`, `RingBuffer` 等のシステムコンテナに置き換えられているか。設定で除外されたシステムコンテナ実装、テスト、シナリオ、ベンチマークは対象外とする。
-   - 禁止コンテナの抜け道として、可変列を `tuple` の連結・再生成で実装していないか。構築中データは固定容量コンテナで保持し、`tuple`/`bytes` はロード完了後の不変データを凍結する場合に限って認める。
-   - `isinstance` 等の RTTI、リフレクション用属性、`in` / `not in` 演算子による線形探索を製品コードに持ち込んでいないか。
-4. **計算量・設定値管理を意識したコードか (Algorithmic Complexity, Determinism & Configuration)**:
-   - $O(1)$ スケジューリング、決定論的ディスパッチ、ホットパスでの線形探索 $O(N)$ 回避、ループ内アロケーション排除、ロード時メタデータの事前計算キャッシュ。
-   - カード幅、アライメント、容量、閾値、バッファサイズ、ビット幅など、ビルドやターゲットで変更される運用定数を関数・クラス・ベンチマークへ直書きせず、正本の設定ファイルまたは設定定数から参照しているか。
-   - 同じ意味の数値が複数ファイルに重複していないか、設定変更時にコード・仕様書・テストの一部だけが変わる状態になっていないか確認する。命令コード、ビットマスク、ABI上不可避な固定値などの意味的定数は、名前付き定数化された場合に限り例外とする。
-5. **後方互換性がないか (No Dead Compatibility Fallbacks & API Regression Control)**:
-   - 仕様改定時に不要となった古いフォールバック分岐や廃止引数（Dead Compatibility Code）が残っていないか。一方で既存統合シナリオの互換性を壊していないか。
-6. **リードオンリー（ROM配置）にできるデータをリードライト（RAM配置）にしてないか (ROM vs RAM Placement)**:
-   - 定数テーブル、オプコード定義、WASM不変セクション、ステンシルバイト列等を `bytearray` や可変 `list` にせず、`bytes`, `tuple`, `ReadOnly*Storage` 等の ROM 配置可能構造にしているか。
-7. **余計なメモリを使用していないか (Zero-Waste Memory Footprint: Static RAM & Object Allocation)**:
-   - 実行時クラスでの `__slots__` 欠落による暗黙の `__dict__` 浪費がないか。二重管理フィールドや不要な冗長バッファがないか。過剰な固定容量や一時オブジェクトのアロケーションがないか。
-8. **デッドコードがないか (Dead Code & Unused Logic Elimination)**:
-   - 呼び出されない未使用の内部関数・メソッド、参照されない変数・フィールド・引数、未使用インポート文、到達不能な `if/else` 分岐がないか。
-9. **文書階層に基づくコンポーネント分割 (Documented Tier Component Boundaries)**:
-   - docs/architecture/document_structure.md と docs/architecture/architecture_overview.md を先に読み、Tier・コンポーネント・依存方向の正本を確定する。
-   - experiments/pysim/ の各パッケージ、主要モジュール、テストディレクトリを、対応する docs/components/** のコンポーネント仕様書へ一対一で対応付ける。対応先がない、または一つのモジュールが複数コンポーネントの責務を抱えている場合は記録する。
-   - 各モジュールの公開クラス・主要関数・状態データが、対応仕様書の責務と同じTierに収まっているか確認する。HAL、ランタイム、OS、IPC、ゲストアダプタ、物理ドライバなどの境界を、ファイル名だけでなく実際の処理内容で判定する。
-   - import、呼び出し、データ所有の方向を追跡し、下位Tierの実装が上位Tierの仕様や利用シナリオを取り込んでいないか、別コンポーネントの内部処理を重複実装していないか確認する。
-   - experiments/pysim/qa/ のテスト配置とテスト対象を確認する。ただしテストの配置だけを仕様の根拠にせず、仕様書・実装・テストの三者が同じコンポーネント境界を示しているかで判定する。
-   - 将来のリファクタリング予定は欠陥の免除理由にせず、現状の境界違反として報告する。一方、単なるテストハーネスや共有試験補助コードは、製品コンポーネントへの混入と区別して根拠を示す。
+## チェックリスト
 
-### 製品仕様とpysim実装の境界監査
+- **仕様と境界**: 状態、契約、GOTCHA、テストが一致し、Python固有の実装詳細が製品仕様に混入していない。
+- **型と制御**: 型注釈、Any/object、nullable契約、例外、実行時型判定が規約に沿う。
+- **コンテナとメモリ**: 固定容量コンテナ、ROM/RAM配置、オブジェクト寿命、容量、重複保持が予算と仕様に合う。
+- **計算量と決定性**: ホットパス、探索、事前計算、設定値、最悪時コストに根拠がある。
+- **互換性とコード健全性**: 不要なフォールバック、デッドコード、Tier越境、テスト境界の混在がない。
 
-- `docs/requires/**` と `docs/components/**` はFireball製品の要求・ネイティブ設計を定義する正本とする。`experiments/pysim/**` のPythonクラス、ファイル構成、オブジェクト寿命、CPython呼出し、Python用buffer配置を、製品の責務・ABI・メモリ配置・実行経路として記述しない。
-- 製品仕様の本文・表・状態図では、`ctypes`、`ctypes.Structure`、`PyObject`、CPython API、Python `memoryview`、Python配列・tuple・dict、および `experiments/pysim/` の実装パスを候補検索し、文脈ごとに判定する。
-- 製品仕様に記載されたクラス名、メソッド名、列挙子、引数形、型名は、要求・WIT・ABI・ネイティブ側の公開契約に定義があるか確認する。`experiments/pysim/` または `docs/components/**/concepts/` にしか定義がないシンボル、Python風シグネチャ、Pythonの依存注入式を製品APIとして記述している場合は、実装詳細の漏れとして報告する。語彙が両方に現れる場合も、製品側の定義元を確認する。
-- Pythonを使う形式検証・コンセプトコード、またはpysimを実行するベンチマーク／QAへのリンクは、検証手段や参考実装だと明示し、要求・設計の根拠として扱わない場合に限り許可する。証跡リンクを製品仕様の定義元にしない。
-- ネイティブ製品だけを記述する文書では、`Native CallFrame` のように製品内で自明な修飾語を付けず、仕様上の正規名（例: `CallFrame`）を用いる。`fireball_call_frame_native` のように公開ABIで定義された正確な識別子はそのまま保持する。
-- 実装の現状やpysimコードから未記載の製品要件を推測しない。要求・WIT・既存のネイティブ契約の根拠がない場合は仕様を追加せず、未確定事項として報告する。要求は要求として扱い、pysim実装から正当化を要求しない。
-- レビュー結果には、漏れを見つけたファイル・行、シミュレータ固有と判断した根拠、製品契約として残す情報と削除・一般化すべき実装詳細を分けて記録する。
+各項目の例外、重大度、詳しい確認方法はルーブリックと適用ルールに従う。最小ターゲット予算は推定で緩和せず、資料間で不一致があれば不一致として報告する。
 
----
+## 結果
 
-横断監査として、仕様の不変条件・境界・副作用を `assert` が直接検証しているかも確認します。`print`・非空判定・固定件数だけの代理検証、無条件 `pass`、検証失敗の握りつぶし、テスト自身が送出した `AssertionError` の自己捕捉は指摘対象です。pysim では不具合を検出した時点で停止することを優先します。
-
-## 運用手順 (Workflow)
-
-### Step 0: 製品仕様とpysim実装の境界確認
-
-`docs/architecture/document_structure.md` と対応する要求・WIT・コンポーネント仕様を読み、製品の正本を確認します。続けて製品仕様からシミュレータ実装詳細が漏れていないか候補検索し、文脈ごとに分類します。候補のAPI名・型名はpysim側の定義元だけで終わらず、製品側の契約定義も検索して突き合わせます。
-
-```bash
-rg -n -i 'ctypes|PyObject|CPython|memoryview|experiments/pysim|Native CallFrame|RuntimeDriveMode|JITRuntimeManager|PlatformDriverConfiguration|WasiHalBindings' docs/requires docs/components --glob '*.md' --glob '!**/formal/**' --glob '!**/concepts/**'
-```
-
-一致は一律削除せず、形式検証・コンセプト・ベンチマーク・QAの証跡と、要求や製品設計として書かれた実装詳細を区別します。Python実装にしか存在しない公開APIらしき識別子も検索し、製品側の定義元の有無を確認します。後者は製品のネイティブ契約に書き換えるか、正本に根拠がなければ除去してレビュー所見に残します。
-
-### Step 1: 静的アンチパターンスキャンの実行
-
-まず付属の AST スキャナを実行し、対象コード内の機械的違反（Any, object, 実行時文字列メンバー, dict, set, list, append, RTTI, bytearray, 型注釈欠落）を瞬時に抽出します。続けて `spec-integrator` のソース検証を実行し、`spec-integrator.yaml` の `pysim_imports` 設定に従ってTier 1の汎用コードがTier 2/3の実装へ逆流していないこと、bare importが`sys.path`依存で別Tierへ解決されないことを確認します。
-
-```powershell
-uv run python .agents/skills/pysim-review/scripts/scan_pysim_anti_patterns.py <target_path> --json
-powershell tools/check-src.ps1 -group pysim
-```
-
-スキャン結果の JSON リストを控えておき、Step 2 のサブエージェントへインプットとして渡します。
-
----
-
-### Step 2: 2体の専門サブエージェントの並行起動
-
-親エージェントは `invoke_subagent` を **1回の呼び出し** で実行し、2体のサブエージェントを並行ディスパッチします。
-
-```python
-invoke_subagent(
-    Subagents=[
-        {
-            "TypeName": "research",
-            "Role": "Spec and Complexity Auditor",
-            "Prompt": "...",  # プロンプト 1 を投入
-        },
-        {
-            "TypeName": "research",
-            "Role": "Type and Memory Placement Auditor",
-            "Prompt": "...",  # プロンプト 2 を投入
-        },
-    ]
-)
-```
-
-各サブエージェントには、対象ファイルパス、評価ルーブリック [`references/pysim_review_rubric.md`](./references/pysim_review_rubric.md)、および Step 1 のスキャン結果を共有します。
-
-#### サブエージェント 1: 仕様・計算量・後方互換性・デッドコード監査 (`spec-complexity-auditor`)
-- **担当評価軸**:
-  - **軸 1 (仕様書一致性)**: `docs/components/**` の対応仕様書（例: `os_scheduler.md`, `tier3_executer/interpreter.md` 等）を照合し、状態機械やアルゴリズム、Gotchas 不変条件との乖離がないか。
-  - **軸 4 (計算量・設定値管理・決定論性)**: ディスパッチループやホットパスで $O(N)$ 線形探索をしていないか、ループ内で不要なオブジェクト生成（GCプレッシャー）をしていないか、ロード時確定値の再計算がないか。変更可能な運用定数が設定ファイル・設定定数へ集約されているかも確認する。
-  - **軸 5 (後方互換性)**: 仕様改定に伴い不要となった古いフォールバックや二重管理パス（Dead Compatibility Code）が残っていないか。既存の統合シナリオを破壊していないか。
- - **軸 8 (デッドコード排除)**: 呼び出されない未使用関数・プライベートメソッド、参照されない変数・フィールド・引数、未使用インポート文、到達不能な `if/else` 分岐がないか。
-  - **軸 9 (文書階層に基づくコンポーネント分割)**: document_structure.md と architecture_overview.md からTier・依存関係を読み取り、対象モジュールとテストを対応仕様書へ割り当てる。責務の混在、誤ったTier配置、仕様書にない統合モジュール、下位から上位への逆依存、別コンポーネント内部の重複実装を、ファイルとシンボルの根拠付きで報告する。将来のpysimリファクタリング予定は現状の判定と分けて記録する。
-
-#### サブエージェント 2: 型・コンテナ・ROM/RAM配置・メモリ監査 (`type-memory-auditor`)
-- **担当評価軸**:
-   - **軸 2 (完全型付け)**: `typing.Any` と `object` が 0 件であるか、`T | None` / `Optional[T]` 以外のUnionがないか、すべての関数引数・戻り値・クラス属性が厳格に型付けされているか（Raw Generic の排除）。必須入力を `None` で受けるコンパイルAPIや、テスト／互換用の本番シンボルを検出し、呼び出し側でのメタデータ準備を要求する。
-  - **軸 3 (set/dict/list排除)**: 素の `dict`/`set`/`list`（リテラル、コンストラクタ、型注釈、内包表記を含む）が製品コードで使われていないか。設定で除外されたシステムコンテナ実装、テスト、シナリオ、ベンチマークは対象外とし、それ以外は View / 固定容量 Storage / `StaticVector` / `RingBuffer` に移行されているか。
-  - **軸 6 (ROM/RAM配置)**: 定数表やイミュータブルなバイト列が `bytearray` や可変オブジェクトで保持されず、Flash ROM に置ける `bytes`, `tuple`, `ReadOnly*Storage` 等の不変構造になっているか。
-  - **軸 7 (余計なメモリ使用排除)**: 実行時インスタンスクラスでの `__slots__` 欠落（暗黙の `__dict__` 浪費）、二重管理フィールドや不要な冗長バッファ、過剰な固定容量確保、ホットパス内の一時オブジェクト生成がないか。
-
----
-
-### Step 3: 結果統合と C++ 移植性判定
-
-親エージェントは各サブエージェントの報告を集約し、以下の基準で判定を下します。
-
-- **CRITICAL**: 実行時 `dict`/`set`/`list` の使用（設定で除外されたシステムコンテナ実装内部を除く）、`Any` / `object` の使用、None以外のUnion型、仕様書との真っ向からの乖離、ホットパスの致命的 $O(N)$ ボトルネック。
-- **MAJOR**: ROM化可能なデータの可変 RAM 保持、実行時クラスでの `__slots__` 欠落、二重管理データ構造、変更可能な運用定数の製品コードへの直書き、到達不能分岐や未使用関数（デッドコード）、型注釈欠落、不要な後方互換フォールバックの残存、動的型検査（No RTTI 違反）。
-- **MINOR**: 容量上限の根拠コメントの不足、未使用インポート文やローカル変数、Docstring の表現揺れ、局所的な最適化の余地。
-
-- **総合判定**:
-  - `PASS`: CRITICAL および MAJOR が 0 件。
-  - `WARN`: CRITICAL は 0 件だが、MAJOR な改善項目が存在する。
-  - `FAIL`: CRITICAL が 1 件以上存在する。
-
----
-
-### Step 4: 構造化レビューレポートの出力
-
-```markdown
-# pysim ソースコードレビューレポート: <Target Name>
-
-## 総合判定: [PASS / WARN / FAIL]
-- 対象ファイル: `<target_file>`
-- 対応設計仕様書: `<spec_file>`
-
----
-
-## 9大評価軸サマリー
-
-| 評価軸 | 担当 | 判定 | 主な所見 |
-| :--- | :--- | :---: | :--- |
-| **1. 仕様書との一致性** | Spec & Complexity | PASS/WARN/FAIL | 状態機械・Gotchas不変条件の準拠状況 |
-| **2. 型が書いてあるか** | Type & Memory | PASS/WARN/FAIL | Any排除、関数の引数・戻り値の完全型付け |
-| **3. set、dict、listを使っていないか** | Type & Memory | PASS/WARN/FAIL | set/dict/list排除、システムコンテナ(FlatMap/StaticVector等)の適用（実装内部は設定除外） |
-| **4. 計算量・設定値管理を意識したコードか** | Spec & Complexity | PASS/WARN/FAIL | O(1)決定論性、線形探索排除、事前計算キャッシュ、定数一元化 |
-| **5. 後方互換性がないか** | Spec & Complexity | PASS/WARN/FAIL | 不要な旧仕様フォールバックの排除、シナリオ互換 |
-| **6. ROM/RAM 配置可能性** | Type & Memory | PASS/WARN/FAIL | 定数・バイト列の不変性(bytes/tuple)、ROM化 |
-| **7. 余計なメモリを使用していないか** | Type & Memory | PASS/WARN/FAIL | __slots__定義、二重管理排除、一時オブジェクト最小化 |
-| **8. デッドコードがないか** | Spec & Complexity | PASS/WARN/FAIL | 未使用関数・変数・到達不能分岐の完全排除 |
-| **9. 文書階層に基づくコンポーネント分割** | Spec & Complexity | PASS/WARN/FAIL | Tier配置、責務境界、依存方向、仕様書・実装・テストの対応 |
-
----
-
-## 発見された課題・改善項目一覧
-
-### [CRITICAL] (C++ 移植不可 / 仕様重大違反)
-1. **[項目名]** (`<ファイル:行>`):
-   - 内容説明
-   - 改善推奨アクション（C++ 移植性の観点）
-
-### [MAJOR] (組込み規約違反 / 要修正)
-1. ...
-
-### [MINOR] (軽微な指摘 / 推奨)
-1. ...
-
----
-
-## 推奨される次アクション
-- 具体的なコード修正方針やリファクタリング提案
-```
+[共通レビュー手順](../review-protocol.md) の所見形式と判定を使う。全適用項目に判定を付け、仕様・実装・テストの根拠を追跡できる状態で報告した時点で完了とする。

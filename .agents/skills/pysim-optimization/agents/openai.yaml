@@ -1,0 +1,4 @@
+interface:
+  display_name: "PySIM Profiling & Optimization"
+  short_description: "Rank measured PySIM optimizations with VTune or uProf and target budgets."
+  default_prompt: "Use $pysim-optimization to profile a pysim workload with Intel VTune or AMD uProf and rank optimizations against Fireball constraints."

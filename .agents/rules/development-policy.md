@@ -5,21 +5,21 @@ globs: ["**/*"]
 scope: GLOBAL
 ---
 
-# Fireball 開発ガイド (Development Guide)
+# Fireball 開発ガイド
 
-Fireball プロジェクトにおける開発方針、プロセス、および各種ルールをここに集約する。
+Fireball の開発方針と作業順序を定める。
 文書階層、メタキーワード、traceability の正本は `docs/architecture/document_structure.md`、要求仕様の正本は `docs/requires/requirement_list.md` とする。
 
 ## 1. 開発方針 (Development Policy)
 
-極限環境（RAM 32KB - 64KB）で動作する高性能 WASM JIT ランタイムを実現するため、以下の原則を遵守する。
+評価対象の最小構成は RAM 32KB / ROM 96KB である。容量要件は `docs/requires/requirement_list.md`、物理配置と適合性の評価状況は `docs/architecture/resource_budget_estimation.md` を正本とする。
 
 - **Specification-First**: 実装に先立ち、対象領域の仕様を `docs/components/**` や `docs/requires/**` に記述する。
 - **Bonsai Design (盆栽デザイン)**: 最初から過密な実装を行わず、仕様・検証・シミュレーション・本実装と段階的に密度を引き上げる。
 - **Zero-Cost Abstraction (ゼロコスト抽象化)**: 言語機能やコンパイラ最適化を活用し、実行時のオーバーヘッドを排除する。
-- **Strict Memory Policy `{Policy_Memory}`**: `malloc` / `free` / `realloc` / `calloc` および通常の `new` / `delete` を禁止する。placement/in-place `new` と、プロジェクトで提供する独自ヒープ API・独自コンテナは許可する。標準の動的 STL コンテナは、システム提供アロケータを使用していても禁止する。
+- **Strict Memory Policy `{GLOBAL_Policy_Memory}`**: `malloc` / `free` / `realloc` / `calloc` および通常の `new` / `delete` を禁止する。placement/in-place `new` と、プロジェクトで提供する独自ヒープ API・独自コンテナは許可する。標準の動的 STL コンテナは、システム提供アロケータを使用していても禁止する。
 - **Code Size Constraint (20 KSLOC制約)**: コメントとテストコードを除く製品ソースコードを 20,000 行 (SLOC) 以内に収める。
-- **Rule Independence**: ルール本文は個別ドキュメント名やツール実装詳細に依存させず、普遍的な原則・役割・分類を参照して記述する。
+- **Rule Independence**: ルールに一時的な計測値やツールの内部実装を複製しない。変わり得る値は正本を参照する。
 
 ---
 
@@ -37,8 +37,8 @@ Fireball プロジェクトにおける開発方針、プロセス、および�
   - アルゴリズムの参照実装を Python で記述し、ロジックの成立性を確認する。言語・型規約は `.agents/rules/coding-standards-python.md` を厳格に遵守する。
 - **テスト設計 (テスト仕様書)**:
   - コンポーネントのテスト仕様書（`docs/qa/tier*/*_test_spec.md`）を作成し、正常系・異常系・境界値・直交表組み合わせを網羅する。
-- **形式検証 (`formal/*_model.py`)**:
-  - Python `pyModelChecking`（Kripke 構造・CTL 論理式）により、デッドロック不在、二重所有不在、リソース有界性等の不変条件を数学的に証明する。
+- **形式検証 (`docs/components/<tier>/formal/*_model.py`)**:
+  - Python `pyModelChecking` の Kripke 構造と CTL / LTL 式で、対象の不変条件を検証する。
   - **ガード無効化（`guards=False`）時の変異検査による反証性の担保を必須**とする。
 
 ### Step 2: Reference Simulation & Gotchas Feedback (勘所の抽出とテスト還元)
@@ -59,12 +59,12 @@ Fireball プロジェクトにおける開発方針、プロセス、および�
 
 ---
 
-## 3. エージェント向け運用ルール
+## 3. 作業時の確認
 
-- いかなる操作（実装、形式検証、ドキュメント修正）を開始する前にも、必ず `docs/plans/backlog_list.md` を読み、現在選択中のタスクがどのフェーズ・バックログアイテムに属するかを確認すること。
-- `Step 3`（プロダクション本実装）を開始する前に、必ず前段の `Step 0-2`（設計・テスト設計・形式検証・Gotchas還元）がチェックリスト要件を満たしているかユーザーに明示的に確認すること。エージェント判断での自己完結的な実装開始を禁止する。
+- 実装・仕様変更の着手時は `docs/plans/backlog_list.md` と `docs/plans/roadmap_phase.md` で作業の位置を確認する。
+- `Step 3` の着手前に、対象範囲で `Step 0-2` の仕様・テスト設計・形式検証・Gotchas 還元が整っているか確認する。欠落があれば補うか、未決事項を明示する。
 - 仕様・ドキュメント作成時は `.agents/rules/documentation-standards.md` を遵守し、上位要求とのトレーサビリティ `{Keyword}` を維持すること。
 - 不確実な仕様は憶測で埋めず、必要ならユーザーに質問すること。
 - `TODO(未決): [課題] [アクション]` を TODO 管理の基本形式とする。フェーズ番号（Phase 1 等）は `docs/plans/**` にのみ記述し、他の文書やコードには書かない。
-- **仕様（ドキュメント）と実装（コンセプトコード・形式検証モデル・テスト等）にまたがる変更は、必ず同一コミットで両方を更新すること。** 片方だけを直すと層間矛盾（アンチパターン G）を引き起こす。詳細は `.agents/rules/verification-antipatterns.md` を参照。
+- 仕様と実装・形式モデル・テストにまたがる変更は、対応する層を同じ変更単位で整合させる。層間矛盾の観点は `.agents/rules/verification-antipatterns.md` を参照する。
 - **日常の検証はコスト 0 のローカル検証のみを実行すること。** クラウド LLM 監査（API 課金）はユーザーから明示的な指示があった場合のみ実行する。

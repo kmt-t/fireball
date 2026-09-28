@@ -2,32 +2,31 @@
 
 ## 判断の土台
 
-Fireball の pysim は、最小構成 SRAM 32KB / Flash 96KB を対象とする参照モデルである。予算の正本・内訳は docs/architecture/resource_budget_estimation.md と docs/components/tier1_core/system_config.md から読み直す。過去の集計値をそのまま「空き」とみなさず、追加領域が既存プール内かプール外か、最大容量・整列・メタデータを含むかを示す。資料間の算術・前提が一致しなければ、合意済みの空き容量として扱わず不一致を報告する。
+Fireball の pysim は、最小構成 RAM 32KB / ROM 96KB を評価対象とする参照モデルである。容量要件は `docs/requires/requirement_list.md`、ARMv8-M の物理予算と評価状況は `docs/architecture/resource_budget_estimation.md` を正本とする。`docs/components/tier1_core/system_config.md` の設定値はシミュレータの容量制限として読む。過去の集計値をそのまま「空き」とみなさず、追加領域が既存プール内かプール外か、最大容量・整列・メタデータを含むかを示す。資料間の前提が一致しなければ不一致を報告する。
 
-VTune が測るのは計測ホスト上の Python プロセスである。Python オブジェクトの割当て量は、コンパイル後の Cortex-M の SRAM 配置量ではない。x86 のサンプル数、キャッシュミス、命令時間も、Cortex-M のサイクル数や Flash サイズと同値ではない。VTune は「どの処理が、どの入力で、どの頻度で動くか」「Python 上でどの呼び出し経路が高価か」を探す道具として使う。C++ 側の見積りは、移植先の型と固定容量から別に算出し、可能ならターゲットの map ファイル、セクションサイズ、スタック高水位、実機または同一 ABI のベンチマークで確かめる。
+VTune と AMD uProf は計測ホスト上のプロセスを測る。Python オブジェクトの割当て量は、コンパイル後の Cortex-M の SRAM 配置量ではない。ホストCPUのサンプル、キャッシュイベント、命令時間も、Cortex-M のサイクル数や Flash サイズと同値ではない。プロファイラは処理頻度とホスト上の高価な呼び出し経路を探すために使う。C++ 側の見積りは移植先の型と固定容量から別に算出し、可能なら対象ビルドの map、セクションサイズ、スタック高水位、実機または同一 ABI のベンチマークで確かめる。
 
 最適化の順序は、仕様・不変条件 → 実測されたボトルネック → 計算量・参照局所性 → RAM/ROM と最悪時時間 → 変更の広さと保守負荷とする。ホットであることは仕様変更やメモリ追加の免罪符にならない。現在の設計で十分な処理を、測定根拠なしに別コンテナや新しいキャッシュへ置き換えない。
 
-## VTune 分析の選択
+## プロファイラと分析の選択
 
-VTune の Python 対応と分析タイプは版・OS・CPU に依存する。まずインストール済み版の CLI help と公式ユーザーガイドを確認し、コレクタやオプションを推測しない。
+ユーザー指定を優先する。未指定なら、インストール済みの VTune または AMD uProf から、対象OS・CPU・Python版と調べたい問いに対応するものを選ぶ。版ごとの CLI help と公式ガイドで分析名・対応条件を確認し、機能を推測しない。
 
-| 疑問 | まず選ぶ分析 | 判断時の注意 |
-| --- | --- | --- |
-| どの pysim 関数／呼び出し経路が CPU 時間を使うか | Hotspots | Python managed-code 表示と Cython/native extension の双方を確認する。相対時間とサンプルの偏りを見る。 |
-| どの割当て箇所が Python のメモリ増減に寄与するか | Memory Consumption | Python では Linux 対象に限る。ターゲット SRAM、静的バッファ、Flash/ROM の証拠にはしない。 |
-| CPU キャッシュ階層やメモリ帯域がホスト実行を制限するか | Memory Access または Microarchitecture Exploration | 対象 CPU、ドライバ／Perf、収集モードの対応を確認する。ハードウェアイベントの結果を Cortex-M へ外挿しない。 |
-| シナリオ全体の実行時間・段階ごとの配分 | 既存ベンチマークと Hotspots | 既存ベンチマークを先に読み、起動・ロード・検証・後処理を含むか記録する。関数単体値と総時間を混同しない。 |
+| 疑問 | Intel VTune | AMD uProf | 判断時の注意 |
+| --- | --- | --- | --- |
+| どの pysim 関数／呼び出し経路が CPU 時間を使うか | Hotspots | Hotspots。Python の機能と実行モードを確認する。 | Python managed-code 表示と native extension の双方を確認し、相対時間とサンプル偏りを見る。uProf の Python 解析は版・OS・Python版・解析モードに依存する。 |
+| どの割当て箇所が Python のメモリ増減に寄与するか | Memory Consumption（Linux） | 版の公式ガイドで Python 割当て追跡への対応を確認する。対応がなければ個別計測を使う。 | 割当て解析はホスト上の割当て起点を示す。ターゲット SRAM、静的バッファ、Flash/ROM の証拠にはしない。 |
+| CPUイベントやメモリ待ちがホスト実行を制限するか | 対応CPU向けの Memory Access / Microarchitecture Exploration | 対応AMD CPU・イベント向けの PMC / IBS 分析 | CPU、OS、権限、ドライバ／Perf、イベントの対応を確認する。ハードウェアイベントを Cortex-M へ外挿しない。 |
+| シナリオ全体の時間と段階ごとの配分 | 既存ベンチマークと Hotspots | 既存ベンチマークと Hotspots | 起動・ロード・検証・後処理を含む範囲を記録する。関数単体値と総時間を混同しない。 |
 
-CLI の基本形は次のとおり。プレースホルダーは実際の Python 実行ファイル、絶対パスのベンチマーク、必要な引数に置き換え、使える knob は vtune -help で確かめる。
+CLI の例を示す。実際のコマンド・Pythonモード・オプションは、導入版の help と公式ガイドで確認してから使う。
 
     vtune -collect hotspots -result-dir <unique-result-dir> -- <python> <absolute-benchmark.py> [args]
-    vtune -report hotspots -result-dir <unique-result-dir> -report-output <report.txt>
-    vtune -collect memory-consumption -result-dir <unique-result-dir> -- <python> <absolute-benchmark.py> [args]
+    AMDuProfCLI collect --config hotspots -o <result-dir> --python <python> <absolute-benchmark.py> [args]
 
-Memory Consumption は Python プロファイルでは Linux のみ対応する。Windows で使えない分析を代替の数値であるかのように推定しない。VTune が存在しない・権限や PMU 制約で分析できない場合は、導入や権限変更を勝手に行わず、利用可能な結果・既存ベンチマークでできる範囲と未測定項目を示す。
+AMD uProf の上記 Python CLI 例は eBPF サンプリングモード用であり、OS・Python版などの前提がある。別モードでは構文が異なる。VTune の Python Memory Consumption は Linux 対象である。利用できない分析を別の数値で代用せず、プロファイラがない場合や権限・PMU制約がある場合は、導入や権限変更を行わずに未測定項目を報告する。
 
-一回の測定結果だけで採否を決めない。Python バージョン、VTune 版、OS/CPU、作業ツリー、入力、コマンド、ウォームアップ、反復回数、計測時間、結果の正当性チェックを記録する。基準と候補を同じ条件で複数回測り、中央値とばらつきを比べる。VTune を通した時間と非計測ベンチマーク時間を分ける。差がばらつきより小さい場合は「改善を確認」と言わない。
+一回の測定だけで採否を決めない。Python版、プロファイラ版、OS/CPU、作業ツリー、入力、コマンド、ウォームアップ、反復回数、計測時間、結果の正当性チェックを記録する。基準と候補を同一条件で複数回測り、中央値とばらつきを比べる。プロファイラ計測と通常ベンチマークの時間を分け、差がばらつきより小さい場合は改善を確認したとしない。
 
 このリポジトリの experiments/pysim/benchmarks/run_all.py は線形メモリ、vMMIO、JIT、AO-Bench などをまとめて走らせる。原因調査ではまずボトルネックに対応する個別ベンチマークを選び、総合スイートはマクロな回帰確認に使う。ワークロードの出力や意味的結果をベンチマークが直接検査しているかも読む。
 
@@ -44,7 +43,7 @@ Memory Consumption は Python プロファイルでは Linux のみ対応する�
 | 実行中に更新される固定容量のキー集合／マップ | MutableFlatSetStorage / MutableFlatMapStorage。仕様が求めるときだけ Radix 版 | 最大件数、キー/値の幅、更新コストを先に確定する。所有ストレージと同じ実体を指す View を所有側で重複保持しない。 |
 | 上限付き LIFO 列 | StaticVector | 実測上の push/pop 列が必要で、容量上限を仕様から導けるとき。 |
 | 上限付き FIFO | RingBuffer | 順序付きキューが必要なとき。LIFO 用途へ流用しない。 |
-| 頻繁に再利用する同一検索結果 | 既存仕様のキャッシュまたは追加の固定容量キャッシュ案 | VTune/カウンタ等で時間局所性とヒット率を確かめる。キー、値、valid bit、衝突、更新時無効化を含む RAM コストを計上し、必要な検索器より総コストが小さいときだけ候補にする。 |
+| 頻繁に再利用する同一検索結果 | 既存仕様のキャッシュまたは追加の固定容量キャッシュ案 | 選択したプロファイラや専用カウンタで時間局所性とヒット率を確かめる。キー、値、valid bit、衝突、更新時無効化を含む RAM コストを計上し、必要な検索器より総コストが小さいときだけ候補にする。 |
 
 この表は語彙を追加・変更する許可ではない。既存コンポーネント仕様がデータ構造を定めている場合はそれに従う。例えば小規模表に Radix 索引を足す、所有側で storage と view を二重管理する、テーブルと値を別配列にして意味のない複製を作る案は、ホストで少し速くても提案から除く。コンテナ案には、要素上限と sizeof ベースの概算（要素、整列、容量、カウンタ、索引、アロケータがあればその分）を必ず添える。
 
@@ -65,20 +64,20 @@ Memory Consumption は Python プロファイルでは Linux のみ対応する�
 
 候補ごとに以下を区別する。
 
-1. **観測**: VTune の分析名、関数/呼び出し経路、サンプル割合・時間・カウンタ、ワークロードと実行条件。
+1. **観測**: 使用プロファイラと分析名、関数/呼び出し経路、サンプル割合・時間・カウンタ、ワークロードと実行条件。
 2. **解釈**: 総時間への寄与と測定の限界。ホスト Python だけで分かる事実と、ターゲットへ移植する推論を分ける。
 3. **変更案**: 変更するアルゴリズム／コンテナ／計算タイミングと、既存仕様のどの条件に適合するか。
 4. **コスト**: RAM bytes と配置先、ROM bytes、初期化処理、実行時コスト、worst-case latency、Tier 依存やテストの広がり。数値にできなければ未見積もりと明記する。
-5. **確かめ方**: 関係する意味テスト、代表ベンチマーク、VTune の再計測、対象ビルドの map/section/stack データ。
+5. **確かめ方**: 関係する意味テスト、代表ベンチマーク、同じプロファイラでの再計測、対象ビルドの map/section/stack データ。
 
 最優先は、仕様を保ちながら、繰り返しホットな経路の計算量を落とし、既存の固定容量語彙で予算内に収まる案である。わずかなホスト時間短縮と引き換えに新しい常駐状態、重複インデックス、初期化経路、Tier 越境、要件の緩和を持ち込む場合は採用を保留し、その費用と代案を並べる。効果が測定ノイズ以下・未確認なら最適化を勧めない。
 
-## 公式 VTune 参照
+## 公式プロファイラ資料
 
-版によって画面、オプション、対応ハードウェアは変わるため、実行時にはインストール済み版のガイドを優先する。
+機能と対応条件は版によって変わるため、実行時にはインストール済み版のガイドを優先する。
 
-- [Python Code Analysis](https://www.intel.com/content/www/us/en/docs/vtune-profiler/user-guide/2025-4/python-code-analysis.html): Python の Hotspots/Threading と Linux の Memory Consumption 対応、および制限。
-- [Analysis Types](https://www.intel.com/content/www/us/en/docs/vtune-profiler/user-guide/2025-4/analysis-types.html): 各分析タイプの用途とターゲット制限。
-- [Memory Consumption CLI](https://www.intel.com/content/www/us/en/docs/vtune-profiler/user-guide/2025-4/run-memory-consumption-analysis-command-line.html): Python プロセスの割当てと解放を収集する CLI。
-- [Memory Usage View](https://www.intel.com/content/www/us/en/docs/vtune-profiler/user-guide/2025-4/memory-usage-view.html): ホスト CPU のキャッシュ、ロード/ストア、帯域分析。
-- [VTune Command Syntax](https://www.intel.com/content/www/us/en/docs/vtune-profiler/user-guide/2025-4/command-syntax.html): CLI の基本構文。
+- [Intel VTune Python code analysis](https://www.intel.com/content/www/us/en/docs/vtune-profiler/user-guide/2026-1/python-code-analysis.html): Python hotspot とメモリ解析の対応条件。
+- [Intel VTune Memory Consumption](https://www.intel.com/content/www/us/en/docs/vtune-profiler/user-guide/2026-1/memory-consumption-analysis.html): Linux Python/native 割当て解析。
+- [AMD uProf Python profiling modes](https://docs.amd.com/r/en-US/57368-uProf-user-guide/8.3.2.-Profiling-Modes): Python版と解析モードの機能表。
+- [AMD uProf Python CLI](https://docs.amd.com/r/en-US/57368-uProf-user-guide/8.3.3.4.2.-Using-CLI): Python hotspot の CLI とモード固有オプション。
+- [AMD uProf CLI reference](https://docs.amd.com/r/en-US/68658-uProf-getting-started-guide/uProf-CLI): CLI コマンドと設定の確認方法。

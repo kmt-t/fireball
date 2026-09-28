@@ -5,26 +5,24 @@ globs: ["experiments/**", "docs/**/concepts/**", "docs/**/formal/**", "tools/**"
 scope: GLOBAL
 ---
 
-# Fireball Python コーディング標準 (Python Coding Standards)
+# Fireball Python コーディング標準
 
 本ドキュメントは、Fireball プロジェクトにおける参照シミュレータ（`experiments/pysim`）、コンセプトコード（`docs/**/concepts/`）、形式検証モデル（`docs/**/formal/`）、およびテストコードの Python 実装規約を定義する。
 
-- `experiments/pysim/` は評価ターゲットの最小構成（SRAM 32KB / Flash 96KB）を前提に、物理予算を一バイト単位で厳格に守る。回避可能なメタデータ複製、所有権のないビュー以外のキャッシュ、可変長コンテナ、文字列本体、二重バッファ、未使用フィールドは「警告」ではなく実装不適合とする。ターゲット条件がコードから読み取れない場合も、Pythonの利便性を理由に緩和してはならない。
+- `experiments/pysim/` は組み込み実装の設計制約を表す参照シミュレータとする。最小構成の容量要件は `docs/requires/requirement_list.md`、物理配置と適合性の評価状況は `docs/architecture/resource_budget_estimation.md` に従う。pysim の設定値やホスト上の計測値を実機の使用量として扱わない。不要なメタデータ複製、二重バッファ、未使用フィールドを避け、容量・所有権・寿命を説明できる構成にする。
 
 - `docs/**/concepts/` のコンセプトコードでは、Python 標準の `dict` / `set` / `list` を使用してよい。
-- `experiments/pysim/` には専用の `pysim-review` 規約を適用し、素の `dict` / `set` / `list` を禁止する。リテラル、`dict()` / `set()` / `list()`、型注釈、および内包表記も対象とし、`ReadOnly*Storage`、`Mutable*Storage`、`StaticVector`、`RingBuffer` 等のシステムコンテナを使用する。両者の規約を混同しない。
+- `experiments/pysim/` の製品コードでは、素の `dict` / `set` / `list` を禁止する。リテラル、コンストラクタ、型注釈、内包表記も対象とする。固定容量のシステムコンテナを使う。
 - 禁止コンテナを回避するために、可変列を `tuple` の連結・再生成へ置き換えてはならない。構築中・可変データは固定容量システムコンテナで保持し、ロード完了後に不変化する値だけを `tuple` または `bytes` へ凍結する。
 - `experiments/pysim/` の製品クラス／データクラスの実行時メンバーに `str` 型を持たせてはならない。WASM名や診断文字列を含む可変長文字列はメンバーへ格納せず、ROM上のバイト範囲、整数ID、または固定長の数値表現で保持する。クラス定数として文字列リテラルを直接初期化するメンバー、および `ClassVar` / `Final` で宣言したROM定数は許可する。テスト、シナリオ、ベンチマーク、AOベンチマークは設定された検査除外範囲とする。
 - 例外として、`spec-integrator.yaml` の `builtin_container_exclude_paths` に指定したシステムコンテナ実装内部、テスト、シナリオ、ベンチマークでは、組み込み `dict` / `set` / `list` を使用してよい。製品コードには適用しない。
 - ストレージの所有権は常に単一インスタンスに限定する。所有側は実体ストレージだけを保持し、検索用のviewを二重に保持しない。別インスタンスが所有ストレージを検索する場合だけ、借用viewを渡す。
 
-## 0.1 検索コンテナの選択規約
+## 1. pysim の制約
 
-- 読み取り回数とエントリ数が大きい表では、全域二分探索によるキャッシュ汚染を避けるため `RadixBinaryTreeView` を使い、基数表で探索範囲を先に絞る。
-- エントリ数が小さい表は基数表を持たず、ソート済みの `FlatMapView` を使う。小さい表へRadix索引を追加してはならない。
-- アクセスに局所性がある固定表は、キーをXORで折りたたんだダイレクトマップキャッシュを使う。32ビットキーを4ビットへ折りたたむ場合は、16、8、4ビット右シフトとのXORを順に適用してから `& 0xF` とする。エントリ数に合わせてキャッシュ容量を設定し、キーの単純な下位ビットだけを使わない。
+検索構造とキャッシュは、対象表の仕様、件数、アクセス頻度、実測結果に基づいて選ぶ。具体的なアルゴリズムと容量はコンポーネント仕様を正本とする。
 
-## 1.1 pysim の即時失敗とアサーション規約
+### 即時失敗とアサーション
 
 - `experiments/pysim/` は参照シミュレータであり、不変条件・事前条件・事後条件・型契約に違反した場合は `assert` で直ちに停止させる。pysim で不具合を握りつぶしたり、暗黙のフォールバックで処理を継続したりしてはならない。
 - pysim の製品コードでは明示的な `raise` を禁止する。`try` / `except` による境界での捕捉は許可するが、エラーは `Result` 等の戻り値へ集約し、事前条件・不変条件違反は `assert` で停止させる。
@@ -36,14 +34,14 @@ scope: GLOBAL
 - 失敗を期待するテストでは、対象処理を `try` ブロック内で実行し、対象が送出する具体的な例外だけを捕捉する。テスト自身が失敗用に送出した `AssertionError` を同じ `except` で捕捉して成功扱いにする偽陽性パターンを禁止する。
 - 仕様上スキップが許可された外部依存の `ImportError` を除き、広すぎる `except Exception` や検証失敗を無条件に無視する例外処理を禁止する。
 
-## 1.2 pysim のimport依存方向規約
+### import の依存方向
 
 - `experiments/pysim/` の製品コードは、`docs/architecture/document_structure.md` のTier依存方向に従う。上位Tier（小さいTier番号）は下位Tierの実装モジュールをimportしてはならず、下位Tierから上位Tierの契約・インターフェースを参照する。
 - Interpreter、WASMタスクアダプタ、テスト用ハーネスなど特定ランタイムに固有の処理をCOOS・IPC RouterなどTier 1の汎用コンポーネントへ持ち込んではならない。必要なアダプタはランタイムまたはテスト側に置く。
 - bare importが`sys.path`の順序で別Tierの同名モジュールへ解決される構成を禁止する。各ローカルimportは所属Tierと実ファイルが一意に確認できなければならない。
-- レビュー時は `powershell tools/check-src.ps1 -group pysim` を実行し、`spec-integrator.yaml` の `pysim_imports` 設定に基づく違反を0件にする。テスト・シナリオ固有の補助importは製品コードの依存グラフへ混入させない。
+- ローカル import の対象ファイルと Tier は `spec-integrator.yaml` の `pysim_imports` を正本とする。検査入口は `tools/README.md` に従う。テスト・シナリオ固有の補助 import は製品コードの依存グラフへ混入させない。
 
-## 1. 型安全性と `Any` 完全禁止規約 (Strict Type Safety)
+## 2. 型安全性
 
 - **`typing.Any` / `object` の完全禁止 (アンチパターン I の防止)**:
   - 静的型解析の形骸化を防止するため、コードベース全体で `typing.Any` の使用を **0 件（完全禁止）** とする。
@@ -53,30 +51,30 @@ scope: GLOBAL
 
 ---
 
-## 2. Gotchas & Invariants（実装の勘所・不変条件）の同期義務
+## 3. Gotchas と不変条件
 
 - **docstring およびコメントへの明記**:
   - シミュレーションやテストから得られた「実装の勘所（Gotchas）」および「システム不変条件（Invariants）」は、関連するクラスや関数の docstring / コメントに固有識別子（例: `GOTCHA-COOS-01`, `GOTCHA-LOAD-02` 等）と共に設計理由を明記する。
 - **三位一体の同期**:
   - 設計仕様書（Markdown）、シミュレータ/コンセプトコード（Python）、およびテストコード（テスト仕様書・ユニットテスト）の 3 者間で Gotchas 識別子と不変条件の記述を常に一致させる。
-- **自然言語コメントと最新設計準拠 (アンチパターン J の防止)**:
-  - コード内のコメントは最新の設計思想（3-Stage Routing, ADR_RendezvousChannel, Zero-Allocation, 3-Bank Cache, Symmetric Transfer 等）に準拠させ、古い内部用語（`(AoS)` 等）を混入させない。
+- **コメントと設計の整合**:
+  - コメントには現行仕様の用語を使い、実装の詳細を設計上の契約として扱わない。
 
 ---
 
-## 3. 形式検証モデル規約 (`docs/**/formal/*.py`)
+## 4. 形式検証モデル
 
 - **pyModelChecking の準拠**:
-  - Kripke 構造による状態空間定義と、CTL（計算樹論理: `AG`, `AF`, `AX`, `EF`, `Imply`, `Not` 等）による論理式を記述する。
+  - Kripke 構造による状態空間定義と、対象の性質に合う CTL / LTL 式を記述する。
 - **変異検査（guards=False）による反証性の担保**:
   - 単に正常系モデルで CTL 式が PASS することを確認するだけでなく、必ず `guards=False` 引数によるガード無効化経路を設け、仕様違反状態へ遷移した際に CTL 式が確実に FAIL すること（保護証明）を実装・検証する。
 
 ---
 
-## 4. 外部依存と実行環境規約
+## 5. 外部依存と実行環境
 
 - **Python バージョン**:
-  - Python 3.11+ / 3.14+ 準拠。
+  - 対応バージョンは `pyproject.toml` の `requires-python` を正本とする。
   - パッケージ管理およびスクリプト実行は `uv` を標準とする。
 - **外部任意依存の安全ガード**:
   - `unicorn` 等のプラットフォーム依存・任意インストールのツールは必ず `try-except ImportError` でガードする。

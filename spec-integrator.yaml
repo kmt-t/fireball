@@ -44,19 +44,6 @@ tiers:
     path_pattern: 'qa/.*\.md'
     description: "全Tier横断のテスト仕様書および品質証跡。"
 
-keywords:
-  meta:
-    pattern: "^META_[A-Za-z0-9_]+$"
-    defined_in: 'architecture/document_structure\.md'
-  global:
-    pattern: "^GLOBAL_[A-Za-z0-9_]+$"
-    defined_in: 'architecture/document_structure\.md'
-  local:
-    # Allows hyphens in GOTCHA IDs. The keyword dictionary resolves each
-    # registered identifier to its exact source document.
-    pattern: "^[A-Za-z0-9_-]+$"
-    defined_in: 'requires/.*\.md'
-
 formal_verification:
   model_dir_name: "formal"
   tag: "{VERIFY_FORMAL}"
@@ -115,20 +102,12 @@ evidence:
 
 llm_judge:
   tag: "{VERIFY_LLM}"
-  default_backend: "laya"
+  default_backend: "jev"
   backends:
-    laya:
-      endpoint: "http://127.0.0.1:8000/v1/systemone"
-      model: "multilingual"
     jev:
       api_key_env: "OPENROUTER_API_KEY"
       endpoint: "https://openrouter.ai/api/alpha/decisions"
       model: "typesafe/jev-1.13"
-    sakura:
-      api_key_env: "SAKURA_API_KEY"
-      model: "preview/Qwen3.6-35B-A3B"
-    openrouter:
-      api_key_env: "OPENROUTER_API_KEY"
   checks:
     - id: "vertical_consistency"
       name: "Vertical Consistency (Definition vs. Designs)"
@@ -136,13 +115,6 @@ llm_judge:
       enabled: true
       severity: "ERROR"
       prompt_file: "tools/spec-integrator/prompts/checks/vertical_consistency.prompt"
-
-    - id: "cross_doc_consistency"
-      name: "Cross-Document Consistency (Pairwise Drift & Mismatches)"
-      mode: ["link_pair"]
-      enabled: true
-      severity: "ERROR"
-      prompt_file: "tools/spec-integrator/prompts/checks/cross_doc_consistency.prompt"
 
     - id: "keyword_definition_integrity"
       name: "Keyword Definition Source, Placement, and Meaning"
@@ -157,13 +129,6 @@ llm_judge:
       enabled: true
       severity: "ERROR"
       prompt_file: "tools/spec-integrator/prompts/checks/keyword_reference_traceability.prompt"
-
-    - id: "internal_consistency"
-      name: "Internal Document Consistency"
-      mode: ["single"]
-      enabled: true
-      severity: "ERROR"
-      prompt_file: "tools/spec-integrator/prompts/checks/internal_consistency.prompt"
 
     - id: "numeric_agreement"
       name: "Numeric Agreement & Arithmetic"
@@ -221,13 +186,6 @@ llm_judge:
       severity: "ERROR"
       prompt_file: "tools/spec-integrator/prompts/checks/reference_by_keyword_or_filename.prompt"
 
-    - id: "rationale_over_history"
-      name: "Design Rationale Over Chronological History"
-      mode: ["single", "link_pair"]
-      enabled: true
-      severity: "WARNING"
-      prompt_file: "tools/spec-integrator/prompts/checks/rationale_over_history.prompt"
-
     - id: "redundancy_and_duplication"
       name: "Redundancy & Duplication Audit (Permit Multi-perspective Descriptions)"
       mode: ["link_pair"]
@@ -235,10 +193,12 @@ llm_judge:
       severity: "WARNING"
       prompt_file: "tools/spec-integrator/prompts/checks/redundancy_and_duplication.prompt"
 
+embeddings:
+  endpoint: "http://localhost:11434"
+
 terminology:
   enabled: true
   embedding_model: "qwen3-embedding"
-  embedding_backend: "ollama"
   similarity_threshold: 0.80
   confidence_threshold: 0.60
   max_terms: 1000
@@ -435,7 +395,6 @@ semantic_topic:
   duplicate_warning_threshold: 0.93
   max_pairs: 1000
   embedding_model: "qwen3-embedding"
-  backend: "ollama"
   batch_size: 16
 
 prose_readability:

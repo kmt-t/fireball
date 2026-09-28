@@ -90,23 +90,20 @@ GiNZA の構文解析は、冗長性や意味の正しさを判定しない。�
 | 目的 | Windows | Linux / WSL | 区分 |
 | :--- | :--- | :--- | :--- |
 | 用語候補の静的確認 | <code>powershell tools/llm-word.ps1 -quick</code> | <code>./tools/llm-word.sh --quick</code> | LLM 判定なし（未作成の埋め込みを Ollama のローカルモデルで生成） |
-| 用語揺れの意味判定 | <code>powershell tools/llm-word.ps1</code> | <code>./tools/llm-word.sh</code> | Laya と Ollama を既定で使用 |
-| キーワードのリスク評価 | <code>powershell tools/risk.ps1</code> | <code>./tools/risk.sh</code> | ローカル Laya を既定で使用 |
-| 文書単体のレビュー | <code>powershell tools/llm-single-review.ps1 -file &lt;path&gt;</code> | <code>./tools/llm-single-review.sh --file &lt;path&gt;</code> | ローカル Laya を既定で使用 |
-| キーワード定義・参照ペアのレビュー | <code>powershell tools/llm-keyword-review.ps1 -keyword &lt;name&gt;</code> | <code>./tools/llm-keyword-review.sh --keyword &lt;name&gt;</code> | 定義セクションと参照セクションを1組ずつ評価。ローカル Laya を既定で使用 |
-| {VERIFY_LLM} 義務の履行 | <code>powershell tools/llm-judge.ps1</code> | <code>./tools/llm-judge.sh</code> | ローカル Laya を既定で使用し、判定を記録 |
+| 用語揺れの意味判定 | <code>powershell tools/llm-word.ps1</code> | <code>./tools/llm-word.sh</code> | OpenRouter の Jev と Ollama を既定で使用 |
+| キーワードのリスク評価 | <code>powershell tools/risk.ps1</code> | <code>./tools/risk.sh</code> | OpenRouter 経由の Jev を既定で使用 |
+| 文書単体のレビュー | <code>powershell tools/llm-single-review.ps1 -file &lt;path&gt;</code> | <code>./tools/llm-single-review.sh --file &lt;path&gt;</code> | OpenRouter 経由の Jev を既定で使用 |
+| キーワード定義・参照ペアのレビュー | <code>powershell tools/llm-keyword-review.ps1 -keyword &lt;name&gt;</code> | <code>./tools/llm-keyword-review.sh --keyword &lt;name&gt;</code> | 定義セクションと参照セクションを1組ずつ評価。OpenRouter 経由の Jev を既定で使用 |
+| {VERIFY_LLM} 義務の履行 | <code>powershell tools/llm-judge.ps1</code> | <code>./tools/llm-judge.sh</code> | OpenRouter 経由の Jev を既定で使用し、判定を記録 |
 | 保存済み判定の確信度検索 | <code>powershell tools/llm-findings.ps1 -minConfidence 0.70</code> | <code>./tools/llm-findings.sh --min-confidence 0.70</code> | DBを検索。API利用なし |
 
-クラウド API 利用を伴う監査は、ユーザーの明示指示がある場合だけ実行する。
+OpenRouter API を利用する監査は課金対象のため、ユーザーの明示指示を受けて実行する。
 <code>{VERIFY_LLM}</code> の義務は <code>llm-judge</code> で記録付きで履行する。詳細なオプションは [spec-integrator のリファレンス](spec-integrator/README.md) を参照する。
-既定の判定バックエンドはローカル Laya (<code>http://127.0.0.1:8000/v1/systemone</code>)、埋め込みバックエンドはローカル Ollama (<code>http://localhost:11434</code>) である。埋め込みモデルを取得するには <code>ollama pull qwen3-embedding</code> を実行する。Laya サーバーはツールの uv 環境で管理する。
+既定の判定バックエンドは OpenRouter 経由の Jev (<code>typesafe/jev-1.13</code>) であり、<code>OPENROUTER_API_KEY</code> を環境変数に設定する。埋め込み生成にはローカル Ollama の <code>qwen3-embedding</code> を使う。初回は <code>ollama pull qwen3-embedding</code> を実行する。
 
 ```bash
-uv sync --project tools/spec-integrator --extra local-llm
-uv run --project tools/spec-integrator --extra local-llm python -c \
-  "import torch; print(torch.cuda.is_available())"
-LAYA_HOST=127.0.0.1 LAYA_MODELS=multilingual LAYA_PRELOAD=1 \
-  uv run --project tools/spec-integrator --extra local-llm laya-serve
+# OPENROUTER_API_KEY を設定したシェルで実行する
+ollama pull qwen3-embedding
 ```
 
-<code>torch.cuda.is_available()</code> が <code>True</code> の場合、<code>LAYA_DEVICE</code> を指定しなくても Laya が GPU を選ぶ。利用できない場合は CPU に切り替わる。Linux で GPU が選ばれない場合は、uv 環境の PyTorch と NVIDIA ドライバを確認する。クラウドを明示的に使う場合は <code>--backend openrouter</code> などを指定する。Laya は型付き判定だけを返し、説明文や引用箇所は生成しない。確信度の定義は Jev と異なるため、既存の確信度しきい値を同じ意味の値として扱わない。
+文書レビュー、リスク評価、用語判定は Jev の System One チェックシートで実行する。埋め込み生成は Ollama のみを使う。

@@ -88,6 +88,43 @@ class BitView:
         return BitView(self.storage, self.bits, self.origin + first * self.bits, last - first)
 
 
+class ReadOnlyBitView:
+    """Borrowed packed-bit view that exposes reads and narrowing only."""
+
+    __slots__ = ("bits", "count", "origin", "storage")
+
+    def __init__(self, storage: bytes, bits: int, origin: int = 0, count: int = 0):
+        self.storage = storage
+        self.bits = bits
+        self.origin = origin
+        self.count = count
+
+    def __len__(self) -> int:
+        return self.count
+
+    def _bit_pos(self, index: int) -> int:
+        assert 0 <= index < self.count, (
+            f"index {index} outside read-only bit view of size {self.count}"
+        )
+        return self.origin + index * self.bits
+
+    def at(self, index: int) -> int:
+        bit = self._bit_pos(index)
+        mask = (1 << self.bits) - 1
+        return (self.storage[bit >> 3] >> (bit & 7)) & mask
+
+    def slice(self, first: int, last: int) -> ReadOnlyBitView:
+        assert 0 <= first <= last <= self.count, (
+            f"a read-only view may only shrink (0 <= {first} <= {last} <= {self.count})"
+        )
+        return ReadOnlyBitView(
+            self.storage,
+            self.bits,
+            origin=self.origin + first * self.bits,
+            count=last - first,
+        )
+
+
 class ReadOnlyBitStorage:
     """
     fireball::read_only_bit_storage<Bits, Count>:
@@ -115,8 +152,8 @@ class ReadOnlyBitStorage:
         mask = (1 << self.bits) - 1
         return (self._buffer[bit >> 3] >> (bit & 7)) & mask
 
-    def view(self, origin: int = 0, count: int | None = None) -> BitView:
-        return BitView(
+    def view(self, origin: int = 0, count: int | None = None) -> ReadOnlyBitView:
+        return ReadOnlyBitView(
             self._buffer, self.bits, origin=origin, count=count if count is not None else self.count
         )
 
@@ -182,7 +219,7 @@ class MutableBitStorage:
 # ---------------------------------------------------------------------------
 
 
-@dataclass
+@dataclass(slots=True)
 class ReadOnlyFlatSetStorage(Generic[KeyT]):
     """Owns an immutable, sorted, duplicate-free flat-set sequence."""
 
@@ -263,15 +300,32 @@ class ReadOnlyFlatSetView(Generic[KeyT]):
 # ---------------------------------------------------------------------------
 
 
-@dataclass
+@dataclass(frozen=True, slots=True)
 class ReadOnlyFlatMapStorage(Generic[KeyT, ValT]):
     """Owns an immutable, sorted flat-map sequence."""
 
-    entries: tuple[tuple[KeyT, ValT], ...]
+    entries: Sequence[tuple[KeyT, ValT]]
 
     @classmethod
     def create(cls, entries: Sequence[tuple[KeyT, ValT]]) -> ReadOnlyFlatMapStorage[KeyT, ValT]:
-        return cls(entries=tuple(sorted(entries, key=lambda entry: entry[0])))
+        sorted_entries = tuple(sorted(entries, key=lambda entry: entry[0]))
+        for index in range(1, len(sorted_entries)):
+            assert sorted_entries[index - 1][0] != sorted_entries[index][0], (
+                f"duplicate flat-map key {sorted_entries[index][0]!r}"
+            )
+        return cls(entries=sorted_entries)
+
+    @classmethod
+    def from_sorted_static_entries(
+        cls,
+        entries: StaticVector[tuple[KeyT, ValT]],
+    ) -> ReadOnlyFlatMapStorage[KeyT, ValT]:
+        """Takes ownership of an already sorted fixed vector without copying it."""
+        for index in range(1, len(entries)):
+            previous = entries[index - 1][0]
+            current = entries[index][0]
+            assert previous < current, f"flat-map keys must be unique and sorted: {current!r}"
+        return cls(entries=entries.freeze())
 
     def view(self) -> ReadOnlyFlatMapView[KeyT, ValT]:
         return ReadOnlyFlatMapView(self.entries)
@@ -403,7 +457,12 @@ def build_radix_table(
     """
     if not keys:
         return [0, 0]
-    sorted_keys = sorted(keys)
+    sorted_keys = sorted(
+        keys,
+        key=(lambda key: (key_transform(key), key))
+        if key_transform is not None
+        else (lambda key: (key, key)),
+    )
     transformed = [key_transform(k) if key_transform is not None else k for k in sorted_keys]
     max_prefix = max(transformed) >> radix_shift
     table_size = max_prefix + 2
@@ -422,19 +481,47 @@ def build_radix_table(
     return table
 
 
-@dataclass
+def _build_radix_table_for_sorted_entries(
+    entries: Sequence[tuple[int, ValT]],
+    radix_shift: int,
+    key_transform: Callable[[int], int] | None,
+) -> list[int]:
+    """Builds radix bounds directly from the canonical sorted entry array."""
+    if not entries:
+        return [0, 0]
+    max_prefix = -1
+    for key, _value in entries:
+        transformed_key = key_transform(key) if key_transform is not None else key
+        prefix = transformed_key >> radix_shift
+        if prefix > max_prefix:
+            max_prefix = prefix
+    table_size = max_prefix + 2
+    assert table_size <= FB_CONF_MAX_RADIX_TABLE_SIZE, (
+        f"Radix table size ({table_size}) exceeds embedded limit {FB_CONF_MAX_RADIX_TABLE_SIZE}! Adjust radix_shift."
+    )
+    table = [0] * table_size
+    current_prefix = 0
+    for index, (key, _value) in enumerate(entries):
+        transformed_key = key_transform(key) if key_transform is not None else key
+        prefix = transformed_key >> radix_shift
+        while current_prefix < prefix:
+            current_prefix += 1
+            table[current_prefix] = index
+    for prefix in range(current_prefix + 1, table_size):
+        table[prefix] = len(entries)
+    return table
+
+
+@dataclass(frozen=True, slots=True)
 class ReadOnlyRadixBinaryTreeStorage(Generic[ValT]):
     """
-    Owns sorted entries and the radix prefix table.
-    Owns memory buffers for sorted keys, values, and radix_table.
+    Owns one sorted entry array and the radix prefix table.
     Strictly separates storage ownership from non-owning view borrows ({Type_Vocabulary}, {GLOBAL_Policy_Memory}).
     """
 
-    keys: tuple[int, ...]
-    values: tuple[ValT, ...]
     radix_table: tuple[int, ...]
     radix_shift: int
-    entries: tuple[tuple[int, ValT], ...]
+    entries: Sequence[tuple[int, ValT]]
     key_transform: Callable[[int], int] | None = None
 
     @classmethod
@@ -445,18 +532,65 @@ class ReadOnlyRadixBinaryTreeStorage(Generic[ValT]):
         radix_shift: int = 28,
         key_transform: Callable[[int], int] | None = None,
     ) -> ReadOnlyRadixBinaryTreeStorage[ValT]:
-        paired = tuple(sorted(zip(keys, values, strict=False), key=lambda p: p[0]))
-        s_keys = tuple(p[0] for p in paired)
-        s_vals = tuple(p[1] for p in paired)
-        table = tuple(
-            build_radix_table(s_keys, radix_shift=radix_shift, key_transform=key_transform)
+        paired = tuple(
+            sorted(
+                zip(keys, values, strict=True),
+                key=lambda pair: (
+                    key_transform(pair[0]) if key_transform is not None else pair[0],
+                    pair[0],
+                ),
+            )
         )
+        return cls.from_sorted_entries(
+            paired,
+            radix_shift=radix_shift,
+            key_transform=key_transform,
+        )
+
+    @classmethod
+    def from_sorted_entries(
+        cls,
+        entries: tuple[tuple[int, ValT], ...],
+        radix_shift: int = 28,
+        key_transform: Callable[[int], int] | None = None,
+    ) -> ReadOnlyRadixBinaryTreeStorage[ValT]:
+        """Takes one immutable tuple of sorted entries and builds its radix table."""
+        return cls._from_ordered_entries(entries, radix_shift, key_transform)
+
+    @classmethod
+    def from_sorted_static_entries(
+        cls,
+        entries: StaticVector[tuple[int, ValT]],
+        radix_shift: int = 28,
+        key_transform: Callable[[int], int] | None = None,
+    ) -> ReadOnlyRadixBinaryTreeStorage[ValT]:
+        """Takes ownership of sorted fixed storage without making a second entry array."""
+        return cls._from_ordered_entries(entries.freeze(), radix_shift, key_transform)
+
+    @classmethod
+    def _from_ordered_entries(
+        cls,
+        entries: Sequence[tuple[int, ValT]],
+        radix_shift: int,
+        key_transform: Callable[[int], int] | None,
+    ) -> ReadOnlyRadixBinaryTreeStorage[ValT]:
+        for index in range(1, len(entries)):
+            previous_key = entries[index - 1][0]
+            current_key = entries[index][0]
+            previous_order = (
+                key_transform(previous_key) if key_transform is not None else previous_key,
+                previous_key,
+            )
+            current_order = (
+                key_transform(current_key) if key_transform is not None else current_key,
+                current_key,
+            )
+            assert previous_order <= current_order
+        table = tuple(_build_radix_table_for_sorted_entries(entries, radix_shift, key_transform))
         return cls(
-            keys=s_keys,
-            values=s_vals,
             radix_table=table,
             radix_shift=radix_shift,
-            entries=paired,
+            entries=entries,
             key_transform=key_transform,
         )
 
@@ -479,7 +613,7 @@ class ReadOnlyRadixBinaryTreeView(Generic[ValT]):
         Non-owning view: borrows references to external storage without taking ownership.
     """
 
-    __slots__ = ("entries", "key_transform", "map_view", "radix_shift", "radix_table")
+    __slots__ = ("entries", "key_transform", "radix_shift", "radix_table")
 
     def __init__(
         self,
@@ -492,7 +626,6 @@ class ReadOnlyRadixBinaryTreeView(Generic[ValT]):
             f"Radix table size ({len(radix_table)}) exceeds embedded limit {FB_CONF_MAX_RADIX_TABLE_SIZE}!"
         )
         self.entries = entries
-        self.map_view = ReadOnlyFlatMapView(entries)
         self.radix_table = radix_table
         self.radix_shift = radix_shift
         self.key_transform = key_transform
@@ -506,12 +639,53 @@ class ReadOnlyRadixBinaryTreeView(Generic[ValT]):
         last = self.radix_table[prefix + 1]
         if first >= last:
             return None
-        return self.map_view.slice(first, last).find(key)
+        low = self._lower_bound(key, first, last)
+        if low < last and self.entries[low][0] == key:
+            return self.entries[low][1]
+        return None
+
+    def _lower_bound(self, key: int, first: int, last: int) -> int:
+        """Return the first projected-order entry not less than ``key``."""
+        projected_key = self.key_transform(key) if self.key_transform is not None else key
+        target_order = (projected_key, key)
+        low = first
+        high = last
+        while low < high:
+            middle = (low + high) // 2
+            middle_key = self.entries[middle][0]
+            projected_middle = (
+                self.key_transform(middle_key) if self.key_transform is not None else middle_key
+            )
+            if (projected_middle, middle_key) < target_order:
+                low = middle + 1
+            else:
+                high = middle
+        return low
+
+    def find_matching(self, key: int, predicate: Callable[[ValT], bool]) -> ValT | None:
+        """Find one value among equal keys that also satisfies a collision check."""
+        rk = self.key_transform(key) if self.key_transform is not None else key
+        prefix = rk >> self.radix_shift
+        if prefix < 0 or prefix + 1 >= len(self.radix_table):
+            return None
+        first = self.radix_table[prefix]
+        last = self.radix_table[prefix + 1]
+        if first >= last:
+            return None
+
+        low = self._lower_bound(key, first, last)
+        while low < last and self.entries[low][0] == key:
+            value = self.entries[low][1]
+            if predicate(value):
+                return value
+            low += 1
+        return None
 
     def find_interval(self, offset: int) -> ValT | None:
         """
         Range lookup for interval keys [start, end) -- finds entity where entity.start_offset <= offset < entity.end_offset.
         """
+        assert self.key_transform is None, "interval lookup requires raw-key ordering"
         if not self.entries:
             return None
         idx = bisect.bisect_right(self.entries, offset, key=lambda entry: entry[0]) - 1
@@ -531,7 +705,11 @@ class ReadOnlyRadixBinaryTreeView(Generic[ValT]):
 
 
 class MutableFlatSetStorage(Generic[KeyT]):
-    """Owns a fixed-capacity flat set and keeps active keys sorted."""
+    """Owns sorted keys in fixed storage.
+
+    GOTCHA-CONT-04: Shift entries in place so borrowed views keep observing the
+    same buffer while its active count changes; never resize the backing storage.
+    """
 
     __slots__ = ("_buffer", "_count", "capacity")
 
@@ -604,7 +782,11 @@ class MutableFlatSetStorage(Generic[KeyT]):
 
 
 class MutableFlatMapStorage(Generic[KeyT, ValT]):
-    """Owns a fixed-capacity flat map and keeps active entries sorted by key."""
+    """Owns sorted entries in fixed storage.
+
+    GOTCHA-CONT-04: Shift entries in place so borrowed views keep observing the
+    same buffer while its active count changes; never resize the backing storage.
+    """
 
     __slots__ = ("_buffer", "_count", "capacity")
 
@@ -690,7 +872,11 @@ class MutableFlatMapStorage(Generic[KeyT, ValT]):
 
 
 class MutableRadixBinaryTreeStorage(Sequence[tuple[int, ValT]], Generic[ValT]):
-    """Owns fixed-capacity sorted entries and maintains the radix table."""
+    """Owns fixed-capacity sorted entries and maintains the radix table.
+
+    GOTCHA-CONT-04: In-place shifts preserve the borrowed view's backing buffer
+    and keep its active range synchronized without dynamic storage growth.
+    """
 
     __slots__ = ("_buffer", "_count", "capacity", "key_transform", "radix_shift", "radix_table")
 
@@ -706,21 +892,47 @@ class MutableRadixBinaryTreeStorage(Sequence[tuple[int, ValT]], Generic[ValT]):
         self.key_transform = key_transform
         self._buffer: list[tuple[int, ValT] | None] = [None] * capacity
         self._count = 0
-        self.radix_table: list[int] = [0, 0]
+        self.radix_table: StaticVector[int] = StaticVector(capacity=FB_CONF_MAX_RADIX_TABLE_SIZE)
+        for _ in range(FB_CONF_MAX_RADIX_TABLE_SIZE):
+            self.radix_table.append(0)
+
+    def _order_key(self, key: int) -> tuple[int, int]:
+        projected = self.key_transform(key) if self.key_transform is not None else key
+        return projected, key
 
     def _rebuild_radix_table(self) -> None:
-        keys = [self._buffer[index][0] for index in range(self._count)]
-        self.radix_table[:] = build_radix_table(
-            keys, radix_shift=self.radix_shift, key_transform=self.key_transform
+        if self._count == 0:
+            for index in range(FB_CONF_MAX_RADIX_TABLE_SIZE):
+                self.radix_table[index] = 0
+            return
+        last_entry = self._buffer[self._count - 1]
+        assert last_entry is not None
+        max_prefix = self._order_key(last_entry[0])[0] >> self.radix_shift
+        table_size = max_prefix + 2
+        assert table_size <= FB_CONF_MAX_RADIX_TABLE_SIZE, (
+            f"Radix table size ({table_size}) exceeds embedded limit {FB_CONF_MAX_RADIX_TABLE_SIZE}! Adjust radix_shift."
         )
+        current_prefix = 0
+        for index in range(self._count):
+            entry = self._buffer[index]
+            assert entry is not None
+            prefix = self._order_key(entry[0])[0] >> self.radix_shift
+            while current_prefix < prefix:
+                current_prefix += 1
+                self.radix_table[current_prefix] = index
+        for prefix in range(current_prefix + 1, table_size):
+            self.radix_table[prefix] = self._count
+        for prefix in range(table_size, FB_CONF_MAX_RADIX_TABLE_SIZE):
+            self.radix_table[prefix] = self._count
 
     def insert(self, key: int, value: ValT) -> bool:
+        order_key = self._order_key(key)
         idx = bisect.bisect_left(
             self._buffer,
-            key,
+            order_key,
             0,
             self._count,
-            key=lambda entry: entry[0] if entry is not None else key,
+            key=lambda entry: self._order_key(entry[0]) if entry is not None else order_key,
         )
         if idx < self._count and self._buffer[idx] is not None and self._buffer[idx][0] == key:
             self._buffer[idx] = (key, value)
@@ -735,12 +947,13 @@ class MutableRadixBinaryTreeStorage(Sequence[tuple[int, ValT]], Generic[ValT]):
         return True
 
     def remove(self, key: int) -> ValT | None:
+        order_key = self._order_key(key)
         idx = bisect.bisect_left(
             self._buffer,
-            key,
+            order_key,
             0,
             self._count,
-            key=lambda entry: entry[0] if entry is not None else key,
+            key=lambda entry: self._order_key(entry[0]) if entry is not None else order_key,
         )
         if idx >= self._count or self._buffer[idx] is None or self._buffer[idx][0] != key:
             return None
@@ -756,7 +969,8 @@ class MutableRadixBinaryTreeStorage(Sequence[tuple[int, ValT]], Generic[ValT]):
         for index in range(self._count):
             self._buffer[index] = None
         self._count = 0
-        self.radix_table[:] = [0, 0]
+        for index in range(FB_CONF_MAX_RADIX_TABLE_SIZE):
+            self.radix_table[index] = 0
 
     def size(self) -> int:
         return self._count
@@ -882,11 +1096,17 @@ class RingBuffer(Generic[T]):
 class StaticVector(Generic[T]):
     """Fixed-capacity sequential storage without dynamic heap reallocation."""
 
-    __slots__ = ("_items", "capacity")
+    __slots__ = ("_frozen", "_items", "capacity")
 
     def __init__(self, capacity: int = 32):
         self.capacity = capacity
         self._items: list[T] = []
+        self._frozen = False
+
+    def freeze(self) -> StaticVector[T]:
+        """Disables mutation and transfers this bounded sequence to read-only storage."""
+        self._frozen = True
+        return self
 
     @classmethod
     def of(cls, items: Iterable[T], capacity: int | None = None) -> StaticVector[T]:
@@ -899,6 +1119,7 @@ class StaticVector(Generic[T]):
         return vec
 
     def push_back(self, item: T) -> bool:
+        assert not self._frozen, "cannot mutate a frozen StaticVector"
         if len(self._items) >= self.capacity:
             return False
         self._items.append(item)
@@ -911,6 +1132,7 @@ class StaticVector(Generic[T]):
         assert pushed
 
     def extend(self, items: Sequence[T]) -> bool:
+        assert not self._frozen, "cannot mutate a frozen StaticVector"
         item_count = len(items)
         if len(self._items) + item_count > self.capacity:
             return False
@@ -920,6 +1142,8 @@ class StaticVector(Generic[T]):
 
     def reverse_in_place(self) -> None:
         """Reverse the populated range without constructing a temporary sequence."""
+
+        assert not self._frozen, "cannot mutate a frozen StaticVector"
 
         left = 0
         right = len(self._items) - 1
@@ -931,6 +1155,7 @@ class StaticVector(Generic[T]):
             right -= 1
 
     def insert_at(self, index: int, item: T) -> bool:
+        assert not self._frozen, "cannot mutate a frozen StaticVector"
         if not (0 <= index <= len(self._items)) or len(self._items) >= self.capacity:
             return False
         self._items.append(item)
@@ -940,14 +1165,17 @@ class StaticVector(Generic[T]):
         return True
 
     def pop_at(self, index: int = -1) -> T:
+        assert not self._frozen, "cannot mutate a frozen StaticVector"
         assert self._items, "pop from an empty StaticVector"
         return self._items.pop(index)
 
     def pop_back(self) -> T | None:
+        assert not self._frozen, "cannot mutate a frozen StaticVector"
         return self._items.pop() if self._items else None
 
     def remove(self, item: T) -> bool:
         """Removes the first occurrence of `item`, shifting later entries down. False if absent."""
+        assert not self._frozen, "cannot mutate a frozen StaticVector"
         try:
             self._items.remove(item)
         except ValueError:
@@ -955,9 +1183,11 @@ class StaticVector(Generic[T]):
         return True
 
     def clear(self) -> None:
+        assert not self._frozen, "cannot mutate a frozen StaticVector"
         self._items.clear()
 
     def sort(self, *, key: Callable[[T], T] | None = None) -> None:
+        assert not self._frozen, "cannot mutate a frozen StaticVector"
         self._items.sort(key=key)
 
     def at(self, index: int) -> T:
@@ -973,9 +1203,11 @@ class StaticVector(Generic[T]):
         return self._items[index]
 
     def __setitem__(self, index: int, item: T) -> None:
+        assert not self._frozen, "cannot mutate a frozen StaticVector"
         self._items[index] = item
 
     def __delitem__(self, index: int) -> None:
+        assert not self._frozen, "cannot mutate a frozen StaticVector"
         del self._items[index]
 
     def contains(self, item: T) -> bool:

@@ -61,7 +61,7 @@ _EMPTY_RELOC_ENTRIES: tuple[tuple[Relocation, int], ...] = ()
 _EMPTY_RELOC_OFFSETS: tuple[int, ...] = (NO_RELOCATION,) * RELOCATION_COUNT
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class Stencil:
     code: bytes
     reloc_entries: tuple[tuple[Relocation, int], ...] = field(

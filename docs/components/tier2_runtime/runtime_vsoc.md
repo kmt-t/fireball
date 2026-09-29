@@ -90,8 +90,8 @@ vSoC全体の可変な実行時状態を保持する構造体。
 | JITコードアロケータ | 選択されたJIT実行構成のコード領域から3-Bankコードキャッシュを切り出す専用アロケータ。x64参照構成の実行可能バッファ契約は [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) に従い、ARMv8-Mの物理割当と保護方式はTBD。 | `jit_code_allocator` 構造体 |
 
 #### vSoCランタイム環境
-<!-- traceability: {ContextPointerRegister} {EnvironmentPointer} {MemoryBoundaryCheck} {FastAddressCheck} {ExecutionContext_Layout} {VsocRuntime_Layout} {GOTCHA-VSOC-03} -->
-vSoCの実行環境情報は `execution_context` の論理フィールドとして保持する。固定ABIではリニアメモリ、グローバル領域、命令ハンドラ表の参照をそれぞれ独立したフィールドに置き、別の環境構造体を特定オフセットへ埋め込まない。JITトレースとインタープリタは同じ論理状態を参照する。境界で渡す第4論理引数はスタック頂点値であり、物理レジスタへの割当は対象ABIで定義する。`memory.grow` で動的に伸長するリニアメモリの実体や、モジュール横断で共有されるグローバル変数配列など、単一の呼び出しコンテキストを超えて生存する状態を保持する。
+<!-- traceability: {ContextPointerRegister} {EnvironmentPointer} {MemoryBoundaryCheck} {FastAddressCheck} {ExecutionContext_Layout} -->
+vSoCの実行環境情報は `execution_context` の論理フィールドとして保持する。`vsoc_runtime` は独立した構造体ではなく、この実行コンテキストに含まれる環境フィールド群である。 {VsocRuntime_Layout} <!-- definition: {VsocRuntime_Layout} --> {GOTCHA-VSOC-03} <!-- definition: {GOTCHA-VSOC-03} --> 固定ABIではリニアメモリ、グローバル領域、命令ハンドラ表の参照をそれぞれ独立したフィールドに置き、別の環境構造体を特定オフセットへ埋め込まない。JITトレースとインタープリタは同じ論理状態を参照する。境界で渡す第4論理引数はスタック頂点値であり、物理レジスタへの割当は対象ABIで定義する。`memory.grow` で動的に伸長するリニアメモリの実体や、モジュール横断で共有されるグローバル変数配列など、単一の呼び出しコンテキストを超えて生存する状態を保持する。
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
@@ -132,7 +132,7 @@ vSoC コアエンジンの実行委譲、協調イールド、および外部介
 | アルゴリズム / 機構 | 契機・条件 | 動作内容 | 目的・安全性不変条件 |
 | :--- | :--- | :--- | :--- |
 | **C++実行dispatcher** | WASM実行開始時 | C++ dispatch loopがC++ Interpreter handlerと常駐JIT traceを次PCに応じて実行し、yield・trap・完了などの実行境界まで継続する | handler後のlookupで実行境界へ戻らない。handler-mediated遷移をchainと数えない（`GOTCHA-VSOC-01`） |
-| **LOOP後方分岐yield** | C++ branch handlerが取得済みLOOP後方辺を処理した時 | handlerが共通contextの回数を増やす。共有しきい値に達するまではC++ dispatcherが続行し、到達時にyield statusを返す | Interpreter単独とHybrid JITが同じ回数条件で協調境界へ戻る。割り込みイベントはCOOS境界で処理する |
+| **LOOP後方分岐yield** | C++ branch handlerが取得済みLOOP後方辺を処理した時 | handlerが共通contextの回数を増やす。共有しきい値に達するまではC++ dispatcherが続行し、到達時にyield statusを返す | Interpreter単独とHybrid JITが同じ回数条件で協調境界へ戻る。割り込みイベントはCOOS境界で処理する {GOTCHA-VSOC-02} <!-- definition: {GOTCHA-VSOC-02} --> |
 | **x64 trace chain** | 互換な直線後続traceがキャッシュ常駐時 | trace末尾が共通コード領域のchain dispatcherへ進み、dispatcherがheaderのtarget bodyへtail-jumpする | chain dispatcherはopcodeを判定せず、C++ Interpreter handlerの分岐処理を迂回しない |
 | **デバッガとJITの構成排他** | デバッグ構成の合成時 | Tier 2の構成器は `Interpreter + Debugger` を選択し、`Debugger + JIT` の同時構成を `assert` で拒否する | デバッガがJITキャッシュを管理する経路を生成しない |
 | **1ランタイム1ゲスト・専用アリーナ** | ランタイム生成時およびアンロード時 | データと実行可能コード用の領域を別のアロケータで管理し、破棄時に所有する領域を一括返却する | 領域の寿命と所有権をランタイム単位で分離する。ARMv8-Mの物理配置と保護方式はTBD |
@@ -143,7 +143,7 @@ vSoC コアエンジンの実行委譲、協調イールド、および外部介
   一方、JIT コンパイラは実行可能コード領域から専用アロケータを用いてネイティブトレースを確保する。x64では書込み権限と実行権限を同時に付与せず、W^Xを維持する。ARMv8-Mの物理配置と保護方式はTBDである。
   モジュール終了・アンロード時は、JIT キャッシュを無効化（3-Bank Flush）する。その上でバンプアロケータのアリーナごと $O(1)$ で一括リセットして返還し、JIT コードセクションも解放する。
   個別の `free()` や複雑なデストラクタ走査は一切行わない。これにより動的メモリ断片化や他モジュールからのダングリング参照を原理的に根絶する。
-- **C++実行dispatcherと4論理引数契約 (`{GOTCHA-VSOC-01}`)**:
+- **C++実行dispatcherと4論理引数契約 (`{GOTCHA-VSOC-01}`)**: <!-- definition: {GOTCHA-VSOC-01} -->
   実行入口は `(ctx, sp, local_base, tos)` の4論理引数を受け取る。物理呼出し規約は [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) のx64定義に従い、ARMv8-Mの物理配置はTBDとする。
   C++ native dispatch loopはC++ Interpreter handlerと常駐JIT traceを次PCに応じて実行し、yield・trap・完了などの境界でRuntimeEngineへstatusを返す。制御handlerの後もしきい値到達まではC++側に留まり、vSoCへ命令ごとに戻らない。
   共通コード領域のchain dispatcherは別の機械語経路である。直線traceの末尾からdispatcherへ移り、headerのtarget bodyへtail-jumpする。C++ handler後にdispatch loopがtraceをlookupする遷移はchainではない。
@@ -230,9 +230,9 @@ sequenceDiagram
 ```
 
 ### 4.2 状態遷移図 (SysML SMD: vSoC Engine ライフサイクル)
-<!-- traceability: {DebuggerInterpreterComposition} {JIT_CopyAndPatch} {JIT_BackedgeYield} {ThreadedInterpreter} {VSOC_Lifecycle} -->
+<!-- traceability: {DebuggerInterpreterComposition} {JIT_CopyAndPatch} {JIT_BackedgeYield} {ThreadedInterpreter} -->
 
-vSoC Engine の実行制御と JIT/Interpreter 切り替えの状態遷移を以下に示す。
+vSoC Engine の実行制御と JIT/Interpreter 切り替えの状態遷移を以下に示す。 {VSOC_Lifecycle} <!-- definition: {VSOC_Lifecycle} -->
 
 ```mermaid
 stateDiagram-v2
@@ -248,13 +248,15 @@ stateDiagram-v2
 
     NativeDispatch --> NativeDispatch: handler or resident trace advances next PC
     NativeDispatch --> RuntimeBoundary: taken LOOP backedge count reaches threshold
+    NativeDispatch --> RuntimeBoundary: guest call completes
     NativeDispatch --> Debugging: breakpoint_debugger / configured debug boundary
     NativeDispatch --> Error: trap / invalid opcode
     RuntimeBoundary --> CoosYield: yield_requested / System returns control to COOS
     RuntimeBoundary --> NativeDispatch: continue / resume saved state
+    RuntimeBoundary --> Ready: completed call / return result to caller
+    CoosYield --> Ready: COOS schedules the suspended guest task again
 
-    Debugging --> NativeDispatch: resume() / continue selected engine
-    Debugging --> Ready: continue() / return to scheduler
+    Debugging --> NativeDispatch: resume() / continue Interpreter path
 
     Error --> Ready: recover() / reset context
     Error --> [*]: fatal() / shutdown
@@ -270,7 +272,7 @@ stateDiagram-v2
 | **Loading** | WASM モジュール読み込み・リンク中 | パーサ実行、セクション検証 |
 | **Ready** | 実行準備完了 | `RuntimeEngine.run()`でC++ native dispatchへ入る |
 | **NativeDispatch** | C++ Interpreter handlerと常駐JIT traceの実行 | 次PCをC++内でdispatchする。取得したLOOP後方辺だけを数え、handlerごとにはRuntimeEngineへ戻らない |
-| **RuntimeBoundary** | yield・trap・完了などのRuntimeEngine境界 | statusと共有実行状態を返す |
+| **RuntimeBoundary** | yieldまたはゲスト呼出完了時のRuntimeEngine境界 | statusと共有実行状態をSystemへ返す |
 | **CoosYield** | SystemがRuntimeEngineのYield要求を受けた状態 | COOSへ制御を返し、割り込みイベントや再スケジュール要求を処理可能にする |
 | **Debugging** | デバッガによる停止中 | メモリ検査、変数書き換え。JITキャッシュは管理しない |
 | **Error** | エラー発生（復帰可能） | トラップハンドラ実行、状態リセット |
@@ -281,28 +283,37 @@ stateDiagram-v2
 | 遷移 | トリガー | 条件 | アクション | 次状態 |
 | :--- | :--- | :--- | :--- | :--- |
 | Load → Ready | load_ok() | モジュール有効 | リンク完了、コンテキスト初期化 | Ready |
-| Ready → InterpreterRun | step(pc) | exec_trace = interpreter | PC 登録、実行開始 | InterpreterRun |
-| Ready → JitRun | step(pc) | exec_trace = compiled code | ネイティブコード実行開始 | JitRun |
 | Ready → NativeDispatch | run() | 通常実行を開始 | C++ native dispatchへ状態を渡す | NativeDispatch |
 | NativeDispatch → NativeDispatch | handlerまたはtrace終了 | LOOPしきい値未到達、trap・完了なし | C++内で次PCをlookupし続ける | NativeDispatch |
 | NativeDispatch → RuntimeBoundary | [count >= threshold] | 取得LOOP後方辺が共通しきい値に達した | C++ dispatcherがyield statusを返す | RuntimeBoundary |
+| NativeDispatch → RuntimeBoundary | call_complete() | ゲスト関数が正常終了した | RuntimeEngineが完了状態と結果をSystemへ返す | RuntimeBoundary |
 | RuntimeBoundary → CoosYield | [yield_requested] | RuntimeEngineがyield statusを受け取る | Systemが`on_yield()`後にCOOSへ制御を返す | CoosYield |
 | RuntimeBoundary → NativeDispatch | [continue] | 継続可能な状態 | 保存した状態から同じ実行経路を再開する | NativeDispatch |
+| RuntimeBoundary → Ready | [call_complete] | ゲスト関数の呼出しが完了した | 呼出結果を呼出元へ返し、実行状態をReadyへ戻す | Ready |
+| CoosYield → Ready | [task scheduled] | COOSが停止中のゲストタスクを再選択した | 保存済みの継続状態から実行を再開できる状態にする | Ready |
 | NativeDispatch → Debugging | breakpoint [debugger] | 構成済みdebug境界 | デバッガコマンド待ち | Debugging |
-| Debugging → NativeDispatch | resume() | 再開要求 | 選択したRuntimeEngine経路で保存PCから再開 | NativeDispatch |
+| Debugging → NativeDispatch | resume() | 再開要求 | `Interpreter + Debugger` 構成の同じInterpreter経路で保存PCから再開 | NativeDispatch |
 | (any) → Error | trap() | ページフォルト / 不正オプコード | トラップハンドラ実行 | Error |
 | Error → Ready | recover() | リカバリ可能 | コンテキストリセット | Ready |
 
 **重要な設計ポイント:**
 
-- **LOOP後方分岐yield {ADR_LoopBackedgeYield}**: C++ Interpreter handlerが取得後方辺を記録し、C++ dispatcherは共通しきい値到達までC++内で処理する。到達時だけRuntimeEngineへstatusを返し、SystemがCOOSへの協調yieldを行う。
+- **LOOP後方分岐yield {ADR_LoopBackedgeYield}**: C++ Interpreter handlerが取得後方辺を記録し、C++ dispatcherは共通しきい値到達までC++内で処理する。到達時だけRuntimeEngineへstatusを返し、SystemがCOOSへの協調yieldを行う。 <!-- definition: {ADR_LoopBackedgeYield} -->
 
 ### 4.2.1 LOOP後方分岐とJIT chain
 <!-- traceability: {JIT_BackedgeYield} {Challenge_JITCacheEfficiency} {DebuggerInterpreterComposition} {JIT_LazyChaining} -->
 
-`br`、`br_if`、`br_table`および構造終端の意味論は命令別C++ Interpreter handlerが所有する。取得されたLOOP後方辺だけをhandlerが共通contextで数え、共有しきい値に達するまでC++ native dispatch loopが次のC++ handlerまたはJIT traceを実行する。到達時にdispatch loopがyield statusを返し、RuntimeEngineとSystemを経てCOOSへ制御を戻す。Interpreter単独経路も同じしきい値を使う。
+`br`、`br_if`、`br_table`、構造終端の意味論は命令別C++ Interpreter handlerが所有する。handlerは取得したLOOP後方辺だけを共通contextで数える。
 
-handler後のC++ trace lookupはchainではない。chainはx64 trace末尾から共通コード領域のchain dispatcherへ進み、そのdispatcherがtrace headerのresident target bodyへtail-jumpする場合を指す。dispatcherはopcode別handlerや分岐条件を持たない。ARMv8-Mのchain構成、命令列、header、lookup方式、保護方式、物理配置はすべてTBDとする。
+共有しきい値に達するまでは、C++ native dispatch loopが次のC++ handlerまたはJIT traceを実行する。しきい値へ達すると、dispatch loopはyield statusを返す。
+
+制御はRuntimeEngineとSystemを経てCOOSへ戻る。Interpreter単独経路も同じしきい値を使う。
+
+handler後のC++ trace lookupはchainではない。chainはx64 trace末尾から共通コード領域のchain dispatcherへ進む経路を指す。
+
+chain dispatcherはtrace headerのresident target bodyへtail-jumpする。dispatcherはopcode別handlerや分岐条件を持たない。
+
+ARMv8-Mのchain構成、命令列、header、lookup方式、保護方式、物理配置はすべてTBDである。
 
 この方式は壁時計時間によるプリエンプションを保証しない。しきい値が数えるのは取得したWASM LOOP後方辺であり、割り込みイベントやデバッガ状態を命令ごとにポーリングしない。
 
@@ -355,7 +366,7 @@ JIT Evictable Banks (6 KB of 8 KB total)
 
 #### 形式検証 (pyModelChecking) 検証対象
 
-本節で述べたLOOP後方分岐yieldとキャッシュ一貫性の性質は、検証対象の不変条件表に列挙したプロパティとして形式検証されている。個々のモデルファイルとプロパティ名の対応は **[検証対象の不変条件](#61-検証対象の不変条件)** を正本とする。
+本節で述べたLOOP後方分岐yieldとキャッシュ一貫性の性質は、検証対象の不変条件表に列挙したプロパティとして形式検証されている。個々のモデルファイルとプロパティ名の対応は **[検証対象の不変条件](#71-検証対象の不変条件)** を正本とする。
 
 ### 4.3 内部シーケンス
 <!-- traceability: {ThreadedInterpreter} {JIT_CopyAndPatch} {JIT_BackedgeYield} {DebuggerInterpreterComposition} -->
@@ -523,9 +534,28 @@ Fireballでは、標準WASIのゲスト側アダプタを `libfireball` とし�
 | **Wasm Loader** | モジュールロードと `module_view` の管理 | `loader`, `module_view` |
 | **Debugger** | デバッグコマンドの処理と実行状態の同期 | `debugger`, `debug_command_queue` |
 
-## 6. 形式検証（pyModelChecking / 直交表）
 
-### 6.1 検証対象の不変条件
+## 6. 制約達成の方策
+
+### 6.1 性能制約と方策
+<!-- traceability: {LowLatencyJIT} {ThreadedInterpreter} -->
+- **目標**: WAMRインタープリタを上回る実行速度を実現する。
+- **方策**: コピーアンドパッチJITによるネイティブ実行と、スレッドインタープリタによる高速フォールバックを組み合わせる。
+
+### 6.2 メモリ制約と方策
+<!-- traceability: {JIT_MultiBuffer_Cache} {GLOBAL_IndependentHeap} {WasmPageAlignment} -->
+- **目標**: 構成で定めるメモリ上限内で動作させる。ARMv8-Mの物理容量適合性はTBDとする。
+- **方策**: x64参照構成は構成で定めるJITコード領域を使う。容量とバンク分割は [`jit_runtime.md`](docs/components/tier3_executer/jit_runtime.md) に従う。ARMv8-Mの容量と物理配置はTBDとする。
+- **高速アドレス判定**: ゲストRAMを `0x0` から配置し、単一の比較命令でRAMアクセスを判定することで、インタープリタおよびJITのオーバーヘッドを最小化する。
+
+### 6.3 安全性制約と方策
+<!-- traceability: {MemoryBoundaryCheck} {META_RestrictedPhysicalAccess} -->
+- **目標**: ゲストアプリケーションの暴走を完全に隔離する。
+- **方策**: JITコードへの境界チェック埋め込みと、vMMIOによる物理アクセスの制限を行う。物理アドレスアクセスの許可範囲は `FB_CONF_VMMIO_ALLOWED_ADDRS`（`{META_ConfigurableSystem}`）に `constexpr` 定義されたテーブルに基づき、vMMIOが検証する。
+
+## 7. 形式検証・テスト仕様との対応
+
+### 7.1 検証対象の不変条件
 
 <!-- traceability: {JIT_BackedgeYield} {Challenge_JITCacheEfficiency} {DebuggerInterpreterComposition} {GLOBAL_InterruptWakeup} -->
 
@@ -538,60 +568,47 @@ Fireballでは、標準WASIのゲスト側アダプタを `libfireball` とし�
 | **Debugger構成排他** | デバッガとJITを同時に有効化した構成を生成しないこと。| `RuntimeComposer` の構成時 `assert` |
 | **キャッシュ整合性** | generation cookie が全バンク一括で更新され、バンク間で世代が逆行・不一致にならないこと。| [`vsoc_cache_coherency_model.py`](docs/components/tier2_runtime/formal/vsoc_cache_coherency_model.py) `generation_monotonicity_across_banks` |
 | **リソース有界性** | 3面ローテーション時、Purge とエントリ表スロット回収が不可分に行われ、未回収スロットが蓄積しないこと。 | [`vsoc_cache_coherency_model.py`](docs/components/tier2_runtime/formal/vsoc_cache_coherency_model.py) `bounded_cache_rotation_memory` |
-| **Revoke後のflush完了性** | 共有メモリ権限剥奪で dirty になったキャッシュの flush は必ず完了すること。| [`vsoc_cache_coherency_model.py`](docs/components/tier2_runtime/formal/vsoc_cache_coherency_model.py) `dirty_cache_always_flushes_promptly` |
+| **Revoke後のflush完了性** | 抽象遷移モデルで、共有メモリ権限剥奪により dirty になった状態から flush 完了状態へ到達すること。実時間の期限や有限のtick数は証明しない。| [`vsoc_cache_coherency_model.py`](docs/components/tier2_runtime/formal/vsoc_cache_coherency_model.py) `dirty_cache_eventually_flushes` |
 | **重複コンパイル抑止** | 常駐済みトレースに対する二重コンパイルを抑止しキャッシュを浪費しないこと。| [`vsoc_cache_coherency_model.py`](docs/components/tier2_runtime/formal/vsoc_cache_coherency_model.py) `resident_trace_duplicate_compile_suppression` |
 | **状態一貫性** | vSoC Engine ライフサイクル（4.2）の各遷移後に状態が整合していること。 | 直交表 / レビュー（形式検証対象外） |
 
-### 6.2 モデル分割の理由
+### 7.2 モデル分割の理由
 
 実行エンジンの状態機械（`vsoc_state_model.py`）とキャッシュ寿命（`vsoc_cache_coherency_model.py`）は、**別モデルに分割している**。世代スタンプとリソース回収を実行状態機械へ統合すると、状態空間が積になり爆発する。これは `document_structure.md` が定める「検証可能性 (Verification Tractability) の維持」に反する。
 
 実行状態モデルとキャッシュ整合性モデルは、COOSへ制御を返す協調境界を共有する。C++ branch handlerはイベントを直接検出せず、LOOP後方分岐数の記録だけを行う。デバッガはキャッシュ整合性モデルの対象外である。
 
-### 6.3 検証モデル概要（vsoc_cache_coherency_model.py）
+### 7.3 検証モデル概要（vsoc_cache_coherency_model.py）
 
-**状態変数（抽象化）:**
-```
-phase       : {interp, exec_fresh, rotate, reclaimed, shm_revoke, coos_boundary, flushing, flushed}
-gen_status  : {gen_consistent, gen_regressed}          -- 全バンク一括更新か否か
-bank_status : {all_banks_accounted, leaked}            -- Purge と回収の不可分性
-code_status : {fresh, stale_code}                      -- 実行中コードの世代妥当性
-```
+このモデルは値を持つ状態変数ではなく、Kripke状態と原子命題で抽象状態を表す。状態名と命題ラベルはモデルファイルの表記を示す。flush完了性はCTLの eventuality であり、実時間の上限や「promptly」のような応答時間保証ではない。
 
-**初期状態:** `phase = interp`（キャッシュ参照のみ、世代一致、全バンク回収済み）
+**通常状態:** `s_interp`, `s_exec_fresh`, `s_check_resident`, `s_skip_compile`, `s_rotate`, `s_reclaimed`, `s_shm_revoke`, `s_coos_boundary`, `s_flushing`, `s_flushed`。
+
+**不変条件ラベル:** `gen_consistent` / `gen_regressed`、`all_banks_accounted` / `leaked_bank`、`fresh` / `stale_code`、`dirty` / `flushed`。
+
+**初期状態:** `s_interp`（キャッシュ参照のみ、世代一致、全バンク回収済み）
 
 **遷移:**
-- 通常実行: `interp → exec_fresh → interp`
-- ローテーション: `interp → rotate → reclaimed → interp`（Purge と回収は不可分）
-- 共有メモリ Revoke: `(interp | exec_fresh) → shm_revoke → coos_boundary → flushing → flushed → interp`
+- 通常実行: `s_interp → s_exec_fresh → s_interp`
+- 常駐確認: `s_interp → s_check_resident → s_skip_compile → s_exec_fresh`
+- ローテーション: `s_interp → s_rotate → s_reclaimed → s_interp`（Purge と回収は不可分）
+- 共有メモリ Revoke: `(s_interp | s_exec_fresh) → s_shm_revoke → s_coos_boundary → s_flushing → s_flushed → s_interp`
 
 **証明される不変式:**
 - `AG(¬stale_code)`   — Revoke 後の flush 完了前に旧世代コードを実行する状態は到達不能
 - `AG(¬gen_regressed)` — 世代の逆行・バンク間不一致は到達不能
-- `AG(¬leaked)`       — 未回収スロットの蓄積は到達不能
+- `AG(¬leaked_bank)`  — 未回収スロットの蓄積は到達不能
 - `AG(dirty → AF(flushed))` — dirty になった flush は必ず完了する
+- `AG(¬duplicate_compile)` — 常駐済みトレースを重複コンパイルする状態は到達不能
 
 **変異検査（`guards=False`）で到達可能になる違反:** `s_exec_stale`（協調境界の世代照合を撤去）、`s_gen_regressed`（世代の個別更新化）、`s_leaked_bank`（Purge のみ実行し回収を省略）、`s_flush_stalled`（flush の遅延を許容）。
 
-### 6.4 既知の制限
+### 7.4 既知の制限
 
 - **時間応答の上限**: LOOP後方分岐の回数しきい値は壁時計時間ではない。実時間の応答上限はCPU速度、分岐間の処理量、COOSの実行状況に依存する。
 - **複数コアでのメモリ可視性**: シングルコア仮定。マルチコアではメモリバリア追加が必要。
 
-## 7. 制約達成の方策
 
-### 7.1 性能制約と方策
-<!-- traceability: {LowLatencyJIT} {ThreadedInterpreter} -->
-- **目標**: WAMRインタープリタを上回る実行速度を実現する。
-- **方策**: コピーアンドパッチJITによるネイティブ実行と、スレッドインタープリタによる高速フォールバックを組み合わせる。
+## 8. 設計判断と参考実装
 
-### 7.2 メモリ制約と方策
-<!-- traceability: {JIT_MultiBuffer_Cache} {GLOBAL_IndependentHeap} {WasmPageAlignment} -->
-- **目標**: 構成で定めるメモリ上限内で動作させる。ARMv8-Mの物理容量適合性はTBDとする。
-- **方策**: x64参照構成は構成で定めるJITコード領域を使う。容量とバンク分割は [`jit_runtime.md`](docs/components/tier3_executer/jit_runtime.md) に従う。ARMv8-Mの容量と物理配置はTBDとする。
-- **高速アドレス判定**: ゲストRAMを `0x0` から配置し、単一の比較命令でRAMアクセスを判定することで、インタープリタおよびJITのオーバーヘッドを最小化する。
-
-### 7.3 安全性制約と方策
-<!-- traceability: {MemoryBoundaryCheck} {META_RestrictedPhysicalAccess} -->
-- **目標**: ゲストアプリケーションの暴走を完全に隔離する。
-- **方策**: JITコードへの境界チェック埋め込みと、vMMIOによる物理アクセスの制限を行う。物理アドレスアクセスの許可範囲は `FB_CONF_VMMIO_ALLOWED_ADDRS`（`{META_ConfigurableSystem}`）に `constexpr` 定義されたテーブルに基づき、vMMIOが検証する。
+特記すべき独立したADRはない。採用方針は本書の各契約節に記載する。

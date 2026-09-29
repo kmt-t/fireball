@@ -19,10 +19,11 @@ _REPO_ROOT = _PYSIM_DIR.parent.parent
 
 from fixtures.platform_drivers import create_reference_platform_drivers
 from fixtures.uvwasi_reference import UvwasiReferenceContext
-from helpers import wat_to_wasm
+from helpers import make_interpreter, wat_to_wasm
 from ipc_router import (
     IPCMessage,
     IPCStatus,
+    OwnershipState,
     Role,
     bytes_to_kv_storage,
     kv_entries_to_bytes,
@@ -62,13 +63,6 @@ def test_syscall_02_host_call_system_control():
     sysv = System()
     sysv.start_runtime_task(name="test_runtime_task")
     try:
-        assert sysv.fireball_call(FbSyscallId.SYS_YIELD, 0, 0, 0, 0, 0, 0) == WasiErrno.SUCCESS
-        from tier3_platform.drivers.wasi.context import WasiHostContext
-
-        host = WasiHostContext(sysv, guest_memory=bytearray(64))
-        fireball_call = host.get_handler_for_import("fireball", "fireball_call")
-        assert fireball_call is not None
-        assert fireball_call(FbSyscallId.SYS_YIELD, 0, 0, 0, 0, 0, 0) == WasiErrno.SUCCESS
         assert sysv.fireball_call(FbSyscallId.SYS_RESET, 0, 0, 0, 0, 0, 0) == WasiErrno.SUCCESS
         assert sysv.reset_requested
         assert sysv.fireball_call(FbSyscallId.SYS_HALT, 0, 0, 0, 0, 0, 0) == WasiErrno.SUCCESS
@@ -77,16 +71,98 @@ def test_syscall_02_host_call_system_control():
         sysv.shutdown()
 
 
+def test_syscall_04_guest_yield_hands_off_to_ready_task():
+    """SYS_YIELD returns to COOS at a resumable guest boundary."""
+    from scheduler import ChannelAction, TaskState
+    from tier3_platform.drivers.wasi.context import WasiHostContext
+    from wasm_reader import parse
+
+    wasm = wat_to_wasm(
+        """
+        (module
+          (import "fireball" "fireball_call"
+            (func $fb (param i32 i32 i32 i32 i32 i32 i32) (result i32)))
+          (memory (export "memory") 1)
+          (func (export "main") (local $count i32)
+            i32.const 1 i32.const 0 i32.const 0 i32.const 0
+            i32.const 0 i32.const 0 i32.const 0 call $fb drop
+            loop $again
+              local.get $count
+              i32.const 1
+              i32.add
+              local.tee $count
+              i32.const 3
+              i32.lt_s
+              br_if $again
+            end
+            i32.const 0
+            i32.const 1
+            i32.store
+          )
+        )
+        """
+    )
+    module = parse(wasm)
+    system = System()
+    try:
+        host = WasiHostContext(system)
+        host_functions = host.build_interpreter_host_functions(module)
+        interpreter = make_interpreter(
+            module,
+            memory=host.guest_memory,
+            host_functions=host_functions,
+        )
+        guest_id = system.scheduler.spawn(
+            "yielding_guest",
+            system.run_guest(interpreter, module.export_func_index("main"), ()),
+        )
+        observed_guest_state: list[TaskState] = []
+        observed_guest_memory: list[int] = []
+
+        def monitor_task():
+            guest = system.scheduler.get_task(guest_id)
+            assert guest is not None
+            observed_guest_state.append(guest.state)
+            observed_guest_memory.append(int.from_bytes(host.guest_memory[:4], "little"))
+            yield (ChannelAction.YIELD, None)
+
+        system.scheduler.spawn("yield_observer", monitor_task())
+        system.scheduler.run_until_idle()
+
+        guest = system.scheduler.get_task(guest_id)
+        assert guest is not None and guest.state == TaskState.TERMINATED
+        assert observed_guest_state == [TaskState.READY]
+        assert observed_guest_memory == [0]
+        assert int.from_bytes(host.guest_memory[:4], "little") == 1
+    finally:
+        system.shutdown()
+
+
 def test_syscall_03_mmio_read_write():
     sysv = System()
     sysv.start_runtime_task(name="test_runtime_task")
     try:
+        guest_mem = bytearray(64)
+        sysv.bind_runtime(guest_mem)
         addr = FB_CONF_VSOC_PASSTHROUGH_BASE
         assert (
             sysv.fireball_call(FbSyscallId.MMIO_WRITE32, addr, 0xCAFEBABE, 0, 0, 0, 0)
             == WasiErrno.SUCCESS
         )
-        assert sysv.fireball_call(FbSyscallId.MMIO_READ32, addr, 0, 0, 0, 0, 0) == 0xCAFEBABE
+        assert sysv.fireball_call(FbSyscallId.MMIO_READ32, addr, 8, 0, 0, 0, 0) == WasiErrno.SUCCESS
+        assert int.from_bytes(guest_mem[8:12], "little") == 0xCAFEBABE
+        # A successful MMIO value can equal an errno number. The raw return
+        # remains SUCCESS and the data travels through value_out_ptr.
+        assert (
+            sysv.fireball_call(FbSyscallId.MMIO_WRITE32, addr, WasiErrno.FAULT, 0, 0, 0, 0)
+            == WasiErrno.SUCCESS
+        )
+        assert sysv.fireball_call(FbSyscallId.MMIO_READ32, addr, 8, 0, 0, 0, 0) == WasiErrno.SUCCESS
+        assert int.from_bytes(guest_mem[8:12], "little") == WasiErrno.FAULT
+        assert (
+            sysv.fireball_call(FbSyscallId.MMIO_READ32, addr, len(guest_mem) - 2, 0, 0, 0, 0)
+            == WasiErrno.FAULT
+        )
     finally:
         sysv.shutdown()
 
@@ -96,9 +172,10 @@ def test_syscall_11_mmio_read32_out_of_bounds():
     sysv = System()
     sysv.start_runtime_task(name="test_runtime_task")
     try:
+        sysv.bind_runtime(bytearray(16))
         oob_addr = FB_CONF_GUEST_RAM_SIZE + 0x1000  # bit31=0 (linear), past guest RAM
         assert (
-            sysv.fireball_call(FbSyscallId.MMIO_READ32, oob_addr, 0, 0, 0, 0, 0) == WasiErrno.FAULT
+            sysv.fireball_call(FbSyscallId.MMIO_READ32, oob_addr, 8, 0, 0, 0, 0) == WasiErrno.FAULT
         )
     finally:
         sysv.shutdown()
@@ -124,11 +201,14 @@ def test_syscall_13_mmio_read8_write8():
     sysv = System()
     sysv.start_runtime_task(name="test_runtime_task")
     try:
+        guest_mem = bytearray(16)
+        sysv.bind_runtime(guest_mem)
         addr = FB_CONF_VSOC_PASSTHROUGH_BASE
         assert (
             sysv.fireball_call(FbSyscallId.MMIO_WRITE8, addr, 0xAB, 0, 0, 0, 0) == WasiErrno.SUCCESS
         )
-        assert sysv.fireball_call(FbSyscallId.MMIO_READ8, addr, 0, 0, 0, 0, 0) == 0xAB
+        assert sysv.fireball_call(FbSyscallId.MMIO_READ8, addr, 8, 0, 0, 0, 0) == WasiErrno.SUCCESS
+        assert int.from_bytes(guest_mem[8:12], "little") == 0xAB
     finally:
         sysv.shutdown()
 
@@ -166,6 +246,35 @@ def test_syscall_15_mmio_bulk_read_dest_offset_out_of_bounds():
         assert guest_mem == bytearray(b"\xaa" * 16), (
             "no partial write should occur on out-of-bounds dest_offset"
         )
+    finally:
+        sysv.shutdown()
+
+
+def test_syscall_16_mmio_access_width_stays_inside_shm_mapping():
+    sysv = System()
+    runtime_task = sysv.start_runtime_task(name="test_runtime_task")
+    try:
+        vpn = 0xE000_3000 >> 12
+        physical_addr = 0x1000
+        sysv.vmmio.map_shm_page(
+            vpn=vpn,
+            physical_addr=physical_addr,
+            owner_id=runtime_task.task_id,
+            mapping_size=4,
+        )
+        addr = vpn << 12
+        sysv.phys_mem[physical_addr : physical_addr + 4] = b"safe"
+
+        assert (
+            sysv.fireball_call(FbSyscallId.MMIO_WRITE32, addr, 0x11223344, 0, 0, 0, 0)
+            == WasiErrno.SUCCESS
+        )
+        before = bytes(sysv.phys_mem[physical_addr : physical_addr + 4])
+        assert (
+            sysv.fireball_call(FbSyscallId.MMIO_WRITE32, addr + 1, 0xAABBCCDD, 0, 0, 0, 0)
+            == WasiErrno.FAULT
+        )
+        assert bytes(sysv.phys_mem[physical_addr : physical_addr + 4]) == before
     finally:
         sysv.shutdown()
 
@@ -242,8 +351,32 @@ def test_syscall_06_ipc_lookup_send_recv():
         sysv.bind_runtime(guest_mem)
         guest_task = sysv.scheduler.current_task
         assert guest_task is not None
-        handle = sysv.fireball_call(FbSyscallId.IPC_LOOKUP, 0, len(uri_bytes), 0, 0, 0, 0)
+        assert (
+            sysv.fireball_call(FbSyscallId.IPC_LOOKUP, 0, len(uri_bytes), len(guest_mem), 0, 0, 0)
+            == WasiErrno.FAULT
+        )
+        assert len(sysv._channel_table) == 0
+        assert (
+            sysv.fireball_call(FbSyscallId.IPC_LOOKUP, 0, len(uri_bytes), 120, 0, 0, 0)
+            == WasiErrno.SUCCESS
+        )
+        handle = int.from_bytes(guest_mem[120:124], "little")
         assert handle > 0
+
+        # The byte bridge uses one KV pair for length metadata and one per
+        # four-byte chunk: 28 bytes fit exactly; 29 must be rejected before
+        # constructing the fixed-size shared message block.
+        maximum_payload = bytes(range(28))
+        guest_mem[64 : 64 + len(maximum_payload)] = maximum_payload
+        guest_mem[32 : 32 + 29] = bytes(range(29))
+        assert (
+            sysv.fireball_call(FbSyscallId.IPC_SEND, handle, 32, 29, 0, 0, 0) == WasiErrno.MSGSIZE
+        )
+        guest_mem[32:36] = b"noop"
+        assert (
+            sysv.fireball_call(FbSyscallId.IPC_SEND, handle, 32, 4, len(guest_mem) - 2, 0, 0)
+            == WasiErrno.FAULT
+        )
 
         # -- IPC_SEND: a HAL_GPIO receiver coroutine blocks first (nobody
         # is sending yet), then the guest's IPC_SEND completes the rendezvous
@@ -260,49 +393,63 @@ def test_syscall_06_ipc_lookup_send_recv():
         assert sysv.scheduler.get_task(recv_id).state.name == "SUSPENDED_CSP"
         sysv.scheduler.current_task = guest_task
 
+        guest_mem[64 : 64 + len(maximum_payload)] = maximum_payload
         assert (
-            sysv.fireball_call(FbSyscallId.IPC_SEND, handle, 64, len(payload), 0, 0, 0)
+            sysv.fireball_call(FbSyscallId.IPC_SEND, handle, 64, len(maximum_payload), 124, 0, 0)
             == WasiErrno.SUCCESS
         )
-        assert sent and kv_entries_to_bytes(sent[0].entries, max_len=len(payload)) == payload
+        assert sent and kv_entries_to_bytes(sent[0].entries, max_len=28) == maximum_payload
+        assert int.from_bytes(guest_mem[124:128], "little") == 0
 
         # -- IPC_RECV: a DEBUGGER sender coroutine blocks first, so the
         # guest's IPC_RECV completes the rendezvous the instant it calls in.
         # Set guest task role to CORE_SERVICE so it is authorized to receive on DEBUGGER->CORE_SERVICE edge
         guest_task.role = Role.CORE_SERVICE
+        guest_task.role = Role.RUNTIME
+        assert sysv.fireball_call(FbSyscallId.IPC_RECV, 0, 96, 28, 124, 0, 0) == WasiErrno.PERM
+        guest_task.role = Role.CORE_SERVICE
 
         core_uri = "fireball://core/coos/0"
         core_uri_bytes = core_uri.encode()
         guest_mem[32 : 32 + len(core_uri_bytes)] = core_uri_bytes
-        reply = b"ACK"
+        assert (
+            sysv.fireball_call(FbSyscallId.IPC_LOOKUP, 32, len(core_uri_bytes), 120, 0, 0, 0)
+            == WasiErrno.PERM
+        )
+        reply = bytes(range(21))
         sent_status = []
+        received_messages: list[IPCMessage] = []
 
         def debugger_sender():
             status, ch = sysv.ipc.lookup(core_uri)
             assert status == IPCStatus.COMPLETED and ch is not None
-            status, _ = yield from sysv.ipc.send(
-                ch,
-                IPCMessage.from_entries(
-                    bytes_to_kv_storage(reply), memory_manager=sysv.memory_manager
-                ),
+            msg = IPCMessage.from_entries(
+                bytes_to_kv_storage(reply), memory_manager=sysv.memory_manager
             )
+            received_messages.append(msg)
+            status, _ = yield from sysv.ipc.send(ch, msg)
             sent_status.append(status)
 
         sysv.scheduler.spawn("debugger_sender", debugger_sender(), role=Role.DEBUGGER)
         sysv.scheduler.run_until_idle()
         sysv.scheduler.current_task = guest_task
-
-        core_handle = sysv.fireball_call(
-            FbSyscallId.IPC_LOOKUP, 32, len(core_uri_bytes), 0, 0, 0, 0
+        assert received_messages and received_messages[0].ownership == OwnershipState.IN_FLIGHT
+        assert (
+            sysv.fireball_call(FbSyscallId.IPC_RECV, 0, len(guest_mem) - 4, 8, 124, 0, 0)
+            == WasiErrno.FAULT
         )
-        assert core_handle > 0
-        recv_len = sysv.fireball_call(FbSyscallId.IPC_RECV, core_handle, 96, 32, 0, 0, 0)
+        assert received_messages[0].ownership == OwnershipState.IN_FLIGHT
+        assert sent_status == []
+
+        assert sysv.fireball_call(FbSyscallId.IPC_RECV, 0, 96, 3, 124, 0, 0) == WasiErrno.MSGSIZE
+        assert received_messages[0].ownership == OwnershipState.IN_FLIGHT
+        assert sent_status == []
+
+        assert sysv.fireball_call(FbSyscallId.IPC_RECV, 0, 96, 28, 124, 0, 0) == WasiErrno.SUCCESS
+        recv_len = int.from_bytes(guest_mem[124:128], "little")
         assert recv_len == len(reply)
         assert bytes(guest_mem[96 : 96 + recv_len]) == reply
-        assert (
-            sysv.fireball_call(FbSyscallId.IPC_REPLY, core_handle, 0, 0, 0, 0, 0)
-            == WasiErrno.SUCCESS
-        )
+        assert sysv.fireball_call(FbSyscallId.IPC_REPLY, 0, 0, 0, 0, 0, 0) == WasiErrno.SUCCESS
         assert sent_status == [IPCStatus.COMPLETED]
     finally:
         sysv.shutdown()
@@ -322,7 +469,7 @@ def test_syscall_07_wasi_fd_write():
         struct.pack_into("<II", guest_mem, 0, 32, len(message))
         WasiHostContext(sysv, guest_memory=guest_mem)
         sysv.start_hal_driver(
-            DummyDriver(sysv.wasi_hal_bindings.stdout_uri, transport=sysv.transport)
+            DummyDriver(transport=sysv.transport), sysv.wasi_hal_bindings.stdout_uri
         )
         assert sysv.fireball_call(FbSyscallId.WASI_FD_WRITE, 1, 0, 1, 48, 0, 0) == WasiErrno.SUCCESS
         assert sysv.transport.drain_output() == message
@@ -350,7 +497,7 @@ def test_wasi_01_fd_write_scatter_gather():
         struct.pack_into("<II", guest_mem, 8, 64, len(chunk2))
         WasiHostContext(sysv, guest_memory=guest_mem)
         sysv.start_hal_driver(
-            DummyDriver(sysv.wasi_hal_bindings.stdout_uri, transport=sysv.transport)
+            DummyDriver(transport=sysv.transport), sysv.wasi_hal_bindings.stdout_uri
         )
         # Write to stdout (fd=1) with 2 iovecs, result at offset 100
         assert (
@@ -398,7 +545,7 @@ def test_wasi_02_fd_read_eof():
         struct.pack_into("<II", guest_mem, 0, 16, 32)
         WasiHostContext(sysv, guest_memory=guest_mem)
         sysv.start_hal_driver(
-            DummyDriver(sysv.wasi_hal_bindings.stdout_uri, transport=sysv.transport)
+            DummyDriver(transport=sysv.transport), sysv.wasi_hal_bindings.stdout_uri
         )
         assert sysv.fireball_call(FbSyscallId.WASI_FD_READ, 0, 0, 1, 48, 0, 0) == WasiErrno.SUCCESS
         nread = struct.unpack_from("<I", guest_mem, 48)[0]

@@ -267,12 +267,8 @@ from wasm_opcodes import (
 
 from . import _interpreter_native
 
-NATIVE_RUNTIME_PROFILE_STATS_ENABLED = bool(
-    _interpreter_native.RUNTIME_PROFILE_STATS_ENABLED
-)
-NATIVE_JIT_HOTSPOT_PROFILING_ENABLED = bool(
-    _interpreter_native.JIT_HOTSPOT_PROFILING_ENABLED
-)
+NATIVE_RUNTIME_PROFILE_STATS_ENABLED = bool(_interpreter_native.RUNTIME_PROFILE_STATS_ENABLED)
+NATIVE_JIT_HOTSPOT_PROFILING_ENABLED = bool(_interpreter_native.JIT_HOTSPOT_PROFILING_ENABLED)
 
 I32_MASK = 0xFFFFFFFF
 PAGE_SIZE = 65536
@@ -466,6 +462,12 @@ class WasmNumber(Protocol):
     def __float__(self) -> float: ...
 
 
+class WasmHostFunction(Protocol):
+    """Host import callable whose arity is carried by the validated WASM type."""
+
+    def __call__(self, *args: WasmNumber) -> WasmNumber | None: ...
+
+
 FB_CONF_MAX_LOCAL_STACK = NATIVE_VALUE_STACK_CAPACITY
 
 
@@ -504,7 +506,7 @@ class ExecEnv:
     memory: bytearray | None
     globals: StaticVector[int]
     tables: StaticVector[StaticVector[int | None]]
-    host_functions: StaticVector[Callable[..., WasmNumber | None] | None]
+    host_functions: StaticVector[WasmHostFunction | None]
     memory_decl: Memory
     vmmio: VMMIOController | None = None
     phys_mem: bytearray | None = None
@@ -517,7 +519,7 @@ class InterpreterBindings:
     memory: bytearray
     memory_decl: Memory
     imported_memory: bool
-    host_functions: StaticVector[Callable[..., WasmNumber | None] | None]
+    host_functions: StaticVector[WasmHostFunction | None]
     globals: StaticVector[int]
     tables: StaticVector[StaticVector[int | None]]
 
@@ -549,7 +551,7 @@ class InterpreterBindings:
     def with_memory_and_functions(
         cls,
         memory: bytearray,
-        host_functions: StaticVector[Callable[..., WasmNumber | None] | None],
+        host_functions: StaticVector[WasmHostFunction | None],
     ) -> InterpreterBindings:
         """Create bindings for a host memory and dense function-import table."""
         return cls(
@@ -854,7 +856,7 @@ class CallFrame:
             native_control_map[index].br_table_targets = 0
         for start, control in self.control_map.blocks.view().entries:
             match_end, else_offset, result_arity = control
-            _, next_pc = decode_signed(self.code, start + 1)
+            _, next_pc = decode_signed(self.code, start + 1, bits=32)
             native_control_map[start].match_end = match_end
             native_control_map[start].else_offset = (
                 0xFFFF_FFFF if else_offset is None else else_offset
@@ -877,10 +879,9 @@ class CallFrame:
         for start, (labels, default_label) in br_tables:
             entry = native_control_map[start]
             entry.br_table_target_count = len(labels) + 1
-            entry.br_table_targets = (
-                ctypes.addressof(native_br_table_targets)
-                + target_offset * ctypes.sizeof(ctypes.c_uint32)
-            )
+            entry.br_table_targets = ctypes.addressof(
+                native_br_table_targets
+            ) + target_offset * ctypes.sizeof(ctypes.c_uint32)
             for label in labels:
                 native_br_table_targets[target_offset] = label
                 target_offset += 1
@@ -1458,19 +1459,17 @@ class Interpreter:
             return self._step(call_state, stop_at_boundary=True)
 
         context = call_state.context
-        native_status, native_ip, native_size, native_trap = (
-            _interpreter_native.run_control_step(
-                frame.code,
-                context.context_view,
-                frame.values.raw_view,
-                locals_arr._storage.raw_view,
-                context.control_frame_stack.raw_view,
-                len(frame.values),
-                frame.values.capacity,
-                call_state._ip,
-                frame.local_slot_count,
-                frame.control_base,
-            )
+        native_status, native_ip, native_size, native_trap = _interpreter_native.run_control_step(
+            frame.code,
+            context.context_view,
+            frame.values.raw_view,
+            locals_arr._storage.raw_view,
+            context.control_frame_stack.raw_view,
+            len(frame.values),
+            frame.values.capacity,
+            call_state._ip,
+            frame.local_slot_count,
+            frame.control_base,
         )
 
         if native_status == 3 and native_ip >= len(frame.code):
@@ -1528,30 +1527,28 @@ class Interpreter:
             eligible_block_visits,
             interpreted_block_count,
             visits,
-        ) = (
-            _interpreter_native.run_native_dispatch(
-                frame.code,
-                context.context_view,
-                frame.values.raw_view,
-                locals_arr._storage.raw_view,
-                context.control_frame_stack.raw_view,
-                snapshot.entries,
-                snapshot.trackable_blocks,
-                snapshot.observed_visit_counts,
-                snapshot.entry_count,
-                snapshot.trackable_count,
-                len(frame.values),
-                frame.values.capacity,
-                call_state._ip,
-                frame.frame_offset,
-                frame.local_slot_count,
-                frame.control_base,
-                call_state.func_index,
-                yield_threshold,
-                execution_count,
-                collect_stats,
-                collect_hotspots,
-            )
+        ) = _interpreter_native.run_native_dispatch(
+            frame.code,
+            context.context_view,
+            frame.values.raw_view,
+            locals_arr._storage.raw_view,
+            context.control_frame_stack.raw_view,
+            snapshot.entries,
+            snapshot.trackable_blocks,
+            snapshot.observed_visit_counts,
+            snapshot.entry_count,
+            snapshot.trackable_count,
+            len(frame.values),
+            frame.values.capacity,
+            call_state._ip,
+            frame.frame_offset,
+            frame.local_slot_count,
+            frame.control_base,
+            call_state.func_index,
+            yield_threshold,
+            execution_count,
+            collect_stats,
+            collect_hotspots,
         )
         frame.values.set_size(native_size)
         context.native_context.ip = native_ip
@@ -2097,7 +2094,7 @@ def _h_i32_const(
     ctx: InterpreterContext, sp: NativeValueStack, local_base: _LocalStackWindow, tos: int
 ) -> _HandlerResult:
     ip, frame, env = _handler_state(ctx, sp)
-    val, next_ip = decode_signed(frame.code, ip + 1)
+    val, next_ip = decode_signed(frame.code, ip + 1, bits=32)
     frame.values.push_back(_to_i32(val))
     ctx.native_context.ip = next_ip
     return None
@@ -2108,7 +2105,7 @@ def _h_i64_const(
     ctx: InterpreterContext, sp: NativeValueStack, local_base: _LocalStackWindow, tos: int
 ) -> _HandlerResult:
     ip, frame, env = _handler_state(ctx, sp)
-    val, next_ip = decode_signed(frame.code, ip + 1)
+    val, next_ip = decode_signed(frame.code, ip + 1, bits=64)
     assert frame.values.push_i64(_to_i64(val))
     ctx.native_context.ip = next_ip
     return None
@@ -3037,7 +3034,7 @@ def _h_i64_const(
     ctx: InterpreterContext, sp: NativeValueStack, local_base: _LocalStackWindow, tos: int
 ) -> _HandlerResult:
     ip, frame, env = _handler_state(ctx, sp)
-    val, next_ip = decode_signed(frame.code, ip + 1)
+    val, next_ip = decode_signed(frame.code, ip + 1, bits=64)
     assert frame.values.push_i64(_to_i64(val))
     ctx.native_context.ip = next_ip
     return None

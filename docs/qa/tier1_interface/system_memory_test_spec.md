@@ -23,18 +23,19 @@
 | TEST-MEM-09 | HAL固定バッファと共有メモリの分離 | HAL固定スロットをRuntimeへマップ | I/O開始時に`map-buffer`で固定スロットを取得し、完了時に`unmap-buffer`する | HAL固定バッファは共有メモリと別プールであり、`allocate-shared`を呼び出さない。DYNAMICマッピングはRuntime寿命を越えて残らない | runtime_vmmio.md |
 
 ### `shared-block`ライフサイクル（契約レベル）
+<!-- traceability: {ADR_SharedBlockRaii} {OwnershipTransfer} -->
 
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | TEST-MEM-10 | `allocate-shared`→`release`→`claim`の所有権移動 | タスクAが`allocate-shared`済み | ライフサイクル手順を実行 | `release`後はA側で無効化され、`claim`後はB側が所有権を得る（二重所有なし） | `{OwnershipTransfer}` |
 | TEST-MEM-10c | `rollback_transfer()`による所有権の復元 | `release()`済みで送信中断 | `rollback_transfer(handle)`を送信タスクの実行コンテキストから実行 | 所有権が送信元タスクへ復元される（ダングリングのまま放置されない）。物理的なページ再マッピング挙動の検証は [`runtime_memory_test_spec.md`](docs/qa/tier2_runtime/runtime_memory_test_spec.md) TEST-MEM-10c(物理)を正本とする | ipc_router.md |
 | TEST-MEM-10d | 所有権変更通知フック | `PageMappingCallbacks`を登録済み | `release()`、`claim()`、`rollback_transfer()`を順に実行 | 所有権変更ごとに`on_owner_changed`が旧・新所有者を通知し、再利用可能な所有ビューの作成時だけ`on_map_page`が発火する。コールバックはtask-idを引数で自己申告させない | [`system_memory.md`](docs/components/tier1_interface/system_memory.md)「共有ページマッピング・所有権変更通知フック」 |
-| TEST-MEM-11 | `shared-block`のRAII自動解放 | Bがdropする | drop実行 | メモリが自動解放される（明示的`release`呼び出し不要） | 「ADR_SharedBlockRaii」 |
+| TEST-MEM-11 | `shared-block`のRAII自動解放 | Bがdropする | drop実行 | メモリが自動解放される（明示的`release`呼び出し不要） | `{ADR_SharedBlockRaii}` |
 | TEST-MEM-12 | `shm-id`のkv_pairエンコーディング | IPC送信 | メッセージ構築 | 型スコープ上位3bit=`0b000`（機能的）、下位5bit=`0b00001`（u32）のkv_pairとして格納される。`ipc_router.md`の型語彙表にない独自の`dtype=handle`は使わない | ipc_router.md |
 | TEST-MEM-13 | `query()`/`check_ownership()`が削除されている | - | APIサーフェスを確認 | これらのAPIは存在しない（`shared_block.get_size()`/`get_owner()`で代替） | ADR_MemoryManagerMinimalSurface |
 
 ### ランタイム用バンプアロケータ・JITキャッシュアロケータ（契約レベル）
-<!-- traceability: {ADR_SharedBlockRaii} {JIT_MultiBuffer_Cache} {OneRuntimeOneGuest} {Runtime_BumpAllocator} -->
+<!-- traceability: {JIT_MultiBuffer_Cache} {OneRuntimeOneGuest} {Runtime_BumpAllocator} -->
 
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
@@ -43,7 +44,7 @@
 | TEST-MEM-28 | `reset-runtime-arena`はO(1)でバンプポインタを先頭へ巻き戻す | N個確保済み | `reset-runtime-arena`後に再度`bump-alloc` | リセット後最初の`bump-alloc`はアリーナ基点アドレスを返す | |
 | TEST-MEM-29 | `release-runtime-arena`後は`bump-alloc`が拒否される | アリーナ返却済み | 返却済みアリーナへ`bump-alloc` | `memory-error`（`invalid-owner`）を返す | |
 | TEST-MEM-30 | `acquire-jit-cache`は起動時1回のみ許可される | - | 2回目の`acquire-jit-cache` | 2回目は拒否される（単一リージョン保証、`{GLOBAL_StrictMemoryLimit}`） | |
-| TEST-MEM-31 | WIT handleとC++ RAII所有権の境界 | WIT `shm-handle`をC++バインディングへ渡す | handle recordを複製しつつ所有権操作を実行 | recordの複製は所有権を複製しない。C++ `shared_block`はmove-onlyで、release成功後のsource wrapperは無効、claim成功時だけ受信側wrapperが所有者となる | `system_memory.md` §4.3, `ADR_SharedBlockRaii` |
+| TEST-MEM-31 | WIT handleとC++ RAII所有権の境界 | WIT `shm-handle`をC++バインディングへ渡す | handle recordを複製しつつ所有権操作を実行 | recordの複製は所有権を複製しない。C++ `shared_block`はmove-onlyで、release成功後のsource wrapperは無効、claim成功時だけ受信側wrapperが所有者となる | [`system_memory.md`](docs/components/tier1_interface/system_memory.md) §5.1.3, `{ADR_SharedBlockRaii}` |
 | TEST-MEM-32 | x64参照JIT領域の連続性と固定区画 | `acquire-jit-cache`成功 | シミュレーション領域の容量と区画境界を検査 | 現行pysim構成は8,192バイトを共通コード2KB + Active/Warm/Oldest各2KBに分ける。共通領域をバンク管理へ渡さない。この容量・ページ単位をARMv8-Mの物理要件とはしない | `system_config.md`, `runtime_memory.md` |
 
 ## 3. テスト検証実績と網羅状況

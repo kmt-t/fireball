@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import ctypes
 import sys
-from collections.abc import Callable
+from typing import Protocol
 
 from config import (
     JIT_CACHE_ABSOLUTE_ADDRESS_POOL_BYTES,
@@ -38,6 +38,12 @@ COMMON_ABSOLUTE_POOL_OFFSET = 80
 COMMON_CHAIN_DISPATCH_OFFSET = JIT_TRACE_COMMON_CHAIN_DISPATCH_OFFSET
 TRACE_ENTRY_STUB_BYTES = 15
 TRACE_BODY_OFFSET = JIT_X64_TRACE_HEADER_BYTES + TRACE_ENTRY_STUB_BYTES
+
+
+class NativeTraceFunction(Protocol):
+    """Fixed four-argument x64 trace ABI returned by the code patcher."""
+
+    def __call__(self, ctx: int, sp: int, local_base: int, tos: int) -> int | None: ...
 
 
 def gen_pic_prologue() -> bytes:
@@ -251,7 +257,7 @@ class JITCodeCacheRegion:
         helper_exit_patch_offset: int,
         chain_dispatch_patch_offset: int = -1,
         common_helper_offset: int = COMMON_HELPER_OFFSET,
-    ) -> tuple[Callable[..., int | None], int]:
+    ) -> tuple[NativeTraceFunction, int]:
         """Relocate and copy one trace against fixed shared-code entry points.
 
         The trace blob contains no inline ABI prologue or chain dispatcher. Its

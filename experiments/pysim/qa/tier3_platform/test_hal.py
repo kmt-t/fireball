@@ -25,15 +25,14 @@ from hal_dispatch import (
     WasiIpcCmd,
 )
 from helpers import expect_assertion
-from ipc_router import FB_URI_HAL_STDOUT
-from scheduler import Scheduler
+from scheduler import ChannelAction, Scheduler
 from system import (
     System,
 )
 from system_containers import (
     ReadOnlyFlatMapView,
 )
-from tier2_runtime.logger import LogLevel
+from tier2_runtime.logger import LogDictionary, LogLevel, LogResult, decode_log_records
 from tier3_platform.drivers.hal.dummy import DummyDriver, Timer
 from tier3_platform.drivers.hal.stream import StreamTransport
 from tier3_platform.drivers.logging.file_sink import FileLogSink
@@ -59,7 +58,7 @@ def test_hal_02_dummy_stdio_driver_streams_stdin_and_stdout():
     assert scheduler.current_task is not None
     vmmio = VMMIOController(guest_ram_size=8192, scheduler=scheduler)
     pool = HalBufferPool(scheduler, vmmio)
-    driver = DummyDriver(FB_URI_HAL_STDOUT)
+    driver = DummyDriver()
     driver.bind_buffer_pool(pool)
     try:
         rx = pool.buffer(0)
@@ -108,6 +107,42 @@ def test_hal_03_timer_monotonic_ns():
     assert t2 > t1
 
 
+def test_hal_15_timer_pollables_are_deadline_checked_and_reusable():
+    sysv = System()
+    timer_uri = "fireball://hal/timer/0"
+    try:
+        runtime_task = sysv.start_runtime_task(name="timer_poll_guest")
+        sysv.scheduler.current_task = runtime_task
+        timer_driver = DummyDriver()
+        sysv.start_hal_driver(timer_driver, timer_uri)
+        from tier3_platform.drivers.wasi.context import Wasi03pEngine
+
+        engine = Wasi03pEngine(sysv)
+        handle = engine.clock_subscribe(timer_uri, 100_000_000)
+        assert handle != 0
+        assert engine.poll_check(timer_uri, handle) is False
+        peer_ran_ns: list[int] = []
+
+        def ready_peer():
+            yield (ChannelAction.YIELD, None)
+            yield (ChannelAction.YIELD, None)
+            peer_ran_ns.append(time.monotonic_ns())
+            yield (ChannelAction.YIELD, None)
+
+        sysv.scheduler.spawn("timer_wait_peer", ready_peer(), role=runtime_task.role)
+        deadline_ns = timer_driver.timer.wakeup_ns(handle)
+        assert engine.poll_wait(timer_uri, handle) is True
+        assert len(peer_ran_ns) == 1 and peer_ran_ns[0] < deadline_ns
+        assert engine.poll_check(timer_uri, handle) is True
+        assert engine.poll_drop(timer_uri, handle) == 0
+        replacement = engine.clock_subscribe(timer_uri, 0)
+        assert replacement != handle
+        with expect_assertion("stale HAL timer pollable handle"):
+            engine.poll_check(timer_uri, handle)
+    finally:
+        sysv.shutdown()
+
+
 def test_hal_04_hal_buffer_pool_maps_fixed_slots():
     scheduler = Scheduler()
     task_id = scheduler.spawn("test_task")
@@ -142,10 +177,17 @@ def test_hal_05_hal_buffer_slice_bounds_and_guest_mapping():
         assert pool.can_view(h, 0, 16)
         scheduler.current_task = scheduler.get_task(other_id)
         assert pool.map_for_io(h.buffer_id) == HalBufferMapStatus.BUSY
+        status, _ = vmmio.access(h.virtual_address, is_write=False)
+        assert status == VmmioStatus.OWNER_MISMATCH
         assert not pool.can_view(h, 0, 16)
         with expect_assertion("DYNAMIC buffer is not mapped for this guest"):
             pool.view(h, 0, 16)
+        # The HAL endpoint uses the validated fixed-pool backing, while guest
+        # vMMIO access remains restricted to the mapped guest owner.
+        driver_view = pool.view_for_driver(h.buffer_id, 0, 4)
+        driver_view[:] = b"HAL!"
         scheduler.current_task = scheduler.get_task(owner_id)
+        assert pool.view(h, 0, 4).tobytes() == b"HAL!"
         pool.unmap_after_io(h.buffer_id)
         assert not pool.can_view(h, 0, 16)
         assert pool.map_for_io(h.buffer_id) == HalBufferMapStatus.MAPPED
@@ -175,7 +217,7 @@ def test_hal_task_ipc_communication():
         buffer_view = sysv.pool.view(buffer_handle, 0, 128)
         buffer_view[:] = b"x" * 128
         sysv.start_hal_driver(
-            DummyDriver(sysv.wasi_hal_bindings.stdout_uri, transport=sysv.transport)
+            DummyDriver(transport=sysv.transport), sysv.wasi_hal_bindings.stdout_uri
         )
         engine = Wasi03pEngine(sysv)
         # Send command via IPC
@@ -205,7 +247,9 @@ def test_hal_command_response_separates_status_and_u64_value():
     try:
         runtime_task = sysv.start_runtime_task(name="hal_clock_guest")
         sysv.scheduler.current_task = runtime_task
-        sysv.start_hal_driver(DummyDriver(sysv.wasi_hal_bindings.stdout_uri, transport=sysv.transport))
+        sysv.start_hal_driver(
+            DummyDriver(transport=sysv.transport), sysv.wasi_hal_bindings.stdout_uri
+        )
         engine = Wasi03pEngine(sysv)
 
         response = engine.send_ipc_command(
@@ -216,11 +260,14 @@ def test_hal_command_response_separates_status_and_u64_value():
 
         assert response.response_code == 0
         assert response.value > 0xFFFF_FFFF
-        assert engine.dispatch_command(
-            "fireball://hal/stdout/0",
-            WasiIpcCmd.CLOCK_GET_NOW,
-            ReadOnlyFlatMapView(()),
-        ) > 0xFFFF_FFFF
+        assert (
+            engine.dispatch_command(
+                "fireball://hal/stdout/0",
+                WasiIpcCmd.CLOCK_GET_NOW,
+                ReadOnlyFlatMapView(()),
+            )
+            > 0xFFFF_FFFF
+        )
     finally:
         sysv.shutdown()
 
@@ -257,18 +304,20 @@ def test_hal_15_file_log_sink_receives_internal_logs():
     """System logs go to the injected file sink, never to guest stdout."""
     backing = io.BytesIO()
     sink = FileLogSink(backing)
-    sysv = System(logger_sink=sink)
+    log_dictionary = LogDictionary(entries=((0x300, "TEST_LOG: v=%d"),))
+    sysv = System(logger_sink=sink, log_dictionary=log_dictionary)
     try:
         sysv.start_hal_driver(
-            DummyDriver(sysv.wasi_hal_bindings.stdout_uri, transport=sysv.transport)
+            DummyDriver(transport=sysv.transport), sysv.wasi_hal_bindings.stdout_uri
         )
 
-        sysv.dictionary.register(0x300, "TEST_LOG: v=%d")
-        assert sysv.logger.log_event(LogLevel.INFO, 0x300, 7) == "QUEUED"
+        assert sysv.logger.log_event(LogLevel.INFO, 0x300, 7) == LogResult.SUCCESS
         assert sysv.logger.flush() == 1
         assert sysv.transport.write(memoryview(b"guest-out\n")) == 10
 
-        assert backing.getvalue().endswith(b"TEST_LOG: v=7\n")
+        records = decode_log_records(backing.getvalue(), sysv.dictionary)
+        assert len(records) == 1
+        assert records[0] == "[INFO] TEST_LOG: v=7"
         assert sink.bytes_written == len(backing.getvalue())
         assert sysv.transport.drain_output() == b"guest-out\n"
     finally:

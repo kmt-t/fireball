@@ -1,11 +1,15 @@
 # ランタイムプラグイン構成契約 コンポーネント設計書
 <!-- evidence:
      contract-only: true
+     reference: experiments/pysim/tier2_runtime/runtime_composer.py
+     test: docs/qa/tier2_runtime/runtime_plugin_architecture_test_spec.md
 -->
 
 ## 1. コンセプト
 <!-- traceability: {META_3TierSeparation} {META_ContractImplSplit} {META_StaticDI} {GLOBAL_ComponentHarness} {ZeroRuntimeOverhead} -->
 本コンポーネントは、WASM ランタイムを構成する実行エンジンと補助エンジンの交換契約を定義する。System は不変な構成情報を保持する。Runtime は構成情報から実装を静的に合成する。Tier 3 のプラグインは個別の実行方式、観測方式、物理接続を実装する。
+
+本書は実機C++ RuntimeComposerの目標契約である。現行リポジトリの `RuntimeComposer` はpysim内の構成モデルであり、`System.runtime_engine` や実機C++ Runtimeへ統合されていない。Pythonモデルの選択・Observer生成の範囲は関連テストで検証し、C++生成物からの除去や実機Pluginの初期化・終了は未実装の制限として扱う。
 
 本契約は、インタープリタ、JIT ランタイム、JIT コード生成器、デバッガ、ゲストプロファイラ、WASI バックエンドを同じランタイムへ混在させることを目的としない。Runtime は各機能を独立したスロットへ静的に結線する。無効な機能は Null オブジェクトとして実行時に保持せず、構成合成時に除外する。これにより、Runtime が実装方式の詳細と不要な weave 処理を抱え込むことを防止する。
 
@@ -179,20 +183,27 @@ sequenceDiagram
 - Debugger の状態変更は `ExecutionControl` へ限定し、Profiler と観測イベントを介して実行状態を変更できないようにする。
 - JIT のコード領域、Runtime のデータ領域、外部ログの搬送領域を物理的に分離する。
 
-## 7. 形式検証（pyModelChecking / 直交表）
 
-### 7.1 検証対象の不変条件
+## 7. 形式検証・テスト仕様との対応
+
+### 7.1 形式検証（pyModelChecking / 直交表）
+
+#### 7.1.1 検証対象の不変条件
 | 不変条件 | 説明 | 範囲 | 検証方法 |
 | :--- | :--- | :--- | :--- |
-| スロット完全性 | 必須スロットが必ず具象実装で満たされ、無効スロットが実行経路に存在しない。 | 構成 | TODO(未決): 構成モデルの CTL 検証 |
-| weave 除去 | 無効アスペクトのフック、状態、呼出し、WIT 境界、翻訳単位が合成結果に存在しない。 | 構成・生成物 | TODO(未決): 生成物検査と map file 検査 |
-| 依存方向 | Tier 2 契約が Tier 3 の内部型を参照しない。 | 文書・型 | TODO(未決): DocGraph と静的検査 |
-| 共通呼出同値性 | Interpreter と JIT の完了理由、トラップ、結果検証が同じ意味を持つ。 | 実行 | TODO(未決): 直交表と状態モデル |
-| 終了完全性 | 初期化済みの全プラグインが終了処理を一度だけ受ける。 | ライフサイクル | TODO(未決): CTL 変異検査 |
+| 実行器選択 | Interpreter/JIT構成が選択したfactoryだけを呼び、Debugger+JITを拒否する。 | pysim構成モデル | [`runtime_plugin_architecture_test_spec.md`](docs/qa/tier2_runtime/runtime_plugin_architecture_test_spec.md) `TEST-PLUGIN-01` |
+| Observer選択 | 選択済みObserverだけを生成し、全Observer無効構成は観測状態を持たない。 | pysim構成モデル | `runtime_plugin_architecture_test_spec.md` `TEST-PLUGIN-02` |
+| C++ weave除去 | 無効アスペクトのフック、状態、WIT境界、翻訳単位を生成物から除去する。 | 実機C++生成物 | 未実装。C++実装とmap-file検査を追加するまで保証しない |
+| 初期化・終了 | 全Pluginの初期化・終了順と各処理の一度限りの実行。 | 実機Runtime lifecycle | 未実装。現行pysim構成モデルはPlugin lifecycleを持たない |
 
-### 7.2 既知の制限や仮定
-本仕様はプラグイン境界とライフサイクルを定義する。各プラグインのキャッシュアルゴリズム、WASI ABI、デバッグパケット形式、イベント集計アルゴリズムは本仕様の検証対象外であり、対応する Tier 3 仕様へ委譲する。
+#### 7.1.2 既知の制限や仮定
+本仕様は実機Runtimeのプラグイン境界とライフサイクル目標を定義する。現行pysim参照モデルの検証範囲は実行器とObserverの構成選択であり、実行中の統合や終了hookを含まない。各プラグインのキャッシュアルゴリズム、WASI ABI、デバッグパケット形式、イベント集計アルゴリズムは対応する Tier 3 仕様へ委譲する。
 
-## 8. 設計上の未決事項
-- JIT runtime と JIT compiler のコンパイル要求を同期呼出だけにするか、固定長要求キューを許可するかの選択。
-- プロファイラの観測損失を構成エラーにする厳密モードと、欠落数をログへ残して継続する計測モードの選択。
+## 8. 設計判断と参考実装
+
+### 8.1 設計上の未決事項
+- JIT runtime と JIT compiler の要求搬送方式。
+- Profilerの損失許容方針と予約イベント容量。
+
+
+特記すべき独立したADRはない。採用方針は本書の各契約節に記載する。

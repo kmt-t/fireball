@@ -15,8 +15,10 @@ Implements:
 from __future__ import annotations
 
 import struct
+from enum import IntEnum
 from typing import TypeVar
 
+from config import FB_CONF_MAX_WASM_PAGES
 from system_containers import (
     MutableFlatMapStorage,
     ReadOnlyFlatMapStorage,
@@ -45,7 +47,6 @@ def _push_or_assert(target: StaticVector[ItemT], item: ItemT, label: str) -> Non
     assert pushed, f"{label} capacity exceeded"
 
 
-FB_CONF_MAX_WASM_PAGES = 16
 FB_CONF_WASM_PAGE_SIZE = 65536
 
 
@@ -78,6 +79,15 @@ class SectionID:
     DATA_COUNT = 12
 
 
+class DecodedEntityKind(IntEnum):
+    """Fixed identifiers for ROM-backed decoded entity metadata."""
+
+    SECTION = 0
+    FUNCTION = 1
+    GLOBAL = 2
+    DATA = 3
+
+
 class ValType:
     __slots__ = ()
     I32 = 0x7F
@@ -98,23 +108,56 @@ class ExternalKind:
 
 def fnv1a_32(data: str) -> int:
     """FNV-1a 32-bit hash for fast zero-copy symbol lookup."""
+    return fnv1a_32_bytes(memoryview(data.encode("utf-8")))
+
+
+def fnv1a_32_bytes(data: memoryview) -> int:
+    """FNV-1a 32-bit hash over a borrowed byte range."""
     h = 0x811C9DC5
-    for b in data.encode("utf-8"):
+    for b in data:
         h = ((h ^ b) * 0x01000193) & 0xFFFFFFFF
     return h
 
 
-class BumpAllocator:
-    """Non-owning LIFO bump allocator simulating scratch allocation ({META_BumpAllocator})."""
+def fnv1a_32_name(data: memoryview, offset: int, size: int) -> int:
+    """Hash a name in the original WASM image without storing a decoded copy."""
+    return fnv1a_32_bytes(data[offset : offset + size])
 
-    __slots__ = ("capacity", "offset", "storage")
+
+def fnv1a_32_name_pair(
+    data: memoryview,
+    first_offset: int,
+    first_size: int,
+    separator: memoryview,
+    second_offset: int,
+    second_size: int,
+) -> int:
+    """Hash two ROM names with their public-key separator bytes."""
+    h = 0x811C9DC5
+    for value in data[first_offset : first_offset + first_size]:
+        h = ((h ^ value) * 0x01000193) & 0xFFFFFFFF
+    for value in separator:
+        h = ((h ^ value) * 0x01000193) & 0xFFFFFFFF
+    for value in data[second_offset : second_offset + second_size]:
+        h = ((h ^ value) * 0x01000193) & 0xFFFFFFFF
+    return h
+
+
+class BumpAllocator:
+    """Offset-only bump arena model used to verify allocation and rollback ({META_BumpAllocator})."""
+
+    __slots__ = ("capacity", "offset")
 
     def __init__(self, capacity: int = 16384):
+        assert capacity >= 0, "BumpAllocator capacity must be non-negative"
         self.capacity = capacity
-        self.storage = bytearray(capacity)
         self.offset = 0
 
     def allocate(self, size: int, alignment: int = WASM_RAW_WORD_BYTES) -> int:
+        assert size >= 0, "BumpAllocator allocation size must be non-negative"
+        assert alignment > 0 and alignment & (alignment - 1) == 0, (
+            "BumpAllocator alignment must be a positive power of two"
+        )
         aligned_offset = (self.offset + (alignment - 1)) & ~(alignment - 1)
         if aligned_offset + size > self.capacity:
             assert False, "BumpAllocator capacity exceeded"
@@ -225,6 +268,17 @@ class BinaryStream:
         except UnicodeDecodeError as e:
             assert False, f"Invalid UTF-8 string: {e}"
 
+    def read_string_range(self) -> tuple[int, int]:
+        """Validate and return a WASM name's ROM offset and byte length."""
+        length = self.read_leb128_u32()
+        offset = self.cursor
+        raw_bytes = self.read_bytes(length)
+        try:
+            bytes(raw_bytes).decode("utf-8")
+        except UnicodeDecodeError as e:
+            assert False, f"Invalid UTF-8 string: {e}"
+        return offset, length
+
 
 class FuncType:
     __slots__ = ("params", "results")
@@ -238,25 +292,40 @@ class FuncType:
 
 
 class ImportEntry:
-    __slots__ = ("desc", "field_name", "kind", "module_name")
+    __slots__ = (
+        "desc",
+        "field_name_offset",
+        "field_name_size",
+        "kind",
+        "module_name_offset",
+        "module_name_size",
+    )
 
-    def __init__(self, module_name: str, field_name: str, kind: int, desc: int):
-        self.module_name = module_name
-        self.field_name = field_name
+    def __init__(
+        self,
+        module_name_offset: int,
+        module_name_size: int,
+        field_name_offset: int,
+        field_name_size: int,
+        kind: int,
+        desc: int,
+    ):
+        self.module_name_offset = module_name_offset
+        self.module_name_size = module_name_size
+        self.field_name_offset = field_name_offset
+        self.field_name_size = field_name_size
         self.kind = kind
         self.desc = desc
 
 
 class ExportEntry:
-    __slots__ = ("index", "kind", "name")
+    __slots__ = ("index", "kind", "name_offset", "name_size")
 
-    def __init__(self, name: str, kind: int, index: int):
-        self.name = name
+    def __init__(self, name_offset: int, name_size: int, kind: int, index: int):
+        self.name_offset = name_offset
+        self.name_size = name_size
         self.kind = kind
         self.index = index
-
-    def __lt__(self, other: ExportEntry) -> bool:
-        return self.name < other.name
 
 
 class GlobalEntry:
@@ -372,12 +441,12 @@ class DecodedEntity:
 
     def __init__(
         self,
-        kind: str,
+        kind: DecodedEntityKind,
         start_offset: int,
         end_offset: int,
         index: int,
     ):
-        self.kind = kind  # "SECTION", "FUNCTION", "GLOBAL", "DATA"
+        self.kind = kind
         self.start_offset = start_offset
         self.end_offset = end_offset
         self.index = index
@@ -403,7 +472,6 @@ class ModuleView:
         "imports",
         "is_ready",
         "memories",
-        "module_name",
         "resolved_imports",
         "rom_binary",
         "sections",
@@ -412,8 +480,7 @@ class ModuleView:
         "types",
     )
 
-    def __init__(self, module_name: str, rom_binary: memoryview):
-        self.module_name = module_name
+    def __init__(self, rom_binary: memoryview):
         self.rom_binary = memoryview(rom_binary)
         # Section IDs are SectionID.CUSTOM(0)..DATA_COUNT(12): a fixed, dense
         # WASM-spec-defined range, so a fixed-size array indexed by ID -- not
@@ -450,7 +517,7 @@ class ModuleView:
 
     def register_entity(
         self,
-        kind: str,
+        kind: DecodedEntityKind,
         start_offset: int,
         end_offset: int,
         index: int,
@@ -463,14 +530,23 @@ class ModuleView:
         """Constructs read-only radix-binary-tree indexes for exports, imports, and entity offsets."""
         exp_keys: StaticVector[int] = StaticVector(capacity=len(self.exports_dict))
         for exp in self.exports_dict:
-            exp_keys.append(fnv1a_32(exp.name))
+            exp_keys.append(fnv1a_32_name(self.rom_binary, exp.name_offset, exp.name_size))
         self.export_storage = ReadOnlyRadixBinaryTreeStorage.create(
             exp_keys, self.exports_dict, radix_shift=28
         )
 
         imp_keys: StaticVector[int] = StaticVector(capacity=len(self.imports))
         for imp in self.imports:
-            imp_keys.append(fnv1a_32(f"{imp.module_name}::{imp.field_name}"))
+            imp_keys.append(
+                fnv1a_32_name_pair(
+                    self.rom_binary,
+                    imp.module_name_offset,
+                    imp.module_name_size,
+                    memoryview(b"::"),
+                    imp.field_name_offset,
+                    imp.field_name_size,
+                )
+            )
         self.import_storage = ReadOnlyRadixBinaryTreeStorage.create(
             imp_keys, self.imports, radix_shift=28
         )
@@ -484,27 +560,98 @@ class ModuleView:
 
     def lookup_export(self, name: str) -> ExportEntry | None:
         """Hash + read-only radix lookup with zero-copy string verification in O(k)."""
+        return self.lookup_export_bytes(memoryview(name.encode("utf-8")))
+
+    def lookup_export_bytes(self, name: memoryview) -> ExportEntry | None:
+        """Lookup a borrowed UTF-8 name against ROM-backed export ranges."""
         if self.export_storage is None:
             return None
-        h = fnv1a_32(name)
-        candidate = self.export_storage.view().find(h)
-        if candidate is not None and candidate.name == name:
-            return candidate
-        return None
+        h = fnv1a_32_bytes(name)
+        return self.export_storage.view().find_matching(
+            h,
+            lambda candidate: (
+                self.rom_binary[candidate.name_offset : candidate.name_offset + candidate.name_size]
+                == name
+            ),
+        )
 
     def find_import(self, module_name: str, field_name: str) -> ImportEntry | None:
         """Hash + read-only radix import table lookup in O(k)."""
+        return self.find_import_bytes(
+            memoryview(module_name.encode("utf-8")), memoryview(field_name.encode("utf-8"))
+        )
+
+    def find_import_bytes(
+        self, module_name: memoryview, field_name: memoryview
+    ) -> ImportEntry | None:
+        """Lookup borrowed UTF-8 names against ROM-backed import ranges."""
         if self.import_storage is None:
             return None
-        h = fnv1a_32(f"{module_name}::{field_name}")
-        candidate = self.import_storage.view().find(h)
-        if (
-            candidate is not None
-            and candidate.module_name == module_name
-            and candidate.field_name == field_name
-        ):
-            return candidate
-        return None
+        h = fnv1a_32_bytes(module_name)
+        for value in b"::":
+            h = ((h ^ value) * 0x01000193) & 0xFFFFFFFF
+        for value in field_name:
+            h = ((h ^ value) * 0x01000193) & 0xFFFFFFFF
+        return self.import_storage.view().find_matching(
+            h,
+            lambda candidate: (
+                self.rom_binary[
+                    candidate.module_name_offset : candidate.module_name_offset
+                    + candidate.module_name_size
+                ]
+                == module_name
+                and self.rom_binary[
+                    candidate.field_name_offset : candidate.field_name_offset
+                    + candidate.field_name_size
+                ]
+                == field_name
+            ),
+        )
+
+    def decode_name(self, offset: int, size: int) -> str:
+        """Materialize a ROM name only for diagnostics or test inspection."""
+        return bytes(self.rom_binary[offset : offset + size]).decode("utf-8")
+
+    def export_name(self, entry: ExportEntry) -> str:
+        return self.decode_name(entry.name_offset, entry.name_size)
+
+    def import_names(self, entry: ImportEntry) -> tuple[str, str]:
+        return (
+            self.decode_name(entry.module_name_offset, entry.module_name_size),
+            self.decode_name(entry.field_name_offset, entry.field_name_size),
+        )
+
+    def sort_exports(self) -> None:
+        """Keep the public export sequence ordered without retaining decoded names."""
+        for index in range(1, len(self.exports_dict)):
+            entry = self.exports_dict[index]
+            entry_start = entry.name_offset
+            entry_size = entry.name_size
+            position = index
+            while position > 0:
+                previous = self.exports_dict[position - 1]
+                left_size = previous.name_size if previous.name_size < entry_size else entry_size
+                compare_index = 0
+                ordering = 0
+                while compare_index < left_size:
+                    left_byte = self.rom_binary[previous.name_offset + compare_index]
+                    right_byte = self.rom_binary[entry_start + compare_index]
+                    if left_byte != right_byte:
+                        ordering = -1 if left_byte < right_byte else 1
+                        break
+                    compare_index += 1
+                if ordering == 0:
+                    if previous.name_size < entry_size:
+                        ordering = -1
+                    elif previous.name_size > entry_size:
+                        ordering = 1
+                    else:
+                        assert False, "WASM export names must be unique"
+                if ordering <= 0:
+                    break
+                self.exports_dict[position] = previous
+                position -= 1
+            self.exports_dict[position] = entry
 
     def lookup_export_func(self, name: str) -> int | None:
         exp = self.lookup_export(name)
@@ -561,24 +708,32 @@ class WasmLoader:
         max_wasm_pages: int = FB_CONF_MAX_WASM_PAGES,
     ):
         self.allocator = allocator or BumpAllocator()
-        self.registry: MutableFlatMapStorage[int, ModuleView] = MutableFlatMapStorage(
+        self.registry: MutableFlatMapStorage[bytes, ModuleView] = MutableFlatMapStorage(
             capacity=max_modules
         )
         self.max_modules = max_modules
         self.max_wasm_pages = max_wasm_pages
 
     def lookup(self, name: str) -> ModuleView | None:
-        return self.registry.view().find(fnv1a_32(name))
+        return self.registry.view().find(name.encode("utf-8"))
+
+    def _lookup_name_bytes(self, name: memoryview) -> ModuleView | None:
+        """Resolve a transient ROM name against the bounded module registry."""
+        return self.registry.view().find(bytes(name))
 
     def prepare(self, module_name: str, wasm_binary: memoryview) -> ModuleView:
         if len(self.registry) >= self.max_modules:
             assert False, f"Module registry capacity ({self.max_modules}) exceeded"
+        module_key = module_name.encode("utf-8")
+        assert self.registry.view().find(module_key) is None, (
+            f"Module name {module_name!r} is already registered"
+        )
         watermark = self.allocator.save()
         try:
             # Reserve fixed metadata scratch so transactional rollback and LIFO
             # unload exercise a real allocator mutation ({META_BumpAllocator}).
             self.allocator.allocate(64, alignment=WASM_VALUE_SLOT_BYTES)
-            view = ModuleView(module_name, wasm_binary)
+            view = ModuleView(wasm_binary)
             view.allocator_start = watermark
             view.allocator_end = self.allocator.save()
             stream = BinaryStream(wasm_binary)
@@ -621,7 +776,12 @@ class WasmLoader:
                 sec_total_size = (payload_start - sec_start) + sec_size
                 sec_view = SectionView(sec_id, sec_start, sec_total_size, payload_start, sec_size)
                 view.sections[sec_id] = sec_view
-                view.register_entity("SECTION", sec_start, sec_start + sec_total_size, sec_id)
+                view.register_entity(
+                    DecodedEntityKind.SECTION,
+                    sec_start,
+                    sec_start + sec_total_size,
+                    sec_id,
+                )
                 sec_stream = BinaryStream(wasm_binary, offset=payload_start, length=sec_size)
                 self._parse_section_content(sec_id, sec_stream, view)
                 stream.seek(payload_start + sec_size)
@@ -652,12 +812,12 @@ class WasmLoader:
                         f"V6 Verification Failed: Memory pages {mem.initial_pages} > budget {self.max_wasm_pages}"
                     )
 
-            view.exports_dict.sort()
+            view.sort_exports()
             view.build_indexes()
             if not view.imports:
                 view.is_ready = True
 
-            assert self.registry.insert(fnv1a_32(module_name), view)
+            assert self.registry.insert(module_key, view)
             return view
         except Exception:
             self.allocator.restore(watermark)
@@ -686,14 +846,21 @@ class WasmLoader:
         elif sec_id == SectionID.IMPORT:
             count = stream.read_leb128_u32()
             for _ in range(count):
-                mod_name = stream.read_string()
-                field_name = stream.read_string()
+                mod_name_offset, mod_name_size = stream.read_string_range()
+                field_name_offset, field_name_size = stream.read_string_range()
                 kind = stream.read_u8()
                 if kind == ExternalKind.FUNCTION:
                     type_idx = stream.read_leb128_u32()
                     _push_or_assert(
                         view.imports,
-                        ImportEntry(mod_name, field_name, kind, type_idx),
+                        ImportEntry(
+                            mod_name_offset,
+                            mod_name_size,
+                            field_name_offset,
+                            field_name_size,
+                            kind,
+                            type_idx,
+                        ),
                         "import",
                     )
                 elif kind == ExternalKind.TABLE:
@@ -703,7 +870,16 @@ class WasmLoader:
                     maximum = stream.read_leb128_u32() if (flags & 1) else None
                     _push_or_assert(view.tables, TableEntry(elemtype, initial, maximum), "table")
                     _push_or_assert(
-                        view.imports, ImportEntry(mod_name, field_name, kind, 0), "import"
+                        view.imports,
+                        ImportEntry(
+                            mod_name_offset,
+                            mod_name_size,
+                            field_name_offset,
+                            field_name_size,
+                            kind,
+                            0,
+                        ),
+                        "import",
                     )
                 elif kind == ExternalKind.MEMORY:
                     flags = stream.read_leb128_u32()
@@ -711,14 +887,32 @@ class WasmLoader:
                     maximum = stream.read_leb128_u32() if (flags & 1) else None
                     _push_or_assert(view.memories, MemoryEntry(initial, maximum), "memory")
                     _push_or_assert(
-                        view.imports, ImportEntry(mod_name, field_name, kind, 0), "import"
+                        view.imports,
+                        ImportEntry(
+                            mod_name_offset,
+                            mod_name_size,
+                            field_name_offset,
+                            field_name_size,
+                            kind,
+                            0,
+                        ),
+                        "import",
                     )
                 elif kind == ExternalKind.GLOBAL:
                     valtype = stream.read_u8()
                     mutable = stream.read_u8() == 1
                     _push_or_assert(view.globals, GlobalEntry(valtype, mutable, 0, 0), "global")
                     _push_or_assert(
-                        view.imports, ImportEntry(mod_name, field_name, kind, 0), "import"
+                        view.imports,
+                        ImportEntry(
+                            mod_name_offset,
+                            mod_name_size,
+                            field_name_offset,
+                            field_name_size,
+                            kind,
+                            0,
+                        ),
+                        "import",
                     )
         elif sec_id == SectionID.FUNCTION:
             count = stream.read_leb128_u32()
@@ -752,16 +946,23 @@ class WasmLoader:
                 init_size = stream.tell() - init_start
                 g_entry = GlobalEntry(valtype, mutable, init_start, init_size)
                 _push_or_assert(view.globals, g_entry, "global")
-                view.register_entity("GLOBAL", init_start, init_start + init_size, g_idx)
+                view.register_entity(
+                    DecodedEntityKind.GLOBAL,
+                    init_start,
+                    init_start + init_size,
+                    g_idx,
+                )
         elif sec_id == SectionID.EXPORT:
             count = stream.read_leb128_u32()
             if count > FB_CONF_MAX_EXPORTS:
                 assert False, "Export count exceeds FB_CONF_MAX_EXPORTS"
             for _ in range(count):
-                name = stream.read_string()
+                name_offset, name_size = stream.read_string_range()
                 kind = stream.read_u8()
                 index = stream.read_leb128_u32()
-                _push_or_assert(view.exports_dict, ExportEntry(name, kind, index), "export")
+                _push_or_assert(
+                    view.exports_dict, ExportEntry(name_offset, name_size, kind, index), "export"
+                )
         elif sec_id == SectionID.START:
             view.start_func_idx = stream.read_leb128_u32()
         elif sec_id == SectionID.CODE:
@@ -772,7 +973,7 @@ class WasmLoader:
                 _push_or_assert(view.code_offsets, (body_start, body_size), "code body")
                 func_idx = view.num_imported_functions() + c_idx
                 view.register_entity(
-                    "FUNCTION",
+                    DecodedEntityKind.FUNCTION,
                     body_start,
                     body_start + body_size,
                     func_idx,
@@ -782,15 +983,34 @@ class WasmLoader:
     def resolve_imports(self, module: ModuleView) -> bool:
         entries: StaticVector[tuple[int, ExportEntry]] = StaticVector(capacity=FB_CONF_MAX_IMPORTS)
         for imp in module.imports:
-            target_mod = self.lookup(imp.module_name)
+            module_name = module.rom_binary[
+                imp.module_name_offset : imp.module_name_offset + imp.module_name_size
+            ]
+            field_name = module.rom_binary[
+                imp.field_name_offset : imp.field_name_offset + imp.field_name_size
+            ]
+            target_mod = self._lookup_name_bytes(module_name)
             if target_mod is None:
-                assert False, f"Dependency module '{imp.module_name}' not found"
-            export_entry = target_mod.lookup_export(imp.field_name)
+                assert False, f"Dependency module '{bytes(module_name).decode('utf-8')}' not found"
+            export_entry = target_mod.lookup_export_bytes(field_name)
             if export_entry is None or export_entry.kind != imp.kind:
-                assert False, f"Unresolved import '{imp.module_name}.{imp.field_name}'"
+                assert False, (
+                    "Unresolved import "
+                    f"'{bytes(module_name).decode('utf-8')}.{bytes(field_name).decode('utf-8')}'"
+                )
             _push_or_assert(
                 entries,
-                (fnv1a_32(f"{imp.module_name}.{imp.field_name}"), export_entry),
+                (
+                    fnv1a_32_name_pair(
+                        module.rom_binary,
+                        imp.module_name_offset,
+                        imp.module_name_size,
+                        memoryview(b"."),
+                        imp.field_name_offset,
+                        imp.field_name_size,
+                    ),
+                    export_entry,
+                ),
                 "resolved import",
             )
 
@@ -800,9 +1020,15 @@ class WasmLoader:
         return True
 
     def unload(self, module: ModuleView) -> bool:
-        removed = self.registry.remove(fnv1a_32(module.module_name))
-        if removed is None:
+        module_key: bytes | None = None
+        for key, registered_module in self.registry:
+            if registered_module is module:
+                module_key = key
+                break
+        if module_key is None:
             return False
+        removed = self.registry.remove(module_key)
+        assert removed is not None
         assert removed is module
         if module.allocator_end == self.allocator.save():
             assert module.allocator_start is not None

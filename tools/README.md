@@ -11,7 +11,7 @@
 | コンポーネントごとの必要証跡と網羅性 | [検証因子・成果物マトリクス](../docs/qa/verification_factor_matrix.md) | 必要な検証成果物と因子の対応を定める。 |
 | テスト仕様・結果の配置 | [品質保証資料の案内](../docs/qa/README.md) | テスト仕様と記録済み証跡を分類する。 |
 | 検証の選び方と実行入口 | この文書 | 変更範囲に合うコマンドを選ぶ。 |
-| ドキュメント検証の運用手順 | [document-validation スキル](../.agents/skills/document-validation/SKILL.md) | 対象を絞り、正本と検査結果を照合する。 |
+| ドキュメント検証の運用手順 | この文書 | 対象を絞り、正本と検査結果を照合する。 |
 | CLI の検査項目・オプション | [spec-integrator のリファレンス](spec-integrator/README.md) | ツールの実装に対応する詳細を示す。 |
 
 ## 検証の分類
@@ -36,9 +36,8 @@ check-doc と check-src は、検証因子・成果物マトリクスも確認�
 | :--- | :--- | :--- |
 | 最上位アーキテクチャと下位Tier | [architecture-review](../.agents/skills/architecture-review/SKILL.md) | 概要設計、下位仕様、形式モデル、WIT、実装の垂直整合性。 |
 | 個別コンポーネント | [component-review](../.agents/skills/component-review/SKILL.md) | 仕様、形式モデル、コンセプトコード、テスト仕様・実装の証跡連鎖。 |
-| クラス責務と依存設計 | [clean-architecture-solid-review](../.agents/skills/clean-architecture-solid-review/SKILL.md) | Clean Architecture、SOLID、依存方向、ファクトリ配置、計算量と簡潔さ。 |
 | pysim の移植性・規約 | [pysim-review](../.agents/skills/pysim-review/SKILL.md) | C++23 移植性、型・コンテナ・決定性・計算量・RAM/ROM 配置。 |
-| pysim の性能最適化 | [pysim-vtune-optimization](../.agents/skills/pysim-vtune-optimization/SKILL.md) | VTune の実測ボトルネック、RAM/ROM 予算、事前計算と遅延計算の比較。 |
+| pysim の性能最適化 | [pysim-optimization](../.agents/skills/pysim-optimization/SKILL.md) | VTune/uProf の実測ボトルネック、RAM/ROM 予算、事前計算と遅延計算の比較。 |
 
 ## 変更範囲から選ぶ
 
@@ -107,3 +106,4 @@ ollama pull qwen3-embedding
 ```
 
 文書レビュー、リスク評価、用語判定は Jev の System One チェックシートで実行する。埋め込み生成は Ollama のみを使う。
+OpenRouter の判定APIが HTTP エラーを返した場合、その結果を PASS/FAIL や数値スコアとして記録せず、コマンドを失敗終了する。HTTP 4xx（429 を除く）は再試行せず、現在のキャッシュ済み判定を維持する。

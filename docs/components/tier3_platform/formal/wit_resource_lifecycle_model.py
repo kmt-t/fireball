@@ -1,12 +1,4 @@
-"""
-docs/components/tier3_platform/formal/wit_resource_lifecycle_model.py
-pyModelChecking による WIT インターフェースの
-(1) `hal-buffer-slice`（ゲストの`map-buffer`でマップされるHAL固定スロット）は
-    `unmap-buffer`された後、決して操作が実行されないこと
-(2) ホストがトリガーした仮想割り込みは、対応する汎用ポーリングハンドル（`POLL_CHECK`/`POLL_WAIT`
-    で ready 確認する u32 ハンドル）が必ずいずれ ready になり届くこと
-の形式検証（証明・変異検査対応）モデル
-"""
+"""WIT resource lifecycle, WASI pollables, and COOS-delivered vIRQ properties."""
 
 from pyModelChecking import Kripke
 from pyModelChecking.CTL import AF, AG, AtomicProposition, Imply, Not
@@ -15,20 +7,8 @@ BACKS = ["components/tier3_platform/interface_wit.md"]
 
 
 def build_model(*, guards: bool = True) -> Kripke:
-    """
-    WIT リソースライフサイクル・非同期通知の変異検査対応保護証明モデル
-    - s_idle: ゲストが待機中（バッファ未確保、割り込みなし）
-    - s_resource_active: `map-buffer` により `hal-buffer-slice` 固定スロットがマップ済み
-    - s_op_call / s_op_performed: 有効なハンドルへの操作（IPCコマンドID発行）呼び出し・実行
-    - s_resource_dropped: `unmap-buffer` により固定スロットがアンマップ済み
-    - s_op_call_on_dropped: 返却済みハンドルへの操作呼び出し
-    - s_op_rejected: 操作が正しく拒否される（実行されない、`HalBufferTrap` 相当）
-    - s_interrupt_triggered: ホストが仮想割り込みをトリガー
-    - s_pollable_ready: 対応する汎用ポーリングハンドルが `POLL_CHECK` で ready 状態になりゲストへ届く
-    - s_op_performed_on_dropped: 違反状態（返却済みハンドルへの操作が実際に実行された）
-    - s_notification_lost: 違反状態（トリガーされた割り込みが ready にならない）
-    """
-    S = [
+    """Model independent pollable and virtual-interrupt delivery paths."""
+    states = [
         "s_idle",
         "s_resource_active",
         "s_op_call",
@@ -36,13 +16,18 @@ def build_model(*, guards: bool = True) -> Kripke:
         "s_resource_dropped",
         "s_op_call_on_dropped",
         "s_op_rejected",
-        "s_interrupt_triggered",
+        "s_operation_pending",
         "s_pollable_ready",
+        "s_interrupt_triggered",
+        "s_interrupt_queued",
+        "s_coos_boundary",
+        "s_virq_delivered",
         "s_op_performed_on_dropped",
         "s_notification_lost",
+        "s_interrupt_as_pollable",
     ]
-    S0 = {"s_idle"}
-    R = [
+    initial = {"s_idle"}
+    transitions = [
         ("s_idle", "s_resource_active"),
         ("s_resource_active", "s_op_call"),
         ("s_op_call", "s_op_performed"),
@@ -51,21 +36,30 @@ def build_model(*, guards: bool = True) -> Kripke:
         ("s_resource_dropped", "s_op_call_on_dropped"),
         ("s_op_call_on_dropped", "s_op_rejected"),
         ("s_op_rejected", "s_op_rejected"),
-        ("s_idle", "s_interrupt_triggered"),
-        ("s_interrupt_triggered", "s_pollable_ready"),
+        # WASI operation completion uses a generic pollable.
+        ("s_idle", "s_operation_pending"),
+        ("s_operation_pending", "s_pollable_ready"),
         ("s_pollable_ready", "s_idle"),
-        # 違反状態の自己ループ（Kripke 構造は全域的でなければならない）
+        # vIRQ follows ISR -> COOS FIFO -> cooperative boundary -> vSoC.
+        ("s_idle", "s_interrupt_triggered"),
+        ("s_interrupt_triggered", "s_interrupt_queued"),
+        ("s_interrupt_queued", "s_coos_boundary"),
+        ("s_coos_boundary", "s_virq_delivered"),
+        ("s_virq_delivered", "s_idle"),
+        # Mutation states are totalized with self-loops.
         ("s_op_performed_on_dropped", "s_op_performed_on_dropped"),
         ("s_notification_lost", "s_notification_lost"),
+        ("s_interrupt_as_pollable", "s_interrupt_as_pollable"),
     ]
     if not guards:
-        # ガード無効時（変異検査）:
-        # 1. drop 済みハンドルの検証を外すと、操作が実際に実行されてしまう
-        R = [*R, ("s_op_call_on_dropped", "s_op_performed_on_dropped")]
-        # 2. pollable への ready 通知配送を外すと、割り込みが届かない経路が生じる
-        R = [*R, ("s_interrupt_triggered", "s_notification_lost")]
+        # Drop guard removal permits a use-after-unmap operation.
+        transitions.append(("s_op_call_on_dropped", "s_op_performed_on_dropped"))
+        # Missing queue delivery loses a triggered interrupt.
+        transitions.append(("s_interrupt_triggered", "s_notification_lost"))
+        # A broken routing guard conflates vIRQ delivery with WASI pollable readiness.
+        transitions.append(("s_interrupt_triggered", "s_interrupt_as_pollable"))
 
-    L = {
+    labels = {
         "s_idle": {"idle"},
         "s_resource_active": {"active"},
         "s_op_call": {"active"},
@@ -73,35 +67,49 @@ def build_model(*, guards: bool = True) -> Kripke:
         "s_resource_dropped": {"dropped"},
         "s_op_call_on_dropped": {"dropped"},
         "s_op_rejected": {"rejected"},
-        "s_interrupt_triggered": {"triggered"},
-        "s_pollable_ready": {"ready"},
-        "s_op_performed_on_dropped": {"op_on_dropped"},  # 違反状態
-        "s_notification_lost": {"lost"},  # 違反状態
+        "s_operation_pending": {"operation_pending"},
+        "s_pollable_ready": {"pollable_ready"},
+        "s_interrupt_triggered": {"interrupt_triggered"},
+        "s_interrupt_queued": {"interrupt_queued"},
+        "s_coos_boundary": {"coos_boundary"},
+        "s_virq_delivered": {"virq_delivered"},
+        "s_op_performed_on_dropped": {"op_on_dropped"},
+        "s_notification_lost": {"lost"},
+        "s_interrupt_as_pollable": {"interrupt_as_pollable"},
     }
-    return Kripke(S=S, S0=S0, R=R, L=L)
+    return Kripke(S=states, S0=initial, R=transitions, L=labels)
 
 
 def properties():
-    bad_op = AtomicProposition("op_on_dropped")
-    bad_lost = AtomicProposition("lost")
-    triggered = AtomicProposition("triggered")
-    ready = AtomicProposition("ready")
     return [
         {
             "name": "resource_op_never_succeeds_after_drop",
             "kind": "safety",
             "logic": "CTL",
-            "formula": AG(Not(bad_op)),
-            "violation": bad_op,
-            "expect": True,  # ハンドル有効性検証により、drop 後の操作実行状態は到達不能
+            "formula": AG(Not(AtomicProposition("op_on_dropped"))),
+            "violation": AtomicProposition("op_on_dropped"),
+            "expect": True,
         },
         {
-            "name": "triggered_interrupt_always_reaches_pollable_ready",
+            "name": "triggered_interrupt_reaches_virq_after_coos_boundary",
             "kind": "liveness",
             "logic": "CTL",
-            "formula": AG(Imply(triggered, AF(ready))),
-            "violation": bad_lost,
-            "expect": True,  # 仮想割り込みは必ず対応する pollable の ready 化として配送される (AF)
+            "formula": AG(
+                Imply(
+                    AtomicProposition("interrupt_triggered"),
+                    AF(AtomicProposition("virq_delivered")),
+                )
+            ),
+            "violation": AtomicProposition("lost"),
+            "expect": True,
+        },
+        {
+            "name": "virtual_interrupt_does_not_make_wasi_pollable_ready",
+            "kind": "safety",
+            "logic": "CTL",
+            "formula": AG(Not(AtomicProposition("interrupt_as_pollable"))),
+            "violation": AtomicProposition("interrupt_as_pollable"),
+            "expect": True,
         },
     ]
 
@@ -109,18 +117,17 @@ def properties():
 if __name__ == "__main__":
     from pyModelChecking.CTL import modelcheck
 
-    print("=== Formal Verification: WIT Resource Lifecycle Model (guards=True) ===")
-    km = build_model(guards=True)
+    model = build_model(guards=True)
     for prop in properties():
-        res = modelcheck(km, prop["formula"])
-        passed = km.S0.issubset(res)
-        assert passed == prop["expect"], f"Property {prop['name']} verification failed!"
+        result = modelcheck(model, prop["formula"])
+        passed = model.S0.issubset(result)
+        assert passed == prop["expect"], f"Property {prop['name']} verification failed"
         print(f"  [{'PASS' if passed else 'FAIL'}] {prop['name']}")
 
-    print("=== Mutation Testing: WIT Resource Lifecycle Model (guards=False) ===")
-    km_mut = build_model(guards=False)
+    mutated_model = build_model(guards=False)
     for prop in properties():
-        res_mut = modelcheck(km_mut, prop["formula"])
-        violated = not km_mut.S0.issubset(res_mut)
-        assert violated, f"Mutation for {prop['name']} was NOT detected!"
+        result = modelcheck(mutated_model, prop["formula"])
+        assert not mutated_model.S0.issubset(result), (
+            f"Mutation for {prop['name']} was not detected"
+        )
         print(f"  [PASS (Refuted as expected)] {prop['name']}")

@@ -57,7 +57,9 @@ public:
   }
   template <typename T>
   struct allocator : public std::pmr::polymorphic_allocator<T> {
-    allocator() : std::pmr::polymorphic_allocator<T>(&this_type::instance()) {}
+    allocator() : std::pmr::polymorphic_allocator<T>(&this_type::instance()) {
+      static_assert(N > 0, "allocator arena must have a nonzero size");
+    }
   };
 
 private:

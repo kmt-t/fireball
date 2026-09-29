@@ -7,7 +7,7 @@ from pathlib import Path
 _PYSIM_DIR = Path(__file__).resolve().parents[3]
 
 from runtime_events import RuntimeEvent, RuntimeEventKind
-from tier2_runtime.logger import LogDictionary, Logger, LogLevel
+from tier2_runtime.logger import LogDictionary, Logger, LogLevel, decode_log_records
 from tier3_plugins.logger.logger import RuntimeEventLogger
 
 
@@ -15,7 +15,7 @@ class _Sink:
     def __init__(self) -> None:
         self.data = bytearray()
 
-    def write(self, data: bytes) -> int:
+    def write(self, data: memoryview) -> int:
         self.data.extend(data)
         return len(data)
 
@@ -31,7 +31,8 @@ def test_runtime_events_are_queued_as_fixed_dictionary_records() -> None:
     assert entry is not None
     assert entry.dict_offset == 0x0400 + int(RuntimeEventKind.FUNCTION_ENTER)
     assert logger.flush() == 1
-    assert b"function=7" in bytes(sink.data)
+    output = "\n".join(decode_log_records(bytes(sink.data), logger.dictionary))
+    assert "function=7" in output
 
 
 if __name__ == "__main__":

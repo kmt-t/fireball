@@ -1,5 +1,7 @@
 # Fireball ドキュメント体系定義書 (Document Structure & Metadata)
 
+<!-- traceability: {META_AI_Native_Dev} {VERIFY_LLM} -->
+
 この文書は `docs/**` における階層構造（Tier）、メタキーワード、トレーサビリティの正本である。下位文書で表記が揺れた場合はこの文書を優先する。
 
 本ドキュメントは、Fireball プロジェクトにおける設計書の配置ルール、**設計複雑度（Complexity）に基づくシステム分解階層（Decomposition Tiers）**の定義、およびドキュメント間の一貫性検証のための依存性ルールを定義する。 `{META_AI_Native_Dev}`
@@ -42,7 +44,7 @@ Tier は単なる「OSやハードウェアの実行レイヤ」ではなく、*
   · Guest Adapter (libfireball) — WASMゲストへ組み込むWASI／Fireball ABIアダプタ。物理ドライバやCOOSタスクは実装しない
 
 [ Meta: 横断的メタ設計・開発計画 (Cross-cutting / Meta) ] ─ (全Tier横断)
-  · Architecture (architecture_overview, document_structure, keyword_dictionary, resource_budget_estimation)
+  · Architecture (architecture_overview, document_structure, resource_budget_estimation)
   · Plans (roadmap_phase, backlog_list, backlog_archive)
 
 [ Specs: 横串物理仕様・規格マトリクス (Cross-cutting Physical Specs & Catalogs) ] ─ (全Tier横断・具象規格、個々のファイルにTierラベルを明示)
@@ -53,6 +55,8 @@ Tier は単なる「OSやハードウェアの実行レイヤ」ではなく、*
 ```
 
 ### 1.1 各 Tier の定義と配置ディレクトリ
+
+<!-- traceability: {META_ContractImplSplit} -->
 
 | レイヤー | ディレクトリ | 定義される設計書 | 複雑度・責務の範囲 |
 | :--- | :--- | :--- | :--- |
@@ -71,6 +75,8 @@ Tier は単なる「OSやハードウェアの実行レイヤ」ではなく、*
 自動検証ツール `spec-integrator` は、本ルールに基づいてコンポーネント間の階層一貫性（Hierarchy Gate）およびトレーサビリティ（Traceability Gate）を検証する。
 
 ### 2.1 デコンポジション基準（いつ下位 Tier へ分解するか）
+
+<!-- traceability: {META_ContractImplSplit} -->
 1. **単一責務・複雑度制御の原則**: コンポーネントが複数の独立した状態機械・アルゴリズムを持つ場合、単一仕様書に肥大化させず、サブコンポーネントとして分解して Tier を 1 つ下げる。
    - 判定基準は「単一仕様書に自己完結して書けるか」であり、「親から分解された」という記述の有無ではない。vSoC の Loader/vMMIO は Tier 2 のサブコンポーネントとして残す。Interpreter は `tier3_executer/` の実行系、Debugger と Profiler は交換可能な `tier3_plugins/` のプラグインへ分離する。JIT は実行時コード生成の責務分離として、コード生成コア（`jit_compiler.md`）とランタイム制御（`jit_runtime.md`）の 2 ファイルで Tier 3 Executer に位置する。
 2. **検証可能性（Verification Tractability）の維持**: 形式検証（pyModelChecking等）において状態空間が爆発しない単位に状態遷移モデルを区切る。
@@ -81,6 +87,8 @@ Tier は単なる「OSやハードウェアの実行レイヤ」ではなく、*
    - 例: ゲスト側の WASI／Fireball ABI アダプタは、Tier 2 の `runtime_syscall.md` と `hal_dispatch.md` が定義する公開契約を利用する Tier 3（`libfireball.md`）として分離する。これは HAL の物理ドライバ実装とは別のゲスト側アダプタである。
 
 ### 2.2 依存方向のルール
+
+<!-- traceability: {META_ContractImplSplit} -->
 1. **下り方向の依存（詳細化・具体化）**:
    - 上位 Tier (N) の定義や要求は、下位 Tier (N+1) において具体化（詳細化）される。
    - 下位 Tier は上位 Tier のインターフェースや定数定義を明示的に参照（Refine）して実装する。
@@ -120,7 +128,7 @@ Fireball の Tier 構造では、上位 Tier が粗粒度の方針を示す。�
 各設計書は、システムの一貫性を保つため、以下の静的チェックおよびフォーマットに適合しなければならない。
 
 - **親フォーマット適合**: 文書が直接属するディレクトリから最も近い `FORMAT.md` を適用し、その見出し構成、必須要素、禁止事項に従うこと。コンポーネント設計書は [`FORMAT.md`](docs/components/FORMAT.md)、テスト仕様書は [`FORMAT.md`](docs/qa/FORMAT.md)、要求仕様書は [`FORMAT.md`](docs/requires/FORMAT.md) を正本とする。`architecture_overview.md` は固有のFORMATを持たず、アーキテクチャレビューのTier、責務、依存方向、および一覧・リンク整合性の規則に従う。対象文書の設計意図と親 `FORMAT.md` が一致しない場合は、文書だけを黙ってFORMATへ合わせず、設計意図を確定したうえで `FORMAT.md` を先に改定し、その後に対象文書を準拠させること。
-- **要求キーワード（Keyword）の紐付け**: 設計書内の各セクションは、末尾に要求キーワード（中括弧で囲まれたもの）を付与し、`requirement_list.md` に定義された要求仕様とのトレーサビリティを維持すること。
+- **キーワードによるトレーサビリティ**: 各文書は、検索で意味が伝わるよう定義・説明の本文に対象語を自然な文章で記述する。定義元は本文または表に定義を置いて同じセクション内に `definition` コメントを付け、他の文書や要求仕様への参照はセクション見出し直下の `traceability` コメントに記録する。キーワード一覧を別ファイルで手作業管理せず、検索用DBは文書本文から構築する。
 
 ---
 
@@ -134,7 +142,7 @@ Fireball の Tier 構造では、上位 Tier が粗粒度の方針を示す。�
 | **グローバルキーワード (GLOBAL)** | `{GLOBAL_[Name]}` | システム全体（多数の仕様書）に適用される広域ポリシー、プラットフォーム要件。 | - 各仕様書の単体要求適合性 (`Traceability Gate`) で検証される。 |
 | **全体アーキテクチャ (ARCHITECTURE)** | `{ADR_*}` / `{Challenge_*}` / 原則名 | アーキテクチャ判定記録（ADR）、技術課題・制約（Challenge）、およびクリーンアーキテクチャ等の全体設計原則。 | - `requirement_list.md` または設計書で宣言され、下位層での遵守状況が検証される。 |
 | **コンポーネント要求 (COMPONENT & GOTCHA)** | 個別要求名 / `{GOTCHA-<COMPONENT>-<連番>}` | Tier 1〜3 の個別コンポーネント（スケジューラ、インタープリタ等）の機能要求、および設計・実装の勘所（GOTCHA）。 | - Traceability Gate による定義元・参照先追跡、およびテスト仕様書との紐付け検証対象となる。 |
-| **リンクアンカー (LINK)** | 意味のある連携契約は `{[Name]_Layout}` / `{CPS_*}` / 機構名。意味を持たない純粋リンクだけは `LINK-<連番>`。 | 物理メモリレイアウト整合、低層ディスパッチ規約、内部バイパス・状態連携のための専用リンクアンカー。 | - 定義は各仕様書の本文に置く。`keyword_dictionary.md` は所在を管理する索引とし、DocGraph で複数コンポーネント間の構造整合性を機械検証する。 |
+| **リンクアンカー (LINK)** | 意味のある連携契約は `{[Name]_Layout}` / `{CPS_*}` / 機構名。意味を持たない純粋リンクだけは `LINK-<連番>`。 | 物理メモリレイアウト整合、低層ディスパッチ規約、内部バイパス・状態連携のための専用リンクアンカー。 | - 定義は各仕様書の本文に置き、定義元セクションに `<!-- definition: &#123;Keyword&#125; -->` を付ける。DocGraph で複数コンポーネント間の構造整合性を機械検証する。 |
 
 ---
 
@@ -142,26 +150,26 @@ Fireball の Tier 構造では、上位 Tier が粗粒度の方針を示す。�
 
 | キーワード | 説明 |
 | :--- | :--- |
-| `{META_3TierSeparation}` | 設計複雑度に応じた3階層のデコンポジション（分解）とカプセル化された依存関係管理。 |
-| `{META_ContractImplSplit}` | 抽象契約（インターフェース仕様・ポリシー・不変条件）を上位Tier、物理実装（アルゴリズム・データ構造・アロケータ実装）を下位Tierへ意図的に分割するデコンポジションパターン。 |
-| `{META_ConfigurableSystem}` | ヘッダマクロ定義および `constexpr` 定数により、システムパラメータをコンパイル時に静的確定する。 |
-| `{META_FaultIsolation}` | メモリパーティションにより、コンポーネント間の障害伝播を防止する。 |
-| `{META_RecoveryStrategy}` | エラーコードの代わりに推奨されるリカバリー動作（Retry/Panic等）を返し、自己修復を促進する。 |
-| `{META_RestrictedPhysicalAccess}` | 物理リソースへのアクセスを許可テーブルで厳格に制限する。 |
-| `{META_StaticDI}` | コンパイル時の設定・静的バインディングにより依存性を注入する。 |
-| `{META_AI_Native_Dev}` | 定型的な実装はLLMを活用し、設計と検証の品質を重視する。 |
-| `{META_ServiceIsWasmResident}` | 「サービス」はWASM上で実行される常駐タスクを指し、HAL・ロギング等のネイティブ常駐基盤機能（サブシステム）とは区別する。 |
-| `{META_Risk_Tiering}` | リスクベースの設計階層化。重要度や不確実性に応じて検証レベルを調整する。 |
-| `{META_SpecificationFirst}` | 実装に先立ち、形式仕様や契約を定義する開発スタンス。 |
-| `{META_ZeroOverhead}` | ゼロコスト抽象化。高性能組み込み向けC++デザイン。 |
-| `{META_ZeroCostAbstraction}` | 抽象化のコストを実行時に支払わない。C++非仮想インターフェース等による最適化。 |
-| `{META_Static_Resolution}` | 実行時に決定可能な事項はコンパイル時に決定し、オーバーヘッドを最小化する。 |
-| `{META_CompileTimeValidation}` | 静的な型チェックやconstexprにより、コンパイル時に不正を検知する。 |
-| `{META_NoStdVector}` | 動的な `std::vector` の使用を禁止し、固定長またはカスタムコンテナを使用する。 |
-| `{META_BumpAllocator}` | メモリの断片化を防ぎ、コンパイル時または実行時に高速なメモリ割り当てを行うアロケータ。 |
-| `{META_FlatMapIndexed}` | ソート済み配列や `fireball::flat_map_view`、二段テーブル等を用いて、順序維持と高速検索を省メモリで実現する。 |
-| `{META_BinarySearch}` | ソート済み配列に対する $O(\log N)$ の高速検索。 |
-| `{META_AccessDictionary}` | データの索引化と、それを用いたランタイムアクセスの最適化。 |
+| `{META_3TierSeparation}` | 設計複雑度に応じた3階層のデコンポジション（分解）とカプセル化された依存関係管理。 <!-- definition: {META_3TierSeparation} --> |
+| `{META_ContractImplSplit}` | 抽象契約（インターフェース仕様・ポリシー・不変条件）を上位Tier、物理実装（アルゴリズム・データ構造・アロケータ実装）を下位Tierへ意図的に分割するデコンポジションパターン。 <!-- definition: {META_ContractImplSplit} --> |
+| `{META_ConfigurableSystem}` | ヘッダマクロ定義および `constexpr` 定数により、システムパラメータをコンパイル時に静的確定する。 <!-- definition: {META_ConfigurableSystem} --> |
+| `{META_FaultIsolation}` | メモリパーティションにより、コンポーネント間の障害伝播を防止する。 <!-- definition: {META_FaultIsolation} --> |
+| `{META_RecoveryStrategy}` | エラーコードの代わりに推奨されるリカバリー動作（Retry/Panic等）を返し、自己修復を促進する。 <!-- definition: {META_RecoveryStrategy} --> |
+| `{META_RestrictedPhysicalAccess}` | 物理リソースへのアクセスを許可テーブルで厳格に制限する。 <!-- definition: {META_RestrictedPhysicalAccess} --> |
+| `{META_StaticDI}` | コンパイル時の設定・静的バインディングにより依存性を注入する。 <!-- definition: {META_StaticDI} --> |
+| `{META_AI_Native_Dev}` | 定型的な実装はLLMを活用し、設計と検証の品質を重視する。 <!-- definition: {META_AI_Native_Dev} --> |
+| `{META_ServiceIsWasmResident}` | 「サービス」はWASM上で実行される常駐タスクを指し、HAL・ロギング等のネイティブ常駐基盤機能（サブシステム）とは区別する。 <!-- definition: {META_ServiceIsWasmResident} --> |
+| `{META_Risk_Tiering}` | リスクベースの設計階層化。重要度や不確実性に応じて検証レベルを調整する。 <!-- definition: {META_Risk_Tiering} --> |
+| `{META_SpecificationFirst}` | 実装に先立ち、形式仕様や契約を定義する開発スタンス。 <!-- definition: {META_SpecificationFirst} --> |
+| `{META_ZeroOverhead}` | ゼロコスト抽象化。高性能組み込み向けC++デザイン。 <!-- definition: {META_ZeroOverhead} --> |
+| `{META_ZeroCostAbstraction}` | 抽象化のコストを実行時に支払わない。C++非仮想インターフェース等による最適化。 <!-- definition: {META_ZeroCostAbstraction} --> |
+| `{META_Static_Resolution}` | 実行時に決定可能な事項はコンパイル時に決定し、オーバーヘッドを最小化する。 <!-- definition: {META_Static_Resolution} --> |
+| `{META_CompileTimeValidation}` | 静的な型チェックやconstexprにより、コンパイル時に不正を検知する。 <!-- definition: {META_CompileTimeValidation} --> |
+| `{META_NoStdVector}` | 動的な `std::vector` の使用を禁止し、固定長またはカスタムコンテナを使用する。 <!-- definition: {META_NoStdVector} --> |
+| `{META_BumpAllocator}` | メモリの断片化を防ぎ、コンパイル時または実行時に高速なメモリ割り当てを行うアロケータ。 <!-- definition: {META_BumpAllocator} --> |
+| `{META_FlatMapIndexed}` | ソート済み配列や `fireball::flat_map_view`、二段テーブル等を用いて、順序維持と高速検索を省メモリで実現する。 <!-- definition: {META_FlatMapIndexed} --> |
+| `{META_BinarySearch}` | ソート済み配列に対する $O(\log N)$ の高速検索。 <!-- definition: {META_BinarySearch} --> |
+| `{META_AccessDictionary}` | データの索引化と、それを用いたランタイムアクセスの最適化。 <!-- definition: {META_AccessDictionary} --> |
 
 ---
 
@@ -169,30 +177,30 @@ Fireball の Tier 構造では、上位 Tier が粗粒度の方針を示す。�
 
 | キーワード | 説明 |
 | :--- | :--- |
-| `{GLOBAL_Policy_Memory}` | メモリ管理や割り当てに関する共通ポリシー。 |
-| `{GLOBAL_StrictMemoryLimit}` | メモリの上限が厳格に制限された動作。 |
-| `{GLOBAL_IndependentHeap}` | 各コンポーネントが互いに独立したヒープメモリ領域を確保する設計。 |
-| `{GLOBAL_IdleDetection}` | アイドル状態の検出とログフラッシュ・バックグラウンド処理制御。 |
-| `{GLOBAL_PeriodicTask}` | 周期的に実行されるタスクスケジュール。 |
-| `{GLOBAL_ComponentHarness}` | テストや検証、サブコンポーネント統合のためのハーネスパターン。 |
-| `{GLOBAL_InterruptWakeup}` | 割り込み契機による待機解除・復帰処理。 |
-| `{GLOBAL_UseCpp20Coroutine}` | C++20 コルーチンの使用方針。 |
-| `{GLOBAL_UseCpp23Library}` | C++23 標準ライブラリ機能の使用方針。 |
-| `{GLOBAL_StaticScalability}` | 静的にパラメータ化されたスケーラビリティ。 |
+| `{GLOBAL_Policy_Memory}` | メモリ管理や割り当てに関する共通ポリシー。 <!-- definition: {GLOBAL_Policy_Memory} --> |
+| `{GLOBAL_StrictMemoryLimit}` | メモリの上限が厳格に制限された動作。 <!-- definition: {GLOBAL_StrictMemoryLimit} --> |
+| `{GLOBAL_IndependentHeap}` | 各コンポーネントが互いに独立したヒープメモリ領域を確保する設計。 <!-- definition: {GLOBAL_IndependentHeap} --> |
+| `{GLOBAL_IdleDetection}` | アイドル状態の検出とログフラッシュ・バックグラウンド処理制御。 <!-- definition: {GLOBAL_IdleDetection} --> |
+| `{GLOBAL_PeriodicTask}` | 周期的に実行されるタスクスケジュール。 <!-- definition: {GLOBAL_PeriodicTask} --> |
+| `{GLOBAL_ComponentHarness}` | テストや検証、サブコンポーネント統合のためのハーネスパターン。 <!-- definition: {GLOBAL_ComponentHarness} --> |
+| `{GLOBAL_InterruptWakeup}` | 割り込み契機による待機解除・復帰処理。 <!-- definition: {GLOBAL_InterruptWakeup} --> |
+| `{GLOBAL_UseCpp20Coroutine}` | C++20 コルーチンの使用方針。 <!-- definition: {GLOBAL_UseCpp20Coroutine} --> |
+| `{GLOBAL_UseCpp23Library}` | C++23 標準ライブラリ機能の使用方針。 <!-- definition: {GLOBAL_UseCpp23Library} --> |
+| `{GLOBAL_StaticScalability}` | 静的にパラメータ化されたスケーラビリティ。 <!-- definition: {GLOBAL_StaticScalability} --> |
 
 ---
 
 ### 4.4 キーワードの定義・参照記法規約
 
-中括弧表記のキーワード（`{...}`）について、定義元正本と参照側コンポーネントとで記述箇所を厳格に区別する。`keyword_dictionary.md` は識別子と所在を管理する索引であり、定義にも参照にも数えない。
+中括弧表記のキーワード（`{...}`）について、定義元正本と参照側コンポーネントとで記述箇所を厳格に区別する。キーワードIDの一覧を手作業で管理せず、文書本文から検索・抽出する。
 
-- **定義元（Source of Truth）**: 定義内容を記述する仕様本文または表の中に `&#123;Keyword&#125;` をインラインで記述する。台帳の所在欄は定義内容ではなく、その正本のファイルを示すメタデータである。各キーワードのインライン定義は全文書を通じて必ず1箇所とし、0箇所または複数箇所はエラーとする。
+- **定義元（Source of Truth）**: 定義内容を記述する仕様本文または表の中に `&#123;Keyword&#125;` をインラインで記述する。同じセクション内に `<!-- definition: &#123;Keyword&#125; -->` を置き、機械的に識別する。このコメントは定義元の位置情報であり、意味上の定義は本文に置く。各キーワードの宣言は全文書を通じて必ず1箇所とし、0箇所または複数箇所はエラーとする。
 - **参照側（Reference / Traceability）**: 上位要求や他コンポーネントを参照・追跡する場合は、セクション見出し直下の HTML コメント `<!-- traceability: &#123;Keyword1&#125; &#123;Keyword2&#125; -->` 内に記述する。参照は複数の文書・セクションにあってよい。本文中に参照目的のキーワード列（例: `関連キーワード: &#123;...&#125;`）をインライン記述してはならない。未定義のキーワードを参照することはエラーとなる。
 
 ### 4.5 キーワードとテストケースIDの区別
 
 - `&#123;Keyword&#125;` は意味的なトレーサビリティアンカーであり、連番だけの名前を付けない。
-- `TEST-<コンポーネント>-<テスト番号>`（例: `TEST-INT-01`、`TEST-MEM-14`、`TEST-JITR-26`）はテスト仕様書のテストケースIDであり、キーワードではない。テスト仕様書や台帳では「テストケースID」と明記して、キーワードとの紐づけと区別する。
+- `TEST-<コンポーネント>-<テスト番号>`（例: `TEST-INT-01`、`TEST-MEM-14`、`TEST-JITR-26`）はテスト仕様書のテストケースIDであり、キーワードではない。テスト仕様書では「テストケースID」と明記して、キーワードとの紐づけと区別する。
 - `GOTCHA-<COMPONENT>-<連番>` は、設計の勘所・不変条件を表す説明付きの固有IDとしてのみ許可する。対応する設計理由とテストケースを必ず併記する。
 - テストケースIDは `TEST-<コンポーネント>-<テスト番号>` とし、キーワードとは別欄で管理する。意味を持たない純粋な文書間リンクだけに `LINK-<連番>` を使う。
 - ベンチマークIDは `BENCHMARK-<コンポーネント>-<ID>` とし、テストケースIDとは区別する。
@@ -219,7 +227,7 @@ Fireball の Tier 構造では、上位 Tier が粗粒度の方針を示す。�
 
 | 形式検証モデルファイル | 検証・証明する対象性質 | `BACKS` 正本ドキュメント一覧 |
 | :--- | :--- | :--- |
-| [`coos_channel_model.py`](docs/components/tier1_core/formal/coos_channel_model.py) | - CSP チャネル純粋ランデブー<br>- デッドロック不在・二重所有不在<br>- 連続ハンドオフ有界復帰 | - `components/tier1_core/os_coos.md`<br>- `components/tier1_core/os_scheduler.md` |
+| [`coos_channel_model.py`](docs/components/tier1_core/formal/coos_channel_model.py) | - CSP チャネル純粋ランデブー<br>- デッドロック不在・二重所有不在<br>- 連続ハンドオフ有界復帰<br>- タイマー待機の期限起床とREADYタスクの先行実行 | - `components/tier1_core/os_coos.md`<br>- `components/tier1_core/os_scheduler.md` |
 | [`system_config_model.py`](docs/components/tier1_core/formal/system_config_model.py) | - 構成値の実行時変更禁止<br>- 定義済みリソース予算内の構成 | - `components/tier1_core/system_config.md` |
 | [`system_memory_model.py`](docs/components/tier1_interface/formal/system_memory_model.py) | - 共有ブロックの二重所有禁止<br>- 5プール総予算超過禁止<br>- 所有権移譲またはロールバックの有限完了 | - `components/tier1_interface/system_memory.md` |
 | [`csp_handoff_model.py`](docs/components/tier1_interface/formal/csp_handoff_model.py) | - 所有権移譲と Drop ハンドラによる二重所有・リーク防止 | - `components/tier1_interface/ipc_router.md` |

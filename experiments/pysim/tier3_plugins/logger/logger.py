@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 from runtime_events import RuntimeEvent
-from tier2_runtime.logger import LOG_EVT_TRAP_BASE, Logger, LogLevel
-
-RUNTIME_EVENT_LOG_BASE = LOG_EVT_TRAP_BASE + 0x100
+from tier2_runtime.logger import RUNTIME_EVENT_LOG_BASE, Logger, LogLevel
 
 
 class RuntimeEventLogger:
@@ -15,11 +13,6 @@ class RuntimeEventLogger:
 
     def __init__(self, logger: Logger):
         self.logger = logger
-        for kind in range(1, 12):
-            assert logger.dictionary.storage.insert(
-                RUNTIME_EVENT_LOG_BASE + kind,
-                "RUNTIME: event=%d function=%d pc=%d tick=%d",
-            )
 
     def on_runtime_event(self, event: RuntimeEvent) -> None:
         self.logger.log_event(

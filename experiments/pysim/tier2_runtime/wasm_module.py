@@ -22,7 +22,7 @@ from config import (
     FB_CONF_MAX_BASIC_BLOCKS,
     FB_CONF_MAX_LOCALS,
 )
-from jit_scoring import OpcodeBenefitTable
+from jit_scoring import OPCODE_BENEFIT_TABLE, score_opcodes
 from leb128 import decode_signed, decode_unsigned
 from system_containers import (
     BitView,
@@ -30,7 +30,6 @@ from system_containers import (
     ReadOnlyFlatMapStorage,
     ReadOnlyRadixBinaryTreeStorage,
     StaticVector,
-    build_radix_table,
     fold_mix32,
 )
 
@@ -43,7 +42,7 @@ ElementInitializer = Callable[[int, int, int], None]
 DataInitializer = Callable[[int, memoryview], None]
 
 
-@dataclass
+@dataclass(slots=True)
 class BasicBlock:
     """
     A straight-line run of WASM instructions ending with branch/return, as PC
@@ -125,7 +124,7 @@ class LocalWidthMap:
         return self.count
 
 
-@dataclass
+@dataclass(slots=True)
 class FuncType:
     # Parsed modules keep only the raw type record.  Directly-constructed
     # concept modules may still provide materialized vectors.
@@ -135,7 +134,7 @@ class FuncType:
     size: int = 0
 
 
-@dataclass
+@dataclass(slots=True)
 class Function:
     type_index: int
     locals_extra: StaticVector[int]  # declared (non-parameter) locals, in order
@@ -162,7 +161,7 @@ class Function:
             self.code = memoryview(self.code)
 
 
-@dataclass
+@dataclass(slots=True)
 class Export:
     name_offset: int
     name_size: int
@@ -170,7 +169,7 @@ class Export:
     index: int
 
 
-@dataclass
+@dataclass(slots=True)
 class Import:
     module_offset: int
     module_size: int
@@ -183,14 +182,14 @@ class Import:
     max_limit: int | None = None
 
 
-@dataclass
+@dataclass(slots=True)
 class Memory:
     min_pages: int
     max_pages: int | None
     imported: bool = False
 
 
-@dataclass
+@dataclass(slots=True)
 class Global:
     vtype: int
     mutable: bool
@@ -199,14 +198,14 @@ class Global:
     init_global_index: int | None = None
 
 
-@dataclass
+@dataclass(slots=True)
 class Table:
     min_size: int
     max_size: int | None
     imported: bool = False
 
 
-@dataclass
+@dataclass(slots=True)
 class Element:
     table_index: int
     offset: int
@@ -217,7 +216,7 @@ class Element:
     func_indices: StaticVector[int] | None = None  # direct-construction fallback
 
 
-@dataclass
+@dataclass(slots=True)
 class DataSegment:
     memory_index: int
     offset: int
@@ -231,7 +230,7 @@ class DataSegment:
             self.data = memoryview(self.data)
 
 
-@dataclass
+@dataclass(slots=True)
 class Module:
     types: StaticVector[FuncType] = field(default_factory=lambda: StaticVector(capacity=0))
     imports: StaticVector[Import] = field(default_factory=lambda: StaticVector(capacity=0))
@@ -254,7 +253,6 @@ class Module:
     data_section_size: int = 0
     block_storage: ReadOnlyRadixBinaryTreeStorage[BasicBlock] | None = None
     blocks: StaticVector[BasicBlock] = field(default_factory=lambda: StaticVector(capacity=0))
-    opcode_benefit_table: OpcodeBenefitTable | None = None
     source: memoryview | None = None
 
     def __post_init__(self) -> None:
@@ -331,7 +329,7 @@ class Module:
                     off = elem.func_indices_offset
                     end = off + elem.func_indices_size
                     for index in range(elem.func_count):
-                        function_index, off = decode_unsigned(self.source, off)
+                        function_index, off = decode_unsigned(self.source, off, end)
                         callback(elem.table_index, offset + index, function_index)
                     assert off == end
             return
@@ -340,22 +338,22 @@ class Module:
         data = self.source
         off = self.element_section_offset
         end = off + self.element_section_size
-        segment_count, off = decode_unsigned(data, off)
+        segment_count, off = decode_unsigned(data, off, end)
         for _ in range(segment_count):
-            flags, off = decode_unsigned(data, off)
+            flags, off = decode_unsigned(data, off, end)
             assert flags == 0 or flags == 2, f"unsupported element segment flags={flags}"
             table_index = 0
             if flags == 2:
-                table_index, off = decode_unsigned(data, off)
+                table_index, off = decode_unsigned(data, off, end)
             offset, off = _read_init_offset(
                 data, off, end, global_values, self, "element segment", resolve_globals
             )
             if flags == 2:
-                elem_kind, off = decode_unsigned(data, off)
+                elem_kind, off = decode_unsigned(data, off, end)
                 assert elem_kind == 0, "only funcref element segments are supported"
-            function_count, off = decode_unsigned(data, off)
+            function_count, off = decode_unsigned(data, off, end)
             for index in range(function_count):
-                function_index, off = decode_unsigned(data, off)
+                function_index, off = decode_unsigned(data, off, end)
                 callback(table_index, offset + index, function_index)
         assert off == end, "element section length mismatch"
 
@@ -385,18 +383,18 @@ class Module:
         data = self.source
         off = self.data_section_offset
         end = off + self.data_section_size
-        segment_count, off = decode_unsigned(data, off)
+        segment_count, off = decode_unsigned(data, off, end)
         for _ in range(segment_count):
-            flags, off = decode_unsigned(data, off)
+            flags, off = decode_unsigned(data, off, end)
             assert flags == 0 or flags == 2, f"unsupported data segment flags={flags}"
             memory_index = 0
             if flags == 2:
-                memory_index, off = decode_unsigned(data, off)
+                memory_index, off = decode_unsigned(data, off, end)
             assert memory_index == 0, "only memory index 0 is supported"
             offset, off = _read_init_offset(
                 data, off, end, global_values, self, "data segment", resolve_globals
             )
-            data_size, off = decode_unsigned(data, off)
+            data_size, off = decode_unsigned(data, off, end)
             data_end = off + data_size
             assert data_end <= end, "data segment exceeds section bounds"
             callback(offset, data[off:data_end])
@@ -466,7 +464,10 @@ class Module:
             else:
                 assert self.source is not None
                 func_indices = _read_u32_vector(
-                    self.source, elem.func_indices_offset, elem.func_count
+                    self.source,
+                    elem.func_indices_offset,
+                    elem.func_count,
+                    elem.func_indices_offset + elem.func_indices_size,
                 )
             for i, func_index in enumerate(func_indices):
                 offset = elem.offset
@@ -552,9 +553,6 @@ class Module:
     def build_basic_block_index(self) -> None:
         """Build the immutable block and instruction indexes during loading."""
         from control_flow import extract_basic_blocks, iter_block_ops
-        from jit_scoring import score_opcodes
-
-        self.opcode_benefit_table = OpcodeBenefitTable()
 
         n_imports = len(self.imports)
         block_capacity = max(1, self.total_basic_blocks)
@@ -580,7 +578,7 @@ class Module:
                                         code, head_pc & 0xFFFF, byte_span
                                     )
                                 ),
-                                self.opcode_benefit_table,
+                                OPCODE_BENEFIT_TABLE,
                             ),
                         )
                     )
@@ -597,26 +595,14 @@ class Module:
             self.block_storage = None
             return
 
-        radix_sorted_blocks: StaticVector[BasicBlock] = StaticVector.of(
-            sorted(all_blocks, key=lambda block: fold_mix32(block.head_pc)),
-            capacity=len(all_blocks),
-        )
-        inv_keys: StaticVector[int] = StaticVector(capacity=len(radix_sorted_blocks))
-        entries: StaticVector[tuple[int, BasicBlock]] = StaticVector(
-            capacity=len(radix_sorted_blocks)
-        )
-        for block in radix_sorted_blocks:
-            inverse_key = fold_mix32(block.head_pc)
-            inv_keys.append(inverse_key)
-            entries.append((inverse_key, block))
+        entries: StaticVector[tuple[int, BasicBlock]] = StaticVector(capacity=len(all_blocks))
+        for block in all_blocks:
+            entries.append((fold_mix32(block.head_pc), block))
+        entries.sort(key=lambda entry: (entry[0], entry[1].head_pc))
         radix_shift = 28
-        radix_table = build_radix_table(inv_keys, radix_shift=radix_shift)
-        self.block_storage = ReadOnlyRadixBinaryTreeStorage[BasicBlock](
-            keys=inv_keys,
-            values=radix_sorted_blocks,
-            radix_table=radix_table,
+        self.block_storage = ReadOnlyRadixBinaryTreeStorage.from_sorted_static_entries(
+            entries,
             radix_shift=radix_shift,
-            entries=entries,
         )
 
     def get_block(self, pc: int) -> BasicBlock | None:
@@ -650,12 +636,14 @@ def _read_func_type(data: memoryview, offset: int, size: int) -> FuncType:
     off = offset
     assert data[off] == 0x60
     off += 1
-    nparams, off = decode_unsigned(data, off)
+    nparams, off = decode_unsigned(data, off, end)
+    assert nparams <= FB_CONF_MAX_LOCALS, "WASM function parameter count exceeds configured maximum"
     params = StaticVector[int](capacity=nparams)
     for _ in range(nparams):
         params.append(data[off])
         off += 1
-    nresults, off = decode_unsigned(data, off)
+    nresults, off = decode_unsigned(data, off, end)
+    assert nresults <= 1, "MVP functions have at most one result"
     results = StaticVector[int](capacity=nresults)
     for _ in range(nresults):
         results.append(data[off])
@@ -676,10 +664,10 @@ def _read_init_offset(
     opcode = data[off]
     off += 1
     if opcode == op.I32_CONST:
-        offset, off = decode_signed(data, off)
+        offset, off = decode_signed(data, off, end, bits=32)
         offset &= 0xFFFF_FFFF
     elif opcode == op.GLOBAL_GET:
-        global_index, off = decode_unsigned(data, off)
+        global_index, off = decode_unsigned(data, off, end)
         if not resolve_globals:
             assert global_index < len(module.globals), (
                 f"{expression_name} global index out of range"
@@ -700,10 +688,10 @@ def _read_init_offset(
     return offset, off + 1
 
 
-def _read_u32_vector(data: memoryview, offset: int, count: int) -> StaticVector[int]:
+def _read_u32_vector(data: memoryview, offset: int, count: int, end: int) -> StaticVector[int]:
     values = StaticVector[int](capacity=count)
     off = offset
     for _ in range(count):
-        value, off = decode_unsigned(data, off)
+        value, off = decode_unsigned(data, off, end)
         values.append(value)
     return values

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+from typing import Final
 
 from config import JIT_CARD_SHIFT
 from system_containers import BitView, MutableBitStorage, StaticVector
@@ -166,6 +167,9 @@ class OpcodeBenefitTable:
         assert 0 <= opcode < OPCODE_TABLE_COUNT
         table = BitView(self.storage, bits=4, count=OPCODE_TABLE_COUNT)
         return _decode_int4(table.at(opcode))
+
+
+OPCODE_BENEFIT_TABLE: Final[OpcodeBenefitTable] = OpcodeBenefitTable()
 
 
 class JITCandidateBitmap:

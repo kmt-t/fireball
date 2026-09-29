@@ -43,7 +43,7 @@
 | BUG-0007 | ロガーURIがIPCサービステーブルに未登録である | 低 | 修正済み | `ipc_router` | 大規模ワークロード | [BUG-0007_logger_uri_not_registered.md](docs/qa/bug_table/BUG-0007_logger_uri_not_registered.md) |
 | BUG-0008 | f64ローカルを持つフレームでJITトレースの実行が停止する | 高 | 修正済み | `runtime_engine` | 大規模ワークロード | [BUG-0008_jit_wide_local_assert.md](docs/qa/bug_table/BUG-0008_jit_wide_local_assert.md) |
 | BUG-0009 | JITが降ろしを代行した制御フレームが残り、結果が食い違う | 重大 | 修正済み | `runtime_engine` | 大規模ワークロード | [BUG-0009_jit_stale_control_frames.md](docs/qa/bug_table/BUG-0009_jit_stale_control_frames.md) |
-| BUG-0010 | GOTCHA IDの多くがキーワード台帳に登録されていない | 中 | 修正済み | 台帳、テスト仕様書、検証ゲート | 設計変更の作業 | [BUG-0010_gotcha_ids_unregistered.md](docs/qa/bug_table/BUG-0010_gotcha_ids_unregistered.md) |
+| BUG-0010 | GOTCHA IDの定義・追跡不足 | 中 | 解決済み | 定義元仕様書、テスト仕様書、検証ゲート | 設計変更の作業 | [BUG-0010_gotcha_ids_unregistered.md](docs/qa/bug_table/BUG-0010_gotcha_ids_unregistered.md) |
 | BUG-0011 | JITの押し出し書き込みがオペランドスタックの容量を超える | 高 | 修正済み | `x64_jit`, `runtime_engine` | 大規模ワークロード | [BUG-0011_jit_operand_spill_overflow.md](docs/qa/bug_table/BUG-0011_jit_operand_spill_overflow.md) |
 
 ## 3. 関連資料

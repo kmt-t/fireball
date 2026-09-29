@@ -11,31 +11,59 @@ Fireball System Logging Engine mirroring docs/components/tier2_runtime/runtime_l
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
 from enum import IntEnum
 from typing import TYPE_CHECKING, Callable, Sequence
 
-from system_containers import MutableFlatMapStorage, ReadOnlyFlatMapView, RingBuffer
+from config import FB_CONF_LOG_DICT_MAX_ENTRIES
+from logging_interface import LogLevel, LogResult
+from system_containers import ReadOnlyFlatMapStorage, ReadOnlyFlatMapView, StaticVector
 
 if TYPE_CHECKING:
     from hal_dispatch import StreamSink
 
-# Matches a printf-style numeric conversion (%d, %08X, %u, ...) but not a
-# literal "%%". Deliberately excludes %s/%p/%c: LogDictionary.register()
-# rejects those outright, see the FINDING below.
-_SPECIFIER_RE = re.compile(r"%(?:%|[-+0# ]*\d*(?:\.\d+)?[diouxX])")
+LOG_RECORD_SIZE = 20  # u8 level + u24 dictionary ID + four little-endian u32 arguments.
+_MAX_DICTIONARY_ID = 0x00FF_FFFF
+_UINT32_MAX = 0xFFFF_FFFF
 
 
-class LogLevel(IntEnum):
-    DEBUG = 0
-    INFO = 1
-    WARN = 2
-    ERROR = 3
-    FATAL = 4
+def _is_one_of(value: str, options: str) -> bool:
+    for index in range(len(options)):
+        if value == options[index]:
+            return True
+    return False
 
 
-_DISALLOWED_SPECIFIERS = ("%s", "%p", "%c")
+def _format_argument_count(fmt: str) -> int:
+    """Validate the build-time numeric printf subset and count its arguments."""
+    argument_count = 0
+    index = 0
+    while index < len(fmt):
+        if fmt[index] != "%":
+            index += 1
+            continue
+        index += 1
+        assert index < len(fmt), "format string ends with '%'"
+        if fmt[index] == "%":
+            index += 1
+            continue
+        while index < len(fmt) and _is_one_of(fmt[index], "-+0 #"):
+            index += 1
+        while index < len(fmt) and fmt[index].isdigit():
+            index += 1
+        if index < len(fmt) and fmt[index] == ".":
+            index += 1
+            precision_start = index
+            while index < len(fmt) and fmt[index].isdigit():
+                index += 1
+            assert index > precision_start, "printf precision requires digits"
+        assert index < len(fmt), "incomplete printf conversion"
+        assert _is_one_of(fmt[index], "diouxX"), f"unsupported printf conversion %{fmt[index]}"
+        argument_count += 1
+        assert argument_count <= 4, "log format may use at most four u32 arguments"
+        index += 1
+    return argument_count
+
 
 # Standard Diagnostic Log Event IDs (runtime_logging.md §4.2.1)
 LOG_EVT_COOS_HANDOFF_LIMIT = 0x0101
@@ -117,6 +145,21 @@ STANDARD_DIAGNOSTIC_EVENTS: tuple[tuple[int, str], ...] = (
     (LOG_EVT_TRAP_INVALID_CONVERSION, "TRAP: invalid float-to-integer conversion (pc=0x%08X)"),
 )
 
+RUNTIME_EVENT_LOG_BASE = 0x0400
+RUNTIME_EVENT_DICTIONARY: tuple[tuple[int, str], ...] = (
+    (0x0401, "RUNTIME: event=%d function=%d pc=0x%08X tick=%d"),
+    (0x0402, "RUNTIME: event=%d function=%d pc=0x%08X tick=%d"),
+    (0x0403, "RUNTIME: event=%d function=%d pc=0x%08X tick=%d"),
+    (0x0404, "RUNTIME: event=%d function=%d pc=0x%08X tick=%d"),
+    (0x0405, "RUNTIME: event=%d function=%d pc=0x%08X tick=%d"),
+    (0x0406, "RUNTIME: event=%d function=%d pc=0x%08X tick=%d"),
+    (0x0407, "RUNTIME: event=%d function=%d pc=0x%08X tick=%d"),
+    (0x0408, "RUNTIME: event=%d function=%d pc=0x%08X tick=%d"),
+    (0x0409, "RUNTIME: event=%d function=%d pc=0x%08X tick=%d"),
+    (0x040A, "RUNTIME: event=%d function=%d pc=0x%08X tick=%d"),
+    (0x040B, "RUNTIME: event=%d function=%d pc=0x%08X tick=%d"),
+)
+
 
 class LogDictionary:
     """
@@ -125,68 +168,175 @@ class LogDictionary:
     and presents format strings via a non-owning ReadOnlyFlatMapView (AoS).
     """
 
+    __slots__ = ("_view", "payload", "storage")
+
     def __init__(
         self,
-        storage: MutableFlatMapStorage[int, str] | None = None,
-        capacity: int = 128,
+        storage: ReadOnlyFlatMapStorage[int, str] | None = None,
+        entries: tuple[tuple[int, str], ...] = (),
         include_diagnostic_events: bool = True,
     ):
-        self.storage = storage if storage is not None else MutableFlatMapStorage(capacity=capacity)
-        if include_diagnostic_events and storage is None:
-            for event_id, fmt in STANDARD_DIAGNOSTIC_EVENTS:
-                assert self.storage.insert(event_id, fmt)
+        assert storage is None or not entries
+        if storage is None:
+            extra_count = len(STANDARD_DIAGNOSTIC_EVENTS) + len(RUNTIME_EVENT_DICTIONARY)
+            if not include_diagnostic_events:
+                extra_count = 0
+            entry_count = len(entries) + extra_count
+            assert entry_count <= FB_CONF_LOG_DICT_MAX_ENTRIES
+            built_entries: StaticVector[tuple[int, str]] = StaticVector(capacity=entry_count)
+            for entry in entries:
+                built_entries.append(entry)
+            if include_diagnostic_events:
+                for entry in STANDARD_DIAGNOSTIC_EVENTS:
+                    built_entries.append(entry)
+                for entry in RUNTIME_EVENT_DICTIONARY:
+                    built_entries.append(entry)
+            built_entries.sort(key=lambda entry: entry[0])
+            previous_id: int | None = None
+            for event_id, fmt in built_entries:
+                assert 0 <= event_id <= _MAX_DICTIONARY_ID
+                assert previous_id is None or previous_id < event_id
+                _format_argument_count(fmt)
+                previous_id = event_id
+            self.storage = ReadOnlyFlatMapStorage.from_sorted_static_entries(built_entries)
+        else:
+            self.storage = storage
+            assert len(storage.entries) <= FB_CONF_LOG_DICT_MAX_ENTRIES
+            for event_id, fmt in storage.entries:
+                assert 0 <= event_id <= _MAX_DICTIONARY_ID
+                _format_argument_count(fmt)
         self._view: ReadOnlyFlatMapView[int, str] = self.storage.view()
         self.payload: ReadOnlyFlatMapView[int, str] = self._view
-
-    def register(self, offset: int, fmt: str) -> None:
-        for bad in _DISALLOWED_SPECIFIERS:
-            if fmt.find(bad) >= 0:
-                assert False, (
-                    f"dictionary entry 0x{offset:X} uses '{bad}', which cannot be "
-                    "backed by a u32 argument without reading it as a pointer"
-                )
-
-        assert self.storage.insert(offset, fmt)
-        self._view = self.storage.view()
-        self.payload = self._view
 
     def view(self) -> ReadOnlyFlatMapView[int, str]:
         return self._view
 
     @property
     def entries(self) -> Sequence[tuple[int, str]]:
-        return self.storage
+        return self.storage.entries
 
-    def format(self, offset: int, args: tuple[int, int, int, int]) -> str:
-        """
-        FINDING: runtime_logging.md 4.2 says a format string may reference
-                "最大4個" (up to 4) u32 args -- i.e. using fewer than 4 is normal and
-                expected (most messages need 1-2). A real C `vsnprintf` silently
-                ignores unused variadic arguments, but Python's `%` operator raises
-                TypeError if the tuple is longer than the specifier count. A naive
-                port of this component would crash on every log_event() call whose
-                format string uses fewer than 4 specifiers -- i.e. almost all of
-                them. This slices `args` down to the specifier count actually
-                present so behavior matches C's variadic semantics instead of
-                Python's stricter one.
-        """
+    def format(self, offset: int, args: Sequence[int]) -> str:
+        """Host-side expansion for one fixed dictionary ID and at most four values."""
         fmt = self._view.find(offset)
         if fmt is None:
             return f"<UNKNOWN_DICT_OFFSET_0x{offset:X}>"
-        n = sum(1 for m in _SPECIFIER_RE.finditer(fmt) if m.group() != "%%")
-        return fmt % args[:n]
+        _format_argument_count(fmt)
+        formatted = ""
+        literal_start = 0
+        index = 0
+        argument_index = 0
+        while index < len(fmt):
+            if fmt[index] != "%":
+                index += 1
+                continue
+            formatted += fmt[literal_start:index]
+            index += 1
+            if fmt[index] == "%":
+                formatted += "%"
+                index += 1
+                literal_start = index
+                continue
+            conversion_start = index - 1
+            while index < len(fmt) and _is_one_of(fmt[index], "-+0 #"):
+                index += 1
+            while index < len(fmt) and fmt[index].isdigit():
+                index += 1
+            if index < len(fmt) and fmt[index] == ".":
+                index += 1
+                while index < len(fmt) and fmt[index].isdigit():
+                    index += 1
+            assert argument_index < len(args)
+            formatted += fmt[conversion_start : index + 1] % args[argument_index]
+            argument_index += 1
+            index += 1
+            literal_start = index
+        return formatted + fmt[literal_start:]
 
 
-@dataclass
+@dataclass(slots=True)
 class LogEntry:
-    level: LogLevel
-    dict_offset: int
-    args: tuple[int, int, int, int]
-    tick: int
+    level: LogLevel = LogLevel.DEBUG
+    dict_offset: int = 0
+    arg0: int = 0
+    arg1: int = 0
+    arg2: int = 0
+    arg3: int = 0
+
+    def store(
+        self,
+        level: LogLevel,
+        dict_offset: int,
+        arg0: int,
+        arg1: int,
+        arg2: int,
+        arg3: int,
+    ) -> None:
+        self.level = level
+        self.dict_offset = dict_offset
+        self.arg0 = arg0
+        self.arg1 = arg1
+        self.arg2 = arg2
+        self.arg3 = arg3
+
+
+class LogRingBuffer:
+    """Preallocated fixed-capacity ring that reuses scalar log records."""
+
+    __slots__ = ("buf", "capacity", "count", "dropped", "head")
+
+    def __init__(self, capacity: int):
+        assert capacity > 0
+        self.capacity = capacity
+        self.buf: StaticVector[LogEntry] = StaticVector(capacity=capacity)
+        for _ in range(capacity):
+            self.buf.append(LogEntry())
+        self.count = 0
+        self.dropped = 0
+        self.head = 0
+
+    @property
+    def overwrite_count(self) -> int:
+        return self.dropped
+
+    def __len__(self) -> int:
+        return self.count
+
+    def is_empty(self) -> bool:
+        return self.count == 0
+
+    def push(
+        self,
+        level: LogLevel,
+        dict_offset: int,
+        arg0: int,
+        arg1: int,
+        arg2: int,
+        arg3: int,
+    ) -> LogResult:
+        overwritten = self.count == self.capacity
+        if overwritten:
+            index = self.head
+            self.head = (self.head + 1) % self.capacity
+            self.dropped += 1
+        else:
+            index = (self.head + self.count) % self.capacity
+            self.count += 1
+        self.buf[index].store(level, dict_offset, arg0, arg1, arg2, arg3)
+        return LogResult.OVERWRITTEN if overwritten else LogResult.SUCCESS
+
+    def peek(self) -> LogEntry | None:
+        return None if self.count == 0 else self.buf[self.head]
+
+    def discard_oldest(self) -> None:
+        assert self.count > 0
+        self.head = (self.head + 1) % self.capacity
+        self.count -= 1
 
 
 class Logger:
     """{BufferedLogging}: buffer now, flush during COOS idle_hook."""
+
+    __slots__ = ("_wire_buffer", "_wire_view", "dictionary", "min_level", "ring", "transport")
 
     def __init__(
         self,
@@ -198,26 +348,56 @@ class Logger:
         self.transport = transport
         self.dictionary = dictionary
         self.min_level = min_level
-        self.ring: RingBuffer[LogEntry] = RingBuffer(capacity)
-        self._tick = 0
+        self.ring = LogRingBuffer(capacity)
+        self._wire_buffer = bytearray(LOG_RECORD_SIZE)
+        self._wire_view = memoryview(self._wire_buffer)
 
     def log_event(
         self,
-        level: LogLevel,
+        level: IntEnum,
         dict_offset: int,
         arg0: int = 0,
         arg1: int = 0,
         arg2: int = 0,
         arg3: int = 0,
-    ) -> str:
-
-        self._tick += 1
+    ) -> LogResult:
+        assert 0 <= int(level) <= int(LogLevel.FATAL)
+        level = LogLevel(int(level))
+        assert 0 <= dict_offset <= _MAX_DICTIONARY_ID
+        assert 0 <= arg0 <= _UINT32_MAX
+        assert 0 <= arg1 <= _UINT32_MAX
+        assert 0 <= arg2 <= _UINT32_MAX
+        assert 0 <= arg3 <= _UINT32_MAX
         if level < self.min_level:
-            return "FILTERED"
-        overwritten = self.ring.push(
-            LogEntry(level, dict_offset, (arg0, arg1, arg2, arg3), self._tick)
-        )
-        return "OVERWRITTEN" if overwritten else "QUEUED"
+            return LogResult.FILTERED
+        return self.ring.push(level, dict_offset, arg0, arg1, arg2, arg3)
+
+    def _encode_entry(self, entry: LogEntry) -> None:
+        wire = self._wire_buffer
+        wire[0] = int(entry.level)
+        wire[1] = entry.dict_offset & 0xFF
+        wire[2] = (entry.dict_offset >> 8) & 0xFF
+        wire[3] = (entry.dict_offset >> 16) & 0xFF
+        value = entry.arg0
+        wire[4] = value & 0xFF
+        wire[5] = (value >> 8) & 0xFF
+        wire[6] = (value >> 16) & 0xFF
+        wire[7] = (value >> 24) & 0xFF
+        value = entry.arg1
+        wire[8] = value & 0xFF
+        wire[9] = (value >> 8) & 0xFF
+        wire[10] = (value >> 16) & 0xFF
+        wire[11] = (value >> 24) & 0xFF
+        value = entry.arg2
+        wire[12] = value & 0xFF
+        wire[13] = (value >> 8) & 0xFF
+        wire[14] = (value >> 16) & 0xFF
+        wire[15] = (value >> 24) & 0xFF
+        value = entry.arg3
+        wire[16] = value & 0xFF
+        wire[17] = (value >> 8) & 0xFF
+        wire[18] = (value >> 16) & 0xFF
+        wire[19] = (value >> 24) & 0xFF
 
     def flush(
         self, batch_size: int = 32, interrupt_pending: Callable[[], bool] | None = None
@@ -225,15 +405,17 @@ class Logger:
         """GOTCHA-LOG-03: entries are grouped into batches of up to `batch_size`.
         A started transfer cannot be preempted, so `interrupt_pending` (if given)
         is checked only after each batch completes, never mid-batch."""
+        assert batch_size > 0
         flushed = 0
         while not self.ring.is_empty():
             batch_count = 0
             while not self.ring.is_empty() and batch_count < batch_size:
-                entry = self.ring.pop()
+                entry = self.ring.peek()
                 assert entry is not None
-                msg = self.dictionary.format(entry.dict_offset, entry.args)
-                line = f"[{entry.level.name}][tick:{entry.tick}] {msg}\n"
-                self.transport.write(line.encode("utf-8"))
+                self._encode_entry(entry)
+                written = self.transport.write(self._wire_view)
+                assert written == LOG_RECORD_SIZE
+                self.ring.discard_oldest()
                 flushed += 1
                 batch_count += 1
             if interrupt_pending is not None and interrupt_pending():
@@ -241,11 +423,35 @@ class Logger:
         return flushed
 
 
+def decode_log_records(data: bytes, dictionary: LogDictionary) -> StaticVector[str]:
+    """Host-side decoder for the fixed-width records emitted by ``Logger``."""
+    assert len(data) % LOG_RECORD_SIZE == 0
+    messages: StaticVector[str] = StaticVector(capacity=len(data) // LOG_RECORD_SIZE)
+    for offset in range(0, len(data), LOG_RECORD_SIZE):
+        record = memoryview(data)[offset : offset + LOG_RECORD_SIZE]
+        level = LogLevel(record[0])
+        dict_offset = record[1] | (record[2] << 8) | (record[3] << 16)
+        args: StaticVector[int] = StaticVector(capacity=4)
+        arg_offset = 4
+        while arg_offset < LOG_RECORD_SIZE:
+            args.append(
+                record[arg_offset]
+                | (record[arg_offset + 1] << 8)
+                | (record[arg_offset + 2] << 16)
+                | (record[arg_offset + 3] << 24)
+            )
+            arg_offset += 4
+        messages.append(f"[{level.name}] {dictionary.format(dict_offset, args)}")
+    return messages
+
+
 class ConsoleOutput:
     """Console raw-byte output path (interface_wit.md "console-output"): no dictionary, no ring buffer."""
+
+    __slots__ = ("transport",)
 
     def __init__(self, transport: StreamSink):
         self.transport = transport
 
-    def write(self, data: bytes) -> int:
+    def write(self, data: memoryview) -> int:
         return self.transport.write(data)

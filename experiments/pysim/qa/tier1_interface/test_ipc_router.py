@@ -193,12 +193,12 @@ def test_ipc_04_select_recv_picks_first_ready_sender_and_clears_group():
     sched = Scheduler()
     router = _make_router(sched)
 
-    received: list[tuple[IPCStatus, IPCMessage]] = []
+    received: list[tuple[IPCStatus, int, int | None]] = []
 
     def core_receiver():
         status, msg = yield from router.recv()
-        received.append((status, msg))
         assert msg.sender_id > 0
+        received.append((status, msg.sender_id, msg.get(1)))
         msg.append(2, 100)
         assert router.reply(msg, 0x10) == IPCStatus.COMPLETED
 
@@ -226,20 +226,21 @@ def test_ipc_04_select_recv_picks_first_ready_sender_and_clears_group():
     sched.run_until_idle()
 
     assert len(received) == 1
-    status, msg = received[0]
+    status, sender_id, received_value = received[0]
     assert status == IPCStatus.COMPLETED
-    assert msg.get(1) == 99
+    assert sender_id > 0
+    assert received_value == 99
     # The losing edge (RUNTIME->CORE_SERVICE) must have been cleared, not
     # left pointing at the now-terminated receiver.
     assert runtime_ch.waiter_dir == WaitDir.NONE
     assert runtime_ch.waiter_task is None
 
     # That edge must still be independently usable by a fresh receiver.
-    received2: list[tuple[IPCStatus, IPCMessage]] = []
+    received2: list[tuple[IPCStatus, int | None]] = []
 
     def core_receiver2():
         status, msg = yield from router.recv()
-        received2.append((status, msg))
+        received2.append((status, msg.get(1)))
         assert router.reply(msg, 0) == IPCStatus.COMPLETED
 
     def runtime_sender():
@@ -255,39 +256,47 @@ def test_ipc_04_select_recv_picks_first_ready_sender_and_clears_group():
     sched.run_until_idle()
 
     assert len(received2) == 1
-    assert received2[0][1].get(1) == 7
+    assert received2[0] == (IPCStatus.COMPLETED, 7)
 
 
 def test_ipc_05_message_storage_ownership_and_access_check():
     """TEST-IPC-05: IPCMessage owns its SharedBlock storage and enforces ownership checks upon access."""
     from ipc_router import OwnershipState
 
-    msg = make_test_ipc_message([(10, 100), (20, 200)])
-    assert msg.ownership == OwnershipState.SENDER_OWNS
-    assert msg.get(10) == 100
-    assert msg.get(20) == 200
-    assert len(msg) == 2
-    assert 10 in msg
-    msg.append(15, 150)
-    assert msg.data is not None
-    assert msg.flat_map_view.find(15) == 150
-    assert msg.flat_map_view.find(99) is None
+    scheduler = Scheduler()
+    owner_id = scheduler.spawn("message_owner")
+    owner = scheduler.get_task(owner_id)
+    assert owner is not None
+    manager = MemoryManager(scheduler)
+    assert manager.init_manager(0x00010000, FB_CONF_MEMORY_POOL_SIZE).is_ok
 
-    # Transition to IN_FLIGHT (sending): access to entries is strictly prohibited
-    msg.ownership = OwnershipState.IN_FLIGHT
-    with expect_assertion("Cannot access IPCMessage entries while ownership is IN_FLIGHT"):
-        _ = msg.get(10)
+    with scheduler.task_context(owner):
+        msg = make_test_ipc_message([(10, 100), (20, 200)], memory_manager=manager)
+        assert msg.ownership == OwnershipState.SENDER_OWNS
+        assert msg.get(10) == 100
+        assert msg.get(20) == 200
+        assert len(msg) == 2
+        assert 10 in msg
+        msg.append(15, 150)
+        assert msg.data is not None
+        assert msg.flat_map_view.find(15) == 150
+        assert msg.flat_map_view.find(99) is None
 
-    with expect_assertion("Cannot access IPCMessage entries while ownership is IN_FLIGHT"):
-        _ = msg.entries
+        # Transition to IN_FLIGHT (sending): access to entries is strictly prohibited
+        msg.ownership = OwnershipState.IN_FLIGHT
+        with expect_assertion("Cannot access IPCMessage entries while ownership is IN_FLIGHT"):
+            _ = msg.get(10)
 
-    with expect_assertion("Cannot access IPCMessage entries while ownership is IN_FLIGHT"):
-        _ = len(msg)
+        with expect_assertion("Cannot access IPCMessage entries while ownership is IN_FLIGHT"):
+            _ = msg.entries
 
-    # Transition to RECEIVER_OWNS: access is permitted again
-    msg.ownership = OwnershipState.RECEIVER_OWNS
-    assert msg.get(10) == 100
-    assert msg.get(20) == 200
+        with expect_assertion("Cannot access IPCMessage entries while ownership is IN_FLIGHT"):
+            _ = len(msg)
+
+        # Transition to RECEIVER_OWNS: this state gate permits access after flight ends.
+        msg.ownership = OwnershipState.RECEIVER_OWNS
+        assert msg.get(10) == 100
+        assert msg.get(20) == 200
 
 
 def test_ipc_06_router_create_channel_authorization():

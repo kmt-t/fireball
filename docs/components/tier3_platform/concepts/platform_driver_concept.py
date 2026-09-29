@@ -14,6 +14,14 @@ BACKS = [
 ]
 
 INTERRUPT_EVENT_WORDS: Final[int] = 5
+U32_MASK: Final[int] = 0xFFFF_FFFF
+
+
+def elapsed_u32(start_tick: int, end_tick: int) -> int:
+    """Return elapsed ticks for one or fewer wraps of a 32-bit counter."""
+    assert 0 <= start_tick <= U32_MASK
+    assert 0 <= end_tick <= U32_MASK
+    return (end_tick - start_tick) & U32_MASK
 
 
 @dataclass(frozen=True)
@@ -126,7 +134,13 @@ def test_fixed_fifo_rejects_overflow() -> None:
     assert driver.pending_count == 1
 
 
+def test_u32_timer_elapsed_handles_wraparound() -> None:
+    assert elapsed_u32(100, 140) == 40
+    assert elapsed_u32(0xFFFF_FFF0, 0x0000_0010) == 32
+
+
 if __name__ == "__main__":
     test_isr_push_preserves_event_and_delays_ready()
     test_fixed_fifo_rejects_overflow()
+    test_u32_timer_elapsed_handles_wraparound()
     print("[PASS] Platform driver interrupt boundary concept tests passed.")

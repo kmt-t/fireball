@@ -31,6 +31,7 @@ from hostcall import (
     WasiPreview1Host,
 )
 from ipc_router import (
+    FB_CONF_ROUTER_MAX_KV_PAIRS,
     IPCMessage,
     IPCRouter,
     IPCStatus,
@@ -82,6 +83,35 @@ _PASSTHROUGH_TEST_PAGES = 16  # this experiment's own arbitrary backing size,
 
 
 class System:
+    __slots__ = (
+        "_bound_runtime_task",
+        "_channel_table",
+        "_gdb_task_id",
+        "_guest_memory",
+        "_hal_task_storage",
+        "_yield_requested",
+        "dictionary",
+        "drivers",
+        "exit_code",
+        "gdb_server",
+        "halted",
+        "host_calls",
+        "ipc",
+        "ipcr_regs",
+        "logger",
+        "memory_manager",
+        "phys_mem",
+        "pool",
+        "reset_requested",
+        "runtime_engine",
+        "scheduler",
+        "transport",
+        "vmmio",
+        "wasi_backend",
+        "wasi_context",
+        "wasi_hal_bindings",
+    )
+
     """
     One running Fireball-shaped host: a single platform I/O sink, a single SHM
         buffer pool, one dictionary logger, and a real vMMIO controller (FlatMap PTEs + TLB, reused from
@@ -94,6 +124,7 @@ class System:
         self,
         logger_sink: StreamSink | None = None,
         drivers: PlatformDriverConfiguration | None = None,
+        log_dictionary: LogDictionary | None = None,
     ):
         self.drivers = (
             drivers if drivers is not None else create_default_platform_drivers(logger_sink)
@@ -101,7 +132,7 @@ class System:
         self.wasi_hal_bindings = self.drivers.wasi_hal_bindings
         self.wasi_backend = self.drivers.wasi_backend
         self.transport = self.drivers.stdout_transport
-        self.dictionary = LogDictionary()
+        self.dictionary = log_dictionary if log_dictionary is not None else LogDictionary()
         self.logger = Logger(self.drivers.logger_sink, self.dictionary, min_level=LogLevel.DEBUG)
         self.scheduler = Scheduler(logger=self.logger)
         # --- vMMIO: real FlatMap+TLB dispatch, this file's own byte
@@ -140,12 +171,10 @@ class System:
         self.reset_requested = False
         self.exit_code: int | None = None
         self._guest_memory: bytearray | None = None
+        self._yield_requested = False
         self._bound_runtime_task: Task | None = None
         self._hal_task_storage: MutableFlatMapStorage[int, HalTask] = MutableFlatMapStorage(
             capacity=8
-        )
-        self._hal_task_index: ReadOnlyFlatMapStorage[int, HalTask] = ReadOnlyFlatMapStorage.create(
-            ()
         )
         self.gdb_server: GDBServer | None = None
         self._gdb_task_id: int | None = None
@@ -172,7 +201,7 @@ class System:
             ),
             (
                 FbSyscallId.MMIO_READ32,
-                lambda a0, a1, a2, a3, a4, a5: self._mmio_read(a0, 4),
+                lambda a0, a1, a2, a3, a4, a5: int(self._mmio_read(a0, a1, 4)),
             ),
             (
                 FbSyscallId.MMIO_WRITE32,
@@ -180,7 +209,7 @@ class System:
             ),
             (
                 FbSyscallId.MMIO_READ8,
-                lambda a0, a1, a2, a3, a4, a5: self._mmio_read(a0, 1),
+                lambda a0, a1, a2, a3, a4, a5: int(self._mmio_read(a0, a1, 1)),
             ),
             (
                 FbSyscallId.MMIO_WRITE8,
@@ -200,11 +229,11 @@ class System:
             ),
             (
                 FbSyscallId.IPC_RECV,
-                lambda a0, a1, a2, a3, a4, a5: int(self._ipc_recv(a0, a1, a2)),
+                lambda a0, a1, a2, a3, a4, a5: int(self._ipc_recv(a0, a1, a2, a3)),
             ),
             (
                 FbSyscallId.IPC_LOOKUP,
-                lambda a0, a1, a2, a3, a4, a5: self._ipc_lookup(a0, a1),
+                lambda a0, a1, a2, a3, a4, a5: int(self._ipc_lookup(a0, a1, a2)),
             ),
             (
                 FbSyscallId.IPC_REPLY,
@@ -276,7 +305,11 @@ class System:
             task = self.scheduler.current_task
             assert task is not None, "guest execution requires an active COOS task"
             generation_yield = self.scheduler.observe_reschedule_generation(task)
-            if not call_state.finished and (boundary.yield_requested or generation_yield):
+            syscall_yield = self._yield_requested
+            self._yield_requested = False
+            if not call_state.finished and (
+                boundary.yield_requested or generation_yield or syscall_yield
+            ):
                 self.runtime_engine.on_yield()
                 yield (ChannelAction.YIELD, None)
         return self.runtime_engine.complete_call(interp, call_state, idle_budget)
@@ -368,14 +401,10 @@ class System:
         if cmd == int(FbSyscallId.SYS_RESET):
             self.reset_requested = True
         elif cmd == int(FbSyscallId.SYS_YIELD):
-            # {CooperativeMultitasking}: a real yield suspends the calling
-            # coroutine until the scheduler resumes it. This experiment's
-            # WASM JIT has no continuation/suspend mechanism -- a native
-            # `call` into fireball_call runs to completion synchronously --
-            # so there is nothing to suspend here. scheduler.py's own
-            # generator-based yield is the actual host-side yield model for
-            # the HAL demo; this path can only acknowledge the request.
-            pass
+            # The synchronous host call records a request. run_guest() observes
+            # it after the current RuntimeEngine boundary and yields its COOS
+            # generator there, where the interpreter continuation is resumable.
+            self._yield_requested = True
         elif cmd == int(FbSyscallId.SYS_HALT):
             self.halted = True
         else:
@@ -402,7 +431,7 @@ class System:
         return WasiErrno.FAULT
 
     def _mmio_touch(
-        self, addr: int, is_write: bool
+        self, addr: int, is_write: bool, access_size: int = 1
     ) -> tuple[WasiErrno | None, bytearray | None, int | None]:
         """
         Runs the real permission dispatch, then resolves this
@@ -411,7 +440,7 @@ class System:
                 Returns (errno_or_None, backing_bytearray_or_None, local_offset).
         """
 
-        access_status, _ = self.vmmio.access(addr, is_write)
+        access_status, _ = self.vmmio.access(addr, is_write, access_size=access_size)
         errno = self._trap_to_errno(access_status)
         if errno is not None:
             return errno, None, None
@@ -426,19 +455,28 @@ class System:
         # the same public PTE fields it exposes (self.vmmio.ptes is a
         # public FlatMap, not a hidden implementation detail).
         pte = self.vmmio.ptes.view().find(a.vpn())
-        phys_addr = (pte.phys_page << 12) | a.offset()
+        assert pte is not None
+        phys_addr = pte.physical_base_addr + a.offset()
         return None, self.phys_mem, phys_addr
 
-    def _mmio_read(self, addr: int, width: int) -> int:
-        errno, backing, off = self._mmio_touch(addr, is_write=False)
+    def _mmio_read(self, addr: int, value_out_ptr: int, width: int) -> WasiErrno:
+        # The raw host-call return is reserved for errno. Validate the output
+        # before touching a potentially side-effecting MMIO register.
+        if not self._guest_ram_ok(value_out_ptr, 4):
+            return WasiErrno.FAULT
+        errno, backing, off = self._mmio_touch(addr, is_write=False, access_size=width)
         if errno is not None:
-            return int(errno)
+            return errno
+        assert backing is not None and off is not None
         if off + width > len(backing):
-            return int(WasiErrno.FAULT)
-        return int.from_bytes(backing[off : off + width], "little")
+            return WasiErrno.FAULT
+        value = int.from_bytes(backing[off : off + width], "little")
+        if not self._write_guest(value_out_ptr, value.to_bytes(4, "little")):
+            return WasiErrno.FAULT
+        return WasiErrno.SUCCESS
 
     def _mmio_write(self, addr: int, value: int, width: int) -> WasiErrno:
-        errno, backing, off = self._mmio_touch(addr, is_write=True)
+        errno, backing, off = self._mmio_touch(addr, is_write=True, access_size=width)
         if errno is not None:
             return errno
         if off + width > len(backing):
@@ -447,7 +485,9 @@ class System:
         return WasiErrno.SUCCESS
 
     def _mmio_bulk_read(self, addr: int, dest_offset: int, byte_count: int) -> WasiErrno:
-        errno, backing, off = self._mmio_touch(addr, is_write=False)
+        if not self._guest_ram_ok(dest_offset, byte_count):
+            return WasiErrno.FAULT
+        errno, backing, off = self._mmio_touch(addr, is_write=False, access_size=byte_count)
         if errno is not None:
             return errno
         if off + byte_count > len(backing):
@@ -457,11 +497,13 @@ class System:
         return WasiErrno.SUCCESS
 
     def _mmio_bulk_write(self, addr: int, src_offset: int, byte_count: int) -> WasiErrno:
-        errno, backing, off = self._mmio_touch(addr, is_write=True)
+        data = self._read_guest(src_offset, byte_count)
+        if data is None:
+            return WasiErrno.FAULT
+        errno, backing, off = self._mmio_touch(addr, is_write=True, access_size=byte_count)
         if errno is not None:
             return errno
-        data = self._read_guest(src_offset, byte_count)
-        if data is None or off + byte_count > len(backing):
+        if off + byte_count > len(backing):
             return WasiErrno.FAULT
         backing[off : off + byte_count] = data
         return WasiErrno.SUCCESS
@@ -482,8 +524,8 @@ class System:
         a = VmmioAddress(addr)
         if a.is_linear():
             return (self._guest_memory, addr) if self._guest_ram_ok(addr, count) else (None, None)
-        errno, backing, off = self._mmio_touch(addr, is_write)
-        if errno is not None or off + count > len(backing):
+        errno, backing, off = self._mmio_touch(addr, is_write, access_size=count)
+        if errno is not None or backing is None or off is None or off + count > len(backing):
             return None, None
         return backing, off
 
@@ -498,24 +540,31 @@ class System:
         return WasiErrno.SUCCESS
 
     # --- IPC (real IPCRouter: URI lookup, RBAC, CSP rendezvous handoff) ---
-    def _ipc_lookup(self, uri_offset: int, uri_len: int) -> int:
+    def _ipc_lookup(self, uri_offset: int, uri_len: int, handle_out_ptr: int) -> WasiErrno:
+        if not self._guest_ram_ok(uri_offset, uri_len):
+            return WasiErrno.FAULT
+        if not self._guest_ram_ok(handle_out_ptr, 4):
+            return WasiErrno.FAULT
         raw = self._read_guest(uri_offset, uri_len)
         if raw is None:
-            return int(WasiErrno.FAULT)
+            return WasiErrno.FAULT
         try:
             uri = raw.decode("utf-8")
         except UnicodeDecodeError:
-            return int(WasiErrno.INVAL)
+            return WasiErrno.INVAL
         task = self.scheduler.current_task
         assert task is not None, "IPC lookup requires an active scheduler task"
         status, channel = self.ipc.lookup(uri)
-        if status == IPCStatus.ERR_NOT_FOUND or channel is None:
-            return int(WasiErrno.NOENT)
+        if status == IPCStatus.ERR_NOT_FOUND:
+            return WasiErrno.NOENT
         if status == IPCStatus.ERR_PERMISSION_DENIED:
-            return int(WasiErrno.PERM)
+            return WasiErrno.PERM
+        assert channel is not None, "successful IPC lookup must return a channel"
         if not self._channel_table.push_back(channel):
             return WasiErrno.NOMEM
-        return len(self._channel_table)
+        handle_id = len(self._channel_table)
+        assert self._write_guest(handle_out_ptr, handle_id.to_bytes(4, "little"))
+        return WasiErrno.SUCCESS
 
     def _ipc_send(
         self, handle_id: int, msg_offset: int, msg_len: int, response_code_ptr: int = 0
@@ -523,6 +572,15 @@ class System:
         if handle_id < 1 or handle_id > len(self._channel_table):
             return WasiErrno.BADF
         channel = self._channel_table[handle_id - 1]
+        if not self._guest_ram_ok(msg_offset, msg_len):
+            return WasiErrno.FAULT
+        if response_code_ptr != 0 and not self._guest_ram_ok(response_code_ptr, 4):
+            return WasiErrno.FAULT
+        # The byte bridge reserves one KV pair for the payload length and uses
+        # one pair for each four-byte chunk. Reject oversize input before
+        # allocating/populating the fixed-size shared message block.
+        if (msg_len + 3) // 4 + 1 > FB_CONF_ROUTER_MAX_KV_PAIRS:
+            return WasiErrno.MSGSIZE
         payload = self._read_guest(msg_offset, msg_len)
         if payload is None:
             return WasiErrno.FAULT
@@ -565,9 +623,24 @@ class System:
             return WasiErrno.SUCCESS
         if status == IPCStatus.ERR_PERMISSION_DENIED:
             return WasiErrno.PERM
+        if status == IPCStatus.ERR_MSG_TOO_LARGE:
+            return WasiErrno.MSGSIZE
         return WasiErrno.NOENT
 
-    def _ipc_recv(self, handle_id: int, buf_offset: int, buf_len: int) -> int:
+    def _ipc_recv(
+        self, handle_id: int, buf_offset: int, buf_len: int, recv_len_out_ptr: int
+    ) -> WasiErrno:
+        # Validate before entering the blocking CSP receive. An invalid buffer
+        # must not consume a sender's message or suspend the calling task.
+        if not self._guest_ram_ok(buf_offset, buf_len):
+            return WasiErrno.FAULT
+        if not self._guest_ram_ok(recv_len_out_ptr, 4):
+            return WasiErrno.FAULT
+        if buf_offset < recv_len_out_ptr + 4 and recv_len_out_ptr < buf_offset + buf_len:
+            return WasiErrno.INVAL
+        max_payload_size = (FB_CONF_ROUTER_MAX_KV_PAIRS - 1) * 4
+        if buf_len < max_payload_size:
+            return WasiErrno.MSGSIZE
         task = self.scheduler.current_task
         assert task is not None, "IPC receive requires an active scheduler task"
 
@@ -594,18 +667,17 @@ class System:
                 status, msg = IPCStatus.COMPLETED, None
             self.scheduler.run_until_idle()
 
-        if (
-            status == IPCStatus.ERR_NOT_FOUND
-            or status == IPCStatus.ERR_PERMISSION_DENIED
-            or msg is None
-        ):
-            return int(WasiErrno.NOENT)
+        if status == IPCStatus.ERR_PERMISSION_DENIED:
+            return WasiErrno.PERM
+        if status == IPCStatus.ERR_NOT_FOUND or msg is None:
+            return WasiErrno.NOENT
         data = kv_entries_to_bytes(msg.entries, max_len=buf_len)
         n = len(data)
         if not self._write_guest(buf_offset, data):
-            return int(WasiErrno.FAULT)
+            return WasiErrno.FAULT
+        assert self._write_guest(recv_len_out_ptr, n.to_bytes(4, "little"))
         task.pending_reply = msg
-        return n
+        return WasiErrno.SUCCESS
 
     def _ipc_reply(self, handle_id: int, response_code: int) -> WasiErrno:
         """Reply to the most recent IPC_RECV message on the current task."""
@@ -649,25 +721,24 @@ class System:
         assert self.wasi_context is not None, "WASI random_get requires a bound WASI context"
         return WasiErrno(self.wasi_context.random_get(buf_ptr, buf_len))
 
-    def start_hal_driver(self, driver: HalDriver) -> int:
+    def start_hal_driver(self, driver: HalDriver, uri: str) -> int:
         """Registers and starts one driver-owned HAL device task."""
         driver.bind_buffer_pool(self.pool)
-        desc = self.ipc.find_service(driver.uri)
-        assert desc is not None, f"HAL driver URI not registered: {driver.uri}"
-        uri_key = fnv1a_32(driver.uri)
-        assert self._hal_task_index.view().find(uri_key) is None, (
-            f"duplicate HAL driver URI: {driver.uri}"
+        desc = self.ipc.find_service(uri)
+        assert desc is not None, f"HAL driver URI not registered: {uri}"
+        uri_key = fnv1a_32(uri)
+        assert self._hal_task_storage.view().find(uri_key) is None, (
+            f"duplicate HAL driver URI: {uri}"
         )
         task_id, task = driver.start(
-            self.ipc, self.scheduler, desc.role, self.ipc.lookup_service_handle(driver.uri)
+            self.ipc, self.scheduler, desc.role, self.ipc.lookup_service_handle(uri)
         )
         assert self._hal_task_storage.insert(uri_key, task)
-        self._hal_task_index = ReadOnlyFlatMapStorage.create(self._hal_task_storage.view().entries)
         return task_id
 
     def hal_task_for(self, uri: str) -> HalTask | None:
         """Returns the dedicated HalTask instance bound to `uri`, if spawned."""
-        return self._hal_task_index.view().find(fnv1a_32(uri))
+        return self._hal_task_storage.view().find(fnv1a_32(uri))
 
     def spawn_gdbserver_task(
         self,
@@ -706,7 +777,7 @@ class System:
     def shutdown(self) -> None:
         if self.gdb_server is not None:
             self.gdb_server.stop()
-        for _, task in self._hal_task_index.entries:
+        for _, task in self._hal_task_storage:
             task.running = False
         self.pool.close_all()
         self.wasi_backend.close()

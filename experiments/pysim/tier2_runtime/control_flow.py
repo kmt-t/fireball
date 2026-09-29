@@ -576,7 +576,7 @@ def build_control_map(code: bytes) -> ControlMap:
         elif _LEB_UNSIGNED_OPERAND.at(opcode):
             _, off = decode_unsigned(code, off)
         elif opcode == I32_CONST or opcode == I64_CONST:
-            _, off = decode_signed(code, off)
+            _, off = decode_signed(code, off, bits=64 if opcode == I64_CONST else 32)
         elif opcode == F32_CONST:
             off += 4
         elif opcode == F64_CONST:
@@ -663,7 +663,9 @@ def iter_scan_instrs(code: bytes, start: int = 0) -> Iterator[Instr]:
         elif _LEB_UNSIGNED_OPERAND.at(opcode):
             operand, off = decode_unsigned(code, off)
         elif opcode == I32_CONST or opcode == I64_CONST:
-            _, off = decode_signed(code, off)  # value unused by block-boundary scanning
+            _, off = decode_signed(
+                code, off, bits=64 if opcode == I64_CONST else 32
+            )  # value unused by block-boundary scanning
         elif opcode == F32_CONST:
             off += 4
         elif opcode == F64_CONST:
@@ -771,7 +773,7 @@ def iter_block_ops(
             operand, off = decode_unsigned(code, off)
             arg: WasmOperand = operand
         elif opcode == I32_CONST or opcode == I64_CONST:
-            arg, off = decode_signed(code, off)
+            arg, off = decode_signed(code, off, bits=64 if opcode == I64_CONST else 32)
         elif opcode == F32_CONST:
             assert off + 4 <= end
             arg = int.from_bytes(code[off : off + 4], "little")

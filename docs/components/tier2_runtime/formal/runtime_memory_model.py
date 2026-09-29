@@ -19,8 +19,11 @@ def build_model(*, guards: bool = True) -> Kripke:
         "s_owned_a",
         "s_in_flight",
         "s_owned_b",
+        "s_transferred_to_b",
+        "s_old_handle_rejected",
         "s_released",
         "s_wrong_owner_access",
+        "s_stale_handle_access",
         "s_mixed_page",
     ]
     initial = {"s_unallocated"}
@@ -33,10 +36,13 @@ def build_model(*, guards: bool = True) -> Kripke:
         ("s_owned_a", "s_in_flight"),
         # CSP rendezvous does not imply peer arrival; indefinite waiting is valid.
         ("s_in_flight", "s_in_flight"),
-        ("s_in_flight", "s_owned_b"),
+        ("s_in_flight", "s_transferred_to_b"),
+        ("s_transferred_to_b", "s_old_handle_rejected"),
+        ("s_old_handle_rejected", "s_owned_b"),
         ("s_owned_b", "s_released"),
         ("s_released", "s_unallocated"),
         ("s_wrong_owner_access", "s_wrong_owner_access"),
+        ("s_stale_handle_access", "s_stale_handle_access"),
         ("s_mixed_page", "s_mixed_page"),
     ]
     if not guards:
@@ -45,6 +51,7 @@ def build_model(*, guards: bool = True) -> Kripke:
             *transitions,
             ("s_owned_a", "s_wrong_owner_access"),
             ("s_owned_a", "s_mixed_page"),
+            ("s_transferred_to_b", "s_stale_handle_access"),
         ]
 
     labels = {
@@ -52,8 +59,11 @@ def build_model(*, guards: bool = True) -> Kripke:
         "s_owned_a": {"owner_a"},
         "s_in_flight": {"transfer_pending"},
         "s_owned_b": {"owner_b", "transfer_complete"},
+        "s_transferred_to_b": {"owner_b", "transfer_complete"},
+        "s_old_handle_rejected": {"old_handle_rejected"},
         "s_released": {"released"},
         "s_wrong_owner_access": {"wrong_owner_access"},
+        "s_stale_handle_access": {"stale_handle_access"},
         "s_mixed_page": {"mixed_page"},
     }
     return Kripke(S=states, S0=initial, R=transitions, L=labels)
@@ -62,6 +72,7 @@ def build_model(*, guards: bool = True) -> Kripke:
 def properties():
     """安全性2件を返す。転送完了は相手到達を仮定する上位契約である。"""
     wrong_owner_access = AtomicProposition("wrong_owner_access")
+    stale_handle_access = AtomicProposition("stale_handle_access")
     mixed_page = AtomicProposition("mixed_page")
     return [
         {
@@ -70,6 +81,14 @@ def properties():
             "logic": "CTL",
             "formula": AG(Not(wrong_owner_access)),
             "violation": wrong_owner_access,
+            "expect": True,
+        },
+        {
+            "name": "transferred_owner_cannot_use_stale_handle",
+            "kind": "safety",
+            "logic": "CTL",
+            "formula": AG(Not(stale_handle_access)),
+            "violation": stale_handle_access,
             "expect": True,
         },
         {

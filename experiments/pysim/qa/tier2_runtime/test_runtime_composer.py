@@ -8,6 +8,7 @@ _TESTS_DIR = Path(__file__).resolve().parents[1]
 _PYSIM_DIR = Path(__file__).resolve().parents[2]
 
 from helpers import expect_assertion
+from recovery import Result
 from runtime_composer import (
     RuntimeComposer,
     RuntimeCompositionConfig,
@@ -17,7 +18,14 @@ from runtime_composer import (
     RuntimeWithoutPlugins,
     RuntimeWithPlugins,
 )
-from runtime_events import RuntimeEvent, RuntimeEventKind
+from runtime_events import (
+    RUNTIME_EVENT_NO_MODULE,
+    RUNTIME_EVENT_NO_PC,
+    RuntimeEvent,
+    RuntimeEventFlags,
+    RuntimeEventKind,
+    RuntimeExecutionError,
+)
 from system_containers import StaticVector
 
 
@@ -25,9 +33,9 @@ class _Executor:
     def __init__(self) -> None:
         self.calls = 0
 
-    def call(self, func_index: int, args: tuple[int, ...]) -> int:
+    def call(self, func_index: int, args: tuple[int, ...]) -> Result[int, RuntimeExecutionError]:
         self.calls += 1
-        return func_index + sum(args)
+        return Result.ok(func_index + sum(args))
 
 
 class _Observer:
@@ -69,19 +77,31 @@ def test_disabled_plugins_are_not_constructed_or_retained() -> None:
     interpreter = _Executor()
     jit = _Executor()
     factories, logger, debugger, profiler = _factories(interpreter, jit)
+
+    class ClockProbe:
+        calls = 0
+
+        def read(self) -> int:
+            self.calls += 1
+            return self.calls
+
+    clock = ClockProbe()
+
     runtime = RuntimeComposer.compose(
         RuntimeCompositionConfig(),
         factories,
+        tick_clock=clock.read,
     )
 
     assert isinstance(runtime, RuntimeWithoutPlugins)
     assert not hasattr(runtime, "observers")
-    assert runtime.call(3, (4,)) == 7
+    assert runtime.call(3, (4,)).unwrap() == 7
     assert interpreter.calls == 1
     assert jit.calls == 0
     assert logger.calls == 0
     assert debugger.calls == 0
     assert profiler.calls == 0
+    assert clock.calls == 0
 
 
 def test_selected_plugins_receive_one_shared_event_stream() -> None:
@@ -95,10 +115,11 @@ def test_selected_plugins_receive_one_shared_event_stream() -> None:
         ),
         factories,
         runtime_id=9,
+        tick_clock=lambda: 10,
     )
 
     assert isinstance(runtime, RuntimeWithPlugins)
-    assert runtime.call(5, (2,)) == 7
+    assert runtime.call(5, (2,)).unwrap() == 7
     assert interpreter.calls == 0
     assert jit.calls == 1
     assert logger.calls == 1
@@ -110,6 +131,62 @@ def test_selected_plugins_receive_one_shared_event_stream() -> None:
     assert logger.instance.events[0].kind == RuntimeEventKind.FUNCTION_ENTER
     assert logger.instance.events[1].kind == RuntimeEventKind.FUNCTION_EXIT
     assert logger.instance.events[0].runtime_id == 9
+    assert logger.instance.events[0].module_id == RUNTIME_EVENT_NO_MODULE
+    assert logger.instance.events[0].guest_pc == RUNTIME_EVENT_NO_PC
+    assert [event.tick for event in logger.instance.events] == [10, 11]
+
+
+class _TrappingExecutor:
+    def call(self, _func_index: int, _args: tuple[int, ...]) -> Result[int, RuntimeExecutionError]:
+        return Result.err(RuntimeExecutionError.GUEST_TRAP)
+
+
+class _FailingExecutor:
+    def call(self, _func_index: int, _args: tuple[int, ...]) -> Result[int, RuntimeExecutionError]:
+        return Result.err(RuntimeExecutionError.HOST_FAILURE)
+
+
+def test_guest_trap_is_distinguished_from_host_failure() -> None:
+    interpreter = _TrappingExecutor()
+    jit = _Executor()
+    factories, logger, _, _ = _factories(jit, jit)
+    factories = RuntimeFactories(
+        interpreter=lambda: interpreter,
+        jit=lambda: jit,
+        logger=factories.logger,
+        debugger=factories.debugger,
+        profiler=factories.profiler,
+    )
+    runtime = RuntimeComposer.compose(
+        RuntimeCompositionConfig(plugins=RuntimePluginSelection(logger=True)),
+        factories,
+    )
+    assert isinstance(runtime, RuntimeWithPlugins)
+    trap_result = runtime.call(4, ())
+    assert not trap_result.is_ok and trap_result.error == RuntimeExecutionError.GUEST_TRAP
+    assert [event.kind for event in logger.instance.events] == [
+        RuntimeEventKind.FUNCTION_ENTER,
+        RuntimeEventKind.TRAP,
+    ]
+
+    factories = RuntimeFactories(
+        interpreter=_FailingExecutor,
+        jit=lambda: jit,
+        logger=factories.logger,
+        debugger=factories.debugger,
+        profiler=factories.profiler,
+    )
+    failing_runtime = RuntimeComposer.compose(
+        RuntimeCompositionConfig(plugins=RuntimePluginSelection(logger=True)),
+        factories,
+    )
+    assert isinstance(failing_runtime, RuntimeWithPlugins)
+    failure_result = failing_runtime.call(4, ())
+    assert not failure_result.is_ok and failure_result.error == RuntimeExecutionError.HOST_FAILURE
+    aborted = logger.instance.events[3]
+    assert aborted.kind == RuntimeEventKind.FUNCTION_EXIT
+    assert aborted.flags & RuntimeEventFlags.ABORTED
+    assert aborted.flags & RuntimeEventFlags.ESTIMATED
 
 
 def test_debugger_composition_constructs_interpreter_only_runtime() -> None:
@@ -125,7 +202,7 @@ def test_debugger_composition_constructs_interpreter_only_runtime() -> None:
     )
 
     assert isinstance(runtime, RuntimeWithPlugins)
-    assert runtime.call(7, (3,)) == 10
+    assert runtime.call(7, (3,)).unwrap() == 10
     assert interpreter.calls == 1
     assert jit.calls == 0
     assert logger.calls == 0
@@ -151,9 +228,7 @@ def test_debugger_cannot_be_composed_with_jit() -> None:
 
 
 ALL_TESTS = tuple(
-    value
-    for name, value in globals().items()
-    if name.startswith("test_") and callable(value)
+    value for name, value in globals().items() if name.startswith("test_") and callable(value)
 )
 
 

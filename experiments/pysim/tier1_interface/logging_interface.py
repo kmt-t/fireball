@@ -14,6 +14,12 @@ class LogLevel(IntEnum):
     FATAL = 4
 
 
+class LogResult(IntEnum):
+    SUCCESS = 0
+    FILTERED = 1
+    OVERWRITTEN = 2
+
+
 class Logger(Protocol):
     """Minimal logging port; the concrete sink is owned by the runtime."""
 
@@ -25,4 +31,4 @@ class Logger(Protocol):
         arg1: int = 0,
         arg2: int = 0,
         arg3: int = 0,
-    ) -> str: ...
+    ) -> LogResult: ...

@@ -13,6 +13,7 @@ Implementation Invariants & Gotchas:
 
 from collections import deque
 from collections.abc import Generator
+from dataclasses import dataclass
 from enum import IntEnum
 
 
@@ -20,19 +21,37 @@ class TaskState(IntEnum):
     READY = 1
     RUNNING = 2
     BLOCKED = 3
-    TERMINATED = 4
+    BLOCKED_TIMER = 4
+    TERMINATED = 5
+
+
+@dataclass(frozen=True, slots=True)
+class WaitUntil:
+    deadline_ns: int
+
+
+SchedulerAction = str | WaitUntil
 
 
 class TaskControlBlock:
-    __slots__ = ("block_reason", "coro", "dispatches", "id", "last_seen_generation", "state")
+    __slots__ = (
+        "block_reason",
+        "coro",
+        "deadline_ns",
+        "dispatches",
+        "id",
+        "last_seen_generation",
+        "state",
+    )
 
-    def __init__(self, task_id: str, coro: Generator):
+    def __init__(self, task_id: str, coro: Generator[SchedulerAction, None, None]):
         self.id = task_id
         self.coro = coro
         self.state = TaskState.READY
         self.last_seen_generation = 0
         self.dispatches = 0
         self.block_reason: str | None = None
+        self.deadline_ns: int | None = None
 
 
 class RoundRobinScheduler:
@@ -46,6 +65,7 @@ class RoundRobinScheduler:
         self.reschedule_pending = False
         self.round_target_generation = 0
         self.round_target_ids: set[str] = set()
+        self.now_ns = 0
 
     def _begin_reschedule_round(self) -> None:
         if not self.reschedule_pending:
@@ -129,6 +149,42 @@ class RoundRobinScheduler:
         self._complete_reschedule_if_ready()
         self.current_task = None
 
+    def wait_until_current(self, deadline_ns: int) -> None:
+        """Block only the current task until the scheduler's monotonic model clock reaches a deadline."""
+        assert self.current_task is not None, "No active task to block"
+        assert deadline_ns > self.now_ns, "Timer deadline must be in the future"
+        task_id = self.current_task
+        tcb = self.tasks[task_id]
+        tcb.state = TaskState.BLOCKED_TIMER
+        tcb.deadline_ns = deadline_ns
+        self.round_target_ids.discard(task_id)
+        self._complete_reschedule_if_ready()
+        self.current_task = None
+
+    def _advance_to_next_deadline(self) -> bool:
+        if self.ready_ring:
+            return True
+        # GOTCHA-SCHED-03: Select from live timer waiters so ended waits cannot
+        # leave an obsolete earlier deadline driving the next idle step.
+        deadlines = [
+            tcb.deadline_ns
+            for tcb in self.tasks.values()
+            if tcb.state == TaskState.BLOCKED_TIMER and tcb.deadline_ns is not None
+        ]
+        if not deadlines:
+            return False
+        self.now_ns = min(deadlines)
+        for task_id, tcb in self.tasks.items():
+            if (
+                tcb.state == TaskState.BLOCKED_TIMER
+                and tcb.deadline_ns is not None
+                and tcb.deadline_ns <= self.now_ns
+            ):
+                tcb.deadline_ns = None
+                tcb.state = TaskState.READY
+                self.ready_ring.append(task_id)
+        return bool(self.ready_ring)
+
     def unblock_task(self, task_id: str) -> None:
         """Unblock task on event arrival: append to ready ring."""
         assert task_id in self.tasks, f"Unknown task {task_id}"
@@ -150,6 +206,7 @@ class RoundRobinScheduler:
     def run_cycle(self) -> bool:
         """Dispatches and advances one active task."""
         self._begin_reschedule_round()
+        self._advance_to_next_deadline()
         task_id = self.schedule_next()
         if task_id is None:
             return False  # All tasks blocked or completed
@@ -163,6 +220,8 @@ class RoundRobinScheduler:
                 self.yield_current()
             elif action == "BLOCK":
                 self.block_current()
+            elif isinstance(action, WaitUntil):
+                self.wait_until_current(action.deadline_ns)
         except StopIteration:
             self.terminate_current()
         return True
@@ -224,6 +283,27 @@ def test_block_and_unblock_cycle() -> None:
     assert sched.tasks["W"].state == TaskState.TERMINATED
 
 
+def test_timed_wait_runs_ready_peer_before_expiring() -> None:
+    sched = RoundRobinScheduler(max_tasks=4)
+    events: list[tuple[str, int]] = []
+
+    def timer_waiter() -> Generator[SchedulerAction, None, None]:
+        events.append(("wait", sched.now_ns))
+        yield WaitUntil(deadline_ns=5)
+        events.append(("resume", sched.now_ns))
+
+    def peer() -> Generator[SchedulerAction, None, None]:
+        events.append(("peer", sched.now_ns))
+        yield "YIELD"
+
+    sched.spawn("timer", timer_waiter())
+    sched.spawn("peer", peer())
+    while sched.run_cycle():
+        pass
+
+    assert events == [("wait", 0), ("peer", 0), ("resume", 5)]
+
+
 def test_interrupt_reschedule_generation() -> None:
     """An accepted interrupt gives existing READY tasks one observation turn."""
     sched = RoundRobinScheduler(max_tasks=4)
@@ -249,5 +329,6 @@ def test_interrupt_reschedule_generation() -> None:
 if __name__ == "__main__":
     test_round_robin_fairness()
     test_block_and_unblock_cycle()
+    test_timed_wait_runs_ready_peer_before_expiring()
     test_interrupt_reschedule_generation()
     print("[PASS] All Scheduler concept tests passed successfully.")

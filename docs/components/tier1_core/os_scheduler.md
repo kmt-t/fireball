@@ -20,7 +20,9 @@ COOSスケジューラは、協調型OS COOS（[`os_coos.md`](docs/components/ti
 <!-- traceability: {COOS_Transparent} {ADR_InterruptRescheduleGeneration} -->
 - **`Scheduler`**: タスクのREADYキュー管理、実行順序制御、およびコルーチン実行をカプセル化した主要クラス。各タスクの実行状態を外部から可視化・検査するための監査用インターフェースを提供する。
 - **`task_context`**: 各タスクの実行状態（READY/BLOCKED/RUNNING等の待機状態）、スタック境界、コルーチンハンドル、および最後に観測した再スケジュール要求世代を集約したデータ構造。
-- **`scheduler_config`**: 最大タスク数、タイムアウト閾値、および各タスクの割り当てリソース制限からなる不変の静的設定。
+- **`scheduler_config`**: 最大タスク数、タイマー待機の確認間隔、および各タスクの割り当てリソース制限からなる不変の静的設定。
+- **`waiting_deadline_ns`**: 単調時計の期限を待つタスクがTCB内に保持する絶対時刻。期限到達後にタスクをREADYキュー末尾へ戻す。
+- **`next_timer_deadline_ns`**: 待機中タスクのうち最も早い期限。アイドル時の確認間隔ではタスク表を走査せず、期限到達後だけ期限待ちタスクを再評価する。
 - **`reschedule_generation`**: 割り込み通知を契機に更新する単調増加の要求世代。要求が保留中の間に到着した追加イベントは同じ世代へ集約し、イベント本体は固定長ロックフリーFIFOで個別に保持する。
 - **`reschedule_pending`**: 未完了の協調再スケジュール要求を示す原子的な状態。要求世代の一巡完了とロックフリーFIFOの空を確認するまで解除しない。
 - **`round_target_mask`**: 協調再スケジュール開始時点で実行対象となるRUNNINGおよびREADYタスクを示す固定長ビットマップ。新規生成タスクは現在の一巡の対象に含めない。
@@ -58,6 +60,8 @@ flowchart TD
 | 割り込み制御機 | 物理ハードウェア（NVIC）の制御用 | 構造体への参照 | `interrupt_controller` |
 | 実行可能列 | 次に実行すべきタスクのFIFO実行可能列（侵入型循環双方向リスト） | リスト構造 | `task_context` のリスト |
 | 待機リスト | イベントや時間待ちを行っているタスクのリスト（侵入型） | リスト構造 | `task_context` のリスト |
+| 次回期限 | タイマー待機中タスクの最小期限 | `u64` | `next_timer_deadline_ns` |
+| タイマー待機確認間隔 | 外部イベントも確認するアイドル待機の上限間隔 | `u32` | `FB_CONF_TIMER_IDLE_POLL_SLICE_NS`、既定値1ms |
 | 現在のタスク | 現在CPUコアを占有しているタスク | 構造体への参照 | `task_context` (NULL許容) |
 | 再スケジュール要求 | 割り込み通知の保留状態、要求世代、および一巡対象マスク | 原子状態と固定長ビットマップ | `reschedule_pending`, `reschedule_generation`, `round_target_mask` |
 | 状態可視化API | 外部から全タスクの待機・実行状態を安全に監視するためのメソッド群。ロックフリーな読み取り専用構造（Double Buffering）を採用し、実行中タスクをブロックせずに O(1) で状態を即座に取得可能。 | 関数オブジェクト | `Scheduler::get_task_states` (読み取り専用) |
@@ -73,8 +77,10 @@ flowchart TD
     - **背景**: 直接ハンドオフを無制限に許可すると、タスク間のピンポン通信がスケジューラへの復帰を遅らせ続ける可能性がある。
     - **動作**: スケジューラは連続直接遷移カウンタ（`consecutive_handoffs`）を保持する。上限（ビルド時定数 `FB_CONF_MAX_CONSECUTIVE_HANDOFFS`、既定値 `4` 回）到達後のランデブーでは、直接遷移を行わず相手タスクを READY キュー末尾へ投入する。その後 `YIELD` を返し、スケジューラのメイン巡回ループへ制御を戻す。
     - **保証範囲**: この上限は連続直接ハンドオフ回数と、上限到達後にスケジューラへ制御が戻ることを制限する。協調型スケジューラは実行中タスクを強制プリエンプトしないため、全タスクの公平性や有界な実時間応答は保証しない。
-    - **検証範囲**: 形式検証モデル `formal/coos_channel_model.py` は、モデル内のスケジューラ復帰と他の READY タスクのディスパッチを検証する。 `{GOTCHA-SCHED-01}`
-- **アイドル状態の検知**: 全ての管理タスクが「待機状態（BLOCKED/SUSPENDED_CSP）」となった場合にアイドル・ハンドラ（Periodic Task、ログフラッシュ、JITバッチコンパイル等）を実行する。
+    - **検証範囲**: 形式検証モデル `formal/coos_channel_model.py` は、モデル内のスケジューラ復帰と他の READY タスクのディスパッチを検証する。 `{GOTCHA-SCHED-01}` <!-- definition: {GOTCHA-SCHED-01} -->
+- **時刻待機**: `wait_until(deadline_ns)`を呼んだタスクを`BLOCKED_TIMER`へ移す。READYタスクを先に実行し、READYキューが空の場合はアイドルフックを実行してから単調時計の次回期限または外部イベント確認時点まで待つ。待機中も最大1ms間隔で割り込みFIFOを確認する。期限到達後は期限待ちタスクをREADYキュー末尾へ戻す。
+- **時刻待ちタスク終了後の期限キャッシュ (`GOTCHA-SCHED-03`)**: `task_killed`は`BLOCKED_TIMER`も終了対象として受け付け、期限登録を解除して生存する時刻待ちタスクから最小期限を再計算する。最早期限の取消し後に古い最小値を残すと、取消し済み期限で不要なアイドル待機サイクルが発生する。終了済みタスクは期限到達で再起床しない。 {GOTCHA-SCHED-03} <!-- definition: {GOTCHA-SCHED-03} -->
+- **アイドル状態の検知**: 全ての管理タスクが「待機状態（BLOCKED/BLOCKED_TIMER/SUSPENDED_CSP）」となった場合にアイドル・ハンドラ（Periodic Task、ログフラッシュ、JITバッチコンパイル等）を実行する。
 - **割り込み処理**: HALからの原因付き`interrupt-event`通知（`notify_interrupt(event)`）を受信し、固定長FIFOから回収する。`vector_id`に対応するvSoCランタイム待機タスクへイベント本体を引き渡したうえで、そのタスクをREADYキュー末尾に追加する。COOSはvIRQ階層の評価やゲスト関数呼出しを行わない。
 - **割り込み時の協調再スケジュール (`ADR_InterruptRescheduleGeneration`)**:
     - ISRは`interrupt-event`を固定長ロックフリーFIFOへ投入し、要求が保留されていない場合だけ`reschedule_generation`を一世代進める。ISRはタスク状態、READYキュー、および`round_target_mask`を変更しない。FIFO操作はmutexやスピンロックを取得しない。
@@ -237,11 +243,14 @@ stateDiagram-v2
 
     Running --> CSPWait: "send() to empty / push sender to wait"
     Running --> CSPWait: "recv() no data / push receiver to wait"
+    Running --> TimerWait: "wait_until(deadline_ns) / store deadline in TCB"
     Running --> EventWait: "wait_event(id) / push to event queue"
     Running --> InterruptWait: "interrupt occurs / ISR posts INT event"
 
     CSPWait --> Running: **CSP Handoff** [opposite ready]
     CSPWait --> Ready: [opposite not ready] / wake partner
+    TimerWait --> Ready: "deadline reached / enqueue at tail"
+    TimerWait --> [*]: "task_killed / clear deadline and recache"
     EventWait --> Ready: event dispatch / dequeue from wait
     InterruptWait --> Ready: ISR INT event / event loop process
 
@@ -262,6 +271,8 @@ stateDiagram-v2
 | CSPWait → READY | [opposite not ready] | 相手タスク未待機 (Rendezvous不成立) | 相手タスクを起床させREADYキュー末尾へ投入、自身もREADYキューへ復帰 | READY |
 | RUNNING → EventWait | wait_event(id) | (常に可) | イベントID登録、スケジューラに制御戻す | EventWait |
 | EventWait → READY | event dispatch | イベント受信 | イベントループがタスクをREADYへ遷移 | READY |
+| RUNNING → TimerWait | wait_until(deadline_ns) | 期限が単調時計の現在値より未来 | TCBに期限を記録し、現在の協調世代対象から外してスケジューラへ戻す | TimerWait |
+| TimerWait → READY | 期限確認 | 単調時計がTCBの期限以上 | 期限待ちタスクをREADYキュー末尾へ挿入する | READY |
 | RUNNING → InterruptWait | [ISR発生] | 割り込みハードウェア | ISRが INT イベントをキューに投入 | InterruptWait |
 | InterruptWait → READY | event dispatch | INT イベント処理 | イベントループが対象タスクをREADYへ遷移 | READY |
 | RUNNING → [*] | exit() / error | (常に可) | TCBスロットの返却（再利用化）、静的メモリパーティション回収 | [*] |
@@ -270,12 +281,15 @@ stateDiagram-v2
 - 割り込みハンドラ（ISR）は直接タスク状態を変更しない。代わりに INT イベントをイベントキューに投入する。
 - **CSP Handoff の特徴**: スケジューラを介さず、C++20 コルーチンの対称遷移（Symmetric Transfer）によりコールスタックを消費せずに相手タスクへ直接ジャンプする。超低レイテンシかつスタック深度 $O(1)$ を保証。
 
-## 5. インターフェース設計
 
-### 5.1 公開API
+## 5. インターフェース定義
+
+### 5.1 インターフェース設計
+
+#### 5.1.1 公開API
 外部から利用可能なオブジェクト指向APIを定義する。依存関係は `initialize` メソッドで注入する。
 
-#### 初期化 (`init-scheduler`)
+##### 初期化 (`init-scheduler`)
 
 <!-- traceability: {ConceptHarnessDI} -->
 
@@ -288,7 +302,7 @@ stateDiagram-v2
 | 事後条件 | スケジューラがアイドル状態で起動する。 | 状態変化 |
 | 不変条件 | シングルトンであり、実行時の再初期化は不可。 | 制約 |
 
-#### タスク生成 (`spawn`)
+##### タスク生成 (`spawn`)
 
 <!-- traceability: {COOS_Scheduling_Refine} -->
 
@@ -302,7 +316,7 @@ stateDiagram-v2
 | 事後条件 | 新しいタスクが実行可能キューの末尾に追加される。TCBが満杯の場合は、終了済みタスクの中で最古のスロットを先に返却する。 | 状態変化 |
 | 不変条件 | 生成されたシステムタスクIDはシステム内で一意であること。スロットを再利用しても、過去のタスクIDを再び割り当てない。 | 制約 |
 
-#### タスク生成（spawn_task - ネイティブタスク用）
+##### タスク生成（spawn_task - ネイティブタスク用）
 <!-- traceability: {CooperativeMultitasking} {GLOBAL_UseCpp20Coroutine} -->
 既存のコルーチンオブジェクトを移動セマンティクスによって登録し、協調型マルチタスクとして動作させる。本APIは公開APIであり、`fireball` 名前空間の下に配置される。
 
@@ -310,12 +324,12 @@ stateDiagram-v2
 | :--- | :--- | :--- |
 | 機能概要 | 既存のコルーチンオブジェクトからネイティブタスクを生成し、READY キューに追加する。 | 操作定義 |
 | シグネチャ | `auto fireball::spawn_task(task&& t) -> result<os_task_id_t, os_result_t>` | 関数プロトタイプ |
-| 引数 | `t`: 移動セマンティクスによるムーブ専用のコルーチンタスクオブジェクト。<br>※ コルーチンフレームの有界性を担保するため、`t` の `promise_type` は `operator new`/`operator delete` をオーバーライドし、[`system_memory.md`](docs/components/tier1_interface/system_memory.md) §4.2 の型付きスロット貸与API（`acquire_slot<T>()`/`pool_ref<T>`、カーネルプール `FB_CONF_KERNEL_HEAP_SIZE` 内から確保）を介してコルーチンフレームを確保する（`malloc`/`new` を用いない）。`t` はこの静的スロット割り当てに適合するコンパイル時コンセプト `is_heap_less<task>` を満たす型でなければならない。 | 引数定義 |
+| 引数 | `t`: 移動セマンティクスによるムーブ専用のコルーチンタスクオブジェクト。<br>※ コルーチンフレームの有界性を担保するため、`t` の `promise_type` は `operator new`/`operator delete` をオーバーライドし、[`system_memory.md`](docs/components/tier1_interface/system_memory.md) §5.1.2 の型付きスロット貸与API（`acquire_slot<T>()`/`pool_ref<T>`、カーネルプール `FB_CONF_KERNEL_HEAP_SIZE` 内から確保）を介してコルーチンフレームを確保する（`malloc`/`new` を用いない）。`t` はこの静的スロット割り当てに適合するコンパイル時コンセプト `is_heap_less<task>` を満たす型でなければならない。 | 引数定義 |
 | 戻り値 | 成功時は割り当てられたタスクID `os_task_id_t` を返し、失敗時はエラーコードを示す `os_result_t` （例：`ERR_MEM_FULL`, `ERR_INVALID_ARG`）を返す `result<os_task_id_t, os_result_t>` 型。 | 結果型 |
 | 事前条件 | `t` が有効なコルーチンハンドルを保持していること。 | 条件 |
 | 事後条件 | タスクが READY キューに追加される。 | 状態変化 |
 
-#### 実行譲渡（yield）
+##### 実行譲渡（yield）
 <!-- traceability: {LowOverheadSwitch} -->
 現在実行中のタスクを中断し、次のタスクへコンテキストを切り替える。C++20 コルーチンの対称遷移（Symmetric Transfer）により、全汎用レジスタ退避を伴わず数サイクルで高速遷移する。
 
@@ -326,20 +340,31 @@ stateDiagram-v2
 | 事前条件 | タスク実行コンテキスト内から呼び出されること（ISRからの呼び出し不可）。 |
 | 事後条件 | 現在のタスクが READY キューの末尾に移動し、次タスクに切り替わる。 |
 
-#### 実行（run）
+##### 実行（run）
 <!-- traceability: {LowOverheadSwitch} -->
 メインスケジューリングループを開始し、READY キューのタスクを順次ディスパッチする。
 | 事前条件 | `init-scheduler` が完了していること。 |
 | 事後条件 | 通常、この関数は戻らない（電源断または致命的エラー時のみ）。 |
 
-#### アイドルハンドラ設定（set_idle_handler）
+##### アイドルハンドラ設定（set_idle_handler）
 | 項目 | 内容 |
 | :--- | :--- |
 | 機能概要 | READYキューが空になった際に呼び出されるアイドル時処理を登録する。 |
 | シグネチャ | `set_idle_handler(handler: idle_handler) -> void` |
 | 引数 | `handler`: 関数ポインタ (`void(*)()`) |
 
-#### `notify-interrupt` (内部 API)
+##### 時刻待機（wait_until、内部契約）
+<!-- traceability: {GLOBAL_IdleDetection} {GLOBAL_PeriodicTask} -->
+
+| 項目 | 内容 |
+| :--- | :--- |
+| シグネチャ | `wait_until(deadline_ns: u64) -> void` |
+| 事前条件 | 実行中タスクが存在し、`deadline_ns`が単調時計の現在値より未来であること。 |
+| 動作 | 呼出元だけを`BLOCKED_TIMER`へ移し、READYタスクの実行を継続する。READYキューが空の場合だけ次の期限または外部イベント確認間隔までアイドル待機する。 |
+| 事後条件 | 期限到達後に呼出元がREADYキュー末尾へ一度だけ追加される。 |
+| 制約 | 協調型待機であり、実時間の応答上限は保証しない。アイドル待機の割り込み確認間隔は最大1msである。 |
+
+##### `notify-interrupt` (内部 API)
 | 項目 | 内容 |
 | :--- | :--- |
 | 機能概要 | ISRから呼び出され、固定長ロックフリーFIFOへ汎用`interrupt-event`を投入する。 |
@@ -349,7 +374,7 @@ stateDiagram-v2
 | 事後条件 | FIFOへの`interrupt-event`投入に成功した場合、FIFO満杯でなければ、要求が保留されていない場合に`reschedule_generation`を更新し、`reschedule_pending`を設定する。FIFO満杯の場合はイベントをドロップし、ドロップカウントだけをインクリメントする。ドレイン時に`vector_id`の待機先が未登録ならイベントをドロップし、登録済みの待機タスクだけをBLOCKEDからREADYへ遷移させてREADYキュー末尾へ挿入する。 |
 | 設計注記 | 割り込み通知は原因情報を保持したままイベント化され、SPSCロックフリーFIFOへ公開される。ISRはmutex・スピンロックを取得せず、イベント投入、要求世代の更新、およびドロップカウンタの更新だけを行う。スケジューラは協調境界でFIFOをドレインし、タスク状態とREADYキューを変更する。 |
 
-#### 再スケジュール世代の観測（内部契約）
+##### 再スケジュール世代の観測（内部契約）
 <!-- traceability: {ADR_InterruptRescheduleGeneration} {TaskPollInterruptEvent} -->
 
 | 項目 | 内容 |
@@ -360,7 +385,7 @@ stateDiagram-v2
 | 解除条件 | 一巡完了、FIFO空、および解除対象世代と現在世代の一致を同一の原子的手順で確認した時点 |
 | 禁止事項 | ISRからのタスク状態変更、タスク自身による要求世代の巻き戻し、協調境界を持たない強制プリエンプション |
 
-#### タスク終了（terminate）
+##### タスク終了（terminate）
 | 項目 | 内容 |
 | :--- | :--- |
 | 機能概要 | 指定したタスクを終了し、リソースを解放する。 |
@@ -369,7 +394,7 @@ stateDiagram-v2
 | 事前条件 | `id` が有効なタスクを指していること。 |
 | 事後条件 | タスクに関連するメモリリソース（TCB等）が解放され、全キューから除外される。 |
 
-#### タスク状態可視化（get_task_states）
+##### タスク状態可視化（get_task_states）
 | 項目 | 内容 | 型分類 |
 | :--- | :--- | :--- |
 | 機能概要 | 外部から全タスクの待機・実行状態を安全に監視するためのメソッド。ロックフリーな読み取り専用構造（Double Buffering）を採用し、実行中タスクをブロックせずに $O(1)$ で状態スナップショットを取得可能。 | 操作定義 |
@@ -378,7 +403,30 @@ stateDiagram-v2
 | 事前条件 | スケジューラが初期化済みであること。 | 条件 |
 | 事後条件 | 実行中タスクの進行に影響を与えない。 | 状態変化 |
 
-## 6. 設計判断 (ADR)
+
+## 6. 制約達成の方策
+
+タスク数は固定上限内で管理し、優先度制御や強制プリエンプションは行わない。READYタスクがある間は時刻待機タスクよりREADYタスクを先に実行する。アイドル中の外部イベント確認間隔は最大1msとし、全タスクの公平性や実時間応答上限は保証しない。
+
+
+## 7. 形式検証・テスト仕様との対応
+
+### 7.1 検証対象の不変条件
+本書で定めた状態、境界、所有権、およびエラー処理を検証対象とする。
+
+### 7.2 検証モデルと反証可能性
+形式検証モデルは[coos_channel_model.py](docs/components/tier1_core/formal/coos_channel_model.py)である。各モデルの正常系と`guards=False`変異で、保護条件が反証されることを確認する。
+
+### 7.3 テスト仕様書との連携
+対応するテスト仕様は[os_scheduler_test_spec.md](docs/qa/tier1_core/os_scheduler_test_spec.md)である。テストケースIDと実行可能テストは同仕様を正本とする。
+
+### 7.4 既知の制限・対象外
+ホスト実機依存の挙動、未実装アーキテクチャ、およびテスト仕様が明示する対象外条件は未検証として扱う。
+
+
+## 8. 設計判断と参考実装
+
+### 8.1 設計判断 (ADR)
 <!-- traceability: {ADR_CoosPureRoundRobin} {ADR_EventDrivenWakeQueue} {ADR_IntrusiveTcbList} {NotRTOS} -->
 
 このコンポーネントの ADR は、全体アーキテクチャから `{ADR_*}` キーワードで参照される。詳細な背景・選択肢の比較検討は以下に記録する。
@@ -421,4 +469,4 @@ stateDiagram-v2
     - 案3: COOS全体の要求世代と、TCBごとの最終観測世代を保持する。要求対象のスナップショットを固定長ビットマップで管理し、タスクごとの観測を一世代一回に制限する。
   - **結論**: 案3を採用する。 `{ADR_InterruptRescheduleGeneration}`
   - **採用理由**: ISR側の処理をイベント投函と世代更新に限定し、タスク側の観測を既存の協調境界へ統合できる。世代比較により、同一要求に対する重複yieldと要求の消失を防止する。
-  - **制約**: 本方式は協調的再スケジュールであり、協調境界へ到達しないタスクを強制停止しない。IPCの直接ハンドオフは、ランデブー成立に必要な遷移だけを要求中に許可し、遷移先の世代観測後に追加連鎖を停止する。
+  - **制約**: 本方式は協調的再スケジュールであり、協調境界へ到達しないタスクを強制停止しない。IPCの直接ハンドオフは、ランデブー成立に必要な遷移だけを要求中に許可し、遷移先の世代観測後に追加連鎖を停止する。 {GOTCHA-SCHED-02} <!-- definition: {GOTCHA-SCHED-02} -->

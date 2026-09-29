@@ -19,12 +19,14 @@ Implementation Invariants & Gotchas:
 
 from __future__ import annotations
 
+import time
 from collections.abc import Callable, Generator, Iterator, Sequence
 from contextlib import contextmanager
 from enum import IntEnum
 from typing import Protocol, cast
 
 from interrupt_event import InterruptEvent
+from logging_interface import LogResult
 from system_containers import StaticVector
 
 FB_CONF_MAX_TASKS = 16
@@ -32,6 +34,15 @@ FB_CONF_MAX_CHANNELS = FB_CONF_MAX_TASKS * 4
 FB_CONF_MAX_CONSECUTIVE_HANDOFFS = 4
 FB_CONF_INTERRUPT_QUEUE_SIZE = 16
 FB_CONF_MAX_IDLE_HOOKS = 8
+FB_CONF_TIMER_IDLE_POLL_SLICE_NS = 1_000_000
+
+
+def _sleep_for_ns(duration_ns: int) -> None:
+    """Sleep for a bounded scheduler-idle interval expressed in nanoseconds."""
+    assert duration_ns >= 0
+    if duration_ns > 0:
+        time.sleep(duration_ns / 1_000_000_000)
+
 
 # Tier 1 owns the scheduler diagnostics identifiers. The Tier 2 logger can
 # consume them, but COOS must remain independent of the runtime implementation.
@@ -100,7 +111,7 @@ class _SchedulerLogger(Protocol):
         arg1: int = 0,
         arg2: int = 0,
         arg3: int = 0,
-    ) -> str: ...
+    ) -> LogResult: ...
 
 
 class ChannelPayload(Protocol):
@@ -254,6 +265,7 @@ class TaskState(IntEnum):
     BLOCKED = 3
     SUSPENDED_CSP = 4
     TERMINATED = 5
+    BLOCKED_TIMER = 6
 
 
 class WaitDir(IntEnum):
@@ -280,7 +292,7 @@ class SelectGroup:
 
     __slots__ = ("channels",)
 
-    def __init__(self, channels: "list[Channel]"):
+    def __init__(self, channels: Sequence[Channel]):
         self.channels = channels
 
 
@@ -299,6 +311,7 @@ class Channel:
     """
 
     __slots__ = (
+        "channel_id",
         "reply_payload",
         "reply_sender_task",
         "reply_stamper",
@@ -316,12 +329,14 @@ class Channel:
     def __init__(
         self,
         scheduler: "Scheduler | None" = None,
+        channel_id: int = -1,
         transfer_mode: ChannelTransferMode = ChannelTransferMode.BORROWED,
         sender_stamper: SenderStamper | None = None,
         reply_stamper: ReplyStamper | None = None,
         request_reply: bool = False,
     ):
         self.scheduler = scheduler
+        self.channel_id = channel_id
         self.request_reply = request_reply
         self.sender_stamper = sender_stamper
         self.reply_stamper = reply_stamper
@@ -365,7 +380,6 @@ class Task:
     __slots__ = (
         "coro",
         "last_seen_generation",
-        "name",
         "pending_interrupt_event",
         "pending_reply",
         "pending_val",
@@ -377,19 +391,18 @@ class Task:
         "service_handle",
         "state",
         "task_id",
+        "waiting_deadline_ns",
         "waiting_irq",
     )
 
     def __init__(
         self,
         task_id: int,
-        name: str,
         coro: Generator[ChannelPayload, None, None] | None = None,
         role: int = 0,
         service_handle: int | None = None,
     ):
         self.task_id = task_id
-        self.name = name
         self.coro = coro
         self.role = role
         self.service_handle = service_handle
@@ -404,6 +417,7 @@ class Task:
         self.result: ChannelPayload | None = None
         self.pending_interrupt_event: InterruptEvent | None = None
         self.last_seen_generation = 0
+        self.waiting_deadline_ns = 0
         self.waiting_irq: int | None = None
 
 
@@ -411,9 +425,12 @@ class Scheduler:
     __slots__ = (
         "_all",
         "_channels",
+        "_clock_ns",
         "_next_id",
+        "_next_timer_deadline_ns",
         "_ready",
         "_ready_coro_count",
+        "_sleep_ns",
         "consecutive_handoffs",
         "current_task",
         "dropped_irqs",
@@ -433,16 +450,21 @@ class Scheduler:
         max_tasks: int = FB_CONF_MAX_TASKS,
         max_handoffs: int = FB_CONF_MAX_CONSECUTIVE_HANDOFFS,
         logger: _SchedulerLogger | None = None,
+        clock_ns: Callable[[], int] = time.monotonic_ns,
+        sleep_ns: Callable[[int], None] = _sleep_for_ns,
     ):
         self.max_tasks = max_tasks
         self.max_handoffs = max_handoffs
         self.logger = logger
+        self._clock_ns = clock_ns
+        self._sleep_ns = sleep_ns
         self.consecutive_handoffs = 0
         self._ready: BoundedReadyQueue = BoundedReadyQueue(capacity=self.max_tasks)
         self._all: StaticVector[Task] = StaticVector(capacity=self.max_tasks)
         self._channels: StaticVector[Channel] = StaticVector(capacity=FB_CONF_MAX_CHANNELS)
         self.current_task: Task | None = None
         self._next_id = 1
+        self._next_timer_deadline_ns = 0
         self.idle_hooks: StaticVector[Callable[[], None]] = StaticVector(
             capacity=FB_CONF_MAX_IDLE_HOOKS
         )
@@ -604,7 +626,7 @@ class Scheduler:
             assigned_id = self._next_id
             self._next_id += 1
 
-        task = Task(assigned_id, name, coro, role=role, service_handle=service_handle)
+        task = Task(assigned_id, coro, role=role, service_handle=service_handle)
         # A task created during an active generation belongs to the next round.
         task.last_seen_generation = self.reschedule_generation
         self._all.push_back(task)
@@ -645,6 +667,7 @@ class Scheduler:
         """
         channel = Channel(
             scheduler=self,
+            channel_id=len(self._channels),
             transfer_mode=transfer_mode,
             sender_stamper=sender_stamper,
             reply_stamper=reply_stamper,
@@ -654,6 +677,17 @@ class Scheduler:
         assert channel_added, f"Channel capacity exceeded (max {FB_CONF_MAX_CHANNELS})"
         return channel
 
+    @property
+    def channel_count(self) -> int:
+        """Number of registered channels; IDs are dense and stable from zero."""
+        return len(self._channels)
+
+    def get_channel(self, channel_id: int) -> Channel | None:
+        """Returns one registered channel by its stable dense identifier."""
+        if channel_id < 0 or channel_id >= len(self._channels):
+            return None
+        return self._channels[channel_id]
+
     def task_killed(self, task_id: int) -> bool:
         """Externally terminate a blocked task and remove every wait registration."""
 
@@ -661,11 +695,18 @@ class Scheduler:
         if task is None or task.state == TaskState.TERMINATED:
             return False
         assert task is not self.current_task, "a running task cannot be killed externally"
-        assert task.state == TaskState.BLOCKED or task.state == TaskState.SUSPENDED_CSP, (
-            "task_killed requires a blocked task"
-        )
+        assert (
+            task.state == TaskState.BLOCKED
+            or task.state == TaskState.BLOCKED_TIMER
+            or task.state == TaskState.SUSPENDED_CSP
+        ), "task_killed requires a blocked task"
 
         self.detach(task)
+        if task.state == TaskState.BLOCKED_TIMER:
+            task.waiting_deadline_ns = 0
+            # GOTCHA-SCHED-03: Drop the canceled deadline from the cached minimum;
+            # otherwise the idle loop makes an unnecessary wait cycle at that time.
+            self._recompute_next_timer_deadline()
         task.waiting_irq = None
         task.pending_interrupt_event = None
         self._remove_round_target(task)
@@ -820,9 +861,7 @@ class Scheduler:
         self._complete_reschedule_if_ready()
         return (ChannelAction.BLOCK, None)
 
-    def channel_wait_reply(
-        self, channel: Channel
-    ) -> tuple[ChannelAction, ChannelPayload | None]:
+    def channel_wait_reply(self, channel: Channel) -> tuple[ChannelAction, ChannelPayload | None]:
         """Block the authenticated request sender until its response arrives."""
         ch = channel
         sender = self.current_task
@@ -868,9 +907,7 @@ class Scheduler:
         sender.state = TaskState.READY
         return self._handoff_or_yield(sender)
 
-    def _move_payload(
-        self, channel: Channel, data: ChannelPayload, target: Task
-    ) -> ChannelPayload:
+    def _move_payload(self, channel: Channel, data: ChannelPayload, target: Task) -> ChannelPayload:
         """Move a payload while the scheduler authenticates the target TCB."""
         if channel.transfer_mode != ChannelTransferMode.MOVABLE:
             return data
@@ -968,6 +1005,60 @@ class Scheduler:
         self._remove_round_target(task)
         self._complete_reschedule_if_ready()
 
+    def wait_until(self, deadline_ns: int) -> None:
+        """Suspend the current task until a monotonic deadline without blocking peers."""
+        task = self.current_task
+        assert task is not None, "timed wait requires an active task"
+        assert task.state == TaskState.RUNNING, "only a running task can enter a timed wait"
+        assert task.waiting_deadline_ns == 0
+        assert deadline_ns > self._clock_ns(), "timed wait deadline must be in the future"
+        task.waiting_deadline_ns = deadline_ns
+        if self._next_timer_deadline_ns == 0 or deadline_ns < self._next_timer_deadline_ns:
+            self._next_timer_deadline_ns = deadline_ns
+        task.state = TaskState.BLOCKED_TIMER
+        self._remove_round_target(task)
+        self._complete_reschedule_if_ready()
+
+    def _wake_expired_timed_tasks(self) -> int:
+        now_ns = self._clock_ns()
+        if self._next_timer_deadline_ns == 0 or now_ns < self._next_timer_deadline_ns:
+            return 0
+        awakened = 0
+        next_deadline_ns = 0
+        for task in self._all:
+            if task.state != TaskState.BLOCKED_TIMER:
+                continue
+            if task.waiting_deadline_ns <= now_ns:
+                task.waiting_deadline_ns = 0
+                task.state = TaskState.READY
+                assert self._ready.enqueue(task), "READY queue capacity exceeded"
+                if task.coro is not None:
+                    self._ready_coro_count += 1
+                awakened += 1
+            elif next_deadline_ns == 0 or task.waiting_deadline_ns < next_deadline_ns:
+                next_deadline_ns = task.waiting_deadline_ns
+        self._next_timer_deadline_ns = next_deadline_ns
+        return awakened
+
+    def _recompute_next_timer_deadline(self) -> None:
+        """GOTCHA-SCHED-03: Rebuild the cache after a timed waiter leaves the set."""
+        self._next_timer_deadline_ns = min(
+            (
+                task.waiting_deadline_ns
+                for task in self._all
+                if task.state == TaskState.BLOCKED_TIMER and task.waiting_deadline_ns > 0
+            ),
+            default=0,
+        )
+
+    def _wait_for_next_timed_task(self) -> bool:
+        if self._next_timer_deadline_ns == 0:
+            return False
+        remaining_ns = self._next_timer_deadline_ns - self._clock_ns()
+        if remaining_ns > 0:
+            self._sleep_ns(min(remaining_ns, FB_CONF_TIMER_IDLE_POLL_SLICE_NS))
+        return True
+
     def consume_interrupt_event(self) -> InterruptEvent | None:
         """Consume the event handed to the current vSoC runtime task."""
         task = self.current_task
@@ -980,15 +1071,21 @@ class Scheduler:
         hook_added = self.idle_hooks.push_back(fn)
         assert hook_added, f"Idle hooks capacity exceeded (max {FB_CONF_MAX_IDLE_HOOKS})"
 
+    def _run_idle_hooks(self) -> None:
+        for hook in self.idle_hooks:
+            hook()
+
     def pending_task_count(self) -> int:
         blocked_irq_count = sum(
             1 for t in self._all if t.waiting_irq is not None and t.state == TaskState.BLOCKED
         )
-        return len(self._ready) + blocked_irq_count
+        blocked_timer_count = sum(1 for t in self._all if t.state == TaskState.BLOCKED_TIMER)
+        return len(self._ready) + blocked_irq_count + blocked_timer_count
 
     def step(self) -> Task | None:
         """Executes a single ready task from the front of the queue."""
         self.drain_interrupts()
+        self._wake_expired_timed_tasks()
         self._begin_reschedule_round()
         if not self._ready:
             return None
@@ -1034,7 +1131,21 @@ class Scheduler:
         self.drain_interrupts()
         self._begin_reschedule_round()
         step_budget = budget if budget is not None else max(1000, len(self._ready) * 64 + 16)
-        while self._ready and step_budget > 0:
+        idle_hooks_called = False
+        while step_budget > 0:
+            self.drain_interrupts()
+            self._wake_expired_timed_tasks()
+            if not self._ready:
+                if not idle_hooks_called:
+                    self._run_idle_hooks()
+                    idle_hooks_called = True
+                if self._ready:
+                    idle_hooks_called = False
+                    continue
+                if not self._wait_for_next_timed_task():
+                    break
+                continue
+            idle_hooks_called = False
             step_budget -= 1
             if self._ready_coro_count == 0:
                 break
@@ -1082,8 +1193,8 @@ class Scheduler:
 
             self.current_task = None
 
-        for hook in self.idle_hooks:
-            hook()
+        if not idle_hooks_called:
+            self._run_idle_hooks()
         self.current_task = previous_task
 
     def run_to_completion(self, max_sweeps: int = 1000) -> None:

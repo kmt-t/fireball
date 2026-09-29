@@ -157,6 +157,7 @@ def test_mem_10_shared_block_ownership_transfer():
     # Underlying bytearray direct accessor
     raw_ba = sb_a.get_bytearray()
     assert isinstance(raw_ba, memoryview)
+    assert raw_ba.readonly
     assert raw_ba[0] == 0xAB
 
     page_idx = sb_a.page_idx
@@ -183,6 +184,36 @@ def test_mem_10_shared_block_ownership_transfer():
     assert sb_b.read_kv(40) == (0x1000, 0x2000)
     assert sb_b.read_u64(10) == 0x1122334455667788
     assert sb_b.read_entry(11) == (0x12345678, 0x9ABCDEF0)
+    with expect_assertion("inactive or in-flight"):
+        sb_a.read_u8(0)
+
+
+def test_mem_10d_resource_revoke_invalidates_old_handle():
+    """TEST-MEM-10d: RESOURCE revoke permanently invalidates sender capabilities."""
+    mm, scheduler = _make_memory_manager(1, 2)
+    mm.init_manager(pool_base=0x00010000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
+    sender_block = mm.allocate_shared(size=32).unwrap()
+    sender_block.write_bytes(0, b"resource payload")
+    snapshot = sender_block.get_bytearray()
+    shm_id = sender_block.shm_id
+
+    assert mm.revoke_shared(shm_id)
+    with expect_assertion("revoked or transferred"):
+        sender_block.read_u8(0)
+    with expect_assertion("revoked or transferred"):
+        sender_block.get_bytearray()
+    assert snapshot.tobytes() == b"resource payload" + b"\x00" * 16
+
+    scheduler.current_task = scheduler.get_task(2)
+    assert scheduler.current_task is not None
+    assert mm.grant_shared(shm_id)
+    receiver_block = mm.claim(shm_id).unwrap()
+    assert receiver_block.read_bytes(0, 16) == b"resource payload"
+    scheduler.current_task = scheduler.get_task(1)
+    with expect_assertion("revoked or transferred"):
+        sender_block.write_u8(0, 0)
+    scheduler.current_task = scheduler.get_task(2)
+    assert receiver_block.read_bytes(0, 16) == b"resource payload"
 
 
 def test_mem_10c_rollback_transfer_restores_owner_id():

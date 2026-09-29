@@ -63,7 +63,7 @@ def properties():
             "expect": True,
         },
         {
-            "name": "configured_resources_stay_within_budget",
+            "name": "abstract_budget_guard_excludes_over_budget_state",
             "kind": "safety",
             "logic": "CTL",
             "formula": AG(Not(AtomicProposition("over_budget"))),

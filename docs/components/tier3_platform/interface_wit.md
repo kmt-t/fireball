@@ -1,11 +1,15 @@
 # WIT インターフェース仕様書 (WASI 準拠版) {VERIFY_WIT} {VERIFY_LLM} {VERIFY_FORMAL}
 <!-- evidence:
-     wit: docs/components/tier3_platform/wit
+     wit: docs/components/tier3_platform/wit/fireball_hostcall_contract.wit
+     wit: docs/components/tier3_platform/wit/fireball_hal_contract.wit
      formal: formal/wit_resource_lifecycle_model.py
      test: docs/qa/tier3_platform/interface_wit_test_spec.md
 -->
 
-## 1. 目的
+
+## 1. コンセプト
+
+### 1.1 目的
 
 <!-- traceability: {WIT_Interface_Purpose} {WIT_First} {WIT_Common_Types} {URIAbstraction} -->
 本ドキュメントは、Fireballプロジェクトにおいてゲスト（WASM）環境に公開されるシステムコールおよびハードウェア抽象化層（HAL）のインターフェース仕様を定義する。ゲスト側のWASI互換アダプタはTier 3に属し、本書はその依存先となる公開WIT契約を定義する。WITは、低レベルホストコールを [`fireball_hostcall_contract.wit`](docs/components/tier3_platform/wit/fireball_hostcall_contract.wit)、HALの型とURI Resolverを [`fireball_hal_contract.wit`](docs/components/tier3_platform/wit/fireball_hal_contract.wit) に分割して定義する。
@@ -16,7 +20,10 @@
 
 デバイスや HAL ごとの振る舞いは IPC コマンド ID で決定する。URI 命名規則とコマンド仕様の正本は [`hal_dispatch.md`](docs/components/tier2_runtime/hal_dispatch.md) である。レガシーな WASI 0.1p（`wasi_snapshot_preview1`）ABI は、これらの公開 IF を呼び出す Tier 3 ゲストアダプタとして提供する。
 
-## 2. アーキテクチャ原則
+
+## 2. アーキテクチャ分類
+
+### 2.1 アーキテクチャ原則
 
 <!-- traceability: {CleanArchitecture} {META_SpecificationFirst} {META_Risk_Tiering} {URIAbstraction} -->
 - **URI Resolver メソッド**: `resolver.get-interface(uri: string)` により、URI 文字列からインターフェースハンドルを取得可能とする。個別デバイスの WIT リソース型は存在しない——ハンドルに対する操作はすべて IPC コマンドID経由で行う。
@@ -25,9 +32,12 @@
 - **WASI 0.1p 互換ラッパー (Adapter Pattern)**: WASI Preview 1 の標準出力とログ出力は、Tier 3ゲストアダプタが上記の URI Resolver + HALバッファプール機構へ変換する。その他の Preview 1 操作は Tier 3 の uvwasi ドライバへ委譲し、`proc_exit` は Fireball host call でランタイムへ通知する。
 - **Stateless Interface**: リソースハンドルを通じた操作を行い、ホスト側で状態を管理する。
 
-## 3. 共通データ構造
 
-### 3.1 基礎インターフェース & IPC URI Resolver
+## 3. 静的モデル
+
+### 3.1 共通データ構造
+
+#### 3.1.1 基礎インターフェース & IPC URI Resolver
 <!-- traceability: {CooperativeMultitasking} {Asynchronous_Notification} {URIAbstraction} {META_RestrictedPhysicalAccess} -->
 以下の基礎コンポーネントのみを提供する。個別デバイス/HAL向けの WIT リソース型は定義しない。
 
@@ -56,14 +66,18 @@ interface resolver {
     clock-get-now: func(handle: u32) -> result<u64, recovery-strategy-category>;
     /// クロック分解能を取得する
     clock-get-resolution: func(handle: u32) -> result<u64, recovery-strategy-category>;
+    /// 指定時間後にreadyとなる一回限りのpollableを予約する
+    clock-subscribe: func(handle: u32, nanos: u64) -> result<u32, recovery-strategy-category>;
     /// 操作完了または入力準備の状態を確認する
-    poll-check: func(handle: u32) -> result<bool, recovery-strategy-category>;
-    /// 準備完了まで待機する
-    poll-wait: func(handle: u32) -> operation-result;
+    poll-check: func(handle: u32, pollable: u32) -> result<bool, recovery-strategy-category>;
+    /// pollableがreadyになるまで待機する
+    poll-wait: func(handle: u32, pollable: u32) -> result<bool, recovery-strategy-category>;
+    /// pollableを破棄する
+    poll-drop: func(handle: u32, pollable: u32) -> operation-result;
 }
 ```
 
-非同期通知（GPIOエッジ、タイマー満了等の待機）は、専用の `pollable` リソース型を設けず、IPCコマンドID（`POLL_CHECK` / `POLL_WAIT`、`hal_dispatch.md` を正本とする）による汎用ポーリングとして表現する（後述の非同期通知メカニズムを参照）。
+非同期通知（GPIOエッジ、タイマー満了等の待機）は、専用の `pollable` リソース型を設けず、IPCコマンドID（`POLL_CHECK` / `POLL_WAIT` / `POLL_DROP`、`hal_dispatch.md` を正本とする）による汎用ポーリングとして表現する（後述の非同期通知メカニズムを参照）。
 
 ```mermaid
 flowchart TD
@@ -78,7 +92,7 @@ flowchart TD
     W3Core --> Console[fireball://hal/stdout/0]
 ```
 
-### 3.2 リカバリー戦略とエラーハンドリング
+#### 3.1.2 リカバリー戦略とエラーハンドリング
 <!-- traceability: {META_RecoveryStrategy} {Errorcode_To_Strategy} -->
 
 本プロジェクトでは、エラーコードではなくリカバリー戦略を返すことで、呼び出し側が具体的なアクション（リトライ/諦める）を取れるようにする。低レイヤー（Syscall）の `errno` は、ゲスト側の `libfireball` でこの戦略に変換される。
@@ -104,7 +118,7 @@ type registration-result = result<_, recovery-strategy-category>;
 type routing-result = result<_, recovery-strategy-category>;
 ```
 
-#### リカバリー戦略の事前・事後条件と不変条件
+##### リカバリー戦略の事前・事後条件と不変条件
 <!-- traceability: {META_RecoveryStrategy} {Errorcode_To_Strategy} -->
 
 | 戦略カテゴリ | 選択基準（事前条件） | 事後条件 / システム状態 | 不変条件 |
@@ -114,25 +128,38 @@ type routing-result = result<_, recovery-strategy-category>;
 | `restart` | サービスコンテキストやメモリ破損の疑い。モジュール単体の自己修復が必要な場合 | 該当タスク/サービスのTCB・ヒープを初期化し再起動 | 他サービスおよびカーネルのメモリ空間は隔離され保護される |
 | `panic` | MPU違反、二重解放、デッドロック検知など、安全な継続が不可能な致命的障害 | 全タスク停止、クラッシュダンプを出力しフェイルセーフ停止 | ハードウェアおよび不揮発性領域への不正書き込みを即時遮断 |
 
-#### 設計判断
+##### 設計判断
 <!-- traceability: {META_RecoveryStrategy} {Errorcode_To_Strategy} -->
 - **実装詳細の分離**: `hardware-error`や`timeout`は実装の内部状態であり、クリーンアーキテクチャの内側が知るべきではない。
 - **アクション指向**: リカバリー戦略により、呼び出し側は具体的なアクション（リトライ/エラーログ出力して諦める）を決定できる。
-- **リトライ上限到達時の段階的エスカレーション (Retry Exhaustion Escalation)**: `retry` 戦略で `RETRY_MAX_ATTEMPTS`（3回）を超過した場合、呼び出し元は自動的に `restart`（タスクコンテキスト再初期化・再起動）へエスカレーションする。再起動後もエラーが回復不能な場合は最終的に `panic` へエスカレーションし、システム安全性を担保する。
+- **リトライ上限到達時の段階的エスカレーション (Retry Exhaustion Escalation)**: `retry` 戦略の上限は`system_config.md`が定める`FB_CONF_RETRY_MAX_ATTEMPTS`（3回）とする。上限到達後は `restart`（タスクコンテキスト再初期化・再起動）へエスカレーションする。再起動後もエラーが回復不能な場合は最終的に `panic` へエスカレーションし、システム安全性を担保する。
 - **IPC は所有権ロールバックを必要としない**: IPC ルータ（`ipc_router.md`）はバッファなし同期 CSP チャネル（`{ADR_RendezvousChannel}`）であり、宛先ごとの有界キューを持たない。したがって `ERR_QUEUE_FULL` のような一時的な資源競合は原理的に発生せず、`Revoke` 後の所有権ロールバックという回復処理も存在しない——送信は相手タスクの到達を待つのみで、失敗して差し戻る経路がない。
 - **デバッグ情報の分離**: 失敗の詳細理由はログシステムで確認する。インターフェースには含めない。
 
-## 4. 低レベル・ホストコール・インターフェース
+
+## 4. 動的モデル
+
+### 4.1 非同期通知メカニズム
+
+<!-- traceability: {Asynchronous_Notification} {WASI_Async_Bridge} -->
+WASIでは割り込みベクタを直接扱わず、汎用ポーリングコマンドによる操作完了待機としてモデル化する。専用の `pollable` リソース型は設けず、`resolver.get-interface`が返すインターフェースハンドルと`clock-subscribe`等が返すpollableハンドルを`POLL_CHECK` / `POLL_WAIT` / `POLL_DROP`（`hal_dispatch.md` を正本とする）コマンドへ渡すことでready状態を確認・解放する。vMMIOのvIRQ原因付き階層ディスパッチは、COOSの汎用割り込みイベント契約とCOOS協調境界での配送で処理し、WASI契約には追加しない。
+
+- **操作完了通知**: 物理デバイスの完了状態は、GPIOエッジ購読、タイマー満了購読、バス受信購読等のIPCコマンドが返す`u32`ポーリングハンドルに対する`POLL_CHECK`/`POLL_WAIT`で確認する。これはvIRQの原因レコード配送とは別の経路である。
+
+
+## 5. インターフェース定義
+
+### 5.1 低レベル・ホストコール・インターフェース
 <!-- traceability: {Syscall_Mapping} -->
 WASI標準には存在しない、Fireball固有の高速 host call である。実体は `../tier2_runtime/runtime_syscall.md` で定義される `fireball::fireball_call` である。WASM import がこの host call を直接ホストディスパッチへ接続し、SYSCTL／VDMAの vMMIO レジスタは経由しない。
 
-### 4.1. `fireball:host/trap` の定義
+#### 5.1.1. `fireball:host/trap` の定義
 <!-- traceability: {Syscall_Mapping} -->
 WIT内では `fireball-call` という kebab-case 名で定義されるが、C++バインディングおよび公開APIとしては名前空間 `fireball` 内に `fireball_call`（snake_case）としてマッピングされ、host call として公開される。
 
 - `fireball-call(id: u32, arg0: u32, arg1: u32, arg2: u32, arg3: u32, arg4: u32, arg5: u32) -> u32`
 
-### 4.2. vIRQ / vDMA 専用ホストコール
+#### 5.1.2. vIRQ / vDMA 専用ホストコール
 <!-- traceability: {GLOBAL_InterruptWakeup} {VDMA} -->
 
 vIRQの登録・解除とvDMA転送は、汎用 `fireball-call` のIDディスパッチへ統合しない。WITの [`fireball_hostcall_contract.wit`](docs/components/tier3_platform/wit/fireball_hostcall_contract.wit) が公開する専用importを直接呼び出す。
@@ -157,14 +184,14 @@ FireballのC ABIアダプタをCore Wasmへ静的リンクする場合、WIT名�
 
 各操作の戻り値は`u32`であり、`0`は成功、非0はWASI errno互換の失敗を表す。
 
-### 4.3. 高応答トリガーインターフェース
+#### 5.1.3. 高応答トリガーインターフェース
 <!-- traceability: {Syscall_Mapping} -->
 GPIO のような割り込み応答性・ビットバンギング等の要求から、URI Resolver 経由のハンドルルックアップを介さず、`fireball-call` に直接マッピングされた ID を通じて操作するものとする。ゲスト側の呼び出しラッパーはTier 3で定義し、本書では raw host-call 契約だけを扱う。
 
 - **理由**: ハンドルルックアップのオーバーヘッド排除、レジスタ直結に近いレイテンシの確保。
 - **ID**: `FB_SYSCALL_TRIGGER_SET_PIN`。
 
-## 5. `console-output` の位置づけ
+### 5.2 `console-output` の位置づけ
 <!-- traceability: {DictionaryBasedIPC} -->
 ゲストの `print`/`eprint` が書き込む文字列は実行時に組み立てられる任意長データである。一方、`runtime_logging.md` の内部ロガーはビルド時登録の辞書オフセットと固定4引数のみを扱い、実行時に辞書を追加できない。そのため、コンソール出力は内部ロガーとは独立した経路として扱う。
 
@@ -174,21 +201,7 @@ GPIO のような割り込み応答性・ビットバンギング等の要求か
 
 ゲスト側アダプタが `fireball_call(WASI_FD_WRITE, ...)`（`runtime_syscall.md` 正本）を発行し、ゲストの `print` 呼び出しをこの `fireball://hal/stdout/0` 経路へ変換する。`eprint` は Fireball logger sink へ分離する。`fd_read`、`fd_close`、`clock_time_get`、`random_get` および標準出力・ログ以外の `fd_write` は uvwasi ドライバへ委譲する。ホスト側のディスパッチとHAL操作は、それぞれ `runtime_syscall.md` と `hal_dispatch.md` の契約に従う。
 
-## 6. 非同期通知メカニズム
-
-<!-- traceability: {Asynchronous_Notification} {WASI_Async_Bridge} -->
-WASIでは割り込みベクタを直接扱わず、汎用ポーリングコマンドによる操作完了待機としてモデル化する。専用の `pollable` リソース型は設けず、`resolver.get-interface`/IPCコマンド発行が返す `u32` ハンドルに対して `POLL_CHECK` / `POLL_WAIT`（`hal_dispatch.md` を正本とする）コマンドIDを発行することで、ready 状態を確認する。vMMIOのvIRQ原因付き階層ディスパッチは、COOSの汎用割り込みイベント契約とCOOS協調境界での配送で処理し、WASI契約には追加しない。
-
-- **操作完了通知**: 物理デバイスの完了状態は、GPIOエッジ購読、タイマー満了購読、バス受信購読等のIPCコマンドが返す`u32`ポーリングハンドルに対する`POLL_CHECK`/`POLL_WAIT`で確認する。これはvIRQの原因レコード配送とは別の経路である。
-
-## 7. フィードバック：WASI 準拠における制約事項
-WASI仕様と HAL の乖離および考慮点は以下の通り：
-
-1. **GPIO/Bus の不在**: WASI (CLI/Cloud) には GPIO や I2C/SPI の標準インターフェースがない。これらは専用 WIT リソース型を設けず、URI Resolver + HALバッファプール + IPCコマンドIDの汎用機構上で「Fireball 独自プロポーザル」として実現する。
-2. **リアルタイム性**: WASI 0.3p のポーリングモデルは非同期イベントの集約に利用できるが、極めて高速なリアルタイム応答が必要な場合、`fireball_call` (Trap) を併用する方が効率的である可能性がある。
-3. **リソース管理のオーバーヘッド**: 専用 WIT リソース型（ハンドル管理）を廃したことで、単純な `u32` ID渡しとIPCコマンドIDを使う構成となり、ホスト側の管理状態を抑える。
-
-## 8. 命名規則 (Naming Conventions)
+### 5.3 命名規則 (Naming Conventions)
 
 WIT識別子は WASI 標準および `wasm-tools` の制約により `kebab-case` (ハイフン区切り) が必須である。プロジェクトでは以下のセマンティクス規約を適用する。
 
@@ -199,7 +212,36 @@ WIT識別子は WASI 標準および `wasm-tools` の制約により `kebab-case
 | **Method** (Function) | `動詞` または `動詞-機能` | `get-interface`, `map-buffer`, `unmap-buffer` |
 | **Field / Enum Case** | `kebab-case` | `max-latency`, `retry` |
 
-### 8.1 設計上の留意点
+#### 5.3.1 設計上の留意点
 - **Kebab-Case Mandatory**: WIT定義内で `snake_case` (アンダースコア) は使用禁止。
 - **C++ へのマッピング**: 生成される C++ コードではプロジェクト標準規約に従い、自動的に `snake_case` へ変換される。
 - **名前の衝突回避**: ドメインプレフィックスを積極的に活用し、グローバルな名前空間での衝突を避ける。
+
+## 6. 制約達成の方策
+
+### 6.1 フィードバック：WASI 準拠における制約事項
+WASI仕様と HAL の乖離および考慮点は以下の通り：
+
+1. **GPIO/Bus の不在**: WASI (CLI/Cloud) には GPIO や I2C/SPI の標準インターフェースがない。これらは専用 WIT リソース型を設けず、URI Resolver + HALバッファプール + IPCコマンドIDの汎用機構上で「Fireball 独自プロポーザル」として実現する。
+2. **リアルタイム性**: WASI 0.3p のポーリングモデルは非同期イベントの集約に利用できるが、極めて高速なリアルタイム応答が必要な場合、`fireball_call` (Trap) を併用する方が効率的である可能性がある。
+3. **リソース管理のオーバーヘッド**: 専用 WIT リソース型（ハンドル管理）を廃したことで、単純な `u32` ID渡しとIPCコマンドIDを使う構成となり、ホスト側の管理状態を抑える。
+
+
+## 7. 形式検証・テスト仕様との対応
+
+### 7.1 検証対象の不変条件
+本書で定めた状態、境界、所有権、およびエラー処理を検証対象とする。
+
+### 7.2 検証モデルと反証可能性
+形式検証モデルは[wit_resource_lifecycle_model.py](docs/components/tier3_platform/formal/wit_resource_lifecycle_model.py)である。各モデルの正常系と`guards=False`変異で、保護条件が反証されることを確認する。
+
+### 7.3 テスト仕様書との連携
+対応するテスト仕様は[interface_wit_test_spec.md](docs/qa/tier3_platform/interface_wit_test_spec.md)である。テストケースIDと実行可能テストは同仕様を正本とする。
+
+### 7.4 既知の制限・対象外
+ホスト実機依存の挙動、未実装アーキテクチャ、およびテスト仕様が明示する対象外条件は未検証として扱う。
+
+
+## 8. 設計判断と参考実装
+
+特記すべき独立したADRはない。採用方針は本書の各契約節に記載する。

@@ -37,6 +37,7 @@ class GuestProfiler:
         "_function_stats",
         "estimated_events",
         "lost_events",
+        "overflowed_frames",
         "unmatched_events",
     )
 
@@ -55,42 +56,59 @@ class GuestProfiler:
         self._frames: StaticVector[_OpenFrame] = StaticVector(capacity=stack_capacity)
         self.estimated_events = 0
         self.lost_events = 0
+        self.overflowed_frames = 0
         self.unmatched_events = 0
 
     @staticmethod
     def _edge_key(parent_function_id: int, function_id: int) -> int:
         return ((parent_function_id & 0xFFFF_FFFF) << 32) | (function_id & 0xFFFF_FFFF)
 
-    def _function(self, function_id: int) -> ProfileStats:
+    def _function(self, function_id: int) -> ProfileStats | None:
         stats = self._function_stats.view().find(function_id)
         if stats is None:
             stats = ProfileStats(function_id=function_id)
-            assert self._function_stats.insert(function_id, stats)
+            if not self._function_stats.insert(function_id, stats):
+                self.lost_events += 1
+                self._mark_estimated()
+                return None
         return stats
 
     def _mark_estimated(self) -> None:
         self.estimated_events += 1
-        if self._frames:
-            self._frames[-1].estimated = True
+        for index in range(len(self._frames)):
+            frame = self._frames[index]
+            frame.estimated = True
+            stats = self._function_stats.view().find(frame.function_id)
+            if stats is not None:
+                stats.estimated = True
 
     def _enter(self, event: RuntimeEvent) -> None:
         parent = self._frames[-1].function_id if self._frames else -1
-        frame = _OpenFrame(parent, parent, event.tick)
-        frame.function_id = event.function_id
-        frame.parent_function_id = parent
+        frame = _OpenFrame(event.function_id, parent, event.tick)
         if not self._frames.push_back(frame):
+            self.overflowed_frames += 1
             self.lost_events += 1
             self._mark_estimated()
             return
 
         stats = self._function(event.function_id)
-        stats.call_count += 1
+        if stats is None:
+            frame.estimated = True
+        else:
+            stats.call_count += 1
         if parent >= 0:
             edge_key = self._edge_key(parent, event.function_id)
             edge_count = self._edge_counts.view().find(edge_key)
-            assert self._edge_counts.insert(edge_key, 1 if edge_count is None else edge_count + 1)
+            if not self._edge_counts.insert(edge_key, 1 if edge_count is None else edge_count + 1):
+                self.lost_events += 1
+                self._mark_estimated()
+                frame.estimated = True
 
     def _exit(self, event: RuntimeEvent) -> None:
+        if self.overflowed_frames:
+            self.overflowed_frames -= 1
+            self._mark_estimated()
+            return
         if not self._frames or self._frames[-1].function_id != event.function_id:
             self.unmatched_events += 1
             self._mark_estimated()
@@ -100,26 +118,38 @@ class GuestProfiler:
         inclusive = max(0, event.tick - frame.enter_tick)
         self_ticks = max(0, inclusive - frame.child_ticks)
         stats = self._function(event.function_id)
-        stats.inclusive_ticks += inclusive
-        stats.self_ticks += self_ticks
-        stats.estimated = stats.estimated or frame.estimated
-        if event.flags & RuntimeEventFlags.ESTIMATED:
-            stats.estimated = True
+        if stats is not None:
+            stats.inclusive_ticks += inclusive
+            stats.self_ticks += self_ticks
+            stats.estimated = stats.estimated or frame.estimated
+            if event.flags & RuntimeEventFlags.ESTIMATED:
+                stats.estimated = True
         if self._frames:
             self._frames[-1].child_ticks += inclusive
 
     def _finish_open_frames(self, event: RuntimeEvent) -> None:
+        self.overflowed_frames = 0
         while self._frames:
             frame = self._frames.pop_at()
             stats = self._function(frame.function_id)
-            stats.estimated = True
-            stats.inclusive_ticks += max(0, event.tick - frame.enter_tick)
+            inclusive = max(0, event.tick - frame.enter_tick)
+            self_ticks = max(0, inclusive - frame.child_ticks)
+            if stats is not None:
+                stats.estimated = True
+                stats.inclusive_ticks += inclusive
+                stats.self_ticks += self_ticks
+            if self._frames:
+                self._frames[-1].child_ticks += inclusive
             self.estimated_events += 1
 
     def on_runtime_event(self, event: RuntimeEvent) -> None:
         """イベントを一件だけ固定長状態へ反映する。"""
 
-        if event.flags & (RuntimeEventFlags.DROPPED | RuntimeEventFlags.ESTIMATED):
+        if event.flags & RuntimeEventFlags.DROPPED:
+            self.lost_events += 1
+            self._mark_estimated()
+            return
+        if event.flags & RuntimeEventFlags.ESTIMATED:
             self._mark_estimated()
         if event.kind == RuntimeEventKind.FUNCTION_ENTER:
             self._enter(event)
@@ -144,3 +174,7 @@ class GuestProfiler:
     @property
     def open_frame_count(self) -> int:
         return len(self._frames)
+
+    @property
+    def overflowed_frame_count(self) -> int:
+        return self.overflowed_frames

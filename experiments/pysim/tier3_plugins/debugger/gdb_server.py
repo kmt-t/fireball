@@ -24,6 +24,8 @@ from wasm_module import BasicBlock
 class GDBServer:
     """RSP server using an injected Tier 3 physical debugger transport."""
 
+    __slots__ = ("_client_sock", "_running", "_thread", "actual_port", "dbg", "rsp", "transport")
+
     def __init__(
         self,
         dbg: DebuggerManager,
@@ -74,7 +76,7 @@ class GDBServer:
         def _try_flush_tx() -> None:
             if tx_buffer and self._client_sock:
                 try:
-                    n = self._client_sock.send(tx_buffer)
+                    n = self._client_sock.send(memoryview(tx_buffer))
                     del tx_buffer[:n]
                 except (BlockingIOError, TimeoutError):
                     pass
@@ -104,7 +106,7 @@ class GDBServer:
                     _try_flush_tx()
                     yield (ChannelAction.YIELD, None)
                     continue
-                except Exception:
+                except OSError:
                     break
 
                 # Process all complete packets in buffer
@@ -115,6 +117,9 @@ class GDBServer:
                         break
                     packet_str = buffer[dollar_idx : hash_idx + 3]
                     buffer = buffer[hash_idx + 3 :]
+                    if not self.rsp.is_valid_packet(packet_str):
+                        tx_buffer.extend(b"-")
+                        continue
                     # Queue immediate ACK
                     tx_buffer.extend(b"+")
                     # Handle packet via GDBRspProtocol
@@ -165,7 +170,7 @@ class GDBServer:
                     buffer += data.decode("latin1")
                 except TimeoutError:
                     continue
-                except Exception:
+                except OSError:
                     break
                 # Process all complete packets in buffer
                 while buffer.find("$") >= 0 and buffer.find("#") >= 0:
@@ -175,6 +180,9 @@ class GDBServer:
                         break  # Need more bytes for checksum
                     packet_str = buffer[dollar_idx : hash_idx + 3]
                     buffer = buffer[hash_idx + 3 :]
+                    if not self.rsp.is_valid_packet(packet_str):
+                        self._send_all(b"-")
+                        continue
                     # Send immediate ACK
                     self._send_all(b"+")
                     # Handle packet via GDBRspProtocol
@@ -184,7 +192,7 @@ class GDBServer:
                     # Send response packet
                     if response:
                         self._send_all(response.encode("latin1"))
-        except Exception:
+        except OSError:
             pass
         finally:
             if self._client_sock is not None:
@@ -198,6 +206,6 @@ class GDBServer:
         assert self._client_sock is not None
         remaining = memoryview(data)
         while remaining:
-            sent = self._client_sock.send(remaining)
+            sent = self._client_sock.send(memoryview(remaining))
             assert sent > 0, "Debugger transport returned a zero-byte send"
             remaining = remaining[sent:]

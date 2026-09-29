@@ -18,8 +18,9 @@ _REPO_ROOT = _PYSIM_DIR.parent.parent
 # Keep the product Tier 3 package ahead of tests/tier3_executer when importing
 # runtime_engine's qualified Tier 3 modules.
 
-from helpers import expect_assertion, wat_to_wasm
+from helpers import _build_test_wasm_binary, expect_assertion, wat_to_wasm
 from helpers import make_interpreter as Interpreter
+from loader import DecodedEntityKind
 from system_containers import StaticVector
 from tier3_executer.interpreter.interpreter import InterpreterContext, Trap, WasmNumber
 from vmmio import TrapCode
@@ -547,13 +548,11 @@ def test_wasm_loader_and_radix_binary_tree_view_indexes():
     """TEST-LOAD-01..47: Verifies WASM Loader zero-copy indexing, verification, and ReadOnlyRadixBinaryTreeView file offset & hash symbol indexes."""
     from loader import WasmLoader
 
-    from experiments.pysim.qa.tier2_runtime.test_loader import _build_test_wasm_binary
-
     loader = WasmLoader()
     wasm_bytes = _build_test_wasm_binary(export_names=["zeta", "alpha", "beta"])
     view = loader.prepare("test_module", wasm_bytes)
     # 1. Zero-copy & Hash + ReadOnlyRadixBinaryTreeView export lookup (TEST-LOAD-13)
-    assert [e.name for e in view.exports_dict] == ["alpha", "beta", "zeta"]
+    assert [view.export_name(entry) for entry in view.exports_dict] == ["alpha", "beta", "zeta"]
     assert view.lookup_export_func("alpha") == 0
     assert view.lookup_export_func("beta") == 0
     assert view.lookup_export_func("zeta") == 0
@@ -568,17 +567,17 @@ def test_wasm_loader_and_radix_binary_tree_view_indexes():
     func_start, func_size = view.code_offsets[0]
     entity_fn = view.lookup_by_file_offset(func_start)
     assert entity_fn is not None
-    assert entity_fn.kind == "FUNCTION"
+    assert entity_fn.kind == DecodedEntityKind.FUNCTION
     assert entity_fn.index == 0
     # Middle of function
     entity_fn_mid = view.lookup_by_file_offset(func_start + 2)
     assert entity_fn_mid is not None
-    assert entity_fn_mid.kind == "FUNCTION"
+    assert entity_fn_mid.kind == DecodedEntityKind.FUNCTION
     # Global lookup
     glob_entry = view.globals[0]
     entity_glob = view.lookup_by_file_offset(glob_entry.init_expr_offset)
     assert entity_glob is not None
-    assert entity_glob.kind == "GLOBAL"
+    assert entity_glob.kind == DecodedEntityKind.GLOBAL
     # Out-of-bounds offset
     assert view.lookup_by_file_offset(len(wasm_bytes) + 1000) is None
 

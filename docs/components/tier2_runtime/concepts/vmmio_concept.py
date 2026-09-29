@@ -160,6 +160,7 @@ class Stage3PTE:
         write: bool = True,
         exec_: bool = False,
         owner_id: int = FB_TASK_ID_INVALID,
+        mapping_size: int = 4096,
     ):
         self.phys_page = phys_page
         self.valid = valid
@@ -167,6 +168,7 @@ class Stage3PTE:
         self.write = write
         self.exec_ = exec_
         self.owner_id = owner_id
+        self.mapping_size = mapping_size
 
 
 class TLBSlot(TypedDict):
@@ -190,21 +192,13 @@ class VMMIOController:
         self.tlb: list[TLBSlot] = [TLBSlot(vpn=0xFFFF_FFFF, pte=None) for _ in range(32)]
         self.tlb_hits = 0
         self.tlb_misses = 0
-        self.dynamic_guest_id: int | None = None
 
     # --- Static & Dynamic PTE Registration (FlatMap) ---
-    def bind_dynamic_guest(self, task_id: int) -> None:
-        """Binds FC=13 DYNAMIC mappings to one guest for the pool lifetime."""
-        if self.dynamic_guest_id is None:
-            self.dynamic_guest_id = task_id
-            return
-        assert self.dynamic_guest_id == task_id
-
-    def map_dynamic_page(self, vpn: int, phys_page: int) -> None:
-        """Maps one HAL-owned FC=13 page after the guest binding is established."""
+    def map_dynamic_page(self, vpn: int, phys_page: int, owner_id: int) -> None:
+        """Maps one HAL-owned FC=13 page to its current guest owner."""
         assert (vpn >> 16) == FC_DYNAMIC
-        assert self.dynamic_guest_id is not None
-        self.ptes[vpn] = Stage3PTE(phys_page=phys_page)
+        assert owner_id > 0
+        self.ptes[vpn] = Stage3PTE(phys_page=phys_page, owner_id=owner_id)
         tlb_idx = self.tlb_index(vpn)
         if self.tlb[tlb_idx]["vpn"] == vpn:
             self.tlb[tlb_idx] = TLBSlot(vpn=0xFFFF_FFFF, pte=None)
@@ -235,8 +229,10 @@ class VMMIOController:
         read: bool = True,
         write: bool = True,
         owner_id: int = FB_TASK_ID_INVALID,
+        mapping_size: int = 4096,
     ) -> None:
         """Registers a Stage 3 SHM page (FC=14) into FlatMap."""
+        assert 0 < mapping_size <= 4096
         self.ptes[vpn] = Stage3PTE(
             phys_page=phys_page,
             valid=True,
@@ -244,6 +240,7 @@ class VMMIOController:
             write=write,
             exec_=False,
             owner_id=owner_id,
+            mapping_size=mapping_size,
         )
 
     def unmap_shm_page(self, vpn: int) -> None:
@@ -330,6 +327,7 @@ class VMMIOController:
         raw_addr: int,
         is_write: bool,
         current_task_id: int = FB_TASK_ID_INVALID,
+        access_size: int = 1,
     ) -> tuple[VmmioStatus, int]:
         """
         Full dispatch: RAM bypass -> TLB/FlatMap -> permission check (always,
@@ -337,10 +335,11 @@ class VMMIOController:
         Returns (status, physical_address). The second field is zero unless
         the status is OK_PHYSICAL.
         """
+        assert access_size >= 0
         addr = VmmioAddress(raw_addr)
         # 1. Fast RAM bypass (Stage 1) — O(1), never touches the page table.
         if addr.is_linear():
-            if addr.raw >= self.guest_ram_size:
+            if addr.raw >= self.guest_ram_size or access_size > self.guest_ram_size - addr.raw:
                 return (
                     TrapCode.OUT_OF_BOUNDS,
                     0,
@@ -367,6 +366,8 @@ class VMMIOController:
                 return (TrapCode.ACCESS_VIOLATION, 0)
             if not is_write and not pte.read:
                 return (TrapCode.ACCESS_VIOLATION, 0)
+            if access_size > 4096 - addr.offset():
+                return (TrapCode.OUT_OF_BOUNDS, 0)
             if pte.handler is not None:
                 pte.handler(addr.device_metadata(), addr.offset(), is_write)
             return (VmmioStatus.OK_STATIC_DEVICE, 0)
@@ -377,12 +378,18 @@ class VMMIOController:
             return (TrapCode.ACCESS_VIOLATION, 0)
         if not is_write and not pte.read:
             return (TrapCode.ACCESS_VIOLATION, 0)
+        if access_size > 4096 - addr.offset():
+            return (TrapCode.OUT_OF_BOUNDS, 0)
 
-        if addr.fc() == FC_DYNAMIC and self.dynamic_guest_id != current_task_id:
+        if addr.fc() == FC_DYNAMIC and pte.owner_id != current_task_id:
             return (TrapCode.OWNER_MISMATCH, 0)
         if addr.fc() == FC_SHM and pte.owner_id != FB_TASK_ID_INVALID:
             if pte.owner_id == FB_TASK_ID_FLIGHT or pte.owner_id != current_task_id:
                 return (TrapCode.OWNER_MISMATCH, 0)
+        if addr.fc() == FC_SHM and (
+            addr.offset() >= pte.mapping_size or access_size > pte.mapping_size - addr.offset()
+        ):
+            return (TrapCode.OUT_OF_BOUNDS, 0)
 
         phys_addr = (pte.phys_page << 12) | addr.offset()
         return (VmmioStatus.OK_PHYSICAL, phys_addr)
@@ -426,20 +433,14 @@ def test_tlb_hit_after_first_walk() -> None:
 
 
 def test_dynamic_mapping_is_single_guest() -> None:
-    """FC=13 DYNAMIC mapping is not shareable between guest bindings."""
+    """FC=13 DYNAMIC mapping is only accessible by its current guest owner."""
     ctrl = VMMIOController()
-    ctrl.bind_dynamic_guest(7)
-    ctrl.bind_dynamic_guest(7)
-    rejected = False
-    try:
-        ctrl.bind_dynamic_guest(8)
-    except AssertionError:
-        rejected = True
-    assert rejected, "a second guest must not bind FC=13 DYNAMIC"
-    ctrl.map_dynamic_page(vpn=0xD0000, phys_page=0x2000)
+    ctrl.map_dynamic_page(vpn=0xD0000, phys_page=0x2000, owner_id=7)
     status, physical = ctrl.access(0xD000_0040, is_write=True, current_task_id=7)
     assert status == VmmioStatus.OK_PHYSICAL
     assert physical == (0x2000 << 12) | 0x40
+    status, _ = ctrl.access(0xD000_0040, is_write=True, current_task_id=8)
+    assert status == TrapCode.OWNER_MISMATCH
     ctrl.unmap_dynamic_page(0xD0000)
     status, _ = ctrl.access(0xD000_0040, is_write=True)
     assert status == TrapCode.UNREGISTERED_PAGE
@@ -503,6 +504,18 @@ def test_linear_ram_bound_check_works_for_non_power_of_two_size() -> None:
     assert ok == VmmioStatus.OK_GUEST_RAM, "last in-range byte (size-1) must be accepted"
     st, _ = ctrl.access(12288, is_write=False)
     assert st == TrapCode.OUT_OF_BOUNDS, "the first byte past the real 12KB boundary must trap"
+
+
+def test_access_width_stays_inside_ram_and_shm_mappings() -> None:
+    ctrl = VMMIOController(guest_ram_size=8192)
+    status, _ = ctrl.access(8190, is_write=True, access_size=4)
+    assert status == TrapCode.OUT_OF_BOUNDS
+
+    ctrl.map_shm_page(vpn=0xE0004, phys_page=0x1234, mapping_size=4)
+    status, _ = ctrl.access(0xE000_4000, is_write=True, access_size=4)
+    assert status == VmmioStatus.OK_PHYSICAL
+    status, _ = ctrl.access(0xE000_4001, is_write=True, access_size=4)
+    assert status == TrapCode.OUT_OF_BOUNDS
 
 
 def test_tlb_index_separates_function_codes() -> None:
@@ -676,6 +689,7 @@ if __name__ == "__main__":
     test_revoke_invalidates_tlb_and_blocks_unmapped_access()
     test_linear_ram_is_bounds_checked_not_waved_through()
     test_linear_ram_bound_check_works_for_non_power_of_two_size()
+    test_access_width_stays_inside_ram_and_shm_mappings()
     test_tlb_index_separates_function_codes()
     test_interleaved_device_and_shm_keep_hitting_the_tlb()
     test_flatmap_pte_registration_and_tlb_caching()

@@ -119,9 +119,7 @@ class JITRuntime(Protocol):
 
     def lookup(self, pc: int) -> JITTrace | None: ...
 
-    def native_dispatch_state(
-        self, function_index: int
-    ) -> NativeDispatchSnapshot: ...
+    def native_dispatch_state(self, function_index: int) -> NativeDispatchSnapshot: ...
 
     def record_native_block_visits(
         self, visits: tuple[NativeBlockVisit, ...], total_visits: int

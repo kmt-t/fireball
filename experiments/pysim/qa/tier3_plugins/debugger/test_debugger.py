@@ -22,6 +22,7 @@ Strictly implements and verifies all test cases from:
 docs/qa/tier3_plugins/debugger_test_spec.md (TEST-DBG-01 ~ TEST-DBG-15).
 """
 
+from config import FB_CONF_DEBUG_MAX_BREAKPOINTS
 from execution_context import WASMContext
 from helpers import wat_to_wasm
 from runtime_test_driver import RuntimeEngineDebugDriver
@@ -53,11 +54,11 @@ def test_dbg_02_read_virtual_registers():
     raw = res[1 : res.index("#")]
     assert len(raw) == 20 * 8  # 160 hex characters
     # Verify individual registers
-    pc_val = int(raw[0:8], 16)
-    sp_val = int(raw[8:16], 16)
-    tos_val = int(raw[24:32], 16)
-    l0_val = int(raw[32:40], 16)
-    l1_val = int(raw[40:48], 16)
+    pc_val = int.from_bytes(bytes.fromhex(raw[0:8]), "little")
+    sp_val = int.from_bytes(bytes.fromhex(raw[8:16]), "little")
+    tos_val = int.from_bytes(bytes.fromhex(raw[24:32]), "little")
+    l0_val = int.from_bytes(bytes.fromhex(raw[32:40]), "little")
+    l1_val = int.from_bytes(bytes.fromhex(raw[40:48]), "little")
     assert pc_val == 0x100
     assert sp_val == 1
     assert tos_val == 999
@@ -74,12 +75,80 @@ def test_dbg_03_write_virtual_registers():
     ctx.locals = (0,) * 16
     # Set new PC=0x200, locals[0]=55, locals[1]=77
     regs = [0x200, 0, 0, 0, 55, 77] + [0] * 14
-    hex_payload = "G" + "".join(f"{r:08x}" for r in regs)
+    hex_payload = "G" + "".join((r & 0xFFFF_FFFF).to_bytes(4, "little").hex() for r in regs)
     res, new_pc = rsp.handle_packet(hex_payload, 0x100, ctx, {})
     assert res.startswith("$OK#")
     assert new_pc == 0x200
     assert ctx.locals[0] == 55
     assert ctx.locals[1] == 77
+    assert len(ctx.stack) == 0
+
+    invalid_regs = regs.copy()
+    invalid_regs[1] = ctx.stack_capacity + 1
+    invalid_payload = "G" + "".join(f"{value:08x}" for value in invalid_regs)
+    rejected, rejected_pc = rsp.handle_packet(invalid_payload, new_pc, ctx, {})
+    assert rejected.startswith("$E01#")
+    assert rejected_pc == new_pc
+    assert ctx.locals[0] == 55 and ctx.locals[1] == 77
+    assert len(ctx.stack) == 0
+
+    malformed_regs = regs.copy()
+    malformed_payload = "G" + "".join(
+        (value & 0xFFFF_FFFF).to_bytes(4, "little").hex() for value in malformed_regs
+    )
+    malformed_payload = malformed_payload[:9] + "z" + malformed_payload[10:]
+    rejected, rejected_pc = rsp.handle_packet(malformed_payload, new_pc, ctx, {})
+    assert rejected.startswith("$E01#")
+    assert rejected_pc == new_pc
+    assert ctx.locals[0] == 55 and ctx.locals[1] == 77
+
+
+def test_dbg_03b_single_register_and_supported_query():
+    dbg = DebuggerManager()
+    rsp = GDBRspProtocol(dbg)
+    ctx = WASMContext()
+    ctx.locals[0] = 12
+    response, pc = rsp.handle_packet("p4", 0x123, ctx, {})
+    assert response.startswith("$0c000000#")
+    assert pc == 0x123
+    response, pc = rsp.handle_packet("P4=2a000000", pc, ctx, {})
+    assert response.startswith("$OK#")
+    assert ctx.locals[0] == 42
+    response, _ = rsp.handle_packet("qSupported:multiprocess+", pc, ctx, {})
+    assert response.startswith("$PacketSize=256#")
+    assert not GDBRspProtocol.is_valid_packet("$M0,4:deadbeef#00")
+    assert GDBRspProtocol.is_valid_packet(GDBRspProtocol.format_packet("?"))
+
+
+def test_dbg_03c_malformed_register_packets_are_rejected():
+    dbg = DebuggerManager()
+    rsp = GDBRspProtocol(dbg)
+    ctx = WASMContext()
+    response, pc = rsp.handle_packet("pzz", 0x123, ctx, {})
+    assert response.startswith("$E01#")
+    assert pc == 0x123
+    response, pc = rsp.handle_packet("P4", 0x123, ctx, {})
+    assert response.startswith("$E01#")
+    assert pc == 0x123
+    assert ctx.locals[0] == 0
+
+
+def test_dbg_08b_breakpoint_capacity_returns_protocol_error():
+    dbg = DebuggerManager()
+    rsp = GDBRspProtocol(dbg)
+    for pc in range(FB_CONF_DEBUG_MAX_BREAKPOINTS):
+        assert dbg.add_breakpoint(pc)
+
+    response, pc = rsp.handle_packet(
+        f"Z0,{FB_CONF_DEBUG_MAX_BREAKPOINTS:x},0",
+        0x200,
+        WASMContext(),
+        {},
+    )
+    assert response.startswith("$E01#")
+    assert pc == 0x200
+    assert dbg.has_breakpoint(0)
+    assert not dbg.has_breakpoint(FB_CONF_DEBUG_MAX_BREAKPOINTS)
 
 
 def test_dbg_04_05_read_memory_and_bounds_check():

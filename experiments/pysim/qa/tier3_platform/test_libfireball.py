@@ -54,12 +54,20 @@ def test_libfireball_host_call_argument_packing() -> None:
     host_calls = RecordingHostCalls()
     lib = Libfireball(host_calls)
     assert lib.fireball_call0(0x01) == 0
-    assert lib.fireball_call3(0x10, 1, 2, 3) == 0
-    assert lib.fireball_call6(0x40, 1, 2, 3, 4, 5, 6) == 0
+    assert lib.fireball_call1(0x10, 1) == 0
+    assert lib.fireball_call2(0x11, 1, 2) == 0
+    assert lib.fireball_call3(0x12, 1, 2, 3) == 0
+    assert lib.fireball_call4(0x13, 1, 2, 3, 4) == 0
+    assert lib.fireball_call5(0x14, 1, 2, 3, 4, 5) == 0
+    assert lib.fireball_call6(0x15, 1, 2, 3, 4, 5, 6) == 0
     assert host_calls.calls == [
         (0x01, 0, 0, 0, 0, 0, 0),
-        (0x10, 1, 2, 3, 0, 0, 0),
-        (0x40, 1, 2, 3, 4, 5, 6),
+        (0x10, 1, 0, 0, 0, 0, 0),
+        (0x11, 1, 2, 0, 0, 0, 0),
+        (0x12, 1, 2, 3, 0, 0, 0),
+        (0x13, 1, 2, 3, 4, 0, 0),
+        (0x14, 1, 2, 3, 4, 5, 0),
+        (0x15, 1, 2, 3, 4, 5, 6),
     ]
 
 
@@ -67,6 +75,25 @@ def test_libfireball_rejects_non_u32_host_call_values() -> None:
     lib = Libfireball(RecordingHostCalls())
     with pytest.raises(AssertionError):
         lib.fireball_call1(0x10, -1)
+
+
+def test_libfireball_rejects_non_u32_host_call_result() -> None:
+    class InvalidResultHostCalls(RecordingHostCalls):
+        def fireball_call(
+            self,
+            syscall_id: int,
+            arg0: int,
+            arg1: int,
+            arg2: int,
+            arg3: int,
+            arg4: int,
+            arg5: int,
+        ) -> int:
+            return -1
+
+    lib = Libfireball(InvalidResultHostCalls())
+    with pytest.raises(AssertionError):
+        lib.fireball_call0(0x10)
 
 
 def test_libfireball_dedicated_host_calls() -> None:

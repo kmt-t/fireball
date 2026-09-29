@@ -213,7 +213,7 @@ def test_scenario_wasi_syscall():
     module = parse(wasm_bytes)
     sysv = System()
     wasi_ctx = WasiHostContext(sysv)
-    sysv.start_hal_driver(DummyDriver(sysv.wasi_hal_bindings.stdout_uri, transport=sysv.transport))
+    sysv.start_hal_driver(DummyDriver(transport=sysv.transport), sysv.wasi_hal_bindings.stdout_uri)
     host_funcs = wasi_ctx.build_interpreter_host_functions(module)
     module.init_memory_data(wasi_ctx.guest_memory, ())
     interp = Interpreter(

@@ -2,7 +2,7 @@
 
 本書は、Fireball のコンポーネント配置、Tier 分類、責務境界、および依存関係を示す概要図である。個別コンポーネントの状態、アルゴリズム、データ構造、ABI、形式検証、テスト条件は本書に再掲しない。詳細は各コンポーネント設計書を正本とする。
 
-文書階層と配置規則は [`document_structure.md`](docs/architecture/document_structure.md) が定義する。キーワードは各定義元文書の本文または表で定義し、[`keyword_dictionary.md`](docs/architecture/keyword_dictionary.md) は定義元の所在を示す索引として使う。
+文書階層と配置規則は [`document_structure.md`](docs/architecture/document_structure.md) が定義する。キーワードの意味上の定義は正本文書の本文または表に置き、同じセクション内の `<!-- definition: &#123;Keyword&#125; -->` 宣言で定義元を識別する。参照側は `<!-- traceability: &#123;Keyword&#125; -->` コメントで紐付ける。
 
 ## 1. Tier 構成
 

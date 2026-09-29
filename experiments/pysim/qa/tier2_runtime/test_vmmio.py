@@ -80,6 +80,15 @@ def test_vmmio_03_undefined_function_code_traps():
     assert stat == TrapCode.UNDEFINED_FC
 
 
+def test_vmmio_04_dynamic_unregistered_page_traps():
+    """TEST-VMMIO-13: An unregistered FC=13 VPN is distinct from an undefined FC."""
+    scheduler = Scheduler()
+    scheduler.current_task = scheduler.get_task(scheduler.spawn("test_task"))
+    ctrl = VMMIOController(guest_ram_size=64 * 1024, scheduler=scheduler)
+    stat, _ = ctrl.access(raw_addr=0xD000_0000, is_write=False)
+    assert stat == TrapCode.UNREGISTERED_PAGE
+
+
 # ===========================================================================
 # 8. Tier 1 IPC Router & Zero-Copy SharedBlock Transfer (ipc_router_test_spec.md)
 # ===========================================================================
@@ -105,4 +114,5 @@ if __name__ == "__main__":
     test_vmmio_01_three_tier_gate_dispatch()
     test_vmmio_02_fc14_shm_owner_isolation_and_flight()
     test_vmmio_03_undefined_function_code_traps()
-    print("[PASS] All 3 Virtual MMIO Controller tests passed.")
+    test_vmmio_04_dynamic_unregistered_page_traps()
+    print("[PASS] All 4 Virtual MMIO Controller tests passed.")

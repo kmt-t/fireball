@@ -18,7 +18,12 @@ REPO_ROOT = _PYSIM_DIR.parent.parent
 
 
 from hal_dispatch import HalBufferPool
-from helpers import expect_assertion, make_test_ipc_message, wat_to_wasm
+from helpers import (
+    _build_test_wasm_binary,
+    expect_assertion,
+    make_test_ipc_message,
+    wat_to_wasm,
+)
 from helpers import make_interpreter as Interpreter
 from ipc_router import (
     IPCRouter,
@@ -32,7 +37,7 @@ from runtime_events import RuntimeEvent
 from scheduler import ChannelAction, Scheduler, Task, WaitDir
 from system import System, WasiErrno
 from system_containers import BitView, MutableFlatMapStorage, ReadOnlyFlatMapView, StaticVector
-from tier2_runtime.logger import LogDictionary, Logger, LogLevel
+from tier2_runtime.logger import LogDictionary, Logger, LogLevel, LogResult
 from tier3_executer.interpreter.interpreter import _HANDLERS
 from tier3_executer.jit.jit_cache import CardState, JITMultiBufferCache, JITTrace
 from tier3_platform.drivers.hal.stream import StreamTransport
@@ -184,7 +189,7 @@ def test_intp_gotcha_04_unified_pc_multi_module():
 
     keys = sorted([pc_fn0, pc_fn1])
     vals = [100 if k == pc_fn0 else 200 for k in keys]
-    entries = list(zip(keys, vals, strict=False))
+    entries = list(zip(keys, vals, strict=True))
     view = ReadOnlyFlatMapView(entries)
 
     assert view.find(pc_fn0) == 100
@@ -533,30 +538,30 @@ def test_cont_gotcha_02_narrowing_never_expands_bounds():
 
 def test_log_gotcha_01_no_runtime_pointer_scalar_args_only():
     """GOTCHA-LOG-01: Logging interface rejects string specifiers and accepts only scalar u32 arguments."""
-    d = LogDictionary()
-    for bad_fmt in ["Message: %s", "Pointer: %p", "Char: %c"]:
+    for event_id, bad_fmt in enumerate(
+        ("Message: %s", "Pointer: %p", "Char: %c", "Formatted string: %08s"), 0x10
+    ):
         with expect_assertion():
-            d.register(0x10, bad_fmt)
+            LogDictionary(entries=((event_id, bad_fmt),), include_diagnostic_events=False)
 
-    d.register(0x20, "Task %d event %u (0x%08X)")
+    d = LogDictionary(entries=((0x20, "Task %d event %u (0x%08X)"),))
     uart = StreamTransport()
     logger = Logger(uart, d, capacity=4)
     res = logger.log_event(LogLevel.INFO, dict_offset=0x20, arg0=1, arg1=2, arg2=0xABC)
-    assert res == "QUEUED"
+    assert res == LogResult.SUCCESS
 
 
 def test_log_gotcha_02_ring_buffer_oldest_overwrite():
     """GOTCHA-LOG-02: Ring buffer overwrite on full preserves system non-blocking invariant."""
-    d = LogDictionary()
-    d.register(0x10, "Event %d")
+    d = LogDictionary(entries=((0x10, "Event %d"),))
     uart = StreamTransport()
     cap = 4
     logger = Logger(uart, d, capacity=cap)
 
     for i in range(cap):
-        assert logger.log_event(LogLevel.INFO, dict_offset=0x10, arg0=i) == "QUEUED"
+        assert logger.log_event(LogLevel.INFO, dict_offset=0x10, arg0=i) == LogResult.SUCCESS
 
-    assert logger.log_event(LogLevel.INFO, dict_offset=0x10, arg0=100) == "OVERWRITTEN"
+    assert logger.log_event(LogLevel.INFO, dict_offset=0x10, arg0=100) == LogResult.OVERWRITTEN
     assert logger.ring.count == cap
     assert logger.ring.dropped == 1
 
@@ -674,8 +679,6 @@ def test_dbg_gotcha_01_debugger_and_jit_composition_is_rejected():
 def test_load_gotcha_01_non_existent_symbol_fast_rejection():
     """GOTCHA-LOAD-01: Non-existent symbol rejection is O(k) without linear scan."""
     loader = WasmLoader()
-    from experiments.pysim.qa.tier2_runtime.test_loader import _build_test_wasm_binary
-
     wasm_bytes = _build_test_wasm_binary(export_names=["foo", "bar"])
     view = loader.prepare("test_mod", wasm_bytes)
     assert view.lookup_export("non_existent_symbol_xyz") is None

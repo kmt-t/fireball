@@ -18,13 +18,14 @@
 | TEST-CONT-05 | `bit_view`の隣接要素非破壊 | 2bit幅、複数要素 | 1要素を`put`で書き換え | 隣接要素のビットが変化しない | at/put 不変条件, flat_view_concept.py |
 | TEST-CONT-06 | `bit_view`のバイト境界非依存slice | 非バイト境界のfirstでslice | slice実行 | ビット原点が端数を吸収し、正しく動作する | bit_view「バイト境界の制約を課さない」 |
 | TEST-CONT-07 | `Bits`は1,2,4のみ許容 | Bits=3等の不正値 | BitView構築 | `static_assert`相当（Python実装では`assert`）で拒否される | 「8ビットの約数のみ」 |
-| TEST-CONT-08 | `radix_binary_tree_view`のO(1)粗索引 | Radix Table構築済み | `find(key)` | プレフィックスで範囲を即座に絞り込み、範囲内のみ二分探索する | radix_binary_tree_view, flat_view_concept.py `RadixBinaryTreeView.find` |
+| TEST-CONT-08 | `radix_binary_tree_view`のO(1)粗索引 | Radix Table構築済み。射影キーを使う場合は射影値と元キーの順で格納する | `find(key)`。非単調な`bswap32`射影の前後で追加・検索する | プレフィックス範囲が射影順に保たれ、範囲内の二分探索で登録済みキーだけを返す。可変Radix表は固定上限容量を維持し、追加・削除で再確保しない | `radix_binary_tree_view`, `test_containers.py::test_cont_16_radix_projection_keeps_lookup_ranges_ordered_and_bounded` |
 | TEST-CONT-09 | JITエントリ検索のカードマーキング事前フィルタと疎キー探索 | ソート済みJITエントリとカード表 | COMPILEDでないPC／登録済みPCを検索 | 非COMPILEDは二分探索せずNone。COMPILEDはRadix表なしのソート済みエントリを二分探索して値を返す | 「JIT entry lookup」, flat_view_concept.py `lookup_jit_entry` |
 | TEST-CONT-10 | mapとsetの型分離 | - | 型定義を確認 | `flat_set_view`は値列フィールドを持たない（`flat_map_view`の特殊形として実装されていない） | 「なぜ4つに分けるか」 |
 | TEST-CONT-11 | ペア配列データ所有権と非所有Viewの完全分離 | ストレージ配列構築 | `storage.view()` | ストレージ（Owner）が実体ペア配列を所有し、Viewは所有権を持たず単一スパンとして借用参照する（多重生成しても同一配列参照） | 「所有コンテナは定義しない」 |
 | TEST-CONT-12 | 静的ソート配列コンテナの標準ソート（constexpr対応） | 未ソートのペア配列 | ソート実行 | C++標準の`std::sort`相当でキー昇順にソートされ、自前ソート関数を抱えずにソート済み状態になり`view().find()`で全要素探索可能 | 静的ソート配列 |
 | TEST-CONT-13 | 静的ソート配列コンテナのソート維持挿入・削除 | 構築済みマップ | 要素挿入 / 削除 | 任意順序での挿入・削除後も常にペア配列の昇順ソート状態が維持され、二分探索の不変条件が保たれる | 静的ソート配列挿入・削除 |
-| TEST-CONT-14 | 可変ストレージの固定長配列事前確保とエントリカウンタ管理 | 容量指定で可変ストレージ構築 | 要素挿入（容量上限まで / 超過時）および削除 | バッファ長が初期化時から常にCapacity固定でリサイズされず、countが現在有効エントリ数を正確に追跡する。容量到達時の新規挿入はFalseを返して拒絶され、削除時はインプレースシフトされて空き末尾スロットがクリアされる | 「固定長配列と有効エントリカウント規約」, `{GLOBAL_Policy_Memory}`, `{META_NoStdVector}` |
+| TEST-CONT-14 | 可変ストレージの固定長配列事前確保とエントリカウンタ管理 | 容量指定で可変ストレージ構築 | 新規挿入、既存キー更新、容量超過挿入および削除 | 固定長バッファと有効エントリ数を保ち、既存キー更新と新規挿入は`True`、容量超過の新規挿入は状態を変えず`False`、削除はインプレースシフトされて空き末尾スロットをクリアする | 「固定長配列と有効エントリカウント規約」, `flat_view_concept.py` `test_static_flat_map_update_and_capacity_rejection`, `{GLOBAL_Policy_Memory}`, `{META_NoStdVector}` |
+| TEST-CONT-15 | ReadOnlyBitStorageの読み取り専用ビュー | 不変バイト列のbit storage | ビューと部分ビューを読み、公開APIを調べる | 値と部分範囲を正しく読み取れ、ビュー自体に`put` APIが存在しない | pysim `test_containers.py` ReadOnlyBitStorage検査 |
 
 ### 実装の勘所・不変条件（Gotchas & Implementation Invariants）
 <!-- traceability: {GOTCHA-CONT-04} -->

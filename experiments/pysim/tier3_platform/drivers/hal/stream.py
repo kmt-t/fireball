@@ -8,6 +8,8 @@ FB_CONF_STDIO_BUFFER_SIZE = 4096
 class StreamTransport:
     """HALドライバがアクセスする固定長の標準入出力バッファ。"""
 
+    __slots__ = ("_input", "_input_len", "_output", "_output_len", "bytes_written")
+
     def __init__(self, capacity: int = FB_CONF_STDIO_BUFFER_SIZE) -> None:
         assert capacity > 0
         self._input = bytearray(capacity)
@@ -57,6 +59,8 @@ class StreamTransport:
 class DedicatedLogSink:
     """固定容量の診断ログ専用Sink。標準出力とは別の蓄積領域を持つ。"""
 
+    __slots__ = ("_output", "_output_len", "bytes_written")
+
     def __init__(self, capacity: int = FB_CONF_STDIO_BUFFER_SIZE) -> None:
         assert capacity > 0
         self._output = bytearray(capacity)
@@ -80,4 +84,3 @@ class DedicatedLogSink:
 
     def close(self) -> None:
         self._output_len = 0
-

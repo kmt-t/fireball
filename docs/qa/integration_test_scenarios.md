@@ -53,7 +53,7 @@
 | | [`jit_runtime.md`](docs/components/tier3_executer/jit_runtime.md) | 3面キャッシュ代謝、2-bit Card Marking、UnifiedPC + 少数エントリ二分探索 | Scenario 4, 5 |
 
 ### 1.3 仕様キーワード・不変条件カバレッジ追跡表 (Requirements Traceability Matrix: RTM)
-<!-- traceability: {OwnerMismatchTrap} {TraceBoundaryInvariant} -->
+<!-- traceability: {OwnerMismatchTrap} {UnregisteredPageTrap} {TraceBoundaryInvariant} -->
 
 各コンポーネント設計書に定義されている仕様キーワード、アーキテクチャ不変条件（Invariants）、およびエッジケース要件に対する結合テスト（Scenario 1〜12）の実動網羅状況：
 
@@ -73,7 +73,8 @@
 | `PreflightRejection` | `ipc_router.md` | Revoke前の静的チェック（RBAC拒否・メッセージサイズ超過）失敗時、所有権は送信側から一度も動かない | `TEST-INT-81` | ✅ PASS |
 | `RAM_Bypass_Bit31` | `runtime_vmmio.md` | Bit 31 == 0 アドレスに対するページテーブル不使用 $O(1)$ 高速バイパス | `TEST-INT-90` | ✅ PASS |
 | `DirectMappedTLB32` | `runtime_vmmio.md` | 20-bit VPN の 5-bit Folding XOR Hash による32エントリ Direct-Mapped TLB キャッシュ | `TEST-INT-92` | ✅ PASS |
-| `OwnerMismatchTrap` | `runtime_vmmio.md` | タスク間共有メモリ（FC=0xE）の所有権移動に伴うアンマップによる未登録ページフォルト（`TRAP_UNREGISTERED_PAGE`）遮断 | `TEST-INT-93` | ✅ PASS |
+| `OwnerMismatchTrap` | `runtime_vmmio.md` | PTEが登録済みのSHMに対して非所有タスクがアクセスすると`TRAP_OWNER_MISMATCH`で遮断する | `TEST-INT-93` | ✅ PASS |
+| `UnregisteredPageTrap` | `runtime_vmmio.md` | Revoke後にアンマップ済みSHMへアクセスすると`TRAP_UNREGISTERED_PAGE`で遮断する | `TEST-INT-94` | ✅ PASS |
 | `ActiveDataSegments` | `runtime_loader.md` | モジュールロード時のアクティブデータセグメント自動リニアメモリ展開 | `TEST-INT-01` | ✅ PASS |
 | `CPS_4Args` | `interpreter.md` | `ctx, sp, local_base, tos` 4論理引数による継続関数ポインタディスパッチ | `TEST-INT-01`〜`TEST-INT-105` | ✅ PASS |
 | `SignZeroExtension` | `interpreter.md` | 8/16/32-bit メモリ読み書きにおける符号付き・符号なしゼロ/符号拡張の完全性 | `TEST-INT-70` | ✅ PASS |
@@ -241,21 +242,23 @@
 ---
 
 ### シナリオ 10: Tier 2 Runtime vMMIO Virtual Devices & Address Translation
-<!-- traceability: {OwnerMismatchTrap} -->
+<!-- traceability: {OwnerMismatchTrap} {UnregisteredPageTrap} -->
 - **対象コンポーネント**: `runtime_vmmio`, `runtime_syscall`, `runtime_memory`, `system_config`
 - **参照実装スクリプト (Reference Script)**: [`scenario10_vmmio_virtual_devices.py`](experiments/pysim/qa/scenarios/scenario10_vmmio_virtual_devices.py)
 - **検証シナリオ**:
   - Bit 31 RAM Bypass フラグ: ゲストリニア RAM（Bit 31 == 0）の $O(1)$ 高速パス
   - 仮想デバイス（FC=0xC）、共有メモリ（FC=0xE）、物理パススルー（FC=0xF）の PTE マッピング
   - 5-bit Folding XOR Hash による Direct-Mapped Software TLB[32] ヒット/ミス遷移
-  - タスク間共有メモリの所有権分離とアンマップによる未登録ページ遮断
+  - マップ済みSHMの非所有者アクセス時の`OWNER_MISMATCH`遮断
+  - Revoke後のアンマップ済みSHMアクセス時の`UNREGISTERED_PAGE`遮断
 
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | TEST-INT-90 | Bit 31 RAM Bypass 高速パス | リニア RAM アドレス | `access()` 実行 | ページテーブルを介さず `OK_GUEST_RAM` で即時バイパスされる | `RAM_Bypass_Bit31` |
 | TEST-INT-91 | 仮想デバイス書き込みとハンドラディスパッチ | デバイスページ登録済み | `access()` で書き込み | `OK_STATIC_DEVICE` が返り登録ハンドラが呼び出される | `vMMIO_TrapAndEmulate` |
 | TEST-INT-92 | 32エントリ Direct-Mapped TLB キャッシュ | 同一ページ反復アクセス | 連続 `access()` | 2回目以降が TLB ヒットとなり `tlb_hits` が増加する | `DirectMappedTLB32` |
-| TEST-INT-93 | タスク間共有メモリ所有権分離 | 非所有（未マッピング）タスクのSHMアクセス | `access()` 実行 | `TRAP_UNREGISTERED_PAGE` で安全にトラップ遮断される | `OwnerMismatchTrap` |
+| TEST-INT-93 | マップ済みSHMへの非所有者アクセス | task A所有のSHM PTEが登録済みでRevoke前、task Bが実行中 | task Bから同じアドレスを`access()`する | `TRAP_OWNER_MISMATCH`で遮断され、物理アクセスは発生しない | `OwnerMismatchTrap` |
+| TEST-INT-94 | Revoke後のSHMアクセス | 所有権移譲に伴いSHM PTEをRevoke済み | 非所有タスクから同じアドレスを`access()`する | TLBが無効化され、`TRAP_UNREGISTERED_PAGE`で遮断される | `UnregisteredPageTrap` |
 
 ---
 

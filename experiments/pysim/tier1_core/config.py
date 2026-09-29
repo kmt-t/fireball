@@ -7,6 +7,9 @@ JIT_CARD_BYTES: int = 1 << JIT_CARD_SHIFT
 # Both the native Interpreter and Hybrid JIT return to their Python/COOS
 # boundary after this many taken backward loop branches.
 FB_CONF_RUNTIME_YIELD_THRESHOLD: int = 16
+# Retry policy shared by recovery-capable components (system_config.md §3.3.8).
+FB_CONF_RETRY_BACKOFF_MS: int = 10
+FB_CONF_RETRY_MAX_ATTEMPTS: int = 3
 # Diagnostic counters are compiled into the native dispatcher only when enabled.
 # Rebuild the native interpreter extension after changing this configuration.
 FB_CONF_RUNTIME_PROFILE_STATS: bool = False
@@ -28,6 +31,7 @@ FB_CONF_MAX_EXPORTS: int = 64
 FB_CONF_MAX_GLOBALS: int = 32
 FB_CONF_MAX_TABLES: int = 16
 FB_CONF_MAX_MEMORIES: int = 4
+FB_CONF_MAX_WASM_PAGES: int = 16
 FB_CONF_MAX_ELEMENTS: int = 64
 FB_CONF_MAX_DATA_SEGMENTS: int = 64
 FB_CONF_MAX_BASIC_BLOCKS: int = 1024
@@ -35,6 +39,7 @@ FB_CONF_MAX_LOCALS: int = 256
 FB_CONF_MAX_VALUE_STACK: int = 64
 FB_CONF_DEBUG_MAX_BREAKPOINTS: int = 64
 FB_CONF_DEBUG_MAX_ASSERTIONS: int = 64
+FB_CONF_LOG_DICT_MAX_ENTRIES: int = 128
 
 JIT_CACHE_PAGE_BYTES: int = 4096
 JIT_CACHE_COMMON_CODE_BYTES: int = 2048

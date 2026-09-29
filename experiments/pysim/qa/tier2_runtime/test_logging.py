@@ -23,13 +23,15 @@ from ipc_router import (
 from system import (
     System,
 )
-from system_containers import MutableFlatMapStorage
+from system_containers import ReadOnlyFlatMapStorage
 from tier2_runtime.logger import (
     STANDARD_DIAGNOSTIC_EVENTS,
     ConsoleOutput,
     LogDictionary,
     Logger,
     LogLevel,
+    LogResult,
+    decode_log_records,
 )
 from tier3_executer.interpreter.interpreter import TRAP_LOG_EVENTS, TrapCode
 from tier3_platform.drivers.hal.stream import DedicatedLogSink, StreamTransport
@@ -37,18 +39,19 @@ from wasm_reader import parse
 
 
 def test_log_01_dictionary_rejects_pointer_specifiers():
-    d = LogDictionary()
-    d.register(0x01, "ok: %d %d")
-    for bad in ("bad: %s", "bad: %p", "bad: %c"):
+    LogDictionary(entries=((0x01, "ok: %d %d"),), include_diagnostic_events=False)
+    for event_id, bad in enumerate(("bad: %s", "bad: %p", "bad: %c", "bad: %08s"), 2):
         with expect_assertion():
-            d.register(0x02, bad)
+            LogDictionary(entries=((event_id, bad),), include_diagnostic_events=False)
+    for malformed in ("bad: %*d", "bad: %1$d", "bad: %f", "bad: %d %d %d %d %d"):
+        with expect_assertion():
+            LogDictionary(entries=((0x10, malformed),), include_diagnostic_events=False)
 
 
 def test_log_02_logger_ring_buffer_overwrites():
     t = StreamTransport()
     try:
-        d = LogDictionary()
-        d.register(0x01, "event #%d")
+        d = LogDictionary(entries=((0x01, "event #%d"),))
         logger = Logger(t, d, min_level=LogLevel.DEBUG, capacity=4)
         for i in range(6):
             logger.log_event(LogLevel.INFO, 0x01, i)
@@ -56,7 +59,7 @@ def test_log_02_logger_ring_buffer_overwrites():
         assert logger.ring.overwrite_count == 2
         flushed = logger.flush()
         assert flushed == 4
-        wire = t.drain_output().decode()
+        wire = "\n".join(decode_log_records(t.drain_output(), d))
         assert "event #2" in wire and "event #5" in wire
     finally:
         t.close()
@@ -64,21 +67,19 @@ def test_log_02_logger_ring_buffer_overwrites():
 
 def test_log_03_dictionary_storage_ownership_separation():
     """TEST-LOG-03: LogDictionary borrows entries storage without owning/duplicating it."""
-    storage = MutableFlatMapStorage[int, str](capacity=4)
-    assert storage.insert(0x01, "event #%d")
-    assert storage.insert(0x02, "value %d %d")
+    storage = ReadOnlyFlatMapStorage.create(((0x01, "event #%d"), (0x02, "value %d %d")))
     d = LogDictionary(storage=storage)
 
     # Ownership separation assertion
     assert d.storage is storage
-    assert d.payload.entries is storage
+    assert d.payload.entries is storage.entries
     assert d.view() is d.payload
-    assert d.entries is storage
+    assert d.entries is storage.entries
     assert d.format(0x01, (42, 0, 0, 0)) == "event #42"
     assert d.format(0x02, (10, 20, 0, 0)) == "value 10 20"
     transport = StreamTransport()
     try:
-        assert ConsoleOutput(transport).write(b"raw") == 3
+        assert ConsoleOutput(transport).write(memoryview(b"raw")) == 3
         assert transport.drain_output() == b"raw"
     finally:
         transport.close()
@@ -136,7 +137,7 @@ def test_log_04_coos_and_ipc_diagnostic_logging():
 
         # Flush logger to UART (in addition to idle hooks)
         sysv.logger.flush()
-        wire = logger_sink.drain_output().decode()
+        wire = "\n".join(decode_log_records(logger_sink.drain_output(), sysv.dictionary))
 
         # Verify all diagnostic strings were formatted and transmitted
         assert "COOS: duplicate task id rejected" in wire
@@ -153,11 +154,10 @@ def test_log_05_gotcha_03_interrupt_checked_only_at_batch_boundary():
     completes, never mid-batch, since a started transfer cannot be preempted."""
     t = StreamTransport()
     try:
-        d = LogDictionary()
-        d.register(0x01, "event #%d")
+        d = LogDictionary(entries=((0x01, "event #%d"),))
         logger = Logger(t, d, min_level=LogLevel.DEBUG, capacity=8)
         for i in range(4):
-            logger.log_event(LogLevel.INFO, 0x01, i)
+            assert logger.log_event(LogLevel.INFO, 0x01, i) == LogResult.SUCCESS
 
         call_count = 0
 
@@ -187,7 +187,8 @@ def test_log_12_interpreter_trap_diagnostic_logging():
     mod = parse(wat_to_wasm(wat))
     t = StreamTransport()
     try:
-        logger = Logger(t, LogDictionary(), min_level=LogLevel.DEBUG, capacity=8)
+        dictionary = LogDictionary()
+        logger = Logger(t, dictionary, min_level=LogLevel.DEBUG, capacity=8)
         interp = make_interpreter(mod, logger=logger)
         func_index = mod.export_func_index("div_s")
         call_state = interp.start(func_index, [10, 0])
@@ -198,7 +199,7 @@ def test_log_12_interpreter_trap_diagnostic_logging():
 
         flushed = logger.flush()
         assert flushed == 1
-        wire = t.drain_output().decode()
+        wire = "\n".join(decode_log_records(t.drain_output(), dictionary))
         assert "TRAP: integer divide by zero (pc=0x" in wire
     finally:
         t.close()

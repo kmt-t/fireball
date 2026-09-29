@@ -101,8 +101,7 @@ def main() -> None:
     parser.add_argument("--perf-ack-fifo")
     args = parser.parse_args()
     assert not args.collect_runtime_stats or NATIVE_RUNTIME_PROFILE_STATS_ENABLED, (
-        "runtime profile stats were compiled out; rebuild with "
-        "FB_CONF_RUNTIME_PROFILE_STATS=True"
+        "runtime profile stats were compiled out; rebuild with FB_CONF_RUNTIME_PROFILE_STATS=True"
     )
 
     repetitions = (
@@ -158,9 +157,7 @@ def main() -> None:
             collect_runtime_stats=args.collect_runtime_stats,
         )
         runtime_engine.register_module_blocks(module)
-        interpreter = JITInterpreter(
-            module, InterpreterBindings.empty(), runtime_engine
-        )
+        interpreter = JITInterpreter(module, InterpreterBindings.empty(), runtime_engine)
         warmup_result = interpreter.call(function_index, [100])
         assert int(warmup_result[0]) == 4_950
         runtime_engine.idle_hook(budget=10)
@@ -189,7 +186,10 @@ def main() -> None:
             trace_exits = runtime_engine.stat_trace_exits_to_interp
             assert jit_invocations > 0
         else:
-            assert runtime_engine.jit_runtime.cache.active.traces or runtime_engine.jit_runtime.cache.warm.traces
+            assert (
+                runtime_engine.jit_runtime.cache.active.traces
+                or runtime_engine.jit_runtime.cache.warm.traces
+            )
 
     assert observed_result == expected_result
     print(f"profile_path={args.path}")

@@ -27,22 +27,43 @@ class LogLevel(IntEnum):
     FATAL = 4
 
 
-@dataclass(frozen=True)
+@dataclass(slots=True)
 class LogEntry:
-    level: LogLevel
-    dict_offset: int
+    level: LogLevel = LogLevel.DEBUG
+    dict_offset: int = 0
     arg0: int = 0
     arg1: int = 0
     arg2: int = 0
     arg3: int = 0
-    timestamp_tick: int = 0
+
+    def store(
+        self,
+        level: LogLevel,
+        dict_offset: int,
+        arg0: int,
+        arg1: int,
+        arg2: int,
+        arg3: int,
+    ) -> None:
+        self.level = level
+        self.dict_offset = dict_offset
+        self.arg0 = arg0
+        self.arg1 = arg1
+        self.arg2 = arg2
+        self.arg3 = arg3
+
+
+class LogResult(IntEnum):
+    SUCCESS = 0
+    FILTERED = 1
+    OVERWRITTEN = 2
 
 
 from docs.components.tier1_core.concepts.flat_view_concept import FlatMapView
 
 
 class LogDictionary:
-    """Simulates ROM-resident static format string dictionary (DictionaryBasedIPC).
+    """Simulates a ROM-resident static format string dictionary.
     Storage ownership is separated: borrows entries storage and performs lookup
     via non-owning FlatMapView.
     """
@@ -55,14 +76,33 @@ class LogDictionary:
 
         self.payload: FlatMapView = FlatMapView(self.storage)
 
-    def format(self, offset: int, arg0: int, arg1: int, arg2: int, arg3: int) -> str:
+    def format(self, offset: int, args: tuple[int, int, int, int]) -> str:
+        """Host-side expansion only; Logger never calls this on the device path."""
         fmt = self.payload.find(offset)
         if fmt is None:
-            fmt = f"UNKNOWN_FORMAT_OFFSET_{offset}: %d %d %d %d"
-        try:
-            return fmt % (arg0, arg1, arg2, arg3)
-        except TypeError:
-            return fmt % (arg0, arg1, arg2, arg3)[: fmt.count("%")]
+            return f"<UNKNOWN_DICT_OFFSET_0x{offset:X}>"
+        argument_count = 0
+        index = 0
+        while index < len(fmt):
+            if fmt[index] != "%":
+                index += 1
+                continue
+            index += 1
+            if fmt[index] == "%":
+                index += 1
+                continue
+            while index < len(fmt) and fmt[index] in "-+0 #":
+                index += 1
+            while index < len(fmt) and fmt[index].isdigit():
+                index += 1
+            if index < len(fmt) and fmt[index] == ".":
+                index += 1
+                while index < len(fmt) and fmt[index].isdigit():
+                    index += 1
+            assert index < len(fmt) and fmt[index] in "diouxX"
+            argument_count += 1
+            index += 1
+        return fmt % args[:argument_count]
 
 
 class LogRingBuffer:
@@ -75,35 +115,48 @@ class LogRingBuffer:
         assert (capacity & (capacity - 1)) == 0 and capacity > 0, "Capacity must be power of 2"
         self.capacity = capacity
         self.mask = capacity - 1
-        self.buffer: list[LogEntry | None] = [None] * capacity
-        self.head = 0  # Write index
-        self.tail = 0  # Read index
+        self.buffer = [LogEntry() for _ in range(capacity)]
+        self.head = 0  # Read index
+        self.tail = 0  # Write index
         self.count = 0
         self.overwrite_count = 0
 
-    def push(self, entry: LogEntry) -> bool:
-        """Enqueues entry. If buffer is full, overwrites oldest entry (tail advanced)."""
-        overwritten = False
-        if self.count == self.capacity:
-            self.tail = (self.tail + 1) & self.mask
-            self.count -= 1
+    def push(
+        self,
+        level: LogLevel,
+        dict_offset: int,
+        arg0: int,
+        arg1: int,
+        arg2: int,
+        arg3: int,
+    ) -> LogResult:
+        """Stores scalars in preallocated record storage, replacing oldest on full."""
+        overwritten = self.count == self.capacity
+        self.buffer[self.tail].store(level, dict_offset, arg0, arg1, arg2, arg3)
+        self.tail = (self.tail + 1) & self.mask
+        if overwritten:
+            self.head = (self.head + 1) & self.mask
             self.overwrite_count += 1
-            overwritten = True
-
-        self.buffer[self.head] = entry
-        self.head = (self.head + 1) & self.mask
+            return LogResult.OVERWRITTEN
         self.count += 1
-        return overwritten
+        return LogResult.SUCCESS
 
     def pop(self) -> LogEntry | None:
         """Dequeues oldest entry."""
         if self.count == 0:
             return None
-        entry = self.buffer[self.tail]
-        self.buffer[self.tail] = None
-        self.tail = (self.tail + 1) & self.mask
+        entry = self.buffer[self.head]
+        self.head = (self.head + 1) & self.mask
         self.count -= 1
         return entry
+
+    def peek(self) -> LogEntry | None:
+        return None if self.count == 0 else self.buffer[self.head]
+
+    def discard_oldest(self) -> None:
+        assert self.count > 0
+        self.head = (self.head + 1) & self.mask
+        self.count -= 1
 
     def is_empty(self) -> bool:
         return self.count == 0
@@ -116,22 +169,14 @@ class MockHALTransport:
     """Simulates physical output transport (UART / DMA / ITM)."""
 
     def __init__(self):
-        self.output_log: list[str] = []
+        self.output_log: list[bytes] = []
         self.is_busy = False
         self.dma_active = False
 
-    def transmit(self, formatted_message: str) -> bool:
+    def transmit(self, raw_record: memoryview) -> bool:
         if self.is_busy:
             return False
-        self.output_log.append(formatted_message)
-        return True
-
-    def start_dma(self, formatted_messages: list[str]) -> bool:
-        if self.is_busy or self.dma_active:
-            return False
-        self.dma_active = True
-        self.output_log.extend(formatted_messages)
-        self.dma_active = False
+        self.output_log.append(bytes(raw_record))
         return True
 
 
@@ -149,7 +194,8 @@ class Logger:
         self.dictionary = dictionary
         self.min_level = min_level
         self.ring_buffer = LogRingBuffer(capacity=buffer_capacity)
-        self.tick_counter = 0
+        self.wire_buffer = bytearray(20)
+        self.wire_view = memoryview(self.wire_buffer)
 
     def set_min_level(self, level: LogLevel) -> None:
         self.min_level = level
@@ -162,33 +208,43 @@ class Logger:
         arg1: int = 0,
         arg2: int = 0,
         arg3: int = 0,
-    ) -> str:
+    ) -> LogResult:
         """Logs an event via dictionary offset and up to 4 integer arguments."""
-        self.tick_counter += 1
+        assert 0 <= dict_offset <= 0x00FF_FFFF
+        assert 0 <= arg0 <= 0xFFFF_FFFF
+        assert 0 <= arg1 <= 0xFFFF_FFFF
+        assert 0 <= arg2 <= 0xFFFF_FFFF
+        assert 0 <= arg3 <= 0xFFFF_FFFF
         if level < self.min_level:
-            return "FILTERED"
-        entry = LogEntry(
-            level=level,
-            dict_offset=dict_offset,
-            arg0=arg0,
-            arg1=arg1,
-            arg2=arg2,
-            arg3=arg3,
-            timestamp_tick=self.tick_counter,
-        )
-        overwritten = self.ring_buffer.push(entry)
-        return "OVERWRITTEN" if overwritten else "QUEUED"
+            return LogResult.FILTERED
+        return self.ring_buffer.push(level, dict_offset, arg0, arg1, arg2, arg3)
 
-    def handle_ipc_message(self, message_payload: dict[str, int]) -> dict[str, str]:
-        """Handles fireball://logging/system/0 IPC requests."""
-        level = LogLevel(message_payload.get("level", int(LogLevel.INFO)))
-        dict_offset = int(message_payload.get("dict_offset", 0))
-        arg0 = int(message_payload.get("arg0", 0))
-        arg1 = int(message_payload.get("arg1", 0))
-        arg2 = int(message_payload.get("arg2", 0))
-        arg3 = int(message_payload.get("arg3", 0))
-        status = self.log_event(level, dict_offset, arg0, arg1, arg2, arg3)
-        return {"status": "SUCCESS", "detail": status}
+    def _encode(self, entry: LogEntry) -> None:
+        wire = self.wire_buffer
+        wire[0] = int(entry.level)
+        wire[1] = entry.dict_offset & 0xFF
+        wire[2] = (entry.dict_offset >> 8) & 0xFF
+        wire[3] = (entry.dict_offset >> 16) & 0xFF
+        value = entry.arg0
+        wire[4] = value & 0xFF
+        wire[5] = (value >> 8) & 0xFF
+        wire[6] = (value >> 16) & 0xFF
+        wire[7] = (value >> 24) & 0xFF
+        value = entry.arg1
+        wire[8] = value & 0xFF
+        wire[9] = (value >> 8) & 0xFF
+        wire[10] = (value >> 16) & 0xFF
+        wire[11] = (value >> 24) & 0xFF
+        value = entry.arg2
+        wire[12] = value & 0xFF
+        wire[13] = (value >> 8) & 0xFF
+        wire[14] = (value >> 16) & 0xFF
+        wire[15] = (value >> 24) & 0xFF
+        value = entry.arg3
+        wire[16] = value & 0xFF
+        wire[17] = (value >> 8) & 0xFF
+        wire[18] = (value >> 16) & 0xFF
+        wire[19] = (value >> 24) & 0xFF
 
     def flush(
         self, batch_size: int = 32, interrupt_pending: Callable[[], bool] | None = None
@@ -201,28 +257,46 @@ class Logger:
         or transmitted (GOTCHA-LOG-03). If interrupt_pending() is true after a batch,
         remaining entries stay buffered and control returns to the scheduler.
         """
+        assert batch_size > 0
         total_flushed = 0
         while not self.ring_buffer.is_empty():
             if self.transport.is_busy or self.transport.dma_active:
                 break
-            batch: list[str] = []
-            while not self.ring_buffer.is_empty() and len(batch) < batch_size:
-                entry = self.ring_buffer.pop()
+            batch_count = 0
+            while not self.ring_buffer.is_empty() and batch_count < batch_size:
+                entry = self.ring_buffer.peek()
                 if entry is None:
                     break
-                msg = self.dictionary.format(
-                    entry.dict_offset, entry.arg0, entry.arg1, entry.arg2, entry.arg3
-                )
-                batch.append(f"[{entry.level.name}][tick:{entry.timestamp_tick}] {msg}")
-
-            if batch:
-                self.transport.start_dma(batch)
-                total_flushed += len(batch)
+                self._encode(entry)
+                if not self.transport.transmit(self.wire_view):
+                    break
+                self.ring_buffer.discard_oldest()
+                total_flushed += 1
+                batch_count += 1
 
             if interrupt_pending and interrupt_pending():
                 break
 
         return total_flushed
+
+
+def decode_transport(transport: MockHALTransport, dictionary: LogDictionary) -> tuple[str, ...]:
+    """Host-side pretty printer for fixed-width records captured by the mock transport."""
+    messages: list[str] = []
+    for record_bytes in transport.output_log:
+        assert len(record_bytes) == 20
+        record = memoryview(record_bytes)
+        level = LogLevel(record[0])
+        offset = record[1] | (record[2] << 8) | (record[3] << 16)
+        args = tuple(
+            record[index]
+            | (record[index + 1] << 8)
+            | (record[index + 2] << 16)
+            | (record[index + 3] << 24)
+            for index in range(4, 20, 4)
+        )
+        messages.append(f"[{level.name}] {dictionary.format(offset, args)}")
+    return tuple(messages)
 
 
 # ==============================================================================
@@ -238,7 +312,7 @@ def test_logger_dictionary_formatting() -> None:
             (0x03, "IPC channel '%d' transfer error code: 0x%08X"),
         ]
     )
-    msg = dictionary.format(0x01, 42, 23552, 0, 0)
+    msg = dictionary.format(0x01, (42, 23552, 0, 0))
     assert msg == "System booted in 42 ms (RAM free: 23552 bytes)"
 
 
@@ -251,17 +325,16 @@ def test_logger_buffering_and_idle_flush() -> None:
     )
     transport = MockHALTransport()
     logger = Logger(transport, dictionary, min_level=LogLevel.INFO, buffer_capacity=4)
-    assert logger.log_event(LogLevel.INFO, 0x10, 1, 100) == "QUEUED"
-    assert logger.log_event(LogLevel.WARN, 0x20, 0x80000000, 0x1234) == "QUEUED"
+    assert logger.log_event(LogLevel.INFO, 0x10, 1, 100) == LogResult.SUCCESS
+    assert logger.log_event(LogLevel.WARN, 0x20, 0x80000000, 0x1234) == LogResult.SUCCESS
     assert len(transport.output_log) == 0
     flushed = logger.flush()
     assert flushed == 2
     assert len(transport.output_log) == 2
-    assert "[INFO][tick:1] Task 1 yield count: 100" in transport.output_log[0]
-    assert (
-        "[WARN][tick:2] vMMIO read access to addr: 0x80000000 (val: 0x00001234)"
-        in transport.output_log[1]
-    )
+    output = decode_transport(transport, dictionary)
+    assert output[0] == "[INFO] Task 1 yield count: 100"
+    assert "[WARN] vMMIO read access to addr: 0x80000000 (val: 0x00001234)" in output[1]
+    assert all(len(record) == 20 for record in transport.output_log)
 
 
 def test_logger_overwrite_on_buffer_full() -> None:
@@ -273,49 +346,31 @@ def test_logger_overwrite_on_buffer_full() -> None:
     transport = MockHALTransport()
     logger = Logger(transport, dictionary, min_level=LogLevel.DEBUG, buffer_capacity=4)
     for i in range(1, 5):
-        assert logger.log_event(LogLevel.INFO, 0x01, i) == "QUEUED"
+        assert logger.log_event(LogLevel.INFO, 0x01, i) == LogResult.SUCCESS
     assert logger.ring_buffer.is_full()
-    assert logger.log_event(LogLevel.INFO, 0x01, 5) == "OVERWRITTEN"
-    assert logger.log_event(LogLevel.INFO, 0x01, 6) == "OVERWRITTEN"
+    assert logger.log_event(LogLevel.INFO, 0x01, 5) == LogResult.OVERWRITTEN
+    assert logger.log_event(LogLevel.INFO, 0x01, 6) == LogResult.OVERWRITTEN
     assert logger.ring_buffer.overwrite_count == 2
     flushed = logger.flush()
     assert flushed == 4
-    assert "Event #3" in transport.output_log[0]
-    assert "Event #4" in transport.output_log[1]
-    assert "Event #5" in transport.output_log[2]
-    assert "Event #6" in transport.output_log[3]
+    output = decode_transport(transport, dictionary)
+    assert "Event #3" in output[0]
+    assert "Event #4" in output[1]
+    assert "Event #5" in output[2]
+    assert "Event #6" in output[3]
 
 
 def test_logger_level_filtering() -> None:
     dictionary = LogDictionary([(0x01, "Log message")])
     transport = MockHALTransport()
     logger = Logger(transport, dictionary, min_level=LogLevel.WARN, buffer_capacity=8)
-    assert logger.log_event(LogLevel.DEBUG, 0x01) == "FILTERED"
-    assert logger.log_event(LogLevel.INFO, 0x01) == "FILTERED"
-    assert logger.log_event(LogLevel.WARN, 0x01) == "QUEUED"
-    assert logger.log_event(LogLevel.ERROR, 0x01) == "QUEUED"
+    assert logger.log_event(LogLevel.DEBUG, 0x01) == LogResult.FILTERED
+    assert logger.log_event(LogLevel.INFO, 0x01) == LogResult.FILTERED
+    assert logger.log_event(LogLevel.WARN, 0x01) == LogResult.SUCCESS
+    assert logger.log_event(LogLevel.ERROR, 0x01) == LogResult.SUCCESS
     flushed = logger.flush()
     assert flushed == 2
     assert len(transport.output_log) == 2
-
-
-def test_logger_ipc_message_handling() -> None:
-    dictionary = LogDictionary([(0x50, "Guest VM %d trap occurred (cause: %d)")])
-    transport = MockHALTransport()
-    logger = Logger(transport, dictionary, min_level=LogLevel.INFO, buffer_capacity=8)
-    resp = logger.handle_ipc_message(
-        {
-            "level": int(LogLevel.ERROR),
-            "dict_offset": 0x50,
-            "arg0": 1,
-            "arg1": 3,
-        }
-    )
-    assert resp["status"] == "SUCCESS"
-    assert resp["detail"] == "QUEUED"
-    logger.flush()
-    assert len(transport.output_log) == 1
-    assert "Guest VM 1 trap occurred (cause: 3)" in transport.output_log[0]
 
 
 def test_logger_flush_interruption() -> None:
@@ -353,7 +408,7 @@ def test_logger_storage_ownership_separation() -> None:
     logger = Logger(transport, dictionary)
     logger.log_event(LogLevel.INFO, 0x10, 100)
     logger.flush()
-    assert "External format: 100" in transport.output_log[0]
+    assert "External format: 100" in decode_transport(transport, dictionary)[0]
 
 
 def test_logger_cannot_carry_a_runtime_string_but_console_can() -> None:
@@ -369,7 +424,6 @@ if __name__ == "__main__":
     test_logger_buffering_and_idle_flush()
     test_logger_overwrite_on_buffer_full()
     test_logger_level_filtering()
-    test_logger_ipc_message_handling()
     test_logger_flush_interruption()
     test_logger_storage_ownership_separation()
     test_logger_cannot_carry_a_runtime_string_but_console_can()

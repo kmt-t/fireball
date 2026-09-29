@@ -6,7 +6,7 @@
 関連正本: [`runtime_vmmio.md`](docs/components/tier2_runtime/runtime_vmmio.md)（vMMIOアドレス空間と対象アドレスの保護）、[`system_config.md`](docs/components/tier1_core/system_config.md)（アドレス定数）
 参考実装: [`syscall_concept.py`](docs/components/tier2_runtime/concepts/syscall_concept.py)
 
-`fireball_call(id, arg0..arg5) -> u32` の host-call ID 空間（System/vMMIO Generic/IPC/WASI）と、WASI `errno_t` 準拠の戻り値規約を検証する。vIRQ/vDMAは専用host callとして別契約で検証する。host call の搬送に SYSCTL／VDMA の vMMIO レジスタを使用しないことも検証する。
+`fireball_call(id, arg0..arg5) -> u32` の host-call ID 空間（System/vMMIO Generic/IPC/WASI）と、戻り値は常にWASI `errno_t`、データは出力ポインタまたはデータ領域で渡すABI規約を検証する。vIRQ/vDMAは専用host callとして別契約で検証する。host call の搬送に SYSCTL／VDMA の vMMIO レジスタを使用しないことも検証する。
 
 ## 2. テストケース一覧
 
@@ -14,7 +14,7 @@
 
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| TEST-SYS-01 | `SYS_YIELD`(0x01) | - | `fireball_call(0x01, ...)` | `0`を返す（`{CooperativeMultitasking}`要求の協調的yield） | runtime_syscall.md (Lifecycle) |
+| TEST-SYS-01 | `SYS_YIELD`(0x01) | ゲスト関数が後続処理を持ち、別タスクがREADYである | ゲストから `fireball_call(0x01, ...)` を呼ぶ | `0`を返し、現在のRuntime境界でゲストをREADYへ戻して別タスクを実行し、再開後に後続処理を完了する | `runtime_syscall.md` §5.3.2, `test_syscall_04_guest_yield_hands_off_to_ready_task` |
 | TEST-SYS-02 | `SYS_HALT`(0x02) | - | `fireball_call(0x02, ...)` | システム停止状態になる（戻り値は規定なし） | runtime_syscall.md (Lifecycle) |
 | TEST-SYS-03 | `SYS_RESET`(0x03) | - | `fireball_call(0x03, ...)` | `0`を返し、ゲストリセット相当の状態変化が起こる | runtime_syscall.md (Lifecycle) |
 
@@ -22,8 +22,8 @@
 
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| TEST-SYS-10 | `MMIO_READ32`成功 | 許可された物理アドレスに値が存在 | `fireball_call(0x10, addr, ...)` | `value`(u32)を返す | runtime_syscall.md (MMIO), `test_syscall_03_mmio_read_write` |
-| TEST-SYS-11 | `MMIO_READ32`境界外 | `addr`が`FB_CONF_VMMIO_ALLOWED_ADDRS`外 | 同上 | `ERR_OUT_OF_BOUNDS`相当のエラーコードを返す | `{META_RestrictedPhysicalAccess}`, `test_syscall_11_mmio_read32_out_of_bounds` |
+| TEST-SYS-10 | `MMIO_READ32`成功とerrno値との衝突回避 | 許可アドレスに値`WasiErrno.FAULT`が存在し、有効な`value_out_ptr`がある | `fireball_call(0x10, addr, value_out_ptr, ...)` | raw returnは`SUCCESS`で、`value_out_ptr`から値`21`を読める | runtime_syscall.md (MMIO), `test_syscall_03_mmio_read_write` |
+| TEST-SYS-11 | `MMIO_READ32`境界外または出力範囲外 | MMIOアドレスまたは4バイトの`value_out_ptr`が範囲外 | 同上 | `FAULT`相当を返し、出力範囲外には書き込まない | `{META_RestrictedPhysicalAccess}`, `test_syscall_11_mmio_read32_out_of_bounds`, `test_syscall_03_mmio_read_write` |
 | TEST-SYS-12 | `MMIO_WRITE32`成功/権限拒否 | 書き込み許可/不許可の2ケース | `fireball_call(0x11, addr, value,...)` | 許可時`0`、不許可時`ERR_ACCESS_DENIED`相当 | runtime_syscall.md (MMIO), `test_syscall_03_mmio_read_write`(成功), `test_syscall_12_mmio_write32_permission_denied`(拒否) |
 | TEST-SYS-13 | `MMIO_READ8`/`MMIO_WRITE8` | 同上をバイト単位で | 同様の手順 | 同様の結果（幅8bit） | runtime_syscall.md (MMIO), `test_syscall_13_mmio_read8_write8` |
 | TEST-SYS-14 | `MMIO_BULK_READ`/`WRITE`のサイズ不正 | `byte_count`が不正（範囲外・0等） | 呼び出す | `ERR_INVALID_SIZE`相当を返す | runtime_syscall.md (MMIO), `test_syscall_14_mmio_bulk_read_write_invalid_size` |
@@ -51,12 +51,18 @@
 
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| TEST-SYS-40 | `IPC_LOOKUP`成功 | URIが登録済み | `fireball_call(0x42, uri_offset, uri_len,...)` | `handle_id`(u32)を返す | `IPC_HandleBased` |
-| TEST-SYS-41 | `IPC_LOOKUP`未登録URI | URI未登録 | 同上 | errno相当を返す | runtime_syscall.md (IPC) |
+| TEST-SYS-40 | `IPC_LOOKUP`成功 | URIが登録済み、有効な4バイト`handle_out_ptr`がある | `fireball_call(0x42, uri_offset, uri_len, handle_out_ptr,...)` | raw returnは`SUCCESS`で、出力領域から正の`handle_id`を読める | `IPC_HandleBased` |
+| TEST-SYS-41 | `IPC_LOOKUP`未登録URI | URI未登録 | 同上 | `NOENT`を返し、出力値やハンドル表を変更しない | runtime_syscall.md (IPC) |
 | TEST-SYS-42 | `IPC_SEND`成功 | 有効なhandle_id | `fireball_call(0x40, handle_id, msg_offset, msg_len,...)` | 受信側が既に待機していれば即座に、まだ到達していなければ呼び出し元タスクのコルーチンが協調スケジューラ上でブロックし、受信側到達後に`0`を返す（キューは存在しないため、待機はブロックのみで失敗経路はない） | ipc_router.md |
-| TEST-SYS-43 | `IPC_SEND`宛先未登録／RBAC拒否／サイズ超過 | 未登録URIから得たhandle_id、または許可されないロール、または9個以上のkv_pair | 同上 | errno相当（`ERR_NOT_FOUND`/`ERR_PERMISSION_DENIED`/`ERR_MSG_TOO_LARGE`のいずれかに対応）を即座に返す。所有権は最初から送信側のまま動いていない | ipc_router.md  |
-| TEST-SYS-44 | `IPC_RECV`成功 | 送信側が既に到達している、または有効なhandle_id | `fireball_call(0x41, handle_id, buf_offset, buf_len,...)` | 送信側が既に待機していれば即座に、まだ到達していなければブロックして待ち、到達後に`recv_len`(u32)を返し、`buf_offset`にメッセージがコピーされる | runtime_syscall.md (IPC) |
+| TEST-SYS-43 | `IPC_SEND`宛先未登録／RBAC拒否／サイズ超過 | 未登録URIから得たhandle_id、許可されないロール、9個以上のkv_pair、または29バイト以上のゲストペイロード | 同上 | 未登録・権限拒否・KV上限超過を対応するerrnoへ変換する。29バイト以上は共有メッセージ構築前に `EMSGSIZE` を返し、所有権移譲やチャネル状態変更を起こさない | ipc_router.md, runtime_syscall.md (IPC) |
+| TEST-SYS-44 | `IPC_RECV`成功 | 呼び出し元ロールに受信許可された送信側が到達し、出力範囲が重ならない | `fireball_call(0x41, handle_id, buf_offset, buf_len, recv_len_out_ptr,...)` (`handle_id`は未使用) | raw returnは`SUCCESS`で、データが`buf_offset`に、`recv_len`が出力ポインタに書かれる | runtime_syscall.md (IPC) |
 | TEST-SYS-45 | `IPC_RECV`相手未到達 | 送信側がまだ到達していない | 同上 | `fireball_call`の呼び出し元タスクのコルーチンが協調スケジューラ上でブロックし、送信側が到達するまで再開しない（EAGAINのような即時errnoは返さない。ブロックがCSPランデブーの本来の意味論であり、実装依存の妥協ではない） | 「バッファが空の場合はコルーチンがサスペンドされる」, [`system.py`](experiments/pysim/system.py) `_ipc_recv` |
+| TEST-SYS-46 | `IPC_RECV`出力範囲不正 | データ出力または4バイト受信長出力が現在のゲストメモリ範囲を超える | 相手を待機させずに`fireball_call(0x41, handle_id, buf_offset, buf_len, recv_len_out_ptr,...)` | 待受け開始前に`EFAULT`を返し、タスクをブロックせず送信メッセージも消費しない | runtime_syscall.md (IPC), GOTCHA-SYS-02 |
+| TEST-SYS-47 | `IPC_LOOKUP` RBAC拒否 | 登録URIへの送信が呼び出し元ロールで許可されない | `fireball_call(0x42, uri_offset, uri_len, handle_out_ptr,...)` | `PERM`を返す。URI未登録の`NOENT`へ誤変換しない | runtime_syscall.md (IPC), ipc_router.md |
+| TEST-SYS-48 | `IPC_RECV` RBAC拒否 | 受信可能な送信元エッジを持たないロール | 有効なデータ出力領域、受信長出力領域を指定して `fireball_call(0x41,...)` | ブロックせず `PERM` を返し、`NOENT` へ誤変換しない | runtime_syscall.md (IPC), ipc_router.md |
+| TEST-SYS-49 | `IPC_SEND`応答コード出力範囲の事前検査 | `response_code_ptr` の4バイト範囲がゲストメモリ外 | 相手を待たせず `fireball_call(0x40,...)` | CSP送信を開始する前に `EFAULT` を返し、相手側の処理・メッセージ所有権に影響しない | runtime_syscall.md (IPC), GOTCHA-SYS-02 |
+| TEST-SYS-50 | `IPC_RECV`出力領域重複 | データ領域と4バイト受信長領域が重なる | 相手を待たせず`fireball_call(0x41, handle_id, buf_offset, buf_len, recv_len_out_ptr,...)` | 待受け前に`INVAL`を返し、送信メッセージを消費しない | runtime_syscall.md (IPC) |
+| TEST-SYS-51 | `IPC_RECV`バッファ容量不足 | データ出力容量が最大ペイロード28バイト未満 | 相手を待たせず`fireball_call(0x41, handle_id, buf_offset, buf_len, recv_len_out_ptr,...)` | 待受け前に`MSGSIZE`を返し、受信メッセージを消費しない | runtime_syscall.md (IPC) |
 
 ### WASI (`0x80`-`0xBF`)
 
@@ -76,6 +82,8 @@
 | TEST-SYS-90 | 未定義ID | 予約済み範囲・未割当ID | `fireball_call(未定義ID,...)` | 定義されたエラーコード（WASI `errno_t`準拠、実装は`ENOSYS`相当）を返す | `syscall_concept.py` `test_reserved_irq_and_unknown_id_return_nosys` |
 | TEST-SYS-91 | 戻り値は常にWASI `errno_t`準拠 | 任意の失敗ケース | 各失敗パスの戻り値を確認 | プロジェクト独自の非標準エラーコードを使わない | 「WASIの`errno_t`に準拠」 |
 | TEST-SYS-92 | `fb_offset_t`のゲスト境界チェック | offset引数がゲストメモリ範囲外 | 該当syscallを呼ぶ | 即座に境界外エラーを返す（加算オーバーフローを起こさない減算形式で判定） | `syscall_concept.py` `test_guest_range_validation_precedes_access` |
+| TEST-SYS-93 | raw returnにデータ値を混在させない | MMIO/IPC成功データがWASI errnoの有効値と一致する | `fireball_call`を呼び出し、戻り値と出力領域を確認する | raw returnは`SUCCESS`、データ値は指定出力領域から取得する | runtime_syscall.md |
+| TEST-SYS-94 | MMIOアクセス幅がSHMのマッピング範囲を越えない | `mapping_size=4`のSHMページと、開始アドレスが範囲内の32bit操作 | 先頭の32bit操作と1バイト進めた32bit書き込みを行う | 先頭は成功し、後者は`FAULT`となりSHM backingを変更しない | `test_syscall.py` `test_syscall_16_mmio_access_width_stays_inside_shm_mapping` |
 
 ### 実装の勘所・不変条件（Gotchas & Implementation Invariants）
 

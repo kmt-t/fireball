@@ -16,7 +16,7 @@ from flat_view_concept import FlatMapView
 
 
 def linear_scan(keys: list[int], values: list[int], key: int):
-    for k, v in zip(keys, values, strict=False):
+    for k, v in zip(keys, values, strict=True):
         if k == key:
             return v
     return None
@@ -39,7 +39,7 @@ def main() -> None:
     for n in sizes:
         keys = list(range(n))
         values = [k * 2 for k in keys]
-        entries = list(zip(keys, values, strict=False))
+        entries = list(zip(keys, values, strict=True))
         view = FlatMapView(entries)
         probe = keys[n // 2]  # a worst-case-depth-representative middle key
         t_flat = time_lookup(lambda: view.find(probe), n_calls)

@@ -5,15 +5,14 @@
      test: docs/qa/tier2_runtime/runtime_syscall_test_spec.md
 -->
 
-## 1. 目的
+
+## 1. コンセプト
+
+### 1.1 目的
 <!-- traceability: {NativeAPI_Export} -->
 本ドキュメントは、WebAssemblyゲスト環境からホストの提供する機能を呼び出すための汎用システムコール `fireball_call` のホスト側インターフェース仕様を定義する。WASI呼び出しをこのABIへ接続するゲスト側アダプタは、Tier 3 の `libfireball` が担う。
 
-## 2. アーキテクチャ分類
-<!-- traceability: {META_3TierSeparation} -->
-本コンポーネントは **Tier 2 (分解されたサブコンポーネント: Decomposed Subcomponent)** に属する。`fireball_call` はゲスト（WASM）からのみ呼び出される。これはゲストをホストする vSoC ランタイムの機能である。Tier 1 のコアコンポーネント（COOS、IPC ルータ等）が依存する汎用プリミティブではない。
-
-## 3. 背景
+### 1.2 背景
 <!-- traceability: {UnifiedAccessModel} -->
 `fireball_call` は、WASM の import からホストディスパッチへ直結する**ホストコール境界**である。ホストは `id` と6個の引数を直接受け取り、登録済みハンドラを同期実行する。ホストコールの転送に vMMIO の SYSCTL レジスタや VDMA レジスタは使用しない。ゲスト専用RAM（Stage 1, Bit 31 == 0）は `FastAddressCheck` により保護し、MMIO操作を要求するIDだけが対象アドレスの vMMIO ゲートを明示的に利用する。
 
@@ -22,11 +21,74 @@
 アクセスパスB: guest import fireball_call(id, args) → host-call dispatch → handler
 ```
 
-インタープリタと JIT は、`fireball:host/trap` の import を host call として捕捉し、`fireball_call` のハンドラを直接呼び出す。戻り値は host call の結果として WASM の呼び出し元へ返す。SYSCTL の syscall doorbell、`REG_SYSCALL_*`、および vMMIO syscall vector table は定義しない。
+インタープリタと JIT は、`fireball:host/trap` の import を host call として捕捉し、`fireball_call` のハンドラを直接呼び出す。戻り値は errno 専用であり、データ値を返す操作はゲストメモリの出力ポインタへ書き込む。データ値と errno の数値が一致しても結果を区別できる。SYSCTL の syscall doorbell、`REG_SYSCALL_*`、および vMMIO syscall vector table は定義しない。
 
 vMMIOアドレス空間（Stage 2/3）に対しては、どちらのパスも最終的に統一された vMMIO ページマッピング機構（PTE / TLB）を通る。アクセス権限のない領域（他タスク所有の共有メモリや未割当領域）は仮想アドレス空間から物理的に **unmap（マッピング解除）** されており、PTE 不在として未登録ページトラップ（`TRAP_UNREGISTERED_PAGE`）により即座に遮断される。セキュリティ境界は vMMIO のマッピング存在性により 1 箇所に統一される（ゲストRAMのFastAddressCheckとは独立した別ゲート）。
 
-## 4. `fireball_call` WIT定義
+## 2. アーキテクチャ分類
+<!-- traceability: {META_3TierSeparation} -->
+本コンポーネントは **Tier 2 (分解されたサブコンポーネント: Decomposed Subcomponent)** に属する。`fireball_call` はゲスト（WASM）からのみ呼び出される。これはゲストをホストする vSoC ランタイムの機能である。Tier 1 のコアコンポーネント（COOS、IPC ルータ等）が依存する汎用プリミティブではない。
+
+
+## 3. 静的モデル
+
+ホストコールは固定の`fireball_call(id, arg0, ..., arg5)`フレームで構成する。呼出しIDと6個の32bit引数の配置は第5節のWIT定義・呼出し規約を正本とする。
+
+
+## 4. 動的モデル
+
+### 4.1 WASIホスト側実装
+
+#### 4.1.1 役割
+<!-- traceability: {Challenge_WasiFdWriteLoop} {WASI_Async_Bridge} -->
+`fireball_call` を host call として捕捉し、`id` に基づいて適切なハンドラにディスパッチする。WASI関連の呼び出しに対しては、対応するサービスや下位レイヤーのハードウェアHAL（Zephyr/SoC SDKなど）の操作を実行する。
+
+| 機構名 | 課題と背景 | 解決方針・設計構造 | 関連キーワード |
+| :--- | :--- | :--- | :--- |
+| **Scatter/Gather 分割処理** | WASI `fd_write` は `ciovec` 配列による一括書き込みを要求するが、ホスト側でベクタ解析ループを抱えるとホスト実装が肥大化する | **`libfireball` 側ループ設計**: ゲスト側ライブラリがベクタを反復し、1 ベクタごとに `fireball_call` を発行する。ホスト側はステートレスな単一ブロックディスパッチに専念する | |
+| **同期WASI・非同期IPC ブリッジ** | ゲスト側の同期 WASI 呼び出しと Fireball の非同期 CSP IPC の実行モデル不一致 | **コルーチン Yield 連動**: ラッパー内の `wait_for_ipc_response` が内部で `co_yield()` を発行し、VSoC/COOS が I/O 完了までタスクを安全にサスペンドする | |
+
+### 4.2 ホストからゲストへの非同期通知メカニズム
+<!-- traceability: {Asynchronous_Notification} -->
+
+ホスト側で非同期に発生したイベント（例: ハードウェア割り込みの完了、タイマーイベント、非同期I/Oの完了など）をゲストに通知するために、同期ホストコールとは独立したメカニズムを定義する。vIRQの登録・解除は `fireball:host/virq` の専用host callで行い、イベント本体の通知・配送はこの非同期経路で行う。
+
+#### 4.2.1 仮想割り込み
+<!-- traceability: {Asynchronous_Notification} -->
+ホストは、COOSの固定長 `interrupt-event` を経由して**仮想割り込み**を通知する。COOSへ制御が戻る境界でvSoCがイベントを受け取り、登録済みのvIRQ階層へ配送する。これは `fireball:host/virq` の同期的な戻り値やWASI `pollable` では表現しない。
+
+##### 4.2.1.1 vIRQ原因源識別子
+<!-- traceability: {Asynchronous_Notification} -->
+vIRQの `vector_id` はホスト設定の原因源表で固定する。WASIのpollable IDやゲストが自由に割り当てる通知IDとしては扱わない。具体的なノード階層と原因源表は [`runtime_vmmio.md`](docs/components/tier2_runtime/runtime_vmmio.md) が定義する。
+
+| 原因源 | `vector_id` | 説明 | 主な用途 |
+| :--- | :--- | :--- | :--- |
+| デバイス `n` | `0x0100 + n` | デバイス原因を集約する | デバイスディスパッチャ |
+| SYSTEM | `0x1000` | COOS・システム制御由来 | SYSTEM分類 |
+| RUNTIME | `0x2000` | vSoC・実行制御由来 | RUNTIME分類 |
+| FAULT | `0x3000` | vMMIO違反などのフォールト | FAULT分類 |
+
+##### 4.2.1.2 仮想割り込みペイロード
+<!-- traceability: {Asynchronous_Notification} -->
+仮想割り込みの詳細情報は、COOSが保持する固定5ワードの `interrupt-event` としてvSoCへ引き渡す。`vector_id`、`source_id`、`cause_code`、`payload0`、`payload1`の順序を維持し、COOSへ制御が戻る協調境界でvSoCがこのレコードをvIRQ階層へ渡す。イベント本体をvMMIOレジスタ、共有メモリ、WASI `pollable`へ別経路で複製せず、ISRやCOOSからゲスト関数を直接呼び出さない。
+
+### 4.3 トラップ状態プロトコル
+<!-- traceability: {Trap_Interface} -->
+
+`fireball_call` は、WASM import をベースにした同期 host-call インターフェースである。ゲストWASM実行環境で import 呼び出し（`call`）が行われると、実行エンジン（Interpreter/JIT）がホスト側の対応する C++ ハンドラへ制御を同期的に移譲する。基盤CPUの `ecall` や `svc` は実装詳細であり、vMMIO レジスタ経路を意味しない。
+
+###### トラップ実行の制御フロー
+トラップ命令ベースの同期通信インターフェース（`{Trap_Interface}`）における、具体的な実行制御フローは以下の通りである。
+
+1. **ゲスト実行**: ゲストが `fireball_call(id, a0, ...)` を呼び出す。
+2. **ホストコール検知**: 実行エンジンが `fireball_call` import を解決する。
+3. **引数受け渡し**: 引数 `id` および `a0`〜`a5` を固定 host-call シグネチャでホストへ渡す。
+4. **ホストディスパッチ**: ホスト側ハンドラが同期実行される。この間、ゲストタスクのPC（Program Counter）は import 呼び出し位置で停止する。
+5. **完了と復帰**: ホストコールの戻り値を WASM の結果値へ変換し、実行エンジンが次の命令からゲストを再開する。
+
+## 5. インターフェース定義
+
+### 5.1 `fireball_call` WIT定義
 <!-- traceability: {WIT_Interface_Spec} -->
 `fireball_call`のWIT (WebAssembly Interface Type) 定義は以下の通りである。詳細は [`interface_wit.md`](docs/components/tier3_platform/interface_wit.md) を参照のこと。
 WITシグネチャの正本は [`fireball_hostcall_contract.wit`](docs/components/tier3_platform/wit/fireball_hostcall_contract.wit) である。
@@ -63,18 +125,18 @@ world fireball-hostcall {
 }
 ```
 
-##### ホストコール高速パス
+###### ホストコール高速パス
 <!-- traceability: {Trap_Interface} -->
 `fireball_call` は、実行環境の JIT/Interpreter が提供する import 呼び出しをインターセプトし、引数をホスト側の固定シグネチャへ直接渡す高速パスを提供する。vMMIO レジスタへの引数複写や SYSCTL doorbell の操作は行わない。
 
-## 5. `fireball_call` 呼び出し規約
+### 5.2 `fireball_call` 呼び出し規約
 
-### 5.1. 引数のパッキング
+#### 5.2.1 引数のパッキング
 <!-- traceability: {Type_Vocabulary} -->
 
 `fireball_call` は、後述の「型のエイリアス定義」で定義された型エイリアス（`fb_id_t`, `fb_val_t`, `fb_offset_t`）および規定の語彙セットに従って引数をパッキングする。物理的にはシステムコールID（`id`）と、6つの汎用引数（`arg0`〜`arg5`）の合計7つの `u32` 表現で構成され、インターフェースの型安全性を担保する。WASI関数がこれらの引数よりも多くのパラメータを持つ場合、ゲストメモリの物理ベースアドレスからの相対オフセット（`fb_offset_t`）を渡す。絶対アドレスではなく相対オフセットに制限することで、ゲスト境界チェックを瞬時に行う。
 
-##### 型のエイリアス定義 (Type Vocabulary) `{Type_Vocabulary}`
+###### 型のエイリアス定義 (Type Vocabulary) `{Type_Vocabulary}`
 本インターフェースで受け渡される引数はすべて物理的には `u32` であるが、その意味論的な解釈を定義するため、以下の型語彙（エイリアス）を使用する。
 * **`fb_id_t`**: システムコールIDまたはリソースIDを表す `u32`。
 * **`fb_val_t`**: 即値のレジスタ値または即値パラメータを表す `u32`。
@@ -90,7 +152,7 @@ world fireball-hostcall {
 | `arg4` | `fb_offset_t \| fb_val_t` | 汎用引数4、またはゲストメモリ内構造体の相対オフセット |
 | `arg5` | `fb_offset_t \| fb_val_t` | 汎用引数5、またはゲストメモリ内構造体の相対オフセット |
 
-#### 5.1.1. ゲストメモリ内構造体のレイアウト規則
+##### 5.2.1.1 ゲストメモリ内構造体のレイアウト規則
 `arg0`〜`arg5` にゲストメモリ上のポインタ（`iovs_ptr` 等）を渡す場合、データ構造は以下の制約に従って配置されなければならない。
 
 * **アライメント**: すべての構造体およびそのメンバは **4バイトアライメント** に配置されなければならない。
@@ -99,25 +161,25 @@ world fireball-hostcall {
   * `buf`: データの開始アドレスを示すポインタ（`uint32_t` / 4バイト）
   * `buf_len`: データのバイト長（`uint32_t` / 4バイト）
 
-**境界検査先行と整数オーバーフロー防止 (`GOTCHA-SYS-02`)**:
+**境界検査先行と整数オーバーフロー防止 (`GOTCHA-SYS-02`)**: {GOTCHA-SYS-02} <!-- definition: {GOTCHA-SYS-02} -->
 ゲスト空間のアドレス `fb_offset_t` は、物理アドレスへの解決前に必ず境界を検査する。`offset + size` は32ビットを超えると小さな値に折り返す。この整数オーバーフローを利用した境界検査の回避を防ぐ。
 
 境界検査には、`offset > guest_memory_size or size > guest_memory_size - offset` の減算形式を使う。この式を先に評価する。違反時はメモリアクセス前に WASI `errno_t` の `EFAULT` で拒絶する。エラー値の正本は [`wasi_preview1_abi.md`](docs/specs/wasi_preview1_abi.md) とする。
 
-**WASI iovec 散在ギャザーの全要素事前検証 (`GOTCHA-SYS-03`)**:
+**WASI iovec 散在ギャザーの全要素事前検証 (`GOTCHA-SYS-03`)**: {GOTCHA-SYS-03} <!-- definition: {GOTCHA-SYS-03} -->
 散在ギャザー（iovec 配列）の各バッファ要素（`buf + len`）は、実際の出力ストリームへの書き込みを開始する前に全数事前検証される。途中の要素に境界外アドレスが含まれている場合、先行する正常要素であっても 1 バイトも出力ストリームへ書き込まず即座に `EFAULT` を返却する。これにより、異常終了時に中途半端なデータが出力先に漏洩・残存することを防止する。
 
-### 5.2. 戻り値
-<!-- traceability: {Syscall_Return_Value} {Errorcode_To_Strategy} {GOTCHA-SYS-01} -->
-`fireball_call` は `u32` 型の値を返す。成功時は `0` を返し、失敗時は WASI `errno_t` に準拠した非0のエラーコードを返す。エラーコードの定義は [`wasi_preview1_abi.md`](docs/specs/wasi_preview1_abi.md) を参照する。ゲスト側の `libfireball` は必要に応じて値を WASI の戻り値へ変換する。
+#### 5.2.2 戻り値
+<!-- traceability: {Syscall_Return_Value} {Errorcode_To_Strategy} -->
+`fireball_call` は常に `u32` 型の WASI `errno_t` を返す。成功時は `0`、失敗時は非0のエラーコードを返す。読み出し値、ハンドル、受信長などのデータは各システムコールの出力ポインタまたはデータバッファへ書き込む。raw return をデータにも使うと、データが有効な errno と同じ数値の場合に成功と失敗を区別できないためである。エラーコードの定義は [`wasi_preview1_abi.md`](docs/specs/wasi_preview1_abi.md) を参照する。ゲスト側の `libfireball` は必要に応じてこの errno を WASI の戻り値へ変換する。
 
-**未定義 Syscall ID の非パニック安全復帰 (`GOTCHA-SYS-01`)**:
+**未定義 Syscall ID の非パニック安全復帰 (`GOTCHA-SYS-01`)**: {GOTCHA-SYS-01} <!-- definition: {GOTCHA-SYS-01} -->
 未定義または予約済みのシステムコール ID が呼び出された場合、ホスト側はアボートやカーネルパニックを起こさない。WASI 準拠の `WasiErrno.NOSYS`（52）を返して安全に復帰する。この動作により、新機能の有無を問い合わせるゲストランタイムや WASI libc 等の標準ライブラリはフォールバックできる。
 
-## 6. システムコールID
+### 5.3 システムコールID
 システムコールIDは、`fireball_call` が実行する特定のホスト操作を識別する。カテゴリ別に管理される。vMMIO の通常アクセスそのものは WASM の load/store 経路で扱い、host call による vMMIO レジスタ操作へ置き換えない。
 
-### 6.1. カテゴリ一覧
+#### 5.3.1 カテゴリ一覧
 
 <!-- traceability: {Type_Vocabulary} {IPC_HandleBased} {CSPCommunication} -->
 
@@ -128,31 +190,31 @@ world fireball-hostcall {
 | IPC | `0x40`-`0x4F` | ハンドル解決およびCSPメッセージ通信 |
 | WASI | `0x80`-`0xBF` | WASI互換レイヤー |
 
-### 6.2. System (`0x00`-`0x0F`)
+#### 5.3.2 System (`0x00`-`0x0F`)
 <!-- traceability: {CooperativeMultitasking} -->
 
 | ID | 名前 | 引数 | 戻り値 | 説明 |
 | :--- | :--- | :--- | :--- | :--- |
 | `0x00` | `RESERVED` | — | — | 予約済み |
-| `0x01` | `SYS_YIELD` | — | `0` | 協調的イールド要求 |
+| `0x01` | `SYS_YIELD` | — | `0` | 現在のゲスト呼出しが未完了なら、次の安全な Runtime 境界で COOS へ制御を返す。スケジューラ再開後は保存した Interpreter 継続から実行する |
 | `0x02` | `SYS_HALT` | — | — | システム停止 |
 | `0x03` | `SYS_RESET` | — | `0` | ゲストリセット |
 
-### 6.3. vMMIO Generic (`0x10`-`0x1F`)
+#### 5.3.3 vMMIO Generic (`0x10`-`0x1F`)
 <!-- traceability: {RoleBasedAccessControl} {META_RestrictedPhysicalAccess} {Fast_Path_GPIO} -->
 vMMIO管理下のアドレスへの汎用 host-call 操作である。IPCR/SHM/DYNAMIC/PASSTHROUGH等を対象とし、SYSCTL syscall doorbell と VDMA レジスタは対象に含めない。アクセス可否は、対象物理アドレスが `FB_CONF_VMMIO_ALLOWED_ADDRS`（[`system_config.md`](docs/components/tier1_core/system_config.md)）の許可範囲に属するかで判定される。この許可判定はタスク単位ではなく物理アドレス単位のグローバルなゲートであり、PTEに埋め込まれた権限フィールドが唯一の検証点となる（`runtime_vmmio.md` を正本とする）。SHM領域（FC=14）等、タスク間で所有権が移動するリソースの排他制御はRBACとIPCルータの所有権移譲によって別途行われ、vMMIOの物理アクセス許可判定とは独立している。
 
 | ID | 名前 | 引数 | 戻り値 | 説明 |
 | :--- | :--- | :--- | :--- | :--- |
-| `0x10` | `MMIO_READ32` | `addr` (`fb_val_t`: 物理アドレス) | `value` (`fb_val_t`: 32bit値、エラー時は `ERR_OUT_OF_BOUNDS`) | 32bit読み出し |
+| `0x10` | `MMIO_READ32` | `addr`, `value_out_ptr` (`fb_offset_t`: ゲスト内4バイト出力領域) | errno | 32bit値をlittle-endianで`value_out_ptr`へ書く |
 | `0x11` | `MMIO_WRITE32` | `addr` (`fb_val_t`: 物理アドレス), `value` (`fb_val_t`: 32bit値) | `0` (エラー時は `ERR_OUT_OF_BOUNDS` または `ERR_ACCESS_DENIED`) | 32bit書き込み |
-| `0x12` | `MMIO_READ8` | `addr` (`fb_val_t`: 物理アドレス) | `value` (`fb_val_t`: 8bit値、エラー時は `ERR_OUT_OF_BOUNDS`) | 8bit読み出し |
+| `0x12` | `MMIO_READ8` | `addr`, `value_out_ptr` (`fb_offset_t`: ゲスト内4バイト出力領域) | errno | 8bit値をゼロ拡張し、little-endianの`u32`として`value_out_ptr`へ書く |
 | `0x13` | `MMIO_WRITE8` | `addr` (`fb_val_t`: 物理アドレス), `value` (`fb_val_t`: 8bit値) | `0` (エラー時は `ERR_OUT_OF_BOUNDS` または `ERR_ACCESS_DENIED`) | 8bit書き込み |
 | `0x14` | `MMIO_BULK_READ` | `addr` (`fb_val_t`: 物理アドレス), `dest_offset` (`fb_offset_t`: ゲスト物理ベース相対), `byte_count` (`fb_val_t`: 転送バイト数) | `0` (エラー時は `ERR_OUT_OF_BOUNDS`, `ERR_ACCESS_DENIED` または `ERR_INVALID_SIZE`) | バルク読み出し（ゲストメモリへコピー） |
 | `0x15` | `MMIO_BULK_WRITE` | `addr` (`fb_val_t`: 物理アドレス), `src_offset` (`fb_offset_t`: ゲスト物理ベース相対), `byte_count` (`fb_val_t`: 転送バイト数) | `0` (エラー時は `ERR_OUT_OF_BOUNDS`, `ERR_ACCESS_DENIED` または `ERR_INVALID_SIZE`) | バルク書き込み（ゲストメモリから書込） |
 | `0x16` | `TRIGGER_SET_PIN` | `pin` (`fb_val_t`), `value` (`fb_val_t`: 0/1) | `0` (エラー時は `ERR_OUT_OF_BOUNDS` または `ERR_ACCESS_DENIED`) | GPIOピン出力設定（Fast_Path_GPIOのhost-call経路、`FB_SYSCALL_TRIGGER_SET_PIN`）。未実装環境は`GOTCHA-SYS-01`に従って`WasiErrno.NOSYS`を返す。高速な実機GPIOアクセスは別契約の直接vMMIOストアで行う。 |
 
-### 6.4. 専用ホストコール（vIRQ / vDMA）
+#### 5.3.4 専用ホストコール（vIRQ / vDMA）
 <!-- traceability: {VDMA} {GLOBAL_InterruptWakeup} {TaskPollInterruptEvent} -->
 vIRQとvDMAは汎用 `fireball_call` のID空間には含めない。ゲストから見えるWITの専用importとして、機能ごとに型付きのホストコールを公開する。専用ホストコールもWASM importからC++ハンドラへ同期接続するが、`fireball_call` のIDディスパッチやvMMIOレジスタ経路は使用しない。
 
@@ -164,19 +226,21 @@ vIRQとvDMAは汎用 `fireball_call` のID空間には含めない。ゲスト�
 
 vIRQのイベント本体は専用host callの呼出し中には配送せず、ISR → COOS FIFO → COOS協調境界 → vSoC → vIRQ階層の非同期経路で処理する。`REG_IRQ_FLAGS` の読み書き、vIRQ固定スロットへのゲストからの直接store、およびWASIのpoll APIへの接続は採用しない。
 
-### 6.5. IPC (`0x40`-`0x4F`)
+#### 5.3.5 IPC (`0x40`-`0x4F`)
 <!-- traceability: {CSPCommunication} {IPC_HandleBased} -->
 CSPチャネルおよびハンドルベースのプロセス間通信。
 URIによる名前解決後の接続確立（`lookup`）によって取得した `handle_id` を用いて、以降は直接メッセージパッシングを行う。メッセージの送受信は、ホーアのCSPモデルに基づくゼロコピー所有権移譲を伴う同期通信として処理される。
 
+`IPC_SEND`のゲストバッファは、長さメタデータ1ペアと4バイト単位のデータペアへ変換される。IPCメッセージの上限は8ペアであるため、ゲストペイロードは最大28バイトである。上限を超える送信はメッセージ構築前に `EMSGSIZE`（35）で拒否する。`IPC_RECV`は待受け前にデータ出力範囲と受信長出力範囲を検証し、範囲外なら `EFAULT` を返す。二つの出力範囲が重なる場合は `EINVAL`、データ出力容量が最大ペイロード28バイト未満の場合は `EMSGSIZE` を返す。これらの失敗では送信メッセージを消費しない。受信は呼び出し元タスクのロールで許可された入力チャネルを選択するため、`handle_id` はABI対称性の引数であり、受信先の選択には使わない。
+
 | ID | 名前 | 引数 | 戻り値 | 説明 |
 | :--- | :--- | :--- | :--- | :--- |
-| `0x40` | `IPC_SEND` | `handle_id`, `msg_offset`, `msg_len`, `response_code_ptr` | `0` / errno | メッセージ要求を送り、応答までコルーチンをサスペンドする。応答コードは指定ポインタへ `u32` で書き戻す。応答メッセージは同一オブジェクトを返す。 |
-| `0x41` | `IPC_RECV` | `handle_id`, `buf_offset`, `buf_len` | `recv_len` / errno | メッセージ要求を受信する。受信後は応答待ち状態となり、`IPC_REPLY` で応答するまで送信側はブロックされる。 |
-| `0x42` | `IPC_LOOKUP` | `uri_offset`, `uri_len` | `handle_id` / errno | 名前解決とハンドル取得（uri_offset: URI文字列の相対オフセット）。URI文字列の相対オフセットから通信ハンドルを返却する。 |
+| `0x40` | `IPC_SEND` | `handle_id`, `msg_offset`, `msg_len`, `response_code_ptr` | `0` / errno | 最大28バイトのメッセージ要求を送り、応答までコルーチンをサスペンドする。上限超過は `EMSGSIZE`。応答コードは指定ポインタへ `u32` で書き戻す。応答メッセージは同一オブジェクトを返す。 |
+| `0x41` | `IPC_RECV` | `handle_id`（未使用）, `buf_offset`, `buf_len`, `recv_len_out_ptr` | errno | 出力範囲を先に検証して、呼び出し元の許可済み入力チャネルから受信する。成功時は受信データを`buf_offset`へ、受信バイト数をlittle-endian `u32`で`recv_len_out_ptr`へ書く。受信後は`IPC_REPLY`まで送信側がブロックされる。範囲外なら`EFAULT`、出力領域の重なりなら`EINVAL`を返し、メッセージを消費しない。 |
+| `0x42` | `IPC_LOOKUP` | `uri_offset`, `uri_len`, `handle_out_ptr` | errno | 名前解決を行い、取得した1始まりの通信ハンドルをlittle-endian `u32`で`handle_out_ptr`へ書く。URIおよび出力範囲の検証に失敗した場合、ハンドル表を変更しない。 |
 | `0x43` | `IPC_REPLY` | `handle_id`, `response_code` | errno | 現在の受信タスクが直前の `IPC_RECV` で取得した同一メッセージを、応答コード付きで送信元へ返す。返信先はメッセージに結び付いた送信元TCBで確定し、`handle_id` はABI対称性のための引数で返信先選択には使わない。IPCルータAPIでは受信後のKV追加も応答データになる。 |
 
-### 6.6. WASI (`0x80`-`0xBF`)
+#### 5.3.6 WASI (`0x80`-`0xBF`)
 <!-- traceability: {Fast_Path_GPIO} {WASI_Implementation} -->
 WASI互換レイヤー。Tier 3 の `libfireball` が `wasi-libc` 等のゲスト側呼び出しをこれらのIDに変換する。本ドキュメントはホスト側のシステムコールIDとディスパッチ仕様に限定し、高レベルのゲストバインディングは Tier 3 の `libfireball` 仕様を正本とする。
 WASIの引数レイアウトとエラー変換は、`libfireball` が `runtime_syscall.md` のABI契約に従って実施する。ホスト側ディスパッチはゲストラッパーの呼び出し順序を知らない。
@@ -195,7 +259,7 @@ WASIの引数レイアウトとエラー変換は、`libfireball` が `runtime_s
 > [!NOTE]
 > 最速のGPIOアクセスは `Fast_Path_GPIO` に従い vMMIO 空間への直接ストア（PASSTHROUGH領域経由、トラップ不要）を用いる。専用syscallは原則不要であるが、WASI互換用途では `libfireball` が MMIO Generic または `FB_SYSCALL_TRIGGER_SET_PIN` を介した呼び出しを提供できる。
 
-##### システムコール ID 定義一覧表 (`fb_syscall_id`)
+###### システムコール ID 定義一覧表 (`fb_syscall_id`)
 <!-- traceability: {Syscall_Mapping} -->
 
 | グループ | 識別子名 | 値 (ID) | 説明 |
@@ -221,69 +285,43 @@ WASIの引数レイアウトとエラー変換は、`libfireball` が `runtime_s
 | | `wasi_proc_exit` | `0x84` | プロセス終了 |
 | | `wasi_random_get` | `0x85` | 乱数取得 |
 
-## 7. ゲスト向けバインディングの境界
+### 5.4 ゲスト向けバインディングの境界
 
-### 7.1. 役割
+#### 5.4.1 役割
 
 <!-- traceability: {WIT_Interface_Purpose} -->
 ゲストのWASI互換呼び出しを `fireball_call` ABIへ変換する責務は、本コンポーネントには含めない。ゲスト側の静的ライブラリ `libfireball` が、Preview1 APIの引数整理、HALハンドル操作、戻り値変換を担当する。本節は両コンポーネントの境界を宣言する。
 
-### 7.2. 高レベルバインディングの参照先
+#### 5.4.2 高レベルバインディングの参照先
 <!-- traceability: {Trap_Interface} {Syscall_Mapping} -->
 
 `fireball_call` の raw trap ABI、システムコールID、引数境界検証は本書で定義する。WASI Preview1 の `fd_write` 等をこのABIへ変換するコード例やゲストライブラリのビルド形態は Tier 3 の `libfireball` 仕様に置く。HALのデバイス固有処理は [`hal_dispatch.md`](docs/components/tier2_runtime/hal_dispatch.md) の公開抽象IFを経由し、物理ドライバ詳細はその下位仕様へ委譲する。
 
-## 8. WASIホスト側実装
 
-### 8.1. 役割
-<!-- traceability: {Challenge_WasiFdWriteLoop} {WASI_Async_Bridge} -->
-`fireball_call` を host call として捕捉し、`id` に基づいて適切なハンドラにディスパッチする。WASI関連の呼び出しに対しては、対応するサービスや下位レイヤーのハードウェアHAL（Zephyr/SoC SDKなど）の操作を実行する。
+## 6. 制約達成の方策
 
-| 機構名 | 課題と背景 | 解決方針・設計構造 | 関連キーワード |
-| :--- | :--- | :--- | :--- |
-| **Scatter/Gather 分割処理** | WASI `fd_write` は `ciovec` 配列による一括書き込みを要求するが、ホスト側でベクタ解析ループを抱えるとホスト実装が肥大化する | **`libfireball` 側ループ設計**: ゲスト側ライブラリがベクタを反復し、1 ベクタごとに `fireball_call` を発行する。ホスト側はステートレスな単一ブロックディスパッチに専念する | |
-| **同期WASI・非同期IPC ブリッジ** | ゲスト側の同期 WASI 呼び出しと Fireball の非同期 CSP IPC の実行モデル不一致 | **コルーチン Yield 連動**: ラッパー内の `wait_for_ipc_response` が内部で `co_yield()` を発行し、VSoC/COOS が I/O 完了までタスクを安全にサスペンドする | |
-
-## 9. ホストからゲストへの非同期通知メカニズム
-<!-- traceability: {Asynchronous_Notification} -->
-
-ホスト側で非同期に発生したイベント（例: ハードウェア割り込みの完了、タイマーイベント、非同期I/Oの完了など）をゲストに通知するために、同期ホストコールとは独立したメカニズムを定義する。vIRQの登録・解除は `fireball:host/virq` の専用host callで行い、イベント本体の通知・配送はこの非同期経路で行う。
-
-### 9.1. 仮想割り込み
-<!-- traceability: {Asynchronous_Notification} -->
-ホストは、COOSの固定長 `interrupt-event` を経由して**仮想割り込み**を通知する。COOSへ制御が戻る境界でvSoCがイベントを受け取り、登録済みのvIRQ階層へ配送する。これは `fireball:host/virq` の同期的な戻り値やWASI `pollable` では表現しない。
-
-#### 9.1.1. vIRQ原因源識別子
-<!-- traceability: {Asynchronous_Notification} -->
-vIRQの `vector_id` はホスト設定の原因源表で固定する。WASIのpollable IDやゲストが自由に割り当てる通知IDとしては扱わない。具体的なノード階層と原因源表は [`runtime_vmmio.md`](docs/components/tier2_runtime/runtime_vmmio.md) が定義する。
-
-| 原因源 | `vector_id` | 説明 | 主な用途 |
-| :--- | :--- | :--- | :--- |
-| デバイス `n` | `0x0100 + n` | デバイス原因を集約する | デバイスディスパッチャ |
-| SYSTEM | `0x1000` | COOS・システム制御由来 | SYSTEM分類 |
-| RUNTIME | `0x2000` | vSoC・実行制御由来 | RUNTIME分類 |
-| FAULT | `0x3000` | vMMIO違反などのフォールト | FAULT分類 |
-
-#### 9.1.2. 仮想割り込みペイロード
-<!-- traceability: {Asynchronous_Notification} -->
-仮想割り込みの詳細情報は、COOSが保持する固定5ワードの `interrupt-event` としてvSoCへ引き渡す。`vector_id`、`source_id`、`cause_code`、`payload0`、`payload1`の順序を維持し、COOSへ制御が戻る協調境界でvSoCがこのレコードをvIRQ階層へ渡す。イベント本体をvMMIOレジスタ、共有メモリ、WASI `pollable`へ別経路で複製せず、ISRやCOOSからゲスト関数を直接呼び出さない。
-
-## 10. メモリ安全性
+### 6.1 メモリ安全性
 <!-- traceability: {Challenge_SyscallMemorySafety} {OwnershipTransfer} {FastAddressCheck} {GOTCHA-SYS-02} {GOTCHA-SYS-03} -->
 `fireball_call` を介してゲストメモリへのポインタを渡す場合も、アクセス禁止領域は仮想アドレス空間から物理的に **unmap（マッピング解除）** する。他タスク所有の SHM 領域、転送中（`IN_FLIGHT`）のページ、未割当領域には PTE / TLB が存在しない。これらへのアクセスは、未登録ページトラップ（`TRAP_UNREGISTERED_PAGE`）としてハードウェア・仮想化境界で遮断する。
 
 ゲスト RAM（リニアメモリ）は、単一の境界比較（`FastAddressCheck`）で保護する。そのためホスト側の二重ポインタ検証（`vsoc_validate_ptr` 等）は不要である。アクセスごとに必要な境界比較で保護し、同じ境界の重複検証を避ける。
 
-## 11. トラップ状態プロトコル
-<!-- traceability: {Trap_Interface} -->
 
-`fireball_call` は、WASM import をベースにした同期 host-call インターフェースである。ゲストWASM実行環境で import 呼び出し（`call`）が行われると、実行エンジン（Interpreter/JIT）がホスト側の対応する C++ ハンドラへ制御を同期的に移譲する。基盤CPUの `ecall` や `svc` は実装詳細であり、vMMIO レジスタ経路を意味しない。
+## 7. 形式検証・テスト仕様との対応
 
-##### トラップ実行の制御フロー
-トラップ命令ベースの同期通信インターフェース（`{Trap_Interface}`）における、具体的な実行制御フローは以下の通りである。
+### 7.1 検証対象の不変条件
+本書で定めた状態、境界、所有権、およびエラー処理を検証対象とする。
 
-1. **ゲスト実行**: ゲストが `fireball_call(id, a0, ...)` を呼び出す。
-2. **ホストコール検知**: 実行エンジンが `fireball_call` import を解決する。
-3. **引数受け渡し**: 引数 `id` および `a0`〜`a5` を固定 host-call シグネチャでホストへ渡す。
-4. **ホストディスパッチ**: ホスト側ハンドラが同期実行される。この間、ゲストタスクのPC（Program Counter）は import 呼び出し位置で停止する。
-5. **完了と復帰**: ホストコールの戻り値を WASM の結果値へ変換し、実行エンジンが次の命令からゲストを再開する。
+### 7.2 検証モデルと反証可能性
+形式検証モデルは[syscall_trap_model.py](docs/components/tier2_runtime/formal/syscall_trap_model.py)である。各モデルの正常系と`guards=False`変異で、保護条件が反証されることを確認する。
+
+### 7.3 テスト仕様書との連携
+対応するテスト仕様は[runtime_syscall_test_spec.md](docs/qa/tier2_runtime/runtime_syscall_test_spec.md)である。テストケースIDと実行可能テストは同仕様を正本とする。
+
+### 7.4 既知の制限・対象外
+ホスト実機依存の挙動、未実装アーキテクチャ、およびテスト仕様が明示する対象外条件は未検証として扱う。
+
+
+## 8. 設計判断と参考実装
+
+特記すべき独立したADRはない。採用方針は本書の各契約節に記載する。

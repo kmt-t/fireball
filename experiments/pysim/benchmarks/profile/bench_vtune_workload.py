@@ -37,7 +37,7 @@ from memory import FB_CONF_MEMORY_POOL_SIZE, MemoryManager
 from scheduler import ChannelAction, Scheduler
 from system import System
 from system_containers import StaticVector
-from tier2_runtime.logger import LogDictionary, Logger, LogLevel
+from tier2_runtime.logger import LOG_RECORD_SIZE, LogDictionary, Logger, LogLevel, LogResult
 from tier3_executer.interpreter.interpreter import Interpreter, InterpreterBindings
 from tier3_executer.jit.jit_manager import JITRuntimeManager
 from tier3_executer.jit.jit_runtime import JITInterpreter
@@ -128,8 +128,16 @@ def _open_log(phase: str) -> tuple[Path, FileLogSink]:
     return path, FileLogSink(path.open("wb", buffering=64 * 1024))
 
 
-def _count_in_log(path: Path, marker: bytes) -> int:
-    return path.read_bytes().count(marker)
+def _count_log_id(path: Path, dict_offset: int) -> int:
+    data = path.read_bytes()
+    assert len(data) % LOG_RECORD_SIZE == 0
+    count = 0
+    for record_offset in range(0, len(data), LOG_RECORD_SIZE):
+        record = data[record_offset : record_offset + LOG_RECORD_SIZE]
+        record_id = record[1] | (record[2] << 8) | (record[3] << 16)
+        if record_id == dict_offset:
+            count += 1
+    return count
 
 
 def _new_guest():
@@ -147,9 +155,7 @@ def _new_interpreter_guest() -> tuple[Module, Interpreter]:
 
 def _new_jit_guest() -> tuple[Module, Interpreter]:
     module, bindings = _new_guest()
-    engine = RuntimeEngine(
-        jit_runtime=JITRuntimeManager(jit_compiler=TraceCompiler())
-    )
+    engine = RuntimeEngine(jit_runtime=JITRuntimeManager(jit_compiler=TraceCompiler()))
     return module, JITInterpreter(module, bindings, engine)
 
 
@@ -232,8 +238,10 @@ def phase_os_mix(scale: float, kernels: list[str] | None, oracle: bool) -> Phase
     runs: list[KernelRun] = []
     seconds = 0.0
     log_path, sink = _open_log("os_mix")
-    sysv = System(logger_sink=sink)
-    sysv.dictionary.register(0x200, "KERNEL_DONE: idx=%d result=%d")
+    sysv = System(
+        logger_sink=sink,
+        log_dictionary=LogDictionary(entries=((0x200, "KERNEL_DONE: idx=%d result=%d"),)),
+    )
 
     def guest(index: int, name: str, units: int):
         module, interp = _new_guest()
@@ -243,7 +251,7 @@ def phase_os_mix(scale: float, kernels: list[str] | None, oracle: bool) -> Phase
             if not state.finished:
                 yield (ChannelAction.YIELD, None)
         result = state.results[0] & MASK32
-        assert sysv.logger.log_event(LogLevel.INFO, 0x200, index, result) == "QUEUED"
+        assert sysv.logger.log_event(LogLevel.INFO, 0x200, index, result) == LogResult.SUCCESS
         return result
 
     # The scheduler holds 16 TCBs and returns a finished task's slot on the next spawn, so the
@@ -270,7 +278,7 @@ def phase_os_mix(scale: float, kernels: list[str] | None, oracle: bool) -> Phase
             runs.append(KernelRun(name, units, 0.0, result))
             checksum = zlib.crc32(result.to_bytes(4, "little"), checksum) & MASK32
     sink.close()
-    assert _count_in_log(log_path, b"KERNEL_DONE:") == len(picked), "structured log entries lost"
+    assert _count_log_id(log_path, 0x200) == len(picked), "structured log entries lost"
     work = f"{len(picked)} guests, waves of {OS_MIX_WAVE}, {sink.bytes_written} log bytes"
     return PhaseResult("os_mix", seconds, work, checksum, tuple(runs))
 
@@ -292,7 +300,7 @@ def _ao_guest(phase: str):
     _, sink = _open_log(phase)
     sysv = System(logger_sink=sink)  # keep system logs out of the guest's stdout stream
     wasi_ctx = WasiHostContext(sysv)
-    sysv.start_hal_driver(DummyDriver(sysv.wasi_hal_bindings.stdout_uri, transport=sysv.transport))
+    sysv.start_hal_driver(DummyDriver(transport=sysv.transport), sysv.wasi_hal_bindings.stdout_uri)
     funcs = wasi_ctx.build_interpreter_host_functions(module)
     module.init_memory_data(wasi_ctx.guest_memory, ())
     interp = Interpreter(
@@ -328,9 +336,7 @@ def phase_ao_interp(scale: float, kernels: list[str] | None, oracle: bool) -> Ph
 def phase_ao_jit(scale: float, kernels: list[str] | None, oracle: bool) -> PhaseResult:
     width, height = _ao_size(scale)
     module, sysv, interp, sink = _ao_guest("ao_jit")
-    engine = RuntimeEngine(
-        jit_runtime=JITRuntimeManager(jit_compiler=TraceCompiler())
-    )
+    engine = RuntimeEngine(jit_runtime=JITRuntimeManager(jit_compiler=TraceCompiler()))
     engine.register_module_blocks(module)
     t0 = time.perf_counter()
     engine.call(interp, module.export_func_index("main"), [width, height])
@@ -359,8 +365,7 @@ def phase_ipc(scale: float, kernels: list[str] | None, oracle: bool) -> PhaseRes
     assert manager.init_manager(0x00010000, FB_CONF_MEMORY_POOL_SIZE).is_ok
     router = IPCRouter(sched, manager)
     log_path, sink = _open_log("ipc")
-    dictionary = LogDictionary()
-    dictionary.register(_LOG_ID_MSG, "MSG: seq=%d val=%d")
+    dictionary = LogDictionary(entries=((_LOG_ID_MSG, "MSG: seq=%d val=%d"),))
     logger = Logger(transport=sink, dictionary=dictionary, min_level=LogLevel.INFO)
     sent_sum = [0]
     recv_sum = [0]
@@ -376,7 +381,7 @@ def phase_ipc(scale: float, kernels: list[str] | None, oracle: bool) -> PhaseRes
             status, _ = yield from router.send(channel, msg)
             assert status == IPCStatus.COMPLETED, status
             sent_sum[0] = (sent_sum[0] + value) & MASK32
-            assert logger.log_event(LogLevel.INFO, _LOG_ID_MSG, seq, value) == "QUEUED"
+            assert logger.log_event(LogLevel.INFO, _LOG_ID_MSG, seq, value) == LogResult.SUCCESS
 
     def consumer():
         for seq in range(count):
@@ -399,7 +404,7 @@ def phase_ipc(scale: float, kernels: list[str] | None, oracle: bool) -> PhaseRes
     sink.close()
     assert received[0] == count, (received[0], count)
     assert recv_sum[0] == sent_sum[0], "payload lost or corrupted across rendezvous"
-    assert _count_in_log(log_path, b"MSG: seq=") == count, "log entries lost"
+    assert _count_log_id(log_path, _LOG_ID_MSG) == count, "log entries lost"
     work = f"{count:,} msgs, {sink.bytes_written // 1024} KiB log"
     return PhaseResult("ipc", seconds, work, recv_sum[0])
 

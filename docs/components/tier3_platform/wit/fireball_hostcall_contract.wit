@@ -2,7 +2,7 @@ package fireball:host@0.1.0;
 
 /// 低レベル・ホストコール・インターフェース
 interface trap {
-    /// Fireball固有の高速ホスト呼び出し
+    /// Fireball固有の高速ホスト呼び出し。戻り値はWASI errnoで、データ値は引数の出力ポインタへ書く
     fireball-call: func(
         id: u32,
         arg0: u32,

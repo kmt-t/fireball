@@ -138,10 +138,12 @@ sequenceDiagram
 ## 5. インターフェース定義
 
 ### 5.1 物理実装の勘所・不変条件
-<!-- traceability: {HAL_Interface} {IPC_ZeroCopy} {BufferedLogging} {GOTCHA-HAL-02} {GOTCHA-HAL-03} -->
+<!-- traceability: {HAL_Interface} {IPC_ZeroCopy} {BufferedLogging} -->
 [`hal_dispatch.md`](docs/components/tier2_runtime/hal_dispatch.md) で定義された契約API（`stream-read`, `stream-write`, `map-buffer`, `unmap-buffer`）を、以下の物理不変条件に従って実装する。
 
-**静的固定長バッファプールの境界厳格検査 (`GOTCHA-HAL-01`)**:
+`{BufferedLogging}` の物理出力はこの HAL の `stream-write` 経路を使う。ロガーのリングバッファとHALドライバーの固定長I/Oバッファプールは別の所有領域である。
+
+**静的固定長バッファプールの境界厳格検査 ({GOTCHA-HAL-01})**: <!-- definition: {GOTCHA-HAL-01} -->
 `HalBufferPool` は、`FB_CONF_HAL_MAX_BUFFERS` 個の固定サイズスロット（`FB_CONF_HAL_BUFFER_SIZE` = 256 バイト）を保持する。ゲストの`map-buffer(buffer_id)`が選択した1スロットだけをvMMIO DYNAMICへマップし、I/O完了時の`unmap-buffer(handle)`で解除する。マッピング競合は`BUSY`を返し、境界超過や不正なハンドルだけを`HalBufferTrap`で即時停止させる。
 **設計理由と不変条件**: 固定スロットは共有メモリの所有権を持たず、HALの`acquire`/`release`も存在しない。HALドライバは専用Sinkとしてマッピング中のスロットだけを参照する。
 
@@ -153,15 +155,15 @@ sequenceDiagram
 ホスト実行では、出力先の実体をホストファイルとする。出力先は `System` の生成時に呼び出し側が渡す。
 **設計理由**: 標準出力とログが同じ固定長バッファを共有すると、システムの警告ログがゲスト出力の途中に割り込む。この混入は、ゲスト出力の完全性検証を困難にする。
 
-**UART トランスポートの双方向独立性 (`GOTCHA-HAL-02`)**:
+**UART トランスポートの双方向独立性 ({GOTCHA-HAL-02})**: <!-- definition: {GOTCHA-HAL-02} -->
 UART デバイスドライバにおける送信リングバッファと受信リングバッファは、メモリ領域・ポインタ共に完全に独立したデータ構造として管理される。送受信でバッファや状態変数を不用意に共有・使い回すことを禁止し、全二重シリアル通信時における送受信ポインタ競合やデータ化けを防止する。
 
-**単調増加タイマーの差分計算安全性 (`GOTCHA-HAL-03`)**:
-32ビットハードウェアカウンタ（SysTick / タイマー）の経過時間は、符号なし差分減算（`elapsed = t2 - t1`）で求める。絶対時刻（`t2 > t1`）を比較してはならない。
+**単調増加タイマーの差分計算安全性 ({GOTCHA-HAL-03})**: <!-- definition: {GOTCHA-HAL-03} -->
+32ビットハードウェアカウンタ（SysTick / タイマー）の経過時間は、32ビット符号なし差分減算（`elapsed = (t2 - t1) & 0xFFFFFFFF`）で求める。絶対時刻（`t2 > t1`）を比較してはならない。
 
-32ビットカウンタが `0xFFFFFFFF` から `0x00000000` へ折り返しても、2の補数演算のモジュロ代数により差分は正しい経過時間を示す。この方式はタイマーの単調増加性を保つ。
+測定区間がカウンタの全周期より短ければ、32ビットカウンタが `0xFFFFFFFF` から `0x00000000` へ折り返しても、モジュロ差分は正しい経過tick数を示す。複数周期をまたいだ経過時間は単一の32ビット値から復元できないため、この計算だけで判定してはならない。概念コード `platform_driver_concept.py` の `test_u32_timer_elapsed_handles_wraparound` が通常区間と折り返し区間を検証する。
 
-### 5.4 RSP 物理トランスポート仕様
+### 5.2 RSP 物理トランスポート仕様
 <!-- traceability: {RSP_Transport_Selectable} -->
 UART および SEGGER RTT は同一のRaw RSPバイトトランスポート契約を提供する。RSPパケットのエンコード、デコード、解析、およびデバッガ状態の管理は Tier 3 debugger の正本とする。
 
@@ -182,6 +184,11 @@ UART および SEGGER RTT は同一のRaw RSPバイトトランスポート契�
 ### 7.1 検証対象の不変条件
 - **非同期割り込み境界分離**: ISR からタスク状態を直接変更せずキュー経由で安全にディスパッチすること（`interrupt_boundary_model.py` の `isr_does_not_update_task_state_directly` および `interrupt_event_reaches_scheduler_boundary`）。
 - **固定長スロット境界保護**: 要求サイズが 256 バイトを超える場合の即時拒絶（`GOTCHA-HAL-01`）。
+- **32bitタイマー折り返し**: 1周期未満の測定区間に限り、符号なしモジュロ差分が経過tick数を返すこと（`platform_driver_concept.py` の `test_u32_timer_elapsed_handles_wraparound`）。pysimの実タイマーはホストの64bit `time.monotonic_ns()` を使用するため、物理32bitカウンタの折り返しは実機統合時に別途検証する。
 
 ### 7.2 テスト仕様書との連携
 本コンポーネントの物理実装テストケース（TEST-HAL-03, TEST-HAL-05〜TEST-HAL-08, TEST-HAL-15, GOTCHA-HAL-01〜03）は、[`platform_driver_test_spec.md`](docs/qa/tier3_platform/platform_driver_test_spec.md) を正本として定義する。HAL契約レベルのテストケース（TEST-HAL-01, TEST-HAL-02, TEST-HAL-04, TEST-HAL-09〜TEST-HAL-13）は [`hal_dispatch_test_spec.md`](docs/qa/tier2_runtime/hal_dispatch_test_spec.md) を参照する。TEST-HAL-15 は物理HALドライバの起動ではなく、ホスト側ファイルSinkの直接注入と標準出力分離を確認する。
+
+## 8. 設計判断と参考実装
+
+特記すべき独立したADRはない。採用方針は本書の各契約節に記載する。

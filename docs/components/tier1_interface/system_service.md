@@ -176,3 +176,22 @@ enum class service_load_result_t : uint32_t {
 <!-- traceability: {META_FaultIsolation} -->
 - **目標**: サービスの障害が他へ波及するのを防止する。
 - **方策**: サービスを独立した実行コンテキスト（タスク）で実行し、メモリパーティションを用いて不正アクセスやクラッシュを領域的に隔離する。
+
+## 7. 形式検証・テスト仕様との対応
+
+### 7.1 検証対象の不変条件
+本書で定めた状態、境界、所有権、およびエラー処理を検証対象とする。
+
+### 7.2 検証モデルと反証可能性
+形式検証モデルは[service_fault_isolation_model.py](docs/components/tier1_interface/formal/service_fault_isolation_model.py)である。各モデルの正常系と`guards=False`変異で、保護条件が反証されることを確認する。
+
+### 7.3 テスト仕様書との連携
+対応するテスト仕様は[system_service_test_spec.md](docs/qa/tier1_interface/system_service_test_spec.md)である。テストケースIDと実行可能テストは同仕様を正本とする。
+
+### 7.4 既知の制限・対象外
+ホスト実機依存の挙動、未実装アーキテクチャ、およびテスト仕様が明示する対象外条件は未検証として扱う。
+
+
+## 8. 設計判断と参考実装
+
+特記すべき独立したADRはない。採用方針は本書の各契約節に記載する。

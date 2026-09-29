@@ -20,7 +20,6 @@ from jit_scoring import JIT_CANDIDATE_THRESHOLD
 from system_containers import (
     ReadOnlyRadixBinaryTreeStorage,
     StaticVector,
-    build_radix_table,
     fold_mix32,
 )
 from tier3_executer.jit.jit_cache import JITTrace
@@ -168,13 +167,10 @@ def make_pc_only_module(pcs: tuple[int, ...]) -> Module:
     # of `blocks`' caller-given order, matching wasm_module.py's real
     # construction (see build_basic_block_index).
     radix_sorted = tuple(sorted(blocks, key=lambda block: fold_mix32(block.head_pc)))
-    inverse_keys = tuple(fold_mix32(block.head_pc) for block in radix_sorted)
-    module.block_storage = ReadOnlyRadixBinaryTreeStorage(
-        keys=inverse_keys,
-        values=radix_sorted,
-        radix_table=build_radix_table(inverse_keys, radix_shift=28),
+    entries = tuple((fold_mix32(block.head_pc), block) for block in radix_sorted)
+    module.block_storage = ReadOnlyRadixBinaryTreeStorage.from_sorted_entries(
+        entries,
         radix_shift=28,
-        entries=tuple(zip(inverse_keys, radix_sorted, strict=True)),
     )
     return module
 
@@ -216,12 +212,9 @@ def make_pc_only_functions_module(blocks_per_function: tuple[tuple[int, ...], ..
     )
     module.blocks = blocks
     radix_sorted = tuple(sorted(blocks, key=lambda block: fold_mix32(block.head_pc)))
-    inverse_keys = tuple(fold_mix32(block.head_pc) for block in radix_sorted)
-    module.block_storage = ReadOnlyRadixBinaryTreeStorage(
-        keys=inverse_keys,
-        values=radix_sorted,
-        radix_table=build_radix_table(inverse_keys, radix_shift=28),
+    entries = tuple((fold_mix32(block.head_pc), block) for block in radix_sorted)
+    module.block_storage = ReadOnlyRadixBinaryTreeStorage.from_sorted_entries(
+        entries,
         radix_shift=28,
-        entries=tuple(zip(inverse_keys, radix_sorted, strict=True)),
     )
     return module

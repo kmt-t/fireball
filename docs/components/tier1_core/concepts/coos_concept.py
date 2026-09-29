@@ -24,6 +24,7 @@ MsgT = TypeVar("MsgT")
 
 
 FB_CONF_MAX_CONSECUTIVE_HANDOFFS: int = 4
+FB_CONF_INTERRUPT_QUEUE_SIZE: int = 16
 
 
 class TaskState(IntEnum):
@@ -142,7 +143,8 @@ class COOSKernel:
         self.ready_queue: list[str] = []
         self.current_task: str | None = None
         self.channels: dict[str, Channel] = {}
-        self.interrupt_event_queue: list[int] = []  # Ring buffer for IRQ IDs
+        self.interrupt_event_queue: list[int] = []  # Bounded FIFO model for IRQ IDs
+        self.dropped_interrupt_events = 0
         self.irq_waiters: dict[int, list[str]] = {}  # irq_id -> [task_ids]
         self.max_consecutive_handoffs = max_consecutive_handoffs
         self.consecutive_handoffs = 0
@@ -286,12 +288,16 @@ class COOSKernel:
         return val
 
     # --- Interrupt Handling ---
-    def notify_interrupt(self, irq_id: int) -> None:
-        """Called from ISR context: non-blocking enqueue of IRQ event."""
+    def notify_interrupt(self, irq_id: int) -> bool:
+        """GOTCHA-COOS-03: enqueue without blocking; drop and count on FIFO full."""
+        if len(self.interrupt_event_queue) >= FB_CONF_INTERRUPT_QUEUE_SIZE:
+            self.dropped_interrupt_events += 1
+            return False
         self.interrupt_event_queue.append(irq_id)
         if not self.reschedule_pending:
             self.reschedule_generation += 1
             self.reschedule_pending = True
+        return True
 
     def drain_interrupts(self) -> None:
         """Called at yield point: wake up tasks waiting on received IRQs."""
@@ -547,6 +553,19 @@ def test_coos_interrupt_wakeup() -> None:
     assert kernel.tasks["worker"].state == TaskState.TERMINATED
 
 
+def test_coos_interrupt_fifo_drops_when_full() -> None:
+    kernel = COOSKernel()
+    accepted = [kernel.notify_interrupt(irq_id) for irq_id in range(FB_CONF_INTERRUPT_QUEUE_SIZE)]
+    generation = kernel.reschedule_generation
+
+    assert all(accepted)
+    assert len(kernel.interrupt_event_queue) == FB_CONF_INTERRUPT_QUEUE_SIZE
+    assert not kernel.notify_interrupt(999)
+    assert kernel.interrupt_event_queue == list(range(FB_CONF_INTERRUPT_QUEUE_SIZE))
+    assert kernel.dropped_interrupt_events == 1
+    assert kernel.reschedule_generation == generation
+
+
 def test_shared_block_move_semantics_across_rendezvous() -> None:
     """ADR_SharedBlockRaii / IPC_ZeroCopy: Move-only SharedBlock transfer across CSP channel.
     Upon rendezvous, ownership moves directly from sender to receiver.
@@ -657,5 +676,6 @@ if __name__ == "__main__":
     test_one_waiter_per_channel_is_enforced()
     test_consecutive_handoff_limit_forces_yield()
     test_coos_interrupt_wakeup()
+    test_coos_interrupt_fifo_drops_when_full()
     test_shared_block_move_semantics_across_rendezvous()
     print("[PASS] All COOS concept tests passed successfully.")

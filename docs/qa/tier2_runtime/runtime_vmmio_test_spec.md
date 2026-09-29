@@ -19,7 +19,7 @@ Bit31によるRAM/vMMIO高速分岐、64件のFlatMap PTE + 32エントリDirect
 | **C-02** | Guest RAM (Bit 31==0) | Write | N/A (Bypass) | 境界外 (`addr >= size`) | 即時トラップ (`TRAP_MEMORY_OUT_OF_BOUNDS`) | TEST-VMMIO-02 |
 | **C-03** | Static Device (FC=12) | Read / Write | Cold Miss | 有効・登録済み | FlatMap探索 → TLBリフィル → ハンドラ実行 (`OK_STATIC_DEVICE`) | TEST-VMMIO-10 |
 | **C-04** | Static Device (FC=12) | Read / Write | Hit | 有効・登録済み | TLB完全 $O(1)$ ヒット → ハンドラ実行 (`OK_STATIC_DEVICE`) | TEST-VMMIO-11 |
-| **C-05** | Undefined FC (FC=13) | Any | N/A | 未定義領域 | 即時トラップ (`TRAP_UNDEFINED_FC`) | TEST-VMMIO-12 |
+| **C-05** | Undefined FC (FC=11) | Any | N/A | 未定義領域 | 即時トラップ (`TRAP_UNDEFINED_FC`) | TEST-VMMIO-12 |
 | **C-06** | SHM (FC=14) | Read | Cold Miss | 有効マッピング | FlatMap二分探索 → TLBリフィル → 物理アクセス (`OK_PHYSICAL`) | TEST-VMMIO-20 |
 | **C-07** | SHM (FC=14) | Write | Hit | 書き込み禁止 (`write=False`) | TLBヒット時も権限チェック執行 → トラップ (`TRAP_ACCESS_VIOLATION`) | TEST-VMMIO-17 |
 | **C-08** | SHM (FC=14) | Read / Write | Evicted (衝突追い出し) | 有効マッピング | 衝突によるTLB追い出し確認 → 再ミス → FlatMap再探索成功 | TEST-VMMIO-18 |
@@ -45,8 +45,8 @@ Bit31によるRAM/vMMIO高速分岐、64件のFlatMap PTE + 32エントリDirect
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | TEST-VMMIO-10 | 静的デバイス(FC=12)ページへのアクセスとハンドラ呼び出し | IPCR等をmap_static_device済み | 該当アドレスへアクセス | `OK_STATIC_DEVICE`を返し、登録ハンドラが`(device_metadata, offset, is_write)`で呼ばれる | `vmmio_concept.py` `test_static_device_dispatch` |
 | TEST-VMMIO-11 | TLBヒット（2回目以降のアクセス） | 同一ページへ2回アクセス | 2回目のアクセス | `tlb_hits`が増加し、`tlb_misses`は増えない | {META_RestrictedPhysicalAccess}, `vmmio_concept.py` `test_tlb_hit_after_first_walk` |
-| TEST-VMMIO-12 | 未定義FCのトラップ分類 | FC=13（未割当） | アクセス | `TRAP_UNDEFINED_FC`を返す | `vmmio_concept.py` `test_undefined_fc_traps` |
-| TEST-VMMIO-13 | 未登録ページのトラップ分類 | 有効なFCだが該当VPNが未登録 | アクセス | `TRAP_UNREGISTERED_PAGE`を返す | `vmmio_concept.py` `test_undefined_fc_traps` |
+| TEST-VMMIO-12 | 未定義FCのトラップ分類 | FC=11（予約済み） | アクセス | `TRAP_UNDEFINED_FC`を返す | pysim `test_vmmio_03_undefined_function_code_traps`, `vmmio_concept.py` `test_undefined_fc_traps` |
+| TEST-VMMIO-13 | 未登録ページのトラップ分類 | FC=13 DYNAMICの未登録VPN | アクセス | `TRAP_UNREGISTERED_PAGE`を返す | pysim `test_vmmio_04_dynamic_unregistered_page_traps`, `vmmio_concept.py` |
 | TEST-VMMIO-14 | Folding XOR HashによるFC間の衝突回避 | FC=12/14/15の同一下位ページ番号 | `tlb_index`を比較 | 異なるTLBスロットに分散する | `vmmio_concept.py` `test_tlb_index_separates_function_codes` |
 | TEST-VMMIO-15 | 混在アクセスパターンでの高いTLBヒット率 | 静的デバイス宛先とSHM宛先を交互にアクセス | 10回繰り返す | ヒット率90%以上（スラッシングしない） | `vmmio_concept.py` `test_interleaved_device_and_shm_keep_hitting_the_tlb` |
 | TEST-VMMIO-16 | FlatMap登録件数と検索 | 32件のSHMページを登録 | 全件アクセス | 全件が正しく解決される。ホットな作業集合(8件)への繰り返しアクセスは100%ヒット | `vmmio_concept.py` `test_flatmap_pte_registration_and_tlb_caching` |
@@ -55,6 +55,7 @@ Bit31によるRAM/vMMIO高速分岐、64件のFlatMap PTE + 32エントリDirect
 | TEST-VMMIO-19 | SYSCTL syscall doorbell の非提供 | SYSCTLページへアクセスする | SYSCTLアドレスをWASM `load/store`またはvMMIO `access`で参照する | SYSCTLページは未登録として `TRAP_UNREGISTERED_PAGE` になり、syscallは実行されない。host call経路は `runtime_syscall_test_spec.md`で検証する | `runtime_vmmio.md`, `runtime_syscall.md` |
 
 ### 3段階セキュリティゲート・SHMマッピング保護 ({OwnershipTransfer})
+<!-- traceability: {OwnershipTransfer} {OwnerMismatchTrap} {UnregisteredPageTrap} -->
 
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
@@ -66,6 +67,9 @@ Bit31によるRAM/vMMIO高速分岐、64件のFlatMap PTE + 32エントリDirect
 | TEST-VMMIO-25 | PASSTHROUGH(FC=15)の物理アドレス変換 | `map_passthrough_page`済み | アクセス | `phys_addr = (pte.phys_page << 12) \| offset`で正しく解決 | {PhysicalPassthrough}, `vmmio_concept.py` `test_passthrough_page_access` |
 | TEST-VMMIO-26 | ビット並列連続ビットマップアロケータ | 32ページの空き仮想空間 | `alloc_consecutive(k)` / `free_consecutive` | $O(1)$で連続$k$ページが確保・解放され、断片化時も正しく探索される | `vmmio_concept.py` `test_shm_virtual_address_allocator_consecutive` |
 | TEST-VMMIO-27 | マルチページ連続マッピングとアクセス | 連続3ページをアロケート・マップ | 3ページすべてのアドレスへアクセス | 全ページが正しい物理アドレスに変換され、一括アンマップ後は全て未登録トラップとなる | `vmmio_concept.py` `test_vmmio_alloc_and_map_multipage` |
+| TEST-VMMIO-28 | アクセス幅がRAM/PTEマッピング境界を越えない | ゲストRAM末尾または`mapping_size`を持つSHM PTE | 範囲が収まる幅と1バイト越える幅でアクセス | 収まる範囲だけ許可し、範囲外は物理アクセス前に`OUT_OF_BOUNDS`で拒否する | `vmmio_concept.py` `test_access_width_stays_inside_ram_and_shm_mappings` |
+| TEST-VMMIO-29 | FC=13 DYNAMICマッピングのゲスト所有者照合 | ゲストA所有でFC=13 PTEが登録済み | ゲストAとBの両方から同一アドレスを直接`vmmio.access`する | Aのみ`OK_PHYSICAL`、Bは`OWNER_MISMATCH`となる | pysim `test_hal_05_hal_buffer_slice_bounds_and_guest_mapping`, `runtime_vmmio.md` |
+| TEST-VMMIO-32 | マップ済みSHMに対する非所有者アクセス | task A所有のFC=14 PTEが登録済みで、Revoke前 | task Bから同じページを読み書きする | `OWNER_MISMATCH`で遮断し、物理メモリを読み書きしない | `{OwnerMismatchTrap}`, pysim `test_vmmio_02_fc14_shm_owner_isolation` |
 
 ### vIRQ原因付き階層ディスパッチ
 

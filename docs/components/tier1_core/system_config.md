@@ -5,7 +5,7 @@
 -->
 
 ## 1. コンセプト
-<!-- traceability: {META_ConfigurableSystem} {META_Static_Resolution} {GLOBAL_IndependentHeap} {GLOBAL_StrictMemoryLimit} {ConsolidatedHeap} {GLOBAL_StaticScalability} {RoleBasedAccessControl} {FastAddressCheck} {vMMIO_Isolation} {META_RestrictedPhysicalAccess} {BufferedLogging} {Challenge_DebuggerResource} {ZeroRuntimeOverhead} -->
+<!-- traceability: {META_ConfigurableSystem} {META_Static_Resolution} {GLOBAL_IndependentHeap} {GLOBAL_StrictMemoryLimit} {ConsolidatedHeap} {GLOBAL_StaticScalability} {RoleBasedAccessControl} {FastAddressCheck} {vMMIO_Isolation} {META_RestrictedPhysicalAccess} {Challenge_DebuggerResource} {ZeroRuntimeOverhead} -->
 Fireballハイパーバイザは、リソース制約の厳しい組み込み環境で動作するため、メモリサイズや最大リソース数をコンパイル時に固定する設計を採用する。設定はヘッダファイル形式のコンフィグファイル（`inc/fireball_config.hxx`）内のマクロ定義および `constexpr` 定数によって行われ、実行時オーバーヘッドを完全に排除する（ゼロコスト抽象化）。
 
 ## 2. アーキテクチャ分類
@@ -61,7 +61,7 @@ ARMv8-Mの対象ボード、SRAM/ROM/周辺アドレス、メモリ保護方式�
 | マクロ名 | 説明 | デフォルト値 | 導出元 |
 | :--- | :--- | :--- | :--- |
 | `FB_CONF_IPC_MAX_SERVICES` | 登録可能な最大サービス数 | `16` | |
-| `FB_CONF_ROUTER_MAX_KV_PAIRS` | 1メッセージが保持できるkv_pairの最大数（[`ipc_router.md`](docs/components/tier1_interface/ipc_router.md) の ） | `8` | |
+| `FB_CONF_ROUTER_MAX_KV_PAIRS` | 1メッセージが保持できるkv_pairの最大数（[`ipc_router.md`](docs/components/tier1_interface/ipc_router.md) §3.3） | `8` | |
 | `FB_CONF_MAX_CONSECUTIVE_HANDOFFS` | スケジューラ復帰なしでの最大連続CSPハンドオフ回数 | `4` | `{Challenge_CspHandoffStarvation}` |
 
 ```cpp
@@ -80,23 +80,21 @@ namespace fireball::config {
         HAL_I2C = 6,
         HAL_SPI = 7,
         DEBUGGER = 8,
-        HAL_LOGGER = 9,
-        COUNT = 10
+        COUNT = 9
     };
 
-    // ロール間通信許可マトリクス (10x10 static bool table)
-    inline constexpr std::array<std::array<bool, 10>, 10> FB_CONF_ROUTER_ROLE_MATRIX {{
-        // Target:            RUNTIME, CORE_SERVICE, HAL_UART, HAL_STDOUT, HAL_GPIO, HAL_TIMER, HAL_I2C, HAL_SPI, DEBUGGER, HAL_LOGGER
-        /* RUNTIME         */ {false,  true,         true,     true,       true,     true,      true,    true,    false,    true},
-        /* CORE_SERVICE    */ {false,  false,        true,     true,       true,     true,      true,    true,    false,    true},
-        /* HAL_UART        */ {false,  false,        false,    false,      false,    false,     false,   false,   false,    false},
-        /* HAL_STDOUT      */ {false,  false,        false,    false,      false,    false,     false,   false,   false,    false},
-        /* HAL_GPIO        */ {false,  false,        false,    false,      false,    false,     false,   false,   false,    false},
-        /* HAL_TIMER       */ {false,  false,        false,    false,      false,    false,     false,   false,   false,    false},
-        /* HAL_I2C         */ {false,  false,        false,    false,      false,    false,     false,   false,   false,    false},
-        /* HAL_SPI         */ {false,  false,        false,    false,      false,    false,     false,   false,   false,    false},
-        /* DEBUGGER        */ {false,  true,         true,     true,       true,     true,      true,    true,    false,    true},
-        /* HAL_LOGGER      */ {false,  false,        false,    false,      false,    false,     false,   false,   false,    false},
+    // ロール間通信許可マトリクス (9x9 static bool table)
+    inline constexpr std::array<std::array<bool, 9>, 9> FB_CONF_ROUTER_ROLE_MATRIX {{
+        // Target:            RUNTIME, CORE_SERVICE, HAL_UART, HAL_STDOUT, HAL_GPIO, HAL_TIMER, HAL_I2C, HAL_SPI, DEBUGGER
+        /* RUNTIME         */ {false,  true,         true,     true,       true,     true,      true,    true,    false},
+        /* CORE_SERVICE    */ {false,  false,        true,     true,       true,     true,      true,    true,    false},
+        /* HAL_UART        */ {false,  false,        false,    false,      false,    false,     false,   false,   false},
+        /* HAL_STDOUT      */ {false,  false,        false,    false,      false,    false,     false,   false,   false},
+        /* HAL_GPIO        */ {false,  false,        false,    false,      false,    false,     false,   false,   false},
+        /* HAL_TIMER       */ {false,  false,        false,    false,      false,    false,     false,   false,   false},
+        /* HAL_I2C         */ {false,  false,        false,    false,      false,    false,     false,   false,   false},
+        /* HAL_SPI         */ {false,  false,        false,    false,      false,    false,     false,   false,   false},
+        /* DEBUGGER        */ {false,  true,         true,     true,       true,     true,      true,    true,    false},
     }};
 }
 ```
@@ -151,6 +149,7 @@ vMMIO Stage 1アドレス窓へのアクセスは、有効サイズとの比較�
 | マクロ名 | 説明 | デフォルト値 | 導出元 |
 | :--- | :--- | :--- | :--- |
 | `FB_CONF_LOG_BUFFER_SIZE` | ログメッセージ保持用のバッファサイズ (Bytes) | `512` | |
+| `FB_CONF_LOG_DICT_MAX_ENTRIES` | ROM上に保持する固定ログ辞書エントリの最大数 | `128` | `{DictionaryBasedIPC}` |
 | `FB_CONF_DEBUG_MAX_BREAKPOINTS` | 最大ブレークポイント数 | `8` | `{META_ConfigurableSystem}` |
 | `FB_CONF_DEBUG_PACKET_SIZE` | RSPパケットバッファサイズ | `1024` | |
 | `FB_CONF_DEBUG_MAX_PC_SAMPLES` | プロファイラバッファに保持可能なPCサンプリングエントリの最大件数 | `64` | `Debug_Integrated` `{META_NoStdVector}` |
@@ -180,8 +179,9 @@ assert FB_CONF_MAX_TASKS <= 254, "FB_CONF_MAX_TASKS must be <= 254"
 | マクロ名 | 説明 | デフォルト値 | 導出元 |
 | :--- | :--- | :--- | :--- |
 | `FB_CONF_RETRY_BACKOFF_MS` | `retry` 戦略の再試行間ウェイト（ミリ秒） | `10` | |
+| `FB_CONF_RETRY_MAX_ATTEMPTS` | `retry` 戦略で再実行する最大回数 | `3` | |
 
-`retry` の上限回数（3回、の不変条件）とあわせ、を実装するすべてのコンポーネントはこの2値を共有する。個別のコンポーネント文書で異なる待機時間・回数を独自に定義しないこと。
+`retry` を実装するすべてのコンポーネントはこの2値を共有する。個別のコンポーネント文書で異なる待機時間・回数を独自に定義しないこと。
 
 ## 4. 動的モデル
 
@@ -189,16 +189,29 @@ assert FB_CONF_MAX_TASKS <= 254, "FB_CONF_MAX_TASKS must be <= 254"
 <!-- traceability: {META_Static_Resolution} -->
 本コンポーネントは静的な定義のみを提供し、すべての値はコンパイル時に確定する。
 
-## 5. 制約達成の方策
 
-### 5.1 性能・メモリ制約と方策
+## 5. インターフェース定義
+
+実行時の公開APIは提供しない。構成値はコンパイル時定数として定義し、各コンポーネントの利用契約は本書の静的モデルと対応するコンポーネント仕様に従う。
+
+
+## 6. 制約達成の方策
+
+### 6.1 性能・メモリ制約と方策
 <!-- traceability: {META_Static_Resolution} {META_ConfigurableSystem} {GLOBAL_StaticScalability} -->
 - **方策**: すべてのパラメータをコンパイル時定数（`constexpr` / マクロ）とし、実行時の探索・計算コストおよび動的ヒープ（malloc/new）消費を完全排除する。
 
-### 5.2 安全性制約と方策
+### 6.2 安全性制約と方策
 <!-- traceability: {META_ConfigurableSystem} -->
 - **方策**: システム構成定数はすべて `constexpr` / `const` として ROM / Flash（`.rodata`）に静的配置され、実行時の不正な書き換えから保護される。
 
-## 6. 形式検証との対応
 
-[`system_config_model.py`](docs/components/tier1_core/formal/system_config_model.py) は、構成値の実行時変更禁止と、定義済みリソース予算内への収束をCTLで検証する。`guards=False` では実行時上書きおよび予算超過の遷移を追加し、両特性が反証されることを確認する。
+## 7. 形式検証・テスト仕様との対応
+
+### 7.1 形式検証との対応
+
+[`system_config_model.py`](docs/components/tier1_core/formal/system_config_model.py) は、抽象化した構成状態での実行時変更禁止と`within_budget`分類をCTLで検証する。メモリ容量の数値計算や物理配置を証明するモデルではない。対象構成がTBDの値は未検証であり、数値予算は構成値が確定した後に静的検査で確認する。`guards=False` では実行時上書きおよび抽象的な予算超過の遷移を追加し、両特性が反証されることを確認する。
+
+## 8. 設計判断と参考実装
+
+特記すべき独立したADRはない。構成値をコンパイル時に固定する判断は[第1節](#1-コンセプト)と[第3節](#3-静的モデル)に記載する。pysim参照実装は [`config.py`](experiments/pysim/tier1_core/config.py)、抽象状態の形式モデルは [`system_config_model.py`](docs/components/tier1_core/formal/system_config_model.py)、検証ケースは [`system_config_test_spec.md`](docs/qa/tier1_core/system_config_test_spec.md) に示す。

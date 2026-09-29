@@ -62,7 +62,7 @@ def test_wasi03p_hierarchical_uri_and_ipc_commands():
     )
     engine = Wasi03pEngine(sysv)
     runtime_task = sysv.start_runtime_task(name="scenario12_runtime")
-    sysv.start_hal_driver(DummyDriver(sysv.wasi_hal_bindings.stdout_uri, transport=sysv.transport))
+    sysv.start_hal_driver(DummyDriver(transport=sysv.transport), sysv.wasi_hal_bindings.stdout_uri)
 
     # 1. Test Hierarchical IPC URIs Resolution
     hierarchical_uris = [

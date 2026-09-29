@@ -21,8 +21,9 @@ _REPO_ROOT = _PYSIM_DIR.parent.parent
 
 from execution_context import WASMContext
 from fixtures.platform_drivers import create_reference_platform_drivers
-from helpers import expect_assertion, wat_to_wasm
+from helpers import _build_test_wasm_binary, expect_assertion, wat_to_wasm
 from helpers import make_interpreter as Interpreter
+from loader import DecodedEntityKind
 from runtime_test_driver import RuntimeEngineDebugDriver
 from scheduler import ChannelAction, Scheduler, Task, TaskState
 from system import (
@@ -38,7 +39,7 @@ from test_support import (
     make_pc_only_module,
     make_runtime_engine,
 )
-from tier2_runtime.logger import LogDictionary, Logger, LogLevel
+from tier2_runtime.logger import LogDictionary, Logger, LogLevel, LogResult, decode_log_records
 from tier3_executer.jit.jit_cache import CardState, JITTrace
 from tier3_executer.jit.x64_jit import TraceCompiler
 from tier3_platform.drivers.hal.stream import DedicatedLogSink, StreamTransport
@@ -382,7 +383,7 @@ def test_hal_task_ipc_communication():
         sysv.pool.view(buffer_handle, 0, 128)[:] = b"x" * 128
         sysv.scheduler.current_task = runtime_task
         sysv.start_hal_driver(
-            DummyDriver(sysv.wasi_hal_bindings.stdout_uri, transport=sysv.transport)
+            DummyDriver(transport=sysv.transport), sysv.wasi_hal_bindings.stdout_uri
         )
         engine = Wasi03pEngine(sysv)
         # Send command via IPC
@@ -524,19 +525,18 @@ def test_idle_01_jit_batch_compilation_on_idle():
 def test_idle_02_logging_flush_on_idle():
     """TEST-IDLE-02: Deferred logs in RingBuffer are flushed to UART transport upon scheduler idle."""
     transport = StreamTransport()
-    dictionary = LogDictionary()
-    dictionary.register(0x01, "event payload=%d")
+    dictionary = LogDictionary(entries=((0x01, "event payload=%d"),))
     logger = Logger(transport, dictionary, min_level=LogLevel.INFO)
     # Log events during active execution
     status1 = logger.log_event(LogLevel.INFO, 0x01, 42)
     status2 = logger.log_event(LogLevel.INFO, 0x01, 99)
-    assert status1 == "QUEUED"
-    assert status2 == "QUEUED"
+    assert status1 == LogResult.SUCCESS
+    assert status2 == LogResult.SUCCESS
     assert transport.bytes_written == 0, "No UART I/O allowed on hot path"
     # Scheduler reaches IDLE -> fires idle hook
     flushed = logger.flush()
     assert flushed == 2
-    wire_output = transport.drain_output().decode("utf-8")
+    wire_output = "\n".join(decode_log_records(transport.drain_output(), dictionary))
     assert "event payload=42" in wire_output
     assert "event payload=99" in wire_output
 
@@ -544,9 +544,11 @@ def test_idle_02_logging_flush_on_idle():
 def test_tier_01_interpreter_to_jit_cooperative_flow():
     """TEST-TIER-01: End-to-end integration of cooperative WASM execution on COOS with idle JIT compilation and log flush."""
     logger_sink = DedicatedLogSink()
-    sysv = System(logger_sink=logger_sink)
+    sysv = System(
+        logger_sink=logger_sink,
+        log_dictionary=LogDictionary(entries=((0x10, "wasm iteration=%d"),)),
+    )
     sysv.runtime_engine = make_runtime_engine(code_lengths=(0x1001,))
-    sysv.dictionary.register(0x10, "wasm iteration=%d")
     executed_steps = []
 
     def wasm_task():
@@ -570,7 +572,7 @@ def test_tier_01_interpreter_to_jit_cooperative_flow():
     assert "task_step_0" in executed_steps
     assert "monitor_step_0" in executed_steps
     # Verify deferred logs were flushed by idle_hook
-    wire = logger_sink.drain_output().decode("utf-8")
+    wire = "\n".join(decode_log_records(logger_sink.drain_output(), sysv.dictionary))
     assert "wasm iteration=0" in wire
     assert "wasm iteration=4" in wire
 
@@ -690,7 +692,7 @@ def test_guest_wasi_01_interpreter_fd_write():
 
         ctx = WasiHostContext(sysv)
         sysv.start_hal_driver(
-            DummyDriver(sysv.wasi_hal_bindings.stdout_uri, transport=sysv.transport)
+            DummyDriver(transport=sysv.transport), sysv.wasi_hal_bindings.stdout_uri
         )
         # Set up guest memory:
         # offset 0: iov { buf: 16, len: 12 }
@@ -903,13 +905,11 @@ def test_wasm_loader_and_radix_binary_tree_view_indexes():
     """TEST-LOAD-01..47: Verifies WASM Loader zero-copy indexing, verification, and ReadOnlyRadixBinaryTreeView file offset & hash symbol indexes."""
     from loader import WasmLoader
 
-    from experiments.pysim.qa.tier2_runtime.test_loader import _build_test_wasm_binary
-
     loader = WasmLoader()
     wasm_bytes = _build_test_wasm_binary(export_names=["zeta", "alpha", "beta"])
     view = loader.prepare("test_module", wasm_bytes)
     # 1. Zero-copy & Hash + ReadOnlyRadixBinaryTreeView export lookup (TEST-LOAD-13)
-    assert [e.name for e in view.exports_dict] == ["alpha", "beta", "zeta"]
+    assert [view.export_name(entry) for entry in view.exports_dict] == ["alpha", "beta", "zeta"]
     assert view.lookup_export_func("alpha") == 0
     assert view.lookup_export_func("beta") == 0
     assert view.lookup_export_func("zeta") == 0
@@ -924,17 +924,17 @@ def test_wasm_loader_and_radix_binary_tree_view_indexes():
     func_start, func_size = view.code_offsets[0]
     entity_fn = view.lookup_by_file_offset(func_start)
     assert entity_fn is not None
-    assert entity_fn.kind == "FUNCTION"
+    assert entity_fn.kind == DecodedEntityKind.FUNCTION
     assert entity_fn.index == 0
     # Middle of function
     entity_fn_mid = view.lookup_by_file_offset(func_start + 2)
     assert entity_fn_mid is not None
-    assert entity_fn_mid.kind == "FUNCTION"
+    assert entity_fn_mid.kind == DecodedEntityKind.FUNCTION
     # Global lookup
     glob_entry = view.globals[0]
     entity_glob = view.lookup_by_file_offset(glob_entry.init_expr_offset)
     assert entity_glob is not None
-    assert entity_glob.kind == "GLOBAL"
+    assert entity_glob.kind == DecodedEntityKind.GLOBAL
     # Out-of-bounds offset
     assert view.lookup_by_file_offset(len(wasm_bytes) + 1000) is None
 

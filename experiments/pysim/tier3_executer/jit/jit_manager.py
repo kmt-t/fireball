@@ -229,9 +229,7 @@ class JITRuntimeManager:
         )
         return trace
 
-    def native_dispatch_state(
-        self, function_index: int
-    ) -> NativeDispatchSnapshot:
+    def native_dispatch_state(self, function_index: int) -> NativeDispatchSnapshot:
         """Return cached ctypes buffers that the C++ dispatcher reads directly."""
 
         cache_key = (

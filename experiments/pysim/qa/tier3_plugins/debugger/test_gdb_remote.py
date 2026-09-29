@@ -138,12 +138,16 @@ class _MemoryDebuggerSink:
 
 def test_debugger_sink_is_replaceable() -> None:
     """TEST-DBG-25: RSP processing is independent of the physical sink."""
-    connection = _MemoryDebuggerConnection(GDBRspProtocol.format_packet("?").encode("latin1"))
+    malformed_write = "$M0,4:deadbeef#00"
+    valid_query = GDBRspProtocol.format_packet("?")
+    connection = _MemoryDebuggerConnection((malformed_write + valid_query).encode("latin1"))
     sink = _MemoryDebuggerSink(connection)
     server = GDBServer(DebuggerManager(), transport=sink)
-    task = server.run_task(0, WASMContext(), {})
+    memory = bytearray(b"keep")
+    task = server.run_task(0, WASMContext(memory=memory), {})
     next(task)
-    assert bytes(connection.outgoing) == b"+$S05#b8"
+    assert bytes(connection.outgoing) == b"-+$S05#b8"
+    assert memory == b"keep", "bad checksum packet must not execute a memory write"
     task.close()
     assert connection.closed
     assert sink.closed
@@ -205,8 +209,8 @@ def test_gdb_remote_socket_session():
         # Step 2: Read virtual registers ('g')
         resp = client.send_raw_packet("g")
         assert len(resp) == 160, f"Expected 160 hex chars for 20 virtual registers, got {len(resp)}"
-        pc = int(resp[0:8], 16)
-        l0 = int(resp[32:40], 16)
+        pc = int.from_bytes(bytes.fromhex(resp[0:8]), "little")
+        l0 = int.from_bytes(bytes.fromhex(resp[32:40]), "little")
         assert pc == block10.head_pc, f"Expected PC {block10.head_pc:#x}, got {pc:x}"
         assert l0 == 2, f"Expected Local0 = 2, got {l0}"
         print(f"    [Step 2] Read virtual registers 'g' (PC=0x{pc:x}, Local0={l0}) [PASS]")
@@ -224,14 +228,16 @@ def test_gdb_remote_socket_session():
         assert resp == "S05", f"Expected S05 on breakpoint hit, got {resp}"
         # Verify state at block20's head: local0 should now be 2 + 10 = 12
         resp_g = client.send_raw_packet("g")
-        pc = int(resp_g[0:8], 16)
-        l0 = int(resp_g[32:40], 16)
+        pc = int.from_bytes(bytes.fromhex(resp_g[0:8]), "little")
+        l0 = int.from_bytes(bytes.fromhex(resp_g[32:40]), "little")
         assert pc == block20.head_pc, f"Expected break at 0x{block20.head_pc:x}, got 0x{pc:x}"
         assert l0 == 12, f"Expected Local0 = 12, got {l0}"
         print(f"    [Step 5] Continue 'c' -> Trapped at breakpoint PC=0x{pc:x}, Local0={l0} [PASS]")
         # Step 6: Write virtual registers ('G') -> Modify local0 to 100
         new_regs = [block20.head_pc, 0, 0, 0, 100, 0] + [0] * 14
-        g_payload = "G" + "".join(f"{r:08x}" for r in new_regs)
+        g_payload = "G" + "".join(
+            (value & 0xFFFF_FFFF).to_bytes(4, "little").hex() for value in new_regs
+        )
         resp = client.send_raw_packet(g_payload)
         assert resp == "OK", f"Expected OK, got {resp}"
         assert ctx.locals[0] == 100
@@ -245,8 +251,8 @@ def test_gdb_remote_socket_session():
         resp = client.send_raw_packet("s")
         assert resp == "S05", f"Expected S05 after step, got {resp}"
         resp_g = client.send_raw_packet("g")
-        pc = int(resp_g[0:8], 16)
-        l1 = int(resp_g[40:48], 16)
+        pc = int.from_bytes(bytes.fromhex(resp_g[0:8]), "little")
+        l1 = int.from_bytes(bytes.fromhex(resp_g[40:48]), "little")
         assert pc == block30.head_pc, f"Expected step to 0x{block30.head_pc:x}, got 0x{pc:x}"
         assert l1 == 500, f"Expected Local1 = 500, got {l1}"
         print(f"    [Step 8] Single-step 's' -> Stepped to PC=0x{pc:x}, Local1={l1} [PASS]")

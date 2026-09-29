@@ -6,10 +6,9 @@ Compiles individual HOT BasicBlocks / Traces into Position-Independent Code (PIC
 Conforms strictly to docs/components/tier3_executer/jit_compiler.md and
 docs/components/tier3_executer/interpreter.md.
 CPS 4-argument calling convention:
-  RCX (R0): void* ctx            -- execution_context
-  RDX (R1): void* sp             -- operand-stack pointer
-  R8  (R2): void* local_base     -- locals array pointer
-  R9  (R3): uint32_t tos         -- stack top value
+  Windows x64: RCX=ctx, RDX=sp, R8=local_base, R9D=tos
+  System V AMD64: RDI=ctx, RSI=sp, RDX=local_base, ECX=tos
+  The common trace prologue keeps them in R13, R12, R10, and R9D.
 """
 
 from __future__ import annotations
@@ -340,6 +339,8 @@ class TraceCompiler:
         a 15-byte entry stub immediately after each header. The stub and exits
         route through common-code offsets selected by build configuration.
     """
+
+    __slots__ = ("_standalone_region",)
 
     def __init__(self) -> None:
         # Standalone traces use the same shared-area ABI as cache-resident

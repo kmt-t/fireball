@@ -135,6 +135,7 @@ def test_sched_04_shared_block_move_semantics_csp_rendezvous():
     recv_sb2 = t2.received_val
     assert isinstance(recv_sb2, SharedBlock)
     assert recv_sb2.get_owner() == 2
+    _activate_task(sched, t2)
     assert recv_sb2.read_bytes(0, 15) == b"Subcase 2 Move!"
 
     with expect_assertion():
@@ -255,6 +256,80 @@ def test_sched_08_task_ids_stay_unique_after_a_slot_is_reclaimed():
     assert len(set(ids)) == 4
 
 
+def test_sched_09_timed_wait_runs_ready_peers_before_idle_sleep():
+    now_ns = 100
+    sleep_intervals: list[int] = []
+    idle_hook_times: list[int] = []
+    events: list[tuple[str, int]] = []
+
+    def clock_ns() -> int:
+        return now_ns
+
+    def sleep_ns(duration_ns: int) -> None:
+        nonlocal now_ns
+        sleep_intervals.append(duration_ns)
+        now_ns += duration_ns
+
+    sched = Scheduler(clock_ns=clock_ns, sleep_ns=sleep_ns)
+    sched.set_idle_hook(lambda: idle_hook_times.append(now_ns))
+
+    def timed_waiter():
+        events.append(("wait", now_ns))
+        sched.wait_until(105)
+        yield (ChannelAction.BLOCK, None)
+        events.append(("resume", now_ns))
+
+    def ready_peer():
+        events.append(("peer", now_ns))
+        yield None
+
+    waiter_id = sched.spawn("timed_waiter", timed_waiter())
+    peer_id = sched.spawn("ready_peer", ready_peer())
+    sched.run_until_idle()
+
+    assert events == [("wait", 100), ("peer", 100), ("resume", 105)]
+    assert sleep_intervals == [5]
+    assert idle_hook_times == [100, 105]
+    assert sched.get_task(waiter_id).state == TaskState.TERMINATED
+    assert sched.get_task(peer_id).state == TaskState.TERMINATED
+    assert sched.pending_task_count() == 0
+
+
+def test_sched_10_killing_timed_waiter_clears_only_its_deadline():
+    now_ns = 100
+    sleep_intervals: list[int] = []
+    resumed: list[str] = []
+
+    def clock_ns() -> int:
+        return now_ns
+
+    def sleep_ns(duration_ns: int) -> None:
+        nonlocal now_ns
+        sleep_intervals.append(duration_ns)
+        now_ns += duration_ns
+
+    sched = Scheduler(clock_ns=clock_ns, sleep_ns=sleep_ns)
+
+    def waiter(name: str, deadline_ns: int):
+        sched.wait_until(deadline_ns)
+        yield (ChannelAction.BLOCK, None)
+        resumed.append(name)
+
+    earliest_id = sched.spawn("earliest", waiter("earliest", 110))
+    survivor_id = sched.spawn("survivor", waiter("survivor", 120))
+    assert sched.step() is not None
+    assert sched.step() is not None
+    assert sched.get_task(earliest_id).state == TaskState.BLOCKED_TIMER
+    assert sched.get_task(survivor_id).state == TaskState.BLOCKED_TIMER
+
+    assert sched.task_killed(earliest_id)
+    assert sched.get_task(earliest_id).state == TaskState.TERMINATED
+    sched.run_until_idle()
+    assert sleep_intervals == [20], "cancelled earliest deadline must not cause a stale wake cycle"
+    assert resumed == ["survivor"]
+    assert sched.get_task(survivor_id).state == TaskState.TERMINATED
+
+
 if __name__ == "__main__":
     test_sched_01_pure_round_robin_fifo()
     test_sched_02_task_capacity_limit()
@@ -264,4 +339,6 @@ if __name__ == "__main__":
     test_sched_06_ready_queue_intrusive_ring_two_ended_fifo()
     test_sched_07_terminated_task_returns_its_tcb_slot_on_spawn()
     test_sched_08_task_ids_stay_unique_after_a_slot_is_reclaimed()
-    print("[PASS] All 8 Round-Robin Scheduler tests passed.")
+    test_sched_09_timed_wait_runs_ready_peers_before_idle_sleep()
+    test_sched_10_killing_timed_waiter_clears_only_its_deadline()
+    print("[PASS] All 10 Round-Robin Scheduler tests passed.")

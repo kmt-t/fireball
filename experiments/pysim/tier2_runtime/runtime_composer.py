@@ -2,12 +2,22 @@
 
 from __future__ import annotations
 
+import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from enum import IntEnum
 from typing import Generic, Protocol, TypeVar
 
-from runtime_events import RuntimeEvent, RuntimeEventFlags, RuntimeEventKind, RuntimeObserver
+from recovery import Result
+from runtime_events import (
+    RUNTIME_EVENT_NO_MODULE,
+    RUNTIME_EVENT_NO_PC,
+    RuntimeEvent,
+    RuntimeEventFlags,
+    RuntimeEventKind,
+    RuntimeExecutionError,
+    RuntimeObserver,
+)
 from system_containers import StaticVector
 
 ResultT = TypeVar("ResultT")
@@ -17,13 +27,17 @@ ArgumentT = TypeVar("ArgumentT")
 class RuntimeExecutor(Protocol, Generic[ResultT, ArgumentT]):
     """Interpreter または JIT に共通する最小呼出契約。"""
 
-    def call(self, func_index: int, args: Sequence[ArgumentT]) -> ResultT: ...
+    def call(
+        self, func_index: int, args: Sequence[ArgumentT]
+    ) -> Result[ResultT, RuntimeExecutionError]: ...
 
 
 class ComposedRuntime(Protocol, Generic[ResultT, ArgumentT]):
     """RuntimeComposer の生成結果が公開する呼出境界。"""
 
-    def call(self, func_index: int, args: Sequence[ArgumentT]) -> ResultT: ...
+    def call(
+        self, func_index: int, args: Sequence[ArgumentT]
+    ) -> Result[ResultT, RuntimeExecutionError]: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -69,27 +83,36 @@ class RuntimeWithoutPlugins(Generic[ResultT, ArgumentT]):
     def __init__(self, executor: RuntimeExecutor[ResultT, ArgumentT]):
         self.executor = executor
 
-    def call(self, func_index: int, args: Sequence[ArgumentT]) -> ResultT:
+    def call(
+        self, func_index: int, args: Sequence[ArgumentT]
+    ) -> Result[ResultT, RuntimeExecutionError]:
         return self.executor.call(func_index, args)
 
 
 class RuntimeWithPlugins(Generic[ResultT, ArgumentT]):
     """有効なプラグインだけを固定ベクタへ結線した合成結果。"""
 
-    __slots__ = ("call_id", "executor", "observers", "runtime_id", "tick")
+    __slots__ = ("call_id", "executor", "observers", "runtime_id", "tick", "tick_clock")
 
     def __init__(
         self,
         executor: RuntimeExecutor[ResultT, ArgumentT],
         observers: StaticVector[RuntimeObserver],
         runtime_id: int,
+        tick_clock: Callable[[], int] = time.monotonic_ns,
     ):
         assert len(observers) > 0
         self.executor = executor
         self.observers = observers
         self.runtime_id = runtime_id
-        self.tick = 0
+        self.tick = -1
         self.call_id = 0
+        self.tick_clock = tick_clock
+
+    def _next_tick(self) -> int:
+        observed_tick = self.tick_clock()
+        self.tick = max(observed_tick, self.tick + 1)
+        return self.tick
 
     def _emit(
         self,
@@ -101,25 +124,41 @@ class RuntimeWithPlugins(Generic[ResultT, ArgumentT]):
         event = RuntimeEvent(
             kind=kind,
             runtime_id=self.runtime_id,
-            module_id=0,
+            module_id=RUNTIME_EVENT_NO_MODULE,
             function_id=func_index,
-            guest_pc=guest_pc,
-            tick=self.tick,
+            guest_pc=guest_pc if guest_pc >= 0 else RUNTIME_EVENT_NO_PC,
+            tick=self._next_tick(),
             call_id=self.call_id,
             flags=flags,
         )
         for index in range(len(self.observers)):
             self.observers[index].on_runtime_event(event)
 
-    def call(self, func_index: int, args: Sequence[ArgumentT]) -> ResultT:
+    def call(
+        self, func_index: int, args: Sequence[ArgumentT]
+    ) -> Result[ResultT, RuntimeExecutionError]:
         """共通呼出境界からイベントを発行して、選択済み実行器を呼び出す。"""
 
         self.call_id += 1
-        self.tick += 1
-        self._emit(RuntimeEventKind.FUNCTION_ENTER, func_index, 0, RuntimeEventFlags.NONE)
+        self._emit(RuntimeEventKind.FUNCTION_ENTER, func_index, -1, RuntimeEventFlags.NONE)
         result = self.executor.call(func_index, args)
-        self.tick += 1
-        self._emit(RuntimeEventKind.FUNCTION_EXIT, func_index, 0, RuntimeEventFlags.NONE)
+        if result.is_ok:
+            self._emit(RuntimeEventKind.FUNCTION_EXIT, func_index, -1, RuntimeEventFlags.NONE)
+            return result
+        if result.error == RuntimeExecutionError.GUEST_TRAP:
+            self._emit(
+                RuntimeEventKind.TRAP,
+                func_index,
+                -1,
+                RuntimeEventFlags.TRAP | RuntimeEventFlags.ESTIMATED,
+            )
+        else:
+            self._emit(
+                RuntimeEventKind.FUNCTION_EXIT,
+                func_index,
+                -1,
+                RuntimeEventFlags.ESTIMATED | RuntimeEventFlags.ABORTED,
+            )
         return result
 
 
@@ -137,6 +176,7 @@ class RuntimeComposer:
         config: RuntimeCompositionConfig,
         factories: RuntimeFactories[ResultT, ArgumentT],
         runtime_id: int = 1,
+        tick_clock: Callable[[], int] = time.monotonic_ns,
     ) -> ComposedRuntime[ResultT, ArgumentT]:
         """無効プラグインを生成せず、選択済みの具象 Runtime だけを返す。"""
 
@@ -160,4 +200,4 @@ class RuntimeComposer:
             observers.append(factories.debugger())
         if selection.profiler:
             observers.append(factories.profiler())
-        return RuntimeWithPlugins(executor, observers, runtime_id)
+        return RuntimeWithPlugins(executor, observers, runtime_id, tick_clock)

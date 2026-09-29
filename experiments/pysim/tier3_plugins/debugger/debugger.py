@@ -4,7 +4,7 @@ Debugger Manager & GDB RSP Protocol Engine for Fireball.
 Conforms strictly to docs/components/tier3_plugins/debugger.md
 and docs/specs/gdb_rsp_protocol.md.
 Implements:
-1. GDB RSP Minimal Command Set (?, g, G, m, M, Z0, z0, s, c) ({RSPMinimalSet})
+1. GDB RSP Minimal Command Set (?, g, G, p, P, m, M, qSupported, Z0, z0, s, c) ({RSPMinimalSet})
 2. Virtual Register Mapping (0:pc, 1:sp, 2:fp, 3:tos, 4..19:local0..15)
 3. Breakpoint Management via sorted ReadOnlyFlatSetView semantics ({FlatViewNarrowing})
 4. Integrated Profiler (PC sampling frequency & memory assertions) ({Debug_Integrated})
@@ -27,6 +27,56 @@ from wasm_module import BasicBlock
 FB_CONF_DEBUG_MAX_PC_SAMPLES = 64
 
 
+def _hex_digit(character: str) -> int | None:
+    """Returns the numeric value of one ASCII hexadecimal digit."""
+    if "0" <= character <= "9":
+        return ord(character) - ord("0")
+    if "a" <= character <= "f":
+        return ord(character) - ord("a") + 10
+    if "A" <= character <= "F":
+        return ord(character) - ord("A") + 10
+    return None
+
+
+def _parse_hex(value: str) -> int | None:
+    """Parses a nonempty ASCII hexadecimal field without exception control flow."""
+    if not value:
+        return None
+    parsed = 0
+    for character in value:
+        digit = _hex_digit(character)
+        if digit is None:
+            return None
+        parsed = (parsed << 4) | digit
+    return parsed
+
+
+def _parse_hex_bytes(value: str) -> bytes | None:
+    """Parses an even-length hexadecimal payload after validating every digit."""
+    if len(value) % 2 != 0:
+        return None
+    result = bytearray()
+    for offset in range(0, len(value), 2):
+        byte_value = _parse_hex(value[offset : offset + 2])
+        if byte_value is None:
+            return None
+        result.append(byte_value)
+    return bytes(result)
+
+
+def _format_gdb_register(value: int) -> str:
+    """Encodes one 32-bit register in the target's little-endian byte order."""
+    return (value & 0xFFFF_FFFF).to_bytes(4, "little").hex()
+
+
+def _parse_gdb_register(value: str) -> int | None:
+    """Decodes one four-byte little-endian register value."""
+    raw = _parse_hex_bytes(value)
+    if raw is None or len(raw) != 4:
+        return None
+    return int.from_bytes(raw, "little")
+
+
 class _DebuggerEngine(Protocol):
     """Tier 2 execution contract implemented by an injected runtime engine."""
 
@@ -39,6 +89,17 @@ class _DebuggerEngine(Protocol):
 
 class DebuggerManager:
     """Manages debug state, breakpoint sets, execution stepping, and integrated profiling."""
+
+    __slots__ = (
+        "_assertion_violations",
+        "_breakpoints",
+        "_pc_sample_storage",
+        "attached",
+        "engine",
+        "halted",
+        "memory_assertions",
+        "stop_signal",
+    )
 
     def __init__(self, engine: _DebuggerEngine | None = None):
         self.engine = engine
@@ -73,11 +134,12 @@ class DebuggerManager:
         if self.engine is not None:
             self.engine.detach_debugger()
 
-    def add_breakpoint(self, pc: int) -> None:
+    def add_breakpoint(self, pc: int) -> bool:
         """Adds a breakpoint maintaining sorted order for flat_set_view O(log N) lookup."""
         idx = bisect.bisect_left(self._breakpoints, pc)
-        if idx == len(self._breakpoints) or self._breakpoints[idx] != pc:
-            assert self._breakpoints.insert_at(idx, pc)
+        if idx < len(self._breakpoints) and self._breakpoints[idx] == pc:
+            return True
+        return self._breakpoints.insert_at(idx, pc)
 
     def remove_breakpoint(self, pc: int) -> None:
         """Removes a breakpoint if present."""
@@ -138,13 +200,29 @@ class DebuggerManager:
             regs.append(ctx.locals[i] if i < len(ctx.locals) else 0)
         return regs
 
-    def write_virtual_registers(self, regs: Sequence[int], ctx: WASMContext) -> int:
-        """Updates virtual registers from a 20-integer list. Returns new PC."""
-        new_pc = regs[0] if len(regs) > 0 else 0
-        # locals
+    def write_virtual_registers(self, regs: Sequence[int], ctx: WASMContext) -> int | None:
+        """Updates registers or returns `None` when the packet violates the ABI."""
+        assert len(regs) == 20, "GDB G packet must contain exactly 20 registers"
+        assert all(0 <= value <= 0xFFFF_FFFF for value in regs), (
+            "GDB registers must be 32-bit unsigned values"
+        )
+        new_pc = regs[0]
+        stack_size = regs[1]
+        frame_pointer = regs[2]
+        tos = regs[3]
+        if stack_size > ctx.stack_capacity:
+            return None
+        if frame_pointer != 0:
+            return None
+        if stack_size == 0:
+            if tos != 0:
+                return None
+        else:
+            ctx.stack.set_size(stack_size)
+            ctx.stack.write_raw_at(stack_size - 1, tos)
+        ctx.stack.set_size(stack_size)
         for i in range(16):
-            if 4 + i < len(regs):
-                ctx.locals[i] = regs[4 + i]
+            ctx.locals[i] = regs[4 + i]
         return new_pc
 
     def on_runtime_event(self, event: RuntimeEvent) -> None:
@@ -157,6 +235,8 @@ class DebuggerManager:
 class GDBRspProtocol:
     """GDB Remote Serial Protocol (RSP) packet handler and dispatcher ({RSPMinimalSet})."""
 
+    __slots__ = ("dbg",)
+
     def __init__(self, dbg: DebuggerManager):
         self.dbg = dbg
 
@@ -164,6 +244,21 @@ class GDBRspProtocol:
     def calculate_checksum(payload: str) -> str:
         cksum = sum(ord(c) for c in payload) % 256
         return f"{cksum:02x}"
+
+    @classmethod
+    def is_valid_packet(cls, packet: str) -> bool:
+        """Validate complete RSP framing and checksum before command dispatch."""
+        if not packet.startswith("$"):
+            return False
+        marker = packet.find("#", 1)
+        if marker < 0 or len(packet) != marker + 3:
+            return False
+        checksum = packet[marker + 1 :]
+        try:
+            int(checksum, 16)
+        except ValueError:
+            return False
+        return checksum.lower() == cls.calculate_checksum(packet[1:marker])
 
     @classmethod
     def format_packet(cls, payload: str) -> str:
@@ -194,62 +289,100 @@ class GDBRspProtocol:
         # g - Read All Registers
         elif cmd == "g":
             regs = self.dbg.read_virtual_registers(current_pc, ctx)
-            hex_payload = "".join(f"{r & 0xFFFF_FFFF:08x}" for r in regs)
+            hex_payload = "".join(_format_gdb_register(value) for value in regs)
             return self.format_packet(hex_payload), current_pc
         # G - Write All Registers
         elif cmd == "G":
-            try:
-                # 20 registers * 8 hex digits = 160 chars
-                hex_data = args
-                regs: StaticVector[int] = StaticVector(capacity=20)
-                for i in range(0, len(hex_data), 8):
-                    regs.append(int(hex_data[i : i + 8], 16))
-                new_pc = self.dbg.write_virtual_registers(regs, ctx)
-                return self.format_packet("OK"), new_pc
-            except Exception:
+            if len(args) != 20 * 8:
                 return self.format_packet("E01"), current_pc
+            regs: StaticVector[int] = StaticVector(capacity=20)
+            for i in range(0, len(args), 8):
+                value = _parse_gdb_register(args[i : i + 8])
+                if value is None:
+                    return self.format_packet("E01"), current_pc
+                regs.append(value)
+            new_pc = self.dbg.write_virtual_registers(regs, ctx)
+            if new_pc is None:
+                return self.format_packet("E01"), current_pc
+            return self.format_packet("OK"), new_pc
+        # p - Read one register
+        elif cmd == "p":
+            register = _parse_hex(args)
+            if register is None or not 0 <= register < 20:
+                return self.format_packet("E01"), current_pc
+            value = self.dbg.read_virtual_registers(current_pc, ctx)[register]
+            return self.format_packet(_format_gdb_register(value)), current_pc
+        # P - Write one register
+        elif cmd == "P":
+            if args.count("=") != 1:
+                return self.format_packet("E01"), current_pc
+            register_text, _, value_text = args.partition("=")
+            register = _parse_hex(register_text)
+            value = _parse_gdb_register(value_text)
+            if register is None or value is None or not 0 <= register < 20:
+                return self.format_packet("E01"), current_pc
+            regs = self.dbg.read_virtual_registers(current_pc, ctx)
+            regs[register] = value
+            new_pc = self.dbg.write_virtual_registers(regs, ctx)
+            if new_pc is None:
+                return self.format_packet("E01"), current_pc
+            return self.format_packet("OK"), new_pc
         # m addr,len - Read Memory
         elif cmd == "m":
-            try:
-                addr_str, len_str = args.split(",")
-                addr = int(addr_str, 16)
-                length = int(len_str, 16)
-                if ctx.memory is None or addr + length > len(ctx.memory):
-                    return self.format_packet("E01"), current_pc
-                mem_bytes = bytes(ctx.memory[addr : addr + length])
-                return self.format_packet(mem_bytes.hex()), current_pc
-            except Exception:
+            parts = args.split(",")
+            if len(parts) != 2:
                 return self.format_packet("E01"), current_pc
+            addr = _parse_hex(parts[0])
+            length = _parse_hex(parts[1])
+            if addr is None or length is None or ctx.memory is None:
+                return self.format_packet("E01"), current_pc
+            if addr + length > len(ctx.memory):
+                return self.format_packet("E01"), current_pc
+            mem_bytes = bytes(ctx.memory[addr : addr + length])
+            return self.format_packet(mem_bytes.hex()), current_pc
         # M addr,len:XX... - Write Guest Memory
         elif cmd == "M":
-            try:
-                header, hex_data = args.split(":")
-                addr_str, len_str = header.split(",")
-                addr = int(addr_str, 16)
-                length = int(len_str, 16)
-                data = bytes.fromhex(hex_data)
-                if ctx.memory is None or addr + len(data) > len(ctx.memory) or len(data) != length:
-                    return self.format_packet("E01"), current_pc
-                ctx.memory[addr : addr + length] = data
-                return self.format_packet("OK"), current_pc
-            except Exception:
+            if args.count(":") != 1:
                 return self.format_packet("E01"), current_pc
+            header, _, hex_data = args.partition(":")
+            parts = header.split(",")
+            if len(parts) != 2:
+                return self.format_packet("E01"), current_pc
+            addr = _parse_hex(parts[0])
+            length = _parse_hex(parts[1])
+            data = _parse_hex_bytes(hex_data)
+            if addr is None or length is None or data is None or ctx.memory is None:
+                return self.format_packet("E01"), current_pc
+            if addr + len(data) > len(ctx.memory) or len(data) != length:
+                return self.format_packet("E01"), current_pc
+            ctx.memory[addr : addr + length] = data
+            return self.format_packet("OK"), current_pc
         # Z0,addr,kind - Insert Breakpoint
         elif cmd == "Z" and args.startswith("0,"):
-            try:
-                addr = int(args.split(",")[1], 16)
-                self.dbg.add_breakpoint(addr)
-                return self.format_packet("OK"), current_pc
-            except Exception:
+            parts = args.split(",")
+            if len(parts) != 3 or parts[0] != "0":
                 return self.format_packet("E01"), current_pc
+            addr = _parse_hex(parts[1])
+            kind = _parse_hex(parts[2])
+            if addr is None or kind is None or kind > 0xFFFF_FFFF:
+                return self.format_packet("E01"), current_pc
+            if not self.dbg.add_breakpoint(addr):
+                return self.format_packet("E01"), current_pc
+            return self.format_packet("OK"), current_pc
         # z0,addr,kind - Remove Breakpoint
         elif cmd == "z" and args.startswith("0,"):
-            try:
-                addr = int(args.split(",")[1], 16)
-                self.dbg.remove_breakpoint(addr)
-                return self.format_packet("OK"), current_pc
-            except Exception:
+            parts = args.split(",")
+            if len(parts) != 3 or parts[0] != "0":
                 return self.format_packet("E01"), current_pc
+            addr = _parse_hex(parts[1])
+            kind = _parse_hex(parts[2])
+            if addr is None or kind is None or kind > 0xFFFF_FFFF:
+                return self.format_packet("E01"), current_pc
+            self.dbg.remove_breakpoint(addr)
+            return self.format_packet("OK"), current_pc
+        # qSupported - advertise only capabilities implemented by this server.
+        elif cmd == "q" and args.startswith("Supported"):
+            return self.format_packet("PacketSize=256"), current_pc
         # s - Single Step Instruction
         elif cmd == "s":
             if blocks.get(current_pc) is None:

@@ -153,12 +153,12 @@ def properties():
             "expect": True,  # 3面ローテーションで破棄されたバンクのエントリ表スロットは漏れなく回収される
         },
         {
-            "name": "dirty_cache_always_flushes_promptly",
+            "name": "dirty_cache_eventually_flushes",
             "kind": "liveness",
             "logic": "CTL",
             "formula": AG(Imply(dirty, AF(flushed))),
             "violation": bad_stall,
-            "expect": True,  # Revoke で汚れたキャッシュは必ず有界時間内に flush される
+            "expect": True,  # 抽象遷移上、Revoke で汚れたキャッシュはいずれ flush される
         },
         {
             "name": "resident_trace_duplicate_compile_suppression",

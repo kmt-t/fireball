@@ -9,10 +9,18 @@ from __future__ import annotations
 
 import ctypes
 import sys
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
+from typing import Protocol
 
 # Platform detection
 IS_WINDOWS = sys.platform == "win32"
+
+
+class NativeDynamicFunction(Protocol):
+    """Callable machine-code entry whose argument vector comes from its ABI type."""
+
+    def __call__(self, *args: int) -> int | None: ...
+
 
 if IS_WINDOWS:
     import ctypes.wintypes as wt
@@ -71,6 +79,15 @@ class ExecutableBuffer:
         - commit_jit_patch(): flips protection from RW+XN back to RO+X (PAGE_EXECUTE_READ / PROT_READ|PROT_EXEC)
         - assert_no_rwx(): verifies no state ever permits both write and execution.
     """
+
+    __slots__ = (
+        "base",
+        "current_protection",
+        "dsb_count",
+        "isb_count",
+        "patch_in_progress",
+        "size",
+    )
 
     def __init__(self, size: int):
         # Set before any allocation attempt: if VirtualAlloc/mmap below raises,
@@ -174,7 +191,7 @@ class ExecutableBuffer:
 
     def function_at(
         self, offset: int, restype: type | None, argtypes: Sequence[type]
-    ) -> Callable[..., int | None]:
+    ) -> NativeDynamicFunction:
         self.finalize()
         func_type = ctypes.CFUNCTYPE(restype, *argtypes)
         return func_type(self.base + offset)

@@ -18,6 +18,7 @@ from enum import IntEnum
 from logging_interface import Logger, LogLevel
 from memory_interface import MemoryManager, SharedBlock
 from scheduler import (
+    FB_CONF_MAX_CHANNELS,
     Channel,
     ChannelAction,
     ChannelTransferMode,
@@ -119,7 +120,9 @@ class ServiceDescriptor(tuple):
     this role) edge of the RBAC DAG gets its own dedicated CSP channel (see
     _EDGE_CHANNEL_NAMES), since a Channel is a strict 1:1 pairing."""
 
-    def __new__(cls, role: Role, device_id: int = 0):
+    __slots__ = ()
+
+    def __new__(cls, role: Role, device_id: int = 0) -> ServiceDescriptor:
         assert device_id >= 0
         return super().__new__(cls, (role, device_id))
 
@@ -157,6 +160,17 @@ class IPCMessage:
     Bulk data across tasks must be passed via RAII SharedBlock (shared_block),
     encapsulating shm_id entirely per {ADR_SharedBlockRaii}.
     """
+
+    __slots__ = (
+        "_block",
+        "_in_flight_resource_ids",
+        "_in_flight_shm_id",
+        "_memory_manager",
+        "_reply_channel",
+        "_response_code",
+        "_sender_id",
+        "ownership",
+    )
 
     def __init__(
         self,
@@ -507,6 +521,15 @@ class IPCRouter:
     (Stage 3, delegated to scheduler.Channel via integer edge handles).
     """
 
+    __slots__ = (
+        "_channel_role_masks",
+        "_service_channels",
+        "logger",
+        "memory_manager",
+        "registry",
+        "scheduler",
+    )
+
     def __init__(
         self,
         scheduler: Scheduler,
@@ -525,20 +548,25 @@ class IPCRouter:
         self._service_channels: StaticVector[StaticVector[Channel | None]] = StaticVector(
             capacity=len(_SERVICE_ENTRIES)
         )
+        self._channel_role_masks: StaticVector[int] = StaticVector(capacity=FB_CONF_MAX_CHANNELS)
+        for _ in range(self.scheduler.channel_count):
+            self._channel_role_masks.append(0)
         for _uri, descriptor in _SERVICE_ENTRIES:
             channels: StaticVector[Channel | None] = StaticVector(capacity=len(Role))
             for sender_role in Role:
                 allowed = FB_CONF_ROUTER_ROLE_MATRIX[int(sender_role)][int(descriptor.role)]
-                channels.append(
-                    self.scheduler.create_channel(
+                if allowed:
+                    channel = self.scheduler.create_channel(
                         transfer_mode=ChannelTransferMode.MOVABLE,
                         sender_stamper=IPCMessage.stamp_sender,
                         reply_stamper=IPCMessage.prepare_reply,
                         request_reply=True,
                     )
-                    if allowed
-                    else None
-                )
+                    assert channel.channel_id == len(self._channel_role_masks)
+                    self._channel_role_masks.append(1 << int(sender_role))
+                    channels.append(channel)
+                else:
+                    channels.append(None)
             self._service_channels.append(channels)
 
     def lookup_service_handle(self, uri: str) -> int:
@@ -620,12 +648,13 @@ class IPCRouter:
         current = self.scheduler.current_task
         assert current is not None, "IPC send requires an active scheduler task"
         sender_role = Role(current.role)
-        channel_allowed = False
-        for service_channels in self._service_channels:
-            allowed_channel = service_channels[int(sender_role)]
-            if allowed_channel is channel:
-                channel_allowed = True
-                break
+        channel_id = channel.channel_id
+        registered_channel = self.scheduler.get_channel(channel_id)
+        channel_allowed = (
+            registered_channel is channel
+            and 0 <= channel_id < len(self._channel_role_masks)
+            and self._channel_role_masks[channel_id] & (1 << int(sender_role)) != 0
+        )
         if not channel_allowed:
             if self.logger is not None:
                 self.logger.log_event(
@@ -734,9 +763,7 @@ class IPCRouter:
 
         return (IPCStatus.COMPLETED, message)
 
-    def reply(
-        self, message: IPCMessage, response_code: int | None = None
-    ) -> IPCStatus:
+    def reply(self, message: IPCMessage, response_code: int | None = None) -> IPCStatus:
         """Return the received message, optionally extended, to its sender."""
         receiver = self.scheduler.current_task
         assert receiver is not None, "IPC reply requires an active scheduler task"

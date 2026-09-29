@@ -21,7 +21,7 @@ FlatMap 単体での探索は $O(\log N)$ である。本アーキテクチャ�
 
 1. **リニアアドレス空間フィルタ（高速バイパス & 境界チェック）**:
    32ビットゲストアドレスの最上位ビット（Bit 31）が `0` の場合、そのアドレスは vMMIO 管理対象外として、Stage 1（ゲストRAM）への直接アクセスとして高速バイパス（O(1) 処理）を実行する。
-   - **統一境界チェック**: 比較命令ベースの単一の高速境界チェックである（マスクは用いない）。`guest_ram_size`（`vsoc_runtime.mem-size`）と直接比較する。`addr >= guest_ram_size` なら境界外として即座に `ERR_OUT_OF_BOUNDS` トラップを発生させる。`guest_ram_size` に2の冪の制約はない。論理WASMページやシミュレーション容量にかかわらず、同一の比較契約を使う。トラップは必須であり、境界外アドレスのラップアラウンド継続は許容しない。JIT トレース側も同一の比較・トラップ方式を採り、トラップ時はインタープリタへフォールバックする。
+   - **統一境界チェック**: 比較命令ベースの境界チェックであり、マスクは用いない。1バイト以上のアクセスでは `addr >= guest_ram_size` または `access_size > guest_ram_size - addr` を境界外とする。全アクセス範囲がゲストRAM内に収まる必要がある。`guest_ram_size` に2の冪の制約はない。トラップは必須であり、境界外アドレスのラップアラウンド継続は許容しない。JIT トレース側も同一の比較・トラップ方式を採り、トラップ時はインタープリタへフォールバックする。
 2. **FlatMap PTE 管理**:
    最上位ビット（Bit 31）が `1` のアドレス空間を vMMIO 領域（`0x8000_0000` – `0xFFFF_FFFF`）とする。
    - 仮想ページ番号（VPN = `raw >> 12`）をキーとして、FlatMap（`vmmio_ptes`）に PTE を格納する。
@@ -36,6 +36,8 @@ vMMIO領域（Stage 2/3）のセキュリティモデルは**PTEに埋め込ま�
 1. **Stage 1 (ゲストRAMバイパス)**: ゲスト専用RAM領域（Bit 31 == 0、FC=0..7）。`addr >= guest_ram_size` による比較ベースの単一の高速境界チェック（FastAddressCheck）を行い、境界外は即座にトラップする。
 2. **Stage 2 (静的vMMIO, FC=12)**: コンパイル時にアドレスが確定するコアデバイス（IPCR、vIRQ等）。システムコールと VDMA の host call はこのアドレス空間を経由しない。
 3. **Stage 3 (動的vMMIO, FC=13-15)**: HAL DYNAMIC（FC=13, `0xD000_0000`）、SHM（FC=14, `0xE000_0000`）、PASSTHROUGH（FC=15, `0xF000_0000`）領域のアクセス。TLB または FlatMap を経由して PTE を解決し、エントリの権限フィールドで可否を判定する。DYNAMIC はマルチゲスト構成でも同時にマップできるゲストを1つに限定する。
+
+単一のロード、ストア、バルク転送、VDMA転送が触れる範囲は、解決した1つの仮想ページとPTEのマッピング範囲内に収める。FC=14 SHMでは `mapping_size` も上限とし、開始アドレスだけが有効でも範囲末尾が上限を越える場合は `OUT_OF_BOUNDS` とする。本層はページ境界をまたぐ要求を自動分割しない。呼び出し側はページごとに別要求を行い、それぞれ独立した権限検査を受ける。
 
 IPC経由のデータ交換は行わない — GPIOのようなsub-µs応答が必要な周辺機器はIPCレイテンシに耐えられないため、このダイレクトアクセスモデルが採用されている。
 
@@ -139,7 +141,9 @@ Static Devices (Stage 2) 向け。PTE には Device Type やパーミッショ�
 
 #### Stage 3 ページテーブルエントリ
 <!-- traceability: {META_Static_Resolution} {OwnershipTransfer} -->
-SHM (FC=14) および Passthrough (FC=15) 向け。PTEにはページ保護フラグとSHM所有タスクIDを保持し、SHMでは別メタデータとして物理バック基点と実サイズを保持する。SHMアクセスではスケジューラの現在タスクIDと`owner_id`を照合し、所有者が一致しないアクセスは未登録ページフォルト（`TRAP_UNREGISTERED_PAGE`）として遮断する（`{OwnerMismatchTrap}`）。Revokeまたは所有権変更時はPTEをアンマップしてTLBをフラッシュする。DYNAMIC (FC=13) はHALバッファプールの操作期間マッピングで保護する。
+SHM (FC=14)、DYNAMIC (FC=13) および Passthrough (FC=15) 向け。PTEにはページ保護フラグと所有タスクIDを保持し、SHMでは別メタデータとして物理バック基点と実サイズも保持する。マップ済みページの所有者とスケジューラの現在タスクIDが異なる場合は`OWNER_MISMATCH`で遮断する（`{OwnerMismatchTrap}`）。 <!-- definition: {OwnerMismatchTrap} --> 未登録・Revoke済みページは`UNREGISTERED_PAGE`とする（`{UnregisteredPageTrap}`）。 <!-- definition: {UnregisteredPageTrap} --> Revokeまたは所有権変更時はPTEをアンマップしてTLBをフラッシュする。
+
+FC=13のHALドライバーはゲストとして`vmmio.access`を実行しない。HALバッファプールが現在のI/Oに対応するVPN、物理ページ、ゲスト所有者をPTEメタデータで照合した後、固定スロットの境界付きviewを渡す。ゲストからのFC=13アクセスには引き続きスケジューラの現在タスクIDを照合する。
 
 ```
 32-bit Stage 3 permission PTE (mapping metadata is held beside it):
@@ -148,10 +152,10 @@ SHM (FC=14) および Passthrough (FC=15) 向け。PTEにはページ保護フ�
 [10]    READ (1 = 読み出し許可)
 [9]     WRITE (1 = 書き込み許可)
 [8]     EXEC (1 = 実行許可 — Passthrough で使用)
-[7:0]   OWNER_TASK_ID (SHM only; DYNAMIC uses pool guest binding)
+[7:0]   OWNER_TASK_ID (SHM / DYNAMIC)
 ```
 
-**FC=14（SHM）のマッピングは、共有メモリマネージャの予約スロットイベント購読により駆動される。4KB仮想スロット番号、物理バック基点、実サイズは独立したマッピングメタデータとして保持する。4KBの仮想予約は同量の物理RAM確保を意味しない。vMMIOはイベントに応じてPTE・サイズメタデータを登録または削除し、対応TLBをフラッシュする。** {VmmioShmDelegation}
+**FC=14（SHM）のマッピングは、共有メモリマネージャの予約スロットイベント購読により駆動される。4KB仮想スロット番号、物理バック基点、実サイズは独立したマッピングメタデータとして保持する。4KBの仮想予約は同量の物理RAM確保を意味しない。vMMIOはイベントに応じてPTE・サイズメタデータを登録または削除し、対応TLBをフラッシュする。** {VmmioShmDelegation} <!-- definition: {VmmioShmDelegation} -->
 
 #### 仮想アドレス割り当てアルゴリズム（ビット並列連続ビットマップ方式）
 <!-- traceability: {META_Static_Resolution} -->
@@ -326,13 +330,13 @@ PASSTHROUGH アドレス変換:
 <!-- traceability: {Trap_Interface} {VDMA} -->
 システム制御、システムコール、WASI、IPCは `fireball:host/trap` のimport host callで実行し、vDMAは `fireball:host/vdma` の専用importで実行する。これらの要求を vMMIO の SYSCTL／VDMA レジスタへ変換する経路は存在しない。vMMIO はゲストの load/store によるデバイス・共有メモリ・passthrough アクセスだけを扱う。
 
-### 4.6 HAL DYNAMICバッファマッピング (FC=13)
+### 4.5 HAL DYNAMICバッファマッピング (FC=13)
 <!-- traceability: {HAL_Interface} {IPC_ZeroCopy} -->
 HALが用意した固定長バッファは vMMIO の DYNAMIC 領域へ、ゲストの各I/O操作の実行期間だけマップする。ゲストは `map-buffer(slot-index)` で対象スロットを選択し、操作完了後に `unmap-buffer(handle)` を呼ぶ。マッピング中のスロットがある場合は新しい要求へ `BUSY` を返し、呼び出し側が再試行する。契約違反・境界破損・不正なアンマップだけを `assert` またはトラップの対象とする。
 
 これは共有メモリの所有権移譲ではなく、HAL固定スロットの一時的なvMMIOマッピングである。マッピング中はゲストとHALドライバが同じliveバッファへアクセスする。ゲストへ生ポインタを渡さず、バッファID、固定スロットの仮想アドレス、オフセット、および長さだけをインターフェース境界へ渡す。poll-waitを導入する場合のマッピング保持期間は、非同期操作の仕様決定時に定義する。
 
-### 4.7 共有メモリマッピング (FC=14)
+### 4.6 共有メモリマッピング (FC=14)
 <!-- traceability: {OwnershipTransfer} -->
 SHM へのアクセスは **IPCルータ経由でのみ許可される**。ゲストは IPCルータからハンドルを受け取ることによってのみ FC=14 アドレス空間にアクセスできる。SHM の所有権状態は IPCルータが一元管理し（[`ipc_router.md`](docs/components/tier1_interface/ipc_router.md) の 準拠）、vMMIO はその状態を執行するのみ。
 
@@ -385,7 +389,7 @@ sequenceDiagram
 4. **Grant (`claim(shm-id)`)**: 所有権変更時に Tier 1 の `PageMappingCallbacks.on_owner_changed` を受け、vMMIO は旧 PTE と TLB エントリを無効化する。ランデブー成立後、受信タスク側で `claim()` を呼び出すと `on_map_page` により受信タスクの仮想アドレス空間へ PTE がマッピングされ、有効な `shared-block` ハンドルが取得可能となる。
 5. **障害時回復 (`rollback_transfer`)**: 相手タスクが永久に到達しない場合、送信タスクはブロックし続ける。タスク異常終了やタイムアウト等によるフォールト発生時は、物理メモリ層の `rollback_transfer()` により送信元タスクの空間へ PTE を再マッピングし、リソースの回収・再利用を行う。
 
-### 4.8 原因付き vIRQ ディスパッチ
+### 4.7 原因付き vIRQ ディスパッチ
 <!-- traceability: {META_ConfigurableSystem} {GLOBAL_InterruptWakeup} -->
 
 vIRQは、物理割り込みの原因源表と有効な登録状態を保持する静的vMMIOページである。ゲストの登録・解除要求は [`libfireball.md`](docs/components/tier3_platform/libfireball.md) が `fireball:host/virq.register` / `fireball:host/virq.unregister` へ変換する。ゲストは固定スロットへ直接書き込まず、vSoCが要求を検証して次のCOOS協調境界で原子的に反映する。`REG_IRQ_FLAGS` のポーリングはvIRQの配送経路ではない。
@@ -482,13 +486,13 @@ sequenceDiagram
 <!-- traceability: {VDMA} {OwnershipTransfer} {META_ConfigurableSystem} -->
 Stage 3 アクセス（FC=14/15）において毎回 FlatMap の二分探索を走らせる遅延を排除するため、仮想ページ番号（VPN = `raw >> 12`）に基づくマッピングを32エントリのダイレクトマップキャッシュに保持する。
 
-- **Guest RAM アクセス時の TLB 完全バイパス (`GOTCHA-VMMIO-01`)**:
+- **Guest RAM アクセス時の TLB 完全バイパス (`GOTCHA-VMMIO-01`)**: {GOTCHA-VMMIO-01} <!-- definition: {GOTCHA-VMMIO-01} -->
   **設計理由と不変条件**: 最上位ビットが 0 のアドレス空間（`0x0000_0000`〜`0x7FFF_FFFF`）はゲスト RAM 専用領域である。全メモリアクセスの 99% 以上を占める最頻パスにおいて毎回 TLB ルックアップやハッシュ計算を行うと、実行性能が致命的に劣化する。そのため、最上位ビットが 0 のアクセスは TLB を一切参照せず、直接ゲストベースアドレス加算＋サイズ境界検査のみで即時メモリアクセスを完結させる。TLB は最上位ビットが 1 の vMMIO / ペリフェラル領域にのみ適用される。
-- **Folding XOR ハッシュによる機能コード（FC）の均等分散 ({GOTCHA-VMMIO-02})**:
+- **Folding XOR ハッシュによる機能コード（FC）の均等分散 ({GOTCHA-VMMIO-02})**: <!-- definition: {GOTCHA-VMMIO-02} -->
   - キー（VPN）: `raw >> 12`（20-bit）
   - HASH / インデックス計算: `temp = vpn ^ (vpn >> 10); temp = temp ^ (temp >> 5); tlb_idx = temp & 0x1F`（20→10→5 bit、2回の XOR）
   - **設計理由と不変条件**: 単純なビットマスクでは、同一オフセットを持つ異なる機能コード（FC=14 SHM と FC=15 PASSTHROUGH 等）が同一スロットに衝突する。上位の FC から下位ページまでの全 20 ビットを 5-bit 幅で折りたたんで XOR 合成する。これにより異なるデバイス領域間の競合を極小化し、32 スロットの利用効率を最大化する。
-- **アクセス権限剥奪（Revoke）時の TLB 即時無効化 (`GOTCHA-VMMIO-03`)**:
+- **アクセス権限剥奪（Revoke）時の TLB 即時無効化 (`GOTCHA-VMMIO-03`)**: {GOTCHA-VMMIO-03} <!-- definition: {GOTCHA-VMMIO-03} -->
   - **設計理由と不変条件**: 共有メモリの送信や権限剥奪トランザクションにおいて、所有者 ID を `FB_TASK_ID_FLIGHT` へ変更する際は、該当 VPN に対応する TLB エントリを直ちに無効化する。TLB 無効化を怠ると、古いタスクからデータが読み書き可能となり、所有権移譲プロトコルの安全性（ゼロコピー手渡しと二重所有防止）が破壊されるためである。
 - **キャッシュ更新 & 押し出し (Eviction & Refill)**:
   TLBミス時に FlatMap から取得した PTE を `vmmio_tlb_cache[tlb_idx]` に上書き（同一ハッシュに別のアドレスが割り当てられた場合は以前のエントリを自動無効化・上書きする完全O(1)方式）。
@@ -550,3 +554,22 @@ Stage 3 アクセス（FC=14/15）において毎回 FlatMap の二分探索を�
 <!-- traceability: {META_RestrictedPhysicalAccess} {OwnershipTransfer} -->
 - **目標**: ゲストが許可されていない物理アドレスにアクセスできないことを保証する。
 - **方策**: 権限チェックを解決された PTE フラグで行い、TLBヒット時も含めてすべてのアクセスパスで必ず実行する。TLBはページテーブル探索のスキップのみを担い、権限チェックをバイパスしない。FC=14 (SHM) の所有権は IPCルータが唯一の書き込み権限を持ち、Revoke 時に該当マッピングの TLB エントリを即時無効化する。
+
+## 7. 形式検証・テスト仕様との対応
+
+### 7.1 検証対象の不変条件
+本書で定めた状態、境界、所有権、およびエラー処理を検証対象とする。
+
+### 7.2 検証モデルと反証可能性
+形式検証モデルは[vmmio_mapping_model.py](docs/components/tier2_runtime/formal/vmmio_mapping_model.py)である。各モデルの正常系と`guards=False`変異で、保護条件が反証されることを確認する。
+
+### 7.3 テスト仕様書との連携
+対応するテスト仕様は[runtime_vmmio_test_spec.md](docs/qa/tier2_runtime/runtime_vmmio_test_spec.md)である。テストケースIDと実行可能テストは同仕様を正本とする。
+
+### 7.4 既知の制限・対象外
+ホスト実機依存の挙動、未実装アーキテクチャ、およびテスト仕様が明示する対象外条件は未検証として扱う。
+
+
+## 8. 設計判断と参考実装
+
+特記すべき独立したADRはない。採用方針は本書の各契約節に記載する。

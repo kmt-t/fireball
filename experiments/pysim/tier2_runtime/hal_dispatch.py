@@ -14,7 +14,7 @@ something has to really run.
 from __future__ import annotations
 
 import bisect
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Generator, Sequence
 from dataclasses import dataclass, field
 from enum import IntEnum
 from typing import TYPE_CHECKING, Protocol
@@ -48,6 +48,8 @@ ARG_TX_BUFFER_HANDLE = pack_key32(ScopeKind.FUNCTIONAL, DataType.UINT32, key_id=
 ARG_RX_BUFFER_HANDLE = pack_key32(ScopeKind.FUNCTIONAL, DataType.UINT32, key_id=12)
 ARG_CLOCK_HZ = pack_key32(ScopeKind.FUNCTIONAL, DataType.UINT32, key_id=13)
 ARG_SLAVE_ADDR = pack_key32(ScopeKind.FUNCTIONAL, DataType.UINT32, key_id=14)
+ARG_POLLABLE_HANDLE = pack_key32(ScopeKind.FUNCTIONAL, DataType.UINT32, key_id=17)
+ARG_NANOS_HI = pack_key32(ScopeKind.FUNCTIONAL, DataType.UINT32, key_id=18)
 ARG_FD = pack_key32(ScopeKind.FUNCTIONAL, DataType.UINT32, key_id=16)
 
 
@@ -76,6 +78,7 @@ class WasiIpcCmd(IntEnum):
     # Poll (0x40..0x41)
     POLL_CHECK = 0x40
     POLL_WAIT = 0x41
+    POLL_DROP = 0x42
 
 
 class HalError(Exception):
@@ -87,8 +90,10 @@ class HalBufferTrap(HalError):
     A guest touched an unmapped or stale HAL buffer-pool handle, or a slice
         escaped the handle's fixed bounds. DYNAMIC buffers do not carry
         shared-memory ownership; the mapped-guest boundary is checked
-        separately from the HAL driver's privileged view.
+    separately from the HAL driver's privileged view.
     """
+
+    __slots__ = ()
 
 
 class HalBufferMapStatus(IntEnum):
@@ -117,7 +122,7 @@ FB_CONF_HAL_BUFFER_SIZE = 256  # docs/components/tier1_core/system_config.md 3.3
 FB_CONF_HAL_MAX_BUFFERS = 4  # docs/components/tier1_core/system_config.md 3.3.3
 
 
-@dataclass
+@dataclass(slots=True)
 class HalBufferHandle:
     """
     What the fixed buffer accessor returns: an opaque integer ID, not a
@@ -136,9 +141,11 @@ class HalBufferPool:
     FB_CONF_HAL_MAX_BUFFERS fixed-size slots of
         FB_CONF_HAL_BUFFER_SIZE bytes each: a static pool, not a dynamic
         allocator. One selected slot is MMIO'd into the vMMIO DYNAMIC region
-        only for the duration of one I/O operation. The HAL driver may access
-        that live slot while the operation is being serviced.
+    only for the duration of one I/O operation. The HAL driver may access
+    that live slot while the operation is being serviced.
     """
+
+    __slots__ = ("_mapped_buffer_id", "_mapped_task_id", "_scheduler", "_slots", "_vmmio")
 
     def __init__(self, scheduler: Scheduler, vmmio: VMMIOController):
         self._scheduler = scheduler
@@ -163,7 +170,11 @@ class HalBufferPool:
         if self._mapped_task_id is not None:
             return HalBufferMapStatus.BUSY
         handle = self._slots[buffer_id]
-        self._vmmio.map_dynamic_page(handle.virtual_address >> VMMIO_PAGE_SHIFT, buffer_id)
+        self._vmmio.map_dynamic_page(
+            handle.virtual_address >> VMMIO_PAGE_SHIFT,
+            buffer_id,
+            owner_id=task_id,
+        )
         self._mapped_task_id = task_id
         self._mapped_buffer_id = buffer_id
         return HalBufferMapStatus.MAPPED
@@ -191,7 +202,9 @@ class HalBufferPool:
         task_id = self.current_task_id
         assert self._mapped_task_id == task_id, "DYNAMIC buffer is not mapped for this guest"
         assert 0 <= handle.buffer_id < len(self._slots), f"buffer {handle.buffer_id} does not exist"
-        assert self._mapped_buffer_id == handle.buffer_id, "DYNAMIC buffer is not mapped for this operation"
+        assert self._mapped_buffer_id == handle.buffer_id, (
+            "DYNAMIC buffer is not mapped for this operation"
+        )
         record = self._slots[handle.buffer_id]
         assert record.buffer_id == handle.buffer_id, "stale HAL buffer handle"
         return record
@@ -205,13 +218,19 @@ class HalBufferPool:
         """
         assert buffer_id >= 0
         assert buffer_id < len(self._slots), f"buffer {buffer_id} does not exist"
-        assert self._mapped_buffer_id == buffer_id, "DYNAMIC buffer is not mapped for this operation"
+        assert self._mapped_buffer_id == buffer_id, (
+            "DYNAMIC buffer is not mapped for this operation"
+        )
         record = self._slots[buffer_id]
         assert record.buffer_id == buffer_id, f"buffer {buffer_id} does not exist"
         assert 0 <= offset <= record.capacity
         assert 0 <= length <= record.capacity - offset
-        status, _physical = self._vmmio.access(record.virtual_address + offset, is_write=False)
-        assert status == VmmioStatus.OK_PHYSICAL, "HAL buffer is not mapped in vMMIO DYNAMIC"
+        owner_id = self._mapped_task_id
+        assert owner_id is not None, "DYNAMIC buffer has no mapped guest owner"
+        vpn = record.virtual_address >> VMMIO_PAGE_SHIFT
+        assert self._vmmio.dynamic_mapping_matches(vpn, buffer_id, owner_id), (
+            "HAL buffer is not mapped in vMMIO DYNAMIC for its guest owner"
+        )
         return memoryview(record._storage)[offset : offset + length]
 
     def close_all(self) -> None:
@@ -291,8 +310,9 @@ class HalDriver:
     callback lookup; it does not contain device-specific dispatch logic.
     """
 
-    def __init__(self, uri: str):
-        self.uri = uri
+    __slots__ = ("_buffer_pool", "_command_bindings")
+
+    def __init__(self):
         self._buffer_pool: HalBufferPool | None = None
         self._command_bindings: StaticVector[HalCommandBinding] = StaticVector(capacity=16)
         self.register_command(WasiIpcCmd.QUERY_CAPS, self._query_caps)
@@ -334,13 +354,18 @@ class HalDriver:
         assert callback is not None, f"unregistered HAL command {cmd_id:#x}"
         return callback(params)
 
+    def poll_wakeup_ns(self, handle: int) -> int:
+        """Returns when a pending pollable should next be checked by the scheduler."""
+        assert False, f"driver has no pollable wake source for handle {handle}"
+        return 0
+
     def start(
         self, ipc: IPCRouter, scheduler: Scheduler, role: Role, service_handle: int
     ) -> tuple[int, HalTask]:
         """Starts this driver's dedicated HAL task and returns its task handle."""
-        task = HalTask(ipc, self)
+        task = HalTask(ipc, scheduler, self)
         task_id = scheduler.spawn(
-            f"hal_task[{self.uri}]", task.run(), role=role, service_handle=service_handle
+            f"hal_task[{service_handle}]", task.run(), role=role, service_handle=service_handle
         )
         return task_id, task
 
@@ -375,8 +400,20 @@ class HalTask:
     Role that URI resolves to (see system.py `start_hal_driver`).
     """
 
-    def __init__(self, ipc: IPCRouter, driver: HalDriver):
+    __slots__ = (
+        "driver",
+        "ipc",
+        "last_handled_cmd",
+        "last_response_code",
+        "last_result",
+        "processed_count",
+        "running",
+        "scheduler",
+    )
+
+    def __init__(self, ipc: IPCRouter, scheduler: Scheduler, driver: HalDriver):
         self.ipc = ipc
+        self.scheduler = scheduler
         self.driver = driver
         self.running = True
         self.last_handled_cmd: int | None = None
@@ -384,7 +421,17 @@ class HalTask:
         self.last_response_code = 0
         self.processed_count: int = 0
 
-    def run(self):
+    def _wait_for_pollable(
+        self, params: ReadOnlyFlatMapView
+    ) -> Generator[tuple[ChannelAction, None], None, int]:
+        handle = params.find(ARG_POLLABLE_HANDLE)
+        assert handle is not None
+        while self.driver.dispatch(WasiIpcCmd.POLL_CHECK, params) == 0:
+            self.scheduler.wait_until(self.driver.poll_wakeup_ns(handle))
+            yield (ChannelAction.BLOCK, None)
+        return self.driver.dispatch(WasiIpcCmd.POLL_WAIT, params)
+
+    def run(self) -> Generator[tuple[ChannelAction, None], None, None]:
         """
         Coroutine body of one HAL device's server task.
         Runs continuously in COOS, listening on this task's own dedicated
@@ -401,7 +448,10 @@ class HalTask:
             if cmd_id is None:
                 cmd_id = msg.get(ARG_QUERY_CMD_ID, 0x00)
 
-            self.last_result = self.driver.dispatch(cmd_id, msg.payload)
+            if cmd_id == WasiIpcCmd.POLL_WAIT:
+                self.last_result = yield from self._wait_for_pollable(msg.payload)
+            else:
+                self.last_result = self.driver.dispatch(cmd_id, msg.payload)
             self.last_handled_cmd = cmd_id
             self.last_response_code = 0
             result_value = self.last_result & 0xFFFF_FFFF_FFFF_FFFF

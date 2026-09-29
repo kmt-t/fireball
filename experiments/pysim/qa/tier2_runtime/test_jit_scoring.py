@@ -8,6 +8,7 @@ _PYSIM_DIR = Path(__file__).resolve().parents[2]
 
 from jit_scoring import (
     JIT_CANDIDATE_THRESHOLD,
+    OPCODE_BENEFIT_TABLE,
     OPCODE_TABLE_BYTES,
     JITCandidateBitmap,
     OpcodeBenefitTable,
@@ -33,7 +34,7 @@ def test_loader_scores_basic_block_once() -> None:
         functions=[Function(type_index=0, locals_extra=[], code=code)],
     )
     module.build_basic_block_index()
-    assert module.opcode_benefit_table is not None
+    assert OPCODE_BENEFIT_TABLE.score(I32_ADD) == 7
     assert len(module.blocks) == 1
     assert module.blocks[0].jit_score == 19
     assert module.blocks[0].jit_score >= JIT_CANDIDATE_THRESHOLD

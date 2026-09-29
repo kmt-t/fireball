@@ -25,5 +25,3 @@ class FileLogSink:
 
     def close(self) -> None:
         self._file.close()
-
-

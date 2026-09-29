@@ -38,10 +38,12 @@
 | TEST-INTP-12 | 再帰呼び出し（call）とローカル値領域 | `fact(n)`のような再帰関数 | `execute_function`で呼び出す | 各呼び出しごとに新しいローカル値領域の区画が割り当てられ、ローカル変数が互いに独立する | interpreter_concept.py `test_full_wasm_recursive_factorial` |
 | TEST-INTP-13 | 戻り値の受け渡し | 関数が1個の結果を返す | `return`実行後の呼び出し元スタック | 呼び出し元のスタックに正しく結果が積まれる | interpreter_concept.py `execute_function` |
 | TEST-INTP-14 | オペランド領域とローカル値領域の容量独立性 | オペランド領域の残容量が1、ローカル値領域に空きがある | 既存のオペランド値を保持したまま引数付き関数を呼び出す | ローカル値領域へ引数を積め、関数結果と呼び出し元オペランド領域の値が正しく保持される | interpreter_concept.py `test_independent_operand_and_local_stacks`, [`interpreter_stack_model.py`](docs/components/tier3_executer/formal/interpreter_stack_model.py) |
-| TEST-INTP-15 | 3本の値領域・関数呼出し記述子分離・関数復帰結果の形式検証 | 通常モデルと`guards=False`変異モデル | [`interpreter_stack_model.py`](docs/components/tier3_executer/formal/interpreter_stack_model.py)を実行 | 通常モデルでは値領域独立性、関数呼出し記述子とローカル値の分離、関数結果保持の3性質が成立し、各変異モデルでは対応性質が反証される | [`interpreter_stack_model.py`](docs/components/tier3_executer/formal/interpreter_stack_model.py) |
+| TEST-INTP-15 | 3本の値領域・関数呼出し記述子分離・関数復帰結果の形式検証 | 通常モデルと`guards=False`統合変異モデル | [`interpreter_stack_model.py`](docs/components/tier3_executer/formal/interpreter_stack_model.py)を実行 | 通常モデルでは値領域独立性、関数呼出し記述子とローカル値の分離、関数結果保持の3性質が成立し、統合変異モデルでは各違反遷移によって3性質すべてが反証される | [`interpreter_stack_model.py`](docs/components/tier3_executer/formal/interpreter_stack_model.py) |
+| TEST-INTP-19 | 分岐時制御frame復元の形式検証 | 通常モデルと`guards=False`変異モデル | [`interpreter_control_flow_model.py`](docs/components/tier3_executer/formal/interpreter_control_flow_model.py)を実行 | loop対象frameの維持、block対象frameの除去、オペランド高さ・分岐結果の保持、elseなし偽`if`のframe不在が成立し、各変異モデルで反証される | [`interpreter_control_flow_model.py`](docs/components/tier3_executer/formal/interpreter_control_flow_model.py) |
 | TEST-INTP-16 | ネストしたcalleeの戻り値と関数呼出し記述子の復帰 | callerがcalleeを呼び、calleeがi32/i64/f32/f64を返す | calleeの`return`処理を実行 | 戻り値は共有オペランド領域へ残り、calleeの関数呼出し記述子が取り除かれ、call helperが復帰sentinelを消費してcallerへ戻る。ホストABIの戻り値規約とWASM共有領域の戻り値規約を混同しない。x64の物理ABIは定義済み、ARMv8-MはTBD | `interpreter.md` 関数復帰の番兵 |
 | TEST-INTP-17 | トップレベル復帰のRETURN sentinel | 最外周WASM関数がreturnする | return handlerとRuntimeEngineを実行 | sentinelはInterpreterのreturn handlerだけが生成し、RuntimeEngineが実行完了を判定する。JITはsentinelを生成しない | `interpreter.md` 関数復帰の番兵 |
 | TEST-INTP-18 | 関数呼出し記述子とローカル値領域の分離 | callerが引数付きcalleeを呼び出す | call helperでcalleeの実行区画を開始し、calleeから復帰する | 記述子は独立した領域に置かれ、`frame_offset`がローカル値領域の開始ワード位置を示す。ローカル値領域にはローカル値だけが入り、復帰時に記述子を取り除いて`local_offset`とローカル値領域の長さを保存位置へ戻す | `interpreter.md` 関数呼び出し境界、`interpreter_concept.py`、`test_interpreter.py` TEST-INTP-70 |
+| TEST-INTP-77 | ネイティブ静的分岐先での制御frame pruning | C++ native dispatcherを有効にし、入れ子の`block`/`loop`と条件分岐を含むWASMを使う | [`scenario4_hybrid_jit_loop.py`](experiments/pysim/qa/scenarios/scenario4_hybrid_jit_loop.py)を実行してTier 2/Hybrid JITの結果を比較する | 静的後続PCが複数の`end`を越えるとき、範囲外になったcontrol frameを捨てる。両実行経路が素数数`168`で一致し、旧結果`235`へ戻らない | `native_interpreter.cxx` `prune_control_frames_after_static_jump`, `interpreter.md` 分岐処理 |
 
 ### ラベルアリティ・スタックプルーニング (`prune_stack`)
 
@@ -144,6 +146,7 @@
 - **継続渡しディスパッチと3本の独立領域 (TEST-INTP-01〜14)**: 4論理引数、オペランド領域のアンダー／オーバーフロー、ローカル値領域上の再帰呼び出し、戻り値、容量独立性。
 - **Python互換のネイティブ継続実験 (TEST-INTP-05〜09)**: 通常Python入口、全175ハンドラを対象にしたC関数ポインタチェイン、musttail継続、分岐境界、AO-Bench差分の一致。
 - **ネイティブディスパッチのyield回数境界 (TEST-INTP-76)**: C++ InterpreterのPython復帰statusが共有後方分岐しきい値で返り、yieldごとの再開後に正しい結果へ到達すること。
+- **静的分岐先の制御frame pruning (TEST-INTP-77)**: 入れ子の`end`を飛び越えた後続PCで、範囲外frameを破棄しTier 2とHybrid JITの結果`168`が一致すること。
 - **ラベルアリティ & プルーニング (TEST-INTP-20〜23)**: ブロック脱出、ループ背進辺、多重ネスト br_table。
 - **i64全演算 & メモリアクセス (TEST-INTP-30〜43)**: 64bit算術・シフト・ビットカウント・境界外トラップ。
 - **LOOP後方分岐の協調yield (TEST-INTP-50〜51)**: 共通回数しきい値に達した時だけC++ dispatcherからRuntimeEngineへ戻る。

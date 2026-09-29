@@ -10,6 +10,19 @@ from __future__ import annotations
 from collections.abc import Callable
 
 import wasm_opcodes as op
+from config import (
+    FB_CONF_MAX_DATA_SEGMENTS,
+    FB_CONF_MAX_ELEMENTS,
+    FB_CONF_MAX_EXPORTS,
+    FB_CONF_MAX_FUNCTIONS,
+    FB_CONF_MAX_GLOBALS,
+    FB_CONF_MAX_IMPORTS,
+    FB_CONF_MAX_MEMORIES,
+    FB_CONF_MAX_TABLES,
+    FB_CONF_MAX_TYPES,
+    FB_CONF_MAX_VALUE_STACK,
+    FB_CONF_MAX_WASM_PAGES,
+)
 from leb128 import decode_signed, decode_unsigned
 from system_containers import ReadOnlyFlatMapStorage, StaticVector
 from wasm_module import (
@@ -45,7 +58,9 @@ SEC_DATA = 11
 ELEM_TYPE_FUNCREF = 0x70
 
 
-def _read_value_type(data: memoryview, off: int) -> int:
+def _read_value_type(data: memoryview, off: int, end: int | None = None) -> int:
+    limit = len(data) if end is None else end
+    assert 0 <= off < limit <= len(data), "value type exceeds section bounds"
     value_type = data[off]
     assert value_type == I32 or value_type == I64 or value_type == F32 or value_type == F64
     return value_type
@@ -102,6 +117,9 @@ class _ParseCallbacks:
         self.module.imports.append(import_entry)
 
     def on_global_import(self, value_type: int, mutable: bool) -> None:
+        assert len(self.module.globals) < FB_CONF_MAX_GLOBALS, (
+            "WASM global count exceeds configured maximum"
+        )
         self.module.global_import_count += 1
         self.module.globals.append(
             Global(vtype=value_type, mutable=mutable, init_value=0, imported=True)
@@ -113,10 +131,16 @@ class _ParseCallbacks:
         self.module.memory = Memory(min_pages=minimum, max_pages=maximum, imported=True)
 
     def on_table_import(self, minimum: int, maximum: int | None) -> None:
+        assert len(self.module.tables) < FB_CONF_MAX_TABLES, (
+            "WASM table count exceeds configured maximum"
+        )
         self.module.table_import_count += 1
         self.module.tables.append(Table(min_size=minimum, max_size=maximum, imported=True))
 
     def on_table(self, minimum: int, maximum: int | None) -> None:
+        assert len(self.module.tables) < FB_CONF_MAX_TABLES, (
+            "WASM table count exceeds configured maximum"
+        )
         self.module.tables.append(Table(min_size=minimum, max_size=maximum))
 
     def on_memory(self, minimum: int, maximum: int | None) -> None:
@@ -124,12 +148,18 @@ class _ParseCallbacks:
         self.module.memory = Memory(min_pages=minimum, max_pages=maximum)
 
     def on_global(self, global_value: Global) -> None:
+        assert len(self.module.globals) < FB_CONF_MAX_GLOBALS, (
+            "WASM global count exceeds configured maximum"
+        )
         self.module.globals.append(global_value)
 
     def on_export(self, export: Export) -> None:
         self.module.exports.append(export)
 
     def on_function(self, function: Function) -> None:
+        assert len(self.module.functions) < FB_CONF_MAX_FUNCTIONS, (
+            "WASM function count exceeds configured maximum"
+        )
         self.module.functions.append(function)
 
     def on_start(self, function_index: int) -> None:
@@ -145,42 +175,63 @@ class _ParseCallbacks:
 
 
 def _read_section_counts(data: memoryview) -> _SectionCounts:
+    assert len(data) >= 8, "truncated WASM header"
     counts = _SectionCounts()
     off = 8
     while off < len(data):
         section_id = data[off]
         off += 1
-        section_length, off = decode_unsigned(data, off)
+        section_length, off = decode_unsigned(data, off, len(data))
         section_end = off + section_length
+        assert section_end <= len(data), "section length exceeds module bounds"
         if section_id == SEC_TYPE:
-            count, _ = decode_unsigned(data, off)
+            count, _ = decode_unsigned(data, off, section_end)
             counts.types = count
         elif section_id == SEC_IMPORT:
-            count, _ = decode_unsigned(data, off)
+            count, _ = decode_unsigned(data, off, section_end)
             counts.imports = count
         elif section_id == SEC_FUNCTION:
-            count, _ = decode_unsigned(data, off)
+            count, _ = decode_unsigned(data, off, section_end)
             counts.functions = count
         elif section_id == SEC_TABLE:
-            count, _ = decode_unsigned(data, off)
+            count, _ = decode_unsigned(data, off, section_end)
             counts.tables = count
         elif section_id == SEC_MEMORY:
-            count, _ = decode_unsigned(data, off)
+            count, _ = decode_unsigned(data, off, section_end)
             counts.memories = count
         elif section_id == SEC_GLOBAL:
-            count, _ = decode_unsigned(data, off)
+            count, _ = decode_unsigned(data, off, section_end)
             counts.globals = count
         elif section_id == SEC_EXPORT:
-            count, _ = decode_unsigned(data, off)
+            count, _ = decode_unsigned(data, off, section_end)
             counts.exports = count
         elif section_id == SEC_ELEMENT:
-            count, _ = decode_unsigned(data, off)
+            count, _ = decode_unsigned(data, off, section_end)
             counts.elements = count
         elif section_id == SEC_DATA:
-            count, _ = decode_unsigned(data, off)
+            count, _ = decode_unsigned(data, off, section_end)
             counts.data_segments = count
         off = section_end
     return counts
+
+
+def _validate_section_counts(counts: _SectionCounts) -> None:
+    limits = (
+        ("types", counts.types, FB_CONF_MAX_TYPES),
+        ("imports", counts.imports, FB_CONF_MAX_IMPORTS),
+        ("functions", counts.functions, FB_CONF_MAX_FUNCTIONS),
+        ("tables", counts.tables, FB_CONF_MAX_TABLES),
+        ("memories", counts.memories, FB_CONF_MAX_MEMORIES),
+        ("globals", counts.globals, FB_CONF_MAX_GLOBALS),
+        ("exports", counts.exports, FB_CONF_MAX_EXPORTS),
+        ("elements", counts.elements, FB_CONF_MAX_ELEMENTS),
+        ("data segments", counts.data_segments, FB_CONF_MAX_DATA_SEGMENTS),
+    )
+    for label, count, capacity in limits:
+        assert count <= capacity, (
+            f"WASM {label} count {count} exceeds configured maximum {capacity}"
+        )
+    assert counts.memories <= 1, "only single linear memory is supported"
 
 
 class WasmParseError(Exception):
@@ -188,6 +239,8 @@ class WasmParseError(Exception):
 
 
 class WasmUnsupportedFeatureError(WasmParseError):
+    __slots__ = ("error_code",)
+
     def __init__(self, message: str = "ERR_WASM_UNSUPPORTED_FEATURE"):
         super().__init__(message)
         self.error_code = "ERR_WASM_UNSUPPORTED_FEATURE"
@@ -209,23 +262,25 @@ def _has_nested_calls(code: memoryview) -> bool:
     return False
 
 
-def _parse_functype(data: memoryview, off: int) -> tuple[FuncType, int]:
+def _parse_functype(data: memoryview, off: int, end: int) -> tuple[FuncType, int]:
+    assert off < end, "truncated function type"
     record_offset = off
     tag = data[off]
     off += 1
     if tag != 0x60:
         assert False, f"expected functype tag 0x60, got 0x{tag:02X}"
-    nparams, off = decode_unsigned(data, off)
+    nparams, off = decode_unsigned(data, off, end)
+    assert nparams <= FB_CONF_MAX_LOCALS, "function parameter count exceeds configured maximum"
     params = StaticVector[int](capacity=nparams)
     for _ in range(nparams):
-        params.append(_read_value_type(data, off))
+        params.append(_read_value_type(data, off, end))
         off += 1
 
-    nresults, off = decode_unsigned(data, off)
+    nresults, off = decode_unsigned(data, off, end)
     assert nresults <= 1, "MVP functions have at most one result"
     results = StaticVector[int](capacity=nresults)
     for _ in range(nresults):
-        results.append(_read_value_type(data, off))
+        results.append(_read_value_type(data, off, end))
         off += 1
     assert off <= len(data)
     return FuncType(
@@ -234,29 +289,30 @@ def _parse_functype(data: memoryview, off: int) -> tuple[FuncType, int]:
 
 
 def _parse_type_section(data: memoryview, off: int, end: int, callbacks: _ParseCallbacks) -> None:
-    n, off = decode_unsigned(data, off)
+    n, off = decode_unsigned(data, off, end)
     for _ in range(n):
-        ft, off = _parse_functype(data, off)
+        ft, off = _parse_functype(data, off, end)
         callbacks.on_type(ft)
 
     assert off == end, "type section length mismatch"
 
 
 def _parse_import_section(data: memoryview, off: int, end: int, callbacks: _ParseCallbacks) -> None:
-    n, off = decode_unsigned(data, off)
+    n, off = decode_unsigned(data, off, end)
     for _ in range(n):
-        mod_len, off = decode_unsigned(data, off)
+        mod_len, off = decode_unsigned(data, off, end)
         module_offset = off
         _validate_utf8_name(data, off, mod_len, end, "import module name")
         off += mod_len
-        field_len, off = decode_unsigned(data, off)
+        field_len, off = decode_unsigned(data, off, end)
         name_offset = off
         _validate_utf8_name(data, off, field_len, end, "import field name")
         off += field_len
+        assert off < end, "truncated import descriptor"
         kind = data[off]
         off += 1
         if kind == 0:
-            type_index, off = decode_unsigned(data, off)
+            type_index, off = decode_unsigned(data, off, end)
             callbacks.on_function_import(
                 Import(
                     module_offset=module_offset,
@@ -267,13 +323,14 @@ def _parse_import_section(data: memoryview, off: int, end: int, callbacks: _Pars
                 )
             )
         elif kind == 3:
-            value_type = _read_value_type(data, off)
+            value_type = _read_value_type(data, off, end)
             off += 1
+            assert off < end, "truncated global import descriptor"
             mutable = data[off] == 0x01
             off += 1
             callbacks.on_global_import(value_type, mutable)
         elif kind == 2:
-            minimum, maximum, off = _parse_limits(data, off, is_memory=True)
+            minimum, maximum, off = _parse_limits(data, off, end, is_memory=True)
             descriptor = Import(
                 module_offset=module_offset,
                 module_size=mod_len,
@@ -285,12 +342,13 @@ def _parse_import_section(data: memoryview, off: int, end: int, callbacks: _Pars
             )
             callbacks.on_memory_import(descriptor, minimum, maximum)
         elif kind == 1:
+            assert off < end, "truncated table import descriptor"
             elem_type = data[off]
             off += 1
             assert elem_type == ELEM_TYPE_FUNCREF, (
                 f"only funcref table imports are supported, got 0x{elem_type:02X}"
             )
-            minimum, maximum, off = _parse_limits(data, off)
+            minimum, maximum, off = _parse_limits(data, off, end)
             callbacks.on_table_import(minimum, maximum)
         else:
             assert False, f"unsupported import kind={kind}"
@@ -299,10 +357,10 @@ def _parse_import_section(data: memoryview, off: int, end: int, callbacks: _Pars
 
 
 def _parse_function_section(data: memoryview, off: int, end: int) -> StaticVector[int]:
-    n, off = decode_unsigned(data, off)
+    n, off = decode_unsigned(data, off, end)
     type_indices = StaticVector[int](capacity=n)
     for _ in range(n):
-        idx, off = decode_unsigned(data, off)
+        idx, off = decode_unsigned(data, off, end)
         type_indices.append(idx)
 
     assert off == end, "function section length mismatch"
@@ -310,43 +368,49 @@ def _parse_function_section(data: memoryview, off: int, end: int) -> StaticVecto
 
 
 def _parse_limits(
-    data: memoryview, off: int, *, is_memory: bool = False
+    data: memoryview, off: int, end: int, *, is_memory: bool = False
 ) -> tuple[int, int | None, int]:
+    assert off < end, "truncated limits descriptor"
     flag = data[off]
     off += 1
     assert flag == 0x00 or flag == 0x01, f"invalid limits flag=0x{flag:02X}"
-    minimum, off = decode_unsigned(data, off)
+    minimum, off = decode_unsigned(data, off, end)
     maximum: int | None = None
     if flag == 0x01:
-        maximum, off = decode_unsigned(data, off)
+        maximum, off = decode_unsigned(data, off, end)
         assert minimum <= maximum, "limits minimum exceeds maximum"
     if is_memory:
         assert minimum <= 65536, "memory minimum exceeds 65536 pages"
         assert maximum is None or maximum <= 65536, "memory maximum exceeds 65536 pages"
+        assert minimum <= FB_CONF_MAX_WASM_PAGES, "memory minimum exceeds FB_CONF_MAX_WASM_PAGES"
+        assert maximum is None or maximum <= FB_CONF_MAX_WASM_PAGES, (
+            "memory maximum exceeds FB_CONF_MAX_WASM_PAGES"
+        )
     return minimum, maximum, off
 
 
 def _parse_memory_section(data: memoryview, off: int, end: int, callbacks: _ParseCallbacks) -> None:
     module = callbacks.module
-    n, off = decode_unsigned(data, off)
+    n, off = decode_unsigned(data, off, end)
     assert n <= 1, "only single linear memory is supported"
     for _ in range(n):
         assert module.memory is None, "multiple imported/defined memories are unsupported"
-        mn, mx, off = _parse_limits(data, off, is_memory=True)
+        mn, mx, off = _parse_limits(data, off, end, is_memory=True)
         callbacks.on_memory(mn, mx)
 
     assert off == end, "memory section length mismatch"
 
 
 def _parse_table_section(data: memoryview, off: int, end: int, callbacks: _ParseCallbacks) -> None:
-    n, off = decode_unsigned(data, off)
+    n, off = decode_unsigned(data, off, end)
     for _ in range(n):
+        assert off < end, "truncated table descriptor"
         elem_type = data[off]
         off += 1
         assert elem_type == ELEM_TYPE_FUNCREF, (
             f"only funcref tables are supported, got 0x{elem_type:02X}"
         )
-        mn, mx, off = _parse_limits(data, off)
+        mn, mx, off = _parse_limits(data, off, end)
         callbacks.on_table(mn, mx)
 
     assert off == end, "table section length mismatch"
@@ -366,34 +430,38 @@ def _parse_element_section(
 
 def _parse_global_section(data: memoryview, off: int, end: int, callbacks: _ParseCallbacks) -> None:
     module = callbacks.module
-    n, off = decode_unsigned(data, off)
+    n, off = decode_unsigned(data, off, end)
     for _ in range(n):
-        vtype = _read_value_type(data, off)
+        vtype = _read_value_type(data, off, end)
         off += 1
+        assert off < end, "truncated global mutability field"
         mutable = data[off] == 0x01
         off += 1
+        assert off < end, "truncated global initializer"
         opcode = data[off]
         off += 1
         init_global_index: int | None = None
         if opcode == op.I32_CONST:
             init_type = I32
-            init_value, off = decode_signed(data, off)
+            init_value, off = decode_signed(data, off, end, bits=32)
             init_value &= 0xFFFF_FFFF
         elif opcode == op.I64_CONST:
             init_type = I64
-            init_value, off = decode_signed(data, off)
+            init_value, off = decode_signed(data, off, end, bits=64)
             init_value &= 0xFFFF_FFFF_FFFF_FFFF
         elif opcode == op.F32_CONST:
             init_type = F32
+            assert off + 4 <= end, "truncated f32 global initializer"
             init_value = int.from_bytes(data[off : off + 4], "little")
             off += 4
         elif opcode == op.F64_CONST:
             init_type = F64
+            assert off + 8 <= end, "truncated f64 global initializer"
             init_value = int.from_bytes(data[off : off + 8], "little")
             off += 8
         else:
             if opcode == op.GLOBAL_GET:
-                init_global_index, off = decode_unsigned(data, off)
+                init_global_index, off = decode_unsigned(data, off, end)
                 assert init_global_index < len(module.globals)
                 imported_global = module.globals[init_global_index]
                 assert imported_global.imported and not imported_global.mutable, (
@@ -404,7 +472,7 @@ def _parse_global_section(data: memoryview, off: int, end: int, callbacks: _Pars
             else:
                 assert False, f"unsupported global initializer opcode 0x{opcode:02X}"
         assert init_type == vtype, "global initializer type must match global type"
-        assert data[off] == 0x0B, "global init expr must end with 0x0B"
+        assert off < end and data[off] == 0x0B, "global init expr must end with 0x0B"
         off += 1
         callbacks.on_global(
             Global(
@@ -419,15 +487,16 @@ def _parse_global_section(data: memoryview, off: int, end: int, callbacks: _Pars
 
 
 def _parse_export_section(data: memoryview, off: int, end: int, callbacks: _ParseCallbacks) -> None:
-    n, off = decode_unsigned(data, off)
+    n, off = decode_unsigned(data, off, end)
     for _ in range(n):
-        name_len, off = decode_unsigned(data, off)
+        name_len, off = decode_unsigned(data, off, end)
         name_offset = off
         _validate_utf8_name(data, off, name_len, end, "export name")
         off += name_len
+        assert off < end, "truncated export descriptor"
         kind = data[off]
         off += 1
-        idx, off = decode_unsigned(data, off)
+        idx, off = decode_unsigned(data, off, end)
         callbacks.on_export(
             Export(name_offset=name_offset, name_size=name_len, kind=kind, index=idx)
         )
@@ -442,24 +511,26 @@ def _parse_code_section(
     type_indices: StaticVector[int],
     callbacks: _ParseCallbacks,
 ) -> None:
-    n, off = decode_unsigned(data, off)
+    n, off = decode_unsigned(data, off, end)
     assert n == len(type_indices), "code section entry count must match function section"
     for i in range(n):
-        body_size, off = decode_unsigned(data, off)
+        body_size, off = decode_unsigned(data, off, end)
         body_start = off
         body_end = off + body_size
-        n_local_groups, local_scan = decode_unsigned(data, body_start)
+        assert body_end <= end, "function body exceeds code section bounds"
+        n_local_groups, local_scan = decode_unsigned(data, body_start, body_end)
         local_count = 0
         for _ in range(n_local_groups):
-            count, local_scan = decode_unsigned(data, local_scan)
+            count, local_scan = decode_unsigned(data, local_scan, body_end)
+            assert local_scan < body_end, "truncated local type"
             local_scan += 1
             local_count += count
         assert local_count <= FB_CONF_MAX_LOCALS
-        _, loff = decode_unsigned(data, body_start)
+        _, loff = decode_unsigned(data, body_start, body_end)
         locals_extra = StaticVector[int](capacity=local_count)
         for _ in range(n_local_groups):
-            count, loff = decode_unsigned(data, loff)
-            vtype = _read_value_type(data, loff)
+            count, loff = decode_unsigned(data, loff, body_end)
+            vtype = _read_value_type(data, loff, body_end)
             loff += 1
             for _ in range(count):
                 locals_extra.append(vtype)
@@ -481,7 +552,7 @@ def _parse_code_section(
 
 
 def _parse_start_section(data: memoryview, off: int, end: int, callbacks: _ParseCallbacks) -> None:
-    func_idx, off = decode_unsigned(data, off)
+    func_idx, off = decode_unsigned(data, off, end)
     callbacks.on_start(func_idx)
     assert off == end, "start section length mismatch"
 
@@ -498,7 +569,7 @@ def _parse_data_section(data: memoryview, off: int, end: int, callbacks: _ParseC
 
 
 def _parse_custom_section(data: memoryview, off: int, end: int) -> None:
-    name_size, off = decode_unsigned(data, off)
+    name_size, off = decode_unsigned(data, off, end)
     name_end = off + name_size
     assert name_end <= end, "custom section name exceeds section bounds"
     data[off:name_end].tobytes().decode("utf-8")
@@ -550,7 +621,7 @@ class _SelectAnalysisState:
         self.function = module.functions[function_index - len(module.imports)]
         self.code = module.code_for(function_index)
         self.locals_types = module.local_types(function_index)
-        self.values: StaticVector[int | None] = StaticVector(capacity=len(self.code) + 1)
+        self.values: StaticVector[int | None] = StaticVector(capacity=FB_CONF_MAX_VALUE_STACK)
         self.controls: StaticVector[_AnalysisControlFrame] = StaticVector(
             capacity=min(33, len(self.code) + 1)
         )
@@ -1015,12 +1086,13 @@ def _index_stack_value_widths(module: Module, function_index: int) -> None:
 
 def parse(data: memoryview) -> Module:
     data = memoryview(data)
+    assert len(data) >= 8, "truncated WASM header"
     if data[0:4] != MAGIC:
         assert False, "missing \\0asm magic header"
     if data[4:8] != VERSION:
         assert False, f"unsupported wasm version {data[4:8]!r}"
     section_counts = _read_section_counts(data)
-    assert section_counts.memories <= 1
+    _validate_section_counts(section_counts)
     module = Module()
     module.source = data
     module.configure_section_capacities(
@@ -1038,7 +1110,7 @@ def parse(data: memoryview) -> Module:
     while off < len(data):
         sec_id = data[off]
         off += 1
-        sec_len, off = decode_unsigned(data, off)
+        sec_len, off = decode_unsigned(data, off, len(data))
         sec_end = off + sec_len
         assert sec_end <= len(data), "section length exceeds module bounds"
         if sec_id == 0:

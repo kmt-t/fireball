@@ -19,7 +19,7 @@ while not (_PYSIM_DIR / "tier1_core").is_dir():
 from recovery import RecoveryManager, RecoveryStrategy, Result
 from system import System
 from system_containers import StaticVector
-from tier2_runtime.logger import LogLevel
+from tier2_runtime.logger import LogDictionary, LogLevel, decode_log_records
 from tier3_executer.interpreter.interpreter import Interpreter, InterpreterBindings
 from tier3_executer.jit.jit_manager import JITRuntimeManager
 from tier3_executer.jit.runtime_engine import RuntimeEngine
@@ -36,9 +36,8 @@ def task_structured_logger(sysv: System):
         exactly what {DictionaryBasedIPC} can carry.
     """
 
-    sysv.dictionary.register(0x01, "task booted (free=%d bytes, retries=%d, x=%d, y=%d)")
     status = sysv.logger.log_event(LogLevel.INFO, 0x01, 21504, 0, 0, 0)
-    print(f"  [structured-logger] log_event -> {status}")
+    print(f"  [structured-logger] log_event -> {status.name}")
     yield
 
 
@@ -201,7 +200,12 @@ def demo_wasmjit_hybrid_execution(sysv: System) -> None:
 
 def main() -> None:
     logger_sink = DedicatedLogSink()
-    sysv = System(logger_sink=logger_sink)
+    sysv = System(
+        logger_sink=logger_sink,
+        log_dictionary=LogDictionary(
+            entries=((0x01, "task booted (free=%d bytes, retries=%d, x=%d, y=%d)"),)
+        ),
+    )
     sched = sysv.scheduler
     sched.set_idle_hook(
         lambda: print(f"  [idle_hook] flushed {sysv.logger.flush()} log entr(y/ies)")
@@ -230,9 +234,9 @@ def main() -> None:
         print(f"    | {line}")
 
     print("\n== pysim: draining the dedicated logger sink ==")
-    log_wire = logger_sink.drain_output().decode("utf-8", errors="replace")
+    log_messages = decode_log_records(logger_sink.drain_output(), sysv.dictionary)
     print(f"  {logger_sink.bytes_written} bytes reached the dedicated logger sink:")
-    for line in log_wire.splitlines():
+    for line in log_messages:
         print(f"    | {line}")
 
     demo_wasmjit_hybrid_execution(sysv)

@@ -71,6 +71,11 @@ Element/Data初期化定義を個別配列へ展開せず、パース時検証�
 | TEST-LOAD-48 | ローダ所有のベーシックブロック索引と不変メタ情報公開 | パース済み WASM モジュール | `mod.get_block(pc)` / `mod.block_storage` | ランタイム側での再構築なしに、ローダが構築した `ReadOnlyRadixBinaryTreeStorage` と借用viewから $O(1) + O(\log n)$ で `BasicBlock` メタ情報を解決できる | `{Loader_BasicBlockIndex}` |
 | TEST-LOAD-49 | int4_t スコアリングによる JIT 候補ビットマップ生成 | WASM モジュールロード | `cand_bm.evaluate_block(bb, table, threshold=9)` | 128B BitView<4> テーブルから命令ごとの機械語短縮スコア（int4_t）を積算し、合計9点以上のブロックの head_pc カードビット（1bit）が正確に 1 にセットされる | `{JIT_StaticBenefitScoring}`, `{JIT_CandidateBitmap}` |
 | TEST-LOAD-50 | JITCandidateBitmap 非候補ブロックの touch/履歴バイパス | 非候補ブロック（カードビット 0）の実行 | `eng.run(cold_pc, ctx)` | インタープリタ実行は行われるが、HotspotBitmap.touch() および履歴リングへの記録が完全にバイパスされ、カード状態が UNEXECUTED のまま維持される | `{JIT_CandidateBitmap}` |
+| TEST-LOAD-51 | 到達不能な外側フレームの型ポリモーフィズム分離 | `unreachable` の後に値を要求するネストブロック | `parse(module)` | 外側フレームのunreachable状態を内側ブロックへ漏らさず、operand stack underflowとして拒否する | `wasm_reader.py` operand stack validation |
+| TEST-LOAD-52 | Custom section 名のセクション境界 | 名前長がCustom sectionの残りバイト数を超える | `parse(module)` | 次セクションのバイトを名前として読まず、section bounds違反で拒否する | `wasm_reader.py` custom section bounds |
+| TEST-LOAD-53 | LEB128幅とsection件数の事前検証 | 幅超過LEB128、短いsection内の巨大な型件数 | `parse(module)` | LEB128を最大幅・現在のsection終端で停止し、設定容量を構成する前に不正件数を拒否する | `leb128.py`, `wasm_reader.py` |
+| TEST-LOAD-54 | ROM-backed 名称範囲とハッシュ衝突解決 | 異なる名前 `ufbwjn` / `rsksbm`（同一FNV-1a 32-bit値）を持つエクスポート | `lookup_export(name)` と各エントリのROM範囲を確認 | 名前の実体をエントリへ保存せず、各ハッシュ候補をROM上の完全一致で識別する | `{GOTCHA-LOAD-01}` |
+| TEST-LOAD-55 | 実行時作成が使うパーサーのWASMページ上限 | 初期メモリが `FB_CONF_MAX_WASM_PAGES + 1` ページ | `wasm_reader.parse(module)` | 設定上限を超える初期メモリを拒否する | `runtime_loader.md` (Resource Constraints) |
 
 ### 実装の勘所・不変条件（Gotchas & Implementation Invariants）
 <!-- traceability: {Loader_BasicBlockIndex} -->
@@ -89,6 +94,9 @@ Element/Data初期化定義を個別配列へ展開せず、パース時検証�
 - **複数モジュール・インポート解決 (TEST-LOAD-20〜25)**: ハッシュ索引の $O(1)$ の区間絞り込みと有界探索 $O(\log n)$、元文字列照合によるインポート解決、型照合、レジストリ上限、LIFOアンロード。
 - **容量制約 (TEST-LOAD-30〜32)**: 最大数制限およびLEB128ガード。
 - **RadixBinaryTreeView 索引 & JIT候補判定 (TEST-LOAD-40〜50)**: デコード済みエンティティ登録、RadixBinaryTreeView によるファイルオフセット逆引き、ハッシュ＋RadixBinaryTreeView によるインポート/エクスポート高速解決、ハッシュ衝突耐性、不存在判定、ローダ所有のベーシックブロック索引（`TEST-LOAD-48`）、`int4_t` スコアリングによる JIT 候補ビットマップ生成（`TEST-LOAD-49`）、非候補カードにおける touch/履歴バイパス（`TEST-LOAD-50`）。
+- **パーサ堅牢性と実行時パーサー上限 (TEST-LOAD-51〜55)**:
+  - 型検証の到達不能境界、Custom section長、LEB128とsection件数の上限を確認する。
+  - ROM名範囲、FNV衝突解決、実行時パーサーのWASM初期ページ上限を確認する。
 
 ## 4. 未検証・スコープ外
 

@@ -449,7 +449,7 @@ class RadixBinaryTreeView:
     """
 
     def __init__(self, keys: list[int], values: list[object], radix_shift: int = 28):
-        paired = sorted(zip(keys, values, strict=False), key=lambda p: p[0])
+        paired = sorted(zip(keys, values, strict=True), key=lambda p: p[0])
         self.keys = [p[0] for p in paired]
         self.values = [p[1] for p in paired]
         self.map_view = FlatMapView(self.keys, self.values)

@@ -1,12 +1,26 @@
 # JIT 実行コンテキスト ABI 契約
 
-<!-- traceability: {ContextPointerRegister} {PositionIndependentCode} {JIT_RuntimeAPI_Fallback} -->
+<!-- evidence:
+     test: docs/qa/tier3_executer/jit_runtime_test_spec.md
+-->
 
-この文書は、Tier 2ランタイムがTier 3 Executerへ提供する、複雑な処理をCヘルパーへ委譲するためのABI契約を定義する。共通コード領域の入口offsetはビルド構成または配置時のrelocation情報で解決し、JIT trace headerにはtrace固有の委譲先関数アドレスだけを保持する。実行コンテキストはこのルーティング情報を保持しない。
+<!-- traceability: {ContextPointerRegister} {PositionIndependentCode} {JIT_RuntimeAPI_Fallback} {JIT_RegisterMapping} -->
 
-確認済みx64実行構成の `execution_context` と関連ビュー型は、固定フィールド順・サイズ・オフセットを持つ標準レイアウト構造体として定義する。インタープリタ単独実行とインタープリタからJITへの遷移で `ctx` のABI型を変えない。構造体は所有権を持たず、コード・関数表・結果配列は `address + length` の非所有ビューとして渡すため、呼び出し側が呼び出し完了まで対象領域の寿命を保証する。ARMv8-Mの構造体配置、ポインタ幅、サイズ、offsetはすべてTBDである。 `{ExecutionContext_Layout}` `{META_ZeroCostAbstraction}`
+## 1. コンセプト
 
-## コンテキスト拡張
+この文書は、Tier 2ランタイムがTier 3 Executerへ提供する、複雑な処理をCヘルパーへ委譲するためのABI契約を定義する。Interpreter handlerとJIT trace entryが共有する`ctx`, `sp`, `local_base`, `tos`の4論理引数契約を `{CPS_4Args}` と定義する。 <!-- definition: {CPS_4Args} --> 共通コード領域の入口offsetはビルド構成または配置時のrelocation情報で解決し、JIT trace headerにはtrace固有の委譲先関数アドレスだけを保持する。実行コンテキストはこのルーティング情報を保持しない。ゲストへ公開するWIT契約は対象外であり、WIT正本は各ゲストインターフェース文書に置く。
+
+
+## 2. アーキテクチャ分類
+
+本書はTier 2 Runtimeが所有する契約である。Tier 3 ExecuterのInterpreterおよびJIT実装がこのABIを利用する。
+
+
+## 3. 静的モデル
+
+確認済みx64実行構成の `execution_context` と関連ビュー型は、固定フィールド順・サイズ・オフセットを持つ標準レイアウト構造体として定義する。インタープリタ単独実行とインタープリタからJITへの遷移で `ctx` のABI型を変えない。構造体は所有権を持たず、コード・関数表・結果配列は `address + length` の非所有ビューとして渡すため、呼び出し側が呼び出し完了まで対象領域の寿命を保証する。ARMv8-Mの構造体配置、ポインタ幅、サイズ、offsetはすべてTBDである。 `{ExecutionContext_Layout}` `{META_ZeroCostAbstraction}` <!-- definition: {ExecutionContext_Layout} -->
+
+### コンテキスト拡張
 
 既存の16個の32bit状態ワード（`+0x00`〜`+0x3F`）に、コードビュー、制御スタックビュー、境界フォールバック用チェックポイント、CallStackビュー、オペランドスタック容量、およびLOOP後方分岐カウンタを続けて配置する。x86-64のコンテキスト全体は128バイトである。Cヘルパーアドレスはトレースごとのヘッダに置く。
 
@@ -29,17 +43,59 @@
 
 `fireball_execution_context_native` は、32ビットのゲスト状態フィールド16個を持つ。コード、制御スタック、CallStack の非所有ビュー、オペランドスタック容量、LOOP後方分岐カウンタとしきい値も含む。x86-64 でのサイズは128バイトである。標準レイアウトを維持する。
 
-## JITランタイム呼出し契約
+### x64継続引数の物理レジスタ割り当て
+<!-- traceability: {JIT_RegisterMapping} {CPS_4Args} -->
+
+Interpreter handlerとJIT trace entryが共有する4論理引数のx64関数入口割り当て、および共通trace code内での保持先を以下に定める。レジスタはこのJIT入口契約の値であり、WASM仮想レジスタではない。
+
+| 論理値 | Windows x64関数入口 | System V AMD64関数入口 | 共通trace code内の保持先 |
+| :--- | :--- | :--- | :--- |
+| `ctx` | `RCX` | `RDI` | `R13` |
+| `sp` | `RDX` | `RSI` | `R12` |
+| `local_base` | `R8` | `RDX` | `R10` |
+| `tos` | `R9D` | `ECX` | `R9D` |
+
+共通trace prologueは`RBX`, `R12`〜`R15`を保存する。Windows x64では追加で`RDI`を、System V AMD64では`RBP`を保存し、通常復帰またはhelper委譲前に対応する値を復元する。ARMv8-Mの引数レジスタ割り当てと保存規則はTBDとする。
+
+### x64実行環境のトレースヘッダ
+
+以下はWindows x64およびSystem V AMD64で共通に使用する物理配置である。ARMv8-Mの配置、命令列、ABIはすべてTBDであり、x64の確認結果から推定しない。物理ポインタを格納する欄は64ビットとし、32ビットのWASM PC欄と混同しない。
+
+| オフセット | フィールド | サイズ | 用途 |
+| :--- | :--- | ---: | :--- |
+| `+0x00` | `head_wasm_pc` | 4バイト | トレース先頭のWASM PC |
+| `+0x04` | `trace_byte_size` | 2バイト | ヘッダを含むトレース全体の長さ |
+| `+0x06` | `flags` | 1バイト | 昇格・ループ先頭などの状態 |
+| `+0x07` | `variant_id` | 1バイト | 将来のレジスタ状態variant用の予約値。現在のx64生成器は`0`を出力し、variant選択・variant間chainは行わない |
+| `+0x08` | `chain_target_addr` | 8バイト | 共通chain dispatcherが読み取る次trace bodyのネイティブアドレス。未接続時は0 |
+| `+0x10` | `helper_target_addr` | 8バイト | trace固有のC helperアドレス |
+
+ヘッダ全体は24バイトである。traceのentry stubは `+0x18` から始まる。
+
+`chain_next` PCは実行時cache descriptorに保持する。物理ヘッダには重複して格納しない。
+
+`common_prologue_offset`、`common_epilogue_offset`、`common_helper_offset`、絶対アドレスpool位置はビルド構成または配置時のrelocation情報である。これらはtraceごとに物理ヘッダへ保持しない。
+
+chainはtrace終端から共通コード領域のchain dispatcherへ移り、そのdispatcherが `chain_target_addr` のbodyへtail-jumpする経路を指す。dispatcherはWASM opcodeを判定しない。分岐命令の条件評価、control frame更新、後方分岐回数の記録はC++ Interpreterの命令別handlerが行い、そのhandler実行だけをchainとは呼ばない。chain targetの更新にはW^X手順を適用する。
+
+共通helper入口は契約ごとに個別配置し、trace bodyのexit rel32をinstallation時に選択した入口へpatchする。コンテキスト型入口は `0x030`、x64のi32整数除算・剰余は `0x160` から32バイト単位で4入口、wideヘルパーは `0x200` から32バイト単位で11入口を置く。ARMv8-Mのhelper呼出し入口と共通コード配置はTBDである。トレース本体には関数引数の組み替えや呼出し用のスタック領域確保を置かない。
+
+## 4. 動的モデル
+
+### JITランタイム呼出し契約
 
 Tier 2のJIT runtime APIは、Tier 3実行器にモジュール登録、基本ブロック情報、履歴記録、トレース検索、およびchain終端情報を提供する。APIはトレースキャッシュの配置・置換・リンク構造を公開しない。
 
-`fireball_call_frame_native` は、関数コード、ローカル幅、引数搬送、戻り境界を持つ96バイトの固定記述子である。`fireball_call_stack_native` は、32個の記述子を保持する固定長配列である。`fireball_const_buffer_view_native`、`fireball_wasm_function_view_native`、`fireball_wasm_module_view_native` は、WASM コードと関数メタデータを渡す非所有の標準レイアウト構造体である。この境界に文字列、`std::vector`、仮想関数、例外を含めない。 `{ExecutionContext_Layout}` `{META_NoStdVector}`
+`fireball_call_frame_native` は、関数コード、ローカル幅、引数搬送、戻り境界を持つ96バイトの固定記述子である。`fireball_call_stack_native` は、32個の記述子を保持する固定長配列である。`fireball_const_buffer_view_native`、`fireball_wasm_function_view_native`、`fireball_wasm_module_view_native` は、WASM コードと関数メタデータを渡す非所有の標準レイアウト構造体である。この境界に文字列、`std::vector`、仮想関数、例外を含めない。 `{META_NoStdVector}`
 
 実行時のオペランド領域、ローカル値領域、制御ブロック復帰情報領域は、固定容量の構造体と配列として配置する。値領域は `WASM_VALUE_SLOT_BYTES` の境界に配置した型情報を持たない32ビットワード配列で、WASM の i32/f32 は1スロット、i64/f64 は2スロットを使用する。ローカル値は、フレームごとのスロット幅（4 / 8 / 16バイト）の固定スロットとし、JIT/インタープリタともスロット番号とスロット幅からアドレスを直接計算する。スロット幅は、フレーム内で最大の変数サイズで決める。JITはこの幅を命令生成時に埋め込む。したがってローカルオフセット表を保持・参照する必要はなく、i64/f64の有効ワードも自然に境界へ置かれる。値の型タグは記録せず、型を知っているハンドラが対応する読み書きメソッドを選択する。制御ブロックの復帰情報は、構造種別、開始位置、終了位置、保存済みスタック長、結果個数を持つ20バイトの固定長レコード配列として保持する。 `{META_NoStdVector}`
 
 関数の引数・戻り値バッファも同じ原則で扱う。`WasmRunRequestNative` と `WasmRunResultNative` はバッファポインタと個数だけを渡し、戻り値型や型タグを保持しない。呼び出し側が関数シグネチャを知っているため、必要なスロット幅と解釈は呼び出し側で決める。
 
-## 委譲シグネチャ
+
+## 5. インターフェース定義
+
+### 委譲シグネチャ
 
 JITトレースの入口が使用する4論理引数契約を、すべてのヘルパーへ強制してはならない。ヘルパーは通常の関数呼出しであり、命令ごとに入力型、入力個数、結果の返却方法、およびトラップの扱いを定義する。ヘルパーの物理引数配置は対象ABIに従う。
 
@@ -54,21 +110,27 @@ x64では、整数除算・剰余の4命令は、2つの入力を整数引数レ
 
 ヘルパーへの遷移は、トレースヘッダから対象関数のアドレスを取得し、共通コード領域に配置した対象ABIの呼出しコードを経由して呼び出す。JITの保護レジスタ復元、結果領域への結果反映、実行コンテキストの更新、およびトラップ状態の反映は、各ヘルパー契約に従う。入力形式を一律に32ビットワード列へ変換する共通規則は設けない。 `{JIT_RuntimeAPI_Fallback}`
 
-## x64実行環境のトレースヘッダ
 
-以下はWindows x64およびSystem V AMD64で共通に使用する物理配置である。ARMv8-Mの配置、命令列、ABIはすべてTBDであり、x64の確認結果から推定しない。物理ポインタを格納する欄は64ビットとし、32ビットのWASM PC欄と混同しない。
+## 6. 制約達成の方策
 
-| オフセット | フィールド | サイズ | 用途 |
-| :--- | :--- | ---: | :--- |
-| `+0x00` | `head_wasm_pc` | 4バイト | トレース先頭のWASM PC |
-| `+0x04` | `trace_byte_size` | 2バイト | ヘッダを含むトレース全体の長さ |
-| `+0x06` | `flags` | 1バイト | 昇格・ループ先頭などの状態 |
-| `+0x07` | `variant_id` | 1バイト | レジスタ状態の識別子 |
-| `+0x08` | `chain_target_addr` | 8バイト | 共通chain dispatcherが読み取る次trace bodyのネイティブアドレス。未接続時は0 |
-| `+0x10` | `helper_target_addr` | 8バイト | trace固有のC helperアドレス |
+ABIは標準レイアウト、固定サイズ、固定オフセットを維持する。x64以外のポインタ幅とレイアウトは未確定であり、確定前に他アーキテクチャの互換性を主張しない。
 
-ヘッダ全体は24バイトであり、traceのentry stubは `+0x18` から始まる。`chain_next` PCは実行時cache descriptorに保持し、物理ヘッダには重複して格納しない。`common_prologue_offset`、`common_epilogue_offset`、`common_helper_offset`、絶対アドレスpool位置はビルド構成または配置時のrelocation情報であり、traceごとに物理ヘッダへ保持しない。
 
-chainはtrace終端から共通コード領域のchain dispatcherへ移り、そのdispatcherが `chain_target_addr` のbodyへtail-jumpする経路を指す。dispatcherはWASM opcodeを判定しない。分岐命令の条件評価、control frame更新、後方分岐回数の記録はC++ Interpreterの命令別handlerが行い、そのhandler実行だけをchainとは呼ばない。chain targetの更新にはW^X手順を適用する。
+## 7. 形式検証・テスト仕様との対応
 
-共通helper入口は契約ごとに個別配置し、trace bodyのexit rel32をinstallation時に選択した入口へpatchする。コンテキスト型入口は `0x030`、x64のi32整数除算・剰余は `0x160` から32バイト単位で4入口、wideヘルパーは `0x200` から32バイト単位で11入口を置く。ARMv8-Mのhelper呼出し入口と共通コード配置はTBDである。トレース本体には関数引数の組み替えや呼出し用のスタック領域確保を置かない。
+### 7.1 検証対象の不変条件
+本書で定めた状態、境界、所有権、およびエラー処理を検証対象とする。
+
+### 7.2 検証モデルと反証可能性
+独立した形式検証モデルは設定しない。x64 ABIの物理サイズ、オフセット、呼び出し結果はテスト仕様と実行テストで検証する。
+
+### 7.3 テスト仕様書との連携
+対応するテスト仕様は[jit_runtime_test_spec.md](docs/qa/tier3_executer/jit_runtime_test_spec.md)である。テストケースIDと実行可能テストは同仕様を正本とする。
+
+### 7.4 既知の制限・対象外
+ホスト実機依存の挙動、未実装アーキテクチャ、およびテスト仕様が明示する対象外条件は未検証として扱う。
+
+
+## 8. 設計判断と参考実装
+
+特記すべき独立したADRはない。採用方針は本書の各契約節に記載する。

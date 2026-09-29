@@ -90,7 +90,7 @@ JIT トレース内にインライン展開せず、トレース境界でイン�
 
 **ABI 規約と境界チェック・バックパッチング (`GOTCHA-JITC-01`, `03`〜`05`)**:
 - **スタック状態の同期**: JITトレース内では対象ABIが定める値保持方法を正本として演算する。基本ブロック終端、インタープリタ境界、トラップ時には共有オペランド領域と実行コンテキストを対象ABIの順序で同期する。キャッシュ値の破棄やダミー退避は禁止する。 `{ADR_TosCacheAsymmetry}` `{ExecutionContext_Layout}`
-- **呼出し境界 (`GOTCHA-JITC-01`, `03`)**: JITトレースとインタープリタが共有するのは4つの論理引数である。確認済みx64の物理配置は [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) に従う。ARMv8-Mの物理ABI、レジスタ割当、保存・復元、境界同期はTBDとする。
+- **呼出し境界 ({GOTCHA-JITC-01}, `03`)**: JITトレースとインタープリタが共有するのは4つの論理引数である。確認済みx64の物理配置は [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) に従い、境界引数レジスタとJIT内部一時レジスタの割当を分離する。ARMv8-Mの物理ABI、レジスタ割当、保存・復元、境界同期はTBDとする。 <!-- definition: {GOTCHA-JITC-01} -->
 - **ヘルパー選択**: Cヘルパー演算は命令ごとに専用の関数契約を持つ。コンパイラは命令に対応する識別番号と関数アドレスをヘッダへ格納し、入力型・入力個数・結果の返却方法は対象関数ごとに適用する。共通ディスパッチャが演算種別を再判定する方式は採用しない。入力を一律に共有オペランド領域の32ビット列へ変換する規則も設けない。
 - **境界チェックとバックパッチング (`GOTCHA-JITC-04`, `05`)**: トレース内ジャンプおよびインタープリタ脱出境界において、PC 境界検証を必ず行う。x64前方参照への相対オフセットはコード生成完了時にバックパッチングで書き込む。ARMv8-Mの命令列と適用方法はTBDとする。
 
@@ -111,8 +111,8 @@ Interpreter opcode handlerとJIT trace entryは4つの論理引数を共有す�
 JITトレースとインタープリタは境界で4つの論理引数を共有する。x64の物理レジスタ・スタック契約は [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) を正本とし、本書では重複定義しない。ARMv8-Mの物理配置とトレース内レジスタ割当はTBDである。
 
 #### トレース境界不変条件とスタックフレーム整合性 (Trace Boundary Invariants)
-<!-- traceability: {LowLatencyJIT} {PositionIndependentCode} {JIT_RuntimeAPI_Fallback} {GOTCHA-JITC-03} -->
-JIT トレースとインタープリタが共有オペランド領域上で相互運用するため、トレース境界不変条件（`{TraceBoundaryInvariant}`）を含む以下の4つの不変条件を厳格に保持する。
+<!-- traceability: {LowLatencyJIT} {PositionIndependentCode} {JIT_RuntimeAPI_Fallback} -->
+JIT トレースとインタープリタが共有オペランド領域上で相互運用するため、トレース境界不変条件（`{TraceBoundaryInvariant}`）を含む以下の4つの不変条件を厳格に保持する。JITからC++ Interpreter handlerへ戻る境界では共有オペランド領域と実行コンテキストを同期する（{GOTCHA-JITC-03}）。 <!-- definition: {TraceBoundaryInvariant} --> <!-- definition: {GOTCHA-JITC-03} -->
 
 1. **スタック自己完結性不変条件 (Stack Self-Containment Invariant)**:
    - JIT コンパイル対象とする BasicBlock は、**命令走査中の累積スタック深さが 0 未満（`stack_depth < 0`）に落ちない自己完結ブロックのみ**とする。
@@ -242,7 +242,7 @@ sequenceDiagram
 | 事後条件 | カードマーキング表がクリアされ、キャッシュが空の状態になる。 |
 | 不変条件 | 実行中に `config` の値を変更してはならない。 |
 | エラー時の挙動 | メモリ割り当ての不備がある場合はエラーを返す。 |
-| 補足 | の方針に基づき、基本的にはブート時に一度だけ呼び出される。 |
+| 補足 | `{META_ConfigurableSystem}` の方針に基づき、基本的にはブート時に一度だけ呼び出す。 |
 
 #### トレース検索（lookup_trace）
 <!-- traceability: {META_ConfigurableSystem} -->
@@ -315,8 +315,11 @@ sequenceDiagram
 ### 7.2 テスト仕様書との連携
 本コンポーネントの単体テストケースは [`jit_compiler_test_spec.md`](docs/qa/tier3_executer/jit_compiler_test_spec.md) を正本として定義する。3面キャッシュの直交表は [`jit_runtime_test_spec.md`](docs/qa/tier3_executer/jit_runtime_test_spec.md) を正本とする。
 
-## 8. 設計判断 (ADR)
-<!-- traceability: {ADR_ScalableCodeOffset} {ADR_SafeQueuingOnHotMiss} {ADR_TosCacheAsymmetry} {JIT_LazyChaining} {GOTCHA-JITC-07} -->
+
+## 8. 設計判断と参考実装
+
+### 8.1 設計判断 (ADR)
+<!-- traceability: {ADR_ScalableCodeOffset} {ADR_SafeQueuingOnHotMiss} {ADR_TosCacheAsymmetry} {JIT_LazyChaining} -->
 
 - **決定事項**:
   - **背景**: JITトレースとインタープリタは4つの論理引数を共有するが、物理レジスタ、スタック整列、値キャッシュの方式は対象ABIごとに異なる。トレース境界での状態同期を対象ごとに定義する必要がある。
@@ -326,7 +329,7 @@ sequenceDiagram
     - 案3: 値キャッシュを使う場合でも、キャッシュの物理レジスタ、共有領域への書戻し、および実行コンテキストの更新方法を対象ABIごとに定義する。ARMv8-Mのレジスタやスタック配置はTBDとし、x64の契約から推定しない。
   - **結論**: 論理的な4引数境界と共有状態の同期を共通契約とし、値キャッシュ、SP整列、保護レジスタの扱いは対象ABIで定義する。
   - **トレース境界の2種類のエントリと2種類のエグジット**: 境界の性質は「真の脱出/新規進入」と「共通コード領域のchain dispatcherを介した継続」の2系統に分かれる。混同してはならない。物理的な命令列は対象アーキテクチャの仕様で定める。
-     - **新規エントリ / 真の脱出**: インタープリタから初めて呼び出される場合は対象ABIの開始処理を通過する。真の脱出では、共有オペランド領域と実行コンテキストを同期し、対象ABIの終了処理で復帰する。VMの値とCの戻り値は別の契約として扱う。
+     - **新規エントリ / 真の脱出**: インタープリタから初めて呼び出される場合は対象ABIの開始処理を通過する。真の脱出では、共有オペランド領域と実行コンテキストを同期し、対象ABIの終了処理で復帰する。WASM値は共有オペランドスタックに残し、JIT traceのC戻り値には使わない（{GOTCHA-JITC-07}）。 <!-- definition: {GOTCHA-JITC-07} -->
   - **chain dispatcher経由の継続**: 直線後続traceが常駐し、対象ABIの状態引継ぎ条件を満たす場合、trace末尾から共通コード領域のchain dispatcherへ移り、dispatcherがTraceヘッダのtarget bodyへtail-jumpする。入口保存処理を重ねない。target未接続時は共通epilogueへ進み、C++ dispatcherへ戻る。
   - **固定ローカルスロットの直接アクセス (`ContextPointerRegister`)**: 各論理ローカルは、フレームのスロット幅の固定スロットに配置される。スロット幅は関数ごとに決まり、i32/f32だけの関数は4バイト、i64/f64を含む関数は8バイトである。ローカル領域の基底を起点とする `local index × スロット幅` を、命令生成時に直接埋め込む。実行時のオフセット表参照やベースアドレス再計算は行わない。
 

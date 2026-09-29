@@ -30,7 +30,7 @@ from ipc_router import (
 )
 from memory import FB_CONF_MEMORY_POOL_SIZE, MemoryManager
 from scheduler import Scheduler
-from tier2_runtime.logger import LogDictionary, Logger, LogLevel
+from tier2_runtime.logger import LogDictionary, Logger, LogLevel, LogResult, decode_log_records
 from tier3_platform.drivers.hal.stream import StreamTransport
 
 # kv_pair key_ids (ipc_router.md §3.3): Functional scope, UINT32 values.
@@ -133,28 +133,29 @@ def test_scenario_ipc_router_and_logging():
     # Section 2: Structured System Logging & LogDictionary Safety
     # -------------------------------------------------------------------------
     transport = StreamTransport()
-    log_dict = LogDictionary()
-    # 1. Register valid format strings
-    log_dict.register(0x100, "TASK_INIT: id=%d priority=%d")
-    log_dict.register(0x104, "COOS_STATE: state=0x%08X")
-    # 2. Unsafe format specifier (%s) must be rejected
+    log_dict = LogDictionary(
+        entries=((0x1100, "TASK_INIT: id=%d priority=%d"), (0x1104, "COOS_STATE: state=0x%08X"))
+    )
+    # Unsafe format specifiers (%s/%p/%c and width variants) are rejected at dictionary build time.
     rejected = False
     try:
-        log_dict.register(0x108, "UNSAFE_STRING: name=%s")
+        LogDictionary(
+            entries=((0x1108, "UNSAFE_STRING: name=%s"),), include_diagnostic_events=False
+        )
     except AssertionError:
         rejected = True
     assert rejected, "LogDictionary must reject %s pointer specifier"
     print("    [Section 2.1] LogDictionary Pointer Specifier Rejection (%s) -> REJECTED [PASS]")
     # 3. Emit structured logs via Logger
     logger = Logger(transport=transport, dictionary=log_dict, min_level=LogLevel.INFO)
-    assert logger.log_event(LogLevel.INFO, 0x100, 1, 5) == "QUEUED"
-    assert logger.log_event(LogLevel.DEBUG, 0x104, 0x12345678) == "FILTERED"  # Filtered out
-    assert logger.log_event(LogLevel.ERROR, 0x104, 0xDEADBEEF) == "QUEUED"
+    assert logger.log_event(LogLevel.INFO, 0x1100, 1, 5) == LogResult.SUCCESS
+    assert logger.log_event(LogLevel.DEBUG, 0x1104, 0x12345678) == LogResult.FILTERED
+    assert logger.log_event(LogLevel.ERROR, 0x1104, 0xDEADBEEF) == LogResult.SUCCESS
     # Flush buffered logs to UART (simulating COOS idle_hook flush)
     flushed_count = logger.flush()
     assert flushed_count == 2
     # Read UART output stream
-    emitted = transport.drain_output().decode("ascii")
+    emitted = "\n".join(decode_log_records(transport.drain_output(), log_dict))
     assert "TASK_INIT: id=1 priority=5" in emitted
     assert "0x12345678" not in emitted  # DEBUG filtered
     assert "COOS_STATE: state=0xDEADBEEF" in emitted

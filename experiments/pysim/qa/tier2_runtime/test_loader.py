@@ -21,10 +21,14 @@ Tests for WASM Loader, Zero-Copy Indexing, and Hash + ReadOnlyRadixBinaryTreeVie
 Conforms strictly to docs/qa/tier2_runtime/runtime_loader_test_spec.md (TEST-LOAD-01 ~ TEST-LOAD-47).
 """
 
-import struct
-
-from helpers import expect_assertion, wat_to_wasm
+from helpers import (
+    _build_test_wasm_binary,
+    _encode_leb128_u32,
+    expect_assertion,
+    wat_to_wasm,
+)
 from loader import (
+    DecodedEntityKind,
     ExternalKind,
     FuncType,
     SectionID,
@@ -32,121 +36,6 @@ from loader import (
     WasmLoader,
     fnv1a_32,
 )
-
-
-def _encode_leb128_u32(val: int) -> bytes:
-    buf = bytearray()
-    while True:
-        b = val & 0x7F
-        val >>= 7
-        if val != 0:
-            b |= 0x80
-
-        buf.append(b)
-        if val == 0:
-            break
-    return bytes(buf)
-
-
-def _encode_leb128_s32(val: int) -> bytes:
-    buf = bytearray()
-    more = True
-    while more:
-        b = val & 0x7F
-        val >>= 7
-        if (val == 0 and (b & 0x40) == 0) or (val == -1 and (b & 0x40) != 0):
-            more = False
-        else:
-            b |= 0x80
-
-        buf.append(b)
-    return bytes(buf)
-
-
-def _build_test_wasm_binary(
-    magic: bytes = b"\x00asm",
-    version: int = 1,
-    export_names: list[str] | None = None,
-    corrupt_section_order: bool = False,
-    corrupt_section_bounds: bool = False,
-    invalid_type_idx: bool = False,
-    memory_pages: int = 1,
-) -> bytes:
-
-    buf = bytearray()
-    buf.extend(magic)
-    buf.extend(struct.pack("<I", version))
-    # Type Section (ID=1) -> (i32, i32) -> i32
-    type_payload = bytearray()
-    type_payload.extend(_encode_leb128_u32(1))
-    type_payload.append(0x60)
-    type_payload.extend(_encode_leb128_u32(2))
-    type_payload.extend([ValType.I32, ValType.I32])
-    type_payload.extend(_encode_leb128_u32(1))
-    type_payload.append(ValType.I32)
-    buf.append(SectionID.TYPE)
-    buf.extend(_encode_leb128_u32(len(type_payload)))
-    buf.extend(type_payload)
-    # Function Section (ID=3)
-    func_payload = bytearray()
-    func_payload.extend(_encode_leb128_u32(1))
-    func_payload.extend(_encode_leb128_u32(999 if invalid_type_idx else 0))
-    buf.append(SectionID.FUNCTION)
-    buf.extend(_encode_leb128_u32(len(func_payload)))
-    buf.extend(func_payload)
-    # Memory Section (ID=5)
-    mem_payload = bytearray()
-    mem_payload.extend(_encode_leb128_u32(1))
-    mem_payload.append(0x00)
-    mem_payload.extend(_encode_leb128_u32(memory_pages))
-    buf.append(SectionID.MEMORY)
-    buf.extend(_encode_leb128_u32(len(mem_payload)))
-    buf.extend(mem_payload)
-    # Global Section (ID=6)
-    glob_payload = bytearray()
-    glob_payload.extend(_encode_leb128_u32(1))
-    glob_payload.append(ValType.I32)
-    glob_payload.append(0x00)
-    glob_payload.append(0x41)
-    glob_payload.extend(_encode_leb128_s32(42))
-    glob_payload.append(0x0B)
-    buf.append(SectionID.GLOBAL)
-    buf.extend(_encode_leb128_u32(len(glob_payload)))
-    buf.extend(glob_payload)
-    # Export Section (ID=7)
-    names = export_names or ["add", "main", "compute"]
-    exp_payload = bytearray()
-    exp_payload.extend(_encode_leb128_u32(len(names)))
-    for name in names:
-        encoded_name = name.encode("utf-8")
-        exp_payload.extend(_encode_leb128_u32(len(encoded_name)))
-        exp_payload.extend(encoded_name)
-        exp_payload.append(ExternalKind.FUNCTION)
-        exp_payload.extend(_encode_leb128_u32(0))
-
-    if corrupt_section_order:
-        buf.append(SectionID.IMPORT)
-        buf.extend(_encode_leb128_u32(0))
-
-    buf.append(SectionID.EXPORT)
-    buf.extend(_encode_leb128_u32(len(exp_payload)))
-    buf.extend(exp_payload)
-    # Code Section (ID=10)
-    code_body = bytearray()
-    code_body.extend(_encode_leb128_u32(0))
-    code_body.extend([0x20, 0x00, 0x20, 0x01, 0x6A, 0x0B])
-    code_payload = bytearray()
-    code_payload.extend(_encode_leb128_u32(1))
-    code_payload.extend(_encode_leb128_u32(len(code_body)))
-    code_payload.extend(code_body)
-    buf.append(SectionID.CODE)
-    if corrupt_section_bounds:
-        buf.extend(_encode_leb128_u32(9999))
-    else:
-        buf.extend(_encode_leb128_u32(len(code_payload)))
-
-    buf.extend(code_payload)
-    return bytes(buf)
 
 
 def test_load_01_to_07_lightweight_verification():
@@ -189,7 +78,7 @@ def test_load_10_to_15_zero_copy_and_accessors():
     wasm_bytes = _build_test_wasm_binary(export_names=["zeta", "alpha", "beta"])
     view = loader.prepare("zc_mod", wasm_bytes)
     # Exports sorted
-    exp_names = [e.name for e in view.exports_dict]
+    exp_names = [view.export_name(entry) for entry in view.exports_dict]
     assert exp_names == ["alpha", "beta", "zeta"]
     # Hash + ReadOnlyRadixBinaryTreeView lookup (TEST-LOAD-13)
     assert view.lookup_export_func("alpha") == 0
@@ -261,23 +150,23 @@ def test_load_40_to_47_radix_binary_tree_view_indexes():
     # 1. TEST-LOAD-40: Entities registered in DecodedEntityRegistry
     assert len(view.entity_registry) > 0
     kinds = [e.kind for e in view.entity_registry]
-    assert "SECTION" in kinds
-    assert "FUNCTION" in kinds
-    assert "GLOBAL" in kinds
+    assert DecodedEntityKind.SECTION in kinds
+    assert DecodedEntityKind.FUNCTION in kinds
+    assert DecodedEntityKind.GLOBAL in kinds
     # 2. TEST-LOAD-41 & 42: Function body reverse lookup
     func_start, func_size = view.code_offsets[0]
     entity_start = view.lookup_by_file_offset(func_start)
     assert entity_start is not None
-    assert entity_start.kind == "FUNCTION"
+    assert entity_start.kind == DecodedEntityKind.FUNCTION
     assert entity_start.index == 0
     entity_mid = view.lookup_by_file_offset(func_start + 2)
     assert entity_mid is not None
-    assert entity_mid.kind == "FUNCTION"
+    assert entity_mid.kind == DecodedEntityKind.FUNCTION
     # 3. TEST-LOAD-43: Global entry reverse lookup
     global_entry = view.globals[0]
     entity_glob = view.lookup_by_file_offset(global_entry.init_expr_offset)
     assert entity_glob is not None
-    assert entity_glob.kind == "GLOBAL"
+    assert entity_glob.kind == DecodedEntityKind.GLOBAL
     # 4. TEST-LOAD-44: Invalid / out-of-bounds offsets
     assert view.lookup_by_file_offset(len(wasm_bytes) + 100) is None
     assert view.lookup_by_file_offset(0xFFFFFFFF) is None
@@ -316,17 +205,36 @@ def test_load_40_to_47_radix_binary_tree_view_indexes():
     app_view = loader.prepare("app_test_view", bytes(app_buf))
     imp_alpha = app_view.find_import("radix_mod", "alpha")
     assert imp_alpha is not None
-    assert imp_alpha.field_name == "alpha"
+    assert app_view.import_names(imp_alpha) == ("radix_mod", "alpha")
     imp_compute = app_view.find_import("radix_mod", "compute")
     assert imp_compute is not None
-    assert imp_compute.field_name == "compute"
+    assert app_view.import_names(imp_compute) == ("radix_mod", "compute")
     assert app_view.find_import("radix_mod", "unknown") is None
     # 6. TEST-LOAD-46: Hash collision verification
     exp_entry = view.lookup_export("gamma")
     assert exp_entry is not None
-    assert exp_entry.name == "gamma"
+    assert view.export_name(exp_entry) == "gamma"
     # 7. TEST-LOAD-47: Fast non-existent symbol rejection
     assert view.lookup_export("totally_fake_symbol") is None
+
+
+def test_load_54_rom_backed_names_and_hash_collision_resolution():
+    """TEST-LOAD-54: Name indexes retain ROM ranges and distinguish equal FNV hashes."""
+    loader = WasmLoader()
+    view = loader.prepare(
+        "collision_mod", _build_test_wasm_binary(export_names=["ufbwjn", "rsksbm"])
+    )
+
+    first = view.lookup_export("ufbwjn")
+    second = view.lookup_export("rsksbm")
+    assert first is not None
+    assert second is not None
+    assert view.export_name(first) == "ufbwjn"
+    assert view.export_name(second) == "rsksbm"
+    assert fnv1a_32("ufbwjn") == fnv1a_32("rsksbm")
+    assert (
+        bytes(view.rom_binary[first.name_offset : first.name_offset + first.name_size]) == b"ufbwjn"
+    )
 
 
 def test_load_48_loader_basic_block_index():
@@ -406,6 +314,42 @@ def test_load_52_rejects_custom_section_names_past_section_end():
     wasm_bytes = b"\x00asm\x01\x00\x00\x00\x00\x02\x03a"
     with expect_assertion("custom section name exceeds section bounds"):
         parse(wasm_bytes)
+
+
+def test_load_53_bounds_leb128_and_section_counts_before_storage_configuration():
+    """LEB128 reads stop at their field width and current section boundary."""
+    from leb128 import decode_signed, decode_unsigned
+    from wasm_reader import parse
+
+    assert decode_unsigned(memoryview(b"\xff\xff\xff\xff\x0f"), 0) == (0xFFFF_FFFF, 5)
+    assert decode_signed(memoryview(b"\x80\x80\x80\x80\x78"), 0, bits=32) == (
+        -(1 << 31),
+        5,
+    )
+    with expect_assertion("truncated unsigned LEB128"):
+        decode_unsigned(memoryview(b"\x80"), 0)
+    with expect_assertion("exceeds width"):
+        decode_unsigned(memoryview(b"\xff\xff\xff\xff\x10"), 0)
+    with expect_assertion("maximum 5 bytes"):
+        decode_unsigned(memoryview(b"\x80\x80\x80\x80\x80\x00"), 0)
+
+    over_capacity_types = b"\x00asm\x01\x00\x00\x00\x01\x02\x81\x02"
+    with expect_assertion("exceeds configured maximum"):
+        parse(memoryview(over_capacity_types))
+
+    truncated_type_count_followed_by_section = b"\x00asm\x01\x00\x00\x00\x01\x01\x80\x03\x01\x00"
+    with expect_assertion("truncated unsigned LEB128"):
+        parse(memoryview(truncated_type_count_followed_by_section))
+
+
+def test_load_55_active_parser_enforces_configured_wasm_memory_page_limit():
+    """TEST-LOAD-55: The parser used by runtime creation enforces the configured page budget."""
+    from config import FB_CONF_MAX_WASM_PAGES
+    from wasm_reader import parse
+
+    over_limit = _build_test_wasm_binary(memory_pages=FB_CONF_MAX_WASM_PAGES + 1)
+    with expect_assertion("memory minimum exceeds FB_CONF_MAX_WASM_PAGES"):
+        parse(memoryview(over_limit))
 
 
 ALL_TESTS = sorted(

@@ -49,7 +49,7 @@ def run_aobench(debug: bool = False) -> dict[str, int | float]:
     # 1. Tier 2 Reference Execution
     sysv = System()
     wasi_ctx = WasiHostContext(sysv)
-    sysv.start_hal_driver(DummyDriver(sysv.wasi_hal_bindings.stdout_uri, transport=sysv.transport))
+    sysv.start_hal_driver(DummyDriver(transport=sysv.transport), sysv.wasi_hal_bindings.stdout_uri)
     funcs = wasi_ctx.build_interpreter_host_functions(module)
     module.init_memory_data(wasi_ctx.guest_memory, ())
     interp = Interpreter(
@@ -70,7 +70,7 @@ def run_aobench(debug: bool = False) -> dict[str, int | float]:
     sysv_t3 = System()
     wasi_ctx_t3 = WasiHostContext(sysv_t3)
     sysv_t3.start_hal_driver(
-        DummyDriver(sysv_t3.wasi_hal_bindings.stdout_uri, transport=sysv_t3.transport)
+        DummyDriver(transport=sysv_t3.transport), sysv_t3.wasi_hal_bindings.stdout_uri
     )
     funcs_t3 = wasi_ctx_t3.build_interpreter_host_functions(module)
     module.init_memory_data(wasi_ctx_t3.guest_memory, ())

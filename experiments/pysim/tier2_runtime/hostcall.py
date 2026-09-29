@@ -47,6 +47,7 @@ class WasiErrno(IntEnum):
     FAULT = 21
     INVAL = 28
     IO = 29
+    MSGSIZE = 35
     NOENT = 44
     NOMEM = 48
     NOSYS = 52

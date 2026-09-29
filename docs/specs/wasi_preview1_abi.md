@@ -33,6 +33,25 @@ WASI 32-bit (wasm32) における物理データ型およびメモリレイア�
 | `__wasi_iovec_t` | `struct { uint32_t buf; uint32_t buf_len; }` | 8 bytes | 入力用バッファ記述子 |
 | `__wasi_exitcode_t` | `uint32_t` | 4 bytes | プロセス終了コード |
 
+### 2.1. 本プロジェクトで使用する errno 値
+
+システムコールのエラー値は WASI Preview 1 の `__wasi_errno_t` に従う。現在の実装で使用する値は次のとおりである。
+
+| 名前 | 値 | 用途 |
+| :--- | ---: | :--- |
+| `SUCCESS` | 0 | 成功 |
+| `AGAIN` | 6 | データ未着 |
+| `BADF` | 8 | 無効なハンドル |
+| `FAULT` | 21 | ゲストメモリ範囲外 |
+| `INVAL` | 28 | 不正な引数 |
+| `IO` | 29 | I/O失敗 |
+| `MSGSIZE` | 35 | メッセージ上限超過 |
+| `NOENT` | 44 | 対象未登録 |
+| `NOMEM` | 48 | メモリ確保失敗 |
+| `NOSYS` | 52 | 未実装システムコール |
+| `PERM` | 63 | 権限拒否 |
+| `NOTCAPABLE` | 76 | capability権限不足 |
+
 ---
 
 ## 3. WASI Preview 1 サポート API マトリクス

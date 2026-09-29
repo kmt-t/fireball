@@ -177,4 +177,3 @@ class UvwasiReferenceContext:
 
     def close(self) -> None:
         """Release the test fixture state."""
-

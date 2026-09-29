@@ -57,7 +57,7 @@ x64で確認したInterpreter/JIT間の4論理引数契約と物理ABIは [`jit_
 ---
 
 ### 3.3 変数アクセス命令 (Variable Access)
-<!-- traceability: {ContextPointerRegister} {JIT_RegisterMapping} -->
+<!-- traceability: {ContextPointerRegister} -->
 
 | Opcode | 命令名 | スタック遷移 | インタープリタ実装 | ARMv8-M JIT mapping (TBD) | ARMv8-M physical behavior (TBD) |
 | :--- | :--- | :--- | :--- | :--- | :--- |

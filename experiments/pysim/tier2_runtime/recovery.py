@@ -19,10 +19,10 @@ from collections.abc import Callable
 from enum import IntEnum
 from typing import Generic, Never, TypeVar
 
+from config import FB_CONF_RETRY_BACKOFF_MS, FB_CONF_RETRY_MAX_ATTEMPTS
+
 T = TypeVar("T")
 E = TypeVar("E")
-FB_CONF_RETRY_BACKOFF_MS = 10  # docs/components/tier1_core/system_config.md 3.3.7
-RETRY_MAX_ATTEMPTS = 3  # interface_wit.md 3.2 retry invariant
 
 
 class RecoveryStrategy(IntEnum):
@@ -98,9 +98,18 @@ def classify_errno_strategy(errno: int) -> RecoveryStrategy:
 class RecoveryManager:
     """Manages layered execution, retries, escalations, and reset/panic recovery actions without exceptions."""
 
+    __slots__ = (
+        "backoff_ms",
+        "max_retries",
+        "sleep_fn",
+        "total_panics",
+        "total_restarts",
+        "total_retries",
+    )
+
     def __init__(
         self,
-        max_retries: int = RETRY_MAX_ATTEMPTS,
+        max_retries: int = FB_CONF_RETRY_MAX_ATTEMPTS,
         backoff_ms: int = FB_CONF_RETRY_BACKOFF_MS,
         sleep_fn: Callable[[float], None] = time.sleep,
     ):

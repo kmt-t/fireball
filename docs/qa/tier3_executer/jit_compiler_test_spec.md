@@ -40,7 +40,7 @@ Copy-and-Patchエンジンによるネイティブコード生成、4論理引�
 | TEST-JITC-20 | x64ヘッダサイズは固定24バイト | x64向けに生成したトレース | ヘッダを解析 | `+0x00 head_wasm_pc(u32)`, `+0x04 trace_byte_size(u16)`, `+0x06 flags(u8)`, `+0x07 variant_id(u8)`, `+0x08 chain_target_addr(u64)`, `+0x10 helper_target_addr(u64)`を含む24バイト構造 | [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) |
 | TEST-JITC-21 | flagsビットの意味 | PROMOTED済み/LOOP_HEADERのトレース | flagsを確認 | `0x01: PROMOTED`, `0x02: LOOP_HEADER`が正しく設定される | 同上 |
 | TEST-JITC-22 | x64エントリstubは24バイトヘッダ直後に配置 | x64向けに生成したトレース | メモリレイアウトを確認 | 24バイトヘッダ直後(+0x18)から15バイトのentry stubが始まり、bodyはその直後(+0x27)から始まる。ARMv8-Mの配置はTBD | [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) |
-| TEST-JITC-23 | `variant_id`とレジスタ割り当ての対応 | 命令テンプレートごとに異なる値キャッシュ常駐数 | variant選択とチェイン遷移を確認 | `variant_id`は命令テンプレートのレジスタ割り当て状態を表し、互換variantへは直接遷移し、非互換variantへは共有オペランド領域から再構成して遷移する | `JIT_RegisterMapping` |
+| TEST-JITC-23 | 予約済み`variant_id`の現行値 | x64向けトレースを生成 | トレースヘッダを解析 | 現行生成器は`variant_id=0`を出力し、異なるレジスタ割り当てvariantの選択やvariant間chainを行わない | [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md), `{JIT_RegisterMapping}` |
 
 ### ADR_ScalableCodeOffset
 
@@ -84,7 +84,7 @@ Copy-and-Patchエンジンによるネイティブコード生成、4論理引�
 
 | GOTCHA ID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| GOTCHA-JITC-01 | 境界引数レジスタとJIT内部一時レジスタの物理競合防止 | トレース生成 | 各ステンシルのレジスタ割り当てを走査 | x64の物理レジスタ配置は対象ABIと一致すること。ARMv8-Mの物理レジスタ割当と競合条件はTBD | `{JIT_RegisterMapping}` |
+| `{GOTCHA-JITC-01}` | 境界引数レジスタとJIT内部一時レジスタの物理競合防止 | トレース生成 | 各ステンシルのレジスタ割り当てを走査 | x64の物理レジスタ配置は[`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md)の対象ABI表と一致すること。ARMv8-Mの物理レジスタ割当と競合条件はTBD | `{JIT_RegisterMapping}` |
 | GOTCHA-JITC-03 | trace境界の共有stackと実行状態同期 | JIT trace終端 | C++ Interpreter handlerへ復帰した状態を確認する | x64の共有状態は同期される。ARMv8-Mの物理保存先と同期方法はTBD | `{ADR_TosCacheAsymmetry}` |
 | GOTCHA-JITC-04 | 境界チェック先行性と副作用ゼロ（Wrapping禁止） | メモリアクセス命令 | `addr + width - 1 >= mem_size` でトレース実行 | メモリアクセス（LDR/STR）前にx64実装の範囲検査で評価され、境界外時はメモリ書き込みや値更新の副作用が一切発生せず即座にトラップテールへ分岐する。**実装の勘所**: マスク等でアドレスを巡回（Wrapping）させて継続実行することは安全上絶対に許容されない | MemoryBoundaryCheck, FastAddressCheck |
 | GOTCHA-JITC-07 | trace結果値とホスト関数戻り値の分離 | 残余値を持つtrace | 共通stackとC++ handler復帰後の値を確認する | WASM値は共有operand stackに残し、JIT traceのC戻り値として返さない。x64の物理配置は`jit_abi.md`に従い、ARMv8-Mの物理配置はTBD | `{ADR_TosCacheAsymmetry}` |

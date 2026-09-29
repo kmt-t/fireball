@@ -63,10 +63,7 @@ class ExecutionContextNative(ctypes.Structure):
 
 
 assert ExecutionContextNative.loop_jump_count.offset == JIT_LOOP_JUMP_COUNT_OFFSET_BYTES
-assert (
-    ExecutionContextNative.loop_jump_threshold.offset
-    == JIT_LOOP_JUMP_THRESHOLD_OFFSET_BYTES
-)
+assert ExecutionContextNative.loop_jump_threshold.offset == JIT_LOOP_JUMP_THRESHOLD_OFFSET_BYTES
 
 
 class ConstBufferViewNative(ctypes.Structure):

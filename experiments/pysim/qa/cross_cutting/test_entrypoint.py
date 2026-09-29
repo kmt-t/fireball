@@ -15,7 +15,6 @@ _TESTS_DIR = _TEST_FILE.parent.parent
 _PYSIM_DIR = _TESTS_DIR.parent
 
 
-
 def test_entrypoint_01_main_runs_every_demo_and_finds_no_violation():
     """TEST-ENTRY-01: main.py imports, runs all guest tasks, and reports no behavioral bug."""
     import main
@@ -26,7 +25,7 @@ def test_entrypoint_01_main_runs_every_demo_and_finds_no_violation():
     report = captured.getvalue()
 
     for expected in (
-        "[structured-logger] log_event -> QUEUED",
+        "[structured-logger] log_event -> SUCCESS",
         "[console-writer] wrote",
         "out-of-bounds slice correctly refused",
         "[hostile-neighbor] cross-task view correctly refused",

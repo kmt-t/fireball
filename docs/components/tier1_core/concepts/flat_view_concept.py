@@ -142,6 +142,9 @@ class StaticFlatMap(Generic[KeyT, ValT]):
     Fixed-capacity owning sorted map stored in an AoS entry array (C++ std::array).
     Provides non-owning FlatMapView via .view().
     Leverages standard sorting algorithms and binary search.
+
+    GOTCHA-CONT-04: This logical model checks capacity rejection and borrowed-view
+    visibility; Python list allocation does not model physical buffer stability.
     """
 
     __slots__ = ("_entries", "capacity")
@@ -181,8 +184,9 @@ class StaticFlatMap(Generic[KeyT, ValT]):
         idx = bisect.bisect_left(self._entries, key, key=lambda e: e[0])
         if idx < len(self._entries) and self._entries[idx][0] == key:
             self._entries[idx] = (key, value)
+            return True
+        if len(self._entries) >= self.capacity:
             return False
-        assert len(self._entries) < self.capacity, "StaticFlatMap capacity exceeded"
         self._entries.insert(idx, (key, value))
         return True
 
@@ -238,7 +242,7 @@ class RadixBinaryTreeView(Generic[ValT]):
         radix_table: Sequence[int],
         radix_shift: int,
     ):
-        self.map_view = FlatMapView(list(zip(keys, values, strict=False)))
+        self.map_view = FlatMapView(list(zip(keys, values, strict=True)))
         self.radix_table = radix_table  # pure scalar offsets array [0, 3, 6, ...]
         self.radix_shift = radix_shift
 
@@ -422,6 +426,17 @@ def test_static_flat_map_operations() -> None:
     assert m.entries == [(10, 100), (30, 300)]
 
 
+def test_static_flat_map_update_and_capacity_rejection() -> None:
+    """GOTCHA-CONT-04: Existing views observe in-place updates; full maps reject growth."""
+    m = StaticFlatMap(capacity=2)
+    assert m.insert(2, 20)
+    assert m.insert(1, 10)
+    assert m.insert(2, 200)
+    assert m.entries == [(1, 10), (2, 200)]
+    assert not m.insert(3, 30)
+    assert m.entries == [(1, 10), (2, 200)]
+
+
 if __name__ == "__main__":
     test_two_bit_card_marking_packs_four_cards_per_byte()
     test_packed_write_does_not_disturb_neighbours()
@@ -433,4 +448,5 @@ if __name__ == "__main__":
     test_radix_binary_tree_view()
     test_bits_must_divide_a_byte()
     test_static_flat_map_operations()
+    test_static_flat_map_update_and_capacity_rejection()
     print("[PASS] All container vocabulary concept tests passed successfully.")

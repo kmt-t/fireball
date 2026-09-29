@@ -26,16 +26,22 @@ class WasiPreview1Backend(Protocol):
 
     __slots__ = ()
 
-    def fd_read(self, fd: int, memory: bytearray, iovs_ptr: int, iovs_len: int, nread_ptr: int) -> int:
+    def fd_read(
+        self, fd: int, memory: bytearray, iovs_ptr: int, iovs_len: int, nread_ptr: int
+    ) -> int:
         """Read guest iovecs from uvwasi."""
 
-    def fd_write(self, fd: int, memory: bytearray, iovs_ptr: int, iovs_len: int, nwritten_ptr: int) -> int:
+    def fd_write(
+        self, fd: int, memory: bytearray, iovs_ptr: int, iovs_len: int, nwritten_ptr: int
+    ) -> int:
         """Write guest iovecs through uvwasi."""
 
     def fd_close(self, fd: int) -> int:
         """Close one uvwasi descriptor."""
 
-    def clock_time_get(self, clock_id: int, precision: int, memory: bytearray, time_ptr: int) -> int:
+    def clock_time_get(
+        self, clock_id: int, precision: int, memory: bytearray, time_ptr: int
+    ) -> int:
         """Write a uvwasi clock value into guest memory."""
 
     def random_get(self, memory: bytearray, buf_ptr: int, buf_len: int) -> int:
@@ -50,16 +56,22 @@ class UnavailableUvwasiBackend:
 
     __slots__ = ()
 
-    def fd_read(self, fd: int, memory: bytearray, iovs_ptr: int, iovs_len: int, nread_ptr: int) -> int:
+    def fd_read(
+        self, fd: int, memory: bytearray, iovs_ptr: int, iovs_len: int, nread_ptr: int
+    ) -> int:
         return int(WasiErrno.NOSYS)
 
-    def fd_write(self, fd: int, memory: bytearray, iovs_ptr: int, iovs_len: int, nwritten_ptr: int) -> int:
+    def fd_write(
+        self, fd: int, memory: bytearray, iovs_ptr: int, iovs_len: int, nwritten_ptr: int
+    ) -> int:
         return int(WasiErrno.NOSYS)
 
     def fd_close(self, fd: int) -> int:
         return int(WasiErrno.NOSYS)
 
-    def clock_time_get(self, clock_id: int, precision: int, memory: bytearray, time_ptr: int) -> int:
+    def clock_time_get(
+        self, clock_id: int, precision: int, memory: bytearray, time_ptr: int
+    ) -> int:
         return int(WasiErrno.NOSYS)
 
     def random_get(self, memory: bytearray, buf_ptr: int, buf_len: int) -> int:
@@ -186,7 +198,9 @@ class UvwasiBackend:
 
     @staticmethod
     def _valid_range(memory: bytearray, offset: int, length: int) -> bool:
-        return offset >= 0 and length >= 0 and offset <= len(memory) and length <= len(memory) - offset
+        return (
+            offset >= 0 and length >= 0 and offset <= len(memory) and length <= len(memory) - offset
+        )
 
     def _iovecs(
         self,
@@ -194,7 +208,11 @@ class UvwasiBackend:
         iovs_ptr: int,
         iovs_len: int,
     ) -> tuple[ctypes.Array[_UvwasiIovec] | None, ctypes.Array[ctypes.c_ubyte] | None, int]:
-        if iovs_len < 0 or iovs_len > UVWASI_MAX_IOVECS or not self._valid_range(memory, iovs_ptr, iovs_len * 8):
+        if (
+            iovs_len < 0
+            or iovs_len > UVWASI_MAX_IOVECS
+            or not self._valid_range(memory, iovs_ptr, iovs_len * 8)
+        ):
             return None, None, int(WasiErrno.FAULT)
         memory_array = self._memory_view(memory)
         iovecs = (_UvwasiIovec * UVWASI_MAX_IOVECS)()
@@ -206,26 +224,38 @@ class UvwasiBackend:
             iovecs[index].buf_len = length
         return iovecs, memory_array, int(WasiErrno.SUCCESS)
 
-    def fd_read(self, fd: int, memory: bytearray, iovs_ptr: int, iovs_len: int, nread_ptr: int) -> int:
+    def fd_read(
+        self, fd: int, memory: bytearray, iovs_ptr: int, iovs_len: int, nread_ptr: int
+    ) -> int:
         if not self._valid_range(memory, nread_ptr, 4):
             return int(WasiErrno.FAULT)
         iovecs, memory_array, status = self._iovecs(memory, iovs_ptr, iovs_len)
         if status != int(WasiErrno.SUCCESS) or iovecs is None or memory_array is None:
             return status
         nread = ctypes.c_uint32(0)
-        result = int(self._library.uvwasi_fd_read(ctypes.byref(self._context), fd, iovecs, iovs_len, ctypes.byref(nread)))
+        result = int(
+            self._library.uvwasi_fd_read(
+                ctypes.byref(self._context), fd, iovecs, iovs_len, ctypes.byref(nread)
+            )
+        )
         if result == int(WasiErrno.SUCCESS):
             struct.pack_into("<I", memory, nread_ptr, int(nread.value))
         return result
 
-    def fd_write(self, fd: int, memory: bytearray, iovs_ptr: int, iovs_len: int, nwritten_ptr: int) -> int:
+    def fd_write(
+        self, fd: int, memory: bytearray, iovs_ptr: int, iovs_len: int, nwritten_ptr: int
+    ) -> int:
         if not self._valid_range(memory, nwritten_ptr, 4):
             return int(WasiErrno.FAULT)
         iovecs, memory_array, status = self._iovecs(memory, iovs_ptr, iovs_len)
         if status != int(WasiErrno.SUCCESS) or iovecs is None or memory_array is None:
             return status
         nwritten = ctypes.c_uint32(0)
-        result = int(self._library.uvwasi_fd_write(ctypes.byref(self._context), fd, iovecs, iovs_len, ctypes.byref(nwritten)))
+        result = int(
+            self._library.uvwasi_fd_write(
+                ctypes.byref(self._context), fd, iovecs, iovs_len, ctypes.byref(nwritten)
+            )
+        )
         if result == int(WasiErrno.SUCCESS):
             struct.pack_into("<I", memory, nwritten_ptr, int(nwritten.value))
         return result
@@ -233,7 +263,9 @@ class UvwasiBackend:
     def fd_close(self, fd: int) -> int:
         return int(self._library.uvwasi_fd_close(ctypes.byref(self._context), fd))
 
-    def clock_time_get(self, clock_id: int, precision: int, memory: bytearray, time_ptr: int) -> int:
+    def clock_time_get(
+        self, clock_id: int, precision: int, memory: bytearray, time_ptr: int
+    ) -> int:
         if not self._valid_range(memory, time_ptr, 8):
             return int(WasiErrno.FAULT)
         value = ctypes.c_uint64(0)

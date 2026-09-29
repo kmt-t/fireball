@@ -123,7 +123,7 @@ def test_scenario_multimodule_unified_pc():
     sorted_pairs = sorted(runtime_engine.jit_runtime.cache.active.traces, key=lambda x: x[0])
     keys = tuple(pc for pc, _ in sorted_pairs)
     vals = tuple(trace for _, trace in sorted_pairs)
-    for k, v in zip(keys, vals, strict=False):
+    for k, v in zip(keys, vals, strict=True):
         index = bisect_left(keys, k)
         found = vals[index] if index < len(keys) and keys[index] == k else None
         assert found is v, f"JIT binary lookup failed for UnifiedPC 0x{k:08X}"

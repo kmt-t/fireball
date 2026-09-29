@@ -79,6 +79,8 @@ HAL全体の制限値を定義する。物理値は Tier 3 で確定される。
 
 割り込み通知の責務分担（ISR → 固定5ワードイベント生成 → COOSの固定長ロックフリーFIFO → COOS協調境界でのvSoC配送）の抽象契約は [`runtime_vmmio.md`](docs/components/tier2_runtime/runtime_vmmio.md) を正本とする。WASIの`poll-check`/`poll-wait`は操作完了待機の別経路であり、vIRQの原因イベントを表さない。物理割り込みハンドラの実装は Tier 3 [`platform_driver.md`](docs/components/tier3_platform/platform_driver.md) を参照。
 
+`poll-wait`がnot-readyを検出した場合、HALタスクは次回確認時刻をCOOSへ登録して自タスクだけを`BLOCKED_TIMER`へ移す。READYタスクは期限を待たずに実行する。READYキューが空の場合だけCOOSが最も近い期限までアイドル待機する。期限到達後にpollableを再確認し、readyになったときだけ応答する。
+
 ## 5. インターフェース定義
 
 ### 5.1 公開 API（WASI親和性のある契約）
@@ -97,8 +99,12 @@ HAL の公開境界は、WASI 0.3p の interface / stream / pollable に対応�
 | `stream-close` | `stream-close(handle: u32) -> operation-result` | ストリームハンドルを閉じる |
 | `clock-get-now` | `clock-get-now(handle: u32) -> result<u64, recovery-strategy-category>` | 単調クロックの現在値を取得する |
 | `clock-get-resolution` | `clock-get-resolution(handle: u32) -> result<u64, recovery-strategy-category>` | クロック分解能を取得する |
+| `clock-subscribe` | `clock-subscribe(nanos: u64) -> result<u32, recovery-strategy-category>` | 指定時間後にreadyとなる一回限りの pollable を予約する |
 | `poll-check` | `poll-check(handle: u32) -> result<bool, recovery-strategy-category>` | 操作完了または入力準備の状態を確認する |
-| `poll-wait` | `poll-wait(handle: u32) -> operation-result` | 準備完了まで待機する |
+| `poll-wait` | `poll-wait(handle: u32) -> result<bool, recovery-strategy-category>` | 準備完了まで待機し、ready を返す |
+| `poll-drop` | `poll-drop(handle: u32) -> operation-result` | pollable を破棄して固定スロットを解放する |
+
+`poll-wait`を提供するドライバは、未完了pollableの次回確認時刻を単調時計の絶対時刻で返す。COOSはその時刻を期限待ちTCBへ登録する。アイドル中の割り込み確認間隔は最大1msとする。
 
 GPIO、I2C、SPI 等の WASI 標準外機能も、`get-interface` で得たハンドルと同じバッファ／コマンド境界を使う拡張操作として定義する。個別デバイスの WIT resource 型やゲスト向け Preview1 ラッパーは定義しない。物理配置と境界検査は Tier 3 を正本とする。
 
@@ -124,8 +130,11 @@ HAL が管轄するすべてのハードウェアドライバおよびコンソ�
 | | `CMD_STREAM_FLUSH` | `0x03` | なし | `0` (SUCCESS) | デバイス送信バッファのフラッシュ |
 | | `CMD_STREAM_CLOSE` | `0x04` | なし | `0` (SUCCESS) | ストリームチャネルのクローズ |
 | **Clock/Timer** | `CMD_CLOCK_GET_NOW` | `0x10` | なし | `response_code=0` + `ARG_RESULT_LO`/`ARG_RESULT_HI` (`now_ns`, 64bit) | 単調増加時刻（SysTick/Timer ナノ秒）を取得 |
-| | `CMD_CLOCK_SUBSCRIBE` | `0x11` | `nanos` (64bit) | `pollable_handle` | 指定ナノ秒後に発火する非同期イベントを予約 |
+| | `CMD_CLOCK_SUBSCRIBE` | `0x11` | `nanos_lo`, `nanos_hi` (各32bit) | `pollable_handle` | 指定ナノ秒後にreadyとなる一回限りのイベントを予約 |
 | | `CMD_CLOCK_GET_RES` | `0x12` | なし | `resolution_ns` | クロック分解能（ナノ秒）を取得 |
+| **Poll** | `CMD_POLL_CHECK` | `0x40` | `pollable_handle` | `ready` (0/1) | pollable の準備状態を確認 |
+| | `CMD_POLL_WAIT` | `0x41` | `pollable_handle` | `ready=1` | pollable が準備完了になるまで待機 |
+| | `CMD_POLL_DROP` | `0x42` | `pollable_handle` | `0` (SUCCESS) | pollable を破棄し固定スロットを解放 |
 | **GPIO/Trigger** | `CMD_GPIO_SET_PIN` | `0x20` | `pin_no`, `val` (0/1) | `0` (SUCCESS) | GPIO ピンの出力レベルを設定 |
 | | `CMD_GPIO_GET_PIN` | `0x21` | `pin_no` | `pin_val` (0/1) | GPIO ピンの入力レベルを取得 |
 | | `CMD_GPIO_CONFIG_PIN`| `0x22` | `pin_no`, `mode` (In/Out/Pull) | `0` (SUCCESS) | GPIO ピンの方向・プル構成を設定 |
@@ -160,4 +169,8 @@ Fireball の HAL は、WASI 0.3p と親和性のある汎用インターフェ�
 - **IPCルーティングと事前検査**: デバイスアクセスはIPCルータを迂回せず、バッファ転送は生ポインタを使わず、事前検査で拒否された要求は所有権を先取りして剥奪しないことを [`hal_dispatch_contract_model.py`](docs/components/tier2_runtime/formal/hal_dispatch_contract_model.py) でCTL検証する。`guards=False` では各違反経路が反証されることを確認する。
 
 ### 7.2 テスト仕様書との連携
-本コンポーネントの契約テストケース（TEST-HAL-01, TEST-HAL-02, TEST-HAL-04, TEST-HAL-09〜TEST-HAL-13）は、[`hal_dispatch_test_spec.md`](docs/qa/tier2_runtime/hal_dispatch_test_spec.md) を正本として定義する。物理ドライバ実装のテストケース（TEST-HAL-03, TEST-HAL-05〜TEST-HAL-08, GOTCHA-HAL-01〜03）は [`platform_driver_test_spec.md`](docs/qa/tier3_platform/platform_driver_test_spec.md) を参照する。
+本コンポーネントの契約テストケース（TEST-HAL-01, TEST-HAL-02, TEST-HAL-04, TEST-HAL-09〜TEST-HAL-15）は、[`hal_dispatch_test_spec.md`](docs/qa/tier2_runtime/hal_dispatch_test_spec.md) を正本として定義する。物理ドライバ実装のテストケース（TEST-HAL-03, TEST-HAL-05〜TEST-HAL-08, GOTCHA-HAL-01〜03）は [`platform_driver_test_spec.md`](docs/qa/tier3_platform/platform_driver_test_spec.md) を参照する。
+
+## 8. 設計判断と参考実装
+
+特記すべき独立したADRはない。採用方針は本書の各契約節に記載する。

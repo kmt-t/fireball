@@ -141,9 +141,7 @@ class JITCompilerBenchmark:
                 )
             )
             runtime_engine.register_module_blocks(module)
-            interp_jit = JITInterpreter(
-                module, InterpreterBindings.empty(), runtime_engine
-            )
+            interp_jit = JITInterpreter(module, InterpreterBindings.empty(), runtime_engine)
 
             # Warm up and compile the hot traces before measuring native execution.
             interp_jit.call(fn_idx, [100])

@@ -53,11 +53,7 @@ def build_model(*, guards: bool = True) -> Kripke:
         # Mutation 1: permit interrupt handling to start during native JIT.
         R = [*R, ("s_jit_run", "s_bad_irq_jit")]
         # Mutation 2: remove the finite-count route back to the COOS boundary.
-        R = [
-            edge
-            for edge in R
-            if edge != ("s_loop_backedge_count_2", "s_coos_boundary")
-        ]
+        R = [edge for edge in R if edge != ("s_loop_backedge_count_2", "s_coos_boundary")]
         R = [*R, ("s_loop_backedge_count_2", "s_yield_starved")]
 
     L = {

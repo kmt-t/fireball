@@ -12,6 +12,7 @@ def build_model(*, guards: bool = True) -> Kripke:
         "s_owned_by_a",
         "s_owned_by_a_again",
         "s_in_flight",
+        "s_matched_transfer",
         "s_owned_by_b",
         "s_rolled_back_to_a",
         "s_double_owned",
@@ -23,8 +24,10 @@ def build_model(*, guards: bool = True) -> Kripke:
         ("s_owned_by_a", "s_in_flight"),
         ("s_owned_by_a", "s_owned_by_a_again"),
         ("s_owned_by_a_again", "s_in_flight"),
-        ("s_in_flight", "s_owned_by_b"),
-        ("s_in_flight", "s_rolled_back_to_a"),
+        ("s_in_flight", "s_in_flight"),
+        ("s_in_flight", "s_matched_transfer"),
+        ("s_matched_transfer", "s_owned_by_b"),
+        ("s_matched_transfer", "s_rolled_back_to_a"),
         ("s_owned_by_b", "s_owned_by_b"),
         ("s_rolled_back_to_a", "s_owned_by_a"),
         ("s_double_owned", "s_double_owned"),
@@ -36,13 +39,14 @@ def build_model(*, guards: bool = True) -> Kripke:
             *relations,
             ("s_owned_by_a", "s_double_owned"),
             ("s_owned_by_a_again", "s_over_budget"),
-            ("s_in_flight", "s_stuck_in_flight"),
+            ("s_matched_transfer", "s_stuck_in_flight"),
         ]
 
     labels = {
         "s_owned_by_a": {"owned"},
         "s_owned_by_a_again": {"owned"},
         "s_in_flight": {"in_flight"},
+        "s_matched_transfer": {"in_flight", "peer_matched"},
         "s_owned_by_b": {"owned"},
         "s_rolled_back_to_a": {"owned"},
         "s_double_owned": {"double_owned"},
@@ -64,7 +68,7 @@ def properties():
             "expect": True,
         },
         {
-            "name": "all_pools_stay_within_global_budget",
+            "name": "abstract_budget_guard_excludes_over_budget_state",
             "kind": "safety",
             "logic": "CTL",
             "formula": AG(Not(AtomicProposition("over_budget"))),
@@ -72,12 +76,12 @@ def properties():
             "expect": True,
         },
         {
-            "name": "ownership_transfer_or_rollback_eventually_completes",
+            "name": "matched_ownership_transfer_or_rollback_completes",
             "kind": "liveness",
             "logic": "CTL",
             "formula": AG(
                 Imply(
-                    AtomicProposition("in_flight"),
+                    AtomicProposition("peer_matched"),
                     AF(Not(AtomicProposition("in_flight"))),
                 )
             ),

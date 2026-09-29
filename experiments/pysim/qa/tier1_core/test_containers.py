@@ -30,6 +30,7 @@ from system_containers import (
     ReadOnlyRadixBinaryTreeView,
     RingBuffer,
     StaticVector,
+    bswap32,
     lookup_jit_entry,
 )
 
@@ -153,7 +154,7 @@ def test_cont_08_radix_binary_tree_view_coarse_radix_lookup():
     # Prefix 0: [0, 2), Prefix 1: [2, 5), Prefix 2: [5, 6)
     radix_table = [0, 2, 5, 6]
     tree = ReadOnlyRadixBinaryTreeView(
-        entries=tuple(zip(keys, values, strict=False)), radix_table=radix_table, radix_shift=8
+        entries=tuple(zip(keys, values, strict=True)), radix_table=radix_table, radix_shift=8
     )
     assert tree.find(0x0120) == "T1_B"
     assert tree.find(0x0010) == "T0_A"
@@ -168,7 +169,7 @@ def test_cont_09_jit_entry_lookup_card_table_prefilter():
     card_table = BitView(card_storage, bits=2, origin=0, count=16)
     keys = [0x0010, 0x0020]
     values = ["NATIVE_0010", "NATIVE_0020"]
-    view = ReadOnlyFlatMapView(tuple(zip(keys, values, strict=False)))
+    view = ReadOnlyFlatMapView(tuple(zip(keys, values, strict=True)))
     # PC 0x0010 (16) is card 2 (16 >> 3). Currently UNEXECUTED (0) -> lookup returns None without search
     assert lookup_jit_entry(view, card_table, pc=0x0010, card_shift=3) is None
     # Mark card 2 as COMPILED (3)
@@ -180,7 +181,7 @@ def test_cont_10_container_type_separation():
     """TEST-CONT-10: flat_map_view and flat_set_view have strictly separated type responsibilities."""
     keys = [1, 2, 3]
     vals = [10, 20, 30]
-    entries = list(zip(keys, vals, strict=False))
+    entries = list(zip(keys, vals, strict=True))
     m = ReadOnlyFlatMapView(entries)
     s = ReadOnlyFlatSetView(keys)
     assert type(m) is ReadOnlyFlatMapView
@@ -200,6 +201,8 @@ def test_cont_11_storage_and_view_ownership_separation():
     assert v_ro.entries is ro_map.entries
     assert not hasattr(v_ro, "insert")
     assert not hasattr(v_ro, "remove")
+    with expect_assertion():
+        ReadOnlyFlatMapStorage.create([(1, "first"), (1, "duplicate")])
 
     mut_map = MutableFlatMapStorage(capacity=8)
     assert mut_map.insert(100, "X")
@@ -243,8 +246,16 @@ def test_cont_11_storage_and_view_ownership_separation():
     assert rv2.find(30) == "C"
     assert rv1.entries is ro_radix.entries
     assert rv1.radix_table is ro_radix.radix_table
+    assert ro_radix.entries == ((10, "A"), (20, "B"), (30, "C"))
+    assert not hasattr(ro_radix, "keys")
+    assert not hasattr(ro_radix, "values")
     assert not hasattr(rv1, "insert")
     assert not hasattr(rv1, "remove")
+
+    radix_entries = StaticVector.of(((10, "A"), (20, "B")), capacity=2)
+    ReadOnlyRadixBinaryTreeStorage.from_sorted_static_entries(radix_entries, radix_shift=4)
+    with expect_assertion():
+        radix_entries.append((30, "C"))
 
     mut_radix = MutableRadixBinaryTreeStorage(capacity=16, radix_shift=4)
     assert mut_radix.insert(10, "A")
@@ -264,9 +275,13 @@ def test_cont_11_storage_and_view_ownership_separation():
     # 4. BitStorage: ReadOnly vs Mutable Storage vs non-owning View
     ro_bit = ReadOnlyBitStorage(buffer=bytes([0b00001101]), bits=2, count=4)
     bv_ro = ro_bit.view()
+    assert not hasattr(bv_ro, "put")
     assert bv_ro.at(0) == 1
     assert bv_ro.at(1) == 3
     assert bv_ro.storage is ro_bit.buffer
+    narrowed_ro = bv_ro.slice(1, 3)
+    assert len(narrowed_ro) == 2
+    assert narrowed_ro.at(0) == 3
 
     mut_bit = MutableBitStorage(count=16, bits=2, default=0)
     mut_bit.put(2, 3)
@@ -354,9 +369,9 @@ def test_cont_13_mutable_flat_map_sorted_insert_remove():
 
 
 def test_cont_14_mutable_storages_fixed_array_and_entry_count():
-    """TEST-CONT-14: Mutable storages allocate fixed-length arrays upfront, track valid entry count,
+    """TEST-CONT-14 / GOTCHA-CONT-04: fixed buffers keep borrowed views live.
 
-    and allow insertions up to capacity without dynamic array reallocation.
+    Mutable storages track valid entry count and reject growth past capacity.
     """
     # 1. MutableFlatMapStorage
     m: MutableFlatMapStorage[int, str] = MutableFlatMapStorage(capacity=4)
@@ -483,6 +498,44 @@ def test_cont_15_public_container_lifecycle_methods():
     assert repr(vector).startswith("StaticVector")
 
 
+def test_cont_16_radix_projection_keeps_lookup_ranges_ordered_and_bounded():
+    keys = (0x00000001, 0x00000002, 0x01000000)
+    values = ("one", "two", "high")
+    storage = ReadOnlyRadixBinaryTreeStorage.create(
+        keys,
+        values,
+        radix_shift=24,
+        key_transform=bswap32,
+    )
+    view = storage.view()
+    assert tuple(entry[0] for entry in storage.entries) == (
+        0x01000000,
+        0x00000001,
+        0x00000002,
+    )
+    assert view.find(0x00000001) == "one"
+    assert view.find(0x00000002) == "two"
+    assert view.find(0x01000000) == "high"
+    assert view.find(0x00000003) is None
+
+    mutable = MutableRadixBinaryTreeStorage[str](
+        capacity=3,
+        radix_shift=24,
+        key_transform=bswap32,
+    )
+    assert len(mutable.radix_table) == 256
+    assert mutable.insert(0x00000002, "two")
+    assert mutable.insert(0x01000000, "high")
+    assert mutable.insert(0x00000001, "one")
+    mutable_view = mutable.view()
+    assert mutable_view.find(0x00000001) == "one"
+    assert mutable_view.find(0x00000002) == "two"
+    assert mutable_view.find(0x01000000) == "high"
+    assert mutable.remove(0x00000001) == "one"
+    assert mutable_view.find(0x00000001) is None
+    assert mutable_view.find(0x00000002) == "two"
+
+
 # ===========================================================================
 # Cooperative Multitasking & Idle-Hook Integration (YIELD / IDLE / TIER)
 # ===========================================================================
@@ -504,4 +557,5 @@ if __name__ == "__main__":
     test_cont_13_mutable_flat_map_sorted_insert_remove()
     test_cont_14_mutable_storages_fixed_array_and_entry_count()
     test_cont_15_public_container_lifecycle_methods()
-    print("[PASS] All 15 System Containers & Views tests passed.")
+    test_cont_16_radix_projection_keeps_lookup_ranges_ordered_and_bounded()
+    print("[PASS] All 16 System Containers & Views tests passed.")

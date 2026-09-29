@@ -14,8 +14,10 @@ GDB RSP コマンド処理（`?`, `g/G`, `m/M`, `Z0/z0`, `s`, `c`）、ブレー
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | TEST-DBG-01 | 停止要因問い合わせ (`?`) | デバッガアタッチ・停止状態 | `?` パケット送信 | 直近の停止理由（`S05` = SIGTRAP）を正しく返す |  `{RSPMinimalSet}` |
-| TEST-DBG-02 | 仮想レジスタ全読み出し (`g`) | レジスタ値設定済み | `g` パケット送信 | `0:pc, 1:sp, 2:fp, 3:tos, 4..19:local0..15` の 20 レジスタが 32-bit リトルエンディアン hex（各8文字）で連結返却される | 「仮想レジスタセット」 `{RSPMinimalSet}` |
-| TEST-DBG-03 | 仮想レジスタ全書き込み (`G`) | 20レジスタ分の hex 文字列 | `G <hex>` 送信 | 各レジスタ（pc, sp, fp, tos, local0..15）が正確に上書き更新され `OK` を返す | 「仮想レジスタセット」 |
+| TEST-DBG-02 | 仮想レジスタ全読み出し (`g`) | レジスタ値設定済み | `g` パケット送信 | `0:pc, 1:sp, 2:fp, 3:tos, 4..19:local0..15` の 20 レジスタが 各32-bit値をlittle-endianの4バイト表現（各8文字）にして連結返却する | 「仮想レジスタセット」 `{RSPMinimalSet}` |
+| TEST-DBG-03 | 仮想レジスタ全書き込み (`G`) | 有効な20レジスタ分のhex文字列 | `G <hex>`を送信 | PC、SP、TOS、local0..15が更新され`OK`を返す。スタック容量超過、空スタックの非0 TOS、固定値FPへの非0書込みは`E01`となり状態を変えない | 「仮想レジスタセット」 |
+| TEST-DBG-03b | 個別レジスタと実装能力の応答 | デバッガ停止中 | `p4`、`P4=2a000000`、`qSupported`を送る | little-endianの4バイト値でlocal0を個別読書きでき、`PacketSize=256`だけを広告する | `gdb_rsp_protocol.md` |
+| TEST-DBG-03c | 不正な個別レジスタパケット | 停止中のデバッガ | 不正hex `p` と区切りなし `P` を送る | `E01`を返しPCとレジスタ状態を変更しない | `test_dbg_03c_malformed_register_packets_are_rejected` |
 | TEST-DBG-04 | ゲストメモリ読み出し (`m`) | リニアメモリ初期化済み | `m <addr>,<len>` 送信 | 指定範囲のバイト列が hex 文字列として返却される | {RSPMinimalSet} |
 | TEST-DBG-05 | ゲストメモリ読み出し境界外エラー | 範囲外 `addr` 指定 | `m <addr>,<len>` 送信 | `E01` エラーパケットが返却される | `{MemoryBoundaryCheck}` |
 | TEST-DBG-06 | ゲストメモリ書き込み (`M`) | デバッグ構成でインタープリタとデバッガが有効 | `M <addr>,<len>:<hex>` 送信 | 境界内のメモリが上書きされ `OK` が返却される。デバッガはJITキャッシュを操作しない | `{MemoryBoundaryCheck}` |
@@ -26,6 +28,7 @@ GDB RSP コマンド処理（`?`, `g/G`, `m/M`, `Z0/z0`, `s`, `c`）、ブレー
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | TEST-DBG-08 | ソフトウェアブレークポイント追加・削除 (`Z0`/`z0`) | デバッガアタッチ状態 | `Z0,0x100,0` / `z0,0x100,0` 送信 | ブレークポイント集合への追加・削除が行われ `OK` が返却される | 「ブレークポイントリスト」 `{RSPMinimalSet}` |
+| TEST-DBG-08b | ブレークポイント固定容量超過 | ブレークポイント表が満杯 | 追加の`Z0`を送る | `E01`を返し、既存項目を維持して新規項目を追加しない | `test_dbg_08b_breakpoint_capacity_returns_protocol_error` |
 | TEST-DBG-09 | ブレークポイントヒットによる実行停止 | PC=0x100 にブレークポイント設定 | `c`（継続実行）送信 | PC=0x100 到達時に実行が停止し、`S05`（SIGTRAP）が返却される | 状態遷移図 |
 | TEST-DBG-10 | 単一命令ステップ実行 (`s`) | 停止状態 | `s` 送信 | ちょうど 1 命令だけ実行され、PC が進んだ状態で再び `S05` で停止する |  `{RSPMinimalSet}` |
 | TEST-DBG-11 | プログラム正常終了 | 終端命令実行 | `c` 送信 | プログラム終了時に `W00`（正常終了）が返却される | 状態遷移図 |
@@ -47,6 +50,7 @@ GDB RSP コマンド処理（`?`, `g/G`, `m/M`, `Z0/z0`, `s`, `c`）、ブレー
 | TEST-DBG-23 | ソケット経由のブレークポイント停止とステップ | セッション接続中 | `Z0` 設定後 `c` / `s` 送信 | 指定 PC で正確にトラップ停止し、単歩ステップ実行で 1 命令進む | [`debugger.md`](docs/components/tier3_plugins/debugger.md) |
 | TEST-DBG-24 | プログラム完走通知とソケット正常切断 | ブレークポイント解除 | `c` 送信後クローズ | 終了パケット `$W00#b7` を受信し、サーバーソケットがクリーンに終了・デタッチされる | [`gdb_rsp_protocol.md`](docs/specs/gdb_rsp_protocol.md), [`debugger.md`](docs/components/tier3_plugins/debugger.md) |
 | TEST-DBG-25 | デバッガSinkの静的差し替え | `DebuggerSink`互換のテスト用物理Sinkを構成 | TCPを使わず同じRSPバイト列をSinkへ入出力する | GDBServerはRSP解析を維持したまま物理Sinkだけを差し替えられ、デバッガの状態制御と応答が同一になる | `RSP_Transport_Selectable`, [`debugger.md`](docs/components/tier3_plugins/debugger.md) |
+| TEST-DBG-26 | チェックサム不一致パケットの破棄 | デバッグセッション接続中 | 不正なチェックサム付き`M`パケットと正しい`?`を順に送る | 不正パケットへ`-`を返し、メモリを変更せず、後続の正しいパケットを処理する | `{RSPChecksumVerify}`, `gdb_rsp_protocol.md` |
 
 ### 実装の勘所・不変条件（Gotchas & Implementation Invariants）
 <!-- traceability: {DebuggerInterpreterComposition} {RSPChecksumVerify} {GOTCHA-DBG-04} -->
@@ -60,10 +64,10 @@ GDB RSP コマンド処理（`?`, `g/G`, `m/M`, `Z0/z0`, `s`, `c`）、ブレー
 
 ## 3. テスト検証実績と網羅状況
 
-- **GDB RSP 通信 & 仮想レジスタ (TEST-DBG-01〜07)**: `?`, `g`, `G`, `m`, `M`, `Z0`, `z0` のパケット解析・応答およびレジスタ/メモリ操作を検証。
+- **GDB RSP 通信 & 仮想レジスタ (TEST-DBG-01〜07, 03b〜03c)**: `?`, `g`, `G`, `p`, `P`, `m`, `M` のパケット解析・応答、値検証、状態非変更を検証。
 - **実行制御 (TEST-DBG-08〜11)**: ブレークポイント停止、ステップ実行、正常終了通知を検証。
 - **デバッグ構成 (TEST-DBG-12〜13)**: 通常構成のデバッグ分岐なしと、アタッチ中のインタープリタ専用実行を検証する。
-- **実ソケット GDB リモート対話セッション (TEST-DBG-20〜24)**: GDB RSP の TCP 接続、パケット交換、実行制御、終了通知を検証する。
+- **実ソケット GDB リモート対話セッション (TEST-DBG-20〜26)**: GDB RSP の TCP 接続、パケット交換、実行制御、終了通知、破損フレーム破棄を検証する。
 
 ## 4. 未検証・スコープ外
 

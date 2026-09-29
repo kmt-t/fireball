@@ -6,8 +6,8 @@
 -->
 
 ## 1. コンセプト
-<!-- traceability: {IPCRouter} {DictionaryBasedIPC} {BufferedLogging} {GLOBAL_IdleDetection} -->
-ロギングコンポーネントは、ハイパーバイザ内部の状態を記録し、外部（UART/ITM等）へ出力する。システムコールはすべてIPCルータを経由して行われ、ログデータの転送もIPCルータを通過する。メモリ消費と通信負荷を抑えるため、辞書参照IPCと内部リングバッファによる遅延出力を採用する。また、COOSの **Idle Hook** を利用してシステム負荷が低い時に集中的に出力を行うことで、実行性能への影響を抑える。自己完結した参照実装は [`logging_concept.py`](docs/components/tier2_runtime/concepts/logging_concept.py) を参照。
+<!-- traceability: {BufferedLogging} {GLOBAL_IdleDetection} -->
+ロギングコンポーネントは、ハイパーバイザ内部の状態を記録し、外部（UART/ITM等）へ出力する内部診断サブシステムである。内部コンポーネントは固定辞書オフセットとスカラー引数を`log_event`へ直接渡し、固定長リングバッファへ記録する。COOSの **Idle Hook** は負荷の低い時にバッファを出力し、実行性能への影響を抑える。ゲスト標準出力は本コンポーネントの対象外である。自己完結した参照実装は [`logging_concept.py`](docs/components/tier2_runtime/concepts/logging_concept.py) を参照。
 
 **適用範囲外**: 本コンポーネントが扱うのはビルド時に辞書登録された固定フォーマットの内部状態ログのみである。ゲストの `wasi:cli/stdout`/`stderr`（`print`/`eprint` による実行時生成の任意長文字列）はここでは表現できず、コンソール生バイト出力経路（`interface_wit.md` の `console-output` の位置づけ節）という別経路で扱う。
 
@@ -58,7 +58,7 @@ flowchart TD
 | :--- | :--- | :--- | :--- |
 | バッファ総容量 | 循環バッファの大きさを定義する | バイト数 | 2のべき乗 |
 #### ログ辞書（LogDictionary）
-<!-- traceability: {DictionaryBasedIPC} {META_FlatMapIndexed} -->
+<!-- traceability: {META_FlatMapIndexed} -->
 ROM上に固定配置されたフォーマット文字列配列の非所有アクセスを担う。
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
@@ -69,23 +69,23 @@ ROM上に固定配置されたフォーマット文字列配列の非所有ア�
 ## 4. 動的モデル
 
 ### 4.1 アルゴリズム
-<!-- traceability: {DictionaryBasedIPC} {BufferedLogging} {GOTCHA-LOG-01} {GOTCHA-LOG-02} {GOTCHA-LOG-03} {GOTCHA-LOG-04} -->
-- **辞書参照ロギング (`GOTCHA-LOG-01`)**:
-  送信側はメッセージ文字列ではなく、辞書内のオフセットと引数のみをIPCで送信する。
+<!-- traceability: {BufferedLogging} -->
+- **辞書参照ロギング (`GOTCHA-LOG-01`)**: {GOTCHA-LOG-01} <!-- definition: {GOTCHA-LOG-01} -->
+  呼出し側はメッセージ文字列ではなく、辞書内のオフセットと引数のみを`log_event`へ渡す。
   **設計理由と不変条件**: ログ API は任意長文字列ポインタ（`%s`、`%p` 等）を直接受け付けない。実行時に構築した文字列ポインタをログエントリに格納すると、ログ出力元タスクの終了後にロガーが無効なメモリを参照するおそれがある。Use-After-Free を防ぐため、ログメッセージは静的辞書オフセットとスカラー引数（u32）に限定する。これによりメモリ安全性を保証する。
-- **遅延出力と割り込み応答性 (`GOTCHA-LOG-03`)**:
-  IPC受信時はリングバッファへの格納のみを行い、実際の物理出力は `HAL_Transport` を介した抽象化された通信路によりバックグラウンドで行われる。具体的なトランスポート実装（UARTやITMなど）はシステム構成定義ファイル（`inc/fireball_config.hxx`）で指定される。
+- **遅延出力と割り込み応答性 (`GOTCHA-LOG-03`)**: {GOTCHA-LOG-03} <!-- definition: {GOTCHA-LOG-03} -->
+  `log_event`はリングバッファへの格納のみを行い、実際の物理出力は `HAL_Transport` を介した抽象化された通信路によりCOOSアイドルフックで行われる。具体的なトランスポート実装（UARTやITMなど）はシステム構成で指定される。
   **設計理由と不変条件**: ログフラッシュはリングバッファの連続領域をバッチ単位で DMA 転送する。DMA 転送は開始後、完了割り込み（`dma_complete`）まで中断できない。そのため `interrupt_pending()` はエントリ単位ではなく、各バッチの完了時に確認する。
   割り込みを検出した場合は次のバッチを開始しない。残りのエントリをバッファに残し、スケジューラへ制御を戻す。これにより、割り込み応答レイテンシを1バッチの転送時間以内に制限する。
-- **バッファフル・ポリシー (`GOTCHA-LOG-02`)**: **FINALIZED: Overwrite** {DeterministicRingBuffer}。
+- **バッファフル・ポリシー (`GOTCHA-LOG-02`)**: **FINALIZED: Overwrite** {DeterministicRingBuffer}。 <!-- definition: {DeterministicRingBuffer} --> {GOTCHA-LOG-02} <!-- definition: {GOTCHA-LOG-02} -->
   リングバッファが満杯の場合、古いログを破棄して新しいログを書き込む。システムの稼働継続を優先する。
   **設計理由と不変条件**: ログバッファ満杯時に呼び出し元をブロックしたり、動的に再確保したりしてはならない。高負荷時や異常フォールト時に、ログ処理がシステム全体のデッドロックやメモリ枯渇を招くためである。満杯時は最も古いエントリを非ブロッキングで上書きし、ドロップカウンタを増やす。直近の診断情報を残し、システムの稼働を継続する。
-- **トラップ発生箇所での診断情報捕捉 (`GOTCHA-LOG-04`)**:
+- **トラップ発生箇所での診断情報捕捉 (`GOTCHA-LOG-04`)**: {GOTCHA-LOG-04} <!-- definition: {GOTCHA-LOG-04} -->
   インタープリタは、トラップによって呼出しフレームを解体する直前に `unified_pc` とトラップ原因コードを確定し、ロガーへ引き渡す。
   **設計理由と不変条件**: フレーム解体後は `func_index` と `bytecode_offset` を復元できない。解体前に捕捉しなければ、診断ログに発生位置を記録できない。イベント ID をトラップ原因コードから機械的に算出する（4.2.1）。これにより、ログ辞書エントリの登録漏れも防ぐ。
 
 ### 4.2 辞書構造
-<!-- traceability: {DictionaryBasedIPC} -->
+<!-- traceability: {BufferedLogging} -->
 辞書はROM上に固定配置され、ホスト側ツールが `dict_offset + args` から可読テキストに展開する。
 
 | 項目 | 値 |
@@ -98,8 +98,10 @@ ROM上に固定配置されたフォーマット文字列配列の非所有ア�
 | 引数スライス規則 | フォーマット文字列に含まれる指定子数 $n$（$0 \le n \le 4$）に対し、渡された4引数タプルの先頭 $n$ 個（`args[0..n]`）のみが展開時に参照され、未使用スロットは安全に無視される |
 | 登録時期 | ビルド時 (実行時の追加は不可) |
 
+デバイス上のロガーはフォーマット文字列を走査・展開しない。トランスポートへ送る1レコードは20バイトであり、先頭から `level:u8`、`dict_offset:u24 little-endian`、`arg0:u32 little-endian`、`arg1:u32 little-endian`、`arg2:u32 little-endian`、`arg3:u32 little-endian` の順に格納する。ホスト側ツールが辞書を参照して可読テキストへ展開する。辞書IDは `0..0xFFFFFF`、各引数は `u32` の範囲でなければならない。
+
 ### 4.2.1 COOS / IPC / インタープリタ 診断ログイベント仕様
-<!-- traceability: {DictionaryBasedIPC} {BufferedLogging} -->
+<!-- traceability: {BufferedLogging} -->
 COOS、IPC、およびインタープリタ実行時トラップにおいて、デバッグ時に重大な不整合・境界超過・通信遮断・ゲストトラップを検知するための診断ログイベントを定義する。ログのオーバーヘッドを最小化するため、常時ログは出力せず、異常系・境界値到達時のみに厳選して発行する。
 
 | イベントID | 分類 | レベル | フォーマット文字列 | 引数構成 (args[0..3]) | 発生条件 |
@@ -145,7 +147,7 @@ COOSスケジューラの `set_idle_hook` で `logger.flush()` を登録する�
 4. DMA転送完了割り込みで次のブロックを順次排出し、バッファが空になったら制御を返す
 
 ### 4.4 状態遷移図
-<!-- traceability: {DictionaryBasedIPC} {BufferedLogging} {GLOBAL_IdleDetection} -->
+<!-- traceability: {BufferedLogging} {GLOBAL_IdleDetection} -->
 ```mermaid
 stateDiagram-v2
     [*] --> Idle
@@ -162,7 +164,7 @@ stateDiagram-v2
 形式検証モデルの状態との対応は、`Idle` = `s_idle_empty`、`Validating`/`Enqueuing` = `s_active_partial` または `s_active_full`、`Flushing`/`DrainingBatch` = `s_idle_flushing`、`dma_complete` 後の完了 = `s_flush_done`、割り込み経路 = `s_irq_preempt`/`s_irq_handled` である。`s_blocked_caller`、`s_never_flushed`、`s_irq_blocked` は `guards=False` でのみ到達する違反状態である。
 
 ### 4.5 内部シーケンス
-<!-- traceability: {DictionaryBasedIPC} {BufferedLogging} {GLOBAL_IdleDetection} -->
+<!-- traceability: {BufferedLogging} {GLOBAL_IdleDetection} -->
 #### ログ出力シーケンス
 ```mermaid
 sequenceDiagram
@@ -171,7 +173,7 @@ sequenceDiagram
     participant RB as Ring Buffer
     participant HW as UART/DMA
 
-    C->>L: IPC(dict_id, args)
+    C->>L: log_event(level, dict_id, args)
     L->>L: Validate dict_id bounds (no string formatting)
     L->>RB: push(raw_entry) / overwrite if full
     L-->>C: reply(OK)
@@ -184,8 +186,8 @@ sequenceDiagram
 
 ## 5. インターフェース定義
 
-### 5.1 公開API
-外部から利用可能なオブジェクト指向APIを定義する。
+### 5.1 内部API
+ネイティブ内部コンポーネントが利用する型付きAPIを定義する。これは公開IPCサービスではない。
 
 #### ログイベント記録 (`log_event`)
 
@@ -195,7 +197,7 @@ sequenceDiagram
 | :--- | :--- |
 | 機能概要 | 発生したイベントを、レベルと辞書オフセット形式で記録する。 |
 | シグネチャ | `log_event(level: log-level, offset: dictionary-offset, args: scalar-argument-view<4>) -> log-result` |
-| 引数 | `level`: ログレベル重要度<br>`offset`: 辞書オフセット（IPC送信時は `kv_pair` の識別キー幅である24bitに収める）<br>`args`: ログパラメータとなる最大4個のスカラー引数ビュー |
+| 引数 | `level`: ログレベル重要度<br>`offset`: 辞書オフセット（24bit）<br>`args`: ログパラメータとなる最大4個のスカラー引数ビュー |
 | 戻り値 | `log-result`（概念実装では `SUCCESS`、レベル除外時は `FILTERED`、満杯時に上書きした場合は `OVERWRITTEN`） |
 | 期待する結果 | 正常：ログ情報がリングバッファにキューイングされる。 |
 
@@ -206,20 +208,17 @@ sequenceDiagram
 | 機能概要 | リングバッファに蓄積されたログを物理トランスポートへ一括出力する。 |
 | シグネチャ | `flush(batch_size: u32, interrupt_pending: optional<callback>) -> u32` |
 | 戻り値 | 転送したログ件数。トランスポートがビジーの場合は新しいバッチを開始せず、転送済み件数を返す。 |
-| 補足 | COOS の `set_idle_hook` により、システムアイドル時に呼び出される。DMAバッチ転送は開始後は完了割り込み（`dma_complete`）まで中断できないため、実行中バッチの完了は待機する。バッチ完了時点で割り込み（INTイベント、例：WASIタイマー等）が確認された場合は、残余エントリがあっても次バッチの転送開始をスキップして速やかに制御をスケジューラに戻す。{InterruptibleFlush} |
+| 補足 | COOS の `set_idle_hook` により、システムアイドル時に呼び出される。DMAバッチ転送は開始後は完了割り込み（`dma_complete`）まで中断できないため、実行中バッチの完了は待機する。バッチ完了時点で割り込み（INTイベント、例：WASIタイマー等）が確認された場合は、残余エントリがあっても次バッチの転送開始をスキップして速やかに制御をスケジューラに戻す。{InterruptibleFlush} <!-- definition: {InterruptibleFlush} --> |
 
-### 5.2 URI/IPCインターフェース
-<!-- traceability: {DictionaryBasedIPC} -->
-- **URI**: `fireball://logging/system/0`
-- **メッセージ形式**: Key-Valueプロトコル。 `level`, `dict_offset`, `arg0`〜`arg3` を含む。
-- **不変条件**: 辞書オフセットは `kv_pair` の識別キー幅に合わせ 24bit、引数は各 32bit とする。24bit（最大16MB）は本プロジェクトの ROM 辞書サイズに対して十分な範囲である。
+### 5.2 内部呼出し境界
+Loggerはネイティブサブシステム内の診断出力先であり、公開IPCサービスではない。Scheduler、インタープリタ、Runtime Event Loggerなどの内部コンポーネントが型付き`log_event` APIを直接呼び出す。ゲストの標準出力・標準エラーはWASI/ HALの別経路を使う。
 
 ## 6. 制約達成の方策
 
 ### 6.1 性能制約と方策
 <!-- traceability: {BufferedLogging} -->
 - **目標**: ログ出力による呼び出し側のブロッキングを最小化する。
-- **方策**: 内部バッファリングと非同期出力により、IPCハンドラを即座に解放する。
+- **方策**: 内部バッファリングにより`log_event`を短時間で返し、物理出力をアイドルフックへ遅延する。
 
 ### 6.2 メモリ制約と方策
 <!-- traceability: {MemoryIsolation} {META_ConfigurableSystem} -->
@@ -230,3 +229,22 @@ sequenceDiagram
 <!-- traceability: {BufferedLogging} {MemoryIsolation} {META_ConfigurableSystem} -->
 - **目標**: ログ出力の失敗がシステム全体に波及しないようにする。
 - **方策**: ログの蓄積はリングバッファでバッファリングを行い、メモリパーティションによってログ領域のクラッシュを他のコンポーネントから隔離する。また、バッファサイズ等の制限はコンパイル時マクロ定義で設定される。バッファフル時は古いログを破棄し、システムの継続実行を優先する。
+
+## 7. 形式検証・テスト仕様との対応
+
+### 7.1 検証対象の不変条件
+本書で定めた状態、境界、所有権、およびエラー処理を検証対象とする。
+
+### 7.2 検証モデルと反証可能性
+形式検証モデルは[logging_flush_model.py](docs/components/tier2_runtime/formal/logging_flush_model.py)である。各モデルの正常系と`guards=False`変異で、保護条件が反証されることを確認する。
+
+### 7.3 テスト仕様書との連携
+対応するテスト仕様は[runtime_logging_test_spec.md](docs/qa/tier2_runtime/runtime_logging_test_spec.md)である。テストケースIDと実行可能テストは同仕様を正本とする。
+
+### 7.4 既知の制限・対象外
+ホスト実機依存の挙動、未実装アーキテクチャ、およびテスト仕様が明示する対象外条件は未検証として扱う。
+
+
+## 8. 設計判断と参考実装
+
+特記すべき独立したADRはない。採用方針は本書の各契約節に記載する。

@@ -72,14 +72,14 @@ GDB等の外部クライアントに提示する WASM 仮想レジスタ番号�
 ## 4. 動的モデル
 
 ### 4.1 アルゴリズム
-<!-- traceability: {DebuggerInterpreterComposition} {RSPMinimalSet} {GOTCHA-DBG-02} -->
-1. **コマンド取得とチェックサム照合 (`GOTCHA-DBG-03`)**:
-   - HAL層が `$`〜`#`のパケットフレーミングとチェックサム検証（一致時 ACK (`+`)、不一致時 NAK (`-`)）を完了させた上で供給する `debug_command` を、コマンドキューから取得する。
+<!-- traceability: {DebuggerInterpreterComposition} {RSPMinimalSet} -->
+1. **コマンド取得とチェックサム照合 ({GOTCHA-DBG-03})**: <!-- definition: {GOTCHA-DBG-03} -->
+   - GDBServerが注入されたRaw Sinkから完全な`$`〜`#`フレームを組み立て、Debugger側RSP parserでチェックサムを検証する。一致時だけACK (`+`)を返してコマンドを実行し、不一致時はNAK (`-`)を返して破棄する。
    **設計理由と不変条件**: GDB RSP はシリアル通信等の低信頼通信路での利用を想定しているため、パケット末尾の 2 桁の 16 進チェックサムを厳格に照合する。万一チェックサムが不一致であった場合は一切のコマンド解釈・実行を行わず、直ちに NAK（`-`）を返信してホスト側の GDB クライアントへ再送を要求する。
 2. **コマンドディスパッチとゲストメモリ書き換え (`MemoryBoundaryCheck`)**:
    - 取得したコマンド（`?`, `g/G`, `m/M`, `c`, `s`, `Z0/z0` 等）の GDB コマンド構文を解析し、ディスパッチする。
    **設計理由と不変条件**: メモリ書き込みコマンド（`M` パケット）は、境界検査に成功した場合だけゲストリニアメモリを更新する。デバッガはJITキャッシュを保持せず、キャッシュの無効化や世代管理を担当しない。
-3. **デバッグ構成でのインタープリタ専用実行 (`GOTCHA-DBG-02`)**:
+3. **デバッグ構成でのインタープリタ専用実行 ({GOTCHA-DBG-02})**: <!-- definition: {GOTCHA-DBG-02} -->
    - デバッグ実行は `Interpreter + Debugger` の静的構成で生成し、JIT実行器を構成しない。アタッチ中の `step` と `continue` は同じインタープリタの命令意味論を通り、デバッグ専用ハンドラテーブルへの切替は行わない。
    **設計理由と不変条件**: JITをアタッチ時に停止・再開する動的モード切替を実行経路へ持ち込まず、デバッグ時の命令境界、ブレークポイント、および停止状態をインタープリタの境界で一貫して観測する。通常のJIT実行構成はデバッガを含まないため、通常実行のホットパスにもデバッグ分岐を追加しない。
 4. **ステップ実行**:
@@ -87,7 +87,7 @@ GDB等の外部クライアントに提示する WASM 仮想レジスタ番号�
 5. **応答の協調送信**:
    - GDBServer は ACK と RSP 応答を同じ送信キューへ順に追加する。
    - ノンブロッキング送信が一部だけ進んだ場合、未送信の末尾を保持して次の協調実行へ持ち越す。
-   - 受信側は複数回の `recv` をまたいで完全な `$...#xx` フレームを組み立てる。{GOTCHA-DBG-04}
+   - 受信側は複数回の `recv` をまたいで完全な `$...#xx` フレームを組み立てる。{GOTCHA-DBG-04} <!-- definition: {GOTCHA-DBG-04} -->
 #### デバッガ・インタープリタ結合コンセプトコード (`concepts/debugger_concept.py`)
 デバッガとインタープリタの結合、注入された物理Sinkを介したGDB RSP パケット処理、統一スタック検査の参照実装：
 [`debugger_concept.py`](docs/components/tier3_plugins/concepts/debugger_concept.py)
@@ -101,20 +101,22 @@ GDB ホストからのチェックサム検証付きパケット受信とゲス�
 sequenceDiagram
     autonumber
     actor Host as GDB Host Client
-    participant HAL as HAL UART (RSP Framer)
+    participant Sink as Raw Debugger Sink
     participant Dbg as Debugger
     participant RAM as Guest RAM / Flash
 
-    Host->>HAL: '$M<addr>,<len>:<data>#<chksum>'
-    Note over HAL: GOTCHA-DBG-03: Compute 2-digit Hex Checksum
+    Host->>Sink: '$M<addr>,<len>:<data>#<chksum>'
+    Sink->>Dbg: 完全なRawパケット
+    Note over Dbg: GOTCHA-DBG-03: 2桁チェックサムを検証
     alt Checksum Mismatch
-        HAL-->>Host: '-' (NAK: request retransmission)
+        Dbg-->>Sink: '-' (NAK: request retransmission)
+        Sink-->>Host: '-'
     else Checksum Valid
-        HAL-->>Host: '+' (ACK)
-        HAL->>Dbg: Push verified command (WRITE_MEMORY, addr, data)
+        Dbg-->>Sink: '+' (ACK)
+        Sink-->>Host: '+'
         Dbg->>RAM: Write new bytes into Guest RAM
-        Dbg-->>HAL: PacketResponse('OK')
-        HAL-->>Host: '$OK#9a'
+        Dbg-->>Sink: PacketResponse('OK')
+        Sink-->>Host: '$OK#9a'
     end
 ```
 

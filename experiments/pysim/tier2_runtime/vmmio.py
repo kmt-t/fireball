@@ -261,9 +261,10 @@ class VMMIOController:
         ), "vMMIO PTE table capacity exceeded"
         self.flush_tlb_entry(vpn)
 
-    def map_dynamic_page(self, vpn: int, phys_page: int) -> None:
-        """Maps one HAL-owned page in the FC=13 DYNAMIC region."""
+    def map_dynamic_page(self, vpn: int, phys_page: int, owner_id: int) -> None:
+        """Maps one FC=13 DYNAMIC page for exactly one guest task."""
         assert (vpn >> 16) == FC_DYNAMIC, "DYNAMIC VPN is outside FC=13"
+        assert owner_id > 0, "DYNAMIC mappings require a guest task owner"
         if self.ptes.view().find(vpn) is not None:
             self.ptes.remove(vpn)
         assert self.ptes.insert(
@@ -274,6 +275,7 @@ class VMMIOController:
                 read=True,
                 write=True,
                 exec_=False,
+                owner_id=owner_id,
             ),
         ), "vMMIO PTE table capacity exceeded"
         self.flush_tlb_entry(vpn)
@@ -284,6 +286,18 @@ class VMMIOController:
         if self.ptes.view().find(vpn) is not None:
             self.ptes.remove(vpn)
         self.flush_tlb_entry(vpn)
+
+    def dynamic_mapping_matches(self, vpn: int, phys_page: int, owner_id: int) -> bool:
+        """Checks DYNAMIC mapping metadata for a trusted HAL buffer access."""
+        assert (vpn >> 16) == FC_DYNAMIC, "DYNAMIC VPN is outside FC=13"
+        assert owner_id > 0, "DYNAMIC mappings require a guest task owner"
+        pte = self.ptes.view().find(vpn)
+        return (
+            pte is not None
+            and pte.valid
+            and pte.owner_id == owner_id
+            and pte.phys_page == phys_page
+        )
 
     def map_passthrough_page(
         self, vpn: int, phys_page: int, read: bool = True, write: bool = True
@@ -387,7 +401,12 @@ class VMMIOController:
         return pte
 
     def access(
-        self, raw_addr: int, is_write: bool, value: int | None = None
+        self,
+        raw_addr: int,
+        is_write: bool,
+        value: int | None = None,
+        *,
+        access_size: int = 1,
     ) -> tuple[VmmioStatus, int]:
         """
         Full dispatch: RAM bypass -> TLB/FlatMap -> permission check (always,
@@ -397,11 +416,12 @@ class VMMIOController:
         returned in the second field.
         """
 
+        assert access_size >= 0
         current_task_id = self.scheduler.current_task_id
         addr = VmmioAddress(raw_addr)
         # 1. Fast RAM bypass (Tier 1) — O(1), never touches the page table.
         if addr.is_linear():
-            if addr.raw >= self.guest_ram_size:
+            if addr.raw >= self.guest_ram_size or access_size > self.guest_ram_size - addr.raw:
                 return (
                     TrapCode.OUT_OF_BOUNDS,
                     0,
@@ -431,6 +451,8 @@ class VMMIOController:
                 return (TrapCode.ACCESS_VIOLATION, 0)
             if not is_write and not pte.read:
                 return (TrapCode.ACCESS_VIOLATION, 0)
+            if access_size > VMMIO_PAGE_SIZE - addr.offset():
+                return (TrapCode.OUT_OF_BOUNDS, 0)
             if value is not None and pte.value_handler is not None:
                 result = pte.value_handler(addr.offset(), value & 0xFFFF_FFFF, is_write)
                 return (VmmioStatus.OK_STATIC_DEVICE, 0 if result is None else result)
@@ -444,7 +466,9 @@ class VMMIOController:
             return (TrapCode.ACCESS_VIOLATION, 0)
         if not is_write and not pte.read:
             return (TrapCode.ACCESS_VIOLATION, 0)
-        if addr.fc() == FC_SHM:
+        if access_size > VMMIO_PAGE_SIZE - addr.offset():
+            return (TrapCode.OUT_OF_BOUNDS, 0)
+        if addr.fc() == FC_DYNAMIC or addr.fc() == FC_SHM:
             if pte.owner_id == FB_TASK_ID_FLIGHT:
                 return (
                     TrapCode.OWNER_MISMATCH,
@@ -455,7 +479,8 @@ class VMMIOController:
                     TrapCode.OWNER_MISMATCH,
                     0,
                 )
-            if addr.offset() >= pte.mapping_size:
+        if addr.fc() == FC_SHM:
+            if addr.offset() >= pte.mapping_size or access_size > pte.mapping_size - addr.offset():
                 return (VmmioStatus.OUT_OF_BOUNDS, 0)
 
         phys_addr = pte.physical_base_addr + addr.offset()

@@ -635,8 +635,8 @@ def test_jitr_block_capacity_from_wasm_loader_and_no_set():
     # 1. WASM loader provides total_basic_blocks metadata and owns block_storage
     assert mod.total_basic_blocks == 2
     assert mod.block_storage is not None
-    assert len(mod.block_storage.keys) == mod.total_basic_blocks
     assert isinstance(mod.block_storage, ReadOnlyRadixBinaryTreeStorage)
+    assert len(mod.block_storage.entries) == mod.total_basic_blocks
     assert len(mod.blocks) == 2
 
     # 2. RuntimeEngine binds loader-owned blocks and resolves them seamlessly

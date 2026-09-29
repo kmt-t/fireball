@@ -142,6 +142,7 @@ class ShmPagePTE:
     owner_id: int
     physical_addr: int
     is_valid: bool = True
+    generation: int = 0
 
 
 _FB_CONF_MAX_SHM_PAGE_SLOTS = FB_CONF_MAX_SHM_PAGES
@@ -164,23 +165,32 @@ class ShmPageRegistry:
         )
 
     def register_page(self, page_idx: int, owner_id: int, physical_addr: int) -> None:
+        previous = self.ptes[page_idx]
+        generation = 0 if previous is None else previous.generation + 1
         self.ptes[page_idx] = ShmPagePTE(
             page_idx=page_idx,
             owner_id=owner_id,
             physical_addr=physical_addr,
             is_valid=True,
+            generation=generation,
         )
 
     def update_owner(self, page_idx: int, new_owner_id: int) -> bool:
         pte = self.ptes[page_idx]
         if pte is None or not pte.is_valid:
             return False
-        pte.owner_id = new_owner_id
+        if pte.owner_id != new_owner_id:
+            pte.owner_id = new_owner_id
+            pte.generation += 1
         return True
 
     def get_owner(self, page_idx: int) -> int | None:
         pte = self.ptes[page_idx]
         return pte.owner_id if pte is not None and pte.is_valid else None
+
+    def get_generation(self, page_idx: int) -> int | None:
+        pte = self.ptes[page_idx]
+        return pte.generation if pte is not None and pte.is_valid else None
 
     def unregister_page(self, page_idx: int) -> None:
         pte = self.ptes[page_idx]
@@ -192,11 +202,12 @@ class SharedBlock:
     """RAII-managed shared memory block for zero-copy IPC."""
 
     __slots__ = (
+        "_data",
         "_is_active",
         "_is_in_flight",
         "_manager",
+        "_owner_generation",
         "base_address",
-        "data",
         "owner",
         "page_idx",
         "shm_id",
@@ -224,88 +235,102 @@ class SharedBlock:
         self._manager = manager
         self._is_active = True
         self._is_in_flight = False
-        self.data: memoryview = data if data is not None else memoryview(bytearray(size))
+        generation = manager.page_registry.get_generation(page_idx)
+        assert generation is not None, "SharedBlock page must be registered"
+        self._owner_generation = generation
+        self._data: memoryview = data if data is not None else memoryview(bytearray(size))
 
-    def get_address(self) -> int:
-        assert self._is_active, "Cannot access released or dropped SharedBlock"
+    @property
+    def data(self) -> memoryview:
+        """Return a read-only snapshot, never a revocation-bypassing backing view."""
+        self._check_handle_access()
+        return memoryview(bytes(self._data))
+
+    def _check_handle_access(self) -> None:
+        assert self._is_active and not self._is_in_flight, (
+            "Cannot access inactive or in-flight SharedBlock"
+        )
         assert self.owner == self._manager.current_task_id, (
             "GOTCHA-MEM-02: non-owner cannot access SharedBlock"
         )
+        page_owner = self._manager.page_registry.get_owner(self.page_idx)
+        assert page_owner == self.owner, "SharedBlock ownership has been revoked or transferred"
+        page_generation = self._manager.page_registry.get_generation(self.page_idx)
+        assert page_generation == self._owner_generation, (
+            "SharedBlock handle is stale after ownership changed"
+        )
+
+    def get_address(self) -> int:
+        self._check_handle_access()
         return self.base_address
 
     def get_size(self) -> int:
-        assert self._is_active, "Cannot access released or dropped SharedBlock"
-        assert self.owner == self._manager.current_task_id, (
-            "GOTCHA-MEM-02: non-owner cannot access SharedBlock"
-        )
+        self._check_handle_access()
         return self.size
 
     def get_owner(self) -> int:
         return self.owner
 
     def _check_access(self, offset: int, length: int = 1) -> None:
-        assert self._is_active, "Cannot access released or dropped SharedBlock"
-        assert not self._is_in_flight, "Cannot access in-flight SharedBlock"
+        self._check_handle_access()
         assert 0 <= offset and offset + length <= self.size, (
             f"Access out of bounds: offset {offset} + len {length} > size {self.size}"
         )
 
     def get_bytearray(self) -> memoryview:
-        """Returns a bounded view into the fixed shared-memory backing store."""
-        assert self._is_active and not self._is_in_flight, (
-            "Cannot access inactive or in-flight SharedBlock bytearray"
-        )
-        return self.data
+        """Returns a bounded read-only snapshot of the block contents."""
+        self._check_access(0, self.size)
+        return memoryview(bytes(self._data))
 
     def read_u8(self, offset: int) -> int:
         self._check_access(offset, 1)
-        return self.data[offset]
+        return self._data[offset]
 
     def write_u8(self, offset: int, val: int) -> None:
         self._check_access(offset, 1)
-        self.data[offset] = val & 0xFF
+        self._data[offset] = val & 0xFF
 
     def read_u16(self, offset: int) -> int:
         self._check_access(offset, 2)
-        return struct.unpack_from("<H", self.data, offset)[0]
+        return struct.unpack_from("<H", self._data, offset)[0]
 
     def write_u16(self, offset: int, val: int) -> None:
         self._check_access(offset, 2)
-        struct.pack_into("<H", self.data, offset, val & 0xFFFF)
+        struct.pack_into("<H", self._data, offset, val & 0xFFFF)
 
     def read_u32(self, offset: int) -> int:
         self._check_access(offset, 4)
-        return struct.unpack_from("<I", self.data, offset)[0]
+        return struct.unpack_from("<I", self._data, offset)[0]
 
     def write_u32(self, offset: int, val: int) -> None:
         self._check_access(offset, 4)
-        struct.pack_into("<I", self.data, offset, val & 0xFFFFFFFF)
+        struct.pack_into("<I", self._data, offset, val & 0xFFFFFFFF)
 
     def read_i32(self, offset: int) -> int:
         self._check_access(offset, 4)
-        return struct.unpack_from("<i", self.data, offset)[0]
+        return struct.unpack_from("<i", self._data, offset)[0]
 
     def write_i32(self, offset: int, val: int) -> None:
         self._check_access(offset, 4)
-        struct.pack_into("<i", self.data, offset, val)
+        struct.pack_into("<i", self._data, offset, val)
 
     def read_bytes(self, offset: int, length: int) -> bytes:
         self._check_access(offset, length)
-        return bytes(self.data[offset : offset + length])
+        return bytes(self._data[offset : offset + length])
 
     def write_bytes(self, offset: int, src: memoryview) -> None:
         self._check_access(offset, len(src))
-        self.data[offset : offset + len(src)] = src
+        self._data[offset : offset + len(src)] = src
 
     def read_kv(self, offset: int) -> tuple[int, int]:
         """Reads 64-bit kv_pair (uint32 key, uint32 value) from bytearray."""
         self._check_access(offset, 8)
-        return struct.unpack_from("<II", self.data, offset)
+        return struct.unpack_from("<II", self._data, offset)
 
     def write_kv(self, offset: int, key: int, val: int) -> None:
         """Writes 64-bit kv_pair (uint32 key, uint32 value) into bytearray."""
         self._check_access(offset, 8)
-        struct.pack_into("<II", self.data, offset, key & 0xFFFFFFFF, val & 0xFFFFFFFF)
+        struct.pack_into("<II", self._data, offset, key & 0xFFFFFFFF, val & 0xFFFFFFFF)
 
     def u64_capacity(self) -> int:
         """Returns the number of uint64_t elements available in this shared memory array."""
@@ -315,13 +340,13 @@ class SharedBlock:
         """Reads a 64-bit unsigned integer (uint64_t) from the shared memory array at element index."""
         offset = index * 8
         self._check_access(offset, 8)
-        return struct.unpack_from("<Q", self.data, offset)[0]
+        return struct.unpack_from("<Q", self._data, offset)[0]
 
     def write_u64(self, index: int, val: int) -> None:
         """Writes a 64-bit unsigned integer (uint64_t) to the shared memory array at element index."""
         offset = index * 8
         self._check_access(offset, 8)
-        struct.pack_into("<Q", self.data, offset, val & 0xFFFFFFFFFFFFFFFF)
+        struct.pack_into("<Q", self._data, offset, val & 0xFFFFFFFFFFFFFFFF)
 
     def read_entry(self, index: int) -> tuple[int, int]:
         """
@@ -381,7 +406,7 @@ class SharedBlock:
             owner=new_owner,
             base_address=self.base_address,
             manager=self._manager,
-            data=self.data,
+            data=self._data,
         )
 
     def drop(self) -> None:

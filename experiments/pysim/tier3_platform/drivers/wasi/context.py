@@ -17,7 +17,10 @@ from config import FB_CONF_MAX_IMPORTS
 from hal_dispatch import (
     ARG_BUFFER_HANDLE,
     ARG_LENGTH,
+    ARG_NANOS,
+    ARG_NANOS_HI,
     ARG_OFFSET,
+    ARG_POLLABLE_HANDLE,
     ARG_RESULT_HI,
     ARG_RESULT_LO,
     FB_CONF_HAL_BUFFER_SIZE,
@@ -45,6 +48,12 @@ from wasi_bindings import WasiHalBindings
 from wasm_module import Module
 
 WasiValue = int
+
+
+class WasiHostFunction(Protocol):
+    """Integer-only WASM host import; the validated module carries its arity."""
+
+    def __call__(self, *args: int) -> int: ...
 
 
 class WasiRuntimeHost(Protocol):
@@ -87,25 +96,7 @@ class WasiInterfaceVTable:
     than via `in`/`.get()` (dict-only APIs with no C++ counterpart).
     """
 
-    write: Callable[..., WasiValue] | None = None
-    read: Callable[..., WasiValue] | None = None
-    close: Callable[..., WasiValue] | None = None
-    write_buffer: Callable[..., WasiValue] | None = None
-    map_buffer: Callable[..., WasiValue] | None = None
-    unmap_buffer: Callable[..., WasiValue] | None = None
-    read_buffer: Callable[..., WasiValue] | None = None
-    flush: Callable[..., WasiValue] | None = None
-    get_now: Callable[..., WasiValue] | None = None
-    get_resolution: Callable[..., WasiValue] | None = None
-    subscribe: Callable[..., WasiValue] | None = None
-    set_pin: Callable[..., WasiValue] | None = None
-    get_pin: Callable[..., WasiValue] | None = None
-    config_pin: Callable[..., WasiValue] | None = None
-    subscribe_edge: Callable[..., WasiValue] | None = None
-    transfer: Callable[..., WasiValue] | None = None
-    transfer_buffer: Callable[..., WasiValue] | None = None
-    config: Callable[..., WasiValue] | None = None
-    log: Callable[..., WasiValue] | None = None
+    write_buffer: Callable[[int, int, int], WasiValue] | None = None
 
 
 class Wasi03pEngine:
@@ -156,7 +147,52 @@ class Wasi03pEngine:
         IPC operations.
         """
         response = self.send_ipc_command(uri, cmd_id, params)
-        return response.value if response.response_code == WasiErrno.SUCCESS else response.response_code
+        return (
+            response.value
+            if response.response_code == WasiErrno.SUCCESS
+            else response.response_code
+        )
+
+    def clock_subscribe(self, uri: str, nanos: int) -> int:
+        """Reserve a one-shot timer through the URI-routed HAL command path."""
+        assert 0 <= nanos <= 0xFFFF_FFFF_FFFF_FFFF
+        params = ReadOnlyFlatMapView(
+            (
+                (ARG_NANOS, nanos & 0xFFFF_FFFF),
+                (ARG_NANOS_HI, nanos >> 32),
+            )
+        )
+        return int(self.dispatch_command(uri, WasiIpcCmd.CLOCK_SUBSCRIBE, params))
+
+    def poll_check(self, uri: str, handle: int) -> bool:
+        """Check one pollable through the HAL task."""
+        result = self.dispatch_command(
+            uri,
+            WasiIpcCmd.POLL_CHECK,
+            ReadOnlyFlatMapView(((ARG_POLLABLE_HANDLE, handle),)),
+        )
+        assert result == 0 or result == 1
+        return result == 1
+
+    def poll_wait(self, uri: str, handle: int) -> bool:
+        """Wait for one pollable through the HAL task."""
+        result = self.dispatch_command(
+            uri,
+            WasiIpcCmd.POLL_WAIT,
+            ReadOnlyFlatMapView(((ARG_POLLABLE_HANDLE, handle),)),
+        )
+        assert result == 0 or result == 1
+        return result == 1
+
+    def poll_drop(self, uri: str, handle: int) -> int:
+        """Release one pollable through the HAL task."""
+        return int(
+            self.dispatch_command(
+                uri,
+                WasiIpcCmd.POLL_DROP,
+                ReadOnlyFlatMapView(((ARG_POLLABLE_HANDLE, handle),)),
+            )
+        )
 
     def send_ipc_command(
         self, uri: str, cmd_id: int, params: ReadOnlyFlatMapView
@@ -201,7 +237,9 @@ class Wasi03pEngine:
     # Resource methods: Tier 2 only builds and sends HAL commands.
     def _send_simple(self, uri: str, cmd_id: WasiIpcCmd) -> int:
         result = self.send_ipc_command(uri, cmd_id, ReadOnlyFlatMapView(()))
-        return int(result.value if result.response_code == WasiErrno.SUCCESS else result.response_code)
+        return int(
+            result.value if result.response_code == WasiErrno.SUCCESS else result.response_code
+        )
 
     def _write_buffer(self, uri: str, handle: HalBufferHandle, offset: int, length: int) -> int:
         map_status = self.sysv.pool.map_for_io(handle.buffer_id)
@@ -218,7 +256,9 @@ class Wasi03pEngine:
         )
         result = self.send_ipc_command(uri, WasiIpcCmd.STREAM_WRITE_BUFFER, params)
         self.sysv.pool.unmap_after_io(handle.buffer_id)
-        return int(result.value if result.response_code == WasiErrno.SUCCESS else result.response_code)
+        return int(
+            result.value if result.response_code == WasiErrno.SUCCESS else result.response_code
+        )
 
     def map_buffer(self, slot_index: int) -> HalBufferHandle | None:
         """Map one fixed slot for the current guest I/O operation."""
@@ -231,6 +271,7 @@ class Wasi03pEngine:
         """End the guest operation that owns one mapped slot."""
         self.sysv.pool.unmap_after_io(handle.buffer_id)
         return int(WasiErrno.SUCCESS)
+
 
 # ==============================================================================
 # WASI 0.1p Compatibility Layer (Adapter Pattern wrapping WASI 0.3p)
@@ -266,12 +307,12 @@ class WasiHostContext:
         self.core03p = Wasi03pEngine(sysv, self.bindings)
         self.uvwasi = uvwasi if uvwasi is not None else sysv.wasi_backend
         self.sysv.attach_wasi_context(self)
-        self._keepalive_trampolines: StaticVector[Callable[..., int]] = StaticVector(
+        self._keepalive_trampolines: StaticVector[WasiHostFunction] = StaticVector(
             capacity=FB_CONF_MAX_IMPORTS
         )
 
         # Build static host import table via ReadOnlyRadixBinaryTreeView
-        host_entries: StaticVector[tuple[str, str, Callable[..., int]]] = StaticVector.of(
+        host_entries: StaticVector[tuple[str, str, WasiHostFunction]] = StaticVector.of(
             (
                 ("wasi_snapshot_preview1", "fd_write", self.fd_write),
                 ("wasi_snapshot_preview1", "fd_read", self.fd_read),
@@ -296,8 +337,8 @@ class WasiHostContext:
             ),
             capacity=FB_CONF_MAX_IMPORTS,
         )
-        hashed_entries: StaticVector[tuple[int, tuple[str, str, Callable[..., int]]]] = (
-            StaticVector(capacity=FB_CONF_MAX_IMPORTS)
+        hashed_entries: StaticVector[tuple[int, tuple[str, str, WasiHostFunction]]] = StaticVector(
+            capacity=FB_CONF_MAX_IMPORTS
         )
         for mod, field, handler in host_entries:
             h = fnv1a_32(f"{mod}::{field}")
@@ -305,7 +346,7 @@ class WasiHostContext:
 
         hashed_entries.sort(key=lambda x: x[0])
         keys: StaticVector[int] = StaticVector(capacity=len(hashed_entries))
-        values: StaticVector[tuple[str, str, Callable[..., int]]] = StaticVector(
+        values: StaticVector[tuple[str, str, WasiHostFunction]] = StaticVector(
             capacity=len(hashed_entries)
         )
         for key, value in hashed_entries:
@@ -447,9 +488,7 @@ class WasiHostContext:
         """Delegate wasi_snapshot_preview1:random_get to uvwasi."""
         return self.uvwasi.random_get(self.guest_memory, buf_ptr, buf_len)
 
-    def get_handler_for_import(
-        self, module_name: str, field_name: str
-    ) -> Callable[..., int] | None:
+    def get_handler_for_import(self, module_name: str, field_name: str) -> WasiHostFunction | None:
         """Resolves an import name to the corresponding host function callable via ReadOnlyRadixBinaryTreeView."""
         h = fnv1a_32(f"{module_name}::{field_name}")
         candidate = self._import_storage.view().find(h)
@@ -461,7 +500,7 @@ class WasiHostContext:
 
     def build_interpreter_host_functions(
         self, module: Module
-    ) -> StaticVector[Callable[..., int] | None]:
+    ) -> StaticVector[WasiHostFunction | None]:
         """
         Maps all imported functions in the module to host function
         callables for the Interpreter. Import indices are 0..len(imports)-1
@@ -469,7 +508,7 @@ class WasiHostContext:
         that ordinal is the direct fit -- not a dict, which would imply a
         sparse/arbitrary key space this table never has.
         """
-        host_funcs: StaticVector[Callable[..., int] | None] = StaticVector(
+        host_funcs: StaticVector[WasiHostFunction | None] = StaticVector(
             capacity=len(module.imports)
         )
         for _ in module.imports:
@@ -497,7 +536,7 @@ class WasiHostContext:
             c_ret = ctypes.c_uint32  # WASI returns errno as u32
             c_func_type = ctypes.CFUNCTYPE(c_ret, *c_args)
 
-            def make_wrapper(h: Callable[..., int], np: int) -> Callable[..., int]:
+            def make_wrapper(h: WasiHostFunction, np: int) -> WasiHostFunction:
                 def wrapper(*args: int) -> int:
                     return h(*args[:np]) & 0xFFFF_FFFF
 

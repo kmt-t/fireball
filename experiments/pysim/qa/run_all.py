@@ -71,7 +71,11 @@ TEST_SUITES = [
         TEST_DIR / "tier2_runtime" / "test_recovery.py",
     ),
     ("Tier 2 Runtime", "vSoC Multitasking & Pipeline", TEST_DIR / "tier2_runtime" / "test_vsoc.py"),
-    ("Tier 2 Runtime", "Runtime Static Composition", TEST_DIR / "tier2_runtime" / "test_runtime_composer.py"),
+    (
+        "Tier 2 Runtime",
+        "Runtime Static Composition",
+        TEST_DIR / "tier2_runtime" / "test_runtime_composer.py",
+    ),
     # --- Tier 3 Plugins ---
     (
         "Tier 3 Plugins",

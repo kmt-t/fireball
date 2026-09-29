@@ -21,7 +21,7 @@ WASM ローダは、ROM 上の WASM32 バイナリを解析し、実行環境向
 ## 3. 静的モデル
 
 ### 3.1 データ構造
-<!-- traceability: {MultiModule_Support} {META_AccessDictionary} {GOTCHA-LOAD-04} -->
+<!-- traceability: {MultiModule_Support} {META_AccessDictionary} -->
 - **`WasmLoader`**: WASMバイナリのパース、検証、およびロード済みモジュールの管理を一括して行う主要クラス。
 - **`module_view`**: ROM上のバイナリデータへの参照と、構築された索引群を保持する読み取り専用の構造体。
 - **`module_registry`**: ロード済みの `module_view` を名前で管理するための内部リスト。
@@ -32,9 +32,9 @@ WASM ローダは、ROM 上の WASM32 バイナリを解析し、実行環境向
 - **`decoded_entity_registry`**: 各エンティティの種類・ファイル内開始位置・長さ・参照に必要な最小メタ情報だけを保持する固定長レジストリ。関数コード、名前文字列、データ本体は所有せず、WASM原本上の範囲を参照する。
 - **`entity_offset_storage` (`ReadOnlyRadixBinaryTreeStorage`)**: ファイル内のバイト位置（開始オフセット）をキーとしてデコード済みエンティティへ $O(1) + O(\log n)$ でマッピングする基数2進木索引。検索時だけviewを借用する。
 - **`import_storage` / `export_storage` (`ReadOnlyRadixBinaryTreeStorage`)**: シンボル名（インポート名・エクスポート名）のハッシュ値をキーとして各エントリへ $O(1) + O(\log n)$ でマッピングする基数2進木索引。検索時だけviewを借用する。
-- **`block_storage` (`ReadOnlyRadixBinaryTreeStorage`)**: モジュール内の全基本ブロックメタ情報（`BasicBlock`: `head_pc`, `next_pc`, `loops_to`, `frame_depth`, `byte_span`）へ UnifiedPC（`fold_mix32(pc)`、`func_index`と`offset`の両方を折り込む乗算Foldingミックス）でアクセスする基数2進木索引。`BasicBlock` はPCレンジと制御フローメタ情報のみを保持し、デコード済み命令列は持たない――命令列はブロックが実際にコンパイル・実行される瞬間にのみ、バイトコードから一度だけストリーミングで導出する。ランタイムや JIT コンパイラがブロック探索・メタ情報を再生成することなく、ローダ側の不変ストレージから借用viewで $O(1) + O(\log n)$ にブロックを解決する。 `{Loader_BasicBlockIndex}`
-- **`opcode_benefit_table` (`BitView<4>`)**: ROM 上に配置される 128 バイト（256 opcode $\times$ 4-bit）の静的テーブル。インタープリタ処理命令数と JIT 処理命令数の差分（短縮機械語命令数、分岐8倍換算）をゼロ点固定線形正規化した `int4_t`（-8〜+7、1スコア＝2命令相当短縮）を保持する。 `{JIT_StaticBenefitScoring}`
-- **`jit_candidate_bitmap` (`BitView<1>`)**: モジュールロード時に各基本ブロックの命令スコア合算値が閾値（9点：コンパイルオーバーヘッド換算値6点＋デルタ3点）に達したブロックの `head_pc` が属する Card を 1bit でマーキングしたビットマップ。インタープリタ実行ループにおける `touch()` スキップに供される。 `{JIT_CandidateBitmap}`
+- **`block_storage` (`ReadOnlyRadixBinaryTreeStorage`)**: モジュール内の全基本ブロックメタ情報（`BasicBlock`: `head_pc`, `next_pc`, `loops_to`, `frame_depth`, `byte_span`）へ UnifiedPC（`fold_mix32(pc)`、`func_index`と`offset`の両方を折り込む乗算Foldingミックス）でアクセスする基数2進木索引。`BasicBlock` はPCレンジと制御フローメタ情報のみを保持し、デコード済み命令列は持たない――命令列はブロックが実際にコンパイル・実行される瞬間にのみ、バイトコードから一度だけストリーミングで導出する。ランタイムや JIT コンパイラがブロック探索・メタ情報を再生成することなく、ローダ側の不変ストレージから借用viewで $O(1) + O(\log n)$ にブロックを解決する。 `{Loader_BasicBlockIndex}` <!-- definition: {Loader_BasicBlockIndex} --> {GOTCHA-LOAD-04} <!-- definition: {GOTCHA-LOAD-04} -->
+- **`opcode_benefit_table` (`BitView<4>`)**: ROM 上に配置される 128 バイト（256 opcode $\times$ 4-bit）の静的テーブル。インタープリタ処理命令数と JIT 処理命令数の差分（短縮機械語命令数、分岐8倍換算）をゼロ点固定線形正規化した `int4_t`（-8〜+7、1スコア＝2命令相当短縮）を保持する。 `{JIT_StaticBenefitScoring}` <!-- definition: {JIT_StaticBenefitScoring} -->
+- **`jit_candidate_bitmap` (`BitView<1>`)**: モジュールロード時に各基本ブロックの命令スコア合算値が閾値（9点：コンパイルオーバーヘッド換算値6点＋デルタ3点）に達したブロックの `head_pc` が属する Card を 1bit でマーキングしたビットマップ。インタープリタ実行ループにおける `touch()` スキップに供される。 `{JIT_CandidateBitmap}` <!-- definition: {JIT_CandidateBitmap} -->
 - **`control_map`**: 各関数の制御デリミタと `br_table` の静的対応を保持する固定長メタデータ。インタープリタはロード済みの関数メタデータを参照し、実行時に制御構造を再走査しない。命令列そのものは保持せず、必要な命令だけをROM上のコードからストリーミングする。
 
 ### 3.2 内部ブロック図
@@ -132,14 +132,14 @@ ROM上の読み取り専用バイト列ビューをラップし、カレント�
 ## 4. 動的モデル
 
 ### 4.1 アルゴリズム
-<!-- traceability: {GOTCHA-LOAD-03} {META_AccessDictionary} {META_BinarySearch} {META_BumpAllocator} {MultiModule_Support} {OneRuntimeOneGuest} {ROMParsing} {ZeroCopyIndexing} -->
+<!-- traceability: {JIT_CandidateBitmap} {JIT_StaticBenefitScoring} {META_AccessDictionary} {META_BinarySearch} {META_BumpAllocator} {MultiModule_Support} {OneRuntimeOneGuest} {ROMParsing} {ZeroCopyIndexing} -->
 - **バイナリパース & トランザクション保護 (`GOTCHA-LOAD-02`)**:
   - ROM 上のデータを `BinaryStream` でラップする。
   - `read_leb128` などで境界を検査しながら順次読み取る。読み取りガードは最大5バイトまたは10バイトである。
   - パース開始前に `bump_allocator::save()` で位置を記録する。
   - 失敗時は `bump_allocator::restore()` で追加確保を戻す。
 
-  **設計理由と不変条件**: WASM バイナリで検証エラーが発生する場合がある。例はセクション長の不整合、未定義型参照、リソース上限超過である。途中確保した領域が残ると、静的バンプアロケータのメモリを枯渇させる。すべての失敗時にアロケータを開始前の位置へ戻す。不正バイナリによるメモリリークと断片化を防ぐ。
+  **設計理由と不変条件**: WASM バイナリで検証エラーが発生する場合がある。例はセクション長の不整合、未定義型参照、リソース上限超過である。途中確保した領域が残ると、静的バンプアロケータのメモリを枯渇させる。すべての失敗時にアロケータを開始前の位置へ戻す。不正バイナリによるメモリリークと断片化を防ぐ。 {GOTCHA-LOAD-02} <!-- definition: {GOTCHA-LOAD-02} -->
 - **module_view 構築 & デコード値レジストリ登録 (Zero-Copy & Radix-Indexed)**:
     - セクションスキャン時に内容をRAMにコピーせず、ROM上の開始オフセットとサイズを索引化する。
     - 各セクション、関数コードブロック、グローバル変数等について、内容を展開しない最小ディスクリプタを `decoded_entity_registry` に登録する。
@@ -150,13 +150,13 @@ ROM上の読み取り専用バイト列ビューをラップし、カレント�
     - `load`は同じセクションを再走査し、Elementの関数番号をテーブルへ書き込み、Dataのバイト範囲をリニアメモリへコピーする。各エントリは適用callbackへ直接渡す。
     - `global.get`を使うオフセットは、`prepare`で参照先の制約を検証し、`load`で確定したグローバル値を用いて解決する。
 - **パースイベントと保持領域の分離**: セクションパーサはROMの読み取りと形式検証を担当し、定義の登録・保持方法はパースイベントコールバックへ分離する。通常の固定長メタデータは2パスで確定した容量へ登録し、Element/Dataの初期化定義はイベントとしてストリーミングする。
-- **シンボル検索とハッシュ衝突完全排除 (`GOTCHA-LOAD-01`, `META_BinarySearch`)**:
+- **シンボル検索とハッシュ衝突完全排除 (`GOTCHA-LOAD-01`, `META_BinarySearch`)**: {GOTCHA-LOAD-01} <!-- definition: {GOTCHA-LOAD-01} -->
   シンボル名ハッシュ（FNV-1a 32-bit）をキーとして `export_storage`から借用した`radix_binary_tree_view`を、粗索引 $O(1)$ と狭い区間の二分探索 $O(\log n)$ の組み合わせで探索する。候補が得られた後はROM上の元の名前を照合するため、照合込みの worst-case は $O(1) + O(\log n) + O(L)$（$L$ は名前長）である。
   **設計理由と不変条件**: 32-bit ハッシュ値による探索のみで関数解決を完了させると、万一のハッシュ衝突発生時に誤った関数がディスパッチされ、壊滅的な誤動作を引き起こす。そのため、ハッシュ探索で候補エントリがヒットした際は必ず ROM 上の元のシンボル名文字列と 1 回完全一致照合を行い、ハッシュ衝突によるシンボル誤認を完全に排除する。
 - **インポートテーブル検索と依存関係解決 (resolve_imports)**: インポートテーブルの各エントリに対し、インポート先モジュール名・フィールド名のハッシュ値で対象モジュールの `export_storage`から借用した`radix_binary_tree_view`を探索する。候補区間の索引探索は $O(1) + O(\log n)$、ROM上の元文字列による衝突照合を含む worst-case は $O(1) + O(\log n) + O(L)$ であり、照合後に依存関係を解決してモジュールを実行可能状態へ遷移させる。
 - **ファイル位置逆引き (lookup_by_file_offset)**: 任意のファイル内バイトオフセットから `entity_offset_storage`の借用`radix_binary_tree_view`を検索し、そのオフセットを包含するデコード済みエンティティ（セクション、関数、データ等）を即座に特定・返却する。
 - **メモリセクション検証**: Memory Sectionをパースし、論理ページサイズ（64KB単位）と初期ページ数を取得する。初期ページ数を`FB_CONF_MAX_WASM_PAGES`と照合する。WASMリニアメモリの物理バック方式とARMv8-Mの容量対応はTBDとする。
-- **アンロードと専用バンプアロケータ一括回収 (`GOTCHA-LOAD-03`, `OneRuntimeOneGuest`, `{Runtime_BumpAllocator}`)**:
+- **アンロードと専用バンプアロケータ一括回収 (`GOTCHA-LOAD-03`, `OneRuntimeOneGuest`, `{Runtime_BumpAllocator}`)**: {GOTCHA-LOAD-03} <!-- definition: {GOTCHA-LOAD-03} -->
   `unload` はモジュールをアンロードし、親ランタイムの `bump_allocator` を一括リセットまたは返還する。
   **設計理由と不変条件**: 1ランタイム1ゲストの直交分離原則（`OneRuntimeOneGuest`）により、各ランタイムは専用バンプアロケータアリーナ（`{Runtime_BumpAllocator}`）を所有する。この分離により、ランタイム間でモジュールの生存期間が競合しない。
   単一ランタイム内では、最大 `FB_CONF_MAX_MODULES` 個のモジュール（メインアプリとライブラリ）が同じアリーナを共有できる。個々のモジュールを完全に回収するには、ロード順の逆順（LIFO）でアンロードする必要がある。詳細は後述の `unload` インターフェースを参照する。
@@ -419,3 +419,22 @@ sequenceDiagram
 <!-- traceability: {LightweightVerifier} {Wasm32Only} -->
 - **目標**: 不正なWASMバイナリによるクラッシュを防止する。
 - **方策**: ロード時にマジック値、バージョン、セクション境界の整合性を検証し、不正なバイナリを拒否する。
+
+## 7. 形式検証・テスト仕様との対応
+
+### 7.1 検証対象の不変条件
+本書で定めた状態、境界、所有権、およびエラー処理を検証対象とする。
+
+### 7.2 検証モデルと反証可能性
+形式検証モデルは[loader_verification_model.py](docs/components/tier2_runtime/formal/loader_verification_model.py)である。各モデルの正常系と`guards=False`変異で、保護条件が反証されることを確認する。
+
+### 7.3 テスト仕様書との連携
+対応するテスト仕様は[runtime_loader_test_spec.md](docs/qa/tier2_runtime/runtime_loader_test_spec.md)である。テストケースIDと実行可能テストは同仕様を正本とする。
+
+### 7.4 既知の制限・対象外
+ホスト実機依存の挙動、未実装アーキテクチャ、およびテスト仕様が明示する対象外条件は未検証として扱う。
+
+
+## 8. 設計判断と参考実装
+
+特記すべき独立したADRはない。採用方針は本書の各契約節に記載する。

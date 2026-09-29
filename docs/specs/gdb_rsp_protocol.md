@@ -9,6 +9,7 @@
 ---
 
 ## 2. パケット構造とチェックサム規約
+
 <!-- traceability: {DebuggerInterpreterComposition} -->
 
 GDB RSP パケットは ASCII 文字列で送受信され、以下のフレーム構造を持つ：
@@ -20,8 +21,9 @@ $<payload>#<checksum>
 - **`$` (0x24)**: パケット開始マーカー。
 - **`<payload>`**: コマンドまたはレスポンスの ASCII 文字列。
 - **`#` (0x23)**: ペイロード終了マーカー。
-- **`<checksum>`**: ペイロード全バイトの算術合計（modulo 256）を表す 2 桁の 16 進数（小文字/大文字）。{RSPChecksumVerify}
+- **`<checksum>`**: ペイロード全バイトの算術合計（modulo 256）を表す 2 桁の 16 進数（小文字/大文字）。{RSPChecksumVerify} <!-- definition: {RSPChecksumVerify} -->
 - **ACK / NAK**: 正常受信時は `+` (0x2B)、再送要求時は `-` (0x2D) を 1 バイト返却。
+- チェックサム不一致、16進表記の不正、またはフレーム長の不一致ではコマンドを実行せず `-` を返す。一致を検証した後だけ `+` を返してディスパッチする。
 
 ---
 
@@ -40,27 +42,28 @@ $<payload>#<checksum>
 | **単一ステップ実行** | `s` [ `<addr_hex>` ] | `T05thread:01;` | WASM 命令を 1 命令だけ実行して即座に停止。 |
 | **ブレークポイント設定**| `Z0,<addr_hex>,<kind>` | `OK` または `E01` | ソフトウェアブレークポイントを登録（`debugger` の `flat_set_view` に PC を挿入）。 |
 | **ブレークポイント削除**| `z0,<addr_hex>,<kind>` | `OK` または `E01` | ソフトウェアブレークポイントを削除（`flat_set_view` から PC を削除）。 |
-| **機能クエリ** | `qSupported` | `PacketSize=256;qXfer:features:read+` | パケットバッファ最大長（256 Bytes）および XML ターゲット記述サポートを通知。 |
-| **プロセス終了** | `k` | (接続切断) | デバッグ対象タスクを終了し、初期状態へリセット。 |
+| **機能クエリ** | `qSupported` | `PacketSize=256` | 実装済みのパケットバッファ最大長だけを通知する。 |
 
 ---
 
-## 4. WASM 仮想レジスタ番号マッピング (GDB Target XML Map)
+## 4. WASM 仮想レジスタ番号マッピング
 <!-- traceability: {ContextPointerRegister} {DebuggerInterpreterComposition} -->
 
-GDB クライアントが参照するレジスタ番号（Target Description XML）と、Fireball 統合スタック上の物理オフセットの対応：
+GDB クライアントが参照するレジスタ番号と、Fireballの実行コンテキスト値の対応：
 
-| GDB レジスタ番号 | レジスタ名 | ビット幅 | 物理ソース（スタックボトム `execution_context` / 統合スタック） |
+| GDB レジスタ番号 | レジスタ名 | ビット幅 | 論理ソース（`execution_context` / オペランドスタック） |
 | :--- | :--- | :--- | :--- |
 | **`0`** | `pc` | 32-bit | `R0 (ip)` (現在実行中の WASM バイトコードオフセット / PC) |
-| **`1`** | `sp` | 32-bit | `execution_context.sp_offset` (スタックボトムから見た、現在積まれているオペランドスタックの成長長——次の空きスロットへのオフセット。`interpreter.md` `interpreter.md`「スタックの成長した長さ」と同一の量) |
-| **`2`** | `fp` | 32-bit | `execution_context.frame_offset` (カレントコールフレームの開始オフセット) |
-| **`3`** | `tos` | 32-bit | オペランドスタック最上位の値（`sp_offset` は次の空きスロットを指すため、最上位要素はその1つ手前: `[stack_bot + sp_offset - 4]`） |
-| **`4`** | `local0` | 32-bit | カレント関数のローカル変数 0 (`[stack_bot + frame.local_offset + 0]`) |
-| **`5`** | `local1` | 32-bit | カレント関数のローカル変数 1 (`[stack_bot + frame.local_offset + 4]`) |
-| **`6`** | `local2` | 32-bit | カレント関数のローカル変数 2 (`[stack_bot + frame.local_offset + 8]`) |
-| **`7`** | `local3` | 32-bit | カレント関数のローカル変数 3 (`[stack_bot + frame.local_offset + 12]`) |
-| **`8..19`**| `local4..15` | 32-bit | カレント関数のローカル変数 4〜15 |
+| **`1`** | `sp` | 32-bit | `execution_context.sp_offset`（スタックボトムから数えた32-bitスロット数。pysimでは`len(ctx.stack)`に対応する。詳細は[`interpreter.md`](docs/components/tier3_executer/interpreter.md)を参照） |
+| **`2`** | `fp` | 32-bit | 固定値 `0`。pysimの公開コンテキストは独立したフレームポインタを持たず、書込みも `0` のみ許可する。 |
+| **`3`** | `tos` | 32-bit | オペランドスタック最上位の値。`sp_offset` は次の空きスロットを指すため、スロット添字では `stack[sp_offset - 1]` |
+| **`4`** | `local0` | 32-bit | 固定長ローカルスタック上の値 0 |
+| **`5`** | `local1` | 32-bit | 固定長ローカルスタック上の値 1 |
+| **`6`** | `local2` | 32-bit | 固定長ローカルスタック上の値 2 |
+| **`7`** | `local3` | 32-bit | 固定長ローカルスタック上の値 3 |
+| **`8..19`**| `local4..15` | 32-bit | 固定長ローカルスタック上の値 4〜15 |
+
+`g` の応答と `G` / `p` / `P` の値は、各32-bitレジスタを4バイトのlittle-endian順で16進表記する。`G` / `P` はPC、SP、TOS、対象ローカルを更新する。SPは固定スタック容量以下でなければならない。空スタックではTOSも0でなければならない。FPは固定値のため0以外の書込みを`E01`で拒否する。
 
 ---
 
@@ -70,5 +73,6 @@ GDB クライアントが参照するレジスタ番号（Target Description XML
 極小マイコン向けデバッグサーバのため、以下の複雑な GDB 拡張機能は非サポートとし、空パケット（`$#00`）を返却する：
 - ハードウェアウォッチポイント (`Z2`, `Z3`, `Z4`)
 - マルチプロセスデバッグ (`vAttach`, `vRun`)
+- デバッグ対象の終了・再起動 (`k`)
 - ターゲット側ブレークポイント評価式（Bytecode Agent）
 - 逆方向デバッグ (Reverse Execution: `bs`, `bc`)

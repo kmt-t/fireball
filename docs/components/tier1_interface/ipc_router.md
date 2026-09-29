@@ -9,7 +9,7 @@
 
 ## 1. コンセプト
 <!-- traceability: {IPCRouter} {URIAbstraction} {OwnershipTransfer} {IPCDI} {IPC_Resource_Isolation} {System_Allocator} {Shm_Allocator} -->
-IPCルータは、URIベースのサービスディスカバリとロールベースアクセス制御（{RoleBasedAccessControl}）を備えたメッセージルーティング層である。コンポーネント間の依存性をURIで抽象化する。所有権移譲を伴う安全なデータ移動とリソースの完全分離を実現する。ルータ内部のルーティングテーブルやチャネルレジストリ等のシステムコンテナは、システム用アロケータから動的に確保する。ゼロコピー転送される共有メモリ（`shared_block`）は、共有メモリアロケータから可変長で切り出す。
+IPCルータは、URIベースのサービスディスカバリとロールベースアクセス制御（{RoleBasedAccessControl}）を備えたメッセージルーティング層である。コンポーネント間の依存性をURIで抽象化する。所有権移譲を伴う安全なデータ移動とリソースの完全分離を実現する。ルータ内部のルーティングテーブルやチャネルレジストリ等のシステムコンテナは、システム用アロケータから動的に確保する。ゼロコピー転送される共有メモリ（`shared_block`）は、共有メモリアロケータから可変長で切り出す。 <!-- definition: {RoleBasedAccessControl} -->
 
 ## 2. アーキテクチャ分類
 <!-- traceability: {META_3TierSeparation} {IPCRouter} {URIAbstraction} -->
@@ -118,7 +118,7 @@ Key-Valueペアを複数集約した要求・応答の基本単位である。�
     4. **Sender Unblock**: Scheduler は要求時に記録した送信元 TCBだけを起床し、同じメッセージを `SENDER_OWNS` で返す。応答完了まで同一エッジへの次の送信は許可しない。
 - **送信前チェックの失敗とロールバック境界**:
     - URI 未登録、RBAC 拒否、KV ペア数超過はいずれも Revoke 前段の静的検査である。
-    - これらの失敗時、メッセージ所有権は送信側のまま維持され、回復処理を要しない。
+    - これらの失敗時、メッセージ所有権は送信側のまま維持され、回復処理を要しない。 {GOTCHA-IPCR-02} <!-- definition: {GOTCHA-IPCR-02} -->
     - メッセージパッシング自体は CSP ランデブーのためロールバック経路を持たない。
     - 転送中に相手タスクが異常終了した場合、物理メモリ層の回復機構が送信元タスクへの再マッピングを復元する。
 
@@ -479,15 +479,17 @@ stateDiagram-v2
     PermissionCheck --> MessageRouting: [access allowed]
     PermissionCheck --> PermissionDenied: [access denied]
 
-    %% Message Routing → Ownership Transfer Pipeline
-    MessageRouting --> Revoke: begin send
-    Revoke --> Rendezvous: mark In-flight
+    %% Request ownership transfer
+    MessageRouting --> RequestRevoke: begin request send
+    RequestRevoke --> RequestRendezvous: mark In-flight
+    RequestRendezvous --> RequestGrant: receiver arrived
+    RequestGrant --> Response: receiver owns request
 
-    %% Rendezvous: blocks until the counterpart arrives, then always completes
-    Rendezvous --> Grant: peer arrived (immediate or after a CSP block)
-
-    %% Success path
-    Grant --> Complete: grant to receiver
+    %% Response ownership transfer returns the same message to its sender
+    Response --> ResponseRevoke: reply same message
+    ResponseRevoke --> ResponseRendezvous: mark In-flight
+    ResponseRendezvous --> ResponseGrant: recorded sender arrives
+    ResponseGrant --> Complete: grant to sender
     Complete --> Idle: done
 
     %% Error handling → Idle
@@ -504,9 +506,9 @@ stateDiagram-v2
 | **Permission Check** | 送信側ロールと受信側ロールのマトリックスで許可判定 | ロールマトリックス参照 |
 | **Message Routing** | 送信メッセージの転送処理 | エッジ専用 CSP チャネルへのディスパッチ |
 | **Ownership Transfer** | ゼロコピー CSP の要求・応答所有権移譲フロー | 要求 Revoke → Rendezvous → Grant、応答 Revoke → Rendezvous → Grant |
-| **Revoke** | 現所有者の権限を無効化、In-flight 状態へ遷移 | リソースロック設定（要求または応答の再送は不可） |
-| **Rendezvous** | バッファなし同期ハンドオフ。相手が既に待機していれば即座に、いなければ協調スケジューラ上でブロックして待つ | CSP チャネル上での 1 対 1 ハンドオフ（キューは存在しないため満杯状態も存在しない） |
-| **Grant** | 次の所有者にリソースの権限を付与 | 所有権ハンドシェイク完了 |
+| **Request Revoke / Response Revoke** | 要求では送信側、応答では受信側の権限を無効化し、In-flight 状態へ遷移 | リソースロック設定（要求または応答の再送は不可） |
+| **Request Rendezvous / Response Rendezvous** | バッファなし同期ハンドオフ。相手が既に待機していれば即座に、いなければ協調スケジューラ上でブロックして待つ | 要求は受信側、応答は記録済み送信元TCBとの1対1ハンドオフ |
+| **Request Grant / Response Grant** | 要求では受信側、応答では送信側へリソースの権限を付与 | 所有権ハンドシェイク完了 |
 | **Response** | 受信側が応答コードと必要な追加KVを設定して同じメッセージを返す | 送信元TCBの応答待ちを解除 |
 | **Complete** | 応答を送信側が取得 | 次の要求を開始可能 |
 | **Service Not Found** | 指定 URI が未登録 | エラー応答を呼び出し側に返却 |
@@ -740,9 +742,27 @@ sequenceDiagram
 <!-- traceability: {ServiceFacade} {IoC} {TypeSafeMessaging} -->
 IPCのプリミティブ性を隠蔽し、依存性の逆転 (IoC) を実現するため、サービスの利用側（内側の層）がファサードクラスを定義する。ファサードの各メソッドは、KVマップへの生のパッキングやアンパッキングを外部に露出しない。引数や戻り値の型をシグネチャとして静的に固定した型安全なメソッドとして提供する。内部変換は型安全な Key-Value 構造を利用する。呼び出し側は `kv_pair` の型スコープやビットフラグを直接扱わない。
 
-## 6. 形式検証（pyModelChecking / 直交表）
 
-### 6.1 検証対象の不変条件
+## 6. 制約達成の方策
+
+### 6.1 性能制約と方策
+<!-- traceability: {LowLatencyLookup} -->
+- **目標**: サービス検索のレイテンシを最小化する。
+- **方策**: ソート済み配列の二分探索を採用する。
+
+### 6.2 メモリ制約と方策
+<!-- traceability: {META_BumpAllocator} {GLOBAL_StaticScalability} -->
+- **目標**: レジストリ管理によるメモリ断片化を防止する。
+- **方策**: バンプアロケータを使用し、最大サービス数をコンパイル時に固定する。
+
+### 6.3 安全性制約と方策
+<!-- traceability: {RoleBasedAccessControl} {OwnershipTransfer} -->
+- **目標**: 不正なタスク間通信を防止する。
+- **方策**: ロールベースの認可と、厳密な所有権管理により、データ競合と不正アクセスを排除する。
+
+## 7. 形式検証・テスト仕様との対応
+
+### 7.1 検証対象の不変条件
 
 <!-- traceability: {IPC_ZeroCopy} {RoleBasedAccessControl} -->
 
@@ -751,16 +771,16 @@ IPCのプリミティブ性を隠蔽し、依存性の逆転 (IoC) を実現す�
 | **所有権単調性** | 要求は Sender → In-flight → Receiver、応答は Receiver → In-flight → Sender の順に移譲され、二重所有が発生しないこと。`{OwnershipTransfer}` | `formal/csp_handoff_model.py` CTL 安全性検証 (`AG(Not(sender_owns & receiver_owns))` ➔ True) |
 | **デッドロック不在** | クライアント・サーバ規律（非循環チャネル依存）により、Send/Recv の循環待ちデッドロックが発生しないこと。`RoleBasedAccessControl` | 設計レビュー（自動の機械的閉路検査ツールは無し） |
 | **要求・応答待機の安全性** | 相手が未到達なら送信側は要求In-flightで待機し、受信後は応答コード設定と応答ハンドオフが完了するまで送信側をブロックする。相手タスクの到達・有限時間内の応答はCSP単独では保証しない。`{ADR_RendezvousChannel}` | `formal/csp_handoff_model.py`で要求待機・応答待機の自己ループを含めて検査。無条件の有限応答時間は証明しない |
-| **単一待機者制約** | 1 本の CSP チャネルは同時に高々 1 つの送信待機または受信待機しか保持しない（キューではない）こと。 | `formal/csp_handoff_model.py` 不変式検証（二重待機の禁止） |
+| **単一待機者制約** | 1 本の CSP チャネルは同時に高々 1 つの送信待機または受信待機しか保持しない（キューではない）こと。 | `formal/csp_handoff_model.py` 不変式検証（二重待機の禁止） {GOTCHA-IPCR-01} <!-- definition: {GOTCHA-IPCR-01} --> |
 
-### 6.2 検証対象のプロパティ
+### 7.2 検証対象のプロパティ
 
 - **Safety**:
   - 二重所有不在（所有権競合不在）`{IPC_ZeroCopy}`
   - 単一待機者制約（1 チャネルにつき送信待機・受信待機のいずれか高々 1 つ、キュー化されない）
 - **Liveness**: CSPチャネル単独では相手タスク到達の公平性・有界応答時間を保証しないため、本モデルは無条件livenessを主張しない。
 
-### 6.3 検証モデル概要
+### 7.3 検証モデル概要
 
 **状態変数:**
 ```
@@ -780,24 +800,12 @@ waiter_dir: {NONE, SEND, RECV}     # そのチャネルで待機中の方向
 
 ※ CSP 所有権移譲プロトコルの二重所有不在および有限解決性は `formal/csp_handoff_model.py` により変異検査付きモデル検査を実施する。
 
-### 6.4 既知の制限
+### 7.4 既知の制限
 
 - **マルチプロセッサ同期**: 現在、シングルプロセッサを仮定。マルチコア環境ではメモリバリア追加が必要。
 - **相手タスクの生存**: 受信側（または送信側）タスクが永久に到達しない場合、相手はブロックし続ける。本コンポーネントはタスクの生存監視やタイムアウトによる強制解除を提供しない——必要であれば呼び出し側の上位レイヤ（ウォッチドッグ等）が担う。
 
-## 7. 制約達成の方策
 
-### 7.1 性能制約と方策
-<!-- traceability: {LowLatencyLookup} -->
-- **目標**: サービス検索のレイテンシを最小化する。
-- **方策**: ソート済み配列の二分探索を採用する。
+## 8. 設計判断と参考実装
 
-### 7.2 メモリ制約と方策
-<!-- traceability: {META_BumpAllocator} {GLOBAL_StaticScalability} -->
-- **目標**: レジストリ管理によるメモリ断片化を防止する。
-- **方策**: バンプアロケータを使用し、最大サービス数をコンパイル時に固定する。
-
-### 7.3 安全性制約と方策
-<!-- traceability: {RoleBasedAccessControl} {OwnershipTransfer} -->
-- **目標**: 不正なタスク間通信を防止する。
-- **方策**: ロールベースの認可と、厳密な所有権管理により、データ競合と不正アクセスを排除する。
+特記すべき独立したADRはない。採用方針は本書の各契約節に記載する。

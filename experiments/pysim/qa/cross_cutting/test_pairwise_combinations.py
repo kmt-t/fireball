@@ -170,8 +170,8 @@ def run_single_pairwise_case(case_id: str, case_tuple: tuple[str, ...]) -> None:
     sysv = System()
     wasi_ctx = WasiHostContext(sysv, guest_memory=bytearray(2 * 65536))
     wasi_dummy = UvwasiReferenceContext()
-    stdio = DummyDriver(sysv.wasi_hal_bindings.stdout_uri, transport=sysv.transport)
-    sysv.start_hal_driver(stdio)
+    stdio = DummyDriver(transport=sysv.transport)
+    sysv.start_hal_driver(stdio, sysv.wasi_hal_bindings.stdout_uri)
     # 2. Parse WASM Module
     wasm_bytes = bytes(wasmtime.wat2wasm(WAT_TEMPLATE))
     module = parse(wasm_bytes)

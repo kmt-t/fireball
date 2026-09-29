@@ -53,6 +53,10 @@ constexpr std::uint32_t kSentinel = 0xFFFF'FFFFu;
 
 using execution_context = fireball_execution_context_native;
 
+static_assert(sizeof(void*) == 8, "native interpreter requires a 64-bit host ABI");
+static_assert(sizeof(execution_context) == 128,
+              "x86-64 execution_context ABI layout must remain 128 bytes");
+
 struct step_result {
   std::uint32_t kind;
   std::uint32_t next_ip;
@@ -277,6 +281,18 @@ bool branch(execution_context& current, std::uint32_t* sp, std::uint32_t depth,
     next_ip = current.control_stack->frames[current.control_base + target_index].match_end + 1;
   }
   return true;
+}
+
+void prune_control_frames_after_static_jump(execution_context& current,
+                                            std::uint32_t target_ip) {
+  // A loader-resolved basic-block successor may skip one or more `end`
+  // handlers. Drop lexical frames whose ranges no longer contain its target
+  // before continuing native dispatch.
+  while (current.control_stack->size > current.control_base) {
+    const auto& frame = current.control_stack->frames[current.control_stack->size - 1];
+    if (target_ip <= frame.match_end) return;
+    --current.control_stack->size;
+  }
 }
 
 bool pop(execution_context& current, std::uint32_t* sp, std::uint32_t& value) {
@@ -1057,6 +1073,7 @@ FIREBALL_CPS_CALL step_result h_else(
   current.ip = call_frame != nullptr && call_frame->boundary_next_pc != kSentinel
                    ? call_frame->boundary_next_pc & 0xFFFFu
                    : frame.match_end + 1;
+  prune_control_frames_after_static_jump(current, current.ip);
   if (should_stop_after_control(current)) return block_boundary(current.ip);
   [[clang::musttail]] return dispatch(context, sp, local_base, top_value(current, sp));
 }
@@ -1125,6 +1142,7 @@ FIREBALL_CPS_CALL step_result h_br(
   if (call_frame != nullptr && call_frame->boundary_next_pc != kSentinel) {
     next_ip = call_frame->boundary_next_pc & 0xFFFFu;
   }
+  prune_control_frames_after_static_jump(current, next_ip);
   record_loop_backedge(current, source_ip, next_ip);
   current.ip = next_ip;
   if (should_stop_after_control(current)) return block_boundary(current.ip);
@@ -1154,6 +1172,7 @@ FIREBALL_CPS_CALL step_result h_br_if(
   if (call_frame != nullptr && call_frame->boundary_loops_to != kSentinel) {
     next_ip = call_frame->boundary_loops_to & 0xFFFFu;
   }
+  prune_control_frames_after_static_jump(current, next_ip);
   record_loop_backedge(current, source_ip, next_ip);
   current.ip = next_ip;
   if (should_stop_after_control(current)) return block_boundary(current.ip);

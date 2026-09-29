@@ -10,6 +10,7 @@ and destination must be fully verified before revoking resource ownership.
 
 from __future__ import annotations
 
+from bisect import bisect_left
 from collections.abc import Sequence
 from enum import IntEnum
 
@@ -158,6 +159,7 @@ _REGISTRY_ENTRIES = sorted(
         ("fireball://hal/spi/0", Role.HAL_SPI),
         ("fireball://hal/timer/0", Role.HAL_TIMER),
         ("fireball://hal/uart/0", Role.HAL_UART),
+        ("fireball://hal/uart/1", Role.HAL_UART),
         ("fireball://hal/stdout/0", Role.HAL_STDOUT),
     ]
 )
@@ -195,15 +197,32 @@ _ROLE_MATRIX = (
 
 
 class IPCRouter:
-    def __init__(self, current_task_role: Role = Role.RUNTIME, current_task_id: int = 1):
+    def __init__(
+        self,
+        current_task_role: Role = Role.RUNTIME,
+        current_task_id: int = 1,
+        current_service_handle: int | None = None,
+    ):
         self.current_task_role = current_task_role
         self.current_task_id = current_task_id
-        # Stage 3: one dedicated CSP channel per ALLOW edge of the RBAC
-        # matrix -- a Channel is a strict 1:1 pairing, so distinct senders
-        # to the same target role cannot share one.
+        self.current_service_handle = current_service_handle
+        # Stage 3: one dedicated CSP channel per (sender role, service URI).
+        # RBAC is role-based, while the channel carries the specific URI
+        # instance identity so same-kind devices cannot cross-consume traffic.
         self._channels: tuple[tuple["Channel | None", ...], ...] = tuple(
-            tuple(Channel() if allowed else None for allowed in row) for row in _ROLE_MATRIX
+            tuple(
+                Channel() if _ROLE_MATRIX[sender_role][descriptor] else None
+                for sender_role in range(len(Role))
+            )
+            for _uri, descriptor in _REGISTRY_ENTRIES
         )
+
+    def service_handle(self, uri: str) -> int | None:
+        """Resolve a URI to its stable index in the sorted service table."""
+        index = bisect_left(_REGISTRY_ENTRIES, uri, key=lambda entry: entry[0])
+        if index == len(_REGISTRY_ENTRIES) or _REGISTRY_ENTRIES[index][0] != uri:
+            return None
+        return index
 
     def lookup(self, uri: str) -> tuple[str, Channel | None]:
         """
@@ -211,22 +230,28 @@ class IPCRouter:
         Role is strictly derived from caller's TCB context (current_task_role),
         preventing self-reported role spoofing. Returns pre-authorized Channel object.
         """
-        target_role = _REGISTRY.find(uri)
-        if target_role is None:
+        service_handle = self.service_handle(uri)
+        if service_handle is None:
             return ("ERR_NOT_FOUND", None)
+        target_role = _REGISTRY_ENTRIES[service_handle][1]
 
         if not _ROLE_MATRIX[self.current_task_role][target_role]:
             return ("ERR_PERMISSION_DENIED", None)
 
-        return ("COMPLETED", self._channels[self.current_task_role][target_role])
+        channel = self._channels[service_handle][self.current_task_role]
+        assert channel is not None
+        return ("COMPLETED", channel)
 
     def send(self, channel: Channel, message: IPCMessage) -> tuple[str, str]:
         """
         Stage 3: Zero-Copy CSP Handoff directly on pre-authorized Channel object.
         URI is eliminated from this hot transfer path. Caller's TCB role is verified.
         """
-        allowed_channels = [ch for ch in self._channels[self.current_task_role] if ch is not None]
-        if channel not in allowed_channels:
+        allowed = any(
+            service_channels[self.current_task_role] is channel
+            for service_channels in self._channels
+        )
+        if not allowed:
             return ("ERR_PERMISSION_DENIED", "Role not authorized on this channel")
 
         assert message.ownership == OwnershipState.SENDER_OWNS, (
@@ -248,15 +273,27 @@ class IPCRouter:
         DEBUGGER. Grant happens on whichever edge actually has a message.
         """
         target_role = self.current_task_role
-        for sender_role in range(len(_ROLE_MATRIX)):
-            channel = self._channels[sender_role][target_role]
-            if channel is None:
-                continue
-            message = channel.recv()
-            if message is not None:
-                message.ownership = OwnershipState.RECEIVER_OWNS
-                message.reply_channel = channel
-                return message
+        service_handles: range | tuple[int, ...]
+        if self.current_service_handle is not None:
+            assert 0 <= self.current_service_handle < len(_REGISTRY_ENTRIES)
+            assert _REGISTRY_ENTRIES[self.current_service_handle][1] == target_role
+            service_handles = (self.current_service_handle,)
+        else:
+            service_handles = tuple(
+                handle
+                for handle, (_uri, descriptor) in enumerate(_REGISTRY_ENTRIES)
+                if descriptor == target_role
+            )
+        for service_handle in service_handles:
+            for sender_role in range(len(Role)):
+                channel = self._channels[service_handle][sender_role]
+                if channel is None:
+                    continue
+                message = channel.recv()
+                if message is not None:
+                    message.ownership = OwnershipState.RECEIVER_OWNS
+                    message.reply_channel = channel
+                    return message
         return None
 
     def reply(self, message: IPCMessage, response_code: int) -> str:
@@ -282,6 +319,33 @@ def test_registry_is_a_real_flat_map_view_not_a_dict() -> None:
     assert not isinstance(_REGISTRY, dict)
     assert _REGISTRY.find("fireball://hal/gpio/0") == Role.HAL_GPIO
     assert _REGISTRY.find("fireball://nonexistent/service/0") is None
+
+
+def test_same_role_uri_instances_use_distinct_channels() -> None:
+    """URI identity selects the channel; equal roles do not collapse instances."""
+    router = IPCRouter(current_task_role=Role.RUNTIME)
+    uri0 = "fireball://hal/uart/0"
+    uri1 = "fireball://hal/uart/1"
+    handle0 = router.service_handle(uri0)
+    handle1 = router.service_handle(uri1)
+    assert handle0 is not None and handle1 is not None and handle0 != handle1
+    status0, channel0 = router.lookup(uri0)
+    status1, channel1 = router.lookup(uri1)
+    assert status0 == status1 == "COMPLETED"
+    assert channel0 is not None and channel1 is not None and channel0 is not channel1
+
+    message = IPCMessage(entries=[(1, 17)])
+    assert router.send(channel0, message)[0] == "COMPLETED"
+    router.current_task_role = Role.HAL_UART
+    router.current_service_handle = handle1
+    assert router.receive() is None
+    assert message.ownership == OwnershipState.IN_FLIGHT
+
+    router.current_service_handle = handle0
+    assert router.receive() is message
+    assert message.ownership == OwnershipState.RECEIVER_OWNS
+    assert router.reply(message, response_code=0) == "COMPLETED"
+    assert message.ownership == OwnershipState.SENDER_OWNS
 
 
 def test_unregistered_uri_is_rejected() -> None:

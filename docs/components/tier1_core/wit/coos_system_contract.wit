@@ -2,7 +2,7 @@ package fireball:core@0.1.0;
 
 /// COOS カーネルおよびコアコンポーネント共通型定義
 interface types {
-    /// タスク識別子 (0〜15)
+    /// タスク識別子 (1〜FB_CONF_MAX_TASKS、0は無効)
     type task-id = u32;
 
     /// チャンネル識別子

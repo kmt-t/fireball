@@ -6,6 +6,9 @@ from dataclasses import dataclass
 from enum import IntEnum, IntFlag
 from typing import Protocol
 
+RUNTIME_EVENT_NO_MODULE: int = 0xFFFF_FFFF
+RUNTIME_EVENT_NO_PC: int = 0xFFFF_FFFF
+
 
 class RuntimeEventKind(IntEnum):
     """Runtime が発行するイベント種別。"""
@@ -33,6 +36,14 @@ class RuntimeEventFlags(IntFlag):
     DEBUG_STOP = 1 << 3
     DROPPED = 1 << 4
     ESTIMATED = 1 << 5
+    ABORTED = 1 << 6
+
+
+class RuntimeExecutionError(IntEnum):
+    """Executor outcome category used without Python exceptions."""
+
+    GUEST_TRAP = 1
+    HOST_FAILURE = 2
 
 
 @dataclass(frozen=True, slots=True)

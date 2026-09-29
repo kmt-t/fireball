@@ -130,8 +130,8 @@ def test_scenario_gdb_socket_debugger():
         # Step 2: Read virtual registers ('g')
         resp = client.send_raw_packet("g")
         assert len(resp) == 160
-        pc = int(resp[0:8], 16)
-        l0 = int(resp[32:40], 16)
+        pc = int.from_bytes(bytes.fromhex(resp[0:8]), "little")
+        l0 = int.from_bytes(bytes.fromhex(resp[32:40]), "little")
         assert pc == block10.head_pc and l0 == 2
         # Step 3: Read memory ('m0,8')
         resp = client.send_raw_packet("m0,8")
@@ -144,12 +144,14 @@ def test_scenario_gdb_socket_debugger():
         resp = client.send_raw_packet("c")
         assert resp == "S05"
         resp_g = client.send_raw_packet("g")
-        pc = int(resp_g[0:8], 16)
-        l0 = int(resp_g[32:40], 16)
+        pc = int.from_bytes(bytes.fromhex(resp_g[0:8]), "little")
+        l0 = int.from_bytes(bytes.fromhex(resp_g[32:40]), "little")
         assert pc == block20.head_pc and l0 == 12
         # Step 6: Write virtual registers ('G') -> Modify local0 to 100
         new_regs = [block20.head_pc, 0, 0, 0, 100, 0] + [0] * 14
-        g_payload = "G" + "".join(f"{r:08x}" for r in new_regs)
+        g_payload = "G" + "".join(
+            (value & 0xFFFF_FFFF).to_bytes(4, "little").hex() for value in new_regs
+        )
         resp = client.send_raw_packet(g_payload)
         assert resp == "OK" and ctx.locals[0] == 100
         # Step 7: Write memory ('M') in interpreter-only debug mode
@@ -159,8 +161,8 @@ def test_scenario_gdb_socket_debugger():
         resp = client.send_raw_packet("s")
         assert resp == "S05"
         resp_g = client.send_raw_packet("g")
-        pc = int(resp_g[0:8], 16)
-        l1 = int(resp_g[40:48], 16)
+        pc = int.from_bytes(bytes.fromhex(resp_g[0:8]), "little")
+        l1 = int.from_bytes(bytes.fromhex(resp_g[40:48]), "little")
         assert pc == block30.head_pc and l1 == 500
         # Step 9: Remove breakpoint ('z0,<addr>,0')
         resp = client.send_raw_packet(f"z0,{block20.head_pc:x},0")

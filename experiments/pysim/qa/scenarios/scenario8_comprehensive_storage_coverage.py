@@ -237,8 +237,8 @@ def test_scenario_comprehensive_storage_and_debugger():
         assert bytes.fromhex(resp) == b"STORAGE_DATA"
         # 3. Read initial virtual registers
         resp = client.send_raw_packet("g")
-        pc = int(resp[0:8], 16)
-        l0 = int(resp[32:40], 16)
+        pc = int.from_bytes(bytes.fromhex(resp[0:8]), "little")
+        l0 = int.from_bytes(bytes.fromhex(resp[32:40]), "little")
         assert pc == block100.head_pc and l0 == 7
         # 4. Set breakpoint at block110's head
         resp = client.send_raw_packet(f"Z0,{block110.head_pc:x},0")
@@ -247,12 +247,14 @@ def test_scenario_comprehensive_storage_and_debugger():
         resp = client.send_raw_packet("c")
         assert resp == "S05"
         resp_g = client.send_raw_packet("g")
-        pc = int(resp_g[0:8], 16)
-        l0 = int(resp_g[32:40], 16)
+        pc = int.from_bytes(bytes.fromhex(resp_g[0:8]), "little")
+        l0 = int.from_bytes(bytes.fromhex(resp_g[32:40]), "little")
         assert pc == block110.head_pc and l0 == 8  # 7 + 1 = 8
         # 6. Debugger mutation: Mutate local0 to 15, patch memory to "MUTATED_DATA"
         new_regs = [block110.head_pc, 0, 0, 0, 15, 0, 0] + [0] * 13
-        g_payload = "G" + "".join(f"{r:08x}" for r in new_regs)
+        g_payload = "G" + "".join(
+            (value & 0xFFFF_FFFF).to_bytes(4, "little").hex() for value in new_regs
+        )
         assert client.send_raw_packet(g_payload) == "OK"
         assert ctx.locals[0] == 15
         assert client.send_raw_packet("M0,c:4d5554415445445f44415441") == "OK"
@@ -260,8 +262,8 @@ def test_scenario_comprehensive_storage_and_debugger():
         # 7. Single-step block110 -> block120 (local1 = 15 * 10 = 150)
         assert client.send_raw_packet("s") == "S05"
         resp_g = client.send_raw_packet("g")
-        pc = int(resp_g[0:8], 16)
-        l1 = int(resp_g[40:48], 16)
+        pc = int.from_bytes(bytes.fromhex(resp_g[0:8]), "little")
+        l1 = int.from_bytes(bytes.fromhex(resp_g[40:48]), "little")
         assert pc == block120.head_pc and l1 == 150
         # 8. Remove breakpoint & continue to exit
         assert client.send_raw_packet(f"z0,{block110.head_pc:x},0") == "OK"

@@ -89,6 +89,7 @@ def test_scenario_ipc_router_and_logging():
         sent.append(("4_too_large", status4, oversized))
 
     received: list[IPCMessage] = []
+    received_payloads: list[tuple[int, int]] = []
 
     def coos_receiver():
         # recv() selects across every allowed incoming edge (RUNTIME and
@@ -96,6 +97,7 @@ def test_scenario_ipc_router_and_logging():
         # committing to just one sender_role upfront.
         status, msg = yield from router.recv()
         received.append(msg)
+        received_payloads.append((msg[_KEY_CMD], msg[_KEY_TASK_ID]))
         assert router.reply(msg, 0) == IPCStatus.COMPLETED
 
     sched.spawn("coos_receiver", coos_receiver(), role=Role.CORE_SERVICE)
@@ -109,8 +111,7 @@ def test_scenario_ipc_router_and_logging():
         "request/reply returns ownership to the sender after the receiver replies"
     )
     assert received == [msg1]
-    assert received[0][_KEY_CMD] == _CMD_START_TASK
-    assert received[0][_KEY_TASK_ID] == 10
+    assert received_payloads == [(_CMD_START_TASK, 10)]
     print(
         "    [Stage 1.1] IPC CSP Request/Reply (receiver handoff -> sender unblock) -> SENDER_OWNS [PASS]"
     )

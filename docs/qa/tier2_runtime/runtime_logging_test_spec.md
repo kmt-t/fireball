@@ -18,7 +18,7 @@
 | TEST-LOG-04 | 固定長リングバッファ・オーバーライト | バッファ容量（例:4）を満杯にする | 5件目をlog_event | 最古のエントリが上書きされ、`overwrite_count`がインクリメントされる。戻り値`LogResult.OVERWRITTEN` | `{BufferedLogging}` |
 | TEST-LOG-05 | ログレベルフィルタリング | `min_level=WARN`に設定 | DEBUG/INFOレベルでlog_event | `LogResult.FILTERED`を返し、リングバッファに積まれない | Logger.log_event |
 | TEST-LOG-06 | idle_hookでのフラッシュ | ログを複数件queueした状態 | idle_hook相当（`flush()`）を呼ぶ | バッファ内の全エントリが`transport`（DMA相当）へ一括転送され、バッファが空になる | `{GLOBAL_IdleDetection}` |
-| TEST-LOG-07 | flush中の割り込み | `interrupt_pending`がバッチ完了後にTrueを返すコールバックを渡す | flushを実行 | 現在のバッチ（DMA転送）完了時点で処理を中断し、残りのエントリはバッファに残る | logging_concept.py `test_logger_flush_interruption` |
+| TEST-LOG-07 | flush中の割り込み | `interrupt_pending`がバッチ完了後にTrueを返すコールバックを渡す | flushを実行 | 現在のバッチ（DMA転送）完了時点で処理を中断し、残りのエントリはバッファに残る | `{InterruptibleFlush}`, logging_concept.py `test_logger_flush_interruption` |
 | TEST-LOG-08 | ログ投入時の事前割当て | ロガー生成後のエントリ配列を保持 | 複数回log_eventとflushを実行 | 既存の固定長レコードを再利用し、レコードオブジェクト・引数タプル・整形済み文字列をログ投入ごとに生成しない | `{META_ZeroOverhead}` |
 | TEST-LOG-09 | ダングリングポインタ（実行時文字列）の禁止 | 実行時に構築した任意長文字列をdict_offset経由で渡そうとする | ログAPIの引数型を確認 | 内部ログAPIは固定オフセット+u32引数4個のみを受け付け、任意長文字列やポインタ相当の値を渡せない | `logging_concept.py` `test_logger_cannot_carry_a_runtime_string_but_console_can` |
 | TEST-LOG-10 | Runtimeイベントから内部ログへの通知 | ロガーとRuntime Event Loggerが注入済み | 関数イベントを通知し、ログをflushして固定レコードを復号する | 内部Observerが辞書オフセットと関数IDをキューイングし、イベント名がホスト側で復号される | pysim `test_runtime_events_are_queued_as_fixed_dictionary_records` |
@@ -33,7 +33,7 @@
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | {GOTCHA-LOG-01} | 実行時文字列ポインタの完全排除（ダングリングポインタ防止） | ログAPI呼び出し | 実行時文字列ポインタの受け渡しを試行 | ログAPIは固定長辞書オフセットと u32 スカラー引数4個のみを受け付け、任意長文字列を直接埋め込む手段が存在しない。**実装の勘所**: ログメッセージにポインタを含めると、対象タスクがクラッシュまたは終了した後にロガーが不正メモリを参照（Use-After-Free）する | [`runtime_logging.md`](docs/components/tier2_runtime/runtime_logging.md) §4.1, {GOTCHA-LOG-01} |
 | {GOTCHA-LOG-02} | リングバッファ満杯時の最古上書き（システム非ブロック不変条件） | リングバッファが満杯 | さらに `log_event` を実行 | エラーやブロックを起こさず、最も古いエントリを上書きして直近のログを保存する。**実装の勘所**: ログ出力でタスクをブロックさせると、高負荷時や異常発生時にシステム全体がデッドロックに陥る | [`runtime_logging.md`](docs/components/tier2_runtime/runtime_logging.md) §4.1, {GOTCHA-LOG-02} {DeterministicRingBuffer} |
-| {GOTCHA-LOG-03} | 転送ループの割り込み即時応答性 | flush 実行中 | 現在のバッチ（DMA転送）完了後に `interrupt_pending()` が True を返す | バッファ全フラッシュを強行せず、現在のバッチ（DMA転送）完了時点で直ちにループを抜けてスケジューラへ制御を戻す。**実装の勘所**: DMA転送は開始後 `dma_complete` まで中断できないため、確認はエントリ単位ではなくバッチ境界でのみ行う。ログフラッシュをアトミックに実行すると、長大なログ転送中に外部割り込みレイテンシが大幅に悪化する | [`runtime_logging.md`](docs/components/tier2_runtime/runtime_logging.md) §4.1, {GOTCHA-LOG-03} |
+| {GOTCHA-LOG-03} | 転送ループの割り込み即時応答性 | flush 実行中 | 現在のバッチ（DMA転送）完了後に `interrupt_pending()` が True を返す | バッファ全フラッシュを強行せず、現在のバッチ（DMA転送）完了時点で直ちにループを抜けてスケジューラへ制御を戻す。**実装の勘所**: DMA転送は開始後 `dma_complete` まで中断できないため、確認はエントリ単位ではなくバッチ境界でのみ行う。ログフラッシュをアトミックに実行すると、長大なログ転送中に外部割り込みレイテンシが大幅に悪化する | [`runtime_logging.md`](docs/components/tier2_runtime/runtime_logging.md), {GOTCHA-LOG-03}, {InterruptibleFlush} |
 | {GOTCHA-LOG-04} | トラップ発生箇所での診断情報捕捉順序 | インタープリタがトラップを検知 | 呼出しフレーム解体前に `unified_pc` とトラップ原因コードを確定してロガーへ渡す | 診断ログに発生関数・命令位置が記録される。**実装の勘所**: フレーム解体後は `func_index`/`bytecode_offset` を復元できないため、解体前の捕捉を怠ると発生位置不明のログになる。イベントIDはトラップ原因コード + `0x0300` の機械算出とし、登録漏れを構造的に防止する | [`runtime_logging.md`](docs/components/tier2_runtime/runtime_logging.md) §4.1 / §4.2.1, [`interpreter.md`](docs/components/tier3_executer/interpreter.md), {GOTCHA-LOG-04} |
 
 ## 3. テスト検証実績と網羅状況

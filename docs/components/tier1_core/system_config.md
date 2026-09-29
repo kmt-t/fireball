@@ -214,4 +214,6 @@ assert FB_CONF_MAX_TASKS <= 254, "FB_CONF_MAX_TASKS must be <= 254"
 
 ## 8. 設計判断と参考実装
 
-特記すべき独立したADRはない。構成値をコンパイル時に固定する判断は[第1節](#1-コンセプト)と[第3節](#3-静的モデル)に記載する。pysim参照実装は [`config.py`](experiments/pysim/tier1_core/config.py)、抽象状態の形式モデルは [`system_config_model.py`](docs/components/tier1_core/formal/system_config_model.py)、検証ケースは [`system_config_test_spec.md`](docs/qa/tier1_core/system_config_test_spec.md) に示す。
+<!-- traceability: {META_ConfigurableSystem} {META_Static_Resolution} {GLOBAL_StrictMemoryLimit} -->
+
+特記すべき独立したADRはない。構成値をコンパイル時に固定する方針は本書のコンセプトと静的モデルで定義する。pysim参照実装は [`config.py`](experiments/pysim/tier1_core/config.py)、抽象状態の形式モデルは [`system_config_model.py`](docs/components/tier1_core/formal/system_config_model.py)、検証ケースは [`system_config_test_spec.md`](docs/qa/tier1_core/system_config_test_spec.md) に示す。

@@ -18,10 +18,8 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 import wasm_opcodes as op
-from config import (
-    FB_CONF_MAX_BASIC_BLOCKS,
-    FB_CONF_MAX_LOCALS,
-)
+from bump_allocator import BumpAllocator
+from config import FB_CONF_MAX_BASIC_BLOCKS, FB_CONF_MAX_LOCALS
 from jit_scoring import OPCODE_BENEFIT_TABLE, score_opcodes
 from leb128 import decode_signed, decode_unsigned
 from system_containers import (
@@ -66,6 +64,28 @@ F32 = 0x7D
 F64 = 0x7C
 WASM_RAW_WORD_BYTES = 4
 WASM_VALUE_SLOT_BYTES = 8
+
+# Fixed reference-layout charges for loader-owned records. These sizes model
+# the 32-bit target records; final C++ sizeof values remain part of the target
+# ABI review and are not inferred from CPython object sizes.
+LOADER_TYPE_ENTRY_BYTES = 16
+LOADER_IMPORT_ENTRY_BYTES = 32
+LOADER_FUNCTION_ENTRY_BYTES = 40
+LOADER_EXPORT_ENTRY_BYTES = 4 * WASM_RAW_WORD_BYTES
+LOADER_GLOBAL_ENTRY_BYTES = 20
+LOADER_TABLE_ENTRY_BYTES = 12
+LOADER_BASIC_BLOCK_ENTRY_BYTES = 24
+
+
+def _allocate_loader_vector[T](
+    allocator: BumpAllocator, capacity: int, entry_bytes: int
+) -> StaticVector[T]:
+    """Create a bounded vector and reserve its target backing from the loader arena."""
+
+    assert capacity >= 0 and entry_bytes > 0
+    storage_size = capacity * entry_bytes
+    offset = allocator.allocate(storage_size)
+    return StaticVector(capacity=capacity, arena_offset=offset, arena_size=storage_size)
 
 
 def value_slot_width(value_type: int) -> int:
@@ -265,11 +285,12 @@ class Module:
     def configure_section_capacities(
         self,
         type_count: int,
-        import_count: int,
+        function_import_count: int,
         function_count: int,
         export_count: int,
         global_count: int,
         table_count: int,
+        allocator: BumpAllocator,
     ) -> None:
         """Set exact section capacities before the loader starts appending."""
 
@@ -280,12 +301,16 @@ class Module:
         assert len(self.exports) == 0
         assert len(self.globals) == 0
         assert len(self.tables) == 0
-        self.types = StaticVector(capacity=type_count)
-        self.imports = StaticVector(capacity=import_count)
-        self.functions = StaticVector(capacity=function_count)
-        self.exports = StaticVector(capacity=export_count)
-        self.globals = StaticVector(capacity=global_count)
-        self.tables = StaticVector(capacity=table_count + import_count)
+        self.types = _allocate_loader_vector(allocator, type_count, LOADER_TYPE_ENTRY_BYTES)
+        self.imports = _allocate_loader_vector(
+            allocator, function_import_count, LOADER_IMPORT_ENTRY_BYTES
+        )
+        self.functions = _allocate_loader_vector(
+            allocator, function_count, LOADER_FUNCTION_ENTRY_BYTES
+        )
+        self.exports = _allocate_loader_vector(allocator, export_count, LOADER_EXPORT_ENTRY_BYTES)
+        self.globals = _allocate_loader_vector(allocator, global_count, LOADER_GLOBAL_ENTRY_BYTES)
+        self.tables = _allocate_loader_vector(allocator, table_count, LOADER_TABLE_ENTRY_BYTES)
 
     def prepare_function_layouts(self) -> None:
         """Precompute each frame's local-slot width and the parameter widths at module load."""
@@ -550,14 +575,19 @@ class Module:
         assert types.extend(local.locals_extra)
         return types
 
-    def build_basic_block_index(self) -> None:
+    def build_basic_block_index(self, allocator: BumpAllocator | None = None) -> None:
         """Build the immutable block and instruction indexes during loading."""
         from control_flow import extract_basic_blocks, iter_block_ops
 
         n_imports = len(self.imports)
-        block_capacity = max(1, self.total_basic_blocks)
+        block_capacity = self.total_basic_blocks
         assert block_capacity <= FB_CONF_MAX_BASIC_BLOCKS
-        all_blocks: StaticVector[BasicBlock] = StaticVector(capacity=block_capacity)
+        if allocator is None:
+            all_blocks: StaticVector[BasicBlock] = StaticVector(capacity=block_capacity)
+        else:
+            all_blocks = _allocate_loader_vector(
+                allocator, block_capacity, LOADER_BASIC_BLOCK_ENTRY_BYTES
+            )
         for idx, _fn in enumerate(self.functions):
             func_idx = n_imports + idx
             code = self.code_for(func_idx)

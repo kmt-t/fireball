@@ -4,9 +4,9 @@
 
 正本: [`wasm_instruction_set.md`](docs/specs/wasm_instruction_set.md)
 関連: [`interpreter.md`](docs/components/tier3_executer/interpreter.md)（インタープリタ側実装）, [`jit_compiler.md`](docs/components/tier3_executer/jit_compiler.md)（JIT側実装）
-参考実装: [`interpreter_concept.py`](docs/components/tier3_executer/concepts/interpreter_concept.py)
+参考実装: [`interpreter_concept.py`](docs/components/tier3_executer/concepts/interpreter_concept.py), [`bulk_memory_concept.py`](docs/components/tier3_executer/concepts/bulk_memory_concept.py)
 
-インタープリタ・JIT双方が対応すべきWASM MVPオプコードの意味論を、命令カテゴリごとに検証する。本書は個々のオプコードのスタック遷移・トラップ条件を横断的に一覧化する（実行エンジンごとの内部実装詳細は`interpreter_test_spec.md`/`jit_compiler_test_spec.md`を参照）。x64で確認した実装を対象とし、ARMv8-Mの物理命令列と実機受入れはTBDである。
+インタープリタ・JIT双方が対応すべきWASM Core 1.0 MVPと、`{WasmFCSubset}`が列挙する`0xFC`部分集合の意味論を命令カテゴリごとに検証する。本書は個々のオプコードのスタック遷移・トラップ条件を横断的に一覧化する（実行エンジンごとの内部実装詳細は`interpreter_test_spec.md`/`jit_compiler_test_spec.md`を参照）。x64で確認した実装を対象とし、ARMv8-Mの物理命令列と実機受入れはTBDである。
 
 ## 2. テストケース一覧
 
@@ -71,6 +71,22 @@
 | TEST-WASM-54 | `i32.div_s`/`div_u`のゼロ除算トラップ | 除数0 | 実行 | ゼロ除算をWASM trapにし、演算結果をstackへ書かない | wasm_instruction_set.md (Integer Arithmetic) |
 | TEST-WASM-55 | `i32.and`/`or`/`xor`/`shl`/`shr_s`/`shr_u` | - | 実行 | ビット演算・シフトが正しい。i32のシフト量は下位5 bitだけを使う | wasm_instruction_set.md (Integer Arithmetic) |
 | TEST-WASM-56 | `i32.rotl`/`rotr` | - | 実行 | 左右循環シフトのWASM意味論に従う | wasm_instruction_set.md (Integer Arithmetic) |
+
+### 選択された`0xFC`命令 ({WasmFCSubset})
+<!-- traceability: {WasmFCSubset} -->
+
+| テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| TEST-WASM-60 | `0xFC`サブオペコードのデコード | サブオペコード0〜12および不正LEB128 | モジュールをロード | 0〜7、10、11のみ受理。8、9、12以上および不正LEB128はロード時に拒否 | `{WasmFCSubset}` |
+| TEST-WASM-61 | 飽和変換のNaN・無限大 | f32/f64のNaN、`+∞`、`-∞` | 8変換命令を実行 | NaNは0、正の無限大は整数上限、負の無限大はsigned下限またはunsigned 0。変換trapなし | `{WasmFCSubset}` |
+| TEST-WASM-62 | 飽和変換のsigned境界 | i32/i64 signed変換先の下限・上限および隣接値 | f32/f64から実行 | 0方向への切り捨て後にsigned範囲へ収まり、範囲外値は下限/上限へ飽和 | `{WasmFCSubset}` |
+| TEST-WASM-63 | 飽和変換のunsigned境界 | i32/i64 unsigned変換先、負の小数を含む | f32/f64から実行 | 負の値は0方向切捨て後に0、上限超過はunsigned最大値へ飽和 | `{WasmFCSubset}` |
+| TEST-WASM-64 | Interpreter/JIT間の飽和変換一致 | 同一の変換命令列 | InterpreterとJIT有効構成で実行 | 8命令の結果ビット幅、NaN、境界値が一致する。未実装JIT命令はInterpreterへ委譲する | `{WasmFCSubset}` `{JIT_RuntimeAPI_Fallback}` |
+| TEST-WASM-70 | `memory.copy`の重複領域 | 同一memory内で前方・後方重複、完全一致 | copy実行後に全byteを比較 | memmove意味論でコピー元の元データと一致し、vDMAを起動しない | `{WasmFCSubset}` `{VDMA}` |
+| TEST-WASM-71 | `memory.copy`の非重複領域とゼロ長 | 有効な範囲、境界ちょうどのゼロ長範囲 | copy実行 | byte列が一致する。`len == 0`は範囲内offsetで無変更・DMAなし | `{WasmFCSubset}` |
+| TEST-WASM-72 | `memory.copy`の両範囲境界 | sourceまたはdestinationが終端を超える。ゼロ長でoffsetが終端より大きい場合も含む | copy実行 | WASM memory trapとなり、宛先を含むメモリに部分更新がない | `{WasmFCSubset}` `{MemoryBoundaryCheck}` |
+| TEST-WASM-73 | `memory.fill`の値と範囲 | byteパターン`0x00`、`0xFF`、`-1`、複数上位bitを持つvalue | fill実行 | i32のbit pattern下位8 bitだけが指定範囲へ書かれ、範囲外はtrap、vDMAは使わない | `{WasmFCSubset}` |
+| TEST-WASM-74 | `memory.copy`/`fill`のmemory index | index 0および非ゼロ即値 | モジュールをロード | index 0だけ受理し、非ゼロindexは単一メモリ仕様によりロード時拒否 | `{WasmFCSubset}` |
 
 ## 3. テスト検証実績と網羅状況
 

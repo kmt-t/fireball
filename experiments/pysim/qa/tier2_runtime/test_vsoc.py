@@ -19,6 +19,7 @@ _REPO_ROOT = _PYSIM_DIR.parent.parent
 # Keep the product Tier 3 package ahead of tests/tier3_executer when importing
 # runtime_engine's qualified Tier 3 modules.
 
+from bump_allocator import BumpAllocator
 from execution_context import WASMContext
 from fixtures.platform_drivers import create_reference_platform_drivers
 from helpers import _build_test_wasm_binary, expect_assertion, wat_to_wasm
@@ -905,7 +906,8 @@ def test_wasm_loader_and_radix_binary_tree_view_indexes():
     """TEST-LOAD-01..47: Verifies WASM Loader zero-copy indexing, verification, and ReadOnlyRadixBinaryTreeView file offset & hash symbol indexes."""
     from loader import WasmLoader
 
-    loader = WasmLoader()
+    runtime_allocator = BumpAllocator()
+    loader = WasmLoader(runtime_allocator)
     wasm_bytes = _build_test_wasm_binary(export_names=["zeta", "alpha", "beta"])
     view = loader.prepare("test_module", wasm_bytes)
     # 1. Zero-copy & Hash + ReadOnlyRadixBinaryTreeView export lookup (TEST-LOAD-13)
@@ -915,10 +917,10 @@ def test_wasm_loader_and_radix_binary_tree_view_indexes():
     assert view.lookup_export_func("zeta") == 0
     assert view.lookup_export_func("unknown") is None
     # 2. Transactional rollback on invalid WASM
-    watermark = loader.allocator.offset
+    watermark = runtime_allocator.offset
     with expect_assertion():
         loader.prepare("bad", _build_test_wasm_binary(magic=b"\x7fELF"))
-    assert loader.allocator.offset == watermark
+    assert runtime_allocator.offset == watermark
     # 3. ReadOnlyRadixBinaryTreeView file offset reverse-lookup (TEST-LOAD-40..44)
     assert len(view.entity_registry) > 0
     func_start, func_size = view.code_offsets[0]

@@ -1,30 +1,32 @@
 # WASM 命令セット物理仕様書 (Supported WASM Instruction Set) {VERIFY_FORMAL}
 <!-- evidence:
      formal: formal/wasm_control_flow_model.py
+     formal: formal/wasm_bulk_memory_model.py
      test: docs/qa/specs/wasm_instruction_set_test_spec.md
 -->
 
 ## 1. 概要と適用方針
-<!-- traceability: {ThreadedInterpreter} {JIT_CopyAndPatch} {Wasm32Only} {META_ZeroCostAbstraction} -->
-本仕様書は、Fireball Hypervisor がサポートする **WASM MVP (v1, 32-bit)** の命令意味論とインタープリタ動作を定義する。ARMv8-M向けJITの物理命令列・レジスタ・ABI・メモリ保護方式はTBDとし、本書で確定しない。
+<!-- traceability: {ThreadedInterpreter} {JIT_CopyAndPatch} {Wasm32Only} {WasmFCSubset} {META_ZeroCostAbstraction} -->
+本仕様書は、wasm32単一リニアメモリのWASM Core 1.0 MVPを基礎とし、`0xFC`のうち飽和型浮動小数点→整数変換8命令と`memory.copy`/`memory.fill`だけを追加した命令意味論とインタープリタ動作を定義する。その他の`0xFC`サブオペコードは非対応とする。ARMv8-M向けJITの物理命令列・レジスタ・ABI・メモリ保護方式はTBDとし、本書で確定しない。
 
 x64で確認したInterpreter/JIT間の4論理引数契約と物理ABIは [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) を参照する。ARMv8-Mでは論理引数の物理配置、callee-save規則、値キャッシュ、トレース境界同期をすべてTBDとする。
 
 ---
 
 ## 2. 非サポート機能 (Explicit Non-Goals)
-<!-- traceability: {Wasm32Only} {GLOBAL_StrictMemoryLimit} -->
-本プロジェクトが対象とするWASM MVPの範囲を明確にするため、以下のWASM拡張仕様はサポート対象外（Non-Goal）とし、ロード時にデコードエラー（`ERR_WASM_UNSUPPORTED_FEATURE`）として拒否する。対象プラットフォームのメモリ容量とは切り離して定める。
+<!-- traceability: {Wasm32Only} {WasmFCSubset} {GLOBAL_StrictMemoryLimit} -->
+本プロジェクトのWASM Core 1.0 MVPと選択拡張の範囲を明確にする。以下の機能はサポート対象外（Non-Goal）とし、ロード時にデコードエラー（`ERR_WASM_UNSUPPORTED_FEATURE`）として拒否する。対象プラットフォームのメモリ容量とは切り離して定める。
 - **Wasm64 / Memory64 / Table64**: 64-bit アドレス空間・テーブル（完全除外 ）。
 - **SIMD / Vector (`0xFD` プレフィックス)**: 128-bit ベクトル命令（本実装の対象外）。
 - **Threads / Atomics (`0xFE` プレフィックス)**: 共有メモリ・アトミック命令（CSP ランデブー通信で代替）。
 - **Garbage Collection (GC) / Reference Types (`externref`, `funcref`)**: 動的GCヒープを排除。
 - **Exception Handling (EH)**: テーブル駆動例外ハンドリング。
 - **Tail Call Optimization (`return_call`, `return_call_indirect`)**: MVP 範囲外。
+- **その他の`0xFC`命令**: `memory.init`、`data.drop`、table操作、および本書で列挙しない全サブオペコード。
 
 ---
 
-## 3. WASM MVP オプコード物理マトリクス
+## 3. WASMオプコード物理マトリクス
 
 ### 3.1 制御フロー命令 (Control Flow)
 <!-- traceability: {ThreadedInterpreter} {JIT_RuntimeAPI_Fallback} {ContextPointerRegister} -->
@@ -93,6 +95,22 @@ x64で確認したInterpreter/JIT間の4論理引数契約と物理ABIは [`jit_
 | `0x3F` | `memory.size`| `[] -> [i32]` | 現在のリニアメモリページ数を返す | TBD | TBD |
 | `0x40` | `memory.grow`| `[i32] -> [i32]` | リニアメモリ拡張 (ランタイムAPI呼出) | TBD | TBD |
 
+### 3.4.1 選択された`0xFC`メモリ操作 ({WasmFCSubset})
+<!-- traceability: {WasmFCSubset} {VDMA} {MemoryBoundaryCheck} -->
+
+命令列では`0xFC`の後にサブオペコードを符号なしLEB128で置く。`memory.copy`は宛先・元のmemory index、`memory.fill`はmemory indexを即値として持ち、いずれも単一メモリのindex `0`だけを受理する。即値の省略、非ゼロindex、または不正LEB128はロード時エラーとする。
+
+| Encoding | 命令名 | スタック遷移 | 意味論と実行経路 |
+| :--- | :--- | :--- | :--- |
+| `0xFC 0x0A` | `memory.copy` | `[i32 dst, i32 src, i32 len] -> []` | 全範囲を先に検査し、重複領域はmemmove順序でCPUコピーする。非重複領域はvDMA適格性を満たす場合に限り同期コピーサービスへ委譲できる。 |
+| `0xFC 0x0B` | `memory.fill` | `[i32 dst, i32 value, i32 len] -> []` | 全範囲を先に検査し、`value`の下位8 bitでCPU書込みする。vDMAオフロードは行わない。 |
+
+`i32`オフセットと長さは符号なし32-bit値として扱う。`offset <= memory_size`かつ`len <= memory_size - offset`を、それぞれの範囲について加算オーバーフローなしで確認してからメモリを変更する。どちらかが範囲外なら命令はWASM out-of-bounds memory trapとなり、対象メモリを部分変更しない。`len == 0`でも各offsetが`memory_size`以下であることを検査する。
+
+`memory.copy`はコピー元・先が重なる場合も、コピー元の元データを保つmemmove意味論を持つ。重複はvDMAに渡さず、方向を選んだCPUコピーを使う。非重複領域のvDMA実行は命令同期であり、転送完了・DMA idle・CPUからの書込可視性を確認してから次命令へ進む。実行環境はDMA開始前に必要なsource cache clean/write-backとmemory barrierを行い、完了後にdestination cache invalidateまたは同等の可視化処理とmemory barrierを行う。ハードウェアが転送を開始できない場合、DMA engineが使用中の場合、または失敗後に停止を確認できた場合はCPUコピーへ戻る。DMA停止または完了データの可視化を確認できない場合はゲストを再開せず、ランタイム実行エラーで停止する。
+
+転送サイズしきい値、DMAアラインメント、到達可能メモリ区間、cache maintenance方式はベンチマークと対象ハードウェア評価で決定する。しきい値未確定時または条件不成立時はCPU経路を選択する。vDMA制御にはguest importの`fireball:host/vdma.start`やvMMIOレジスタを介さず、内部の同期コピーサービスを使う。
+
 ---
 
 ### 3.5 整数算術・論理・比較命令 (Integer Arithmetic, Logic & Comparison)
@@ -141,3 +159,23 @@ ARMv8-Mでの64-bit整数・浮動小数点命令の命令選択、libgcc等の�
 | `0x99`〜`0xA6` | **f64 倍精度浮動小数点** (`f64.add`, `f64.sub`, `f64.mul`, `f64.div`, `f64.sqrt`, `f64.min`, `f64.max`, `f64.ceil/floor/trunc/nearest`) | `[f64, f64] -> [f64]` | C++ `double` / `libgcc` soft-float | TBD | TBD |
 | `0x5B`〜`0x66` | **f32/f64 浮動小数点比較** (`f32/f64.eq`, `ne`, `lt`, `gt`, `le`, `ge`) | `[f*, f*] -> [i32]` | IEEE 754 準拠比較 | TBD | TBD |
 | `0xA7`〜`0xBF` | **型変換・再解釈命令** (`i32.wrap_i64`, `i64.extend_i32_*`, `i32/i64.trunc_f*`, `f32/f64.convert_i*`, `reinterpret`) | `[t1] -> [t2]` | 型変換・ビット再解釈ハンドラ | TBD | TBD |
+
+### 3.7 飽和型浮動小数点→整数変換 ({WasmFCSubset})
+<!-- traceability: {WasmFCSubset} {ThreadedInterpreter} {JIT_RuntimeAPI_Fallback} -->
+
+飽和変換は`0xFC` prefixのサブオペコード`0`〜`7`で符号化される。サブオペコードは符号なしLEB128としてデコードする。スタック上の浮動小数点値を整数へ変換して1値を置き換える。全命令で変換自体はtrapを発生させない。
+
+| Subopcode | 命令名 | スタック遷移 | NaN | 有限値・無限大 |
+| :---: | :--- | :--- | :--- | :--- |
+| `0` | `i32.trunc_sat_f32_s` | `[f32] -> [i32]` | `0` | 0方向に切り捨て、signed 32-bit範囲へ飽和 |
+| `1` | `i32.trunc_sat_f32_u` | `[f32] -> [i32]` | `0` | 0方向に切り捨て、unsigned 32-bit範囲へ飽和 |
+| `2` | `i32.trunc_sat_f64_s` | `[f64] -> [i32]` | `0` | 0方向に切り捨て、signed 32-bit範囲へ飽和 |
+| `3` | `i32.trunc_sat_f64_u` | `[f64] -> [i32]` | `0` | 0方向に切り捨て、unsigned 32-bit範囲へ飽和 |
+| `4` | `i64.trunc_sat_f32_s` | `[f32] -> [i64]` | `0` | 0方向に切り捨て、signed 64-bit範囲へ飽和 |
+| `5` | `i64.trunc_sat_f32_u` | `[f32] -> [i64]` | `0` | 0方向に切り捨て、unsigned 64-bit範囲へ飽和 |
+| `6` | `i64.trunc_sat_f64_s` | `[f64] -> [i64]` | `0` | 0方向に切り捨て、signed 64-bit範囲へ飽和 |
+| `7` | `i64.trunc_sat_f64_u` | `[f64] -> [i64]` | `0` | 0方向に切り捨て、unsigned 64-bit範囲へ飽和 |
+
+signed変換の結果範囲は`[-2^(N-1), 2^(N-1)-1]`、unsigned変換の結果範囲は`[0, 2^N-1]`である。負の非整数値は0方向へ切り捨ててから範囲に収める（例: `-0.5`からunsignedへの変換結果は`0`）。`+∞`と上限超過値は整数上限、`-∞`と下限超過値は整数下限（unsignedでは`0`）となる。符号付き/符号なしは命令指定に従い、NaNのpayloadや浮動小数点例外状態は結果へ伝播しない。
+
+本節のWASM規則はインタープリタとJITの共通契約である。JITが専用の正確な実装を持たない場合はインタープリタハンドラへ委譲する。

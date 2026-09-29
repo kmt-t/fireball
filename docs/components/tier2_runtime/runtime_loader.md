@@ -150,17 +150,15 @@ ROM上の読み取り専用バイト列ビューをラップし、カレント�
     - `load`は同じセクションを再走査し、Elementの関数番号をテーブルへ書き込み、Dataのバイト範囲をリニアメモリへコピーする。各エントリは適用callbackへ直接渡す。
     - `global.get`を使うオフセットは、`prepare`で参照先の制約を検証し、`load`で確定したグローバル値を用いて解決する。
 - **パースイベントと保持領域の分離**: セクションパーサはROMの読み取りと形式検証を担当し、定義の登録・保持方法はパースイベントコールバックへ分離する。通常の固定長メタデータは2パスで確定した容量へ登録し、Element/Dataの初期化定義はイベントとしてストリーミングする。
+- **ランタイム所有アリーナへの2パス割り当て (`{Runtime_BumpAllocator}`)**: ローダは親ランタイムが所有する専用 `bump_allocator` を借用する。第1パスで各セクションの件数を読み、第2パスでその件数と同じ容量の `StaticVector` をアリーナから確保して定義を登録する。エクスポート件数には独立した上限を設けず、全メタデータの合計がアリーナに収まる範囲で受理する。確保に失敗したロードだけを開始時の watermark までロールバックする。成功したモジュールのメタデータはランタイム破棄まで保持し、個別アンロードは提供しない。
 - **シンボル検索とハッシュ衝突完全排除 (`GOTCHA-LOAD-01`, `META_BinarySearch`)**: {GOTCHA-LOAD-01} <!-- definition: {GOTCHA-LOAD-01} -->
   シンボル名ハッシュ（FNV-1a 32-bit）をキーとして `export_storage`から借用した`radix_binary_tree_view`を、粗索引 $O(1)$ と狭い区間の二分探索 $O(\log n)$ の組み合わせで探索する。候補が得られた後はROM上の元の名前を照合するため、照合込みの worst-case は $O(1) + O(\log n) + O(L)$（$L$ は名前長）である。
   **設計理由と不変条件**: 32-bit ハッシュ値による探索のみで関数解決を完了させると、万一のハッシュ衝突発生時に誤った関数がディスパッチされ、壊滅的な誤動作を引き起こす。そのため、ハッシュ探索で候補エントリがヒットした際は必ず ROM 上の元のシンボル名文字列と 1 回完全一致照合を行い、ハッシュ衝突によるシンボル誤認を完全に排除する。
 - **インポートテーブル検索と依存関係解決 (resolve_imports)**: インポートテーブルの各エントリに対し、インポート先モジュール名・フィールド名のハッシュ値で対象モジュールの `export_storage`から借用した`radix_binary_tree_view`を探索する。候補区間の索引探索は $O(1) + O(\log n)$、ROM上の元文字列による衝突照合を含む worst-case は $O(1) + O(\log n) + O(L)$ であり、照合後に依存関係を解決してモジュールを実行可能状態へ遷移させる。
 - **ファイル位置逆引き (lookup_by_file_offset)**: 任意のファイル内バイトオフセットから `entity_offset_storage`の借用`radix_binary_tree_view`を検索し、そのオフセットを包含するデコード済みエンティティ（セクション、関数、データ等）を即座に特定・返却する。
 - **メモリセクション検証**: Memory Sectionをパースし、論理ページサイズ（64KB単位）と初期ページ数を取得する。初期ページ数を`FB_CONF_MAX_WASM_PAGES`と照合する。WASMリニアメモリの物理バック方式とARMv8-Mの容量対応はTBDとする。
-- **アンロードと専用バンプアロケータ一括回収 (`GOTCHA-LOAD-03`, `OneRuntimeOneGuest`, `{Runtime_BumpAllocator}`)**: {GOTCHA-LOAD-03} <!-- definition: {GOTCHA-LOAD-03} -->
-  `unload` はモジュールをアンロードし、親ランタイムの `bump_allocator` を一括リセットまたは返還する。
-  **設計理由と不変条件**: 1ランタイム1ゲストの直交分離原則（`OneRuntimeOneGuest`）により、各ランタイムは専用バンプアロケータアリーナ（`{Runtime_BumpAllocator}`）を所有する。この分離により、ランタイム間でモジュールの生存期間が競合しない。
-  単一ランタイム内では、最大 `FB_CONF_MAX_MODULES` 個のモジュール（メインアプリとライブラリ）が同じアリーナを共有できる。個々のモジュールを完全に回収するには、ロード順の逆順（LIFO）でアンロードする必要がある。詳細は後述の `unload` インターフェースを参照する。
-  ランタイム全体を破棄する場合は、モジュールの有無やロード順に関係なく、アリーナを $O(1)$ で一括リセット・解放できる。単一ランタイム内で検証エラーが発生した場合は、`save()` / `restore()` でそのアリーナだけを即時ロールバックする。断片化は発生しない。
+- **ランタイム単位のメモリ寿命 (`OneRuntimeOneGuest`, `{Runtime_BumpAllocator}`)**:
+  各ランタイムは専用バンプアロケータアリーナを所有し、ロードした全モジュールのメタデータをそこへ保持する。モジュール単位のアリーナ巻き戻しやアンロードはサポートしない。モジュール終了後もメタデータはランタイム破棄まで有効であり、破棄時にアリーナ全体を $O(1)$ でリセット・返却する。ロード中に検証または確保が失敗した場合に限り、そのロード開始時の watermark へロールバックする。
 - **基本ブロック適格性静的評価 & JIT 候補ビットマップ生成 (`{JIT_StaticBenefitScoring}`, `{JIT_CandidateBitmap}`)**:
   WASM コードセクションを走査し、各関数の基本ブロック（`BasicBlock`）を調べる。ROM 上の `opcode_benefit_table`（`BitView<4>`、128B）から、各命令の機械語短縮スコアを取得する。スコアは `int4_t` の -8〜+7 である。1スコアは約2命令の短縮に相当し、分岐命令は8命令として換算する。各ブロックのスコアを符号付き整数（`int`）へ累積加算する。
 
@@ -172,8 +170,9 @@ ROM上の読み取り専用バイト列ビューをラップし、カレント�
   対象外ブロックでは、インタープリタ実行ループの `HotspotBitmap.touch(pc)` と履歴記録を完全に省く。この処理は $O(1)$ で不要になる。これによりキャッシュ汚染とスラッシングを防ぐ。
 
 ##### 命令別短縮利得スコア定義台帳 (`opcode_benefit_table` / `int4_t`)
-<!-- traceability: {JIT_StaticBenefitScoring} {JIT_CandidateBitmap} -->
+<!-- traceability: {JIT_StaticBenefitScoring} {JIT_CandidateBitmap} {WasmFCSubset} -->
 ROM 上に配置される 128 バイトルックアップテーブル（256 オプコード $\times$ 4-bit 符号付き整数 `int4_t`: `-8`〜`+7`）のスコア配分表を以下に定める。スコアは命令単体の実行時間ではなく、インタープリタ経路をJIT経路へ置き換えたときの期待利得を表す。インライン展開は高い正の値、JITからCヘルパーへ直接末尾遷移する命令は境界コストを差し引いた正の値、インタープリタへ戻る命令は負の値とする。構文デリミタは中立（0）、未サポート・トラップ命令は最大ペナルティ（-8）となる。
+`0xFC`はサブオペコードを持つprefix命令だが、本テーブルは先頭opcode byteで引く256要素のため、サポートする全サブオペコード（`0`〜`7`、`10`、`11`）へ共通のスコアを適用する。未対応サブオペコードはLoaderが先に拒否するので候補スコア表へ渡さない。
 
 | スコア (`int4_t`) | 換算短縮命令数 | 分類と特性 | 該当 WASM 命令 |
 | :---: | :---: | :--- | :--- |
@@ -184,7 +183,7 @@ ROM 上に配置される 128 バイトルックアップテーブル（256 オ�
 | **`+3`** | 約 +6〜7 命令相当の正味利得 | 命令別Cヘルパーへの直接末尾遷移。JITコードには演算を埋め込まず、共有スタックを同期してコンテキストの関数ポインタへジャンプする | `i64.add` (`0x7C`), `i64.sub` (`0x7D`), `i64.mul` (`0x7E`), `f32.add` (`0x92`), `f32.sub` (`0x93`), `f32.mul` (`0x94`), `f32.div` (`0x95`), `f64.add` (`0xA0`), `f64.sub` (`0xA1`), `f64.mul` (`0xA2`), `f64.div` (`0xA3`) |
 | **`0`** | 0 命令短縮 | 構文デリミタ（0バイト消去・トレースヘッダ埋め込みにより加点もペナルティもなし） | `block` (`0x02`), `loop` (`0x03`), `else` (`0x05`), `end` (`0x0B`) |
 | **`-1`** | 約 -2 命令ペナルティ | 真のインタープリタ委譲・関数間コール・動的ジャンプ（フレーム生成・境界コスト） | `call` (`0x10`), `call_indirect` (`0x11`), `br_table` (`0x0E`) |
-| **`-2`** | 約 -4 命令ペナルティ | OS システムサービス・メモリ拡張・一括操作 | `memory.grow` (`0x40`), `memory.copy` (`0xFC 0x0A`), `memory.fill` (`0xFC 0x0B`) |
+| **`-2`** | 約 -4 命令ペナルティ | OS システムサービス・メモリ拡張・一括操作・Interpreter委譲 | `memory.grow` (`0x40`), `i32/i64.trunc_sat_f32/f64_{s,u}` (`0xFC 0x00`〜`0x07`), `memory.copy` (`0xFC 0x0A`), `memory.fill` (`0xFC 0x0B`) |
 | **`-8` (MIN)** | 最大ペナルティ | トラップ命令・未サポート・ハードウェア非対応演算（JIT 化不適格） | `unreachable` (`0x00`), `i32.popcnt` (`0x69`), `i64.div_*`, `i64.rem_*`, その他の `f32.*` / `f64.*`、未定義オプコード |
 
 
@@ -239,15 +238,15 @@ flowchart TD
 
 ### 4.2 メモリ制約
 <!-- traceability: {META_ConfigurableSystem} -->
-`module_view` と関連構造の最大サイズ。すべてコンパイル時固定。
+`module_view` と関連構造の容量制約を示す。個別件数に上限がある配列と、親ランタイムの固定長アリーナ容量で上限が決まる配列がある。
 
 | 項目 | 定数名 | 既定値 | 根拠 |
 | :--- | :--- | :--- | :--- |
 | 最大モジュール数 | `FB_CONF_MAX_MODULES` | 4 | 単一アプリ + 3ライブラリ |
 | 最大関数数/モジュール | `FB_CONF_MAX_FUNCTIONS` | 256 | 典型的な組み込みWASMアプリ |
-| 最大エクスポート数/モジュール | `FB_CONF_MAX_EXPORTS` | 64 | エクスポート名ソート済み配列 |
 | 最大グローバル数/モジュール | `FB_CONF_MAX_GLOBALS` | 32 | グローバルアクセサ配列 |
 | 最大インポート数/モジュール | `FB_CONF_MAX_IMPORTS` | 32 | インポート解決テーブル |
+| エクスポート数/モジュール | 個別上限なし | 規定しない | 第1パスで実数を数え、第2パスで同数の `StaticVector` を確保する。受理数は全モジュールが共有するランタイムアリーナ容量で決まる |
 
 ### 4.3 軽量検証スコープ
 <!-- traceability: {ZeroCopyIndexing} {META_AccessDictionary} {META_ConfigurableSystem} -->
@@ -272,10 +271,9 @@ stateDiagram-v2
     Verifying --> Ready: verify_ok
     Verifying --> Error: verify_fail
     Parsing --> Error: parse_fail
-    Ready --> Idle: unload
 ```
 
-形式検証モデルの状態との対応は、`Idle` = `s_rom_unparsed`、`Parsing` = `s_parsing`/`s_parsed_unverified`、`Verifying` = `s_verifying`、`Ready` = `s_verified_ok`/`s_executable`、`Error` = `s_verified_bad`/`s_rollback_done` である。`s_executing_unverified`、`s_stuck_verifying`、`s_leaked_bump` は `guards=False` でのみ到達する違反状態として、図の正常系には含めない。
+`Ready` になったモジュールはランタイムの寿命中保持される。ランタイム破棄はローダ状態遷移ではなく、親ランタイムが所有アリーナとローダをまとめて破棄する。形式検証モデルの状態との対応は、`Idle` = `s_rom_unparsed`、`Parsing` = `s_parsing`/`s_parsed_unverified`、`Verifying` = `s_verifying`、`Ready` = `s_verified_ok`/`s_executable`、`Error` = `s_verified_bad`/`s_rollback_done` である。`s_executing_unverified`、`s_stuck_verifying`、`s_leaked_bump` は `guards=False` でのみ到達する違反状態として、図の正常系には含めない。
 
 ### 4.5 内部シーケンス
 <!-- traceability: {ZeroCopyIndexing} {META_AccessDictionary} {META_ConfigurableSystem} {LightweightVerifier} -->
@@ -333,16 +331,6 @@ sequenceDiagram
 | シグネチャ | `resolve-imports(module: wasm-module-view) -> operation-result` |
 | 事前条件 | 依存するすべてのモジュールが既にロード（リポジトリに登録）されていること。 |
 | 事後条件 | 成功時、モジュールが実行可能状態になる。 |
-
-#### アンロード（unload）
-
-| 項目 | 内容 |
-| :--- | :--- |
-| 機能概要 | モジュールをレジストリから削除し、関連リソースを解放する。 |
-| シグネチャ | `unload(module: wasm-module-view) -> operation-result` |
-| 事前条件 | 対象モジュールがロード済みであること。 |
-| 事後条件 | モジュールに関連するすべての管理リソースが解放される。 |
-| 補足 | バンプアロケータを使用しているため、完全なメモリ回収はロードの逆順で行う必要がある。 |
 
 #### 検索（lookup）
 

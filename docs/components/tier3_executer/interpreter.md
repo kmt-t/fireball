@@ -3,8 +3,11 @@
      formal: ../tier2_runtime/formal/vsoc_state_model.py
      formal: formal/interpreter_stack_model.py
      formal: formal/interpreter_control_flow_model.py
+     formal: ../../specs/formal/wasm_bulk_memory_model.py
      concept: concepts/interpreter_concept.py
+     concept: concepts/bulk_memory_concept.py
      test: docs/qa/tier3_executer/interpreter_test_spec.md
+     test: docs/qa/specs/wasm_instruction_set_test_spec.md
 -->
 
 ## 1. コンセプト
@@ -329,6 +332,12 @@ x64ではトレースが共有オペランド領域へ状態を書き戻す。AR
 #### WASM インタープリタのコンセプトコード
 実行可能な概念モデルは [`interpreter_concept.py`](docs/components/tier3_executer/concepts/interpreter_concept.py) に分離する。本文書には実装言語のコードを埋め込まず、WASM実行契約と固定レイアウトのみを規定する。
 
+#### 選択された`0xFC`命令 ({WasmFCSubset})
+<!-- traceability: {WasmFCSubset} {MemoryBoundaryCheck} {JIT_RuntimeAPI_Fallback} -->
+Interpreterは`0xFC`の後続サブオペコードを符号なしLEB128で読み、対応表にある`0`〜`7`、`10`、`11`だけを実行する。その他の値はロード時拒否を前提とし、実行時に汎用フォールバック先として扱わない。飽和型数値変換は本書ではなく [`wasm_instruction_set.md`](docs/specs/wasm_instruction_set.md) の規則に従う。JITが同じ変換を直接生成しない場合は同じInterpreter handlerへ委譲する。
+
+`memory.copy`と`memory.fill`は全オペランドを確定した後、宛先とコピー元（copy時）の全範囲を加算オーバーフローなしで検査する。範囲外ならWASM memory trapを返し、メモリとオペランドstackを部分更新しない。`memory.copy`は重複範囲をCPU memmove経路で処理する。非重複の場合に限りvSoCの同期コピーサービスを呼び出せる。`memory.fill`は値の下位byteをCPUで反復書込みし、vDMAを呼ばない。概念モデルは [`bulk_memory_concept.py`](docs/components/tier3_executer/concepts/bulk_memory_concept.py) に分離する。
+
 #### 統合 Tiered ランタイムエンジン・コンセプトコード
 実行経路の統合検証は、本コンポーネントのテスト仕様書と [`vsoc_state_model.py`](docs/components/tier2_runtime/formal/vsoc_state_model.py) を参照する。ARMv8-Mの物理ABIとメモリ保護はTBDである。
 
@@ -375,6 +384,31 @@ sequenceDiagram
         D-->>I: continue
     end
     I-->>V: return Result (SUCCESS / TRAP)
+```
+
+#### `memory.copy`の同期vDMA委譲
+<!-- traceability: {WasmFCSubset} {VDMA} {MemoryBoundaryCheck} -->
+```mermaid
+sequenceDiagram
+    participant I as Interpreter
+    participant V as vSoC copy service
+    participant D as vDMA
+    participant M as Guest linear memory
+
+    I->>V: copy(dst, src, len)
+    V->>V: dst/src全範囲を事前検証
+    alt 範囲外
+        V-->>I: WASM memory trap（メモリ未変更）
+    else 重複範囲・しきい値未満・DMA不適格
+        V->>M: CPU memmove copy
+        V-->>I: 完了
+    else 非重複かつDMA適格
+        V->>D: 同一リニアメモリ間copy開始
+        D->>M: 転送
+        D-->>V: 完了、DMA idle
+        V-->>I: 完了
+    end
+    Note over I,V: 完了確認後にのみ次のWASM命令へ進む
 ```
 
 ## 5. インターフェース定義
@@ -448,6 +482,7 @@ sequenceDiagram
 | **JIT Compiler** | ホットスポット情報の共有と実行エンジンの切り替え | `execution_context`, 履歴バッファ |
 | **Debugger** | インタープリタ実行境界でのブレークポイント判定と実行状態の可視化 | `execution_context` |
 | **vSoC** | 実行制御（step）と協調型マルチタスク（yield）の管理 | `execution_context` |
+| **vSoC** | 選択`0xFC`メモリ命令の境界検査と`memory.copy`同期実行サービス | `memory.copy` / `memory.fill` |
 
 ## 6. 制約達成の方策
 

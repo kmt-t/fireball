@@ -1,8 +1,9 @@
 # JIT コンパイラ コンポーネント設計書 {VERIFY_FORMAL} {VERIFY_LLM} {VERIFY_BENCHMARK}
 <!-- evidence:
      formal: formal/jit_cache_model.py
-     benchmark: experiments/pysim/benchmarks/jit/bench_jit.py
+     benchmark: ../../../experiments/pysim/benchmarks/jit/bench_jit.py
      test: docs/qa/tier3_executer/jit_compiler_test_spec.md
+     test: docs/qa/specs/wasm_instruction_set_test_spec.md
 -->
 
 ## 1. コンセプト
@@ -80,13 +81,16 @@ JIT トレース内にインライン展開せず、トレース境界でイン�
 | | `0x11` | `call_indirect` | テーブル索引、型シグネチャ一致検査、動的ターゲット解決を伴うためインタープリタへ委譲 |
 | **動的分岐** | `0x0E` | `br_table` | 可変長ジャンプターゲットテーブル（ベクトル）の動的インデックス検索を伴うため委譲 |
 | **OS・メモリ管理** | `0x40` | `memory.grow` | 線形メモリ容量変更と実行環境更新を伴うシステムサービス呼出のため委譲 |
-| | `0xFC 0x0A` | `memory.copy` | バッファ重なり検査、メモリコピーランタイム呼び出しのため委譲 |
-| | `0xFC 0x0B` | `memory.fill` | メモリフィルランタイム呼び出しのため委譲 |
+| | `0xFC 0x00`〜`0xFC 0x07` | `i32/i64.trunc_sat_f32/f64_{s,u}` | saturating変換のNaN・範囲端意味論をInterpreter共通契約で処理するため委譲 |
+| | `0xFC 0x0A` | `memory.copy` | 全範囲検査とmemmove規則を共有実装へ委譲。vDMAは条件を満たす非重複範囲だけを同期実行する |
+| | `0xFC 0x0B` | `memory.fill` | 全範囲検査を含むInterpreter共通実装へ委譲し、CPU経路で実行する |
 | **Cヘルパー演算** | `0x7C`〜`0x7E` | `i64.add` / `i64.sub` / `i64.mul` | 各命令固有の64ビット整数引数契約へ委譲 |
 | | `0x92`〜`0x95` | `f32.add` / `f32.sub` / `f32.mul` / `f32.div` | 各命令固有の32ビット浮動小数点引数契約へ委譲 |
 | | `0xA0`〜`0xA3` | `f64.add` / `f64.sub` / `f64.mul` / `f64.div` | 各命令固有の64ビット浮動小数点引数契約へ委譲 |
 | | `0x6D`〜`0x70` | `i32.div_s` / `i32.div_u` / `i32.rem_s` / `i32.rem_u` | 2個の32ビット整数引数と結果領域ポインタを持つ関数契約へ委譲 |
 | **インタープリタ境界** | - | `i64.div_*`, `rem_*` | ゼロ除算・最小値オーバーフローのトラップ結果を返すABIを定義するまでインタープリタへ委譲 |
+
+`0xFC`は`wasm_instruction_set.md`が列挙するサブオペコードだけをロード時に受理する。未サポートサブオペコードはJITフォールバック扱いにせず、ロード時に拒否する（{WasmFCSubset}）。
 
 **ABI 規約と境界チェック・バックパッチング (`GOTCHA-JITC-01`, `03`〜`05`)**:
 - **スタック状態の同期**: JITトレース内では対象ABIが定める値保持方法を正本として演算する。基本ブロック終端、インタープリタ境界、トラップ時には共有オペランド領域と実行コンテキストを対象ABIの順序で同期する。キャッシュ値の破棄やダミー退避は禁止する。 `{ADR_TosCacheAsymmetry}` `{ExecutionContext_Layout}`

@@ -512,3 +512,61 @@ AO-Benchは全スイート実行時の1回に加え、`uv run --offline --no-syn
 | 中央値 | 5,733.03 | 6,323.02 | 1.103x |
 
 この3試行ではHybrid JITがInterpreterより約10%遅かった。9月24日の別実装・別実行では逆方向の値だったため、旧値との単純な増減評価はしない。実行統計は無効であり、JIT trace遷移数とJIT実行割合は未取得である。
+
+### 6.13 Clang再ビルド後の個別ベンチマーク測定（2026-09-29）
+<!-- traceability: {FastAddressCheck} {DirectMappedJIT16} {JIT_CopyAndPatch} {JIT_OldestOnly_Promote} {JIT_CardAgingSweep} -->
+
+AMD Ryzen 5 5500GT、Linux 7.0.0-34-generic x86-64、CPython 3.14.6、uv 0.12.19で測定した。実行前にInterpreter拡張、JIT trace拡張、FastCache拡張をClang 21.1.8で再ビルドした。Interpreter実行統計は無効、JIT hotspot profilingは有効、FastCacheは16スロット構成である。
+
+CPU 2へ固定し、エイジングを除く5系統とFastCache比較を独立プロセスで各3回実行した。表の値はプロセス間中央値であり、括弧内に最小値と最大値を示す。JIT算術ループは各プロセス内でも3回測定し、その中央値を使った。FastCacheは各プロセスで1,000,000 hitを5ラウンド測定した。
+
+Clang再ビルド後に`run_all.py`も実行したが、JITカードエイジングで停止した。当時の実装では、wasmtime 49.0.0が生成したWASMの208個のexportが`FB_CONF_MAX_EXPORTS=64`を超えていた。後続のローダ設計変更で固定件数上限をなくし、アリーナ容量で受理数を制約する方式へ移行した。エイジング系はこの報告時点では未計測である。
+
+| 系統 | 指標 | 中央値（3プロセスの範囲） |
+| :--- | :--- | :--- |
+| リニアメモリ | 32-bit 読み書き | 9.02 M ops/s（8.68–9.31） |
+| リニアメモリ | 8-bit / 16-bit 読み書き | 32.09 / 9.24 M ops/s（28.09–33.02 / 8.64–9.25） |
+| リニアメモリ | 境界検査 / vMMIO RAMバイパス | 15.82 / 3.40 M ops/s（13.80–15.91 / 3.33–3.49） |
+| リニアメモリ | vMMIO RAMバイパス帯域 | 12.97 MB/s（12.72–13.30） |
+| vMMIO | TLB hit / FlatMap walk | 1.05 / 0.92 M ops/s（1.00–1.07 / 0.92–0.95） |
+| vMMIO | hit / walk 比 | 1.13x（1.08–1.14） |
+| vMMIO | 静的デバイス dispatch / RBAC 検査 | 1.32 / 1.27 M ops/s（1.30–1.33 / 1.24–1.27） |
+| JIT | Copy-and-Patchコンパイル | 53,430 traces/s、18.72 µs/trace（51,921–55,073 traces/s、18.16–19.26 µs/trace） |
+| JIT | カード検査 / 疎なentry検索 | 615.9 / 508.0 ns（593.7–616.5 / 490.6–511.1） |
+| JIT FastCache | C++ FastCache / Python StaticVector hit | 62.6 / 176.8 ns（62.5–63.1 / 175.5–184.0）、比0.354 |
+| JIT | 算術ループ100,000反復 | Python 4,936.03 ms / C++ Interpreter 15.36 ms / Hybrid JIT 30.71 ms |
+| JITキャッシュ | 小 / 中 / 大作業集合のhit rate | 100.00% / 100.00% / 92.44% |
+| JITキャッシュ | 追い出し処理速度 | 165,759 evictions/s（159,696–166,402） |
+| AO-Bench | Interpreter / Hybrid JIT | 6,255.22 / 6,643.39 ms（6,174.75–6,514.52 / 6,574.33–6,694.15） |
+
+算術ループの3経路はすべて`704,982,704`を返した。Hybrid JITはPython handlerより160.73倍速く、C++ Interpreterより約2.00倍の時間を要した。InterpreterとJITのネイティブ拡張は通常設定でビルドしたため、JIT trace起動数とdispatcher遷移数は取得していない。
+
+JIT FastCacheのC++経路とPython経路は毎回同じtrace objectを返した。C++経路のhit時間はPython経路の0.354倍だった。この合成測定は固定PCのhit処理だけを比較し、JIT全体の速度差を示す値ではない。
+
+AO-Benchの描画結果は毎回InterpreterとHybrid JITで一致した。Hybrid JITはInterpreterより約1.06倍の時間を要した。JIT cacheのActiveバンクには各回4トレースが存在した。
+
+この環境には`perf`、Intel VTune、AMD uProfがなく、`perf_event_paranoid`は4だった。cycles/opcodeと外部ホットスポットプロファイルは未取得である。6.12節はCPU固定なしの統合実行であり、実行条件が異なるため、今回の数値との差を性能変化として扱わない。
+
+再ビルドと測定では`UV_CACHE_DIR=/tmp/fireball-uv-cache`、`UV_OFFLINE=true`、`UV_NO_SYNC=true`を設定した。ビルドには次のスクリプトを使った。
+
+```bash
+bash experiments/pysim/tier3_executer/interpreter/build_native.sh
+bash experiments/pysim/tier3_executer/jit/build_native.sh
+```
+
+測定ログは`/tmp/pysim_benchmark_20260929_rebuilt_1.log`から`rebuilt_3.log`に保存した。統合ランナーの失敗ログは`/tmp/pysim_benchmark_20260929_rebuilt_run_all.log`にある。
+
+### 6.14 エクスポート件数上限の除去後に行ったJITエイジング測定（2026-09-29）
+<!-- traceability: {JIT_CardAgingSweep} {Runtime_BumpAllocator} -->
+
+ローダの固定エクスポート数上限を削除し、セクション件数を先に走査して必要な `StaticVector` を親ランタイムの専用バンプアリーナから確保する方式へ変更した。PySIMの既定アリーナは32 KiBである。ベンチマークでは同じアリーナをパーサーと `RuntimeEngine` に渡した。wasmtime 49.0.0が生成する8 hot + 200 cold関数（208 export）のワークロードを使用し、CPU 2へ固定して各variantを3回実行した。以下はvariant内の中央値である。
+
+| Variant | Compile requests | Evictions | Rotations | Time (ms) | Compile (ms) | Aging (ms) |
+| :--- | ---: | ---: | ---: | ---: | ---: | ---: |
+| hot only (ideal) | 16 | 0 | 0 | 187 | 0.6 | 0.00 |
+| no aging | 741 | 693 | 58 | 489 | 21.6 | 0.00 |
+| aging U=1 O=4 | 656 | 608 | 50 | 460 | 18.0 | 0.81 |
+| aging U=2 O=8 (config default) | 656 | 605 | 50 | 462 | 19.4 | 1.37 |
+| aging U=8 O=32 | 257 | 210 | 20 | 405 | 8.3 | 1.83 |
+
+設定既定値では `no aging` と比べてcompile requestsが11.5%減り、実行時間は5.5%短縮した。エイジング処理は1stepあたり27.3 µsで、このvariantの実行時間の0.30%を占めた。全variantの結果checksumは一致し、ベンチマーク内の決定性条件を満たした。JIT実行割合はネイティブ実行統計が無効なため取得していない。

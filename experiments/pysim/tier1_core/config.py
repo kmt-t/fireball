@@ -27,7 +27,8 @@ FB_CONF_JIT_AGING_STEP_SCAN_BYTES: int = 8
 FB_CONF_MAX_TYPES: int = 256
 FB_CONF_MAX_IMPORTS: int = 32
 FB_CONF_MAX_FUNCTIONS: int = 256
-FB_CONF_MAX_EXPORTS: int = 64
+# PySIM runtime-owned bump arena capacity; this is not a target RAM budget.
+FB_CONF_RUNTIME_BUMP_ARENA_BYTES: int = 32_768
 FB_CONF_MAX_GLOBALS: int = 32
 FB_CONF_MAX_TABLES: int = 16
 FB_CONF_MAX_MEMORIES: int = 4

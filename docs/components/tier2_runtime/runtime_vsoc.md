@@ -2,16 +2,18 @@
 <!-- evidence:
      formal: formal/vsoc_state_model.py
      formal: formal/vsoc_cache_coherency_model.py
+     formal: ../../specs/formal/wasm_bulk_memory_model.py
      wit: wit/runtime_vsoc_contract.wit
      test: docs/qa/tier2_runtime/runtime_vsoc_test_spec.md
+     benchmark: benchmarks/linear_memory_bench_spec.md
 -->
 
 ## 1. コンセプト
-<!-- traceability: {LowLatencyJIT} {MemoryIsolation} {META_FaultIsolation} {EnvironmentPointer} {OneRuntimeOneGuest} {Runtime_BumpAllocator} -->
+<!-- traceability: {LowLatencyJIT} {MemoryIsolation} {META_FaultIsolation} {EnvironmentPointer} {OneRuntimeOneGuest} {Runtime_BumpAllocator} {WasmFCSubset} {VDMA} -->
 vSoC (Virtual System-on-Chip) は WASM 実行環境の統合マネージャである。Loader、Interpreter、JIT、vMMIO、Debugger を統括して実行制御を行う。
 各サブコンポーネントを統合する環境としての役割を担う。`execution_context` 内のリニアメモリ情報やグローバル変数テーブル（`vsoc_runtime` 領域）を介して実行環境を提供する。
 本システムは **1ランタイム1ゲストの直交分離原則** を採用する。各 vSoC インスタンスは厳密に 1 つのゲストモジュールのみを担当する。
-各ランタイムは**自身専用の固定長データバンプアロケータ**を所有する。モジュール内の全システムコンテナストレージ（RAM/XN）の確保を一元管理する。アンロード時にはこれらを $O(1)$ で一括リセットし、メモリ断片化を根絶する。
+各ランタイムは**自身専用の固定長データバンプアロケータ**を所有する。ロードした全モジュールのシステムコンテナストレージ（RAM/XN）の確保を一元管理する。モジュールはランタイムと同じ期間保持し、個別アンロードは行わない。ランタイム破棄時にアリーナ全体を $O(1)$ で一括リセットし、メモリ断片化を根絶する。
 JIT ネイティブコードキャッシュ（3-Bank）は、Tier 3のJITランタイムが専用のコード領域から**専用の JIT コードアロケータ**により確保する。Tier 2 vSoCは [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) が定義する契約を介してJIT実行サービスを注入する。具体的なInterpreter/JIT切替とWASM継続処理はTier 3 `RuntimeEngine` が担い、キャッシュ・ホットスポット・コンパイル待ち列の状態はTier 3実装が所有する。x64参照構成では実行可能バッファの書込・実行権限を切り替える。ARMv8-Mの物理保護方式、領域配置、同期処理はすべてTBDとする。
 
 ## 2. アーキテクチャ分類
@@ -44,6 +46,8 @@ graph TD
         Interp["interpreter"]
         JIT["jit_compiler"]
         JITRuntime["jit_runtime (Tier 3)"]
+        BulkCopy["linear-memory copy service"]
+        VDMA["vDMA synchronous transfer"]
         vMMIO["vmmio_controller"]
         Debug["debugger"]
     end
@@ -55,6 +59,10 @@ graph TD
     Harness -- points to --> vMMIO
     Harness -- points to --> Debug
     Harness -- operates on --> Context
+    Harness -- provides --> BulkCopy
+    Interp -- memory.copy --> BulkCopy
+    BulkCopy -- eligible non-overlap copy --> VDMA
+    BulkCopy -- overlap / fallback --> Context
     Context -- owns --> Alloc
     Context -- owns --> JitAlloc
     Loader -- allocates containers from --> Alloc
@@ -74,6 +82,7 @@ graph TD
 | インタープリタ | WASMバイトコードを逐次実行するエンジンへの参照。 | `Interpreter*` |
 | JITランタイム契約 | Tier 3のホットスポット管理・トレース検索・キャッシュ無効化を呼び出す契約への参照。 | `JitRuntime*` |
 | JITコンパイラ | ホットスポットをネイティブコードに変換するTier 3実装への参照。 | `JitCompiler*` |
+| リニアメモリコピーサービス | `memory.copy`の範囲検査、CPUコピー、同期vDMA転送を選択する内部サービス。 | `LinearMemoryCopyService*` |
 | デバッガ | RSPプロトコルを介したデバッグ機能を提供するコンポーネントへの参照。 | `Debugger*` |
 | vMMIO | 仮想的なメモリマップドI/Oを制御するコンポーネントへの参照。 | `VmmioController*` |
 
@@ -86,7 +95,7 @@ vSoC全体の可変な実行時状態を保持する構造体。
 | 割り込みイベント状態 | COOSから受け取った固定5ワードの`interrupt-event`とvIRQ配送状態。 | `interrupt_event` + 固定長状態 |
 | JITランタイム契約 | Tier 3のJIT実行サービスへの参照。 | JITランタイム契約型 |
 | WASMモジュール参照 | 現在ロードされているWASMモジュールのインスタンスへのポインタ。 | `WasmModule*` |
-| 専用データバンプアロケータ | モジュール内の全システムコンテナストレージ（RAM/XN）を切り出す専用アロケータ。アンロード時に一括リセットされる。 | `bump_allocator` インスタンス |
+| 専用データバンプアロケータ | ランタイム内の全モジュールのシステムコンテナストレージ（RAM/XN）を切り出す専用アロケータ。ランタイム破棄時に一括リセットされる。 | `bump_allocator` インスタンス |
 | JITコードアロケータ | 選択されたJIT実行構成のコード領域から3-Bankコードキャッシュを切り出す専用アロケータ。x64参照構成の実行可能バッファ契約は [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) に従い、ARMv8-Mの物理割当と保護方式はTBD。 | `jit_code_allocator` 構造体 |
 
 #### vSoCランタイム環境
@@ -135,19 +144,20 @@ vSoC コアエンジンの実行委譲、協調イールド、および外部介
 | **LOOP後方分岐yield** | C++ branch handlerが取得済みLOOP後方辺を処理した時 | handlerが共通contextの回数を増やす。共有しきい値に達するまではC++ dispatcherが続行し、到達時にyield statusを返す | Interpreter単独とHybrid JITが同じ回数条件で協調境界へ戻る。割り込みイベントはCOOS境界で処理する {GOTCHA-VSOC-02} <!-- definition: {GOTCHA-VSOC-02} --> |
 | **x64 trace chain** | 互換な直線後続traceがキャッシュ常駐時 | trace末尾が共通コード領域のchain dispatcherへ進み、dispatcherがheaderのtarget bodyへtail-jumpする | chain dispatcherはopcodeを判定せず、C++ Interpreter handlerの分岐処理を迂回しない |
 | **デバッガとJITの構成排他** | デバッグ構成の合成時 | Tier 2の構成器は `Interpreter + Debugger` を選択し、`Debugger + JIT` の同時構成を `assert` で拒否する | デバッガがJITキャッシュを管理する経路を生成しない |
-| **1ランタイム1ゲスト・専用アリーナ** | ランタイム生成時およびアンロード時 | データと実行可能コード用の領域を別のアロケータで管理し、破棄時に所有する領域を一括返却する | 領域の寿命と所有権をランタイム単位で分離する。ARMv8-Mの物理配置と保護方式はTBD |
+| **1ランタイム1ゲスト・専用アリーナ** | ランタイム生成時および破棄時 | データと実行可能コード用の領域を別のアロケータで管理し、ランタイム破棄時に所有する領域を一括返却する | 領域の寿命と所有権をランタイム単位で分離する。ARMv8-Mの物理配置と保護方式はTBD |
+| **選択`0xFC`メモリ命令** | `memory.copy` / `memory.fill`実行時 | 全アクセス範囲を先に検査する。copyは重複時・不適格時・vDMA使用中にCPUで処理し、非重複かつサイズ・アラインメント・到達性・cache整合性条件を満たす場合だけ同期vDMAを選択する。fillはCPUで処理する | 範囲外の部分更新を許さず、DMA idleとCPU可視性の確認前にゲストを再開しない。サイズしきい値は[`linear_memory_bench_spec.md`](docs/components/tier2_runtime/benchmarks/linear_memory_bench_spec.md)で決定する |
 
 - **1ランタイム1ゲストのライフサイクル管理と専用アリーナ (`OneRuntimeOneGuest`)**:
   vSoC インスタンス生成時、メモリマネージャからデータ用領域と実行可能コード用領域を別々に取得し、専用の `bump_allocator` と `jit_code_allocator` を初期化する。具体的な物理配置と保護方式は対象プラットフォームで定める。ARMv8-MはTBDである。
   WASM ローダはデータ用バンプアロケータを受け取り、モジュール内の全システムコンテナストレージ（`ReadOnlyRadixBinaryTreeStorage`, `MutableBitStorage` 等）を順次切り出す。
   一方、JIT コンパイラは実行可能コード領域から専用アロケータを用いてネイティブトレースを確保する。x64では書込み権限と実行権限を同時に付与せず、W^Xを維持する。ARMv8-Mの物理配置と保護方式はTBDである。
-  モジュール終了・アンロード時は、JIT キャッシュを無効化（3-Bank Flush）する。その上でバンプアロケータのアリーナごと $O(1)$ で一括リセットして返還し、JIT コードセクションも解放する。
+  ゲスト実行終了後もロード済みモジュールのメタデータはランタイム内に保持する。ランタイム破棄時にJIT キャッシュを無効化（3-Bank Flush）し、データバンプアロケータとJITコードアロケータのアリーナを $O(1)$ で一括リセットして返還する。
   個別の `free()` や複雑なデストラクタ走査は一切行わない。これにより動的メモリ断片化や他モジュールからのダングリング参照を原理的に根絶する。
 - **C++実行dispatcherと4論理引数契約 (`{GOTCHA-VSOC-01}`)**: <!-- definition: {GOTCHA-VSOC-01} -->
   実行入口は `(ctx, sp, local_base, tos)` の4論理引数を受け取る。物理呼出し規約は [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) のx64定義に従い、ARMv8-Mの物理配置はTBDとする。
   C++ native dispatch loopはC++ Interpreter handlerと常駐JIT traceを次PCに応じて実行し、yield・trap・完了などの境界でRuntimeEngineへstatusを返す。制御handlerの後もしきい値到達まではC++側に留まり、vSoCへ命令ごとに戻らない。
   共通コード領域のchain dispatcherは別の機械語経路である。直線traceの末尾からdispatcherへ移り、headerのtarget bodyへtail-jumpする。C++ handler後にdispatch loopがtraceをlookupする遷移はchainではない。
-#### ランタイム生成とモジュールアンロードのライフサイクル（責務シーケンス図）
+#### ランタイム生成と破棄のライフサイクル（責務シーケンス図）
 <!-- traceability: {OneRuntimeOneGuest} {Runtime_BumpAllocator} {META_FaultIsolation} -->
 COOS Scheduler、vSoC Engine、Platform MemoryManager、WASM Loader、WASM Module 間の生成・ストレージ確保と、$O(1)$ 一括解放手順を示す。
 
@@ -179,7 +189,7 @@ sequenceDiagram
     Loader-->>vSoC: Return module_view
     vSoC-->>Sched: Runtime Ready
 
-    Note over Sched,Mod: ランタイム破棄・モジュールアンロード手順 ($O(1)$ 一括解放)
+    Note over Sched,Mod: ランタイム破棄手順 ($O(1)$ 一括解放)
     Sched->>vSoC: terminate()
     vSoC->>JitRuntime: flush_all()
     JitRuntime->>JitRuntime: Invalidate 3-Bank Cache
@@ -406,6 +416,33 @@ sequenceDiagram
     Note over R: Cache lookup, hotspot processing, and queued compilation run at this boundary
 ```
 
+#### WASM `memory.copy`同期サービス
+<!-- traceability: {WasmFCSubset} {VDMA} {MemoryBoundaryCheck} -->
+```mermaid
+sequenceDiagram
+    participant I as Interpreter handler
+    participant S as vSoC LinearMemoryCopyService
+    participant M as Guest linear memory
+    participant D as vDMA
+
+    I->>S: copy_linear_memory(dst, src, len)
+    S->>S: validate complete source and destination ranges
+    alt out of bounds
+        S-->>I: WASM memory trap before mutation
+    else overlap, small, or DMA-ineligible
+        S->>M: CPU memmove copy
+        S-->>I: completed
+    else eligible non-overlapping range
+        S->>M: clean source cache / memory barrier
+        S->>D: start same-linear-memory copy
+        D->>M: transfer bytes
+        D-->>S: transfer complete and idle
+        S->>M: invalidate destination cache / memory barrier
+        S-->>I: completed
+    end
+    Note over I,S: Interpreter advances only after the service returns
+```
+
 #### マルチモジュール動的リンクシーケンス
 <!-- traceability: {MultiModule_Support} -->
 複数のWASMモジュール間の依存関係を解決し、関数ポインタを接続する。
@@ -499,6 +536,23 @@ sequenceDiagram
 | 期待する結果 | 指定範囲へのアクセス時に登録したコールバックが実行されるようになる。 |
 | 補足 | 転送先の事前条件・事後条件・不変条件・エラー処理は [`runtime_vmmio.md`](docs/components/tier2_runtime/runtime_vmmio.md) の `register-hook` を正本とする。 |
 
+#### 内部リニアメモリコピーサービス (`memory.copy`)
+<!-- traceability: {WasmFCSubset} {VDMA} {MemoryBoundaryCheck} -->
+このサービスはInterpreterからの内部呼出しであり、guest-facing WIT import `fireball:host/vdma.start` と別の契約である。vMMIOレジスタ経路も使わない。
+
+| 項目 | 内容 |
+| :--- | :--- |
+| 機能概要 | 同一ゲストのWASMリニアメモリ内コピーをWASM `memory.copy`の同期意味論で完了する。 |
+| シグネチャ | `copy_linear_memory(dst: u32, src: u32, len: u32) -> result<void, wasm-trap | runtime-error>` |
+| 事前条件 | 単一メモリindex `0`。`dst`と`src`を符号なしbyte offset、`len`をbyte数として扱う。 |
+| 境界検査 | 両範囲について`offset <= mem_size && len <= mem_size - offset`を検査する。失敗時はWASM out-of-bounds memory trapとし、コピー開始前に返す。 |
+| CPU経路 | 範囲が重複する場合は方向を選んだmemmoveを行う。DMA非対応、しきい値未満、アラインメントまたは到達性不適格、開始拒否時もCPUへフォールバックする。 |
+| vDMA経路 | 非重複かつ対象ハードウェア条件を満たす時だけ同一ゲストリニアメモリ間転送を開始する。DMA開始前にsourceのcache clean/write-backとmemory barrier、完了後にdestinationのcache invalidateまたは同等の可視化処理とmemory barrierを行う。APIはDMA idleとCPUからのデータ可視性を同期確認してから成功を返す。 |
+| 排他とfallback | DMA engineが使用中、DMA到達性・アラインメント・cache maintenanceが不適格、または開始前に要求が拒否された場合はCPUで完了する。vDMA経路はengineを転送完了まで排他的に保持する。 |
+| 完了・障害 | DMA開始後の失敗は停止を確認してからCPUで全範囲を再実行する。停止または完了データの可視化を確認できない時はゲストを再開せずruntime errorを返す。 |
+| 不変条件 | 呼出しが戻るまでゲストはメモリを観測・変更しない。`len == 0`でもWASM境界規則を適用し、DMAを起動しない。 |
+| 補足 | size thresholdと対象ハードウェアのcache maintenance費用は固定せず、`BENCHMARK-MEM-05`でCPU/vDMAのbreak-evenを測定して決定する。 |
+
 ### 5.2 ネイティブAPI エクスポート
 <!-- traceability: {NativeAPI_Export} -->
 
@@ -571,6 +625,7 @@ Fireballでは、標準WASIのゲスト側アダプタを `libfireball` とし�
 | **Revoke後のflush完了性** | 抽象遷移モデルで、共有メモリ権限剥奪により dirty になった状態から flush 完了状態へ到達すること。実時間の期限や有限のtick数は証明しない。| [`vsoc_cache_coherency_model.py`](docs/components/tier2_runtime/formal/vsoc_cache_coherency_model.py) `dirty_cache_eventually_flushes` |
 | **重複コンパイル抑止** | 常駐済みトレースに対する二重コンパイルを抑止しキャッシュを浪費しないこと。| [`vsoc_cache_coherency_model.py`](docs/components/tier2_runtime/formal/vsoc_cache_coherency_model.py) `resident_trace_duplicate_compile_suppression` |
 | **状態一貫性** | vSoC Engine ライフサイクル（4.2）の各遷移後に状態が整合していること。 | 直交表 / レビュー（形式検証対象外） |
+| **Bulk Memory境界とDMA完了** | 範囲外部分更新、重複領域のDMA選択、DMA完了・可視化前の再開を禁止する。飽和変換カテゴリの結果も保持する。 | [`wasm_bulk_memory_model.py`](docs/specs/formal/wasm_bulk_memory_model.py): `oob_copy_never_partially_mutates`, `overlap_copy_never_uses_dma`, `guest_never_resumes_while_dma_pending`, `guest_never_resumes_before_dma_visible`, `nan_saturates_to_zero`, `positive_overflow_saturates_to_maximum`, `signed_underflow_saturates_to_minimum`, `unsigned_underflow_saturates_to_zero`, `finite_saturating_conversion_completes` |
 
 ### 7.2 モデル分割の理由
 
@@ -601,7 +656,7 @@ Fireballでは、標準WASIのゲスト側アダプタを `libfireball` とし�
 - `AG(dirty → AF(flushed))` — dirty になった flush は必ず完了する
 - `AG(¬duplicate_compile)` — 常駐済みトレースを重複コンパイルする状態は到達不能
 
-**変異検査（`guards=False`）で到達可能になる違反:** `s_exec_stale`（協調境界の世代照合を撤去）、`s_gen_regressed`（世代の個別更新化）、`s_leaked_bank`（Purge のみ実行し回収を省略）、`s_flush_stalled`（flush の遅延を許容）。
+**変異検査（`guards=False`）で到達可能になる違反:** `s_exec_stale`（協調境界の世代照合を撤去）、`s_gen_regressed`（世代の個別更新化）、`s_leaked_bank`（Purge のみ実行し回収を省略）、`s_flush_stalled`（flush の遅延を許容）、`s_duplicate_compile`（常駐確認を省略）。
 
 ### 7.4 既知の制限
 

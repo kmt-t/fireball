@@ -12,6 +12,7 @@
 ## 2. アーキテクチャ分類
 <!-- traceability: {META_3TierSeparation} {IPCRouter} {URIAbstraction} -->
 本コンポーネントは **Tier 1 (主要システムコンポーネント: Primary Component)** に属する。ゲストWASMに対する抽象化されたサービスレイヤを提供し、IoC (Inversion of Control) と URIベースのDIを用いて、機能拡張性と隔離性を統括する。
+サービスのシステムコールはIPCルータでURIを解決し、ロール認可を受けてから配送する。本コンポーネントはサービスのライフサイクルを担い、通信経路の詳細はIPCルータの契約に委譲する。
 
 ## 3. 静的モデル
 

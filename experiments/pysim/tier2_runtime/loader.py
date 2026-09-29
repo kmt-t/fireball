@@ -18,6 +18,7 @@ import struct
 from enum import IntEnum
 from typing import TypeVar
 
+from bump_allocator import BumpAllocator
 from config import FB_CONF_MAX_WASM_PAGES
 from system_containers import (
     MutableFlatMapStorage,
@@ -25,13 +26,20 @@ from system_containers import (
     ReadOnlyRadixBinaryTreeStorage,
     StaticVector,
 )
-from wasm_module import WASM_RAW_WORD_BYTES, WASM_VALUE_SLOT_BYTES
+from wasm_module import (
+    LOADER_BASIC_BLOCK_ENTRY_BYTES,
+    LOADER_EXPORT_ENTRY_BYTES,
+    LOADER_GLOBAL_ENTRY_BYTES,
+    LOADER_IMPORT_ENTRY_BYTES,
+    LOADER_TABLE_ENTRY_BYTES,
+    LOADER_TYPE_ENTRY_BYTES,
+    WASM_RAW_WORD_BYTES,
+)
 
 # Configuration Constants
 FB_CONF_MAX_MODULES = 4
 FB_CONF_MAX_FUNCTIONS = 256
 FB_CONF_MAX_TYPES = 256
-FB_CONF_MAX_EXPORTS = 64
 FB_CONF_MAX_GLOBALS = 32
 FB_CONF_MAX_IMPORTS = 32
 FB_CONF_MAX_TABLES = 16
@@ -45,6 +53,119 @@ ItemT = TypeVar("ItemT")
 def _push_or_assert(target: StaticVector[ItemT], item: ItemT, label: str) -> None:
     pushed = target.push_back(item)
     assert pushed, f"{label} capacity exceeded"
+
+
+class _SectionCounts:
+    __slots__ = (
+        "code",
+        "data",
+        "elements",
+        "exports",
+        "functions",
+        "globals",
+        "import_globals",
+        "import_memories",
+        "import_tables",
+        "imports",
+        "memories",
+        "sections",
+        "tables",
+        "types",
+    )
+
+    def __init__(self) -> None:
+        self.sections = 0
+        self.types = 0
+        self.imports = 0
+        self.import_tables = 0
+        self.import_memories = 0
+        self.import_globals = 0
+        self.functions = 0
+        self.tables = 0
+        self.memories = 0
+        self.globals = 0
+        self.exports = 0
+        self.elements = 0
+        self.code = 0
+        self.data = 0
+
+
+def _scan_section_counts(wasm_binary: memoryview) -> _SectionCounts:
+    """Read section entry counts before reserving exact loader vector capacities."""
+
+    stream = BinaryStream(wasm_binary)
+    assert bytes(stream.read_bytes(4)) == b"\x00asm", "invalid WASM magic"
+    assert stream.read_u32_le() == 1, "unsupported WASM version"
+    counts = _SectionCounts()
+    while stream.remaining() > 0:
+        section_id = stream.read_u8()
+        section_size = stream.read_leb128_u32()
+        section_start = stream.tell()
+        section_end = section_start + section_size
+        assert section_end <= stream.limit, "section length exceeds module bounds"
+        counts.sections += 1
+        if section_id == SectionID.CUSTOM or section_id == SectionID.START:
+            stream.seek(section_end)
+            continue
+        section = BinaryStream(wasm_binary, offset=section_start, length=section_size)
+        if section_id == SectionID.TYPE:
+            counts.types = section.read_leb128_u32()
+        elif section_id == SectionID.IMPORT:
+            counts.imports = section.read_leb128_u32()
+            for _ in range(counts.imports):
+                section.read_string_range()
+                section.read_string_range()
+                import_kind = section.read_u8()
+                if import_kind == ExternalKind.FUNCTION:
+                    section.read_leb128_u32()
+                elif import_kind == ExternalKind.TABLE:
+                    counts.import_tables += 1
+                    section.read_u8()
+                    flags = section.read_leb128_u32()
+                    section.read_leb128_u32()
+                    if flags & 1:
+                        section.read_leb128_u32()
+                elif import_kind == ExternalKind.MEMORY:
+                    counts.import_memories += 1
+                    flags = section.read_leb128_u32()
+                    section.read_leb128_u32()
+                    if flags & 1:
+                        section.read_leb128_u32()
+                elif import_kind == ExternalKind.GLOBAL:
+                    counts.import_globals += 1
+                    section.read_bytes(2)
+                else:
+                    assert False, f"unsupported WASM import kind={import_kind}"
+            assert section.remaining() == 0, "import section length mismatch"
+        elif section_id == SectionID.FUNCTION:
+            counts.functions = section.read_leb128_u32()
+        elif section_id == SectionID.TABLE:
+            counts.tables = section.read_leb128_u32()
+        elif section_id == SectionID.MEMORY:
+            counts.memories = section.read_leb128_u32()
+        elif section_id == SectionID.GLOBAL:
+            counts.globals = section.read_leb128_u32()
+        elif section_id == SectionID.EXPORT:
+            counts.exports = section.read_leb128_u32()
+        elif section_id == SectionID.ELEMENT:
+            counts.elements = section.read_leb128_u32()
+        elif section_id == SectionID.CODE:
+            counts.code = section.read_leb128_u32()
+        elif section_id == SectionID.DATA:
+            counts.data = section.read_leb128_u32()
+        else:
+            assert False, f"unsupported WASM section id={section_id}"
+        stream.seek(section_end)
+    return counts
+
+
+def _reserve_loader_vector[T](
+    allocator: BumpAllocator, capacity: int, entry_bytes: int
+) -> StaticVector[T]:
+    assert capacity >= 0 and entry_bytes > 0
+    storage_size = capacity * entry_bytes
+    offset = allocator.allocate(storage_size)
+    return StaticVector(capacity=capacity, arena_offset=offset, arena_size=storage_size)
 
 
 FB_CONF_WASM_PAGE_SIZE = 65536
@@ -141,38 +262,6 @@ def fnv1a_32_name_pair(
     for value in data[second_offset : second_offset + second_size]:
         h = ((h ^ value) * 0x01000193) & 0xFFFFFFFF
     return h
-
-
-class BumpAllocator:
-    """Offset-only bump arena model used to verify allocation and rollback ({META_BumpAllocator})."""
-
-    __slots__ = ("capacity", "offset")
-
-    def __init__(self, capacity: int = 16384):
-        assert capacity >= 0, "BumpAllocator capacity must be non-negative"
-        self.capacity = capacity
-        self.offset = 0
-
-    def allocate(self, size: int, alignment: int = WASM_RAW_WORD_BYTES) -> int:
-        assert size >= 0, "BumpAllocator allocation size must be non-negative"
-        assert alignment > 0 and alignment & (alignment - 1) == 0, (
-            "BumpAllocator alignment must be a positive power of two"
-        )
-        aligned_offset = (self.offset + (alignment - 1)) & ~(alignment - 1)
-        if aligned_offset + size > self.capacity:
-            assert False, "BumpAllocator capacity exceeded"
-        self.offset = aligned_offset + size
-        return aligned_offset
-
-    def save(self) -> int:
-        return self.offset
-
-    def restore(self, saved_offset: int) -> None:
-        assert 0 <= saved_offset <= self.offset
-        self.offset = saved_offset
-
-    def reset(self) -> None:
-        self.offset = 0
 
 
 class BinaryStream:
@@ -459,8 +548,6 @@ class ModuleView:
     """
 
     __slots__ = (
-        "allocator_end",
-        "allocator_start",
         "code_offsets",
         "entity_offset_storage",
         "entity_registry",
@@ -472,6 +559,7 @@ class ModuleView:
         "imports",
         "is_ready",
         "memories",
+        "resolved_import_entries",
         "resolved_imports",
         "rom_binary",
         "sections",
@@ -480,25 +568,48 @@ class ModuleView:
         "types",
     )
 
-    def __init__(self, rom_binary: memoryview):
+    def __init__(self, rom_binary: memoryview, allocator: BumpAllocator, counts: _SectionCounts):
         self.rom_binary = memoryview(rom_binary)
         # Section IDs are SectionID.CUSTOM(0)..DATA_COUNT(12): a fixed, dense
         # WASM-spec-defined range, so a fixed-size array indexed by ID -- not
         # a dict -- is the direct fit.
-        self.sections: StaticVector[SectionView | None] = StaticVector(
-            capacity=SectionID.DATA_COUNT + 1
+        self.sections: StaticVector[SectionView | None] = _reserve_loader_vector(
+            allocator, SectionID.DATA_COUNT + 1, 16
         )
         for _ in range(SectionID.DATA_COUNT + 1):
             self.sections.append(None)
-        self.types: StaticVector[FuncType] = StaticVector(capacity=FB_CONF_MAX_TYPES)
-        self.imports: StaticVector[ImportEntry] = StaticVector(capacity=FB_CONF_MAX_IMPORTS)
-        self.functions: StaticVector[int] = StaticVector(capacity=FB_CONF_MAX_FUNCTIONS)
-        self.tables: StaticVector[TableEntry] = StaticVector(capacity=FB_CONF_MAX_TABLES)
-        self.memories: StaticVector[MemoryEntry] = StaticVector(capacity=FB_CONF_MAX_MEMORIES)
-        self.globals: StaticVector[GlobalEntry] = StaticVector(capacity=FB_CONF_MAX_GLOBALS)
-        self.exports_dict: StaticVector[ExportEntry] = StaticVector(capacity=FB_CONF_MAX_EXPORTS)
-        self.code_offsets: StaticVector[tuple[int, int]] = StaticVector(
-            capacity=FB_CONF_MAX_FUNCTIONS
+        self.types: StaticVector[FuncType] = _reserve_loader_vector(
+            allocator, counts.types, LOADER_TYPE_ENTRY_BYTES
+        )
+        self.imports: StaticVector[ImportEntry] = _reserve_loader_vector(
+            allocator, counts.imports, LOADER_IMPORT_ENTRY_BYTES
+        )
+        self.functions: StaticVector[int] = _reserve_loader_vector(
+            allocator, counts.functions, WASM_RAW_WORD_BYTES
+        )
+        self.tables: StaticVector[TableEntry] = _reserve_loader_vector(
+            allocator,
+            counts.tables + counts.import_tables,
+            LOADER_TABLE_ENTRY_BYTES,
+        )
+        self.memories: StaticVector[MemoryEntry] = _reserve_loader_vector(
+            allocator,
+            counts.memories + counts.import_memories,
+            LOADER_TABLE_ENTRY_BYTES,
+        )
+        self.globals: StaticVector[GlobalEntry] = _reserve_loader_vector(
+            allocator,
+            counts.globals + counts.import_globals,
+            LOADER_GLOBAL_ENTRY_BYTES,
+        )
+        self.exports_dict: StaticVector[ExportEntry] = _reserve_loader_vector(
+            allocator, counts.exports, LOADER_EXPORT_ENTRY_BYTES
+        )
+        self.resolved_import_entries: StaticVector[tuple[int, ExportEntry]] = (
+            _reserve_loader_vector(allocator, counts.imports, 2 * WASM_RAW_WORD_BYTES)
+        )
+        self.code_offsets: StaticVector[tuple[int, int]] = _reserve_loader_vector(
+            allocator, counts.functions, 2 * WASM_RAW_WORD_BYTES
         )
         self.start_func_idx: int | None = None
         self.resolved_imports: ReadOnlyFlatMapStorage[int, ExportEntry] = (
@@ -506,14 +617,16 @@ class ModuleView:
         )
         self.is_ready: bool = False
         # Decoded entity registry & radix-binary-tree indexes ({META_BinarySearch})
-        self.entity_registry: StaticVector[DecodedEntity] = StaticVector(
-            capacity=FB_CONF_MAX_ENTITIES
+        entity_capacity = min(
+            FB_CONF_MAX_ENTITIES,
+            counts.sections + counts.functions + counts.globals,
+        )
+        self.entity_registry: StaticVector[DecodedEntity] = _reserve_loader_vector(
+            allocator, entity_capacity, LOADER_BASIC_BLOCK_ENTRY_BYTES
         )
         self.export_storage: ReadOnlyRadixBinaryTreeStorage[ExportEntry] | None = None
         self.import_storage: ReadOnlyRadixBinaryTreeStorage[ImportEntry] | None = None
         self.entity_offset_storage: ReadOnlyRadixBinaryTreeStorage[DecodedEntity] | None = None
-        self.allocator_start: int | None = None
-        self.allocator_end: int | None = None
 
     def register_entity(
         self,
@@ -526,16 +639,20 @@ class ModuleView:
         self.entity_registry.append(entity)
         return entity
 
-    def build_indexes(self) -> None:
+    def build_indexes(self, allocator: BumpAllocator) -> None:
         """Constructs read-only radix-binary-tree indexes for exports, imports, and entity offsets."""
-        exp_keys: StaticVector[int] = StaticVector(capacity=len(self.exports_dict))
+        exp_keys: StaticVector[int] = _reserve_loader_vector(
+            allocator, len(self.exports_dict), WASM_RAW_WORD_BYTES
+        )
         for exp in self.exports_dict:
             exp_keys.append(fnv1a_32_name(self.rom_binary, exp.name_offset, exp.name_size))
         self.export_storage = ReadOnlyRadixBinaryTreeStorage.create(
             exp_keys, self.exports_dict, radix_shift=28
         )
 
-        imp_keys: StaticVector[int] = StaticVector(capacity=len(self.imports))
+        imp_keys: StaticVector[int] = _reserve_loader_vector(
+            allocator, len(self.imports), WASM_RAW_WORD_BYTES
+        )
         for imp in self.imports:
             imp_keys.append(
                 fnv1a_32_name_pair(
@@ -551,7 +668,9 @@ class ModuleView:
             imp_keys, self.imports, radix_shift=28
         )
 
-        ent_keys: StaticVector[int] = StaticVector(capacity=len(self.entity_registry))
+        ent_keys: StaticVector[int] = _reserve_loader_vector(
+            allocator, len(self.entity_registry), WASM_RAW_WORD_BYTES
+        )
         for entity in self.entity_registry:
             ent_keys.append(entity.start_offset)
         self.entity_offset_storage = ReadOnlyRadixBinaryTreeStorage.create(
@@ -699,43 +818,47 @@ class WasmLoader:
     `{ROMParsing}` `{LightweightVerifier}` `{MultiModule_Support}` `{META_BumpAllocator}`
     """
 
-    __slots__ = ("allocator", "max_modules", "max_wasm_pages", "registry")
+    __slots__ = ("_allocator", "_registry", "max_modules", "max_wasm_pages")
 
     def __init__(
         self,
-        allocator: BumpAllocator | None = None,
+        allocator: BumpAllocator,
         max_modules: int = FB_CONF_MAX_MODULES,
         max_wasm_pages: int = FB_CONF_MAX_WASM_PAGES,
     ):
-        self.allocator = allocator or BumpAllocator()
-        self.registry: MutableFlatMapStorage[bytes, ModuleView] = MutableFlatMapStorage(
+        self._allocator = allocator
+        self._registry: MutableFlatMapStorage[bytes, ModuleView] = MutableFlatMapStorage(
             capacity=max_modules
         )
         self.max_modules = max_modules
         self.max_wasm_pages = max_wasm_pages
 
     def lookup(self, name: str) -> ModuleView | None:
-        return self.registry.view().find(name.encode("utf-8"))
+        return self._registry.view().find(name.encode("utf-8"))
 
     def _lookup_name_bytes(self, name: memoryview) -> ModuleView | None:
         """Resolve a transient ROM name against the bounded module registry."""
-        return self.registry.view().find(bytes(name))
+        return self._registry.view().find(bytes(name))
 
     def prepare(self, module_name: str, wasm_binary: memoryview) -> ModuleView:
-        if len(self.registry) >= self.max_modules:
+        if len(self._registry) >= self.max_modules:
             assert False, f"Module registry capacity ({self.max_modules}) exceeded"
         module_key = module_name.encode("utf-8")
-        assert self.registry.view().find(module_key) is None, (
+        assert self._registry.view().find(module_key) is None, (
             f"Module name {module_name!r} is already registered"
         )
-        watermark = self.allocator.save()
+        watermark = self._allocator.save()
         try:
-            # Reserve fixed metadata scratch so transactional rollback and LIFO
-            # unload exercise a real allocator mutation ({META_BumpAllocator}).
-            self.allocator.allocate(64, alignment=WASM_VALUE_SLOT_BYTES)
-            view = ModuleView(wasm_binary)
-            view.allocator_start = watermark
-            view.allocator_end = self.allocator.save()
+            counts = _scan_section_counts(wasm_binary)
+            assert counts.types <= FB_CONF_MAX_TYPES
+            assert counts.imports <= FB_CONF_MAX_IMPORTS
+            assert counts.functions <= FB_CONF_MAX_FUNCTIONS
+            assert counts.tables + counts.import_tables <= FB_CONF_MAX_TABLES
+            assert counts.memories + counts.import_memories <= FB_CONF_MAX_MEMORIES
+            assert counts.globals + counts.import_globals <= FB_CONF_MAX_GLOBALS
+            assert counts.elements <= FB_CONF_MAX_ENTITIES
+            assert counts.data <= FB_CONF_MAX_ENTITIES
+            view = ModuleView(wasm_binary, self._allocator, counts)
             stream = BinaryStream(wasm_binary)
             # V1: Magic Number Check
             magic = bytes(stream.read_bytes(4))
@@ -783,7 +906,7 @@ class WasmLoader:
                     sec_id,
                 )
                 sec_stream = BinaryStream(wasm_binary, offset=payload_start, length=sec_size)
-                self._parse_section_content(sec_id, sec_stream, view)
+                self._parse_section_content(sec_id, sec_stream, view, self._allocator)
                 stream.seek(payload_start + sec_size)
 
             # V5: Type signature consistency
@@ -813,17 +936,19 @@ class WasmLoader:
                     )
 
             view.sort_exports()
-            view.build_indexes()
+            view.build_indexes(self._allocator)
             if not view.imports:
                 view.is_ready = True
 
-            assert self.registry.insert(module_key, view)
+            assert self._registry.insert(module_key, view)
             return view
         except Exception:
-            self.allocator.restore(watermark)
+            self._allocator.restore(watermark)
             assert False, "WASM module preparation failed after allocator rollback"
 
-    def _parse_section_content(self, sec_id: int, stream: BinaryStream, view: ModuleView) -> None:
+    def _parse_section_content(
+        self, sec_id: int, stream: BinaryStream, view: ModuleView, allocator: BumpAllocator
+    ) -> None:
         if sec_id == SectionID.TYPE:
             count = stream.read_leb128_u32()
             for _ in range(count):
@@ -833,13 +958,13 @@ class WasmLoader:
                 p_count = stream.read_leb128_u32()
                 if p_count > FB_CONF_MAX_FUNCTION_PARAMS:
                     assert False, "Function parameter count exceeds fixed capacity"
-                params = StaticVector[int](capacity=FB_CONF_MAX_FUNCTION_PARAMS)
+                params = _reserve_loader_vector(allocator, p_count, 1)
                 for _ in range(p_count):
                     _push_or_assert(params, stream.read_u8(), "function parameter")
                 r_count = stream.read_leb128_u32()
                 if r_count > FB_CONF_MAX_FUNCTION_PARAMS:
                     assert False, "Function result count exceeds fixed capacity"
-                results = StaticVector[int](capacity=FB_CONF_MAX_FUNCTION_PARAMS)
+                results = _reserve_loader_vector(allocator, r_count, 1)
                 for _ in range(r_count):
                     _push_or_assert(results, stream.read_u8(), "function result")
                 _push_or_assert(view.types, FuncType(params, results), "type")
@@ -954,8 +1079,6 @@ class WasmLoader:
                 )
         elif sec_id == SectionID.EXPORT:
             count = stream.read_leb128_u32()
-            if count > FB_CONF_MAX_EXPORTS:
-                assert False, "Export count exceeds FB_CONF_MAX_EXPORTS"
             for _ in range(count):
                 name_offset, name_size = stream.read_string_range()
                 kind = stream.read_u8()
@@ -981,7 +1104,8 @@ class WasmLoader:
                 stream.seek(body_start + body_size)
 
     def resolve_imports(self, module: ModuleView) -> bool:
-        entries: StaticVector[tuple[int, ExportEntry]] = StaticVector(capacity=FB_CONF_MAX_IMPORTS)
+        entries = module.resolved_import_entries
+        assert not entries, "module imports have already been resolved"
         for imp in module.imports:
             module_name = module.rom_binary[
                 imp.module_name_offset : imp.module_name_offset + imp.module_name_size
@@ -1015,22 +1139,6 @@ class WasmLoader:
             )
 
         entries.sort(key=lambda e: e[0])
-        module.resolved_imports = ReadOnlyFlatMapStorage.create(entries)
+        module.resolved_imports = ReadOnlyFlatMapStorage.from_sorted_static_entries(entries)
         module.is_ready = True
-        return True
-
-    def unload(self, module: ModuleView) -> bool:
-        module_key: bytes | None = None
-        for key, registered_module in self.registry:
-            if registered_module is module:
-                module_key = key
-                break
-        if module_key is None:
-            return False
-        removed = self.registry.remove(module_key)
-        assert removed is not None
-        assert removed is module
-        if module.allocator_end == self.allocator.save():
-            assert module.allocator_start is not None
-            self.allocator.restore(module.allocator_start)
         return True

@@ -31,6 +31,19 @@ Loader/Interpreter/JIT/vMMIO/Debuggerを統合する`vsoc_harness`（静的DI）
 | TEST-VSOC-16 | Purgeと回収の不可分性 | ローテーション時 | Oldestバンクのpurge処理を確認 | Purgeとエントリ表スロット回収が同一トランザクションで行われ、未回収スロットが蓄積しない | [`vsoc_cache_coherency_model.py`](docs/components/tier2_runtime/formal/vsoc_cache_coherency_model.py) `bounded_cache_rotation_memory` |
 | TEST-VSOC-17 | 形式検証の変異反証 | 通常モデルと`guards=False`モデル | `vsoc_state_model.py`を実行 | 通常モデルでは2つの性質が成立し、ガードを無効化した変異モデルでは両方の性質が失敗する | [`vsoc_state_model.py`](docs/components/tier2_runtime/formal/vsoc_state_model.py) |
 
+### 選択されたBulk Memoryの同期vDMA経路
+<!-- traceability: {WasmFCSubset} {VDMA} {MemoryBoundaryCheck} -->
+
+| テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| TEST-VSOC-60 | 非重複`memory.copy`のvDMA適格性 | 両範囲が有効、重複なし、サイズ・アラインメント・到達性が適格 | 内部`copy_linear_memory`を呼ぶ | vDMAが同一guest linear memory間転送を行い、DMA idle確認後にだけ呼出しが成功する | `{WasmFCSubset}` `{VDMA}` |
+| TEST-VSOC-61 | CPU経路への選択 | 重複範囲、しきい値未満、非対応アラインメントまたはDMA開始拒否 | 同じcopyを呼ぶ | vDMAを起動せず、CPU経路でWASM意味論どおりに完了する | `{WasmFCSubset}` |
+| TEST-VSOC-62 | DMA完了前のguest再開禁止 | 非重複copyを受け付け、DMA完了を保留できる | DMA pending中のdispatch状態を観測し、完了通知を与える | pending中は次WASM命令へ進まず、DMA idle後にcopy呼出しが戻る | `{VDMA}` |
+| TEST-VSOC-63 | DMA失敗後の安全な回復 | DMA転送失敗。停止確認可能ケースと停止不能ケース | 同期サービスを実行する | 停止確認可能時は全範囲をCPUで再実行して成功。停止不能時はruntime errorでguestを再開しない | `{VDMA}` `{WasmFCSubset}` |
+| TEST-VSOC-64 | 範囲外copyの副作用なし | sourceまたはdestinationが範囲外 | vDMA適格な入力形に見せて呼出し | vDMA開始前にWASM memory trapを返し、メモリに部分更新がない | `{MemoryBoundaryCheck}` |
+| TEST-VSOC-65 | DMA書込みのCPU可視性 | CPU cacheのある対象構成、非重複copy | sourceをCPU書込み後、DMA copy完了後にdestinationをCPU読出し | DMA前のsource clean/write-backとDMA後のdestination invalidateまたは同等処理がmemory barrierで順序化され、WASMから転送結果が観測できる | `{VDMA}` |
+| TEST-VSOC-66 | vDMA engine使用中のfallback | 他の転送がengineを保持中 | `copy_linear_memory`を呼び、転送完了後のmemoryを比較 | 新規DMAを発行せずCPU経路で正しいcopyを完了する | `{VDMA}` `{WasmFCSubset}` |
+
 ### vSoC Engineライフサイクル
 <!-- traceability: {VSOC_Lifecycle} -->
 

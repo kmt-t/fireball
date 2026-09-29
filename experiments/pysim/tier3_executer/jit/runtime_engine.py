@@ -24,6 +24,7 @@ from dataclasses import dataclass
 from enum import IntEnum
 from typing import TextIO
 
+from bump_allocator import BumpAllocator
 from config import (
     FB_CONF_RUNTIME_PROFILE_STATS,
     FB_CONF_RUNTIME_YIELD_THRESHOLD,
@@ -82,6 +83,7 @@ class RuntimeEngine:
 
     __slots__ = (
         "_boundary_runner",
+        "_bump_allocator",
         "_virq",
         "_virq_interp",
         "collect_runtime_stats",
@@ -104,6 +106,7 @@ class RuntimeEngine:
         drive_mode: RuntimeDriveMode = RuntimeDriveMode.SYNCHRONOUS,
         yield_threshold: int = FB_CONF_RUNTIME_YIELD_THRESHOLD,
         collect_runtime_stats: bool = FB_CONF_RUNTIME_PROFILE_STATS,
+        bump_allocator: BumpAllocator | None = None,
     ):
         debug_env = os.environ.get("FIREBALL_DEBUG", "").lower()
         self.debug = debug or debug_env == "1" or debug_env == "true" or debug_env == "yes"
@@ -117,6 +120,8 @@ class RuntimeEngine:
             or NATIVE_JIT_HOTSPOT_PROFILING_ENABLED
         ), "JIT hotspot profiling was compiled out; rebuild with FB_CONF_JIT_HOTSPOT_PROFILING=True"
         self.collect_runtime_stats = collect_runtime_stats
+        # RuntimeEngine is the runtime owner; loaders borrow this arena.
+        self._bump_allocator = bump_allocator if bump_allocator is not None else BumpAllocator()
         self.jit_runtime = jit_runtime
         self.stat_interp_steps: int = 0
         self.stat_jit_invocations: int = 0
@@ -139,7 +144,7 @@ class RuntimeEngine:
         """Parses raw WASM binary and binds all loader-owned basic blocks and Radix trees."""
         from wasm_reader import parse
 
-        module = parse(wasm_bytes)
+        module = parse(wasm_bytes, self._bump_allocator)
         self.register_module_blocks(module)
         return module
 
@@ -151,7 +156,7 @@ class RuntimeEngine:
     def register_module_blocks(self, module: Module) -> None:
         """Binds the loader-owned immutable block index."""
         if module.block_storage is None:
-            module.build_basic_block_index()
+            module.build_basic_block_index(self._bump_allocator)
         self.module = module
         self._virq = VirqDispatcher(module, self._invoke_virq)
         if self.jit_runtime is not None:

@@ -10,10 +10,10 @@ from __future__ import annotations
 from collections.abc import Callable
 
 import wasm_opcodes as op
+from bump_allocator import BumpAllocator
 from config import (
     FB_CONF_MAX_DATA_SEGMENTS,
     FB_CONF_MAX_ELEMENTS,
-    FB_CONF_MAX_EXPORTS,
     FB_CONF_MAX_FUNCTIONS,
     FB_CONF_MAX_GLOBALS,
     FB_CONF_MAX_IMPORTS,
@@ -31,6 +31,7 @@ from wasm_module import (
     FB_CONF_MAX_LOCALS,
     I32,
     I64,
+    WASM_RAW_WORD_BYTES,
     Export,
     Function,
     FuncType,
@@ -84,6 +85,10 @@ class _SectionCounts:
         "exports",
         "functions",
         "globals",
+        "imported_functions",
+        "imported_globals",
+        "imported_memories",
+        "imported_tables",
         "imports",
         "memories",
         "tables",
@@ -93,6 +98,10 @@ class _SectionCounts:
     def __init__(self) -> None:
         self.types = 0
         self.imports = 0
+        self.imported_functions = 0
+        self.imported_tables = 0
+        self.imported_memories = 0
+        self.imported_globals = 0
         self.functions = 0
         self.tables = 0
         self.memories = 0
@@ -174,6 +183,50 @@ class _ParseCallbacks:
         self.module.data_section_size = size
 
 
+def _skip_limits_descriptor(data: memoryview, offset: int, end: int) -> int:
+    assert offset < end, "truncated limits descriptor"
+    flags = data[offset]
+    offset += 1
+    assert flags == 0 or flags == 1, f"invalid limits flag=0x{flags:02X}"
+    _, offset = decode_unsigned(data, offset, end)
+    if flags == 1:
+        _, offset = decode_unsigned(data, offset, end)
+    return offset
+
+
+def _count_import_kinds(data: memoryview, offset: int, end: int, counts: _SectionCounts) -> None:
+    import_count, offset = decode_unsigned(data, offset, end)
+    counts.imports = import_count
+    for _ in range(import_count):
+        module_size, offset = decode_unsigned(data, offset, end)
+        assert offset + module_size <= end, "import module name exceeds section bounds"
+        offset += module_size
+        field_size, offset = decode_unsigned(data, offset, end)
+        assert offset + field_size <= end, "import field name exceeds section bounds"
+        offset += field_size
+        assert offset < end, "truncated import kind"
+        import_kind = data[offset]
+        offset += 1
+        if import_kind == 0:
+            counts.imported_functions += 1
+            _, offset = decode_unsigned(data, offset, end)
+        elif import_kind == 1:
+            counts.imported_tables += 1
+            assert offset < end, "truncated table import element type"
+            offset += 1
+            offset = _skip_limits_descriptor(data, offset, end)
+        elif import_kind == 2:
+            counts.imported_memories += 1
+            offset = _skip_limits_descriptor(data, offset, end)
+        elif import_kind == 3:
+            counts.imported_globals += 1
+            assert offset + 2 <= end, "truncated global import descriptor"
+            offset += 2
+        else:
+            assert False, f"unsupported import kind={import_kind}"
+    assert offset == end, "import section length mismatch"
+
+
 def _read_section_counts(data: memoryview) -> _SectionCounts:
     assert len(data) >= 8, "truncated WASM header"
     counts = _SectionCounts()
@@ -188,8 +241,7 @@ def _read_section_counts(data: memoryview) -> _SectionCounts:
             count, _ = decode_unsigned(data, off, section_end)
             counts.types = count
         elif section_id == SEC_IMPORT:
-            count, _ = decode_unsigned(data, off, section_end)
-            counts.imports = count
+            _count_import_kinds(data, off, section_end, counts)
         elif section_id == SEC_FUNCTION:
             count, _ = decode_unsigned(data, off, section_end)
             counts.functions = count
@@ -220,10 +272,9 @@ def _validate_section_counts(counts: _SectionCounts) -> None:
         ("types", counts.types, FB_CONF_MAX_TYPES),
         ("imports", counts.imports, FB_CONF_MAX_IMPORTS),
         ("functions", counts.functions, FB_CONF_MAX_FUNCTIONS),
-        ("tables", counts.tables, FB_CONF_MAX_TABLES),
-        ("memories", counts.memories, FB_CONF_MAX_MEMORIES),
-        ("globals", counts.globals, FB_CONF_MAX_GLOBALS),
-        ("exports", counts.exports, FB_CONF_MAX_EXPORTS),
+        ("tables", counts.tables + counts.imported_tables, FB_CONF_MAX_TABLES),
+        ("memories", counts.memories + counts.imported_memories, FB_CONF_MAX_MEMORIES),
+        ("globals", counts.globals + counts.imported_globals, FB_CONF_MAX_GLOBALS),
         ("elements", counts.elements, FB_CONF_MAX_ELEMENTS),
         ("data segments", counts.data_segments, FB_CONF_MAX_DATA_SEGMENTS),
     )
@@ -231,7 +282,7 @@ def _validate_section_counts(counts: _SectionCounts) -> None:
         assert count <= capacity, (
             f"WASM {label} count {count} exceeds configured maximum {capacity}"
         )
-    assert counts.memories <= 1, "only single linear memory is supported"
+    assert counts.memories + counts.imported_memories <= 1, "only single linear memory is supported"
 
 
 class WasmParseError(Exception):
@@ -262,7 +313,9 @@ def _has_nested_calls(code: memoryview) -> bool:
     return False
 
 
-def _parse_functype(data: memoryview, off: int, end: int) -> tuple[FuncType, int]:
+def _parse_functype(
+    data: memoryview, off: int, end: int, allocator: BumpAllocator
+) -> tuple[FuncType, int]:
     assert off < end, "truncated function type"
     record_offset = off
     tag = data[off]
@@ -271,14 +324,24 @@ def _parse_functype(data: memoryview, off: int, end: int) -> tuple[FuncType, int
         assert False, f"expected functype tag 0x60, got 0x{tag:02X}"
     nparams, off = decode_unsigned(data, off, end)
     assert nparams <= FB_CONF_MAX_LOCALS, "function parameter count exceeds configured maximum"
-    params = StaticVector[int](capacity=nparams)
+    params_offset = allocator.allocate(nparams)
+    params = StaticVector[int](
+        capacity=nparams,
+        arena_offset=params_offset,
+        arena_size=nparams,
+    )
     for _ in range(nparams):
         params.append(_read_value_type(data, off, end))
         off += 1
 
     nresults, off = decode_unsigned(data, off, end)
     assert nresults <= 1, "MVP functions have at most one result"
-    results = StaticVector[int](capacity=nresults)
+    results_offset = allocator.allocate(nresults)
+    results = StaticVector[int](
+        capacity=nresults,
+        arena_offset=results_offset,
+        arena_size=nresults,
+    )
     for _ in range(nresults):
         results.append(_read_value_type(data, off, end))
         off += 1
@@ -288,10 +351,16 @@ def _parse_functype(data: memoryview, off: int, end: int) -> tuple[FuncType, int
     ), off
 
 
-def _parse_type_section(data: memoryview, off: int, end: int, callbacks: _ParseCallbacks) -> None:
+def _parse_type_section(
+    data: memoryview,
+    off: int,
+    end: int,
+    callbacks: _ParseCallbacks,
+    allocator: BumpAllocator,
+) -> None:
     n, off = decode_unsigned(data, off, end)
     for _ in range(n):
-        ft, off = _parse_functype(data, off, end)
+        ft, off = _parse_functype(data, off, end, allocator)
         callbacks.on_type(ft)
 
     assert off == end, "type section length mismatch"
@@ -356,9 +425,17 @@ def _parse_import_section(data: memoryview, off: int, end: int, callbacks: _Pars
     assert off == end, "import section length mismatch"
 
 
-def _parse_function_section(data: memoryview, off: int, end: int) -> StaticVector[int]:
+def _parse_function_section(
+    data: memoryview, off: int, end: int, allocator: BumpAllocator
+) -> StaticVector[int]:
     n, off = decode_unsigned(data, off, end)
-    type_indices = StaticVector[int](capacity=n)
+    storage_size = n * WASM_RAW_WORD_BYTES
+    storage_offset = allocator.allocate(storage_size)
+    type_indices = StaticVector[int](
+        capacity=n,
+        arena_offset=storage_offset,
+        arena_size=storage_size,
+    )
     for _ in range(n):
         idx, off = decode_unsigned(data, off, end)
         type_indices.append(idx)
@@ -510,6 +587,7 @@ def _parse_code_section(
     end: int,
     type_indices: StaticVector[int],
     callbacks: _ParseCallbacks,
+    allocator: BumpAllocator,
 ) -> None:
     n, off = decode_unsigned(data, off, end)
     assert n == len(type_indices), "code section entry count must match function section"
@@ -527,7 +605,12 @@ def _parse_code_section(
             local_count += count
         assert local_count <= FB_CONF_MAX_LOCALS
         _, loff = decode_unsigned(data, body_start, body_end)
-        locals_extra = StaticVector[int](capacity=local_count)
+        locals_offset = allocator.allocate(local_count)
+        locals_extra = StaticVector[int](
+            capacity=local_count,
+            arena_offset=locals_offset,
+            arena_size=local_count,
+        )
         for _ in range(n_local_groups):
             count, loff = decode_unsigned(data, loff, body_end)
             vtype = _read_value_type(data, loff, body_end)
@@ -1084,7 +1167,7 @@ def _index_stack_value_widths(module: Module, function_index: int) -> None:
     state.function.drop_widths = ReadOnlyFlatMapStorage.create(state.drop_widths)
 
 
-def parse(data: memoryview) -> Module:
+def _parse_with_allocator(data: memoryview, allocator: BumpAllocator) -> Module:
     data = memoryview(data)
     assert len(data) >= 8, "truncated WASM header"
     if data[0:4] != MAGIC:
@@ -1097,13 +1180,14 @@ def parse(data: memoryview) -> Module:
     module.source = data
     module.configure_section_capacities(
         type_count=section_counts.types,
-        import_count=section_counts.imports,
+        function_import_count=section_counts.imported_functions,
         function_count=section_counts.functions,
         export_count=section_counts.exports,
-        global_count=section_counts.globals + section_counts.imports,
-        table_count=section_counts.tables,
+        global_count=section_counts.globals + section_counts.imported_globals,
+        table_count=section_counts.tables + section_counts.imported_tables,
+        allocator=allocator,
     )
-    type_indices = StaticVector[int](capacity=section_counts.functions)
+    type_indices = StaticVector[int](capacity=0)
     callbacks = _ParseCallbacks(module)
     off = 8
     last_section_id = 0
@@ -1120,11 +1204,11 @@ def parse(data: memoryview) -> Module:
             assert sec_id > last_section_id, "WASM sections are duplicated or out of order"
             last_section_id = sec_id
         if sec_id == SEC_TYPE:
-            _parse_type_section(data, off, sec_end, callbacks)
+            _parse_type_section(data, off, sec_end, callbacks, allocator)
         elif sec_id == SEC_IMPORT:
             _parse_import_section(data, off, sec_end, callbacks)
         elif sec_id == SEC_FUNCTION:
-            type_indices = _parse_function_section(data, off, sec_end)
+            type_indices = _parse_function_section(data, off, sec_end, allocator)
         elif sec_id == SEC_TABLE:
             _parse_table_section(data, off, sec_end, callbacks)
         elif sec_id == SEC_MEMORY:
@@ -1138,7 +1222,7 @@ def parse(data: memoryview) -> Module:
         elif sec_id == SEC_ELEMENT:
             _parse_element_section(data, off, sec_end, callbacks)
         elif sec_id == SEC_CODE:
-            _parse_code_section(data, off, sec_end, type_indices, callbacks)
+            _parse_code_section(data, off, sec_end, type_indices, callbacks, allocator)
         elif sec_id == SEC_DATA:
             _parse_data_section(data, off, sec_end, callbacks)
         elif sec_id == 0:
@@ -1160,5 +1244,18 @@ def parse(data: memoryview) -> Module:
     module.prepare_function_layouts()
     for function_index in range(len(module.imports), len(module.imports) + len(module.functions)):
         _index_stack_value_widths(module, function_index)
-    module.build_basic_block_index()
+    module.build_basic_block_index(allocator)
     return module
+
+
+def parse(data: memoryview, allocator: BumpAllocator | None = None) -> Module:
+    """Parse a module transactionally using its loader metadata arena."""
+
+    if allocator is None:
+        allocator = BumpAllocator()
+    watermark = allocator.save()
+    try:
+        return _parse_with_allocator(data, allocator)
+    except AssertionError as error:
+        allocator.restore(watermark)
+        assert False, str(error)

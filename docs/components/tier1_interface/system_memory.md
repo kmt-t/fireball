@@ -10,7 +10,7 @@
 <!-- traceability: {ConsolidatedHeap} {GLOBAL_IndependentHeap} {GLOBAL_Policy_Memory} {GLOBAL_StrictMemoryLimit} {META_3TierSeparation} {OneRuntimeOneGuest} -->
 メモリマネージャ（`memory-manager`）は、システム全体の統合物理メモリプール（`ConsolidatedHeap`）を基礎とする。5つの独立した静的アロケーションプールを貸与する抽象契約（`co_mem`）を定義する。各プールは用途、ライフサイクル、アロケータ方式が異なる。プール間は物理的にも領域的にも独立している。特定プールのメモリ不足が他のプールへ波及することを防ぐ。
 
-本コンポーネントが定義する5つのプールは以下の通りである。それぞれの詳細は「5.1 インターフェース設計」を参照。
+本コンポーネントが定義する5つのプールは以下の通りである。各プールの貸与条件と操作は、インターフェース定義で個別に示す。
 
 1. **ホスト用ヒープ**（`host-heap`）: システムコンテナ（IPCレジストリ、カーネルプール等）用の動的確保・個別解放ヒープ。
 2. **タスクヒープ**（`task-heap`）: COOS がタスクを起動する際に貸与する、タスク固有の固定長パーティション。
@@ -85,12 +85,12 @@ Tier 1 は、共有メモリ予約の外部マッピング管理者がライフ�
 ### 5.1 インターフェース設計
 <!-- traceability: {System_Allocator} {Shm_Allocator} {Runtime_BumpAllocator} {JIT_MultiBuffer_Cache} -->
 
-<!-- traceability: {GLOBAL_Policy_Memory} {META_StaticDI} {META_ContractImplSplit} -->
+<!-- traceability: {GLOBAL_Policy_Memory} {META_StaticDI} {META_ContractImplSplit} {META_ConfigurableSystem} {WIT_Interface_Spec} -->
 本コンポーネントの公開APIは `{META_StaticDI}` が定義する `co_mem` インターフェース契約そのものである。実装側（`runtime_memory.md`）は本契約をそのまま実現し、契約自体（メソッド名・引数・戻り値の意味）に食い違いがあれば本節を正とする。
 
 WIT インターフェース名は kebab-case で定義する。C++ の公開 API バインディングは、`fireball` 名前空間の下で `snake_case` として実装・公開する（例: `fireball::co_mem::host_alloc`）。
 
-各シグネチャは [`system_memory_contract.wit`](docs/components/tier1_interface/wit/system_memory_contract.wit) の `interface memory` を正本として引用する。プールの基点アドレスとサイズの静的構成は、[`system_config.md`](docs/components/tier1_core/system_config.md) §3.3.1 の `FB_CONF_*` 定数群を正本とする。各プールの契約は `{System_Allocator}`、`{Shm_Allocator}`、`{Runtime_BumpAllocator}`、`{JIT_MultiBuffer_Cache}` に紐付く。具体的な割当て方式は Tier 2 実装の [`runtime_memory.md`](docs/components/tier2_runtime/runtime_memory.md) を参照する。本契約は実行時初期化 API を持たない。製品ソースコード規模を抑える方針に基づき、起動時の静的構成だけで要件を満たすためである。
+各シグネチャは [`system_memory_contract.wit`](docs/components/tier1_interface/wit/system_memory_contract.wit) の `interface memory` を正本として引用する。プールの基点アドレスとサイズの静的構成は、[`system_config.md`](docs/components/tier1_core/system_config.md) が定める `FB_CONF_*` 定数群を正本とする。各プールの契約は `{System_Allocator}`、`{Shm_Allocator}`、`{Runtime_BumpAllocator}`、`{JIT_MultiBuffer_Cache}` に紐付く。具体的な割当て方式は Tier 2 実装の [`runtime_memory.md`](docs/components/tier2_runtime/runtime_memory.md) を参照する。本契約は実行時初期化 API を持たない。製品ソースコード規模を抑える方針に基づき、起動時の静的構成だけで要件を満たすためである。
 
 #### 5.1.1 ホスト用ヒープ（`host-heap`）
 <!-- traceability: {GLOBAL_Policy_Memory} {System_Allocator} -->
@@ -174,7 +174,7 @@ WIT インターフェース名は kebab-case で定義する。C++ の公開 AP
 
 #### 5.1.4 ランタイム用バンプアロケータ（`runtime-bump-allocator`）
 <!-- traceability: {Runtime_BumpAllocator} {OneRuntimeOneGuest} -->
-1ランタイム1ゲストの直交分離原則に従い、各ランタイムは専用のバンプアロケータアリーナを所有する。アリーナはランタイムごとに独立する。WASM モジュールのロード時に使うシステムコンテナストレージ（`module_view`、シンボルテーブル等）は、このアリーナから一括確保する。ランタイムまたはモジュールのアンロード時は、個別解放を行わず $O(1)$ で決定論的に一括解放する。
+1ランタイム1ゲストの直交分離原則に従い、各ランタイムは専用のバンプアロケータアリーナを所有する。アリーナはランタイムごとに独立する。WASM モジュールのロード時に使うシステムコンテナストレージ（`module_view`、シンボルテーブル等）は、このアリーナから一括確保する。モジュールのメタデータはランタイム破棄まで保持する。ランタイム破棄時は個別モジュールの解放を行わず、$O(1)$ で決定論的に一括解放する。
 
 | 項目 | 内容 |
 | :--- | :--- |
@@ -192,7 +192,7 @@ WIT インターフェース名は kebab-case で定義する。C++ の公開 AP
 
 | 項目 | 内容 |
 | :--- | :--- |
-| 機能概要 | アリーナ内の全確保を個別解放なしで一括リセットする（モジュール単位のアンロード等）。 |
+| 機能概要 | ランタイム破棄時にアリーナ内の全確保を個別モジュールの解放なしで一括リセットする。 |
 | シグネチャ | `reset-runtime-arena(arena: runtime-arena) -> void`<br>(C++マッピング: `fireball::co_mem::reset_runtime_arena`) |
 | 計算量 | $O(1)$（バンプポインタをアリーナ先頭へ巻き戻すのみ） |
 

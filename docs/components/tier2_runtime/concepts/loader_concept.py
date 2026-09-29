@@ -5,7 +5,7 @@ Reference Concept Implementation: WASM Loader & Zero-Copy Indexing Engine
 - Transactional allocation rollback via BumpAllocator (save/restore)
 - Zero-copy section indexing and module_view construction (exports_dict with binary search)
 - Lightweight verification scope (V1: Magic, V2: Version, V3: Section bounds, V4: Section order, V5: Type signature index, V6: Memory section page limit)
-- Multi-module registry, export lookup, import resolution across modules, and LIFO unload
+- Multi-module registry and import resolution, with metadata retained for the runtime lifetime
 - Lazy function/global accessors (FunctionAccessor, GlobalAccessor)
 """
 
@@ -18,7 +18,6 @@ import struct
 
 FB_CONF_MAX_MODULES = 4
 FB_CONF_MAX_FUNCTIONS = 256
-FB_CONF_MAX_EXPORTS = 64
 FB_CONF_MAX_GLOBALS = 32
 FB_CONF_MAX_IMPORTS = 32
 FB_CONF_MAX_WASM_PAGES = 16  # Simulator configuration limit for linear memory pages (64KB each)
@@ -81,11 +80,13 @@ class ExternalKind:
 
 class BumpAllocator:
     """
-    Non-owning LIFO bump allocator simulating ROM/RAM scratch allocation.
+    Runtime-owned monotonic arena simulating ROM/RAM metadata allocation.
+    Individual modules cannot release allocations; the runtime resets the arena
+    when the runtime itself is destroyed.
     `{META_BumpAllocator}`
     """
 
-    def __init__(self, capacity: int = 16384):
+    def __init__(self, capacity: int = 32768):
         self.capacity = capacity
         self.storage = bytearray(capacity)
         self.offset = 0
@@ -673,19 +674,17 @@ class WasmLoader:
 
     def __init__(
         self,
-        allocator: BumpAllocator | None = None,
+        allocator: BumpAllocator,
         max_modules: int = FB_CONF_MAX_MODULES,
         max_wasm_pages: int = FB_CONF_MAX_WASM_PAGES,
     ):
-        self.allocator = allocator or BumpAllocator()
-        self.registry: dict[str, ModuleView] = {}
-        self._load_order: list[str] = []
-        self._savepoints: dict[str, int] = {}
+        self._allocator = allocator
+        self._registry: dict[str, ModuleView] = {}
         self.max_modules = max_modules
         self.max_wasm_pages = max_wasm_pages
 
     def lookup(self, name: str) -> ModuleView | None:
-        return self.registry.get(name)
+        return self._registry.get(name)
 
     def prepare(self, module_name: str, wasm_binary: bytes | bytearray | memoryview) -> ModuleView:
         """
@@ -693,25 +692,23 @@ class WasmLoader:
         Guarantees full transactional rollback via BumpAllocator on failure.
         `{ROMParsing}` `{ZeroCopyIndexing}` `{LightweightVerifier}`
         """
-        if len(self.registry) >= self.max_modules:
+        if len(self._registry) >= self.max_modules:
             raise WasmLinkError(f"Module registry limit ({self.max_modules}) exceeded")
-        save_point = self.allocator.save()
+        save_point = self._allocator.save()
         try:
             view = self._parse_and_verify(module_name, wasm_binary)
-            self.registry[module_name] = view
-            self._load_order.append(module_name)
-            self._savepoints[module_name] = save_point
+            self._registry[module_name] = view
             return view
         except Exception:
             # Transactional rollback of any scratch allocations
-            self.allocator.restore(save_point)
+            self._allocator.restore(save_point)
             raise
 
     def _parse_and_verify(
         self, module_name: str, wasm_binary: bytes | bytearray | memoryview
     ) -> ModuleView:
         # Reserve metadata so rollback tests exercise a real allocator mutation.
-        self.allocator.allocate(64, alignment=8)
+        self._allocator.allocate(64, alignment=8)
         stream = BinaryStream(wasm_binary)
         # ----------------------------------------------------------------------
         # V1: Magic Number Check (\0asm -> 0x00, 0x61, 0x73, 0x6D)
@@ -895,10 +892,6 @@ class WasmLoader:
                 view.register_entity("GLOBAL", init_start, init_start + init_size, g_idx)
         elif sec_id == SectionID.EXPORT:
             count = stream.read_leb128_u32()
-            if count > FB_CONF_MAX_EXPORTS:
-                raise WasmParseError(
-                    f"Export count {count} exceeds FB_CONF_MAX_EXPORTS ({FB_CONF_MAX_EXPORTS})"
-                )
             for _ in range(count):
                 name = stream.read_string()
                 kind = stream.read_u8()
@@ -956,19 +949,6 @@ class WasmLoader:
 
         module.is_ready = True
         return True
-
-    def unload(self, module: ModuleView) -> bool:
-        """
-        Unloads module from registry and releases scratch allocations if LIFO.
-        """
-        if module.module_name in self.registry:
-            del self.registry[module.module_name]
-            if self._load_order and self._load_order[-1] == module.module_name:
-                save_point = self._savepoints.pop(module.module_name)
-                self.allocator.restore(save_point)
-                self._load_order.pop()
-            return True
-        return False
 
 
 # ==============================================================================
@@ -1091,7 +1071,8 @@ def _build_test_wasm_binary(
 
 
 def test_wasm_loader_lifecycle_and_verification() -> None:
-    loader = WasmLoader()
+    runtime_allocator = BumpAllocator()
+    loader = WasmLoader(runtime_allocator)
     # 1. Normal prepare & parse
     valid_wasm = _build_test_wasm_binary(export_names=["zeta", "alpha", "beta"])
     view = loader.prepare("math_module", valid_wasm)
@@ -1116,14 +1097,14 @@ def test_wasm_loader_lifecycle_and_verification() -> None:
     bytecode = bytes(code_stream.read_bytes(code_stream.remaining()))
     assert bytecode == bytes([0x20, 0x00, 0x20, 0x01, 0x6A, 0x0B])
     # 4. V1: Invalid Magic Number rejection & rollback
-    watermark_before = loader.allocator.offset
+    watermark_before = runtime_allocator.offset
     bad_magic_wasm = _build_test_wasm_binary(magic=b"\x7fELF")
     try:
         loader.prepare("bad_magic", bad_magic_wasm)
         raise AssertionError("Should fail V1")
     except WasmVerifyError as e:
         assert "V1 Verification Failed" in str(e)
-    assert loader.allocator.offset == watermark_before
+    assert runtime_allocator.offset == watermark_before
     # 5. V2: Invalid Version rejection & rollback
     bad_ver_wasm = _build_test_wasm_binary(version=2)
     try:
@@ -1131,7 +1112,7 @@ def test_wasm_loader_lifecycle_and_verification() -> None:
         raise AssertionError("Should fail V2")
     except WasmVerifyError as e:
         assert "V2 Verification Failed" in str(e)
-    assert loader.allocator.offset == watermark_before
+    assert runtime_allocator.offset == watermark_before
     # 6. V3: Section bounds overflow rejection & rollback
     bad_bounds_wasm = _build_test_wasm_binary(corrupt_section_bounds=True)
     try:
@@ -1139,7 +1120,7 @@ def test_wasm_loader_lifecycle_and_verification() -> None:
         raise AssertionError("Should fail V3")
     except WasmVerifyError as e:
         assert "V3 Verification Failed" in str(e)
-    assert loader.allocator.offset == watermark_before
+    assert runtime_allocator.offset == watermark_before
     # 7. V4: Section order corruption rejection & rollback
     bad_order_wasm = _build_test_wasm_binary(corrupt_section_order=True)
     try:
@@ -1147,7 +1128,7 @@ def test_wasm_loader_lifecycle_and_verification() -> None:
         raise AssertionError("Should fail V4")
     except WasmVerifyError as e:
         assert "V4 Verification Failed" in str(e)
-    assert loader.allocator.offset == watermark_before
+    assert runtime_allocator.offset == watermark_before
     # 8. V5: Invalid Type signature index rejection & rollback
     bad_type_wasm = _build_test_wasm_binary(invalid_type_idx=True)
     try:
@@ -1155,7 +1136,7 @@ def test_wasm_loader_lifecycle_and_verification() -> None:
         raise AssertionError("Should fail V5")
     except WasmVerifyError as e:
         assert "V5 Verification Failed" in str(e)
-    assert loader.allocator.offset == watermark_before
+    assert runtime_allocator.offset == watermark_before
     # 9. V6: Memory page limit overflow rejection & rollback
     bad_mem_wasm = _build_test_wasm_binary(memory_pages=32)
     try:
@@ -1163,7 +1144,7 @@ def test_wasm_loader_lifecycle_and_verification() -> None:
         raise AssertionError("Should fail V6")
     except WasmVerifyError as e:
         assert "V6 Verification Failed" in str(e)
-    assert loader.allocator.offset == watermark_before
+    assert runtime_allocator.offset == watermark_before
     # 10. Multi-module linking (resolve_imports)
     # Build lib module exporting 'helper'
     lib_wasm = _build_test_wasm_binary(export_names=["helper"])
@@ -1194,16 +1175,16 @@ def test_wasm_loader_lifecycle_and_verification() -> None:
     app_buf.append(SectionID.IMPORT)
     app_buf.extend(_encode_leb128_u32(len(app_imp)))
     app_buf.extend(app_imp)
-    app_watermark = loader.allocator.offset
     app_view = loader.prepare("app_module", bytes(app_buf))
     assert app_view.is_ready is False  # Not ready until imports resolved
     assert loader.resolve_imports(app_view) is True
     assert app_view.is_ready is True
     assert "lib_module.helper" in app_view.resolved_imports
-    # 11. Unload
-    assert loader.unload(app_view) is True
-    assert loader.lookup("app_module") is None
-    assert loader.allocator.offset == app_watermark
+    # Module metadata stays allocated until the owning runtime is destroyed.
+    assert loader.lookup("app_module") is app_view
+    assert runtime_allocator.offset > watermark_before
+    runtime_allocator.reset()
+    assert runtime_allocator.offset == 0
     print("[PASS] All WASM Loader concept tests passed successfully.")
 
 
@@ -1215,7 +1196,7 @@ def test_wasm_loader_radix_binary_tree_offset_indexing() -> None:
     - Reverse-lookup of FunctionAccessor, GlobalAccessor, SectionView by file byte offset
     - Boundary and invalid offset rejection
     """
-    loader = WasmLoader()
+    loader = WasmLoader(BumpAllocator())
     wasm_bytes = _build_test_wasm_binary(export_names=["alpha", "beta"])
     view = loader.prepare("radix_test_module", wasm_bytes)
     # 1. TEST-LOAD-40: Entities registered
@@ -1256,7 +1237,7 @@ def test_wasm_loader_hash_radix_binary_tree_view_symbol_lookup() -> None:
     - Hash collision resistance (string verification)
     - Non-existent symbol rejection without scanning the complete table
     """
-    loader = WasmLoader()
+    loader = WasmLoader(BumpAllocator())
     wasm_bytes = _build_test_wasm_binary(export_names=["alpha", "beta", "gamma", "compute"])
     view = loader.prepare("sym_mod", wasm_bytes)
     # TEST-LOAD-13: Hash + RadixBinaryTreeView symbol lookup

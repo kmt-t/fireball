@@ -1096,12 +1096,37 @@ class RingBuffer(Generic[T]):
 class StaticVector(Generic[T]):
     """Fixed-capacity sequential storage without dynamic heap reallocation."""
 
-    __slots__ = ("_frozen", "_items", "capacity")
+    __slots__ = ("_arena_offset", "_arena_size", "_frozen", "_items", "capacity")
 
-    def __init__(self, capacity: int = 32):
+    def __init__(
+        self,
+        capacity: int = 32,
+        *,
+        arena_offset: int | None = None,
+        arena_size: int = 0,
+    ):
         self.capacity = capacity
         self._items: list[T] = []
         self._frozen = False
+        # The reference simulator keeps Python records in _items and records
+        # only the non-owning target-arena span; the allocator owns the bytes.
+        assert arena_size >= 0
+        assert arena_offset is not None or arena_size == 0
+        assert arena_offset is None or arena_offset >= 0
+        self._arena_offset = arena_offset
+        self._arena_size = arena_size
+
+    @property
+    def arena_offset(self) -> int | None:
+        """Return the non-owning offset of this vector's arena backing."""
+
+        return self._arena_offset
+
+    @property
+    def arena_size(self) -> int:
+        """Return the byte size of this vector's arena backing reservation."""
+
+        return self._arena_size
 
     def freeze(self) -> StaticVector[T]:
         """Disables mutation and transfers this bounded sequence to read-only storage."""

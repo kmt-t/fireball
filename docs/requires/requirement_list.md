@@ -47,7 +47,7 @@ graph LR
 | `{JIT_LazyChaining}` | 常駐traceの直線後続へ進む際、共通コード領域のchain dispatcherがTraceヘッダのtarget bodyへtail-jumpする。opcode別の条件評価・C++ Interpreter handler実行はchainに含めない。 | 高 | レビュー <!-- definition: {JIT_LazyChaining} --> |
 | `{Interpreter_LazyJITSwitch}` | 制御命令はC++ Interpreterの命令別handlerで処理する。C++ dispatcherは共有後方分岐しきい値へ達するまで、常駐JIT traceまたはC++ handlerを続けて実行する。しきい値到達時にRuntimeEngineへyield statusを返す。JIT候補の観測・cache更新・コンパイルはTier 3 runtime境界が行う。分岐handlerからvSoCへは復帰しない。 | 高 | レビュー <!-- definition: {Interpreter_LazyJITSwitch} --> |
 | `{vMMIO_TrapAndEmulate}` | ゲストからのメモリアクセスをトラップし、ホスト側のフックを呼び出す。 | 高 | テスト <!-- definition: {vMMIO_TrapAndEmulate} --> |
-| `{VDMA}` | host call により、ゲストリニアメモリと仮想・物理アドレス間の高速転送を実現する。VDMAの制御要求は vMMIO レジスタを経由しない。 | 中 | テスト <!-- definition: {VDMA} --> |
+| `{VDMA}` | host call によるゲストリニアメモリと仮想・物理アドレス間の高速転送に加え、WASM `memory.copy` を同一ゲストリニアメモリ内で加速する内部コピー経路を提供する。VDMAの制御要求は vMMIO レジスタを経由しない。 | 中 | テスト <!-- definition: {VDMA} --> |
 | `{JIT_ReverseCompilationOrder}` | キューを逆順（LIFO）で処理し、コンパイル直後の即時チェイニング率を向上させる。 | 高 | レビュー <!-- definition: {JIT_ReverseCompilationOrder} --> |
 | `{DynamicMmap}` | 共有メモリIDを指定し、外部バッファをvMMIO空間に一時的にマッピングする。 | 高 | テスト <!-- definition: {DynamicMmap} --> |
 | `{EnvironmentPointer}` | 周辺コンポーネント・リニアメモリへの参照を `execution_context` 内の環境フィールド（`vsoc_runtime` 領域）経由で型安全に行う。 | 高 | レビュー <!-- definition: {EnvironmentPointer} --> |
@@ -55,12 +55,13 @@ graph LR
 | `{MemoryBoundaryCheck}` | メモリアクセス時の境界チェックを強制し、隔離性を保証する。 | 高 | テスト <!-- definition: {MemoryBoundaryCheck} --> |
 | `{WasmPageAlignment}` | メモリ割り当てをWASMページ単位（64KB）で行い、アドレス変換を効率化する。 | 中 | レビュー <!-- definition: {WasmPageAlignment} --> |
 | `{UnifiedAccessModel}` | 物理・共有メモリへの全アクセスをvMMIO層（PTEマッピング・unmap機構）に一本化してセキュリティを標準化する。未認可領域は unmap によりアクセス不可とし、ゲスト専用RAM（論理メモリ）はレイテンシ最優先のため`FastAddressCheck`による独立した高速境界チェック経路とし、vMMIO層の対象外とする。 | 高 | レビュー <!-- definition: {UnifiedAccessModel} --> |
-| `{Wasm32Only}` | MVP命令セットのみをサポートし、64-bitアドレス空間（Wasm64）やマルチスレッド等の非組込み拡張を除外してリソースを削減する（F32/F64浮動小数点演算はサポート）。 | 高 | テスト <!-- definition: {Wasm32Only} --> |
+| `{Wasm32Only}` | wasm32の単一リニアメモリを対象とし、WASM Core 1.0 MVPを基礎に明示選択した`0xFC`命令だけを追加する。Wasm64やマルチスレッド等は除外する。 | 高 | テスト <!-- definition: {Wasm32Only} --> |
+| `{WasmFCSubset}` | `0xFC`の飽和型浮動小数点→整数変換8命令と、単一メモリ向け`memory.copy`/`memory.fill`だけをサポートする。変換はNaN・無限大・範囲外値をWASM規則で飽和させ、メモリ操作は全範囲を事前検証する。`memory.copy`の非重複転送は内部同期vDMA経路へ委譲可能とし、重複領域はCPUでmemmove意味論を実現する。 | 高 | テスト <!-- definition: {WasmFCSubset} --> |
 | `{FastAddressCheck}` | ゲストアドレスの境界チェックをサイズ比較の単一命令で高速化し、境界外は即座にトラップする（黙ったラップアラウンドは不可）。 | 中 | レビュー <!-- definition: {FastAddressCheck} --> |
 | `{vMMIO_Isolation}` | vMMIO空間へのアクセスのみをデバイスI/Oとして許可し、メモリ安全性を確保する。 | 高 | テスト <!-- definition: {vMMIO_Isolation} --> |
 | `{JIT_RuntimeAPI_Fallback}` | 複雑な命令をランタイムAPI呼び出しにフォールバックさせ、JITエンジンの複雑さを抑える。 | 高 | レビュー <!-- definition: {JIT_RuntimeAPI_Fallback} --> |
 | `{OneRuntimeOneGuest}` | 1つのWASMランタイムは厳密に1つのゲストモジュールのみを担当し、マルチインスタンス実行は共有VM内のスレッドではなく独立した別ランタイムの並行起動とIPC協調によって完全なメモリ・障害隔離を実現する。 | 高 | レビュー <!-- definition: {OneRuntimeOneGuest} --> |
-| `{Runtime_BumpAllocator}` | 各ランタイムが専用の固定長バンプアロケータ（`bump_allocator`）を所有し、モジュール内のシステムコンテナストレージ確保を一括管理して、アンロード時に個別破棄なしで $O(1)$ 決定論的メモリ解放を行う。 | 高 | テスト <!-- definition: {Runtime_BumpAllocator} --> |
+| `{Runtime_BumpAllocator}` | 各ランタイムが専用の固定長バンプアロケータ（`bump_allocator`）を所有し、ロードした全モジュールのシステムコンテナストレージ確保を一括管理する。メモリはランタイム破棄時に個別モジュールの破棄なしで $O(1)$ 解放する。 | 高 | テスト <!-- definition: {Runtime_BumpAllocator} --> |
 | `{System_Allocator}` | カーネル・仮想化基盤（COOS, vMMIO, IPC Router等）が常駐・運用するシステムコンテナの内部ストレージを dlmalloc（`mspace`）により動的アロケートし、個別解放・自動合体によるメモリ再利用を可能にする。 | 高 | レビュー <!-- definition: {System_Allocator} --> |
 | `{Shm_Allocator}` | IPC共有メモリプールから、タスクが要求する可変長（`size`）の `shared_block` バッファを切り出し、独立した4KB仮想予約スロット単位の権限分離を維持しつつ、要求サイズ分の物理バック領域をRAII解放時に再利用する。 | 高 | テスト <!-- definition: {Shm_Allocator} --> |
 | `InterpreterContextStackless` | Cスタックを使わないスタックレスなインタープリタ実行。 | 高 | レビュー |
@@ -93,7 +94,7 @@ graph LR
 | `{IPC_HandleBased}` | URIによる名前解決は初回のみとし、以降はハンドルで直接通信する。 | 高 | テスト <!-- definition: {IPC_HandleBased} --> |
 | `{URIAbstraction}` | コンポーネント間の依存関係を「スキーマ://ドメイン/サービス/ID」形式のURIで疎結合に記述する。 | 高 | レビュー <!-- definition: {URIAbstraction} --> |
 | `{IPCDI}` | IPCを介したサービス呼び出し時に、URIベースで依存性を解決し注入する。 | 高 | レビュー <!-- definition: {IPCDI} --> |
-| `RoleBasedAccessControl` | URIとロールマトリックスに基づく静的なアクセス制御を実施する。 | 高 | テスト |
+| `{RoleBasedAccessControl}` | URIとロールマトリックスに基づく静的なアクセス制御を実施する。 | 高 | テスト <!-- definition: {RoleBasedAccessControl} --> |
 | `{OwnershipTransfer}` | メッセージパッシング時にデータの所有権を論理的に移動し、不必要なコピーを避ける。 | 高 | テスト <!-- definition: {OwnershipTransfer} --> |
 | `{DictionaryBasedIPC}` | 文字列キーを静的辞書のオフセットに変換し、IPC転送量を削減する。 | 高 | テスト <!-- definition: {DictionaryBasedIPC} --> |
 | `{LowLatencyLookup}` | ソート済み配列と二分探索により、サービス検索の計算量を O(log N) に抑える。 | 高 | ベンチマーク <!-- definition: {LowLatencyLookup} --> |
@@ -226,7 +227,7 @@ graph LR
     - 想定構成: Cortex-M33 / RAM 64KB / ROM 128KB
     - ※ 評価は最小構成（32KB/96KB）をターゲットとする。
 - **パフォーマンス制約**: AOTを使用しない条件下で、WAMRインタープリタを上回る実行速度。
-- **互換性**: WASM MVP準拠（`{Wasm32Only}` の通り F32/F64 浮動小数点演算はサポートし、Wasm64・マルチスレッド等の非組込み拡張のみを除外する）。
+- **互換性**: wasm32単一メモリを対象とするWASM Core 1.0 MVPを基礎とし、追加対応は `{WasmFCSubset}` が列挙する`0xFC`の部分集合に限る。Wasm64・マルチスレッド等の非組込み拡張は対象外とする。
 - **開発環境**: clang 17+ (C23, C++23, libstdc++)。
 - **依存性**: 標準C/C++ライブラリ以外の外部ライブラリは用いない。
 - **コード規模**: 製品ソースコードを20 KSLOC以内とする。コメントとテストコードは計測対象外とする。

@@ -32,7 +32,7 @@
 | Tier 3 Plugins | `debugger` | `debugger_concept.py` | N/A（RSP の境界テストで直接検証） | `debugger_test_spec.md` | `test_debugger.py`, `test_gdb_remote.py` | 7, 8 | required |
 | Tier 2 Runtime | `hal_dispatch` | N/A（WIT/ディスパッチ契約） | `hal_dispatch_contract_model.py` | `hal_dispatch_test_spec.md` | `test_hal.py`, `test_syscall.py` | 10, 11 | contract_only |
 | Tier 2 Runtime | `jit_abi` | N/A（ABI 契約） | N/A（ABI の実レイアウトテストで検証） | N/A（`interface_wit_test_spec.md` に統合） | `test_interop_abi.py`, `test_x64_jit.py` | 4, 5, 8 | contract_only |
-| Tier 3 Executer | `interpreter` | `interpreter_concept.py` | `interpreter_stack_model.py`, `interpreter_control_flow_model.py` | `interpreter_test_spec.md` | `test_interpreter.py`, `test_wasm_differential.py`, `test_gotchas.py` | 1〜12 | required |
+| Tier 3 Executer | `interpreter` | `interpreter_concept.py`, `bulk_memory_concept.py` | `interpreter_stack_model.py`, `interpreter_control_flow_model.py`, `wasm_bulk_memory_model.py` | `interpreter_test_spec.md`, `wasm_instruction_set_test_spec.md` | `test_interpreter.py`, `test_wasm_differential.py`, `test_gotchas.py` | 1〜12 | required |
 | Tier 2 Runtime | `runtime_loader` | `loader_concept.py` | `loader_verification_model.py` | `runtime_loader_test_spec.md` | `test_loader.py` | 1, 3, 5, 8, 12 | required |
 | Tier 2 Runtime | `runtime_logging` | `logging_concept.py` | `logging_flush_model.py` | `runtime_logging_test_spec.md` | `test_logging.py` | 9 | required |
 | Tier 2 Runtime | `runtime_memory` | `runtime_memory_concept.py` | `runtime_memory_model.py` | `runtime_memory_test_spec.md` | `test_memory.py`, `test_vmmio.py` | 1, 4, 8, 10 | required |
@@ -42,7 +42,7 @@
 | Tier 2 Runtime | `runtime_plugin_architecture` | `runtime_composer.py`（pysim構成モデル） | N/A（C++生成物モデル未実装） | `runtime_plugin_architecture_test_spec.md` | `test_runtime_composer.py` | N/A（実機Runtime未統合） | contract_only |
 | Tier 2 Runtime | `runtime_observability` | `runtime_events.py`, `runtime_composer.py`（公開call境界のみ） | N/A（内部実行イベント未統合） | `runtime_observability_test_spec.md` | `test_runtime_composer.py` | N/A（実機Runtime未統合） | contract_only |
 | Tier 3 Plugins | `guest_profiler` | `guest_profiler.py` | `guest_profiler_model.py` | `guest_profiler_test_spec.md` | `test_guest_profiler.py` | `test_runtime_composer.py` | required |
-| Tier 3 Executer | `jit_compiler` | N/A (x64 implementation is covered directly; ARMv8-M is TBD) | `jit_cache_model.py` | `jit_compiler_test_spec.md` | `test_x64_asm.py`, `test_x64_stencils.py`, `test_x64_jit.py` | 4, 5, 8 | required |
+| Tier 3 Executer | `jit_compiler` | N/A (x64 implementation is covered directly; ARMv8-M is TBD) | `jit_cache_model.py` | `jit_compiler_test_spec.md`, `wasm_instruction_set_test_spec.md` | `test_x64_asm.py`, `test_x64_stencils.py`, `test_x64_jit.py` | 4, 5, 8 | required |
 | Tier 3 Executer | `jit_runtime` | N/A (x64 runtime tests cover the confirmed path; ARMv8-M is TBD) | `jit_cache_model.py` | `jit_runtime_test_spec.md` | `test_jit_runtime.py`, `test_x64_jit.py`, `test_jit_differential.py` | 4, 5, 8 | required |
 | Tier 3 Platform | `libfireball` | `libfireball.py`（pysim host-call参照モデルのみ） | N/A（ゲストC/C++ adapter未実装） | `libfireball_test_spec.md` | `test_libfireball.py` | N/A（実機ゲストABI未統合） | contract_only |
 | Tier 3 Platform | `platform_driver` | `platform_driver_concept.py` | `interrupt_boundary_model.py` | `platform_driver_test_spec.md` | `test_hal.py` | 10, 11 | required |
@@ -92,6 +92,7 @@
 | concept | [service_concept.py](docs/components/tier1_interface/concepts/service_concept.py) |
 | concept | [debugger_concept.py](docs/components/tier3_plugins/concepts/debugger_concept.py) |
 | concept | [interpreter_concept.py](docs/components/tier3_executer/concepts/interpreter_concept.py) |
+| concept | [bulk_memory_concept.py](docs/components/tier3_executer/concepts/bulk_memory_concept.py) |
 | concept | [loader_concept.py](docs/components/tier2_runtime/concepts/loader_concept.py) |
 | concept | [logging_concept.py](docs/components/tier2_runtime/concepts/logging_concept.py) |
 | concept | [runtime_memory_concept.py](docs/components/tier2_runtime/concepts/runtime_memory_concept.py) |
@@ -107,6 +108,7 @@
 | formal | [hal_dispatch_contract_model.py](docs/components/tier2_runtime/formal/hal_dispatch_contract_model.py) |
 | formal | [interpreter_stack_model.py](docs/components/tier3_executer/formal/interpreter_stack_model.py) |
 | formal | [interpreter_control_flow_model.py](docs/components/tier3_executer/formal/interpreter_control_flow_model.py) |
+| formal | [wasm_bulk_memory_model.py](docs/specs/formal/wasm_bulk_memory_model.py) |
 | formal | [guest_profiler_model.py](docs/components/tier3_plugins/formal/guest_profiler_model.py) |
 | formal | [loader_verification_model.py](docs/components/tier2_runtime/formal/loader_verification_model.py) |
 | formal | [logging_flush_model.py](docs/components/tier2_runtime/formal/logging_flush_model.py) |
@@ -129,6 +131,7 @@
 | test spec | [guest_profiler_test_spec.md](docs/qa/tier3_plugins/guest_profiler_test_spec.md) |
 | test spec | [hal_dispatch_test_spec.md](docs/qa/tier2_runtime/hal_dispatch_test_spec.md) |
 | test spec | [interpreter_test_spec.md](docs/qa/tier3_executer/interpreter_test_spec.md) |
+| test spec | [wasm_instruction_set_test_spec.md](docs/qa/specs/wasm_instruction_set_test_spec.md) |
 | test spec | [runtime_loader_test_spec.md](docs/qa/tier2_runtime/runtime_loader_test_spec.md) |
 | test spec | [runtime_logging_test_spec.md](docs/qa/tier2_runtime/runtime_logging_test_spec.md) |
 | test spec | [runtime_observability_test_spec.md](docs/qa/tier2_runtime/runtime_observability_test_spec.md) |

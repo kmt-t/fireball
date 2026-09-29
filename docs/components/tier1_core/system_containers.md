@@ -255,8 +255,9 @@ struct mutable_flat_map_storage {
 
 ### 4.1 アルゴリズム
 <!-- traceability: {META_BinarySearch} {FlatViewNarrowing} {PackedBitView} {LowLatencyLookup} {GLOBAL_StrictMemoryLimit} {META_ZeroCostAbstraction} -->
-- **絞り込み後二分探索 (Narrow-then-Search)**: 粗い索引で対象区間を先に狭め、狭めた区間に対してのみ二分探索を行う。全体の件数を $N$、絞り込み後を $n$ とすると計算量は $O(\log n)$ となり、$n$ が $N$ より十分小さい限り全体探索より少ない比較回数で済む。加えて、走査するキーが連続した狭い範囲に収まるため参照局所性が改善する。map / set の双方に適用される。
-- **絞り込みの合成**: 絞り込み操作の戻り値は同じビュー型であるため、複数段の索引を順に適用できる。各段は区間を単調に狭めるのみで、区間外の要素を再び含めることはない。
+- **疎なキーの検索**: `FlatMapView` と `FlatSetView` は、現在のビューに含まれる昇順のキーを二分探索する。現在のビューの要素数を $n$ とすると、検索の計算量は $O(\log n)$ である。全件ビューでは $n=N$ となる。
+- **キー範囲による絞り込み**: `narrow(lo, hi)` は現在のビュー内で境界を二分探索し、該当する非所有サブビューを返す。返されたビューに対する検索は、そのサブビューの要素数を $n$ として $O(\log n)$ である。再度の絞り込みは現在のビュー内で行い、除外済みの要素を復元しない。
+- **Radix検索**: `RadixBinaryTreeView` は Radix Table からキーに対応する区間を $O(1)$ で求め、その区間の要素だけを二分探索する。区間の要素数を $n$ とすると検索は $O(\log n)$ であり、$n$ は全体件数 $N$ 以下である。
 - **ビット詰めアクセス**: 論理添字 $i$ に対する物理位置は `bit = origin + i * Bits` として求まり、`byte = bit >> 3`、`shift = bit & 7` となる。`Bits` が 8 の約数であるため 1 要素がバイトを跨ぐことはなく、単一バイトのロードとシフト・マスクで読み出しが完結する。
 - **AoS 標準ソートと二分探索 (Standard Sort & Binary Search)**: 自前のソート関数（連動ヒープソート等）を再実装せず、C++ 標準の `std::sort` と射影付き `std::lower_bound` を利用する。`std::sort` は C++20 の `constexpr` に対応する。
 

@@ -35,6 +35,7 @@ from _bootstrap import configure_import_paths
 
 configure_import_paths(_PYSIM_DIR, _BENCH_DIR)
 
+from bump_allocator import BumpAllocator
 from config import FB_CONF_JIT_AGING_STEP_SCAN_BYTES, FB_CONF_JIT_AGING_STEP_UNITS
 from tier3_executer.interpreter.interpreter import (
     NATIVE_RUNTIME_PROFILE_STATS_ENABLED,
@@ -172,7 +173,8 @@ class JITAgingBenchmark:
     ) -> AgingResult:
         assert wasmtime is not None
         wasm = bytes(wasmtime.wat2wasm(build_workload_wat(self.hot_functions, self.cold_functions)))
-        module = parse(wasm)
+        runtime_allocator = BumpAllocator()
+        module = parse(wasm, runtime_allocator)
         compiler = _CountingCompiler()
         settings: dict[str, int] = {}
         if units is not None:
@@ -182,6 +184,7 @@ class JITAgingBenchmark:
         engine = RuntimeEngine(
             jit_runtime=JITRuntimeManager(jit_compiler=compiler, **settings),
             collect_runtime_stats=NATIVE_RUNTIME_PROFILE_STATS_ENABLED,
+            bump_allocator=runtime_allocator,
         )
         engine.register_module_blocks(module)
         hook = _RotationHook(engine, aging)

@@ -18,7 +18,7 @@ while not (_PYSIM_DIR / "tier1_core").is_dir():
 """
 experiments/pysim/qa/tier2_runtime/test_loader.py
 Tests for WASM Loader, Zero-Copy Indexing, and Hash + ReadOnlyRadixBinaryTreeView Symbol/Import/Offset Indexes.
-Conforms strictly to docs/qa/tier2_runtime/runtime_loader_test_spec.md (TEST-LOAD-01 ~ TEST-LOAD-47).
+Conforms strictly to docs/qa/tier2_runtime/runtime_loader_test_spec.md (TEST-LOAD-01 ~ TEST-LOAD-55).
 """
 
 from helpers import (
@@ -28,6 +28,7 @@ from helpers import (
     wat_to_wasm,
 )
 from loader import (
+    BumpAllocator,
     DecodedEntityKind,
     ExternalKind,
     FuncType,
@@ -40,41 +41,42 @@ from loader import (
 
 def test_load_01_to_07_lightweight_verification():
     """TEST-LOAD-01..07: Verifies V1-V6 lightweight checks and transactional rollback."""
-    loader = WasmLoader()
+    runtime_allocator = BumpAllocator()
+    loader = WasmLoader(runtime_allocator)
     # Normal prepare
     valid_wasm = _build_test_wasm_binary(export_names=["zeta", "alpha", "beta"])
     view = loader.prepare("valid_mod", valid_wasm)
     assert view.is_ready is True
     # V1: Bad magic
-    watermark = loader.allocator.offset
+    watermark = runtime_allocator.offset
     with expect_assertion():
         loader.prepare("bad_magic", _build_test_wasm_binary(magic=b"\x7fELF"))
-    assert loader.allocator.offset == watermark
+    assert runtime_allocator.offset == watermark
     # V2: Bad version
     with expect_assertion():
         loader.prepare("bad_ver", _build_test_wasm_binary(version=2))
-    assert loader.allocator.offset == watermark
+    assert runtime_allocator.offset == watermark
     # V3: Bad section bounds
     with expect_assertion():
         loader.prepare("bad_bounds", _build_test_wasm_binary(corrupt_section_bounds=True))
-    assert loader.allocator.offset == watermark
+    assert runtime_allocator.offset == watermark
     # V4: Bad section order
     with expect_assertion():
         loader.prepare("bad_order", _build_test_wasm_binary(corrupt_section_order=True))
-    assert loader.allocator.offset == watermark
+    assert runtime_allocator.offset == watermark
     # V5: Bad type index
     with expect_assertion():
         loader.prepare("bad_type", _build_test_wasm_binary(invalid_type_idx=True))
-    assert loader.allocator.offset == watermark
+    assert runtime_allocator.offset == watermark
     # V6: Exceeds page budget
     with expect_assertion():
         loader.prepare("bad_mem", _build_test_wasm_binary(memory_pages=32))
-    assert loader.allocator.offset == watermark
+    assert runtime_allocator.offset == watermark
 
 
 def test_load_10_to_15_zero_copy_and_accessors():
     """TEST-LOAD-10..15: Verifies ROM direct references, Hash + ReadOnlyRadixBinaryTreeView export lookup, and lazy accessors."""
-    loader = WasmLoader()
+    loader = WasmLoader(BumpAllocator())
     wasm_bytes = _build_test_wasm_binary(export_names=["zeta", "alpha", "beta"])
     view = loader.prepare("zc_mod", wasm_bytes)
     # Exports sorted
@@ -99,9 +101,9 @@ def test_load_10_to_15_zero_copy_and_accessors():
     assert mutable is False
 
 
-def test_load_20_to_25_multi_module_import_resolution():
-    """TEST-LOAD-20..25: Verifies multi-module imports, readiness, linking via Hash + ReadOnlyRadixBinaryTreeView, and unloading."""
-    loader = WasmLoader()
+def test_load_20_to_24_multi_module_import_resolution():
+    """TEST-LOAD-20..24: Verifies multi-module imports, readiness and linking."""
+    loader = WasmLoader(BumpAllocator())
     # 1. Prepare target library module
     lib_wasm = _build_test_wasm_binary(export_names=["helper"])
     loader.prepare("lib_mod", lib_wasm)
@@ -137,14 +139,11 @@ def test_load_20_to_25_multi_module_import_resolution():
     assert loader.resolve_imports(app_view) is True
     assert app_view.is_ready is True
     assert app_view.resolved_imports.view().find(fnv1a_32("lib_mod.helper")) is not None
-    # Unload
-    assert loader.unload(app_view) is True
-    assert loader.lookup("app_mod") is None
 
 
 def test_load_40_to_47_radix_binary_tree_view_indexes():
     """TEST-LOAD-40..47: Verifies ReadOnlyRadixBinaryTreeView file offset and Hash symbol/import indexes."""
-    loader = WasmLoader()
+    loader = WasmLoader(BumpAllocator())
     wasm_bytes = _build_test_wasm_binary(export_names=["alpha", "beta", "gamma", "compute"])
     view = loader.prepare("radix_mod", wasm_bytes)
     # 1. TEST-LOAD-40: Entities registered in DecodedEntityRegistry
@@ -220,7 +219,7 @@ def test_load_40_to_47_radix_binary_tree_view_indexes():
 
 def test_load_54_rom_backed_names_and_hash_collision_resolution():
     """TEST-LOAD-54: Name indexes retain ROM ranges and distinguish equal FNV hashes."""
-    loader = WasmLoader()
+    loader = WasmLoader(BumpAllocator())
     view = loader.prepare(
         "collision_mod", _build_test_wasm_binary(export_names=["ufbwjn", "rsksbm"])
     )

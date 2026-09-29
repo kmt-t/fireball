@@ -31,7 +31,7 @@ from ipc_router import (
     OwnershipState,
     Role,
 )
-from loader import WasmLoader
+from loader import BumpAllocator, WasmLoader
 from memory import FB_CONF_MEMORY_POOL_SIZE, MemoryManager
 from runtime_events import RuntimeEvent
 from scheduler import ChannelAction, Scheduler, Task, WaitDir
@@ -678,7 +678,7 @@ def test_dbg_gotcha_01_debugger_and_jit_composition_is_rejected():
 
 def test_load_gotcha_01_non_existent_symbol_fast_rejection():
     """GOTCHA-LOAD-01: Non-existent symbol rejection is O(k) without linear scan."""
-    loader = WasmLoader()
+    loader = WasmLoader(BumpAllocator())
     wasm_bytes = _build_test_wasm_binary(export_names=["foo", "bar"])
     view = loader.prepare("test_mod", wasm_bytes)
     assert view.lookup_export("non_existent_symbol_xyz") is None

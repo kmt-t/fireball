@@ -74,7 +74,7 @@ verification_matrix:
   pairwise_test: "experiments/pysim/qa/cross_cutting/test_pairwise_combinations.py"
   expected:
     component_specs: 25
-    concept_files: 13
+    concept_files: 14
     formal_models: 19
     test_specs: 24
     pysim_unit_suites: 30

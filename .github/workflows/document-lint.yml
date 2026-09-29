@@ -35,6 +35,12 @@ jobs:
       run: |
         chmod +x tools/*.sh
 
+    - name: Build PySim native extensions
+      run: |
+        clang++ --version
+        FIREBALL_BUILD_RUNTIME_PROFILE_STATS=1 bash experiments/pysim/tier3_executer/interpreter/build_native.sh
+        bash experiments/pysim/tier3_executer/jit/build_native.sh
+
     - name: Run PySim Source Quality Gate & Unit Tests
       run: |
         ./tools/check-src.sh -g pysim
@@ -89,6 +95,12 @@ jobs:
     - name: Ensure script execution permissions
       run: |
         chmod +x tools/*.sh
+
+    - name: Build PySim native extensions
+      run: |
+        clang++ --version
+        FIREBALL_BUILD_RUNTIME_PROFILE_STATS=1 bash experiments/pysim/tier3_executer/interpreter/build_native.sh
+        bash experiments/pysim/tier3_executer/jit/build_native.sh
 
     - name: Run Document & Source Quality Gates
       run: |

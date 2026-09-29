@@ -39,7 +39,6 @@ You need Clang, CMake, Ninja, and Python (with `uv` recommended) to build and ve
   ```bash
   uv sync
   ```
-  `requirements.txt` remains a compatibility mirror for tools that require a requirements file.
   Key modules include:
   - **Verification Engine (`spec-integrator`)**: `pyModelChecking` (CTL/LTL formal verification), `mistune` (Markdown AST parser), `pyyaml`, `requests`, `urllib3`, `mermaidx`.
   - **Simulator & JIT Machine Code (`experiments/pysim`)**: `wasmtime` (WASM reference runtime for differential testing).

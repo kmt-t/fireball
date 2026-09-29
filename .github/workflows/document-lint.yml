@@ -21,17 +21,15 @@ jobs:
       uses: astral-sh/setup-uv@v5
       with:
         enable-cache: true
-        python-version: '3.11'
+        python-version: '3.14'
 
     - name: Set up Python
       uses: actions/setup-python@v6
       with:
-        python-version: '3.11'
+        python-version: '3.14'
 
     - name: Install Fireball Python dependencies
-      run: |
-        python3 -m venv .venv
-        uv pip install --python .venv/bin/python -r requirements.txt
+      run: uv sync --locked
 
     - name: Ensure script execution permissions
       run: |
@@ -78,17 +76,15 @@ jobs:
       uses: astral-sh/setup-uv@v5
       with:
         enable-cache: true
-        python-version: '3.11'
+        python-version: '3.14'
 
     - name: Set up Python
       uses: actions/setup-python@v6
       with:
-        python-version: '3.11'
+        python-version: '3.14'
 
     - name: Install Fireball Python dependencies
-      run: |
-        python3 -m venv .venv
-        uv pip install --python .venv/bin/python -r requirements.txt
+      run: uv sync --locked
 
     - name: Ensure script execution permissions
       run: |

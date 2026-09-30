@@ -801,6 +801,53 @@ def test_wasm_mvp_typed_global_initializers_and_access():
     assert interp.call(module.export_func_index("get_f64"), []) == [-2.5]
 
 
+def test_native_interpreter_executes_typed_global_get_set():
+    """C++ global handlers read and write the same typed storage as Python."""
+    from tier3_executer.interpreter.interpreter import InterpreterBindings, NativeInterpreter
+
+    module = parse(
+        wat_to_wasm(
+            """(module
+              (global $g_i32 (mut i32) (i32.const -7))
+              (global $g_i64 (mut i64) (i64.const -1234567890123))
+              (global $g_f32 (mut f32) (f32.const -0))
+              (global $g_f64 (mut f64) (f64.const 1.25))
+              (func (export "get_i32") (result i32) (global.get $g_i32))
+              (func (export "set_i32") (param i32) (global.set $g_i32 (local.get 0)))
+              (func (export "get_i64") (result i64) (global.get $g_i64))
+              (func (export "set_i64") (param i64) (global.set $g_i64 (local.get 0)))
+              (func (export "get_f32") (result f32) (global.get $g_f32))
+              (func (export "set_f32") (param f32) (global.set $g_f32 (local.get 0)))
+              (func (export "get_f64") (result f64) (global.get $g_f64))
+              (func (export "set_f64") (param f64) (global.set $g_f64 (local.get 0))))"""
+        )
+    )
+    interpreter = NativeInterpreter(module, InterpreterBindings.empty())
+
+    assert interpreter.call(module.export_func_index("get_i32"), []) == [-7]
+    assert interpreter.call(module.export_func_index("get_i64"), []) == [-1234567890123]
+    f32_initial = interpreter.call(module.export_func_index("get_f32"), [])[0]
+    assert f32_initial == -0.0
+    import math
+
+    assert math.copysign(1.0, f32_initial) == -1.0
+    assert interpreter.call(module.export_func_index("get_f64"), []) == [1.25]
+
+    interpreter.call(module.export_func_index("set_i32"), [0x12345678])
+    interpreter.call(module.export_func_index("set_i64"), [0x0123456789ABCDEF])
+    interpreter.call(module.export_func_index("set_f32"), [3.25])
+    interpreter.call(module.export_func_index("set_f64"), [-2.5])
+
+    assert interpreter.call(module.export_func_index("get_i32"), []) == [0x12345678]
+    assert interpreter.call(module.export_func_index("get_i64"), []) == [0x0123456789ABCDEF]
+    assert interpreter.call(module.export_func_index("get_f32"), []) == [3.25]
+    assert interpreter.call(module.export_func_index("get_f64"), []) == [-2.5]
+    assert interpreter.globals[0] == 0x12345678
+    assert interpreter.globals[1] == 0x0123456789ABCDEF
+    assert interpreter.globals[2] == struct.unpack("<I", struct.pack("<f", 3.25))[0]
+    assert interpreter.globals[3] == struct.unpack("<Q", struct.pack("<d", -2.5))[0]
+
+
 def test_wasm_mvp_imported_immutable_global_initializer():
     """global.get constant expressions resolve an imported immutable global."""
     wat = """

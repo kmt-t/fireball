@@ -35,6 +35,12 @@ constexpr std::uint32_t kOldestTraceHit = 4;
 constexpr std::uint32_t kStopAtBlockBoundaryFlag = 1u << 0;
 constexpr std::uint32_t kStopAfterControlFlag = 1u << 1;
 constexpr std::uint32_t kDispatchYield = 5;
+constexpr std::uint32_t kTrapLocalStackCapacity = 1;
+constexpr std::uint32_t kTrapCallStackCapacity = 3;
+constexpr std::uint32_t kTrapOperandStackCapacity = 4;
+constexpr std::uint32_t kTrapTableIndexOutOfBounds = 6;
+constexpr std::uint32_t kTrapTableSlotUninitialized = 7;
+constexpr std::uint32_t kTrapIndirectCallTypeMismatch = 8;
 constexpr std::uint32_t kTrapUnreachable = 9;
 constexpr std::uint32_t kTrapMemoryOutOfBounds = 13;
 constexpr std::uint32_t kTrapDivideByZero = 15;
@@ -178,6 +184,188 @@ const fireball_call_frame_native* active_frame(const execution_context& current)
   return &current.call_stack->frames[current.call_stack->size - 1];
 }
 
+bool finish_current_function(execution_context& current) {
+  auto* stack = current.call_stack;
+  if (stack == nullptr || stack->size <= current.call_base + 1) {
+    current.ip = kSentinel;
+    return true;
+  }
+
+  const auto finished = stack->frames[stack->size - 1];
+  if (finished.return_ip == kSentinel || finished.return_func_index == kSentinel) {
+    current.ip = kSentinel;
+    return true;
+  }
+  --stack->size;
+  current.call_offset = stack->size;
+  current.local_offset = finished.local_base;
+  current.control_stack->size = finished.control_base;
+
+  const auto& caller = stack->frames[stack->size - 1];
+  if (caller.func_index != finished.return_func_index || caller.function_view == nullptr) {
+    current.ip = kSentinel;
+    return true;
+  }
+  current.code = caller.code;
+  current.code_size = caller.code_size;
+  current.control_base = caller.control_base;
+  current.ip = finished.return_ip;
+  return false;
+}
+
+bool signatures_match(const fireball_wasm_module_execution_view_native& module,
+                      std::uint32_t expected_type, std::uint32_t actual_type) {
+  if (expected_type >= module.type_count || actual_type >= module.type_count ||
+      module.types == nullptr) {
+    return false;
+  }
+  const auto& expected = module.types[expected_type];
+  const auto& actual = module.types[actual_type];
+  if (expected.param_count != actual.param_count ||
+      expected.result_count != actual.result_count) {
+    return false;
+  }
+  if (expected.param_count == 0 && expected.result_count == 0) return true;
+  if (module.signature_bytes == nullptr) return false;
+  for (std::uint32_t index = 0; index < expected.param_count; ++index) {
+    if (module.signature_bytes[expected.param_offset + index] !=
+        module.signature_bytes[actual.param_offset + index]) {
+      return false;
+    }
+  }
+  for (std::uint32_t index = 0; index < expected.result_count; ++index) {
+    if (module.signature_bytes[expected.result_offset + index] !=
+        module.signature_bytes[actual.result_offset + index]) {
+      return false;
+    }
+  }
+  return true;
+}
+
+template <bool Indirect>
+FIREBALL_CPS_CALL step_result begin_native_call(execution_context* context,
+                                                std::uint32_t* sp,
+                                                std::uint32_t* local_stack,
+                                                std::uint32_t) {
+  auto& current = *context;
+  const auto source_ip = current.ip;
+  auto operand_ip = source_ip + 1;
+  std::uint32_t function_index = 0;
+  std::uint32_t expected_type = kSentinel;
+  std::uint32_t table_index = 0;
+  std::uint32_t table_slot = 0;
+  const auto* caller = active_frame(current);
+  if (caller == nullptr || caller->function_view == nullptr ||
+      caller->function_view->module_view == nullptr) {
+    return trap(kTrapUnreachable);
+  }
+  const auto& module = *caller->function_view->module_view;
+
+  if constexpr (Indirect) {
+    if (!read_u32(current, operand_ip, expected_type) ||
+        !read_u32(current, operand_ip, table_index)) {
+      return trap(kTrapUnreachable);
+    }
+    if (table_index >= module.table_count || module.tables == nullptr) {
+      return trap(kTrapTableIndexOutOfBounds);
+    }
+    const auto& table = module.tables[table_index];
+    if (current.sp_offset == 0) return trap(kTrapOperandStackCapacity);
+    table_slot = sp[current.sp_offset - 1];
+    if (table_slot >= table.size || table.function_indices == nullptr) {
+      return trap(kTrapTableIndexOutOfBounds);
+    }
+    function_index = table.function_indices[table_slot];
+    if (function_index == kSentinel) return trap(kTrapTableSlotUninitialized);
+  } else if (!read_u32(current, operand_ip, function_index)) {
+    return trap(kTrapUnreachable);
+  }
+
+  if (function_index >= module.function_count || module.functions == nullptr) {
+    return trap(kTrapUnreachable);
+  }
+  const auto& target = module.functions[function_index];
+  if constexpr (Indirect) {
+    if (!signatures_match(module, expected_type, target.type_index)) {
+      return trap(kTrapIndirectCallTypeMismatch);
+    }
+  }
+  // Imports cross the host-call boundary; defined guest functions stay in this
+  // native dispatcher and never return to Python opcode handling.
+  if (target.is_import != 0) return fallback(source_ip);
+  if ((target.code == nullptr && target.code_size != 0) ||
+      (target.local_width_map == nullptr && target.local_width_count != 0) ||
+      target.module_view != &module || target.result_arity > 2 ||
+      target.local_width_count < target.param_count ||
+      target.param_packed_slot_count + (Indirect ? 1u : 0u) > current.sp_offset) {
+    return trap(kTrapUnreachable);
+  }
+  if (current.call_stack == nullptr ||
+      current.call_stack->size >= FIREBALL_NATIVE_CALL_STACK_CAPACITY) {
+    return trap(kTrapCallStackCapacity);
+  }
+  if (current.control_stack == nullptr) return trap(kTrapUnreachable);
+  if (current.reserved_0 == 0 || target.local_slot_count > current.reserved_0 ||
+      current.local_offset > current.reserved_0 - target.local_slot_count) {
+    return trap(kTrapLocalStackCapacity);
+  }
+
+  const auto local_base = current.local_offset;
+  const auto local_end = local_base + target.local_slot_count;
+  for (std::uint32_t index = local_base; index < local_end; ++index) {
+    local_stack[index] = 0;
+  }
+
+  const auto argument_base =
+      current.sp_offset - target.param_packed_slot_count - (Indirect ? 1u : 0u);
+  std::uint32_t argument_offset = argument_base;
+  for (std::uint32_t index = 0; index < target.param_count; ++index) {
+    const auto width_code = (target.local_width_map[index >> 2] >> ((index & 3u) * 2u)) & 3u;
+    const auto width = 1u << width_code;
+    if (width > target.slot_words || argument_offset + width > current.sp_offset ||
+        local_base + index * target.slot_words + width > local_end) {
+      return trap(kTrapUnreachable);
+    }
+    for (std::uint32_t word = 0; word < width; ++word) {
+      local_stack[local_base + index * target.slot_words + word] = sp[argument_offset++];
+    }
+  }
+  if (argument_offset != argument_base + target.param_packed_slot_count) {
+    return trap(kTrapUnreachable);
+  }
+
+  auto& callee = current.call_stack->frames[current.call_stack->size];
+  callee.func_index = function_index;
+  callee.code = target.code;
+  callee.code_size = target.code_size;
+  callee.function_view = &target;
+  callee.local_base = local_base;
+  callee.local_count = target.local_width_count;
+  callee.local_slot_count = target.local_slot_count;
+  callee.slot_words = target.slot_words;
+  callee.local_width_map = target.local_width_map;
+  callee.local_width_count = target.local_width_count;
+  callee.param_count = target.param_count;
+  callee.param_packed_slot_count = target.param_packed_slot_count;
+  callee.result_arity = target.result_arity;
+  callee.control_base = current.control_stack->size;
+  callee.return_ip = operand_ip;
+  callee.return_func_index = caller->func_index;
+  callee.boundary_next_pc = kSentinel;
+  callee.boundary_loops_to = kSentinel;
+
+  current.sp_offset = argument_base;
+  current.local_offset = local_end;
+  ++current.call_stack->size;
+  current.call_offset = current.call_stack->size;
+  current.ip = 0;
+  current.code = target.code;
+  current.code_size = target.code_size;
+  current.control_base = callee.control_base;
+  (void)local_stack;
+  [[clang::musttail]] return dispatch(context, sp, local_stack, top_value(current, sp));
+}
+
 bool is_requested_block_boundary(const execution_context& current) {
   if ((current.runtime_flags & kStopAtBlockBoundaryFlag) == 0) return false;
   const auto* frame = active_frame(current);
@@ -200,12 +388,11 @@ void record_loop_backedge(execution_context& current, std::uint32_t source_ip,
 const fireball_control_map_entry_native* control_entry(
     const execution_context& current, std::uint32_t ip) {
   const auto* frame = active_frame(current);
-  if (frame == nullptr || frame->control_map == nullptr || ip >= current.code_size) {
+  if (frame == nullptr || frame->function_view == nullptr ||
+      frame->function_view->control_map == nullptr || ip >= current.code_size) {
     return nullptr;
   }
-  const auto* entries = static_cast<const fireball_control_map_entry_native*>(
-      frame->control_map);
-  return &entries[ip];
+  return &frame->function_view->control_map[ip];
 }
 
 bool local_span(const execution_context& current, std::uint32_t index,
@@ -982,7 +1169,14 @@ FIREBALL_CPS_CALL step_result h_br(
   if (!read_u32(current, operand_ip, depth) || !branch(current, sp, depth, next_ip)) {
     return fallback(current.ip);
   }
-  if (next_ip == kSentinel) return complete();
+  if (next_ip == kSentinel) {
+    const bool outermost = current.call_stack == nullptr ||
+                           current.call_stack->size <= current.call_base + 1;
+    if (outermost && should_stop_after_control(current)) return block_boundary(kSentinel);
+    if (finish_current_function(current)) return complete();
+    if (should_stop_after_control(current)) return block_boundary(current.ip);
+    [[clang::musttail]] return dispatch(context, sp, local_base, top_value(current, sp));
+  }
   const auto* call_frame = active_frame(current);
   if (call_frame != nullptr && call_frame->boundary_next_pc != kSentinel) {
     next_ip = call_frame->boundary_next_pc & 0xFFFFu;
@@ -1012,7 +1206,14 @@ FIREBALL_CPS_CALL step_result h_br_if(
   }
   std::uint32_t next_ip = 0;
   if (!branch(current, sp, depth, next_ip)) return fallback(current.ip);
-  if (next_ip == kSentinel) return complete();
+  if (next_ip == kSentinel) {
+    const bool outermost = current.call_stack == nullptr ||
+                           current.call_stack->size <= current.call_base + 1;
+    if (outermost && should_stop_after_control(current)) return block_boundary(kSentinel);
+    if (finish_current_function(current)) return complete();
+    if (should_stop_after_control(current)) return block_boundary(current.ip);
+    [[clang::musttail]] return dispatch(context, sp, local_base, top_value(current, sp));
+  }
   const auto* call_frame = active_frame(current);
   if (call_frame != nullptr && call_frame->boundary_loops_to != kSentinel) {
     next_ip = call_frame->boundary_loops_to & 0xFFFFu;
@@ -1083,6 +1284,68 @@ FIREBALL_CPS_CALL step_result h_local_tee(
   [[clang::musttail]] return dispatch(context, sp, local_base, top_value(current, sp));
 }
 
+FIREBALL_CPS_CALL step_result h_global_get(
+    execution_context* context, std::uint32_t* sp, std::uint32_t* local_base,
+    std::uint32_t) {
+  auto& current = *context;
+  auto operand_ip = current.ip + 1;
+  std::uint32_t index = 0;
+  if (!read_u32(current, operand_ip, index)) return fallback(current.ip);
+
+  const auto* frame = active_frame(current);
+  const auto* module = frame == nullptr || frame->function_view == nullptr
+                           ? nullptr
+                           : frame->function_view->module_view;
+  if (module == nullptr || index >= module->global_count || module->globals == nullptr ||
+      module->global_widths == nullptr) {
+    return fallback(current.ip);
+  }
+
+  const auto width = module->global_widths[index];
+  if ((width != 1u && width != 2u) || current.sp_offset > current.sp_capacity ||
+      width > current.sp_capacity - current.sp_offset) {
+    return fallback(current.ip);
+  }
+  const auto value = module->globals[index];
+  if (!push(current, sp, static_cast<std::uint32_t>(value))) return fallback(current.ip);
+  if (width == 2u &&
+      !push(current, sp, static_cast<std::uint32_t>(value >> 32))) {
+    return fallback(current.ip);
+  }
+  current.ip = operand_ip;
+  [[clang::musttail]] return dispatch(context, sp, local_base, top_value(current, sp));
+}
+
+FIREBALL_CPS_CALL step_result h_global_set(
+    execution_context* context, std::uint32_t* sp, std::uint32_t* local_base,
+    std::uint32_t) {
+  auto& current = *context;
+  auto operand_ip = current.ip + 1;
+  std::uint32_t index = 0;
+  if (!read_u32(current, operand_ip, index)) return fallback(current.ip);
+
+  const auto* frame = active_frame(current);
+  const auto* module = frame == nullptr || frame->function_view == nullptr
+                           ? nullptr
+                           : frame->function_view->module_view;
+  if (module == nullptr || index >= module->global_count || module->globals == nullptr ||
+      module->global_widths == nullptr) {
+    return fallback(current.ip);
+  }
+
+  const auto width = module->global_widths[index];
+  if ((width != 1u && width != 2u) || current.sp_offset < width) {
+    return fallback(current.ip);
+  }
+  const auto source = current.sp_offset - width;
+  auto value = static_cast<std::uint64_t>(sp[source]);
+  if (width == 2u) value |= static_cast<std::uint64_t>(sp[source + 1]) << 32;
+  module->globals[index] = value;
+  current.sp_offset = source;
+  current.ip = operand_ip;
+  [[clang::musttail]] return dispatch(context, sp, local_base, top_value(current, sp));
+}
+
 FIREBALL_CPS_CALL step_result h_drop(
     execution_context* context, std::uint32_t* sp, std::uint32_t* local_base,
     std::uint32_t) {
@@ -1122,15 +1385,28 @@ FIREBALL_CPS_CALL step_result h_end(
     current.control_stack->size -= 1;
   }
   current.ip += 1;
+  if (current.ip >= current.code_size) {
+    const bool outermost = current.call_stack == nullptr ||
+                           current.call_stack->size <= current.call_base + 1;
+    if (outermost && should_stop_after_control(current)) return block_boundary(kSentinel);
+    if (finish_current_function(current)) return complete();
+    if (should_stop_after_control(current)) return block_boundary(current.ip);
+    [[clang::musttail]] return dispatch(context, sp, local_base, top_value(current, sp));
+  }
   if (should_stop_after_control(current)) return block_boundary(current.ip);
   [[clang::musttail]] return dispatch(context, sp, local_base, top_value(current, sp));
 }
 
 FIREBALL_CPS_CALL step_result h_return(
-    execution_context* context, std::uint32_t*, std::uint32_t*, std::uint32_t) {
-  if (should_stop_after_control(*context)) return block_boundary(kSentinel);
-  context->ip = kSentinel;
-  return complete();
+    execution_context* context, std::uint32_t* sp, std::uint32_t* local_stack,
+    std::uint32_t) {
+  auto& current = *context;
+  const bool outermost = current.call_stack == nullptr ||
+                         current.call_stack->size <= current.call_base + 1;
+  if (outermost && should_stop_after_control(current)) return block_boundary(kSentinel);
+  if (finish_current_function(current)) return complete();
+  if (should_stop_after_control(current)) return block_boundary(current.ip);
+  [[clang::musttail]] return dispatch(context, sp, local_stack, top_value(current, sp));
 }
 
 FIREBALL_CPS_CALL step_result h_br_table(
@@ -1153,7 +1429,14 @@ FIREBALL_CPS_CALL step_result h_br_table(
 
   std::uint32_t next_ip = 0;
   if (!branch(current, sp, selected_depth, next_ip)) return fallback(current.ip);
-  if (next_ip == kSentinel) return complete();
+  if (next_ip == kSentinel) {
+    const bool outermost = current.call_stack == nullptr ||
+                           current.call_stack->size <= current.call_base + 1;
+    if (outermost && should_stop_after_control(current)) return block_boundary(kSentinel);
+    if (finish_current_function(current)) return complete();
+    if (should_stop_after_control(current)) return block_boundary(current.ip);
+    [[clang::musttail]] return dispatch(context, sp, local_base, top_value(current, sp));
+  }
   record_loop_backedge(current, source_ip, next_ip);
   current.ip = next_ip;
   if (should_stop_after_control(current)) {
@@ -1491,7 +1774,7 @@ constexpr auto make_opcode_attributes() {
   };
 
   for (const auto opcode : {0x02u, 0x03u, 0x04u, 0x05u, 0x0Bu, 0x0Cu, 0x0Du, 0x0Eu,
-                            0x0Fu}) {
+                            0x0Fu, 0x10u, 0x11u}) {
     set_control_terminator(static_cast<std::uint8_t>(opcode));
   }
   set_prefixed(kOpcodeFcPrefix);
@@ -1509,7 +1792,10 @@ FIREBALL_CPS_CALL step_result dispatch(execution_context* context, std::uint32_t
   auto& current = *context;
   current.cf_offset = current.control_stack->size;
   if (is_requested_block_boundary(current)) return block_boundary(current.ip);
-  if (current.ip >= current.code_size) return complete();
+  if (current.ip >= current.code_size) {
+    if (finish_current_function(current)) return complete();
+    [[clang::musttail]] return dispatch(context, sp, local_base, top_value(current, sp));
+  }
 
   current.stack_checkpoint = current.sp_offset;
   const auto opcode = current.code[current.ip];
@@ -1545,11 +1831,15 @@ FIREBALL_CPS_CALL step_result dispatch(execution_context* context, std::uint32_t
     case 0x0D: [[clang::musttail]] return h_br_if(context, sp, local_base, tos);
     case 0x0E: [[clang::musttail]] return h_br_table(context, sp, local_base, tos);
     case 0x0F: [[clang::musttail]] return h_return(context, sp, local_base, tos);
+    case 0x10: [[clang::musttail]] return begin_native_call<false>(context, sp, local_base, tos);
+    case 0x11: [[clang::musttail]] return begin_native_call<true>(context, sp, local_base, tos);
     case 0x1A: [[clang::musttail]] return h_drop(context, sp, local_base, tos);
     case 0x1B: [[clang::musttail]] return h_select(context, sp, local_base, tos);
     case 0x20: [[clang::musttail]] return h_local_get(context, sp, local_base, tos);
     case 0x21: [[clang::musttail]] return h_local_set(context, sp, local_base, tos);
     case 0x22: [[clang::musttail]] return h_local_tee(context, sp, local_base, tos);
+    case 0x23: [[clang::musttail]] return h_global_get(context, sp, local_base, tos);
+    case 0x24: [[clang::musttail]] return h_global_set(context, sp, local_base, tos);
     case 0x36:
       [[clang::musttail]] return h_i32_store<sizeof(std::uint32_t)>(
           context, sp, local_base, tos);
@@ -1995,6 +2285,26 @@ bool prepare_native_dispatch_call(native_dispatch_call<CollectHotspots>& call) {
   return true;
 }
 
+template <bool CollectHotspots>
+bool refresh_native_dispatch_frame(native_dispatch_call<CollectHotspots>& call,
+                                   std::uint32_t& current_pc) {
+  const auto* active = active_frame(*call.context);
+  if (active == nullptr || active->function_view == nullptr) return false;
+  call.call_frame = const_cast<fireball_call_frame_native*>(active);
+  call.function_index = active->func_index;
+  call.local_base = active->local_base;
+  call.local_slots = active->local_slot_count;
+  call.control_base = active->control_base;
+  call.locals = call.local_stack + active->local_base;
+  call.code = active->code;
+  call.code_size = active->code_size;
+  call.context->code = active->code;
+  call.context->code_size = active->code_size;
+  call.context->control_base = active->control_base;
+  current_pc = (active->func_index << 16) | call.context->ip;
+  return true;
+}
+
 enum class dispatch_iteration { continue_dispatch, stop_dispatch, error };
 
 struct native_dispatch_stats {
@@ -2077,6 +2387,9 @@ dispatch_iteration execute_interpreted_block(
   call.call_frame->boundary_loops_to = kNoPc;
   context.sp_offset = call.stack_size;
   context.stack_checkpoint = call.stack_size;
+  context.code = call.call_frame->code;
+  context.code_size = call.call_frame->code_size;
+  context.control_base = call.call_frame->control_base;
   const auto result = execute_control_boundary<true>(call, interpreter_ip);
   if (result.kind == kFallback) {
     context.sp_offset = context.stack_checkpoint;
@@ -2093,7 +2406,7 @@ dispatch_iteration execute_interpreted_block(
   }
 
   call.stack_size = context.sp_offset;
-  if (result.kind == kComplete || result.next_ip == kNoPc || result.next_ip >= call.code_size) {
+  if (result.kind == kComplete || result.next_ip == kNoPc || result.next_ip == kSentinel) {
     context.ip = kNoPc;
     state.status = kComplete;
     return dispatch_iteration::stop_dispatch;
@@ -2109,7 +2422,12 @@ dispatch_iteration execute_interpreted_block(
   }
   context.ip = result.next_ip;
   call.stack_size = context.sp_offset;
-  const auto next_pc = (call.function_index << 16) | result.next_ip;
+  const auto* active = active_frame(context);
+  if (active == nullptr) {
+    PyErr_SetString(PyExc_RuntimeError, "native call returned without an active frame");
+    return dispatch_iteration::error;
+  }
+  const auto next_pc = (active->func_index << 16) | result.next_ip;
   state.current_pc = next_pc;
   if (context.loop_jump_count >= call.yield_threshold) {
     state.status = kDispatchYield;
@@ -2137,6 +2455,11 @@ dispatch_iteration execute_native_trace(
     PyErr_SetString(PyExc_RuntimeError, "native trace chain target is absent from its snapshot");
     return dispatch_iteration::error;
   }
+  const auto* active = active_frame(context);
+  if (active == nullptr || active->function_view == nullptr) {
+    PyErr_SetString(PyExc_RuntimeError, "native trace has no active function frame");
+    return dispatch_iteration::error;
+  }
   if (call.stack_size + terminal->stack_words > call.stack_capacity ||
       terminal->frame_depth > FIREBALL_NATIVE_CONTROL_STACK_CAPACITY - call.control_base) {
     context.ip = start.head_pc & 0xFFFFu;
@@ -2160,7 +2483,8 @@ dispatch_iteration execute_native_trace(
   call.call_frame->boundary_next_pc = terminal->next_pc;
   call.call_frame->boundary_loops_to = terminal->loops_to;
   const auto trace_entry = reinterpret_cast<native_trace_entry_fn>(start.entry_address);
-  trace_entry(&context, call.stack + call.stack_size, call.locals, 0);
+  trace_entry(&context, call.stack + call.stack_size,
+              call.local_stack + active->local_base, 0);
   if constexpr (CollectStats) {
     ++state.metrics.stats.trace_count;
     state.metrics.stats.body_count += chain_body_count;
@@ -2169,12 +2493,12 @@ dispatch_iteration execute_native_trace(
   context.sp_offset = call.stack_size;
 
   const auto terminal_ip = (terminal->head_pc & 0xFFFFu) + terminal->byte_span;
-  if (terminal_ip >= call.code_size) {
+  if (terminal_ip >= active->code_size) {
     context.ip = kNoPc;
     state.status = kComplete;
     return dispatch_iteration::stop_dispatch;
   }
-  if (!is_control_terminator(call.code[terminal_ip])) {
+  if (!is_control_terminator(active->code[terminal_ip])) {
     context.ip = terminal_ip;
     state.status = kFallback;
     return dispatch_iteration::stop_dispatch;
@@ -2194,7 +2518,7 @@ dispatch_iteration execute_native_trace(
     state.status = kTrap;
     return dispatch_iteration::stop_dispatch;
   }
-  if (result.kind == kComplete || result.next_ip == kNoPc || result.next_ip >= call.code_size) {
+  if (result.kind == kComplete || result.next_ip == kNoPc || result.next_ip == kSentinel) {
     context.ip = kNoPc;
     state.status = kComplete;
     return dispatch_iteration::stop_dispatch;
@@ -2207,7 +2531,12 @@ dispatch_iteration execute_native_trace(
   if constexpr (CollectStats) state.metrics.stats.control_handler_pending_trace = true;
   context.ip = result.next_ip;
   call.stack_size = context.sp_offset;
-  state.current_pc = (call.function_index << 16) | result.next_ip;
+  const auto* next_frame = active_frame(context);
+  if (next_frame == nullptr) {
+    PyErr_SetString(PyExc_RuntimeError, "native control handler returned without a frame");
+    return dispatch_iteration::error;
+  }
+  state.current_pc = (next_frame->func_index << 16) | result.next_ip;
   if (context.loop_jump_count >= call.yield_threshold) {
     state.status = kDispatchYield;
     return dispatch_iteration::stop_dispatch;
@@ -2277,6 +2606,10 @@ PyObject* run_native_dispatch_impl(PyObject*, PyObject* args) {
   native_dispatch_state<CollectStats, CollectHotspots> state{
       call, (call.function_index << 16) | call.initial_ip, kFallback, 0, {}};
   while (true) {
+    if (!refresh_native_dispatch_frame(call, state.current_pc)) {
+      PyErr_SetString(PyExc_RuntimeError, "native dispatcher lost its active call frame");
+      return nullptr;
+    }
     const auto* start = find_dispatch_entry(call.entries, call.entry_count, state.current_pc);
     if (start != nullptr && start->promote_on_hit != 0) {
       if constexpr (CollectStats) {
@@ -2432,6 +2765,7 @@ PyObject* run_native_step(PyObject* args, bool direct_control) {
     return Py_BuildValue("IIII", kTrap, execution_context->ip, execution_context->sp_offset,
                          result.trap_code);
   }
+  execution_context->ip = static_cast<std::uint32_t>(code_size);
   return Py_BuildValue("IIII", kComplete, kSentinel, execution_context->sp_offset, 0);
 }
 

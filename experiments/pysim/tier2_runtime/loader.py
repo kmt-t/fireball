@@ -307,6 +307,9 @@ class BinaryStream:
     def read_u8(self) -> int:
         return self.read_bytes(1)[0]
 
+    def read_u32_le(self) -> int:
+        return struct.unpack("<I", self.read_bytes(4))[0]
+
     def read_leb128_u32(self) -> int:
         result = 0
         shift = 0
@@ -868,8 +871,7 @@ class WasmLoader:
                 )
 
             # V2: Version Check
-            ver_raw = stream.read_bytes(4)
-            version = struct.unpack("<I", ver_raw)[0]
+            version = stream.read_u32_le()
             if version != 1:
                 assert False, (
                     f"V2 Verification Failed: Unsupported WASM version {version}, expected 1"

@@ -98,11 +98,55 @@ typedef struct fireball_wasm_run_result_native {
   uint64_t *results;
 } fireball_wasm_run_result_native;
 
+struct fireball_wasm_module_execution_view_native;
+
+typedef struct fireball_wasm_function_execution_view_native {
+  const uint8_t *code;
+  uint32_t code_size;
+  const fireball_control_map_entry_native *control_map;
+  const uint8_t *local_width_map;
+  uint32_t local_width_count;
+  uint32_t local_slot_count;
+  uint32_t slot_words;
+  uint32_t param_count;
+  uint32_t param_packed_slot_count;
+  uint32_t result_arity;
+  uint32_t type_index;
+  uint32_t is_import;
+  const struct fireball_wasm_module_execution_view_native *module_view;
+} fireball_wasm_function_execution_view_native;
+
+typedef struct fireball_wasm_function_type_execution_view_native {
+  uint32_t param_offset;
+  uint32_t param_count;
+  uint32_t result_offset;
+  uint32_t result_count;
+} fireball_wasm_function_type_execution_view_native;
+
+typedef struct fireball_wasm_table_execution_view_native {
+  const uint32_t *function_indices;
+  uint32_t size;
+} fireball_wasm_table_execution_view_native;
+
+typedef struct fireball_wasm_module_execution_view_native {
+  const fireball_wasm_function_execution_view_native *functions;
+  uint32_t function_count;
+  uint32_t imported_function_count;
+  const fireball_wasm_function_type_execution_view_native *types;
+  uint32_t type_count;
+  const uint8_t *signature_bytes;
+  const fireball_wasm_table_execution_view_native *tables;
+  uint32_t table_count;
+  uint64_t *globals;
+  const uint8_t *global_widths;
+  uint32_t global_count;
+} fireball_wasm_module_execution_view_native;
+
 typedef struct fireball_call_frame_native {
   uint32_t func_index;
   const uint8_t *code;
   uint32_t code_size;
-  const fireball_control_map_entry_native *control_map;
+  const fireball_wasm_function_execution_view_native *function_view;
   uint32_t local_base;
   uint32_t local_count;
   uint32_t local_slot_count;
@@ -174,6 +218,12 @@ using wasm_function_view_native = ::fireball_wasm_function_view_native;
 using wasm_module_view_native = ::fireball_wasm_module_view_native;
 using wasm_run_request_native = ::fireball_wasm_run_request_native;
 using wasm_run_result_native = ::fireball_wasm_run_result_native;
+using wasm_function_execution_view_native =
+    ::fireball_wasm_function_execution_view_native;
+using wasm_function_type_execution_view_native =
+    ::fireball_wasm_function_type_execution_view_native;
+using wasm_table_execution_view_native = ::fireball_wasm_table_execution_view_native;
+using wasm_module_execution_view_native = ::fireball_wasm_module_execution_view_native;
 using call_frame_native = ::fireball_call_frame_native;
 using call_stack_native = ::fireball_call_stack_native;
 using value_stack_native = ::fireball_value_stack_native;
@@ -197,6 +247,14 @@ static_assert(__is_standard_layout(wasm_run_request_native));
 static_assert(__is_trivially_copyable(wasm_run_request_native));
 static_assert(__is_standard_layout(wasm_run_result_native));
 static_assert(__is_trivially_copyable(wasm_run_result_native));
+static_assert(__is_standard_layout(wasm_function_execution_view_native));
+static_assert(__is_trivially_copyable(wasm_function_execution_view_native));
+static_assert(__is_standard_layout(wasm_function_type_execution_view_native));
+static_assert(__is_trivially_copyable(wasm_function_type_execution_view_native));
+static_assert(__is_standard_layout(wasm_table_execution_view_native));
+static_assert(__is_trivially_copyable(wasm_table_execution_view_native));
+static_assert(__is_standard_layout(wasm_module_execution_view_native));
+static_assert(__is_trivially_copyable(wasm_module_execution_view_native));
 static_assert(__is_standard_layout(value_stack_native));
 static_assert(__is_trivially_copyable(value_stack_native));
 static_assert(alignof(value_stack_native) == FIREBALL_NATIVE_STACK_ALIGNMENT_BYTES);
@@ -233,6 +291,13 @@ static_assert(sizeof(wasm_function_view_native) == 24);
 static_assert(sizeof(wasm_module_view_native) == 24);
 static_assert(sizeof(wasm_run_request_native) == 48);
 static_assert(sizeof(wasm_run_result_native) == 24);
+static_assert(sizeof(wasm_function_execution_view_native) == 72);
+static_assert(sizeof(wasm_function_type_execution_view_native) == 16);
+static_assert(sizeof(wasm_table_execution_view_native) == 16);
+static_assert(sizeof(wasm_module_execution_view_native) == 80);
+static_assert(offsetof(wasm_module_execution_view_native, globals) == 56);
+static_assert(offsetof(wasm_module_execution_view_native, global_widths) == 64);
+static_assert(offsetof(wasm_module_execution_view_native, global_count) == 72);
 static_assert(sizeof(value_stack_native) == 520);
 static_assert(offsetof(value_stack_native, values) == 0);
 static_assert(offsetof(value_stack_native, size) == 512);
@@ -243,7 +308,7 @@ static_assert(offsetof(control_stack_native, size) == 640);
 static_assert(sizeof(call_frame_native) == 96);
 static_assert(offsetof(call_frame_native, func_index) == 0);
 static_assert(offsetof(call_frame_native, code) == 8);
-static_assert(offsetof(call_frame_native, control_map) == 24);
+static_assert(offsetof(call_frame_native, function_view) == 24);
 static_assert(offsetof(call_frame_native, local_width_map) == 48);
 static_assert(sizeof(call_stack_native) == 3080);
 static_assert(offsetof(call_stack_native, frames) == 0);

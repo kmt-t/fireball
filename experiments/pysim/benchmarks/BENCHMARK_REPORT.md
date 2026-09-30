@@ -682,3 +682,59 @@ done
 C++ InterpreterはPython参照の約2.15倍速かった。Hybrid JITはC++ Interpreterの約0.42倍の速度（約2.37倍遅い）で、Python参照に対しても約0.91倍だった。JITは各試行で5 traceを生成し、診断実行のinterpreter blocksは82,960、JIT invocationsは82,015、native dispatcher trace transitionsは44,734、trace exits to interpreterは93,043で一致した。この測定ではJITが遅い事実を記録する。プロファイルなしでは遅延原因は確定しない。
 
 3回の性能結果は [`aobench_native_cpp_20260930_run1.json`](results/aobench_native_cpp_20260930_run1.json)、[`aobench_native_cpp_20260930_run2.json`](results/aobench_native_cpp_20260930_run2.json)、[`aobench_native_cpp_20260930_run3.json`](results/aobench_native_cpp_20260930_run3.json) に、出力長528バイトを含む検証結果は [`aobench_native_cpp_20260930_validation.json`](results/aobench_native_cpp_20260930_validation.json) に保存した。
+
+### 6.18 C++ Interpreter の関数呼び出し測定（2026-09-30）
+<!-- traceability: {ThreadedInterpreter} -->
+
+`call` と `call_indirect` をそれぞれ1万回実行する合成WASMを追加した。比較対象のbaselineは各ループで同じ `i + 1` を合計し、関数呼び出しを行わない。直接呼び出しは `leaf(i)`、間接呼び出しは1要素の `funcref` tableを経由して同じ `leaf(i)` を呼ぶ。3経路の返却値はすべて `50,005,000` で一致した。Python参照には `Interpreter`、C++経路にはPythonハンドラへフォールバックしない `NativeInterpreter` を使った。
+
+AMD Ryzen 5 5500GT、Linux 7.0.0-34-generic、CPython 3.14.6、Clang 21.1.8の環境でCPU 2へ固定し、独立プロセスを各3回実行した。各プロセスでは各測定を3回行い、その中央値を採った。以下はプロセス間中央値と範囲である。
+
+| 経路 | 処理 | 合計時間 (ms / 10,000回) | 1回あたり |
+| :--- | :--- | ---: | ---: |
+| Python Interpreter | baseline | 554.217 (553.398–555.620) | 55.42 µs/loop |
+| Python Interpreter | `call` | 1,070.832 (1,040.487–1,081.812) | 107.08 µs/call |
+| Python Interpreter | `call_indirect` | 1,118.579 (1,112.265–1,138.489) | 111.86 µs/call |
+| C++ Interpreter | baseline | 4.917 (4.824–4.931) | 491.66 ns/loop |
+| C++ Interpreter | `call` | 5.145 (5.067–5.265) | 514.49 ns/call |
+| C++ Interpreter | `call_indirect` | 5.230 (5.089–5.413) | 523.01 ns/call |
+
+同一回数の呼び出しを含む経路全体では、C++ InterpreterはPython参照に対し `call` で208.1倍、`call_indirect` で213.9倍速かった。呼び出しなしbaselineとの差を大きい測定で比較するため、65,535回ループを各プロセス7回、独立3プロセスで追加測定した。`call` と `call_indirect` はそれぞれ `520.26 ns/loop`、`525.29 ns/loop` で、baselineの `486.61 ns/loop` に対する差は約33.65 ns/callと38.68 ns/callだった。両呼び出し経路の試行範囲は重なるため、間接呼び出しが直接呼び出しより約5 ns遅いという差は確定的な性能差として扱わない。
+
+変更後の経路全体への影響を見るため、AO-Benchも同条件で3プロセス実行した。Python、C++ Interpreter、Hybrid JITの描画出力は一致し、各回528バイト、1,600 ray/frameだった。
+
+| 経路 | 中央値 (ms/frame) | 最小〜最大 (ms/frame) | 中央値 (rays/s) |
+| :--- | ---: | ---: | ---: |
+| Python参照Interpreter | 6,424.265 | 6,421.796–6,425.974 | 249 |
+| C++ Interpreter | 22.331 | 21.935–22.568 | 71,650 |
+| Hybrid JIT | 30.864 | 30.498–31.647 | 51,841 |
+
+C++ InterpreterはPython参照より287.7倍速く、直前の6.17節で記録したC++ Interpreterの2,807.37 ms/frameと比べて125.7倍短い時間で完了した。Hybrid JITも30.864 ms/frameまで短縮した。各診断実行では10 compiled traces、81,909 interpreter blocks、37,018 JIT invocations、36,563 native dispatcher trace transitions、943 trace exits to interpreterを記録した。6.17節は今回のC++関数呼び出し実装より前の測定であり、同一実装の前後比較ではなく参考比較として記録する。今回の測定はホスト上のPySIM結果であり、組み込みCPUの実行時間や実機性能を示すものではない。
+
+AMD uProf 5.3.521.0は導入され、`info --system`でIBS OP対応と`perf_event_paranoid=1`を認識した。しかし、`profile --event event=ibs-op,interval=250000`の収集開始は `Environment setup failed` で失敗し、ハードウェアサンプルとホットスポット結果は得られなかった。付属の `AMDuProfSetup.sh` はroot権限でtracefsアクセスと `bpftracer` の特権を設定する。このシステム権限変更は自動審査に拒否されたため適用していない。以下の時間値はwall-clock計測のみである。
+
+計測は次のコマンドで再現できる。
+
+```bash
+UV_CACHE_DIR=/tmp/fireball-uv-cache UV_OFFLINE=true UV_NO_SYNC=true \
+  bash experiments/pysim/tier3_executer/interpreter/build_native.sh
+for trial in 1 2 3; do
+  taskset -c 2 env UV_CACHE_DIR=/tmp/fireball-uv-cache UV_OFFLINE=true UV_NO_SYNC=true \
+    uv run --offline --no-sync python experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py \
+    --iterations 10000 --repeats 3 --variant both --workload all \
+    > "experiments/pysim/benchmarks/results/bench_call_dispatch_20260930_run${trial}.json"
+done
+for trial in 1 2 3; do
+  taskset -c 2 env UV_CACHE_DIR=/tmp/fireball-uv-cache UV_OFFLINE=true UV_NO_SYNC=true \
+    uv run --offline --no-sync python experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py \
+    --iterations 65535 --repeats 7 --variant native --workload all \
+    > "experiments/pysim/benchmarks/results/bench_call_dispatch_native_65535_20260930_run${trial}.json"
+done
+for trial in 1 2 3; do
+  taskset -c 2 env UV_CACHE_DIR=/tmp/fireball-uv-cache UV_OFFLINE=true UV_NO_SYNC=true \
+    uv run --offline --no-sync python -c 'import json,sys; sys.path.insert(0,"experiments/pysim/benchmarks/aobench"); from bench_aobench import run_aobench; print(json.dumps(run_aobench(),sort_keys=True))' \
+    > "experiments/pysim/benchmarks/results/aobench_native_calls_20260930_run${trial}.json"
+done
+```
+
+再現スクリプトは [`bench_call_dispatch.py`](interpreter/bench_call_dispatch.py) である。合成呼び出し測定は [`bench_call_dispatch_20260930_run1.json`](results/bench_call_dispatch_20260930_run1.json) から [`bench_call_dispatch_20260930_run3.json`](results/bench_call_dispatch_20260930_run3.json) と [`bench_call_dispatch_native_65535_20260930_run1.json`](results/bench_call_dispatch_native_65535_20260930_run1.json) から [`bench_call_dispatch_native_65535_20260930_run3.json`](results/bench_call_dispatch_native_65535_20260930_run3.json) に保存した。AO-Benchの各試行は [`aobench_native_calls_20260930_run1.json`](results/aobench_native_calls_20260930_run1.json) から [`aobench_native_calls_20260930_run3.json`](results/aobench_native_calls_20260930_run3.json) に保存した。

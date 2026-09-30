@@ -62,7 +62,12 @@ from interop_abi import (
     CallFrameNative,
     ControlMapEntryNative,
     ExecutionContextNative,
+    FunctionExecutionViewNative,
+    FunctionTypeExecutionViewNative,
+    ModuleExecutionViewNative,
+    NativeGlobalStorage,
     NativeValueStack,
+    TableExecutionViewNative,
 )
 from leb128 import decode_signed, decode_unsigned
 from native_stacks import (
@@ -552,7 +557,7 @@ class ExecEnv:
 
     module: Module
     memory: bytearray | None
-    globals: StaticVector[int]
+    globals: NativeGlobalStorage
     tables: StaticVector[StaticVector[int | None]]
     host_functions: StaticVector[WasmHostFunction | None]
     memory_decl: Memory
@@ -671,20 +676,66 @@ class _CallFrameStack:
 
     def push_back(self, frame: CallFrame) -> bool:
         assert len(self._frames) == len(self._native)
+        native_index = len(self._native)
         if not self._native.push_back(frame.native):
             return False
+        frame._native_slot = native_index
         if not self._frames.push_back(frame):
             self._native.pop_back()
+            frame._native_slot = -1
             return False
+        frame._native = None
         return True
 
     def pop_back(self) -> CallFrame:
         assert len(self._frames) == len(self._native)
-        native_frame = self._native.pop_back()
         frame = self._frames.pop_back()
         assert frame is not None
-        assert frame.native.func_index == native_frame.func_index
+        assert frame.native.func_index == self._native[-1].func_index
+        self._native.pop_back()
+        frame._native_slot = -1
+        frame._native = None
         return frame
+
+    def sync_native_frames(self, context: InterpreterContext, env: ExecEnv) -> None:
+        """Reconcile Python wrappers with the Native stack without copying records."""
+        adapter = context.native_module_execution
+        assert adapter is not None
+        common = 0
+        common_limit = min(len(self._frames), len(self._native))
+        while common < common_limit:
+            native_frame = self._native[common]
+            frame = self._frames[common]
+            if (
+                frame._native_slot != common
+                or frame.func_index != native_frame.func_index
+                or frame.frame_offset != native_frame.local_base
+                or frame.control_base != native_frame.control_base
+            ):
+                break
+            common += 1
+        while len(self._frames) > common:
+            frame = self._frames.pop_back()
+            assert frame is not None
+            frame._native_slot = -1
+            frame._native = None
+        assert len(self._native) <= self._frames.capacity
+        while len(self._frames) < len(self._native):
+            index = len(self._frames)
+            native_frame = self._native[index]
+            template = adapter.template(native_frame.func_index)
+            frame = CallFrame(
+                context,
+                native_frame.func_index,
+                native_frame.local_base,
+                env,
+                template=template,
+                native_slot=index,
+            )
+            self._frames.append(frame)
+        context.local_offset = int(context.native_context.local_offset)
+        context.local_stack.set_size(context.local_offset)
+        context.native_context.call_offset = len(self._native)
 
 
 class InterpreterContext:
@@ -695,6 +746,7 @@ class InterpreterContext:
         "_call_stack_native",
         "_context_ptr",
         "_context_view",
+        "_native_module_execution",
         "call_frame_stack",
         "control_frame_stack",
         "local_offset",
@@ -714,6 +766,7 @@ class InterpreterContext:
         self.local_stack: NativeValueStack = NativeValueStack(FB_CONF_MAX_LOCAL_STACK)
         self.local_offset = 0
         self.module = module
+        self._native_module_execution: NativeModuleExecution | None = None
         self._call_stack_native = NativeCallFrameStack(FB_CONF_MAX_NESTING_DEPTH)
         self.call_frame_stack = _CallFrameStack(
             self._call_stack_native,
@@ -724,6 +777,7 @@ class InterpreterContext:
         self._c_context.call_base = 0
         self._c_context.call_offset = 0
         self._c_context.sp_capacity = self.operand_stack.capacity
+        self._c_context.reserved_0 = self.local_stack.capacity
 
     @property
     def context_ptr(self) -> ctypes.c_void_p:
@@ -741,6 +795,14 @@ class InterpreterContext:
         return self._call_stack_native
 
     @property
+    def native_module_execution(self) -> NativeModuleExecution | None:
+        return self._native_module_execution
+
+    def install_native_module_execution(self, execution: NativeModuleExecution) -> None:
+        assert self._native_module_execution is None
+        self._native_module_execution = execution
+
+    @property
     def context_view(self) -> memoryview:
         """Return the zero-copy execution-context ABI record view."""
         return self._context_view
@@ -753,11 +815,15 @@ class InterpreterContext:
     ) -> CallFrame:
         """Push one frame's locals directly into the context-owned Native stack."""
         frame_offset = self.local_offset
+        template = None
+        if self._native_module_execution is not None:
+            template = self._native_module_execution.template(func_index)
         frame = CallFrame(
             self,
             func_index=func_index,
             frame_offset=frame_offset,
             env=env,
+            template=template,
         )
         local_slot_count = frame.local_slot_count
         assert len(raw_args) == frame.param_packed_slot_count
@@ -856,8 +922,8 @@ class CallFrame:
         "_native",
         "_native_br_table_targets",
         "_native_control_map",
-        "boundary_loops_to",
-        "boundary_next_pc",
+        "_native_function_view",
+        "_native_slot",
         "code",
         "context",
         "control_base",
@@ -881,16 +947,26 @@ class CallFrame:
         func_index: int,
         frame_offset: int,
         env: ExecEnv | None = None,
+        *,
+        template: CallFrame | None = None,
+        native_slot: int | None = None,
     ):
         module = context.module
         assert module is not None
         assert not module.is_import(func_index)
+        assert native_slot is None or 0 <= native_slot < len(context.native_call_stack)
+        self._native_slot = -1
+        native_frame = context.native_call_stack[native_slot] if native_slot is not None else None
         function = module.functions[func_index - len(module.imports)]
         local_widths = function.local_width_map_cache
         assert local_widths is not None
         self.context = context
         self.values = context.operand_stack
-        self.control_base = len(context.control_frame_stack)
+        self.control_base = (
+            int(native_frame.control_base)
+            if native_frame is not None
+            else len(context.control_frame_stack)
+        )
         self._frames = _ControlFrameWindow(context.control_frame_stack, self.control_base)
         self.func_index = func_index
         self.frame_offset = frame_offset
@@ -917,52 +993,78 @@ class CallFrame:
         self.code = context.module.code_for(func_index)
         assert function.control_map is not None
         self.control_map = function.control_map
-        control_map_array_type = ControlMapEntryNative * len(self.code)
-        native_control_map = control_map_array_type()
-        for index in range(len(self.code)):
-            native_control_map[index].match_end = 0xFFFF_FFFF
-            native_control_map[index].else_offset = 0xFFFF_FFFF
-            native_control_map[index].next_pc = 0xFFFF_FFFF
-            native_control_map[index].result_arity = 0
-            native_control_map[index].operand_width = 1
-            native_control_map[index].br_table_target_count = 0
-            native_control_map[index].br_table_targets = 0
-        for start, control in self.control_map.blocks.view().entries:
-            match_end, else_offset, result_arity = control
-            _, next_pc = decode_signed(self.code, start + 1, bits=32)
-            native_control_map[start].match_end = match_end
-            native_control_map[start].else_offset = (
-                0xFFFF_FFFF if else_offset is None else else_offset
-            )
-            native_control_map[start].next_pc = next_pc
-            native_control_map[start].result_arity = result_arity
-        if function.drop_widths is not None:
-            for start, width in function.drop_widths.view().entries:
-                native_control_map[start].operand_width = width
-        if function.select_widths is not None:
-            for start, width in function.select_widths.view().entries:
-                native_control_map[start].operand_width = width
-        br_tables = self.control_map.br_tables.view().entries
-        target_count = 0
-        for _, (labels, _) in br_tables:
-            target_count += len(labels) + 1
-        target_array_type = ctypes.c_uint32 * target_count
-        native_br_table_targets = target_array_type()
-        target_offset = 0
-        for start, (labels, default_label) in br_tables:
-            entry = native_control_map[start]
-            entry.br_table_target_count = len(labels) + 1
-            entry.br_table_targets = ctypes.addressof(
-                native_br_table_targets
-            ) + target_offset * ctypes.sizeof(ctypes.c_uint32)
-            for label in labels:
-                native_br_table_targets[target_offset] = label
+        if template is None:
+            control_map_array_type = ControlMapEntryNative * len(self.code)
+            native_control_map = control_map_array_type()
+            for index in range(len(self.code)):
+                native_control_map[index].match_end = 0xFFFF_FFFF
+                native_control_map[index].else_offset = 0xFFFF_FFFF
+                native_control_map[index].next_pc = 0xFFFF_FFFF
+                native_control_map[index].result_arity = 0
+                native_control_map[index].operand_width = 1
+                native_control_map[index].br_table_target_count = 0
+                native_control_map[index].br_table_targets = 0
+            for start, control in self.control_map.blocks.view().entries:
+                match_end, else_offset, result_arity = control
+                _, next_pc = decode_signed(self.code, start + 1, bits=32)
+                native_control_map[start].match_end = match_end
+                native_control_map[start].else_offset = (
+                    0xFFFF_FFFF if else_offset is None else else_offset
+                )
+                native_control_map[start].next_pc = next_pc
+                native_control_map[start].result_arity = result_arity
+            if function.drop_widths is not None:
+                for start, width in function.drop_widths.view().entries:
+                    native_control_map[start].operand_width = width
+            if function.select_widths is not None:
+                for start, width in function.select_widths.view().entries:
+                    native_control_map[start].operand_width = width
+            br_tables = self.control_map.br_tables.view().entries
+            target_count = 0
+            for _, (labels, _) in br_tables:
+                target_count += len(labels) + 1
+            target_array_type = ctypes.c_uint32 * target_count
+            native_br_table_targets = target_array_type()
+            target_offset = 0
+            for start, (labels, default_label) in br_tables:
+                entry = native_control_map[start]
+                entry.br_table_target_count = len(labels) + 1
+                entry.br_table_targets = (
+                    0
+                    if target_count == 0
+                    else ctypes.addressof(native_br_table_targets)
+                    + target_offset * ctypes.sizeof(ctypes.c_uint32)
+                )
+                for label in labels:
+                    native_br_table_targets[target_offset] = label
+                    target_offset += 1
+                native_br_table_targets[target_offset] = default_label
                 target_offset += 1
-            native_br_table_targets[target_offset] = default_label
-            target_offset += 1
-        assert target_offset == target_count
-        self._native_br_table_targets = native_br_table_targets
-        self._native_control_map = native_control_map
+            assert target_offset == target_count
+            self._native_br_table_targets = native_br_table_targets
+            self._native_control_map = native_control_map
+            func_type = module.func_type(func_index)
+            assert func_type.params is not None and func_type.results is not None
+            self._native_function_view = FunctionExecutionViewNative(
+                code=_native_buffer_address(self.code),
+                code_size=len(self.code),
+                control_map=(0 if len(self.code) == 0 else ctypes.addressof(native_control_map)),
+                local_width_map=_native_buffer_address(self.local_widths.raw_view),
+                local_width_count=self.local_count,
+                local_slot_count=self.local_slot_count,
+                slot_words=self.local_widths.slot_words,
+                param_count=self.param_count,
+                param_packed_slot_count=self.param_packed_slot_count,
+                result_arity=self.result_arity,
+                type_index=function.type_index,
+                is_import=0,
+                module_view=0,
+            )
+        else:
+            assert template.func_index == func_index
+            self._native_br_table_targets = template._native_br_table_targets
+            self._native_control_map = template._native_control_map
+            self._native_function_view = template._native_function_view
         self.env = env
         # Set by RuntimeEngine.run() right before each interp.step() call,
         # from that step's BasicBlock's own statically-computed next_pc /
@@ -975,28 +1077,54 @@ class CallFrame:
         # is dispatching never can, since it is a pure function of `pc`
         # alone. Stays None for a bare Interpreter.call() run with no
         # owning RuntimeEngine, so that path is byte-for-byte unchanged.
-        self.boundary_next_pc: int | None = None
-        self.boundary_loops_to: int | None = None
-        self._native = CallFrameNative(
-            func_index=self.func_index,
-            code=_native_buffer_address(self.code),
-            code_size=len(self.code),
-            control_map=ctypes.addressof(native_control_map),
-            local_base=self.frame_offset,
-            local_count=self.local_count,
-            local_slot_count=self.local_slot_count,
-            slot_words=self.local_widths.slot_words,
-            local_width_map=_native_buffer_address(self.local_widths.raw_view),
-            local_width_count=self.local_count,
-            param_count=self.param_count,
-            param_packed_slot_count=self.param_packed_slot_count,
-            result_arity=self.result_arity,
-            control_base=self.control_base,
-            return_ip=0xFFFF_FFFF,
-            return_func_index=0xFFFF_FFFF,
-            boundary_next_pc=0xFFFF_FFFF,
-            boundary_loops_to=0xFFFF_FFFF,
+        execution = context.native_module_execution
+        function_view_address = (
+            execution.function_view_address(func_index)
+            if execution is not None
+            else ctypes.addressof(self._native_function_view)
         )
+        if native_frame is None:
+            self._native = CallFrameNative(
+                func_index=self.func_index,
+                code=_native_buffer_address(self.code),
+                code_size=len(self.code),
+                function_view=function_view_address,
+                local_base=self.frame_offset,
+                local_count=self.local_count,
+                local_slot_count=self.local_slot_count,
+                slot_words=self.local_widths.slot_words,
+                local_width_map=_native_buffer_address(self.local_widths.raw_view),
+                local_width_count=self.local_count,
+                param_count=self.param_count,
+                param_packed_slot_count=self.param_packed_slot_count,
+                result_arity=self.result_arity,
+                control_base=self.control_base,
+                return_ip=0xFFFF_FFFF,
+                return_func_index=0xFFFF_FFFF,
+                boundary_next_pc=0xFFFF_FFFF,
+                boundary_loops_to=0xFFFF_FFFF,
+            )
+            assert native_slot is None
+        else:
+            assert native_slot is not None
+            assert native_frame.func_index == func_index
+            assert native_frame.code == _native_buffer_address(self.code)
+            assert native_frame.code_size == len(self.code)
+            assert native_frame.function_view == function_view_address
+            assert native_frame.local_base == frame_offset
+            assert native_frame.local_count == self.local_count
+            assert native_frame.local_slot_count == self.local_slot_count
+            assert native_frame.slot_words == self.local_widths.slot_words
+            assert native_frame.local_width_map == _native_buffer_address(
+                self.local_widths.raw_view
+            )
+            assert native_frame.local_width_count == self.local_count
+            assert native_frame.param_count == self.param_count
+            assert native_frame.param_packed_slot_count == self.param_packed_slot_count
+            assert native_frame.result_arity == self.result_arity
+            assert native_frame.control_base == self.control_base
+            self._native = None
+            self._native_slot = native_slot
 
     @property
     def context_ptr(self) -> ctypes.c_void_p:
@@ -1005,8 +1133,28 @@ class CallFrame:
     @property
     def native(self) -> CallFrameNative:
         """Return the flat native activation descriptor stored on the call stack."""
-
+        if self._native_slot >= 0:
+            return self.context.native_call_stack[self._native_slot]
+        assert self._native is not None, "inactive call frame has no Native descriptor"
         return self._native
+
+    @property
+    def boundary_next_pc(self) -> int | None:
+        value = int(self.native.boundary_next_pc)
+        return None if value == 0xFFFF_FFFF else value
+
+    @boundary_next_pc.setter
+    def boundary_next_pc(self, value: int | None) -> None:
+        self.native.boundary_next_pc = 0xFFFF_FFFF if value is None else value
+
+    @property
+    def boundary_loops_to(self) -> int | None:
+        value = int(self.native.boundary_loops_to)
+        return None if value == 0xFFFF_FFFF else value
+
+    @boundary_loops_to.setter
+    def boundary_loops_to(self, value: int | None) -> None:
+        self.native.boundary_loops_to = 0xFFFF_FFFF if value is None else value
 
     @property
     def frames(self) -> _ControlFrameWindow:
@@ -1022,10 +1170,181 @@ class CallFrame:
         self.boundary_loops_to = loops_to
         assert self.context.call_frame_stack
         assert self.context.call_frame_stack[-1] is self
-        native_frame = self.context.call_frame_stack.native[-1]
-        assert native_frame.func_index == self.func_index
-        native_frame.boundary_next_pc = 0xFFFF_FFFF if next_pc is None else next_pc
-        native_frame.boundary_loops_to = 0xFFFF_FFFF if loops_to is None else loops_to
+        assert self.native.func_index == self.func_index
+
+
+class NativeModuleExecution:
+    """Owns the module-wide immutable descriptors consumed by C++ calls."""
+
+    __slots__ = (
+        "_function_types",
+        "_function_views",
+        "_function_views_address",
+        "_global_widths",
+        "_module_view",
+        "_signature_bytes",
+        "_table_indices",
+        "_table_views",
+        "_templates",
+        "globals",
+        "module",
+        "tables",
+    )
+
+    def __init__(
+        self,
+        template_context: InterpreterContext,
+        module: Module,
+        env: ExecEnv,
+        tables: Sequence[StaticVector[int | None]],
+    ):
+        self.module = module
+        self.tables = tables
+        self.globals = env.globals
+        function_count = len(module.imports) + len(module.functions)
+        self._templates: StaticVector[CallFrame] = StaticVector(capacity=len(module.functions))
+        for local_index in range(len(module.functions)):
+            function_index = len(module.imports) + local_index
+            function = module.functions[local_index]
+            if function.control_map is None:
+                function.control_map = build_control_map(module.code_for(function_index))
+            self._templates.append(CallFrame(template_context, function_index, 0, env))
+
+        self._function_views = (FunctionExecutionViewNative * function_count)()
+        self._function_views_address = (
+            0 if function_count == 0 else ctypes.addressof(self._function_views)
+        )
+        for import_index in range(len(module.imports)):
+            import_record = module.imports[import_index]
+            function_type = module.func_type(import_index)
+            assert function_type.params is not None and function_type.results is not None
+            view = self._function_views[import_index]
+            view.code = 0
+            view.code_size = 0
+            view.control_map = 0
+            view.local_width_map = 0
+            view.local_width_count = 0
+            view.local_slot_count = 0
+            view.slot_words = 1
+            view.param_count = len(function_type.params)
+            view.param_packed_slot_count = sum(
+                value_slot_width(value_type) for value_type in function_type.params
+            )
+            view.result_arity = sum(
+                value_slot_width(value_type) for value_type in function_type.results
+            )
+            view.type_index = import_record.type_index
+            view.is_import = 1
+        for local_index in range(len(module.functions)):
+            function_index = len(module.imports) + local_index
+            template = self._templates[local_index]
+            native_view = self._function_views[function_index]
+            native_view.code = _native_buffer_address(template.code)
+            native_view.code_size = len(template.code)
+            native_view.control_map = (
+                0 if len(template.code) == 0 else ctypes.addressof(template._native_control_map)
+            )
+            native_view.local_width_map = _native_buffer_address(template.local_widths.raw_view)
+            native_view.local_width_count = template.local_count
+            native_view.local_slot_count = template.local_slot_count
+            native_view.slot_words = template.local_widths.slot_words
+            native_view.param_count = template.param_count
+            native_view.param_packed_slot_count = template.param_packed_slot_count
+            native_view.result_arity = template.result_arity
+            native_view.type_index = module.functions[local_index].type_index
+            native_view.is_import = 0
+
+        type_count = len(module.types)
+        type_array_type = FunctionTypeExecutionViewNative * type_count
+        self._function_types = type_array_type()
+        signature_size = 0
+        for type_index in range(type_count):
+            function_type = module.type_at(type_index)
+            assert function_type.params is not None and function_type.results is not None
+            signature_size += len(function_type.params) + len(function_type.results)
+        signature_array_type = ctypes.c_uint8 * signature_size
+        self._signature_bytes = signature_array_type()
+        signature_offset = 0
+        for type_index in range(type_count):
+            function_type = module.type_at(type_index)
+            assert function_type.params is not None and function_type.results is not None
+            descriptor = self._function_types[type_index]
+            descriptor.param_offset = signature_offset
+            descriptor.param_count = len(function_type.params)
+            for value_type in function_type.params:
+                self._signature_bytes[signature_offset] = value_type
+                signature_offset += 1
+            descriptor.result_offset = signature_offset
+            descriptor.result_count = len(function_type.results)
+            for value_type in function_type.results:
+                self._signature_bytes[signature_offset] = value_type
+                signature_offset += 1
+        assert signature_offset == signature_size
+
+        global_count = len(module.globals)
+        self._global_widths = (ctypes.c_uint8 * global_count)()
+        for global_index in range(global_count):
+            self._global_widths[global_index] = value_slot_width(module.globals[global_index].vtype)
+
+        self._table_views = (TableExecutionViewNative * len(tables))()
+        self._table_indices = (ctypes.c_uint32 * 0)()
+        self._module_view = ModuleExecutionViewNative(
+            functions=self._function_views_address,
+            function_count=function_count,
+            imported_function_count=len(module.imports),
+            types=(0 if type_count == 0 else ctypes.addressof(self._function_types)),
+            type_count=type_count,
+            signature_bytes=(0 if signature_size == 0 else ctypes.addressof(self._signature_bytes)),
+            tables=(0 if len(tables) == 0 else ctypes.addressof(self._table_views)),
+            table_count=len(tables),
+            globals=self.globals.native_address,
+            global_widths=(0 if global_count == 0 else ctypes.addressof(self._global_widths)),
+            global_count=global_count,
+        )
+        module_view_address = ctypes.addressof(self._module_view)
+        for function_index in range(function_count):
+            self._function_views[function_index].module_view = module_view_address
+        for local_index in range(len(module.functions)):
+            function_index = len(module.imports) + local_index
+            template = self._templates[local_index]
+            template._native.function_view = self.function_view_address(function_index)
+        self.refresh_tables()
+
+    def template(self, func_index: int) -> CallFrame:
+        local_index = func_index - len(self.module.imports)
+        assert 0 <= local_index < len(self._templates)
+        return self._templates[local_index]
+
+    def function_view_address(self, func_index: int) -> int:
+        assert 0 <= func_index < len(self.module.imports) + len(self.module.functions)
+        return self._function_views_address + func_index * ctypes.sizeof(
+            FunctionExecutionViewNative
+        )
+
+    def refresh_tables(self) -> None:
+        """Refresh table slots before dispatch so host changes remain visible."""
+        entry_count = 0
+        for table in self.tables:
+            entry_count += len(table)
+        if len(self._table_indices) != entry_count:
+            table_index_type = ctypes.c_uint32 * entry_count
+            self._table_indices = table_index_type()
+        entry_offset = 0
+        for table_index, table in enumerate(self.tables):
+            descriptor = self._table_views[table_index]
+            descriptor.function_indices = (
+                0
+                if len(table) == 0
+                else ctypes.addressof(self._table_indices)
+                + entry_offset * ctypes.sizeof(ctypes.c_uint32)
+            )
+            descriptor.size = len(table)
+            for function_index in table:
+                self._table_indices[entry_offset] = (
+                    0xFFFF_FFFF if function_index is None else function_index
+                )
+                entry_offset += 1
+        assert entry_offset == entry_count
 
 
 # The interpreter call's resumable continuation: (next_ip, frame, local_base,
@@ -1223,7 +1542,7 @@ class Interpreter:
 
         assert len(bindings.host_functions) == len(module.imports)
         self.host_functions = bindings.host_functions
-        self.globals: StaticVector[int] = StaticVector(capacity=len(module.globals))
+        self.globals = NativeGlobalStorage(capacity=len(module.globals))
         global_import_index = 0
         assert len(bindings.globals) == module.global_import_count
         for global_value in module.globals:
@@ -1350,12 +1669,17 @@ class Interpreter:
                 trap=trap,
             )
 
+        self._prepare_native_execution(context)
         raw_args = _encode_public_args(args, self.module.func_type(func_index).params)
         try:
             frame, locals_arr = self._build_frame(func_index, raw_args, context)
         except Trap as trap:
             return InterpreterCall(func_index, context, cont=None, finished=True, trap=trap)
         return InterpreterCall(func_index, context, cont=(0, frame, locals_arr, 0))
+
+    def _prepare_native_execution(self, context: InterpreterContext) -> None:
+        """Allow the strict native interpreter to install call descriptors."""
+        return None
 
     def _call_import(
         self, func_index: int, args: Sequence[WasmNumber]
@@ -1455,26 +1779,30 @@ class Interpreter:
         frame = call_state._frame
         locals_arr = call_state._locals
         assert frame is not None and locals_arr is not None
-        (
-            native_status,
-            _trace_count,
-            _body_count,
-            _dispatcher_trace_transitions,
-            _control_handler_count,
-            _eligible_block_visits,
-            _interpreted_block_count,
-            _visits,
-        ) = self.run_native_dispatch(
-            call_state,
-            EMPTY_NATIVE_DISPATCH_SNAPSHOT,
-            FB_CONF_RUNTIME_YIELD_THRESHOLD,
-            0,
-            native_dispatcher=self._native_dispatcher,
-        )
+        native_status = 0
+        while native_status == 0 and not call_state.finished:
+            (
+                native_status,
+                _trace_count,
+                _body_count,
+                _dispatcher_trace_transitions,
+                _control_handler_count,
+                _eligible_block_visits,
+                _interpreted_block_count,
+                _visits,
+            ) = self.run_native_dispatch(
+                call_state,
+                EMPTY_NATIVE_DISPATCH_SNAPSHOT,
+                FB_CONF_RUNTIME_YIELD_THRESHOLD,
+                0,
+                native_dispatcher=self._native_dispatcher,
+            )
+            if native_status == 0:
+                self.resolve_native_call_boundary(call_state)
+                if call_state.finished:
+                    native_status = 2
 
-        if native_status == 0:
-            self.resolve_native_call_boundary(call_state)
-        elif native_status == 1:
+        if native_status == 1:
             call_state._ip = RETURN_SENTINEL_IP
             self._finish_native_frame(call_state)
         elif native_status == 2:
@@ -1486,21 +1814,71 @@ class Interpreter:
         return call_state
 
     def resolve_native_call_boundary(self, call_state: InterpreterCall) -> InterpreterCall:
-        """Resolve a C++ dispatcher exit at CALL/CALL_INDIRECT or fail fast."""
+        """Resolve a host import or a memory-manager boundary after C++ stops."""
         frame = call_state._frame
         locals_arr = call_state._locals
         ip = call_state._ip
         assert frame is not None and locals_arr is not None
         assert 0 <= ip < len(frame.code)
         opcode = frame.code[ip]
-        assert opcode in (CALL, CALL_INDIRECT), (
-            f"C++ interpreter does not implement opcode 0x{opcode:02X}"
-        )
-        trap = self._enter_or_resolve_call(
-            call_state, opcode, ip, frame, locals_arr, call_state._tos
-        )
+        if opcode == CALL:
+            callee_func_index, _ = decode_unsigned(frame.code, ip + 1)
+            assert self.module.is_import(callee_func_index), (
+                "C++ dispatcher returned a defined guest call instead of executing it"
+            )
+            trap = self._enter_or_resolve_call(
+                call_state, opcode, ip, frame, locals_arr, call_state._tos
+            )
+            if trap is not None:
+                self._abort_call(call_state, trap, ip)
+            return call_state
+        if opcode == CALL_INDIRECT:
+            _, off = decode_unsigned(frame.code, ip + 1)
+            table_index, _ = decode_unsigned(frame.code, off)
+            table_slot = _to_u32(frame.values[-1])
+            assert table_index < len(self.tables)
+            table = self.tables[table_index]
+            assert table_slot < len(table)
+            callee_index = table[table_slot]
+            assert callee_index is not None
+            callee_func_index = callee_index
+            assert self.module.is_import(callee_func_index), (
+                "C++ dispatcher returned a defined guest call instead of executing it"
+            )
+            trap = self._enter_or_resolve_call(
+                call_state, opcode, ip, frame, locals_arr, call_state._tos
+            )
+            if trap is not None:
+                self._abort_call(call_state, trap, ip)
+            return call_state
+        if opcode == I32_STORE or opcode == I32_STORE8:
+            return self._resolve_native_memory_boundary(call_state, opcode, ip)
+        if opcode == FC_PREFIX:
+            subopcode, _ = decode_unsigned(frame.code, ip + 1)
+            assert subopcode == FC_MEMORY_COPY, (
+                f"C++ interpreter does not implement 0xFC subopcode {subopcode}"
+            )
+            return self._resolve_native_memory_boundary(call_state, opcode, ip)
+        assert False, f"C++ interpreter does not implement opcode 0x{opcode:02X}"
+
+    def _resolve_native_memory_boundary(
+        self, call_state: InterpreterCall, opcode: int, ip: int
+    ) -> InterpreterCall:
+        """Run only the memory-manager operation C++ explicitly yielded."""
+        frame = call_state._frame
+        locals_arr = call_state._locals
+        assert frame is not None and locals_arr is not None
+        handler = _HANDLERS[opcode]
+        assert handler is not None
+        context = call_state.context
+        context.bind_handler_state(ip, frame)
+        trap = handler(context, frame.values, locals_arr, call_state._tos)
         if trap is not None:
             self._abort_call(call_state, trap, ip)
+            return call_state
+        next_ip = int(context.native_context.ip)
+        call_state._ip = RETURN_SENTINEL_IP if next_ip >= len(frame.code) else next_ip
+        call_state._tos = frame.values.raw_top() if frame.values else 0
         return call_state
 
     def _finish_native_frame(self, call_state: InterpreterCall) -> InterpreterCall:
@@ -1549,6 +1927,9 @@ class Interpreter:
         )
 
         context = call_state.context
+        execution = context.native_module_execution
+        assert execution is not None
+        execution.refresh_tables()
         with _native_linear_memory_scope(context.native_context, frame.env.memory):
             native_status, native_ip, native_size, native_trap = (
                 _interpreter_native.run_control_step(
@@ -1565,12 +1946,18 @@ class Interpreter:
                 )
             )
 
-        if native_status == 3 and native_ip >= len(frame.code):
-            native_ip = RETURN_SENTINEL_IP
         frame.values.set_size(native_size)
         context.native_context.ip = native_ip
-        call_state._ip = native_ip
-        call_state._tos = frame.values.raw_top() if frame.values else 0
+        context.call_frame_stack.sync_native_frames(context, self._env)
+        if context.call_frame_stack:
+            active = context.call_frame_stack[-1]
+            call_state.func_index = active.func_index
+            call_state._frame = active
+            call_state._locals = active.locals
+            if native_status == 3 and native_ip >= len(active.code):
+                native_ip = RETURN_SENTINEL_IP
+            call_state._ip = native_ip
+            call_state._tos = active.values.raw_top() if active.values else 0
 
         if native_status == 3:
             return call_state
@@ -1597,6 +1984,9 @@ class Interpreter:
         assert call_state._ip != RETURN_SENTINEL_IP
         assert yield_threshold > 0
         context = call_state.context
+        execution = context.native_module_execution
+        assert execution is not None
+        execution.refresh_tables()
         with _native_linear_memory_scope(context.native_context, frame.env.memory):
             (
                 native_status,
@@ -1633,6 +2023,12 @@ class Interpreter:
             )
         frame.values.set_size(native_size)
         context.native_context.ip = native_ip
+        context.call_frame_stack.sync_native_frames(context, self._env)
+        if context.call_frame_stack:
+            active = context.call_frame_stack[-1]
+            call_state.func_index = active.func_index
+            call_state._frame = active
+            call_state._locals = active.locals
         call_state._ip = RETURN_SENTINEL_IP if native_status == 1 else native_ip
         call_state._tos = frame.values.raw_top() if frame.values else 0
         if native_status == 2:
@@ -1685,12 +2081,18 @@ class Interpreter:
         finally:
             context.native_context.runtime_flags = previous_flags
 
-        if native_status == 3 and native_ip >= len(frame.code):
-            native_ip = RETURN_SENTINEL_IP
         frame.values.set_size(native_size)
         context.native_context.ip = native_ip
-        call_state._ip = native_ip
-        call_state._tos = frame.values.raw_top() if frame.values else 0
+        context.call_frame_stack.sync_native_frames(context, self._env)
+        if context.call_frame_stack:
+            active = context.call_frame_stack[-1]
+            call_state.func_index = active.func_index
+            call_state._frame = active
+            call_state._locals = active.locals
+            if native_status == 3 and native_ip >= len(active.code):
+                native_ip = RETURN_SENTINEL_IP
+            call_state._ip = native_ip
+            call_state._tos = active.values.raw_top() if active.values else 0
 
         if native_status == 3:
             return True
@@ -1905,9 +2307,31 @@ class Interpreter:
 
 
 class NativeInterpreter(Interpreter):
-    """Strict C++ interpreter; only explicit CALL boundaries return to Python."""
+    """Strict C++ interpreter; defined guest calls remain in native dispatch."""
 
-    __slots__ = ()
+    __slots__ = ("_native_module_execution",)
+
+    def __init__(
+        self,
+        module: Module,
+        bindings: InterpreterBindings,
+        vmmio: VMMIOController | None = None,
+        phys_mem: bytearray | None = None,
+        logger: Logger | None = None,
+    ):
+        self._native_module_execution: NativeModuleExecution | None = None
+        super().__init__(module, bindings, vmmio, phys_mem, logger)
+
+    def _prepare_native_execution(self, context: InterpreterContext) -> None:
+        if self._native_module_execution is None:
+            template_context = InterpreterContext(self.module)
+            self._native_module_execution = NativeModuleExecution(
+                template_context,
+                self.module,
+                self._env,
+                self.tables,
+            )
+        context.install_native_module_execution(self._native_module_execution)
 
     def _complete_call(self, call_state: InterpreterCall) -> StaticVector[WasmNumber]:
         while not call_state.finished:

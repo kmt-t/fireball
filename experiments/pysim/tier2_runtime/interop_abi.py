@@ -157,6 +157,109 @@ class ControlMapEntryNative(ctypes.Structure):
     )
 
 
+class FunctionExecutionViewNative(ctypes.Structure):
+    """Immutable native execution metadata for one unified function index."""
+
+    __slots__ = ()
+
+    _fields_ = (
+        ("code", ctypes.c_void_p),
+        ("code_size", ctypes.c_uint32),
+        ("control_map", ctypes.c_void_p),
+        ("local_width_map", ctypes.c_void_p),
+        ("local_width_count", ctypes.c_uint32),
+        ("local_slot_count", ctypes.c_uint32),
+        ("slot_words", ctypes.c_uint32),
+        ("param_count", ctypes.c_uint32),
+        ("param_packed_slot_count", ctypes.c_uint32),
+        ("result_arity", ctypes.c_uint32),
+        ("type_index", ctypes.c_uint32),
+        ("is_import", ctypes.c_uint32),
+        ("module_view", ctypes.c_void_p),
+    )
+
+
+class FunctionTypeExecutionViewNative(ctypes.Structure):
+    """Offsets and arities for one signature in the flattened type bytes."""
+
+    __slots__ = ()
+
+    _fields_ = (
+        ("param_offset", ctypes.c_uint32),
+        ("param_count", ctypes.c_uint32),
+        ("result_offset", ctypes.c_uint32),
+        ("result_count", ctypes.c_uint32),
+    )
+
+
+class TableExecutionViewNative(ctypes.Structure):
+    """Immutable table snapshot using 0xFFFFFFFF for an uninitialized slot."""
+
+    __slots__ = ()
+
+    _fields_ = (("function_indices", ctypes.c_void_p), ("size", ctypes.c_uint32))
+
+
+class ModuleExecutionViewNative(ctypes.Structure):
+    """Native function, type, signature, and table metadata for one module."""
+
+    __slots__ = ()
+
+    _fields_ = (
+        ("functions", ctypes.c_void_p),
+        ("function_count", ctypes.c_uint32),
+        ("imported_function_count", ctypes.c_uint32),
+        ("types", ctypes.c_void_p),
+        ("type_count", ctypes.c_uint32),
+        ("signature_bytes", ctypes.c_void_p),
+        ("tables", ctypes.c_void_p),
+        ("table_count", ctypes.c_uint32),
+        ("globals", ctypes.c_void_p),
+        ("global_widths", ctypes.c_void_p),
+        ("global_count", ctypes.c_uint32),
+    )
+
+
+class NativeGlobalStorage(Sequence[int]):
+    """Fixed-width globals shared directly by Python and native execution."""
+
+    __slots__ = ("_size", "_values", "capacity")
+
+    def __init__(self, capacity: int):
+        assert capacity >= 0
+        self.capacity = capacity
+        self._size = 0
+        self._values = (ctypes.c_uint64 * capacity)()
+
+    def __len__(self) -> int:
+        return self._size
+
+    def __getitem__(self, index: int) -> int:
+        normalized = index if index >= 0 else self._size + index
+        assert 0 <= normalized < self._size
+        return int(self._values[normalized])
+
+    def __setitem__(self, index: int, value: int) -> None:
+        normalized = index if index >= 0 else self._size + index
+        assert 0 <= normalized < self._size
+        self._values[normalized] = value & 0xFFFF_FFFF_FFFF_FFFF
+
+    def __iter__(self) -> Iterator[int]:
+        for index in range(self._size):
+            yield int(self._values[index])
+
+    def append(self, value: int) -> None:
+        assert self._size < self.capacity
+        self._values[self._size] = value & 0xFFFF_FFFF_FFFF_FFFF
+        self._size += 1
+
+    @property
+    def native_address(self) -> int:
+        """Return the stable address of the fixed raw global array."""
+
+        return 0 if self.capacity == 0 else ctypes.addressof(self._values)
+
+
 class ValueStackNative(ctypes.Structure):
     """Fixed-capacity raw WASM value stack shared with the embedded runtime."""
 
@@ -192,7 +295,7 @@ class CallFrameNative(ctypes.Structure):
         ("func_index", ctypes.c_uint32),
         ("code", ctypes.c_void_p),
         ("code_size", ctypes.c_uint32),
-        ("control_map", ctypes.c_void_p),
+        ("function_view", ctypes.c_void_p),
         ("local_base", ctypes.c_uint32),
         ("local_count", ctypes.c_uint32),
         ("local_slot_count", ctypes.c_uint32),
@@ -561,7 +664,14 @@ assert ctypes.sizeof(ControlStackNative) == 648
 assert ControlStackNative.size.offset == 640
 assert CallFrameNative.func_index.offset == 0
 assert CallFrameNative.code.offset == 8
-assert CallFrameNative.control_map.offset == 24
+assert ctypes.sizeof(FunctionExecutionViewNative) == 72
+assert ctypes.sizeof(FunctionTypeExecutionViewNative) == 16
+assert ctypes.sizeof(TableExecutionViewNative) == 16
+assert ctypes.sizeof(ModuleExecutionViewNative) == 80
+assert ModuleExecutionViewNative.globals.offset == 56
+assert ModuleExecutionViewNative.global_widths.offset == 64
+assert ModuleExecutionViewNative.global_count.offset == 72
+assert CallFrameNative.function_view.offset == 24
 assert CallFrameNative.local_width_map.offset == 48
 assert ctypes.sizeof(CallFrameNative) == 96
 assert ctypes.sizeof(CallStackNative) == 3080
@@ -579,7 +689,12 @@ __all__ = (
     "ControlMapEntryNative",
     "ControlStackNative",
     "ExecutionContextNative",
+    "FunctionExecutionViewNative",
+    "FunctionTypeExecutionViewNative",
+    "ModuleExecutionViewNative",
+    "NativeGlobalStorage",
     "NativeValueStack",
+    "TableExecutionViewNative",
     "ValueStackNative",
     "WasmFunctionViewNative",
     "WasmModuleViewNative",

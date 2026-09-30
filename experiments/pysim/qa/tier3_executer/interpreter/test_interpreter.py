@@ -171,6 +171,10 @@ def test_native_interpreter_returns_to_python_at_loop_yield_counts(monkeypatch):
     """Native Interpreter returns at the configured backedge count, as Hybrid JIT does."""
     from config import FB_CONF_RUNTIME_YIELD_THRESHOLD
     from tier3_executer.interpreter import interpreter as interpreter_module
+    from tier3_executer.interpreter.interpreter import (
+        InterpreterBindings,
+        NativeInterpreter,
+    )
 
     module = parse(
         wat_to_wasm(
@@ -207,7 +211,9 @@ def test_native_interpreter_returns_to_python_at_loop_yield_counts(monkeypatch):
         record_native_dispatch,
     )
     iteration_count = FB_CONF_RUNTIME_YIELD_THRESHOLD * 2 + 1
-    results = Interpreter(module).call(function_index, [iteration_count])
+    results = NativeInterpreter(module, InterpreterBindings.empty()).call(
+        function_index, [iteration_count]
+    )
 
     assert results == [sum(range(1, iteration_count + 1))]
     assert returned_statuses == [5, 5, 1]

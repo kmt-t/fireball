@@ -29,7 +29,7 @@ Tier は単なる「OSやハードウェアの実行レイヤ」ではなく、*
            ▼
 [ Tier 2: 分解されたサブコンポーネント (Decomposed Subcomponents) ] ─ (How - Subsystem)
   · vSoC Subsystem (runtime_vsoc, runtime_loader, runtime_vmmio)
-  · Runtime Contracts (runtime_plugin_architecture, runtime_observability, runtime_syscall, hal_dispatch)
+  · Runtime Contracts (runtime_plugin_architecture, runtime_observability, runtime_hotspot_profiler, runtime_syscall, hal_dispatch)
   · Memory Implementation (runtime_memory) — `system_memory` 契約を実装する `system_allocator`/`shm_allocator`（dlmalloc アリーナ）
   · HAL Abstraction (hal_dispatch) — URI Resolver・トランスポート抽象、`{IPCRouter}` 経由のデバイス仲介
   · Logging Subsystem (runtime_logging) — COOS上に常駐するリングバッファロギングタスク、COOSのタスクスケジューリングに依存
@@ -62,7 +62,7 @@ Tier は単なる「OSやハードウェアの実行レイヤ」ではなく、*
 | :--- | :--- | :--- | :--- |
 | **Tier 0** | `docs/requires/` | システム要求仕様書 (`requirement_list.md`) | **最上位要求 (Why)**<br>システム全体が満たすべき受入基準・機能要求。 |
 | **Tier 1** | `docs/components/tier1_core/`<br>`docs/components/tier1_interface/` | スケジューラ、チャネル通信、システムサービス、ホスト内部のインターフェース契約、IPCルータ、共有静的コンテナ語彙等のコア仕様書 | **粗粒度主要コンポーネント (What)**<br>要求（Tier 0）を直接受け取る。単一仕様書で状態遷移・ポリシーを自己完結して記述可能なシステム要素。契約/実装分割パターン（`{META_ContractImplSplit}`）では抽象契約側を担う。 |
-| **Tier 2** | `docs/components/tier2_runtime/` | Runtime のライフサイクル・プラグイン構成・VM観測フック、WASMローダー、vMMIO、メモリマネージャ実装（`runtime_memory.md`）、HAL抽象化層（`hal_dispatch.md`）、ホストコール契約（`runtime_syscall.md`）等のサブコンポーネント仕様書 | **分解されたサブコンポーネント (How - Subsystem)**<br>Tier 1 で扱うには状態空間やアルゴリズムが複雑化するため、独立した責務としてブレークダウンされた要素。契約/実装分割パターン（`{META_ContractImplSplit}`）では実装側を担う場合がある。 |
+| **Tier 2** | `docs/components/tier2_runtime/` | Runtime のライフサイクル・プラグイン構成・Runtimeイベント契約（`runtime_observability.md`）・独立したホットスポット分析契約（`runtime_hotspot_profiler.md`）、WASMローダー、vMMIO、メモリマネージャ実装（`runtime_memory.md`）、HAL抽象化層（`hal_dispatch.md`）、ホストコール契約（`runtime_syscall.md`）等のサブコンポーネント仕様書 | **分解されたサブコンポーネント (How - Subsystem)**<br>Tier 1 で扱うには状態空間やアルゴリズムが複雑化するため、独立した責務としてブレークダウンされた要素。契約/実装分割パターン（`{META_ContractImplSplit}`）では実装側を担う場合がある。 |
 | **Tier 3** | `docs/components/tier3_executer/`<br>`docs/components/tier3_plugins/`<br>`docs/components/tier3_platform/` | 実行系（`interpreter.md`、`jit_compiler.md`、`jit_runtime.md`）、交換可能プラグイン（`debugger.md`、`guest_profiler.md`）、ゲスト公開WIT（`interface_wit.md`）、HALドライバ実装（`platform_driver.md`）、ゲストアダプタ（`libfireball.md`）| **詳細リーフ / 物理コンポーネント (How - Leaf)**<br>Tier 2 からさらに責務が切り出された具象コンポーネント、ゲストから見える公開契約、ハードウェア抽象化層の最終物理実装、またはゲストへ組み込むABIアダプタ。 |
 | **Specs** | `docs/specs/` | WASM命令セット、WASI Preview 1 ABI、GDB RSP、JITステンシルカタログ等の規格マトリクス | **横串物理規格・具象カタログ (How - Physical Specs)**<br>コンポーネントを横断して統一される具象バイナリ列、ABI、パケット形式、命令セットマトリクス。各ファイル冒頭にアーキテクチャ分類（Tierラベル）を明示する。 |
 | **QA** | `docs/qa/` | Tier別のテスト仕様書、検証データ、テスト実行結果、品質ゲート結果、ベンチマーク結果などの横断的品質資料 | **横断的品質保証 (Quality Assurance)**<br>コンポーネントの設計正本や実行可能テストを置き換えず、テスト仕様書と検証データは `tier1_core/` 等のTier別または `specs/` のサブディレクトリへ集約する。実行結果には範囲、環境、成否、未実行項目を記録する。 |

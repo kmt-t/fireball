@@ -59,7 +59,6 @@ $cacheSourceCpp = Join-Path $scriptDir "native_fast_cache.cxx"
 $cacheGeneratedPyd = Join-Path $nativeBuildDir "_jit_cache_native.pyd"
 Write-Host ">>> Compiling native_fast_cache.cxx (fixed JIT lookup slots) -> .pyd (clang-cl)" -ForegroundColor Yellow
 & clang-cl.exe /TP /std:c++latest /O2 /LD /EHsc `
-    "/DFB_CONF_JIT_ENABLED=1" `
     "/DFB_CONF_JIT_CACHE_FAST_SLOT_COUNT=$fastSlotCount" `
     "-I$pyInc" `
     "-I$vsDir\VC\Tools\MSVC\$msvcVer\include" `

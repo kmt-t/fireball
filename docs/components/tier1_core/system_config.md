@@ -111,7 +111,6 @@ namespace fireball::config {
 <!-- traceability: {JIT_MultiBuffer_Cache} {GLOBAL_StrictMemoryLimit} {vMMIO_Isolation} {META_ConfigurableSystem} {META_RestrictedPhysicalAccess} {META_FlatMapIndexed} {GLOBAL_StaticScalability} -->
 | マクロ名 | 説明 | デフォルト値 | 導出元 |
 | :--- | :--- | :--- | :--- |
-| `FB_CONF_JIT_ENABLED` | JITコンパイラ機能の有効化フラグ | `true` | |
 | `FB_CONF_WASM_PAGE_SIZE` | WASM標準論理ページサイズ (64KB, 65,536 Bytes) | `65536` | |
 | `FB_CONF_MAX_WASM_PAGES` | 初期WASMリニアメモリに許可する最大ページ数 | 対象構成で定義 | |
 | `FB_CONF_JIT_CACHE_PAGE_SIZE` | x64参照構成で使用するJITコード領域のページ単位 | `4096` (x64参照構成) | |
@@ -122,8 +121,6 @@ namespace fireball::config {
 | `FB_CONF_JIT_MAX_INBOUND_CHAINS_PER_BANK` | 単一キャッシュバンクの最大被チェインエントリ数 | `32` | `{JIT_LazyChaining}` |
 | `FB_CONF_JIT_CARD_SHIFT` | JITカードテーブルのビットシフト数（関数ごと、4バイト単位 = 2） | `2` | |
 | `FB_CONF_RUNTIME_YIELD_THRESHOLD` | C++ InterpreterとHybrid JITがCOOSへyieldするまでの取得済み後方分岐数 | `16` | |
-| `FB_CONF_RUNTIME_PROFILE_STATS` | 実行経路の診断カウンタをC++ dispatcherへ含める選択 | `false` | |
-| `FB_CONF_JIT_HOTSPOT_PROFILING` | 未コンパイルblockの実行履歴から動的compile対象を判断するC++機能を含める選択 | `true` | |
 | `FB_CONF_JIT_AGING_STEP_UNITS` | 3面キャッシュのローテーション1回ごとに処理する関数更新表の非ゼロバイト数（1バイト = 8関数） | `2` | |
 | `FB_CONF_JIT_AGING_STEP_SCAN_BYTES` | 3面キャッシュのローテーション1回ごとに走査する関数更新表のバイト数の上限（値が0のバイトも数える） | `8` | |
 
@@ -140,7 +137,9 @@ namespace fireball::config {
 | `FB_CONF_VIRQ_MAX_NODES` | vIRQ静的ノード数（root + 4分類 + デバイスノード） | `1 + FB_CONF_VIRQ_CATEGORY_COUNT + FB_CONF_HAL_MAX_DEVICES` | |
 | `FB_CONF_VIRQ_MAX_SOURCES` | vIRQ静的原因源数（SYSTEM/RUNTIME/FAULT + デバイス源） | `3 + FB_CONF_HAL_MAX_DEVICES` | |
 
-`FB_CONF_RUNTIME_PROFILE_STATS` と `FB_CONF_JIT_HOTSPOT_PROFILING` はビルド時構成である。`false` の機能はコンパイル時に除外し、実行時フラグによる選択分岐や対応する実装を生成しない。Runtimeの引数でビルドから除外した機能を有効にすることはできない。
+実行経路の診断カウンタとJITホットスポット観測は、翻訳単位共通のビルドフラグで切り替えない。RuntimeComposerが構成に対応する具象型を選び、選択済みハーネスをインスタンス化する。同一プログラムには有効・無効の異なるRuntimeを共存させられる。
+
+JITの有効・無効も個別のビルド定義では切り替えない。Interpreter専用構成とJIT構成はRuntimeComposerがそれぞれの型で合成する。
 
 vMMIO Stage 1アドレス窓へのアクセスは、有効サイズとの比較で保護する（`FastAddressCheck`）。境界外アドレスはトラップし、マスクで折り返して実行を継続しない。この判定は窓サイズが2の冪であることを要求しない。WASMリニアメモリは独立したページ数契約に従う。
 
@@ -216,4 +215,4 @@ assert FB_CONF_MAX_TASKS <= 254, "FB_CONF_MAX_TASKS must be <= 254"
 
 <!-- traceability: {META_ConfigurableSystem} {META_Static_Resolution} {GLOBAL_StrictMemoryLimit} -->
 
-特記すべき独立したADRはない。構成値をコンパイル時に固定する方針は本書のコンセプトと静的モデルで定義する。pysim参照実装は [`config.py`](experiments/pysim/tier1_core/config.py)、抽象状態の形式モデルは [`system_config_model.py`](docs/components/tier1_core/formal/system_config_model.py)、検証ケースは [`system_config_test_spec.md`](docs/qa/tier1_core/system_config_test_spec.md) に示す。
+特記すべき独立したADRはない。構成値をコンパイル時に固定する方針は本書のコンセプトと静的モデルで定義する。抽象状態の形式モデルは [`system_config_model.py`](docs/components/tier1_core/formal/system_config_model.py)、検証ケースは [`system_config_test_spec.md`](docs/qa/tier1_core/system_config_test_spec.md) に示す。

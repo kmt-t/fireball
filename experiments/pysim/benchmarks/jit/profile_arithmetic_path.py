@@ -22,7 +22,7 @@ configure_import_paths(_PYSIM_DIR, _BENCH_DIR)
 from bench_jit import JITCompilerBenchmark
 from config import FB_CONF_RUNTIME_YIELD_THRESHOLD
 from tier3_executer.interpreter.interpreter import (
-    NATIVE_RUNTIME_PROFILE_STATS_ENABLED,
+    NATIVE_RUNTIME_PROFILE_STATS_AVAILABLE,
     Interpreter,
     InterpreterBindings,
 )
@@ -100,8 +100,8 @@ def main() -> None:
     parser.add_argument("--perf-control-fifo")
     parser.add_argument("--perf-ack-fifo")
     args = parser.parse_args()
-    assert not args.collect_runtime_stats or NATIVE_RUNTIME_PROFILE_STATS_ENABLED, (
-        "runtime profile stats were compiled out; rebuild with FB_CONF_RUNTIME_PROFILE_STATS=True"
+    assert not args.collect_runtime_stats or NATIVE_RUNTIME_PROFILE_STATS_AVAILABLE, (
+        "runtime profile stats are unavailable in the native dispatcher"
     )
 
     repetitions = (
@@ -153,6 +153,7 @@ def main() -> None:
             jit_runtime=JITRuntimeManager(
                 jit_compiler=benchmark.compiler,
                 yield_threshold=FB_CONF_RUNTIME_YIELD_THRESHOLD,
+                hotspot_profiling_enabled=args.hotspot_profiling == "enabled",
             ),
             collect_runtime_stats=args.collect_runtime_stats,
         )
@@ -161,9 +162,6 @@ def main() -> None:
         warmup_result = interpreter.call(function_index, [100])
         assert int(warmup_result[0]) == 4_950
         runtime_engine.idle_hook(budget=10)
-        runtime_engine.jit_runtime.set_hotspot_profiling_enabled(
-            args.hotspot_profiling == "enabled"
-        )
         runtime_engine.reset_stats()
 
         arguments = [LOOP_COUNT]

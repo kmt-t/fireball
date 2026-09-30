@@ -9,7 +9,6 @@ from typing import Protocol
 from config import (
     FB_CONF_JIT_AGING_STEP_SCAN_BYTES,
     FB_CONF_JIT_AGING_STEP_UNITS,
-    FB_CONF_JIT_HOTSPOT_PROFILING,
     FB_CONF_MAX_BASIC_BLOCKS,
     FB_CONF_RUNTIME_YIELD_THRESHOLD,
     JIT_CACHE_BANK_CAPACITY_BYTES,
@@ -88,6 +87,8 @@ class JITRuntimeManager:
 
     __slots__ = (
         "_fast_block_slots",
+        "_hotspot_profiling_enabled",
+        "_last_analyzed_overwrite_count",
         "_native_dispatch_cache_key",
         "_native_dispatch_cache_snapshot",
         "_trackable_generation",
@@ -102,10 +103,13 @@ class JITRuntimeManager:
         "compile_queue",
         "compile_queue_capacity",
         "exec_counter",
-        "hotspot_profiling_enabled",
+        "history_capacity",
+        "history_overwritten_count",
         "jit_compiler",
+        "last_history_analysis_approximate",
         "min_trace_bytes",
         "module",
+        "module_id",
         "ring",
         "trackable",
         "update_bitmap",
@@ -123,24 +127,30 @@ class JITRuntimeManager:
         compile_queue_capacity: int = 4,
         aging_step_units: int = FB_CONF_JIT_AGING_STEP_UNITS,
         aging_scan_bytes: int = FB_CONF_JIT_AGING_STEP_SCAN_BYTES,
-        hotspot_profiling_enabled: bool = FB_CONF_JIT_HOTSPOT_PROFILING,
+        hotspot_profiling_enabled: bool = True,
+        history_capacity: int = 32,
+        module_id: int = 0,
     ):
         assert 1 <= yield_threshold <= 0xFFFFFFFF
         assert candidate_threshold >= 0
         assert compile_queue_capacity >= 1
         assert aging_step_units >= 1 and aging_scan_bytes >= 1
+        assert history_capacity >= 1
+        assert 0 <= module_id <= 0xFFFF_FFFF
         self.yield_threshold = yield_threshold
         self.candidate_threshold = candidate_threshold
         self.compile_queue_capacity = compile_queue_capacity
         self.aging_step_units = aging_step_units
         self.aging_scan_bytes = aging_scan_bytes
         self.jit_compiler = jit_compiler
-        self.hotspot_profiling_enabled = hotspot_profiling_enabled
+        self._hotspot_profiling_enabled = hotspot_profiling_enabled
+        self.history_capacity = history_capacity
+        self.module_id = module_id
         self.min_trace_bytes = min_trace_bytes if min_trace_bytes is not None else (1 << card_shift)
         self.bitmap = HotspotBitmap(card_shift=card_shift, code_lengths=code_lengths)
         self.trackable = BlockCardMask(card_shift=card_shift, code_lengths=code_lengths)
         self.update_bitmap = FunctionUpdateBitmap(function_count=len(code_lengths))
-        self.ring = HistoryRing()
+        self.ring = HistoryRing(capacity=history_capacity)
         self.cache = JITMultiBufferCache()
         self.cache.on_evict = self._handle_eviction
         self.cache.on_rotate = self.age_step
@@ -151,6 +161,9 @@ class JITRuntimeManager:
         self._native_dispatch_cache_key: tuple[int, int, int, bool] | None = None
         self._trackable_generation = 0
         self.exec_counter = 0
+        self.history_overwritten_count = 0
+        self.last_history_analysis_approximate = False
+        self._last_analyzed_overwrite_count = 0
         self.aging_steps = 0
         self.aging_units_processed = 0
         self.aging_bytes_scanned = 0
@@ -161,9 +174,18 @@ class JITRuntimeManager:
 
         return self.bitmap.card_shift
 
-    def register_module(self, module: Module) -> None:
+    @property
+    def hotspot_profiling_enabled(self) -> bool:
+        """Return the immutable hotspot observation choice for this JIT Runtime."""
+
+        return self._hotspot_profiling_enabled
+
+    def register_module(self, module: Module, module_id: int | None = None) -> None:
         """Bind loader metadata and initialize all JIT-owned indexes."""
 
+        if module_id is not None:
+            assert 0 <= module_id <= 0xFFFF_FFFF
+            self.module_id = module_id
         if module.block_storage is None:
             module.build_basic_block_index()
         self.module = module
@@ -171,10 +193,13 @@ class JITRuntimeManager:
         self.bitmap = HotspotBitmap(card_shift=self.card_shift, code_lengths=code_lengths)
         self.trackable = BlockCardMask(card_shift=self.card_shift, code_lengths=code_lengths)
         self.update_bitmap = FunctionUpdateBitmap(function_count=len(code_lengths))
-        self.ring = HistoryRing()
+        self.ring = HistoryRing(capacity=self.history_capacity)
         self.compile_queue = StaticVector(capacity=self.compile_queue_capacity)
         self._fast_block_slots = _empty_block_slots()
         self.exec_counter = 0
+        self.history_overwritten_count = 0
+        self.last_history_analysis_approximate = False
+        self._last_analyzed_overwrite_count = 0
         self.trackable.clear()
         for block in module.blocks:
             if (
@@ -293,7 +318,8 @@ class JITRuntimeManager:
                 int(selected_bank == 2),
             )
             entry_count += 1
-        trackable_heads = (ctypes.c_uint32 * FB_CONF_MAX_BASIC_BLOCKS)()
+        trackable_capacity = FB_CONF_MAX_BASIC_BLOCKS if self.hotspot_profiling_enabled else 0
+        trackable_heads = (ctypes.c_uint32 * trackable_capacity)()
         trackable_count = 0
         if self.hotspot_profiling_enabled:
             for block in module.blocks:
@@ -303,33 +329,21 @@ class JITRuntimeManager:
                     assert trackable_count < FB_CONF_MAX_BASIC_BLOCKS
                     trackable_heads[trackable_count] = block.head_pc
                     trackable_count += 1
-        observed_visit_counts = (ctypes.c_uint8 * FB_CONF_MAX_BASIC_BLOCKS)()
+        block_history = (ctypes.c_uint32 * self.yield_threshold)()
         self._native_dispatch_cache_snapshot = NativeDispatchSnapshot(
             entries,
             entry_count,
             trackable_heads,
             trackable_count,
-            observed_visit_counts,
+            block_history,
         )
         self._native_dispatch_cache_key = cache_key
         return self._native_dispatch_cache_snapshot
 
-    def set_hotspot_profiling_enabled(self, enabled: bool) -> None:
-        """Select whether future native dispatches collect JIT hotness observations."""
-
-        if self.hotspot_profiling_enabled == enabled:
-            return
-        self.hotspot_profiling_enabled = enabled
-        if not enabled:
-            self.exec_counter = 0
-            self.ring.drain()
-            self.compile_queue.clear()
-        self._native_dispatch_cache_key = None
-
     def record_native_block_visits(
         self, visits: tuple[NativeBlockVisit, ...], total_visits: int
     ) -> bool:
-        """Replay bounded C++ block observations into the hotspot/card state."""
+        """Append the interpreter's ordered block history without analyzing it."""
 
         if not self.hotspot_profiling_enabled:
             assert not visits and total_visits == 0
@@ -338,16 +352,12 @@ class JITRuntimeManager:
         retained_visits = 0
         for pc, count in visits:
             assert self.trackable.is_marked(pc)
-            assert 1 <= count <= 2
+            assert count == 1
             retained_visits += count
-            for _ in range(count):
-                self.ring.record(pc)
-        assert total_visits >= retained_visits
+            self.ring.record(self.module_id, pc)
+        assert total_visits == retained_visits
         self.exec_counter += total_visits
-        if self.exec_counter >= self.yield_threshold:
-            self.on_yield()
-            return True
-        return False
+        return self.exec_counter >= self.yield_threshold
 
     def is_trackable(self, pc: int) -> bool:
         """Return whether the loader-selected candidate bit is set."""
@@ -360,24 +370,26 @@ class JITRuntimeManager:
         return self.bitmap.get_state(pc)
 
     def record_block_head(self, pc: int) -> bool:
-        """Record one candidate execution and report a yield threshold hit."""
+        """Record one candidate execution and report whether it requests a yield."""
 
         if not self.hotspot_profiling_enabled:
             return False
         if not self.trackable.is_marked(pc):
             return False
-        self.ring.record(pc)
+        self.ring.record(self.module_id, pc)
         self.exec_counter += 1
-        if self.exec_counter >= self.yield_threshold:
-            self.on_yield()
-            return True
-        return False
+        return self.exec_counter >= self.yield_threshold
 
-    def on_yield(self) -> None:
-        """Promote history cards and queue newly hot blocks for compilation."""
-
-        self.exec_counter = 0
-        for pc in self.ring.drain():
+    def on_interpreter_exit(self, yield_requested: bool) -> None:
+        """Analyze the completed interpreter history once at its execution boundary."""
+        overwritten_count = self.ring.dropped
+        self.history_overwritten_count = overwritten_count
+        self.last_history_analysis_approximate = (
+            overwritten_count > self._last_analyzed_overwrite_count
+        )
+        self._last_analyzed_overwrite_count = overwritten_count
+        for module_id, pc in self.ring.drain():
+            assert module_id == self.module_id
             new_state = self.bitmap.touch(pc)
             if new_state == CardState.EXECUTED:
                 self.update_bitmap.mark(self.bitmap.function_of(pc))
@@ -385,6 +397,13 @@ class JITRuntimeManager:
                 self.compile_queue.push_back(pc)
                 if len(self.compile_queue) >= self.compile_queue_capacity:
                     self.drain_compile_queue()
+        if yield_requested:
+            self.exec_counter = 0
+
+    def on_yield(self) -> None:
+        """Finish pending history and reset the interpreter execution counter."""
+
+        self.on_interpreter_exit(True)
 
     def age_step(self) -> int:
         """Perform one bounded card-aging sweep after a cache rotation."""

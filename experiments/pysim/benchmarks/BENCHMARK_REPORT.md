@@ -570,3 +570,115 @@ bash experiments/pysim/tier3_executer/jit/build_native.sh
 | aging U=8 O=32 | 257 | 210 | 20 | 405 | 8.3 | 1.83 |
 
 設定既定値では `no aging` と比べてcompile requestsが11.5%減り、実行時間は5.5%短縮した。エイジング処理は1stepあたり27.3 µsで、このvariantの実行時間の0.30%を占めた。全variantの結果checksumは一致し、ベンチマーク内の決定性条件を満たした。JIT実行割合はネイティブ実行統計が無効なため取得していない。
+
+## 6.15 C++ Interpreter の 0xFC 命令測定（2026-09-30）
+<!-- traceability: {WasmInstructionSet} {DirectBytecodeExecution} -->
+
+Clang 21.1.8でInterpreter拡張をビルドし、CPython 3.14.6、uv 0.12.19、Linux 7.0.0-34-generic、AMD Ryzen 5 5500GT上で測定した。計測は3ラウンドを実行し、1命令または1転送あたりの中央値を記録した。CPU固定、ハードウェアカウンタ測定はしていない。
+
+```bash
+UV_CACHE_DIR=/tmp/fireball-uv-cache UV_OFFLINE=true UV_NO_SYNC=true \
+  bash experiments/pysim/tier3_executer/interpreter/build_native.sh
+UV_CACHE_DIR=/tmp/fireball-uv-cache UV_OFFLINE=true UV_NO_SYNC=true \
+  uv run --offline --no-sync python experiments/pysim/benchmarks/interpreter/bench_fc.py
+```
+
+| 経路 | ワークロード | C++拡張あり | Python参照 | 相対速度 |
+| :--- | :--- | ---: | ---: | ---: |
+| 飽和数値変換 `0xFC 0x00..0x07` | 各2,048命令 | 263〜284 ns/命令 | 41.5〜44.5 µs/命令 | 152〜165倍 |
+| リニア `memory.copy` | 16 B、8,192回 | 250 ns/回 | 45.8 µs/回 | 183倍 |
+| リニア `memory.copy` | 256 B、2,048回 | 286 ns/回 | 56.3 µs/回 | 197倍 |
+| リニア `memory.copy` | 4,096 B、128回 | 862 ns/回 | 237.8 µs/回 | 276倍 |
+| リニア `memory.fill` | 16 B、8,192回 | 252 ns/回 | 43.6 µs/回 | 173倍 |
+| リニア `memory.fill` | 256 B、2,048回 | 278 ns/回 | 50.7 µs/回 | 182倍 |
+| リニア `memory.fill` | 4,096 B、128回 | 861 ns/回 | 157.3 µs/回 | 183倍 |
+
+飽和変換の意味論38ケース（NaN、無限大、有限境界、符号付き・符号なし）と、リニア `memory.copy` / `memory.fill` のPython・C++両経路を確認した。C++計測は公開 `Interpreter.call()` からネイティブ命令ハンドラへ入る経路である。
+
+vDMAについては、合成コピーを使わず、各試行で生成した `System` の実 vMMIO PTEと `System.vdma_transfer()` を通した。各ルートは64 Bを512回転送し、転送回数、アドレス、転送後のバイト列を検証した。非リニアアドレスではC++命令ハンドラからPython実行境界へ戻るため、下表のC++拡張ありの値はネイティブInterpreterからPysimのPython vDMAサービスへ渡る境界を含む。これはvDMAハードウェア単体の性能値ではない。
+
+| ルート（source FC → destination FC） | C++拡張あり | Python参照 | 相対速度 |
+| :--- | ---: | ---: | ---: |
+| リニア → DYNAMIC（0 → 13） | 14.67 µs/転送 | 54.87 µs/転送 | 3.74倍 |
+| SHM → リニア（14 → 0） | 14.79 µs/転送 | 55.12 µs/転送 | 3.73倍 |
+| DYNAMIC → PASSTHROUGH（13 → 15） | 17.05 µs/転送 | 57.42 µs/転送 | 3.37倍 |
+| PASSTHROUGH → SHM（15 → 14） | 19.24 µs/転送 | 60.69 µs/転送 | 3.15倍 |
+
+この計測はPysimの命令実装、vMMIOの許可・物理アドレス解決、およびSystemの転送サービスを検証する。DYNAMIC PTEが参照する `System.phys_mem` と `HalBufferPool` のスロットストレージが同一のデータ領域を共有することまでは確認していない。したがって、HALバッファの実データ連携と実機vDMA帯域は別の検証項目として残る。C++拡張ありの数値も、組み込みCPUや製品ランタイムの性能値とは扱わない。
+
+再現結果の全数値と実行環境は [`bench_fc_20260930.json`](results/bench_fc_20260930.json) に保存した。
+
+## 6.16 C++ Interpreter・JIT 統合スイート再測定（2026-09-30）
+<!-- traceability: {ThreadedInterpreter} {JIT_CopyAndPatch} {RuntimeHotspotProfiler} -->
+
+Interpreter、JIT、FastCacheをClang 21.1.8で再ビルドした後、CPU 2へ固定して `run_all.py` を独立プロセスで3回実行した。環境はAMD Ryzen 5 5500GT、Linux 7.0.0-34-generic、CPython 3.14.6、uv 0.12.19である。各試行は6系統すべて完走し、各ログに `[PASS]` が記録された。VTune、AMD uProf、Linux `perf` が利用できないため、時間計測のみを行いハードウェアイベントは取得していない。
+
+```bash
+UV_CACHE_DIR=/tmp/fireball-uv-cache UV_OFFLINE=true UV_NO_SYNC=true \
+  bash experiments/pysim/tier3_executer/interpreter/build_native.sh
+UV_CACHE_DIR=/tmp/fireball-uv-cache UV_OFFLINE=true UV_NO_SYNC=true \
+  bash experiments/pysim/tier3_executer/jit/build_native.sh
+for trial in 1 2 3; do
+  taskset -c 2 env UV_CACHE_DIR=/tmp/fireball-uv-cache UV_OFFLINE=true UV_NO_SYNC=true \
+    uv run --offline --no-sync python experiments/pysim/benchmarks/run_all.py \
+    > experiments/pysim/benchmarks/results/run_all_20260930_${trial}.log
+done
+for trial in 1 2 3; do
+  taskset -c 2 env UV_CACHE_DIR=/tmp/fireball-uv-cache UV_OFFLINE=true UV_NO_SYNC=true \
+    uv run --offline --no-sync python experiments/pysim/benchmarks/interpreter/bench_fc.py \
+    > experiments/pysim/benchmarks/results/bench_fc_20260930_run${trial}.json
+done
+```
+
+| 指標 | 3試行の中央値 | 最小〜最大 |
+| :--- | ---: | ---: |
+| 100,000回算術ループ: Python handler | 4,761.10 ms | 4,742.55〜4,784.37 ms |
+| 100,000回算術ループ: C++ Interpreter | 20.82 ms | 20.66〜21.22 ms |
+| 100,000回算術ループ: Hybrid JIT | 37.65 ms | 37.14〜38.15 ms |
+| Copy-and-Patch compile throughput | 55,337 traces/s | 46,366〜58,290 traces/s |
+| JIT aging既定値の総時間 | 488 ms | 474〜510 ms |
+| AO-Bench: Interpreter | 6,158.89 ms | 6,144.68〜6,256.92 ms |
+| AO-Bench: Hybrid JIT | 6,884.01 ms | 6,765.63〜7,129.61 ms |
+| 全スイート所要時間 | 42.27 s | 42.19〜43.35 s |
+
+算術ループの返却値は3経路すべて `704,982,704` で一致し、各試行のRuntime統計も200,001 trace invocations、193,751 dispatcher trace transitions、3 interpreter stepsで一致した。Python handlerに対してC++ Interpreterは約228.7倍、Hybrid JITは約126.4倍速かった。一方、このワークロードではHybrid JITはC++ Interpreterより約1.81倍遅く、AO-BenchでもInterpreterより約1.12倍遅かった。小さいトレースでのdispatcher・実行境界コストが原因候補だが、プロファイルを取得できていないため原因は未確定であり、この結果だけでJIT全般の優劣は判断しない。
+
+0xFC専用ベンチマークも同じCPU固定条件で3プロセス実行した。各プロセス内では3ラウンドの中央値を採り、以下はそのプロセス間中央値である。
+
+| 経路 | C++拡張あり | Python参照 | 相対速度 |
+| :--- | ---: | ---: | ---: |
+| 飽和数値変換8種 | 267〜277 ns/命令 | 42.0〜45.0 µs/命令 | 153〜165倍 |
+| `memory.copy` 16 / 256 / 4,096 B | 252 / 283 / 897 ns | 45.8 / 56.3 / 239.9 µs | 182 / 199 / 268倍 |
+| `memory.fill` 16 / 256 / 4,096 B | 250 / 281 / 973 ns | 44.5 / 49.9 / 156.3 µs | 178 / 178 / 161倍 |
+| vDMA 64 B、4ルート | 14.4〜20.2 µs/転送 | 55.6〜61.2 µs/転送 | 3.0〜3.9倍 |
+
+vDMAは各ルート512転送/試行を記録した。各試行で変換38ケース、リニアcopy/fill 4ケース、vDMAルート4種の意味論チェックを通過した。非リニア転送の計測値はPysimのPython vDMAサービスを含み、ハードウェア転送時間を表さない。DYNAMIC PTEとHALスロットストレージの共有関係に関する6.15節の制約も引き続き残る。
+
+全6系統の生ログは [`run_all_20260930_1.log`](results/run_all_20260930_1.log)、[`run_all_20260930_2.log`](results/run_all_20260930_2.log)、[`run_all_20260930_3.log`](results/run_all_20260930_3.log) に、0xFC各試行のJSONは [`bench_fc_20260930_run1.json`](results/bench_fc_20260930_run1.json)、[`bench_fc_20260930_run2.json`](results/bench_fc_20260930_run2.json)、[`bench_fc_20260930_run3.json`](results/bench_fc_20260930_run3.json) に保存した。
+
+6.16節のAO-Benchで「Interpreter」とした値は、当時の`Interpreter.call()`がネストしたWASM関数呼出しを検出するとC++ dispatchを使わず、Python `_step()`へ進んでいた経路の測定だった。この値をC++ Interpreterの性能証跡として扱わず、以下でPython参照、C++ Interpreter、Hybrid JITを分けて再測定した。
+
+## 6.17 AO-BenchのPython・C++ Interpreter・JIT比較（2026-09-30）
+<!-- traceability: {ThreadedInterpreter} {JIT_CopyAndPatch} -->
+
+AO-Benchを32×16、4 AO samples/hitで実行し、1600 ray/frameの同じWASM入力をPython参照インタープリタ、C++ Interpreter、Hybrid JITで処理した。Python参照とC++ Interpreterは別々の`System`・WASIメモリで実行した。C++ Interpreterは`NativeInterpreter`を明示して選択し、C++命令ディスパッチ未対応opcodeをPython命令ハンドラへ渡さず失敗させる。WASM `call` とhost importはランタイム境界で解決する。AO-Benchで使う`i32.store`と`i32.store8`はC++ハンドラで実行する。3経路の出力は各測定で完全一致した。別の検証実行でも528バイトをassertした。
+
+各測定はCPU 2へ固定した独立プロセスで3回実行した。表は試行間中央値と最小〜最大である。VTune、AMD uProf、Linux `perf`が利用できなかったため、ハードウェアカウンタは取得していない。
+
+```bash
+for trial in 1 2 3; do
+  taskset -c 2 env UV_CACHE_DIR=/tmp/fireball-uv-cache UV_OFFLINE=true UV_NO_SYNC=true \
+    uv run --offline --no-sync python -c 'import json,sys; sys.path.insert(0,"experiments/pysim/benchmarks/aobench"); from bench_aobench import run_aobench; print(json.dumps(run_aobench(),sort_keys=True))' \
+    > "experiments/pysim/benchmarks/results/aobench_native_cpp_20260930_run${trial}.json"
+done
+```
+
+| 経路 | 中央値 (ms/frame) | 最小〜最大 (ms/frame) | 中央値 (rays/s) |
+| :--- | ---: | ---: | ---: |
+| Python参照Interpreter | 6,045.15 | 6,017.58〜6,101.75 | 265 |
+| C++ Interpreter | 2,807.37 | 2,764.88〜2,829.45 | 570 |
+| Hybrid JIT | 6,643.55 | 6,595.24〜6,648.53 | 241 |
+
+C++ InterpreterはPython参照の約2.15倍速かった。Hybrid JITはC++ Interpreterの約0.42倍の速度（約2.37倍遅い）で、Python参照に対しても約0.91倍だった。JITは各試行で5 traceを生成し、診断実行のinterpreter blocksは82,960、JIT invocationsは82,015、native dispatcher trace transitionsは44,734、trace exits to interpreterは93,043で一致した。この測定ではJITが遅い事実を記録する。プロファイルなしでは遅延原因は確定しない。
+
+3回の性能結果は [`aobench_native_cpp_20260930_run1.json`](results/aobench_native_cpp_20260930_run1.json)、[`aobench_native_cpp_20260930_run2.json`](results/aobench_native_cpp_20260930_run2.json)、[`aobench_native_cpp_20260930_run3.json`](results/aobench_native_cpp_20260930_run3.json) に、出力長528バイトを含む検証結果は [`aobench_native_cpp_20260930_validation.json`](results/aobench_native_cpp_20260930_validation.json) に保存した。

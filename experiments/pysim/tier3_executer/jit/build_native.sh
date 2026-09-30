@@ -39,7 +39,6 @@ echo "Built native_trace_call.so"
 
 echo ">>> Compiling native_fast_cache.cxx -> .so (clang++)"
 clang++ -std=c++23 -O2 -g -Wall -Wextra -Wpedantic -shared -fPIC \
-    -DFB_CONF_JIT_ENABLED=1 \
     -DFB_CONF_JIT_CACHE_FAST_SLOT_COUNT="${fast_slot_count}" \
     -I"${PY_INC}" \
     "${CACHE_SOURCE_CPP}" -o "${CACHE_GENERATED_SO}" \

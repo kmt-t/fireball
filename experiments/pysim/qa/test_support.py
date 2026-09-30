@@ -42,6 +42,7 @@ def make_runtime_engine(
     aging_scan_bytes: int = FB_CONF_JIT_AGING_STEP_SCAN_BYTES,
     drive_mode: RuntimeDriveMode = RuntimeDriveMode.SYNCHRONOUS,
     collect_runtime_stats: bool = True,
+    hotspot_profiling_enabled: bool = True,
 ) -> RuntimeEngine:
     """Compose a Tier 3 runtime engine with the Tier 3 JIT manager for tests."""
 
@@ -56,6 +57,7 @@ def make_runtime_engine(
         and aging_step_units == FB_CONF_JIT_AGING_STEP_UNITS
         and aging_scan_bytes == FB_CONF_JIT_AGING_STEP_SCAN_BYTES
         and drive_mode == RuntimeDriveMode.SYNCHRONOUS
+        and hotspot_profiling_enabled
     ):
         return RuntimeEngine(debug=debug, collect_runtime_stats=collect_runtime_stats)
     manager = JITRuntimeManager(
@@ -68,6 +70,7 @@ def make_runtime_engine(
         compile_queue_capacity=compile_queue_capacity,
         aging_step_units=aging_step_units,
         aging_scan_bytes=aging_scan_bytes,
+        hotspot_profiling_enabled=hotspot_profiling_enabled,
     )
     return RuntimeEngine(
         jit_runtime=manager,

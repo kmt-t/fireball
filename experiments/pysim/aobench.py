@@ -30,7 +30,12 @@ except ImportError:
     wasmtime = None
 
 from system import System
-from tier3_executer.interpreter.interpreter import Interpreter, InterpreterBindings
+from tier3_executer.interpreter.interpreter import (
+    Interpreter,
+    InterpreterBindings,
+    NativeInterpreter,
+)
+from tier3_executer.jit.jit_runtime import JITInterpreter
 from tier3_platform.drivers.hal.dummy import DummyDriver
 from tier3_platform.drivers.wasi.context import WasiHostContext
 from wasm_reader import parse
@@ -409,7 +414,7 @@ def run_aobench():
         f"\n[*] Step 3: Executing on Tier 3 Threaded CPS Interpreter "
         f"(backend=native-cpp-cps, {WIDTH}x{HEIGHT}, {AO_SAMPLES} samples/hit)..."
     )
-    interp_t2 = Interpreter(
+    interp_t2 = NativeInterpreter(
         module, InterpreterBindings.with_memory_and_functions(wasi_ctx.guest_memory, host_funcs)
     )
     main_func_idx = module.export_func_index("main")
@@ -443,9 +448,10 @@ def run_aobench():
         debug=debug,
     )
     runtime_engine.register_module_blocks(module)
-    interp_t3 = Interpreter(
+    interp_t3 = JITInterpreter(
         module,
         InterpreterBindings.with_memory_and_functions(wasi_ctx_t3.guest_memory, host_funcs_t3),
+        runtime_engine,
     )
     t0_t3 = time.perf_counter()
     runtime_engine.call(interp_t3, main_func_idx, [WIDTH, HEIGHT])
@@ -459,9 +465,7 @@ def run_aobench():
     has_no_nul = "\x00" not in render_output
     expected_bytes = (WIDTH + 1) * HEIGHT  # (32 chars + 1 newline) * 16 rows = 528 bytes
     is_valid_size = len(render_output.encode("utf-8")) == expected_bytes
-    assert is_identical, (
-        "CRITICAL: Tier 3 JIT output diverges from Tier 3 Interpreter reference output!"
-    )
+    assert is_identical, "CRITICAL: Tier 3 JIT output diverges from C++ interpreter output!"
     assert has_no_nul, "CRITICAL: Output contains corrupted NUL bytes!"
     assert is_valid_size, (
         f"CRITICAL: Output size {len(render_output.encode('utf-8'))} != expected {expected_bytes} bytes!"
@@ -478,18 +482,22 @@ def run_aobench():
     print("  * Differential Check:       PASS (Interpreter & Hybrid JIT match byte-for-byte)")
     print("--------------------------------------------------------------------------------")
     print(
-        f"  * Tier 3 Interpreter (Threaded CPS): {t2_time_ms:.2f} ms / frame  ({t2_rays_per_sec:,.0f} Rays / Sec)"
+        f"  * C++ Threaded Interpreter:          {t2_time_ms:.2f} ms / frame  "
+        f"({t2_rays_per_sec:,.0f} Rays / Sec)"
     )
     print(
         f"  * Tier 3 (Hybrid + JIT):    {t3_time_ms:.2f} ms / frame  ({t3_rays_per_sec:,.0f} Rays / Sec)"
     )
-    print(f"  * Measured Speedup Ratio:   {speedup_ratio:.2f}x faster")
+    if speedup_ratio >= 1.0:
+        print(f"  * JIT vs C++ interpreter:   {speedup_ratio:.2f}x faster")
+    else:
+        print(f"  * JIT vs C++ interpreter:   {1.0 / speedup_ratio:.2f}x slower")
     print(
         f"  * JIT Traces Compiled:      {len(runtime_engine.jit_runtime.cache.active.traces)} traces in Active cache bank"
     )
     print("================================================================================")
     print(
-        f"\n[Result] Genuine 3D AO-Bench: {total_rays:,} Rays traced in {t2_time_ms:.2f} ms (Tier 2) vs {t3_time_ms:.2f} ms (Tier 3), Speedup: {speedup_ratio:.2f}x."
+        f"\n[Result] Genuine 3D AO-Bench: {total_rays:,} rays in {t2_time_ms:.2f} ms (C++ interpreter) vs {t3_time_ms:.2f} ms (hybrid JIT), speedup: {speedup_ratio:.2f}x."
     )
     print(
         "[PASS] 3D Ambient Occlusion differential verification & benchmark completed successfully."

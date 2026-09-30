@@ -26,7 +26,6 @@ from typing import TextIO
 
 from bump_allocator import BumpAllocator
 from config import (
-    FB_CONF_RUNTIME_PROFILE_STATS,
     FB_CONF_RUNTIME_YIELD_THRESHOLD,
     RUNTIME_DEBUG_REPORT_LINE_CAPACITY,
 )
@@ -42,12 +41,12 @@ from tier2_runtime.jit_runtime_contract import (
 from tier3_executer.interpreter.interpreter import (
     NATIVE_DISPATCH_OLDEST_TRACE,
     NATIVE_DISPATCH_YIELD,
-    NATIVE_JIT_HOTSPOT_PROFILING_ENABLED,
-    NATIVE_RUNTIME_PROFILE_STATS_ENABLED,
     RETURN_SENTINEL_IP,
     Interpreter,
     InterpreterCall,
+    NativeDispatchEntryPoint,
     WasmNumber,
+    select_native_dispatch_entry,
 )
 from virq import (
     DispatchResult,
@@ -84,9 +83,10 @@ class RuntimeEngine:
     __slots__ = (
         "_boundary_runner",
         "_bump_allocator",
+        "_collect_runtime_stats",
+        "_native_dispatcher",
         "_virq",
         "_virq_interp",
-        "collect_runtime_stats",
         "debug",
         "drive_mode",
         "jit_runtime",
@@ -105,21 +105,16 @@ class RuntimeEngine:
         debug: bool = False,
         drive_mode: RuntimeDriveMode = RuntimeDriveMode.SYNCHRONOUS,
         yield_threshold: int = FB_CONF_RUNTIME_YIELD_THRESHOLD,
-        collect_runtime_stats: bool = FB_CONF_RUNTIME_PROFILE_STATS,
+        collect_runtime_stats: bool = False,
         bump_allocator: BumpAllocator | None = None,
     ):
         debug_env = os.environ.get("FIREBALL_DEBUG", "").lower()
         self.debug = debug or debug_env == "1" or debug_env == "true" or debug_env == "yes"
-        assert not collect_runtime_stats or NATIVE_RUNTIME_PROFILE_STATS_ENABLED, (
-            "runtime profile stats were compiled out; rebuild with "
-            "FB_CONF_RUNTIME_PROFILE_STATS=True"
+        collect_hotspots = jit_runtime is not None and jit_runtime.hotspot_profiling_enabled
+        self._collect_runtime_stats = collect_runtime_stats
+        self._native_dispatcher = select_native_dispatch_entry(
+            collect_runtime_stats, collect_hotspots
         )
-        assert (
-            jit_runtime is None
-            or not jit_runtime.hotspot_profiling_enabled
-            or NATIVE_JIT_HOTSPOT_PROFILING_ENABLED
-        ), "JIT hotspot profiling was compiled out; rebuild with FB_CONF_JIT_HOTSPOT_PROFILING=True"
-        self.collect_runtime_stats = collect_runtime_stats
         # RuntimeEngine is the runtime owner; loaders borrow this arena.
         self._bump_allocator = bump_allocator if bump_allocator is not None else BumpAllocator()
         self.jit_runtime = jit_runtime
@@ -139,6 +134,18 @@ class RuntimeEngine:
         self._boundary_runner: Callable[
             [Interpreter, InterpreterCall, int], RuntimeBoundaryResult
         ] = self._run_interpreter_boundary if jit_runtime is None else self._run_jit_boundary
+
+    @property
+    def collect_runtime_stats(self) -> bool:
+        """Whether this Runtime instance was composed with diagnostic counters."""
+
+        return self._collect_runtime_stats
+
+    @property
+    def native_dispatcher(self) -> NativeDispatchEntryPoint:
+        """Return the native dispatch entry selected when this Runtime was composed."""
+
+        return self._native_dispatcher
 
     def load_wasm(self, wasm_bytes: bytes) -> Module:
         """Parses raw WASM binary and binds all loader-owned basic blocks and Radix trees."""
@@ -169,7 +176,7 @@ class RuntimeEngine:
         whether a block is trackable, so the minimum trace length and static
         score are not re-derived on this hot path. Terminal blocks remain
         eligible because a compiled return exits through RETURN_SENTINEL_IP.
-        Returns True if exec_counter reached yield_threshold and triggered on_yield.
+        Returns True if the recorded history reached the hotspot yield threshold.
         """
         if self.jit_runtime is None:
             return False
@@ -344,7 +351,7 @@ class RuntimeEngine:
     ) -> RuntimeBoundaryResult:
         """Run C++ interpreter handlers through one count-based yield boundary."""
         if call_state._ip == RETURN_SENTINEL_IP:
-            return RuntimeBoundaryResult(interp.step(call_state))
+            return RuntimeBoundaryResult(interp.step_native(call_state))
         assert call_state._frame is not None
         frame = call_state._frame
         (
@@ -361,10 +368,10 @@ class RuntimeEngine:
             EMPTY_NATIVE_DISPATCH_SNAPSHOT,
             self.yield_threshold,
             0,
-            collect_stats=self.collect_runtime_stats,
+            native_dispatcher=self._native_dispatcher,
         )
         if native_status == 0:
-            call_state = interp.step(call_state)
+            call_state = interp.resolve_native_call_boundary(call_state)
         elif native_status == NATIVE_DISPATCH_YIELD:
             frame.context.native_context.loop_jump_count = 0
         if self.collect_runtime_stats:
@@ -388,7 +395,7 @@ class RuntimeEngine:
         """Run native JIT/interpreter dispatch to the next required boundary."""
         assert self.jit_runtime is not None
         if call_state._ip == RETURN_SENTINEL_IP:
-            return RuntimeBoundaryResult(interp.step(call_state))
+            return RuntimeBoundaryResult(interp.step_native(call_state))
         assert call_state._frame is not None
         pc = call_state.current_pc()
         block_here = self.get_block(pc)
@@ -423,12 +430,15 @@ class RuntimeEngine:
                     block_here.next_pc if block_here is not None else None,
                     block_here.loops_to if block_here is not None else None,
                 )
-                yield_requested = (
-                    block_here is not None
+                records_hotspot = (
+                    self.jit_runtime.hotspot_profiling_enabled
+                    and block_here is not None
                     and self.jit_runtime.is_trackable(pc)
-                    and self.record_block_head(pc)
                 )
-                call_state = interp.step(call_state)
+                yield_requested = records_hotspot and self.record_block_head(pc)
+                call_state = interp.step_native(call_state)
+                if records_hotspot:
+                    self.jit_runtime.on_interpreter_exit(yield_requested)
                 if yield_requested:
                     self.idle_hook(budget=idle_budget)
             return RuntimeBoundaryResult(call_state, yield_requested)
@@ -439,6 +449,7 @@ class RuntimeEngine:
         interpreted_block_count = 0
         native_status = 0
         hotness_yield = False
+        recorded_hotspot_history = False
         while True:
             dispatch_snapshot = self.jit_runtime.native_dispatch_state(call_state.func_index)
             (
@@ -455,8 +466,7 @@ class RuntimeEngine:
                 dispatch_snapshot,
                 self.jit_runtime.yield_threshold,
                 self.jit_runtime.exec_counter,
-                collect_stats=self.collect_runtime_stats,
-                collect_hotspots=self.jit_runtime.hotspot_profiling_enabled,
+                native_dispatcher=self._native_dispatcher,
             )
             body_count += native_body_count
             dispatcher_trace_transitions += native_trace_transitions
@@ -469,6 +479,7 @@ class RuntimeEngine:
                     "native dispatcher reported an Oldest trace absent from the JIT cache"
                 )
             if self.jit_runtime.hotspot_profiling_enabled:
+                recorded_hotspot_history = recorded_hotspot_history or eligible_block_visits > 0
                 hotness_yield = (
                     self.jit_runtime.record_native_block_visits(block_visits, eligible_block_visits)
                     or hotness_yield
@@ -478,7 +489,9 @@ class RuntimeEngine:
             if hotness_yield:
                 break
         if native_status == 0:
-            call_state = interp.step(call_state)
+            call_state = interp.resolve_native_call_boundary(call_state)
+        if recorded_hotspot_history:
+            self.jit_runtime.on_interpreter_exit(hotness_yield)
         if hotness_yield:
             self.jit_runtime.idle_hook(budget=idle_budget)
 
@@ -589,4 +602,4 @@ class RuntimeEngine:
             # Invoke this one terminal opcode through the native handler table.
             # The C++ entry returns after the handler updates stacks and PC.
             return interp.step_native_control(call_state)
-        return interp.step(call_state)
+        return interp.step_native(call_state)

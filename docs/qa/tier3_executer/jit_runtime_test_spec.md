@@ -4,12 +4,7 @@
 
 正本: [`jit_runtime.md`](docs/components/tier3_executer/jit_runtime.md)
 関連正本: [`jit_compiler.md`](docs/components/tier3_executer/jit_compiler.md)（{JIT_LazyChaining}、{JIT_CopyAndPatch}はjit_runtimeと共同責務）
-x64の統合実行経路は [`runtime_engine.py`](experiments/pysim/tier3_executer/jit/runtime_engine.py) とpysimテストで検証する。ARMv8-Mの物理スタックキャッシュ設計はTBDである。
-3面キャッシュ、ホットスポット、chain dispatcherの統合ケースはx64のpysim JITランタイムテストで検証する。ARMv8-Mの物理ABIとスタックキャッシュ仕様はTBDである。
-製品 pysim の状態所有実装は [`jit_manager.py`](experiments/pysim/tier3_executer/jit/jit_manager.py) の `JITRuntimeManager` である。Tier 2の [`jit_runtime_contract.py`](experiments/pysim/tier2_runtime/jit_runtime_contract.py) はサービス契約を定義し、Tier 3の [`runtime_engine.py`](experiments/pysim/tier3_executer/jit/runtime_engine.py) はInterpreter/JIT実行とトレース復帰を調整する。JIT trace境界の対応済み制御終端命令は、条件と制御frameを更新するC++ Interpreter handlerを一度通る。未対応命令は既存のPython handlerへ委譲する。
-
-本仕様は、WASM PC からネイティブコードを検索する3段階の経路を検証する。経路はカードマーキング、Folding XOR 高速キャッシュ、ソート済みバンク内の二分探索である。
-2-bit ホットスポット検出、x64のJITコード領域、Oldest-Only Promotion、共通コード領域dispatcherを経由するchain、x64実行可能バッファのW^Xを対象とする。ARMv8-Mの物理仕様はTBDである。
+本仕様は、WASM PCからネイティブコードを検索する3段階の経路、ホットスポット昇格、3面コードキャッシュ、chain dispatcher、および実行可能メモリの権限遷移を検証する。検索経路はカードマーキング、Folding XOR高速キャッシュ、ソート済みバンク内の二分探索である。x64参照構成を対象とし、ARMv8-Mの物理配置、ABI、保護方式は別途定義する。
 
 ## 2. テストケース一覧
 
@@ -21,7 +16,7 @@ x64の統合実行経路は [`runtime_engine.py`](experiments/pysim/tier3_execut
 | TEST-JITR-02 | 状態遷移: UNEXECUTED→EXECUTED→HOT | 新規カード | 1回touch、2回目touch | 1回目でEXECUTED、2回目でHOT | jit_runtime.md (Card Marking) |
 | TEST-JITR-03 | COMPILED後のtouchは状態を変えない | カードがCOMPILED | touch | 状態はCOMPILEDのまま | |
 | TEST-JITR-04 | 評価(Eviction)でUNEXECUTEDへ戻る（EXECUTEDではない） | カードがCOMPILED、対応トレースがキャッシュから追い出される | `mark_evicted` | 状態がUNEXECUTEDに戻る。**実装の勘所**: EXECUTEDへ戻すと、境界的にしかホットでないコードが「1回touchすればまたHOT」という状態になり、コンパイルとEvictを永久に繰り返す（スラッシング）。追い出された以上は`UNEXECUTED→EXECUTED→HOT`のウォームアップを最初からやり直させ、本当に持続的にホットなコードだけを再コンパイル対象にする |, `test_hotspot_bitmap_pure_2bit_state_transitions`, [`test_jit_runtime.py`](experiments/pysim/qa/tier3_executer/jit/test_jit_runtime.py) `test_hotspot_05_3bank_cache_rotation_and_eviction_resets_card` |
-| TEST-JITR-05 | ベーシックブロック先頭PCのみ履歴記録 | 命令数の多いベーシックブロック | 実行 | 履歴リングへのエントリはブロックにつき1件のみ | |
+| TEST-JITR-05 | 適格ベーシックブロックの履歴記録 | 複数の適格ブロックを含むInterpreter実行区間 | 対象関数を実行し、Runtime Hotspot Profilerの履歴を読む | `(module_id, unified_pc)`が適格ブロックごとに1件ずつ実行順で記録される | [`runtime_hotspot_profiler_test_spec.md`](docs/qa/tier2_runtime/runtime_hotspot_profiler_test_spec.md) |
 | TEST-JITR-06 | 最小トレース長未満のブロックはカード共有を起こさず永久に追跡されない | 同一カード内に2つの短いベーシックブロック（推定コンパイル後サイズがカード幅未満） | 両方のPCを繰り返し実行 | 両方のカード状態は `UNEXECUTED` のままであり、コンパイル待ち列にも追加されない。**実装の勘所**: カードの2-bit状態は、1枚につき1トレースしか表現できない。異なるブロックが同じカードを共有すると、一方のコンパイル状態を他方も誤認する。Evict 時には一方のトレースが、他方の `COMPILED` 状態を誤って消すおそれもある。カード幅以上のブロックだけを追跡対象にする。連続するブロックの先頭は前ブロックの終端以降にあるため、対象ブロックはカードを共有しない。 | `jit_runtime.md` 「最小トレース長フィルタ」、[`test_jit_runtime.py`](experiments/pysim/qa/tier3_executer/jit/test_jit_runtime.py) `test_hotspot_06_short_blocks_never_tracked_avoiding_card_aliasing` |
 | TEST-JITR-07 | コンパイル待ち列処理時、既にキャッシュ常駐のPCは再コンパイルしない | PCがキャッシュに常駐済み（カード状態はまだCOMPILEDになっていない）が、同PCが待ち列にも積まれている | idle_hookを実行 | コンパイラを呼び出さず、カード状態だけを `COMPILED` へ同期する。**実装の勘所**: コンパイル済みかどうかの一次情報源は、カード状態ではなく実際のキャッシュ常駐状態である。`mark_compiled` の反映前に同じ PC が再度キューへ積まれる場合がある。カード状態だけを見ると二重コンパイルが発生する。 | `jit_runtime.md` 「キュー処理時のキャッシュ再確認」、[`test_jit_runtime.py`](experiments/pysim/qa/tier3_executer/jit/test_jit_runtime.py) `test_hotspot_07_idle_hook_skips_recompiling_an_already_resident_trace` |
 | TEST-JITR-08 | JITエントリテーブル（バンクのトレース一覧）は常にhead_pcでソートされ、削除は削除フラグ（トンビストーン）で行う | 複数のトレースをPC順不同で挿入し、1件削除後に同じPCを再挿入 | 挿入・削除・再挿入後にトレース一覧と該当PCの取得結果を確認 | 一覧は常にhead_pc昇順。削除直後は取得結果がNone。再挿入は既存tombstone枠を再利用し、取得結果は新しいトレースそのものになる。**実装の勘所**: JITはエントリ数が少ない疎なキー集合なのでRadix索引を持たず、ソート済み固定容量配列を二分探索する。新規キーの挿入時は配列をシフトし、削除時はtombstone化する。配列容量と挿入コストは2KBバンク上限により制限される | jit_runtime.md「JITエントリ表」, [`jit_cache.py`](experiments/pysim/tier3_executer/jit/jit_cache.py), [`test_jit_runtime.py`](experiments/pysim/qa/tier3_executer/jit/test_jit_runtime.py) |
@@ -34,7 +29,7 @@ x64の統合実行経路は [`runtime_engine.py`](experiments/pysim/tier3_execut
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | TEST-JITR-10 | 検出と通常コンパイルの遅延、および満杯時の即時drain | カードがHOTになる | 通常時とキュー満杯時を分けて実行 | 通常時はyield/idleまでコンパイルせず、キュー満杯時だけその場でLIFO drainしてキューを空ける。キュー容量を超えて保持しない | jit_compiler.md ADR_SafeQueuingOnHotMiss, `{JIT_ReverseCompilationOrder}` |
-| TEST-JITR-11 | yield時に履歴を走査しHOTカードをキューへ | HOTなカードのPCが履歴に記録済み | `on_yield`相当を呼ぶ | 該当PCがコンパイル待ち列(LIFO)に追加される | jit_compiler.md 「ホットスポット判定」 |
+| TEST-JITR-11 | Interpreter終了境界で履歴を分析 | yield、fallback、trap、関数完了によりInterpreter実行区間を終了する | 未分析のHotspotHistoryを分析し、その後JIT trace/chainのみの区間を実行する | 各Interpreter終了境界で履歴順にカードを一度更新し、必要な要求を登録する。JIT-only区間は履歴を記録・分析しない | [`runtime_hotspot_profiler_test_spec.md`](docs/qa/tier2_runtime/runtime_hotspot_profiler_test_spec.md) |
 | TEST-JITR-12 | LIFO順でのバッチコンパイル | キューに複数PC | idle_hookを実行 | 後入れのPCから先にコンパイルされる | `{JIT_ReverseCompilationOrder}` |
 | TEST-JITR-13 | 常駐トレース再確認とカード状態の整合 | コンパイル要求PCがキューに重複登録済み、またはキャッシュ常駐済み | idle_hookを実行 | 常駐済みなら再コンパイルせず`COMPILED`へ同期する。全キャッシュmissはコンパイル要求として扱い、eviction後のPCを`COMPILED`のまま放置しない | `{ADR_SafeQueuingOnHotMiss}` |
 | TEST-JITR-14 | コンパイル失敗時の恒久的候補除外 | `compile_trace`が失敗を返す | idle_hookを実行 | Trackable Maskの対象ビットだけを解除し、カードを`COMPILED`へ設定しない。同一モジュール内で再履歴・再キュー・再コンパイルを行わない | `{TrackableBlockMask}` |
@@ -121,7 +116,7 @@ JITトレース検索時の内部状態と期待される挙動を検証する�
 | TEST-JITR-63 | C++ディスパッチのLOOP後方辺回数制御とyield境界 | 同一関数・同一制御frameのLOOP後方`BR_IF`と常駐トレースを持つ関数 | 共通C++ディスパッチ内のJIT実行、C++ `br_if` handler回数、RuntimeEngineのyield要求を観測する | しきい値未満はC++ディスパッチが後続常駐トレースを検索して実行する。しきい値到達後はC++ handlerが分岐とframe状態を更新し、RuntimeEngineがカウンタを0へ戻してyield要求を返す | `interpreter.md`「トレース境界での協調的Yield」、`runtime_vsoc_test_spec.md` TEST-VSOC-22, pysim `test_jitr_loop_backedge_stays_in_cpp_until_coos_yield` |
 | TEST-JITR-64 | Interpreter warm-upからC++ディスパッチを使うJITへ移行 | 未コンパイルの数値ループを実行し、idle時に対象トレースをコンパイルする | RuntimeEngineで関数を完了し、返値・実行統計・キャッシュ常駐を確認する | 結果は15で、Interpreter warm-up後にLOOPトレースが常駐する。C++ dispatcherは設定された後方辺数までC++ handlerとトレースを実行してからRuntimeEngineへyieldを返す | `jit_runtime.md`「トレース実行時の分岐解決とインタープリタ復帰」、pysim `test_hybrid_interpreter_to_jit_trace_elevation` |
 | TEST-JITR-65 | ネイティブdispatch metadataの世代更新とhotspot profiling切替 | 未コンパイル候補blockと一つの常駐traceを持つJIT manager | ネイティブdispatch stateを読み、trace挿入とhotspot profiling切替後のmetadataを確認する | metadataは常駐traceと候補blockに一致する。キャッシュ世代変更後はtrace表を更新する。hotspot profiling無効時は候補PC数を0にして常駐trace実行と分岐handlerの意味を保つ | `jit_runtime.md`「トレース実行時の分岐解決とインタープリタ復帰」、pysim `test_jitr_native_dispatch_snapshot_is_cached_and_hotspot_collection_is_configurable` |
-| TEST-JITR-66 | 診断カウンタを無効にした実行の意味保存 | `FB_CONF_RUNTIME_PROFILE_STATS`既定値で後方分岐yieldを行うC++ Interpreter | 関数を実行し、結果・yieldと統計値を確認する | 結果とyield境界は変わらず、JIT body、handler、trace遷移の診断カウンタは0のままである | `jit_runtime.md`「トレース実行時の分岐解決とインタープリタ復帰」、pysim `test_runtime_profile_counters_are_disabled_by_default` |
+| TEST-JITR-66 | 診断カウンタを無効にしたRuntimeの意味保存 | 診断カウンタなしで後方分岐yieldを行うC++ Interpreter構成 | 関数を実行し、結果・yieldと統計値を確認する | 結果とyield境界は変わらず、JIT body、handler、trace遷移の診断カウンタは0のままである。同じプログラム内で診断カウンタ有効Runtimeも構成できる | `jit_runtime.md`「トレース実行時の分岐解決とインタープリタ復帰」 |
 | TEST-JITR-67 | フレーム深度をまたぐ合法なLOOP分岐はchain targetを作らない | 内側`block`から同一関数の外側`loop`へ戻る合法な`br_if` | 対象・分岐blockのframe深度、コンパイル結果、C++ handler経由の実行結果を確認する | トレース本体はコンパイル可能でも、後方分岐にchain targetは設定しない。分岐はC++ Interpreter handlerが処理し、Interpreterのみの結果と一致する | `runtime_vsoc.md`「後方分岐とyield回数」、`jit_runtime.md`「トレース実行時の分岐解決とインタープリタ復帰」、pysim `test_jitr_cross_frame_loop_branch_skips_special_link_but_keeps_trace_body` |
 
 ### 実装の勘所・不変条件（Gotchas & Implementation Invariants）

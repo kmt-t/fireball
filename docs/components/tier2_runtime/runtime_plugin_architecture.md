@@ -1,15 +1,12 @@
 # ランタイムプラグイン構成契約 コンポーネント設計書
 <!-- evidence:
      contract-only: true
-     reference: experiments/pysim/tier2_runtime/runtime_composer.py
      test: docs/qa/tier2_runtime/runtime_plugin_architecture_test_spec.md
 -->
 
 ## 1. コンセプト
-<!-- traceability: {META_3TierSeparation} {META_ContractImplSplit} {META_StaticDI} {GLOBAL_ComponentHarness} {ZeroRuntimeOverhead} -->
+<!-- traceability: {META_3TierSeparation} {META_ContractImplSplit} {META_StaticDI} {GLOBAL_ComponentHarness} {RuntimeEventSink} {RuntimeHotspotProfiler} {ZeroRuntimeOverhead} -->
 本コンポーネントは、WASM ランタイムを構成する実行エンジンと補助エンジンの交換契約を定義する。System は不変な構成情報を保持する。Runtime は構成情報から実装を静的に合成する。Tier 3 のプラグインは個別の実行方式、観測方式、物理接続を実装する。
-
-本書は実機C++ RuntimeComposerの目標契約である。現行リポジトリの `RuntimeComposer` はpysim内の構成モデルであり、`System.runtime_engine` や実機C++ Runtimeへ統合されていない。Pythonモデルの選択・Observer生成の範囲は関連テストで検証し、C++生成物からの除去や実機Pluginの初期化・終了は未実装の制限として扱う。
 
 本契約は、インタープリタ、JIT ランタイム、JIT コード生成器、デバッガ、ゲストプロファイラ、WASI バックエンドを同じランタイムへ混在させることを目的としない。Runtime は各機能を独立したスロットへ静的に結線する。無効な機能は Null オブジェクトとして実行時に保持せず、構成合成時に除外する。これにより、Runtime が実装方式の詳細と不要な weave 処理を抱え込むことを防止する。
 
@@ -40,7 +37,9 @@ System と Runtime の責務は次のように分離する。
 - **`runtime_context`**: 一ゲストに専有される可変状態である。実行コンテキスト、メモリ境界、トラップ、停止理由、観測統計の所有権を保持する。
 - **`execution_strategy`**: 命令列を実行する Tier 3 実装の契約である。Interpreter と JIT の共通呼出境界から利用する。
 - **`jit_lookup_policy`**: JIT 有効構成で使うキャッシュ検索実装の選択である。選択責務は Tier 2 `RuntimeComposer`、検索アルゴリズムは選択された Tier 3 実装が担う。
-- **`jit_runtime_plugin`**: JIT 有効構成にだけ存在し、ホットスポット検出、選択済み検索実装、コードキャッシュ、コンパイル要求、ネイティブ実行可否を担当する契約である。
+- **`jit_runtime_plugin`**: JIT 有効構成にだけ存在し、カード状態、選択済み検索実装、コードキャッシュ、コンパイル要求、ネイティブ実行可否を担当する契約である。
+- **`runtime_event_sink`**: 意味上のRuntimeイベントを固定長リングへ記録し、安全点でABIバッチとして出力する契約である。ホットスポット履歴を記録しない。
+- **`runtime_hotspot_profiler`**: Interpreterの適格基本ブロック履歴をRuntime実行境界で分析し、JIT Runtimeのカードを更新する契約である。Runtime Event Sinkを経由しない。
 - **`jit_compiler_plugin`**: WASM の実行単位を対象アーキテクチャのコードへ変換する契約である。
 - **`debugger_plugin`**: 停止、再開、ブレークポイント、レジスタ・メモリ観測を担当する契約である。実行状態を変更できる唯一の補助プラグインとする。
 - **`profiler_plugin`**: Runtime 観測イベントを読み取り、関数コールグラフと実行時間を集計する契約である。実行状態を変更しない。
@@ -58,10 +57,14 @@ graph TD
     Harness --> JitCompiler[JIT Compiler Plugin]
     Harness --> Debugger[Debugger Plugin]
     Harness --> Profiler[Profiler Plugin]
+    Harness --> EventSink[Runtime Event Sink]
+    Harness --> Hotspot[Runtime Hotspot Profiler]
     Harness --> Wasi[WASI Plugin]
     Runtime --> Context[RuntimeContext<br/>共有実行状態]
-    Runtime -. emits .-> Events[VM Observation Events]
-    Events --> Profiler
+    Runtime --> EventSink
+    EventSink --> Profiler
+    Interpreter -->|基本ブロック履歴| Hotspot
+    Hotspot --> JitRuntime
 ```
 
 ### 3.3 プラグインスロット
@@ -70,43 +73,55 @@ graph TD
 | :--- | :--- | :--- | :--- |
 | Execution | 共通 `call` と実行ステップの完了結果 | インタープリタまたは JIT 実行 | 許可しない。必ず一つを結線する |
 | JIT lookup | JIT キャッシュ検索契約と構成選択 | 選択された固定容量キャッシュ検索 | JIT 無効構成では契約、検索処理、キャッシュ状態を合成しない |
-| JIT runtime | コンパイル要求、選択済み検索、フォールバック、無効化 | ホットスポット管理とコードキャッシュ | JIT 無効構成ではスロット自体を持たない |
+| JIT runtime | コンパイル要求、選択済み検索、フォールバック、無効化 | カード状態とコードキャッシュ | JIT 無効構成ではスロット自体を持たない |
 | JIT compiler | 実行単位のコード生成結果 | x64コード生成（検証済み）。ARMv8-M物理生成はTBD | コンパイル要求を未対応として返す |
 | Debugger | 停止、再開、観測、書込みの境界 | GDB RSP 等のプロトコルと停止処理 | デバッグ要求を無効化する |
 | Profiler | VM イベントの受信と終了通知 | コールグラフ、実行時間、ログ出力 | フック、イベント生成、状態、呼出しを合成しない |
+| Runtime Event Sink | 意味上のRuntimeイベントを記録し、停止点でABIバッチを出力する | 固定長イベントリング | 観測無効構成ではSink、リング、発行経路を合成しない |
+| Runtime Hotspot Profiler | Interpreterの履歴を実行境界で分析し、JIT Runtimeへ適格PCを渡す | 固定容量PC履歴 | JITまたはホットスポット検出が無効なら履歴と分析経路を合成しない |
 | WASI | ゲスト呼出とホスト結果の変換境界 | Preview 1、Component Model、uvwasi 等 | WASI import を未対応として返す |
 
-`FB_CONF_JIT_ENABLED` は翻訳単位共通のビルド定義として固定し、JIT無効構成ではJIT型とlookup契約を生成しない。JIT有効構成ではTier 2が選んだlookup型だけを `runtime_composer` のテンプレート引数に渡し、JIT executorへ静的に結線する。構成で除外された処理に実行時選択分岐を残さない。
+構成は翻訳単位共通のマクロで切り替えず、`runtime_configuration<Interpreter, JitRuntime, LookupPolicy, Debugger, Profiler, RuntimeEventSink, RuntimeHotspotProfiler>` の型で表す。Runtime Event Sink と Runtime Hotspot Profiler は独立した型スロットで選択する。無効なスロットの型には `void` を指定し、`runtime_harness<Configuration>` は選択済みコンポーネントへの参照だけを保持する。`runtime_composer<Configuration>` はそのハーネスを値として保持する。Interpreter専用、Debugger/Profiler付きInterpreter、イベント有効・無効、JITホットスポット有効・無効などの構成違いは同一プログラム内で別々にインスタンス化でき、各インスタンスの実行経路に構成選択分岐を置かない。
 
 ## 4. 動的モデル
 
 ### 4.1 初期化と終了
-`runtime_composer` は、RuntimeContext、観測シンク、実行戦略、JIT 補助、デバッガ、WASI の順に有効な実装だけを構築する。失敗時は逆順で終了する。C++ 構成では不変構成をテンプレート引数または同等の生成済み型として固定し、Interpreter 構成には JIT lookup 契約と実装を参照させない。JIT 構成では Tier 2 が選んだ検索実装を一つだけ結線する。無効なスロットは初期化せず、Runtime の実行経路へ Null オブジェクト、有効性分岐、未選択検索実装への参照を残さない。
+`runtime_composer` は、RuntimeContext、Runtime Event Sink、Runtime Hotspot Profiler、実行戦略、JIT補助、Debugger、WASIのうち、選択された具象実装だけをハーネスへ結線する。Runtime Event Sink と Runtime Hotspot Profiler は独立して初期化・破棄する。失敗時は逆順で終了する。C++ 構成では不変構成をテンプレート引数または同等の生成済み型として固定する。無効なスロットはインスタンスへ含めず、Runtimeの実行経路へNullオブジェクト、有効性分岐、未選択検索実装への参照を残さない。
 
 ```mermaid
 sequenceDiagram
     participant C as RuntimeComposer
     participant R as Runtime
-    participant O as Observer
+    participant O as Runtime Event Sink
+    participant H as Runtime Hotspot Profiler
+    participant A as Python Adapter
     participant E as ExecutionStrategy
     participant P as Optional Plugins
     C->>R: RuntimeContext を構築
     alt 観測有効
-        R->>O: 観測境界を初期化
+        R->>O: Runtime Event Sinkを初期化
     else 観測無効
         Note over R: 観測 weave を生成しない
     end
     R->>E: Interpreter または JIT を初期化
+    opt JITとホットスポット検出が有効
+        R->>H: 履歴領域と分析サービスを初期化
+    end
     R->>P: 有効な Debugger / Profiler / WASI を初期化
     R-->>C: 構成済み Runtime
     C->>R: guest をロード
     opt 観測有効
-        R->>O: module_load
+        R->>O: module_loadedを記録
     end
     R->>E: call
-    E-->>R: 完了、トラップ、停止
+    E-->>R: 完了、トラップ、停止点
     opt 観測有効
-        R->>O: 終了イベント
+        R->>O: Runtimeイベントを記録
+        R->>A: 停止点でイベントバッチを出力
+        A->>P: Python値を配信
+    end
+    opt Interpreter実行履歴あり
+        E->>H: 終了境界で履歴を分析
     end
 ```
 
@@ -114,11 +129,12 @@ sequenceDiagram
 `call` の共通処理は次の順序を保証する。Tier 3 の実装は `execute_body` に相当する実行フックだけを差し替える。
 
 1. 実行可能状態、関数番号、引数型、スタック容量を検証する。
-2. 呼出フレームを作成し、関数開始イベントを発行する。
+2. 呼出フレームを作成し、選択されたRuntime Event Sinkへ関数開始イベントを記録する。
 3. 構成済み実行器を呼び出す。Interpreter 構成はインタープリタだけを実行する。JIT 構成は選択済みキャッシュ検索、コンパイル要求、ネイティブ実行を行い、トレース終端命令は C++ Interpreter の対応ハンドラへ渡す。
 4. 戻り値、トラップ、停止要求を共通形式へ変換する。
-5. 呼出フレームを確定し、関数終了イベントを発行する。
-6. 呼出元へ結果を返す。
+5. 呼出フレームを確定し、選択されたRuntime Event Sinkへ関数終了イベントを記録する。
+6. Runtimeが安全点へ達した後にイベントバッチを出力し、Python Adapterが値へ変換する。
+7. 呼出元へ結果を返す。
 
 共通処理は JIT のキャッシュ状態、コンパイラの命令エンコーディング、デバッガの通信形式を参照してはならない。JIT の実行経路が共通契約を再実装することも禁止する。
 
@@ -126,10 +142,12 @@ sequenceDiagram
 - 置換単位はスロット単位とする。一つの Tier 3 実装が別スロットの内部状態を兼務してはならない。
 - 実装選択と weave は Tier 2 `RuntimeComposer` が行う。ゲスト実行中の型差し替えは行わない。
 - C++ の `RuntimeComposer` は静的 DI で選択済みの具体型をテンプレートまたは生成済みハーネスへ結線する。実行ホットパスに構成判定を置かず、選択条件は `if constexpr` で特殊化する。
-- JIT 有効時の lookup 方針も Tier 2 が構成で選び、該当する Tier 3 実装だけを参照する。Interpreter 構成の生成物に JIT lookup シンボルが現れないことをビルド検証する。
+- JIT 有効時の lookup 方針も Tier 2 が構成で選び、該当する Tier 3 実装だけをハーネスの型引数にする。Interpreter 専用ハーネスは JIT lookup を参照せず、同じプログラム内で JIT ハーネスと共存できる。
 - 無効なアスペクトに対応する `constexpr` 条件は偽でなければならない。このとき、イベントペイロード計算、フック呼出し、Null 判定、状態領域を翻訳単位へ生成してはならない。
 - JIT runtime と JIT compiler は別スロットとする。JIT runtime 内のコンパイル失敗やキャッシュミスは、選択済みの C++ Interpreter ハンドラへフォールバックする。JIT 無効構成には JIT runtime の代わりに Null オブジェクトを置かない。
-- Profiler は `RuntimeObserver` としてイベントを読む。Profiler から Runtime の実行メソッドを呼び出してはならない。
+- Runtime Event Sink は C++ Runtime 内で固定長レコードを記録し、C++実行中にPython callbackを呼び出さない。Python Adapterは停止点で変換したイベント値をProfilerへ渡す。
+- Runtime Event Sink と Runtime Hotspot Profiler は独立した型スロットと状態を持つ。Runtime Event Sinkは意味上のイベントのみを記録し、基本ブロック履歴を受けない。
+- Profiler から Runtime の実行メソッドを呼び出してはならない。
 - Debugger の停止・再開・メモリ書込みは `ExecutionControl` 契約を使う。Profiler の観測契約へ書込み操作を追加してはならない。
 - WASI のホスト呼出は `HostCallBoundary` を通す。製品ターゲットのWASI実装はこの境界の下位プラットフォーム実装を選択し、uvwasiはホスト上の評価構成だけで使用する。Runtimeはuvwasiを直接参照しない。
 
@@ -171,7 +189,7 @@ sequenceDiagram
 - 構成済み Interpreter と JIT のホットパスに `jit_runtime != nullptr` 相当の判定を置かない。選択は Tier 2 の合成時に完了させる。
 - 実行中の文字列検索、動的レジストリ検索、仮想関数による全称ディスパッチを要求しない。
 - weave 箇所は `constexpr` 条件で特殊化する。条件が偽のアスペクトでは、フック本体だけでなく呼出し、引数評価、ペイロード構築、状態領域を除去する。
-- リンカの未参照コード除去や LTO は補助に留める。RuntimeComposer は、不要な実装を参照せず翻訳単位へ含めないことで除去を保証する。
+- RuntimeComposer は選択された実装をインスタンスへ静的に結線し、他スロットの状態や呼出しをそのインスタンスへ含めない。別構成のハーネスが同じプログラム内で使われる場合、その構成の実装も同時に存在できる。
 
 ### 6.2 メモリ制約と方策
 - 全プラグインの状態容量、イベントリング容量、JIT コード領域、デバッガバッファを `SystemConfig` の予算へ登録する。
@@ -191,19 +209,19 @@ sequenceDiagram
 #### 7.1.1 検証対象の不変条件
 | 不変条件 | 説明 | 範囲 | 検証方法 |
 | :--- | :--- | :--- | :--- |
-| 実行器選択 | Interpreter/JIT構成が選択したfactoryだけを呼び、Debugger+JITを拒否する。 | pysim構成モデル | [`runtime_plugin_architecture_test_spec.md`](docs/qa/tier2_runtime/runtime_plugin_architecture_test_spec.md) `TEST-PLUGIN-01` |
-| Observer選択 | 選択済みObserverだけを生成し、全Observer無効構成は観測状態を持たない。 | pysim構成モデル | `runtime_plugin_architecture_test_spec.md` `TEST-PLUGIN-02` |
-| C++ weave除去 | 無効アスペクトのフック、状態、WIT境界、翻訳単位を生成物から除去する。 | 実機C++生成物 | 未実装。C++実装とmap-file検査を追加するまで保証しない |
-| 初期化・終了 | 全Pluginの初期化・終了順と各処理の一度限りの実行。 | 実機Runtime lifecycle | 未実装。現行pysim構成モデルはPlugin lifecycleを持たない |
+| 実行器選択 | Interpreter/JIT構成が選択した実行器だけを保持し、禁止された組合せを構築時に拒否する。 | Runtime構成テスト |
+| 独立スロット選択 | Runtime Event SinkとRuntime Hotspot Profilerの有効・無効を独立して組み合わせる。 | Runtime構成テスト |
+| C++ weave除去 | 無効アスペクトのフック、状態、WIT境界、翻訳単位を生成物から除去する。 | 型構成、生成コード、map-file検査 |
+| 初期化・終了 | 選択された各Pluginの初期化と逆順終了を一度ずつ行う。 | Runtime lifecycleテスト |
 
-#### 7.1.2 既知の制限や仮定
-本仕様は実機Runtimeのプラグイン境界とライフサイクル目標を定義する。現行pysim参照モデルの検証範囲は実行器とObserverの構成選択であり、実行中の統合や終了hookを含まない。各プラグインのキャッシュアルゴリズム、WASI ABI、デバッグパケット形式、イベント集計アルゴリズムは対応する Tier 3 仕様へ委譲する。
+#### 7.1.2 対象外
+各プラグインのキャッシュアルゴリズム、WASI ABI、デバッグパケット形式、イベント集計アルゴリズムは対応する Tier 3 仕様へ委譲する。
 
 ## 8. 設計判断と参考実装
 
 ### 8.1 設計上の未決事項
 - JIT runtime と JIT compiler の要求搬送方式。
-- Profilerの損失許容方針と予約イベント容量。
+- 各プラグインの固定容量は `SystemConfig` の資源予算で確定する。
 
 
 特記すべき独立したADRはない。採用方針は本書の各契約節に記載する。

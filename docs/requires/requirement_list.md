@@ -47,7 +47,7 @@ graph LR
 | `{JIT_LazyChaining}` | 常駐traceの直線後続へ進む際、共通コード領域のchain dispatcherがTraceヘッダのtarget bodyへtail-jumpする。opcode別の条件評価・C++ Interpreter handler実行はchainに含めない。 | 高 | レビュー <!-- definition: {JIT_LazyChaining} --> |
 | `{Interpreter_LazyJITSwitch}` | 制御命令はC++ Interpreterの命令別handlerで処理する。C++ dispatcherは共有後方分岐しきい値へ達するまで、常駐JIT traceまたはC++ handlerを続けて実行する。しきい値到達時にRuntimeEngineへyield statusを返す。JIT候補の観測・cache更新・コンパイルはTier 3 runtime境界が行う。分岐handlerからvSoCへは復帰しない。 | 高 | レビュー <!-- definition: {Interpreter_LazyJITSwitch} --> |
 | `{vMMIO_TrapAndEmulate}` | ゲストからのメモリアクセスをトラップし、ホスト側のフックを呼び出す。 | 高 | テスト <!-- definition: {vMMIO_TrapAndEmulate} --> |
-| `{VDMA}` | host call によるゲストリニアメモリと仮想・物理アドレス間の高速転送に加え、WASM `memory.copy` を同一ゲストリニアメモリ内で加速する内部コピー経路を提供する。VDMAの制御要求は vMMIO レジスタを経由しない。 | 中 | テスト <!-- definition: {VDMA} --> |
+| `{VDMA}` | host call によるゲストリニアメモリと仮想・物理アドレス間の転送に加え、WASM `memory.copy` ではvMMIO管理下のDYNAMIC・SHM・PASSTHROUGHアドレスを含むコピーを内部転送経路で扱う。リニアメモリ端点同士はCPUでコピーする。vMMIOアドレスは既存の権限・所有権検査を通し、VDMAの制御要求はvMMIOレジスタを経由しない。 | 中 | テスト <!-- definition: {VDMA} --> |
 | `{JIT_ReverseCompilationOrder}` | キューを逆順（LIFO）で処理し、コンパイル直後の即時チェイニング率を向上させる。 | 高 | レビュー <!-- definition: {JIT_ReverseCompilationOrder} --> |
 | `{DynamicMmap}` | 共有メモリIDを指定し、外部バッファをvMMIO空間に一時的にマッピングする。 | 高 | テスト <!-- definition: {DynamicMmap} --> |
 | `{EnvironmentPointer}` | 周辺コンポーネント・リニアメモリへの参照を `execution_context` 内の環境フィールド（`vsoc_runtime` 領域）経由で型安全に行う。 | 高 | レビュー <!-- definition: {EnvironmentPointer} --> |
@@ -56,7 +56,7 @@ graph LR
 | `{WasmPageAlignment}` | メモリ割り当てをWASMページ単位（64KB）で行い、アドレス変換を効率化する。 | 中 | レビュー <!-- definition: {WasmPageAlignment} --> |
 | `{UnifiedAccessModel}` | 物理・共有メモリへの全アクセスをvMMIO層（PTEマッピング・unmap機構）に一本化してセキュリティを標準化する。未認可領域は unmap によりアクセス不可とし、ゲスト専用RAM（論理メモリ）はレイテンシ最優先のため`FastAddressCheck`による独立した高速境界チェック経路とし、vMMIO層の対象外とする。 | 高 | レビュー <!-- definition: {UnifiedAccessModel} --> |
 | `{Wasm32Only}` | wasm32の単一リニアメモリを対象とし、WASM Core 1.0 MVPを基礎に明示選択した`0xFC`命令だけを追加する。Wasm64やマルチスレッド等は除外する。 | 高 | テスト <!-- definition: {Wasm32Only} --> |
-| `{WasmFCSubset}` | `0xFC`の飽和型浮動小数点→整数変換8命令と、単一メモリ向け`memory.copy`/`memory.fill`だけをサポートする。変換はNaN・無限大・範囲外値をWASM規則で飽和させ、メモリ操作は全範囲を事前検証する。`memory.copy`の非重複転送は内部同期vDMA経路へ委譲可能とし、重複領域はCPUでmemmove意味論を実現する。 | 高 | テスト <!-- definition: {WasmFCSubset} --> |
+| `{WasmFCSubset}` | `0xFC`の飽和型浮動小数点→整数変換8命令と、単一メモリ向け`memory.copy`/`memory.fill`だけをサポートする。変換はNaN・無限大・範囲外値をWASM規則で飽和させ、メモリ操作は全範囲を事前検証する。`memory.copy`はゲストリニアアドレスとvMMIO管理下のDYNAMIC・SHM・PASSTHROUGHアドレスを扱い、vMMIO側は内部同期vDMA経路で転送する。コピーの観測結果はWASMのmemmove意味論を保つ。 | 高 | テスト <!-- definition: {WasmFCSubset} --> |
 | `{FastAddressCheck}` | ゲストアドレスの境界チェックをサイズ比較の単一命令で高速化し、境界外は即座にトラップする（黙ったラップアラウンドは不可）。 | 中 | レビュー <!-- definition: {FastAddressCheck} --> |
 | `{vMMIO_Isolation}` | vMMIO空間へのアクセスのみをデバイスI/Oとして許可し、メモリ安全性を確保する。 | 高 | テスト <!-- definition: {vMMIO_Isolation} --> |
 | `{JIT_RuntimeAPI_Fallback}` | 複雑な命令をランタイムAPI呼び出しにフォールバックさせ、JITエンジンの複雑さを抑える。 | 高 | レビュー <!-- definition: {JIT_RuntimeAPI_Fallback} --> |
@@ -131,6 +131,8 @@ graph LR
 | キーワード | 内容 | 優先度 | 検証方法 |
 | :--- | :--- | :--- | :--- |
 | `{HistoryBuffer}` | JITホットスポット検出のために、実行履歴を保持するリング状のバッファ。 | 中 | レビュー <!-- definition: {HistoryBuffer} --> |
+| `{RuntimeEventSink}` | Runtimeは意味上の実行境界イベントを固定幅レコードの固定容量リングへ記録し、安全点でversioned little-endian ABIバッチとしてPythonへ渡す。イベント無効構成にはSink、履歴領域、時計、発行経路を含めず、Hotspot履歴とは独立させる。 | 高 | テスト <!-- definition: {RuntimeEventSink} --> |
+| `{RuntimeHotspotProfiler}` | JITホットスポット検出有効時、Interpreterは適格な基本ブロックの`(module_id, unified_pc)`を実行順で固定容量履歴へ記録し、Interpreter区間終了時にカードを更新する。JIT-only区間は記録・分析せず、履歴上書きは欠落状態として示す。Runtime Event Sinkとは独立し、Runtime破棄時に状態を解放する。 | 高 | テスト <!-- definition: {RuntimeHotspotProfiler} --> |
 | `{LightweightVerifier}` | ロード時に最小限のチェック（マジック値、バージョン等）のみを行う高速検証器。 | 中 | テスト <!-- definition: {LightweightVerifier} --> |
 | `{COOS_Scheduling_Refine}` | スケジューリングアルゴリズムの継続的な改善と最適化。 | 中 | レビュー <!-- definition: {COOS_Scheduling_Refine} --> |
 | `{vMMIO_TLB}` | ソフトウェアTLBによるvMMIOアクセスの高速化。 | 中 | レビュー <!-- definition: {vMMIO_TLB} --> |

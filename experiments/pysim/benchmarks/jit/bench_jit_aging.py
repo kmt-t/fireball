@@ -37,11 +37,7 @@ configure_import_paths(_PYSIM_DIR, _BENCH_DIR)
 
 from bump_allocator import BumpAllocator
 from config import FB_CONF_JIT_AGING_STEP_SCAN_BYTES, FB_CONF_JIT_AGING_STEP_UNITS
-from tier3_executer.interpreter.interpreter import (
-    NATIVE_RUNTIME_PROFILE_STATS_ENABLED,
-    Interpreter,
-    InterpreterBindings,
-)
+from tier3_executer.interpreter.interpreter import Interpreter, InterpreterBindings
 from tier3_executer.jit.jit_cache import JITTrace
 from tier3_executer.jit.jit_manager import JITRuntimeManager
 from tier3_executer.jit.runtime_engine import RuntimeEngine
@@ -183,7 +179,7 @@ class JITAgingBenchmark:
             settings["aging_scan_bytes"] = scan_bytes
         engine = RuntimeEngine(
             jit_runtime=JITRuntimeManager(jit_compiler=compiler, **settings),
-            collect_runtime_stats=NATIVE_RUNTIME_PROFILE_STATS_ENABLED,
+            collect_runtime_stats=True,
             bump_allocator=runtime_allocator,
         )
         engine.register_module_blocks(module)

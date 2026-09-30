@@ -4,7 +4,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from runtime_events import RuntimeEvent, RuntimeEventFlags, RuntimeEventKind
+from runtime_events import (
+    RuntimeEvent,
+    RuntimeEventBatch,
+    RuntimeEventFlags,
+    RuntimeEventKind,
+)
 from system_containers import MutableFlatMapStorage, StaticVector
 
 
@@ -35,6 +40,9 @@ class GuestProfiler:
         "_edge_counts",
         "_frames",
         "_function_stats",
+        "_last_dropped_count",
+        "_loss_pending",
+        "_trap_pending",
         "estimated_events",
         "lost_events",
         "overflowed_frames",
@@ -54,6 +62,9 @@ class GuestProfiler:
             capacity=edge_capacity
         )
         self._frames: StaticVector[_OpenFrame] = StaticVector(capacity=stack_capacity)
+        self._last_dropped_count = 0
+        self._loss_pending = False
+        self._trap_pending = False
         self.estimated_events = 0
         self.lost_events = 0
         self.overflowed_frames = 0
@@ -84,7 +95,12 @@ class GuestProfiler:
 
     def _enter(self, event: RuntimeEvent) -> None:
         parent = self._frames[-1].function_id if self._frames else -1
-        frame = _OpenFrame(event.function_id, parent, event.tick)
+        frame = _OpenFrame(
+            event.function_id,
+            parent,
+            event.tick,
+            estimated=self._loss_pending,
+        )
         if not self._frames.push_back(frame):
             self.overflowed_frames += 1
             self.lost_events += 1
@@ -115,6 +131,12 @@ class GuestProfiler:
             return
 
         frame = self._frames.pop_at()
+        if (
+            self._loss_pending
+            or self._trap_pending
+            or event.flags & (RuntimeEventFlags.ESTIMATED | RuntimeEventFlags.ABORTED)
+        ):
+            frame.estimated = True
         inclusive = max(0, event.tick - frame.enter_tick)
         self_ticks = max(0, inclusive - frame.child_ticks)
         stats = self._function(event.function_id)
@@ -126,9 +148,14 @@ class GuestProfiler:
                 stats.estimated = True
         if self._frames:
             self._frames[-1].child_ticks += inclusive
+        else:
+            self._loss_pending = False
+            self._trap_pending = False
 
     def _finish_open_frames(self, event: RuntimeEvent) -> None:
         self.overflowed_frames = 0
+        self._loss_pending = False
+        self._trap_pending = False
         while self._frames:
             frame = self._frames.pop_at()
             stats = self._function(frame.function_id)
@@ -147,6 +174,7 @@ class GuestProfiler:
 
         if event.flags & RuntimeEventFlags.DROPPED:
             self.lost_events += 1
+            self._loss_pending = True
             self._mark_estimated()
             return
         if event.flags & RuntimeEventFlags.ESTIMATED:
@@ -155,8 +183,24 @@ class GuestProfiler:
             self._enter(event)
         elif event.kind == RuntimeEventKind.FUNCTION_EXIT:
             self._exit(event)
-        elif event.kind == RuntimeEventKind.TRAP or event.kind == RuntimeEventKind.DEBUG_STOP:
+        elif event.kind == RuntimeEventKind.TRAP:
+            self._trap_pending = True
+            self._mark_estimated()
+        elif event.kind == RuntimeEventKind.DEBUG_STOP:
             self._finish_open_frames(event)
+
+    def on_runtime_batch(self, batch: RuntimeEventBatch) -> None:
+        """Consume one Python-side batch, including its cumulative loss count."""
+
+        if batch.dropped_count >= self._last_dropped_count:
+            dropped = batch.dropped_count - self._last_dropped_count
+            if dropped:
+                self.lost_events += dropped
+                self._loss_pending = True
+                self._mark_estimated()
+        self._last_dropped_count = batch.dropped_count
+        for event in batch.records:
+            self.on_runtime_event(event)
 
     def stats_for(self, function_id: int) -> ProfileStats:
         """関数統計を取得する。未観測関数の参照は契約違反とする。"""

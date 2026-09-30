@@ -161,9 +161,6 @@ class Function:
     code: memoryview | None  # direct-construction fallback; loaded modules use source offsets
     code_offset: int = 0
     code_size: int = 0
-    # Determined by the loader from decoded instructions. CallFrame uses this
-    # metadata to select the non-nested-call fast path without rescanning code.
-    has_nested_calls: bool = False
     control_map: ControlMap | None = None
     select_widths: ReadOnlyFlatMapStorage[int, int] | None = None
     drop_widths: ReadOnlyFlatMapStorage[int, int] | None = None

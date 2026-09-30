@@ -44,6 +44,7 @@ flowchart LR
     hal["hal_dispatch"]
     plugin_contract["runtime_plugin_architecture"]
     observability["runtime_observability"]
+    hotspot["runtime_hotspot_profiler"]
     logging["runtime_logging"]
     jit_abi["jit_abi"]
   end
@@ -86,8 +87,10 @@ flowchart LR
   vsoc --> hal
   vsoc --> plugin_contract
   vsoc --> observability
+  vsoc --> hotspot
   interpreter --> plugin_contract
   interpreter --> observability
+  interpreter --> hotspot
   interpreter --> vsoc
   interpreter --> loader
   interpreter --> vmmio
@@ -97,6 +100,7 @@ flowchart LR
   jit_compiler --> jit_abi
   jit_compiler --> memory
   jit_runtime --> jit_abi
+  jit_runtime --> hotspot
   jit_runtime --> memory
   debugger --> plugin_contract
   debugger --> observability
@@ -142,6 +146,7 @@ flowchart LR
 | `hal_dispatch` | HAL公開IFとホストデバイス仲介 | [`hal_dispatch.md`](docs/components/tier2_runtime/hal_dispatch.md) |
 | `runtime_plugin_architecture` | 実行系・観測系プラグインの接続契約 | [`runtime_plugin_architecture.md`](docs/components/tier2_runtime/runtime_plugin_architecture.md) |
 | `runtime_observability` | Runtimeイベントと観測フックの共通契約 | [`runtime_observability.md`](docs/components/tier2_runtime/runtime_observability.md) |
+| `runtime_hotspot_profiler` | Interpreter履歴に基づく独立したJITホットスポット分析契約 | [`runtime_hotspot_profiler.md`](docs/components/tier2_runtime/runtime_hotspot_profiler.md) |
 | `runtime_logging` | Runtimeイベントのログ配送 | [`runtime_logging.md`](docs/components/tier2_runtime/runtime_logging.md) |
 | `jit_abi` | Tier 3 Executerへ提供するJIT ABI契約 | [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) |
 

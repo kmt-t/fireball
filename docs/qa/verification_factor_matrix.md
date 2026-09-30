@@ -41,6 +41,7 @@
 | Tier 2 Runtime | `runtime_vsoc` | N/A（旧統合モデルは現行C++ dispatcherと共通chain dispatcherを表現していないため削除。実装テストと形式モデルで検証） | `vsoc_cache_coherency_model.py`, `vsoc_state_model.py` | `runtime_vsoc_test_spec.md` | `test_vsoc.py`, `test_recovery.py` | 4, 5, 6, 8, 10 | required |
 | Tier 2 Runtime | `runtime_plugin_architecture` | `runtime_composer.py`（pysim構成モデル） | N/A（C++生成物モデル未実装） | `runtime_plugin_architecture_test_spec.md` | `test_runtime_composer.py` | N/A（実機Runtime未統合） | contract_only |
 | Tier 2 Runtime | `runtime_observability` | `runtime_events.py`, `runtime_composer.py`（公開call境界のみ） | N/A（内部実行イベント未統合） | `runtime_observability_test_spec.md` | `test_runtime_composer.py` | N/A（実機Runtime未統合） | contract_only |
+| Tier 2 Runtime | `runtime_hotspot_profiler` | N/A（Runtime内部契約） | `runtime_hotspot_profiler_model.py` | `runtime_hotspot_profiler_test_spec.md` | `test_jit_runtime.py` | N/A（実機Runtime未統合） | contract_only |
 | Tier 3 Plugins | `guest_profiler` | `guest_profiler.py` | `guest_profiler_model.py` | `guest_profiler_test_spec.md` | `test_guest_profiler.py` | `test_runtime_composer.py` | required |
 | Tier 3 Executer | `jit_compiler` | N/A (x64 implementation is covered directly; ARMv8-M is TBD) | `jit_cache_model.py` | `jit_compiler_test_spec.md`, `wasm_instruction_set_test_spec.md` | `test_x64_asm.py`, `test_x64_stencils.py`, `test_x64_jit.py` | 4, 5, 8 | required |
 | Tier 3 Executer | `jit_runtime` | N/A (x64 runtime tests cover the confirmed path; ARMv8-M is TBD) | `jit_cache_model.py` | `jit_runtime_test_spec.md` | `test_jit_runtime.py`, `test_x64_jit.py`, `test_jit_differential.py` | 4, 5, 8 | required |
@@ -70,6 +71,7 @@
 | Tier 3 Plugins | [guest_profiler.md](docs/components/tier3_plugins/guest_profiler.md) |
 | Tier 2 Runtime | [runtime_plugin_architecture.md](docs/components/tier2_runtime/runtime_plugin_architecture.md) |
 | Tier 2 Runtime | [runtime_observability.md](docs/components/tier2_runtime/runtime_observability.md) |
+| Tier 2 Runtime | [runtime_hotspot_profiler.md](docs/components/tier2_runtime/runtime_hotspot_profiler.md) |
 | Tier 2 Runtime | [runtime_loader.md](docs/components/tier2_runtime/runtime_loader.md) |
 | Tier 2 Runtime | [runtime_logging.md](docs/components/tier2_runtime/runtime_logging.md) |
 | Tier 2 Runtime | [runtime_memory.md](docs/components/tier2_runtime/runtime_memory.md) |
@@ -117,6 +119,7 @@
 | formal | [vmmio_mapping_model.py](docs/components/tier2_runtime/formal/vmmio_mapping_model.py) |
 | formal | [vsoc_cache_coherency_model.py](docs/components/tier2_runtime/formal/vsoc_cache_coherency_model.py) |
 | formal | [vsoc_state_model.py](docs/components/tier2_runtime/formal/vsoc_state_model.py) |
+| formal | [runtime_hotspot_profiler_model.py](docs/components/tier2_runtime/formal/runtime_hotspot_profiler_model.py) |
 | formal | [jit_cache_model.py](docs/components/tier3_executer/formal/jit_cache_model.py) |
 | formal | [interrupt_boundary_model.py](docs/components/tier3_platform/formal/interrupt_boundary_model.py) |
 | test spec | [os_coos_test_spec.md](docs/qa/tier1_core/os_coos_test_spec.md) |
@@ -135,6 +138,7 @@
 | test spec | [runtime_loader_test_spec.md](docs/qa/tier2_runtime/runtime_loader_test_spec.md) |
 | test spec | [runtime_logging_test_spec.md](docs/qa/tier2_runtime/runtime_logging_test_spec.md) |
 | test spec | [runtime_observability_test_spec.md](docs/qa/tier2_runtime/runtime_observability_test_spec.md) |
+| test spec | [runtime_hotspot_profiler_test_spec.md](docs/qa/tier2_runtime/runtime_hotspot_profiler_test_spec.md) |
 | test spec | [runtime_memory_test_spec.md](docs/qa/tier2_runtime/runtime_memory_test_spec.md) |
 | test spec | [runtime_plugin_architecture_test_spec.md](docs/qa/tier2_runtime/runtime_plugin_architecture_test_spec.md) |
 | test spec | [runtime_syscall_test_spec.md](docs/qa/tier2_runtime/runtime_syscall_test_spec.md) |

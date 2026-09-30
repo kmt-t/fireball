@@ -46,7 +46,7 @@ class ExecutionContextNative(ctypes.Structure):
         ("mem_size", ctypes.c_uint32),
         ("globals_base", ctypes.c_uint32),
         ("globals_limit", ctypes.c_uint32),
-        ("handler_table", ctypes.c_uint32),
+        ("reserved_0", ctypes.c_uint32),
         ("runtime_flags", ctypes.c_uint32),
         ("code", ctypes.c_void_p),
         ("code_size", ctypes.c_uint32),
@@ -59,6 +59,8 @@ class ExecutionContextNative(ctypes.Structure):
         ("sp_capacity", ctypes.c_uint32),
         ("loop_jump_count", ctypes.c_uint32),
         ("loop_jump_threshold", ctypes.c_uint32),
+        ("linear_memory_host_base", ctypes.c_void_p),
+        ("linear_memory_size", ctypes.c_uint64),
     )
 
 
@@ -533,7 +535,7 @@ class NativeValueStack:
 assert ctypes.sizeof(ctypes.c_void_p) == 8
 assert ctypes.sizeof(ExecutionContextNative) == JIT_CONTEXT_SIZE_BYTES
 assert ExecutionContextNative.mem_base.offset == 0x28
-assert ExecutionContextNative.handler_table.offset == 0x38
+assert ExecutionContextNative.reserved_0.offset == 0x38
 assert ExecutionContextNative.runtime_flags.offset == 0x3C
 assert ExecutionContextNative.code.offset == 0x40
 assert ExecutionContextNative.code_size.offset == 0x48
@@ -543,6 +545,8 @@ assert ExecutionContextNative.stack_checkpoint.offset == 0x5C
 assert ExecutionContextNative.call_stack.offset == 0x60
 assert ExecutionContextNative.call_base.offset == 0x68
 assert ExecutionContextNative.call_offset.offset == 0x6C
+assert ExecutionContextNative.linear_memory_host_base.offset == 0x80
+assert ExecutionContextNative.linear_memory_size.offset == 0x88
 assert ExecutionContextNative.sp_capacity.offset == 0x70
 assert ctypes.sizeof(ConstBufferViewNative) == 16
 assert ctypes.sizeof(WasmFunctionViewNative) == 24

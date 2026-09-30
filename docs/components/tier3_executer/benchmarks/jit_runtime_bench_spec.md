@@ -30,7 +30,7 @@ Pythonハンドラ経路は `_step(..., stop_at_boundary=False)` を直接呼ぶ
 
 計測区間には関数実行と実行状態の初期化を含める。WASM生成・ロード、実行器の準備、JITトレースの事前コンパイルは区間から除外する。通常の速度値はプロファイラを通さず、各経路3回の中央値で報告する。
 
-実行診断カウンタ`FB_CONF_RUNTIME_PROFILE_STATS`は既定で無効にし、速度・cyclesの計測中も無効にする。通常のC++拡張ビルドではカウンタ収集コードを生成しない。QAまたは別計測でカウンタが要る場合は`FIREBALL_BUILD_RUNTIME_PROFILE_STATS=1`を指定して拡張を再ビルドする。RuntimeEngineのカウンタ収集は別途 opt-in とし、計時後の診断実行だけで有効にする。chainはtrace末尾から共通コード領域のchain dispatcherへ入り、そこで次trace bodyへtail-jumpする経路を指す。`native_dispatch_trace_transitions`はC++ handlerからJIT traceへのdispatcher遷移を数える別指標であり、chain回数には使わない。共通コードchain dispatcherの実行回数を数える専用指標は現状ないため、未取得の値として扱う。動的hotspot profilingの負荷比較では、同じtraceを事前準備して`--hotspot-profiling enabled`と`disabled`を実行する。OFF構成ではC++拡張を再ビルドし、ホットネス観測コード自体を除外する。
+実行診断カウンタは通常の速度・cycles計測用Runtimeでは無効にし、計時後の診断用Runtimeで有効にする。両Runtimeは構成別のハーネスとして同じプログラム内にインスタンス化でき、拡張の再ビルドは行わない。chainはtrace末尾から共通コード領域のchain dispatcherへ入り、そこで次trace bodyへtail-jumpする経路を指す。`native_dispatch_trace_transitions`はC++ handlerからJIT traceへのdispatcher遷移を数える別指標であり、chain回数には使わない。共通コードchain dispatcherの実行回数を数える専用指標は現状ないため、未取得の値として扱う。動的hotspot profilingの負荷比較では、同じtraceを事前準備して`--hotspot-profiling enabled`と`disabled`を実行する。観測設定はRuntimeの構成で選ぶ。
 
 Intel CPUではVTune Hotspotsを使い、3経路を個別に収集する。AMD CPUではuProfのHotspotsとIBSを使い、Hybrid JIT経路を個別に収集する。各反復で期待結果を照合し、Hybrid JITでは常駐traceが事前に準備され、実行結果が一致することを確認する。C++インタープリタとHybrid JITの共通LOOP後方分岐yieldしきい値は出力された `loop_backedge_yield_threshold` と照合する。プロファイラ収集中の所要時間は通常の速度比較に使わない。
 

@@ -1,19 +1,18 @@
 # ゲストプロファイラプラグイン設計書
 <!-- evidence:
-     implementation: experiments/pysim/tier3_plugins/profiler/guest_profiler.py
      formal: formal/guest_profiler_model.py
      test: docs/qa/tier3_plugins/guest_profiler_test_spec.md
 -->
 
 ## 1. コンセプト
-<!-- traceability: {META_3TierSeparation} {META_ContractImplSplit} {META_StaticDI} {GLOBAL_Policy_Memory} -->
-本コンポーネントは、Tier 2 の [`runtime_observability.md`](docs/components/tier2_runtime/runtime_observability.md) が定義する Runtime イベントを受信し、関数のコールグラフと実行時間を集計する Tier 3 プラグインである。現行の pysim 参照実装はイベント集計器であり、ログ搬送や `RuntimeEngine` への常時結線は実装していない。
+<!-- traceability: {META_3TierSeparation} {META_ContractImplSplit} {META_StaticDI} {GLOBAL_Policy_Memory} {RuntimeEventSink} -->
+本コンポーネントは、Tier 2 の [`runtime_observability.md`](docs/components/tier2_runtime/runtime_observability.md) が定義する Runtime イベントを受信し、関数のコールグラフと実行時間を集計する Tier 3 プラグインである。Runtime Event Sink の履歴搬送、イベント変換、下流のプロファイル出力を担当する。
 
 プロファイラは Runtime の実行状態を変更しない。停止、再開、ステップ、メモリ書込みは Debugger プラグインの責務であり、プロファイラは観測シンクとしてのみ Runtime へ接続する。
 
 ## 2. アーキテクチャ分類
 <!-- traceability: {META_3TierSeparation} {META_ContractImplSplit} -->
-本コンポーネントは **Tier 3 (プラグイン・リーフコンポーネント: Plugin Leaf Component)** に属する。固定長の観測状態、コールグラフ集計、時間計算、ログ搬送を担当する。Runtime のフック位置、イベントレコードの意味、実行方式の識別は Tier 2 の `runtime_observability.md` を正本とする。
+本コンポーネントは **Tier 3 (プラグイン・リーフコンポーネント: Plugin Leaf Component)** に属する。固定長の観測状態、コールグラフ集計、時間計算、Runtimeイベントバッチの受信後処理を担当する。Runtimeのイベント生成、C++レコード、C++/Python転送ABIはTier 2の`runtime_observability.md`を正本とする。
 
 ## 3. 静的モデル
 
@@ -22,7 +21,7 @@
 - **関数スタック**: `function_enter` から `function_exit` までの未完了呼出を保持する。再帰呼出は別フレームとして保持する。
 - **呼出辺表**: 親関数識別子と子関数識別子の組をキーとする固定容量表である。再帰呼出は同じ辺のカウンタへ加算する。
 - **時間統計表**: 関数識別子ごとの呼出回数、包括時間、自己時間、推定値フラグを保持する。
-- **欠落統計**: 受信した `DROPPED` イベントと固定容量表の挿入失敗を欠落数として保持する。ログ搬送欠落との区別はしない。
+- **欠落統計**: Runtime Event Sink のバッチに含まれる累積 `dropped_count` と固定容量表の挿入失敗を欠落数として保持する。ログ搬送欠落との区別はしない。
 - **スタック超過深度**: 固定スタックへ積めなかった再帰フレーム数を保持し、対応する終了イベントを消費して追跡中の親フレームを誤って閉じない。
 
 ### 3.2 内部ブロック図
@@ -47,21 +46,19 @@ graph TD
 - **自己時間**は、包括時間から、対応する子関数と明示的に除外したホスト呼出の時間を差し引いた時間である。
 - **呼出辺**は、親関数識別子と子関数識別子の組で一意に識別する。再帰呼出は同じ辺のカウンタへ加算する。
 - **JIT と Interpreter の区別**はイベントの状態フラグで行う。実行方式を別の関数としてコールグラフへ追加してはならない。イベント生成側がフラグを提供しない場合、本実装は方式を推定しない。
-- **トラップまたは停止**では `TRAP` または `DEBUG_STOP` イベントで未完了フレームを閉じ、統計を推定値として記録する。通常の `FUNCTION_EXIT` は正常終了に用いる。
+- **トラップ**では `TRAP` の後にRuntimeが発行する各 `FUNCTION_EXIT` を内側から消費し、該当フレームを終了理由付きの推定値として記録する。`DEBUG_STOP` は停止位置の開いたフレームを推定値として扱う。
 - **イベント欠落**が発生した場合は、欠落以降の時間を厳密値と呼ばない。欠落数と推定値フラグを集計状態へ記録する。
-
-現行の pysim `RuntimeWithPlugins` は公開 `call` 境界だけを同期観測する。イベントのモジュール識別子とゲスト PC は未提供値を使い、時刻は単調時計のナノ秒値である。Interpreter 内部の関数呼出、JIT 入退出、ホストコール、COOS 境界のイベントはまだ生成しない。
 
 ### 4.2 イベント受信と過負荷
 イベント受信側は動的メモリ確保、ブロッキング、文字列整形、外部 I/O を行わない。固定長レコードを固定容量の状態へ反映する。
 
-- 現行実装は Observer へ同期的に直接配送し、リングバッファや予約容量を持たない。
-- 入力元が `DROPPED` を通知した場合、または関数・辺・スタック表の容量を超えた場合に欠落数と推定値フラグを更新する。
-- 搬送キュー、ログ出力、停止方針は現行実装の責務外である。
+- Python Adapter は安全点で受け取ったバッチを値オブジェクトへ変換し、選択されたconsumerへ渡す。
+- バッチの累積欠落数が前回値より増えた場合、欠落数と推定値フラグを更新する。
+- Runtime実行中のPython callback、ログ出力、停止要求は行わない。
 - 欠落または集計表の容量超過が発生した場合、該当する統計値へ推定値フラグを設定する。
 
 ### 4.3 終了処理
-正常復帰時は対応する `FUNCTION_EXIT` でフレームを閉じる。`TRAP` または `DEBUG_STOP` を受信すると、開いている全フレームを推定値として閉じる。イベントを受け取らずにオブジェクトを破棄した場合の終了要約は生成しない。
+正常復帰時は対応する `FUNCTION_EXIT` でフレームを閉じる。`TRAP` は後続する関数離脱イベントの終了理由を推定値として扱う印として記録する。`DEBUG_STOP` は開いている全フレームを推定値として閉じる。Runtimeイベントバッチを受け取らずにRuntimeを破棄した場合の終了要約は生成しない。
 
 ## 5. インターフェース定義
 
@@ -69,7 +66,7 @@ graph TD
 | 項目 | 内容 |
 | :--- | :--- |
 | 機能概要 | Tier 2 の `runtime_event` を受信して固定容量のプロファイル状態へ反映する。 |
-| 事前条件 | イベント種別、関数識別子、時刻、呼出相関が Tier 2 契約を満たしている。 |
+| 事前条件 | ABI検証済みバッチがPython値へ変換され、イベント識別子、時刻、呼出相関がTier 2契約を満たしている。 |
 | 期待する結果 | コールグラフ、時間統計、欠落統計のいずれかが更新される。 |
 | 不変条件 | Runtime の PC、スタック、メモリ、停止状態を変更しない。 |
 | エラー時の挙動 | 容量不足は欠落として記録し、Runtime の実行結果とは分離する。 |
@@ -92,8 +89,8 @@ graph TD
 - 関数識別子と呼出相関だけでスタックと辺を更新し、ゲストメモリを参照しない。
 
 ### 6.2 メモリ制約と方策
-- 関数スタック、呼出辺表、時間統計表を `SystemConfig` の観測予算へ登録する。
-- 参照実装はこれらの表を固定容量とし、無制限の動的配列やログ搬送バッファを要求しない。
+- 関数スタック、呼出辺表、時間統計表、Python Adapterの固定容量搬送バッファを `SystemConfig` の観測予算へ登録する。
+- これらの表を固定容量とし、無制限の動的配列やRuntime実行中のログ搬送バッファを要求しない。
 - プロファイラ状態と Runtime の実行スタックを別領域に配置する。
 
 ### 6.3 安全性制約と方策

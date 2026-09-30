@@ -19,16 +19,6 @@
 #ifndef FB_CONF_NATIVE_JIT_BLOCK_CAPACITY
 #error "Native JIT block-observation capacity must come from tier1_core/config.py"
 #endif
-#ifndef FB_CONF_RUNTIME_PROFILE_STATS
-#error "Runtime profile stats selection must come from tier1_core/config.py"
-#endif
-#ifndef FB_CONF_JIT_HOTSPOT_PROFILING
-#error "JIT hotspot profiling selection must come from tier1_core/config.py"
-#endif
-
-static_assert(FB_CONF_RUNTIME_PROFILE_STATS == 0 || FB_CONF_RUNTIME_PROFILE_STATS == 1);
-static_assert(FB_CONF_JIT_HOTSPOT_PROFILING == 0 || FB_CONF_JIT_HOTSPOT_PROFILING == 1);
-
 namespace {
 
 #if defined(_WIN32)
@@ -46,30 +36,24 @@ constexpr std::uint32_t kStopAtBlockBoundaryFlag = 1u << 0;
 constexpr std::uint32_t kStopAfterControlFlag = 1u << 1;
 constexpr std::uint32_t kDispatchYield = 5;
 constexpr std::uint32_t kTrapUnreachable = 9;
+constexpr std::uint32_t kTrapMemoryOutOfBounds = 13;
 constexpr std::uint32_t kTrapDivideByZero = 15;
 constexpr std::uint32_t kTrapIntegerOverflow = 16;
 constexpr std::uint32_t kTrapInvalidConversion = 17;
 constexpr std::uint32_t kSentinel = 0xFFFF'FFFFu;
+constexpr std::uint32_t kOpcodeFcPrefix = 0xFC;
 
 using execution_context = fireball_execution_context_native;
 
 static_assert(sizeof(void*) == 8, "native interpreter requires a 64-bit host ABI");
-static_assert(sizeof(execution_context) == 128,
-              "x86-64 execution_context ABI layout must remain 128 bytes");
+static_assert(sizeof(execution_context) == 144,
+              "x86-64 execution_context ABI layout must remain 144 bytes");
 
 struct step_result {
   std::uint32_t kind;
   std::uint32_t next_ip;
   std::uint32_t trap_code;
 };
-
-using handler_fn = FIREBALL_CPS_CALL step_result (*)(
-    execution_context*, std::uint32_t*, std::uint32_t*, std::uint32_t);
-using binary_operation_fn = bool (*)(std::uint32_t, std::uint32_t, std::uint32_t&,
-                                     std::uint32_t&);
-
-const std::array<handler_fn, 256>& handler_table_data();
-const std::array<binary_operation_fn, 256>& binary_operation_table_data();
 
 constexpr step_result fallback(std::uint32_t ip) {
   return {kFallback, ip, 0};
@@ -489,30 +473,6 @@ bool evaluate_rem_u(std::uint32_t lhs, std::uint32_t rhs, std::uint32_t& result,
   return true;
 }
 
-using i64_binary_operation_fn = bool (*)(std::uint64_t, std::uint64_t, std::uint64_t&,
-                                         std::uint32_t&);
-using i64_unary_operation_fn = std::uint64_t (*)(std::uint64_t);
-using f32_binary_operation_fn = float (*)(float, float);
-using f64_binary_operation_fn = double (*)(double, double);
-using f32_unary_operation_fn = float (*)(float);
-using f64_unary_operation_fn = double (*)(double);
-
-const std::array<i64_binary_operation_fn, 256>& i64_binary_table_data();
-const std::array<i64_unary_operation_fn, 256>& i64_unary_table_data();
-const std::array<f32_binary_operation_fn, 256>& f32_binary_table_data();
-const std::array<f64_binary_operation_fn, 256>& f64_binary_table_data();
-const std::array<f32_unary_operation_fn, 256>& f32_unary_table_data();
-const std::array<f64_unary_operation_fn, 256>& f64_unary_table_data();
-const std::array<bool, 256>& numeric_result_is_bool_data();
-
-template <std::uint64_t (*Operation)(std::uint64_t, std::uint64_t)>
-bool evaluate_i64_plain(std::uint64_t lhs, std::uint64_t rhs, std::uint64_t& result,
-                        std::uint32_t& trap_code) {
-  result = Operation(lhs, rhs);
-  trap_code = 0;
-  return true;
-}
-
 constexpr std::uint64_t i64_eq(std::uint64_t a, std::uint64_t b) { return a == b; }
 constexpr std::uint64_t i64_ne(std::uint64_t a, std::uint64_t b) { return a != b; }
 constexpr std::uint64_t i64_lt_s(std::uint64_t a, std::uint64_t b) {
@@ -696,9 +656,6 @@ double f64_trunc(double a) { return std::trunc(a); }
 double f64_nearest(double a) { return std::nearbyint(a); }
 double f64_sqrt(double a) { return std::sqrt(a); }
 
-using conversion_operation_fn = bool (*)(execution_context&, std::uint32_t*, std::uint32_t&);
-const std::array<conversion_operation_fn, 256>& conversion_table_data();
-
 template <typename T>
 bool truncate_i32(T value, bool is_signed, std::uint32_t& result) {
   if (!std::isfinite(value)) return false;
@@ -734,6 +691,73 @@ bool truncate_i64(T value, bool is_signed, std::uint64_t& result) {
   }
   result = static_cast<std::uint64_t>(value);
   return true;
+}
+
+template <typename T, bool Signed>
+std::uint32_t truncate_sat_i32(T value) {
+  if (std::isnan(value)) return 0;
+  if constexpr (Signed) {
+    constexpr auto lower = static_cast<T>(-2147483648.0);
+    constexpr auto upper = static_cast<T>(2147483648.0);
+    if (value <= lower) return 0x8000'0000u;
+    if (value >= upper) return 0x7FFF'FFFFu;
+    return static_cast<std::uint32_t>(static_cast<std::int32_t>(value));
+  } else {
+    constexpr auto upper = static_cast<T>(4294967296.0);
+    if (value <= static_cast<T>(0)) return 0;
+    if (value >= upper) return 0xFFFF'FFFFu;
+    return static_cast<std::uint32_t>(value);
+  }
+}
+
+template <typename T, bool Signed>
+std::uint64_t truncate_sat_i64(T value) {
+  if (std::isnan(value)) return 0;
+  if constexpr (Signed) {
+    constexpr auto lower = static_cast<T>(-9223372036854775808.0);
+    constexpr auto upper = static_cast<T>(9223372036854775808.0);
+    if (value <= lower) return 0x8000'0000'0000'0000ull;
+    if (value >= upper) return 0x7FFF'FFFF'FFFF'FFFFull;
+    return static_cast<std::uint64_t>(static_cast<std::int64_t>(value));
+  } else {
+    constexpr auto upper = static_cast<T>(18446744073709551616.0);
+    if (value <= static_cast<T>(0)) return 0;
+    if (value >= upper) return 0xFFFF'FFFF'FFFF'FFFFull;
+    return static_cast<std::uint64_t>(value);
+  }
+}
+
+template <typename T, bool Signed>
+bool conversion_truncate_sat_i32(execution_context& current, std::uint32_t* sp) {
+  T value = 0;
+  const bool popped = [&]() {
+    if constexpr (sizeof(T) == sizeof(float)) {
+      return pop_f32(current, sp, value);
+    } else {
+      return pop_f64(current, sp, value);
+    }
+  }();
+  return popped && push(current, sp, truncate_sat_i32<T, Signed>(value));
+}
+
+template <typename T, bool Signed>
+bool conversion_truncate_sat_i64(execution_context& current, std::uint32_t* sp) {
+  T value = 0;
+  const bool popped = [&]() {
+    if constexpr (sizeof(T) == sizeof(float)) {
+      return pop_f32(current, sp, value);
+    } else {
+      return pop_f64(current, sp, value);
+    }
+  }();
+  return popped && push_u64(current, sp, truncate_sat_i64<T, Signed>(value));
+}
+
+bool linear_memory_range_is_valid(const execution_context& current, std::uint64_t offset,
+                                  std::uint32_t length) {
+  const auto wide_length = static_cast<std::uint64_t>(length);
+  return offset <= current.linear_memory_size &&
+         wide_length <= current.linear_memory_size - offset;
 }
 
 bool conversion_i32_wrap_i64(execution_context& current, std::uint32_t* sp,
@@ -874,186 +898,6 @@ bool conversion_identity(execution_context&, std::uint32_t*, std::uint32_t& trap
   return true;
 }
 
-FIREBALL_CPS_CALL step_result binary_i32(
-    execution_context* context, std::uint32_t* sp, std::uint32_t* local_base, std::uint32_t) {
-  auto& current = *context;
-  const std::uint8_t opcode = current.code[current.ip];
-  const auto operation = binary_operation_table_data()[opcode];
-  if (operation == nullptr) return fallback(current.ip);
-  std::uint32_t rhs = 0;
-  std::uint32_t lhs = 0;
-  if (!pop(current, sp, rhs) || !pop(current, sp, lhs)) return fallback(current.ip);
-  std::uint32_t result = 0;
-  std::uint32_t trap_code = 0;
-  if (!operation(lhs, rhs, result, trap_code)) return trap(trap_code);
-  if (!push(current, sp, result)) return fallback(current.ip);
-  current.ip += 1;
-  [[clang::musttail]] return dispatch(context, sp, local_base, top_value(current, sp));
-}
-
-FIREBALL_CPS_CALL step_result h_i64_const(
-    execution_context* context, std::uint32_t* sp, std::uint32_t* local_base,
-    std::uint32_t) {
-  auto& current = *context;
-  auto operand_ip = current.ip + 1;
-  std::int64_t value = 0;
-  if (!read_s64(current, operand_ip, value) ||
-      !push_u64(current, sp, static_cast<std::uint64_t>(value))) {
-    return fallback(current.ip);
-  }
-  current.ip = operand_ip;
-  [[clang::musttail]] return dispatch(context, sp, local_base, top_value(current, sp));
-}
-
-FIREBALL_CPS_CALL step_result h_f32_const(
-    execution_context* context, std::uint32_t* sp, std::uint32_t* local_base,
-    std::uint32_t) {
-  auto& current = *context;
-  if (current.ip + 5 > current.code_size ||
-      !push(current, sp, static_cast<std::uint32_t>(current.code[current.ip + 1]) |
-                         (static_cast<std::uint32_t>(current.code[current.ip + 2]) << 8) |
-                         (static_cast<std::uint32_t>(current.code[current.ip + 3]) << 16) |
-                         (static_cast<std::uint32_t>(current.code[current.ip + 4]) << 24))) {
-    return fallback(current.ip);
-  }
-  current.ip += 5;
-  [[clang::musttail]] return dispatch(context, sp, local_base, top_value(current, sp));
-}
-
-FIREBALL_CPS_CALL step_result h_f64_const(
-    execution_context* context, std::uint32_t* sp, std::uint32_t* local_base,
-    std::uint32_t) {
-  auto& current = *context;
-  if (current.ip + 9 > current.code_size) return fallback(current.ip);
-  std::uint64_t raw = 0;
-  for (std::uint32_t word = 0; word < 8; ++word) {
-    raw |= static_cast<std::uint64_t>(current.code[current.ip + 1 + word]) << (word * 8);
-  }
-  if (!push_u64(current, sp, raw)) return fallback(current.ip);
-  current.ip += 9;
-  [[clang::musttail]] return dispatch(context, sp, local_base, top_value(current, sp));
-}
-
-FIREBALL_CPS_CALL step_result h_i64_unary(
-    execution_context* context, std::uint32_t* sp, std::uint32_t* local_base,
-    std::uint32_t) {
-  auto& current = *context;
-  const auto operation = i64_unary_table_data()[current.code[current.ip]];
-  std::uint64_t value = 0;
-  if (operation == nullptr || !pop_u64(current, sp, value)) return fallback(current.ip);
-  const auto result = operation(value);
-  if (numeric_result_is_bool_data()[current.code[current.ip]]) {
-    if (!push(current, sp, static_cast<std::uint32_t>(result))) return fallback(current.ip);
-  } else if (!push_u64(current, sp, result)) {
-    return fallback(current.ip);
-  }
-  current.ip += 1;
-  [[clang::musttail]] return dispatch(context, sp, local_base, top_value(current, sp));
-}
-
-FIREBALL_CPS_CALL step_result h_i64_binary(
-    execution_context* context, std::uint32_t* sp, std::uint32_t* local_base,
-    std::uint32_t) {
-  auto& current = *context;
-  const auto operation = i64_binary_table_data()[current.code[current.ip]];
-  std::uint64_t rhs = 0;
-  std::uint64_t lhs = 0;
-  if (operation == nullptr || !pop_u64(current, sp, rhs) || !pop_u64(current, sp, lhs)) {
-    return fallback(current.ip);
-  }
-  std::uint64_t result = 0;
-  std::uint32_t trap_code = 0;
-  if (!operation(lhs, rhs, result, trap_code)) return trap(trap_code);
-  if (numeric_result_is_bool_data()[current.code[current.ip]]) {
-    if (!push(current, sp, static_cast<std::uint32_t>(result))) return fallback(current.ip);
-  } else if (!push_u64(current, sp, result)) {
-    return fallback(current.ip);
-  }
-  current.ip += 1;
-  [[clang::musttail]] return dispatch(context, sp, local_base, top_value(current, sp));
-}
-
-FIREBALL_CPS_CALL step_result h_f32_unary(
-    execution_context* context, std::uint32_t* sp, std::uint32_t* local_base,
-    std::uint32_t) {
-  auto& current = *context;
-  const auto operation = f32_unary_table_data()[current.code[current.ip]];
-  float value = 0.0f;
-  if (operation == nullptr || !pop_f32(current, sp, value) ||
-      !push_f32(current, sp, operation(value))) {
-    return fallback(current.ip);
-  }
-  current.ip += 1;
-  [[clang::musttail]] return dispatch(context, sp, local_base, top_value(current, sp));
-}
-
-FIREBALL_CPS_CALL step_result h_f32_binary(
-    execution_context* context, std::uint32_t* sp, std::uint32_t* local_base,
-    std::uint32_t) {
-  auto& current = *context;
-  const auto operation = f32_binary_table_data()[current.code[current.ip]];
-  float rhs = 0.0f;
-  float lhs = 0.0f;
-  if (operation == nullptr || !pop_f32(current, sp, rhs) || !pop_f32(current, sp, lhs)) {
-    return fallback(current.ip);
-  }
-  const auto result = operation(lhs, rhs);
-  if (numeric_result_is_bool_data()[current.code[current.ip]]) {
-    if (!push(current, sp, static_cast<std::uint32_t>(result))) return fallback(current.ip);
-  } else if (!push_f32(current, sp, result)) {
-    return fallback(current.ip);
-  }
-  current.ip += 1;
-  [[clang::musttail]] return dispatch(context, sp, local_base, top_value(current, sp));
-}
-
-FIREBALL_CPS_CALL step_result h_f64_unary(
-    execution_context* context, std::uint32_t* sp, std::uint32_t* local_base,
-    std::uint32_t) {
-  auto& current = *context;
-  const auto operation = f64_unary_table_data()[current.code[current.ip]];
-  double value = 0.0;
-  if (operation == nullptr || !pop_f64(current, sp, value) ||
-      !push_f64(current, sp, operation(value))) {
-    return fallback(current.ip);
-  }
-  current.ip += 1;
-  [[clang::musttail]] return dispatch(context, sp, local_base, top_value(current, sp));
-}
-
-FIREBALL_CPS_CALL step_result h_f64_binary(
-    execution_context* context, std::uint32_t* sp, std::uint32_t* local_base,
-    std::uint32_t) {
-  auto& current = *context;
-  const auto operation = f64_binary_table_data()[current.code[current.ip]];
-  double rhs = 0.0;
-  double lhs = 0.0;
-  if (operation == nullptr || !pop_f64(current, sp, rhs) || !pop_f64(current, sp, lhs)) {
-    return fallback(current.ip);
-  }
-  const auto result = operation(lhs, rhs);
-  if (numeric_result_is_bool_data()[current.code[current.ip]]) {
-    if (!push(current, sp, static_cast<std::uint32_t>(result))) return fallback(current.ip);
-  } else if (!push_f64(current, sp, result)) {
-    return fallback(current.ip);
-  }
-  current.ip += 1;
-  [[clang::musttail]] return dispatch(context, sp, local_base, top_value(current, sp));
-}
-
-FIREBALL_CPS_CALL step_result h_conversion(
-    execution_context* context, std::uint32_t* sp, std::uint32_t* local_base,
-    std::uint32_t) {
-  auto& current = *context;
-  const auto operation = conversion_table_data()[current.code[current.ip]];
-  std::uint32_t trap_code = 0;
-  if (operation == nullptr || !operation(current, sp, trap_code)) {
-    return trap_code == 0 ? fallback(current.ip) : trap(trap_code);
-  }
-  current.ip += 1;
-  [[clang::musttail]] return dispatch(context, sp, local_base, top_value(current, sp));
-}
-
 FIREBALL_CPS_CALL step_result h_nop(
     execution_context* context, std::uint32_t* sp, std::uint32_t* local_base, std::uint32_t) {
   auto& current = *context;
@@ -1078,6 +922,7 @@ FIREBALL_CPS_CALL step_result h_else(
   [[clang::musttail]] return dispatch(context, sp, local_base, top_value(current, sp));
 }
 
+template <bool IsLoop>
 FIREBALL_CPS_CALL step_result h_block(
     execution_context* context, std::uint32_t* sp, std::uint32_t* local_base,
     std::uint32_t) {
@@ -1088,7 +933,7 @@ FIREBALL_CPS_CALL step_result h_block(
     return fallback(current.ip);
   }
   auto& frame = current.control_stack->frames[current.control_stack->size++];
-  frame.kind = current.code[current.ip] == 0x03 ? 1u : 0u;
+  frame.kind = IsLoop ? 1u : 0u;
   frame.start = current.ip;
   frame.match_end = entry->match_end;
   frame.stack_height = current.sp_offset;
@@ -1335,310 +1180,517 @@ FIREBALL_CPS_CALL step_result h_i32_const(
   [[clang::musttail]] return dispatch(context, sp, local_base, top_value(current, sp));
 }
 
-FIREBALL_CPS_CALL step_result h_binary(
-    execution_context* context, std::uint32_t* sp, std::uint32_t* local_base, std::uint32_t tos) {
-  [[clang::musttail]] return binary_i32(context, sp, local_base, tos);
+template <std::uint32_t (*Operation)(std::uint32_t, std::uint32_t)>
+FIREBALL_CPS_CALL step_result h_i32_binary(
+    execution_context* context, std::uint32_t* sp, std::uint32_t* local_base, std::uint32_t) {
+  auto& current = *context;
+  std::uint32_t rhs = 0;
+  std::uint32_t lhs = 0;
+  if (!pop(current, sp, rhs) || !pop(current, sp, lhs) ||
+      !push(current, sp, Operation(lhs, rhs))) {
+    return fallback(current.ip);
+  }
+  ++current.ip;
+  [[clang::musttail]] return dispatch(context, sp, local_base, top_value(current, sp));
 }
 
-FIREBALL_CPS_CALL step_result h_unary_eqz(
-    execution_context* context, std::uint32_t* sp, std::uint32_t* local_base, std::uint32_t tos) {
-  [[clang::musttail]] return unary_i32_eqz(context, sp, local_base, tos);
+template <bool (*Operation)(std::uint32_t, std::uint32_t, std::uint32_t&,
+                            std::uint32_t&)>
+FIREBALL_CPS_CALL step_result h_i32_checked_binary(
+    execution_context* context, std::uint32_t* sp, std::uint32_t* local_base, std::uint32_t) {
+  auto& current = *context;
+  std::uint32_t rhs = 0;
+  std::uint32_t lhs = 0;
+  if (!pop(current, sp, rhs) || !pop(current, sp, lhs)) return fallback(current.ip);
+  std::uint32_t result = 0;
+  std::uint32_t trap_code = 0;
+  if (!Operation(lhs, rhs, result, trap_code)) return trap(trap_code);
+  if (!push(current, sp, result)) return fallback(current.ip);
+  ++current.ip;
+  [[clang::musttail]] return dispatch(context, sp, local_base, top_value(current, sp));
 }
 
-FIREBALL_CPS_CALL step_result h_unary_clz(
-    execution_context* context, std::uint32_t* sp, std::uint32_t* local_base, std::uint32_t tos) {
-  [[clang::musttail]] return unary_i32_clz(context, sp, local_base, tos);
+template <std::uint64_t (*Operation)(std::uint64_t, std::uint64_t), bool ResultIsBool>
+FIREBALL_CPS_CALL step_result h_i64_binary(
+    execution_context* context, std::uint32_t* sp, std::uint32_t* local_base, std::uint32_t) {
+  auto& current = *context;
+  std::uint64_t rhs = 0;
+  std::uint64_t lhs = 0;
+  if (!pop_u64(current, sp, rhs) || !pop_u64(current, sp, lhs)) return fallback(current.ip);
+  const auto result = Operation(lhs, rhs);
+  const bool pushed = [&]() {
+    if constexpr (ResultIsBool) return push(current, sp, static_cast<std::uint32_t>(result));
+    return push_u64(current, sp, result);
+  }();
+  if (!pushed) return fallback(current.ip);
+  ++current.ip;
+  [[clang::musttail]] return dispatch(context, sp, local_base, top_value(current, sp));
 }
 
-FIREBALL_CPS_CALL step_result h_unary_ctz(
-    execution_context* context, std::uint32_t* sp, std::uint32_t* local_base, std::uint32_t tos) {
-  [[clang::musttail]] return unary_i32_ctz(context, sp, local_base, tos);
+template <bool (*Operation)(std::uint64_t, std::uint64_t, std::uint64_t&,
+                            std::uint32_t&), bool ResultIsBool>
+FIREBALL_CPS_CALL step_result h_i64_checked_binary(
+    execution_context* context, std::uint32_t* sp, std::uint32_t* local_base, std::uint32_t) {
+  auto& current = *context;
+  std::uint64_t rhs = 0;
+  std::uint64_t lhs = 0;
+  if (!pop_u64(current, sp, rhs) || !pop_u64(current, sp, lhs)) return fallback(current.ip);
+  std::uint64_t result = 0;
+  std::uint32_t trap_code = 0;
+  if (!Operation(lhs, rhs, result, trap_code)) return trap(trap_code);
+  const bool pushed = [&]() {
+    if constexpr (ResultIsBool) return push(current, sp, static_cast<std::uint32_t>(result));
+    return push_u64(current, sp, result);
+  }();
+  if (!pushed) return fallback(current.ip);
+  ++current.ip;
+  [[clang::musttail]] return dispatch(context, sp, local_base, top_value(current, sp));
 }
 
-FIREBALL_CPS_CALL step_result h_unary_popcnt(
+template <std::uint64_t (*Operation)(std::uint64_t), bool ResultIsBool>
+FIREBALL_CPS_CALL step_result h_i64_unary(
+    execution_context* context, std::uint32_t* sp, std::uint32_t* local_base, std::uint32_t) {
+  auto& current = *context;
+  std::uint64_t value = 0;
+  if (!pop_u64(current, sp, value)) return fallback(current.ip);
+  const auto result = Operation(value);
+  const bool pushed = [&]() {
+    if constexpr (ResultIsBool) return push(current, sp, static_cast<std::uint32_t>(result));
+    return push_u64(current, sp, result);
+  }();
+  if (!pushed) return fallback(current.ip);
+  ++current.ip;
+  [[clang::musttail]] return dispatch(context, sp, local_base, top_value(current, sp));
+}
+
+template <float (*Operation)(float, float), bool ResultIsBool>
+FIREBALL_CPS_CALL step_result h_f32_binary(
+    execution_context* context, std::uint32_t* sp, std::uint32_t* local_base, std::uint32_t) {
+  auto& current = *context;
+  float rhs = 0.0f;
+  float lhs = 0.0f;
+  if (!pop_f32(current, sp, rhs) || !pop_f32(current, sp, lhs)) return fallback(current.ip);
+  const auto result = Operation(lhs, rhs);
+  const bool pushed = [&]() {
+    if constexpr (ResultIsBool) return push(current, sp, static_cast<std::uint32_t>(result));
+    return push_f32(current, sp, result);
+  }();
+  if (!pushed) return fallback(current.ip);
+  ++current.ip;
+  [[clang::musttail]] return dispatch(context, sp, local_base, top_value(current, sp));
+}
+
+template <double (*Operation)(double, double), bool ResultIsBool>
+FIREBALL_CPS_CALL step_result h_f64_binary(
+    execution_context* context, std::uint32_t* sp, std::uint32_t* local_base, std::uint32_t) {
+  auto& current = *context;
+  double rhs = 0.0;
+  double lhs = 0.0;
+  if (!pop_f64(current, sp, rhs) || !pop_f64(current, sp, lhs)) return fallback(current.ip);
+  const auto result = Operation(lhs, rhs);
+  const bool pushed = [&]() {
+    if constexpr (ResultIsBool) return push(current, sp, static_cast<std::uint32_t>(result));
+    return push_f64(current, sp, result);
+  }();
+  if (!pushed) return fallback(current.ip);
+  ++current.ip;
+  [[clang::musttail]] return dispatch(context, sp, local_base, top_value(current, sp));
+}
+
+template <float (*Operation)(float)>
+FIREBALL_CPS_CALL step_result h_f32_unary(
+    execution_context* context, std::uint32_t* sp, std::uint32_t* local_base, std::uint32_t) {
+  auto& current = *context;
+  float value = 0.0f;
+  if (!pop_f32(current, sp, value) || !push_f32(current, sp, Operation(value))) {
+    return fallback(current.ip);
+  }
+  ++current.ip;
+  [[clang::musttail]] return dispatch(context, sp, local_base, top_value(current, sp));
+}
+
+template <double (*Operation)(double)>
+FIREBALL_CPS_CALL step_result h_f64_unary(
+    execution_context* context, std::uint32_t* sp, std::uint32_t* local_base, std::uint32_t) {
+  auto& current = *context;
+  double value = 0.0;
+  if (!pop_f64(current, sp, value) || !push_f64(current, sp, Operation(value))) {
+    return fallback(current.ip);
+  }
+  ++current.ip;
+  [[clang::musttail]] return dispatch(context, sp, local_base, top_value(current, sp));
+}
+
+template <bool (*Operation)(execution_context&, std::uint32_t*, std::uint32_t&)>
+FIREBALL_CPS_CALL step_result h_conversion(
+    execution_context* context, std::uint32_t* sp, std::uint32_t* local_base, std::uint32_t) {
+  auto& current = *context;
+  std::uint32_t trap_code = 0;
+  if (!Operation(current, sp, trap_code)) {
+    return trap_code == 0 ? fallback(current.ip) : trap(trap_code);
+  }
+  ++current.ip;
+  [[clang::musttail]] return dispatch(context, sp, local_base, top_value(current, sp));
+}
+
+FIREBALL_CPS_CALL step_result h_i64_const(
+    execution_context* context, std::uint32_t* sp, std::uint32_t* local_base, std::uint32_t) {
+  auto& current = *context;
+  auto operand_ip = current.ip + 1;
+  std::int64_t value = 0;
+  if (!read_s64(current, operand_ip, value) ||
+      !push_u64(current, sp, static_cast<std::uint64_t>(value))) {
+    return fallback(current.ip);
+  }
+  current.ip = operand_ip;
+  [[clang::musttail]] return dispatch(context, sp, local_base, top_value(current, sp));
+}
+
+FIREBALL_CPS_CALL step_result h_f32_const(
+    execution_context* context, std::uint32_t* sp, std::uint32_t* local_base, std::uint32_t) {
+  auto& current = *context;
+  if (current.ip + 5 > current.code_size) return fallback(current.ip);
+  const auto bits = static_cast<std::uint32_t>(current.code[current.ip + 1]) |
+                    (static_cast<std::uint32_t>(current.code[current.ip + 2]) << 8) |
+                    (static_cast<std::uint32_t>(current.code[current.ip + 3]) << 16) |
+                    (static_cast<std::uint32_t>(current.code[current.ip + 4]) << 24);
+  if (!push(current, sp, bits)) return fallback(current.ip);
+  current.ip += 5;
+  [[clang::musttail]] return dispatch(context, sp, local_base, top_value(current, sp));
+}
+
+FIREBALL_CPS_CALL step_result h_f64_const(
+    execution_context* context, std::uint32_t* sp, std::uint32_t* local_base, std::uint32_t) {
+  auto& current = *context;
+  if (current.ip + 9 > current.code_size) return fallback(current.ip);
+  std::uint64_t bits = 0;
+  for (std::uint32_t byte = 0; byte < 8; ++byte) {
+    bits |= static_cast<std::uint64_t>(current.code[current.ip + 1 + byte]) << (byte * 8);
+  }
+  if (!push_u64(current, sp, bits)) return fallback(current.ip);
+  current.ip += 9;
+  [[clang::musttail]] return dispatch(context, sp, local_base, top_value(current, sp));
+}
+
+template <std::uint32_t Width>
+FIREBALL_CPS_CALL step_result h_i32_store(
     execution_context* context, std::uint32_t* sp, std::uint32_t* local_base,
-    std::uint32_t tos) {
-  [[clang::musttail]] return unary_i32_popcnt(context, sp, local_base, tos);
+    std::uint32_t) {
+  auto& current = *context;
+  auto operand_ip = current.ip + 1;
+  std::uint32_t alignment = 0;
+  std::uint32_t offset = 0;
+  if (!read_u32(current, operand_ip, alignment) || !read_u32(current, operand_ip, offset) ||
+      current.sp_offset < 2) {
+    return fallback(current.ip);
+  }
+  (void)alignment;
+
+  const auto address = sp[current.sp_offset - 2];
+  const auto value = sp[current.sp_offset - 1];
+  if ((address & 0x8000'0000u) != 0) return fallback(current.ip);
+  const auto effective_address = static_cast<std::uint64_t>(address) + offset;
+  if (!linear_memory_range_is_valid(current, effective_address, Width)) {
+    return trap(kTrapMemoryOutOfBounds);
+  }
+  if (current.linear_memory_host_base == nullptr) return fallback(current.ip);
+  if constexpr (Width == sizeof(std::uint32_t)) {
+    std::memcpy(current.linear_memory_host_base + effective_address, &value, sizeof(value));
+  } else {
+    current.linear_memory_host_base[effective_address] = static_cast<std::uint8_t>(value);
+  }
+  current.sp_offset -= 2;
+  current.ip = operand_ip;
+  [[clang::musttail]] return dispatch(context, sp, local_base, top_value(current, sp));
 }
 
-FIREBALL_CPS_CALL step_result h_unary_extend8(
-    execution_context* context, std::uint32_t* sp, std::uint32_t* local_base,
-    std::uint32_t tos) {
-  [[clang::musttail]] return unary_i32_extend8(context, sp, local_base, tos);
+template <bool (*Operation)(execution_context&, std::uint32_t*)>
+FIREBALL_CPS_CALL step_result h_fc_saturating_conversion(
+    execution_context* context, std::uint32_t* sp, std::uint32_t* local_base, std::uint32_t) {
+  auto& current = *context;
+  auto operand_ip = current.ip + 1;
+  std::uint32_t subopcode = 0;
+  if (!read_u32(current, operand_ip, subopcode) || subopcode > 7 || !Operation(current, sp)) {
+    return fallback(current.ip);
+  }
+  current.ip = operand_ip;
+  [[clang::musttail]] return dispatch(context, sp, local_base, top_value(current, sp));
 }
 
-FIREBALL_CPS_CALL step_result h_unary_extend16(
-    execution_context* context, std::uint32_t* sp, std::uint32_t* local_base,
-    std::uint32_t tos) {
-  [[clang::musttail]] return unary_i32_extend16(context, sp, local_base, tos);
+FIREBALL_CPS_CALL step_result h_fc_memory_copy(
+    execution_context* context, std::uint32_t* sp, std::uint32_t* local_base, std::uint32_t) {
+  auto& current = *context;
+  auto operand_ip = current.ip + 1;
+  std::uint32_t subopcode = 0;
+  std::uint32_t destination_memory = 0;
+  std::uint32_t source_memory = 0;
+  if (!read_u32(current, operand_ip, subopcode) || subopcode != 0x0A ||
+      !read_u32(current, operand_ip, destination_memory) ||
+      !read_u32(current, operand_ip, source_memory) || destination_memory != 0 ||
+      source_memory != 0 || current.sp_offset < 3) {
+    return fallback(current.ip);
+  }
+
+  const auto destination_index = current.sp_offset - 3;
+  const auto destination = sp[destination_index];
+  const auto source = sp[destination_index + 1];
+  const auto length = sp[destination_index + 2];
+  if (((destination | source) & 0x8000'0000u) != 0) return fallback(current.ip);
+  if (!linear_memory_range_is_valid(current, destination, length) ||
+      !linear_memory_range_is_valid(current, source, length)) {
+    return trap(kTrapMemoryOutOfBounds);
+  }
+  if (length != 0) {
+    if (current.linear_memory_host_base == nullptr) return fallback(current.ip);
+    auto* memory = current.linear_memory_host_base;
+    std::memmove(memory + destination, memory + source, length);
+  }
+  current.sp_offset = destination_index;
+  current.ip = operand_ip;
+  [[clang::musttail]] return dispatch(context, sp, local_base, top_value(current, sp));
 }
 
-FIREBALL_CPS_CALL step_result dispatch(
-    execution_context* context, std::uint32_t* sp, std::uint32_t* local_base,
-  std::uint32_t tos) {
+FIREBALL_CPS_CALL step_result h_fc_memory_fill(
+    execution_context* context, std::uint32_t* sp, std::uint32_t* local_base, std::uint32_t) {
+  auto& current = *context;
+  auto operand_ip = current.ip + 1;
+  std::uint32_t subopcode = 0;
+  std::uint32_t memory_index = 0;
+  if (!read_u32(current, operand_ip, subopcode) || subopcode != 0x0B ||
+      !read_u32(current, operand_ip, memory_index) || memory_index != 0 ||
+      current.sp_offset < 3) {
+    return fallback(current.ip);
+  }
+
+  const auto destination_index = current.sp_offset - 3;
+  const auto destination = sp[destination_index];
+  const auto value = static_cast<std::uint8_t>(sp[destination_index + 1]);
+  const auto length = sp[destination_index + 2];
+  if (!linear_memory_range_is_valid(current, destination, length)) {
+    return trap(kTrapMemoryOutOfBounds);
+  }
+  if (length != 0) {
+    if (current.linear_memory_host_base == nullptr) return fallback(current.ip);
+    std::memset(current.linear_memory_host_base + destination, value, length);
+  }
+  current.sp_offset = destination_index;
+  current.ip = operand_ip;
+  [[clang::musttail]] return dispatch(context, sp, local_base, top_value(current, sp));
+}
+
+constexpr std::uint8_t kOpcodeControlTerminator = 1u << 0;
+constexpr std::uint8_t kOpcodePrefixed = 1u << 1;
+
+constexpr auto make_opcode_attributes() {
+  std::array<std::uint8_t, 256> attributes{};
+  const auto set_control_terminator = [&attributes](std::uint8_t opcode) {
+    attributes[opcode] |= kOpcodeControlTerminator;
+  };
+  const auto set_prefixed = [&attributes](std::uint8_t opcode) {
+    attributes[opcode] |= kOpcodePrefixed;
+  };
+
+  for (const auto opcode : {0x02u, 0x03u, 0x04u, 0x05u, 0x0Bu, 0x0Cu, 0x0Du, 0x0Eu,
+                            0x0Fu}) {
+    set_control_terminator(static_cast<std::uint8_t>(opcode));
+  }
+  set_prefixed(kOpcodeFcPrefix);
+  return attributes;
+}
+
+constexpr auto kOpcodeAttributes = make_opcode_attributes();
+
+bool opcode_is_control_terminator(std::uint8_t opcode) {
+  return (kOpcodeAttributes[opcode] & kOpcodeControlTerminator) != 0;
+}
+
+FIREBALL_CPS_CALL step_result dispatch(execution_context* context, std::uint32_t* sp,
+                                       std::uint32_t* local_base, std::uint32_t tos) {
   auto& current = *context;
   current.cf_offset = current.control_stack->size;
   if (is_requested_block_boundary(current)) return block_boundary(current.ip);
-  if (current.ip >= current.code_size) {
-    return complete();
-  }
+  if (current.ip >= current.code_size) return complete();
+
   current.stack_checkpoint = current.sp_offset;
-  const auto handler = handler_table_data()[current.code[current.ip]];
-  if (handler == nullptr) {
-    return fallback(current.ip);
+  const auto opcode = current.code[current.ip];
+  const auto opcode_attributes = kOpcodeAttributes[opcode];
+  if ((opcode_attributes & kOpcodePrefixed) != 0) {
+    auto operand_ip = current.ip + 1;
+    std::uint32_t subopcode = 0;
+    if (!read_u32(current, operand_ip, subopcode)) return fallback(current.ip);
+    switch (subopcode) {
+      case 0x00: [[clang::musttail]] return h_fc_saturating_conversion<conversion_truncate_sat_i32<float, true>>(context, sp, local_base, tos);
+      case 0x01: [[clang::musttail]] return h_fc_saturating_conversion<conversion_truncate_sat_i32<float, false>>(context, sp, local_base, tos);
+      case 0x02: [[clang::musttail]] return h_fc_saturating_conversion<conversion_truncate_sat_i32<double, true>>(context, sp, local_base, tos);
+      case 0x03: [[clang::musttail]] return h_fc_saturating_conversion<conversion_truncate_sat_i32<double, false>>(context, sp, local_base, tos);
+      case 0x04: [[clang::musttail]] return h_fc_saturating_conversion<conversion_truncate_sat_i64<float, true>>(context, sp, local_base, tos);
+      case 0x05: [[clang::musttail]] return h_fc_saturating_conversion<conversion_truncate_sat_i64<float, false>>(context, sp, local_base, tos);
+      case 0x06: [[clang::musttail]] return h_fc_saturating_conversion<conversion_truncate_sat_i64<double, true>>(context, sp, local_base, tos);
+      case 0x07: [[clang::musttail]] return h_fc_saturating_conversion<conversion_truncate_sat_i64<double, false>>(context, sp, local_base, tos);
+      case 0x0A: [[clang::musttail]] return h_fc_memory_copy(context, sp, local_base, tos);
+      case 0x0B: [[clang::musttail]] return h_fc_memory_fill(context, sp, local_base, tos);
+      default: return fallback(current.ip);
+    }
   }
-  [[clang::musttail]] return handler(context, sp, local_base, tos);
-}
 
-constexpr auto make_binary_operation_table() {
-  std::array<binary_operation_fn, 256> table{};
-  table[0x46] = evaluate_plain<op_eq>;
-  table[0x47] = evaluate_plain<op_ne>;
-  table[0x48] = evaluate_plain<op_lt_s>;
-  table[0x49] = evaluate_plain<op_lt_u>;
-  table[0x4A] = evaluate_plain<op_gt_s>;
-  table[0x4B] = evaluate_plain<op_gt_u>;
-  table[0x4C] = evaluate_plain<op_le_s>;
-  table[0x4D] = evaluate_plain<op_le_u>;
-  table[0x4E] = evaluate_plain<op_ge_s>;
-  table[0x4F] = evaluate_plain<op_ge_u>;
-  table[0x6A] = evaluate_plain<op_add>;
-  table[0x6B] = evaluate_plain<op_sub>;
-  table[0x6C] = evaluate_plain<op_mul>;
-  table[0x6D] = evaluate_div_s;
-  table[0x6E] = evaluate_div_u;
-  table[0x6F] = evaluate_rem_s;
-  table[0x70] = evaluate_rem_u;
-  table[0x71] = evaluate_plain<op_and>;
-  table[0x72] = evaluate_plain<op_or>;
-  table[0x73] = evaluate_plain<op_xor>;
-  table[0x74] = evaluate_plain<op_shl>;
-  table[0x75] = evaluate_plain<op_shr_s>;
-  table[0x76] = evaluate_plain<op_shr_u>;
-  table[0x77] = evaluate_plain<op_rotl>;
-  table[0x78] = evaluate_plain<op_rotr>;
-  return table;
-}
-
-constexpr auto make_i64_unary_table() {
-  std::array<i64_unary_operation_fn, 256> table{};
-  table[0x50] = i64_eqz;
-  table[0x79] = i64_clz;
-  table[0x7A] = i64_ctz;
-  table[0x7B] = i64_popcnt;
-  table[0xC2] = i64_extend8;
-  table[0xC3] = i64_extend16;
-  table[0xC4] = i64_extend32;
-  return table;
-}
-
-constexpr auto make_i64_binary_table() {
-  std::array<i64_binary_operation_fn, 256> table{};
-  table[0x51] = evaluate_i64_plain<i64_eq>;
-  table[0x52] = evaluate_i64_plain<i64_ne>;
-  table[0x53] = evaluate_i64_plain<i64_lt_s>;
-  table[0x54] = evaluate_i64_plain<i64_lt_u>;
-  table[0x55] = evaluate_i64_plain<i64_gt_s>;
-  table[0x56] = evaluate_i64_plain<i64_gt_u>;
-  table[0x57] = evaluate_i64_plain<i64_le_s>;
-  table[0x58] = evaluate_i64_plain<i64_le_u>;
-  table[0x59] = evaluate_i64_plain<i64_ge_s>;
-  table[0x5A] = evaluate_i64_plain<i64_ge_u>;
-  table[0x7C] = evaluate_i64_plain<i64_add>;
-  table[0x7D] = evaluate_i64_plain<i64_sub>;
-  table[0x7E] = evaluate_i64_plain<i64_mul>;
-  table[0x7F] = i64_div_s;
-  table[0x80] = i64_div_u;
-  table[0x81] = i64_rem_s;
-  table[0x82] = i64_rem_u;
-  table[0x83] = evaluate_i64_plain<i64_and>;
-  table[0x84] = evaluate_i64_plain<i64_or>;
-  table[0x85] = evaluate_i64_plain<i64_xor>;
-  table[0x86] = evaluate_i64_plain<i64_shl>;
-  table[0x87] = evaluate_i64_plain<i64_shr_s>;
-  table[0x88] = evaluate_i64_plain<i64_shr_u>;
-  table[0x89] = evaluate_i64_plain<i64_rotl>;
-  table[0x8A] = evaluate_i64_plain<i64_rotr>;
-  return table;
-}
-
-constexpr auto make_f32_binary_table() {
-  std::array<f32_binary_operation_fn, 256> table{};
-  table[0x5B] = f32_eq;
-  table[0x5C] = f32_ne;
-  table[0x5D] = f32_lt;
-  table[0x5E] = f32_gt;
-  table[0x5F] = f32_le;
-  table[0x60] = f32_ge;
-  table[0x92] = f32_add;
-  table[0x93] = f32_sub;
-  table[0x94] = f32_mul;
-  table[0x95] = f32_div;
-  table[0x96] = f32_min;
-  table[0x97] = f32_max;
-  table[0x98] = f32_copysign;
-  return table;
-}
-
-constexpr auto make_f64_binary_table() {
-  std::array<f64_binary_operation_fn, 256> table{};
-  table[0x61] = f64_eq;
-  table[0x62] = f64_ne;
-  table[0x63] = f64_lt;
-  table[0x64] = f64_gt;
-  table[0x65] = f64_le;
-  table[0x66] = f64_ge;
-  table[0xA0] = f64_add;
-  table[0xA1] = f64_sub;
-  table[0xA2] = f64_mul;
-  table[0xA3] = f64_div;
-  table[0xA4] = f64_min;
-  table[0xA5] = f64_max;
-  table[0xA6] = f64_copysign;
-  return table;
-}
-
-constexpr auto make_f32_unary_table() {
-  std::array<f32_unary_operation_fn, 256> table{};
-  table[0x8B] = f32_abs;
-  table[0x8C] = f32_neg;
-  table[0x8D] = f32_ceil;
-  table[0x8E] = f32_floor;
-  table[0x8F] = f32_trunc;
-  table[0x90] = f32_nearest;
-  table[0x91] = f32_sqrt;
-  return table;
-}
-
-constexpr auto make_f64_unary_table() {
-  std::array<f64_unary_operation_fn, 256> table{};
-  table[0x99] = f64_abs;
-  table[0x9A] = f64_neg;
-  table[0x9B] = f64_ceil;
-  table[0x9C] = f64_floor;
-  table[0x9D] = f64_trunc;
-  table[0x9E] = f64_nearest;
-  table[0x9F] = f64_sqrt;
-  return table;
-}
-
-constexpr auto make_numeric_result_is_bool() {
-  std::array<bool, 256> table{};
-  table[0x50] = true;
-  for (const auto opcode : {0x51, 0x52, 0x53, 0x54, 0x55, 0x56, 0x57, 0x58, 0x59, 0x5A,
-                            0x5B, 0x5C, 0x5D, 0x5E, 0x5F, 0x60, 0x61, 0x62, 0x63, 0x64,
-                            0x65, 0x66}) {
-    table[opcode] = true;
+  switch (opcode) {
+    case 0x00: [[clang::musttail]] return h_unreachable(context, sp, local_base, tos);
+    case 0x01: [[clang::musttail]] return h_nop(context, sp, local_base, tos);
+    case 0x02: [[clang::musttail]] return h_block<false>(context, sp, local_base, tos);
+    case 0x03: [[clang::musttail]] return h_block<true>(context, sp, local_base, tos);
+    case 0x04: [[clang::musttail]] return h_if(context, sp, local_base, tos);
+    case 0x05: [[clang::musttail]] return h_else(context, sp, local_base, tos);
+    case 0x0B: [[clang::musttail]] return h_end(context, sp, local_base, tos);
+    case 0x0C: [[clang::musttail]] return h_br(context, sp, local_base, tos);
+    case 0x0D: [[clang::musttail]] return h_br_if(context, sp, local_base, tos);
+    case 0x0E: [[clang::musttail]] return h_br_table(context, sp, local_base, tos);
+    case 0x0F: [[clang::musttail]] return h_return(context, sp, local_base, tos);
+    case 0x1A: [[clang::musttail]] return h_drop(context, sp, local_base, tos);
+    case 0x1B: [[clang::musttail]] return h_select(context, sp, local_base, tos);
+    case 0x20: [[clang::musttail]] return h_local_get(context, sp, local_base, tos);
+    case 0x21: [[clang::musttail]] return h_local_set(context, sp, local_base, tos);
+    case 0x22: [[clang::musttail]] return h_local_tee(context, sp, local_base, tos);
+    case 0x36:
+      [[clang::musttail]] return h_i32_store<sizeof(std::uint32_t)>(
+          context, sp, local_base, tos);
+    case 0x3A:
+      [[clang::musttail]] return h_i32_store<sizeof(std::uint8_t)>(
+          context, sp, local_base, tos);
+    case 0x41: [[clang::musttail]] return h_i32_const(context, sp, local_base, tos);
+    case 0x42: [[clang::musttail]] return h_i64_const(context, sp, local_base, tos);
+    case 0x43: [[clang::musttail]] return h_f32_const(context, sp, local_base, tos);
+    case 0x44: [[clang::musttail]] return h_f64_const(context, sp, local_base, tos);
+    case 0x45: [[clang::musttail]] return unary_i32_eqz(context, sp, local_base, tos);
+    case 0x46: [[clang::musttail]] return h_i32_binary<op_eq>(context, sp, local_base, tos);
+    case 0x47: [[clang::musttail]] return h_i32_binary<op_ne>(context, sp, local_base, tos);
+    case 0x48: [[clang::musttail]] return h_i32_binary<op_lt_s>(context, sp, local_base, tos);
+    case 0x49: [[clang::musttail]] return h_i32_binary<op_lt_u>(context, sp, local_base, tos);
+    case 0x4A: [[clang::musttail]] return h_i32_binary<op_gt_s>(context, sp, local_base, tos);
+    case 0x4B: [[clang::musttail]] return h_i32_binary<op_gt_u>(context, sp, local_base, tos);
+    case 0x4C: [[clang::musttail]] return h_i32_binary<op_le_s>(context, sp, local_base, tos);
+    case 0x4D: [[clang::musttail]] return h_i32_binary<op_le_u>(context, sp, local_base, tos);
+    case 0x4E: [[clang::musttail]] return h_i32_binary<op_ge_s>(context, sp, local_base, tos);
+    case 0x4F: [[clang::musttail]] return h_i32_binary<op_ge_u>(context, sp, local_base, tos);
+    case 0x50: [[clang::musttail]] return h_i64_unary<i64_eqz, true>(context, sp, local_base, tos);
+    case 0x51: [[clang::musttail]] return h_i64_binary<i64_eq, true>(context, sp, local_base, tos);
+    case 0x52: [[clang::musttail]] return h_i64_binary<i64_ne, true>(context, sp, local_base, tos);
+    case 0x53: [[clang::musttail]] return h_i64_binary<i64_lt_s, true>(context, sp, local_base, tos);
+    case 0x54: [[clang::musttail]] return h_i64_binary<i64_lt_u, true>(context, sp, local_base, tos);
+    case 0x55: [[clang::musttail]] return h_i64_binary<i64_gt_s, true>(context, sp, local_base, tos);
+    case 0x56: [[clang::musttail]] return h_i64_binary<i64_gt_u, true>(context, sp, local_base, tos);
+    case 0x57: [[clang::musttail]] return h_i64_binary<i64_le_s, true>(context, sp, local_base, tos);
+    case 0x58: [[clang::musttail]] return h_i64_binary<i64_le_u, true>(context, sp, local_base, tos);
+    case 0x59: [[clang::musttail]] return h_i64_binary<i64_ge_s, true>(context, sp, local_base, tos);
+    case 0x5A: [[clang::musttail]] return h_i64_binary<i64_ge_u, true>(context, sp, local_base, tos);
+    case 0x5B: [[clang::musttail]] return h_f32_binary<f32_eq, true>(context, sp, local_base, tos);
+    case 0x5C: [[clang::musttail]] return h_f32_binary<f32_ne, true>(context, sp, local_base, tos);
+    case 0x5D: [[clang::musttail]] return h_f32_binary<f32_lt, true>(context, sp, local_base, tos);
+    case 0x5E: [[clang::musttail]] return h_f32_binary<f32_gt, true>(context, sp, local_base, tos);
+    case 0x5F: [[clang::musttail]] return h_f32_binary<f32_le, true>(context, sp, local_base, tos);
+    case 0x60: [[clang::musttail]] return h_f32_binary<f32_ge, true>(context, sp, local_base, tos);
+    case 0x61: [[clang::musttail]] return h_f64_binary<f64_eq, true>(context, sp, local_base, tos);
+    case 0x62: [[clang::musttail]] return h_f64_binary<f64_ne, true>(context, sp, local_base, tos);
+    case 0x63: [[clang::musttail]] return h_f64_binary<f64_lt, true>(context, sp, local_base, tos);
+    case 0x64: [[clang::musttail]] return h_f64_binary<f64_gt, true>(context, sp, local_base, tos);
+    case 0x65: [[clang::musttail]] return h_f64_binary<f64_le, true>(context, sp, local_base, tos);
+    case 0x66: [[clang::musttail]] return h_f64_binary<f64_ge, true>(context, sp, local_base, tos);
+    case 0x67: [[clang::musttail]] return unary_i32_clz(context, sp, local_base, tos);
+    case 0x68: [[clang::musttail]] return unary_i32_ctz(context, sp, local_base, tos);
+    case 0x69: [[clang::musttail]] return unary_i32_popcnt(context, sp, local_base, tos);
+    case 0x6A: [[clang::musttail]] return h_i32_binary<op_add>(context, sp, local_base, tos);
+    case 0x6B: [[clang::musttail]] return h_i32_binary<op_sub>(context, sp, local_base, tos);
+    case 0x6C: [[clang::musttail]] return h_i32_binary<op_mul>(context, sp, local_base, tos);
+    case 0x6D: [[clang::musttail]] return h_i32_checked_binary<evaluate_div_s>(context, sp, local_base, tos);
+    case 0x6E: [[clang::musttail]] return h_i32_checked_binary<evaluate_div_u>(context, sp, local_base, tos);
+    case 0x6F: [[clang::musttail]] return h_i32_checked_binary<evaluate_rem_s>(context, sp, local_base, tos);
+    case 0x70: [[clang::musttail]] return h_i32_checked_binary<evaluate_rem_u>(context, sp, local_base, tos);
+    case 0x71: [[clang::musttail]] return h_i32_binary<op_and>(context, sp, local_base, tos);
+    case 0x72: [[clang::musttail]] return h_i32_binary<op_or>(context, sp, local_base, tos);
+    case 0x73: [[clang::musttail]] return h_i32_binary<op_xor>(context, sp, local_base, tos);
+    case 0x74: [[clang::musttail]] return h_i32_binary<op_shl>(context, sp, local_base, tos);
+    case 0x75: [[clang::musttail]] return h_i32_binary<op_shr_s>(context, sp, local_base, tos);
+    case 0x76: [[clang::musttail]] return h_i32_binary<op_shr_u>(context, sp, local_base, tos);
+    case 0x77: [[clang::musttail]] return h_i32_binary<op_rotl>(context, sp, local_base, tos);
+    case 0x78: [[clang::musttail]] return h_i32_binary<op_rotr>(context, sp, local_base, tos);
+    case 0x79: [[clang::musttail]] return h_i64_unary<i64_clz, false>(context, sp, local_base, tos);
+    case 0x7A: [[clang::musttail]] return h_i64_unary<i64_ctz, false>(context, sp, local_base, tos);
+    case 0x7B: [[clang::musttail]] return h_i64_unary<i64_popcnt, false>(context, sp, local_base, tos);
+    case 0x7C: [[clang::musttail]] return h_i64_binary<i64_add, false>(context, sp, local_base, tos);
+    case 0x7D: [[clang::musttail]] return h_i64_binary<i64_sub, false>(context, sp, local_base, tos);
+    case 0x7E: [[clang::musttail]] return h_i64_binary<i64_mul, false>(context, sp, local_base, tos);
+    case 0x7F: [[clang::musttail]] return h_i64_checked_binary<i64_div_s, false>(context, sp, local_base, tos);
+    case 0x80: [[clang::musttail]] return h_i64_checked_binary<i64_div_u, false>(context, sp, local_base, tos);
+    case 0x81: [[clang::musttail]] return h_i64_checked_binary<i64_rem_s, false>(context, sp, local_base, tos);
+    case 0x82: [[clang::musttail]] return h_i64_checked_binary<i64_rem_u, false>(context, sp, local_base, tos);
+    case 0x83: [[clang::musttail]] return h_i64_binary<i64_and, false>(context, sp, local_base, tos);
+    case 0x84: [[clang::musttail]] return h_i64_binary<i64_or, false>(context, sp, local_base, tos);
+    case 0x85: [[clang::musttail]] return h_i64_binary<i64_xor, false>(context, sp, local_base, tos);
+    case 0x86: [[clang::musttail]] return h_i64_binary<i64_shl, false>(context, sp, local_base, tos);
+    case 0x87: [[clang::musttail]] return h_i64_binary<i64_shr_s, false>(context, sp, local_base, tos);
+    case 0x88: [[clang::musttail]] return h_i64_binary<i64_shr_u, false>(context, sp, local_base, tos);
+    case 0x89: [[clang::musttail]] return h_i64_binary<i64_rotl, false>(context, sp, local_base, tos);
+    case 0x8A: [[clang::musttail]] return h_i64_binary<i64_rotr, false>(context, sp, local_base, tos);
+    case 0x8B: [[clang::musttail]] return h_f32_unary<f32_abs>(context, sp, local_base, tos);
+    case 0x8C: [[clang::musttail]] return h_f32_unary<f32_neg>(context, sp, local_base, tos);
+    case 0x8D: [[clang::musttail]] return h_f32_unary<f32_ceil>(context, sp, local_base, tos);
+    case 0x8E: [[clang::musttail]] return h_f32_unary<f32_floor>(context, sp, local_base, tos);
+    case 0x8F: [[clang::musttail]] return h_f32_unary<f32_trunc>(context, sp, local_base, tos);
+    case 0x90: [[clang::musttail]] return h_f32_unary<f32_nearest>(context, sp, local_base, tos);
+    case 0x91: [[clang::musttail]] return h_f32_unary<f32_sqrt>(context, sp, local_base, tos);
+    case 0x92: [[clang::musttail]] return h_f32_binary<f32_add, false>(context, sp, local_base, tos);
+    case 0x93: [[clang::musttail]] return h_f32_binary<f32_sub, false>(context, sp, local_base, tos);
+    case 0x94: [[clang::musttail]] return h_f32_binary<f32_mul, false>(context, sp, local_base, tos);
+    case 0x95: [[clang::musttail]] return h_f32_binary<f32_div, false>(context, sp, local_base, tos);
+    case 0x96: [[clang::musttail]] return h_f32_binary<f32_min, false>(context, sp, local_base, tos);
+    case 0x97: [[clang::musttail]] return h_f32_binary<f32_max, false>(context, sp, local_base, tos);
+    case 0x98: [[clang::musttail]] return h_f32_binary<f32_copysign, false>(context, sp, local_base, tos);
+    case 0x99: [[clang::musttail]] return h_f64_unary<f64_abs>(context, sp, local_base, tos);
+    case 0x9A: [[clang::musttail]] return h_f64_unary<f64_neg>(context, sp, local_base, tos);
+    case 0x9B: [[clang::musttail]] return h_f64_unary<f64_ceil>(context, sp, local_base, tos);
+    case 0x9C: [[clang::musttail]] return h_f64_unary<f64_floor>(context, sp, local_base, tos);
+    case 0x9D: [[clang::musttail]] return h_f64_unary<f64_trunc>(context, sp, local_base, tos);
+    case 0x9E: [[clang::musttail]] return h_f64_unary<f64_nearest>(context, sp, local_base, tos);
+    case 0x9F: [[clang::musttail]] return h_f64_unary<f64_sqrt>(context, sp, local_base, tos);
+    case 0xA0: [[clang::musttail]] return h_f64_binary<f64_add, false>(context, sp, local_base, tos);
+    case 0xA1: [[clang::musttail]] return h_f64_binary<f64_sub, false>(context, sp, local_base, tos);
+    case 0xA2: [[clang::musttail]] return h_f64_binary<f64_mul, false>(context, sp, local_base, tos);
+    case 0xA3: [[clang::musttail]] return h_f64_binary<f64_div, false>(context, sp, local_base, tos);
+    case 0xA4: [[clang::musttail]] return h_f64_binary<f64_min, false>(context, sp, local_base, tos);
+    case 0xA5: [[clang::musttail]] return h_f64_binary<f64_max, false>(context, sp, local_base, tos);
+    case 0xA6: [[clang::musttail]] return h_f64_binary<f64_copysign, false>(context, sp, local_base, tos);
+    case 0xA7: [[clang::musttail]] return h_conversion<conversion_i32_wrap_i64>(context, sp, local_base, tos);
+    case 0xA8: [[clang::musttail]] return h_conversion<conversion_truncate_i32<float, true>>(context, sp, local_base, tos);
+    case 0xA9: [[clang::musttail]] return h_conversion<conversion_truncate_i32<float, false>>(context, sp, local_base, tos);
+    case 0xAA: [[clang::musttail]] return h_conversion<conversion_truncate_i32<double, true>>(context, sp, local_base, tos);
+    case 0xAB: [[clang::musttail]] return h_conversion<conversion_truncate_i32<double, false>>(context, sp, local_base, tos);
+    case 0xAC: [[clang::musttail]] return h_conversion<conversion_i64_extend_i32_s>(context, sp, local_base, tos);
+    case 0xAD: [[clang::musttail]] return h_conversion<conversion_i64_extend_i32_u>(context, sp, local_base, tos);
+    case 0xAE: [[clang::musttail]] return h_conversion<conversion_truncate_i64<float, true>>(context, sp, local_base, tos);
+    case 0xAF: [[clang::musttail]] return h_conversion<conversion_truncate_i64<float, false>>(context, sp, local_base, tos);
+    case 0xB0: [[clang::musttail]] return h_conversion<conversion_truncate_i64<double, true>>(context, sp, local_base, tos);
+    case 0xB1: [[clang::musttail]] return h_conversion<conversion_truncate_i64<double, false>>(context, sp, local_base, tos);
+    case 0xB2: [[clang::musttail]] return h_conversion<conversion_f32_convert_i32_s>(context, sp, local_base, tos);
+    case 0xB3: [[clang::musttail]] return h_conversion<conversion_f32_convert_i32_u>(context, sp, local_base, tos);
+    case 0xB4: [[clang::musttail]] return h_conversion<conversion_f32_convert_i64_s>(context, sp, local_base, tos);
+    case 0xB5: [[clang::musttail]] return h_conversion<conversion_f32_convert_i64_u>(context, sp, local_base, tos);
+    case 0xB6: [[clang::musttail]] return h_conversion<conversion_f32_demote_f64>(context, sp, local_base, tos);
+    case 0xB7: [[clang::musttail]] return h_conversion<conversion_f64_convert_i32_s>(context, sp, local_base, tos);
+    case 0xB8: [[clang::musttail]] return h_conversion<conversion_f64_convert_i32_u>(context, sp, local_base, tos);
+    case 0xB9: [[clang::musttail]] return h_conversion<conversion_f64_convert_i64_s>(context, sp, local_base, tos);
+    case 0xBA: [[clang::musttail]] return h_conversion<conversion_f64_convert_i64_u>(context, sp, local_base, tos);
+    case 0xBB: [[clang::musttail]] return h_conversion<conversion_f64_promote_f32>(context, sp, local_base, tos);
+    case 0xBC: [[clang::musttail]] return h_conversion<conversion_identity>(context, sp, local_base, tos);
+    case 0xBD: [[clang::musttail]] return h_conversion<conversion_identity>(context, sp, local_base, tos);
+    case 0xBE: [[clang::musttail]] return h_conversion<conversion_identity>(context, sp, local_base, tos);
+    case 0xBF: [[clang::musttail]] return h_conversion<conversion_identity>(context, sp, local_base, tos);
+    case 0xC0: [[clang::musttail]] return unary_i32_extend8(context, sp, local_base, tos);
+    case 0xC1: [[clang::musttail]] return unary_i32_extend16(context, sp, local_base, tos);
+    case 0xC2: [[clang::musttail]] return h_i64_unary<i64_extend8, false>(context, sp, local_base, tos);
+    case 0xC3: [[clang::musttail]] return h_i64_unary<i64_extend16, false>(context, sp, local_base, tos);
+    case 0xC4: [[clang::musttail]] return h_i64_unary<i64_extend32, false>(context, sp, local_base, tos);
+    default: return fallback(current.ip);
   }
-  return table;
 }
-
-constexpr auto make_conversion_table() {
-  std::array<conversion_operation_fn, 256> table{};
-  table[0xA7] = conversion_i32_wrap_i64;
-  table[0xA8] = conversion_truncate_i32<float, true>;
-  table[0xA9] = conversion_truncate_i32<float, false>;
-  table[0xAA] = conversion_truncate_i32<double, true>;
-  table[0xAB] = conversion_truncate_i32<double, false>;
-  table[0xAC] = conversion_i64_extend_i32_s;
-  table[0xAD] = conversion_i64_extend_i32_u;
-  table[0xAE] = conversion_truncate_i64<float, true>;
-  table[0xAF] = conversion_truncate_i64<float, false>;
-  table[0xB0] = conversion_truncate_i64<double, true>;
-  table[0xB1] = conversion_truncate_i64<double, false>;
-  table[0xB2] = conversion_f32_convert_i32_s;
-  table[0xB3] = conversion_f32_convert_i32_u;
-  table[0xB4] = conversion_f32_convert_i64_s;
-  table[0xB5] = conversion_f32_convert_i64_u;
-  table[0xB6] = conversion_f32_demote_f64;
-  table[0xB7] = conversion_f64_convert_i32_s;
-  table[0xB8] = conversion_f64_convert_i32_u;
-  table[0xB9] = conversion_f64_convert_i64_s;
-  table[0xBA] = conversion_f64_convert_i64_u;
-  table[0xBB] = conversion_f64_promote_f32;
-  table[0xBC] = conversion_identity;
-  table[0xBD] = conversion_identity;
-  table[0xBE] = conversion_identity;
-  table[0xBF] = conversion_identity;
-  return table;
-}
-
-constexpr auto make_handler_table() {
-  std::array<handler_fn, 256> table{};
-  table[0x00] = h_unreachable;
-  table[0x01] = h_nop;
-  table[0x02] = h_block;
-  table[0x03] = h_block;
-  table[0x04] = h_if;
-  table[0x05] = h_else;
-  table[0x0B] = h_end;
-  table[0x0C] = h_br;
-  table[0x0D] = h_br_if;
-  table[0x0E] = h_br_table;
-  table[0x0F] = h_return;
-  table[0x1A] = h_drop;
-  table[0x1B] = h_select;
-  table[0x20] = h_local_get;
-  table[0x21] = h_local_set;
-  table[0x22] = h_local_tee;
-  table[0x41] = h_i32_const;
-  table[0x42] = h_i64_const;
-  table[0x43] = h_f32_const;
-  table[0x44] = h_f64_const;
-  table[0x45] = h_unary_eqz;
-  for (const auto opcode : {0x46, 0x47, 0x48, 0x49, 0x4A, 0x4B, 0x4C, 0x4D, 0x4E, 0x4F,
-                            0x6A, 0x6B, 0x6C, 0x6D, 0x6E, 0x6F, 0x70, 0x71, 0x72, 0x73,
-                            0x74, 0x75, 0x76, 0x77, 0x78}) {
-    table[opcode] = h_binary;
-  }
-  table[0x50] = h_i64_unary;
-  for (const auto opcode : {0x51, 0x52, 0x53, 0x54, 0x55, 0x56, 0x57, 0x58, 0x59, 0x5A,
-                            0x7C, 0x7D, 0x7E, 0x7F, 0x80, 0x81, 0x82, 0x83, 0x84, 0x85,
-                            0x86, 0x87, 0x88, 0x89, 0x8A}) {
-    table[opcode] = h_i64_binary;
-  }
-  for (const auto opcode : {0x5B, 0x5C, 0x5D, 0x5E, 0x5F, 0x60, 0x92, 0x93, 0x94, 0x95,
-                            0x96, 0x97, 0x98}) {
-    table[opcode] = h_f32_binary;
-  }
-  for (const auto opcode : {0x61, 0x62, 0x63, 0x64, 0x65, 0x66, 0xA0, 0xA1, 0xA2, 0xA3,
-                            0xA4, 0xA5, 0xA6}) {
-    table[opcode] = h_f64_binary;
-  }
-  for (const auto opcode : {0x79, 0x7A, 0x7B, 0xC2, 0xC3, 0xC4}) {
-    table[opcode] = h_i64_unary;
-  }
-  table[0x67] = h_unary_clz;
-  table[0x68] = h_unary_ctz;
-  table[0x69] = h_unary_popcnt;
-  table[0xC0] = h_unary_extend8;
-  table[0xC1] = h_unary_extend16;
-  for (const auto opcode : {0x8B, 0x8C, 0x8D, 0x8E, 0x8F, 0x90, 0x91}) {
-    table[opcode] = h_f32_unary;
-  }
-  for (const auto opcode : {0x99, 0x9A, 0x9B, 0x9C, 0x9D, 0x9E, 0x9F}) {
-    table[opcode] = h_f64_unary;
-  }
-  for (const auto opcode : {0xA7, 0xA8, 0xA9, 0xAA, 0xAB, 0xAC, 0xAD, 0xAE, 0xAF, 0xB0,
-                            0xB1, 0xB2, 0xB3, 0xB4, 0xB5, 0xB6, 0xB7, 0xB8, 0xB9, 0xBA,
-                            0xBB, 0xBC, 0xBD, 0xBE, 0xBF}) {
-    table[opcode] = h_conversion;
-  }
-  return table;
-}
-
-constexpr auto kHandlerTable = make_handler_table();
-constexpr auto kBinaryOperationTable = make_binary_operation_table();
-constexpr auto kI64BinaryTable = make_i64_binary_table();
-constexpr auto kI64UnaryTable = make_i64_unary_table();
-constexpr auto kF32BinaryTable = make_f32_binary_table();
-constexpr auto kF64BinaryTable = make_f64_binary_table();
-constexpr auto kF32UnaryTable = make_f32_unary_table();
-constexpr auto kF64UnaryTable = make_f64_unary_table();
-constexpr auto kNumericResultIsBool = make_numeric_result_is_bool();
-constexpr auto kConversionTable = make_conversion_table();
-
-const std::array<handler_fn, 256>& handler_table_data() { return kHandlerTable; }
 
 struct buffer_guard {
   Py_buffer view{};
@@ -1685,9 +1737,7 @@ constexpr std::uint32_t kNoPc = 0xFFFF'FFFFu;
 using native_trace_entry_fn = void (*)(void*, std::uint32_t*, std::uint32_t*, std::uint32_t);
 
 bool is_control_terminator(std::uint8_t opcode) {
-  return opcode == 0x02 || opcode == 0x03 || opcode == 0x04 || opcode == 0x05 ||
-         opcode == 0x0B || opcode == 0x0C || opcode == 0x0D || opcode == 0x0E ||
-         opcode == 0x0F;
+  return opcode_is_control_terminator(opcode);
 }
 
 const native_trace_descriptor* find_dispatch_entry(
@@ -1735,18 +1785,29 @@ const native_trace_descriptor* terminal_dispatch_entry(
   return nullptr;
 }
 
-template <bool CollectStats, bool CollectHotspots>
-PyObject* run_native_dispatch_impl(PyObject*, PyObject* args) {
+template <bool CollectHotspots>
+struct native_dispatch_hotspot_buffers {};
+
+template <>
+struct native_dispatch_hotspot_buffers<true> {
+  PyObject* trackable_blocks_object = nullptr;
+  PyObject* block_history_object = nullptr;
+  unsigned int trackable_count = 0;
+  buffer_guard trackable_blocks_buffer;
+  buffer_guard block_history_buffer;
+  const std::uint32_t* trackable_blocks = nullptr;
+  std::uint32_t* block_history = nullptr;
+};
+
+template <bool CollectHotspots>
+struct native_dispatch_call : native_dispatch_hotspot_buffers<CollectHotspots> {
   PyObject* code_object = nullptr;
   PyObject* context_object = nullptr;
   PyObject* stack_object = nullptr;
   PyObject* locals_object = nullptr;
   PyObject* control_object = nullptr;
   PyObject* entries_object = nullptr;
-  PyObject* trackable_blocks_object = nullptr;
-  PyObject* observed_visit_counts_object = nullptr;
   unsigned int entry_count = 0;
-  unsigned int trackable_count = 0;
   unsigned int stack_size = 0;
   unsigned int stack_capacity = 0;
   unsigned int initial_ip = 0;
@@ -1756,345 +1817,418 @@ PyObject* run_native_dispatch_impl(PyObject*, PyObject* args) {
   unsigned int function_index = 0;
   unsigned int yield_threshold = 0;
   unsigned int execution_count = 0;
-  int collect_stats_arg = 0;
-  int collect_hotspots_arg = 0;
-  if (!PyArg_ParseTuple(args, "OOOOOOOOIIIIIIIIIIIpp", &code_object, &context_object,
-                        &stack_object, &locals_object, &control_object, &entries_object,
-                        &trackable_blocks_object, &observed_visit_counts_object, &entry_count,
-                        &trackable_count, &stack_size, &stack_capacity, &initial_ip, &local_base,
-                        &local_slots, &control_base, &function_index, &yield_threshold,
-                        &execution_count, &collect_stats_arg, &collect_hotspots_arg)) {
-    return nullptr;
-  }
-  if ((collect_stats_arg != 0) != CollectStats ||
-      (collect_hotspots_arg != 0) != CollectHotspots) {
-    PyErr_SetString(PyExc_RuntimeError, "native dispatcher feature specialization mismatch");
-    return nullptr;
-  }
-  if (yield_threshold == 0) {
-    PyErr_SetString(PyExc_ValueError, "native JIT dispatch yield threshold must be positive");
-    return nullptr;
-  }
-
   buffer_guard code_buffer;
-  if (PyObject_GetBuffer(code_object, &code_buffer.view, PyBUF_SIMPLE) != 0) return nullptr;
-  code_buffer.active = true;
   buffer_guard context_buffer;
-  if (PyObject_GetBuffer(context_object, &context_buffer.view, PyBUF_SIMPLE) != 0) return nullptr;
-  context_buffer.active = true;
   buffer_guard stack_buffer;
-  if (PyObject_GetBuffer(stack_object, &stack_buffer.view, PyBUF_SIMPLE) != 0) return nullptr;
-  stack_buffer.active = true;
   buffer_guard locals_buffer;
-  if (PyObject_GetBuffer(locals_object, &locals_buffer.view, PyBUF_SIMPLE) != 0) return nullptr;
-  locals_buffer.active = true;
   buffer_guard control_buffer;
-  if (PyObject_GetBuffer(control_object, &control_buffer.view, PyBUF_SIMPLE) != 0) return nullptr;
-  control_buffer.active = true;
   buffer_guard entries_buffer;
-  if (PyObject_GetBuffer(entries_object, &entries_buffer.view, PyBUF_SIMPLE) != 0) return nullptr;
-  entries_buffer.active = true;
-  buffer_guard trackable_blocks_buffer;
-  if (PyObject_GetBuffer(trackable_blocks_object, &trackable_blocks_buffer.view,
-                         PyBUF_SIMPLE) != 0) {
-    return nullptr;
-  }
-  trackable_blocks_buffer.active = true;
-  buffer_guard observed_visit_counts_buffer;
-  if (PyObject_GetBuffer(observed_visit_counts_object, &observed_visit_counts_buffer.view,
-                         PyBUF_SIMPLE) != 0) {
-    return nullptr;
-  }
-  observed_visit_counts_buffer.active = true;
+  const native_trace_descriptor* entries = nullptr;
+  fireball_execution_context_native* context = nullptr;
+  fireball_control_stack_native* control_stack = nullptr;
+  fireball_call_frame_native* call_frame = nullptr;
+  std::uint32_t* stack = nullptr;
+  std::uint32_t* local_stack = nullptr;
+  std::uint32_t* locals = nullptr;
+  const std::uint8_t* code = nullptr;
+  std::uint32_t code_size = 0;
+};
 
+template <bool CollectHotspots>
+bool parse_native_dispatch_call(PyObject* args, native_dispatch_call<CollectHotspots>& call) {
+  PyObject* trackable_blocks_object = nullptr;
+  PyObject* block_history_object = nullptr;
+  unsigned int trackable_count = 0;
+  if (!PyArg_ParseTuple(args, "OOOOOOOOIIIIIIIIIII", &call.code_object,
+                        &call.context_object, &call.stack_object, &call.locals_object,
+                        &call.control_object, &call.entries_object,
+                        &trackable_blocks_object, &block_history_object,
+                        &call.entry_count, &trackable_count, &call.stack_size,
+                        &call.stack_capacity, &call.initial_ip, &call.local_base,
+                        &call.local_slots, &call.control_base, &call.function_index,
+                        &call.yield_threshold, &call.execution_count)) {
+    return false;
+  }
+  if constexpr (CollectHotspots) {
+    call.trackable_blocks_object = trackable_blocks_object;
+    call.block_history_object = block_history_object;
+    call.trackable_count = trackable_count;
+  }
+  if (call.yield_threshold == 0) {
+    PyErr_SetString(PyExc_ValueError, "native JIT dispatch yield threshold must be positive");
+    return false;
+  }
+  return true;
+}
+
+bool borrow_simple_buffer(PyObject* object, buffer_guard& buffer) {
+  if (PyObject_GetBuffer(object, &buffer.view, PyBUF_SIMPLE) != 0) return false;
+  buffer.active = true;
+  return true;
+}
+
+template <bool CollectHotspots>
+bool acquire_native_dispatch_buffers(native_dispatch_call<CollectHotspots>& call) {
+  if (!borrow_simple_buffer(call.code_object, call.code_buffer) ||
+      !borrow_simple_buffer(call.context_object, call.context_buffer) ||
+      !borrow_simple_buffer(call.stack_object, call.stack_buffer) ||
+      !borrow_simple_buffer(call.locals_object, call.locals_buffer) ||
+      !borrow_simple_buffer(call.control_object, call.control_buffer) ||
+      !borrow_simple_buffer(call.entries_object, call.entries_buffer)) {
+    return false;
+  }
+  if constexpr (CollectHotspots) {
+    return borrow_simple_buffer(call.trackable_blocks_object, call.trackable_blocks_buffer) &&
+           borrow_simple_buffer(call.block_history_object, call.block_history_buffer);
+  }
+  return true;
+}
+
+template <bool CollectHotspots>
+bool validate_native_dispatch_tables(native_dispatch_call<CollectHotspots>& call) {
+  for (unsigned int index = 0; index < call.entry_count; ++index) {
+    const auto& entry = call.entries[index];
+    if ((entry.head_pc >> 16) != call.function_index ||
+        (index > 0 && call.entries[index - 1].head_pc >= entry.head_pc) ||
+        entry.byte_span == 0 || entry.result_words == 0 || entry.stack_words == 0 ||
+        entry.frame_depth > FIREBALL_NATIVE_CONTROL_STACK_CAPACITY ||
+        entry.has_return_value > 1 || entry.promote_on_hit > 1 || entry.entry_address == 0) {
+      PyErr_SetString(PyExc_ValueError, "native trace table is unsorted or has invalid metadata");
+      return false;
+    }
+  }
+  if constexpr (CollectHotspots) {
+    for (unsigned int index = 0; index < call.trackable_count; ++index) {
+      const auto pc = call.trackable_blocks[index];
+      if ((pc >> 16) != call.function_index ||
+          (index > 0 && call.trackable_blocks[index - 1] >= pc)) {
+        PyErr_SetString(PyExc_ValueError, "trackable block table is unsorted or invalid");
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
+template <bool CollectHotspots>
+bool prepare_native_dispatch_call(native_dispatch_call<CollectHotspots>& call) {
   const auto context_bytes = static_cast<Py_ssize_t>(sizeof(fireball_execution_context_native));
   const auto stack_bytes = static_cast<Py_ssize_t>(128 * sizeof(std::uint32_t));
-  const auto local_bytes = static_cast<Py_ssize_t>((local_base + local_slots) * sizeof(std::uint32_t));
+  const auto local_bytes = static_cast<Py_ssize_t>(
+      (call.local_base + call.local_slots) * sizeof(std::uint32_t));
   const auto control_bytes = static_cast<Py_ssize_t>(sizeof(fireball_control_stack_native));
-  if (stack_capacity > 128 || stack_size > stack_capacity ||
-      context_buffer.view.len < context_bytes || stack_buffer.view.len < stack_bytes ||
-      locals_buffer.view.len < local_bytes || control_buffer.view.len < control_bytes ||
-      entry_count > FB_CONF_NATIVE_JIT_TRACE_CAPACITY ||
-      trackable_count > FB_CONF_NATIVE_JIT_BLOCK_CAPACITY ||
-      entries_buffer.view.len <
-          static_cast<Py_ssize_t>(entry_count * sizeof(native_trace_descriptor)) ||
-      trackable_blocks_buffer.view.len <
-          static_cast<Py_ssize_t>(trackable_count * sizeof(std::uint32_t)) ||
-      observed_visit_counts_buffer.view.len < static_cast<Py_ssize_t>(trackable_count) ||
-      initial_ip > static_cast<unsigned int>(code_buffer.view.len) || function_index > 0xFFFFu) {
+  if (call.stack_capacity > 128 || call.stack_size > call.stack_capacity ||
+      call.context_buffer.view.len < context_bytes || call.stack_buffer.view.len < stack_bytes ||
+      call.locals_buffer.view.len < local_bytes || call.control_buffer.view.len < control_bytes ||
+      call.entry_count > FB_CONF_NATIVE_JIT_TRACE_CAPACITY ||
+      call.entries_buffer.view.len <
+          static_cast<Py_ssize_t>(call.entry_count * sizeof(native_trace_descriptor)) ||
+      call.initial_ip > static_cast<unsigned int>(call.code_buffer.view.len) ||
+      call.function_index > 0xFFFFu) {
     PyErr_SetString(PyExc_ValueError, "invalid native JIT dispatch buffer or execution state");
-    return nullptr;
+    return false;
+  }
+  if constexpr (CollectHotspots) {
+    if (call.trackable_count > FB_CONF_NATIVE_JIT_BLOCK_CAPACITY ||
+        call.trackable_blocks_buffer.view.len <
+            static_cast<Py_ssize_t>(call.trackable_count * sizeof(std::uint32_t)) ||
+        call.block_history_buffer.view.len <
+            static_cast<Py_ssize_t>(call.yield_threshold * sizeof(std::uint32_t))) {
+      PyErr_SetString(PyExc_ValueError, "invalid native hotspot observation buffer");
+      return false;
+    }
   }
 
-  // These ctypes-owned ABI buffers stay pinned for the call and are read in place.
-  const auto* entries = static_cast<const native_trace_descriptor*>(entries_buffer.view.buf);
-  const auto* trackable_blocks =
-      static_cast<const std::uint32_t*>(trackable_blocks_buffer.view.buf);
-  auto* observed_visit_counts =
-      static_cast<std::uint8_t*>(observed_visit_counts_buffer.view.buf);
-  if ((entry_count != 0 &&
-       reinterpret_cast<std::uintptr_t>(entries) % alignof(native_trace_descriptor) != 0) ||
-      (trackable_count != 0 &&
-       reinterpret_cast<std::uintptr_t>(trackable_blocks) % alignof(std::uint32_t) != 0) ||
-      (trackable_count != 0 &&
-       reinterpret_cast<std::uintptr_t>(observed_visit_counts) % alignof(std::uint8_t) != 0)) {
+  call.entries = static_cast<const native_trace_descriptor*>(call.entries_buffer.view.buf);
+  if constexpr (CollectHotspots) {
+    call.trackable_blocks =
+        static_cast<const std::uint32_t*>(call.trackable_blocks_buffer.view.buf);
+    call.block_history = static_cast<std::uint32_t*>(call.block_history_buffer.view.buf);
+  }
+  auto buffers_aligned = call.entry_count == 0 ||
+                         reinterpret_cast<std::uintptr_t>(call.entries) %
+                                 alignof(native_trace_descriptor) ==
+                             0;
+  if constexpr (CollectHotspots) {
+    buffers_aligned =
+        buffers_aligned &&
+        (call.trackable_count == 0 ||
+         reinterpret_cast<std::uintptr_t>(call.trackable_blocks) % alignof(std::uint32_t) == 0) &&
+        (call.yield_threshold == 0 ||
+         reinterpret_cast<std::uintptr_t>(call.block_history) % alignof(std::uint32_t) == 0);
+  }
+  if (!buffers_aligned) {
     PyErr_SetString(PyExc_ValueError, "native dispatch buffer has invalid alignment");
-    return nullptr;
+    return false;
   }
+  if (!validate_native_dispatch_tables<CollectHotspots>(call)) return false;
 
-  for (unsigned int index = 0; index < entry_count; ++index) {
-    const auto& current = entries[index];
-    if ((current.head_pc >> 16) != function_index ||
-        (index > 0 && entries[index - 1].head_pc >= current.head_pc) ||
-        current.byte_span == 0 || current.result_words == 0 || current.stack_words == 0 ||
-        current.frame_depth > FIREBALL_NATIVE_CONTROL_STACK_CAPACITY ||
-        current.has_return_value > 1 || current.promote_on_hit > 1 ||
-        current.entry_address == 0) {
-      PyErr_SetString(PyExc_ValueError, "native trace table is unsorted or has invalid metadata");
-      return nullptr;
-    }
-  }
-  for (unsigned int index = 0; index < trackable_count; ++index) {
-    const auto pc = trackable_blocks[index];
-    if ((pc >> 16) != function_index ||
-        (index > 0 && trackable_blocks[index - 1] >= pc)) {
-      PyErr_SetString(PyExc_ValueError, "trackable block table is unsorted or invalid");
-      return nullptr;
-    }
-  }
-
-  auto* execution_context =
-      static_cast<fireball_execution_context_native*>(context_buffer.view.buf);
-  auto* control_stack = static_cast<fireball_control_stack_native*>(control_buffer.view.buf);
-  auto* stack = static_cast<std::uint32_t*>(stack_buffer.view.buf);
-  auto* local_stack = static_cast<std::uint32_t*>(locals_buffer.view.buf);
-  auto* locals = local_stack + local_base;
-  const auto* code = static_cast<const std::uint8_t*>(code_buffer.view.buf);
-  const auto code_size = static_cast<std::uint32_t>(code_buffer.view.len);
-  if (control_stack->size > FIREBALL_NATIVE_CONTROL_STACK_CAPACITY ||
-      control_base > control_stack->size || execution_context->call_stack == nullptr ||
-      execution_context->call_stack->size == 0 ||
-      execution_context->call_stack->size > FIREBALL_NATIVE_CALL_STACK_CAPACITY ||
-      execution_context->call_stack->frames[execution_context->call_stack->size - 1].func_index !=
-          function_index) {
+  call.context = static_cast<fireball_execution_context_native*>(call.context_buffer.view.buf);
+  call.control_stack =
+      static_cast<fireball_control_stack_native*>(call.control_buffer.view.buf);
+  call.stack = static_cast<std::uint32_t*>(call.stack_buffer.view.buf);
+  call.local_stack = static_cast<std::uint32_t*>(call.locals_buffer.view.buf);
+  call.locals = call.local_stack + call.local_base;
+  call.code = static_cast<const std::uint8_t*>(call.code_buffer.view.buf);
+  call.code_size = static_cast<std::uint32_t>(call.code_buffer.view.len);
+  if (call.control_stack->size > FIREBALL_NATIVE_CONTROL_STACK_CAPACITY ||
+      call.control_base > call.control_stack->size || call.context->call_stack == nullptr ||
+      call.context->call_stack->size == 0 ||
+      call.context->call_stack->size > FIREBALL_NATIVE_CALL_STACK_CAPACITY ||
+      call.context->call_stack->frames[call.context->call_stack->size - 1].func_index !=
+          call.function_index) {
     PyErr_SetString(PyExc_ValueError, "invalid native JIT dispatch call or control stack");
-    return nullptr;
+    return false;
   }
-  auto& call_frame =
-      execution_context->call_stack->frames[execution_context->call_stack->size - 1];
-  execution_context->sp_capacity = stack_capacity;
-  execution_context->ip = initial_ip;
-  execution_context->code = code;
-  execution_context->code_size = code_size;
-  execution_context->control_stack = control_stack;
-  execution_context->control_base = control_base;
-  execution_context->sp_offset = stack_size;
-  execution_context->cf_offset = control_stack->size;
-  execution_context->stack_checkpoint = stack_size;
-  execution_context->loop_jump_threshold = yield_threshold;
+  call.call_frame =
+      &call.context->call_stack->frames[call.context->call_stack->size - 1];
+  call.context->sp_capacity = call.stack_capacity;
+  call.context->ip = call.initial_ip;
+  call.context->code = call.code;
+  call.context->code_size = call.code_size;
+  call.context->control_stack = call.control_stack;
+  call.context->control_base = call.control_base;
+  call.context->sp_offset = call.stack_size;
+  call.context->cf_offset = call.control_stack->size;
+  call.context->stack_checkpoint = call.stack_size;
+  call.context->loop_jump_threshold = call.yield_threshold;
+  return true;
+}
 
-  auto current_pc = (function_index << 16) | initial_ip;
+enum class dispatch_iteration { continue_dispatch, stop_dispatch, error };
+
+struct native_dispatch_stats {
   std::uint32_t trace_count = 0;
-  std::uint32_t status = kFallback;
-  std::uint32_t trap_code = 0;
   std::uint32_t body_count = 0;
   std::uint32_t dispatcher_trace_transitions = 0;
   std::uint32_t control_handler_count = 0;
-  std::uint32_t eligible_block_visits = 0;
   std::uint32_t interpreted_block_count = 0;
   bool control_handler_pending_trace = false;
+};
+
+struct native_dispatch_hotspots {
+  std::uint32_t eligible_block_visits = 0;
+};
+
+struct empty_dispatch_metrics {};
+
+template <bool CollectStats, bool CollectHotspots>
+struct native_dispatch_metrics {
+  [[no_unique_address]] std::conditional_t<CollectStats, native_dispatch_stats,
+                                          empty_dispatch_metrics>
+      stats;
+  [[no_unique_address]] std::conditional_t<CollectHotspots, native_dispatch_hotspots,
+                                          empty_dispatch_metrics>
+      hotspots;
+};
+
+template <bool CollectStats, bool CollectHotspots>
+struct native_dispatch_state {
+  native_dispatch_call<CollectHotspots>& call;
+  std::uint32_t current_pc;
+  std::uint32_t status = kFallback;
+  std::uint32_t trap_code = 0;
+  [[no_unique_address]] native_dispatch_metrics<CollectStats, CollectHotspots> metrics;
+};
+
+template <bool ClearBlockBoundaryFlag, bool CollectHotspots>
+step_result execute_control_boundary(native_dispatch_call<CollectHotspots>& call,
+                                      std::uint32_t ip) {
+  auto& context = *call.context;
+  context.ip = ip;
+  const auto previous_flags = context.runtime_flags;
+  if constexpr (ClearBlockBoundaryFlag) {
+    context.runtime_flags = (previous_flags & ~kStopAtBlockBoundaryFlag) | kStopAfterControlFlag;
+  } else {
+    context.runtime_flags = previous_flags | kStopAfterControlFlag;
+  }
+  const auto result = dispatch(&context, call.stack, call.local_stack,
+                               top_value(context, call.stack));
+  context.runtime_flags = previous_flags;
+  return result;
+}
+
+template <bool CollectStats, bool CollectHotspots>
+dispatch_iteration execute_interpreted_block(
+    native_dispatch_state<CollectStats, CollectHotspots>& state) {
+  auto& call = state.call;
+  auto& context = *call.context;
+  if constexpr (CollectStats) ++state.metrics.stats.interpreted_block_count;
+
+  const auto interpreter_ip = state.current_pc & 0xFFFFu;
+  bool hotness_yield = false;
   if constexpr (CollectHotspots) {
-    if (trackable_count != 0) {
-      std::memset(observed_visit_counts, 0, trackable_count * sizeof(std::uint8_t));
+    const auto block_index = find_trackable_block_index(
+        call.trackable_blocks, call.trackable_count, state.current_pc);
+    if (block_index < call.trackable_count) {
+      const auto visit_index = state.metrics.hotspots.eligible_block_visits;
+      if (visit_index >= call.yield_threshold) {
+        PyErr_SetString(PyExc_RuntimeError, "native hotspot history exceeded the yield bound");
+        return dispatch_iteration::error;
+      }
+      call.block_history[visit_index] = state.current_pc;
+      ++state.metrics.hotspots.eligible_block_visits;
+      hotness_yield = call.execution_count + state.metrics.hotspots.eligible_block_visits >=
+                      call.yield_threshold;
     }
   }
-  while (true) {
-    const auto* start = find_dispatch_entry(entries, entry_count, current_pc);
-    if (start != nullptr && start->promote_on_hit != 0) {
-      if constexpr (CollectStats) {
-        if (control_handler_pending_trace) ++dispatcher_trace_transitions;
-      }
-      execution_context->ip = current_pc & 0xFFFFu;
-      status = kOldestTraceHit;
-      break;
-    }
-    if (start == nullptr || stack_size + start->chain_stack_words > stack_capacity) {
-      if constexpr (CollectStats) ++interpreted_block_count;
-      const auto interpreter_ip = current_pc & 0xFFFFu;
-      bool hotness_yield = false;
-      if constexpr (CollectHotspots) {
-        const auto block_index = find_trackable_block_index(trackable_blocks, trackable_count,
-                                                             current_pc);
-        if (block_index < trackable_count) {
-          ++eligible_block_visits;
-          auto& visit_count = observed_visit_counts[block_index];
-          if (visit_count < 2) ++visit_count;
-          hotness_yield = execution_count + eligible_block_visits >= yield_threshold;
-        }
-      }
-      call_frame.boundary_next_pc = kNoPc;
-      call_frame.boundary_loops_to = kNoPc;
-      execution_context->ip = interpreter_ip;
-      execution_context->sp_offset = stack_size;
-      execution_context->stack_checkpoint = stack_size;
-      const auto previous_flags = execution_context->runtime_flags;
-      execution_context->runtime_flags =
-          (previous_flags & ~kStopAtBlockBoundaryFlag) | kStopAfterControlFlag;
-      const auto result = dispatch(execution_context, stack, local_stack,
-                                   top_value(*execution_context, stack));
-      execution_context->runtime_flags = previous_flags;
-      if (result.kind == kFallback) {
-        execution_context->sp_offset = execution_context->stack_checkpoint;
-        execution_context->ip = result.next_ip;
-        stack_size = execution_context->sp_offset;
-        status = kFallback;
-        break;
-      }
-      if (result.kind == kTrap) {
-        trap_code = result.trap_code;
-        stack_size = execution_context->sp_offset;
-        status = kTrap;
-        break;
-      }
-      stack_size = execution_context->sp_offset;
-      if (result.kind == kComplete || result.next_ip == kNoPc ||
-          result.next_ip >= code_size) {
-        execution_context->ip = kNoPc;
-        status = kComplete;
-        break;
-      }
-      if (result.kind != kBlockBoundary) {
-        PyErr_SetString(PyExc_RuntimeError, "native interpreter returned an invalid status");
-        return nullptr;
-      }
-      if constexpr (CollectStats) {
-        ++control_handler_count;
-        control_handler_pending_trace = true;
-      }
-      execution_context->ip = result.next_ip;
-      stack_size = execution_context->sp_offset;
-      const auto next_pc = (function_index << 16) | result.next_ip;
-      if (execution_context->loop_jump_count >= yield_threshold) {
-        current_pc = next_pc;
-        status = kDispatchYield;
-        break;
-      }
-      current_pc = next_pc;
-      if constexpr (CollectHotspots) {
-        if (hotness_yield) {
-          status = kDispatchYield;
-          break;
-        }
-      }
-      continue;
-    }
-    std::uint32_t chain_body_count = 0;
-    const auto* terminal = terminal_dispatch_entry<CollectStats>(
-        entries, entry_count, start, chain_body_count);
-    if (terminal == nullptr) {
-      PyErr_SetString(PyExc_RuntimeError, "native trace chain target is absent from its snapshot");
-      return nullptr;
-    }
-    if (stack_size + terminal->stack_words > stack_capacity ||
-        terminal->frame_depth > FIREBALL_NATIVE_CONTROL_STACK_CAPACITY - control_base) {
-      execution_context->ip = start->head_pc & 0xFFFFu;
-      status = kFallback;
-      break;
-    }
 
-    if constexpr (CollectStats) {
-      if (control_handler_pending_trace) {
-        ++dispatcher_trace_transitions;
-        control_handler_pending_trace = false;
-      }
-    }
-
-    const auto expected_frames = control_base + terminal->frame_depth;
-    if (control_stack->size > expected_frames) control_stack->size = expected_frames;
-    if (control_stack->size < control_base) {
-      PyErr_SetString(PyExc_ValueError, "native JIT trace depth is below its control base");
-      return nullptr;
-    }
-    call_frame.boundary_next_pc = terminal->next_pc;
-    call_frame.boundary_loops_to = terminal->loops_to;
-    const auto trace_entry = reinterpret_cast<native_trace_entry_fn>(start->entry_address);
-    trace_entry(execution_context, stack + stack_size, locals, 0);
-    if constexpr (CollectStats) {
-      ++trace_count;
-      body_count += chain_body_count;
-    }
-    if (terminal->has_return_value != 0) stack_size += terminal->result_words;
-    execution_context->sp_offset = stack_size;
-
-    const auto terminal_ip = (terminal->head_pc & 0xFFFFu) + terminal->byte_span;
-    if (terminal_ip >= code_size) {
-      execution_context->ip = kNoPc;
-      status = kComplete;
-      break;
-    }
-    const auto opcode = code[terminal_ip];
-    if (!is_control_terminator(opcode)) {
-      execution_context->ip = terminal_ip;
-      status = kFallback;
-      break;
-    }
-
-    execution_context->ip = terminal_ip;
-    execution_context->stack_checkpoint = stack_size;
-    const auto previous_flags = execution_context->runtime_flags;
-    execution_context->runtime_flags |= kStopAfterControlFlag;
-    const auto handler = handler_table_data()[opcode];
-    if constexpr (CollectStats) ++control_handler_count;
-    const auto result = handler == nullptr
-                            ? fallback(terminal_ip)
-                            : handler(execution_context, stack, local_stack,
-                                      top_value(*execution_context, stack));
-    execution_context->runtime_flags = previous_flags;
-    if (result.kind == kFallback) {
-      execution_context->sp_offset = execution_context->stack_checkpoint;
-      execution_context->ip = result.next_ip;
-      status = kFallback;
-      break;
-    }
-    if (result.kind == kTrap) {
-      trap_code = result.trap_code;
-      status = kTrap;
-      break;
-    }
-    if (result.kind == kComplete || result.next_ip == kNoPc || result.next_ip >= code_size) {
-      execution_context->ip = kNoPc;
-      status = kComplete;
-      break;
-    }
-    if (result.kind != kBlockBoundary) {
-      PyErr_SetString(PyExc_RuntimeError, "native control handler returned an invalid status");
-      return nullptr;
-    }
-    if constexpr (CollectStats) control_handler_pending_trace = true;
-    execution_context->ip = result.next_ip;
-    stack_size = execution_context->sp_offset;
-    const auto next_pc = (function_index << 16) | result.next_ip;
-    if (execution_context->loop_jump_count >= yield_threshold) {
-      current_pc = next_pc;
-      status = kDispatchYield;
-      break;
-    }
-    current_pc = next_pc;
+  call.call_frame->boundary_next_pc = kNoPc;
+  call.call_frame->boundary_loops_to = kNoPc;
+  context.sp_offset = call.stack_size;
+  context.stack_checkpoint = call.stack_size;
+  const auto result = execute_control_boundary<true>(call, interpreter_ip);
+  if (result.kind == kFallback) {
+    context.sp_offset = context.stack_checkpoint;
+    context.ip = result.next_ip;
+    call.stack_size = context.sp_offset;
+    state.status = kFallback;
+    return dispatch_iteration::stop_dispatch;
   }
+  if (result.kind == kTrap) {
+    state.trap_code = result.trap_code;
+    call.stack_size = context.sp_offset;
+    state.status = kTrap;
+    return dispatch_iteration::stop_dispatch;
+  }
+
+  call.stack_size = context.sp_offset;
+  if (result.kind == kComplete || result.next_ip == kNoPc || result.next_ip >= call.code_size) {
+    context.ip = kNoPc;
+    state.status = kComplete;
+    return dispatch_iteration::stop_dispatch;
+  }
+  if (result.kind != kBlockBoundary) {
+    PyErr_SetString(PyExc_RuntimeError, "native interpreter returned an invalid status");
+    return dispatch_iteration::error;
+  }
+
+  if constexpr (CollectStats) {
+    ++state.metrics.stats.control_handler_count;
+    state.metrics.stats.control_handler_pending_trace = true;
+  }
+  context.ip = result.next_ip;
+  call.stack_size = context.sp_offset;
+  const auto next_pc = (call.function_index << 16) | result.next_ip;
+  state.current_pc = next_pc;
+  if (context.loop_jump_count >= call.yield_threshold) {
+    state.status = kDispatchYield;
+    return dispatch_iteration::stop_dispatch;
+  }
+  if constexpr (CollectHotspots) {
+    if (hotness_yield) {
+      state.status = kDispatchYield;
+      return dispatch_iteration::stop_dispatch;
+    }
+  }
+  return dispatch_iteration::continue_dispatch;
+}
+
+template <bool CollectStats, bool CollectHotspots>
+dispatch_iteration execute_native_trace(
+    native_dispatch_state<CollectStats, CollectHotspots>& state,
+    const native_trace_descriptor& start) {
+  auto& call = state.call;
+  auto& context = *call.context;
+  std::uint32_t chain_body_count = 0;
+  const auto* terminal = terminal_dispatch_entry<CollectStats>(
+      call.entries, call.entry_count, &start, chain_body_count);
+  if (terminal == nullptr) {
+    PyErr_SetString(PyExc_RuntimeError, "native trace chain target is absent from its snapshot");
+    return dispatch_iteration::error;
+  }
+  if (call.stack_size + terminal->stack_words > call.stack_capacity ||
+      terminal->frame_depth > FIREBALL_NATIVE_CONTROL_STACK_CAPACITY - call.control_base) {
+    context.ip = start.head_pc & 0xFFFFu;
+    state.status = kFallback;
+    return dispatch_iteration::stop_dispatch;
+  }
+
+  if constexpr (CollectStats) {
+    if (state.metrics.stats.control_handler_pending_trace) {
+      ++state.metrics.stats.dispatcher_trace_transitions;
+      state.metrics.stats.control_handler_pending_trace = false;
+    }
+  }
+
+  const auto expected_frames = call.control_base + terminal->frame_depth;
+  if (call.control_stack->size > expected_frames) call.control_stack->size = expected_frames;
+  if (call.control_stack->size < call.control_base) {
+    PyErr_SetString(PyExc_ValueError, "native JIT trace depth is below its control base");
+    return dispatch_iteration::error;
+  }
+  call.call_frame->boundary_next_pc = terminal->next_pc;
+  call.call_frame->boundary_loops_to = terminal->loops_to;
+  const auto trace_entry = reinterpret_cast<native_trace_entry_fn>(start.entry_address);
+  trace_entry(&context, call.stack + call.stack_size, call.locals, 0);
+  if constexpr (CollectStats) {
+    ++state.metrics.stats.trace_count;
+    state.metrics.stats.body_count += chain_body_count;
+  }
+  if (terminal->has_return_value != 0) call.stack_size += terminal->result_words;
+  context.sp_offset = call.stack_size;
+
+  const auto terminal_ip = (terminal->head_pc & 0xFFFFu) + terminal->byte_span;
+  if (terminal_ip >= call.code_size) {
+    context.ip = kNoPc;
+    state.status = kComplete;
+    return dispatch_iteration::stop_dispatch;
+  }
+  if (!is_control_terminator(call.code[terminal_ip])) {
+    context.ip = terminal_ip;
+    state.status = kFallback;
+    return dispatch_iteration::stop_dispatch;
+  }
+
+  context.stack_checkpoint = call.stack_size;
+  if constexpr (CollectStats) ++state.metrics.stats.control_handler_count;
+  const auto result = execute_control_boundary<false>(call, terminal_ip);
+  if (result.kind == kFallback) {
+    context.sp_offset = context.stack_checkpoint;
+    context.ip = result.next_ip;
+    state.status = kFallback;
+    return dispatch_iteration::stop_dispatch;
+  }
+  if (result.kind == kTrap) {
+    state.trap_code = result.trap_code;
+    state.status = kTrap;
+    return dispatch_iteration::stop_dispatch;
+  }
+  if (result.kind == kComplete || result.next_ip == kNoPc || result.next_ip >= call.code_size) {
+    context.ip = kNoPc;
+    state.status = kComplete;
+    return dispatch_iteration::stop_dispatch;
+  }
+  if (result.kind != kBlockBoundary) {
+    PyErr_SetString(PyExc_RuntimeError, "native control handler returned an invalid status");
+    return dispatch_iteration::error;
+  }
+
+  if constexpr (CollectStats) state.metrics.stats.control_handler_pending_trace = true;
+  context.ip = result.next_ip;
+  call.stack_size = context.sp_offset;
+  state.current_pc = (call.function_index << 16) | result.next_ip;
+  if (context.loop_jump_count >= call.yield_threshold) {
+    state.status = kDispatchYield;
+    return dispatch_iteration::stop_dispatch;
+  }
+  return dispatch_iteration::continue_dispatch;
+}
+
+template <bool CollectHotspots, bool CollectStats>
+PyObject* build_native_dispatch_result(
+    native_dispatch_state<CollectStats, CollectHotspots>& state) {
+  auto& call = state.call;
   Py_ssize_t observed_count = 0;
   if constexpr (CollectHotspots) {
-    for (unsigned int index = 0; index < trackable_count; ++index) {
-      if (observed_visit_counts[index] != 0) ++observed_count;
-    }
+    observed_count = state.metrics.hotspots.eligible_block_visits;
   }
   PyObject* visits = PyTuple_New(observed_count);
   if (visits == nullptr) return nullptr;
   Py_ssize_t visit_index = 0;
   if constexpr (CollectHotspots) {
-    for (unsigned int index = 0; index < trackable_count; ++index) {
-      const auto count = observed_visit_counts[index];
-      if (count == 0) continue;
-      PyObject* visit = Py_BuildValue("II", trackable_blocks[index], count);
+    for (unsigned int index = 0; index < state.metrics.hotspots.eligible_block_visits; ++index) {
+      PyObject* visit = Py_BuildValue("II", call.block_history[index], 1u);
       if (visit == nullptr) {
         Py_DECREF(visits);
         return nullptr;
@@ -2107,91 +2241,71 @@ PyObject* run_native_dispatch_impl(PyObject*, PyObject* args) {
     PyErr_SetString(PyExc_RuntimeError, "native block observation count is inconsistent");
     return nullptr;
   }
+  std::uint32_t trace_count = 0;
+  std::uint32_t body_count = 0;
+  std::uint32_t dispatcher_trace_transitions = 0;
+  std::uint32_t control_handler_count = 0;
+  std::uint32_t interpreted_block_count = 0;
+  if constexpr (CollectStats) {
+    trace_count = state.metrics.stats.trace_count;
+    body_count = state.metrics.stats.body_count;
+    dispatcher_trace_transitions = state.metrics.stats.dispatcher_trace_transitions;
+    control_handler_count = state.metrics.stats.control_handler_count;
+    interpreted_block_count = state.metrics.stats.interpreted_block_count;
+  }
+  std::uint32_t eligible_block_visits = 0;
+  if constexpr (CollectHotspots) {
+    eligible_block_visits = state.metrics.hotspots.eligible_block_visits;
+  }
   PyObject* result = Py_BuildValue(
-      "IIIIIIIIIIO", status, execution_context->ip, stack_size, trap_code, trace_count,
-      body_count, dispatcher_trace_transitions, control_handler_count, eligible_block_visits,
-      interpreted_block_count, visits);
+      "IIIIIIIIIIO", state.status, call.context->ip, call.stack_size, state.trap_code,
+      trace_count, body_count, dispatcher_trace_transitions, control_handler_count,
+      eligible_block_visits, interpreted_block_count, visits);
   Py_DECREF(visits);
   return result;
 }
 
-PyObject* run_native_dispatch(PyObject* self, PyObject* args) {
-  if (!PyTuple_Check(args) || PyTuple_GET_SIZE(args) != 21) {
-    PyErr_SetString(PyExc_TypeError, "native dispatcher expects 21 arguments");
+template <bool CollectStats, bool CollectHotspots>
+PyObject* run_native_dispatch_impl(PyObject*, PyObject* args) {
+  native_dispatch_call<CollectHotspots> call;
+  if (!parse_native_dispatch_call<CollectHotspots>(args, call) ||
+      !acquire_native_dispatch_buffers<CollectHotspots>(call) ||
+      !prepare_native_dispatch_call<CollectHotspots>(call)) {
     return nullptr;
   }
-  const auto collect_stats = PyObject_IsTrue(PyTuple_GET_ITEM(args, 19));
-  if (collect_stats < 0) return nullptr;
-  const auto collect_hotspots = PyObject_IsTrue(PyTuple_GET_ITEM(args, 20));
-  if (collect_hotspots < 0) return nullptr;
 
-#if FB_CONF_RUNTIME_PROFILE_STATS == 0
-  if (collect_stats != 0) {
-    PyErr_SetString(PyExc_RuntimeError,
-                    "runtime profile stats were compiled out by configuration");
+  native_dispatch_state<CollectStats, CollectHotspots> state{
+      call, (call.function_index << 16) | call.initial_ip, kFallback, 0, {}};
+  while (true) {
+    const auto* start = find_dispatch_entry(call.entries, call.entry_count, state.current_pc);
+    if (start != nullptr && start->promote_on_hit != 0) {
+      if constexpr (CollectStats) {
+        if (state.metrics.stats.control_handler_pending_trace) {
+          ++state.metrics.stats.dispatcher_trace_transitions;
+        }
+      }
+      call.context->ip = state.current_pc & 0xFFFFu;
+      state.status = kOldestTraceHit;
+      break;
+    }
+
+    const auto outcome = start == nullptr ||
+                                 call.stack_size + start->chain_stack_words > call.stack_capacity
+                             ? execute_interpreted_block<CollectStats, CollectHotspots>(state)
+                             : execute_native_trace<CollectStats, CollectHotspots>(state, *start);
+    if (outcome == dispatch_iteration::error) return nullptr;
+    if (outcome == dispatch_iteration::stop_dispatch) break;
+  }
+  return build_native_dispatch_result<CollectHotspots, CollectStats>(state);
+}
+
+template <bool CollectStats, bool CollectHotspots>
+PyObject* run_native_dispatch_variant(PyObject* self, PyObject* args) {
+  if (!PyTuple_Check(args) || PyTuple_GET_SIZE(args) != 19) {
+    PyErr_SetString(PyExc_TypeError, "native dispatcher expects 19 arguments");
     return nullptr;
   }
-#endif
-#if FB_CONF_JIT_HOTSPOT_PROFILING == 0
-  if (collect_hotspots != 0) {
-    PyErr_SetString(PyExc_RuntimeError,
-                    "JIT hotspot profiling was compiled out by configuration");
-    return nullptr;
-  }
-#endif
-
-#if FB_CONF_RUNTIME_PROFILE_STATS == 1
-  if (collect_stats != 0) {
-#if FB_CONF_JIT_HOTSPOT_PROFILING == 1
-    return collect_hotspots != 0 ? run_native_dispatch_impl<true, true>(self, args)
-                                 : run_native_dispatch_impl<true, false>(self, args);
-#else
-    return run_native_dispatch_impl<true, false>(self, args);
-#endif
-  }
-#endif
-#if FB_CONF_JIT_HOTSPOT_PROFILING == 1
-  return collect_hotspots != 0 ? run_native_dispatch_impl<false, true>(self, args)
-                               : run_native_dispatch_impl<false, false>(self, args);
-#else
-  return run_native_dispatch_impl<false, false>(self, args);
-#endif
-}
-
-const std::array<binary_operation_fn, 256>& binary_operation_table_data() {
-  return kBinaryOperationTable;
-}
-
-const std::array<i64_binary_operation_fn, 256>& i64_binary_table_data() {
-  return kI64BinaryTable;
-}
-
-const std::array<i64_unary_operation_fn, 256>& i64_unary_table_data() {
-  return kI64UnaryTable;
-}
-
-const std::array<f32_binary_operation_fn, 256>& f32_binary_table_data() {
-  return kF32BinaryTable;
-}
-
-const std::array<f64_binary_operation_fn, 256>& f64_binary_table_data() {
-  return kF64BinaryTable;
-}
-
-const std::array<f32_unary_operation_fn, 256>& f32_unary_table_data() {
-  return kF32UnaryTable;
-}
-
-const std::array<f64_unary_operation_fn, 256>& f64_unary_table_data() {
-  return kF64UnaryTable;
-}
-
-const std::array<bool, 256>& numeric_result_is_bool_data() {
-  return kNumericResultIsBool;
-}
-
-const std::array<conversion_operation_fn, 256>& conversion_table_data() {
-  return kConversionTable;
+  return run_native_dispatch_impl<CollectStats, CollectHotspots>(self, args);
 }
 
 PyObject* run_native_step(PyObject* args, bool direct_control) {
@@ -2290,28 +2404,15 @@ PyObject* run_native_step(PyObject* args, bool direct_control) {
       return nullptr;
     }
     const auto opcode = raw_code[ip];
-    switch (opcode) {
-      case 0x02:
-      case 0x03:
-      case 0x04:
-      case 0x05:
-      case 0x0B:
-      case 0x0C:
-      case 0x0D:
-      case 0x0E:
-      case 0x0F:
-        break;
-      default:
-        PyErr_SetString(PyExc_ValueError, "opcode is not a native control terminator");
-        return nullptr;
+    if (!opcode_is_control_terminator(opcode) &&
+        opcode != kOpcodeFcPrefix) {
+      PyErr_SetString(PyExc_ValueError, "opcode is not a native control terminator");
+      return nullptr;
     }
     const auto previous_flags = execution_context->runtime_flags;
     execution_context->runtime_flags |= kStopAfterControlFlag;
-    const auto handler = handler_table_data()[opcode];
-    result = handler == nullptr
-                 ? fallback(ip)
-                 : handler(execution_context, stack, locals,
-                           top_value(*execution_context, stack));
+    result = dispatch(execution_context, stack, locals,
+                      top_value(*execution_context, stack));
     execution_context->runtime_flags = previous_flags;
   } else {
     result = dispatch(execution_context, stack, locals,
@@ -2344,8 +2445,14 @@ PyMethodDef module_methods[] = {
     {"run_step", run_step, METH_VARARGS, "Run the native CPS handler table until a boundary."},
     {"run_control_step", run_control_step, METH_VARARGS,
      "Run one structured-control opcode through its native handler."},
-    {"run_native_dispatch", run_native_dispatch, METH_VARARGS,
-     "Run native JIT traces and C++ interpreter handlers until a yield or exit."},
+    {"run_native_dispatch", run_native_dispatch_variant<false, false>, METH_VARARGS,
+     "Run native JIT traces and C++ interpreter handlers without diagnostics."},
+    {"run_native_dispatch_stats", run_native_dispatch_variant<true, false>, METH_VARARGS,
+     "Run native JIT traces and C++ interpreter handlers with diagnostic counters."},
+    {"run_native_dispatch_hotspots", run_native_dispatch_variant<false, true>, METH_VARARGS,
+     "Run native JIT traces and C++ interpreter handlers with hotspot observations."},
+    {"run_native_dispatch_stats_hotspots", run_native_dispatch_variant<true, true>, METH_VARARGS,
+     "Run native JIT traces and C++ interpreter handlers with diagnostics and hotspots."},
     {nullptr, nullptr, 0, nullptr},
 };
 
@@ -2366,10 +2473,8 @@ PyModuleDef module_definition = {
 PyMODINIT_FUNC PyInit__interpreter_native() {
   PyObject* module = PyModule_Create(&module_definition);
   if (module == nullptr) return nullptr;
-  if (PyModule_AddIntConstant(module, "RUNTIME_PROFILE_STATS_ENABLED",
-                              FB_CONF_RUNTIME_PROFILE_STATS) < 0 ||
-      PyModule_AddIntConstant(module, "JIT_HOTSPOT_PROFILING_ENABLED",
-                              FB_CONF_JIT_HOTSPOT_PROFILING) < 0) {
+  if (PyModule_AddIntConstant(module, "RUNTIME_PROFILE_STATS_AVAILABLE", 1) < 0 ||
+      PyModule_AddIntConstant(module, "JIT_HOTSPOT_PROFILING_AVAILABLE", 1) < 0) {
     Py_DECREF(module);
     return nullptr;
   }

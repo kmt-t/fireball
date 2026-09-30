@@ -5,12 +5,6 @@
 #include <cstddef>
 #include <cstdint>
 
-#ifndef FB_CONF_JIT_ENABLED
-#error "FB_CONF_JIT_ENABLED must be defined by the build configuration"
-#elif FB_CONF_JIT_ENABLED != 1
-#error "native_fast_cache is only part of a JIT-enabled build"
-#endif
-
 #ifndef FB_CONF_JIT_CACHE_FAST_SLOT_COUNT
 #error "FB_CONF_JIT_CACHE_FAST_SLOT_COUNT must be defined by the build configuration"
 #endif

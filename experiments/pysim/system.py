@@ -517,7 +517,7 @@ class System:
     ) -> tuple[bytearray | None, int | None]:
         """
         runtime_vmmio.md §4.5: VDMA src/dst may be guest RAM (Tier 1) or
-                vMMIO FC=14/15 -- resolved through the exact same permission gate
+                vMMIO FC=13/14/15 -- resolved through the same permission gate
                 as a direct access, owner checks included.
         """
 
@@ -538,6 +538,10 @@ class System:
             return WasiErrno.FAULT
         dst_backing[dst_off : dst_off + count] = bytes(src_backing[src_off : src_off + count])
         return WasiErrno.SUCCESS
+
+    def vdma_transfer(self, src: int, dst: int, count: int) -> int:
+        """Provide the synchronous transfer callback used by `memory.copy`."""
+        return int(self._run_vdma(src, dst, count))
 
     # --- IPC (real IPCRouter: URI lookup, RBAC, CSP rendezvous handoff) ---
     def _ipc_lookup(self, uri_offset: int, uri_len: int, handle_out_ptr: int) -> WasiErrno:
@@ -610,7 +614,7 @@ class System:
             # Direct O(1) rendezvous handoff (atomic ownership transfer)
             try:
                 status, response = e.value
-            except (TypeError, ValueError):
+            except TypeError, ValueError:
                 status, response = IPCStatus.COMPLETED, None
             self.scheduler.run_until_idle()
 
@@ -663,7 +667,7 @@ class System:
             # Direct O(1) rendezvous handoff
             try:
                 status, msg = e.value
-            except (TypeError, ValueError):
+            except TypeError, ValueError:
                 status, msg = IPCStatus.COMPLETED, None
             self.scheduler.run_until_idle()
 

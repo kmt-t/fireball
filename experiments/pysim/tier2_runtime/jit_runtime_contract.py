@@ -33,9 +33,9 @@ class NativeDispatchSnapshot:
     """Python-owned fixed buffers shared directly with the C++ dispatcher."""
 
     __slots__ = (
+        "block_history",
         "entries",
         "entry_count",
-        "observed_visit_counts",
         "trackable_blocks",
         "trackable_count",
     )
@@ -44,7 +44,7 @@ class NativeDispatchSnapshot:
     entry_count: int
     trackable_blocks: ctypes.Array
     trackable_count: int
-    observed_visit_counts: ctypes.Array
+    block_history: ctypes.Array
 
     def __init__(
         self,
@@ -52,16 +52,15 @@ class NativeDispatchSnapshot:
         entry_count: int,
         trackable_blocks: ctypes.Array,
         trackable_count: int,
-        observed_visit_counts: ctypes.Array,
+        block_history: ctypes.Array,
     ) -> None:
         assert 0 <= entry_count <= len(entries)
         assert 0 <= trackable_count <= len(trackable_blocks)
-        assert len(observed_visit_counts) >= trackable_count
         self.entries = entries
         self.entry_count = entry_count
         self.trackable_blocks = trackable_blocks
         self.trackable_count = trackable_count
-        self.observed_visit_counts = observed_visit_counts
+        self.block_history = block_history
 
 
 EMPTY_NATIVE_DISPATCH_SNAPSHOT = NativeDispatchSnapshot(
@@ -69,7 +68,7 @@ EMPTY_NATIVE_DISPATCH_SNAPSHOT = NativeDispatchSnapshot(
     0,
     (ctypes.c_uint32 * 0)(),
     0,
-    (ctypes.c_uint8 * 0)(),
+    (ctypes.c_uint32 * 0)(),
 )
 
 
@@ -111,6 +110,8 @@ class JITRuntime(Protocol):
 
     def record_block_head(self, pc: int) -> bool: ...
 
+    def on_interpreter_exit(self, yield_requested: bool) -> None: ...
+
     def on_yield(self) -> None: ...
 
     def idle_hook(self, budget: int = 4) -> int: ...
@@ -124,8 +125,6 @@ class JITRuntime(Protocol):
     def record_native_block_visits(
         self, visits: tuple[NativeBlockVisit, ...], total_visits: int
     ) -> bool: ...
-
-    def set_hotspot_profiling_enabled(self, enabled: bool) -> None: ...
 
     def find_trace(self, pc: int) -> JITTrace | None: ...
 

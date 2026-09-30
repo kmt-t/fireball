@@ -153,7 +153,7 @@ def main():
             f"{jit_res['jit_loop_interpreter_steps']:,} interpreter steps"
         )
     else:
-        print("  * JIT Execution Coverage:             runtime stats compiled out")
+        print("  * JIT Execution Coverage:             runtime stats not collected")
     print(
         f"  * PIC Trace-Header Helper Tail Jump:  {jit_res['context_helper_tail_mops']:.2f} M ops/s  ({jit_res['context_helper_tail_ns']:.1f} ns/dispatch; {jit_res['context_helper_tail_invocations']:,} calls)"
     )
@@ -198,17 +198,18 @@ def main():
     print(
         f"  * Resolution & Sampling:              {ao_res['width']} x {ao_res['height']} ({ao_res['total_rays']:,} rays / frame)"
     )
+    print(f"  * Python reference interpreter:        {ao_res['python_interpreter_time_ms']:.2f} ms")
     print(
-        f"  * Tier 3 Interpreter (Threaded CPS): {ao_res['t2_time_ms']:.2f} ms  ({ao_res['t2_rays_per_sec']:,.0f} Rays / Sec)"
+        f"  * C++ threaded interpreter:          {ao_res['native_interpreter_time_ms']:.2f} ms  ({ao_res['native_interpreter_rays_per_sec']:,.0f} Rays / Sec)"
     )
     print(
         f"  * Tier 3 (Hybrid + JIT):              {ao_res['t3_time_ms']:.2f} ms  ({ao_res['t3_rays_per_sec']:,.0f} Rays / Sec)"
     )
     if ao_res["speedup_ratio"] >= 1.0:
-        print(f"  * JIT vs interpreter:                 {ao_res['speedup_ratio']:.2f}x faster")
+        print(f"  * JIT vs C++ interpreter:             {ao_res['speedup_ratio']:.2f}x faster")
     else:
         print(
-            f"  * JIT vs interpreter:                 {1.0 / ao_res['speedup_ratio']:.2f}x slower"
+            f"  * JIT vs C++ interpreter:             {1.0 / ao_res['speedup_ratio']:.2f}x slower"
         )
     if ao_res["runtime_profile_stats_enabled"]:
         print(
@@ -216,7 +217,7 @@ def main():
             f"{ao_res['native_dispatch_trace_transitions']:,}"
         )
     else:
-        print("  * JIT trace transitions:              runtime stats compiled out")
+        print("  * JIT trace transitions:              runtime stats not collected")
     print(f"  * Active JIT Cache Bank Traces:       {ao_res['compiled_traces']} compiled traces")
     print("=" * 80)
     print(f"[PASS] All benchmarks completed successfully in {t_total:.2f} seconds.")

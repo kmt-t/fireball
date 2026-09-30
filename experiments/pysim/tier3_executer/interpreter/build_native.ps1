@@ -17,8 +17,6 @@ $pyLibDir = & uv run --offline --no-sync --python $uvPython python -c "import sy
 $env:PYTHONPATH = Join-Path $projectRoot "experiments\pysim\tier1_core"
 $dispatchConfig = & uv run --offline --no-sync --python $uvPython python -c "from config import JIT_CACHE_BANK_CAPACITY_BYTES, JIT_CACHE_BANK_COUNT, JIT_X64_TRACE_HEADER_BYTES; print(JIT_CACHE_BANK_COUNT * max(1, JIT_CACHE_BANK_CAPACITY_BYTES // JIT_X64_TRACE_HEADER_BYTES))"
 $blockConfig = & uv run --offline --no-sync --python $uvPython python -c "from config import FB_CONF_MAX_BASIC_BLOCKS; print(FB_CONF_MAX_BASIC_BLOCKS)"
-$featureConfig = & uv run --offline --no-sync --python $uvPython python -c "from config import FB_CONF_RUNTIME_PROFILE_STATS, FB_CONF_JIT_HOTSPOT_PROFILING; print(int(FB_CONF_RUNTIME_PROFILE_STATS), int(FB_CONF_JIT_HOTSPOT_PROFILING))"
-$featureValues = (($featureConfig -join " ").Trim() -split "\s+")
 $nativeBuildDir = Join-Path $env:TEMP "fireball-pysim-native"
 New-Item -ItemType Directory -Force -Path $nativeBuildDir | Out-Null
 $sourceCxx = Join-Path $scriptDir "native_interpreter.cxx"
@@ -28,8 +26,6 @@ Write-Host ">>> Compiling native_interpreter.cxx -> _interpreter_native.pyd" -Fo
 & clang-cl.exe /TP /std:c++latest /O2 /LD /EHsc /W4 `
     "/DFB_CONF_NATIVE_JIT_TRACE_CAPACITY=$dispatchConfig" `
     "/DFB_CONF_NATIVE_JIT_BLOCK_CAPACITY=$blockConfig" `
-    "/DFB_CONF_RUNTIME_PROFILE_STATS=$($featureValues[0])" `
-    "/DFB_CONF_JIT_HOTSPOT_PROFILING=$($featureValues[1])" `
     "-I$pyInc" `
     "-I$vsDir\VC\Tools\MSVC\$msvcVer\include" `
     "-I$sdkRoot\Include\$sdkVer\ucrt" `

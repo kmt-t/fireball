@@ -1,25 +1,29 @@
-# Runtime Plugin 構成モデル テスト仕様書
+# Runtime Plugin 構成 テスト仕様書
 
 ## 1. 目的と対象範囲
 
 正本: [`runtime_plugin_architecture.md`](docs/components/tier2_runtime/runtime_plugin_architecture.md)
 
-本仕様はpysim `RuntimeComposer` の構成時選択を検証する。実機C++生成物のコード除去、Pluginの実行時初期化・終了、SystemへのRuntime統合は対象外とする。
+本仕様は、Runtimeの型構成、独立したプラグイン選択、初期化・終了順序、および未選択機能の除去を検証する。
 
 ## 2. テストケース一覧
 
-| テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 実装 |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| TEST-PLUGIN-01 | 実行器とDebugger構成の選択 | Interpreter/JIT factoryが存在する | 各実行構成をcomposeする | 選択したfactoryだけを呼び、Debugger+JITはfactory呼出し前に拒否する | `test_runtime_composer.py` `test_debugger_composition_constructs_interpreter_only_runtime`, `test_debugger_cannot_be_composed_with_jit` |
-| TEST-PLUGIN-02 | Observerの選択と保持 | Logger/Debugger/Profiler factoryが存在する | Observer有効・無効の構成をcomposeする | 有効なfactoryだけを一度呼び、全無効ならObserver状態を保持しない | `test_runtime_composer.py` `test_disabled_plugins_are_not_constructed_or_retained`, `test_selected_plugins_receive_one_shared_event_stream` |
+| テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 |
+| :--- | :--- | :--- | :--- | :--- |
+| TEST-PLUGIN-01 | 構成別Runtimeの同時生成 | Interpreter/JIT、Debugger、Profiler、Event Sink、Hotspot Profilerの具象型が利用可能 | 異なる構成を同一プログラム内で生成・実行する | 各Runtimeが選択された型だけを保持し、構成選択分岐や状態を他インスタンスと共有しない |
+| TEST-PLUGIN-02 | Runtime Event SinkとHotspot Profilerの独立選択 | 両サービスの有効・無効型を用意する | 2サービスの全有効組合せをインスタンス化して実行する | 片方の選択が他方の生成・記録・分析経路に影響しない |
+| TEST-PLUGIN-03 | 無効スロットの除去 | 1つ以上のプラグインを無効にした構成を用意する | 型構成、生成コード、リンクmapを調べる | 無効機能の状態、初期化、呼出し、破棄コードがRuntime生成物に含まれない |
+| TEST-PLUGIN-04 | 依存順初期化と逆順終了 | 複数の選択済みコンポーネントを接続する | 正常起動、初期化失敗、Runtime破棄を実行する | 依存先から初期化し、失敗時と破棄時は逆順に終了する。未初期化要素を終了しない |
+| TEST-PLUGIN-05 | Debugger構成の実行器選択 | Debugger有効構成とInterpreter/JITが利用可能 | Debugger付き構成を生成し、JIT型を選んだ構成も試す | Debugger付きRuntimeはInterpreterのみを選び、Debugger+JITの不正構成は起動前に拒否する |
+| TEST-PLUGIN-06 | 共有Runtime状態の隔離 | 同じ実行ファイル内に独立した複数Runtimeを生成する | 各Runtimeで別モジュール・別イベント履歴・別Hotspot履歴を更新する | Runtime破棄まで各状態が分離され、片方の破棄で他方の状態が変化しない |
 
-## 3. テスト検証実績と網羅状況
+## 3. 判定条件
 
-- 2ケースを [`test_runtime_composer.py`](experiments/pysim/qa/tier2_runtime/test_runtime_composer.py) で実行する。
-- 本仕様のテストはPython参照モデルに限定し、実機C++ RuntimeComposerを検証しない。
+Runtime構成、初期化ログ、失敗時の破棄順序、生成コード、および資源量を直接比較する。構成の差はコンパイル時の
+具象型選択に現れ、実行中の有効性分岐として現れてはならない。
 
-## 4. 未検証・スコープ外
+## 4. 対象外
 
-- C++ `constexpr` 特殊化、翻訳単位・WIT境界の除去、リンカmap検査。
-- Pluginの初期化・終了hook、失敗時ロールバック、Runtime実行ループとの統合。
-- JITコンパイラ要求キューとProfilerイベント容量の実機構成。
+- Runtime Event Sinkのレコード形式・転送ABI。詳細は [`runtime_observability_test_spec.md`](docs/qa/tier2_runtime/runtime_observability_test_spec.md) に置く。
+- Hotspot履歴と実行区間ごとのカード分析。詳細は [`runtime_hotspot_profiler_test_spec.md`](docs/qa/tier2_runtime/runtime_hotspot_profiler_test_spec.md) に置く。
+- Debuggerのプロトコル処理、Profilerの集計方針、JITコンパイルアルゴリズム。

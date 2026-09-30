@@ -277,12 +277,13 @@ class BlockCardMask:
 
 
 class HistoryRing:
-    """Fixed-size ring of recently executed basic-block head PCs backed by RingBuffer."""
+    """Fixed-size ring of recently executed module/PC pairs backed by RingBuffer."""
 
     __slots__ = ("ring",)
 
     def __init__(self, capacity: int = 32):
-        self.ring: RingBuffer[int] = RingBuffer(capacity)
+        assert capacity > 0
+        self.ring: RingBuffer[tuple[int, int]] = RingBuffer(capacity)
 
     @property
     def capacity(self) -> int:
@@ -292,10 +293,15 @@ class HistoryRing:
     def dropped(self) -> int:
         return self.ring.dropped
 
-    def record(self, pc: int) -> None:
-        self.ring.push(pc)
+    def record(self, module_id: int, pc: int | None = None) -> None:
+        if pc is None:
+            pc = module_id
+            module_id = 0
+        assert 0 <= module_id <= 0xFFFF_FFFF
+        assert 0 <= pc <= 0xFFFF_FFFF
+        self.ring.push((module_id, pc))
 
-    def drain(self) -> StaticVector[int]:
+    def drain(self) -> StaticVector[tuple[int, int]]:
         return self.ring.drain()
 
 

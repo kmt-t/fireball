@@ -10,12 +10,6 @@ FB_CONF_RUNTIME_YIELD_THRESHOLD: int = 16
 # Retry policy shared by recovery-capable components (system_config.md §3.3.8).
 FB_CONF_RETRY_BACKOFF_MS: int = 10
 FB_CONF_RETRY_MAX_ATTEMPTS: int = 3
-# Diagnostic counters are compiled into the native dispatcher only when enabled.
-# Rebuild the native interpreter extension after changing this configuration.
-FB_CONF_RUNTIME_PROFILE_STATS: bool = False
-# Dynamic JIT candidate observation is a separately selected runtime feature.
-# Rebuild the native interpreter extension after changing this configuration.
-FB_CONF_JIT_HOTSPOT_PROFILING: bool = True
 # Aging sweep of the card table ({JIT_CardAgingSweep}); the public spelling is
 # FB_CONF_JIT_AGING_STEP_UNITS / FB_CONF_JIT_AGING_STEP_SCAN_BYTES in system_config.md.
 # A step ends after this many non-zero update-bitmap bytes (8 functions each) are

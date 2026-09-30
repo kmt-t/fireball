@@ -28,9 +28,9 @@ from wasm_module import F32, F64, I32, I64, LocalWidthMap
 
 
 def test_native_layout_matches_x64_jit_context():
-    assert ctypes.sizeof(ExecutionContextNative) == 128
+    assert ctypes.sizeof(ExecutionContextNative) == 144
     assert ExecutionContextNative.mem_base.offset == 0x28
-    assert ExecutionContextNative.handler_table.offset == 0x38
+    assert ExecutionContextNative.reserved_0.offset == 0x38
     assert ExecutionContextNative.runtime_flags.offset == 0x3C
     assert ExecutionContextNative.loop_jump_count.offset == 0x74
     assert ExecutionContextNative.loop_jump_threshold.offset == 0x78
@@ -42,6 +42,8 @@ def test_native_layout_matches_x64_jit_context():
     assert ExecutionContextNative.call_stack.offset == 0x60
     assert ExecutionContextNative.call_base.offset == 0x68
     assert ExecutionContextNative.call_offset.offset == 0x6C
+    assert ExecutionContextNative.linear_memory_host_base.offset == 0x80
+    assert ExecutionContextNative.linear_memory_size.offset == 0x88
 
     ctx = ExecutionContextNative()
     ctx.ip = 0x1234
@@ -98,7 +100,7 @@ def test_interpreter_and_jit_contexts_share_native_record_type():
     )
     assert jit_context.context_ptr.value == ctypes.addressof(jit_context.native_context)
     assert memory_context.mem_ptr.value != 0
-    assert ctypes.sizeof(memory_context.native_context) == 128
+    assert ctypes.sizeof(memory_context.native_context) == 144
 
 
 def test_native_value_stack_owns_the_fixed_storage():

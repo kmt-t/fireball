@@ -41,7 +41,6 @@ from wasm_module import (
     Module,
     Table,
 )
-from wasm_opcodes import CALL, CALL_INDIRECT
 
 MAGIC = b"\x00asm"
 VERSION = b"\x01\x00\x00\x00"
@@ -295,22 +294,6 @@ class WasmUnsupportedFeatureError(WasmParseError):
     def __init__(self, message: str = "ERR_WASM_UNSUPPORTED_FEATURE"):
         super().__init__(message)
         self.error_code = "ERR_WASM_UNSUPPORTED_FEATURE"
-
-
-def _has_nested_calls(code: memoryview) -> bool:
-    """Return whether decoded function instructions contain a call opcode."""
-    from control_flow import iter_scan_instrs
-
-    try:
-        for instruction in iter_scan_instrs(code):
-            if instruction.opcode == CALL or instruction.opcode == CALL_INDIRECT:
-                return True
-    except WasmUnsupportedFeatureError:
-        # Keep parsing unsupported modules for the existing execution-time
-        # rejection contract. Do not select the no-call fast path when the
-        # instruction stream could not be fully classified.
-        return True
-    return False
 
 
 def _parse_functype(
@@ -618,7 +601,6 @@ def _parse_code_section(
             for _ in range(count):
                 locals_extra.append(vtype)
 
-        code = data[loff:body_end]  # instruction stream, including the trailing 0x0B (end)
         callbacks.on_function(
             Function(
                 type_index=type_indices[i],
@@ -626,7 +608,6 @@ def _parse_code_section(
                 code=None,
                 code_offset=loff,
                 code_size=body_end - loff,
-                has_nested_calls=_has_nested_calls(code),
             )
         )
         off = body_end
@@ -1000,6 +981,46 @@ def _analyze_memory_size_grow(
     if opcode == op.MEMORY_GROW:
         state.pop(I32)
     state.push(I32)
+
+
+@_select_analysis_handler(op.FC_PREFIX)
+def _analyze_fc_instruction(
+    state: _SelectAnalysisState, opcode: int, offset: int, subopcode: int
+) -> None:
+    assert opcode == op.FC_PREFIX
+    if op.FC_I32_TRUNC_SAT_F32_S <= subopcode <= op.FC_I64_TRUNC_SAT_F64_U:
+        source_type = (
+            F32
+            if subopcode
+            in (
+                op.FC_I32_TRUNC_SAT_F32_S,
+                op.FC_I32_TRUNC_SAT_F32_U,
+                op.FC_I64_TRUNC_SAT_F32_S,
+                op.FC_I64_TRUNC_SAT_F32_U,
+            )
+            else F64
+        )
+        state.pop(source_type)
+        state.push(I32 if subopcode <= op.FC_I32_TRUNC_SAT_F64_U else I64)
+        return
+
+    assert state.module.memory is not None, "bulk memory instruction requires linear memory"
+    _, cursor = decode_unsigned(state.code, offset + 1)
+    if subopcode == op.FC_MEMORY_COPY:
+        destination_memory, cursor = decode_unsigned(state.code, cursor)
+        source_memory, _ = decode_unsigned(state.code, cursor)
+        assert destination_memory == 0 and source_memory == 0
+        state.pop(I32)  # length
+        state.pop(I32)  # source
+        state.pop(I32)  # destination
+        return
+
+    assert subopcode == op.FC_MEMORY_FILL
+    memory_index, _ = decode_unsigned(state.code, cursor)
+    assert memory_index == 0
+    state.pop(I32)  # length
+    state.pop(I32)  # fill value
+    state.pop(I32)  # destination
 
 
 @_select_analysis_handler(op.CALL, op.CALL_INDIRECT)

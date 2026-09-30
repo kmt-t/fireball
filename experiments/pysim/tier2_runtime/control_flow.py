@@ -94,6 +94,11 @@ from wasm_opcodes import (
     F64_STORE,
     F64_SUB,
     F64_TRUNC,
+    FC_I32_TRUNC_SAT_F32_S,
+    FC_I64_TRUNC_SAT_F64_U,
+    FC_MEMORY_COPY,
+    FC_MEMORY_FILL,
+    FC_PREFIX,
     GLOBAL_GET,
     GLOBAL_SET,
     I32_ADD,
@@ -253,6 +258,7 @@ for _opcode, _attributes in (
     (RETURN, OpcodeAttribute.BASIC_BLOCK_BOUNDARY),
     (CALL, OpcodeAttribute.CALL | OpcodeAttribute.BASIC_BLOCK_BOUNDARY),
     (CALL_INDIRECT, OpcodeAttribute.CALL | OpcodeAttribute.BASIC_BLOCK_BOUNDARY),
+    (FC_PREFIX, OpcodeAttribute.BASIC_BLOCK_BOUNDARY),
 ):
     _OPCODE_ATTRIBUTE_STORAGE.put(_opcode, int(_attributes))
 
@@ -271,6 +277,24 @@ def opcode_has_attribute(opcode: int, attribute: OpcodeAttribute) -> bool:
     assert 0 <= opcode < 256
     packed = OPCODE_ATTRIBUTES.at(opcode)
     return (packed & int(attribute)) != 0
+
+
+def _decode_fc_instruction(code: bytes, offset: int) -> tuple[int, int]:
+    """Decode and validate one supported 0xFC subopcode and its immediates."""
+
+    subopcode, next_offset = decode_unsigned(code, offset)
+    if FC_I32_TRUNC_SAT_F32_S <= subopcode <= FC_I64_TRUNC_SAT_F64_U:
+        return subopcode, next_offset
+    if subopcode == FC_MEMORY_COPY:
+        destination_memory, next_offset = decode_unsigned(code, next_offset)
+        source_memory, next_offset = decode_unsigned(code, next_offset)
+        assert destination_memory == 0 and source_memory == 0, "only memory index zero is supported"
+        return subopcode, next_offset
+    if subopcode == FC_MEMORY_FILL:
+        memory_index, next_offset = decode_unsigned(code, next_offset)
+        assert memory_index == 0, "only memory index zero is supported"
+        return subopcode, next_offset
+    assert False, f"ERR_WASM_UNSUPPORTED_FEATURE: 0xFC subopcode {subopcode} is not supported"
 
 
 def is_control_terminator(opcode: int) -> bool:
@@ -564,7 +588,9 @@ def build_control_map(code: bytes) -> ControlMap:
         start = off
         opcode = code[off]
         off += 1
-        if _BLOCK_OPENERS.at(opcode):
+        if opcode == FC_PREFIX:
+            _, off = _decode_fc_instruction(code, off)
+        elif _BLOCK_OPENERS.at(opcode):
             result_arity, off = _decode_blocktype(code, off)
             if depth >= FB_CONF_MAX_NESTING_DEPTH:
                 assert False, (
@@ -658,7 +684,9 @@ def iter_scan_instrs(code: bytes, start: int = 0) -> Iterator[Instr]:
         opcode = code[off]
         off += 1
         operand = None
-        if _BLOCK_OPENERS.at(opcode):
+        if opcode == FC_PREFIX:
+            operand, off = _decode_fc_instruction(code, off)
+        elif _BLOCK_OPENERS.at(opcode):
             _, off = _decode_blocktype(code, off)
         elif _LEB_UNSIGNED_OPERAND.at(opcode):
             operand, off = decode_unsigned(code, off)
@@ -951,6 +979,12 @@ def extract_basic_blocks(
                         if match is not None
                         else base_pc | ins.end_offset
                     )
+                    loops_to = None
+                elif ins.opcode == FC_PREFIX:
+                    # Leave the prefixed instruction for the interpreter.
+                    # A JIT block ending immediately before this boundary
+                    # must resume at the prefix so its subopcode still runs.
+                    next_pc = pc
                     loops_to = None
                 else:
                     next_pc = base_pc | _skip_trailing_ends(ins.end_offset)

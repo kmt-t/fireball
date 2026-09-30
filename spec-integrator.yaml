@@ -73,10 +73,10 @@ verification_matrix:
   unit_runner: "experiments/pysim/qa/run_all.py"
   pairwise_test: "experiments/pysim/qa/cross_cutting/test_pairwise_combinations.py"
   expected:
-    component_specs: 25
+    component_specs: 26
     concept_files: 14
-    formal_models: 19
-    test_specs: 24
+    formal_models: 20
+    test_specs: 25
     pysim_unit_suites: 30
     scenarios: 12
     pairwise_factors: 7

@@ -769,8 +769,8 @@ def test_jitr_loop_backedge_stays_in_cpp_until_coos_yield():
     assert list(results) == [15]
 
 
-def test_jitr_native_dispatch_snapshot_is_cached_and_hotspot_collection_is_configurable():
-    """Stable trace snapshots are reused, and steady-state runs can skip profiling."""
+def test_jitr_native_dispatch_snapshot_is_cached_per_hotspot_configuration():
+    """Each JIT Runtime keeps the snapshot shape selected during composition."""
     module = parse(
         wat_to_wasm(
             """(module
@@ -790,7 +790,7 @@ def test_jitr_native_dispatch_snapshot_is_cached_and_hotspot_collection_is_confi
                 local.get 1))"""
         )
     )
-    engine = make_runtime_engine(jit_compiler=TraceCompiler())
+    engine = make_runtime_engine(jit_compiler=TraceCompiler(), collect_runtime_stats=False)
     engine.register_module_blocks(module)
     function_index = module.export_func_index("sum")
     manager = engine.jit_runtime
@@ -818,25 +818,34 @@ def test_jitr_native_dispatch_snapshot_is_cached_and_hotspot_collection_is_confi
     assert compiled_snapshot.entries[0].head_pc == loop_block.head_pc
     assert compiled_snapshot.entries[0].entry_address == trace.raw_addr
 
-    manager.set_hotspot_profiling_enabled(False)
-    steady_snapshot = manager.native_dispatch_state(function_index)
-    assert steady_snapshot.entry_count == compiled_snapshot.entry_count
+    steady_engine = make_runtime_engine(
+        jit_compiler=TraceCompiler(),
+        collect_runtime_stats=False,
+        hotspot_profiling_enabled=False,
+    )
+    steady_engine.register_module_blocks(module)
+    steady_manager = steady_engine.jit_runtime
+    steady_trace = steady_manager._compile_trace(loop_block.head_pc, loop_block)
+    assert steady_trace is not None and steady_manager.cache.insert(steady_trace)
+    steady_manager.mark_compiled(loop_block.head_pc)
+    steady_snapshot = steady_manager.native_dispatch_state(function_index)
+    assert steady_snapshot.entry_count == 1
     assert steady_snapshot.entries[0].head_pc == compiled_snapshot.entries[0].head_pc
     assert steady_snapshot.trackable_count == 0
-    assert manager.lookup(loop_block.head_pc) is trace
-    assert not manager.record_block_head(loop_block.head_pc)
-    assert not manager.record_native_block_visits((), 0)
-    manager.cache.rotate()
-    manager.cache.rotate()
-    oldest_snapshot = manager.native_dispatch_state(function_index)
+    assert steady_manager.lookup(loop_block.head_pc) is steady_trace
+    assert not steady_manager.record_block_head(loop_block.head_pc)
+    assert not steady_manager.record_native_block_visits((), 0)
+    steady_manager.cache.rotate()
+    steady_manager.cache.rotate()
+    oldest_snapshot = steady_manager.native_dispatch_state(function_index)
     oldest_entry = next(
         oldest_snapshot.entries[index]
         for index in range(oldest_snapshot.entry_count)
         if oldest_snapshot.entries[index].head_pc == loop_block.head_pc
     )
     assert oldest_entry.promote_on_hit == 1
-    assert list(engine.call(Interpreter(module), function_index, [5])) == [15]
-    assert manager.cache.active.has_trace(loop_block.head_pc)
+    assert list(steady_engine.call(Interpreter(module), function_index, [5])) == [15]
+    assert steady_manager.cache.active.has_trace(loop_block.head_pc)
 
 
 def test_jitr_cross_frame_loop_branch_skips_special_link_but_keeps_trace_body():

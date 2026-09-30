@@ -41,11 +41,15 @@ import ctypes
 import math
 import struct
 from collections.abc import Callable, Iterator, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass
 from enum import IntEnum
 from typing import Protocol
 
-from config import FB_CONF_MAX_VALUE_STACK, FB_CONF_RUNTIME_YIELD_THRESHOLD
+from config import (
+    FB_CONF_MAX_VALUE_STACK,
+    FB_CONF_RUNTIME_YIELD_THRESHOLD,
+)
 from control_flow import (
     FB_CONF_MAX_NESTING_DEPTH,
     OpcodeAttribute,
@@ -69,13 +73,20 @@ from native_stacks import (
     _LocalStackWindow,
 )
 from system_containers import StaticVector
+from tier2_runtime.hostcall import VdmaTransfer
 from tier2_runtime.jit_runtime_contract import (
     EMPTY_NATIVE_DISPATCH_SNAPSHOT,
     NativeBlockVisit,
     NativeDispatchSnapshot,
 )
 from tier2_runtime.logger import Logger, LogLevel
-from vmmio import VMMIOController, VmmioStatus
+from vmmio import (
+    FC_DYNAMIC,
+    FC_PASSTHROUGH,
+    FC_SHM,
+    VMMIOController,
+    VmmioStatus,
+)
 from wasm_module import (
     F32,
     F64,
@@ -153,6 +164,13 @@ from wasm_opcodes import (
     F64_STORE,
     F64_SUB,
     F64_TRUNC,
+    FC_I32_TRUNC_SAT_F32_S,
+    FC_I32_TRUNC_SAT_F64_U,
+    FC_I64_TRUNC_SAT_F32_S,
+    FC_I64_TRUNC_SAT_F64_U,
+    FC_MEMORY_COPY,
+    FC_MEMORY_FILL,
+    FC_PREFIX,
     GLOBAL_GET,
     GLOBAL_SET,
     I32_ADD,
@@ -267,8 +285,38 @@ from wasm_opcodes import (
 
 from . import _interpreter_native
 
-NATIVE_RUNTIME_PROFILE_STATS_ENABLED = bool(_interpreter_native.RUNTIME_PROFILE_STATS_ENABLED)
-NATIVE_JIT_HOTSPOT_PROFILING_ENABLED = bool(_interpreter_native.JIT_HOTSPOT_PROFILING_ENABLED)
+NATIVE_RUNTIME_PROFILE_STATS_AVAILABLE = bool(_interpreter_native.RUNTIME_PROFILE_STATS_AVAILABLE)
+NATIVE_JIT_HOTSPOT_PROFILING_AVAILABLE = bool(_interpreter_native.JIT_HOTSPOT_PROFILING_AVAILABLE)
+
+NativeDispatchResult = tuple[
+    int,
+    int,
+    int,
+    int,
+    int,
+    int,
+    int,
+    int,
+    int,
+    int,
+    tuple[NativeBlockVisit, ...],
+]
+NativeDispatchEntryPoint = Callable[..., NativeDispatchResult]
+
+
+def select_native_dispatch_entry(
+    collect_stats: bool, collect_hotspots: bool
+) -> NativeDispatchEntryPoint:
+    """Select one fixed native dispatcher while composing a Runtime instance."""
+
+    if collect_stats:
+        if collect_hotspots:
+            return _interpreter_native.run_native_dispatch_stats_hotspots
+        return _interpreter_native.run_native_dispatch_stats
+    if collect_hotspots:
+        return _interpreter_native.run_native_dispatch_hotspots
+    return _interpreter_native.run_native_dispatch
+
 
 I32_MASK = 0xFFFFFFFF
 PAGE_SIZE = 65536
@@ -510,6 +558,29 @@ class ExecEnv:
     memory_decl: Memory
     vmmio: VMMIOController | None = None
     phys_mem: bytearray | None = None
+    vdma_transfer: VdmaTransfer | None = None
+
+
+@contextmanager
+def _native_linear_memory_scope(
+    native_context: ExecutionContextNative, memory: bytearray | None
+) -> Iterator[None]:
+    """Borrow the current linear-memory address for one native call only."""
+    memory_buffer: ctypes.Array | None = None
+    memory_size = len(memory) if memory is not None else 0
+    try:
+        if memory_size != 0 and memory is not None:
+            memory_buffer = (ctypes.c_ubyte * memory_size).from_buffer(memory)
+            native_context.linear_memory_host_base = ctypes.addressof(memory_buffer)
+        else:
+            native_context.linear_memory_host_base = None
+        native_context.linear_memory_size = memory_size
+        native_context.mem_size = min(memory_size, 0xFFFF_FFFF)
+        yield
+    finally:
+        native_context.linear_memory_host_base = None
+        native_context.linear_memory_size = 0
+        native_context.mem_size = 0
 
 
 @dataclass(slots=True)
@@ -522,6 +593,7 @@ class InterpreterBindings:
     host_functions: StaticVector[WasmHostFunction | None]
     globals: StaticVector[int]
     tables: StaticVector[StaticVector[int | None]]
+    vdma_transfer: VdmaTransfer | None = None
 
     @classmethod
     def empty(cls) -> InterpreterBindings:
@@ -552,6 +624,8 @@ class InterpreterBindings:
         cls,
         memory: bytearray,
         host_functions: StaticVector[WasmHostFunction | None],
+        *,
+        vdma_transfer: VdmaTransfer | None = None,
     ) -> InterpreterBindings:
         """Create bindings for a host memory and dense function-import table."""
         return cls(
@@ -561,6 +635,7 @@ class InterpreterBindings:
             host_functions=host_functions,
             globals=StaticVector(capacity=0),
             tables=StaticVector(capacity=0),
+            vdma_transfer=vdma_transfer,
         )
 
 
@@ -752,7 +827,7 @@ def _native_buffer_address(view: memoryview) -> int:
         return 0
     try:
         return ctypes.addressof(ctypes.c_ubyte.from_buffer(view))
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         descriptor = _PyBuffer()
         get_buffer = ctypes.pythonapi.PyObject_GetBuffer
         get_buffer.argtypes = (ctypes.py_object, ctypes.POINTER(_PyBuffer), ctypes.c_int)
@@ -790,7 +865,6 @@ class CallFrame:
         "env",
         "frame_offset",
         "func_index",
-        "has_nested_calls",
         "local_count",
         "local_slot_count",
         "local_types",
@@ -819,7 +893,6 @@ class CallFrame:
         self.control_base = len(context.control_frame_stack)
         self._frames = _ControlFrameWindow(context.control_frame_stack, self.control_base)
         self.func_index = func_index
-        self.has_nested_calls = function.has_nested_calls
         self.frame_offset = frame_offset
         self.local_count = len(local_widths)
         self.local_widths = local_widths
@@ -1109,6 +1182,7 @@ class InterpreterCall:
 class Interpreter:
     __slots__ = (
         "_env",
+        "_native_dispatcher",
         "debugger",
         "globals",
         "host_functions",
@@ -1129,6 +1203,7 @@ class Interpreter:
         phys_mem: bytearray | None = None,
         logger: Logger | None = None,
     ):
+        self._native_dispatcher = _interpreter_native.run_native_dispatch
         self.module = module
         self.logger = logger
         self.memory = bindings.memory
@@ -1184,6 +1259,7 @@ class Interpreter:
             self.host_functions,
             vmmio=vmmio,
             phys_mem=phys_mem,
+            vdma_transfer=bindings.vdma_transfer,
             memory_decl=self.memory_decl,
         )
         if self.module.start_function is not None:
@@ -1208,21 +1284,7 @@ class Interpreter:
         return self._complete_call(call_state)
 
     def _complete_call(self, call_state: InterpreterCall) -> StaticVector[WasmNumber]:
-        """Template hook for alternate execution drivers.
-
-        The public call contract, call-state construction, trap publication, and result
-        validation stay owned by the interpreter.  Tiered execution may override only the
-        driver hook while preserving the exact same call boundary as the base interpreter.
-        """
-        if not call_state.finished:
-            frame = call_state._frame
-            assert frame is not None
-            if not frame.has_nested_calls:
-                results = self._call_without_nested_calls(call_state)
-                if results is not None:
-                    return results
-                assert call_state.trap is not None
-                assert False, call_state.trap.code
+        """Run the Python reference interpreter until the call completes."""
         while not call_state.finished:
             call_state = self._step(call_state, stop_at_boundary=False)
         if call_state.trap is not None:
@@ -1230,83 +1292,12 @@ class Interpreter:
         assert call_state.results is not None
         return call_state.results
 
-    def _call_without_nested_calls(
-        self, call_state: InterpreterCall
-    ) -> StaticVector[WasmNumber] | None:
-        """Run C++ handlers to completion, returning through Python at yield counts."""
-        frame = call_state._frame
-        locals_arr = call_state._locals
-        assert frame is not None and locals_arr is not None
-        ip = call_state._ip
-        code = frame.code
-        code_len = len(code)
-        ctx = call_state.context
-        values = frame.values
-        while True:
-            if ip == RETURN_SENTINEL_IP:
-                break
-            assert 0 <= ip < code_len
-
-            native_status = self.run_native_dispatch(
-                call_state,
-                EMPTY_NATIVE_DISPATCH_SNAPSHOT,
-                FB_CONF_RUNTIME_YIELD_THRESHOLD,
-                0,
-            )
-            native_status = native_status[0]
-            if native_status == 1:
-                ip = RETURN_SENTINEL_IP
-                break
-            if native_status == 2:
-                return None
-            if native_status == NATIVE_DISPATCH_YIELD:
-                ctx.native_context.loop_jump_count = 0
-                ip = call_state._ip
-                continue
-            assert native_status == 0
-            ip = call_state._ip
-            opcode = code[ip]
-            handler = _HANDLERS[opcode]
-            assert handler is not None, f"interpreter: unhandled opcode 0x{opcode:02X}"
-            ctx.bind_handler_state(ip, frame)
-            trap = handler(ctx, values, locals_arr, call_state._tos)
-            if trap is not None:
-                self._abort_call(call_state, trap, ip)
-                return None
-            ip = int(ctx.native_context.ip)
-            if ip >= code_len:
-                ip = RETURN_SENTINEL_IP
-            call_state._ip = ip
-            call_state._tos = values.raw_top() if values else 0
-
-        func_type = self.module.func_type(call_state.func_index)
-        frame.frames.truncate(0)
-        call_state.context.end_call_frame(frame)
-        results: StaticVector[WasmNumber] = StaticVector(capacity=4)
-        if func_type.results:
-            result_type = func_type.results[0]
-            if result_type == I64:
-                result_value = frame.values.pop_i64()
-            elif result_type == F32:
-                result_value = frame.values.pop_f32()
-            elif result_type == F64:
-                result_value = frame.values.pop_f64()
-            else:
-                result_value = frame.values.pop_i32()
-            results.append(result_value)
-        call_state.cont = None
-        call_state.finished = True
-        call_state.results = results
-        return results
-
     def _abort_call(self, call_state: InterpreterCall, trap: Trap, ip: int) -> None:
         """Terminate every active frame and publish a runtime trap outcome.
 
-        `ip` is the trapping instruction's offset within `call_state.func_index`,
-        passed explicitly by the caller rather than read from `call_state._ip`:
-        the `_call_without_nested_calls` fast path advances a local `ip` without
-        writing it back to `call_state` until the frame completes, so
-        `call_state.current_pc()` would report a stale address there.
+        `ip` is passed explicitly so the trap event records the instruction that
+        failed even when dispatch has already moved the resumable call state to a
+        boundary or return sentinel.
         """
         if self.logger is not None:
             # GOTCHA-LOG-04: unified_pc must be captured before frame teardown below;
@@ -1445,9 +1436,107 @@ class Interpreter:
         `.cont`, or `finished == True` with `.results` set once the outermost call
         actually returns.
         """
+        return self._step(call_state, stop_at_boundary=True)
+
+    def step_native(self, call_state: InterpreterCall) -> InterpreterCall:
+        """Advance through C++ dispatch and explicit runtime call boundaries only."""
+        assert self.debugger is None, "native stepping does not support Python debugger hooks"
+        if call_state.finished:
+            return call_state
+        if call_state._ip == RETURN_SENTINEL_IP:
+            return self._finish_native_frame(call_state)
         if self._try_native_step_to_boundary(call_state):
             return call_state
-        return self._step(call_state, stop_at_boundary=True)
+        if call_state.finished:
+            return call_state
+        if call_state._ip == RETURN_SENTINEL_IP:
+            return self._finish_native_frame(call_state)
+
+        frame = call_state._frame
+        locals_arr = call_state._locals
+        assert frame is not None and locals_arr is not None
+        (
+            native_status,
+            _trace_count,
+            _body_count,
+            _dispatcher_trace_transitions,
+            _control_handler_count,
+            _eligible_block_visits,
+            _interpreted_block_count,
+            _visits,
+        ) = self.run_native_dispatch(
+            call_state,
+            EMPTY_NATIVE_DISPATCH_SNAPSHOT,
+            FB_CONF_RUNTIME_YIELD_THRESHOLD,
+            0,
+            native_dispatcher=self._native_dispatcher,
+        )
+
+        if native_status == 0:
+            self.resolve_native_call_boundary(call_state)
+        elif native_status == 1:
+            call_state._ip = RETURN_SENTINEL_IP
+            self._finish_native_frame(call_state)
+        elif native_status == 2:
+            assert call_state.finished and call_state.trap is not None
+        elif native_status == NATIVE_DISPATCH_YIELD:
+            call_state.context.native_context.loop_jump_count = 0
+        else:
+            assert False, f"unexpected C++ interpreter status: {native_status}"
+        return call_state
+
+    def resolve_native_call_boundary(self, call_state: InterpreterCall) -> InterpreterCall:
+        """Resolve a C++ dispatcher exit at CALL/CALL_INDIRECT or fail fast."""
+        frame = call_state._frame
+        locals_arr = call_state._locals
+        ip = call_state._ip
+        assert frame is not None and locals_arr is not None
+        assert 0 <= ip < len(frame.code)
+        opcode = frame.code[ip]
+        assert opcode in (CALL, CALL_INDIRECT), (
+            f"C++ interpreter does not implement opcode 0x{opcode:02X}"
+        )
+        trap = self._enter_or_resolve_call(
+            call_state, opcode, ip, frame, locals_arr, call_state._tos
+        )
+        if trap is not None:
+            self._abort_call(call_state, trap, ip)
+        return call_state
+
+    def _finish_native_frame(self, call_state: InterpreterCall) -> InterpreterCall:
+        """Complete one C++ return boundary and restore its suspended caller."""
+        frame = call_state._frame
+        assert frame is not None and call_state._ip == RETURN_SENTINEL_IP
+        frame.frames.truncate(0)
+        call_state.context.end_call_frame(frame)
+        if not call_state.call_stack:
+            func_type = self.module.func_type(call_state.func_index)
+            results: StaticVector[WasmNumber] = StaticVector(capacity=4)
+            if func_type.results:
+                result_type = func_type.results[0]
+                if result_type == I64:
+                    result_value = frame.values.pop_i64()
+                elif result_type == F32:
+                    result_value = frame.values.pop_f32()
+                elif result_type == F64:
+                    result_value = frame.values.pop_f64()
+                else:
+                    result_value = frame.values.pop_i32()
+                assert result_value is not None
+                results.append(result_value)
+            call_state.cont = None
+            call_state.finished = True
+            call_state.results = results
+            return call_state
+
+        parent_func_index, parent_cont = call_state.call_stack.pop_back()
+        parent_ip, parent_frame, parent_locals, _ = parent_cont
+        call_state.func_index = parent_func_index
+        call_state._ip = parent_ip
+        call_state._frame = parent_frame
+        call_state._locals = parent_locals
+        call_state._tos = parent_frame.values.raw_top() if parent_frame.values else 0
+        return call_state
 
     def step_native_control(self, call_state: InterpreterCall) -> InterpreterCall:
         """Execute one supported structured-control opcode through its C++ handler."""
@@ -1455,22 +1544,26 @@ class Interpreter:
         locals_arr = call_state._locals
         assert frame is not None and locals_arr is not None
         assert call_state._ip != RETURN_SENTINEL_IP
-        if self.debugger is not None:
-            return self._step(call_state, stop_at_boundary=True)
+        assert self.debugger is None, (
+            "native control stepping does not support Python debugger hooks"
+        )
 
         context = call_state.context
-        native_status, native_ip, native_size, native_trap = _interpreter_native.run_control_step(
-            frame.code,
-            context.context_view,
-            frame.values.raw_view,
-            locals_arr._storage.raw_view,
-            context.control_frame_stack.raw_view,
-            len(frame.values),
-            frame.values.capacity,
-            call_state._ip,
-            frame.local_slot_count,
-            frame.control_base,
-        )
+        with _native_linear_memory_scope(context.native_context, frame.env.memory):
+            native_status, native_ip, native_size, native_trap = (
+                _interpreter_native.run_control_step(
+                    frame.code,
+                    context.context_view,
+                    frame.values.raw_view,
+                    locals_arr._storage.raw_view,
+                    context.control_frame_stack.raw_view,
+                    len(frame.values),
+                    frame.values.capacity,
+                    call_state._ip,
+                    frame.local_slot_count,
+                    frame.control_base,
+                )
+            )
 
         if native_status == 3 and native_ip >= len(frame.code):
             native_ip = RETURN_SENTINEL_IP
@@ -1483,12 +1576,11 @@ class Interpreter:
             return call_state
         if native_status == 1:
             call_state._ip = RETURN_SENTINEL_IP
-            return self._step(call_state, stop_at_boundary=True)
+            return self._finish_native_frame(call_state)
         if native_status == 2:
             self._abort_call(call_state, Trap(TrapCode(native_trap)), native_ip)
             return call_state
-        assert native_status == 0, f"unexpected native control status: {native_status}"
-        return self._step(call_state, stop_at_boundary=True)
+        assert False, f"C++ control handler does not implement opcode at 0x{native_ip:04X}"
 
     def run_native_dispatch(
         self,
@@ -1496,60 +1588,49 @@ class Interpreter:
         snapshot: NativeDispatchSnapshot,
         yield_threshold: int,
         execution_count: int,
-        collect_stats: bool = False,
-        collect_hotspots: bool = False,
+        native_dispatcher: NativeDispatchEntryPoint,
     ) -> tuple[int, int, int, int, int, int, int, tuple[NativeBlockVisit, ...]]:
         """Run native traces and C++ handlers over Python-owned ctypes buffers."""
-
-        assert not collect_stats or NATIVE_RUNTIME_PROFILE_STATS_ENABLED, (
-            "runtime profile stats were compiled out; rebuild with "
-            "FB_CONF_RUNTIME_PROFILE_STATS=True"
-        )
-        assert not collect_hotspots or NATIVE_JIT_HOTSPOT_PROFILING_ENABLED, (
-            "JIT hotspot profiling was compiled out; rebuild with "
-            "FB_CONF_JIT_HOTSPOT_PROFILING=True"
-        )
         frame = call_state._frame
         locals_arr = call_state._locals
         assert frame is not None and locals_arr is not None
         assert call_state._ip != RETURN_SENTINEL_IP
         assert yield_threshold > 0
         context = call_state.context
-        (
-            native_status,
-            native_ip,
-            native_size,
-            native_trap,
-            trace_count,
-            body_count,
-            dispatcher_trace_transitions,
-            control_handler_count,
-            eligible_block_visits,
-            interpreted_block_count,
-            visits,
-        ) = _interpreter_native.run_native_dispatch(
-            frame.code,
-            context.context_view,
-            frame.values.raw_view,
-            locals_arr._storage.raw_view,
-            context.control_frame_stack.raw_view,
-            snapshot.entries,
-            snapshot.trackable_blocks,
-            snapshot.observed_visit_counts,
-            snapshot.entry_count,
-            snapshot.trackable_count,
-            len(frame.values),
-            frame.values.capacity,
-            call_state._ip,
-            frame.frame_offset,
-            frame.local_slot_count,
-            frame.control_base,
-            call_state.func_index,
-            yield_threshold,
-            execution_count,
-            collect_stats,
-            collect_hotspots,
-        )
+        with _native_linear_memory_scope(context.native_context, frame.env.memory):
+            (
+                native_status,
+                native_ip,
+                native_size,
+                native_trap,
+                trace_count,
+                body_count,
+                dispatcher_trace_transitions,
+                control_handler_count,
+                eligible_block_visits,
+                interpreted_block_count,
+                visits,
+            ) = native_dispatcher(
+                frame.code,
+                context.context_view,
+                frame.values.raw_view,
+                locals_arr._storage.raw_view,
+                context.control_frame_stack.raw_view,
+                snapshot.entries,
+                snapshot.trackable_blocks,
+                snapshot.block_history,
+                snapshot.entry_count,
+                snapshot.trackable_count,
+                len(frame.values),
+                frame.values.capacity,
+                call_state._ip,
+                frame.frame_offset,
+                frame.local_slot_count,
+                frame.control_base,
+                call_state.func_index,
+                yield_threshold,
+                execution_count,
+            )
         frame.values.set_size(native_size)
         context.native_context.ip = native_ip
         call_state._ip = RETURN_SENTINEL_IP if native_status == 1 else native_ip
@@ -1588,18 +1669,19 @@ class Interpreter:
             previous_flags | EXECUTION_CONTEXT_FLAG_STOP_AT_BLOCK_BOUNDARY
         )
         try:
-            native_status, native_ip, native_size, native_trap = _interpreter_native.run_step(
-                frame.code,
-                context.context_view,
-                frame.values.raw_view,
-                locals_arr._storage.raw_view,
-                context.control_frame_stack.raw_view,
-                len(frame.values),
-                frame.values.capacity,
-                call_state._ip,
-                frame.local_slot_count,
-                frame.control_base,
-            )
+            with _native_linear_memory_scope(context.native_context, frame.env.memory):
+                native_status, native_ip, native_size, native_trap = _interpreter_native.run_step(
+                    frame.code,
+                    context.context_view,
+                    frame.values.raw_view,
+                    locals_arr._storage.raw_view,
+                    context.control_frame_stack.raw_view,
+                    len(frame.values),
+                    frame.values.capacity,
+                    call_state._ip,
+                    frame.local_slot_count,
+                    frame.control_base,
+                )
         finally:
             context.native_context.runtime_flags = previous_flags
 
@@ -1822,6 +1904,23 @@ class Interpreter:
         return None
 
 
+class NativeInterpreter(Interpreter):
+    """Strict C++ interpreter; only explicit CALL boundaries return to Python."""
+
+    __slots__ = ()
+
+    def _complete_call(self, call_state: InterpreterCall) -> StaticVector[WasmNumber]:
+        while not call_state.finished:
+            self.step_native(call_state)
+        if call_state.trap is not None:
+            assert False, call_state.trap.code
+        assert call_state.results is not None
+        return call_state.results
+
+    def step(self, call_state: InterpreterCall) -> InterpreterCall:
+        return self.step_native(call_state)
+
+
 # Per-opcode logical CPS handlers. Each receives the native CPS arguments and
 # returns the exact arguments for the next handler, plus an optional trap.
 # ---------------------------------------------------------------------------
@@ -1987,11 +2086,10 @@ def _h_return(
     return None
 
 
-# CALL and CALL_INDIRECT are not in `_HANDLERS`: entering or returning from a
-# nested WASM call is always a mandatory `step()` boundary (see
-# `InterpreterCall.call_stack`), so `Interpreter.step()` intercepts both
-# opcodes itself, before the generic dispatch table lookup, via
-# `_enter_or_resolve_call()`.
+# CALL and CALL_INDIRECT are not in `_HANDLERS`. Python `Interpreter.step()`
+# handles them before its table lookup. `NativeInterpreter.step_native()` and
+# `RuntimeEngine` resolve the C++ dispatch boundary through the same call
+# resolver; no guest opcode is sent to the Python handler table.
 
 
 @_handler(DROP)
@@ -3411,6 +3509,144 @@ def _truncate_float(value: float, bits: int, signed: bool) -> int | None:
     if (value < lower if signed else value <= lower) or value >= upper:
         return None
     return int(value)
+
+
+def _truncate_saturating_float(value: float, bits: int, signed: bool) -> int:
+    """Convert with WASM trunc_sat semantics, including NaN and infinities."""
+    if math.isnan(value):
+        return 0
+    if signed:
+        lower = -(1 << (bits - 1))
+        upper = 1 << (bits - 1)
+        if value <= lower:
+            return lower
+        if value >= upper:
+            return upper - 1
+    else:
+        upper = 1 << bits
+        if value <= 0.0:
+            return 0
+        if value >= upper:
+            return upper - 1
+    return math.trunc(value)
+
+
+def _memory_range_is_valid(memory_size: int, offset: int, length: int) -> bool:
+    """Check one wasm32 memory range without overflowing offset + length."""
+    return offset <= memory_size and length <= memory_size - offset
+
+
+def _linear_memory_address(address: int) -> bool:
+    """Return whether the guest address belongs to the linear RAM window."""
+    return (address & 0x8000_0000) == 0
+
+
+def _guest_address_range_is_valid(address: int, length: int) -> bool:
+    """Check that a guest virtual-address range does not wrap the wasm32 space."""
+    return length <= (1 << 32) - address
+
+
+def _vdma_address_is_supported(address: int) -> bool:
+    """Accept guest RAM or one of the three vMMIO memory mapping classes."""
+    if _linear_memory_address(address):
+        return True
+    function_code = address >> 28
+    return function_code in (FC_DYNAMIC, FC_SHM, FC_PASSTHROUGH)
+
+
+@_handler(FC_PREFIX)
+def _h_fc_prefix(
+    ctx: InterpreterContext, sp: NativeValueStack, local_base: _LocalStackWindow, tos: int
+) -> _HandlerResult:
+    ip, frame, env = _handler_state(ctx, sp)
+    subopcode, next_ip = decode_unsigned(frame.code, ip + 1)
+
+    if FC_I32_TRUNC_SAT_F32_S <= subopcode <= FC_I32_TRUNC_SAT_F64_U:
+        source_is_f32 = subopcode in (0, 1)
+        value = frame.values.pop_f32() if source_is_f32 else frame.values.pop_f64()
+        converted = _truncate_saturating_float(value, 32, subopcode % 2 == 0)
+        assert frame.values.push_i32(converted)
+        ctx.native_context.ip = next_ip
+        return None
+
+    if FC_I64_TRUNC_SAT_F32_S <= subopcode <= FC_I64_TRUNC_SAT_F64_U:
+        source_is_f32 = subopcode in (4, 5)
+        value = frame.values.pop_f32() if source_is_f32 else frame.values.pop_f64()
+        converted = _truncate_saturating_float(value, 64, subopcode % 2 == 0)
+        assert frame.values.push_i64(converted)
+        ctx.native_context.ip = next_ip
+        return None
+
+    assert env is not None
+    memory = env.memory
+    if memory is None:
+        return Trap(TrapCode.MEMORY_SECTION_MISSING)
+
+    if subopcode == FC_MEMORY_COPY:
+        destination_memory, next_ip = decode_unsigned(frame.code, next_ip)
+        source_memory, next_ip = decode_unsigned(frame.code, next_ip)
+        assert destination_memory == 0 and source_memory == 0
+        stack_size = len(frame.values)
+        assert stack_size >= 3, "memory.copy requires three i32 operands"
+        destination = frame.values.raw_at(stack_size - 3)
+        source = frame.values.raw_at(stack_size - 2)
+        length = frame.values.raw_at(stack_size - 1)
+        memory_size = len(memory)
+        destination_is_linear = _linear_memory_address(destination)
+        source_is_linear = _linear_memory_address(source)
+        if destination_is_linear and not _memory_range_is_valid(memory_size, destination, length):
+            return Trap(TrapCode.MEMORY_OUT_OF_BOUNDS, destination)
+        if source_is_linear and not _memory_range_is_valid(memory_size, source, length):
+            return Trap(TrapCode.MEMORY_OUT_OF_BOUNDS, source)
+        if not destination_is_linear and (
+            not _vdma_address_is_supported(destination)
+            or not _guest_address_range_is_valid(destination, length)
+        ):
+            return Trap(TrapCode.VMMIO_ACCESS, destination)
+        if not source_is_linear and (
+            not _vdma_address_is_supported(source)
+            or not _guest_address_range_is_valid(source, length)
+        ):
+            return Trap(TrapCode.VMMIO_ACCESS, source)
+
+        if not destination_is_linear or not source_is_linear:
+            if env.vdma_transfer is None:
+                return Trap(TrapCode.VMMIO_NOT_CONFIGURED)
+            transfer_status = env.vdma_transfer(source, destination, length)
+            if transfer_status != 0:
+                return Trap(TrapCode.VMMIO_ACCESS, transfer_status)
+        else:
+            overlaps = (destination <= source and source - destination < length) or (
+                source < destination and destination - source < length
+            )
+            if destination > source and overlaps:
+                index = length
+                while index > 0:
+                    index -= 1
+                    memory[destination + index] = memory[source + index]
+            else:
+                for index in range(length):
+                    memory[destination + index] = memory[source + index]
+        frame.values.truncate(stack_size - 3)
+        ctx.native_context.ip = next_ip
+        return None
+
+    assert subopcode == FC_MEMORY_FILL
+    memory_index, next_ip = decode_unsigned(frame.code, next_ip)
+    assert memory_index == 0
+    stack_size = len(frame.values)
+    assert stack_size >= 3, "memory.fill requires three i32 operands"
+    destination = frame.values.raw_at(stack_size - 3)
+    value = frame.values.raw_at(stack_size - 2) & 0xFF
+    length = frame.values.raw_at(stack_size - 1)
+    memory_size = len(memory)
+    if not _memory_range_is_valid(memory_size, destination, length):
+        return Trap(TrapCode.MEMORY_OUT_OF_BOUNDS, destination)
+    for index in range(length):
+        memory[destination + index] = value
+    frame.values.truncate(stack_size - 3)
+    ctx.native_context.ip = next_ip
+    return None
 
 
 @_handler(I32_TRUNC_F32_S)

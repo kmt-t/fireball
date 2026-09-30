@@ -3,9 +3,7 @@
 ## 1. 目的と対象範囲
 
 正本: [`runtime_vsoc.md`](docs/components/tier2_runtime/runtime_vsoc.md)
-参考実装: [`runtime_engine.py`](experiments/pysim/tier3_executer/jit/runtime_engine.py) および [`test_vsoc.py`](experiments/pysim/qa/tier2_runtime/test_vsoc.py)。本書はvSoC固有の統合責務——ハーネスによる静的DI、割り込み/デバッガ協調、マルチモジュールリンク——に焦点を当てる。
-
-Loader/Interpreter/JIT/vMMIO/Debuggerを統合する`vsoc_harness`（静的DI）、C++ native dispatchのyield境界、JITキャッシュ協調モデル、マルチモジュール動的リンクを検証する。
+本書はvSoCの統合責務、割り込みとデバッガの協調、およびマルチモジュールリンクを対象とする。
 
 ## 2. テストケース一覧
 
@@ -23,9 +21,9 @@ Loader/Interpreter/JIT/vMMIO/Debuggerを統合する`vsoc_harness`（静的DI）
 
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| TEST-VSOC-10 | C++ dispatchのLOOP後方分岐は有限回数で協調境界へ戻る | 同一フレームLOOP後方分岐と有限の`FB_CONF_RUNTIME_YIELD_THRESHOLD` | C++ branch handler回数、後続trace実行、yield境界を検証する | 各取得済み後方分岐でC++ Interpreter handlerが制御状態を更新する。しきい値到達まではC++ dispatcherが実行を続け、到達後にRuntimeEngineがyield要求を返す。C++ Interpreter単独経路も同じ条件を使う | pysim `test_jitr_loop_backedge_stays_in_cpp_until_coos_yield` |
+| TEST-VSOC-10 | LOOP後方分岐は有限回数で協調境界へ戻る | 同一フレームLOOP後方分岐と有限の`FB_CONF_RUNTIME_YIELD_THRESHOLD` | しきい値前後の分岐回数とyield境界を確認する | 各取得済み後方分岐で実行状態を更新する。しきい値到達までは命令実行を続け、到達後にRuntimeEngineがyield要求を返す。Interpreter単独実行とHybrid JITで同じ条件を使う | `{ADR_LoopBackedgeYield}`, `runtime_vsoc.md` |
 | TEST-VSOC-11 | 保留interrupt-eventの構成 | - | 保留イベント構造を確認 | `vector_id`、`source_id`、`cause_code`、`payload0`、`payload1`の固定5ワードで保持される | `{GLOBAL_InterruptWakeup}` |
-| TEST-VSOC-13 | IRQ/JITレース不在 | JIT実行中に割り込みイベントが待機 | 形式検証プロパティを確認 | JITネイティブ実行中は割り込みハンドラを開始せず、COOS協調境界から配送する(`AG(Not(handling_irq & jit_mode))`) | irq_jit_race_freedom_proof |
+| TEST-VSOC-13 | IRQ/JITレース不在 | JIT実行中に割り込みイベントが待機 | 形式検証プロパティを確認 | JITコード実行中は割り込みハンドラを開始せず、COOS協調境界から配送する(`AG(Not(handling_irq & jit_mode))`) | `irq_jit_race_freedom_proof` |
 | TEST-VSOC-14 | 抽象モデル上のflush完了性 | dirty状態になったキャッシュ | 形式検証プロパティを確認 | `AG(dirty -> AF(flushed))`（抽象遷移モデルでdirty状態からflush完了状態へ到達する。実時間の期限は対象外） | [`vsoc_cache_coherency_model.py`](docs/components/tier2_runtime/formal/vsoc_cache_coherency_model.py) `dirty_cache_eventually_flushes` |
 | TEST-VSOC-15 | 世代の逆行不在 | 3面ローテーション | 各バンクのgeneration cookieを確認 | 全バンク一括更新され、逆行・不一致が生じない | [`vsoc_cache_coherency_model.py`](docs/components/tier2_runtime/formal/vsoc_cache_coherency_model.py) `generation_monotonicity_across_banks` |
 | TEST-VSOC-16 | Purgeと回収の不可分性 | ローテーション時 | Oldestバンクのpurge処理を確認 | Purgeとエントリ表スロット回収が同一トランザクションで行われ、未回収スロットが蓄積しない | [`vsoc_cache_coherency_model.py`](docs/components/tier2_runtime/formal/vsoc_cache_coherency_model.py) `bounded_cache_rotation_memory` |
@@ -88,9 +86,9 @@ Loader/Interpreter/JIT/vMMIO/Debuggerを統合する`vsoc_harness`（静的DI）
 
 | GOTCHA ID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| GOTCHA-VSOC-01 | C++ Interpreter handler後のdispatch | C++ handlerが分岐後のPCを確定した状態 | native dispatchの制御遷移を確認する | C++ dispatcherが同一native dispatch内で次PCのtraceまたはhandlerを実行し、Python/vSoCへ命令ごとに戻らない。このhandler-mediated遷移をchainと呼ばない | `{JIT_BackedgeYield}`, `test_native_interpreter_returns_to_python_at_loop_yield_counts` |
-| GOTCHA-VSOC-02 | 共通LOOP後方分岐yield条件 | C++ Interpreter単独またはHybrid JIT経路 | branch回数とdispatch statusを確認する | 共通contextのLOOP後方分岐数が共通しきい値に達した時だけC++ dispatcherがyield statusを返す。両経路の復帰条件は一致する | - |
-| GOTCHA-VSOC-03 | `execution_context` 内包レイアウトと委譲シグネチャ | WASM スタック初期化 | コンテキストオフセットを確認 | `vsoc_runtime`（`mem_base` `+0x28`, `mem_size` `+0x2C`, `globals_base` `+0x30`, `globals_limit` `+0x34`）は独立構造体ではなく `execution_context` の内部に配置され、x86-64 Tier 2 ABIはLOOPカウンタとしきい値を含む128バイトである。`exec_trace` 呼び出し時は `(ctx, sp, local_base, tos)` の4引数で委譲される。**実装の勘所**: コンテキスト外にポインタを分散させると、レジスタ圧迫とキャッシュミスが増加する | `ExecutionContext_Layout`, `EnvironmentPointer`, `VsocRuntime_Layout` |
+| GOTCHA-VSOC-01 | 命令handler後のディスパッチ | handlerが分岐後のPCを確定した状態 | ディスパッチの制御遷移を確認する | ディスパッチャは同じ実行区間内で次PCのtraceまたはhandlerを実行し、命令ごとにはRuntimeEngineへ戻らない | `{JIT_BackedgeYield}`, `runtime_vsoc.md` |
+| GOTCHA-VSOC-02 | 共通LOOP後方分岐yield条件 | Interpreter単独またはHybrid JIT経路 | 分岐回数と実行状態を確認する | 共通コンテキストのLOOP後方分岐数が共通しきい値に達した時だけRuntimeEngineへyield状態を返す。両経路の復帰条件は一致する | `{ADR_LoopBackedgeYield}` |
+| GOTCHA-VSOC-03 | `execution_context` 内包レイアウトと委譲シグネチャ | WASMスタック初期化 | コンテキストオフセットを確認する | `vsoc_runtime`（`mem_base` `+0x28`, `mem_size` `+0x2C`, `globals_base` `+0x30`, `globals_limit` `+0x34`）は独立構造体ではなく `execution_context` の内部に配置される。x86-64 Tier 2 ABIは128バイトであり、`exec_trace` は `(ctx, sp, local_base, tos)` の4引数で呼び出す | `{ExecutionContext_Layout}`, `{EnvironmentPointer}`, `{VsocRuntime_Layout}` |
 
 ## 3. テスト検証実績と網羅状況
 

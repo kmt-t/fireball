@@ -1,13 +1,15 @@
 # JIT ランタイム管理 コンポーネント設計書 {VERIFY_FORMAL} {VERIFY_LLM} {VERIFY_BENCHMARK}
 <!-- evidence:
      formal: formal/jit_cache_model.py
-     benchmark: experiments/pysim/benchmarks/jit/bench_fast_cache.py
+     benchmark_spec: benchmarks/jit_runtime_bench_spec.md
+     benchmark: ../../../experiments/pysim/benchmarks/jit/bench_jit.py
+     benchmark_record: ../../../experiments/pysim/benchmarks/BENCHMARK_REPORT.md
      test: docs/qa/tier3_executer/jit_runtime_test_spec.md
 -->
 
 ## 1. コンセプト
-<!-- traceability: {SimpleJITArchitecture} {JIT_MultiBuffer_Cache} {JIT_OldestOnly_Promote} {META_AccessDictionary} {META_BinarySearch} {LowLatencyJIT} {LowOverhead} {HistoryBuffer} {GLOBAL_PeriodicTask} {DirectMappedJIT16} {Runtime_BumpAllocator} -->
-JIT ランタイム管理は、WASM PC とネイティブコードの紐付け検索を担当する。3面世代交代コードキャッシュのローテーションも担当する。ホットスポット検出も一括して担う。
+<!-- traceability: {SimpleJITArchitecture} {JIT_MultiBuffer_Cache} {JIT_OldestOnly_Promote} {META_AccessDictionary} {META_BinarySearch} {LowLatencyJIT} {LowOverhead} {HistoryBuffer} {RuntimeHotspotProfiler} {GLOBAL_PeriodicTask} {DirectMappedJIT16} {Runtime_BumpAllocator} -->
+JIT ランタイム管理は、WASM PC とネイティブコードの紐付け検索、3面世代交代コードキャッシュのローテーション、およびカード状態に基づくコンパイル要求を担当する。ホットスポット履歴の記録と分析境界は Tier 2 [`runtime_hotspot_profiler.md`](docs/components/tier2_runtime/runtime_hotspot_profiler.md) の契約に従い、Runtime Event Sink とは独立する。
 
 実行入口は Tier 3 `Interpreter` のテンプレートメソッド契約と共有する。`JITInterpreter` は `Interpreter.call()` の呼出状態・完了・トラップ・結果検証を継承し、実行ドライバだけを `RuntimeEngine` のJIT／Interpreter統合経路へ差し替える。これにより、Interpreter と JIT の実行経路は同じ公開 `call()` 境界で比較できる。
 
@@ -23,17 +25,17 @@ JIT ランタイム管理は、WASM PC とネイティブコードの紐付け�
 <!-- traceability: {JIT_CopyAndPatch} {JIT_Encoder} {SimpleJITArchitecture} -->
 JITサブシステムは、以下の2つの独立した設計書に責務を分離して構成される。
 - **[jit_compiler.md](docs/components/tier3_executer/jit_compiler.md)**: 命令テンプレートを用いたネイティブコード生成および静的命令エンコードを担当する。
-- **[jit_runtime.md](docs/components/tier3_executer/jit_runtime.md)**: 実行履歴監視、ホットスポット判定、PC-アドレス変換検索、3面キャッシュローテーションを担当する。 `SimpleJITArchitecture` `{JIT_MultiBuffer_Cache}`
+- **[jit_runtime.md](docs/components/tier3_executer/jit_runtime.md)**: Tier 2 Runtime Hotspot Profilerから受け取った実行履歴に基づくカード更新・コンパイル要求、PC-アドレス変換検索、3面キャッシュローテーションを担当する。 `SimpleJITArchitecture` `{JIT_MultiBuffer_Cache}`
 
 ### 2.2 実装責務と依存方向
 <!-- traceability: {META_ContractImplSplit} {META_StaticDI} {META_3TierSeparation} -->
-Tier 3 の `RuntimeEngine` は Tier 2 の JIT runtime API を介して、モジュール登録、基本ブロック解決、ホットスポット記録、yield処理、トレース検索、chain解決、およびキャッシュ無効化を呼び出す。APIはカード表、履歴リング、コンパイル待ち列、キャッシュバンク、直接マップ索引の内部表現を公開しない。
+Tier 3 の `RuntimeEngine` は Tier 2 の JIT runtime API を介して、モジュール登録、基本ブロック解決、Interpreter実行区間終了時の履歴分析、yield処理、トレース検索、chain解決、およびキャッシュ無効化を呼び出す。APIはカード表、履歴リング、コンパイル待ち列、キャッシュバンク、直接マップ索引の内部表現を公開しない。
 
 Tier 3 の実装は次の責務に分ける。
 
 | 実装 | 所有する責務 | 依存先 |
 | :--- | :--- | :--- |
-| JIT runtime manager | ホットスポットカード、候補マスク、履歴リング、関数更新表、コンパイル待ち列、ブロック索引、コンパイル起動、トレース検索、chain解決 | Tier 2 JIT runtime API、Loaderのモジュール・基本ブロック情報 |
+| JIT runtime manager | ホットスポットカード、候補マスク、Tier 2契約が所有する履歴領域、関数更新表、コンパイル待ち列、ブロック索引、コンパイル起動、トレース検索、chain解決 | Tier 2 JIT runtime API、Loaderのモジュール・基本ブロック情報 |
 | Trace cache | 3面コードキャッシュ、バンク回転、Oldest昇格、局所アンリンク、エントリ索引 | JIT runtime managerからの所有・通知 |
 | Native trace compiler | トレースのコード生成とコンパイラ実装 | JIT compiler契約、JIT ABI |
 | RuntimeEngine | Interpreter/JITの実行境界、vIRQ、実行統計、トレース継続 | Tier 2 JIT runtime API、Tier 3 Interpreter |
@@ -67,7 +69,7 @@ Tier 3内部の依存は `JITInterpreter` → `RuntimeEngine` → `Interpreter` 
   - コードを持たない関数（import 関数）のビットは立たない。
 - **エイジングカーソル**: 関数更新表のバイト位置を保持する整数である。モジュール登録時に 0 で初期化し、表の末尾に達したら先頭へ戻る。
 - **JITエントリ表**: 各バンクの `head_pc` 順に並ぶ固定容量配列である。検索は二分探索（$O(\log n)$）とし、削除済み枠は無効項目として扱う。エントリが少ないためRadix索引を設けない。
-- **x64参照コード領域 (8KB)**: シミュレータ構成では4KBページ2枚分の領域を使う。先頭2KBは開始処理、終了処理、x64ヘルパー呼出しコード、chain dispatcher、および絶対アドレスプールを置く非エビクション領域とし、残る2KBずつを`Bank 0 (Active)`, `Bank 1 (Warm)`, `Bank 2 (Oldest)`に割り当てる。x64トレースヘッダはtrace identityとchain/helper targetだけを保持する。共通コード領域はflushやバンクローテーションでも維持する。ARMv8-Mの領域容量、物理配置、保護方式、ヘッダ形式はすべてTBDである。
+- **x64参照コード領域 (8KB)**: x64参照構成では4KBページ2枚分の領域を使う。先頭2KBは開始処理、終了処理、x64ヘルパー呼出しコード、chain dispatcher、および絶対アドレスプールを置く非エビクション領域とし、残る2KBずつを`Bank 0 (Active)`, `Bank 1 (Warm)`, `Bank 2 (Oldest)`に割り当てる。x64トレースヘッダはtrace identityとchain/helper targetだけを保持する。共通コード領域はflushやバンクローテーションでも維持する。ARMv8-Mの領域容量、物理配置、保護方式、ヘッダ形式はすべてTBDである。
   x64参照共通領域内の固定オフセットは次のとおりである。オフセットはコード領域先頭からの値であり、トレースヘッダのフィールド位置とは別の値である。
 
   | 共通領域オフセット | 配置物 | 容量・用途 |
@@ -84,7 +86,7 @@ Tier 3内部の依存は `JITInterpreter` → `RuntimeEngine` → `Interpreter` 
 - **オンデマンドコンパイルキュー (On-demand Compile Queue)**: `HOT` に達した命令オフセットを保持する固定容量 LIFO キューである。容量到達時にバッチコンパイルが即座に実行される。固定容量を上回ることはない。 `JIT_ReverseCompilationOrder` `{GLOBAL_Policy_Memory}`
 - **バンク別被チェイン逆引きテーブル (Inbound Chain Index Table)**: 各キャッシュバンクへ向けたchain元のJITエントリを保持する固定長配列である。cache回転・promote時に共通chain dispatcherが参照するtarget addressを更新または解除する。
 - **前方chainメタデータ**: 実行時cache metadataの`chain_next` / `next_pc`は直線後続traceの論理PCを保持する。x64物理ヘッダの`chain_target_addr`は共通chain dispatcherがtail-jumpするresident target bodyを保持する。後方branch linkは作らず、branch handlerへ制御を戻す。
-- **実行履歴バッファ**: 短期間の実行履歴を一時的に保持するリングバッファである。 `{HistoryBuffer}`
+- **実行履歴バッファ**: Tier 2 Runtime Hotspot Profiler契約のもと、Runtimeと同じ寿命で保持される固定容量リングである。各レコードは`module_id`と`UnifiedPC`を持ち、Interpreter実行区間の終了時に順序どおり分析される。JIT trace/chainだけを実行した区間では記録も分析もしない。 `{HistoryBuffer}`
 
 ### 3.2 内部ブロック図
 ```mermaid
@@ -108,7 +110,7 @@ flowchart TD
 | カードマーキング表 | カードごとの 2-bit 状態表 | 密ビュー | `fireball::bit_view<2>` |
 | 関数更新表 | 前回の巡回以降に `EXECUTED` のカードが生じた関数の印 | 密ビュー | `fireball::bit_view<1>`、関数数ビット |
 | 被チェイン逆引きテーブル | バンクごとの被チェイン元 JIT エントリインデックス配列 | 固定長配列の配列 | `FB_CONF_JIT_MAX_INBOUND_CHAINS_PER_BANK` |
-| 履歴バッファ | 判定契機までの一時的な実行記録 | リングバッファ | `offset` の配列 `{HistoryBuffer}` |
+| 履歴バッファ | Interpreterが記録した基本ブロック履歴 | 固定容量リング | `(module_id, unified_pc)` の8バイトレコード。Runtimeと同じ寿命 `{HistoryBuffer}` |
 
 ## 4. 動的モデル
 
@@ -125,7 +127,7 @@ flowchart TD
    - ヒットした場合はネイティブコードアドレス（`exec_trace`）を返す。
    - 次回用として高速スロットへ格納する。
 5. **ホットスポット昇格判定**:
-   - yield 時等に履歴バッファを走査する。
+   - Interpreterがyield、fallback、trap、関数完了でRuntime実行境界へ戻るとき、未分析履歴を一度だけ走査する。履歴の順序を保ってカードを更新し、処理した範囲を消費する。JIT trace/chainだけの実行区間では走査しない。
    - 実行頻度が閾値に達したカードを`HOT`のままコンパイル待ち列へ登録する。コンパイルとcache挿入の両方が成功した場合にのみ`COMPILED`へ遷移する。
    - コンパイル失敗時は対象bitを解除し、そのブロックを再履歴・再コンパイル対象にしない。cache evictionまたは明示flushでは、対象bitを維持したままカードを`UNEXECUTED`へ戻し、次の閾値までhotnessを再計測する。
 6. **最小トレース長フィルタ**:
@@ -282,7 +284,7 @@ JIT trace終端の制御命令はC++ Interpreterの対応ハンドラで実行�
 
 trace chainは直線後続traceが常駐する場合に限り、trace末尾から共通コード領域のchain dispatcherへ移り、dispatcherがTraceヘッダのtarget bodyへtail-jumpする経路を指す。未接続のtargetは0で表し、共通epilogueから実行境界へ戻る。opcode別handlerの呼出しや、C++ handler後にC++ dispatcherが別traceを選ぶ遷移はchainではない。chain dispatcherは命令を判定せず、分岐helperも持たない。
 
-常駐trace表とホットスポット候補PC表は、キャッシュ世代または候補マスク世代が変わったときだけ構築する。通常経路ではC++ dispatcherがこのsnapshotをlookupし、制御handler実行後もしきい値到達まではC++内で次のtraceまたはhandlerを選ぶ。`FB_CONF_RUNTIME_PROFILE_STATS`は既定で無効であり、OFF構成では診断カウンタ処理をC++拡張へ生成しない。`FB_CONF_JIT_HOTSPOT_PROFILING`は未コンパイル領域の動的ホットネス観測を選び、既定値は有効である。OFF構成では観測処理を生成せず、常駐traceのlookupとC++ handlerによる遷移だけを行う。どちらの値を変更した場合もC++拡張を再ビルドする。
+常駐trace表とホットスポット候補PC表は、キャッシュ世代または候補マスク世代が変わったときだけ構築する。通常経路ではC++ dispatcherがこのsnapshotをlookupし、制御handler実行後もしきい値到達まではC++内で次のtraceまたはhandlerを選ぶ。Interpreterは適格な基本ブロックPCを独立したHotspotHistoryへ記録し、実行区間の終了時にRuntime Hotspot Profilerが履歴順にカードを更新する。Runtime Event Sinkはこの履歴を受け取らない。診断カウンタとホットスポット履歴はRuntimeComposerが選んだ具象型で独立に有効・無効を決める。無効なRuntimeインスタンスには対応する収集状態と処理を含めず、設定違いのRuntimeを同じプログラムで共存させられる。
 
 常駐trace descriptor、候補PC、および観測回数は固定容量の実行時テーブルとして管理する。C++ dispatcherは有効要素数を受け取り、テーブルを直接参照して観測回数を更新する。テーブルはcache世代または候補mask世代が変化したときに再構築し、dispatcherの呼び出しごとに最大容量分をスタック上へ複製しない。テーブルの具体的な所有型はこの契約で規定しない。
 

@@ -191,6 +191,20 @@ I64_REINTERPRET_F64 = 0xBD
 F32_REINTERPRET_I32 = 0xBE
 F64_REINTERPRET_I64 = 0xBF
 
+# Selected 0xFC prefixed instructions. These values are unsigned LEB128
+# subopcodes and are never dispatched as standalone byte opcodes.
+FC_PREFIX = 0xFC
+FC_I32_TRUNC_SAT_F32_S = 0x00
+FC_I32_TRUNC_SAT_F32_U = 0x01
+FC_I32_TRUNC_SAT_F64_S = 0x02
+FC_I32_TRUNC_SAT_F64_U = 0x03
+FC_I64_TRUNC_SAT_F32_S = 0x04
+FC_I64_TRUNC_SAT_F32_U = 0x05
+FC_I64_TRUNC_SAT_F64_S = 0x06
+FC_I64_TRUNC_SAT_F64_U = 0x07
+FC_MEMORY_COPY = 0x0A
+FC_MEMORY_FILL = 0x0B
+
 # blocktype byte used by block/loop/if when there is no result value.  The
 # control-flow scanner also accepts the four single-result value types; type
 # indices and multi-value block signatures remain unsupported here.

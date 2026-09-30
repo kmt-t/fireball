@@ -5,9 +5,9 @@ from __future__ import annotations
 from system_containers import StaticVector
 from tier2_runtime.logger import Logger
 from tier3_executer.interpreter.interpreter import (
-    Interpreter,
     InterpreterBindings,
     InterpreterCall,
+    NativeInterpreter,
     WasmNumber,
 )
 from tier3_executer.jit.runtime_engine import RuntimeEngine
@@ -19,7 +19,7 @@ from .jit_manager import JITCompiler, JITRuntimeManager
 __all__ = ("JITCompiler", "JITInterpreter", "JITRuntimeManager")
 
 
-class JITInterpreter(Interpreter):
+class JITInterpreter(NativeInterpreter):
     """Interpreter の共通 ``call`` 境界だけを継承し、実行ドライバをJITへ差し替える。"""
 
     __slots__ = ("idle_budget", "runtime_engine")

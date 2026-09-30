@@ -50,6 +50,11 @@ class WASMContext:
         # structure, not a Python object graph.
         self._c_context = ExecutionContextNative()
         self._c_context.sp_capacity = self.stack.capacity
+        if self._c_mem is not None:
+            assert memory is not None
+            self._c_context.linear_memory_host_base = ctypes.addressof(self._c_mem)
+            self._c_context.linear_memory_size = len(memory)
+            self._c_context.mem_size = min(len(memory), 0xFFFF_FFFF)
         assert ctypes.sizeof(self._c_context) == JIT_CONTEXT_SIZE_BYTES
         self._cached_locals_view = self._LocalsView(self)
 

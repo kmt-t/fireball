@@ -10,13 +10,18 @@ from typing import Generic, Protocol, TypeVar
 
 from recovery import Result
 from runtime_events import (
+    RUNTIME_EVENT_ABI_MAJOR,
     RUNTIME_EVENT_NO_MODULE,
     RUNTIME_EVENT_NO_PC,
     RuntimeEvent,
+    RuntimeEventAdapter,
+    RuntimeEventExportStatus,
     RuntimeEventFlags,
     RuntimeEventKind,
+    RuntimeEventSink,
     RuntimeExecutionError,
     RuntimeObserver,
+    dispatch_runtime_event_batch,
 )
 from system_containers import StaticVector
 
@@ -92,7 +97,16 @@ class RuntimeWithoutPlugins(Generic[ResultT, ArgumentT]):
 class RuntimeWithPlugins(Generic[ResultT, ArgumentT]):
     """有効なプラグインだけを固定ベクタへ結線した合成結果。"""
 
-    __slots__ = ("call_id", "executor", "observers", "runtime_id", "tick", "tick_clock")
+    __slots__ = (
+        "call_id",
+        "event_sink",
+        "executor",
+        "is_jit",
+        "observers",
+        "runtime_id",
+        "tick",
+        "tick_clock",
+    )
 
     def __init__(
         self,
@@ -100,6 +114,8 @@ class RuntimeWithPlugins(Generic[ResultT, ArgumentT]):
         observers: StaticVector[RuntimeObserver],
         runtime_id: int,
         tick_clock: Callable[[], int] = time.monotonic_ns,
+        event_capacity: int = 64,
+        is_jit: bool = False,
     ):
         assert len(observers) > 0
         self.executor = executor
@@ -108,6 +124,8 @@ class RuntimeWithPlugins(Generic[ResultT, ArgumentT]):
         self.tick = -1
         self.call_id = 0
         self.tick_clock = tick_clock
+        self.event_sink = RuntimeEventSink(capacity=event_capacity)
+        self.is_jit = is_jit
 
     def _next_tick(self) -> int:
         observed_tick = self.tick_clock()
@@ -120,7 +138,13 @@ class RuntimeWithPlugins(Generic[ResultT, ArgumentT]):
         func_index: int,
         guest_pc: int,
         flags: RuntimeEventFlags,
+        value: int = 0,
     ) -> None:
+        event_flags = flags | RuntimeEventFlags.TICK_VALID
+        if self.is_jit:
+            event_flags |= RuntimeEventFlags.JIT
+        else:
+            event_flags |= RuntimeEventFlags.INTERPRETER
         event = RuntimeEvent(
             kind=kind,
             runtime_id=self.runtime_id,
@@ -129,10 +153,22 @@ class RuntimeWithPlugins(Generic[ResultT, ArgumentT]):
             guest_pc=guest_pc if guest_pc >= 0 else RUNTIME_EVENT_NO_PC,
             tick=self._next_tick(),
             call_id=self.call_id,
-            flags=flags,
+            flags=event_flags,
+            auxiliary=value,
         )
-        for index in range(len(self.observers)):
-            self.observers[index].on_runtime_event(event)
+        self.event_sink.record(event)
+
+    def _deliver_events_at_safe_point(self) -> None:
+        """Export a versioned batch and notify Python plugins after execution."""
+
+        exported = self.event_sink.export(
+            abi_major=RUNTIME_EVENT_ABI_MAJOR,
+            capacity=self.event_sink.required_size,
+        )
+        assert exported.status == RuntimeEventExportStatus.OK
+        batch = RuntimeEventAdapter.decode(exported.data, self.runtime_id)
+        if batch.records or batch.dropped_count:
+            dispatch_runtime_event_batch(self.observers, batch)
 
     def call(
         self, func_index: int, args: Sequence[ArgumentT]
@@ -141,24 +177,36 @@ class RuntimeWithPlugins(Generic[ResultT, ArgumentT]):
 
         self.call_id += 1
         self._emit(RuntimeEventKind.FUNCTION_ENTER, func_index, -1, RuntimeEventFlags.NONE)
+        if self.is_jit:
+            self._emit(RuntimeEventKind.JIT_ENTER, func_index, -1, RuntimeEventFlags.NONE)
         result = self.executor.call(func_index, args)
+        if self.is_jit:
+            self._emit(RuntimeEventKind.JIT_EXIT, func_index, -1, RuntimeEventFlags.NONE)
         if result.is_ok:
-            self._emit(RuntimeEventKind.FUNCTION_EXIT, func_index, -1, RuntimeEventFlags.NONE)
+            self._emit(
+                RuntimeEventKind.FUNCTION_EXIT,
+                func_index,
+                -1,
+                RuntimeEventFlags.NONE,
+                value=0,
+            )
+            self._deliver_events_at_safe_point()
             return result
         if result.error == RuntimeExecutionError.GUEST_TRAP:
             self._emit(
                 RuntimeEventKind.TRAP,
                 func_index,
                 -1,
-                RuntimeEventFlags.TRAP | RuntimeEventFlags.ESTIMATED,
+                RuntimeEventFlags.NONE,
             )
-        else:
-            self._emit(
-                RuntimeEventKind.FUNCTION_EXIT,
-                func_index,
-                -1,
-                RuntimeEventFlags.ESTIMATED | RuntimeEventFlags.ABORTED,
-            )
+        self._emit(
+            RuntimeEventKind.FUNCTION_EXIT,
+            func_index,
+            -1,
+            RuntimeEventFlags.ESTIMATED | RuntimeEventFlags.ABORTED,
+            value=int(result.error),
+        )
+        self._deliver_events_at_safe_point()
         return result
 
 
@@ -177,6 +225,7 @@ class RuntimeComposer:
         factories: RuntimeFactories[ResultT, ArgumentT],
         runtime_id: int = 1,
         tick_clock: Callable[[], int] = time.monotonic_ns,
+        event_capacity: int = 64,
     ) -> ComposedRuntime[ResultT, ArgumentT]:
         """無効プラグインを生成せず、選択済みの具象 Runtime だけを返す。"""
 
@@ -200,4 +249,11 @@ class RuntimeComposer:
             observers.append(factories.debugger())
         if selection.profiler:
             observers.append(factories.profiler())
-        return RuntimeWithPlugins(executor, observers, runtime_id, tick_clock)
+        return RuntimeWithPlugins(
+            executor,
+            observers,
+            runtime_id,
+            tick_clock,
+            event_capacity=event_capacity,
+            is_jit=config.execution == RuntimeExecutionKind.JIT,
+        )

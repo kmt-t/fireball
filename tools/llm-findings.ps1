@@ -5,6 +5,7 @@ param(
     [string[]]$classification = @(),
     [switch]$allOutcomes,
     [string]$runType = "",
+    [string]$backend = "",
     [int]$limit = 200,
     [string]$config = "spec-integrator.yaml",
     [switch]$h,
@@ -19,10 +20,11 @@ Usage:
   powershell tools/llm-findings.ps1 [OPTIONS]
 
 Options:
-  -minConfidence <0..1> Minimum confidence (default: 0.70).
+  -minConfidence <0..1> Minimum backend-specific score (default: 0.70).
   -classification <id>  Filter by outcome; may be repeated.
   -allOutcomes          Include no_issue and insufficient_context outcomes.
   -runType <type>       Filter by review command/mode.
+  -backend <name>       Filter by backend (default from configuration).
   -limit <N>            Maximum rows; 0 prints all matches (default: 200).
   -config <path>        Path to configuration file (default: spec-integrator.yaml).
   -h, -help             Show this help message.
@@ -42,6 +44,7 @@ $cmdArgs = @("run", "--system-certs", "--project", "tools/spec-integrator",
 foreach ($value in $classification) { $cmdArgs += @("--classification", $value) }
 if ($allOutcomes) { $cmdArgs += "--all-outcomes" }
 if ($runType) { $cmdArgs += @("--run-type", $runType) }
+if ($backend) { $cmdArgs += @("--backend", $backend) }
 
 & uv @cmdArgs
 exit $LASTEXITCODE

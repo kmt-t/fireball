@@ -94,16 +94,16 @@ GiNZA の構文解析は、冗長性や意味の正しさを判定しない。�
 | 文書単体のレビュー | <code>powershell tools/llm-single-review.ps1 -file &lt;path&gt;</code> | <code>./tools/llm-single-review.sh --file &lt;path&gt;</code> | OpenRouter 経由の Jev を既定で使用 |
 | キーワード定義・参照ペアのレビュー | <code>powershell tools/llm-keyword-review.ps1 -keyword &lt;name&gt;</code> | <code>./tools/llm-keyword-review.sh --keyword &lt;name&gt;</code> | 定義セクションと参照セクションを1組ずつ評価。OpenRouter 経由の Jev を既定で使用 |
 | {VERIFY_LLM} 義務の履行 | <code>powershell tools/llm-judge.ps1</code> | <code>./tools/llm-judge.sh</code> | OpenRouter 経由の Jev を既定で使用し、判定を記録 |
-| 保存済み判定の確信度検索 | <code>powershell tools/llm-findings.ps1 -minConfidence 0.70</code> | <code>./tools/llm-findings.sh --min-confidence 0.70</code> | DBを検索。API利用なし |
+| 保存済み判定のスコア検索 | <code>powershell tools/llm-findings.ps1 -minConfidence 0.70</code> | <code>./tools/llm-findings.sh --min-confidence 0.70</code> | DBを検索。既定バックエンドに絞る。API利用なし |
 
 OpenRouter API を利用する監査は課金対象のため、ユーザーの明示指示を受けて実行する。
 <code>{VERIFY_LLM}</code> の義務は <code>llm-judge</code> で記録付きで履行する。詳細なオプションは [spec-integrator のリファレンス](spec-integrator/README.md) を参照する。
-既定の判定バックエンドは OpenRouter 経由の Jev (<code>typesafe/jev-1.13</code>) であり、<code>OPENROUTER_API_KEY</code> を環境変数に設定する。埋め込み生成にはローカル Ollama の <code>qwen3-embedding</code> を使う。初回は <code>ollama pull qwen3-embedding</code> を実行する。
+既定の判定バックエンドは OpenRouter 経由の Jev (<code>typesafe/jev-1.13</code>) であり、<code>OPENROUTER_API_KEY</code> を環境変数に設定する。ローカルの Nimble は <code>--backend nimble</code> で選択できる。Nimble は Ollama 0.35 以降と <code>nimble</code> モデルを必要とする。初回は <code>ollama pull nimble</code> を実行する。埋め込み生成には引き続きローカル Ollama の <code>qwen3-embedding</code> を使う。
 
 ```bash
 # OPENROUTER_API_KEY を設定したシェルで実行する
 ollama pull qwen3-embedding
 ```
 
-文書レビュー、リスク評価、用語判定は Jev の System One チェックシートで実行する。埋め込み生成は Ollama のみを使う。
+文書レビュー、リスク評価、用語判定は Jev または Nimble の System One チェックシートで実行する。既定値は Jev とする。Nimble の確信度は選択確率の集中度であり、正答確率ではない。確信度検索は既定で設定中のバックエンドだけを対象とし、<code>--backend nimble</code> で対象を指定できる。両モデルとも説明文や引用箇所を生成しないため、判定箇所を文書で確認する。Nimble の既定モデルは `num_ctx: 8194`（System One の入力上限は8,192 token）で、本文上限は64 KiB。Modelfileで `PARAMETER num_ctx` を設定した別モデルを使う場合は、バックエンド設定の `model` と `context_window_tokens` を揃える。リスク評価ではこの設定に応じて定義・参照を各最大4セクション標本化し、既定モデルでは各最大500文字に制限する。制限した範囲は保存済み評価の要約に記録する。埋め込み生成は Ollama を使う。
 OpenRouter の判定APIが HTTP エラーを返した場合、その結果を PASS/FAIL や数値スコアとして記録せず、コマンドを失敗終了する。HTTP 4xx（429 を除く）は再試行せず、現在のキャッシュ済み判定を維持する。

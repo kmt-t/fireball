@@ -11,6 +11,7 @@ MIN_CONFIDENCE="0.70"
 CLASSIFICATIONS=()
 ALL_OUTCOMES=""
 RUN_TYPE=""
+BACKEND=""
 LIMIT="200"
 CONFIG="spec-integrator.yaml"
 
@@ -22,10 +23,11 @@ Usage:
   ./tools/llm-findings.sh [OPTIONS]
 
 Options:
-  --min-confidence <0..1> Minimum confidence (default: 0.70).
+  --min-confidence <0..1> Minimum backend-specific score (default: 0.70).
   --classification <id>  Filter by outcome; may be repeated.
   --all-outcomes          Include no_issue and insufficient_context outcomes.
   --run-type <type>       Filter by review command/mode.
+  --backend <name>        Filter by backend (default from configuration).
   --limit <N>             Maximum rows; 0 prints all matches (default: 200).
   -c, --config <path>      Path to configuration file (default: spec-integrator.yaml).
   -h, --help               Show this help message.
@@ -39,6 +41,7 @@ while [[ $# -gt 0 ]]; do
         --classification) CLASSIFICATIONS+=("$2"); shift 2 ;;
         --all-outcomes) ALL_OUTCOMES="--all-outcomes"; shift ;;
         --run-type) RUN_TYPE="$2"; shift 2 ;;
+        --backend) BACKEND="$2"; shift 2 ;;
         --limit) LIMIT="$2"; shift 2 ;;
         -c|--config) CONFIG="$2"; shift 2 ;;
         -h|--help) usage ;;
@@ -53,5 +56,6 @@ CMD_ARGS=("run" "--system-certs" "--project" "tools/spec-integrator"
 for value in "${CLASSIFICATIONS[@]}"; do CMD_ARGS+=("--classification" "$value"); done
 if [[ -n "$ALL_OUTCOMES" ]]; then CMD_ARGS+=("$ALL_OUTCOMES"); fi
 if [[ -n "$RUN_TYPE" ]]; then CMD_ARGS+=("--run-type" "$RUN_TYPE"); fi
+if [[ -n "$BACKEND" ]]; then CMD_ARGS+=("--backend" "$BACKEND"); fi
 
 exec uv "${CMD_ARGS[@]}"

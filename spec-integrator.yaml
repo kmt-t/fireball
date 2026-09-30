@@ -108,6 +108,11 @@ llm_judge:
       api_key_env: "OPENROUTER_API_KEY"
       endpoint: "https://openrouter.ai/api/alpha/decisions"
       model: "typesafe/jev-1.13"
+    nimble:
+      endpoint: "http://localhost:11434/v1/systemone"
+      model: "nimble"
+      requires_api_key: false
+      context_window_tokens: 8192
   checks:
     - id: "vertical_consistency"
       name: "Vertical Consistency (Definition vs. Designs)"

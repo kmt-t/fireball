@@ -23,11 +23,11 @@ _PYSIM_DIR = _TESTS_DIR.parent
 
 
 import wasmtime
-from helpers import expect_assertion, make_interpreter, wat_to_wasm
+from helpers import expect_assertion, make_interpreter, make_native_interpreter, wat_to_wasm
 from test_support import make_runtime_engine
-from tier3_executer.interpreter.interpreter import Interpreter
-from tier3_executer.jit.runtime_engine import RuntimeEngine
+from tier3_executer.interpreter.interpreter import NativeInterpreter
 from tier3_executer.jit.x64_jit import TraceCompiler
+from tier3_executer.runtime_engine import RuntimeEngine
 from wasm_module import Module
 from wasm_reader import parse
 
@@ -42,17 +42,21 @@ def _wasmtime_result(wasm: bytes, export: str, args: list[int]) -> int:
     return instance.exports(store)[export](store, *args) & MASK32
 
 
-def _guest(module: Module) -> Interpreter:
-    """Interpreter over fresh linear memory with the active data segments applied."""
+def _guest(module: Module) -> NativeInterpreter:
+    """C++ interpreter over fresh linear memory for RuntimeEngine integration."""
     memory = bytearray(module.memory.min_pages * 65536) if module.memory is not None else None
     if memory is not None:
         module.init_memory_data(memory, ())
-    return make_interpreter(module, memory=memory)
+    return make_native_interpreter(module, memory=memory)
 
 
 def _tier2_result(wasm: bytes, export: str, args: list[int]) -> int:
     module = parse(wasm)
-    return _guest(module).call(module.export_func_index(export), args)[0] & MASK32
+    memory = bytearray(module.memory.min_pages * 65536) if module.memory is not None else None
+    if memory is not None:
+        module.init_memory_data(memory, ())
+    interpreter = make_interpreter(module, memory=memory)
+    return interpreter.call(module.export_func_index(export), args)[0] & MASK32
 
 
 def _tier3(

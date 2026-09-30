@@ -10,7 +10,7 @@ from tier3_executer.interpreter.interpreter import (
     NativeInterpreter,
     WasmNumber,
 )
-from tier3_executer.jit.runtime_engine import RuntimeEngine
+from tier3_executer.runtime_engine import RuntimeEngine
 from vmmio import VMMIOController
 from wasm_module import Module
 

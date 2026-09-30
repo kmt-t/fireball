@@ -63,13 +63,19 @@ experiments/pysim/
 │
 ├── tier3_executer/             # Tier 3 Interpreter/JIT実行系
 │   ├── interpreter/
-│   │   └── interpreter.py # WASM命令ハンドラと実行状態
+│   │   ├── interpreter.py # Python WASM命令ハンドラと実行状態
+│   │   └── native_abi.py  # C++インタープリタ用ctypes ABI
+│   ├── runtime_engine.py  # Interpreter/JIT統合ドライバ
 │   └── jit/
-│       ├── runtime_engine.py # Interpreter/JIT統合ドライバ
 │       ├── jit_runtime.py # JIT有効Interpreterと公開実行境界
 │       ├── jit_manager.py # ホットスポット・コンパイル待ち列・検索
 │       ├── jit_cache.py   # トレース記述子・3面キャッシュ
-│       └── x64_jit.py     # Copy-and-Patch JITコンパイラ
+│       ├── x64_jit.py     # Python Copy-and-Patch JITコンパイラ
+│       └── native_abi.py  # C++ JIT・キャッシュ用ctypes ABI
+│
+├── native/tier3_executer/ # C++ Tier 3実装
+│   ├── interpreter/       # C++インタープリタとC ABI
+│   └── jit/               # C++ JIT、x64ステンシル、ネイティブキャッシュ
 │
 ├── tier3_platform/        # Tier 3 Platform & ハードウェア依存部
 │   └── drivers/           # 静的DIで合成する交換可能なドライバ群
@@ -163,7 +169,7 @@ uv sync
 export UV_OFFLINE=true
 export UV_NO_SYNC=true
 
-# Linux/WSL: Tier 3 実行に必要なネイティブ拡張をビルド
+# Linux/WSL: Tier 3 C++共有ライブラリをビルド
 bash experiments/pysim/tier3_executer/interpreter/build_native.sh
 bash experiments/pysim/tier3_executer/jit/build_native.sh
 
@@ -181,7 +187,7 @@ uv run --offline --no-sync python -u experiments/pysim/benchmarks/jit/profile_ar
 
 Windows では `tier3_executer/interpreter/build_native.ps1` と `tier3_executer/jit/build_native.ps1` を実行してから、同じ `uv run` コマンドでベンチマークを実行します。
 
-算術ループはPythonハンドラ、C++インタープリタ拡張、JITの3経路を測定します。JITの速度比はPythonハンドラを基準に算出し、C++拡張の結果は別基準として表示します。これにより拡張の有無でOS間の比較条件が変わるのを防ぎます。
+算術ループはPythonハンドラ、C++インタープリタ、JITの3経路を測定します。JITの速度比はPythonハンドラを基準に算出し、C++インタープリタの結果は別基準として表示します。
 
 ---
 
@@ -213,10 +219,10 @@ uv run --offline --no-sync python experiments/pysim/qa/run_all.py
 uv run --offline --no-sync python experiments/pysim/aobench.py
 ```
 
-### JIT ネイティブコンパイラと呼び出し経路
-`tier3_executer/jit/native_trace_call.cxx` は x64 Copy-and-Patch トレースのコンパイルを実装する。JIT コンパイラがこの拡張を直接 import するため、Tier 3 の JIT 実行にはビルドが必須である。実行時は `JITTrace` が所有するCPS 4引数ABIの関数ポインタをC++ dispatcherが呼ぶ。LOOP後方`BR` / `BR_IF`はC++ Interpreter handlerを通して制御状態を更新し、その取得回数を共通コンテキストに記録する。dispatcherは共有設定の回数に達するまでJIT traceとC++ handlerを連続実行してからRuntimeEngineへyieldを返す。C++ Interpreter単独経路も同じdispatcherと回数条件を使う。Linux拡張には `-g` を付け、AMD uProfとIntel VTuneでC++ソース位置を解決できるようにする。
+### JIT C++実装とABI
+`native/tier3_executer/jit/trace_compiler.cxx` はx64 Copy-and-Patchトレースをコンパイルし、固定バイト列のステンシルは`stencils_x64.hxx`に置く。`fast_cache.cxx`は固定長のネイティブキャッシュを実装する。Python実装からは`ctypes`が固定レイアウトのレコードとC ABI関数だけを呼ぶ。C++コードはCPython APIに依存しない。実行時は`JITTrace`が所有するCPS 4引数ABIの関数ポインタをC++ dispatcherが呼ぶ。Linux共有ライブラリには`-g`を付け、AMD uProfとIntel VTuneでC++ソース位置を解決できるようにする。
 
-JIT chainはtrace末尾から共通コード領域のchain dispatcherへ入り、そこから次trace bodyへtail-jumpする経路を指す。C++ handler後にC++ dispatcherが常駐traceを起動する遷移はchainではない。`native_dispatch_trace_transitions`はC++ handlerからJIT traceへのdispatcher遷移数であり、chain指標ではない。現状、共通コードchain dispatcherの実行回数を数える専用指標はない。診断カウンタはRuntime構成で有効・無効を選び、通常の速度計測では無効にする。診断実行用Runtimeは別構成として同じプロセス内に作成でき、C++拡張の再ビルドは不要である。ホットスポット観測もJIT Runtimeの構成で選ぶ。コンパイル済みtraceの定常状態を測る場合は、warm-up後に候補観測を無効化する。dispatch snapshotはcache世代が変わったときだけ再生成する。
+JIT chainはtrace末尾から共通コード領域のchain dispatcherへ入り、そこから次trace bodyへtail-jumpする経路を指す。C++ handler後にC++ dispatcherが常駐traceを起動する遷移はchainではない。`native_dispatch_trace_transitions`はC++ handlerからJIT traceへのdispatcher遷移数であり、chain指標ではない。現状、共通コードchain dispatcherの実行回数を数える専用指標はない。診断カウンタはRuntime構成で有効・無効を選び、通常の速度計測では無効にする。診断実行用Runtimeは別構成として同じプロセス内に作成でき、C++共有ライブラリの再ビルドは不要である。ホットスポット観測もJIT Runtimeの構成で選ぶ。コンパイル済みtraceの定常状態を測る場合は、warm-up後に候補観測を無効化する。dispatch snapshotはcache世代が変わったときだけ再生成する。
 ```bash
 # Windows: clang-cl + Visual Studio Build Tools + Windows SDK が必要
 powershell experiments/pysim/tier3_executer/jit/build_native.ps1
@@ -225,10 +231,10 @@ powershell experiments/pysim/tier3_executer/jit/build_native.ps1
 bash experiments/pysim/tier3_executer/jit/build_native.sh
 ```
 
-### Tier 3インタープリタの境界
-`tier3_executer/interpreter/native_interpreter.cxx`は、本番インタープリタに対応するC++の固定256スロットハンドラ表とstep／dispatch入口を持つ。handlerは`ctx, sp, local_base, tos`の4論理引数を共有し、ホストx64で検証したABIを使う。ARMv8-Mの物理引数配置と関数ABIはTBDであり、このシミュレータはARM適合を主張しない。Python側はネイティブ実行コンテキスト、operand/local/controlの固定領域を`memoryview`で渡し、JITのdispatch metadataは`NativeTraceDispatchEntry`の`ctypes.Structure`配列として渡す。C++ dispatcherは配列をコピーせず、Python所有bufferを直接読み、JIT traceとC++ handlerを後方分岐yield境界まで連続実行する。C++ Interpreter単独経路も同じ共有しきい値を使う。`bytes`のコピーや整数アドレス化は行わない。
+### Tier 3インタープリタのABI
+`native/tier3_executer/interpreter/native_interpreter.cxx`はC++の固定256スロットハンドラ表とstep／dispatch入口を持つ。Python層は`interpreter/native_abi.py`で実行コンテキスト、スタック、dispatch metadataを固定レイアウトの引数レコードに組み立て、C ABIを`ctypes`で呼ぶ。C++側はCPython APIを使わず、Python所有bufferをポインタと長さで受け取る。診断カウンタとHotspot計測はC++側の構成別エントリをRuntime生成時に選ぶ。
 
-C++実装済みの命令はC++ handlerが処理する。未対応命令や外部呼出しは現在のPCでPython境界へフォールバックし、trapと完了も境界statusとして返す。このフォールバックは後方互換層ではなく、実装が定める実行境界である。Tier 3実行にはC++拡張のビルドを必須とする。
+C++実装済みの命令はC++ handlerが処理する。未対応命令や外部呼出しは現在のPCで実行境界へ戻り、trapと完了もstatusとして返す。Tier 3のC++実行には共有ライブラリのビルドを必須とする。
 ```bash
 # Windows: clang-cl + Visual Studio Build Tools + Windows SDK が必要
 powershell experiments/pysim/tier3_executer/interpreter/build_native.ps1
@@ -237,4 +243,4 @@ powershell experiments/pysim/tier3_executer/interpreter/build_native.ps1
 bash experiments/pysim/tier3_executer/interpreter/build_native.sh
 ```
 
-実行ホットパスは`native_interpreter.cxx`のhandler tableと`run_native_dispatch`であり、LEB128はロード時デコーダの責務で実行時境界には入らない。旧Cython/CPS互換入口は提供しない。
+実行ホットパスは`native_interpreter.cxx`のhandler tableと`fb_native_run_dispatch`系C ABIであり、LEB128はロード時デコーダの責務で実行時境界には入らない。

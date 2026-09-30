@@ -60,7 +60,7 @@ class SocketDebuggerSink:
         assert self._server_sock is not None, "Debugger sink must be bound first"
         try:
             connection, _ = self._server_sock.accept()
-        except (BlockingIOError, TimeoutError):
+        except BlockingIOError, TimeoutError:
             return None
         return connection
 

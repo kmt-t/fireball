@@ -19,8 +19,7 @@ configure_import_paths(_PYSIM_DIR, _BENCH_DIR)
 
 from config import JIT_CACHE_FAST_SLOT_COUNT
 from system_containers import StaticVector
-from tier3_executer.jit import _jit_cache_native
-from tier3_executer.jit.jit_cache import JITTrace
+from tier3_executer.jit.jit_cache import JITTrace, NativeFastCache
 
 TEST_PC = 0x10020
 ITERATIONS = 1_000_000
@@ -37,10 +36,9 @@ def _folded_slot(pc: int) -> int:
 
 
 def main() -> None:
-    assert _jit_cache_native.FAST_SLOT_COUNT == JIT_CACHE_FAST_SLOT_COUNT
     trace = JITTrace(head_pc=TEST_PC)
 
-    native_cache = _jit_cache_native.FastCache()
+    native_cache = NativeFastCache()
     native_cache.store(TEST_PC, trace)
 
     python_slots: StaticVector[tuple[int, JITTrace] | None] = StaticVector(

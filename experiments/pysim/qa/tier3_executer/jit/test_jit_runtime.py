@@ -34,7 +34,7 @@ from config import (
     JIT_X64_CHAIN_TARGET_OFFSET,
 )
 from execution_context import WASMContext
-from helpers import make_interpreter as Interpreter
+from helpers import make_native_interpreter as Interpreter
 from helpers import wat_to_wasm
 from system_containers import ReadOnlyRadixBinaryTreeStorage, StaticVector
 from test_support import (
@@ -57,8 +57,8 @@ from tier3_executer.jit.jit_cache import (
     JITTraceHeader,
 )
 from tier3_executer.jit.jit_runtime import JITInterpreter
-from tier3_executer.jit.runtime_engine import RuntimeEngine
 from tier3_executer.jit.x64_jit import TraceCompiler
+from tier3_executer.runtime_engine import RuntimeEngine
 from wasm_module import I32, LocalWidthMap
 from wasm_opcodes import BR_TABLE, I32_ADD, I32_CONST, LOCAL_GET, LOCAL_SET
 from wasm_reader import parse
@@ -795,8 +795,8 @@ def test_jitr_native_dispatch_snapshot_is_cached_per_hotspot_configuration():
     function_index = module.export_func_index("sum")
     manager = engine.jit_runtime
 
-    initial_snapshot = manager.native_dispatch_state(function_index)
-    cached_snapshot = manager.native_dispatch_state(function_index)
+    initial_snapshot = manager.native_dispatch_state()
+    cached_snapshot = manager.native_dispatch_state()
     assert cached_snapshot is initial_snapshot
     assert cached_snapshot.entries is initial_snapshot.entries
     assert cached_snapshot.trackable_blocks is initial_snapshot.trackable_blocks
@@ -811,7 +811,7 @@ def test_jitr_native_dispatch_snapshot_is_cached_per_hotspot_configuration():
     trace = manager._compile_trace(loop_block.head_pc, loop_block)
     assert trace is not None and manager.cache.insert(trace)
     manager.mark_compiled(loop_block.head_pc)
-    compiled_snapshot = manager.native_dispatch_state(function_index)
+    compiled_snapshot = manager.native_dispatch_state()
     assert compiled_snapshot.entry_count == 1
     assert compiled_snapshot is not initial_snapshot
     assert compiled_snapshot.trackable_count == initial_snapshot.trackable_count
@@ -828,7 +828,7 @@ def test_jitr_native_dispatch_snapshot_is_cached_per_hotspot_configuration():
     steady_trace = steady_manager._compile_trace(loop_block.head_pc, loop_block)
     assert steady_trace is not None and steady_manager.cache.insert(steady_trace)
     steady_manager.mark_compiled(loop_block.head_pc)
-    steady_snapshot = steady_manager.native_dispatch_state(function_index)
+    steady_snapshot = steady_manager.native_dispatch_state()
     assert steady_snapshot.entry_count == 1
     assert steady_snapshot.entries[0].head_pc == compiled_snapshot.entries[0].head_pc
     assert steady_snapshot.trackable_count == 0
@@ -837,7 +837,7 @@ def test_jitr_native_dispatch_snapshot_is_cached_per_hotspot_configuration():
     assert not steady_manager.record_native_block_visits((), 0)
     steady_manager.cache.rotate()
     steady_manager.cache.rotate()
-    oldest_snapshot = steady_manager.native_dispatch_state(function_index)
+    oldest_snapshot = steady_manager.native_dispatch_state()
     oldest_entry = next(
         oldest_snapshot.entries[index]
         for index in range(oldest_snapshot.entry_count)

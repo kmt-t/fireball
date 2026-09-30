@@ -47,7 +47,7 @@ def _run_differential(
     wt_result = None
     try:
         wt_result = wt_func(store, *args)
-    except (wasmtime.WasmtimeError, wasmtime.Trap):
+    except wasmtime.WasmtimeError, wasmtime.Trap:
         wt_trap = True
 
     # 2. Execute with pysim Interpreter
@@ -61,7 +61,7 @@ def _run_differential(
         pysim_res_list = pysim_interp.call(func_idx, args)
         if pysim_res_list:
             pysim_result = pysim_res_list[0]
-    except (AssertionError, Trap, ZeroDivisionError, OverflowError):
+    except AssertionError, Trap, ZeroDivisionError, OverflowError:
         pysim_trap = True
 
     # 3. Assert parity

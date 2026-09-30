@@ -197,7 +197,7 @@ def test_native_interpreter_returns_to_python_at_loop_yield_counts(monkeypatch):
         )
     )
     function_index = module.export_func_index("sum_to")
-    native_dispatch = interpreter_module._interpreter_native.run_native_dispatch
+    native_dispatch = interpreter_module._native_abi.run_native_dispatch
     returned_statuses: list[int] = []
 
     def record_native_dispatch(*args):
@@ -206,7 +206,7 @@ def test_native_interpreter_returns_to_python_at_loop_yield_counts(monkeypatch):
         return result
 
     monkeypatch.setattr(
-        interpreter_module._interpreter_native,
+        interpreter_module._native_abi,
         "run_native_dispatch",
         record_native_dispatch,
     )

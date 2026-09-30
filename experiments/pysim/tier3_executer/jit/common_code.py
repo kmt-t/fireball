@@ -25,7 +25,7 @@ from config import (
     JIT_X64_TRACE_HEADER_BYTES,
 )
 
-from . import native_trace_call
+from . import native_abi
 from .exec_memory import ExecutableBuffer
 
 IS_WINDOWS = sys.platform == "win32"
@@ -191,9 +191,7 @@ class JITCodeCacheRegion:
         epilogue = gen_pic_epilogue()
         helper = gen_helper_entry()
         i32_helper_entry = gen_i32_helper_entry()
-        generated_chain_dispatch_offset, chain_dispatcher = (
-            native_trace_call.common_chain_dispatcher()
-        )
+        generated_chain_dispatch_offset, chain_dispatcher = native_abi.common_chain_dispatcher()
         assert generated_chain_dispatch_offset == COMMON_CHAIN_DISPATCH_OFFSET
         assert len(chain_dispatcher) == JIT_TRACE_COMMON_CHAIN_DISPATCH_BYTES
         assert 0 < len(helper) <= JIT_TRACE_HELPER_ENTRY_BYTES

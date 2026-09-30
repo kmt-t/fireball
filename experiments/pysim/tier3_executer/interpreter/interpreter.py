@@ -288,10 +288,10 @@ from wasm_opcodes import (
     UNREACHABLE,
 )
 
-from . import _interpreter_native
+from . import native_abi as _native_abi
 
-NATIVE_RUNTIME_PROFILE_STATS_AVAILABLE = bool(_interpreter_native.RUNTIME_PROFILE_STATS_AVAILABLE)
-NATIVE_JIT_HOTSPOT_PROFILING_AVAILABLE = bool(_interpreter_native.JIT_HOTSPOT_PROFILING_AVAILABLE)
+NATIVE_RUNTIME_PROFILE_STATS_AVAILABLE = bool(_native_abi.RUNTIME_PROFILE_STATS_AVAILABLE)
+NATIVE_JIT_HOTSPOT_PROFILING_AVAILABLE = bool(_native_abi.JIT_HOTSPOT_PROFILING_AVAILABLE)
 
 NativeDispatchResult = tuple[
     int,
@@ -316,11 +316,11 @@ def select_native_dispatch_entry(
 
     if collect_stats:
         if collect_hotspots:
-            return _interpreter_native.run_native_dispatch_stats_hotspots
-        return _interpreter_native.run_native_dispatch_stats
+            return _native_abi.run_native_dispatch_stats_hotspots
+        return _native_abi.run_native_dispatch_stats
     if collect_hotspots:
-        return _interpreter_native.run_native_dispatch_hotspots
-    return _interpreter_native.run_native_dispatch
+        return _native_abi.run_native_dispatch_hotspots
+    return _native_abi.run_native_dispatch
 
 
 I32_MASK = 0xFFFFFFFF
@@ -331,6 +331,7 @@ PAGE_SIZE = 65536
 RETURN_SENTINEL_IP = -1
 RETURN_SENTINEL_PC = 0xFFFF_FFFF
 NATIVE_DISPATCH_YIELD = 5
+NATIVE_DISPATCH_CALL_BOUNDARY = 6
 NATIVE_DISPATCH_OLDEST_TRACE = 4
 
 
@@ -1115,7 +1116,7 @@ class CallFrame:
             assert native_frame.local_count == self.local_count
             assert native_frame.local_slot_count == self.local_slot_count
             assert native_frame.slot_words == self.local_widths.slot_words
-            assert native_frame.local_width_map == _native_buffer_address(
+            assert (native_frame.local_width_map or 0) == _native_buffer_address(
                 self.local_widths.raw_view
             )
             assert native_frame.local_width_count == self.local_count
@@ -1522,7 +1523,7 @@ class Interpreter:
         phys_mem: bytearray | None = None,
         logger: Logger | None = None,
     ):
-        self._native_dispatcher = _interpreter_native.run_native_dispatch
+        self._native_dispatcher = _native_abi.run_native_dispatch
         self.module = module
         self.logger = logger
         self.memory = bindings.memory
@@ -1851,11 +1852,11 @@ class Interpreter:
             if trap is not None:
                 self._abort_call(call_state, trap, ip)
             return call_state
-        if opcode == I32_STORE or opcode == I32_STORE8:
+        if I32_LOAD <= opcode <= MEMORY_GROW:
             return self._resolve_native_memory_boundary(call_state, opcode, ip)
         if opcode == FC_PREFIX:
             subopcode, _ = decode_unsigned(frame.code, ip + 1)
-            assert subopcode == FC_MEMORY_COPY, (
+            assert subopcode == FC_MEMORY_COPY or subopcode == FC_MEMORY_FILL, (
                 f"C++ interpreter does not implement 0xFC subopcode {subopcode}"
             )
             return self._resolve_native_memory_boundary(call_state, opcode, ip)
@@ -1931,19 +1932,17 @@ class Interpreter:
         assert execution is not None
         execution.refresh_tables()
         with _native_linear_memory_scope(context.native_context, frame.env.memory):
-            native_status, native_ip, native_size, native_trap = (
-                _interpreter_native.run_control_step(
-                    frame.code,
-                    context.context_view,
-                    frame.values.raw_view,
-                    locals_arr._storage.raw_view,
-                    context.control_frame_stack.raw_view,
-                    len(frame.values),
-                    frame.values.capacity,
-                    call_state._ip,
-                    frame.local_slot_count,
-                    frame.control_base,
-                )
+            native_status, native_ip, native_size, native_trap = _native_abi.run_control_step(
+                frame.code,
+                context.context_view,
+                frame.values.raw_view,
+                locals_arr._storage.raw_view,
+                context.control_frame_stack.raw_view,
+                len(frame.values),
+                frame.values.capacity,
+                call_state._ip,
+                frame.local_slot_count,
+                frame.control_base,
             )
 
         frame.values.set_size(native_size)
@@ -2066,7 +2065,7 @@ class Interpreter:
         )
         try:
             with _native_linear_memory_scope(context.native_context, frame.env.memory):
-                native_status, native_ip, native_size, native_trap = _interpreter_native.run_step(
+                native_status, native_ip, native_size, native_trap = _native_abi.run_step(
                     frame.code,
                     context.context_view,
                     frame.values.raw_view,

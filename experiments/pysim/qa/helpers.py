@@ -18,6 +18,7 @@ from tier2_runtime.logger import Logger
 from tier3_executer.interpreter.interpreter import (
     Interpreter,
     InterpreterBindings,
+    NativeInterpreter,
     WasmHostFunction,
 )
 from vmmio import VMMIOController
@@ -136,17 +137,14 @@ def wat_to_wasm(wat_text: str) -> bytes:
     return bytes(wasmtime.wat2wasm(wat_text))
 
 
-def make_interpreter(
+def _make_interpreter_bindings(
     module: Module,
     memory: bytearray | None = None,
     host_functions: StaticVector[WasmHostFunction | None] | None = None,
-    vmmio: VMMIOController | None = None,
-    phys_mem: bytearray | None = None,
     imported_globals: StaticVector[int] | None = None,
     imported_tables: StaticVector[StaticVector[int | None]] | None = None,
     imported_memory: Memory | None = None,
-    logger: Logger | None = None,
-) -> Interpreter:
+) -> InterpreterBindings:
     """Build explicit runtime bindings for compact unit-test setup."""
     min_pages = 0
     if module.memory is not None:
@@ -172,7 +170,7 @@ def make_interpreter(
     actual_tables = imported_tables
     if actual_tables is None:
         actual_tables = StaticVector(capacity=0)
-    bindings = InterpreterBindings(
+    return InterpreterBindings(
         memory=actual_memory,
         memory_decl=actual_memory_decl,
         imported_memory=imported_memory is not None,
@@ -180,7 +178,52 @@ def make_interpreter(
         globals=actual_globals,
         tables=actual_tables,
     )
+
+
+def make_interpreter(
+    module: Module,
+    memory: bytearray | None = None,
+    host_functions: StaticVector[WasmHostFunction | None] | None = None,
+    vmmio: VMMIOController | None = None,
+    phys_mem: bytearray | None = None,
+    imported_globals: StaticVector[int] | None = None,
+    imported_tables: StaticVector[StaticVector[int | None]] | None = None,
+    imported_memory: Memory | None = None,
+    logger: Logger | None = None,
+) -> Interpreter:
+    """Build the independent Python interpreter for test reference runs."""
+    bindings = _make_interpreter_bindings(
+        module,
+        memory,
+        host_functions,
+        imported_globals,
+        imported_tables,
+        imported_memory,
+    )
     return Interpreter(module, bindings, vmmio=vmmio, phys_mem=phys_mem, logger=logger)
+
+
+def make_native_interpreter(
+    module: Module,
+    memory: bytearray | None = None,
+    host_functions: StaticVector[WasmHostFunction | None] | None = None,
+    vmmio: VMMIOController | None = None,
+    phys_mem: bytearray | None = None,
+    imported_globals: StaticVector[int] | None = None,
+    imported_tables: StaticVector[StaticVector[int | None]] | None = None,
+    imported_memory: Memory | None = None,
+    logger: Logger | None = None,
+) -> NativeInterpreter:
+    """Build the independent C++ interpreter for RuntimeEngine test runs."""
+    bindings = _make_interpreter_bindings(
+        module,
+        memory,
+        host_functions,
+        imported_globals,
+        imported_tables,
+        imported_memory,
+    )
+    return NativeInterpreter(module, bindings, vmmio=vmmio, phys_mem=phys_mem, logger=logger)
 
 
 @contextmanager

@@ -22,7 +22,12 @@ _REPO_ROOT = _PYSIM_DIR.parent.parent
 from bump_allocator import BumpAllocator
 from execution_context import WASMContext
 from fixtures.platform_drivers import create_reference_platform_drivers
-from helpers import _build_test_wasm_binary, expect_assertion, wat_to_wasm
+from helpers import (
+    _build_test_wasm_binary,
+    expect_assertion,
+    make_native_interpreter,
+    wat_to_wasm,
+)
 from helpers import make_interpreter as Interpreter
 from loader import DecodedEntityKind
 from runtime_test_driver import RuntimeEngineDebugDriver
@@ -273,7 +278,7 @@ def test_runtime_engine_run_advances_one_trace_boundary():
     )
     engine = make_runtime_engine()
     module = engine.load_wasm(wasm_bytes)
-    interpreter = Interpreter(module)
+    interpreter = make_native_interpreter(module)
     call_state = interpreter.start(0, (2,))
     boundary = engine.run(interpreter, call_state)
     assert not boundary.call_state.finished
@@ -287,7 +292,9 @@ def test_system_coos_runtime_rejects_synchronous_guest_execution():
     system = System()
 
     with expect_assertion("COOS runtime calls must be advanced by System at each trace boundary"):
-        system.runtime_engine.call(Interpreter(module), module.export_func_index("entry"), ())
+        system.runtime_engine.call(
+            make_native_interpreter(module), module.export_func_index("entry"), ()
+        )
 
 
 def test_system_guest_interpreter_returns_to_coos_and_resumes():
@@ -318,7 +325,7 @@ def test_system_guest_interpreter_returns_to_coos_and_resumes():
     )
     system = System()
     module = parse(wasm_bytes)
-    interpreter = Interpreter(module)
+    interpreter = make_native_interpreter(module)
     monitor_observed_guest_ready: list[bool] = []
 
     def monitor_task():
@@ -416,7 +423,7 @@ def _recv_rsp_frame(client: socket.socket, sysv: System, max_steps: int = 32) ->
         sysv.scheduler.step()
         try:
             buf += client.recv(1024)
-        except (socket.timeout, BlockingIOError):
+        except socket.timeout, BlockingIOError:
             pass
         if b"$" in buf:
             dollar_idx = buf.index(b"$")
@@ -608,7 +615,7 @@ def test_tier_02_interpreter_to_jit_trace_transition():
     engine = make_runtime_engine(yield_threshold=3, card_shift=2, jit_compiler=TraceCompiler())
     mod = engine.load_wasm(wasm_bytes)
     loop_pc = mod.blocks[1].head_pc
-    results = engine.call(Interpreter(mod), 0, [5])
+    results = engine.call(make_native_interpreter(mod), 0, [5])
     assert results[0] == 120
     assert engine.stat_interp_steps >= 3
     assert engine.stat_jit_invocations >= 2
@@ -660,7 +667,7 @@ def test_tier_03_trace_chaining_and_interpreter_fallback():
     engine.jit_runtime.bitmap.mark_compiled(block_a.head_pc)
     # Assert trace A chained directly into trace B
     assert trace_a.chain_next == block_b.head_pc
-    results = engine.call(Interpreter(mod), 0, [100])
+    results = engine.call(make_native_interpreter(mod), 0, [100])
     assert results[0] == 160
     assert engine.stat_jit_invocations == 2
     assert engine.stat_interp_steps >= 1

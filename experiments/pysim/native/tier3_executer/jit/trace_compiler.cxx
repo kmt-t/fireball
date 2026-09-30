@@ -1,9 +1,13 @@
-#define PY_SSIZE_T_CLEAN
-#include <Python.h>
-
 #include <array>
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
+
+#include "trace_compiler_abi.hxx"
+#include "stencils_x64.hxx"
+
+using namespace fireball::pysim::jit;
 
 #ifndef FB_CONF_JIT_TRACE_COMMON_CHAIN_DISPATCH_OFFSET
 #error "JIT chain dispatcher offset must come from tier1_core/config.py"
@@ -165,14 +169,6 @@ constexpr std::array<std::uint8_t, kSharedDispatcherBytes> make_chain_dispatcher
 inline constexpr auto kChainDispatcher = make_chain_dispatcher();
 static_assert(kChainDispatcher.size() == kSharedDispatcherBytes);
 
-struct buffer_guard {
-  Py_buffer view{};
-  bool active = false;
-  ~buffer_guard() {
-    if (active) PyBuffer_Release(&view);
-  }
-};
-
 struct trace_builder {
   std::array<std::uint8_t, kMaxBodyBytes> body{};
   std::size_t body_size = 0;
@@ -213,53 +209,6 @@ bool append_u32_patch(trace_builder& builder, const std::array<std::uint8_t, N>&
   return append_stencil(builder, stencil) && builder.u32(value);
 }
 
-constexpr std::array<std::uint8_t, 2> kLoadImmStencil = {0x41, 0xB9};
-constexpr std::array<std::uint8_t, 3> kLoadLocalStencil = {0x45, 0x8B, 0x8A};
-constexpr std::array<std::uint8_t, 3> kStoreLocalStencil = {0x45, 0x89, 0x8A};
-constexpr std::array<std::uint8_t, 4> kStoreTosStencil = {0x45, 0x89, 0x8C, 0x24};
-constexpr std::array<std::uint8_t, 4> kStoreNosStencil = {0x45, 0x89, 0x9C, 0x24};
-constexpr std::array<std::uint8_t, 4> kLoadTosStencil = {0x45, 0x8B, 0x8C, 0x24};
-constexpr std::array<std::uint8_t, 4> kLoadNosStencil = {0x45, 0x8B, 0x9C, 0x24};
-constexpr std::array<std::uint8_t, 3> kMoveNosFromTosStencil = {0x45, 0x89, 0xCB};
-constexpr std::array<std::uint8_t, 3> kI32AddStencil = {0x45, 0x01, 0xD9};
-constexpr std::array<std::uint8_t, 6> kI32SubStencil = {
-    0x45, 0x29, 0xCB, 0x45, 0x89, 0xD9};
-constexpr std::array<std::uint8_t, 4> kI32MulStencil = {0x45, 0x0F, 0xAF, 0xCB};
-constexpr std::array<std::uint8_t, 3> kI32AndStencil = {0x45, 0x21, 0xD9};
-constexpr std::array<std::uint8_t, 3> kI32OrStencil = {0x45, 0x09, 0xD9};
-constexpr std::array<std::uint8_t, 3> kI32XorStencil = {0x45, 0x31, 0xD9};
-constexpr std::array<std::uint8_t, 10> kI32EqzStencil = {
-    0x45, 0x85, 0xC9, 0x0F, 0x94, 0xC0, 0x44, 0x0F, 0xB6, 0xC8};
-constexpr std::array<std::uint8_t, 6> kShiftPrefixStencil = {
-    0x44, 0x89, 0xC9, 0x45, 0x89, 0xD9};
-constexpr std::array<std::uint8_t, 3> kI32ShlStencil = {0x41, 0xD3, 0xE1};
-constexpr std::array<std::uint8_t, 3> kI32ShrSStencil = {0x41, 0xD3, 0xF9};
-constexpr std::array<std::uint8_t, 3> kI32ShrUStencil = {0x41, 0xD3, 0xE9};
-constexpr std::array<std::uint8_t, 15> kEntryStencil = {
-    0x48, 0xB8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0xE9, 0x00, 0x00, 0x00, 0x00};
-constexpr std::array<std::uint8_t, 12> kHelperTailStencil = {
-    0x48, 0x8D, 0x05, 0x00, 0x00, 0x00, 0x00, 0xE9, 0x00, 0x00, 0x00, 0x00};
-constexpr std::array<std::uint8_t, 4> kPublishNextPcStencil = {0x41, 0xC7, 0x45, 0x00};
-constexpr std::array<std::uint8_t, 5> kChainDispatchStencil = {
-    0xE9, 0x00, 0x00, 0x00, 0x00};
-constexpr std::array<std::uint8_t, 5> kExitJumpStencil = {0xE9, 0x00, 0x00, 0x00, 0x00};
-
-constexpr std::array<std::uint8_t, 10> make_compare_stencil(std::uint8_t condition) {
-  return {0x45, 0x39, 0xCB, 0x0F, condition, 0xC0, 0x44, 0x0F, 0xB6, 0xC8};
-}
-
-constexpr auto kI32EqStencil = make_compare_stencil(0x94);
-constexpr auto kI32NeStencil = make_compare_stencil(0x95);
-constexpr auto kI32LtSStencil = make_compare_stencil(0x9C);
-constexpr auto kI32LtUStencil = make_compare_stencil(0x92);
-constexpr auto kI32GtSStencil = make_compare_stencil(0x9F);
-constexpr auto kI32GtUStencil = make_compare_stencil(0x97);
-constexpr auto kI32LeSStencil = make_compare_stencil(0x9E);
-constexpr auto kI32LeUStencil = make_compare_stencil(0x96);
-constexpr auto kI32GeSStencil = make_compare_stencil(0x9D);
-constexpr auto kI32GeUStencil = make_compare_stencil(0x93);
-
 bool is_binary(int op) {
   return op == kI32Add || op == kI32Sub || op == kI32Mul || op == kI32And ||
          op == kI32Or || op == kI32Xor || op == kI32Eq || op == kI32Ne ||
@@ -288,11 +237,12 @@ int helper_index(int op) {
   return -1;
 }
 
-int local_words(const Py_buffer& map, unsigned int count, int index) {
+int local_words(const std::uint8_t* map, std::uint32_t map_bytes,
+                std::uint32_t count, int index) {
   if (index < 0 || static_cast<unsigned int>(index) >= count) return 0;
   const auto byte_index = static_cast<std::size_t>(index) >> 2;
-  if (byte_index >= static_cast<std::size_t>(map.len)) return 0;
-  const auto byte = static_cast<const std::uint8_t*>(map.buf)[byte_index];
+  if (byte_index >= map_bytes || map == nullptr) return 0;
+  const auto byte = map[byte_index];
   return 1 << ((byte >> ((index & 3) * 2)) & 3u);
 }
 
@@ -391,35 +341,23 @@ bool emit_shift(trace_builder& b, int op) {
   return false;
 }
 
-bool operand(const PyObject* object, std::uint64_t& value) {
-  if (object == Py_None) return false;
-  const auto signed_value = PyLong_AsLongLong(const_cast<PyObject*>(object));
-  if (signed_value == -1 && PyErr_Occurred()) return false;
-  value = static_cast<std::uint64_t>(signed_value);
-  return true;
-}
-
-bool compile_operations(trace_builder& b, PyObject* instructions, const Py_buffer& map,
-                        unsigned int local_count, std::uint32_t slot_bytes) {
-  PyObject* iterator = PyObject_GetIter(instructions);
-  if (iterator == nullptr) return false;
-  while (PyObject* item = PyIter_Next(iterator)) {
-    PyObject* pair = PySequence_Fast(item, "JIT instruction must be a pair");
-    Py_DECREF(item);
-    if (pair == nullptr) { Py_DECREF(iterator); return false; }
-    if (PySequence_Fast_GET_SIZE(pair) < 2) {
-      Py_DECREF(pair); Py_DECREF(iterator);
-      PyErr_SetString(PyExc_ValueError, "JIT instruction pair is incomplete");
-      return false;
+bool compile_operations(trace_builder& b, const fb_jit_instruction* instructions,
+                        std::uint32_t instruction_count, const std::uint8_t* map,
+                        std::uint32_t map_bytes, std::uint32_t local_count,
+                        std::uint32_t slot_bytes) {
+  for (std::uint32_t instruction_index = 0; instruction_index < instruction_count;
+       ++instruction_index) {
+    const auto& instruction = instructions[instruction_index];
+    const int op = static_cast<int>(instruction.opcode);
+    auto arg = instruction.operand;
+    const bool expects_operand = op == kI32Const || op == kI64Const ||
+                                 op == kF32Const || op == kF64Const ||
+                                 op == kLocalGet || op == kLocalSet ||
+                                 op == kLocalTee;
+    if ((instruction.has_operand != 0) != expects_operand) {
+      b.declined = true;
+      return true;
     }
-    const int op = static_cast<int>(PyLong_AsLong(PySequence_Fast_GET_ITEM(pair, 0)));
-    std::uint64_t arg = 0;
-    const auto* arg_object = PySequence_Fast_GET_ITEM(pair, 1);
-    const bool has_arg = arg_object != Py_None;
-    if ((op == -1 && PyErr_Occurred()) || (has_arg && !operand(arg_object, arg))) {
-      Py_DECREF(pair); Py_DECREF(iterator); return false;
-    }
-    Py_DECREF(pair);
     if (b.spilled_words > b.max_spilled_words) b.max_spilled_words = b.spilled_words;
     b.saw_op = true;
     b.helper_index = helper_index(op);
@@ -427,7 +365,7 @@ bool compile_operations(trace_builder& b, PyObject* instructions, const Py_buffe
       if (b.helper_index >= 11) {
         if (b.location_count != 2 || b.spilled_words != 0 || b.helper_words != 0 ||
             b.locations[0] != kNos || b.locations[1] != kTos) {
-          b.declined = true; Py_DECREF(iterator); return true;
+          b.declined = true; return true;
         }
         b.location_count = 0;
       } else {
@@ -435,20 +373,20 @@ bool compile_operations(trace_builder& b, PyObject* instructions, const Py_buffe
               b.helper_index >= 3 && b.helper_index <= 6 ? 2 : 4;
         if (b.location_count != 0 || (b.helper_words != 4 && b.helper_words != 2) ||
             b.helper_words != expected) {
-          b.declined = true; Py_DECREF(iterator); return true;
+          b.declined = true; return true;
         }
       }
       break;
     }
     int pops = 0, pushes = 0;
     if (!stack_effect(op, pops, pushes) || pops > static_cast<int>(b.location_count)) {
-      b.declined = true; Py_DECREF(iterator); return true;
+      b.declined = true; return true;
     }
     bool ok = true;
     if (op == kI32Const || op == kLocalGet) {
       if (op == kLocalGet) {
         const int index = static_cast<int>(arg);
-        if (local_words(map, local_count, index) != 1) ok = false;
+        if (local_words(map, map_bytes, local_count, index) != 1) ok = false;
         arg = static_cast<std::uint64_t>(index);
       }
       if (ok) ok = emit_push(b, op, arg, slot_bytes);
@@ -462,13 +400,13 @@ bool compile_operations(trace_builder& b, PyObject* instructions, const Py_buffe
     } else if (op == kLocalSet || op == kDrop) {
       if (op == kLocalSet) {
         const int index = static_cast<int>(arg);
-        ok = local_words(map, local_count, index) == 1 &&
+        ok = local_words(map, map_bytes, local_count, index) == 1 &&
              store_local(b, static_cast<std::uint32_t>(index * slot_bytes));
       }
       if (ok) ok = emit_pop(b);
     } else if (op == kLocalTee) {
       const int index = static_cast<int>(arg);
-      ok = local_words(map, local_count, index) == 1 && b.location_count != 0 &&
+      ok = local_words(map, map_bytes, local_count, index) == 1 && b.location_count != 0 &&
            store_local(b, static_cast<std::uint32_t>(index * slot_bytes));
     } else if (op == kI32Eqz) {
       ok = b.location_count != 0 && b.locations[b.location_count - 1] == kTos &&
@@ -486,122 +424,94 @@ bool compile_operations(trace_builder& b, PyObject* instructions, const Py_buffe
         b.location_count -= 2; b.locations[b.location_count++] = kTos;
       } else ok = false;
     } else ok = false;
-    if (!ok) { b.declined = true; Py_DECREF(iterator); return true; }
+    if (!ok) { b.declined = true; return true; }
   }
-  const bool success = !PyErr_Occurred();
-  Py_DECREF(iterator);
-  return success;
+  return true;
 }
 
-PyObject* compile_trace(PyObject*, PyObject* args) {
-  PyObject* instructions = nullptr;
-  PyObject* next_object = nullptr;
-  PyObject* loops_object = nullptr;
-  unsigned int byte_span = 0;
-  PyObject* width_object = nullptr;
-  unsigned int local_count = 0;
-  unsigned int slot_words = 0;
-  int tail = 0;
-  unsigned long long helper_target = 0;
-  if (!PyArg_ParseTuple(args, "OOOIOIIpK", &instructions, &next_object, &loops_object,
-                        &byte_span, &width_object, &local_count, &slot_words, &tail,
-                        &helper_target)) {
-    return nullptr;
-  }
-  if (byte_span == 0 || local_count > kMaxStackLocations ||
-      (slot_words != 1 && slot_words != 2 && slot_words != 4)) {
-    PyErr_SetString(PyExc_ValueError, "invalid native JIT compiler bounds");
-    return nullptr;
-  }
-  const bool has_next = next_object != Py_None;
-  const bool has_loops = loops_object != Py_None;
-  const auto next_pc = has_next ? PyLong_AsUnsignedLong(next_object) : 0u;
-  if (has_loops) static_cast<void>(PyLong_AsUnsignedLong(loops_object));
-  if ((has_next || has_loops) && PyErr_Occurred()) return nullptr;
-  buffer_guard width_buffer;
-  if (PyObject_GetBuffer(width_object, &width_buffer.view, PyBUF_SIMPLE) != 0) return nullptr;
-  width_buffer.active = true;
-  trace_builder b;
-  if (!append_stencil(b, kEntryStencil)) {
-    PyErr_SetString(PyExc_MemoryError, "native JIT body buffer exhausted");
-    return nullptr;
-  }
-  const auto slot_bytes = slot_words * 4;
-  if (!compile_operations(b, instructions, width_buffer.view, local_count, slot_bytes)) return nullptr;
-  if (b.declined || !b.saw_op || b.location_count > 1 || b.spilled_words != 0 ||
-      (b.helper_index < 0 && b.helper_words != 0)) Py_RETURN_NONE;
-
-  int helper_header = -1, helper_exit = -1, exit_patch = -1;
-  int chain_dispatch = -1;
-  if (tail) {
-    if (b.helper_index >= 0 || b.location_count != 0 || helper_target == 0) Py_RETURN_NONE;
-    const auto base = b.body_size;
-    if (!append_stencil(b, kHelperTailStencil)) Py_RETURN_NONE;
-    helper_header = static_cast<int>(kTraceHeaderBytes + base + 3);
-    helper_exit = static_cast<int>(kTraceHeaderBytes + base + 8);
-  } else if (b.helper_index >= 0) {
-    if (helper_target == 0 || b.location_count != 0) Py_RETURN_NONE;
-    const auto base = b.body_size;
-    if (!append_stencil(b, kHelperTailStencil)) Py_RETURN_NONE;
-    helper_header = static_cast<int>(kTraceHeaderBytes + base + 3);
-    helper_exit = static_cast<int>(kTraceHeaderBytes + base + 8);
-  } else {
-    if (b.location_count != 0 && !store_sp(b, kTos, 0)) Py_RETURN_NONE;
-    if (has_next && !has_loops) {
-      if (!append_u32_patch(b, kPublishNextPcStencil, static_cast<std::uint32_t>(next_pc))) {
-        Py_RETURN_NONE;
-      }
-      chain_dispatch = static_cast<int>(kTraceHeaderBytes + b.body_size + 1);
-      if (!append_stencil(b, kChainDispatchStencil)) Py_RETURN_NONE;
-    } else {
-      exit_patch = static_cast<int>(kTraceHeaderBytes + b.body_size + 1);
-      if (!append_stencil(b, kExitJumpStencil)) Py_RETURN_NONE;
-    }
-  }
-  if (tail) b.helper_index = -1;
-  if (kTraceHeaderBytes + b.body_size > 0xFFFF) Py_RETURN_NONE;
-  PyObject* result = PyTuple_New(9);
-  if (result == nullptr) return nullptr;
-  PyTuple_SET_ITEM(result, 0, PyBytes_FromStringAndSize(reinterpret_cast<const char*>(b.body.data()),
-                                                        static_cast<Py_ssize_t>(b.body_size)));
-  PyTuple_SET_ITEM(result, 1, PyLong_FromLong(b.helper_index));
-  PyTuple_SET_ITEM(result, 2, PyLong_FromLong(b.helper_words));
-  PyTuple_SET_ITEM(result, 3, PyLong_FromLong(b.max_spilled_words));
-  PyTuple_SET_ITEM(result, 4, PyLong_FromLong(static_cast<long>(b.location_count)));
-  PyTuple_SET_ITEM(result, 5, PyLong_FromLong(helper_header));
-  PyTuple_SET_ITEM(result, 6, PyLong_FromLong(helper_exit));
-  PyTuple_SET_ITEM(result, 7, PyLong_FromLong(exit_patch));
-  PyTuple_SET_ITEM(result, 8, PyLong_FromLong(chain_dispatch));
-  return result;
-}
-
-PyObject* common_chain_dispatcher(PyObject*, PyObject*) {
-  PyObject* result = PyTuple_New(2);
-  if (result == nullptr) return nullptr;
-  PyObject* offset = PyLong_FromUnsignedLong(FB_CONF_JIT_TRACE_COMMON_CHAIN_DISPATCH_OFFSET);
-  PyObject* code = PyBytes_FromStringAndSize(
-      reinterpret_cast<const char*>(kChainDispatcher.data()),
-      static_cast<Py_ssize_t>(kChainDispatcher.size()));
-  if (offset == nullptr || code == nullptr) {
-    Py_XDECREF(offset);
-    Py_XDECREF(code);
-    Py_DECREF(result);
-    return nullptr;
-  }
-  PyTuple_SET_ITEM(result, 0, offset);
-  PyTuple_SET_ITEM(result, 1, code);
-  return result;
-}
-
-PyMethodDef module_methods[] = {
-    {"compile_trace", compile_trace, METH_VARARGS, "Compile one x64 trace in Native C++."},
-    {"common_chain_dispatcher", common_chain_dispatcher, METH_NOARGS,
-     "Return the compile-time assembled shared chain dispatcher."},
-    {nullptr, nullptr, 0, nullptr},
-};
-PyModuleDef module_definition = {PyModuleDef_HEAD_INIT, "native_trace_call",
-                                 "Native x64 Copy-and-Patch compiler and ABI bridge.", -1,
-                                 module_methods, nullptr, nullptr, nullptr, nullptr};
 }  // namespace
 
-PyMODINIT_FUNC PyInit_native_trace_call() { return PyModule_Create(&module_definition); }
+extern "C" int fb_jit_compile_trace(
+    const fb_jit_instruction* instructions, std::uint32_t instruction_count,
+    std::uint32_t has_next_pc, std::uint32_t next_pc,
+    std::uint32_t has_loops_to, std::uint32_t loops_to,
+    std::uint32_t byte_span, const std::uint8_t* local_widths,
+    std::uint32_t local_width_bytes, std::uint32_t local_count,
+    std::uint32_t slot_words, std::uint32_t tail_context_helper,
+    std::uintptr_t helper_target, std::uint8_t* output,
+    std::uint32_t output_capacity, fb_jit_compile_result* result) {
+  static_cast<void>(loops_to);
+  if (result == nullptr || output == nullptr || byte_span == 0 ||
+      instruction_count > byte_span || (instruction_count != 0 && instructions == nullptr) ||
+      (local_width_bytes != 0 && local_widths == nullptr) ||
+      local_count > kMaxStackLocations ||
+      (slot_words != 1 && slot_words != 2 && slot_words != 4)) {
+    return -1;
+  }
+  *result = {};
+  trace_builder builder;
+  if (!append_stencil(builder, kEntryStencil)) return -2;
+  const auto slot_bytes = slot_words * 4;
+  if (!compile_operations(builder, instructions, instruction_count, local_widths,
+                          local_width_bytes, local_count, slot_bytes)) {
+    return -1;
+  }
+  if (builder.declined || !builder.saw_op || builder.location_count > 1 ||
+      builder.spilled_words != 0 || (builder.helper_index < 0 && builder.helper_words != 0)) {
+    return 0;
+  }
+
+  std::int32_t helper_header = -1;
+  std::int32_t helper_exit = -1;
+  std::int32_t exit_patch = -1;
+  std::int32_t chain_dispatch = -1;
+  if (tail_context_helper != 0) {
+    if (builder.helper_index >= 0 || builder.location_count != 0 || helper_target == 0) return 0;
+    const auto base = builder.body_size;
+    if (!append_stencil(builder, kHelperTailStencil)) return 0;
+    helper_header = static_cast<std::int32_t>(kTraceHeaderBytes + base + 3);
+    helper_exit = static_cast<std::int32_t>(kTraceHeaderBytes + base + 8);
+  } else if (builder.helper_index >= 0) {
+    if (helper_target == 0 || builder.location_count != 0) return 0;
+    const auto base = builder.body_size;
+    if (!append_stencil(builder, kHelperTailStencil)) return 0;
+    helper_header = static_cast<std::int32_t>(kTraceHeaderBytes + base + 3);
+    helper_exit = static_cast<std::int32_t>(kTraceHeaderBytes + base + 8);
+  } else {
+    if (builder.location_count != 0 && !store_sp(builder, kTos, 0)) return 0;
+    if (has_next_pc != 0 && has_loops_to == 0) {
+      if (!append_u32_patch(builder, kPublishNextPcStencil, next_pc)) return 0;
+      chain_dispatch = static_cast<std::int32_t>(kTraceHeaderBytes + builder.body_size + 1);
+      if (!append_stencil(builder, kChainDispatchStencil)) return 0;
+    } else {
+      exit_patch = static_cast<std::int32_t>(kTraceHeaderBytes + builder.body_size + 1);
+      if (!append_stencil(builder, kExitJumpStencil)) return 0;
+    }
+  }
+  if (tail_context_helper != 0) builder.helper_index = -1;
+  if (kTraceHeaderBytes + builder.body_size > 0xFFFF ||
+      builder.body_size > output_capacity) {
+    return -2;
+  }
+
+  std::memcpy(output, builder.body.data(), builder.body_size);
+  result->body_bytes = static_cast<std::uint32_t>(builder.body_size);
+  result->helper_index = builder.helper_index;
+  result->helper_words = static_cast<std::uint32_t>(builder.helper_words);
+  result->max_spilled_words = static_cast<std::uint32_t>(builder.max_spilled_words);
+  result->stack_location_count = static_cast<std::uint32_t>(builder.location_count);
+  result->helper_header_patch_offset = helper_header;
+  result->helper_exit_patch_offset = helper_exit;
+  result->exit_patch_offset = exit_patch;
+  result->chain_dispatch_patch_offset = chain_dispatch;
+  return 1;
+}
+
+extern "C" void fb_jit_common_chain_dispatcher(const std::uint8_t** bytes,
+                                                std::uint32_t* byte_count,
+                                                std::uint32_t* offset) {
+  if (bytes == nullptr || byte_count == nullptr || offset == nullptr) return;
+  *bytes = kChainDispatcher.data();
+  *byte_count = static_cast<std::uint32_t>(kChainDispatcher.size());
+  *offset = FB_CONF_JIT_TRACE_COMMON_CHAIN_DISPATCH_OFFSET;
+}

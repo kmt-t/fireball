@@ -41,8 +41,8 @@ from tier2_runtime.logger import LOG_RECORD_SIZE, LogDictionary, Logger, LogLeve
 from tier3_executer.interpreter.interpreter import Interpreter, InterpreterBindings
 from tier3_executer.jit.jit_manager import JITRuntimeManager
 from tier3_executer.jit.jit_runtime import JITInterpreter
-from tier3_executer.jit.runtime_engine import RuntimeEngine
 from tier3_executer.jit.x64_jit import TraceCompiler
+from tier3_executer.runtime_engine import RuntimeEngine
 from tier3_platform.drivers.hal.dummy import DummyDriver
 from tier3_platform.drivers.logging.file_sink import FileLogSink
 from tier3_platform.drivers.wasi.context import WasiHostContext

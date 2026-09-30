@@ -39,12 +39,13 @@ from tier2_runtime.jit_runtime_contract import (
     JITTrace,
 )
 from tier3_executer.interpreter.interpreter import (
+    NATIVE_DISPATCH_CALL_BOUNDARY,
     NATIVE_DISPATCH_OLDEST_TRACE,
     NATIVE_DISPATCH_YIELD,
     RETURN_SENTINEL_IP,
-    Interpreter,
     InterpreterCall,
     NativeDispatchEntryPoint,
+    NativeInterpreter,
     WasmNumber,
     select_native_dispatch_entry,
 )
@@ -130,9 +131,9 @@ class RuntimeEngine:
         self.drive_mode = drive_mode
         self.module: Module | None = None
         self._virq: VirqDispatcher | None = None
-        self._virq_interp: Interpreter | None = None
+        self._virq_interp: NativeInterpreter | None = None
         self._boundary_runner: Callable[
-            [Interpreter, InterpreterCall, int], RuntimeBoundaryResult
+            [NativeInterpreter, InterpreterCall, int], RuntimeBoundaryResult
         ] = self._run_interpreter_boundary if jit_runtime is None else self._run_jit_boundary
 
     @property
@@ -297,7 +298,7 @@ class RuntimeEngine:
 
     def run(
         self,
-        interp: Interpreter,
+        interp: NativeInterpreter,
         call_state: InterpreterCall,
         idle_budget: int = 4,
     ) -> RuntimeBoundaryResult:
@@ -308,7 +309,7 @@ class RuntimeEngine:
 
     def call(
         self,
-        interp: Interpreter,
+        interp: NativeInterpreter,
         func_index: int,
         args: Sequence[WasmNumber],
         idle_budget: int = 4,
@@ -321,7 +322,7 @@ class RuntimeEngine:
         return self.complete_call(interp, interp.start(func_index, args), idle_budget)
 
     def complete_call(
-        self, interp: Interpreter, call_state: InterpreterCall, idle_budget: int = 4
+        self, interp: NativeInterpreter, call_state: InterpreterCall, idle_budget: int = 4
     ) -> StaticVector[WasmNumber]:
         """Finish a call by repeatedly using the same native-dispatch ``run`` path."""
         self._bind_interpreter(interp)
@@ -340,14 +341,14 @@ class RuntimeEngine:
         assert call_state.results is not None
         return call_state.results
 
-    def _bind_interpreter(self, interp: Interpreter) -> None:
+    def _bind_interpreter(self, interp: NativeInterpreter) -> None:
         """Bind module-owned metadata and the current interpreter activation."""
         if self.module is None and interp.module is not None:
             self.register_module_blocks(interp.module)
         self._virq_interp = interp
 
     def _run_interpreter_boundary(
-        self, interp: Interpreter, call_state: InterpreterCall, idle_budget: int
+        self, interp: NativeInterpreter, call_state: InterpreterCall, idle_budget: int
     ) -> RuntimeBoundaryResult:
         """Run C++ interpreter handlers through one count-based yield boundary."""
         if call_state._ip == RETURN_SENTINEL_IP:
@@ -390,7 +391,7 @@ class RuntimeEngine:
         return RuntimeBoundaryResult(call_state, native_status == NATIVE_DISPATCH_YIELD)
 
     def _run_jit_boundary(
-        self, interp: Interpreter, call_state: InterpreterCall, idle_budget: int
+        self, interp: NativeInterpreter, call_state: InterpreterCall, idle_budget: int
     ) -> RuntimeBoundaryResult:
         """Run native JIT/interpreter dispatch to the next required boundary."""
         assert self.jit_runtime is not None
@@ -451,7 +452,7 @@ class RuntimeEngine:
         hotness_yield = False
         recorded_hotspot_history = False
         while True:
-            dispatch_snapshot = self.jit_runtime.native_dispatch_state(call_state.func_index)
+            dispatch_snapshot = self.jit_runtime.native_dispatch_state()
             (
                 native_status,
                 _dispatch_count,
@@ -510,6 +511,7 @@ class RuntimeEngine:
             or native_status == 2
             or native_status == NATIVE_DISPATCH_YIELD
             or native_status == NATIVE_DISPATCH_OLDEST_TRACE
+            or native_status == NATIVE_DISPATCH_CALL_BOUNDARY
         )
         if not valid_native_status:
             assert False, f"unexpected native JIT dispatch status: {native_status}"
@@ -524,7 +526,7 @@ class RuntimeEngine:
 
     def _invoke_trace(
         self,
-        interp: Interpreter,
+        interp: NativeInterpreter,
         call_state: InterpreterCall,
         trace: JITTrace,
         terminal_trace: JITTrace | None = None,
@@ -558,7 +560,7 @@ class RuntimeEngine:
         return self._resume_trace(interp, call_state, terminal_trace)
 
     def _resume_trace(
-        self, interp: Interpreter, call_state: InterpreterCall, terminal_trace: JITTrace
+        self, interp: NativeInterpreter, call_state: InterpreterCall, terminal_trace: JITTrace
     ) -> InterpreterCall:
         """Resume a trace by dispatching its terminator through Interpreter handlers."""
         frame = call_state._frame

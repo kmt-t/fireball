@@ -21,6 +21,10 @@ from helpers import make_interpreter as Interpreter
 from system import System
 from system_containers import ReadOnlyFlatMapView
 from test_support import make_runtime_engine
+from tier3_executer.interpreter.interpreter import (
+    InterpreterBindings,
+    NativeInterpreter,
+)
 from tier3_executer.jit.x64_jit import TraceCompiler
 from tier3_platform.drivers.wasi.context import WasiHostContext
 from tier3_plugins.debugger.debugger import DebuggerManager
@@ -189,7 +193,11 @@ def run_single_pairwise_case(case_id: str, case_tuple: tuple[str, ...]) -> None:
         runtime_engine.register_module_blocks(module)
 
     module.init_memory_data(wasi_ctx.guest_memory, ())
-    interp = Interpreter(module, memory=wasi_ctx.guest_memory, host_functions=host_funcs)
+    if runtime_engine is None:
+        interp = Interpreter(module, memory=wasi_ctx.guest_memory, host_functions=host_funcs)
+    else:
+        bindings = InterpreterBindings.with_memory_and_functions(wasi_ctx.guest_memory, host_funcs)
+        interp = NativeInterpreter(module, bindings)
     # Setup Debugger if needed
     dbg_mgr = None
     if dbg_mode in ("inspect", "active"):

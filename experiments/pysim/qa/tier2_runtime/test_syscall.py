@@ -19,7 +19,7 @@ _REPO_ROOT = _PYSIM_DIR.parent.parent
 
 from fixtures.platform_drivers import create_reference_platform_drivers
 from fixtures.uvwasi_reference import UvwasiReferenceContext
-from helpers import make_interpreter, wat_to_wasm
+from helpers import make_native_interpreter, wat_to_wasm
 from ipc_router import (
     IPCMessage,
     IPCStatus,
@@ -107,7 +107,7 @@ def test_syscall_04_guest_yield_hands_off_to_ready_task():
     try:
         host = WasiHostContext(system)
         host_functions = host.build_interpreter_host_functions(module)
-        interpreter = make_interpreter(
+        interpreter = make_native_interpreter(
             module,
             memory=host.guest_memory,
             host_functions=host_functions,

@@ -29,12 +29,12 @@ from system_containers import (
     StaticVector,
 )
 
-from . import _jit_cache_native
 from .common_code import (
     COMMON_HELPER_OFFSET,
     TRACE_ENTRY_STUB_BYTES,
     JITCodeCacheRegion,
 )
+from .native_abi import FAST_CACHE_SLOT_COUNT, NativeFastCacheStorage
 
 if TYPE_CHECKING:
     from execution_context import WASMContext
@@ -42,7 +42,7 @@ if TYPE_CHECKING:
 
 NativeTraceFn = Callable[[ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, int], int | None]
 TraceArgument = ctypes.c_void_p
-assert _jit_cache_native.FAST_SLOT_COUNT == JIT_CACHE_FAST_SLOT_COUNT
+assert FAST_CACHE_SLOT_COUNT == JIT_CACHE_FAST_SLOT_COUNT
 
 
 class CardState:
@@ -65,6 +65,50 @@ _CARD_STATE_NAMES = ("UNEXECUTED", "EXECUTED", "HOT", "COMPILED")
 # FB_CONF-style bounds (JITMultiBufferCache.NUM_FAST_SLOTS=16,
 # JITRuntimeManager.compile_queue_capacity=4).
 FB_CONF_MAX_INBOUND_SOURCES = JIT_CACHE_MAX_INBOUND_SOURCES
+
+
+class NativeFastCache:
+    """C++ direct-mapped lookup over Python-owned trace handles."""
+
+    __slots__ = ("_next_handle", "_references", "_storage")
+
+    def __init__(self) -> None:
+        assert FAST_CACHE_SLOT_COUNT == JIT_CACHE_FAST_SLOT_COUNT
+        self._storage = NativeFastCacheStorage()
+        self._references: StaticVector[tuple[int, JITTrace] | None] = StaticVector(
+            capacity=FAST_CACHE_SLOT_COUNT
+        )
+        for _ in range(FAST_CACHE_SLOT_COUNT):
+            self._references.append(None)
+        self._next_handle = 1
+
+    def lookup(self, head_pc: int) -> JITTrace | None:
+        handle = self._storage.lookup(head_pc)
+        if handle == 0:
+            return None
+        slot = self._storage.slot(head_pc)
+        entry = self._references[slot]
+        assert entry is not None and entry[0] == handle
+        assert entry[1].head_pc == head_pc
+        return entry[1]
+
+    def store(self, head_pc: int, trace: JITTrace) -> None:
+        assert trace.head_pc == head_pc
+        slot = self._storage.slot(head_pc)
+        entry = self._references[slot]
+        if entry is not None and entry[1] is trace:
+            self._storage.store(head_pc, entry[0])
+            return
+        assert self._next_handle <= 0xFFFF_FFFF_FFFF_FFFF
+        handle = self._next_handle
+        self._next_handle += 1
+        self._storage.store(head_pc, handle)
+        self._references[slot] = (handle, trace)
+
+    def clear(self) -> None:
+        self._storage.clear()
+        for slot in range(len(self._references)):
+            self._references[slot] = None
 
 
 class HotspotBitmap:
@@ -419,7 +463,7 @@ class JITTrace:
     ):
         self.head_pc = head_pc
         self.fn = fn or native_fn  # Direct ctypes CFUNCTYPE function pointer or callable
-        self.raw_addr = raw_addr  # Entry point as a plain int, for native_trace_call
+        self.raw_addr = raw_addr  # Entry point address consumed by native dispatch
         self.code_blob = code_blob
         self.code_offset: int | None = None
         self.entry_body_patch_offset = entry_body_patch_offset
@@ -639,7 +683,7 @@ class JITMultiBufferCache:
         self.on_rotate: Callable[[], int] | None = None
         # Direct-mapped 16-slot cache keyed by a repeatedly folded XOR over
         # UnifiedPC.
-        self._fast_cache = _jit_cache_native.FastCache()
+        self._fast_cache = NativeFastCache()
 
     @property
     def active(self) -> JITCacheBank:

@@ -30,7 +30,7 @@ import struct
 
 from control_flow import extract_basic_blocks
 from execution_context import WASMContext
-from helpers import make_interpreter as Interpreter
+from helpers import make_native_interpreter as Interpreter
 from helpers import wat_to_wasm
 from test_support import compile_module_block, compile_test_block, make_runtime_engine
 from tier3_executer.jit.common_code import COMMON_CHAIN_DISPATCH_OFFSET
@@ -277,6 +277,46 @@ def test_trace_compiler_cps_4arg_and_pic():
     )
     assert res is None
     # Two i32 locals give a 4-byte slot stride, so local 1 is raw word 1.
+    assert locals_arr[1] == 40
+
+
+def test_python_trace_compiler_is_selected_per_instance():
+    """Python and C++ JIT compilers can be composed as separate instances."""
+    code = bytes(
+        [
+            LOCAL_GET,
+            0,
+            I32_CONST,
+            10,
+            I32_ADD,
+            I32_CONST,
+            3,
+            I32_MUL,
+            I32_CONST,
+            5,
+            I32_SUB,
+            LOCAL_SET,
+            1,
+        ]
+    )
+    head_pc, next_pc, loops_to, frame_depth, byte_span = extract_basic_blocks(code)[0]
+    block = BasicBlock(
+        head_pc=head_pc,
+        next_pc=next_pc,
+        loops_to=loops_to,
+        frame_depth=frame_depth,
+        byte_span=byte_span,
+    )
+    compiler = TraceCompiler(backend="python")
+    trace = compile_test_block(compiler, code, block, (I32, I32))
+    locals_arr = (ctypes.c_uint32 * 8)()
+    locals_arr[0] = 5
+    trace.fn(
+        ctypes.c_void_p(0),
+        ctypes.c_void_p(0),
+        ctypes.cast(locals_arr, ctypes.c_void_p),
+        0,
+    )
     assert locals_arr[1] == 40
     # 3. The installed entry is a header-selected jump into the common prefix.
     assert trace.code_offset == 2048

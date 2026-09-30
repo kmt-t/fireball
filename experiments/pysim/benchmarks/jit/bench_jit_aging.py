@@ -37,11 +37,11 @@ configure_import_paths(_PYSIM_DIR, _BENCH_DIR)
 
 from bump_allocator import BumpAllocator
 from config import FB_CONF_JIT_AGING_STEP_SCAN_BYTES, FB_CONF_JIT_AGING_STEP_UNITS
-from tier3_executer.interpreter.interpreter import Interpreter, InterpreterBindings
+from tier3_executer.interpreter.interpreter import InterpreterBindings, NativeInterpreter
 from tier3_executer.jit.jit_cache import JITTrace
 from tier3_executer.jit.jit_manager import JITRuntimeManager
-from tier3_executer.jit.runtime_engine import RuntimeEngine
 from tier3_executer.jit.x64_jit import TraceCompiler
+from tier3_executer.runtime_engine import RuntimeEngine
 from wasm_module import LocalWidthMap, WasmOperand
 from wasm_reader import parse
 
@@ -185,7 +185,7 @@ class JITAgingBenchmark:
         engine.register_module_blocks(module)
         hook = _RotationHook(engine, aging)
         engine.jit_runtime.cache.on_rotate = hook
-        interp = Interpreter(module, InterpreterBindings.empty())
+        interp = NativeInterpreter(module, InterpreterBindings.empty())
         hot = [module.export_func_index(f"h{i}") for i in range(self.hot_functions)]
         cold = [module.export_func_index(f"c{i}") for i in range(self.cold_functions)]
 

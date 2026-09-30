@@ -37,8 +37,8 @@ from tier3_executer.interpreter.interpreter import (
 from tier3_executer.jit.jit_cache import HotspotBitmap
 from tier3_executer.jit.jit_manager import JITRuntimeManager
 from tier3_executer.jit.jit_runtime import JITInterpreter
-from tier3_executer.jit.runtime_engine import RuntimeEngine
 from tier3_executer.jit.x64_jit import TraceCompiler
+from tier3_executer.runtime_engine import RuntimeEngine
 from wasm_module import I32, LocalWidthMap
 from wasm_reader import parse
 

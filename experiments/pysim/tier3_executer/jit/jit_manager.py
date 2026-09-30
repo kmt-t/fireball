@@ -158,7 +158,7 @@ class JITRuntimeManager:
         self.module: Module | None = None
         self._fast_block_slots = _empty_block_slots()
         self._native_dispatch_cache_snapshot = EMPTY_NATIVE_DISPATCH_SNAPSHOT
-        self._native_dispatch_cache_key: tuple[int, int, int, bool] | None = None
+        self._native_dispatch_cache_key: tuple[int, int, bool] | None = None
         self._trackable_generation = 0
         self.exec_counter = 0
         self.history_overwritten_count = 0
@@ -254,11 +254,10 @@ class JITRuntimeManager:
         )
         return trace
 
-    def native_dispatch_state(self, function_index: int) -> NativeDispatchSnapshot:
-        """Return cached ctypes buffers that the C++ dispatcher reads directly."""
+    def native_dispatch_state(self) -> NativeDispatchSnapshot:
+        """Return module-wide ctypes tables consumed by native nested calls."""
 
         cache_key = (
-            function_index,
             self.cache.generation,
             self._trackable_generation,
             self.hotspot_profiling_enabled,
@@ -298,8 +297,6 @@ class JITRuntimeManager:
                 oldest_index += 1
             assert selected is not None
             head_pc, trace = selected
-            if head_pc >> 16 != function_index:
-                continue
             block = self.get_block(head_pc)
             assert block is not None and trace.raw_addr is not None
             assert entry_count < trace_capacity
@@ -323,9 +320,7 @@ class JITRuntimeManager:
         trackable_count = 0
         if self.hotspot_profiling_enabled:
             for block in module.blocks:
-                if block.head_pc >> 16 == function_index and self.trackable.is_marked(
-                    block.head_pc
-                ):
+                if self.trackable.is_marked(block.head_pc):
                     assert trackable_count < FB_CONF_MAX_BASIC_BLOCKS
                     trackable_heads[trackable_count] = block.head_pc
                     trackable_count += 1

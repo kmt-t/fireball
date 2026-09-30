@@ -24,8 +24,8 @@ from system_containers import (
 )
 from tier3_executer.jit.jit_cache import JITTrace
 from tier3_executer.jit.jit_manager import JITCompiler, JITRuntimeManager
-from tier3_executer.jit.runtime_engine import RuntimeDriveMode, RuntimeEngine
 from tier3_executer.jit.x64_jit import TraceCompiler
+from tier3_executer.runtime_engine import RuntimeDriveMode, RuntimeEngine
 from wasm_module import BasicBlock, Function, FuncType, LocalWidthMap, Module, WasmOperand
 
 

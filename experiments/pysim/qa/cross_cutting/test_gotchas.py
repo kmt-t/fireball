@@ -21,6 +21,7 @@ from hal_dispatch import HalBufferPool
 from helpers import (
     _build_test_wasm_binary,
     expect_assertion,
+    make_native_interpreter,
     make_test_ipc_message,
     wat_to_wasm,
 )
@@ -300,7 +301,7 @@ def test_vsoc_gotcha_01_02_stateless_interp_and_yield_in_vsoc():
     engine = make_runtime_engine(yield_threshold=3, jit_compiler=TraceCompiler())
     mod = engine.load_wasm(wasm_bytes)
     loop_pc = mod.blocks[0].head_pc
-    results = engine.call(Interpreter(mod), 0, [5])
+    results = engine.call(make_native_interpreter(mod), 0, [5])
     assert results[0] == 15
     assert engine.stat_jit_invocations >= 2
     assert engine.stat_interp_steps >= 3
@@ -512,7 +513,7 @@ def test_cont_gotcha_01_bit_view_power_of_two_factors():
         rejected = False
         try:
             BitView(buf, bits=invalid_bits)
-        except (ValueError, AssertionError):
+        except ValueError, AssertionError:
             rejected = True
         assert rejected, f"Expected BitView to reject bits={invalid_bits}"
 
@@ -531,7 +532,7 @@ def test_cont_gotcha_02_narrowing_never_expands_bounds():
         rejected = False
         try:
             view.slice(invalid_first, invalid_last)
-        except (ValueError, IndexError, AssertionError):
+        except ValueError, IndexError, AssertionError:
             rejected = True
         assert rejected, f"Expected slice({invalid_first}, {invalid_last}) to fail"
 

@@ -49,7 +49,7 @@ uv run --offline --no-sync python experiments/pysim/benchmarks/profile/bench_vtu
 
 ## 5. 修正
 
-[`runtime_engine.py`](experiments/pysim/tier3_executer/jit/runtime_engine.py) の `_invoke_trace` で、再開位置を確定する前に、制御フレームを再開位置の深さまで切り詰める。
+[`runtime_engine.py`](experiments/pysim/tier3_executer/runtime_engine.py) の `_invoke_trace` で、再開位置を確定する前に、制御フレームを再開位置の深さまで切り詰める。
 
 深さは、次のとおり求める。
 

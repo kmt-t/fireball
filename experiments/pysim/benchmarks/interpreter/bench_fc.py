@@ -1,6 +1,6 @@
 """Measure the selected WASM 0xFC paths in the PySIM interpreter.
 
-The native path requires the Clang-built ``_interpreter_native`` extension.
+The native path requires the Clang-built ``libnative_interpreter`` C ABI library.
 Measurements compare that path with the Python handler reference. Non-linear
 ``memory.copy`` endpoints intentionally return to Python and call the injected
 vDMA service; their timings describe the PySIM boundary and service together.
@@ -37,6 +37,7 @@ from tier2_runtime.wasm_reader import parse
 from tier3_executer.interpreter.interpreter import (
     Interpreter,
     InterpreterBindings,
+    NativeInterpreter,
     WasmNumber,
 )
 
@@ -124,7 +125,7 @@ class SemanticChecks(TypedDict):
 class BenchmarkReport(TypedDict):
     benchmark_id: str
     host: HostInfo
-    native_extension: str
+    native_implementation: str
     measurement: MeasurementSettings
     semantic_checks: SemanticChecks
     saturating_conversion: list[ConversionMeasurement]
@@ -411,6 +412,12 @@ def _invoke(
     return _call_python(interpreter, function_index, arguments)
 
 
+def _new_interpreter(module: Module, bindings: InterpreterBindings, native: bool) -> Interpreter:
+    """Select the Python reference or strict C++ interpreter for this measurement."""
+    interpreter_type = NativeInterpreter if native else Interpreter
+    return interpreter_type(module, bindings)
+
+
 def _measure(
     module: Module,
     function_index: int,
@@ -423,9 +430,10 @@ def _measure(
 ) -> float:
     warm_memory = memory_factory()
     warm_transfer = transfer_factory(warm_memory)
-    warm_interpreter = Interpreter(
+    warm_interpreter = _new_interpreter(
         module,
         _bindings(warm_memory, warm_transfer.transfer if warm_transfer is not None else None),
+        native,
     )
     warm_arguments = (*arguments[:-1], WARMUP_ITERATIONS)
     try:
@@ -440,9 +448,10 @@ def _measure(
     for _ in range(ROUNDS):
         memory = memory_factory()
         transfer = transfer_factory(memory)
-        interpreter = Interpreter(
+        interpreter = _new_interpreter(
             module,
             _bindings(memory, transfer.transfer if transfer is not None else None),
+            native,
         )
         try:
             started = time.perf_counter()
@@ -501,7 +510,7 @@ def _verify_conversion_semantics(module: Module) -> int:
     memory = bytearray(PAGE_SIZE)
     verified = 0
     for subopcode, value, expected in cases:
-        native = Interpreter(module, _bindings(memory)).call(subopcode, (value,))
+        native = NativeInterpreter(module, _bindings(memory)).call(subopcode, (value,))
         reference = _call_python(Interpreter(module, _bindings(memory)), subopcode, (value,))
         assert len(native) == 1 and len(reference) == 1
         assert native[0] == reference[0] == expected, (subopcode, value, native, reference)
@@ -514,7 +523,11 @@ def _verify_linear_memory_semantics(module: Module) -> int:
     for native in (False, True):
         memory = bytearray(PAGE_SIZE)
         memory[:64] = bytes(range(64))
-        interpreter = Interpreter(module, _bindings(memory))
+        interpreter = (
+            NativeInterpreter(module, _bindings(memory))
+            if native
+            else Interpreter(module, _bindings(memory))
+        )
         original = bytes(memory)
         _invoke(interpreter, 16, (8, 4, 32), native)
         expected = bytearray(original)
@@ -753,7 +766,7 @@ def run_benchmarks(iterations_scale: int = 1) -> BenchmarkReport:
             "processor": _cpu_model(),
             "python": platform.python_version(),
         },
-        "native_extension": "Clang-built _interpreter_native",
+        "native_implementation": "Clang-built libnative_interpreter C ABI",
         "measurement": {
             "rounds": ROUNDS,
             "statistic": "median",

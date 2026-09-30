@@ -400,8 +400,8 @@ def run_aobench():
     print(f"    -> Parsed Module: {len(module.functions)} functions, {len(module.exports)} exports")
     # 3. Setup System & WASI Context
     from tier3_executer.jit.jit_manager import JITRuntimeManager
-    from tier3_executer.jit.runtime_engine import RuntimeEngine
     from tier3_executer.jit.x64_jit import TraceCompiler
+    from tier3_executer.runtime_engine import RuntimeEngine
 
     # 3. Setup System & WASI Context for the Interpreter baseline
     sysv = System()

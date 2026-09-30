@@ -17,10 +17,14 @@ Tests:
 
 import wasmtime
 from system import System
-from tier3_executer.interpreter.interpreter import Interpreter, InterpreterBindings
+from tier3_executer.interpreter.interpreter import (
+    Interpreter,
+    InterpreterBindings,
+    NativeInterpreter,
+)
 from tier3_executer.jit.jit_manager import JITRuntimeManager
-from tier3_executer.jit.runtime_engine import RuntimeEngine
 from tier3_executer.jit.x64_jit import TraceCompiler
+from tier3_executer.runtime_engine import RuntimeEngine
 from tier3_platform.drivers.wasi.context import WasiHostContext
 from wasm_reader import parse
 
@@ -109,7 +113,7 @@ def test_scenario_hybrid_jit():
         jit_runtime=JITRuntimeManager(jit_compiler=trace_compiler, yield_threshold=16)
     )
     runtime_engine.register_module_blocks(module)
-    interp_t3 = Interpreter(
+    interp_t3 = NativeInterpreter(
         module, InterpreterBindings.with_memory_and_functions(wasi_t3.guest_memory, funcs_t3)
     )
     res_t3 = runtime_engine.call(interp_t3, fn_idx, [LIMIT])

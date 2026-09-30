@@ -44,7 +44,7 @@ if TYPE_CHECKING:
     from hal_dispatch import HalDriver, HalTask, StreamSink
     from tier3_executer.interpreter.interpreter import (
         BasicBlock,
-        Interpreter,
+        NativeInterpreter,
         WASMContext,
         WasmNumber,
     )
@@ -59,7 +59,7 @@ from memory import (
 from scheduler import FB_CONF_MAX_TASKS, Channel, ChannelAction, Scheduler, Task, TaskState
 from system_containers import MutableFlatMapStorage, ReadOnlyFlatMapStorage, StaticVector
 from tier2_runtime.logger import LogDictionary, Logger, LogLevel
-from tier3_executer.jit.runtime_engine import RuntimeDriveMode, RuntimeEngine
+from tier3_executer.runtime_engine import RuntimeDriveMode, RuntimeEngine
 from tier3_platform.drivers.platform_config import (
     PlatformDriverConfiguration,
     create_default_platform_drivers,
@@ -292,7 +292,7 @@ class System:
 
     def run_guest(
         self,
-        interp: Interpreter,
+        interp: NativeInterpreter,
         func_index: int,
         args: Sequence[WasmNumber],
         idle_budget: int = 4,

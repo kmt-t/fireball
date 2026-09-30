@@ -10,7 +10,7 @@ _PYSIM_DIR = _TEST_FILE.parents[3]
 
 from interop_abi import ExecutionContextNative, NativeValueStack
 from native_stacks import NativeControlStack
-from tier3_executer.interpreter import _interpreter_native
+from tier3_executer.interpreter import native_abi
 
 
 def test_native_cps_entry_uses_four_logical_arguments() -> None:
@@ -19,7 +19,7 @@ def test_native_cps_entry_uses_four_logical_arguments() -> None:
     control_stack = NativeControlStack()
     context = ExecutionContextNative()
     code = memoryview(bytearray((0x41, 3, 0x41, 4, 0x6A, 0x0B)))
-    status, next_ip, stack_size, trap_code = _interpreter_native.run_step(
+    status, next_ip, stack_size, trap_code = native_abi.run_step(
         code,
         memoryview(context),
         stack.raw_view,

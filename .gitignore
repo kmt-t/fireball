@@ -88,8 +88,9 @@ pip-wheel-metadata/
 *.egg-info/
 
 # Local editor and agent state
-.idea/
 .antigravitycli/
 .codex/
 .serena/
 .mcp.json
+/.aws/
+/.ri

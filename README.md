@@ -33,7 +33,7 @@ You need Clang, CMake, Ninja, and Python (with `uv` recommended) to build and ve
   - CMake (3.25+)
   - Ninja
 - **Python Runtime & Package Management**:
-  - Python 3.14.x for the repository `.venv`; [`uv`](https://github.com/astral-sh/uv) manages the environment.
+  - Use CPython 3.14.x for the repository `.venv`; [`uv`](https://github.com/astral-sh/uv) manages the environment. PyPy is not configured as a supported runtime.
 - **Python Dependencies**:
   Install the repository development dependencies from [pyproject.toml](pyproject.toml):
   ```bash
@@ -42,7 +42,7 @@ You need Clang, CMake, Ninja, and Python (with `uv` recommended) to build and ve
   Key modules include:
   - **Verification Engine (`spec-integrator`)**: `pyModelChecking` (CTL/LTL formal verification), `mistune` (Markdown AST parser), `pyyaml`, `requests`, `urllib3`, `mermaidx`.
   - **Simulator & JIT Machine Code (`experiments/pysim`)**: `wasmtime` (WASM reference runtime for differential testing).
-  - **Testing, Formatting & Static Typing**: `pytest`, `pytest-cov`, `ruff`, `pyright` (初期ゲートは型契約が安定した製品Tierモジュール群から段階導入).
+  - **Testing, Formatting & Static Typing**: `pytest`, `pytest-cov`, `ruff`, and `pyright`. Pyright is the static type checker used by CI for the pilot set of product-tier modules; it is separate from the Python runtime.
 
 ### 2. Verification & Quality Gates
 Fireball enforces an automated verification pipeline (`spec-integrator`) ensuring static formatting, keyword traceability, tier hierarchy encapsulation, pyModelChecking formal verification, WIT interface types, evidence backing, verification obligations, and consistency baselines (see `tools/README.md`):

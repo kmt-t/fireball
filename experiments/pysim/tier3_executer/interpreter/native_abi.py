@@ -146,6 +146,9 @@ _RUN_STEP.restype = ctypes.c_int
 _RUN_CONTROL_STEP = _LIBRARY.fb_native_run_control_step
 _RUN_CONTROL_STEP.argtypes = (ctypes.c_void_p, ctypes.POINTER(NativeResult))
 _RUN_CONTROL_STEP.restype = ctypes.c_int
+_RUN_DEBUG_DISPATCH = _LIBRARY.fb_native_run_debug_dispatch
+_RUN_DEBUG_DISPATCH.argtypes = (ctypes.c_void_p, ctypes.POINTER(NativeResult))
+_RUN_DEBUG_DISPATCH.restype = ctypes.c_int
 _RUN_DISPATCH = _LIBRARY.fb_native_run_dispatch
 _RUN_DISPATCH.argtypes = (ctypes.c_void_p, ctypes.POINTER(NativeResult))
 _RUN_DISPATCH.restype = ctypes.c_int
@@ -389,6 +392,51 @@ def run_native_dispatch(
 ) -> NativeDispatchResult:
     return _run_dispatch(
         _RUN_DISPATCH,
+        code,
+        context,
+        stack,
+        locals_buffer,
+        control_stack,
+        entries,
+        trackable_blocks,
+        block_history,
+        entry_count,
+        trackable_count,
+        stack_size,
+        stack_capacity,
+        initial_ip,
+        local_base,
+        local_slots,
+        control_base,
+        function_index,
+        yield_threshold,
+        execution_count,
+    )
+
+
+def run_native_debug_dispatch(
+    code: bytes,
+    context: memoryview,
+    stack: memoryview,
+    locals_buffer: memoryview,
+    control_stack: memoryview,
+    entries: ctypes.Array,
+    trackable_blocks: ctypes.Array,
+    block_history: ctypes.Array,
+    entry_count: int,
+    trackable_count: int,
+    stack_size: int,
+    stack_capacity: int,
+    initial_ip: int,
+    local_base: int,
+    local_slots: int,
+    control_base: int,
+    function_index: int,
+    yield_threshold: int,
+    execution_count: int,
+) -> NativeDispatchResult:
+    return _run_dispatch(
+        _RUN_DEBUG_DISPATCH,
         code,
         context,
         stack,

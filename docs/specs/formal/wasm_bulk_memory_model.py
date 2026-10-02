@@ -28,6 +28,7 @@ def build_model(*, guards: bool = True) -> Kripke:
         "s_oob_copy_request",
         "s_oob_copy_trap",
         "s_overlap_copy_request",
+        "s_linear_disjoint_request",
         "s_overlap_cpu_done",
         "s_overlap_dma",
         "s_dma_copy_request",
@@ -53,6 +54,7 @@ def build_model(*, guards: bool = True) -> Kripke:
     transitions = [
         ("s_start", "s_oob_copy_request"),
         ("s_start", "s_overlap_copy_request"),
+        ("s_start", "s_linear_disjoint_request"),
         ("s_start", "s_dma_copy_request"),
         ("s_start", "s_nan_conversion"),
         ("s_start", "s_positive_overflow_conversion"),
@@ -61,7 +63,10 @@ def build_model(*, guards: bool = True) -> Kripke:
         ("s_start", "s_finite_conversion"),
         ("s_oob_copy_request", "s_oob_copy_trap"),
         ("s_overlap_copy_request", "s_overlap_cpu_done"),
-        ("s_dma_copy_request", "s_dma_pending"),
+        ("s_linear_disjoint_request", "s_overlap_cpu_done"),
+        ("s_dma_copy_request", "s_dma_complete"),  # Synchronous completion is permitted.
+        ("s_dma_copy_request", "s_dma_pending"),  # Deferred completion uses the wait path.
+        ("s_dma_pending", "s_dma_pending"),  # External completion is not guaranteed.
         ("s_dma_pending", "s_dma_complete"),
         ("s_dma_complete", "s_dma_visible"),
         ("s_dma_visible", "s_guest_resume"),
@@ -93,6 +98,7 @@ def build_model(*, guards: bool = True) -> Kripke:
             [
                 ("s_oob_copy_request", "s_partial_memory_write"),
                 ("s_overlap_copy_request", "s_overlap_dma"),
+                ("s_linear_disjoint_request", "s_overlap_dma"),
                 ("s_dma_pending", "s_resume_while_pending"),
                 ("s_dma_complete", "s_resume_before_dma_visible"),
                 ("s_nan_conversion", "s_wrong_conversion_result"),
@@ -107,10 +113,11 @@ def build_model(*, guards: bool = True) -> Kripke:
         "s_start": {"start"},
         "s_oob_copy_request": {"copy_request"},
         "s_oob_copy_trap": {"trap", "memory_unchanged"},
-        "s_overlap_copy_request": {"overlap_copy_request"},
-        "s_overlap_cpu_done": {"overlap_copy", "cpu_copy", "copy_complete"},
-        "s_overlap_dma": {"overlap_copy", "dma_used"},
-        "s_dma_copy_request": {"nonoverlap_copy_request"},
+        "s_overlap_copy_request": {"linear_copy_request"},
+        "s_linear_disjoint_request": {"linear_copy_request"},
+        "s_overlap_cpu_done": {"linear_copy", "cpu_copy", "copy_complete"},
+        "s_overlap_dma": {"linear_copy", "dma_used"},
+        "s_dma_copy_request": {"vmmio_copy_request"},
         "s_dma_pending": {"dma_pending"},
         "s_dma_complete": {"dma_complete", "dma_idle"},
         "s_dma_visible": {"dma_complete", "dma_idle", "memory_visible"},
@@ -143,7 +150,7 @@ def build_model(*, guards: bool = True) -> Kripke:
 
 
 def properties() -> list[FormalProperty]:
-    overlap_copy = AtomicProposition("overlap_copy")
+    linear_copy = AtomicProposition("linear_copy")
     nan_input = AtomicProposition("nan_input")
     positive_overflow = AtomicProposition("positive_overflow_input")
     signed_underflow = AtomicProposition("signed_underflow_input")
@@ -159,11 +166,11 @@ def properties() -> list[FormalProperty]:
             "expect": True,
         },
         {
-            "name": "overlap_copy_never_uses_dma",
+            "name": "linear_copy_never_uses_dma",
             "kind": "safety",
             "logic": "CTL",
-            "formula": AG(Not(And(overlap_copy, AtomicProposition("dma_used")))),
-            "violation": And(overlap_copy, AtomicProposition("dma_used")),
+            "formula": AG(Not(And(linear_copy, AtomicProposition("dma_used")))),
+            "violation": And(linear_copy, AtomicProposition("dma_used")),
             "expect": True,
         },
         {

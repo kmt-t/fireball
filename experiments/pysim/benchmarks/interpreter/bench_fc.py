@@ -425,15 +425,43 @@ def _measure(
     iterations: int,
     native: bool,
     memory_factory: Callable[[], bytearray],
-    transfer_factory: Callable[[bytearray], VdmaModel | None],
-    validate: Callable[[Interpreter, VdmaModel | None, int], None],
+    validate: Callable[[Interpreter, int], None] | None = None,
 ) -> float:
     warm_memory = memory_factory()
-    warm_transfer = transfer_factory(warm_memory)
+    warm_interpreter = _new_interpreter(module, _bindings(warm_memory), native)
+    warm_arguments = (*arguments[:-1], WARMUP_ITERATIONS)
+    warm_result = _invoke(warm_interpreter, function_index, warm_arguments, native)
+    assert len(warm_result) == 0
+    if validate is not None:
+        validate(warm_interpreter, WARMUP_ITERATIONS)
+
+    samples: list[float] = []
+    for _ in range(ROUNDS):
+        memory = memory_factory()
+        interpreter = _new_interpreter(module, _bindings(memory), native)
+        started = time.perf_counter()
+        result = _invoke(interpreter, function_index, arguments, native)
+        elapsed = time.perf_counter() - started
+        assert len(result) == 0
+        if validate is not None:
+            validate(interpreter, iterations)
+        samples.append(elapsed * 1e9 / iterations)
+    return median(samples)
+
+
+def _measure_vdma(
+    module: Module,
+    function_index: int,
+    arguments: Sequence[WasmNumber],
+    iterations: int,
+    native: bool,
+    memory_factory: Callable[[], bytearray],
+    validate: Callable[[Interpreter, VdmaModel, int], None],
+) -> float:
+    warm_memory = memory_factory()
+    warm_transfer = VdmaModel(warm_memory)
     warm_interpreter = _new_interpreter(
-        module,
-        _bindings(warm_memory, warm_transfer.transfer if warm_transfer is not None else None),
-        native,
+        module, _bindings(warm_memory, warm_transfer.transfer), native
     )
     warm_arguments = (*arguments[:-1], WARMUP_ITERATIONS)
     try:
@@ -441,18 +469,13 @@ def _measure(
         assert len(warm_result) == 0
         validate(warm_interpreter, warm_transfer, WARMUP_ITERATIONS)
     finally:
-        if warm_transfer is not None:
-            warm_transfer.close()
+        warm_transfer.close()
 
     samples: list[float] = []
     for _ in range(ROUNDS):
         memory = memory_factory()
-        transfer = transfer_factory(memory)
-        interpreter = _new_interpreter(
-            module,
-            _bindings(memory, transfer.transfer if transfer is not None else None),
-            native,
-        )
+        transfer = VdmaModel(memory)
+        interpreter = _new_interpreter(module, _bindings(memory, transfer.transfer), native)
         try:
             started = time.perf_counter()
             result = _invoke(interpreter, function_index, arguments, native)
@@ -461,8 +484,7 @@ def _measure(
             validate(interpreter, transfer, iterations)
             samples.append(elapsed * 1e9 / iterations)
         finally:
-            if transfer is not None:
-                transfer.close()
+            transfer.close()
     return median(samples)
 
 
@@ -542,9 +564,8 @@ def _verify_linear_memory_semantics(module: Module) -> int:
 
 def _linear_copy_validator(
     length: int,
-) -> Callable[[Interpreter, VdmaModel | None, int], None]:
-    def validate(interpreter: Interpreter, transfer: VdmaModel | None, _iterations: int) -> None:
-        assert transfer is None
+) -> Callable[[Interpreter, int], None]:
+    def validate(interpreter: Interpreter, _iterations: int) -> None:
         assert interpreter.memory is not None
         assert interpreter.memory[32_768 : 32_768 + length] == bytes(
             (index * 13 + 7) & 0xFF for index in range(length)
@@ -555,9 +576,8 @@ def _linear_copy_validator(
 
 def _linear_fill_validator(
     destination: int, value: int, length: int
-) -> Callable[[Interpreter, VdmaModel | None, int], None]:
-    def validate(interpreter: Interpreter, transfer: VdmaModel | None, _iterations: int) -> None:
-        assert transfer is None
+) -> Callable[[Interpreter, int], None]:
+    def validate(interpreter: Interpreter, _iterations: int) -> None:
         assert interpreter.memory is not None
         assert (
             interpreter.memory[destination : destination + length]
@@ -578,9 +598,8 @@ def _vmmio_routes() -> tuple[tuple[str, str, str], ...]:
 
 def _vdma_validator(
     expected_source: int, expected_destination: int, length: int
-) -> Callable[[Interpreter, VdmaModel | None, int], None]:
-    def validate(interpreter: Interpreter, transfer: VdmaModel | None, iterations: int) -> None:
-        assert transfer is not None
+) -> Callable[[Interpreter, VdmaModel, int], None]:
+    def validate(interpreter: Interpreter, transfer: VdmaModel, iterations: int) -> None:
         assert transfer.calls == iterations
         assert transfer.last_transfer is not None
         source, destination, transfer_length = transfer.last_transfer
@@ -615,8 +634,6 @@ def run_benchmarks(iterations_scale: int = 1) -> BenchmarkReport:
             counter,
             True,
             lambda: bytearray(PAGE_SIZE),
-            lambda _memory: None,
-            lambda _interpreter, transfer, _count: assert_no_vdma(transfer),
         )
         python_ns = _measure(
             module,
@@ -625,8 +642,6 @@ def run_benchmarks(iterations_scale: int = 1) -> BenchmarkReport:
             counter,
             False,
             lambda: bytearray(PAGE_SIZE),
-            lambda _memory: None,
-            lambda _interpreter, transfer, _count: assert_no_vdma(transfer),
         )
         conversion_results.append(
             {
@@ -653,7 +668,6 @@ def run_benchmarks(iterations_scale: int = 1) -> BenchmarkReport:
             iterations,
             True,
             lambda: bytearray(memory),
-            lambda _memory: None,
             copy_validator,
         )
         python_ns = _measure(
@@ -663,7 +677,6 @@ def run_benchmarks(iterations_scale: int = 1) -> BenchmarkReport:
             iterations,
             False,
             lambda: bytearray(memory),
-            lambda _memory: None,
             copy_validator,
         )
         linear_copy_results.append(
@@ -689,7 +702,6 @@ def run_benchmarks(iterations_scale: int = 1) -> BenchmarkReport:
             iterations,
             True,
             lambda: bytearray(PAGE_SIZE),
-            lambda _memory: None,
             fill_validator,
         )
         python_ns = _measure(
@@ -699,7 +711,6 @@ def run_benchmarks(iterations_scale: int = 1) -> BenchmarkReport:
             iterations,
             False,
             lambda: bytearray(PAGE_SIZE),
-            lambda _memory: None,
             fill_validator,
         )
         linear_fill_results.append(
@@ -725,24 +736,22 @@ def run_benchmarks(iterations_scale: int = 1) -> BenchmarkReport:
         iterations = VDMA_ITERATIONS * iterations_scale
         arguments = (destination, source, 64, iterations)
         validator = _vdma_validator(source, destination, 64)
-        native_ns = _measure(
+        native_ns = _measure_vdma(
             module,
             17,
             arguments,
             iterations,
             True,
             lambda: bytearray(PAGE_SIZE),
-            lambda memory: VdmaModel(memory),
             validator,
         )
-        python_ns = _measure(
+        python_ns = _measure_vdma(
             module,
             17,
             arguments,
             iterations,
             False,
             lambda: bytearray(PAGE_SIZE),
-            lambda memory: VdmaModel(memory),
             validator,
         )
         vdma_results.append(
@@ -782,10 +791,6 @@ def run_benchmarks(iterations_scale: int = 1) -> BenchmarkReport:
         "linear_memory_fill": linear_fill_results,
         "vdma_memory_copy": vdma_results,
     }
-
-
-def assert_no_vdma(transfer: VdmaModel | None) -> None:
-    assert transfer is None
 
 
 def _cpu_model() -> str:

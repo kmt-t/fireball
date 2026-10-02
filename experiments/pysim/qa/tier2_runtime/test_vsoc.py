@@ -9,6 +9,8 @@ import socket
 import struct
 from pathlib import Path
 
+import pytest
+
 # Setup paths
 _TEST_FILE = Path(__file__).resolve()
 _TESTS_DIR = _TEST_FILE.parent.parent
@@ -29,9 +31,10 @@ from helpers import (
     wat_to_wasm,
 )
 from helpers import make_interpreter as Interpreter
+from ipc_router import Role
 from loader import DecodedEntityKind
 from runtime_test_driver import RuntimeEngineDebugDriver
-from scheduler import ChannelAction, Scheduler, Task, TaskState
+from scheduler import ChannelAction, TaskState
 from system import (
     System,
 )
@@ -45,10 +48,11 @@ from test_support import (
     make_pc_only_module,
     make_runtime_engine,
 )
-from tier2_runtime.logger import LogDictionary, Logger, LogLevel, LogResult, decode_log_records
+from tier2_runtime.logger import LogDictionary, LogLevel, LogResult, decode_log_records
 from tier3_executer.jit.jit_cache import CardState, JITTrace
 from tier3_executer.jit.x64_jit import TraceCompiler
-from tier3_platform.drivers.hal.stream import DedicatedLogSink, StreamTransport
+from tier3_executer.runtime_engine import RuntimeDriveMode, RuntimeEngine
+from tier3_platform.drivers.hal.stream import DedicatedLogSink
 from tier3_platform.drivers.wasi.context import WasiHostContext
 from virq import (
     DispatchResult,
@@ -152,17 +156,28 @@ def test_virq_52_pending_registration_is_invisible_until_boundary():
 
 def test_virq_53_dispatches_fixed_event_through_static_hierarchy():
     """TEST-VSOC-53: PASS_THROUGH traverses root, category, device in order."""
-    calls = StaticVector[int](capacity=8)
+    calls = StaticVector[tuple[int, InterruptEvent]](capacity=8)
 
     def invoke(
         function_index: int,
-        _vector_id: int,
-        _source_id: int,
-        _cause_code: int,
-        _payload0: int,
-        _payload1: int,
+        vector_id: int,
+        source_id: int,
+        cause_code: int,
+        payload0: int,
+        payload1: int,
     ) -> int:
-        calls.push_back(function_index)
+        calls.push_back(
+            (
+                function_index,
+                InterruptEvent(
+                    vector_id,
+                    source_id,
+                    cause_code,
+                    payload0,
+                    payload1,
+                ),
+            )
+        )
         return int(VirqDispatchResult.PASS_THROUGH)
 
     dispatcher = VirqDispatcher(_make_virq_module(), invoke)
@@ -174,11 +189,15 @@ def test_virq_53_dispatches_fixed_event_through_static_hierarchy():
     result = dispatcher.dispatch_interrupt_event(_virq_event(0x0100, source_id=0))
 
     assert result.outcome == VirqDispatchResult.PASS_THROUGH
-    assert tuple(calls) == (0, 1, 2)
+    assert tuple(calls) == tuple((index, _virq_event(0x0100, 0)) for index in (0, 1, 2))
     assert dispatcher.last_path == (int(VirqNode.ROOT), int(VirqNode.DEVICE), 5)
 
 
-def test_virq_54_handled_and_reject_are_terminal():
+@pytest.mark.parametrize("terminal_level", (0, 1, 2), ids=("root", "category", "device"))
+@pytest.mark.parametrize("outcome", (VirqDispatchResult.HANDLED, VirqDispatchResult.REJECT))
+def test_virq_54_handled_and_reject_are_terminal(
+    terminal_level: int, outcome: VirqDispatchResult
+) -> None:
     """TEST-VSOC-54: terminal outcomes do not propagate to child or FAULT nodes."""
     calls = StaticVector[int](capacity=8)
     modes = StaticVector[int](capacity=8)
@@ -200,39 +219,82 @@ def test_virq_54_handled_and_reject_are_terminal():
     dispatcher.register_dispatcher(VirqNode.device(0), 2)
     dispatcher.commit_pending_registrations()
 
-    modes.extend(
+    modes.extend((1, 1, 1))
+    modes[terminal_level] = int(outcome)
+    result = dispatcher.dispatch_interrupt_event(_virq_event(0x0100))
+    expected_calls = ((0,), (0, 1), (0, 1, 2))[terminal_level]
+    expected_path = ((0,), (0, 1), (0, 1, 5))[terminal_level]
+    expected_fault = (
         (
-            int(VirqDispatchResult.HANDLED),
-            int(VirqDispatchResult.PASS_THROUGH),
-            int(VirqDispatchResult.PASS_THROUGH),
-        )
+            VirqFaultCode.ROOT_REJECT,
+            VirqFaultCode.CATEGORY_REJECT,
+            VirqFaultCode.DEVICE_REJECT,
+        )[terminal_level]
+        if outcome == VirqDispatchResult.REJECT
+        else None
     )
-    handled = dispatcher.dispatch_interrupt_event(_virq_event(0x0100))
-    assert handled.outcome == VirqDispatchResult.HANDLED
-    assert tuple(calls) == (0,)
-
-    calls.clear()
-    modes[0] = int(VirqDispatchResult.REJECT)
-    rejected = dispatcher.dispatch_interrupt_event(_virq_event(0x0100))
-    assert rejected.outcome == VirqDispatchResult.REJECT
-    assert tuple(calls) == (0,)
-    assert dispatcher.last_path == (int(VirqNode.ROOT),)
-    assert dispatcher.faults[-1] == VirqFaultCode.ROOT_REJECT
+    assert result.outcome == outcome
+    assert result.error == expected_fault
+    assert tuple(calls) == expected_calls
+    assert dispatcher.last_path == expected_path
+    assert tuple(dispatcher.faults) == (() if expected_fault is None else (expected_fault,))
 
 
 def test_virq_55_does_not_enter_wasi_polling_path():
-    """TEST-VSOC-55: vIRQ dispatch invokes only its registered dispatcher callback."""
-    poll_calls = StaticVector[int](capacity=2)
-    dispatcher = VirqDispatcher(
-        _make_virq_module(),
-        lambda _index, _v, _s, _c, _p0, _p1: int(VirqDispatchResult.HANDLED),
-    )
-    dispatcher.register_dispatcher(int(VirqNode.ROOT), 0)
-    dispatcher.commit_pending_registrations()
+    """TEST-VSOC-55: real HAL poll and native vIRQ leave each other's state unchanged."""
+    from tier3_platform.drivers.hal.dummy import DummyDriver
+    from tier3_platform.drivers.wasi.context import Wasi03pEngine
 
-    result = dispatcher.dispatch_interrupt_event(_virq_event(0x2000))
-    assert result.outcome == VirqDispatchResult.HANDLED
-    assert len(poll_calls) == 0
+    system = System()
+    try:
+        system.start_runtime_task(name="virq_poll_guest")
+        timer_uri = "fireball://hal/timer/0"
+        system.start_hal_driver(DummyDriver(stream_enabled=False), timer_uri)
+        polling = Wasi03pEngine(system)
+        handle = polling.clock_subscribe(timer_uri, 0)
+        module = system.runtime_engine.load_wasm(
+            wat_to_wasm(
+                """(module (memory 1)
+              (func (param i32 i32 i32 i32 i32) (result i32)
+                i32.const 0 local.get 0 i32.store
+                i32.const 4 local.get 1 i32.store
+                i32.const 8 local.get 2 i32.store
+                i32.const 12 local.get 3 i32.store
+                i32.const 16 local.get 4 i32.store
+                i32.const 0))"""
+            )
+        )
+        memory = bytearray(65536)
+        interpreter = make_native_interpreter(module, memory=memory)
+        state = interpreter.start(0, (0, 0, 0, 0, 0))
+        while not state.finished:
+            state = system.runtime_engine.run(interpreter, state).call_state
+        assert state.results == [0]
+        assert system.host_calls.virq_register(int(VirqNode.ROOT), 0) == 0
+        system.runtime_engine.commit_virq_registrations()
+        dispatcher = system.runtime_engine._virq
+        assert dispatcher is not None
+        active = dispatcher.active_functions
+        pending = tuple(dispatcher._pending_functions)
+        assert polling.poll_check(timer_uri, handle) is True
+        assert dispatcher.active_functions == active
+        assert tuple(dispatcher._pending_functions) == pending
+        hal_task = system.hal_task_for(timer_uri)
+        assert hal_task is not None
+        processed = hal_task.processed_count
+        event = _virq_event(0x0100, 0)
+        result = system.runtime_engine.dispatch_interrupt_event(event)
+        assert result.outcome == VirqDispatchResult.HANDLED
+        assert struct.unpack_from("<5I", memory) == (0x0100, 0, 7, 11, 13)
+        assert hal_task.processed_count == processed
+        before = bytes(memory)
+        assert polling.poll_check(timer_uri, handle) is True
+        assert hal_task.processed_count == processed + 1
+        assert bytes(memory) == before
+        assert dispatcher.active_functions == active
+        assert tuple(dispatcher._pending_functions) == pending
+    finally:
+        system.shutdown()
 
 
 def test_runtime_engine_registers_virq_dispatchers_through_bound_module():
@@ -297,84 +359,107 @@ def test_system_coos_runtime_rejects_synchronous_guest_execution():
         )
 
 
-def test_system_guest_interpreter_returns_to_coos_and_resumes():
-    """System hands off after one interpreter boundary and resumes the same call."""
-
-    wasm_bytes = wat_to_wasm(
-        """
-        (module
-          (func (export "count") (param $count i32) (result i32)
-            (local $index i32)
-            (block $exit
-              (loop $loop
-                local.get $index
-                local.get $count
-                i32.ge_s
-                br_if $exit
-                local.get $index
-                i32.const 1
-                i32.add
-                local.set $index
-                br $loop
-              )
-            )
-            local.get $index
-          )
-        )
-        """
+def _counter_module() -> Module:
+    return parse(
+        wat_to_wasm("""(module (memory 1)
+      (func (export "count") (param $limit i32) (result i32) (local $index i32)
+        (loop $loop
+          local.get $index i32.const 1 i32.add local.set $index
+          i32.const 0 local.get $index i32.store
+          local.get $index local.get $limit i32.lt_u br_if $loop)
+        local.get $index))""")
     )
+
+
+def test_system_guest_interpreter_returns_to_coos_and_resumes():
+    """TEST-VSOC-10: native LOOP thresholds return to COOS and resume one call."""
     system = System()
-    module = parse(wasm_bytes)
-    interpreter = make_native_interpreter(module)
-    monitor_observed_guest_ready: list[bool] = []
+    system.runtime_engine = RuntimeEngine(yield_threshold=3, drive_mode=RuntimeDriveMode.COOS)
+    memory = bytearray(65536)
+    module = _counter_module()
+    interpreter = make_native_interpreter(module, memory=memory)
+    observed: list[tuple[int, TaskState]] = []
 
     def monitor_task():
-        guest_task = system.scheduler.get_task(guest_task_id)
-        assert guest_task is not None
-        assert guest_task.state == TaskState.READY
-        monitor_observed_guest_ready.append(True)
-        yield (ChannelAction.YIELD, None)
+        for _ in range(3):
+            guest = system.scheduler.get_task(guest_task_id)
+            assert guest is not None
+            observed.append((struct.unpack_from("<I", memory)[0], guest.state))
+            yield (ChannelAction.YIELD, None)
 
-    polls = 0
-
-    def observe_at_second_boundary(scheduler: Scheduler, task: Task | None = None) -> bool:
-        nonlocal polls
-        polls += 1
-        return polls == 2
-
-    from unittest.mock import patch
-
-    with patch.object(Scheduler, "observe_reschedule_generation", observe_at_second_boundary):
+    try:
         guest_task_id = system.scheduler.spawn(
             "guest",
-            system.run_guest(interpreter, module.export_func_index("count"), (100,)),
+            system.run_guest(interpreter, 0, (10,)),
+            role=Role.RUNTIME,
         )
         system.scheduler.spawn("monitor", monitor_task())
         system.scheduler.run_until_idle()
-
-    guest_task = system.scheduler.get_task(guest_task_id)
-    assert guest_task is not None
-    assert guest_task.state == TaskState.TERMINATED
-    assert guest_task.result == [100]
-    assert monitor_observed_guest_ready == [True]
-    assert polls > 2
+        guest = system.scheduler.get_task(guest_task_id)
+        assert guest is not None and guest.state == TaskState.TERMINATED
+        assert guest.result == [10]
+        assert struct.unpack_from("<I", memory)[0] == 10
+        assert observed == [(3, TaskState.READY), (6, TaskState.READY), (9, TaskState.READY)]
+    finally:
+        system.shutdown()
 
 
 def test_virq_unregisters_dispatcher_at_coos_boundary():
-    """The dedicated vIRQ unregister host call takes effect at the next COOS boundary."""
-    dispatcher = VirqDispatcher(_make_virq_module(), lambda _index, _v, _s, _c, _p0, _p1: 0)
-    assert dispatcher.register_dispatcher(int(VirqNode.ROOT), 0).is_ok
-    dispatcher.commit_pending_registrations()
-    assert dispatcher.unregister_dispatcher(int(VirqNode.ROOT)).is_ok
-    assert (
-        dispatcher.dispatch_interrupt_event(_virq_event(0x2000)).outcome
-        == VirqDispatchResult.HANDLED
+    """TEST-VSOC-52: raw host registration/removal publish at real interrupt handoffs."""
+    system = System()
+    module = system.runtime_engine.load_wasm(
+        wat_to_wasm("""(module
+      (func (param i32 i32 i32 i32 i32) (result i32) i32.const 0)
+      (func (export "entry")))""")
     )
-    dispatcher.commit_pending_registrations()
-    assert (
-        dispatcher.dispatch_interrupt_event(_virq_event(0x2000)).outcome
-        == VirqDispatchResult.PASS_THROUGH
-    )
+    interpreter = make_native_interpreter(module)
+    event = _virq_event(0x2000)
+    outcomes: list[VirqDispatchResult] = []
+
+    def guest():
+        yield from system.run_guest(interpreter, 1, ())
+        assert system.host_calls.virq_register(int(VirqNode.ROOT), 0) == 0
+        outcomes.append(system.runtime_engine.dispatch_interrupt_event(event).outcome)
+        system.scheduler.wait_for_interrupt(event.vector_id)
+        yield (ChannelAction.BLOCK, None)
+        first = system.dispatch_current_interrupt()
+        assert first is not None
+        outcomes.append(first.outcome)
+        assert system.host_calls.virq_unregister(int(VirqNode.ROOT)) == 0
+        outcomes.append(system.runtime_engine.dispatch_interrupt_event(event).outcome)
+        system.scheduler.wait_for_interrupt(event.vector_id)
+        yield (ChannelAction.BLOCK, None)
+        second = system.dispatch_current_interrupt()
+        assert second is not None
+        outcomes.append(second.outcome)
+
+    def source():
+        assert system.scheduler.notify_interrupt(event)
+        yield (ChannelAction.YIELD, None)
+        for _ in range(8):
+            if len(outcomes) == 3:
+                break
+            yield (ChannelAction.YIELD, None)
+        assert len(outcomes) == 3, "guest must reach its second interrupt wait"
+        assert system.scheduler.notify_interrupt(event)
+        yield (ChannelAction.YIELD, None)
+
+    try:
+        guest_id = system.scheduler.spawn("virq_guest", guest(), role=Role.RUNTIME)
+        system.scheduler.spawn("source", source())
+        system.scheduler.run_until_idle()
+        task = system.scheduler.get_task(guest_id)
+        assert task is not None and task.state == TaskState.TERMINATED
+        assert outcomes == [
+            VirqDispatchResult.PASS_THROUGH,
+            VirqDispatchResult.HANDLED,
+            VirqDispatchResult.HANDLED,
+            VirqDispatchResult.PASS_THROUGH,
+        ]
+        assert task.pending_interrupt_event is None
+        assert system.scheduler.dropped_irqs == 0
+    finally:
+        system.shutdown()
 
 
 def test_hal_task_ipc_communication():
@@ -461,46 +546,50 @@ def test_gdbserver_task_coos_cooperative_execution():
         client.sendall(b"+$g#67")
         resp = _recv_rsp_frame(client, sysv)
         assert b"+" in resp
-        assert b"$" in resp
-        assert b"#" in resp
+        expected_regs = (
+            b"".join(struct.pack("<I", value) for value in (0x10, 0, 0, 0, 10, 20, *([0] * 14)))
+            .hex()
+            .encode()
+        )
+        assert resp[resp.index(b"$") + 1 : resp.index(b"#")] == expected_regs
 
         client.close()
     finally:
         sysv.shutdown()
 
 
-def test_coop_01_wasm_coroutine_yields_on_quantum():
-    """TEST-YIELD-01: Long-running WASM task yields every `yield_every` instructions, interleaving with other tasks."""
-    wat = """
-    (module
-      (func $busy_loop (export "busy_loop") (param $x i32) (result i32)
-        (block $b
-          (loop $l
-            (local.set $x (i32.add (local.get $x) (i32.const 1)))
-            (br_if $l (i32.lt_s (local.get $x) (i32.const 100)))
-          )
-        )
-        (local.get $x)
-      )
+@pytest.mark.parametrize("threshold", (1, 3, 7))
+def test_coop_01_wasm_coroutine_yields_on_loop_threshold(threshold: int):
+    """TEST-VSOC-10: LOOP backedge counts, not instruction counts, determine handoffs."""
+    system = System()
+    system.runtime_engine = RuntimeEngine(
+        yield_threshold=threshold,
+        drive_mode=RuntimeDriveMode.COOS,
     )
-"""
+    module = _counter_module()
+    memory = bytearray(65536)
+    interpreter = make_native_interpreter(module, memory=memory)
+    values: list[int] = []
 
-    wasm_bytes = wat_to_wasm(wat)
-    if not wasm_bytes:
-        print("    [SKIP] wasmtime not installed, skipping test_coop_01")
-        return
-    mod = parse(wasm_bytes)
-    interp = Interpreter(mod)
-    # Step in quanta of 10 instructions
-    call_state = interp.start(mod.export_func_index("busy_loop"), [0])
-    step_count = 0
-    while not call_state.finished:
-        call_state = interp.step(call_state)
-        step_count += 1
-    result = call_state.results
+    def monitor():
+        while True:
+            task = system.scheduler.get_task(guest_id)
+            assert task is not None
+            if task.state == TaskState.TERMINATED:
+                return
+            assert task.state == TaskState.READY
+            values.append(struct.unpack_from("<I", memory)[0])
+            yield (ChannelAction.YIELD, None)
 
-    assert step_count >= 10, f"Expected multiple basic block steps, got {step_count}"
-    assert result == [100]
+    try:
+        guest_id = system.scheduler.spawn("guest", system.run_guest(interpreter, 0, (10,)))
+        system.scheduler.spawn("monitor", monitor())
+        system.scheduler.run_until_idle()
+        task = system.scheduler.get_task(guest_id)
+        assert task is not None and task.result == [10]
+        assert values == list(range(threshold, 10, threshold))
+    finally:
+        system.shutdown()
 
 
 def test_idle_01_jit_batch_compilation_on_idle():
@@ -520,9 +609,13 @@ def test_idle_01_jit_batch_compilation_on_idle():
     engine.jit_runtime.compile_queue = StaticVector.of(
         [0x100, 0x200], capacity=engine.jit_runtime.compile_queue_capacity
     )  # Enqueued
-    # COOS idle_hook fires with budget 2
-    count = engine.idle_hook(budget=2)
-    assert count == 2
+    system = System()
+    system.runtime_engine = engine
+    try:
+        system.scheduler.run_until_idle()
+    finally:
+        system.shutdown()
+    assert len(engine.jit_runtime.compile_queue) == 0
     assert compiled_log == [0x200, 0x100], "LIFO compilation order required"
     assert engine.jit_runtime.bitmap.get_state(0x100) == CardState.COMPILED
     assert engine.jit_runtime.bitmap.get_state(0x200) == CardState.COMPILED
@@ -531,58 +624,95 @@ def test_idle_01_jit_batch_compilation_on_idle():
 
 
 def test_idle_02_logging_flush_on_idle():
-    """TEST-IDLE-02: Deferred logs in RingBuffer are flushed to UART transport upon scheduler idle."""
-    transport = StreamTransport()
-    dictionary = LogDictionary(entries=((0x01, "event payload=%d"),))
-    logger = Logger(transport, dictionary, min_level=LogLevel.INFO)
-    # Log events during active execution
-    status1 = logger.log_event(LogLevel.INFO, 0x01, 42)
-    status2 = logger.log_event(LogLevel.INFO, 0x01, 99)
-    assert status1 == LogResult.SUCCESS
-    assert status2 == LogResult.SUCCESS
-    assert transport.bytes_written == 0, "No UART I/O allowed on hot path"
-    # Scheduler reaches IDLE -> fires idle hook
-    flushed = logger.flush()
-    assert flushed == 2
-    wire_output = "\n".join(decode_log_records(transport.drain_output(), dictionary))
-    assert "event payload=42" in wire_output
-    assert "event payload=99" in wire_output
+    """TEST-LOG-06: System's scheduler idle hook flushes every deferred log in order."""
+    sink = DedicatedLogSink()
+    system = System(
+        logger_sink=sink, log_dictionary=LogDictionary(entries=((1, "event payload=%d"),))
+    )
+    try:
+        assert system.logger.log_event(LogLevel.INFO, 1, 42) == LogResult.SUCCESS
+        assert system.logger.log_event(LogLevel.INFO, 1, 99) == LogResult.SUCCESS
+        assert sink.bytes_written == 0
+        system.scheduler.run_until_idle()
+        assert list(decode_log_records(sink.drain_output(), system.dictionary)) == [
+            "[INFO] event payload=42",
+            "[INFO] event payload=99",
+        ]
+        assert system.logger.ring.count == 0
+    finally:
+        system.shutdown()
 
 
 def test_tier_01_interpreter_to_jit_cooperative_flow():
-    """TEST-TIER-01: End-to-end integration of cooperative WASM execution on COOS with idle JIT compilation and log flush."""
-    logger_sink = DedicatedLogSink()
-    sysv = System(
-        logger_sink=logger_sink,
-        log_dictionary=LogDictionary(entries=((0x10, "wasm iteration=%d"),)),
+    """Real native/JIT guest execution cooperates with COOS and flushes logs on idle."""
+    sink = DedicatedLogSink()
+    system = System(
+        logger_sink=sink, log_dictionary=LogDictionary(entries=((0x10, "wasm iteration=%d"),))
     )
-    sysv.runtime_engine = make_runtime_engine(code_lengths=(0x1001,))
-    executed_steps = []
+    system.runtime_engine = make_runtime_engine(
+        jit_compiler=TraceCompiler(),
+        yield_threshold=2,
+        card_shift=2,
+        drive_mode=RuntimeDriveMode.COOS,
+        min_trace_bytes=1,
+        candidate_threshold=0,
+    )
+    module = parse(
+        wat_to_wasm("""(module
+      (import "test" "observe" (func $observe (param i32)))
+      (func (export "count") (param $limit i32) (result i32) (local $index i32)
+        (loop $loop
+          local.get $index i32.const 1 i32.add local.set $index
+          local.get $index call $observe
+          local.get $index local.get $limit i32.lt_u br_if $loop)
+        local.get $index))""")
+    )
+    reported: list[int] = []
 
-    def wasm_task():
-        # Emulate a WASM task executing in slices
-        for i in range(5):
-            sysv.runtime_engine.record_block_head(0x1000)
-            sysv.logger.log_event(LogLevel.INFO, 0x10, i)
-            executed_steps.append(f"task_step_{i}")
-            yield  # Cooperative yield
+    def report(value: int) -> int:
+        reported.append(value)
+        return 0
 
-    def monitor_task():
-        for i in range(5):
-            executed_steps.append(f"monitor_step_{i}")
-            yield  # Cooperative yield
+    interpreter = make_native_interpreter(module, host_functions=StaticVector.of((report,)))
+    observed: list[int] = []
 
-    sysv.scheduler.spawn("wasm_worker", wasm_task())
-    sysv.scheduler.spawn("monitor", monitor_task())
-    # Run COOS scheduler to completion
-    sysv.scheduler.run_to_completion()
-    # Verify interleaved cooperative execution
-    assert "task_step_0" in executed_steps
-    assert "monitor_step_0" in executed_steps
-    # Verify deferred logs were flushed by idle_hook
-    wire = "\n".join(decode_log_records(logger_sink.drain_output(), sysv.dictionary))
-    assert "wasm iteration=0" in wire
-    assert "wasm iteration=4" in wire
+    def monitor():
+        while True:
+            task = system.scheduler.get_task(guest_id)
+            assert task is not None
+            if task.state == TaskState.TERMINATED:
+                return
+            assert task.state == TaskState.READY
+            value = reported[-1]
+            observed.append(value)
+            assert system.logger.log_event(LogLevel.INFO, 0x10, value) == LogResult.SUCCESS
+            assert sink.bytes_written == 0
+            yield (ChannelAction.YIELD, None)
+
+    try:
+        guest_id = system.scheduler.spawn(
+            "guest", system.run_guest(interpreter, module.export_func_index("count"), (12,))
+        )
+        system.scheduler.spawn("monitor", monitor())
+        system.scheduler.run_until_idle()
+        guest = system.scheduler.get_task(guest_id)
+        assert guest is not None and guest.result == [12]
+        # The initial pending scheduler generation yields at the first import
+        # boundary; subsequent handoffs occur at two LOOP backedges.
+        assert observed == [1, 2, 4, 6, 8, 10]
+        assert reported == list(range(1, 13))
+        assert list(decode_log_records(sink.drain_output(), system.dictionary)) == [
+            f"[INFO] wasm iteration={value}" for value in (1, 2, 4, 6, 8, 10)
+        ]
+        assert system.logger.ring.count == 0
+        assert system.runtime_engine.stat_interp_steps > 0
+        assert system.runtime_engine.stat_jit_invocations > 0
+        manager = system.runtime_engine.jit_runtime
+        assert manager is not None
+        loop_pc = next(block.head_pc for block in module.blocks if block.loops_to is not None)
+        assert manager.cache.active.has_trace(loop_pc) or manager.cache.warm.has_trace(loop_pc)
+    finally:
+        system.shutdown()
 
 
 def test_tier_02_interpreter_to_jit_trace_transition():
@@ -690,9 +820,6 @@ def test_guest_wasi_01_interpreter_fd_write():
 """
 
     wasm_bytes = wat_to_wasm(wat)
-    if not wasm_bytes:
-        print("    [SKIP] wasmtime not installed, skipping test_guest_wasi_01")
-        return
     mod = parse(wasm_bytes)
     sysv = System()
     try:
@@ -733,9 +860,6 @@ def test_guest_wasi_02_interpreter_clock_and_random():
     )
 """
     wasm_bytes = wat_to_wasm(wat)
-    if not wasm_bytes:
-        print("    [SKIP] wasmtime not installed, skipping test_guest_wasi_02")
-        return
     mod = parse(wasm_bytes)
     sysv = System(drivers=create_reference_platform_drivers())
     try:
@@ -765,9 +889,6 @@ def test_guest_wasi_03_interpreter_proc_exit():
     )
 """
     wasm_bytes = wat_to_wasm(wat)
-    if not wasm_bytes:
-        print("    [SKIP] wasmtime not installed, skipping test_guest_wasi_03")
-        return
     mod = parse(wasm_bytes)
     sysv = System()
     try:
@@ -784,7 +905,7 @@ def test_guest_wasi_03_interpreter_proc_exit():
 
 
 def test_debugger_manager_gdb_rsp_integration():
-    """TEST-DBG-01..15: Verifies interpreter-only Debug Manager GDB RSP behavior."""
+    """GDB smoke: stop query, register values, memory write and breakpoint resume."""
     from tier3_plugins.debugger.debugger import DebuggerManager, GDBRspProtocol
 
     engine = RuntimeEngineDebugDriver()
@@ -799,7 +920,12 @@ def test_debugger_manager_gdb_rsp_integration():
     assert res == "$S05#b8"
     # 2. Virtual registers read/write
     res_g, _ = rsp.handle_packet("g", 0x100, ctx, {})
-    assert len(res_g[1 : res_g.index("#")]) == 160
+    assert (
+        res_g[1 : res_g.index("#")]
+        == b"".join(
+            struct.pack("<I", value) for value in (0x100, 0, 0, 0, 10, 20, *([0] * 14))
+        ).hex()
+    )
     # 3. Memory write in the interpreter-only debug configuration.
     res_m, _ = rsp.handle_packet("M0,4:aabbccdd", 0x100, ctx, {})
     assert res_m.startswith("$OK#")
@@ -828,9 +954,16 @@ def test_debugger_manager_gdb_rsp_integration():
     mod = engine.load_wasm(wat_to_wasm(step_wat))
     block1, block2 = mod.blocks[0], mod.blocks[1]
     blocks = {block1.head_pc: block1, block2.head_pc: block2}
-    ctx.locals[0] = 10
+    from helpers import make_debug_execution
+
+    execution = make_debug_execution(mod, 0, (10,), memory=mem)
+    dbg.detach()
+    dbg = DebuggerManager(engine=execution)
+    dbg.attach()
+    rsp = GDBRspProtocol(dbg)
+    ctx = execution.context
     rsp.handle_packet(f"Z0,{block2.head_pc:x},0", block1.head_pc, ctx, blocks)
-    res_c, stop_pc = rsp.handle_packet("c", block1.head_pc, ctx, blocks)
+    res_c, stop_pc = rsp.handle_packet("c", 0, ctx, blocks)
     assert res_c.startswith("$S05#")
     assert stop_pc == block2.head_pc
     assert ctx.locals[0] == 11
@@ -838,11 +971,11 @@ def test_debugger_manager_gdb_rsp_integration():
     rsp.handle_packet(f"z0,{block2.head_pc:x},0", block2.head_pc, ctx, blocks)
     res_c2, _ = rsp.handle_packet("c", block2.head_pc, ctx, blocks)
     assert res_c2.startswith("$W00#")
-    assert ctx.locals[0] == 22
+    assert execution.call.results == [22]
 
 
 def test_interpreter_debugger_attachment_and_hooks():
-    """TEST-INTP-60..65: Verifies interpreter-only debug execution, PC sampling and assertions."""
+    """Test-driver integration: attach, breakpoint, sampling, assertions and no JIT selection."""
     from tier3_plugins.debugger.debugger import DebuggerManager
 
     wat = """
@@ -870,7 +1003,7 @@ def test_interpreter_debugger_attachment_and_hooks():
     mod = engine.load_wasm(wasm_bytes)
     block1 = mod.blocks[0]
     block2 = mod.blocks[1]
-    # 1. Normal interpreter composition (TEST-INTP-60: zero JIT/debugger overhead)
+    # 1. Normal interpreter composition (normal interpreter-only selection)
     assert engine.handler_table == "interpreter"
     assert engine.debugger is None
     ctx_normal = WASMContext()
@@ -878,11 +1011,11 @@ def test_interpreter_debugger_attachment_and_hooks():
     next_pc = engine.run_step(block1.head_pc, ctx_normal)
     assert next_pc == block2.head_pc
     assert ctx_normal.locals[0] == 6
-    # 2. Attach debugger (TEST-INTP-61: keeps the interpreter execution path)
+    # 2. Attach debugger (keeps the interpreter execution path)
     dbg.attach()
     assert engine.handler_table == "interpreter"
     assert engine.debugger is dbg
-    # 3. Breakpoint hit (TEST-INTP-62: halts before execution)
+    # 3. Breakpoint hit (halts before execution)
     dbg.add_breakpoint(block2.head_pc)
     ctx_debug = WASMContext(memory=bytearray([0x55, 0xAA]))
     ctx_debug.locals = (10,)
@@ -894,10 +1027,10 @@ def test_interpreter_debugger_attachment_and_hooks():
     assert dbg.halted is True
     assert dbg.stop_signal == 5
     assert ctx_debug.locals[0] == 11
-    # 4. Profiler & Assertions (TEST-INTP-63, TEST-INTP-64)
+    # 4. Profiler & Assertions (sampling and assertions)
     assert dbg.pc_sample_counts[block1.head_pc] == 1
     assert len(dbg.assertion_violations) == 1
-    # 5. Attached execution remains interpreter-only (TEST-INTP-65)
+    # 5. Attached execution remains interpreter-only (JIT remains absent)
     assert engine.jit_runtime is None
     interp_before = engine.interp_blocks
     jit_before = engine.jit_traces
@@ -910,7 +1043,7 @@ def test_interpreter_debugger_attachment_and_hooks():
 
 
 def test_wasm_loader_and_radix_binary_tree_view_indexes():
-    """TEST-LOAD-01..47: Verifies WASM Loader zero-copy indexing, verification, and ReadOnlyRadixBinaryTreeView file offset & hash symbol indexes."""
+    """TEST-LOAD-01/13/41/42/44, 43(global only): rollback, export lookup and function/global offsets."""
     from loader import WasmLoader
 
     runtime_allocator = BumpAllocator()
@@ -928,7 +1061,7 @@ def test_wasm_loader_and_radix_binary_tree_view_indexes():
     with expect_assertion():
         loader.prepare("bad", _build_test_wasm_binary(magic=b"\x7fELF"))
     assert runtime_allocator.offset == watermark
-    # 3. ReadOnlyRadixBinaryTreeView file offset reverse-lookup (TEST-LOAD-40..44)
+    # 3. ReadOnlyRadixBinaryTreeView file offset reverse-lookup (function/global offsets only)
     assert len(view.entity_registry) > 0
     func_start, func_size = view.code_offsets[0]
     entity_fn = view.lookup_by_file_offset(func_start)
@@ -952,14 +1085,60 @@ def test_wasm_loader_and_radix_binary_tree_view_indexes():
 # Test Runner
 # ===========================================================================
 
-ALL_TESTS = sorted(
-    (v for k, v in globals().items() if k.startswith("test_") and callable(v)),
-    key=lambda fn: fn.__code__.co_firstlineno,
-)
+from hypothesis import example, given
+from hypothesis import strategies as st
+
+
+@given(source=st.integers(0, 192), destination=st.integers(0, 192), count=st.integers(0, 64))
+@example(source=0, destination=128, count=64)
+@example(source=0, destination=1, count=64)
+@example(source=1, destination=0, count=64)
+@example(source=64, destination=64, count=64)
+@example(source=192, destination=0, count=0)
+@example(source=65535, destination=128, count=1)
+@example(source=128, destination=65535, count=1)
+@example(source=65536, destination=65536, count=0)
+@example(source=0, destination=16384, count=32768)
+def test_linear_memory_copy_uses_cpu_memmove(source: int, destination: int, count: int) -> None:
+    """TEST-VSOC-60/61: 大小・重複・同一・ゼロ長のlinear copyでDMAを呼ばない。"""
+    from tier3_executer.interpreter.interpreter import InterpreterBindings, NativeInterpreter
+
+    module = parse(
+        wat_to_wasm("""(module (memory 1)
+      (func (export "copy") (param i32 i32 i32)
+        local.get 0 local.get 1 local.get 2 memory.copy))""")
+    )
+    system = System()
+    try:
+        memory = bytearray(range(256)) + bytearray(65536 - 256)
+        expected = bytearray(memory)
+        expected[destination : destination + count] = bytes(memory[source : source + count])
+        calls: list[tuple[int, int, int]] = []
+
+        def transfer(src: int, dst: int, length: int) -> int:
+            calls.append((src, dst, length))
+            return 0
+
+        bindings = InterpreterBindings.with_memory_and_functions(
+            memory,
+            StaticVector(capacity=0),
+            vdma_transfer=transfer,
+        )
+        interpreter = NativeInterpreter(module, bindings)
+        task_id = system.scheduler.spawn(
+            "linear_copy_guest",
+            system.run_guest(
+                interpreter, module.export_func_index("copy"), (destination, source, count)
+            ),
+        )
+        system.scheduler.run_until_idle()
+        task = system.scheduler.get_task(task_id)
+        assert task is not None and task.state == TaskState.TERMINATED
+        assert memory == expected
+        assert calls == []
+    finally:
+        system.shutdown()
+
 
 if __name__ == "__main__":
-    for test in ALL_TESTS:
-        test()
-        print(f"[PASS] {test.__name__}")
-
-    print(f"\n[PASS] All {len(ALL_TESTS)} comprehensive pysim invariant tests passed.")
+    raise SystemExit(pytest.main([__file__]))

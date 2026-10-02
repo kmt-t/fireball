@@ -28,7 +28,7 @@ Interpreter は、WASM命令をスレッドインタープリタ方式で実行�
 
 ### 3.1 データ構造
 - **`Interpreter`**: WASM命令の実行、コンテキスト管理、外部環境との連携をカプセル化した主要クラスである。
-- **`execution_context`**: 仮想CPUレジスタ、3本の値スタック情報、コードビュー、制御スタックビュー、CallStackビュー、オペランドスタック論理容量、LOOP後方辺のyieldカウンタを保持する構造体である。既存状態領域は64バイト、x86-64の実体は128バイトである。JIT共通領域とヘルパーはトレースヘッダが保持する。
+- **`execution_context`**: 仮想CPUレジスタ、3本の値スタック情報、コードビュー、制御スタックビュー、CallStackビュー、オペランドスタック論理容量、LOOP後方辺のyieldカウンタを保持する構造体である。既存状態領域は64バイト、x86-64の実体は144バイトである。JIT共通領域とヘルパーはトレースヘッダが保持する。
 - **`オペランドスタック`（オペランドスタック）**: WASM のオペランド値のみを保持する固定容量スタックである。コールチェーン全体を貫く1本の連続バッファとして動作する。呼び出しを跨いでもスタックは連続して配置される。
 - **`ローカル値領域`（ローカル変数スタック）**: コールチェーン全体で共有する固定容量の、型情報を持たない32ビットワード領域である。型タグ、実行時オブジェクト、関数実行記述子を格納しない。論理ローカル1個につき、そのフレームのスロット幅の固定スロットを割り当てる。スロット幅は、フレーム内で最大の変数サイズで決める。i32/f32だけのフレームは4バイト、i64/f64を含むフレームは8バイトとする。v128を含む場合は16バイトとする。同一フレーム内でスロット幅を混在させない。アクセス先は `local_base + local_index * スロット幅` から直接計算する。
 - **制御ブロック復帰情報領域**: `block`/`loop`/`if` の入れ子構造を管理する固定容量領域である。
@@ -91,7 +91,7 @@ graph TD
 WASMゲストの全実行状態を管理する。JIT/Interpreter 共通の仮想CPUレジスタ群として設計する（{GOTCHA-INTP-11}）。 <!-- definition: {GOTCHA-INTP-11} -->
 
 **独立した固定構造体としての配置**:
-`execution_context` は、単体の固定サイズ構造体（x86-64では計128バイト）である。オペランド領域、ローカル値領域、制御ブロック復帰情報領域、関数呼出し記述子領域のいずれにもインライン配置されない。ハンドラとJITの境界では、実行コンテキスト、オペランド領域の現在位置、ローカル値領域の開始位置、スタック頂点値を4つの論理引数として渡す（{CPS_4Args}）。これらの物理レジスタと退避規則は対象ABIで定義する。
+`execution_context` は、単体の固定サイズ構造体（x86-64では計144バイト）である。オペランド領域、ローカル値領域、制御ブロック復帰情報領域、関数呼出し記述子領域のいずれにもインライン配置されない。ハンドラとJITの境界では、実行コンテキスト、オペランド領域の現在位置、ローカル値領域の開始位置、スタック頂点値を4つの論理引数として渡す（{CPS_4Args}）。これらの物理レジスタと退避規則は対象ABIで定義する。
 
 複雑命令をCへ委譲する場合の委譲先関数アドレスは、トレースヘッダへトレースごとに置く。対象ABIの呼出しコードはヘルパー契約ごとに共通コード領域へ配置し、トレースはヘッダに保持した対応入口の選択値を用いてそこへ遷移する。したがって、呼出し用のレジスタ変換、スタック領域確保、関数呼出し命令をトレースごとに複製しない。インタープリタの命令ディスパッチはこの共通呼出しコードを直接呼ばない。基本ブロック末尾では、対象ABIが定める値キャッシュの個数だけ共有オペランド領域へ書き戻す。その後、実行コンテキストの `ip`（`+0x00`）および `sp_offset`（`+0x0C`）を更新して状態を同期する（{GOTCHA-INTP-09}）。 <!-- definition: {GOTCHA-INTP-09} -->
 
@@ -104,7 +104,7 @@ WASMゲストの全実行状態を管理する。JIT/Interpreter 共通の仮想
 | ローカル値領域の開始位置 | 現在の関数呼出しに対応するローカル値領域の先頭 | 論理引数 | 第3引数。物理レジスタは対象ABIで定義する |
 | スタック頂点値 | `オペランドスタック` の最上位値 | 論理引数 | 第4引数。物理レジスタは対象ABIで定義する |
 
-##### `execution_context` 物理メモリレイアウト（x86-64では計128バイト）
+##### `execution_context` 物理メモリレイアウト（x86-64では計144バイト）
 
 `execution_context` 起点の `+0x00`〜`+0x3F` に配置される固定構造体メモリフィールド：
 
@@ -137,7 +137,9 @@ WASMゲストの全実行状態を管理する。JIT/Interpreter 共通の仮想
 | オペランドスタック容量 (sp_capacity) | オペランドスタックに使用できる32bitワード数 | 32bit符号なし | 4バイト（`execution_context` の `+0x70`） |
 | LOOP後方分岐回数 (loop_jump_count) | 取得されたLOOP後方辺の累積回数。yield時にRuntimeEngineが0へ戻す | 32bit符号なし | 4バイト（`execution_context` の `+0x74`） |
 | LOOP後方分岐yieldしきい値 (loop_jump_threshold) | RuntimeEngineが設定する協調yieldまでの取得回数 | 32bit符号なし | 4バイト（`execution_context` の `+0x78`） |
-`execution_context` 構造体のx86-64実体は128バイトである。先頭16個の32bitフィールド、3個のポインタ、残りの32bitフィールド、LOOP状態、およびABIアラインメントで構成する。この配置とサイズを実行コンテキストのABI契約とする。コード、制御スタック、CallStackは非所有ポインタとしてコンテキスト自身から参照する。ハンドラは別の呼出し状態やTLSを参照しない。3本の値領域とCallStackの開始・終端・オフセットは独立したフィールドとして保持する。いずれか1本の領域の伸縮は他の記録位置へ影響しない。JITの複雑処理の委譲先アドレスとヘルパー契約別入口の選択値は、対象ABIのトレースヘッダから参照する。バイトオフセットの物理配置は `{ExecutionContext_Layout}` に従う。
+| リニアメモリのホスト基点 (linear_memory_host_base) | 実行中に借用するリニアメモリ実体の先頭アドレス | ポインタ | 8バイト（`execution_context` の `+0x80`） |
+| リニアメモリの有効サイズ (linear_memory_size) | 実体メモリに対する境界検査のバイト数 | 64bit符号なし | 8バイト（`execution_context` の `+0x88`） |
+`execution_context` 構造体のx86-64実体は144バイトである。先頭16個の32bitフィールド、4個のポインタ、残りの32bitフィールド、LOOP状態、64bitのリニアメモリサイズ、およびABIアラインメントで構成する。この配置とサイズを実行コンテキストのABI契約とする。コード、制御スタック、CallStackは非所有ポインタとしてコンテキスト自身から参照する。ハンドラは別の呼出し状態やTLSを参照しない。3本の値領域とCallStackの開始・終端・オフセットは独立したフィールドとして保持する。いずれか1本の領域の伸縮は他の記録位置へ影響しない。JITの複雑処理の委譲先アドレスとヘルパー契約別入口の選択値は、対象ABIのトレースヘッダから参照する。バイトオフセットの物理配置は `{ExecutionContext_Layout}` に従う。
 
 `CallFrame` の `control_map` は、コードオフセットで直接引ける固定配列を指す。各エントリは対応する `end`、`else`、命令後PC、ブロック結果アリティ、および `drop/select` の生ワード幅を保持する。命令ハンドラはローカル幅表と制御表を `CallFrame` から直接参照する。
 
@@ -337,7 +339,7 @@ x64ではトレースが共有オペランド領域へ状態を書き戻す。AR
 <!-- traceability: {WasmFCSubset} {MemoryBoundaryCheck} {JIT_RuntimeAPI_Fallback} -->
 Interpreterは`0xFC`の後続サブオペコードを符号なしLEB128で読み、対応表にある`0`〜`7`、`10`、`11`だけを実行する。その他の値はロード時拒否を前提とし、実行時に汎用フォールバック先として扱わない。飽和型数値変換は本書ではなく [`wasm_instruction_set.md`](docs/specs/wasm_instruction_set.md) の規則に従う。JITが同じ変換を直接生成しない場合は同じInterpreter handlerへ委譲する。
 
-`memory.copy`と`memory.fill`は全オペランドを確定した後に端点を検査し、不正ならメモリとオペランドstackを部分更新しない。リニアメモリ端点はサイズ範囲を検査する。`memory.copy`ではBit 31が`1`の端点にFC=13（DYNAMIC）、FC=14（SHM）、FC=15（PASSTHROUGH）を指定でき、vSoCの同期vDMAサービスを使う。リニアメモリ端点同士はCPU memmoveで処理する。vMMIO端点はvMMIO共通のPTE・権限・所有権検査に従う。`memory.fill`はリニアメモリだけを対象とし、値の下位byteをCPUで反復書込みする。概念モデルは [`bulk_memory_concept.py`](docs/components/tier3_executer/concepts/bulk_memory_concept.py) に分離する。
+`memory.copy`と`memory.fill`は全オペランドを確定した後に端点を検査し、不正ならメモリとオペランドstackを部分更新しない。リニアメモリ端点はサイズ範囲を検査する。`memory.copy`ではBit 31が`1`の端点にFC=13（DYNAMIC）、FC=14（SHM）、FC=15（PASSTHROUGH）を指定でき、vSoCの内部vDMAサービスを使う。転送完了とCPU可視性を確認した後に次命令へ進む。内部の同期・非同期はvSoCの転送対象別契約に従う。リニアメモリ端点同士はCPU memmoveで処理する。vMMIO端点はvMMIO共通のPTE・権限・所有権検査に従う。`memory.fill`はリニアメモリだけを対象とし、値の下位byteをCPUで反復書込みする。概念モデルは [`bulk_memory_concept.py`](docs/components/tier3_executer/concepts/bulk_memory_concept.py) に分離する。
 
 #### 統合 Tiered ランタイムエンジン・コンセプトコード
 実行経路の統合検証は、本コンポーネントのテスト仕様書と [`vsoc_state_model.py`](docs/components/tier2_runtime/formal/vsoc_state_model.py) を参照する。ARMv8-Mの物理ABIとメモリ保護はTBDである。
@@ -387,10 +389,14 @@ sequenceDiagram
     I-->>V: return Result (SUCCESS / TRAP)
 ```
 
-#### `memory.copy`の同期vDMA委譲
+#### `memory.copy`の内部vDMA委譲
 <!-- traceability: {WasmFCSubset} {VDMA} {MemoryBoundaryCheck} -->
+内部の同期・非同期とCOOS待機は、[`runtime_vsoc.md`](docs/components/tier2_runtime/runtime_vsoc.md)の転送対象別契約に従う。
+本図は、Interpreterが転送完了とCPU可視性の確認を待って次命令へ進む境界を示す。
+
 ```mermaid
 sequenceDiagram
+    autonumber
     participant I as Interpreter
     participant V as vSoC copy service
     participant D as vDMA
@@ -409,10 +415,11 @@ sequenceDiagram
         V->>D: guest address間copy
         D->>M: 転送（リニア端点）
         D->>P: 転送（vMMIO端点）
-        D-->>V: 完了、DMA idle
+        D-->>V: 転送完了
+        V->>V: 完了とCPU可視性を確認
         V-->>I: 完了
     end
-    Note over I,V: 完了確認後にのみ次のWASM命令へ進む
+    Note over I,V: 完了とCPU可視性の確認後にのみ次のWASM命令へ進む
 ```
 
 ## 5. インターフェース定義

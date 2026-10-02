@@ -329,10 +329,10 @@ class WasiHostContext:
                 # WASI 0.3p Dynamic URI Interface Resolver import
                 ("wasi:resolver", "get_interface", self.wasi03p_get_interface),
                 ("fireball", "get_interface", self.wasi03p_get_interface),
-                ("fireball", "fireball_call", sysv.host_calls.fireball_call),
-                ("fireball", "virq_register", sysv.host_calls.virq_register),
-                ("fireball", "virq_unregister", sysv.host_calls.virq_unregister),
-                ("fireball", "vdma_start", sysv.host_calls.vdma_start),
+                ("fireball", "fireball_call", self.raw_fireball_call),
+                ("fireball", "virq_register", self.raw_virq_register),
+                ("fireball", "virq_unregister", self.raw_virq_unregister),
+                ("fireball", "vdma_start", self.raw_vdma_start),
                 ("fireball", "fd_write", self.fd_write),
             ),
             capacity=FB_CONF_MAX_IMPORTS,
@@ -487,6 +487,33 @@ class WasiHostContext:
     def random_get(self, buf_ptr: int, buf_len: int) -> int:
         """Delegate wasi_snapshot_preview1:random_get to uvwasi."""
         return self.uvwasi.random_get(self.guest_memory, buf_ptr, buf_len)
+
+    def raw_fireball_call(
+        self, syscall_id: int, arg0: int, arg1: int, arg2: int, arg3: int, arg4: int, arg5: int
+    ) -> int:
+        """Decode Core Wasm i32 bit patterns as the WIT contract's u32 values."""
+        return self.sysv.host_calls.fireball_call(
+            syscall_id & 0xFFFF_FFFF,
+            arg0 & 0xFFFF_FFFF,
+            arg1 & 0xFFFF_FFFF,
+            arg2 & 0xFFFF_FFFF,
+            arg3 & 0xFFFF_FFFF,
+            arg4 & 0xFFFF_FFFF,
+            arg5 & 0xFFFF_FFFF,
+        )
+
+    def raw_virq_register(self, node_id: int, function_index: int) -> int:
+        return self.sysv.host_calls.virq_register(
+            node_id & 0xFFFF_FFFF, function_index & 0xFFFF_FFFF
+        )
+
+    def raw_virq_unregister(self, node_id: int) -> int:
+        return self.sysv.host_calls.virq_unregister(node_id & 0xFFFF_FFFF)
+
+    def raw_vdma_start(self, source: int, destination: int, byte_count: int) -> int:
+        return self.sysv.host_calls.vdma_start(
+            source & 0xFFFF_FFFF, destination & 0xFFFF_FFFF, byte_count & 0xFFFF_FFFF
+        )
 
     def get_handler_for_import(self, module_name: str, field_name: str) -> WasiHostFunction | None:
         """Resolves an import name to the corresponding host function callable via ReadOnlyRadixBinaryTreeView."""

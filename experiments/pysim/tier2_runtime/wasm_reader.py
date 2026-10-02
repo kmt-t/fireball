@@ -989,17 +989,13 @@ def _analyze_fc_instruction(
 ) -> None:
     assert opcode == op.FC_PREFIX
     if op.FC_I32_TRUNC_SAT_F32_S <= subopcode <= op.FC_I64_TRUNC_SAT_F64_U:
-        source_type = (
-            F32
-            if subopcode
-            in (
-                op.FC_I32_TRUNC_SAT_F32_S,
-                op.FC_I32_TRUNC_SAT_F32_U,
-                op.FC_I64_TRUNC_SAT_F32_S,
-                op.FC_I64_TRUNC_SAT_F32_U,
-            )
-            else F64
+        source_is_f32 = (
+            subopcode == op.FC_I32_TRUNC_SAT_F32_S
+            or subopcode == op.FC_I32_TRUNC_SAT_F32_U
+            or subopcode == op.FC_I64_TRUNC_SAT_F32_S
+            or subopcode == op.FC_I64_TRUNC_SAT_F32_U
         )
+        source_type = F32 if source_is_f32 else F64
         state.pop(source_type)
         state.push(I32 if subopcode <= op.FC_I32_TRUNC_SAT_F64_U else I64)
         return

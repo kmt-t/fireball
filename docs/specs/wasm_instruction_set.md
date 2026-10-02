@@ -102,14 +102,14 @@ x64で確認したInterpreter/JIT間の4論理引数契約と物理ABIは [`jit_
 
 | Encoding | 命令名 | スタック遷移 | 意味論と実行経路 |
 | :--- | :--- | :--- | :--- |
-| `0xFC 0x0A` | `memory.copy` | `[i32 dst, i32 src, i32 len] -> []` | リニアアドレス同士はCPUでコピーする。片方以上がDYNAMIC・SHM・PASSTHROUGHなら同期vDMAへ委譲する。コピー結果はmemmove意味論を保つ。 |
+| `0xFC 0x0A` | `memory.copy` | `[i32 dst, i32 src, i32 len] -> []` | リニアアドレス同士はCPUでコピーする。片方以上がDYNAMIC・SHM・PASSTHROUGHなら内部vDMAへ委譲する。完了とCPU可視性の確認後に次命令へ進む。コピー結果はmemmove意味論を保つ。 |
 | `0xFC 0x0B` | `memory.fill` | `[i32 dst, i32 value, i32 len] -> []` | 全範囲を先に検査し、`value`の下位8 bitでCPU書込みする。vDMAオフロードは行わない。 |
 
 `dst`、`src`、`len`は符号なし32-bit値として扱う。Fireballアドレス空間でBit 31が`0`のコピー端点はリニアメモリのbyte offsetとし、`offset <= memory_size`かつ`len <= memory_size - offset`を加算オーバーフローなしで検査する。Bit 31が`1`の端点はFC=13（DYNAMIC）、FC=14（SHM）、FC=15（PASSTHROUGH）だけを受理し、他のFCはvMMIOアクセス違反とする。vMMIO端点のPTE、権限、所有権および範囲はvMMIO共通アクセスゲートで検査する。いずれかの端点が不正ならコピーを開始せず、対象メモリを部分変更しない。`len == 0`でも各端点を検査する。
 
-リニアメモリ同士のコピーは重複時を含めてCPU memmoveで実行する。どちらか一方でもvMMIO端点を含む場合は同期vDMAサービスへ委譲し、転送完了を確認してから次命令へ進む。サービスは両端点を検証してから転送し、コピー元の元データを保つ。
+リニアメモリ同士のコピーは重複時を含めてCPU memmoveで実行する。どちらか一方でもvMMIO端点を含む場合は内部vDMAサービスへ委譲する。サービスは両端点を検証してから転送し、コピー元の元データを保つ。転送完了とCPU可視性を確認してから次命令へ進む。
 
-内部vDMA委譲はguest importの`fireball:host/vdma.start`やvMMIOレジスタを介さず、ランタイムの同期コピーサービスを使う。
+内部vDMA委譲はguest importの`fireball:host/vdma.start`やvMMIOレジスタを介さず、ランタイムのコピーサービスを使う。内部の同期・非同期と待機経路は、[`runtime_vsoc.md`](docs/components/tier2_runtime/runtime_vsoc.md)の転送対象別契約に従う。
 
 ---
 

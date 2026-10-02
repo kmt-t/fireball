@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from runtime_events import RuntimeEvent
+from runtime_events import RuntimeEvent, RuntimeEventBatch
 from tier2_runtime.logger import RUNTIME_EVENT_LOG_BASE, Logger, LogLevel
 
 
@@ -23,3 +23,7 @@ class RuntimeEventLogger:
             event.guest_pc,
             event.tick,
         )
+
+    def on_runtime_batch(self, batch: RuntimeEventBatch) -> None:
+        for event in batch.records:
+            self.on_runtime_event(event)

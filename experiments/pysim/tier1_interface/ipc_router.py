@@ -12,7 +12,7 @@ Fireball IPC Router: URI/RBAC front-end over the CSP rendezvous engine.
 
 from __future__ import annotations
 
-from collections.abc import Generator, Sequence
+from collections.abc import Generator, Iterator, Sequence
 from enum import IntEnum
 
 from logging_interface import Logger, LogLevel
@@ -148,6 +148,29 @@ class OwnershipState(IntEnum):
     RECEIVER_OWNS = 3
 
 
+class SharedEntries:
+    """Borrow entries from one SharedBlock; its existing ownership guards apply."""
+
+    __slots__ = ("_block",)
+
+    def __init__(self, block: SharedBlock):
+        self._block = block
+
+    def __len__(self) -> int:
+        count = self._block.read_u64(0)
+        assert count <= FB_CONF_ROUTER_MAX_KV_PAIRS, "IPC entry count exceeds capacity"
+        assert count + 1 <= self._block.u64_capacity(), "IPC entries escape SharedBlock"
+        return count
+
+    def __getitem__(self, index: int) -> tuple[int, int]:
+        assert 0 <= index < len(self), "IPC entry index is out of bounds"
+        return self._block.read_entry(index + 1)
+
+    def __iter__(self) -> Iterator[tuple[int, int]]:
+        for index in range(len(self)):
+            yield self[index]
+
+
 class IPCMessage:
     """
     Fireball IPC message: an owning container of a fixed-size (<= FB_CONF_ROUTER_MAX_KV_PAIRS)
@@ -210,17 +233,19 @@ class IPCMessage:
         assert self._memory_manager is not None, "IPC transfer requires a memory manager"
         entries = self.entries
         self._in_flight_resource_ids.clear()
+        # Resolve RESOURCE entries while the message block is still owned.
+        for key, value in entries:
+            scope, _, _ = unpack_key32(key)
+            if scope == ScopeKind.RESOURCE:
+                self._in_flight_resource_ids.append(value)
         if self._block is not None:
             released_shm_id = self._block.release()
             assert released_shm_id >= 0, "message SharedBlock must belong to current task"
             self._in_flight_shm_id = released_shm_id
-        for key, value in entries:
-            scope, _, _ = unpack_key32(key)
-            if scope == ScopeKind.RESOURCE and value >= 0:
-                assert self._memory_manager.revoke_shared(value), (
-                    "RESOURCE handle must be backed by an allocated SHM block"
-                )
-                self._in_flight_resource_ids.append(value)
+        for shm_id in self._in_flight_resource_ids:
+            assert self._memory_manager.revoke_shared(shm_id), (
+                "RESOURCE handle must be backed by an allocated SHM block"
+            )
 
     @property
     def sender_id(self) -> int:
@@ -280,31 +305,38 @@ class IPCMessage:
         self._check_ownership()
         return self._block.data if self._block is not None else None
 
-    def _read_entries(self) -> StaticVector[tuple[int, int]]:
+    def _read_entries(self) -> SharedEntries:
         self._check_ownership()
-        if self._block is None or self._block.u64_capacity() < 1:
-            return StaticVector(capacity=0)
-        count = self._block.read_u64(0)
-        count = min(count, FB_CONF_ROUTER_MAX_KV_PAIRS)
-        res: StaticVector[tuple[int, int]] = StaticVector(capacity=FB_CONF_ROUTER_MAX_KV_PAIRS)
-        for i in range(count):
-            if i + 1 < self._block.u64_capacity():
-                k, v = self._block.read_entry(i + 1)
-                res.push_back((k, v))
-        return res
+        assert self._block is not None, "IPC entries require a backing SharedBlock"
+        entries = SharedEntries(self._block)
+        len(entries)
+        return entries
 
     def write_entries(self, entries: Sequence[tuple[int, int]]) -> None:
         """Writes a batch of (key, value) pairs into the backing uint64_t shared memory array."""
         self._check_ownership()
         assert self._block is not None, "Cannot write entries without a backing SharedBlock"
-        sorted_entries = sorted(entries, key=lambda e: e[0])
-        self._block.write_u64(0, len(sorted_entries))
-        for i, (k, v) in enumerate(sorted_entries):
-            self._block.write_entry(i + 1, k, v)
+        count = len(entries)
+        assert count <= FB_CONF_ROUTER_MAX_KV_PAIRS, "IPC entry count exceeds capacity"
+        assert count + 1 <= self._block.u64_capacity(), "IPC entries escape SharedBlock"
+        # A malformed internal batch is a contract violation. Check every
+        # precondition before changing the shared bytes, including aliases.
+        ordered: StaticVector[tuple[int, int]] = StaticVector(capacity=FB_CONF_ROUTER_MAX_KV_PAIRS)
+        for key, value in entries:
+            assert 0 <= key <= 0xFFFF_FFFF, "IPC key must fit u32"
+            assert 0 <= value <= 0xFFFF_FFFF, "IPC value must fit u32"
+            ordered.append((key, value))
+        ordered.sort(key=lambda entry: entry[0])
+        for index in range(1, count):
+            assert ordered[index - 1][0] < ordered[index][0], "duplicate IPC key"
+        for index, (key, value) in enumerate(ordered):
+            self._block.write_entry(index + 1, key, value)
+        self._block.write_u64(0, count)
 
     def append(self, key: int, value: int) -> None:
         """Appends an entry (key32, value32) into the shared memory block, keeping it sorted."""
-        entries = self._read_entries()
+        entries: StaticVector[tuple[int, int]] = StaticVector(capacity=FB_CONF_ROUTER_MAX_KV_PAIRS)
+        entries.extend(self._read_entries())
         entries.append((key, value))
         self.write_entries(entries)
 
@@ -327,8 +359,8 @@ class IPCMessage:
         return msg
 
     @property
-    def entries(self) -> Sequence[tuple[int, int]]:
-        """Returns the sorted AoS (key, value) entries read from the shared memory block."""
+    def entries(self) -> SharedEntries:
+        """Borrow the sorted AoS entries directly from the shared memory block."""
         return self._read_entries()
 
     @property

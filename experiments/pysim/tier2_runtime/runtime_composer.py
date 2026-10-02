@@ -27,6 +27,7 @@ from system_containers import StaticVector
 
 ResultT = TypeVar("ResultT")
 ArgumentT = TypeVar("ArgumentT")
+ExecutorT = TypeVar("ExecutorT")
 
 
 class RuntimeExecutor(Protocol, Generic[ResultT, ArgumentT]):
@@ -218,6 +219,22 @@ class RuntimeComposer:
     """
 
     __slots__ = ()
+
+    @staticmethod
+    def compose_execution(
+        config: RuntimeCompositionConfig,
+        executor_factory: Callable[[], ExecutorT],
+        debugger_weave: Callable[[ExecutorT], None],
+    ) -> ExecutorT:
+        """起動前に有効な実行制御アスペクトだけを結線する。"""
+        if config.plugins.debugger:
+            assert config.execution == RuntimeExecutionKind.INTERPRETER, (
+                "debugger-enabled runtime must use interpreter-only execution"
+            )
+        executor = executor_factory()
+        if config.plugins.debugger:
+            debugger_weave(executor)
+        return executor
 
     @staticmethod
     def compose(

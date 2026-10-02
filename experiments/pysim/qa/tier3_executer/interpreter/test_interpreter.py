@@ -18,19 +18,24 @@ _REPO_ROOT = _PYSIM_DIR.parent.parent
 # Keep the product Tier 3 package ahead of tests/tier3_executer when importing
 # runtime_engine's qualified Tier 3 modules.
 
+import pytest
 from bump_allocator import BumpAllocator
-from helpers import _build_test_wasm_binary, expect_assertion, wat_to_wasm
+from helpers import _build_test_wasm_binary, expect_assertion, make_native_interpreter, wat_to_wasm
 from helpers import make_interpreter as Interpreter
 from loader import DecodedEntityKind
 from system_containers import StaticVector
 from tier3_executer.interpreter.interpreter import InterpreterContext, Trap, WasmNumber
+from tier3_executer.interpreter.interpreter import TrapCode as InterpreterTrapCode
 from vmmio import TrapCode
 from wasm_module import F64, I32, I64, Function, FuncType, Memory, Module
 from wasm_reader import parse
 
 
-def test_intp_01_02_cps_handlers_and_dispatch_table():
-    """TEST-INTP-01, 02: Opcode handlers use the direct raw signature and array dispatch."""
+def test_intp_01_python_reference_cps_handlers_and_dispatch_table():
+    """TEST-INTP-01 (Python reference): handlers share the four logical arguments.
+
+    The reference table is not evidence of the native dispatcher implementation (TEST-INTP-02).
+    """
     import inspect
 
     from tier3_executer.interpreter.interpreter import _HANDLERS
@@ -56,8 +61,8 @@ def test_intp_01_02_cps_handlers_and_dispatch_table():
     )
 
 
-def test_intp_03_control_frame_enum_and_opcode_attribute_table():
-    """TEST-INTP-03: Control-frame kinds and loader opcode metadata are typed and shared."""
+def test_control_frame_enum_and_opcode_attribute_table():
+    """Control-frame kinds and loader opcode metadata are typed and shared."""
     from control_flow import OpcodeAttribute, opcode_has_attribute
     from tier3_executer.interpreter.interpreter import ControlFrameKind, NativeControlStack
     from wasm_opcodes import BR_IF, CALL, I32_ADD, LOOP
@@ -72,8 +77,8 @@ def test_intp_03_control_frame_enum_and_opcode_attribute_table():
     assert not opcode_has_attribute(I32_ADD, OpcodeAttribute.BASIC_BLOCK_BOUNDARY)
 
 
-def test_intp_04_wide_frame_uses_eight_byte_slots():
-    """A frame holding an i64/f64 local gives every local an 8-byte slot; wide values stay aligned."""
+def test_intp_73_wide_frame_uses_eight_byte_slots():
+    """TEST-INTP-73: a frame containing wide locals has aligned 8-byte slots."""
     function = Function(
         type_index=0,
         locals_extra=(I32, I64),
@@ -93,8 +98,8 @@ def test_intp_04_wide_frame_uses_eight_byte_slots():
     assert Interpreter(module).call(0, [7, 42, 3.5]) == [42]
 
 
-def test_intp_04_control_map_uses_four_entry_locality_caches():
-    """The small per-function ControlMap keeps only four direct-mapped cache slots."""
+def test_intp_72_control_map_uses_four_entry_locality_caches():
+    """TEST-INTP-72: static control metadata retains its bounded locality caches."""
     from control_flow import build_control_map
 
     control_map = build_control_map(b"\x02\x40\x0b")
@@ -109,8 +114,8 @@ def test_intp_04_control_map_uses_four_entry_locality_caches():
         assert 0 <= control_map._cache_slot(ip) < 4
 
 
-def test_intp_05_handler_returns_trap_outcome():
-    """A WASM trap is an explicit handler outcome, not an absent continuation."""
+def test_intp_01_handler_returns_specific_trap_outcome():
+    """TEST-INTP-01: the reference handler and execution boundary report UNREACHABLE."""
     from tier3_executer.interpreter.interpreter import _HANDLERS
     from wasm_opcodes import UNREACHABLE
 
@@ -124,11 +129,13 @@ def test_intp_05_handler_returns_trap_outcome():
     assert handler is not None
     result = handler(call_state.context, frame.values, local_base, tos)
     assert isinstance(result, Trap)
+    assert result.code == InterpreterTrapCode.UNREACHABLE
 
     stepped = Interpreter(module).step(Interpreter(module).start(0, []))
     assert stepped.finished
     assert stepped.results is None
     assert isinstance(stepped.trap, Trap)
+    assert stepped.trap.code == InterpreterTrapCode.UNREACHABLE
 
 
 def test_intp_17_return_publishes_explicit_sentinel_before_frame_pop():
@@ -148,7 +155,7 @@ def test_intp_17_return_publishes_explicit_sentinel_before_frame_pop():
     assert completed.results == [7]
 
 
-def test_intp_18_typed_block_results_keep_wide_native_slots():
+def test_typed_block_results_keep_wide_native_slots():
     """Label pruning preserves i64/f32/f64 results through the shared raw stack."""
     module = parse(
         wat_to_wasm(
@@ -372,8 +379,9 @@ def test_wasm_10_to_15_control_flow_and_calls():
     mod = parse(wasm_bytes)
     interp = Interpreter(mod)
     # TEST-WASM-10: unreachable traps
-    with expect_assertion():
+    with pytest.raises(AssertionError) as failure:
         interp.call(mod.export_func_index("unreachable_fn"), [])
+    assert failure.value.args == (InterpreterTrapCode.UNREACHABLE,)
     # TEST-WASM-13: br_table branch resolution
     assert interp.call(mod.export_func_index("calc_fn"), [0]) == [100]
     assert interp.call(mod.export_func_index("calc_fn"), [1]) == [200]
@@ -458,8 +466,11 @@ def test_wasm_40_to_46_memory_load_store_grow_and_data():
     assert pages == [2]
     assert struct.unpack_from("<I", mem, 16)[0] == 0x12345678
     # OOB trap check
-    with expect_assertion():
+    before = bytes(mem)
+    with pytest.raises(AssertionError) as failure:
         interp.call(mod.export_func_index("trap_oob"), [])
+    assert failure.value.args == (InterpreterTrapCode.MEMORY_OUT_OF_BOUNDS,)
+    assert bytes(mem) == before
 
 
 def test_wasm_50_to_56_integer_arithmetic_and_bitwise():
@@ -484,8 +495,9 @@ def test_wasm_50_to_56_integer_arithmetic_and_bitwise():
     mod = parse(wasm_bytes)
     interp = Interpreter(mod)
     # TEST-WASM-54: Div by zero traps
-    with expect_assertion():
+    with pytest.raises(AssertionError) as failure:
         interp.call(mod.export_func_index("div_s"), [10, 0])
+    assert failure.value.args == (InterpreterTrapCode.INTEGER_DIVIDE_BY_ZERO,)
     # Normal div
     assert interp.call(mod.export_func_index("div_s"), [10, 2]) == [5]
     # TEST-WASM-52, 55, 56: Bit ops
@@ -591,7 +603,7 @@ def test_wasm_loader_and_radix_binary_tree_view_indexes():
 
 
 def test_intp_70_to_72_direct_bytecode_execution():
-    """TEST-INTP-70..72 & GOTCHA-INTP-05: Direct bytecode decoding without instruction objects or binary search."""
+    """TEST-INTP-18/70/72/75: frame ABI, loaded code/control metadata, and reference result."""
     wat = """
     (module
       (func (export "calc") (param $x i32) (result i32)
@@ -618,7 +630,7 @@ def test_intp_70_to_72_direct_bytecode_execution():
     module = parse(wasm_bytes)
     interp = Interpreter(module)
 
-    # 1. TEST-INTP-70: the context owns the call-frame and LocalStack construction.
+    # 1. TEST-INTP-18/75: independent call descriptors and local storage follow the native ABI.
     context = InterpreterContext(module)
     frame, locals_arr = interp._build_frame(0, StaticVector.of((15,), capacity=64), context)
     assert frame.code == module.code_for(0)
@@ -736,10 +748,12 @@ def test_wasm_mvp_packed_memory_and_i64_float_conversions():
     assert interp.call(module.export_func_index("f64_from_s"), [-7]) == [-7.0]
     assert interp.call(module.export_func_index("f64_from_u"), [max_u64]) == [float(max_u64)]
 
-    with expect_assertion():
+    with pytest.raises(AssertionError) as failure:
         interp.call(module.export_func_index("trunc_f32_s"), [float("nan")])
-    with expect_assertion():
+    assert failure.value.args == (InterpreterTrapCode.INVALID_CONVERSION,)
+    with pytest.raises(AssertionError) as failure:
         interp.call(module.export_func_index("trunc_f64_u"), [-1.0])
+    assert failure.value.args == (InterpreterTrapCode.INVALID_CONVERSION,)
 
 
 def test_wasm_mvp_select_preserves_wide_operands():
@@ -996,12 +1010,14 @@ def test_intp_74_all_32bit_frames_use_half_the_local_stack():
     # Sixteen 4-byte slots per frame: seven frames use 112 of the 128 raw words.
     assert 7 * 16 <= local_stack_words
     assert Interpreter(narrow_module).call(0, [6]) == [6]
+    assert make_native_interpreter(narrow_module).call(0, [6]) == [6]
     wide_module = parse(recursion("(local $w f64)"))
     assert wide_module.functions[0].local_slot_count_cache == 34
     # Seventeen 8-byte slots per frame: the same depth needs 238 raw words and must stop.
     assert 7 * 34 > local_stack_words
-    with expect_assertion():
-        Interpreter(wide_module).call(0, [6])
+    with pytest.raises(AssertionError) as failure:
+        make_native_interpreter(wide_module).call(0, [6])
+    assert failure.value.args == (InterpreterTrapCode.LOCAL_STACK_CAPACITY,)
 
 
 # ===========================================================================
@@ -1014,20 +1030,4 @@ ALL_TESTS = sorted(
 )
 
 if __name__ == "__main__":
-    for test in ALL_TESTS:
-        test()
-        print(f"[PASS] {test.__name__}")
-
-    print(f"\n[PASS] All {len(ALL_TESTS)} comprehensive pysim invariant tests passed.")
-
-if __name__ == "__main__":
-    test_intp_01_02_cps_handlers_and_dispatch_table()
-    test_intp_04_wide_frame_uses_eight_byte_slots()
-    test_wasm_01_to_06_unsupported_features_rejected()
-    test_wasm_10_to_15_control_flow_and_calls()
-    test_wasm_20_21_drop_and_select()
-    test_wasm_30_31_locals_and_globals()
-    test_wasm_40_to_46_memory_load_store_grow_and_data()
-    test_wasm_50_to_56_integer_arithmetic_and_bitwise()
-    test_wasm_loader_and_radix_binary_tree_view_indexes()
-    print("[PASS] All 8 WASM Interpreter & Instructions tests passed.")
+    raise SystemExit(pytest.main([__file__]))

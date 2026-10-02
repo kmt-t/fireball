@@ -1126,7 +1126,7 @@ class Scheduler:
         return task
 
     def run_until_idle(self, budget: int | None = None) -> None:
-        """Runs cooperative tasks until all coroutines block, yield or terminate, then fires idle hooks."""
+        """Runs cooperative tasks within the budget; fires hooks only with no READY task or event."""
         previous_task = self.current_task
         self.drain_interrupts()
         self._begin_reschedule_round()
@@ -1136,6 +1136,8 @@ class Scheduler:
             self.drain_interrupts()
             self._wake_expired_timed_tasks()
             if not self._ready:
+                if len(self.interrupt_event_queue) != 0:
+                    continue
                 if not idle_hooks_called:
                     self._run_idle_hooks()
                     idle_hooks_called = True
@@ -1193,7 +1195,7 @@ class Scheduler:
 
             self.current_task = None
 
-        if not idle_hooks_called:
+        if not idle_hooks_called and not self._ready and len(self.interrupt_event_queue) == 0:
             self._run_idle_hooks()
         self.current_task = previous_task
 

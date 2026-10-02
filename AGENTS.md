@@ -15,6 +15,7 @@
 ## 作業前に読むもの
 
 - 変更前に関連する既存ルール（`.agents/rules/**`）を読む。
+- 仕様の追加・改定・レビューでは、[仕様の必要性と既存機構の確認](.agents/skills/specification-review.md)を適用する。
 - 迷ったら `docs/plans/backlog_list.md` と `docs/plans/roadmap_phase.md` を確認する。
 - 仕様変更時は `docs/components/`、`docs/requires/` を必要に応じて更新し、形式検証モデル（`docs/components/<tier>/formal/`）を整合させる。
 - 仕様、計画、検証に触れる変更では、`docs/architecture/document_structure.md` に従って `{Keyword}` の紐付けを保つ。
@@ -58,7 +59,7 @@
 
 - エージェント共通のルール正本は `AGENTS.md` および `.agents/rules/**`。
 - ドキュメント品質の検証入口と品質ゲートは `tools/README.md` を参照。
-- 最上位アーキテクチャレビュースキル（Tier分類・責務境界・依存方向・契約配置・一覧とリンクの整合性）は `.agents/skills/architecture-review/` を参照。
-- コンポーネントレビュースキル（仕様→形式検証→コンセプトコード→テストの4層チェーンと垂直一貫性）は `.agents/skills/component-review/` を参照。
+- 最上位アーキテクチャレビュースキル（責務・経路の必要性、Tier分類、依存方向、契約配置、一覧とリンクの整合性）は `.agents/skills/architecture-review/` を参照。
+- コンポーネントレビュースキル（仕様の必要性と既存機構への適合、仕様→形式検証→コンセプトコード→テストの4層チェーン）は `.agents/skills/component-review/` を参照。
 - pysim ソースコードレビュースキル（組み込み C++ 移植性・型・メモリ・計算量・Tier境界の9評価軸）は `.agents/skills/pysim-review/` を参照。
 - pysim 計測・最適化スキル（Intel VTune / AMD uProf・ターゲット資源予算）は `.agents/skills/pysim-optimization/` を参照。

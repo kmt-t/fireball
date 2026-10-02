@@ -9,6 +9,8 @@ import io
 import time
 from pathlib import Path
 
+import pytest
+
 # Setup paths
 _TEST_FILE = Path(__file__).resolve()
 _TESTS_DIR = _TEST_FILE.parent.parent
@@ -198,13 +200,122 @@ def test_hal_05_hal_buffer_slice_bounds_and_guest_mapping():
         pool.close_all()
 
 
+@pytest.mark.parametrize(
+    "rejection",
+    (
+        "other-slot",
+        "negative-id",
+        "past-id",
+        "negative-offset",
+        "negative-length",
+        "past-offset",
+        "past-end",
+        "oversized-length",
+        "unmapped-handle",
+        "wrong-unmap",
+    ),
+)
+def test_hal_06_rejection_preserves_mapping_and_all_slot_bytes(rejection: str) -> None:
+    """TEST-HAL-06 / GOTCHA-HAL-01: Reject bad I/O without corrupting the live or adjacent slots."""
+    scheduler = Scheduler()
+    owner_id = scheduler.spawn("owner")
+    scheduler.current_task = scheduler.get_task(owner_id)
+    vmmio = VMMIOController(guest_ram_size=8192, scheduler=scheduler)
+    pool = HalBufferPool(scheduler, vmmio)
+    handles = tuple(pool.buffer(index) for index in range(FB_CONF_HAL_MAX_BUFFERS))
+    try:
+        for index, handle in enumerate(handles):
+            assert pool.map_for_io(handle.buffer_id) == HalBufferMapStatus.MAPPED
+            pool.view(handle, 0, handle.capacity)[:] = bytes(
+                (offset + index * 29) % 256 for offset in range(handle.capacity)
+            )
+            pool.unmap_after_io(handle.buffer_id)
+        before = tuple(bytes(handle._storage) for handle in handles)
+        current, other = handles[:2]
+        assert pool.map_for_io(current.buffer_id) == HalBufferMapStatus.MAPPED
+
+        def assert_preserved() -> None:
+            assert tuple(bytes(handle._storage) for handle in handles) == before
+            assert pool._mapped_buffer_id == current.buffer_id
+            assert pool._mapped_task_id == owner_id
+            assert pool.can_view(current, 0, current.capacity)
+            assert pool.view(current, 0, current.capacity).tobytes() == before[0]
+            for handle in handles:
+                status, _ = vmmio.access(handle.virtual_address, is_write=False)
+                expected = (
+                    VmmioStatus.OK_PHYSICAL if handle is current else TrapCode.UNREGISTERED_PAGE
+                )
+                assert status == expected
+
+        if rejection == "other-slot":
+            assert pool.map_for_io(other.buffer_id) == HalBufferMapStatus.BUSY
+        elif rejection in ("negative-id", "past-id"):
+            invalid_id = -1 if rejection == "negative-id" else FB_CONF_HAL_MAX_BUFFERS
+            with expect_assertion():
+                pool.map_for_io(invalid_id)
+            assert_preserved()
+            with expect_assertion():
+                pool.buffer(invalid_id)
+            assert_preserved()
+            with expect_assertion():
+                pool.view_for_driver(invalid_id, 0, 1)
+        elif rejection == "unmapped-handle":
+            assert not pool.can_view(other, 0, 1)
+            with expect_assertion("not mapped for this operation"):
+                pool.view(other, 0, 1)
+        elif rejection == "wrong-unmap":
+            with expect_assertion("mapping does not match"):
+                pool.unmap_after_io(other.buffer_id)
+        else:
+            invalid_ranges = {
+                "negative-offset": (-1, 1),
+                "negative-length": (0, -1),
+                "past-offset": (current.capacity + 1, 0),
+                "past-end": (current.capacity, 1),
+                "oversized-length": (0, current.capacity + 1),
+            }
+            offset, length = invalid_ranges[rejection]
+            assert not pool.can_view(current, offset, length)
+            with expect_assertion("escapes fixed buffer"):
+                pool.view(current, offset, length)
+            assert_preserved()
+            with expect_assertion():
+                pool.view_for_driver(current.buffer_id, offset, length)
+        assert_preserved()
+
+        # A valid edge slice must still reach the same live HAL backing after rejection.
+        pool.view(current, current.capacity - 3, 3)[:] = b"HAL"
+        assert pool.view_for_driver(current.buffer_id, current.capacity - 3, 3).tobytes() == b"HAL"
+        assert tuple(bytes(handle._storage) for handle in handles) == (
+            before[0][:-3] + b"HAL",
+            *before[1:],
+        )
+        pool.unmap_after_io(current.buffer_id)
+        status, _ = vmmio.access(current.virtual_address, is_write=False)
+        assert status == TrapCode.UNREGISTERED_PAGE
+        assert pool.map_for_io(other.buffer_id) == HalBufferMapStatus.MAPPED
+        assert pool.view(other, 0, other.capacity).tobytes() == before[1]
+        pool.unmap_after_io(other.buffer_id)
+        status, _ = vmmio.access(other.virtual_address, is_write=False)
+        assert status == TrapCode.UNREGISTERED_PAGE
+    finally:
+        pool.close_all()
+
+
 # ===========================================================================
 # 5. Tier 2 Logging & Recovery (runtime_logging_test_spec.md)
 # ===========================================================================
 
 
-def test_hal_task_ipc_communication():
-    """TEST-HAL-01: HAL operates as a distinct task on COOS and handles commands via IPC rendezvous."""
+@pytest.mark.parametrize(
+    "offset, payload",
+    [
+        pytest.param(0, b"x" * 128, id="offset-zero"),
+        pytest.param(17, bytes(range(32)), id="offset-17"),
+    ],
+)
+def test_hal_task_ipc_communication(offset: int, payload: bytes):
+    """TEST-HAL-01/02/16: IPC stream writes deliver exactly the selected fixed-buffer slice."""
     from hal_dispatch import ARG_BUFFER_HANDLE, ARG_LENGTH, ARG_OFFSET
     from tier3_platform.drivers.wasi.context import Wasi03pEngine, WasiIpcCmd
 
@@ -214,27 +325,39 @@ def test_hal_task_ipc_communication():
         sysv.scheduler.current_task = runtime_task
         buffer_handle = sysv.pool.buffer(0)
         assert sysv.pool.map_for_io(buffer_handle.buffer_id) == HalBufferMapStatus.MAPPED
-        buffer_view = sysv.pool.view(buffer_handle, 0, 128)
-        buffer_view[:] = b"x" * 128
-        sysv.start_hal_driver(
-            DummyDriver(transport=sysv.transport), sysv.wasi_hal_bindings.stdout_uri
-        )
+        buffer_view = sysv.pool.view(buffer_handle, 0, buffer_handle.capacity)
+        buffer_view[:] = b"\xa5" * buffer_handle.capacity
+        buffer_view[offset : offset + len(payload)] = payload
+        original_buffer = bytes(buffer_view)
+        driver = DummyDriver(transport=sysv.transport)
+        sysv.start_hal_driver(driver, sysv.wasi_hal_bindings.stdout_uri)
         engine = Wasi03pEngine(sysv)
         # Send command via IPC
         response = engine.send_ipc_command(
             "fireball://hal/stdout/0",
             WasiIpcCmd.STREAM_WRITE_BUFFER,
             ReadOnlyFlatMapView(
-                [(ARG_BUFFER_HANDLE, buffer_handle.buffer_id), (ARG_LENGTH, 128), (ARG_OFFSET, 0)]
+                [
+                    (ARG_BUFFER_HANDLE, buffer_handle.buffer_id),
+                    (ARG_LENGTH, len(payload)),
+                    (ARG_OFFSET, offset),
+                ]
             ),
         )
         assert response.response_code == 0
-        assert response.value == 128
+        assert response.value == len(payload)
         stdio_task = sysv.hal_task_for("fireball://hal/stdout/0")
         assert stdio_task is not None
         assert stdio_task.processed_count == 1
         assert stdio_task.last_handled_cmd == WasiIpcCmd.STREAM_WRITE_BUFFER
+        assert stdio_task.driver is driver
+        assert driver.drain_stdout() == payload
+        assert driver.drain_stdout() == b"", "one IPC command must not duplicate output"
+        assert bytes(buffer_view) == original_buffer, "stream-write must preserve its source slot"
         sysv.pool.unmap_after_io(buffer_handle.buffer_id)
+        assert not sysv.pool.can_view(buffer_handle, offset, len(payload))
+        status, _ = sysv.vmmio.access(buffer_handle.virtual_address, is_write=False)
+        assert status == TrapCode.UNREGISTERED_PAGE
     finally:
         sysv.shutdown()
 
@@ -325,14 +448,4 @@ def test_hal_15_file_log_sink_receives_internal_logs():
 
 
 if __name__ == "__main__":
-    test_hal_01_stream_transport_uses_fixed_buffers()
-    test_hal_02_dummy_stdio_driver_streams_stdin_and_stdout()
-    test_hal_03_timer_monotonic_ns()
-    test_hal_04_hal_buffer_pool_maps_fixed_slots()
-    test_hal_05_hal_buffer_slice_bounds_and_guest_mapping()
-    test_hal_task_ipc_communication()
-    test_wasi_dummy_fd_write_updates_stdout_and_count()
-    test_wasi_dummy_fd_seek_writes_new_offset()
-    test_wasi_dummy_clock_time_get_writes_timestamp()
-    test_hal_15_file_log_sink_receives_internal_logs()
-    print("[PASS] All 10 HAL Drivers & HalBufferPool tests passed.")
+    raise SystemExit(pytest.main([__file__]))

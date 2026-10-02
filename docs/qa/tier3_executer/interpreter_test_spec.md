@@ -30,7 +30,7 @@
 
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| TEST-INTP-10 | オペランド領域オーバーフロートラップ | `stack_capacity`を超えるpush | 再帰呼び出し等でオペランド領域を溢れさせる | `WASMTrap("STACK_OVERFLOW")`相当が発生する（無限に領域が伸びない） | interpreter_concept.py `ExecutionContext.push` |
+| TEST-INTP-10 | オペランド領域オーバーフロートラップ | `stack_capacity`を超えるpush | 再帰呼び出し等でオペランド領域を溢れさせる。nativeの4型constを空き0/1/2 word境界で実行する | 概念実装は`WASMTrap("STACK_OVERFLOW")`相当、pysim/nativeは`OPERAND_STACK_CAPACITY`を返す。constの拒否時はPC、stackサイズ、既存wordと隣接sentinelを保持し、未対応opcode扱いにしない | interpreter_concept.py `ExecutionContext.push`、[`test_cps_interpreter.py`](experiments/pysim/qa/tier3_executer/interpreter/test_cps_interpreter.py) |
 | TEST-INTP-11 | オペランド領域アンダーフロートラップ | 空のオペランド領域でpop | pop操作 | `WASMTrap("STACK_UNDERFLOW")`相当 | interpreter_concept.py `ExecutionContext.pop` |
 | TEST-INTP-12 | 再帰呼び出し（call）とローカル値領域 | `fact(n)`のような再帰関数 | `execute_function`で呼び出す | 各呼び出しごとに新しいローカル値領域の区画が割り当てられ、ローカル変数が互いに独立する | interpreter_concept.py `test_full_wasm_recursive_factorial` |
 | TEST-INTP-13 | 戻り値の受け渡し | 関数が1個の結果を返す | `return`実行後の呼び出し元スタック | 呼び出し元のスタックに正しく結果が積まれる | interpreter_concept.py `execute_function` |
@@ -149,6 +149,44 @@
 - **LOOP後方分岐の協調yield (TEST-INTP-50〜51)**: 共通回数しきい値に達した時だけRuntimeEngineへ戻る。
 - **デバッグ構成 (TEST-INTP-60〜62, 65)**: インタープリタ専用構成、ブレークポイント停止、およびアタッチ中のJIT不使用。
 
+### native constの容量境界と原因の識別
+
+[`test_cps_interpreter.py`](experiments/pysim/qa/tier3_executer/interpreter/test_cps_interpreter.py)の`test_native_const_capacity_traps_without_partial_push`は、4型constと5境界の20組を全数実行する。境界は容量0で空き0、容量1で空き1、容量4で空き0/1/2である。i32/f32は1 word、i64/f64は2 wordを使う。i32/i64の-1とf32/f64の負のゼロについて、成功時の具体raw wordも確認する。
+
+拒否時はnative C ABIのstatusがtrap、原因が`OPERAND_STACK_CAPACITY`、停止PCがconstの位置、stackサイズが操作前と一致することを確認する。物理128 wordを個別sentinelで埋め、全wordを操作前後で比較する。wide constの片側だけの書込みと、利用可能容量の外側への書込みを検出する。
+
+`test_native_invalid_const_is_not_misclassified_as_capacity_trap`は、4型の切れた即値と未対応opcodeを、空き0/2 wordの10組で実行する。容量trapへ一括変更せず、元のfallback境界、PC、全word保存が維持されることを確認する。この低位ABI試験は不正WASMのロード受入れを意味しない。
+
+2026-10-01、Linux x64、Python 3.14.6、Clang 21.1.8で、修正前は容量不足の12組がFAIL、正常・負例など19件がPASSとなった。4 constハンドラのpush失敗を具体容量trapへ分離し、nativeを再ビルドした後、次の局所検証で31件PASS、FAIL 0件、SKIP 0件を確認した。
+
+```bash
+UV_CACHE_DIR=/tmp/fireball-test-design-uv bash experiments/pysim/tier3_executer/interpreter/build_native.sh
+UV_CACHE_DIR=/tmp/fireball-test-design-uv uv run --offline --no-sync python -m pytest -q experiments/pysim/qa/tier3_executer/interpreter/test_cps_interpreter.py
+```
+
+同じ20容量境界と10負例をstandalone C ABIの一時ハーネスから実行し、AddressSanitizerとUndefinedBehaviorSanitizerの検出なしを確認した。LeakSanitizerは実行環境のprocess検査制約により動作しないため、この確認では無効にした。
+
+### Interpreter試験の観測とケース対応
+
+[`test_interpreter.py`](experiments/pysim/qa/tier3_executer/interpreter/test_interpreter.py)はPython参照実装の試験と、既存native入口の試験を区別する。
+Python参照実装のhandler表を検査した結果は、native dispatcherの方式を検証した結果として扱わない。
+関数名の旧番号が異なる要求を指していた試験は、実際に観測する内容へ名称と対応を修正した。
+
+| 要求・対象 | 実行関数 | 独立した期待値と観測 |
+| :--- | :--- | :--- |
+| TEST-INTP-01の参照handler | `test_intp_01_python_reference_cps_handlers_and_dispatch_table`、`test_intp_01_handler_returns_specific_trap_outcome` | 論理引数の名前と順序を比較し、handler結果と実行境界が具体的な`UNREACHABLE`を報告することを確認する。native dispatcherのTEST-INTP-02の証拠へ読み替えない |
+| 制御フレーム型とopcode属性 | `test_control_frame_enum_and_opcode_attribute_table` | 実フレームのLOOP種別と、CALL、BR_IF、LOOP、I32_ADDの属性を比較する。handler/JITの論理引数契約を扱うTEST-INTP-03へ紐付けない |
+| TEST-INTP-72の静的制御表 | `test_intp_72_control_map_uses_four_entry_locality_caches` | void、i32、i64のblock終端とアリティ、および固定容量のcacheを比較する。TEST-INTP-04のJIT復帰経路へ紐付けない |
+| TEST-INTP-73の広幅フレーム | `test_intp_73_wide_frame_uses_eight_byte_slots` | 混在型の幅マップ、引数の生ワード数、フレームのスロット数と関数結果42を比較する |
+| ラベルアリティによる広幅結果の保存 | `test_typed_block_results_keep_wide_native_slots` | i64、f32、f64のblockからの分岐結果42、1.5、2.5を比較する。関数呼出し記述子の分離を扱うTEST-INTP-18の証拠へ読み替えない |
+| TEST-INTP-18/75の記述子とlocal領域 | `test_intp_70_to_72_direct_bytecode_execution` | 既存のフレーム構築後にnative記述子の関数番号、コード、幅マップ、引数・local数、独立したlocal領域位置を比較する。復帰後の記述子とlocal領域の長さが0へ戻ることを確認する |
+| 命令のTrap原因 | `test_wasm_10_to_15_control_flow_and_calls`、`test_wasm_40_to_46_memory_load_store_grow_and_data`、`test_wasm_50_to_56_integer_arithmetic_and_bitwise`、`test_wasm_mvp_packed_memory_and_i64_float_conversions` | 対象呼出しだけの`AssertionError`を捕捉し、外側で`UNREACHABLE`、`MEMORY_OUT_OF_BOUNDS`、`INTEGER_DIVIDE_BY_ZERO`、`INVALID_CONVERSION`を比較する。境界外メモリアクセスでは全メモリの不変も比較する |
+| TEST-INTP-74のlocal容量 | `test_intp_74_all_32bit_frames_use_half_the_local_stack` | 狭幅版は参照実装とnativeで結果6を得る。広幅版は既存native入口から`LOCAL_STACK_CAPACITY`を返す。任意の内部assertを容量Trapの代替にしない |
+
+この対応表は既存の実行入口と試験の観測対象を示す。
+TEST-INTP-03の全handler/JIT戻り型比較や、TEST-INTP-04のJIT復帰は上記の補助試験で代替せず、対応するABI試験とJIT試験の範囲で確認する。
+
 ## 4. 未検証・スコープ外
 
 - f32/f64演算（`interpreter_concept.py`自体にも実装がなく、スコープが仕様上不明瞭。README「Missing spec coverage」参照）。
+- 上記const境界試験は全opcodeの容量超過、全即値、全呼出し履歴を網羅しない。JITを含む深いstackの回帰は[`jit_runtime_test_spec.md`](docs/qa/tier3_executer/jit_runtime_test_spec.md)のTEST-JITR-61を参照する。

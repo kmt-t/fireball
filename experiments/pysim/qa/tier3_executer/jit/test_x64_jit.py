@@ -27,6 +27,7 @@ Verifies:
 
 import ctypes
 import struct
+import sys
 
 from control_flow import extract_basic_blocks
 from execution_context import WASMContext
@@ -320,7 +321,25 @@ def test_python_trace_compiler_is_selected_per_instance():
     assert locals_arr[1] == 40
     # 3. The installed entry is a header-selected jump into the common prefix.
     assert trace.code_offset == 2048
-    assert trace._exec_buf.read(0, 22) == trace._exec_buf.read(0, 22)
+    assert trace._exec_buf is not None
+    # ABI register moves and the body jump are independent machine-code expectations.
+    saved_registers = bytes.fromhex("53 41 54 41 55 41 56 41 57")
+    register_moves = (
+        bytes.fromhex("57 48 89 e7 4d 89 c2 49 89 d4 49 89 cd")
+        if sys.platform == "win32"
+        else bytes.fromhex("55 48 89 e5 49 89 d2 49 89 f4 49 89 fd 44 89 c9")
+    )
+    expected_prologue = saved_registers + register_moves + bytes.fromhex("4c 8d 70 d9 ff e0")
+    assert trace._exec_buf.read(0, len(expected_prologue)) == expected_prologue
+    stub_offset = trace.code_offset + 24
+    entry_stub = trace._exec_buf.read(stub_offset, 15)
+    assert entry_stub[:2] == bytes.fromhex("48 b8")
+    assert (
+        int.from_bytes(entry_stub[2:10], "little") == trace._exec_buf.base + trace.code_offset + 39
+    )
+    assert entry_stub[10:11] == b"\xe9"
+    common_displacement = int.from_bytes(entry_stub[11:15], "little", signed=True)
+    assert stub_offset + 15 + common_displacement == 0
 
     # 4. Context-based invocation via trace.invoke(ctx)
     ctx = WASMContext()
@@ -622,12 +641,14 @@ def test_trace_local_addressing_follows_frame_slot_width():
         trace = compile_test_block(TraceCompiler(), code, block, types)
         assert trace is not None
         locals_arr = (ctypes.c_uint32 * (3 * slot_words))()
-        locals_arr[0] = 7
+        for index in range(len(locals_arr)):
+            locals_arr[index] = 0x10203040 + index
+        expected = list(locals_arr)
+        expected[2 * slot_words] = expected[0]
         trace.fn(
             ctypes.c_void_p(0), ctypes.c_void_p(0), ctypes.cast(locals_arr, ctypes.c_void_p), 0
         )
-        assert locals_arr[2 * slot_words] == 7, f"types {types}"
-        assert sum(locals_arr) == 14, "no other slot may change"
+        assert list(locals_arr) == expected, f"types {types}: all untouched words must survive"
 
 
 # ---------------------------------------------------------------------------

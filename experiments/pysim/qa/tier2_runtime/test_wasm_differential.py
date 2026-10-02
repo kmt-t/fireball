@@ -11,6 +11,9 @@ import math
 import struct
 from pathlib import Path
 
+import pytest
+import wasmtime
+
 # Setup search paths
 _TEST_FILE = Path(__file__).resolve()
 _TESTS_DIR = _TEST_FILE.parent.parent
@@ -20,7 +23,7 @@ _REPO_ROOT = _PYSIM_DIR.parent.parent
 
 from helpers import make_interpreter as Interpreter
 from helpers import wat_to_wasm
-from tier3_executer.interpreter.interpreter import Trap
+from tier3_executer.interpreter.interpreter import TrapCode
 from wasm_reader import parse
 
 
@@ -28,10 +31,10 @@ def _run_differential(
     wat_text: str,
     func_name: str,
     args: list[int | float],
-    expect_trap: bool = False,
+    expected_trap: TrapCode | None = None,
+    memory_export: str | None = None,
 ) -> None:
-    """Runs a function under both pysim Interpreter and wasmtime, asserting identical outcomes."""
-    import wasmtime
+    """Compare successful values or the declared guest trap, and optional full memory state."""
 
     wasm_bytes = wat_to_wasm(wat_text)
     assert wasm_bytes, "wasmtime.wat2wasm must succeed in differential test environment"
@@ -42,55 +45,77 @@ def _run_differential(
     module = wasmtime.Module(engine, wasm_bytes)
     instance = wasmtime.Instance(store, module, [])
     wt_func = instance.exports(store)[func_name]
+    assert isinstance(wt_func, wasmtime.Func)
 
-    wt_trap = False
+    wt_trap_code = None
     wt_result = None
     try:
         wt_result = wt_func(store, *args)
-    except wasmtime.WasmtimeError, wasmtime.Trap:
-        wt_trap = True
+    except wasmtime.Trap as trap:
+        wt_trap_code = trap.trap_code
+        assert wt_trap_code is not None, "reference engine raised an unclassified trap"
 
     # 2. Execute with pysim Interpreter
     pysim_mod = parse(wasm_bytes)
     pysim_interp = Interpreter(pysim_mod)
     func_idx = pysim_mod.export_func_index(func_name)
 
-    pysim_trap = False
-    pysim_result = None
-    try:
-        pysim_res_list = pysim_interp.call(func_idx, args)
-        if pysim_res_list:
-            pysim_result = pysim_res_list[0]
-    except AssertionError, Trap, ZeroDivisionError, OverflowError:
-        pysim_trap = True
+    call_state = pysim_interp.start(func_idx, args)
+    while not call_state.finished:
+        call_state = pysim_interp.step(call_state)
 
-    # 3. Assert parity
-    assert wt_trap == pysim_trap, (
-        f"Trap mismatch for {func_name}{args}: wasmtime trap={wt_trap}, pysim trap={pysim_trap}"
-    )
-    if expect_trap:
-        assert pysim_trap, f"Expected trap for {func_name}{args}, but both succeeded"
+    # 3. Compare externally visible memory, including partial-write rejection.
+    if memory_export is not None:
+        wt_memory = instance.exports(store)[memory_export]
+        assert isinstance(wt_memory, wasmtime.Memory)
+        assert bytes(pysim_interp.memory) == bytes(wt_memory.read(store)), (
+            f"Memory mismatch after {func_name}{args}"
+        )
+
+    # 4. Guest traps are structured outcomes. Unrelated Python failures propagate.
+    if expected_trap is not None:
+        reference_codes = {
+            TrapCode.UNREACHABLE: wasmtime.TrapCode.UNREACHABLE,
+            TrapCode.INTEGER_DIVIDE_BY_ZERO: wasmtime.TrapCode.INTEGER_DIVISION_BY_ZERO,
+            TrapCode.INTEGER_OVERFLOW: wasmtime.TrapCode.INTEGER_OVERFLOW,
+            TrapCode.MEMORY_OUT_OF_BOUNDS: wasmtime.TrapCode.MEMORY_OUT_OF_BOUNDS,
+            TrapCode.INVALID_CONVERSION: wasmtime.TrapCode.BAD_CONVERSION_TO_INTEGER,
+        }
+        assert wt_trap_code == reference_codes[expected_trap], (
+            f"Wrong reference trap for {func_name}{args}: {wt_trap_code}, expected {expected_trap}"
+        )
+        assert call_state.trap is not None, f"Expected guest trap for {func_name}{args}"
+        assert call_state.trap.code == expected_trap, (
+            f"Wrong pysim trap for {func_name}{args}: {call_state.trap.code}, expected {expected_trap}"
+        )
+        assert call_state.results is None, "trapping call must not publish a successful result"
         return
 
-    if not pysim_trap:
-        if isinstance(wt_result, float) or isinstance(pysim_result, float):
-            # Special check for NaN
-            if math.isnan(wt_result):
-                assert math.isnan(pysim_result), (
-                    f"Result NaN mismatch for {func_name}{args}: wasmtime={wt_result}, pysim={pysim_result}"
-                )
-            else:
-                # Compare bit patterns for exact float/double representation (e.g., signed zero)
-                wt_bits = struct.unpack(">Q", struct.pack(">d", float(wt_result)))[0]
-                pysim_bits = struct.unpack(">Q", struct.pack(">d", float(pysim_result)))[0]
-                assert wt_bits == pysim_bits, (
-                    f"Float bit mismatch for {func_name}{args}: wasmtime={wt_result} ({hex(wt_bits)}), "
-                    f"pysim={pysim_result} ({hex(pysim_bits)})"
-                )
-        else:
-            assert wt_result == pysim_result, (
-                f"Result mismatch for {func_name}{args}: wasmtime={wt_result}, pysim={pysim_result}"
+    assert wt_trap_code is None, f"Unexpected reference trap for {func_name}{args}: {wt_trap_code}"
+    assert call_state.trap is None, (
+        f"Unexpected pysim trap for {func_name}{args}: {call_state.trap}"
+    )
+    assert call_state.results is not None
+    assert len(call_state.results) == 1, "these fixtures declare exactly one result"
+    pysim_result = call_state.results[0]
+    if isinstance(wt_result, float) or isinstance(pysim_result, float):
+        # Special check for NaN
+        if math.isnan(wt_result):
+            assert math.isnan(pysim_result), (
+                f"Result NaN mismatch for {func_name}{args}: wasmtime={wt_result}, pysim={pysim_result}"
             )
+        else:
+            # Compare bit patterns for exact float/double representation (e.g., signed zero)
+            wt_bits = struct.unpack(">Q", struct.pack(">d", float(wt_result)))[0]
+            pysim_bits = struct.unpack(">Q", struct.pack(">d", float(pysim_result)))[0]
+            assert wt_bits == pysim_bits, (
+                f"Float bit mismatch for {func_name}{args}: wasmtime={wt_result} ({hex(wt_bits)}), "
+                f"pysim={pysim_result} ({hex(pysim_bits)})"
+            )
+    else:
+        assert wt_result == pysim_result, (
+            f"Result mismatch for {func_name}{args}: wasmtime={wt_result}, pysim={pysim_result}"
+        )
 
 
 def test_differential_i32_i64_arithmetic():
@@ -123,13 +148,68 @@ def test_differential_i32_i64_arithmetic():
     _run_differential(wat, "sub32", [10, 25])
     _run_differential(wat, "mul32", [1234, 5678])
     _run_differential(wat, "div_s32", [100, -5])
-    _run_differential(wat, "div_s32", [100, 0], expect_trap=True)
+    _run_differential(wat, "div_s32", [100, 0], expected_trap=TrapCode.INTEGER_DIVIDE_BY_ZERO)
     _run_differential(wat, "div_u32", [0xFFFFFFFF, 2])
     _run_differential(wat, "rem_s32", [-105, 10])
     _run_differential(wat, "rotl32", [0x12345678, 4])
     _run_differential(wat, "clz32", [0x000F0000])
     _run_differential(wat, "popcnt32", [0x12345678])
     _run_differential(wat, "add64", [0x100000000, 0x200000000])
+
+
+@pytest.mark.parametrize("value_type", ["i32", "i64"])
+@pytest.mark.parametrize("opcode", ["div_s", "div_u", "rem_s", "rem_u"])
+def test_differential_integer_zero_divisor_trap(value_type: str, opcode: str):
+    """TEST-WASM-54: All eight integer division/remainder forms report divide-by-zero."""
+    wat = f"""
+    (module
+      (func (export "run") (param {value_type} {value_type}) (result {value_type})
+        ({value_type}.{opcode} (local.get 0) (local.get 1))))
+    """
+    _run_differential(wat, "run", [100, 0], expected_trap=TrapCode.INTEGER_DIVIDE_BY_ZERO)
+
+
+@pytest.mark.parametrize("value_type, minimum", [("i32", -(1 << 31)), ("i64", -(1 << 63))])
+def test_differential_signed_division_overflow_trap(value_type: str, minimum: int):
+    """TEST-WASM-57: Signed minimum divided by -1 reports overflow, not divide-by-zero."""
+    wat = f"""
+    (module
+      (func (export "run") (param {value_type} {value_type}) (result {value_type})
+        ({value_type}.div_s (local.get 0) (local.get 1))))
+    """
+    _run_differential(wat, "run", [minimum, -1], expected_trap=TrapCode.INTEGER_OVERFLOW)
+
+
+@pytest.mark.parametrize(
+    "instruction, expected_trap",
+    [
+        pytest.param("unreachable", TrapCode.UNREACHABLE, id="unreachable"),
+        pytest.param(
+            "(i32.trunc_f64_s (f64.const nan))", TrapCode.INVALID_CONVERSION, id="nan-to-integer"
+        ),
+    ],
+)
+def test_differential_declared_instruction_traps(instruction: str, expected_trap: TrapCode):
+    """TEST-WASM-10/58: Semantic guest faults report their declared causes."""
+    wat = f'(module (func (export "run") (result i32) {instruction}))'
+    _run_differential(wat, "run", [], expected_trap=expected_trap)
+
+
+@pytest.mark.parametrize("func_name", ["load", "store"])
+@pytest.mark.parametrize("address", [65532, 65533, 65536, 0x7FFFFFFF])
+def test_differential_memory_boundary_and_side_effects(func_name: str, address: int):
+    """TEST-WASM-40/42/44: Last valid word succeeds; out-of-range accesses trap unchanged."""
+    wat = """
+    (module
+      (memory (export "memory") 1)
+      (func (export "load") (param i32) (result i32)
+        (i32.load (local.get 0)))
+      (func (export "store") (param i32) (result i32)
+        (i32.store (local.get 0) (i32.const 0x12345678))
+        (i32.const 7)))
+    """
+    expected_trap = None if address == 65532 else TrapCode.MEMORY_OUT_OF_BOUNDS
+    _run_differential(wat, func_name, [address], expected_trap, memory_export="memory")
 
 
 def test_differential_f32_operations():
@@ -236,13 +316,4 @@ def test_differential_control_flow():
 
 
 if __name__ == "__main__":
-    print("Running WASM Differential Oracle Tests...")
-    test_differential_i32_i64_arithmetic()
-    print("  [PASS] i32/i64 differential tests passed.")
-    test_differential_f32_operations()
-    print("  [PASS] f32 differential tests passed.")
-    test_differential_f64_operations()
-    print("  [PASS] f64 differential tests passed.")
-    test_differential_control_flow()
-    print("  [PASS] Control flow differential tests passed.")
-    print("ALL DIFFERENTIAL TESTS PASSED.")
+    raise SystemExit(pytest.main([__file__]))

@@ -8,19 +8,14 @@ _PYSIM_DIR = _TESTS_DIR.parent
 _REPO_ROOT = _PYSIM_DIR.parent.parent
 
 
-from pathlib import Path
-
-_PYSIM_DIR = Path(__file__).resolve().parent
-while not (_PYSIM_DIR / "tier1_core").is_dir():
-    _PYSIM_DIR = _PYSIM_DIR.parent
-
-
 """
 experiments/pysim/qa/tier2_runtime/test_loader.py
 Tests for WASM Loader, Zero-Copy Indexing, and Hash + ReadOnlyRadixBinaryTreeView Symbol/Import/Offset Indexes.
-Conforms strictly to docs/qa/tier2_runtime/runtime_loader_test_spec.md (TEST-LOAD-01 ~ TEST-LOAD-55).
+Case IDs identify the contracts asserted; unimplemented ranges remain explicit in the test specification.
 """
 
+import pytest
+from config import FB_CONF_MAX_WASM_PAGES
 from helpers import (
     _build_test_wasm_binary,
     _encode_leb128_u32,
@@ -28,10 +23,11 @@ from helpers import (
     wat_to_wasm,
 )
 from loader import (
+    FB_CONF_MAX_FUNCTIONS,
+    FB_CONF_MAX_MODULES,
     BumpAllocator,
     DecodedEntityKind,
     ExternalKind,
-    FuncType,
     SectionID,
     ValType,
     WasmLoader,
@@ -39,46 +35,99 @@ from loader import (
 )
 
 
-def test_load_01_to_07_lightweight_verification():
-    """TEST-LOAD-01..07: Verifies V1-V6 lightweight checks and transactional rollback."""
-    runtime_allocator = BumpAllocator()
-    loader = WasmLoader(runtime_allocator)
-    # Normal prepare
-    valid_wasm = _build_test_wasm_binary(export_names=["zeta", "alpha", "beta"])
-    view = loader.prepare("valid_mod", valid_wasm)
-    assert view.is_ready is True
-    # V1: Bad magic
-    watermark = runtime_allocator.offset
-    with expect_assertion():
-        loader.prepare("bad_magic", _build_test_wasm_binary(magic=b"\x7fELF"))
-    assert runtime_allocator.offset == watermark
-    # V2: Bad version
-    with expect_assertion():
-        loader.prepare("bad_ver", _build_test_wasm_binary(version=2))
-    assert runtime_allocator.offset == watermark
-    # V3: Bad section bounds
-    with expect_assertion():
-        loader.prepare("bad_bounds", _build_test_wasm_binary(corrupt_section_bounds=True))
-    assert runtime_allocator.offset == watermark
-    # V4: Bad section order
-    with expect_assertion():
-        loader.prepare("bad_order", _build_test_wasm_binary(corrupt_section_order=True))
-    assert runtime_allocator.offset == watermark
-    # V5: Bad type index
-    with expect_assertion():
-        loader.prepare("bad_type", _build_test_wasm_binary(invalid_type_idx=True))
-    assert runtime_allocator.offset == watermark
-    # V6: Exceeds page budget
-    with expect_assertion():
-        loader.prepare("bad_mem", _build_test_wasm_binary(memory_pages=32))
-    assert runtime_allocator.offset == watermark
+def _assert_prepare_rejected_without_mutation(binary: bytes) -> None:
+    allocator = BumpAllocator()
+    loader = WasmLoader(allocator)
+    kept = loader.prepare("kept", _build_test_wasm_binary())
+    watermark = allocator.offset
+    for _ in range(2):
+        with expect_assertion("allocator rollback"):
+            loader.prepare("rejected", binary)
+        assert allocator.offset == watermark
+        assert loader.lookup("rejected") is None
+        assert loader.lookup("kept") is kept
+        assert kept.is_ready
+
+
+def test_load_01_invalid_magic_rejects_and_rolls_back() -> None:
+    """TEST-LOAD-01, TEST-LOAD-07: A non-WASM magic cannot enter the registry or consume the arena."""
+    _assert_prepare_rejected_without_mutation(_build_test_wasm_binary(magic=b"\x7fELF"))
+
+
+def test_load_02_unsupported_version_rejects_and_rolls_back() -> None:
+    """TEST-LOAD-02, TEST-LOAD-07: A version other than 1 cannot enter the registry."""
+    _assert_prepare_rejected_without_mutation(_build_test_wasm_binary(version=2))
+
+
+def test_load_03_section_past_binary_end_rejects_and_rolls_back() -> None:
+    """TEST-LOAD-03, TEST-LOAD-07: A code section longer than the binary is rejected."""
+    _assert_prepare_rejected_without_mutation(_build_test_wasm_binary(corrupt_section_bounds=True))
+
+
+@pytest.mark.parametrize("duplicate", (False, True))
+def test_load_04_decreasing_or_duplicate_section_rejects_and_rolls_back(duplicate: bool) -> None:
+    """TEST-LOAD-04, TEST-LOAD-07: Otherwise valid TYPE payloads violate ordering by decrease or duplication."""
+    binary = _build_test_wasm_binary()
+    # The fixture's complete TYPE section starts after the eight-byte WASM header.
+    type_section = b"\x01\x07\x01\x60\x02\x7f\x7f\x01\x7f"
+    assert binary[8:17] == type_section
+    malformed = binary[:17] + binary[8:] if duplicate else binary + type_section
+    _assert_prepare_rejected_without_mutation(malformed)
+
+
+def test_load_04_custom_sections_are_exempt_from_type_ordering() -> None:
+    """TEST-LOAD-04: CUSTOM after CODE is accepted; duplicate CUSTOM sections remain legal."""
+    loader = WasmLoader(BumpAllocator())
+    binary = _build_test_wasm_binary() + b"\x00\x02\x01x\x00\x02\x01y"
+    view = loader.prepare("custom", binary)
+    assert view.is_ready
+    assert view.lookup_export_func("add") == 0
+
+
+def test_load_05_invalid_type_index_rejects_and_rolls_back() -> None:
+    """TEST-LOAD-05, TEST-LOAD-07: A function's type must reference the declared TYPE vector."""
+    _assert_prepare_rejected_without_mutation(_build_test_wasm_binary(invalid_type_idx=True))
+
+
+def test_load_06_memory_page_limit_rejects_and_rolls_back() -> None:
+    """TEST-LOAD-06, TEST-LOAD-07: Initial memory one page above the configured limit is rejected."""
+    _assert_prepare_rejected_without_mutation(
+        _build_test_wasm_binary(memory_pages=FB_CONF_MAX_WASM_PAGES + 1)
+    )
+
+
+def test_load_07_arena_exhaustion_rolls_back_partial_metadata_allocations() -> None:
+    """TEST-LOAD-07 / GOTCHA-LOAD-02: Retrying a failed allocation cannot leak arena capacity."""
+    allocator = BumpAllocator(capacity=2048)
+    allocator.allocate(1748, alignment=1)
+    watermark = allocator.offset
+    loader = WasmLoader(allocator)
+    for _ in range(3):
+        with expect_assertion("allocator rollback"):
+            loader.prepare("overflow", _build_test_wasm_binary())
+        assert allocator.offset == watermark
+        assert loader.lookup("overflow") is None
 
 
 def test_load_10_to_15_zero_copy_and_accessors():
-    """TEST-LOAD-10..15: Verifies ROM direct references, Hash + ReadOnlyRadixBinaryTreeView export lookup, and lazy accessors."""
+    """TEST-LOAD-10, TEST-LOAD-11, TEST-LOAD-12, TEST-LOAD-13, TEST-LOAD-14, TEST-LOAD-15: Verifies ROM direct references, Hash + ReadOnlyRadixBinaryTreeView export lookup, and lazy accessors."""
     loader = WasmLoader(BumpAllocator())
     wasm_bytes = _build_test_wasm_binary(export_names=["zeta", "alpha", "beta"])
     view = loader.prepare("zc_mod", wasm_bytes)
+    # TEST-LOAD-10, TEST-LOAD-11: The original ROM bytes own section/code/name backing.
+    assert view.rom_binary.obj is wasm_bytes
+    section = view.sections[SectionID.CODE]
+    assert section is not None
+    assert (
+        bytes(
+            view.rom_binary[section.payload_offset : section.payload_offset + section.payload_size]
+        )
+        == b"\x01\x07\x00\x20\x00\x20\x01\x6a\x0b"
+    )
+    for entry in view.exports_dict:
+        assert bytes(
+            view.rom_binary[entry.name_offset : entry.name_offset + entry.name_size]
+        ) == view.export_name(entry).encode("utf-8")
     # Exports sorted
     exp_names = [view.export_name(entry) for entry in view.exports_dict]
     assert exp_names == ["alpha", "beta", "zeta"]
@@ -90,7 +139,9 @@ def test_load_10_to_15_zero_copy_and_accessors():
     # Function Accessor
     func_acc = view.get_function(0)
     assert func_acc.get_type_index() == 0
-    assert func_acc.get_signature() == FuncType([ValType.I32, ValType.I32], [ValType.I32])
+    signature = func_acc.get_signature()
+    assert tuple(signature.params) == (ValType.I32, ValType.I32)
+    assert tuple(signature.results) == (ValType.I32,)
     code_stream = func_acc.get_code_stream()
     bytecode = bytes(code_stream.read_bytes(code_stream.remaining()))
     assert bytecode == bytes([0x20, 0x00, 0x20, 0x01, 0x6A, 0x0B])
@@ -101,48 +152,123 @@ def test_load_10_to_15_zero_copy_and_accessors():
     assert mutable is False
 
 
-def test_load_20_to_24_multi_module_import_resolution():
-    """TEST-LOAD-20..24: Verifies multi-module imports, readiness and linking."""
+def _function_import_binary(
+    field: str = "helper", signature: str = "(param i32 i32) (result i32)"
+) -> bytes:
+    return wat_to_wasm(f'(module (import "lib_mod" "{field}" (func {signature})))')
+
+
+def test_load_20_unresolved_dependency_keeps_module_unready() -> None:
+    """TEST-LOAD-20: Preparing an import cannot mark the module executable before linking."""
     loader = WasmLoader(BumpAllocator())
-    # 1. Prepare target library module
-    lib_wasm = _build_test_wasm_binary(export_names=["helper"])
-    loader.prepare("lib_mod", lib_wasm)
-    # 2. Build dependent app module
-    app_buf = bytearray()
-    app_buf.extend(b"\x00asm\x01\x00\x00\x00")
-    # Type section: (i32, i32) -> i32
-    app_type = bytearray()
-    app_type.extend(_encode_leb128_u32(1))
-    app_type.append(0x60)
-    app_type.extend(_encode_leb128_u32(2))
-    app_type.extend([ValType.I32, ValType.I32])
-    app_type.extend(_encode_leb128_u32(1))
-    app_type.append(ValType.I32)
-    app_buf.append(SectionID.TYPE)
-    app_buf.extend(_encode_leb128_u32(len(app_type)))
-    app_buf.extend(app_type)
-    # Import section: lib_mod.helper
-    app_imp = bytearray()
-    app_imp.extend(_encode_leb128_u32(1))
-    app_imp.extend(_encode_leb128_u32(len(b"lib_mod")))
-    app_imp.extend(b"lib_mod")
-    app_imp.extend(_encode_leb128_u32(len(b"helper")))
-    app_imp.extend(b"helper")
-    app_imp.append(ExternalKind.FUNCTION)
-    app_imp.extend(_encode_leb128_u32(0))
-    app_buf.append(SectionID.IMPORT)
-    app_buf.extend(_encode_leb128_u32(len(app_imp)))
-    app_buf.extend(app_imp)
-    app_view = loader.prepare("app_mod", bytes(app_buf))
-    assert app_view.is_ready is False  # Pending resolution
-    # TEST-LOAD-21: Hash + ReadOnlyRadixBinaryTreeView import resolution
-    assert loader.resolve_imports(app_view) is True
-    assert app_view.is_ready is True
-    assert app_view.resolved_imports.view().find(fnv1a_32("lib_mod.helper")) is not None
+    view = loader.prepare("app_mod", _function_import_binary())
+    assert loader.lookup("app_mod") is view
+    assert not view.is_ready
+    assert len(view.resolved_import_entries) == 0
+    with expect_assertion("Dependency module"):
+        loader.resolve_imports(view)
+    assert not view.is_ready
+    assert len(view.resolved_import_entries) == 0
 
 
-def test_load_40_to_47_radix_binary_tree_view_indexes():
-    """TEST-LOAD-40..47: Verifies ReadOnlyRadixBinaryTreeView file offset and Hash symbol/import indexes."""
+def test_load_21_matching_signatures_link_to_the_exact_export() -> None:
+    """TEST-LOAD-21: Matching signatures link across different module-local type indexes."""
+    loader = WasmLoader(BumpAllocator())
+    library = loader.prepare(
+        "lib_mod",
+        wat_to_wasm(
+            '(module (type (func)) (func (export "helper") (param i32 i32) (result i32) local.get 0 local.get 1 i32.add))'
+        ),
+    )
+    view = loader.prepare("app_mod", _function_import_binary())
+    assert not view.is_ready
+    assert library.functions[0] != view.imports[0].desc
+    assert loader.resolve_imports(view)
+    assert view.is_ready
+    resolved = view.resolved_imports.view().find(fnv1a_32("lib_mod.helper"))
+    assert resolved is library.lookup_export("helper")
+    assert resolved.kind == ExternalKind.FUNCTION
+    assert resolved.index == 0
+    assert len(view.resolved_import_entries) == 1
+
+
+def test_load_22_missing_symbol_rejects_without_partial_resolution() -> None:
+    """TEST-LOAD-22: A missing second symbol leaves every import unresolved and permits retry."""
+    loader = WasmLoader(BumpAllocator())
+    loader.prepare("lib_mod", _build_test_wasm_binary(export_names=["helper"]))
+    view = loader.prepare(
+        "app_mod",
+        wat_to_wasm(
+            '(module (import "lib_mod" "helper" (func (param i32 i32) (result i32))) (import "lib_mod" "missing" (func)))'
+        ),
+    )
+    with expect_assertion("Unresolved import"):
+        loader.resolve_imports(view)
+    assert not view.is_ready
+    assert len(view.resolved_import_entries) == 0
+    assert len(view.resolved_imports.view()) == 0
+    assert loader.lookup("app_mod") is view
+    with expect_assertion("Unresolved import"):
+        loader.resolve_imports(view)
+
+
+@pytest.mark.parametrize(
+    "signature",
+    (
+        "(param i64 i32) (result i32)",
+        "(param i32) (result i32)",
+        "(param i32 i32) (result i64)",
+        "(param i32 i32)",
+    ),
+)
+def test_load_23_function_signature_mismatch_is_rejected(signature: str) -> None:
+    """TEST-LOAD-23: Same symbol/kind cannot hide parameter/result type or arity mismatches."""
+    loader = WasmLoader(BumpAllocator())
+    loader.prepare("lib_mod", _build_test_wasm_binary(export_names=["helper"]))
+    view = loader.prepare("app_mod", _function_import_binary(signature=signature))
+    with expect_assertion("signature"):
+        loader.resolve_imports(view)
+    assert not view.is_ready
+    assert len(view.resolved_import_entries) == 0
+    assert len(view.resolved_imports.view()) == 0
+    assert loader.lookup("app_mod") is view
+
+
+def test_load_23_late_type_mismatch_preserves_all_unresolved_imports() -> None:
+    """TEST-LOAD-23: Failure after a matching import never commits a partial link table."""
+    loader = WasmLoader(BumpAllocator())
+    loader.prepare("lib_mod", _build_test_wasm_binary(export_names=["helper", "other"]))
+    view = loader.prepare(
+        "app_mod",
+        wat_to_wasm(
+            '(module (import "lib_mod" "helper" (func (param i32 i32) (result i32))) (import "lib_mod" "other" (func (param i64) (result i64))))'
+        ),
+    )
+    with expect_assertion("signature"):
+        loader.resolve_imports(view)
+    assert not view.is_ready
+    assert len(view.resolved_import_entries) == 0
+    assert len(view.resolved_imports.view()) == 0
+
+
+def test_load_24_module_capacity_rejects_without_registry_or_allocator_mutation() -> None:
+    """TEST-LOAD-24: The configured registry limit preserves every accepted module on rejection."""
+    allocator = BumpAllocator()
+    loader = WasmLoader(allocator)
+    binary = _build_test_wasm_binary()
+    accepted = [loader.prepare(f"module_{index}", binary) for index in range(FB_CONF_MAX_MODULES)]
+    watermark = allocator.offset
+    with expect_assertion("Module registry capacity"):
+        loader.prepare("overflow", binary)
+    assert allocator.offset == watermark
+    assert loader.lookup("overflow") is None
+    for index, view in enumerate(accepted):
+        assert loader.lookup(f"module_{index}") is view
+        assert view.is_ready
+
+
+def test_load_40_to_45_and_47_radix_binary_tree_view_indexes():
+    """TEST-LOAD-40, TEST-LOAD-41, TEST-LOAD-42, TEST-LOAD-43, TEST-LOAD-44, TEST-LOAD-45, TEST-LOAD-47: Verify entity kinds, containing ranges and exact import names."""
     loader = WasmLoader(BumpAllocator())
     wasm_bytes = _build_test_wasm_binary(export_names=["alpha", "beta", "gamma", "compute"])
     view = loader.prepare("radix_mod", wasm_bytes)
@@ -153,20 +279,33 @@ def test_load_40_to_47_radix_binary_tree_view_indexes():
     assert DecodedEntityKind.FUNCTION in kinds
     assert DecodedEntityKind.GLOBAL in kinds
     # 2. TEST-LOAD-41 & 42: Function body reverse lookup
-    func_start, func_size = view.code_offsets[0]
+    body = b"\x00\x20\x00\x20\x01\x6a\x0b"
+    func_start = wasm_bytes.index(body)
+    func_size = len(body)
+    assert view.code_offsets[0] == (func_start, func_size)
     entity_start = view.lookup_by_file_offset(func_start)
     assert entity_start is not None
     assert entity_start.kind == DecodedEntityKind.FUNCTION
     assert entity_start.index == 0
+    assert (entity_start.start_offset, entity_start.end_offset) == (
+        func_start,
+        func_start + func_size,
+    )
     entity_mid = view.lookup_by_file_offset(func_start + 2)
     assert entity_mid is not None
     assert entity_mid.kind == DecodedEntityKind.FUNCTION
     # 3. TEST-LOAD-43: Global entry reverse lookup
-    global_entry = view.globals[0]
-    entity_glob = view.lookup_by_file_offset(global_entry.init_expr_offset)
+    global_start = wasm_bytes.index(b"\x41\x2a\x0b")
+    assert view.globals[0].init_expr_offset == global_start
+    entity_glob = view.lookup_by_file_offset(global_start)
     assert entity_glob is not None
     assert entity_glob.kind == DecodedEntityKind.GLOBAL
+    assert entity_glob.index == 0
+    assert (entity_glob.start_offset, entity_glob.end_offset) == (global_start, global_start + 3)
     # 4. TEST-LOAD-44: Invalid / out-of-bounds offsets
+    for offset in range(8):
+        assert view.lookup_by_file_offset(offset) is None
+    assert view.lookup_by_file_offset(len(wasm_bytes)) is None
     assert view.lookup_by_file_offset(len(wasm_bytes) + 100) is None
     assert view.lookup_by_file_offset(0xFFFFFFFF) is None
     # 5. TEST-LOAD-45: Import table ReadOnlyRadixBinaryTreeView search
@@ -209,7 +348,7 @@ def test_load_40_to_47_radix_binary_tree_view_indexes():
     assert imp_compute is not None
     assert app_view.import_names(imp_compute) == ("radix_mod", "compute")
     assert app_view.find_import("radix_mod", "unknown") is None
-    # 6. TEST-LOAD-46: Hash collision verification
+    # An ordinary lookup supplies no evidence for hash collision handling.
     exp_entry = view.lookup_export("gamma")
     assert exp_entry is not None
     assert view.export_name(exp_entry) == "gamma"
@@ -218,10 +357,10 @@ def test_load_40_to_47_radix_binary_tree_view_indexes():
 
 
 def test_load_54_rom_backed_names_and_hash_collision_resolution():
-    """TEST-LOAD-54: Name indexes retain ROM ranges and distinguish equal FNV hashes."""
+    """TEST-LOAD-46, TEST-LOAD-54 / GOTCHA-LOAD-01: Equal hashes resolve distinct ROM names to distinct functions."""
     loader = WasmLoader(BumpAllocator())
     view = loader.prepare(
-        "collision_mod", _build_test_wasm_binary(export_names=["ufbwjn", "rsksbm"])
+        "collision_mod", wat_to_wasm('(module (func (export "ufbwjn")) (func (export "rsksbm")))')
     )
 
     first = view.lookup_export("ufbwjn")
@@ -230,6 +369,11 @@ def test_load_54_rom_backed_names_and_hash_collision_resolution():
     assert second is not None
     assert view.export_name(first) == "ufbwjn"
     assert view.export_name(second) == "rsksbm"
+    assert first.index == 0
+    assert second.index == 1
+    assert first is not second
+    assert view.lookup_export_func("ufbwjn") == 0
+    assert view.lookup_export_func("rsksbm") == 1
     assert fnv1a_32("ufbwjn") == fnv1a_32("rsksbm")
     assert (
         bytes(view.rom_binary[first.name_offset : first.name_offset + first.name_size]) == b"ufbwjn"
@@ -256,7 +400,6 @@ def test_load_48_loader_basic_block_index():
 
     # Loader owns basic block storage and index ({Loader_BasicBlockIndex})
     assert mod.block_storage is not None
-    assert mod.block_storage is not None
     assert len(mod.blocks) == 2
     assert mod.total_basic_blocks == 2
 
@@ -267,10 +410,16 @@ def test_load_48_loader_basic_block_index():
         assert found.head_pc == blk.head_pc
 
 
-def test_load_49_rejects_overaligned_memory_access():
-    """MVP validation rejects memarg alignment stronger than the access width."""
+def test_load_56_rejects_overaligned_memory_access():
+    """TEST-LOAD-56: WebAssembly memarg validation accepts natural alignment and rejects a larger hint."""
     from wasm_reader import parse
 
+    valid = parse(
+        wat_to_wasm(
+            "(module (memory 1) (func (param i32) (result i32) local.get 0 i32.load align=4))"
+        )
+    )
+    assert len(valid.functions) == 1
     wasm_bytes = wat_to_wasm(
         "(module (memory 1) (func (param i32) (result i32) local.get 0 i32.load align=8))"
     )
@@ -278,8 +427,8 @@ def test_load_49_rejects_overaligned_memory_access():
         parse(wasm_bytes)
 
 
-def test_load_50_resolves_imported_global_offsets_for_active_segments():
-    """MVP data and element offset expressions may read imported immutable i32 globals."""
+def test_load_16_resolves_imported_global_offsets_for_active_segments():
+    """TEST-LOAD-16: Streamed element/data offsets use the actual imported immutable i32 global."""
     from wasm_reader import parse
 
     module = parse(
@@ -291,10 +440,12 @@ def test_load_50_resolves_imported_global_offsets_for_active_segments():
     )
     memory = bytearray(65536)
     module.init_memory_data(memory, (2,))
-    assert memory[2] == ord("D")
+    assert memory == bytearray(2) + b"D" + bytearray(65533)
+    assert len(module.data_segments) == 0
+    assert len(module.elements) == 0
 
     table = module.table_contents(0, (2,))
-    assert table[2] == 0
+    assert tuple(table) == (None, None, 0, None)
 
 
 def test_load_51_keeps_unreachable_polymorphism_inside_its_control_frame():
@@ -351,14 +502,49 @@ def test_load_55_active_parser_enforces_configured_wasm_memory_page_limit():
         parse(memoryview(over_limit))
 
 
-ALL_TESTS = sorted(
-    (v for k, v in globals().items() if k.startswith("test_") and callable(v)),
-    key=lambda fn: fn.__code__.co_firstlineno,
-)
+def test_load_30_function_capacity_rejects_one_more_than_configured_limit() -> None:
+    """TEST-LOAD-30, TEST-LOAD-07: A valid module with one excess function cannot be committed."""
+    functions = " ".join("(func)" for _ in range(FB_CONF_MAX_FUNCTIONS + 1))
+    _assert_prepare_rejected_without_mutation(wat_to_wasm(f"(module {functions})"))
+
+
+def test_load_31_more_than_64_exports_remain_searchable_without_fixed_export_limit() -> None:
+    """TEST-LOAD-31: Every declared export survives indexing when the arena has enough space."""
+    loader = WasmLoader(BumpAllocator())
+    names = [f"export_{index:03}" for index in range(65)]
+    view = loader.prepare("many_exports", _build_test_wasm_binary(export_names=names))
+    assert view.is_ready
+    assert [view.export_name(entry) for entry in view.exports_dict] == names
+    for name in names:
+        assert view.lookup_export_func(name) == 0
+    assert view.lookup_export_func("export_065") is None
+
+
+@pytest.mark.parametrize("bits, limit", ((32, 5), (64, 10)))
+def test_load_32_unsigned_leb128_byte_budget(bits: int, limit: int) -> None:
+    """TEST-LOAD-32: Continuation past the u32/u64 byte budget is rejected without reading further."""
+    from leb128 import decode_unsigned
+
+    with expect_assertion(f"maximum {limit} bytes"):
+        decode_unsigned(memoryview(b"\x80" * limit + b"\x00"), 0, bits=bits)
+
+
+def test_load_21_matching_imported_function_reexport_signature_links() -> None:
+    """TEST-LOAD-21, TEST-LOAD-23: Imported re-exports use their import signature rather than a defined function slot."""
+    loader = WasmLoader(BumpAllocator())
+    library = loader.prepare(
+        "lib_mod",
+        wat_to_wasm(
+            '(module (import "source" "original" (func $f (param i32 i32) (result i32))) (export "helper" (func $f)))'
+        ),
+    )
+    view = loader.prepare("app_mod", _function_import_binary())
+    assert loader.resolve_imports(view)
+    assert view.is_ready
+    assert view.resolved_imports.view().find(fnv1a_32("lib_mod.helper")) is library.lookup_export(
+        "helper"
+    )
+
 
 if __name__ == "__main__":
-    for test in ALL_TESTS:
-        test()
-        print(f"[PASS] {test.__name__}")
-
-    print(f"\n[PASS] All {len(ALL_TESTS)} WASM Loader tests passed successfully.")
+    raise SystemExit(pytest.main([str(_TEST_FILE)]))

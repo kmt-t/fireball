@@ -1,4 +1,4 @@
-from collections.abc import Generator
+import struct
 from pathlib import Path
 
 _PYSIM_DIR = Path(__file__).resolve().parent
@@ -6,20 +6,16 @@ while not (_PYSIM_DIR / "tier1_core").is_dir():
     _PYSIM_DIR = _PYSIM_DIR.parent
 
 
-"""Integration Scenario 6: COOS Cooperative Multitasking & Coroutine Interleaving.
+"""Scenario 6: native guest producer/consumer yield through RuntimeEngine and COOS.
 
-Tests:
-- Cooperative interleaving of multiple WASM coroutines sharing an ExecEnv
-- Fuel / instruction budget bounded execution (`yield_every`)
-- State preservation across coroutine yield / resume cycles
+Fresh shared memory, LOOP thresholds, complete interleaving snapshots and both
+completion results are observed through the existing System.run_guest path.
 """
 
-import wasmtime
-from scheduler import ChannelAction
+from helpers import make_native_interpreter, wat_to_wasm
+from scheduler import ChannelAction, TaskState
 from system import System
-from system_containers import StaticVector
-from tier3_executer.interpreter.interpreter import Interpreter, InterpreterBindings
-from tier3_platform.drivers.wasi.context import WasiHostContext
+from tier3_executer.runtime_engine import RuntimeDriveMode, RuntimeEngine
 from wasm_reader import parse
 
 SCENARIO6_WAT = """
@@ -38,6 +34,7 @@ SCENARIO6_WAT = """
         (i32.store (local.get $ptr) (i32.mul (i32.add (local.get $i) (i32.const 1)) (i32.const 10)))
         (local.set $ptr (i32.add (local.get $ptr) (i32.const 4)))
         (local.set $i (i32.add (local.get $i) (i32.const 1)))
+        (i32.store (i32.const 0) (local.get $i))
         (br $l_top)
       )
     )
@@ -57,6 +54,7 @@ SCENARIO6_WAT = """
         (local.set $sum (i32.add (local.get $sum) (i32.load (local.get $ptr))))
         (local.set $ptr (i32.add (local.get $ptr) (i32.const 4)))
         (local.set $i (i32.add (local.get $i) (i32.const 1)))
+        (i32.store (i32.const 4) (local.get $i))
         (br $l_top)
       )
     )
@@ -66,72 +64,58 @@ SCENARIO6_WAT = """
 """
 
 
-def make_wasm_task_coro(
-    interp: Interpreter, func_index: int, args: list[int]
-) -> Generator[tuple[ChannelAction, None], None, StaticVector[int]]:
-    """Test-only adapter from Interpreter steps to generic COOS coroutines."""
-    step_iter = interp.run_iter(func_index, args)
-    call_state = next(step_iter)
-    for call_state in step_iter:
-        if not call_state.finished:
-            yield (ChannelAction.YIELD, None)
-    assert call_state.finished, "Interpreter coroutine must finish with a final call state"
-    return call_state.results
-
-
 def test_scenario_coos_multitask():
-    print("[*] Running Scenario 6: COOS Cooperative Multitasking & Coroutines...")
-    wasm_bytes = bytes(wasmtime.wat2wasm(SCENARIO6_WAT))
-    module = parse(wasm_bytes)
-    sysv = System()
-    wasi_ctx = WasiHostContext(sysv)
-    host_funcs = wasi_ctx.build_interpreter_host_functions(module)
-    module.init_memory_data(wasi_ctx.guest_memory, ())
-    interp = Interpreter(
-        module, InterpreterBindings.with_memory_and_functions(wasi_ctx.guest_memory, host_funcs)
-    )
-    fn_prod = module.export_func_index("producer_task")
-    fn_cons = module.export_func_index("consumer_task")
-    N = 100  # 100 items: sum(1..100) * 10 = 5050 * 10 = 50500
-    # 1. Run Producer block by block
-    prod_state = interp.start(fn_prod, [N])
-    prod_steps = 0
-    while not prod_state.finished:
-        prod_state = interp.step(prod_state)
-        prod_steps += 1
-    prod_res = prod_state.results
+    """TEST-INT-50/51: real native threshold handoffs preserve guest progress."""
+    module = parse(wat_to_wasm(SCENARIO6_WAT))
+    memory = bytearray(65536)
+    producer = make_native_interpreter(module, memory=memory)
+    consumer = make_native_interpreter(module, memory=memory)
+    system = System()
+    system.runtime_engine = RuntimeEngine(yield_threshold=4, drive_mode=RuntimeDriveMode.COOS)
+    observed: list[tuple[int, int]] = []
 
-    assert prod_res == [100], f"Producer task failed: {prod_res}"
-    assert prod_steps > 0, "Producer should have taken multiple steps"
-    print(f"    -> Producer ran in {prod_steps} step(s) and produced 100 items.")
-    # 2. Run Consumer block by block
-    cons_state = interp.start(fn_cons, [N])
-    cons_steps = 0
-    while not cons_state.finished:
-        cons_state = interp.step(cons_state)
-        cons_steps += 1
-    cons_res = cons_state.results
+    def monitor():
+        for _ in range(24):
+            prod = system.scheduler.get_task(prod_id)
+            cons = system.scheduler.get_task(cons_id)
+            assert prod is not None and prod.state == TaskState.READY
+            assert cons is not None and cons.state == TaskState.READY
+            observed.append(struct.unpack_from("<2I", memory))
+            yield (ChannelAction.YIELD, None)
 
-    assert cons_res == [50500], f"Consumer task sum mismatch: expected 50500, got {cons_res}"
-    assert cons_steps > 0, "Consumer should have taken multiple steps"
-    print(f"    -> Consumer ran in {cons_steps} step(s) and computed expected sum: {cons_res[0]}.")
-
-    # 3. This integration scenario supplies the test-only WASM adapter;
-    # COOS receives only generic coroutines.
-    interp_coos = Interpreter(
-        module, InterpreterBindings.with_memory_and_functions(wasi_ctx.guest_memory, host_funcs)
-    )
-    t_prod = sysv.scheduler.spawn("producer_task", make_wasm_task_coro(interp_coos, fn_prod, [N]))
-    t_cons = sysv.scheduler.spawn("consumer_task", make_wasm_task_coro(interp_coos, fn_cons, [N]))
-    sysv.scheduler.run_until_idle()
-    prod_task = sysv.scheduler.get_task(t_prod)
-    cons_task = sysv.scheduler.get_task(t_cons)
-    assert prod_task is not None and prod_task.result == [100]
-    assert cons_task is not None and cons_task.result == [50500]
-    print(
-        "    -> COOS Scheduler successfully executed WASM tasks collaboratively via round-robin quanta."
-    )
-    print("    [PASS] Scenario 6 (COOS Cooperative Multitasking) succeeded seamlessly.")
+    try:
+        prod_id = system.scheduler.spawn(
+            "producer",
+            system.run_guest(
+                producer,
+                module.export_func_index("producer_task"),
+                (100,),
+            ),
+        )
+        cons_id = system.scheduler.spawn(
+            "consumer",
+            system.run_guest(
+                consumer,
+                module.export_func_index("consumer_task"),
+                (100,),
+            ),
+        )
+        system.scheduler.spawn("monitor", monitor())
+        system.scheduler.run_until_idle()
+        prod = system.scheduler.get_task(prod_id)
+        cons = system.scheduler.get_task(cons_id)
+        assert prod is not None and prod.state == TaskState.TERMINATED and prod.result == [100]
+        assert cons is not None and cons.state == TaskState.TERMINATED and cons.result == [50500]
+        assert observed == [(value, value) for value in range(4, 100, 4)]
+        assert struct.unpack_from("<2I", memory) == (100, 100)
+        assert struct.unpack_from("<100I", memory, 512) == tuple(range(10, 1001, 10))
+        assert memory[8:512] == bytes(504)
+        assert memory[912:] == bytes(65536 - 912)
+        print(
+            "[PASS] Scenario 6: native LOOP threshold handoffs, fresh-memory interleaving and results."
+        )
+    finally:
+        system.shutdown()
 
 
 if __name__ == "__main__":

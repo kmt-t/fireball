@@ -76,8 +76,8 @@ verification_matrix:
     component_specs: 26
     concept_files: 14
     formal_models: 20
-    test_specs: 25
-    pysim_unit_suites: 30
+    test_specs: 26
+    pysim_unit_suites: 34
     scenarios: 12
     pairwise_factors: 7
     pairwise_cases: 26

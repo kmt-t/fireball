@@ -1,0 +1,151 @@
+.FFFFF.                                                                  [100%]
+=================================== FAILURES ===================================
+_____________________ test_loader_scores_basic_block_once ______________________
+
+    def test_loader_scores_basic_block_once() -> None:
+        code = bytes((I32_CONST, 1, I32_CONST, 2, I32_ADD, RETURN))
+        module = Module(
+            types=[FuncType(params=(), results=())],
+            functions=[Function(type_index=0, locals_extra=[], code=code)],
+        )
+        module.build_basic_block_index()
+        assert OPCODE_BENEFIT_TABLE.score(I32_ADD) == 7
+        assert len(module.blocks) == 1
+        assert module.blocks[0].jit_score == 19
+>       assert JIT_CANDIDATE_THRESHOLD == 9  # runtime_loader.mdの規定値から独立に比較する。
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       assert 18 == 9
+
+experiments/pysim/qa/tier2_runtime/test_jit_scoring.py:43: AssertionError
+_ test_loader_candidate_gate_uses_specification_threshold[A\x01iE\x1a\x0b-8-False] _
+
+code = b'A\x01iE\x1a\x0b', score = 8, candidate = False
+
+    @pytest.mark.parametrize(
+        "code, score, candidate",
+        (
+            (bytes.fromhex("41 01 69 45 1a 0b"), 8, False),
+            (bytes.fromhex("41 01 1a 10 00 0b"), 9, True),
+            (bytes.fromhex("41 01 1a 0b"), 10, True),
+            (bytes.fromhex("41 01 69 1a 0b"), 2, False),
+        ),
+    )
+    def test_loader_candidate_gate_uses_specification_threshold(
+        code: bytes, score: int, candidate: bool
+    ) -> None:
+        """TEST-LOAD-49: 実登録で候補カードを生成し、非候補の履歴を記録しない。"""
+        module = Module(
+            types=(FuncType(params=(), results=()),),
+            functions=(Function(type_index=0, locals_extra=(), code=code),),
+        )
+        module.build_basic_block_index()
+        assert len(module.blocks) == 1
+        assert module.blocks[0].jit_score == score
+        manager = JITRuntimeManager(card_shift=0, min_trace_bytes=1)
+        try:
+>           assert manager.candidate_threshold == 9
+E           assert 18 == 9
+E            +  where 18 = <tier3_executer.jit.jit_manager.JITRuntimeManager object at 0x7c4d814cfc40>.candidate_threshold
+
+experiments/pysim/qa/tier2_runtime/test_jit_scoring.py:68: AssertionError
+_ test_loader_candidate_gate_uses_specification_threshold[A\x01\x1a\x10\x00\x0b-9-True] _
+
+code = b'A\x01\x1a\x10\x00\x0b', score = 9, candidate = True
+
+    @pytest.mark.parametrize(
+        "code, score, candidate",
+        (
+            (bytes.fromhex("41 01 69 45 1a 0b"), 8, False),
+            (bytes.fromhex("41 01 1a 10 00 0b"), 9, True),
+            (bytes.fromhex("41 01 1a 0b"), 10, True),
+            (bytes.fromhex("41 01 69 1a 0b"), 2, False),
+        ),
+    )
+    def test_loader_candidate_gate_uses_specification_threshold(
+        code: bytes, score: int, candidate: bool
+    ) -> None:
+        """TEST-LOAD-49: 実登録で候補カードを生成し、非候補の履歴を記録しない。"""
+        module = Module(
+            types=(FuncType(params=(), results=()),),
+            functions=(Function(type_index=0, locals_extra=(), code=code),),
+        )
+        module.build_basic_block_index()
+        assert len(module.blocks) == 1
+        assert module.blocks[0].jit_score == score
+        manager = JITRuntimeManager(card_shift=0, min_trace_bytes=1)
+        try:
+>           assert manager.candidate_threshold == 9
+E           assert 18 == 9
+E            +  where 18 = <tier3_executer.jit.jit_manager.JITRuntimeManager object at 0x7c4d812ac440>.candidate_threshold
+
+experiments/pysim/qa/tier2_runtime/test_jit_scoring.py:68: AssertionError
+_ test_loader_candidate_gate_uses_specification_threshold[A\x01\x1a\x0b-10-True] _
+
+code = b'A\x01\x1a\x0b', score = 10, candidate = True
+
+    @pytest.mark.parametrize(
+        "code, score, candidate",
+        (
+            (bytes.fromhex("41 01 69 45 1a 0b"), 8, False),
+            (bytes.fromhex("41 01 1a 10 00 0b"), 9, True),
+            (bytes.fromhex("41 01 1a 0b"), 10, True),
+            (bytes.fromhex("41 01 69 1a 0b"), 2, False),
+        ),
+    )
+    def test_loader_candidate_gate_uses_specification_threshold(
+        code: bytes, score: int, candidate: bool
+    ) -> None:
+        """TEST-LOAD-49: 実登録で候補カードを生成し、非候補の履歴を記録しない。"""
+        module = Module(
+            types=(FuncType(params=(), results=()),),
+            functions=(Function(type_index=0, locals_extra=(), code=code),),
+        )
+        module.build_basic_block_index()
+        assert len(module.blocks) == 1
+        assert module.blocks[0].jit_score == score
+        manager = JITRuntimeManager(card_shift=0, min_trace_bytes=1)
+        try:
+>           assert manager.candidate_threshold == 9
+E           assert 18 == 9
+E            +  where 18 = <tier3_executer.jit.jit_manager.JITRuntimeManager object at 0x7c4d812acb40>.candidate_threshold
+
+experiments/pysim/qa/tier2_runtime/test_jit_scoring.py:68: AssertionError
+_ test_loader_candidate_gate_uses_specification_threshold[A\x01i\x1a\x0b-2-False] _
+
+code = b'A\x01i\x1a\x0b', score = 2, candidate = False
+
+    @pytest.mark.parametrize(
+        "code, score, candidate",
+        (
+            (bytes.fromhex("41 01 69 45 1a 0b"), 8, False),
+            (bytes.fromhex("41 01 1a 10 00 0b"), 9, True),
+            (bytes.fromhex("41 01 1a 0b"), 10, True),
+            (bytes.fromhex("41 01 69 1a 0b"), 2, False),
+        ),
+    )
+    def test_loader_candidate_gate_uses_specification_threshold(
+        code: bytes, score: int, candidate: bool
+    ) -> None:
+        """TEST-LOAD-49: 実登録で候補カードを生成し、非候補の履歴を記録しない。"""
+        module = Module(
+            types=(FuncType(params=(), results=()),),
+            functions=(Function(type_index=0, locals_extra=(), code=code),),
+        )
+        module.build_basic_block_index()
+        assert len(module.blocks) == 1
+        assert module.blocks[0].jit_score == score
+        manager = JITRuntimeManager(card_shift=0, min_trace_bytes=1)
+        try:
+>           assert manager.candidate_threshold == 9
+E           assert 18 == 9
+E            +  where 18 = <tier3_executer.jit.jit_manager.JITRuntimeManager object at 0x7c4d812ad340>.candidate_threshold
+
+experiments/pysim/qa/tier2_runtime/test_jit_scoring.py:68: AssertionError
+REVIEW mutant=jit-threshold-18 mutation_calls=[18]
+=========================== short test summary info ============================
+FAILED experiments/pysim/qa/tier2_runtime/test_jit_scoring.py::test_loader_scores_basic_block_once
+FAILED experiments/pysim/qa/tier2_runtime/test_jit_scoring.py::test_loader_candidate_gate_uses_specification_threshold[A\x01iE\x1a\x0b-8-False]
+FAILED experiments/pysim/qa/tier2_runtime/test_jit_scoring.py::test_loader_candidate_gate_uses_specification_threshold[A\x01\x1a\x10\x00\x0b-9-True]
+FAILED experiments/pysim/qa/tier2_runtime/test_jit_scoring.py::test_loader_candidate_gate_uses_specification_threshold[A\x01\x1a\x0b-10-True]
+FAILED experiments/pysim/qa/tier2_runtime/test_jit_scoring.py::test_loader_candidate_gate_uses_specification_threshold[A\x01i\x1a\x0b-2-False]
+5 failed, 2 passed in 0.15s

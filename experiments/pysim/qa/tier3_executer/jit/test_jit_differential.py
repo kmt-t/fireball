@@ -22,10 +22,11 @@ _TESTS_DIR = _TEST_FILE.parents[2]
 _PYSIM_DIR = _TESTS_DIR.parent
 
 
+import pytest
 import wasmtime
-from helpers import expect_assertion, make_interpreter, make_native_interpreter, wat_to_wasm
+from helpers import make_interpreter, make_native_interpreter, wat_to_wasm
 from test_support import make_runtime_engine
-from tier3_executer.interpreter.interpreter import NativeInterpreter
+from tier3_executer.interpreter.interpreter import NativeInterpreter, TrapCode
 from tier3_executer.jit.x64_jit import TraceCompiler
 from tier3_executer.runtime_engine import RuntimeEngine
 from wasm_module import Module
@@ -323,14 +324,16 @@ def test_jitr_61_a_trace_that_would_overflow_the_operand_stack_runs_on_the_inter
     """
     wasm = wat_to_wasm(_operand_overflow_wat())
     interpreter_module = parse(wasm)
-    with expect_assertion():
+    with pytest.raises(AssertionError) as interpreter_failure:
         _guest(interpreter_module).call(interpreter_module.export_func_index("main"), [])
+    assert interpreter_failure.value.args == (TrapCode.OPERAND_STACK_CAPACITY,)
     engine = make_runtime_engine(
         yield_threshold=3, candidate_threshold=0, jit_compiler=TraceCompiler()
     )
     module = engine.load_wasm(wasm)
-    with expect_assertion():
+    with pytest.raises(AssertionError) as hybrid_failure:
         engine.call(_guest(module), module.export_func_index("main"), [])
+    assert hybrid_failure.value.args == (TrapCode.OPERAND_STACK_CAPACITY,)
     assert engine.stat_jit_invocations > 0, "`work` never ran compiled before the overflow"
 
 

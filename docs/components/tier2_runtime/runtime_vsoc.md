@@ -61,8 +61,8 @@ graph TD
     Harness -- operates on --> Context
     Harness -- provides --> BulkCopy
     Interp -- memory.copy --> BulkCopy
-    BulkCopy -- eligible non-overlap copy --> VDMA
-    BulkCopy -- overlap / fallback --> Context
+    BulkCopy -- vMMIO endpoint --> VDMA
+    BulkCopy -- both endpoints in linear memory: CPU memmove --> Context
     Context -- owns --> Alloc
     Context -- owns --> JitAlloc
     Loader -- allocates containers from --> Alloc
@@ -82,7 +82,7 @@ graph TD
 | インタープリタ | WASMバイトコードを逐次実行するエンジンへの参照。 | `Interpreter*` |
 | JITランタイム契約 | Tier 3のホットスポット管理・トレース検索・キャッシュ無効化を呼び出す契約への参照。 | `JitRuntime*` |
 | JITコンパイラ | ホットスポットを機械語に変換するTier 3実装への参照。 | `JitCompiler*` |
-| リニアメモリコピーサービス | `memory.copy`の範囲検査、CPUコピー、同期vDMA転送を選択する内部サービス。 | `LinearMemoryCopyService*` |
+| リニアメモリコピーサービス | `memory.copy`の範囲検査と、端点に応じたCPUコピーまたはvDMA転送を担う内部サービス。 | `LinearMemoryCopyService*` |
 | デバッガ | RSPプロトコルを介したデバッグ機能を提供するコンポーネントへの参照。 | `Debugger*` |
 | vMMIO | 仮想的なメモリマップドI/Oを制御するコンポーネントへの参照。 | `VmmioController*` |
 
@@ -109,7 +109,7 @@ vSoCの実行環境情報は `execution_context` の論理フィールドとし�
 | グローバル変数基底 | WASM `global` 配列（4バイト単位でインデックス付け）の開始アドレス | アドレス値 | 32bit符号なし（`execution_context` の `+0x30`） |
 | グローバル変数終端 | WASM `global` 配列の終端アドレス | アドレス値 | 32bit符号なし（`execution_context` の `+0x34`） |
 
-`execution_context` の既存状態領域は64バイト（`+0x00`〜`+0x3F`）である。コードビュー、制御スタックビュー、境界チェックポイント、CallStackビュー、オペランドスタック容量、LOOP後方分岐カウンタとしきい値を続けて配置する。x86-64の実体は128バイトである。JITの委譲先関数アドレスと共通呼出し入口の選択値はトレースヘッダへ置く。
+`execution_context` の既存状態領域は64バイト（`+0x00`〜`+0x3F`）である。コードビュー、制御スタックビュー、境界チェックポイント、CallStackビュー、オペランドスタック容量、LOOP後方分岐カウンタとしきい値を続けて配置する。リニアメモリのホスト基点を`+0x80`、64bitの有効サイズを`+0x88`へ配置する。x86-64の実体は144バイトである。JITの委譲先関数アドレスと共通呼出し入口の選択値はトレースヘッダへ置く。
 オペランド領域、ローカル値領域、制御ブロック復帰情報領域は、それぞれ専用の境界オフセット対を持つ独立領域である。いずれか1本の伸縮が他の記録位置へ影響することはない（ADR-INTERP-03）。
 JIT の複雑処理委譲先はトレースヘッダの `helper_target_addr` からトレースごとにロードする。対象ABIの呼出しコードはヘルパー契約ごとに共通コード領域へ配置し、ヘッダの対応入口選択値で呼び出す。JITコード内へ委譲先の絶対アドレスを埋め込まない。型定義の正本は [`runtime_vsoc_contract.wit`](docs/components/tier2_runtime/wit/runtime_vsoc_contract.wit) であり、固定ABIの物理配置は [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) に従う。 `{PositionIndependentCode}`
 
@@ -144,7 +144,7 @@ vSoC コアエンジンの実行委譲、協調イールド、および外部介
 | **x64 trace chain** | 互換な直線後続traceがキャッシュ常駐時 | trace末尾が共通コード領域のchain dispatcherへ進み、dispatcherがheaderのtarget bodyへtail-jumpする | chain dispatcherはopcodeを判定せず、C++ Interpreter handlerの分岐処理を迂回しない |
 | **デバッガとJITの構成排他** | デバッグ構成の合成時 | Tier 2の構成器は `Interpreter + Debugger` を選択し、`Debugger + JIT` の同時構成を `assert` で拒否する | デバッガがJITキャッシュを管理する経路を生成しない |
 | **1ランタイム1ゲスト・専用アリーナ** | ランタイム生成時および破棄時 | データと実行可能コード用の領域を別のアロケータで管理し、ランタイム破棄時に所有する領域を一括返却する | 領域の寿命と所有権をランタイム単位で分離する。ARMv8-Mの物理配置と保護方式はTBD |
-| **選択`0xFC`メモリ命令** | `memory.copy` / `memory.fill`実行時 | 全アクセス範囲を先に検査する。copyは重複時・不適格時・vDMA使用中にCPUで処理し、非重複かつサイズ・アラインメント・到達性・cache整合性条件を満たす場合だけ同期vDMAを選択する。fillはCPUで処理する | 範囲外の部分更新を許さず、DMA idleとCPU可視性の確認前にゲストを再開しない。サイズしきい値は[`linear_memory_bench_spec.md`](docs/components/tier2_runtime/benchmarks/linear_memory_bench_spec.md)で決定する |
+| **選択`0xFC`メモリ命令** | `memory.copy` / `memory.fill`実行時 | 全アクセス範囲を先に検査する。copyの両端点がリニアメモリならCPU memmoveで処理する。FC=13/14/15の端点を含む場合はvMMIOの権限・所有権・範囲を検査して内部vDMAへ委譲する。fillはCPUで処理する | 範囲外の部分更新を許さない。vDMAの成功復帰は転送完了とCPU可視性を意味する。リニアメモリ間転送にDMA選択のしきい値を設けない |
 
 - **1ランタイム1ゲストのライフサイクル管理と専用アリーナ (`OneRuntimeOneGuest`)**:
   vSoC インスタンス生成時、メモリマネージャからデータ用領域と実行可能コード用領域を別々に取得し、専用の `bump_allocator` と `jit_code_allocator` を初期化する。具体的な物理配置と保護方式は対象プラットフォームで定める。ARMv8-MはTBDである。
@@ -415,31 +415,47 @@ sequenceDiagram
     Note over R: Cache lookup, hotspot processing, and queued compilation run at this boundary
 ```
 
-#### WASM `memory.copy`同期サービス
+#### WASM `memory.copy`の端点別実行
 <!-- traceability: {WasmFCSubset} {VDMA} {MemoryBoundaryCheck} -->
+ゲストはvDMAの転送完了とCPU可視性を確認した後にだけ成功復帰する。
+ランタイム内部の転送は、転送対象と操作に応じて同期または非同期で実行する。
+同期転送は、完了とCPU可視性の確認後に直接復帰する。
+非同期転送は、既存のCOOS待機と完了通知の経路を使う。
+FC=13/14/15はvDMAへの委譲条件であり、内部の完了方式は転送実体と操作から決まる。
+ゲストから見た同期性は、CPUのbusy waitを要求しない。
+外部デバイスの応答について、無条件の有限完了を保証しない。
+タイムアウトだけを根拠に転送停止やバッファ再利用を認めない。
+
 ```mermaid
 sequenceDiagram
+    autonumber
     participant I as Interpreter handler
-    participant S as vSoC LinearMemoryCopyService
+    participant R as vSoC Runtime
     participant M as Guest linear memory
     participant D as vDMA
+    participant C as COOS
 
-    I->>S: copy_linear_memory(dst, src, len)
-    S->>S: validate complete source and destination ranges
-    alt out of bounds
-        S-->>I: WASM memory trap before mutation
-    else overlap, small, or DMA-ineligible
-        S->>M: CPU memmove copy
-        S-->>I: completed
-    else eligible non-overlapping range
-        S->>M: clean source cache / memory barrier
-        S->>D: start same-linear-memory copy
-        D->>M: transfer bytes
-        D-->>S: transfer complete and idle
-        S->>M: invalidate destination cache / memory barrier
-        S-->>I: completed
+    I->>R: memory.copy(dst, src, len)
+    R->>R: validate complete endpoint ranges and permissions
+    alt invalid endpoint
+        R-->>I: WASM memory trap before mutation
+    else both endpoints are linear memory
+        R->>M: CPU memmove copy
+        R-->>I: completed
+    else includes vMMIO FC=13/14/15
+        R->>D: prepare visibility and start transfer
+        alt 転送対象・操作に応じた同期転送
+            D-->>R: 転送完了
+        else 転送対象・操作に応じた非同期転送
+            D-->>R: 開始受理、完了待ち
+            R->>C: wait for completion event
+            D-->>C: completion notification
+            C-->>R: resume runtime
+        end
+        R->>R: confirm completion and CPU visibility
+        R-->>I: completed
     end
-    Note over I,S: Interpreter advances only after the service returns
+    Note over I,R: Guest continues only after successful completion
 ```
 
 #### マルチモジュール動的リンクシーケンス
@@ -621,7 +637,7 @@ Fireballでは、標準WASIのゲスト側アダプタを `libfireball` とし�
 | **Revoke後のflush完了性** | 抽象遷移モデルで、共有メモリ権限剥奪により dirty になった状態から flush 完了状態へ到達すること。実時間の期限や有限のtick数は証明しない。| [`vsoc_cache_coherency_model.py`](docs/components/tier2_runtime/formal/vsoc_cache_coherency_model.py) `dirty_cache_eventually_flushes` |
 | **重複コンパイル抑止** | 常駐済みトレースに対する二重コンパイルを抑止しキャッシュを浪費しないこと。| [`vsoc_cache_coherency_model.py`](docs/components/tier2_runtime/formal/vsoc_cache_coherency_model.py) `resident_trace_duplicate_compile_suppression` |
 | **状態一貫性** | vSoC Engine ライフサイクル（4.2）の各遷移後に状態が整合していること。 | 直交表 / レビュー（形式検証対象外） |
-| **Bulk Memory境界とDMA完了** | 範囲外部分更新、重複領域のDMA選択、DMA完了・可視化前の再開を禁止する。飽和変換カテゴリの結果も保持する。 | [`wasm_bulk_memory_model.py`](docs/specs/formal/wasm_bulk_memory_model.py): `oob_copy_never_partially_mutates`, `overlap_copy_never_uses_dma`, `guest_never_resumes_while_dma_pending`, `guest_never_resumes_before_dma_visible`, `nan_saturates_to_zero`, `positive_overflow_saturates_to_maximum`, `signed_underflow_saturates_to_minimum`, `unsigned_underflow_saturates_to_zero`, `finite_saturating_conversion_completes` |
+| **Bulk Memory境界とDMA完了** | 範囲外部分更新、リニアメモリ間コピーのDMA選択、DMA完了・可視化前の再開を禁止する。飽和変換カテゴリの結果も保持する。 | [`wasm_bulk_memory_model.py`](docs/specs/formal/wasm_bulk_memory_model.py): `oob_copy_never_partially_mutates`, `linear_copy_never_uses_dma`, `guest_never_resumes_while_dma_pending`, `guest_never_resumes_before_dma_visible`, `nan_saturates_to_zero`, `positive_overflow_saturates_to_maximum`, `signed_underflow_saturates_to_minimum`, `unsigned_underflow_saturates_to_zero`, `finite_saturating_conversion_completes` |
 
 ### 7.2 モデル分割の理由
 

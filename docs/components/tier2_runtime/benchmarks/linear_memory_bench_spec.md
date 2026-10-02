@@ -16,7 +16,7 @@
 | **BENCHMARK-MEM-02** | 単一比較 境界チェック (`CMP addr, mem_size`) オーバーヘッド | `addr < guest_ram_size` の単一比較 | ns/op, M ops/sec | 境界チェック遅延が最小限（マスク方式と同等以下）であること | FastAddressCheck, MemoryBoundaryCheck |
 | **BENCHMARK-MEM-03** | vMMIO 高速バイパスアクセス (Bit 31 == 0) | `VMMIOController.access` 経由 | M ops/sec, バンド幅 (MB/s) | PTE 探索を一切行わず即座にバイパス完了すること | `{META_RestrictedPhysicalAccess}` |
 | **BENCHMARK-MEM-04** | アクセス幅別スループット (8-bit / 16-bit / 32-bit) | 各バイト幅での連続/ストライドアドレス | M ops/sec | 各データ幅で正常に読み書き可能であること | `interpreter.md` |
-| **BENCHMARK-MEM-05** | `memory.copy` CPU対vDMA break-even | 同一ゲストリニアメモリ、非重複コピー。サイズ・アラインメント・DMA到達性・cache maintenance条件を掃引し、同一データでCPU経路と同期vDMA経路を比較する | 起動遅延、cache maintenance込み完了遅延、MB/s、サイズ別break-even | 意味論一致を確認し、CPUからvDMAへ切り替える最小サイズと対象条件を実測で決定する。数値しきい値は計測前に固定しない | `{VDMA}` `{WasmFCSubset}` |
+| **BENCHMARK-MEM-05** | `memory.copy`のCPU memmove性能 | 同一ゲストリニアメモリのサイズ・重複方向・アラインメントを掃引する | 完了遅延、MB/s | WASM意味論との一致を確認し、CPU経路の性能を測定する。リニアメモリ間のDMA選択しきい値は定義しない | `{WasmFCSubset}` |
 
 境界外アドレスのトラップは性能測定項目に含めない。正しさの検証は [`runtime_vmmio_test_spec.md`](docs/qa/tier2_runtime/runtime_vmmio_test_spec.md) の TEST-VMMIO-02/03 で行う。WASMリニアメモリは64KB単位のページ意味論を保ち、vMMIO Stage 1の任意サイズ境界窓を「部分WASMページ」として扱わない。
 

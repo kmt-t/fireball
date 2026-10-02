@@ -24,7 +24,7 @@ from scheduler import Scheduler
 from system_containers import MutableFlatMapStorage, StaticVector
 
 if TYPE_CHECKING:
-    from memory_interface import MemoryManager
+    from memory import MemoryManager
 
 # docs/components/tier1_core/system_config.md {META_FlatMapIndexed}: max PTE
 # count the FlatMap page table can hold.
@@ -58,6 +58,7 @@ class VmmioPte(Protocol):
     phys_page: int
     physical_base_addr: int
     mapping_size: int
+    mapped_storage: memoryview | None
     handler: Callable[[int, int, bool], None] | None
     value_handler: VmmioVectorHandler | None
 
@@ -131,6 +132,7 @@ class Tier3PTE:
 
     __slots__ = (
         "exec_",
+        "mapped_storage",
         "mapping_size",
         "owner_id",
         "phys_page",
@@ -150,12 +152,14 @@ class Tier3PTE:
         owner_id: int = FB_TASK_ID_INVALID,
         physical_base_addr: int | None = None,
         mapping_size: int = VMMIO_PAGE_SIZE,
+        mapped_storage: memoryview | None = None,
     ):
         self.phys_page = phys_page
         self.physical_base_addr = (
             (phys_page << VMMIO_PAGE_SHIFT) if physical_base_addr is None else physical_base_addr
         )
         self.mapping_size = mapping_size
+        self.mapped_storage = mapped_storage
         self.valid = valid
         self.read = read
         self.write = write
@@ -261,7 +265,9 @@ class VMMIOController:
         ), "vMMIO PTE table capacity exceeded"
         self.flush_tlb_entry(vpn)
 
-    def map_dynamic_page(self, vpn: int, phys_page: int, owner_id: int) -> None:
+    def map_dynamic_page(
+        self, vpn: int, phys_page: int, owner_id: int, storage: memoryview
+    ) -> None:
         """Maps one FC=13 DYNAMIC page for exactly one guest task."""
         assert (vpn >> 16) == FC_DYNAMIC, "DYNAMIC VPN is outside FC=13"
         assert owner_id > 0, "DYNAMIC mappings require a guest task owner"
@@ -276,6 +282,8 @@ class VMMIOController:
                 write=True,
                 exec_=False,
                 owner_id=owner_id,
+                mapping_size=len(storage),
+                mapped_storage=storage,
             ),
         ), "vMMIO PTE table capacity exceeded"
         self.flush_tlb_entry(vpn)
@@ -334,21 +342,31 @@ class VMMIOController:
 
     def register_to_memory_manager(self, memory_manager: MemoryManager) -> None:
         """Registers vMMIO FC=14 SHM page table listeners into MemoryManager."""
+        from memory import FB_CONF_SHM_SIM_BASE
         from memory_interface import PageMappingCallbacks
 
         def _to_vpn(page_idx: int) -> int:
             return (0xE000_0000 >> 12) + page_idx
 
+        def _map_shared_page(
+            page_idx: int, physical_addr: int, owner_id: int, mapping_size: int
+        ) -> None:
+            vpn = _to_vpn(page_idx)
+            self.map_shm_page(
+                vpn, owner_id=owner_id, physical_addr=physical_addr, mapping_size=mapping_size
+            )
+            pte = self.ptes.view().find(vpn)
+            assert pte is not None
+            offset = physical_addr - FB_CONF_SHM_SIM_BASE
+            assert 0 <= offset and mapping_size <= len(memory_manager.shm_storage) - offset
+            # Borrow the allocator's physical SHM store; do not create a second backing.
+            pte.mapped_storage = memoryview(memory_manager.shm_storage)[
+                offset : offset + mapping_size
+            ]
+
         memory_manager.register_page_mapping_callbacks(
             PageMappingCallbacks(
-                on_map_page=lambda page_idx, physical_addr, owner_id, mapping_size: (
-                    self.map_shm_page(
-                        _to_vpn(page_idx),
-                        owner_id=owner_id,
-                        physical_addr=physical_addr,
-                        mapping_size=mapping_size,
-                    )
-                ),
+                on_map_page=_map_shared_page,
                 on_owner_changed=lambda page_idx, _addr, _previous_owner_id, _new_owner_id: (
                     self.unmap_shm_page(_to_vpn(page_idx))
                 ),
@@ -479,7 +497,7 @@ class VMMIOController:
                     TrapCode.OWNER_MISMATCH,
                     0,
                 )
-        if addr.fc() == FC_SHM:
+        if addr.fc() == FC_SHM or addr.fc() == FC_DYNAMIC:
             if addr.offset() >= pte.mapping_size or access_size > pte.mapping_size - addr.offset():
                 return (VmmioStatus.OUT_OF_BOUNDS, 0)
 

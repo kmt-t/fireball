@@ -1,34 +1,38 @@
+"""固定26行の計画被覆と、許可構成の実状態・禁止構成の拒否を検査する。"""
+
 from __future__ import annotations
 
 import csv
+from collections.abc import Generator
 from itertools import combinations
 from pathlib import Path
 
-_TEST_FILE = Path(__file__).resolve()
-_TESTS_DIR = _TEST_FILE.parent.parent
-_PYSIM_DIR = _TESTS_DIR.parent
-_REPO_ROOT = _PYSIM_DIR.parent.parent
-
-
-"""
-test_pairwise_combinations.py: Comprehensive 2-Way All-Pairs Combinatorial Test Suite.
-Verifies that all 26 orthogonal test cases (covering 100% of the 288 2-way factor interactions)
-execute or reject their explicitly forbidden composition while preserving architectural invariants.
-"""
-
 import wasmtime
-from helpers import make_interpreter as Interpreter
-from system import System
-from system_containers import ReadOnlyFlatMapView
-from test_support import make_runtime_engine
-from tier3_executer.interpreter.interpreter import (
-    InterpreterBindings,
-    NativeInterpreter,
+from fixtures.uvwasi_reference import UvwasiReferenceContext
+from hal_dispatch import ARG_BUFFER_HANDLE, ARG_LENGTH, ARG_OFFSET, WasiIpcCmd
+from helpers import expect_assertion, make_debug_execution, make_native_interpreter
+from ipc_router import IPCStatus, Role
+from runtime_composer import (
+    RuntimeComposer,
+    RuntimeCompositionConfig,
+    RuntimeExecutionKind,
+    RuntimeFactories,
+    RuntimePluginSelection,
 )
+from runtime_events import RuntimeEventBatch
+from scheduler import ChannelAction, TaskState, WaitDir
+from system import System
+from system_containers import ReadOnlyFlatMapView, StaticVector
+from test_support import make_runtime_engine
 from tier3_executer.jit.x64_jit import TraceCompiler
+from tier3_executer.runtime_engine import RuntimeDriveMode, RuntimeEngine
+from tier3_platform.drivers.hal.dummy import DummyDriver
 from tier3_platform.drivers.wasi.context import WasiHostContext
-from tier3_plugins.debugger.debugger import DebuggerManager
+from tier3_plugins.debugger.debugger import DebuggerManager, GDBRspProtocol
+from wasm_module import Module
 from wasm_reader import parse
+
+_REPO_ROOT = Path(__file__).resolve().parents[4]
 
 PAIRWISE_CASES = [
     # (engine, cache, mem_width, storage, host_call, scheduler, debugger)
@@ -66,64 +70,20 @@ def pairwise_case_id(case_number: int) -> str:
 
 
 def _load_factor_levels() -> tuple[tuple[str, ...], ...]:
-    factor_csv = _REPO_ROOT / "docs" / "qa" / "specs" / "pairwise_factors.csv"
     levels: list[list[str]] = []
     factor_ids: list[str] = []
-    with factor_csv.open(newline="", encoding="utf-8") as stream:
+    with (_REPO_ROOT / "docs/qa/specs/pairwise_factors.csv").open(
+        newline="", encoding="utf-8"
+    ) as stream:
         for row in csv.DictReader(stream):
-            factor_id = row["factor_id"]
-            if not factor_ids or factor_ids[-1] != factor_id:
-                factor_ids.append(factor_id)
+            if not factor_ids or factor_ids[-1] != row["factor_id"]:
+                factor_ids.append(row["factor_id"])
                 levels.append([])
             levels[-1].append(row["level"])
     return tuple(tuple(factor_levels) for factor_levels in levels)
 
 
 PAIRWISE_FACTORS = _load_factor_levels()
-
-WAT_TEMPLATE = """
-(module
-  (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
-  (import "fireball" "fireball_call" (func $fireball_call (param i32 i32 i32 i32 i32 i32 i32) (result i32)))
-  (memory 2 4)
-  (global $g_acc (mut i32) (i32.const 100))
-  (export "main" (func $main))
-  (func $main (param $iter i32) (result i32)
-    (local $i i32)
-    (local $acc i32)
-    (local.set $i (i32.const 0))
-    (local.set $acc (i32.const 0))
-    (loop $l
-      ;; Mutate local
-      (local.set $acc (i32.add (local.get $acc) (i32.const 1)))
-      ;; 8-bit RAM access
-      (i32.store8 (i32.const 10) (i32.and (local.get $acc) (i32.const 0xFF)))
-      ;; 16-bit RAM access
-      (i32.store16 (i32.const 20) (i32.and (local.get $acc) (i32.const 0xFFFF)))
-      ;; 32-bit RAM access
-      (i32.store (i32.const 30) (local.get $acc))
-      ;; Global mutation
-      (global.set $g_acc (i32.add (global.get $g_acc) (i32.const 2)))
-      (local.set $i (i32.add (local.get $i) (i32.const 1)))
-      (br_if $l (i32.lt_s (local.get $i) (local.get $iter)))
-    )
-    (i32.add (local.get $acc) (global.get $g_acc))
-  )
-)
-"""
-
-from fixtures.uvwasi_reference import UvwasiReferenceContext
-from hal_dispatch import ARG_BUFFER_HANDLE, ARG_LENGTH, ARG_OFFSET, WasiIpcCmd
-from helpers import expect_assertion
-from runtime_composer import (
-    RuntimeComposer,
-    RuntimeCompositionConfig,
-    RuntimeExecutionKind,
-    RuntimeFactories,
-    RuntimePluginSelection,
-)
-from runtime_events import RuntimeEvent
-from tier3_platform.drivers.hal.dummy import DummyDriver
 
 
 class _CompositionExecutor:
@@ -132,16 +92,20 @@ class _CompositionExecutor:
 
 
 class _CompositionObserver:
-    def on_runtime_event(self, event: RuntimeEvent) -> None:
+    def on_runtime_batch(self, batch: RuntimeEventBatch) -> None:
         return None
 
 
-def _assert_debugger_jit_composition_rejected(case_id: str) -> None:
-    """JIT を含むデバッグ構成は実行せず、合成時 assert で拒否する。"""
+def _assert_debugger_jit_composition_rejected() -> None:
+    created: list[str] = []
+
+    def executor() -> _CompositionExecutor:
+        created.append("executor")
+        return _CompositionExecutor()
 
     factories = RuntimeFactories(
-        interpreter=_CompositionExecutor,
-        jit=_CompositionExecutor,
+        interpreter=executor,
+        jit=executor,
         logger=_CompositionObserver,
         debugger=_CompositionObserver,
         profiler=_CompositionObserver,
@@ -149,167 +113,362 @@ def _assert_debugger_jit_composition_rejected(case_id: str) -> None:
     with expect_assertion("debugger-enabled runtime must use interpreter-only execution"):
         RuntimeComposer.compose(
             RuntimeCompositionConfig(
-                execution=RuntimeExecutionKind.JIT,
-                plugins=RuntimePluginSelection(debugger=True),
+                execution=RuntimeExecutionKind.JIT, plugins=RuntimePluginSelection(debugger=True)
             ),
             factories,
         )
-    print(f"    [PASS] {case_id}: rejected Debugger + JIT composition")
+    assert created == [], "forbidden composition must fail before executor construction"
 
 
-def run_single_pairwise_case(case_id: str, case_tuple: tuple[str, ...]) -> None:
-    (
-        engine_mode,
-        cache_mode,
-        mem_width,
-        storage_mode,
-        host_mode,
-        sched_mode,
-        dbg_mode,
-    ) = case_tuple
-    if engine_mode in ("jit", "hybrid") and dbg_mode in ("inspect", "active"):
-        _assert_debugger_jit_composition_rejected(case_id)
-        return
-    # 1. Setup host system and services
-    sysv = System()
-    wasi_ctx = WasiHostContext(sysv, guest_memory=bytearray(2 * 65536))
-    wasi_dummy = UvwasiReferenceContext()
-    stdio = DummyDriver(transport=sysv.transport)
-    sysv.start_hal_driver(stdio, sysv.wasi_hal_bindings.stdout_uri)
-    # 2. Parse WASM Module
-    wasm_bytes = bytes(wasmtime.wat2wasm(WAT_TEMPLATE))
-    module = parse(wasm_bytes)
-    fn_idx = module.export_func_index("main")
-    # Build host imports
-    host_funcs = wasi_ctx.build_interpreter_host_functions(module)
-    # 3. Setup Runtime Engine & JIT
-    trace_compiler = TraceCompiler() if engine_mode in ("jit", "hybrid") else None
-    runtime_engine = (
-        make_runtime_engine(jit_compiler=trace_compiler, yield_threshold=4)
-        if engine_mode in ("jit", "hybrid")
-        else None
-    )
-    if runtime_engine:
-        runtime_engine.register_module_blocks(module)
-
-    module.init_memory_data(wasi_ctx.guest_memory, ())
-    if runtime_engine is None:
-        interp = Interpreter(module, memory=wasi_ctx.guest_memory, host_functions=host_funcs)
+def _case_wat(storage_mode: str, mem_width: str, host_mode: str) -> str:
+    address = 0xE0001000 if storage_mode == "shm" else 512
+    if storage_mode == "locals":
+        initialize, read = "(local.set $acc (i32.const 0))", "(local.get $acc)"
+        write = "(local.set $acc (call $inc (local.get $acc)))"
+    elif storage_mode == "globals":
+        initialize, read = "(global.set $storage (i32.const 0))", "(global.get $storage)"
+        write = "(global.set $storage (call $inc (global.get $storage)))"
     else:
-        bindings = InterpreterBindings.with_memory_and_functions(wasi_ctx.guest_memory, host_funcs)
-        interp = NativeInterpreter(module, bindings)
-    # Setup Debugger if needed
-    dbg_mgr = None
-    if dbg_mode in ("inspect", "active"):
-        dbg_mgr = DebuggerManager(interp)
-        dbg_mgr.attach()
-        if dbg_mode == "active":
-            dbg_mgr.add_breakpoint(0x0010)
-
-    # 4. Apply Cache mode
-    if runtime_engine and cache_mode == "flush":
-        runtime_engine.jit_runtime.cache.flush_all()
-    elif runtime_engine and cache_mode == "evict":
-        # Rotate banks
-        runtime_engine.jit_runtime.cache.rotate()
-        runtime_engine.jit_runtime.cache.rotate()
-
-    # 5. Apply Memory width / grow
-    if mem_width == "grow":
-        wasi_ctx.guest_memory.extend(b"\x00" * 65536)
-        assert len(wasi_ctx.guest_memory) >= 65536 * 2
-
-    # 6. Apply Storage mode
-    if storage_mode == "shm":
-        # Register vMMIO SHM page (FC=14 -> vpn=0x0E000)
-        sysv.vmmio.map_shm_page(0x0E000, 1, 1)
-
-    # 7. Execute according to Scheduler mode
-    n_iters = 8
-    if sched_mode == "noint":
-        res = interp.call(fn_idx, [n_iters])
-    elif sched_mode in ("yield", "multi"):
-        if runtime_engine:
-            res = runtime_engine.call(interp, fn_idx, [n_iters], idle_budget=2)
-        else:
-            call_state = interp.start(fn_idx, [n_iters])
-            while not call_state.finished:
-                call_state = interp.step(call_state)
-            res = call_state.results
-
-    # 8. Verify Result
-    assert res is not None, f"Execution failed for {case_id}"
-    expected_acc = n_iters
-    expected_gacc = 100 + (n_iters * 2)
-    assert res[0] == expected_acc + expected_gacc, (
-        f"{case_id} result mismatch: got {res[0]}, expected {expected_acc + expected_gacc}"
+        initialize, read = (
+            f"(i32.store (i32.const {address}) (i32.const 0))",
+            f"(i32.load (i32.const {address}))",
+        )
+        write = f"(i32.store (i32.const {address}) (call $inc {read}))"
+    store = {
+        "8bit": "i32.store8",
+        "16bit": "i32.store16",
+        "32bit": "i32.store",
+        "grow": "i32.store",
+    }[mem_width]
+    host_import = (
+        '(import "qa" "host" (func $host (param i32) (result i32)))' if host_mode != "none" else ""
     )
-    # 9. Verify Invariants
-    # Invariant A: Memory consistency
-    assert wasi_ctx.guest_memory[10] == (n_iters & 0xFF)
-    assert wasi_ctx.guest_memory[20] == (n_iters & 0xFF)
-    assert wasi_ctx.guest_memory[30] == (n_iters & 0xFF)
-    # Invariant B: Global state persistence
-    assert interp.globals[0] == expected_gacc
-    # Invariant C: Host call integrity
-    if host_mode == "wasi_console":
-        # write out to wasi
-        wasi_ctx.fd_write(1, 10, 1, 40)
-    elif host_mode == "wasi_vfs":
-        # read from dummy file
-        read_buf = bytearray(16)
-        wasi_dummy.fd_read(3, read_buf, 0, 1, 12)
-    elif host_mode == "hal":
-        payload = f"pairwise:{case_id}".encode("ascii")
-        if sysv.scheduler.current_task is None:
-            sysv.start_runtime_task(name="pairwise_hal_guest")
-        buffer_handle = sysv.pool.buffer(0)
-        assert sysv.pool.map_for_io(buffer_handle.buffer_id).name == "MAPPED"
-        sysv.pool.view(buffer_handle, 0, len(payload))[:] = payload
-        assert stdio.dispatch(
-            WasiIpcCmd.STREAM_WRITE_BUFFER,
-            ReadOnlyFlatMapView(
-                [
-                    (ARG_BUFFER_HANDLE, buffer_handle.buffer_id),
-                    (ARG_OFFSET, 0),
-                    (ARG_LENGTH, len(payload)),
-                ]
-            ),
-        ) == len(payload)
-        assert stdio.drain_stdout() == payload
-        sysv.pool.unmap_after_io(buffer_handle.buffer_id)
+    host_call = "(drop (call $host (local.get $n)))" if host_mode != "none" else ""
+    grow = "(global.set $grew (memory.grow (i32.const 1)))" if mem_width == "grow" else ""
+    return f"""(module
+      {host_import}
+      (memory 2 4)
+      (global $g_acc (mut i32) (i32.const 100))
+      (global $storage (mut i32) (i32.const 0))
+      (global $grew (mut i32) (i32.const -1))
+      (func $inc (export "inc") (param i32) (result i32)
+        (i32.add (local.get 0) (i32.const 1)))
+      (func (export "main") (param $n i32) (result i32) (local $i i32) (local $acc i32)
+        {initialize}
+        (loop $top
+          {write}
+          ({store} (i32.const 256) (i32.const 305441741))
+          (global.set $g_acc (i32.add (global.get $g_acc) (i32.const 2)))
+          (local.set $i (i32.add (local.get $i) (i32.const 1)))
+          (br_if $top (i32.lt_s (local.get $i) (local.get $n))))
+        {grow}
+        {host_call}
+        (i32.add {read} (global.get $g_acc))))"""
 
 
-def test_all_pairwise_combinations():
+def _prepare_cache(
+    engine: RuntimeEngine, module: Module, cache_mode: str, engine_mode: str
+) -> None:
+    manager = engine.jit_runtime
+    if engine_mode == "interp":
+        assert manager is None
+        return  # Cache factors are inapplicable with JIT disabled.
+    assert manager is not None
+    cache = manager.cache
+    assert all(not bank.traces for bank in (cache.active, cache.warm, cache.oldest))
+    inc_index = module.export_func_index("inc")
+    block = next(
+        block for block in module.blocks if block.head_pc >> 16 == inc_index and block.byte_span
+    )
+
+    def install() -> None:
+        trace = manager._compile_trace(block.head_pc, block)
+        assert trace is not None and cache.insert(trace)
+        manager.bitmap.mark_compiled(block.head_pc)
+        assert cache.active.get_trace(block.head_pc) is trace
+
+    if cache_mode != "cold":
+        install()
+        if cache_mode == "warm":
+            cache.rotate()
+            assert cache.warm.has_trace(block.head_pc) and not cache.active.has_trace(block.head_pc)
+        elif cache_mode == "evict":
+            for _ in range(3):
+                cache.rotate()
+            assert all(
+                not bank.has_trace(block.head_pc)
+                for bank in (cache.active, cache.warm, cache.oldest)
+            )
+        elif cache_mode == "flush":
+            manager.flush_all()
+            assert all(not bank.traces for bank in (cache.active, cache.warm, cache.oldest))
+    if engine_mode == "jit" and not any(
+        bank.has_trace(block.head_pc) for bank in (cache.active, cache.warm, cache.oldest)
+    ):
+        install()  # Eager JIT setup follows the observed cache transition.
+
+
+def _probe_debugger(dbg_mode: str) -> None:
+    """The existing static debug composition is probed separately from COOS driving."""
+    if dbg_mode == "detached":
+        return
+    module = parse(
+        bytes(
+            wasmtime.wat2wasm(
+                "(module (func (param i32) (result i32) local.get 0 i32.const 1 i32.add))"
+            )
+        )
+    )
+    execution = make_debug_execution(module, 0, (7,))
+    debugger = DebuggerManager(engine=execution)
+    debugger.attach()
+    rsp = GDBRspProtocol(debugger)
+    response, pc = rsp.handle_packet("g", 0, execution.context, {})
+    assert response == GDBRspProtocol.format_packet("00000000" * 4 + "07000000" + "00000000" * 15)
+    assert pc == 0 and tuple(execution.context.stack) == ()
+    if dbg_mode == "active":
+        assert debugger.add_breakpoint(2)
+        response, pc = rsp.handle_packet("c", pc, execution.context, {})
+        assert response == GDBRspProtocol.format_packet("S05")
+        assert pc == 2 and tuple(execution.context.stack) == (7,) and not execution.call.finished
+        debugger.remove_breakpoint(2)
+    response, _ = rsp.handle_packet("c", pc, execution.context, {})
+    assert response == GDBRspProtocol.format_packet("W00")
+    assert execution.call.finished and execution.call.results == [8]
+    debugger.detach()
+    assert not debugger.attached and execution.debugger is None
+
+
+def run_single_pairwise_case(case_id: str, case_tuple: tuple[str, ...]) -> str:
+    engine_mode, cache_mode, mem_width, storage_mode, host_mode, sched_mode, dbg_mode = case_tuple
+    if engine_mode in ("jit", "hybrid") and dbg_mode in ("inspect", "active"):
+        _assert_debugger_jit_composition_rejected()
+        return "rejected"
+    sysv = System()
+    backend = UvwasiReferenceContext()
+    memory = bytearray(b"\xa5" * (2 * 65536))
+    wasi = WasiHostContext(sysv, guest_memory=memory, uvwasi=backend)
+    driver = DummyDriver(transport=sysv.transport)
+    driver_task_id = sysv.start_hal_driver(driver, sysv.wasi_hal_bindings.stdout_uri)
+    payload = f"pairwise:{case_id}".encode("ascii")
+    memory[1024:1032] = (1200).to_bytes(4, "little") + len(payload).to_bytes(4, "little")
+    memory[1200 : 1200 + len(payload)] = payload
+    expected_memory = bytearray(memory)
+    expected_physical = bytearray(sysv.phys_mem)
+    host_calls: list[int] = []
+    host_responses: list[int] = []
+    n_iters = 48
+
+    def host_call(iterations: int) -> int:
+        host_calls.append(iterations)
+        if host_mode == "wasi_console":
+            result = wasi.fd_write(1, 1024, 1, 1100)
+            assert result == 0 and driver.drain_stdout() == payload
+            expected_memory[1100:1104] = len(payload).to_bytes(4, "little")
+        elif host_mode == "wasi_vfs":
+            memory[1028:1032] = (8).to_bytes(4, "little")
+            expected_memory[1028:1032] = (8).to_bytes(4, "little")
+            result = wasi.fd_read(3, 1024, 1, 1100)
+            assert result == 0 and memory[1200:1208] == b"[system]"
+            virtual_file = backend.files.view().find(3)
+            assert virtual_file is not None and virtual_file.cursor == 8
+            expected_memory[1200:1208] = b"[system]"
+            expected_memory[1100:1104] = (8).to_bytes(4, "little")
+        else:
+            handle = sysv.pool.buffer(0)
+            assert sysv.pool.map_for_io(handle.buffer_id).name == "MAPPED"
+            sysv.pool.view(handle, 0, len(payload))[:] = payload
+            params = ReadOnlyFlatMapView(
+                sorted(
+                    (
+                        (ARG_BUFFER_HANDLE, handle.buffer_id),
+                        (ARG_OFFSET, 0),
+                        (ARG_LENGTH, len(payload)),
+                    )
+                )
+            )
+            if host_mode == "ipc":
+                response = wasi.core03p.send_ipc_command(
+                    sysv.wasi_hal_bindings.stdout_uri, WasiIpcCmd.STREAM_WRITE_BUFFER, params
+                )
+                assert response.response_code == 0 and response.value == len(payload)
+                status, channel = sysv.ipc.lookup(sysv.wasi_hal_bindings.stdout_uri)
+                assert status == IPCStatus.COMPLETED and channel is not None
+                assert channel.waiter_task is sysv.scheduler.get_task(driver_task_id)
+                assert channel.waiter_dir == WaitDir.RECV
+                assert channel.reply_payload is None and channel.reply_sender_task is None
+                result = response.value
+            else:
+                assert host_mode == "hal"
+                result = wasi.core03p.dispatch_command(
+                    sysv.wasi_hal_bindings.stdout_uri, WasiIpcCmd.STREAM_WRITE_BUFFER, params
+                )
+                assert result == len(payload)
+            assert driver.drain_stdout() == payload
+            sysv.pool.unmap_after_io(handle.buffer_id)
+        host_responses.append(result)
+        return result
+
+    module = parse(bytes(wasmtime.wat2wasm(_case_wat(storage_mode, mem_width, host_mode))))
+    host_functions = StaticVector.of((host_call,) if host_mode != "none" else (), capacity=1)
+    interp = make_native_interpreter(
+        module,
+        memory=memory,
+        host_functions=host_functions,
+        vmmio=sysv.vmmio,
+        phys_mem=sysv.phys_mem,
+    )
+    drive_mode = RuntimeDriveMode.SYNCHRONOUS if sched_mode == "noint" else RuntimeDriveMode.COOS
+    if engine_mode == "interp":
+        engine = RuntimeEngine(yield_threshold=4, drive_mode=drive_mode, collect_runtime_stats=True)
+        assert engine.jit_runtime is None
+    else:
+        engine = make_runtime_engine(
+            jit_compiler=TraceCompiler(), yield_threshold=4, drive_mode=drive_mode
+        )
+        assert engine.jit_runtime is not None
+        assert engine.jit_runtime.jit_compiler is not None
+    engine.register_module_blocks(module)
+    _prepare_cache(engine, module, cache_mode, engine_mode)
+    main_index = module.export_func_index("main")
+    schedule: list[str] = []
+    yielded_pcs: list[int] = []
+
+    def guest_task() -> Generator[tuple[ChannelAction, None], None, tuple[int, ...]]:
+        schedule.append("guest-start")
+        state = interp.start(main_index, (n_iters,))
+        while not state.finished:
+            boundary = engine.run(interp, state, idle_budget=2)
+            state = boundary.call_state
+            if boundary.yield_requested and not state.finished:
+                yielded_pcs.append(state.current_pc())
+                schedule.append("guest-yield")
+                engine.on_yield()
+                yield (ChannelAction.YIELD, None)
+        result = engine.complete_call(interp, state, idle_budget=2)
+        schedule.append("guest-done")
+        return tuple(result)
+
+    def peer_task() -> Generator[tuple[ChannelAction, None], None, int]:
+        schedule.append("peer-start")
+        yield (ChannelAction.YIELD, None)
+        schedule.append("peer-done")
+        return 73
+
+    try:
+        task = sysv.scheduler.current_task
+        assert task is not None and task.role == Role.RUNTIME
+        if sched_mode != "noint":
+            task.coro = guest_task()
+            task.state = TaskState.READY
+            sysv.scheduler.attach(task)
+            sysv.scheduler.current_task = None
+        if storage_mode == "shm":
+            sysv.vmmio.map_shm_page(0xE0001, phys_page=1, owner_id=task.task_id)
+            pte = sysv.vmmio.ptes.view().find(0xE0001)
+            assert (
+                pte is not None and pte.owner_id == task.task_id and pte.physical_base_addr == 4096
+            )
+        if sched_mode == "noint":
+            results = engine.call(interp, main_index, (n_iters,), idle_budget=2)
+            assert sysv.scheduler.current_task is task
+            assert schedule == [] and yielded_pcs == []
+        else:
+            peer_id = (
+                sysv.scheduler.spawn("pairwise_peer", peer_task())
+                if sched_mode == "multi"
+                else None
+            )
+            sysv.scheduler.run_until_idle()
+            assert task.state == TaskState.TERMINATED
+            results = task.result
+            assert yielded_pcs and schedule.count("guest-yield") == len(yielded_pcs)
+            if peer_id is not None:
+                peer = sysv.scheduler.get_task(peer_id)
+                assert peer is not None and peer.state == TaskState.TERMINATED and peer.result == 73
+                assert (
+                    schedule.index("guest-start")
+                    < schedule.index("peer-start")
+                    < schedule.index("guest-done")
+                )
+                assert (
+                    schedule.index("peer-start")
+                    < schedule.index("peer-done")
+                    < schedule.index("guest-done")
+                )
+        assert tuple(results) == (100 + 3 * n_iters,), case_id
+        assert interp.globals[0] == 100 + 2 * n_iters
+        assert interp.globals[1] == (n_iters if storage_mode == "globals" else 0)
+        assert interp.globals[2] == (2 if mem_width == "grow" else 0xFFFFFFFF)
+        width = {"8bit": 1, "16bit": 2, "32bit": 4, "grow": 4}[mem_width]
+        expected_memory[256 : 256 + width] = (0x1234ABCD).to_bytes(4, "little")[:width]
+        if storage_mode == "ram":
+            expected_memory[512:516] = n_iters.to_bytes(4, "little")
+        if storage_mode == "shm":
+            expected_physical[4096:4100] = n_iters.to_bytes(4, "little")
+        if mem_width == "grow":
+            expected_memory.extend(bytes(65536))
+        assert memory == expected_memory, (
+            f"{case_id}: guest writes, width sentinels, and grow contents"
+        )
+        assert sysv.phys_mem == expected_physical, (
+            f"{case_id}: bounded SHM writes and other physical bytes"
+        )
+        assert host_calls == ([] if host_mode == "none" else [n_iters])
+        assert len(host_responses) == len(host_calls)
+        if engine_mode == "interp":
+            assert engine.stat_jit_invocations == 0
+        else:
+            assert engine.stat_jit_invocations > 0, f"{case_id}: no generated trace was executed"
+        _probe_debugger(dbg_mode)
+        assert memory == expected_memory and sysv.phys_mem == expected_physical
+        return "executed"
+    finally:
+        if engine.jit_runtime is not None:
+            engine.jit_runtime.cache.common_code.buffer.close()
+        sysv.wasi_backend.close()
+
+
+def test_all_pairwise_combinations() -> None:
     factor_count = len(PAIRWISE_FACTORS)
     assert all(len(case) == factor_count for case in PAIRWISE_CASES)
-    covered_pairs = {
+    for case in PAIRWISE_CASES:
+        assert all(level in PAIRWISE_FACTORS[index] for index, level in enumerate(case))
+    planned_pairs = {
         (left, right, case[left], case[right])
         for case in PAIRWISE_CASES
         for left, right in combinations(range(factor_count), 2)
     }
-    expected_pairs = sum(
-        len(PAIRWISE_FACTORS[left]) * len(PAIRWISE_FACTORS[right])
+    expected_pairs = {
+        (left, right, left_level, right_level)
         for left, right in combinations(range(factor_count), 2)
-    )
-    assert len(covered_pairs) == expected_pairs, (
-        f"pairwise coverage incomplete: {len(covered_pairs)} of {expected_pairs} combinations"
-    )
-    print(f"[*] Executing {len(PAIRWISE_CASES)} All-Pairs Combinatorial Test Cases...")
+        for left_level in PAIRWISE_FACTORS[left]
+        for right_level in PAIRWISE_FACTORS[right]
+    }
+    assert planned_pairs == expected_pairs
     expected_case_ids = tuple(
-        pairwise_case_id(case_number) for case_number in range(1, len(PAIRWISE_CASES) + 1)
+        pairwise_case_id(number) for number in range(1, len(PAIRWISE_CASES) + 1)
     )
-    executed_case_ids: list[str] = []
+    observed: list[tuple[str, str]] = []
     for case_number, case_tuple in enumerate(PAIRWISE_CASES, start=1):
         case_id = pairwise_case_id(case_number)
-        run_single_pairwise_case(case_id, case_tuple)
-        executed_case_ids.append(case_id)
-        print(f"    [PASS] {case_id}: {case_tuple}")
+        outcome = run_single_pairwise_case(case_id, case_tuple)
+        assert outcome == (
+            "rejected" if case_tuple[0] != "interp" and case_tuple[6] != "detached" else "executed"
+        )
+        observed.append((case_id, outcome))
+        print(f"[PASS] {case_id}: {outcome}: {case_tuple}")
+    executed_case_ids = [case_id for case_id, _ in observed]
     assert tuple(executed_case_ids) == expected_case_ids
     print(
-        f"[PASS] All {len(PAIRWISE_CASES)} Pairwise Combinations executed or rejected as specified with 100% 2-way interaction coverage."
+        f"[PASS] Static plan: {len(planned_pairs)}/{len(expected_pairs)} factor pairs; "
+        f"allowed rows: {sum(outcome == 'executed' for _, outcome in observed)}; "
+        f"rejected rows: {sum(outcome == 'rejected' for _, outcome in observed)}. "
+        "Cache levels do not apply to interpreter-only rows; debugger probes are separate from COOS driving."
     )
 
 
 if __name__ == "__main__":
-    test_all_pairwise_combinations()
+    import pytest
+
+    raise SystemExit(pytest.main([__file__]))

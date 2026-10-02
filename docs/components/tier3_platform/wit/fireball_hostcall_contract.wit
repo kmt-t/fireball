@@ -24,7 +24,7 @@ interface virq {
 
 /// 仮想DMA転送ホストコール
 interface vdma {
-    /// ゲストまたはvMMIO管理下の領域間で転送を開始する
+    /// ゲストまたはvMMIO管理下の領域間で転送し、完了とCPU可視性の確認後に成功復帰する
     start: func(source: u32, destination: u32, byte-count: u32) -> u32;
 }
 

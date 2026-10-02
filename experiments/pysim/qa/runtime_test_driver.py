@@ -1,9 +1,9 @@
-"""Test-side execution driver for debugger and GDB protocol tests.
+"""Legacy QA block driver for protocol plumbing.
 
-The production ``RuntimeEngine`` owns the integrated Interpreter/JIT execution
-loop. Debugger protocol tests need a block-at-a-time stepping surface, so this
-module supplies that narrow test driver without adding test-only hooks to the
-production runtime.
+This driver reuses the production loader and RuntimeEngine metadata surfaces,
+but its small opcode subset implements synthetic block execution. Passing tests
+against it establish RSP command dispatch and transport behavior only. They do
+not establish production Interpreter integration or single-instruction stepping.
 """
 
 from __future__ import annotations
@@ -85,9 +85,9 @@ _HANDLERS = _build_handlers()
 
 
 class RuntimeEngineDebugDriver(RuntimeEngine):
-    """Test-only debugger driver backed by the production ``RuntimeEngine``.
+    """Legacy test driver with loader-backed metadata and synthetic block execution.
 
-    Debugger stepping always uses the interpreter.  A supplied JIT runtime is
+    Its debugger stepping uses the local opcode subset.  A supplied JIT runtime is
     retained only by unrelated runtime tests; it is never an execution path
     for an attached debugger.
     """

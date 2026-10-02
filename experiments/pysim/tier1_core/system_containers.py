@@ -331,6 +331,29 @@ class ReadOnlyFlatMapStorage(Generic[KeyT, ValT]):
         return ReadOnlyFlatMapView(self.entries)
 
 
+class FlatMapEntryRange(Generic[KeyT, ValT]):
+    """Borrow an integer-indexed subrange without materializing its entries."""
+
+    __slots__ = ("_entries", "first", "last")
+
+    def __init__(self, entries: Sequence[tuple[KeyT, ValT]], first: int, last: int):
+        self._entries = entries
+        self.first = first
+        self.last = last
+
+    def __len__(self) -> int:
+        assert self.last <= len(self._entries), "borrowed range escapes its storage"
+        return self.last - self.first
+
+    def __getitem__(self, index: int) -> tuple[KeyT, ValT]:
+        assert 0 <= index < len(self)
+        return self._entries[self.first + index]
+
+    def __iter__(self) -> Iterator[tuple[KeyT, ValT]]:
+        for index in range(len(self)):
+            yield self[index]
+
+
 class ReadOnlyFlatMapView(Generic[KeyT, ValT]):
     """
     flat_map_view<Key, Value>: non-owning view over an externally owned sorted array of (key, value) pairs (AoS).
@@ -352,16 +375,16 @@ class ReadOnlyFlatMapView(Generic[KeyT, ValT]):
 
     @property
     def last(self) -> int:
-        return len(self._entries) if self._last is None else min(self._last, len(self._entries))
+        if self._last is None:
+            return len(self._entries)
+        assert self._last <= len(self._entries), "borrowed range escapes its storage"
+        return self._last
 
     @property
     def entries(self) -> Sequence[tuple[KeyT, ValT]]:
         if self.first == 0 and self.last == len(self._entries):
             return self._entries
-        # Mutable storage is an integer-indexed fixed-capacity sequence, not
-        # a Python sliceable container. Materialize only a narrowed view;
-        # the full view remains a zero-copy borrow.
-        return tuple(self._entries[index] for index in range(self.first, self.last))
+        return FlatMapEntryRange(self._entries, self.first, self.last)
 
     @property
     def keys(self) -> list[KeyT]:

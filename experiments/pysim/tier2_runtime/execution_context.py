@@ -6,9 +6,37 @@ from __future__ import annotations
 
 import ctypes
 from collections.abc import Iterator
+from typing import Protocol
 
 from interop_abi import ExecutionContextNative, NativeValueStack
 from jit_abi import JIT_CONTEXT_SIZE_BYTES
+
+
+class DebugLocalView(Protocol):
+    """停止した実行状態の非所有ローカルビュー。"""
+
+    def __len__(self) -> int: ...
+    def __getitem__(self, index: int) -> int: ...
+    def __setitem__(self, index: int, value: int) -> None: ...
+
+
+class DebugExecutionContext(Protocol):
+    """ExecutionControlが公開する実行状態の非所有ビュー。"""
+
+    @property
+    def stack(self) -> NativeValueStack: ...
+    @property
+    def stack_capacity(self) -> int: ...
+    @property
+    def locals(self) -> DebugLocalView: ...
+    @property
+    def memory(self) -> bytearray | None: ...
+
+
+class ExecutionControl(Protocol):
+    """構成済みデバッグフックによる停止・再開の契約。"""
+
+    def resume(self, pc: int, ctx: DebugExecutionContext, single_step: bool) -> int | None: ...
 
 
 class WASMContext:
@@ -50,8 +78,7 @@ class WASMContext:
         # structure, not a Python object graph.
         self._c_context = ExecutionContextNative()
         self._c_context.sp_capacity = self.stack.capacity
-        if self._c_mem is not None:
-            assert memory is not None
+        if memory is not None:
             self._c_context.linear_memory_host_base = ctypes.addressof(self._c_mem)
             self._c_context.linear_memory_size = len(memory)
             self._c_context.mem_size = min(len(memory), 0xFFFF_FFFF)

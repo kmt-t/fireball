@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import struct
+from collections.abc import Sequence
 from dataclasses import dataclass
 from enum import IntEnum, IntFlag
-from typing import Protocol, runtime_checkable
+from typing import Protocol
 
 from system_containers import StaticVector
 
@@ -97,7 +98,7 @@ class RuntimeEventBatch:
     """ABI Adapterが生成するPython側のイベントバッチ。"""
 
     runtime_id: int
-    records: tuple[RuntimeEvent, ...]
+    records: Sequence[RuntimeEvent]
     dropped_count: int
     clock_frequency_hz: int
     clock_domain: int
@@ -113,14 +114,7 @@ class RuntimeEventExport:
 
 
 class RuntimeObserver(Protocol):
-    """Python Runtime Event APIを受信する観測プラグイン契約。"""
-
-    def on_runtime_event(self, event: RuntimeEvent) -> None: ...
-
-
-@runtime_checkable
-class RuntimeBatchObserver(Protocol):
-    """バッチ欠落数も必要とするPython観測プラグイン契約。"""
+    """Python Runtime Event Batch APIを受信する観測プラグイン契約。"""
 
     def on_runtime_batch(self, batch: RuntimeEventBatch) -> None: ...
 
@@ -254,7 +248,7 @@ class RuntimeEventAdapter:
         assert batch_flags & ~(_BATCH_FLAG_TICKS_VALID | _BATCH_FLAG_OVERFLOW) == 0
         assert len(data) == header_size + record_count * record_size
 
-        records: list[RuntimeEvent] = []
+        records: StaticVector[RuntimeEvent] = StaticVector(capacity=max(1, record_count))
         offset = header_size
         for _ in range(record_count):
             (
@@ -278,14 +272,10 @@ class RuntimeEventAdapter:
                 == 0
             )
             flags = RuntimeEventFlags(wire_flags)
-            if (
-                kind
-                in (
-                    RuntimeEventKind.FUNCTION_ENTER,
-                    RuntimeEventKind.FUNCTION_EXIT,
-                )
-                and not flags & RuntimeEventFlags.JIT
-            ):
+            is_function_boundary = (
+                kind == RuntimeEventKind.FUNCTION_ENTER or kind == RuntimeEventKind.FUNCTION_EXIT
+            )
+            if is_function_boundary and not flags & RuntimeEventFlags.JIT:
                 flags |= RuntimeEventFlags.INTERPRETER
             if kind == RuntimeEventKind.TRAP:
                 flags |= RuntimeEventFlags.TRAP
@@ -309,7 +299,7 @@ class RuntimeEventAdapter:
             offset += record_size
         return RuntimeEventBatch(
             runtime_id=runtime_id,
-            records=tuple(records),
+            records=records,
             dropped_count=dropped_count,
             clock_frequency_hz=clock_frequency_hz,
             clock_domain=clock_domain,
@@ -319,11 +309,7 @@ class RuntimeEventAdapter:
 def dispatch_runtime_event_batch(
     observers: StaticVector[RuntimeObserver], batch: RuntimeEventBatch
 ) -> None:
-    """Deliver converted values after the runtime reaches a safe point."""
+    """Deliver each converted batch after the runtime reaches a safe point."""
 
     for observer in observers:
-        if isinstance(observer, RuntimeBatchObserver):
-            observer.on_runtime_batch(batch)
-        else:
-            for event in batch.records:
-                observer.on_runtime_event(event)
+        observer.on_runtime_batch(batch)

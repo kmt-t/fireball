@@ -22,7 +22,7 @@ Simulates a real GDB client session connecting to Fireball GDBServer:
 6. Continue execution ('c') & hit breakpoint
 7. Write virtual registers ('G')
 8. Write memory ('M') in interpreter-only debug mode
-9. Single-step execution ('s')
+9. Statically composed native debug stop ('s') after exactly one WASM instruction
 10. Remove breakpoint ('z0')
 11. Continue to program termination ('W00')
 """
@@ -38,7 +38,7 @@ import socket
 import time
 
 from execution_context import WASMContext
-from helpers import wat_to_wasm
+from helpers import make_debug_execution, wat_to_wasm
 from runtime_test_driver import RuntimeEngineDebugDriver
 from tier3_plugins.debugger.debugger import DebuggerManager, GDBRspProtocol
 from tier3_plugins.debugger.gdb_server import GDBServer
@@ -54,7 +54,7 @@ class GDBClientHelper:
     def close(self):
         try:
             self.sock.close()
-        except Exception:
+        except OSError:
             pass
 
     def send_raw_packet(self, payload: str) -> str:
@@ -64,7 +64,11 @@ class GDBClientHelper:
         self.sock.sendall(wire_data)
         # Receive ACK '+' and response packet
         buf = ""
-        while "$" not in buf or "#" not in buf:
+        while True:
+            dollar = buf.find("$")
+            hash_end = buf.find("#", dollar) if dollar >= 0 else -1
+            if hash_end >= 0 and len(buf) >= hash_end + 3:
+                break
             chunk = self.sock.recv(1024).decode("latin1")
             if not chunk:
                 break
@@ -78,6 +82,11 @@ class GDBClientHelper:
             dollar_idx = buf.index("$")
             hash_idx = buf.find("#", dollar_idx)
             response_payload = buf[dollar_idx + 1 : hash_idx]
+            assert len(buf) >= hash_idx + 3, "incomplete RSP checksum"
+            assert (
+                int(buf[hash_idx + 1 : hash_idx + 3], 16)
+                == sum(response_payload.encode("latin1")) % 256
+            ), "incorrect RSP checksum"
             # Send ACK for response
             self.sock.sendall(b"+")
             return response_payload
@@ -137,7 +146,7 @@ class _MemoryDebuggerSink:
 
 
 def test_debugger_sink_is_replaceable() -> None:
-    """TEST-DBG-25: RSP processing is independent of the physical sink."""
+    """TEST-DBG-25, TEST-DBG-26: Sink substitution preserves checksum rejection and bytes."""
     malformed_write = "$M0,4:deadbeef#00"
     valid_query = GDBRspProtocol.format_packet("?")
     connection = _MemoryDebuggerConnection((malformed_write + valid_query).encode("latin1"))
@@ -154,17 +163,16 @@ def test_debugger_sink_is_replaceable() -> None:
 
 
 def test_gdb_remote_socket_session():
+    """TEST-DBG-20/21/22/24: Real TCP plumbing with the statically composed native ExecutionControl."""
     print("[*] Starting GDB Remote Debugger Socket Connection Test...")
-    # 1. Setup execution environment with three real basic blocks, split by
-    # nested `block`/`end` and loaded through a real Module -- so
-    # run_block_interpret's op-stream derivation (from raw bytecode) has a
-    # function to decode against:
+    # Load real bytecode. Block metadata locates the breakpoint; execution uses
+    # the statically composed native interpreter and its instruction stop hook.
     # block10: local.get 0, i32.const 10, i32.add, local.set 0 (next: block20)
     # block20: local.get 0, i32.const 5, i32.mul, local.set 1 (next: block30)
     # block30: local.get 1, i32.const 2, i32.sub, local.set 1 (next: None / exit)
     wat = """
     (module
-      (func (export "f") (param i32 i32 i32 i32)
+      (func (export "f") (param i32 i32 i32 i32) (result i32)
         (block $b1
           (block $b2
             local.get 0
@@ -181,6 +189,7 @@ def test_gdb_remote_socket_session():
         i32.const 2
         i32.sub
         local.set 1
+        local.get 1
         return
       )
     )
@@ -189,15 +198,15 @@ def test_gdb_remote_socket_session():
     mod = engine.load_wasm(wat_to_wasm(wat))
     block10, block20, block30 = mod.blocks[0], mod.blocks[1], mod.blocks[2]
     blocks = {block10.head_pc: block10, block20.head_pc: block20, block30.head_pc: block30}
-    dbg = DebuggerManager(engine=engine)
-    server = GDBServer(dbg=dbg, host="127.0.0.1", port=0)
     # Initial guest state: local0 = 2, memory 128 bytes
     mem = bytearray(128)
     mem[0:8] = b"TESTDATA"
-    ctx = WASMContext(memory=mem)
-    ctx.locals = (2, 0, 0, 0)
+    execution = make_debug_execution(mod, 0, (2, 0, 0, 0), memory=mem)
+    dbg = DebuggerManager(engine=execution)
+    server = GDBServer(dbg=dbg, host="127.0.0.1", port=0)
+    ctx = execution.context
     # Start TCP Server on dynamic port
-    port = server.start(current_pc=block10.head_pc, ctx=ctx, blocks=blocks)
+    port = server.start(current_pc=0, ctx=ctx, blocks=blocks)
     print(f"    -> GDB Remote Server listening on 127.0.0.1:{port}")
     time.sleep(0.1)
     client = GDBClientHelper("127.0.0.1", port)
@@ -211,7 +220,7 @@ def test_gdb_remote_socket_session():
         assert len(resp) == 160, f"Expected 160 hex chars for 20 virtual registers, got {len(resp)}"
         pc = int.from_bytes(bytes.fromhex(resp[0:8]), "little")
         l0 = int.from_bytes(bytes.fromhex(resp[32:40]), "little")
-        assert pc == block10.head_pc, f"Expected PC {block10.head_pc:#x}, got {pc:x}"
+        assert pc == 0, f"Expected PC 0, got {pc:x}"
         assert l0 == 2, f"Expected Local0 = 2, got {l0}"
         print(f"    [Step 2] Read virtual registers 'g' (PC=0x{pc:x}, Local0={l0}) [PASS]")
         # Step 3: Read memory ('m0,8')
@@ -246,27 +255,30 @@ def test_gdb_remote_socket_session():
         resp = client.send_raw_packet("M0,4:50415443")  # Write "PATC"
         assert resp == "OK", f"Expected OK, got {resp}"
         assert ctx.memory[0:4] == b"PATC"
-        print("    [Step 7] Write memory 'M0,4:PATC' & Flush JIT Cache -> OK [PASS]")
-        # Step 8: Single-step execution ('s') -> Execute block20 (local1 = 100 * 5 = 500), land at block30's head
+        print("    [Step 7] Write memory 'M0,4:PATC' -> OK [PASS]")
+        # Step 8: stop after local.get 0; the following constant and multiplication remain pending.
         resp = client.send_raw_packet("s")
         assert resp == "S05", f"Expected S05 after step, got {resp}"
         resp_g = client.send_raw_packet("g")
         pc = int.from_bytes(bytes.fromhex(resp_g[0:8]), "little")
         l1 = int.from_bytes(bytes.fromhex(resp_g[40:48]), "little")
-        assert pc == block30.head_pc, f"Expected step to 0x{block30.head_pc:x}, got 0x{pc:x}"
-        assert l1 == 500, f"Expected Local1 = 500, got {l1}"
-        print(f"    [Step 8] Single-step 's' -> Stepped to PC=0x{pc:x}, Local1={l1} [PASS]")
+        assert pc == block20.head_pc + 2, (
+            f"Expected instruction stop at 0x{block20.head_pc + 2:x}, got 0x{pc:x}"
+        )
+        assert l1 == 0
+        assert tuple(ctx.stack) == (100,)
+        print(f"    [Step 8] Native debug stop 's' -> Stepped to PC=0x{pc:x}, Local1={l1} [PASS]")
         # Step 9: Remove breakpoint ('z0,<addr>,0')
         resp = client.send_raw_packet(f"z0,{block20.head_pc:x},0")
         assert resp == "OK", f"Expected OK, got {resp}"
         assert not dbg.has_breakpoint(block20.head_pc)
         print("    [Step 9] Remove breakpoint -> OK [PASS]")
-        # Step 10: Continue to termination ('c') -> Execute block30 (local1 = 500 - 2 = 498), exit with W00
+        # Step 10: resume the remaining multiplication and subtraction, return 498, and report W00.
         resp = client.send_raw_packet("c")
         assert resp == "W00", f"Expected W00 (process exit), got {resp}"
-        assert ctx.locals[1] == 498
+        assert execution.call.results == [498]
         print(
-            f"    [Step 10] Continue 'c' -> Program terminated cleanly W00 (Local1={ctx.locals[1]}) [PASS]"
+            f"    [Step 10] Continue 'c' -> Program terminated cleanly W00 (result={execution.call.results[0]}) [PASS]"
         )
     finally:
         client.close()

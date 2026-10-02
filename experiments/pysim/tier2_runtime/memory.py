@@ -560,7 +560,20 @@ class MemoryManager:
                 )
             )
 
-        slot_index = len(self.partition_owners)
+        # A returned slot can precede another live partition. The number of
+        # owners is not the index of the next free configured slot.
+        slot_index = 0
+        offset = 0
+        while slot_index < len(FB_CONF_TASK_HEAP_SIZES):
+            occupied = False
+            for _, partition in self.partition_owners.view().entries:
+                if partition.base_address == self.pool_base + offset:
+                    occupied = True
+                    break
+            if not occupied:
+                break
+            offset += FB_CONF_TASK_HEAP_SIZES[slot_index]
+            slot_index += 1
         if slot_index >= len(FB_CONF_TASK_HEAP_SIZES):
             return Result(
                 error=MemoryErrorResult(
@@ -584,7 +597,6 @@ class MemoryManager:
                 )
             )
 
-        offset = sum(FB_CONF_TASK_HEAP_SIZES[:slot_index])
         base_addr = self.pool_base + offset
         pv = PartitionView(
             owner=owner,

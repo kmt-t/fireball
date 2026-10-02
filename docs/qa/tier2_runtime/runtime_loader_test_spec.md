@@ -43,8 +43,8 @@ Element/Data初期化定義を個別配列へ展開せず、パース時検証�
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | TEST-LOAD-20 | 未解決インポートは実行不可状態 | インポートを持つモジュールをprepare（依存先未登録） | `is_ready`を確認 | `False`（実行不可） | - |
 | TEST-LOAD-21 | ハッシュ＋RadixBinaryTreeView インポート解決 | 依存モジュールが先に登録済み | `resolve_imports(module)` | ハッシュ＋RadixBinaryTreeView で $O(1)+O(\log n)$ に候補を絞り、元文字列照合後に `True`（`is_ready == True`）になる | resolve-imports |
-| TEST-LOAD-22 | シンボル未発見での解決失敗 | 依存モジュールに該当エクスポートがない | `resolve_imports` | `WasmLinkError`相当（`{MultiModule_Support}`） | loader_concept.py `WasmLinkError` |
-| TEST-LOAD-23 | インポート/エクスポートの型シグネチャ不一致 | 型が異なる同名エクスポート | 同上 | 拒否される | loader_concept.py `resolve_imports`の型チェック |
+| TEST-LOAD-22 | シンボル未発見での解決失敗 | 依存モジュールに該当エクスポートがない | `resolve_imports` | `WasmLinkError`相当（`{MultiModule_Support}`）。モジュールは未Readyのままで、仮登録した解決エントリを残さない | loader_concept.py `WasmLinkError` |
+| TEST-LOAD-23 | インポート/エクスポートの型シグネチャ不一致 | 型が異なる同名エクスポート | 同上 | パラメータ・結果の型と個数を照合して拒否する。モジュールは未Readyのままで、仮登録した解決エントリを残さない | loader_concept.py `resolve_imports`の型チェック |
 | TEST-LOAD-24 | モジュール登録数上限 | `FB_CONF_MAX_MODULES`（既定4）到達 | 5個目をprepare | `WasmLinkError`（レジストリ上限超過） | runtime_loader.md (Resource Constraints) |
 
 ### 容量制約 (runtime_loader.md (Resource Constraints))
@@ -68,13 +68,15 @@ Element/Data初期化定義を個別配列へ展開せず、パース時検証�
 | TEST-LOAD-46 | シンボルハッシュ衝突時の安全な文字列一致検証 | 同一ハッシュ値を持つ異なるシンボル名 | `lookup_export(name)` | ハッシュ一致後に ROM 上の文字列を 1 回照合し、誤ったシンボルの誤認を確実に防ぐ | 「シンボル検索」 |
 | TEST-LOAD-47 | 未定義シンボルの高速不存在判定 | 未エクスポートのシンボル名 | `lookup_export(non_existent)` | ハッシュ索引の $O(1)$ の区間絞り込みと有界探索 $O(\log n)$ の後、候補がなければ `None` を返す。候補がある場合のみ元文字列を照合する | - |
 | TEST-LOAD-48 | ローダ所有のベーシックブロック索引と不変メタ情報公開 | パース済み WASM モジュール | `mod.get_block(pc)` / `mod.block_storage` | ランタイム側での再構築なしに、ローダが構築した `ReadOnlyRadixBinaryTreeStorage` と借用viewから $O(1) + O(\log n)$ で `BasicBlock` メタ情報を解決できる | `{Loader_BasicBlockIndex}` |
-| TEST-LOAD-49 | int4_t スコアリングによる JIT 候補ビットマップ生成 | WASM モジュールロード | `cand_bm.evaluate_block(bb, table, threshold=9)` | 128B BitView<4> テーブルから命令ごとの機械語短縮スコア（int4_t）を積算し、合計9点以上のブロックの head_pc カードビット（1bit）が正確に 1 にセットされる | `{JIT_StaticBenefitScoring}`, `{JIT_CandidateBitmap}` |
+| TEST-LOAD-49 | int4_t スコアリングによる JIT 候補ビットマップ生成 | WASM モジュールロード | `test_loader_candidate_gate_uses_specification_threshold`で8・9・10点と負の便益を含む2点の有効ブロックを実登録する | 128B BitView<4> テーブルから命令ごとの機械語短縮スコア（int4_t）を積算し、合計9点以上のブロックの head_pc カードビット（1bit）が正確に 1 にセットされる | `{JIT_StaticBenefitScoring}`, `{JIT_CandidateBitmap}` |
 | TEST-LOAD-50 | JITCandidateBitmap 非候補ブロックの touch/履歴バイパス | 非候補ブロック（カードビット 0）の実行 | `eng.run(cold_pc, ctx)` | インタープリタ実行は行われるが、HotspotBitmap.touch() および履歴リングへの記録が完全にバイパスされ、カード状態が UNEXECUTED のまま維持される | `{JIT_CandidateBitmap}` |
 | TEST-LOAD-51 | 到達不能な外側フレームの型ポリモーフィズム分離 | `unreachable` の後に値を要求するネストブロック | `parse(module)` | 外側フレームのunreachable状態を内側ブロックへ漏らさず、operand stack underflowとして拒否する | `wasm_reader.py` operand stack validation |
 | TEST-LOAD-52 | Custom section 名のセクション境界 | 名前長がCustom sectionの残りバイト数を超える | `parse(module)` | 次セクションのバイトを名前として読まず、section bounds違反で拒否する | `wasm_reader.py` custom section bounds |
 | TEST-LOAD-53 | LEB128幅とsection件数の事前検証 | 幅超過LEB128、短いsection内の巨大な型件数 | `parse(module)` | LEB128を最大幅・現在のsection終端で停止し、設定容量を構成する前に不正件数を拒否する | `leb128.py`, `wasm_reader.py` |
 | TEST-LOAD-54 | ROM-backed 名称範囲とハッシュ衝突解決 | 異なる名前 `ufbwjn` / `rsksbm`（同一FNV-1a 32-bit値）を持つエクスポート | `lookup_export(name)` と各エントリのROM範囲を確認 | 名前の実体をエントリへ保存せず、各ハッシュ候補をROM上の完全一致で識別する | `{GOTCHA-LOAD-01}` |
 | TEST-LOAD-55 | 実行時作成が使うパーサーのWASMページ上限 | 初期メモリが `FB_CONF_MAX_WASM_PAGES + 1` ページ | `wasm_reader.parse(module)` | 設定上限を超える初期メモリを拒否する | `runtime_loader.md` (Resource Constraints) |
+
+| TEST-LOAD-56 | メモリ命令の整列指定上限 | `i32.load`の整列指定がアクセス幅を超える | `parse(module)` | 4バイト指定を許可し、8バイト指定を拒否する | [WebAssembly Core・memarg検証](https://webassembly.github.io/spec/core/valid/instructions.html#valid-memarg)、pysim `test_load_56_rejects_overaligned_memory_access` |
 
 ### 実装の勘所・不変条件（Gotchas & Implementation Invariants）
 <!-- traceability: {Loader_BasicBlockIndex} -->
@@ -87,16 +89,45 @@ Element/Data初期化定義を個別配列へ展開せず、パース時検証�
 
 ## 3. テスト検証実績と網羅状況
 
-- **軽量検証 (TEST-LOAD-01〜07)**: V1〜V6検証および失敗時のアロケータロールバック。
-- **ゼロコピー索引化 (TEST-LOAD-10〜15)**: ROM直接参照、ハッシュ＋RadixBinaryTreeView シンボル検索、遅延アクセサ。
-- **複数モジュール・インポート解決 (TEST-LOAD-20〜24)**: ハッシュ索引の $O(1)$ の区間絞り込みと有界探索 $O(\log n)$、元文字列照合によるインポート解決、型照合、レジストリ上限。
-- **容量制約 (TEST-LOAD-30〜32)**: 固定件数制限、アリーナ容量によるエクスポート受理数、およびLEB128ガード。
-- **RadixBinaryTreeView 索引 & JIT候補判定 (TEST-LOAD-40〜50)**: デコード済みエンティティ登録、RadixBinaryTreeView によるファイルオフセット逆引き、ハッシュ＋RadixBinaryTreeView によるインポート/エクスポート高速解決、ハッシュ衝突耐性、不存在判定、ローダ所有のベーシックブロック索引（`TEST-LOAD-48`）、`int4_t` スコアリングによる JIT 候補ビットマップ生成（`TEST-LOAD-49`）、非候補カードにおける touch/履歴バイパス（`TEST-LOAD-50`）。
-- **パーサ堅牢性と実行時パーサー上限 (TEST-LOAD-51〜55)**:
-  - 型検証の到達不能境界、Custom section長、LEB128とsection件数の上限を確認する。
-  - ROM名範囲、FNV衝突解決、実行時パーサーのWASM初期ページ上限を確認する。
+pysimの実装テストは [`test_loader.py`](experiments/pysim/qa/tier2_runtime/test_loader.py) を正本とする。
+`WasmLoader`の登録・リンクと、実行時に使用する`wasm_reader.parse`のパース検査を区別する。
+テスト名とdocstringには、実際に検査するケースIDを記載する。
+
+| ケースID | 実装テスト | 直接観測する結果 |
+| :--- | :--- | :--- |
+| TEST-LOAD-01〜06 | `test_load_01_invalid_magic_rejects_and_rolls_back`〜`test_load_06_memory_page_limit_rejects_and_rolls_back` | 各独立の違反の拒否、watermarkと既存モジュールの保存。TEST-LOAD-04は降順、重複、Custom例外を検査する |
+| TEST-LOAD-07 | `test_load_07_arena_exhaustion_rolls_back_partial_metadata_allocations` と各拒否ケース | アリーナ途中確保失敗後も、繰り返し失敗時のwatermarkとレジストリを保存 |
+| TEST-LOAD-10〜15 | `test_load_10_to_15_zero_copy_and_accessors` | 元ROM所有者、セクション・名称バイト範囲、名前順、関数本体、型、グローバル属性 |
+| TEST-LOAD-16 | `test_load_16_resolves_imported_global_offsets_for_active_segments` | Element/Data個別配列なし、実グローバル値による適用先、隣接メモリ・テーブルの保存 |
+| TEST-LOAD-20 | `test_load_20_unresolved_dependency_keeps_module_unready` | 未Readyと解決表なし、未登録依存の拒否 |
+| TEST-LOAD-21 | `test_load_21_matching_signatures_link_to_the_exact_export`、`test_load_21_matching_imported_function_reexport_signature_links` | 異なるローカル型番号の同一シグネチャ成功、正しいexportへの参照、import再exportの型解決 |
+| TEST-LOAD-22 | `test_load_22_missing_symbol_rejects_without_partial_resolution` | 後半の欠落シンボルでの拒否、未Ready、途中エントリなし、再試行で同じ原因を検出 |
+| TEST-LOAD-23 | `test_load_23_function_signature_mismatch_is_rejected`、`test_load_23_late_type_mismatch_preserves_all_unresolved_imports` | パラメータ・結果の型と個数の4種の不一致、後半不一致時の状態保存 |
+| TEST-LOAD-24 | `test_load_24_module_capacity_rejects_without_registry_or_allocator_mutation` | 設定上限後の拒否、既存全モジュールとwatermarkの保存 |
+| TEST-LOAD-30〜32 | `test_load_30_function_capacity_rejects_one_more_than_configured_limit`、`test_load_31_more_than_64_exports_remain_searchable_without_fixed_export_limit`、`test_load_32_unsigned_leb128_byte_budget` | 関数上限+1の拒否、65エクスポート全件の保存・検索、u32/u64のバイト数上限 |
+| TEST-LOAD-40〜45、47 | `test_load_40_to_45_and_47_radix_binary_tree_view_indexes` | セクション・関数・グローバルの登録、fixtureバイト列から独立導出した位置・範囲、名前一致、ヘッダと終端の未発見 |
+| TEST-LOAD-46、54 | `test_load_54_rom_backed_names_and_hash_collision_resolution` | 実際にFNVが衝突する2名から、それぞれ異なる関数番号を取得する。通常名検索を衝突検査として扱わない |
+| TEST-LOAD-48 | `test_load_48_loader_basic_block_index` | ローダ所有のブロックと検索結果の同一性 |
+| TEST-LOAD-51〜53、55〜56 | 対応番号の`test_load_*` | 型到達不能境界、Custom名境界、LEB幅・section件数、設定WASMページ上限、メモリ整列上限の拒否 |
+
+2026-10-01にLinux・CPython 3.14.6・uv環境で局所スイートを実行した。
+実行コマンドを示す。
+
+```bash
+UV_CACHE_DIR=/tmp/fireball-test-design-uv uv run --no-sync python -m pytest -q experiments/pysim/qa/tier2_runtime/test_loader.py
+```
+
+33件成功、0件失敗、0件skipである。
+改修前の実装では、TEST-LOAD-23の型不一致4種と後半不一致が受理され、TEST-LOAD-22の失敗後には途中の解決エントリが残った。
+これら6件の失敗を確認した後、関数型照合と失敗時の仮登録破棄を実装した。
+隔離コピーで型照合を恒真に変える変異と失敗時の仮登録破棄を省く変異を作り、対応する4件と1件のテスト失敗を確認した。
 
 ## 4. 未検証・スコープ外
 
 - 物理ROM配置・`std::span<const uint8_t>`のメモリレイアウト詳細。
 - [`loader_verification_model.py`](docs/components/tier2_runtime/formal/loader_verification_model.py)によるV1〜V6の形式検証そのもの。
+
+- TEST-LOAD-40、43のDataセグメント位置登録・逆引きは、本pysimスイートでは未検証である。関数とグローバルの逆引き成功をDataの証拠にしない。
+- TEST-LOAD-45の多数インポート、TEST-LOAD-46の未登録名が既存名と衝突する条件は、本pysimスイートでは未検証である。
+- TEST-LOAD-49〜50のJIT候補判定と非候補touch/履歴バイパスは、本スイートでは未実装である。番号だけが49だったメモリ整列拒否はTEST-LOAD-56へ、番号だけが50だったElement/Data初期化はTEST-LOAD-16へ対応を修正した。
+- 名前・ファイル位置検索の計算量、物理ROMのコピー回数、全WASM命令の完全検証は、上記の局所機能検査では証明しない。

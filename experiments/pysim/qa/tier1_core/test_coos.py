@@ -5,7 +5,10 @@ Unit tests for Tier 1 Core: COOS Rendezvous & Handoff
 Traceability: os_coos_test_spec.md
 """
 
+from collections.abc import Generator
 from pathlib import Path
+
+import pytest
 
 # Setup paths
 _TEST_FILE = Path(__file__).resolve()
@@ -94,16 +97,31 @@ def test_coos_04_send_after_recv_completes_rendezvous():
 
 
 def test_coos_05_one_waiter_per_channel_enforced():
-    """TEST-COOS-05: Only one waiter per channel direction; second waiter asserts."""
-    sched = Scheduler()
-    ch = sched.create_channel()
-    t1 = sched.get_task(sched.spawn("t1"))
-    t2 = sched.get_task(sched.spawn("t2"))
-    _activate_task(sched, t1)
-    ch.send(1)
-    _activate_task(sched, t2)
-    with expect_assertion("separate channels"):
-        ch.send(2)
+    """TEST-COOS-05: Both directions reject a second waiter and preserve the first."""
+    for direction in (WaitDir.SEND, WaitDir.RECV):
+        sched = Scheduler()
+        ch = sched.create_channel()
+        first = sched.get_task(sched.spawn("first"))
+        second = sched.get_task(sched.spawn("second"))
+        assert first is not None and second is not None
+        _activate_task(sched, first)
+        result = ch.send(1) if direction == WaitDir.SEND else ch.recv()
+        assert result == (ChannelAction.BLOCK, None)
+        assert first.state == TaskState.SUSPENDED_CSP
+        _activate_task(sched, second)
+        first_payload = first.pending_val
+        second_state = second.state
+        with expect_assertion("separate channels"):
+            if direction == WaitDir.SEND:
+                ch.send(2)
+            else:
+                ch.recv()
+        assert ch.waiter_task is first
+        assert ch.waiter_dir == direction
+        assert first.state == TaskState.SUSPENDED_CSP
+        assert first.pending_val == first_payload
+        assert second.state == second_state
+        assert second.pending_val is None and second.received_val is None
 
 
 def test_coos_06_csp_handoff_direct_switch():
@@ -122,7 +140,7 @@ def test_coos_06_csp_handoff_direct_switch():
 
 
 def test_coos_07_consecutive_handoff_limit_yields():
-    """TEST-COOS-07: Consecutive handoff limit (4) forces yield back to main loop."""
+    """TEST-COOS-07: At the configured handoff limit, queue the target after existing READY peers."""
     sched = Scheduler(max_handoffs=2)
     ch1 = sched.create_channel()
     ch2 = sched.create_channel()
@@ -144,11 +162,24 @@ def test_coos_07_consecutive_handoff_limit_yields():
     _activate_task(sched, t1)
     ch3.send(3)
     _activate_task(sched, t2)
+    dispatched: list[str] = []
+
+    def ready_peer() -> Generator[tuple[ChannelAction, None], None, None]:
+        dispatched.append("peer-ran")
+        yield (ChannelAction.YIELD, None)
+
+    peer = sched.get_task(sched.spawn("ready_peer", ready_peer()))
+    assert peer is not None
+    assert tuple(sched._ready) == (peer,)
     act3, _ = ch3.recv()
     assert act3 == ChannelAction.YIELD, (
         "Must yield back to scheduler when consecutive handoffs reach threshold"
     )
     assert sched.consecutive_handoffs == 0
+    assert tuple(sched._ready) == (peer, t1)
+    sched.current_task = None
+    assert sched.step() is peer
+    assert dispatched == ["peer-ran"]
 
 
 def test_coos_08_interrupt_notification_and_drain():
@@ -176,14 +207,67 @@ def test_coos_08_interrupt_notification_and_drain():
 
 
 def test_coos_09_interrupt_queue_overflow_drops():
-    """TEST-COOS-09: Overflowing ISR queue drops notification and increments dropped_irqs counter."""
-    sched = Scheduler()
-    for i in range(16):
-        assert sched.notify_interrupt(InterruptEvent(i, 0, 0, 0, 0))
+    """TEST-COOS-09: A rejected event preserves every queued word, task, and generation."""
+    from scheduler import FB_CONF_INTERRUPT_QUEUE_SIZE
 
-    # 17th notification must drop
-    assert not sched.notify_interrupt(InterruptEvent(17, 0, 0, 0, 0))
-    assert sched.dropped_irqs == 1
+    for round_observed in (False, True):
+        sched = Scheduler()
+        waiter = sched.get_task(sched.spawn("irq_waiter"))
+        assert waiter is not None
+        _activate_task(sched, waiter)
+        sched.wait_for_interrupt(0)
+        sched.current_task = None
+        peer = sched.get_task(sched.spawn("ready_peer"))
+        second_peer = sched.get_task(sched.spawn("second_ready_peer"))
+        assert peer is not None and second_peer is not None
+        events = tuple(
+            InterruptEvent(i, i + 100, i + 200, i + 300, i + 400)
+            for i in range(FB_CONF_INTERRUPT_QUEUE_SIZE)
+        )
+        for event in events:
+            assert sched.notify_interrupt(event)
+        if round_observed:
+            assert sched.observe_reschedule_generation(peer)
+        assert sched.reschedule_pending
+        generation_state = (
+            sched.reschedule_generation,
+            sched.reschedule_pending,
+            sched.round_target_generation,
+            sched.round_target_mask,
+        )
+        task_states = tuple(
+            (task.state, task.waiting_irq, task.pending_interrupt_event, task.last_seen_generation)
+            for task in (waiter, peer, second_peer)
+        )
+        ready_before = tuple(sched._ready)
+        dropped_before = sched.dropped_irqs
+        assert len(sched.interrupt_event_queue) == FB_CONF_INTERRUPT_QUEUE_SIZE
+
+        assert not sched.notify_interrupt(InterruptEvent(0, 99, 98, 97, 96))
+
+        assert sched.dropped_irqs == dropped_before + 1
+        assert len(sched.interrupt_event_queue) == FB_CONF_INTERRUPT_QUEUE_SIZE
+        assert (
+            sched.reschedule_generation,
+            sched.reschedule_pending,
+            sched.round_target_generation,
+            sched.round_target_mask,
+        ) == generation_state
+        assert (
+            tuple(
+                (
+                    task.state,
+                    task.waiting_irq,
+                    task.pending_interrupt_event,
+                    task.last_seen_generation,
+                )
+                for task in (waiter, peer, second_peer)
+            )
+            == task_states
+        )
+        assert tuple(sched._ready) == ready_before
+        assert tuple(sched.interrupt_event_queue.pop() for _ in events) == events
+        assert sched.interrupt_event_queue.pop() is None
 
 
 def test_coos_17_interrupt_queue_is_bounded_lock_free_spsc():
@@ -241,7 +325,7 @@ def test_coos_13_interrupt_reschedule_generation_round():
 
 
 def test_coos_14_pending_generation_ends_direct_handoff_chain():
-    """TEST-COOS-14: a pending generation changes direct CSP handoff into scheduler yield."""
+    """TEST-COOS-16: A pending generation yields without losing the rendezvous payload."""
     sched = Scheduler()
     ch = sched.create_channel()
     sender_id = sched.spawn("sender")
@@ -264,6 +348,11 @@ def test_coos_14_pending_generation_ends_direct_handoff_chain():
     action, _ = ch.recv()
     assert action == ChannelAction.YIELD
     assert sched.consecutive_handoffs == 0
+    assert receiver.pending_val is None
+    assert sender.received_val == "next"
+    assert sender.state == receiver.state == TaskState.READY
+    assert ch.waiter_task is None and ch.waiter_dir == WaitDir.NONE
+    assert sched.reschedule_pending
     sched.current_task = None
 
 
@@ -285,6 +374,48 @@ def test_coos_10_idle_detection_when_all_blocked():
     assert idle_calls == [1], "idle hook must fire exactly once when READY queue empties"
     task = sched.get_task(task_id)
     assert task.state == TaskState.SUSPENDED_CSP, "the sole task must be blocked, not terminated"
+
+
+@pytest.mark.parametrize("budget", (1, None), ids=("one-step", "default-budget"))
+def test_coos_10_budget_exhaustion_with_ready_task_is_not_idle(budget: int | None) -> None:
+    """TEST-COOS-10: 予算終了時にREADYが残ればidle hookを呼ばない。"""
+    sched = Scheduler()
+    idle_calls: list[int] = []
+    sched.set_idle_hook(lambda: idle_calls.append(1))
+
+    def worker() -> Generator[tuple[ChannelAction, None], None, None]:
+        while True:
+            yield (ChannelAction.YIELD, None)
+
+    task = sched.get_task(sched.spawn("worker", worker()))
+    assert task is not None
+    sched.run_until_idle(budget=budget)
+    assert task.state == TaskState.READY
+    assert tuple(sched._ready) == (task,)
+    assert idle_calls == []
+
+
+def test_coos_10_pending_event_at_budget_end_is_not_idle() -> None:
+    """TEST-COOS-10: 最後のtaskが通知した未処理イベントをidleと扱わない。"""
+    sched = Scheduler()
+    idle_calls: list[int] = []
+    sched.set_idle_hook(lambda: idle_calls.append(1))
+    event = InterruptEvent(16, 2, 3, 4, 5)
+
+    def notifier() -> Generator[tuple[ChannelAction, None], None, None]:
+        assert sched.notify_interrupt(event)
+        yield from ()
+
+    task = sched.get_task(sched.spawn("notifier", notifier()))
+    assert task is not None
+    sched.run_until_idle(budget=1)
+    assert task.state == TaskState.TERMINATED
+    assert not sched._ready
+    assert len(sched.interrupt_event_queue) == 1
+    assert idle_calls == []
+    sched.run_until_idle()
+    assert len(sched.interrupt_event_queue) == 0
+    assert idle_calls == [1]
 
 
 def test_coos_11_no_double_ownership_sanity():
@@ -363,19 +494,4 @@ def test_coos_12_task_killed_removes_csp_and_irq_wait_registrations():
 
 
 if __name__ == "__main__":
-    test_coos_01_send_first_suspends_csp()
-    test_coos_02_recv_after_send_completes_rendezvous()
-    test_coos_03_recv_first_suspends_csp()
-    test_coos_04_send_after_recv_completes_rendezvous()
-    test_coos_05_one_waiter_per_channel_enforced()
-    test_coos_06_csp_handoff_direct_switch()
-    test_coos_07_consecutive_handoff_limit_yields()
-    test_coos_08_interrupt_notification_and_drain()
-    test_coos_09_interrupt_queue_overflow_drops()
-    test_coos_17_interrupt_queue_is_bounded_lock_free_spsc()
-    test_coos_10_idle_detection_when_all_blocked()
-    test_coos_11_no_double_ownership_sanity()
-    test_coos_12_task_killed_removes_csp_and_irq_wait_registrations()
-    test_coos_13_interrupt_reschedule_generation_round()
-    test_coos_14_pending_generation_ends_direct_handoff_chain()
-    print("[PASS] All 15 COOS Rendezvous & Handoff tests passed.")
+    raise SystemExit(pytest.main([__file__, "-q"]))

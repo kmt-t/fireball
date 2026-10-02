@@ -89,6 +89,7 @@ from vmmio import (
     FC_DYNAMIC,
     FC_PASSTHROUGH,
     FC_SHM,
+    VmmioAddress,
     VMMIOController,
     VmmioStatus,
 )
@@ -331,6 +332,7 @@ PAGE_SIZE = 65536
 RETURN_SENTINEL_IP = -1
 RETURN_SENTINEL_PC = 0xFFFF_FFFF
 NATIVE_DISPATCH_YIELD = 5
+NATIVE_DISPATCH_DEBUG_STOP = 7
 NATIVE_DISPATCH_CALL_BOUNDARY = 6
 NATIVE_DISPATCH_OLDEST_TRACE = 4
 
@@ -950,14 +952,14 @@ class CallFrame:
         env: ExecEnv | None = None,
         *,
         template: CallFrame | None = None,
-        native_slot: int | None = None,
+        native_slot: int = -1,
     ):
         module = context.module
         assert module is not None
         assert not module.is_import(func_index)
-        assert native_slot is None or 0 <= native_slot < len(context.native_call_stack)
+        assert native_slot == -1 or 0 <= native_slot < len(context.native_call_stack)
         self._native_slot = -1
-        native_frame = context.native_call_stack[native_slot] if native_slot is not None else None
+        native_frame = context.native_call_stack[native_slot] if native_slot >= 0 else None
         function = module.functions[func_index - len(module.imports)]
         local_widths = function.local_width_map_cache
         assert local_widths is not None
@@ -1105,9 +1107,9 @@ class CallFrame:
                 boundary_next_pc=0xFFFF_FFFF,
                 boundary_loops_to=0xFFFF_FFFF,
             )
-            assert native_slot is None
+            assert native_slot == -1
         else:
-            assert native_slot is not None
+            assert native_slot >= 0
             assert native_frame.func_index == func_index
             assert native_frame.code == _native_buffer_address(self.code)
             assert native_frame.code_size == len(self.code)
@@ -1810,6 +1812,10 @@ class Interpreter:
             assert call_state.finished and call_state.trap is not None
         elif native_status == NATIVE_DISPATCH_YIELD:
             call_state.context.native_context.loop_jump_count = 0
+        elif native_status == NATIVE_DISPATCH_DEBUG_STOP:
+            # A statically composed debugger has stopped native execution.
+            # This is a runtime boundary, not a different instruction driver.
+            return call_state
         else:
             assert False, f"unexpected C++ interpreter status: {native_status}"
         return call_state
@@ -2697,12 +2703,24 @@ def _h_global_set(
 def _vmmio_load(env: ExecEnv, addr: int, width: int, signed: bool) -> tuple[int, Trap | None]:
     if env.vmmio is None:
         return 0, Trap(TrapCode.VMMIO_NOT_CONFIGURED, addr)
-    status, phys_addr = env.vmmio.access(addr, is_write=False, value=0)
+    status, phys_addr = env.vmmio.access(addr, is_write=False, value=0, access_size=width)
     if status > VmmioStatus.OK_PHYSICAL:
         return 0, Trap(TrapCode.VMMIO_ACCESS, int(status))
     if status == VmmioStatus.OK_STATIC_DEVICE:
         return phys_addr, None
     if status == VmmioStatus.OK_PHYSICAL:
+        address = VmmioAddress(addr)
+        if address.fc() == FC_DYNAMIC or address.fc() == FC_SHM:
+            pte = env.vmmio.ptes.view().find(address.vpn())
+            assert pte is not None
+            if address.fc() == FC_DYNAMIC:
+                assert pte.mapped_storage is not None
+            if pte.mapped_storage is not None:
+                return int.from_bytes(
+                    pte.mapped_storage[address.offset() : address.offset() + width],
+                    "little",
+                    signed=signed,
+                ), None
         assert env.phys_mem is not None
         assert phys_addr + width <= len(env.phys_mem)
         return (
@@ -2719,10 +2737,20 @@ def _vmmio_store(env: ExecEnv, addr: int, val_bytes: bytes) -> Trap | None:
         addr,
         is_write=True,
         value=int.from_bytes(val_bytes, "little"),
+        access_size=len(val_bytes),
     )
     if status > VmmioStatus.OK_PHYSICAL:
         return Trap(TrapCode.VMMIO_ACCESS, int(status))
     if status == VmmioStatus.OK_PHYSICAL:
+        address = VmmioAddress(addr)
+        if address.fc() == FC_DYNAMIC or address.fc() == FC_SHM:
+            pte = env.vmmio.ptes.view().find(address.vpn())
+            assert pte is not None
+            if address.fc() == FC_DYNAMIC:
+                assert pte.mapped_storage is not None
+            if pte.mapped_storage is not None:
+                pte.mapped_storage[address.offset() : address.offset() + len(val_bytes)] = val_bytes
+                return None
         assert env.phys_mem is not None
         assert phys_addr + len(val_bytes) <= len(env.phys_mem)
         env.phys_mem[phys_addr : phys_addr + len(val_bytes)] = val_bytes
@@ -3974,7 +4002,7 @@ def _vdma_address_is_supported(address: int) -> bool:
     if _linear_memory_address(address):
         return True
     function_code = address >> 28
-    return function_code in (FC_DYNAMIC, FC_SHM, FC_PASSTHROUGH)
+    return function_code == FC_DYNAMIC or function_code == FC_SHM or function_code == FC_PASSTHROUGH
 
 
 @_handler(FC_PREFIX)
@@ -3985,7 +4013,7 @@ def _h_fc_prefix(
     subopcode, next_ip = decode_unsigned(frame.code, ip + 1)
 
     if FC_I32_TRUNC_SAT_F32_S <= subopcode <= FC_I32_TRUNC_SAT_F64_U:
-        source_is_f32 = subopcode in (0, 1)
+        source_is_f32 = subopcode == 0 or subopcode == 1
         value = frame.values.pop_f32() if source_is_f32 else frame.values.pop_f64()
         converted = _truncate_saturating_float(value, 32, subopcode % 2 == 0)
         assert frame.values.push_i32(converted)
@@ -3993,7 +4021,7 @@ def _h_fc_prefix(
         return None
 
     if FC_I64_TRUNC_SAT_F32_S <= subopcode <= FC_I64_TRUNC_SAT_F64_U:
-        source_is_f32 = subopcode in (4, 5)
+        source_is_f32 = subopcode == 4 or subopcode == 5
         value = frame.values.pop_f32() if source_is_f32 else frame.values.pop_f64()
         converted = _truncate_saturating_float(value, 64, subopcode % 2 == 0)
         assert frame.values.push_i64(converted)

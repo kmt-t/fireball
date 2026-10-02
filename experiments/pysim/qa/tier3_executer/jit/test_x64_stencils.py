@@ -41,6 +41,7 @@ while not (_PYSIM_DIR / "tier1_core").is_dir():
 import ctypes
 import random
 
+import pytest
 import tier3_executer.jit.x64_stencils as st
 from helpers import expect_assertion
 from tier3_executer.jit.exec_memory import ExecutableBuffer
@@ -401,13 +402,15 @@ def test_out_of_bounds_load_traps():
 
 
 def test_out_of_bounds_store_traps():
-    memory = bytearray(16)
-    code = [const_(13), const_(0), (st.I32_STORE, {"disp": 0, "max_addr": 12})]
+    memory = bytearray(range(0xA0, 0xB0))
+    before = bytes(memory)
+    code = [const_(13), const_(0x12345678), (st.I32_STORE, {"disp": 0, "max_addr": 12})]
     try:
         run_i32_checked(code, memory=memory)
         raise AssertionError("expected an out-of-bounds i32.store to trap")
     except st.WasmTrapError:
         pass
+    assert bytes(memory) == before, "bounds rejection must precede every memory write"
 
 
 def test_memarg_static_offset_is_folded_into_the_bounds_check():
@@ -561,12 +564,8 @@ def test_fuzz_add_sub_mul_against_python_reference():
 
 def test_executable_buffer_wx_protection_lifecycle():
     """
-    Verify strict W^X state machine on host platform (Windows VirtualProtect / Linux mprotect):
-    1. Buffer initializes in RW+XN (patch_in_progress=True).
-    2. Invariant assert_no_rwx() holds at every state.
-    3. Finalize/commit switches buffer to RO+X (patch_in_progress=False).
-    4. Writing in committed state raises AssertionError.
-    5. begin_jit_patch() safely reopens transaction to RW+XN.
+    TEST-JITC-05: Verify API transaction state, rejected writes, and executable code.
+    OS mapping permissions are checked independently by the Linux-only test below.
     """
     buf = ExecutableBuffer(64)
     try:
@@ -600,6 +599,38 @@ def test_executable_buffer_wx_protection_lifecycle():
         buf.close()
 
 
+def _linux_buffer_permissions(buf: ExecutableBuffer) -> str:
+    """Read the kernel's mapping permissions without using buffer protection metadata."""
+    assert buf.base is not None
+    for line in Path("/proc/self/maps").read_text().splitlines():
+        region, permissions, *_ = line.split()
+        begin, end = (int(part, 16) for part in region.split("-"))
+        if begin <= buf.base and buf.base + buf.size <= end:
+            return permissions[:3]
+    raise AssertionError("executable buffer is not fully contained in an OS mapping")
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="OS mapping oracle uses Linux /proc/self/maps")
+def test_executable_buffer_linux_mapping_enforces_wx():
+    """TEST-JITC-05: Actual OS mappings follow RW -> RX -> RW -> RX, and patched code runs."""
+    buf = ExecutableBuffer(64)
+    try:
+        assert _linux_buffer_permissions(buf) == "rw-"
+        buf.write(0, b"\xb8\x2a\x00\x00\x00\xc3")  # mov eax, 42; ret
+        buf.commit_jit_patch()
+        assert _linux_buffer_permissions(buf) == "r-x"
+        assert buf.function_at(0, ctypes.c_int32, [])() == 42
+
+        buf.begin_jit_patch()
+        assert _linux_buffer_permissions(buf) == "rw-"
+        buf.write(0, b"\xb8\x07\x00\x00\x00\xc3")  # mov eax, 7; ret
+        buf.commit_jit_patch()
+        assert _linux_buffer_permissions(buf) == "r-x"
+        assert buf.function_at(0, ctypes.c_int32, [])() == 7
+    finally:
+        buf.close()
+
+
 # Discovered by name rather than hand-listed: a hand-maintained list is
 # exactly the kind of bookkeeping that silently drifts (a new test added
 # above and never wired in here would just never run). Order is
@@ -610,8 +641,4 @@ ALL_TESTS = sorted(
 )
 
 if __name__ == "__main__":
-    for test in ALL_TESTS:
-        test()
-        print(f"[PASS] {test.__name__}")
-
-    print(f"[PASS] All {len(ALL_TESTS)} x64 stencil tests passed (executed as real machine code).")
+    raise SystemExit(pytest.main([__file__]))

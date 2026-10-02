@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 _TEST_FILE = Path(__file__).resolve()
 _TESTS_DIR = _TEST_FILE.parent.parent
 _PYSIM_DIR = _TESTS_DIR.parent
@@ -19,7 +21,6 @@ REPO_ROOT = _PYSIM_DIR.parent.parent
 
 from hal_dispatch import HalBufferPool
 from helpers import (
-    _build_test_wasm_binary,
     expect_assertion,
     make_native_interpreter,
     make_test_ipc_message,
@@ -34,7 +35,7 @@ from ipc_router import (
 )
 from loader import BumpAllocator, WasmLoader
 from memory import FB_CONF_MEMORY_POOL_SIZE, MemoryManager
-from runtime_events import RuntimeEvent
+from runtime_events import RuntimeEventBatch
 from scheduler import ChannelAction, Scheduler, Task, WaitDir
 from system import System, WasiErrno
 from system_containers import BitView, MutableFlatMapStorage, ReadOnlyFlatMapView, StaticVector
@@ -333,15 +334,9 @@ def test_vmmio_gotcha_01_ram_bypass_never_touches_tlb():
 
 def test_vmmio_gotcha_02_folding_xor_hash_disperses_function_codes():
     """GOTCHA-VMMIO-02: 5-bit Folding XOR Hash disperses different Function Codes of same lower page."""
-    vpn_c = 0x8000C
-    vpn_e = 0x8000E
-    temp_c = vpn_c ^ (vpn_c >> 10)
-    temp_c = temp_c ^ (temp_c >> 5)
-    idx_c = temp_c & 0x1F
-    temp_e = vpn_e ^ (vpn_e >> 10)
-    temp_e = temp_e ^ (temp_e >> 5)
-    idx_e = temp_e & 0x1F
-    assert idx_c != idx_e
+    scheduler = Scheduler()
+    ctrl = VMMIOController(guest_ram_size=65536, scheduler=scheduler)
+    assert len({ctrl.tlb_index(vpn) for vpn in (0xC0000, 0xE0000, 0xF0000)}) == 3
 
 
 def test_vmmio_gotcha_03_revoke_invalidates_tlb_blocks_inflight():
@@ -414,14 +409,20 @@ def test_ipcr_gotcha_02_preflight_rejection_preserves_sender_ownership():
     # Even if an attacker obtains an unauthorized channel directly, send() rejects it based on TCB role
     runtime_ch = router.channel_for_edge(Role.RUNTIME, Role.HAL_UART)
     assert runtime_ch is not None
-    try:
-        gen = router.send(runtime_ch, msg)
-        next(gen)
-    except StopIteration as e:
-        status, _ = e.value
-        assert status == IPCStatus.ERR_PERMISSION_DENIED
-
+    before = bytes(msg.block.data)
+    before_task = sched.current_task
+    assert before_task is not None
+    before_state = before_task.state
+    with pytest.raises(StopIteration) as stopped:
+        next(router.send(runtime_ch, msg))
+    assert stopped.value.value == (IPCStatus.ERR_PERMISSION_DENIED, None)
     assert msg.ownership == OwnershipState.SENDER_OWNS
+    assert bytes(msg.block.data) == before
+    assert runtime_ch.waiter_task is None
+    assert runtime_ch.waiter_dir == WaitDir.NONE
+    assert runtime_ch.reply_waiter_task is None
+    assert sched.current_task is before_task
+    assert before_task.state == before_state
 
 
 def test_sched_gotcha_01_handoff_limit_forces_return_to_main_loop():
@@ -568,13 +569,13 @@ def test_log_gotcha_02_ring_buffer_oldest_overwrite():
 
 
 def test_mem_gotcha_01_page_granular_isolation():
-    """GOTCHA-MEM-01: Page-granular permission isolation ensures distinct tasks never share the same 4KB physical page."""
+    """GOTCHA-MEM-01: distinct tasks reserve distinct virtual 4KB SHM pages."""
     mm, scheduler = _make_memory_manager()
     b1 = mm.allocate_shared(size=64).unwrap()
     scheduler.current_task = scheduler.get_task(2)
     b2 = mm.allocate_shared(size=64).unwrap()
     assert b1.page_idx != b2.page_idx, (
-        f"Task 1 (page {b1.page_idx}) and Task 2 (page {b2.page_idx}) must not share physical page"
+        f"Task 1 (page {b1.page_idx}) and Task 2 (page {b2.page_idx}) must not share virtual page"
     )
 
 
@@ -657,7 +658,7 @@ def test_dbg_gotcha_01_debugger_and_jit_composition_is_rejected():
             return func_index + sum(args)
 
     class _Observer:
-        def on_runtime_event(self, event: RuntimeEvent) -> None:
+        def on_runtime_batch(self, batch: RuntimeEventBatch) -> None:
             return None
 
     factories = RuntimeFactories(
@@ -677,12 +678,14 @@ def test_dbg_gotcha_01_debugger_and_jit_composition_is_rejected():
         )
 
 
-def test_load_gotcha_01_non_existent_symbol_fast_rejection():
-    """GOTCHA-LOAD-01: Non-existent symbol rejection is O(k) without linear scan."""
+def test_load_gotcha_01_colliding_export_names_remain_distinct():
+    """GOTCHA-LOAD-01: Equal FNV hashes require comparison of the actual ROM names."""
     loader = WasmLoader(BumpAllocator())
-    wasm_bytes = _build_test_wasm_binary(export_names=["foo", "bar"])
+    wasm_bytes = wat_to_wasm('(module (func (export "ufbwjn")) (func (export "rsksbm")))')
     view = loader.prepare("test_mod", wasm_bytes)
     assert view.lookup_export("non_existent_symbol_xyz") is None
+    assert view.lookup_export_func("ufbwjn") == 0
+    assert view.lookup_export_func("rsksbm") == 1
 
 
 ALL_TESTS = sorted(

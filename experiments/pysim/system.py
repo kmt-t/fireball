@@ -66,6 +66,8 @@ from tier3_platform.drivers.platform_config import (
 )
 from virq import DispatchResult
 from vmmio import (
+    FC_DYNAMIC,
+    FC_SHM,
     FC_STATIC_DEVICE,
     TrapCode,
     VmmioAddress,
@@ -432,12 +434,11 @@ class System:
 
     def _mmio_touch(
         self, addr: int, is_write: bool, access_size: int = 1
-    ) -> tuple[WasiErrno | None, bytearray | None, int | None]:
+    ) -> tuple[WasiErrno | None, memoryview | None, int | None]:
         """
-        Runs the real permission dispatch, then resolves this
-                experiment's own backing storage for the byte-level effect
-                vmmio_concept.access() intentionally leaves to the caller.
-                Returns (errno_or_None, backing_bytearray_or_None, local_offset).
+        Run the permission dispatch and borrow the matching backing storage.
+        The permission gate leaves the byte-level effect to its caller.
+        Return (errno_or_None, borrowed_storage_or_None, local_offset).
         """
 
         access_status, _ = self.vmmio.access(addr, is_write, access_size=access_size)
@@ -448,16 +449,20 @@ class System:
         if a.fc() == FC_STATIC_DEVICE:
             page = addr & _STATIC_DEVICE_PAGE_MASK
             if page == IPCR_BASE:
-                return None, self.ipcr_regs, a.offset()
+                return None, memoryview(self.ipcr_regs), a.offset()
             return WasiErrno.NOENT, None, None
-        # Tier 3 (SHM / PASSTHROUGH): resolve the same phys_addr formula
-        # vmmio_concept.access() itself already computed internally, from
-        # the same public PTE fields it exposes (self.vmmio.ptes is a
-        # public FlatMap, not a hidden implementation detail).
+        # Resolve the permitted DYNAMIC buffer or SHM/PASSTHROUGH backing.
         pte = self.vmmio.ptes.view().find(a.vpn())
         assert pte is not None
+        if a.fc() == FC_DYNAMIC:
+            handle = self.pool.buffer(pte.phys_page)
+            if not self.pool.can_view(handle, a.offset(), access_size):
+                return WasiErrno.FAULT, None, None
+            return None, self.pool.view(handle, a.offset(), access_size), 0
+        if a.fc() == FC_SHM and pte.mapped_storage is not None:
+            return None, pte.mapped_storage, a.offset()
         phys_addr = pte.physical_base_addr + a.offset()
-        return None, self.phys_mem, phys_addr
+        return None, memoryview(self.phys_mem), phys_addr
 
     def _mmio_read(self, addr: int, value_out_ptr: int, width: int) -> WasiErrno:
         # The raw host-call return is reserved for errno. Validate the output
@@ -514,7 +519,7 @@ class System:
 
     def _vdma_region(
         self, addr: int, count: int, is_write: bool
-    ) -> tuple[bytearray | None, int | None]:
+    ) -> tuple[memoryview | None, int | None]:
         """
         runtime_vmmio.md §4.5: VDMA src/dst may be guest RAM (Tier 1) or
                 vMMIO FC=13/14/15 -- resolved through the same permission gate
@@ -523,7 +528,11 @@ class System:
 
         a = VmmioAddress(addr)
         if a.is_linear():
-            return (self._guest_memory, addr) if self._guest_ram_ok(addr, count) else (None, None)
+            return (
+                (memoryview(self._guest_memory), addr)
+                if self._guest_ram_ok(addr, count)
+                else (None, None)
+            )
         errno, backing, off = self._mmio_touch(addr, is_write, access_size=count)
         if errno is not None or backing is None or off is None or off + count > len(backing):
             return None, None

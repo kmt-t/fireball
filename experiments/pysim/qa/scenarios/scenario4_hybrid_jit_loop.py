@@ -8,11 +8,11 @@ while not (_PYSIM_DIR / "tier1_core").is_dir():
 """Integration Scenario 4: Tier 2 Runtime + Tier 3 JIT Hybrid Compilation.
 
 Tests:
-- 2-bit Card Marking Hotspot tracking during loop execution
-- Automatic trace extraction and queueing in RuntimeEngine
-- COOS `idle_hook` batch JIT compilation
-- Native x64 JIT trace execution from Active Cache Bank
-- 100% Differential byte/value equality between pure Tier 2 and Tier 3 JIT
+- Pure Interpreter and hybrid RuntimeEngine return values both equal 168
+- The hybrid run generates at least one trace in the Active cache bank
+
+Card-state transitions, COOS idle_hook wiring, native JIT invocation counts,
+and trace-boundary state synchronization are not independently asserted here.
 """
 
 import wasmtime

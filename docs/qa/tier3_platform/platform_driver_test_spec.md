@@ -31,7 +31,29 @@
 
 - 仕様書に定義された各テストケース（物理実装レベルの不変条件・境界条件・エラー処理）の検証手順と期待結果を定義。
 
+### pysimの固定スロットとstdoutの観測
+
+[`test_hal.py`](experiments/pysim/qa/tier3_platform/test_hal.py)の`test_hal_task_ipc_communication`は、TEST-HAL-06の操作期間マッピングをstream-writeの実経路で部分確認する。offset 0の128 byteとoffset 17の32 byteを固定スロットへ書く。専用HALタスクへのIPCの完了後、stdoutが指定sliceと完全一致し、送信元スロットが保持されることを確認する。続けてunmapし、同じハンドルのguest viewが拒否され、vMMIOアクセスが`UNREGISTERED_PAGE`となることを確認する。IPCの契約と実行記録は[`hal_dispatch_test_spec.md`](docs/qa/tier2_runtime/hal_dispatch_test_spec.md)のTEST-HAL-16を正本とする。
+
+`test_hal_02_dummy_stdio_driver_streams_stdin_and_stdout`は、ドライバ単体のRxとTxの全byteを直接比較する。`test_hal_05_hal_buffer_slice_bounds_and_guest_mapping`は、別guestのアクセス拒否、ドライバ側の書込みが同じ固定スロットへ現れること、unmap後のアクセス拒否を確認する。いずれも実機UARTやDMAの検証済みとは扱わない。
+
+`test_hal_06_rejection_preserves_mapping_and_all_slot_bytes`は、TEST-HAL-06とGOTCHA-HAL-01の拒否経路を10条件で検査する。
+因子は別slotの同時map、負値と上限外ID、負のoffset/長さ、末尾外offset、末尾超過、257 byte、未mapのhandleと誤ったunmap対象である。
+各拒否後に、選択slotのマッピング、全slotの全byte、他slotの未登録状態を保存する。
+拒否後の末尾slice書込みは同じHAL実体へ届き、元slotをunmapした後は別slotの正常I/Oを開始できる。
+
+- 実行日: 2026-10-02。
+- 対象ソース: [`hal_dispatch.py`](experiments/pysim/tier2_runtime/hal_dispatch.py)。
+- スイート: [`test_hal.py`](experiments/pysim/qa/tier3_platform/test_hal.py)。
+- 環境: Linux、プロジェクトのuv環境。
+- 結果: 成功23件、失敗0件、skip 0件、xfail 0件。
+
+```bash
+UV_CACHE_DIR=/tmp/fireball-test-refactor-uv uv run --offline --no-sync python -m pytest -q experiments/pysim/qa/tier3_platform/test_hal.py
+```
+
 ## 4. 未検証・スコープ外
 
 - 契約レベルの振る舞い（TEST-HAL-01, TEST-HAL-02, TEST-HAL-04, TEST-HAL-09〜TEST-HAL-13）は [`hal_dispatch_test_spec.md`](docs/qa/tier2_runtime/hal_dispatch_test_spec.md) を参照。
 - 実ハードウェア（UART/RTT/GPIO/I2C）そのものの電気的特性。
+- stdoutの2入力によるpysim統合試験は、固定プールの全slot・全offset・全長、物理DMAのCPU非介在性を網羅しない。

@@ -21,8 +21,10 @@ from memory import (
     FB_TASK_ID_FLIGHT,
     MemoryErrorCode,
     MemoryManager,
+    MemoryReasonCode,
     RecoveryAction,
 )
+from memory_interface import PageMappingCallbacks
 from scheduler import Scheduler
 from vmmio import (
     TrapCode,
@@ -120,6 +122,150 @@ def test_mem_06_guest_ram_64kb_alignment():
         mm.init_manager(pool_base=0x00011000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
 
 
+def test_mem_08_claim_rejection_preserves_live_storage():
+    """TEST-MEM-08: Invalid and dropped IDs fail without changing live storage or ownership."""
+    for dropped_id in (False, True):
+        manager, scheduler = _make_memory_manager(1, 2)
+        assert manager.init_manager(0x00010000, FB_CONF_MEMORY_POOL_SIZE).is_ok
+        block = manager.allocate_shared(size=64).unwrap()
+        contents = bytes(range(64))
+        block.write_bytes(0, memoryview(contents))
+        if dropped_id:
+            dropped = manager.allocate_shared(size=32).unwrap()
+            rejected_id = dropped.shm_id
+            dropped.drop()
+        else:
+            rejected_id = 0x9999
+        slot = manager.shm_slots.view().find(block.shm_id)
+        assert slot is not None
+        slot_before = (slot.owner, slot.allocated, slot.size, slot.base_address)
+        pages_before = tuple(
+            (page.owner_id, page.allocated, page.allocated_bytes, page.physical_addr)
+            for page in manager.shm_pages
+        )
+        registry_before = tuple(
+            (
+                manager.page_registry.get_owner(page.page_idx),
+                manager.page_registry.get_generation(page.page_idx),
+            )
+            for page in manager.shm_pages
+        )
+        storage_before = bytes(manager.shm_storage)
+        counts_before = (manager.total_allocated_bytes, manager.shm_allocated_bytes)
+        scheduler.current_task = scheduler.get_task(2)
+
+        result = manager.claim(rejected_id)
+
+        assert result.is_err and result.value is None
+        assert result.error is not None
+        assert result.error.error_code == MemoryErrorCode.INVALID_SHM_ID
+        assert result.error.recovery.action == RecoveryAction.RETRY
+        assert result.error.recovery.reason_code == MemoryReasonCode.INVALID_OR_DEALLOCATED_SHM_ID
+        assert manager.shm_slots.view().find(rejected_id) is None
+        assert tuple(manager.shm_slots.view().keys) == (block.shm_id,)
+        assert manager.shm_slots.view().find(block.shm_id) is slot
+        assert (slot.owner, slot.allocated, slot.size, slot.base_address) == slot_before
+        assert (
+            tuple(
+                (page.owner_id, page.allocated, page.allocated_bytes, page.physical_addr)
+                for page in manager.shm_pages
+            )
+            == pages_before
+        )
+        assert (
+            tuple(
+                (
+                    manager.page_registry.get_owner(page.page_idx),
+                    manager.page_registry.get_generation(page.page_idx),
+                )
+                for page in manager.shm_pages
+            )
+            == registry_before
+        )
+        assert bytes(manager.shm_storage) == storage_before
+        assert (manager.total_allocated_bytes, manager.shm_allocated_bytes) == counts_before
+        scheduler.current_task = scheduler.get_task(1)
+        assert block.read_bytes(0, 64) == contents
+        address = block.get_address()
+        valid_id = block.release()
+        scheduler.current_task = scheduler.get_task(2)
+        assert manager.grant_shared(valid_id)
+        claimed = manager.claim(valid_id).unwrap()
+        assert claimed.get_owner() == 2
+        assert claimed.get_address() == address
+        assert claimed.read_bytes(0, 64) == contents
+        claimed.drop()
+
+
+def test_mem_10d_owner_notifications_match_each_lifecycle_boundary():
+    """TEST-MEM-10d (Tier 1): Notify old/new owners once, and map only reusable owner views."""
+    manager, scheduler = _make_memory_manager(1, 2)
+    assert manager.init_manager(0x00010000, FB_CONF_MEMORY_POOL_SIZE).is_ok
+    mapped: list[tuple[int, int, int, int]] = []
+    changed: list[tuple[int, int, int, int]] = []
+    unmapped: list[tuple[int, int]] = []
+
+    def on_map(page_idx: int, address: int, owner_id: int, size: int) -> None:
+        assert manager.page_registry.get_owner(page_idx) == owner_id
+        mapped.append((page_idx, address, owner_id, size))
+
+    def on_changed(page_idx: int, address: int, previous_id: int, new_id: int) -> None:
+        # The contract requires notification after the owner ledger is updated.
+        assert manager.page_registry.get_owner(page_idx) == new_id
+        changed.append((page_idx, address, previous_id, new_id))
+
+    def on_unmap(page_idx: int, address: int) -> None:
+        unmapped.append((page_idx, address))
+
+    manager.register_page_mapping_callbacks(PageMappingCallbacks(on_map, on_changed, on_unmap))
+    block = manager.allocate_shared(size=64).unwrap()
+    block.write_bytes(0, memoryview(bytes(range(64))))
+    page_idx, address = block.page_idx, block.get_address()
+    assert mapped == [(page_idx, address, 1, 64)]
+    assert changed == [] and unmapped == []
+
+    shm_id = block.release()
+    assert changed == [(page_idx, address, 1, FB_TASK_ID_FLIGHT)]
+    assert mapped == [(page_idx, address, 1, 64)]
+    scheduler.current_task = scheduler.get_task(2)
+    assert manager.grant_shared(shm_id)
+    expected_changes = [
+        (page_idx, address, 1, FB_TASK_ID_FLIGHT),
+        (page_idx, address, FB_TASK_ID_FLIGHT, 2),
+    ]
+    assert changed == expected_changes
+    assert mapped == [(page_idx, address, 1, 64)]
+    assert manager.grant_shared(shm_id)
+    assert changed == expected_changes, "unchanged owners must not emit a change notification"
+    received = manager.claim(shm_id).unwrap()
+    assert received.read_bytes(0, 64) == bytes(range(64))
+    assert changed == expected_changes
+    assert mapped == [(page_idx, address, 1, 64), (page_idx, address, 2, 64)]
+
+    assert received.release() == shm_id
+    expected_changes.append((page_idx, address, 2, FB_TASK_ID_FLIGHT))
+    assert changed == expected_changes
+    assert mapped == [(page_idx, address, 1, 64), (page_idx, address, 2, 64)]
+    manager.rollback_transfer(shm_id)
+    expected_changes.append((page_idx, address, FB_TASK_ID_FLIGHT, 2))
+    assert changed == expected_changes
+    assert mapped == [
+        (page_idx, address, 1, 64),
+        (page_idx, address, 2, 64),
+        (page_idx, address, 2, 64),
+    ]
+    restored = manager.claim(shm_id).unwrap()
+    assert restored.get_owner() == 2
+    assert restored.get_address() == address
+    assert restored.read_bytes(0, 64) == bytes(range(64))
+    assert changed == expected_changes
+    assert mapped == [(page_idx, address, 1, 64)] + [(page_idx, address, 2, 64)] * 3
+    restored.drop()
+    assert unmapped == [(page_idx, address)]
+    assert changed == expected_changes
+    assert manager.page_registry.get_owner(page_idx) is None
+
+
 def test_mem_10_shared_block_ownership_transfer():
     """TEST-MEM-10: allocate-shared -> release -> claim moves ownership cleanly without double-ownership."""
     mm, sched = _make_memory_manager(1, 2)
@@ -186,6 +332,37 @@ def test_mem_10_shared_block_ownership_transfer():
     assert sb_b.read_entry(11) == (0x12345678, 0x9ABCDEF0)
     with expect_assertion("inactive or in-flight"):
         sb_a.read_u8(0)
+
+
+def test_mem_10_entry_writer_matches_wire_layout() -> None:
+    """TEST-IPCR-27: writerを規定の全byte列で検査し、隣接領域の保存も確認する。"""
+    mm, _ = _make_memory_manager(1)
+    mm.init_manager(pool_base=0x00010000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
+    block = mm.allocate_shared(size=32).unwrap()
+    block.write_bytes(0, bytes.fromhex("a5") * 32)
+    block.write_entry(1, key=0x12345678, val=0x90ABCDEF)
+    assert block.read_u64(1) == 0x1234567890ABCDEF
+    assert (
+        block.read_bytes(0, 32)
+        == bytes.fromhex("a5") * 8
+        + bytes.fromhex("ef cd ab 90 78 56 34 12")
+        + bytes.fromhex("a5") * 16
+    )
+
+
+def test_mem_10_entry_reader_decodes_independent_wire_layout() -> None:
+    """TEST-IPCR-27: 製品writerを使わず、規定byte列を直接投入してreaderを検査する。"""
+    mm, _ = _make_memory_manager(1)
+    mm.init_manager(pool_base=0x00010000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
+    block = mm.allocate_shared(size=32).unwrap()
+    wire = (
+        bytes.fromhex("a5") * 16
+        + bytes.fromhex("21 43 65 87 98 ba dc fe")
+        + bytes.fromhex("a5") * 8
+    )
+    block.write_bytes(0, wire)
+    assert block.read_entry(2) == (0xFEDCBA98, 0x87654321)
+    assert block.read_bytes(0, 32) == wire
 
 
 def test_mem_10d_resource_revoke_invalidates_old_handle():
@@ -362,17 +539,43 @@ def test_mem_16_virtual_page_reservation_is_independent_of_shm_backing():
 # ===========================================================================
 
 
+def test_reacquire_released_partition_does_not_overlap_live_task(monkeypatch) -> None:
+    """TEST-MEM-01/05: 固定2スロット構成で対象heapだけを返却・再初期化する。"""
+    import memory as memory_module
+
+    # Select a compile-time configuration in the test, without changing the
+    # product default of one VM or adding a runtime configuration backdoor.
+    monkeypatch.setattr(memory_module, "FB_CONF_TASK_HEAP_SIZES", (4096, 4096))
+    manager, scheduler = _make_memory_manager(1, 2)
+    assert manager.init_manager(0x10000, FB_CONF_MEMORY_POOL_SIZE).is_ok
+    target = scheduler.get_task(1)
+    protected = scheduler.get_task(2)
+    assert target is not None and protected is not None
+    with scheduler.task_context(target):
+        original = manager.acquire_task_heap().unwrap()
+        original.data[:] = b"\xa5" * original.size
+    with scheduler.task_context(protected):
+        other = manager.acquire_task_heap().unwrap()
+        other.data[:] = b"\x5a" * other.size
+    other_before = bytes(other.data)
+    other_before_metadata = (other.owner, other.base_address, other.size)
+    for _ in range(4):
+        with scheduler.task_context(target):
+            manager.release_task_heap()
+            assert manager.partition_owners.view().find(protected.task_id) is other
+            replacement = manager.acquire_task_heap().unwrap()
+            assert replacement.base_address == original.base_address
+            assert replacement.base_address + replacement.size <= other.base_address
+            assert replacement.owner == target.task_id
+            assert bytes(replacement.data) == bytes(replacement.size)
+            replacement.data[0] = 0xA5
+        assert bytes(other.data) == other_before
+        assert (other.owner, other.base_address, other.size) == other_before_metadata
+        assert manager.partition_owners.view().find(protected.task_id) is other
+        assert manager.total_allocated_bytes == original.size + other.size
+
+
 if __name__ == "__main__":
-    test_mem_01_acquire_task_heap_fixed_size()
-    test_mem_02_recovery_strategy_on_exhaustion()
-    test_mem_03_total_allocation_bound()
-    test_mem_04_owner_task_id_auto_set()
-    test_mem_05_release_and_deallocate_owner_only()
-    test_mem_06_guest_ram_64kb_alignment()
-    test_mem_10_shared_block_ownership_transfer()
-    test_mem_10c_rollback_transfer_restores_owner_id()
-    test_mem_11_shared_block_raII_auto_deallocate()
-    test_mem_14_page_granular_permission_isolation()
-    test_mem_15_vmmio_fc14_tlb_sync()
-    test_mem_16_virtual_page_reservation_is_independent_of_shm_backing()
-    print("[PASS] All physical-memory software-contract tests passed.")
+    import pytest
+
+    raise SystemExit(pytest.main([__file__]))

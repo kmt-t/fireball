@@ -74,6 +74,17 @@ struct fb_native_step_call {
   std::uint32_t control_base;
 };
 
+// A selected debugger owns this fixed record; normal contexts have no control slot.
+struct fb_native_debug_control {
+  const std::uint32_t* breakpoints;
+  std::uint32_t breakpoint_count;
+  std::uint32_t single_step;
+  std::uint32_t executed;
+  std::uint32_t stopped;
+  std::uint32_t current_pc;
+  std::uint32_t enabled;
+};
+
 struct fb_native_result {
   std::uint32_t status;
   std::uint32_t ip;
@@ -99,6 +110,9 @@ FB_PYSIM_INTERPRETER_EXPORT int fb_native_run_dispatch_stats(
 FB_PYSIM_INTERPRETER_EXPORT int fb_native_run_dispatch_hotspots(
     const fb_native_dispatch_call* call, fb_native_result* result);
 FB_PYSIM_INTERPRETER_EXPORT int fb_native_run_dispatch_stats_hotspots(
+    const fb_native_dispatch_call* call, fb_native_result* result);
+
+FB_PYSIM_INTERPRETER_EXPORT int fb_native_run_debug_dispatch(
     const fb_native_dispatch_call* call, fb_native_result* result);
 
 }

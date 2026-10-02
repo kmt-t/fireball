@@ -10,8 +10,10 @@ Tests:
    - Querying the standard output driver.
 3. WASI 0.3p IPC Driver Command Protocol dispatching via the HAL task:
    - Stream: `CMD_STREAM_WRITE_BUFFER`
-4. WASI 0.1p (`wasi_snapshot_preview1`) adapter delegating stdout to Fireball and
-   other operations to an injected uvwasi-compatible backend.
+4. Direct calls to the WASI host compatibility wrapper for URI and clock delegation.
+
+No WASM guest or guest-side libfireball adapter is executed.  Timer command dispatch
+and rejection of unsupported commands are not exercised here.
 """
 
 from __future__ import annotations
@@ -128,7 +130,7 @@ def test_wasi03p_hierarchical_uri_and_ipc_commands():
         f"    [IPC ReadOnlyFlatMapView DISPATCH] Written {nwritten_fmap} bytes -> {out_stdout_fmap}"
     )
 
-    # 4.c Confirm the dedicated HAL task processed both commands.
+    # 4.c Confirm that the dedicated HAL task processed at least one command.
     stdio_task = sysv.hal_task_for("fireball://hal/stdout/0")
     assert stdio_task is not None and stdio_task.processed_count >= 1
     print(
@@ -159,7 +161,7 @@ def test_wasi03p_hierarchical_uri_and_ipc_commands():
         f"{ipc_msg_64.entries}"
     )
 
-    # 5. Test WASI 0.1p Wrapper Delegation
+    # 5. Directly test the host compatibility wrapper, without a guest adapter.
     wasi_ctx = WasiHostContext(sysv)
     uri_bytes = b"fireball://hal/stdout/0"
     wasi_ctx.guest_memory[100 : 100 + len(uri_bytes)] = uri_bytes
@@ -173,7 +175,7 @@ def test_wasi03p_hierarchical_uri_and_ipc_commands():
     assert t_val > 0, "Expected non-zero timestamp from WASI 0.3p delegated clock"
 
     print(
-        "    [PASS] Scenario 12 (Hierarchical URI, Capability Query & IPC Driver Commands) verified successfully."
+        "    [PASS] Scenario 12 host URI/capability/HAL checks; guest adapter remains unverified."
     )
 
 

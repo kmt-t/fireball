@@ -23,12 +23,19 @@
 | TEST-SVC-09 | ロード後の明示起動 | `Loaded`のサービス | `start_guest(uri)` | `Running`へ遷移する | `system_service.md` 状態遷移図, `service_concept.py` |
 | TEST-SVC-10 | サービスメッセージ境界 | - | メッセージを公開境界へ渡す | サービス仕様はHALの内部コマンドIDを定義しない | `IPCRouter` |
 | TEST-SVC-11 | サービス障害の自己再起動 | サービスが異常終了 | 障害イベント通知 | TCBスロットがリセットされ、当該サービスのみ再初期化される（他サービス波及なし） | 「自己再起動」`SelfReboot_via_Event`, `service_concept.py` `test_fault_isolation_and_targeted_restart` |
+| TEST-SVC-12 | 再起動による失敗要求の自動再実行禁止 | 外部副作用を伴う要求の処理中に障害を確認する | 対象を再初期化し、操作回数と応答を観測する | 初期化成功でも元要求の成功を返さず、元操作の回数を増やさない。他サービスの状態は変わらない | `{SelfReboot_via_Event}`, `test_recovery.py`（再実行禁止のみ）、`service_fault_isolation_model.py`（抽象モデル） |
+
 
 ## 3. テスト検証実績と網羅状況
 
-- 仕様書に定義された各テストケース（不変条件・境界条件・エラー処理）の検証手順と期待結果を定義。
+サービスのロード、明示起動、障害隔離、対象サービスの再起動は`service_concept.py`の概念モデルで検査する。`test_ipc_router.py`はIPCのアクセスと所有権を検査する。`test_vsoc.py`はvSoC実行状態を検査する。これらのpysim試験を、実サービスのロードと自己再起動の検証実績へ読み替えない。
+
+監査結果は[`test_reconstruction_review.md`](docs/qa/test_reconstruction_review.md)を参照する。
 
 ## 4. 未検証・スコープ外
 
+- TEST-SVC-01/02/04/05/09/11のpysimサービス実装への統合は未検証である。概念モデルの状態を、実ランタイムのTCBとヒープの状態に対応付ける証拠が必要である。
+- TEST-SVC-12の実サービス要求・IPC後始末との統合は未実装である。reset callbackの操作回数から実TCB・Runtime・heapの再初期化を主張しない。
+- 固定2スロットのheap返却・再貸与は`test_reacquire_released_partition_does_not_overlap_live_task`で他タスクの実体保全と対象領域のゼロ初期化を検査する。これはサービス生命周期の結線全体の証拠ではない。
 - `service_load_result_t`のC++列挙型そのもの。
 - 物理メモリパーティション分離の実効性（`system_memory.md`/`runtime_memory.md`側）。

@@ -1,6 +1,7 @@
 """
-Fireball Full Component Integration Test Suite Runner.
-Executes all 12 integration test scenarios end-to-end against genuine WASM bytecode.
+Fireball integration scenario runner.
+Runs 12 registered files containing WASM examples and direct Python protocol/driver checks.
+Successful process exits summarize execution, while requirement coverage is tracked in the RTM.
 """
 
 import subprocess

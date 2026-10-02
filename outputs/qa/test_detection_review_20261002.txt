@@ -1,0 +1,349 @@
+Fireball 既存テストの仕様違反検出力レビュー
+実施日: 2026-10-02
+対象基点: HEAD c42a2246 と、ユーザー変更・以前の作業を含む現行作業ツリー
+
+1. 合意した作業範囲
+
+ユーザーはレビュー結果と具体的な修正案までを選択した。
+重要箇所は静的レビューに加え、隔離したプロセス内で製品処理へ故障を注入した。
+今回新設したtest_driver_stubs.pyを除く33スイートと12統合シナリオを読んだ。
+関連する要求・設計・QA仕様・補助コード・実装を照合した。
+関連する概念・形式モデルは証拠の境界を確認するために参照した。
+概念・形式モデル全件の独立監査と、全スイートの一括再実行は実施していない。
+製品コード、既存テストコード、仕様・ポリシーファイルは修正していない。
+再現用コードと実行ログは/tmp/fireball-test-review-20261002に置いた。
+このファイルはレビュー成果物である。
+
+2. 判定の読み方
+
+「実不具合再現」は、故障を注入しない現行製品処理が既存仕様に反した結果である。
+「見逃し確認」は、仕様違反を模した変異に対して対象の既存スイートが合格した結果である。
+「構成のずれ確認」は、テストの構成名と実際の実行構成が異なることを実測した結果である。
+「静的不足」は、assertと入力から検査不足を確認した結果である。
+静的不足について、変異実行や全スイートの通過を主張しない。
+「既知未検証」は、現行QAが既に限定している証拠である。
+既知未検証を新発見の実装不具合と数えない。
+合格件数を要求完了数・欠陥検出数・独立した故障仮説数へ読み替えない。
+
+3. 実行で確認した所見と修正案
+
+TD-01: READYが残る実行予算終了でidle hookを起動する。
+判定: 現行実装の仕様違反を再現した。
+正本: docs/components/tier1_core/os_coos.md:237
+実装: experiments/pysim/tier1_core/scheduler.py:1196
+既存試験: experiments/pysim/qa/tier1_core/test_coos.py:343
+          experiments/pysim/qa/tier1_core/test_scheduler.py:506
+idleはREADYなし・イベントキュー空という条件成立時だけ起動する。
+現行run_until_idleは末尾でREADYを確認せずidle hookを呼ぶ。
+yieldを続ける実タスクに対してbudget=1と既定budgetの両方で再現した。
+タスクはREADYに残り、idle hookが1回呼ばれた。
+既存idle正例2件は合格する。
+修正案: READY残留時と未処理イベント残留時の起動禁止を独立した負例にする。
+実装の終了時処理を既存idle条件へ合わせる。
+ループが止まったことをidleの新しい条件にしない。
+再現ログ: /tmp/fireball-test-review-20261002/probes-baseline.log
+
+TD-02: IPCエントリの読み書きが同じ誤配置を共有するとABI違反を検出できない。
+判定: 故障注入で見逃しを確認した。
+正本: docs/components/tier1_interface/ipc_router.md:86
+実装: experiments/pysim/tier2_runtime/memory.py:351
+既存試験: experiments/pysim/qa/tier1_interface/test_ipc_router.py:381
+          experiments/pysim/qa/tier3_platform/test_memory.py:300
+正本はu64上位32bitがkey、下位32bitがvalueと定める。
+writerを逆配置にし、readerも対応する逆配置にする変異を与えた。
+IPCとMemoryの関連2ファイル137件が全て合格した。
+この実行で変異writerは442回、readerは2693回呼ばれた。
+独立した規定byte列を照合する一時試験は失敗した。
+現在の製品encoder/decoderは正しい。
+修正案: writerの実u64・全byteを仕様から独立に導いた値と比較する。
+規定byte列を直接投入し、readerも独立して検査する。
+例: key=0x12345678/value=0x90ABCDEFのu64は0x1234567890ABCDEFである。
+往復試験は保持し、ABI表現の正しさを別の期待値で保護する。
+ログ: /tmp/fireball-test-review-20261002/ipc-mutant-existing.log
+      /tmp/fireball-test-review-20261002/ipc-mutant-canary.log
+
+TD-03: vIRQのHANDLED/REJECT終端契約をrootだけで検査する。
+判定: 故障注入で見逃しを確認した。
+正本: docs/components/tier2_runtime/runtime_vsoc.md:525
+QA: docs/qa/tier2_runtime/runtime_vsoc_test_spec.md:252
+既存試験: experiments/pysim/qa/tier2_runtime/test_vsoc.py:196
+実装: experiments/pysim/tier2_runtime/virq.py:200
+正本はPASS_THROUGHだけ子へ進み、HANDLED/REJECTはその階層で終了すると定める。
+既存の終端試験はrootの返値だけを変え、分類・deviceはPASS_THROUGHのままである。
+分類ノードの終端分岐を除く変異で、vSoCの28件が全て合格した。
+root PASS、分類 HANDLED/REJECTの一時試験2件は両方失敗した。
+誤ってdeviceまで呼ばれ、実呼出列が[0,1,2]となった。
+修正案: root・分類・deviceそれぞれの終端結果を検査する。
+呼出列、last_path、結果、診断原因を照合する。
+受信者が決める既存配送規則をそのまま検査し、新しい配送方針を追加しない。
+ログ: /tmp/fireball-test-review-20261002/virq-mutant-existing.log
+      /tmp/fireball-test-review-20261002/virq-mutant-canary.log
+
+TD-04: pairwiseのinterp因子がJIT補助状態を持つ構成になっている。
+判定: TEST-PAIR-03で実行構成のずれを確認した。
+正本: docs/components/tier2_runtime/runtime_plugin_architecture.md:36
+      docs/components/tier2_runtime/runtime_hotspot_profiler.md:84
+既存試験: experiments/pysim/qa/cross_cutting/test_pairwise_combinations.py:321
+補助: experiments/pysim/qa/test_support.py:49
+jit_compiler=Noneでもyield_threshold=4のため、補助関数はJITRuntimeManagerを作る。
+TEST-PAIR-03は既存検査を全て通ってexecutedとなった。
+実構成はjit_runtimeあり、compilerなし、hotspot有効、JIT実行0回だった。
+JIT実行0回は、JIT状態・履歴・処理経路の不在を示さない。
+修正案: interpでは既存RuntimeEngineのjit_runtimeなし構成を明示して作る。
+manager不在と構成済みNative経路を確認する。
+準備と後始末のmanager前提も構成に合わせる。
+固定26行と計画被覆は維持する。
+ログ: /tmp/fireball-test-review-20261002/pairwise-configuration.log
+
+TD-05: 1回目・2回目の成功後に余分な操作を実行する誤りを検出できない。
+判定: 故障注入で見逃しを確認した。
+正本: docs/components/tier3_platform/interface_wit.md:127
+既存試験: experiments/pysim/qa/tier2_runtime/test_recovery.py:19
+実装: experiments/pysim/tier2_runtime/recovery.py:138
+通常成功の既存例は3回目成功だけである。
+1回目・2回目の成功後にoperationをもう1回実行する変異で8件が全て合格した。
+変異の誤動作分岐へ到達した既存例は0件だった。
+成功位置1/2の一時試験は両方失敗した。
+現在の製品は成功時に即座に返しており、ここはテストの穴である。
+修正案: 成功位置1/2/3と全失敗を明示する。
+操作履歴・sleep列・返却結果・reset/panic不在を比較する。
+ログ: /tmp/fireball-test-review-20261002/recovery-mutant-existing.log
+      /tmp/fireball-test-review-20261002/recovery-mutant-canary.log
+
+TD-06: JIT候補閾値を製品から期待値へimportする。
+判定: 故障注入で見逃しを確認した。
+正本: docs/components/tier2_runtime/runtime_loader.md:167
+既存試験: experiments/pysim/qa/tier2_runtime/test_jit_scoring.py:9
+実装: experiments/pysim/tier2_runtime/jit_scoring.py:74
+正本の既定閾値は9点である。
+製品定数を収集前に18へ変えても、対応する3件は全て合格した。
+スコア19との比較と手動bitmap.markは、9点の境界と自動候補生成を検査しない。
+独立した規定値9の一時試験は失敗した。
+修正案: 8/9/10点の有効ブロックを実登録し、候補カードの有無を比較する。
+負スコアを含む積算と非候補履歴の不在も確認する。
+製品定数との自己比較を受入条件にしない。
+ログ: /tmp/fireball-test-review-20261002/score-mutant-existing.log
+      /tmp/fireball-test-review-20261002/score-mutant-canary.log
+
+TD-07: trapログの診断位置試験がPython参照だけを実行する。
+判定: 故障注入で見逃しを確認した。
+正本: docs/components/tier2_runtime/runtime_logging.md:132
+既存試験: experiments/pysim/qa/tier2_runtime/test_logging.py:336
+実装: experiments/pysim/tier3_executer/interpreter/interpreter.py:1624
+既存の独立20byte期待値と非0PCの検査は有効である。
+その試験の生成物はPython Interpreterである。
+NativeInterpreterだけtrapログを省く変異でもloggingの12件は全て合格した。
+既存fixtureを実Nativeへ結線した一時試験は、元実装では合格し、変異では失敗した。
+修正案: 既存Python参照試験を保持し、実Nativeへ同じ独立期待値を適用する。
+別calleeの非0位置でtrapする例も加え、実発生PCを比較する。
+通常step粒度や構成時のフック契約は変更しない。
+ログ: /tmp/fireball-test-review-20261002/native-log-mutant-existing.log
+      /tmp/fireball-test-review-20261002/native-log-mutant-canary.log
+
+4. 静的に確認した追加所見と最小修正案
+
+TD-08: JIT local保存を合計値で代用する。
+場所: experiments/pysim/qa/tier3_executer/jit/test_x64_jit.py:648
+要求: docs/qa/tier3_executer/jit_compiler_test_spec.md:93
+正解[7,0,7]と誤結果[6,1,7]は、対象local=7と合計14を両方満たす。
+修正案: 独立した期待配列と全wordを比較する。
+
+TD-09: 範囲外storeの破壊後trapを検出しない。
+場所: experiments/pysim/qa/tier3_executer/jit/test_x64_stencils.py:404
+全ゼロ領域に値0をstoreし、WasmTrapErrorだけを比較する。
+修正案: 非ゼロsentinelと非ゼロ値を用い、具体trapと全memory保存を比較する。
+他のInterpreter境界試験には全memory保存の検査がある。
+
+TD-10: native chain stressの期待値が製品chain_nextに依存する。
+場所: experiments/pysim/qa/tier3_executer/jit/test_jit_runtime.py:1858
+Python/native headerが一緒に別のlive traceへ誤リンクすると期待値も誤経路を採用する。
+現製品の_link_chainは論理next_pcとの一致をassertしている。
+現製品が誤リンクするという所見ではない。
+修正案: 生成入力のindex/strideから独立した期待successorとゲスト副作用を導く。
+2本の固定chain試験の独立期待値は保持する。
+誤リンク変異は実行していない。
+
+TD-11: CSP上限後のREADY末尾登録と先行READY実行を確認しない。
+場所: experiments/pysim/qa/tier1_core/test_coos.py:139
+正本: docs/components/tier1_core/os_scheduler.md:78
+既存試験はYIELDとcounter=0を比較する。
+修正案: 先行READYを残し、上限到達後のqueue順と次の実ディスパッチを比較する。
+現行実装は末尾登録であり、QAも検査不足を既に明記している。
+
+TD-12: RuntimeEventLoggerの変換結果を部分文字列で判定する。
+場所: experiments/pysim/qa/tier3_plugins/logger/test_runtime_event_logger.py:23
+辞書offset、件数、function=7だけでは、既存record内のPC/tick等の誤変換を検出しない。
+修正案: 現行固定recordの全フィールドと複数batchの順序を比較する。
+新しいログ項目を追加する要求にはしない。
+
+TD-13: assemblerの共通encode往復・XOR・弱いalignment条件。
+場所: experiments/pysim/qa/tier3_executer/jit/test_x64_asm.py:146
+      experiments/pysim/qa/tier3_executer/jit/test_x64_asm.py:177
+store/loadが同じ誤offsetを使う場合と、複数slotの入替えがXORで相殺される場合がある。
+16の倍数かつ元以下だけでは、32等の境界へ余分に切り下げる誤りを検出しない。
+修正案: 独立したアドレスから各slotを比較し、after == before & ~0xFを比較する。
+
+TD-14: Gotcha名と実観測の不一致。
+場所: experiments/pysim/qa/cross_cutting/test_gotchas.py:344
+      experiments/pysim/qa/cross_cutting/test_gotchas.py:689
+VMMIOのhash試験は製品tlb_indexを呼ばず、テスト内の式だけを計算する。
+Loaderのhash衝突名を持つ試験は非存在名のNoneだけを比較する。
+修正案: 実製品と仕様に合う入力へ結線するか、既存の主スイートへ対応を揃える。
+主スイートには実TLB・実衝突の検査がある。
+全要求未検証とは扱わない。
+
+TD-15: Scenario 10の条件付き欠落を成功表示が隠す。
+場所: experiments/pysim/qa/scenarios/scenario10_vmmio_virtual_devices.py:134
+      experiments/pysim/qa/scenarios/scenario10_vmmio_virtual_devices.py:191
+wasmtimeなしの条件分岐ではguest部分を実行せず、最後のverified completelyは表示される。
+修正案: 必須依存として拒否するか、欠落を明示した別判定へ分ける。
+現環境で依存なしにした再現は実行していない。
+
+TD-16: host callの物理ABI達成主張に対応する証拠が見つからない。
+場所: docs/qa/tier3_executer/jit_compiler_test_spec.md:101
+0〜6引数でstack alignment/Caller-saved完全保護を実証済みという主張が残る。
+raw guest bindingの値・型・port検査は物理register保存の証拠ではない。
+修正案: 各主張の実行入口と物理観測を対応付ける。
+対応する試験が見つからない主張は未検証へ限定する。
+既存jit_abiの契約を検査し、新しいABIは設計しない。
+既存証拠の探索範囲内で未確認という判定である。
+
+TD-17: 題名の対象JIT traceへ到達したことをany traceで代用する局所回帰。
+場所: experiments/pysim/qa/tier3_executer/jit/test_jit_runtime.py:1051
+      experiments/pysim/qa/tier3_executer/jit/test_jit_runtime.py:1104
+      experiments/pysim/qa/tier3_executer/jit/test_jit_runtime.py:1170
+最終結果とactive traceの存在だけでは、対象ブロックがfallbackした場合を区別しない。
+修正案: 対象PCのcompileとinvocationを捕捉し、意味結果と合わせて確認する。
+対象だけcompile失敗にする変異は未実施である。
+直接terminal traceを実行する別試験の証拠は保持する。
+
+5. 33スイートの観測境界と維持すべき証拠
+
+以下のパスはexperiments/pysim/qaを基準とする。
+
+Tier 1 Core / Interface: 4
+tier1_core/test_containers.py: 独立dict/set/整数モデル、全内容、拒否後保存、借用、探索回数。
+tier1_core/test_coos.py: 実Channel/Scheduler、移譲値と登録。TD-01/11。
+tier1_core/test_scheduler.py: READY順、終了、世代、timer、IRQ全5word。TD-01。
+tier1_interface/test_ipc_router.py: 独立RBAC表、実SHM、全KV、所有者、拒否後全状態。TD-02。
+
+Tier 2 Runtime: 11
+tier2_runtime/test_loader.py: ROM借用、型照合、途中失敗rollback、既存登録保存、索引、segment。
+tier2_runtime/test_jit_scoring.py: opcode値、score19、手動bitmap。TD-06。
+tier2_runtime/test_interop_abi.py: 144byte配置、offset、非所有descriptor、stack/localの32/64bit。
+tier2_runtime/test_syscall.py: output境界、重複拒否、全byte保存、Native、IPC、WASI port搬送。
+tier2_runtime/test_vmmio.py: 実controller、物理アドレス、PTE/TLB、owner、width。
+tier2_runtime/test_vsoc.py: vIRQ登録/配送、Native+COOS、JIT移行、idle log、GDB/HAL。TD-03。
+tier2_runtime/test_vdma.py: 32入口/方向、storage独立snapshot、境界、alias、SHM移譲、外部mock。
+tier2_runtime/test_logging.py: 独立wire oracle、overflow/FIFO/filter、batch、診断。TD-07。
+tier2_runtime/test_runtime_composer.py: executor/observer doubleによる構成と公開call境界。
+tier2_runtime/test_recovery.py: retry回数、sleep引数と順序、reset/panic通知。TD-05。
+tier2_runtime/test_wasm_differential.py: Wasmtime対Python参照、具体trap、全memory、float bit。
+
+Tier 3 Executer: 7
+tier3_executer/interpreter/test_interpreter.py: Python命令契約、control/CallFrame、memory/import、Native境界。
+tier3_executer/interpreter/test_cps_interpreter.py: 実Native入口、const幅、容量trap、全stack保存。
+tier3_executer/jit/test_jit_runtime.py: card/history/queue/cache、chain、C++control、yield、aging。TD-10/17。
+tier3_executer/jit/test_jit_differential.py: Wasmtime/Python/hybrid結果、固定回帰、60seed、Clang kernels。
+tier3_executer/jit/test_x64_jit.py: 実生成コード、header/stub bytes、helper、chain、local、spill。TD-08。
+tier3_executer/jit/test_x64_stencils.py: 実CPUでのstencil、算術/memory/globals、Linux実W^X。TD-09。
+tier3_executer/jit/test_x64_asm.py: 実CPUでのencoder/register/間接call/addressing。TD-13。
+
+Tier 3 Platform: 4
+tier3_platform/test_memory.py: 実MemoryManager/SharedBlock/台帳、全状態、heap再貸与。TD-02。
+tier3_platform/test_hal.py: 実HAL task/IPC、固定slot/busy/owner、stdout全byte、Timer。QA backend単体も含む。
+tier3_platform/test_libfireball.py: wrapper port、u32境界、WIT生成/archive/guestリンク、実Native raw 4 imports。
+tier3_platform/test_wasi_guest.py: Clang+WASI-libc、実Native/host gateway/IPC/COOS/HAL、外部stream/backend double。
+SDK試験の製品guest loweringは未実装であり、QAのwrap経路をその達成証拠にしない。
+今回新設したtest_driver_stubs.pyは別レビューの対象であり、この33の分母から除く。
+
+Tier 3 Plugins: 4
+tier3_plugins/debugger/test_debugger.py: 既存静的Native hook、命令位置停止/継続、memory、host replay禁止、構成隔離。
+tier3_plugins/debugger/test_gdb_remote.py: 実TCP RSPとNative hook、変更/継続、bad checksum副作用抑止。
+tier3_plugins/profiler/test_guest_profiler.py: 入れ子の時間/edge、trap exit、drop/overflow、debug stop、batch保存。
+tier3_plugins/logger/test_runtime_event_logger.py: 固定辞書offsetと部分表示。TD-12。
+
+Cross Cutting: 3
+cross_cutting/test_entrypoint.py: 登録欠落/重複/empty拒否、仕様分母、main smoke。
+cross_cutting/test_gotchas.py: 各層局所条件。一部要求名と呼出先のずれ。TD-14。
+cross_cutting/test_pairwise_combinations.py: 26計画行、288pair、12許可/14拒否、host/COOS/SHM全状態。TD-04。
+計画pairの被覆と、意味上の実行構成の被覆は別である。
+
+6. 12シナリオの観測境界
+
+パスはexperiments/pysim/qa/scenariosを基準とする。
+scenario1_loader_and_memory.py: data/read/write/grow/global。全新領域ゼロ・失敗時保存は局所未検査。
+scenario2_wasi_syscall_io.py: Preview1 guestの2iovecとstdout全byte、exit42。製品guest adapterは別。
+scenario3_recursion_and_tables.py: fib/table/br_tableの結果。深い容量と全frame保存は別試験。
+scenario4_hybrid_jit_loop.py: 結果168とtrace存在。対象trace実行や全境界状態の証拠にはしない。
+scenario5_multimodule_unified_pc.py: 単一module複数functionとテスト内検索。複数module・製品lookupは未検証。
+scenario6_coos_multitask_yield.py: 実Native閾値4、24境界、2task結果と全memory。物理DirectSwitchは別。
+scenario7_gdb_socket_debugger.py: 実TCP+Native hook、register/memory/step/continue、結果498。
+scenario8_comprehensive_storage_coverage.py: 合成結果65757、global持続、Native debug。全幅/全値の独立oracleではない。
+scenario9_ipc_router_and_logging.py: 実request/reply、owner/identity、URI/RBAC/容量拒否、固定log。
+scenario10_vmmio_virtual_devices.py: PTE/TLB/owner/revoke、条件付きPython guest。TD-15。
+scenario11_hal_and_wasi_drivers.py: Python stdio/Timer、QA VFS/random/clock。ゲスト・全deviceの証拠ではない。
+scenario12_wasi03p_uri_resolver.py: Python URI/capability、HAL task write、IPC KV、host clock。
+12子プロセスのexit code成功を、上記未観測要求の達成へ読み替えない。
+
+7. 既知未実装と文書整合で扱う事項
+
+実サービス再起動のTCB/heap/Runtime破棄・未完了IPC整理は概念適合と実統合を分ける。
+reset/panic callbackの通知試験を実再起動・全task停止の証拠にしない。
+release-task-heapのinvalid-owner結果は現行QAが未達と明記している。
+C++型付きslot、SPSC並行ロックフリー、ARM物理ABI/保護/資源予算は今回のpysim成功で閉じない。
+Runtime Composerの公開callイベントはNative内部の全粗粒度イベントを証明しない。
+vIRQのPython表と配送はguest可視R/O snapshotページを証明しない。
+DMA外部mockの待機/cache操作は、製品ドライバの結線とCPU上の効果を証明しない。
+DMA内部同期/非同期は転送対象で選べ、guestからの同期観測と独立という既決を維持する。
+Profiler方式フラグを統計属性として保存するQA要求は、正本のイベントフラグ契約との必要性確認が先である。
+QAに未実装とあるだけで、この属性を新しい製品要求として採用しない。
+旧VMMIO連続allocator、ルーティング表コピー、割込待機検索O(1)等の過去記述を復活させない。
+旧デバッガの命令step偽装と旧ABI配置は現行修正を確認した。
+今回の新規不具合として数えない。
+
+8. 実行範囲・ログ・再現方法
+
+元実装の既存局所試験は3実行群で147件、31件、12件が合格した。
+これは関連ファイルとidle正例だけの実行であり、33スイート全体の再実行結果ではない。
+一時契約試験は2件失敗・7件成功だった。
+失敗2件はbudget=1/既定budgetの同じidle不具合である。
+故障注入5種の既存局所結果は137/28/8/3/12件の合格だった。
+各変異に対応する独立契約試験は失敗した。
+変異はpytestプロセス内の関数・定数へ限定し、製品ファイルは編集していない。
+検出されなかった5種から全体のmutation scoreや未知欠陥率を推定しない。
+
+再現コード:
+/tmp/fireball-test-review-20261002/review_mutants.py
+/tmp/fireball-test-review-20261002/test_contract_probes.py
+/tmp/fireball-test-review-20261002/pairwise_configuration_probe.py
+
+基本再現:
+.venv/bin/python -m pytest -c pytest.ini -q /tmp/fireball-test-review-20261002/test_contract_probes.py
+.venv/bin/python /tmp/fireball-test-review-20261002/pairwise_configuration_probe.py
+
+IPC見逃し:
+PYTHONPATH=/tmp/fireball-test-review-20261002 .venv/bin/python -m pytest -p review_mutants --review-mutant=ipc-half-swap -q experiments/pysim/qa/tier1_interface/test_ipc_router.py experiments/pysim/qa/tier3_platform/test_memory.py
+vIRQ見逃し:
+PYTHONPATH=/tmp/fireball-test-review-20261002 .venv/bin/python -m pytest -p review_mutants --review-mutant=virq-ignore-category-stop -q experiments/pysim/qa/tier2_runtime/test_vsoc.py
+早期成功見逃し:
+PYTHONPATH=/tmp/fireball-test-review-20261002 .venv/bin/python -m pytest -p review_mutants --review-mutant=recovery-extra-success -q experiments/pysim/qa/tier2_runtime/test_recovery.py
+閾値見逃し:
+PYTHONPATH=/tmp/fireball-test-review-20261002 .venv/bin/python -m pytest -p review_mutants --review-mutant=jit-threshold-18 -q experiments/pysim/qa/tier2_runtime/test_jit_scoring.py
+Native診断ログ見逃し:
+PYTHONPATH=/tmp/fireball-test-review-20261002 .venv/bin/python -m pytest -p review_mutants --review-mutant=native-trap-no-log -q experiments/pysim/qa/tier2_runtime/test_logging.py
+
+同じplugin/変異名でtest_contract_probes.pyの該当caseだけを実行すれば独立期待値の失敗を再現できる。
+変異なしの独立試験が成功し、変異ありでは意味上のassertが失敗することを確認した。
+idleとpairwise構成のずれは変異なしで失敗する。
+
+9. 再構築の推奨順序
+
+最初にTD-01の現行実装とテストを既存idle契約へ合わせる。
+次にTD-02/03/05でABI、配送終端、成功後の操作停止を独立した期待値へ結ぶ。
+TD-04でpairwiseの構成対象を正しくし、TD-06/07で閾値とNative診断の実経路を検査する。
+その後にTD-08/09/10/12/13の全状態比較と独立oracleを改善する。
+TD-11/14/15/16/17では要求名、実行構成、実到達、達成主張と証拠を揃える。
+コンテナ、独立RBAC、拒否後の全状態保存、Wasmtime差分、Linux実W^X、実Native debug hookは維持する。
+修正の受入条件は、既存仕様の正常例が通り、対応する具体的な仕様違反を検出することである。
+新しい製品要求・回復経路・通常step粒度・動的プラグイン切替を追加する必要はない。

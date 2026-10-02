@@ -1,27 +1,11 @@
-"""Concept model for selected WASM 0xFC operations and their vDMA boundary."""
+"""Concept model for linear-memory CPU operations and saturating conversions."""
 
 import math
-from typing import Literal, Protocol
+from typing import Literal
 
 
 class WASMTrap(Exception):
     """A trap required by the WASM instruction semantics."""
-
-
-class SynchronousCopyBackend(Protocol):
-    """Copy backend that returns only after DMA is idle.
-
-    False means the transfer was refused or failed after reaching a quiescent
-    state. A caller may then safely redo a non-overlapping copy on the CPU.
-    """
-
-    def try_copy_sync(
-        self,
-        memory: bytearray,
-        destination: int,
-        source: int,
-        length: int,
-    ) -> bool: ...
 
 
 def _u32(value: int) -> int:
@@ -41,14 +25,8 @@ def memory_copy(
     destination: int,
     source: int,
     length: int,
-    *,
-    backend: SynchronousCopyBackend | None = None,
-    dma_threshold: int | None = None,
-) -> Literal["cpu", "vdma"]:
+) -> Literal["cpu"]:
     """Implement memory.copy; all bounds are checked before any mutation."""
-    if dma_threshold is not None and dma_threshold < 0:
-        raise ValueError("dma_threshold must be non-negative")
-
     destination = _u32(destination)
     source = _u32(source)
     length = _u32(length)
@@ -59,10 +37,6 @@ def memory_copy(
         return "cpu"
 
     overlaps = destination < source + length and source < destination + length
-    if not overlaps and backend is not None and dma_threshold is not None:
-        if length >= dma_threshold and backend.try_copy_sync(memory, destination, source, length):
-            return "vdma"
-
     if destination > source and overlaps:
         for index in range(length - 1, -1, -1):
             memory[destination + index] = memory[source + index]
@@ -112,23 +86,6 @@ def trunc_sat_unsigned(value: float, bits: int) -> int:
     return math.trunc(value)
 
 
-class _AcceptingBackend:
-    def __init__(self) -> None:
-        self.calls = 0
-
-    def try_copy_sync(
-        self,
-        memory: bytearray,
-        destination: int,
-        source: int,
-        length: int,
-    ) -> bool:
-        self.calls += 1
-        for index in range(length):
-            memory[destination + index] = memory[source + index]
-        return True
-
-
 def _check_concept_examples() -> None:
     memory = bytearray(range(8))
     memory_copy(memory, 2, 0, 6)
@@ -146,15 +103,9 @@ def _check_concept_examples() -> None:
     memory_fill(memory, 0, -1, 2)
     assert memory == bytearray([0xFF, 0xFF])
 
-    backend = _AcceptingBackend()
     memory = bytearray(range(16))
-    route = memory_copy(memory, 8, 0, 8, backend=backend, dma_threshold=8)
-    assert route == "vdma" and backend.calls == 1
-
-    backend = _AcceptingBackend()
-    memory = bytearray(range(16))
-    route = memory_copy(memory, 1, 0, 8, backend=backend, dma_threshold=1)
-    assert route == "cpu" and backend.calls == 0
+    assert memory_copy(memory, 8, 0, 8) == "cpu"
+    assert memory == bytearray(list(range(8)) + list(range(8)))
 
     assert trunc_sat_signed(float("nan"), 32) == 0
     assert trunc_sat_signed(float("inf"), 32) == (1 << 31) - 1

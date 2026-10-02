@@ -4,7 +4,7 @@
      test: docs/qa/tier3_platform/libfireball_test_spec.md
 -->
 
-本書はゲスト側 `libfireball` の設計目標を定義する。現行の参照実装 [`libfireball.py`](experiments/pysim/tier3_platform/libfireball.py) は汎用host-call引数の詰め替えと専用vIRQ/vDMA port転送だけをモデル化する。ゲスト側C/C++ライブラリ、WASI Preview1変換、URI Resolver、HALバッファ処理はリポジトリに未実装である。参照実装を完成したゲストアダプタとして扱わない。
+本書はゲスト側 `libfireball` の設計目標を定義する。Python参照実装 [`libfireball.py`](experiments/pysim/tier3_platform/libfireball.py) は汎用host-call引数の詰め替えと専用vIRQ/vDMA port転送をモデル化する。raw 4 importにはC++参照wrapperがあり、WIT生成bindingの静的リンクと実Interpreter実行を第8節の範囲で検証する。WASI Preview1変換、URI Resolver、HALバッファ処理はゲスト側ライブラリに未実装である。
 
 
 ## 1. コンセプト
@@ -168,7 +168,7 @@ sequenceDiagram
 - ゲストの生ポインタをホスト IF の引数として渡さず、相対オフセットまたは HAL バッファスライスを使う。
 - Tier 2 の契約にない URI、コマンド ID、物理アドレスを独自に定義しない。
 - vIRQページのアドレス、原因源表、親子関係、関数シグネチャ検証を独自に再実装しない。ゲストからvMMIO固定スロットへ直接storeしてはならない。
-- 実装言語や生成方式は固定せず、将来の C/C++ ゲストライブラリ実装へ移植可能な境界だけを仕様化する。
+- 実機のbinding生成方式は固定しない。raw Core Wasm参照実装の生成器は明示的な4 import写像を対象とする。
 
 
 ## 7. 形式検証・テスト仕様との対応
@@ -179,10 +179,18 @@ sequenceDiagram
 
 汎用システムコールは固定7引数のhost-call関数へ接続する。`fireball_call0`〜`fireball_call6`は不足引数を`0`で埋めて直接呼び出す。vIRQ/vDMAラッパーは専用host-call importへ接続する。
 
-参照実装の引数配置と専用port転送は [`libfireball_test_spec.md`](docs/qa/tier3_platform/libfireball_test_spec.md) の4ケースで検証する。WASI adapter、Guest ABI、HAL結線、ゲスト側C/C++ライブラリは未実装であり、この参照実装テストでは検証しない。ホスト側登録・解除・転送はTier 2の`runtime_syscall` / `runtime_vsoc`テストで行う。
+参照実装の引数配置と専用port転送は [`libfireball_test_spec.md`](docs/qa/tier3_platform/libfireball_test_spec.md) の4ケースで検証する。WASI adapterとHAL loweringは未実装であり、この参照wrapperテストでは検証しない。raw guest ABIの生成・静的リンク・実Interpreter実行は同じテスト仕様の統合ケースで検査する。ホスト側登録・解除・転送はTier 2の`runtime_syscall` / `runtime_vsoc`テストで行う。
 
-目標とする実機向けC/C++ゲストライブラリは実行時portを保持しない。各WIT importの静的リンクシンボルをinline wrapperから直接呼び出す。現行リポジトリにはこの実装がない。
+目標とする実機向けC/C++ゲストライブラリは実行時portを保持しない。各WIT importの静的リンクシンボルをinline wrapperから直接呼び出す。raw 4 importの参照実装を本節末尾に示す。実機プラットフォームとの統合は対象外である。
 
 ## 8. 設計判断と参考実装
 
 特記すべき独立したADRはない。採用方針は本書の各契約節に記載する。
+
+### raw host-call参照実装
+<!-- traceability: {WIT_Interface_Spec} -->
+[`libfireball.hxx`](experiments/pysim/native/tier3_platform/libfireball/libfireball.hxx) は汎用host-callの0〜6引数を固定7引数へ配置するinline wrapperである。
+専用vIRQ/vDMA入口はWITから生成したbindingを使用する。
+[`build_guest.py`](tools/guest_bindings/build_guest.py) が生成bindingを静的archiveへ格納し、guestへリンクする。
+この実装範囲はraw 4 importである。
+WASI Preview1とHAL loweringは本実装の対象外である。

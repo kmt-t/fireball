@@ -47,12 +47,44 @@
 | TEST-MEM-31 | WIT handleとC++ RAII所有権の境界 | WIT `shm-handle`をC++バインディングへ渡す | handle recordを複製しつつ所有権操作を実行 | recordの複製は所有権を複製しない。C++ `shared_block`はmove-onlyで、release成功後のsource wrapperは無効、claim成功時だけ受信側wrapperが所有者となる | [`system_memory.md`](docs/components/tier1_interface/system_memory.md) §5.1.3, `{ADR_SharedBlockRaii}` |
 | TEST-MEM-32 | x64参照JIT領域の連続性と固定区画 | `acquire-jit-cache`成功 | シミュレーション領域の容量と区画境界を検査 | 現行pysim構成は8,192バイトを共通コード2KB + Active/Warm/Oldest各2KBに分ける。共通領域をバンク管理へ渡さない。この容量・ページ単位をARMv8-Mの物理要件とはしない | `system_config.md`, `runtime_memory.md` |
 
+### 固定パーティションの返却後再利用
+
+TEST-MEM-01/05は`test_reacquire_released_partition_does_not_overlap_live_task`でも検査する。
+固定2スロット構成をテスト側で選び、先行スロットの返却と再貸与を4回繰り返す。
+他タスクの領域、owner、実体identityおよび全バイトを保存する。
+対象領域はゼロ初期化し、総貸与量を増やさない。
+製品既定のVMスロット数は変更しない。
+
 ## 3. テスト検証実績と網羅状況
 
 - 仕様書に定義された各テストケース（契約レベルの不変条件・境界条件・エラー処理）の検証手順と期待結果を定義。
 - TEST-MEM-26〜30（ランタイム用バンプアロケータ・JITキャッシュアロケータの契約レベル振る舞い）は本書で契約として定義済みだが、対応する実行可能テスト（concept code / pysim）は [`runtime_loader.md`](docs/components/tier2_runtime/runtime_loader.md) および [`jit_runtime.md`](docs/components/tier3_executer/jit_runtime.md) 側の実装完了後にそれぞれの正本テスト仕様書へ追加される（現状は契約定義のみで実行時検証は未着手であることを明示する。サイレントな欠落ではなく既知の追跡対象とする）。
 
+### 3.1 claim拒否と所有権通知の実行対応
+
+| テストケースID | 実行可能テスト | 実際に確認する範囲 |
+| :--- | :--- | :--- |
+| TEST-MEM-08 | `test_mem_08_claim_rejection_preserves_live_storage` | 不存在IDとRAII drop済みIDの拒否、全SHMバイト、所有者台帳、ページ世代、総量と有効ブロックの保存、拒否後の正常Grant/Claim |
+| TEST-MEM-10d | `test_mem_10d_owner_notifications_match_each_lifecycle_boundary` | 台帳更新後の旧・新所有者通知と回数、release/grantでmapなし、claim/rollbackで有効所有ビューをmap、内容保存とdrop時のunmap |
+
+両ケースは[`test_memory.py`](experiments/pysim/qa/tier3_platform/test_memory.py)で実行する。
+pysimのTEST-MEM-08は`INVALID_SHM_ID`と`INVALID_OR_DEALLOCATED_SHM_ID`を観測する。
+これは参照実装のエラー表現であり、WITのエラー値そのものは検査しない。
+Tier 2の同名TEST-MEM-10dは古いハンドルの失効を検査する別ケースである。
+本書の10dは`PageMappingCallbacks`の契約を検査する。
+
+- 実行日: 2026-10-02。
+- 対象ソース: [`memory.py`](experiments/pysim/tier2_runtime/memory.py)。
+- スイート: [`test_memory.py`](experiments/pysim/qa/tier3_platform/test_memory.py)。
+- 環境: Linux、プロジェクトのuv環境。
+- 結果: 成功16件、失敗0件、skip 0件、xfail 0件。
+
+```bash
+UV_CACHE_DIR=/tmp/fireball-test-refactor-uv uv run --offline --no-sync python -m pytest -q experiments/pysim/qa/tier3_platform/test_memory.py
+```
+
 ## 4. 未検証・スコープ外
 
+- TEST-MEM-05の`invalid-owner`結果は、現行pysimの`release_task_heap`には未実装である。所有者台帳から呼出し元の領域だけを返却し、領域がなければ何もせず`None`を返す。既存試験が確認するのは他タスクのパーティション保全と所有者による返却である。型付き`acquire-slot`/`release-slot`も現行pysimには未実装である。これらは製品機能の未達として追跡し、TEST-MEM-08/10dの成功から達成済みとはしない。
 - 共有メモリのソフトウェア所有権・vMMIO通知（TEST-MEM-14〜16）は [`runtime_memory_test_spec.md`](docs/qa/tier2_runtime/runtime_memory_test_spec.md) を参照する。ARMv8-Mの物理メモリ保護と実機受け入れ条件はTBDである。
 - vMMIO PTE / TLB の具体的な物理挙動（マッピング登録・アンマップ・再マッピング）は本書のスコープ外であり、`runtime_memory_test_spec.md` を正本とする（本契約はvMMIO等の内部シンボル・アドレス体系を一切参照しないため）。

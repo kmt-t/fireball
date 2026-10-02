@@ -59,8 +59,8 @@ from tier3_executer.jit.jit_cache import (
 from tier3_executer.jit.jit_runtime import JITInterpreter
 from tier3_executer.jit.x64_jit import TraceCompiler
 from tier3_executer.runtime_engine import RuntimeEngine
-from wasm_module import I32, LocalWidthMap
-from wasm_opcodes import BR_TABLE, I32_ADD, I32_CONST, LOCAL_GET, LOCAL_SET
+from wasm_module import I32, LocalWidthMap, Module
+from wasm_opcodes import BR_IF, BR_TABLE, I32_ADD, I32_CONST, IF, LOCAL_GET, LOCAL_SET, RETURN
 from wasm_reader import parse
 
 
@@ -1048,13 +1048,45 @@ def test_jitr_backward_branch_block_byte_span_not_disqualified():
     )
 
 
+def _install_single_control_trace(
+    engine: RuntimeEngine, module: Module, terminator: int, required_bytes: bytes = b""
+) -> int:
+    """対象traceだけを配置し、native実行件数を対象PCの実行証拠にする。"""
+    manager = engine.jit_runtime
+    assert manager is not None and not manager.hotspot_profiling_enabled
+    candidates = []
+    for block in module.blocks:
+        code = module.code_for(block.head_pc >> 16)
+        offset = block.head_pc & 0xFFFF
+        end = offset + block.byte_span
+        if (
+            end < len(code)
+            and code[end] == terminator
+            and required_bytes in bytes(code[offset:end])
+        ):
+            candidates.append(block)
+    assert len(candidates) == 1, "fixture must identify one required control block"
+    block = candidates[0]
+    trace = manager._compile_trace(block.head_pc, block)
+    assert trace is not None
+    assert manager.cache.insert(trace)
+    manager.bitmap.mark_compiled(block.head_pc)
+    assert tuple(pc for pc, _ in manager.cache.active.traces) == (block.head_pc,)
+    assert engine.stat_jit_invocations == 0
+    return block.head_pc
+
+
+def _assert_single_control_trace_executed(engine: RuntimeEngine, pc: int) -> None:
+    manager = engine.jit_runtime
+    assert manager is not None
+    assert tuple(head for bank in manager.cache.banks for head, _ in bank.traces) == (pc,)
+    assert engine.stat_jit_invocations > 0, f"required native trace {pc:#x} was never executed"
+
+
 def test_jitr_if_then_skipped_when_condition_false_after_jit():
-    """
-    TEST-JITR-42: once the `if (cond) (then ...)` condition-check block compiles,
-    the then-body must run only when the native trace's condition is true --
-    a regression guard for a `_invoke_trace` that treated IF exactly like an
-    unconditional fallthrough, always executing the then-body regardless of
-    the computed condition.
+    """TEST-JITR-33: IF直前のtraceだけを配置し、真偽両方の分岐結果を検査する。
+
+    Native実行件数を対象PCの到達証拠にする。hotnessの生成規則は別の試験が扱う。
     """
     wat = """
     (module
@@ -1085,8 +1117,11 @@ def test_jitr_if_then_skipped_when_condition_false_after_jit():
         return
     module = parse(wasm_bytes)
     fn_idx = module.export_func_index("abs_sum")
-    engine = make_runtime_engine(jit_compiler=TraceCompiler(), yield_threshold=4)
+    engine = make_runtime_engine(
+        jit_compiler=TraceCompiler(), yield_threshold=4, hotspot_profiling_enabled=False
+    )
     engine.register_module_blocks(module)
+    target_pc = _install_single_control_trace(engine, module, IF)
     interp = Interpreter(module)
 
     n = 20
@@ -1096,22 +1131,11 @@ def test_jitr_if_then_skipped_when_condition_false_after_jit():
         f"abs_sum({n}) via JIT-driven RuntimeEngine.call() = {results}, expected [{expected}] -- "
         "an unconditionally-taken then-body (or an unconditionally-skipped one) throws this off"
     )
-    assert len(engine.jit_runtime.cache.active.traces) > 0, (
-        "the if-condition-check block must have gotten hot enough to compile"
-    )
+    _assert_single_control_trace_executed(engine, target_pc)
 
 
 def test_jitr_nested_loop_in_if_frame_stack_reconciliation():
-    """
-    TEST-JITR-42: a loop nested inside an if nested inside an outer loop --
-    RuntimeEngine._invoke_trace's computed jumps bypass _h_block/_h_loop/
-    _h_if entirely, so once the inner loop's exit-condition block compiles,
-    the frame.frames pushed for it during any earlier cold (interpreted)
-    pass are never popped by the interpreter's own _do_branch. A regression
-    guard for exactly that: once the outer loop's own unconditional `br`
-    later resolves via the interpreter, a stale inner frame on top of
-    frame.frames misdirects depth-relative branch resolution.
-    """
+    """TEST-JITR-33: 内側loopの条件traceを実行し、制御frameと外側loopの結果を守る。"""
     wat = """
     (module
       (func (export "nested") (param $n i32) (result i32)
@@ -1149,8 +1173,13 @@ def test_jitr_nested_loop_in_if_frame_stack_reconciliation():
         return
     module = parse(wasm_bytes)
     fn_idx = module.export_func_index("nested")
-    engine = make_runtime_engine(jit_compiler=TraceCompiler(), yield_threshold=4)
+    engine = make_runtime_engine(
+        jit_compiler=TraceCompiler(), yield_threshold=4, hotspot_profiling_enabled=False
+    )
     engine.register_module_blocks(module)
+    target_pc = _install_single_control_trace(
+        engine, module, BR_IF, bytes.fromhex("20 02 41 03 4e")
+    )
     interp = Interpreter(module)
 
     n = 20
@@ -1162,21 +1191,13 @@ def test_jitr_nested_loop_in_if_frame_stack_reconciliation():
         "a desynced frame.frames misresolves the outer loop's `br` once JIT skips the inner "
         "loop/if exit without popping the frames the interpreter pushed for them"
     )
-    assert len(engine.jit_runtime.cache.active.traces) > 0, (
-        "the inner loop's exit-condition block must have compiled"
-    )
+    _assert_single_control_trace_executed(engine, target_pc)
 
 
 def test_jitr_return_terminated_block_jit_result_correct():
-    """
-    A JIT-compiled block whose terminator is RETURN has
-    `trace.next_pc is None` (the function is ending, not falling through to
-    another block). `_invoke_trace` resumes at the raw RETURN opcode after
-    spilling the result to the shared operand stack. The interpreter's return
-    handler publishes the sentinel and performs frame finalization. The JIT
-    must never decode an `Instr` at runtime, which
-    `{DirectBytecodeExecution}` (GOTCHA-INTP-05) forbids: no instruction-object
-    generation at runtime, ever.
+    """TEST-JITR-44: RETURN直前のtraceを実行し、共有stackから結果を返す。
+
+    対象traceだけを配置する。Native実行件数と最終結果をともに検査する。
     """
     wat = """
     (module
@@ -1206,8 +1227,14 @@ def test_jitr_return_terminated_block_jit_result_correct():
     fn_idx = module.export_func_index("f")
     # The tail is intentionally compact; use the smaller test card so its
     # RETURN-terminated block remains a valid JIT candidate.
-    engine = make_runtime_engine(jit_compiler=TraceCompiler(), yield_threshold=2, card_shift=2)
+    engine = make_runtime_engine(
+        jit_compiler=TraceCompiler(),
+        yield_threshold=2,
+        card_shift=2,
+        hotspot_profiling_enabled=False,
+    )
     engine.register_module_blocks(module)
+    target_pc = _install_single_control_trace(engine, module, RETURN)
     interp = Interpreter(module)
 
     n = 20
@@ -1215,9 +1242,7 @@ def test_jitr_return_terminated_block_jit_result_correct():
     assert results == [n * 3], (
         f"f({n}) via JIT-driven RuntimeEngine.call() = {results}, expected [{n * 3}]"
     )
-    assert len(engine.jit_runtime.cache.active.traces) > 0, (
-        "the RETURN-terminated tail block must have compiled"
-    )
+    _assert_single_control_trace_executed(engine, target_pc)
 
 
 def test_jitr_terminal_trace_returns_to_interpreter_return_handler():
@@ -1847,6 +1872,9 @@ def _chain_stress_check_links(cache: JITMultiBufferCache) -> None:
             if trace.chain_next is None:
                 assert native == 0, f"unchained trace {pc:#x} keeps a native jump"
                 continue
+            index = (pc - CHAIN_STRESS_HEAD) // CHAIN_STRESS_STRIDE
+            assert index < CHAIN_STRESS_TRACES - 1
+            assert trace.chain_next == CHAIN_STRESS_HEAD + (index + 1) * CHAIN_STRESS_STRIDE
             target = cache.find_trace(trace.chain_next)
             assert target is not None, f"{pc:#x} chains into evicted {trace.chain_next:#x}"
             assert target.raw_addr is not None
@@ -1856,14 +1884,17 @@ def _chain_stress_check_links(cache: JITMultiBufferCache) -> None:
 
 
 def _chain_stress_run(cache: JITMultiBufferCache, start: JITTrace) -> None:
-    """Run the chain natively; the touched traces must equal the Python chain walk."""
+    """Run natively; derive successors and effects from the generated linear chain input."""
     expected_mask = 0
     walked = start
     while True:
         expected_mask |= 1 << ((walked.head_pc - CHAIN_STRESS_HEAD) // CHAIN_STRESS_STRIDE)
         if walked.chain_next is None:
             break
-        successor = cache.find_trace(walked.chain_next)
+        index = (walked.head_pc - CHAIN_STRESS_HEAD) // CHAIN_STRESS_STRIDE
+        expected_next = CHAIN_STRESS_HEAD + (index + 1) * CHAIN_STRESS_STRIDE
+        assert walked.chain_next == expected_next
+        successor = cache.find_trace(expected_next)
         assert successor is not None
         walked = successor
     context = WASMContext()
@@ -1872,8 +1903,13 @@ def _chain_stress_run(cache: JITMultiBufferCache, start: JITTrace) -> None:
     assert context.locals[0] == expected_mask, (
         f"native chain ran {context.locals[0]:#x}, chain pointers say {expected_mask:#x}"
     )
-    assert walked.next_pc is not None
-    assert context.native_context.ip == walked.next_pc
+    final_index = (walked.head_pc - CHAIN_STRESS_HEAD) // CHAIN_STRESS_STRIDE
+    expected_ip = (
+        CHAIN_STRESS_EXIT_PC
+        if final_index == CHAIN_STRESS_TRACES - 1
+        else CHAIN_STRESS_HEAD + (final_index + 1) * CHAIN_STRESS_STRIDE
+    )
+    assert context.native_context.ip == expected_ip
 
 
 def test_jitr_62_chain_links_stay_valid_across_rotation_and_promotion():
@@ -1883,7 +1919,7 @@ def test_jitr_62_chain_links_stay_valid_across_rotation_and_promotion():
 
     After every step, each `chain_next` names a resident trace, the Python header and the
     native header agree, and no trace is resident in two banks.  Every trace looked up is
-    then run natively; the traces the native chain touches match the pointers' walk, so a
+    then run natively; effects match the generated logical successor sequence, so a
     jump to a promoted trace's old code cannot pass.
     """
     import random

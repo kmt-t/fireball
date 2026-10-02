@@ -1,0 +1,43 @@
+........................................................................ [ 51%]
+..........................................................FF.......      [100%]
+=================================== FAILURES ===================================
+_________________ test_mem_10_entry_writer_matches_wire_layout _________________
+
+    def test_mem_10_entry_writer_matches_wire_layout() -> None:
+        """TEST-IPCR-27: writerを規定の全byte列で検査し、隣接領域の保存も確認する。"""
+        mm, _ = _make_memory_manager(1)
+        mm.init_manager(pool_base=0x00010000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
+        block = mm.allocate_shared(size=32).unwrap()
+        block.write_bytes(0, bytes.fromhex("a5") * 32)
+        block.write_entry(1, key=0x12345678, val=0x90ABCDEF)
+>       assert block.read_u64(1) == 0x1234567890ABCDEF
+E       assert 10424652189165442680 == 1311768467294899695
+E        +  where 10424652189165442680 = read_u64(1)
+E        +    where read_u64 = <memory.SharedBlock object at 0x72f8d190ef40>.read_u64
+
+experiments/pysim/qa/tier3_platform/test_memory.py:344: AssertionError
+___________ test_mem_10_entry_reader_decodes_independent_wire_layout ___________
+
+    def test_mem_10_entry_reader_decodes_independent_wire_layout() -> None:
+        """TEST-IPCR-27: 製品writerを使わず、規定byte列を直接投入してreaderを検査する。"""
+        mm, _ = _make_memory_manager(1)
+        mm.init_manager(pool_base=0x00010000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
+        block = mm.allocate_shared(size=32).unwrap()
+        wire = (
+            bytes.fromhex("a5") * 16
+            + bytes.fromhex("21 43 65 87 98 ba dc fe")
+            + bytes.fromhex("a5") * 8
+        )
+        block.write_bytes(0, wire)
+>       assert block.read_entry(2) == (0xFEDCBA98, 0x87654321)
+E       assert (2271560481, 4275878552) == (4275878552, 2271560481)
+E
+E         At index 0 diff: 2271560481 != 4275878552
+E         Use -v to get more diff
+
+experiments/pysim/qa/tier3_platform/test_memory.py:364: AssertionError
+REVIEW mutant=ipc-half-swap mutation_calls=[404, 2386]
+=========================== short test summary info ============================
+FAILED experiments/pysim/qa/tier3_platform/test_memory.py::test_mem_10_entry_writer_matches_wire_layout
+FAILED experiments/pysim/qa/tier3_platform/test_memory.py::test_mem_10_entry_reader_decodes_independent_wire_layout
+2 failed, 137 passed in 0.53s

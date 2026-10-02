@@ -22,6 +22,7 @@ from runtime_events import (
     RUNTIME_EVENT_NO_MODULE,
     RUNTIME_EVENT_NO_PC,
     RuntimeEvent,
+    RuntimeEventBatch,
     RuntimeEventFlags,
     RuntimeEventKind,
     RuntimeExecutionError,
@@ -40,10 +41,11 @@ class _Executor:
 
 class _Observer:
     def __init__(self) -> None:
-        self.events: StaticVector[RuntimeEvent] = StaticVector(capacity=4)
+        self.events: StaticVector[RuntimeEvent] = StaticVector(capacity=8)
 
-    def on_runtime_event(self, event: RuntimeEvent) -> None:
-        self.events.append(event)
+    def on_runtime_batch(self, batch: RuntimeEventBatch) -> None:
+        for event in batch.records:
+            self.events.append(event)
 
 
 class _Factory:
@@ -53,6 +55,7 @@ class _Factory:
 
     def create(self) -> _Observer:
         self.calls += 1
+        self.instance = _Observer()
         return self.instance
 
 
@@ -125,15 +128,28 @@ def test_selected_plugins_receive_one_shared_event_stream() -> None:
     assert logger.calls == 1
     assert debugger.calls == 0
     assert profiler.calls == 1
-    assert len(logger.instance.events) == 2
-    assert len(profiler.instance.events) == 2
-    assert logger.instance.events[0] == profiler.instance.events[0]
-    assert logger.instance.events[0].kind == RuntimeEventKind.FUNCTION_ENTER
-    assert logger.instance.events[1].kind == RuntimeEventKind.FUNCTION_EXIT
-    assert logger.instance.events[0].runtime_id == 9
-    assert logger.instance.events[0].module_id == RUNTIME_EVENT_NO_MODULE
-    assert logger.instance.events[0].guest_pc == RUNTIME_EVENT_NO_PC
-    assert [event.tick for event in logger.instance.events] == [10, 11]
+    expected = tuple(
+        RuntimeEvent(
+            kind,
+            9,
+            RUNTIME_EVENT_NO_MODULE,
+            5,
+            RUNTIME_EVENT_NO_PC,
+            10 + offset,
+            1,
+            RuntimeEventFlags.TICK_VALID | RuntimeEventFlags.JIT,
+        )
+        for offset, kind in enumerate(
+            (
+                RuntimeEventKind.FUNCTION_ENTER,
+                RuntimeEventKind.JIT_ENTER,
+                RuntimeEventKind.JIT_EXIT,
+                RuntimeEventKind.FUNCTION_EXIT,
+            )
+        )
+    )
+    assert tuple(logger.instance.events) == expected
+    assert tuple(profiler.instance.events) == expected
 
 
 class _TrappingExecutor:
@@ -167,7 +183,11 @@ def test_guest_trap_is_distinguished_from_host_failure() -> None:
     assert [event.kind for event in logger.instance.events] == [
         RuntimeEventKind.FUNCTION_ENTER,
         RuntimeEventKind.TRAP,
+        RuntimeEventKind.FUNCTION_EXIT,
     ]
+    guest_exit = logger.instance.events[2]
+    assert guest_exit.flags & RuntimeEventFlags.ABORTED
+    assert guest_exit.flags & RuntimeEventFlags.ESTIMATED
 
     factories = RuntimeFactories(
         interpreter=_FailingExecutor,
@@ -183,7 +203,11 @@ def test_guest_trap_is_distinguished_from_host_failure() -> None:
     assert isinstance(failing_runtime, RuntimeWithPlugins)
     failure_result = failing_runtime.call(4, ())
     assert not failure_result.is_ok and failure_result.error == RuntimeExecutionError.HOST_FAILURE
-    aborted = logger.instance.events[3]
+    assert [event.kind for event in logger.instance.events] == [
+        RuntimeEventKind.FUNCTION_ENTER,
+        RuntimeEventKind.FUNCTION_EXIT,
+    ]
+    aborted = logger.instance.events[1]
     assert aborted.kind == RuntimeEventKind.FUNCTION_EXIT
     assert aborted.flags & RuntimeEventFlags.ABORTED
     assert aborted.flags & RuntimeEventFlags.ESTIMATED

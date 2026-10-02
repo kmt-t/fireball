@@ -7,29 +7,20 @@ while not (_PYSIM_DIR / "tier1_core").is_dir():
     _PYSIM_DIR = _PYSIM_DIR.parent
 
 
-"""Integration Scenario 8: Comprehensive Full-Coverage Storage & Debugger Integration.
+"""Integration Scenario 8: Python Interpreter storage examples and TCP RSP plumbing.
 
-Tests exhaustive read/write operations across all WASM storage tiers:
-1. Globals: mutable/immutable globals, global.get, global.set, cross-function access
-2. Locals: local.get, local.set, local.tee, parameter preservation, frame scoping
-3. Linear Memory:
-   - 8-bit: i32.store8, i32.load8_u, i32.load8_s (sign/zero extension)
-   - 16-bit: i32.store16, i32.load16_u, i32.load16_s
-   - 32-bit: i32.store, i32.load
-   - Dynamic Memory Growth: memory.grow, memory.size, boundary accesses
-4. High-Coverage JIT Differential Verification:
-   - Tier 3 Interpreter vs Tier 3 JIT execution differential equality
-5. Interactive GDB RSP Live Debugging:
-   - Breakpoint trapping, virtual register inspection/mutation (g, G)
-   - Memory inspection/patching (m, M) in interpreter-only debug mode
-   - Single-stepping (s) and continue-to-exit (c, W00)
+Checks the selected globals, locals, linear-memory loads/stores and growth in
+this script. It does not establish exhaustive opcode coverage or JIT differential
+execution. The TCP session uses statically composed native hooks and live execution state.
 """
+
+# Calculation uses the Python Interpreter, not a JIT differential execution.
 
 import socket
 import time
 
 import wasmtime
-from execution_context import WASMContext
+from helpers import make_debug_execution
 from runtime_test_driver import RuntimeEngineDebugDriver
 from system import System
 from tier3_executer.interpreter.interpreter import Interpreter, InterpreterBindings
@@ -117,7 +108,7 @@ class GDBClientHelper:
     def close(self):
         try:
             self.sock.close()
-        except Exception:
+        except OSError:
             pass
 
     def send_raw_packet(self, payload: str) -> str:
@@ -125,7 +116,11 @@ class GDBClientHelper:
         wire_data = f"${payload}#{cksum:02x}".encode("latin1")
         self.sock.sendall(wire_data)
         buf = ""
-        while "$" not in buf or "#" not in buf:
+        while True:
+            dollar = buf.find("$")
+            hash_end = buf.find("#", dollar) if dollar >= 0 else -1
+            if hash_end >= 0 and len(buf) >= hash_end + 3:
+                break
             chunk = self.sock.recv(1024).decode("latin1")
             if not chunk:
                 break
@@ -137,6 +132,11 @@ class GDBClientHelper:
             dollar_idx = buf.index("$")
             hash_idx = buf.find("#", dollar_idx)
             response_payload = buf[dollar_idx + 1 : hash_idx]
+            assert len(buf) >= hash_idx + 3, "incomplete RSP checksum"
+            assert (
+                int(buf[hash_idx + 1 : hash_idx + 3], 16)
+                == sum(response_payload.encode("latin1")) % 256
+            ), "incorrect RSP checksum"
             self.sock.sendall(b"+")
             return response_payload
         return ""
@@ -187,15 +187,14 @@ def test_scenario_comprehensive_storage_and_debugger():
     # -------------------------------------------------------------------------
     # Phase 3: Interactive GDB RSP Socket Debugging Session on Live Storage
     # -------------------------------------------------------------------------
-    # Three real basic blocks split by nested `block`/`end` and loaded through
-    # a real Module -- so run_block_interpret's op-stream derivation (from raw
-    # bytecode) has a function to decode against.
+    # Real bytecode executes through the statically composed native interpreter.
+    # Loaded block metadata supplies addresses for the breakpoint assertions.
     # block100: local.get 0, i32.const 1, i32.add, local.set 0 (next: block110)
     # block110: local.get 0, i32.const 10, i32.mul, local.set 1 (next: block120)
     # block120: local.get 1, local.set 2 (next: None / exit)
     debug_wat = """
     (module
-      (func (export "f") (param i32 i32 i32 i32)
+      (func (export "f") (param i32 i32 i32 i32) (result i32)
         (block $b1
           (block $b2
             local.get 0
@@ -210,6 +209,7 @@ def test_scenario_comprehensive_storage_and_debugger():
         )
         local.get 1
         local.set 2
+        local.get 2
         return
       )
     )
@@ -218,14 +218,14 @@ def test_scenario_comprehensive_storage_and_debugger():
     debug_mod = engine.load_wasm(bytes(wasmtime.wat2wasm(debug_wat)))
     block100, block110, block120 = debug_mod.blocks[0], debug_mod.blocks[1], debug_mod.blocks[2]
     blocks = {block100.head_pc: block100, block110.head_pc: block110, block120.head_pc: block120}
-    dbg = DebuggerManager(engine=engine)
-    server = GDBServer(dbg=dbg, host="127.0.0.1", port=0)
     # Initial context: local0 = 7, memory 256 bytes with header "STORAGE_DATA"
     live_mem = bytearray(256)
     live_mem[0:12] = b"STORAGE_DATA"
-    ctx = WASMContext(memory=live_mem)
-    ctx.locals = (7, 0, 0, 0)
-    port = server.start(current_pc=block100.head_pc, ctx=ctx, blocks=blocks)
+    execution = make_debug_execution(debug_mod, 0, (7, 0, 0, 0), memory=live_mem)
+    dbg = DebuggerManager(engine=execution)
+    server = GDBServer(dbg=dbg, host="127.0.0.1", port=0)
+    ctx = execution.context
+    port = server.start(current_pc=0, ctx=ctx, blocks=blocks)
     time.sleep(0.05)
     client = GDBClientHelper("127.0.0.1", port)
     try:
@@ -239,7 +239,7 @@ def test_scenario_comprehensive_storage_and_debugger():
         resp = client.send_raw_packet("g")
         pc = int.from_bytes(bytes.fromhex(resp[0:8]), "little")
         l0 = int.from_bytes(bytes.fromhex(resp[32:40]), "little")
-        assert pc == block100.head_pc and l0 == 7
+        assert pc == 0 and l0 == 7
         # 4. Set breakpoint at block110's head
         resp = client.send_raw_packet(f"Z0,{block110.head_pc:x},0")
         assert resp == "OK"
@@ -259,16 +259,17 @@ def test_scenario_comprehensive_storage_and_debugger():
         assert ctx.locals[0] == 15
         assert client.send_raw_packet("M0,c:4d5554415445445f44415441") == "OK"
         assert ctx.memory[0:12] == b"MUTATED_DATA"
-        # 7. Single-step block110 -> block120 (local1 = 15 * 10 = 150)
+        # 7. Debug stop after local.get 0; the multiplication remains pending
         assert client.send_raw_packet("s") == "S05"
         resp_g = client.send_raw_packet("g")
         pc = int.from_bytes(bytes.fromhex(resp_g[0:8]), "little")
         l1 = int.from_bytes(bytes.fromhex(resp_g[40:48]), "little")
-        assert pc == block120.head_pc and l1 == 150
+        assert pc == block110.head_pc + 2 and l1 == 0
+        assert tuple(ctx.stack) == (15,)
         # 8. Remove breakpoint & continue to exit
         assert client.send_raw_packet(f"z0,{block110.head_pc:x},0") == "OK"
         assert client.send_raw_packet("c") == "W00"
-        assert ctx.locals[2] == 150
+        assert execution.call.results == [150]
         print(
             "    [Phase 3] Live GDB Socket Debugging on Full Storage (Locals/Memory) -> OK [PASS]"
         )

@@ -29,3 +29,17 @@ ProfilerがRuntimeのPC、スタック、メモリ、停止状態を変更した
 
 `guest_profiler_model.py`で呼出対応、包括・自己時間、Trap離脱、欠落時の推定状態、および再帰スタック超過の性質を
 検証する。通常モデルで各性質が成立し、`guards=False`変異モデルで対応する違反遷移を反証する。
+
+## 5. 現行pysimとの対応
+
+| ケース | 実行入口 | 判定範囲 |
+| :--- | :--- | :--- |
+| TEST-PROF-01/02 | `test_call_graph_and_time_accounting` | 実RuntimeEventBatchから全呼出回数、辺、包括・自己時間、フレーム終了を照合する |
+| TEST-PROF-03 | `test_trap_waits_for_ordered_exits_as_estimated` | Trap直後は2フレームを保持する。内側のexitで親を閉じず、最終exitまで各時間を照合する |
+| TEST-PROF-04 | `test_cumulative_batch_loss_is_counted_once` | 累積欠落5→5→8の差分と、推定値付きの時間7を照合する |
+| TEST-PROF-05 | 容量超過3ケース | 関数表、辺表、再帰スタックを個別に超過させ、親フレームと時間を保存する |
+| TEST-PROF-06 | `test_debug_stop_closes_nested_frames_at_stop_tick` | 停止tickで親子を閉じ、自己時間と推定属性を照合する。入力batchの不変性を検査する |
+| TEST-PROF-07 | `test_interpreter_and_jit_events_share_one_function_identity` | 同じIDへ呼出2回と時間6を集計する部分を検査する。方式フラグを統計属性として保持する製品機構は未実装である |
+
+TEST-PROF-06のbatch不変性だけで実Runtime全状態の保存を証明しない。
+実Runtimeとの結合証拠と、TEST-PROF-07の方式属性は残る製品・統合検証項目である。

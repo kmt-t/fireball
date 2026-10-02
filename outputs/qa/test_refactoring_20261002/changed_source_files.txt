@@ -1,0 +1,15 @@
+experiments/pysim/tier1_core/scheduler.py
+experiments/pysim/qa/tier1_core/test_coos.py
+experiments/pysim/qa/tier2_runtime/test_recovery.py
+experiments/pysim/qa/tier2_runtime/test_vsoc.py
+experiments/pysim/qa/tier2_runtime/test_jit_scoring.py
+experiments/pysim/qa/tier2_runtime/test_logging.py
+experiments/pysim/qa/tier3_platform/test_memory.py
+experiments/pysim/qa/cross_cutting/test_pairwise_combinations.py
+experiments/pysim/qa/cross_cutting/test_gotchas.py
+experiments/pysim/qa/tier3_plugins/logger/test_runtime_event_logger.py
+experiments/pysim/qa/tier3_executer/jit/test_x64_jit.py
+experiments/pysim/qa/tier3_executer/jit/test_x64_stencils.py
+experiments/pysim/qa/tier3_executer/jit/test_x64_asm.py
+experiments/pysim/qa/tier3_executer/jit/test_jit_runtime.py
+experiments/pysim/qa/scenarios/scenario10_vmmio_virtual_devices.py

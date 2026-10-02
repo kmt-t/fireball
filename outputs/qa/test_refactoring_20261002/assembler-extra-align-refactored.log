@@ -1,0 +1,25 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+____________ test_and_rsp_imm8_aligns_the_stack_pointer_down_to_16 _____________
+
+    def test_and_rsp_imm8_aligns_the_stack_pointer_down_to_16():
+        code = bytearray()
+        code += asm.mov_reg_reg("r12", ARG0)
+        code += asm.mov_reg_reg("r13", "rsp")
+        code += asm.sub_rsp_imm8(7)
+        code += asm.mov_reg_reg("rax", "rsp")
+        code += asm.and_rsp_imm8(-16 & 0xFF)
+        code += asm.mov_reg_reg("rbx", "rsp")
+        code += asm.mov_reg_reg("rsp", "r13")
+        code += bytes((0x49, 0x89, 0x04, 0x24))
+        code += bytes((0x49, 0x89, 0x5C, 0x24, 0x08))
+        before, after = _run_void_ptr_arg(bytes(code), out_len=2)
+        assert after % 16 == 0, f"and rsp,-16 left rsp={after:#x}, not 16-aligned"
+>       assert after == before & ~0xF
+E       assert 140733661977376 == (140733661977393 & ~15)
+
+experiments/pysim/qa/tier3_executer/jit/test_x64_asm.py:204: AssertionError
+REFACTOR mutant=assembler-extra-align hits=[1]
+=========================== short test summary info ============================
+FAILED experiments/pysim/qa/tier3_executer/jit/test_x64_asm.py::test_and_rsp_imm8_aligns_the_stack_pointer_down_to_16
+1 failed, 9 deselected in 0.14s

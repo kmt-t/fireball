@@ -40,6 +40,13 @@ def _require_count(label: str, actual: int, expected: int) -> None:
         raise MatrixCheckError(f"{label}: expected {expected}, got {actual}")
 
 
+def _test_spec_paths(test_spec_root: Path) -> list[Path]:
+    """Collect both scopes defined by docs/qa/FORMAT.md."""
+    return sorted(
+        (*test_spec_root.glob("tier*/*_test_spec.md"), *test_spec_root.glob("specs/*_test_spec.md"))
+    )
+
+
 def _artifact_inventory(repo_root: Path, matrix: dict) -> dict[str, list[str]]:
     root = repo_root / matrix["component_root"]
     inventory = {
@@ -56,7 +63,7 @@ def _artifact_inventory(repo_root: Path, matrix: dict) -> dict[str, list[str]]:
         ),
         "test_specs": sorted(
             _relative(path, repo_root)
-            for path in (repo_root / matrix["test_spec_root"]).glob("tier*/*_test_spec.md")
+            for path in _test_spec_paths(repo_root / matrix["test_spec_root"])
         ),
         "scenarios": sorted(
             _relative(path, repo_root)
@@ -189,7 +196,9 @@ def _check_runner_inventory(repo_root: Path, matrix: dict, inventory: dict[str, 
         parts = re.findall(r'"([^"]+)"', match.group(1))
         if parts and parts[-1].endswith(".py"):
             registered_units.add("/".join(parts))
-    _require_count("pysim_unit_suites", len(registered_units), int(matrix["expected"]["pysim_unit_suites"]))
+    _require_count(
+        "pysim_unit_suites", len(registered_units), int(matrix["expected"]["pysim_unit_suites"])
+    )
 
     pairwise_source = (repo_root / matrix["pairwise_test"]).read_text(encoding="utf-8")
     required_fragments = (
@@ -246,7 +255,11 @@ def run(repo_root: Path, config_path: Path) -> None:
 if __name__ == "__main__":
     try:
         default_root = Path(__file__).resolve().parent.parent
-        config_path = Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else default_root / "spec-integrator.yaml"
+        config_path = (
+            Path(sys.argv[1]).resolve()
+            if len(sys.argv) > 1
+            else default_root / "spec-integrator.yaml"
+        )
         run(config_path.parent, config_path)
     except (MatrixCheckError, KeyError, OSError, ValueError) as error:
         print(f"[FAIL] verification matrix: {error}", file=sys.stderr)

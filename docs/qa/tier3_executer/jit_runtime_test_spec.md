@@ -80,6 +80,8 @@ JITトレース検索時の内部状態と期待される挙動を検証する�
 | TEST-JITR-36 | WarmからOldestへ移動したresident target | target traceがWarmからOldestへ移動する | rotate直後のsource headerを確認する | targetが常駐している間は既存chainを維持する。次にpurgeされた時に無効化する | `test_jitr_31_to_35_trace_chaining_and_ok_unlinking` |
 | TEST-JITR-37 | bank purgeとchain unlinkの処理量 | bank内n trace、被chain元k件 | cache rotateを確認する | 破棄bankの全n entryを処理し、被chain元を索引から取り出して更新する。参照実装の上限付き処理量は`O(n + k log n)`である | `jit_runtime.md`「世代交代ローテーション」 |
 
+TEST-JITR-33のIFと内側loopの回帰試験は、対象の制御終端直前のtraceだけを配置する。TEST-JITR-44の終了block回帰試験も同じ構成を使う。対象PCのコンパイル成功、単独常駐、Native実行件数と意味結果を確認する。他のtraceが実行されたことだけで対象の到達を代用しない。hotnessからの自動生成は別の試験で扱う。
+
 ### x64実行可能バッファのW^X保護 (ARMv8-M: TBD)
 
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
@@ -112,7 +114,7 @@ JITトレース検索時の内部状態と期待される挙動を検証する�
 | TEST-JITR-59 | clang生成カーネルスイートの3実行系差分 | `suite.wasm`の16カーネル（呼び出し、`br_table`、f64、i64、サブワードメモリを含む） | 各カーネルの結果を3実行系で比較する | 全カーネルの結果が一致する | `{JIT_CopyAndPatch}`, `{ThreadedInterpreter}` |
 | TEST-JITR-60 | スロット幅の異なるフレームの混在実行 | 4バイトスロットの関数と、i64ローカルを含む8バイトスロットの関数が、同一のホットループから交互に呼ばれる | 3実行系の結果を比較し、両関数のトレースが存在することを確認する | 結果が一致する。2つの関数のトレースが同時に実行される | `{ContextPointerRegister}`, TraceBoundaryInvariant |
 | TEST-JITR-61 | オペランドスタックの容量を超える押し出しの拒否 | 深さ40の加算列を持つ関数を、30個の値が保留中の状態から呼ぶ。合計が容量（64ワード）を超える | Tier 2とJIT有効のエンジンの両方で実行する | どちらも容量超過の `assert` で停止する。トレースは、容量に収まる呼び出しでは実行される。収まらない呼び出しは、インタープリタが停止する。JITは容量外へ書き込まない | TraceBoundaryInvariant |
-| TEST-JITR-62 | 退避・昇格・ローテーション後のチェイン再リンク | 14本の連鎖トレースと、容量の小さい3面キャッシュ。乱数で、挿入・参照（昇格）・ローテーションを繰り返す（40シード、各90手） | 各手の後にリンクを検査し、参照したトレースをネイティブ実行する | すべてのチェインポインタが、常駐トレースの有効な入口を指す。Pythonのヘッダとネイティブのヘッダが一致する。同一トレースが複数の面に常駐しない。ネイティブ実行が通ったトレースの集合は、ポインタをたどった集合と一致する | `{JIT_MultiBuffer_Cache}`, `{GOTCHA-JITR-02}` |
+| TEST-JITR-62 | 退避・昇格・ローテーション後のチェイン再リンク | 14本の連鎖トレースと、容量の小さい3面キャッシュ。乱数で、挿入・参照（昇格）・ローテーションを繰り返す（40シード、各90手） | 各手の後にリンクを検査し、参照したトレースをネイティブ実行する | すべてのチェインポインタが、常駐トレースの有効な入口を指す。Pythonのヘッダとネイティブのヘッダが一致する。同一トレースが複数の面に常駐しない。各リンク先は生成入力のindexとstrideから導いた直後のtraceである。Native実行の副作用と最終PCも生成入力から導いた期待値に一致する | `{JIT_MultiBuffer_Cache}`, `{GOTCHA-JITR-02}` |
 | TEST-JITR-63 | C++ディスパッチのLOOP後方辺回数制御とyield境界 | 同一関数・同一制御frameのLOOP後方`BR_IF`と常駐トレースを持つ関数 | 共通C++ディスパッチ内のJIT実行、C++ `br_if` handler回数、RuntimeEngineのyield要求を観測する | しきい値未満はC++ディスパッチが後続常駐トレースを検索して実行する。しきい値到達後はC++ handlerが分岐とframe状態を更新し、RuntimeEngineがカウンタを0へ戻してyield要求を返す | `interpreter.md`「トレース境界での協調的Yield」、`runtime_vsoc_test_spec.md` TEST-VSOC-22, pysim `test_jitr_loop_backedge_stays_in_cpp_until_coos_yield` |
 | TEST-JITR-64 | Interpreter warm-upからC++ディスパッチを使うJITへ移行 | 未コンパイルの数値ループを実行し、idle時に対象トレースをコンパイルする | RuntimeEngineで関数を完了し、返値・実行統計・キャッシュ常駐を確認する | 結果は15で、Interpreter warm-up後にLOOPトレースが常駐する。C++ dispatcherは設定された後方辺数までC++ handlerとトレースを実行してからRuntimeEngineへyieldを返す | `jit_runtime.md`「トレース実行時の分岐解決とインタープリタ復帰」、pysim `test_hybrid_interpreter_to_jit_trace_elevation` |
 | TEST-JITR-65 | ネイティブdispatch metadataの世代更新とhotspot profiling切替 | 未コンパイル候補blockと一つの常駐traceを持つJIT manager | ネイティブdispatch stateを読み、trace挿入とhotspot profiling切替後のmetadataを確認する | metadataは常駐traceと候補blockに一致する。キャッシュ世代変更後はtrace表を更新する。hotspot profiling無効時は候補PC数を0にして常駐trace実行と分岐handlerの意味を保つ | `jit_runtime.md`「トレース実行時の分岐解決とインタープリタ復帰」、pysim `test_jitr_native_dispatch_snapshot_is_cached_and_hotspot_collection_is_configurable` |
@@ -133,6 +135,10 @@ JITトレース検索時の内部状態と期待される挙動を検証する�
 | GOTCHA-JITR-09 | エイジングスイープと常駐状態・待ち列の分離 | カードが`COMPILED`（キャッシュに常駐）、別のカードが`HOT`（コンパイル待ち列に登録済み）、別のカードが`EXECUTED` | 全ブロックを覆うまでエイジングスイープを実行し、常駐トレースをlookup | `COMPILED`のカードは`COMPILED`のままで、lookupは常駐トレースを返す。`HOT`のカードは`HOT`のままで、待ち列の要求と対応する。`EXECUTED`のカードだけが`UNEXECUTED`になる。**実装の勘所**: スイープが`COMPILED`を戻すと、Stage 1のフィルタが常駐トレースを拒否し、実行がインタープリタへ落ちる | `jit_runtime.md` 「エイジングスイープ」, `TEST-JITR-16`, [`test_jit_runtime.py`](experiments/pysim/qa/tier3_executer/jit/test_jit_runtime.py) `test_gotcha_jitr_09_aging_never_drops_compiled_or_hot` |
 
 ## 3. テスト検証実績と網羅状況
+
+TEST-JITR-61は`test_jitr_61_a_trace_that_would_overflow_the_operand_stack_runs_on_the_interpreter`で検査する。Native InterpreterとJIT有効RuntimeEngineの両方が`OPERAND_STACK_CAPACITY`を報告することを確認する。任意の`AssertionError`を容量超過の証拠として受理しない。先行する容量内の呼出しでは実JIT実行も確認する。この試験だけから物理メモリの全容量外書込みがないことを証明しない。
+
+実行結果は[`test_reconstruction_review.md`](docs/qa/test_reconstruction_review.md)を参照する。
 
 - 仕様書に定義された各テストケース（不変条件・境界条件・エラー処理）の検証手順と期待結果を定義。
 

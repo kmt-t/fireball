@@ -13,14 +13,25 @@ Implements:
 from __future__ import annotations
 
 import bisect
-from collections.abc import Mapping, Sequence
+import ctypes
+from collections.abc import Iterator, Mapping, Sequence
 from typing import Protocol
 
 from config import FB_CONF_DEBUG_MAX_ASSERTIONS, FB_CONF_DEBUG_MAX_BREAKPOINTS
-from execution_context import WASMContext
-from runtime_events import RuntimeEvent, RuntimeEventKind
+from execution_context import DebugExecutionContext, ExecutionControl
+from interop_abi import ExecutionContextNative, NativeValueStack
+from runtime_composer import RuntimeComposer, RuntimeCompositionConfig
+from runtime_events import RuntimeEvent, RuntimeEventBatch, RuntimeEventKind
 from system_containers import MutableFlatMapStorage, ReadOnlyFlatMapView, StaticVector
-from wasm_module import BasicBlock
+from tier3_executer.interpreter import native_abi
+from tier3_executer.interpreter.interpreter import (
+    InterpreterBindings,
+    InterpreterCall,
+    InterpreterContext,
+    NativeInterpreter,
+    WasmNumber,
+)
+from wasm_module import BasicBlock, Module
 
 # docs/components/tier1_core/system_config.md {Debug_Integrated}
 # {META_NoStdVector}: max PC-sampling entries the profiler buffer holds.
@@ -77,14 +88,53 @@ def _parse_gdb_register(value: str) -> int | None:
     return int.from_bytes(raw, "little")
 
 
-class _DebuggerEngine(Protocol):
+class _DebuggerEngine(ExecutionControl, Protocol):
     """Tier 2 execution contract implemented by an injected runtime engine."""
 
     def attach_debugger(self, debugger: DebuggerManager) -> None: ...
 
     def detach_debugger(self) -> None: ...
 
-    def run_block_interpret(self, block: BasicBlock, ctx: WASMContext) -> int | None: ...
+    def resume(self, pc: int, ctx: DebugExecutionContext, single_step: bool) -> int | None: ...
+
+
+class _BreakpointStorage:
+    """One fixed sorted array, borrowed by Python lookup and native debug hooks."""
+
+    __slots__ = ("_size", "_words")
+
+    def __init__(self):
+        self._words = (ctypes.c_uint32 * FB_CONF_DEBUG_MAX_BREAKPOINTS)()
+        self._size = 0
+
+    def __len__(self) -> int:
+        return self._size
+
+    def __getitem__(self, index: int) -> int:
+        assert 0 <= index < self._size
+        return int(self._words[index])
+
+    def __iter__(self) -> Iterator[int]:
+        for index in range(self._size):
+            yield int(self._words[index])
+
+    def insert_at(self, index: int, pc: int) -> bool:
+        assert 0 <= pc <= 0xFFFF_FFFF
+        assert 0 <= index <= self._size
+        if self._size == FB_CONF_DEBUG_MAX_BREAKPOINTS:
+            return False
+        for offset in range(self._size, index, -1):
+            self._words[offset] = self._words[offset - 1]
+        self._words[index] = pc
+        self._size += 1
+        return True
+
+    def pop_at(self, index: int) -> int:
+        value = self[index]
+        for offset in range(index, self._size - 1):
+            self._words[offset] = self._words[offset + 1]
+        self._size -= 1
+        return value
 
 
 class DebuggerManager:
@@ -107,7 +157,7 @@ class DebuggerManager:
         self.halted: bool = False
         self.stop_signal: int = 5  # SIGTRAP (5)
         # Sorted breakpoint list (flat_set_view semantics with O(log N) binary search)
-        self._breakpoints: StaticVector[int] = StaticVector(capacity=FB_CONF_DEBUG_MAX_BREAKPOINTS)
+        self._breakpoints = _BreakpointStorage()
         # Integrated Profiler & Test Tool ({Debug_Integrated})
         self._pc_sample_storage: MutableFlatMapStorage[int, int] = MutableFlatMapStorage(
             capacity=FB_CONF_DEBUG_MAX_PC_SAMPLES
@@ -188,7 +238,7 @@ class DebuggerManager:
         assert self.engine is not None, "GDB execution requires an injected runtime engine"
         return self.engine
 
-    def read_virtual_registers(self, pc: int, ctx: WASMContext) -> StaticVector[int]:
+    def read_virtual_registers(self, pc: int, ctx: DebugExecutionContext) -> StaticVector[int]:
         """Returns 20 virtual registers: 0:pc, 1:sp, 2:fp, 3:tos, 4..19:local0..15."""
         sp = len(ctx.stack)
         fp = 0
@@ -200,7 +250,9 @@ class DebuggerManager:
             regs.append(ctx.locals[i] if i < len(ctx.locals) else 0)
         return regs
 
-    def write_virtual_registers(self, regs: Sequence[int], ctx: WASMContext) -> int | None:
+    def write_virtual_registers(
+        self, regs: Sequence[int], ctx: DebugExecutionContext
+    ) -> int | None:
         """Updates registers or returns `None` when the packet violates the ABI."""
         assert len(regs) == 20, "GDB G packet must contain exactly 20 registers"
         assert all(0 <= value <= 0xFFFF_FFFF for value in regs), (
@@ -221,7 +273,7 @@ class DebuggerManager:
             ctx.stack.set_size(stack_size)
             ctx.stack.write_raw_at(stack_size - 1, tos)
         ctx.stack.set_size(stack_size)
-        for i in range(16):
+        for i in range(min(16, len(ctx.locals))):
             ctx.locals[i] = regs[4 + i]
         return new_pc
 
@@ -230,6 +282,10 @@ class DebuggerManager:
         if event.kind == RuntimeEventKind.DEBUG_STOP:
             self.halted = True
             self.stop_signal = 5
+
+    def on_runtime_batch(self, batch: RuntimeEventBatch) -> None:
+        for event in batch.records:
+            self.on_runtime_event(event)
 
 
 class GDBRspProtocol:
@@ -268,7 +324,7 @@ class GDBRspProtocol:
         self,
         packet: str,
         current_pc: int,
-        ctx: WASMContext,
+        ctx: DebugExecutionContext,
         blocks: Mapping[int, BasicBlock],
     ) -> tuple[str, int]:
         """Handles an RSP packet payload and returns (response_packet, new_pc)."""
@@ -364,7 +420,7 @@ class GDBRspProtocol:
                 return self.format_packet("E01"), current_pc
             addr = _parse_hex(parts[1])
             kind = _parse_hex(parts[2])
-            if addr is None or kind is None or kind > 0xFFFF_FFFF:
+            if addr is None or addr > 0xFFFF_FFFF or kind is None or kind > 0xFFFF_FFFF:
                 return self.format_packet("E01"), current_pc
             if not self.dbg.add_breakpoint(addr):
                 return self.format_packet("E01"), current_pc
@@ -376,45 +432,167 @@ class GDBRspProtocol:
                 return self.format_packet("E01"), current_pc
             addr = _parse_hex(parts[1])
             kind = _parse_hex(parts[2])
-            if addr is None or kind is None or kind > 0xFFFF_FFFF:
+            if addr is None or addr > 0xFFFF_FFFF or kind is None or kind > 0xFFFF_FFFF:
                 return self.format_packet("E01"), current_pc
             self.dbg.remove_breakpoint(addr)
             return self.format_packet("OK"), current_pc
         # qSupported - advertise only capabilities implemented by this server.
         elif cmd == "q" and args.startswith("Supported"):
             return self.format_packet("PacketSize=256"), current_pc
-        # s - Single Step Instruction
-        elif cmd == "s":
-            if blocks.get(current_pc) is None:
-                return self.format_packet("W00"), current_pc
-            self.dbg.sample_pc(current_pc)
-            block = blocks[current_pc]
-            # Execute single step via Interpreter
+        # ExecutionControl arms the selected native hooks and resumes the same driver.
+        elif cmd == "s" or cmd == "c":
             engine = self.dbg.require_execution_engine()
-            next_pc = engine.run_block_interpret(block, ctx)
+            self.dbg.halted = False
+            next_pc = engine.resume(current_pc, ctx, single_step=cmd == "s")
             self.dbg.verify_assertions(ctx.memory)
+            self.dbg.halted = True
             if next_pc is None:
-                return self.format_packet("W00"), 0  # Process terminated
+                return self.format_packet("W00"), 0
             self.dbg.stop_signal = 5
             return self.format_packet("S05"), next_pc
-        # c - Continue Execution
-        elif cmd == "c":
-            engine = self.dbg.require_execution_engine()
-            pc = current_pc
-            while pc is not None:
-                if self.dbg.has_breakpoint(pc) and pc != current_pc:
-                    self.dbg.stop_signal = 5
-                    return self.format_packet("S05"), pc
-                if blocks.get(pc) is None:
-                    return self.format_packet("W00"), pc
-                self.dbg.sample_pc(pc)
-                block = blocks[pc]
-                # Run one block in the statically composed interpreter
-                pc = engine.run_block_interpret(block, ctx)
-                self.dbg.verify_assertions(ctx.memory)
-                if pc is not None and self.dbg.has_breakpoint(pc):
-                    self.dbg.stop_signal = 5
-                    return self.format_packet("S05"), pc
-            return self.format_packet("W00"), 0
         # Unknown / Unsupported command
         return self.format_packet(""), current_pc
+
+
+class _NativeDebugControl(ctypes.Structure):
+    """Debugger-owned fixed state; native hooks borrow the breakpoint array."""
+
+    _fields_ = (
+        ("breakpoints", ctypes.POINTER(ctypes.c_uint32)),
+        ("breakpoint_count", ctypes.c_uint32),
+        ("single_step", ctypes.c_uint32),
+        ("executed", ctypes.c_uint32),
+        ("stopped", ctypes.c_uint32),
+        ("current_pc", ctypes.c_uint32),
+        ("enabled", ctypes.c_uint32),
+    )
+
+
+class _DebugNativeContext(ExecutionContextNative):
+    """Only a debug composition carries this borrowed control slot."""
+
+    _fields_ = (("control", ctypes.POINTER(_NativeDebugControl)),)
+
+
+class _DebugNativeInterpreter(NativeInterpreter):
+    """Static context weave only; call and native step drivers remain inherited."""
+
+    __slots__ = ("_execution_control",)
+
+    def __init__(self, module: Module, bindings: InterpreterBindings, control: _NativeDebugControl):
+        self._execution_control = control
+        super().__init__(module, bindings)
+
+    def _prepare_native_execution(self, context: InterpreterContext) -> None:
+        super()._prepare_native_execution(context)
+        native = _DebugNativeContext()
+        ctypes.memmove(
+            ctypes.addressof(native),
+            ctypes.addressof(context.native_context),
+            ctypes.sizeof(ExecutionContextNative),
+        )
+        native.control = ctypes.pointer(self._execution_control)
+        context._c_context = native
+        context._context_ptr = ctypes.cast(ctypes.pointer(native), ctypes.c_void_p)
+        context._context_view = memoryview(native)
+
+
+class _InterpreterRegisterView:
+    """Borrow the active frame's values; no register snapshot or shadow stack."""
+
+    __slots__ = ("_call", "_interpreter")
+
+    def __init__(self, interpreter: NativeInterpreter, call: InterpreterCall):
+        self._interpreter = interpreter
+        self._call = call
+
+    @property
+    def stack(self) -> NativeValueStack:
+        return self._call.context.operand_stack
+
+    @property
+    def stack_capacity(self) -> int:
+        return self.stack.capacity
+
+    @property
+    def memory(self) -> bytearray:
+        return self._interpreter.memory
+
+    @property
+    def locals(self) -> _InterpreterRegisterView:
+        return self
+
+    def __len__(self) -> int:
+        cont = self._call.cont
+        return len(cont[2]) if cont is not None else 0
+
+    def __getitem__(self, index: int) -> int:
+        cont = self._call.cont
+        assert cont is not None
+        return self._call.context.local_stack[cont[2].raw_slot(index)]
+
+    def __setitem__(self, index: int, value: int) -> None:
+        cont = self._call.cont
+        assert cont is not None
+        self._call.context.local_stack.write_raw_at(cont[2].raw_slot(index), value)
+
+
+class InterpreterExecutionControl:
+    """Tier 3 implementation of the statically composed ExecutionControl contract."""
+
+    __slots__ = ("_control", "call", "context", "debugger", "interpreter")
+
+    def __init__(
+        self,
+        config: RuntimeCompositionConfig,
+        module: Module,
+        bindings: InterpreterBindings,
+        func_index: int,
+        args: Sequence[WasmNumber],
+    ):
+        assert config.plugins.debugger, "ExecutionControl requires a debugger composition"
+        self._control = _NativeDebugControl()
+        self.debugger: DebuggerManager | None = None
+        self.interpreter = RuntimeComposer.compose_execution(
+            config, lambda: _DebugNativeInterpreter(module, bindings, self._control), self._weave
+        )
+        self.call = self.interpreter.start(func_index, args)
+        self.context = _InterpreterRegisterView(self.interpreter, self.call)
+
+    def _weave(self, interpreter: NativeInterpreter) -> None:
+        interpreter._native_dispatcher = native_abi.run_native_debug_dispatch
+
+    def attach_debugger(self, debugger: DebuggerManager) -> None:
+        assert self.debugger is None
+        self.debugger = debugger
+        self._control.breakpoints = ctypes.cast(
+            debugger._breakpoints._words, ctypes.POINTER(ctypes.c_uint32)
+        )
+        self._control.enabled = 1
+
+    def detach_debugger(self) -> None:
+        self._control.enabled = 0
+        self.debugger = None
+
+    def resume(self, pc: int, ctx: DebugExecutionContext, single_step: bool) -> int | None:
+        assert ctx is self.context
+        debugger = self.debugger
+        assert debugger is not None and debugger.attached
+        call = self.call
+        if call.finished:
+            return self._control.current_pc if call.trap is not None else None
+        cont = call.cont
+        assert cont is not None
+        if pc != call.current_pc():
+            assert pc >> 16 == call.func_index
+            call.cont = (pc & 0xFFFF, cont[1], cont[2], cont[3])
+        self._control.breakpoint_count = len(debugger._breakpoints)
+        self._control.single_step = int(single_step)
+        self._control.executed = 0
+        self._control.stopped = 0
+        debugger.sample_pc(pc)
+        while not call.finished and self._control.stopped == 0:
+            self.interpreter.step(call)
+        if call.trap is not None:
+            return self._control.current_pc
+        return None if call.finished else call.current_pc()

@@ -131,7 +131,7 @@ class RecoveryManager:
                 Workflow:
                   1. Initial attempts with RETRY (up to max_retries with backoff).
                   2. On retry exhaustion: escalate to RESTART.
-                  3. RESTART: invoke task_reset_fn() to clean TCB/heap and retry once.
+                  3. RESTART: reset the service and return the failed request.
                   4. PANIC: invoke panic_fn() to safely halt kernel and return PANIC result.
         """
         # Tier 1: Initial execution and retry loop
@@ -159,10 +159,9 @@ class RecoveryManager:
         if task_reset_fn is not None:
             reset_ok = task_reset_fn()
             if reset_ok:
-                # Re-run after clean task reset
-                post_reset_res = operation()
-                if post_reset_res.is_ok:
-                    return post_reset_res
+                # A successful reset recovers the service, not the failed
+                # operation. Replaying it could duplicate external effects.
+                return Result.err(error=res.error, strategy=RecoveryStrategy.RESTART)
         # Tier 3: Unrecoverable after restart -> Escalate to PANIC
         self.total_panics += 1
         if panic_fn:

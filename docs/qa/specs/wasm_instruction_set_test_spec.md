@@ -68,9 +68,11 @@
 | TEST-WASM-51 | `i32.eqz`/`eq`/`ne`/`lt_s`/`lt_u`(以降gt/le/ge含む全10種) | 2値または1値 | 実行 | 比較結果(0/1)を返す。符号付き/符号なしを区別する | wasm_instruction_set.md (Integer Arithmetic) |
 | TEST-WASM-52 | `i32.clz`/`ctz`/`popcnt` | 既知のビットパターン | 実行 | 正しいビットカウント | wasm_instruction_set.md (Integer Arithmetic) |
 | TEST-WASM-53 | `i32.add`/`sub`/`mul` | - | 実行 | 32bitラップアラウンド | wasm_instruction_set.md (Integer Arithmetic) |
-| TEST-WASM-54 | `i32.div_s`/`div_u`のゼロ除算トラップ | 除数0 | 実行 | ゼロ除算をWASM trapにし、演算結果をstackへ書かない | wasm_instruction_set.md (Integer Arithmetic) |
+| TEST-WASM-54 | 整数除算・剰余のゼロ除算トラップ | i32/i64の`div_s`、`div_u`、`rem_s`、`rem_u`、除数0 | pysimとwasmtimeで同じ命令列を実行する | pysimは`INTEGER_DIVIDE_BY_ZERO`、wasmtimeは`INTEGER_DIVISION_BY_ZERO`を返す。pysimは成功結果を公開しない | [`test_wasm_differential.py`](experiments/pysim/qa/tier2_runtime/test_wasm_differential.py) |
 | TEST-WASM-55 | `i32.and`/`or`/`xor`/`shl`/`shr_s`/`shr_u` | - | 実行 | ビット演算・シフトが正しい。i32のシフト量は下位5 bitだけを使う | wasm_instruction_set.md (Integer Arithmetic) |
 | TEST-WASM-56 | `i32.rotl`/`rotr` | - | 実行 | 左右循環シフトのWASM意味論に従う | wasm_instruction_set.md (Integer Arithmetic) |
+| TEST-WASM-57 | 符号付き整数除算のoverflow | i32/i64の最小値を-1で除算する | pysimとwasmtimeで同じ命令列を実行する | 両エンジンが`INTEGER_OVERFLOW`を返す。ゼロ除算と区別し、pysimは成功結果を公開しない | [`test_wasm_differential.py`](experiments/pysim/qa/tier2_runtime/test_wasm_differential.py) |
+| TEST-WASM-58 | NaNから整数への非飽和変換 | `i32.trunc_f64_s`の入力がNaNである | pysimとwasmtimeで同じ命令列を実行する | pysimは`INVALID_CONVERSION`、wasmtimeは`BAD_CONVERSION_TO_INTEGER`を返す。pysimは成功結果を公開しない | [`test_wasm_differential.py`](experiments/pysim/qa/tier2_runtime/test_wasm_differential.py) |
 
 ### 選択された`0xFC`命令 ({WasmFCSubset})
 <!-- traceability: {WasmFCSubset} -->
@@ -92,7 +94,34 @@
 
 - 仕様書に定義された各テストケース（不変条件・境界条件・エラー処理）の検証手順と期待結果を定義。
 
+### pysim差分試験の契約と観測
+
+[`test_wasm_differential.py`](experiments/pysim/qa/tier2_runtime/test_wasm_differential.py)は同じWASMバイナリと引数をpysimとwasmtimeへ渡す。成功時は整数値、浮動小数点のbit pattern、NaN分類を比較する。異常系は事前に宣言したguest trap理由を両エンジンで照合する。pysimは`start`と`step`が返す構造化trapを観測し、`AssertionError`などの実装不変条件違反をguest trapとして捕捉しない。wasmtimeのロードエラーもguest trapとして捕捉しない。
+
+| 仕様契約 | 実行関数 | 具体的な範囲とオラクル |
+| :--- | :--- | :--- |
+| TEST-WASM-52〜54/56 | `test_differential_i32_i64_arithmetic` | 既存11入力を維持する。正常値とゼロ除算の具体理由をwasmtimeと比較する |
+| TEST-WASM-54 | `test_differential_integer_zero_divisor_trap` | 2整数幅×4除算・剰余形式の8組を全数実行する |
+| TEST-WASM-57 | `test_differential_signed_division_overflow_trap` | i32/i64の2境界を実行する |
+| TEST-WASM-10/58 | `test_differential_declared_instruction_traps` | unreachableとNaN変換の2原因を区別する |
+| TEST-WASM-40/42/44 | `test_differential_memory_boundary_and_side_effects` | 1ページmemoryのload/store×4アドレスを全数実行する。65532は最終有効word、65533はword途中の越境、65536は先頭が境界外、0x7FFFFFFFは通常領域の上端である。全メモリbyteをwasmtimeと比較し、不正storeの部分更新を検出する |
+| 浮動小数点意味論 | `test_differential_f32_operations`、`test_differential_f64_operations` | f32の13入力、f64の8入力を維持する。符号付きゼロはbit pattern、NaNは分類で比較する |
+| TEST-WASM-12/13/30 | `test_differential_control_flow` | Collatzの入力6、1、27の3例を維持し、最終値をwasmtimeと比較する |
+
+この差分試験は列挙した契約の部分検証である。表に紐付けたケース全体の網羅を主張しない。行・分岐カバレッジ率は受入れ条件に使わない。
+
+2026-10-01にLinux x64、Python 3.14.6で次のコマンドを実行し、24件PASS、FAIL 0件、SKIP 0件を確認した。
+
+```bash
+UV_CACHE_DIR=/tmp/fireball-test-design-uv uv run --offline --no-sync python -m pytest -q experiments/pysim/qa/tier2_runtime/test_wasm_differential.py
+```
+
+試験プロセス内だけでゼロ除算の結果を変更する2変異を実行した。無関係な`AssertionError`への置換は、例外を成功扱いせずFAIL 1件となった。trap理由を`INTEGER_OVERFLOW`へ変更する変異は、期待した`INTEGER_DIVIDE_BY_ZERO`との不一致でFAIL 1件となった。製品ソースは変更していない。
+
 ## 4. 未検証・スコープ外
 
 - ARMv8-M向け物理命令列、ABI、メモリ保護、実機の受け入れ条件はTBDである。x64で確認した意味論・実装結果から推定しない。
 - f32/f64の全演算子の個別テスト網羅は本書では定義しない。WASM意味論の詳細は [`wasm_instruction_set.md`](docs/specs/wasm_instruction_set.md) を参照する。
+- この差分試験は全WASM opcode、全値、全制御履歴、JIT生成コードを網羅しない。
+- `0x80000000`以上のFireball固有VMMIO領域はwasmtimeと意味論が異なるため、この差分試験の対象外である。
+- NaN payloadの一致、浮動小数点から整数への全境界変換、間接callの全trap理由は、この差分試験では未検証である。

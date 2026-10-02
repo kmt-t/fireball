@@ -9,8 +9,11 @@ while not (_PYSIM_DIR / "tier1_core").is_dir():
 
 Tests:
 - UnifiedPC address space across multiple guest functions
-- Binary search over the small sorted JIT entry set, without a Radix index
-- Hotspot tracking and JIT execution across deeply nested function invocations
+- A test-local sorted entry reference built from generated JIT traces
+- Generated traces across multiple functions and equality of final return values
+
+The bisect check below searches a test-created table; it does not call the product cache lookup.
+JIT execution counts and cache-bank transitions are not asserted here.
 """
 
 from bisect import bisect_left
@@ -123,14 +126,15 @@ def test_scenario_multimodule_unified_pc():
     func_indices_in_jit = {(pc >> 16) for pc, _ in runtime_engine.jit_runtime.cache.active.traces}
     print(f"    -> Compiled JIT traces belong to functions: {func_indices_in_jit}")
     assert len(func_indices_in_jit) >= 2, "Traces should span across multiple functions"
-    # 4. Verify sparse JIT entry lookup by binary search across compiled UnifiedPCs
+    # 4. Check identities in a test-local reference index of compiled UnifiedPCs.
+    # Product cache lookup and its bank transitions remain unverified by this check.
     sorted_pairs = sorted(runtime_engine.jit_runtime.cache.active.traces, key=lambda x: x[0])
     keys = tuple(pc for pc, _ in sorted_pairs)
     vals = tuple(trace for _, trace in sorted_pairs)
     for k, v in zip(keys, vals, strict=True):
         index = bisect_left(keys, k)
         found = vals[index] if index < len(keys) and keys[index] == k else None
-        assert found is v, f"JIT binary lookup failed for UnifiedPC 0x{k:08X}"
+        assert found is v, f"Test-local binary index failed for UnifiedPC 0x{k:08X}"
 
     print(
         f"    [PASS] Scenario 5 (Multi-Function UnifiedPC) verified with {len(runtime_engine.jit_runtime.cache.active.traces)} traces."

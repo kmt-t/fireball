@@ -6,7 +6,7 @@ Common test utilities for all pysim unit tests.
 from __future__ import annotations
 
 import struct
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 
 import wasmtime
@@ -20,7 +20,9 @@ from tier3_executer.interpreter.interpreter import (
     InterpreterBindings,
     NativeInterpreter,
     WasmHostFunction,
+    WasmNumber,
 )
+from tier3_plugins.debugger.debugger import InterpreterExecutionControl
 from vmmio import VMMIOController
 from wasm_module import Memory, Module
 
@@ -256,3 +258,23 @@ def make_test_ipc_message(
             return IPCMessage.from_entries(entries, memory_manager=manager)
     message = IPCMessage.from_entries(entries, memory_manager=memory_manager)
     return message
+
+
+def make_debug_execution(
+    module: Module,
+    func_index: int,
+    args: Sequence[WasmNumber],
+    memory: bytearray | None = None,
+    host_functions: StaticVector[WasmHostFunction | None] | None = None,
+) -> InterpreterExecutionControl:
+    """Build the production ExecutionControl through the Tier 2 composition root."""
+    from runtime_composer import RuntimeCompositionConfig, RuntimePluginSelection
+    from tier3_plugins.debugger.debugger import InterpreterExecutionControl
+
+    return InterpreterExecutionControl(
+        RuntimeCompositionConfig(plugins=RuntimePluginSelection(debugger=True)),
+        module,
+        _make_interpreter_bindings(module, memory=memory, host_functions=host_functions),
+        func_index,
+        args,
+    )

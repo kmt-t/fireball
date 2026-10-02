@@ -1,0 +1,74 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+______ test_jitr_62_chain_links_stay_valid_across_rotation_and_promotion _______
+
+    def test_jitr_62_chain_links_stay_valid_across_rotation_and_promotion():
+        """
+        TEST-JITR-62: randomized insert / promote / rotate sequences over a chain of
+        traces keep every chain pointer on a live entry.
+
+        After every step, each `chain_next` names a resident trace, the Python header and the
+        native header agree, and no trace is resident in two banks.  Every trace looked up is
+        then run natively; effects match the generated logical successor sequence, so a
+        jump to a promoted trace's old code cannot pass.
+        """
+        import random
+
+        compiler = TraceCompiler()
+        promoted_total = 0
+        evicted_total = 0
+        chained_runs = 0
+        for seed in range(40):
+            rng = random.Random(seed)
+            cache = JITMultiBufferCache(bank_capacity=512)
+            for _ in range(90):
+                index = rng.randrange(CHAIN_STRESS_TRACES)
+                pc = CHAIN_STRESS_HEAD + index * CHAIN_STRESS_STRIDE
+                action = rng.randrange(10)
+                if action < 5:
+                    if cache.find_trace(pc) is None:
+                        assert cache.insert(_chain_stress_compile(compiler, index))
+                elif action < 9:
+                    found = cache.lookup(pc)
+                    if found is not None:
+                        assert found is cache.find_trace(pc)
+                        assert cache.find_bank(pc) is not cache.oldest, "promotion left it in Oldest"
+                        _chain_stress_check_links(cache)
+                        _chain_stress_run(cache, found)
+                        chained_runs += found.chain_next is not None
+                else:
+                    cache.rotate()
+>               _chain_stress_check_links(cache)
+
+experiments/pysim/qa/tier3_executer/jit/test_jit_runtime.py:1951:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+cache = <tier3_executer.jit.jit_cache.JITMultiBufferCache object at 0x79b036265740>
+
+    def _chain_stress_check_links(cache: JITMultiBufferCache) -> None:
+        """Every chain pointer, Python and native, must name a resident trace's live entry."""
+        for bank in cache.banks:
+            for pc, trace in bank.traces:
+                assert trace.head_pc == pc
+                assert trace.raw_addr is not None and trace.code_offset is not None
+                native = int.from_bytes(
+                    cache.common_code.buffer.read(trace.code_offset + JIT_X64_CHAIN_TARGET_OFFSET, 8),
+                    "little",
+                )
+                assert native == trace.header.chain_target_addr, "native header diverged from Python"
+                holders = sum(1 for other in cache.banks if other.has_trace(pc))
+                assert holders == 1, f"trace {pc:#x} resident in {holders} banks"
+                if trace.chain_next is None:
+                    assert native == 0, f"unchained trace {pc:#x} keeps a native jump"
+                    continue
+                index = (pc - CHAIN_STRESS_HEAD) // CHAIN_STRESS_STRIDE
+                assert index < CHAIN_STRESS_TRACES - 1
+>               assert trace.chain_next == CHAIN_STRESS_HEAD + (index + 1) * CHAIN_STRESS_STRIDE
+E               assert 288 == (256 + ((0 + 1) * 16))
+E                +  where 288 = <tier3_executer.jit.jit_cache.JITTrace object at 0x79b034122330>.chain_next
+
+experiments/pysim/qa/tier3_executer/jit/test_jit_runtime.py:1877: AssertionError
+REFACTOR mutant=chain-wrong-live-successor hits=[1]
+=========================== short test summary info ============================
+FAILED experiments/pysim/qa/tier3_executer/jit/test_jit_runtime.py::test_jitr_62_chain_links_stay_valid_across_rotation_and_promotion
+1 failed, 46 deselected in 0.22s

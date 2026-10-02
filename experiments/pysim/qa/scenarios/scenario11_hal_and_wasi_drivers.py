@@ -14,9 +14,12 @@ Tests:
    - Standard I/O: full-duplex stdin/stdout streaming
    - Timer: High-resolution monotonic clock (monotonic_ns) and tick advancement
 2. uvwasi-compatible in-memory reference stack:
-   - File I/O: Virtual file descriptors (fd_read, fd_write, fd_seek: SET/CUR/END)
-   - Standard Streams: stdin buffered reading, stdout/stderr capture
-   - System Utilities: random_get (entropy pool fill), clock_time_get (monotonic/realtime timestamp)
+   - File I/O: fd_read, fd_write, and fd_seek with SET
+   - stdin buffered reading
+   - random_get returns a nonzero buffer; clock_time_get returns a positive timestamp
+
+These are direct Python calls to drivers and a reference backend.  No WASM guest,
+guest-side libfireball adapter, GPIO, I2C, or SPI path is executed here.
 """
 
 from fixtures.uvwasi_reference import UvwasiReferenceContext, WasiErrno, WasiWhence
@@ -131,7 +134,9 @@ def test_scenario_hal_and_wasi_drivers():
     ts_ns = int.from_bytes(guest_mem[500:508], "little")
     assert ts_ns > 0
     print(f"    [Phase B.5] WASI clock_time_get (Monotonic ns={ts_ns}) [PASS]")
-    print("    [PASS] Scenario 11 (HAL & WASI Dummy Drivers) verified completely.")
+    print(
+        "    [PASS] Scenario 11 direct stdio/Timer/backend checks; guest/peripheral paths unverified."
+    )
 
 
 if __name__ == "__main__":

@@ -143,35 +143,49 @@ def test_mov_reg_imm64_loads_every_bit_of_a_64_bit_immediate():
             assert got == imm, f"mov {reg}, {imm:#x} -> got {got:#x}"
 
 
-def test_mov_store_and_load_rsp_disp32_round_trip_at_several_offsets():
+def test_rsp_disp32_store_preserves_every_independently_read_slot() -> None:
+    """TEST-JITC-10: disp32 storeを別形式のdisp8 loadで全slot照合する。"""
+    sentinels = [0xA0B0C0D000000000 + index for index in range(14)]
     for disp in (0, 8, 40, 96):
-        code = bytearray()
-        code += asm.sub_rsp_imm8(disp + 8)
-        code += asm.mov_store_rsp_disp32(disp, ARG0)
+        code = bytearray(asm.mov_reg_reg("r12", ARG0) + asm.sub_rsp_imm8(112))
+        for index, value in enumerate(sentinels):
+            code += asm.mov_reg_imm64("rax", value)
+            code += bytes((0x48, 0x89, 0x44, 0x24, index * 8))  # independent disp8 store
+        value = 0x123456789ABCDEF0
+        code += asm.mov_reg_imm64("rax", value)
+        code += asm.mov_store_rsp_disp32(disp, "rax")
+        for index in range(14):
+            code += bytes((0x48, 0x8B, 0x44, 0x24, index * 8))  # independent disp8 load
+            code += bytes((0x49, 0x89, 0x44, 0x24, index * 8))  # [r12 + disp8] = rax
+        code += asm.add_rsp_imm8(112)
+        expected = sentinels.copy()
+        expected[disp // 8] = value
+        assert _run_void_ptr_arg(bytes(code), out_len=14) == expected
+
+
+def test_rsp_disp32_load_reads_the_requested_independently_written_slot() -> None:
+    sentinels = [0x1020304000000000 + index for index in range(14)]
+    for disp in (0, 8, 40, 96):
+        code = bytearray(asm.sub_rsp_imm8(112))
+        for index, value in enumerate(sentinels):
+            code += asm.mov_reg_imm64("rax", value)
+            code += bytes((0x48, 0x89, 0x44, 0x24, index * 8))
         code += asm.mov_load_rsp_disp32("rax", disp)
-        code += asm.add_rsp_imm8(disp + 8)
-        got = _run_u64(bytes(code), a=0xAABBCCDD11223344)
-        assert got == 0xAABBCCDD11223344, f"store/load round-trip at disp={disp} got {got:#x}"
+        code += asm.add_rsp_imm8(112)
+        assert _run_u64(bytes(code)) == sentinels[disp // 8]
 
 
-def test_mov_store_rsp_disp32_uses_a_distinct_register_per_slot_without_aliasing():
-    code = bytearray()
-    code += asm.sub_rsp_imm8(56)
-    code += asm.mov_reg_reg("r13", ARG0)
-    code += asm.mov_reg_imm64("r14", 0x2222222222222222)
-    code += asm.mov_reg_imm64("r15", 0x3333333333333333)
-    code += asm.mov_store_rsp_disp32(32, "r13")
-    code += asm.mov_store_rsp_disp32(40, "r14")
-    code += asm.mov_store_rsp_disp32(48, "r15")
-    code += asm.mov_load_rsp_disp32("rax", 32)
-    code += asm.mov_load_rsp_disp32("rbx", 40)
-    code += asm.mov_load_rsp_disp32("rdx", 48)
-    code += bytes((0x48, 0x31, 0xD8))  # xor rax, rbx
-    code += bytes((0x48, 0x31, 0xD0))  # xor rax, rdx
+def test_mov_store_rsp_disp32_uses_a_distinct_register_per_slot_without_aliasing() -> None:
+    code = bytearray(asm.mov_reg_reg("r12", ARG0) + asm.sub_rsp_imm8(56))
+    values = (0x1111111111111111, 0x2222222222222222, 0x3333333333333333)
+    for reg, value, disp in zip(("r13", "r14", "r15"), values, (32, 40, 48), strict=True):
+        code += asm.mov_reg_imm64(reg, value)
+        code += asm.mov_store_rsp_disp32(disp, reg)
+    for index, disp in enumerate((32, 40, 48)):
+        code += bytes((0x48, 0x8B, 0x44, 0x24, disp))
+        code += bytes((0x49, 0x89, 0x44, 0x24, index * 8))
     code += asm.add_rsp_imm8(56)
-    got = _run_u64(bytes(code), a=0x1111111111111111)
-    expected = 0x1111111111111111 ^ 0x2222222222222222 ^ 0x3333333333333333
-    assert got == expected
+    assert _run_void_ptr_arg(bytes(code), out_len=3) == list(values)
 
 
 def test_and_rsp_imm8_aligns_the_stack_pointer_down_to_16():
@@ -187,7 +201,7 @@ def test_and_rsp_imm8_aligns_the_stack_pointer_down_to_16():
     code += bytes((0x49, 0x89, 0x5C, 0x24, 0x08))
     before, after = _run_void_ptr_arg(bytes(code), out_len=2)
     assert after % 16 == 0, f"and rsp,-16 left rsp={after:#x}, not 16-aligned"
-    assert after <= before
+    assert after == before & ~0xF
 
 
 def test_call_reg_performs_a_real_indirect_call_and_returns_here():

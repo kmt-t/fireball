@@ -15,7 +15,7 @@ Tests:
   bufferless synchronous CSP handoff via scheduler.Channel)
 - Message KV-pair static buffer limit (ERR_MSG_TOO_LARGE)
 - Dictionary-based structured logging (LogDictionary, LogLevel filtering, UART transport emission)
-- Safety check rejecting unsafe format specifiers (%s/%p) at dictionary registration
+- Safety check rejecting %s at dictionary registration
 """
 
 from ipc_router import (
@@ -29,7 +29,7 @@ from ipc_router import (
     pack_key32,
 )
 from memory import FB_CONF_MEMORY_POOL_SIZE, MemoryManager
-from scheduler import Scheduler
+from scheduler import Scheduler, WaitDir
 from tier2_runtime.logger import LogDictionary, Logger, LogLevel, LogResult, decode_log_records
 from tier3_platform.drivers.hal.stream import StreamTransport
 
@@ -84,8 +84,15 @@ def test_scenario_ipc_router_and_logging():
         sent.append(("3_not_found", status3, msg3))
 
         # 4. Message exceeds the static 8 kv_pair buffer (ipc_router.md §3.3/§5.1).
-        oversized = _make_test_ipc_message([(i, i) for i in range(9)], manager)
+        oversized = _make_test_ipc_message([(i, i) for i in range(8)], manager)
+        # Corrupt the wire count after a valid internal construction. Internal
+        # construction of nine entries is an assert contract, not this status path.
+        oversized.block.write_u64(0, 9)
+        before = bytes(oversized.block.data)
         status4, _ = yield from router.send(ch1, oversized)
+        assert bytes(oversized.block.data) == before
+        assert ch1.waiter_task is None
+        assert ch1.waiter_dir == WaitDir.NONE
         sent.append(("4_too_large", status4, oversized))
 
     received: list[IPCMessage] = []
@@ -137,7 +144,7 @@ def test_scenario_ipc_router_and_logging():
     log_dict = LogDictionary(
         entries=((0x1100, "TASK_INIT: id=%d priority=%d"), (0x1104, "COOS_STATE: state=0x%08X"))
     )
-    # Unsafe format specifiers (%s/%p/%c and width variants) are rejected at dictionary build time.
+    # This example checks %s rejection at dictionary build time.
     rejected = False
     try:
         LogDictionary(
@@ -152,7 +159,7 @@ def test_scenario_ipc_router_and_logging():
     assert logger.log_event(LogLevel.INFO, 0x1100, 1, 5) == LogResult.SUCCESS
     assert logger.log_event(LogLevel.DEBUG, 0x1104, 0x12345678) == LogResult.FILTERED
     assert logger.log_event(LogLevel.ERROR, 0x1104, 0xDEADBEEF) == LogResult.SUCCESS
-    # Flush buffered logs to UART (simulating COOS idle_hook flush)
+    # Explicitly flush buffered logs; COOS idle_hook integration is not exercised here.
     flushed_count = logger.flush()
     assert flushed_count == 2
     # Read UART output stream
@@ -160,8 +167,10 @@ def test_scenario_ipc_router_and_logging():
     assert "TASK_INIT: id=1 priority=5" in emitted
     assert "0x12345678" not in emitted  # DEBUG filtered
     assert "COOS_STATE: state=0xDEADBEEF" in emitted
-    print("    [Section 2.2] Buffered Logging & COOS Idle Flush -> 2 Entries Flushed [PASS]")
-    print("    [PASS] Scenario 9 (IPC Router & Structured Logging) verified completely.")
+    print("    [Section 2.2] Buffered Logging & Explicit Flush -> 2 Entries Flushed [PASS]")
+    print(
+        "    [PASS] Scenario 9 routing/logging examples; idle_hook and overwrite remain unverified."
+    )
 
 
 if __name__ == "__main__":

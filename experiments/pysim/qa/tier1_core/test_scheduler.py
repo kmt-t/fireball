@@ -15,14 +15,61 @@ _REPO_ROOT = _PYSIM_DIR.parent.parent
 
 
 from helpers import expect_assertion
+from interrupt_event import InterruptEvent
 from scheduler import (
     BoundedReadyQueue,
     ChannelAction,
     ChannelTransferMode,
+    LockFreeInterruptEventQueue,
     Scheduler,
     Task,
     TaskState,
 )
+
+
+class CountedReadyTask(Task):
+    """QA-only task that counts READY-link access without changing queue operations."""
+
+    __slots__ = ("_following", "_previous", "link_reads", "link_writes")
+
+    def __init__(self, task_id: int) -> None:
+        self.link_reads = 0
+        self.link_writes = 0
+        self._previous: Task | None = None
+        self._following: Task | None = None
+        super().__init__(task_id)
+
+    @property
+    def ready_prev(self) -> Task | None:
+        self.link_reads += 1
+        return self._previous
+
+    @ready_prev.setter
+    def ready_prev(self, task: Task | None) -> None:
+        self.link_writes += 1
+        self._previous = task
+
+    @property
+    def ready_next(self) -> Task | None:
+        self.link_reads += 1
+        return self._following
+
+    @ready_next.setter
+    def ready_next(self, task: Task | None) -> None:
+        self.link_writes += 1
+        self._following = task
+
+
+def _reset_ready_link_counts(tasks: tuple[CountedReadyTask, ...]) -> None:
+    for task in tasks:
+        task.link_reads = 0
+        task.link_writes = 0
+
+
+def _assert_bounded_ready_link_counts(tasks: tuple[CountedReadyTask, ...]) -> None:
+    # Each operation touches a fixed neighborhood, never every READY task.
+    assert sum(task.link_reads for task in tasks) <= 8
+    assert sum(task.link_writes for task in tasks) <= 8
 
 
 def _activate_task(scheduler: Scheduler, task: Task) -> None:
@@ -47,22 +94,27 @@ def test_sched_01_pure_round_robin_fifo():
     assert order == ["a", "b", "a", "b"]
 
 
-def test_sched_02_task_capacity_limit():
-    """TEST-SCHED-02: Scheduler enforces FB_CONF_MAX_TASKS (16) limit."""
+def test_sched_09_task_capacity_limit():
+    """TEST-SCHED-09: Rejected overflow preserves the live tasks and READY order."""
     sched = Scheduler(max_tasks=4)
     for i in range(4):
         sched.spawn(f"t{i}")
 
     with expect_assertion("capacity exceeded"):
         sched.spawn("t_overflow")
+    assert [task.task_id for task in sched._ready] == [1, 2, 3, 4]
+    assert all(sched.get_task(task_id).state == TaskState.READY for task_id in range(1, 5))
 
 
-def test_sched_03_duplicate_task_id_rejected():
-    """TEST-SCHED-03: Attempting to spawn with an existing task_id is rejected."""
+def test_sched_10_duplicate_task_id_rejected():
+    """TEST-SCHED-10: A duplicate ID cannot replace its task or alter READY order."""
     sched = Scheduler()
     sched.spawn("t1", task_id=10)
+    original = sched.get_task(10)
     with expect_assertion("already exists"):
         sched.spawn("t2", task_id=10)
+    assert sched.get_task(10) is original
+    assert list(sched._ready) == [original]
 
 
 # ===========================================================================
@@ -70,7 +122,7 @@ def test_sched_03_duplicate_task_id_rejected():
 # ===========================================================================
 
 
-def test_sched_04_shared_block_move_semantics_csp_rendezvous():
+def test_mem_10_shared_block_move_semantics_csp_rendezvous():
     """TEST-MEM-10 / IPC_ZeroCopy: Move-only SharedBlock transfer across CSP channel.
     Upon rendezvous, ownership moves directly from sender to receiver.
     Sender instance is invalidated (use-after-move triggers assertion),
@@ -142,10 +194,11 @@ def test_sched_04_shared_block_move_semantics_csp_rendezvous():
         sb2.read_bytes(0, 5)
 
 
-def test_sched_05_queue_and_detached_task_lifecycle():
+def test_sched_13_detached_task_reattaches_once():
+    """TEST-SCHED-13: Removing/reattaching a task preserves queue membership and links."""
     queue = BoundedReadyQueue(capacity=2)
-    first = Task(1, "first")
-    second = Task(2, "second")
+    first = Task(1)
+    second = Task(2)
     assert queue.enqueue(first)
     assert queue.enqueue_front(second)
     assert len(queue) == 2
@@ -173,9 +226,10 @@ def test_sched_05_queue_and_detached_task_lifecycle():
     assert scheduler.pending_task_count() == 1
 
 
-def test_sched_06_ready_queue_intrusive_ring_two_ended_fifo():
+def test_sched_13_ready_queue_intrusive_ring_two_ended_fifo():
+    """TEST-SCHED-13: FIFO/ring links survive overflow rejection and arbitrary removal."""
     queue = BoundedReadyQueue(capacity=4)
-    tasks = tuple(Task(task_id, f"t{task_id}") for task_id in range(1, 6))
+    tasks = tuple(Task(task_id) for task_id in range(1, 6))
     first, second, third, fourth, fifth = tasks
 
     assert queue.enqueue(first)
@@ -191,6 +245,8 @@ def test_sched_06_ready_queue_intrusive_ring_two_ended_fifo():
         assert task.ready_prev is expected[(index - 1) % len(expected)]
     assert not queue.enqueue(fifth)
     assert not queue.enqueue_front(fifth)
+    assert list(queue) == expected
+    assert fifth.ready_prev is None and fifth.ready_next is None
     assert queue.dequeue() is first
     assert queue.enqueue_front(fifth)
     assert list(queue) == [fifth, second, third, fourth]
@@ -202,7 +258,51 @@ def test_sched_06_ready_queue_intrusive_ring_two_ended_fifo():
         assert task.ready_prev is expected_after_remove[(index - 1) % len(expected_after_remove)]
 
 
-def test_sched_07_terminated_task_returns_its_tcb_slot_on_spawn():
+def test_sched_08_ready_queue_link_operations_are_bounded():
+    """TEST-SCHED-08/13: Link accesses stay bounded as the READY ring grows."""
+    for count in (0, 1, 4, 16, 64):
+        queue = BoundedReadyQueue(capacity=count + 2)
+        tasks = tuple(CountedReadyTask(task_id) for task_id in range(count + 3))
+        initial = tasks[:count]
+        tail, front, overflow = tasks[count:]
+        for task in initial:
+            assert queue.enqueue(task)
+
+        _reset_ready_link_counts(tasks)
+        assert queue.enqueue(tail)
+        _assert_bounded_ready_link_counts(tasks)
+        assert tuple(queue) == (*initial, tail)
+
+        _reset_ready_link_counts(tasks)
+        assert queue.enqueue_front(front)
+        _assert_bounded_ready_link_counts(tasks)
+        expected = (front, *initial, tail)
+        assert tuple(queue) == expected
+
+        _reset_ready_link_counts(tasks)
+        assert not queue.enqueue(overflow)
+        assert not queue.enqueue_front(overflow)
+        assert sum(task.link_reads + task.link_writes for task in tasks) == 0
+        assert tuple(queue) == expected
+
+        _reset_ready_link_counts(tasks)
+        assert queue.dequeue() is front
+        _assert_bounded_ready_link_counts(tasks)
+        assert tuple(queue) == (*initial, tail)
+
+        _reset_ready_link_counts(tasks)
+        assert queue.remove(tail)
+        _assert_bounded_ready_link_counts(tasks)
+        assert tuple(queue) == initial
+        if count > 2:
+            middle = initial[count // 2]
+            _reset_ready_link_counts(tasks)
+            assert queue.remove(middle)
+            _assert_bounded_ready_link_counts(tasks)
+            assert tuple(queue) == tuple(task for task in initial if task is not middle)
+
+
+def test_sched_16_terminated_task_returns_its_tcb_slot_on_spawn():
     """TEST-SCHED-16: a full table reclaims terminated tasks; live tasks are never reclaimed."""
 
     def quick():
@@ -240,7 +340,7 @@ def test_sched_07_terminated_task_returns_its_tcb_slot_on_spawn():
         busy.spawn("w_overflow")
 
 
-def test_sched_08_task_ids_stay_unique_after_a_slot_is_reclaimed():
+def test_sched_16_task_ids_stay_unique_after_a_slot_is_reclaimed():
     """TEST-SCHED-16: a reclaimed slot never hands its old task ID to a new task."""
 
     def quick():
@@ -256,7 +356,8 @@ def test_sched_08_task_ids_stay_unique_after_a_slot_is_reclaimed():
     assert len(set(ids)) == 4
 
 
-def test_sched_09_timed_wait_runs_ready_peers_before_idle_sleep():
+def test_sched_18_timed_wait_runs_ready_peers_before_idle_sleep():
+    """TEST-SCHED-18: READY peers run before timer sleep; only the deadline resumes the waiter."""
     now_ns = 100
     sleep_intervals: list[int] = []
     idle_hook_times: list[int] = []
@@ -295,7 +396,8 @@ def test_sched_09_timed_wait_runs_ready_peers_before_idle_sleep():
     assert sched.pending_task_count() == 0
 
 
-def test_sched_10_killing_timed_waiter_clears_only_its_deadline():
+def test_sched_19_killing_timed_waiter_clears_only_its_deadline():
+    """TEST-SCHED-19 / GOTCHA-SCHED-03: Cancelling the earliest deadline preserves the survivor."""
     now_ns = 100
     sleep_intervals: list[int] = []
     resumed: list[str] = []
@@ -330,15 +432,205 @@ def test_sched_10_killing_timed_waiter_clears_only_its_deadline():
     assert sched.get_task(survivor_id).state == TaskState.TERMINATED
 
 
+def test_sched_02_spawn_appends_behind_existing_ready_peer() -> None:
+    """TEST-SCHED-02: A task spawned by RUNNING A is dispatched after already READY B."""
+    scheduler = Scheduler()
+    events: list[str] = []
+
+    def child():
+        events.append("C")
+        yield None
+
+    def parent():
+        events.append("A")
+        scheduler.spawn("C", child())
+        yield None
+        events.append("A resumed")
+
+    def peer():
+        events.append("B")
+        yield None
+
+    a_id = scheduler.spawn("A", parent())
+    b_id = scheduler.spawn("B", peer())
+    assert scheduler.step().task_id == a_id
+    assert [task.task_id for task in scheduler._ready] == [b_id, 3, a_id]
+    assert scheduler.step().task_id == b_id
+    assert scheduler.step().task_id == 3
+    assert scheduler.step().task_id == a_id
+    assert events == ["A", "B", "C", "A resumed"]
+
+
+def test_sched_03_yield_returns_to_ready_and_runs_again() -> None:
+    """TEST-SCHED-03: Each yield exposes READY; each subsequent dispatch exposes RUNNING."""
+    scheduler = Scheduler()
+    observed: list[TaskState] = []
+
+    def worker():
+        for _ in range(2):
+            observed.append(scheduler.current_task.state)
+            yield None
+        observed.append(scheduler.current_task.state)
+
+    task = scheduler.get_task(scheduler.spawn("worker", worker()))
+    for _ in range(2):
+        assert scheduler.step() is task
+        assert task.state == TaskState.READY
+        assert list(scheduler._ready) == [task]
+        assert scheduler.current_task is None
+    assert scheduler.step() is task
+    assert observed == [TaskState.RUNNING] * 3
+    assert task.state == TaskState.TERMINATED
+
+
+def test_sched_05_terminated_task_is_never_redispatched() -> None:
+    """TEST-SCHED-05: StopIteration removes the task from READY and future dispatches."""
+    scheduler = Scheduler()
+    events: list[str] = []
+
+    def worker():
+        events.append("finished")
+        return
+        yield
+
+    task = scheduler.get_task(scheduler.spawn("worker", worker()))
+    assert scheduler.step() is task
+    assert task.state == TaskState.TERMINATED
+    assert task.waiting_irq is None
+    assert task not in scheduler._ready
+    assert scheduler.step() is None
+    assert scheduler.step() is None
+    assert events == ["finished"]
+
+
+def test_sched_04_06_07_interrupt_defers_targeted_wakeup_until_drain() -> None:
+    """TEST-SCHED-04, TEST-SCHED-06, TEST-SCHED-07: BLOCKED idle, deferred wakeup, and exact cause handoff."""
+    scheduler = Scheduler()
+    received: list[tuple[int, int, int, int, int]] = []
+    idle_states: list[tuple[TaskState, TaskState]] = []
+
+    def waiter(vector_id: int):
+        scheduler.wait_for_interrupt(vector_id)
+        yield (ChannelAction.BLOCK, None)
+        event = scheduler.consume_interrupt_event()
+        assert event is not None
+        received.append(event.words())
+
+    a = scheduler.get_task(scheduler.spawn("A", waiter(7)))
+    b = scheduler.get_task(scheduler.spawn("B", waiter(8)))
+    scheduler.set_idle_hook(lambda: idle_states.append((a.state, b.state)))
+    assert scheduler.step() is a
+    assert scheduler.step() is b
+    scheduler.run_until_idle()
+    assert idle_states == [(TaskState.BLOCKED, TaskState.BLOCKED)]
+    assert scheduler.step() is None
+
+    assert scheduler.notify_interrupt(InterruptEvent(7, 91, 3, 0x1234, 0x5678))
+    assert a.state == b.state == TaskState.BLOCKED
+    assert list(scheduler._ready) == []
+    assert a.pending_interrupt_event is None
+    assert scheduler.drain_interrupts() == 1
+    assert a.state == TaskState.READY
+    assert a.waiting_irq is None
+    assert list(scheduler._ready) == [a]
+    assert b.state == TaskState.BLOCKED and b.waiting_irq == 8
+    assert b.pending_interrupt_event is None
+    scheduler.run_until_idle()
+    assert received == [(7, 91, 3, 0x1234, 0x5678)]
+    assert a.state == TaskState.TERMINATED
+    assert b.state == TaskState.BLOCKED
+
+
+def test_sched_11_unnotified_waiter_reaches_explicit_sweep_limit() -> None:
+    """TEST-SCHED-11: A permanently BLOCKED IRQ waiter reports noncompletion within the budget."""
+    scheduler = Scheduler()
+
+    def waiter():
+        scheduler.wait_for_interrupt(7)
+        yield (ChannelAction.BLOCK, None)
+
+    task = scheduler.get_task(scheduler.spawn("waiter", waiter()))
+    with expect_assertion("within 2 sweeps"):
+        scheduler.run_to_completion(max_sweeps=2)
+    assert task.state == TaskState.BLOCKED
+    assert task.waiting_irq == 7
+    assert list(scheduler._ready) == []
+
+
+def test_sched_12_interrupt_fifo_orders_registered_targets_and_drops_unknown() -> None:
+    """TEST-SCHED-12: Event order governs wake order; an unknown vector changes no task."""
+    scheduler = Scheduler()
+
+    def waiter(vector_id: int):
+        scheduler.wait_for_interrupt(vector_id)
+        yield (ChannelAction.BLOCK, None)
+
+    a = scheduler.get_task(scheduler.spawn("A", waiter(7)))
+    b = scheduler.get_task(scheduler.spawn("B", waiter(8)))
+    scheduler.step()
+    scheduler.step()
+    for event in (
+        InterruptEvent(8, 2, 3, 4, 5),
+        InterruptEvent(99, 0, 0, 0, 0),
+        InterruptEvent(7, 6, 7, 8, 9),
+    ):
+        assert scheduler.notify_interrupt(event)
+    assert a.state == b.state == TaskState.BLOCKED
+    assert scheduler.drain_interrupts() == 3
+    assert list(scheduler._ready) == [b, a]
+    assert a.pending_interrupt_event.words() == (7, 6, 7, 8, 9)
+    assert b.pending_interrupt_event.words() == (8, 2, 3, 4, 5)
+    assert scheduler.dropped_irqs == 1
+    assert len(scheduler.interrupt_event_queue) == 0
+
+
+def test_sched_14_15_interrupt_generation_is_observed_once_by_existing_targets() -> None:
+    """TEST-SCHED-14, TEST-SCHED-15: One burst creates one round; a newly spawned task is excluded."""
+    scheduler = Scheduler()
+    a = scheduler.get_task(scheduler.spawn("A"))
+    b = scheduler.get_task(scheduler.spawn("B"))
+    for vector in (98, 99):
+        assert scheduler.notify_interrupt(InterruptEvent(vector, 0, 0, 0, 0))
+    assert scheduler.reschedule_generation == 1
+    assert scheduler.reschedule_pending
+    assert scheduler.step() is a
+    assert a.last_seen_generation == 1
+    assert b.last_seen_generation == 0
+    assert scheduler.round_target_mask == 1 << b.task_id
+    assert scheduler.reschedule_pending
+    c = scheduler.get_task(scheduler.spawn("C"))
+    assert c.last_seen_generation == 1
+    assert scheduler.round_target_mask & (1 << c.task_id) == 0
+    assert not scheduler.observe_reschedule_generation(c)
+    assert scheduler.reschedule_pending
+    assert scheduler.step() is b
+    assert b.last_seen_generation == 1
+    assert not scheduler.reschedule_pending
+    assert scheduler.round_target_mask == 0
+    assert not scheduler.observe_reschedule_generation(a)
+    assert not scheduler.observe_reschedule_generation(b)
+    assert scheduler.reschedule_generation == 1
+
+
+def test_sched_17_interrupt_fifo_rejects_overflow_then_reuses_consumed_slot() -> None:
+    """TEST-SCHED-17: Overflow preserves cause records; wraparound reuses only a consumed slot."""
+    queue = LockFreeInterruptEventQueue(capacity=2)
+    a = InterruptEvent(1, 2, 3, 4, 5)
+    b = InterruptEvent(6, 7, 8, 9, 10)
+    c = InterruptEvent(11, 12, 13, 14, 15)
+    assert queue.push(a)
+    assert queue.push(b)
+    assert not queue.push(c)
+    assert len(queue) == 2
+    assert queue.pop() == a
+    assert queue.push(c)
+    assert queue.pop() == b
+    assert queue.pop() == c
+    assert queue.pop() is None
+    assert len(queue) == 0
+
+
 if __name__ == "__main__":
-    test_sched_01_pure_round_robin_fifo()
-    test_sched_02_task_capacity_limit()
-    test_sched_03_duplicate_task_id_rejected()
-    test_sched_04_shared_block_move_semantics_csp_rendezvous()
-    test_sched_05_queue_and_detached_task_lifecycle()
-    test_sched_06_ready_queue_intrusive_ring_two_ended_fifo()
-    test_sched_07_terminated_task_returns_its_tcb_slot_on_spawn()
-    test_sched_08_task_ids_stay_unique_after_a_slot_is_reclaimed()
-    test_sched_09_timed_wait_runs_ready_peers_before_idle_sleep()
-    test_sched_10_killing_timed_waiter_clears_only_its_deadline()
-    print("[PASS] All 10 Round-Robin Scheduler tests passed.")
+    import pytest
+
+    raise SystemExit(pytest.main([str(_TEST_FILE)]))

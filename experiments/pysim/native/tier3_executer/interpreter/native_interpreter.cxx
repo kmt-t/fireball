@@ -36,6 +36,7 @@ constexpr std::uint32_t kStopAfterControlFlag = 1u << 1;
 constexpr std::uint32_t kStopAtDefinedCallBoundaryFlag = 1u << 2;
 constexpr std::uint32_t kDispatchYield = 5;
 constexpr std::uint32_t kNativeCallBoundary = 6;
+constexpr std::uint32_t kDebugStop = 7;
 constexpr std::uint32_t kTrapLocalStackCapacity = 1;
 constexpr std::uint32_t kTrapCallStackCapacity = 3;
 constexpr std::uint32_t kTrapOperandStackCapacity = 4;
@@ -79,6 +80,46 @@ constexpr step_result complete() { return {kComplete, kSentinel, 0}; }
 
 constexpr step_result trap(std::uint32_t code) { return {kTrap, kSentinel, code}; }
 
+struct debug_context {
+  execution_context execution;
+  fb_native_debug_control* control;
+};
+
+static_assert(offsetof(debug_context, execution) == 0);
+static_assert(offsetof(debug_context, control) == sizeof(execution_context));
+
+struct debugger_aspect {
+  static bool before_instruction(execution_context& context) {
+    auto& control = *reinterpret_cast<debug_context*>(&context)->control;
+    if (control.enabled == 0) return false;
+    const auto* frame = context.call_stack->size == 0 ? nullptr
+        : &context.call_stack->frames[context.call_stack->size - 1];
+    if (frame == nullptr) return false;
+    const auto pc = (frame->func_index << 16) | context.ip;
+    control.current_pc = pc;
+    if (control.single_step != 0 && control.executed != 0) {
+      control.stopped = 1;
+      return true;
+    }
+    if (control.executed != 0) {
+      std::uint32_t low = 0;
+      std::uint32_t high = control.breakpoint_count;
+      while (low < high) {
+        const auto middle = low + (high - low) / 2;
+        if (control.breakpoints[middle] < pc) low = middle + 1;
+        else high = middle;
+      }
+      if (low < control.breakpoint_count && control.breakpoints[low] == pc) {
+        control.stopped = 1;
+        return true;
+      }
+    }
+    control.executed = 1;
+    return false;
+  }
+};
+
+template <typename Debugger = void>
 FIREBALL_CPS_CALL step_result dispatch(execution_context* context, std::uint32_t* sp,
                                        std::uint32_t* local_base, std::uint32_t tos);
 
@@ -248,7 +289,7 @@ bool signatures_match(const fireball_wasm_module_execution_view_native& module,
   return true;
 }
 
-template <bool Indirect>
+template <typename Debugger, bool Indirect>
 FIREBALL_CPS_CALL step_result begin_native_call(execution_context* context,
                                                 std::uint32_t* sp,
                                                 std::uint32_t* local_stack,
@@ -372,7 +413,7 @@ FIREBALL_CPS_CALL step_result begin_native_call(execution_context* context,
   if ((current.runtime_flags & kStopAtDefinedCallBoundaryFlag) != 0) {
     return {kCallBoundary, 0, 0};
   }
-  [[clang::musttail]] return dispatch(context, sp, local_stack, top_value(current, sp));
+  [[clang::musttail]] return dispatch<Debugger>(context, sp, local_stack, top_value(current, sp));
 }
 
 bool is_requested_block_boundary(const execution_context& current) {
@@ -491,6 +532,7 @@ bool push(execution_context& current, std::uint32_t* sp, std::uint32_t value) {
   return true;
 }
 
+template <typename Debugger>
 FIREBALL_CPS_CALL step_result unary_i32_eqz(
     execution_context* context, std::uint32_t* sp, std::uint32_t* local_base, std::uint32_t) {
   auto& current = *context;
@@ -499,9 +541,10 @@ FIREBALL_CPS_CALL step_result unary_i32_eqz(
     return fallback(current.ip);
   }
   current.ip += 1;
-  [[clang::musttail]] return dispatch(context, sp, local_base, top_value(current, sp));
+  [[clang::musttail]] return dispatch<Debugger>(context, sp, local_base, top_value(current, sp));
 }
 
+template <typename Debugger>
 FIREBALL_CPS_CALL step_result unary_i32_clz(
     execution_context* context, std::uint32_t* sp, std::uint32_t* local_base, std::uint32_t) {
   auto& current = *context;
@@ -514,9 +557,10 @@ FIREBALL_CPS_CALL step_result unary_i32_clz(
     return fallback(current.ip);
   }
   current.ip += 1;
-  [[clang::musttail]] return dispatch(context, sp, local_base, top_value(current, sp));
+  [[clang::musttail]] return dispatch<Debugger>(context, sp, local_base, top_value(current, sp));
 }
 
+template <typename Debugger>
 FIREBALL_CPS_CALL step_result unary_i32_ctz(
     execution_context* context, std::uint32_t* sp, std::uint32_t* local_base, std::uint32_t) {
   auto& current = *context;
@@ -529,9 +573,10 @@ FIREBALL_CPS_CALL step_result unary_i32_ctz(
     return fallback(current.ip);
   }
   current.ip += 1;
-  [[clang::musttail]] return dispatch(context, sp, local_base, top_value(current, sp));
+  [[clang::musttail]] return dispatch<Debugger>(context, sp, local_base, top_value(current, sp));
 }
 
+template <typename Debugger>
 FIREBALL_CPS_CALL step_result unary_i32_popcnt(
     execution_context* context, std::uint32_t* sp, std::uint32_t* local_base, std::uint32_t) {
   auto& current = *context;
@@ -540,9 +585,10 @@ FIREBALL_CPS_CALL step_result unary_i32_popcnt(
     return fallback(current.ip);
   }
   current.ip += 1;
-  [[clang::musttail]] return dispatch(context, sp, local_base, top_value(current, sp));
+  [[clang::musttail]] return dispatch<Debugger>(context, sp, local_base, top_value(current, sp));
 }
 
+template <typename Debugger>
 FIREBALL_CPS_CALL step_result unary_i32_extend8(
     execution_context* context, std::uint32_t* sp, std::uint32_t* local_base, std::uint32_t) {
   auto& current = *context;
@@ -553,9 +599,10 @@ FIREBALL_CPS_CALL step_result unary_i32_extend8(
     return fallback(current.ip);
   }
   current.ip += 1;
-  [[clang::musttail]] return dispatch(context, sp, local_base, top_value(current, sp));
+  [[clang::musttail]] return dispatch<Debugger>(context, sp, local_base, top_value(current, sp));
 }
 
+template <typename Debugger>
 FIREBALL_CPS_CALL step_result unary_i32_extend16(
     execution_context* context, std::uint32_t* sp, std::uint32_t* local_base, std::uint32_t) {
   auto& current = *context;
@@ -566,7 +613,7 @@ FIREBALL_CPS_CALL step_result unary_i32_extend16(
     return fallback(current.ip);
   }
   current.ip += 1;
-  [[clang::musttail]] return dispatch(context, sp, local_base, top_value(current, sp));
+  [[clang::musttail]] return dispatch<Debugger>(context, sp, local_base, top_value(current, sp));
 }
 
 template <std::uint32_t (*Operation)(std::uint32_t, std::uint32_t)>
@@ -1094,13 +1141,15 @@ bool conversion_identity(execution_context&, std::uint32_t*, std::uint32_t& trap
   return true;
 }
 
+template <typename Debugger>
 FIREBALL_CPS_CALL step_result h_nop(
     execution_context* context, std::uint32_t* sp, std::uint32_t* local_base, std::uint32_t) {
   auto& current = *context;
   current.ip += 1;
-  [[clang::musttail]] return dispatch(context, sp, local_base, top_value(current, sp));
+  [[clang::musttail]] return dispatch<Debugger>(context, sp, local_base, top_value(current, sp));
 }
 
+template <typename Debugger>
 FIREBALL_CPS_CALL step_result h_else(
     execution_context* context, std::uint32_t* sp, std::uint32_t* local_base, std::uint32_t) {
   auto& current = *context;
@@ -1115,10 +1164,10 @@ FIREBALL_CPS_CALL step_result h_else(
                    : frame.match_end + 1;
   prune_control_frames_after_static_jump(current, current.ip);
   if (should_stop_after_control(current)) return block_boundary(current.ip);
-  [[clang::musttail]] return dispatch(context, sp, local_base, top_value(current, sp));
+  [[clang::musttail]] return dispatch<Debugger>(context, sp, local_base, top_value(current, sp));
 }
 
-template <bool IsLoop>
+template <typename Debugger, bool IsLoop>
 FIREBALL_CPS_CALL step_result h_block(
     execution_context* context, std::uint32_t* sp, std::uint32_t* local_base,
     std::uint32_t) {
@@ -1136,9 +1185,10 @@ FIREBALL_CPS_CALL step_result h_block(
   frame.result_arity = static_cast<std::uint16_t>(entry->result_arity);
   current.ip = entry->next_pc;
   if (should_stop_after_control(current)) return block_boundary(current.ip);
-  [[clang::musttail]] return dispatch(context, sp, local_base, top_value(current, sp));
+  [[clang::musttail]] return dispatch<Debugger>(context, sp, local_base, top_value(current, sp));
 }
 
+template <typename Debugger>
 FIREBALL_CPS_CALL step_result h_if(
     execution_context* context, std::uint32_t* sp, std::uint32_t* local_base,
     std::uint32_t) {
@@ -1151,7 +1201,7 @@ FIREBALL_CPS_CALL step_result h_if(
   if (condition == 0 && entry->else_offset == kSentinel) {
     current.ip = entry->match_end + 1;
     if (should_stop_after_control(current)) return block_boundary(current.ip);
-    [[clang::musttail]] return dispatch(context, sp, local_base, top_value(current, sp));
+    [[clang::musttail]] return dispatch<Debugger>(context, sp, local_base, top_value(current, sp));
   }
   if (current.control_stack->size >= FIREBALL_NATIVE_CONTROL_STACK_CAPACITY) {
     return fallback(current.ip);
@@ -1164,9 +1214,10 @@ FIREBALL_CPS_CALL step_result h_if(
   frame.result_arity = static_cast<std::uint16_t>(entry->result_arity);
   current.ip = condition == 0 ? entry->else_offset + 1 : entry->next_pc;
   if (should_stop_after_control(current)) return block_boundary(current.ip);
-  [[clang::musttail]] return dispatch(context, sp, local_base, top_value(current, sp));
+  [[clang::musttail]] return dispatch<Debugger>(context, sp, local_base, top_value(current, sp));
 }
 
+template <typename Debugger>
 FIREBALL_CPS_CALL step_result h_br(
     execution_context* context, std::uint32_t* sp, std::uint32_t* local_base,
     std::uint32_t) {
@@ -1184,7 +1235,7 @@ FIREBALL_CPS_CALL step_result h_br(
     if (outermost && should_stop_after_control(current)) return block_boundary(kSentinel);
     if (finish_current_function(current)) return complete();
     if (should_stop_after_control(current)) return block_boundary(current.ip);
-    [[clang::musttail]] return dispatch(context, sp, local_base, top_value(current, sp));
+    [[clang::musttail]] return dispatch<Debugger>(context, sp, local_base, top_value(current, sp));
   }
   const auto* call_frame = active_frame(current);
   if (call_frame != nullptr && call_frame->boundary_next_pc != kSentinel) {
@@ -1194,9 +1245,10 @@ FIREBALL_CPS_CALL step_result h_br(
   record_loop_backedge(current, source_ip, next_ip);
   current.ip = next_ip;
   if (should_stop_after_control(current)) return block_boundary(current.ip);
-  [[clang::musttail]] return dispatch(context, sp, local_base, top_value(current, sp));
+  [[clang::musttail]] return dispatch<Debugger>(context, sp, local_base, top_value(current, sp));
 }
 
+template <typename Debugger>
 FIREBALL_CPS_CALL step_result h_br_if(
     execution_context* context, std::uint32_t* sp, std::uint32_t* local_base,
     std::uint32_t) {
@@ -1211,7 +1263,7 @@ FIREBALL_CPS_CALL step_result h_br_if(
   if (condition == 0) {
     current.ip = operand_ip;
     if (should_stop_after_control(current)) return block_boundary(current.ip);
-    [[clang::musttail]] return dispatch(context, sp, local_base, top_value(current, sp));
+    [[clang::musttail]] return dispatch<Debugger>(context, sp, local_base, top_value(current, sp));
   }
   std::uint32_t next_ip = 0;
   if (!branch(current, sp, depth, next_ip)) return fallback(current.ip);
@@ -1221,7 +1273,7 @@ FIREBALL_CPS_CALL step_result h_br_if(
     if (outermost && should_stop_after_control(current)) return block_boundary(kSentinel);
     if (finish_current_function(current)) return complete();
     if (should_stop_after_control(current)) return block_boundary(current.ip);
-    [[clang::musttail]] return dispatch(context, sp, local_base, top_value(current, sp));
+    [[clang::musttail]] return dispatch<Debugger>(context, sp, local_base, top_value(current, sp));
   }
   const auto* call_frame = active_frame(current);
   if (call_frame != nullptr && call_frame->boundary_loops_to != kSentinel) {
@@ -1231,9 +1283,10 @@ FIREBALL_CPS_CALL step_result h_br_if(
   record_loop_backedge(current, source_ip, next_ip);
   current.ip = next_ip;
   if (should_stop_after_control(current)) return block_boundary(current.ip);
-  [[clang::musttail]] return dispatch(context, sp, local_base, top_value(current, sp));
+  [[clang::musttail]] return dispatch<Debugger>(context, sp, local_base, top_value(current, sp));
 }
 
+template <typename Debugger>
 FIREBALL_CPS_CALL step_result h_local_get(
     execution_context* context, std::uint32_t* sp, std::uint32_t* local_base,
     std::uint32_t) {
@@ -1249,9 +1302,10 @@ FIREBALL_CPS_CALL step_result h_local_get(
     if (!push(current, sp, local_base[offset + word])) return fallback(current.ip);
   }
   current.ip = operand_ip;
-  [[clang::musttail]] return dispatch(context, sp, local_base, top_value(current, sp));
+  [[clang::musttail]] return dispatch<Debugger>(context, sp, local_base, top_value(current, sp));
 }
 
+template <typename Debugger>
 FIREBALL_CPS_CALL step_result h_local_set(
     execution_context* context, std::uint32_t* sp, std::uint32_t* local_base,
     std::uint32_t) {
@@ -1270,9 +1324,10 @@ FIREBALL_CPS_CALL step_result h_local_set(
   }
   current.sp_offset -= width;
   current.ip = operand_ip;
-  [[clang::musttail]] return dispatch(context, sp, local_base, top_value(current, sp));
+  [[clang::musttail]] return dispatch<Debugger>(context, sp, local_base, top_value(current, sp));
 }
 
+template <typename Debugger>
 FIREBALL_CPS_CALL step_result h_local_tee(
     execution_context* context, std::uint32_t* sp, std::uint32_t* local_base,
     std::uint32_t) {
@@ -1290,9 +1345,10 @@ FIREBALL_CPS_CALL step_result h_local_tee(
     local_base[offset + word] = sp[source + word];
   }
   current.ip = operand_ip;
-  [[clang::musttail]] return dispatch(context, sp, local_base, top_value(current, sp));
+  [[clang::musttail]] return dispatch<Debugger>(context, sp, local_base, top_value(current, sp));
 }
 
+template <typename Debugger>
 FIREBALL_CPS_CALL step_result h_global_get(
     execution_context* context, std::uint32_t* sp, std::uint32_t* local_base,
     std::uint32_t) {
@@ -1322,9 +1378,10 @@ FIREBALL_CPS_CALL step_result h_global_get(
     return fallback(current.ip);
   }
   current.ip = operand_ip;
-  [[clang::musttail]] return dispatch(context, sp, local_base, top_value(current, sp));
+  [[clang::musttail]] return dispatch<Debugger>(context, sp, local_base, top_value(current, sp));
 }
 
+template <typename Debugger>
 FIREBALL_CPS_CALL step_result h_global_set(
     execution_context* context, std::uint32_t* sp, std::uint32_t* local_base,
     std::uint32_t) {
@@ -1352,9 +1409,10 @@ FIREBALL_CPS_CALL step_result h_global_set(
   module->globals[index] = value;
   current.sp_offset = source;
   current.ip = operand_ip;
-  [[clang::musttail]] return dispatch(context, sp, local_base, top_value(current, sp));
+  [[clang::musttail]] return dispatch<Debugger>(context, sp, local_base, top_value(current, sp));
 }
 
+template <typename Debugger>
 FIREBALL_CPS_CALL step_result h_drop(
     execution_context* context, std::uint32_t* sp, std::uint32_t* local_base,
     std::uint32_t) {
@@ -1364,9 +1422,10 @@ FIREBALL_CPS_CALL step_result h_drop(
   if (width == 0 || current.sp_offset < width) return fallback(current.ip);
   current.sp_offset -= width;
   current.ip += 1;
-  [[clang::musttail]] return dispatch(context, sp, local_base, top_value(current, sp));
+  [[clang::musttail]] return dispatch<Debugger>(context, sp, local_base, top_value(current, sp));
 }
 
+template <typename Debugger>
 FIREBALL_CPS_CALL step_result h_select(
     execution_context* context, std::uint32_t* sp, std::uint32_t* local_base,
     std::uint32_t) {
@@ -1384,9 +1443,10 @@ FIREBALL_CPS_CALL step_result h_select(
   }
   current.sp_offset = a + width;
   current.ip += 1;
-  [[clang::musttail]] return dispatch(context, sp, local_base, top_value(current, sp));
+  [[clang::musttail]] return dispatch<Debugger>(context, sp, local_base, top_value(current, sp));
 }
 
+template <typename Debugger>
 FIREBALL_CPS_CALL step_result h_end(
     execution_context* context, std::uint32_t* sp, std::uint32_t* local_base, std::uint32_t) {
   auto& current = *context;
@@ -1400,12 +1460,13 @@ FIREBALL_CPS_CALL step_result h_end(
     if (outermost && should_stop_after_control(current)) return block_boundary(kSentinel);
     if (finish_current_function(current)) return complete();
     if (should_stop_after_control(current)) return block_boundary(current.ip);
-    [[clang::musttail]] return dispatch(context, sp, local_base, top_value(current, sp));
+    [[clang::musttail]] return dispatch<Debugger>(context, sp, local_base, top_value(current, sp));
   }
   if (should_stop_after_control(current)) return block_boundary(current.ip);
-  [[clang::musttail]] return dispatch(context, sp, local_base, top_value(current, sp));
+  [[clang::musttail]] return dispatch<Debugger>(context, sp, local_base, top_value(current, sp));
 }
 
+template <typename Debugger>
 FIREBALL_CPS_CALL step_result h_return(
     execution_context* context, std::uint32_t* sp, std::uint32_t* local_stack,
     std::uint32_t) {
@@ -1415,9 +1476,10 @@ FIREBALL_CPS_CALL step_result h_return(
   if (outermost && should_stop_after_control(current)) return block_boundary(kSentinel);
   if (finish_current_function(current)) return complete();
   if (should_stop_after_control(current)) return block_boundary(current.ip);
-  [[clang::musttail]] return dispatch(context, sp, local_stack, top_value(current, sp));
+  [[clang::musttail]] return dispatch<Debugger>(context, sp, local_stack, top_value(current, sp));
 }
 
+template <typename Debugger>
 FIREBALL_CPS_CALL step_result h_br_table(
     execution_context* context, std::uint32_t* sp, std::uint32_t* local_base,
     std::uint32_t) {
@@ -1444,35 +1506,37 @@ FIREBALL_CPS_CALL step_result h_br_table(
     if (outermost && should_stop_after_control(current)) return block_boundary(kSentinel);
     if (finish_current_function(current)) return complete();
     if (should_stop_after_control(current)) return block_boundary(current.ip);
-    [[clang::musttail]] return dispatch(context, sp, local_base, top_value(current, sp));
+    [[clang::musttail]] return dispatch<Debugger>(context, sp, local_base, top_value(current, sp));
   }
   record_loop_backedge(current, source_ip, next_ip);
   current.ip = next_ip;
   if (should_stop_after_control(current)) {
     return block_boundary(current.ip);
   }
-  [[clang::musttail]] return dispatch(context, sp, local_base, top_value(current, sp));
+  [[clang::musttail]] return dispatch<Debugger>(context, sp, local_base, top_value(current, sp));
 }
 
+template <typename Debugger>
 FIREBALL_CPS_CALL step_result h_unreachable(
     execution_context*, std::uint32_t*, std::uint32_t*, std::uint32_t) {
   return trap(kTrapUnreachable);
 }
 
+template <typename Debugger>
 FIREBALL_CPS_CALL step_result h_i32_const(
     execution_context* context, std::uint32_t* sp, std::uint32_t* local_base, std::uint32_t) {
   auto& current = *context;
   auto operand_ip = current.ip + 1;
   std::int32_t value = 0;
-  if (!read_s32(current, operand_ip, value) ||
-      !push(current, sp, static_cast<std::uint32_t>(value))) {
-    return fallback(current.ip);
+  if (!read_s32(current, operand_ip, value)) return fallback(current.ip);
+  if (!push(current, sp, static_cast<std::uint32_t>(value))) {
+    return trap(kTrapOperandStackCapacity);
   }
   current.ip = operand_ip;
-  [[clang::musttail]] return dispatch(context, sp, local_base, top_value(current, sp));
+  [[clang::musttail]] return dispatch<Debugger>(context, sp, local_base, top_value(current, sp));
 }
 
-template <std::uint32_t (*Operation)(std::uint32_t, std::uint32_t)>
+template <typename Debugger, std::uint32_t (*Operation)(std::uint32_t, std::uint32_t)>
 FIREBALL_CPS_CALL step_result h_i32_binary(
     execution_context* context, std::uint32_t* sp, std::uint32_t* local_base, std::uint32_t) {
   auto& current = *context;
@@ -1483,10 +1547,10 @@ FIREBALL_CPS_CALL step_result h_i32_binary(
     return fallback(current.ip);
   }
   ++current.ip;
-  [[clang::musttail]] return dispatch(context, sp, local_base, top_value(current, sp));
+  [[clang::musttail]] return dispatch<Debugger>(context, sp, local_base, top_value(current, sp));
 }
 
-template <bool (*Operation)(std::uint32_t, std::uint32_t, std::uint32_t&,
+template <typename Debugger, bool (*Operation)(std::uint32_t, std::uint32_t, std::uint32_t&,
                             std::uint32_t&)>
 FIREBALL_CPS_CALL step_result h_i32_checked_binary(
     execution_context* context, std::uint32_t* sp, std::uint32_t* local_base, std::uint32_t) {
@@ -1499,10 +1563,10 @@ FIREBALL_CPS_CALL step_result h_i32_checked_binary(
   if (!Operation(lhs, rhs, result, trap_code)) return trap(trap_code);
   if (!push(current, sp, result)) return fallback(current.ip);
   ++current.ip;
-  [[clang::musttail]] return dispatch(context, sp, local_base, top_value(current, sp));
+  [[clang::musttail]] return dispatch<Debugger>(context, sp, local_base, top_value(current, sp));
 }
 
-template <std::uint64_t (*Operation)(std::uint64_t, std::uint64_t), bool ResultIsBool>
+template <typename Debugger, std::uint64_t (*Operation)(std::uint64_t, std::uint64_t), bool ResultIsBool>
 FIREBALL_CPS_CALL step_result h_i64_binary(
     execution_context* context, std::uint32_t* sp, std::uint32_t* local_base, std::uint32_t) {
   auto& current = *context;
@@ -1516,10 +1580,10 @@ FIREBALL_CPS_CALL step_result h_i64_binary(
   }();
   if (!pushed) return fallback(current.ip);
   ++current.ip;
-  [[clang::musttail]] return dispatch(context, sp, local_base, top_value(current, sp));
+  [[clang::musttail]] return dispatch<Debugger>(context, sp, local_base, top_value(current, sp));
 }
 
-template <bool (*Operation)(std::uint64_t, std::uint64_t, std::uint64_t&,
+template <typename Debugger, bool (*Operation)(std::uint64_t, std::uint64_t, std::uint64_t&,
                             std::uint32_t&), bool ResultIsBool>
 FIREBALL_CPS_CALL step_result h_i64_checked_binary(
     execution_context* context, std::uint32_t* sp, std::uint32_t* local_base, std::uint32_t) {
@@ -1536,10 +1600,10 @@ FIREBALL_CPS_CALL step_result h_i64_checked_binary(
   }();
   if (!pushed) return fallback(current.ip);
   ++current.ip;
-  [[clang::musttail]] return dispatch(context, sp, local_base, top_value(current, sp));
+  [[clang::musttail]] return dispatch<Debugger>(context, sp, local_base, top_value(current, sp));
 }
 
-template <std::uint64_t (*Operation)(std::uint64_t), bool ResultIsBool>
+template <typename Debugger, std::uint64_t (*Operation)(std::uint64_t), bool ResultIsBool>
 FIREBALL_CPS_CALL step_result h_i64_unary(
     execution_context* context, std::uint32_t* sp, std::uint32_t* local_base, std::uint32_t) {
   auto& current = *context;
@@ -1552,10 +1616,10 @@ FIREBALL_CPS_CALL step_result h_i64_unary(
   }();
   if (!pushed) return fallback(current.ip);
   ++current.ip;
-  [[clang::musttail]] return dispatch(context, sp, local_base, top_value(current, sp));
+  [[clang::musttail]] return dispatch<Debugger>(context, sp, local_base, top_value(current, sp));
 }
 
-template <float (*Operation)(float, float), bool ResultIsBool>
+template <typename Debugger, float (*Operation)(float, float), bool ResultIsBool>
 FIREBALL_CPS_CALL step_result h_f32_binary(
     execution_context* context, std::uint32_t* sp, std::uint32_t* local_base, std::uint32_t) {
   auto& current = *context;
@@ -1569,10 +1633,10 @@ FIREBALL_CPS_CALL step_result h_f32_binary(
   }();
   if (!pushed) return fallback(current.ip);
   ++current.ip;
-  [[clang::musttail]] return dispatch(context, sp, local_base, top_value(current, sp));
+  [[clang::musttail]] return dispatch<Debugger>(context, sp, local_base, top_value(current, sp));
 }
 
-template <double (*Operation)(double, double), bool ResultIsBool>
+template <typename Debugger, double (*Operation)(double, double), bool ResultIsBool>
 FIREBALL_CPS_CALL step_result h_f64_binary(
     execution_context* context, std::uint32_t* sp, std::uint32_t* local_base, std::uint32_t) {
   auto& current = *context;
@@ -1586,10 +1650,10 @@ FIREBALL_CPS_CALL step_result h_f64_binary(
   }();
   if (!pushed) return fallback(current.ip);
   ++current.ip;
-  [[clang::musttail]] return dispatch(context, sp, local_base, top_value(current, sp));
+  [[clang::musttail]] return dispatch<Debugger>(context, sp, local_base, top_value(current, sp));
 }
 
-template <float (*Operation)(float)>
+template <typename Debugger, float (*Operation)(float)>
 FIREBALL_CPS_CALL step_result h_f32_unary(
     execution_context* context, std::uint32_t* sp, std::uint32_t* local_base, std::uint32_t) {
   auto& current = *context;
@@ -1598,10 +1662,10 @@ FIREBALL_CPS_CALL step_result h_f32_unary(
     return fallback(current.ip);
   }
   ++current.ip;
-  [[clang::musttail]] return dispatch(context, sp, local_base, top_value(current, sp));
+  [[clang::musttail]] return dispatch<Debugger>(context, sp, local_base, top_value(current, sp));
 }
 
-template <double (*Operation)(double)>
+template <typename Debugger, double (*Operation)(double)>
 FIREBALL_CPS_CALL step_result h_f64_unary(
     execution_context* context, std::uint32_t* sp, std::uint32_t* local_base, std::uint32_t) {
   auto& current = *context;
@@ -1610,10 +1674,10 @@ FIREBALL_CPS_CALL step_result h_f64_unary(
     return fallback(current.ip);
   }
   ++current.ip;
-  [[clang::musttail]] return dispatch(context, sp, local_base, top_value(current, sp));
+  [[clang::musttail]] return dispatch<Debugger>(context, sp, local_base, top_value(current, sp));
 }
 
-template <bool (*Operation)(execution_context&, std::uint32_t*, std::uint32_t&)>
+template <typename Debugger, bool (*Operation)(execution_context&, std::uint32_t*, std::uint32_t&)>
 FIREBALL_CPS_CALL step_result h_conversion(
     execution_context* context, std::uint32_t* sp, std::uint32_t* local_base, std::uint32_t) {
   auto& current = *context;
@@ -1622,22 +1686,24 @@ FIREBALL_CPS_CALL step_result h_conversion(
     return trap_code == 0 ? fallback(current.ip) : trap(trap_code);
   }
   ++current.ip;
-  [[clang::musttail]] return dispatch(context, sp, local_base, top_value(current, sp));
+  [[clang::musttail]] return dispatch<Debugger>(context, sp, local_base, top_value(current, sp));
 }
 
+template <typename Debugger>
 FIREBALL_CPS_CALL step_result h_i64_const(
     execution_context* context, std::uint32_t* sp, std::uint32_t* local_base, std::uint32_t) {
   auto& current = *context;
   auto operand_ip = current.ip + 1;
   std::int64_t value = 0;
-  if (!read_s64(current, operand_ip, value) ||
-      !push_u64(current, sp, static_cast<std::uint64_t>(value))) {
-    return fallback(current.ip);
+  if (!read_s64(current, operand_ip, value)) return fallback(current.ip);
+  if (!push_u64(current, sp, static_cast<std::uint64_t>(value))) {
+    return trap(kTrapOperandStackCapacity);
   }
   current.ip = operand_ip;
-  [[clang::musttail]] return dispatch(context, sp, local_base, top_value(current, sp));
+  [[clang::musttail]] return dispatch<Debugger>(context, sp, local_base, top_value(current, sp));
 }
 
+template <typename Debugger>
 FIREBALL_CPS_CALL step_result h_f32_const(
     execution_context* context, std::uint32_t* sp, std::uint32_t* local_base, std::uint32_t) {
   auto& current = *context;
@@ -1646,11 +1712,12 @@ FIREBALL_CPS_CALL step_result h_f32_const(
                     (static_cast<std::uint32_t>(current.code[current.ip + 2]) << 8) |
                     (static_cast<std::uint32_t>(current.code[current.ip + 3]) << 16) |
                     (static_cast<std::uint32_t>(current.code[current.ip + 4]) << 24);
-  if (!push(current, sp, bits)) return fallback(current.ip);
+  if (!push(current, sp, bits)) return trap(kTrapOperandStackCapacity);
   current.ip += 5;
-  [[clang::musttail]] return dispatch(context, sp, local_base, top_value(current, sp));
+  [[clang::musttail]] return dispatch<Debugger>(context, sp, local_base, top_value(current, sp));
 }
 
+template <typename Debugger>
 FIREBALL_CPS_CALL step_result h_f64_const(
     execution_context* context, std::uint32_t* sp, std::uint32_t* local_base, std::uint32_t) {
   auto& current = *context;
@@ -1659,9 +1726,9 @@ FIREBALL_CPS_CALL step_result h_f64_const(
   for (std::uint32_t byte = 0; byte < 8; ++byte) {
     bits |= static_cast<std::uint64_t>(current.code[current.ip + 1 + byte]) << (byte * 8);
   }
-  if (!push_u64(current, sp, bits)) return fallback(current.ip);
+  if (!push_u64(current, sp, bits)) return trap(kTrapOperandStackCapacity);
   current.ip += 9;
-  [[clang::musttail]] return dispatch(context, sp, local_base, top_value(current, sp));
+  [[clang::musttail]] return dispatch<Debugger>(context, sp, local_base, top_value(current, sp));
 }
 
 template <std::uint32_t Width>
@@ -1673,7 +1740,7 @@ std::uint64_t sign_extend_memory_value(std::uint64_t value) {
   return value;
 }
 
-template <std::uint32_t Width, std::uint32_t ResultWords, bool Signed>
+template <typename Debugger, std::uint32_t Width, std::uint32_t ResultWords, bool Signed>
 FIREBALL_CPS_CALL step_result h_memory_load(
     execution_context* context, std::uint32_t* sp, std::uint32_t* local_base,
     std::uint32_t) {
@@ -1712,10 +1779,10 @@ FIREBALL_CPS_CALL step_result h_memory_load(
   }();
   if (!pushed) return fallback(current.ip);
   current.ip = operand_ip;
-  [[clang::musttail]] return dispatch(context, sp, local_base, top_value(current, sp));
+  [[clang::musttail]] return dispatch<Debugger>(context, sp, local_base, top_value(current, sp));
 }
 
-template <std::uint32_t Width, std::uint32_t ValueWords>
+template <typename Debugger, std::uint32_t Width, std::uint32_t ValueWords>
 FIREBALL_CPS_CALL step_result h_memory_store(
     execution_context* context, std::uint32_t* sp, std::uint32_t* local_base,
     std::uint32_t) {
@@ -1748,10 +1815,10 @@ FIREBALL_CPS_CALL step_result h_memory_store(
   }
   current.sp_offset = address_index;
   current.ip = operand_ip;
-  [[clang::musttail]] return dispatch(context, sp, local_base, top_value(current, sp));
+  [[clang::musttail]] return dispatch<Debugger>(context, sp, local_base, top_value(current, sp));
 }
 
-template <bool (*Operation)(execution_context&, std::uint32_t*)>
+template <typename Debugger, bool (*Operation)(execution_context&, std::uint32_t*)>
 FIREBALL_CPS_CALL step_result h_fc_saturating_conversion(
     execution_context* context, std::uint32_t* sp, std::uint32_t* local_base, std::uint32_t) {
   auto& current = *context;
@@ -1761,9 +1828,10 @@ FIREBALL_CPS_CALL step_result h_fc_saturating_conversion(
     return fallback(current.ip);
   }
   current.ip = operand_ip;
-  [[clang::musttail]] return dispatch(context, sp, local_base, top_value(current, sp));
+  [[clang::musttail]] return dispatch<Debugger>(context, sp, local_base, top_value(current, sp));
 }
 
+template <typename Debugger>
 FIREBALL_CPS_CALL step_result h_fc_memory_copy(
     execution_context* context, std::uint32_t* sp, std::uint32_t* local_base, std::uint32_t) {
   auto& current = *context;
@@ -1794,9 +1862,10 @@ FIREBALL_CPS_CALL step_result h_fc_memory_copy(
   }
   current.sp_offset = destination_index;
   current.ip = operand_ip;
-  [[clang::musttail]] return dispatch(context, sp, local_base, top_value(current, sp));
+  [[clang::musttail]] return dispatch<Debugger>(context, sp, local_base, top_value(current, sp));
 }
 
+template <typename Debugger>
 FIREBALL_CPS_CALL step_result h_fc_memory_fill(
     execution_context* context, std::uint32_t* sp, std::uint32_t* local_base, std::uint32_t) {
   auto& current = *context;
@@ -1822,7 +1891,7 @@ FIREBALL_CPS_CALL step_result h_fc_memory_fill(
   }
   current.sp_offset = destination_index;
   current.ip = operand_ip;
-  [[clang::musttail]] return dispatch(context, sp, local_base, top_value(current, sp));
+  [[clang::musttail]] return dispatch<Debugger>(context, sp, local_base, top_value(current, sp));
 }
 
 constexpr std::uint8_t kOpcodeControlTerminator = 1u << 0;
@@ -1851,6 +1920,7 @@ bool opcode_is_control_terminator(std::uint8_t opcode) {
   return (kOpcodeAttributes[opcode] & kOpcodeControlTerminator) != 0;
 }
 
+template <typename Debugger>
 FIREBALL_CPS_CALL step_result dispatch(execution_context* context, std::uint32_t* sp,
                                        std::uint32_t* local_base, std::uint32_t tos) {
   auto& current = *context;
@@ -1858,7 +1928,11 @@ FIREBALL_CPS_CALL step_result dispatch(execution_context* context, std::uint32_t
   if (is_requested_block_boundary(current)) return block_boundary(current.ip);
   if (current.ip >= current.code_size) {
     if (finish_current_function(current)) return complete();
-    [[clang::musttail]] return dispatch(context, sp, local_base, top_value(current, sp));
+    [[clang::musttail]] return dispatch<Debugger>(context, sp, local_base, top_value(current, sp));
+  }
+
+  if constexpr (!std::is_void_v<Debugger>) {
+    if (Debugger::before_instruction(current)) return {kDebugStop, current.ip, 0};
   }
 
   current.stack_checkpoint = current.sp_offset;
@@ -1869,196 +1943,196 @@ FIREBALL_CPS_CALL step_result dispatch(execution_context* context, std::uint32_t
     std::uint32_t subopcode = 0;
     if (!read_u32(current, operand_ip, subopcode)) return fallback(current.ip);
     switch (subopcode) {
-      case 0x00: [[clang::musttail]] return h_fc_saturating_conversion<conversion_truncate_sat_i32<float, true>>(context, sp, local_base, tos);
-      case 0x01: [[clang::musttail]] return h_fc_saturating_conversion<conversion_truncate_sat_i32<float, false>>(context, sp, local_base, tos);
-      case 0x02: [[clang::musttail]] return h_fc_saturating_conversion<conversion_truncate_sat_i32<double, true>>(context, sp, local_base, tos);
-      case 0x03: [[clang::musttail]] return h_fc_saturating_conversion<conversion_truncate_sat_i32<double, false>>(context, sp, local_base, tos);
-      case 0x04: [[clang::musttail]] return h_fc_saturating_conversion<conversion_truncate_sat_i64<float, true>>(context, sp, local_base, tos);
-      case 0x05: [[clang::musttail]] return h_fc_saturating_conversion<conversion_truncate_sat_i64<float, false>>(context, sp, local_base, tos);
-      case 0x06: [[clang::musttail]] return h_fc_saturating_conversion<conversion_truncate_sat_i64<double, true>>(context, sp, local_base, tos);
-      case 0x07: [[clang::musttail]] return h_fc_saturating_conversion<conversion_truncate_sat_i64<double, false>>(context, sp, local_base, tos);
-      case 0x0A: [[clang::musttail]] return h_fc_memory_copy(context, sp, local_base, tos);
-      case 0x0B: [[clang::musttail]] return h_fc_memory_fill(context, sp, local_base, tos);
+      case 0x00: [[clang::musttail]] return h_fc_saturating_conversion<Debugger, conversion_truncate_sat_i32<float, true>>(context, sp, local_base, tos);
+      case 0x01: [[clang::musttail]] return h_fc_saturating_conversion<Debugger, conversion_truncate_sat_i32<float, false>>(context, sp, local_base, tos);
+      case 0x02: [[clang::musttail]] return h_fc_saturating_conversion<Debugger, conversion_truncate_sat_i32<double, true>>(context, sp, local_base, tos);
+      case 0x03: [[clang::musttail]] return h_fc_saturating_conversion<Debugger, conversion_truncate_sat_i32<double, false>>(context, sp, local_base, tos);
+      case 0x04: [[clang::musttail]] return h_fc_saturating_conversion<Debugger, conversion_truncate_sat_i64<float, true>>(context, sp, local_base, tos);
+      case 0x05: [[clang::musttail]] return h_fc_saturating_conversion<Debugger, conversion_truncate_sat_i64<float, false>>(context, sp, local_base, tos);
+      case 0x06: [[clang::musttail]] return h_fc_saturating_conversion<Debugger, conversion_truncate_sat_i64<double, true>>(context, sp, local_base, tos);
+      case 0x07: [[clang::musttail]] return h_fc_saturating_conversion<Debugger, conversion_truncate_sat_i64<double, false>>(context, sp, local_base, tos);
+      case 0x0A: [[clang::musttail]] return h_fc_memory_copy<Debugger>(context, sp, local_base, tos);
+      case 0x0B: [[clang::musttail]] return h_fc_memory_fill<Debugger>(context, sp, local_base, tos);
       default: return fallback(current.ip);
     }
   }
 
   switch (opcode) {
-    case 0x00: [[clang::musttail]] return h_unreachable(context, sp, local_base, tos);
-    case 0x01: [[clang::musttail]] return h_nop(context, sp, local_base, tos);
-    case 0x02: [[clang::musttail]] return h_block<false>(context, sp, local_base, tos);
-    case 0x03: [[clang::musttail]] return h_block<true>(context, sp, local_base, tos);
-    case 0x04: [[clang::musttail]] return h_if(context, sp, local_base, tos);
-    case 0x05: [[clang::musttail]] return h_else(context, sp, local_base, tos);
-    case 0x0B: [[clang::musttail]] return h_end(context, sp, local_base, tos);
-    case 0x0C: [[clang::musttail]] return h_br(context, sp, local_base, tos);
-    case 0x0D: [[clang::musttail]] return h_br_if(context, sp, local_base, tos);
-    case 0x0E: [[clang::musttail]] return h_br_table(context, sp, local_base, tos);
-    case 0x0F: [[clang::musttail]] return h_return(context, sp, local_base, tos);
-    case 0x10: [[clang::musttail]] return begin_native_call<false>(context, sp, local_base, tos);
-    case 0x11: [[clang::musttail]] return begin_native_call<true>(context, sp, local_base, tos);
-    case 0x1A: [[clang::musttail]] return h_drop(context, sp, local_base, tos);
-    case 0x1B: [[clang::musttail]] return h_select(context, sp, local_base, tos);
-    case 0x20: [[clang::musttail]] return h_local_get(context, sp, local_base, tos);
-    case 0x21: [[clang::musttail]] return h_local_set(context, sp, local_base, tos);
-    case 0x22: [[clang::musttail]] return h_local_tee(context, sp, local_base, tos);
-    case 0x23: [[clang::musttail]] return h_global_get(context, sp, local_base, tos);
-    case 0x24: [[clang::musttail]] return h_global_set(context, sp, local_base, tos);
-    case 0x28: [[clang::musttail]] return h_memory_load<4, 1, false>(context, sp, local_base, tos);
-    case 0x29: [[clang::musttail]] return h_memory_load<8, 2, false>(context, sp, local_base, tos);
-    case 0x2A: [[clang::musttail]] return h_memory_load<4, 1, false>(context, sp, local_base, tos);
-    case 0x2B: [[clang::musttail]] return h_memory_load<8, 2, false>(context, sp, local_base, tos);
-    case 0x2C: [[clang::musttail]] return h_memory_load<1, 1, true>(context, sp, local_base, tos);
-    case 0x2D: [[clang::musttail]] return h_memory_load<1, 1, false>(context, sp, local_base, tos);
-    case 0x2E: [[clang::musttail]] return h_memory_load<2, 1, true>(context, sp, local_base, tos);
-    case 0x2F: [[clang::musttail]] return h_memory_load<2, 1, false>(context, sp, local_base, tos);
-    case 0x30: [[clang::musttail]] return h_memory_load<1, 2, true>(context, sp, local_base, tos);
-    case 0x31: [[clang::musttail]] return h_memory_load<1, 2, false>(context, sp, local_base, tos);
-    case 0x32: [[clang::musttail]] return h_memory_load<2, 2, true>(context, sp, local_base, tos);
-    case 0x33: [[clang::musttail]] return h_memory_load<2, 2, false>(context, sp, local_base, tos);
-    case 0x34: [[clang::musttail]] return h_memory_load<4, 2, true>(context, sp, local_base, tos);
-    case 0x35: [[clang::musttail]] return h_memory_load<4, 2, false>(context, sp, local_base, tos);
-    case 0x36: [[clang::musttail]] return h_memory_store<4, 1>(context, sp, local_base, tos);
-    case 0x37: [[clang::musttail]] return h_memory_store<8, 2>(context, sp, local_base, tos);
-    case 0x38: [[clang::musttail]] return h_memory_store<4, 1>(context, sp, local_base, tos);
-    case 0x39: [[clang::musttail]] return h_memory_store<8, 2>(context, sp, local_base, tos);
-    case 0x3A: [[clang::musttail]] return h_memory_store<1, 1>(context, sp, local_base, tos);
-    case 0x3B: [[clang::musttail]] return h_memory_store<2, 1>(context, sp, local_base, tos);
-    case 0x3C: [[clang::musttail]] return h_memory_store<1, 2>(context, sp, local_base, tos);
-    case 0x3D: [[clang::musttail]] return h_memory_store<2, 2>(context, sp, local_base, tos);
-    case 0x3E: [[clang::musttail]] return h_memory_store<4, 2>(context, sp, local_base, tos);
-    case 0x41: [[clang::musttail]] return h_i32_const(context, sp, local_base, tos);
-    case 0x42: [[clang::musttail]] return h_i64_const(context, sp, local_base, tos);
-    case 0x43: [[clang::musttail]] return h_f32_const(context, sp, local_base, tos);
-    case 0x44: [[clang::musttail]] return h_f64_const(context, sp, local_base, tos);
-    case 0x45: [[clang::musttail]] return unary_i32_eqz(context, sp, local_base, tos);
-    case 0x46: [[clang::musttail]] return h_i32_binary<op_eq>(context, sp, local_base, tos);
-    case 0x47: [[clang::musttail]] return h_i32_binary<op_ne>(context, sp, local_base, tos);
-    case 0x48: [[clang::musttail]] return h_i32_binary<op_lt_s>(context, sp, local_base, tos);
-    case 0x49: [[clang::musttail]] return h_i32_binary<op_lt_u>(context, sp, local_base, tos);
-    case 0x4A: [[clang::musttail]] return h_i32_binary<op_gt_s>(context, sp, local_base, tos);
-    case 0x4B: [[clang::musttail]] return h_i32_binary<op_gt_u>(context, sp, local_base, tos);
-    case 0x4C: [[clang::musttail]] return h_i32_binary<op_le_s>(context, sp, local_base, tos);
-    case 0x4D: [[clang::musttail]] return h_i32_binary<op_le_u>(context, sp, local_base, tos);
-    case 0x4E: [[clang::musttail]] return h_i32_binary<op_ge_s>(context, sp, local_base, tos);
-    case 0x4F: [[clang::musttail]] return h_i32_binary<op_ge_u>(context, sp, local_base, tos);
-    case 0x50: [[clang::musttail]] return h_i64_unary<i64_eqz, true>(context, sp, local_base, tos);
-    case 0x51: [[clang::musttail]] return h_i64_binary<i64_eq, true>(context, sp, local_base, tos);
-    case 0x52: [[clang::musttail]] return h_i64_binary<i64_ne, true>(context, sp, local_base, tos);
-    case 0x53: [[clang::musttail]] return h_i64_binary<i64_lt_s, true>(context, sp, local_base, tos);
-    case 0x54: [[clang::musttail]] return h_i64_binary<i64_lt_u, true>(context, sp, local_base, tos);
-    case 0x55: [[clang::musttail]] return h_i64_binary<i64_gt_s, true>(context, sp, local_base, tos);
-    case 0x56: [[clang::musttail]] return h_i64_binary<i64_gt_u, true>(context, sp, local_base, tos);
-    case 0x57: [[clang::musttail]] return h_i64_binary<i64_le_s, true>(context, sp, local_base, tos);
-    case 0x58: [[clang::musttail]] return h_i64_binary<i64_le_u, true>(context, sp, local_base, tos);
-    case 0x59: [[clang::musttail]] return h_i64_binary<i64_ge_s, true>(context, sp, local_base, tos);
-    case 0x5A: [[clang::musttail]] return h_i64_binary<i64_ge_u, true>(context, sp, local_base, tos);
-    case 0x5B: [[clang::musttail]] return h_f32_binary<f32_eq, true>(context, sp, local_base, tos);
-    case 0x5C: [[clang::musttail]] return h_f32_binary<f32_ne, true>(context, sp, local_base, tos);
-    case 0x5D: [[clang::musttail]] return h_f32_binary<f32_lt, true>(context, sp, local_base, tos);
-    case 0x5E: [[clang::musttail]] return h_f32_binary<f32_gt, true>(context, sp, local_base, tos);
-    case 0x5F: [[clang::musttail]] return h_f32_binary<f32_le, true>(context, sp, local_base, tos);
-    case 0x60: [[clang::musttail]] return h_f32_binary<f32_ge, true>(context, sp, local_base, tos);
-    case 0x61: [[clang::musttail]] return h_f64_binary<f64_eq, true>(context, sp, local_base, tos);
-    case 0x62: [[clang::musttail]] return h_f64_binary<f64_ne, true>(context, sp, local_base, tos);
-    case 0x63: [[clang::musttail]] return h_f64_binary<f64_lt, true>(context, sp, local_base, tos);
-    case 0x64: [[clang::musttail]] return h_f64_binary<f64_gt, true>(context, sp, local_base, tos);
-    case 0x65: [[clang::musttail]] return h_f64_binary<f64_le, true>(context, sp, local_base, tos);
-    case 0x66: [[clang::musttail]] return h_f64_binary<f64_ge, true>(context, sp, local_base, tos);
-    case 0x67: [[clang::musttail]] return unary_i32_clz(context, sp, local_base, tos);
-    case 0x68: [[clang::musttail]] return unary_i32_ctz(context, sp, local_base, tos);
-    case 0x69: [[clang::musttail]] return unary_i32_popcnt(context, sp, local_base, tos);
-    case 0x6A: [[clang::musttail]] return h_i32_binary<op_add>(context, sp, local_base, tos);
-    case 0x6B: [[clang::musttail]] return h_i32_binary<op_sub>(context, sp, local_base, tos);
-    case 0x6C: [[clang::musttail]] return h_i32_binary<op_mul>(context, sp, local_base, tos);
-    case 0x6D: [[clang::musttail]] return h_i32_checked_binary<evaluate_div_s>(context, sp, local_base, tos);
-    case 0x6E: [[clang::musttail]] return h_i32_checked_binary<evaluate_div_u>(context, sp, local_base, tos);
-    case 0x6F: [[clang::musttail]] return h_i32_checked_binary<evaluate_rem_s>(context, sp, local_base, tos);
-    case 0x70: [[clang::musttail]] return h_i32_checked_binary<evaluate_rem_u>(context, sp, local_base, tos);
-    case 0x71: [[clang::musttail]] return h_i32_binary<op_and>(context, sp, local_base, tos);
-    case 0x72: [[clang::musttail]] return h_i32_binary<op_or>(context, sp, local_base, tos);
-    case 0x73: [[clang::musttail]] return h_i32_binary<op_xor>(context, sp, local_base, tos);
-    case 0x74: [[clang::musttail]] return h_i32_binary<op_shl>(context, sp, local_base, tos);
-    case 0x75: [[clang::musttail]] return h_i32_binary<op_shr_s>(context, sp, local_base, tos);
-    case 0x76: [[clang::musttail]] return h_i32_binary<op_shr_u>(context, sp, local_base, tos);
-    case 0x77: [[clang::musttail]] return h_i32_binary<op_rotl>(context, sp, local_base, tos);
-    case 0x78: [[clang::musttail]] return h_i32_binary<op_rotr>(context, sp, local_base, tos);
-    case 0x79: [[clang::musttail]] return h_i64_unary<i64_clz, false>(context, sp, local_base, tos);
-    case 0x7A: [[clang::musttail]] return h_i64_unary<i64_ctz, false>(context, sp, local_base, tos);
-    case 0x7B: [[clang::musttail]] return h_i64_unary<i64_popcnt, false>(context, sp, local_base, tos);
-    case 0x7C: [[clang::musttail]] return h_i64_binary<i64_add, false>(context, sp, local_base, tos);
-    case 0x7D: [[clang::musttail]] return h_i64_binary<i64_sub, false>(context, sp, local_base, tos);
-    case 0x7E: [[clang::musttail]] return h_i64_binary<i64_mul, false>(context, sp, local_base, tos);
-    case 0x7F: [[clang::musttail]] return h_i64_checked_binary<i64_div_s, false>(context, sp, local_base, tos);
-    case 0x80: [[clang::musttail]] return h_i64_checked_binary<i64_div_u, false>(context, sp, local_base, tos);
-    case 0x81: [[clang::musttail]] return h_i64_checked_binary<i64_rem_s, false>(context, sp, local_base, tos);
-    case 0x82: [[clang::musttail]] return h_i64_checked_binary<i64_rem_u, false>(context, sp, local_base, tos);
-    case 0x83: [[clang::musttail]] return h_i64_binary<i64_and, false>(context, sp, local_base, tos);
-    case 0x84: [[clang::musttail]] return h_i64_binary<i64_or, false>(context, sp, local_base, tos);
-    case 0x85: [[clang::musttail]] return h_i64_binary<i64_xor, false>(context, sp, local_base, tos);
-    case 0x86: [[clang::musttail]] return h_i64_binary<i64_shl, false>(context, sp, local_base, tos);
-    case 0x87: [[clang::musttail]] return h_i64_binary<i64_shr_s, false>(context, sp, local_base, tos);
-    case 0x88: [[clang::musttail]] return h_i64_binary<i64_shr_u, false>(context, sp, local_base, tos);
-    case 0x89: [[clang::musttail]] return h_i64_binary<i64_rotl, false>(context, sp, local_base, tos);
-    case 0x8A: [[clang::musttail]] return h_i64_binary<i64_rotr, false>(context, sp, local_base, tos);
-    case 0x8B: [[clang::musttail]] return h_f32_unary<f32_abs>(context, sp, local_base, tos);
-    case 0x8C: [[clang::musttail]] return h_f32_unary<f32_neg>(context, sp, local_base, tos);
-    case 0x8D: [[clang::musttail]] return h_f32_unary<f32_ceil>(context, sp, local_base, tos);
-    case 0x8E: [[clang::musttail]] return h_f32_unary<f32_floor>(context, sp, local_base, tos);
-    case 0x8F: [[clang::musttail]] return h_f32_unary<f32_trunc>(context, sp, local_base, tos);
-    case 0x90: [[clang::musttail]] return h_f32_unary<f32_nearest>(context, sp, local_base, tos);
-    case 0x91: [[clang::musttail]] return h_f32_unary<f32_sqrt>(context, sp, local_base, tos);
-    case 0x92: [[clang::musttail]] return h_f32_binary<f32_add, false>(context, sp, local_base, tos);
-    case 0x93: [[clang::musttail]] return h_f32_binary<f32_sub, false>(context, sp, local_base, tos);
-    case 0x94: [[clang::musttail]] return h_f32_binary<f32_mul, false>(context, sp, local_base, tos);
-    case 0x95: [[clang::musttail]] return h_f32_binary<f32_div, false>(context, sp, local_base, tos);
-    case 0x96: [[clang::musttail]] return h_f32_binary<f32_min, false>(context, sp, local_base, tos);
-    case 0x97: [[clang::musttail]] return h_f32_binary<f32_max, false>(context, sp, local_base, tos);
-    case 0x98: [[clang::musttail]] return h_f32_binary<f32_copysign, false>(context, sp, local_base, tos);
-    case 0x99: [[clang::musttail]] return h_f64_unary<f64_abs>(context, sp, local_base, tos);
-    case 0x9A: [[clang::musttail]] return h_f64_unary<f64_neg>(context, sp, local_base, tos);
-    case 0x9B: [[clang::musttail]] return h_f64_unary<f64_ceil>(context, sp, local_base, tos);
-    case 0x9C: [[clang::musttail]] return h_f64_unary<f64_floor>(context, sp, local_base, tos);
-    case 0x9D: [[clang::musttail]] return h_f64_unary<f64_trunc>(context, sp, local_base, tos);
-    case 0x9E: [[clang::musttail]] return h_f64_unary<f64_nearest>(context, sp, local_base, tos);
-    case 0x9F: [[clang::musttail]] return h_f64_unary<f64_sqrt>(context, sp, local_base, tos);
-    case 0xA0: [[clang::musttail]] return h_f64_binary<f64_add, false>(context, sp, local_base, tos);
-    case 0xA1: [[clang::musttail]] return h_f64_binary<f64_sub, false>(context, sp, local_base, tos);
-    case 0xA2: [[clang::musttail]] return h_f64_binary<f64_mul, false>(context, sp, local_base, tos);
-    case 0xA3: [[clang::musttail]] return h_f64_binary<f64_div, false>(context, sp, local_base, tos);
-    case 0xA4: [[clang::musttail]] return h_f64_binary<f64_min, false>(context, sp, local_base, tos);
-    case 0xA5: [[clang::musttail]] return h_f64_binary<f64_max, false>(context, sp, local_base, tos);
-    case 0xA6: [[clang::musttail]] return h_f64_binary<f64_copysign, false>(context, sp, local_base, tos);
-    case 0xA7: [[clang::musttail]] return h_conversion<conversion_i32_wrap_i64>(context, sp, local_base, tos);
-    case 0xA8: [[clang::musttail]] return h_conversion<conversion_truncate_i32<float, true>>(context, sp, local_base, tos);
-    case 0xA9: [[clang::musttail]] return h_conversion<conversion_truncate_i32<float, false>>(context, sp, local_base, tos);
-    case 0xAA: [[clang::musttail]] return h_conversion<conversion_truncate_i32<double, true>>(context, sp, local_base, tos);
-    case 0xAB: [[clang::musttail]] return h_conversion<conversion_truncate_i32<double, false>>(context, sp, local_base, tos);
-    case 0xAC: [[clang::musttail]] return h_conversion<conversion_i64_extend_i32_s>(context, sp, local_base, tos);
-    case 0xAD: [[clang::musttail]] return h_conversion<conversion_i64_extend_i32_u>(context, sp, local_base, tos);
-    case 0xAE: [[clang::musttail]] return h_conversion<conversion_truncate_i64<float, true>>(context, sp, local_base, tos);
-    case 0xAF: [[clang::musttail]] return h_conversion<conversion_truncate_i64<float, false>>(context, sp, local_base, tos);
-    case 0xB0: [[clang::musttail]] return h_conversion<conversion_truncate_i64<double, true>>(context, sp, local_base, tos);
-    case 0xB1: [[clang::musttail]] return h_conversion<conversion_truncate_i64<double, false>>(context, sp, local_base, tos);
-    case 0xB2: [[clang::musttail]] return h_conversion<conversion_f32_convert_i32_s>(context, sp, local_base, tos);
-    case 0xB3: [[clang::musttail]] return h_conversion<conversion_f32_convert_i32_u>(context, sp, local_base, tos);
-    case 0xB4: [[clang::musttail]] return h_conversion<conversion_f32_convert_i64_s>(context, sp, local_base, tos);
-    case 0xB5: [[clang::musttail]] return h_conversion<conversion_f32_convert_i64_u>(context, sp, local_base, tos);
-    case 0xB6: [[clang::musttail]] return h_conversion<conversion_f32_demote_f64>(context, sp, local_base, tos);
-    case 0xB7: [[clang::musttail]] return h_conversion<conversion_f64_convert_i32_s>(context, sp, local_base, tos);
-    case 0xB8: [[clang::musttail]] return h_conversion<conversion_f64_convert_i32_u>(context, sp, local_base, tos);
-    case 0xB9: [[clang::musttail]] return h_conversion<conversion_f64_convert_i64_s>(context, sp, local_base, tos);
-    case 0xBA: [[clang::musttail]] return h_conversion<conversion_f64_convert_i64_u>(context, sp, local_base, tos);
-    case 0xBB: [[clang::musttail]] return h_conversion<conversion_f64_promote_f32>(context, sp, local_base, tos);
-    case 0xBC: [[clang::musttail]] return h_conversion<conversion_identity>(context, sp, local_base, tos);
-    case 0xBD: [[clang::musttail]] return h_conversion<conversion_identity>(context, sp, local_base, tos);
-    case 0xBE: [[clang::musttail]] return h_conversion<conversion_identity>(context, sp, local_base, tos);
-    case 0xBF: [[clang::musttail]] return h_conversion<conversion_identity>(context, sp, local_base, tos);
-    case 0xC0: [[clang::musttail]] return unary_i32_extend8(context, sp, local_base, tos);
-    case 0xC1: [[clang::musttail]] return unary_i32_extend16(context, sp, local_base, tos);
-    case 0xC2: [[clang::musttail]] return h_i64_unary<i64_extend8, false>(context, sp, local_base, tos);
-    case 0xC3: [[clang::musttail]] return h_i64_unary<i64_extend16, false>(context, sp, local_base, tos);
-    case 0xC4: [[clang::musttail]] return h_i64_unary<i64_extend32, false>(context, sp, local_base, tos);
+    case 0x00: [[clang::musttail]] return h_unreachable<Debugger>(context, sp, local_base, tos);
+    case 0x01: [[clang::musttail]] return h_nop<Debugger>(context, sp, local_base, tos);
+    case 0x02: [[clang::musttail]] return h_block<Debugger, false>(context, sp, local_base, tos);
+    case 0x03: [[clang::musttail]] return h_block<Debugger, true>(context, sp, local_base, tos);
+    case 0x04: [[clang::musttail]] return h_if<Debugger>(context, sp, local_base, tos);
+    case 0x05: [[clang::musttail]] return h_else<Debugger>(context, sp, local_base, tos);
+    case 0x0B: [[clang::musttail]] return h_end<Debugger>(context, sp, local_base, tos);
+    case 0x0C: [[clang::musttail]] return h_br<Debugger>(context, sp, local_base, tos);
+    case 0x0D: [[clang::musttail]] return h_br_if<Debugger>(context, sp, local_base, tos);
+    case 0x0E: [[clang::musttail]] return h_br_table<Debugger>(context, sp, local_base, tos);
+    case 0x0F: [[clang::musttail]] return h_return<Debugger>(context, sp, local_base, tos);
+    case 0x10: [[clang::musttail]] return begin_native_call<Debugger, false>(context, sp, local_base, tos);
+    case 0x11: [[clang::musttail]] return begin_native_call<Debugger, true>(context, sp, local_base, tos);
+    case 0x1A: [[clang::musttail]] return h_drop<Debugger>(context, sp, local_base, tos);
+    case 0x1B: [[clang::musttail]] return h_select<Debugger>(context, sp, local_base, tos);
+    case 0x20: [[clang::musttail]] return h_local_get<Debugger>(context, sp, local_base, tos);
+    case 0x21: [[clang::musttail]] return h_local_set<Debugger>(context, sp, local_base, tos);
+    case 0x22: [[clang::musttail]] return h_local_tee<Debugger>(context, sp, local_base, tos);
+    case 0x23: [[clang::musttail]] return h_global_get<Debugger>(context, sp, local_base, tos);
+    case 0x24: [[clang::musttail]] return h_global_set<Debugger>(context, sp, local_base, tos);
+    case 0x28: [[clang::musttail]] return h_memory_load<Debugger, 4, 1, false>(context, sp, local_base, tos);
+    case 0x29: [[clang::musttail]] return h_memory_load<Debugger, 8, 2, false>(context, sp, local_base, tos);
+    case 0x2A: [[clang::musttail]] return h_memory_load<Debugger, 4, 1, false>(context, sp, local_base, tos);
+    case 0x2B: [[clang::musttail]] return h_memory_load<Debugger, 8, 2, false>(context, sp, local_base, tos);
+    case 0x2C: [[clang::musttail]] return h_memory_load<Debugger, 1, 1, true>(context, sp, local_base, tos);
+    case 0x2D: [[clang::musttail]] return h_memory_load<Debugger, 1, 1, false>(context, sp, local_base, tos);
+    case 0x2E: [[clang::musttail]] return h_memory_load<Debugger, 2, 1, true>(context, sp, local_base, tos);
+    case 0x2F: [[clang::musttail]] return h_memory_load<Debugger, 2, 1, false>(context, sp, local_base, tos);
+    case 0x30: [[clang::musttail]] return h_memory_load<Debugger, 1, 2, true>(context, sp, local_base, tos);
+    case 0x31: [[clang::musttail]] return h_memory_load<Debugger, 1, 2, false>(context, sp, local_base, tos);
+    case 0x32: [[clang::musttail]] return h_memory_load<Debugger, 2, 2, true>(context, sp, local_base, tos);
+    case 0x33: [[clang::musttail]] return h_memory_load<Debugger, 2, 2, false>(context, sp, local_base, tos);
+    case 0x34: [[clang::musttail]] return h_memory_load<Debugger, 4, 2, true>(context, sp, local_base, tos);
+    case 0x35: [[clang::musttail]] return h_memory_load<Debugger, 4, 2, false>(context, sp, local_base, tos);
+    case 0x36: [[clang::musttail]] return h_memory_store<Debugger, 4, 1>(context, sp, local_base, tos);
+    case 0x37: [[clang::musttail]] return h_memory_store<Debugger, 8, 2>(context, sp, local_base, tos);
+    case 0x38: [[clang::musttail]] return h_memory_store<Debugger, 4, 1>(context, sp, local_base, tos);
+    case 0x39: [[clang::musttail]] return h_memory_store<Debugger, 8, 2>(context, sp, local_base, tos);
+    case 0x3A: [[clang::musttail]] return h_memory_store<Debugger, 1, 1>(context, sp, local_base, tos);
+    case 0x3B: [[clang::musttail]] return h_memory_store<Debugger, 2, 1>(context, sp, local_base, tos);
+    case 0x3C: [[clang::musttail]] return h_memory_store<Debugger, 1, 2>(context, sp, local_base, tos);
+    case 0x3D: [[clang::musttail]] return h_memory_store<Debugger, 2, 2>(context, sp, local_base, tos);
+    case 0x3E: [[clang::musttail]] return h_memory_store<Debugger, 4, 2>(context, sp, local_base, tos);
+    case 0x41: [[clang::musttail]] return h_i32_const<Debugger>(context, sp, local_base, tos);
+    case 0x42: [[clang::musttail]] return h_i64_const<Debugger>(context, sp, local_base, tos);
+    case 0x43: [[clang::musttail]] return h_f32_const<Debugger>(context, sp, local_base, tos);
+    case 0x44: [[clang::musttail]] return h_f64_const<Debugger>(context, sp, local_base, tos);
+    case 0x45: [[clang::musttail]] return unary_i32_eqz<Debugger>(context, sp, local_base, tos);
+    case 0x46: [[clang::musttail]] return h_i32_binary<Debugger, op_eq>(context, sp, local_base, tos);
+    case 0x47: [[clang::musttail]] return h_i32_binary<Debugger, op_ne>(context, sp, local_base, tos);
+    case 0x48: [[clang::musttail]] return h_i32_binary<Debugger, op_lt_s>(context, sp, local_base, tos);
+    case 0x49: [[clang::musttail]] return h_i32_binary<Debugger, op_lt_u>(context, sp, local_base, tos);
+    case 0x4A: [[clang::musttail]] return h_i32_binary<Debugger, op_gt_s>(context, sp, local_base, tos);
+    case 0x4B: [[clang::musttail]] return h_i32_binary<Debugger, op_gt_u>(context, sp, local_base, tos);
+    case 0x4C: [[clang::musttail]] return h_i32_binary<Debugger, op_le_s>(context, sp, local_base, tos);
+    case 0x4D: [[clang::musttail]] return h_i32_binary<Debugger, op_le_u>(context, sp, local_base, tos);
+    case 0x4E: [[clang::musttail]] return h_i32_binary<Debugger, op_ge_s>(context, sp, local_base, tos);
+    case 0x4F: [[clang::musttail]] return h_i32_binary<Debugger, op_ge_u>(context, sp, local_base, tos);
+    case 0x50: [[clang::musttail]] return h_i64_unary<Debugger, i64_eqz, true>(context, sp, local_base, tos);
+    case 0x51: [[clang::musttail]] return h_i64_binary<Debugger, i64_eq, true>(context, sp, local_base, tos);
+    case 0x52: [[clang::musttail]] return h_i64_binary<Debugger, i64_ne, true>(context, sp, local_base, tos);
+    case 0x53: [[clang::musttail]] return h_i64_binary<Debugger, i64_lt_s, true>(context, sp, local_base, tos);
+    case 0x54: [[clang::musttail]] return h_i64_binary<Debugger, i64_lt_u, true>(context, sp, local_base, tos);
+    case 0x55: [[clang::musttail]] return h_i64_binary<Debugger, i64_gt_s, true>(context, sp, local_base, tos);
+    case 0x56: [[clang::musttail]] return h_i64_binary<Debugger, i64_gt_u, true>(context, sp, local_base, tos);
+    case 0x57: [[clang::musttail]] return h_i64_binary<Debugger, i64_le_s, true>(context, sp, local_base, tos);
+    case 0x58: [[clang::musttail]] return h_i64_binary<Debugger, i64_le_u, true>(context, sp, local_base, tos);
+    case 0x59: [[clang::musttail]] return h_i64_binary<Debugger, i64_ge_s, true>(context, sp, local_base, tos);
+    case 0x5A: [[clang::musttail]] return h_i64_binary<Debugger, i64_ge_u, true>(context, sp, local_base, tos);
+    case 0x5B: [[clang::musttail]] return h_f32_binary<Debugger, f32_eq, true>(context, sp, local_base, tos);
+    case 0x5C: [[clang::musttail]] return h_f32_binary<Debugger, f32_ne, true>(context, sp, local_base, tos);
+    case 0x5D: [[clang::musttail]] return h_f32_binary<Debugger, f32_lt, true>(context, sp, local_base, tos);
+    case 0x5E: [[clang::musttail]] return h_f32_binary<Debugger, f32_gt, true>(context, sp, local_base, tos);
+    case 0x5F: [[clang::musttail]] return h_f32_binary<Debugger, f32_le, true>(context, sp, local_base, tos);
+    case 0x60: [[clang::musttail]] return h_f32_binary<Debugger, f32_ge, true>(context, sp, local_base, tos);
+    case 0x61: [[clang::musttail]] return h_f64_binary<Debugger, f64_eq, true>(context, sp, local_base, tos);
+    case 0x62: [[clang::musttail]] return h_f64_binary<Debugger, f64_ne, true>(context, sp, local_base, tos);
+    case 0x63: [[clang::musttail]] return h_f64_binary<Debugger, f64_lt, true>(context, sp, local_base, tos);
+    case 0x64: [[clang::musttail]] return h_f64_binary<Debugger, f64_gt, true>(context, sp, local_base, tos);
+    case 0x65: [[clang::musttail]] return h_f64_binary<Debugger, f64_le, true>(context, sp, local_base, tos);
+    case 0x66: [[clang::musttail]] return h_f64_binary<Debugger, f64_ge, true>(context, sp, local_base, tos);
+    case 0x67: [[clang::musttail]] return unary_i32_clz<Debugger>(context, sp, local_base, tos);
+    case 0x68: [[clang::musttail]] return unary_i32_ctz<Debugger>(context, sp, local_base, tos);
+    case 0x69: [[clang::musttail]] return unary_i32_popcnt<Debugger>(context, sp, local_base, tos);
+    case 0x6A: [[clang::musttail]] return h_i32_binary<Debugger, op_add>(context, sp, local_base, tos);
+    case 0x6B: [[clang::musttail]] return h_i32_binary<Debugger, op_sub>(context, sp, local_base, tos);
+    case 0x6C: [[clang::musttail]] return h_i32_binary<Debugger, op_mul>(context, sp, local_base, tos);
+    case 0x6D: [[clang::musttail]] return h_i32_checked_binary<Debugger, evaluate_div_s>(context, sp, local_base, tos);
+    case 0x6E: [[clang::musttail]] return h_i32_checked_binary<Debugger, evaluate_div_u>(context, sp, local_base, tos);
+    case 0x6F: [[clang::musttail]] return h_i32_checked_binary<Debugger, evaluate_rem_s>(context, sp, local_base, tos);
+    case 0x70: [[clang::musttail]] return h_i32_checked_binary<Debugger, evaluate_rem_u>(context, sp, local_base, tos);
+    case 0x71: [[clang::musttail]] return h_i32_binary<Debugger, op_and>(context, sp, local_base, tos);
+    case 0x72: [[clang::musttail]] return h_i32_binary<Debugger, op_or>(context, sp, local_base, tos);
+    case 0x73: [[clang::musttail]] return h_i32_binary<Debugger, op_xor>(context, sp, local_base, tos);
+    case 0x74: [[clang::musttail]] return h_i32_binary<Debugger, op_shl>(context, sp, local_base, tos);
+    case 0x75: [[clang::musttail]] return h_i32_binary<Debugger, op_shr_s>(context, sp, local_base, tos);
+    case 0x76: [[clang::musttail]] return h_i32_binary<Debugger, op_shr_u>(context, sp, local_base, tos);
+    case 0x77: [[clang::musttail]] return h_i32_binary<Debugger, op_rotl>(context, sp, local_base, tos);
+    case 0x78: [[clang::musttail]] return h_i32_binary<Debugger, op_rotr>(context, sp, local_base, tos);
+    case 0x79: [[clang::musttail]] return h_i64_unary<Debugger, i64_clz, false>(context, sp, local_base, tos);
+    case 0x7A: [[clang::musttail]] return h_i64_unary<Debugger, i64_ctz, false>(context, sp, local_base, tos);
+    case 0x7B: [[clang::musttail]] return h_i64_unary<Debugger, i64_popcnt, false>(context, sp, local_base, tos);
+    case 0x7C: [[clang::musttail]] return h_i64_binary<Debugger, i64_add, false>(context, sp, local_base, tos);
+    case 0x7D: [[clang::musttail]] return h_i64_binary<Debugger, i64_sub, false>(context, sp, local_base, tos);
+    case 0x7E: [[clang::musttail]] return h_i64_binary<Debugger, i64_mul, false>(context, sp, local_base, tos);
+    case 0x7F: [[clang::musttail]] return h_i64_checked_binary<Debugger, i64_div_s, false>(context, sp, local_base, tos);
+    case 0x80: [[clang::musttail]] return h_i64_checked_binary<Debugger, i64_div_u, false>(context, sp, local_base, tos);
+    case 0x81: [[clang::musttail]] return h_i64_checked_binary<Debugger, i64_rem_s, false>(context, sp, local_base, tos);
+    case 0x82: [[clang::musttail]] return h_i64_checked_binary<Debugger, i64_rem_u, false>(context, sp, local_base, tos);
+    case 0x83: [[clang::musttail]] return h_i64_binary<Debugger, i64_and, false>(context, sp, local_base, tos);
+    case 0x84: [[clang::musttail]] return h_i64_binary<Debugger, i64_or, false>(context, sp, local_base, tos);
+    case 0x85: [[clang::musttail]] return h_i64_binary<Debugger, i64_xor, false>(context, sp, local_base, tos);
+    case 0x86: [[clang::musttail]] return h_i64_binary<Debugger, i64_shl, false>(context, sp, local_base, tos);
+    case 0x87: [[clang::musttail]] return h_i64_binary<Debugger, i64_shr_s, false>(context, sp, local_base, tos);
+    case 0x88: [[clang::musttail]] return h_i64_binary<Debugger, i64_shr_u, false>(context, sp, local_base, tos);
+    case 0x89: [[clang::musttail]] return h_i64_binary<Debugger, i64_rotl, false>(context, sp, local_base, tos);
+    case 0x8A: [[clang::musttail]] return h_i64_binary<Debugger, i64_rotr, false>(context, sp, local_base, tos);
+    case 0x8B: [[clang::musttail]] return h_f32_unary<Debugger, f32_abs>(context, sp, local_base, tos);
+    case 0x8C: [[clang::musttail]] return h_f32_unary<Debugger, f32_neg>(context, sp, local_base, tos);
+    case 0x8D: [[clang::musttail]] return h_f32_unary<Debugger, f32_ceil>(context, sp, local_base, tos);
+    case 0x8E: [[clang::musttail]] return h_f32_unary<Debugger, f32_floor>(context, sp, local_base, tos);
+    case 0x8F: [[clang::musttail]] return h_f32_unary<Debugger, f32_trunc>(context, sp, local_base, tos);
+    case 0x90: [[clang::musttail]] return h_f32_unary<Debugger, f32_nearest>(context, sp, local_base, tos);
+    case 0x91: [[clang::musttail]] return h_f32_unary<Debugger, f32_sqrt>(context, sp, local_base, tos);
+    case 0x92: [[clang::musttail]] return h_f32_binary<Debugger, f32_add, false>(context, sp, local_base, tos);
+    case 0x93: [[clang::musttail]] return h_f32_binary<Debugger, f32_sub, false>(context, sp, local_base, tos);
+    case 0x94: [[clang::musttail]] return h_f32_binary<Debugger, f32_mul, false>(context, sp, local_base, tos);
+    case 0x95: [[clang::musttail]] return h_f32_binary<Debugger, f32_div, false>(context, sp, local_base, tos);
+    case 0x96: [[clang::musttail]] return h_f32_binary<Debugger, f32_min, false>(context, sp, local_base, tos);
+    case 0x97: [[clang::musttail]] return h_f32_binary<Debugger, f32_max, false>(context, sp, local_base, tos);
+    case 0x98: [[clang::musttail]] return h_f32_binary<Debugger, f32_copysign, false>(context, sp, local_base, tos);
+    case 0x99: [[clang::musttail]] return h_f64_unary<Debugger, f64_abs>(context, sp, local_base, tos);
+    case 0x9A: [[clang::musttail]] return h_f64_unary<Debugger, f64_neg>(context, sp, local_base, tos);
+    case 0x9B: [[clang::musttail]] return h_f64_unary<Debugger, f64_ceil>(context, sp, local_base, tos);
+    case 0x9C: [[clang::musttail]] return h_f64_unary<Debugger, f64_floor>(context, sp, local_base, tos);
+    case 0x9D: [[clang::musttail]] return h_f64_unary<Debugger, f64_trunc>(context, sp, local_base, tos);
+    case 0x9E: [[clang::musttail]] return h_f64_unary<Debugger, f64_nearest>(context, sp, local_base, tos);
+    case 0x9F: [[clang::musttail]] return h_f64_unary<Debugger, f64_sqrt>(context, sp, local_base, tos);
+    case 0xA0: [[clang::musttail]] return h_f64_binary<Debugger, f64_add, false>(context, sp, local_base, tos);
+    case 0xA1: [[clang::musttail]] return h_f64_binary<Debugger, f64_sub, false>(context, sp, local_base, tos);
+    case 0xA2: [[clang::musttail]] return h_f64_binary<Debugger, f64_mul, false>(context, sp, local_base, tos);
+    case 0xA3: [[clang::musttail]] return h_f64_binary<Debugger, f64_div, false>(context, sp, local_base, tos);
+    case 0xA4: [[clang::musttail]] return h_f64_binary<Debugger, f64_min, false>(context, sp, local_base, tos);
+    case 0xA5: [[clang::musttail]] return h_f64_binary<Debugger, f64_max, false>(context, sp, local_base, tos);
+    case 0xA6: [[clang::musttail]] return h_f64_binary<Debugger, f64_copysign, false>(context, sp, local_base, tos);
+    case 0xA7: [[clang::musttail]] return h_conversion<Debugger, conversion_i32_wrap_i64>(context, sp, local_base, tos);
+    case 0xA8: [[clang::musttail]] return h_conversion<Debugger, conversion_truncate_i32<float, true>>(context, sp, local_base, tos);
+    case 0xA9: [[clang::musttail]] return h_conversion<Debugger, conversion_truncate_i32<float, false>>(context, sp, local_base, tos);
+    case 0xAA: [[clang::musttail]] return h_conversion<Debugger, conversion_truncate_i32<double, true>>(context, sp, local_base, tos);
+    case 0xAB: [[clang::musttail]] return h_conversion<Debugger, conversion_truncate_i32<double, false>>(context, sp, local_base, tos);
+    case 0xAC: [[clang::musttail]] return h_conversion<Debugger, conversion_i64_extend_i32_s>(context, sp, local_base, tos);
+    case 0xAD: [[clang::musttail]] return h_conversion<Debugger, conversion_i64_extend_i32_u>(context, sp, local_base, tos);
+    case 0xAE: [[clang::musttail]] return h_conversion<Debugger, conversion_truncate_i64<float, true>>(context, sp, local_base, tos);
+    case 0xAF: [[clang::musttail]] return h_conversion<Debugger, conversion_truncate_i64<float, false>>(context, sp, local_base, tos);
+    case 0xB0: [[clang::musttail]] return h_conversion<Debugger, conversion_truncate_i64<double, true>>(context, sp, local_base, tos);
+    case 0xB1: [[clang::musttail]] return h_conversion<Debugger, conversion_truncate_i64<double, false>>(context, sp, local_base, tos);
+    case 0xB2: [[clang::musttail]] return h_conversion<Debugger, conversion_f32_convert_i32_s>(context, sp, local_base, tos);
+    case 0xB3: [[clang::musttail]] return h_conversion<Debugger, conversion_f32_convert_i32_u>(context, sp, local_base, tos);
+    case 0xB4: [[clang::musttail]] return h_conversion<Debugger, conversion_f32_convert_i64_s>(context, sp, local_base, tos);
+    case 0xB5: [[clang::musttail]] return h_conversion<Debugger, conversion_f32_convert_i64_u>(context, sp, local_base, tos);
+    case 0xB6: [[clang::musttail]] return h_conversion<Debugger, conversion_f32_demote_f64>(context, sp, local_base, tos);
+    case 0xB7: [[clang::musttail]] return h_conversion<Debugger, conversion_f64_convert_i32_s>(context, sp, local_base, tos);
+    case 0xB8: [[clang::musttail]] return h_conversion<Debugger, conversion_f64_convert_i32_u>(context, sp, local_base, tos);
+    case 0xB9: [[clang::musttail]] return h_conversion<Debugger, conversion_f64_convert_i64_s>(context, sp, local_base, tos);
+    case 0xBA: [[clang::musttail]] return h_conversion<Debugger, conversion_f64_convert_i64_u>(context, sp, local_base, tos);
+    case 0xBB: [[clang::musttail]] return h_conversion<Debugger, conversion_f64_promote_f32>(context, sp, local_base, tos);
+    case 0xBC: [[clang::musttail]] return h_conversion<Debugger, conversion_identity>(context, sp, local_base, tos);
+    case 0xBD: [[clang::musttail]] return h_conversion<Debugger, conversion_identity>(context, sp, local_base, tos);
+    case 0xBE: [[clang::musttail]] return h_conversion<Debugger, conversion_identity>(context, sp, local_base, tos);
+    case 0xBF: [[clang::musttail]] return h_conversion<Debugger, conversion_identity>(context, sp, local_base, tos);
+    case 0xC0: [[clang::musttail]] return unary_i32_extend8<Debugger>(context, sp, local_base, tos);
+    case 0xC1: [[clang::musttail]] return unary_i32_extend16<Debugger>(context, sp, local_base, tos);
+    case 0xC2: [[clang::musttail]] return h_i64_unary<Debugger, i64_extend8, false>(context, sp, local_base, tos);
+    case 0xC3: [[clang::musttail]] return h_i64_unary<Debugger, i64_extend16, false>(context, sp, local_base, tos);
+    case 0xC4: [[clang::musttail]] return h_i64_unary<Debugger, i64_extend32, false>(context, sp, local_base, tos);
     default: return fallback(current.ip);
   }
 }
@@ -2364,7 +2438,7 @@ struct native_dispatch_state {
   [[no_unique_address]] native_dispatch_metrics<CollectStats, CollectHotspots> metrics;
 };
 
-template <bool ClearBlockBoundaryFlag, bool CollectHotspots>
+template <bool ClearBlockBoundaryFlag, bool CollectHotspots, typename Debugger = void>
 step_result execute_control_boundary(native_dispatch_call<CollectHotspots>& call,
                                       std::uint32_t ip) {
   auto& context = *call.context;
@@ -2375,13 +2449,13 @@ step_result execute_control_boundary(native_dispatch_call<CollectHotspots>& call
   } else {
     context.runtime_flags = previous_flags | kStopAfterControlFlag;
   }
-  const auto result = dispatch(&context, call.stack, call.local_stack,
+  const auto result = dispatch<Debugger>(&context, call.stack, call.local_stack,
                                top_value(context, call.stack));
   context.runtime_flags = previous_flags;
   return result;
 }
 
-template <bool CollectStats, bool CollectHotspots>
+template <bool CollectStats, bool CollectHotspots, typename Debugger = void>
 dispatch_iteration execute_interpreted_block(
     native_dispatch_state<CollectStats, CollectHotspots>& state) {
   auto& call = state.call;
@@ -2413,7 +2487,15 @@ dispatch_iteration execute_interpreted_block(
   context.code = call.call_frame->code;
   context.code_size = call.call_frame->code_size;
   context.control_base = call.call_frame->control_base;
-  const auto result = execute_control_boundary<true>(call, interpreter_ip);
+  const auto result = execute_control_boundary<true, CollectHotspots, Debugger>(call, interpreter_ip);
+  if constexpr (!std::is_void_v<Debugger>) {
+    if (result.kind == kDebugStop) {
+      call.stack_size = context.sp_offset;
+      state.current_pc = (active_frame(context)->func_index << 16) | context.ip;
+      state.status = kDebugStop;
+      return dispatch_iteration::stop_dispatch;
+    }
+  }
   if (result.kind == kCallBoundary) {
     call.stack_size = context.sp_offset;
     const auto* active = active_frame(context);
@@ -2619,13 +2701,23 @@ int native_abi_error(fb_native_result* result, std::uint32_t error_code) {
   return 0;
 }
 
-template <bool CollectStats, bool CollectHotspots>
+template <bool CollectStats, bool CollectHotspots, typename Debugger = void>
 int run_native_dispatch_abi(const fb_native_dispatch_call* input,
                             fb_native_result* result) {
   if (result == nullptr) return 0;
   *result = {};
   if (input == nullptr) return native_abi_error(result, kNativeErrorInvalidArgument);
 
+  if constexpr (!std::is_void_v<Debugger>) {
+    if (input->context_bytes < sizeof(debug_context) || input->entry_count != 0) {
+      return native_abi_error(result, kNativeErrorInvalidArgument);
+    }
+    auto* debug = static_cast<debug_context*>(input->context);
+    if (debug == nullptr || debug->control == nullptr ||
+        (debug->control->breakpoint_count != 0 && debug->control->breakpoints == nullptr)) {
+      return native_abi_error(result, kNativeErrorInvalidArgument);
+    }
+  }
   native_dispatch_call<CollectHotspots> call(*input);
   if (!prepare_native_dispatch_call<CollectHotspots>(call)) {
     return native_abi_error(result, call.error_code);
@@ -2642,24 +2734,29 @@ int run_native_dispatch_abi(const fb_native_dispatch_call* input,
       call.error_code = kNativeErrorInternal;
       break;
     }
-    const auto* start = find_dispatch_entry(call.entries, call.entry_count,
-                                            state.current_pc);
-    if (start != nullptr && start->promote_on_hit != 0) {
-      if constexpr (CollectStats) {
-        if (state.metrics.stats.control_handler_pending_trace) {
-          ++state.metrics.stats.dispatcher_trace_transitions;
+    dispatch_iteration outcome;
+    if constexpr (std::is_void_v<Debugger>) {
+      const auto* start = find_dispatch_entry(call.entries, call.entry_count,
+                                              state.current_pc);
+      if (start != nullptr && start->promote_on_hit != 0) {
+        if constexpr (CollectStats) {
+          if (state.metrics.stats.control_handler_pending_trace) {
+            ++state.metrics.stats.dispatcher_trace_transitions;
+          }
         }
+        call.context->ip = state.current_pc & 0xFFFFu;
+        state.status = kOldestTraceHit;
+        break;
       }
-      call.context->ip = state.current_pc & 0xFFFFu;
-      state.status = kOldestTraceHit;
-      break;
-    }
 
-    const auto outcome =
-        start == nullptr ||
-                call.stack_size + start->chain_stack_words > call.stack_capacity
-            ? execute_interpreted_block<CollectStats, CollectHotspots>(state)
-            : execute_native_trace<CollectStats, CollectHotspots>(state, *start);
+      outcome =
+          start == nullptr ||
+                  call.stack_size + start->chain_stack_words > call.stack_capacity
+              ? execute_interpreted_block<CollectStats, CollectHotspots, Debugger>(state)
+              : execute_native_trace<CollectStats, CollectHotspots>(state, *start);
+    } else {
+      outcome = execute_interpreted_block<CollectStats, CollectHotspots, Debugger>(state);
+    }
     if (outcome == dispatch_iteration::error) break;
     if (outcome == dispatch_iteration::stop_dispatch) break;
   }
@@ -2793,4 +2890,9 @@ extern "C" int fb_native_run_dispatch_hotspots(const fb_native_dispatch_call* ca
 extern "C" int fb_native_run_dispatch_stats_hotspots(
     const fb_native_dispatch_call* call, fb_native_result* result) {
   return run_native_dispatch_abi<true, true>(call, result);
+}
+
+extern "C" int fb_native_run_debug_dispatch(const fb_native_dispatch_call* call,
+                                            fb_native_result* result) {
+  return run_native_dispatch_abi<false, false, debugger_aspect>(call, result);
 }

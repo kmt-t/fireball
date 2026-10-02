@@ -174,6 +174,7 @@ class HalBufferPool:
             handle.virtual_address >> VMMIO_PAGE_SHIFT,
             buffer_id,
             owner_id=task_id,
+            storage=memoryview(handle._storage),
         )
         self._mapped_task_id = task_id
         self._mapped_buffer_id = buffer_id

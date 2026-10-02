@@ -19,6 +19,7 @@
 
 | 資料 | 内容 |
 | :--- | :--- |
+| [test_reconstruction_review.md](docs/qa/test_reconstruction_review.md) | pysimの要求対応レビュー、再構築した試験、実行結果、未実装・未検証の要求 |
 | [architecture_review_report.md](docs/qa/architecture_review_report.md) | アーキテクチャ概要、下位仕様、形式モデル、WIT、pysim間のレビュー結果と修正順 |
 | [integration_test_scenarios.md](docs/qa/integration_test_scenarios.md) | コンポーネント間の統合受入シナリオと実装検証範囲 |
 | [verification_factor_matrix.md](docs/qa/verification_factor_matrix.md) | 検証因子、必要成果物、テスト仕様、シナリオの対応マトリクス |

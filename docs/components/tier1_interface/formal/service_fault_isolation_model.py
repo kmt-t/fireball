@@ -38,6 +38,7 @@ def build_model(*, guards: bool = True) -> Kripke:
         "s_b_recovered",
         "s_corrupted",
         "s_stuck",
+        "s_request_replayed",
     ]
     S0 = {"s_all_running"}
     R = [
@@ -62,7 +63,16 @@ def build_model(*, guards: bool = True) -> Kripke:
         # 2. イベント通知契機の自己再起動を外すと、隔離済みのまま復旧しない経路が生じる
         R = [*R, ("s_a_isolated", "s_stuck"), ("s_b_isolated", "s_stuck")]
 
+    R.append(("s_request_replayed", "s_request_replayed"))
+    if not guards:
+        R.extend(
+            [
+                ("s_a_rebooting", "s_request_replayed"),
+                ("s_b_rebooting", "s_request_replayed"),
+            ]
+        )
     L = {
+        "s_request_replayed": {"request_replayed"},
         "s_all_running": {"up"},
         "s_a_crashed": {"down"},
         "s_a_isolated": {"down"},
@@ -84,6 +94,14 @@ def properties():
     down = AtomicProposition("down")
     up = AtomicProposition("up")
     return [
+        {
+            "name": "restart_never_replays_failed_request",
+            "kind": "safety",
+            "logic": "CTL",
+            "formula": AG(Not(AtomicProposition("request_replayed"))),
+            "violation": AtomicProposition("request_replayed"),
+            "expect": True,
+        },
         {
             "name": "crash_does_not_propagate",
             "kind": "safety",

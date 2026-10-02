@@ -1105,42 +1105,66 @@ class WasmLoader:
                 )
                 stream.seek(body_start + body_size)
 
+    @staticmethod
+    def _function_signature(module: ModuleView, function_index: int) -> FuncType:
+        """Resolve a function's module-local type, including imported re-exports."""
+        imported_index = 0
+        for entry in module.imports:
+            if entry.kind == ExternalKind.FUNCTION:
+                if function_index == imported_index:
+                    return module.types[entry.desc]
+                imported_index += 1
+        defined_index = function_index - imported_index
+        assert 0 <= defined_index < len(module.functions), "Export function index out of range"
+        return module.types[module.functions[defined_index]]
+
     def resolve_imports(self, module: ModuleView) -> bool:
         entries = module.resolved_import_entries
         assert not entries, "module imports have already been resolved"
-        for imp in module.imports:
-            module_name = module.rom_binary[
-                imp.module_name_offset : imp.module_name_offset + imp.module_name_size
-            ]
-            field_name = module.rom_binary[
-                imp.field_name_offset : imp.field_name_offset + imp.field_name_size
-            ]
-            target_mod = self._lookup_name_bytes(module_name)
-            if target_mod is None:
-                assert False, f"Dependency module '{bytes(module_name).decode('utf-8')}' not found"
-            export_entry = target_mod.lookup_export_bytes(field_name)
-            if export_entry is None or export_entry.kind != imp.kind:
-                assert False, (
-                    "Unresolved import "
-                    f"'{bytes(module_name).decode('utf-8')}.{bytes(field_name).decode('utf-8')}'"
-                )
-            _push_or_assert(
-                entries,
-                (
-                    fnv1a_32_name_pair(
-                        module.rom_binary,
-                        imp.module_name_offset,
-                        imp.module_name_size,
-                        memoryview(b"."),
-                        imp.field_name_offset,
-                        imp.field_name_size,
+        try:
+            for imp in module.imports:
+                module_name = module.rom_binary[
+                    imp.module_name_offset : imp.module_name_offset + imp.module_name_size
+                ]
+                field_name = module.rom_binary[
+                    imp.field_name_offset : imp.field_name_offset + imp.field_name_size
+                ]
+                target_mod = self._lookup_name_bytes(module_name)
+                if target_mod is None:
+                    assert False, (
+                        f"Dependency module '{bytes(module_name).decode('utf-8')}' not found"
+                    )
+                export_entry = target_mod.lookup_export_bytes(field_name)
+                if export_entry is None or export_entry.kind != imp.kind:
+                    assert False, (
+                        "Unresolved import "
+                        f"'{bytes(module_name).decode('utf-8')}.{bytes(field_name).decode('utf-8')}'"
+                    )
+                if imp.kind == ExternalKind.FUNCTION:
+                    expected = module.types[imp.desc]
+                    actual = self._function_signature(target_mod, export_entry.index)
+                    assert expected == actual, "Imported function signature mismatch"
+                _push_or_assert(
+                    entries,
+                    (
+                        fnv1a_32_name_pair(
+                            module.rom_binary,
+                            imp.module_name_offset,
+                            imp.module_name_size,
+                            memoryview(b"."),
+                            imp.field_name_offset,
+                            imp.field_name_size,
+                        ),
+                        export_entry,
                     ),
-                    export_entry,
-                ),
-                "resolved import",
-            )
+                    "resolved import",
+                )
 
-        entries.sort(key=lambda e: e[0])
-        module.resolved_imports = ReadOnlyFlatMapStorage.from_sorted_static_entries(entries)
+            entries.sort(key=lambda e: e[0])
+            module.resolved_imports = ReadOnlyFlatMapStorage.from_sorted_static_entries(entries)
+        except AssertionError as error:
+            # {MultiModule_Support}: A rejected link must not retain a partial table.
+            entries.clear()
+            assert False, str(error)
         module.is_ready = True
         return True

@@ -36,10 +36,10 @@
 | TEST-COOS-04 | 送信者到着でランデブー成立（受信側視点） | Bが受信待機中(RECV) | タスクAが`channel_send`を呼ぶ | A・B双方がREADYに遷移し、値の所有権がAからBへ移る | 直交表 ケース2 |
 | TEST-COOS-05 | 1チャネル1待機者の強制（同方向多重待機は不可能） | (1) Aが送信待機中(SEND) または<br>(2) Bが受信待機中(RECV) | (1) 別タスクCが同チャネルへ`channel_send`<br>(2) 別タスクDが同チャネルへ`channel_recv` | 到達不能ケースとして`assert`で即座に検出される（設計違反フェイルファスト） | 直交表 ケース5/6 |
 | TEST-COOS-06 | CSP Handoffは待機相手へ直接切り替える | ランデブー成立、ハンドオフ回数が上限未満 | ランデブー完了時の結果を観測 | 結果が直接切替を示し、切替先が待機相手である | `{CSP_Handoff}` |
-| TEST-COOS-07 | 連続ハンドオフ上限後のスケジューラ復帰 | `max_handoffs=2` とし、2タスク間で2回の直接ハンドオフを完了 | 3回目のランデブーを成立させる | 操作結果が `YIELD` となり、連続回数が0へ戻る。これは制御譲渡とカウンタの検証であり、READYキュー順序、全タスクの公平性、実時間応答上限は検証しない | [`os_scheduler.md`](docs/components/tier1_core/os_scheduler.md), {GOTCHA-SCHED-01}, {Challenge_CspHandoffStarvation} |
+| TEST-COOS-07 | 連続ハンドオフ上限後のスケジューラ復帰 | `max_handoffs=2` とし、2タスク間で2回の直接ハンドオフを完了 | 3回目のランデブーを成立させる | 操作結果が `YIELD` となり、連続回数が0へ戻る。待機相手は先行READYタスクの後ろへ登録され、次の実dispatchは先行タスクを選ぶ。全タスクの公平性と実時間応答上限は対象外である | [`os_scheduler.md`](docs/components/tier1_core/os_scheduler.md), {GOTCHA-SCHED-01}, {Challenge_CspHandoffStarvation} |
 | TEST-COOS-08 | 割り込み通知を協調境界で処理して待機タスクを起床する | vSoCランタイムタスクが`vector_id`待ち | 固定5ワードの`interrupt-event`を`notify_interrupt`へ渡し、スケジューラにイベントを処理させる | 通知イベントが協調境界で処理され、5ワードを対応する待機タスクへ引き渡したうえでREADYとなって再開する | 直交表 ケース8, `{GLOBAL_InterruptWakeup}` |
 | TEST-COOS-09 | 割り込みイベントFIFO満杯時のドロップ | 容量`FB_CONF_INTERRUPT_QUEUE_SIZE`のFIFOが満杯 | 原因レコードを追加で`notify_interrupt` | `false`を返し、既存のFIFO順序と再スケジュール世代を変えずにドロップカウンタだけを1増やす | `os_scheduler.md` `notify-interrupt`, `coos_concept.py` `test_coos_interrupt_fifo_drops_when_full` |
-| TEST-COOS-10 | READYタスクがない場合のアイドル検出 | 少なくとも1タスクがブロック中で、READYキューと割り込みイベントFIFOが空 | スケジューラを実行する | アイドルフックが呼び出される | `os_coos.md` §4.1, pysim `test_coos_10_idle_detection_when_all_blocked` |
+| TEST-COOS-10 | READYタスクがない場合のアイドル検出 | 全タスクのブロック、READY残留、未処理イベント残留の3条件 | 既定予算と1ステップ予算でスケジューラを実行する | READYキューと割り込みイベントFIFOが両方空のときだけidle hookが呼ばれる。予算終了はidleの条件にしない | `os_coos.md` §4.1, pysim `test_coos_10_idle_detection_when_all_blocked` |
 | TEST-COOS-11 | ランデブー完了時の単一所有 | 送信側Aが値を保持して待機中 | 受信側Bを到着させ、ランデブー直後の両タスクを確認 | Aの値がクリアされ、Bが値を保持する | [`coos_channel_model.py`](docs/components/tier1_core/formal/coos_channel_model.py), pysim `test_coos_11_no_double_ownership_sanity` |
 | TEST-COOS-12 | ブロックタスク終了時の待機登録解除 | タスクがselect受信待ち、割り込み待ち、または現在実行中 | `task_killed`を呼び、select対象チャネルと割り込みイベントを処理する | selectグループ内の全チャネル登録とIRQ登録が解除され、タスクは`TERMINATED`のまま再起床しない。コルーチン参照も破棄される。未登録IDおよび終了済みタスクへの要求は`false`を返し、現在実行中のタスクはアサーションで拒否する | `os_coos.md` §4.3, pysim `test_coos_12_task_killed_removes_csp_and_irq_wait_registrations` |
 | TEST-COOS-13 | 原因レコードのFIFO順序保持 | 複数の`interrupt-event`を同一FIFOへ投入 | 異なる`cause_code`とpayloadを順に投入してドレイン | 受付順と同じ順序でイベントが観測され、5ワードが欠落・混在しない | `{GLOBAL_InterruptWakeup}` |
@@ -73,6 +73,24 @@
 ## 3. テスト検証実績と網羅状況
 
 - 仕様書に定義されたテストケース（不変条件・境界条件・エラー処理）の検証手順と期待結果を定義。
+
+TEST-COOS-05は`test_coos_05_one_waiter_per_channel_enforced`でSEND同士とRECV同士を検査する。
+拒否後も最初の待機者、方向、保留値と両タスクの状態を保存する。
+TEST-COOS-09は`test_coos_09_interrupt_queue_overflow_drops`で世代対象の観測前後を検査する。
+満杯時の拒否後、全FIFOレコード、READY列、割り込み待機状態、世代と対象マスクを保存する。
+ドロップカウンタだけが1増える。
+TEST-COOS-16は`test_coos_14_pending_generation_ends_direct_handoff_chain`で検査する。
+世代保留時のYIELDとともに、保留値の消去、受信値、両タスクのREADYと待機登録解除を確認する。
+
+- 実行日: 2026-10-02。
+- 対象ソース: [`scheduler.py`](experiments/pysim/tier1_core/scheduler.py)。
+- スイート: [`test_coos.py`](experiments/pysim/qa/tier1_core/test_coos.py)。
+- 環境: Linux、プロジェクトのuv環境。
+- 結果: 成功15件、失敗0件、skip 0件、xfail 0件。
+
+```bash
+UV_CACHE_DIR=/tmp/fireball-test-refactor-uv uv run --offline --no-sync python -m pytest -q experiments/pysim/qa/tier1_core/test_coos.py
+```
 
 ## 4. 未検証・スコープ外
 

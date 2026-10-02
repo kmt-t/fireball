@@ -1,20 +1,19 @@
+"""
+静的コンテナの要求適合テスト。
+
+正本: docs/components/tier1_core/system_containers.md
+ケースと期待結果: docs/qa/tier1_core/system_containers_test_spec.md
+生成テストは標準の dict / set と整数表現を独立した期待値として使う。
+"""
+
 from __future__ import annotations
 
-"""
-Unit tests for Tier 1 Core: System Containers & Views
-Traceability: system_containers_test_spec.md
-"""
+from collections.abc import Callable, Sequence
+from typing import Protocol, overload
 
-from pathlib import Path
-
-# Setup paths
-_TEST_FILE = Path(__file__).resolve()
-_TESTS_DIR = _TEST_FILE.parent.parent
-_PYSIM_DIR = _TESTS_DIR.parent
-_REPO_ROOT = _PYSIM_DIR.parent.parent
-
-
-from helpers import expect_assertion
+import pytest
+from hypothesis import example, given, settings
+from hypothesis import strategies as st
 from system_containers import (
     BitView,
     MutableBitStorage,
@@ -28,25 +27,53 @@ from system_containers import (
     ReadOnlyFlatSetView,
     ReadOnlyRadixBinaryTreeStorage,
     ReadOnlyRadixBinaryTreeView,
-    RingBuffer,
     StaticVector,
     bswap32,
     lookup_jit_entry,
 )
 
 
-def test_cont_01_flat_map_view_find_binary_search():
-    """TEST-CONT-01: flat_map_view.find performs O(log n) binary search returning value or None."""
-    entries = [(10, 100), (20, 200), (30, 300), (40, 400), (50, 500), (60, 600)]
+class CountedEntries(Sequence[tuple[int, int]]):
+    """実データの参照範囲と参照回数を記録する。検索結果の期待値は持たない。"""
+
+    def __init__(self, entries: tuple[tuple[int, int], ...]) -> None:
+        self.entries = entries
+        self.read_indices: list[int] = []
+
+    def __len__(self) -> int:
+        return len(self.entries)
+
+    @overload
+    def __getitem__(self, index: int) -> tuple[int, int]:
+        return self.entries[index]
+
+    @overload
+    def __getitem__(self, index: slice) -> tuple[tuple[int, int], ...]:
+        return self.entries[index]
+
+    def __getitem__(self, index: int | slice) -> tuple[int, int] | tuple[tuple[int, int], ...]:
+        if isinstance(index, slice):
+            indices = range(*index.indices(len(self)))
+            self.read_indices.extend(indices)
+        else:
+            self.read_indices.append(index)
+        return self.entries[index]
+
+
+@pytest.mark.parametrize("count", (0, 1, 2, 3, 16, 257, 1024))
+def test_cont_01_flat_map_view_find_binary_search(count: int) -> None:
+    """TEST-CONT-01: 登録値と不在キーを判定し、参照回数を対数の上限内に保つ。"""
+    entries = CountedEntries(tuple((index * 2, index + 100) for index in range(count)))
     view = ReadOnlyFlatMapView(entries)
-    assert view.find(30) == 300
-    assert view.find(10) == 100
-    assert view.find(60) == 600
-    assert view.find(25) is None
-    assert view.find(5) is None
-    assert view.find(70) is None
-    assert view.size() == 6
-    assert not view.empty()
+    expected = dict(entries.entries)
+    queries = (-1, 0, count, 2 * count - 2, 2 * count - 1, 2 * count)
+    for key in queries:
+        entries.read_indices.clear()
+        assert view.find(key) == expected.get(key)
+        # 二分探索の最大反復数に、存在確認と値取得の2参照を加える。
+        assert len(entries.read_indices) <= count.bit_length() + 2
+    assert view.size() == count
+    assert view.empty() is (count == 0)
 
 
 def test_cont_02_narrow_monotonic_shrinkage():
@@ -74,7 +101,7 @@ def test_cont_03_slice_monotonic_shrinkage_and_bounds():
     assert v1.size() == 3
     assert v1.find(20) == 2
     assert v1.find(40) == 4
-    with expect_assertion():
+    with pytest.raises(AssertionError):
         v1.slice(0, 5)  # Expanding beyond v1's window [1, 4] must fail
 
 
@@ -92,7 +119,7 @@ def test_cont_04_flat_set_view_membership_only():
 def test_cont_05_bit_view_adjacent_element_non_destructive():
     """TEST-CONT-05: bit_view put/at modifies targeted sub-byte element without corrupting adjacent elements."""
     storage = bytearray(4)  # 4 bytes = 16 2-bit elements
-    bv = BitView(storage, bits=2, origin=0, count=16)
+    bv = BitView(memoryview(storage), bits=2, origin=0, count=16)
     # Initial state all 0
     for i in range(16):
         assert bv.at(i) == 0
@@ -119,7 +146,7 @@ def test_cont_05_bit_view_adjacent_element_non_destructive():
 def test_cont_06_bit_view_unaligned_slice_origin_absorption():
     """TEST-CONT-06: bit_view.slice absorbs non-byte-aligned bit origins."""
     storage = bytearray(2)  # 8 2-bit elements
-    bv = BitView(storage, bits=2, origin=0, count=8)
+    bv = BitView(memoryview(storage), bits=2, origin=0, count=8)
     for i in range(8):
         bv.put(i, i % 4)
 
@@ -137,44 +164,47 @@ def test_cont_07_bit_view_allowed_bits_enforced():
     """TEST-CONT-07: bit_view allows only 1, 2, 4 bits dividing 8."""
     storage = bytearray(4)
     # Valid
-    BitView(storage, bits=1, count=32)
-    BitView(storage, bits=2, count=16)
-    BitView(storage, bits=4, count=8)
+    BitView(memoryview(storage), bits=1, count=32)
+    BitView(memoryview(storage), bits=2, count=16)
+    BitView(memoryview(storage), bits=4, count=8)
     # Invalid
     for invalid in (3, 5, 6, 7, 8):
-        with expect_assertion():
-            BitView(storage, bits=invalid, count=4)
+        with pytest.raises(AssertionError):
+            BitView(memoryview(storage), bits=invalid, count=4)
 
 
-def test_cont_08_radix_binary_tree_view_coarse_radix_lookup():
-    """TEST-CONT-08: radix_binary_tree_view uses O(1) Radix Table prefix + local binary search."""
-    keys = [0x0010, 0x0020, 0x0110, 0x0120, 0x0130, 0x0210]
-    values = ["T0_A", "T0_B", "T1_A", "T1_B", "T1_C", "T2_A"]
-    # Radix shift = 8 -> prefix = pc >> 8
-    # Prefix 0: [0, 2), Prefix 1: [2, 5), Prefix 2: [5, 6)
-    radix_table = [0, 2, 5, 6]
-    tree = ReadOnlyRadixBinaryTreeView(
-        entries=tuple(zip(keys, values, strict=True)), radix_table=radix_table, radix_shift=8
-    )
-    assert tree.find(0x0120) == "T1_B"
-    assert tree.find(0x0010) == "T0_A"
-    assert tree.find(0x0210) == "T2_A"
-    assert tree.find(0x0199) is None
-    assert tree.find(0x0300) is None
+def test_cont_08_radix_binary_tree_view_coarse_radix_lookup() -> None:
+    """TEST-CONT-08: 基数表で局所範囲を選び、空バケットでは実体を読まない。"""
+    entries = CountedEntries(tuple((key, key + 1) for key in (*range(64), *range(512, 576))))
+    tree = ReadOnlyRadixBinaryTreeView(entries, (0, 64, 64, 128), radix_shift=8)
+    for key, expected, first, last in ((0, 1, 0, 64), (63, 64, 0, 64), (550, 551, 64, 128)):
+        entries.read_indices.clear()
+        assert tree.find(key) == expected
+        assert all(first <= index < last for index in entries.read_indices)
+        assert len(entries.read_indices) <= (last - first).bit_length() + 2
+    for key in (256, 400, 768):
+        entries.read_indices.clear()
+        assert tree.find(key) is None
+        assert entries.read_indices == []
 
 
-def test_cont_09_jit_entry_lookup_card_table_prefilter():
-    """TEST-CONT-09: sparse JIT keys use bsearch after the O(1) card prefilter."""
-    card_storage = bytearray(4)
-    card_table = BitView(card_storage, bits=2, origin=0, count=16)
-    keys = [0x0010, 0x0020]
-    values = ["NATIVE_0010", "NATIVE_0020"]
-    view = ReadOnlyFlatMapView(tuple(zip(keys, values, strict=True)))
-    # PC 0x0010 (16) is card 2 (16 >> 3). Currently UNEXECUTED (0) -> lookup returns None without search
-    assert lookup_jit_entry(view, card_table, pc=0x0010, card_shift=3) is None
-    # Mark card 2 as COMPILED (3)
+def test_cont_09_jit_entry_lookup_card_table_prefilter() -> None:
+    """TEST-CONT-09: COMPILED以外と表外PCでは疎マップにアクセスしない。"""
+    card_table = MutableBitStorage(count=16, bits=2).view()
+    entries = CountedEntries(((16, 160), (20, 200)))
+    view = ReadOnlyFlatMapView(entries)
+    for state in (0, 1, 2):
+        card_table.put(2, state)
+        entries.read_indices.clear()
+        assert lookup_jit_entry(view, card_table, pc=16, card_shift=3) is None
+        assert entries.read_indices == []
     card_table.put(2, 3)
-    assert lookup_jit_entry(view, card_table, pc=0x0010, card_shift=3) == "NATIVE_0010"
+    assert lookup_jit_entry(view, card_table, pc=16, card_shift=3) == 160
+    # 同じCOMPILEDカードに含まれても、未登録PCを返してはならない。
+    assert lookup_jit_entry(view, card_table, pc=18, card_shift=3) is None
+    entries.read_indices.clear()
+    assert lookup_jit_entry(view, card_table, pc=128, card_shift=3) is None
+    assert entries.read_indices == []
 
 
 def test_cont_10_container_type_separation():
@@ -201,7 +231,7 @@ def test_cont_11_storage_and_view_ownership_separation():
     assert v_ro.entries is ro_map.entries
     assert not hasattr(v_ro, "insert")
     assert not hasattr(v_ro, "remove")
-    with expect_assertion():
+    with pytest.raises(AssertionError):
         ReadOnlyFlatMapStorage.create([(1, "first"), (1, "duplicate")])
 
     mut_map = MutableFlatMapStorage(capacity=8)
@@ -254,7 +284,7 @@ def test_cont_11_storage_and_view_ownership_separation():
 
     radix_entries = StaticVector.of(((10, "A"), (20, "B")), capacity=2)
     ReadOnlyRadixBinaryTreeStorage.from_sorted_static_entries(radix_entries, radix_shift=4)
-    with expect_assertion():
+    with pytest.raises(AssertionError):
         radix_entries.append((30, "C"))
 
     mut_radix = MutableRadixBinaryTreeStorage(capacity=16, radix_shift=4)
@@ -296,25 +326,16 @@ def test_cont_11_storage_and_view_ownership_separation():
     assert bv_mut.at(0) == 2
 
 
-def test_cont_12_mutable_flat_map_storage_standard_sort():
-    """TEST-CONT-12: MutableFlatMapStorage manages fixed-capacity sorted entries (AoS) and presents ReadOnlyFlatMapView."""
-    entries = [(50, "E"), (10, "A"), (40, "D"), (20, "B"), (30, "C")]
-    sorted_entries = sorted(entries, key=lambda x: x[0])
-    map_storage = MutableFlatMapStorage(capacity=8)
-    for k, v in sorted_entries:
-        map_storage.insert(k, v)
-    assert map_storage.is_sorted()
-    map_view = map_storage.view()
-    assert list(map_view.keys) == [10, 20, 30, 40, 50]
-    assert list(map_view.values) == ["A", "B", "C", "D", "E"]
-    assert list(map_view.entries) == [(10, "A"), (20, "B"), (30, "C"), (40, "D"), (50, "E")]
-
-    # View correctly finds via binary search
-    v = map_storage.view()
-    assert v.find(10) == "A"
-    assert v.find(30) == "C"
-    assert v.find(50) == "E"
-    assert v.find(99) is None
+def test_cont_12_read_only_flat_map_sorts_input_and_preserves_pairs() -> None:
+    """TEST-CONT-12: 未整列の入力から生成し、全てのキーと値の対応を保存する。"""
+    entries = ((50, "E"), (10, "A"), (40, "D"), (20, "B"), (30, "C"))
+    storage = ReadOnlyFlatMapStorage.create(entries)
+    view = storage.view()
+    assert tuple(view.entries) == ((10, "A"), (20, "B"), (30, "C"), (40, "D"), (50, "E"))
+    for key, expected in entries:
+        assert view.find(key) == expected
+    assert view.find(99) is None
+    assert entries == ((50, "E"), (10, "A"), (40, "D"), (20, "B"), (30, "C"))
 
 
 def test_cont_13_mutable_flat_map_sorted_insert_remove():
@@ -457,48 +478,31 @@ def test_cont_14_mutable_storages_fixed_array_and_entry_count():
     assert rv.find(10) is None
 
 
-def test_cont_15_public_container_lifecycle_methods():
-    """Covers the remaining public lifecycle and view-window methods."""
-    set_view = ReadOnlyFlatSetView((1, 3, 5))
-    assert set_view.size() == 3
-    assert not set_view.empty()
-    assert set_view.slice(1, 3).keys == (3, 5)
-    assert set_view.narrow(2, 4).keys == (3,)
-
-    flat_set = MutableFlatSetStorage[int](capacity=2)
-    assert flat_set.size() == 0
-    assert flat_set.insert(2)
-    assert flat_set.insert(1)
-    flat_set.clear()
-    assert flat_set.size() == 0
-
-    flat_map = MutableFlatMapStorage[int, str](capacity=2)
-    assert flat_map.insert(2, "two")
-    assert flat_map.size() == 1
-    assert flat_map.clear() is None
-    assert flat_map.size() == 0
-
-    radix = MutableRadixBinaryTreeStorage[str](capacity=2, radix_shift=4)
-    assert radix.insert(2, "two")
-    assert radix.size() == 1
-    radix.clear()
-    assert radix.size() == 0
-
-    ring = RingBuffer[int](capacity=2)
-    assert ring.size() == 0
-    ring.push(1)
-    assert ring.size() == 1
-    assert ring.pop() == 1
-    assert ring.is_empty()
-
-    vector = StaticVector.of((1, 2), capacity=3)
-    assert vector.size() == 2
-    assert vector.at(1) == 2
-    del vector[0]
-    assert repr(vector).startswith("StaticVector")
+@pytest.mark.parametrize("bits", (1, 2, 4))
+def test_cont_15_read_only_bit_views_have_no_write_api(bits: int) -> None:
+    """TEST-CONT-15: 読み取り専用ビューと部分ビューは値を保ち、putを提供しない。"""
+    raw = bytes((0xA5, 0x3C))
+    count = len(raw) * 8 // bits
+    expected = tuple(
+        (int.from_bytes(raw, "little") // (2 ** (bits * i))) % (2**bits) for i in range(count)
+    )
+    storage = ReadOnlyBitStorage(raw, bits, count)
+    view = storage.view()
+    sub = view.slice(1, count - 1)
+    assert tuple(view.at(i) for i in range(count)) == expected
+    assert tuple(sub.at(i) for i in range(len(sub))) == expected[1:-1]
+    assert view.storage is storage.buffer
+    assert sub.storage is storage.buffer
+    assert not hasattr(view, "put")
+    assert not hasattr(sub, "put")
+    with pytest.raises(AssertionError):
+        sub.at(len(sub))
+    with pytest.raises(AssertionError):
+        sub.slice(0, len(sub) + 1)
 
 
 def test_cont_16_radix_projection_keeps_lookup_ranges_ordered_and_bounded():
+    """TEST-CONT-16: 非単調射影で生成・変更しても登録値の検索と容量を保つ。"""
     keys = (0x00000001, 0x00000002, 0x01000000)
     values = ("one", "two", "high")
     storage = ReadOnlyRadixBinaryTreeStorage.create(
@@ -536,26 +540,278 @@ def test_cont_16_radix_projection_keeps_lookup_ranges_ordered_and_bounded():
     assert mutable_view.find(0x00000002) == "two"
 
 
-# ===========================================================================
-# Cooperative Multitasking & Idle-Hook Integration (YIELD / IDLE / TIER)
-# ===========================================================================
+class LookupView(Protocol):
+    @property
+    def entries(self) -> Sequence[tuple[int, int]]: ...
+
+    def find(self, key: int) -> int | None: ...
+
+
+class LookupStorage(Protocol):
+    _buffer: list[tuple[int, int] | None]
+
+    @property
+    def count(self) -> int: ...
+
+    def size(self) -> int: ...
+
+    def insert(self, key: int, value: int) -> bool: ...
+
+    def remove(self, key: int) -> int | None: ...
+
+    def clear(self) -> None: ...
+
+    def view(self) -> LookupView: ...
+
+
+def _identity(key: int) -> int:
+    return key
+
+
+def _independent_bswap(key: int) -> int:
+    return int.from_bytes(key.to_bytes(4, "little"), "big")
+
+
+def _assert_lookup_state(
+    storage: LookupStorage,
+    borrowed: LookupView,
+    model: dict[int, int],
+    buffer: list[tuple[int, int] | None],
+    capacity: int,
+    projection: Callable[[int], int],
+    radix_table: Sequence[int] | None,
+) -> None:
+    expected = tuple(sorted(model.items(), key=lambda entry: (projection(entry[0]), entry[0])))
+    assert storage.size() == storage.count == len(model)
+    assert 0 <= storage.count <= capacity
+    assert storage._buffer is buffer
+    assert len(buffer) == capacity
+    assert tuple(borrowed.entries) == expected
+    assert buffer[len(model) :] == [None] * (capacity - len(model))
+    for key in (*range(34), 256, 0x01000000, 0x02000000, *model):
+        assert borrowed.find(key) == model.get(key)
+    if radix_table is not None:
+        # 桶を組み立てる製品アルゴリズムを写さず、各境界より前にある要素を数える。
+        expected_boundaries = tuple(
+            sum((projection(key) >> 24) < prefix for key in model)
+            for prefix in range(len(radix_table))
+        )
+        assert tuple(radix_table) == expected_boundaries
+
+
+_OPERATION_KEYS = st.one_of(st.integers(0, 31), st.sampled_from((256, 0x01000000)))
+_LOOKUP_OPERATIONS = st.lists(
+    st.tuples(
+        st.sampled_from(("insert", "remove", "clear")), _OPERATION_KEYS, st.integers(-1000, 1000)
+    ),
+    min_size=1,
+    max_size=60,
+)
+
+
+@pytest.mark.parametrize("kind", ("map", "radix", "radix_bswap"))
+@settings(max_examples=80, deadline=None, print_blob=True)
+@example(
+    capacity=2,
+    operations=[
+        ("insert", 1, 10),
+        ("insert", 2, 20),
+        ("insert", 1, 11),
+        ("insert", 3, 30),
+        ("remove", 2, 0),
+        ("insert", 3, 30),
+        ("clear", 0, 0),
+        ("insert", 2, 22),
+    ],
+)
+@given(capacity=st.integers(0, 8), operations=_LOOKUP_OPERATIONS)
+def test_cont_17_lookup_operation_histories_preserve_contract(
+    kind: str, capacity: int, operations: list[tuple[str, int, int]]
+) -> None:
+    """TEST-CONT-17 / GOTCHA-CONT-04: 更新・拒否・削除・再利用の各段で全状態を照合する。"""
+    radix_table: Sequence[int] | None = None
+    projection = _identity
+    storage: LookupStorage
+    if kind == "map":
+        storage = MutableFlatMapStorage[int, int](capacity=capacity)
+    else:
+        if kind == "radix_bswap":
+            projection = _independent_bswap
+        radix = MutableRadixBinaryTreeStorage[int](
+            capacity=capacity,
+            radix_shift=24,
+            key_transform=bswap32 if kind == "radix_bswap" else None,
+        )
+        storage = radix
+        radix_table = radix.radix_table
+    borrowed = storage.view()  # 最初に借用し、操作後に作り直さない。
+    buffer = storage._buffer
+    model: dict[int, int] = {}
+    _assert_lookup_state(storage, borrowed, model, buffer, capacity, projection, radix_table)
+    for operation, key, value in operations:
+        if operation == "insert":
+            accepted = key in model or len(model) < capacity
+            assert storage.insert(key, value) is accepted
+            if accepted:
+                model[key] = value
+        elif operation == "remove":
+            assert storage.remove(key) == model.pop(key, None)
+        else:
+            storage.clear()
+            model.clear()
+        _assert_lookup_state(storage, borrowed, model, buffer, capacity, projection, radix_table)
+
+
+@settings(max_examples=80, deadline=None, print_blob=True)
+@example(
+    capacity=2,
+    operations=[
+        ("insert", 1),
+        ("insert", 2),
+        ("insert", 1),
+        ("insert", 3),
+        ("remove", 1),
+        ("insert", 3),
+        ("clear", 0),
+        ("insert", 2),
+    ],
+)
+@given(
+    capacity=st.integers(0, 8),
+    operations=st.lists(
+        st.tuples(st.sampled_from(("insert", "remove", "clear")), st.integers(0, 15)),
+        min_size=1,
+        max_size=60,
+    ),
+)
+def test_cont_18_set_operation_histories_preserve_contract(
+    capacity: int, operations: list[tuple[str, int]]
+) -> None:
+    """TEST-CONT-18 / GOTCHA-CONT-04: 重複挿入と拒否を含め、集合と借用Viewを保全する。"""
+    storage = MutableFlatSetStorage[int](capacity=capacity)
+    borrowed = storage.view()
+    buffer = storage._buffer
+    model: set[int] = set()
+    for operation, key in operations:
+        if operation == "insert":
+            accepted = key in model or len(model) < capacity
+            assert storage.insert(key) is accepted
+            if accepted:
+                model.add(key)
+        elif operation == "remove":
+            assert storage.remove(key) is (key in model)
+            model.discard(key)
+        else:
+            storage.clear()
+            model.clear()
+        assert storage.count == storage.size() == len(model)
+        assert storage._buffer is buffer
+        assert len(buffer) == capacity
+        assert buffer[len(model) :] == [None] * (capacity - len(model))
+        assert tuple(borrowed.keys) == tuple(sorted(model))
+        assert borrowed.size() == len(model)
+        assert borrowed.empty() is (len(model) == 0)
+        for query in range(-1, 17):
+            assert borrowed.contains(query) is (query in model)
+
+
+@pytest.mark.parametrize("bits", (1, 2, 4))
+@settings(max_examples=80, deadline=None, print_blob=True)
+@given(raw=st.binary(min_size=1, max_size=8), data=st.data())
+def test_cont_19_nested_bit_writes_preserve_every_other_element(
+    bits: int, raw: bytes, data: st.DataObject
+) -> None:
+    """TEST-CONT-19: 多段sliceへの書き込みは指定要素だけを更新し、拒否時は全バイトを保つ。"""
+    count = len(raw) * 8 // bits
+    base = 2**bits
+    model = [(int.from_bytes(raw, "little") // (base**i)) % base for i in range(count)]
+    buffer = bytearray(raw)
+    parent = BitView(memoryview(buffer), bits=bits, count=count)
+    first = data.draw(st.integers(0, count - 1), label="first")
+    last = data.draw(st.integers(first + 1, count), label="last")
+    child = parent.slice(first, last)
+    inner_first = data.draw(st.integers(0, len(child) - 1), label="inner_first")
+    inner_last = data.draw(st.integers(inner_first + 1, len(child)), label="inner_last")
+    nested = child.slice(inner_first, inner_last)
+    offset = first + inner_first
+    assert tuple(nested.at(i) for i in range(len(nested))) == tuple(
+        model[offset : offset + len(nested)]
+    )
+    operations = data.draw(
+        st.lists(
+            st.tuples(
+                st.integers(0, len(nested) - 1),
+                st.integers(0, base - 1),
+            ),
+            min_size=1,
+            max_size=30,
+        ),
+        label="writes",
+    )
+    for index, value in operations:
+        nested.put(index, value)
+        model[offset + index] = value
+        expected_bytes = sum(value * base**i for i, value in enumerate(model)).to_bytes(
+            len(raw), "little"
+        )
+        assert bytes(buffer) == expected_bytes
+        assert tuple(parent.at(i) for i in range(count)) == tuple(model)
+    before = bytes(buffer)
+    for index in (-1, len(nested)):
+        with pytest.raises(AssertionError):
+            nested.put(index, 0)
+        assert bytes(buffer) == before
+    for value in (-1, base):
+        with pytest.raises(AssertionError):
+            nested.put(0, value)
+        assert bytes(buffer) == before
+    with pytest.raises(AssertionError):
+        nested.slice(0, len(nested) + 1)
+    assert bytes(buffer) == before
+
+
+@settings(max_examples=100, deadline=None, print_blob=True)
+@given(
+    keys=st.lists(st.integers(-32, 32), unique=True, max_size=25),
+    bounds=st.lists(st.tuples(st.integers(-40, 40), st.integers(-40, 40)), min_size=2, max_size=6),
+)
+def test_cont_20_narrowed_views_never_restore_excluded_keys(
+    keys: list[int], bounds: list[tuple[int, int]]
+) -> None:
+    """TEST-CONT-20 / GOTCHA-CONT-02: 絞り込みを繰り返しても除外した要素を復元しない。"""
+    expected = sorted(keys)
+    map_view = ReadOnlyFlatMapStorage.create(tuple((key, key * 37 + 11) for key in keys)).view()
+    set_view = ReadOnlyFlatSetStorage.create(tuple(keys)).view()
+    for a, b in bounds:
+        lo, hi = min(a, b), max(a, b)
+        expected = [key for key in expected if lo <= key <= hi]
+        map_view = map_view.narrow(lo, hi)
+        set_view = set_view.narrow(lo, hi)
+        assert tuple(map_view.entries) == tuple((key, key * 37 + 11) for key in expected)
+        assert tuple(set_view.keys) == tuple(expected)
+        assert map_view.size() == set_view.size() == len(expected)
+        for query in range(-33, 34):
+            assert map_view.find(query) == (query * 37 + 11 if query in expected else None)
+            assert set_view.contains(query) is (query in expected)
+
+
+@pytest.mark.parametrize("bits", (1, 2, 4))
+def test_cont_21_bit_storage_fill_clear_updates_borrowed_view(bits: int) -> None:
+    """TEST-CONT-21: fill/clearは全論理要素を更新し、既存の借用Viewへ反映する。"""
+    count = 9  # 最終バイトを完全には使わない領域も含める。
+    storage = MutableBitStorage(count=count, bits=bits, default=1)
+    borrowed = storage.view()
+    buffer = storage.buffer
+    for value in (1, (1 << bits) - 1, 0):
+        storage.fill(value)
+        assert tuple(borrowed.at(i) for i in range(count)) == (value,) * count
+        assert storage.buffer is buffer
+        assert len(buffer) == (count * bits + 7) // 8
+    storage.put(count - 1, 1)
+    storage.clear()
+    assert tuple(borrowed.at(i) for i in range(count)) == (0,) * count
+    assert storage.buffer is buffer
 
 
 if __name__ == "__main__":
-    test_cont_01_flat_map_view_find_binary_search()
-    test_cont_02_narrow_monotonic_shrinkage()
-    test_cont_03_slice_monotonic_shrinkage_and_bounds()
-    test_cont_04_flat_set_view_membership_only()
-    test_cont_05_bit_view_adjacent_element_non_destructive()
-    test_cont_06_bit_view_unaligned_slice_origin_absorption()
-    test_cont_07_bit_view_allowed_bits_enforced()
-    test_cont_08_radix_binary_tree_view_coarse_radix_lookup()
-    test_cont_09_jit_entry_lookup_card_table_prefilter()
-    test_cont_10_container_type_separation()
-    test_cont_11_storage_and_view_ownership_separation()
-    test_cont_12_mutable_flat_map_storage_standard_sort()
-    test_cont_13_mutable_flat_map_sorted_insert_remove()
-    test_cont_14_mutable_storages_fixed_array_and_entry_count()
-    test_cont_15_public_container_lifecycle_methods()
-    test_cont_16_radix_projection_keeps_lookup_ranges_ordered_and_bounded()
-    print("[PASS] All 16 System Containers & Views tests passed.")
+    raise SystemExit(pytest.main([__file__]))

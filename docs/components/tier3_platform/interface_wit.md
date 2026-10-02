@@ -217,6 +217,14 @@ WIT識別子は WASI 標準および `wasm-tools` の制約により `kebab-case
 - **C++ へのマッピング**: 生成される C++ コードではプロジェクト標準規約に従い、自動的に `snake_case` へ変換される。
 - **名前の衝突回避**: ドメインプレフィックスを積極的に活用し、グローバルな名前空間での衝突を避ける。
 
+### raw Core Wasmアダプタの生成と実行
+<!-- traceability: {WIT_Interface_Spec} -->
+[`generate_hostcall_bindings.py`](tools/guest_bindings/generate_hostcall_bindings.py) は本ホストコールWITの関数名、u32型、引数順序およびworldのimport集合から、明示的なraw 4 import写像を生成する。
+未対応型、余剰宣言および欠落したimportは生成失敗とする。
+本生成器はComponent ModelのCanonical ABI生成器ではない。
+[`build_guest.py`](tools/guest_bindings/build_guest.py) は生成bindingを静的archiveへ格納し、そのarchiveをguest objectへリンクする。
+Core Wasmのi32ビットパターンはホストresolverのraw入口でWITのu32へ変換する。
+
 ## 6. 制約達成の方策
 
 ### 6.1 フィードバック：WASI 準拠における制約事項

@@ -19,7 +19,7 @@ Copy-and-Patchエンジンによるネイティブコード生成、4論理引�
 | TEST-JITC-02 | 未対応命令のエラー | x64コンパイラが未対応のWASM opcode | コンパイル | 明確なcompile-failure結果を返し、無音の誤コンパイルをしない | [`test_x64_jit.py`](experiments/pysim/qa/tier3_executer/jit/test_x64_jit.py) |
 | TEST-JITC-03 | ステンシル即値とrelocation範囲 | x64の即値命令と相対分岐を含むtrace | コンパイル結果を実行し、境界値も確認する | x64のバイト列と実行結果が正しく、範囲外relocationはcompile failureとなる | [`test_x64_stencils.py`](experiments/pysim/qa/tier3_executer/jit/test_x64_stencils.py), [`test_x64_asm.py`](experiments/pysim/qa/tier3_executer/jit/test_x64_asm.py) |
 | TEST-JITC-04 | C++ Interpreter handlerへの境界フォールバック | 制御終端命令、複雑命令、import／host call | trace実行後のhandlerとRuntimeEngine境界を確認する | 制御終端命令は対応するC++ Interpreter handlerを通る。JIT内にopcode別handler dispatcherやhost call stubを生成しない | `{JIT_RuntimeAPI_Fallback}` |
-| TEST-JITC-05 | x64実行可能バッファのW^X確定 | パッチ完了後 | executable bufferの権限と実行結果を確認する | commit後は実行可能で書込み不可となり、ARMv8-Mの同期命令や保護機構は受入れ条件に含めない | [`test_x64_stencils.py`](experiments/pysim/qa/tier3_executer/jit/test_x64_stencils.py) |
+| TEST-JITC-05 | x64実行可能バッファのW^X確定 | Linux x64上で初期化したバッファ | `/proc/self/maps`でOSの実権限を読み、commit、再パッチ、再commit後に再確認する。生成コードをCPUで実行する | 実権限が`RW → RX → RW → RX`となる。commit後のコードは42を返し、再パッチ後は7を返す。API経由のcommit後書込みは拒否される | [`test_x64_stencils.py`](experiments/pysim/qa/tier3_executer/jit/test_x64_stencils.py) |
 | TEST-JITC-06 | インタープリタ⇔JIT境界でのレジスタ書き戻しコスト | JITトレースから脱出 | 脱出処理を確認 | 値キャッシュの共有オペランド領域への書戻しが対象ABIで定める有界コストに収まる |  `{ADR_TosCacheAsymmetry}` |
 | TEST-JITC-07 | x64整数除算・剰余のヘルパー委譲 | i32除算・剰余を含むトレース | x64向けコンパイルと実行を確認 | 2つの32ビット整数を対象ABIの引数レジスタからヘルパーへ渡し、ヘルパーが結果領域ポインタへ1ワードを書き込んで対象ABIの終了処理へ戻る | `{JIT_RuntimeAPI_Fallback}` |
 | TEST-JITC-08 | ヘルパー呼出しコードの共通配置 | ARMv8-Mまたはx64のヘルパー委譲 | 共通コード領域とトレース本体のバイト数を確認 | x64整数ヘルパー入口は契約ごとに32バイトの固定スロットへ配置する。ARMv8-Mのhelper入口と配置はTBD | [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) `{JIT_MultiBuffer_Cache}` |
@@ -39,7 +39,7 @@ Copy-and-Patchエンジンによるネイティブコード生成、4論理引�
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | TEST-JITC-20 | x64ヘッダサイズは固定24バイト | x64向けに生成したトレース | ヘッダを解析 | `+0x00 head_wasm_pc(u32)`, `+0x04 trace_byte_size(u16)`, `+0x06 flags(u8)`, `+0x07 variant_id(u8)`, `+0x08 chain_target_addr(u64)`, `+0x10 helper_target_addr(u64)`を含む24バイト構造 | [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) |
 | TEST-JITC-21 | flagsビットの意味 | PROMOTED済み/LOOP_HEADERのトレース | flagsを確認 | `0x01: PROMOTED`, `0x02: LOOP_HEADER`が正しく設定される | 同上 |
-| TEST-JITC-22 | x64エントリstubは24バイトヘッダ直後に配置 | x64向けに生成したトレース | メモリレイアウトを確認 | 24バイトヘッダ直後(+0x18)から15バイトのentry stubが始まり、bodyはその直後(+0x27)から始まる。ARMv8-Mの配置はTBD | [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) |
+| TEST-JITC-22 | x64エントリstubは24バイトヘッダ直後に配置 | x64向けに生成したトレース | 独立した機械語期待値、entry stubのbodyアドレスと共通prologueへの分岐先を比較し、生成コードを実行する | 24バイトヘッダ直後(+0x18)から15バイトのentry stubが始まり、bodyはその直後(+0x27)から始まる。共通prologueの対象ABIの保存・引数配置と分岐先が一致し、入力5の計算結果は40である。ARMv8-Mの配置はTBD | [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md)、`test_python_trace_compiler_is_selected_per_instance` |
 | TEST-JITC-23 | 予約済み`variant_id`の現行値 | x64向けトレースを生成 | トレースヘッダを解析 | 現行生成器は`variant_id=0`を出力し、異なるレジスタ割り当てvariantの選択やvariant間chainを行わない | [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md), `{JIT_RegisterMapping}` |
 
 ### ADR_ScalableCodeOffset
@@ -73,7 +73,7 @@ Copy-and-Patchエンジンによるネイティブコード生成、4論理引�
 | TEST-JITC-54 | x64共通コード領域chain dispatcher経由のtrace遷移 | 直線後続ブロックのtraceが常駐 | trace終端の相対分岐とchain targetを確認して実行 | trace末尾の`rel32`が共通コード領域のchain dispatcherを指す。dispatcherはヘッダ`+0x08`のtarget bodyへtail-jumpし、未接続なら共通epilogueへ戻る。C++ handler実行後のdispatcher遷移はchainに含めない | [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) `` |
 | TEST-JITC-55 | x64 JIT対応命令と制御終端のhandler経由 | x64 JITが対応する算術・ローカル命令、および`BR`/`BR_IF`/`BR_TABLE`等の制御終端 | 各traceの生成・実行とC++ handler呼出しを確認する | 対応命令はx64 trace bodyで実行され、制御終端はC++ Interpreter handlerが一度処理する。構文終端を無条件に消去せず、条件値やcontrol frameを更新する | ``, `test_x64_jit.py` |
 | TEST-JITC-58 | 分岐handlerによるstack巻き戻し | ラベル脱出に伴うスタック巻き戻しを持つ `BR` / `BR_IF` | 対応するC++ Interpreter handlerを通して実行する | handlerが条件値を消費し、stackとcontrol frameを更新する。JIT traceにbranch条件評価や分岐handlerをインライン展開しない | 「制御フロー・コール境界のインタープリタ委譲不変条件」 |
-| TEST-JITC-59 | フレームのスロット幅に従うローカルアドレス | ローカルを読み書きするブロック。全ローカルがi32のフレームと、i64ローカルを含むフレームの2通り | 各幅でコンパイルし、ローカル配列を指定して実行する | 書き込み先は `local index × スロット幅` になる。4バイトスロットでは3番目のローカルがワード2、8バイトスロットではワード4である。他のスロットは変化しない | `` |
+| TEST-JITC-59 | フレームのスロット幅に従うローカルアドレス | ローカルを読み書きするブロック。全ローカルがi32のフレームと、i64ローカルを含むフレームの2通り | 各幅でコンパイルし、ローカル配列を指定して実行する | 書き込み先は `local index × スロット幅` になる。4バイトスロットでは3番目のローカルがワード2、8バイトスロットではワード4である。固有のsentinelで全wordを比較し、広幅スロットの未使用上位wordを含む他の領域が変化しない | `test_trace_local_addressing_follows_frame_slot_width` |
 | TEST-JITC-60 | 押し出された値の順序と書き込み範囲 | 乱数で生成した逆ポーランド式（最大深さ3〜11）。TOSとNOSに載らない値を持つ | 各式をコンパイルして実行し、参照実装と比較する。書き込まれたワードも検査する | 結果が参照実装と一致する。書き込みは `[sp, sp + stack_words)` に収まる。`stack_words` は、押し出しの最大ワード数（最小1）と等しい | ``, TraceBoundaryInvariant |
 | TEST-JITC-61 | 右にネストした式の被演算子の復元 | 右にネストした `i32.sub` の連鎖と、シフトの連鎖（深さ11） | コンパイルして実行する | 押し出された値が、左被演算子として正しい順序で戻る。結果が参照実装と一致する | TraceBoundaryInvariant |
 
@@ -92,12 +92,26 @@ Copy-and-Patchエンジンによるネイティブコード生成、4論理引�
 ## 3. テスト検証実績と網羅状況
 
 - **TEST-JITC-01〜08 (Copy-and-Patch)**: 単一パスによる命令テンプレートのコピー＆パッチ、必須リロケーションホール、x64整数演算のヘルパー委譲、および共通呼出しコードのバイト数と共有配置を検証対象とする。x64の検証対象に限定する。ARMv8-Mの実装と検証はTBDである。
+- **TEST-JITC-05 (W^X)**: `test_executable_buffer_wx_protection_lifecycle`はAPIのトランザクション状態と書込み拒否を検査する。`test_executable_buffer_linux_mapping_enforces_wx`は内部の`current_protection`を期待値に使わず、Linuxカーネルが公開する実権限を独立に確認する。初期状態、初回commit、再パッチ、再commitの4状態を確認する。
+- **TEST-JITC-05の反証確認**: `mprotect`への指定に書込み・実行ビットを追加して実権限をRWXにする試験内変異を用いる。メタデータがRXのままでも、OS実権限の期待値`r-x`との不一致で失敗することを確認する。
 - **TEST-JITC-10 (4論理引数規約)**: `(ctx, sp, local_base, tos)` の論理引数順序がInterpreterとJITで一致することを確認する。x64の物理配置は [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) が定める。
 - **TEST-JITC-20〜22 (x64 24バイト物理ヘッダ)**: x64の `jit_trace_header` はtrace識別情報とchain/helper targetだけを保持し、24バイト直後に15バイトのentry stub、さらにその後にnative bodyを配置する。ARMv8-Mの配置はTBDである。
 - **TEST-JITC-40 (PIC 位置独立性)**: トレースバイナリを別のメモリ領域・オフセットへコピーして再コンパイルなしで直接実行し、完全同一の演算結果を返すことを実証済み。
 - **TEST-JITC-42 (3面キャッシュ代謝 & 有界アンリンク)**: 3面マルチバッファキャッシュのローテーション、破棄バンク全体の消去、および被チェイン逆引きテーブルに基づく `O(n + k log n)` 処理を実証済み。
-- **TEST-JITC-43 (ホストコール ABI)**: 0〜6引数のホスト関数呼び出しにおけるスタックアライメントおよびCaller-savedレジスタの完全保護を実証済み。
+- **TEST-JITC-43 (ホストコール ABI)**: `test_jitr_host_import_stays_on_interpreter_runtime_boundary`は、traceからInterpreterへ戻った後のhost import呼出しと結果を検査する。raw guest bindingの0〜6引数検査は型・値・port搬送の証拠である。0〜6引数の物理スタックアライメントとCaller-savedレジスタの完全保護は未検証である。
+
+### W^X再構築時の局所検証
+
+2026-10-01にLinux x64、Python 3.14.6で次のコマンドを実行し、31件PASS、FAIL 0件、SKIP 0件を確認した。この件数はステンシル試験ファイルの実行結果であり、本書全体の完了件数ではない。
+
+```bash
+UV_CACHE_DIR=/tmp/fireball-test-design-uv uv run --offline --no-sync python -m pytest -q experiments/pysim/qa/tier3_executer/jit/test_x64_stencils.py
+```
+
+試験プロセス内だけで`mprotect`の権限をRWXに変更する変異は、Linux実権限試験でFAIL 1件となった。実権限`rwx`と期待値`r-x`の不一致を検出した。製品ソースは変更していない。
 
 ## 4. 未検証・スコープ外
 
 - ARMv8-Mの物理JIT仕様と実機検証はTBDであり、本書は受け入れ条件を定めない。
+- WindowsとLinux以外のOSにおける実権限の独立確認は未検証である。Linux専用の実権限試験は他OSで明示的にskipする。APIの状態検査だけでOS実権限の検証済みとは扱わない。
+- W^X遷移中の別スレッドによる並行実行と、同時書込み・実行の競合履歴は本試験の対象外である。

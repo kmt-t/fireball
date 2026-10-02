@@ -1,0 +1,87 @@
+FF........                                                               [100%]
+=================================== FAILURES ===================================
+________________ test_recovery_01_retry_success_within_limit[1] ________________
+
+success_attempt = 1
+
+    @pytest.mark.parametrize("success_attempt", (1, 2, 3))
+    def test_recovery_01_retry_success_within_limit(success_attempt: int) -> None:
+        """TEST-WIT-02: 成功位置にかかわらず即時終了し、成功後の再実行を禁止する。"""
+        sleeps: list[float] = []
+        timeline: list[str] = []
+
+        def sleep_spy(seconds: float) -> None:
+            sleeps.append(seconds)
+            timeline.append("sleep")
+
+        mgr = RecoveryManager(sleep_fn=sleep_spy)
+        assert mgr.max_retries == FB_CONF_RETRY_MAX_ATTEMPTS == 3
+        assert mgr.backoff_ms == FB_CONF_RETRY_BACKOFF_MS == 10
+        attempts = [0]
+
+        def op() -> Result[str, str]:
+            attempts[0] += 1
+            timeline.append("operation")
+            if attempts[0] < success_attempt:
+                return Result.err("BUSY", RecoveryStrategy.RETRY)
+            return Result.ok("SUCCESS_DATA")
+
+        def reset() -> bool:
+            timeline.append("reset")
+            return True
+
+        def panic(_message: str) -> None:
+            timeline.append("panic")
+
+        res = mgr.execute_with_recovery(op, task_reset_fn=reset, panic_fn=panic)
+        assert res.is_ok is True
+        assert res.value == "SUCCESS_DATA"
+>       assert attempts[0] == success_attempt
+E       assert 2 == 1
+
+experiments/pysim/qa/tier2_runtime/test_recovery.py:51: AssertionError
+________________ test_recovery_01_retry_success_within_limit[2] ________________
+
+success_attempt = 2
+
+    @pytest.mark.parametrize("success_attempt", (1, 2, 3))
+    def test_recovery_01_retry_success_within_limit(success_attempt: int) -> None:
+        """TEST-WIT-02: 成功位置にかかわらず即時終了し、成功後の再実行を禁止する。"""
+        sleeps: list[float] = []
+        timeline: list[str] = []
+
+        def sleep_spy(seconds: float) -> None:
+            sleeps.append(seconds)
+            timeline.append("sleep")
+
+        mgr = RecoveryManager(sleep_fn=sleep_spy)
+        assert mgr.max_retries == FB_CONF_RETRY_MAX_ATTEMPTS == 3
+        assert mgr.backoff_ms == FB_CONF_RETRY_BACKOFF_MS == 10
+        attempts = [0]
+
+        def op() -> Result[str, str]:
+            attempts[0] += 1
+            timeline.append("operation")
+            if attempts[0] < success_attempt:
+                return Result.err("BUSY", RecoveryStrategy.RETRY)
+            return Result.ok("SUCCESS_DATA")
+
+        def reset() -> bool:
+            timeline.append("reset")
+            return True
+
+        def panic(_message: str) -> None:
+            timeline.append("panic")
+
+        res = mgr.execute_with_recovery(op, task_reset_fn=reset, panic_fn=panic)
+        assert res.is_ok is True
+        assert res.value == "SUCCESS_DATA"
+>       assert attempts[0] == success_attempt
+E       assert 3 == 2
+
+experiments/pysim/qa/tier2_runtime/test_recovery.py:51: AssertionError
+REVIEW mutant=recovery-extra-success mutation_calls=[2]
+=========================== short test summary info ============================
+FAILED experiments/pysim/qa/tier2_runtime/test_recovery.py::test_recovery_01_retry_success_within_limit[1]
+FAILED experiments/pysim/qa/tier2_runtime/test_recovery.py::test_recovery_01_retry_success_within_limit[2]
+2 failed, 8 passed in 0.14s

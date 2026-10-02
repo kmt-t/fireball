@@ -9,10 +9,12 @@ Executes all unit tests in strict architectural tier order:
 
 from __future__ import annotations
 
+import ast
 import os
 import subprocess
 import sys
 import time
+from collections.abc import Sequence
 from pathlib import Path
 
 TEST_DIR = Path(__file__).resolve().parent
@@ -71,6 +73,7 @@ TEST_SUITES = [
         TEST_DIR / "tier2_runtime" / "test_recovery.py",
     ),
     ("Tier 2 Runtime", "vSoC Multitasking & Pipeline", TEST_DIR / "tier2_runtime" / "test_vsoc.py"),
+    ("Tier 2 Runtime", "vDMA Transfer Contracts", TEST_DIR / "tier2_runtime" / "test_vdma.py"),
     (
         "Tier 2 Runtime",
         "Runtime Static Composition",
@@ -104,6 +107,21 @@ TEST_SUITES = [
         TEST_DIR / "tier3_platform" / "test_memory.py",
     ),
     ("Tier 3 Platform", "HAL Drivers & ShmPool", TEST_DIR / "tier3_platform" / "test_hal.py"),
+    (
+        "Tier 3 Platform",
+        "libfireball Host-Call Contract",
+        TEST_DIR / "tier3_platform" / "test_libfireball.py",
+    ),
+    (
+        "Tier 3 Platform",
+        "WASI-SDK Guest across Runtime, IPC and HAL",
+        TEST_DIR / "tier3_platform" / "test_wasi_guest.py",
+    ),
+    (
+        "Tier 3 Platform",
+        "Device Stub Commands and Clang Guest Integration",
+        TEST_DIR / "tier3_platform" / "test_driver_stubs.py",
+    ),
     # --- Tier 3: Executer ---
     (
         "Tier 3 Executer",
@@ -149,7 +167,31 @@ TEST_SUITES = [
 ]
 
 
+def assert_registered_test_modules(test_dir: Path, registered: Sequence[Path]) -> None:
+    """検証マトリクスの実行入口から、実在する試験モジュールを取りこぼさない。"""
+    discovered: set[Path] = set()
+    for path in test_dir.rglob("test_*.py"):
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        has_tests = any(
+            isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+            and node.name.startswith("test_")
+            for node in ast.walk(tree)
+        )
+        has_test_case = any(
+            isinstance(node, ast.ClassDef) and node.name.startswith("Test") for node in tree.body
+        )
+        if has_tests or has_test_case:
+            discovered.add(path.resolve())
+    registered_paths = {path.resolve() for path in registered}
+    assert len(registered_paths) == len(registered), "duplicate test suite registration"
+    missing = discovered - registered_paths
+    stale = registered_paths - discovered
+    assert not missing, f"unregistered test suites: {sorted(str(path) for path in missing)}"
+    assert not stale, f"missing or empty test suites: {sorted(str(path) for path in stale)}"
+
+
 def run_all_tests():
+    assert_registered_test_modules(TEST_DIR, tuple(path for _, _, path in TEST_SUITES))
     print("=" * 84)
     print("           Fireball pysim Architectural Unit Test Suite (Tier 1 -> 3)            ")
     print("=" * 84)
@@ -184,6 +226,10 @@ def run_all_tests():
         if res.returncode == 0:
             status = "[PASS]"
             print(f"  {status} {name:<42} ({script_path.name:<24}) {elapsed_ms:>8.2f} ms")
+            # 成功終了でもskip/xfailを隠さず、pytestの集計を表示する。
+            output_lines = res.stdout.strip().splitlines()
+            if output_lines:
+                print(f"         {output_lines[-1]}")
             passed += 1
         else:
             status = "[FAIL]"

@@ -194,11 +194,14 @@ class VMMIOController:
         self.tlb_misses = 0
 
     # --- Static & Dynamic PTE Registration (FlatMap) ---
-    def map_dynamic_page(self, vpn: int, phys_page: int, owner_id: int) -> None:
+    def map_dynamic_page(self, vpn: int, phys_page: int, owner_id: int, mapping_size: int) -> None:
         """Maps one HAL-owned FC=13 page to its current guest owner."""
         assert (vpn >> 16) == FC_DYNAMIC
         assert owner_id > 0
-        self.ptes[vpn] = Stage3PTE(phys_page=phys_page, owner_id=owner_id)
+        assert 0 < mapping_size <= 4096
+        self.ptes[vpn] = Stage3PTE(
+            phys_page=phys_page, owner_id=owner_id, mapping_size=mapping_size
+        )
         tlb_idx = self.tlb_index(vpn)
         if self.tlb[tlb_idx]["vpn"] == vpn:
             self.tlb[tlb_idx] = TLBSlot(vpn=0xFFFF_FFFF, pte=None)
@@ -371,7 +374,7 @@ class VMMIOController:
             if pte.handler is not None:
                 pte.handler(addr.device_metadata(), addr.offset(), is_write)
             return (VmmioStatus.OK_STATIC_DEVICE, 0)
-        # Stage3PTE (SHM / PASSTHROUGH)
+        # Stage3PTE (DYNAMIC / SHM / PASSTHROUGH)
         if not pte.valid:
             return (TrapCode.ACCESS_VIOLATION, 0)
         if is_write and not pte.write:
@@ -386,7 +389,7 @@ class VMMIOController:
         if addr.fc() == FC_SHM and pte.owner_id != FB_TASK_ID_INVALID:
             if pte.owner_id == FB_TASK_ID_FLIGHT or pte.owner_id != current_task_id:
                 return (TrapCode.OWNER_MISMATCH, 0)
-        if addr.fc() == FC_SHM and (
+        if addr.fc() in (FC_DYNAMIC, FC_SHM) and (
             addr.offset() >= pte.mapping_size or access_size > pte.mapping_size - addr.offset()
         ):
             return (TrapCode.OUT_OF_BOUNDS, 0)
@@ -435,12 +438,17 @@ def test_tlb_hit_after_first_walk() -> None:
 def test_dynamic_mapping_is_single_guest() -> None:
     """FC=13 DYNAMIC mapping is only accessible by its current guest owner."""
     ctrl = VMMIOController()
-    ctrl.map_dynamic_page(vpn=0xD0000, phys_page=0x2000, owner_id=7)
+    ctrl.map_dynamic_page(vpn=0xD0000, phys_page=0x2000, owner_id=7, mapping_size=256)
     status, physical = ctrl.access(0xD000_0040, is_write=True, current_task_id=7)
     assert status == VmmioStatus.OK_PHYSICAL
     assert physical == (0x2000 << 12) | 0x40
     status, _ = ctrl.access(0xD000_0040, is_write=True, current_task_id=8)
     assert status == TrapCode.OWNER_MISMATCH
+    for offset, width in ((255, 2), (256, 1), (0, 257)):
+        status, _ = ctrl.access(
+            0xD000_0000 + offset, is_write=True, current_task_id=7, access_size=width
+        )
+        assert status == TrapCode.OUT_OF_BOUNDS
     ctrl.unmap_dynamic_page(0xD0000)
     status, _ = ctrl.access(0xD000_0040, is_write=True)
     assert status == TrapCode.UNREGISTERED_PAGE

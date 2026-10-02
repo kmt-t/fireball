@@ -45,8 +45,8 @@ Bit31によるRAM/vMMIO高速分岐、64件のFlatMap PTE + 32エントリDirect
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | TEST-VMMIO-10 | 静的デバイス(FC=12)ページへのアクセスとハンドラ呼び出し | IPCR等をmap_static_device済み | 該当アドレスへアクセス | `OK_STATIC_DEVICE`を返し、登録ハンドラが`(device_metadata, offset, is_write)`で呼ばれる | `vmmio_concept.py` `test_static_device_dispatch` |
 | TEST-VMMIO-11 | TLBヒット（2回目以降のアクセス） | 同一ページへ2回アクセス | 2回目のアクセス | `tlb_hits`が増加し、`tlb_misses`は増えない | {META_RestrictedPhysicalAccess}, `vmmio_concept.py` `test_tlb_hit_after_first_walk` |
-| TEST-VMMIO-12 | 未定義FCのトラップ分類 | FC=11（予約済み） | アクセス | `TRAP_UNDEFINED_FC`を返す | pysim `test_vmmio_03_undefined_function_code_traps`, `vmmio_concept.py` `test_undefined_fc_traps` |
-| TEST-VMMIO-13 | 未登録ページのトラップ分類 | FC=13 DYNAMICの未登録VPN | アクセス | `TRAP_UNREGISTERED_PAGE`を返す | pysim `test_vmmio_04_dynamic_unregistered_page_traps`, `vmmio_concept.py` |
+| TEST-VMMIO-12 | 未定義FCのトラップ分類 | FC=11（予約済み） | アクセス | `TRAP_UNDEFINED_FC`を返す | pysim `test_vmmio_12_undefined_function_code_traps`, `vmmio_concept.py` `test_undefined_fc_traps` |
+| TEST-VMMIO-13 | 未登録ページのトラップ分類 | FC=13 DYNAMICの未登録VPN | アクセス | `TRAP_UNREGISTERED_PAGE`を返す | pysim `test_vmmio_13_dynamic_unregistered_page_traps`, `vmmio_concept.py` |
 | TEST-VMMIO-14 | Folding XOR HashによるFC間の衝突回避 | FC=12/14/15の同一下位ページ番号 | `tlb_index`を比較 | 異なるTLBスロットに分散する | `vmmio_concept.py` `test_tlb_index_separates_function_codes` |
 | TEST-VMMIO-15 | 混在アクセスパターンでの高いTLBヒット率 | 静的デバイス宛先とSHM宛先を交互にアクセス | 10回繰り返す | ヒット率90%以上（スラッシングしない） | `vmmio_concept.py` `test_interleaved_device_and_shm_keep_hitting_the_tlb` |
 | TEST-VMMIO-16 | FlatMap登録件数と検索 | 32件のSHMページを登録 | 全件アクセス | 全件が正しく解決される。ホットな作業集合(8件)への繰り返しアクセスは100%ヒット | `vmmio_concept.py` `test_flatmap_pte_registration_and_tlb_caching` |
@@ -67,9 +67,9 @@ Bit31によるRAM/vMMIO高速分岐、64件のFlatMap PTE + 32エントリDirect
 | TEST-VMMIO-25 | PASSTHROUGH(FC=15)の物理アドレス変換 | `map_passthrough_page`済み | アクセス | `phys_addr = (pte.phys_page << 12) \| offset`で正しく解決 | {PhysicalPassthrough}, `vmmio_concept.py` `test_passthrough_page_access` |
 | TEST-VMMIO-26 | ビット並列連続ビットマップアロケータ | 32ページの空き仮想空間 | `alloc_consecutive(k)` / `free_consecutive` | $O(1)$で連続$k$ページが確保・解放され、断片化時も正しく探索される | `vmmio_concept.py` `test_shm_virtual_address_allocator_consecutive` |
 | TEST-VMMIO-27 | マルチページ連続マッピングとアクセス | 連続3ページをアロケート・マップ | 3ページすべてのアドレスへアクセス | 全ページが正しい物理アドレスに変換され、一括アンマップ後は全て未登録トラップとなる | `vmmio_concept.py` `test_vmmio_alloc_and_map_multipage` |
-| TEST-VMMIO-28 | アクセス幅がRAM/PTEマッピング境界を越えない | ゲストRAM末尾または`mapping_size`を持つSHM PTE | 範囲が収まる幅と1バイト越える幅でアクセス | 収まる範囲だけ許可し、範囲外は物理アクセス前に`OUT_OF_BOUNDS`で拒否する | `vmmio_concept.py` `test_access_width_stays_inside_ram_and_shm_mappings` |
+| TEST-VMMIO-28 | アクセス幅がRAM/PTEマッピング境界を越えない | ゲストRAM末尾または実容量を持つSHM/DYNAMIC PTE | 範囲が収まる幅と1バイト越える幅でアクセスする。DYNAMICでは実guestの1/2/4/8byte load/storeも使う | 収まる範囲だけ許可し、範囲外は物理アクセス前に`OUT_OF_BOUNDS`で拒否する。拒否時の実バッファとguest RAMを保存する | `vmmio_concept.py`、pysim `test_vmmio.py`、`test_syscall.py` `test_dynamic_guest_access_checks_full_instruction_width` |
 | TEST-VMMIO-29 | FC=13 DYNAMICマッピングのゲスト所有者照合 | ゲストA所有でFC=13 PTEが登録済み | ゲストAとBの両方から同一アドレスを直接`vmmio.access`する | Aのみ`OK_PHYSICAL`、Bは`OWNER_MISMATCH`となる | pysim `test_hal_05_hal_buffer_slice_bounds_and_guest_mapping`, `runtime_vmmio.md` |
-| TEST-VMMIO-32 | マップ済みSHMに対する非所有者アクセス | task A所有のFC=14 PTEが登録済みで、Revoke前 | task Bから同じページを読み書きする | `OWNER_MISMATCH`で遮断し、物理メモリを読み書きしない | `{OwnerMismatchTrap}`, pysim `test_vmmio_02_fc14_shm_owner_isolation` |
+| TEST-VMMIO-32 | マップ済みSHMに対する非所有者アクセス | task A所有のFC=14 PTEが登録済みで、Revoke前 | task Bから同じページを読み書きする | `OWNER_MISMATCH`で遮断し、物理メモリを読み書きしない | `{OwnerMismatchTrap}`, pysim `test_vmmio_29_32_cached_owned_mapping_rejects_nonowner_read_and_write` |
 
 ### vIRQ原因付き階層ディスパッチ
 
@@ -99,9 +99,43 @@ Bit31によるRAM/vMMIO高速分岐、64件のFlatMap PTE + 32エントリDirect
 
 ## 3. テスト検証実績と網羅状況
 
-- 仕様書に定義された各テストケース（不変条件・境界条件・エラー処理）の検証手順と期待結果を定義。
+pysimの実装テストは [`test_vmmio.py`](experiments/pysim/qa/tier2_runtime/test_vmmio.py) を正本とする。
+本スイートはゲートの戻り値、返却物理アドレス、ハンドラへの引数、PTE、TLBを検査する。
+実際の物理メモリ読み書きはこのコントローラの責務に含まれず、拒否時には使用可能な物理アドレスが返らないことを確認する。
+
+| ケースID | 実装テスト | 直接観測する結果 |
+| :--- | :--- | :--- |
+| TEST-VMMIO-01 | `test_vmmio_01_ram_bypasses_page_table_and_tlb` | RAMの成功、全TLBエントリとカウンタの不変 |
+| TEST-VMMIO-02、03 | `test_vmmio_02_ram_exact_boundary_without_power_of_two_assumption`、`test_vmmio_03_out_of_bounds_ram_never_wraps` | 非2の冪容量の末尾・超過境界、折り畳まれ得るアドレスの拒否 |
+| TEST-VMMIO-10、11 | `test_vmmio_10_11_static_handler_receives_address_fields_on_miss_and_hit` | cold・hit双方のハンドラ引数と結果 |
+| TEST-VMMIO-12、13 | `test_vmmio_12_undefined_function_code_traps`、`test_vmmio_13_dynamic_unregistered_page_traps` | 未定義FCと未登録PTEの別トラップ |
+| TEST-VMMIO-14、15 | `test_vmmio_14_15_interleaved_function_codes_keep_separate_tlb_slots` | FC間のスロット分離、交互アクセスの正しい解決、18hit・2miss |
+| TEST-VMMIO-16 | `test_vmmio_16_all_registered_pages_resolve_and_hot_working_set_hits` | 32ページすべての物理アドレス、8ページ作業集合のhit |
+| TEST-VMMIO-17 | `test_vmmio_17_read_only_shm_permission_is_enforced_on_tlb_hit` | warmな読み出し専用PTEへの書込み拒否 |
+| TEST-VMMIO-18 | `test_vmmio_18_collision_rewalks_correct_pte_instead_of_reusing_wrong_translation` | A→B→A衝突時の各物理アドレスと再walk |
+| TEST-VMMIO-19、30 | `test_vmmio_19_30_legacy_syscall_and_vdma_control_pages_are_unregistered` | 廃止doorbellの未登録トラップ |
+| TEST-VMMIO-20〜23 | `test_vmmio_20_to_23_unmap_or_revoke_removes_pte_and_warm_translation` | マップ時の物理アドレス、削除後のPTE/TLB不在、旧所有者と他タスク双方の拒否 |
+| TEST-VMMIO-25 | `test_vmmio_25_passthrough_resolves_physical_page_and_offset` | 物理ページ番号とページ内オフセットの保存 |
+| TEST-VMMIO-28 | `test_vmmio_28_access_width_cannot_cross_ram_or_shm_mapping`、`test_dynamic_guest_access_checks_full_instruction_width` | RAM、SHM実サイズ、ページ境界の幅検査。実NativeInterpreterのDYNAMIC load/storeでは末尾ちょうどの値と1byte超過の具体trapを検査する |
+| TEST-VMMIO-29、32 | `test_vmmio_29_32_cached_owned_mapping_rejects_nonowner_read_and_write` | warmなDYNAMIC/SHMの非所有者読書き拒否、PTEと所有者の保存 |
+
+2026-10-01にLinux・CPython 3.14.6・uv環境で局所スイートを実行した。
+実行コマンドを示す。
+
+```bash
+UV_CACHE_DIR=/tmp/fireball-test-design-uv uv run --no-sync python -m pytest -q experiments/pysim/qa/tier2_runtime/test_vmmio.py
+```
+
+25件成功、0件失敗、0件skipである。
+収集件数にはパラメータ化した容量、FC、アドレス、Revokeの水準を含む。
+隔離コピーで境界外RAMアドレスを容量マスクで折り畳む変異を作り、TEST-VMMIO-03の4水準が失敗することも確認した。
 
 ## 4. 未検証・スコープ外
 
 - ARMv8-M実機でのTLB/FlatMapサイクル数と性能目標の適用はTBD。
 - `register-hook` の完全な公開API契約。
+
+- TEST-VMMIO-24のFC=14管理経路限定、TEST-VMMIO-26〜27の連続仮想領域アロケータは、本pysimスイートでは未実装である。参考実装の該当ケースと実装側の管理経路を別途照合する。
+- TEST-VMMIO-31のVDMA host callは [`runtime_syscall_test_spec.md`](docs/qa/tier2_runtime/runtime_syscall_test_spec.md) の担当である。本スイートの成功件数には含めない。
+- TEST-VMMIO-40〜44のvIRQ階層は本pysimスイートでは未実装である。vSoC側の検査を本書の各原因・登録契約へ対応させる必要がある。
+- TEST-VMMIO-01のTLB/PTE状態不変は観測済みである。状態変更を伴わない隠れたテーブル読み出しの完全非参照、および各検索の計算量は、この機能検査だけでは証明しない。

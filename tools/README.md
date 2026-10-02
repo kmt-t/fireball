@@ -84,6 +84,24 @@ GiNZA の構文解析は、冗長性や意味の正しさを判定しない。�
 
 文章チェックを含む環境を初回に用意する場合は、<code>uv sync --project tools/spec-integrator --extra dev --extra prose</code> を実行する。
 
+## WASI-SDKゲストの層横断試験
+
+[`test_wasi_guest.py`](../experiments/pysim/qa/tier3_platform/test_wasi_guest.py)は実SDKとwasi-libcを使う。
+SDKを用意してからテストを実行する。
+Linux x86_64向けの準備入口は、公式WASI-SDK 27.0の配布物をSHA-256固定で取得する。
+展開先はGit管理外の`build/wasi-sdk/`である。
+
+```bash
+.venv/bin/python tools/guest_bindings/build_wasi_guest.py --prepare-sdk
+.venv/bin/python -m pytest -q experiments/pysim/qa/tier3_platform/test_wasi_guest.py
+```
+
+他環境や既存SDKは`FIREBALL_WASI_SDK`でSDKルートを指定する。
+テスト自身はSDKをダウンロードせず、未配置なら明示的に失敗する。
+ビルド入口は[`build_wasi_guest.py`](guest_bindings/build_wasi_guest.py)である。
+標準Preview1と、QAのFireball syscallリンク用fixtureの2構成を実行する。
+検査する経路と製品guest adapterの未実装範囲は、[結合テスト仕様](../docs/qa/integration_test_scenarios.md)を参照する。
+
 ## 任意の補助監査
 
 | 目的 | Windows | Linux / WSL | 区分 |

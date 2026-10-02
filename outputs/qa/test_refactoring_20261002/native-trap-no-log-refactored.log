@@ -1,0 +1,87 @@
+...........F.F.                                                          [100%]
+=================================== FAILURES ===================================
+________ test_log_12_interpreter_trap_diagnostic_logging[direct-native] ________
+
+native = True, entry = 'div_s'
+
+    @pytest.mark.parametrize("native", (False, True), ids=("python", "native"))
+    @pytest.mark.parametrize("entry", ("div_s", "caller"), ids=("direct", "callee"))
+    def test_log_12_interpreter_trap_diagnostic_logging(native: bool, entry: str) -> None:
+        """TEST-LOG-12 / GOTCHA-LOG-04: a guest trap is logged via the dictionary,
+        with the trapping unified_pc captured before frame teardown."""
+        wat = """
+        (module
+          (func $unused)
+          (func $div_s (export "div_s") (param $a i32) (param $b i32) (result i32)
+            (i32.div_s (local.get $a) (local.get $b))
+          )
+          (func (export "caller") (param i32 i32) (result i32)
+            local.get 0 local.get 1 call $div_s)
+        )
+        """
+        mod = parse(wat_to_wasm(wat))
+        t = StreamTransport()
+        try:
+            dictionary = LogDictionary()
+            logger = Logger(t, dictionary, min_level=LogLevel.DEBUG, capacity=8)
+            factory = make_native_interpreter if native else make_interpreter
+            interp = factory(mod, logger=logger)
+            func_index = mod.export_func_index("div_s")
+            assert func_index == 1
+            assert bytes(mod.code_for(func_index)) == bytes.fromhex("20 00 20 01 6d 0b")
+            call_state = interp.start(mod.export_func_index(entry), [10, 0])
+            while not call_state.finished:
+                call_state = interp.step(call_state)
+            assert call_state.trap is not None
+            assert call_state.trap.code == TrapCode.INTEGER_DIVIDE_BY_ZERO
+
+            flushed = logger.flush()
+>           assert flushed == 1
+E           assert 0 == 1
+
+experiments/pysim/qa/tier2_runtime/test_logging.py:352: AssertionError
+________ test_log_12_interpreter_trap_diagnostic_logging[callee-native] ________
+
+native = True, entry = 'caller'
+
+    @pytest.mark.parametrize("native", (False, True), ids=("python", "native"))
+    @pytest.mark.parametrize("entry", ("div_s", "caller"), ids=("direct", "callee"))
+    def test_log_12_interpreter_trap_diagnostic_logging(native: bool, entry: str) -> None:
+        """TEST-LOG-12 / GOTCHA-LOG-04: a guest trap is logged via the dictionary,
+        with the trapping unified_pc captured before frame teardown."""
+        wat = """
+        (module
+          (func $unused)
+          (func $div_s (export "div_s") (param $a i32) (param $b i32) (result i32)
+            (i32.div_s (local.get $a) (local.get $b))
+          )
+          (func (export "caller") (param i32 i32) (result i32)
+            local.get 0 local.get 1 call $div_s)
+        )
+        """
+        mod = parse(wat_to_wasm(wat))
+        t = StreamTransport()
+        try:
+            dictionary = LogDictionary()
+            logger = Logger(t, dictionary, min_level=LogLevel.DEBUG, capacity=8)
+            factory = make_native_interpreter if native else make_interpreter
+            interp = factory(mod, logger=logger)
+            func_index = mod.export_func_index("div_s")
+            assert func_index == 1
+            assert bytes(mod.code_for(func_index)) == bytes.fromhex("20 00 20 01 6d 0b")
+            call_state = interp.start(mod.export_func_index(entry), [10, 0])
+            while not call_state.finished:
+                call_state = interp.step(call_state)
+            assert call_state.trap is not None
+            assert call_state.trap.code == TrapCode.INTEGER_DIVIDE_BY_ZERO
+
+            flushed = logger.flush()
+>           assert flushed == 1
+E           assert 0 == 1
+
+experiments/pysim/qa/tier2_runtime/test_logging.py:352: AssertionError
+REVIEW mutant=native-trap-no-log mutation_calls=[2]
+=========================== short test summary info ============================
+FAILED experiments/pysim/qa/tier2_runtime/test_logging.py::test_log_12_interpreter_trap_diagnostic_logging[direct-native]
+FAILED experiments/pysim/qa/tier2_runtime/test_logging.py::test_log_12_interpreter_trap_diagnostic_logging[callee-native]
+2 failed, 13 passed in 0.21s

@@ -144,9 +144,7 @@ WASMゲストの全実行状態を管理する。JIT/Interpreter 共通の仮想
 `CallFrame` の `control_map` は、コードオフセットで直接引ける固定配列を指す。各エントリは対応する `end`、`else`、命令後PC、ブロック結果アリティ、および `drop/select` の生ワード幅を保持する。命令ハンドラはローカル幅表と制御表を `CallFrame` から直接参照する。
 
 **スタック頂点値の保持と同期不変条件 (`{GOTCHA-INTP-01}`)**: <!-- definition: {GOTCHA-INTP-01} -->
-オペランドスタックの論理状態はInterpreter/JIT境界で共有する。x64では共有オペランド領域を正本とする。ARMv8-Mでの値キャッシュ、物理レジスタ、境界同期はTBDであり、x64の方式から推定しない。
-
-ARMv8-Mの値キャッシュと状態同期方式はTBDである。x64では共有オペランド領域を正本とし、インタープリタとJITの相互移行、外部呼出し、トラップ処理で共有状態を同期する。
+オペランドスタックの論理状態はInterpreter/JIT境界で共有する。x64では共有オペランド領域を正本とし、インタープリタとJITの相互移行、外部呼出し、トラップ処理で共有状態を同期する。ARMv8-Mでの値キャッシュ、物理レジスタ、境界同期はTBDであり、x64の方式から推定しない。
 
 **統一プログラムカウンタによる複数モジュール線形化 (`{GOTCHA-INTP-04}`)**: <!-- definition: {GOTCHA-INTP-04} -->
 モジュール間を跨ぐ相互関数呼び出しでは、統一 PC（Unified PC: `(func_index << 16) | bytecode_offset`）を採用する。モジュール相対オフセットではなく、システム全体で一意に決定される値とする。これにより複数モジュールが共存する環境下でも、PC の単一比較のみで分岐先コードブロックを特定できる。JIT トレースのモジュール横断インライン化を極低オーバーヘッドで実現する。
@@ -188,7 +186,7 @@ JITは、関数ごとのスロット幅から `local index × スロット幅` �
 <!-- traceability: {CPS_4Args} {ContextPointerRegister} {EnvironmentPointer} {MemoryBoundaryCheck} {PositionIndependentCode} {TraceBoundaryInvariant} -->
 制御ブロック復帰情報は、`block/loop/if` 命令による入れ子構造とジャンプ先を管理する。専用の固定容量領域へ積む。JIT trace bodyは制御終端命令を実行せず、JIT境界で再開したC++ Interpreter handlerがこの領域を更新する（`TraceBoundaryInvariant`, `{JIT_RuntimeAPI_Fallback}`）。この領域はoperand stackおよびlocal領域から物理的に独立している。
 
-`control_map`参照用キャッシュは、4エントリの固定長とし、32bitキーをXOR畳み込みで2bitへ縮約してスロットを選ぶ。キャッシュ挿入に失敗した場合は`assert`で検出する（{GOTCHA-INTP-19}）。 <!-- definition: {GOTCHA-INTP-19} -->
+`control_map`参照用キャッシュは、4エントリの固定長とし、32bitキーをXOR畳み込みで2bitへ縮約してスロットを選ぶ。縮約は`temp = v ^ (v >> 16)`、`temp ^= temp >> 8`、`temp ^= temp >> 4`、`temp ^= temp >> 2`、`temp &= 0x3`の順に行う。キャッシュ挿入に失敗した場合は`assert`で検出する（{GOTCHA-INTP-19}）。 <!-- definition: {GOTCHA-INTP-19} -->
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
@@ -233,7 +231,7 @@ flowchart TD
     CheckCond -- "はい / 無条件" --> FetchTarget["指定深度の対象制御フレームを取得"]
 
     FetchTarget --> CheckArity{"対象ブロックの戻り値数 > 0 か"}
-    CheckArity -- "はい" --> SaveVal["スタック頂点 / TOS から戻り値を退避"]
+    CheckArity -- "はい" --> SaveVal["スタック頂点から戻り値を退避"]
     CheckArity -- "いいえ" --> Prune["指定深度の中間制御フレームをポップ"]
 
     SaveVal --> Prune
@@ -246,7 +244,7 @@ flowchart TD
     LoopBranch --> RestoreVal{"戻り値の退避があったか"}
     BlockBranch --> RestoreVal
 
-    RestoreVal -- "はい" --> SetTOS["退避値を TOS レジスタ / スタック頂点へ復元"]
+    RestoreVal -- "はい" --> SetTOS["退避値をスタック頂点へ復元"]
     RestoreVal -- "いいえ" --> Dispatch
     SetTOS --> Dispatch(["clang::musttail で次の命令へディスパッチ"])
 ```
@@ -268,7 +266,7 @@ flowchart TD
 
 インタープリタハンドラは次回呼び出し用の4引数とトラップ状態を結果として返す（{GOTCHA-INTP-08}）。 <!-- definition: {GOTCHA-INTP-08} --> 次のPCは `ctx` に保持する。JITトレースは末尾ジャンプで継続し、結果レコードを返さない。
 
-命令実行中のWASMトラップは、例外を送出せず、継続引数とトラップ情報を含む結果として返す（{GOTCHA-INTP-10}）。 <!-- definition: {GOTCHA-INTP-10} --> トラップを受け取った実行器は全アクティブフレームを破棄して実行結果を確定する。以後の命令は実行しない。同期的な公開APIは、確定済みトラップを正常な戻り値（特に`None`）と混同せず、呼び出し側へ明示する。これはハンドラ内部の実行経路とは分離する。追加仕様の一覧と判定項目は [interpreter_test_spec.md](docs/qa/tier3_executer/interpreter_test_spec.md#追加gotcha一覧マージ判定用) に集約する。
+命令実行中のWASMトラップは、例外を送出せず、継続引数とトラップ情報を含む結果として返す（{GOTCHA-INTP-10}）。 <!-- definition: {GOTCHA-INTP-10} --> トラップを受け取った実行器は全アクティブフレームを破棄して実行結果を確定する。以後の命令は実行しない。同期的な公開APIは、確定済みトラップを正常な戻り値（特に`None`）と混同せず、呼び出し側へ明示する。これはハンドラ内部の実行経路とは分離する。実装上の注意点に対応する検証条件と確認状況は [interpreter_test_spec.md](docs/qa/tier3_executer/interpreter_test_spec.md#継続状態と資源境界の検証) を参照する。
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |

@@ -55,17 +55,19 @@ URIベースのサービス検索（3段パイプライン）、デバイス種�
 | TEST-IPCR-26 | 内部KVバッチの構築契約 | 一意なu32 KV、最大8要素、実体容量内 | 正常生成例と重複・容量外・u32外のバッチを書き込む | 正常例はソート済み実体から検索できる。契約違反は書込み前にassertし、全共有バイトを保存する | `test_ipc_batch_sorted_unique_map_roundtrip`、`test_ipc_invalid_internal_batch_asserts_before_write` |
 | TEST-IPCR-27 | KVエントリのu64 wire配置 | keyとvalueに異なる32bitパターンを使う | SharedBlockのwriterとreaderを別々に実行する | u64上位32bitはkey、下位32bitはvalueである。writerの全byte列を独立した既知値と比較する。readerには規定byte列を直接入力する。隣接領域を保存する | `ipc_router.md`「IPCメッセージ」、`test_mem_10_entry_writer_matches_wire_layout`、`test_mem_10_entry_reader_decodes_independent_wire_layout` |
 
-### 実装の勘所・不変条件（Gotchas & Implementation Invariants）
+### 実装上の注意点に対応する検証
+<!-- traceability: {GOTCHA-IPCR-01} {GOTCHA-IPCR-02} -->
 
-| GOTCHA ID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
+| GOTCHA参照 | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| GOTCHA-IPCR-01 | 単一要求・応答トランザクションとキュー完全不在 | 同一 CSP エッジへ要求を送信し、応答待ち状態にする | 同一エッジへさらに `send` を試行 | `ERR_QUEUE_FULL` のような差し戻しエラーではなく、即座にアサーション違反（プログラミングエラー）で停止する。**実装の勘所**: CSP ランデブーチャネルには要求・応答を蓄積するキューがなく、2重送信は呼び出し元の論理破綻として検出する | `ipc_router.md`, `{ADR_RendezvousChannel}` |
-| GOTCHA-IPCR-02 | Preflight Rejection による所有権保全 | RBAC 拒否エッジまたは未登録 URI 宛のメッセージ送信 | `send` を実行 | 権限・URI・サイズ検証がメッセージ Revoke（所有権剥奪）の前に先行して行われ、エラー時は所有権が `SENDER_OWNS` のまま1ミリも動かない。**実装の勘所**: 先にリソースを Revoke してから送信先を検証すると、エラー時にリソースが孤立（in-flight リーク）する | `ipc_router.md`, `{OwnershipTransfer}` |
+| GOTCHA-IPCR-01 | 単一要求・応答トランザクションとキュー完全不在 | 同一 CSP エッジへ要求を送信し、応答待ち状態にする | 同一エッジへさらに `send` を試行 | `ERR_QUEUE_FULL` のような差し戻しエラーではなく、即座にアサーション違反（プログラミングエラー）で停止する。 | [`ipc_router.md`](docs/components/tier1_interface/ipc_router.md), `{ADR_RendezvousChannel}` |
+| GOTCHA-IPCR-02 | Preflight Rejection による所有権保全 | RBAC 拒否エッジまたは未登録 URI 宛のメッセージ送信 | `send` を実行 | 権限・URI・サイズ検証がメッセージ Revoke（所有権剥奪）の前に先行して行われ、エラー時は所有権が `SENDER_OWNS` のまま1ミリも動かない。 | [`ipc_router.md`](docs/components/tier1_interface/ipc_router.md), `{OwnershipTransfer}` |
 
 
 ## 3. テスト検証実績と網羅状況
 
 ### 3.1 契約と実行ケースの対応
+<!-- traceability: {GOTCHA-IPCR-01} {GOTCHA-IPCR-02} -->
 
 | テストケースID | 実行可能テスト | 実際に確認する範囲 |
 | :--- | :--- | :--- |

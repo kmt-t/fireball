@@ -154,12 +154,10 @@ enum class service_load_result_t : uint32_t {
 サービスロード処理において `IGNORE` は非適用（ロード失敗を無視して未初期化のまま続行することは許容されない）であり、`SUCCESS` または 3 つのエラーリカバリー戦略（`RETRY`, `RESTART`, `PANIC`）のいずれかを返却する。各ステータスに応じて、呼び出し側（システムマネージャなど）は本書のリカバリー戦略ポリシーに従うアクションを決定し、実行する。 `{META_RecoveryStrategy}`
 
 ### 5.3 URI/IPCインターフェース
-<!-- traceability: {META_RecoveryStrategy} -->
-- **URI規則**: `fireball://<subsystem_id>/<service_name>/<instance_id>` に準拠する（例: `fireball://services/wasi/0`）。
-- **メッセージ形式**: 64ビットのKey-Value値を `arg0`〜`arg7` の計8スロット（最大8個）含むパケット。
-  * **ヘッダ部**: `arg0` にコマンドID、`arg1` にリカバリー戦略カテゴリ （`recovery-strategy-category` 値）を格納。
-  * **ペイロード部**: `arg2`〜`arg5` にコマンド固有引数（または共有メモリハンドル等）を格納。
-  * **拡張部**: `arg6`〜`arg7` は将来のコマンド固有引数用に予約し、未使用時はゼロを格納。
+<!-- traceability: {META_RecoveryStrategy} {URIAbstraction} {TypeSafeMessaging} {ADR_RendezvousChannel} {OwnershipTransfer} {WIT_First} {WIT_Common_Types} -->
+サービスの名前解決と要求・応答は [`ipc_router.md`](docs/components/tier1_interface/ipc_router.md) のURI・IPC契約に従う。メッセージの型は [`ipc_router_contract.wit`](docs/components/tier1_interface/wit/ipc_router_contract.wit) の `types` を正本とする。本書では共通ヘッダ、Key-Value表現、およびHAL内部コマンドIDを再定義しない。
+
+サービスは受信した要求を処理し、同じIPCメッセージへ応答を設定する。サービスの回復判断は本書のリカバリー戦略ポリシーに従う。
 
 ## 6. 制約達成の方策
 

@@ -74,7 +74,7 @@ flowchart TD
 | 8 | 読出 | - | 読出可能 | 正常アクセス（本コンポーネントの関与なし） |
 | 9 | 自動解放 | - | **解放** | 仮想予約を解放し、要求サイズ分の物理バック領域をプールへ返却してアンマップ通知を発火 |
 
-- **非所有タスク操作の完全遮断 (`GOTCHA-MEM-02`)**: {GOTCHA-MEM-02} <!-- definition: {GOTCHA-MEM-02} --> `SharedBlock` APIはハンドルの所有者・現行タスク・ページ所有者・所有権世代を照合し、非所有者または移譲後の古いハンドルを拒絶する。ゲストのFC=14アクセスではマップ済みページの所有者不一致を`OWNER_MISMATCH`、未登録・Revoke済みページを`UNREGISTERED_PAGE`で拒絶する。具体的なvMMIO契約は `runtime_vmmio.md` を正本とする。
+- **非所有タスク操作の完全遮断 (`GOTCHA-MEM-02`)**: {GOTCHA-MEM-02} <!-- definition: {GOTCHA-MEM-02} --> `SharedBlock` APIはハンドルの所有者・現行タスク・ページ所有者・所有権世代を照合し、非所有者または移譲後の古いハンドルを拒絶する。raw accessorは、取得後に所有権検査を迂回して共有バック領域を変更できるwritable viewを返さない。pysimのraw accessorは読み取り専用コピーを返し、取得済みviewからの変更を遮断する。ゲストのFC=14アクセスではマップ済みページの所有者不一致を`OWNER_MISMATCH`、未登録・Revoke済みページを`UNREGISTERED_PAGE`で拒絶する。具体的なvMMIO契約は `runtime_vmmio.md` を正本とする。
 - **送信中ブロックの保護状態 {GOTCHA-MEM-03}**: 送信開始（`release()`）から受信完了（`claim()`）まで、送信元タスクの旧アドレスアクセスを遮断する。アクセス結果は未登録ページフォルト（`TRAP_UNREGISTERED_PAGE`）とする。
 
 この境界により、TOCTOU競合と不正アクセスを構造的に排除する。遮断の具体的な実装（PTEアンマップ・TLB即時フラッシュ）は [`runtime_vmmio.md`](docs/components/tier2_runtime/runtime_vmmio.md) を正本とする。 <!-- definition: {GOTCHA-MEM-03} -->
@@ -141,7 +141,7 @@ W^Xの抽象不変条件は別途定義する。ハードウェア機構と実�
 - **抽象W^X不変条件**: 書込可能状態と実行可能状態を同時に許可しない抽象状態遷移を [`jit_cache_model.py`](docs/components/tier3_executer/formal/jit_cache_model.py) で表す。x64実行可能バッファの挙動はJITテスト仕様が定める。ARMv8-Mの物理保護方式と実機受け入れ条件はTBDである。形式モデルの3面バンク回転・2ビットホットスポットFSM・遅延チェイニングは [`jit_compiler.md`](docs/components/tier3_executer/jit_compiler.md)/[`jit_runtime.md`](docs/components/tier3_executer/jit_runtime.md) の対象である。
 
 ### 7.2 テスト仕様書との連携
-本コンポーネントのテストケース（TEST-MEM-01〜TEST-MEM-19, GOTCHA-MEM-01〜04）は、[`runtime_memory_test_spec.md`](docs/qa/tier2_runtime/runtime_memory_test_spec.md) を正本として定義する。
+本コンポーネントのテストケース（TEST-MEM-01〜TEST-MEM-19）の検証手順・期待結果は、[`runtime_memory_test_spec.md`](docs/qa/tier2_runtime/runtime_memory_test_spec.md) を正本とする。同書は、本書で定義する実装上の注意点を参照して検証する。
 
 
 ## 8. 設計判断と参考実装

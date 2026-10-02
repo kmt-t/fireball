@@ -170,6 +170,36 @@ def test_wit_15_hal_world_imports_host_services_without_guest_exports() -> None:
     assert remainder.strip() == ""
 
 
+@pytest.mark.parametrize(
+    ("operation", "arguments", "result"),
+    (
+        ("clock-subscribe", "nanos:u64", "result<u32,recovery-strategy-category>"),
+        ("poll-check", "handle:u32", "result<bool,recovery-strategy-category>"),
+        ("poll-wait", "handle:u32", "result<bool,recovery-strategy-category>"),
+        ("poll-drop", "handle:u32", "operation-result"),
+    ),
+)
+def test_wit_23_hal_pollable_signatures_follow_existing_contract(
+    operation: str, arguments: str, result: str
+) -> None:
+    """TEST-WIT-23: 購読と単一ハンドルのpoll操作は既存HAL契約の型を公開する。"""
+    wit_path = (
+        _PYSIM_DIR.parents[1] / "docs/components/tier3_platform/wit/fireball_hal_contract.wit"
+    )
+    source = wit_path.read_text(encoding="utf-8")
+    source = re.sub(r"/\*.*?\*/|//[^\n]*", "", source, flags=re.DOTALL)
+    resolvers = re.findall(r"\binterface\s+resolver\s*\{(.*?)^\}", source, re.DOTALL | re.MULTILINE)
+    assert len(resolvers) == 1
+    declarations = re.findall(
+        rf"(?<![a-z0-9-]){re.escape(operation)}\s*:\s*func\(([^()]*)\)\s*->\s*([^;]+);",
+        resolvers[0],
+    )
+    assert len(declarations) == 1
+    actual_arguments, actual_result = declarations[0]
+    assert re.sub(r"\s+", "", actual_arguments) == arguments
+    assert re.sub(r"\s+", "", actual_result) == result
+
+
 def test_wit_14_core_wasm_import_names_select_the_matching_host_port() -> None:
     """TEST-WIT-14: Core Wasmのmodule/fieldを解決し、対応portへ引数順を保って渡す。"""
     from system import System

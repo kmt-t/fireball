@@ -19,6 +19,7 @@
 | TEST-SYS-03 | `SYS_RESET`(0x03) | - | `fireball_call(0x03, ...)` | `0`を返し、ゲストリセット相当の状態変化が起こる | runtime_syscall.md (Lifecycle) |
 
 ### vMMIO Generic (`0x10`-`0x1F`)
+<!-- traceability: {GOTCHA-SYS-01} -->
 
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
@@ -52,7 +53,7 @@
 | TEST-SYS-32 | 不正vIRQ要求で有効・保留登録を保存 | 有効登録Aと保留登録Bがある。範囲外ノード、存在しない関数、不適合シグネチャを使う | 専用importから登録または解除を試す。その後commitする | `INVAL`を返し、有効表、保留表、静的原因源表を変更しない。commit後は正常な保留登録Bが有効になる | runtime_syscall.md, runtime_vsoc.md, `test_syscall_32_invalid_virq_registration_preserves_active_and_pending`, `test_syscall_32_invalid_virq_unregister_preserves_active_and_pending` |
 
 ### IPC (`0x40`-`0x4F`)
-<!-- traceability: {IPC_HandleBased} -->
+<!-- traceability: {IPC_HandleBased} {GOTCHA-SYS-02} -->
 
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
@@ -90,13 +91,14 @@
 | TEST-SYS-93 | raw returnにデータ値を混在させない | MMIO/IPC成功データがWASI errnoの有効値と一致する | `fireball_call`を呼び出し、戻り値と出力領域を確認する | raw returnは`SUCCESS`、データ値は指定出力領域から取得する | runtime_syscall.md |
 | TEST-SYS-94 | MMIOアクセス幅がSHMのマッピング範囲を越えない | `mapping_size=4`のSHMページと、開始アドレスが範囲内の32bit操作 | 先頭の32bit操作と1バイト進めた32bit書き込みを行う | 先頭は指定バイト列を書き、後者は`FAULT`となる。マッピング外のsentinelを含む全物理バック領域を保存する | `test_syscall.py` `test_syscall_16_mmio_access_width_stays_inside_shm_mapping` |
 
-### 実装の勘所・不変条件（Gotchas & Implementation Invariants）
+### 実装上の注意点に対応する検証
+<!-- traceability: {GOTCHA-SYS-01} {GOTCHA-SYS-02} {GOTCHA-SYS-03} -->
 
-| GOTCHA ID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
+| GOTCHA参照 | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| GOTCHA-SYS-01 | 未定義 Syscall ID の非パニック・ENOSYS 安全復帰 | 存在しないシステムコール ID（例: `0xFF`） | `fireball_call(0xFF)` を実行 | システムが停止・パニックせず、WASI 準拠の `WasiErrno.NOSYS`（52）を返して安全に復帰する。**実装の勘所**: 未定義システムコールでホスト側が例外やアボートを発生させると、未サポート機能への問い合わせを行うゲストランタイムがクラッシュする | `runtime_syscall.md` |
-| GOTCHA-SYS-02 | `fb_offset_t` 境界チェックの完全先行（ホスト SEGV 防止） | ゲストメモリ終端を超えるオフセット | `fd_write` や `mmio_bulk_read` を実行 | ホスト側でのメモリアクセス前に `offset + len > mem_size` が評価され、`WasiErrno.FAULT`（21）で即座に拒絶される。**実装の勘所**: 整数オーバーフロー（`offset + len` が 32bit を超えて 0 付近にラップ）を考慮した境界判定式 `offset > mem_size or len > mem_size - offset` を使用しなければならない | `runtime_syscall.md` |
-| GOTCHA-SYS-03 | WASI iovec 散在ギャザー（Scatter-Gather）の全要素事前検証 | 一部要素が境界外を指す iovec 配列 | `fd_write` を実行 | 途中の正常要素も含めて 1 バイトも出力ストリームへ書き込まず、即座に `EFAULT` を返却する。**実装の勘所**: 検証しながら逐次出力すると、異常要素に到達した時点で途中までの中途半端なデータが出力先に漏洩・残存する | `runtime_syscall.md` |
+| GOTCHA-SYS-01 | 未定義 Syscall ID の非パニック・ENOSYS 安全復帰 | 存在しないシステムコール ID（例: `0xFF`） | `fireball_call(0xFF)` を実行 | システムが停止・パニックせず、WASI 準拠の `WasiErrno.NOSYS`（52）を返して安全に復帰する。 | [`runtime_syscall.md`](docs/components/tier2_runtime/runtime_syscall.md) |
+| GOTCHA-SYS-02 | `fb_offset_t`境界違反の副作用前拒否 | ゲストメモリ終端を超える範囲と32bit加算overflow相当の入力がある | `fd_write`や`mmio_bulk_read`を実行する | `WasiErrno.FAULT`（21）で拒否され、ホスト側の対象メモリアクセスと出力先の変更が発生しない | [`runtime_syscall.md`](docs/components/tier2_runtime/runtime_syscall.md) |
+| GOTCHA-SYS-03 | WASI iovec 散在ギャザー（Scatter-Gather）の全要素事前検証 | 一部要素が境界外を指す iovec 配列 | `fd_write` を実行 | 途中の正常要素も含めて 1 バイトも出力ストリームへ書き込まず、即座に `EFAULT` を返却する。 | [`runtime_syscall.md`](docs/components/tier2_runtime/runtime_syscall.md) |
 
 ### DYNAMIC実体の境界
 
@@ -105,6 +107,7 @@
 拒否時はguest memory、HAL buffer、PTEとownerを保存する。
 
 ## 3. テスト検証実績と網羅状況
+<!-- traceability: {GOTCHA-SYS-03} -->
 
 仕様表の定義数と実行済み件数を区別する。ケースIDの範囲をdocstringに記しただけでは、その範囲を検証済みとしない。
 
@@ -120,7 +123,7 @@
 | TEST-SYS-50 | 出力領域の重複4件 | 拒否後のメモリとタスク状態を保存比較する。再受信内容は送信元の固定ペイロードから導く |
 | TEST-SYS-81、82 | EOFとclose | EOFは非0の受信長を0へ更新し、全メモリとstdin状態を保存する。closeは対象fdの除去と別fdの保存を直接検査する |
 | TEST-SYS-83、85 | 単調時計と乱数データの搬送 | 単調時計は呼出前後の参照値で64bit値を囲む。乱数は既存参照バックエンドのentropy入力を既知16バイトに固定し、要求長・全バイト・範囲外の保存を照合する |
-| GOTCHA-SYS-03 | 後半iovecの境界違反 | 実stdout HALを結線する。拒否後に全メモリ、出力なし、HAL処理件数0を照合する |
+| GOTCHA-SYS-03 | 後半iovecの境界違反 | [`runtime_syscall.md`](docs/components/tier2_runtime/runtime_syscall.md)、実stdout HALを結線する。拒否後に全メモリ、出力なし、HAL処理件数0を照合する |
 
 2026-10-01に、[`test_syscall.py`](experiments/pysim/qa/tier2_runtime/test_syscall.py) 全体をLinux x86-64、Python 3.14の既存開発環境で実行した。実行コマンドを示す。
 

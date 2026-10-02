@@ -5,10 +5,10 @@
 正本: [`os_scheduler.md`](docs/components/tier1_core/os_scheduler.md)
 参考実装: [`scheduler_concept.py`](docs/components/tier1_core/concepts/scheduler_concept.py)
 
-純粋協調型ラウンドロビンスケジューラ（`{ADR_CoosPureRoundRobin}`）の、タスクライフサイクル・READYキュー・イベント駆動起床（`{ADR_EventDrivenWakeQueue}`）に関する振る舞いを定義する。CSPランデブーと値の所有権移譲は対象外とする。ハンドオフ上限到達時のスケジューラ制御復帰のみ、本書のGOTCHAとして扱う。
+純粋協調型ラウンドロビンスケジューラ（`{ADR_CoosPureRoundRobin}`）の、タスクライフサイクル・READYキュー・イベント駆動起床（`{ADR_EventDrivenWakeQueue}`）に関する振る舞いを定義する。CSPランデブーと値の所有権移譲は対象外とする。実装上の注意点はコンポーネント仕様書を参照し、本書では対応する検証条件を扱う。
 
 ## 2. テストケース一覧
-<!-- traceability: {ADR_EventDrivenWakeQueue} {GLOBAL_IdleDetection} -->
+<!-- traceability: {ADR_EventDrivenWakeQueue} {GLOBAL_IdleDetection} {GOTCHA-SCHED-03} -->
 
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
@@ -30,16 +30,16 @@
 | TEST-SCHED-16 | 終了タスクのTCBスロット返却 | TCBが満杯で、一部のタスクが終了済み。別の場合として、全タスクが生存している | 新しいタスクをspawnする | 終了済みの最古のスロットが返却され、生成が成功する。生存タスクは回収されない。全タスクが生存している場合は、容量超過で停止する。新しいタスクIDは、過去のIDと重複しない | `{CooperativeMultitasking}` |
 | TEST-SCHED-17 | 割り込みFIFOのロックフリー性と容量境界 | ISR producerとCOOS consumerが同一の固定長SPSC FIFOを使用 | producerが満杯まで投入し、consumerが順に取り出し、空きスロットへ再投入する | mutex／スピンロックなしでFIFO順序を保ち、満杯時は既存イベントを上書きせず`false`を返し、consumer後に再利用できる | `{GLOBAL_InterruptWakeup}` |
 | TEST-SCHED-18 | 時刻待機中の他タスク実行・アイドルフック・期限起床 | 時刻待機タスクとREADYタスクが各1つ存在し、単調時計を制御できる | 待機タスクが未来期限を登録して`BLOCKED_TIMER`へ移る | READYタスクが時刻を進める前に実行される。READYキューが空になった時点でアイドルフックを呼び、その後に次回期限まで待つ。待機タスクは期限到達後にREADYキュー末尾へ戻って完了する | `{GLOBAL_IdleDetection}` |
-| TEST-SCHED-19 | タイマー待ちタスク終了時の期限解除 | 異なる未来期限を持つ`BLOCKED_TIMER`タスクが2つある | 早い期限のタスクを`task_killed`し、残るタスクを実行する | 終了タスクは期限到達で再開せず、残るタスクは自身の期限で一度だけ再開する。取り消した期限で余分な起床・待機周期を発生させない | pysim `test_sched_19_killing_timed_waiter_clears_only_its_deadline`, `{GOTCHA-SCHED-03}` |
+| TEST-SCHED-19 | タイマー待ちタスク終了時の期限解除 | 異なる未来期限を持つ`BLOCKED_TIMER`タスクが2つある | 早い期限のタスクを`task_killed`し、残るタスクを実行する | 終了タスクは期限到達で再開せず、残るタスクは自身の期限で一度だけ再開する。取り消した期限で余分な起床・待機周期を発生させない | pysim `test_sched_19_killing_timed_waiter_clears_only_its_deadline`, `GOTCHA-SCHED-03` |
 
-### 実装の勘所・不変条件（Gotchas & Implementation Invariants）
+### 実装上の注意点に対応する検証
 <!-- traceability: {GOTCHA-SCHED-01} {GOTCHA-SCHED-02} {GOTCHA-SCHED-03} -->
 
-| GOTCHA ID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
+| GOTCHA参照 | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| GOTCHA-SCHED-01 | 連続直接ハンドオフ上限後のスケジューラ復帰 | 2つのタスクが CSP Rendezvous でピンポン通信し、連続ハンドオフ数が設定上限に達している | 上限到達後にさらにランデブーを成立させる | 直接遷移せず `YIELD` でスケジューラへ制御を戻し、連続回数を0に戻す。上限は全タスクの公平性や実時間応答上限を保証しない。**pysim実装テストの観測範囲**: `TEST-COOS-07` は `YIELD` とカウンタリセットを検証し、READYキュー順序は検証しない | `os_scheduler.md` , `{Challenge_CspHandoffStarvation}` |
-| GOTCHA-SCHED-02 | 割り込み保留中の直接ハンドオフ連鎖停止 | CSPランデブー成立時に`reschedule_pending=true` | 直接ハンドオフ可能な相手を成立させる | ランデブーと所有権移譲は完了するが、相手への直接遷移を行わず`YIELD`でスケジューラへ戻り、世代観測の機会を確保する | `{ADR_InterruptRescheduleGeneration}` |
-| GOTCHA-SCHED-03 | 最早タイマー期限の取消し後に最小期限を再計算 | 異なる未来期限を持つ`BLOCKED_TIMER`タスクが2つある | 最早期限のタスクを終了させる | 期限キャッシュは残るタスクの最小期限へ更新され、終了した期限で不要なアイドル待機サイクルや起床を発生させない | `os_scheduler.md`, `TEST-SCHED-19` |
+| GOTCHA-SCHED-01 | 連続直接ハンドオフ上限後のスケジューラ復帰 | 2つのタスクが CSP Rendezvous でピンポン通信し、連続ハンドオフ数が設定上限に達している | 上限到達後にさらにランデブーを成立させる | 直接遷移せず `YIELD` でスケジューラへ制御を戻し、連続回数を0に戻す。上限は全タスクの公平性や実時間応答上限を保証しない。**pysim実装テストの観測範囲**: `TEST-COOS-07` は `YIELD`、カウンタリセット、先行READYタスクの後ろへの登録、および次の実ディスパッチで先行タスクが選ばれることを検証する | [`os_scheduler.md`](docs/components/tier1_core/os_scheduler.md) , `{Challenge_CspHandoffStarvation}` |
+| GOTCHA-SCHED-02 | 割り込み保留中の追加ハンドオフ連鎖停止 | CSPランデブー成立時に`reschedule_pending=true` | ランデブーを成立させ、遷移先の世代観測と追加連鎖を観測する | 所有権移譲と成立に必要な直接遷移は完了する。遷移先が世代を観測した後、追加の直接ハンドオフ連鎖を停止してスケジューラへ制御を戻す | [`os_scheduler.md`](docs/components/tier1_core/os_scheduler.md), `{ADR_InterruptRescheduleGeneration}` |
+| GOTCHA-SCHED-03 | 最早タイマー期限の取消し後に最小期限を再計算 | 異なる未来期限を持つ`BLOCKED_TIMER`タスクが2つある | 最早期限のタスクを終了させる | 期限キャッシュは残るタスクの最小期限へ更新され、終了した期限で不要なアイドル待機サイクルや起床を発生させない | [`os_scheduler.md`](docs/components/tier1_core/os_scheduler.md), `TEST-SCHED-19` |
 
 ## 3. テスト検証実績と網羅状況
 

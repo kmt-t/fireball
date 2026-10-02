@@ -269,14 +269,14 @@ line/branch coverageは、抜けた経路を探す診断情報として記録す
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | TEST-VSOC-40 | `fireball_call` host-call の引数個数とパッキング | 汎用システムコール発行 | `fireball:host/trap` import の受け渡しを検証 | `fireball_call(id, arg0..arg5)`（計7引数）として統一され、6つの汎用引数がvMMIOレジスタを経由せずホストハンドラへ直接渡る。vIRQ/vDMA専用host callはこのABIに含めない | `{Syscall_Mapping}` |
 
-### 実装の勘所・不変条件（Gotchas & Implementation Invariants）
-<!-- traceability: {GOTCHA-VSOC-01} {GOTCHA-VSOC-02} {GOTCHA-VSOC-03} {Interpreter_LazyJITSwitch} {ADR_LoopBackedgeYield} {ExecutionContext_Layout} {EnvironmentPointer} {VsocRuntime_Layout} -->
+### 実装上の注意点に対応する検証
+<!-- traceability: {GOTCHA-VSOC-01} {GOTCHA-VSOC-02} {GOTCHA-VSOC-03} {Interpreter_LazyJITSwitch} {ADR_LoopBackedgeYield} {ExecutionContext_Layout} {EnvironmentPointer} {VsocRuntime_Layout} {CPS_4Args} -->
 
-| GOTCHA ID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
+| GOTCHA参照 | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| GOTCHA-VSOC-01 | 命令handler後のディスパッチ | handlerが分岐後のPCを確定した状態 | ディスパッチの制御遷移を確認する | ディスパッチャは同じ実行区間内で次PCのtraceまたはhandlerを実行し、命令ごとにはRuntimeEngineへ戻らない | `{JIT_BackedgeYield}`, `runtime_vsoc.md` |
-| GOTCHA-VSOC-02 | 共通LOOP後方分岐yield条件 | Interpreter単独またはHybrid JIT経路 | 分岐回数と実行状態を確認する | 共通コンテキストのLOOP後方分岐数が共通しきい値に達した時だけRuntimeEngineへyield状態を返す。両経路の復帰条件は一致する | `{ADR_LoopBackedgeYield}` |
-| GOTCHA-VSOC-03 | `execution_context` 内包レイアウトと委譲シグネチャ | WASMスタック初期化 | コンテキストオフセットを確認する | `vsoc_runtime`（`mem_base` `+0x28`, `mem_size` `+0x2C`, `globals_base` `+0x30`, `globals_limit` `+0x34`）は独立構造体ではなく `execution_context` の内部に配置される。x86-64 Tier 2 ABIは144バイトであり、ホスト基点は`+0x80`、64bitメモリサイズは`+0x88`へ配置する。`exec_trace` は `(ctx, sp, local_base, tos)` の4引数で呼び出す | `{ExecutionContext_Layout}`, `{EnvironmentPointer}`, `{VsocRuntime_Layout}` |
+| GOTCHA-VSOC-01 | 命令handler後のディスパッチ | handlerが分岐後のPCを確定した状態 | ディスパッチの制御遷移を確認する | ディスパッチャは同じ実行区間内で次PCのtraceまたはhandlerを実行し、命令ごとにはRuntimeEngineへ戻らない | `{JIT_BackedgeYield}`, [`runtime_vsoc.md`](docs/components/tier2_runtime/runtime_vsoc.md) |
+| GOTCHA-VSOC-02 | 共通LOOP後方分岐yield条件 | Interpreter単独またはHybrid JIT経路 | 分岐回数と実行状態を確認する | 共通コンテキストのLOOP後方分岐数が共通しきい値に達した時だけRuntimeEngineへyield状態を返す。両経路の復帰条件は一致する | [`runtime_vsoc.md`](docs/components/tier2_runtime/runtime_vsoc.md)、`{ADR_LoopBackedgeYield}` |
+| GOTCHA-VSOC-03 | `execution_context` 内包レイアウトと委譲シグネチャ | WASMスタック初期化 | コンテキストオフセットを確認する | `vsoc_runtime`（`mem_base` `+0x28`, `mem_size` `+0x2C`, `globals_base` `+0x30`, `globals_limit` `+0x34`）は独立構造体ではなく `execution_context` の内部に配置される。x86-64 Tier 2 ABIは144バイトであり、ホスト基点は`+0x80`、64bitメモリサイズは`+0x88`へ配置する。`exec_trace` は `(ctx, sp, local_base, tos)` の4引数で呼び出す | [`runtime_vsoc.md`](docs/components/tier2_runtime/runtime_vsoc.md)、`{ExecutionContext_Layout}`, `{EnvironmentPointer}`, `{VsocRuntime_Layout}` |
 
 ## 3. テスト検証実績と網羅状況
 

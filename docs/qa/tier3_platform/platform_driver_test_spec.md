@@ -8,7 +8,7 @@
 物理割り込みのイベント投函経路、GPIO vMMIOストアの唯一の高速パス、HALバッファプール(vMMIO/DYNAMIC)への操作期間マッピング、RSPのRawバイトトランスポートを検証する。RSP Parser、チェックサム、ACK/NAK、およびデバッグコマンド解釈はTier 3 debuggerの責務である。契約レベルの振る舞い（IPCルータ経由アクセス、hal-buffer-id契約等）は [`hal_dispatch_test_spec.md`](docs/qa/tier2_runtime/hal_dispatch_test_spec.md) の責務とする。
 
 ## 2. テストケース一覧
-<!-- traceability: {BufferedLogging} {Fast_Path_GPIO} {HAL_Interface} -->
+<!-- traceability: {BufferedLogging} {Fast_Path_GPIO} {HAL_Interface} {GOTCHA-HAL-01} -->
 
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
@@ -19,21 +19,23 @@
 | TEST-HAL-08 | RSP Parserの責務分離 | Raw RSPバイト列を受信 | platform_driverの出力をDebugger Pluginへ渡し、物理ドライバにチェックサム・ACK/NAK・コマンド解析がないことを確認 | platform_driverはRawバイトの物理入出力と専用Sinkへの受け渡しだけを行い、RSP ParserはDebugger Plugin側にだけ存在する | platform_driver.md |
 | TEST-HAL-15 | ファイルSinkへのロガー出力分離 | `FileLogSink`を`System`へ注入し、標準出力用ドライバを起動 | システムログを1行出力してフラッシュし、ゲストの標準出力へ別のバイト列を書く | ログ行は注入したファイルSinkだけに現れ、標準出力にはゲストのバイト列だけが残る。ログ出力にロガーHALタスクの起動を要求しない | `BufferedLogging`, `HAL_Interface` |
 
-### 実装の勘所・不変条件（Gotchas & Implementation Invariants）
+### 実装上の注意点に対応する検証
+<!-- traceability: {GOTCHA-HAL-01} {GOTCHA-HAL-02} {GOTCHA-HAL-03} -->
 
-| GOTCHA ID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
+| GOTCHA参照 | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| GOTCHA-HAL-01 | `HalBufferPool` のマップ境界厳格検査（隣接汚染防止） | 固定サイズバッファプール（各バッファ 256 バイト） | `map-buffer`またはI/O範囲で256バイトを超えるスライス（例: 512バイト）を要求 | 即座にassert違反で拒絶される。**実装の勘所**: プールアロケータでサイズ検証を省略すると、隣接する別スロットのバッファ領域へ書き込みがはみ出し、システム破壊を招く | `platform_driver.md` |
-| GOTCHA-HAL-02 | UART パイプトランスポートの双方向独立性とノンブロッキング | UART トランスポート初期化 | 送信側が連続書き込み、受信側が非同期読み出し | 送信と受信が互いに干渉せず、EOF やバッファ満杯時にも安全にエラーまたはブロックなしで制御が返る。**実装の勘所**: 組み込み UART ドライバで送受信のリングバッファを不用意に共有すると、全二重通信時にデータ化けが発生する | `platform_driver.md` |
-| GOTCHA-HAL-03 | 32bitタイマーの差分計算安全性（ラップアラウンド耐性） | 32bitカウンタ値の開始・終了サンプルがある | `platform_driver_concept.py` の `test_u32_timer_elapsed_handles_wraparound` を実行し、通常区間と `0xFFFFFFF0 -> 0x00000010` の折り返し区間を確認する | 通常区間は40 tick、折り返し区間は32 tickを返す。測定区間が1周期以上の場合は単一カウンタ値から復元できない。**実装の勘所**: 絶対値の大小比較ではなく、32bit符号なしモジュロ差分を使う | `platform_driver.md`, `platform_driver_concept.py` |
+| GOTCHA-HAL-01 | `HalBufferPool` のマップ境界厳格検査（隣接汚染防止） | 固定サイズバッファプール（各バッファ 256 バイト） | `map-buffer`またはI/O範囲で256バイトを超えるスライス（例: 512バイト）を要求 | 即座にassert違反で拒絶される。 | [`platform_driver.md`](docs/components/tier3_platform/platform_driver.md) |
+| GOTCHA-HAL-02 | UART パイプトランスポートの双方向独立性とノンブロッキング | UART トランスポート初期化 | 送信側が連続書き込み、受信側が非同期読み出し | 送信と受信が互いに干渉せず、EOF やバッファ満杯時にも安全にエラーまたはブロックなしで制御が返る。 | [`platform_driver.md`](docs/components/tier3_platform/platform_driver.md) |
+| GOTCHA-HAL-03 | 32bitタイマーの差分計算安全性（ラップアラウンド耐性） | 32bitカウンタ値の開始・終了サンプルがある | `platform_driver_concept.py` の `test_u32_timer_elapsed_handles_wraparound` を実行し、通常区間と `0xFFFFFFF0 -> 0x00000010` の折り返し区間を確認する | 通常区間は40 tick、折り返し区間は32 tickを返す。測定区間が1周期以上の場合は単一カウンタ値から復元できない。 | [`platform_driver.md`](docs/components/tier3_platform/platform_driver.md), `platform_driver_concept.py` |
 
 ## 3. テスト検証実績と網羅状況
 
 - 仕様書に定義された各テストケース（物理実装レベルの不変条件・境界条件・エラー処理）の検証手順と期待結果を定義。
 
 ### pysimの固定スロットとstdoutの観測
+<!-- traceability: {GOTCHA-HAL-01} -->
 
-[`test_hal.py`](experiments/pysim/qa/tier3_platform/test_hal.py)の`test_hal_task_ipc_communication`は、TEST-HAL-06の操作期間マッピングをstream-writeの実経路で部分確認する。offset 0の128 byteとoffset 17の32 byteを固定スロットへ書く。専用HALタスクへのIPCの完了後、stdoutが指定sliceと完全一致し、送信元スロットが保持されることを確認する。続けてunmapし、同じハンドルのguest viewが拒否され、vMMIOアクセスが`UNREGISTERED_PAGE`となることを確認する。IPCの契約と実行記録は[`hal_dispatch_test_spec.md`](docs/qa/tier2_runtime/hal_dispatch_test_spec.md)のTEST-HAL-16を正本とする。
+[`test_hal.py`](experiments/pysim/qa/tier3_platform/test_hal.py)の`test_hal_task_ipc_communication`は、TEST-HAL-06の操作期間マッピングをstream-writeの実経路で部分確認する。offset 0の128 byteとoffset 17の32 byteを固定スロットへ書く。専用HALタスクへのIPCの完了後、stdoutが指定sliceと完全一致し、送信元スロットが保持されることを確認する。続けてunmapし、同じハンドルのguest viewが拒否され、vMMIOアクセスが`UNREGISTERED_PAGE`となることを確認する。IPCを用いたHAL操作の契約は[`hal_dispatch.md`](docs/components/tier2_runtime/hal_dispatch.md)を参照する。検証条件と実行記録は[`hal_dispatch_test_spec.md`](docs/qa/tier2_runtime/hal_dispatch_test_spec.md)のTEST-HAL-16を参照する。
 
 `test_hal_02_dummy_stdio_driver_streams_stdin_and_stdout`は、ドライバ単体のRxとTxの全byteを直接比較する。`test_hal_05_hal_buffer_slice_bounds_and_guest_mapping`は、別guestのアクセス拒否、ドライバ側の書込みが同じ固定スロットへ現れること、unmap後のアクセス拒否を確認する。いずれも実機UARTやDMAの検証済みとは扱わない。
 

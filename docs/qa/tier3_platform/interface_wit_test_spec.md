@@ -1,7 +1,7 @@
 # WITインターフェース / リカバリー戦略 テスト仕様書 (Test Specification)
 
 ## 1. 目的と対象範囲
-
+<!-- traceability: {WIT_Interface_Spec} {WIT_First} -->
 正本: [`interface_wit.md`](docs/components/tier3_platform/interface_wit.md)
 参考実装: [`libfireball.py`](experiments/pysim/tier3_platform/libfireball.py) と専用host-callの参照モデルを用いる。WIT宣言とホスト側の契約適合を検査し、ゲストC/C++ライブラリの静的リンクは対象外とする。
 
@@ -10,7 +10,7 @@
 ## 2. テストケース一覧
 
 ### リカバリー戦略
-
+<!-- traceability: {META_RecoveryStrategy} {Errorcode_To_Strategy} {META_ConfigurableSystem} -->
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | TEST-WIT-01 | `ignore`の選択基準 | 一時的なバッファ空/満杯通知など、データ喪失を伴わない事象 | 該当操作を発生させる | `ignore`が返り、状態変化なく呼び出し元が継続する | 表、`test_recovery_05_ignore_returns_original_result_without_recovery_actions` |
@@ -20,7 +20,7 @@
 | TEST-WIT-05 | `panic`の選択基準 | MPU違反・二重解放・デッドロック検知 | 該当操作を発生させる | 全タスク停止、クラッシュダンプ出力、フェイルセーフ停止 | 表、`test_recovery_03_panic_invokes_hook_immediately_without_retry_or_reset`はpanic通知と追加操作なしだけを検査する |
 
 ### 低レベル・トラップインターフェース
-<!-- traceability: {WIT_Interface_Spec} -->
+<!-- traceability: {WIT_Interface_Spec} {WIT_First} {Syscall_Mapping} -->
 
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
@@ -28,25 +28,31 @@
 | TEST-WIT-11 | Trigger(GPIO)の直接マッピング | `FB_SYSCALL_TRIGGER_SET_PIN`等 | `fireball_call`に直接該当IDを渡す | ハンドルルックアップを経由せず直接操作される | WIT_Interface_Spec |
 
 ### vIRQ / vDMA 専用ホストコール
-
+<!-- traceability: {WIT_Interface_Spec} {GLOBAL_InterruptWakeup} {VDMA} -->
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | TEST-WIT-12 | vIRQ専用importの分離 | `fireball:host/virq` が公開されている | `register` / `unregister` を呼び出す | 汎用 `fireball_call` のIDディスパッチを経由せず、vSoCの保留表へ渡される | `test_syscall.py`のTEST-SYS-30〜32、`test_libfireball_dedicated_host_calls` |
 | TEST-WIT-13 | vDMA専用importの分離 | `fireball:host/vdma` が公開されている | `start` を呼び出す | 汎用 `fireball_call` のIDディスパッチやVDMA vMMIOレジスタを経由せず、転送要求へ渡される | `test_syscall.py`のTEST-SYS-20/21、`test_libfireball_dedicated_host_calls` |
 | TEST-WIT-14 | Core Wasm C ABI写像 | ホスト側のimport resolverがある | `fireball` moduleの4fieldを解決し、各引数と戻り値を照合する | 各操作が対応portへ渡る。別moduleと不明fieldは解決されない | `test_wit_14_core_wasm_import_names_select_the_matching_host_port`、`test_wit_generated_static_guest_raw_four_imports`、`test_wit_guest_requires_static_archive` |
-| TEST-WIT-15 | HAL worldの公開方向 | ゲストが`fireball-hal` worldを利用する | worldのimport／exportを確認する | `types`と`resolver`はホスト提供importであり、ゲスト実装を要求するexportが存在しない | `test_wit_15_hal_world_imports_host_services_without_guest_exports` |
 
 ### コンソール生バイト出力経路 (`fireball://hal/stdout/0`)
-
+<!-- traceability: {HAL_Interface} {URIAbstraction} {WASI_Implementation} -->
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | TEST-WIT-20 | 任意長生バイト列の出力 | ゲストが`print`/`eprint`相当を実行 | `resolver.get-interface("fireball://hal/stdout/0")`、固定バッファスロット、`stream-write`を順に利用 | データがそのまま物理トランスポートへ渡される（辞書変換もリングバッファ構造化もされない） | `libfireball_test_spec.md` |
 | TEST-WIT-21 | 内部ロガーとの排他性なし（インターリーブ許容） | 内部ロガーのflushとコンソール出力経路の書き込みが同時期に発生 | 両方を実行 | 出力順序の保証はされない（インターリーブし得る）ことを仕様として確認する（バグではない） | 末尾 |
 | TEST-WIT-22 | WASI_FD_WRITE→コンソール出力経路への自動ルーティング | ゲストの`print`/`eprint` | `libfireball` が `fireball_call(WASI_FD_WRITE,...)`を発行 | `fireball://hal/stdout/0`を解決し、HALの`stream-write`へ変換される | `libfireball_test_spec.md` |
-| TEST-WIT-23 | WASI親和性のあるHAL汎用操作 | `resolver` が公開されている | `stream-read/write`、`stream-flush/close`、`clock-get-now/resolution`、`poll-check/wait`の型を確認 | 個別デバイスresource型なしに、同じハンドル境界で操作できる | `hal_dispatch.md` |
+
+### HAL公開契約
+<!-- traceability: {WIT_Interface_Spec} {WIT_First} {HAL_Interface} {Asynchronous_Notification} -->
+
+| テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| TEST-WIT-15 | HAL worldの公開方向 | ゲストが`fireball-hal` worldを利用する | worldのimport／exportを確認する | `types`と`resolver`はホスト提供importであり、ゲスト実装を要求するexportが存在しない | `test_wit_15_hal_world_imports_host_services_without_guest_exports` |
+| TEST-WIT-23 | WASI親和性のあるHAL汎用操作 | `resolver` が公開されている | `stream-read/write`、`stream-flush/close`、`clock-get-now/resolution/subscribe`、`poll-check/wait/drop`の型を確認 | 購読は`u64`の待ち時間を受けて単一`u32`ハンドルを返す。check/waitは真偽値、dropは操作結果を返す | `hal_dispatch.md`、`test_wit_23_hal_pollable_signatures_follow_existing_contract` |
 
 ## 3. テスト検証実績と網羅状況
-
+<!-- traceability: {WIT_Interface_Spec} {WIT_First} {HAL_Interface} {Asynchronous_Notification} {META_RecoveryStrategy} {Syscall_Mapping} {GLOBAL_InterruptWakeup} {VDMA} -->
 リカバリーの実行コマンドを示す。
 
 ```bash
@@ -55,7 +61,7 @@ uv run pytest -q experiments/pysim/qa/tier2_runtime/test_recovery.py
 
 8ケースでTEST-WIT-01〜05の戦略選択、既定10msの待機値、3回上限、reset・panic通知順序を検査する。待機はspyで記録し、実時間を待たない。最大3回の初期操作とresetを区別する。reset成功後に元要求を再実行せず、元のエラーとRESTART戦略を返す。`TEST-RECOVERY-*`と存在しない`system_recovery_spec`への旧参照を、本書のTEST-WIT IDへ置き換えた。
 
-TEST-WIT-12/13は専用ホスト入口の転送と状態を検査する。TEST-WIT-14はホスト側のCore Wasm名解決を検査する。TEST-WIT-15はコメントを除いたworld宣言のimport/export方向を検査する。WITの構文検査と機能適合を区別する。
+TEST-WIT-12/13は専用ホスト入口の転送と状態を検査する。TEST-WIT-14はホスト側のCore Wasm名解決を検査する。TEST-WIT-15はコメントを除いたworld宣言のimport/export方向を検査する。TEST-WIT-23のpollable操作はコメントを除いたHAL WITの関数宣言を検査する。WITの構文検査と機能適合を区別する。
 
 実行コマンドを示す。
 

@@ -92,11 +92,11 @@ JIT トレース内にインライン展開せず、トレース境界でイン�
 
 `0xFC`は`wasm_instruction_set.md`が列挙するサブオペコードだけをロード時に受理する。未サポートサブオペコードはJITフォールバック扱いにせず、ロード時に拒否する（{WasmFCSubset}）。
 
-**ABI 規約と境界チェック・バックパッチング (`GOTCHA-JITC-01`, `03`〜`05`)**:
+**ABI 規約と境界チェック・バックパッチング (`GOTCHA-JITC-01`, `03`, `05`)**:
 - **スタック状態の同期**: JITトレース内では対象ABIが定める値保持方法を正本として演算する。基本ブロック終端、インタープリタ境界、トラップ時には共有オペランド領域と実行コンテキストを対象ABIの順序で同期する。キャッシュ値の破棄やダミー退避は禁止する。 `{ADR_TosCacheAsymmetry}` `{ExecutionContext_Layout}`
 - **呼出し境界 ({GOTCHA-JITC-01}, `03`)**: JITトレースとインタープリタが共有するのは4つの論理引数である。確認済みx64の物理配置は [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) に従い、境界引数レジスタとJIT内部一時レジスタの割当を分離する。ARMv8-Mの物理ABI、レジスタ割当、保存・復元、境界同期はTBDとする。 <!-- definition: {GOTCHA-JITC-01} -->
 - **ヘルパー選択**: Cヘルパー演算は命令ごとに専用の関数契約を持つ。コンパイラは命令に対応する識別番号と関数アドレスをヘッダへ格納し、入力型・入力個数・結果の返却方法は対象関数ごとに適用する。共通ディスパッチャが演算種別を再判定する方式は採用しない。入力を一律に共有オペランド領域の32ビット列へ変換する規則も設けない。
-- **境界チェックとバックパッチング (`GOTCHA-JITC-04`, `05`)**: トレース内ジャンプおよびインタープリタ脱出境界において、PC 境界検証を必ず行う。x64前方参照への相対オフセットはコード生成完了時にバックパッチングで書き込む。ARMv8-Mの命令列と適用方法はTBDとする。
+- **境界チェックとバックパッチング (`GOTCHA-JITC-05`)**: トレース内ジャンプおよびインタープリタ脱出境界において、PC 境界検証を必ず行う。x64前方参照への相対オフセットはコード生成完了時にバックパッチングで書き込む。ARMv8-Mの命令列と適用方法はTBDとする。
 
 #### コピーアンドパッチエンジン（CopyAndPatchEngine）クラス
 <!-- traceability: {JIT_RegisterMapping} {ContextPointerRegister} {EnvironmentPointer} {ADR_TosCacheAsymmetry} {PositionIndependentCode} -->
@@ -231,60 +231,19 @@ sequenceDiagram
 ## 5. インターフェース定義
 
 ### 5.1 公開API
-外部から利用可能なオブジェクト指向APIを定義する。
-
-#### 初期化（initialize）
-<!-- traceability: {META_ConfigurableSystem} -->
+<!-- traceability: {JIT_CopyAndPatch} {SinglePassCompilation} {TraceBoundaryInvariant} {PositionIndependentCode} {ExecutionContext_Layout} {GOTCHA-JITC-03} {JIT_MultiBuffer_Cache} -->
+本コンポーネントの公開境界は、JIT Runtimeから受け取ったトレースのコード生成である。入力ビュー、出力領域、および生成結果のABIは [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) を正本とする。
 
 | 項目 | 内容 |
 | :--- | :--- |
-| 機能概要 | コードキャッシュ領域、管理テーブル、およびカードマーキング表の初期化を行う。 |
-| シグネチャ | `initialize(ctx: 可変参照, config: const参照) -> 結果型` |
-| 引数 | `ctx`: JITコンテキスト (`jit_context`) への可変参照<br>`config`: JIT構成 (`jit_config`) への読取専用参照 |
-| 戻り値 | 結果型 (成功時は空、エラー時はエラーコード) |
-| 事前条件 | 設定パラメータが一貫しており、静的に確保されたメモリの範囲を超えていないこと。 |
-| 事後条件 | カードマーキング表がクリアされ、キャッシュが空の状態になる。 |
-| 不変条件 | 実行中に `config` の値を変更してはならない。 |
-| エラー時の挙動 | メモリ割り当ての不備がある場合はエラーを返す。 |
-| 補足 | `{META_ConfigurableSystem}` の方針に基づき、基本的にはブート時に一度だけ呼び出す。 |
+| 機能概要 | 適格なWASMトレースを単一パスでネイティブ命令列へ変換する。 |
+| 入力 | 対象トレースと、ロード時に確定した型・フレーム・命令境界のメタデータ。 |
+| 出力 | 生成コードと、JIT Runtimeへの登録に必要なトレース情報。 |
+| 事前条件 | トレースが本書のスタック自己完結性と命令適格性の条件を満たすこと。 |
+| 事後条件 | 対象ABIに従うコードと、トレース境界で共有状態を同期する情報を返す。 |
+| エラー時の挙動 | 未対応命令、型混在、ABI不整合はコンパイル失敗として返す。実行器が規定のインタープリタ経路を選ぶ。 |
 
-#### トレース検索（lookup_trace）
-<!-- traceability: {META_ConfigurableSystem} -->
-
-| 項目 | 内容 |
-| :--- | :--- |
-| 機能概要 | 指定されたWASMプログラムカウンタ(PC)に対応する、コンパイル済みのネイティブコードの実行アドレスを高速に検索する。 |
-| シグネチャ | `lookup_trace(pc: address) -> result<address, bool>` |
-| 補足 | カードマーキング表の状態が `COMPILED` でない場合は即座に失敗を返す。その後、`harness` 経由でエントリ索引を検索する。本機能は、ヘッダファイルで定義されたマクロ（`FB_CONF_JIT_CACHE_SIZE`等）に基づき、システムのメモリマップや検索範囲等のパラメータが固定された状態で動作する。 |
-
-#### カード状態取得（get_card_state）
-<!-- traceability: {META_ConfigurableSystem} -->
-
-| 項目 | 内容 |
-| :--- | :--- |
-| 機能概要 | 指定したPCが属するカードの状態（2-bit）を取得する。 |
-| シグネチャ | `get_card_state(pc: address) -> u8` |
-| 補足 | 本機能は、コンパイル時に固定されたカード境界シフト値（`FB_CONF_JIT_CARD_SHIFT`等）のマクロ定義に基づき、PC値からカードインデックスへの変換を高速に行う。 |
-
-#### JITエントリ検索（find_entry）
-<!-- traceability: {META_ConfigurableSystem} {META_BinarySearch} -->
-
-| 項目 | 内容 |
-| :--- | :--- |
-| 機能概要 | 指定されたWASM PCをバンク内の `head_pc` 昇順固定容量エントリ配列から二分探索する。エントリ数が少ないためRadix索引は持たない。 |
-| シグネチャ | `find_entry(bank_idx: u8, pc: address) -> optional<jit_entry_view>` |
-| 計算量 | 1バンクあたり $O(\log n)$。固定配列の容量は2KBバンクの上限で決まる。 |
-
-#### バッチコンパイル処理（process_batch_compile）
-<!-- traceability: {META_ConfigurableSystem} -->
-
-| 項目 | 内容 |
-| :--- | :--- |
-| 機能概要 | vSoC が収集した履歴を基にコンパイルを実行する。 |
-| シグネチャ | `process_batch_compile(ctx: 可変参照, harness: 構造体への参照) -> void` |
-| 引数 | `ctx`: JITコンテキスト への可変参照<br>`harness`: JITハーネス への参照 |
-| 戻り値 | void |
-| 補足 | vSoC が `co_yield` を発行する際に呼び出され、アイドル時間等を活用して処理される（`co_yield` の判定・発行はインタープリタや `executor` 自身ではなく vSoC が行う）。 |
+キャッシュの初期化、エントリ検索、カード状態、コンパイル待ち列、およびコンパイル時期の契約は [`jit_runtime.md`](docs/components/tier3_executer/jit_runtime.md) を参照する。本コンポーネントはこれらの管理APIを定義しない。
 
 ### 5.2 URI/IPCインターフェース
 <!-- traceability: {META_ConfigurableSystem} -->
@@ -293,12 +252,12 @@ sequenceDiagram
 ## 6. 制約達成の方策
 
 ### 6.1 性能制約と方策
-<!-- traceability: {JIT_CopyAndPatch} {JIT_RegisterMapping} -->
+<!-- traceability: {JIT_CopyAndPatch} {JIT_RegisterMapping} {JIT_MultiBuffer_Cache} -->
 - **目標**: コンパイルレイテンシを最小化し、WAMRインタープリタを上回る実行速度を実現。
 - **方策**:
     - **コピー・パッチ方式**: 複雑な最適化を省き、テンプレートコピーのみでコンパイルを完了。
     - **レジスタ割り当て**: x64コード生成で使う物理レジスタと呼出し保存規則は [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) で定義する。ARMv8-Mの物理レジスタ割当はTBDである。
-    - `Card Marking (O(1)) + Binary Search`: カードマーキング表による $O(1)$ 事前フィルタと二分探索により、高速な検索を実現。
+    - **実行時検索との分離**: コード生成後の検索方式とキャッシュ管理は [`jit_runtime.md`](docs/components/tier3_executer/jit_runtime.md) に従う。
 
 ### 6.2 安全性制約と方策
 <!-- traceability: {PositionIndependentCode} {MemoryBoundaryCheck} {FastAddressCheck} {SimpleJITArchitecture} -->
@@ -306,7 +265,7 @@ sequenceDiagram
 - **方策**:
     - **位置独立コード**: 生成コードを位置独立とし、配置場所の自由度を確保。
     - `Cache Capacity Check`: コード生成時にキャッシュ溢れを厳密にチェックし、溢れた場合は 3面リングローテーションにより Oldest バンクを破棄して再利用する。これはキャッシュ容量管理であり、（ゲストメモリアクセスの隔離）とは別の関心事である。
-    - **メモリ境界検査**: x64の対応済みゲストメモリアクセス命令は、アクセス前に幅を含めた境界を検査し、範囲外をWASM trapへ変換する。具体的な命令列はx64実装テストを正本とする。ARMv8-Mの命令列と検査方式はTBDである。
+    - **メモリ境界検査 ({GOTCHA-JITC-04})**: <!-- definition: {GOTCHA-JITC-04} --> x64の対応済みゲストメモリアクセス命令は、load/store前に幅を含めた境界を検査し、範囲外をWASM trapへ変換する。拒否時はメモリと演算対象の値を変更しない。アドレスをマスク等で巡回させて継続すると境界外アクセスを隠すため、Wrappingによる継続は禁止する。生成命令列の検証証拠はx64実装テストを参照する。ARMv8-Mの命令列と検査方式はTBDである。
     - **W^X 保護**: x64の実行可能バッファは書込みと実行を同時許可しない。ARMv8-Mの保護機構、属性遷移、命令キャッシュ同期はTBDである。形式モデル `formal/jit_cache_model.py` は抽象W^X状態遷移を検証し、物理機構は主張しない。
 
 ## 7. 形式検証・テスト仕様との対応

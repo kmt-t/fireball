@@ -160,58 +160,9 @@ flowchart TD
     RetISR -.-> YieldPoint
 ```
 
-```python
-# CSPチャネルの送受信処理 (概念コード: 純粋同期ランデブー + Symmetric Transfer 規約)
-# チャネルは値を保持しない。待機者は最大1タスク（ADR_RendezvousChannel）。
-
-
-def channel_send(channel: Channel, sender_task: Task, value: object) -> CoroutineHandle:
-    if channel.waiter_dir == RECV:
-        # 受信側が待機中: 値（ムーブ所有権）を直接移譲してランデブー成立
-        receiver = channel.take_waiter()
-        receiver.value = value  # 所有権はここで sender -> receiver へ移る
-        sender_task.state = READY
-        receiver.state = READY
-        return handoff_or_yield(receiver)  # CSP Handoff (スタックレス対称遷移)
-    else:
-        # 相手不在: 値は sender_task のフレーム上に留めたまま待機する。
-        # チャネルはバッファを持たないため overflow もロールバックも存在しない。
-        assert channel.waiter_dir != SEND, (
-            "1チャネル1待機者: 送信待機の重複はチャネル分割で回避する"
-        )
-        channel.set_waiter(sender_task, SEND)
-        sender_task.state = SUSPENDED_CSP
-        return scheduler_handle
-
-
-def channel_recv(channel: Channel, receiver_task: Task) -> CoroutineHandle:
-    if channel.waiter_dir == SEND:
-        # 送信側が待機中: 送信側フレームから値を引き取ってランデブー成立
-        sender = channel.take_waiter()
-        receiver_task.value = sender.value  # 所有権はここで sender -> receiver へ移る
-        sender.value = None  # 二重所有を作らない
-        sender.state = READY
-        receiver_task.state = READY
-        return handoff_or_yield(sender)
-    else:
-        assert channel.waiter_dir != RECV, (
-            "1チャネル1待機者: 受信待機の重複はチャネル分割で回避する"
-        )
-        channel.set_waiter(receiver_task, RECV)
-        receiver_task.state = SUSPENDED_CSP
-        return scheduler_handle
-
-
-def handoff_or_yield(target: Task) -> CoroutineHandle:
-    """連続ハンドオフを有界化し、必ずスケジューラへ復帰する経路を残す。
-    この上限が {MainLoopReturnGuarantee}（AF(main_loop)）の根拠である。"""
-    if sched.consecutive_handoffs < FB_CONF_MAX_CONSECUTIVE_HANDOFFS:
-        sched.consecutive_handoffs += 1
-        return target.coroutine_handle  # 直接対称遷移
-    sched.consecutive_handoffs = 0
-    sched.ready_queue.append(target)  # 上限到達: スケジューラへ返す
-    return scheduler_handle
-```
+#### CSP送受信とスケジューラ復帰の参考実装
+<!-- traceability: {CSPCommunication} {CSP_Handoff} {GOTCHA-SCHED-01} {MainLoopReturnGuarantee} -->
+CSP送受信のコンセプトコードは [`coos_concept.py`](docs/components/tier1_core/concepts/coos_concept.py) を参照する。連続ハンドオフ上限とスケジューラへの復帰手順は [`os_scheduler.md`](docs/components/tier1_core/os_scheduler.md) を正本とする。
 
 ## 4. 動的モデル
 
@@ -238,28 +189,10 @@ COOS の動的スケジューリングおよび同期通信の基本アルゴリ
 - **Memory Management**: タスク生成時に独立したメモリパーティションを割り当てる。
 
 ##### コンセプトコード参照 (Reference Concept Implementation)
+<!-- traceability: {CSPCommunication} {CooperativeMultitasking} -->
 <!-- evidence: concept: concepts/coos_concept.py -->
 
-完全な実行可能コンセプトコード、厳格な型定義（`typing.Any` ゼロ）、および不変条件検証テストスイートは正本 [`coos_concept.py`](docs/components/tier1_core/concepts/coos_concept.py) を参照。
-
-```python
-# 中核アルゴリズム要約: バッファレス同期ランデブーと直接ハンドオフ
-def channel_send(self, channel: Channel, data: object) -> tuple[ChannelAction, str | None]:
-    if channel.waiter_dir == WaitDir.RECV:
-        # 受信待機者が存在: ランデブー即時成立、ゼロコピー移譲、ハンドオフ
-        receiver = channel.waiter_task
-        channel.waiter_task, channel.waiter_dir = None, WaitDir.NONE
-        self.tasks[receiver].received_val = data
-        self.tasks[self.current_task].state = TaskState.READY
-        self.tasks[receiver].state = TaskState.READY
-        return self._handoff_or_yield(receiver)
-    # 受信待機者不在: 送信側フレーム内に値を保持したまま SUSPENDED_CSP 遷移
-    assert channel.waiter_dir != WaitDir.SEND, "1-channel-1-waiter constraint"
-    channel.waiter_task, channel.waiter_dir = self.current_task, WaitDir.SEND
-    self.tasks[self.current_task].pending_val = data
-    self.tasks[self.current_task].state = TaskState.SUSPENDED_CSP
-    return (ChannelAction.BLOCK, None)
-```
+実行可能なコンセプトコードとその検証範囲は [`coos_concept.py`](docs/components/tier1_core/concepts/coos_concept.py) を参照する。COOS固有の条件と不変条件は本書で定義する。
 
 ### 4.2 状態遷移図 (SMD: COOS システムレベル)
 <!-- traceability: {CSP_Handoff} {DirectContextSwitch} {GLOBAL_IdleDetection} {GLOBAL_StrictMemoryLimit} {GLOBAL_IndependentHeap} {META_RecoveryStrategy} -->

@@ -56,6 +56,7 @@ Element/Data初期化定義を個別配列へ展開せず、パース時検証�
 | TEST-LOAD-32 | LEB128の5/10バイトガード | 6バイト以上のu32 LEB128、11バイト以上のu64 LEB128 | パース | 即座にパースエラー（無限ループしない） | loader_concept.py `read_leb128_u32/u64` |
 
 ### ファイル内データ位置 & シンボルハッシュ RadixBinaryTreeView 索引 ({META_BinarySearch})
+<!-- traceability: {GOTCHA-LOAD-01} -->
 
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
@@ -73,19 +74,19 @@ Element/Data初期化定義を個別配列へ展開せず、パース時検証�
 | TEST-LOAD-51 | 到達不能な外側フレームの型ポリモーフィズム分離 | `unreachable` の後に値を要求するネストブロック | `parse(module)` | 外側フレームのunreachable状態を内側ブロックへ漏らさず、operand stack underflowとして拒否する | `wasm_reader.py` operand stack validation |
 | TEST-LOAD-52 | Custom section 名のセクション境界 | 名前長がCustom sectionの残りバイト数を超える | `parse(module)` | 次セクションのバイトを名前として読まず、section bounds違反で拒否する | `wasm_reader.py` custom section bounds |
 | TEST-LOAD-53 | LEB128幅とsection件数の事前検証 | 幅超過LEB128、短いsection内の巨大な型件数 | `parse(module)` | LEB128を最大幅・現在のsection終端で停止し、設定容量を構成する前に不正件数を拒否する | `leb128.py`, `wasm_reader.py` |
-| TEST-LOAD-54 | ROM-backed 名称範囲とハッシュ衝突解決 | 異なる名前 `ufbwjn` / `rsksbm`（同一FNV-1a 32-bit値）を持つエクスポート | `lookup_export(name)` と各エントリのROM範囲を確認 | 名前の実体をエントリへ保存せず、各ハッシュ候補をROM上の完全一致で識別する | `{GOTCHA-LOAD-01}` |
+| TEST-LOAD-54 | ROM-backed 名称範囲とハッシュ衝突解決 | 異なる名前 `ufbwjn` / `rsksbm`（同一FNV-1a 32-bit値）を持つエクスポート | `lookup_export(name)` と各エントリのROM範囲を確認 | 名前の実体をエントリへ保存せず、各ハッシュ候補をROM上の完全一致で識別する | `GOTCHA-LOAD-01` |
 | TEST-LOAD-55 | 実行時作成が使うパーサーのWASMページ上限 | 初期メモリが `FB_CONF_MAX_WASM_PAGES + 1` ページ | `wasm_reader.parse(module)` | 設定上限を超える初期メモリを拒否する | `runtime_loader.md` (Resource Constraints) |
 
 | TEST-LOAD-56 | メモリ命令の整列指定上限 | `i32.load`の整列指定がアクセス幅を超える | `parse(module)` | 4バイト指定を許可し、8バイト指定を拒否する | [WebAssembly Core・memarg検証](https://webassembly.github.io/spec/core/valid/instructions.html#valid-memarg)、pysim `test_load_56_rejects_overaligned_memory_access` |
 
-### 実装の勘所・不変条件（Gotchas & Implementation Invariants）
-<!-- traceability: {Loader_BasicBlockIndex} -->
+### 実装上の注意点に対応する検証
+<!-- traceability: {Loader_BasicBlockIndex} {GOTCHA-LOAD-01} {GOTCHA-LOAD-02} {GOTCHA-LOAD-04} -->
 
-| GOTCHA ID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
+| GOTCHA参照 | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| GOTCHA-LOAD-01 | ハッシュ衝突時の文字列完全一致確認（シンボル誤認防止） | 同一ハッシュ値を持つ異なるシンボル名 | `lookup_export(name)` を実行 | ハッシュ値による探索後に ROM 上の文字列を 1 回比較し、異なる文字列であれば一致と誤判定しない。**実装の勘所**: ハッシュ値の一致のみでシンボル解決を完了させると、ハッシュ衝突時に無関係な関数を呼び出す致命的なセキュリティホールとなる | `runtime_loader.md` |
-| GOTCHA-LOAD-02 | ロード失敗時のアロケータ完全ロールバック（メモリリーク防止） | 不正なセクションまたはアリーナ容量を超える WASM バイナリ | `prepare_module` を実行 | パースまたは確保失敗時にバンプポインタがロード開始前の位置へ巻き戻される。**実装の勘所**: 失敗したロードの確保分を残すと、再試行を繰り返すことでメモリ枯渇を引き起こす | `runtime_loader.md` |
-| GOTCHA-LOAD-04 | ベーシックブロックメタ情報のローダ側不変保持とゼロコピー解決 | WASM モジュールロード | `mod.get_block(pc)` を実行 | 基本ブロック境界や制御スキップ情報は WASM バイトコードの静的プロパティであり実行時に変化しない。実行時エンジンが動的なミュータブル辞書やツリーで再構築するのではなく、ローダ側が `ReadOnlyRadixBinaryTreeStorage` を一度だけ構築・公開し、実行環境がそれを直接借用・参照する。**実装の勘所**: ランタイム側でブロック走査や動的アロケーションを行うと、JIT ホットスポット追跡時の毎ブロック検索で深刻なオーバーヘッドを招く | `runtime_loader.md` `Loader_BasicBlockIndex` |
+| GOTCHA-LOAD-01 | ハッシュ衝突時の文字列完全一致確認（シンボル誤認防止） | 同一ハッシュ値を持つ異なるシンボル名 | `lookup_export(name)` を実行 | ハッシュ値による探索後に ROM 上の文字列を 1 回比較し、異なる文字列であれば一致と誤判定しない。 | [`runtime_loader.md`](docs/components/tier2_runtime/runtime_loader.md) |
+| GOTCHA-LOAD-02 | ロード失敗時のアロケータ完全ロールバック（メモリリーク防止） | 不正なセクションまたはアリーナ容量を超える WASM バイナリ | `prepare_module` を実行 | パースまたは確保失敗時にバンプポインタがロード開始前の位置へ巻き戻される。 | [`runtime_loader.md`](docs/components/tier2_runtime/runtime_loader.md) |
+| GOTCHA-LOAD-04 | 基本ブロックメタ情報の不変保持と借用 | WASMモジュールをロード済み | 同じPCで`mod.get_block(pc)`を繰り返し、ロード時のメタ情報と比較する | 同じ境界・制御情報を持つ借用viewが返る。実行時の再走査・メタ情報再構築・動的確保が発生しない | [`runtime_loader.md`](docs/components/tier2_runtime/runtime_loader.md), `Loader_BasicBlockIndex` |
 
 ## 3. テスト検証実績と網羅状況
 

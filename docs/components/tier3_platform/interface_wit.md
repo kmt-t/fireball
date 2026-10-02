@@ -38,44 +38,12 @@
 ### 3.1 共通データ構造
 
 #### 3.1.1 基礎インターフェース & IPC URI Resolver
-<!-- traceability: {CooperativeMultitasking} {Asynchronous_Notification} {URIAbstraction} {META_RestrictedPhysicalAccess} -->
+<!-- traceability: {CooperativeMultitasking} {Asynchronous_Notification} {URIAbstraction} {META_RestrictedPhysicalAccess} {WIT_First} {WIT_Interface_Spec} {HAL_Interface} {IPC_ZeroCopy} -->
 以下の基礎コンポーネントのみを提供する。個別デバイス/HAL向けの WIT リソース型は定義しない。
 
 - `resolver`: 階層型 IPC 宛先 URI（`fireball://hal/<type>/<instance>`）から通信ハンドルを取得し、HALが常時保持する固定バッファスロットのビューを提供するリゾルバ。
 
-```wit
-/// WASI 0.3p / IPC 動的インターフェース取得・HALバッファ解決 (URI Resolver)
-interface resolver {
-    use types.{hal-buffer-slice, operation-result, recovery-strategy-category};
-
-    /// IPC 宛先 URI から通信チャネルハンドルを取得
-    get-interface: func(uri: string) -> result<u32, recovery-strategy-category>;
-    /// HALが保持する固定バッファスロットを今回のI/Oだけマップ
-    map-buffer: func(slot-index: u32) -> result<hal-buffer-slice, recovery-strategy-category>;
-    /// 今回のI/Oを終了し、DYNAMIC領域のマッピングを解除
-    unmap-buffer: func(handle: u32) -> operation-result;
-    /// ストリームからHALバッファへ読み込む
-    stream-read: func(handle: u32, buffer: hal-buffer-slice) -> operation-result;
-    /// HALバッファからストリームへ書き込む
-    stream-write: func(handle: u32, buffer: hal-buffer-slice) -> operation-result;
-    /// ストリームの保留データを送出する
-    stream-flush: func(handle: u32) -> operation-result;
-    /// ストリームハンドルを閉じる
-    stream-close: func(handle: u32) -> operation-result;
-    /// 単調クロックの現在値を取得する
-    clock-get-now: func(handle: u32) -> result<u64, recovery-strategy-category>;
-    /// クロック分解能を取得する
-    clock-get-resolution: func(handle: u32) -> result<u64, recovery-strategy-category>;
-    /// 指定時間後にreadyとなる一回限りのpollableを予約する
-    clock-subscribe: func(handle: u32, nanos: u64) -> result<u32, recovery-strategy-category>;
-    /// 操作完了または入力準備の状態を確認する
-    poll-check: func(handle: u32, pollable: u32) -> result<bool, recovery-strategy-category>;
-    /// pollableがreadyになるまで待機する
-    poll-wait: func(handle: u32, pollable: u32) -> result<bool, recovery-strategy-category>;
-    /// pollableを破棄する
-    poll-drop: func(handle: u32, pollable: u32) -> operation-result;
-}
-```
+公開操作と引数・戻り値型は [`fireball_hal_contract.wit`](docs/components/tier3_platform/wit/fireball_hal_contract.wit) の `resolver` を正本とする。操作の適用条件とIPCへの対応は [`hal_dispatch.md`](docs/components/tier2_runtime/hal_dispatch.md) を参照する。
 
 非同期通知（GPIOエッジ、タイマー満了等の待機）は、専用の `pollable` リソース型を設けず、IPCコマンドID（`POLL_CHECK` / `POLL_WAIT` / `POLL_DROP`、`hal_dispatch.md` を正本とする）による汎用ポーリングとして表現する（後述の非同期通知メカニズムを参照）。
 
@@ -93,30 +61,12 @@ flowchart TD
 ```
 
 #### 3.1.2 リカバリー戦略とエラーハンドリング
-<!-- traceability: {META_RecoveryStrategy} {Errorcode_To_Strategy} -->
+<!-- traceability: {META_RecoveryStrategy} {Errorcode_To_Strategy} {WIT_First} {WIT_Common_Types} -->
 
 本プロジェクトでは、エラーコードではなくリカバリー戦略を返すことで、呼び出し側が具体的なアクション（リトライ/諦める）を取れるようにする。低レイヤー（Syscall）の `errno` は、ゲスト側の `libfireball` でこの戦略に変換される。
 ※なお、ホスト内部で各デバイスドライバと通信する低レイヤーの IPC コマンドプロトコルおよび RSP デバッグ仕様は、Tier 2/3 の HAL コンポーネント設計書（[`hal_dispatch.md`](docs/components/tier2_runtime/hal_dispatch.md) / [`platform_driver.md`](docs/components/tier3_platform/platform_driver.md)）を正本とする。
 
-```wit
-/// Recovery strategy for operation failures.
-enum recovery-strategy-category {
-    /// Error can be ignored, continue operation.
-    ignore,
-    /// Retry with same parameters may succeed.
-    retry,
-    /// Module or system needs to be re-initialized.
-    restart,
-    /// Fatal error, halt the system and dump state.
-    panic
-}
-
-// Domain-specific result types
-type operation-result = result<_, recovery-strategy-category>;
-type load-result = result<_, recovery-strategy-category>;
-type registration-result = result<_, recovery-strategy-category>;
-type routing-result = result<_, recovery-strategy-category>;
-```
+リカバリー戦略カテゴリと結果型は [`fireball_hal_contract.wit`](docs/components/tier3_platform/wit/fireball_hal_contract.wit) の `types` を正本とする。戦略の選択条件と回復後の保証は以下に定める。
 
 ##### リカバリー戦略の事前・事後条件と不変条件
 <!-- traceability: {META_RecoveryStrategy} {Errorcode_To_Strategy} -->
@@ -140,9 +90,8 @@ type routing-result = result<_, recovery-strategy-category>;
 ## 4. 動的モデル
 
 ### 4.1 非同期通知メカニズム
-
-<!-- traceability: {Asynchronous_Notification} {WASI_Async_Bridge} -->
-WASIでは割り込みベクタを直接扱わず、汎用ポーリングコマンドによる操作完了待機としてモデル化する。専用の `pollable` リソース型は設けず、`resolver.get-interface`が返すインターフェースハンドルと`clock-subscribe`等が返すpollableハンドルを`POLL_CHECK` / `POLL_WAIT` / `POLL_DROP`（`hal_dispatch.md` を正本とする）コマンドへ渡すことでready状態を確認・解放する。vMMIOのvIRQ原因付き階層ディスパッチは、COOSの汎用割り込みイベント契約とCOOS協調境界での配送で処理し、WASI契約には追加しない。
+<!-- traceability: {Asynchronous_Notification} {WASI_Async_Bridge} {WIT_First} {HAL_Interface} -->
+WASIでは割り込みベクタを直接扱わず、汎用ポーリングコマンドによる操作完了待機としてモデル化する。専用の `pollable` リソース型は設けず、購読操作が返す単一のpollableハンドルでready状態の確認、待機、および解放を行う。公開操作の型は [`fireball_hal_contract.wit`](docs/components/tier3_platform/wit/fireball_hal_contract.wit)、IPCコマンドへの対応は [`hal_dispatch.md`](docs/components/tier2_runtime/hal_dispatch.md) を正本とする。vMMIOのvIRQ原因付き階層ディスパッチは、COOSの汎用割り込みイベント契約とCOOS協調境界での配送で処理し、WASI契約には追加しない。
 
 - **操作完了通知**: 物理デバイスの完了状態は、GPIOエッジ購読、タイマー満了購読、バス受信購読等のIPCコマンドが返す`u32`ポーリングハンドルに対する`POLL_CHECK`/`POLL_WAIT`で確認する。これはvIRQの原因レコード配送とは別の経路である。
 
@@ -154,10 +103,10 @@ WASIでは割り込みベクタを直接扱わず、汎用ポーリングコマ�
 WASI標準には存在しない、Fireball固有の高速 host call である。実体は `../tier2_runtime/runtime_syscall.md` で定義される `fireball::fireball_call` である。WASM import がこの host call を直接ホストディスパッチへ接続し、SYSCTL／VDMAの vMMIO レジスタは経由しない。
 
 #### 5.1.1. `fireball:host/trap` の定義
-<!-- traceability: {Syscall_Mapping} -->
+<!-- traceability: {Syscall_Mapping} {WIT_First} {WIT_Interface_Spec} -->
 WIT内では `fireball-call` という kebab-case 名で定義されるが、C++バインディングおよび公開APIとしては名前空間 `fireball` 内に `fireball_call`（snake_case）としてマッピングされ、host call として公開される。
 
-- `fireball-call(id: u32, arg0: u32, arg1: u32, arg2: u32, arg3: u32, arg4: u32, arg5: u32) -> u32`
+引数と戻り値型は [`fireball_hostcall_contract.wit`](docs/components/tier3_platform/wit/fireball_hostcall_contract.wit) の `trap.fireball-call` を正本とする。IDと引数の意味は [`runtime_syscall.md`](docs/components/tier2_runtime/runtime_syscall.md) を参照する。
 
 #### 5.1.2. vIRQ / vDMA 専用ホストコール
 <!-- traceability: {GLOBAL_InterruptWakeup} {VDMA} -->

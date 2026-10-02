@@ -336,33 +336,11 @@ ARMv8-Mのchain構成、命令列、header、lookup方式、保護方式、物�
 └─────────────────────────────────────────┘
 ```
 
-#### x64参照実装のActive/Warm/Oldestキャッシュ
-<!-- traceability: {Challenge_JITCacheEfficiency} {LowLatencyJIT} -->
+#### JITキャッシュ管理への委譲
+<!-- traceability: {Challenge_JITCacheEfficiency} {LowLatencyJIT} {JIT_MultiBuffer_Cache} {JIT_OldestOnly_Promote} -->
+JITキャッシュの状態、検索、バンク回転、昇格、および破棄は [`jit_runtime.md`](docs/components/tier3_executer/jit_runtime.md) を正本とする。対象ABIの物理配置は [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) を参照する。
 
-現在のx64参照構成は `FB_CONF_JIT_CACHE_SIZE` に従ってコード領域を共通コード領域とActive / Warm / Oldestバンクに分ける。容量とoffsetの正本は [`jit_runtime.md`](docs/components/tier3_executer/jit_runtime.md) および [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) である。ARMv8-Mの物理容量・領域数・配置はTBDである。
-
-| フェーズ | 状態 | 説明 | アクション |
-| :--- | :--- | :--- | :--- |
-| **Normal (JitRun)** | Active が書込・実行中、Warm/Oldest が観測 | 新規 JIT コンパイルが Active へ追加 | 既存コードは保持 |
-| **co_yield (Rotation)** | 世代ローテーション | Active → Warm → Oldest へスライド | Warm バンクでは無償観測 |
-| **Oldest Evaluation** | Oldest lookup hit または破棄判定 | Oldest で lookup にヒットしたトレースは追加hotness判定なしに新 Active へ即時昇格 | 未ヒット（Cold）コードは Purge 破棄。Warm hitは昇格しない |
-
-**可変バンク内レイアウト（共通コード領域の後ろに連続配置）:**
-```
-JIT Evictable Banks (6 KB of 8 KB total)
-┌──────────────────────┐
-│  Active Buffer Bank  │  2 KB (Bank 0: current compiling & execution)
-│  - Generation[0]     │  - New hot traces
-├──────────────────────┤
-│  Warm Buffer Bank    │  2 KB (Bank 1: observation window)
-│  - Generation[1]     │  - Retained without copying
-├──────────────────────┤
-│  Oldest Buffer Bank  │  2 KB (Bank 2: oldest bank)
-│  - Generation[2]     │  - Promoted if hot, else purged
-└──────────────────────┘
-```
-
-共通コードのx64命令列はC++ constexpr assemblerで生成し、chain dispatcherは共通領域に一度だけ配置する。ARMv8-M向けの分岐形式、到達範囲、relay配置はすべてTBDである。
+vSoCは実行境界でJIT Runtimeへ制御を渡す。キャッシュの内部状態や回転契機をvSoC側で再定義しない。ARMv8-Mの物理容量と配置はTBDである。
 
 #### Debugger と JIT の構成排他
 <!-- traceability: {DebuggerInterpreterComposition} {Debug_Integrated} -->
@@ -566,15 +544,14 @@ sequenceDiagram
 | 不変条件 | 不正な端点ではコピーを開始せず、メモリを部分変更しない。`len == 0`でも端点を検査する。 |
 
 ### 5.2 ホストAPIエクスポート
-<!-- traceability: {NativeAPI_Export} -->
+<!-- traceability: {NativeAPI_Export} {Syscall_Mapping} {WIT_Interface_Spec} {WIT_First} {VDMA} {GLOBAL_InterruptWakeup} {WASI_Implementation} {HAL_Interface} -->
 
 WASMゲストからホストサービスを呼び出すための最小限のインターフェースを提供する。
 
 Fireballでは、標準WASIのゲスト側アダプタを `libfireball` として提供し、WASM import の host call でホストサービスへ接続する。汎用システムコール、vIRQ、vDMAの要求搬送に vMMIO レジスタは使用しない。
 
-- **host-call import**: `uint32_t fireball_call(uint32_t id, uint32_t arg0, uint32_t arg1, ... uint32_t arg5)`
-  - ゲストはこの関数をインポートし、統合システムコールID `id`（上位16bit: `service_id`, 下位16bit: `command_id`）および最大6つの汎用引数を指定して呼び出す（`{Syscall_Mapping}` を正本とする）。
-  - **host call は vMMIO レジスタ経路ではない**。上記シグネチャはゲストから見た WASM import ABI であり、ゲストは通常の関数呼び出しとして引数を渡す。実行エンジンは引数をホスト側ハンドラへ直接渡し、戻り値を WASM の結果値へ返す。※整合性検証は [runtime_vsoc_test_spec.md](docs/qa/tier2_runtime/runtime_vsoc_test_spec.md) `TEST-VSOC-40` を参照。
+- **host-call import**: 汎用host callのIDと呼出規約は [`runtime_syscall.md`](docs/components/tier2_runtime/runtime_syscall.md) のID対応契約を参照する。ゲスト公開シグネチャは [`fireball_hostcall_contract.wit`](docs/components/tier3_platform/wit/fireball_hostcall_contract.wit) の `trap` を正本とする。
+  - vSoCはWASM importをホスト側ハンドラへ接続し、その結果をゲストへ返す。host callはvMMIOレジスタ経路を使用しない。接続の検証は [runtime_vsoc_test_spec.md](docs/qa/tier2_runtime/runtime_vsoc_test_spec.md) の `TEST-VSOC-40` を参照する。
 - **専用host-call import**: `fireball:host/virq` と `fireball:host/vdma`
   - vIRQの `register` / `unregister` とvDMAの `start` は、汎用 `fireball_call` のIDディスパッチを経由せず、専用WASM importから対応ハンドラへ直接接続する。
 - **WASI互換性**: ゲスト側で `wasi-libc` と Tier 3 のゲストアダプタをリンクし、Tier 2 の `runtime_syscall` と `hal_dispatch` が定義する公開契約へ接続することで実現する。

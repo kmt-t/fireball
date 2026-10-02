@@ -79,15 +79,15 @@ Copy-and-Patchエンジンによるネイティブコード生成、4論理引�
 
 | TEST-JITC-57 | x64共通コード区画とchain targetの有効性 | x64 JIT cacheでtraceをlinkし、対象バンクをrotate | chain targetと共通dispatcherを確認 | 共通コードはcache rotationで保持され、無効化されたtraceを指すtargetは0に戻る。ARMv8-Mの分岐範囲とrelay方式はTBD | `jit_abi.md`, `jit_runtime.md` |
 
-### 実装の勘所・不変条件（Gotchas & Implementation Invariants）
-<!-- traceability: {MemoryBoundaryCheck} {FastAddressCheck} -->
+### 実装上の注意点に対応する検証
+<!-- traceability: {MemoryBoundaryCheck} {FastAddressCheck} {GOTCHA-JITC-01} {GOTCHA-JITC-03} {GOTCHA-JITC-04} {GOTCHA-JITC-07} -->
 
-| GOTCHA ID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
+| GOTCHA参照 | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| `{GOTCHA-JITC-01}` | 境界引数レジスタとJIT内部一時レジスタの物理競合防止 | トレース生成 | 各ステンシルのレジスタ割り当てを走査 | x64の物理レジスタ配置は[`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md)の対象ABI表と一致すること。ARMv8-Mの物理レジスタ割当と競合条件はTBD | `{JIT_RegisterMapping}` |
-| GOTCHA-JITC-03 | trace境界の共有stackと実行状態同期 | JIT trace終端 | C++ Interpreter handlerへ復帰した状態を確認する | x64の共有状態は同期される。ARMv8-Mの物理保存先と同期方法はTBD | `{ADR_TosCacheAsymmetry}` |
-| GOTCHA-JITC-04 | 境界チェック先行性と副作用ゼロ（Wrapping禁止） | メモリアクセス命令 | `addr + width - 1 >= mem_size` でトレース実行 | メモリアクセス（LDR/STR）前にx64実装の範囲検査で評価され、境界外時はメモリ書き込みや値更新の副作用が一切発生せず即座にトラップテールへ分岐する。**実装の勘所**: マスク等でアドレスを巡回（Wrapping）させて継続実行することは安全上絶対に許容されない | MemoryBoundaryCheck, FastAddressCheck |
-| GOTCHA-JITC-07 | trace結果値とホスト関数戻り値の分離 | 残余値を持つtrace | 共通stackとC++ handler復帰後の値を確認する | WASM値は共有operand stackに残し、JIT traceのC戻り値として返さない。x64の物理配置は`jit_abi.md`に従い、ARMv8-Mの物理配置はTBD | `{ADR_TosCacheAsymmetry}` |
+| `GOTCHA-JITC-01` | 境界引数レジスタとJIT内部一時レジスタの物理競合防止 | トレース生成 | 各ステンシルのレジスタ割り当てを走査 | x64の物理レジスタ配置は[`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md)の対象ABI表と一致すること。ARMv8-Mの物理レジスタ割当と競合条件はTBD | [`jit_compiler.md`](docs/components/tier3_executer/jit_compiler.md)、`{JIT_RegisterMapping}` |
+| GOTCHA-JITC-03 | trace境界の共有stackと実行状態同期 | JIT trace終端 | C++ Interpreter handlerへ復帰した状態を確認する | x64の共有状態は同期される。ARMv8-Mの物理保存先と同期方法はTBD | [`jit_compiler.md`](docs/components/tier3_executer/jit_compiler.md)、`{ADR_TosCacheAsymmetry}` |
+| GOTCHA-JITC-04 | 境界チェック先行性と副作用ゼロ（Wrapping禁止） | メモリアクセス命令 | `addr + width - 1 >= mem_size` でトレース実行 | メモリアクセス（LDR/STR）前にx64実装の範囲検査で評価され、境界外時はメモリ書き込みや値更新の副作用が一切発生せず即座にトラップテールへ分岐する。 | [`jit_compiler.md`](docs/components/tier3_executer/jit_compiler.md)、MemoryBoundaryCheck, FastAddressCheck |
+| GOTCHA-JITC-07 | trace結果値とホスト関数戻り値の分離 | 残余値を持つtrace | 共通stackとC++ handler復帰後の値を確認する | WASM値は共有operand stackに残し、JIT traceのC戻り値として返さない。x64の物理配置は`jit_abi.md`に従い、ARMv8-Mの物理配置はTBD | [`jit_compiler.md`](docs/components/tier3_executer/jit_compiler.md)、`{ADR_TosCacheAsymmetry}` |
 
 ## 3. テスト検証実績と網羅状況
 

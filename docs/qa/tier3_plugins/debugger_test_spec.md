@@ -56,17 +56,18 @@ GDB RSP コマンド処理（`?`, `g/G`, `m/M`, `Z0/z0`, `s`, `c`）、ブレー
 | TEST-DBG-25 | デバッガSinkの静的差し替え | `DebuggerSink`互換のテスト用物理Sinkを構成 | TCPを使わず同じRSPバイト列をSinkへ入出力する | GDBServerはRSP解析を維持したまま物理Sinkだけを差し替えられ、デバッガの状態制御と応答が同一になる | `RSP_Transport_Selectable`, [`debugger.md`](docs/components/tier3_plugins/debugger.md) |
 | TEST-DBG-26 | チェックサム不一致パケットの破棄 | デバッグセッション接続中 | 不正なチェックサム付き`M`パケットと正しい`?`を順に送る | 不正パケットへ`-`を返し、メモリを変更せず、後続の正しいパケットを処理する | `{RSPChecksumVerify}`, `gdb_rsp_protocol.md` |
 
-### 実装の勘所・不変条件（Gotchas & Implementation Invariants）
-<!-- traceability: {DebuggerInterpreterComposition} {RSPChecksumVerify} {GOTCHA-DBG-04} -->
+### 実装上の注意点に対応する検証
+<!-- traceability: {DebuggerInterpreterComposition} {RSPChecksumVerify} {GOTCHA-DBG-04} {GOTCHA-DBG-01} {GOTCHA-DBG-02} {GOTCHA-DBG-03} -->
 
-| GOTCHA ID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
+| GOTCHA参照 | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| GOTCHA-DBG-01 | デバッガとJITの同時構成拒否 | `RuntimeCompositionConfig(execution=JIT, debugger=True)` | ランタイム構成を合成する | 構成時 `assert` で拒否され、デバッガがJITキャッシュを操作する経路は生成されない | `debugger.md` |
-| GOTCHA-DBG-02 | アタッチ中のインタープリタ専用実行 | `Interpreter + Debugger` 構成 | デバッガをアタッチして実行する | アタッチ中もインタープリタだけが実行され、JIT実行器およびデバッグ専用ハンドラテーブルへの切替は発生しない | `debugger.md` |
-| GOTCHA-DBG-03 | GDB RSP チェックサム照合と再送制御（通信化け耐性） | GDB リモートセッション接続中 | チェックサムが不一致の破損パケットを送信 | サーバーはパケットを破棄し、NAK（`-`）を返信してクライアントに再送を要求する。**実装の勘所**: チェックサム検証を怠って破損パケットを解釈すると、誤ったメモリアドレスや不正レジスタ値が書き込まれてデバッグ対象がクラッシュする | [`gdb_rsp_protocol.md`](docs/specs/gdb_rsp_protocol.md) |
-| GOTCHA-DBG-04 | 協調スケジューラ下での RSP 応答分割送出と複数 yield 跨ぎ耐性 | COOS 協調スケジューラ上で GDBServer タスクが動作中 | 長い応答パケット（`g` 等）を要求し、クライアント側で完全な RSP フレーム（`$...#xx`）を受信 | ACK（`+`）とペイロード（`$...#xx`）を同じ送信キューへ積む。ノンブロッキング送信と複数 yield に跨るドレイン処理により、応答全体を送受信する。**実装の勘所**: 協調スケジューラ下で `sendall()` を使うと、部分送信が脱落する。`tx_buffer` で `send()` のフラグメント状態を管理し、yield 境界で確実にフラッシュする。ACK とペイロードを別々に即時送信すると、TCP セグメントが分割される。1回の `scheduler.step()` で応答全体を送れず、複数 yield に跨る。テスト側とクライアント側は1回の yield / recv で完了すると仮定しない。フレーム終端（`#` と2桁の16進数）まで受信をバッファする。 | [`debugger.md`](docs/components/tier3_plugins/debugger.md) |
+| GOTCHA-DBG-01 | デバッガとJITの同時構成拒否 | `RuntimeCompositionConfig(execution=JIT, debugger=True)` | ランタイム構成を合成する | 構成時 `assert` で拒否され、デバッガがJITキャッシュを操作する経路は生成されない | [`debugger.md`](docs/components/tier3_plugins/debugger.md) |
+| GOTCHA-DBG-02 | アタッチ中のインタープリタ専用実行 | `Interpreter + Debugger` 構成 | デバッガをアタッチして実行する | アタッチ中もインタープリタだけが実行され、JIT実行器およびデバッグ専用ハンドラテーブルへの切替は発生しない | [`debugger.md`](docs/components/tier3_plugins/debugger.md) |
+| GOTCHA-DBG-03 | GDB RSP チェックサム照合と再送制御（通信化け耐性） | GDB リモートセッション接続中 | チェックサムが不一致の破損パケットを送信 | サーバーはパケットを破棄し、NAK（`-`）を返信してクライアントに再送を要求する。 | [`debugger.md`](docs/components/tier3_plugins/debugger.md)、[`gdb_rsp_protocol.md`](docs/specs/gdb_rsp_protocol.md) |
+| GOTCHA-DBG-04 | RSP応答の部分送信と複数yield跨ぎ | COOS上のGDBServerへ長い応答を要求し、送信可能量を制限する | 複数回の協調実行と`recv`でACKおよび応答フレームを受信する | ACKに続いて完全な`$...#xx`フレームが届き、応答の欠落・重複・順序変更がない。1回のyield/recvでの完了を前提にしない | [`debugger.md`](docs/components/tier3_plugins/debugger.md) |
 
 ## 3. テスト検証実績と網羅状況
+<!-- traceability: {GOTCHA-DBG-01} -->
 
 実装テストは [`test_debugger.py`](experiments/pysim/qa/tier3_plugins/debugger/test_debugger.py) と [`test_gdb_remote.py`](experiments/pysim/qa/tier3_plugins/debugger/test_gdb_remote.py) にある。
 パケット解析、仮想レジスタ、メモリの読書き、固定容量ブレークポイント、チェックサム拒否、注入Sink、実TCP接続を検査する。
@@ -105,7 +106,7 @@ QAブロックドライバはローダメタデータ取得と既存のブロッ
 | TEST-DBG-10/11 | `test_dbg_10_trap_stops_without_normal_exit_or_later_update` | PC=0/3のUNREACHABLEでs/cが停止し、global更新とW00を発生させない |
 | TEST-DBG-12 | `test_dbg_12_disabled_composition_has_no_debug_state_or_weave` | 通常native入口と144byteのABIを維持し、構成時weaveを呼ばない |
 | TEST-DBG-12/13 | `test_dbg_12_continue_returns_to_python_only_at_actual_stop` | 2002命令のcが既存native stepの1回で完了する |
-| GOTCHA-DBG-01 | `test_dbg_13_composition_rejects_jit_before_creating_executor` | JITとDebuggerの同時構成を生成前に拒否する |
+| GOTCHA-DBG-01 | `test_dbg_13_composition_rejects_jit_before_creating_executor` | [`debugger.md`](docs/components/tier3_plugins/debugger.md)、JITとDebuggerの同時構成を生成前に拒否する |
 | TEST-DBG-12/13 | `test_dbg_13_two_compositions_keep_stop_state_and_storage_independent` | 通常構成と2つのデバッグ構成の状態・ブレークポイントを相互に変更しない |
 | TEST-DBG-20〜24 | `test_gdb_remote_socket_session` | 実TCPのsでlocal.getだけを実行し、同じ状態から結果498とW00を得る |
 

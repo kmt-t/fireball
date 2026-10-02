@@ -141,7 +141,7 @@ pysimのPython・C・C++ソースとヘッダ、ビルド入口、設定と依�
 ## 4. 未検証・スコープ外
 
 - 物理割り込み処理（TEST-HAL-03）と GPIO vMMIO 高速パスの物理実装（TEST-HAL-05）は、[`platform_driver_test_spec.md`](docs/qa/tier3_platform/platform_driver_test_spec.md) を参照する。
-- HAL バッファプールの物理配置（TEST-HAL-06）と RSP トランスポート物理層（TEST-HAL-07、TEST-HAL-08）も同仕様書を参照する。物理実装の勘所（GOTCHA）の正本も同仕様書である。
+- HAL バッファプールの物理配置（TEST-HAL-06）と RSP トランスポート物理層（TEST-HAL-07、TEST-HAL-08）も同仕様書を参照する。実装上の注意点（GOTCHA）の定義は[`platform_driver.md`](docs/components/tier3_platform/platform_driver.md)を参照する。
 - 実ハードウェア（UART/RTT/GPIO/I2C）そのものの電気的特性。
 - 上記2入力はstream-writeのデータ完全性を検査する。物理DMAによるCPU非介在転送、全デバイス種別、全長・全offsetの網羅は未検証である。
 - スタブの成功は、製品のADC/PWMコマンドABI、ロール方針、GPIO vMMIO高速経路、物理ISR配送、電気的特性の証拠ではない。

@@ -53,10 +53,14 @@ interface resolver {
     clock-get-now: func(handle: u32) -> result<u64, recovery-strategy-category>;
     /// クロック分解能を取得する
     clock-get-resolution: func(handle: u32) -> result<u64, recovery-strategy-category>;
+    /// 指定時間後にreadyとなる一回限りのpollableを予約する
+    clock-subscribe: func(nanos: u64) -> result<u32, recovery-strategy-category>;
     /// 操作完了または入力準備の状態を確認する
     poll-check: func(handle: u32) -> result<bool, recovery-strategy-category>;
     /// 準備完了まで待機する
-    poll-wait: func(handle: u32) -> operation-result;
+    poll-wait: func(handle: u32) -> result<bool, recovery-strategy-category>;
+    /// pollableを破棄して固定スロットを解放する
+    poll-drop: func(handle: u32) -> operation-result;
 }
 
 /// Fireball HAL contract.

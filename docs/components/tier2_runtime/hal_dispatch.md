@@ -84,25 +84,15 @@ HAL全体の制限値を定義する。物理値は Tier 3 で確定される。
 ## 5. インターフェース定義
 
 ### 5.1 公開 API（WASI親和性のある契約）
-<!-- traceability: {HAL_Interface} {IPC_ZeroCopy} -->
+<!-- traceability: {HAL_Interface} {IPC_ZeroCopy} {WIT_First} {WIT_Interface_Spec} {Asynchronous_Notification} {WASI_Async_Bridge} {CooperativeMultitasking} -->
 
 HAL の公開境界は、WASI 0.3p の interface / stream / pollable に対応しやすい汎用操作で構成する。ゲスト側の Preview1 API への変換は Tier 3 のゲストアダプタが担当し、HAL はその変換後の契約だけを受け取る。
 
-| 操作 | シグネチャ | 役割 |
-| :--- | :--- | :--- |
-| `get-interface` | `get-interface(uri: string) -> result<u32, recovery-strategy-category>` | URI からデバイスまたはHALのインターフェースハンドルを取得する |
-| `map-buffer` | `map-buffer(slot-index: u32) -> result<hal-buffer-slice, recovery-strategy-category>` | 対象スロットを今回のI/O期間だけDYNAMICへマップする。競合時は`BUSY`を返す |
-| `unmap-buffer` | `unmap-buffer(handle: u32) -> operation-result` | 今回のI/Oを終了し、対象スロットをDYNAMICからアンマップする |
-| `stream-read` | `stream-read(handle: u32, buffer: hal-buffer-slice) -> operation-result` | ストリームから HAL バッファへ読み込む |
-| `stream-write` | `stream-write(handle: u32, buffer: hal-buffer-slice) -> operation-result` | HAL バッファからストリームへ書き込む |
-| `stream-flush` | `stream-flush(handle: u32) -> operation-result` | ストリームの保留データを送出する |
-| `stream-close` | `stream-close(handle: u32) -> operation-result` | ストリームハンドルを閉じる |
-| `clock-get-now` | `clock-get-now(handle: u32) -> result<u64, recovery-strategy-category>` | 単調クロックの現在値を取得する |
-| `clock-get-resolution` | `clock-get-resolution(handle: u32) -> result<u64, recovery-strategy-category>` | クロック分解能を取得する |
-| `clock-subscribe` | `clock-subscribe(nanos: u64) -> result<u32, recovery-strategy-category>` | 指定時間後にreadyとなる一回限りの pollable を予約する |
-| `poll-check` | `poll-check(handle: u32) -> result<bool, recovery-strategy-category>` | 操作完了または入力準備の状態を確認する |
-| `poll-wait` | `poll-wait(handle: u32) -> result<bool, recovery-strategy-category>` | 準備完了まで待機し、ready を返す |
-| `poll-drop` | `poll-drop(handle: u32) -> operation-result` | pollable を破棄して固定スロットを解放する |
+公開操作のシグネチャと型は [`fireball_hal_contract.wit`](docs/components/tier3_platform/wit/fireball_hal_contract.wit) の `resolver` を正本とする。本書は操作の適用条件とIPCコマンドへの対応を定める。
+
+- バッファ操作では対象スロットを今回のI/O期間だけDYNAMICへマップする。競合時は `BUSY` を返し、I/O終了時にアンマップする。
+- クロック購読で予約した一回限りのpollableは、指定時間後にreadyとなる。確認と待機はその単一ハンドルを対象とし、破棄時に固定スロットを解放する。
+- `poll-wait`はreadyになったときだけ成功応答を返す。待機中の協調実行は本書のコマンドルーティング契約に従う。
 
 `poll-wait`を提供するドライバは、未完了pollableの次回確認時刻を単調時計の絶対時刻で返す。COOSはその時刻を期限待ちTCBへ登録する。アイドル中の割り込み確認間隔は最大1msとする。
 
@@ -169,7 +159,7 @@ Fireball の HAL は、WASI 0.3p と親和性のある汎用インターフェ�
 - **IPCルーティングと事前検査**: デバイスアクセスはIPCルータを迂回せず、バッファ転送は生ポインタを使わず、事前検査で拒否された要求は所有権を先取りして剥奪しないことを [`hal_dispatch_contract_model.py`](docs/components/tier2_runtime/formal/hal_dispatch_contract_model.py) でCTL検証する。`guards=False` では各違反経路が反証されることを確認する。
 
 ### 7.2 テスト仕様書との連携
-本コンポーネントの契約テストケース（TEST-HAL-01, TEST-HAL-02, TEST-HAL-04, TEST-HAL-09〜TEST-HAL-15）は、[`hal_dispatch_test_spec.md`](docs/qa/tier2_runtime/hal_dispatch_test_spec.md) を正本として定義する。物理ドライバ実装のテストケース（TEST-HAL-03, TEST-HAL-05〜TEST-HAL-08, GOTCHA-HAL-01〜03）は [`platform_driver_test_spec.md`](docs/qa/tier3_platform/platform_driver_test_spec.md) を参照する。
+本コンポーネントの契約テストケース（TEST-HAL-01, TEST-HAL-02, TEST-HAL-04, TEST-HAL-09〜TEST-HAL-15）は、[`hal_dispatch_test_spec.md`](docs/qa/tier2_runtime/hal_dispatch_test_spec.md) を正本として定義する。物理ドライバ実装のテストケース（TEST-HAL-03, TEST-HAL-05〜TEST-HAL-08）は [`platform_driver_test_spec.md`](docs/qa/tier3_platform/platform_driver_test_spec.md) を参照する。実装上の注意点の定義は [`platform_driver.md`](docs/components/tier3_platform/platform_driver.md)、対応する検証は同テスト仕様書を参照する。
 
 ## 8. 設計判断と参考実装
 

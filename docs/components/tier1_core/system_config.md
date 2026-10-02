@@ -57,47 +57,16 @@ graph TD
 ARMv8-Mの対象ボード、SRAM/ROM/周辺アドレス、メモリ保護方式、領域数・属性・配置、JITコードキャッシュの物理配置と実装時の資源使用量はTBDとする。要求のRAM/ROM容量条件は [`requirement_list.md`](docs/requires/requirement_list.md) に従う。
 
 #### 3.3.2 IPCルータ
-<!-- traceability: {META_ConfigurableSystem} {IPC_ZeroCopy} -->
+<!-- traceability: {META_ConfigurableSystem} {IPC_ZeroCopy} {RoleBasedAccessControl} {WIT_First} {WIT_Common_Types} {Challenge_CspHandoffStarvation} -->
 | マクロ名 | 説明 | デフォルト値 | 導出元 |
 | :--- | :--- | :--- | :--- |
 | `FB_CONF_IPC_MAX_SERVICES` | 登録可能な最大サービス数 | `16` | |
 | `FB_CONF_ROUTER_MAX_KV_PAIRS` | 1メッセージが保持できるkv_pairの最大数（[`ipc_router.md`](docs/components/tier1_interface/ipc_router.md) §3.3） | `8` | |
-| `FB_CONF_MAX_CONSECUTIVE_HANDOFFS` | スケジューラ復帰なしでの最大連続CSPハンドオフ回数 | `4` | `{Challenge_CspHandoffStarvation}` |
+| `FB_CONF_MAX_CONSECUTIVE_HANDOFFS` | スケジューラ復帰なしでの最大連続CSPハンドオフ回数 | `4` | [`os_scheduler.md`](docs/components/tier1_core/os_scheduler.md) の連続ハンドオフ上限 |
 
-```cpp
-namespace fireball::config {
-    // ロール定義: HAL_* の各ロールはデバイス/サービスインスタンス 1 つに専用のロール
-    // （＝専用チャネル）を割り当てる。「1 チャネル 1 待機者」制約下で複数の同種デバイス
-    // インスタンス（例: 物理UARTと、それとは別に登録されるコンソール出力ストリーム）を
-    // 区別するために必要である（{ADR_RendezvousChannel}）。
-    enum class router_role : uint8_t {
-        RUNTIME = 0,
-        CORE_SERVICE = 1,
-        HAL_UART = 2,
-        HAL_STDOUT = 3,
-        HAL_GPIO = 4,
-        HAL_TIMER = 5,
-        HAL_I2C = 6,
-        HAL_SPI = 7,
-        DEBUGGER = 8,
-        COUNT = 9
-    };
+ロールの型と列挙値は [`ipc_router_contract.wit`](docs/components/tier1_interface/wit/ipc_router_contract.wit) の `types.role` を正本とする。ロール間の通信許可は [`ipc_router.md`](docs/components/tier1_interface/ipc_router.md) §4.1.1 の許可マトリクスを正本とする。
 
-    // ロール間通信許可マトリクス (9x9 static bool table)
-    inline constexpr std::array<std::array<bool, 9>, 9> FB_CONF_ROUTER_ROLE_MATRIX {{
-        // Target:            RUNTIME, CORE_SERVICE, HAL_UART, HAL_STDOUT, HAL_GPIO, HAL_TIMER, HAL_I2C, HAL_SPI, DEBUGGER
-        /* RUNTIME         */ {false,  true,         true,     true,       true,     true,      true,    true,    false},
-        /* CORE_SERVICE    */ {false,  false,        true,     true,       true,     true,      true,    true,    false},
-        /* HAL_UART        */ {false,  false,        false,    false,      false,    false,     false,   false,   false},
-        /* HAL_STDOUT      */ {false,  false,        false,    false,      false,    false,     false,   false,   false},
-        /* HAL_GPIO        */ {false,  false,        false,    false,      false,    false,     false,   false,   false},
-        /* HAL_TIMER       */ {false,  false,        false,    false,      false,    false,     false,   false,   false},
-        /* HAL_I2C         */ {false,  false,        false,    false,      false,    false,     false,   false,   false},
-        /* HAL_SPI         */ {false,  false,        false,    false,      false,    false,     false,   false,   false},
-        /* DEBUGGER        */ {false,  true,         true,     true,       true,     true,      true,    true,    false},
-    }};
-}
-```
+本コンポーネントは許可マトリクスをビルド時構成 `FB_CONF_ROUTER_ROLE_MATRIX` へ反映する。ロールの意味と許可セルを本書で再定義しない。
 
 #### 3.3.3 HAL
 <!-- traceability: {META_ConfigurableSystem} -->

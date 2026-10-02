@@ -110,9 +110,9 @@ llm_judge:
       model: "typesafe/jev-1.13"
     nimble:
       endpoint: "http://localhost:11434/v1/systemone"
-      model: "nimble"
+      model: "fireball-tev1-64k"
       requires_api_key: false
-      context_window_tokens: 8192
+      context_window_tokens: 65536
   checks:
     - id: "vertical_consistency"
       name: "Vertical Consistency (Definition vs. Designs)"

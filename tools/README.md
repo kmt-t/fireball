@@ -116,7 +116,7 @@ Linux x86_64向けの準備入口は、公式WASI-SDK 27.0の配布物をSHA-256
 
 OpenRouter API を利用する監査は課金対象のため、ユーザーの明示指示を受けて実行する。
 <code>{VERIFY_LLM}</code> の義務は <code>llm-judge</code> で記録付きで履行する。詳細なオプションは [spec-integrator のリファレンス](spec-integrator/README.md) を参照する。
-既定の判定バックエンドは OpenRouter 経由の Jev (<code>typesafe/jev-1.13</code>) であり、<code>OPENROUTER_API_KEY</code> を環境変数に設定する。ローカルの Nimble は <code>--backend nimble</code> で選択できる。Nimble は Ollama 0.35 以降と <code>nimble</code> モデルを必要とする。初回は <code>ollama pull nimble</code> を実行する。埋め込み生成には引き続きローカル Ollama の <code>qwen3-embedding</code> を使う。
+既定の判定バックエンドは OpenRouter 経由の Jev (<code>typesafe/jev-1.13</code>) であり、<code>OPENROUTER_API_KEY</code> を環境変数に設定する。ローカル監査は <code>--backend nimble</code> で選択できる。この接続名はOllamaのSystem Oneを表す。現在のモデルはTev1を64Kコンテキストで使用する <code>fireball-tev1-64k</code> である。Ollama 0.35以降を使用し、初回は <code>ollama pull tev1</code> と <code>ollama create fireball-tev1-64k -f tools/ollama/tev1-64k.Modelfile</code> を実行する。モデルとコンテキストの設定は <code>spec-integrator.yaml</code> を参照する。埋め込み生成には引き続きローカル Ollama の <code>qwen3-embedding</code> を使う。
 
 ```bash
 # OPENROUTER_API_KEY を設定したシェルで実行する

@@ -464,19 +464,15 @@ source_verification:
           rules: ["forbid_typing_any", "forbid_object_type", "forbid_non_none_union", "forbid_builtin_containers", "forbid_raise", "forbid_rtti", "forbid_in_operator", "forbid_test_backdoor", "forbid_required_nullable_arguments", "forbid_string_members", "dummy_pass", "todo_comment"]
           builtin_container_exclude_paths:
             - "experiments/pysim/tier1_core/system_containers.py"
-            - "experiments/pysim/aobench.py"
             - "experiments/pysim/qa/**"
             - "experiments/pysim/benchmarks/**"
           rtti_exclude_paths:
-            - "experiments/pysim/aobench.py"
             - "experiments/pysim/qa/**"
             - "experiments/pysim/benchmarks/**"
           raise_exclude_paths:
-            - "experiments/pysim/aobench.py"
             - "experiments/pysim/qa/**"
             - "experiments/pysim/benchmarks/**"
           test_backdoor_exclude_paths:
-            - "experiments/pysim/aobench.py"
             - "experiments/pysim/qa/**"
             - "experiments/pysim/benchmarks/**"
           forbidden_product_symbols:
@@ -485,15 +481,12 @@ source_verification:
             - "resolve_trace_block"
             - "emulate_trace"
           in_operator_exclude_paths:
-            - "experiments/pysim/aobench.py"
             - "experiments/pysim/qa/**"
             - "experiments/pysim/benchmarks/**"
           non_none_union_exclude_paths:
-            - "experiments/pysim/aobench.py"
             - "experiments/pysim/qa/**"
             - "experiments/pysim/benchmarks/**"
           string_member_exclude_paths:
-            - "experiments/pysim/aobench.py"
             - "experiments/pysim/tier2_runtime/logger.py"
             - "experiments/pysim/qa/**"
             - "experiments/pysim/benchmarks/**"
@@ -520,7 +513,6 @@ pysim_imports:
       paths:
         - "system.py"
         - "main.py"
-        - "aobench.py"
         - "tier3_executer/**/*.py"
         - "tier3_plugins/**/*.py"
         - "tier3_platform/**/*.py"

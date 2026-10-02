@@ -1,5 +1,5 @@
 """
-experiments/pysim/aobench.py
+experiments/pysim/benchmarks/aobench/aobench.py
 Genuine 3D Ambient Occlusion Benchmark (AO-Bench):
 1. Written in standard WAT using fixed-point Q8.8 arithmetic (no floats, {Wasm32Only} compliant).
 2. Computes:
@@ -20,6 +20,13 @@ from pathlib import Path
 _PYSIM_DIR = Path(__file__).resolve().parent
 while not (_PYSIM_DIR / "tier1_core").is_dir():
     _PYSIM_DIR = _PYSIM_DIR.parent
+
+_BENCH_DIR = Path(__file__).resolve().parents[1]
+if str(_BENCH_DIR) not in sys.path:
+    sys.path.insert(0, str(_BENCH_DIR))
+from _bootstrap import configure_import_paths
+
+configure_import_paths(_PYSIM_DIR, _BENCH_DIR)
 
 
 import time
@@ -382,7 +389,7 @@ def run_aobench():
     HEIGHT = 16
     AO_SAMPLES = 4
     # 1. Compile 3D AO-Bench WAT to standard WASM binary using external toolchain if available
-    wasm_path = Path(_PYSIM_DIR) / "aobench.wasm"
+    wasm_path = Path(__file__).resolve().with_suffix(".wasm")
     if wasmtime is not None:
         print("\n[*] Step 1: Compiling Q8.8 3D AO-Bench WAT via `wasmtime.wat2wasm`...")
         wasm_bytes = bytes(wasmtime.wat2wasm(GENUINE_AO_WAT))

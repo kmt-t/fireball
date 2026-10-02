@@ -41,7 +41,7 @@ def run_aobench(debug: bool = False) -> dict[str, int | float]:
     HEIGHT = 16
     AO_SAMPLES = 4
 
-    wasm_path = Path(_PYSIM_DIR) / "aobench.wasm"
+    wasm_path = Path(__file__).resolve().parent / "aobench.wasm"
     with open(wasm_path, "rb") as f:
         wasm_bytes = f.read()
 

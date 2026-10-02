@@ -101,8 +101,13 @@ experiments/pysim/
 │       ├── scenario12_wasi03p_uri_resolver.py
 │       └── run_all.py     # 全シナリオ一括実行ドライバ
 │
+├── benchmarks/            # ベンチマーク
+│   └── aobench/           # 3D レイトレーシング Ambient Occlusion ベンチマーク
+│       ├── aobench.py     # f32 / Q8.8 の検証・描画
+│       ├── aobench.wasm   # コンパイル済み Q8.8 ワークロード
+│       └── bench_aobench.py # Python / C++ / JIT の比較測定
+│
 ├── system.py              # 全 Tier 統合ファサード
-├── aobench.py             # 3D レイトレーシング Ambient Occlusion ベンチマーク (f32 / Q8.8)
 └── main.py                # エントリポイント CLI
 ```
 
@@ -147,7 +152,7 @@ C++ InterpreterとHybrid JITは、同じ実行コンテキストのLOOP後方分
 ### B. JITの共通helper呼出し契約
 x64参照構成のhelper入口と呼出規約は [`jit_runtime.md`](docs/components/tier3_executer/jit_runtime.md) と [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) に従う。ARMv8-Mの命令列、ABI、helper配置とROM/RAM使用量はTBDであり、x64の結果から推定しない。
 
-### C. Ambient Occlusion ベンチマーク (`aobench.py`)
+### C. Ambient Occlusion ベンチマーク (`benchmarks/aobench/aobench.py`)
 Float32経路とQ8.8固定小数点経路を同じ入力で実行する。WASI `fd_write`の出力と描画結果を比較し、Interpreter/JIT間で結果が一致することを確認する。このワークロードから特定の組み込みCPUや物理メモリ予算は推定しない。
 
 ---
@@ -216,7 +221,7 @@ uv run --offline --no-sync python experiments/pysim/qa/run_all.py
 
 ### 3D AO-Bench ベンチマークの実行
 ```bash
-uv run --offline --no-sync python experiments/pysim/aobench.py
+uv run --offline --no-sync python experiments/pysim/benchmarks/aobench/aobench.py
 ```
 
 ### JIT C++実装とABI

@@ -87,7 +87,7 @@ ninja
 uv run --offline --no-sync python experiments/pysim/qa/scenarios/run_all.py
 
 # Run 3D AO-Bench (Ambient Occlusion) benchmark
-uv run --offline --no-sync python experiments/pysim/aobench.py
+uv run --offline --no-sync python experiments/pysim/benchmarks/aobench/aobench.py
 ```
 
 ## Documentation and Development Process

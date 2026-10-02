@@ -32,6 +32,12 @@ from pathlib import Path
 _BENCH_DIR = Path(__file__).resolve().parent.parent
 _PYSIM_DIR = _BENCH_DIR.parent
 
+if str(_BENCH_DIR) not in sys.path:
+    sys.path.insert(0, str(_BENCH_DIR))
+from _bootstrap import configure_import_paths
+
+configure_import_paths(_PYSIM_DIR, _BENCH_DIR)
+
 from ipc_router import DataType, IPCMessage, IPCRouter, IPCStatus, Role, ScopeKind, pack_key32
 from memory import FB_CONF_MEMORY_POOL_SIZE, MemoryManager
 from scheduler import ChannelAction, Scheduler
@@ -50,7 +56,7 @@ from wasm_module import Module
 from wasm_reader import parse
 
 SUITE_WASM_PATH = Path(__file__).resolve().parent / "guest" / "suite.wasm"
-AO_WASM_PATH = _PYSIM_DIR / "aobench.wasm"
+AO_WASM_PATH = _BENCH_DIR / "aobench" / "aobench.wasm"
 MASK32 = 0xFFFFFFFF
 OS_MIX_MAX_SWEEPS = 10_000_000
 OS_MIX_WAVE = 8  # concurrent guest tasks per wave; the scheduler allows 16 TCBs in total
@@ -303,10 +309,8 @@ def _ao_guest(phase: str):
     sysv.start_hal_driver(DummyDriver(transport=sysv.transport), sysv.wasi_hal_bindings.stdout_uri)
     funcs = wasi_ctx.build_interpreter_host_functions(module)
     module.init_memory_data(wasi_ctx.guest_memory, ())
-    interp = Interpreter(
-        module, InterpreterBindings.with_memory_and_functions(wasi_ctx.guest_memory, funcs)
-    )
-    return module, sysv, interp, sink
+    bindings = InterpreterBindings.with_memory_and_functions(wasi_ctx.guest_memory, funcs)
+    return module, sysv, bindings, sink
 
 
 def _check_ao_frame(frame: bytes, width: int, height: int) -> None:
@@ -320,7 +324,8 @@ def _check_ao_frame(frame: bytes, width: int, height: int) -> None:
 
 def phase_ao_interp(scale: float, kernels: list[str] | None, oracle: bool) -> PhaseResult:
     width, height = _ao_size(scale)
-    module, sysv, interp, sink = _ao_guest("ao_interp")
+    module, sysv, bindings, sink = _ao_guest("ao_interp")
+    interp = Interpreter(module, bindings)
     t0 = time.perf_counter()
     interp.call(module.export_func_index("main"), [width, height])
     seconds = time.perf_counter() - t0
@@ -335,9 +340,10 @@ def phase_ao_interp(scale: float, kernels: list[str] | None, oracle: bool) -> Ph
 
 def phase_ao_jit(scale: float, kernels: list[str] | None, oracle: bool) -> PhaseResult:
     width, height = _ao_size(scale)
-    module, sysv, interp, sink = _ao_guest("ao_jit")
+    module, sysv, bindings, sink = _ao_guest("ao_jit")
     engine = RuntimeEngine(jit_runtime=JITRuntimeManager(jit_compiler=TraceCompiler()))
     engine.register_module_blocks(module)
+    interp = JITInterpreter(module, bindings, engine)
     t0 = time.perf_counter()
     engine.call(interp, module.export_func_index("main"), [width, height])
     seconds = time.perf_counter() - t0

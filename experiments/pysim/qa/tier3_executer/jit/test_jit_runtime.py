@@ -1261,7 +1261,7 @@ def test_jitr_terminal_trace_returns_to_interpreter_return_handler():
         candidate_threshold=0,
     )
     engine.register_module_blocks(module)
-    block = engine.get_block(0)
+    block = engine.get_block(module.function_pc_offset(0))
     assert block is not None
     trace = engine.jit_runtime._compile_trace(block.head_pc, block)
     assert trace is not None
@@ -1330,9 +1330,7 @@ def test_jitr_nested_wasm_call_keeps_callee_result_on_shared_operand_stack():
     assert engine.call(interp, caller, [20]) == [2]
     assert any(
         module.function_index_for_pc(pc) == 0 for pc, _ in engine.jit_runtime.cache.active.traces
-    ), (
-        "the repeatedly called callee should be eligible for JIT execution"
-    )
+    ), "the repeatedly called callee should be eligible for JIT execution"
 
 
 def test_jitr_hotspot_collection_continues_defined_calls_in_cpp():
@@ -1568,7 +1566,7 @@ def test_jitr_br_table_uses_native_handler_and_preserves_every_target():
         min_trace_bytes=1,
     )
     jit_engine.register_module_blocks(module)
-    table_pc = next(
+    table_offset = next(
         (
             instruction.offset
             for instruction in iter_scan_instrs(module.code_for(0))
@@ -1576,7 +1574,8 @@ def test_jitr_br_table_uses_native_handler_and_preserves_every_target():
         ),
         None,
     )
-    assert table_pc is not None
+    assert table_offset is not None
+    table_pc = module.function_pc_offset(0) + table_offset
     assert jit_engine.get_block(table_pc) is None
     predecessor = next(
         (block for block in module.blocks if block.next_pc == table_pc),
@@ -1722,7 +1721,7 @@ def test_jitr_host_import_stays_on_interpreter_runtime_boundary():
         candidate_threshold=0,
     )
     engine.register_module_blocks(module)
-    call_block = engine.get_block(0x1_0000)
+    call_block = engine.get_block(module.function_pc_offset(1))
     assert call_block is not None
     assert engine.jit_runtime._compile_trace(call_block.head_pc, call_block) is None
 

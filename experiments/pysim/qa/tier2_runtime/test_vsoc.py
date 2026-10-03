@@ -697,12 +697,11 @@ def test_tier_01_interpreter_to_jit_cooperative_flow():
         system.scheduler.run_until_idle()
         guest = system.scheduler.get_task(guest_id)
         assert guest is not None and guest.result == [12]
-        # The initial pending scheduler generation yields at the first import
-        # boundary; subsequent handoffs occur at two LOOP backedges.
-        assert observed == [1, 2, 4, 6, 8, 10]
+        # Scheduler handoffs occur after every two LOOP backedges.
+        assert observed == [2, 4, 6, 8, 10]
         assert reported == list(range(1, 13))
         assert list(decode_log_records(sink.drain_output(), system.dictionary)) == [
-            f"[INFO] wasm iteration={value}" for value in (1, 2, 4, 6, 8, 10)
+            f"[INFO] wasm iteration={value}" for value in (2, 4, 6, 8, 10)
         ]
         assert system.logger.ring.count == 0
         assert system.runtime_engine.stat_interp_steps > 0

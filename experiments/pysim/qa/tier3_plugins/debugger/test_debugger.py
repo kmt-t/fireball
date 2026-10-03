@@ -262,10 +262,10 @@ def test_dbg_11_native_execution_termination_response():
     block1, block2 = mod.blocks[0], mod.blocks[1]
     blocks = {block1.head_pc: block1, block2.head_pc: block2}
     ctx = execution.context
-    # Step 1 -> halts at block2 with S05
+    # Step 1 executes `local.get 0` and stops at the next instruction.
     res_s1, pc1 = rsp.handle_packet("s", block1.head_pc, ctx, blocks)
     assert res_s1.startswith("$S05#")
-    assert pc1 == block2.head_pc
+    assert pc1 == block1.head_pc + 2
     assert ctx.locals[0] == 5
     # Step 2 -> ends with W00 (clean termination)
     res_s2, pc2 = rsp.handle_packet("c", pc1, ctx, blocks)
@@ -494,9 +494,9 @@ def test_dbg_10_store_does_not_execute_early_or_damage_other_bytes() -> None:
         response, pc = rsp.handle_packet("s", pc, execution.context, {})
         assert response == GDBRspProtocol.format_packet("S05")
         assert pc == pc_base + expected_pc
-        if pc == 7:
+        if expected_pc == 7:
             expected[0] = 7
-        if pc == 14:
+        if expected_pc == 14:
             expected[1] = 9
         assert memory == expected
     response, pc = rsp.handle_packet("c", pc, execution.context, {})

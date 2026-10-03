@@ -352,9 +352,7 @@ def test_log_12_interpreter_trap_diagnostic_logging(native: bool, entry: str) ->
         assert flushed == 1
         wire = t.drain_output()
         # Code-section payload-relative div_s instruction address is 0x0000000A.
-        assert wire == bytes.fromhex(
-            "03 0f 0a 00 00 00 01 00 00 00 00 00 00 00 00 00 00 00 00 00"
-        )
+        assert wire == bytes.fromhex("03 0f 03 00 0a 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00")
         assert tuple(decode_log_records(wire, dictionary)) == (
             "[ERROR] TRAP: integer divide by zero (pc=0x0000000A)",
         )

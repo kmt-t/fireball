@@ -65,8 +65,8 @@ def _tier3(
 ) -> tuple[int, RuntimeEngine]:
     """Run on the hybrid engine; hot blocks compile at the first yield.
 
-    `compile_only` narrows the trackable-block bitmap to the given block heads, so every
-    other block stays on the interpreter.
+    `compile_only` contains Code section payload-relative block PCs. It narrows the
+    trackable-block bitmap to those heads, so every other block stays on the interpreter.
     """
     engine = make_runtime_engine(
         yield_threshold=3, candidate_threshold=0, jit_compiler=TraceCompiler()
@@ -250,7 +250,9 @@ def test_jitr_53_loop_entered_after_hot_block_keeps_control_frames():
     Only the pre-loop block is compiled, so the loop's own branches run on the interpreter
     and resolve their target through the control-frame stack.
     """
-    _assert_jit_ran(_check_three_ways(LOOP_AFTER_HOT_BLOCK_WAT, "main", [30], compile_only=(0,)))
+    wasm = wat_to_wasm(LOOP_AFTER_HOT_BLOCK_WAT)
+    first_function_block_pc = parse(wasm).blocks[0].head_pc
+    _assert_jit_ran(_check_three_ways(wasm, "main", [30], compile_only=(first_function_block_pc,)))
 
 
 def test_jitr_54_a_non_head_resume_point_never_enters_the_compile_queue():

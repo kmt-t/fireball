@@ -2751,7 +2751,7 @@ int run_native_dispatch_abi(const fb_native_dispatch_call* input,
         if (active == nullptr || active->function_view == nullptr ||
             state.current_pc < active->function_view->code_pc_offset) {
           call.error_code = kNativeErrorInternal;
-          return dispatch_iteration::error;
+          break;
         }
         call.context->ip = state.current_pc - active->function_view->code_pc_offset;
         state.status = kOldestTraceHit;

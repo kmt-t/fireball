@@ -292,7 +292,8 @@ def test_jitr_60_frames_with_different_slot_widths_run_side_by_side():
         2,
     )
     compiled_functions = {
-        trace.head_pc >> 16 for _key, trace in engine.jit_runtime.cache.active.traces
+        module.function_index_for_pc(trace.head_pc)
+        for _key, trace in engine.jit_runtime.cache.active.traces
     }
     assert compiled_functions >= {0, 1}, f"traces exist only for functions {compiled_functions}"
 

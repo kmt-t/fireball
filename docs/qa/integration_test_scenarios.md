@@ -67,7 +67,7 @@ Scenario 9、11、12はPythonからIPC、ドライバ、ホスト互換層を直
 
 | 仕様キーワード / 不変条件 | 定義元設計書 | 仕様上の定義・要件 | 対応テスト ID | 現行assertの観測と限界 |
 | :--- | :--- | :--- | :--- | :--- |
-| `META_BinarySearch` | `system_containers.md`, `jit_runtime.md` | 疎なJIT UnifiedPCエントリのソート配列二分探索（Radix表なし） | `TEST-INT-40`, `TEST-INT-41` | 未検証。Scenario 5のsorted/bisect_left照合はテスト側で作った表を検索し、製品lookupを呼ばない |
+| `META_BinarySearch` | `system_containers.md`, `jit_runtime.md` | 疎なJIT Code-section PCエントリのソート配列二分探索（Radix表なし） | `TEST-INT-40`, `TEST-INT-41` | 未検証。Scenario 5のsorted/bisect_left照合はテスト側で作った表を検索し、製品lookupを呼ばない |
 | `FlatMapView_BinarySearch` | `system_containers.md`, `ipc_router.md` | 静的ソート配列に対する二分探索と動的割当なしの検索 | `TEST-INT-01`, `TEST-INT-80` | 一部。URI検索結果を検査する。計算量と割当不在は検査しない |
 | `RingBuffer_Overwrite` | `system_containers.md`, `runtime_logging.md` | 満杯時の最古エントリ自動上書き | `TEST-INT-82` | 未検証。Scenario 9は2件をflushし、容量超過を発生させない |
 | `BitView_CardMarking` | `system_containers.md`, `jit_runtime.md` | 2-bitカードのUNEXEC→EXEC→HOT→COMPILED遷移 | `TEST-INT-30`, `TEST-INT-31` | 一部。Activeトレースの存在を検査する。各カード状態と遷移順序を検査しない |
@@ -174,18 +174,19 @@ Scenario 9、11、12はPythonからIPC、ドライバ、ホスト互換層を直
 
 ---
 
-### シナリオ 5: Multi-Function UnifiedPC & sparse JIT lookup
+### シナリオ 5: Code-section PC & sparse JIT lookup
+<!-- traceability: {WasmCodeSectionPC} -->
 - **対象コンポーネント**: `jit_runtime`, `jit_compiler`, `system_containers` (StaticVector / sorted entry array)
 - **参照実装スクリプト (Reference Script)**: [`scenario5_multimodule_unified_pc.py`](experiments/pysim/qa/scenarios/scenario5_multimodule_unified_pc.py)
 - **WAT シナリオ**:
   - 複数関数（3D 内積 `dot3`、マンハッタン距離 `manhattan3`、バッチ処理 `batch_metrics`）の相互呼び出し
-  - `UnifiedPC = (func_index << 16) | bytecode_offset` による関数間 PC 衝突防止
+  - 関数間のPCはCode section payload内の命令先頭オフセットで区別する。モジュール横断キーは`(module_id, pc)`とする
   - コンパイル済みJIT entryは少数の疎なキー集合として保持し、ソート配列の二分探索で検索（Radix表なし）
 
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| TEST-INT-40 | 複数関数にまたがる UnifiedPC JIT トレース | 複数関数がホット化 | `cache.active.traces` を検査 | 異なる `func_index`（上位16bit）を持つ複数の JIT トレースが正常に共存・実行される | `JIT_MultiBuffer_Cache` |
-| TEST-INT-41 | 少数の疎なUnifiedPCエントリを二分探索 | トレース登録済み | 製品キャッシュのlookupへUnifiedPCを渡す | 全UnifiedPCに対し二分探索で正しいJITトレースを取得する。Radix表を構築しない | `META_BinarySearch`, `ThreeBankCacheEviction` |
+| TEST-INT-40 | 複数関数にまたがるCode-section PCのJITトレース | 複数関数がホット化 | `cache.active.traces` を検査 | 同じモジュール内の各関数のトレースが、それぞれCode section payload内の異なるPCで正常に共存・実行される | `JIT_MultiBuffer_Cache` |
+| TEST-INT-41 | 少数の疎なモジュールPCエントリを二分探索 | トレース登録済み | 製品キャッシュのlookupへmodule IDとCode-section PCを渡す | 各`(module_id, pc)`に対し二分探索で正しいJITトレースを取得する。Radix表を構築しない | `META_BinarySearch`, `ThreeBankCacheEviction` |
 
 現行の二分探索assertは、テスト側で構築したソート表をbisect_leftで検索する。製品キャッシュのlookupと、3面バンク移動後の検索は未検証である。
 

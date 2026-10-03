@@ -830,11 +830,11 @@ def iter_block_ops(
 
 
 def extract_basic_blocks(
-    code: bytes, func_index: int = 0
+    code: bytes, pc_base: int = 0
 ) -> StaticVector[tuple[int, int | None, int | None, int, int]]:
     """Extracts straight-line BasicBlock PC ranges from WASM bytecode as a flat list.
     Each entry is: (head_pc, next_pc, loops_to, frame_depth, byte_span).
-    head_pc = (func_index << 16) | start_offset. frame_depth is the count of
+    head_pc = pc_base + start_offset. frame_depth is the count of
     enclosing BLOCK/LOOP/IF frames the interpreter's frame.frames stack must
     hold once execution resumes at head_pc. byte_span is this block's own
     instruction-stream length -- deliberately NOT `next_pc - head_pc`, which
@@ -868,12 +868,13 @@ def extract_basic_blocks(
             offset += 1
         return offset
 
-    base_pc = func_index << 16
+    assert 0 <= pc_base <= 0xFFFF_FFFF - len(code)
     blocks: StaticVector[tuple[int, int | None, int | None, int, int]] = StaticVector(
         capacity=len(code)
     )
     cur_op_count = 0  # count only -- the ops themselves are never materialized here
     cur_head: int | None = None
+    cur_head_offset = 0
     cur_frame_depth = 0
     cur_span_end = 0  # local offset just past the last BB-opcode instruction seen
     # Fixed-size buffer of still-open BLOCK/LOOP/IF instructions, indexed by
@@ -886,9 +887,10 @@ def extract_basic_blocks(
     active_openers_depth = 0
 
     for ins in instr_stream:
-        pc = base_pc | ins.offset
+        pc = pc_base + ins.offset
         if cur_head is None:
             cur_head = pc
+            cur_head_offset = ins.offset
             # The nesting depth (count of enclosing BLOCK/LOOP/IF frames)
             # that must be active in the interpreter's frame.frames stack
             # once execution resumes here -- recorded from this single
@@ -925,7 +927,7 @@ def extract_basic_blocks(
                     if opcode_has_attribute(target.opcode, OpcodeAttribute.CONTROL_LOOP):
                         # Backward continuation: br/br_if taken jumps to the
                         # loop's own start (re-enter the loop body).
-                        branch_target = base_pc | target.end_offset
+                        branch_target = pc_base + target.end_offset
                     else:
                         # Forward exit: br/br_if taken jumps past the block/if's
                         # matching END (block/if labels resume after, unlike
@@ -933,7 +935,7 @@ def extract_basic_blocks(
                         match = control_map.block(target.offset)
                         if match is not None:
                             match_end_ip, _else_offset, _result_arity = match
-                            branch_target = base_pc | _skip_trailing_ends(match_end_ip + 1)
+                            branch_target = pc_base + _skip_trailing_ends(match_end_ip + 1)
 
                 if ins.opcode == BR:
                     # Unconditional: the branch target is the block's only
@@ -955,12 +957,12 @@ def extract_basic_blocks(
                     # else-body / past-END (condition false, then-body
                     # skipped entirely) -- reuses the same cond!=0 -> loops_to
                     # / cond==0 -> next_pc contract as BR_IF.
-                    then_target = base_pc | ins.end_offset
+                    then_target = pc_base + ins.end_offset
                     skip_target = then_target
                     match = control_map.block(ins.offset)
                     if match is not None:
                         match_end_ip, else_offset, _result_arity = match
-                        skip_target = base_pc | (
+                        skip_target = pc_base + (
                             (else_offset + 1)
                             if else_offset is not None
                             else _skip_trailing_ends(match_end_ip + 1)
@@ -975,9 +977,9 @@ def extract_basic_blocks(
                     assert if_opener is not None
                     match = control_map.block(if_opener.offset)
                     next_pc = (
-                        base_pc | _skip_trailing_ends(match[0] + 1)
+                        pc_base + _skip_trailing_ends(match[0] + 1)
                         if match is not None
-                        else base_pc | ins.end_offset
+                        else pc_base + ins.end_offset
                     )
                     loops_to = None
                 elif ins.opcode == FC_PREFIX:
@@ -987,10 +989,10 @@ def extract_basic_blocks(
                     next_pc = pc
                     loops_to = None
                 else:
-                    next_pc = base_pc | _skip_trailing_ends(ins.end_offset)
+                    next_pc = pc_base + _skip_trailing_ends(ins.end_offset)
                     loops_to = branch_target if ins.opcode == BR_IF else None
 
-                byte_span = cur_span_end - (cur_head & 0xFFFF)
+                byte_span = cur_span_end - cur_head_offset
                 if not blocks.push_back((cur_head, next_pc, loops_to, cur_frame_depth, byte_span)):
                     assert False, (
                         "ERR_WASM_UNSUPPORTED_FEATURE: basic-block count exceeds code capacity"
@@ -1004,7 +1006,7 @@ def extract_basic_blocks(
             active_openers[active_openers_depth] = None
 
     if cur_head is not None and cur_op_count:
-        byte_span = cur_span_end - (cur_head & 0xFFFF)
+        byte_span = cur_span_end - cur_head_offset
         if not blocks.push_back((cur_head, None, None, cur_frame_depth, byte_span)):
             assert False, "ERR_WASM_UNSUPPORTED_FEATURE: basic-block count exceeds code capacity"
     return blocks

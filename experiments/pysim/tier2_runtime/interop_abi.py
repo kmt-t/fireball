@@ -165,6 +165,7 @@ class FunctionExecutionViewNative(ctypes.Structure):
     _fields_ = (
         ("code", ctypes.c_void_p),
         ("code_size", ctypes.c_uint32),
+        ("code_pc_offset", ctypes.c_uint32),
         ("control_map", ctypes.c_void_p),
         ("local_width_map", ctypes.c_void_p),
         ("local_width_count", ctypes.c_uint32),
@@ -665,6 +666,7 @@ assert ControlStackNative.size.offset == 640
 assert CallFrameNative.func_index.offset == 0
 assert CallFrameNative.code.offset == 8
 assert ctypes.sizeof(FunctionExecutionViewNative) == 72
+assert FunctionExecutionViewNative.code_pc_offset.offset == 12
 assert ctypes.sizeof(FunctionTypeExecutionViewNative) == 16
 assert ctypes.sizeof(TableExecutionViewNative) == 16
 assert ctypes.sizeof(ModuleExecutionViewNative) == 80

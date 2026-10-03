@@ -64,6 +64,14 @@ def _module_code_lengths(module: Module) -> StaticVector[int]:
         lengths.append(len(module.code_for(len(module.imports) + index)))
     return lengths
 
+def _module_function_pc_bases(module: Module) -> tuple[int, ...]:
+    """Return per-function Code-section PCs, with zero-sized import slots."""
+    bases: list[int] = [0] * len(module.imports)
+    for local_index in range(len(module.functions)):
+        bases.append(module.function_pc_offset(len(module.imports) + local_index))
+    return tuple(bases)
+
+
 
 def _empty_block_slots() -> StaticVector[tuple[int, BasicBlock | None] | None]:
     """Create the fixed direct-mapped block lookup cache."""
@@ -190,8 +198,17 @@ class JITRuntimeManager:
             module.build_basic_block_index()
         self.module = module
         code_lengths = _module_code_lengths(module)
-        self.bitmap = HotspotBitmap(card_shift=self.card_shift, code_lengths=code_lengths)
-        self.trackable = BlockCardMask(card_shift=self.card_shift, code_lengths=code_lengths)
+        function_pc_bases = _module_function_pc_bases(module)
+        self.bitmap = HotspotBitmap(
+            card_shift=self.card_shift,
+            code_lengths=code_lengths,
+            function_pc_bases=function_pc_bases,
+        )
+        self.trackable = BlockCardMask(
+            card_shift=self.card_shift,
+            code_lengths=code_lengths,
+            function_pc_bases=function_pc_bases,
+        )
         self.update_bitmap = FunctionUpdateBitmap(function_count=len(code_lengths))
         self.ring = HistoryRing(capacity=self.history_capacity)
         self.compile_queue = StaticVector(capacity=self.compile_queue_capacity)
@@ -229,13 +246,14 @@ class JITRuntimeManager:
 
         assert self.module is not None
         assert self.jit_compiler is not None
-        function_index = pc >> 16
+        function_index = block.func_index
         function = self.module.functions[function_index - len(self.module.imports)]
         assert function.local_width_map_cache is not None
         code = self.module.code_for(function_index)
         next_pc = block.next_pc
         loops_to = block.loops_to
-        terminator_offset = (pc & 0xFFFF) + block.byte_span
+        block_offset = pc - self.module.function_pc_offset(function_index)
+        terminator_offset = block_offset + block.byte_span
         terminator = code[terminator_offset] if terminator_offset < len(code) else END
         # Control instructions stay with the C++ Interpreter handler. A
         # straight-line successor may use the shared common-code chain dispatcher.

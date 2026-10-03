@@ -928,6 +928,7 @@ class CallFrame:
         "_native_function_view",
         "_native_slot",
         "code",
+        "code_pc_offset",
         "context",
         "control_base",
         "control_map",
@@ -994,6 +995,7 @@ class CallFrame:
             local_widths,
         )
         self.code = context.module.code_for(func_index)
+        self.code_pc_offset = context.module.function_pc_offset(func_index)
         assert function.control_map is not None
         self.control_map = function.control_map
         if template is None:
@@ -1051,6 +1053,7 @@ class CallFrame:
             self._native_function_view = FunctionExecutionViewNative(
                 code=_native_buffer_address(self.code),
                 code_size=len(self.code),
+                code_pc_offset=self.code_pc_offset,
                 control_map=(0 if len(self.code) == 0 else ctypes.addressof(native_control_map)),
                 local_width_map=_native_buffer_address(self.local_widths.raw_view),
                 local_width_count=self.local_count,
@@ -1224,6 +1227,7 @@ class NativeModuleExecution:
             view = self._function_views[import_index]
             view.code = 0
             view.code_size = 0
+            view.code_pc_offset = 0
             view.control_map = 0
             view.local_width_map = 0
             view.local_width_count = 0
@@ -1244,6 +1248,7 @@ class NativeModuleExecution:
             native_view = self._function_views[function_index]
             native_view.code = _native_buffer_address(template.code)
             native_view.code_size = len(template.code)
+            native_view.code_pc_offset = module.function_pc_offset(function_index)
             native_view.control_map = (
                 0 if len(template.code) == 0 else ctypes.addressof(template._native_control_map)
             )
@@ -1486,7 +1491,7 @@ class InterpreterCall:
 
     def current_pc(self) -> int:
         """
-        Return this call's unified `(func_index, ip)` address.
+        Return this call's Code-section-relative instruction address.
 
         The return sentinel is exposed as its reserved unified PC so the
         runtime can recognize it without consulting bytecode. It is never a
@@ -1498,7 +1503,7 @@ class InterpreterCall:
         if ip == RETURN_SENTINEL_IP:
             return RETURN_SENTINEL_PC
         assert 0 <= ip < len(frame.code)
-        return (self.func_index << 16) | ip
+        return frame.code_pc_offset + ip
 
 
 class Interpreter:
@@ -1622,12 +1627,13 @@ class Interpreter:
         boundary or return sentinel.
         """
         if self.logger is not None:
-            # GOTCHA-LOG-04: unified_pc must be captured before frame teardown below;
-            # func_index/bytecode_offset cannot be recovered from call_state afterward.
+            frame = call_state._frame
+            assert frame is not None
+            # GOTCHA-LOG-04: Code-section PC must be captured before frame teardown below.
             unified_pc = (
                 RETURN_SENTINEL_PC
                 if ip == RETURN_SENTINEL_IP
-                else (call_state.func_index << 16) | ip
+                else frame.code_pc_offset + ip
             )
             self.logger.log_event(
                 LogLevel.ERROR, LOG_EVT_TRAP_BASE + int(trap.code), unified_pc, trap.detail
@@ -2433,7 +2439,7 @@ def _h_else(
     ip, frame, env = _handler_state(ctx, sp)
     popped = frame.frames.pop_back() if frame.frames else None
     if frame.boundary_next_pc is not None:
-        ctx.native_context.ip = frame.boundary_next_pc & 0xFFFF
+        ctx.native_context.ip = frame.boundary_next_pc - frame.code_pc_offset
         return None
     if popped is not None:
         ctx.native_context.ip = popped.match_end + 1
@@ -2464,7 +2470,7 @@ def _h_br(
         ctx.native_context.ip = RETURN_SENTINEL_IP
         return None
     if frame.boundary_next_pc is not None:
-        next_ip = frame.boundary_next_pc & 0xFFFF
+        next_ip = frame.boundary_next_pc - frame.code_pc_offset
     ctx.native_context.ip = next_ip
     return None
 
@@ -2484,7 +2490,7 @@ def _h_br_if(
         ctx.native_context.ip = RETURN_SENTINEL_IP
         return None
     if frame.boundary_loops_to is not None:
-        ctx.native_context.ip = frame.boundary_loops_to & 0xFFFF
+        ctx.native_context.ip = frame.boundary_loops_to - frame.code_pc_offset
         return None
     ctx.native_context.ip = target_ip
     return None

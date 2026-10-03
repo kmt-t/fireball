@@ -40,6 +40,7 @@ graph LR
 | `{JIT_CopyAndPatch}` | 命令テンプレートを連結しパッチを当てる方式を採用する。 | 高 | レビュー <!-- definition: {JIT_CopyAndPatch} --> |
 | `{JIT_MultiBuffer_Cache}` | 連続8KB（4KBページ×2）のJITコード領域を、共通コード2KB（非エビクション）とActive/Warm/Oldest各2KBの3面循環キャッシュへ固定分割し、キャッシュ置換の局所性を高める。JITエントリ検索は少数疎キー用のXORキャッシュとソート配列二分探索を使い、JIT用Radix表は持たない。 | 高 | テスト <!-- definition: {JIT_MultiBuffer_Cache} --> |
 | `{PositionIndependentCode}` | 出力バイナリはPIC（位置独立コード）とする。 | 高 | テスト <!-- definition: {PositionIndependentCode} --> |
+| `{WasmCodeSectionPC}` | WASM PCは各モジュールのCode section payload先頭を0とし、payload内にある命令先頭バイトのオフセットで表す。PC単独はモジュールを越えて一意ではなく、モジュール横断の識別には`(module_id, pc)`を使う。 | 高 | テスト <!-- definition: {WasmCodeSectionPC} --> |
 | `{NativeAPI_Export}` | 最小限のトラップ命令とvMMIOによるホストサービス提供をサポートする。 | 高 | テスト <!-- definition: {NativeAPI_Export} --> |
 | `{JIT_Encoder}` | C++の constexpr 機能を活用し、ビルド時に命令テンプレートを生成する。 | 高 | レビュー <!-- definition: {JIT_Encoder} --> |
 | `{MultiModule_Support}` | 複数WASMモジュールのロードと、モジュール間の動的リンクをサポートする。 | 中 | テスト <!-- definition: {MultiModule_Support} --> |
@@ -132,7 +133,7 @@ graph LR
 | :--- | :--- | :--- | :--- |
 | `{HistoryBuffer}` | JITホットスポット検出のために、実行履歴を保持するリング状のバッファ。 | 中 | レビュー <!-- definition: {HistoryBuffer} --> |
 | `{RuntimeEventSink}` | Runtimeは意味上の実行境界イベントを固定幅レコードの固定容量リングへ記録し、安全点でversioned little-endian ABIバッチとしてPythonへ渡す。イベント無効構成にはSink、履歴領域、時計、発行経路を含めず、Hotspot履歴とは独立させる。 | 高 | テスト <!-- definition: {RuntimeEventSink} --> |
-| `{RuntimeHotspotProfiler}` | JITホットスポット検出有効時、Interpreterは適格な基本ブロックの`(module_id, unified_pc)`を実行順で固定容量履歴へ記録し、Interpreter区間終了時にカードを更新する。JIT-only区間は記録・分析せず、履歴上書きは欠落状態として示す。Runtime Event Sinkとは独立し、Runtime破棄時に状態を解放する。 | 高 | テスト <!-- definition: {RuntimeHotspotProfiler} --> |
+| `{RuntimeHotspotProfiler}` | JITホットスポット検出有効時、InterpreterはCode section payload相対PCを含む適格な基本ブロックの`(module_id, unified_pc)`を実行順で固定容量履歴へ記録し、Interpreter区間終了時にカードを更新する。JIT-only区間は記録・分析せず、履歴上書きは欠落状態として示す。Runtime Event Sinkとは独立し、Runtime破棄時に状態を解放する。 | 高 | テスト <!-- definition: {RuntimeHotspotProfiler} --> |
 | `{LightweightVerifier}` | ロード時に最小限のチェック（マジック値、バージョン等）のみを行う高速検証器。 | 中 | テスト <!-- definition: {LightweightVerifier} --> |
 | `{COOS_Scheduling_Refine}` | スケジューリングアルゴリズムの継続的な改善と最適化。 | 中 | レビュー <!-- definition: {COOS_Scheduling_Refine} --> |
 | `{vMMIO_TLB}` | ソフトウェアTLBによるvMMIOアクセスの高速化。 | 中 | レビュー <!-- definition: {vMMIO_TLB} --> |

@@ -114,10 +114,30 @@ class NativeFastCache:
 class HotspotBitmap:
     """Per-function 2-bit card state with one owned storage per function."""
 
-    __slots__ = ("card_shift", "func_storages")
+    __slots__ = ("card_shift", "func_storages", "function_pc_bases", "code_lengths")
 
-    def __init__(self, card_shift: int = JIT_CARD_SHIFT, code_lengths: tuple[int, ...] = ()):
+    def __init__(
+        self,
+        card_shift: int = JIT_CARD_SHIFT,
+        code_lengths: tuple[int, ...] = (),
+        function_pc_bases: tuple[int, ...] = (),
+    ):
         self.card_shift = card_shift
+        if not function_pc_bases:
+            bases: list[int] = []
+            cursor = 0
+            for code_len in code_lengths:
+                bases.append(cursor)
+                cursor += code_len + 1
+            function_pc_bases = tuple(bases)
+        assert len(function_pc_bases) == len(code_lengths)
+        assert all(base >= 0 for base in function_pc_bases)
+        assert all(
+            function_pc_bases[index] <= function_pc_bases[index + 1]
+            for index in range(len(function_pc_bases) - 1)
+        )
+        self.function_pc_bases = function_pc_bases
+        self.code_lengths = code_lengths
         assert all(code_len >= 0 for code_len in code_lengths)
         self.func_storages: StaticVector[MutableBitStorage] = StaticVector(
             capacity=len(code_lengths)
@@ -131,12 +151,19 @@ class HotspotBitmap:
             )
 
     def _split_pc(self, pc: int) -> tuple[int, int]:
-        if pc > 0xFFFF:
-            func_idx = (pc >> 16) & 0xFFFF
-            offset = pc & 0xFFFF
-        else:
-            func_idx = 0
-            offset = pc
+        assert 0 <= pc <= 0xFFFF_FFFF
+        low = 0
+        high = len(self.function_pc_bases)
+        while low < high:
+            middle = low + (high - low) // 2
+            if self.function_pc_bases[middle] <= pc:
+                low = middle + 1
+            else:
+                high = middle
+        func_idx = low - 1
+        assert func_idx >= 0
+        offset = pc - self.function_pc_bases[func_idx]
+        assert offset < self.code_lengths[func_idx]
         return func_idx, offset
 
     def card_of(self, pc: int) -> int:
@@ -270,10 +297,25 @@ class BlockCardMask:
     flush do not restore or clear candidate eligibility.
     """
 
-    __slots__ = ("card_shift", "func_storages")
+    __slots__ = ("card_shift", "func_storages", "function_pc_bases", "code_lengths")
 
-    def __init__(self, card_shift: int = JIT_CARD_SHIFT, code_lengths: tuple[int, ...] = ()):
+    def __init__(
+        self,
+        card_shift: int = JIT_CARD_SHIFT,
+        code_lengths: tuple[int, ...] = (),
+        function_pc_bases: tuple[int, ...] = (),
+    ):
         self.card_shift = card_shift
+        if not function_pc_bases:
+            bases: list[int] = []
+            cursor = 0
+            for code_len in code_lengths:
+                bases.append(cursor)
+                cursor += code_len + 1
+            function_pc_bases = tuple(bases)
+        assert len(function_pc_bases) == len(code_lengths)
+        self.function_pc_bases = function_pc_bases
+        self.code_lengths = code_lengths
         assert all(code_len >= 0 for code_len in code_lengths)
         self.func_storages: StaticVector[MutableBitStorage] = StaticVector(
             capacity=len(code_lengths)
@@ -287,9 +329,20 @@ class BlockCardMask:
             )
 
     def _split_pc(self, pc: int) -> tuple[int, int]:
-        if pc > 0xFFFF:
-            return (pc >> 16) & 0xFFFF, pc & 0xFFFF
-        return 0, pc
+        assert 0 <= pc <= 0xFFFF_FFFF
+        low = 0
+        high = len(self.function_pc_bases)
+        while low < high:
+            middle = low + (high - low) // 2
+            if self.function_pc_bases[middle] <= pc:
+                low = middle + 1
+            else:
+                high = middle
+        func_idx = low - 1
+        assert func_idx >= 0
+        offset = pc - self.function_pc_bases[func_idx]
+        assert offset < self.code_lengths[func_idx]
+        return func_idx, offset
 
     def mark(self, pc: int) -> None:
         func_idx, offset = self._split_pc(pc)

@@ -162,26 +162,24 @@ class JITCacheMetabolismBenchmark:
         results["chain_unlinking_safety_passed"] = True
 
         # ----------------------------------------------------------------------
-        # 5. Corner Case 5: Multi-Module UnifiedPC Collision Immunity
+        # 5. Corner Case 5: Module-scoped Code-section PC isolation
         # ----------------------------------------------------------------------
-        # func_0: pc 0x0000_0010 vs func_1: pc 0x0001_0010 (both offset 0x10)
-        pc_func0 = (0 << 16) | 0x0010
-        pc_func1 = (1 << 16) | 0x0010
-        cache_pc = JITMultiBufferCache(bank_capacity=self.bank_capacity)
+        module_pc = 0x0010
+        cache_module0 = JITMultiBufferCache(bank_capacity=self.bank_capacity)
+        cache_module1 = JITMultiBufferCache(bank_capacity=self.bank_capacity)
+        trace_module0 = JITTrace(head_pc=module_pc, size_bytes=64)
+        trace_module1 = JITTrace(head_pc=module_pc, size_bytes=64)
 
-        trace_f0 = JITTrace(head_pc=pc_func0, size_bytes=64)
-        trace_f1 = JITTrace(head_pc=pc_func1, size_bytes=64)
+        cache_module0.insert(trace_module0)
+        cache_module1.insert(trace_module1)
 
-        cache_pc.insert(trace_f0)
-        cache_pc.insert(trace_f1)
+        result_module0 = cache_module0.lookup(module_pc)
+        result_module1 = cache_module1.lookup(module_pc)
 
-        res_f0 = cache_pc.lookup(pc_func0)
-        res_f1 = cache_pc.lookup(pc_func1)
-
-        assert res_f0 is not None and res_f0.head_pc == pc_func0
-        assert res_f1 is not None and res_f1.head_pc == pc_func1
-        assert res_f0 is not res_f1, "UnifiedPC collision detected between func 0 and func 1!"
-        results["unified_pc_collision_immunity_passed"] = True
+        assert result_module0 is trace_module0
+        assert result_module1 is trace_module1
+        assert result_module0 is not result_module1, "module-scoped PC caches must be isolated"
+        results["module_pc_isolation_passed"] = True
 
         return results
 
@@ -234,7 +232,8 @@ def main():
         f"  * Dangling Chain Unlinking Safety:    [PASS] (Status={res['chain_unlinking_safety_passed']})"
     )
     print(
-        f"  * Multi-Module UnifiedPC Collision:   [PASS] (Immunity={res['unified_pc_collision_immunity_passed']})"
+        f"  * Module-scoped Code-section PC:      [PASS] "
+        f"(Isolation={res['module_pc_isolation_passed']})"
     )
     print("=" * 80)
     print("[PASS] JIT Cache Metabolism benchmark completed successfully.")

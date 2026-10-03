@@ -38,6 +38,8 @@ from helpers import make_native_interpreter as Interpreter
 from helpers import wat_to_wasm
 from system_containers import ReadOnlyRadixBinaryTreeStorage, StaticVector
 from test_support import (
+    PC_ONLY_FUNCTION_BASE,
+    PC_ONLY_FUNCTION_STRIDE,
     PcOnlyCompiler,
     make_pc_only_functions_module,
     make_pc_only_module,
@@ -556,7 +558,7 @@ def test_jitr_compile_failure_unmarks_candidate_without_faking_compiled():
 def test_jitr_26_direct_mapped_folding_xor_jit_cache():
     """TEST-JITR-26 & GOTCHA-JITR-05: Native fixed-slot lookup and rotation invalidation."""
     cache = JITMultiBufferCache(bank_capacity=1024)
-    # PC with function index 1, offset 0x20 -> (1 << 16) | 0x20 = 0x00010020
+    # Code-section-relative instruction PC used to exercise hash folding.
     pc1 = 0x00010020
     pc2 = 0x00000003
     t1 = JITTrace(head_pc=pc1, native_fn=lambda: 10, size_bytes=64)
@@ -746,7 +748,7 @@ def test_jitr_loop_backedge_stays_in_cpp_until_coos_yield():
     loop_block = next(
         block
         for block in module.blocks
-        if block.loops_to == block.head_pc and block.head_pc >> 16 == function_index
+        if block.loops_to == block.head_pc and block.func_index == function_index
     )
     trace = engine.jit_runtime._compile_trace(loop_block.head_pc, loop_block)
     assert trace is not None
@@ -806,7 +808,7 @@ def test_jitr_native_dispatch_snapshot_is_cached_per_hotspot_configuration():
     loop_block = next(
         block
         for block in module.blocks
-        if block.loops_to == block.head_pc and block.head_pc >> 16 == function_index
+        if block.loops_to == block.head_pc and block.func_index == function_index
     )
     trace = manager._compile_trace(loop_block.head_pc, loop_block)
     assert trace is not None and manager.cache.insert(trace)
@@ -873,7 +875,7 @@ def test_jitr_cross_frame_loop_branch_skips_special_link_but_keeps_trace_body():
     branch_block = next(
         block
         for block in module.blocks
-        if block.loops_to is not None and block.head_pc >> 16 == function_index
+        if block.loops_to is not None and block.func_index == function_index
     )
     target_block = engine.get_block(branch_block.loops_to)
     assert target_block is not None
@@ -926,7 +928,7 @@ def test_interpreter_only_runtime_uses_the_shared_backedge_yield_threshold():
         for block in module.blocks
         if block.next_pc is not None and block.next_pc < block.head_pc
     )
-    assert first.call_state.current_pc() == (function_index << 16) | loop_head_pc
+    assert first.call_state.current_pc() == loop_head_pc
     if engine.collect_runtime_stats:
         assert engine.stat_native_control_handlers >= 2
     assert list(engine.complete_call(interpreter, first.call_state)) == [15]
@@ -1056,8 +1058,9 @@ def _install_single_control_trace(
     assert manager is not None and not manager.hotspot_profiling_enabled
     candidates = []
     for block in module.blocks:
-        code = module.code_for(block.head_pc >> 16)
-        offset = block.head_pc & 0xFFFF
+        function_index = block.func_index
+        code = module.code_for(function_index)
+        offset = block.head_pc - module.function_pc_offset(function_index)
         end = offset + block.byte_span
         if (
             end < len(code)
@@ -1324,7 +1327,9 @@ def test_jitr_nested_wasm_call_keeps_callee_result_on_shared_operand_stack():
 
     caller = module.export_func_index("caller")
     assert engine.call(interp, caller, [20]) == [2]
-    assert any(pc >> 16 == 0 for pc, _ in engine.jit_runtime.cache.active.traces), (
+    assert any(
+        module.function_index_for_pc(pc) == 0 for pc, _ in engine.jit_runtime.cache.active.traces
+    ), (
         "the repeatedly called callee should be eligible for JIT execution"
     )
 
@@ -1508,7 +1513,7 @@ def test_jitr_mixed_typed_callee_returns_keep_the_shared_stack_synchronized():
     compiled_heads = {pc for pc, _ in engine.jit_runtime.cache.active.traces}
 
     assert actual == [[12]] * 6
-    assert 1 << 16 in compiled_heads
+    assert module.function_pc_offset(1) in compiled_heads
     assert engine.stat_jit_invocations > 0
 
 
@@ -1582,8 +1587,8 @@ def test_jitr_runtime_engine_surfaces_guest_trap_at_sync_boundary():
 
 
 def _pc(i, func=0):
-    """Block i of function `func`; every block's card is distinct (card = 8 * i)."""
-    return (func << 16) | (0x20 * i)
+    """Synthetic Code-section PC for a test-only function and card (card = 8 * i)."""
+    return PC_ONLY_FUNCTION_BASE + func * PC_ONLY_FUNCTION_STRIDE + (0x20 * i)
 
 
 def _aging_engine(counts, compile_fn=None, **engine_kwargs):
@@ -1798,7 +1803,8 @@ def test_jitr_aging_processes_every_set_function_of_a_byte_and_ignores_imports()
     assert update.function_count == 3 and update.unit_count == 1
     pc_a = module.blocks[0].head_pc
     pc_b = module.blocks[len(module.blocks) - 1].head_pc
-    assert pc_a >> 16 == 1 and pc_b >> 16 == 2
+    assert module.function_index_for_pc(pc_a) == 1
+    assert module.function_index_for_pc(pc_b) == 2
     _touch_via_yield(wasm_engine, pc_a)
     _touch_via_yield(wasm_engine, pc_b)
     assert not update.is_marked(0), "an import function has no cards, so its bit is never set"

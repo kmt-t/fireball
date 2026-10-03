@@ -66,8 +66,10 @@ graph TD
 | `last_stop_reason` | 直近の停止要因。 | ID値 | 信号番号等 |
 
 #### 仮想レジスタセット（virtual_register_set）
-<!-- traceability: {RSPMinimalSet} -->
+<!-- traceability: {RSPMinimalSet} {WasmCodeSectionPC} -->
 GDB等の外部クライアントに提示する WASM 仮想レジスタ番号マッピング（`0: pc`, `1: sp`, `2: fp`, `3: tos`, `4..19: local0..15`）は [`gdb_rsp_protocol.md`](docs/specs/gdb_rsp_protocol.md) を正本とする。
+
+PCレジスタと`Z0`/`z0`アドレスは、現在のWASMモジュールのCode section payload相対オフセットである。命令位置は命令先頭バイトで表す。Code section payload内の関数数、body size、locals宣言を含み、Code sectionより前のファイル位置は含めない。
 
 ## 4. 動的モデル
 
@@ -168,7 +170,7 @@ sequenceDiagram
 
 #### コマンド処理 (`poll_commands`)
 
-<!-- traceability: {RSPMinimalSet} -->
+<!-- traceability: {RSPMinimalSet} {WasmCodeSectionPC} -->
 
 | 項目 | 内容 |
 | :--- | :--- |

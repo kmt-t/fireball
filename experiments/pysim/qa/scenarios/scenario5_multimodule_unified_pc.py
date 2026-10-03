@@ -122,8 +122,11 @@ def test_scenario_multimodule_unified_pc():
 
     assert res_t2 == res_t3, f"Calculations diverged: T2={res_t2} vs T3={res_t3}"
     assert len(runtime_engine.jit_runtime.cache.active.traces) > 0, "No JIT traces compiled"
-    # 3. Verify that traces belong to multiple distinct functions via UnifiedPC
-    func_indices_in_jit = {(pc >> 16) for pc, _ in runtime_engine.jit_runtime.cache.active.traces}
+    # 3. Resolve Code-section PCs back to distinct function bodies.
+    func_indices_in_jit = {
+        module.function_index_for_pc(pc)
+        for pc, _ in runtime_engine.jit_runtime.cache.active.traces
+    }
     print(f"    -> Compiled JIT traces belong to functions: {func_indices_in_jit}")
     assert len(func_indices_in_jit) >= 2, "Traces should span across multiple functions"
     # 4. Check identities in a test-local reference index of compiled UnifiedPCs.

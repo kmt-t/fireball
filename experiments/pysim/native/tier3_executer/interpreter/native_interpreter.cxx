@@ -95,7 +95,7 @@ struct debugger_aspect {
     const auto* frame = context.call_stack->size == 0 ? nullptr
         : &context.call_stack->frames[context.call_stack->size - 1];
     if (frame == nullptr) return false;
-    const auto pc = (frame->func_index << 16) | context.ip;
+    const auto pc = frame->function_view->code_pc_offset + context.ip;
     control.current_pc = pc;
     if (control.single_step != 0 && control.executed != 0) {
       control.stopped = 1;
@@ -420,7 +420,7 @@ bool is_requested_block_boundary(const execution_context& current) {
   if ((current.runtime_flags & kStopAtBlockBoundaryFlag) == 0) return false;
   const auto* frame = active_frame(current);
   if (frame == nullptr) return false;
-  const auto pc = (frame->func_index << 16) | (current.ip & 0xFFFFu);
+  const auto pc = frame->function_view->code_pc_offset + current.ip;
   return pc == frame->boundary_next_pc || pc == frame->boundary_loops_to;
 }
 
@@ -1160,7 +1160,7 @@ FIREBALL_CPS_CALL step_result h_else(
   current.control_stack->size -= 1;
   const auto* call_frame = active_frame(current);
   current.ip = call_frame != nullptr && call_frame->boundary_next_pc != kSentinel
-                   ? call_frame->boundary_next_pc & 0xFFFFu
+                   ? call_frame->boundary_next_pc - call_frame->function_view->code_pc_offset
                    : frame.match_end + 1;
   prune_control_frames_after_static_jump(current, current.ip);
   if (should_stop_after_control(current)) return block_boundary(current.ip);
@@ -1239,7 +1239,7 @@ FIREBALL_CPS_CALL step_result h_br(
   }
   const auto* call_frame = active_frame(current);
   if (call_frame != nullptr && call_frame->boundary_next_pc != kSentinel) {
-    next_ip = call_frame->boundary_next_pc & 0xFFFFu;
+    next_ip = call_frame->boundary_next_pc - call_frame->function_view->code_pc_offset;
   }
   prune_control_frames_after_static_jump(current, next_ip);
   record_loop_backedge(current, source_ip, next_ip);
@@ -1277,7 +1277,7 @@ FIREBALL_CPS_CALL step_result h_br_if(
   }
   const auto* call_frame = active_frame(current);
   if (call_frame != nullptr && call_frame->boundary_loops_to != kSentinel) {
-    next_ip = call_frame->boundary_loops_to & 0xFFFFu;
+    next_ip = call_frame->boundary_loops_to - call_frame->function_view->code_pc_offset;
   }
   prune_control_frames_after_static_jump(current, next_ip);
   record_loop_backedge(current, source_ip, next_ip);
@@ -2318,7 +2318,7 @@ bool prepare_native_dispatch_call(native_dispatch_call<CollectHotspots>& call) {
       call.entries_bytes <
           static_cast<std::uint64_t>(call.entry_count * sizeof(native_trace_descriptor)) ||
       call.code_bytes > std::numeric_limits<std::uint32_t>::max() ||
-      call.initial_ip > call.code_bytes || call.function_index > 0xFFFFu ||
+      call.initial_ip > call.code_bytes ||
       call.yield_threshold == 0 || call.code == nullptr || call.context == nullptr ||
       call.stack == nullptr || call.local_stack == nullptr || call.control_stack == nullptr ||
       (call.entry_count != 0 && call.entries == nullptr)) {
@@ -2398,7 +2398,7 @@ bool refresh_native_dispatch_frame(native_dispatch_call<CollectHotspots>& call,
   call.context->code = active->code;
   call.context->code_size = active->code_size;
   call.context->control_base = active->control_base;
-  current_pc = (active->func_index << 16) | call.context->ip;
+  current_pc = active->function_view->code_pc_offset + call.context->ip;
   return true;
 }
 
@@ -2462,7 +2462,8 @@ dispatch_iteration execute_interpreted_block(
   auto& context = *call.context;
   if constexpr (CollectStats) ++state.metrics.stats.interpreted_block_count;
 
-  const auto interpreter_ip = state.current_pc & 0xFFFFu;
+  const auto interpreter_ip =
+      state.current_pc - call.call_frame->function_view->code_pc_offset;
   bool hotness_yield = false;
   if constexpr (CollectHotspots) {
     const auto block_index = find_trackable_block_index(
@@ -2491,7 +2492,12 @@ dispatch_iteration execute_interpreted_block(
   if constexpr (!std::is_void_v<Debugger>) {
     if (result.kind == kDebugStop) {
       call.stack_size = context.sp_offset;
-      state.current_pc = (active_frame(context)->func_index << 16) | context.ip;
+      const auto* stopped_frame = active_frame(context);
+      if (stopped_frame == nullptr || stopped_frame->function_view == nullptr) {
+        call.error_code = kNativeErrorInternal;
+        return dispatch_iteration::error;
+      }
+      state.current_pc = stopped_frame->function_view->code_pc_offset + context.ip;
       state.status = kDebugStop;
       return dispatch_iteration::stop_dispatch;
     }
@@ -2504,7 +2510,7 @@ dispatch_iteration execute_interpreted_block(
       return dispatch_iteration::error;
     }
     if constexpr (CollectStats) ++state.metrics.stats.control_handler_count;
-    state.current_pc = (active->func_index << 16) | context.ip;
+    state.current_pc = active->function_view->code_pc_offset + context.ip;
     state.status = kNativeCallBoundary;
     return dispatch_iteration::stop_dispatch;
   }
@@ -2544,7 +2550,7 @@ dispatch_iteration execute_interpreted_block(
     call.error_code = kNativeErrorInternal;
     return dispatch_iteration::error;
   }
-  const auto next_pc = (active->func_index << 16) | result.next_ip;
+  const auto next_pc = active->function_view->code_pc_offset + result.next_ip;
   state.current_pc = next_pc;
   if (context.loop_jump_count >= call.yield_threshold) {
     state.status = kDispatchYield;
@@ -2579,7 +2585,7 @@ dispatch_iteration execute_native_trace(
   }
   if (call.stack_size + terminal->stack_words > call.stack_capacity ||
       terminal->frame_depth > FIREBALL_NATIVE_CONTROL_STACK_CAPACITY - call.control_base) {
-    context.ip = start.head_pc & 0xFFFFu;
+    context.ip = start.head_pc - active->function_view->code_pc_offset;
     state.status = kFallback;
     return dispatch_iteration::stop_dispatch;
   }
@@ -2609,7 +2615,8 @@ dispatch_iteration execute_native_trace(
   if (terminal->has_return_value != 0) call.stack_size += terminal->result_words;
   context.sp_offset = call.stack_size;
 
-  const auto terminal_ip = (terminal->head_pc & 0xFFFFu) + terminal->byte_span;
+  const auto terminal_ip =
+      terminal->head_pc - active->function_view->code_pc_offset + terminal->byte_span;
   if (terminal_ip >= active->code_size) {
     context.ip = kNoPc;
     state.status = kComplete;
@@ -2631,7 +2638,7 @@ dispatch_iteration execute_native_trace(
       call.error_code = kNativeErrorInternal;
       return dispatch_iteration::error;
     }
-    state.current_pc = (next_frame->func_index << 16) | context.ip;
+    state.current_pc = next_frame->function_view->code_pc_offset + context.ip;
     state.status = kNativeCallBoundary;
     return dispatch_iteration::stop_dispatch;
   }
@@ -2664,7 +2671,7 @@ dispatch_iteration execute_native_trace(
     call.error_code = kNativeErrorInternal;
     return dispatch_iteration::error;
   }
-  state.current_pc = (next_frame->func_index << 16) | result.next_ip;
+  state.current_pc = next_frame->function_view->code_pc_offset + result.next_ip;
   if (context.loop_jump_count >= call.yield_threshold) {
     state.status = kDispatchYield;
     return dispatch_iteration::stop_dispatch;
@@ -2724,7 +2731,7 @@ int run_native_dispatch_abi(const fb_native_dispatch_call* input,
   }
 
   native_dispatch_state<CollectStats, CollectHotspots> state{
-      call, (call.function_index << 16) | call.initial_ip, kFallback, 0, {}};
+      call, call.call_frame->function_view->code_pc_offset + call.initial_ip, kFallback, 0, {}};
   const auto previous_runtime_flags = call.context->runtime_flags;
   if constexpr (CollectHotspots) {
     call.context->runtime_flags |= kStopAtDefinedCallBoundaryFlag;
@@ -2744,7 +2751,13 @@ int run_native_dispatch_abi(const fb_native_dispatch_call* input,
             ++state.metrics.stats.dispatcher_trace_transitions;
           }
         }
-        call.context->ip = state.current_pc & 0xFFFFu;
+        const auto* active = active_frame(*call.context);
+        if (active == nullptr || active->function_view == nullptr ||
+            state.current_pc < active->function_view->code_pc_offset) {
+          call.error_code = kNativeErrorInternal;
+          return dispatch_iteration::error;
+        }
+        call.context->ip = state.current_pc - active->function_view->code_pc_offset;
         state.status = kOldestTraceHit;
         break;
       }

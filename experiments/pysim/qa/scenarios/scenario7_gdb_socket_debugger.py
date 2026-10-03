@@ -130,7 +130,7 @@ def test_scenario_gdb_socket_debugger():
     server = GDBServer(dbg=dbg, host="127.0.0.1", port=0)
     ctx = execution.context
     # Start TCP Server on dynamic port
-    port = server.start(current_pc=0, ctx=ctx, blocks=blocks)
+    port = server.start(current_pc=block10.head_pc, ctx=ctx, blocks=blocks)
     time.sleep(0.05)
     client = GDBClientHelper("127.0.0.1", port)
     try:
@@ -142,7 +142,7 @@ def test_scenario_gdb_socket_debugger():
         assert len(resp) == 160
         pc = int.from_bytes(bytes.fromhex(resp[0:8]), "little")
         l0 = int.from_bytes(bytes.fromhex(resp[32:40]), "little")
-        assert pc == 0 and l0 == 2
+        assert pc == block10.head_pc and l0 == 2
         # Step 3: Read memory ('m0,8')
         resp = client.send_raw_packet("m0,8")
         assert resp == b"TESTDATA".hex()

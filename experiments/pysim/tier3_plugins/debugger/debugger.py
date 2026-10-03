@@ -584,8 +584,10 @@ class InterpreterExecutionControl:
         cont = call.cont
         assert cont is not None
         if pc != call.current_pc():
-            assert pc >> 16 == call.func_index
-            call.cont = (pc & 0xFFFF, cont[1], cont[2], cont[3])
+            function_index = call.context.module.function_index_for_pc(pc)
+            assert function_index == cont[1].func_index
+            function_pc_offset = call.context.module.function_pc_offset(cont[1].func_index)
+            call.cont = (pc - function_pc_offset, cont[1], cont[2], cont[3])
         self._control.breakpoint_count = len(debugger._breakpoints)
         self._control.single_step = int(single_step)
         self._control.executed = 0

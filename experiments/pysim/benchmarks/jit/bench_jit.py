@@ -62,7 +62,7 @@ class JITCompilerBenchmark:
         for _ in range(compile_count):
             _trace = self.compiler.compile_trace(
                 head_pc,
-                iter_block_ops(code, head_pc & 0xFFFF, byte_span),
+                iter_block_ops(code, head_pc, byte_span),
                 next_pc,
                 loops_to,
                 byte_span,
@@ -83,12 +83,12 @@ class JITCompilerBenchmark:
         results["card_marking_check_ns"] = (t1 - t0) / iterations * 1e9
 
         # 3.3 Sparse sorted JIT entry lookup
-        keys = [(idx << 16) | (idx * 16) for idx in range(64)]
+        keys = [idx * 0x100 + 0x10 for idx in range(64)]
         values = list(range(64))
         jit_entries = ReadOnlyFlatMapView(tuple(zip(keys, values, strict=True)))
         t0 = time.perf_counter()
         for i in range(iterations):
-            pc = ((i % 64) << 16) | ((i % 64) * 16)
+            pc = (i % 64) * 0x100 + 0x10
             _ = jit_entries.find(pc)
         t1 = time.perf_counter()
         results["jit_entry_lookup_mops"] = iterations / (t1 - t0) / 1e6

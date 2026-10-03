@@ -25,14 +25,14 @@ WASM ローダは、ROM 上の WASM32 バイナリを解析し、実行環境向
 - **`WasmLoader`**: WASMバイナリのパース、検証、およびロード済みモジュールの管理を一括して行う主要クラス。
 - **`module_view`**: ROM上のバイナリデータへの参照と、構築された索引群を保持する読み取り専用の構造体。
 - **`module_registry`**: ロード済みの `module_view` を名前で管理するための内部リスト。
-<!-- traceability: {ZeroCopyIndexing} {META_BumpAllocator} {Runtime_BumpAllocator} -->
+<!-- traceability: {ZeroCopyIndexing} {META_BumpAllocator} {Runtime_BumpAllocator} {WasmCodeSectionPC} -->
 - **`ModuleView`**: ROM上のバイナリをゼロコピーで参照するための不変インデックス構造体。
 - **`BinaryStream`**: ROMデータをバイト境界・LEB128ガード付きで読み進めるストリームリーダ。
-- **`WasmLoader`**: バイナリ検証、パース、および `ModuleView` の構築を担うローダクラス。親ランタイムの `bump_allocator` を非所有参照として保持する。
+- **`code_section_payload_file_offset`**: `ModuleView` が保持するCode section payloadの先頭ファイル位置（section IDとpayload lengthの後）。命令のファイル位置からこの値を引いた差分をCode section相対PCとする。
 - **`decoded_entity_registry`**: 各エンティティの種類・ファイル内開始位置・長さ・参照に必要な最小メタ情報だけを保持する固定長レジストリ。関数コード、名前文字列、データ本体は所有せず、WASM原本上の範囲を参照する。
 - **`entity_offset_storage` (`ReadOnlyRadixBinaryTreeStorage`)**: ファイル内のバイト位置（開始オフセット）をキーとしてデコード済みエンティティへ $O(1) + O(\log n)$ でマッピングする基数2進木索引。検索時だけviewを借用する。
 - **`import_storage` / `export_storage` (`ReadOnlyRadixBinaryTreeStorage`)**: シンボル名（インポート名・エクスポート名）のハッシュ値をキーとして各エントリへ $O(1) + O(\log n)$ でマッピングする基数2進木索引。検索時だけviewを借用する。
-- **`block_storage` (`ReadOnlyRadixBinaryTreeStorage`)**: モジュール内の全基本ブロックメタ情報（`BasicBlock`: `head_pc`, `next_pc`, `loops_to`, `frame_depth`, `byte_span`）へ UnifiedPC（`fold_mix32(pc)`、`func_index`と`offset`の両方を折り込む乗算Foldingミックス）でアクセスする基数2進木索引。`BasicBlock` はPCレンジと制御フローメタ情報のみを保持し、デコード済み命令列は持たない――命令列はブロックが実際にコンパイル・実行される瞬間にのみ、バイトコードから一度だけストリーミングで導出する。ランタイムや JIT コンパイラがブロック探索・メタ情報を再生成することなく、ローダ側の不変ストレージから借用viewで $O(1) + O(\log n)$ にブロックを解決する。 実行時のブロック再走査やメタ情報の動的確保を避け、ホットスポット追跡時の検索負担を抑える。 `{Loader_BasicBlockIndex}` <!-- definition: {Loader_BasicBlockIndex} --> {GOTCHA-LOAD-04} <!-- definition: {GOTCHA-LOAD-04} -->
+- **`block_storage` (`ReadOnlyRadixBinaryTreeStorage`)**: モジュール内の全基本ブロックメタ情報（`BasicBlock`: `head_pc`, `next_pc`, `loops_to`, `frame_depth`, `byte_span`, `func_index`）へCode section payload相対PCをキーとしてアクセスする基数2進木索引。`head_pc`と`next_pc`はpayload内の命令先頭オフセットであり、`byte_span`は当該ブロックの命令バイト数である。PCから関数内カード位置を得るため、Loaderは各基本ブロックの関数所有情報と関数の命令開始PCを確定する。PCはsection ID・payload lengthの後から数え、payload内の関数数・body size・locals宣言を含む。`BasicBlock`はPCレンジと制御フローメタ情報のみを保持し、デコード済み命令列は持たない――命令列はブロックが実際にコンパイル・実行される瞬間にのみ、バイトコードから一度だけストリーミングで導出する。ランタイムやJITコンパイラがブロック探索・メタ情報を再生成することなく、ローダ側の不変ストレージから借用viewで $O(1) + O(\log n)$ にブロックを解決する。実行時のブロック再走査やメタデータの動的確保を避け、ホットスポット追跡時の検索負担を抑える。 `{Loader_BasicBlockIndex}` <!-- definition: {Loader_BasicBlockIndex} --> `{GOTCHA-LOAD-04}` <!-- definition: {GOTCHA-LOAD-04} -->
 - **`opcode_benefit_table` (`BitView<4>`)**: ROM 上に配置される 128 バイト（256 opcode $\times$ 4-bit）の静的テーブル。インタープリタ処理命令数と JIT 処理命令数の差分（短縮機械語命令数、分岐8倍換算）をゼロ点固定線形正規化した `int4_t`（-8〜+7、1スコア＝2命令相当短縮）を保持する。 `{JIT_StaticBenefitScoring}` <!-- definition: {JIT_StaticBenefitScoring} -->
 - **`jit_candidate_bitmap` (`BitView<1>`)**: モジュールロード時に各基本ブロックの命令スコア合算値が閾値（9点：コンパイルオーバーヘッド換算値6点＋デルタ3点）に達したブロックの `head_pc` が属する Card を 1bit でマーキングしたビットマップ。インタープリタ実行ループにおける `touch()` スキップに供される。 `{JIT_CandidateBitmap}` <!-- definition: {JIT_CandidateBitmap} -->
 - **`control_map`**: 各関数の制御デリミタと `br_table` の静的対応を保持する固定長メタデータ。インタープリタはロード済みの関数メタデータを参照し、実行時に制御構造を再走査しない。命令列そのものは保持せず、必要な命令だけをROM上のコードからストリーミングする。

@@ -79,12 +79,12 @@ def test_loader_candidate_gate_uses_specification_threshold(
 
 def test_jit_candidate_bitmap_allocates_and_marks_function_cards() -> None:
     bitmap = JITCandidateBitmap(card_shift=2)
-    bitmap.allocate_functions(2)
-    assert bitmap.is_candidate(0) is False
-    bitmap.mark((1 << 16) | 4, code_len=8)
-    assert bitmap.is_candidate((1 << 16) | 4) is True
-    assert bitmap.is_candidate((1 << 16) | 0) is False
-    assert bitmap.is_candidate((2 << 16) | 0) is False
+    bitmap.allocate_functions(function_pc_bases=(0, 8), code_lengths=(4, 8))
+    assert bitmap.is_candidate(0, 0) is False
+    bitmap.mark(1, 12)
+    assert bitmap.is_candidate(1, 12) is True
+    assert bitmap.is_candidate(1, 8) is False
+    assert bitmap.is_candidate(2, 16) is False
 
 
 if __name__ == "__main__":

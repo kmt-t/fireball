@@ -225,7 +225,7 @@ def test_scenario_comprehensive_storage_and_debugger():
     dbg = DebuggerManager(engine=execution)
     server = GDBServer(dbg=dbg, host="127.0.0.1", port=0)
     ctx = execution.context
-    port = server.start(current_pc=0, ctx=ctx, blocks=blocks)
+    port = server.start(current_pc=block100.head_pc, ctx=ctx, blocks=blocks)
     time.sleep(0.05)
     client = GDBClientHelper("127.0.0.1", port)
     try:
@@ -239,7 +239,7 @@ def test_scenario_comprehensive_storage_and_debugger():
         resp = client.send_raw_packet("g")
         pc = int.from_bytes(bytes.fromhex(resp[0:8]), "little")
         l0 = int.from_bytes(bytes.fromhex(resp[32:40]), "little")
-        assert pc == 0 and l0 == 7
+        assert pc == block100.head_pc and l0 == 7
         # 4. Set breakpoint at block110's head
         resp = client.send_raw_packet(f"Z0,{block110.head_pc:x},0")
         assert resp == "OK"

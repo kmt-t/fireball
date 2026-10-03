@@ -206,7 +206,7 @@ def test_gdb_remote_socket_session():
     server = GDBServer(dbg=dbg, host="127.0.0.1", port=0)
     ctx = execution.context
     # Start TCP Server on dynamic port
-    port = server.start(current_pc=0, ctx=ctx, blocks=blocks)
+    port = server.start(current_pc=block10.head_pc, ctx=ctx, blocks=blocks)
     print(f"    -> GDB Remote Server listening on 127.0.0.1:{port}")
     time.sleep(0.1)
     client = GDBClientHelper("127.0.0.1", port)
@@ -220,7 +220,7 @@ def test_gdb_remote_socket_session():
         assert len(resp) == 160, f"Expected 160 hex chars for 20 virtual registers, got {len(resp)}"
         pc = int.from_bytes(bytes.fromhex(resp[0:8]), "little")
         l0 = int.from_bytes(bytes.fromhex(resp[32:40]), "little")
-        assert pc == 0, f"Expected PC 0, got {pc:x}"
+        assert pc == block10.head_pc, f"Expected PC {block10.head_pc:x}, got {pc:x}"
         assert l0 == 2, f"Expected Local0 = 2, got {l0}"
         print(f"    [Step 2] Read virtual registers 'g' (PC=0x{pc:x}, Local0={l0}) [PASS]")
         # Step 3: Read memory ('m0,8')

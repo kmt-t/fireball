@@ -175,40 +175,55 @@ OPCODE_BENEFIT_TABLE: Final[OpcodeBenefitTable] = OpcodeBenefitTable()
 class JITCandidateBitmap:
     """Fixed per-function one-bit card bitmap populated at module load."""
 
-    __slots__ = ("card_shift", "func_storages")
+    __slots__ = ("card_shift", "func_storages", "function_pc_bases", "code_lengths")
 
     def __init__(self, card_shift: int = JIT_CARD_SHIFT) -> None:
         assert card_shift >= 0
         self.card_shift = card_shift
         self.func_storages: StaticVector[MutableBitStorage | None] = StaticVector(capacity=0)
+        self.function_pc_bases: tuple[int, ...] = ()
+        self.code_lengths: tuple[int, ...] = ()
 
-    def allocate_functions(self, function_count: int) -> None:
-        assert function_count >= 0
-        self.func_storages = StaticVector.of((None,) * function_count, capacity=function_count)
+    def allocate_functions(
+        self, function_pc_bases: tuple[int, ...], code_lengths: tuple[int, ...]
+    ) -> None:
+        assert len(function_pc_bases) == len(code_lengths)
+        assert all(length >= 0 for length in code_lengths)
+        assert all(
+            function_pc_bases[index] <= function_pc_bases[index + 1]
+            for index in range(len(function_pc_bases) - 1)
+        )
+        self.function_pc_bases = function_pc_bases
+        self.code_lengths = code_lengths
+        self.func_storages = StaticVector.of(
+            (None,) * len(code_lengths), capacity=len(code_lengths)
+        )
 
-    @staticmethod
-    def _split_pc(pc: int) -> tuple[int, int]:
+    def _offset(self, function_index: int, pc: int) -> int:
+        assert 0 <= function_index < len(self.function_pc_bases)
         assert 0 <= pc <= 0xFFFF_FFFF
-        return (pc >> 16, pc & 0xFFFF)
+        offset = pc - self.function_pc_bases[function_index]
+        assert 0 <= offset < self.code_lengths[function_index]
+        return offset
 
-    def mark(self, pc: int, code_len: int) -> None:
-        func_index, offset = self._split_pc(pc)
-        assert func_index < len(self.func_storages)
+    def mark(self, function_index: int, pc: int) -> None:
+        assert 0 <= function_index < len(self.func_storages)
+        offset = self._offset(function_index, pc)
         card = offset >> self.card_shift
+        code_len = self.code_lengths[function_index]
         card_count = max(1, (code_len + (1 << self.card_shift) - 1) >> self.card_shift)
-        assert card < card_count
-        storage = self.func_storages[func_index]
+        storage = self.func_storages[function_index]
         if storage is None:
             storage = MutableBitStorage(count=card_count, bits=1)
-            self.func_storages[func_index] = storage
+            self.func_storages[function_index] = storage
         assert card < storage.count
         storage.put(card, 1)
 
-    def is_candidate(self, pc: int) -> bool:
-        func_index, offset = self._split_pc(pc)
-        if func_index >= len(self.func_storages):
+    def is_candidate(self, function_index: int, pc: int) -> bool:
+        if not 0 <= function_index < len(self.func_storages):
             return False
-        storage = self.func_storages[func_index]
+        offset = self._offset(function_index, pc)
+        storage = self.func_storages[function_index]
         if storage is None:
             return False
         card = offset >> self.card_shift

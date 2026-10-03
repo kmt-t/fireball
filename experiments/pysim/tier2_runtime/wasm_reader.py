@@ -572,6 +572,7 @@ def _parse_code_section(
     callbacks: _ParseCallbacks,
     allocator: BumpAllocator,
 ) -> None:
+    payload_start = off
     n, off = decode_unsigned(data, off, end)
     assert n == len(type_indices), "code section entry count must match function section"
     for i in range(n):
@@ -608,6 +609,7 @@ def _parse_code_section(
                 code=None,
                 code_offset=loff,
                 code_size=body_end - loff,
+                code_pc_offset=loff - payload_start,
             )
         )
         off = body_end

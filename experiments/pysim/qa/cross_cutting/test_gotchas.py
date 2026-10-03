@@ -183,19 +183,22 @@ def test_intp_gotcha_03_if_false_no_else_no_frame_leak():
     assert call_state.results == [77]
 
 
-def test_intp_gotcha_04_unified_pc_multi_module():
-    """GOTCHA-INTP-04: UnifiedPC ((func_index << 16) | offset) prevents cross-function collision in ReadOnlyFlatMapView."""
-    pc_fn0 = (0 << 16) | 0x0010
-    pc_fn1 = (1 << 16) | 0x0010
-    assert pc_fn0 != pc_fn1
+def test_intp_gotcha_04_code_section_pc_module_scope():
+    """GOTCHA-INTP-04: Code-section PCs distinguish functions and pair with module ID."""
+    location_a = (1, 0x0010)
+    location_b = (1, 0x0020)
+    same_pc_other_module = (2, 0x0010)
+    assert location_a != location_b
+    assert location_a != same_pc_other_module
 
-    keys = sorted([pc_fn0, pc_fn1])
-    vals = [100 if k == pc_fn0 else 200 for k in keys]
+    keys = sorted([location_a, location_b, same_pc_other_module])
+    vals = [{location_a: 100, location_b: 200, same_pc_other_module: 300}[key] for key in keys]
     entries = list(zip(keys, vals, strict=True))
     view = ReadOnlyFlatMapView(entries)
 
-    assert view.find(pc_fn0) == 100
-    assert view.find(pc_fn1) == 200
+    assert view.find(location_a) == 100
+    assert view.find(location_b) == 200
+    assert view.find(same_pc_other_module) == 300
 
 
 # ==============================================================================

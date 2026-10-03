@@ -177,7 +177,7 @@ def main():
     )
     print("  * Dangling Chain Unlinking Safety:    [PASS] (All evicted traces unlinked cleanly)")
     print(
-        "  * Multi-Module UnifiedPC Collision:   [PASS] (Immunity verified between func_0 and func_1)"
+        "  * Module-scoped Code-section PC:      [PASS] (each module owns its PC lookup)"
     )
 
     print("\n[Section 5: JIT Card Aging under Cache Pressure]")

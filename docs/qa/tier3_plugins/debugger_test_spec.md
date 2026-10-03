@@ -1,11 +1,14 @@
 # Debugger プラグイン テスト仕様書 (Test Specification)
 
 ## 1. 目的と対象範囲
+<!-- traceability: {WasmCodeSectionPC} -->
 
 正本: [`debugger.md`](docs/components/tier3_plugins/debugger.md)
 関連正本: [`gdb_rsp_protocol.md`](docs/specs/gdb_rsp_protocol.md)
 
 GDB RSP コマンド処理（`?`, `g/G`, `m/M`, `Z0/z0`, `s`, `c`）、ブレークポイント管理（`fireball::flat_set_view`）、インタープリタ専用デバッグ構成（`DebuggerInterpreterComposition`）、および仮想レジスタセットを検証する。
+
+本書のPC値は、WASM Code section payload先頭から命令先頭までのモジュール内オフセットである。テストが命令位置を参照するときは、`PC(I)`を「命令Iの最初のバイト位置 - Code section payload先頭位置」とする。関数body内の命令オフセットをPCとして直接使わない。
 
 ## 2. テストケース一覧
 
@@ -57,7 +60,7 @@ GDB RSP コマンド処理（`?`, `g/G`, `m/M`, `Z0/z0`, `s`, `c`）、ブレー
 | TEST-DBG-26 | チェックサム不一致パケットの破棄 | デバッグセッション接続中 | 不正なチェックサム付き`M`パケットと正しい`?`を順に送る | 不正パケットへ`-`を返し、メモリを変更せず、後続の正しいパケットを処理する | `{RSPChecksumVerify}`, `gdb_rsp_protocol.md` |
 
 ### 実装上の注意点に対応する検証
-<!-- traceability: {DebuggerInterpreterComposition} {RSPChecksumVerify} {GOTCHA-DBG-04} {GOTCHA-DBG-01} {GOTCHA-DBG-02} {GOTCHA-DBG-03} -->
+<!-- traceability: {DebuggerInterpreterComposition} {RSPChecksumVerify} {WasmCodeSectionPC} {GOTCHA-DBG-04} {GOTCHA-DBG-01} {GOTCHA-DBG-02} {GOTCHA-DBG-03} -->
 
 | GOTCHA参照 | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
@@ -75,7 +78,7 @@ TEST-DBG-14〜15は実DebuggerManagerの記録・値照合を検査する。
 
 実行制御はTier 2の`RuntimeComposer.compose_execution`がデバッグ有効構成へ結線する。
 Tier 3の`InterpreterExecutionControl`は、同じNativeInterpreterの`step`とC++ dispatcherを再開する。
-命令位置の停止判定は構成時に選択されたC++アスペクトが行う。
+命令位置の停止判定は構成時に選択されたC++アスペクトが行い、比較するPCはCode section payload相対である。
 デバッガの停止要求はフックの状態であり、通常Interpreterの1命令実行APIや実行時モードへ追加しない。
 通常構成の`void`アスペクトでは`if constexpr`が停止フックを除去する。
 RSPの`c`はPythonへ命令ごとに復帰しない。
@@ -85,9 +88,9 @@ QAブロックドライバはローダメタデータ取得と既存のブロッ
 その独自handlerを、命令停止の証拠へ含めない。
 
 `test_dbg_10_23_one_rsp_step_executes_only_one_wasm_instruction`は、RSPの1命令要求を固定した反例である。
-`20 00 41 0a 6a 0b`と`local0=5`では、旧QA経路は1回の`s`でPC=6、stack=[15]まで進んでいた。
-構成済みフックの経路ではPC=2、stack=[5]で停止する。
-次の`s`はPC=4、stack=[5,10]で停止する。
+`20 00 41 0a 6a 0b`と`local0=5`では、旧QA経路は1回の`s`で3命令を進め、関数body内オフセット6、stack=[15]まで進んでいた。
+構成済みフックの経路では`PC(41 0a)=5`、stack=[5]で停止する。
+次の`s`は`PC(6a)=7`、stack=[5,10]で停止する。
 同じ状態から`c`を再開すると結果15で正常終了する。
 この反例を通常の回帰テストへ変更し、xfail指定を除去した。
 撤回した1命令APIを用いた試行の成功件数は、仕様適合の証拠に採用しない。
@@ -95,15 +98,15 @@ QAブロックドライバはローダメタデータ取得と既存のブロッ
 | 要求 | 実行関数 | 独立した期待値と観測 |
 | :--- | :--- | :--- |
 | TEST-DBG-08c | `test_dbg_08c_breakpoint_pc_overflow_is_rejected_without_state_change` | 32bit最大PCを含む固定配列を保存し、幅超過を0へ丸めずE01で拒否する |
-| TEST-DBG-10/23 | `test_dbg_10_23_one_rsp_step_executes_only_one_wasm_instruction` | PC=2/4と全stackを照合し、同じ呼出しから結果15へ継続する |
-| TEST-DBG-09/10 | `test_dbg_09_interior_breakpoint_stops_before_side_effect_and_resumes` | ブロック内PC=2で止まり、書いたlocal0=7を使用して結果17へ継続する |
+| TEST-DBG-10/23 | `test_dbg_10_23_one_rsp_step_executes_only_one_wasm_instruction` | `PC(41 0a)=5` / `PC(6a)=7`と全stackを照合し、同じ呼出しから結果15へ継続する |
+| TEST-DBG-09/10 | `test_dbg_09_interior_breakpoint_stops_before_side_effect_and_resumes` | ブロック内の停止命令をCode section payload相対PCで指定し、書いたlocal0=7を使用して結果17へ継続する |
 | TEST-DBG-10 | `test_dbg_10_call_and_return_stop_at_selected_function` | call/call_indirectでcallee先頭、endでcaller次命令へ止まり、結果12を得る |
 | TEST-DBG-10 | `test_dbg_10_branch_stop_retains_control_state` | ifの真偽それぞれの固定PC列と全stackを照合する |
 | TEST-DBG-10 | `test_dbg_10_loop_stop_keeps_local_and_control_frame_history` | 2回のloopのPC・値履歴を照合し、結果0へ継続する |
 | TEST-DBG-10 | `test_dbg_10_store_does_not_execute_early_or_damage_other_bytes` | 各停止後の全65536byteを照合し、後続storeの先行実行を検出する |
 | TEST-DBG-10 | `test_dbg_10_immediate_is_one_instruction` | 多byte LEB128とi64/f32/f64の固定PC・全生ワードを照合する |
 | TEST-DBG-10 | `test_dbg_10_host_boundary_does_not_replay_the_import` | host importの引数7を1回だけ記録し、後続命令を先行実行しない |
-| TEST-DBG-10/11 | `test_dbg_10_trap_stops_without_normal_exit_or_later_update` | PC=0/3のUNREACHABLEでs/cが停止し、global更新とW00を発生させない |
+| TEST-DBG-10/11 | `test_dbg_10_trap_stops_without_normal_exit_or_later_update` | `PC(unreachable)`でs/cが停止し、global更新とW00を発生させない |
 | TEST-DBG-12 | `test_dbg_12_disabled_composition_has_no_debug_state_or_weave` | 通常native入口と144byteのABIを維持し、構成時weaveを呼ばない |
 | TEST-DBG-12/13 | `test_dbg_12_continue_returns_to_python_only_at_actual_stop` | 2002命令のcが既存native stepの1回で完了する |
 | GOTCHA-DBG-01 | `test_dbg_13_composition_rejects_jit_before_creating_executor` | [`debugger.md`](docs/components/tier3_plugins/debugger.md)、JITとDebuggerの同時構成を生成前に拒否する |

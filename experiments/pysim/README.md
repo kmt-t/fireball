@@ -125,8 +125,8 @@ experiments/pysim/
    - 再帰呼び出し、CallFrame/ControlFrame インライン整合性、`call_indirect` による Table+Element 間接ディスパッチと型シグネチャ照合。
 4. **Scenario 4: Hybrid JIT Compilation & Hotspot (`qa/scenarios/scenario4_hybrid_jit_loop.py`)**:
    - 2-bit カードマーキング（UNEXEC → EXEC → HOT → COMPILED）によるホットスポット検出、Copy-and-Patch x64 ネイティブコード生成、インタープリタと JIT の差分実行検証。
-5. **Scenario 5: Multi-Function UnifiedPC & Radix (`qa/scenarios/scenario5_multimodule_unified_pc.py`)**:
-   - `UnifiedPC`（`func_idx << 16 | pc`）の乗算Foldingミックス（`fold_mix32`）RadixBinaryTreeView による $O(1)$ キャッシュ索引、複数関数にまたがる JIT トレース実行。
+5. **Scenario 5: Multi-Function Code-section PC & Radix (`qa/scenarios/scenario5_multimodule_unified_pc.py`)**:
+   - Code section payload相対PCのFoldingミックス（`fold_mix32`）とRadixBinaryTreeViewによるキャッシュ索引、複数関数にまたがるJITトレース実行。
 6. **Scenario 6: COOS Cooperative Multitasking (`qa/scenarios/scenario6_coos_multitask_yield.py`)**:
    - コルーチン協調マルチタスク、トレース境界での Yield 判定（`{ADR_LoopBackedgeYield}`）、Producer-Consumer CSP 直接ハンドオフ。
 7. **Scenario 7: GDB Remote Debugger Socket Session (`qa/scenarios/scenario7_gdb_socket_debugger.py`)**:

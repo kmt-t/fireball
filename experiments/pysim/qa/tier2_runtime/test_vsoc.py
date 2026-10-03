@@ -963,7 +963,7 @@ def test_debugger_manager_gdb_rsp_integration():
     rsp = GDBRspProtocol(dbg)
     ctx = execution.context
     rsp.handle_packet(f"Z0,{block2.head_pc:x},0", block1.head_pc, ctx, blocks)
-    res_c, stop_pc = rsp.handle_packet("c", 0, ctx, blocks)
+    res_c, stop_pc = rsp.handle_packet("c", block1.head_pc, ctx, blocks)
     assert res_c.startswith("$S05#")
     assert stop_pc == block2.head_pc
     assert ctx.locals[0] == 11

@@ -136,9 +136,10 @@ class RuntimeEngineDebugDriver(RuntimeEngine):
 
     def run_block_interpret(self, block: BasicBlock, ctx: WASMContext) -> int | None:
         assert self.module is not None
-        function_index = block.head_pc >> 16
+        function_index = block.func_index
         code = self.module.code_for(function_index)
-        for op, arg in iter_block_ops(code, block.head_pc & 0xFFFF, block.byte_span):
+        offset = block.head_pc - self.module.function_pc_offset(function_index)
+        for op, arg in iter_block_ops(code, offset, block.byte_span):
             handler = _HANDLERS[op]
             if handler is not None:
                 handler(ctx, arg)

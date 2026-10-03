@@ -103,6 +103,7 @@ struct fireball_wasm_module_execution_view_native;
 typedef struct fireball_wasm_function_execution_view_native {
   const uint8_t *code;
   uint32_t code_size;
+  uint32_t code_pc_offset;
   const fireball_control_map_entry_native *control_map;
   const uint8_t *local_width_map;
   uint32_t local_width_count;
@@ -249,6 +250,7 @@ static_assert(__is_standard_layout(wasm_run_result_native));
 static_assert(__is_trivially_copyable(wasm_run_result_native));
 static_assert(__is_standard_layout(wasm_function_execution_view_native));
 static_assert(__is_trivially_copyable(wasm_function_execution_view_native));
+static_assert(offsetof(wasm_function_execution_view_native, code_pc_offset) == 12);
 static_assert(__is_standard_layout(wasm_function_type_execution_view_native));
 static_assert(__is_trivially_copyable(wasm_function_type_execution_view_native));
 static_assert(__is_standard_layout(wasm_table_execution_view_native));

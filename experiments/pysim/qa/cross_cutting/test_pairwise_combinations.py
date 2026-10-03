@@ -178,7 +178,7 @@ def _prepare_cache(
     assert all(not bank.traces for bank in (cache.active, cache.warm, cache.oldest))
     inc_index = module.export_func_index("inc")
     block = next(
-        block for block in module.blocks if block.head_pc >> 16 == inc_index and block.byte_span
+        block for block in module.blocks if block.func_index == inc_index and block.byte_span
     )
 
     def install() -> None:
@@ -223,15 +223,23 @@ def _probe_debugger(dbg_mode: str) -> None:
     debugger = DebuggerManager(engine=execution)
     debugger.attach()
     rsp = GDBRspProtocol(debugger)
-    response, pc = rsp.handle_packet("g", 0, execution.context, {})
-    assert response == GDBRspProtocol.format_packet("00000000" * 4 + "07000000" + "00000000" * 15)
-    assert pc == 0 and tuple(execution.context.stack) == ()
+    pc_base = execution.call.current_pc()
+    response, pc = rsp.handle_packet("g", pc_base, execution.context, {})
+    expected_registers = (
+        pc_base.to_bytes(4, "little").hex()
+        + "00000000" * 3
+        + "07000000"
+        + "00000000" * 15
+    )
+    assert response == GDBRspProtocol.format_packet(expected_registers)
+    assert pc == pc_base and tuple(execution.context.stack) == ()
     if dbg_mode == "active":
-        assert debugger.add_breakpoint(2)
+        assert debugger.add_breakpoint(pc_base + 2)
         response, pc = rsp.handle_packet("c", pc, execution.context, {})
         assert response == GDBRspProtocol.format_packet("S05")
-        assert pc == 2 and tuple(execution.context.stack) == (7,) and not execution.call.finished
-        debugger.remove_breakpoint(2)
+        assert pc == pc_base + 2 and tuple(execution.context.stack) == (7,)
+        assert not execution.call.finished
+        debugger.remove_breakpoint(pc_base + 2)
     response, _ = rsp.handle_packet("c", pc, execution.context, {})
     assert response == GDBRspProtocol.format_packet("W00")
     assert execution.call.finished and execution.call.results == [8]

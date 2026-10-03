@@ -90,7 +90,7 @@ Hypothesisは失敗入力を縮小し、再現用blobを表示する設定にし
 
 | 項目 | 確認した根拠 | 現在の扱い |
 | :--- | :--- | :--- |
-| 1命令デバッグ | 旧QA経路のPC=6/stack=[15]の反例を、静的デバッグ構成へ結線した | 構成済みnativeフックでPC=2/stack=[5]に停止し、同じ呼出しを継続する。通常stepの実行粒度は維持する。第5.6節を参照する |
+| 1命令デバッグ | 旧QA経路のPC=6/stack=[15]の反例を、静的デバッグ構成へ結線した | 1命令停止とstack=[5]を確認した。旧QAが記録したPC=2は関数内オフセットであり、Code section payload相対PC仕様への適合を示す証拠ではない。第5.6節を参照する |
 | ABI配置 | ユーザー確認により、設計変更の文書反映漏れと確定した。native実装の144byteは、末尾のlinear-memory host baseとsizeを含む | x86_64のABI正本と関連文書を144byteへ同期した。追加2フィールドのoffsetは0x80と0x88である |
 | DMA経路と完了方式 | 要求正本へlinear間CPU／vMMIO端点vDMAを同期した。内部の同期・非同期は転送対象と操作に応じる | 同期対象の全32構成、両端の拒否、物理alias、DYNAMIC履歴、実SHM移譲を追加実装した。実SHMの参照先不一致も検出して修正した。外部サービスのモックで保留、開始後失敗、engine占有、CPU可視化前の停止を検査した。製品ドライバの待機・cache操作の結線と対象CPU上の効果は別の証拠を要する。第5.9〜5.12節を参照する |
 | サービスの自己再起動 | 概念モデルにはload/start/targeted restartがあるが、IPCとvSoCの試験は実サービスのTCB・heap初期化を観測しない | [`system_service_test_spec.md`](docs/qa/tier1_interface/system_service_test_spec.md)に概念証拠と実統合の未検証を分けて記載した |
@@ -251,8 +251,8 @@ RSPのcはPythonの命令実行ループを持たない。
 デバッグ構成だけが実行コンテキストへ制御状態の借用スロットを結線する。
 1命令実行API、追加のruntime flag、attach時のハンドラテーブル切替は導入しない。
 
-最小反例はPC=2、stack=[5]で停止する。
-2回目のsはPC=4、stack=[5,10]となる。
+当時の回帰記録は関数body内オフセットとしてPC=2、stack=[5]で停止した。
+2回目のsは関数body内オフセットPC=4、stack=[5,10]となった。この節は2026-10-01時点の観測記録であり、Code section payload相対PCを定める現行仕様値ではない。
 同じ状態からcを再開して結果15を得る。
 ブロック内ブレークポイント、call/call_indirect、分岐、loop、全memory byte、即値、host import、trapと複数構成の独立性を局所回帰へ含めた。
 1000組の定数とdrop、結果定数とendの2002命令は、cから既存native stepを1回呼んで完了する。

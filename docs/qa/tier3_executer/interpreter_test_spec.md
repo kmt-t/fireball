@@ -95,7 +95,7 @@
 
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| TEST-INTP-70 | 命令オブジェクト非生成とバイト直接フェッチ | WASM関数実行 | 実行ループのフェッチ処理を確認 | `frame.code[ip]` から $O(1)$ で直接バイトを読み出し、中間 `Instr` オブジェクトを生成しない | `interpreter.md` `DirectBytecodeExecution` |
+| TEST-INTP-70 | 命令オブジェクト非生成とバイト直接フェッチ | WASM関数実行 | 実行ループのフェッチ処理を確認 | 関数内カーソルから `frame.code[cursor_offset]` を使って $O(1)$ で直接バイトを読み出し、中間 `Instr` オブジェクトを生成しない。コンテキストPCとの変換は `cursor_offset = pc - function_start_pc` とする | `interpreter.md` `DirectBytecodeExecution` |
 | TEST-INTP-71 | 足し算による次PC進行と即値のその場デコード | 算術・即値命令実行 | `ip` の遷移を確認 | 命令長または即値長を加算した `ip + len` で直接進行し、二分探索マップ（FlatMapView）を走査しない | `interpreter.md` |
 | TEST-INTP-72 | 静的制御表によるブロック境界解決 | `block/loop/if` 構文の実行 | 分岐および終了時の遷移を確認 | モジュールロード時に事前計算された静的 `control_map`（`blocks`, `br_tables`）を参照し、実行時の全命令再デコードを行わない | `interpreter.md` |
 | TEST-INTP-73 | フレームごとのスロット幅の決定 | i32のみ、f32のみ、i64を含む、f64ローカルを含む、ローカルなしの関数 | ロード後の幅マップ（ローカルごとの幅を2ビットで保持）のスロット幅と `local_slot_count_cache` を確認し、各関数を実行する | i32/f32のみは1ワード、i64/f64を含むと2ワードになる。ローカルなしは1ワードでスロット数は0である。全ローカルの幅がスロット幅以下である。実行結果が正しい | GOTCHA-INTP-22 |
@@ -104,15 +104,15 @@
 | TEST-INTP-76 | LOOP後方分岐しきい値と再開 | LOOP後方辺を持つWASM関数がある | しきい値の2倍を超える後方分岐を実行し、yield後に再開する | しきい値到達ごとにyield状態を返し、再開時に回数を0へ戻す。最終的に実行が完了する | `{ADR_LoopBackedgeYield}`, `runtime_vsoc.md` |
 
 ### 実装上の注意点に対応する検証
-<!-- traceability: {InterpreterContextStackless} {JIT_RuntimeAPI_Fallback} {GOTCHA-INTP-01} {GOTCHA-INTP-02} {GOTCHA-INTP-03} {GOTCHA-INTP-04} {GOTCHA-INTP-05} {GOTCHA-INTP-06} -->
+<!-- traceability: {InterpreterContextStackless} {JIT_RuntimeAPI_Fallback} {GOTCHA-INTP-01} {GOTCHA-INTP-02} {GOTCHA-INTP-03} {WasmCodeSectionPC} {GOTCHA-INTP-04} {GOTCHA-INTP-05} {GOTCHA-INTP-06} -->
 
 | GOTCHA参照 | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | GOTCHA-INTP-01 | 継続渡し第4論理引数 `tos` とスタック領域の境界同期 | スタック空状態から複数回の push/pop | `i32.const` および二項演算を連続実行 | スタック空時は `tos=0`、値push時は旧`tos`がスタック領域へ退避され新値が`tos`に格納される。pop時は次段値が`tos`へ復元される。物理レジスタ割当は対象ABIに従い、ARMv8-MはTBD | [`interpreter.md`](docs/components/tier3_executer/interpreter.md)「実行コンテキスト」, `{CPS_4Args}` |
 | GOTCHA-INTP-02 | Label Arity スタック巻き戻し時の TOS 復元 | `block (result i32)` 内で値をpush後に`br 0` | ブロック脱出を実行 | ブロック開始時の深さまでスタックが巻き戻され、宣言アリティ分の結果値のうち最上位値が論理`tos`へ復元されて次handlerへ渡る。破棄された値が`tos`に残ってはならない | [`interpreter.md`](docs/components/tier3_executer/interpreter.md) |
 | GOTCHA-INTP-03 | if 条件偽（else節なし）での制御フレームリーク防止 | `if (cond=0)` で else 節なし | `if` 命令を実行 | `match_offset + 1` へジャンプする際、`_Frame("if")` がスタックに残らずフレームスタックの深さが不変に保たれる。 | [`interpreter.md`](docs/components/tier3_executer/interpreter.md) |
-| GOTCHA-INTP-04 | UnifiedPC による多重モジュール空間の衝突防止 | 複数モジュールがロードされ、同一オフセット（例: 0x0010）を持つ関数が存在 | 各モジュールの関数を実行 | JIT キャッシュ引き当てやデバッグブレークポイント判定において、`(func_index << 16) \| bytecode_offset` の32bit表現で一意に区別され、他モジュールの同一オフセットと決して誤衝突しない | [`interpreter.md`](docs/components/tier3_executer/interpreter.md), `{PositionIndependentCode}` |
-| GOTCHA-INTP-05 | 実行時の命令オブジェクト生成・二分探索排除 | 関数呼び出しおよび命令ステップ実行 | `_build_frame` および `step()` を実行 | `_build_frame` および `step()` の命令フェッチが、オフセット→命令の逆引きテーブルを一切経由せず、生のバイト列（`frame.code[ip]`）から直接デコードする。 | [`interpreter.md`](docs/components/tier3_executer/interpreter.md) `{DirectBytecodeExecution}` |
+| GOTCHA-INTP-04 | Code section 相対PCとモジュールスコープ | Code section payloadより前に複数関数bodyがあり、対象関数のbody sizeとlocals宣言を含むWASMモジュールを用意する | 先行bodyと対象命令のファイル位置、Code section payload先頭位置、Loaderが返すPCを比較し、別モジュールで同じPC値になる基本ブロックも照合する | PCは命令先頭のファイル位置からCode section payload先頭のファイル位置を引いた値である。関数数・body size・locals宣言の符号化バイトを含み、関数内オフセットを使わない。別モジュールで同じPC値を許し、モジュール横断のJIT・履歴キーは`(module_id, pc)`で区別する | [`interpreter.md`](docs/components/tier3_executer/interpreter.md) |
+| GOTCHA-INTP-05 | 実行時の命令オブジェクト生成・二分探索排除 | 関数呼び出しおよび命令ステップ実行 | `_build_frame` および `step()` を実行 | `_build_frame` および `step()` の命令フェッチが、オフセット→命令の逆引きテーブルを一切経由せず、生のバイト列（`frame.code[cursor_offset]`）から直接デコードする。Code section payload相対PCから関数内カーソルへ変換しても、逆引き表を使わない。 | [`interpreter.md`](docs/components/tier3_executer/interpreter.md) `{DirectBytecodeExecution}` |
 | GOTCHA-INTP-06 | JIT終端命令の分岐と制御フレーム整理 | 入れ子のloop/ifを持つ関数で、内側の分岐条件ブロックがコンパイル済み | JIT実行後、条件分岐を複数回通過する | 終端命令PCから命令handlerを呼び、残余条件を消費し、制御フレームに従って分岐とスタック整理を行う。Interpreter単独実行と同じ結果になる。実行状態の判定と更新は命令handlerが一元して行う | [`interpreter.md`](docs/components/tier3_executer/interpreter.md)、`{InterpreterContextStackless}`, `{JIT_RuntimeAPI_Fallback}` |
 
 ### 継続状態と資源境界の検証

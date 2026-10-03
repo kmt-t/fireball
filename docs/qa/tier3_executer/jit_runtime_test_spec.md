@@ -9,6 +9,7 @@
 ## 2. テストケース一覧
 
 ### 2-bitカードマーキング (jit_runtime.md (Card Marking))
+<!-- traceability: {WasmCodeSectionPC} -->
 
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
@@ -16,12 +17,12 @@
 | TEST-JITR-02 | 状態遷移: UNEXECUTED→EXECUTED→HOT | 新規カード | 1回touch、2回目touch | 1回目でEXECUTED、2回目でHOT | jit_runtime.md (Card Marking) |
 | TEST-JITR-03 | COMPILED後のtouchは状態を変えない | カードがCOMPILED | touch | 状態はCOMPILEDのまま | |
 | TEST-JITR-04 | 評価(Eviction)でUNEXECUTEDへ戻る（EXECUTEDではない） | カードがCOMPILED、対応トレースがキャッシュから追い出される | `mark_evicted` | 状態がUNEXECUTEDに戻る。 |, `test_hotspot_bitmap_pure_2bit_state_transitions`, [`test_jit_runtime.py`](experiments/pysim/qa/tier3_executer/jit/test_jit_runtime.py) `test_hotspot_05_3bank_cache_rotation_and_eviction_resets_card` |
-| TEST-JITR-05 | 適格ベーシックブロックの履歴記録 | 複数の適格ブロックを含むInterpreter実行区間 | 対象関数を実行し、Runtime Hotspot Profilerの履歴を読む | `(module_id, unified_pc)`が適格ブロックごとに1件ずつ実行順で記録される | [`runtime_hotspot_profiler_test_spec.md`](docs/qa/tier2_runtime/runtime_hotspot_profiler_test_spec.md) |
+| TEST-JITR-05 | 適格ベーシックブロックの履歴記録 | 複数の適格ブロックを含むInterpreter実行区間 | 対象関数を実行し、Runtime Hotspot Profilerの履歴を読む | Code section payload相対PCを含む`(module_id, unified_pc)`が適格ブロックごとに1件ずつ実行順で記録される | [`runtime_hotspot_profiler_test_spec.md`](docs/qa/tier2_runtime/runtime_hotspot_profiler_test_spec.md) |
 | TEST-JITR-06 | 最小トレース長未満のブロックはカード共有を起こさず永久に追跡されない | 同一カード内に2つの短いベーシックブロック（推定コンパイル後サイズがカード幅未満） | 両方のPCを繰り返し実行 | 両方のカード状態は `UNEXECUTED` のままであり、コンパイル待ち列にも追加されない。 | `jit_runtime.md` 「最小トレース長フィルタ」、[`test_jit_runtime.py`](experiments/pysim/qa/tier3_executer/jit/test_jit_runtime.py) `test_hotspot_06_short_blocks_never_tracked_avoiding_card_aliasing` |
 | TEST-JITR-07 | コンパイル待ち列処理時、既にキャッシュ常駐のPCは再コンパイルしない | PCがキャッシュに常駐済み（カード状態はまだCOMPILEDになっていない）が、同PCが待ち列にも積まれている | idle_hookを実行 | コンパイラを呼び出さず、カード状態だけを `COMPILED` へ同期する。 | `jit_runtime.md` 「キュー処理時のキャッシュ再確認」、[`test_jit_runtime.py`](experiments/pysim/qa/tier3_executer/jit/test_jit_runtime.py) `test_hotspot_07_idle_hook_skips_recompiling_an_already_resident_trace` |
 | TEST-JITR-08 | JITエントリテーブル（バンクのトレース一覧）は常にhead_pcでソートされ、削除は削除フラグ（トンビストーン）で行う | 複数のトレースをPC順不同で挿入し、1件削除後に同じPCを再挿入 | 挿入・削除・再挿入後にトレース一覧と該当PCの取得結果を確認 | 一覧は常にhead_pc昇順。削除直後は取得結果がNone。再挿入は既存tombstone枠を再利用し、取得結果は新しいトレースそのものになる。 | jit_runtime.md「JITエントリ表」, [`jit_cache.py`](experiments/pysim/tier3_executer/jit/jit_cache.py), [`test_jit_runtime.py`](experiments/pysim/qa/tier3_executer/jit/test_jit_runtime.py) |
 | TEST-JITR-09 | OldestヒットによるPromotion時、被チェイン登録（inbound_sources）は昇格先バンクへ引き継がれる | トレースBがバンクXでチェイン元Aから被チェインされている状態で、Bのみが後にOldestからPromoteされる | Bをlookupで昇格させた後、AとBそれぞれの所属バンクを確認 | 昇格前のバンクXからAの登録がなくなり、Bの新しい所属バンクへ引き継がれる。 | [`test_jit_runtime.py`](experiments/pysim/qa/tier3_executer/jit/test_jit_runtime.py) `test_jitr_promote_transfers_inbound_sources_avoiding_dangling_chain` |
-| TEST-JITR-09b | 実行ループはキャッシュ検索の前に必ずカードビットマップをO(1)確認する | 通常実行（大半のブロックは未コンパイル） | 多数回ブロックを実行 | `cache.lookup()`が呼ばれるのはカード状態が`COMPILED`である場合のみ。 | jit_runtime.md 「カードマーキング確認」, [`test_jit_runtime.py`](experiments/pysim/qa/tier3_executer/jit/test_jit_runtime.py) `test_jitr_bitmap_checked_before_cache_lookup` |
+| TEST-JITR-09b | 通常実行ではC++ dispatcherが常駐trace表を検索する | 未コンパイルブロックが多く、実行中にtraceをコンパイルする関数 | 関数を実行し、JIT実行件数、Python側`cache.lookup()`の呼出し、常駐trace表とカード状態を確認する | 関数結果が正しく、JITを実行する。通常経路ではPython側`cache.lookup()`を呼ばない。常駐trace表の各PCは`COMPILED`のカードとキャッシュ内のtraceに対応する。 | `jit_runtime.md`「トレース実行時の分岐解決とインタープリタ復帰」、pysim `test_jitr_native_trace_lookup_uses_resident_snapshot` |
 
 ### ホットスポット判定 (yield時) と バッチコンパイル
 <!-- traceability: {GOTCHA-JITR-09} {JIT_CardAgingSweep} -->
@@ -121,6 +122,9 @@ TEST-JITR-33のIFと内側loopの回帰試験は、対象の制御終端直前�
 | TEST-JITR-65 | ネイティブdispatch metadataの世代更新とhotspot profiling切替 | 未コンパイル候補blockと一つの常駐traceを持つJIT manager | ネイティブdispatch stateを読み、trace挿入とhotspot profiling切替後のmetadataを確認する | metadataは常駐traceと候補blockに一致する。キャッシュ世代変更後はtrace表を更新する。hotspot profiling無効時は候補PC数を0にして常駐trace実行と分岐handlerの意味を保つ | `jit_runtime.md`「トレース実行時の分岐解決とインタープリタ復帰」、pysim `test_jitr_native_dispatch_snapshot_is_cached_and_hotspot_collection_is_configurable` |
 | TEST-JITR-66 | 診断カウンタを無効にしたRuntimeの意味保存 | 診断カウンタなしで後方分岐yieldを行うC++ Interpreter構成 | 関数を実行し、結果・yieldと統計値を確認する | 結果とyield境界は変わらず、JIT body、handler、trace遷移の診断カウンタは0のままである。同じプログラム内で診断カウンタ有効Runtimeも構成できる | `jit_runtime.md`「トレース実行時の分岐解決とインタープリタ復帰」 |
 | TEST-JITR-67 | フレーム深度をまたぐ合法なLOOP分岐はchain targetを作らない | 内側`block`から同一関数の外側`loop`へ戻る合法な`br_if` | 対象・分岐blockのframe深度、コンパイル結果、C++ handler経由の実行結果を確認する | トレース本体はコンパイル可能でも、後方分岐にchain targetは設定しない。分岐はC++ Interpreter handlerが処理し、Interpreterのみの結果と一致する | `runtime_vsoc.md`「後方分岐とyield回数」、`jit_runtime.md`「トレース実行時の分岐解決とインタープリタ復帰」、pysim `test_jitr_cross_frame_loop_branch_skips_special_link_but_keeps_trace_body` |
+| TEST-JITR-68 | ホットスポット収集中の定義済み関数呼出しをC++内で継続 | 適格なcalleeを繰り返し呼ぶcallerと、ホットスポット収集有効のRuntime | 同じ入力を初回とcalleeコンパイル後に実行し、結果、calleeの常駐、JIT実行件数、Runtime復帰件数を確認する | 両実行の結果が一致する。calleeの適格ブロックは履歴へ記録されてコンパイルされる。定義済み関数の各呼出しでPythonへ戻らず、コンパイル後はcalleeのJIT traceが実行される | `{RuntimeHotspotProfiler}`、`{LowLatencyJIT}`、pysim `test_jitr_hotspot_collection_continues_defined_calls_in_cpp` |
+| TEST-JITR-69 | C++履歴リングの容量超過 | ループ後方分岐を使わず、履歴容量を超える回数の適格ブロックを実行する | C++ dispatcherの終了理由、関数結果、履歴上書き数、近似フラグを確認する | 容量超過でyieldせず、最古の履歴を破棄して直近の履歴を分析する。上書き数と近似フラグを記録する | `{RuntimeHotspotProfiler}`、pysim `test_jitr_native_history_overwrite_does_not_yield` |
+| TEST-JITR-70 | 空のyield境界でのJIT制御処理省略 | コンパイル待ち作業と候補履歴がなく、後方分岐yieldを繰り返す関数 | 実行結果、yield回数、コンパイル処理・履歴引渡し・Python側trace検索の呼出しを確認する | 関数結果とyield条件を保つ。空キューのコンパイル処理と空履歴の引渡しを行わず、通常経路でtraceをPython側で検索しない | `{LowLatencyJIT}`、`{RuntimeHotspotProfiler}`、pysim `test_jitr_empty_yield_skips_python_control_work` |
 
 ### 実装上の注意点に対応する検証
 <!-- traceability: {GOTCHA-INTP-06} {GOTCHA-JITR-01} {GOTCHA-JITR-02} {GOTCHA-JITR-03} {GOTCHA-JITR-05} {GOTCHA-JITR-06} {GOTCHA-JITR-07} {GOTCHA-JITR-08} {GOTCHA-JITR-09} -->

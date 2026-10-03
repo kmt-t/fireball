@@ -49,6 +49,7 @@ class BasicBlock:
     """
 
     head_pc: int
+    func_index: int = 0
     next_pc: int | None = None
     loops_to: int | None = None
     frame_depth: int = 0
@@ -64,6 +65,16 @@ F32 = 0x7D
 F64 = 0x7C
 WASM_RAW_WORD_BYTES = 4
 WASM_VALUE_SLOT_BYTES = 8
+
+
+def _uleb_size(value: int) -> int:
+    assert value >= 0
+    size = 1
+    while value >= 0x80:
+        value >>= 7
+        size += 1
+    return size
+
 
 # Fixed reference-layout charges for loader-owned records. These sizes model
 # the 32-bit target records; final C++ sizeof values remain part of the target
@@ -161,6 +172,7 @@ class Function:
     code: memoryview | None  # direct-construction fallback; loaded modules use source offsets
     code_offset: int = 0
     code_size: int = 0
+    code_pc_offset: int | None = None
     control_map: ControlMap | None = None
     select_widths: ReadOnlyFlatMapStorage[int, int] | None = None
     drop_widths: ReadOnlyFlatMapStorage[int, int] | None = None
@@ -278,6 +290,37 @@ class Module:
         # Direct concept modules may provide already-materialized sequences;
         # their metadata is read directly without a second full copy.
         self.prepare_function_layouts()
+        if self.functions and all(function.code_pc_offset is None for function in self.functions):
+            payload_offset = _uleb_size(len(self.functions))
+            for function in self.functions:
+                assert function.code is not None
+                local_group_count = 0
+                locals_size = _uleb_size(0)
+                previous_type: int | None = None
+                previous_count = 0
+                for value_type in function.locals_extra:
+                    if value_type == previous_type:
+                        previous_count += 1
+                    else:
+                        if previous_type is not None:
+                            locals_size += _uleb_size(previous_count) + 1
+                        local_group_count += 1
+                        previous_type = value_type
+                        previous_count = 1
+                if previous_type is not None:
+                    locals_size += _uleb_size(previous_count) + 1
+                locals_size += _uleb_size(local_group_count) - 1
+                body_size = locals_size + len(function.code)
+                body_size_prefix = _uleb_size(body_size)
+                function.code_pc_offset = payload_offset + body_size_prefix + locals_size
+                payload_offset += body_size_prefix + body_size
+        previous_code_end = 0
+        for function in self.functions:
+            assert function.code_pc_offset is not None
+            code_size = function.code_size if function.code is None else len(function.code)
+            assert function.code_pc_offset + code_size <= 0x1_0000_0000
+            assert previous_code_end <= function.code_pc_offset
+            previous_code_end = function.code_pc_offset + code_size
 
     def configure_section_capacities(
         self,
@@ -511,6 +554,32 @@ class Module:
         assert self.source is not None
         return self.source[function.code_offset : function.code_offset + function.code_size]
 
+    def function_pc_offset(self, func_index: int) -> int:
+        """Return the Code-section PC of a defined function's first instruction byte."""
+        assert not self.is_import(func_index)
+        function = self.functions[func_index - len(self.imports)]
+        assert function.code_pc_offset is not None
+        return function.code_pc_offset
+
+    def function_index_for_pc(self, pc: int) -> int | None:
+        """Resolve a module-local Code-section PC to its defined function index."""
+        assert 0 <= pc <= 0xFFFF_FFFF
+        imports = len(self.imports)
+        low = 0
+        high = len(self.functions)
+        while low < high:
+            middle = low + (high - low) // 2
+            function_index = imports + middle
+            start = self.function_pc_offset(function_index)
+            end = start + len(self.code_for(function_index))
+            if pc < start:
+                high = middle
+            elif pc >= end:
+                low = middle + 1
+            else:
+                return function_index
+        return None
+
     def func_type(self, func_index: int) -> FuncType:
         if self.is_import(func_index):
             type_index = self.imports[func_index].type_index
@@ -588,12 +657,14 @@ class Module:
         for idx, _fn in enumerate(self.functions):
             func_idx = n_imports + idx
             code = self.code_for(func_idx)
-            extracted = extract_basic_blocks(code, func_index=func_idx)
+            function_pc_offset = self.function_pc_offset(func_idx)
+            extracted = extract_basic_blocks(code, pc_base=function_pc_offset)
             for head_pc, next_pc, loops_to, frame_depth, byte_span in extracted:
                 if byte_span > 0:
                     all_blocks.append(
                         BasicBlock(
                             head_pc=head_pc,
+                            func_index=func_idx,
                             next_pc=next_pc,
                             loops_to=loops_to,
                             frame_depth=frame_depth,
@@ -602,7 +673,7 @@ class Module:
                                 (
                                     opcode
                                     for opcode, _ in iter_block_ops(
-                                        code, head_pc & 0xFFFF, byte_span
+                                        code, head_pc - function_pc_offset, byte_span
                                     )
                                 ),
                                 OPCODE_BENEFIT_TABLE,
@@ -648,8 +719,9 @@ class Module:
         n_imports = len(self.imports)
         count = 0
         for idx, _fn in enumerate(self.functions):
+            function_index = n_imports + idx
             extracted = extract_basic_blocks(
-                self.code_for(n_imports + idx), func_index=n_imports + idx
+                self.code_for(function_index), pc_base=self.function_pc_offset(function_index)
             )
             # Matches build_basic_block_index's own filter exactly, so this
             # fallback path (self.blocks not yet built) agrees with the fast

@@ -8,7 +8,7 @@
 **適用範囲外の明記**: `runtime_logging.md` 冒頭は「本コンポーネントが扱うのはビルド時に辞書登録された固定フォーマットの内部状態ログのみである」と明示し、ゲストの `wasi:cli/stdout`/`stderr`（`print`/`eprint`）は別経路（`interface_wit.md` の `console-output` の位置づけ節、`fireball://hal/stdout/0`）で扱うとしている。したがって本テスト仕様書は **辞書ベースの内部ログ** のみを対象とし、生バイト出力は [`interface_wit_test_spec.md`](docs/qa/tier3_platform/interface_wit_test_spec.md) 側の責務とする。
 
 ## 2. テストケース一覧
-<!-- traceability: {BufferedLogging} {GOTCHA-LOG-01} {GOTCHA-LOG-04} -->
+<!-- traceability: {BufferedLogging} {WasmCodeSectionPC} {GOTCHA-LOG-01} {GOTCHA-LOG-04} -->
 
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
@@ -23,7 +23,7 @@
 | TEST-LOG-09 | ダングリングポインタ（実行時文字列）の禁止 | 実行時に構築した任意長文字列をdict_offset経由で渡そうとする | ログAPIの引数型を確認 | 内部ログAPIは固定オフセット+u32引数4個のみを受け付け、任意長文字列やポインタ相当の値を渡せない | `logging_concept.py` `test_logger_cannot_carry_a_runtime_string_but_console_can` |
 | TEST-LOG-10 | Runtimeイベントから内部ログへの通知 | ロガーとRuntime Event Loggerが注入済み | 関数イベントを通知し、ログをflushして固定レコードを復号する | 内部Observerが辞書オフセットと関数IDをキューイングし、イベント名がホスト側で復号される | pysim `test_runtime_events_are_queued_as_fixed_dictionary_records` |
 | TEST-LOG-11 | ログ辞書ストレージ所有権分離 | 外部で固定辞書ストレージを定義 | ログ辞書初期化 | ログ辞書および非所有ビューは外部ストレージを参照し、実行中の辞書追加を提供しない | logging_concept.py `test_logger_storage_ownership_separation` |
-| TEST-LOG-12 | インタープリタ実行時トラップの診断ログ出力 | Python参照とNativeの双方で関数index=1の`local.get 0; local.get 1; i32.div_s; end`にロガーを結線する | 直接呼出しと別callerからの呼出しで第2引数を0とし、trap後にflushする | ERROR、イベントID=`0x030F`、命令オフセット4から得る`unified_pc=0x00010004`、残り引数0の20バイトが出力される。ホスト展開も同じPCを示す | 4.2.1、`GOTCHA-LOG-04`、`test_log_12_interpreter_trap_diagnostic_logging` |
+| TEST-LOG-12 | インタープリタ実行時トラップの診断ログ出力 | Python参照とNativeの双方で関数index=1の`local.get 0; local.get 1; i32.div_s; end`にロガーを結線する | 直接呼出しと別callerからの呼出しで第2引数を0とし、trap後にflushする | Code section payloadは関数数、unused関数のbody、対象bodyのsizeとlocals宣言を含むため、`i32.div_s`のPCはpayload先頭相対`0x0000000A`となる。ERROR、イベントID=`0x030F`、PC=`0x0000000A`、残り引数0の20バイトが出力される。ホスト展開も同じPCを示す | 4.2.1、`GOTCHA-LOG-04`、`{WasmCodeSectionPC}`、`test_log_12_interpreter_trap_diagnostic_logging` |
 | TEST-LOG-13 | トラップログ辞書のインタープリタ・ロガー間同期 | `interpreter.TRAP_LOG_EVENTS` と `logger.STANDARD_DIAGNOSTIC_EVENTS` を突合 | 全17トラップ原因コードを走査 | 各イベントIDおよびフォーマット文字列が両モジュール間で完全一致する（登録漏れ・字面ずれの機械的検出） | 4.2.1, `GOTCHA-LOG-04` |
 | TEST-LOG-14 | COOS・IPCの異常診断 | 重複task ID、満杯の割り込みFIFO、未登録URI、権限不一致、9ペアのメッセージを用意する | 各操作の拒否結果とflushした全レコードを照合する | 重複ID99、割り込み4件の破棄順序と累計、未知URI、RUNTIME→DEBUGGERの拒否、9対8の容量超過が、それぞれ所定のレベル・イベントID・引数で出力される | runtime_logging.md §4.2.1、`test_log_14_coos_and_ipc_diagnostics_preserve_event_ids_and_arguments` |
 
@@ -35,7 +35,7 @@
 | `GOTCHA-LOG-01` | 実行時文字列ポインタの完全排除（ダングリングポインタ防止） | ログAPI呼び出し | 実行時文字列ポインタの受け渡しを試行 | ログAPIは固定長辞書オフセットと u32 スカラー引数4個のみを受け付け、任意長文字列を直接埋め込む手段が存在しない。 | [`runtime_logging.md`](docs/components/tier2_runtime/runtime_logging.md) §4.1, `GOTCHA-LOG-01` |
 | `GOTCHA-LOG-02` | リングバッファ満杯時の最古上書き（システム非ブロック不変条件） | リングバッファが満杯 | さらに `log_event` を実行 | エラーやブロックを起こさず、最も古いエントリを上書きして直近のログを保存する。 | [`runtime_logging.md`](docs/components/tier2_runtime/runtime_logging.md) §4.1, `GOTCHA-LOG-02` {DeterministicRingBuffer} |
 | `GOTCHA-LOG-03` | 転送ループの割り込み即時応答性 | flush 実行中 | 現在のバッチ（DMA転送）完了後に `interrupt_pending()` が True を返す | バッファ全フラッシュを強行せず、現在のバッチ（DMA転送）完了時点で直ちにループを抜けてスケジューラへ制御を戻す。 | [`runtime_logging.md`](docs/components/tier2_runtime/runtime_logging.md), `GOTCHA-LOG-03`, {InterruptibleFlush} |
-| `GOTCHA-LOG-04` | トラップ発生箇所での診断情報捕捉順序 | インタープリタがトラップを検知 | 呼出しフレーム解体前に `unified_pc` とトラップ原因コードを確定してロガーへ渡す | 診断ログに発生関数・命令位置が記録される。 | [`runtime_logging.md`](docs/components/tier2_runtime/runtime_logging.md) §4.1 / §4.2.1, [`interpreter.md`](docs/components/tier3_executer/interpreter.md), `GOTCHA-LOG-04` |
+| `GOTCHA-LOG-04` | トラップ発生箇所での診断情報捕捉順序 | インタープリタがトラップを検知 | 呼出しフレーム解体前にCode section payload相対`unified_pc`とトラップ原因コードを確定してロガーへ渡す | 診断ログにモジュール内命令位置が記録される。PC単独はモジュールを特定しない。 | [`runtime_logging.md`](docs/components/tier2_runtime/runtime_logging.md) §4.1 / §4.2.1, [`interpreter.md`](docs/components/tier3_executer/interpreter.md), `GOTCHA-LOG-04` |
 
 ## 3. テスト検証実績と網羅状況
 

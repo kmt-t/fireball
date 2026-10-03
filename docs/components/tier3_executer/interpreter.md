@@ -16,7 +16,7 @@
 <!-- traceability: {ThreadedInterpreter} {LowLatencyJIT} {InterpreterContextStackless} {RuntimeHotspotProfiler} {RuntimeEventSink} -->
 Interpreter は、WASM命令をスレッドインタープリタ方式で実行する。低レイテンシと小フットプリントを設計目標とする。本コンポーネントは Execution Engine (`executor`) の一部として設計する。JITと実行状態を共有する。実行環境は `execution_context` の論理フィールドとして参照する。独立した `vsoc_runtime* env` 引数は設けない。
 
-組み込み環境の極小メモリ制約（`{GLOBAL_Policy_Memory}`）を遵守する。WASM命令は Flash や ROM 上のバイト列（`const uint8_t* ip`）から直接フェッチ（`*ip++`）する。中間命令オブジェクト（`Instr`）は生成しない。命令ごとの二分探索マップ（`FlatMapView`）も一切使用しない。即値（LEB128 等）はその場でポインタから直接デコードする。次の命令アドレスは単なるポインタ加算（`ip += len`）で決定する。これを {DirectBytecodeExecution} と定義する。 <!-- definition: {DirectBytecodeExecution} -->
+組み込み環境の極小メモリ制約（`{GLOBAL_Policy_Memory}`）を遵守する。WASM命令はFlashやROM上の関数コードビューから直接フェッチする。デコード中のローカルカーソルと`execution_context.ip`は、いずれもアクティブ関数のコードビュー内オフセットを保持する。RuntimeやDebuggerへ渡すPCは、CallFrameが持つ関数命令開始PCをこの値に加えて得る。中間命令オブジェクト（`Instr`）は生成しない。命令ごとの二分探索マップ（`FlatMapView`）も一切使用しない。即値（LEB128等）はその場でポインタから直接デコードし、次の命令アドレスは単なるポインタ加算（`ip += len`）で決定する。これを {DirectBytecodeExecution} と定義する。 <!-- definition: {DirectBytecodeExecution} -->
 
 制御構文（`block`, `loop`, `if`）の飛び先は静的解決された軽量制御表（`control_map`）を参照する。この制御表はモジュールロード時に一度だけ構築される。命令実行中にヒープ確保や飛び先探索は行わず、制御表の参照を $O(1)$ で行う（`{GOTCHA-INTP-05}`）。 <!-- definition: {GOTCHA-INTP-05} -->
 
@@ -87,7 +87,7 @@ graph TD
 | Opcode属性表 | 処理区分を含む各命令の属性フラグを保持する | 固定長メタデータ | 関数ポインタを保持しない |
 
 #### 実行コンテキスト（execution_context）
-<!-- traceability: {PositionIndependentCode} {ContextPointerRegister} {MemoryBoundaryCheck} {EnvironmentPointer} -->
+<!-- traceability: {PositionIndependentCode} {ContextPointerRegister} {MemoryBoundaryCheck} {EnvironmentPointer} {WasmCodeSectionPC} -->
 WASMゲストの全実行状態を管理する。JIT/Interpreter 共通の仮想CPUレジスタ群として設計する（{GOTCHA-INTP-11}）。 <!-- definition: {GOTCHA-INTP-11} -->
 
 **独立した固定構造体としての配置**:
@@ -110,7 +110,7 @@ WASMゲストの全実行状態を管理する。JIT/Interpreter 共通の仮想
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・オフセット |
 | :--- | :--- | :--- | :--- |
-| プログラムカウンタ (ip) | 現在または復帰時の WASM PC | 統一オフセット | 4バイト（`execution_context` の `+0x00`） |
+| 命令カーソル (ip) | アクティブ関数コードビュー内の現在または復帰時の命令オフセット。外部へ示すPCは関数命令開始PCを加えて求める | 32bit符号なしオフセット | 4バイト（`execution_context` の `+0x00`） |
 | SP領域開始位置 (sp_base) | `オペランドスタック` バッファ先頭アドレス | アドレス | 4バイト（`execution_context` の `+0x04`） |
 | SP領域終端位置 (sp_limit) | `オペランドスタック` バッファ終端アドレス（オーバーフロー検知用） | アドレス | 4バイト（`execution_context` の `+0x08`） |
 | SPオフセット (sp_offset) | `オペランドスタック` 現在の頂点オフセット/アドレス | 長さ/アドレス | 4バイト（`execution_context` の `+0x0C`） |
@@ -141,19 +141,23 @@ WASMゲストの全実行状態を管理する。JIT/Interpreter 共通の仮想
 | リニアメモリの有効サイズ (linear_memory_size) | 実体メモリに対する境界検査のバイト数 | 64bit符号なし | 8バイト（`execution_context` の `+0x88`） |
 `execution_context` 構造体のx86-64実体は144バイトである。先頭16個の32bitフィールド、4個のポインタ、残りの32bitフィールド、LOOP状態、64bitのリニアメモリサイズ、およびABIアラインメントで構成する。この配置とサイズを実行コンテキストのABI契約とする。コード、制御スタック、CallStackは非所有ポインタとしてコンテキスト自身から参照する。ハンドラは別の呼出し状態やTLSを参照しない。3本の値領域とCallStackの開始・終端・オフセットは独立したフィールドとして保持する。いずれか1本の領域の伸縮は他の記録位置へ影響しない。JITの複雑処理の委譲先アドレスとヘルパー契約別入口の選択値は、対象ABIのトレースヘッダから参照する。バイトオフセットの物理配置は `{ExecutionContext_Layout}` に従う。
 
-`CallFrame` の `control_map` は、コードオフセットで直接引ける固定配列を指す。各エントリは対応する `end`、`else`、命令後PC、ブロック結果アリティ、および `drop/select` の生ワード幅を保持する。命令ハンドラはローカル幅表と制御表を `CallFrame` から直接参照する。
+`CallFrame`の`control_map`は、関数コードビュー内オフセットで直接引ける固定配列を指す。各エントリは対応する`end`、`else`、関数内の命令後オフセット、ブロック結果アリティ、および`drop/select`の生ワード幅を保持する。Runtimeから受け取ったCode section PCは関数命令開始PCを引いて制御表を参照し、遷移先の関数内オフセットを`execution_context.ip`へ格納する。外部へPCを返す場合は関数命令開始PCを加える。ローカル幅表と制御表は`CallFrame`から直接参照する。
 
 **スタック頂点値の保持と同期不変条件 (`{GOTCHA-INTP-01}`)**: <!-- definition: {GOTCHA-INTP-01} -->
 オペランドスタックの論理状態はInterpreter/JIT境界で共有する。x64では共有オペランド領域を正本とし、インタープリタとJITの相互移行、外部呼出し、トラップ処理で共有状態を同期する。ARMv8-Mでの値キャッシュ、物理レジスタ、境界同期はTBDであり、x64の方式から推定しない。
 
-**統一プログラムカウンタによる複数モジュール線形化 (`{GOTCHA-INTP-04}`)**: <!-- definition: {GOTCHA-INTP-04} -->
-モジュール間を跨ぐ相互関数呼び出しでは、統一 PC（Unified PC: `(func_index << 16) | bytecode_offset`）を採用する。モジュール相対オフセットではなく、システム全体で一意に決定される値とする。これにより複数モジュールが共存する環境下でも、PC の単一比較のみで分岐先コードブロックを特定できる。JIT トレースのモジュール横断インライン化を極低オーバーヘッドで実現する。
+**WASM Code section 相対PC (`{GOTCHA-INTP-04}`)**: <!-- definition: {GOTCHA-INTP-04} -->
+WASM PCは、当該モジュールのCode section payload先頭を0とし、命令の最初のバイトまでのオフセットで表す。payload先頭はsection IDとpayload lengthのLEB128の後であり、payload内の関数数、各body size、locals宣言を含む。PCは関数body内オフセットでも、WASMファイル全体のオフセットでも、ネイティブアドレスでもない。LoaderはCode section payloadのファイル位置を保持し、命令のファイル位置からpayload先頭位置を減じてPCを得る。
+
+この座標はDWARF for WebAssemblyが定めるCode section相対命令位置と一致する。命令アドレスは命令先頭バイトを指す。参照: [WebAssembly tool-conventions: DWARF Code Addresses](https://github.com/WebAssembly/tool-conventions/blob/main/Dwarf.md#code-addresses)、[Wasmtime: DWARF PC lookup](https://docs.wasmtime.dev/api/src/wasmtime/runtime/trap.rs.html)。
+
+PCはモジュール内の座標であり、異なるモジュール間では同じ値を取り得る。PCをキーとしてモジュール横断の状態を保持する場合は`(module_id, pc)`を使う。モジュール内では各命令がCode section payload内の異なるバイト位置を持つため、関数を含めた命令位置を一意に識別できる。
 
 #### 関数呼出し記述子
 <!-- traceability: {PositionIndependentCode} {ContextPointerRegister} {MemoryBoundaryCheck} {EnvironmentPointer} {CPS_4Args} -->
 関数実行記述子は、関数インデックス、コード、制御マップ、ローカル幅マップ、引数搬送情報、戻り境界、および`ローカル値領域`の開始32ビットワード位置を結び付ける実行時メタデータであり、CallStackへ固定容量で積む。関数メタデータは記述子の生成時に一度取得して紐付け、命令実行中にコードや制御表を再検索しない（{GOTCHA-INTP-14}）。 <!-- definition: {GOTCHA-INTP-14} --> ローカル値は現在の空き位置から確保し、記述子に保存した開始位置から参照する。`オペランドスタック`と`ローカル値領域`は型情報を持たない32ビットワード列であり、記述子、戻りPC、型情報を格納しない。論理ローカルは、フレームごとに決まるスロット幅の固定スロットで保持する。スロット幅は、関数のロード時に、ローカルの最大の変数サイズから求める。値の有効ワードは関数シグネチャに従う。i32/f32は1ワード、i64/f64は2ワードを占有する（{GOTCHA-INTP-13}）。 <!-- definition: {GOTCHA-INTP-13} -->
 
-`local.get`, `local.set`, `local.tee` は型を解釈しない。local index にフレームのスロット幅を掛けて、アドレスを直接計算する。必要な 1 または 2 ワードをオペランドスタックとの間で生コピーする（{GOTCHA-INTP-15}）。 <!-- definition: {GOTCHA-INTP-15} --> 型付き演算や ABI 境界の読み書きのみが、既知の型に応じて値を解釈する。オペランドスタックはコール境界を跨いで連続する。`call`, `call_indirect`, import, host call, 関数復帰は、常に Interpreter/RuntimeEngine 境界で処理する。JIT トレースが関数呼出し記述子の積み下ろしや host call helper の呼出しを代行することはない。Fireball host import の `fireball_call` も実行エンジンからホストハンドラへ直接接続し、SYSCTL/vMMIO syscall vectorを経由しない（{GOTCHA-INTP-21}）。 <!-- definition: {GOTCHA-INTP-21} -->
+`local.get`, `local.set`, `local.tee` は型を解釈しない。local index にフレームのスロット幅を掛けて、アドレスを直接計算する。必要な 1 または 2 ワードをオペランドスタックとの間で生コピーする（{GOTCHA-INTP-15}）。 <!-- definition: {GOTCHA-INTP-15} --> 型付き演算や ABI 境界の読み書きのみが、既知の型に応じて値を解釈する。オペランドスタックはコール境界を跨いで連続する。`call`と`call_indirect`はC++ Interpreter handlerが処理し、定義済みゲスト関数ならC++ dispatcherが呼出し先へ継続する。import・host callはInterpreter/RuntimeEngine境界へ戻す。関数復帰はC++ handlerが処理し、最上位の完了をRuntimeEngineへ返す。JIT トレースが関数呼出し記述子の積み下ろしや host call helper の呼出しを代行することはない。Fireball host import の `fireball_call` も実行エンジンからホストハンドラへ直接接続し、SYSCTL/vMMIO syscall vectorを経由しない（{GOTCHA-INTP-21}）。 <!-- definition: {GOTCHA-INTP-21} -->
 
 値スタックは型タグを持たない32ビットワード列とし、型は各命令の操作側で解釈する（{GOTCHA-INTP-12}）。 <!-- definition: {GOTCHA-INTP-12} -->
 
@@ -171,6 +175,7 @@ JITは、関数ごとのスロット幅から `local index × スロット幅` �
 | 関数インデックス | 所有するWASM関数のメタデータを特定 | インデックス | 32bit符号なし |
 | コード参照 | 現在実行するWASM命令列 | 非所有参照 | Flash/ROM上のコードを参照 |
 | コードサイズ | コード参照の有効バイト数 | 32bit符号なし | ロード時に確定 |
+| 関数命令開始PC | 関数コードビューの先頭命令に対応するCode section payload相対PC | 32bit符号なし | Loaderがbody sizeとlocals宣言を読み飛ばして確定 |
 | 制御マップ | block/loop/if の静的な飛び先表 | 非所有参照 | ロード時に構築した表を共有 |
 | ローカル値領域開始スロット | 当該関数のローカル値の先頭 | 32bitオフセット | 固定長ローカル配列内の物理スロット位置 |
 | ローカル個数・スロット個数 | 引数を含む論理ローカル数と物理スロット数 | 32bit符号なし | `local_slot_count = local_count × slot_words` |
@@ -318,6 +323,7 @@ x64ではトレースが共有オペランド領域へ状態を書き戻す。AR
   - トップレベル復帰のみ専用の RETURN sentinel PC を生成し、RuntimeEngine が実行完了を判定する。
 - **Hotspot検知と JIT候補ビットマップによるバイパス (`JIT_CandidateBitmap`)**:
   - JIT有効かつホットスポット検出有効のRuntimeでは、候補マスクに適合する基本ブロック先頭の`(module_id, UnifiedPC)`を固定容量履歴へ実行順に記録する。Runtime Event Sinkや時計を通さない。履歴の所有・容量・分析境界はTier 2 [`runtime_hotspot_profiler.md`](docs/components/tier2_runtime/runtime_hotspot_profiler.md) に従う。
+  - 定義済みゲスト関数の呼出しではC++ dispatcherが呼出し先フレームを選び、呼出し先の適格ブロックも同じ実行区間の履歴へ記録する。履歴容量の超過では最古の履歴を上書きして実行を続ける。後方分岐のyield条件に達した場合はRuntime実行境界へ戻る。
   - Interpreterがyield、fallback、trap、関数完了のいずれかでRuntime実行境界へ戻るとき、未分析履歴を一度だけ引き渡す。カード更新とコンパイル要求登録は実行境界で行う。JIT trace/chainだけを実行した区間では履歴記録・分析を行わない。
   - JIT cache・候補mask・compile queueの所有者はTier 3 JITランタイムであり、C++ Interpreter handlerやvSoCはそれらを直接参照しない。
   - 候補ビットマップで該当block先頭PCが候補外（`0`）の場合、JITランタイムは追跡登録を省略する。compile効果のないblockの追跡overheadを抑える。
@@ -477,7 +483,7 @@ sequenceDiagram
 - ローカル変数命令: `local.get/set/tee`。
 - 数値命令: i32/i64の数値命令、およびf32/f64の定数・比較・算術・丸め・平方根・reinterpret/変換。
 
-外部状態を伴う `call`、`call_indirect`、import/host呼出し、グローバル、リニアメモリの各命令は、共有状態を同期してからInterpreter/RuntimeEngine境界へ委譲する。RuntimeEngineが要求するブロック境界停止PCはC++ディスパッチが判定し、境界で共有状態を保存する。`sp_capacity` は設定済みの論理容量を32bitワード単位で保持し、物理バッファの大きさまでスタックを伸ばさない。
+定義済みゲスト関数への`call`と`call_indirect`はC++ handlerが関数呼出し記述子を積み、C++ dispatcherが呼出し先へ継続する。import/host呼出し、グローバル、リニアメモリの各命令で外部状態を扱う場合は、共有状態を同期してInterpreter/RuntimeEngine境界へ委譲する。RuntimeEngineが要求するブロック境界停止PCはC++ディスパッチが判定し、境界で共有状態を保存する。`sp_capacity` は設定済みの論理容量を32bitワード単位で保持し、物理バッファの大きさまでスタックを伸ばさない。
 
 ### 5.2 URI/IPCインターフェース
 <!-- traceability: {META_RecoveryStrategy} -->

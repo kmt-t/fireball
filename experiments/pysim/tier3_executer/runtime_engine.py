@@ -573,7 +573,13 @@ class RuntimeEngine:
 
         terminal_block = self.get_block(terminal_trace.head_pc)
         assert terminal_block is not None
-        terminal_ip = (terminal_trace.head_pc & 0xFFFF) + terminal_block.byte_span
+        assert terminal_block.func_index == frame.func_index
+        assert self.jit_runtime is not None and self.jit_runtime.module is not None
+        terminal_ip = (
+            terminal_trace.head_pc
+            - self.jit_runtime.module.function_pc_offset(frame.func_index)
+            + terminal_block.byte_span
+        )
         if terminal_ip >= len(frame.code):
             # A body that ends at the implicit function boundary has no opcode
             # handler to invoke. All explicit control terminators stay on the

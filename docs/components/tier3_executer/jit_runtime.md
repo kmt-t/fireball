@@ -29,7 +29,7 @@ JITサブシステムは、以下の2つの独立した設計書に責務を分�
 
 ### 2.2 実装責務と依存方向
 <!-- traceability: {META_ContractImplSplit} {META_StaticDI} {META_3TierSeparation} -->
-Tier 3 の `RuntimeEngine` は Tier 2 の JIT runtime API を介して、モジュール登録、基本ブロック解決、Interpreter実行区間終了時の履歴分析、yield処理、トレース検索、chain解決、およびキャッシュ無効化を呼び出す。APIはカード表、履歴リング、コンパイル待ち列、キャッシュバンク、直接マップ索引の内部表現を公開しない。
+Tier 3 の `RuntimeEngine` は Tier 2 の JIT runtime API を介して、モジュール登録、基本ブロック解決、Interpreter実行区間終了時の履歴分析、yield処理、トレース検索、chain解決、およびキャッシュ無効化を呼び出す。APIはコンパイル待ち作業の有無を返す。APIはカード表、履歴リング、コンパイル待ち列、キャッシュバンク、直接マップ索引の内部表現を公開しない。
 
 Tier 3 の実装は次の責務に分ける。
 
@@ -49,14 +49,10 @@ Tier 3内部の依存は `JITInterpreter` → `RuntimeEngine` → `Interpreter` 
 ## 3. 静的モデル
 
 ### 3.1 データ構造
-<!-- traceability: {JIT_ReverseCompilationOrder} -->
-- **統一プログラムカウンタ (`UnifiedPC` / `wasm_pc_t`)**: モジュール全体の全関数・全命令を一意に識別する 32ビット整数である。
-  - **構造**: `(func_index << 16) | (bytecode_offset & 0xFFFF)`
-    - **上位 16ビット (`func_index`)**: モジュール内の関数インデックス（0 〜 65,535）。
-    - **下位 16ビット (`bytecode_offset`)**: 当該関数のバイトコード内オフセット（0 〜 65,535 バイト）。
-  - **役割**: 複数関数を含む WASM モジュールにおいて、関数間の PC 衝突を防止する。一意な追跡とディスパッチを保証する。
+<!-- traceability: {JIT_ReverseCompilationOrder} {WasmCodeSectionPC} -->
+- **WASMプログラムカウンタ (`UnifiedPC` / `wasm_pc_t`)**: 32ビットのモジュール内Code section payload相対オフセットであり、命令先頭バイトを指す。関数インデックスを上位ビットへ格納しない。Code section payload内の関数数、body size、locals宣言も座標に含む。異なるモジュール間のキーは`(module_id, pc)`とする。
 - **`JitEntryIndex`**: WASMオフセットとネイティブコードの対応付け、および 4 段高速検索ロジックをカプセル化した主要クラスである。
-- **カードマーキング表 (Card Marking Table)**: 関数ごとのコード領域を 4 バイト単位のカードで分割管理する 2 ビット状態表である。密ビュー `fireball::bit_view<2>` として参照する。
+- **カードマーキング表 (Card Marking Table)**: 関数ごとの命令領域を 4 バイト単位のカードで分割管理する 2 ビット状態表である。Code section payload相対PCから所属関数の命令範囲を解決し、`(pc - function_start_pc) >> card_shift`で関数内カード番号を得る。密ビュー `fireball::bit_view<2>` として参照する。
   - `0: UNEXECUTED` (未実行)
   - `1: EXECUTED` (実行済み)
   - `2: HOT` (コンパイル要求中)
@@ -64,11 +60,11 @@ Tier 3内部の依存は `JITInterpreter` → `RuntimeEngine` → `Interpreter` 
 - **コンパイル対象可否マスク (Trackable Mask)**: ブロックの静的適格性を管理する 1 ビット状態表である。ロード時に一度だけマークされる。`next_pc` を持ち、かつバイト長が `min_trace_bytes` 以上のブロックを対象とする。密ビュー `fireball::bit_view<1>` として独立バッファで参照する。実行時のディスパッチはこの 1 ビットのみを参照する。ブロックの静的メタデータを再走査する必要がない。 `{TrackableBlockMask}` <!-- definition: {TrackableBlockMask} -->
 - **関数更新表 (Function Update Bitmap)**: 関数添字ごとの 1 ビット状態表である。前回の巡回以降に、その関数のカードが `UNEXECUTED` から `EXECUTED` へ遷移した関数だけに 1 を立てる。密ビュー `fireball::bit_view<1>` として独立バッファで参照する。
   - サイズは、モジュールの関数数と同じビット数である。
-  - 関数添字は、touch した PC の上位 16 ビットから直接決まる。カードや基本ブロックの解決は要らない。
+  - 関数添字はInterpreterの実行中CallFrameおよびLoaderの基本ブロック所有情報から得る。PCのビット分割は行わない。
   - 巡回は 8 関数を 1 バイトとして行う。値が 0 のバイトは 1 回の比較で読み飛ばす。
   - コードを持たない関数（import 関数）のビットは立たない。
 - **エイジングカーソル**: 関数更新表のバイト位置を保持する整数である。モジュール登録時に 0 で初期化し、表の末尾に達したら先頭へ戻る。
-- **JITエントリ表**: 各バンクの `head_pc` 順に並ぶ固定容量配列である。検索は二分探索（$O(\log n)$）とし、削除済み枠は無効項目として扱う。新規キーは配列内のシフトで挿入し、削除はtombstone化する。同じキーの再挿入では無効項目を再利用する。配列容量と挿入量はバンク容量により制限される。エントリが少ないためRadix索引を設けない。
+- **JITエントリ表**: モジュールごとの各バンクに `head_pc` 順で並ぶ固定容量配列である。異なるモジュールを一つの検索表へ入れる場合のキーは`(module_id, head_pc)`とする。検索は二分探索（$O(\log n)$）とし、削除済み枠は無効項目として扱う。新規キーは配列内のシフトで挿入し、削除はtombstone化する。同じキーの再挿入では無効項目を再利用する。配列容量と挿入量はバンク容量により制限される。エントリが少ないためRadix索引を設けない。
 - **x64参照コード領域 (8KB)**: x64参照構成では4KBページ2枚分の領域を使う。先頭2KBは開始処理、終了処理、x64ヘルパー呼出しコード、chain dispatcher、および絶対アドレスプールを置く非エビクション領域とし、残る2KBずつを`Bank 0 (Active)`, `Bank 1 (Warm)`, `Bank 2 (Oldest)`に割り当てる。x64トレースヘッダはtrace identityとchain/helper targetだけを保持する。共通コード領域はflushやバンクローテーションでも維持する。ARMv8-Mの領域容量、物理配置、保護方式、ヘッダ形式はすべてTBDである。
   x64参照共通領域内の固定オフセットは次のとおりである。オフセットはコード領域先頭からの値であり、トレースヘッダのフィールド位置とは別の値である。
 
@@ -193,7 +189,7 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    Start(["Input UnifiedPC: (func_index << 16) | bytecode_offset"]) --> Stage1["[Stage 1] Card Marking: Check bit_view<2>[pc >> card_shift] (O(1))"]
+    Start(["Input module-scoped Code-section PC"]) --> Stage1["[Stage 1] Card Marking: resolve function-local card from PC (O(1))"]
     Stage1 --> CheckCompiled{"Card State == COMPILED?"}
 
     CheckCompiled -- "No" --> ExitInterp(["Fast Exit: Dispatch to Interpreter Handler"])
@@ -280,11 +276,13 @@ stateDiagram-v2
 
 命令列長は、後続アドレスから自分自身の先頭アドレスを引いて求めてはならない。後方分岐ブロックでは差分が負になる。その結果「短すぎる」と誤判定される。命令列長はブロック自身の命令バイト数から直接求める。
 
-JIT trace終端の制御命令はC++ Interpreterの対応ハンドラで実行し、取得された後方分岐をそのハンドラ内で数える。C++ dispatcherは分岐後のPCから常駐トレースを検索し、JIT traceまたはC++ handlerを連続実行する。`FB_CONF_RUNTIME_YIELD_THRESHOLD` 到達時にdispatcherがyield statusを返し、RuntimeEngineからCOOS境界へ制御を戻す。C++ Interpreter単独経路も同じdispatcher・カウンタ・しきい値を使う。後方分岐カウンタは時間ではなく取得した後方分岐の回数である。非対応命令、外部呼出し、trap、関数完了は必要な早期境界となる。
+JIT trace終端の制御命令はC++ Interpreterの対応ハンドラで実行し、取得された後方分岐をそのハンドラ内で数える。C++ dispatcherは分岐後のPCから常駐トレースを検索し、JIT traceまたはC++ handlerを連続実行する。定義済みゲスト関数の呼出しもC++ handlerで処理し、呼出し先の適格ブロックを記録しながらdispatcher内で継続する。`FB_CONF_RUNTIME_YIELD_THRESHOLD` 到達時にdispatcherがyield statusを返し、RuntimeEngineからCOOS境界へ制御を戻す。C++ Interpreter単独経路も同じdispatcher・カウンタ・しきい値を使う。後方分岐カウンタは時間ではなく取得した後方分岐の回数である。非対応命令、外部呼出し、trap、関数完了は必要な早期境界となる。
 
 trace chainは直線後続traceが常駐する場合に限り、trace末尾から共通コード領域のchain dispatcherへ移り、dispatcherがTraceヘッダのtarget bodyへtail-jumpする経路を指す。未接続のtargetは0で表し、共通epilogueから実行境界へ戻る。opcode別handlerの呼出しや、C++ handler後にC++ dispatcherが別traceを選ぶ遷移はchainではない。chain dispatcherは命令を判定せず、分岐helperも持たない。
 
-常駐trace表とホットスポット候補PC表は、キャッシュ世代または候補マスク世代が変わったときだけ構築する。通常経路ではC++ dispatcherがこのsnapshotをlookupし、制御handler実行後もしきい値到達まではC++内で次のtraceまたはhandlerを選ぶ。Interpreterは適格な基本ブロックPCを独立したHotspotHistoryへ記録し、実行区間の終了時にRuntime Hotspot Profilerが履歴順にカードを更新する。Runtime Event Sinkはこの履歴を受け取らない。診断カウンタとホットスポット履歴はRuntimeComposerが選んだ具象型で独立に有効・無効を決める。無効なRuntimeインスタンスには対応する収集状態と処理を含めず、設定違いのRuntimeを同じプログラムで共存させられる。
+常駐trace表とホットスポット候補PC表は、キャッシュ世代または候補マスク世代が変わったときだけ構築する。通常経路ではC++ dispatcherがこのsnapshotをlookupし、制御handler実行後もしきい値到達まではC++内で次のtraceまたはhandlerを選ぶ。通常経路のRuntimeEngineは同じPCのtraceを重複検索しない。デバッガ経路ではRuntimeEngineがtraceを検索して停止条件と実行可否を判定する。Interpreterは適格な基本ブロックPCを独立したHotspotHistoryへ記録し、実行区間の終了時にRuntime Hotspot Profilerが履歴順にカードを更新する。Runtime Event Sinkはこの履歴を受け取らない。診断カウンタとホットスポット履歴はRuntimeComposerが選んだ具象型で独立に有効・無効を決める。無効なRuntimeインスタンスには対応する収集状態と処理を含めず、設定違いのRuntimeを同じプログラムで共存させられる。
+
+コンパイル待ち作業がないyield境界では、RuntimeEngineはコンパイル処理を起動しない。候補履歴が0件の実行区間では履歴を引き渡さない。これらの省略はyield理由、ゲスト状態、トレース選択を変更しない。
 
 常駐trace descriptor、候補PC、および観測回数は固定容量の実行時テーブルとして管理する。C++ dispatcherは有効要素数を受け取り、テーブルを直接参照して観測回数を更新する。テーブルはcache世代または候補mask世代が変化したときに再構築し、dispatcherの呼び出しごとに最大容量分をスタック上へ複製しない。テーブルの具体的な所有型はこの契約で規定しない。
 

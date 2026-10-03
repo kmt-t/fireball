@@ -82,7 +82,7 @@
 | trace-header helper dispatch | 3.70 µs | 3.52–3.81 |
 | cache churn | 128,661 evictions/s | 128,372–129,219 |
 
-Working set 8件と24件のcache hit率は100%、100件のthrashing時は92.44%だった。Oldest-only promotion、eviction時のchain unlink、多モジュールUnifiedPC分離の各不変条件も3試行で通過した。
+Working set 8件と24件のcache hit率は100%、100件のthrashing時は92.44%だった。Oldest-only promotionとeviction時のchain unlinkは3試行で通過した。添付3ログのPC衝突ケースは変更前の関数番号付きPCを確認した記録である。現在のベンチマーク実装は同じCode-section PCを別モジュールの個別キャッシュで検索するケースへ更新したが、この更新は未実行である。
 
 JIT agingの既定値`U=2, O=8`では652 tracesをcompileし608 tracesをpurgeした。agingなしでは745 tracesをcompileし693 tracesをpurgeした。既定値でのaging処理時間は1.33 ms/variantだった。両構成のプログラム結果は一致した。
 

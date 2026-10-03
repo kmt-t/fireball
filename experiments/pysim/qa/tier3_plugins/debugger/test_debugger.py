@@ -225,7 +225,7 @@ def test_dbg_08_09_breakpoints_and_hit():
     assert dbg.has_breakpoint(block2.head_pc)
     # Continue from block1 -> should halt at block2 with SIGTRAP ($S05)
     ctx = execution.context
-    res_c, stop_pc = rsp.handle_packet("c", 0, ctx, blocks)
+    res_c, stop_pc = rsp.handle_packet("c", block1.head_pc, ctx, blocks)
     assert res_c.startswith("$S05#")
     assert stop_pc == block2.head_pc
     assert ctx.locals[0] == 6  # block1 executed
@@ -263,9 +263,9 @@ def test_dbg_11_native_execution_termination_response():
     blocks = {block1.head_pc: block1, block2.head_pc: block2}
     ctx = execution.context
     # Step 1 -> halts at block2 with S05
-    res_s1, pc1 = rsp.handle_packet("s", 0, ctx, blocks)
+    res_s1, pc1 = rsp.handle_packet("s", block1.head_pc, ctx, blocks)
     assert res_s1.startswith("$S05#")
-    assert pc1 == 2
+    assert pc1 == block2.head_pc
     assert ctx.locals[0] == 5
     # Step 2 -> ends with W00 (clean termination)
     res_s2, pc2 = rsp.handle_packet("c", pc1, ctx, blocks)
@@ -286,14 +286,17 @@ def test_dbg_10_23_one_rsp_step_executes_only_one_wasm_instruction() -> None:
     debugger.attach()
     rsp = GDBRspProtocol(debugger)
     ctx = execution.context
+    pc_base = execution.call.current_pc()
     response, next_pc = rsp.handle_packet("s", block.head_pc, ctx, {block.head_pc: block})
     assert response == GDBRspProtocol.format_packet("S05")
-    assert next_pc == 2, "one local.get cannot execute the following constant and addition"
+    assert next_pc == pc_base + 2, (
+        "one local.get cannot execute the following constant and addition"
+    )
     assert tuple(ctx.stack) == (5,)
     assert ctx.locals[0] == 5
     response, next_pc = rsp.handle_packet("s", next_pc, ctx, {})
     assert response == GDBRspProtocol.format_packet("S05")
-    assert next_pc == 4 and tuple(ctx.stack) == (5, 10)
+    assert next_pc == pc_base + 4 and tuple(ctx.stack) == (5, 10)
     response, next_pc = rsp.handle_packet("c", next_pc, ctx, {})
     assert response == GDBRspProtocol.format_packet("W00")
     assert execution.call.results == [15]
@@ -361,15 +364,16 @@ def test_dbg_09_interior_breakpoint_stops_before_side_effect_and_resumes() -> No
         "(module (func (param i32) (result i32) local.get 0 i32.const 10 i32.add))", (5,)
     )
     ctx = execution.context
+    pc_base = execution.call.current_pc()
     assert ctx.stack is execution.call.context.operand_stack
-    rsp.handle_packet("P4=07000000", 0, ctx, {})
-    rsp.handle_packet("Z0,2,0", 0, ctx, {})
-    response, pc = rsp.handle_packet("c", 0, ctx, {})
+    rsp.handle_packet("P4=07000000", pc_base, ctx, {})
+    rsp.handle_packet(f"Z0,{pc_base + 2:x},0", pc_base, ctx, {})
+    response, pc = rsp.handle_packet("c", pc_base, ctx, {})
     assert response == GDBRspProtocol.format_packet("S05")
-    assert pc == 2 and tuple(ctx.stack) == (7,)
+    assert pc == pc_base + 2 and tuple(ctx.stack) == (7,)
     response, pc = rsp.handle_packet("s", pc, ctx, {})
     assert response == GDBRspProtocol.format_packet("S05")
-    assert pc == 4 and tuple(ctx.stack) == (7, 10)
+    assert pc == pc_base + 4 and tuple(ctx.stack) == (7, 10)
     response, pc = rsp.handle_packet("c", pc, ctx, {})
     assert response == GDBRspProtocol.format_packet("W00")
     assert execution.call.results == [17]
@@ -392,15 +396,17 @@ def test_dbg_10_call_and_return_stop_at_selected_function(indirect: bool) -> Non
     debugger = DebuggerManager(engine=execution)
     debugger.attach()
     rsp = GDBRspProtocol(debugger)
-    pc = 0x10000
+    caller_base = module.function_pc_offset(1)
+    callee_base = module.function_pc_offset(0)
+    pc = caller_base
     if indirect:
         response, pc = rsp.handle_packet("s", pc, execution.context, {})
         assert response == GDBRspProtocol.format_packet("S05")
-        assert pc == 0x10002 and tuple(execution.context.stack) == (0,)
-    resume_pc = 0x10005 if indirect else 0x10002
+        assert pc == caller_base + 2 and tuple(execution.context.stack) == (0,)
+    resume_pc = caller_base + (5 if indirect else 2)
     for expected_pc, expected_stack in (
-        (0, ()),
-        (2, (7,)),
+        (callee_base, ()),
+        (callee_base + 2, (7,)),
         (resume_pc, (7,)),
         (resume_pc + 2, (7, 5)),
         (resume_pc + 3, (12,)),
@@ -430,11 +436,12 @@ def test_dbg_10_branch_stop_retains_control_state(
         i32.const 1 i32.add))""",
         (condition,),
     )
-    pc = 0
+    pc = execution.call.current_pc()
+    pc_base = pc
     for expected_pc, stack in trace:
         response, pc = rsp.handle_packet("s", pc, execution.context, {})
         assert response == GDBRspProtocol.format_packet("S05")
-        assert pc == expected_pc and tuple(execution.context.stack) == stack
+        assert pc == pc_base + expected_pc and tuple(execution.context.stack) == stack
     response, pc = rsp.handle_packet("c", pc, execution.context, {})
     assert response == GDBRspProtocol.format_packet("W00")
     assert execution.call.results == [result]
@@ -447,7 +454,8 @@ def test_dbg_10_loop_stop_keeps_local_and_control_frame_history() -> None:
         loop local.get 0 i32.const 1 i32.sub local.tee 0 br_if 0 end local.get 0))""",
         (2,),
     )
-    pc = 0
+    pc = execution.call.current_pc()
+    pc_base = pc
     for expected_pc, stack in (
         (2, ()),
         (4, (2,)),
@@ -465,7 +473,7 @@ def test_dbg_10_loop_stop_keeps_local_and_control_frame_history() -> None:
     ):
         response, pc = rsp.handle_packet("s", pc, execution.context, {})
         assert response == GDBRspProtocol.format_packet("S05")
-        assert pc == expected_pc and tuple(execution.context.stack) == stack
+        assert pc == pc_base + expected_pc and tuple(execution.context.stack) == stack
     response, pc = rsp.handle_packet("c", pc, execution.context, {})
     assert response == GDBRspProtocol.format_packet("W00")
     assert execution.call.results == [0]
@@ -480,11 +488,12 @@ def test_dbg_10_store_does_not_execute_early_or_damage_other_bytes() -> None:
         memory=memory,
     )
     expected = bytearray(memory)
-    pc = 0
+    pc = execution.call.current_pc()
+    pc_base = pc
     for expected_pc in (2, 4, 7, 9, 11, 14):
         response, pc = rsp.handle_packet("s", pc, execution.context, {})
         assert response == GDBRspProtocol.format_packet("S05")
-        assert pc == expected_pc
+        assert pc == pc_base + expected_pc
         if pc == 7:
             expected[0] = 7
         if pc == 14:
@@ -509,9 +518,10 @@ def test_dbg_10_immediate_is_one_instruction(
 ) -> None:
     """TEST-DBG-10: The hook never stops between an opcode and its immediate bytes."""
     execution, _, rsp = _debug_rsp(f"(module (func (result {value_type}) {instruction}))")
-    response, pc = rsp.handle_packet("s", 0, execution.context, {})
+    pc_base = execution.call.current_pc()
+    response, pc = rsp.handle_packet("s", pc_base, execution.context, {})
     assert response == GDBRspProtocol.format_packet("S05")
-    assert pc == next_pc and tuple(execution.context.stack) == words
+    assert pc == pc_base + next_pc and tuple(execution.context.stack) == words
 
 
 @pytest.mark.parametrize("command", ("s", "c"))
@@ -524,15 +534,16 @@ def test_dbg_10_trap_stops_without_normal_exit_or_later_update(
 
     execution, _, rsp = _debug_rsp(f"""(module (global (mut i32) (i32.const 0))
         (func {prefix} unreachable i32.const 1 global.set 0))""")
+    pc_base = execution.call.current_pc()
     if command == "s" and fault_pc != 0:
-        _, pc = rsp.handle_packet("s", 0, execution.context, {})
+        _, pc = rsp.handle_packet("s", pc_base, execution.context, {})
         _, pc = rsp.handle_packet("s", pc, execution.context, {})
-        assert pc == fault_pc
+        assert pc == pc_base + fault_pc
     else:
-        pc = 0
+        pc = pc_base
     for _ in range(2):
         response, pc = rsp.handle_packet(command, pc, execution.context, {})
-        assert response == GDBRspProtocol.format_packet("S05") and pc == fault_pc
+        assert response == GDBRspProtocol.format_packet("S05") and pc == pc_base + fault_pc
         assert execution.call.trap is not None
         assert execution.call.trap.code == TrapCode.UNREACHABLE
         assert execution.interpreter.globals[0] == 0
@@ -558,11 +569,12 @@ def test_dbg_10_host_boundary_does_not_replay_the_import() -> None:
     debugger = DebuggerManager(engine=execution)
     debugger.attach()
     rsp = GDBRspProtocol(debugger)
-    response, pc = rsp.handle_packet("s", 0x10000, execution.context, {})
-    assert pc == 0x10002 and calls == []
+    pc_base = execution.call.current_pc()
+    response, pc = rsp.handle_packet("s", pc_base, execution.context, {})
+    assert pc == pc_base + 2 and calls == []
     response, pc = rsp.handle_packet("s", pc, execution.context, {})
     assert response == GDBRspProtocol.format_packet("S05")
-    assert pc == 0x10004 and calls == [7] and tuple(execution.context.stack) == ()
+    assert pc == pc_base + 4 and calls == [7] and tuple(execution.context.stack) == ()
     response, pc = rsp.handle_packet("c", pc, execution.context, {})
     assert response == GDBRspProtocol.format_packet("W00") and calls == [7]
 
@@ -615,7 +627,7 @@ def test_dbg_12_continue_returns_to_python_only_at_actual_stop(
         return original_step(interpreter, call)
 
     monkeypatch.setattr(NativeInterpreter, "step", tracked_step)
-    response, pc = rsp.handle_packet("c", 0, execution.context, {})
+    response, pc = rsp.handle_packet("c", execution.call.current_pc(), execution.context, {})
     assert response == GDBRspProtocol.format_packet("W00")
     assert execution.call.results == [7]
     assert steps == [1], "continue must not return through Python for each instruction"
@@ -667,14 +679,19 @@ def test_dbg_13_two_compositions_keep_stop_state_and_storage_independent() -> No
     second, second_debugger, second_rsp = _debug_rsp(
         "(module (func (param i32) (result i32) local.get 0 i32.const 10 i32.add))", (20,)
     )
-    first_rsp.handle_packet("Z0,2,0", 0, first.context, {})
-    response, first_pc = first_rsp.handle_packet("c", 0, first.context, {})
-    assert response == GDBRspProtocol.format_packet("S05") and first_pc == 2
+    first_base = first.call.current_pc()
+    first_rsp.handle_packet(f"Z0,{first_base + 2:x},0", first_base, first.context, {})
+    response, first_pc = first_rsp.handle_packet("c", first_base, first.context, {})
+    assert response == GDBRspProtocol.format_packet("S05") and first_pc == first_base + 2
     assert normal.call(0, (30,)) == [40]
-    response, second_pc = second_rsp.handle_packet("c", 0, second.context, {})
+    response, second_pc = second_rsp.handle_packet(
+        "c", second.call.current_pc(), second.context, {}
+    )
     assert response == GDBRspProtocol.format_packet("W00") and second.call.results == [30]
-    assert tuple(first.context.stack) == (5,) and first.call.current_pc() == 2
-    assert first_debugger.has_breakpoint(2) and not second_debugger.has_breakpoint(2)
+    assert tuple(first.context.stack) == (5,) and first.call.current_pc() == first_base + 2
+    assert first_debugger.has_breakpoint(first_base + 2) and not second_debugger.has_breakpoint(
+        first_base + 2
+    )
     response, first_pc = first_rsp.handle_packet("c", first_pc, first.context, {})
     assert response == GDBRspProtocol.format_packet("W00") and first.call.results == [15]
 

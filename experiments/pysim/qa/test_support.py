@@ -28,6 +28,9 @@ from tier3_executer.jit.x64_jit import TraceCompiler
 from tier3_executer.runtime_engine import RuntimeDriveMode, RuntimeEngine
 from wasm_module import BasicBlock, Function, FuncType, LocalWidthMap, Module, WasmOperand
 
+PC_ONLY_FUNCTION_STRIDE = 0x2000
+PC_ONLY_FUNCTION_BASE = 0x100
+
 
 def make_runtime_engine(
     jit_compiler: JITCompiler | None = None,
@@ -115,7 +118,7 @@ def compile_test_block(
 
     return compiler.compile_trace(
         block.head_pc,
-        iter_block_ops(code, block.head_pc & 0xFFFF, block.byte_span),
+        iter_block_ops(code, block.head_pc, block.byte_span),
         block.next_pc,
         block.loops_to,
         block.byte_span,
@@ -128,12 +131,16 @@ def compile_module_block(
 ) -> JITTrace | None:
     """Test-only adapter deriving local metadata from the loaded function."""
 
-    function_index = block.head_pc >> 16
+    function_index = block.func_index
     function = module.functions[function_index - len(module.imports)]
     assert function.local_width_map_cache is not None
     return compiler.compile_trace(
         block.head_pc,
-        iter_block_ops(module.code_for(function_index), block.head_pc & 0xFFFF, block.byte_span),
+        iter_block_ops(
+            module.code_for(function_index),
+            block.head_pc - module.function_pc_offset(function_index),
+            block.byte_span,
+        ),
         block.next_pc,
         block.loops_to,
         block.byte_span,
@@ -149,13 +156,14 @@ def make_pc_only_module(pcs: tuple[int, ...]) -> Module:
     code = bytes(max(pcs) + 1)
     module = Module(
         types=(FuncType(params=(), results=()),),
-        functions=(Function(type_index=0, locals_extra=(), code=code),),
+        functions=(Function(type_index=0, locals_extra=(), code=code, code_pc_offset=0),),
     )
     blocks = StaticVector.of(
         tuple(
             BasicBlock(
-                head_pc=pc,
-                next_pc=pc + 1,
+                head_pc=module.function_pc_offset(0) + pc,
+                func_index=0,
+                next_pc=module.function_pc_offset(0) + pc + 1,
                 loops_to=None,
                 frame_depth=0,
                 byte_span=1,
@@ -191,9 +199,14 @@ def make_pc_only_functions_module(blocks_per_function: tuple[tuple[int, ...], ..
     for func_index, offsets in enumerate(blocks_per_function):
         assert all(offset < 0x1_0000 for offset in offsets)
         functions.append(
-            Function(type_index=0, locals_extra=(), code=bytes(max(offsets, default=0) + 1))
+            Function(
+                type_index=0,
+                locals_extra=(),
+                code=bytes(max(offsets, default=0) + 1),
+                code_pc_offset=PC_ONLY_FUNCTION_BASE + func_index * PC_ONLY_FUNCTION_STRIDE,
+            )
         )
-        heads.extend((func_index << 16) | offset for offset in offsets)
+        heads.extend((func_index, offset) for offset in offsets)
     assert heads
     module = Module(
         types=(FuncType(params=(), results=()),),
@@ -202,14 +215,15 @@ def make_pc_only_functions_module(blocks_per_function: tuple[tuple[int, ...], ..
     blocks = StaticVector.of(
         tuple(
             BasicBlock(
-                head_pc=pc,
-                next_pc=pc + 1,
+                head_pc=module.function_pc_offset(func_index) + offset,
+                func_index=func_index,
+                next_pc=module.function_pc_offset(func_index) + offset + 1,
                 loops_to=None,
                 frame_depth=0,
                 byte_span=1,
                 jit_score=0,
             )
-            for pc in sorted(heads)
+            for func_index, offset in sorted(heads)
         ),
         capacity=len(heads),
     )

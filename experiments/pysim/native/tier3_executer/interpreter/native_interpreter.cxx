@@ -44,7 +44,6 @@ constexpr std::uint32_t kNativeErrorInvalidArgument = 1;
 constexpr std::uint32_t kNativeErrorInvalidTable = 2;
 constexpr std::uint32_t kNativeErrorInvalidState = 3;
 constexpr std::uint32_t kNativeErrorInternal = 4;
-constexpr std::uint32_t kNativeErrorHotspotBound = 5;
 constexpr std::uint32_t kTrapTableIndexOutOfBounds = 6;
 constexpr std::uint32_t kTrapTableSlotUninitialized = 7;
 constexpr std::uint32_t kTrapIndirectCallTypeMismatch = 8;
@@ -2329,8 +2328,8 @@ bool prepare_native_dispatch_call(native_dispatch_call<CollectHotspots>& call) {
     if (call.trackable_count > FB_CONF_NATIVE_JIT_BLOCK_CAPACITY ||
         call.trackable_bytes <
             static_cast<std::uint64_t>(call.trackable_count * sizeof(std::uint32_t)) ||
-        call.block_history_bytes <
-            static_cast<std::uint64_t>(call.yield_threshold * sizeof(std::uint32_t)) ||
+        call.block_history_bytes < sizeof(std::uint32_t) ||
+        call.block_history_bytes % sizeof(std::uint32_t) != 0 ||
         (call.trackable_count != 0 && call.trackable_blocks == nullptr) ||
         call.block_history == nullptr) {
       call.error_code = kNativeErrorInvalidArgument;
@@ -2464,20 +2463,14 @@ dispatch_iteration execute_interpreted_block(
 
   const auto interpreter_ip =
       state.current_pc - call.call_frame->function_view->code_pc_offset;
-  bool hotness_yield = false;
   if constexpr (CollectHotspots) {
     const auto block_index = find_trackable_block_index(
         call.trackable_blocks, call.trackable_count, state.current_pc);
     if (block_index < call.trackable_count) {
-      const auto visit_index = state.metrics.hotspots.eligible_block_visits;
-      if (visit_index >= call.yield_threshold) {
-        call.error_code = kNativeErrorHotspotBound;
-        return dispatch_iteration::error;
-      }
+      const auto history_capacity = call.block_history_bytes / sizeof(std::uint32_t);
+      const auto visit_index = state.metrics.hotspots.eligible_block_visits % history_capacity;
       call.block_history[visit_index] = state.current_pc;
       ++state.metrics.hotspots.eligible_block_visits;
-      hotness_yield = call.execution_count + state.metrics.hotspots.eligible_block_visits >=
-                      call.yield_threshold;
     }
   }
 
@@ -2504,15 +2497,24 @@ dispatch_iteration execute_interpreted_block(
   }
   if (result.kind == kCallBoundary) {
     call.stack_size = context.sp_offset;
-    const auto* active = active_frame(context);
-    if (active == nullptr) {
+    const auto* callee = active_frame(context);
+    if (callee == nullptr) {
       call.error_code = kNativeErrorInternal;
       return dispatch_iteration::error;
     }
     if constexpr (CollectStats) ++state.metrics.stats.control_handler_count;
-    state.current_pc = active->function_view->code_pc_offset + context.ip;
-    state.status = kNativeCallBoundary;
-    return dispatch_iteration::stop_dispatch;
+    state.current_pc = callee->function_view->code_pc_offset + context.ip;
+    if constexpr (CollectHotspots) {
+      if constexpr (CollectStats) state.metrics.stats.control_handler_pending_trace = true;
+      if (context.loop_jump_count >= call.yield_threshold) {
+        state.status = kDispatchYield;
+        return dispatch_iteration::stop_dispatch;
+      }
+      return dispatch_iteration::continue_dispatch;
+    } else {
+      state.status = kNativeCallBoundary;
+      return dispatch_iteration::stop_dispatch;
+    }
   }
   if (result.kind == kFallback) {
     context.sp_offset = context.stack_checkpoint;
@@ -2555,12 +2557,6 @@ dispatch_iteration execute_interpreted_block(
   if (context.loop_jump_count >= call.yield_threshold) {
     state.status = kDispatchYield;
     return dispatch_iteration::stop_dispatch;
-  }
-  if constexpr (CollectHotspots) {
-    if (hotness_yield) {
-      state.status = kDispatchYield;
-      return dispatch_iteration::stop_dispatch;
-    }
   }
   return dispatch_iteration::continue_dispatch;
 }

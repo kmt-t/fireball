@@ -64,13 +64,13 @@ def _module_code_lengths(module: Module) -> StaticVector[int]:
         lengths.append(len(module.code_for(len(module.imports) + index)))
     return lengths
 
+
 def _module_function_pc_bases(module: Module) -> tuple[int, ...]:
     """Return per-function Code-section PCs, with zero-sized import slots."""
     bases: list[int] = [0] * len(module.imports)
     for local_index in range(len(module.functions)):
         bases.append(module.function_pc_offset(len(module.imports) + local_index))
     return tuple(bases)
-
 
 
 def _empty_block_slots() -> StaticVector[tuple[int, BasicBlock | None] | None]:
@@ -264,7 +264,7 @@ class JITRuntimeManager:
             loops_to = None
         trace = self.jit_compiler.compile_trace(
             pc,
-            iter_block_ops(code, pc & 0xFFFF, block.byte_span),
+            iter_block_ops(code, block_offset, block.byte_span),
             next_pc,
             loops_to,
             block.byte_span,
@@ -342,7 +342,7 @@ class JITRuntimeManager:
                     assert trackable_count < FB_CONF_MAX_BASIC_BLOCKS
                     trackable_heads[trackable_count] = block.head_pc
                     trackable_count += 1
-        block_history = (ctypes.c_uint32 * self.yield_threshold)()
+        block_history = (ctypes.c_uint32 * self.history_capacity)()
         self._native_dispatch_cache_snapshot = NativeDispatchSnapshot(
             entries,
             entry_count,
@@ -368,9 +368,10 @@ class JITRuntimeManager:
             assert count == 1
             retained_visits += count
             self.ring.record(self.module_id, pc)
-        assert total_visits == retained_visits
+        assert retained_visits == min(total_visits, self.history_capacity)
+        self.ring.record_dropped(total_visits - retained_visits)
         self.exec_counter += total_visits
-        return self.exec_counter >= self.yield_threshold
+        return False
 
     def is_trackable(self, pc: int) -> bool:
         """Return whether the loader-selected candidate bit is set."""
@@ -383,7 +384,7 @@ class JITRuntimeManager:
         return self.bitmap.get_state(pc)
 
     def record_block_head(self, pc: int) -> bool:
-        """Record one candidate execution and report whether it requests a yield."""
+        """Record one candidate execution without changing the execution boundary."""
 
         if not self.hotspot_profiling_enabled:
             return False
@@ -391,7 +392,7 @@ class JITRuntimeManager:
             return False
         self.ring.record(self.module_id, pc)
         self.exec_counter += 1
-        return self.exec_counter >= self.yield_threshold
+        return False
 
     def on_interpreter_exit(self, yield_requested: bool) -> None:
         """Analyze the completed interpreter history once at its execution boundary."""
@@ -417,6 +418,11 @@ class JITRuntimeManager:
         """Finish pending history and reset the interpreter execution counter."""
 
         self.on_interpreter_exit(True)
+
+    def has_pending_compilation(self) -> bool:
+        """Return whether the bounded compile queue has work for an idle slice."""
+
+        return bool(self.compile_queue)
 
     def age_step(self) -> int:
         """Perform one bounded card-aging sweep after a cache rotation."""

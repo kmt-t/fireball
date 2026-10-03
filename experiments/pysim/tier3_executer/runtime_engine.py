@@ -177,7 +177,7 @@ class RuntimeEngine:
         whether a block is trackable, so the minimum trace length and static
         score are not re-derived on this hot path. Terminal blocks remain
         eligible because a compiled return exits through RETURN_SENTINEL_IP.
-        Returns True if the recorded history reached the hotspot yield threshold.
+        Recording history does not request a yield.
         """
         if self.jit_runtime is None:
             return False
@@ -245,7 +245,12 @@ class RuntimeEngine:
                 through the common-code chain dispatcher as soon as it is resident.
         """
 
-        return self.jit_runtime.idle_hook(budget) if self.jit_runtime is not None else 0
+        if self.jit_runtime is None:
+            return 0
+        assert budget >= 0
+        if not self.jit_runtime.has_pending_compilation():
+            return 0
+        return self.jit_runtime.idle_hook(budget)
 
     def reset_stats(self) -> None:
         """Resets execution statistics counters."""
@@ -395,6 +400,7 @@ class RuntimeEngine:
     ) -> RuntimeBoundaryResult:
         """Run native JIT/interpreter dispatch to the next required boundary."""
         assert self.jit_runtime is not None
+        assert idle_budget >= 0
         if call_state._ip == RETURN_SENTINEL_IP:
             return RuntimeBoundaryResult(interp.step_native(call_state))
         assert call_state._frame is not None
@@ -404,9 +410,8 @@ class RuntimeEngine:
         if block_here is not None and len(frame.frames) > block_here.frame_depth:
             frame.frames.truncate(block_here.frame_depth)
 
-        trace = self.jit_runtime.lookup(pc)
-
         if interp.debugger is not None:
+            trace = self.jit_runtime.lookup(pc)
             if trace is not None and not self._trace_fits_operand_stack(frame.values, trace):
                 trace = None
             if trace is not None:
@@ -449,7 +454,6 @@ class RuntimeEngine:
         control_count = 0
         interpreted_block_count = 0
         native_status = 0
-        hotness_yield = False
         recorded_hotspot_history = False
         while True:
             dispatch_snapshot = self.jit_runtime.native_dispatch_state()
@@ -479,21 +483,17 @@ class RuntimeEngine:
                 assert self.jit_runtime.lookup(oldest_pc) is not None, (
                     "native dispatcher reported an Oldest trace absent from the JIT cache"
                 )
-            if self.jit_runtime.hotspot_profiling_enabled:
-                recorded_hotspot_history = recorded_hotspot_history or eligible_block_visits > 0
-                hotness_yield = (
-                    self.jit_runtime.record_native_block_visits(block_visits, eligible_block_visits)
-                    or hotness_yield
-                )
+            if self.jit_runtime.hotspot_profiling_enabled and eligible_block_visits > 0:
+                recorded_hotspot_history = True
+                self.jit_runtime.record_native_block_visits(block_visits, eligible_block_visits)
             if native_status != NATIVE_DISPATCH_OLDEST_TRACE:
-                break
-            if hotness_yield:
                 break
         if native_status == 0:
             call_state = interp.resolve_native_call_boundary(call_state)
+        yield_requested = native_status == NATIVE_DISPATCH_YIELD
         if recorded_hotspot_history:
-            self.jit_runtime.on_interpreter_exit(hotness_yield)
-        if hotness_yield:
+            self.jit_runtime.on_interpreter_exit(yield_requested)
+        if yield_requested and self.jit_runtime.has_pending_compilation():
             self.jit_runtime.idle_hook(budget=idle_budget)
 
         native_context = frame.context.native_context
@@ -504,7 +504,6 @@ class RuntimeEngine:
             self.stat_native_control_handlers += control_count
         if native_status == NATIVE_DISPATCH_YIELD:
             native_context.loop_jump_count = 0
-        yield_requested = native_status == NATIVE_DISPATCH_YIELD or hotness_yield
         valid_native_status = (
             native_status == 0
             or native_status == 1

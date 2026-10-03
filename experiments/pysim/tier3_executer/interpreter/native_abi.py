@@ -344,12 +344,13 @@ def _run_dispatch(
         assert status == 1, (
             f"C++ interpreter ABI rejected call with status {status} and error {result.error_code}"
         )
-        assert result.eligible_block_visits <= len(block_history)
-        visit_entries: StaticVector[tuple[int, int]] = StaticVector(
-            capacity=result.eligible_block_visits
-        )
-        for index in range(result.eligible_block_visits):
-            visit_entries.append((int(block_history[index]), 1))
+        retained_visits = min(result.eligible_block_visits, len(block_history))
+        assert result.eligible_block_visits == 0 or len(block_history) > 0
+        visit_entries: StaticVector[tuple[int, int]] = StaticVector(capacity=retained_visits)
+        oldest_visit = result.eligible_block_visits - retained_visits
+        for index in range(retained_visits):
+            slot = (oldest_visit + index) % len(block_history)
+            visit_entries.append((int(block_history[slot]), 1))
         visits = freeze_sequence(visit_entries)
         return (
             result.status,

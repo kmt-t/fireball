@@ -45,6 +45,7 @@ from test_support import (
     make_pc_only_module,
     make_runtime_engine,
 )
+from tier2_runtime.jit_runtime_contract import NativeDispatchSnapshot
 from tier3_executer.interpreter.interpreter import InterpreterBindings
 from tier3_executer.jit.common_code import (
     TRACE_ENTRY_STUB_BYTES,
@@ -58,6 +59,7 @@ from tier3_executer.jit.jit_cache import (
     JITTrace,
     JITTraceHeader,
 )
+from tier3_executer.jit.jit_manager import JITRuntimeManager
 from tier3_executer.jit.jit_runtime import JITInterpreter
 from tier3_executer.jit.x64_jit import TraceCompiler
 from tier3_executer.runtime_engine import RuntimeEngine
@@ -167,6 +169,7 @@ def test_hotspot_03_lifo_compile_queue_batch_drain():
     engine.jit_runtime.compile_queue = StaticVector.of(
         [0x100, 0x200, 0x300], capacity=engine.jit_runtime.compile_queue_capacity
     )
+    assert engine.jit_runtime.has_pending_compilation()
     count = engine.idle_hook(budget=2)
     assert count == 2
     assert compiled_traces == [0x300, 0x200], (
@@ -175,6 +178,9 @@ def test_hotspot_03_lifo_compile_queue_batch_drain():
     assert engine.jit_runtime.cache.active.has_trace(0x300)
     assert engine.jit_runtime.cache.active.has_trace(0x200)
     assert not engine.jit_runtime.cache.active.has_trace(0x100)
+    assert engine.jit_runtime.has_pending_compilation()
+    assert engine.idle_hook(budget=2) == 1
+    assert not engine.jit_runtime.has_pending_compilation()
 
 
 def test_hotspot_04_3bank_cache_oldest_only_promotion():
@@ -257,13 +263,10 @@ def test_jitr_promote_transfers_inbound_sources_avoiding_dangling_chain():
     assert 0x100 in new_bank.inbound_sources, "the inbound source must follow the promoted trace"
 
 
-def test_jitr_bitmap_checked_before_cache_lookup():
+def test_jitr_native_trace_lookup_uses_resident_snapshot():
     """
-    RuntimeEngine.call() must check the O(1) card bitmap before ever calling
-    cache.lookup(): most blocks are never compiled, so a miss must be
-    rejected in O(1) without touching the cache's per-bank search, or the
-    miss penalty on the overwhelmingly common path would dwarf the win a
-    hit gets.
+    Normal dispatch searches only resident traces in C++, without a Python
+    cache lookup at each execution boundary.
     """
     wat = """
     (module
@@ -283,9 +286,7 @@ def test_jitr_bitmap_checked_before_cache_lookup():
     """
     wasm_bytes = wat_to_wasm(wat)
     if not wasm_bytes:
-        print(
-            "    [SKIP] wasmtime not installed, skipping test_jitr_bitmap_checked_before_cache_lookup"
-        )
+        print("    [SKIP] wasmtime not installed, skipping native trace lookup test")
         return
     module = parse(wasm_bytes)
     fn_idx = module.export_func_index("sum_to")
@@ -302,18 +303,18 @@ def test_jitr_bitmap_checked_before_cache_lookup():
 
     JITMultiBufferCache.lookup = spy
     try:
-        engine.call(interp, fn_idx, [50])
+        assert engine.call(interp, fn_idx, [50]) == [1225]
     finally:
         JITMultiBufferCache.lookup = real_lookup
 
-    assert lookup_calls, (
-        "the loop must have gotten hot enough to compile and hit the cache at least once"
-    )
-    for pc, state in lookup_calls:
-        assert state == CardState.COMPILED, (
-            f"cache.lookup({pc:#x}) was called while its card was {state}, not COMPILED -- "
-            "the bitmap must be checked first so a miss never reaches the cache search"
-        )
+    assert engine.stat_jit_invocations > 0
+    assert lookup_calls == []
+    snapshot = engine.jit_runtime.native_dispatch_state()
+    assert snapshot.entry_count > 0
+    for index in range(snapshot.entry_count):
+        pc = snapshot.entries[index].head_pc
+        assert engine.jit_runtime.bitmap.get_state(pc) == CardState.COMPILED
+        assert engine.jit_runtime.cache.find_trace(pc) is not None
 
 
 def test_jitr_31_to_35_trace_chaining_and_ok_unlinking():
@@ -1334,6 +1335,165 @@ def test_jitr_nested_wasm_call_keeps_callee_result_on_shared_operand_stack():
     )
 
 
+def test_jitr_hotspot_collection_continues_defined_calls_in_cpp():
+    """TEST-JITR-68: collect callee visits without a Python boundary at each call."""
+    wat = """
+    (module
+      (func $inc (param i32) (result i32)
+        local.get 0
+        i32.const 1
+        i32.add
+      )
+      (func (export "sum_inc") (param $n i32) (result i32)
+        (local $i i32) (local $sum i32)
+        (block $exit
+          (loop $top
+            (br_if $exit (i32.ge_u (local.get $i) (local.get $n)))
+            (local.set $sum
+              (i32.add (local.get $sum) (call $inc (local.get $i))))
+            (local.set $i (i32.add (local.get $i) (i32.const 1)))
+            (br $top)
+          )
+        )
+        local.get $sum
+      )
+    )
+    """
+    module = parse(wat_to_wasm(wat))
+    engine = make_runtime_engine(
+        jit_compiler=TraceCompiler(),
+        yield_threshold=64,
+        card_shift=2,
+        candidate_threshold=0,
+    )
+    engine.register_module_blocks(module)
+    manager = engine.jit_runtime
+    assert manager is not None
+    callee_pc = next(block.head_pc for block in module.blocks if block.func_index == 0)
+    assert manager.trackable.is_marked(callee_pc)
+
+    function_index = module.export_func_index("sum_inc")
+    interpreter = Interpreter(module)
+    assert engine.call(interpreter, function_index, [8]) == [36]
+    assert manager.cache.find_trace(callee_pc) is not None
+    assert engine.stat_trace_exits_to_interp < 8, (
+        "defined guest calls must not return to Python once per invocation"
+    )
+    engine.reset_stats()
+    assert engine.call(interpreter, function_index, [8]) == [36]
+    assert engine.stat_jit_invocations > 0
+    assert engine.stat_trace_exits_to_interp < 8
+
+
+def test_jitr_native_history_overwrite_does_not_yield():
+    """TEST-JITR-69: overflow keeps recent visits without changing the execution boundary."""
+    wat = """
+    (module
+      (func $inc (param i32) (result i32)
+        local.get 0
+        i32.const 1
+        i32.add)
+      (func (export "calls") (result i32)
+        i32.const 1
+        call $inc
+        drop
+        i32.const 2
+        call $inc
+        drop
+        i32.const 3
+        call $inc
+        drop
+        i32.const 4
+        call $inc)
+    )
+    """
+    module = parse(wat_to_wasm(wat))
+    manager = JITRuntimeManager(
+        jit_compiler=TraceCompiler(),
+        yield_threshold=3,
+        history_capacity=2,
+        card_shift=2,
+        candidate_threshold=0,
+    )
+    engine = RuntimeEngine(jit_runtime=manager)
+    engine.register_module_blocks(module)
+    interpreter = Interpreter(module)
+    call_state = interpreter.start(module.export_func_index("calls"), [])
+
+    boundaries = 0
+    while not call_state.finished:
+        boundary = engine.run(interpreter, call_state)
+        assert not boundary.yield_requested
+        call_state = boundary.call_state
+        boundaries += 1
+        assert boundaries < 4
+
+    assert call_state.results == [5]
+    assert manager.exec_counter > manager.history_capacity
+    assert manager.history_overwritten_count == manager.exec_counter - manager.history_capacity
+    assert manager.last_history_analysis_approximate
+    callee_pc = next(block.head_pc for block in module.blocks if block.func_index == 0)
+    assert manager.card_state(callee_pc) == CardState.EXECUTED
+    assert len(manager.ring.drain()) == 0
+
+
+def test_jitr_empty_yield_skips_python_control_work():
+    """TEST-JITR-70: empty yields avoid Python JIT work while preserving the result."""
+
+    class CountingManager(JITRuntimeManager):
+        __slots__ = ("idle_calls", "lookup_calls", "record_calls", "snapshot_calls")
+
+        def __init__(self) -> None:
+            super().__init__(yield_threshold=2, candidate_threshold=1_000_000)
+            self.idle_calls = 0
+            self.lookup_calls = 0
+            self.record_calls = 0
+            self.snapshot_calls = 0
+
+        def idle_hook(self, budget: int = 4) -> int:
+            self.idle_calls += 1
+            return super().idle_hook(budget)
+
+        def lookup(self, pc: int) -> JITTrace | None:
+            self.lookup_calls += 1
+            return super().lookup(pc)
+
+        def record_native_block_visits(
+            self, visits: tuple[tuple[int, int], ...], total_visits: int
+        ) -> bool:
+            self.record_calls += 1
+            return super().record_native_block_visits(visits, total_visits)
+
+        def native_dispatch_state(self) -> NativeDispatchSnapshot:
+            self.snapshot_calls += 1
+            return super().native_dispatch_state()
+
+    module = parse(
+        wat_to_wasm(
+            """
+            (module
+              (func (export "sum") (param $n i32) (result i32)
+                (local $sum i32)
+                (loop $top
+                  (local.set $sum (i32.add (local.get $sum) (local.get $n)))
+                  (local.set $n (i32.sub (local.get $n) (i32.const 1)))
+                  (br_if $top (local.get $n)))
+                local.get $sum))
+            """
+        )
+    )
+    manager = CountingManager()
+    engine = RuntimeEngine(jit_runtime=manager)
+    engine.register_module_blocks(module)
+
+    assert engine.call(Interpreter(module), module.export_func_index("sum"), [5]) == [15]
+    assert manager.snapshot_calls >= 2
+    assert manager.idle_calls == 0
+    assert manager.record_calls == 0
+    assert manager.lookup_calls == 0
+    assert not manager.compile_queue
+
+
 def test_jitr_if_else_loop_matches_interpreter_after_jit_compilation():
     """TEST-JITR-49: both if/else arms and loop exits match the interpreter after JIT."""
     wat = """
@@ -1970,7 +2130,7 @@ if __name__ == "__main__":
     test_hotspot_04_3bank_cache_oldest_only_promotion()
     test_jitr_cache_bank_traces_always_sorted_by_head_pc()
     test_jitr_promote_transfers_inbound_sources_avoiding_dangling_chain()
-    test_jitr_bitmap_checked_before_cache_lookup()
+    test_jitr_native_trace_lookup_uses_resident_snapshot()
     test_jitr_31_to_35_trace_chaining_and_ok_unlinking()
     test_jitc_20_trace_header_24byte_x64_physical_layout()
     test_hotspot_05_3bank_cache_rotation_and_eviction_resets_card()

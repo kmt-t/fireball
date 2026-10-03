@@ -48,8 +48,8 @@ Runtime 構成は Runtime 起動時に履歴容量を確定し、Runtime が専�
 モジュールは Runtime の寿命中に登録されたままとする。個別モジュールのアンロードや、プロファイラ状態の
 モジュール単位解放を要求しない。Runtime を破棄すると履歴とカード状態をまとめて破棄する。
 
-<!-- traceability: {WasmCodeSectionPC} -->
 ### 3.2 履歴レコード
+<!-- traceability: {WasmCodeSectionPC} -->
 
 履歴レコードは 32 ビットの module ID と 32 ビットのUnifiedPCを保持する。UnifiedPCはCode section payload先頭から基本ブロック先頭命令までのバイトオフセットである。異なるモジュール間で同じPC値を取り得るため、基本ブロックの識別キーは
 `(module_id, unified_pc)`とする。時刻、イベント種別、関数ポインタ、ゲストメモリポインタなどを
@@ -107,19 +107,23 @@ sequenceDiagram
         I->>I: 次の基本ブロックを実行
         I->>H: 対象 PC を直接記録
     end
-    I->>R: yield / fallback / trap / 完了で履歴 view を渡す
-    R->>H: 有効な履歴範囲を読む
-    R->>C: 観測順の候補 PC と出現回数を渡す
-    C->>C: 候補状態を更新し、後続要求を登録
-    R->>H: 分析済み範囲を消費
-    R-->>I: 同じ実行境界結果を返す
+    opt 未分析履歴がある
+        I->>R: yield / fallback / trap / 完了で履歴 view を渡す
+        R->>H: 有効な履歴範囲を読む
+        R->>C: 観測順の候補 PC と出現回数を渡す
+        C->>C: 候補状態を更新し、後続要求を登録
+        R->>H: 分析済み範囲を消費
+        R-->>I: 同じ実行境界結果を返す
+    end
 ```
 
 Interpreter は基本ブロック先頭で候補マスクを参照し、候補なら実行コンテキストの非所有 view を通して
 `(module_id, unified_pc)` を `HotspotHistory` に直接書く。
 この記録は Runtime Event Sink の `RuntimeEvent` を構築せず、汎用イベント callback や時刻 source を呼ばない。
+定義済みゲスト関数の呼出しでは、C++ dispatcher が呼出し先の基本ブロックへ進んで履歴記録を続ける。
+呼出し自体を履歴分析境界にしない。
 
-Interpreter が実行区間を抜けて Runtime 実行境界へ戻る前に、Hotspot Profiler は保存済み履歴 view を
+Interpreter が実行区間を抜けるとき、未分析履歴がある場合だけ Hotspot Profiler は保存済み履歴 view を
 履歴の利用側へ一度渡す。利用側は候補状態と後続処理を履歴順に更新する。分析後、処理した履歴範囲を消費済みにする。
 
 JIT trace の実行・chain 中は履歴への書込みと Hotspot Profiler の呼出しを行わない。JIT から Interpreter に
@@ -129,7 +133,7 @@ JIT trace の実行・chain 中は履歴への書込みと Hotspot Profiler の�
 
 `HotspotHistory` は固定容量の循環履歴とし、満杯時は最古の履歴を上書きして直近 `N` 件を保持する。上書き数は
 `overwritten_count` として保持し、分析結果に履歴欠落フラグを付ける。履歴が上書きされた区間のホットネス値は
-近似値として扱う。履歴の確保や拡張のために実行時動的メモリを使わない。
+近似値として扱う。容量超過はyieldやInterpreter終了の理由にしない。履歴の確保や拡張のために実行時動的メモリを使わない。
 
 ### 4.3 状態遷移
 

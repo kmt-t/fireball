@@ -123,6 +123,7 @@ class HotspotBitmap:
         function_pc_bases: tuple[int, ...] = (),
     ):
         self.card_shift = card_shift
+        assert all(code_len >= 0 for code_len in code_lengths)
         if not function_pc_bases:
             bases: list[int] = []
             cursor = 0
@@ -138,7 +139,6 @@ class HotspotBitmap:
         )
         self.function_pc_bases = function_pc_bases
         self.code_lengths = code_lengths
-        assert all(code_len >= 0 for code_len in code_lengths)
         self.func_storages: StaticVector[MutableBitStorage] = StaticVector(
             capacity=len(code_lengths)
         )
@@ -306,6 +306,7 @@ class BlockCardMask:
         function_pc_bases: tuple[int, ...] = (),
     ):
         self.card_shift = card_shift
+        assert all(code_len >= 0 for code_len in code_lengths)
         if not function_pc_bases:
             bases: list[int] = []
             cursor = 0
@@ -316,7 +317,6 @@ class BlockCardMask:
         assert len(function_pc_bases) == len(code_lengths)
         self.function_pc_bases = function_pc_bases
         self.code_lengths = code_lengths
-        assert all(code_len >= 0 for code_len in code_lengths)
         self.func_storages: StaticVector[MutableBitStorage] = StaticVector(
             capacity=len(code_lengths)
         )
@@ -397,6 +397,11 @@ class HistoryRing:
         assert 0 <= module_id <= 0xFFFF_FFFF
         assert 0 <= pc <= 0xFFFF_FFFF
         self.ring.push((module_id, pc))
+
+    def record_dropped(self, count: int) -> None:
+        """Account for entries overwritten before the native ring was transferred."""
+        assert count >= 0
+        self.ring.dropped += count
 
     def drain(self) -> StaticVector[tuple[int, int]]:
         return self.ring.drain()

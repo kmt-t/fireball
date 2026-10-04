@@ -36,7 +36,7 @@
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | `GOTCHA-LOG-01` | 実行時文字列ポインタの完全排除（ダングリングポインタ防止） | ログAPI呼び出し | 実行時文字列ポインタの受け渡しを試行 | ログAPIは固定長辞書オフセットと u32 スカラー引数4個のみを受け付け、任意長文字列を直接埋め込む手段が存在しない。 | [`runtime_logging.md`](docs/components/tier2_runtime/runtime_logging.md) §4.1, `GOTCHA-LOG-01` |
 | `GOTCHA-LOG-02` | リングバッファ満杯時の最古上書き（システム非ブロック不変条件） | リングバッファが満杯 | さらに `log_event` を実行 | エラーやブロックを起こさず、最も古いエントリを上書きして直近のログを保存する。 | [`runtime_logging.md`](docs/components/tier2_runtime/runtime_logging.md) §4.1, `GOTCHA-LOG-02` {DeterministicRingBuffer} |
-| `GOTCHA-LOG-03` | 転送ループの割り込み即時応答性 | flush 実行中 | 現在のバッチ（DMA転送）完了後に `interrupt_pending()` が True を返す | バッファ全フラッシュを強行せず、現在のバッチ（DMA転送）完了時点で直ちにループを抜けてスケジューラへ制御を戻す。 | [`runtime_logging.md`](docs/components/tier2_runtime/runtime_logging.md), `GOTCHA-LOG-03`, {InterruptibleFlush} |
+| `GOTCHA-LOG-03` | バッチ完了後の協調復帰 | flush 実行中 | `batch_size`件以内の同期書込み完了後に`interrupt_pending()`がTrueを返す | 次バッチを開始せず、残りのログを保持してスケジューラへ制御を戻す。書込み途中の中断や実時間応答上限は判定しない | [`runtime_logging.md`](docs/components/tier2_runtime/runtime_logging.md), `GOTCHA-LOG-03`, {InterruptibleFlush} |
 | `GOTCHA-LOG-04` | トラップ発生箇所での診断情報捕捉順序 | インタープリタがトラップを検知 | 呼出しフレーム解体前にCode section payload相対`unified_pc`とトラップ原因コードを確定してロガーへ渡す | 診断ログにモジュール内命令位置が記録される。PC単独はモジュールを特定しない。 | [`runtime_logging.md`](docs/components/tier2_runtime/runtime_logging.md) §4.1 / §4.2.1, [`interpreter.md`](docs/components/tier2_runtime/interpreter.md), `GOTCHA-LOG-04` |
 
 ## 3. テスト検証実績と網羅状況
@@ -59,7 +59,7 @@ TEST-LOG-12はPython参照とNativeで、直接呼出しとcallee呼出しの4�
 - TEST-LOG-09の実行時文字列禁止は、本ファイルでは未検査である。コンセプト側の合格だけでpysimの実行経路を検証済みとしない。
 - TEST-LOG-10はRuntime Event Logger側の`test_runtime_events_are_queued_as_fixed_dictionary_records`で扱う。連続する2 batchの3レコードを、既存4引数の全wire列と展開結果で照合する。
 - `wasi:cli/stdout`/`stderr`（コンソール生バイト出力経路）は対象外。[`interface_wit_test_spec.md`](docs/qa/tier3_platform/interface_wit_test_spec.md)を参照。
-- 物理DMA転送そのもの（`MockHALTransport.start_dma`相当）の実ハードウェア挙動は`platform_driver.md`側。
+- Tier 1 `printk`の物理出力先の挙動は本テストの対象外である。RuntimeロガーにDMA開始・完了割り込み処理は要求しない。
 
 ### 2026-10-02のidle結線確認
 

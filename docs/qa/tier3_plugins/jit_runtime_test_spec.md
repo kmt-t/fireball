@@ -168,16 +168,16 @@ TEST-JITR-33のIFと内側loopの回帰試験は、対象の制御終端直前�
 
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| TEST-JITR-72 | 反復実行、飽和、昇格、測定区間のリセット | 実行回数が既知の常駐loop traceがある | 通常統計とホットスポット計測の有効・無効を組み合わせて反復実行し、Oldest昇格、snapshot再生成、uint32上限、resetを確認する | body実行ごとに1増える。lookupでは増えない。昇格とsnapshot更新では値とカウンタの所在を保持する。最大値で飽和し、reset後は0から数える | `test_jitr_trace_execution_counts_loop_bodies_and_survives_promotion` |
-| TEST-JITR-73 | 直接chainの後続bodyの実行回数 | 2 traceの直線chainがある | 通常統計の有効・無効でRuntimeからchainを実行する | 先頭と後続の回数がともに1増え、ゲストの結果が一致する | `test_jitr_trace_execution_counts_include_direct_chain_successors` |
-| TEST-JITR-74 | 破棄前の記録と新traceの計数寿命 | 実行済みと未実行のtrace、および収集先がある | 昇格、rotate、置換、flushを行う | 昇格では記録せず値を保持する。破棄直前にPCと回数を一度通知する。未実行の0も通知する。同じPCの新traceは0から始まる | `test_jitr_trace_execution_retirement_records_zero_and_used_traces` |
-| TEST-JITR-75 | 容量不足で実行されないtraceの除外 | 常駐traceの必要スタック量が空き容量を越える | Runtimeから関数を実行する | Interpreterで正しい結果を得て、traceの回数は0のままとなる | `test_jitr_trace_execution_count_excludes_pre_entry_stack_fallback` |
+| TEST-JITR-76 | 反復実行、飽和、昇格、測定区間のリセット | 実行回数が既知の常駐loop traceがある | 通常統計とホットスポット計測の有効・無効を組み合わせて反復実行し、Oldest昇格、snapshot再生成、uint32上限、resetを確認する | body実行ごとに1増える。lookupでは増えない。昇格とsnapshot更新では値とカウンタの所在を保持する。最大値で飽和し、reset後は0から数える | `test_jitr_trace_execution_counts_loop_bodies_and_survives_promotion` |
+| TEST-JITR-77 | 直接chainの後続bodyの実行回数 | 2 traceの直線chainがある | 通常統計の有効・無効でRuntimeからchainを実行する | 先頭と後続の回数がともに1増え、ゲストの結果が一致する | `test_jitr_trace_execution_counts_include_direct_chain_successors` |
+| TEST-JITR-78 | 破棄前の記録と新traceの計数寿命 | 実行済みと未実行のtrace、および収集先がある | 昇格、rotate、置換、flushを行う | 昇格では記録せず値を保持する。破棄直前にPCと回数を一度通知する。未実行の0も通知する。同じPCの新traceは0から始まる | `test_jitr_trace_execution_retirement_records_zero_and_used_traces` |
+| TEST-JITR-79 | 容量不足で実行されないtraceの除外 | 常駐traceの必要スタック量が空き容量を越える | Runtimeから関数を実行する | Interpreterで正しい結果を得て、traceの回数は0のままとなる | `test_jitr_trace_execution_count_excludes_pre_entry_stack_fallback` |
 
 形式モデルは[`jit_trace_execution_model.py`](docs/components/tier3_plugins/formal/jit_trace_execution_model.py)を参照する。dispatcher外の低水準直接呼出しは計数対象外である。
 
 ## 3. テスト検証実績と網羅状況
 
-2026-10-05、Linux x86_64、Clang 21.1.8の参照構成でTEST-JITR-72〜75の8ケースを実行した。通常統計とホットスポット計測の構成を含めて8件成功した。関連する`test_jit_runtime.py`と`test_x64_jit.py`の回帰は109件成功した。AddressSanitizerとUndefinedBehaviorSanitizerを有効にしたC++ dispatcherでも追加8ケースが成功した。実行回数モデルの通常系4特性と`guards=False`の4特性の反証を確認した。
+2026-10-05、Linux x86_64、Clang 21.1.8の参照構成でTEST-JITR-76〜79の8ケースを実行した。通常統計とホットスポット計測の構成を含めて8件成功した。関連する`test_jit_runtime.py`と`test_x64_jit.py`の回帰は109件成功した。AddressSanitizerとUndefinedBehaviorSanitizerを有効にしたC++ dispatcherでも追加8ケースが成功した。実行回数モデルの通常系4特性と`guards=False`の4特性の反証を確認した。
 
 実行コマンドは次のとおりである。
 
@@ -195,3 +195,13 @@ TEST-JITR-61は`test_jitr_61_a_trace_that_would_overflow_the_operand_stack_runs_
 - ARMv8-MのTOS/NOS物理レジスタ割当とtrace境界仕様はTBD。
 - [`jit_cache_model.py`](docs/components/tier3_plugins/formal/jit_cache_model.py)による抽象的なW^X不変条件、3面キャッシュ代謝、2-bit FSMの形式検証そのもの。
 - ARMv8-Mの物理メモリ保護機構、JIT配置、命令同期、実機レイテンシ（すべてTBD）。
+
+### コンパイル候補の処理予算
+<!-- traceability: {ADR_JitCompileScheduling} -->
+
+| テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| TEST-JITR-80 | 通常予算は候補処理数に適用する | 固定キューに成功、失敗、既存traceによるスキップ候補がある | 協調境界のidle hookへ0、1、キュー件数未満の予算を渡す | 成否によらず候補処理で1件消費する。処理数は予算以下であり、未処理候補を保持する | `jit_runtime.md`「コンパイル時期と候補処理予算」 |
+| TEST-JITR-81 | 満杯時の全件処理 | 固定キューが容量に達する。通常予算は容量未満である | 満杯契機の候補処理を実行する | 通常予算の例外として固定容量ぶんをその場で全件処理する。失敗・スキップを含めてキューが空となる | `jit_runtime.md`「コンパイル時期と候補処理予算」 |
+
+TEST-JITR-80の候補数予算は現行の成功数予算へ未追従である。TEST-JITR-81は現行の全件処理を採用契約として直接検証するためのケースである。対応する実行テストと形式モデルの追加・更新は未完了とする。

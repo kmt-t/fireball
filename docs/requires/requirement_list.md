@@ -204,16 +204,19 @@ graph LR
 | キーワード | 内容 | ステータス |
 | :--- | :--- | :--- |
 | `{Challenge_InterruptSafety}` | 割り込みハンドラとタスク間の競合回避と安全なウェイクアップ。 → ISRは固定5ワードの原因イベントをFIFOへ投函するのみとし、実処理はCOOSの協調境界で行う方策を採用（`platform_driver.md`）。 | 決定済 <!-- definition: {Challenge_InterruptSafety} --> |
-| `{Challenge_JITCacheEfficiency}` | JITキャッシュの代謝とヒット率の最適化。 → 3面リングローテーション（Active/Warm/Oldest）と世代Cookieによる代謝方式を採用し、形式検証済み（`runtime_vsoc.md` `{JIT_BackedgeYield}`、`components/tier2_runtime/formal/vsoc_cache_coherency_model.py`）。 | 決定済 <!-- definition: {Challenge_JITCacheEfficiency} --> |
+| `{Challenge_JITCacheEfficiency}` | 3面リングローテーション（Active/Warm/Oldest）と世代Cookieによるキャッシュ代謝を採用する。再利用前にevictされるtraceへのスラッシング防止策は未決である。判断材料としてtraceごとの実行回数と破棄時の回数を記録する。キャッシュ整合性の検証は抑止方策の十分性を保証しない。 | 一部決定・抑止方策は検討中 <!-- definition: {Challenge_JITCacheEfficiency} --> |
 | `{Challenge_WasiFdWriteLoop}` | WASI `fd_write` の実装レイヤー分離とバッファ管理。 → `libfireball`側でベクタをループし1ベクタごとに `fireball_call` を発行する設計を採用（`runtime_syscall.md` {Syscall_Mapping}）。 | 決定済 <!-- definition: {Challenge_WasiFdWriteLoop} --> |
 | `{Challenge_SyscallMemorySafety}` | ゲストメモリアクセス時のセキュリティ保護方式。 → アクセス不可な領域は仮想アドレス空間から物理的に unmap され未マッピングトラップ（`TRAP_UNREGISTERED_PAGE`）で遮断されるため、別途の `vsoc_validate_ptr` は導入しない（`runtime_syscall.md` {Syscall_Mapping}）。 | 決定済 <!-- definition: {Challenge_SyscallMemorySafety} --> |
 | `{Challenge_CoosBlockedList}` | `BLOCKED` タスクリストの管理コストとリアルタイム性のトレードオフ。 → `{ADR_EventDrivenWakeQueue}` として決定。 | 決定済 <!-- definition: {ADR_EventDrivenWakeQueue} --> <!-- definition: {Challenge_CoosBlockedList} --> |
 | `{Challenge_CspHandoffStarvation}` | COOS の CSP Handoff 連鎖（IPCルータ含む）が特定のタスクセット間で閉じ、他タスクが実行機会を失うスターベーションリスク。緩和策は `FB_CONF_MAX_CONSECUTIVE_HANDOFFS` による連鎖の有界化。 | 検討中 <!-- definition: {Challenge_CspHandoffStarvation} --> |
 | `{Challenge_DebuggerResource}` | 極小メモリ環境でのデバッグ用バッファ確保、インタープリタ専用デバッグ構成、およびJIT同時構成拒否の制約。 | 決定済 <!-- definition: {Challenge_DebuggerResource} --> |
-| `{ADR_ScalableCodeOffset}` | コードキャッシュ拡張時の 16 ビット `code_offset` 上限（64KB）を越えるための表現形式決定。 | 決定済 <!-- definition: {ADR_ScalableCodeOffset} --> |
+| `{ADR_ScalableCodeOffset}` | 現行x64参照構成の8KBキャッシュではバイト単位のコードオフセットを使用する。64KBを超える拡張の表現とARMv8-Mの物理配置はTBDとする。 | 現行構成は決定済・拡張はTBD <!-- definition: {ADR_ScalableCodeOffset} --> |
 | `{ADR_SafeQueuingOnHotMiss}` | ホットスポット検出時の二重コンパイル要求防止策。 | 決定済 <!-- definition: {ADR_SafeQueuingOnHotMiss} --> |
-| `{ADR_TosCacheAsymmetry}` | スタックトップキャッシュ（`R4`/`R5`）を JIT トレース内部に限定し、インタープリタは保持しない非対称規約の採用。 | 決定済 <!-- definition: {ADR_TosCacheAsymmetry} --> |
-| `{ADR_RendezvousChannel}` | CSP チャネルをバッファなしの純粋同期ランデブーとする決定（送信側は相手が現れるまで値を保持したまま BLOCK）。 | 決定済 <!-- definition: {ADR_RendezvousChannel} --> |
+| `{ADR_TosCacheAsymmetry}` | 4つの論理引数と境界での共有状態同期を共通契約とする。値キャッシュと物理レジスタは対象ABIで定め、ARMv8-Mの割当はTBDとする。 | 共通契約は決定済・ARMv8-MはTBD <!-- definition: {ADR_TosCacheAsymmetry} --> |
+| `{ADR_RendezvousChannel}` | 要求と応答の双方をバッファなしの同期ランデブーとする。相手の受信待機まで送信側をBLOCKする。ランデブー成立後のCPU実行順序に追加の制約を課さず、COOSに従う。 | 決定済 <!-- definition: {ADR_RendezvousChannel} --> |
+| `{ADR_TaskIdLifetime}` | タスクIDは生存期間内だけ有効とする。終了タスクの登録・待機・所有資源を解放した後に再利用を許可する。終了済みIDの使用は契約違反とする。 | 決定済 <!-- definition: {ADR_TaskIdLifetime} --> |
+| `{ADR_JitCompileScheduling}` | idle hookを協調境界でも実行する。通常は処理候補数へ予算を適用する。固定キュー満杯時は予算の例外として、その場で全件処理して空にする。 | 決定済 <!-- definition: {ADR_JitCompileScheduling} --> |
+| `{ADR_RuntimeEventRetention}` | Runtimeイベントリングは満杯時に最古のイベントを上書きし、最新履歴を保持する。欠落を許容して累積件数を公開する。欠落への対応は分析側の責務とし、Guest Profilerの処理は維持する。 | 決定済 <!-- definition: {ADR_RuntimeEventRetention} --> |
 | `{ADR_SharedBlockRaii}` | IPC 転送用共有メモリを `shm-id` ではなく RAII 所有権を持つ `shared-block` リソースとして扱う決定。詳細は `system_memory.md`。 | 決定済 <!-- definition: {ADR_SharedBlockRaii} --> |
 | `{ADR_MemoryManagerMinimalSurface}` | メモリマネージャ API から `query`/`check-ownership` を削除し、最小公開面とする決定。詳細は `system_memory.md`。 | 決定済 <!-- definition: {ADR_MemoryManagerMinimalSurface} --> |
 | `{ADR_IntrusiveTcbList}` | TCBの連結に `std::list` 等を避け、TCB自体に `next` ポインタを持たせる侵入型リストを採用する決定。 | 決定済 <!-- definition: {ADR_IntrusiveTcbList} --> |

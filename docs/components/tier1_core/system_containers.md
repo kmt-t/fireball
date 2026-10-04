@@ -381,7 +381,7 @@ sequenceDiagram
 ### 6.2 メモリ制約と方策
 <!-- traceability: {GLOBAL_Policy_Memory} {META_NoStdVector} {GLOBAL_StrictMemoryLimit} {GLOBAL_StaticScalability} -->
 - **目標**: 無制約な動的メモリ確保を排除し、状態表のメモリ密度を最大化する。
-- **方策**: 所有型を定義せず、実体は各コンポーネントの静的配列または ROM 上の `constexpr` 配列に置く。ビューは非所有であり追加のメモリを消費しない。集合は値列を持たないため、所属判定のみが必要な表でキー列だけを確保できる。加えて `{PackedBitView}` により、2値・4値しか取らない状態表を 1/8〜1/4 のサイズで保持する。
+- **方策**: 固定容量のストレージ型が実体配列を所有し、ビュー型が借用する。実体は静的領域、ROM上の`constexpr`配列、または許可された独自ヒープAPIで確保する。ビューは実体を複製しないが、参照先と長さ等を持つ記述子の容量を消費する。集合は値列を持たないため、所属判定だけの表ではキー列だけを確保する。加えて `{PackedBitView}` により、2値・4値しか取らない状態表を 1/8〜1/4 のサイズで保持する。
 
 ### 6.3 安全性制約と方策
 <!-- traceability: {META_CompileTimeValidation} {META_ZeroCostAbstraction} -->

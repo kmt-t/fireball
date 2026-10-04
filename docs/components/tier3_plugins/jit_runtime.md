@@ -50,7 +50,7 @@ JIT拡張はインタープリタに対するプラグインに近い選択可�
 ## 3. 静的モデル
 
 ### 3.1 データ構造
-<!-- traceability: {JIT_ReverseCompilationOrder} {WasmCodeSectionPC} -->
+<!-- traceability: {JIT_ReverseCompilationOrder} {WasmCodeSectionPC} {ADR_JitCompileScheduling} -->
 - **WASMプログラムカウンタ (`UnifiedPC` / `wasm_pc_t`)**: 32ビットのモジュール内Code section payload相対オフセットであり、命令先頭バイトを指す。関数インデックスを上位ビットへ格納しない。Code section payload内の関数数、body size、locals宣言も座標に含む。異なるモジュール間のキーは`(module_id, pc)`とする。
 - **`JitEntryIndex`**: WASMオフセットとネイティブコードの対応付け、および 4 段高速検索ロジックをカプセル化した主要クラスである。
 - **カードマーキング表 (Card Marking Table)**: モジュールのCode section payload相対PC全体を 4 バイト単位のカードで分割管理する、単一の 2 ビット状態表である。カード番号は`pc >> card_shift`で求め、全関数が同じPC座標・カード領域を共有する。関数境界をまたぐカードも同じ状態を参照する。密ビュー `fireball::bit_view<2>` として参照する。
@@ -84,7 +84,7 @@ JIT拡張はインタープリタに対するプラグインに近い選択可�
   | `0x400` | x64共通chain dispatcher | 32バイト。Traceヘッダのchain targetを読み、次trace bodyへtail-jumpする。未接続時は共通終了処理へ戻る |
 
   chain dispatcherはopcode別の分岐handlerを共通化しない。分岐条件・control frame更新・後方分岐回数はC++ Interpreterの命令別handlerが処理する。handler実行後にC++ dispatcherが別traceを選ぶ遷移と、共通コードchain dispatcherがtarget bodyへtail-jumpするchainは別の経路である。C++ `constexpr` assemblerで生成した固定命令列をx64参照構成の共通領域へ一度だけ配置する。ARMv8-Mの呼出し入口、配置方式、命令列はTBDである。
-- **オンデマンドコンパイルキュー (On-demand Compile Queue)**: Tier 3 JIT拡張内で`HOT`に達した命令オフセットを保持する固定容量LIFOキューである。Runtimeのidle hookから拡張へ処理budgetを渡し、JIT拡張がPCを選択して元のWASMコード領域からtraceをコンパイルする。容量到達時は同じ拡張内でキューを処理する。先行ブロックより後続を先に常駐させ、直線後続chainを接続する。 `JIT_ReverseCompilationOrder` `{GLOBAL_Policy_Memory}`
+- **オンデマンドコンパイルキュー (On-demand Compile Queue)**: Tier 3 JIT拡張内で`HOT`に達した命令オフセットを保持する固定容量LIFOキューである。Runtimeのidle hookは全タスクidle時と協調境界で拡張へ処理予算を渡す。通常の予算は成功コンパイル数ではなく、取り出して処理した候補数に適用する。コンパイル失敗と既存trace等によるスキップも1件に数える。固定キュー満杯時は通常予算の例外として、その場で全候補を処理してキューを空にする。処理件数の上限は固定キュー容量であり、実時間の上限は保証しない。先行ブロックより後続を先に常駐させ、直線後続chainを接続する。 `JIT_ReverseCompilationOrder` `{GLOBAL_Policy_Memory}`
 - **バンク別被チェイン逆引きテーブル (Inbound Chain Index Table)**: 各キャッシュバンクへ向けたchain元のJITエントリを保持する固定長配列である。cache回転・promote時に共通chain dispatcherが参照するtarget addressを更新または解除する。
 - **前方chainメタデータ**: 実行時cache metadataの`chain_next` / `next_pc`は直線後続traceの論理PCを保持する。x64物理ヘッダの`chain_target_addr`は共通chain dispatcherがtail-jumpするresident target bodyを保持する。後方branch linkは作らず、branch handlerへ制御を戻す。
 - **実行履歴バッファ**: ホットスポット検出が有効なJIT拡張が所有する固定容量リングである。各レコードは`module_id`と`UnifiedPC`を持つ。Interpreter実行区間の終了時だけ履歴順に分析し、JIT trace/chainだけの区間では記録も分析もしない。 `{HistoryBuffer}`
@@ -363,8 +363,24 @@ flowchart TD
 ### 7.2 テスト仕様書との連携
 本コンポーネントのテストケースは[`jit_runtime_test_spec.md`](docs/qa/tier3_plugins/jit_runtime_test_spec.md)を正本とする。キャッシュモデルは`formal/jit_cache_model.py`、履歴境界モデルは`formal/jit_hotspot_model.py`を参照する。
 
-実行回数の抽象モデルは[`jit_trace_execution_model.py`](docs/components/tier3_plugins/formal/jit_trace_execution_model.py)を正本とする。実行対象外操作、chainの計数漏れ、飽和、および破棄時記録を検査する。`guards=False`では各違反を反証する。物理的なカウンタ寿命、uint32境界、および実際のC++ chain実行はTEST-JITR-72〜75で検査する。
+実行回数の抽象モデルは[`jit_trace_execution_model.py`](docs/components/tier3_plugins/formal/jit_trace_execution_model.py)を正本とする。実行対象外操作、chainの計数漏れ、飽和、および破棄時記録を検査する。`guards=False`では各違反を反証する。物理的なカウンタ寿命、uint32境界、および実際のC++ chain実行はTEST-JITR-76〜79で検査する。
 
 ## 8. 設計判断と参考実装
 
-特記すべき独立したADRはない。採用方針は本書の各契約節に記載する。
+### 8.1 コンパイル時期と候補処理予算
+<!-- traceability: {ADR_JitCompileScheduling} {JIT_ReverseCompilationOrder} -->
+
+- **ステータス**: 採用。候補処理数の予算について実装・テストの追従が必要である。
+- **背景**: 全タスクidle時だけのコンパイルでは、継続的に実行可能なタスクがある構成で候補処理が進まない。固定キューの満杯時にも処理を進める必要がある。
+- **選択肢**: 全タスクidle時だけ処理する方式と、協調境界でもidle hookを実行する方式を比較する。予算の単位は成功数と候補処理数を比較する。
+- **結論**: 協調境界でも処理する。通常のidle hookは失敗・スキップを含む候補処理数で予算を消費する。満杯時は通常予算の例外として固定キュー容量ぶんをその場で全件処理する。
+- **理由と影響**: 通常処理の仕事量を件数で制限し、満杯時は候補を失わずキューを空にする。満杯時には通常予算より多くの処理を行うため、コンパイルによる停止時間が増える。
+
+### 8.2 キャッシュ代謝とスラッシング防止の未決事項
+<!-- traceability: {Challenge_JITCacheEfficiency} {ADR_SafeQueuingOnHotMiss} -->
+
+- **ステータス**: 3面ローテーションとOldest hit昇格は採用。スラッシング防止方策は未決である。
+- **現行の暫定方策**: evictionでカードを`UNEXECUTED`へ戻す。再度hot判定を得たPCをコンパイル候補とする。この動作だけでスラッシングを防げるとは判定しない。
+- **判断材料**: traceごとの実行回数、破棄時の実行回数、未使用のままevictされたtraceを記録する。計数契約は本書のトレース実行回数に従う。
+- **未決事項**: 未使用evictionだけを対象にするか、実行回数が少なくコンパイル費用を回収できないtraceも対象にするかを決める。再コンパイルの抑止条件、適用範囲、および再許可する回復条件を測定結果から決める。
+- **責務境界**: 記録の追加はコンパイル抑止やキャッシュ方策の採用を意味しない。Guest Profilerの変更は要求しない。

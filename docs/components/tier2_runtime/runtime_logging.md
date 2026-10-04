@@ -75,8 +75,8 @@ ROM上に固定配置されたフォーマット文字列配列の非所有ア�
   **設計理由と不変条件**: ログ API は任意長文字列ポインタ（`%s`、`%p` 等）を直接受け付けない。実行時に構築した文字列ポインタをログエントリに格納すると、ログ出力元タスクの終了後にロガーが無効なメモリを参照するおそれがある。Use-After-Free を防ぐため、ログメッセージは静的辞書オフセットとスカラー引数（u32）に限定する。これによりメモリ安全性を保証する。
 - **遅延出力と割り込み応答性 (`GOTCHA-LOG-03`)**: {GOTCHA-LOG-03} <!-- definition: {GOTCHA-LOG-03} -->
   `log_event`はリングバッファへの格納のみを行い、実際の出力はCOOSアイドルフックからTier 1 `printk` のバイト出力へ行う。ロガーはHALやIPCの稼働を必要としない。具体的な物理出力先（UARTやITMなど）はTier 3 Platformで指定する。
-  **設計理由と不変条件**: ログフラッシュはリングバッファの連続領域をバッチ単位で DMA 転送する。DMA 転送は開始後、完了割り込み（`dma_complete`）まで中断できない。そのため `interrupt_pending()` はエントリ単位ではなく、各バッチの完了時に確認する。
-  割り込みを検出した場合は次のバッチを開始しない。残りのエントリをバッファに残し、スケジューラへ制御を戻す。これにより、割り込み応答レイテンシを1バッチの転送時間以内に制限する。
+  **設計理由と不変条件**: ログフラッシュは各エントリを辞書の引数数に従って符号化し、Tier 1 `printk`の同期バイト出力へ渡す。`batch_size`件までの出力後に`interrupt_pending()`を確認する。RuntimeロガーはDMA開始や完了割り込みを管理しない。
+  割り込みを検出した場合は次のバッチを開始しない。残りのエントリをバッファに残し、スケジューラへ制御を戻す。割り込み確認までの件数は1バッチ以内である。実時間は物理出力先の同期書込み時間に依存し、応答時間の上限は保証しない。
 - **バッファフル・ポリシー (`GOTCHA-LOG-02`)**: **FINALIZED: Overwrite** {DeterministicRingBuffer}。 <!-- definition: {DeterministicRingBuffer} --> {GOTCHA-LOG-02} <!-- definition: {GOTCHA-LOG-02} -->
   リングバッファが満杯の場合、古いログを破棄して新しいログを書き込む。システムの稼働継続を優先する。
   **設計理由と不変条件**: ログバッファ満杯時に呼び出し元をブロックしたり、動的に再確保したりしてはならない。高負荷時や異常フォールト時に、ログ処理がシステム全体のデッドロックやメモリ枯渇を招くためである。満杯時は最も古いエントリを非ブロッキングで上書きし、ドロップカウンタを増やす。直近の診断情報を残し、システムの稼働を継続する。
@@ -139,8 +139,8 @@ COOSスケジューラの `set_idle_hook` で `logger.flush()` を登録する�
 
 1. COOSスケジューラがREADYタスクがないことを検出
 2. `idle_hook()` を呼び出し → `logger.flush()` が実行
-3. リングバッファの連続ブロックをバッチとして物理トランスポート（UART/DMA）へ転送開始
-4. DMA転送完了割り込みで次のブロックを順次排出し、バッファが空になったら制御を返す
+3. 各ログを符号化し、Tier 1 `printk`へ同期書込みする。1バッチは`batch_size`件以内とする
+4. バッチ完了時に割り込みを確認する。保留中なら残りを保持して制御を返し、保留なしなら次のバッチを処理する
 
 ### 4.4 状態遷移図
 <!-- traceability: {BufferedLogging} {GLOBAL_IdleDetection} -->
@@ -151,33 +151,37 @@ stateDiagram-v2
     Validating --> Enqueuing: "registered_id / store raw entry; overwrite oldest on full"
     Enqueuing --> Idle: enqueued
     Idle --> Flushing: "buffer_not_empty / idle_hook"
-    Flushing --> DrainingBatch: "start_dma_batch"
-    DrainingBatch --> Flushing: "dma_complete / buffer_not_empty and not interrupt_pending"
-    DrainingBatch --> Idle: "dma_complete and interrupt_pending / defer next batch"
+    Flushing --> DrainingBatch: "start_write_batch"
+    DrainingBatch --> Flushing: "batch_written / buffer_not_empty and not interrupt_pending"
+    DrainingBatch --> Idle: "batch_written and interrupt_pending / defer next batch"
     DrainingBatch --> Idle: "buffer_empty"
 ```
 
-形式検証モデルの状態との対応は、`Idle` = `s_idle_empty`、`Validating`/`Enqueuing` = `s_active_partial` または `s_active_full`、`Flushing`/`DrainingBatch` = `s_idle_flushing`、`dma_complete` 後の完了 = `s_flush_done`、割り込み経路 = `s_irq_preempt`/`s_irq_handled` である。`s_blocked_caller`、`s_never_flushed`、`s_irq_blocked` は `guards=False` でのみ到達する違反状態である。
+形式検証モデルの状態との対応は、`Idle` = `s_idle_empty`、`Validating`/`Enqueuing` = `s_active_partial` または `s_active_full`、`Flushing`/`DrainingBatch` = `s_idle_flushing`、同期書込み完了 = `s_flush_done`、割り込み確認後の復帰経路 = `s_irq_preempt`/`s_irq_handled` である。`s_blocked_caller`、`s_never_flushed`、`s_irq_blocked` は `guards=False` でのみ到達する違反状態である。
 
 ### 4.5 内部シーケンス
 <!-- traceability: {BufferedLogging} {GLOBAL_IdleDetection} -->
 #### ログ出力シーケンス
 ```mermaid
 sequenceDiagram
+    autonumber
     participant C as Client
     participant L as Logging Subsystem
     participant RB as Ring Buffer
-    participant HW as UART/DMA
+    participant P as Tier 1 Printk
 
     C->>L: log_event(level, dict_id, args)
     L->>L: Validate registered dict_id (no string formatting)
     L->>RB: push(raw_entry) / overwrite if full
     L-->>C: reply(OK)
-    Note over L,HW: COOS Idle Flush (Batch DMA Transfer)
-    L->>RB: get_contiguous_block()
-    L->>HW: Start DMA Batch Transfer(header + used arguments)
-    HW-->>L: Transfer Complete Interrupt
-    L->>RB: advance_read_ptr(transferred_count)
+    Note over L,P: COOS Idle Flush
+    loop Up to batch_size entries
+        L->>RB: peek()
+        L->>P: write(header + used arguments)
+        P-->>L: bytes_written
+        L->>RB: discard_oldest()
+    end
+    L->>L: Check interrupt_pending before next batch
 ```
 
 ## 5. インターフェース定義
@@ -203,8 +207,8 @@ sequenceDiagram
 | :--- | :--- |
 | 機能概要 | リングバッファに蓄積されたログを物理トランスポートへ一括出力する。 |
 | シグネチャ | `flush(batch_size: u32, interrupt_pending: optional<callback>) -> u32` |
-| 戻り値 | 転送したログ件数。トランスポートがビジーの場合は新しいバッチを開始せず、転送済み件数を返す。 |
-| 補足 | COOS の `set_idle_hook` により、システムアイドル時に呼び出される。DMAバッチ転送は開始後は完了割り込み（`dma_complete`）まで中断できないため、実行中バッチの完了は待機する。バッチ完了時点で割り込み（INTイベント、例：WASIタイマー等）が確認された場合は、残余エントリがあっても次バッチの転送開始をスキップして速やかに制御をスケジューラに戻す。{InterruptibleFlush} <!-- definition: {InterruptibleFlush} --> |
+| 戻り値 | 同期書込みが完了したログ件数。各書込みの返却バイト数は符号化長と一致しなければならない。 |
+| 補足 | COOSの`set_idle_hook`で登録する。同期書込みを`batch_size`件以内でまとめ、その完了後に割り込みを確認する。保留中なら次バッチを開始せず、残余エントリを保持してスケジューラへ戻る。{InterruptibleFlush} <!-- definition: {InterruptibleFlush} --> |
 
 ### 5.2 内部呼出し境界
 LoggerはTier 2 RuntimeとTier 3プラグインが利用する診断APIであり、公開IPCサービスではない。Tier 1のSchedulerとIPCルータは`LoggerPort`を参照せず、`printk` の同期診断APIを使う。インタープリタとRuntime Event LoggerなどTier 2以上のコンポーネントは型付き`log_event` APIを呼び出す。ゲストの標準出力はWASI/HALの別経路を使い、標準エラーはTier 2ロガーへ渡す。
@@ -239,6 +243,8 @@ LoggerはTier 2 RuntimeとTier 3プラグインが利用する診断APIであり
 
 ### 7.4 既知の制限・対象外
 ホスト実機依存の挙動、未実装アーキテクチャ、およびテスト仕様が明示する対象外条件は未検証として扱う。
+
+形式モデルのフラッシュと割り込み経路は、同期書込み完了後の協調復帰を抽象化する。書込み途中の中断や実時間応答上限を検証しない。概念コードの`MockHALTransport`にあるDMA・busyの記述は、Tier 1 `printk`の同期出力境界へ未追従である。現行の出力経路の証拠はpysimの`Logger.flush`と対応するTEST-LOGに置く。
 
 
 ## 8. 設計判断と参考実装

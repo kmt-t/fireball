@@ -53,7 +53,7 @@ PYTHONPATH=.:experiments/pysim .venv/bin/python -m pytest -q \
 現在は **Step 2（シミュレータコード品質向上、実装の勘所・Gotchas抽出、テスト設計・コードへの還元）** を集中的に推進中。
 
 ### 1. 現在進行中のタスク (ACTIVE: Step 2 推進中)
-<!-- traceability: {JIT_CardAgingSweep} {META_SpecificationFirst} {Size_20KSLOC} {LowLatencyJIT} {ADR_InterruptRescheduleGeneration} {ROMParsing} -->
+<!-- traceability: {JIT_CardAgingSweep} {META_SpecificationFirst} {Size_20KSLOC} {LowLatencyJIT} {ADR_InterruptRescheduleGeneration} {ADR_TaskIdLifetime} {ADR_RendezvousChannel} {ADR_JitCompileScheduling} {ADR_RuntimeEventRetention} {Challenge_JITCacheEfficiency} {ROMParsing} -->
 - [ ] **Step 2.1: pysim シミュレータコードの品質向上 & リファクタリング**:
   - Tier 2 Interpreter・Runtime契約とTier 3 JIT・観測プラグインの分離後の品質向上を継続する。
   - 制御命令だけの区間のtrace検索と履歴記録を抑止した。通常命令を実行したブロックの開始PCを保持し、履歴転送時の全件Loader索引検索を削除した。prefix命令の実行境界もLoaderへ揃えた。
@@ -64,6 +64,10 @@ PYTHONPATH=.:experiments/pysim .venv/bin/python -m pytest -q \
   - コンポーネント別テスト仕様書（`docs/qa/tier*/`）への Gotchas 固有識別子および設計理由の追記・拡充
   - GOTCHAの正本をコンポーネント側へ集約する文書整備には保存済み監査がある。追加・変更した不変条件の文書と実行テストを継続して同期する。
 - [ ] **アーキテクチャ監査課題の設計整合・ADR策定**:
+  - 採用したADRの実装追従を行う。タスクIDは終了時の登録・待機・資源解放後に再利用する。IPCの応答は相手の受信待機まで応答側をサスペンドする。Runtimeイベントリングは最古を上書きして最新履歴を保持する。
+  - JITの通常idle hookは成功数ではなく、失敗・スキップを含む候補処理数で予算を消費する。満杯時は通常予算の例外として固定キュー容量ぶんをその場で全件処理する。境界値と副作用を実行テスト・形式モデルへ反映する。
+  - スラッシング防止方策は未決である。trace実行回数と破棄時記録を分析し、未使用evictionだけを対象にするか、費用回収の少ないtraceも含めるかを決める。抑止条件・適用範囲・再許可の回復条件を確定する。現在の`UNEXECUTED`へ戻す動作は暫定方策とする。
+  - Loaderの命令利得表を現行compilerの対応範囲と照合して校正する。Logging概念コードの出力境界をTier 1 `printk`へ揃える。Debugger概念コードを現行のレジスタ配置とRSP検証へ揃える。これらの追従前に概念コードを現行契約の検証済み証拠としない。
   - 現行の概要書収集では26コンポーネント、6 WITファイルを確認した。リンク切れ・未掲載・未知のコンポーネントリンクは検出されなかった。責務・契約・実装の意味整合は個別の正本と照合する。
   - JIT chainとInterpreter handlerの実行境界、共有状態、yield/fallbackを現行のネイティブ実装と照合する。古い参照モデルとの差を現行実装の欠陥と断定しない。
   - ARMv8-Mの物理ABI、命令生成、trace layout、MPU/W^X、メモリ配置、ROM/RAM予算、実機検証条件は、x64のJIT契約検証後に新規設計する。現時点ではすべてTBD。
@@ -154,7 +158,7 @@ PYTHONPATH=.:experiments/pysim .venv/bin/python -m pytest -q \
 - [ ] **IPC ルータ (`inc/interface/ipc_router.hxx`)**: 3段階ルーティング、ゼロコピー CSP チャネル & RAII 所有権移譲 (`GOTCHA-IPCR-01`〜`03`)
 - [ ] **vMMIO コントローラ (`inc/runtime/vmmio.hxx`)**: 多段ダイレクトデコードページテーブル & ソフトウェア TLB (`GOTCHA-VMMIO-01`〜`03`)
 - [ ] **HAL & WASI ドライバ (`inc/runtime/hal_dispatch.hxx`, `inc/platform/driver.hxx`, `inc/platform/wasi.hxx`)**: GPIO / I2C / SPI / Timer / WASI Preview 1、`HalBufferPool` (`GOTCHA-HAL-01`〜`03`)
-- [ ] **GDB Server（Tier 3 Plugins）**: [`debugger.md`](docs/components/tier3_plugins/debugger.md) に従うRSPサーバー、メモリ書き換え時JITキャッシュフラッシュ (`GOTCHA-DBG-01`〜`03`)
+- [ ] **GDB Server（Tier 3 Plugins）**: [`debugger.md`](docs/components/tier3_plugins/debugger.md) に従うRSPサーバー。`Interpreter + Debugger`を静的構成し、JITとの同時構成を拒否する (`GOTCHA-DBG-01`〜`03`)
 
 ---
 

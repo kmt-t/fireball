@@ -3,7 +3,7 @@ docs/components/tier2_runtime/formal/logging_flush_model.py
 pyModelChecking による Logging コンポーネントの
 (1) log_event() が呼び出し側を決してブロックしないこと（overwrite-on-full, GOTCHA-LOG-02）
 (2) 保留中のログは COOS Idle Hook によるフラッシュで必ず出力されること
-(3) ログフラッシュループ中に外部割り込みが発生した場合、即座に中断して割り込み応答すること（GOTCHA-LOG-03）
+(3) 同期書込みバッチ完了後に割り込みを確認し、次バッチを保留して協調復帰すること（GOTCHA-LOG-03）
 (4) 同一辞書の引数数に従う転送長と復号境界、および未知ID・欠損入力の拒否
 の形式検証（証明・変異検査対応）モデル
 """
@@ -20,13 +20,13 @@ def build_model(*, guards: bool = True) -> Kripke:
     - s_idle_empty: システムアイドル、バッファ空 (flushed)
     - s_active_partial: 実行中、バッファに未出力ログあり (pending)
     - s_active_full: 実行中、バッファ満杯 (pending)
-    - s_idle_flushing: Idle Hook 起動によるバックグラウンド DMA/割り込みフラッシュ中
+    - s_idle_flushing: Idle Hook 起動による同期書込みバッチの処理中
     - s_flush_done: フラッシュ完了、バッファ空に戻る (flushed)
-    - s_irq_preempt: GOTCHA-LOG-03: フラッシュ中に外部割込が発生し即座に中断 (irq_pending)
+    - s_irq_preempt: GOTCHA-LOG-03: 同期書込みバッチ後に割込を確認して協調復帰 (irq_pending)
     - s_irq_handled: 割込ハンドラ処理完了、フラッシュ再開待ち (irq_handled)
     - s_blocked_caller: 違反状態（バッファ満杯時に log_event が呼び出し側をブロックした）
     - s_never_flushed: 違反状態（Idle Hook が配線されておらず、保留ログが永久に出力されない）
-    - s_irq_blocked: 違反状態（フラッシュを中断できず高優先度割込がブロックされた）
+    - s_irq_blocked: 違反状態（バッチ後に協調復帰せず割込処理が進まない）
     """
     S = [
         "s_idle_empty",
@@ -48,7 +48,7 @@ def build_model(*, guards: bool = True) -> Kripke:
         ("s_active_full", "s_idle_flushing"),
         ("s_idle_flushing", "s_flush_done"),
         ("s_flush_done", "s_idle_empty"),
-        # GOTCHA-LOG-03: 割込によるフラッシュ即時中断と再開
+        # GOTCHA-LOG-03: バッチ後の割込確認による協調復帰と再開
         ("s_idle_flushing", "s_irq_preempt"),
         ("s_irq_preempt", "s_irq_handled"),
         ("s_irq_handled", "s_flush_done"),
@@ -141,7 +141,7 @@ def properties():
             "logic": "CTL",
             "formula": AG(Imply(irq_pending, AF(irq_handled))),
             "violation": bad_irq_blocked,
-            "expect": True,  # GOTCHA-LOG-03: 外部割込発生時はフラッシュを即座に中断し有界時間内にハンドラを実行
+            "expect": True,  # GOTCHA-LOG-03: バッチ後の割込確認で協調復帰する。実時間上限は検証しない
         },
     ]
 

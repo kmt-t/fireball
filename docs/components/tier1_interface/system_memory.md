@@ -261,7 +261,7 @@ JITコード生成専用に予約された連続固定長リージョン（`FB_C
     - 案1: 両APIを提供し、呼び出し側が任意のアドレスについて情報・所有権を問い合わせられるようにする。汎用的だが、`shared-block`が既に保持している情報を別経路でも問い合わせ可能にする冗長な公開面を作り、`{META_FaultIsolation}`が要求する「所有権はshared-block経由でのみ確認できる」という単一の経路を弱める。
     - 案2: 両APIを削除する。サイズはkernel/task用途では呼び出し側（`allocate`時に記録済み）が、shared用途では`shared_block.get_size()`/`get_owner()`が代替する。
   - **結論**: 案2を採用する。
-  - **理由**: `query()`は`allocate`時に呼び出し側がサイズを記録すれば冗長であり、`check-ownership()`は`shared_block.get_owner()`で代替可能である。生ポインタを直接やり取りする経路が存在しない設計（すべて`shared_block`リソース経由）とも整合する。
+  - **理由**: kernel/task用途のサイズは確保時に呼出元が記録する。shared用途のサイズと所有者は`shared_block.get_size()`/`get_owner()`で取得する。IPCの所有権移譲は`shared-block`経由に限定する。ホスト用ヒープやRuntimeのバンプ領域など、移譲を行わない5プール内のアドレス貸与まで`shared-block`経由に限定しない。
 
 - **決定事項**: `{ADR_FivePoolMemoryModel}` (2026-09-09) <!-- definition: {ADR_FivePoolMemoryModel} -->
   - **背景**: システム全体のメモリ管理を、単一の汎用「パーティション貸与」契約として抽象化するか、用途別に区別された複数プールの集合として契約化するかを決定する必要があった。従来の契約は「タスクヒープ」と「共有メモリ用ヒープ」のみを規定し、ランタイム用バンプアロケータや JIT キャッシュアロケータは本契約の管轄外（それぞれ `runtime_vsoc.md`/`jit_runtime.md` が独自に規定）とされていた。

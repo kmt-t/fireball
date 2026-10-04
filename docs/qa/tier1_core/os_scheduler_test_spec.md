@@ -27,7 +27,7 @@
 | TEST-SCHED-13 | READY循環リストの両端操作と定員境界 | 容量4のREADYキューを用意する | 先頭取り出し、末尾追加、先頭追加、任意タスクの除去を行う | FIFO順と循環する前後リンクを保つ。満杯時は追加を拒否し、既存タスクの順序を変えない。各リンク操作はキュー長に依存しない | `{ADR_IntrusiveTcbList}` |
 | TEST-SCHED-14 | 割り込み再スケジュール世代の一巡 | READYタスクA・Bが存在し、割り込み通知を1回以上受け付ける | FIFOをドレインし、A・Bを順にディスパッチする | `reschedule_generation`は保留バーストごとに1回だけ進み、各対象タスクの`last_seen_generation`が一度ずつ更新される。全対象の観測後に`reschedule_pending`が解除される | `{ADR_InterruptRescheduleGeneration}` |
 | TEST-SCHED-15 | 一巡中に生成されたタスクの対象外化 | 世代要求が保留中にタスクCをspawnする | 現在世代の対象マスクを確定してCをディスパッチする | Cは現在世代の`round_target_mask`に含まれず、C自身の通常の協調実行を開始する。既存対象の観測完了を待つ | `{ADR_InterruptRescheduleGeneration}` |
-| TEST-SCHED-16 | 終了タスクのTCBスロット返却 | TCBが満杯で、一部のタスクが終了済み。別の場合として、全タスクが生存している | 新しいタスクをspawnする | 終了済みの最古のスロットが返却され、生成が成功する。生存タスクは回収されない。全タスクが生存している場合は、容量超過で停止する。新しいタスクIDは、過去のIDと重複しない | `{CooperativeMultitasking}` |
+| TEST-SCHED-16 | 終了タスクのTCBスロット返却とID再利用 | TCBが満杯で一部が終了済み、または全タスクが生存している。終了タスクには待機登録と所有資源がある | 生成・終了を固定幅ID空間を超える回数反復する | 終了済みの最古スロットを返却し、生存タスクを保持する。終了タスクの待機登録と資源を解放してからIDを再利用する。生存IDは重複せず、待機マスクは構成範囲内である。全タスク生存時は容量超過で停止する | `{CooperativeMultitasking}`、`{ADR_TaskIdLifetime}` |
 | TEST-SCHED-17 | 割り込みFIFOのロックフリー性と容量境界 | ISR producerとCOOS consumerが同一の固定長SPSC FIFOを使用 | producerが満杯まで投入し、consumerが順に取り出し、空きスロットへ再投入する | mutex／スピンロックなしでFIFO順序を保ち、満杯時は既存イベントを上書きせず`false`を返し、consumer後に再利用できる | `{GLOBAL_InterruptWakeup}` |
 | TEST-SCHED-18 | 時刻待機中の他タスク実行・アイドルフック・期限起床 | 時刻待機タスクとREADYタスクが各1つ存在し、単調時計を制御できる | 待機タスクが未来期限を登録して`BLOCKED_TIMER`へ移る | READYタスクが時刻を進める前に実行される。READYキューが空になった時点でアイドルフックを呼び、その後に次回期限まで待つ。待機タスクは期限到達後にREADYキュー末尾へ戻って完了する | `{GLOBAL_IdleDetection}` |
 | TEST-SCHED-19 | タイマー待ちタスク終了時の期限解除 | 異なる未来期限を持つ`BLOCKED_TIMER`タスクが2つある | 早い期限のタスクを`task_killed`し、残るタスクを実行する | 終了タスクは期限到達で再開せず、残るタスクは自身の期限で一度だけ再開する。取り消した期限で余分な起床・待機周期を発生させない | pysim `test_sched_19_killing_timed_waiter_clears_only_its_deadline`, `GOTCHA-SCHED-03` |
@@ -60,7 +60,7 @@ pysimの実装テストは [`test_scheduler.py`](experiments/pysim/qa/tier1_core
 | TEST-SCHED-12 | `test_sched_12_interrupt_fifo_orders_registered_targets_and_drops_unknown` | 受付順の起床、原因値、未登録イベントのドロップ |
 | TEST-SCHED-13 | `test_sched_13_detached_task_reattaches_once`、`test_sched_13_ready_queue_intrusive_ring_two_ended_fifo` | メンバー重複なし、FIFO順、前後リンク、定員超過後の順序保存 |
 | TEST-SCHED-14、15 | `test_sched_14_15_interrupt_generation_is_observed_once_by_existing_targets` | バースト1世代、各対象の一回観測、新規タスクの除外、保留解除 |
-| TEST-SCHED-16 | `test_sched_16_terminated_task_returns_its_tcb_slot_on_spawn`、`test_sched_16_task_ids_stay_unique_after_a_slot_is_reclaimed` | 最古終了スロット返却、生存タスク保存、ID一意性 |
+| TEST-SCHED-16 | `test_sched_16_terminated_task_returns_its_tcb_slot_on_spawn`、`test_sched_16_task_ids_stay_unique_after_a_slot_is_reclaimed` | 最古終了スロット返却と生存タスク保存を確認する。過去ID非再利用の確認は採用契約へ未追従であり、解放後のID再利用と有限範囲での反復生成は未検証である |
 | TEST-SCHED-17 | `test_sched_17_interrupt_fifo_rejects_overflow_then_reuses_consumed_slot` | 満杯拒否、既存原因レコード保存、消費後の再利用 |
 | TEST-SCHED-18、19 | `test_sched_18_timed_wait_runs_ready_peers_before_idle_sleep`、`test_sched_19_killing_timed_waiter_clears_only_its_deadline` | READY優先、期限時刻、idle・sleep列、取消し後の生存待機者 |
 

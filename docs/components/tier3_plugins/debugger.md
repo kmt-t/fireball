@@ -91,7 +91,7 @@ PCレジスタと`Z0`/`z0`アドレスは、現在のWASMモジュールのCode 
    - ノンブロッキング送信が一部だけ進んだ場合、未送信の末尾を保持して次の協調実行へ持ち越す。部分送信を完了扱いにすると応答の末尾を失うため、1回の協調実行で送信が完了するとは仮定しない。
    - 受信側は複数回の `recv` をまたいで完全な `$...#xx` フレームを組み立てる。{GOTCHA-DBG-04} <!-- definition: {GOTCHA-DBG-04} -->
 #### デバッガ・インタープリタ結合コンセプトコード (`concepts/debugger_concept.py`)
-デバッガとインタープリタの結合、注入された物理Sinkを介したGDB RSP パケット処理、統一スタック検査の参照実装：
+デバッガとインタープリタの結合を示す概念コードである。旧来の4レジスタ表現と簡略化したパケット処理を含み、現行の20レジスタ配置やRSPチェックサムの検証証拠には使用しない。プロトコルの期待値と実行テストは`debugger_test_spec.md`を正本とする。
 [`debugger_concept.py`](docs/components/tier3_plugins/concepts/debugger_concept.py)
 
 
@@ -220,4 +220,4 @@ GDB RSP、ブレークポイント、インタープリタ専用デバッグ構�
 
 ## 8. 設計判断と参考実装
 
-デバッグ実行を `Interpreter + Debugger` に静的限定し、`Debugger + JIT` は構成時に拒否する。デバッガはJITキャッシュを所有せず、メモリ書き換え時のキャッシュ無効化も担当しない。参考実装は [`debugger_concept.py`](docs/components/tier3_plugins/concepts/debugger_concept.py) とする。
+デバッグ実行を `Interpreter + Debugger` に静的限定し、`Debugger + JIT` は構成時に拒否する。デバッガはJITキャッシュを所有せず、メモリ書き換え時のキャッシュ無効化も担当しない。概念コードの構成例は [`debugger_concept.py`](docs/components/tier3_plugins/concepts/debugger_concept.py) を参照する。現行RSPの検証証拠は [`debugger_test_spec.md`](docs/qa/tier3_plugins/debugger_test_spec.md) と対応するpysimテストに置く。

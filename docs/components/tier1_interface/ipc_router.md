@@ -181,7 +181,7 @@ sequenceDiagram
 <!-- traceability: {ADR_RendezvousChannel} {IPC_ZeroCopy} {URIAbstraction} {IPCRegistry} {RoleBasedAccessControl} {OwnershipTransfer} -->
 実行可能な参考モデルは [`ipc_router_concept.py`](docs/components/tier1_interface/concepts/ipc_router_concept.py) を参照する。名前解決、Roleとインスタンスの分離、および要求・応答の参考実装は同ファイルに置く。CSPランデブーと所有権移譲は本書の通信契約に従う。
 
-※ 所有権移譲プロトコルの二重所有不在および有限解決性は、`formal/csp_handoff_model.py` により変異検査付き形式モデルとして検証される。トポロジレベルのデッドロック不在は、非循環チャネル依存規律（クライアント・サーバ規律）により設計上保証される（自動検証ツールでの機械的な閉路検査は行っておらず、設計レビューによる担保）。
+所有権移譲プロトコルの二重所有不在は、`formal/csp_handoff_model.py` により変異検査付き形式モデルとして検証される。相手が到達しない待機は継続できるため、無条件の有限解決性は保証しない。トポロジの非循環チャネル依存規律は設計レビューで確認する。機械的な閉路検査や、非循環だけを根拠とする応答完了の保証は行わない。
 
 ### 4.1.1 名前解決パイプラインとアクセス制御フロー
 <!-- traceability: {LowLatencyLookup} {META_AccessDictionary} {META_FlatMapIndexed} {RoleBasedAccessControl} -->
@@ -342,12 +342,12 @@ stateDiagram-v2
 | :--- | :--- | :--- | :--- | :--- |
 | **SenderOwned** (`SENDER_OWNS`) | Sender | Full (R/W) | 安定 | 送信側が完全な制御を持つ。SHM: 送信元 PTE map 済み |
 | **RevokePhase** | (移譲中) | Sender ロック中 | 遷移中 | 所有権を剥奪（Revoke）中。この時点で送信は完了確約（committed）となる。SHM: `shm.release()` 実行中 |
-| **InFlight** (`IN_FLIGHT`) | Router / チャネル | いずれもアクセス禁止 | 仲介中 | チャネルが一時保管、送受信側いずれもアクセス禁止。SHM: 送信元 PTE unmap ＆ TLB フラッシュ済み（未登録ページ遮断） |
+| **InFlight** (`IN_FLIGHT`) | (移譲中) | いずれもアクセス禁止 | 仲介中 | 値は送信側の待機フレームに保持し、チャネルは待機者を管理する。SHM: 送信元PTE登録と対応するvMMIOキャッシュを無効化済み |
 | **RendezvousWait** | (移譲中) | In-flight 継続 | 協調ブロック中 | 相手側タスクがまだ到達しておらず、協調スケジューラ上でブロック中。タイムアウトや失敗はなく、相手の到達を待つのみ |
 | **GrantPhase** | (移譲中) | Receiver 取得中 | 遷移中 | 受信側にアクセス権を付与中。SHM: 所有権変更通知で旧 PTE を unmap、`claim()` 後に受信側 PTE を map |
 | **ReceiverOwned** (`RECEIVER_OWNS`) | Receiver | Full (R/W) | 安定 | 受信側が完全な制御を持つ。SHM: 受信側で `claim(shared_block)` 完了。応答コード設定と追加KV書込みが可能 |
 | **ResponsePhase** | Receiver | 送信側アクセス禁止 | 遷移中 | `response_code` を設定し、同じメッセージを応答チャネルへ返す準備を行う |
-| **ResponseWait** | チャネル | 双方アクセス禁止 | 応答待ち | 送信側TCBが応答を待つ。応答はキュー化せず、要求と一対一で保持する |
+| **ResponseWait** | (移譲中) | 双方アクセス禁止 | 応答待ち | 応答側と元の送信側のランデブーを待つ。値は応答側の待機フレームに保持する。チャネルへ応答値を蓄積しない |
 | **SenderGrantPhase** | (移譲中) | 遷移中 | 遷移中 | 応答メッセージと共有メモリを送信元へ再付与する |
 
 ### 4.3 メッセージライフサイクルと所有権管理 (SysML Parametric Diagram 相当)
@@ -360,7 +360,7 @@ stateDiagram-v2
 | **Revoke** | チャネルへ到達、送信確約 | 移譲中 (`IN_FLIGHT`) へ遷移 | **アクセス権剥奪（送信ロック）** | 待機中または未到達 | `shm.release()` 連動、送信元 PTE unmap ＆ TLB フラッシュ |
 | **Rendezvous** | 相手の到達を待機（即座または協調ブロック） | 移譲中 (`IN_FLIGHT`) 継続 | **送信ロック継続** | 到達済みなら即完了、未到達ならブロック中 | 単一スロットのハンドオフ管理（キューなし、両者アクセス禁止・unmap遮断） |
 | **Grant（要求）** | ランデブー成立 | 受信側へ移譲 (`RECEIVER_OWNS`) | **応答待ちでブロック** | **所有権付与（受信完了）** | 所有権変更通知で旧 PTE を無効化、受信側 `claim()` 完了後に PTE map |
-| **Response** | 受信側が処理し応答コード・追加KVを設定 | 移譲中 (`IN_FLIGHT`) | **応答を待機** | **送信元TCBを応答待ちへ起床** | 受信側 `release()` 後に送信元へ Grant |
+| **Response** | 受信側が処理し応答コード・追加KVを設定 | 移譲中 (`IN_FLIGHT`) | **応答受信を待機** | **送信元の受信待機までサスペンド** | 受信側`release()`後、応答ランデブー成立で送信元へGrant |
 | **Grant（応答）** | 同一メッセージを返却 | 送信側へ移譲 (`SENDER_OWNS`) | **応答取得、再開** | **応答済み** | 送信元 `claim()` 完了後に PTE map |
 
 **注記:**
@@ -373,11 +373,13 @@ stateDiagram-v2
 * **サービス検索**: サービスレジストリ（URI から channel_id への解決）は、コンパイル時にソートされた URI 文字列スパンに対して二分探索を行う。動的アロケーションを行わず、$O(\log N)$ の低遅延名前解決を達成する。実装詳細は `ipc_router_concept.py` を参照する。実測性能は [`low_latency_lookup_bench.py`](docs/components/tier1_interface/benchmarks/low_latency_lookup_bench.py) で検証済みである。キー数を1000倍にした場合でも、探索時間は理論通り約2倍に留まる。
 * **メッセージ内検索**: メッセージ引数は、キー値を昇順にソートした固定長配列として実装する。受信側でのパラメータ探索に $O(\log N)$ の二分探索を適用し、ゼロコスト抽象化を保証する。
 
-### 4.3.2 CSP Handoff スターベーション防止対策
-<!-- traceability: {Challenge_CspHandoffStarvation} -->
-CSP Handoff によるメッセージ移譲において、特定タスクペアによる CPU 占有とスターベーションを防ぐため、以下のガード条件を適用する。
+### 4.3.2 CSP Handoff の協調復帰条件
+<!-- traceability: {Challenge_CspHandoffStarvation} {ADR_InterruptRescheduleGeneration} -->
+CSP Handoff の連鎖を協調境界で制限するため、以下のガード条件を適用する。
 1. **最大連続ハンドオフ回数の制限**: 連続実行権移譲が `FB_CONF_MAX_CONSECUTIVE_HANDOFFS` 回に達した場合、自タスクを READY キュー末尾へ yield させる。スケジューラによるラウンドロビン巡回をトリガーする。
-2. **タイムスライス閾値監視**: 前回のスケジュールから一定時間以上経過している場合は、直接スイッチを行わない。スケジューラの通常の巡回に自タスクを戻す。キューへの退避ではなく、次回の巡回で再試行する単純な yield である。
+2. **再スケジュール要求の観測**: COOSの保留中の再スケジュール世代を協調境界で観測する。対象タスクの世代観測とREADYキュー巡回はCOOSの契約に従う。
+
+時間ベースのタイムスライスは設けない。yieldしないタスクを含む公平性や実時間応答上限は保証しない。
 
 ### 4.4 内部シーケンス図
 <!-- traceability: {LowLatencyLookup} {META_AccessDictionary} {META_FlatMapIndexed} {OwnershipTransfer} {IPC_ZeroCopy} -->
@@ -505,7 +507,7 @@ sequenceDiagram
 #### メッセージ応答（reply_message）
 <!-- traceability: {OwnershipTransfer} {IPC_ZeroCopy} {ADR_RendezvousChannel} {CSP_Handoff} -->
 
-受信側はメッセージを処理した後、`response_code` を pending 以外へ設定して `reply_message` を呼ぶ。要求メッセージを変更しなければエコー応答になり、追加KVを書き込めば追加データ付き応答になる。応答は要求を保持している送信元 TCBだけへ渡される。送信元が応答待ちになる前に応答された場合も、Scheduler がチャネル内の一時的な応答状態を保持して送信元の待機開始時に直ちに取得させる。
+受信側はメッセージを処理した後、`response_code` を pending 以外へ設定して `reply_message` を呼ぶ。要求メッセージを変更しなければエコー応答になり、追加KVを書き込めば追加データ付き応答になる。応答は要求を保持している送信元 TCBだけへ渡される。送信元が応答受信を待機していない場合、応答側は値を自身の送信フレームに保持してサスペンドする。チャネルに応答値を蓄積して先に復帰してはならない。所有権移譲は応答ランデブーで成立する。成立後のCPU実行順序はCOOSに従い、クライアントの実行完了を追加の条件にしない。
 
 | 項目 | 内容 |
 | :--- | :--- |
@@ -591,14 +593,17 @@ waiter_dir: {NONE, SEND, RECV}     # そのチャネルで待機中の方向
 - `sender_ownership != OWNED ∨ receiver_ownership != OWNED` (二重所有不在)
 - `waiter_dir != SEND ∨ waiter_dir != RECV`（同時に両方向の待機者を持たない。値は排他的な列挙のため常に真——ある瞬間のチャネルは NONE/SEND/RECV のいずれか一状態のみ）
 
-※ CSP 所有権移譲プロトコルの二重所有不在および有限解決性は `formal/csp_handoff_model.py` により変異検査付きモデル検査を実施する。
+CSP所有権移譲プロトコルの二重所有不在は`formal/csp_handoff_model.py`で変異検査する。相手未到達時の待機継続を許容し、無条件の有限解決性は検証対象にしない。
 
 ### 7.4 既知の制限
 
 - **マルチプロセッサ同期**: 現在、シングルプロセッサを仮定。マルチコア環境ではメモリバリア追加が必要。
 - **相手タスクの生存**: 受信側（または送信側）タスクが永久に到達しない場合、相手はブロックし続ける。本コンポーネントはタスクの生存監視やタイムアウトによる強制解除を提供しない——必要であれば呼び出し側の上位レイヤ（ウォッチドッグ等）が担う。
+- **応答同期の実装追従**: 現行pysimの`channel_reply`は受信待機前に`reply_value`をチャネルへ保存して復帰する。要求・応答とも同期ランデブーとする契約へ未追従である。応答側のサスペンド、応答待機での成立、成立前後の所有権、および成立後のCOOS遷移を直接検査する必要がある。
 
 
 ## 8. 設計判断と参考実装
 
-特記すべき独立したADRはない。採用方針は本書の各契約節に記載する。
+<!-- traceability: {ADR_RendezvousChannel} -->
+
+要求と応答の双方に、バッファなしの同期ランデブーを適用する。これはCOOSのチャネル契約を適用する決定である。応答側が相手の受信待機前に復帰する方式は採用しない。ランデブー成立後のCPU実行順序はCOOSの契約に従う。応答値の早期保存を行う現行実装は、この決定の例外として扱わない。

@@ -1,41 +1,51 @@
-# PySIM ベンチマーク結果（2026-10-03）
+# PySIM ベンチマーク結果（2026-10-05）
 <!-- traceability: {ThreadedInterpreter} {JIT_CopyAndPatch} {JIT_CardAgingSweep} {Wasm32Only} -->
 
-## 2026-10-03 統合スイート再測定
+## 2026-10-05 統合スイート再測定
 
 ### 測定条件
 
-- 測定スナップショット: `HEAD 731a4c5e`。測定前にInterpreterとJITのC++共有ライブラリを再ビルドした。
-- 実行環境: AMD Ryzen 5 5500GT、Linux 7.0.0-34-generic、CPython 3.14.6、Clang 21.1.8、uv 0.12.19。
-- `taskset -c 2`でCPU 2に固定し、統合スイートを独立プロセスで3回実行した。
-- 計測は通常実行のwall-clock値である。VTune、AMD uProf、ハードウェアイベントは使っていない。
-- 数値はホスト上のPySIM結果であり、組み込みCPUの実行時間やROM/RAM使用量を表さない。
+- `run_all.py`と関数呼び出し計測は`dc4f8fec`を基点に測定し、JIT agingベンチマークの未コミット修正を含む。
+- 0xFC計測は`3b0cf07c`を基点に測定し、`bench_fc.py`の未コミット修正を含む。C++ネイティブソースに差分はない。
+- AMD Ryzen 5 5500GT、Linux 7.0.0-34-generic、CPython 3.14.6、Clang 21.1.8、uv 0.12.19で測定した。
+- InterpreterとJITのC++共有ライブラリを再ビルドした。`taskset -c 2`でCPU 2に固定し、`run_all.py`を独立プロセスで3回実行した。
+- 通常実行のwall-clock値を採った。VTune、AMD uProf、Linux `perf`、ハードウェアイベントは使用していない。
+- ホスト上のPySIM結果である。組み込みCPUの実行時間やROM/RAM使用量を示す値ではない。
+- agingの`compile_ms`は`compile_wasm_trace`の開始から`build_runtime_trace`の終了までを計時した。
+
+### ベンチマーク不具合の修正
+
+- JIT aging計測器が現行の`JITRuntimeManager`プロトコルにない`compile_trace`を実装していた。`compile_wasm_trace`と`build_runtime_trace`を実装し、コンパイル区間を両APIにまたがって計時するよう修正した。
+- 0xFC計測器は短命なInterpreterを繰り返し生成すると、解放されない計測用領域がモジュールのローダー領域を使い切っていた。各Interpreterに専用の`BumpAllocator`を割り当てるよう修正した。
+- vDMA計測器にRuntimeタスクとタスクコンテキストがなく、動的PTEの所有者検査を通過できなかった。さらに、転送元オフセットがHALバッファの範囲外だった。Runtimeタスクを登録し、操作をタスクコンテキスト内で実行して、バッファ内オフセットを使うよう修正した。
 
 ### 結果
 
-6系統の統合スイートは3回とも完走した。全体時間の中央値は34.85秒（34.46–34.87秒）だった。
+6系統は3回とも完走した。全体時間の中央値は30.40秒（29.95–30.69秒）だった。
 
 | 指標 | 中央値（範囲） |
 | :--- | ---: |
-| 線形RAM帯域 | 13.77 MB/s（13.67–14.05） |
-| Direct-mapped TLB hit | 921.0 ns（917.0–931.9） |
-| Copy-and-Patch compile throughput | 37,788 traces/s（36,742–37,969） |
-| 100,000回算術ループ・Python Interpreter | 4,739.43 ms（4,704.84–4,747.28） |
-| 100,000回算術ループ・C++ Interpreter | 103.27 ms（102.10–104.27） |
-| 100,000回算術ループ・Hybrid JIT | 139.86 ms（139.31–143.26） |
-| 算術ループ・JITのPython Interpreter比 | 33.77倍高速（33.14–33.89） |
-| JIT cache churn | 128,715 evictions/s（128,537–131,180） |
-| 既定JIT aging処理時間 | 1.29 ms（1.29–1.30） |
-| AO-Bench・Python Interpreter | 6,401.14 ms（6,339.66–6,419.22） |
-| AO-Bench・C++ Interpreter | 34.22 ms（32.81–35.31） |
-| AO-Bench・Hybrid JIT | 1,353.63 ms（1,333.03–1,363.31） |
-| AO-Bench・JITのC++ Interpreter比 | 38.96倍遅い（38.61–41.26） |
+| 線形RAM帯域 | 13.90 MB/s（13.88–14.10） |
+| Direct-mapped TLB hit | 958.4 ns（936.5–1,021.3） |
+| Copy-and-Patch compile throughput | 35,468 traces/s（29,490–35,597） |
+| 100,000回算術ループ・Python Interpreter | 4,678.40 ms（4,644.89–4,792.45） |
+| 100,000回算術ループ・C++ Interpreter | 20.82 ms（20.42–20.83） |
+| 100,000回算術ループ・Hybrid JIT | 19.19 ms（19.15–19.56） |
+| 算術ループ・JITのPython Interpreter比 | 243.79倍高速（242.51–245.02） |
+| 算術ループ・JITのC++ Interpreter比 | 1.06倍高速（1.06–1.09） |
+| JIT cache churn | 109,687 evictions/s（108,279–115,128） |
+| 既定JIT aging・処理時間 | 622 ms（598–641） |
+| 既定JIT aging・age step時間 | 0.50 ms（0.49–0.50） |
+| AO-Bench・Python Interpreter | 6,148.23 ms（6,141.19–6,564.57） |
+| AO-Bench・C++ Interpreter | 13.29 ms（12.48–13.43） |
+| AO-Bench・Hybrid JIT | 18.21 ms（17.18–20.28） |
+| AO-Bench・JITのC++ Interpreter比 | 1.38倍遅い（1.36–1.53） |
 
-算術ループ3経路はすべて`704,982,704`を返した。AO-Benchは32×16、1,600 rayの各実行で、3経路の528バイト出力が一致した。キャッシュ不変条件とエイジングの意味結果も各実行で確認した。
+算術ループの3経路はすべて`704,982,704`を返した。AO-Benchは32×16、1,600 rayの各実行で3経路の出力が一致した。キャッシュ不変条件、agingの決定的カウンター、プログラム結果も各実行で確認した。
 
-線形メモリのRaw bytearray計測は104.1–151.1 ns/opとばらつきが大きかった。その他の値もホスト計測の変動を含むため、小さな差を性能改善とは扱わない。
+既定agingは727回のコンパイル・656回の追い出しを行うagingなし構成に対し、698回のコンパイル・631回の追い出しだった。既定値は45回rotateし、aging処理は中央値0.50 msだった。
 
-各実行ログ: [1回目](results/run_all_20261003_retake_1.txt)、[2回目](results/run_all_20261003_retake_2.txt)、[3回目](results/run_all_20261003_retake_3.txt)。
+実行ログ: [1回目](results/run_all_20261005_postfix_1.txt)、[2回目](results/run_all_20261005_postfix_2.txt)、[3回目](results/run_all_20261005_postfix_3.txt)。
 
 再現コマンド:
 
@@ -47,124 +57,40 @@ UV_CACHE_DIR=/tmp/fireball-uv-cache UV_OFFLINE=true UV_NO_SYNC=true \
 for trial in 1 2 3; do
   taskset -c 2 env UV_CACHE_DIR=/tmp/fireball-uv-cache UV_OFFLINE=true UV_NO_SYNC=true \
     uv run --project . --offline --no-sync python experiments/pysim/benchmarks/run_all.py \
-    > "experiments/pysim/benchmarks/results/run_all_20261003_retake_${trial}.txt"
+    > "experiments/pysim/benchmarks/results/run_all_20261005_postfix_${trial}.txt" 2>&1
 done
 ```
 
-## 2026-10-01 個別計測記録
+### 個別計測
 
-以降の関数呼び出しと0xFCの個別測定、および比較用の統合値は2026-10-01時点の記録である。今回それらの個別ベンチマークは再実行していない。
-
-### 測定条件
-
-- 測定スナップショット: `HEAD 3274f977` の未コミット作業ツリー。測定前にInterpreterとJITのC++共有ライブラリを再ビルドした。
-- 実行環境: AMD Ryzen 5 5500GT、Linux 7.0.0-34-generic、CPython 3.14.6、Clang 21.1.8、uv 0.12.19。
-- `taskset -c 2` でCPU 2に固定した。統合スイート、関数呼び出し、0xFCベンチマークをそれぞれ独立プロセスで3回実行した。各行の範囲はプロセス間の最小値と最大値である。
-- AMD uProfとLinux `perf` はこの環境にない。記載値はwall-clock計測で、ハードウェアカウンタは取得していない。
-- 数値はホスト上のPySIM結果であり、組み込みCPUの実行時間やROM/RAM使用量を表さない。
-
-### 統合スイート
-
-`run_all.py` の6系統（linear memory、vMMIO、JIT、JIT cache、JIT aging、AO-Bench）は3回とも完走した。所要時間の中央値は34.94秒（34.88–35.16秒）だった。
-
-| ワークロード | Python Interpreter | C++ Interpreter | Hybrid JIT |
-| :--- | ---: | ---: | ---: |
-| 100,000回算術ループ | 4,743.28 ms (4,718.33–4,793.02) | 104.42 ms (103.13–104.62) | 140.84 ms (140.04–146.48) |
-| AO-Bench、32×16、1,600 ray | 6,425.38 ms (6,367.81–6,469.92) | 34.40 ms (34.21–34.78) | 1,356.95 ms (1,351.33–1,361.90) |
-
-算術ループではC++ InterpreterがPythonの45.4倍、JITがPythonの33.7倍速かった。JITはC++ Interpreterより1.35倍遅かった。AO-BenchではC++ InterpreterがPythonの186.8倍、JITがPythonの4.73倍速かった。JITはC++ Interpreterより39.5倍遅かった。AO-BenchのJIT値はトレース検出・コンパイルを含む初回実行である。
-
-算術ループの3経路はすべて`704,982,704`を返した。AO-Benchの3経路は各528バイトの描画出力が完全一致し、各試行で1,600 rayを処理した。
-
-### 関数呼び出し
-
-各関数呼び出しワークロードは10,000回を実行した。表の「1回あたり」はループ全体の時間を呼び出し回数で割った値であり、baselineとの差分ではない。PythonとC++の全ケースで結果は`50,005,000`に一致した。
+関数呼び出しベンチマークは10,000回の呼び出しを測り、各経路は`50,005,000`を返した。各JSON内の3反復の中央値を、独立プロセス3回分で集計した。
 
 | 経路 | `call` 合計 / 1回あたり | `call_indirect` 合計 / 1回あたり |
 | :--- | ---: | ---: |
-| Python Interpreter | 1,060.28 ms (1,030.04–1,076.97) / 106.03 µs | 1,104.94 ms (1,074.04–1,136.49) / 110.49 µs |
-| C++ Interpreter | 11.84 ms (11.54–12.20) / 1.184 µs | 11.67 ms (11.63–12.04) / 1.167 µs |
+| Python Interpreter | 994.73 ms（976.01–1,029.00） / 99.47 µs（97.60–102.90） | 1,056.44 ms（1,036.21–1,098.92） / 105.64 µs（103.62–109.89） |
+| C++ Interpreter | 2.58 ms（2.53–4.31） / 0.258 µs（0.253–0.431） | 2.81 ms（2.65–4.58） / 0.281 µs（0.265–0.458） |
 
-### 線形メモリ、vMMIO、0xFC、vDMA
+JSON: [1回目](results/bench_call_dispatch_retake_20261005_run1.json)、[2回目](results/bench_call_dispatch_retake_20261005_run2.json)、[3回目](results/bench_call_dispatch_retake_20261005_run3.json)。
 
-`run_all.py`のメモリとvMMIO計測値を示す。各値は3プロセスの中央値と範囲である。
-
-| 指標 | 中央値 | 範囲 |
-| :--- | ---: | ---: |
-| Raw bytearray 32-bit R/W | 102.5 ns/op | 102.3–121.9 |
-| 8-bit byte R/W | 34.07 M ops/s | 30.48–34.07 |
-| 16-bit half-word R/W | 9.78 M ops/s | 9.22–9.82 |
-| 境界チェック | 57.8 ns/op | 57.6–71.0 |
-| vMMIO linear bypass | 277.0 ns/op | 274.0–278.5 |
-| 線形RAM帯域 | 13.77 MB/s | 13.69–13.92 |
-| Direct-mapped TLB hit | 922.2 ns/hit | 912.8–935.6 |
-| Folding XOR hash | 83.0 ns/op | 82.6–84.3 |
-| TLB miss後のFlatMap探索 | 1,062 ns/walk | 1,031.9–1,071.0 |
-| TLB hit / miss探索比 | 1.14× | 1.13–1.16 |
-| Static syscall dispatch | 766.4 ns/dispatch | 747.4–798.0 |
-| RBAC task isolation check | 769.8 ns/check | 748.9–794.5 |
-
-0xFCの飽和変換8種は38の意味境界ケースで確認した。下表の変換値は8 subopcode・3プロセスの各中央値をまとめた中央値と範囲である。`memory.copy`と`memory.fill`の値は操作1回あたりである。
+0xFCベンチマークは、各プロセス内で3反復の中央値を記録した。表の中央値と範囲は独立プロセス3回分である。意味チェックは飽和変換38境界ケース、線形memory.copy／memory.fill 4ケース、vDMA 4経路で通過した。
 
 | 操作 | サイズ | C++ Interpreter | Python Interpreter |
 | :--- | ---: | ---: | ---: |
-| 飽和数値変換8種 | — | 1.58 µs (1.46–3.20) | 45.45 µs (43.21–55.25) |
-| `memory.copy` | 16 B | 1.27 µs (1.25–1.31) | 54.18 µs (47.00–64.92) |
-| `memory.copy` | 256 B | 1.54 µs (1.53–1.56) | 58.45 µs (56.97–58.56) |
-| `memory.copy` | 4,096 B | 8.43 µs (7.03–8.45) | 246.09 µs (244.16–246.39) |
-| `memory.fill` | 16 B | 1.25 µs (1.21–1.31) | 46.41 µs (45.55–47.29) |
-| `memory.fill` | 256 B | 1.54 µs (1.54–1.59) | 52.63 µs (51.72–55.23) |
-| `memory.fill` | 4,096 B | 7.46 µs (7.26–7.53) | 164.83 µs (158.41–169.34) |
+| 飽和数値変換8種 | — | 0.502 µs（0.471–0.551） | 43.309 µs（40.219–50.885） |
+| `memory.copy` | 16 B | 0.281 µs（0.276–0.300） | 45.134 µs（44.942–52.579） |
+| `memory.copy` | 256 B | 0.528 µs（0.502–0.573） | 56.815 µs（56.061–68.450） |
+| `memory.copy` | 4,096 B | 4.977 µs（4.968–4.993） | 241.670 µs（238.381–289.741） |
+| `memory.fill` | 16 B | 0.304 µs（0.274–0.304） | 43.701 µs（43.616–50.846） |
+| `memory.fill` | 256 B | 0.492 µs（0.480–0.549） | 50.523 µs（49.345–58.108） |
+| `memory.fill` | 4,096 B | 5.291 µs（4.864–5.740） | 159.964 µs（153.899–186.738） |
 
-64 B vDMA転送は各ルート512回で、転送回数、物理アドレス、転送後データを照合した。C++側の時間にはC++ InterpreterからPysimのPython vDMAサービスへ移る境界を含む。
+64 B vDMA転送は各経路512回である。C++経路の時間にはC++ InterpreterからPySIMのPython vDMAサービスへ移る境界を含む。
 
 | ルート | C++経路 | Python経路 |
 | :--- | ---: | ---: |
-| linear → DYNAMIC | 35.77 µs (35.59–40.25) | 56.96 µs (56.90–66.11) |
-| SHM → linear | 35.43 µs (34.64–45.54) | 60.37 µs (55.90–69.28) |
-| DYNAMIC → PASSTHROUGH | 38.07 µs (37.57–47.93) | 61.30 µs (59.30–63.12) |
-| PASSTHROUGH → SHM | 41.02 µs (39.81–43.85) | 62.13 µs (62.08–80.45) |
+| linear → DYNAMIC | 28.321 µs（27.356–29.662） | 60.371 µs（59.690–66.895） |
+| SHM → linear | 24.394 µs（24.313–26.156） | 56.603 µs（56.327–63.345） |
+| DYNAMIC → PASSTHROUGH | 30.585 µs（30.535–33.377） | 63.092 µs（62.611–70.507） |
+| PASSTHROUGH → SHM | 30.366 µs（29.452–32.375） | 62.987 µs（61.817–70.114） |
 
-### JITとキャッシュ
-
-| 指標 | 中央値 | 範囲 |
-| :--- | ---: | ---: |
-| Copy-and-Patch compile throughput | 36,393 traces/s | 33,593–36,956 |
-| 1 traceあたりcompile時間 | 27.48 µs | 27.06–29.77 |
-| 2-bit card状態確認 | 579.3 ns | 572.7–595.2 |
-| JIT entry lookup | 456.9 ns | 455.1–459.9 |
-| trace-header helper dispatch | 3.70 µs | 3.52–3.81 |
-| cache churn | 128,661 evictions/s | 128,372–129,219 |
-
-Working set 8件と24件のcache hit率は100%、100件のthrashing時は92.44%だった。Oldest-only promotionとeviction時のchain unlinkは3試行で通過した。添付3ログのPC衝突ケースは変更前の関数番号付きPCを確認した記録である。現在のベンチマーク実装は同じCode-section PCを別モジュールの個別キャッシュで検索するケースへ更新したが、この更新は未実行である。
-
-JIT agingの既定値`U=2, O=8`では652 tracesをcompileし608 tracesをpurgeした。agingなしでは745 tracesをcompileし693 tracesをpurgeした。既定値でのaging処理時間は1.33 ms/variantだった。両構成のプログラム結果は一致した。
-
-### 不具合修正と再現
-
-JIT agingベンチマークが通常の`Interpreter`を`RuntimeEngine`へ渡し、C++ dispatchに必要な実行コンテキストを作成していなかったため、`NativeInterpreter`を使うよう修正した。また、0xFCベンチマークもnative側の測定器に`Interpreter`を使っていたため、native側を`NativeInterpreter`へ切り替えた。修正後、統合スイートは3回完走した。
-
-```bash
-UV_CACHE_DIR=/tmp/fireball-uv-cache UV_OFFLINE=true UV_NO_SYNC=true \
-  bash experiments/pysim/native/tier2_runtime/interpreter/build_native.sh
-UV_CACHE_DIR=/tmp/fireball-uv-cache UV_OFFLINE=true UV_NO_SYNC=true \
-  bash experiments/pysim/native/tier3_plugins/jit/build_native.sh
-for trial in 1 2 3; do
-  taskset -c 2 env UV_CACHE_DIR=/tmp/fireball-uv-cache UV_OFFLINE=true UV_NO_SYNC=true \
-    uv run --project . --offline --no-sync python experiments/pysim/benchmarks/run_all.py \
-    > "experiments/pysim/benchmarks/results/run_all_20261001_verified_${trial}.log"
-done
-for trial in 1 2 3; do
-  taskset -c 2 env UV_CACHE_DIR=/tmp/fireball-uv-cache UV_OFFLINE=true UV_NO_SYNC=true \
-    uv run --project . --offline --no-sync python experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py \
-    --iterations 10000 --repeats 3 --variant both --workload all \
-    > "experiments/pysim/benchmarks/results/bench_call_dispatch_current_20261001_run${trial}.json"
-done
-for trial in 1 2 3; do
-  taskset -c 2 env UV_CACHE_DIR=/tmp/fireball-uv-cache UV_OFFLINE=true UV_NO_SYNC=true \
-    uv run --project . --offline --no-sync python experiments/pysim/benchmarks/interpreter/bench_fc.py \
-    > "experiments/pysim/benchmarks/results/bench_fc_final_20261001_run${trial}.json"
-done
-```
-
-ログとJSONは[統合スイート1回目](results/run_all_20261001_verified_1.log)、[2回目](results/run_all_20261001_verified_2.log)、[3回目](results/run_all_20261001_verified_3.log)、[関数呼び出し計測](results/bench_call_dispatch_current_20261001_run1.json)、[0xFC計測](results/bench_fc_final_20261001_run1.json)に保存した。各ファイル名末尾`run2`、`run3`に残りの試行を保存した。
+JSON: [1回目](results/bench_fc_retake_20261005_run1.json)、[2回目](results/bench_fc_retake_20261005_run2.json)、[3回目](results/bench_fc_retake_20261005_run3.json)。

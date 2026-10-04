@@ -1,0 +1,80 @@
+================================================================================
+        Fireball PySIM Unified Performance Benchmark Suite           
+================================================================================
+
+>>> [1/6] Running Linear Memory Benchmark...
+
+>>> [2/6] Running vMMIO & Address Translation Benchmark...
+
+>>> [3/6] Running JIT Compiler & Runtime Benchmark...
+
+>>> [4/6] Running JIT Cache Metabolism & Corner Cases Benchmark...
+
+>>> [5/6] Running JIT Card Aging Benchmark (Cold-Function Pollution)...
+
+>>> [6/6] Running 3D Ambient Occlusion Raytracing (AO-Bench)...
+
+================================================================================
+                     ALL BENCHMARK RESULTS SUMMARY                       
+================================================================================
+
+[Section 1: Linear Memory & Guest RAM Access]
+--------------------------------------------------------------------------------
+  * Raw Bytearray 32-bit R/W (Baseline): 9.43 M ops/s  (106.0 ns/op)
+  * 8-bit Byte R/W Throughput:          31.77 M ops/s
+  * 16-bit Half-Word R/W Throughput:     9.45 M ops/s
+  * Single-CMP Bound Check Overhead:    15.84 M ops/s  (63.1 ns/op)
+  * vMMIO Fast Bypass (Bit 31 == 0):    3.64 M ops/s  (274.4 ns/op)
+  * Linear RAM Bandwidth:               13.90 MB/s
+
+[Section 2: vMMIO Virtual Devices & Address Translation]
+--------------------------------------------------------------------------------
+  * Direct-Mapped TLB Hit (O(1)):       0.98 M ops/s  (1021.3 ns/hit)
+  * Folding XOR Hash Calculation:       9.95 M ops/s  (100.5 ns/op)
+  * TLB Miss -> FlatMap Walk (O(logN)): 0.93 M ops/s  (1072.0 ns/walk)
+  * TLB Hit / FlatMap Walk Ratio:        1.05x
+  * Static Syscall Dispatch (FC=0xC):   1.33 M ops/s  (751.8 ns/dispatch)
+  * RBAC Task Isolation Verification:   1.23 M ops/s  (810.2 ns/check)
+
+[Section 3: JIT Compiler & Runtime Dispatch]
+--------------------------------------------------------------------------------
+  * Copy-and-Patch Compile Speed:       35,468 Traces/sec  (28.19 us/trace)
+  * Compile Cost per WASM Instruction:  7048.6 ns/opcode
+  * 2-Bit Card Marking O(1) Check:      1.68 M ops/s  (594.4 ns/check)
+  * Sparse JIT Entry Binary Search:      2.21 M ops/s  (452.6 ns/lookup)
+  * Arithmetic Loop (100,000 iters):    Python: 4678.40 ms | Native interp: 20.42 ms | JIT: 19.19 ms
+  * Differential Result Check:          Python=704,982,704 | Native interp=704,982,704 | JIT=704,982,704 (MATCH)
+  * JIT vs Python handlers:              243.79x faster
+  * JIT vs native interpreter:           1.06x faster
+  * JIT Execution Coverage:             200,001 trace invocations, 198,439 dispatcher trace transitions, 3 interpreter steps
+  * PIC Trace-Header Helper Tail Jump:  0.44 M ops/s  (2267.5 ns/dispatch; 10,000 calls)
+
+[Section 4: JIT Cache Metabolism & Corner Cases]
+--------------------------------------------------------------------------------
+  * Oldest-Only Promotion Invariant:    [PASS] (Warm hits=0 promos, Oldest hit=+1 promo)
+  * Small Working Set (N=8 <= Active):  Hit Rate = 100.00%  (0.84 M lookups/s)
+  * Medium Working Set (N=24 <= 3Bank): Hit Rate = 100.00%  (0.71 M lookups/s)
+  * Large Working Set (N=100 Thrash):   Hit Rate = 92.44%  (0.20 M lookups/s)
+  * Cache Metabolism & Churn Rate:      115,128 Evictions / Sec (4976 generations)
+  * Dangling Chain Unlinking Safety:    [PASS] (All evicted traces unlinked cleanly)
+  * Module-scoped Code-section PC:      [PASS] (each module owns its PC lookup)
+
+[Section 5: JIT Card Aging under Cache Pressure]
+--------------------------------------------------------------------------------
+  * hot only (ideal)               compiles=   16  purged=    0  rotations=   0  JIT share= 84.6%  time=    92 ms  compile=   0.3 ms  aging= 0.00 ms
+  * no aging                       compiles=  727  purged=  656  rotations=  49  JIT share= 80.8%  time=   634 ms  compile=  12.8 ms  aging= 0.00 ms
+  * aging U=1 O=4                  compiles=  709  purged=  650  rotations=  47  JIT share= 80.7%  time=   607 ms  compile=  12.4 ms  aging= 0.35 ms
+  * aging U=2 O=8 (config default) compiles=  698  purged=  631  rotations=  45  JIT share= 80.7%  time=   598 ms  compile=  12.7 ms  aging= 0.49 ms
+  * aging U=8 O=32                 compiles=  601  purged=  549  rotations=  40  JIT share= 80.7%  time=   570 ms  compile=  11.3 ms  aging= 1.12 ms
+
+[Section 6: 3D Raytracing Ambient Occlusion (AO-Bench)]
+--------------------------------------------------------------------------------
+  * Resolution & Sampling:              32 x 16 (1,600 rays / frame)
+  * Python reference interpreter:        6148.23 ms
+  * C++ threaded interpreter:          13.43 ms  (119,124 Rays / Sec)
+  * Tier 3 (Hybrid + JIT):              18.21 ms  (87,870 Rays / Sec)
+  * JIT vs C++ interpreter:             1.36x slower
+  * JIT trace transitions:              81,590
+  * Active JIT Cache Bank Traces:       1 compiled traces
+================================================================================
+[PASS] All benchmarks completed successfully in 29.95 seconds.

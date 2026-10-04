@@ -27,6 +27,9 @@ from _bootstrap import configure_import_paths
 
 configure_import_paths(_PYSIM_DIR, _BENCH_DIR)
 
+from bump_allocator import BumpAllocator
+from ipc_router import Role
+from scheduler import Task
 from system import System
 from system_containers import StaticVector
 from tier2_runtime.hal.dispatch import HalBufferMapStatus
@@ -47,6 +50,7 @@ CONVERSION_ITERATIONS = 2_048
 COPY_CASES = ((16, 8_192), (256, 2_048), (4_096, 128))
 FILL_CASES = ((16, 8_192), (256, 2_048), (4_096, 128))
 VDMA_ITERATIONS = 512
+VDMA_BUFFER_OFFSET = 0x40
 ROUNDS = 3
 
 _TYPE_I32 = 0x7F
@@ -319,7 +323,9 @@ def _benchmark_module() -> Module:
 class VdmaModel:
     """Own a real PySIM System and use its vMMIO-backed vDMA transfer service."""
 
-    __slots__ = ("calls", "last_transfer", "linear_memory", "shared_block", "system")
+    __slots__ = ("calls", "last_transfer", "linear_memory", "shared_block", "system", "task")
+
+    task: Task
 
     def __init__(self, linear_memory: bytearray):
         from tier2_runtime.memory.manager import SharedBlock
@@ -329,23 +335,28 @@ class VdmaModel:
         self.linear_memory = linear_memory
         self.system = System()
         self.shared_block: SharedBlock | None = None
-        self.system.bind_runtime(linear_memory)
-        assert self.system.pool.map_for_io(1) == HalBufferMapStatus.MAPPED
-        shared_result = self.system.memory_manager.allocate_shared(1024)
-        assert shared_result.is_ok
-        self.shared_block = shared_result.unwrap()
-        for region, function_code in (
-            ("linear", 0),
-            ("dynamic", FC_DYNAMIC),
-            ("shm", FC_SHM),
-            ("passthrough", FC_PASSTHROUGH),
-        ):
-            address = self.address(region)
-            view = self.backing_view(address, 64, is_write=True)
-            view[:] = bytes((index + function_code * 17) & 0xFF for index in range(64))
+        task_id = self.system.scheduler.spawn("bench_fc_vdma", role=Role.RUNTIME)
+        task = self.system.scheduler.get_task(task_id)
+        assert task is not None
+        self.task = task
+        with self.system.scheduler.task_context(self.task):
+            self.system.bind_runtime(linear_memory)
+            assert self.system.pool.map_for_io(1) == HalBufferMapStatus.MAPPED
+            shared_result = self.system.memory_manager.allocate_shared(1024)
+            assert shared_result.is_ok
+            self.shared_block = shared_result.unwrap()
+            for region, function_code in (
+                ("linear", 0),
+                ("dynamic", FC_DYNAMIC),
+                ("shm", FC_SHM),
+                ("passthrough", FC_PASSTHROUGH),
+            ):
+                address = self.address(region)
+                view = self.backing_view(address, 64, is_write=True)
+                view[:] = bytes((index + function_code * 17) & 0xFF for index in range(64))
 
     def address(self, region: str) -> int:
-        offset = 0x100
+        offset = VDMA_BUFFER_OFFSET
         if region == "linear":
             return offset
         if region == "dynamic":
@@ -360,20 +371,23 @@ class VdmaModel:
         if address >> 31 == 0:
             assert address + length <= len(self.linear_memory)
             return memoryview(self.linear_memory)[address : address + length]
-        backing, offset = self.system._vdma_region(address, length, is_write)
+        with self.system.scheduler.task_context(self.task):
+            backing, offset = self.system._vdma_region(address, length, is_write)
         assert backing is not None and offset is not None
         return memoryview(backing)[offset : offset + length]
 
     def transfer(self, source: int, destination: int, length: int) -> int:
         self.calls += 1
         self.last_transfer = (source, destination, length)
-        return self.system.vdma_transfer(source, destination, length)
+        with self.system.scheduler.task_context(self.task):
+            return self.system.vdma_transfer(source, destination, length)
 
     def close(self) -> None:
-        self.system.pool.unmap_after_io(1)
-        if self.shared_block is not None:
-            self.shared_block.drop()
-            self.shared_block = None
+        with self.system.scheduler.task_context(self.task):
+            self.system.pool.unmap_after_io(1)
+            if self.shared_block is not None:
+                self.shared_block.drop()
+                self.shared_block = None
         self.system.unbind_runtime()
         self.system.shutdown()
 
@@ -413,9 +427,11 @@ def _invoke(
 
 
 def _new_interpreter(module: Module, bindings: InterpreterBindings, native: bool) -> Interpreter:
-    """Select the Python reference or strict C++ interpreter for this measurement."""
+    """Create a measured interpreter with its own reclaimable runtime arena."""
     interpreter_type = NativeInterpreter if native else Interpreter
-    return interpreter_type(module, bindings)
+    # Parsed module metadata already lives in module.allocator. Do not charge each
+    # short-lived interpreter's execution descriptors to that persistent load arena.
+    return interpreter_type(module, bindings, bump_allocator=BumpAllocator())
 
 
 def _measure(

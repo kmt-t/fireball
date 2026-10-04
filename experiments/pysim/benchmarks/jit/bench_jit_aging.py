@@ -20,7 +20,6 @@ from __future__ import annotations
 import statistics
 import sys
 import time
-from collections.abc import Iterable
 from dataclasses import dataclass, replace
 from pathlib import Path
 
@@ -39,7 +38,6 @@ from bump_allocator import BumpAllocator
 from config import FB_CONF_JIT_AGING_STEP_SCAN_BYTES, FB_CONF_JIT_AGING_STEP_UNITS
 from tier2_runtime.interpreter.interpreter import InterpreterBindings, NativeInterpreter
 from tier2_runtime.runtime.engine import RuntimeEngine
-from tier2_runtime.wasm.module import LocalWidthMap, WasmOperand
 from tier2_runtime.wasm.reader import parse
 from tier3_plugins.jit.jit_cache import JITTrace
 from tier3_plugins.jit.jit_manager import JITRuntimeManager
@@ -81,28 +79,58 @@ class _CountingCompiler:
         self.inner = TraceCompiler()
         self.compiles = 0
         self.compile_ns = 0
+        self._compile_started_ns: int | None = None
 
-    def compile_trace(
+    def compile_wasm_trace(
         self,
-        head_pc: int,
-        instructions: Iterable[tuple[int, WasmOperand]],
+        code_address: int,
+        code_bytes: int,
+        code_offset: int,
+        byte_span: int,
         next_pc: int | None,
         loops_to: int | None,
-        byte_span: int,
-        local_widths: LocalWidthMap,
-    ) -> JITTrace | None:
+        local_width_address: int,
+        local_width_bytes: int,
+        local_count: int,
+        slot_words: int,
+    ) -> tuple[bytes, int, int, int, int, int, int, int, int] | None:
+        assert self._compile_started_ns is None
         self.compiles += 1
-        start = time.perf_counter_ns()
-        trace = self.inner.compile_trace(
-            head_pc,
-            instructions,
+        self._compile_started_ns = time.perf_counter_ns()
+        native_result = self.inner.compile_wasm_trace(
+            code_address,
+            code_bytes,
+            code_offset,
+            byte_span,
             next_pc,
             loops_to,
-            byte_span,
-            local_widths,
+            local_width_address,
+            local_width_bytes,
+            local_count,
+            slot_words,
         )
+        if native_result is None:
+            self._finish_compile()
+        return native_result
+
+    def build_runtime_trace(
+        self,
+        head_pc: int,
+        native_result: tuple[bytes, int, int, int, int, int, int, int, int],
+        next_pc: int | None,
+        loops_to: int | None,
+    ) -> JITTrace | None:
+        assert self._compile_started_ns is not None
+        try:
+            return self.inner.build_runtime_trace(head_pc, native_result, next_pc, loops_to)
+        finally:
+            self._finish_compile()
+
+    def _finish_compile(self) -> None:
+        start = self._compile_started_ns
+        assert start is not None
         self.compile_ns += time.perf_counter_ns() - start
-        return trace
+        self._compile_started_ns = None
 
 
 class _RotationHook:

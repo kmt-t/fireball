@@ -70,16 +70,13 @@ Interpreter handlerとJIT trace entryが共有する4論理引数のx64関数入
 
 | オフセット | フィールド | サイズ | 用途 |
 | :--- | :--- | ---: | :--- |
-| `+0x00` | `head_wasm_pc` | 4バイト | トレース先頭のWASM PC |
-| `+0x04` | `trace_byte_size` | 2バイト | ヘッダを含むトレース全体の長さ |
-| `+0x06` | `flags` | 1バイト | 昇格・ループ先頭などの状態 |
-| `+0x07` | `variant_id` | 1バイト | 将来のレジスタ状態variant用の予約値。現在のx64生成器は`0`を出力し、variant選択・variant間chainは行わない |
-| `+0x08` | `chain_target_addr` | 8バイト | 共通chain dispatcherが読み取る次trace bodyの機械語アドレス。未接続時は0 |
-| `+0x10` | `helper_target_addr` | 8バイト | trace固有のC helperアドレス |
+| `+0x00` | `chain_target_addr` | 8バイト | 共通chain dispatcherが読み取る次trace bodyの機械語アドレス。未接続時は0 |
+| `+0x08` | `helper_target_addr` | 8バイト | trace固有のC helperアドレス |
 
-ヘッダ全体は24バイトである。traceのentry stubは `+0x18` から始まる。
+ヘッダ全体は16バイトである。traceのentry stubは `+0x10` から始まる。
 
-`chain_next` PCは実行時cache descriptorに保持する。物理ヘッダには重複して格納しない。
+ヘッダはJITコードから相対参照できるコード近傍に置く。生成コードまたは共通コードが読み取るtrace固有の値だけを保持する。
+先頭PC、コード長、昇格状態、論理的な後続PCはcacheの管理情報に保持する。未使用のvariant予約欄は設けない。
 
 `common_prologue_offset`、`common_epilogue_offset`、`common_helper_offset`、絶対アドレスpool位置はビルド構成または配置時のrelocation情報である。これらはtraceごとに物理ヘッダへ保持しない。
 
@@ -92,6 +89,8 @@ chainはtrace終端から共通コード領域のchain dispatcherへ移り、そ
 ### JITランタイム呼出し契約
 
 Tier 2のJIT runtime APIは、Tier 3実行器にモジュール登録、基本ブロック情報、履歴記録、トレース検索、およびchain終端情報を提供する。APIはトレースキャッシュの配置・置換・リンク構造を公開しない。
+
+ネイティブdispatch境界には、ソート済みtrace記述表と、既存候補マスクの非所有参照を渡す。候補マスクはカード数、カードshift、バイト長を伴う。候補PC列へ展開しない。履歴は有界のPC配列とする。Interpreterは制御処理で確定したブロック開始PCを保持し、通常命令のあるブロックだけを記録する。Tier 3は履歴転送時にLoader索引を検索しない。
 
 関数呼出し記述子は、関数コード、ローカル幅、引数搬送、戻り境界を持つ96バイトの固定構造体である。関数呼出しスタックは、32個の記述子を保持する固定長配列である。定数バッファ参照、関数参照、モジュール参照は、WASMコードと関数メタデータを渡す非所有の標準レイアウト構造体である。この境界に文字列、`std::vector`、仮想関数、例外を含めない。 `{META_NoStdVector}`
 

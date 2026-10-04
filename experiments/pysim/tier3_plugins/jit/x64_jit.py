@@ -99,7 +99,7 @@ class TraceCompiler:
             trace.helper_header_patch_offset,
             trace.helper_exit_patch_offset,
             trace.chain_dispatch_patch_offset,
-            trace.header.common_helper_offset,
+            trace.common_helper_offset,
         )
         trace.fn = fn
         trace.raw_addr = raw_addr
@@ -128,12 +128,9 @@ class TraceCompiler:
             exit_patch_offset,
             chain_dispatch_patch_offset,
         ) = native_result
-        header = JITTraceHeader(head_wasm_pc=head_pc)
-        if helper_index >= 0:
-            header.common_helper_offset = helper_entry_offset(helper_index)
+        header = JITTraceHeader()
         header.helper_target_addr = helper_target_addr
         total_size = JIT_X64_TRACE_HEADER_BYTES + len(native_body)
-        header.trace_byte_size = total_size
         full_blob = bytearray(header.pack()) + native_body
         result_words = (
             2 if helper_index >= 0 and (helper_index <= 2 or 7 <= helper_index <= 10) else 1
@@ -156,4 +153,6 @@ class TraceCompiler:
             helper_target_addr=helper_target_addr,
         )
         trace.header = header
+        if helper_index >= 0:
+            trace.common_helper_offset = helper_entry_offset(helper_index)
         return trace

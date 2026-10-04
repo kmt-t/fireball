@@ -1,7 +1,7 @@
 """CTL model for optional Tier 3 JIT hotspot history and boundary analysis."""
 
 from pyModelChecking import Kripke
-from pyModelChecking.CTL import AF, AG, And, AtomicProposition, Imply, Not
+from pyModelChecking.CTL import AF, AG, And, AtomicProposition, Imply, Not, Or
 
 BACKS = ["components/tier3_plugins/jit_runtime.md"]
 
@@ -9,6 +9,12 @@ BACKS = ["components/tier3_plugins/jit_runtime.md"]
 def build_model(*, guards: bool = True) -> Kripke:
     states = [
         "start",
+        "control_pending",
+        "control_only_complete",
+        "body_observed",
+        "body_resuming",
+        "bad_resume_activity",
+        "bad_control_lookup",
         "interpreter_recorded",
         "analysis_pending",
         "analyzing",
@@ -28,6 +34,15 @@ def build_model(*, guards: bool = True) -> Kripke:
         "bad_destroy_retained",
     ]
     transitions = [
+        ("start", "control_pending"),
+        ("control_pending", "control_only_complete"),
+        ("control_pending", "body_observed"),
+        ("body_observed", "interpreter_recorded"),
+        ("start", "body_resuming"),
+        ("body_resuming", "control_pending"),
+        ("bad_resume_activity", "bad_resume_activity"),
+        ("control_only_complete", "control_only_complete"),
+        ("bad_control_lookup", "bad_control_lookup"),
         ("start", "interpreter_recorded"),
         ("start", "jit_running"),
         ("start", "disabled"),
@@ -48,6 +63,8 @@ def build_model(*, guards: bool = True) -> Kripke:
     if not guards:
         transitions.extend(
             [
+                ("control_pending", "bad_control_lookup"),
+                ("body_resuming", "bad_resume_activity"),
                 ("jit_running", "bad_analysis_in_jit"),
                 ("interpreter_recorded", "bad_event_sink_coupling"),
                 ("analysis_pending", "bad_analysis_stall"),
@@ -68,6 +85,17 @@ def build_model(*, guards: bool = True) -> Kripke:
     )
     labels = {
         "start": {"start"},
+        "control_pending": {"control_only", "saved_pc", "head_pending", "entry_or_control"},
+        "body_observed": {"ordinary_instruction", "saved_pc", "head_pending", "entry_or_control"},
+        "body_resuming": {"block_continuation"},
+        "bad_resume_activity": {
+            "block_continuation",
+            "trace_lookup",
+            "hotspot_write",
+            "head_pending",
+        },
+        "control_only_complete": {"control_only"},
+        "bad_control_lookup": {"control_lookup", "control_only", "hotspot_write"},
         "interpreter_recorded": {"history_present", "hotspot_write"},
         "analysis_pending": {"history_present", "analysis_requested"},
         "analyzing": {"history_present", "analysis_running"},
@@ -103,6 +131,47 @@ def properties():
     history_present = AtomicProposition("history_present")
     runtime_destroyed = AtomicProposition("runtime_destroyed")
     return [
+        {
+            "name": "new_block_head_requires_function_or_control_entry",
+            "kind": "safety",
+            "logic": "CTL",
+            "formula": AG(
+                Imply(
+                    AtomicProposition("head_pending"),
+                    AtomicProposition("entry_or_control"),
+                )
+            ),
+            "violation": AtomicProposition("block_continuation"),
+            "expect": True,
+        },
+        {
+            "name": "memory_helper_continuation_does_not_lookup_or_record_again",
+            "kind": "safety",
+            "logic": "CTL",
+            "formula": AG(
+                Imply(
+                    AtomicProposition("block_continuation"),
+                    Not(Or(AtomicProposition("trace_lookup"), AtomicProposition("hotspot_write"))),
+                )
+            ),
+            "violation": AtomicProposition("block_continuation"),
+            "expect": True,
+        },
+        {
+            "name": "control_only_intervals_do_not_lookup_or_record",
+            "kind": "safety",
+            "logic": "CTL",
+            "formula": AG(
+                Imply(
+                    AtomicProposition("control_only"),
+                    Not(
+                        Or(AtomicProposition("control_lookup"), AtomicProposition("hotspot_write"))
+                    ),
+                )
+            ),
+            "violation": AtomicProposition("control_lookup"),
+            "expect": True,
+        },
         {
             "name": "jit_only_execution_does_not_record_or_analyze_hotspots",
             "kind": "safety",

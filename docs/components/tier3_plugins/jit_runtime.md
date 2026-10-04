@@ -2,6 +2,7 @@
 <!-- evidence:
      formal: formal/jit_cache_model.py
      formal: formal/jit_hotspot_model.py
+     formal: formal/jit_trace_execution_model.py
      benchmark_spec: benchmarks/jit_runtime_bench_spec.md
      benchmark: ../../../experiments/pysim/benchmarks/jit/bench_jit.py
      benchmark_record: ../../../experiments/pysim/benchmarks/BENCHMARK_REPORT.md
@@ -57,12 +58,19 @@ JIT拡張はインタープリタに対するプラグインに近い選択可�
   - `1: EXECUTED` (実行済み)
   - `2: HOT` (コンパイル要求中)
   - `3: COMPILED` (コンパイル済み / オンデマンド許可)
-- **コンパイル対象可否マスク (Trackable Mask)**: Tier 3 JIT拡張がコード領域全体に対して一枚だけ持つ、カードごとの 1 ビット状態表である。ロード時のブロックdescriptorは正確な候補head PCと静的適格性を保持する。実行時はdescriptorでhead PCを確認した後、コード領域マスクでカード単位の抑止を確認する。`next_pc` を持ち、かつバイト長が `min_trace_bytes` 以上のブロックを対象とする。コンパイル失敗時はそのカードを解除し、同じカードに属する候補も外す。 `{TrackableBlockMask}` <!-- definition: {TrackableBlockMask} -->
+- **コンパイル対象可否マスク (Trackable Mask)**: Tier 3 JIT拡張がコード領域全体に対して一枚だけ持つ、カードごとの 1 ビット状態表である。ロード時のブロックdescriptorは正確な候補head PCと静的適格性を保持する。実行時は制御処理で確定したブロック開始PCを保持し、コード領域マスクでカード単位の抑止を確認する。通常命令を実行したブロックだけを履歴へ記録する。`next_pc` を持ち、かつバイト長が `min_trace_bytes` 以上のブロックを対象とする。コンパイル失敗時はそのカードを解除し、同じカードに属する候補も外す。 `{TrackableBlockMask}` <!-- definition: {TrackableBlockMask} -->
 - **カード更新表 (Card Update Bitmap)**: コード領域全体の各カードに対応する 1 ビットdirty表である。カードが `UNEXECUTED` から `EXECUTED` へ遷移した時だけ、そのカードのビットを立てる。密ビュー `fireball::bit_view<1>` として参照する。8カードを1バイトにまとめる。
 - **エイジングカーソル**: カード更新表のバイト位置を保持する整数である。モジュール登録時に 0 で初期化し、表の末尾に達したら先頭へ戻る。
 - **JITエントリ表**: モジュールごとの各バンクに `head_pc` 順で並ぶ固定容量配列である。異なるモジュールを一つの検索表へ入れる場合のキーは`(module_id, head_pc)`とする。検索は二分探索（$O(\log n)$）とし、削除済み枠は無効項目として扱う。新規キーは配列内のシフトで挿入し、削除はtombstone化する。同じキーの再挿入では無効項目を再利用する。配列容量と挿入量はバンク容量により制限される。エントリが少ないためRadix索引を設けない。
 - **ネイティブトレースディスパッチ表**: JIT拡張がキャッシュ世代に応じて作る固定容量の`NativeTraceDispatchEntry`配列である。C++ Interpreter dispatcherはこのsnapshotを直接検索し、実行中にPythonへ戻らない。
-- **x64参照コード領域 (8KB)**: x64参照構成では4KBページ2枚分の領域を使う。先頭2KBは開始処理、終了処理、x64ヘルパー呼出しコード、chain dispatcher、および絶対アドレスプールを置く非エビクション領域とし、残る2KBずつを`Bank 0 (Active)`, `Bank 1 (Warm)`, `Bank 2 (Oldest)`に割り当てる。x64トレースヘッダはtrace identityとchain/helper targetだけを保持する。共通コード領域はflushやバンクローテーションでも維持する。ARMv8-Mの領域容量、物理配置、保護方式、ヘッダ形式はすべてTBDである。
+  x64参照構成の記述枠は `JIT_CACHE_BANK_ENTRY_CAPACITY` により1バンク32件を上限とする。3面の上限は96件である。これはRAM予算の設定値であり、64バイトの既定コンストラクタ値や生成コードの平均サイズから導出しない。
+  snapshotの容量は、ロード済み基本ブロック数と全バンクの記述枠上限の小さい方とする。同一PCの常駐トレースを重複生成しない。WarmまたはOldestに存在するPCを新規insertすると契約違反とする。Oldestの昇格は既存lookup経路を使う。
+  コード領域または記述枠が満杯になれば、既存の3面ローテーションを行う。生成コードの長さは可変である。短いtraceでも記述枠の上限を超えて挿入しない。
+  ホットスポット計測には既存のTrackable Maskを借用する。候補PC配列は確保しない。C++ dispatcherはIPからカードとbit位置を求めて履歴を記録する。
+  同一カードの構造命令位置もbitが立つ。dispatcherは制御命令だけの区間ではtrace表を検索しない。関数入口または制御処理の完了を、新しいブロック候補の開始トリガーとする。そこで確定したPCを保持し、通常命令のあるブロックだけを計測する。制御命令だけの区間を履歴へ記録しない。履歴転送時にLoader索引を検索しない。メモリ操作のruntime委譲後は同じブロックの継続として扱い、次の制御境界までtrace検索と重複した履歴記録を行わない。外部呼出し・prefix委譲の完了は次ブロックの開始トリガーとする。単なるRuntime復帰や通常命令の出現を、新しい先頭の判定に使わない。trap・関数完了では開始待ち状態を解除する。
+  通常命令の観測は候補ブロック入口の専用dispatchに限定する。最初のbody命令を観測した後は、観測処理を持たない通常dispatchへ直接末尾呼出しで移る。候補外と計測無効の経路には通常命令ごとの観測判定を追加しない。
+  snapshotの記述表と履歴はモジュールごとの容量で確保する。世代更新時にも同じ容量のワークスペースを再利用する。
+- **x64参照コード領域 (8KB)**: x64参照構成では4KBページ2枚分の領域を使う。先頭2KBは開始処理、終了処理、x64ヘルパー呼出しコード、chain dispatcher、および絶対アドレスプールを置く非エビクション領域とし、残る2KBずつを`Bank 0 (Active)`, `Bank 1 (Warm)`, `Bank 2 (Oldest)`に割り当てる。x64トレースヘッダはコード近傍に置き、生成コードと共通コードが読むchain/helper targetだけを保持する。共通コード領域はflushやバンクローテーションでも維持する。ARMv8-Mの領域容量、物理配置、保護方式、ヘッダ形式はすべてTBDである。
   x64参照共通領域内の固定オフセットは次のとおりである。オフセットはコード領域先頭からの値であり、トレースヘッダのフィールド位置とは別の値である。
 
   | 共通領域オフセット | 配置物 | 容量・用途 |
@@ -80,6 +88,14 @@ JIT拡張はインタープリタに対するプラグインに近い選択可�
 - **バンク別被チェイン逆引きテーブル (Inbound Chain Index Table)**: 各キャッシュバンクへ向けたchain元のJITエントリを保持する固定長配列である。cache回転・promote時に共通chain dispatcherが参照するtarget addressを更新または解除する。
 - **前方chainメタデータ**: 実行時cache metadataの`chain_next` / `next_pc`は直線後続traceの論理PCを保持する。x64物理ヘッダの`chain_target_addr`は共通chain dispatcherがtail-jumpするresident target bodyを保持する。後方branch linkは作らず、branch handlerへ制御を戻す。
 - **実行履歴バッファ**: ホットスポット検出が有効なJIT拡張が所有する固定容量リングである。各レコードは`module_id`と`UnifiedPC`を持つ。Interpreter実行区間の終了時だけ履歴順に分析し、JIT trace/chainだけの区間では記録も分析もしない。 `{HistoryBuffer}`
+- **トレース実行回数**: JIT拡張は各`JITTrace`に32ビット符号なしカウンタ`exec_count`を所有する。RuntimeのC++ dispatcherが実行した各trace bodyを1回と数える。直接chainの後続bodyも個別に数える。lookup、コンパイル、昇格、実行前の容量不足によるfallbackは数えない。通常のRuntime統計とホットスポット計測の有効・無効にかかわらず記録する。最大値`0xFFFF_FFFF`で飽和する。snapshotはカウンタへの借用ポインタを持ち、実行中はキャッシュの更新・破棄を行わない。昇格とsnapshot再生成では値を保持する。再コンパイルした別traceは0から始める。`reset_stats`は常駐traceの測定区間を0から始め直す。
+  カウンタはtraceあたり4バイトである。x64 snapshot記述枠には8バイトのポインタを追加する。C++ dispatcherは実行後に常駐chainを走査して計数する。低水準の`JITTrace.execute`等によるdispatcher外の直接呼出しはこの計測の対象外である。
+  キャッシュはrotate、flush、および既存traceの置換による破棄の直前に、任意の`on_trace_retire(head_pc, exec_count)`収集先を呼ぶ。収集先はJIT metadataへ再入しない。収集先未接続時は履歴を蓄積しない。記録からコンパイル抑制やキャッシュ方針を変更しない。
+  記録入口は[`record_trace_execution.py`](experiments/pysim/benchmarks/jit/record_trace_execution.py)である。反復するhot関数と2回だけ呼ぶcold関数を混在させ、実行中にevictされたtraceと終了時にresidentなtraceを分けてJSONへ出力する。終了時のflushで未使用evictionを作らない。各関数の戻り値を期待値と照合する。再現コマンドは次のとおりである。
+
+  ```bash
+  uv run python experiments/pysim/benchmarks/jit/record_trace_execution.py --output /tmp/trace_execution.json
+  ```
 
 ### 3.2 内部ブロック図
 ```mermaid
@@ -120,7 +136,7 @@ flowchart TD
    - ヒットした場合はネイティブコードアドレス（`exec_trace`）を返す。
    - 次回用として高速スロットへ格納する。
 5. **ホットスポット昇格判定**:
-   - C++ Interpreterはdispatch snapshotに含まれる候補PCだけを固定履歴バッファへ記録する。yield/fallback境界を処理するTier 3 JIT拡張が履歴を分析し、カード状態を更新する。JIT trace/chainだけの実行区間では記録しない。
+   - C++ Interpreterはブロック開始PCを保持する。候補マスクが立ち、Loaderが基本ブロックとして数える通常命令を実行した場合だけ、その開始PCを固定履歴バッファへ記録する。Tier 3 JIT拡張は境界で履歴を転送し、カード状態を更新する。JIT trace/chainだけの実行区間では記録しない。
    - 実行頻度が閾値に達したカードを`HOT`のままJIT拡張内のコンパイル待ち列へ登録する。Tier 3 JIT拡張が元のWASMコードをコンパイルし、コードcacheへの挿入まで成功した場合に`COMPILED`へ遷移する。
    - コンパイル失敗時は対象bitを解除し、そのブロックを再履歴・再コンパイル対象にしない。cache evictionまたは明示flushでは、対象bitを維持したままカードを`UNEXECUTED`へ戻し、次の閾値までhotnessを再計測する。eviction後に`EXECUTED`へ戻すと1回のtouchで再び`HOT`になり、持続的にホットでないコードでもコンパイルとevictionを繰り返すおそれがある。
 6. **最小トレース長フィルタ**:
@@ -277,11 +293,11 @@ JIT trace終端の制御命令はC++ Interpreterの対応ハンドラで実行�
 
 trace chainは直線後続traceが常駐する場合に限り、trace末尾から共通コード領域のchain dispatcherへ移り、dispatcherがTraceヘッダのtarget bodyへtail-jumpする経路を指す。未接続のtargetは0で表し、共通epilogueから実行境界へ戻る。opcode別handlerの呼出しや、C++ handler後にC++ dispatcherが別traceを選ぶ遷移はchainではない。chain dispatcherは命令を判定せず、分岐helperも持たない。
 
-常駐trace表とホットスポット候補PC表は、キャッシュ世代または候補マスク世代が変わったときだけ構築する。Tier 3 JIT拡張が固定長snapshotをC++ dispatcherへ渡し、制御handler実行後もしきい値到達まではC++内で次のtraceまたはhandlerを選ぶ。Interpreterはsnapshot内の適格PCだけを固定長履歴へ記録する。Tier 3 JIT拡張はdispatch終了時に履歴を分析してカードを更新し、必要なコンパイル要求を処理する。Runtime Event Sinkはこの履歴を受け取らない。JIT無効構成はsnapshot、履歴、候補状態、コンパイラ、実行可能領域を持たない。デバッガ付き実行ではRuntimeがJIT拡張を迂回し、通常のInterpreter dispatcherを使う。
+常駐trace表はキャッシュ世代または候補マスク世代が変わったときだけ構築する。候補マスクは既存ストレージを借用する。Tier 3 JIT拡張が固定長snapshotをC++ dispatcherへ渡し、制御handler実行後もしきい値到達まではC++内で次のtraceまたはhandlerを選ぶ。Interpreterは制御処理で確定した次ブロックのPCを保持する。通常命令が現れるまでtrace表を検索しない。借用マスクが立つブロックで通常命令を実行した場合だけ、保持した開始PCを固定長履歴へ記録する。Tier 3は履歴転送時にLoader索引を検索しない。Tier 3 JIT拡張はdispatch終了時に履歴を分析してカードを更新し、必要なコンパイル要求を処理する。Runtime Event Sinkはこの履歴を受け取らない。JIT無効構成はsnapshot、履歴、候補状態、コンパイラ、実行可能領域を持たない。デバッガ付き実行ではRuntimeがJIT拡張を迂回し、通常のInterpreter dispatcherを使う。
 
 コンパイル待ち作業がないyield境界ではJIT拡張はコンパイル処理を起動しない。候補履歴が0件の実行区間では履歴を分析しない。これらの省略はyield理由、ゲスト状態、トレース選択を変更しない。
 
-常駐trace descriptor、候補PC、および観測回数は固定容量の実行時テーブルとして管理する。C++ dispatcherは有効要素数を受け取り、テーブルを直接参照して観測回数を更新する。テーブルはcache世代または候補mask世代が変化したときに再構築し、dispatcherの呼び出しごとに最大容量分をスタック上へ複製しない。テーブルの具体的な所有型はこの契約で規定しない。
+常駐trace descriptorと履歴は有界の実行時テーブルとして管理する。候補性は既存マスクを借用して判定する。C++ dispatcherは表の有効要素数とマスクのカード数を受け取り、直接参照する。テーブルはcache世代または候補mask世代が変化したときに再構築し、dispatcherの呼び出しごとに最大容量分をスタック上へ複製しない。テーブルの具体的な所有型はこの契約で規定しない。
 
 #### コンパイル済みトレース実行後の遷移手順（アクティビティ図）
 ```mermaid
@@ -336,6 +352,8 @@ flowchart TD
 ### 7.1 検証対象の不変条件
 <!-- traceability: {GOTCHA-JITR-09} -->
 - **3面キャッシュ代謝の有界性**: 循環ローテーションによる Oldest パージと新 Active 再利用を検証する。
+- **制御命令だけの区間の検索抑止**: 制御命令だけの区間ではtrace表検索と履歴記録を行わない。通常命令を実行したブロックは保持した開始PCを記録する。履歴転送がLoader索引を検索しないことを単体テストで検証する。検索と履歴記録の保護条件を形式モデルで検証する。
+- **記述枠の容量境界**: コード領域に空きがあっても、記述枠が満杯なら新しいPCを挿入せずローテーションする。有限個の枠の使用数を形式モデルで検証する。短いtraceの容量境界は単体テストで検証する。
 - **局所アンリンク安全性**: 被チェインソース$k$件だけを逆引き表から処理する。バンク再利用は全$n$項目の消去とバンク検索を伴い、$O(n + k\log n)$である。固定容量により有界だが$O(k)$のみとは主張しない。
 - **カード状態の遷移規則**: 昇格は `UNEXECUTED`、`EXECUTED`、`HOT`、`COMPILED` の順だけで進む。`UNEXECUTED` へ戻す経路は、パージ時のリセットとエイジングスイープの2つに限る。
 - **エイジング安全性**: エイジングスイープは `HOT` と `COMPILED` のカードを変更しない。`COMPILED` のカードは常駐トレースと対応し続ける。
@@ -344,6 +362,8 @@ flowchart TD
 
 ### 7.2 テスト仕様書との連携
 本コンポーネントのテストケースは[`jit_runtime_test_spec.md`](docs/qa/tier3_plugins/jit_runtime_test_spec.md)を正本とする。キャッシュモデルは`formal/jit_cache_model.py`、履歴境界モデルは`formal/jit_hotspot_model.py`を参照する。
+
+実行回数の抽象モデルは[`jit_trace_execution_model.py`](docs/components/tier3_plugins/formal/jit_trace_execution_model.py)を正本とする。実行対象外操作、chainの計数漏れ、飽和、および破棄時記録を検査する。`guards=False`では各違反を反証する。物理的なカウンタ寿命、uint32境界、および実際のC++ chain実行はTEST-JITR-72〜75で検査する。
 
 ## 8. 設計判断と参考実装
 

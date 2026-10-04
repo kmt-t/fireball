@@ -19,7 +19,7 @@ experiments/pysim/qa/tier3_plugins/jit/test_x64_jit.py
 Spec-compliant tests for Fireball Trace-based Copy-and-Patch JIT Compiler (x64_jit.py).
 Verifies:
 1. Exact CPS 4-argument calling convention: (void* ctx, void* sp, void* local_base, uint32_t tos)
-2. 24-byte x64 physical JITTraceHeader layout at offset +0x00
+2. 16-byte x64 physical JITTraceHeader layout at offset +0x00
 3. Shared common-area entry/exit routing
 4. Common-code trace chaining and hybrid tiering transitions
 (docs/components/tier3_plugins/jit_compiler.md and docs/components/tier2_runtime/interpreter.md)
@@ -264,8 +264,8 @@ def test_trace_compiler_cps_4arg_and_pic():
     )
     trace = compile_test_block(compiler, code, block, (I32, I32))
     # 1. Header and common-area offsets
-    assert trace.header.head_wasm_pc == head_pc
-    assert trace.size_bytes >= 24
+    assert trace.head_pc == head_pc
+    assert trace.size_bytes >= 16
     # 2. Direct call via CPS 4-argument C function pointer fn(ctx, sp, local_base, tos)
     locals_arr = (ctypes.c_uint32 * 8)()
     locals_arr[0] = 5
@@ -329,7 +329,7 @@ def test_x64_division_and_remainder_use_helper_boundary() -> None:
             helper_target_addr=ctypes.cast(helper, ctypes.c_void_p).value or 0,
         )
         assert trace is not None
-        assert trace.header.common_helper_offset == 352 + helper_slot * 32
+        assert trace.common_helper_offset == 352 + helper_slot * 32
         ctx = ExecutionContext()
         trace.invoke(ctx)
         assert ctx.stack[0] == expected, (operation, ctx.stack[0], expected)
@@ -413,7 +413,7 @@ def test_trace_header_helper_tail_jump_uses_per_trace_pointer():
 
     raw_blob = trace._exec_buf.read(trace.code_offset, trace.size_bytes)
     helper_addr_bytes = helper_addr.to_bytes(8, "little")
-    assert raw_blob[0x10:0x18] == helper_addr_bytes
+    assert raw_blob[0x08:0x10] == helper_addr_bytes
 
 
 def test_trace_chaining_between_traces():
@@ -722,3 +722,23 @@ if __name__ == "__main__":
         print(f"[PASS] {test.__name__}")
 
     print(f"\n[PASS] All {len(ALL_TESTS)} pure trace JIT CPS 4-arg and PIC tests passed.")
+
+
+def test_trace_generated_size_is_variable_and_uses_compact_header():
+    """TEST-JITC-23: actual generated length is independent of the 64-byte default."""
+    compiler = TraceCompiler()
+    sizes = []
+    for code in (
+        bytes((LOCAL_GET, 0, LOCAL_SET, 0)),
+        bytes((LOCAL_GET, 0, I32_CONST, 3, I32_ADD, LOCAL_SET, 0)),
+    ):
+        head, next_pc, loops_to, depth, span = extract_basic_blocks(code)[0]
+        block = BasicBlock(
+            head_pc=head, next_pc=next_pc, loops_to=loops_to, frame_depth=depth, byte_span=span
+        )
+        trace = compile_test_block(compiler, code, block, (I32,))
+        assert trace.code_blob is not None
+        assert trace.size_bytes == len(trace.code_blob)
+        assert trace.code_blob[:16] == trace.header.pack()
+        sizes.append(trace.size_bytes)
+    assert sizes[1] > sizes[0]

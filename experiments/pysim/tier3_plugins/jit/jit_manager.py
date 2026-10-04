@@ -9,12 +9,8 @@ from typing import Protocol
 from config import (
     FB_CONF_JIT_AGING_STEP_SCAN_BYTES,
     FB_CONF_JIT_AGING_STEP_UNITS,
-    FB_CONF_MAX_BASIC_BLOCKS,
     FB_CONF_RUNTIME_YIELD_THRESHOLD,
-    JIT_CACHE_BANK_CAPACITY_BYTES,
-    JIT_CACHE_BANK_COUNT,
     JIT_CARD_SHIFT,
-    JIT_X64_TRACE_HEADER_BYTES,
     RUNTIME_BLOCK_CACHE_SLOT_COUNT,
 )
 from system_containers import StaticVector
@@ -344,15 +340,17 @@ class JITRuntimeManager:
         active = self.cache.active.traces
         warm = self.cache.warm.traces
         oldest = self.cache.oldest.traces
-        trace_capacity = JIT_CACHE_BANK_COUNT * self.cache.active.entry_capacity
+        module = self.module
+        assert module is not None
+        trace_capacity = min(
+            len(module.blocks), sum(bank.entry_capacity for bank in self.cache.banks)
+        )
         entries = (NativeTraceDispatchEntry * trace_capacity)()
         entry_count = 0
         active_index = 0
         warm_index = 0
         oldest_index = 0
         no_pc = 0xFFFF_FFFF
-        module = self.module
-        assert module is not None
         while active_index < len(active) or warm_index < len(warm) or oldest_index < len(oldest):
             active_item = active[active_index] if active_index < len(active) else None
             warm_item = warm[warm_index] if warm_index < len(warm) else None
@@ -389,26 +387,26 @@ class JITRuntimeManager:
                 chain_next_pc=no_pc if trace.chain_next is None else trace.chain_next,
                 chain_stack_words=self.max_chain_stack_words(trace),
                 promote_on_hit=int(selected_bank == 2),
+                exec_count=trace.exec_count_address,
             )
             entry_count += 1
-        trackable_capacity = FB_CONF_MAX_BASIC_BLOCKS if self.hotspot_profiling_enabled else 0
-        trackable_heads = (ctypes.c_uint32 * trackable_capacity)()
-        trackable_count = 0
-        if self.hotspot_profiling_enabled:
-            for block in module.blocks:
-                if self.trackable.is_marked(block.head_pc):
-                    assert trackable_count < FB_CONF_MAX_BASIC_BLOCKS
-                    trackable_heads[trackable_count] = block.head_pc
-                    trackable_count += 1
+        mask_buffer = self.trackable.storage.buffer
+        trackable_mask = (
+            (ctypes.c_uint8 * len(mask_buffer)).from_buffer(mask_buffer)
+            if self.hotspot_profiling_enabled
+            else (ctypes.c_uint8 * 0)()
+        )
+        trackable_card_count = self.trackable.card_count if self.hotspot_profiling_enabled else 0
         block_history = (ctypes.c_uint32 * self.history_capacity)()
         self._native_dispatch_cache_snapshot.release_workspace()
         self._native_dispatch_cache_snapshot = NativeDispatchSnapshot(
             entries,
             entry_count,
-            trackable_heads,
-            trackable_count,
+            trackable_mask,
+            trackable_card_count,
             block_history,
             allocator=module.allocator,
+            trackable_shift=self.trackable.card_shift,
         )
         self._native_dispatch_cache_key = cache_key
         return self._native_dispatch_cache_snapshot
@@ -684,9 +682,7 @@ class JITRuntimeManager:
 
     def max_chain_stack_words(self, trace: JITTrace) -> int:
         """Bound stack writes across resident forward trace chains."""
-        resident_limit = (
-            JIT_CACHE_BANK_COUNT * JIT_CACHE_BANK_CAPACITY_BYTES // JIT_X64_TRACE_HEADER_BYTES
-        )
+        resident_limit = sum(bank.entry_capacity for bank in self.cache.banks)
         pending: StaticVector[JITTrace] = StaticVector(capacity=resident_limit)
         visited: StaticVector[int] = StaticVector(capacity=resident_limit)
         pending.append(trace)

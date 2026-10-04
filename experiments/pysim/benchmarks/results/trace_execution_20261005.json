@@ -1,0 +1,656 @@
+{
+  "workload": "hot loops plus twice-called cold functions",
+  "hot_functions": 4,
+  "cold_functions": 120,
+  "iterations": 8,
+  "counter_max": 4294967295,
+  "native_source_sha256": "acc7c6bb88fd5b24e50823b1c3ca45021141a768674d4f5d2183e07260ab8307",
+  "native_library_sha256": "5fe8087158a7557eb34c47de9924502c92302062fa8c7f2b62f417f85ebb369d",
+  "runtime_stats_enabled": false,
+  "hotspot_profiling_enabled": true,
+  "evicted_traces": 58,
+  "zero_execution_evictions": 58,
+  "resident_traces": 70,
+  "records": [
+    {
+      "head_pc": 171,
+      "exec_count": 0,
+      "evicted": true
+    },
+    {
+      "head_pc": 182,
+      "exec_count": 0,
+      "evicted": true
+    },
+    {
+      "head_pc": 193,
+      "exec_count": 0,
+      "evicted": true
+    },
+    {
+      "head_pc": 204,
+      "exec_count": 0,
+      "evicted": true
+    },
+    {
+      "head_pc": 215,
+      "exec_count": 0,
+      "evicted": true
+    },
+    {
+      "head_pc": 226,
+      "exec_count": 0,
+      "evicted": true
+    },
+    {
+      "head_pc": 237,
+      "exec_count": 0,
+      "evicted": true
+    },
+    {
+      "head_pc": 248,
+      "exec_count": 0,
+      "evicted": true
+    },
+    {
+      "head_pc": 259,
+      "exec_count": 0,
+      "evicted": true
+    },
+    {
+      "head_pc": 270,
+      "exec_count": 0,
+      "evicted": true
+    },
+    {
+      "head_pc": 281,
+      "exec_count": 0,
+      "evicted": true
+    },
+    {
+      "head_pc": 292,
+      "exec_count": 0,
+      "evicted": true
+    },
+    {
+      "head_pc": 303,
+      "exec_count": 0,
+      "evicted": true
+    },
+    {
+      "head_pc": 314,
+      "exec_count": 0,
+      "evicted": true
+    },
+    {
+      "head_pc": 325,
+      "exec_count": 0,
+      "evicted": true
+    },
+    {
+      "head_pc": 336,
+      "exec_count": 0,
+      "evicted": true
+    },
+    {
+      "head_pc": 347,
+      "exec_count": 0,
+      "evicted": true
+    },
+    {
+      "head_pc": 358,
+      "exec_count": 0,
+      "evicted": true
+    },
+    {
+      "head_pc": 369,
+      "exec_count": 0,
+      "evicted": true
+    },
+    {
+      "head_pc": 380,
+      "exec_count": 0,
+      "evicted": true
+    },
+    {
+      "head_pc": 391,
+      "exec_count": 0,
+      "evicted": true
+    },
+    {
+      "head_pc": 402,
+      "exec_count": 0,
+      "evicted": true
+    },
+    {
+      "head_pc": 413,
+      "exec_count": 0,
+      "evicted": true
+    },
+    {
+      "head_pc": 424,
+      "exec_count": 0,
+      "evicted": true
+    },
+    {
+      "head_pc": 435,
+      "exec_count": 0,
+      "evicted": true
+    },
+    {
+      "head_pc": 446,
+      "exec_count": 0,
+      "evicted": true
+    },
+    {
+      "head_pc": 457,
+      "exec_count": 0,
+      "evicted": true
+    },
+    {
+      "head_pc": 468,
+      "exec_count": 0,
+      "evicted": true
+    },
+    {
+      "head_pc": 479,
+      "exec_count": 0,
+      "evicted": true
+    },
+    {
+      "head_pc": 490,
+      "exec_count": 0,
+      "evicted": true
+    },
+    {
+      "head_pc": 501,
+      "exec_count": 0,
+      "evicted": true
+    },
+    {
+      "head_pc": 512,
+      "exec_count": 0,
+      "evicted": true
+    },
+    {
+      "head_pc": 523,
+      "exec_count": 0,
+      "evicted": true
+    },
+    {
+      "head_pc": 534,
+      "exec_count": 0,
+      "evicted": true
+    },
+    {
+      "head_pc": 545,
+      "exec_count": 0,
+      "evicted": true
+    },
+    {
+      "head_pc": 556,
+      "exec_count": 0,
+      "evicted": true
+    },
+    {
+      "head_pc": 567,
+      "exec_count": 0,
+      "evicted": true
+    },
+    {
+      "head_pc": 578,
+      "exec_count": 0,
+      "evicted": true
+    },
+    {
+      "head_pc": 589,
+      "exec_count": 0,
+      "evicted": true
+    },
+    {
+      "head_pc": 600,
+      "exec_count": 0,
+      "evicted": true
+    },
+    {
+      "head_pc": 611,
+      "exec_count": 0,
+      "evicted": true
+    },
+    {
+      "head_pc": 622,
+      "exec_count": 0,
+      "evicted": true
+    },
+    {
+      "head_pc": 633,
+      "exec_count": 0,
+      "evicted": true
+    },
+    {
+      "head_pc": 644,
+      "exec_count": 0,
+      "evicted": true
+    },
+    {
+      "head_pc": 655,
+      "exec_count": 0,
+      "evicted": true
+    },
+    {
+      "head_pc": 666,
+      "exec_count": 0,
+      "evicted": true
+    },
+    {
+      "head_pc": 677,
+      "exec_count": 0,
+      "evicted": true
+    },
+    {
+      "head_pc": 688,
+      "exec_count": 0,
+      "evicted": true
+    },
+    {
+      "head_pc": 699,
+      "exec_count": 0,
+      "evicted": true
+    },
+    {
+      "head_pc": 710,
+      "exec_count": 0,
+      "evicted": true
+    },
+    {
+      "head_pc": 721,
+      "exec_count": 0,
+      "evicted": true
+    },
+    {
+      "head_pc": 732,
+      "exec_count": 0,
+      "evicted": true
+    },
+    {
+      "head_pc": 743,
+      "exec_count": 0,
+      "evicted": true
+    },
+    {
+      "head_pc": 754,
+      "exec_count": 0,
+      "evicted": true
+    },
+    {
+      "head_pc": 765,
+      "exec_count": 0,
+      "evicted": true
+    },
+    {
+      "head_pc": 776,
+      "exec_count": 0,
+      "evicted": true
+    },
+    {
+      "head_pc": 787,
+      "exec_count": 0,
+      "evicted": true
+    },
+    {
+      "head_pc": 798,
+      "exec_count": 0,
+      "evicted": true
+    },
+    {
+      "head_pc": 809,
+      "exec_count": 0,
+      "evicted": false
+    },
+    {
+      "head_pc": 820,
+      "exec_count": 0,
+      "evicted": false
+    },
+    {
+      "head_pc": 832,
+      "exec_count": 0,
+      "evicted": false
+    },
+    {
+      "head_pc": 844,
+      "exec_count": 0,
+      "evicted": false
+    },
+    {
+      "head_pc": 856,
+      "exec_count": 0,
+      "evicted": false
+    },
+    {
+      "head_pc": 868,
+      "exec_count": 0,
+      "evicted": false
+    },
+    {
+      "head_pc": 880,
+      "exec_count": 0,
+      "evicted": false
+    },
+    {
+      "head_pc": 893,
+      "exec_count": 0,
+      "evicted": false
+    },
+    {
+      "head_pc": 906,
+      "exec_count": 0,
+      "evicted": false
+    },
+    {
+      "head_pc": 919,
+      "exec_count": 0,
+      "evicted": false
+    },
+    {
+      "head_pc": 932,
+      "exec_count": 0,
+      "evicted": false
+    },
+    {
+      "head_pc": 945,
+      "exec_count": 0,
+      "evicted": false
+    },
+    {
+      "head_pc": 958,
+      "exec_count": 0,
+      "evicted": false
+    },
+    {
+      "head_pc": 971,
+      "exec_count": 0,
+      "evicted": false
+    },
+    {
+      "head_pc": 984,
+      "exec_count": 0,
+      "evicted": false
+    },
+    {
+      "head_pc": 997,
+      "exec_count": 0,
+      "evicted": false
+    },
+    {
+      "head_pc": 1010,
+      "exec_count": 0,
+      "evicted": false
+    },
+    {
+      "head_pc": 1023,
+      "exec_count": 0,
+      "evicted": false
+    },
+    {
+      "head_pc": 1036,
+      "exec_count": 0,
+      "evicted": false
+    },
+    {
+      "head_pc": 1049,
+      "exec_count": 0,
+      "evicted": false
+    },
+    {
+      "head_pc": 1062,
+      "exec_count": 0,
+      "evicted": false
+    },
+    {
+      "head_pc": 1075,
+      "exec_count": 0,
+      "evicted": false
+    },
+    {
+      "head_pc": 1088,
+      "exec_count": 0,
+      "evicted": false
+    },
+    {
+      "head_pc": 1101,
+      "exec_count": 0,
+      "evicted": false
+    },
+    {
+      "head_pc": 1114,
+      "exec_count": 0,
+      "evicted": false
+    },
+    {
+      "head_pc": 1127,
+      "exec_count": 0,
+      "evicted": false
+    },
+    {
+      "head_pc": 1348,
+      "exec_count": 0,
+      "evicted": false
+    },
+    {
+      "head_pc": 1361,
+      "exec_count": 0,
+      "evicted": false
+    },
+    {
+      "head_pc": 1374,
+      "exec_count": 0,
+      "evicted": false
+    },
+    {
+      "head_pc": 1387,
+      "exec_count": 0,
+      "evicted": false
+    },
+    {
+      "head_pc": 1400,
+      "exec_count": 0,
+      "evicted": false
+    },
+    {
+      "head_pc": 1413,
+      "exec_count": 0,
+      "evicted": false
+    },
+    {
+      "head_pc": 1426,
+      "exec_count": 0,
+      "evicted": false
+    },
+    {
+      "head_pc": 1439,
+      "exec_count": 0,
+      "evicted": false
+    },
+    {
+      "head_pc": 1452,
+      "exec_count": 0,
+      "evicted": false
+    },
+    {
+      "head_pc": 1465,
+      "exec_count": 0,
+      "evicted": false
+    },
+    {
+      "head_pc": 1478,
+      "exec_count": 0,
+      "evicted": false
+    },
+    {
+      "head_pc": 1491,
+      "exec_count": 0,
+      "evicted": false
+    },
+    {
+      "head_pc": 1504,
+      "exec_count": 0,
+      "evicted": false
+    },
+    {
+      "head_pc": 1517,
+      "exec_count": 0,
+      "evicted": false
+    },
+    {
+      "head_pc": 1530,
+      "exec_count": 0,
+      "evicted": false
+    },
+    {
+      "head_pc": 1543,
+      "exec_count": 0,
+      "evicted": false
+    },
+    {
+      "head_pc": 1556,
+      "exec_count": 0,
+      "evicted": false
+    },
+    {
+      "head_pc": 1569,
+      "exec_count": 0,
+      "evicted": false
+    },
+    {
+      "head_pc": 1582,
+      "exec_count": 0,
+      "evicted": false
+    },
+    {
+      "head_pc": 1595,
+      "exec_count": 0,
+      "evicted": false
+    },
+    {
+      "head_pc": 9,
+      "exec_count": 1071,
+      "evicted": false
+    },
+    {
+      "head_pc": 16,
+      "exec_count": 952,
+      "evicted": false
+    },
+    {
+      "head_pc": 51,
+      "exec_count": 1071,
+      "evicted": false
+    },
+    {
+      "head_pc": 58,
+      "exec_count": 952,
+      "evicted": false
+    },
+    {
+      "head_pc": 93,
+      "exec_count": 1071,
+      "evicted": false
+    },
+    {
+      "head_pc": 100,
+      "exec_count": 952,
+      "evicted": false
+    },
+    {
+      "head_pc": 135,
+      "exec_count": 1071,
+      "evicted": false
+    },
+    {
+      "head_pc": 142,
+      "exec_count": 952,
+      "evicted": false
+    },
+    {
+      "head_pc": 1140,
+      "exec_count": 0,
+      "evicted": false
+    },
+    {
+      "head_pc": 1153,
+      "exec_count": 0,
+      "evicted": false
+    },
+    {
+      "head_pc": 1166,
+      "exec_count": 0,
+      "evicted": false
+    },
+    {
+      "head_pc": 1179,
+      "exec_count": 0,
+      "evicted": false
+    },
+    {
+      "head_pc": 1192,
+      "exec_count": 0,
+      "evicted": false
+    },
+    {
+      "head_pc": 1205,
+      "exec_count": 0,
+      "evicted": false
+    },
+    {
+      "head_pc": 1218,
+      "exec_count": 0,
+      "evicted": false
+    },
+    {
+      "head_pc": 1231,
+      "exec_count": 0,
+      "evicted": false
+    },
+    {
+      "head_pc": 1244,
+      "exec_count": 0,
+      "evicted": false
+    },
+    {
+      "head_pc": 1257,
+      "exec_count": 0,
+      "evicted": false
+    },
+    {
+      "head_pc": 1270,
+      "exec_count": 0,
+      "evicted": false
+    },
+    {
+      "head_pc": 1283,
+      "exec_count": 0,
+      "evicted": false
+    },
+    {
+      "head_pc": 1296,
+      "exec_count": 0,
+      "evicted": false
+    },
+    {
+      "head_pc": 1309,
+      "exec_count": 0,
+      "evicted": false
+    },
+    {
+      "head_pc": 1322,
+      "exec_count": 0,
+      "evicted": false
+    },
+    {
+      "head_pc": 1335,
+      "exec_count": 0,
+      "evicted": false
+    }
+  ]
+}

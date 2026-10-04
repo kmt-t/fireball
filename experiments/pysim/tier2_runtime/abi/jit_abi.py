@@ -26,6 +26,7 @@ class NativeTraceDispatchEntry(ctypes.Structure):
         ("chain_next_pc", ctypes.c_uint32),
         ("chain_stack_words", ctypes.c_uint32),
         ("promote_on_hit", ctypes.c_uint32),
+        ("exec_count", ctypes.c_void_p),
     )
 
 
@@ -54,7 +55,7 @@ class NativeBlockVisitHistory:
 
 
 class NativeDispatchSnapshot:
-    """Fixed trace, hotspot-candidate, and history buffers for one dispatch."""
+    """Owned trace/history buffers and a borrowed hotspot mask for one dispatch."""
 
     __slots__ = (
         "_allocator",
@@ -64,37 +65,40 @@ class NativeDispatchSnapshot:
         "block_history",
         "entries",
         "entry_count",
-        "trackable_blocks",
-        "trackable_count",
+        "trackable_card_count",
+        "trackable_mask",
+        "trackable_shift",
     )
 
     entries: ctypes.Array
     entry_count: int
-    trackable_blocks: ctypes.Array
-    trackable_count: int
+    trackable_mask: ctypes.Array
+    trackable_shift: int
+    trackable_card_count: int
     block_history: NativeBlockVisitHistory
 
     def __init__(
         self,
         entries: ctypes.Array,
         entry_count: int,
-        trackable_blocks: ctypes.Array,
-        trackable_count: int,
+        trackable_mask: ctypes.Array,
+        trackable_card_count: int,
         block_history: ctypes.Array,
         allocator: BumpAllocator | None = None,
+        trackable_shift: int = 0,
     ) -> None:
         assert 0 <= entry_count <= len(entries)
-        assert 0 <= trackable_count <= len(trackable_blocks)
+        assert 0 <= trackable_card_count <= len(trackable_mask) * 8
+        assert 0 <= trackable_shift < 32
         self.entries = entries
         self.entry_count = entry_count
-        self.trackable_blocks = trackable_blocks
-        self.trackable_count = trackable_count
+        self.trackable_mask = trackable_mask
+        self.trackable_card_count = trackable_card_count
+        self.trackable_shift = trackable_shift
         self.block_history = NativeBlockVisitHistory(block_history)
         self._allocator = allocator
         self._arena_offset: int | None = None
-        self._arena_size = (
-            ctypes.sizeof(entries) + ctypes.sizeof(trackable_blocks) + ctypes.sizeof(block_history)
-        )
+        self._arena_size = ctypes.sizeof(entries) + ctypes.sizeof(block_history)
         self._workspace_released = False
         if allocator is not None and self._arena_size:
             self._arena_offset = allocator.acquire(self._arena_size, alignment=8)

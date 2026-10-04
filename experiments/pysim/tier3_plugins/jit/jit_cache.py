@@ -16,6 +16,7 @@ from config import (
     JIT_CACHE_ACTIVE_OFFSET_BYTES,
     JIT_CACHE_BANK_CAPACITY_BYTES,
     JIT_CACHE_BANK_COUNT,
+    JIT_CACHE_BANK_ENTRY_CAPACITY,
     JIT_CACHE_FAST_SLOT_COUNT,
     JIT_CACHE_MAX_INBOUND_SOURCES,
     JIT_CACHE_OLDEST_OFFSET_BYTES,
@@ -325,63 +326,23 @@ class HistoryRing:
 
 
 class JITTraceHeader:
-    """
-    x64-specific 24-byte fixed physical memory layout:
-        +0x00 head_wasm_pc(u32)
-        +0x04 trace_byte_size(u16)
-        +0x06 flags(u8) [0x01: PROMOTED, 0x02: LOOP_HEADER]
-        +0x07 variant_id(u8)
-        +0x08 chain_target_addr(u64)
-        +0x10 helper_target_addr(u64)
+    """Code-adjacent x64 targets read by generated/common native code.
 
-    The common helper entry is compiler metadata used by installation-time
-    relocation. Prologue, epilogue, and chain dispatcher offsets are fixed by
-    the build configuration and are not repeated in each trace header.
+    +0x00 chain_target_addr(u64), +0x08 helper_target_addr(u64).
+    Installation-time relocation metadata is not serialized into the header.
     """
 
-    __slots__ = (
-        "chain_target_addr",
-        "common_helper_offset",
-        "flags",
-        "head_wasm_pc",
-        "helper_target_addr",
-        "trace_byte_size",
-        "variant_id",
-    )
+    __slots__ = ("chain_target_addr", "helper_target_addr")
 
-    FLAG_PROMOTED = 0x01
-    FLAG_LOOP_HEADER = 0x02
-
-    def __init__(
-        self,
-        head_wasm_pc: int,
-        trace_byte_size: int = JIT_TRACE_DEFAULT_BYTES,
-        flags: int = 0,
-        variant_id: int = 0,
-        helper_target_addr: int = 0,
-    ):
-        self.head_wasm_pc = head_wasm_pc & 0xFFFF_FFFF
-        assert trace_byte_size >= JIT_X64_TRACE_HEADER_BYTES
-        self.trace_byte_size = trace_byte_size & 0xFFFF
-        self.flags = flags & 0xFF
-        self.variant_id = variant_id & 0xFF
+    def __init__(self, helper_target_addr: int = 0):
         self.chain_target_addr: int | None = None
-        self.common_helper_offset = COMMON_HELPER_OFFSET
         assert 0 <= helper_target_addr <= 0xFFFF_FFFF_FFFF_FFFF
         self.helper_target_addr = helper_target_addr
 
     def pack(self) -> bytes:
         import struct
 
-        packed = struct.pack(
-            "<IHBBQQ",
-            self.head_wasm_pc,
-            self.trace_byte_size,
-            self.flags,
-            self.variant_id,
-            self.chain_target_addr or 0,
-            self.helper_target_addr,
-        )
+        packed = struct.pack("<QQ", self.chain_target_addr or 0, self.helper_target_addr)
         assert len(packed) == JIT_X64_TRACE_HEADER_BYTES
         return packed
 
@@ -391,15 +352,17 @@ class JITTrace:
 
     __slots__ = (
         "_exec_buf",
+        "_exec_count",
         "_keepalive",
         "chain_dispatch_patch_offset",
         "chain_next",
         "code_blob",
         "code_offset",
+        "common_helper_offset",
         "entry_body_patch_offset",
         "entry_prologue_patch_offset",
-        "exec_count",
         "exit_patch_offset",
+        "flags",
         "fn",
         "has_return_val",
         "head_pc",
@@ -413,6 +376,8 @@ class JITTrace:
         "size_bytes",
         "stack_words",
     )
+
+    FLAG_PROMOTED = 0x01
 
     def __init__(
         self,
@@ -441,6 +406,7 @@ class JITTrace:
         self.raw_addr = raw_addr  # Entry point address consumed by native dispatch
         self.code_blob = code_blob
         self.code_offset: int | None = None
+        self.common_helper_offset = COMMON_HELPER_OFFSET
         self.entry_body_patch_offset = entry_body_patch_offset
         self.entry_prologue_patch_offset = entry_prologue_patch_offset
         self.exit_patch_offset = exit_patch_offset
@@ -460,25 +426,33 @@ class JITTrace:
         assert stack_words >= 1
         self.stack_words = stack_words
         self.header = JITTraceHeader(
-            head_wasm_pc=head_pc,
-            trace_byte_size=size_bytes,
             helper_target_addr=helper_target_addr,
         )
+        self.flags = 0
         self.chain_next: int | None = None
-        self.exec_count: int = 0
+        self._exec_count = ctypes.c_uint32(0)
         self._exec_buf = buf  # Keeps executable buffer alive in memory
+
+    @property
+    def exec_count(self) -> int:
+        """Runtime-dispatched body executions in the current measurement interval."""
+
+        return self._exec_count.value
+
+    @exec_count.setter
+    def exec_count(self, value: int) -> None:
+        assert 0 <= value <= 0xFFFF_FFFF
+        self._exec_count.value = value
+
+    @property
+    def exec_count_address(self) -> int:
+        """Borrow the trace-owned counter without copying it into a snapshot."""
+
+        return ctypes.addressof(self._exec_count)
 
     @property
     def native_fn(self) -> NativeTraceFn | None:
         return self.fn
-
-    @property
-    def flags(self) -> int:
-        return self.header.flags
-
-    @flags.setter
-    def flags(self, val: int) -> None:
-        self.header.flags = val
 
     def __call__(
         self,
@@ -546,12 +520,14 @@ class JITCacheBank:
         bank_id: int,
         capacity_bytes: int = JIT_CACHE_BANK_CAPACITY_BYTES,
         code_offset_bytes: int = 0,
+        entry_capacity: int = JIT_CACHE_BANK_ENTRY_CAPACITY,
     ):
         self.bank_id = bank_id
         self.code_offset_bytes = code_offset_bytes
         assert capacity_bytes >= JIT_X64_TRACE_HEADER_BYTES
         self.capacity_bytes = capacity_bytes
-        self.entry_capacity = max(1, capacity_bytes // JIT_X64_TRACE_HEADER_BYTES)
+        assert 0 < entry_capacity <= JIT_CACHE_BANK_ENTRY_CAPACITY
+        self.entry_capacity = min(entry_capacity, capacity_bytes // JIT_X64_TRACE_HEADER_BYTES)
         self.used_bytes = 0
         self._keys: StaticVector[int] = StaticVector(capacity=self.entry_capacity)
         self._values: StaticVector[JITTrace | None] = StaticVector(
@@ -602,14 +578,18 @@ class JITCacheBank:
     def allocate(self, trace: JITTrace) -> bool:
         prev = self.get_trace(trace.head_pc)
         delta = trace.size_bytes - (prev.size_bytes if prev else 0)
+        idx = bisect.bisect_left(self._keys, trace.head_pc)
+        existing_slot = idx < len(self._keys) and self._keys[idx] == trace.head_pc
         if self.used_bytes + delta > self.capacity_bytes:
+            return False
+        # Short traces can exhaust the metadata RAM budget before code bytes.
+        if not existing_slot and len(self._keys) == self.entry_capacity:
             return False
         if prev is not None and prev.code_offset is not None:
             trace.code_offset = prev.code_offset
         else:
             trace.code_offset = self.code_offset_bytes + self.used_bytes
-        idx = bisect.bisect_left(self._keys, trace.head_pc)
-        if idx < len(self._keys) and self._keys[idx] == trace.head_pc:
+        if existing_slot:
             self._values[idx] = trace  # reuse the existing (live or tombstoned) slot
         else:
             assert self._keys.insert_at(idx, trace.head_pc)
@@ -631,6 +611,7 @@ class JITMultiBufferCache:
         "oldest_idx",
         "on_evict",
         "on_rotate",
+        "on_trace_retire",
         "promotions",
         "warm_idx",
     )
@@ -657,6 +638,7 @@ class JITMultiBufferCache:
         self.evictions = 0
         self.generation = 0
         self.on_evict: Callable[[StaticVector[int]], None] | None = None
+        self.on_trace_retire: Callable[[int, int], None] | None = None
         # Called once at the end of every rotate() (never by flush_all()); the
         # runtime engine runs one {JIT_CardAgingSweep} step from it.
         self.on_rotate: Callable[[], int] | None = None
@@ -769,7 +751,7 @@ class JITMultiBufferCache:
             trace.helper_header_patch_offset,
             trace.helper_exit_patch_offset,
             trace.chain_dispatch_patch_offset,
-            trace.header.common_helper_offset,
+            trace.common_helper_offset,
         )
         trace.fn = fn
         trace.raw_addr = raw_addr
@@ -795,7 +777,7 @@ class JITMultiBufferCache:
         old_oldest = self.oldest
         old_oldest.remove_trace(head_pc)
         old_oldest.used_bytes -= trace.size_bytes
-        trace.flags |= JITTraceHeader.FLAG_PROMOTED
+        trace.flags |= JITTrace.FLAG_PROMOTED
         # Any inbound chain sources registered against the bank this trace
         # used to live in must follow it to wherever it lands -- captured
         # now, before a possible rotate() below clears old_oldest's own
@@ -835,11 +817,18 @@ class JITMultiBufferCache:
         return trace
 
     def insert(self, trace: JITTrace) -> bool:
+        # One module PC must not occupy multiple banks. Active replacement
+        # remains allowed; Oldest promotion uses lookup(), not insertion.
+        assert not self.warm.has_trace(trace.head_pc)
+        assert not self.oldest.has_trace(trace.head_pc)
+        previous = self.active.get_trace(trace.head_pc)
         if not self.active.allocate(trace):
             self.rotate()
             if not self.active.allocate(trace):
                 return False
         self._install_trace(trace)
+        if previous is not None and previous is not trace and self.on_trace_retire is not None:
+            self.on_trace_retire(previous.head_pc, previous.exec_count)
         self._try_link_chain(trace)
         # Forward chaining: check if any resident trace in active/warm can now chain into this trace
         for b in (self.active, self.warm):
@@ -874,6 +863,7 @@ class JITMultiBufferCache:
                 if target_in_active is None:
                     self._unlink_chain(src_trace)
 
+        self._record_retired_traces(old_oldest_bank)
         purged_pcs = old_oldest_bank.clear()
         self.evictions += len(purged_pcs)
         self.active_idx = new_active
@@ -893,9 +883,17 @@ class JITMultiBufferCache:
             for _, trace in bank.traces:
                 if trace.chain_next is not None:
                     self._unlink_chain(trace)
+            self._record_retired_traces(bank)
             purged = bank.clear()
             self.evictions += len(purged)
             if self.on_evict and purged:
                 self.on_evict(purged)
         self._fast_cache.clear()
         self.generation += 1
+
+    def _record_retired_traces(self, bank: JITCacheBank) -> None:
+        """Publish final scalar counts before descriptor storage is cleared."""
+
+        if self.on_trace_retire is not None:
+            for pc, trace in bank.traces:
+                self.on_trace_retire(pc, trace.exec_count)

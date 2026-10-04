@@ -14,9 +14,6 @@
 #ifndef FB_CONF_NATIVE_JIT_TRACE_CAPACITY
 #error "Native JIT dispatch capacity must come from tier1_core/config.py"
 #endif
-#ifndef FB_CONF_NATIVE_JIT_BLOCK_CAPACITY
-#error "Native JIT block-observation capacity must come from tier1_core/config.py"
-#endif
 namespace {
 
 #if defined(_WIN32)
@@ -34,6 +31,9 @@ constexpr std::uint32_t kOldestTraceHit = 4;
 constexpr std::uint32_t kStopAtBlockBoundaryFlag = 1u << 0;
 constexpr std::uint32_t kStopAfterControlFlag = 1u << 1;
 constexpr std::uint32_t kStopAtDefinedCallBoundaryFlag = 1u << 2;
+constexpr std::uint32_t kObserveBlockBodyFlag = 1u << 3;
+constexpr std::uint32_t kObservedBlockBodyFlag = 1u << 4;
+constexpr std::uint32_t kPendingBlockHeadFlag = 1u << 5;
 constexpr std::uint32_t kDispatchYield = 5;
 constexpr std::uint32_t kNativeCallBoundary = 6;
 constexpr std::uint32_t kDebugStop = 7;
@@ -117,6 +117,8 @@ struct debugger_aspect {
     return false;
   }
 };
+
+struct hotspot_observer {};
 
 template <typename Debugger = void>
 FIREBALL_CPS_CALL step_result dispatch(execution_context* context, std::uint32_t* sp,
@@ -1827,6 +1829,7 @@ FIREBALL_CPS_CALL step_result h_fc_saturating_conversion(
     return fallback(current.ip);
   }
   current.ip = operand_ip;
+  if (should_stop_after_control(current)) return block_boundary(current.ip);
   [[clang::musttail]] return dispatch<Debugger>(context, sp, local_base, top_value(current, sp));
 }
 
@@ -1861,6 +1864,7 @@ FIREBALL_CPS_CALL step_result h_fc_memory_copy(
   }
   current.sp_offset = destination_index;
   current.ip = operand_ip;
+  if (should_stop_after_control(current)) return block_boundary(current.ip);
   [[clang::musttail]] return dispatch<Debugger>(context, sp, local_base, top_value(current, sp));
 }
 
@@ -1890,11 +1894,13 @@ FIREBALL_CPS_CALL step_result h_fc_memory_fill(
   }
   current.sp_offset = destination_index;
   current.ip = operand_ip;
+  if (should_stop_after_control(current)) return block_boundary(current.ip);
   [[clang::musttail]] return dispatch<Debugger>(context, sp, local_base, top_value(current, sp));
 }
 
 constexpr std::uint8_t kOpcodeControlTerminator = 1u << 0;
 constexpr std::uint8_t kOpcodePrefixed = 1u << 1;
+constexpr std::uint8_t kOpcodeBlockBody = 1u << 2;
 
 constexpr auto make_opcode_attributes() {
   std::array<std::uint8_t, 256> attributes{};
@@ -1910,6 +1916,17 @@ constexpr auto make_opcode_attributes() {
     set_control_terminator(static_cast<std::uint8_t>(opcode));
   }
   set_prefixed(kOpcodeFcPrefix);
+  // Match Loader's _IS_BB_OPCODE ordinary instructions. CALL remains a
+  // control boundary and must not create a control-only hotspot visit.
+  for (const auto opcode : {0x41u, 0x6Au, 0x6Bu, 0x6Cu, 0x6Du, 0x6Eu,
+                           0x71u, 0x72u, 0x73u, 0x74u, 0x75u, 0x76u,
+                           0x20u, 0x21u, 0x22u, 0x23u, 0x24u,
+                           0x45u, 0x46u, 0x47u, 0x48u, 0x49u, 0x4Au,
+                           0x4Bu, 0x4Cu, 0x4Du, 0x4Eu, 0x4Fu,
+                           0x1Au, 0x1Bu, 0x28u, 0x2Cu, 0x2Du, 0x2Eu,
+                           0x2Fu, 0x36u, 0x3Au, 0x3Bu, 0x3Fu, 0x40u}) {
+    attributes[opcode] |= kOpcodeBlockBody;
+  }
   return attributes;
 }
 
@@ -1930,13 +1947,22 @@ FIREBALL_CPS_CALL step_result dispatch(execution_context* context, std::uint32_t
     [[clang::musttail]] return dispatch<Debugger>(context, sp, local_base, top_value(current, sp));
   }
 
-  if constexpr (!std::is_void_v<Debugger>) {
+  if constexpr (std::is_same_v<Debugger, debugger_aspect>) {
     if (Debugger::before_instruction(current)) return {kDebugStop, current.ip, 0};
   }
 
   current.stack_checkpoint = current.sp_offset;
   const auto opcode = current.code[current.ip];
   const auto opcode_attributes = kOpcodeAttributes[opcode];
+  if constexpr (std::is_same_v<Debugger, hotspot_observer>) {
+    if ((opcode_attributes & kOpcodeBlockBody) != 0) {
+      current.runtime_flags =
+          (current.runtime_flags & ~kObserveBlockBodyFlag) | kObservedBlockBodyFlag;
+      // Observe only the first body opcode, then use the uninstrumented
+      // handler sequence for the remainder of this block.
+      [[clang::musttail]] return dispatch<void>(context, sp, local_base, tos);
+    }
+  }
   if ((opcode_attributes & kOpcodePrefixed) != 0) {
     auto operand_ip = current.ip + 1;
     std::uint32_t subopcode = 0;
@@ -2148,8 +2174,8 @@ static_assert(offsetof(native_trace_descriptor, entry_address) ==
 static_assert(offsetof(native_trace_descriptor, byte_span) ==
               offsetof(native_trace_descriptor, entry_address) + sizeof(std::uintptr_t));
 static_assert(sizeof(native_trace_descriptor) ==
-              align_up(offsetof(native_trace_descriptor, promote_on_hit) +
-                           sizeof(std::uint32_t),
+              align_up(offsetof(native_trace_descriptor, exec_count) +
+                           sizeof(std::uint32_t*),
                        alignof(native_trace_descriptor)));
 
 constexpr std::uint32_t kNoPc = 0xFFFF'FFFFu;
@@ -2175,28 +2201,16 @@ const native_trace_descriptor* find_dispatch_entry(
   return low < count && entries[low].head_pc == pc ? &entries[low] : nullptr;
 }
 
-std::size_t find_trackable_block_index(
-    const std::uint32_t* block_heads, std::size_t count, std::uint32_t pc) {
-  std::size_t low = 0;
-  std::size_t high = count;
-  while (low < high) {
-    const auto middle = low + (high - low) / 2;
-    if (block_heads[middle] < pc) {
-      low = middle + 1;
-    } else {
-      high = middle;
-    }
-  }
-  return low < count && block_heads[low] == pc ? low : count;
-}
-
-template <bool CollectStats>
+template <bool CollectStats, bool RecordExecutions = false>
 const native_trace_descriptor* terminal_dispatch_entry(
     const native_trace_descriptor* entries, std::size_t count,
     const native_trace_descriptor* start, std::uint32_t& body_count) {
   auto* current = start;
   for (std::size_t depth = 0; depth < count; ++depth) {
     if constexpr (CollectStats) ++body_count;
+    if constexpr (RecordExecutions) {
+      if (*current->exec_count != kNoPc) ++*current->exec_count;
+    }
     if (current->chain_next_pc == kNoPc) return current;
     const auto* next = find_dispatch_entry(entries, count, current->chain_next_pc);
     if (next == nullptr || next->head_pc == current->head_pc) return nullptr;
@@ -2210,10 +2224,11 @@ struct native_dispatch_hotspot_buffers {};
 
 template <>
 struct native_dispatch_hotspot_buffers<true> {
-  std::uint32_t trackable_count = 0;
+  std::uint32_t trackable_card_count = 0;
+  std::uint32_t trackable_shift = 0;
   std::uint64_t trackable_bytes = 0;
   std::uint64_t block_history_bytes = 0;
-  const std::uint32_t* trackable_blocks = nullptr;
+  const std::uint8_t* trackable_mask = nullptr;
   std::uint32_t* block_history = nullptr;
 };
 
@@ -2270,10 +2285,11 @@ struct native_dispatch_call : native_dispatch_hotspot_buffers<CollectHotspots> {
         local_stack(source.locals),
         code(source.code) {
     if constexpr (CollectHotspots) {
-      this->trackable_count = source.trackable_count;
+      this->trackable_card_count = source.trackable_card_count;
+      this->trackable_shift = source.trackable_shift;
       this->trackable_bytes = source.trackable_bytes;
       this->block_history_bytes = source.block_history_bytes;
-      this->trackable_blocks = source.trackable_blocks;
+      this->trackable_mask = source.trackable_mask;
       this->block_history = source.block_history;
     }
   }
@@ -2286,18 +2302,11 @@ bool validate_native_dispatch_tables(native_dispatch_call<CollectHotspots>& call
     if ((index > 0 && call.entries[index - 1].head_pc >= entry.head_pc) ||
         entry.byte_span == 0 || entry.result_words == 0 || entry.stack_words == 0 ||
         entry.frame_depth > FIREBALL_NATIVE_CONTROL_STACK_CAPACITY ||
-        entry.has_return_value > 1 || entry.promote_on_hit > 1 || entry.entry_address == 0) {
+        entry.has_return_value > 1 || entry.promote_on_hit > 1 || entry.entry_address == 0 ||
+        entry.exec_count == nullptr ||
+        reinterpret_cast<std::uintptr_t>(entry.exec_count) % alignof(std::uint32_t) != 0) {
       call.error_code = kNativeErrorInvalidTable;
       return false;
-    }
-  }
-  if constexpr (CollectHotspots) {
-    for (unsigned int index = 0; index < call.trackable_count; ++index) {
-      const auto pc = call.trackable_blocks[index];
-      if (index > 0 && call.trackable_blocks[index - 1] >= pc) {
-        call.error_code = kNativeErrorInvalidTable;
-        return false;
-      }
     }
   }
   return true;
@@ -2325,12 +2334,12 @@ bool prepare_native_dispatch_call(native_dispatch_call<CollectHotspots>& call) {
     return false;
   }
   if constexpr (CollectHotspots) {
-    if (call.trackable_count > FB_CONF_NATIVE_JIT_BLOCK_CAPACITY ||
+    if (call.trackable_shift >= 32 ||
         call.trackable_bytes <
-            static_cast<std::uint64_t>(call.trackable_count * sizeof(std::uint32_t)) ||
+            (static_cast<std::uint64_t>(call.trackable_card_count) + 7) / 8 ||
         call.block_history_bytes < sizeof(std::uint32_t) ||
         call.block_history_bytes % sizeof(std::uint32_t) != 0 ||
-        (call.trackable_count != 0 && call.trackable_blocks == nullptr) ||
+        (call.trackable_card_count != 0 && call.trackable_mask == nullptr) ||
         call.block_history == nullptr) {
       call.error_code = kNativeErrorInvalidArgument;
       return false;
@@ -2344,8 +2353,6 @@ bool prepare_native_dispatch_call(native_dispatch_call<CollectHotspots>& call) {
   if constexpr (CollectHotspots) {
     buffers_aligned =
         buffers_aligned &&
-        (call.trackable_count == 0 ||
-         reinterpret_cast<std::uintptr_t>(call.trackable_blocks) % alignof(std::uint32_t) == 0) &&
         (call.yield_threshold == 0 ||
          reinterpret_cast<std::uintptr_t>(call.block_history) % alignof(std::uint32_t) == 0);
   }
@@ -2447,9 +2454,21 @@ step_result execute_control_boundary(native_dispatch_call<CollectHotspots>& call
   } else {
     context.runtime_flags = previous_flags | kStopAfterControlFlag;
   }
-  const auto result = dispatch<Debugger>(&context, call.stack, call.local_stack,
-                               top_value(context, call.stack));
-  context.runtime_flags = previous_flags;
+  const auto result = [&]() {
+    if constexpr (CollectHotspots) {
+      if ((previous_flags & kObserveBlockBodyFlag) != 0) {
+        return dispatch<hotspot_observer>(&context, call.stack, call.local_stack,
+                                         top_value(context, call.stack));
+      }
+    }
+    return dispatch<Debugger>(&context, call.stack, call.local_stack,
+                              top_value(context, call.stack));
+  }();
+  if constexpr (CollectHotspots) {
+    context.runtime_flags = previous_flags | (context.runtime_flags & kObservedBlockBodyFlag);
+  } else {
+    context.runtime_flags = previous_flags;
+  }
   return result;
 }
 
@@ -2462,14 +2481,15 @@ dispatch_iteration execute_interpreted_block(
 
   const auto interpreter_ip =
       state.current_pc - call.call_frame->function_view->code_pc_offset;
+  // Keep the PC established at the preceding control boundary. The first
+  // body opcode may follow NOPs or other non-JIT instructions inside it.
+  const auto block_head_pc = state.current_pc;
+  const auto previous_flags = context.runtime_flags;
   if constexpr (CollectHotspots) {
-    const auto block_index = find_trackable_block_index(
-        call.trackable_blocks, call.trackable_count, state.current_pc);
-    if (block_index < call.trackable_count) {
-      const auto history_capacity = call.block_history_bytes / sizeof(std::uint32_t);
-      const auto visit_index = state.metrics.hotspots.eligible_block_visits % history_capacity;
-      call.block_history[visit_index] = state.current_pc;
-      ++state.metrics.hotspots.eligible_block_visits;
+    const auto card = block_head_pc >> call.trackable_shift;
+    if ((previous_flags & kPendingBlockHeadFlag) != 0 && card < call.trackable_card_count &&
+        ((call.trackable_mask[card >> 3] >> (card & 7)) & 1u) != 0) {
+      context.runtime_flags |= kObserveBlockBodyFlag;
     }
   }
 
@@ -2481,6 +2501,15 @@ dispatch_iteration execute_interpreted_block(
   context.code_size = call.call_frame->code_size;
   context.control_base = call.call_frame->control_base;
   const auto result = execute_control_boundary<true, CollectHotspots, Debugger>(call, interpreter_ip);
+  if constexpr (CollectHotspots) {
+    if ((context.runtime_flags & kObservedBlockBodyFlag) != 0) {
+      const auto history_capacity = call.block_history_bytes / sizeof(std::uint32_t);
+      const auto visit_index = state.metrics.hotspots.eligible_block_visits % history_capacity;
+      call.block_history[visit_index] = block_head_pc;
+      ++state.metrics.hotspots.eligible_block_visits;
+    }
+  }
+  context.runtime_flags = previous_flags & ~kPendingBlockHeadFlag;
   if constexpr (!std::is_void_v<Debugger>) {
     if (result.kind == kDebugStop) {
       call.stack_size = context.sp_offset;
@@ -2495,6 +2524,7 @@ dispatch_iteration execute_interpreted_block(
     }
   }
   if (result.kind == kCallBoundary) {
+    context.runtime_flags |= kPendingBlockHeadFlag;
     call.stack_size = context.sp_offset;
     const auto* callee = active_frame(context);
     if (callee == nullptr) {
@@ -2523,6 +2553,7 @@ dispatch_iteration execute_interpreted_block(
     return dispatch_iteration::stop_dispatch;
   }
   if (result.kind == kTrap) {
+    context.runtime_flags &= ~kPendingBlockHeadFlag;
     state.trap_code = result.trap_code;
     call.stack_size = context.sp_offset;
     state.status = kTrap;
@@ -2531,6 +2562,7 @@ dispatch_iteration execute_interpreted_block(
 
   call.stack_size = context.sp_offset;
   if (result.kind == kComplete || result.next_ip == kNoPc || result.next_ip == kSentinel) {
+    context.runtime_flags &= ~kPendingBlockHeadFlag;
     context.ip = kNoPc;
     state.status = kComplete;
     return dispatch_iteration::stop_dispatch;
@@ -2539,6 +2571,7 @@ dispatch_iteration execute_interpreted_block(
     call.error_code = kNativeErrorInternal;
     return dispatch_iteration::error;
   }
+  context.runtime_flags |= kPendingBlockHeadFlag;
 
   if constexpr (CollectStats) {
     ++state.metrics.stats.control_handler_count;
@@ -2566,6 +2599,7 @@ dispatch_iteration execute_native_trace(
     const native_trace_descriptor& start) {
   auto& call = state.call;
   auto& context = *call.context;
+  context.runtime_flags &= ~kPendingBlockHeadFlag;
   std::uint32_t chain_body_count = 0;
   const auto* terminal = terminal_dispatch_entry<CollectStats>(
       call.entries, call.entry_count, &start, chain_body_count);
@@ -2603,6 +2637,14 @@ dispatch_iteration execute_native_trace(
   const auto trace_entry = reinterpret_cast<native_trace_entry_fn>(start.entry_address);
   trace_entry(&context, call.stack + call.stack_size,
               call.local_stack + active->local_base, 0);
+  // A successful entry runs the complete resident straight-line chain. Count
+  // each body only after pre-entry capacity checks and the native call, including
+  // successors that bypass dispatcher lookup. Snapshot links stay fixed here.
+  if (terminal_dispatch_entry<false, true>(
+          call.entries, call.entry_count, &start, chain_body_count) != terminal) {
+    call.error_code = kNativeErrorInternal;
+    return dispatch_iteration::error;
+  }
   if constexpr (CollectStats) {
     ++state.metrics.stats.trace_count;
     state.metrics.stats.body_count += chain_body_count;
@@ -2627,6 +2669,7 @@ dispatch_iteration execute_native_trace(
   if constexpr (CollectStats) ++state.metrics.stats.control_handler_count;
   const auto result = execute_control_boundary<false>(call, terminal_ip);
   if (result.kind == kCallBoundary) {
+    context.runtime_flags |= kPendingBlockHeadFlag;
     call.stack_size = context.sp_offset;
     const auto* next_frame = active_frame(context);
     if (next_frame == nullptr) {
@@ -2658,6 +2701,7 @@ dispatch_iteration execute_native_trace(
     return dispatch_iteration::error;
   }
 
+  context.runtime_flags |= kPendingBlockHeadFlag;
   if constexpr (CollectStats) state.metrics.stats.control_handler_pending_trace = true;
   context.ip = result.next_ip;
   call.stack_size = context.sp_offset;
@@ -2728,6 +2772,7 @@ int run_native_dispatch_abi(const fb_native_dispatch_call* input,
   native_dispatch_state<CollectStats, CollectHotspots> state{
       call, call.call_frame->function_view->code_pc_offset + call.initial_ip, kFallback, 0, {}};
   const auto previous_runtime_flags = call.context->runtime_flags;
+  if (call.initial_ip == 0) call.context->runtime_flags |= kPendingBlockHeadFlag;
   if constexpr (CollectHotspots) {
     call.context->runtime_flags |= kStopAtDefinedCallBoundaryFlag;
   }
@@ -2738,8 +2783,12 @@ int run_native_dispatch_abi(const fb_native_dispatch_call* input,
     }
     dispatch_iteration outcome;
     if constexpr (std::is_void_v<Debugger>) {
-      const auto* start = find_dispatch_entry(call.entries, call.entry_count,
-                                              state.current_pc);
+      const auto ip = call.context->ip;
+      const auto skip_trace_lookup = (call.context->runtime_flags & kPendingBlockHeadFlag) == 0 ||
+          ip >= call.code_size ||
+          opcode_is_control_terminator(call.code[ip]) || call.code[ip] == kOpcodeFcPrefix;
+      const auto* start = skip_trace_lookup ? nullptr :
+          find_dispatch_entry(call.entries, call.entry_count, state.current_pc);
       if (start != nullptr && start->promote_on_hit != 0) {
         if constexpr (CollectStats) {
           if (state.metrics.stats.control_handler_pending_trace) {
@@ -2769,7 +2818,8 @@ int run_native_dispatch_abi(const fb_native_dispatch_call* input,
     if (outcome == dispatch_iteration::stop_dispatch) break;
   }
 
-  call.context->runtime_flags = previous_runtime_flags;
+  call.context->runtime_flags = (previous_runtime_flags & ~kPendingBlockHeadFlag) |
+      (call.context->runtime_flags & kPendingBlockHeadFlag);
   if (call.error_code != 0) return native_abi_error(result, call.error_code);
   write_native_dispatch_result(state, *result);
   return 1;
@@ -2831,12 +2881,14 @@ int run_native_step_abi(const fb_native_step_call* call, fb_native_result* outpu
     if (!opcode_is_control_terminator(opcode) && opcode != kOpcodeFcPrefix) {
       return native_abi_error(output, kNativeErrorInvalidArgument);
     }
+    execution_context->runtime_flags &= ~kPendingBlockHeadFlag;
     const auto previous_flags = execution_context->runtime_flags;
     execution_context->runtime_flags |= kStopAfterControlFlag;
     step = dispatch(execution_context, stack, locals,
                     top_value(*execution_context, stack));
     execution_context->runtime_flags = previous_flags;
   } else {
+    execution_context->runtime_flags &= ~kPendingBlockHeadFlag;
     step = dispatch(execution_context, stack, locals,
                     top_value(*execution_context, stack));
   }
@@ -2850,16 +2902,19 @@ int run_native_step_abi(const fb_native_step_call* call, fb_native_result* outpu
     output->ip = step.next_ip;
     output->stack_size = execution_context->sp_offset;
   } else if (step.kind == kBlockBoundary) {
+    execution_context->runtime_flags |= kPendingBlockHeadFlag;
     execution_context->ip = step.next_ip;
     output->status = kBlockBoundary;
     output->ip = step.next_ip;
     output->stack_size = execution_context->sp_offset;
   } else if (step.kind == kTrap) {
+    execution_context->runtime_flags &= ~kPendingBlockHeadFlag;
     output->status = kTrap;
     output->ip = execution_context->ip;
     output->stack_size = execution_context->sp_offset;
     output->trap_code = step.trap_code;
   } else {
+    execution_context->runtime_flags &= ~kPendingBlockHeadFlag;
     execution_context->ip = static_cast<std::uint32_t>(call->code_bytes);
     output->status = kComplete;
     output->ip = kSentinel;

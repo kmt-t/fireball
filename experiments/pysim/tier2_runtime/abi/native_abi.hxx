@@ -24,6 +24,7 @@ struct fb_native_trace_descriptor {
   std::uint32_t chain_next_pc;
   std::uint32_t chain_stack_words;
   std::uint32_t promote_on_hit;
+  std::uint32_t* exec_count;
 };
 
 struct fb_native_dispatch_call {
@@ -40,8 +41,9 @@ struct fb_native_dispatch_call {
   const fb_native_trace_descriptor* entries;
   std::uint32_t entry_count;
   std::uint64_t entries_bytes;
-  const std::uint32_t* trackable_blocks;
-  std::uint32_t trackable_count;
+  const std::uint8_t* trackable_mask;
+  std::uint32_t trackable_card_count;
+  std::uint32_t trackable_shift;
   std::uint64_t trackable_bytes;
   std::uint32_t* block_history;
   std::uint64_t block_history_bytes;

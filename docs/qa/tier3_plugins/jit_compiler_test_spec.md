@@ -37,10 +37,10 @@ Copy-and-Patchエンジンによるネイティブコード生成、4論理引�
 
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| TEST-JITC-20 | x64ヘッダサイズは固定24バイト | x64向けに生成したトレース | ヘッダを解析 | `+0x00 head_wasm_pc(u32)`, `+0x04 trace_byte_size(u16)`, `+0x06 flags(u8)`, `+0x07 variant_id(u8)`, `+0x08 chain_target_addr(u64)`, `+0x10 helper_target_addr(u64)`を含む24バイト構造 | [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) |
-| TEST-JITC-21 | flagsビットの意味 | PROMOTED済み/LOOP_HEADERのトレース | flagsを確認 | `0x01: PROMOTED`, `0x02: LOOP_HEADER`が正しく設定される | 同上 |
-| TEST-JITC-22 | x64エントリstubは24バイトヘッダ直後に配置 | x64向けに生成したトレース | 独立した機械語期待値、entry stubのbodyアドレスと共通prologueへの分岐先を比較し、生成コードを実行する | 24バイトヘッダ直後(+0x18)から15バイトのentry stubが始まり、bodyはその直後(+0x27)から始まる。共通prologueの対象ABIの保存・引数配置と分岐先が一致し、入力5の計算結果は40である。ARMv8-Mの配置はTBD | [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md)、`test_python_trace_compiler_is_selected_per_instance` |
-| TEST-JITC-23 | 予約済み`variant_id`の現行値 | x64向けトレースを生成 | トレースヘッダを解析 | 現行生成器は`variant_id=0`を出力し、異なるレジスタ割り当てvariantの選択やvariant間chainを行わない | [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md), `{JIT_RegisterMapping}` |
+| TEST-JITC-20 | x64ヘッダサイズは固定16バイト | x64向けに生成したトレース | ヘッダを解析 | `+0x00 chain_target_addr(u64)`, `+0x08 helper_target_addr(u64)`だけを含む16バイト構造 | [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) |
+| TEST-JITC-21 | 昇格状態を管理情報で保持する | OldestからActiveへ昇格するトレース | cache管理情報と物理ヘッダを確認する | 管理情報の `0x01: PROMOTED` が設定される。物理ヘッダへflags欄を追加しない | 同上 |
+| TEST-JITC-22 | x64エントリstubは16バイトヘッダ直後に配置 | x64向けに生成したトレース | 独立した機械語期待値、entry stubのbodyアドレスと共通prologueへの分岐先を比較し、生成コードを実行する | 16バイトヘッダ直後(+0x10)から15バイトのentry stubが始まり、bodyはその直後(+0x1F)から始まる。共通prologueの対象ABIの保存・引数配置と分岐先が一致し、入力5の計算結果は40である。ARMv8-Mの配置はTBD | [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md)、`test_python_trace_compiler_is_selected_per_instance` |
+| TEST-JITC-23 | 管理情報を物理ヘッダへ複製しない | x64向けトレースを生成 | トレースヘッダを解析 | 先頭PC、コード長、flags、未使用のvariant欄を持たず、生成コードと共通コードが読む2つのtargetだけを持つ | [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md), `{JIT_RegisterMapping}` |
 
 ### ADR_ScalableCodeOffset
 
@@ -95,7 +95,7 @@ Copy-and-Patchエンジンによるネイティブコード生成、4論理引�
 - **TEST-JITC-05 (W^X)**: [`test_exec_memory.py`](experiments/pysim/qa/tier3_plugins/jit/test_exec_memory.py)の`test_executable_buffer_wx_protection_lifecycle`はAPIのトランザクション状態と書込み拒否を検査する。`test_executable_buffer_linux_mapping_enforces_wx`は内部の`current_protection`を期待値に使わず、Linuxカーネルが公開する実権限を独立に確認する。初期状態、初回commit、再パッチ、再commitの4状態を確認する。
 - **TEST-JITC-05の反証確認**: `mprotect`への指定に書込み・実行ビットを追加して実権限をRWXにする試験内変異を用いる。メタデータがRXのままでも、OS実権限の期待値`r-x`との不一致で失敗することを確認する。
 - **TEST-JITC-10 (4論理引数規約)**: `(ctx, sp, local_base, tos)` の論理引数順序がInterpreterとJITで一致することを確認する。x64の物理配置は [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) が定める。
-- **TEST-JITC-20〜22 (x64 24バイト物理ヘッダ)**: x64の `jit_trace_header` はtrace識別情報とchain/helper targetだけを保持し、24バイト直後に15バイトのentry stub、さらにその後にnative bodyを配置する。ARMv8-Mの配置はTBDである。
+- **TEST-JITC-20〜22 (x64 16バイト物理ヘッダ)**: x64の `jit_trace_header` はchain/helper targetだけを保持し、16バイト直後に15バイトのentry stub、さらにその後にnative bodyを配置する。ARMv8-Mの配置はTBDである。
 - **TEST-JITC-40 (PIC 位置独立性)**: トレースバイナリを別のメモリ領域・オフセットへコピーして再コンパイルなしで直接実行し、完全同一の演算結果を返すことを実証済み。
 - **TEST-JITC-42 (3面キャッシュ代謝 & 有界アンリンク)**: 3面マルチバッファキャッシュのローテーション、破棄バンク全体の消去、および被チェイン逆引きテーブルに基づく `O(n + k log n)` 処理を実証済み。
 - **TEST-JITC-43 (ホストコール ABI)**: `test_jitr_host_import_stays_on_interpreter_runtime_boundary`は、traceからInterpreterへ戻った後のhost import呼出しと結果を検査する。raw guest bindingの0〜6引数検査は型・値・port搬送の証拠である。0〜6引数の物理スタックアライメントとCaller-savedレジスタの完全保護は未検証である。

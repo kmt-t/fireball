@@ -63,6 +63,11 @@ def build_model(*, guards: bool = True, aging_guard: bool = True) -> Kripke:
         "s_bad_aged_hot",  # スイープが HOT（コンパイル待ち列）を戻した
         "s_bad_aging_stall",  # EXECUTED がスイープされず永久に残る
     ]
+    # Two descriptor slots abstract the capacity boundary independently of
+    # code bytes: insertion increments usage; a full bank rotates first.
+    entry_capacity = 2
+    entry_states = [f"e_used_{used}" for used in range(entry_capacity + 2)]
+    S.extend(entry_states)
     S0 = {"s_idle", "ch_s0_t0_l1", "ch_s0_t1_l1"}
     R = [
         # --- 抽象W^X状態 & 3面キャッシュ代謝サイクル ---
@@ -105,6 +110,13 @@ def build_model(*, guards: bool = True, aging_guard: bool = True) -> Kripke:
         ("s_bad_aged_hot", "s_bad_aged_hot"),
         ("s_bad_aging_stall", "s_bad_aging_stall"),
     ]
+    R.append(("s_idle", entry_states[0]))
+    for used, state in enumerate(entry_states):
+        R.append((state, state))  # Replacing an existing key consumes no slot.
+        if used < entry_capacity:
+            R.append((state, entry_states[used + 1]))
+        elif used == entry_capacity:
+            R.append((state, entry_states[0] if guards else entry_states[used + 1]))
     if not guards or not aging_guard:
         # エイジング変異（独立検査可能）:
         # 1. スイープが COMPILED まで戻す（常駐トレースのカードを失う）
@@ -161,12 +173,22 @@ def build_model(*, guards: bool = True, aging_guard: bool = True) -> Kripke:
         "s_bad_aged_hot": {"bad_aged_hot", "unexecuted"},
         "s_bad_aging_stall": {"executed", "aging_stalled"},
     }
+    for used, state in enumerate(entry_states):
+        L[state] = {"entry_overflow"} if used > entry_capacity else {"entry_bounded"}
     return Kripke(S=S, S0=S0, R=R, L=L)
 
 
 def properties():
     bad_wx = And(AtomicProposition("writing"), AtomicProposition("executing"))
     return [
+        {
+            "name": "descriptor_slots_never_overflow",
+            "kind": "safety",
+            "logic": "CTL",
+            "formula": AG(Not(AtomicProposition("entry_overflow"))),
+            "violation": AtomicProposition("entry_overflow"),
+            "expect": True,
+        },
         {
             "name": "w_xor_x_safety_proof",
             "kind": "safety",

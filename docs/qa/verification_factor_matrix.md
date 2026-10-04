@@ -44,7 +44,7 @@
 | Tier 2 Runtime | `runtime_observability` | [`events.py`](experiments/pysim/tier2_runtime/observability/events.py), [`composer.py`](experiments/pysim/tier2_runtime/runtime/composer.py)（公開call境界のみ） | N/A（内部実行イベント未統合） | `runtime_observability_test_spec.md` | `test_runtime_composer.py` | — | — | N/A（実機Runtime未統合） | contract_only |
 | Tier 3 Plugins | `guest_profiler` | `guest_profiler.py` | `guest_profiler_model.py` | `guest_profiler_test_spec.md` | `test_guest_profiler.py` | — | — | `test_runtime_composer.py` | required |
 | Tier 3 Plugins | `jit_compiler` | N/A (x64 implementation is covered directly; ARMv8-M is TBD) | `jit_cache_model.py` | `jit_compiler_test_spec.md`, `wasm_instruction_set_test_spec.md` | `test_x64_jit.py`, `test_exec_memory.py` | — | — | 4, 5, 8 | required |
-| Tier 3 Plugins | `jit_runtime` | N/A (x64 runtime tests cover the confirmed path; ARMv8-M is TBD) | `jit_cache_model.py`, `jit_hotspot_model.py` | `jit_runtime_test_spec.md` | `test_jit_runtime.py`, `test_x64_jit.py`, `test_jit_differential.py` | — | — | 4, 5, 8 | required |
+| Tier 3 Plugins | `jit_runtime` | N/A (x64 runtime tests cover the confirmed path; ARMv8-M is TBD) | `jit_cache_model.py`, `jit_hotspot_model.py`, `jit_trace_execution_model.py` | `jit_runtime_test_spec.md` | `test_jit_runtime.py`, `test_x64_jit.py`, `test_jit_differential.py` | — | — | 4, 5, 8 | required |
 | Tier 3 Platform | `libfireball` | `libfireball.py`（pysim host-call参照モデルのみ） | N/A（raw Core Wasm ABIを実guestで検査） | `libfireball_test_spec.md` | `test_libfireball.py` | — | — | N/A（raw 4 import guest統合。実機ABIは対象外） | contract_only |
 | Tier 3 Platform | `platform_driver` | `platform_driver_concept.py` | `interrupt_boundary_model.py` | `platform_driver_test_spec.md` | `test_hal.py` | [`test_driver_stubs.py`](experiments/pysim/qa/integration/test_driver_stubs.py) | `test_wasi_guest.py`, `test_driver_stubs_guest.py` | 10, 11 | required |
 
@@ -122,6 +122,7 @@
 | formal | [vsoc_state_model.py](docs/components/tier2_runtime/formal/vsoc_state_model.py) |
 | formal | [jit_cache_model.py](docs/components/tier3_plugins/formal/jit_cache_model.py) |
 | formal | [jit_hotspot_model.py](docs/components/tier3_plugins/formal/jit_hotspot_model.py) |
+| formal | [jit_trace_execution_model.py](docs/components/tier3_plugins/formal/jit_trace_execution_model.py) |
 | formal | [interrupt_boundary_model.py](docs/components/tier3_platform/formal/interrupt_boundary_model.py) |
 | test spec | [os_coos_test_spec.md](docs/qa/tier1_core/os_coos_test_spec.md) |
 | test spec | [os_scheduler_test_spec.md](docs/qa/tier1_core/os_scheduler_test_spec.md) |

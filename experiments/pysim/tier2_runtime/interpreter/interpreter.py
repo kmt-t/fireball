@@ -53,6 +53,7 @@ from config import (
 from system_containers import StaticVector
 from tier2_runtime.abi import native_abi as _native_abi
 from tier2_runtime.abi.interpreter_abi import (
+    EXECUTION_CONTEXT_FLAG_PENDING_BLOCK_HEAD,
     EXECUTION_CONTEXT_FLAG_STOP_AT_BLOCK_BOUNDARY,
     NATIVE_VALUE_STACK_CAPACITY,
     CallFrameNative,
@@ -1742,6 +1743,7 @@ class Interpreter:
         call_state.finished = True
         call_state.results = None
         call_state.trap = trap
+        call_state.context.runtime_flags &= ~EXECUTION_CONTEXT_FLAG_PENDING_BLOCK_HEAD
         call_state.context.release_workspace()
 
     def run_iter(self, func_index: int, args: Sequence[WasmNumber]) -> Iterator[InterpreterCall]:
@@ -1957,6 +1959,8 @@ class Interpreter:
             )
             if trap is not None:
                 self._abort_call(call_state, trap, ip)
+            elif not call_state.finished:
+                call_state.context.runtime_flags |= EXECUTION_CONTEXT_FLAG_PENDING_BLOCK_HEAD
             return call_state
         if opcode == CALL_INDIRECT:
             _, off = decode_unsigned(frame.code, ip + 1)
@@ -1976,6 +1980,8 @@ class Interpreter:
             )
             if trap is not None:
                 self._abort_call(call_state, trap, ip)
+            elif not call_state.finished:
+                call_state.context.runtime_flags |= EXECUTION_CONTEXT_FLAG_PENDING_BLOCK_HEAD
             return call_state
         if I32_LOAD <= opcode <= MEMORY_GROW:
             return self._resolve_native_memory_boundary(call_state, opcode, ip)
@@ -1984,7 +1990,10 @@ class Interpreter:
             assert subopcode == FC_MEMORY_COPY or subopcode == FC_MEMORY_FILL, (
                 f"C++ interpreter does not implement 0xFC subopcode {subopcode}"
             )
-            return self._resolve_native_memory_boundary(call_state, opcode, ip)
+            self._resolve_native_memory_boundary(call_state, opcode, ip)
+            if not call_state.finished:
+                call_state.context.runtime_flags |= EXECUTION_CONTEXT_FLAG_PENDING_BLOCK_HEAD
+            return call_state
         assert False, f"C++ interpreter does not implement opcode 0x{opcode:02X}"
 
     def _resolve_native_memory_boundary(
@@ -2031,6 +2040,7 @@ class Interpreter:
             call_state.cont = None
             call_state.finished = True
             call_state.results = results
+            call_state.context.runtime_flags &= ~EXECUTION_CONTEXT_FLAG_PENDING_BLOCK_HEAD
             call_state.context.release_workspace()
             return call_state
 
@@ -2041,6 +2051,7 @@ class Interpreter:
         call_state._frame = parent_frame
         call_state._locals = parent_locals
         call_state._tos = parent_frame.values.raw_top() if parent_frame.values else 0
+        call_state.context.runtime_flags |= EXECUTION_CONTEXT_FLAG_PENDING_BLOCK_HEAD
         return call_state
 
     def step_native_control(self, call_state: InterpreterCall) -> InterpreterCall:
@@ -2149,10 +2160,11 @@ class Interpreter:
                     context.control_frame_stack.address,
                     context.control_frame_stack.native_bytes,
                     snapshot.entries,
-                    snapshot.trackable_blocks,
+                    snapshot.trackable_mask,
                     snapshot.block_history,
                     snapshot.entry_count,
-                    snapshot.trackable_count,
+                    snapshot.trackable_card_count,
+                    snapshot.trackable_shift,
                     len(frame.values),
                     frame.values.capacity,
                     call_state._ip,
@@ -2185,10 +2197,11 @@ class Interpreter:
                     locals_arr._storage.raw_view,
                     context.control_frame_stack.raw_view,
                     snapshot.entries,
-                    snapshot.trackable_blocks,
+                    snapshot.trackable_mask,
                     snapshot.block_history,
                     snapshot.entry_count,
-                    snapshot.trackable_count,
+                    snapshot.trackable_card_count,
+                    snapshot.trackable_shift,
                     len(frame.values),
                     frame.values.capacity,
                     call_state._ip,
@@ -2263,7 +2276,9 @@ class Interpreter:
                     result=context._native_result,
                 )
         finally:
-            context.runtime_flags = previous_flags
+            context.runtime_flags = (
+                previous_flags & ~EXECUTION_CONTEXT_FLAG_PENDING_BLOCK_HEAD
+            ) | (int(context.runtime_flags) & EXECUTION_CONTEXT_FLAG_PENDING_BLOCK_HEAD)
 
         frame.values.set_size(native_size)
         context.ip = native_ip

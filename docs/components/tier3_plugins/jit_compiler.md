@@ -29,7 +29,7 @@ JITサブシステムは、以下の2つの独立した設計書に責務を分�
 - **共通コード領域**: x64 JIT領域では開始処理、終了処理、helper契約別入口、chain dispatcherを共通領域へ配置する。命令別条件評価やhandler呼出しを単一dispatcherへ集約しない。x64の領域サイズと各offsetは [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) および [`jit_runtime.md`](docs/components/tier3_plugins/jit_runtime.md) を正本とする。ARMv8-Mのサイズと配置はTBDである。 `{JIT_MultiBuffer_Cache}`
 - **`constexpr_assembler`**: C++の `constexpr` 機能を活用し、opcodeを判定しない共通chain dispatcherの固定命令列をビルド時に生成する。命令別handlerはC++ interpreter内で直接選択し、この共通dispatcherへ集約しない。
 - **命令テンプレート (`jit_template`)**: パッチスロットを含むネイティブ命令列の雛形（x64では `trace_compiler.cxx` のC++実装が生成する。ARMv8-Mの物理仕様はTBD）。
-- **JIT トレースヘッダ (`jit_trace_header`)**: キャッシュに書き込まれる各ネイティブトレースの先頭に配置される実行時メタデータ構造体。x64では24バイトで、trace identity、chain target、必要なhelper targetを保持する。共通コードoffsetと論理的な後続PCは重複格納しない。物理欄は対象ABIごとに定義する。
+- **JIT トレースヘッダ (`jit_trace_header`)**: キャッシュに書き込まれる各ネイティブトレースの先頭に配置される実行時メタデータ構造体。x64では16バイトで、生成コードと共通コードが読むchain targetとhelper targetだけを保持する。JITコードから相対参照できるコード近傍に配置する。共通コードoffsetと論理的な後続PCは重複格納しない。物理欄は対象ABIごとに定義する。
 
 ### 3.2 内部ブロック図
 ```mermaid
@@ -135,7 +135,7 @@ JIT トレースとインタープリタが共有オペランド領域上で相�
 
 #### JIT トレース物理メモリレイアウト (`jit_trace_header`)
 <!-- traceability: {JIT_LazyChaining} {SimpleJITArchitecture} {PositionIndependentCode} -->
-物理配置は対象ごとのABI契約へ委譲する。Windows x64およびSystem V AMD64の24バイト配置は [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) に定義し、ARMv8-Mの物理配置と命令列はTBDである。これらの配置を一つの共通ヘッダとして扱ってはならない。
+物理配置は対象ごとのABI契約へ委譲する。Windows x64およびSystem V AMD64の16バイト配置は [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) に定義し、ARMv8-Mの物理配置と命令列はTBDである。これらの配置を一つの共通ヘッダとして扱ってはならない。
 
 #### ネイティブトレースコンパイラ (`trace_compiler.cxx`)
 <!-- traceability: {JIT_Encoder} {META_ZeroCostAbstraction} -->

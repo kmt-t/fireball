@@ -1,6 +1,6 @@
 {
-  "measured_at_utc": "2026-10-04T20:34:58.208341+00:00",
-  "source_revision": "1328ab03aea4f9214b70f925f43077fc79b13b8f",
+  "measured_at_utc": "2026-10-04T20:51:00.660874+00:00",
+  "source_revision": "dc4f8fec32344eb65d93689e0a684ce8b9209c14",
   "source_worktree_modified": true,
   "runtime_source_sha256": {
     "__init__.py": "2b8295c400a7a95ae10112731aa147d04000e0a29593640dd965743ded4c2b58",
@@ -104,7 +104,7 @@
   "arena_capacity_bytes": 131072,
   "allocator_workspace_directory_bytes": 1344,
   "calls_per_mode": 3,
-  "measurement_script_sha256": "c92548813247ec3bb673b7f420373ba585087090a5ce098a69cd6b0966400e3d",
+  "measurement_script_sha256": "544dd73fd0991ed8a7a03830a3bf39cccc8425aaf2c097bd0908ed12650e255f",
   "allocator_sha256": "35241775a79c0af57659388f682204093f9bd7c93d88f0c6f043a359f8f0ebf3",
   "config_sha256": "ea75a12b835218c39967fe499eae3865bbd57b7a9a8ebaaff5114825d8ea2242",
   "excluded": [
@@ -195,7 +195,8 @@
         }
       ],
       "dispatch_workspace_bytes": 0,
-      "resident_trace_bytes": []
+      "resident_trace_bytes": [],
+      "jit_unaccounted_storage": []
     },
     {
       "workload": "arithmetic",
@@ -288,6 +289,28 @@
         62,
         71,
         89
+      ],
+      "jit_unaccounted_storage": [
+        {
+          "name": "hotspot_state_bits",
+          "payload_bytes": 3
+        },
+        {
+          "name": "trackable_mask_bits",
+          "payload_bytes": 2
+        },
+        {
+          "name": "card_update_bits",
+          "payload_bytes": 2
+        },
+        {
+          "name": "native_fast_cache_arrays",
+          "payload_bytes": 208
+        },
+        {
+          "name": "resident_execution_counters",
+          "payload_bytes": 12
+        }
       ]
     },
     {
@@ -377,7 +400,8 @@
         }
       ],
       "dispatch_workspace_bytes": 0,
-      "resident_trace_bytes": []
+      "resident_trace_bytes": [],
+      "jit_unaccounted_storage": []
     },
     {
       "workload": "indirect_calls",
@@ -476,6 +500,28 @@
       "resident_trace_bytes": [
         63,
         71
+      ],
+      "jit_unaccounted_storage": [
+        {
+          "name": "hotspot_state_bits",
+          "payload_bytes": 8
+        },
+        {
+          "name": "trackable_mask_bits",
+          "payload_bytes": 4
+        },
+        {
+          "name": "card_update_bits",
+          "payload_bytes": 4
+        },
+        {
+          "name": "native_fast_cache_arrays",
+          "payload_bytes": 208
+        },
+        {
+          "name": "resident_execution_counters",
+          "payload_bytes": 8
+        }
       ]
     },
     {
@@ -572,7 +618,8 @@
         }
       ],
       "dispatch_workspace_bytes": 0,
-      "resident_trace_bytes": []
+      "resident_trace_bytes": [],
+      "jit_unaccounted_storage": []
     },
     {
       "workload": "kernel_suite",
@@ -680,6 +727,28 @@
         49,
         62,
         189
+      ],
+      "jit_unaccounted_storage": [
+        {
+          "name": "hotspot_state_bits",
+          "payload_bytes": 912
+        },
+        {
+          "name": "trackable_mask_bits",
+          "payload_bytes": 456
+        },
+        {
+          "name": "card_update_bits",
+          "payload_bytes": 456
+        },
+        {
+          "name": "native_fast_cache_arrays",
+          "payload_bytes": 208
+        },
+        {
+          "name": "resident_execution_counters",
+          "payload_bytes": 16
+        }
       ]
     },
     {
@@ -762,7 +831,8 @@
         }
       ],
       "dispatch_workspace_bytes": 0,
-      "resident_trace_bytes": []
+      "resident_trace_bytes": [],
+      "jit_unaccounted_storage": []
     },
     {
       "workload": "aobench",
@@ -883,6 +953,28 @@
         88,
         62,
         49
+      ],
+      "jit_unaccounted_storage": [
+        {
+          "name": "hotspot_state_bits",
+          "payload_bytes": 60
+        },
+        {
+          "name": "trackable_mask_bits",
+          "payload_bytes": 30
+        },
+        {
+          "name": "card_update_bits",
+          "payload_bytes": 30
+        },
+        {
+          "name": "native_fast_cache_arrays",
+          "payload_bytes": 208
+        },
+        {
+          "name": "resident_execution_counters",
+          "payload_bytes": 124
+        }
       ]
     }
   ]

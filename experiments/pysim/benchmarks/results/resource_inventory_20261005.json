@@ -1,0 +1,804 @@
+{
+  "measured_at_utc": "2026-10-04T21:02:11.212699+00:00",
+  "source_revision": "3cc9ca14c285746acdbf3f0201f3f69ac0ec574a",
+  "source_worktree_modified": true,
+  "script_sha256": "7ffcfb72edc6dae4dd92dd3f79db5b972e36cc1a34535d4b6a7c1dec52770007",
+  "host_machine": "x86_64",
+  "pygments_version": "2.21.0",
+  "compiler": "Ubuntu clang version 21.1.8 (6ubuntu1)",
+  "sloc_definition": "physical nonblank code lines; comments and Python docstrings excluded; preprocessor directives included",
+  "source_excluded": [
+    "QA/tests",
+    "benchmarks",
+    "scenarios",
+    "third_party/",
+    "main.py",
+    "aobench.py",
+    "experiments/pysim/tier2_runtime/interpreter/*.py (reference only)"
+  ],
+  "reference_python_interpreter_excluded": {
+    "name": "reference_python_interpreter_excluded",
+    "files": [
+      {
+        "path": "experiments/pysim/tier2_runtime/interpreter/__init__.py",
+        "sha256": "7f66de44ec95ea903d694690e14124c121f5f11d96f1393fbc1875270b8631b5",
+        "physical_lines": 1,
+        "code_lines": 0
+      },
+      {
+        "path": "experiments/pysim/tier2_runtime/interpreter/control_flow.py",
+        "sha256": "7dcb32e15f010b43f1b89d2e07e67aa14fac65666233668208c31d8498993443",
+        "physical_lines": 1012,
+        "code_lines": 804
+      },
+      {
+        "path": "experiments/pysim/tier2_runtime/interpreter/execution_context.py",
+        "sha256": "49d9afc6c39e48094eef3b83dd3d78288d89b30a4d7a162e5b265d148f6e9eba",
+        "physical_lines": 36,
+        "code_lines": 18
+      },
+      {
+        "path": "experiments/pysim/tier2_runtime/interpreter/interpreter.py",
+        "sha256": "bb012d271efc1f019693938e0322c202e124ae852a31639e1664fdb514ac9032",
+        "physical_lines": 5256,
+        "code_lines": 4391
+      }
+    ],
+    "physical_lines": 6305,
+    "code_lines": 5213
+  },
+  "elf_scope": "x64 reference shared libraries built by checked-in -O2 build scripts; not ARM firmware",
+  "source_groups": [
+    {
+      "name": "tier1_core",
+      "files": [
+        {
+          "path": "experiments/pysim/tier1_core/__init__.py",
+          "sha256": "4e990d5be458f6688c26ee30e9b2baff016f20a0eea8d46b4d46ad00b1b78d28",
+          "physical_lines": 1,
+          "code_lines": 0
+        },
+        {
+          "path": "experiments/pysim/tier1_core/bump_allocator.py",
+          "sha256": "35241775a79c0af57659388f682204093f9bd7c93d88f0c6f043a359f8f0ebf3",
+          "physical_lines": 112,
+          "code_lines": 87
+        },
+        {
+          "path": "experiments/pysim/tier1_core/config.py",
+          "sha256": "ea75a12b835218c39967fe499eae3865bbd57b7a9a8ebaaff5114825d8ea2242",
+          "physical_lines": 86,
+          "code_lines": 60
+        },
+        {
+          "path": "experiments/pysim/tier1_core/fnv1a.py",
+          "sha256": "8dcbbc61fbe86393e98a42e76317a72dd5b7d2ad7440abec174022de2908626c",
+          "physical_lines": 11,
+          "code_lines": 6
+        },
+        {
+          "path": "experiments/pysim/tier1_core/interrupt_event.py",
+          "sha256": "00e8672cce9cba07c90c69d6f86b031bb4b6cf189f4e1c6c91405a9d3079db94",
+          "physical_lines": 25,
+          "code_lines": 17
+        },
+        {
+          "path": "experiments/pysim/tier1_core/printk.py",
+          "sha256": "e302af6ce79e0cc2451dfb06953e662a3d22d05ad11aa2a48b288bbf59112481",
+          "physical_lines": 109,
+          "code_lines": 79
+        },
+        {
+          "path": "experiments/pysim/tier1_core/scheduler.py",
+          "sha256": "36d25708e8221e7d8b8b3a800013d3d2b3f144640090fc62e85a71ab59fca798",
+          "physical_lines": 1183,
+          "code_lines": 946
+        },
+        {
+          "path": "experiments/pysim/tier1_core/system_containers.py",
+          "sha256": "cd1732ebd47155667813c3e8ba87263e108003bac0b76646553ec50072d94f83",
+          "physical_lines": 1348,
+          "code_lines": 954
+        }
+      ],
+      "physical_lines": 2875,
+      "code_lines": 2149
+    },
+    {
+      "name": "tier1_interface",
+      "files": [
+        {
+          "path": "experiments/pysim/tier1_interface/__init__.py",
+          "sha256": "1d18daae9bd0fc18eb48d8045bea0224c1fe2d46250ca7a1d914838551778b4f",
+          "physical_lines": 1,
+          "code_lines": 0
+        },
+        {
+          "path": "experiments/pysim/tier1_interface/ipc_router.py",
+          "sha256": "033ef5b0f27c562ec0413ee8b4c346e300de9b8e3957a2532044fc01bfcfa344",
+          "physical_lines": 802,
+          "code_lines": 563
+        },
+        {
+          "path": "experiments/pysim/tier1_interface/memory_interface.py",
+          "sha256": "44961a666bf33a5ed8c71a3525e7a84a911d978852e2566224052792199ee74d",
+          "physical_lines": 74,
+          "code_lines": 36
+        }
+      ],
+      "physical_lines": 877,
+      "code_lines": 599
+    },
+    {
+      "name": "tier2_runtime",
+      "files": [
+        {
+          "path": "experiments/pysim/tier2_runtime/__init__.py",
+          "sha256": "dbbfed7445a542abf92cc840d9529ef1fa97b9a93d8023beb422d6d86cb7da1f",
+          "physical_lines": 1,
+          "code_lines": 0
+        },
+        {
+          "path": "experiments/pysim/tier2_runtime/abi/__init__.py",
+          "sha256": "7d503558d2b751148d2af44ad4332eabbbbd9d549ef86e3364b5a02ee450edae",
+          "physical_lines": 1,
+          "code_lines": 0
+        },
+        {
+          "path": "experiments/pysim/tier2_runtime/abi/interpreter_abi.py",
+          "sha256": "732f56057f6e2c42bd46463267e80da7424468de3fddc494bcba11286e208c72",
+          "physical_lines": 758,
+          "code_lines": 554
+        },
+        {
+          "path": "experiments/pysim/tier2_runtime/abi/jit_abi.py",
+          "sha256": "59d6ebf12d8a228986f6015244753eee490badc4f9b977bbe25e8a42720eeb40",
+          "physical_lines": 159,
+          "code_lines": 121
+        },
+        {
+          "path": "experiments/pysim/tier2_runtime/abi/native_abi.py",
+          "sha256": "96caed30e09866fb1bd0762bb23916119c8da8618b49cc647b905b6e9b2d073b",
+          "physical_lines": 885,
+          "code_lines": 817
+        },
+        {
+          "path": "experiments/pysim/tier2_runtime/abi/native_stack_abi.py",
+          "sha256": "a372f795994781156178606eb3f9a89dd57f690935866b464d56cf139fb617eb",
+          "physical_lines": 385,
+          "code_lines": 286
+        },
+        {
+          "path": "experiments/pysim/tier2_runtime/hal/__init__.py",
+          "sha256": "25a666aa3c0b838af9111230d870844c99a8181f94807ad6a77d4386cecb3c77",
+          "physical_lines": 1,
+          "code_lines": 0
+        },
+        {
+          "path": "experiments/pysim/tier2_runtime/hal/dispatch.py",
+          "sha256": "38b6e843039afde7fa080a6aa680f8b8b9f726c83eb11c5b0496356bf39f8434",
+          "physical_lines": 482,
+          "code_lines": 299
+        },
+        {
+          "path": "experiments/pysim/tier2_runtime/memory/__init__.py",
+          "sha256": "6a8a5a73076c61836a785d47260156ad32a222bd4d9fbcb0329956a16abf60fe",
+          "physical_lines": 1,
+          "code_lines": 0
+        },
+        {
+          "path": "experiments/pysim/tier2_runtime/memory/manager.py",
+          "sha256": "68001fb74dfe9ca82553eb91b98d05d8405bdd728afa41930a9134f2f0916f6b",
+          "physical_lines": 834,
+          "code_lines": 659
+        },
+        {
+          "path": "experiments/pysim/tier2_runtime/observability/__init__.py",
+          "sha256": "69cc81b72e4abe9020d72ac77644a352e24231e18b25be86c611d4d5889eda93",
+          "physical_lines": 1,
+          "code_lines": 0
+        },
+        {
+          "path": "experiments/pysim/tier2_runtime/observability/events.py",
+          "sha256": "f129b223d36862ec8e36b08d35706772439f960fdb9ab0daea24cbb46530fdad",
+          "physical_lines": 315,
+          "code_lines": 248
+        },
+        {
+          "path": "experiments/pysim/tier2_runtime/observability/logger.py",
+          "sha256": "383be6d451cf2c0b82d1df89a095dd48294b9516a67e23b86d6b20bc22e7aade",
+          "physical_lines": 417,
+          "code_lines": 344
+        },
+        {
+          "path": "experiments/pysim/tier2_runtime/observability/logging_interface.py",
+          "sha256": "8a240b36ba258ccd4bac1657d4c41311fbbfd55e9adbef1424d758a775ddbc4a",
+          "physical_lines": 34,
+          "code_lines": 23
+        },
+        {
+          "path": "experiments/pysim/tier2_runtime/runtime/__init__.py",
+          "sha256": "fa4bd76dc96af1ddc73f6748d26b392294462eafb734f1f29bfcdc353d3567f5",
+          "physical_lines": 1,
+          "code_lines": 0
+        },
+        {
+          "path": "experiments/pysim/tier2_runtime/runtime/composer.py",
+          "sha256": "8c01ff427f9705268a5613dd9885683f536fa3b12d11dcc63317660993913f70",
+          "physical_lines": 276,
+          "code_lines": 214
+        },
+        {
+          "path": "experiments/pysim/tier2_runtime/runtime/engine.py",
+          "sha256": "d9faef8fd08843abb09e323cd740603aea58a02e3d856b8082bb3a401e22f76e",
+          "physical_lines": 417,
+          "code_lines": 336
+        },
+        {
+          "path": "experiments/pysim/tier2_runtime/runtime/jit_plugin.py",
+          "sha256": "9123ab50472c11ca2dc82d16870f19e8d95e9fd0ca64bc631a713cd8f5ea93f7",
+          "physical_lines": 43,
+          "code_lines": 26
+        },
+        {
+          "path": "experiments/pysim/tier2_runtime/runtime/recovery.py",
+          "sha256": "4bfb9b6d36f9827c4bf6cc89e68811ad15db8b5d58d85fcaf978ab8220e37366",
+          "physical_lines": 171,
+          "code_lines": 117
+        },
+        {
+          "path": "experiments/pysim/tier2_runtime/syscall/__init__.py",
+          "sha256": "e06047079b0e590e15bfc46a3427cb84bf07a1bdd67753f32259d42e96c0e433",
+          "physical_lines": 1,
+          "code_lines": 0
+        },
+        {
+          "path": "experiments/pysim/tier2_runtime/syscall/hostcall.py",
+          "sha256": "7517ac6cfb0988e6e19110d77c2b2505a1c6bea267ec380062c0643127aaf9c8",
+          "physical_lines": 189,
+          "code_lines": 128
+        },
+        {
+          "path": "experiments/pysim/tier2_runtime/vmmio/__init__.py",
+          "sha256": "4602613421366ce273c86a870b97e8ecc486fde7ee0b0d84520761b25d141c22",
+          "physical_lines": 1,
+          "code_lines": 0
+        },
+        {
+          "path": "experiments/pysim/tier2_runtime/vmmio/controller.py",
+          "sha256": "3232176b6ba801424dd91d256b80c56a04fa49e2a8893ad7c9ec8d903137c7a6",
+          "physical_lines": 505,
+          "code_lines": 367
+        },
+        {
+          "path": "experiments/pysim/tier2_runtime/vsoc/__init__.py",
+          "sha256": "c9d6cba6e8ee9861137db7a135c7d362c50124617a8a3562bfdd4b0816cec8f2",
+          "physical_lines": 1,
+          "code_lines": 0
+        },
+        {
+          "path": "experiments/pysim/tier2_runtime/vsoc/virq.py",
+          "sha256": "995e6f8b710b8a2b907a9bd492eb57f55899087d6052d61ff3d4c6d67189c215",
+          "physical_lines": 269,
+          "code_lines": 207
+        },
+        {
+          "path": "experiments/pysim/tier2_runtime/wasm/__init__.py",
+          "sha256": "f79c4ca12ce71de0442d4819ed4104c1154d9798eb8ee42d72413036ebb8c80c",
+          "physical_lines": 1,
+          "code_lines": 0
+        },
+        {
+          "path": "experiments/pysim/tier2_runtime/wasm/binary.py",
+          "sha256": "0d30b44d4b89a1449247413971bb27b6e203522910a0142d094ccd1ae2f2b7f9",
+          "physical_lines": 126,
+          "code_lines": 91
+        },
+        {
+          "path": "experiments/pysim/tier2_runtime/wasm/builder.py",
+          "sha256": "e5af81048d4625bd340970635cc44ac46d1c1ab348c1c3baa87efa2ed6c034fa",
+          "physical_lines": 164,
+          "code_lines": 128
+        },
+        {
+          "path": "experiments/pysim/tier2_runtime/wasm/jit_scoring.py",
+          "sha256": "49b0453283f590e73e0ae6c6ca95bfb9eea6934d5096520b0fb28ca5eb6003bd",
+          "physical_lines": 178,
+          "code_lines": 155
+        },
+        {
+          "path": "experiments/pysim/tier2_runtime/wasm/leb128.py",
+          "sha256": "2ffa57a6e3b00467b2ee38f66e2bfe97c60cb93ae5ba0ec66e053ccd1f5a1dcb",
+          "physical_lines": 106,
+          "code_lines": 87
+        },
+        {
+          "path": "experiments/pysim/tier2_runtime/wasm/module.py",
+          "sha256": "8238c5a4e4d3eef992960ed16fba077db3081358d8b5e5f606a03ae5ae47d8ad",
+          "physical_lines": 929,
+          "code_lines": 718
+        },
+        {
+          "path": "experiments/pysim/tier2_runtime/wasm/opcodes.py",
+          "sha256": "9cb404b11f75fb29d49c193d74427595a7673591d694fea7e87795fe359a8b4e",
+          "physical_lines": 211,
+          "code_lines": 189
+        },
+        {
+          "path": "experiments/pysim/tier2_runtime/wasm/reader.py",
+          "sha256": "ccf9f7ee75cf2796777e906d12c67e9a38519c706fe3c93a71d28d00b5ece29f",
+          "physical_lines": 1152,
+          "code_lines": 1021
+        }
+      ],
+      "physical_lines": 9015,
+      "code_lines": 7135
+    },
+    {
+      "name": "tier3_plugins",
+      "files": [
+        {
+          "path": "experiments/pysim/tier3_plugins/__init__.py",
+          "sha256": "2f9988c91457b787d6c20e77c716529794822f77f7cde1fbc31af14def1939c4",
+          "physical_lines": 1,
+          "code_lines": 0
+        },
+        {
+          "path": "experiments/pysim/tier3_plugins/debugger/__init__.py",
+          "sha256": "f7f5f531063817a4d58ec09b7b47179d758b0db90506d9502eb1491867841a73",
+          "physical_lines": 1,
+          "code_lines": 0
+        },
+        {
+          "path": "experiments/pysim/tier3_plugins/debugger/debugger.py",
+          "sha256": "8eab5d18c0333f05ab842d68c2b7e52ca973ce9c958c433277b8cfdab515a2e9",
+          "physical_lines": 586,
+          "code_lines": 445
+        },
+        {
+          "path": "experiments/pysim/tier3_plugins/debugger/gdb_server.py",
+          "sha256": "740159edc8a65b0f1ba07f56e544b799cdc79015422d42309d6b5f8988920390",
+          "physical_lines": 213,
+          "code_lines": 166
+        },
+        {
+          "path": "experiments/pysim/tier3_plugins/jit/__init__.py",
+          "sha256": "e5ea8dbb981b837dd70a9736bf8692d7ac18a5d0e781595ee7afd594576e35eb",
+          "physical_lines": 1,
+          "code_lines": 0
+        },
+        {
+          "path": "experiments/pysim/tier3_plugins/jit/common_code.py",
+          "sha256": "e7e9b2c7baed69a4ae175ddb8ca7ed4c7b13b8f37e7a7ff16f2f794785dbe73e",
+          "physical_lines": 348,
+          "code_lines": 279
+        },
+        {
+          "path": "experiments/pysim/tier3_plugins/jit/exec_memory.py",
+          "sha256": "ff039610eec0751a4a6fff9eb349ae8fae1e014d4983cae3313e27cc0561d2a4",
+          "physical_lines": 213,
+          "code_lines": 163
+        },
+        {
+          "path": "experiments/pysim/tier3_plugins/jit/jit_cache.py",
+          "sha256": "f81095c789ed4ce5099a34d728b2b24e319668b052b7cab0d62848b768d57abb",
+          "physical_lines": 899,
+          "code_lines": 669
+        },
+        {
+          "path": "experiments/pysim/tier3_plugins/jit/jit_manager.py",
+          "sha256": "6bfd5089309708544fd2f13780703fdb93628213a62f32534523a61bc31c6f67",
+          "physical_lines": 723,
+          "code_lines": 604
+        },
+        {
+          "path": "experiments/pysim/tier3_plugins/jit/native_abi.py",
+          "sha256": "b917aee73bd2287319fdbc2bc0591c7c6b15e71b30e4d3afc630a36b44aa688b",
+          "physical_lines": 303,
+          "code_lines": 264
+        },
+        {
+          "path": "experiments/pysim/tier3_plugins/jit/x64_jit.py",
+          "sha256": "b29c9d21fd628dad908cab39ab2fc0b58cef65462cd433e4fa472a7d5675f6a5",
+          "physical_lines": 158,
+          "code_lines": 134
+        },
+        {
+          "path": "experiments/pysim/tier3_plugins/logger/__init__.py",
+          "sha256": "e3b1ccf917e2925cf73ef9cb8965b3c80a5baadecc256ec7dc49dab30daae2e6",
+          "physical_lines": 1,
+          "code_lines": 0
+        },
+        {
+          "path": "experiments/pysim/tier3_plugins/logger/logger.py",
+          "sha256": "8c643aff4a41a4022178f77fcdbea748a6b92e973633fb29c6d6c7cd8d65572c",
+          "physical_lines": 30,
+          "code_lines": 20
+        },
+        {
+          "path": "experiments/pysim/tier3_plugins/profiler/__init__.py",
+          "sha256": "acd1a7c574d25174bff1dc6a221fd9c452a430b9030391b09f24e7bf88548049",
+          "physical_lines": 1,
+          "code_lines": 0
+        },
+        {
+          "path": "experiments/pysim/tier3_plugins/profiler/guest_profiler.py",
+          "sha256": "48f1d0be974c386d94da695a29bf49ba57bff4f5e04a36a5be6b6cec88526e7a",
+          "physical_lines": 224,
+          "code_lines": 187
+        }
+      ],
+      "physical_lines": 3702,
+      "code_lines": 2931
+    },
+    {
+      "name": "tier3_platform",
+      "files": [
+        {
+          "path": "experiments/pysim/tier3_platform/__init__.py",
+          "sha256": "357b8886adccf56f2999c0105ed178036d182178cb01965175551ac450d1d103",
+          "physical_lines": 1,
+          "code_lines": 0
+        },
+        {
+          "path": "experiments/pysim/tier3_platform/drivers/__init__.py",
+          "sha256": "b879ece36ec5721937f67e6201d7452967cb6adc7726cede85c4afd7d705ba10",
+          "physical_lines": 1,
+          "code_lines": 0
+        },
+        {
+          "path": "experiments/pysim/tier3_platform/drivers/debugger/__init__.py",
+          "sha256": "cfdf64e5135273f7ae2893f17afd78bfd9b8c0ceecae7277e60efe9a280bb1f6",
+          "physical_lines": 1,
+          "code_lines": 0
+        },
+        {
+          "path": "experiments/pysim/tier3_platform/drivers/debugger/transport.py",
+          "sha256": "9b2920d131b06230909d171818dc48200ac028548645ace41627c40a0342ca69",
+          "physical_lines": 70,
+          "code_lines": 44
+        },
+        {
+          "path": "experiments/pysim/tier3_platform/drivers/hal/__init__.py",
+          "sha256": "e548ee76cdac5990b6fe1131c52f8462d18debbff254885a17f6331c173c613c",
+          "physical_lines": 6,
+          "code_lines": 3
+        },
+        {
+          "path": "experiments/pysim/tier3_platform/drivers/hal/dummy.py",
+          "sha256": "052067c0a088a31ef2d0e27547312e8e132431a7df849091c9aedc7af6ac3e1a",
+          "physical_lines": 186,
+          "code_lines": 141
+        },
+        {
+          "path": "experiments/pysim/tier3_platform/drivers/hal/stream.py",
+          "sha256": "43f9fb4ffb22e5e301c57b576d143df0518f3633213ef8d261ace9a6a5b1d97f",
+          "physical_lines": 56,
+          "code_lines": 39
+        },
+        {
+          "path": "experiments/pysim/tier3_platform/drivers/logging/__init__.py",
+          "sha256": "10f8c6c61561a8a04e03b6f2c9bbdc88404d0b5ce9f5abc54ebbb0beebaeb212",
+          "physical_lines": 5,
+          "code_lines": 2
+        },
+        {
+          "path": "experiments/pysim/tier3_platform/drivers/logging/file_sink.py",
+          "sha256": "271d119d11ab35f0499216cd55fb37c94e1baf4a74db1305000a0e2c5c8ef55a",
+          "physical_lines": 27,
+          "code_lines": 16
+        },
+        {
+          "path": "experiments/pysim/tier3_platform/drivers/platform_config.py",
+          "sha256": "f4b77cada093b0a7be38f9b0a03ac37059fe0116ab011f9f5be712c2da10f73b",
+          "physical_lines": 40,
+          "code_lines": 25
+        },
+        {
+          "path": "experiments/pysim/tier3_platform/drivers/printk.py",
+          "sha256": "89a4375237f4b500a8b04c8f6320e72136b4b1101435036160d0987724791343",
+          "physical_lines": 98,
+          "code_lines": 77
+        },
+        {
+          "path": "experiments/pysim/tier3_platform/drivers/wasi/__init__.py",
+          "sha256": "f22bd9e76234a333ea84f55eb135e9a5274d1169b45d9024395c835ebe2a78ba",
+          "physical_lines": 18,
+          "code_lines": 15
+        },
+        {
+          "path": "experiments/pysim/tier3_platform/drivers/wasi/context.py",
+          "sha256": "ceca12913ba218aa0f38d1a1bc68dbb9e6ce9e9421d4374a171c6da1ceed4ce8",
+          "physical_lines": 577,
+          "code_lines": 415
+        },
+        {
+          "path": "experiments/pysim/tier3_platform/drivers/wasi/uvwasi.py",
+          "sha256": "c3e8b0241bfb70847da7342da1b6b498ca189b904eca1d77eaaad894bd36eaec",
+          "physical_lines": 302,
+          "code_lines": 237
+        },
+        {
+          "path": "experiments/pysim/tier3_platform/libfireball.py",
+          "sha256": "1e0e3e0c7d491f9846a010230165e3bde9eb90b2b2f90a27d907c02a4bec778a",
+          "physical_lines": 115,
+          "code_lines": 77
+        }
+      ],
+      "physical_lines": 1503,
+      "code_lines": 1091
+    },
+    {
+      "name": "pysim_common",
+      "files": [
+        {
+          "path": "experiments/pysim/__init__.py",
+          "sha256": "2b8295c400a7a95ae10112731aa147d04000e0a29593640dd965743ded4c2b58",
+          "physical_lines": 4,
+          "code_lines": 0
+        },
+        {
+          "path": "experiments/pysim/system.py",
+          "sha256": "3abb33d83dbc4166806a61eaedec4fc894807e7271d29067aeae0361a53526c8",
+          "physical_lines": 802,
+          "code_lines": 644
+        }
+      ],
+      "physical_lines": 806,
+      "code_lines": 644
+    },
+    {
+      "name": "product_c_cpp",
+      "files": [
+        {
+          "path": "inc/allocator/bump_allocator.hxx",
+          "sha256": "545d652bb4fa7e27bdce31706c8073c68004d1772a4d371a22b5b518b1e3a460",
+          "physical_lines": 51,
+          "code_lines": 25
+        },
+        {
+          "path": "inc/allocator/host_allocator.hxx",
+          "sha256": "db37d0d821a821a6355019124a7dd18d05e4993a982e09de069aff9cd85dd24b",
+          "physical_lines": 62,
+          "code_lines": 25
+        },
+        {
+          "path": "inc/allocator/specified_allocator.hxx",
+          "sha256": "152383be2e6e699e329092d1a7e36bd257871e1cc35dbe181b602a0308d901e4",
+          "physical_lines": 80,
+          "code_lines": 51
+        },
+        {
+          "path": "inc/utils/backtrace.hxx",
+          "sha256": "e281fda1626a359a7e96afa1f05a7d056b9eb7ea81c92b76a8c0f27bc3e09c93",
+          "physical_lines": 45,
+          "code_lines": 24
+        },
+        {
+          "path": "src/allocator/host_allocator.cxx",
+          "sha256": "856c5da043374593c10625c1626cacb84672da8bd1c1b6ff23dc71831e455d92",
+          "physical_lines": 93,
+          "code_lines": 58
+        },
+        {
+          "path": "src/allocator/malloc.c",
+          "sha256": "d541a7fdacef0b351f2079ead883cfd0f1cebf208cadafb921ed28e208e93c4f",
+          "physical_lines": 6049,
+          "code_lines": 3581
+        },
+        {
+          "path": "src/main.cxx",
+          "sha256": "ec685fd2a03ee0ae4822ecf86d7378a738d7c2fc599237438fdd35ad6b944499",
+          "physical_lines": 17,
+          "code_lines": 7
+        },
+        {
+          "path": "src/utils/backtrace.cxx",
+          "sha256": "25dbe2fd1f3709a5ca9dd0efd89c43d5e46c7b29dec25eac14f8a7e72454e7da",
+          "physical_lines": 13,
+          "code_lines": 10
+        }
+      ],
+      "physical_lines": 6410,
+      "code_lines": 3781
+    },
+    {
+      "name": "native_reference_c_cpp",
+      "files": [
+        {
+          "path": "experiments/pysim/native/tier2_runtime/interpreter/native_interpreter.cxx",
+          "sha256": "acc7c6bb88fd5b24e50823b1c3ca45021141a768674d4f5d2183e07260ab8307",
+          "physical_lines": 2961,
+          "code_lines": 2740
+        },
+        {
+          "path": "experiments/pysim/native/tier3_platform/libfireball/libfireball.hxx",
+          "sha256": "8c40723bbf6501eae10dc0d6747ed16b1bdce03d2ea60ab7b34c6af7b26f7c67",
+          "physical_lines": 47,
+          "code_lines": 44
+        },
+        {
+          "path": "experiments/pysim/native/tier3_plugins/jit/fast_cache.cxx",
+          "sha256": "f37c0118f3224027488203941f2c37d073ed8550c10060d13eb82cd9c776a813",
+          "physical_lines": 67,
+          "code_lines": 55
+        },
+        {
+          "path": "experiments/pysim/native/tier3_plugins/jit/fast_cache_abi.hxx",
+          "sha256": "ef8e5b405079904d811cb3725b3c29711cc179b04d41b7a804a8a1214faa88f2",
+          "physical_lines": 27,
+          "code_lines": 21
+        },
+        {
+          "path": "experiments/pysim/native/tier3_plugins/jit/stencils_x64.hxx",
+          "sha256": "a982e695b04a167594e107d26f21a5af3cebd92c010b5522437d682ae7868d70",
+          "physical_lines": 59,
+          "code_lines": 52
+        },
+        {
+          "path": "experiments/pysim/native/tier3_plugins/jit/trace_compiler.cxx",
+          "sha256": "380c22946991c8f376a64b374d0ea67606349ad079490f22468e6a9736948eb9",
+          "physical_lines": 621,
+          "code_lines": 573
+        },
+        {
+          "path": "experiments/pysim/native/tier3_plugins/jit/trace_compiler_abi.hxx",
+          "sha256": "23e3da34689c815950445ab3e967aafc2eab2611ee83ae063659b920dc3df89d",
+          "physical_lines": 63,
+          "code_lines": 48
+        },
+        {
+          "path": "experiments/pysim/tier2_runtime/abi/interpreter_abi.hxx",
+          "sha256": "bfd28349e0c87d40c0118d4cd2530c046ba14c0aa35e343de2b3cc1a34bfebf4",
+          "physical_lines": 320,
+          "code_lines": 282
+        },
+        {
+          "path": "experiments/pysim/tier2_runtime/abi/native_abi.hxx",
+          "sha256": "e1522eedda7aace757ef0aae745ea008cdf54aa7df7bca9e7eba311be554969a",
+          "physical_lines": 122,
+          "code_lines": 109
+        }
+      ],
+      "physical_lines": 4287,
+      "code_lines": 3924
+    }
+  ],
+  "native_libraries": [
+    {
+      "path": "experiments/pysim/tier2_runtime/interpreter/libnative_interpreter.so",
+      "sha256": "5fe8087158a7557eb34c47de9924502c92302062fa8c7f2b62f417f85ebb369d",
+      "sections": {
+        ".note.gnu.build-id": 36,
+        ".gnu.hash": 64,
+        ".dynsym": 576,
+        ".dynstr": 438,
+        ".gnu.version": 48,
+        ".gnu.version_r": 80,
+        ".rela.dyn": 168,
+        ".rela.plt": 288,
+        ".init": 27,
+        ".plt": 208,
+        ".plt.got": 8,
+        ".text": 151442,
+        ".fini": 13,
+        ".rodata": 3056,
+        ".eh_frame_hdr": 4604,
+        ".eh_frame": 27144,
+        ".init_array": 8,
+        ".fini_array": 8,
+        ".dynamic": 496,
+        ".got": 32,
+        ".got.plt": 120,
+        ".data": 8,
+        ".bss": 8,
+        ".comment": 77
+      },
+      "text_rodata_bytes": 154498,
+      "data_bss_bytes": 16,
+      "unwind_bytes": 31748
+    },
+    {
+      "path": "experiments/pysim/tier3_plugins/jit/libtrace_compiler.so",
+      "sha256": "6c15a1f87234a4fc769d72827ad24aff0ca791cc95d4e533a3d1c86063764c11",
+      "sections": {
+        ".note.gnu.build-id": 36,
+        ".gnu.hash": 64,
+        ".dynsym": 336,
+        ".dynstr": 425,
+        ".gnu.version": 28,
+        ".gnu.version_r": 48,
+        ".rela.dyn": 264,
+        ".rela.plt": 72,
+        ".init": 27,
+        ".plt": 64,
+        ".plt.got": 8,
+        ".text": 8433,
+        ".fini": 13,
+        ".rodata": 736,
+        ".eh_frame_hdr": 116,
+        ".eh_frame": 508,
+        ".init_array": 8,
+        ".fini_array": 8,
+        ".dynamic": 496,
+        ".got": 64,
+        ".got.plt": 48,
+        ".data": 8,
+        ".bss": 8,
+        ".comment": 77,
+        ".debug_info": 17835,
+        ".debug_abbrev": 1498,
+        ".debug_line": 4394,
+        ".debug_str": 17676,
+        ".debug_addr": 776,
+        ".debug_line_str": 824,
+        ".debug_loclists": 6370,
+        ".debug_rnglists": 857,
+        ".debug_str_offsets": 3216
+      },
+      "text_rodata_bytes": 9169,
+      "data_bss_bytes": 16,
+      "unwind_bytes": 624
+    },
+    {
+      "path": "experiments/pysim/tier3_plugins/jit/libfast_cache.so",
+      "sha256": "e742e9a3e9d34f6b9eec17c5ac95897ed84338a070d4b2d7d56b3dc2de8e837a",
+      "sections": {
+        ".note.gnu.build-id": 36,
+        ".gnu.hash": 56,
+        ".dynsym": 240,
+        ".dynstr": 271,
+        ".gnu.version": 20,
+        ".gnu.version_r": 32,
+        ".rela.dyn": 168,
+        ".init": 27,
+        ".plt": 16,
+        ".plt.got": 8,
+        ".text": 755,
+        ".fini": 13,
+        ".eh_frame_hdr": 68,
+        ".eh_frame": 192,
+        ".init_array": 8,
+        ".fini_array": 8,
+        ".dynamic": 448,
+        ".got": 32,
+        ".got.plt": 24,
+        ".data": 8,
+        ".bss": 8,
+        ".comment": 77,
+        ".debug_info": 1213,
+        ".debug_abbrev": 287,
+        ".debug_line": 648,
+        ".debug_str": 874,
+        ".debug_addr": 72,
+        ".debug_line_str": 517,
+        ".debug_loclists": 233,
+        ".debug_str_offsets": 320
+      },
+      "text_rodata_bytes": 755,
+      "data_bss_bytes": 16,
+      "unwind_bytes": 260
+    }
+  ],
+  "jit_compiler_stack": {
+    "measurement_flags": "-std=c++23 -O2 -fPIC -fstack-usage with checked-in JIT configuration",
+    "source_sha256": "380c22946991c8f376a64b374d0ea67606349ad079490f22468e6a9736948eb9",
+    "function_frame_bytes": {
+      "fb_jit_compile_trace": 41096,
+      "_ZN12_GLOBAL__N_114append_stencilILm12EEEbRNS_13trace_builderERKSt5arrayIhXT_EE": 0,
+      "_ZN12_GLOBAL__N_18store_spERNS_13trace_builderEii": 0,
+      "_ZN12_GLOBAL__N_116append_u32_patchILm4EEEbRNS_13trace_builderERKSt5arrayIhXT_EEj": 0,
+      "_ZN12_GLOBAL__N_114append_stencilILm5EEEbRNS_13trace_builderERKSt5arrayIhXT_EE": 0,
+      "fb_jit_compile_wasm_trace": 131208,
+      "_ZN12_GLOBAL__N_19is_binaryEi": 0,
+      "fb_jit_common_chain_dispatcher": 0,
+      "_ZN12_GLOBAL__N_114append_stencilILm10EEEbRNS_13trace_builderERKSt5arrayIhXT_EE": 0,
+      "_ZN12_GLOBAL__N_17load_spERNS_13trace_builderEii": 0,
+      "_ZN12_GLOBAL__N_110emit_shiftERNS_13trace_builderEi": 0
+    },
+    "entry_frames_subtotal_bytes": 172304,
+    "caller_output_buffer_bytes": 8192,
+    "minimum_known_compile_bytes": 180496,
+    "excluded": "additional callee/ABI frames, result structures and Python objects"
+  }
+}

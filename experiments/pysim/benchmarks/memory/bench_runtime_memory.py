@@ -89,6 +89,12 @@ class AllocationTotal:
 
 
 @dataclass(frozen=True)
+class JITStorage:
+    name: str
+    payload_bytes: int
+
+
+@dataclass(frozen=True)
 class Measurement:
     workload: str
     mode: str
@@ -110,6 +116,7 @@ class Measurement:
     allocation_totals: tuple[AllocationTotal, ...]
     dispatch_workspace_bytes: int
     resident_trace_bytes: tuple[int, ...]
+    jit_unaccounted_storage: tuple[JITStorage, ...]
 
 
 def _measure(workload: Workload, hybrid: bool, calls: int) -> Measurement:
@@ -186,6 +193,26 @@ def _measure(workload: Workload, hybrid: bool, calls: int) -> Measurement:
                 sum(event.padding for event in events),
             )
         )
+    unaccounted: tuple[JITStorage, ...] = ()
+    if jit is not None:
+        fast_storage = jit.cache._fast_cache._storage
+        unaccounted = (
+            JITStorage("hotspot_state_bits", len(jit.bitmap.storage.buffer)),
+            JITStorage("trackable_mask_bits", len(jit.trackable.storage.buffer)),
+            JITStorage("card_update_bits", len(jit.update_bitmap.storage.buffer)),
+            JITStorage(
+                "native_fast_cache_arrays",
+                fast_storage.arena_size if fast_storage.arena_offset is None else 0,
+            ),
+            JITStorage(
+                "resident_execution_counters",
+                sum(
+                    ctypes.sizeof(trace._exec_count)
+                    for bank in jit.cache.banks
+                    for _, trace in bank.traces
+                ),
+            ),
+        )
     return Measurement(
         workload.name,
         "hybrid" if hybrid else "native",
@@ -209,6 +236,7 @@ def _measure(workload: Workload, hybrid: bool, calls: int) -> Measurement:
         ()
         if jit is None
         else tuple(trace.size_bytes for bank in jit.cache.banks for _, trace in bank.traces),
+        unaccounted,
     )
 
 

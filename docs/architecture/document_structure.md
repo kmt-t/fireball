@@ -46,7 +46,7 @@ Tier は単なる「OSやハードウェアの実行レイヤ」ではなく、*
 
 [ Meta: 横断的メタ設計・開発計画 (Cross-cutting / Meta) ] ─ (全Tier横断)
   · Architecture (architecture_overview, document_structure, dependency_resolution, resource_budget_estimation)
-  · Plans (roadmap_phase, backlog_list, backlog_archive)
+  · Plans (roadmap_phase, backlog_list)
 
 [ Specs: 横串物理仕様・規格マトリクス (Cross-cutting Physical Specs & Catalogs) ] ─ (全Tier横断・具象規格、個々のファイルにTierラベルを明示)
   · Specs (wasm_instruction_set, wasi_preview1_abi [Tier3], gdb_rsp_protocol, jit_stencil_catalog)

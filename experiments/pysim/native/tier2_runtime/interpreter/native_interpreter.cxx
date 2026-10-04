@@ -2418,13 +2418,12 @@ struct native_dispatch_hotspots {
 
 struct empty_dispatch_metrics {};
 
+// Clang 18 miscompiles the no-stats hotspot variant when these empty members use
+// [[no_unique_address]], so keep their distinct storage.
 template <bool CollectStats, bool CollectHotspots>
 struct native_dispatch_metrics {
-  [[no_unique_address]] std::conditional_t<CollectStats, native_dispatch_stats,
-                                          empty_dispatch_metrics>
-      stats;
-  [[no_unique_address]] std::conditional_t<CollectHotspots, native_dispatch_hotspots,
-                                          empty_dispatch_metrics>
+  std::conditional_t<CollectStats, native_dispatch_stats, empty_dispatch_metrics> stats;
+  std::conditional_t<CollectHotspots, native_dispatch_hotspots, empty_dispatch_metrics>
       hotspots;
 };
 

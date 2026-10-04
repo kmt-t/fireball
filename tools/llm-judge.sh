@@ -32,7 +32,7 @@ Options:
   --check <id>          Run only a specific check ID.
   --list-checks         List all configured single-section/link-pair review checks and exit.
   --dry-run             Display prompts without calling the LLM backend or persisting results.
-  --backend <name>      Checksheet backend override (jev, nimble, mock).
+  --backend <name>      Checksheet backend override (jev, clef-flash, mock).
   --model <name>        LLM model name override.
   -c, --config <path>   Path to configuration file (default: spec-integrator.yaml).
   -h, --help            Show this help message.

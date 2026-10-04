@@ -1,19 +1,19 @@
 # JIT 実行コンテキスト ABI 契約
 
 <!-- evidence:
-     test: docs/qa/tier3_executer/jit_runtime_test_spec.md
+     test: docs/qa/tier3_plugins/jit_runtime_test_spec.md
 -->
 
 <!-- traceability: {ContextPointerRegister} {PositionIndependentCode} {JIT_RuntimeAPI_Fallback} {JIT_RegisterMapping} -->
 
 ## 1. コンセプト
 
-この文書は、Tier 2ランタイムがTier 3 Executerへ提供する、複雑な処理をCヘルパーへ委譲するためのABI契約を定義する。Interpreter handlerとJIT trace entryが共有する`ctx`, `sp`, `local_base`, `tos`の4論理引数契約を `{CPS_4Args}` と定義する。 <!-- definition: {CPS_4Args} --> 共通コード領域の入口offsetはビルド構成または配置時のrelocation情報で解決し、JIT trace headerにはtrace固有の委譲先関数アドレスだけを保持する。実行コンテキストはこのルーティング情報を保持しない。ゲストへ公開するWIT契約は対象外であり、WIT正本は各ゲストインターフェース文書に置く。
+この文書は、Tier 2ランタイムがTier 3 Pluginsへ提供する、複雑な処理をCヘルパーへ委譲するためのABI契約を定義する。Interpreter handlerとJIT trace entryが共有する`ctx`, `sp`, `local_base`, `tos`の4論理引数契約を `{CPS_4Args}` と定義する。 <!-- definition: {CPS_4Args} --> 共通コード領域の入口offsetはビルド構成または配置時のrelocation情報で解決し、JIT trace headerにはtrace固有の委譲先関数アドレスだけを保持する。実行コンテキストはこのルーティング情報を保持しない。ゲストへ公開するWIT契約は対象外であり、WIT正本は各ゲストインターフェース文書に置く。
 
 
 ## 2. アーキテクチャ分類
 
-本書はTier 2 Runtimeが所有する契約である。Tier 3 ExecuterのInterpreterおよびJIT実装がこのABIを利用する。
+本書はTier 2 Runtimeが所有する契約である。Tier 2 InterpreterとTier 3 JIT拡張がこのABIを利用する。
 
 
 ## 3. 静的モデル
@@ -132,7 +132,7 @@ ABIは標準レイアウト、固定サイズ、固定オフセットを維持�
 独立した形式検証モデルは設定しない。x64 ABIの物理サイズ、オフセット、呼び出し結果はテスト仕様と実行テストで検証する。
 
 ### 7.3 テスト仕様書との連携
-対応するテスト仕様は[jit_runtime_test_spec.md](docs/qa/tier3_executer/jit_runtime_test_spec.md)である。テストケースIDと実行可能テストは同仕様を正本とする。
+対応するテスト仕様は[jit_runtime_test_spec.md](docs/qa/tier3_plugins/jit_runtime_test_spec.md)である。テストケースIDと実行可能テストは同仕様を正本とする。
 
 ### 7.4 既知の制限・対象外
 ホスト実機依存の挙動、未実装アーキテクチャ、およびテスト仕様が明示する対象外条件は未検証として扱う。

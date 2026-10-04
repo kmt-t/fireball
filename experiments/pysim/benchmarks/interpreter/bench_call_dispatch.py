@@ -23,12 +23,12 @@ from _bootstrap import configure_import_paths
 configure_import_paths(_PYSIM_DIR, _BENCH_DIR)
 
 import wasmtime
-from tier3_executer.interpreter.interpreter import (
+from tier2_runtime.interpreter.interpreter import (
     Interpreter,
     InterpreterBindings,
     NativeInterpreter,
 )
-from wasm_reader import parse
+from tier2_runtime.wasm.reader import parse
 
 WAT = r"""(module
   (type $unary (func (param i32) (result i32)))

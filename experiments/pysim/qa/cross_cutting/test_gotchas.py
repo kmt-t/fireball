@@ -19,29 +19,28 @@ while not (_PYSIM_DIR / "tier1_core").is_dir():
 REPO_ROOT = _PYSIM_DIR.parent.parent
 
 
-from hal_dispatch import HalBufferPool
-from helpers import (
-    expect_assertion,
-    make_native_interpreter,
-    make_test_ipc_message,
-    wat_to_wasm,
-)
-from helpers import make_interpreter as Interpreter
+from tier2_runtime.hal.dispatch import HalBufferPool
 from ipc_router import (
     IPCRouter,
     IPCStatus,
     OwnershipState,
     Role,
 )
-from loader import BumpAllocator, WasmLoader
-from memory import FB_CONF_MEMORY_POOL_SIZE, MemoryManager
-from runtime_events import RuntimeEventBatch
+from tier2_runtime.memory.manager import FB_CONF_MEMORY_POOL_SIZE, MemoryManager
+from qa.shared.helpers import (
+    expect_assertion,
+    make_native_interpreter,
+    make_test_ipc_message,
+    wat_to_wasm,
+)
+from qa.shared.helpers import make_interpreter as Interpreter
+from tier2_runtime.observability.events import RuntimeEventBatch
 from scheduler import ChannelAction, Scheduler, Task, WaitDir
 from system import System, WasiErrno
-from system_containers import BitView, MutableFlatMapStorage, ReadOnlyFlatMapView, StaticVector
-from tier2_runtime.logger import LogDictionary, Logger, LogLevel, LogResult
-from tier3_executer.interpreter.interpreter import _HANDLERS
-from tier3_executer.jit.jit_cache import CardState, JITMultiBufferCache, JITTrace
+from system_containers import BitView, MutableFlatMapStorage, ReadOnlyFlatMapView
+from tier2_runtime.observability.logger import LogDictionary, Logger, LogLevel, LogResult
+from tier2_runtime.interpreter.interpreter import _HANDLERS
+from tier3_plugins.jit.jit_cache import CardState, JITMultiBufferCache, JITTrace
 from tier3_platform.drivers.hal.stream import StreamTransport
 
 
@@ -61,14 +60,13 @@ def _make_memory_manager() -> tuple[MemoryManager, Scheduler]:
     return manager, scheduler
 
 
-from test_support import (
-    PcOnlyCompiler,
-    make_pc_only_module,
+from qa.shared.runtime_support import (
+    RecordingTraceCompiler,
     make_runtime_engine,
 )
-from tier3_executer.jit.x64_jit import TraceCompiler
-from vmmio import TrapCode, VMMIOController, VmmioStatus
-from wasm_reader import parse
+from tier3_plugins.jit.x64_jit import TraceCompiler
+from tier2_runtime.hal.vmmio import TrapCode, VMMIOController, VmmioStatus
+from tier2_runtime.wasm.reader import parse
 
 # ==============================================================================
 # 1. Interpreter Gotchas (GOTCHA-INTP-01 ~ 04)
@@ -108,7 +106,7 @@ def test_intp_gotcha_01_native_stack_sync():
     next_tos = frame.values.raw_top()
     assert frame.values.raw_top() == 10
     assert frame.values == [10]
-    ip = int(result_ctx.native_context.ip)
+    ip = int(result_ctx.ip)
     frame = result_ctx.call_frame_stack[-1]
 
     # Execute instruction 1 (i32.const 20)
@@ -118,7 +116,7 @@ def test_intp_gotcha_01_native_stack_sync():
     next_tos = frame.values.raw_top()
     assert frame.values.raw_top() == 20
     assert frame.values == [10, 20]
-    ip = int(result_ctx.native_context.ip)
+    ip = int(result_ctx.ip)
     frame = result_ctx.call_frame_stack[-1]
 
     # Execute instruction 2 (i32.add) -> pops 20 and 10, pushes 30.
@@ -208,24 +206,18 @@ def test_intp_gotcha_04_code_section_pc_module_scope():
 
 def test_jitr_gotcha_01_idle_hook_skips_recompiling_already_resident_trace():
     """GOTCHA-JITR-01: idle_hook skips recompilation if trace is already resident in cache."""
-    compile_calls = []
-
-    def fake_compile(pc):
-        compile_calls.append(pc)
-        return JITTrace(pc, lambda: 0, size_bytes=64)
-
     wat = '(module (func (export "f") i32.const 1 drop i32.const 2 drop return))'
     wasm_bytes = wat_to_wasm(wat)
-    engine = make_runtime_engine(jit_compiler=PcOnlyCompiler(fake_compile), card_shift=3)
+    engine = make_runtime_engine(jit_compiler=TraceCompiler(), card_shift=3)
     mod = engine.load_wasm(wasm_bytes)
     pc = mod.blocks[0].head_pc
     engine.jit_runtime.cache.insert(JITTrace(pc, lambda: 0, size_bytes=64))
+    engine.jit_runtime.bitmap.mark_compiled(pc)
     engine.jit_runtime.compile_queue.push_back(pc)
 
     compiled = engine.idle_hook(budget=4)
 
     assert compiled == 0, "a pc already resident in the cache must not be recompiled"
-    assert compile_calls == []
     assert engine.jit_runtime.bitmap.get_state(pc) == CardState.COMPILED
 
 
@@ -254,24 +246,27 @@ def test_jitr_gotcha_02_promotion_transfers_inbound_sources():
 
 def test_jitr_gotcha_03_lifo_reverse_compilation_order():
     """GOTCHA-JITR-03: LIFO compile order records later straight-line successors first."""
-    compiled_traces = []
-
-    def dummy_compiler(pc: int) -> JITTrace:
-        t = JITTrace(head_pc=pc, native_fn=lambda: pc * 2, size_bytes=64)
-        compiled_traces.append(pc)
-        return t
-
-    engine = make_runtime_engine(jit_compiler=PcOnlyCompiler(dummy_compiler), code_lengths=(0x400,))
-    engine.register_module_blocks(make_pc_only_module((0x100, 0x200, 0x300)))
-    engine.jit_runtime.compile_queue = StaticVector.of(
-        [0x100, 0x200, 0x300], capacity=engine.jit_runtime.compile_queue_capacity
+    compiler = RecordingTraceCompiler()
+    engine = make_runtime_engine(
+        jit_compiler=compiler,
+        min_trace_bytes=1,
+        candidate_threshold=0,
     )
+    wat = """(module
+      (func (export "f0") (result i32) i32.const 10 i32.const 20 i32.add)
+      (func (export "f1") (result i32) i32.const 30 i32.const 40 i32.add)
+      (func (export "f2") (result i32) i32.const 50 i32.const 60 i32.add))"""
+    module = parse(wat_to_wasm(wat))
+    engine.register_module_blocks(module)
+    pcs = [block.head_pc for block in module.blocks]
+    for pc in pcs:
+        engine.jit_runtime.compile_queue.push_back(pc)
     count = engine.idle_hook(budget=2)
     assert count == 2
-    assert compiled_traces == [0x300, 0x200], "LIFO compilation order required"
-    assert engine.jit_runtime.cache.active.has_trace(0x300)
-    assert engine.jit_runtime.cache.active.has_trace(0x200)
-    assert not engine.jit_runtime.cache.active.has_trace(0x100)
+    assert compiler.compiled_pcs == [pcs[2], pcs[1]], "LIFO compilation order required"
+    assert engine.jit_runtime.cache.active.has_trace(pcs[2])
+    assert engine.jit_runtime.cache.active.has_trace(pcs[1])
+    assert not engine.jit_runtime.cache.active.has_trace(pcs[0])
 
 
 # ==============================================================================
@@ -625,7 +620,7 @@ def test_hal_gotcha_01_hal_buffer_pool_bounds_violation_rejected():
     scheduler = Scheduler()
     owner_id = scheduler.spawn("owner")
     scheduler.current_task = scheduler.get_task(owner_id)
-    from vmmio import VMMIOController
+    from tier2_runtime.hal.vmmio import VMMIOController
 
     vmmio = VMMIOController(guest_ram_size=8192, scheduler=scheduler)
     pool = HalBufferPool(scheduler, vmmio)
@@ -647,8 +642,8 @@ def test_sys_gotcha_01_undefined_syscall_returns_enosys():
 
 def test_dbg_gotcha_01_debugger_and_jit_composition_is_rejected():
     """GOTCHA-DBG-01: Debugger and JIT cannot be enabled in one runtime composition."""
-    from helpers import expect_assertion
-    from runtime_composer import (
+    from qa.shared.helpers import expect_assertion
+    from tier2_runtime.runtime.composer import (
         RuntimeComposer,
         RuntimeCompositionConfig,
         RuntimeExecutionKind,
@@ -679,16 +674,6 @@ def test_dbg_gotcha_01_debugger_and_jit_composition_is_rejected():
             ),
             factories,
         )
-
-
-def test_load_gotcha_01_colliding_export_names_remain_distinct():
-    """GOTCHA-LOAD-01: Equal FNV hashes require comparison of the actual ROM names."""
-    loader = WasmLoader(BumpAllocator())
-    wasm_bytes = wat_to_wasm('(module (func (export "ufbwjn")) (func (export "rsksbm")))')
-    view = loader.prepare("test_mod", wasm_bytes)
-    assert view.lookup_export("non_existent_symbol_xyz") is None
-    assert view.lookup_export_func("ufbwjn") == 0
-    assert view.lookup_export_func("rsksbm") == 1
 
 
 ALL_TESTS = sorted(

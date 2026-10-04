@@ -29,12 +29,12 @@ configure_import_paths(_PYSIM_DIR, _BENCH_DIR)
 
 from system import System
 from system_containers import StaticVector
-from tier2_runtime.hal_dispatch import HalBufferMapStatus
-from tier2_runtime.hostcall import VdmaTransfer
-from tier2_runtime.vmmio import FC_DYNAMIC, FC_PASSTHROUGH, FC_SHM
-from tier2_runtime.wasm_module import Memory, Module
-from tier2_runtime.wasm_reader import parse
-from tier3_executer.interpreter.interpreter import (
+from tier2_runtime.hal.dispatch import HalBufferMapStatus
+from tier2_runtime.hal.hostcall import VdmaTransfer
+from tier2_runtime.hal.vmmio import FC_DYNAMIC, FC_PASSTHROUGH, FC_SHM
+from tier2_runtime.wasm.module import Memory, Module
+from tier2_runtime.wasm.reader import parse
+from tier2_runtime.interpreter.interpreter import (
     Interpreter,
     InterpreterBindings,
     NativeInterpreter,
@@ -322,7 +322,7 @@ class VdmaModel:
     __slots__ = ("calls", "last_transfer", "linear_memory", "shared_block", "system")
 
     def __init__(self, linear_memory: bytearray):
-        from tier2_runtime.memory import SharedBlock
+        from tier2_runtime.memory.manager import SharedBlock
 
         self.calls = 0
         self.last_transfer: tuple[int, int, int] | None = None

@@ -12,7 +12,7 @@
 
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| TEST-VSOC-01 | vSoCはTier3実装の内部ヘッダに依存しない | - | 依存関係を確認 | ハーネスに集約されたPOD関数ポインタ経由でのみ呼び出す（仮想関数・動的ディスパッチを使わない） | `{META_StaticDI}` |
+| TEST-VSOC-01 | vSoCはTier3実装の内部ヘッダに依存しない | - | 依存関係と`vsoc_harness`のメンバ型を確認 | 具象依存型はハーネスのメンバ型としてコンパイル時に固定する。依存注入に仮想呼出しや実行時型探索を使わない。C ABIコールバック境界は対応するABI契約に従う | `{META_StaticDI}` |
 | TEST-VSOC-02 | `exec_trace`の統一論理引数契約 | インタープリタ実行/JIT実行の双方 | 実行入口を確認する | 呼び出し側は実行エンジンの種別を意識しない（同一の4論理引数 `(ctx, sp, local_base, tos)`）。x64物理配置はABI定義に従い、ARMv8-MはTBD | 「実行エンジン委譲」 |
 | TEST-VSOC-03 | `register-hook`はvMMIOへの薄い転送 | - | `register-hook`を呼ぶ | `harness.vmmio`経由で`runtime_vmmio.md`の同名APIへそのまま転送され、事前/事後条件はvmmio層が正本 | register-hook |
 
@@ -280,11 +280,7 @@ line/branch coverageは、抜けた経路を探す診断情報として記録す
 
 ## 3. テスト検証実績と網羅状況
 
-### vDMAの追加前の実行との対応
-
-2026-10-02に既存テストを読み、次の実行範囲と設計ケースの対応を確認した。
-本表は新しい実行結果を示さない。
-実行時点の結果と変異検査は、[`test_reconstruction_review.md`](docs/qa/test_reconstruction_review.md)の第5.7節を参照する。
+### 同期copy経路の確認範囲
 
 | 実行入口 | 実際に観測する条件 | 設計との対応と限界 |
 | :--- | :--- | :--- |
@@ -294,10 +290,7 @@ line/branch coverageは、抜けた経路を探す診断情報として記録す
 | `test_syscall_21_vdma_rejects_non_owner_shm_without_mutation` | 専用importへ解決したハンドラを実タスクコンテキストから直接呼ぶ。TLB未充填・所有者アクセス後の2条件で、全ゲストRAM・物理領域・owner・mapping_sizeを保存し、その後の所有者転送を確認する | TEST-SYS-21、TEST-VSOC-68/72の一部。転送先SHMの非所有者拒否を検査する。実guest、転送元拒否、実所有権移譲を含まない |
 | `wasm_bulk_memory_model.py` | 同期完了、非同期保留の自己ループ、完了、可視化、guest復帰を抽象状態で表す。通常モデルとガード無効化変異を検査する | TEST-VSOC-62などの安全性モデル。実対象の開始・待機・通知・cache処理の結線を証明しない |
 
-本表は追加前の実行範囲である。
-同日の追加実装の証拠は次項へ記録する。
-
-### vDMAの追加実装と検証（2026-10-02）
+### vDMA転送の検証
 <!-- traceability: {VDMA} {WasmFCSubset} {MemoryBoundaryCheck} {OwnershipTransfer} -->
 
 [`test_vdma.py`](experiments/pysim/qa/tier2_runtime/test_vdma.py)は、実NativeInterpreter、既存RuntimeEngineとCOOS、HAL固定バッファ、実MemoryManagerを使う。
@@ -337,27 +330,15 @@ Linux x86-64・CPython 3.14.6で次を実行した。
 ```
 
 結果は240件成功、失敗0件、skip 0件である。
-所要時間は1.25秒である。
-生成試験の内部例数はpytestの収集件数へ加算しない。
-通常ランナーへ本モジュールを登録し、登録照合テストも成功した。
-
-修正前の実行ではL→実SHMと実所有権移譲の3条件が失敗した。
-PTEの所有権検査は通るが、転送がMemoryManagerのSHM実体とは別の物理配列を変更していた。
-既存のマッピング通知とPTEの `mapped_storage` へSHM実体の借用を結線した。
-DMAとguest scalar load/storeはその実体を参照する。
-通常Interpreterの実行粒度は変更していない。
-
 隔離したPythonプロセスで、転送元と先の取り違え、末尾1byteの転送漏れ、read/write許可ゲートの欠落を個別に注入した。
 3種類とも対応する状態・拒否assertが失敗した。
 製品ファイルは変異検査で変更していない。
 関連9ファイルの回帰428件も成功した。
-対象とコマンドは[`test_reconstruction_review.md`](docs/qa/test_reconstruction_review.md)の第5.11節へ記録する。
-
-### 外部vDMAサービスのモックによる検証（2026-10-02）
+### 外部vDMAサービスのモックによる検証
 <!-- traceability: {VDMA} {WasmFCSubset} {MemoryBoundaryCheck} {OwnershipTransfer} {GLOBAL_InterruptWakeup} -->
 
 実機がないことは、外部依存の状態を制御したテストを省略する理由にならない。
-[`vdma_mock.py`](experiments/pysim/qa/vdma_mock.py)に制御可能な外部転送サービスを置く。
+[`vdma_mock.py`](experiments/pysim/qa/private/tier2_runtime/vdma_mock.py)に制御可能な外部転送サービスを置く。
 既存の同期 `VdmaTransfer` callableへ差し込み、実NativeInterpreterと実RuntimeHostCallGatewayを使う。
 専用importと内部copyへ同じ境界契約を別々に注入する。
 COOSの待機登録、割り込みFIFO、配送、TCB、別READYタスクは実実装を使う。
@@ -386,15 +367,15 @@ clean、barrier、invalidateの手順は外部サービスモックの入力条�
 特定CPUのcache命令と物理バスの効果は、別の適合確認とする。
 
 同じLinux x86-64・CPython 3.14.6で、前項と同じスイート実行コマンドを使った。
-追加した固定例66件と生成試験1件を含め、結果は307件成功、失敗0件、skip 0件、所要時間1.72秒である。
-追加生成試験は32例が成功した。
+固定例66件と生成試験1件を含む。結果は307件成功、失敗0件、skip 0件、所要時間1.72秒である。
+生成試験は32例が成功した。
 内部例数をpytest収集件数へ加算しない。
 関連9ファイルの回帰488件も成功した。
 実Gatewayでの失敗結果の成功化、実SchedulerでのISR即時配送、実guest loadでの誤った読出し値を隔離プロセスで注入した。
 3種類すべてを検出した。
-コマンドと各検証境界は[`test_reconstruction_review.md`](docs/qa/test_reconstruction_review.md)第5.12節へ記録する。
+実行コマンドは前掲のvSoCスイートと同じである。
 
-### 2026-10-02の実行対応
+### 実行対応
 
 | 要求・契約 | 実行入口 | 直接観測する状態 |
 | :--- | :--- | :--- |

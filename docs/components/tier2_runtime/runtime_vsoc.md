@@ -14,12 +14,14 @@ vSoC (Virtual System-on-Chip) は WASM 実行環境の統合マネージャで�
 各サブコンポーネントを統合する環境としての役割を担う。`execution_context` 内のリニアメモリ情報やグローバル変数テーブル（`vsoc_runtime` 領域）を介して実行環境を提供する。
 本システムは **1ランタイム1ゲストの直交分離原則** を採用する。各 vSoC インスタンスは厳密に 1 つのゲストモジュールのみを担当する。
 各ランタイムは**自身専用の固定長データバンプアロケータ**を所有する。ロードした全モジュールのシステムコンテナストレージ（RAM/XN）の確保を一元管理する。モジュールはランタイムと同じ期間保持し、個別アンロードは行わない。ランタイム破棄時にアリーナ全体を $O(1)$ で一括リセットし、メモリ断片化を根絶する。
-JIT機械語キャッシュ（3-Bank）は、Tier 3のJITランタイムが専用のコード領域から**専用の JIT コードアロケータ**により確保する。Tier 2 vSoCは [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) が定義する契約を介してJIT実行サービスを注入する。具体的なInterpreter/JIT切替とWASM継続処理はTier 3 `RuntimeEngine` が担い、キャッシュ・ホットスポット・コンパイル待ち列の状態はTier 3実装が所有する。x64参照構成では実行可能バッファの書込・実行権限を切り替える。ARMv8-Mの物理保護方式、領域配置、同期処理はすべてTBDとする。
+JIT機械語キャッシュ（3-Bank）は、Tier 3のJIT拡張が専用のコード領域から**専用の JIT コードアロケータ**により確保する。Tier 2 vSoCは [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) が定義する境界で選択済み実行拡張を結線する。RuntimeとInterpreterが実行・yield境界を所有し、JIT拡張がキャッシュ・ホットスポット・コンパイル待ち列を所有する。x64参照構成では実行可能バッファの書込・実行権限を切り替える。ARMv8-Mの物理保護方式、領域配置、同期処理はすべてTBDとする。
 
 ## 2. アーキテクチャ分類
 <!-- traceability: {META_3TierSeparation} {GLOBAL_ComponentHarness} {META_StaticDI} {OneRuntimeOneGuest} -->
-本コンポーネントは **Tier 2 (分解されたサブコンポーネント: Decomposed Subcomponent)** に属する。WASM 仮想実行環境として Loader、Interpreter、JIT、vMMIO、Debugger などのサブコンポーネント群を統合する。統合には**ハーネスパターン（`vsoc_harness`）による静的依存性逆転（Static Dependency Inversion）**を用いる。
-組み込みベアメタル環境では、仮想関数（vtable）や動的ディスパッチによるオーバーヘッドを容認しない。そのため Tier 2 の vSoC は Tier 3 具象エンジンの内部ヘッダに依存しない。ハーネスに集約された POD 関数ポインタやインスタンスを介して、ゼロオーバーヘッドで制御を委譲する。
+本コンポーネントは **Tier 2 (分解されたサブコンポーネント: Decomposed Subcomponent)** に属する。WASM 仮想実行環境として Loader、Interpreter、JIT、vMMIO、Debugger などのサブコンポーネント群を統合する。統合には型で依存を結線する静的ハーネスパターン（`vsoc_harness`）を用いる。
+Tier 2 の vSoC は Tier 3 具象エンジンの内部ヘッダに依存しない。`vsoc_harness` のメンバ型はコンパイル時に固定し、コンポジションルートで具象型を選択する。メンバが非所有ポインタを保持する場合も、実行時の型探索や仮想呼出しは行わない。依存解決による実行時オーバーヘッドは発生しない。
+C ABIのコールバック表を境界で使う場合は、静的ハーネス注入とは区別する。間接呼出しの契約とコストは対応するABI仕様へ記述する。
+依存性解決の共通方針は [`dependency_resolution.md`](docs/architecture/dependency_resolution.md) に従う。
 同一モジュールの複数インスタンス実行は、単一ランタイム内のマルチスレッドでは行わない。独立した別ランタイムを並行起動し、COOS IPC 通信で直交化する。
 
 ## 3. 静的モデル
@@ -74,7 +76,7 @@ graph TD
 <!-- traceability: {META_StaticDI} {Runtime_BumpAllocator} -->
 
 #### vSoCハーネス（vsoc_harness）
-各エンジンへのインターフェースを集約する。PODとして扱い、メンバに末尾アンダースコアは付与しない。
+各エンジンの直接依存型を集約する静的ハーネスである。メンバ型はコンパイル時に固定し、状態を持つ実装への参照を保持する場合は非所有とする。PODとして扱い、メンバに末尾アンダースコアは付与しない。
 
 | 項目名 | 機能と役割 | 備考（制約、型など） |
 | :--- | :--- | :--- |
@@ -338,7 +340,7 @@ ARMv8-Mのchain構成、命令列、header、lookup方式、保護方式、物�
 
 #### JITキャッシュ管理への委譲
 <!-- traceability: {Challenge_JITCacheEfficiency} {LowLatencyJIT} {JIT_MultiBuffer_Cache} {JIT_OldestOnly_Promote} -->
-JITキャッシュの状態、検索、バンク回転、昇格、および破棄は [`jit_runtime.md`](docs/components/tier3_executer/jit_runtime.md) を正本とする。対象ABIの物理配置は [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) を参照する。
+JITキャッシュの状態、検索、バンク回転、昇格、および破棄は [`jit_runtime.md`](docs/components/tier3_plugins/jit_runtime.md) を正本とする。対象ABIの物理配置は [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) を参照する。
 
 vSoCは実行境界でJIT Runtimeへ制御を渡す。キャッシュの内部状態や回転契機をvSoC側で再定義しない。ARMv8-Mの物理容量と配置はTBDである。
 
@@ -588,7 +590,7 @@ Fireballでは、標準WASIのゲスト側アダプタを `libfireball` とし�
 ### 6.2 メモリ制約と方策
 <!-- traceability: {JIT_MultiBuffer_Cache} {GLOBAL_IndependentHeap} {WasmPageAlignment} -->
 - **目標**: 構成で定めるメモリ上限内で動作させる。ARMv8-Mの物理容量適合性はTBDとする。
-- **方策**: x64参照構成は構成で定めるJITコード領域を使う。容量とバンク分割は [`jit_runtime.md`](docs/components/tier3_executer/jit_runtime.md) に従う。ARMv8-Mの容量と物理配置はTBDとする。
+- **方策**: x64参照構成は構成で定めるJITコード領域を使う。容量とバンク分割は [`jit_runtime.md`](docs/components/tier3_plugins/jit_runtime.md) に従う。ARMv8-Mの容量と物理配置はTBDとする。
 - **高速アドレス判定**: ゲストRAMを `0x0` から配置し、単一の比較命令でRAMアクセスを判定することで、インタープリタおよびJITのオーバーヘッドを最小化する。
 
 ### 6.3 安全性制約と方策

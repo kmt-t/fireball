@@ -8,19 +8,24 @@ Traceability: runtime_logging_test_spec.md
 from collections.abc import Sequence
 
 import pytest
-from helpers import expect_assertion, make_interpreter, make_native_interpreter, wat_to_wasm
 from interrupt_event import InterruptEvent
 from ipc_router import (
     IPCMessage,
     IPCStatus,
     Role,
 )
+from qa.shared.helpers import (
+    expect_assertion,
+    make_interpreter,
+    make_native_interpreter,
+    wat_to_wasm,
+)
 from scheduler import FB_CONF_INTERRUPT_QUEUE_SIZE
 from system import (
     System,
 )
 from system_containers import ReadOnlyFlatMapStorage
-from tier2_runtime.logger import (
+from tier2_runtime.observability.logger import (
     STANDARD_DIAGNOSTIC_EVENTS,
     LogDictionary,
     Logger,
@@ -28,9 +33,10 @@ from tier2_runtime.logger import (
     LogResult,
     decode_log_records,
 )
-from tier3_executer.interpreter.interpreter import TRAP_LOG_EVENTS, TrapCode
-from tier3_platform.drivers.hal.stream import DedicatedLogSink, StreamTransport
-from wasm_reader import parse
+from tier2_runtime.interpreter.interpreter import TRAP_LOG_EVENTS, TrapCode
+from tier3_platform.drivers.hal.stream import StreamTransport
+from tier3_platform.drivers.printk import PrintkBuffer
+from tier2_runtime.wasm.reader import parse
 
 
 def _event_record(value: int) -> bytes:
@@ -196,10 +202,10 @@ def test_log_11_dictionary_storage_ownership_separation():
     assert d.format(0x02, (10, 20, 0, 0)) == "value 10 20"
 
 
-def test_log_14_coos_and_ipc_diagnostics_preserve_event_ids_and_arguments():
-    """TEST-LOG-14: 拒否の結果と診断レコードの原因・引数を検査する。"""
-    logger_sink = DedicatedLogSink()
-    sysv = System(logger_sink=logger_sink)
+def test_printk_14_coos_and_ipc_diagnostics_preserve_event_ids_and_arguments():
+    """TEST-LOG-14: T1診断がLoggerを通らずprintkへ記録されることを検査する。"""
+    printk_sink = PrintkBuffer()
+    sysv = System(printk_sink=printk_sink)
     try:
         # 1. COOS Duplicate Task ID -> 0x0103
         def dummy_coro():
@@ -259,9 +265,9 @@ def test_log_14_coos_and_ipc_diagnostics_preserve_event_ids_and_arguments():
         sysv.scheduler.spawn("too_large_task", too_large_task(), role=Role.RUNTIME)
         sysv.scheduler.run_until_idle()
 
-        # Flush logger to UART (in addition to idle hooks)
+        # Tier 1 printk events are synchronous; draining also includes buffered logger records.
         sysv.logger.flush()
-        wire = logger_sink.drain_output()
+        wire = printk_sink.drain_output()
         assert len(wire) == 8 * 20
         records = tuple(
             (

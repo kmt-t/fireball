@@ -2,11 +2,11 @@
   "include": [
     "experiments/pysim/tier1_core/config.py",
     "experiments/pysim/tier1_core/interrupt_event.py",
-    "experiments/pysim/tier1_interface/logging_interface.py",
+    "experiments/pysim/tier1_core/printk.py",
+    "experiments/pysim/tier2_runtime/observability/logging_interface.py",
     "experiments/pysim/tier1_interface/memory_interface.py",
-    "experiments/pysim/tier1_interface/wasi_bindings.py",
-    "experiments/pysim/tier2_runtime/jit_abi.py",
-    "experiments/pysim/tier2_runtime/wasm_opcodes.py"
+    "experiments/pysim/tier2_runtime/abi/jit_abi.py",
+    "experiments/pysim/tier2_runtime/wasm/opcodes.py"
   ],
   "exclude": [
     "**/__pycache__",
@@ -14,10 +14,10 @@
     "experiments/pysim/tier2_runtime/*.pyx"
   ],
   "extraPaths": [
+    "experiments/pysim",
     "experiments/pysim/tier1_core",
     "experiments/pysim/tier1_interface",
-    "experiments/pysim/tier2_runtime",
-    "experiments/pysim/tier3_executer/jit"
+    "experiments/pysim/tier3_plugins/jit"
   ],
   "pythonVersion": "3.14",
   "typeCheckingMode": "basic",

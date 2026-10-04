@@ -26,7 +26,11 @@ from enum import IntEnum
 from typing import Protocol, cast
 
 from interrupt_event import InterruptEvent
-from logging_interface import LogResult
+from tier1_core.printk import (
+    Printk,
+    PrintkEvent,
+    PrintkLevel,
+)
 from system_containers import StaticVector
 
 FB_CONF_MAX_TASKS = 16
@@ -42,19 +46,6 @@ def _sleep_for_ns(duration_ns: int) -> None:
     assert duration_ns >= 0
     if duration_ns > 0:
         time.sleep(duration_ns / 1_000_000_000)
-
-
-# Tier 1 owns the scheduler diagnostics identifiers. The Tier 2 logger can
-# consume them, but COOS must remain independent of the runtime implementation.
-LOG_EVT_COOS_HANDOFF_LIMIT = 0x0101
-LOG_EVT_COOS_TASK_CAPACITY = 0x0102
-LOG_EVT_COOS_DUPLICATE_TASK = 0x0103
-LOG_EVT_COOS_IRQ_OVERFLOW = 0x0104
-
-
-class SchedulerLogLevel(IntEnum):
-    WARN = 2
-    ERROR = 3
 
 
 class LockFreeInterruptEventQueue:
@@ -100,18 +91,6 @@ class LockFreeInterruptEventQueue:
 
     def __len__(self) -> int:
         return self._tail - self._head
-
-
-class _SchedulerLogger(Protocol):
-    def log_event(
-        self,
-        level: IntEnum,
-        dict_offset: int,
-        arg0: int = 0,
-        arg1: int = 0,
-        arg2: int = 0,
-        arg3: int = 0,
-    ) -> LogResult: ...
 
 
 class ChannelPayload(Protocol):
@@ -436,7 +415,7 @@ class Scheduler:
         "dropped_irqs",
         "idle_hooks",
         "interrupt_event_queue",
-        "logger",
+        "printk",
         "max_handoffs",
         "max_tasks",
         "reschedule_generation",
@@ -449,13 +428,13 @@ class Scheduler:
         self,
         max_tasks: int = FB_CONF_MAX_TASKS,
         max_handoffs: int = FB_CONF_MAX_CONSECUTIVE_HANDOFFS,
-        logger: _SchedulerLogger | None = None,
+        printk: Printk | None = None,
         clock_ns: Callable[[], int] = time.monotonic_ns,
         sleep_ns: Callable[[int], None] = _sleep_for_ns,
     ):
         self.max_tasks = max_tasks
         self.max_handoffs = max_handoffs
-        self.logger = logger
+        self.printk = printk
         self._clock_ns = clock_ns
         self._sleep_ns = sleep_ns
         self.consecutive_handoffs = 0
@@ -591,33 +570,28 @@ class Scheduler:
         role: int = 0,
         service_handle: int | None = None,
     ) -> int:
-        """Spawn a new task within FB_CONF_MAX_TASKS bounds."""
+        """Spawn a task within bounds; capacity and duplicate failures go to printk."""
         # os_scheduler.md: a terminated task returns its TCB slot.  The slot is reclaimed here,
         # when the table is full, so a finished task's result stays readable until then.
         if len(self._all) >= self.max_tasks:
             self._reclaim_terminated_slot()
         if len(self._all) >= self.max_tasks:
-            if self.logger is not None:
-                self.logger.log_event(
-                    SchedulerLogLevel.ERROR,
-                    LOG_EVT_COOS_TASK_CAPACITY,
+            if self.printk is not None:
+                self.printk.write_event(
+                    PrintkLevel.ERROR,
+                    PrintkEvent.COOS_TASK_CAPACITY,
                     self.max_tasks,
                     len(self._all) + 1,
-                    0,
-                    0,
                 )
             assert False, f"Task capacity exceeded (max {self.max_tasks})"
         if task_id is not None:
             assigned_id = task_id
             if self.get_task(assigned_id) is not None:
-                if self.logger is not None:
-                    self.logger.log_event(
-                        SchedulerLogLevel.ERROR,
-                        LOG_EVT_COOS_DUPLICATE_TASK,
+                if self.printk is not None:
+                    self.printk.write_event(
+                        PrintkLevel.ERROR,
+                        PrintkEvent.COOS_DUPLICATE_TASK,
                         assigned_id,
-                        0,
-                        0,
-                        0,
                     )
                 assert False, f"Task with ID {assigned_id} already exists"
         else:
@@ -933,14 +907,12 @@ class Scheduler:
             if target_task.coro is not None:
                 self._ready_coro_count += 1
             return (ChannelAction.DIRECT_SWITCH, target_task.task_id)
-        if self.logger is not None:
-            self.logger.log_event(
-                SchedulerLogLevel.WARN,
-                LOG_EVT_COOS_HANDOFF_LIMIT,
+        if self.printk is not None:
+            self.printk.write_event(
+                PrintkLevel.WARN,
+                PrintkEvent.COOS_HANDOFF_LIMIT,
                 target_task.task_id,
                 self.consecutive_handoffs,
-                0,
-                0,
             )
         self.consecutive_handoffs = 0
         assert self._ready.enqueue(target_task), "READY queue capacity exceeded"
@@ -952,14 +924,12 @@ class Scheduler:
         """Non-blocking ISR notification of a fixed five-word event."""
         if not self.interrupt_event_queue.push(event):
             self.dropped_irqs += 1
-            if self.logger is not None:
-                self.logger.log_event(
-                    SchedulerLogLevel.WARN,
-                    LOG_EVT_COOS_IRQ_OVERFLOW,
+            if self.printk is not None:
+                self.printk.write_event(
+                    PrintkLevel.WARN,
+                    PrintkEvent.COOS_IRQ_OVERFLOW,
                     event.vector_id,
                     self.dropped_irqs,
-                    0,
-                    0,
                 )
             return False
         if not self.reschedule_pending:

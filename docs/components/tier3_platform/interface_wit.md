@@ -148,7 +148,7 @@ GPIO のような割り込み応答性・ビットバンギング等の要求か
 
 標準入出力の物理出力はHALドライバが担当する。ドライバはHAL固定スロットを読み取り、注入された物理トランスポートへ出力する。内部ロガーとは辞書・リングバッファを経由しない別経路であり、両者は排他的に出力順序が保証されるわけではない（インターリーブし得る）。
 
-ゲスト側アダプタが `fireball_call(WASI_FD_WRITE, ...)`（`runtime_syscall.md` 正本）を発行し、ゲストの `print` 呼び出しをこの `fireball://hal/stdout/0` 経路へ変換する。`eprint` は Fireball logger sink へ分離する。`fd_read`、`fd_close`、`clock_time_get`、`random_get` および標準出力・ログ以外の `fd_write` は uvwasi ドライバへ委譲する。ホスト側のディスパッチとHAL操作は、それぞれ `runtime_syscall.md` と `hal_dispatch.md` の契約に従う。
+ゲスト側アダプタが `fireball_call(WASI_FD_WRITE, ...)`（`runtime_syscall.md` 正本）を発行し、ゲストの `print` 呼び出しをこの `fireball://hal/stdout/0` 経路へ変換する。`eprint` はTier 2内部ロガーへ渡し、その出力は低層の`printk` Sinkを使う。`fd_read`、`fd_close`、`clock_time_get`、`random_get` および標準出力・ログ以外の `fd_write` は uvwasi ドライバへ委譲する。ホスト側のディスパッチとHAL操作は、それぞれ `runtime_syscall.md` と `hal_dispatch.md` の契約に従う。
 
 ### 5.3 命名規則 (Naming Conventions)
 

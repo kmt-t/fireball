@@ -3,8 +3,8 @@
 ## 1. 目的と対象範囲
 
 正本: [`wasm_instruction_set.md`](docs/specs/wasm_instruction_set.md)
-関連: [`interpreter.md`](docs/components/tier3_executer/interpreter.md)（インタープリタ側実装）, [`jit_compiler.md`](docs/components/tier3_executer/jit_compiler.md)（JIT側実装）
-参考実装: [`interpreter_concept.py`](docs/components/tier3_executer/concepts/interpreter_concept.py), [`bulk_memory_concept.py`](docs/components/tier3_executer/concepts/bulk_memory_concept.py)
+関連: [`interpreter.md`](docs/components/tier2_runtime/interpreter.md)（インタープリタ側実装）, [`jit_compiler.md`](docs/components/tier3_plugins/jit_compiler.md)（JIT側実装）
+参考実装: [`interpreter_concept.py`](docs/components/tier2_runtime/concepts/interpreter_concept.py), [`bulk_memory_concept.py`](docs/components/tier2_runtime/concepts/bulk_memory_concept.py)
 
 インタープリタ・JIT双方が対応すべきWASM Core 1.0 MVPと、`{WasmFCSubset}`が列挙する`0xFC`部分集合の意味論を命令カテゴリごとに検証する。本書は個々のオプコードのスタック遷移・トラップ条件を横断的に一覧化する（実行エンジンごとの内部実装詳細は`interpreter_test_spec.md`/`jit_compiler_test_spec.md`を参照）。x64で確認した実装を対象とし、ARMv8-Mの物理命令列と実機受入れはTBDである。
 

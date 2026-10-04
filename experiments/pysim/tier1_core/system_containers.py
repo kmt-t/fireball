@@ -12,16 +12,78 @@ dense/sequential containers.
 from __future__ import annotations
 
 import bisect
+import ctypes
 from collections.abc import Callable, Iterable, Iterator, Sequence
 from dataclasses import dataclass
 from typing import Generic, TypeVar
 
+from bump_allocator import BumpAllocator
 from config import JIT_CARD_SHIFT
 
 KeyT = TypeVar("KeyT")
 ValT = TypeVar("ValT")
 T = TypeVar("T")
 ALLOWED_BITS = (1, 2, 4)
+
+
+class CtypesU32Buffer:
+    """Fixed-width backing for scalar arrays shared with native code.
+
+    Generic `StaticVector[T]` values cannot use this storage: they may contain
+    Python records whose layout is not a C ABI. Native users must opt into this
+    concrete unsigned-32-bit buffer.
+    """
+
+    __slots__ = ("_allocator", "_arena_offset", "_arena_size", "_values", "capacity")
+
+    def __init__(self, capacity: int, allocator: BumpAllocator | None = None) -> None:
+        assert capacity >= 0
+        self.capacity = capacity
+        self._values = (ctypes.c_uint32 * capacity)()
+        self._allocator: BumpAllocator | None = None
+        self._arena_offset: int | None = None
+        self._arena_size = 0
+        if allocator is not None:
+            self.bind_allocator(allocator)
+
+    @property
+    def arena_offset(self) -> int | None:
+        return self._arena_offset
+
+    @property
+    def arena_size(self) -> int:
+        return self._arena_size
+
+    def bind_allocator(self, allocator: BumpAllocator) -> None:
+        """Record this C-compatible buffer in the owning runtime arena."""
+
+        if self._allocator is allocator:
+            return
+        self._arena_size = ctypes.sizeof(self._values)
+        self._arena_offset = (
+            allocator.allocate(self._arena_size, ctypes.alignment(ctypes.c_uint32))
+            if self._arena_size
+            else None
+        )
+        self._allocator = allocator
+
+    @property
+    def native_address(self) -> int:
+        """Address of the stable C-compatible backing array."""
+
+        return 0 if self.capacity == 0 else ctypes.addressof(self._values)
+
+    def at(self, index: int) -> int:
+        assert 0 <= index < self.capacity
+        return int(self._values[index])
+
+    def put(self, index: int, value: int) -> None:
+        assert 0 <= index < self.capacity
+        assert 0 <= value <= 0xFFFF_FFFF
+        self._values[index] = value
+
+    def __len__(self) -> int:
+        return self.capacity
 
 
 def freeze_sequence(items: Iterable[T]) -> tuple[T, ...]:
@@ -1255,6 +1317,14 @@ class StaticVector(Generic[T]):
     def __delitem__(self, index: int) -> None:
         assert not self._frozen, "cannot mutate a frozen StaticVector"
         del self._items[index]
+
+    def relocate_arena(self, offset_delta: int) -> None:
+        """Move recorded target storage when its owning module changes arenas."""
+
+        if self._arena_offset is not None:
+            relocated_offset = self._arena_offset + offset_delta
+            assert relocated_offset >= 0
+            self._arena_offset = relocated_offset
 
     def contains(self, item: T) -> bool:
         for index in range(len(self._items)):

@@ -10,7 +10,7 @@ from __future__ import annotations
 import threading
 from collections.abc import Generator, Mapping
 
-from execution_context import DebugExecutionContext
+from tier2_runtime.interpreter.execution_context import DebugExecutionView
 from scheduler import ChannelAction
 from tier3_platform.drivers.debugger.transport import (
     DebuggerConnection,
@@ -18,7 +18,7 @@ from tier3_platform.drivers.debugger.transport import (
     SocketDebuggerSink,
 )
 from tier3_plugins.debugger.debugger import DebuggerManager, GDBRspProtocol
-from wasm_module import BasicBlock
+from tier2_runtime.wasm.module import BasicBlock
 
 
 class GDBServer:
@@ -48,7 +48,7 @@ class GDBServer:
         return self.actual_port
 
     def start(
-        self, current_pc: int, ctx: DebugExecutionContext, blocks: Mapping[int, BasicBlock]
+        self, current_pc: int, ctx: DebugExecutionView, blocks: Mapping[int, BasicBlock]
     ) -> int:
         """Starts a blocking transport loop in a background thread."""
         port = self.bind_socket()
@@ -62,7 +62,7 @@ class GDBServer:
         return port
 
     def run_task(
-        self, start_pc: int, ctx: DebugExecutionContext, blocks: Mapping[int, BasicBlock]
+        self, start_pc: int, ctx: DebugExecutionView, blocks: Mapping[int, BasicBlock]
     ) -> Generator[tuple[str, None], None, None]:
         """
         COOS cooperative task coroutine for GDBServer.
@@ -148,7 +148,7 @@ class GDBServer:
             self._thread.join(timeout=1.0)
 
     def _server_loop(
-        self, start_pc: int, ctx: DebugExecutionContext, blocks: Mapping[int, BasicBlock]
+        self, start_pc: int, ctx: DebugExecutionView, blocks: Mapping[int, BasicBlock]
     ) -> None:
         """Accepts a client connection and processes RSP packets until disconnected."""
         try:

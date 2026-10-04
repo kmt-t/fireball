@@ -15,8 +15,12 @@ from __future__ import annotations
 from collections.abc import Generator, Iterator, Sequence
 from enum import IntEnum
 
-from logging_interface import Logger, LogLevel
 from memory_interface import MemoryManager, SharedBlock
+from tier1_core.printk import (
+    Printk,
+    PrintkEvent,
+    PrintkLevel,
+)
 from scheduler import (
     FB_CONF_MAX_CHANNELS,
     Channel,
@@ -26,13 +30,6 @@ from scheduler import (
     WaitDir,
 )
 from system_containers import ReadOnlyFlatMapView, StaticVector
-
-LOG_EVT_IPC_RBAC_DENIED = 0x0201
-LOG_EVT_IPC_UNKNOWN_URI = 0x0202
-LOG_EVT_IPC_MSG_TOO_LARGE = 0x0203
-LOG_EVT_IPC_INVALID_OWNERSHIP = 0x0204
-LOG_EVT_IPC_CHANNEL_COLLISION = 0x0205
-
 
 # ipc_router.md {3.3}: a message is a static, fixed-size buffer of at most 8
 # kv_pair entries.
@@ -556,7 +553,7 @@ class IPCRouter:
     __slots__ = (
         "_channel_role_masks",
         "_service_channels",
-        "logger",
+        "printk",
         "memory_manager",
         "registry",
         "scheduler",
@@ -566,10 +563,10 @@ class IPCRouter:
         self,
         scheduler: Scheduler,
         memory_manager: MemoryManager,
-        logger: Logger | None = None,
+        printk: Printk | None = None,
     ):
         self.scheduler = scheduler
-        self.logger = logger
+        self.printk = printk
         self.memory_manager = memory_manager
         # Non-owning view borrowing ROM-resident AoS storage array (_SERVICE_ENTRIES)
         self.registry = ReadOnlyFlatMapView(_SERVICE_ENTRIES)
@@ -636,21 +633,21 @@ class IPCRouter:
         handle = self.lookup_service_handle(destination_uri)
         desc = self.get_service_descriptor(handle)
         if desc is None:
-            if self.logger is not None:
-                self.logger.log_event(
-                    LogLevel.WARN, LOG_EVT_IPC_UNKNOWN_URI, handle if handle >= 0 else 0, 0, 0, 0
+            if self.printk is not None:
+                self.printk.write_event(
+                    PrintkLevel.WARN,
+                    PrintkEvent.IPC_UNKNOWN_URI,
+                    handle if handle >= 0 else 0,
                 )
             return (IPCStatus.ERR_NOT_FOUND, None)
 
         if not FB_CONF_ROUTER_ROLE_MATRIX[int(sender_role)][int(desc.role)]:
-            if self.logger is not None:
-                self.logger.log_event(
-                    LogLevel.WARN,
-                    LOG_EVT_IPC_RBAC_DENIED,
+            if self.printk is not None:
+                self.printk.write_event(
+                    PrintkLevel.WARN,
+                    PrintkEvent.IPC_RBAC_DENIED,
                     int(sender_role),
                     int(desc.role),
-                    0,
-                    0,
                 )
             return (IPCStatus.ERR_PERMISSION_DENIED, None)
 
@@ -688,14 +685,11 @@ class IPCRouter:
             and self._channel_role_masks[channel_id] & (1 << int(sender_role)) != 0
         )
         if not channel_allowed:
-            if self.logger is not None:
-                self.logger.log_event(
-                    LogLevel.WARN,
-                    LOG_EVT_IPC_RBAC_DENIED,
+            if self.printk is not None:
+                self.printk.write_event(
+                    PrintkLevel.WARN,
+                    PrintkEvent.IPC_RBAC_DENIED,
                     int(sender_role),
-                    0,
-                    0,
-                    0,
                 )
             return (
                 IPCStatus.ERR_PERMISSION_DENIED,
@@ -703,27 +697,23 @@ class IPCRouter:
             )
 
         if message.ownership != OwnershipState.SENDER_OWNS:
-            if self.logger is not None:
-                self.logger.log_event(
-                    LogLevel.ERROR,
-                    LOG_EVT_IPC_INVALID_OWNERSHIP,
+            if self.printk is not None:
+                self.printk.write_event(
+                    PrintkLevel.ERROR,
+                    PrintkEvent.IPC_INVALID_OWNERSHIP,
                     int(message.ownership),
                     1,
-                    0,
-                    0,
                 )
             assert message.ownership == OwnershipState.SENDER_OWNS, (
                 "sender must own the message before sending"
             )
         if len(message) > FB_CONF_ROUTER_MAX_KV_PAIRS:
-            if self.logger is not None:
-                self.logger.log_event(
-                    LogLevel.ERROR,
-                    LOG_EVT_IPC_MSG_TOO_LARGE,
+            if self.printk is not None:
+                self.printk.write_event(
+                    PrintkLevel.ERROR,
+                    PrintkEvent.IPC_MSG_TOO_LARGE,
                     len(message),
                     FB_CONF_ROUTER_MAX_KV_PAIRS,
-                    0,
-                    0,
                 )
             return (
                 IPCStatus.ERR_MSG_TOO_LARGE,

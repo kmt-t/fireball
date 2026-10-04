@@ -1,7 +1,7 @@
 """
 experiments/pysim/benchmarks/jit/bench_jit.py
 JIT Compiler & Runtime Performance Benchmark.
-Conforms to docs/components/tier3_executer/benchmarks/jit_runtime_bench_spec.md (BENCHMARK-JIT-01 ~ BENCHMARK-JIT-05).
+Conforms to docs/components/tier3_plugins/benchmarks/jit_runtime_bench_spec.md (BENCHMARK-JIT-01 ~ BENCHMARK-JIT-05).
 """
 
 from __future__ import annotations
@@ -23,24 +23,23 @@ from _bootstrap import configure_import_paths
 
 configure_import_paths(_PYSIM_DIR, _BENCH_DIR)
 
-import wasm_opcodes as op
+import tier2_runtime.wasm.opcodes as op
 from config import FB_CONF_RUNTIME_YIELD_THRESHOLD
-from control_flow import extract_basic_blocks, iter_block_ops
-from execution_context import WASMContext
+from tier2_runtime.interpreter.control_flow import extract_basic_blocks, iter_block_ops
 from system_containers import ReadOnlyFlatMapView, StaticVector
-from tier3_executer.interpreter.interpreter import (
+from tier2_runtime.interpreter.interpreter import (
+    ExecutionContext,
     Interpreter,
     InterpreterBindings,
     NativeInterpreter,
     WasmNumber,
 )
-from tier3_executer.jit.jit_cache import HotspotBitmap
-from tier3_executer.jit.jit_manager import JITRuntimeManager
-from tier3_executer.jit.jit_runtime import JITInterpreter
-from tier3_executer.jit.x64_jit import TraceCompiler
-from tier3_executer.runtime_engine import RuntimeEngine
-from wasm_module import I32, LocalWidthMap
-from wasm_reader import parse
+from tier3_plugins.jit.jit_cache import HotspotBitmap
+from tier3_plugins.jit.jit_manager import JITRuntimeManager
+from tier3_plugins.jit.x64_jit import TraceCompiler
+from tier2_runtime.runtime.engine import RuntimeEngine
+from tier2_runtime.wasm.module import I32, LocalWidthMap
+from tier2_runtime.wasm.reader import parse
 
 
 class JITCompilerBenchmark:
@@ -136,15 +135,19 @@ class JITCompilerBenchmark:
                 )
             )
             runtime_engine.register_module_blocks(module)
-            interp_jit = JITInterpreter(module, InterpreterBindings.empty(), runtime_engine)
+            interp_jit = NativeInterpreter(
+                module,
+                InterpreterBindings.empty(),
+                bump_allocator=runtime_engine.bump_allocator,
+            )
 
             # Warm up and compile the hot traces before measuring native execution.
-            interp_jit.call(fn_idx, [100])
+            runtime_engine.call(interp_jit, fn_idx, [100])
             runtime_engine.idle_hook(budget=10)
             runtime_engine.reset_stats()
 
             t0 = time.perf_counter()
-            res_jit = interp_jit.call(fn_idx, [LOOP_COUNT])
+            res_jit = runtime_engine.call(interp_jit, fn_idx, [LOOP_COUNT])
             t1 = time.perf_counter()
             jit_times_ms.append((t1 - t0) * 1000)
             jit_results.append(int(res_jit[0]))
@@ -160,13 +163,15 @@ class JITCompilerBenchmark:
             collect_runtime_stats=True,
         )
         diagnostic_engine.register_module_blocks(module)
-        diagnostic_interpreter = JITInterpreter(
-            module, InterpreterBindings.empty(), diagnostic_engine
+        diagnostic_interpreter = NativeInterpreter(
+            module,
+            InterpreterBindings.empty(),
+            bump_allocator=diagnostic_engine.bump_allocator,
         )
-        diagnostic_interpreter.call(fn_idx, [100])
+        diagnostic_engine.call(diagnostic_interpreter, fn_idx, [100])
         diagnostic_engine.idle_hook(budget=10)
         diagnostic_engine.reset_stats()
-        diagnostic_result = diagnostic_interpreter.call(fn_idx, [LOOP_COUNT])
+        diagnostic_result = diagnostic_engine.call(diagnostic_interpreter, fn_idx, [LOOP_COUNT])
         assert int(diagnostic_result[0]) == jit_results[0]
         assert diagnostic_engine.stat_jit_invocations > 0, (
             "diagnostic run did not execute a JIT trace"
@@ -219,8 +224,8 @@ class JITCompilerBenchmark:
             locals_ptr[0] += 1
 
         helper_fn = helper_type(helper)
-        helper_ctx = WASMContext()
-        helper_ctx.locals = (0,)
+        helper_ctx = ExecutionContext()
+        assert helper_ctx.local_stack.extend((0,))
         helper_addr = ctypes.cast(helper_fn, ctypes.c_void_p).value or 0
         helper_trace = self.compiler.compile_trace(
             0xF000,
@@ -238,7 +243,7 @@ class JITCompilerBenchmark:
         for _ in range(helper_iterations):
             helper_trace.invoke(helper_ctx)
         t1 = time.perf_counter()
-        assert helper_ctx.locals[0] == helper_iterations
+        assert helper_ctx.local_stack[0] == helper_iterations
         results["context_helper_tail_mops"] = helper_iterations / (t1 - t0) / 1e6
         results["context_helper_tail_ns"] = (t1 - t0) / helper_iterations * 1e9
         results["context_helper_tail_invocations"] = helper_iterations

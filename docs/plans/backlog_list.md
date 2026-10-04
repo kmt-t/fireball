@@ -34,7 +34,7 @@ Fireball Hypervisor の現行作業および次期フェーズのタスク一覧
   - 仕様書（自然言語記述）とテスト仕様書の完全同期
 - [x] **旧JITテストハーネスの移行と重複dispatchの除去**:
   - JIT遷移テストを現行`Interpreter`／`RuntimeEngine.run()`へ移行し、旧`IntegratedHybridEngine`と旧ランタイムエンジンを削除した
-  - デバッガ／GDBのブロック単位操作は、製品ランタイムへテスト専用APIを追加せず、[`runtime_test_driver.py`](experiments/pysim/qa/runtime_test_driver.py)にテスト側ドライバとして分離した
+  - デバッガ／GDBのブロック単位操作は、製品ランタイムへテスト専用APIを追加せず、[`runtime_test_driver.py`](experiments/pysim/qa/private/runtime_test_driver.py)にテスト側ドライバとして分離した
   - 移行後の関連テストは、JIT 8件、vSoC 21件、デバッガ 8件、GDB 1件、Gotchas 30件が通過している
 - [x] **カード状態のエイジング（`JIT_CardAgingSweep`）**:
   - 3面キャッシュのローテーションごとに関数更新表（関数につき1ビット）を8関数単位で巡回し、`EXECUTED` のカードだけを `UNEXECUTED` へ戻す方式を、仕様・形式モデル・コンセプトコード・pysim・テスト仕様へ同期した

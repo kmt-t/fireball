@@ -58,7 +58,7 @@ Hypothesisの失敗出力には縮小された入力と再現情報を含める�
 uv run pytest -q experiments/pysim/qa/tier1_core/test_containers.py
 ```
 
-通常ランナーのコンテナ登録も同じファイルを実行する。実行結果と変異検査の証跡は [`test_reconstruction_review.md`](docs/qa/test_reconstruction_review.md) に記録する。
+通常ランナーのコンテナ登録も同じファイルを実行する。
 
 ## 4. 未検証・スコープ外
 

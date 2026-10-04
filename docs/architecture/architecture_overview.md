@@ -2,19 +2,18 @@
 
 本書は、Fireball のコンポーネント配置、Tier 分類、責務境界、および依存関係を示す概要図である。個別コンポーネントの状態、アルゴリズム、データ構造、ABI、形式検証、テスト条件は本書に再掲しない。詳細は各コンポーネント設計書を正本とする。
 
-文書階層と配置規則は [`document_structure.md`](docs/architecture/document_structure.md) が定義する。キーワードの意味上の定義は正本文書の本文または表に置き、同じセクション内の `<!-- definition: &#123;Keyword&#125; -->` 宣言で定義元を識別する。参照側は `<!-- traceability: &#123;Keyword&#125; -->` コメントで紐付ける。
+文書階層と配置規則は [`document_structure.md`](docs/architecture/document_structure.md) が定義する。コンポーネントの依存性解決方針は [`dependency_resolution.md`](docs/architecture/dependency_resolution.md) が定義する。キーワードの意味上の定義は正本文書の本文または表に置き、同じセクション内の `<!-- definition: &#123;Keyword&#125; -->` 宣言で定義元を識別する。参照側は `<!-- traceability: &#123;Keyword&#125; -->` コメントで紐付ける。
 
 ## 1. Tier 構成
 
 | Tier | 役割 | 配置・正本 |
 | :--- | :--- | :--- |
 | **Tier 0** | システムが満たす受入要求を定義する。 | [`requirement_list.md`](docs/requires/requirement_list.md) |
-| **Tier 1 Core** | 協調実行、静的設定、基盤コンテナを定義する。 | [`tier1_core`](docs/components/tier1_core/) |
+| **Tier 1 Core** | 協調実行、静的設定、基盤コンテナ、およびOS起動・障害診断用のprintk契約を定義する。 | [`tier1_core`](docs/components/tier1_core/) |
 | **Tier 1 Interface** | IPC、サービス、メモリ契約を定義する。 | [`tier1_interface`](docs/components/tier1_interface/) |
-| **Tier 2 Runtime** | Runtime のライフサイクル、ローダ、仮想メモリ、HAL抽象、システムコール、プラグイン接続契約を定義する。 | [`tier2_runtime`](docs/components/tier2_runtime/) |
-| **Tier 3 Executer** | Interpreter と JIT の具体的な実行系を定義する。 | [`tier3_executer`](docs/components/tier3_executer/) |
-| **Tier 3 Plugins** | Debugger と Guest Profiler の交換可能な実装を定義する。 | [`tier3_plugins`](docs/components/tier3_plugins/) |
-| **Tier 3 Platform** | ゲスト公開WIT、ゲスト側アダプタ、HAL の物理ドライバを定義する。 | [`tier3_platform`](docs/components/tier3_platform/) |
+| **Tier 2 Runtime** | Runtime のライフサイクルとInterpreter実行基盤、ローダ、仮想メモリ、HAL抽象、システムコール、プラグイン接続契約を定義する。 | [`tier2_runtime`](docs/components/tier2_runtime/) |
+| **Tier 3 Plugins** | Tier 2 Interpreterへ任意接続するJIT、Debugger、Guest Profilerなどのプラグイン実装を定義する。 | [`tier3_plugins`](docs/components/tier3_plugins/) |
+| **Tier 3 Platform** | ゲスト公開WIT、ゲスト側アダプタ、HALとprintkの物理ドライバを定義する。 | [`tier3_platform`](docs/components/tier3_platform/) |
 
 `docs/specs/` は複数Tierから参照する外部規格・ABI・命令カタログを置く。`docs/qa/` は各コンポーネントのテスト仕様と横断検証資料を置く。これらは実行コンポーネントのTierには含めない。
 
@@ -29,6 +28,7 @@ flowchart LR
     coos["os_coos"]
     scheduler["os_scheduler"]
     containers["system_containers"]
+    printk["printk"]
   end
   subgraph T1I["Tier 1 Interface"]
     ipc["ipc_router"]
@@ -44,16 +44,13 @@ flowchart LR
     hal["hal_dispatch"]
     plugin_contract["runtime_plugin_architecture"]
     observability["runtime_observability"]
-    hotspot["runtime_hotspot_profiler"]
     logging["runtime_logging"]
     jit_abi["jit_abi"]
-  end
-  subgraph T3E["Tier 3 Executer"]
     interpreter["interpreter"]
-    jit_compiler["jit_compiler"]
-    jit_runtime["jit_runtime"]
   end
   subgraph T3P["Tier 3 Plugins"]
+    jit_compiler["jit_compiler"]
+    jit_runtime["jit_runtime"]
     debugger["debugger"]
     profiler["guest_profiler"]
   end
@@ -64,6 +61,10 @@ flowchart LR
   end
 
   scheduler --> coos
+  scheduler --> printk
+  coos --> printk
+  ipc --> printk
+  driver --> printk
   ipc --> coos
   ipc --> memory_contract
   service --> ipc
@@ -78,6 +79,7 @@ flowchart LR
   syscall --> vmmio
   logging --> coos
   logging --> containers
+  logging --> printk
   vsoc --> coos
   vsoc --> config
   vsoc --> loader
@@ -87,20 +89,17 @@ flowchart LR
   vsoc --> hal
   vsoc --> plugin_contract
   vsoc --> observability
-  vsoc --> hotspot
   interpreter --> plugin_contract
   interpreter --> observability
-  interpreter --> hotspot
   interpreter --> vsoc
   interpreter --> loader
   interpreter --> vmmio
-  interpreter --> jit_abi
   jit_runtime --> interpreter
   jit_runtime --> jit_compiler
+  jit_compiler --> interpreter
   jit_compiler --> jit_abi
   jit_compiler --> memory
   jit_runtime --> jit_abi
-  jit_runtime --> hotspot
   jit_runtime --> memory
   debugger --> plugin_contract
   debugger --> observability
@@ -123,6 +122,7 @@ flowchart LR
 | :--- | :--- | :--- |
 | `os_coos` | 協調実行カーネルとタスク基盤 | [`os_coos.md`](docs/components/tier1_core/os_coos.md) |
 | `os_scheduler` | 実行可能タスクのスケジューリング | [`os_scheduler.md`](docs/components/tier1_core/os_scheduler.md) |
+| `printk` | COOSやIPCの起動前・障害時にも使える低層診断出力契約 | [`printk.md`](docs/components/tier1_core/printk.md) |
 | `system_config` | コンパイル時に確定するシステム設定 | [`system_config.md`](docs/components/tier1_core/system_config.md) |
 | `system_containers` | 固定容量コンテナと静的ビュー | [`system_containers.md`](docs/components/tier1_core/system_containers.md) |
 
@@ -139,6 +139,7 @@ flowchart LR
 | コンポーネント | 責務 | 詳細 |
 | :--- | :--- | :--- |
 | `runtime_vsoc` | ゲスト実行環境のライフサイクルと統合 | [`runtime_vsoc.md`](docs/components/tier2_runtime/runtime_vsoc.md) |
+| `interpreter` | WASM命令を実行するTier 2 Interpreter基盤 | [`interpreter.md`](docs/components/tier2_runtime/interpreter.md) |
 | `runtime_loader` | WASMモジュールのロードと静的メタデータ構築 | [`runtime_loader.md`](docs/components/tier2_runtime/runtime_loader.md) |
 | `runtime_vmmio` | ゲストアドレス空間とvMMIOの変換 | [`runtime_vmmio.md`](docs/components/tier2_runtime/runtime_vmmio.md) |
 | `runtime_memory` | Runtime用メモリ領域の実装 | [`runtime_memory.md`](docs/components/tier2_runtime/runtime_memory.md) |
@@ -146,22 +147,15 @@ flowchart LR
 | `hal_dispatch` | HAL公開IFとホストデバイス仲介 | [`hal_dispatch.md`](docs/components/tier2_runtime/hal_dispatch.md) |
 | `runtime_plugin_architecture` | 実行系・観測系プラグインの接続契約 | [`runtime_plugin_architecture.md`](docs/components/tier2_runtime/runtime_plugin_architecture.md) |
 | `runtime_observability` | Runtimeイベントと観測フックの共通契約 | [`runtime_observability.md`](docs/components/tier2_runtime/runtime_observability.md) |
-| `runtime_hotspot_profiler` | Interpreter履歴に基づく独立したJITホットスポット分析契約 | [`runtime_hotspot_profiler.md`](docs/components/tier2_runtime/runtime_hotspot_profiler.md) |
 | `runtime_logging` | Runtimeイベントのログ配送 | [`runtime_logging.md`](docs/components/tier2_runtime/runtime_logging.md) |
-| `jit_abi` | Tier 3 Executerへ提供するJIT ABI契約 | [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) |
-
-### Tier 3 Executer
-
-| コンポーネント | 責務 | 詳細 |
-| :--- | :--- | :--- |
-| `interpreter` | WASM命令のInterpreter実行 | [`interpreter.md`](docs/components/tier3_executer/interpreter.md) |
-| `jit_compiler` | JITネイティブコードの生成 | [`jit_compiler.md`](docs/components/tier3_executer/jit_compiler.md) |
-| `jit_runtime` | JITコード検索とコードキャッシュ管理 | [`jit_runtime.md`](docs/components/tier3_executer/jit_runtime.md) |
+| `jit_abi` | Tier 3 Pluginsへ提供するJIT ABI契約 | [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) |
 
 ### Tier 3 Plugins
 
 | コンポーネント | 責務 | 詳細 |
 | :--- | :--- | :--- |
+| `jit_compiler` | JITネイティブコードの生成 | [`jit_compiler.md`](docs/components/tier3_plugins/jit_compiler.md) |
+| `jit_runtime` | Interpreterへ任意接続するJITプラグインとして、履歴・JITコード検索・コードキャッシュを管理 | [`jit_runtime.md`](docs/components/tier3_plugins/jit_runtime.md) |
 | `debugger` | ゲスト実行の停止・再開・デバッグ接続 | [`debugger.md`](docs/components/tier3_plugins/debugger.md) |
 | `guest_profiler` | ゲストのコールグラフと実行時間の観測 | [`guest_profiler.md`](docs/components/tier3_plugins/guest_profiler.md) |
 
@@ -170,5 +164,5 @@ flowchart LR
 | コンポーネント | 責務 | 詳細 |
 | :--- | :--- | :--- |
 | `interface_wit` | ゲストへ公開するWITと型契約 | [`interface_wit.md`](docs/components/tier3_platform/interface_wit.md) |
-| `platform_driver` | 物理デバイスのHALドライバ実装 | [`platform_driver.md`](docs/components/tier3_platform/platform_driver.md) |
+| `platform_driver` | HALとprintkの物理出力ドライバ | [`platform_driver.md`](docs/components/tier3_platform/platform_driver.md) |
 | `libfireball` | ゲストへ組み込むWASI／Fireball ABIアダプタ | [`libfireball.md`](docs/components/tier3_platform/libfireball.md) |

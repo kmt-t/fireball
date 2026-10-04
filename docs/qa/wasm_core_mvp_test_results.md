@@ -2,6 +2,28 @@
 
 <!-- traceability: {ROMParsing} {LightweightVerifier} {ThreadedInterpreter} -->
 
+## 再現可能な固定Core Spec Suite実行 (2026-10-04)
+
+[`test_wasm_core_spec.py`](experiments/pysim/qa/workloads/test_wasm_core_spec.py) は、公式WebAssembly Core Spec Testsから固定した37個のMVP互換WASTファイルをFireballインタープリタで実行する。WAST入力はrevision `970c4116e644e2bf7acb39aab8b733db14ccdf28`へ固定し、WABT 1.0.36の`wast2json`で実行前に変換する。
+
+| 項目 | 結果 |
+| :--- | :--- |
+| Core Spec選択セット | 37/37ファイル |
+| 実行した期待値assert | 15,230件 |
+| 成功 | 37 pytest cases |
+| skip | 0件 |
+| 失敗 | 0件 |
+| 所要時間 | 2.11秒 |
+
+```bash
+.venv/bin/python tools/guest_bindings/fetch_wasm_core_suite.py
+.venv/bin/python -m pytest -q -s experiments/pysim/qa/workloads/test_wasm_core_spec.py
+```
+
+この選択セットは公式Core Spec Suite全体ではない。未選択の機能、提案機能、埋込みimportを必要とするケース、対応外のテキスト形式ケースについて適合性を主張しない。従来の49ファイル集計は実行版・個別skip理由が記録されていない旧記録であり、上記の再現可能な実行結果とは別に保持する。
+
+同日のWASMバイナリワークロード入口[`run_all.py`](experiments/pysim/qa/workloads/run_all.py)は、SDK/libcゲスト52件、HALゲスト11件、Core Specファイル37件の計3スイートを実行した。3/3スイート成功、失敗0件、所要時間5.46秒である。Core Specの15,230件は内部assert数であり、pytestの37件に加算していない。HALスタブの直接契約・IPC結合試験99件は、別の結合テストsuiteとして実行する。
+
 ## 結果概要
 
 | 項目 | 記録 |

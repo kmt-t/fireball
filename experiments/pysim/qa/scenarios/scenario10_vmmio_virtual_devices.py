@@ -20,16 +20,16 @@ Tests:
 
 import wasmtime
 from scheduler import Scheduler
-from tier3_executer.interpreter.interpreter import Interpreter, InterpreterBindings
-from tier3_executer.interpreter.interpreter import TrapCode as InterpreterTrapCode
-from vmmio import (
+from tier2_runtime.interpreter.interpreter import Interpreter, InterpreterBindings
+from tier2_runtime.interpreter.interpreter import TrapCode as InterpreterTrapCode
+from tier2_runtime.hal.vmmio import (
     FC_STATIC_DEVICE,
     TrapCode,
     VmmioAddress,
     VMMIOController,
     VmmioStatus,
 )
-from wasm_reader import parse
+from tier2_runtime.wasm.reader import parse
 
 
 def test_scenario_vmmio_virtual_devices():

@@ -125,31 +125,14 @@
 | TEST-SYS-83、85 | 単調時計と乱数データの搬送 | 単調時計は呼出前後の参照値で64bit値を囲む。乱数は既存参照バックエンドのentropy入力を既知16バイトに固定し、要求長・全バイト・範囲外の保存を照合する |
 | GOTCHA-SYS-03 | 後半iovecの境界違反 | [`runtime_syscall.md`](docs/components/tier2_runtime/runtime_syscall.md)、実stdout HALを結線する。拒否後に全メモリ、出力なし、HAL処理件数0を照合する |
 
-2026-10-01に、[`test_syscall.py`](experiments/pysim/qa/tier2_runtime/test_syscall.py) 全体をLinux x86-64、Python 3.14の既存開発環境で実行した。実行コマンドを示す。
+2026-10-02にLinux x86-64・Python 3.14.6で[`test_syscall.py`](experiments/pysim/qa/tier2_runtime/test_syscall.py)を実行した。
 
 ```bash
 .venv/bin/python -m pytest -q experiments/pysim/qa/tier2_runtime/test_syscall.py
 ```
 
-結果は成功38件、失敗0件、skip 0件である。この結果は本書の全契約や実機動作の網羅を意味しない。
-
-同日に隔離したPythonプロセスで、SHM所有権ゲートの欠落、vIRQ登録の即時反映、拒否時の保留登録消去、vIRQ解除の即時反映、不正解除時の保留登録消去、IPC出力重複ガードの欠落を与えた。6種類すべてで対応するテストが失敗した。製品ファイルは変更していない。
-
-2026-10-02にLinux x86-64・Python 3.14.6で同じコマンドを実行した。
-既存MMIOとWASIの状態検査を強めた後の結果は成功52件、失敗0件、skip 0件である。
-所要時間は0.33秒である。
-
-同日に専用importと内部copyの転送契約を[`test_vdma.py`](experiments/pysim/qa/tier2_runtime/test_vdma.py)へ追加した。
-同ファイル240件と、`test_syscall.py`を含む関連9ファイル428件が成功した。
-この追加結果は、前記の直接ハンドラ試験と実guest試験を区別して記録する。
-入力、コマンド、SHM結線の修正、残る検証範囲は[`runtime_vsoc_test_spec.md`](docs/qa/tier2_runtime/runtime_vsoc_test_spec.md)第3〜4節と[`test_reconstruction_review.md`](docs/qa/test_reconstruction_review.md)第5.11節を参照する。
-
-同日に外部vDMAサービスモックを、既存の同期callableへ差し込んだ。
-実guestの専用importと実Gateway、COOSの待機・FIFO・境界配送を使う。
-保留・完了・CPU可視化、開始後失敗、engine占有時の拒否を制御する。
-成功復帰後のload、失敗結果、成功markerの不在、部分更新、全byteと先行engine状態を直接照合する。
-スイートは307件成功、関連回帰は488件成功した。
-TEST-SYS-22のモック境界での証拠と下位サービスの未検証を、[`runtime_vsoc_test_spec.md`](docs/qa/tier2_runtime/runtime_vsoc_test_spec.md)と[`test_reconstruction_review.md`](docs/qa/test_reconstruction_review.md)第5.12節へ記録する。
+結果は成功52件、失敗0件、skip 0件である。所要時間は0.33秒である。
+この結果は本書の全契約や実機動作の網羅を意味しない。vDMAのguest結線と外部サービス境界は [`runtime_vsoc_test_spec.md`](docs/qa/tier2_runtime/runtime_vsoc_test_spec.md) で検証する。
 
 ## 4. 未検証・スコープ外
 

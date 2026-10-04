@@ -1,7 +1,7 @@
 """
 experiments/pysim/benchmarks/aobench/bench_aobench.py
 3D Raytracing Ambient Occlusion Benchmark (AO-Bench).
-Conforms to docs/components/tier3_executer/benchmarks/aobench_spec.md (BENCHMARK-AO-01 ~ BENCHMARK-AO-04).
+Conforms to docs/components/tier3_plugins/benchmarks/aobench_spec.md (BENCHMARK-AO-01 ~ BENCHMARK-AO-04).
 """
 
 from __future__ import annotations
@@ -21,19 +21,19 @@ from _bootstrap import configure_import_paths
 
 configure_import_paths(_PYSIM_DIR, _BENCH_DIR)
 
+from ipc_router import FB_URI_HAL_STDOUT
 from system import System
-from tier3_executer.interpreter.interpreter import (
+from tier2_runtime.interpreter.interpreter import (
     Interpreter,
     InterpreterBindings,
     NativeInterpreter,
 )
-from tier3_executer.jit.jit_manager import JITRuntimeManager
-from tier3_executer.jit.jit_runtime import JITInterpreter
-from tier3_executer.jit.x64_jit import TraceCompiler
-from tier3_executer.runtime_engine import RuntimeEngine
+from tier3_plugins.jit.jit_manager import JITRuntimeManager
+from tier3_plugins.jit.x64_jit import TraceCompiler
+from tier2_runtime.runtime.engine import RuntimeEngine
 from tier3_platform.drivers.hal.dummy import DummyDriver
 from tier3_platform.drivers.wasi.context import WasiHostContext
-from wasm_reader import parse
+from tier2_runtime.wasm.reader import parse
 
 
 def run_aobench(debug: bool = False) -> dict[str, int | float]:
@@ -53,7 +53,7 @@ def run_aobench(debug: bool = False) -> dict[str, int | float]:
     sysv_python = System()
     wasi_python = WasiHostContext(sysv_python)
     sysv_python.start_hal_driver(
-        DummyDriver(transport=sysv_python.transport), sysv_python.wasi_hal_bindings.stdout_uri
+        DummyDriver(transport=sysv_python.transport), FB_URI_HAL_STDOUT
     )
     funcs_python = wasi_python.build_interpreter_host_functions(module)
     module.init_memory_data(wasi_python.guest_memory, ())
@@ -70,7 +70,7 @@ def run_aobench(debug: bool = False) -> dict[str, int | float]:
     sysv_native = System()
     wasi_native = WasiHostContext(sysv_native)
     sysv_native.start_hal_driver(
-        DummyDriver(transport=sysv_native.transport), sysv_native.wasi_hal_bindings.stdout_uri
+        DummyDriver(transport=sysv_native.transport), FB_URI_HAL_STDOUT
     )
     funcs_native = wasi_native.build_interpreter_host_functions(module)
     module.init_memory_data(wasi_native.guest_memory, ())
@@ -91,7 +91,7 @@ def run_aobench(debug: bool = False) -> dict[str, int | float]:
     sysv_t3 = System()
     wasi_ctx_t3 = WasiHostContext(sysv_t3)
     sysv_t3.start_hal_driver(
-        DummyDriver(transport=sysv_t3.transport), sysv_t3.wasi_hal_bindings.stdout_uri
+        DummyDriver(transport=sysv_t3.transport), FB_URI_HAL_STDOUT
     )
     funcs_t3 = wasi_ctx_t3.build_interpreter_host_functions(module)
     module.init_memory_data(wasi_ctx_t3.guest_memory, ())
@@ -101,10 +101,10 @@ def run_aobench(debug: bool = False) -> dict[str, int | float]:
         debug=debug,
     )
     runtime_engine.register_module_blocks(module)
-    interp_t3 = JITInterpreter(
+    interp_t3 = NativeInterpreter(
         module,
         InterpreterBindings.with_memory_and_functions(wasi_ctx_t3.guest_memory, funcs_t3),
-        runtime_engine,
+        bump_allocator=runtime_engine.bump_allocator,
     )
 
     t0_t3 = time.perf_counter()
@@ -136,18 +136,18 @@ def run_aobench(debug: bool = False) -> dict[str, int | float]:
     wasi_diagnostic = WasiHostContext(sysv_diagnostic)
     sysv_diagnostic.start_hal_driver(
         DummyDriver(transport=sysv_diagnostic.transport),
-        sysv_diagnostic.wasi_hal_bindings.stdout_uri,
+        FB_URI_HAL_STDOUT,
     )
     funcs_diagnostic = wasi_diagnostic.build_interpreter_host_functions(module)
     module.init_memory_data(wasi_diagnostic.guest_memory, ())
-    interp_diagnostic = JITInterpreter(
+    interp_diagnostic = NativeInterpreter(
         module,
         InterpreterBindings.with_memory_and_functions(
             wasi_diagnostic.guest_memory, funcs_diagnostic
         ),
-        diagnostic_engine,
+        bump_allocator=diagnostic_engine.bump_allocator,
     )
-    interp_diagnostic.call(main_fn, [WIDTH, HEIGHT])
+    diagnostic_engine.call(interp_diagnostic, main_fn, [WIDTH, HEIGHT])
     diagnostic_output = sysv_diagnostic.transport.drain_output().decode("utf-8", errors="replace")
     assert diagnostic_output == render_output_t3
 

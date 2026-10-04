@@ -11,7 +11,7 @@
 
 Tier 3でclang生成のWASMを実行すると、`RuntimeEngine.idle_hook` が `assert block is not None` で停止する。
 
-停止箇所は [`runtime_engine.py:443`](experiments/pysim/tier3_executer/runtime_engine.py) である。
+停止箇所は [`runtime_engine.py:443`](experiments/pysim/tier2_runtime/runtime/engine.py) である。
 
 コンパイル待ちキューから取り出したPCに対し、`get_block(pc)` が `None` を返している。
 
@@ -53,7 +53,7 @@ BUG-0001と同じである。
 
 ## 6. 修正
 
-[`runtime_engine.py`](experiments/pysim/tier3_executer/runtime_engine.py) の `run` と、その生成器版で、記録の条件へ「ブロックが取得できる」ことを加えた。
+[`runtime_engine.py`](experiments/pysim/tier2_runtime/runtime/engine.py) の `run` と、その生成器版で、記録の条件へ「ブロックが取得できる」ことを加えた。
 
 ## 7. 検証
 

@@ -12,8 +12,8 @@
 ### 1.1 責務と依存方向
 
 1. `fireball-call0`〜`fireball-call6` を呼び出すゲスト側バインディングを提供する。
-2. WASI Preview1 の標準出力とログ出力を Fireball の公開 ABI へ変換する。
-3. 標準出力とログ出力以外の WASI Preview1 操作は、Tier 3 の uvwasi ドライバへ委譲する。
+2. WASI Preview1 の標準出力と標準エラーを Fireball の公開 ABI へ変換する。
+3. 標準出力・標準エラー以外の WASI Preview1 操作は、Tier 3 の uvwasi ドライバへ委譲する。
 4. `fireball:host/virq` の `register` / `unregister` を発行するvIRQ登録・解除ラッパーを提供する。ただし、原因源表・親子関係・シグネチャ検証・COOS協調境界での反映はTier 2に委譲する。
 5. `fireball:host/vdma` の `start` を発行するvDMA転送ラッパーを提供する。ただし、転送先権限・所有権・完了通知はTier 2に委譲する。
 6. 物理レジスタ、IPC ロール、COOS タスク、HAL ドライバの内部構造を知らない。
@@ -71,7 +71,7 @@ graph LR
 | Preview1 関数 | 公開 Fireball IF | 変換方針 |
 | :--- | :--- | :--- |
 | `fd_write(fd=1)` | `get-interface` + 固定バッファスロット + `stream-write` | iovec を全要素検証後に標準出力へ送る |
-| `fd_write(fd=2)` | Fireball logger sink | iovec を全要素検証後にログへ送る |
+| `fd_write(fd=2)` | Tier 2 Fireball logger → `printk` Sink | iovec を全要素検証後にログへ送る |
 | `fd_write(fd≠1,2)` | `WasiPreview1Backend.fd_write` | uvwasiへ委譲する |
 | `fd_read` | `WasiPreview1Backend.fd_read` | uvwasiへ委譲する |
 | `fd_close` | `WasiPreview1Backend.fd_close` | uvwasiへ委譲する |
@@ -85,7 +85,7 @@ Preview1 の errno と Fireball の戻り値の対応は `runtime_syscall.md` �
 
 #### 5.1.3 WASI／HAL プロトコル変換シーケンス設計目標
 
-`libfireball` はゲスト側の同期的な標準出力・ログ呼び出しを、Tier 2 HAL のハンドル・バッファ・ストリーム操作へ変換する。その他の Preview 1 呼び出しは uvwasi ドライバへ委譲する。HAL の内部コマンド ID、IPC ロール、物理ドライバ呼び出しはこのシーケンスの外部契約である。
+`libfireball` はゲスト側の標準出力をTier 2 HALのハンドル・バッファ・ストリーム操作へ変換し、標準エラーをホスト側Tier 2ロガーへ渡す。ロガーの物理出力先はTier 3のprintk Sinkである。その他の Preview 1 呼び出しは uvwasi ドライバへ委譲する。HAL の内部コマンド ID、IPC ロール、物理ドライバ呼び出しはこのシーケンスの外部契約である。
 
 ```mermaid
 sequenceDiagram

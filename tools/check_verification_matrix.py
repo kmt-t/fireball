@@ -69,11 +69,29 @@ def _artifact_inventory(repo_root: Path, matrix: dict) -> dict[str, list[str]]:
             _relative(path, repo_root)
             for path in (repo_root / matrix["scenario_dir"]).glob("scenario[0-9]*_*.py")
         ),
+        "integration_suites": sorted(
+            _relative(path, repo_root)
+            for path in (repo_root / matrix["integration_dir"]).glob("test_*.py")
+        ),
+        "workload_suites": sorted(
+            _relative(path, repo_root)
+            for path in (repo_root / matrix["workload_dir"]).glob("test_*.py")
+        ),
         "factor_csv": [_relative(repo_root / matrix["factor_csv"], repo_root)],
     }
     expected = matrix["expected"]
     for key in ("component_specs", "concept_files", "formal_models", "test_specs", "scenarios"):
         _require_count(key, len(inventory[key]), int(expected[key]))
+    _require_count(
+        "pysim_integration_suites",
+        len(inventory["integration_suites"]),
+        int(expected["pysim_integration_suites"]),
+    )
+    _require_count(
+        "pysim_workload_suites",
+        len(inventory["workload_suites"]),
+        int(expected["pysim_workload_suites"]),
+    )
     return inventory
 
 
@@ -169,10 +187,8 @@ def _check_pairwise(repo_root: Path, matrix: dict, factors: list[dict[str, objec
 
 
 def _registered_paths(source: str, variable: str, directory_name: str) -> set[str]:
-    if variable == "SCENARIOS":
-        pattern = rf"{directory_name}\s*/\s*[\"']([^\"']+)[\"']"
-    else:
-        pattern = rf"{directory_name}\s*/\s*[\"']([^\"']+)[\"']"
+    del variable  # The caller names the registration variable for readability.
+    pattern = rf"{directory_name}\s*/\s*[\"']([^\"']+)[\"']"
     return set(re.findall(pattern, source))
 
 
@@ -199,6 +215,25 @@ def _check_runner_inventory(repo_root: Path, matrix: dict, inventory: dict[str, 
     _require_count(
         "pysim_unit_suites", len(registered_units), int(matrix["expected"]["pysim_unit_suites"])
     )
+
+    for category in ("integration", "workload"):
+        directory = repo_root / matrix[f"{category}_dir"]
+        runner = repo_root / matrix[f"{category}_runner"]
+        runner_source = runner.read_text(encoding="utf-8")
+        registered = _registered_paths(
+            runner_source,
+            f"{category.upper()}_SUITES",
+            f"{category.upper()}_DIR",
+        )
+        actual = {Path(path).name for path in inventory[f"{category}_suites"]}
+        if registered != actual:
+            missing = sorted(actual - registered)
+            extra = sorted(registered - actual)
+            raise MatrixCheckError(
+                f"{category} suite registration mismatch: missing={missing}, extra={extra}"
+            )
+        if not directory.exists():
+            raise MatrixCheckError(f"{category} directory does not exist: {directory}")
 
     pairwise_source = (repo_root / matrix["pairwise_test"]).read_text(encoding="utf-8")
     required_fragments = (
@@ -248,7 +283,9 @@ def run(repo_root: Path, config_path: Path) -> None:
         f"{len(inventory['concept_files'])} concepts, "
         f"{len(inventory['formal_models'])} formal models, "
         f"{len(inventory['test_specs'])} test specs, "
-        f"{len(inventory['scenarios'])} scenarios, pairwise complete"
+        f"{len(inventory['scenarios'])} scenarios, "
+        f"{len(inventory['integration_suites'])} integration suites, "
+        f"{len(inventory['workload_suites'])} WASM workload suites, pairwise complete"
     )
 
 

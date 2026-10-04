@@ -12,11 +12,11 @@ Fresh shared memory, LOOP thresholds, complete interleaving snapshots and both
 completion results are observed through the existing System.run_guest path.
 """
 
-from helpers import make_native_interpreter, wat_to_wasm
+from qa.shared.helpers import make_native_interpreter, wat_to_wasm
 from scheduler import ChannelAction, TaskState
 from system import System
-from tier3_executer.runtime_engine import RuntimeDriveMode, RuntimeEngine
-from wasm_reader import parse
+from tier2_runtime.runtime.engine import RuntimeDriveMode, RuntimeEngine
+from tier2_runtime.wasm.reader import parse
 
 SCENARIO6_WAT = """
 (module

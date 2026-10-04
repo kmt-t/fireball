@@ -8,17 +8,16 @@ import pytest
 
 _PYSIM_DIR = Path(__file__).resolve().parents[2]
 
-from jit_scoring import (
+from tier2_runtime.wasm.jit_scoring import (
     JIT_CANDIDATE_THRESHOLD,
     OPCODE_BENEFIT_TABLE,
     OPCODE_TABLE_BYTES,
-    JITCandidateBitmap,
     OpcodeBenefitTable,
     score_opcodes,
 )
-from tier3_executer.jit.jit_manager import JITRuntimeManager
-from wasm_module import Function, FuncType, Module
-from wasm_opcodes import I32_ADD, I32_CONST, I32_POPCNT, RETURN
+from tier3_plugins.jit.jit_manager import JITRuntimeManager
+from tier2_runtime.wasm.module import Function, FuncType, Module
+from tier2_runtime.wasm.opcodes import I32_ADD, I32_CONST, I32_POPCNT, RETURN
 
 
 def test_numeric_opcode_score_table() -> None:
@@ -75,16 +74,6 @@ def test_loader_candidate_gate_uses_specification_threshold(
         assert tuple(manager.ring.drain()) == (((0, head_pc),) if candidate else ())
     finally:
         manager.cache.common_code.buffer.close()
-
-
-def test_jit_candidate_bitmap_allocates_and_marks_function_cards() -> None:
-    bitmap = JITCandidateBitmap(card_shift=2)
-    bitmap.allocate_functions(function_pc_bases=(0, 8), code_lengths=(4, 8))
-    assert bitmap.is_candidate(0, 0) is False
-    bitmap.mark(1, 12)
-    assert bitmap.is_candidate(1, 12) is True
-    assert bitmap.is_candidate(1, 8) is False
-    assert bitmap.is_candidate(2, 16) is False
 
 
 if __name__ == "__main__":

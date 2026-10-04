@@ -18,20 +18,20 @@ from collections.abc import Iterator, Mapping, Sequence
 from typing import Protocol
 
 from config import FB_CONF_DEBUG_MAX_ASSERTIONS, FB_CONF_DEBUG_MAX_BREAKPOINTS
-from execution_context import DebugExecutionContext, ExecutionControl
-from interop_abi import ExecutionContextNative, NativeValueStack
-from runtime_composer import RuntimeComposer, RuntimeCompositionConfig
-from runtime_events import RuntimeEvent, RuntimeEventBatch, RuntimeEventKind
+from tier2_runtime.interpreter.execution_context import DebugExecutionView, ExecutionControl
+from tier2_runtime.abi.interpreter_abi import NativeValueStack
+from tier2_runtime.runtime.composer import RuntimeComposer, RuntimeCompositionConfig
+from tier2_runtime.observability.events import RuntimeEvent, RuntimeEventBatch, RuntimeEventKind
 from system_containers import MutableFlatMapStorage, ReadOnlyFlatMapView, StaticVector
-from tier3_executer.interpreter import native_abi
-from tier3_executer.interpreter.interpreter import (
+from tier2_runtime.abi import native_abi
+from tier2_runtime.interpreter.interpreter import (
+    ExecutionContext,
     InterpreterBindings,
     InterpreterCall,
-    InterpreterContext,
     NativeInterpreter,
     WasmNumber,
 )
-from wasm_module import BasicBlock, Module
+from tier2_runtime.wasm.module import BasicBlock, Module
 
 # docs/components/tier1_core/system_config.md {Debug_Integrated}
 # {META_NoStdVector}: max PC-sampling entries the profiler buffer holds.
@@ -95,7 +95,7 @@ class _DebuggerEngine(ExecutionControl, Protocol):
 
     def detach_debugger(self) -> None: ...
 
-    def resume(self, pc: int, ctx: DebugExecutionContext, single_step: bool) -> int | None: ...
+    def resume(self, pc: int, ctx: DebugExecutionView, single_step: bool) -> int | None: ...
 
 
 class _BreakpointStorage:
@@ -238,7 +238,7 @@ class DebuggerManager:
         assert self.engine is not None, "GDB execution requires an injected runtime engine"
         return self.engine
 
-    def read_virtual_registers(self, pc: int, ctx: DebugExecutionContext) -> StaticVector[int]:
+    def read_virtual_registers(self, pc: int, ctx: DebugExecutionView) -> StaticVector[int]:
         """Returns 20 virtual registers: 0:pc, 1:sp, 2:fp, 3:tos, 4..19:local0..15."""
         sp = len(ctx.stack)
         fp = 0
@@ -250,9 +250,7 @@ class DebuggerManager:
             regs.append(ctx.locals[i] if i < len(ctx.locals) else 0)
         return regs
 
-    def write_virtual_registers(
-        self, regs: Sequence[int], ctx: DebugExecutionContext
-    ) -> int | None:
+    def write_virtual_registers(self, regs: Sequence[int], ctx: DebugExecutionView) -> int | None:
         """Updates registers or returns `None` when the packet violates the ABI."""
         assert len(regs) == 20, "GDB G packet must contain exactly 20 registers"
         assert all(0 <= value <= 0xFFFF_FFFF for value in regs), (
@@ -324,7 +322,7 @@ class GDBRspProtocol:
         self,
         packet: str,
         current_pc: int,
-        ctx: DebugExecutionContext,
+        ctx: DebugExecutionView,
         blocks: Mapping[int, BasicBlock],
     ) -> tuple[str, int]:
         """Handles an RSP packet payload and returns (response_packet, new_pc)."""
@@ -468,14 +466,8 @@ class _NativeDebugControl(ctypes.Structure):
     )
 
 
-class _DebugNativeContext(ExecutionContextNative):
-    """Only a debug composition carries this borrowed control slot."""
-
-    _fields_ = (("control", ctypes.POINTER(_NativeDebugControl)),)
-
-
 class _DebugNativeInterpreter(NativeInterpreter):
-    """Static context weave only; call and native step drivers remain inherited."""
+    """Native interpreter that installs its debug hook in the shared context record."""
 
     __slots__ = ("_execution_control",)
 
@@ -483,18 +475,12 @@ class _DebugNativeInterpreter(NativeInterpreter):
         self._execution_control = control
         super().__init__(module, bindings)
 
-    def _prepare_native_execution(self, context: InterpreterContext) -> None:
-        super()._prepare_native_execution(context)
-        native = _DebugNativeContext()
-        ctypes.memmove(
-            ctypes.addressof(native),
-            ctypes.addressof(context.native_context),
-            ctypes.sizeof(ExecutionContextNative),
+    def _new_context(self) -> ExecutionContext:
+        """Construct the one context type with its debugger control pointer set."""
+        return ExecutionContext(
+            self.module,
+            debug_control=ctypes.addressof(self._execution_control),
         )
-        native.control = ctypes.pointer(self._execution_control)
-        context._c_context = native
-        context._context_ptr = ctypes.cast(ctypes.pointer(native), ctypes.c_void_p)
-        context._context_view = memoryview(native)
 
 
 class _InterpreterRegisterView:
@@ -508,7 +494,7 @@ class _InterpreterRegisterView:
 
     @property
     def stack(self) -> NativeValueStack:
-        return self._call.context.operand_stack
+        return self._call.context.stack
 
     @property
     def stack_capacity(self) -> int:
@@ -574,7 +560,7 @@ class InterpreterExecutionControl:
         self._control.enabled = 0
         self.debugger = None
 
-    def resume(self, pc: int, ctx: DebugExecutionContext, single_step: bool) -> int | None:
+    def resume(self, pc: int, ctx: DebugExecutionView, single_step: bool) -> int | None:
         assert ctx is self.context
         debugger = self.debugger
         assert debugger is not None and debugger.attached

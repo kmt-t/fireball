@@ -14,8 +14,8 @@ _PYSIM_DIR = _TESTS_DIR.parent
 _REPO_ROOT = _PYSIM_DIR.parent.parent
 
 
-from helpers import expect_assertion
 from interrupt_event import InterruptEvent
+from qa.shared.helpers import expect_assertion
 from scheduler import (
     BoundedReadyQueue,
     ChannelAction,
@@ -127,7 +127,7 @@ def test_mem_10_shared_block_move_semantics_csp_rendezvous():
     Upon rendezvous, ownership moves directly from sender to receiver.
     Sender instance is invalidated (use-after-move triggers assertion),
     while receiver acquires full ownership of the backing buffer."""
-    from memory import FB_CONF_MEMORY_POOL_SIZE, MemoryManager, SharedBlock
+    from tier2_runtime.memory.manager import FB_CONF_MEMORY_POOL_SIZE, MemoryManager, SharedBlock
 
     sched = Scheduler()
     mm = MemoryManager(sched)

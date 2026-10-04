@@ -22,7 +22,7 @@ from _bootstrap import configure_import_paths
 configure_import_paths(_PYSIM_DIR, _BENCH_DIR)
 
 from scheduler import Scheduler
-from vmmio import VMMIOController
+from tier2_runtime.hal.vmmio import VMMIOController
 
 
 class LinearMemoryBenchmark:

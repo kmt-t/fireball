@@ -71,13 +71,19 @@ verification_matrix:
   scenario_dir: "experiments/pysim/qa/scenarios"
   scenario_runner: "experiments/pysim/qa/scenarios/run_all.py"
   unit_runner: "experiments/pysim/qa/run_all.py"
-  pairwise_test: "experiments/pysim/qa/cross_cutting/test_pairwise_combinations.py"
+  integration_dir: "experiments/pysim/qa/integration"
+  integration_runner: "experiments/pysim/qa/integration/run_all.py"
+  workload_dir: "experiments/pysim/qa/workloads"
+  workload_runner: "experiments/pysim/qa/workloads/run_all.py"
+  pairwise_test: "experiments/pysim/qa/integration/test_pairwise_combinations.py"
   expected:
-    component_specs: 26
+    component_specs: 25
     concept_files: 14
     formal_models: 20
-    test_specs: 26
-    pysim_unit_suites: 34
+    test_specs: 25
+    pysim_unit_suites: 30
+    pysim_integration_suites: 3
+    pysim_workload_suites: 3
     scenarios: 12
     pairwise_factors: 7
     pairwise_cases: 26
@@ -102,15 +108,15 @@ evidence:
 
 llm_judge:
   tag: "{VERIFY_LLM}"
-  default_backend: "jev"
+  default_backend: "clef-flash"
   backends:
     jev:
       api_key_env: "OPENROUTER_API_KEY"
       endpoint: "https://openrouter.ai/api/alpha/decisions"
       model: "typesafe/jev-1.13"
-    nimble:
+    clef-flash:
       endpoint: "http://localhost:11434/v1/systemone"
-      model: "fireball-tev1-64k"
+      model: "clef-flash"
       requires_api_key: false
       context_window_tokens: 65536
   checks:
@@ -487,7 +493,7 @@ source_verification:
             - "experiments/pysim/qa/**"
             - "experiments/pysim/benchmarks/**"
           string_member_exclude_paths:
-            - "experiments/pysim/tier2_runtime/logger.py"
+            - "experiments/pysim/tier2_runtime/observability/logger.py"
             - "experiments/pysim/qa/**"
             - "experiments/pysim/benchmarks/**"
         - id: "pysim_imports"
@@ -513,6 +519,5 @@ pysim_imports:
       paths:
         - "system.py"
         - "main.py"
-        - "tier3_executer/**/*.py"
         - "tier3_plugins/**/*.py"
         - "tier3_platform/**/*.py"

@@ -19,12 +19,13 @@ try:
 except ImportError:
     wasmtime = None
 
-import wasm_opcodes as op
+import tier2_runtime.wasm.opcodes as op
+from ipc_router import FB_URI_HAL_STDOUT
 from system import System
-from tier3_executer.interpreter.interpreter import Interpreter, InterpreterBindings
+from tier2_runtime.interpreter.interpreter import Interpreter, InterpreterBindings
 from tier3_platform.drivers.hal.dummy import DummyDriver
 from tier3_platform.drivers.wasi.context import WasiHostContext
-from wasm_reader import parse
+from tier2_runtime.wasm.reader import parse
 
 SCENARIO2_WAT = """
 (module
@@ -51,7 +52,7 @@ SCENARIO2_WAT = """
 """
 
 
-from leb128 import encode_signed, encode_unsigned
+from tier2_runtime.wasm.leb128 import encode_signed, encode_unsigned
 
 
 def _create_scenario2_binary() -> bytes:
@@ -213,7 +214,7 @@ def test_scenario_wasi_syscall():
     module = parse(wasm_bytes)
     sysv = System()
     wasi_ctx = WasiHostContext(sysv)
-    sysv.start_hal_driver(DummyDriver(transport=sysv.transport), sysv.wasi_hal_bindings.stdout_uri)
+    sysv.start_hal_driver(DummyDriver(transport=sysv.transport), FB_URI_HAL_STDOUT)
     host_funcs = wasi_ctx.build_interpreter_host_functions(module)
     module.init_memory_data(wasi_ctx.guest_memory, ())
     interp = Interpreter(

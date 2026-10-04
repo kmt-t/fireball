@@ -7,7 +7,7 @@ from pathlib import Path
 _PYSIM_DIR = Path(__file__).resolve().parents[3]
 
 import pytest
-from runtime_events import (
+from tier2_runtime.observability.events import (
     RUNTIME_EVENT_CLOCK_FREQUENCY_HZ,
     RUNTIME_EVENT_CLOCK_MONOTONIC_NS,
     RuntimeEvent,

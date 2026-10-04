@@ -19,10 +19,8 @@ _PYSIM_DIR = _TESTS_DIR.parent
 _REPO_ROOT = _PYSIM_DIR.parent.parent
 
 
-from fixtures.platform_drivers import create_reference_platform_drivers
-from fixtures.uvwasi_reference import UvwasiReferenceContext
-from helpers import make_native_interpreter, wat_to_wasm
 from ipc_router import (
+    FB_URI_HAL_STDOUT,
     IPCMessage,
     IPCStatus,
     OwnershipState,
@@ -30,6 +28,9 @@ from ipc_router import (
     bytes_to_kv_storage,
     kv_entries_to_bytes,
 )
+from qa.shared.fixtures.platform_drivers import create_reference_platform_drivers
+from qa.shared.fixtures.uvwasi_reference import UvwasiReferenceContext
+from qa.shared.helpers import make_native_interpreter, wat_to_wasm
 from scheduler import TaskState
 from system import (
     FB_CONF_GUEST_RAM_SIZE,
@@ -38,8 +39,8 @@ from system import (
     System,
     WasiErrno,
 )
-from virq import FB_CONF_VIRQ_MAX_NODES, INVALID_FUNCTION_INDEX, VirqNode
-from wasm_module import I32, Function, FuncType, Module
+from tier2_runtime.hal.virq import FB_CONF_VIRQ_MAX_NODES, INVALID_FUNCTION_INDEX, VirqNode
+from tier2_runtime.wasm.module import I32, Function, FuncType, Module
 
 
 def test_syscall_01_unknown_id_returns_nosys():
@@ -82,7 +83,7 @@ def test_syscall_04_guest_yield_hands_off_to_ready_task():
     """TEST-SYS-01: SYS_YIELD returns to COOS at a resumable guest boundary."""
     from scheduler import ChannelAction, TaskState
     from tier3_platform.drivers.wasi.context import WasiHostContext
-    from wasm_reader import parse
+    from tier2_runtime.wasm.reader import parse
 
     wasm = wat_to_wasm(
         """
@@ -316,10 +317,10 @@ def test_syscall_16_mmio_access_width_stays_inside_shm_mapping():
 @pytest.mark.parametrize("transport", ("import", "memory.copy"))
 def test_syscall_04_vdma_host_call_transfer(destination_kind: str, transport: str) -> None:
     """TEST-SYS-20: 実guestの成功復帰直後にCPU読出しし、HAL実体まで確認する。"""
-    from hal_dispatch import HalBufferMapStatus
-    from tier3_executer.interpreter.interpreter import InterpreterBindings, NativeInterpreter
+    from tier2_runtime.hal.dispatch import HalBufferMapStatus
+    from tier2_runtime.interpreter.interpreter import InterpreterBindings, NativeInterpreter
     from tier3_platform.drivers.wasi.context import WasiHostContext
-    from wasm_reader import parse
+    from tier2_runtime.wasm.reader import parse
 
     system = System()
     try:
@@ -389,7 +390,7 @@ def test_syscall_04_vdma_host_call_transfer(destination_kind: str, transport: st
 @pytest.mark.parametrize("offset,count", ((255, 2), (256, 1), (0, 257)))
 def test_vdma_dynamic_bounds_rejection_preserves_real_buffer(offset: int, count: int) -> None:
     """TEST-VMMIO-28/31: 4KB PTE内でも256byte実バッファ外の転送を拒否する。"""
-    from hal_dispatch import HalBufferMapStatus
+    from tier2_runtime.hal.dispatch import HalBufferMapStatus
     from tier3_platform.drivers.wasi.context import WasiHostContext
 
     system = System()
@@ -421,16 +422,16 @@ def test_vdma_dynamic_bounds_rejection_preserves_real_buffer(offset: int, count:
 @pytest.mark.parametrize("width", (1, 2, 4, 8))
 def test_dynamic_guest_access_checks_full_instruction_width(operation: str, width: int) -> None:
     """TEST-VMMIO-28: 実guest命令の全幅を検査し、実容量外なら更新前にtrapする。"""
-    from hal_dispatch import HalBufferMapStatus
-    from tier3_executer.interpreter.interpreter import (
+    from tier2_runtime.hal.dispatch import HalBufferMapStatus
+    from tier2_runtime.interpreter.interpreter import (
         InterpreterBindings,
         NativeInterpreter,
     )
-    from tier3_executer.interpreter.interpreter import (
+    from tier2_runtime.interpreter.interpreter import (
         TrapCode as InterpreterTrapCode,
     )
-    from vmmio import TrapCode as VmmioTrapCode
-    from wasm_reader import parse
+    from tier2_runtime.hal.vmmio import TrapCode as VmmioTrapCode
+    from tier2_runtime.wasm.reader import parse
 
     system = System()
     owner = system.start_runtime_task(name="dynamic_width_owner")
@@ -896,7 +897,7 @@ def test_syscall_07_wasi_fd_write():
         struct.pack_into("<II", guest_mem, 0, 32, len(message))
         WasiHostContext(sysv, guest_memory=guest_mem)
         sysv.start_hal_driver(
-            DummyDriver(transport=sysv.transport), sysv.wasi_hal_bindings.stdout_uri
+            DummyDriver(transport=sysv.transport), FB_URI_HAL_STDOUT
         )
         assert sysv.fireball_call(FbSyscallId.WASI_FD_WRITE, 1, 0, 1, 48, 0, 0) == WasiErrno.SUCCESS
         assert sysv.transport.drain_output() == message
@@ -924,7 +925,7 @@ def test_wasi_01_fd_write_scatter_gather():
         struct.pack_into("<II", guest_mem, 8, 64, len(chunk2))
         WasiHostContext(sysv, guest_memory=guest_mem)
         sysv.start_hal_driver(
-            DummyDriver(transport=sysv.transport), sysv.wasi_hal_bindings.stdout_uri
+            DummyDriver(transport=sysv.transport), FB_URI_HAL_STDOUT
         )
         # Write to stdout (fd=1) with 2 iovecs, result at offset 100
         assert (
@@ -952,14 +953,14 @@ def test_wasi_01b_fd_write_prevalidates_all_iovecs():
         struct.pack_into("<I", guest_mem, 120, 0xA5A5A5A5)
         WasiHostContext(sysv, guest_memory=guest_mem)
         sysv.start_hal_driver(
-            DummyDriver(transport=sysv.transport), sysv.wasi_hal_bindings.stdout_uri
+            DummyDriver(transport=sysv.transport), FB_URI_HAL_STDOUT
         )
         before = bytes(guest_mem)
 
         assert sysv.fireball_call(FbSyscallId.WASI_FD_WRITE, 1, 0, 2, 120, 0, 0) == WasiErrno.FAULT
         assert sysv.transport.drain_output() == b""
         assert bytes(guest_mem) == before
-        stdio_task = sysv.hal_task_for(sysv.wasi_hal_bindings.stdout_uri)
+        stdio_task = sysv.hal_task_for(FB_URI_HAL_STDOUT)
         assert stdio_task is not None and stdio_task.processed_count == 0
     finally:
         sysv.shutdown()
@@ -983,7 +984,7 @@ def test_wasi_02_fd_read_eof():
         position_before = backend.stdin_pos
         WasiHostContext(sysv, guest_memory=guest_mem)
         sysv.start_hal_driver(
-            DummyDriver(transport=sysv.transport), sysv.wasi_hal_bindings.stdout_uri
+            DummyDriver(transport=sysv.transport), FB_URI_HAL_STDOUT
         )
         assert sysv.fireball_call(FbSyscallId.WASI_FD_READ, 0, 0, 1, 48, 0, 0) == WasiErrno.SUCCESS
         nread = struct.unpack_from("<I", guest_mem, 48)[0]
@@ -1077,7 +1078,9 @@ def test_wasi_06_random_get():
         guest_mem = bytearray(b"\xa5" * 64)
         WasiHostContext(sysv, guest_memory=guest_mem)
         payload = bytes.fromhex("00 12 34 56 78 9a bc de ff 01 23 45 67 89 ab cd")
-        with patch("fixtures.uvwasi_reference.os.urandom", return_value=payload) as entropy:
+        with patch(
+            "qa.shared.fixtures.uvwasi_reference.os.urandom", return_value=payload
+        ) as entropy:
             assert (
                 sysv.fireball_call(FbSyscallId.WASI_RANDOM_GET, 8, 16, 0, 0, 0, 0)
                 == WasiErrno.SUCCESS
@@ -1129,7 +1132,7 @@ def test_wasi_08_out_of_bounds_offset_returns_fault():
 def test_wasi_jit_trampoline_invokes_the_registered_handler():
     """The JIT trampoline resolves and invokes the same WASI host handler."""
     from tier3_platform.drivers.wasi.context import WasiHostContext
-    from wasm_reader import parse
+    from tier2_runtime.wasm.reader import parse
 
     module = parse(
         wat_to_wasm('(module (import "wasi_snapshot_preview1" "proc_exit" (func (param i32))))')

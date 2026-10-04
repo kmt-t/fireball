@@ -7,7 +7,7 @@ from pyModelChecking.CTL import AF, AG, And, AtomicProposition, Formula, Imply, 
 
 BACKS = [
     "specs/wasm_instruction_set.md",
-    "components/tier3_executer/interpreter.md",
+    "components/tier2_runtime/interpreter.md",
     "components/tier2_runtime/runtime_vsoc.md",
 ]
 

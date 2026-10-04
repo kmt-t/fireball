@@ -41,9 +41,9 @@
 
 ```bash
 UV_CACHE_DIR=/tmp/fireball-uv-cache UV_OFFLINE=true UV_NO_SYNC=true \
-  bash experiments/pysim/tier3_executer/interpreter/build_native.sh
+  bash experiments/pysim/native/tier2_runtime/interpreter/build_native.sh
 UV_CACHE_DIR=/tmp/fireball-uv-cache UV_OFFLINE=true UV_NO_SYNC=true \
-  bash experiments/pysim/tier3_executer/jit/build_native.sh
+  bash experiments/pysim/native/tier3_plugins/jit/build_native.sh
 for trial in 1 2 3; do
   taskset -c 2 env UV_CACHE_DIR=/tmp/fireball-uv-cache UV_OFFLINE=true UV_NO_SYNC=true \
     uv run --project . --offline --no-sync python experiments/pysim/benchmarks/run_all.py \
@@ -146,9 +146,9 @@ JIT agingベンチマークが通常の`Interpreter`を`RuntimeEngine`へ渡し�
 
 ```bash
 UV_CACHE_DIR=/tmp/fireball-uv-cache UV_OFFLINE=true UV_NO_SYNC=true \
-  bash experiments/pysim/tier3_executer/interpreter/build_native.sh
+  bash experiments/pysim/native/tier2_runtime/interpreter/build_native.sh
 UV_CACHE_DIR=/tmp/fireball-uv-cache UV_OFFLINE=true UV_NO_SYNC=true \
-  bash experiments/pysim/tier3_executer/jit/build_native.sh
+  bash experiments/pysim/native/tier3_plugins/jit/build_native.sh
 for trial in 1 2 3; do
   taskset -c 2 env UV_CACHE_DIR=/tmp/fireball-uv-cache UV_OFFLINE=true UV_NO_SYNC=true \
     uv run --project . --offline --no-sync python experiments/pysim/benchmarks/run_all.py \

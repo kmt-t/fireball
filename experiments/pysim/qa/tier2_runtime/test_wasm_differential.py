@@ -21,10 +21,10 @@ _PYSIM_DIR = _TESTS_DIR.parent
 _REPO_ROOT = _PYSIM_DIR.parent.parent
 
 
-from helpers import make_interpreter as Interpreter
-from helpers import wat_to_wasm
-from tier3_executer.interpreter.interpreter import TrapCode
-from wasm_reader import parse
+from qa.shared.helpers import make_interpreter as Interpreter
+from qa.shared.helpers import wat_to_wasm
+from tier2_runtime.interpreter.interpreter import TrapCode
+from tier2_runtime.wasm.reader import parse
 
 
 def _run_differential(

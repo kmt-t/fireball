@@ -46,7 +46,7 @@ graph LR
 | `{MultiModule_Support}` | 複数WASMモジュールのロードと、モジュール間の動的リンクをサポートする。 | 中 | テスト <!-- definition: {MultiModule_Support} --> |
 | `{ThreadedInterpreter}` | 継続渡しによる主要変数のレジスタ保持、テーブルディスパッチによる高速な命令実行、およびJITコードとの完全な呼び出し規約整合を実現する。 | 高 | テスト <!-- definition: {ThreadedInterpreter} --> |
 | `{JIT_LazyChaining}` | 常駐traceの直線後続へ進む際、共通コード領域のchain dispatcherがTraceヘッダのtarget bodyへtail-jumpする。opcode別の条件評価・C++ Interpreter handler実行はchainに含めない。 | 高 | レビュー <!-- definition: {JIT_LazyChaining} --> |
-| `{Interpreter_LazyJITSwitch}` | 制御命令はC++ Interpreterの命令別handlerで処理する。C++ dispatcherは共有後方分岐しきい値へ達するまで、常駐JIT traceまたはC++ handlerを続けて実行する。しきい値到達時にRuntimeEngineへyield statusを返す。JIT候補の観測・cache更新・コンパイルはTier 3 runtime境界が行う。分岐handlerからvSoCへは復帰しない。 | 高 | レビュー <!-- definition: {Interpreter_LazyJITSwitch} --> |
+| `{Interpreter_LazyJITSwitch}` | 制御命令はC++ Interpreterの命令別handlerで処理する。C++ dispatcherは共有後方分岐しきい値へ達するまで、常駐JIT traceまたはC++ handlerを続けて実行する。しきい値到達時にyield statusを返す。接続中のJIT候補観測・cache更新・コンパイルはTier 3 JIT拡張が行い、Tier 2 Runtimeは拡張の境界結果をvSoCへ伝える。分岐handlerからvSoCへは復帰しない。 | 高 | レビュー <!-- definition: {Interpreter_LazyJITSwitch} --> |
 | `{vMMIO_TrapAndEmulate}` | ゲストからのメモリアクセスをトラップし、ホスト側のフックを呼び出す。 | 高 | テスト <!-- definition: {vMMIO_TrapAndEmulate} --> |
 | `{VDMA}` | host call によるゲストリニアメモリと仮想・物理アドレス間の転送に加え、WASM `memory.copy` ではvMMIO管理下のDYNAMIC・SHM・PASSTHROUGHアドレスを含むコピーを内部転送経路で扱う。リニアメモリ端点同士はCPUでコピーする。vMMIOアドレスは既存の権限・所有権検査を通し、VDMAの制御要求はvMMIOレジスタを経由しない。 | 中 | テスト <!-- definition: {VDMA} --> |
 | `{JIT_ReverseCompilationOrder}` | キューを逆順（LIFO）で処理し、コンパイル直後の即時チェイニング率を向上させる。 | 高 | レビュー <!-- definition: {JIT_ReverseCompilationOrder} --> |
@@ -132,13 +132,13 @@ graph LR
 | キーワード | 内容 | 優先度 | 検証方法 |
 | :--- | :--- | :--- | :--- |
 | `{HistoryBuffer}` | JITホットスポット検出のために、実行履歴を保持するリング状のバッファ。 | 中 | レビュー <!-- definition: {HistoryBuffer} --> |
-| `{RuntimeEventSink}` | Runtimeは意味上の実行境界イベントを固定幅レコードの固定容量リングへ記録し、安全点でversioned little-endian ABIバッチとしてPythonへ渡す。イベント無効構成にはSink、履歴領域、時計、発行経路を含めず、Hotspot履歴とは独立させる。 | 高 | テスト <!-- definition: {RuntimeEventSink} --> |
-| `{RuntimeHotspotProfiler}` | JITホットスポット検出有効時、InterpreterはCode section payload相対PCを含む適格な基本ブロックの`(module_id, unified_pc)`を実行順で固定容量履歴へ記録し、Interpreter区間終了時にカードを更新する。JIT-only区間は記録・分析せず、履歴上書きは欠落状態として示す。Runtime Event Sinkとは独立し、Runtime破棄時に状態を解放する。 | 高 | テスト <!-- definition: {RuntimeHotspotProfiler} --> |
+| `{RuntimeEventSink}` | Runtimeは意味上の実行境界イベントを固定幅レコードの固定容量イベントリングへ記録し、安全点でversioned little-endian ABIバッチとしてPythonへ渡す。イベント無効構成にはSink、イベントリング、時計、発行経路を含めず、JIT拡張のホットスポット履歴とは独立させる。 | 高 | テスト <!-- definition: {RuntimeEventSink} --> |
+| `{RuntimeHotspotProfiler}` | ホットスポット検出を選んだJIT拡張は、Interpreterから受け取る適格な`(module_id, unified_pc)`履歴を固定容量で保持し、Interpreter区間の終了時にカードを更新する。JIT-only区間は記録・分析せず、履歴上書きは欠落状態として示す。Runtime Event Sinkとは独立し、JIT拡張の破棄時に状態を解放する。ホットスポット分析をTier 2 Runtimeの別プラグインとして構成しない。 | 高 | テスト <!-- definition: {RuntimeHotspotProfiler} --> |
 | `{LightweightVerifier}` | ロード時に最小限のチェック（マジック値、バージョン等）のみを行う高速検証器。 | 中 | テスト <!-- definition: {LightweightVerifier} --> |
 | `{COOS_Scheduling_Refine}` | スケジューリングアルゴリズムの継続的な改善と最適化。 | 中 | レビュー <!-- definition: {COOS_Scheduling_Refine} --> |
 | `{vMMIO_TLB}` | ソフトウェアTLBによるvMMIOアクセスの高速化。 | 中 | レビュー <!-- definition: {vMMIO_TLB} --> |
 | `{ZeroCopyIndexing}` | LoaderによるWASMセクションのゼロコピー索引化。 | 高 | テスト <!-- definition: {ZeroCopyIndexing} --> |
-| `{JIT_BackedgeYield}` | C++ Interpreter handlerが取得したLOOP後方辺を共通回数しきい値までC++ dispatcher内で処理し、到達時にRuntimeEngineへyield statusを返す。handler自身はCOOSへ制御を戻さず、割り込みイベントを読み取らない。 | 中 | レビュー <!-- definition: {JIT_BackedgeYield} --> |
+| `{JIT_BackedgeYield}` | C++ Interpreter handlerが取得したLOOP後方辺を共通回数しきい値までC++ dispatcher内で処理し、到達時にyield statusを返す。handler自身はCOOSへ制御を戻さず、割り込みイベントを読み取らない。接続中のTier 3 JIT拡張は同じ境界結果を処理する。 | 中 | レビュー <!-- definition: {JIT_BackedgeYield} --> |
 | `{WASI_Async_Bridge}` | 同期WASIと非同期IPCの連携ブリッジ。 | 高 | テスト <!-- definition: {WASI_Async_Bridge} --> |
 | `{ConceptHarnessDI}` | C++20/23 Conceptsを用いた静的依存性注入。 | 高 | レビュー <!-- definition: {ConceptHarnessDI} --> |
 | `{FlatViewNarrowing}` | ソート済み静的コンテナに対し、粗索引で探索区間を非所有ビュー(`fireball::flat_map_view` / `fireball::flat_set_view`) へ狭めてから二分探索することで、比較回数と参照範囲を削減する。絞り込みは単調縮小であり多段に合成できる。 | 高 | レビュー <!-- definition: {FlatViewNarrowing} --> |
@@ -177,7 +177,7 @@ graph LR
 | `{EliminateDataRace}` | メッセージパッシングによりデータ競合を原理的に排除する。 | 高 | レビュー <!-- definition: {EliminateDataRace} --> |
 | `{CleanArchitecture}` | クリーンアーキテクチャの原則に基づき、依存方向を内部へ制限する。 | 高 | レビュー <!-- definition: {CleanArchitecture} --> |
 | `{IoC}` | Dependency Inversion Principleに基づき、制御の反転を実現する。 | 高 | レビュー <!-- definition: {IoC} --> |
-| `{GLOBAL_ComponentHarness}` | コンポーネントの依存関係をハーネス構造体に集約し、テスト時の注入を容易にする。 | 高 | レビュー |
+| `{GLOBAL_ComponentHarness}` | 静的構成の直接依存型を型付きハーネスでコンパイル時に結線し、実行時構成が必要な境界はコンストラクタインジェクションで注入する。テスト時は代替型または代替インスタンスを使えるようにする。 | 高 | レビュー |
 | `{GLOBAL_StaticScalability}` | リソース上限をコンパイル時定数で決定し、動的拡張のオーバーヘッドを排除する。 | 高 | レビュー |
 | `{WIT_First}` | WebAssembly Interface Types (WIT) はシステムインターフェースの唯一の真実在であり、設計は常にここから開始する。 | 高 | レビュー <!-- definition: {WIT_First} --> |
 | `{Type_Vocabulary}` | 仕様と実装を正確に紐付けるための厳格な型エイリアス定義と語彙セット。 | 高 | レビュー <!-- definition: {Type_Vocabulary} --> |

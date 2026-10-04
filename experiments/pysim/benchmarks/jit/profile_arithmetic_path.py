@@ -21,15 +21,15 @@ configure_import_paths(_PYSIM_DIR, _BENCH_DIR)
 
 from bench_jit import JITCompilerBenchmark
 from config import FB_CONF_RUNTIME_YIELD_THRESHOLD
-from tier3_executer.interpreter.interpreter import (
+from tier2_runtime.interpreter.interpreter import (
     NATIVE_RUNTIME_PROFILE_STATS_AVAILABLE,
     Interpreter,
     InterpreterBindings,
+    NativeInterpreter,
 )
-from tier3_executer.jit.jit_manager import JITRuntimeManager
-from tier3_executer.jit.jit_runtime import JITInterpreter
-from tier3_executer.runtime_engine import RuntimeEngine
-from wasm_reader import parse
+from tier3_plugins.jit.jit_manager import JITRuntimeManager
+from tier2_runtime.runtime.engine import RuntimeEngine
+from tier2_runtime.wasm.reader import parse
 
 LOOP_COUNT = 100_000
 PROFILE_REPETITIONS = {
@@ -158,8 +158,12 @@ def main() -> None:
             collect_runtime_stats=args.collect_runtime_stats,
         )
         runtime_engine.register_module_blocks(module)
-        interpreter = JITInterpreter(module, InterpreterBindings.empty(), runtime_engine)
-        warmup_result = interpreter.call(function_index, [100])
+        interpreter = NativeInterpreter(
+            module,
+            InterpreterBindings.empty(),
+            bump_allocator=runtime_engine.bump_allocator,
+        )
+        warmup_result = runtime_engine.call(interpreter, function_index, [100])
         assert int(warmup_result[0]) == 4_950
         runtime_engine.idle_hook(budget=10)
         runtime_engine.reset_stats()
@@ -169,7 +173,7 @@ def main() -> None:
         batch_start = time.perf_counter()
         try:
             for _ in range(repetitions):
-                result = interpreter.call(function_index, arguments)
+                result = runtime_engine.call(interpreter, function_index, arguments)
         finally:
             elapsed_ms = (time.perf_counter() - batch_start) * 1000.0
             perf_stat.set_enabled(False)

@@ -13,8 +13,8 @@ Tier 3（インタープリタとJITの併用）でclang生成のWASMを実行�
 
 停止箇所は2種類ある。
 
-- [`native_stacks.py:160`](experiments/pysim/tier2_runtime/native_stacks.py) の `assert outer_result_arity <= final_size`
-- [`native_stacks.py:156`](experiments/pysim/tier2_runtime/native_stacks.py) の `assert 0 <= depth <= frame_count`
+- [`native_stack_abi.py:160`](experiments/pysim/tier2_runtime/abi/native_stack_abi.py) の `assert outer_result_arity <= final_size`
+- [`native_stack_abi.py:156`](experiments/pysim/tier2_runtime/abi/native_stack_abi.py) の `assert 0 <= depth <= frame_count`
 
 どちらも `Interpreter.step` の分岐処理（`br` / `br_if`）で発生する。
 
@@ -34,8 +34,8 @@ uv run --offline --no-sync python experiments/pysim/benchmarks/profile/bench_vtu
 
 | 停止箇所 | カーネル |
 | :--- | :--- |
-| `native_stacks.py:160` | `k_sha256`, `k_sort`, `k_matmul`, `k_fir` |
-| `native_stacks.py:156` | `k_lz` |
+| `native_stack_abi.py:160` | `k_sha256`, `k_sort`, `k_matmul`, `k_fir` |
+| `native_stack_abi.py:156` | `k_lz` |
 
 ## 4. 切り分け結果
 
@@ -65,7 +65,7 @@ uv run --offline --no-sync python experiments/pysim/benchmarks/profile/bench_vtu
 
 ## 7. 修正
 
-[`runtime_engine.py`](experiments/pysim/tier3_executer/runtime_engine.py) の `_compile_trace` を変更した。
+[`runtime_engine.py`](experiments/pysim/tier2_runtime/runtime/engine.py) の `_compile_trace` を変更した。
 
 - `block`、`loop`、`if` で終わるブロックのトレースは、終端トレースとして扱う。
 - 終端トレースは、ネイティブチェインの対象にならない。

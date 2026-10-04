@@ -88,40 +88,21 @@ Element/Data初期化定義を個別配列へ展開せず、パース時検証�
 | GOTCHA-LOAD-02 | ロード失敗時のアロケータ完全ロールバック（メモリリーク防止） | 不正なセクションまたはアリーナ容量を超える WASM バイナリ | `prepare_module` を実行 | パースまたは確保失敗時にバンプポインタがロード開始前の位置へ巻き戻される。 | [`runtime_loader.md`](docs/components/tier2_runtime/runtime_loader.md) |
 | GOTCHA-LOAD-04 | 基本ブロックメタ情報の不変保持と借用 | WASMモジュールをロード済み | 同じPCで`mod.get_block(pc)`を繰り返し、ロード時のメタ情報と比較する | 同じ境界・制御情報を持つ借用viewが返る。実行時の再走査・メタ情報再構築・動的確保が発生しない | [`runtime_loader.md`](docs/components/tier2_runtime/runtime_loader.md), `Loader_BasicBlockIndex` |
 
-## 3. テスト検証実績と網羅状況
+## 3. Pysim参照パーサの現行QA範囲
 
-pysimの実装テストは [`test_loader.py`](experiments/pysim/qa/tier2_runtime/test_loader.py) を正本とする。
-`WasmLoader`の登録・リンクと、実行時に使用する`wasm_reader.parse`のパース検査を区別する。
-テスト名とdocstringには、実際に検査するケースIDを記載する。
+この文書の前半は、Phase 1で実装するC++ `runtime_loader` の目標テスト契約である。ロード済み`ModuleView`、複数モジュール登録・リンク、ファイル位置のRadix索引は現行Pysim製品コードの機能ではない。バックログ上もC++ローダー実装は未着手である。
 
-| ケースID | 実装テスト | 直接観測する結果 |
+PysimのPythonコードは参照ランタイムであり、現行のWASMパース入口は [`test_wasm_reader.py`](experiments/pysim/qa/tier2_runtime/test_wasm_reader.py) から呼ぶ `wasm_reader.parse` である。QAはこの経路の境界検証、アロケータの失敗時復元、セグメント初期化、基本ブロック索引を直接確認する。レジストリと関数リンクの契約は [`module_link_harness.py`](experiments/pysim/qa/private/tier2_runtime/module_link_harness.py) がQA内だけでモデル化し、パース済みModuleを使って未解決状態、シグネチャ一致、部分リンク防止、上限を確認する。このハーネスは製品ランタイムのリンク機能やRadix索引の証拠ではない。
+
+| ケースID | 現行Pysim QA | 直接観測する結果 |
 | :--- | :--- | :--- |
-| TEST-LOAD-01〜06 | `test_load_01_invalid_magic_rejects_and_rolls_back`〜`test_load_06_memory_page_limit_rejects_and_rolls_back` | 各独立の違反の拒否、watermarkと既存モジュールの保存。TEST-LOAD-04は降順、重複、Custom例外を検査する |
-| TEST-LOAD-07 | `test_load_07_arena_exhaustion_rolls_back_partial_metadata_allocations` と各拒否ケース | アリーナ途中確保失敗後も、繰り返し失敗時のwatermarkとレジストリを保存 |
-| TEST-LOAD-10〜15 | `test_load_10_to_15_zero_copy_and_accessors` | 元ROM所有者、セクション・名称バイト範囲、名前順、関数本体、型、グローバル属性 |
-| TEST-LOAD-16 | `test_load_16_resolves_imported_global_offsets_for_active_segments` | Element/Data個別配列なし、実グローバル値による適用先、隣接メモリ・テーブルの保存 |
-| TEST-LOAD-20 | `test_load_20_unresolved_dependency_keeps_module_unready` | 未Readyと解決表なし、未登録依存の拒否 |
-| TEST-LOAD-21 | `test_load_21_matching_signatures_link_to_the_exact_export`、`test_load_21_matching_imported_function_reexport_signature_links` | 異なるローカル型番号の同一シグネチャ成功、正しいexportへの参照、import再exportの型解決 |
-| TEST-LOAD-22 | `test_load_22_missing_symbol_rejects_without_partial_resolution` | 後半の欠落シンボルでの拒否、未Ready、途中エントリなし、再試行で同じ原因を検出 |
-| TEST-LOAD-23 | `test_load_23_function_signature_mismatch_is_rejected`、`test_load_23_late_type_mismatch_preserves_all_unresolved_imports` | パラメータ・結果の型と個数の4種の不一致、後半不一致時の状態保存 |
-| TEST-LOAD-24 | `test_load_24_module_capacity_rejects_without_registry_or_allocator_mutation` | 設定上限後の拒否、既存全モジュールとwatermarkの保存 |
-| TEST-LOAD-30〜32 | `test_load_30_function_capacity_rejects_one_more_than_configured_limit`、`test_load_31_more_than_64_exports_remain_searchable_without_fixed_export_limit`、`test_load_32_unsigned_leb128_byte_budget` | 関数上限+1の拒否、65エクスポート全件の保存・検索、u32/u64のバイト数上限 |
-| TEST-LOAD-40〜45、47 | `test_load_40_to_45_and_47_radix_binary_tree_view_indexes` | セクション・関数・グローバルの登録、fixtureバイト列から独立導出した位置・範囲、名前一致、ヘッダと終端の未発見 |
-| TEST-LOAD-46、54 | `test_load_54_rom_backed_names_and_hash_collision_resolution` | 実際にFNVが衝突する2名から、それぞれ異なる関数番号を取得する。通常名検索を衝突検査として扱わない |
-| TEST-LOAD-48 | `test_load_48_loader_basic_block_index` | ローダ所有のブロックと検索結果の同一性 |
-| TEST-LOAD-51〜53、55〜56 | 対応番号の`test_load_*` | 型到達不能境界、Custom名境界、LEB幅・section件数、設定WASMページ上限、メモリ整列上限の拒否 |
-
-2026-10-01にLinux・CPython 3.14.6・uv環境で局所スイートを実行した。
-実行コマンドを示す。
-
-```bash
-UV_CACHE_DIR=/tmp/fireball-test-design-uv uv run --no-sync python -m pytest -q experiments/pysim/qa/tier2_runtime/test_loader.py
-```
-
-33件成功、0件失敗、0件skipである。
-改修前の実装では、TEST-LOAD-23の型不一致4種と後半不一致が受理され、TEST-LOAD-22の失敗後には途中の解決エントリが残った。
-これら6件の失敗を確認した後、関数型照合と失敗時の仮登録破棄を実装した。
-隔離コピーで型照合を恒真に変える変異と失敗時の仮登録破棄を省く変異を作り、対応する4件と1件のテスト失敗を確認した。
+| TEST-LOAD-01〜07 | `test_load_01`〜`test_load_07` | 不正ヘッダ、section境界・順序、型・メモリ上限の拒否とアロケータwatermark復元 |
+| TEST-LOAD-16 | `test_load_16_resolves_imported_global_offsets_for_active_segments` | インポート済みimmutable globalを使うData/Element初期化、メモリとテーブル状態 |
+| TEST-LOAD-20〜24 | `test_load_20`〜`test_load_24` | QA専用ハーネスによる未解決状態、関数リンク、シグネチャ拒否、部分リンク防止、登録上限 |
+| TEST-LOAD-30〜32 | `test_load_30`〜`test_load_32` | 関数上限、64件超のexport保持、u32/u64 LEB128のバイト上限 |
+| TEST-LOAD-46 | `test_load_46_parser_export_lookup_checks_names_when_hashes_collide` | 既知のハッシュ衝突名をパーサのエクスポート検索で区別 |
+| TEST-LOAD-48 | `test_load_48_module_builds_basic_block_index` | パース済みModuleの基本ブロック索引と同一オブジェクト参照 |
+| TEST-LOAD-51〜53、55〜56 | 対応する`test_load_*` | 到達不能時の型検証、Custom名境界、LEB128/件数、メモリページ・整列上限 |
 
 ## 4. 未検証・スコープ外
 
@@ -130,5 +111,5 @@ UV_CACHE_DIR=/tmp/fireball-test-design-uv uv run --no-sync python -m pytest -q e
 
 - TEST-LOAD-40、43のDataセグメント位置登録・逆引きは、本pysimスイートでは未検証である。関数とグローバルの逆引き成功をDataの証拠にしない。
 - TEST-LOAD-45の多数インポート、TEST-LOAD-46の未登録名が既存名と衝突する条件は、本pysimスイートでは未検証である。
-- TEST-LOAD-49〜50のJIT候補判定と非候補touch/履歴バイパスは、本スイートでは未実装である。番号だけが49だったメモリ整列拒否はTEST-LOAD-56へ、番号だけが50だったElement/Data初期化はTEST-LOAD-16へ対応を修正した。
+- TEST-LOAD-49〜50のJIT候補判定と非候補touch/履歴バイパスは、本Pysimスイートでは検証しない。
 - 名前・ファイル位置検索の計算量、物理ROMのコピー回数、全WASM命令の完全検証は、上記の局所機能検査では証明しない。

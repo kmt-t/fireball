@@ -24,9 +24,9 @@ docs/qa/tier3_plugins/debugger_test_spec.md.
 
 import pytest
 from config import FB_CONF_DEBUG_MAX_BREAKPOINTS
-from execution_context import WASMContext
-from helpers import make_debug_execution, wat_to_wasm
-from runtime_test_driver import RuntimeEngineDebugDriver
+from qa.private.debugger_support import DebugTestView, make_debug_execution
+from qa.private.runtime_test_driver import RuntimeEngineDebugDriver
+from qa.shared.helpers import wat_to_wasm
 from tier3_plugins.debugger.debugger import (
     DebuggerManager,
     GDBRspProtocol,
@@ -40,7 +40,7 @@ def test_dbg_01_query_halt_reason():
     dbg.attach()
     dbg.stop_signal = 5
     rsp = GDBRspProtocol(dbg)
-    ctx = WASMContext()
+    ctx = DebugTestView()
     res, pc = rsp.handle_packet("?", 0x100, ctx, {})
     assert res == "$S05#b8"
     assert pc == 0x100
@@ -51,9 +51,9 @@ def test_dbg_02_read_virtual_registers():
     dbg = DebuggerManager()
     dbg.attach()
     rsp = GDBRspProtocol(dbg)
-    ctx = WASMContext()
-    ctx.locals = (10, 20, 30)
-    ctx.push(999)  # tos
+    ctx = DebugTestView()
+    ctx.locals[:3] = (10, 20, 30)
+    assert ctx.stack.push_back(999)  # tos
     res, pc = rsp.handle_packet("g", 0x100, ctx, {})
     # Strip framing
     raw = res[1 : res.index("#")]
@@ -76,8 +76,8 @@ def test_dbg_03_write_virtual_registers():
     dbg = DebuggerManager()
     dbg.attach()
     rsp = GDBRspProtocol(dbg)
-    ctx = WASMContext()
-    ctx.locals = (0,) * 16
+    ctx = DebugTestView()
+    ctx.locals[:] = (0,) * 16
     # Set new PC=0x200, locals[0]=55, locals[1]=77
     regs = [0x200, 0, 0, 0, 55, 77] + [0] * 14
     hex_payload = "G" + "".join((r & 0xFFFF_FFFF).to_bytes(4, "little").hex() for r in regs)
@@ -111,7 +111,7 @@ def test_dbg_03_write_virtual_registers():
 def test_dbg_03b_single_register_and_supported_query():
     dbg = DebuggerManager()
     rsp = GDBRspProtocol(dbg)
-    ctx = WASMContext()
+    ctx = DebugTestView()
     ctx.locals[0] = 12
     response, pc = rsp.handle_packet("p4", 0x123, ctx, {})
     assert response.startswith("$0c000000#")
@@ -128,7 +128,7 @@ def test_dbg_03b_single_register_and_supported_query():
 def test_dbg_03c_malformed_register_packets_are_rejected():
     dbg = DebuggerManager()
     rsp = GDBRspProtocol(dbg)
-    ctx = WASMContext()
+    ctx = DebugTestView()
     response, pc = rsp.handle_packet("pzz", 0x123, ctx, {})
     assert response.startswith("$E01#")
     assert pc == 0x123
@@ -147,7 +147,7 @@ def test_dbg_08b_breakpoint_capacity_returns_protocol_error():
     response, pc = rsp.handle_packet(
         f"Z0,{FB_CONF_DEBUG_MAX_BREAKPOINTS:x},0",
         0x200,
-        WASMContext(),
+        DebugTestView(),
         {},
     )
     assert response.startswith("$E01#")
@@ -162,7 +162,7 @@ def test_dbg_04_05_read_memory_and_bounds_check():
     dbg.attach()
     rsp = GDBRspProtocol(dbg)
     mem = bytearray(b"HELLO FIREBALL WASM")
-    ctx = WASMContext(memory=mem)
+    ctx = DebugTestView(memory=mem)
     # In-bounds read: offset 6, len 8 -> "FIREBALL"
     res, _ = rsp.handle_packet("m6,8", 0, ctx, {})
     raw = res[1 : res.index("#")]
@@ -179,7 +179,7 @@ def test_dbg_06_07_write_memory_and_bounds_check():
     dbg.attach()
     rsp = GDBRspProtocol(dbg)
     mem = bytearray(64)
-    ctx = WASMContext(memory=mem)
+    ctx = DebugTestView(memory=mem)
     # In-bounds write: "M0,4:deadbeef"
     res, _ = rsp.handle_packet("M0,4:deadbeef", 0, ctx, {})
     assert res.startswith("$OK#")
@@ -220,7 +220,9 @@ def test_dbg_08_09_breakpoints_and_hit():
     block1, block2 = mod.blocks[0], mod.blocks[1]
     blocks = {block1.head_pc: block1, block2.head_pc: block2}
     # Set breakpoint at block2's head
-    res_z, _ = rsp.handle_packet(f"Z0,{block2.head_pc:x},0", block1.head_pc, WASMContext(), blocks)
+    res_z, _ = rsp.handle_packet(
+        f"Z0,{block2.head_pc:x},0", block1.head_pc, DebugTestView(), blocks
+    )
     assert res_z.startswith("$OK#")
     assert dbg.has_breakpoint(block2.head_pc)
     # Continue from block1 -> should halt at block2 with SIGTRAP ($S05)
@@ -349,7 +351,7 @@ def test_dbg_08c_breakpoint_pc_overflow_is_rejected_without_state_change(command
     debugger = DebuggerManager()
     debugger.attach()
     rsp = GDBRspProtocol(debugger)
-    context = WASMContext()
+    context = DebugTestView()
     for address in (0, 7, 0xFFFF_FFFF):
         assert rsp.handle_packet(f"Z0,{address:x},0", 7, context, {}) == ("$OK#9a", 7)
     before = tuple(debugger._breakpoints)
@@ -365,7 +367,7 @@ def test_dbg_09_interior_breakpoint_stops_before_side_effect_and_resumes() -> No
     )
     ctx = execution.context
     pc_base = execution.call.current_pc()
-    assert ctx.stack is execution.call.context.operand_stack
+    assert ctx.stack is execution.call.context.stack
     rsp.handle_packet("P4=07000000", pc_base, ctx, {})
     rsp.handle_packet(f"Z0,{pc_base + 2:x},0", pc_base, ctx, {})
     response, pc = rsp.handle_packet("c", pc_base, ctx, {})
@@ -530,7 +532,7 @@ def test_dbg_10_trap_stops_without_normal_exit_or_later_update(
     command: str, prefix: str, fault_pc: int
 ) -> None:
     """TEST-DBG-10/11: Fault PC is retained; a trap is never reported as W00."""
-    from tier3_executer.interpreter.interpreter import TrapCode
+    from tier2_runtime.interpreter.interpreter import TrapCode
 
     execution, _, rsp = _debug_rsp(f"""(module (global (mut i32) (i32.const 0))
         (func {prefix} unreachable i32.const 1 global.set 0))""")
@@ -583,11 +585,11 @@ def test_dbg_12_disabled_composition_has_no_debug_state_or_weave() -> None:
     """TEST-DBG-12: Disabled composition keeps the plain ABI and native entry."""
     import ctypes
 
-    from helpers import make_native_interpreter
-    from interop_abi import ExecutionContextNative
-    from runtime_composer import RuntimeComposer, RuntimeCompositionConfig
-    from tier3_executer.interpreter import native_abi
-    from tier3_executer.interpreter.interpreter import NativeInterpreter
+    from tier2_runtime.abi.interpreter_abi import ExecutionContextABI
+    from qa.shared.helpers import make_native_interpreter
+    from tier2_runtime.runtime.composer import RuntimeComposer, RuntimeCompositionConfig
+    from tier2_runtime.abi import native_abi
+    from tier2_runtime.interpreter.interpreter import NativeInterpreter
 
     module = RuntimeEngineDebugDriver().load_wasm(
         wat_to_wasm("(module (func (result i32) i32.const 7))")
@@ -604,8 +606,11 @@ def test_dbg_12_disabled_composition_has_no_debug_state_or_weave() -> None:
     assert weave_calls == []
     assert interpreter._native_dispatcher is native_abi.run_native_dispatch
     assert (
-        ctypes.sizeof(call.context.native_context) == ctypes.sizeof(ExecutionContextNative) == 144
+        ctypes.sizeof(call.context)
+        == ctypes.sizeof(ExecutionContextABI) + ctypes.sizeof(ctypes.c_void_p)
+        == 152
     )
+    assert call.context.debug_control is None
     interpreter.step(call)
     assert call.finished and call.results == [7]
 
@@ -614,7 +619,7 @@ def test_dbg_12_continue_returns_to_python_only_at_actual_stop(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """TEST-DBG-12/13: Thousands of instructions run inside one existing native step."""
-    from tier3_executer.interpreter.interpreter import InterpreterCall, NativeInterpreter
+    from tier2_runtime.interpreter.interpreter import InterpreterCall, NativeInterpreter
 
     execution, _, rsp = _debug_rsp(
         "(module (func (result i32) " + "i32.const 1 drop " * 1000 + "i32.const 7))"
@@ -635,14 +640,14 @@ def test_dbg_12_continue_returns_to_python_only_at_actual_stop(
 
 def test_dbg_13_composition_rejects_jit_before_creating_executor() -> None:
     """GOTCHA-DBG-01: Static exclusion happens before construction or weaving."""
-    from helpers import expect_assertion, make_native_interpreter
-    from runtime_composer import (
+    from qa.shared.helpers import expect_assertion, make_native_interpreter
+    from tier2_runtime.runtime.composer import (
         RuntimeComposer,
         RuntimeCompositionConfig,
         RuntimeExecutionKind,
         RuntimePluginSelection,
     )
-    from tier3_executer.interpreter.interpreter import NativeInterpreter
+    from tier2_runtime.interpreter.interpreter import NativeInterpreter
 
     module = RuntimeEngineDebugDriver().load_wasm(wat_to_wasm("(module (func))"))
     constructions: list[int] = []
@@ -667,7 +672,7 @@ def test_dbg_13_composition_rejects_jit_before_creating_executor() -> None:
 
 def test_dbg_13_two_compositions_keep_stop_state_and_storage_independent() -> None:
     """TEST-DBG-12/13: A stopped debug runtime cannot alter another runtime."""
-    from helpers import make_native_interpreter
+    from qa.shared.helpers import make_native_interpreter
 
     module = RuntimeEngineDebugDriver().load_wasm(
         wat_to_wasm("(module (func (param i32) (result i32) local.get 0 i32.const 10 i32.add))")

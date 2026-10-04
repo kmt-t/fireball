@@ -69,8 +69,6 @@ TEST-WIT-12/13は専用ホスト入口の転送と状態を検査する。TEST-W
 uv run pytest -q experiments/pysim/qa/tier3_platform/test_libfireball.py experiments/pysim/qa/tier2_runtime/test_syscall.py
 ```
 
-実行結果は [`test_reconstruction_review.md`](docs/qa/test_reconstruction_review.md) を参照する。
-
 ## 4. 未検証・スコープ外
 
 - TEST-WIT-10/14はWIT由来bindingの生成、静的archive経由のguestリンク、raw 4 importの実NativeInterpreter実行で検査する。Component ModelのCanonical ABI、WASI Preview1およびHAL loweringのguest統合は対象外である。

@@ -17,8 +17,8 @@ _PYSIM_DIR = _TESTS_DIR.parent
 _REPO_ROOT = _PYSIM_DIR.parent.parent
 
 
-from helpers import expect_assertion
 from interrupt_event import InterruptEvent
+from qa.shared.helpers import expect_assertion
 from scheduler import (
     ChannelAction,
     LockFreeInterruptEventQueue,

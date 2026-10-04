@@ -58,7 +58,7 @@ TEST-MEM-01/05は`test_reacquire_released_partition_does_not_overlap_live_task`�
 ## 3. テスト検証実績と網羅状況
 
 - 仕様書に定義された各テストケース（契約レベルの不変条件・境界条件・エラー処理）の検証手順と期待結果を定義。
-- TEST-MEM-26〜30（ランタイム用バンプアロケータ・JITキャッシュアロケータの契約レベル振る舞い）は本書で契約として定義済みだが、対応する実行可能テスト（concept code / pysim）は [`runtime_loader.md`](docs/components/tier2_runtime/runtime_loader.md) および [`jit_runtime.md`](docs/components/tier3_executer/jit_runtime.md) 側の実装完了後にそれぞれの正本テスト仕様書へ追加される（現状は契約定義のみで実行時検証は未着手であることを明示する。サイレントな欠落ではなく既知の追跡対象とする）。
+- TEST-MEM-26〜30（ランタイム用バンプアロケータ・JITキャッシュアロケータの契約レベル振る舞い）は本書で契約として定義済みだが、対応する実行可能テスト（concept code / pysim）は [`runtime_loader.md`](docs/components/tier2_runtime/runtime_loader.md) および [`jit_runtime.md`](docs/components/tier3_plugins/jit_runtime.md) 側の実装完了後にそれぞれの正本テスト仕様書へ追加される（現状は契約定義のみで実行時検証は未着手であることを明示する。サイレントな欠落ではなく既知の追跡対象とする）。
 
 ### 3.1 claim拒否と所有権通知の実行対応
 
@@ -74,7 +74,7 @@ Tier 2の同名TEST-MEM-10dは古いハンドルの失効を検査する別ケ�
 本書の10dは`PageMappingCallbacks`の契約を検査する。
 
 - 実行日: 2026-10-02。
-- 対象ソース: [`memory.py`](experiments/pysim/tier2_runtime/memory.py)。
+- 対象ソース: [`memory.py`](experiments/pysim/tier2_runtime/memory/manager.py)。
 - スイート: [`test_memory.py`](experiments/pysim/qa/tier3_platform/test_memory.py)。
 - 環境: Linux、プロジェクトのuv環境。
 - 結果: 成功16件、失敗0件、skip 0件、xfail 0件。

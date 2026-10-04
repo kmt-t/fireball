@@ -45,7 +45,7 @@
 拒否後の末尾slice書込みは同じHAL実体へ届き、元slotをunmapした後は別slotの正常I/Oを開始できる。
 
 - 実行日: 2026-10-02。
-- 対象ソース: [`hal_dispatch.py`](experiments/pysim/tier2_runtime/hal_dispatch.py)。
+- 対象ソース: [`hal_dispatch.py`](experiments/pysim/tier2_runtime/hal/dispatch.py)。
 - スイート: [`test_hal.py`](experiments/pysim/qa/tier3_platform/test_hal.py)。
 - 環境: Linux、プロジェクトのuv環境。
 - 結果: 成功23件、失敗0件、skip 0件、xfail 0件。

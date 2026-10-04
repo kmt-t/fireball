@@ -13,24 +13,24 @@ from itertools import combinations, product
 from pathlib import Path
 
 import pytest
-from hal_dispatch import HalBufferMapStatus
-from helpers import wat_to_wasm
-from hostcall import RuntimeHostCallGateway, VdmaTransfer, WasiErrno
+from tier2_runtime.hal.dispatch import HalBufferMapStatus
+from tier2_runtime.hal.hostcall import RuntimeHostCallGateway, VdmaTransfer, WasiErrno
 from hypothesis import example, given, settings
 from hypothesis import strategies as st
 from ipc_router import Role
+from qa.private.tier2_runtime.vdma_mock import COMPLETION_EVENT, ControlledVdmaMock, DmaPhase
+from qa.shared.helpers import wat_to_wasm
 from scheduler import ChannelAction, TaskState
 from system import FB_CONF_VSOC_PASSTHROUGH_BASE, System
-from tier3_executer.interpreter.interpreter import (
+from tier2_runtime.interpreter.interpreter import (
     InterpreterBindings,
     NativeInterpreter,
     Trap,
     TrapCode,
 )
 from tier3_platform.drivers.wasi.context import WasiHostContext
-from vdma_mock import COMPLETION_EVENT, ControlledVdmaMock, DmaPhase
-from vmmio import VMMIO_PAGE_SIZE, VmmioStatus
-from wasm_reader import parse
+from tier2_runtime.hal.vmmio import VMMIO_PAGE_SIZE, VmmioStatus
+from tier2_runtime.wasm.reader import parse
 
 
 class Region(StrEnum):

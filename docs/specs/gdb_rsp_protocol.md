@@ -56,7 +56,7 @@ GDB クライアントが参照するレジスタ番号と、Fireballの実行�
 | GDB レジスタ番号 | レジスタ名 | ビット幅 | 論理ソース（`execution_context` / オペランドスタック） |
 | :--- | :--- | :--- | :--- |
 | **`0`** | `pc` | 32-bit | Debuggerがアクティブ関数の命令カーソルへ関数命令開始PCを加えて得る、Code section payload相対PC |
-| **`1`** | `sp` | 32-bit | `execution_context.sp_offset`（スタックボトムから数えた32-bitスロット数。pysimでは`len(ctx.stack)`に対応する。詳細は[`interpreter.md`](docs/components/tier3_executer/interpreter.md)を参照） |
+| **`1`** | `sp` | 32-bit | `execution_context.sp_offset`（スタックボトムから数えた32-bitスロット数。pysimでは`len(ctx.stack)`に対応する。詳細は[`interpreter.md`](docs/components/tier2_runtime/interpreter.md)を参照） |
 | **`2`** | `fp` | 32-bit | 固定値 `0`。pysimの公開コンテキストは独立したフレームポインタを持たず、書込みも `0` のみ許可する。 |
 | **`3`** | `tos` | 32-bit | オペランドスタック最上位の値。`sp_offset` は次の空きスロットを指すため、スロット添字では `stack[sp_offset - 1]` |
 | **`4`** | `local0` | 32-bit | 固定長ローカルスタック上の値 0 |

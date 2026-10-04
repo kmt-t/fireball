@@ -1,10 +1,13 @@
 """
-Unit Test Suite Runner for pysim.
-Executes all unit tests in strict architectural tier order:
+Component unit-test runner for pysim.
+Executes component-focused tests in strict architectural tier order:
 1. Tier 1 Core & Interface (foundational kernel, containers, logging, IPC)
 2. Tier 2 Runtime (loader, syscall, vMMIO, vSoC, runtime composition)
-3. Tier 3 Executer and Plugins (interpreter, JIT, debugger, profiler)
-4. Cross-Cutting Verification (pairwise combinations, gotchas & invariants)
+3. Tier 2 Interpreter, Tier 3 Plugins (JIT, debugger, profiler)
+4. Component-local regressions and verification helpers
+
+Cross-component pairwise tests and compiled WASM guests have separate integration
+and workload runners. They are intentionally excluded from this unit-test list.
 """
 
 from __future__ import annotations
@@ -39,22 +42,26 @@ TEST_SUITES = [
         "System Logging & Ring Buffer",
         TEST_DIR / "tier2_runtime" / "test_logging.py",
     ),
-    ("Tier 2 Runtime", "WASM Loader & Segments", TEST_DIR / "tier2_runtime" / "test_loader.py"),
+    (
+        "Tier 2 Runtime",
+        "WASM Reference Parser & Segments",
+        TEST_DIR / "tier2_runtime" / "test_wasm_reader.py",
+    ),
     ("Tier 2 Runtime", "JIT Candidate Scoring", TEST_DIR / "tier2_runtime" / "test_jit_scoring.py"),
     (
-        "Tier 3 Executer",
+        "Tier 2 Runtime",
         "WASM Interpreter & Instructions",
-        TEST_DIR / "tier3_executer" / "interpreter" / "test_interpreter.py",
+        TEST_DIR / "tier2_runtime" / "interpreter" / "test_interpreter.py",
     ),
     (
-        "Tier 3 Executer",
+        "Tier 2 Runtime",
         "CPS Interpreter Python/Native Compatibility",
-        TEST_DIR / "tier3_executer" / "interpreter" / "test_cps_interpreter.py",
+        TEST_DIR / "tier2_runtime" / "interpreter" / "test_cps_interpreter.py",
     ),
     (
         "Tier 2 Runtime",
         "Python/C++ ABI Native Layout",
-        TEST_DIR / "tier2_runtime" / "test_interop_abi.py",
+        TEST_DIR / "tier2_runtime" / "test_interpreter_abi.py",
     ),
     (
         "Tier 2 Runtime",
@@ -112,48 +119,28 @@ TEST_SUITES = [
         "libfireball Host-Call Contract",
         TEST_DIR / "tier3_platform" / "test_libfireball.py",
     ),
-    (
-        "Tier 3 Platform",
-        "WASI-SDK Guest across Runtime, IPC and HAL",
-        TEST_DIR / "tier3_platform" / "test_wasi_guest.py",
-    ),
-    (
-        "Tier 3 Platform",
-        "Device Stub Commands and Clang Guest Integration",
-        TEST_DIR / "tier3_platform" / "test_driver_stubs.py",
-    ),
     # --- Tier 3: Executer ---
     (
-        "Tier 3 Executer",
-        "x64 Assembler",
-        TEST_DIR / "tier3_executer" / "jit" / "test_x64_asm.py",
+        "Tier 3 Plugins",
+        "Executable Memory W^X",
+        TEST_DIR / "tier3_plugins" / "jit" / "test_exec_memory.py",
     ),
     (
-        "Tier 3 Executer",
-        "x64 Stencils Catalog",
-        TEST_DIR / "tier3_executer" / "jit" / "test_x64_stencils.py",
+        "Tier 3 Plugins",
+        "JIT Extension Hotspot History & 3-Bank Cache",
+        TEST_DIR / "tier3_plugins" / "jit" / "test_jit_runtime.py",
     ),
     (
-        "Tier 3 Executer",
-        "JIT Hotspot Profiler & 3-Bank Cache",
-        TEST_DIR / "tier3_executer" / "jit" / "test_jit_runtime.py",
-    ),
-    (
-        "Tier 3 Executer",
+        "Tier 3 Plugins",
         "x64 Copy-and-Patch JIT",
-        TEST_DIR / "tier3_executer" / "jit" / "test_x64_jit.py",
+        TEST_DIR / "tier3_plugins" / "jit" / "test_x64_jit.py",
     ),
     (
-        "Tier 3 Executer",
+        "Tier 3 Plugins",
         "JIT Differential (wasmtime / Tier 2 / Tier 3)",
-        TEST_DIR / "tier3_executer" / "jit" / "test_jit_differential.py",
+        TEST_DIR / "tier3_plugins" / "jit" / "test_jit_differential.py",
     ),
     # --- Cross-Cutting ---
-    (
-        "Cross-Cutting",
-        "All-Pairs Combinatorial Matrix",
-        TEST_DIR / "cross_cutting" / "test_pairwise_combinations.py",
-    ),
     (
         "Cross-Cutting",
         "Implementation Gotchas & Invariants",
@@ -171,6 +158,10 @@ def assert_registered_test_modules(test_dir: Path, registered: Sequence[Path]) -
     """検証マトリクスの実行入口から、実在する試験モジュールを取りこぼさない。"""
     discovered: set[Path] = set()
     for path in test_dir.rglob("test_*.py"):
+        if path.is_relative_to(test_dir / "integration") or path.is_relative_to(
+            test_dir / "workloads"
+        ):
+            continue
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         has_tests = any(
             isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
@@ -193,7 +184,7 @@ def assert_registered_test_modules(test_dir: Path, registered: Sequence[Path]) -
 def run_all_tests():
     assert_registered_test_modules(TEST_DIR, tuple(path for _, _, path in TEST_SUITES))
     print("=" * 84)
-    print("           Fireball pysim Architectural Unit Test Suite (Tier 1 -> 3)            ")
+    print("             Fireball pysim Component Unit Test Suite (Tier 1 -> 3)              ")
     print("=" * 84)
     total_start = time.perf_counter()
     passed = 0

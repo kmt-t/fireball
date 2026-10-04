@@ -18,22 +18,24 @@ _PYSIM_DIR = _TESTS_DIR.parent
 _REPO_ROOT = _PYSIM_DIR.parent.parent
 
 
-# Keep the product Tier 3 package ahead of tests/tier3_executer when importing
+# Keep the product Tier 3 package ahead of tests/tier3_plugins when importing
 # runtime_engine's qualified Tier 3 modules.
 
-from bump_allocator import BumpAllocator
-from execution_context import WASMContext
-from fixtures.platform_drivers import create_reference_platform_drivers
-from helpers import (
-    _build_test_wasm_binary,
+from ipc_router import Role, FB_URI_HAL_STDOUT
+from qa.private.debugger_support import DebugTestView, make_debug_execution
+from qa.private.runtime_test_driver import RuntimeEngineDebugDriver
+from qa.shared.fixtures.platform_drivers import create_reference_platform_drivers
+from qa.shared.helpers import (
     expect_assertion,
     make_native_interpreter,
     wat_to_wasm,
 )
-from helpers import make_interpreter as Interpreter
-from ipc_router import Role
-from loader import DecodedEntityKind
-from runtime_test_driver import RuntimeEngineDebugDriver
+from qa.shared.helpers import make_interpreter as Interpreter
+from qa.shared.runtime_support import (
+    RecordingTraceCompiler,
+    compile_module_block,
+    make_runtime_engine,
+)
 from scheduler import ChannelAction, TaskState
 from system import (
     System,
@@ -42,19 +44,13 @@ from system_containers import (
     ReadOnlyFlatMapView,
     StaticVector,
 )
-from test_support import (
-    PcOnlyCompiler,
-    compile_module_block,
-    make_pc_only_module,
-    make_runtime_engine,
-)
-from tier2_runtime.logger import LogDictionary, LogLevel, LogResult, decode_log_records
-from tier3_executer.jit.jit_cache import CardState, JITTrace
-from tier3_executer.jit.x64_jit import TraceCompiler
-from tier3_executer.runtime_engine import RuntimeDriveMode, RuntimeEngine
-from tier3_platform.drivers.hal.stream import DedicatedLogSink
+from tier2_runtime.observability.logger import LogDictionary, LogLevel, LogResult, decode_log_records
+from tier3_plugins.jit.jit_cache import CardState
+from tier3_plugins.jit.x64_jit import TraceCompiler
+from tier2_runtime.runtime.engine import RuntimeDriveMode, RuntimeEngine
+from tier3_platform.drivers.printk import PrintkBuffer
 from tier3_platform.drivers.wasi.context import WasiHostContext
-from virq import (
+from tier2_runtime.hal.virq import (
     DispatchResult,
     InterruptEvent,
     RegistrationError,
@@ -64,8 +60,8 @@ from virq import (
     VirqFaultCode,
     VirqNode,
 )
-from wasm_module import I32, Function, FuncType, Module
-from wasm_reader import parse
+from tier2_runtime.wasm.module import I32, Function, FuncType, Module
+from tier2_runtime.wasm.reader import parse
 
 
 def _make_virq_module() -> Module:
@@ -464,7 +460,7 @@ def test_virq_unregisters_dispatcher_at_coos_boundary():
 
 def test_hal_task_ipc_communication():
     """TEST-HAL-01: HAL operates as a distinct task on COOS and handles commands via IPC rendezvous."""
-    from hal_dispatch import ARG_BUFFER_HANDLE, ARG_LENGTH, ARG_OFFSET
+    from tier2_runtime.hal.dispatch import ARG_BUFFER_HANDLE, ARG_LENGTH, ARG_OFFSET
     from tier3_platform.drivers.hal.dummy import DummyDriver
     from tier3_platform.drivers.wasi.context import Wasi03pEngine, WasiIpcCmd
 
@@ -476,7 +472,7 @@ def test_hal_task_ipc_communication():
         sysv.pool.view(buffer_handle, 0, 128)[:] = b"x" * 128
         sysv.scheduler.current_task = runtime_task
         sysv.start_hal_driver(
-            DummyDriver(transport=sysv.transport), sysv.wasi_hal_bindings.stdout_uri
+            DummyDriver(transport=sysv.transport), FB_URI_HAL_STDOUT
         )
         engine = Wasi03pEngine(sysv)
         # Send command via IPC
@@ -524,8 +520,8 @@ def test_gdbserver_task_coos_cooperative_execution():
 
     sysv = System()
     dbg = DebuggerManager()
-    ctx = WASMContext()
-    ctx.locals = (10, 20)
+    ctx = DebugTestView()
+    ctx.locals[:2] = (10, 20)
     task_id, port = sysv.spawn_gdbserver_task(dbg, start_pc=0x10, ctx=ctx)
 
     try:
@@ -594,21 +590,25 @@ def test_coop_01_wasm_coroutine_yields_on_loop_threshold(threshold: int):
 
 def test_idle_01_jit_batch_compilation_on_idle():
     """TEST-IDLE-01: Compile queue is drained and compiled in LIFO order when scheduler fires idle_hook."""
-    compiled_log = []
-
-    def mock_compiler(pc: int) -> JITTrace:
-        compiled_log.append(pc)
-        return JITTrace(head_pc=pc, native_fn=lambda: pc, size_bytes=64)
-
-    engine = make_runtime_engine(jit_compiler=PcOnlyCompiler(mock_compiler), code_lengths=(0x400,))
-    engine.register_module_blocks(make_pc_only_module((0x100, 0x200, 0x300)))
-    engine.jit_runtime.bitmap.touch(0x100)
-    engine.jit_runtime.bitmap.touch(0x100)  # HOT
-    engine.jit_runtime.bitmap.touch(0x200)
-    engine.jit_runtime.bitmap.touch(0x200)  # HOT
-    engine.jit_runtime.compile_queue = StaticVector.of(
-        [0x100, 0x200], capacity=engine.jit_runtime.compile_queue_capacity
-    )  # Enqueued
+    compiler = RecordingTraceCompiler()
+    engine = make_runtime_engine(
+        jit_compiler=compiler,
+        min_trace_bytes=1,
+        candidate_threshold=0,
+    )
+    wat = """(module
+      (func (export "f0") (result i32) i32.const 10 i32.const 20 i32.add)
+      (func (export "f1") (result i32) i32.const 30 i32.const 40 i32.add)
+      (func (export "f2") (result i32) i32.const 50 i32.const 60 i32.add))"""
+    module = parse(wat_to_wasm(wat))
+    engine.register_module_blocks(module)
+    pcs = [block.head_pc for block in module.blocks]
+    assert len(pcs) == 3
+    for pc in pcs[:2]:
+        engine.jit_runtime.bitmap.touch(pc)
+        engine.jit_runtime.bitmap.touch(pc)  # HOT
+    for pc in pcs[:2]:
+        engine.jit_runtime.compile_queue.push_back(pc)
     system = System()
     system.runtime_engine = engine
     try:
@@ -616,18 +616,18 @@ def test_idle_01_jit_batch_compilation_on_idle():
     finally:
         system.shutdown()
     assert len(engine.jit_runtime.compile_queue) == 0
-    assert compiled_log == [0x200, 0x100], "LIFO compilation order required"
-    assert engine.jit_runtime.bitmap.get_state(0x100) == CardState.COMPILED
-    assert engine.jit_runtime.bitmap.get_state(0x200) == CardState.COMPILED
-    assert engine.jit_runtime.cache.active.has_trace(0x100)
-    assert engine.jit_runtime.cache.active.has_trace(0x200)
+    assert compiler.compiled_pcs == [pcs[1], pcs[0]], "LIFO compilation order required"
+    assert engine.jit_runtime.bitmap.get_state(pcs[0]) == CardState.COMPILED
+    assert engine.jit_runtime.bitmap.get_state(pcs[1]) == CardState.COMPILED
+    assert engine.jit_runtime.cache.active.has_trace(pcs[0])
+    assert engine.jit_runtime.cache.active.has_trace(pcs[1])
 
 
 def test_idle_02_logging_flush_on_idle():
     """TEST-LOG-06: System's scheduler idle hook flushes every deferred log in order."""
-    sink = DedicatedLogSink()
+    sink = PrintkBuffer()
     system = System(
-        logger_sink=sink, log_dictionary=LogDictionary(entries=((1, "event payload=%d"),))
+        printk_sink=sink, log_dictionary=LogDictionary(entries=((1, "event payload=%d"),))
     )
     try:
         assert system.logger.log_event(LogLevel.INFO, 1, 42) == LogResult.SUCCESS
@@ -645,9 +645,9 @@ def test_idle_02_logging_flush_on_idle():
 
 def test_tier_01_interpreter_to_jit_cooperative_flow():
     """Real native/JIT guest execution cooperates with COOS and flushes logs on idle."""
-    sink = DedicatedLogSink()
+    sink = PrintkBuffer()
     system = System(
-        logger_sink=sink, log_dictionary=LogDictionary(entries=((0x10, "wasm iteration=%d"),))
+        printk_sink=sink, log_dictionary=LogDictionary(entries=((0x10, "wasm iteration=%d"),))
     )
     system.runtime_engine = make_runtime_engine(
         jit_compiler=TraceCompiler(),
@@ -826,7 +826,7 @@ def test_guest_wasi_01_interpreter_fd_write():
 
         ctx = WasiHostContext(sysv)
         sysv.start_hal_driver(
-            DummyDriver(transport=sysv.transport), sysv.wasi_hal_bindings.stdout_uri
+            DummyDriver(transport=sysv.transport), FB_URI_HAL_STDOUT
         )
         # Set up guest memory:
         # offset 0: iov { buf: 16, len: 12 }
@@ -912,8 +912,8 @@ def test_debugger_manager_gdb_rsp_integration():
     dbg.attach()
     rsp = GDBRspProtocol(dbg)
     mem = bytearray(64)
-    ctx = WASMContext(memory=mem)
-    ctx.locals = (10, 20)
+    ctx = DebugTestView(memory=mem)
+    ctx.locals[:2] = (10, 20)
     # 1. Query stop signal
     res, _ = rsp.handle_packet("?", 0x100, ctx, {})
     assert res == "$S05#b8"
@@ -953,8 +953,6 @@ def test_debugger_manager_gdb_rsp_integration():
     mod = engine.load_wasm(wat_to_wasm(step_wat))
     block1, block2 = mod.blocks[0], mod.blocks[1]
     blocks = {block1.head_pc: block1, block2.head_pc: block2}
-    from helpers import make_debug_execution
-
     execution = make_debug_execution(mod, 0, (10,), memory=mem)
     dbg.detach()
     dbg = DebuggerManager(engine=execution)
@@ -1005,8 +1003,8 @@ def test_interpreter_debugger_attachment_and_hooks():
     # 1. Normal interpreter composition (normal interpreter-only selection)
     assert engine.handler_table == "interpreter"
     assert engine.debugger is None
-    ctx_normal = WASMContext()
-    ctx_normal.locals = (5,)
+    ctx_normal = DebugTestView()
+    ctx_normal.locals[0] = 5
     next_pc = engine.run_step(block1.head_pc, ctx_normal)
     assert next_pc == block2.head_pc
     assert ctx_normal.locals[0] == 6
@@ -1016,8 +1014,8 @@ def test_interpreter_debugger_attachment_and_hooks():
     assert engine.debugger is dbg
     # 3. Breakpoint hit (halts before execution)
     dbg.add_breakpoint(block2.head_pc)
-    ctx_debug = WASMContext(memory=bytearray([0x55, 0xAA]))
-    ctx_debug.locals = (10,)
+    ctx_debug = DebugTestView(memory=bytearray([0x55, 0xAA]))
+    ctx_debug.locals[0] = 10
     dbg.add_memory_assertion(0, 0x55, "valid magic")
     dbg.add_memory_assertion(1, 0x00, "invalid magic")  # Will fail
     # Step block1 (stops at block2 due to BP)
@@ -1041,45 +1039,6 @@ def test_interpreter_debugger_attachment_and_hooks():
     assert engine.handler_table == "interpreter"
 
 
-def test_wasm_loader_and_radix_binary_tree_view_indexes():
-    """TEST-LOAD-01/13/41/42/44, 43(global only): rollback, export lookup and function/global offsets."""
-    from loader import WasmLoader
-
-    runtime_allocator = BumpAllocator()
-    loader = WasmLoader(runtime_allocator)
-    wasm_bytes = _build_test_wasm_binary(export_names=["zeta", "alpha", "beta"])
-    view = loader.prepare("test_module", wasm_bytes)
-    # 1. Zero-copy & Hash + ReadOnlyRadixBinaryTreeView export lookup (TEST-LOAD-13)
-    assert [view.export_name(entry) for entry in view.exports_dict] == ["alpha", "beta", "zeta"]
-    assert view.lookup_export_func("alpha") == 0
-    assert view.lookup_export_func("beta") == 0
-    assert view.lookup_export_func("zeta") == 0
-    assert view.lookup_export_func("unknown") is None
-    # 2. Transactional rollback on invalid WASM
-    watermark = runtime_allocator.offset
-    with expect_assertion():
-        loader.prepare("bad", _build_test_wasm_binary(magic=b"\x7fELF"))
-    assert runtime_allocator.offset == watermark
-    # 3. ReadOnlyRadixBinaryTreeView file offset reverse-lookup (function/global offsets only)
-    assert len(view.entity_registry) > 0
-    func_start, func_size = view.code_offsets[0]
-    entity_fn = view.lookup_by_file_offset(func_start)
-    assert entity_fn is not None
-    assert entity_fn.kind == DecodedEntityKind.FUNCTION
-    assert entity_fn.index == 0
-    # Middle of function
-    entity_fn_mid = view.lookup_by_file_offset(func_start + 2)
-    assert entity_fn_mid is not None
-    assert entity_fn_mid.kind == DecodedEntityKind.FUNCTION
-    # Global lookup
-    glob_entry = view.globals[0]
-    entity_glob = view.lookup_by_file_offset(glob_entry.init_expr_offset)
-    assert entity_glob is not None
-    assert entity_glob.kind == DecodedEntityKind.GLOBAL
-    # Out-of-bounds offset
-    assert view.lookup_by_file_offset(len(wasm_bytes) + 1000) is None
-
-
 # ===========================================================================
 # Test Runner
 # ===========================================================================
@@ -1100,7 +1059,7 @@ from hypothesis import strategies as st
 @example(source=0, destination=16384, count=32768)
 def test_linear_memory_copy_uses_cpu_memmove(source: int, destination: int, count: int) -> None:
     """TEST-VSOC-60/61: 大小・重複・同一・ゼロ長のlinear copyでDMAを呼ばない。"""
-    from tier3_executer.interpreter.interpreter import InterpreterBindings, NativeInterpreter
+    from tier2_runtime.interpreter.interpreter import InterpreterBindings, NativeInterpreter
 
     module = parse(
         wat_to_wasm("""(module (memory 1)

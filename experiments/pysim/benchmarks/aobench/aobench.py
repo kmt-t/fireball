@@ -36,16 +36,16 @@ try:
 except ImportError:
     wasmtime = None
 
+from ipc_router import FB_URI_HAL_STDOUT
 from system import System
-from tier3_executer.interpreter.interpreter import (
+from tier2_runtime.interpreter.interpreter import (
     Interpreter,
     InterpreterBindings,
     NativeInterpreter,
 )
-from tier3_executer.jit.jit_runtime import JITInterpreter
 from tier3_platform.drivers.hal.dummy import DummyDriver
 from tier3_platform.drivers.wasi.context import WasiHostContext
-from wasm_reader import parse
+from tier2_runtime.wasm.reader import parse
 
 # ---------------------------------------------------------------------------
 # Genuine 3D Raytracing Ambient Occlusion WAT (Fixed-point Q8.8: 1.0 = 256)
@@ -406,13 +406,13 @@ def run_aobench():
     module = parse(wasm_bytes)
     print(f"    -> Parsed Module: {len(module.functions)} functions, {len(module.exports)} exports")
     # 3. Setup System & WASI Context
-    from tier3_executer.jit.jit_manager import JITRuntimeManager
-    from tier3_executer.jit.x64_jit import TraceCompiler
-    from tier3_executer.runtime_engine import RuntimeEngine
+    from tier3_plugins.jit.jit_manager import JITRuntimeManager
+    from tier3_plugins.jit.x64_jit import TraceCompiler
+    from tier2_runtime.runtime.engine import RuntimeEngine
 
     # 3. Setup System & WASI Context for the Interpreter baseline
     sysv = System()
-    sysv.start_hal_driver(DummyDriver(transport=sysv.transport), sysv.wasi_hal_bindings.stdout_uri)
+    sysv.start_hal_driver(DummyDriver(transport=sysv.transport), FB_URI_HAL_STDOUT)
     wasi_ctx = WasiHostContext(sysv)
     host_funcs = wasi_ctx.build_interpreter_host_functions(module)
     module.init_memory_data(wasi_ctx.guest_memory, ())
@@ -439,11 +439,11 @@ def run_aobench():
     t2_rays_per_sec = total_rays / (t2_time_ms / 1000.0) if t2_time_ms > 0 else 0
     # 5. Tier 3: Integrated Hybrid Execution with 2-bit Card Marking & idle_hook JIT Compilation
     print(
-        "[*] Step 4: Executing on Tier 3 RuntimeEngine (Card-Marking Hotspot Profiler + idle_hook JIT Compiler)..."
+        "[*] Step 4: Executing on Tier 2 RuntimeEngine with Tier 3 JIT extension (card marking + idle compilation)..."
     )
     sysv_t3 = System()
     sysv_t3.start_hal_driver(
-        DummyDriver(transport=sysv_t3.transport), sysv_t3.wasi_hal_bindings.stdout_uri
+        DummyDriver(transport=sysv_t3.transport), FB_URI_HAL_STDOUT
     )
     wasi_ctx_t3 = WasiHostContext(sysv_t3)
     host_funcs_t3 = wasi_ctx_t3.build_interpreter_host_functions(module)
@@ -455,10 +455,10 @@ def run_aobench():
         debug=debug,
     )
     runtime_engine.register_module_blocks(module)
-    interp_t3 = JITInterpreter(
+    interp_t3 = NativeInterpreter(
         module,
         InterpreterBindings.with_memory_and_functions(wasi_ctx_t3.guest_memory, host_funcs_t3),
-        runtime_engine,
+        bump_allocator=runtime_engine.bump_allocator,
     )
     t0_t3 = time.perf_counter()
     runtime_engine.call(interp_t3, main_func_idx, [WIDTH, HEIGHT])
@@ -519,7 +519,7 @@ if __name__ == "__main__":
         module_float = parse(wasm_float_bytes)
         sysv_float = System()
         sysv_float.start_hal_driver(
-            DummyDriver(transport=sysv_float.transport), sysv_float.wasi_hal_bindings.stdout_uri
+            DummyDriver(transport=sysv_float.transport), FB_URI_HAL_STDOUT
         )
         wasi_ctx_float = WasiHostContext(sysv_float)
         host_funcs_float = wasi_ctx_float.build_interpreter_host_functions(module_float)

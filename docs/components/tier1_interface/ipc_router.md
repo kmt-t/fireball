@@ -122,6 +122,11 @@ Key-Valueペアを複数集約した要求・応答の基本単位である。�
     - メッセージパッシング自体は CSP ランデブーのためロールバック経路を持たない。
     - 転送中に相手タスクが異常終了した場合、物理メモリ層の回復機構が送信元タスクへの再マッピングを復元する。
 
+#### 診断出力
+<!-- traceability: {META_3TierSeparation} -->
+
+IPCのRBAC拒否、未知URI、メッセージサイズ超過、所有権違反はTier 1の[`printk.md`](docs/components/tier1_core/printk.md)へ直接出力する。IPCルータはTier 2ロギングAPIを参照せず、拒否・アサーションの処理をロガーの稼働状態に依存させない。
+
 
 #### IPC 要求・応答ルーティング & 所有権移譲プロトコル（責務シーケンス図）
 <!-- traceability: {OwnershipTransfer} {IPC_ZeroCopy} {ADR_RendezvousChannel} {URIAbstraction} {GOTCHA-IPCR-01} {GOTCHA-IPCR-02} -->

@@ -5,7 +5,7 @@
 
 ARMv8-M向けJITの物理仕様は **TBD** とする。x64で確認した実行契約をARMv8-Mの命令列、ABI、メモリ保護方式へ外挿しない。
 
-x64の確認済み契約は [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) と [`jit_compiler.md`](docs/components/tier3_executer/jit_compiler.md) を正本とする。本書はARMv8-Mの物理設計が確定するまで、未確定項目の入口としてのみ残す。
+x64の確認済み契約は [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) と [`jit_compiler.md`](docs/components/tier3_plugins/jit_compiler.md) を正本とする。本書はARMv8-Mの物理設計が確定するまで、未確定項目の入口としてのみ残す。
 
 ## 未確定項目
 

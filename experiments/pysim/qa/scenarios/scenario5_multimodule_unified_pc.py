@@ -19,17 +19,18 @@ JIT execution counts and cache-bank transitions are not asserted here.
 from bisect import bisect_left
 
 import wasmtime
+from config import FB_CONF_RUNTIME_YIELD_THRESHOLD
 from system import System
-from tier3_executer.interpreter.interpreter import (
+from tier2_runtime.interpreter.interpreter import (
     Interpreter,
     InterpreterBindings,
     NativeInterpreter,
 )
-from tier3_executer.jit.jit_manager import JITRuntimeManager
-from tier3_executer.jit.x64_jit import TraceCompiler
-from tier3_executer.runtime_engine import RuntimeEngine
+from tier3_plugins.jit.jit_manager import JITRuntimeManager
+from tier3_plugins.jit.x64_jit import TraceCompiler
+from tier2_runtime.runtime.engine import RuntimeEngine
 from tier3_platform.drivers.wasi.context import WasiHostContext
-from wasm_reader import parse
+from tier2_runtime.wasm.reader import parse
 
 SCENARIO5_WAT = """
 (module
@@ -112,7 +113,10 @@ def test_scenario_multimodule_unified_pc():
     module.init_memory_data(wasi_t3.guest_memory, ())
     trace_compiler = TraceCompiler()
     runtime_engine = RuntimeEngine(
-        jit_runtime=JITRuntimeManager(jit_compiler=trace_compiler, yield_threshold=16)
+        jit_runtime=JITRuntimeManager(
+            jit_compiler=trace_compiler,
+            yield_threshold=FB_CONF_RUNTIME_YIELD_THRESHOLD,
+        )
     )
     runtime_engine.register_module_blocks(module)
     interp_t3 = NativeInterpreter(
@@ -124,8 +128,7 @@ def test_scenario_multimodule_unified_pc():
     assert len(runtime_engine.jit_runtime.cache.active.traces) > 0, "No JIT traces compiled"
     # 3. Resolve Code-section PCs back to distinct function bodies.
     func_indices_in_jit = {
-        module.function_index_for_pc(pc)
-        for pc, _ in runtime_engine.jit_runtime.cache.active.traces
+        module.function_index_for_pc(pc) for pc, _ in runtime_engine.jit_runtime.cache.active.traces
     }
     print(f"    -> Compiled JIT traces belong to functions: {func_indices_in_jit}")
     assert len(func_indices_in_jit) >= 2, "Traces should span across multiple functions"

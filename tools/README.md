@@ -79,49 +79,58 @@ check-doc は GiNZA で日本語文を解析する。長文や複雑な節接続
 警告は品質ゲートのエラーに数えない。終了コードにも影響しない。
 
 しきい値は <code>spec-integrator.yaml</code> の <code>prose_readability</code> で調整する。初期値は文長100文字超、または90文字以上かつ節接続候補4箇所以上である。
-コードブロック・見出し・HTMLコメントは解析しない。表の文章セルは解析する。
+見出しで区切ったセクションごとに解析する。コードブロック・見出し・HTMLコメントは解析せず、表の文章セルは解析する。
 GiNZA の構文解析は、冗長性や意味の正しさを判定しない。警告箇所は人が内容を確認する。
 
 文章チェックを含む環境を初回に用意する場合は、<code>uv sync --project tools/spec-integrator --extra dev --extra prose</code> を実行する。
 
-## WASI-SDKゲストの層横断試験
+## WASMバイナリワークロード試験
 
-[`test_wasi_guest.py`](../experiments/pysim/qa/tier3_platform/test_wasi_guest.py)は実SDKとwasi-libcを使う。
-SDKを用意してからテストを実行する。
-Linux x86_64向けの準備入口は、公式WASI-SDK 27.0の配布物をSHA-256固定で取得する。
-展開先はGit管理外の`build/wasi-sdk/`である。
+WASMワークロードは単体・結合テストから独立した [`workloads/run_all.py`](../experiments/pysim/qa/workloads/run_all.py) で実行する。現在はWASI-SDK/wasi-libcでコンパイルした層横断ゲスト、HAL用ゲスト、固定revisionの公式WebAssembly Core Spec Testsを実行する。
+SDKを用意してからゲスト試験を実行する。Linux x86_64向け準備入口は公式WASI-SDK 27.0の配布物をSHA-256固定で取得し、Git管理外の`build/wasi-sdk/`へ展開する。
+Core Spec Suiteは公式`WebAssembly/spec`の選択したWASTファイルをコミットIDへ固定し、Git管理外の`build/wasm-core-spec/`へ取得する。WASTを実行するため`wast2json` (WABT 1.0.36)をPATH上に用意する。
 
 ```bash
 .venv/bin/python tools/guest_bindings/build_wasi_guest.py --prepare-sdk
-.venv/bin/python -m pytest -q experiments/pysim/qa/tier3_platform/test_wasi_guest.py
+.venv/bin/python tools/guest_bindings/fetch_wasm_core_suite.py
+.venv/bin/python experiments/pysim/qa/workloads/run_all.py
 ```
 
 他環境や既存SDKは`FIREBALL_WASI_SDK`でSDKルートを指定する。
-テスト自身はSDKをダウンロードせず、未配置なら明示的に失敗する。
+テスト自身はSDKやテストスイートをダウンロードせず、未配置なら明示的に失敗する。
 ビルド入口は[`build_wasi_guest.py`](guest_bindings/build_wasi_guest.py)である。
 標準Preview1と、QAのFireball syscallリンク用fixtureの2構成を実行する。
 検査する経路と製品guest adapterの未実装範囲は、[結合テスト仕様](../docs/qa/integration_test_scenarios.md)を参照する。
+Core Spec SuiteはMVP互換の固定選択セットであり、WebAssembly Core仕様全体の適合を主張しない。各WASTファイルの実行assert、embedding依存skip件数、skip理由をpytest出力に記録する。
 
 ## 任意の補助監査
 
 | 目的 | Windows | Linux / WSL | 区分 |
 | :--- | :--- | :--- | :--- |
 | 用語候補の静的確認 | <code>powershell tools/llm-word.ps1 -quick</code> | <code>./tools/llm-word.sh --quick</code> | LLM 判定なし（未作成の埋め込みを Ollama のローカルモデルで生成） |
-| 用語揺れの意味判定 | <code>powershell tools/llm-word.ps1</code> | <code>./tools/llm-word.sh</code> | OpenRouter の Jev と Ollama を既定で使用 |
-| キーワードのリスク評価 | <code>powershell tools/risk.ps1</code> | <code>./tools/risk.sh</code> | OpenRouter 経由の Jev を既定で使用 |
-| 文書単体のレビュー | <code>powershell tools/llm-single-review.ps1 -file &lt;path&gt;</code> | <code>./tools/llm-single-review.sh --file &lt;path&gt;</code> | OpenRouter 経由の Jev を既定で使用 |
-| キーワード定義・参照ペアのレビュー | <code>powershell tools/llm-keyword-review.ps1 -keyword &lt;name&gt;</code> | <code>./tools/llm-keyword-review.sh --keyword &lt;name&gt;</code> | 定義セクションと参照セクションを1組ずつ評価。OpenRouter 経由の Jev を既定で使用 |
-| {VERIFY_LLM} 義務の履行 | <code>powershell tools/llm-judge.ps1</code> | <code>./tools/llm-judge.sh</code> | OpenRouter 経由の Jev を既定で使用し、判定を記録 |
+| 用語揺れの意味判定 | <code>powershell tools/llm-word.ps1</code> | <code>./tools/llm-word.sh</code> | ローカル Ollama の Clef Flash を既定で使用 |
+| キーワードのリスク評価 | <code>powershell tools/risk.ps1</code> | <code>./tools/risk.sh</code> | ローカル Ollama の Clef Flash を既定で使用 |
+| 文書単体のレビュー | <code>powershell tools/llm-single-review.ps1 -file &lt;path&gt;</code> | <code>./tools/llm-single-review.sh --file &lt;path&gt;</code> | ローカル Ollama の Clef Flash を既定で使用 |
+| キーワード定義・参照ペアのレビュー | <code>powershell tools/llm-keyword-review.ps1 -keyword &lt;name&gt;</code> | <code>./tools/llm-keyword-review.sh --keyword &lt;name&gt;</code> | 定義セクションと参照セクションを1組ずつ評価。ローカル Ollama の Clef Flash を既定で使用 |
+| {VERIFY_LLM} 義務の履行 | <code>powershell tools/llm-judge.ps1</code> | <code>./tools/llm-judge.sh</code> | ローカル Ollama の Clef Flash を既定で使用し、判定を記録 |
 | 保存済み判定のスコア検索 | <code>powershell tools/llm-findings.ps1 -minConfidence 0.70</code> | <code>./tools/llm-findings.sh --min-confidence 0.70</code> | DBを検索。既定バックエンドに絞る。API利用なし |
 
-OpenRouter API を利用する監査は課金対象のため、ユーザーの明示指示を受けて実行する。
+LLM監査はローカルとクラウドのどちらのバックエンドでも、ユーザーから明示指示があった場合だけ実行する。OpenRouter 経由の Jev は課金対象である。
 <code>{VERIFY_LLM}</code> の義務は <code>llm-judge</code> で記録付きで履行する。詳細なオプションは [spec-integrator のリファレンス](spec-integrator/README.md) を参照する。
-既定の判定バックエンドは OpenRouter 経由の Jev (<code>typesafe/jev-1.13</code>) であり、<code>OPENROUTER_API_KEY</code> を環境変数に設定する。ローカル監査は <code>--backend nimble</code> で選択できる。この接続名はOllamaのSystem Oneを表す。現在のモデルはTev1を64Kコンテキストで使用する <code>fireball-tev1-64k</code> である。Ollama 0.35以降を使用し、初回は <code>ollama pull tev1</code> と <code>ollama create fireball-tev1-64k -f tools/ollama/tev1-64k.Modelfile</code> を実行する。モデルとコンテキストの設定は <code>spec-integrator.yaml</code> を参照する。埋め込み生成には引き続きローカル Ollama の <code>qwen3-embedding</code> を使う。
+既定の判定バックエンドはローカル Ollama の Clef Flash (`clef-flash`) である。OpenRouter 経由の Jev (`typesafe/jev-1.13`) は `--backend jev` で選択する。Jevを使う場合は `OPENROUTER_API_KEY` を設定する。
+
+Clef Flash の利用には Ollama 0.35.1 以降が必要である。初回は `ollama pull clef-flash` を実行する。モデルは64Kコンテキストに対応し、設定の `context_window_tokens` は65,536 tokenである。モデルとコンテキストの設定は `spec-integrator.yaml` を参照する。
+
+バックエンドの既定値は接続先を選ぶものであり、LLM監査はユーザーの明示指示なしに実行しない。埋め込み生成には引き続きローカル Ollama の `qwen3-embedding` を使う。
 
 ```bash
 # OPENROUTER_API_KEY を設定したシェルで実行する
 ollama pull qwen3-embedding
 ```
 
-文書レビュー、リスク評価、用語判定は Jev または Nimble の System One チェックシートで実行する。既定値は Jev とする。Nimble の確信度は選択確率の集中度であり、正答確率ではない。確信度検索は既定で設定中のバックエンドだけを対象とし、<code>--backend nimble</code> で対象を指定できる。両モデルとも説明文や引用箇所を生成しないため、判定箇所を文書で確認する。Nimble の既定モデルは `num_ctx: 8194`（System One の入力上限は8,192 token）で、本文上限は64 KiB。Modelfileで `PARAMETER num_ctx` を設定した別モデルを使う場合は、バックエンド設定の `model` と `context_window_tokens` を揃える。リスク評価ではこの設定に応じて定義・参照を各最大4セクション標本化し、既定モデルでは各最大500文字に制限する。制限した範囲は保存済み評価の要約に記録する。埋め込み生成は Ollama を使う。
+文書レビュー、リスク評価、用語判定は Jev または Clef Flash の System One チェックシートで実行する。既定値は Clef Flash である。Clef Flash の `confidence` は選択確率の集中度であり、正答確率ではない。Jev の `confidence` はAPIが返す値である。
+
+確信度検索は既定で設定中のバックエンドだけを対象とする。別のバックエンドは `--backend` で指定する。両モデルとも説明文や引用箇所を生成しないため、判定箇所を文書で確認する。System One のリクエスト本文は64 KiBまでである。
+
+リスク評価では定義・参照を各最大4セクション標本化する。各セクションは `500文字 × (context_window_tokens / 8,192)` または `section_char_budget` の小さい方に制限する。標準設定では各最大4,000文字となる。本文上限に近づく場合はさらに短縮する。省略・短縮した範囲は保存済み評価の要約に記録する。埋め込み生成には Ollama を使う。
 OpenRouter の判定APIが HTTP エラーを返した場合、その結果を PASS/FAIL や数値スコアとして記録せず、コマンドを失敗終了する。HTTP 4xx（429 を除く）は再試行せず、現在のキャッシュ済み判定を維持する。

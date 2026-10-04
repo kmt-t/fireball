@@ -18,27 +18,28 @@ _PYSIM_DIR = _TESTS_DIR.parent
 _REPO_ROOT = _PYSIM_DIR.parent.parent
 
 
-from fixtures.uvwasi_reference import UvwasiReferenceContext, WasiErrno, WasiWhence
-from hal_dispatch import (
+from tier2_runtime.hal.dispatch import (
     FB_CONF_HAL_BUFFER_SIZE,
     FB_CONF_HAL_MAX_BUFFERS,
     HalBufferMapStatus,
     HalBufferPool,
     WasiIpcCmd,
 )
-from helpers import expect_assertion
+from qa.shared.fixtures.uvwasi_reference import UvwasiReferenceContext, WasiErrno, WasiWhence
+from qa.shared.helpers import expect_assertion
 from scheduler import ChannelAction, Scheduler
+from ipc_router import FB_URI_HAL_STDOUT
 from system import (
     System,
 )
 from system_containers import (
     ReadOnlyFlatMapView,
 )
-from tier2_runtime.logger import LogDictionary, LogLevel, LogResult, decode_log_records
+from tier2_runtime.observability.logger import LogDictionary, LogLevel, LogResult, decode_log_records
 from tier3_platform.drivers.hal.dummy import DummyDriver, Timer
 from tier3_platform.drivers.hal.stream import StreamTransport
 from tier3_platform.drivers.logging.file_sink import FileLogSink
-from vmmio import TrapCode, VMMIOController, VmmioStatus
+from tier2_runtime.hal.vmmio import TrapCode, VMMIOController, VmmioStatus
 
 
 def test_hal_01_stream_transport_uses_fixed_buffers():
@@ -52,7 +53,7 @@ def test_hal_01_stream_transport_uses_fixed_buffers():
 
 
 def test_hal_02_dummy_stdio_driver_streams_stdin_and_stdout():
-    from hal_dispatch import ARG_BUFFER_HANDLE, ARG_LENGTH, ARG_MAX_LEN, ARG_OFFSET
+    from tier2_runtime.hal.dispatch import ARG_BUFFER_HANDLE, ARG_LENGTH, ARG_MAX_LEN, ARG_OFFSET
 
     scheduler = Scheduler()
     task_id = scheduler.spawn("stdio_guest")
@@ -316,7 +317,7 @@ def test_hal_06_rejection_preserves_mapping_and_all_slot_bytes(rejection: str) -
 )
 def test_hal_task_ipc_communication(offset: int, payload: bytes):
     """TEST-HAL-01/02/16: IPC stream writes deliver exactly the selected fixed-buffer slice."""
-    from hal_dispatch import ARG_BUFFER_HANDLE, ARG_LENGTH, ARG_OFFSET
+    from tier2_runtime.hal.dispatch import ARG_BUFFER_HANDLE, ARG_LENGTH, ARG_OFFSET
     from tier3_platform.drivers.wasi.context import Wasi03pEngine, WasiIpcCmd
 
     sysv = System()
@@ -330,7 +331,7 @@ def test_hal_task_ipc_communication(offset: int, payload: bytes):
         buffer_view[offset : offset + len(payload)] = payload
         original_buffer = bytes(buffer_view)
         driver = DummyDriver(transport=sysv.transport)
-        sysv.start_hal_driver(driver, sysv.wasi_hal_bindings.stdout_uri)
+        sysv.start_hal_driver(driver, FB_URI_HAL_STDOUT)
         engine = Wasi03pEngine(sysv)
         # Send command via IPC
         response = engine.send_ipc_command(
@@ -371,7 +372,7 @@ def test_hal_command_response_separates_status_and_u64_value():
         runtime_task = sysv.start_runtime_task(name="hal_clock_guest")
         sysv.scheduler.current_task = runtime_task
         sysv.start_hal_driver(
-            DummyDriver(transport=sysv.transport), sysv.wasi_hal_bindings.stdout_uri
+            DummyDriver(transport=sysv.transport), FB_URI_HAL_STDOUT
         )
         engine = Wasi03pEngine(sysv)
 
@@ -428,10 +429,10 @@ def test_hal_15_file_log_sink_receives_internal_logs():
     backing = io.BytesIO()
     sink = FileLogSink(backing)
     log_dictionary = LogDictionary(entries=((0x300, "TEST_LOG: v=%d"),))
-    sysv = System(logger_sink=sink, log_dictionary=log_dictionary)
+    sysv = System(printk_sink=sink, log_dictionary=log_dictionary)
     try:
         sysv.start_hal_driver(
-            DummyDriver(transport=sysv.transport), sysv.wasi_hal_bindings.stdout_uri
+            DummyDriver(transport=sysv.transport), FB_URI_HAL_STDOUT
         )
 
         assert sysv.logger.log_event(LogLevel.INFO, 0x300, 7) == LogResult.SUCCESS

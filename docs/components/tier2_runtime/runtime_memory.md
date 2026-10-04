@@ -9,7 +9,7 @@
 
 ## 1. コンセプト
 <!-- traceability: {System_Allocator} {Shm_Allocator} {ConsolidatedHeap} {Runtime_BumpAllocator} {JIT_MultiBuffer_Cache} -->
-[`system_memory.md`](docs/components/tier1_interface/system_memory.md) が定義する5プール契約のうち、ホスト用ヒープ、タスクヒープ、共有メモリ用ヒープの3プールを直接実装する。システム用アロケータ（`system_allocator`）は、システムコンテナの動的確保・個別解放を担当する。タスク起動時には固定長パーティションを貸与する。SHM用アロケータ（`shm_allocator`）は、共有メモリ用の固定長プールから可変長バッファを切り出す。両アロケータは dlmalloc（`create_mspace_with_base`）により運用する。残る2プール（ランタイム用バンプアロケータ、JITキャッシュアロケータ）は、[`runtime_loader.md`](docs/components/tier2_runtime/runtime_loader.md) および [`jit_runtime.md`](docs/components/tier3_executer/jit_runtime.md) が実現する。本書が定義するのはソフトウェア上の割当・所有権契約であり、ARMv8-Mの物理メモリ配置と保護方式はTBDとする。
+[`system_memory.md`](docs/components/tier1_interface/system_memory.md) が定義する5プール契約のうち、ホスト用ヒープ、タスクヒープ、共有メモリ用ヒープの3プールを直接実装する。システム用アロケータ（`system_allocator`）は、システムコンテナの動的確保・個別解放を担当する。タスク起動時には固定長パーティションを貸与する。SHM用アロケータ（`shm_allocator`）は、共有メモリ用の固定長プールから可変長バッファを切り出す。両アロケータは dlmalloc（`create_mspace_with_base`）により運用する。残る2プール（ランタイム用バンプアロケータ、JITキャッシュアロケータ）は、[`runtime_loader.md`](docs/components/tier2_runtime/runtime_loader.md) および [`jit_runtime.md`](docs/components/tier3_plugins/jit_runtime.md) が実現する。本書が定義するのはソフトウェア上の割当・所有権契約であり、ARMv8-Mの物理メモリ配置と保護方式はTBDとする。
 
 ## 2. アーキテクチャ分類
 <!-- traceability: {META_3TierSeparation} -->
@@ -91,7 +91,7 @@ flowchart TD
 - `acquire-task-heap`/`release-task-heap`/`acquire_slot`/`release_slot`: `system_allocator` の mspace 上で固定長パーティション・型付きスロットを貸与・返却する（タスクヒープ）。
 - `allocate-shared`/`claim`/`release`: `shm_allocator` の mspace 上で可変長 `shared_block` を切り出し、RAII 解放時に `mspace_free` へ返却・自動合体する（共有メモリ用ヒープ）。
 - `acquire-runtime-arena`/`bump-alloc`/`reset-runtime-arena`/`release-runtime-arena`: `{Runtime_BumpAllocator}`（[`runtime_loader.md`](docs/components/tier2_runtime/runtime_loader.md) 正本）へ委譲する（ランタイム用バンプアロケータ）。
-- `acquire-jit-cache`: 対象プラットフォームのコードキャッシュ領域へ対応する固定長ハンドル（ARMv8-Mの物理割当とMPU方式はTBD）を返す。バンク分割・世代交代は `{JIT_MultiBuffer_Cache}`（[`jit_runtime.md`](docs/components/tier3_executer/jit_runtime.md) 正本）が管轄する（JITキャッシュアロケータ）。
+- `acquire-jit-cache`: 対象プラットフォームのコードキャッシュ領域へ対応する固定長ハンドル（ARMv8-Mの物理割当とMPU方式はTBD）を返す。バンク分割・世代交代は `{JIT_MultiBuffer_Cache}`（[`jit_runtime.md`](docs/components/tier3_plugins/jit_runtime.md) 正本）が管轄する（JITキャッシュアロケータ）。
 
 
 ## 6. 制約達成の方策
@@ -138,7 +138,7 @@ W^Xの抽象不変条件は別途定義する。ハードウェア機構と実�
 - **非所有者アクセストラップ**: 所有権未取得（未マッピング）スロットへのアクセスが `TRAP_UNREGISTERED_PAGE` で拒絶されること（`TEST-MEM-16`, `GOTCHA-MEM-02`）。同モデルの `non_owner_access_traps` が不正アクセス状態への到達を禁止する。
 - **移譲済みハンドルの失効**: 所有権移譲後に送信側が保持する古い `SharedBlock` ハンドルでアクセスできないこと（`GOTCHA-MEM-02`）。同モデルの `transferred_owner_cannot_use_stale_handle` が失効ガードを外した経路を反証する。
 - **転送の完了性**: 共有メモリ層は相手タスクの到達を保証しない。`s_in_flight`から無期限に待機する経路が存在するため、転送完了は受信側到達・回復処理を環境条件とする上位契約で検証する。
-- **抽象W^X不変条件**: 書込可能状態と実行可能状態を同時に許可しない抽象状態遷移を [`jit_cache_model.py`](docs/components/tier3_executer/formal/jit_cache_model.py) で表す。x64実行可能バッファの挙動はJITテスト仕様が定める。ARMv8-Mの物理保護方式と実機受け入れ条件はTBDである。形式モデルの3面バンク回転・2ビットホットスポットFSM・遅延チェイニングは [`jit_compiler.md`](docs/components/tier3_executer/jit_compiler.md)/[`jit_runtime.md`](docs/components/tier3_executer/jit_runtime.md) の対象である。
+- **抽象W^X不変条件**: 書込可能状態と実行可能状態を同時に許可しない抽象状態遷移を [`jit_cache_model.py`](docs/components/tier3_plugins/formal/jit_cache_model.py) で表す。x64実行可能バッファの挙動はJITテスト仕様が定める。ARMv8-Mの物理保護方式と実機受け入れ条件はTBDである。形式モデルの3面バンク回転・2ビットホットスポットFSM・遅延チェイニングは [`jit_compiler.md`](docs/components/tier3_plugins/jit_compiler.md)/[`jit_runtime.md`](docs/components/tier3_plugins/jit_runtime.md) の対象である。
 
 ### 7.2 テスト仕様書との連携
 本コンポーネントのテストケース（TEST-MEM-01〜TEST-MEM-19）の検証手順・期待結果は、[`runtime_memory_test_spec.md`](docs/qa/tier2_runtime/runtime_memory_test_spec.md) を正本とする。同書は、本書で定義する実装上の注意点を参照して検証する。

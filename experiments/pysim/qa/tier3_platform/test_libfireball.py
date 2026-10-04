@@ -257,11 +257,11 @@ def compiled_raw_guest(tmp_path_factory: pytest.TempPathFactory) -> Path:
 @pytest.mark.parametrize("result", (0, 17, 0xFFFFFFFF))
 def test_wit_generated_static_guest_raw_four_imports(compiled_raw_guest: Path, result: int) -> None:
     """TEST-WIT-10/14, TEST-LIBFB-01/04: 実guestでu32、引数配置、専用入口を観測する。"""
-    from helpers import make_native_interpreter
+    from qa.shared.helpers import make_native_interpreter
     from scheduler import TaskState
     from system import System
     from tier3_platform.drivers.wasi.context import WasiHostContext
-    from wasm_reader import parse
+    from tier2_runtime.wasm.reader import parse
 
     module = parse(compiled_raw_guest.read_bytes())
     observed_imports: dict[str, int] = {}

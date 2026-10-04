@@ -19,36 +19,35 @@
 
 `N/A` は責務上不要な欄であり、所有している検証成果物を別の欄へ移したことを意味しない。結合テストやクロスカッティングテストで複数コンポーネントを検証する場合は、同じテストを複数行から参照する。
 
-| Tier | コンポーネント | コンセプト | 形式モデル | テスト仕様 | pysim 実行テスト | 結合シナリオ | 判定 |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| Tier 1 Core | `os_coos` | `coos_concept.py` | `coos_channel_model.py` | `os_coos_test_spec.md` | `test_coos.py` | 6, 9 | required |
-| Tier 1 Core | `os_scheduler` | `scheduler_concept.py` | N/A（決定的キュー操作はテストで直接検証） | `os_scheduler_test_spec.md` | `test_scheduler.py` | 6, 9 | required |
-| Tier 1 Core | `system_config` | N/A（静的設定の正本） | `system_config_model.py` | `system_config_test_spec.md` | `test_scheduler.py`, `test_memory.py` | 1, 10 | required |
-| Tier 1 Core | `system_containers` | `flat_view_concept.py` | N/A（コンテナ不変条件を直接検証） | `system_containers_test_spec.md` | `test_containers.py` | 1, 4, 5, 8, 9 | required |
-| Tier 3 Platform | `interface_wit` | N/A（WIT 契約） | N/A（WIT の構文・契約検証） | `interface_wit_test_spec.md` | `test_syscall.py`, `test_libfireball.py` | 2, 11, 12 | contract_only |
-| Tier 1 Interface | `ipc_router` | `ipc_router_concept.py` | `csp_handoff_model.py` | `ipc_router_test_spec.md` | `test_ipc_router.py`, `test_wasi_guest.py` | 9 | required |
-| Tier 1 Interface | `system_memory` | N/A（所有権契約） | `system_memory_model.py` | `system_memory_test_spec.md` | `test_memory.py` | 1, 8, 10 | contract_only |
-| Tier 1 Interface | `system_service` | `service_concept.py` | `service_fault_isolation_model.py`, `wit_resource_lifecycle_model.py` | `system_service_test_spec.md` | `test_ipc_router.py`, `test_vsoc.py` | 2, 6, 9, 11 | required |
-| Tier 3 Plugins | `debugger` | `debugger_concept.py` | N/A（RSP の境界テストで直接検証） | `debugger_test_spec.md` | `test_debugger.py`, `test_gdb_remote.py` | 7, 8 | required |
-| Tier 2 Runtime | `hal_dispatch` | N/A（WIT/ディスパッチ契約） | `hal_dispatch_contract_model.py` | `hal_dispatch_test_spec.md` | `test_hal.py`, `test_syscall.py`, `test_wasi_guest.py`, `test_driver_stubs.py` | 10, 11 | contract_only |
-| Tier 2 Runtime | `jit_abi` | N/A（ABI 契約） | N/A（ABI の実レイアウトテストで検証） | N/A（ABI配置の検査条件は`jit_abi.md`を正本とする） | `test_interop_abi.py`, `test_x64_jit.py` | 4, 5, 8 | contract_only |
-| Tier 3 Executer | `interpreter` | `interpreter_concept.py`, `bulk_memory_concept.py` | `interpreter_stack_model.py`, `interpreter_control_flow_model.py`, `wasm_bulk_memory_model.py` | `interpreter_test_spec.md`, `wasm_instruction_set_test_spec.md` | `test_interpreter.py`, `test_wasm_differential.py`, `test_gotchas.py` | 1〜12 | required |
-| Tier 2 Runtime | `runtime_loader` | `loader_concept.py` | `loader_verification_model.py` | `runtime_loader_test_spec.md` | `test_loader.py` | 1, 3, 5, 8, 12 | required |
-| Tier 2 Runtime | `runtime_logging` | `logging_concept.py` | `logging_flush_model.py` | `runtime_logging_test_spec.md` | `test_logging.py` | 9 | required |
-| Tier 2 Runtime | `runtime_memory` | `runtime_memory_concept.py` | `runtime_memory_model.py` | `runtime_memory_test_spec.md` | `test_memory.py`, `test_vmmio.py` | 1, 4, 8, 10 | required |
-| Tier 2 Runtime | `runtime_syscall` | `syscall_concept.py` | `syscall_trap_model.py` | `runtime_syscall_test_spec.md` | `test_syscall.py`, `test_vdma.py`, `test_wasi_guest.py` | 2, 10, 11, 12 | required |
-| Tier 2 Runtime | `runtime_vmmio` | `vmmio_concept.py` | `vmmio_mapping_model.py` | `runtime_vmmio_test_spec.md` | `test_vmmio.py`, `test_syscall.py`, `test_vdma.py` | 10, 11 | required |
-| Tier 2 Runtime | `runtime_vsoc` | N/A（旧統合モデルは現行C++ dispatcherと共通chain dispatcherを表現していないため削除。実装テストと形式モデルで検証） | `vsoc_cache_coherency_model.py`, `vsoc_state_model.py` | `runtime_vsoc_test_spec.md` | `test_vsoc.py`, `test_vdma.py`, `test_recovery.py` | 4, 5, 6, 8, 10 | required |
-| Tier 2 Runtime | `runtime_plugin_architecture` | `runtime_composer.py`（pysim構成モデル） | N/A（C++生成物モデル未実装） | `runtime_plugin_architecture_test_spec.md` | `test_runtime_composer.py` | N/A（実機Runtime未統合） | contract_only |
-| Tier 2 Runtime | `runtime_observability` | `runtime_events.py`, `runtime_composer.py`（公開call境界のみ） | N/A（内部実行イベント未統合） | `runtime_observability_test_spec.md` | `test_runtime_composer.py` | N/A（実機Runtime未統合） | contract_only |
-| Tier 2 Runtime | `runtime_hotspot_profiler` | N/A（Runtime内部契約） | `runtime_hotspot_profiler_model.py` | `runtime_hotspot_profiler_test_spec.md` | `test_jit_runtime.py` | N/A（実機Runtime未統合） | contract_only |
-| Tier 3 Plugins | `guest_profiler` | `guest_profiler.py` | `guest_profiler_model.py` | `guest_profiler_test_spec.md` | `test_guest_profiler.py` | `test_runtime_composer.py` | required |
-| Tier 3 Executer | `jit_compiler` | N/A (x64 implementation is covered directly; ARMv8-M is TBD) | `jit_cache_model.py` | `jit_compiler_test_spec.md`, `wasm_instruction_set_test_spec.md` | `test_x64_asm.py`, `test_x64_stencils.py`, `test_x64_jit.py` | 4, 5, 8 | required |
-| Tier 3 Executer | `jit_runtime` | N/A (x64 runtime tests cover the confirmed path; ARMv8-M is TBD) | `jit_cache_model.py` | `jit_runtime_test_spec.md` | `test_jit_runtime.py`, `test_x64_jit.py`, `test_jit_differential.py` | 4, 5, 8 | required |
-| Tier 3 Platform | `libfireball` | `libfireball.py`（pysim host-call参照モデルのみ） | N/A（raw Core Wasm ABIを実guestで検査） | `libfireball_test_spec.md` | `test_libfireball.py` | N/A（raw 4 import guest統合。実機ABIは対象外） | contract_only |
-| Tier 3 Platform | `platform_driver` | `platform_driver_concept.py` | `interrupt_boundary_model.py` | `platform_driver_test_spec.md` | `test_hal.py`, `test_wasi_guest.py`, `test_driver_stubs.py` | 10, 11 | required |
+| Tier | コンポーネント | コンセプト | 形式モデル | テスト仕様 | 単体テスト | 結合テスト | WASMワークロード | 結合シナリオ | 判定 |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| Tier 1 Core | `os_coos` | `coos_concept.py` | `coos_channel_model.py` | `os_coos_test_spec.md` | `test_coos.py` | — | — | 6, 9 | required |
+| Tier 1 Core | `os_scheduler` | `scheduler_concept.py` | N/A（決定的キュー操作はテストで直接検証） | `os_scheduler_test_spec.md` | `test_scheduler.py` | — | — | 6, 9 | required |
+| Tier 1 Core | `system_config` | N/A（静的設定の正本） | `system_config_model.py` | `system_config_test_spec.md` | `test_scheduler.py`, `test_memory.py` | — | — | 1, 10 | required |
+| Tier 1 Core | `system_containers` | `flat_view_concept.py` | N/A（コンテナ不変条件を直接検証） | `system_containers_test_spec.md` | `test_containers.py` | — | — | 1, 4, 5, 8, 9 | required |
+| Tier 3 Platform | `interface_wit` | N/A（WIT 契約） | N/A（WIT の構文・契約検証） | `interface_wit_test_spec.md` | `test_syscall.py`, `test_libfireball.py` | — | — | 2, 11, 12 | contract_only |
+| Tier 1 Interface | `ipc_router` | `ipc_router_concept.py` | `csp_handoff_model.py` | `ipc_router_test_spec.md` | `test_ipc_router.py` | — | `test_wasi_guest.py` | 9 | required |
+| Tier 1 Interface | `system_memory` | N/A（所有権契約） | `system_memory_model.py` | `system_memory_test_spec.md` | `test_memory.py` | — | — | 1, 8, 10 | contract_only |
+| Tier 1 Interface | `system_service` | `service_concept.py` | `service_fault_isolation_model.py`, `wit_resource_lifecycle_model.py` | `system_service_test_spec.md` | `test_ipc_router.py`, `test_vsoc.py` | — | — | 2, 6, 9, 11 | required |
+| Tier 3 Plugins | `debugger` | `debugger_concept.py` | N/A（RSP の境界テストで直接検証） | `debugger_test_spec.md` | `test_debugger.py`, `test_gdb_remote.py` | [`test_lldb_debugger.py`](experiments/pysim/qa/integration/test_lldb_debugger.py) | — | 7, 8 | required |
+| Tier 2 Runtime | `hal_dispatch` | N/A（WIT/ディスパッチ契約） | `hal_dispatch_contract_model.py` | `hal_dispatch_test_spec.md` | `test_hal.py`, `test_syscall.py` | [`test_driver_stubs.py`](experiments/pysim/qa/integration/test_driver_stubs.py) | `test_wasi_guest.py`, `test_driver_stubs_guest.py` | 10, 11 | contract_only |
+| Tier 2 Runtime | `jit_abi` | N/A（ABI 契約） | N/A（ABI の実レイアウトテストで検証） | N/A（ABI配置の検査条件は`jit_abi.md`を正本とする） | `test_interpreter_abi.py`, `test_x64_jit.py` | — | — | 4, 5, 8 | contract_only |
+| Tier 2 Runtime | `interpreter` | `interpreter_concept.py`, `bulk_memory_concept.py` | `interpreter_stack_model.py`, `interpreter_control_flow_model.py`, `wasm_bulk_memory_model.py` | `interpreter_test_spec.md`, `wasm_instruction_set_test_spec.md` | `test_interpreter.py`, `test_wasm_differential.py`, `test_gotchas.py` | — | `test_wasm_core_spec.py` | 1〜12 | required |
+| Tier 2 Runtime | `runtime_loader` | `loader_concept.py` | `loader_verification_model.py` | `runtime_loader_test_spec.md` | `test_wasm_reader.py` | — | — | 1, 3, 5, 8, 12 | required |
+| Tier 2 Runtime | `runtime_logging` | `logging_concept.py` | `logging_flush_model.py` | `runtime_logging_test_spec.md` | `test_logging.py` | — | — | 9 | required |
+| Tier 2 Runtime | `runtime_memory` | `runtime_memory_concept.py` | `runtime_memory_model.py` | `runtime_memory_test_spec.md` | `test_memory.py`, `test_vmmio.py` | — | — | 1, 4, 8, 10 | required |
+| Tier 2 Runtime | `runtime_syscall` | `syscall_concept.py` | `syscall_trap_model.py` | `runtime_syscall_test_spec.md` | `test_syscall.py`, `test_vdma.py` | — | `test_wasi_guest.py` | 2, 10, 11, 12 | required |
+| Tier 2 Runtime | `runtime_vmmio` | `vmmio_concept.py` | `vmmio_mapping_model.py` | `runtime_vmmio_test_spec.md` | `test_vmmio.py`, `test_syscall.py`, `test_vdma.py` | — | — | 10, 11 | required |
+| Tier 2 Runtime | `runtime_vsoc` | N/A（旧統合モデルは現行C++ dispatcherと共通chain dispatcherを表現していないため削除。実装テストと形式モデルで検証） | `vsoc_cache_coherency_model.py`, `vsoc_state_model.py` | `runtime_vsoc_test_spec.md` | `test_vsoc.py`, `test_vdma.py`, `test_recovery.py` | `test_pairwise_combinations.py` | — | 4, 5, 6, 8, 10 | required |
+| Tier 2 Runtime | `runtime_plugin_architecture` | `runtime_composer.py`（pysim構成モデル） | N/A（C++生成物モデル未実装） | `runtime_plugin_architecture_test_spec.md` | `test_runtime_composer.py` | — | — | N/A（実機Runtime未統合） | contract_only |
+| Tier 2 Runtime | `runtime_observability` | `runtime_events.py`, `runtime_composer.py`（公開call境界のみ） | N/A（内部実行イベント未統合） | `runtime_observability_test_spec.md` | `test_runtime_composer.py` | — | — | N/A（実機Runtime未統合） | contract_only |
+| Tier 3 Plugins | `guest_profiler` | `guest_profiler.py` | `guest_profiler_model.py` | `guest_profiler_test_spec.md` | `test_guest_profiler.py` | — | — | `test_runtime_composer.py` | required |
+| Tier 3 Plugins | `jit_compiler` | N/A (x64 implementation is covered directly; ARMv8-M is TBD) | `jit_cache_model.py` | `jit_compiler_test_spec.md`, `wasm_instruction_set_test_spec.md` | `test_x64_jit.py`, `test_exec_memory.py` | — | — | 4, 5, 8 | required |
+| Tier 3 Plugins | `jit_runtime` | N/A (x64 runtime tests cover the confirmed path; ARMv8-M is TBD) | `jit_cache_model.py`, `jit_hotspot_model.py` | `jit_runtime_test_spec.md` | `test_jit_runtime.py`, `test_x64_jit.py`, `test_jit_differential.py` | — | — | 4, 5, 8 | required |
+| Tier 3 Platform | `libfireball` | `libfireball.py`（pysim host-call参照モデルのみ） | N/A（raw Core Wasm ABIを実guestで検査） | `libfireball_test_spec.md` | `test_libfireball.py` | — | — | N/A（raw 4 import guest統合。実機ABIは対象外） | contract_only |
+| Tier 3 Platform | `platform_driver` | `platform_driver_concept.py` | `interrupt_boundary_model.py` | `platform_driver_test_spec.md` | `test_hal.py` | [`test_driver_stubs.py`](experiments/pysim/qa/integration/test_driver_stubs.py) | `test_wasi_guest.py`, `test_driver_stubs_guest.py` | 10, 11 | required |
 
-実行テストの登録は [`run_all.py`](experiments/pysim/qa/run_all.py) を正本とする。ランナーは試験関数を持つ全モジュールと登録一覧を照合する。未登録、重複、試験がない登録は実行前に拒否する。ケースごとの要求適合と未検証範囲は各テスト仕様を参照する。
+単体テストは [`run_all.py`](experiments/pysim/qa/run_all.py)、結合テストは [`run_all.py`](experiments/pysim/qa/integration/run_all.py)、WASMワークロードは [`run_all.py`](experiments/pysim/qa/workloads/run_all.py) をそれぞれ正本とする。各ランナーは試験関数を持つ全モジュールと登録一覧を照合し、未登録、重複、試験がない登録を実行前に拒否する。表の `—` は、その分類の専用試験を本行に割り当てていないことを示す。ケースごとの要求適合と未検証範囲は各テスト仕様を参照する。
 
 ### 2.1 成果物インベントリ
 
@@ -69,19 +68,18 @@
 | Tier 3 Plugins | [debugger.md](docs/components/tier3_plugins/debugger.md) |
 | Tier 2 Runtime | [hal_dispatch.md](docs/components/tier2_runtime/hal_dispatch.md) |
 | Tier 2 Runtime | [jit_abi.md](docs/components/tier2_runtime/jit_abi.md) |
-| Tier 3 Executer | [interpreter.md](docs/components/tier3_executer/interpreter.md) |
+| Tier 2 Runtime | [interpreter.md](docs/components/tier2_runtime/interpreter.md) |
 | Tier 3 Plugins | [guest_profiler.md](docs/components/tier3_plugins/guest_profiler.md) |
 | Tier 2 Runtime | [runtime_plugin_architecture.md](docs/components/tier2_runtime/runtime_plugin_architecture.md) |
 | Tier 2 Runtime | [runtime_observability.md](docs/components/tier2_runtime/runtime_observability.md) |
-| Tier 2 Runtime | [runtime_hotspot_profiler.md](docs/components/tier2_runtime/runtime_hotspot_profiler.md) |
 | Tier 2 Runtime | [runtime_loader.md](docs/components/tier2_runtime/runtime_loader.md) |
 | Tier 2 Runtime | [runtime_logging.md](docs/components/tier2_runtime/runtime_logging.md) |
 | Tier 2 Runtime | [runtime_memory.md](docs/components/tier2_runtime/runtime_memory.md) |
 | Tier 2 Runtime | [runtime_syscall.md](docs/components/tier2_runtime/runtime_syscall.md) |
 | Tier 2 Runtime | [runtime_vmmio.md](docs/components/tier2_runtime/runtime_vmmio.md) |
 | Tier 2 Runtime | [runtime_vsoc.md](docs/components/tier2_runtime/runtime_vsoc.md) |
-| Tier 3 Executer | [jit_compiler.md](docs/components/tier3_executer/jit_compiler.md) |
-| Tier 3 Executer | [jit_runtime.md](docs/components/tier3_executer/jit_runtime.md) |
+| Tier 3 Plugins | [jit_compiler.md](docs/components/tier3_plugins/jit_compiler.md) |
+| Tier 3 Plugins | [jit_runtime.md](docs/components/tier3_plugins/jit_runtime.md) |
 | Tier 3 Platform | [libfireball.md](docs/components/tier3_platform/libfireball.md) |
 | Tier 3 Platform | [platform_driver.md](docs/components/tier3_platform/platform_driver.md) |
 
@@ -95,8 +93,8 @@
 | concept | [ipc_router_concept.py](docs/components/tier1_interface/concepts/ipc_router_concept.py) |
 | concept | [service_concept.py](docs/components/tier1_interface/concepts/service_concept.py) |
 | concept | [debugger_concept.py](docs/components/tier3_plugins/concepts/debugger_concept.py) |
-| concept | [interpreter_concept.py](docs/components/tier3_executer/concepts/interpreter_concept.py) |
-| concept | [bulk_memory_concept.py](docs/components/tier3_executer/concepts/bulk_memory_concept.py) |
+| concept | [interpreter_concept.py](docs/components/tier2_runtime/concepts/interpreter_concept.py) |
+| concept | [bulk_memory_concept.py](docs/components/tier2_runtime/concepts/bulk_memory_concept.py) |
 | concept | [loader_concept.py](docs/components/tier2_runtime/concepts/loader_concept.py) |
 | concept | [logging_concept.py](docs/components/tier2_runtime/concepts/logging_concept.py) |
 | concept | [runtime_memory_concept.py](docs/components/tier2_runtime/concepts/runtime_memory_concept.py) |
@@ -110,8 +108,8 @@
 | formal | [system_memory_model.py](docs/components/tier1_interface/formal/system_memory_model.py) |
 | formal | [wit_resource_lifecycle_model.py](docs/components/tier3_platform/formal/wit_resource_lifecycle_model.py) |
 | formal | [hal_dispatch_contract_model.py](docs/components/tier2_runtime/formal/hal_dispatch_contract_model.py) |
-| formal | [interpreter_stack_model.py](docs/components/tier3_executer/formal/interpreter_stack_model.py) |
-| formal | [interpreter_control_flow_model.py](docs/components/tier3_executer/formal/interpreter_control_flow_model.py) |
+| formal | [interpreter_stack_model.py](docs/components/tier2_runtime/formal/interpreter_stack_model.py) |
+| formal | [interpreter_control_flow_model.py](docs/components/tier2_runtime/formal/interpreter_control_flow_model.py) |
 | formal | [wasm_bulk_memory_model.py](docs/specs/formal/wasm_bulk_memory_model.py) |
 | formal | [guest_profiler_model.py](docs/components/tier3_plugins/formal/guest_profiler_model.py) |
 | formal | [loader_verification_model.py](docs/components/tier2_runtime/formal/loader_verification_model.py) |
@@ -121,8 +119,8 @@
 | formal | [vmmio_mapping_model.py](docs/components/tier2_runtime/formal/vmmio_mapping_model.py) |
 | formal | [vsoc_cache_coherency_model.py](docs/components/tier2_runtime/formal/vsoc_cache_coherency_model.py) |
 | formal | [vsoc_state_model.py](docs/components/tier2_runtime/formal/vsoc_state_model.py) |
-| formal | [runtime_hotspot_profiler_model.py](docs/components/tier2_runtime/formal/runtime_hotspot_profiler_model.py) |
-| formal | [jit_cache_model.py](docs/components/tier3_executer/formal/jit_cache_model.py) |
+| formal | [jit_cache_model.py](docs/components/tier3_plugins/formal/jit_cache_model.py) |
+| formal | [jit_hotspot_model.py](docs/components/tier3_plugins/formal/jit_hotspot_model.py) |
 | formal | [interrupt_boundary_model.py](docs/components/tier3_platform/formal/interrupt_boundary_model.py) |
 | test spec | [os_coos_test_spec.md](docs/qa/tier1_core/os_coos_test_spec.md) |
 | test spec | [os_scheduler_test_spec.md](docs/qa/tier1_core/os_scheduler_test_spec.md) |
@@ -135,19 +133,18 @@
 | test spec | [debugger_test_spec.md](docs/qa/tier3_plugins/debugger_test_spec.md) |
 | test spec | [guest_profiler_test_spec.md](docs/qa/tier3_plugins/guest_profiler_test_spec.md) |
 | test spec | [hal_dispatch_test_spec.md](docs/qa/tier2_runtime/hal_dispatch_test_spec.md) |
-| test spec | [interpreter_test_spec.md](docs/qa/tier3_executer/interpreter_test_spec.md) |
+| test spec | [interpreter_test_spec.md](docs/qa/tier2_runtime/interpreter_test_spec.md) |
 | test spec | [wasm_instruction_set_test_spec.md](docs/qa/specs/wasm_instruction_set_test_spec.md) |
 | test spec | [runtime_loader_test_spec.md](docs/qa/tier2_runtime/runtime_loader_test_spec.md) |
 | test spec | [runtime_logging_test_spec.md](docs/qa/tier2_runtime/runtime_logging_test_spec.md) |
 | test spec | [runtime_observability_test_spec.md](docs/qa/tier2_runtime/runtime_observability_test_spec.md) |
-| test spec | [runtime_hotspot_profiler_test_spec.md](docs/qa/tier2_runtime/runtime_hotspot_profiler_test_spec.md) |
 | test spec | [runtime_memory_test_spec.md](docs/qa/tier2_runtime/runtime_memory_test_spec.md) |
 | test spec | [runtime_plugin_architecture_test_spec.md](docs/qa/tier2_runtime/runtime_plugin_architecture_test_spec.md) |
 | test spec | [runtime_syscall_test_spec.md](docs/qa/tier2_runtime/runtime_syscall_test_spec.md) |
 | test spec | [runtime_vmmio_test_spec.md](docs/qa/tier2_runtime/runtime_vmmio_test_spec.md) |
 | test spec | [runtime_vsoc_test_spec.md](docs/qa/tier2_runtime/runtime_vsoc_test_spec.md) |
-| test spec | [jit_compiler_test_spec.md](docs/qa/tier3_executer/jit_compiler_test_spec.md) |
-| test spec | [jit_runtime_test_spec.md](docs/qa/tier3_executer/jit_runtime_test_spec.md) |
+| test spec | [jit_compiler_test_spec.md](docs/qa/tier3_plugins/jit_compiler_test_spec.md) |
+| test spec | [jit_runtime_test_spec.md](docs/qa/tier3_plugins/jit_runtime_test_spec.md) |
 | test spec | [libfireball_test_spec.md](docs/qa/tier3_platform/libfireball_test_spec.md) |
 | test spec | [platform_driver_test_spec.md](docs/qa/tier3_platform/platform_driver_test_spec.md) |
 
@@ -196,7 +193,7 @@
 | F6×F7 | 9 |
 | 合計 | 288 |
 
-実行ケースは [test_pairwise_combinations.py](experiments/pysim/qa/cross_cutting/test_pairwise_combinations.py) の `PAIRWISE_CASES` に定義し、ケースIDは行番号から `pairwise_case_id` が自動生成する。ケースデータへIDを書かないため、行の挿入・削除で手書きIDがずれない。ツールは生成IDごとに `run_single_pairwise_case` の呼び出しが存在することを確認し、対応する実行がなければエラーにする。
+実行ケースは [test_pairwise_combinations.py](experiments/pysim/qa/integration/test_pairwise_combinations.py) の `PAIRWISE_CASES` に定義し、ケースIDは行番号から `pairwise_case_id` が自動生成する。ケースデータへIDを書かないため、行の挿入・削除で手書きIDがずれない。ツールは生成IDごとに `run_single_pairwise_case` の呼び出しが存在することを確認し、対応する実行がなければエラーにする。
 
 ### 3.2 実行で観測する範囲
 
@@ -211,7 +208,7 @@
 | 因子 | 実行時の観測 |
 | :--- | :--- |
 | 命令実行経路 | `interp`はJIT managerなしで構成し、manager不在とJIT呼出し0件を確認する。`jit`では事前に実トレースを配置し、`hybrid`ではホットスポットから生成する。両者とも生成コードの呼出しと独立した計算結果を確認する |
-| キャッシュ | JITを使う5行で空のcacheまたはresident traceのevictionを確認する。`warm`と`flush`は許可されたJIT行に存在しないため、この26行では動作を検証しない。対応する単体試験は[`jit_runtime_test_spec.md`](docs/qa/tier3_executer/jit_runtime_test_spec.md)を正本とする。Interpreter専用7行のcache水準は適用外である |
+| キャッシュ | JITを使う5行で空のcacheまたはresident traceのevictionを確認する。`warm`と`flush`は許可されたJIT行に存在しないため、この26行では動作を検証しない。対応する単体試験は[`jit_runtime_test_spec.md`](docs/qa/tier3_plugins/jit_runtime_test_spec.md)を正本とする。Interpreter専用7行のcache水準は適用外である |
 | メモリ操作・拡張 | 水準に対応する幅のstoreを実行する。隣接sentinelを含む全ゲストメモリを比較する。`grow`ではWASMの`memory.grow`の旧ページ数と追加ページのゼロ初期化を確認する |
 | 値の保管場所 | 水準に応じてlocal、global、RAM、SHMを更新する。SHMでは所有者と物理対応を設定し、ゲストload/store後の全物理バイト列を比較する |
 | ホスト境界 | ゲストimportから既存WASI、IPC、HAL経路を呼ぶ。引数、応答、stdout、VFSの読出しバイトとcursor、IPC応答後のHAL受信待ち状態を比較する。VFSの外部環境には決定的なテスト用fixtureを使う |
@@ -248,7 +245,7 @@
 | :--- | :--- | :--- | :--- |
 | `engine` | Interpreter と JIT が同じ Native スタック状態を観測する | `test_interpreter.py`, `test_x64_jit.py`, `test_wasm_differential.py` | `assert` で停止 |
 | `cache` | hit、eviction、flush 後の実行経路が一意になる | `test_jit_runtime.py`, `test_x64_jit.py`, `test_jit_differential.py` | `assert` で停止 |
-| `mem_width` | WASM の幅、符号拡張、境界、grow 後の位置が一致する | `test_interpreter.py`, `test_loader.py`, `test_syscall.py` | `assert` で停止 |
+| `mem_width` | WASM の幅、符号拡張、境界、grow 後の位置が一致する | `test_interpreter.py`, `test_wasm_reader.py`, `test_syscall.py` | `assert` で停止 |
 | `storage` | storage が所有し、view は非所有である。所有権を共有しない | `test_containers.py`, `test_memory.py`, `test_ipc_router.py` | `assert` で停止 |
 | `host_call` | WASI、IPC、HAL の責務境界とバッファ権限が混ざらない | `test_syscall.py`, `test_ipc_router.py`, `test_hal.py` | `assert` で停止 |
 | `scheduler` | current task はスケジューラだけが変更し、yield 後に継続状態を保持する | `test_scheduler.py`, `test_coos.py`, `test_vsoc.py` | `assert` で停止 |
@@ -262,13 +259,14 @@
 | 文書 | [check-doc.ps1](tools/check-doc.ps1) | [docs](docs)、各Markdown | 既存の文書8ゲートに加え、本表ゲートも合格 |
 | ソース | [check-src.ps1](tools/check-src.ps1) | [pysim](experiments/pysim)、各Python | pysim 規約、import Tier、テスト実行、本表ゲートが合格 |
 | 形式検証 | [check-src.ps1](tools/check-src.ps1) | コンポーネント配下の各形式モデル | `pyModelChecking` 実行、guards 変異検査、モデル件数一致 |
-| 単体テスト | `uv run --project tools/spec-integrator --with wasmtime python` [run_all.py](experiments/pysim/qa/run_all.py) | 34 suite | 通常ランナーの登録数。合格範囲は各実行記録に従う |
-| 結合シナリオ | `uv run --project tools/spec-integrator --with wasmtime python` [run_all.py](experiments/pysim/qa/scenarios/run_all.py) | 12 scenarios | 12/12 合格、全シナリオをランナーから実行 |
-| ペアワイズ | `test_pairwise_combinations.py` | 7因子、26ケース | 計画データの288組を集合比較する。許可12行の状態・副作用と禁止14行の生成前拒否を検証する。因子の適用外と独立した補助試験の範囲は3.2節に従う |
+| 単体テスト | [run_all.py](experiments/pysim/qa/run_all.py) | 30 suite | コンポーネント単位の試験を登録・実行する |
+| 結合テスト | [run_all.py](experiments/pysim/qa/integration/run_all.py) | 3 suites + 12 scenarios | HAL/IPC結合試験、ペアワイズ試験、LLDB/RSP実プロセス結合試験、システム結合シナリオを実行する。ペアワイズは7因子、26ケースで288組を比較し、許可12行の状態・副作用と禁止14行の事前拒否を検証する |
+| WASMバイナリワークロード | [run_all.py](experiments/pysim/qa/workloads/run_all.py) | 3 suites | [`test_wasi_guest.py`](experiments/pysim/qa/workloads/test_wasi_guest.py)、[`test_driver_stubs_guest.py`](experiments/pysim/qa/workloads/test_driver_stubs_guest.py)、[`test_wasm_core_spec.py`](experiments/pysim/qa/workloads/test_wasm_core_spec.py) を実行する。WASI-SDK/wasi-libcから生成した2種のゲストと、固定したWebAssembly Core Spec Testsの選択セットを含む。準備・対象範囲・skip理由は各実行結果に記録する |
+| ベンチマーク | [benchmarks](experiments/pysim/benchmarks) | — | 性能・資源計測であり、機能適合テストの合格数には含めない |
 
 ### 6.1 実行順序
 
-変更後は `build` でドキュメントデータベースを再構築し、次にマトリクス、関連する単体テスト、関連するシナリオ、文書、ソースの順で検証する。検証用データベースは成果物ではなく、リポジトリへ追加しない。
+変更後は `build` でドキュメントデータベースを再構築し、次にマトリクス、関連する単体テスト、結合テスト、WASMワークロード、文書、ソースの順で検証する。検証用データベースは成果物ではなく、リポジトリへ追加しない。
 
 ## 7. 不足を作らないための変更規則
 

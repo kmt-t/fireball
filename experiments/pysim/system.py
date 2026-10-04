@@ -9,7 +9,7 @@ strictly to the architectural specifications:
 - `docs/components/tier2_runtime/runtime_vmmio.md` defines the vMMIO address layout
 - `docs/components/tier1_interface/ipc_router.md` defines the URI-routed, zero-copy request/reply CSP
 This module uses self-contained simulation modules (`vmmio.py`, `ipc_router.py`,
-`tier2_runtime/memory.py`) mirroring the authoritative concept models, and provides
+`tier2_runtime/memory/manager.py`) mirroring the authoritative concept models, and provides
     the actual byte-level storage and wire-level u32 handle numbering
 required for end-to-end execution.
 All guest output routes through WASI_FD_WRITE (console-output) to adhere strictly
@@ -22,8 +22,8 @@ from __future__ import annotations
 from collections.abc import Generator, Mapping, Sequence
 from typing import TYPE_CHECKING
 
-from hal_dispatch import HalBufferPool
-from hostcall import (
+from tier2_runtime.hal.dispatch import HalBufferPool
+from tier2_runtime.hal.hostcall import (
     FbSyscallId,
     RuntimeHostCallGateway,
     SyscallHandler,
@@ -41,31 +41,32 @@ from ipc_router import (
 )
 
 if TYPE_CHECKING:
-    from hal_dispatch import HalDriver, HalTask, StreamSink
-    from tier3_executer.interpreter.interpreter import (
+    from tier1_core.printk import PrintkWriter
+    from tier2_runtime.interpreter.execution_context import DebugExecutionView
+    from tier2_runtime.hal.dispatch import HalDriver, HalTask
+    from tier2_runtime.interpreter.interpreter import (
         BasicBlock,
         NativeInterpreter,
-        WASMContext,
         WasmNumber,
     )
     from tier3_plugins.debugger.debugger import DebuggerManager
     from tier3_plugins.debugger.gdb_server import GDBServer
 
-from loader import fnv1a_32
-from memory import (
+from tier1_core.fnv1a import fnv1a_32
+from tier2_runtime.memory.manager import (
     FB_CONF_MEMORY_POOL_SIZE,
     MemoryManager,
 )
 from scheduler import FB_CONF_MAX_TASKS, Channel, ChannelAction, Scheduler, Task, TaskState
 from system_containers import MutableFlatMapStorage, ReadOnlyFlatMapStorage, StaticVector
-from tier2_runtime.logger import LogDictionary, Logger, LogLevel
-from tier3_executer.runtime_engine import RuntimeDriveMode, RuntimeEngine
+from tier2_runtime.observability.logger import LogDictionary, Logger, LogLevel
+from tier2_runtime.runtime.engine import RuntimeDriveMode, RuntimeEngine
 from tier3_platform.drivers.platform_config import (
     PlatformDriverConfiguration,
     create_default_platform_drivers,
 )
-from virq import DispatchResult
-from vmmio import (
+from tier2_runtime.hal.virq import DispatchResult
+from tier2_runtime.hal.vmmio import (
     FC_DYNAMIC,
     FC_SHM,
     FC_STATIC_DEVICE,
@@ -74,7 +75,7 @@ from vmmio import (
     VMMIOController,
     VmmioStatus,
 )
-from wasm_module import BasicBlock
+from tier2_runtime.wasm.module import BasicBlock
 
 # runtime_vmmio.md §4.3: real static-device addresses.
 IPCR_BASE = 0xC000_1000
@@ -99,6 +100,7 @@ class System:
         "halted",
         "host_calls",
         "ipc",
+        "printk",
         "ipcr_regs",
         "logger",
         "memory_manager",
@@ -111,7 +113,6 @@ class System:
         "vmmio",
         "wasi_backend",
         "wasi_context",
-        "wasi_hal_bindings",
     )
 
     """
@@ -124,19 +125,19 @@ class System:
 
     def __init__(
         self,
-        logger_sink: StreamSink | None = None,
+        printk_sink: PrintkWriter | None = None,
         drivers: PlatformDriverConfiguration | None = None,
         log_dictionary: LogDictionary | None = None,
     ):
         self.drivers = (
-            drivers if drivers is not None else create_default_platform_drivers(logger_sink)
+            drivers if drivers is not None else create_default_platform_drivers(printk_sink)
         )
-        self.wasi_hal_bindings = self.drivers.wasi_hal_bindings
         self.wasi_backend = self.drivers.wasi_backend
+        self.printk = self.drivers.printk
         self.transport = self.drivers.stdout_transport
         self.dictionary = log_dictionary if log_dictionary is not None else LogDictionary()
-        self.logger = Logger(self.drivers.logger_sink, self.dictionary, min_level=LogLevel.DEBUG)
-        self.scheduler = Scheduler(logger=self.logger)
+        self.logger = Logger(self.printk, self.dictionary, min_level=LogLevel.DEBUG)
+        self.scheduler = Scheduler(printk=self.printk)
         # --- vMMIO: real FlatMap+TLB dispatch, this file's own byte
         # storage behind it (vmmio_concept.access() deliberately stops at the
         # dispatch decision -- see its module docstring -- it carries no
@@ -164,7 +165,11 @@ class System:
         self.memory_manager = MemoryManager(self.scheduler)
         self.vmmio.register_to_memory_manager(self.memory_manager)
         self.memory_manager.init_manager(pool_base=0x00010000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
-        self.ipc = IPCRouter(self.scheduler, logger=self.logger, memory_manager=self.memory_manager)
+        self.ipc = IPCRouter(
+            self.scheduler,
+            printk=self.printk,
+            memory_manager=self.memory_manager,
+        )
         self._channel_table: StaticVector[Channel] = StaticVector(capacity=FB_CONF_MAX_TASKS)
         # Direct 1-based index mapping over sorted self.ipc.registry.keys array (no dynamic dict)
         self.runtime_engine = RuntimeEngine(drive_mode=RuntimeDriveMode.COOS)
@@ -757,7 +762,7 @@ class System:
         self,
         dbg: DebuggerManager,
         start_pc: int = 0,
-        ctx: WASMContext | None = None,
+        ctx: DebugExecutionView | None = None,
         blocks: Mapping[int, BasicBlock] | None = None,
         host: str = "127.0.0.1",
         port: int = 0,

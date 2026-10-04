@@ -26,19 +26,20 @@ while not (_PYSIM_DIR / "tier1_core").is_dir():
     _PYSIM_DIR = _PYSIM_DIR.parent
 
 
-from fixtures.uvwasi_reference import UvwasiReferenceContext
-from hal_dispatch import (
+from tier2_runtime.hal.dispatch import (
     ARG_BUFFER_HANDLE,
     ARG_LENGTH,
     ARG_OFFSET,
     ARG_QUERY_CMD_ID,
 )
+from qa.shared.fixtures.uvwasi_reference import UvwasiReferenceContext
+from ipc_router import FB_URI_HAL_STDOUT
 from system import System
 from system_containers import ReadOnlyFlatMapView
-from tier3_platform.drivers.hal.bindings import DEFAULT_WASI_HAL_BINDINGS
 from tier3_platform.drivers.hal.dummy import DummyDriver
-from tier3_platform.drivers.hal.stream import DedicatedLogSink, StreamTransport
+from tier3_platform.drivers.hal.stream import StreamTransport
 from tier3_platform.drivers.platform_config import PlatformDriverConfiguration
+from tier3_platform.drivers.printk import PrintkBuffer, PrintkSink
 from tier3_platform.drivers.wasi.context import Wasi03pEngine, WasiHostContext, WasiIpcCmd
 
 
@@ -56,15 +57,14 @@ def test_wasi03p_hierarchical_uri_and_ipc_commands():
     stdout_transport = StreamTransport()
     sysv = System(
         drivers=PlatformDriverConfiguration(
-            wasi_hal_bindings=DEFAULT_WASI_HAL_BINDINGS,
             stdout_transport=stdout_transport,
-            logger_sink=DedicatedLogSink(),
+            printk=PrintkSink(PrintkBuffer()),
             wasi_backend=UvwasiReferenceContext(),
         )
     )
     engine = Wasi03pEngine(sysv)
     runtime_task = sysv.start_runtime_task(name="scenario12_runtime")
-    sysv.start_hal_driver(DummyDriver(transport=sysv.transport), sysv.wasi_hal_bindings.stdout_uri)
+    sysv.start_hal_driver(DummyDriver(transport=sysv.transport), FB_URI_HAL_STDOUT)
 
     # 1. Test Hierarchical IPC URIs Resolution
     hierarchical_uris = [

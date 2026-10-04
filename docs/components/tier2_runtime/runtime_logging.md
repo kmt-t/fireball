@@ -7,7 +7,7 @@
 
 ## 1. コンセプト
 <!-- traceability: {BufferedLogging} {GLOBAL_IdleDetection} -->
-ロギングコンポーネントは、ハイパーバイザ内部の状態を記録し、外部（UART/ITM等）へ出力する内部診断サブシステムである。内部コンポーネントは固定辞書オフセットとスカラー引数を`log_event`へ直接渡し、固定長リングバッファへ記録する。COOSの **Idle Hook** は負荷の低い時にバッファを出力し、実行性能への影響を抑える。ゲスト標準出力は本コンポーネントの対象外である。自己完結した参照実装は [`logging_concept.py`](docs/components/tier2_runtime/concepts/logging_concept.py) を参照。
+ロギングコンポーネントは、Tier 2 RuntimeとTier 3プラグインの状態を固定辞書オフセットとスカラー引数で記録し、固定長リングバッファへ格納する。COOSの **Idle Hook** は低負荷時にバッファをTier 1 [`printk.md`](docs/components/tier1_core/printk.md) の出力契約へ転送する。Tier 1のCOOSとIPCは本ロガーを利用せず、OS診断を同じprintk契約へ直接出力する。ゲスト標準出力は本コンポーネントの対象外である。自己完結した参照実装は [`logging_concept.py`](docs/components/tier2_runtime/concepts/logging_concept.py) を参照。
 
 **適用範囲外**: 本コンポーネントが扱うのはビルド時に辞書登録された固定フォーマットの内部状態ログのみである。ゲストの `wasi:cli/stdout`/`stderr`（`print`/`eprint` による実行時生成の任意長文字列）はここでは表現できず、コンソール生バイト出力経路（`interface_wit.md` の `console-output` の位置づけ節）という別経路で扱う。
 
@@ -31,21 +31,21 @@ flowchart TD
     end
 
     subgraph Dependency
-        HAL[HAL_Transport]
+        Printk[printk output contract]
     end
 
-    Engine -- holds reference --> HAL
+    Engine -- writes records --> Printk
     Engine -- manages --> RB
 ```
 
 ### 3.3 主要なクラス・構造体・配列・定数
 
 #### ロガー（Logger）クラス
-依存関係（HALトランスポート）とバッファ状態をカプセル化する。
+依存関係（Tier 1 printk出力契約）とバッファ状態をカプセル化する。
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
-| 出力トランスポート | HAL_Transport で定義された物理デバイス（UART等）への参照 | 構造体への参照 | `hal_transport` (非所有) |
+| 出力トランスポート | `printk` の物理出力Sinkへの参照 | 構造体への参照 | `printk` (非所有) |
 | 循環バッファ | ログデータを一時的に保持する領域 | リングバッファ | 固定長配列 |
 | 書き込み/読み出し索引 | バッファの現在の状態を示すポインタ | アトミック値 | 32bit |
 | 出力閾値 | 現在出力対象としている最小のログレベル | 8bit整数 | `log_level` |
@@ -74,7 +74,7 @@ ROM上に固定配置されたフォーマット文字列配列の非所有ア�
   呼出し側はメッセージ文字列ではなく、辞書内のオフセットと引数のみを`log_event`へ渡す。
   **設計理由と不変条件**: ログ API は任意長文字列ポインタ（`%s`、`%p` 等）を直接受け付けない。実行時に構築した文字列ポインタをログエントリに格納すると、ログ出力元タスクの終了後にロガーが無効なメモリを参照するおそれがある。Use-After-Free を防ぐため、ログメッセージは静的辞書オフセットとスカラー引数（u32）に限定する。これによりメモリ安全性を保証する。
 - **遅延出力と割り込み応答性 (`GOTCHA-LOG-03`)**: {GOTCHA-LOG-03} <!-- definition: {GOTCHA-LOG-03} -->
-  `log_event`はリングバッファへの格納のみを行い、実際の物理出力は `HAL_Transport` を介した抽象化された通信路によりCOOSアイドルフックで行われる。具体的なトランスポート実装（UARTやITMなど）はシステム構成で指定される。
+  `log_event`はリングバッファへの格納のみを行い、実際の出力はCOOSアイドルフックからTier 1 `printk` のバイト出力へ行う。ロガーはHALやIPCの稼働を必要としない。具体的な物理出力先（UARTやITMなど）はTier 3 Platformで指定する。
   **設計理由と不変条件**: ログフラッシュはリングバッファの連続領域をバッチ単位で DMA 転送する。DMA 転送は開始後、完了割り込み（`dma_complete`）まで中断できない。そのため `interrupt_pending()` はエントリ単位ではなく、各バッチの完了時に確認する。
   割り込みを検出した場合は次のバッチを開始しない。残りのエントリをバッファに残し、スケジューラへ制御を戻す。これにより、割り込み応答レイテンシを1バッチの転送時間以内に制限する。
 - **バッファフル・ポリシー (`GOTCHA-LOG-02`)**: **FINALIZED: Overwrite** {DeterministicRingBuffer}。 <!-- definition: {DeterministicRingBuffer} --> {GOTCHA-LOG-02} <!-- definition: {GOTCHA-LOG-02} -->
@@ -98,23 +98,14 @@ ROM上に固定配置されたフォーマット文字列配列の非所有ア�
 | 引数スライス規則 | フォーマット文字列に含まれる指定子数 $n$（$0 \le n \le 4$）に対し、渡された4引数タプルの先頭 $n$ 個（`args[0..n]`）のみが展開時に参照され、未使用スロットは安全に無視される |
 | 登録時期 | ビルド時 (実行時の追加は不可) |
 
-デバイス上のロガーはフォーマット文字列を走査・展開しない。トランスポートへ送る1レコードは20バイトであり、先頭から `level:u8`、`dict_offset:u24 little-endian`、`arg0:u32 little-endian`、`arg1:u32 little-endian`、`arg2:u32 little-endian`、`arg3:u32 little-endian` の順に格納する。ホスト側ツールが辞書を参照して可読テキストへ展開する。辞書IDは `0..0xFFFFFF`、各引数は `u32` の範囲でなければならない。
+デバイス上のロガーはフォーマット文字列を走査・展開しない。`printk` へ送る1レコードは20バイトであり、先頭から `level:u8`、`dict_offset:u24 little-endian`、`arg0:u32 little-endian`、`arg1:u32 little-endian`、`arg2:u32 little-endian`、`arg3:u32 little-endian` の順に格納する。ホスト側ツールが辞書を参照して可読テキストへ展開する。辞書IDは `0..0xFFFFFF`、各引数は `u32` の範囲でなければならない。Tier 1 printkイベントの辞書エントリもホスト側展開用に共有する。
 
-### 4.2.1 COOS / IPC / インタープリタ 診断ログイベント仕様
+### 4.2.1 インタープリタ診断ログイベント仕様
 <!-- traceability: {BufferedLogging} {WasmCodeSectionPC} -->
-COOS、IPC、およびインタープリタ実行時トラップにおいて、デバッグ時に重大な不整合・境界超過・通信遮断・ゲストトラップを検知するための診断ログイベントを定義する。ログのオーバーヘッドを最小化するため、常時ログは出力せず、異常系・境界値到達時のみに厳選して発行する。
+インタープリタ実行時トラップを診断するイベントを定義する。COOSとIPCのTier 1診断イベントは [`printk.md`](docs/components/tier1_core/printk.md) を正本とし、`Logger.log_event` を呼び出さない。Tier 2ロガーは異常系・境界到達時に限ってイベントを発行する。
 
 | イベントID | 分類 | レベル | フォーマット文字列 | 引数構成 (args[0..3]) | 発生条件 |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| `0x0101` | COOS | `WARN` | `COOS: handoff limit reached (task=%d, count=%d)` | `task_id`, `handoff_count`, 0, 0 | 連続ハンドオフ上限（`FB_CONF_MAX_CONSECUTIVE_HANDOFFS`、`system_config.md` 正本）到達（詳細は `os_coos.md` 正本） |
-| `0x0102` | COOS | `ERROR` | `COOS: task capacity exceeded (max=%d, attempted=%d)` | `max_tasks`, `attempted_count`, 0, 0 | タスク上限（`FB_CONF_MAX_TASKS`、`system_config.md` 正本）超過によるタスク spawn 拒否 |
-| `0x0103` | COOS | `ERROR` | `COOS: duplicate task id rejected (task=%d)` | `task_id`, 0, 0, 0 | 既存タスクと同一 ID の spawn 試行の拒絶 |
-| `0x0104` | COOS | `WARN` | `COOS: interrupt event FIFO overflow dropped (vector=%d, dropped_total=%d)` | `vector_id`, `dropped_count`, 0, 0 | 原因付き割り込みFIFO上限溢れによるイベント破棄（詳細は `os_coos.md` 正本） |
-| `0x0201` | IPC | `WARN` | `IPC: rbac denied (sender_role=%d, target_role=%d)` | `sender_role`, `target_role`, 0, 0 | RBAC 権限マトリクス違反によるメッセージ遮断（詳細は `ipc_router.md` 正本） |
-| `0x0202` | IPC | `WARN` | `IPC: unknown uri routing failed (uri_handle=%d)` | `uri_handle`, 0, 0, 0 | サービスレジストリ未登録の URI への送信試行 |
-| `0x0203` | IPC | `ERROR` | `IPC: message too large (kv_count=%d, max=%d)` | `kv_count`, `max_kv_pairs`, 0, 0 | 許可された最大 KV ペア数（`FB_CONF_ROUTER_MAX_KV_PAIRS`、`system_config.md` 正本）を超過したメッセージ |
-| `0x0204` | IPC | `ERROR` | `IPC: invalid ownership state (current_state=%d, op=%d)` | `ownership_state`, `operation`, 0, 0 | 送信側が所有権を持たないメッセージの送信試行 |
-| `0x0205` | IPC | `ERROR` | `IPC: channel waiter collision (channel=%d, dir=%d)` | `channel_idx`, `wait_dir`, 0, 0 | チャネル待機不変条件違反（詳細は `ipc_router.md` 正本） |
 | `0x0301` | インタープリタ | `ERROR` | `TRAP: local stack capacity exceeded (pc=0x%08X)` | `unified_pc`, 0, 0, 0 | ローカル値領域の固定容量超過（詳細は `interpreter.md` 正本） |
 | `0x0302` | インタープリタ | `ERROR` | `TRAP: call frame capacity exceeded (pc=0x%08X)` | `unified_pc`, 0, 0, 0 | 呼出しフレーム記述子領域の固定容量超過 |
 | `0x0303` | インタープリタ | `ERROR` | `TRAP: call stack capacity exceeded (pc=0x%08X)` | `unified_pc`, 0, 0, 0 | 呼出しネスト深さ上限（`FB_CONF_MAX_NESTING_DEPTH`、`system_config.md` 正本）超過 |
@@ -211,7 +202,7 @@ sequenceDiagram
 | 補足 | COOS の `set_idle_hook` により、システムアイドル時に呼び出される。DMAバッチ転送は開始後は完了割り込み（`dma_complete`）まで中断できないため、実行中バッチの完了は待機する。バッチ完了時点で割り込み（INTイベント、例：WASIタイマー等）が確認された場合は、残余エントリがあっても次バッチの転送開始をスキップして速やかに制御をスケジューラに戻す。{InterruptibleFlush} <!-- definition: {InterruptibleFlush} --> |
 
 ### 5.2 内部呼出し境界
-Loggerはネイティブサブシステム内の診断出力先であり、公開IPCサービスではない。Scheduler、インタープリタ、Runtime Event Loggerなどの内部コンポーネントが型付き`log_event` APIを直接呼び出す。ゲストの標準出力・標準エラーはWASI/ HALの別経路を使う。
+LoggerはTier 2 RuntimeとTier 3プラグインが利用する診断APIであり、公開IPCサービスではない。Tier 1のSchedulerとIPCルータは`LoggerPort`を参照せず、`printk` の同期診断APIを使う。インタープリタとRuntime Event LoggerなどTier 2以上のコンポーネントは型付き`log_event` APIを呼び出す。ゲストの標準出力はWASI/HALの別経路を使い、標準エラーはTier 2ロガーへ渡す。
 
 ## 6. 制約達成の方策
 

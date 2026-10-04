@@ -21,7 +21,7 @@ COOSは、シングルスレッド環境向けのホーアCSPベースのグリ�
 - **`co_csp`**: 通信エンジン。チャネルベースの同期と所有権移譲（本設計書が正本）。
 - **`co_mem`**: メモリマネージャ。タスク独立な静的メモリバッファプール（メモリパーティション）の管理。
 
-ロギングは COOS の構成要素ではなく、独立した Tier 2 コンポーネント [`runtime_logging.md`](docs/components/tier2_runtime/runtime_logging.md) が `{BufferedLogging}` を担う。COOS は `set_idle_hook` によりアイドル時のフラッシュ契機のみを提供する。
+COOSはTier 2ロガーに依存しない。タスク容量超過や割り込みFIFO溢れなど、OS自身の診断にはTier 1の[`printk.md`](docs/components/tier1_core/printk.md)を同期利用する。通常ログのバッファリングとアイドル時フラッシュはTier 2の[`runtime_logging.md`](docs/components/tier2_runtime/runtime_logging.md)が担い、COOSは`set_idle_hook`による呼出し契機だけを提供する。
 
 ## 3. 静的モデル
 
@@ -184,7 +184,7 @@ COOS の動的スケジューリングおよび同期通信の基本アルゴリ
   - **割り込みウェイクアップ (Interrupt Wakeup)**: 外部イベントの発生時に、ISR は `notify_interrupt(interrupt-event)` を呼び出す。この関数は固定長ロックフリー FIFO へ原因レコードを投函する。
     **実装の勘所と設計理由 (`GOTCHA-COOS-03`)**: ISR コンテキストでは、タスク状態や優先度キューを直接変更しない。ISR で mutex やスピンロックを取得すると、割り込み無効化区間が延びる。これにより、最高優先度割り込みの応答レイテンシが劣化する。
     ISR はロックを取得せず、原因レコードを FIFO へ公開する。スケジューラは各協調境界（`run_step` 開始時）で `drain_interrupts` を実行する。この時点で初めて、`vector_id` に対応する vSoC ランタイム待機タスクへ 5 ワードのイベント本体を移す。対象タスクを READY 状態へ遷移させ、実行可能キューの末尾へ投入する。
-    COOS は vIRQ 階層を評価せず、ゲスト関数も呼び出さない。FIFO が満杯の場合、または待機先が未登録の場合はイベントをドロップし、ドロップ数を記録する。要求が保留中に到着したイベントは同じ世代へ集約する。FIFO 上の原因レコードは個別に処理する。
+    COOS は vIRQ 階層を評価せず、ゲスト関数も呼び出さない。FIFO が満杯の場合、または待機先が未登録の場合はイベントをドロップし、ドロップ数を記録する。FIFO溢れの診断はTier 1 [`printk.md`](docs/components/tier1_core/printk.md)へ直接出力する。要求が保留中に到着したイベントは同じ世代へ集約する。FIFO 上の原因レコードは個別に処理する。
 - **Idle Detection**: 全ての実行中タスクがブロック状態にあり、かつイベントキューが空（割り込みや外部イベントによる起床待ちのみ）の場合にアイドル状態と判定する。この条件が成立した時のみ、登録済みの `idle_hook` コールバック群をREADYリング外の専用Idleタスクとして呼び出す。個々のコールバック（ログフラッシュ等）が実際にいつ・何を処理するかはコールバック側の内部実装事項であり、COOS はそれを規定・関知しない（登録・起動機構のみを提供する）。ログフラッシュの具体的なトリガー条件は [`runtime_logging.md`](docs/components/tier2_runtime/runtime_logging.md) を正本とする。
 - **Memory Management**: タスク生成時に独立したメモリパーティションを割り当てる。
 
@@ -276,27 +276,22 @@ stateDiagram-v2
 
 #### 5.1.1 `coos_harness` (システムハーネス)
 <!-- traceability: {META_StaticDI} {GLOBAL_ComponentHarness} -->
-コンポーネント間の依存関係を集約する構造体。テストの容易性と依存性の分離を実現する。
+COOSが使う依存先の具象型を集約する静的ハーネス型。Conceptsで必要な契約をコンパイル時に検査し、テスト時は代替ハーネス型を選べる。
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
-| スケジューラ | タスクの実行順序を管理するコンポーネントへの参照 | 構造体への参照 | [`os_scheduler.md`](docs/components/tier1_core/os_scheduler.md) |
-| 通信エンジン | タスク間のCSP通信を制御するコンポーネントへの参照 | 構造体への参照 | `co_csp` |
-| メモリ管理 | タスク固有の静的パーティションを貸与・返却するコンポーネントへの参照 | 構造体への参照 | `co_mem` |
+| スケジューラ | COOSが直接利用するタスク実行順序の契約 | ハーネスの具象型引数 | [`os_scheduler.md`](docs/components/tier1_core/os_scheduler.md) |
+| 通信エンジン | COOSが直接利用するタスク間CSP通信の契約 | ハーネスの具象型引数 | `co_csp` |
+| メモリ管理 | COOSが直接利用するタスク固有静的パーティションの貸与・返却契約 | ハーネスの具象型引数 | `co_mem` |
 
 ###### ハーネスによる依存性注入パターン
 <!-- traceability: {GLOBAL_ComponentHarness} -->
-システムハーネスは以下のようにコンポーネントへの参照を集約し、静的に注入される。
+COOSが直接利用する3つの依存型だけを `coos_harness` に集約する。コンポジションルートが具象型を選び、そのハーネス型をCOOSの型引数に指定する。Conceptsが必要な操作をコンパイル時に検査する。実行時の依存探索、型選択、仮想呼出しを行わず、依存解決による実行時オーバーヘッドを持たない。
 
-```python
-# システムハーネスによる依存性注入パターン
-class CoosHarness:
-    def __init__(self, scheduler: "Scheduler", csp: "CspEngine", memory: "MemoryManager"):
-        # 各サブコンポーネントへの参照を保持し、結合テストやモックの差し替えを容易にする
-        self.scheduler = scheduler
-        self.csp = csp
-        self.memory = memory
-```
+依存解決の共通方針は [`dependency_resolution.md`](docs/architecture/dependency_resolution.md) を正本とする。
+
+型の結線形を `coos_harness<Scheduler, CspEngine, MemoryManager>`、COOS側の受け取り形を `Coos<Harness>` とする。これは静的注入の型関係を示す概念表記である。テストでは同じ契約を満たす別のハーネス型をコンパイル時に選ぶ。
+
 
 #### 5.1.2 サブコンポーネント・インターフェース (C++23)
 <!-- traceability: {META_StaticDI} -->

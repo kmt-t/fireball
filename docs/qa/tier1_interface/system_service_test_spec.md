@@ -30,8 +30,6 @@
 
 サービスのロード、明示起動、障害隔離、対象サービスの再起動は`service_concept.py`の概念モデルで検査する。`test_ipc_router.py`はIPCのアクセスと所有権を検査する。`test_vsoc.py`はvSoC実行状態を検査する。これらのpysim試験を、実サービスのロードと自己再起動の検証実績へ読み替えない。
 
-監査結果は[`test_reconstruction_review.md`](docs/qa/test_reconstruction_review.md)を参照する。
-
 ## 4. 未検証・スコープ外
 
 - TEST-SVC-01/02/04/05/09/11のpysimサービス実装への統合は未検証である。概念モデルの状態を、実ランタイムのTCBとヒープの状態に対応付ける証拠が必要である。

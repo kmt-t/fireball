@@ -16,16 +16,16 @@ while not (_PYSIM_DIR / "tier1_core").is_dir():
     _PYSIM_DIR = _PYSIM_DIR.parent
 
 
-from recovery import RecoveryManager, RecoveryStrategy, Result
+from tier2_runtime.runtime.recovery import RecoveryManager, RecoveryStrategy, Result
 from system import System
 from system_containers import StaticVector
-from tier2_runtime.logger import LogDictionary, LogLevel, decode_log_records
-from tier3_executer.interpreter.interpreter import InterpreterBindings, NativeInterpreter
-from tier3_executer.jit.jit_manager import JITRuntimeManager
-from tier3_executer.jit.x64_jit import TraceCompiler
-from tier3_executer.runtime_engine import RuntimeEngine
-from tier3_platform.drivers.hal.stream import DedicatedLogSink
-from wasm_reader import parse
+from tier2_runtime.observability.logger import LogDictionary, LogLevel, decode_log_records
+from tier2_runtime.interpreter.interpreter import InterpreterBindings, NativeInterpreter
+from tier3_plugins.jit.jit_manager import JITRuntimeManager
+from tier3_plugins.jit.x64_jit import TraceCompiler
+from tier2_runtime.runtime.engine import RuntimeEngine
+from tier3_platform.drivers.printk import PrintkBuffer
+from tier2_runtime.wasm.reader import parse
 
 findings: StaticVector[str] = StaticVector(capacity=8)
 
@@ -199,9 +199,9 @@ def demo_wasmjit_hybrid_execution(sysv: System) -> None:
 
 
 def main() -> None:
-    logger_sink = DedicatedLogSink()
+    printk_sink = PrintkBuffer()
     sysv = System(
-        logger_sink=logger_sink,
+        printk_sink=printk_sink,
         log_dictionary=LogDictionary(
             entries=((0x01, "task booted (free=%d bytes, retries=%d, x=%d, y=%d)"),)
         ),
@@ -233,9 +233,9 @@ def main() -> None:
     for line in on_the_wire.splitlines():
         print(f"    | {line}")
 
-    print("\n== pysim: draining the dedicated logger sink ==")
-    log_messages = decode_log_records(logger_sink.drain_output(), sysv.dictionary)
-    print(f"  {logger_sink.bytes_written} bytes reached the dedicated logger sink:")
+    print("\n== pysim: draining the printk sink ==")
+    log_messages = decode_log_records(printk_sink.drain_output(), sysv.dictionary)
+    print(f"  {printk_sink.bytes_written} bytes reached the printk sink:")
     for line in log_messages:
         print(f"    | {line}")
 

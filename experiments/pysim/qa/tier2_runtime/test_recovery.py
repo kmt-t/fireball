@@ -7,7 +7,7 @@ Traceability: docs/qa/tier3_platform/interface_wit_test_spec.md, TEST-WIT-01..05
 
 import pytest
 from config import FB_CONF_RETRY_BACKOFF_MS, FB_CONF_RETRY_MAX_ATTEMPTS
-from recovery import (
+from tier2_runtime.runtime.recovery import (
     RecoveryManager,
     RecoveryStrategy,
     Result,

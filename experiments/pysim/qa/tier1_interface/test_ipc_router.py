@@ -20,7 +20,6 @@ _PYSIM_DIR = _TESTS_DIR.parent
 _REPO_ROOT = _PYSIM_DIR.parent.parent
 
 
-from helpers import expect_assertion, make_test_ipc_message
 from ipc_router import (
     DataType,
     IPCMessage,
@@ -32,13 +31,14 @@ from ipc_router import (
     pack_key32,
     unpack_key32,
 )
-from memory import (
+from tier2_runtime.memory.manager import (
     FB_CONF_MEMORY_POOL_SIZE,
     FB_CONF_SHM_SIM_BASE,
     FB_CONF_SHM_SIZE,
     FB_TASK_ID_FLIGHT,
     MemoryManager,
 )
+from qa.shared.helpers import expect_assertion, make_test_ipc_message
 from scheduler import ChannelAction, Scheduler, Task, TaskState, WaitDir
 from system import (
     System,
@@ -427,7 +427,7 @@ def test_ipc_borrow_and_narrowed_entries_read_live_shared_bytes(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """TEST-IPCR-19: 借用時に全KVをコピーせず、狭めた区間も実体を参照する。"""
-    from memory import SharedBlock
+    from tier2_runtime.memory.manager import SharedBlock
 
     scheduler = Scheduler()
     router = _make_router(scheduler)

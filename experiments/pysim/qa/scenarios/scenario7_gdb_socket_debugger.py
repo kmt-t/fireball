@@ -25,8 +25,8 @@ import socket
 import time
 
 import wasmtime
-from helpers import make_debug_execution
-from runtime_test_driver import RuntimeEngineDebugDriver
+from qa.private.debugger_support import make_debug_execution
+from qa.private.runtime_test_driver import RuntimeEngineDebugDriver
 from tier3_plugins.debugger.debugger import DebuggerManager
 from tier3_plugins.debugger.gdb_server import GDBServer
 

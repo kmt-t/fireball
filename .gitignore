@@ -57,12 +57,6 @@ doc_graph.json
 *.dwo
 *.exp
 
-# Optional native extension outputs.  Their source files are tracked.
-experiments/pysim/tier3_executer/jit/native_trace_call.pyd
-experiments/pysim/tier3_executer/jit/native_trace_call.so
-experiments/pysim/tier3_executer/interpreter/_interpreter_native.pyd
-experiments/pysim/tier3_executer/interpreter/_interpreter_native.so
-
 # Logs and generated state
 *.log
 reports/

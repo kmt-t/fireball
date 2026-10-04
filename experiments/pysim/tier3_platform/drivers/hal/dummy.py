@@ -5,7 +5,7 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass
 
-from hal_dispatch import (
+from tier2_runtime.hal.dispatch import (
     ARG_BUFFER_HANDLE,
     ARG_LENGTH,
     ARG_MAX_LEN,

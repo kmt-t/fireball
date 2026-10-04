@@ -8,7 +8,7 @@
 
 物理バッファプールの配置と RSP トランスポートの実装詳細は対象外である。これらは [`platform_driver_test_spec.md`](docs/qa/tier3_platform/platform_driver_test_spec.md) を正本とする。
 
-試験用デバイスは[`hal_stubs.py`](experiments/pysim/qa/fixtures/hal_stubs.py)を使う。
+試験用デバイスは[`hal_stubs.py`](experiments/pysim/qa/shared/fixtures/hal_stubs.py)を使う。
 ADCは設定コマンドとストリームのバッファI/O、PWMはコマンド操作とする。
 この形はユーザー指示に従う。
 ADC/PWMの具体的なID・設定項目とGPIOの数値表現はQAローカル設定である。
@@ -53,7 +53,7 @@ ADCの設定、PWMの設定と出力は、QAローカルのコマンドIDで登�
 設定値はu32のキー・値として保存する。
 サンプル形式、PWMの単位や物理範囲はこのスタブで定義しない。
 ADC/PWM/RTTの製品ロールも決定しない。
-QAの結線と操作方法は[`README.md`](experiments/pysim/qa/fixtures/README.md)を参照する。
+QAの結線と操作方法は[`README.md`](experiments/pysim/qa/shared/fixtures/README.md)を参照する。
 
 現行バッファプールは1スロットだけを操作期間中にマップする。
 バス試験は同一ハンドルのTX/RXで、送信byteを保存してから受信byteを書き込む。
@@ -94,25 +94,28 @@ SDKゲストはWASI-SDK 27.0のClang 20.1.8でC23ソースから生成した。
 
 ```bash
 .venv/bin/python tools/guest_bindings/build_wasi_guest.py --prepare-sdk
-.venv/bin/python -m pytest -q experiments/pysim/qa/tier3_platform/test_driver_stubs.py --hypothesis-show-statistics
+.venv/bin/python -m pytest -q \
+  experiments/pysim/qa/integration/test_driver_stubs.py \
+  experiments/pysim/qa/workloads/test_driver_stubs_guest.py --hypothesis-show-statistics
 ```
 
 110件成功、失敗0件、skip 0件だった。
 固定106条件と生成試験4件を含む。
 生成履歴は各ストリーム24成功例であり、pytest件数へ加算しない。
-通常pysimランナーへ登録し、期待スイート数を34へ同期した。
+直接契約・IPC試験は [`test_driver_stubs.py`](experiments/pysim/qa/integration/test_driver_stubs.py)、Clang生成guestの11ケースは [`test_driver_stubs_guest.py`](experiments/pysim/qa/workloads/test_driver_stubs_guest.py) に分けた。両方の合計110件であり、前者は結合テスト、後者はWASMバイナリワークロードに分類する。
 
-直接関連する回帰7ファイルも局所実行した。
+直接関連する回帰8ファイルも局所実行した。
 
 ```bash
 .venv/bin/python -m pytest -q \
-  experiments/pysim/qa/tier3_platform/test_driver_stubs.py \
-  experiments/pysim/qa/tier3_platform/test_wasi_guest.py \
+  experiments/pysim/qa/integration/test_driver_stubs.py \
+  experiments/pysim/qa/workloads/test_driver_stubs_guest.py \
+  experiments/pysim/qa/workloads/test_wasi_guest.py \
   experiments/pysim/qa/tier3_platform/test_hal.py \
   experiments/pysim/qa/tier1_interface/test_ipc_router.py \
   experiments/pysim/qa/tier2_runtime/test_syscall.py \
   experiments/pysim/qa/cross_cutting/test_entrypoint.py \
-  experiments/pysim/qa/cross_cutting/test_pairwise_combinations.py
+  experiments/pysim/qa/integration/test_pairwise_combinations.py
 ```
 
 364件成功、失敗0件、skip 0件、所要時間3.02秒だった。

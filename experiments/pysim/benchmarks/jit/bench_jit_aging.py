@@ -1,7 +1,7 @@
 """
 experiments/pysim/benchmarks/jit/bench_jit_aging.py
 JIT Card Aging Benchmark: cold-function pollution under JIT cache pressure.
-Conforms to docs/components/tier3_executer/benchmarks/jit_aging_bench_spec.md (BENCHMARK-AGING-01 ~ BENCHMARK-AGING-03).
+Conforms to docs/components/tier3_plugins/benchmarks/jit_aging_bench_spec.md (BENCHMARK-AGING-01 ~ BENCHMARK-AGING-03).
 
 Workload (a few hot functions, many cold ones):
   * A small set of hot functions runs a short arithmetic loop on every pass. Their
@@ -37,13 +37,13 @@ configure_import_paths(_PYSIM_DIR, _BENCH_DIR)
 
 from bump_allocator import BumpAllocator
 from config import FB_CONF_JIT_AGING_STEP_SCAN_BYTES, FB_CONF_JIT_AGING_STEP_UNITS
-from tier3_executer.interpreter.interpreter import InterpreterBindings, NativeInterpreter
-from tier3_executer.jit.jit_cache import JITTrace
-from tier3_executer.jit.jit_manager import JITRuntimeManager
-from tier3_executer.jit.x64_jit import TraceCompiler
-from tier3_executer.runtime_engine import RuntimeEngine
-from wasm_module import LocalWidthMap, WasmOperand
-from wasm_reader import parse
+from tier2_runtime.interpreter.interpreter import InterpreterBindings, NativeInterpreter
+from tier3_plugins.jit.jit_cache import JITTrace
+from tier3_plugins.jit.jit_manager import JITRuntimeManager
+from tier3_plugins.jit.x64_jit import TraceCompiler
+from tier2_runtime.runtime.engine import RuntimeEngine
+from tier2_runtime.wasm.module import LocalWidthMap, WasmOperand
+from tier2_runtime.wasm.reader import parse
 
 try:
     import wasmtime

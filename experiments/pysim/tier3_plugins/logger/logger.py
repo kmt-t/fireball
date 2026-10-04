@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from runtime_events import RuntimeEvent, RuntimeEventBatch
-from tier2_runtime.logger import RUNTIME_EVENT_LOG_BASE, Logger, LogLevel
+from tier2_runtime.observability.events import RuntimeEvent, RuntimeEventBatch
+from tier2_runtime.observability.logging_interface import LoggerPort, LogLevel
+from tier2_runtime.observability.logger import RUNTIME_EVENT_LOG_BASE
 
 
 class RuntimeEventLogger:
@@ -11,7 +12,7 @@ class RuntimeEventLogger:
 
     __slots__ = ("logger",)
 
-    def __init__(self, logger: Logger):
+    def __init__(self, logger: LoggerPort):
         self.logger = logger
 
     def on_runtime_event(self, event: RuntimeEvent) -> None:

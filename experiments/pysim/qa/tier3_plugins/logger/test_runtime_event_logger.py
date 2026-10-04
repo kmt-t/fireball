@@ -6,8 +6,8 @@ from pathlib import Path
 
 _PYSIM_DIR = Path(__file__).resolve().parents[3]
 
-from runtime_events import RuntimeEvent, RuntimeEventBatch, RuntimeEventKind
-from tier2_runtime.logger import LogDictionary, Logger, LogLevel, decode_log_records
+from tier2_runtime.observability.events import RuntimeEvent, RuntimeEventBatch, RuntimeEventKind
+from tier2_runtime.observability.logger import LogDictionary, Logger, LogLevel, decode_log_records
 from tier3_plugins.logger.logger import RuntimeEventLogger
 
 

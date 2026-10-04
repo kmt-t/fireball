@@ -10,7 +10,7 @@ from pyModelChecking.CTL import AF, AG, AtomicProposition, Imply, Not
 
 BACKS = [
     "components/tier2_runtime/runtime_vsoc.md",
-    "components/tier3_executer/jit_compiler.md",
+    "components/tier3_plugins/jit_compiler.md",
     "components/tier2_runtime/runtime_memory.md",
 ]
 

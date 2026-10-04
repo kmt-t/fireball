@@ -1,7 +1,7 @@
 """
 experiments/pysim/benchmarks/jit/bench_jit_cache_metabolism.py
 JIT Code Cache Metabolism, Hit-Rate, Oldest-Only Promotion & Corner Cases Benchmark.
-Conforms strictly to docs/components/tier3_executer/benchmarks/jit_cache_metabolism_bench_spec.md (BENCHMARK-METAB-01 ~ BENCHMARK-METAB-05).
+Conforms strictly to docs/components/tier3_plugins/benchmarks/jit_cache_metabolism_bench_spec.md (BENCHMARK-METAB-01 ~ BENCHMARK-METAB-05).
 """
 
 from __future__ import annotations
@@ -21,7 +21,7 @@ from _bootstrap import configure_import_paths
 
 configure_import_paths(_PYSIM_DIR, _BENCH_DIR)
 
-from tier3_executer.jit.jit_cache import (
+from tier3_plugins.jit.jit_cache import (
     JITMultiBufferCache,
     JITTrace,
 )

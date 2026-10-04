@@ -3,7 +3,7 @@
 ## 1. 目的と対象範囲
 <!-- traceability: {FastAddressCheck} {META_RestrictedPhysicalAccess} {GLOBAL_StrictMemoryLimit} {MemoryBoundaryCheck} -->
 
-正本: [`runtime_vmmio.md`](docs/components/tier2_runtime/runtime_vmmio.md) , [`interpreter.md`](docs/components/tier3_executer/interpreter.md) 参考実装: [`bench_linear_memory.py`](experiments/pysim/benchmarks/linear_memory/bench_linear_memory.py)
+正本: [`runtime_vmmio.md`](docs/components/tier2_runtime/runtime_vmmio.md) , [`interpreter.md`](docs/components/tier2_runtime/interpreter.md) 参考実装: [`bench_linear_memory.py`](experiments/pysim/benchmarks/linear_memory/bench_linear_memory.py)
 
 本ベンチマークは、WASM ゲストのリニアメモリ（Guest RAM、Stage 1: Bit 31 == 0）の高速アクセス性能を計測する。単一比較による統一境界チェック（`FastAddressCheck`）のオーバーヘッドも測定する。8-bit、16-bit、32-bit の各幅で読み書きスループットを実証する。
 

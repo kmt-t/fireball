@@ -1,0 +1,178 @@
+"""Static JIT-candidate scoring for decoded WASM basic blocks."""
+
+from __future__ import annotations
+
+from collections.abc import Iterable
+from typing import Final
+
+from system_containers import BitView
+from tier2_runtime.wasm.opcodes import (
+    BLOCK,
+    BR,
+    BR_IF,
+    BR_TABLE,
+    CALL,
+    CALL_INDIRECT,
+    DROP,
+    ELSE,
+    END,
+    F32_ADD,
+    F32_CONST,
+    F32_DIV,
+    F32_MUL,
+    F32_SUB,
+    F64_ADD,
+    F64_CONST,
+    F64_DIV,
+    F64_MUL,
+    F64_SUB,
+    I32_ADD,
+    I32_AND,
+    I32_CLZ,
+    I32_CONST,
+    I32_CTZ,
+    I32_DIV_S,
+    I32_DIV_U,
+    I32_EQ,
+    I32_EQZ,
+    I32_GE_S,
+    I32_GE_U,
+    I32_GT_S,
+    I32_GT_U,
+    I32_LE_S,
+    I32_LE_U,
+    I32_LT_S,
+    I32_LT_U,
+    I32_MUL,
+    I32_NE,
+    I32_OR,
+    I32_REM_S,
+    I32_REM_U,
+    I32_SHL,
+    I32_SHR_S,
+    I32_SHR_U,
+    I32_SUB,
+    I32_XOR,
+    I64_ADD,
+    I64_CONST,
+    I64_MUL,
+    I64_SUB,
+    LOCAL_GET,
+    LOCAL_SET,
+    LOCAL_TEE,
+    LOOP,
+    MEMORY_GROW,
+    NOP,
+    RETURN,
+    SELECT,
+    UNREACHABLE,
+)
+
+SCORE_MIN = -8
+SCORE_MAX = 7
+JIT_CANDIDATE_THRESHOLD = 9
+OPCODE_TABLE_COUNT = 256
+OPCODE_TABLE_BYTES = OPCODE_TABLE_COUNT // 2
+
+
+def _encode_int4(value: int) -> int:
+    assert SCORE_MIN <= value <= SCORE_MAX
+    return value & 0x0F
+
+
+def _decode_int4(value: int) -> int:
+    value &= 0x0F
+    return value - 16 if value >= 8 else value
+
+
+# Numeric entries keep the loader independent of opcode-name strings and
+# make the table directly translatable to a ROM-resident C++ constexpr array.
+_SCORE_ENTRIES: tuple[tuple[int, int], ...] = (
+    (I32_ADD, 7),
+    (I32_SUB, 7),
+    (I32_AND, 7),
+    (I32_OR, 7),
+    (I32_XOR, 7),
+    (I32_SHL, 7),
+    (I32_SHR_S, 7),
+    (I32_SHR_U, 7),
+    (I32_MUL, 6),
+    (I32_EQZ, 6),
+    (I32_EQ, 6),
+    (I32_NE, 6),
+    (I32_LT_S, 6),
+    (I32_LT_U, 6),
+    (I32_GT_S, 6),
+    (I32_GT_U, 6),
+    (I32_LE_S, 6),
+    (I32_LE_U, 6),
+    (I32_GE_S, 6),
+    (I32_GE_U, 6),
+    (I32_CLZ, 6),
+    (I32_CTZ, 6),
+    (I32_CONST, 6),
+    (I64_CONST, 6),
+    (F32_CONST, 6),
+    (F64_CONST, 6),
+    (LOCAL_GET, 6),
+    (LOCAL_SET, 6),
+    (LOCAL_TEE, 6),
+    (I32_DIV_S, 4),
+    (I32_DIV_U, 4),
+    (DROP, 4),
+    (SELECT, 4),
+    (RETURN, 4),
+    (NOP, 4),
+    (I32_REM_S, 4),
+    (I32_REM_U, 4),
+    (BR, 5),
+    (BR_IF, 5),
+    (I64_ADD, 3),
+    (I64_SUB, 3),
+    (I64_MUL, 3),
+    (F32_ADD, 3),
+    (F32_SUB, 3),
+    (F32_MUL, 3),
+    (F32_DIV, 3),
+    (F64_ADD, 3),
+    (F64_SUB, 3),
+    (F64_MUL, 3),
+    (F64_DIV, 3),
+    (BLOCK, 0),
+    (LOOP, 0),
+    (ELSE, 0),
+    (END, 0),
+    (CALL, -1),
+    (CALL_INDIRECT, -1),
+    (BR_TABLE, -1),
+    (MEMORY_GROW, -2),
+    (UNREACHABLE, -8),
+)
+
+
+class OpcodeBenefitTable:
+    """ROM-shaped 4-bit signed score table indexed by numeric WASM opcode."""
+
+    __slots__ = ("storage",)
+
+    def __init__(self) -> None:
+        storage = bytearray((0x88,) * OPCODE_TABLE_BYTES)
+        view = BitView(storage, bits=4, count=OPCODE_TABLE_COUNT)
+        for opcode, score in _SCORE_ENTRIES:
+            view.put(opcode, _encode_int4(score))
+        self.storage: bytes = bytes(storage)
+
+    def score(self, opcode: int) -> int:
+        assert 0 <= opcode < OPCODE_TABLE_COUNT
+        table = BitView(self.storage, bits=4, count=OPCODE_TABLE_COUNT)
+        return _decode_int4(table.at(opcode))
+
+
+OPCODE_BENEFIT_TABLE: Final[OpcodeBenefitTable] = OpcodeBenefitTable()
+
+
+def score_opcodes(opcodes: Iterable[int], table: OpcodeBenefitTable) -> int:
+    total = 0
+    for opcode in opcodes:
+        total += table.score(opcode)
+    return total

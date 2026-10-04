@@ -14,8 +14,7 @@ _PYSIM_DIR = _TESTS_DIR.parent
 _REPO_ROOT = _PYSIM_DIR.parent.parent
 
 
-from helpers import expect_assertion
-from memory import (
+from tier2_runtime.memory.manager import (
     FB_CONF_MEMORY_POOL_SIZE,
     FB_CONF_TASK_HEAP_SIZES,
     FB_TASK_ID_FLIGHT,
@@ -25,8 +24,9 @@ from memory import (
     RecoveryAction,
 )
 from memory_interface import PageMappingCallbacks
+from qa.shared.helpers import expect_assertion
 from scheduler import Scheduler
-from vmmio import (
+from tier2_runtime.hal.vmmio import (
     TrapCode,
     VMMIOController,
     VmmioStatus,
@@ -495,7 +495,7 @@ def test_mem_15_vmmio_fc14_tlb_sync():
 
 def test_mem_16_virtual_page_reservation_is_independent_of_shm_backing():
     """A 4KB virtual slot maps only the requested bytes from the 1KB SHM pool."""
-    from memory import FB_CONF_SHM_SIM_BASE, FB_CONF_SHM_SIZE, FB_PAGE_SIZE
+    from tier2_runtime.memory.manager import FB_CONF_SHM_SIM_BASE, FB_CONF_SHM_SIZE, FB_PAGE_SIZE
 
     mm, scheduler = _make_memory_manager(1)
     vmmio = VMMIOController(guest_ram_size=8192, scheduler=scheduler)
@@ -541,7 +541,7 @@ def test_mem_16_virtual_page_reservation_is_independent_of_shm_backing():
 
 def test_reacquire_released_partition_does_not_overlap_live_task(monkeypatch) -> None:
     """TEST-MEM-01/05: 固定2スロット構成で対象heapだけを返却・再初期化する。"""
-    import memory as memory_module
+    import tier2_runtime.memory.manager as memory_module
 
     # Select a compile-time configuration in the test, without changing the
     # product default of one VM or adding a runtime configuration backdoor.

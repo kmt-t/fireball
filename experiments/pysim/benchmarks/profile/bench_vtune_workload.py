@@ -38,22 +38,35 @@ from _bootstrap import configure_import_paths
 
 configure_import_paths(_PYSIM_DIR, _BENCH_DIR)
 
-from ipc_router import DataType, IPCMessage, IPCRouter, IPCStatus, Role, ScopeKind, pack_key32
-from memory import FB_CONF_MEMORY_POOL_SIZE, MemoryManager
+from ipc_router import (
+    DataType,
+    IPCMessage,
+    IPCRouter,
+    IPCStatus,
+    Role,
+    ScopeKind,
+    pack_key32,
+    FB_URI_HAL_STDOUT,
+)
+from tier2_runtime.memory.manager import FB_CONF_MEMORY_POOL_SIZE, MemoryManager
 from scheduler import ChannelAction, Scheduler
 from system import System
 from system_containers import StaticVector
-from tier2_runtime.logger import LOG_RECORD_SIZE, LogDictionary, Logger, LogLevel, LogResult
-from tier3_executer.interpreter.interpreter import Interpreter, InterpreterBindings
-from tier3_executer.jit.jit_manager import JITRuntimeManager
-from tier3_executer.jit.jit_runtime import JITInterpreter
-from tier3_executer.jit.x64_jit import TraceCompiler
-from tier3_executer.runtime_engine import RuntimeEngine
+from tier2_runtime.observability.logger import LOG_RECORD_SIZE, LogDictionary, Logger, LogLevel, LogResult
+from tier2_runtime.interpreter.interpreter import (
+    Interpreter,
+    InterpreterBindings,
+    NativeInterpreter,
+)
+from tier3_plugins.jit.jit_manager import JITRuntimeManager
+from tier3_plugins.jit.x64_jit import TraceCompiler
+from tier2_runtime.runtime.engine import RuntimeEngine
 from tier3_platform.drivers.hal.dummy import DummyDriver
 from tier3_platform.drivers.logging.file_sink import FileLogSink
+from tier3_platform.drivers.printk import PrintkSink
 from tier3_platform.drivers.wasi.context import WasiHostContext
-from wasm_module import Module
-from wasm_reader import parse
+from tier2_runtime.wasm.module import Module
+from tier2_runtime.wasm.reader import parse
 
 SUITE_WASM_PATH = Path(__file__).resolve().parent / "guest" / "suite.wasm"
 AO_WASM_PATH = _BENCH_DIR / "aobench" / "aobench.wasm"
@@ -154,15 +167,17 @@ def _new_guest():
     return module, bindings
 
 
-def _new_interpreter_guest() -> tuple[Module, Interpreter]:
+def _new_interpreter_guest() -> tuple[Module, Interpreter, None]:
     module, bindings = _new_guest()
-    return module, Interpreter(module, bindings)
+    return module, Interpreter(module, bindings), None
 
 
-def _new_jit_guest() -> tuple[Module, Interpreter]:
+def _new_jit_guest() -> tuple[Module, NativeInterpreter, RuntimeEngine]:
     module, bindings = _new_guest()
     engine = RuntimeEngine(jit_runtime=JITRuntimeManager(jit_compiler=TraceCompiler()))
-    return module, JITInterpreter(module, bindings, engine)
+    engine.register_module_blocks(module)
+    interpreter = NativeInterpreter(module, bindings, bump_allocator=engine.bump_allocator)
+    return module, interpreter, engine
 
 
 def _select_kernels(scale: float, override: list[str] | None) -> list[tuple[str, int]]:
@@ -181,19 +196,21 @@ def _select_kernels(scale: float, override: list[str] | None) -> list[tuple[str,
 def _run_suite(
     kernels: list[tuple[str, int]],
     oracle: SuiteOracle | None,
-    call: Callable[[Interpreter, Module, int, int], int],
+    call: Callable[[Interpreter | NativeInterpreter, RuntimeEngine | None, Module, int, int], int],
     phase: str,
-    guest_factory: Callable[[], tuple[Module, Interpreter]],
+    guest_factory: Callable[
+        [], tuple[Module, Interpreter | NativeInterpreter, RuntimeEngine | None]
+    ],
 ) -> PhaseResult:
     t_load = time.perf_counter()
-    module, interp = guest_factory()
+    module, interp, engine = guest_factory()
     load_seconds = time.perf_counter() - t_load
     runs: list[KernelRun] = []
     checksum = 0
     t_total = time.perf_counter()
     for name, units in kernels:
         t0 = time.perf_counter()
-        result = call(interp, module, module.export_func_index(name), units) & MASK32
+        result = call(interp, engine, module, module.export_func_index(name), units) & MASK32
         dt = time.perf_counter() - t0
         if oracle is not None:
             assert result == oracle.expected(name, units), f"{name}({units}) diverged from wasmtime"
@@ -214,19 +231,20 @@ def phase_suite_interp(scale: float, kernels: list[str] | None, oracle: bool) ->
     picked = _select_kernels(scale, kernels)
     ref = SuiteOracle(SUITE_WASM_PATH.read_bytes()) if oracle else None
 
-    def call(interp, module, index, units):
+    def call(interp, _engine, module, index, units):
         return interp.call(index, [units])[0]
 
     return _run_suite(picked, ref, call, "suite_interp", _new_interpreter_guest)
 
 
 def phase_suite_jit(scale: float, kernels: list[str] | None, oracle: bool) -> PhaseResult:
-    """Every kernel through the Interpreter template method with a shared JIT driver."""
+    """Every kernel through the C++ interpreter and shared RuntimeEngine JIT driver."""
     picked = _select_kernels(scale, kernels)
     ref = SuiteOracle(SUITE_WASM_PATH.read_bytes()) if oracle else None
 
-    def call(interp, module, index, units):
-        return interp.call(index, [units])[0]
+    def call(interp, engine, module, index, units):
+        assert engine is not None
+        return engine.call(interp, index, [units])[0]
 
     return _run_suite(picked, ref, call, "suite_jit", _new_jit_guest)
 
@@ -245,7 +263,7 @@ def phase_os_mix(scale: float, kernels: list[str] | None, oracle: bool) -> Phase
     seconds = 0.0
     log_path, sink = _open_log("os_mix")
     sysv = System(
-        logger_sink=sink,
+        printk_sink=sink,
         log_dictionary=LogDictionary(entries=((0x200, "KERNEL_DONE: idx=%d result=%d"),)),
     )
 
@@ -304,9 +322,9 @@ def _ao_size(scale: float) -> tuple[int, int]:
 def _ao_guest(phase: str):
     module = parse(AO_WASM_PATH.read_bytes())
     _, sink = _open_log(phase)
-    sysv = System(logger_sink=sink)  # keep system logs out of the guest's stdout stream
+    sysv = System(printk_sink=sink)  # keep system logs out of the guest's stdout stream
     wasi_ctx = WasiHostContext(sysv)
-    sysv.start_hal_driver(DummyDriver(transport=sysv.transport), sysv.wasi_hal_bindings.stdout_uri)
+    sysv.start_hal_driver(DummyDriver(transport=sysv.transport), FB_URI_HAL_STDOUT)
     funcs = wasi_ctx.build_interpreter_host_functions(module)
     module.init_memory_data(wasi_ctx.guest_memory, ())
     bindings = InterpreterBindings.with_memory_and_functions(wasi_ctx.guest_memory, funcs)
@@ -343,7 +361,7 @@ def phase_ao_jit(scale: float, kernels: list[str] | None, oracle: bool) -> Phase
     module, sysv, bindings, sink = _ao_guest("ao_jit")
     engine = RuntimeEngine(jit_runtime=JITRuntimeManager(jit_compiler=TraceCompiler()))
     engine.register_module_blocks(module)
-    interp = JITInterpreter(module, bindings, engine)
+    interp = NativeInterpreter(module, bindings, bump_allocator=engine.bump_allocator)
     t0 = time.perf_counter()
     engine.call(interp, module.export_func_index("main"), [width, height])
     seconds = time.perf_counter() - t0
@@ -372,7 +390,7 @@ def phase_ipc(scale: float, kernels: list[str] | None, oracle: bool) -> PhaseRes
     router = IPCRouter(sched, manager)
     log_path, sink = _open_log("ipc")
     dictionary = LogDictionary(entries=((_LOG_ID_MSG, "MSG: seq=%d val=%d"),))
-    logger = Logger(transport=sink, dictionary=dictionary, min_level=LogLevel.INFO)
+    logger = Logger(transport=PrintkSink(sink), dictionary=dictionary, min_level=LogLevel.INFO)
     sent_sum = [0]
     recv_sum = [0]
     received = [0]

@@ -1,4 +1,4 @@
-# HAL ドライバ実装（UART/SEGGER RTT/GPIO/I2C/SPI/Timer 物理層） コンポーネント設計書 {VERIFY_FORMAL} {VERIFY_LLM}
+# プラットフォーム物理ドライバ コンポーネント設計書 {VERIFY_FORMAL} {VERIFY_LLM}
 <!-- evidence:
      formal: formal/interrupt_boundary_model.py
      concept: concepts/platform_driver_concept.py
@@ -6,6 +6,8 @@
 -->
 
 本コンポーネントは、Tier 2 の抽象契約 [`hal_dispatch.md`](docs/components/tier2_runtime/hal_dispatch.md)（URI Resolver、コマンドプロトコル、ゼロコピー転送インターフェース）の物理ドライバ実装である。RSP Parserは含めず、UARTやSEGGER RTTなどの物理トランスポートだけを提供する。契約と実装の記述に食い違いがあれば `hal_dispatch.md` を正とする（`{META_ContractImplSplit}` 契約/実装分割パターン）。
+
+本TierにはTier 1 [`printk.md`](docs/components/tier1_core/printk.md) 契約の物理出力実装も置く。`PrintkSink` はOS診断イベントを同期出力し、Tier 2 Loggerの固定レコードも同じ出力先へ受け渡す。COOSやIPCを経由しない低層経路を保つ。
 
 ## 1. コンセプト
 <!-- traceability: {Challenge_InterruptSafety} {TaskPollInterruptEvent} {RSPMinimalSet} {Fast_Path_GPIO} -->
@@ -17,9 +19,9 @@
 
 ### 2.1 WASIドライバ結線設定
 
-WASIアダプタとHALドライバのURI結線はTier 3の静的構成で選択する。Tier 2はURIをハードコードせず、Tier 1のWASI/HAL結線契約を通じて注入された値だけを利用する。標準出力とFireballログ以外のWASI Preview 1操作は、選択したWASIバックエンドへ委譲する。
+WASIアダプタとHALドライバのURI結線はTier 3の静的構成で選択する。Tier 2はURIをハードコードせず、Tier 1のWASI/HAL結線契約を通じて注入された値だけを利用する。標準出力と標準エラー以外のWASI Preview 1操作は、選択したWASIバックエンドへ委譲する。
 
-ドライバ構成は標準出力、ロガー、WASIバックエンドを一つの静的構成として保持する。
+ドライバ構成は標準出力、printk、WASIバックエンドを一つの静的構成として保持する。
 
 | 結線 | 既定URI |
 | :--- | :--- |
@@ -30,7 +32,7 @@ WASIの結線設定は標準出力とログだけを対象とする。WASI Previ
 `fd_write` は、構成で選択されたWASI Preview 1バックエンドへ委譲する。
 タイマーやUARTのURIをWASI結線へ追加してはならない。
 
-診断ログはHAL URIを経由せず、`System`へ注入する専用Sinkへ`Logger.flush()`から直接出力する。標準出力SinkはログSinkとして再利用しない。デバッガのRSP物理通信は、`DebuggerSink`契約を満たす専用Sinkをプラットフォーム構成から注入する。既定の転送方式はここでは定めない。RSPのフレーミング解析とコマンド解釈はDebuggerプラグインが担当し、Sinkはバイト転送だけを担当する。
+Tier 1のOS診断は[`printk.md`](docs/components/tier1_core/printk.md)のイベント契約から`PrintkSink`へ同期出力する。Tier 2 Loggerも同じprintk出力先へ固定レコードを書き込むが、Logger自体はリングバッファとCOOS idle hookを使う。標準出力Sinkはprintkとして再利用しない。デバッガのRSP物理通信は、`DebuggerSink`契約を満たす専用Sinkをプラットフォーム構成から注入する。既定の転送方式はここでは定めない。RSPのフレーミング解析とコマンド解釈はDebuggerプラグインが担当し、Sinkはバイト転送だけを担当する。
 
 ## 3. 静的モデル
 
@@ -141,7 +143,7 @@ sequenceDiagram
 <!-- traceability: {HAL_Interface} {IPC_ZeroCopy} {BufferedLogging} -->
 [`hal_dispatch.md`](docs/components/tier2_runtime/hal_dispatch.md) で定義された契約API（`stream-read`, `stream-write`, `map-buffer`, `unmap-buffer`）を、以下の物理不変条件に従って実装する。
 
-`{BufferedLogging}` の物理出力はこの HAL の `stream-write` 経路を使う。ロガーのリングバッファとHALドライバーの固定長I/Oバッファプールは別の所有領域である。
+`{BufferedLogging}` の物理出力は Tier 1 `printk` 契約を実装する`PrintkSink`経由で行い、HALの`stream-write`経路を使わない。ロガーのリングバッファとHALドライバーの固定長I/Oバッファプールは別の所有領域である。
 
 **静的固定長バッファプールの境界厳格検査 ({GOTCHA-HAL-01})**: <!-- definition: {GOTCHA-HAL-01} -->
 `HalBufferPool` は、`FB_CONF_HAL_MAX_BUFFERS` 個の固定サイズスロット（`FB_CONF_HAL_BUFFER_SIZE` = 256 バイト）を保持する。ゲストの`map-buffer(buffer_id)`が選択した1スロットだけをvMMIO DYNAMICへマップし、I/O完了時の`unmap-buffer(handle)`で解除する。マッピング競合は`BUSY`を返し、境界超過や不正なハンドルだけを`HalBufferTrap`で即時停止させる。
@@ -150,7 +152,7 @@ sequenceDiagram
 `stream-read` / `stream-write` を処理するHALドライバは、コマンドに含まれる `hal-buffer-id` を使って現在のI/Oでマップされたバッファスロットへ専用Sink経由でアクセスする。ゲスト側のマッピングは操作完了時に解除し、ドライバ側は同じ固定スロットの境界検査だけを通過して読み書きする。したがって、標準入出力のストリーミングにドライバ専用の複製バッファや生ポインタは存在しない。
 
 **ロガー出力の分離**:
-ロガーは `Logger.flush()` が注入された `FileLogSink` へ直接書き込む。`FileLogSink` は HAL ドライバでも標準出力用ドライバのバッファでもない。
+Tier 3の`PrintkSink`は出力バイトを構成から注入された`FileLogSink`などの物理Sinkへ書き込む。Tier 2ロガーの`flush()`もこのprintk Sinkを使う。`FileLogSink`はHALドライバでも標準出力用ドライバのバッファでもない。
 ログ行は、ゲストの標準出力へ混入しない。
 ホスト実行では、出力先の実体をホストファイルとする。出力先は `System` の生成時に呼び出し側が渡す。
 **設計理由**: 標準出力とログが同じ固定長バッファを共有すると、システムの警告ログがゲスト出力の途中に割り込む。この混入は、ゲスト出力の完全性検証を困難にする。

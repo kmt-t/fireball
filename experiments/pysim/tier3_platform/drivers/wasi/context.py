@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from config import FB_CONF_MAX_IMPORTS
-from hal_dispatch import (
+from tier2_runtime.hal.dispatch import (
     ARG_BUFFER_HANDLE,
     ARG_LENGTH,
     ARG_NANOS,
@@ -31,10 +31,10 @@ from hal_dispatch import (
     HalTask,
     WasiIpcCmd,
 )
-from hostcall import FbSyscallId, FireballHostCallPort, WasiErrno, WasiPreview1Host
-from ipc_router import IPCRouter
-from loader import fnv1a_32
-from memory import MemoryManager
+from tier2_runtime.hal.hostcall import FbSyscallId, FireballHostCallPort, WasiErrno, WasiPreview1Host
+from ipc_router import FB_URI_HAL_STDOUT, IPCRouter
+from tier1_core.fnv1a import fnv1a_32
+from tier2_runtime.memory.manager import MemoryManager
 from scheduler import ChannelAction, Scheduler
 from system_containers import (
     ReadOnlyFlatMapStorage,
@@ -42,10 +42,9 @@ from system_containers import (
     ReadOnlyRadixBinaryTreeStorage,
     StaticVector,
 )
-from tier2_runtime.logger import Logger
+from tier2_runtime.observability.logging_interface import LoggerPort
 from tier3_platform.drivers.wasi.uvwasi import WasiPreview1Backend
-from wasi_bindings import WasiHalBindings
-from wasm_module import Module
+from tier2_runtime.wasm.module import Module
 
 WasiValue = int
 
@@ -63,11 +62,10 @@ class WasiRuntimeHost(Protocol):
 
     host_calls: FireballHostCallPort
     ipc: IPCRouter
-    logger: Logger
+    logger: LoggerPort
     memory_manager: MemoryManager
     pool: HalBufferPool
     scheduler: Scheduler
-    wasi_hal_bindings: WasiHalBindings
     wasi_backend: WasiPreview1Backend
 
     def bind_runtime(self, memory: bytearray | None) -> None:
@@ -102,11 +100,10 @@ class WasiInterfaceVTable:
 class Wasi03pEngine:
     """Provide Fireball URI resolution, IPC dispatch, and the HAL buffer pool."""
 
-    __slots__ = ("_interface_storage", "bindings", "sysv")
+    __slots__ = ("_interface_storage", "sysv")
 
-    def __init__(self, sysv: WasiRuntimeHost, bindings: WasiHalBindings | None = None):
+    def __init__(self, sysv: WasiRuntimeHost):
         self.sysv = sysv
-        self.bindings = bindings if bindings is not None else sysv.wasi_hal_bindings
         self._interface_storage: ReadOnlyFlatMapStorage[int, WasiInterfaceVTable]
         self._setup_standard_interfaces()
 
@@ -120,12 +117,12 @@ class Wasi03pEngine:
         """
         console_iface = WasiInterfaceVTable(
             write_buffer=lambda handle, offset, length: self._write_buffer(
-                self.bindings.stdout_uri, handle, offset, length
+                FB_URI_HAL_STDOUT, handle, offset, length
             ),
         )
         entries: StaticVector[tuple[int, WasiInterfaceVTable]] = StaticVector.of(
             (
-                (fnv1a_32(self.bindings.stdout_uri), console_iface),
+                (fnv1a_32(FB_URI_HAL_STDOUT), console_iface),
                 (fnv1a_32("wasi:io/streams@0.3.0"), console_iface),
                 (fnv1a_32("wasi:io/streams"), console_iface),
                 (fnv1a_32("wasi:cli/stdout@0.3.0"), console_iface),
@@ -201,7 +198,7 @@ class Wasi03pEngine:
         Sends an IPC Driver Command to the HAL Server Task via IPCRouter ({hal_dispatch.md}).
         HAL operates as a distinct task and communicates strictly over IPC rendezvous.
         """
-        from hal_dispatch import make_hal_ipc_message
+        from tier2_runtime.hal.dispatch import make_hal_ipc_message
         from ipc_router import IPCStatus, Role
 
         caller_task = self.sysv.scheduler.current_task
@@ -286,7 +283,6 @@ class WasiHostContext:
     __slots__ = (
         "_import_storage",
         "_keepalive_trampolines",
-        "bindings",
         "core03p",
         "guest_memory",
         "sysv",
@@ -297,14 +293,12 @@ class WasiHostContext:
         self,
         sysv: WasiRuntimeHost,
         guest_memory: bytearray | None = None,
-        bindings: WasiHalBindings | None = None,
         uvwasi: WasiPreview1Backend | None = None,
     ):
         self.sysv = sysv
         self.guest_memory = guest_memory if guest_memory is not None else bytearray(64 * 1024)
         self.sysv.bind_runtime(self.guest_memory)
-        self.bindings = bindings if bindings is not None else sysv.wasi_hal_bindings
-        self.core03p = Wasi03pEngine(sysv, self.bindings)
+        self.core03p = Wasi03pEngine(sysv)
         self.uvwasi = uvwasi if uvwasi is not None else sysv.wasi_backend
         self.sysv.attach_wasi_context(self)
         self._keepalive_trampolines: StaticVector[WasiHostFunction] = StaticVector(
@@ -419,7 +413,7 @@ class WasiHostContext:
                 view = self.sysv.pool.view(handle, 0, chunk_len)
                 view[:] = mem[source_offset : source_offset + chunk_len]
                 result = self.core03p.send_ipc_command(
-                    self.bindings.stdout_uri,
+                    FB_URI_HAL_STDOUT,
                     WasiIpcCmd.STREAM_WRITE_BUFFER,
                     ReadOnlyFlatMapView(
                         sorted(

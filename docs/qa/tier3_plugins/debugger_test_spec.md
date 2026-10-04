@@ -107,7 +107,7 @@ QAブロックドライバはローダメタデータ取得と既存のブロッ
 | TEST-DBG-10 | `test_dbg_10_immediate_is_one_instruction` | 多byte LEB128とi64/f32/f64の固定PC・全生ワードを照合する |
 | TEST-DBG-10 | `test_dbg_10_host_boundary_does_not_replay_the_import` | host importの引数7を1回だけ記録し、後続命令を先行実行しない |
 | TEST-DBG-10/11 | `test_dbg_10_trap_stops_without_normal_exit_or_later_update` | `PC(unreachable)`でs/cが停止し、global更新とW00を発生させない |
-| TEST-DBG-12 | `test_dbg_12_disabled_composition_has_no_debug_state_or_weave` | 通常native入口と144byteのABIを維持し、構成時weaveを呼ばない |
+| TEST-DBG-12 | `test_dbg_12_disabled_composition_has_no_debug_state_or_weave` | 通常native入口は144byteのABI領域を使い、debug hookを有効化せず、構成時weaveを呼ばない |
 | TEST-DBG-12/13 | `test_dbg_12_continue_returns_to_python_only_at_actual_stop` | 2002命令のcが既存native stepの1回で完了する |
 | GOTCHA-DBG-01 | `test_dbg_13_composition_rejects_jit_before_creating_executor` | [`debugger.md`](docs/components/tier3_plugins/debugger.md)、JITとDebuggerの同時構成を生成前に拒否する |
 | TEST-DBG-12/13 | `test_dbg_13_two_compositions_keep_stop_state_and_storage_independent` | 通常構成と2つのデバッグ構成の状態・ブレークポイントを相互に変更しない |

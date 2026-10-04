@@ -22,8 +22,9 @@ These are direct Python calls to drivers and a reference backend.  No WASM guest
 guest-side libfireball adapter, GPIO, I2C, or SPI path is executed here.
 """
 
-from fixtures.uvwasi_reference import UvwasiReferenceContext, WasiErrno, WasiWhence
-from hal_dispatch import ARG_BUFFER_HANDLE, ARG_LENGTH, ARG_MAX_LEN, ARG_OFFSET, WasiIpcCmd
+from tier2_runtime.hal.dispatch import ARG_BUFFER_HANDLE, ARG_LENGTH, ARG_MAX_LEN, ARG_OFFSET, WasiIpcCmd
+from qa.shared.fixtures.uvwasi_reference import UvwasiReferenceContext, WasiErrno, WasiWhence
+from ipc_router import FB_URI_HAL_STDOUT
 from system import System
 from system_containers import ReadOnlyFlatMapView
 from tier3_platform.drivers.hal.dummy import DummyDriver
@@ -38,7 +39,7 @@ def test_scenario_hal_and_wasi_drivers():
     sysv = System()
     runtime_task = sysv.start_runtime_task(name="scenario11_stdio_guest")
     stdio = DummyDriver(transport=sysv.transport)
-    sysv.start_hal_driver(stdio, sysv.wasi_hal_bindings.stdout_uri)
+    sysv.start_hal_driver(stdio, FB_URI_HAL_STDOUT)
     sysv.scheduler.current_task = runtime_task
     rx = sysv.pool.buffer(0)
     tx = sysv.pool.buffer(1)

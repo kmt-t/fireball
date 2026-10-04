@@ -2,7 +2,7 @@
 <!-- evidence:
      reference: docs/requires/requirement_list.md
      test: docs/qa/tier2_runtime/runtime_observability_test_spec.md
-     benchmark: docs/components/tier3_executer/benchmarks/jit_runtime_bench_spec.md
+     benchmark: docs/components/tier3_plugins/benchmarks/jit_runtime_bench_spec.md
 -->
 
 ## 1. コンセプト
@@ -14,8 +14,7 @@ Guest Profiler 向けの関数・実行境界イベントだけを記録する�
 
 この分割により、Interpreter と JIT のホットパスは C++ 内で完結させる。通常のイベント経路は
 関数・ホスト呼出・実行方式の境界など意味上の境界だけを扱い、WASM 命令ごとのイベントを発行しない。
-ホットスポットプロファイラは Runtime Event Sink から独立した別契約とし、Interpreter の実行履歴から
-カードを更新する。詳細は [`runtime_hotspot_profiler.md`](docs/components/tier2_runtime/runtime_hotspot_profiler.md) に置く。
+JIT拡張のホットスポット履歴とカード状態はRuntime Event Sinkに含めず、Tier 3 JIT拡張の内部状態とする。
 
 イベント機能は Runtime の型構成で選び、イベント有効・無効の Runtime を同じ実行ファイル内に別々の
 インスタンスとして生成できるようにする。無効構成にはイベントシンク、計数状態、時計読出し、および
@@ -36,7 +35,7 @@ ABI を定める。集計ポリシーおよび表示は Tier 3 の Profiler が�
 | 役割 | C++ Runtime Event Sink と Python への転送 ABI の契約 |
 | 依存先 | Runtime の実行境界、Interpreter、JIT、Profiler |
 | 被依存側 | Guest Profiler、ホスト上の観測・診断ツール |
-| 正本 | 本書および [`runtime_hotspot_profiler.md`](docs/components/tier2_runtime/runtime_hotspot_profiler.md) |
+| 正本 | 本書 |
 
 ## 3. 静的モデル
 
@@ -48,7 +47,6 @@ ABI を定める。集計ポリシーおよび表示は Tier 3 の Profiler が�
 | C++ Runtime Event Sink | 意味上の実行境界イベントを記録する | 固定幅レコードの固定長リング | C++ 内で記録し、Python を呼ばない |
 | C++/Python 転送 ABI | Runtime イベント履歴を出力する | Versioned little-endian batch | 停止点で呼び出し、バッファを保持しない |
 | Python イベント API | バッチを Profiler 用 Python 値へ変換する | Enum、dataclass、Protocol | C++ レコード配置を直接公開しない |
-| ホットスポットプロファイラ | JIT用の実行履歴を収集・分析する | 別契約で定義する | Runtime Event Sink を通さない |
 
 ```mermaid
 graph TD
@@ -58,8 +56,7 @@ graph TD
     Bridge --> Adapter[Python Adapter]
     Adapter --> PythonAPI[Python Event API]
     PythonAPI --> Profiler[Profiler / 診断ツール]
-    Interpreter[Interpreter] -->|実行 PC 履歴| Hotspot[独立した Runtime Hotspot Profiler 契約]
-    Hotspot --> JITRuntime[JIT Runtime のカード更新]
+    JITRuntime[Tier 3 JIT拡張] -->|内部の候補履歴・カード状態| JITCache[JIT cache]
 ```
 
 ### 3.2 C++ Runtime イベントレコード案
@@ -130,8 +127,8 @@ Runtime インスタンスと同じバイナリへ配置できる。したがっ
 ### 3.4 ホットスポット契約との分離
 
 Runtime Event Sink は Guest Profiler が必要とする粗粒度イベントだけを運ぶ。基本ブロックごとのPC履歴、
-ホットスポット分析、JITカード更新はこのリングへ記録しない。これらは独立した Runtime 契約として
-[`runtime_hotspot_profiler.md`](docs/components/tier2_runtime/runtime_hotspot_profiler.md) に定義する。
+ホットスポット分析、JITカード更新はこのリングへ記録しない。これらはTier 3 JIT拡張の内部処理であり、
+本書のイベント契約には含めない。
 
 ### 3.5 C++ と Python の型境界
 
@@ -286,7 +283,6 @@ Python の sink/consumer はイベントまたは集計レコードを受け取�
 ## 7. 形式検証・テスト仕様との対応
 
 Runtime イベントの意味、リング容量超過、バッチ ABI の境界検証は、対応するテスト仕様と形式モデルで検証する。
-Runtime Hotspot Profiler の検証契約は [`runtime_hotspot_profiler.md`](docs/components/tier2_runtime/runtime_hotspot_profiler.md) に置く。
 
 ### 7.1 検証対象の不変条件
 
@@ -303,14 +299,14 @@ Runtime Hotspot Profiler の検証契約は [`runtime_hotspot_profiler.md`](docs
 
 - C ABI はホスト側 Adapter との境界に限定し、組み込み Runtime は Python やホスト用 ABI に依存しない。
 - 時刻source、周波数、時計IDはRuntime構成で固定し、時刻なし構成は時計状態と読出しを持たない。
-- ホットスポットプロファイラの PC 履歴とカード更新は、[`runtime_hotspot_profiler.md`](docs/components/tier2_runtime/runtime_hotspot_profiler.md) の独立契約に従う。
+- ホットスポット履歴とカード更新は、Tier 3 JIT拡張の責務であり、本契約の対象外とする。
 - Debugger の停止要求検出機構、ログ形式、通信 transport は本契約の対象外とする。
 
 ## 8. 設計判断
 
 本契約の中心判断は、Guest Profiler が必要とする Runtime の粗粒度イベントだけを C++ の型付き Sink に
 記録し、停止点で一括 ABI 変換することである。ホットスポット履歴とカード更新はイベント Sink に混ぜず、
-[`runtime_hotspot_profiler.md`](docs/components/tier2_runtime/runtime_hotspot_profiler.md) の独立契約で定義する。
+Tier 3 JIT拡張が内部状態として所有する。
 
 Runtime Event Sink の比較は「Sink 無効」「Sink 有効」の具象 Runtime を同じ実行ファイルへ生成する。
 同じ WASM 入力と反復数を用い、動的命令あたりの cycles、実行時間、イベント数、リング欠落数を記録する。

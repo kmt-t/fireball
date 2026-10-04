@@ -37,9 +37,9 @@ while not (_PYSIM_DIR / "tier1_core").is_dir():
 import socket
 import time
 
-from execution_context import WASMContext
-from helpers import make_debug_execution, wat_to_wasm
-from runtime_test_driver import RuntimeEngineDebugDriver
+from qa.private.debugger_support import DebugTestView, make_debug_execution
+from qa.private.runtime_test_driver import RuntimeEngineDebugDriver
+from qa.shared.helpers import wat_to_wasm
 from tier3_plugins.debugger.debugger import DebuggerManager, GDBRspProtocol
 from tier3_plugins.debugger.gdb_server import GDBServer
 
@@ -153,7 +153,7 @@ def test_debugger_sink_is_replaceable() -> None:
     sink = _MemoryDebuggerSink(connection)
     server = GDBServer(DebuggerManager(), transport=sink)
     memory = bytearray(b"keep")
-    task = server.run_task(0, WASMContext(memory=memory), {})
+    task = server.run_task(0, DebugTestView(memory=memory), {})
     next(task)
     assert bytes(connection.outgoing) == b"-+$S05#b8"
     assert memory == b"keep", "bad checksum packet must not execute a memory write"

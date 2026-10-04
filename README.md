@@ -35,13 +35,16 @@ You need Clang, CMake, Ninja, and Python (with `uv` recommended) to build and ve
 - **Python Runtime & Package Management**:
   - Use CPython 3.14.x for the repository `.venv`; [`uv`](https://github.com/astral-sh/uv) manages the environment. PyPy is not configured as a supported runtime.
 - **Python Dependencies**:
-  Install the repository development dependencies from [pyproject.toml](pyproject.toml):
+  Install the repository development dependency group from [pyproject.toml](pyproject.toml):
   ```bash
   uv sync
   ```
+  The Python root project has no runtime dependencies. `uv sync` selects the aggregate `dev` group, which includes shared tooling, shared QA framework dependencies, QA-only test oracles, and benchmark-only tools. `qa-shared` contains pytest, pytest-cov, and Hypothesis; `qa-private` contains the Wasmtime oracle. These groups are absent from the Python project's runtime dependency metadata. `experiments/pysim/qa/shared/` holds test support shared across suites, while `experiments/pysim/qa/private/` holds QA-only adapters and suite-specific doubles. WASI-SDK and WABT are external workload tools prepared separately.
+  To install the verification and test environment without benchmark tools, use `uv sync --no-default-groups --group shared --group qa-shared --group qa-private`.
+
   Key modules include:
   - **Verification Engine (`spec-integrator`)**: `pyModelChecking` (CTL/LTL formal verification), `mistune` (Markdown AST parser), `pyyaml`, `requests`, `urllib3`, `mermaidx`.
-  - **Simulator & JIT Machine Code (`experiments/pysim`)**: `wasmtime` (WASM reference runtime for differential testing).
+  - **QA-only WASM oracle (`qa-private`)**: `wasmtime` is used for differential tests; the product runtime does not depend on it.
   - **Testing, Formatting & Static Typing**: `pytest`, `pytest-cov`, `ruff`, and `pyright`. Pyright is the static type checker used by CI for the pilot set of product-tier modules; it is separate from the Python runtime.
 
 ### 2. Verification & Quality Gates
@@ -97,7 +100,7 @@ All Fireball development is strictly governed by the specifications in `docs/` a
 - **Top-Level Requirements**: `docs/requires/requirement_list.md`
 - **Architecture and Document Structure**: `docs/architecture/architecture_overview.md`, `docs/architecture/document_structure.md`
 - **Resource Budget**: `docs/architecture/resource_budget_estimation.md`
-- **Component Specifications**: `docs/components/` (Tier 1 Core/Interface, Tier 2 Runtime, Tier 3 Executer/Plugins/Platform)
+- **Component Specifications**: `docs/components/` (Tier 1 Core/Interface, Tier 2 Runtime, Tier 3 Plugins/Platform)
 - **Physical Specifications**: `docs/specs/` (WASM, WASI, GDB RSP, and JIT stencil catalogs)
 - **Integration Test Scenarios**: `docs/qa/integration_test_scenarios.md`
 - **Roadmap & Backlog**: `docs/plans/roadmap_phase.md`, `docs/plans/backlog_list.md`

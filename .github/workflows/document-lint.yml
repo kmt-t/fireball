@@ -38,8 +38,8 @@ jobs:
     - name: Build PySim native extensions
       run: |
         clang++ --version
-        FIREBALL_BUILD_RUNTIME_PROFILE_STATS=1 bash experiments/pysim/tier3_executer/interpreter/build_native.sh
-        bash experiments/pysim/tier3_executer/jit/build_native.sh
+        FIREBALL_BUILD_RUNTIME_PROFILE_STATS=1 bash experiments/pysim/native/tier2_runtime/interpreter/build_native.sh
+        bash experiments/pysim/native/tier3_plugins/jit/build_native.sh
 
     - name: Run PySim Source Quality Gate & Unit Tests
       run: |
@@ -59,7 +59,7 @@ jobs:
 
     - name: Reject assert-wrapped mutating container operations
       run: |
-        if rg -n 'assert[^\n]*\.push_back\s*\(' experiments/pysim/tier1_core experiments/pysim/tier1_interface experiments/pysim/tier2_runtime experiments/pysim/tier3_jit; then
+        if rg -n 'assert[^\n]*\.push_back\s*\(' experiments/pysim/tier1_core experiments/pysim/tier1_interface experiments/pysim/tier2_runtime experiments/pysim/tier3_plugins; then
           echo 'Found a mutating push_back call inside assert.'
           exit 1
         fi
@@ -99,8 +99,8 @@ jobs:
     - name: Build PySim native extensions
       run: |
         clang++ --version
-        FIREBALL_BUILD_RUNTIME_PROFILE_STATS=1 bash experiments/pysim/tier3_executer/interpreter/build_native.sh
-        bash experiments/pysim/tier3_executer/jit/build_native.sh
+        FIREBALL_BUILD_RUNTIME_PROFILE_STATS=1 bash experiments/pysim/native/tier2_runtime/interpreter/build_native.sh
+        bash experiments/pysim/native/tier3_plugins/jit/build_native.sh
 
     - name: Run Document & Source Quality Gates
       run: |

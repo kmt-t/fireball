@@ -28,10 +28,11 @@ from ipc_router import (
     ScopeKind,
     pack_key32,
 )
-from memory import FB_CONF_MEMORY_POOL_SIZE, MemoryManager
+from tier2_runtime.memory.manager import FB_CONF_MEMORY_POOL_SIZE, MemoryManager
 from scheduler import Scheduler, WaitDir
-from tier2_runtime.logger import LogDictionary, Logger, LogLevel, LogResult, decode_log_records
+from tier2_runtime.observability.logger import LogDictionary, Logger, LogLevel, LogResult, decode_log_records
 from tier3_platform.drivers.hal.stream import StreamTransport
+from tier3_platform.drivers.printk import PrintkSink
 
 # kv_pair key_ids (ipc_router.md §3.3): Functional scope, UINT32 values.
 _KEY_CMD = pack_key32(ScopeKind.FUNCTIONAL, DataType.UINT32, key_id=1)
@@ -155,7 +156,7 @@ def test_scenario_ipc_router_and_logging():
     assert rejected, "LogDictionary must reject %s pointer specifier"
     print("    [Section 2.1] LogDictionary Pointer Specifier Rejection (%s) -> REJECTED [PASS]")
     # 3. Emit structured logs via Logger
-    logger = Logger(transport=transport, dictionary=log_dict, min_level=LogLevel.INFO)
+    logger = Logger(transport=PrintkSink(transport), dictionary=log_dict, min_level=LogLevel.INFO)
     assert logger.log_event(LogLevel.INFO, 0x1100, 1, 5) == LogResult.SUCCESS
     assert logger.log_event(LogLevel.DEBUG, 0x1104, 0x12345678) == LogResult.FILTERED
     assert logger.log_event(LogLevel.ERROR, 0x1104, 0xDEADBEEF) == LogResult.SUCCESS

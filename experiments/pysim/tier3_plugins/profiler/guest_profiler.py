@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from runtime_events import (
+from tier2_runtime.observability.events import (
     RuntimeEvent,
     RuntimeEventBatch,
     RuntimeEventFlags,

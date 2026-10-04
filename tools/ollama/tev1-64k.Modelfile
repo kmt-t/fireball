@@ -1,2 +1,0 @@
-FROM tev1:latest
-PARAMETER num_ctx 65536

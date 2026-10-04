@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Final
 
-from hostcall import FireballHostCallPort
+from tier2_runtime.hal.hostcall import FireballHostCallPort
 
 U32_MAX: Final[int] = 0xFFFF_FFFF
 

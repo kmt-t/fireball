@@ -18,6 +18,16 @@ _PYSIM_DIR = _TESTS_DIR.parent
 _REPO_ROOT = _PYSIM_DIR.parent.parent
 
 
+from ipc_router import FB_URI_HAL_STDOUT
+from qa.shared.fixtures.uvwasi_reference import UvwasiReferenceContext, WasiErrno, WasiWhence
+from qa.shared.helpers import expect_assertion
+from scheduler import ChannelAction, Scheduler
+from system import (
+    System,
+)
+from system_containers import (
+    ReadOnlyFlatMapView,
+)
 from tier2_runtime.hal.dispatch import (
     FB_CONF_HAL_BUFFER_SIZE,
     FB_CONF_HAL_MAX_BUFFERS,
@@ -25,21 +35,16 @@ from tier2_runtime.hal.dispatch import (
     HalBufferPool,
     WasiIpcCmd,
 )
-from qa.shared.fixtures.uvwasi_reference import UvwasiReferenceContext, WasiErrno, WasiWhence
-from qa.shared.helpers import expect_assertion
-from scheduler import ChannelAction, Scheduler
-from ipc_router import FB_URI_HAL_STDOUT
-from system import (
-    System,
+from tier2_runtime.observability.logger import (
+    LogDictionary,
+    LogLevel,
+    LogResult,
+    decode_log_records,
 )
-from system_containers import (
-    ReadOnlyFlatMapView,
-)
-from tier2_runtime.observability.logger import LogDictionary, LogLevel, LogResult, decode_log_records
+from tier2_runtime.vmmio.controller import TrapCode, VMMIOController, VmmioStatus
 from tier3_platform.drivers.hal.dummy import DummyDriver, Timer
 from tier3_platform.drivers.hal.stream import StreamTransport
 from tier3_platform.drivers.logging.file_sink import FileLogSink
-from tier2_runtime.vmmio.controller import TrapCode, VMMIOController, VmmioStatus
 
 
 def test_hal_01_stream_transport_uses_fixed_buffers():
@@ -371,9 +376,7 @@ def test_hal_command_response_separates_status_and_u64_value():
     try:
         runtime_task = sysv.start_runtime_task(name="hal_clock_guest")
         sysv.scheduler.current_task = runtime_task
-        sysv.start_hal_driver(
-            DummyDriver(transport=sysv.transport), FB_URI_HAL_STDOUT
-        )
+        sysv.start_hal_driver(DummyDriver(transport=sysv.transport), FB_URI_HAL_STDOUT)
         engine = Wasi03pEngine(sysv)
 
         response = engine.send_ipc_command(
@@ -431,9 +434,7 @@ def test_hal_15_file_log_sink_receives_internal_logs():
     log_dictionary = LogDictionary(entries=((0x300, "TEST_LOG: v=%d"),))
     sysv = System(printk_sink=sink, log_dictionary=log_dictionary)
     try:
-        sysv.start_hal_driver(
-            DummyDriver(transport=sysv.transport), FB_URI_HAL_STDOUT
-        )
+        sysv.start_hal_driver(DummyDriver(transport=sysv.transport), FB_URI_HAL_STDOUT)
 
         assert sysv.logger.log_event(LogLevel.INFO, 0x300, 7) == LogResult.SUCCESS
         assert sysv.logger.flush() == 1

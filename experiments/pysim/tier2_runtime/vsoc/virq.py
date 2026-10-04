@@ -16,8 +16,8 @@ from enum import IntEnum
 from typing import TYPE_CHECKING
 
 from interrupt_event import InterruptEvent
-from tier2_runtime.runtime.recovery import Result
 from system_containers import StaticVector, freeze_sequence
+from tier2_runtime.runtime.recovery import Result
 from tier2_runtime.wasm.module import I32
 
 if TYPE_CHECKING:

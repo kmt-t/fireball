@@ -43,9 +43,9 @@ from tier2_runtime.interpreter.interpreter import (
     InterpreterBindings,
     NativeInterpreter,
 )
+from tier2_runtime.wasm.reader import parse
 from tier3_platform.drivers.hal.dummy import DummyDriver
 from tier3_platform.drivers.wasi.context import WasiHostContext
-from tier2_runtime.wasm.reader import parse
 
 # ---------------------------------------------------------------------------
 # Genuine 3D Raytracing Ambient Occlusion WAT (Fixed-point Q8.8: 1.0 = 256)
@@ -406,9 +406,9 @@ def run_aobench():
     module = parse(wasm_bytes)
     print(f"    -> Parsed Module: {len(module.functions)} functions, {len(module.exports)} exports")
     # 3. Setup System & WASI Context
+    from tier2_runtime.runtime.engine import RuntimeEngine
     from tier3_plugins.jit.jit_manager import JITRuntimeManager
     from tier3_plugins.jit.x64_jit import TraceCompiler
-    from tier2_runtime.runtime.engine import RuntimeEngine
 
     # 3. Setup System & WASI Context for the Interpreter baseline
     sysv = System()
@@ -442,9 +442,7 @@ def run_aobench():
         "[*] Step 4: Executing on Tier 2 RuntimeEngine with Tier 3 JIT extension (card marking + idle compilation)..."
     )
     sysv_t3 = System()
-    sysv_t3.start_hal_driver(
-        DummyDriver(transport=sysv_t3.transport), FB_URI_HAL_STDOUT
-    )
+    sysv_t3.start_hal_driver(DummyDriver(transport=sysv_t3.transport), FB_URI_HAL_STDOUT)
     wasi_ctx_t3 = WasiHostContext(sysv_t3)
     host_funcs_t3 = wasi_ctx_t3.build_interpreter_host_functions(module)
     module.init_memory_data(wasi_ctx_t3.guest_memory, ())
@@ -518,9 +516,7 @@ if __name__ == "__main__":
         wasm_float_bytes = wasmtime.wat2wasm(GENUINE_AO_FLOAT_WAT)
         module_float = parse(wasm_float_bytes)
         sysv_float = System()
-        sysv_float.start_hal_driver(
-            DummyDriver(transport=sysv_float.transport), FB_URI_HAL_STDOUT
-        )
+        sysv_float.start_hal_driver(DummyDriver(transport=sysv_float.transport), FB_URI_HAL_STDOUT)
         wasi_ctx_float = WasiHostContext(sysv_float)
         host_funcs_float = wasi_ctx_float.build_interpreter_host_functions(module_float)
         module_float.init_memory_data(wasi_ctx_float.guest_memory, ())

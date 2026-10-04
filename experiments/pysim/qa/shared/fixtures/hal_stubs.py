@@ -15,6 +15,9 @@ from enum import IntEnum
 from unittest.mock import patch
 
 import ipc_router
+from ipc_router import Role, ServiceDescriptor
+from system import System
+from system_containers import ReadOnlyFlatMapView
 from tier2_runtime.hal.dispatch import (
     ARG_BUFFER_HANDLE,
     ARG_CLOCK_HZ,
@@ -35,9 +38,6 @@ from tier2_runtime.hal.dispatch import (
     HalDriver,
     WasiIpcCmd,
 )
-from ipc_router import Role, ServiceDescriptor
-from system import System
-from system_containers import ReadOnlyFlatMapView
 from tier3_platform.drivers.hal.stream import StreamTransport
 from tier3_platform.drivers.wasi.context import Wasi03pEngine
 

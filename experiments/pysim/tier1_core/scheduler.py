@@ -26,12 +26,12 @@ from enum import IntEnum
 from typing import Protocol, cast
 
 from interrupt_event import InterruptEvent
+from system_containers import StaticVector
 from tier1_core.printk import (
     Printk,
     PrintkEvent,
     PrintkLevel,
 )
-from system_containers import StaticVector
 
 FB_CONF_MAX_TASKS = 16
 FB_CONF_MAX_CHANNELS = FB_CONF_MAX_TASKS * 4
@@ -415,9 +415,9 @@ class Scheduler:
         "dropped_irqs",
         "idle_hooks",
         "interrupt_event_queue",
-        "printk",
         "max_handoffs",
         "max_tasks",
+        "printk",
         "reschedule_generation",
         "reschedule_pending",
         "round_target_generation",

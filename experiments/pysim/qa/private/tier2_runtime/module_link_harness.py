@@ -74,9 +74,11 @@ def _find_exported_function(module: Module, name: str) -> int:
     assert module.source is not None
     encoded_name = name.encode("utf-8")
     for export in module.exports:
-        if export.kind == 0 and module.source[
-            export.name_offset : export.name_offset + export.name_size
-        ] == encoded_name:
+        if (
+            export.kind == 0
+            and module.source[export.name_offset : export.name_offset + export.name_size]
+            == encoded_name
+        ):
             return export.index
     assert False, f"unresolved function export: {name}"
 

@@ -11,13 +11,21 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Protocol
 
-from tier2_runtime.interpreter.control_flow import iter_block_ops
-from tier2_runtime.runtime.jit_plugin import JITRuntime
 from qa.private.debugger_support import DebugTestView
 from system_containers import StaticVector
+from tier2_runtime.interpreter.control_flow import iter_block_ops
 from tier2_runtime.runtime.engine import RuntimeEngine
+from tier2_runtime.runtime.jit_plugin import JITRuntime
 from tier2_runtime.wasm.module import BasicBlock, WasmOperand
-from tier2_runtime.wasm.opcodes import I32_ADD, I32_CONST, I32_MUL, I32_SUB, LOCAL_GET, LOCAL_SET, LOCAL_TEE
+from tier2_runtime.wasm.opcodes import (
+    I32_ADD,
+    I32_CONST,
+    I32_MUL,
+    I32_SUB,
+    LOCAL_GET,
+    LOCAL_SET,
+    LOCAL_TEE,
+)
 
 
 class _Debugger(Protocol):

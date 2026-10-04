@@ -10,18 +10,18 @@ from config import (
     FB_CONF_RUNTIME_YIELD_THRESHOLD,
     JIT_CARD_SHIFT,
 )
-from tier2_runtime.interpreter.control_flow import iter_block_ops
-from tier2_runtime.wasm.jit_scoring import JIT_CANDIDATE_THRESHOLD
 from system_containers import (
     ReadOnlyRadixBinaryTreeStorage,
     StaticVector,
     fold_mix32,
 )
+from tier2_runtime.interpreter.control_flow import iter_block_ops
+from tier2_runtime.runtime.engine import RuntimeDriveMode, RuntimeEngine
+from tier2_runtime.wasm.jit_scoring import JIT_CANDIDATE_THRESHOLD
+from tier2_runtime.wasm.module import BasicBlock, Function, FuncType, LocalWidthMap, Module
 from tier3_plugins.jit.jit_cache import JITTrace
 from tier3_plugins.jit.jit_manager import JITCompiler, JITRuntimeManager
 from tier3_plugins.jit.x64_jit import TraceCompiler
-from tier2_runtime.runtime.engine import RuntimeDriveMode, RuntimeEngine
-from tier2_runtime.wasm.module import BasicBlock, Function, FuncType, LocalWidthMap, Module
 
 PC_ONLY_FUNCTION_STRIDE = 0x2000
 PC_ONLY_FUNCTION_BASE = 0x100

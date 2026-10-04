@@ -14,6 +14,15 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from config import FB_CONF_MAX_IMPORTS
+from ipc_router import FB_URI_HAL_STDOUT, IPCRouter
+from scheduler import ChannelAction, Scheduler
+from system_containers import (
+    ReadOnlyFlatMapStorage,
+    ReadOnlyFlatMapView,
+    ReadOnlyRadixBinaryTreeStorage,
+    StaticVector,
+)
+from tier1_core.fnv1a import fnv1a_32
 from tier2_runtime.hal.dispatch import (
     ARG_BUFFER_HANDLE,
     ARG_LENGTH,
@@ -31,20 +40,16 @@ from tier2_runtime.hal.dispatch import (
     HalTask,
     WasiIpcCmd,
 )
-from tier2_runtime.syscall.hostcall import FbSyscallId, FireballHostCallPort, WasiErrno, WasiPreview1Host
-from ipc_router import FB_URI_HAL_STDOUT, IPCRouter
-from tier1_core.fnv1a import fnv1a_32
 from tier2_runtime.memory.manager import MemoryManager
-from scheduler import ChannelAction, Scheduler
-from system_containers import (
-    ReadOnlyFlatMapStorage,
-    ReadOnlyFlatMapView,
-    ReadOnlyRadixBinaryTreeStorage,
-    StaticVector,
-)
 from tier2_runtime.observability.logging_interface import LoggerPort
-from tier3_platform.drivers.wasi.uvwasi import WasiPreview1Backend
+from tier2_runtime.syscall.hostcall import (
+    FbSyscallId,
+    FireballHostCallPort,
+    WasiErrno,
+    WasiPreview1Host,
+)
 from tier2_runtime.wasm.module import Module
+from tier3_platform.drivers.wasi.uvwasi import WasiPreview1Backend
 
 WasiValue = int
 
@@ -198,8 +203,8 @@ class Wasi03pEngine:
         Sends an IPC Driver Command to the HAL Server Task via IPCRouter ({hal_dispatch.md}).
         HAL operates as a distinct task and communicates strictly over IPC rendezvous.
         """
-        from tier2_runtime.hal.dispatch import make_hal_ipc_message
         from ipc_router import IPCStatus, Role
+        from tier2_runtime.hal.dispatch import make_hal_ipc_message
 
         caller_task = self.sysv.scheduler.current_task
         assert caller_task is not None, "WASI IPC requires an active runtime task"

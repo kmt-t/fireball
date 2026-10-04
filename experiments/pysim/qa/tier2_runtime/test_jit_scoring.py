@@ -15,9 +15,9 @@ from tier2_runtime.wasm.jit_scoring import (
     OpcodeBenefitTable,
     score_opcodes,
 )
-from tier3_plugins.jit.jit_manager import JITRuntimeManager
 from tier2_runtime.wasm.module import Function, FuncType, Module
 from tier2_runtime.wasm.opcodes import I32_ADD, I32_CONST, I32_POPCNT, RETURN
+from tier3_plugins.jit.jit_manager import JITRuntimeManager
 
 
 def test_numeric_opcode_score_table() -> None:

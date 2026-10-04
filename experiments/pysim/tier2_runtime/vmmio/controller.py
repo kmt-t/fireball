@@ -342,8 +342,8 @@ class VMMIOController:
 
     def register_to_memory_manager(self, memory_manager: MemoryManager) -> None:
         """Registers vMMIO FC=14 SHM page table listeners into MemoryManager."""
-        from tier2_runtime.memory.manager import FB_CONF_SHM_SIM_BASE
         from memory_interface import PageMappingCallbacks
+        from tier2_runtime.memory.manager import FB_CONF_SHM_SIM_BASE
 
         def _to_vpn(page_idx: int) -> int:
             return (0xE000_0000 >> 12) + page_idx

@@ -10,9 +10,9 @@ _TEST_FILE = Path(__file__).resolve()
 _PYSIM_DIR = _TEST_FILE.parents[3]
 
 
+from tier2_runtime.abi import native_abi
 from tier2_runtime.abi.interpreter_abi import ExecutionContextABI, NativeValueStack
 from tier2_runtime.abi.native_stack_abi import NativeControlStack
-from tier2_runtime.abi import native_abi
 from tier2_runtime.interpreter.interpreter import TrapCode
 
 

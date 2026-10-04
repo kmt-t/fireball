@@ -14,9 +14,9 @@ from typing import cast
 
 import pytest
 from qa.shared.helpers import make_interpreter
+from tier2_runtime.interpreter.interpreter import Interpreter, InterpreterCall, Trap
 from tier2_runtime.wasm.module import F32, F64, I32, I64, Module
 from tier2_runtime.wasm.reader import parse
-from tier2_runtime.interpreter.interpreter import Interpreter, InterpreterCall, Trap
 
 ROOT = Path(__file__).resolve().parents[4]
 SPEC_REVISION = "970c4116e644e2bf7acb39aab8b733db14ccdf28"

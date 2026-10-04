@@ -7,16 +7,16 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 
 from ipc_router import IPCMessage
-from tier2_runtime.memory.manager import MemoryManager
 from scheduler import Scheduler
 from system_containers import StaticVector
-from tier2_runtime.observability.logger import Logger
 from tier2_runtime.interpreter.interpreter import (
     Interpreter,
     InterpreterBindings,
     NativeInterpreter,
     WasmHostFunction,
 )
+from tier2_runtime.memory.manager import MemoryManager
+from tier2_runtime.observability.logger import Logger
 from tier2_runtime.vmmio.controller import VMMIOController
 from tier2_runtime.wasm.module import FunctionTable, Memory, Module
 

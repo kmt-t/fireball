@@ -20,13 +20,18 @@ from enum import IntEnum
 from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
-    from tier2_runtime.memory.manager import MemoryManager
     from scheduler import Scheduler
+    from tier2_runtime.memory.manager import MemoryManager
 
 from ipc_router import DataType, IPCMessage, IPCRouter, IPCStatus, Role, ScopeKind, pack_key32
 from scheduler import ChannelAction
 from system_containers import ReadOnlyFlatMapView, StaticVector
-from tier2_runtime.vmmio.controller import FC_DYNAMIC, VMMIO_PAGE_SHIFT, VMMIOController, VmmioStatus
+from tier2_runtime.vmmio.controller import (
+    FC_DYNAMIC,
+    VMMIO_PAGE_SHIFT,
+    VMMIOController,
+    VmmioStatus,
+)
 
 # hal_dispatch.md §4.2's kv_pair command arguments: each is a packed
 # (ScopeKind.FUNCTIONAL, DataType.UINT32, key_id) key per ipc_router.md §3.3,

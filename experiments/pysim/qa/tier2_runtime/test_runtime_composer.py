@@ -8,16 +8,7 @@ _TESTS_DIR = Path(__file__).resolve().parents[1]
 _PYSIM_DIR = Path(__file__).resolve().parents[2]
 
 from qa.shared.helpers import expect_assertion
-from tier2_runtime.runtime.recovery import Result
-from tier2_runtime.runtime.composer import (
-    RuntimeComposer,
-    RuntimeCompositionConfig,
-    RuntimeExecutionKind,
-    RuntimeFactories,
-    RuntimePluginSelection,
-    RuntimeWithoutPlugins,
-    RuntimeWithPlugins,
-)
+from system_containers import StaticVector
 from tier2_runtime.observability.events import (
     RUNTIME_EVENT_NO_MODULE,
     RUNTIME_EVENT_NO_PC,
@@ -27,7 +18,16 @@ from tier2_runtime.observability.events import (
     RuntimeEventKind,
     RuntimeExecutionError,
 )
-from system_containers import StaticVector
+from tier2_runtime.runtime.composer import (
+    RuntimeComposer,
+    RuntimeCompositionConfig,
+    RuntimeExecutionKind,
+    RuntimeFactories,
+    RuntimePluginSelection,
+    RuntimeWithoutPlugins,
+    RuntimeWithPlugins,
+)
+from tier2_runtime.runtime.recovery import Result
 
 
 class _Executor:

@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from enum import IntEnum
 from typing import Generic, Protocol, TypeVar
 
-from tier2_runtime.runtime.recovery import Result
+from system_containers import StaticVector
 from tier2_runtime.observability.events import (
     RUNTIME_EVENT_ABI_MAJOR,
     RUNTIME_EVENT_NO_MODULE,
@@ -23,7 +23,7 @@ from tier2_runtime.observability.events import (
     RuntimeObserver,
     dispatch_runtime_event_batch,
 )
-from system_containers import StaticVector
+from tier2_runtime.runtime.recovery import Result
 
 ResultT = TypeVar("ResultT")
 ArgumentT = TypeVar("ArgumentT")

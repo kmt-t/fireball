@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 from tier1_core.printk import (
+    PRINTK_RECORD_SIZE,
     PrintkEvent,
     PrintkLevel,
-    PRINTK_RECORD_SIZE,
     PrintkWriter,
 )
 

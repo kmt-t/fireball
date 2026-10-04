@@ -4,15 +4,15 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from tier2_runtime.abi.interpreter_abi import NativeValueStack
 from qa.shared.helpers import make_interpreter_bindings
 from system_containers import StaticVector
+from tier2_runtime.abi.interpreter_abi import NativeValueStack
 from tier2_runtime.interpreter.interpreter import (
     WasmHostFunction,
     WasmNumber,
 )
-from tier3_plugins.debugger.debugger import InterpreterExecutionControl
 from tier2_runtime.wasm.module import Module
+from tier3_plugins.debugger.debugger import InterpreterExecutionControl
 
 
 class DebugTestView:

@@ -585,11 +585,11 @@ def test_dbg_12_disabled_composition_has_no_debug_state_or_weave() -> None:
     """TEST-DBG-12: Disabled composition keeps the plain ABI and native entry."""
     import ctypes
 
-    from tier2_runtime.abi.interpreter_abi import ExecutionContextABI
     from qa.shared.helpers import make_native_interpreter
-    from tier2_runtime.runtime.composer import RuntimeComposer, RuntimeCompositionConfig
     from tier2_runtime.abi import native_abi
+    from tier2_runtime.abi.interpreter_abi import ExecutionContextABI
     from tier2_runtime.interpreter.interpreter import NativeInterpreter
+    from tier2_runtime.runtime.composer import RuntimeComposer, RuntimeCompositionConfig
 
     module = RuntimeEngineDebugDriver().load_wasm(
         wat_to_wasm("(module (func (result i32) i32.const 7))")
@@ -641,13 +641,13 @@ def test_dbg_12_continue_returns_to_python_only_at_actual_stop(
 def test_dbg_13_composition_rejects_jit_before_creating_executor() -> None:
     """GOTCHA-DBG-01: Static exclusion happens before construction or weaving."""
     from qa.shared.helpers import expect_assertion, make_native_interpreter
+    from tier2_runtime.interpreter.interpreter import NativeInterpreter
     from tier2_runtime.runtime.composer import (
         RuntimeComposer,
         RuntimeCompositionConfig,
         RuntimeExecutionKind,
         RuntimePluginSelection,
     )
-    from tier2_runtime.interpreter.interpreter import NativeInterpreter
 
     module = RuntimeEngineDebugDriver().load_wasm(wat_to_wasm("(module (func))"))
     constructions: list[int] = []

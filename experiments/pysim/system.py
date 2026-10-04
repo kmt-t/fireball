@@ -22,14 +22,6 @@ from __future__ import annotations
 from collections.abc import Generator, Mapping, Sequence
 from typing import TYPE_CHECKING
 
-from tier2_runtime.hal.dispatch import HalBufferPool
-from tier2_runtime.syscall.hostcall import (
-    FbSyscallId,
-    RuntimeHostCallGateway,
-    SyscallHandler,
-    WasiErrno,
-    WasiPreview1Host,
-)
 from ipc_router import (
     FB_CONF_ROUTER_MAX_KV_PAIRS,
     IPCMessage,
@@ -39,11 +31,19 @@ from ipc_router import (
     bytes_to_kv_storage,
     kv_entries_to_bytes,
 )
+from tier2_runtime.hal.dispatch import HalBufferPool
+from tier2_runtime.syscall.hostcall import (
+    FbSyscallId,
+    RuntimeHostCallGateway,
+    SyscallHandler,
+    WasiErrno,
+    WasiPreview1Host,
+)
 
 if TYPE_CHECKING:
     from tier1_core.printk import PrintkWriter
-    from tier2_runtime.interpreter.execution_context import DebugExecutionView
     from tier2_runtime.hal.dispatch import HalDriver, HalTask
+    from tier2_runtime.interpreter.execution_context import DebugExecutionView
     from tier2_runtime.interpreter.interpreter import (
         BasicBlock,
         NativeInterpreter,
@@ -52,20 +52,15 @@ if TYPE_CHECKING:
     from tier3_plugins.debugger.debugger import DebuggerManager
     from tier3_plugins.debugger.gdb_server import GDBServer
 
+from scheduler import FB_CONF_MAX_TASKS, Channel, ChannelAction, Scheduler, Task, TaskState
+from system_containers import MutableFlatMapStorage, ReadOnlyFlatMapStorage, StaticVector
 from tier1_core.fnv1a import fnv1a_32
 from tier2_runtime.memory.manager import (
     FB_CONF_MEMORY_POOL_SIZE,
     MemoryManager,
 )
-from scheduler import FB_CONF_MAX_TASKS, Channel, ChannelAction, Scheduler, Task, TaskState
-from system_containers import MutableFlatMapStorage, ReadOnlyFlatMapStorage, StaticVector
 from tier2_runtime.observability.logger import LogDictionary, Logger, LogLevel
 from tier2_runtime.runtime.engine import RuntimeDriveMode, RuntimeEngine
-from tier3_platform.drivers.platform_config import (
-    PlatformDriverConfiguration,
-    create_default_platform_drivers,
-)
-from tier2_runtime.vsoc.virq import DispatchResult
 from tier2_runtime.vmmio.controller import (
     FC_DYNAMIC,
     FC_SHM,
@@ -75,7 +70,12 @@ from tier2_runtime.vmmio.controller import (
     VMMIOController,
     VmmioStatus,
 )
+from tier2_runtime.vsoc.virq import DispatchResult
 from tier2_runtime.wasm.module import BasicBlock
+from tier3_platform.drivers.platform_config import (
+    PlatformDriverConfiguration,
+    create_default_platform_drivers,
+)
 
 # runtime_vmmio.md §4.3: real static-device addresses.
 IPCR_BASE = 0xC000_1000
@@ -100,12 +100,12 @@ class System:
         "halted",
         "host_calls",
         "ipc",
-        "printk",
         "ipcr_regs",
         "logger",
         "memory_manager",
         "phys_mem",
         "pool",
+        "printk",
         "reset_requested",
         "runtime_engine",
         "scheduler",

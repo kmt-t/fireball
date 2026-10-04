@@ -19,14 +19,12 @@ while not (_PYSIM_DIR / "tier1_core").is_dir():
 REPO_ROOT = _PYSIM_DIR.parent.parent
 
 
-from tier2_runtime.hal.dispatch import HalBufferPool
 from ipc_router import (
     IPCRouter,
     IPCStatus,
     OwnershipState,
     Role,
 )
-from tier2_runtime.memory.manager import FB_CONF_MEMORY_POOL_SIZE, MemoryManager
 from qa.shared.helpers import (
     expect_assertion,
     make_native_interpreter,
@@ -34,14 +32,16 @@ from qa.shared.helpers import (
     wat_to_wasm,
 )
 from qa.shared.helpers import make_interpreter as Interpreter
-from tier2_runtime.observability.events import RuntimeEventBatch
 from scheduler import ChannelAction, Scheduler, Task, WaitDir
 from system import System, WasiErrno
 from system_containers import BitView, MutableFlatMapStorage, ReadOnlyFlatMapView
-from tier2_runtime.observability.logger import LogDictionary, Logger, LogLevel, LogResult
+from tier2_runtime.hal.dispatch import HalBufferPool
 from tier2_runtime.interpreter.interpreter import _HANDLERS
-from tier3_plugins.jit.jit_cache import CardState, JITMultiBufferCache, JITTrace
+from tier2_runtime.memory.manager import FB_CONF_MEMORY_POOL_SIZE, MemoryManager
+from tier2_runtime.observability.events import RuntimeEventBatch
+from tier2_runtime.observability.logger import LogDictionary, Logger, LogLevel, LogResult
 from tier3_platform.drivers.hal.stream import StreamTransport
+from tier3_plugins.jit.jit_cache import CardState, JITMultiBufferCache, JITTrace
 
 
 def _make_router(sched: Scheduler) -> IPCRouter:
@@ -64,9 +64,9 @@ from qa.shared.runtime_support import (
     RecordingTraceCompiler,
     make_runtime_engine,
 )
-from tier3_plugins.jit.x64_jit import TraceCompiler
 from tier2_runtime.vmmio.controller import TrapCode, VMMIOController, VmmioStatus
 from tier2_runtime.wasm.reader import parse
+from tier3_plugins.jit.x64_jit import TraceCompiler
 
 # ==============================================================================
 # 1. Interpreter Gotchas (GOTCHA-INTP-01 ~ 04)

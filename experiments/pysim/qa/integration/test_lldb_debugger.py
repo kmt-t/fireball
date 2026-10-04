@@ -12,9 +12,9 @@ from pathlib import Path
 
 import pytest
 from qa.private.debugger_support import make_debug_execution
+from tier2_runtime.wasm.reader import parse
 from tier3_plugins.debugger.debugger import DebuggerManager, InterpreterExecutionControl
 from tier3_plugins.debugger.gdb_server import GDBServer
-from tier2_runtime.wasm.reader import parse
 
 
 class _ObservedDebuggerManager(DebuggerManager):

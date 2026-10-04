@@ -10,6 +10,23 @@ from collections.abc import Generator, Sequence
 from pathlib import Path
 
 import pytest
+from hypothesis import given, settings
+from hypothesis import strategies as st
+from ipc_router import Role
+from qa.shared.fixtures.hal_stubs import (
+    AdcStubDriver,
+    GpioStubDriver,
+    PollStubDriver,
+    PwmStubDriver,
+    StreamStubDriver,
+    StubCommand,
+    StubDrivers,
+    StubPlatform,
+    TimerStubDriver,
+    stub_platform,
+)
+from scheduler import ChannelAction, TaskState
+from system_containers import ReadOnlyFlatMapView
 from tier2_runtime.hal.dispatch import (
     ARG_BUFFER_HANDLE,
     ARG_CLOCK_HZ,
@@ -28,23 +45,6 @@ from tier2_runtime.hal.dispatch import (
     HalBufferMapStatus,
     WasiIpcCmd,
 )
-from hypothesis import given, settings
-from hypothesis import strategies as st
-from ipc_router import Role
-from qa.shared.fixtures.hal_stubs import (
-    AdcStubDriver,
-    GpioStubDriver,
-    PollStubDriver,
-    PwmStubDriver,
-    StreamStubDriver,
-    StubCommand,
-    StubDrivers,
-    StubPlatform,
-    TimerStubDriver,
-    stub_platform,
-)
-from scheduler import ChannelAction, TaskState
-from system_containers import ReadOnlyFlatMapView
 
 ROOT = Path(__file__).resolve().parents[4]
 STREAMS = ("uart", "rtt", "stdout", "adc")

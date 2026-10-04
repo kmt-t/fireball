@@ -5,6 +5,7 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass
 
+from system_containers import ReadOnlyFlatMapView, StaticVector
 from tier2_runtime.hal.dispatch import (
     ARG_BUFFER_HANDLE,
     ARG_LENGTH,
@@ -16,7 +17,6 @@ from tier2_runtime.hal.dispatch import (
     HalDriver,
     WasiIpcCmd,
 )
-from system_containers import ReadOnlyFlatMapView, StaticVector
 from tier3_platform.drivers.hal.stream import StreamTransport
 
 FB_CONF_HAL_MAX_POLLABLES = 16

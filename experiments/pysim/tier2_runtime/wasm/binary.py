@@ -106,9 +106,7 @@ class WasmSectionReader:
             return None
 
         section_id = self._stream.read_u8()
-        assert 0 <= section_id <= LAST_MVP_SECTION_ID, (
-            f"unsupported MVP section id={section_id}"
-        )
+        assert 0 <= section_id <= LAST_MVP_SECTION_ID, f"unsupported MVP section id={section_id}"
         payload_size = self._stream.read_leb128_u32()
         payload_offset = self._stream.tell()
         payload_end = payload_offset + payload_size

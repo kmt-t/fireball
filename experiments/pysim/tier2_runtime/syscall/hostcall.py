@@ -6,9 +6,9 @@ from collections.abc import Callable
 from enum import IntEnum
 from typing import Protocol
 
-from tier2_runtime.runtime.recovery import Result
 from scheduler import Scheduler
 from system_containers import ReadOnlyFlatMapStorage
+from tier2_runtime.runtime.recovery import Result
 from tier2_runtime.vsoc.virq import RegistrationError, RegistrationStatus
 
 

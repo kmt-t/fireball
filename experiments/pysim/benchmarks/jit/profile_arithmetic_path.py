@@ -27,9 +27,9 @@ from tier2_runtime.interpreter.interpreter import (
     InterpreterBindings,
     NativeInterpreter,
 )
-from tier3_plugins.jit.jit_manager import JITRuntimeManager
 from tier2_runtime.runtime.engine import RuntimeEngine
 from tier2_runtime.wasm.reader import parse
+from tier3_plugins.jit.jit_manager import JITRuntimeManager
 
 LOOP_COUNT = 100_000
 PROFILE_REPETITIONS = {

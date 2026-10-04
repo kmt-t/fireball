@@ -18,12 +18,10 @@ from collections.abc import Iterator, Mapping, Sequence
 from typing import Protocol
 
 from config import FB_CONF_DEBUG_MAX_ASSERTIONS, FB_CONF_DEBUG_MAX_BREAKPOINTS
-from tier2_runtime.interpreter.execution_context import DebugExecutionView, ExecutionControl
-from tier2_runtime.abi.interpreter_abi import NativeValueStack
-from tier2_runtime.runtime.composer import RuntimeComposer, RuntimeCompositionConfig
-from tier2_runtime.observability.events import RuntimeEvent, RuntimeEventBatch, RuntimeEventKind
 from system_containers import MutableFlatMapStorage, ReadOnlyFlatMapView, StaticVector
 from tier2_runtime.abi import native_abi
+from tier2_runtime.abi.interpreter_abi import NativeValueStack
+from tier2_runtime.interpreter.execution_context import DebugExecutionView, ExecutionControl
 from tier2_runtime.interpreter.interpreter import (
     ExecutionContext,
     InterpreterBindings,
@@ -31,6 +29,8 @@ from tier2_runtime.interpreter.interpreter import (
     NativeInterpreter,
     WasmNumber,
 )
+from tier2_runtime.observability.events import RuntimeEvent, RuntimeEventBatch, RuntimeEventKind
+from tier2_runtime.runtime.composer import RuntimeComposer, RuntimeCompositionConfig
 from tier2_runtime.wasm.module import BasicBlock, Module
 
 # docs/components/tier1_core/system_config.md {Debug_Integrated}

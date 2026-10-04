@@ -22,11 +22,17 @@ These are direct Python calls to drivers and a reference backend.  No WASM guest
 guest-side libfireball adapter, GPIO, I2C, or SPI path is executed here.
 """
 
-from tier2_runtime.hal.dispatch import ARG_BUFFER_HANDLE, ARG_LENGTH, ARG_MAX_LEN, ARG_OFFSET, WasiIpcCmd
-from qa.shared.fixtures.uvwasi_reference import UvwasiReferenceContext, WasiErrno, WasiWhence
 from ipc_router import FB_URI_HAL_STDOUT
+from qa.shared.fixtures.uvwasi_reference import UvwasiReferenceContext, WasiErrno, WasiWhence
 from system import System
 from system_containers import ReadOnlyFlatMapView
+from tier2_runtime.hal.dispatch import (
+    ARG_BUFFER_HANDLE,
+    ARG_LENGTH,
+    ARG_MAX_LEN,
+    ARG_OFFSET,
+    WasiIpcCmd,
+)
 from tier3_platform.drivers.hal.dummy import DummyDriver
 
 

@@ -28,12 +28,12 @@ from tier2_runtime.interpreter.interpreter import (
     InterpreterBindings,
     NativeInterpreter,
 )
-from tier3_plugins.jit.jit_manager import JITRuntimeManager
-from tier3_plugins.jit.x64_jit import TraceCompiler
 from tier2_runtime.runtime.engine import RuntimeEngine
+from tier2_runtime.wasm.reader import parse
 from tier3_platform.drivers.hal.dummy import DummyDriver
 from tier3_platform.drivers.wasi.context import WasiHostContext
-from tier2_runtime.wasm.reader import parse
+from tier3_plugins.jit.jit_manager import JITRuntimeManager
+from tier3_plugins.jit.x64_jit import TraceCompiler
 
 
 def run_aobench(debug: bool = False) -> dict[str, int | float]:
@@ -52,9 +52,7 @@ def run_aobench(debug: bool = False) -> dict[str, int | float]:
     # Keep the Python reference and strict C++ interpreter timings distinct.
     sysv_python = System()
     wasi_python = WasiHostContext(sysv_python)
-    sysv_python.start_hal_driver(
-        DummyDriver(transport=sysv_python.transport), FB_URI_HAL_STDOUT
-    )
+    sysv_python.start_hal_driver(DummyDriver(transport=sysv_python.transport), FB_URI_HAL_STDOUT)
     funcs_python = wasi_python.build_interpreter_host_functions(module)
     module.init_memory_data(wasi_python.guest_memory, ())
     interp_python = Interpreter(
@@ -69,9 +67,7 @@ def run_aobench(debug: bool = False) -> dict[str, int | float]:
 
     sysv_native = System()
     wasi_native = WasiHostContext(sysv_native)
-    sysv_native.start_hal_driver(
-        DummyDriver(transport=sysv_native.transport), FB_URI_HAL_STDOUT
-    )
+    sysv_native.start_hal_driver(DummyDriver(transport=sysv_native.transport), FB_URI_HAL_STDOUT)
     funcs_native = wasi_native.build_interpreter_host_functions(module)
     module.init_memory_data(wasi_native.guest_memory, ())
     interp_native = NativeInterpreter(
@@ -90,9 +86,7 @@ def run_aobench(debug: bool = False) -> dict[str, int | float]:
     # 2. Tier 3 JIT Hybrid Execution
     sysv_t3 = System()
     wasi_ctx_t3 = WasiHostContext(sysv_t3)
-    sysv_t3.start_hal_driver(
-        DummyDriver(transport=sysv_t3.transport), FB_URI_HAL_STDOUT
-    )
+    sysv_t3.start_hal_driver(DummyDriver(transport=sysv_t3.transport), FB_URI_HAL_STDOUT)
     funcs_t3 = wasi_ctx_t3.build_interpreter_host_functions(module)
     module.init_memory_data(wasi_ctx_t3.guest_memory, ())
     trace_compiler = TraceCompiler()

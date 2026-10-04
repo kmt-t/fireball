@@ -10,15 +10,15 @@ from __future__ import annotations
 import threading
 from collections.abc import Generator, Mapping
 
-from tier2_runtime.interpreter.execution_context import DebugExecutionView
 from scheduler import ChannelAction
+from tier2_runtime.interpreter.execution_context import DebugExecutionView
+from tier2_runtime.wasm.module import BasicBlock
 from tier3_platform.drivers.debugger.transport import (
     DebuggerConnection,
     DebuggerSink,
     SocketDebuggerSink,
 )
 from tier3_plugins.debugger.debugger import DebuggerManager, GDBRspProtocol
-from tier2_runtime.wasm.module import BasicBlock
 
 
 class GDBServer:

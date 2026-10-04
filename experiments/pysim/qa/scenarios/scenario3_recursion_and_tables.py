@@ -16,8 +16,8 @@ Tests:
 import wasmtime
 from system import System
 from tier2_runtime.interpreter.interpreter import Interpreter, InterpreterBindings
-from tier3_platform.drivers.wasi.context import WasiHostContext
 from tier2_runtime.wasm.reader import parse
+from tier3_platform.drivers.wasi.context import WasiHostContext
 
 SCENARIO3_WAT = """
 (module

@@ -8,12 +8,16 @@ from itertools import combinations
 from pathlib import Path
 
 import wasmtime
-from tier2_runtime.hal.dispatch import ARG_BUFFER_HANDLE, ARG_LENGTH, ARG_OFFSET, WasiIpcCmd
-from ipc_router import IPCStatus, Role, FB_URI_HAL_STDOUT
+from ipc_router import FB_URI_HAL_STDOUT, IPCStatus, Role
 from qa.private.debugger_support import make_debug_execution
 from qa.shared.fixtures.uvwasi_reference import UvwasiReferenceContext
 from qa.shared.helpers import expect_assertion, make_native_interpreter
 from qa.shared.runtime_support import make_runtime_engine
+from scheduler import ChannelAction, TaskState, WaitDir
+from system import System
+from system_containers import ReadOnlyFlatMapView, StaticVector
+from tier2_runtime.hal.dispatch import ARG_BUFFER_HANDLE, ARG_LENGTH, ARG_OFFSET, WasiIpcCmd
+from tier2_runtime.observability.events import RuntimeEventBatch
 from tier2_runtime.runtime.composer import (
     RuntimeComposer,
     RuntimeCompositionConfig,
@@ -21,17 +25,13 @@ from tier2_runtime.runtime.composer import (
     RuntimeFactories,
     RuntimePluginSelection,
 )
-from tier2_runtime.observability.events import RuntimeEventBatch
-from scheduler import ChannelAction, TaskState, WaitDir
-from system import System
-from system_containers import ReadOnlyFlatMapView, StaticVector
-from tier3_plugins.jit.x64_jit import TraceCompiler
 from tier2_runtime.runtime.engine import RuntimeDriveMode, RuntimeEngine
+from tier2_runtime.wasm.module import Module
+from tier2_runtime.wasm.reader import parse
 from tier3_platform.drivers.hal.dummy import DummyDriver
 from tier3_platform.drivers.wasi.context import WasiHostContext
 from tier3_plugins.debugger.debugger import DebuggerManager, GDBRspProtocol
-from tier2_runtime.wasm.module import Module
-from tier2_runtime.wasm.reader import parse
+from tier3_plugins.jit.x64_jit import TraceCompiler
 
 _REPO_ROOT = Path(__file__).resolve().parents[4]
 

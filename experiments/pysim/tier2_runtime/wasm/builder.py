@@ -70,9 +70,7 @@ class WasmModuleBuilder:
             Global(vtype=value_type, mutable=mutable, init_value=0, imported=True)
         )
 
-    def on_memory_import(
-        self, import_entry: Import, minimum: int, maximum: int | None
-    ) -> None:
+    def on_memory_import(self, import_entry: Import, minimum: int, maximum: int | None) -> None:
         assert self._module.memory is None, "multiple imported/defined memories are unsupported"
         self._module.memory_import = import_entry
         self._module.memory = Memory(min_pages=minimum, max_pages=maximum, imported=True)
@@ -131,9 +129,7 @@ class WasmModuleBuilder:
                 "element segment table index out of range"
             )
 
-        self._module.stream_element_initializers(
-            validate_element, (), resolve_globals=False
-        )
+        self._module.stream_element_initializers(validate_element, (), resolve_globals=False)
 
     def on_data_section(self, offset: int, size: int) -> None:
         self._module.data_section_offset = offset

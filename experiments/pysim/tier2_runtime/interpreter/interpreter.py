@@ -50,12 +50,8 @@ from config import (
     FB_CONF_MAX_VALUE_STACK,
     FB_CONF_RUNTIME_YIELD_THRESHOLD,
 )
-from tier2_runtime.interpreter.control_flow import (
-    FB_CONF_MAX_NESTING_DEPTH,
-    OpcodeAttribute,
-    build_control_map,
-    opcode_has_attribute,
-)
+from system_containers import StaticVector
+from tier2_runtime.abi import native_abi as _native_abi
 from tier2_runtime.abi.interpreter_abi import (
     EXECUTION_CONTEXT_FLAG_STOP_AT_BLOCK_BOUNDARY,
     NATIVE_VALUE_STACK_CAPACITY,
@@ -69,7 +65,11 @@ from tier2_runtime.abi.interpreter_abi import (
     NativeValueStack,
     TableExecutionViewNative,
 )
-from tier2_runtime.wasm.leb128 import decode_signed, decode_unsigned
+from tier2_runtime.abi.jit_abi import (
+    EMPTY_NATIVE_DISPATCH_SNAPSHOT,
+    NativeBlockVisitHistory,
+    NativeDispatchSnapshot,
+)
 from tier2_runtime.abi.native_stack_abi import (
     ControlFrameKind,
     NativeCallFrameStack,
@@ -77,14 +77,14 @@ from tier2_runtime.abi.native_stack_abi import (
     _ControlFrameWindow,
     _LocalStackWindow,
 )
-from system_containers import StaticVector
-from tier2_runtime.syscall.hostcall import VdmaTransfer
-from tier2_runtime.abi.jit_abi import (
-    EMPTY_NATIVE_DISPATCH_SNAPSHOT,
-    NativeBlockVisitHistory,
-    NativeDispatchSnapshot,
+from tier2_runtime.interpreter.control_flow import (
+    FB_CONF_MAX_NESTING_DEPTH,
+    OpcodeAttribute,
+    build_control_map,
+    opcode_has_attribute,
 )
-from tier2_runtime.observability.logging_interface import LogLevel, LoggerPort
+from tier2_runtime.observability.logging_interface import LoggerPort, LogLevel
+from tier2_runtime.syscall.hostcall import VdmaTransfer
 from tier2_runtime.vmmio.controller import (
     FC_DYNAMIC,
     FC_PASSTHROUGH,
@@ -93,6 +93,7 @@ from tier2_runtime.vmmio.controller import (
     VMMIOController,
     VmmioStatus,
 )
+from tier2_runtime.wasm.leb128 import decode_signed, decode_unsigned
 from tier2_runtime.wasm.module import (
     F32,
     F64,
@@ -289,8 +290,6 @@ from tier2_runtime.wasm.opcodes import (
     SELECT,
     UNREACHABLE,
 )
-
-from tier2_runtime.abi import native_abi as _native_abi
 
 NATIVE_RUNTIME_PROFILE_STATS_AVAILABLE = bool(_native_abi.RUNTIME_PROFILE_STATS_AVAILABLE)
 NATIVE_JIT_HOTSPOT_PROFILING_AVAILABLE = bool(_native_abi.JIT_HOTSPOT_PROFILING_AVAILABLE)

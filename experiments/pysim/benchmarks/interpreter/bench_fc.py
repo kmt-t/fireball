@@ -30,16 +30,16 @@ configure_import_paths(_PYSIM_DIR, _BENCH_DIR)
 from system import System
 from system_containers import StaticVector
 from tier2_runtime.hal.dispatch import HalBufferMapStatus
-from tier2_runtime.syscall.hostcall import VdmaTransfer
-from tier2_runtime.vmmio.controller import FC_DYNAMIC, FC_PASSTHROUGH, FC_SHM
-from tier2_runtime.wasm.module import Memory, Module
-from tier2_runtime.wasm.reader import parse
 from tier2_runtime.interpreter.interpreter import (
     Interpreter,
     InterpreterBindings,
     NativeInterpreter,
     WasmNumber,
 )
+from tier2_runtime.syscall.hostcall import VdmaTransfer
+from tier2_runtime.vmmio.controller import FC_DYNAMIC, FC_PASSTHROUGH, FC_SHM
+from tier2_runtime.wasm.module import Memory, Module
+from tier2_runtime.wasm.reader import parse
 
 PAGE_SIZE = 65_536
 WARMUP_ITERATIONS = 64

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ctypes
 
+from qa.shared.helpers import expect_assertion
 from tier2_runtime.abi.interpreter_abi import (
     NATIVE_STACK_ALIGNMENT_BYTES,
     ConstBufferViewNative,
@@ -17,7 +18,6 @@ from tier2_runtime.abi.interpreter_abi import (
     WasmRunResultNative,
 )
 from tier2_runtime.abi.native_stack_abi import ControlFrameWindow, LocalStackWindow
-from qa.shared.helpers import expect_assertion
 from tier2_runtime.interpreter.interpreter import (
     ControlFrameKind,
     ExecutionContext,

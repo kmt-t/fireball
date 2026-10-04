@@ -26,11 +26,11 @@ from tier2_runtime.interpreter.interpreter import (
     InterpreterBindings,
     NativeInterpreter,
 )
+from tier2_runtime.runtime.engine import RuntimeEngine
+from tier2_runtime.wasm.reader import parse
+from tier3_platform.drivers.wasi.context import WasiHostContext
 from tier3_plugins.jit.jit_manager import JITRuntimeManager
 from tier3_plugins.jit.x64_jit import TraceCompiler
-from tier2_runtime.runtime.engine import RuntimeEngine
-from tier3_platform.drivers.wasi.context import WasiHostContext
-from tier2_runtime.wasm.reader import parse
 
 SCENARIO5_WAT = """
 (module

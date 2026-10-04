@@ -63,10 +63,7 @@ class ExecutionContextABI(ctypes.Structure):
     )
 
 
-assert (
-    ExecutionContextABI.loop_jump_count.offset
-    == EXECUTION_CONTEXT_LOOP_JUMP_COUNT_OFFSET_BYTES
-)
+assert ExecutionContextABI.loop_jump_count.offset == EXECUTION_CONTEXT_LOOP_JUMP_COUNT_OFFSET_BYTES
 assert (
     ExecutionContextABI.loop_jump_threshold.offset
     == EXECUTION_CONTEXT_LOOP_JUMP_THRESHOLD_OFFSET_BYTES

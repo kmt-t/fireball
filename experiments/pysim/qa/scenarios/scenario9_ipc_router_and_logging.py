@@ -28,9 +28,15 @@ from ipc_router import (
     ScopeKind,
     pack_key32,
 )
-from tier2_runtime.memory.manager import FB_CONF_MEMORY_POOL_SIZE, MemoryManager
 from scheduler import Scheduler, WaitDir
-from tier2_runtime.observability.logger import LogDictionary, Logger, LogLevel, LogResult, decode_log_records
+from tier2_runtime.memory.manager import FB_CONF_MEMORY_POOL_SIZE, MemoryManager
+from tier2_runtime.observability.logger import (
+    LogDictionary,
+    Logger,
+    LogLevel,
+    LogResult,
+    decode_log_records,
+)
 from tier3_platform.drivers.hal.stream import StreamTransport
 from tier3_platform.drivers.printk import PrintkSink
 

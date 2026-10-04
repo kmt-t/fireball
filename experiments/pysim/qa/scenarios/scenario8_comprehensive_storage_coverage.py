@@ -24,10 +24,10 @@ from qa.private.debugger_support import make_debug_execution
 from qa.private.runtime_test_driver import RuntimeEngineDebugDriver
 from system import System
 from tier2_runtime.interpreter.interpreter import Interpreter, InterpreterBindings
+from tier2_runtime.wasm.reader import parse
 from tier3_platform.drivers.wasi.context import WasiHostContext
 from tier3_plugins.debugger.debugger import DebuggerManager
 from tier3_plugins.debugger.gdb_server import GDBServer
-from tier2_runtime.wasm.reader import parse
 
 SCENARIO8_WAT = """
 (module

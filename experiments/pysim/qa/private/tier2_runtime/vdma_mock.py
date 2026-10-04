@@ -11,11 +11,11 @@ from collections.abc import Callable, Generator
 from dataclasses import dataclass
 from enum import StrEnum
 
-from tier2_runtime.syscall.hostcall import WasiErrno
 from interrupt_event import InterruptEvent
 from ipc_router import Role
 from scheduler import ChannelAction, TaskState
 from system import System
+from tier2_runtime.syscall.hostcall import WasiErrno
 
 # Fixture-owned internal completion key; no guest vIRQ is registered for it.
 COMPLETION_KEY = 0xD0A0

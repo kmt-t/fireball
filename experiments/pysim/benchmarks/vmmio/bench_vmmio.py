@@ -22,7 +22,6 @@ from _bootstrap import configure_import_paths
 configure_import_paths(_PYSIM_DIR, _BENCH_DIR)
 
 from scheduler import Scheduler
-
 from tier2_runtime.vmmio.controller import VMMIOController, VmmioStatus
 
 

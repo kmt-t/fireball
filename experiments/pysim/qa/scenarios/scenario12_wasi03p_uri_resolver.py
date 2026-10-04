@@ -26,16 +26,16 @@ while not (_PYSIM_DIR / "tier1_core").is_dir():
     _PYSIM_DIR = _PYSIM_DIR.parent
 
 
+from ipc_router import FB_URI_HAL_STDOUT
+from qa.shared.fixtures.uvwasi_reference import UvwasiReferenceContext
+from system import System
+from system_containers import ReadOnlyFlatMapView
 from tier2_runtime.hal.dispatch import (
     ARG_BUFFER_HANDLE,
     ARG_LENGTH,
     ARG_OFFSET,
     ARG_QUERY_CMD_ID,
 )
-from qa.shared.fixtures.uvwasi_reference import UvwasiReferenceContext
-from ipc_router import FB_URI_HAL_STDOUT
-from system import System
-from system_containers import ReadOnlyFlatMapView
 from tier3_platform.drivers.hal.dummy import DummyDriver
 from tier3_platform.drivers.hal.stream import StreamTransport
 from tier3_platform.drivers.platform_config import PlatformDriverConfiguration

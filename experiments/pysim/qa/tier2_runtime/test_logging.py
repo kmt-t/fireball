@@ -25,6 +25,7 @@ from system import (
     System,
 )
 from system_containers import ReadOnlyFlatMapStorage
+from tier2_runtime.interpreter.interpreter import TRAP_LOG_EVENTS, TrapCode
 from tier2_runtime.observability.logger import (
     STANDARD_DIAGNOSTIC_EVENTS,
     LogDictionary,
@@ -33,10 +34,9 @@ from tier2_runtime.observability.logger import (
     LogResult,
     decode_log_records,
 )
-from tier2_runtime.interpreter.interpreter import TRAP_LOG_EVENTS, TrapCode
+from tier2_runtime.wasm.reader import parse
 from tier3_platform.drivers.hal.stream import StreamTransport
 from tier3_platform.drivers.printk import PrintkBuffer
-from tier2_runtime.wasm.reader import parse
 
 
 def _event_record(value: int) -> bytes:

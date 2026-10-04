@@ -17,7 +17,6 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 from enum import IntFlag
 
-from tier2_runtime.wasm.leb128 import decode_signed, decode_unsigned
 from system_containers import (
     MutableBitStorage,
     ReadOnlyBitStorage,
@@ -25,6 +24,7 @@ from system_containers import (
     StaticVector,
     freeze_sequence,
 )
+from tier2_runtime.wasm.leb128 import decode_signed, decode_unsigned
 from tier2_runtime.wasm.module import WasmOperand
 from tier2_runtime.wasm.opcodes import (
     BLOCK,

@@ -4,13 +4,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from system_containers import MutableFlatMapStorage, StaticVector
 from tier2_runtime.observability.events import (
     RuntimeEvent,
     RuntimeEventBatch,
     RuntimeEventFlags,
     RuntimeEventKind,
 )
-from system_containers import MutableFlatMapStorage, StaticVector
 
 
 @dataclass(slots=True)

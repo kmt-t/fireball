@@ -28,14 +28,11 @@ Verifies:
 import ctypes
 import struct
 
-from tier2_runtime.interpreter.control_flow import extract_basic_blocks
 from qa.shared.helpers import make_native_interpreter as Interpreter
 from qa.shared.helpers import wat_to_wasm
 from qa.shared.runtime_support import compile_module_block, compile_test_block, make_runtime_engine
+from tier2_runtime.interpreter.control_flow import extract_basic_blocks
 from tier2_runtime.interpreter.interpreter import ExecutionContext
-from tier3_plugins.jit.common_code import COMMON_CHAIN_DISPATCH_OFFSET
-from tier3_plugins.jit.jit_cache import JITTrace
-from tier3_plugins.jit.x64_jit import TraceCompiler
 from tier2_runtime.wasm.module import I32, I64, BasicBlock, LocalWidthMap
 from tier2_runtime.wasm.opcodes import (
     F32_ADD,
@@ -76,6 +73,9 @@ from tier2_runtime.wasm.opcodes import (
     LOCAL_GET,
     LOCAL_SET,
 )
+from tier3_plugins.jit.common_code import COMMON_CHAIN_DISPATCH_OFFSET
+from tier3_plugins.jit.jit_cache import JITTrace
+from tier3_plugins.jit.x64_jit import TraceCompiler
 
 _HELPER_TYPE = ctypes.CFUNCTYPE(
     None,

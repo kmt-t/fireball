@@ -176,9 +176,7 @@ def main():
         f"  * Cache Metabolism & Churn Rate:      {metab_res['churn_eviction_rate_per_sec']:,.0f} Evictions / Sec ({metab_res['churn_rotations']} generations)"
     )
     print("  * Dangling Chain Unlinking Safety:    [PASS] (All evicted traces unlinked cleanly)")
-    print(
-        "  * Module-scoped Code-section PC:      [PASS] (each module owns its PC lookup)"
-    )
+    print("  * Module-scoped Code-section PC:      [PASS] (each module owns its PC lookup)")
 
     print("\n[Section 5: JIT Card Aging under Cache Pressure]")
     print("-" * 80)

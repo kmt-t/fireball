@@ -14,6 +14,9 @@ _PYSIM_DIR = _TESTS_DIR.parent
 _REPO_ROOT = _PYSIM_DIR.parent.parent
 
 
+from memory_interface import PageMappingCallbacks
+from qa.shared.helpers import expect_assertion
+from scheduler import Scheduler
 from tier2_runtime.memory.manager import (
     FB_CONF_MEMORY_POOL_SIZE,
     FB_CONF_TASK_HEAP_SIZES,
@@ -23,9 +26,6 @@ from tier2_runtime.memory.manager import (
     MemoryReasonCode,
     RecoveryAction,
 )
-from memory_interface import PageMappingCallbacks
-from qa.shared.helpers import expect_assertion
-from scheduler import Scheduler
 from tier2_runtime.vmmio.controller import (
     TrapCode,
     VMMIOController,

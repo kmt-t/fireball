@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 from tier2_runtime.observability.events import RuntimeEvent, RuntimeEventBatch
-from tier2_runtime.observability.logging_interface import LoggerPort, LogLevel
 from tier2_runtime.observability.logger import RUNTIME_EVENT_LOG_BASE
+from tier2_runtime.observability.logging_interface import LoggerPort, LogLevel
 
 
 class RuntimeEventLogger:

@@ -16,11 +16,6 @@ from collections.abc import Generator, Iterator, Sequence
 from enum import IntEnum
 
 from memory_interface import MemoryManager, SharedBlock
-from tier1_core.printk import (
-    Printk,
-    PrintkEvent,
-    PrintkLevel,
-)
 from scheduler import (
     FB_CONF_MAX_CHANNELS,
     Channel,
@@ -30,6 +25,11 @@ from scheduler import (
     WaitDir,
 )
 from system_containers import ReadOnlyFlatMapView, StaticVector
+from tier1_core.printk import (
+    Printk,
+    PrintkEvent,
+    PrintkLevel,
+)
 
 # ipc_router.md {3.3}: a message is a static, fixed-size buffer of at most 8
 # kv_pair entries.
@@ -553,8 +553,8 @@ class IPCRouter:
     __slots__ = (
         "_channel_role_masks",
         "_service_channels",
-        "printk",
         "memory_manager",
+        "printk",
         "registry",
         "scheduler",
     )

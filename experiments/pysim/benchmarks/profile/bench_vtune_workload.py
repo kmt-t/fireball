@@ -39,6 +39,7 @@ from _bootstrap import configure_import_paths
 configure_import_paths(_PYSIM_DIR, _BENCH_DIR)
 
 from ipc_router import (
+    FB_URI_HAL_STDOUT,
     DataType,
     IPCMessage,
     IPCRouter,
@@ -46,27 +47,32 @@ from ipc_router import (
     Role,
     ScopeKind,
     pack_key32,
-    FB_URI_HAL_STDOUT,
 )
-from tier2_runtime.memory.manager import FB_CONF_MEMORY_POOL_SIZE, MemoryManager
 from scheduler import ChannelAction, Scheduler
 from system import System
 from system_containers import StaticVector
-from tier2_runtime.observability.logger import LOG_RECORD_SIZE, LogDictionary, Logger, LogLevel, LogResult
 from tier2_runtime.interpreter.interpreter import (
     Interpreter,
     InterpreterBindings,
     NativeInterpreter,
 )
-from tier3_plugins.jit.jit_manager import JITRuntimeManager
-from tier3_plugins.jit.x64_jit import TraceCompiler
+from tier2_runtime.memory.manager import FB_CONF_MEMORY_POOL_SIZE, MemoryManager
+from tier2_runtime.observability.logger import (
+    LOG_RECORD_SIZE,
+    LogDictionary,
+    Logger,
+    LogLevel,
+    LogResult,
+)
 from tier2_runtime.runtime.engine import RuntimeEngine
+from tier2_runtime.wasm.module import Module
+from tier2_runtime.wasm.reader import parse
 from tier3_platform.drivers.hal.dummy import DummyDriver
 from tier3_platform.drivers.logging.file_sink import FileLogSink
 from tier3_platform.drivers.printk import PrintkSink
 from tier3_platform.drivers.wasi.context import WasiHostContext
-from tier2_runtime.wasm.module import Module
-from tier2_runtime.wasm.reader import parse
+from tier3_plugins.jit.jit_manager import JITRuntimeManager
+from tier3_plugins.jit.x64_jit import TraceCompiler
 
 SUITE_WASM_PATH = Path(__file__).resolve().parent / "guest" / "suite.wasm"
 AO_WASM_PATH = _BENCH_DIR / "aobench" / "aobench.wasm"

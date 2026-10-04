@@ -16,16 +16,16 @@ while not (_PYSIM_DIR / "tier1_core").is_dir():
     _PYSIM_DIR = _PYSIM_DIR.parent
 
 
-from tier2_runtime.runtime.recovery import RecoveryManager, RecoveryStrategy, Result
 from system import System
 from system_containers import StaticVector
-from tier2_runtime.observability.logger import LogDictionary, LogLevel, decode_log_records
 from tier2_runtime.interpreter.interpreter import InterpreterBindings, NativeInterpreter
+from tier2_runtime.observability.logger import LogDictionary, LogLevel, decode_log_records
+from tier2_runtime.runtime.engine import RuntimeEngine
+from tier2_runtime.runtime.recovery import RecoveryManager, RecoveryStrategy, Result
+from tier2_runtime.wasm.reader import parse
+from tier3_platform.drivers.printk import PrintkBuffer
 from tier3_plugins.jit.jit_manager import JITRuntimeManager
 from tier3_plugins.jit.x64_jit import TraceCompiler
-from tier2_runtime.runtime.engine import RuntimeEngine
-from tier3_platform.drivers.printk import PrintkBuffer
-from tier2_runtime.wasm.reader import parse
 
 findings: StaticVector[str] = StaticVector(capacity=8)
 

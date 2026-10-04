@@ -15,20 +15,20 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
-from tier2_runtime.hal.dispatch import FB_CONF_HAL_BUFFER_SIZE, HalBufferMapStatus, WasiIpcCmd
-from tier2_runtime.syscall.hostcall import WasiErrno
 from hypothesis import given, settings
 from hypothesis import strategies as st
-from ipc_router import Role, FB_URI_HAL_STDOUT
+from ipc_router import FB_URI_HAL_STDOUT, Role
 from qa.shared.helpers import make_native_interpreter
 from scheduler import TaskState
 from system import System
+from tier2_runtime.hal.dispatch import FB_CONF_HAL_BUFFER_SIZE, HalBufferMapStatus, WasiIpcCmd
+from tier2_runtime.syscall.hostcall import WasiErrno
+from tier2_runtime.wasm.reader import parse
 from tier3_platform.drivers.hal.dummy import DummyDriver
 from tier3_platform.drivers.hal.stream import StreamTransport
-from tier3_platform.drivers.printk import PrintkBuffer, PrintkSink
 from tier3_platform.drivers.platform_config import PlatformDriverConfiguration
+from tier3_platform.drivers.printk import PrintkBuffer, PrintkSink
 from tier3_platform.drivers.wasi.context import WasiHostContext
-from tier2_runtime.wasm.reader import parse
 
 ROOT = Path(__file__).resolve().parents[4]
 SENTINEL = 0x1234_5678
@@ -165,9 +165,7 @@ class GuestSession:
         )
         self.hardware.system = self.system
         self.driver = DummyDriver(transport=self.hardware)
-        self.hardware.hal_task_id = self.system.start_hal_driver(
-            self.driver, FB_URI_HAL_STDOUT
-        )
+        self.hardware.hal_task_id = self.system.start_hal_driver(self.driver, FB_URI_HAL_STDOUT)
         self.module = parse(artifact.wasm.read_bytes())
         assert self.module.memory is not None and self.module.memory.min_pages == 1
         self.host = WasiHostContext(self.system)

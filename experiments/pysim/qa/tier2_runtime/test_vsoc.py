@@ -21,7 +21,7 @@ _REPO_ROOT = _PYSIM_DIR.parent.parent
 # Keep the product Tier 3 package ahead of tests/tier3_plugins when importing
 # runtime_engine's qualified Tier 3 modules.
 
-from ipc_router import Role, FB_URI_HAL_STDOUT
+from ipc_router import FB_URI_HAL_STDOUT, Role
 from qa.private.debugger_support import DebugTestView, make_debug_execution
 from qa.private.runtime_test_driver import RuntimeEngineDebugDriver
 from qa.shared.fixtures.platform_drivers import create_reference_platform_drivers
@@ -44,12 +44,13 @@ from system_containers import (
     ReadOnlyFlatMapView,
     StaticVector,
 )
-from tier2_runtime.observability.logger import LogDictionary, LogLevel, LogResult, decode_log_records
-from tier3_plugins.jit.jit_cache import CardState
-from tier3_plugins.jit.x64_jit import TraceCompiler
+from tier2_runtime.observability.logger import (
+    LogDictionary,
+    LogLevel,
+    LogResult,
+    decode_log_records,
+)
 from tier2_runtime.runtime.engine import RuntimeDriveMode, RuntimeEngine
-from tier3_platform.drivers.printk import PrintkBuffer
-from tier3_platform.drivers.wasi.context import WasiHostContext
 from tier2_runtime.vsoc.virq import (
     DispatchResult,
     InterruptEvent,
@@ -62,6 +63,10 @@ from tier2_runtime.vsoc.virq import (
 )
 from tier2_runtime.wasm.module import I32, Function, FuncType, Module
 from tier2_runtime.wasm.reader import parse
+from tier3_platform.drivers.printk import PrintkBuffer
+from tier3_platform.drivers.wasi.context import WasiHostContext
+from tier3_plugins.jit.jit_cache import CardState
+from tier3_plugins.jit.x64_jit import TraceCompiler
 
 
 def _make_virq_module() -> Module:
@@ -471,9 +476,7 @@ def test_hal_task_ipc_communication():
         assert sysv.pool.map_for_io(buffer_handle.buffer_id).name == "MAPPED"
         sysv.pool.view(buffer_handle, 0, 128)[:] = b"x" * 128
         sysv.scheduler.current_task = runtime_task
-        sysv.start_hal_driver(
-            DummyDriver(transport=sysv.transport), FB_URI_HAL_STDOUT
-        )
+        sysv.start_hal_driver(DummyDriver(transport=sysv.transport), FB_URI_HAL_STDOUT)
         engine = Wasi03pEngine(sysv)
         # Send command via IPC
         response = engine.send_ipc_command(
@@ -825,9 +828,7 @@ def test_guest_wasi_01_interpreter_fd_write():
         from tier3_platform.drivers.hal.dummy import DummyDriver
 
         ctx = WasiHostContext(sysv)
-        sysv.start_hal_driver(
-            DummyDriver(transport=sysv.transport), FB_URI_HAL_STDOUT
-        )
+        sysv.start_hal_driver(DummyDriver(transport=sysv.transport), FB_URI_HAL_STDOUT)
         # Set up guest memory:
         # offset 0: iov { buf: 16, len: 12 }
         # offset 16: "hello guest\n"

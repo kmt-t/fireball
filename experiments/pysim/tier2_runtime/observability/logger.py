@@ -16,13 +16,12 @@ from enum import IntEnum
 from typing import TYPE_CHECKING, Callable, Sequence
 
 from config import FB_CONF_LOG_DICT_MAX_ENTRIES
-from tier1_core.printk import PRINTK_DICTIONARY, PRINTK_RECORD_SIZE
-from tier2_runtime.observability.logging_interface import LogLevel, LogResult, LoggerPort
 from system_containers import ReadOnlyFlatMapStorage, ReadOnlyFlatMapView, StaticVector
+from tier1_core.printk import PRINTK_DICTIONARY, PRINTK_RECORD_SIZE
+from tier2_runtime.observability.logging_interface import LoggerPort, LogLevel, LogResult
 
 if TYPE_CHECKING:
     from tier1_core.printk import PrintkWriter
-    from tier2_runtime.hal.dispatch import StreamSink
 
 LOG_RECORD_SIZE = PRINTK_RECORD_SIZE
 _MAX_DICTIONARY_ID = 0x00FF_FFFF

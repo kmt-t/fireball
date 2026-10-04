@@ -23,9 +23,9 @@ import tier2_runtime.wasm.opcodes as op
 from ipc_router import FB_URI_HAL_STDOUT
 from system import System
 from tier2_runtime.interpreter.interpreter import Interpreter, InterpreterBindings
+from tier2_runtime.wasm.reader import parse
 from tier3_platform.drivers.hal.dummy import DummyDriver
 from tier3_platform.drivers.wasi.context import WasiHostContext
-from tier2_runtime.wasm.reader import parse
 
 SCENARIO2_WAT = """
 (module

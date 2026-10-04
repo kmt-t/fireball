@@ -260,8 +260,8 @@ def test_wit_generated_static_guest_raw_four_imports(compiled_raw_guest: Path, r
     from qa.shared.helpers import make_native_interpreter
     from scheduler import TaskState
     from system import System
-    from tier3_platform.drivers.wasi.context import WasiHostContext
     from tier2_runtime.wasm.reader import parse
+    from tier3_platform.drivers.wasi.context import WasiHostContext
 
     module = parse(compiled_raw_guest.read_bytes())
     observed_imports: dict[str, int] = {}

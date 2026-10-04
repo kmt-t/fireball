@@ -25,8 +25,8 @@ configure_import_paths(_PYSIM_DIR, _BENCH_DIR)
 
 import tier2_runtime.wasm.opcodes as op
 from config import FB_CONF_RUNTIME_YIELD_THRESHOLD
-from tier2_runtime.interpreter.control_flow import extract_basic_blocks, iter_block_ops
 from system_containers import ReadOnlyFlatMapView, StaticVector
+from tier2_runtime.interpreter.control_flow import extract_basic_blocks, iter_block_ops
 from tier2_runtime.interpreter.interpreter import (
     ExecutionContext,
     Interpreter,
@@ -34,12 +34,12 @@ from tier2_runtime.interpreter.interpreter import (
     NativeInterpreter,
     WasmNumber,
 )
-from tier3_plugins.jit.jit_cache import HotspotBitmap
-from tier3_plugins.jit.jit_manager import JITRuntimeManager
-from tier3_plugins.jit.x64_jit import TraceCompiler
 from tier2_runtime.runtime.engine import RuntimeEngine
 from tier2_runtime.wasm.module import I32, LocalWidthMap
 from tier2_runtime.wasm.reader import parse
+from tier3_plugins.jit.jit_cache import HotspotBitmap
+from tier3_plugins.jit.jit_manager import JITRuntimeManager
+from tier3_plugins.jit.x64_jit import TraceCompiler
 
 
 class JITCompilerBenchmark:

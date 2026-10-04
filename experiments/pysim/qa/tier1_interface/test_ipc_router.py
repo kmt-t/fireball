@@ -31,17 +31,17 @@ from ipc_router import (
     pack_key32,
     unpack_key32,
 )
+from qa.shared.helpers import expect_assertion, make_test_ipc_message
+from scheduler import ChannelAction, Scheduler, Task, TaskState, WaitDir
+from system import (
+    System,
+)
 from tier2_runtime.memory.manager import (
     FB_CONF_MEMORY_POOL_SIZE,
     FB_CONF_SHM_SIM_BASE,
     FB_CONF_SHM_SIZE,
     FB_TASK_ID_FLIGHT,
     MemoryManager,
-)
-from qa.shared.helpers import expect_assertion, make_test_ipc_message
-from scheduler import ChannelAction, Scheduler, Task, TaskState, WaitDir
-from system import (
-    System,
 )
 
 _KEY_CMD = pack_key32(ScopeKind.FUNCTIONAL, DataType.UINT32, key_id=1)

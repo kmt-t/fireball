@@ -17,53 +17,22 @@ from typing import TYPE_CHECKING, Callable, Sequence
 
 from config import FB_CONF_LOG_DICT_MAX_ENTRIES
 from system_containers import ReadOnlyFlatMapStorage, ReadOnlyFlatMapView, StaticVector
-from tier1_core.printk import PRINTK_DICTIONARY, PRINTK_RECORD_SIZE
+from tier1_core.printk import (
+    PRINTK_DICTIONARY,
+    PRINTK_HEADER_SIZE,
+    PRINTK_MAX_RECORD_SIZE,
+    _is_one_of,
+    format_argument_count,
+)
 from tier2_runtime.observability.logging_interface import LoggerPort, LogLevel, LogResult
 
 if TYPE_CHECKING:
     from tier1_core.printk import PrintkWriter
 
-LOG_RECORD_SIZE = PRINTK_RECORD_SIZE
+LOG_HEADER_SIZE = PRINTK_HEADER_SIZE
+LOG_MAX_RECORD_SIZE = PRINTK_MAX_RECORD_SIZE
 _MAX_DICTIONARY_ID = 0x00FF_FFFF
 _UINT32_MAX = 0xFFFF_FFFF
-
-
-def _is_one_of(value: str, options: str) -> bool:
-    for index in range(len(options)):
-        if value == options[index]:
-            return True
-    return False
-
-
-def _format_argument_count(fmt: str) -> int:
-    """Validate the build-time numeric printf subset and count its arguments."""
-    argument_count = 0
-    index = 0
-    while index < len(fmt):
-        if fmt[index] != "%":
-            index += 1
-            continue
-        index += 1
-        assert index < len(fmt), "format string ends with '%'"
-        if fmt[index] == "%":
-            index += 1
-            continue
-        while index < len(fmt) and _is_one_of(fmt[index], "-+0 #"):
-            index += 1
-        while index < len(fmt) and fmt[index].isdigit():
-            index += 1
-        if index < len(fmt) and fmt[index] == ".":
-            index += 1
-            precision_start = index
-            while index < len(fmt) and fmt[index].isdigit():
-                index += 1
-            assert index > precision_start, "printf precision requires digits"
-        assert index < len(fmt), "incomplete printf conversion"
-        assert _is_one_of(fmt[index], "diouxX"), f"unsupported printf conversion %{fmt[index]}"
-        argument_count += 1
-        assert argument_count <= 4, "log format may use at most four u32 arguments"
-        index += 1
-    return argument_count
 
 
 # Tier 2 (interpreter.py) owns TrapCode and computes these same offsets as
@@ -146,7 +115,7 @@ class LogDictionary:
     and presents format strings via a non-owning ReadOnlyFlatMapView (AoS).
     """
 
-    __slots__ = ("_view", "payload", "storage")
+    __slots__ = ("_argument_counts", "_view", "payload", "storage")
 
     def __init__(
         self,
@@ -177,18 +146,18 @@ class LogDictionary:
                     built_entries.append(entry)
             built_entries.sort(key=lambda entry: entry[0])
             previous_id: int | None = None
-            for event_id, fmt in built_entries:
+            for event_id, _fmt in built_entries:
                 assert 0 <= event_id <= _MAX_DICTIONARY_ID
                 assert previous_id is None or previous_id < event_id
-                _format_argument_count(fmt)
                 previous_id = event_id
             self.storage = ReadOnlyFlatMapStorage.from_sorted_static_entries(built_entries)
         else:
             self.storage = storage
             assert len(storage.entries) <= FB_CONF_LOG_DICT_MAX_ENTRIES
-            for event_id, fmt in storage.entries:
+            for event_id, _fmt in storage.entries:
                 assert 0 <= event_id <= _MAX_DICTIONARY_ID
-                _format_argument_count(fmt)
+        # Build-time metadata: one byte per existing dictionary entry, with no ID copy.
+        self._argument_counts = bytes(format_argument_count(fmt) for _, fmt in self.storage.entries)
         self._view: ReadOnlyFlatMapView[int, str] = self.storage.view()
         self.payload: ReadOnlyFlatMapView[int, str] = self._view
 
@@ -199,12 +168,17 @@ class LogDictionary:
     def entries(self) -> Sequence[tuple[int, str]]:
         return self.storage.entries
 
+    def argument_count(self, offset: int) -> int:
+        """Look up immutable build-time metadata without reading format strings."""
+        index = self._view.find_index(offset)
+        assert index >= 0, f"unregistered dictionary ID 0x{offset:X}"
+        return self._argument_counts[index]
+
     def format(self, offset: int, args: Sequence[int]) -> str:
         """Host-side expansion for one fixed dictionary ID and at most four values."""
         fmt = self._view.find(offset)
-        if fmt is None:
-            return f"<UNKNOWN_DICT_OFFSET_0x{offset:X}>"
-        _format_argument_count(fmt)
+        assert fmt is not None, f"unregistered dictionary ID 0x{offset:X}"
+        format_argument_count(fmt)
         formatted = ""
         literal_start = 0
         index = 0
@@ -333,7 +307,7 @@ class Logger(LoggerPort):
         self.dictionary = dictionary
         self.min_level = min_level
         self.ring = LogRingBuffer(capacity)
-        self._wire_buffer = bytearray(LOG_RECORD_SIZE)
+        self._wire_buffer = bytearray(LOG_MAX_RECORD_SIZE)
         self._wire_view = memoryview(self._wire_buffer)
 
     def log_event(
@@ -348,6 +322,7 @@ class Logger(LoggerPort):
         assert 0 <= int(level) <= int(LogLevel.FATAL)
         level = LogLevel(int(level))
         assert 0 <= dict_offset <= _MAX_DICTIONARY_ID
+        self.dictionary.argument_count(dict_offset)
         assert 0 <= arg0 <= _UINT32_MAX
         assert 0 <= arg1 <= _UINT32_MAX
         assert 0 <= arg2 <= _UINT32_MAX
@@ -356,32 +331,29 @@ class Logger(LoggerPort):
             return LogResult.FILTERED
         return self.ring.push(level, dict_offset, arg0, arg1, arg2, arg3)
 
-    def _encode_entry(self, entry: LogEntry) -> None:
+    def _encode_entry(self, entry: LogEntry) -> int:
+        argument_count = self.dictionary.argument_count(entry.dict_offset)
         wire = self._wire_buffer
         wire[0] = int(entry.level)
         wire[1] = entry.dict_offset & 0xFF
         wire[2] = (entry.dict_offset >> 8) & 0xFF
         wire[3] = (entry.dict_offset >> 16) & 0xFF
-        value = entry.arg0
-        wire[4] = value & 0xFF
-        wire[5] = (value >> 8) & 0xFF
-        wire[6] = (value >> 16) & 0xFF
-        wire[7] = (value >> 24) & 0xFF
-        value = entry.arg1
-        wire[8] = value & 0xFF
-        wire[9] = (value >> 8) & 0xFF
-        wire[10] = (value >> 16) & 0xFF
-        wire[11] = (value >> 24) & 0xFF
-        value = entry.arg2
-        wire[12] = value & 0xFF
-        wire[13] = (value >> 8) & 0xFF
-        wire[14] = (value >> 16) & 0xFF
-        wire[15] = (value >> 24) & 0xFF
-        value = entry.arg3
-        wire[16] = value & 0xFF
-        wire[17] = (value >> 8) & 0xFF
-        wire[18] = (value >> 16) & 0xFF
-        wire[19] = (value >> 24) & 0xFF
+        if argument_count > 0:
+            self._write_u32(4, entry.arg0)
+        if argument_count > 1:
+            self._write_u32(8, entry.arg1)
+        if argument_count > 2:
+            self._write_u32(12, entry.arg2)
+        if argument_count > 3:
+            self._write_u32(16, entry.arg3)
+        return LOG_HEADER_SIZE + 4 * argument_count
+
+    def _write_u32(self, offset: int, value: int) -> None:
+        wire = self._wire_buffer
+        wire[offset] = value & 0xFF
+        wire[offset + 1] = (value >> 8) & 0xFF
+        wire[offset + 2] = (value >> 16) & 0xFF
+        wire[offset + 3] = (value >> 24) & 0xFF
 
     def flush(
         self, batch_size: int = 32, interrupt_pending: Callable[[], bool] | None = None
@@ -396,9 +368,9 @@ class Logger(LoggerPort):
             while not self.ring.is_empty() and batch_count < batch_size:
                 entry = self.ring.peek()
                 assert entry is not None
-                self._encode_entry(entry)
-                written = self.transport.write(self._wire_view)
-                assert written == LOG_RECORD_SIZE
+                record_size = self._encode_entry(entry)
+                written = self.transport.write(self._wire_view[:record_size])
+                assert written == record_size
                 self.ring.discard_oldest()
                 flushed += 1
                 batch_count += 1
@@ -408,24 +380,28 @@ class Logger(LoggerPort):
 
 
 def decode_log_records(data: bytes, dictionary: LogDictionary) -> StaticVector[str]:
-    """Host-side decoder for the fixed-width records emitted by ``Logger``."""
-    assert len(data) % LOG_RECORD_SIZE == 0
-    messages: StaticVector[str] = StaticVector(capacity=len(data) // LOG_RECORD_SIZE)
-    for offset in range(0, len(data), LOG_RECORD_SIZE):
-        record = memoryview(data)[offset : offset + LOG_RECORD_SIZE]
+    """Decode dictionary-sized records; unknown IDs cannot establish a boundary."""
+    messages: StaticVector[str] = StaticVector(capacity=len(data) // LOG_HEADER_SIZE)
+    offset = 0
+    while offset < len(data):
+        assert len(data) - offset >= LOG_HEADER_SIZE, "truncated log header"
+        record = memoryview(data)[offset:]
+        assert 0 <= record[0] <= int(LogLevel.FATAL), "invalid log level"
         level = LogLevel(record[0])
         dict_offset = record[1] | (record[2] << 8) | (record[3] << 16)
-        args: StaticVector[int] = StaticVector(capacity=4)
-        arg_offset = 4
-        while arg_offset < LOG_RECORD_SIZE:
+        argument_count = dictionary.argument_count(dict_offset)
+        record_size = LOG_HEADER_SIZE + 4 * argument_count
+        assert len(record) >= record_size, "truncated log arguments"
+        args: StaticVector[int] = StaticVector(capacity=argument_count)
+        for arg_offset in range(LOG_HEADER_SIZE, record_size, 4):
             args.append(
                 record[arg_offset]
                 | (record[arg_offset + 1] << 8)
                 | (record[arg_offset + 2] << 16)
                 | (record[arg_offset + 3] << 24)
             )
-            arg_offset += 4
         messages.append(f"[{level.name}] {dictionary.format(dict_offset, args)}")
+        offset += record_size
     return messages
 
 

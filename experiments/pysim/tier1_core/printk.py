@@ -5,7 +5,48 @@ from __future__ import annotations
 from enum import IntEnum
 from typing import Protocol
 
-PRINTK_RECORD_SIZE = 20
+from system_containers import ReadOnlyFlatMapView
+
+PRINTK_HEADER_SIZE = 4
+PRINTK_MAX_RECORD_SIZE = 20
+
+
+def _is_one_of(value: str, options: str) -> bool:
+    for index in range(len(options)):
+        if value == options[index]:
+            return True
+    return False
+
+
+def format_argument_count(fmt: str) -> int:
+    """Validate the build-time numeric printf subset and count its arguments."""
+    argument_count = 0
+    index = 0
+    while index < len(fmt):
+        if fmt[index] != "%":
+            index += 1
+            continue
+        index += 1
+        assert index < len(fmt), "format string ends with '%'"
+        if fmt[index] == "%":
+            index += 1
+            continue
+        while index < len(fmt) and _is_one_of(fmt[index], "-+0 #"):
+            index += 1
+        while index < len(fmt) and fmt[index].isdigit():
+            index += 1
+        if index < len(fmt) and fmt[index] == ".":
+            index += 1
+            precision_start = index
+            while index < len(fmt) and fmt[index].isdigit():
+                index += 1
+            assert index > precision_start, "printf precision requires digits"
+        assert index < len(fmt), "incomplete printf conversion"
+        assert _is_one_of(fmt[index], "diouxX"), f"unsupported printf conversion %{fmt[index]}"
+        argument_count += 1
+        assert argument_count <= 4, "log format may use at most four u32 arguments"
+        index += 1
+    return argument_count
 
 
 class PrintkLevel(IntEnum):
@@ -35,6 +76,17 @@ PRINTK_DICTIONARY: tuple[tuple[int, str], ...] = (
     (0x0203, "IPC: message too large (kv_count=%d, max=%d)"),
     (0x0204, "IPC: invalid ownership state (current_state=%d, op=%d)"),
 )
+
+
+# Simulates immutable ROM metadata generated from the same build-time dictionary.
+_PRINTK_ARGUMENT_COUNTS = bytes(format_argument_count(fmt) for _, fmt in PRINTK_DICTIONARY)
+_PRINTK_DICTIONARY_VIEW = ReadOnlyFlatMapView(PRINTK_DICTIONARY)
+
+
+def printk_argument_count(event: PrintkEvent) -> int:
+    index = _PRINTK_DICTIONARY_VIEW.find_index(int(event))
+    assert index >= 0, "unregistered printk event"
+    return _PRINTK_ARGUMENT_COUNTS[index]
 
 
 class PrintkWriter(Protocol):

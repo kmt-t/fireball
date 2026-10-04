@@ -12,6 +12,7 @@ Implementation Invariants & Gotchas:
 """
 
 import inspect
+from bisect import bisect_left
 from collections.abc import Callable
 from dataclasses import dataclass
 from enum import IntEnum
@@ -62,6 +63,44 @@ class LogResult(IntEnum):
 from docs.components.tier1_core.concepts.flat_view_concept import FlatMapView
 
 
+def _is_one_of(value: str, options: str) -> bool:
+    for index in range(len(options)):
+        if value == options[index]:
+            return True
+    return False
+
+
+def format_argument_count(fmt: str) -> int:
+    """Validate the build-time numeric printf subset and count its arguments."""
+    argument_count = 0
+    index = 0
+    while index < len(fmt):
+        if fmt[index] != "%":
+            index += 1
+            continue
+        index += 1
+        assert index < len(fmt), "format string ends with '%'"
+        if fmt[index] == "%":
+            index += 1
+            continue
+        while index < len(fmt) and _is_one_of(fmt[index], "-+0 #"):
+            index += 1
+        while index < len(fmt) and fmt[index].isdigit():
+            index += 1
+        if index < len(fmt) and fmt[index] == ".":
+            index += 1
+            precision_start = index
+            while index < len(fmt) and fmt[index].isdigit():
+                index += 1
+            assert index > precision_start, "printf precision requires digits"
+        assert index < len(fmt), "incomplete printf conversion"
+        assert _is_one_of(fmt[index], "diouxX"), f"unsupported printf conversion %{fmt[index]}"
+        argument_count += 1
+        assert argument_count <= 4, "log format may use at most four u32 arguments"
+        index += 1
+    return argument_count
+
+
 class LogDictionary:
     """Simulates a ROM-resident static format string dictionary.
     Storage ownership is separated: borrows entries storage and performs lookup
@@ -74,34 +113,20 @@ class LogDictionary:
         else:
             self.storage = []
 
+        self.argument_counts = bytes(format_argument_count(fmt) for _, fmt in self.storage)
         self.payload: FlatMapView = FlatMapView(self.storage)
 
-    def format(self, offset: int, args: tuple[int, int, int, int]) -> str:
+    def argument_count(self, offset: int) -> int:
+        index = bisect_left(self.storage, offset, key=lambda entry: entry[0])
+        assert index < len(self.storage) and self.storage[index][0] == offset
+        return self.argument_counts[index]
+
+    def format(self, offset: int, args: tuple[int, ...]) -> str:
         """Host-side expansion only; Logger never calls this on the device path."""
+        argument_count = self.argument_count(offset)
         fmt = self.payload.find(offset)
-        if fmt is None:
-            return f"<UNKNOWN_DICT_OFFSET_0x{offset:X}>"
-        argument_count = 0
-        index = 0
-        while index < len(fmt):
-            if fmt[index] != "%":
-                index += 1
-                continue
-            index += 1
-            if fmt[index] == "%":
-                index += 1
-                continue
-            while index < len(fmt) and fmt[index] in "-+0 #":
-                index += 1
-            while index < len(fmt) and fmt[index].isdigit():
-                index += 1
-            if index < len(fmt) and fmt[index] == ".":
-                index += 1
-                while index < len(fmt) and fmt[index].isdigit():
-                    index += 1
-            assert index < len(fmt) and fmt[index] in "diouxX"
-            argument_count += 1
-            index += 1
+        assert fmt is not None
+        assert len(args) >= argument_count
         return fmt % args[:argument_count]
 
 
@@ -181,7 +206,7 @@ class MockHALTransport:
 
 
 class Logger:
-    """Fireball Logger Component (Tier 1 Primary Component)."""
+    """Fireball Logger Component (Tier 2 Runtime)."""
 
     def __init__(
         self,
@@ -211,6 +236,7 @@ class Logger:
     ) -> LogResult:
         """Logs an event via dictionary offset and up to 4 integer arguments."""
         assert 0 <= dict_offset <= 0x00FF_FFFF
+        self.dictionary.argument_count(dict_offset)
         assert 0 <= arg0 <= 0xFFFF_FFFF
         assert 0 <= arg1 <= 0xFFFF_FFFF
         assert 0 <= arg2 <= 0xFFFF_FFFF
@@ -219,32 +245,29 @@ class Logger:
             return LogResult.FILTERED
         return self.ring_buffer.push(level, dict_offset, arg0, arg1, arg2, arg3)
 
-    def _encode(self, entry: LogEntry) -> None:
+    def _encode(self, entry: LogEntry) -> int:
+        argument_count = self.dictionary.argument_count(entry.dict_offset)
         wire = self.wire_buffer
         wire[0] = int(entry.level)
         wire[1] = entry.dict_offset & 0xFF
         wire[2] = (entry.dict_offset >> 8) & 0xFF
         wire[3] = (entry.dict_offset >> 16) & 0xFF
-        value = entry.arg0
-        wire[4] = value & 0xFF
-        wire[5] = (value >> 8) & 0xFF
-        wire[6] = (value >> 16) & 0xFF
-        wire[7] = (value >> 24) & 0xFF
-        value = entry.arg1
-        wire[8] = value & 0xFF
-        wire[9] = (value >> 8) & 0xFF
-        wire[10] = (value >> 16) & 0xFF
-        wire[11] = (value >> 24) & 0xFF
-        value = entry.arg2
-        wire[12] = value & 0xFF
-        wire[13] = (value >> 8) & 0xFF
-        wire[14] = (value >> 16) & 0xFF
-        wire[15] = (value >> 24) & 0xFF
-        value = entry.arg3
-        wire[16] = value & 0xFF
-        wire[17] = (value >> 8) & 0xFF
-        wire[18] = (value >> 16) & 0xFF
-        wire[19] = (value >> 24) & 0xFF
+        if argument_count > 0:
+            self._write_u32(4, entry.arg0)
+        if argument_count > 1:
+            self._write_u32(8, entry.arg1)
+        if argument_count > 2:
+            self._write_u32(12, entry.arg2)
+        if argument_count > 3:
+            self._write_u32(16, entry.arg3)
+        return 4 + 4 * argument_count
+
+    def _write_u32(self, offset: int, value: int) -> None:
+        wire = self.wire_buffer
+        wire[offset] = value & 0xFF
+        wire[offset + 1] = (value >> 8) & 0xFF
+        wire[offset + 2] = (value >> 16) & 0xFF
+        wire[offset + 3] = (value >> 24) & 0xFF
 
     def flush(
         self, batch_size: int = 32, interrupt_pending: Callable[[], bool] | None = None
@@ -267,8 +290,8 @@ class Logger:
                 entry = self.ring_buffer.peek()
                 if entry is None:
                     break
-                self._encode(entry)
-                if not self.transport.transmit(self.wire_view):
+                record_size = self._encode(entry)
+                if not self.transport.transmit(self.wire_view[:record_size]):
                     break
                 self.ring_buffer.discard_oldest()
                 total_flushed += 1
@@ -281,19 +304,21 @@ class Logger:
 
 
 def decode_transport(transport: MockHALTransport, dictionary: LogDictionary) -> tuple[str, ...]:
-    """Host-side pretty printer for fixed-width records captured by the mock transport."""
+    """Host-side pretty printer for dictionary-sized records captured by the mock transport."""
     messages: list[str] = []
     for record_bytes in transport.output_log:
-        assert len(record_bytes) == 20
+        assert len(record_bytes) >= 4
         record = memoryview(record_bytes)
         level = LogLevel(record[0])
         offset = record[1] | (record[2] << 8) | (record[3] << 16)
+        record_size = 4 + 4 * dictionary.argument_count(offset)
+        assert len(record_bytes) == record_size
         args = tuple(
             record[index]
             | (record[index + 1] << 8)
             | (record[index + 2] << 16)
             | (record[index + 3] << 24)
-            for index in range(4, 20, 4)
+            for index in range(4, record_size, 4)
         )
         messages.append(f"[{level.name}] {dictionary.format(offset, args)}")
     return tuple(messages)
@@ -334,7 +359,7 @@ def test_logger_buffering_and_idle_flush() -> None:
     output = decode_transport(transport, dictionary)
     assert output[0] == "[INFO] Task 1 yield count: 100"
     assert "[WARN] vMMIO read access to addr: 0x80000000 (val: 0x00001234)" in output[1]
-    assert all(len(record) == 20 for record in transport.output_log)
+    assert all(len(record) == 12 for record in transport.output_log)
 
 
 def test_logger_overwrite_on_buffer_full() -> None:

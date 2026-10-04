@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 from tier1_core.printk import (
-    PRINTK_RECORD_SIZE,
+    PRINTK_HEADER_SIZE,
+    PRINTK_MAX_RECORD_SIZE,
     PrintkEvent,
     PrintkLevel,
     PrintkWriter,
+    printk_argument_count,
 )
 
 PRINTK_BUFFER_CAPACITY = 4096
@@ -48,7 +50,7 @@ class PrintkSink:
 
     def __init__(self, sink: PrintkWriter) -> None:
         self._sink = sink
-        self._event_buffer = bytearray(PRINTK_RECORD_SIZE)
+        self._event_buffer = bytearray(PRINTK_MAX_RECORD_SIZE)
         self._event_view = memoryview(self._event_buffer)
 
     def write(self, data: memoryview) -> int:
@@ -64,6 +66,11 @@ class PrintkSink:
         arg3: int = 0,
     ) -> None:
         """Emit one compact diagnostic record synchronously to the printk sink."""
+        argument_count = printk_argument_count(event)
+        assert 0 <= arg0 <= 0xFFFF_FFFF
+        assert 0 <= arg1 <= 0xFFFF_FFFF
+        assert 0 <= arg2 <= 0xFFFF_FFFF
+        assert 0 <= arg3 <= 0xFFFF_FFFF
         wire = self._event_buffer
         wire[0] = int(level)
         event_id = int(event)
@@ -71,11 +78,16 @@ class PrintkSink:
         wire[1] = event_id & 0xFF
         wire[2] = (event_id >> 8) & 0xFF
         wire[3] = (event_id >> 16) & 0xFF
-        self._write_u32(4, arg0)
-        self._write_u32(8, arg1)
-        self._write_u32(12, arg2)
-        self._write_u32(16, arg3)
-        self._sink.write(self._event_view)
+        if argument_count > 0:
+            self._write_u32(4, arg0)
+        if argument_count > 1:
+            self._write_u32(8, arg1)
+        if argument_count > 2:
+            self._write_u32(12, arg2)
+        if argument_count > 3:
+            self._write_u32(16, arg3)
+        record_size = PRINTK_HEADER_SIZE + 4 * argument_count
+        self._sink.write(self._event_view[:record_size])
 
     def _write_u32(self, offset: int, value: int) -> None:
         assert 0 <= value <= 0xFFFF_FFFF

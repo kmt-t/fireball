@@ -4,6 +4,7 @@ pyModelChecking による Logging コンポーネントの
 (1) log_event() が呼び出し側を決してブロックしないこと（overwrite-on-full, GOTCHA-LOG-02）
 (2) 保留中のログは COOS Idle Hook によるフラッシュで必ず出力されること
 (3) ログフラッシュループ中に外部割り込みが発生した場合、即座に中断して割り込み応答すること（GOTCHA-LOG-03）
+(4) 同一辞書の引数数に従う転送長と復号境界、および未知ID・欠損入力の拒否
 の形式検証（証明・変異検査対応）モデル
 """
 
@@ -79,10 +80,29 @@ def build_model(*, guards: bool = True) -> Kripke:
         "s_never_flushed": {"never_flushed"},  # 違反状態
         "s_irq_blocked": {"irq_blocked"},  # 違反状態
     }
+    # 同一ビルドの辞書を共有する前提で、各引数数の送受信境界を列挙する。
+    # 変異時は辞書と異なる引数数の送信も許し、次レコード位置のずれを検出する。
+    for expected_count in range(5):
+        for sent_count in range(5):
+            state = f"s_record_{expected_count}_{sent_count}"
+            S.append(state)
+            if not guards or sent_count == expected_count:
+                R.extend((("s_idle_empty", state), (state, "s_idle_empty")))
+            else:
+                R.append((state, state))
+            sent_size = 4 + 4 * sent_count
+            next_record_offset = 4 + 4 * expected_count
+            L[state] = {"boundary_error"} if sent_size != next_record_offset else {"record_aligned"}
+    for invalid_input in ("unknown_id", "short_header", "short_arguments"):
+        state = f"s_record_{invalid_input}"
+        S.append(state)
+        R.extend((("s_idle_empty", state), (state, "s_idle_empty")))
+        L[state] = {"rejected"} if guards else {"boundary_error"}
     return Kripke(S=S, S0=S0, R=R, L=L)
 
 
 def properties():
+    bad_boundary = AtomicProposition("boundary_error")
     bad_blocked = AtomicProposition("blocked")
     bad_never_flushed = AtomicProposition("never_flushed")
     bad_irq_blocked = AtomicProposition("irq_blocked")
@@ -91,6 +111,14 @@ def properties():
     irq_pending = AtomicProposition("irq_pending")
     irq_handled = AtomicProposition("irq_handled")
     return [
+        {
+            "name": "dictionary_sized_record_boundary",
+            "kind": "safety",
+            "logic": "CTL",
+            "formula": AG(Not(bad_boundary)),
+            "violation": bad_boundary,
+            "expect": True,
+        },
         {
             "name": "non_blocking_log_event",
             "kind": "safety",

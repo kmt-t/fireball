@@ -58,7 +58,7 @@ from tier2_runtime.interpreter.interpreter import (
 )
 from tier2_runtime.memory.manager import FB_CONF_MEMORY_POOL_SIZE, MemoryManager
 from tier2_runtime.observability.logger import (
-    LOG_RECORD_SIZE,
+    LOG_HEADER_SIZE,
     LogDictionary,
     Logger,
     LogLevel,
@@ -153,15 +153,19 @@ def _open_log(phase: str) -> tuple[Path, FileLogSink]:
     return path, FileLogSink(path.open("wb", buffering=64 * 1024))
 
 
-def _count_log_id(path: Path, dict_offset: int) -> int:
-    data = path.read_bytes()
-    assert len(data) % LOG_RECORD_SIZE == 0
+def _count_log_id(path: Path, dict_offset: int, dictionary: LogDictionary) -> int:
+    data = memoryview(path.read_bytes())
     count = 0
-    for record_offset in range(0, len(data), LOG_RECORD_SIZE):
-        record = data[record_offset : record_offset + LOG_RECORD_SIZE]
+    record_offset = 0
+    while record_offset < len(data):
+        assert len(data) - record_offset >= LOG_HEADER_SIZE
+        record = data[record_offset:]
         record_id = record[1] | (record[2] << 8) | (record[3] << 16)
+        record_size = LOG_HEADER_SIZE + 4 * dictionary.argument_count(record_id)
+        assert len(record) >= record_size
         if record_id == dict_offset:
             count += 1
+        record_offset += record_size
     return count
 
 
@@ -308,7 +312,9 @@ def phase_os_mix(scale: float, kernels: list[str] | None, oracle: bool) -> Phase
             runs.append(KernelRun(name, units, 0.0, result))
             checksum = zlib.crc32(result.to_bytes(4, "little"), checksum) & MASK32
     sink.close()
-    assert _count_log_id(log_path, 0x200) == len(picked), "structured log entries lost"
+    assert _count_log_id(log_path, 0x200, sysv.dictionary) == len(picked), (
+        "structured log entries lost"
+    )
     work = f"{len(picked)} guests, waves of {OS_MIX_WAVE}, {sink.bytes_written} log bytes"
     return PhaseResult("os_mix", seconds, work, checksum, tuple(runs))
 
@@ -434,7 +440,7 @@ def phase_ipc(scale: float, kernels: list[str] | None, oracle: bool) -> PhaseRes
     sink.close()
     assert received[0] == count, (received[0], count)
     assert recv_sum[0] == sent_sum[0], "payload lost or corrupted across rendezvous"
-    assert _count_log_id(log_path, _LOG_ID_MSG) == count, "log entries lost"
+    assert _count_log_id(log_path, _LOG_ID_MSG, dictionary) == count, "log entries lost"
     work = f"{count:,} msgs, {sink.bytes_written // 1024} KiB log"
     return PhaseResult("ipc", seconds, work, recv_sum[0])
 

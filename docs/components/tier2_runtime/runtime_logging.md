@@ -95,10 +95,15 @@ ROM上に固定配置されたフォーマット文字列配列の非所有ア�
 | 最大エントリ数 | `FB_CONF_LOG_DICT_MAX_ENTRIES` (コンパイル時固定) |
 | 所有権モデル | ストレージ所有権分離。ROM上のソート済みAoS固定長配列（`flat_map_storage`）に実体を配置し、`LogDictionary` および `Logger` は非所有スパン（`flat_map_view`）を介して二分探索を行う。ロガー本体が辞書配列を複製・所有することはない |
 | フォーマット文字列 | printf形式。最大4個の `u32` 引数を参照可能。不許可指定子（`%s`, `%p`, `%c` 等のポインタ間接参照）はビルド時に静的拒絶 |
-| 引数スライス規則 | フォーマット文字列に含まれる指定子数 $n$（$0 \le n \le 4$）に対し、渡された4引数タプルの先頭 $n$ 個（`args[0..n]`）のみが展開時に参照され、未使用スロットは安全に無視される |
+| 引数数メタデータ | 数値指定子数 $n$（$0 \le n \le 4$）をビルド時に確定する。`%%`は引数を消費しない。ソート済み辞書の各エントリに対応する不変の1バイト表を生成し、送受信側で同じIDと引数数の対応を共有する。ID索引と文字列は複製しない |
+| 引数スライス規則 | 固定容量の4引数スロットの先頭 $n$ 個のみを転送・展開する。未使用スロットの値は転送しない |
 | 登録時期 | ビルド時 (実行時の追加は不可) |
 
-デバイス上のロガーはフォーマット文字列を走査・展開しない。`printk` へ送る1レコードは20バイトであり、先頭から `level:u8`、`dict_offset:u24 little-endian`、`arg0:u32 little-endian`、`arg1:u32 little-endian`、`arg2:u32 little-endian`、`arg3:u32 little-endian` の順に格納する。ホスト側ツールが辞書を参照して可読テキストへ展開する。辞書IDは `0..0xFFFFFF`、各引数は `u32` の範囲でなければならない。Tier 1 printkイベントの辞書エントリもホスト側展開用に共有する。
+デバイス上のロガーはフォーマット文字列を走査・展開しない。`printk` へ送る1レコードは `4 + 4n` バイトである。先頭に `level:u8` と `dict_offset:u24 little-endian` を格納し、辞書IDに対応する引数数 $n$ 個の `u32 little-endian` を順に続ける。引数数やレコード長のフィールドは送信しない。引数0〜4個の転送長は、それぞれ4、8、12、16、20バイトとなる。リングバッファの各スロットと送信作業領域は最大4引数の固定容量を維持する。
+
+送受信側は同一ビルドの辞書IDと引数数を共有する。ホスト側ツールは4バイトのヘッダを読み、辞書の引数数から次のレコード位置を決める。引数数が異なる辞書や旧20バイト固定形式とは互換性を持たない。未知IDからレコード境界を推測して復号を継続しない。
+
+辞書IDは `0..0xFFFFFF`、各引数は `u32` の範囲でなければならない。送信側は未登録IDをリングへの投入前に拒否する。受信側は未知ID、不正レベル、ヘッダまたは引数部の欠損を契約違反として検出する。pysimではこれらを `assert` で即時検出する。Tier 1 printkイベントの辞書エントリと引数数も同じホスト側展開用辞書へ含める。
 
 ### 4.2.1 インタープリタ診断ログイベント仕様
 <!-- traceability: {BufferedLogging} {WasmCodeSectionPC} -->
@@ -143,7 +148,7 @@ COOSスケジューラの `set_idle_hook` で `logger.flush()` を登録する�
 stateDiagram-v2
     [*] --> Idle
     Idle --> Validating: "log_received(dict_id, args)"
-    Validating --> Enqueuing: "id_within_bounds / store raw entry; overwrite oldest on full"
+    Validating --> Enqueuing: "registered_id / store raw entry; overwrite oldest on full"
     Enqueuing --> Idle: enqueued
     Idle --> Flushing: "buffer_not_empty / idle_hook"
     Flushing --> DrainingBatch: "start_dma_batch"
@@ -165,12 +170,12 @@ sequenceDiagram
     participant HW as UART/DMA
 
     C->>L: log_event(level, dict_id, args)
-    L->>L: Validate dict_id bounds (no string formatting)
+    L->>L: Validate registered dict_id (no string formatting)
     L->>RB: push(raw_entry) / overwrite if full
     L-->>C: reply(OK)
     Note over L,HW: COOS Idle Flush (Batch DMA Transfer)
     L->>RB: get_contiguous_block()
-    L->>HW: Start DMA Batch Transfer(raw_entries)
+    L->>HW: Start DMA Batch Transfer(header + used arguments)
     HW-->>L: Transfer Complete Interrupt
     L->>RB: advance_read_ptr(transferred_count)
 ```
@@ -224,7 +229,7 @@ LoggerはTier 2 RuntimeとTier 3プラグインが利用する診断APIであり
 ## 7. 形式検証・テスト仕様との対応
 
 ### 7.1 検証対象の不変条件
-本書で定めた状態、境界、所有権、およびエラー処理を検証対象とする。
+本書で定めた状態、境界、所有権、およびエラー処理を検証対象とする。同一辞書を共有する前提で、転送長 `4 + 4n` と次レコード位置の一致を引数数0〜4で検証する。未知IDと欠損入力は拒否状態へ遷移する。形式モデルは境界を抽象化し、具体的なバイト列と混在レコードの復号はTEST-LOG-15/16で検査する。
 
 ### 7.2 検証モデルと反証可能性
 形式検証モデルは[logging_flush_model.py](docs/components/tier2_runtime/formal/logging_flush_model.py)である。各モデルの正常系と`guards=False`変異で、保護条件が反証されることを確認する。

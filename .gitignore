@@ -59,6 +59,7 @@ doc_graph.json
 
 # Logs and generated state
 *.log
+/outputs/
 reports/
 temp/
 states/

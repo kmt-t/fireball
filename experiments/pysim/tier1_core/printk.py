@@ -80,7 +80,7 @@ PRINTK_DICTIONARY: tuple[tuple[int, str], ...] = (
 
 # Simulates immutable ROM metadata generated from the same build-time dictionary.
 _PRINTK_ARGUMENT_COUNTS = bytes(format_argument_count(fmt) for _, fmt in PRINTK_DICTIONARY)
-_PRINTK_DICTIONARY_VIEW = ReadOnlyFlatMapView(PRINTK_DICTIONARY)
+_PRINTK_DICTIONARY_VIEW: ReadOnlyFlatMapView[int, str] = ReadOnlyFlatMapView(PRINTK_DICTIONARY)
 
 
 def printk_argument_count(event: PrintkEvent) -> int:

@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 from tier2_runtime.hal.dispatch import HalBufferMapStatus
-from tier2_runtime.hal.hostcall import RuntimeHostCallGateway, VdmaTransfer, WasiErrno
+from tier2_runtime.syscall.hostcall import RuntimeHostCallGateway, VdmaTransfer, WasiErrno
 from hypothesis import example, given, settings
 from hypothesis import strategies as st
 from ipc_router import Role
@@ -29,7 +29,7 @@ from tier2_runtime.interpreter.interpreter import (
     TrapCode,
 )
 from tier3_platform.drivers.wasi.context import WasiHostContext
-from tier2_runtime.hal.vmmio import VMMIO_PAGE_SIZE, VmmioStatus
+from tier2_runtime.vmmio.controller import VMMIO_PAGE_SIZE, VmmioStatus
 from tier2_runtime.wasm.reader import parse
 
 

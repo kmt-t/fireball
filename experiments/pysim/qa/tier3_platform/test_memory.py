@@ -26,7 +26,7 @@ from tier2_runtime.memory.manager import (
 from memory_interface import PageMappingCallbacks
 from qa.shared.helpers import expect_assertion
 from scheduler import Scheduler
-from tier2_runtime.hal.vmmio import (
+from tier2_runtime.vmmio.controller import (
     TrapCode,
     VMMIOController,
     VmmioStatus,

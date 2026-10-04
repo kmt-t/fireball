@@ -65,7 +65,7 @@ uv run --offline --no-sync python experiments/pysim/benchmarks/profile/bench_vtu
 
 ## 7. 修正
 
-[`runtime_engine.py`](experiments/pysim/tier2_runtime/runtime/engine.py) の `_compile_trace` を変更した。
+[`engine.py`](experiments/pysim/tier2_runtime/runtime/engine.py) の `_compile_trace` を変更した。
 
 - `block`、`loop`、`if` で終わるブロックのトレースは、終端トレースとして扱う。
 - 終端トレースは、ネイティブチェインの対象にならない。

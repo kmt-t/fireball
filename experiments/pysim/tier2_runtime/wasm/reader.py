@@ -23,9 +23,10 @@ from config import (
     FB_CONF_MAX_VALUE_STACK,
     FB_CONF_MAX_WASM_PAGES,
 )
-from tier2_runtime.wasm.leb128 import decode_signed, decode_unsigned
 from system_containers import ReadOnlyFlatMapStorage, StaticVector
 from tier2_runtime.wasm.binary import WasmSectionReader
+from tier2_runtime.wasm.builder import WasmModuleBuilder
+from tier2_runtime.wasm.leb128 import decode_signed, decode_unsigned
 from tier2_runtime.wasm.module import (
     F32,
     F64,
@@ -40,7 +41,6 @@ from tier2_runtime.wasm.module import (
     Import,
     Module,
 )
-from tier2_runtime.wasm.builder import WasmModuleBuilder
 
 SEC_TYPE = 1
 SEC_IMPORT = 2
@@ -527,9 +527,7 @@ def _parse_start_section(
     assert off == end, "start section length mismatch"
 
 
-def _parse_data_section(
-    data: memoryview, off: int, end: int, callbacks: WasmModuleBuilder
-) -> None:
+def _parse_data_section(data: memoryview, off: int, end: int, callbacks: WasmModuleBuilder) -> None:
     callbacks.on_data_section(off, end - off)
 
 

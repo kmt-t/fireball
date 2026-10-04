@@ -59,10 +59,6 @@ TIERS: dict[str, TierDefinition] = {
         "label": "Tier 2 Runtime",
         "directory": "docs/components/tier2_runtime",
     },
-    "tier3_executer": {
-        "label": "Tier 3 Executer",
-        "directory": "docs/components/tier3_executer",
-    },
     "tier3_plugins": {
         "label": "Tier 3 Plugins",
         "directory": "docs/components/tier3_plugins",

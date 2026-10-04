@@ -65,7 +65,7 @@ from qa.shared.runtime_support import (
     make_runtime_engine,
 )
 from tier3_plugins.jit.x64_jit import TraceCompiler
-from tier2_runtime.hal.vmmio import TrapCode, VMMIOController, VmmioStatus
+from tier2_runtime.vmmio.controller import TrapCode, VMMIOController, VmmioStatus
 from tier2_runtime.wasm.reader import parse
 
 # ==============================================================================
@@ -620,7 +620,7 @@ def test_hal_gotcha_01_hal_buffer_pool_bounds_violation_rejected():
     scheduler = Scheduler()
     owner_id = scheduler.spawn("owner")
     scheduler.current_task = scheduler.get_task(owner_id)
-    from tier2_runtime.hal.vmmio import VMMIOController
+    from tier2_runtime.vmmio.controller import VMMIOController
 
     vmmio = VMMIOController(guest_ram_size=8192, scheduler=scheduler)
     pool = HalBufferPool(scheduler, vmmio)

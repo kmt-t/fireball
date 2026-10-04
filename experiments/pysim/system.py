@@ -23,7 +23,7 @@ from collections.abc import Generator, Mapping, Sequence
 from typing import TYPE_CHECKING
 
 from tier2_runtime.hal.dispatch import HalBufferPool
-from tier2_runtime.hal.hostcall import (
+from tier2_runtime.syscall.hostcall import (
     FbSyscallId,
     RuntimeHostCallGateway,
     SyscallHandler,
@@ -65,8 +65,8 @@ from tier3_platform.drivers.platform_config import (
     PlatformDriverConfiguration,
     create_default_platform_drivers,
 )
-from tier2_runtime.hal.virq import DispatchResult
-from tier2_runtime.hal.vmmio import (
+from tier2_runtime.vsoc.virq import DispatchResult
+from tier2_runtime.vmmio.controller import (
     FC_DYNAMIC,
     FC_SHM,
     FC_STATIC_DEVICE,

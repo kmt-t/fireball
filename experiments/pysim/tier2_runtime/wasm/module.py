@@ -20,8 +20,6 @@ from typing import TYPE_CHECKING, Protocol
 import tier2_runtime.wasm.opcodes as op
 from bump_allocator import BumpAllocator
 from config import FB_CONF_MAX_BASIC_BLOCKS, FB_CONF_MAX_LOCALS
-from tier2_runtime.wasm.jit_scoring import OPCODE_BENEFIT_TABLE, score_opcodes
-from tier2_runtime.wasm.leb128 import decode_signed, decode_unsigned
 from system_containers import (
     BitView,
     CtypesU32Buffer,
@@ -31,6 +29,8 @@ from system_containers import (
     StaticVector,
     fold_mix32,
 )
+from tier2_runtime.wasm.jit_scoring import OPCODE_BENEFIT_TABLE, score_opcodes
+from tier2_runtime.wasm.leb128 import decode_signed, decode_unsigned
 
 if TYPE_CHECKING:
     from tier2_runtime.interpreter.control_flow import ControlMap
@@ -514,7 +514,9 @@ class Module:
         """Precompute each frame's local-slot width and the parameter widths at module load."""
 
         for function in self.functions:
-            assert 0 <= function.type_index < len(self.types)
+            assert 0 <= function.type_index < len(self.types), (
+                "function type index is outside the type section"
+            )
             function_type = self.type_at(function.type_index)
             local_count = len(function_type.params) + len(function.locals_extra)
             assert local_count <= FB_CONF_MAX_LOCALS

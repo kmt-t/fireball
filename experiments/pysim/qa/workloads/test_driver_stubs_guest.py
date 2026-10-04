@@ -8,6 +8,17 @@ from collections.abc import Sequence
 from pathlib import Path
 
 import pytest
+from ipc_router import Role
+from qa.shared.fixtures.hal_stubs import (
+    StreamStubDriver,
+    StubCommand,
+    StubDrivers,
+    StubPlatform,
+    stub_platform,
+)
+from qa.shared.helpers import make_native_interpreter
+from scheduler import TaskState
+from system_containers import ReadOnlyFlatMapView, StaticVector
 from tier2_runtime.hal.dispatch import (
     ARG_BUFFER_HANDLE,
     ARG_CLOCK_HZ,
@@ -23,18 +34,7 @@ from tier2_runtime.hal.dispatch import (
     HalBufferMapStatus,
     WasiIpcCmd,
 )
-from interpreter.interpreter import WasmHostFunction, WasmNumber
-from ipc_router import Role
-from qa.shared.fixtures.hal_stubs import (
-    StreamStubDriver,
-    StubCommand,
-    StubDrivers,
-    StubPlatform,
-    stub_platform,
-)
-from qa.shared.helpers import make_native_interpreter
-from scheduler import TaskState
-from system_containers import ReadOnlyFlatMapView, StaticVector
+from tier2_runtime.interpreter.interpreter import WasmHostFunction, WasmNumber
 from tier2_runtime.wasm.reader import parse
 
 ROOT = Path(__file__).resolve().parents[4]

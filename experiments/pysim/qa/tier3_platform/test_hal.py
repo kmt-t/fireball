@@ -39,7 +39,7 @@ from tier2_runtime.observability.logger import LogDictionary, LogLevel, LogResul
 from tier3_platform.drivers.hal.dummy import DummyDriver, Timer
 from tier3_platform.drivers.hal.stream import StreamTransport
 from tier3_platform.drivers.logging.file_sink import FileLogSink
-from tier2_runtime.hal.vmmio import TrapCode, VMMIOController, VmmioStatus
+from tier2_runtime.vmmio.controller import TrapCode, VMMIOController, VmmioStatus
 
 
 def test_hal_01_stream_transport_uses_fixed_buffers():

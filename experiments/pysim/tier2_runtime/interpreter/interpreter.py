@@ -78,14 +78,14 @@ from tier2_runtime.abi.native_stack_abi import (
     _LocalStackWindow,
 )
 from system_containers import StaticVector
-from tier2_runtime.hal.hostcall import VdmaTransfer
+from tier2_runtime.syscall.hostcall import VdmaTransfer
 from tier2_runtime.abi.jit_abi import (
     EMPTY_NATIVE_DISPATCH_SNAPSHOT,
     NativeBlockVisitHistory,
     NativeDispatchSnapshot,
 )
 from tier2_runtime.observability.logging_interface import LogLevel, LoggerPort
-from tier2_runtime.hal.vmmio import (
+from tier2_runtime.vmmio.controller import (
     FC_DYNAMIC,
     FC_PASSTHROUGH,
     FC_SHM,

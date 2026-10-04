@@ -74,7 +74,7 @@ Tier 2の同名TEST-MEM-10dは古いハンドルの失効を検査する別ケ�
 本書の10dは`PageMappingCallbacks`の契約を検査する。
 
 - 実行日: 2026-10-02。
-- 対象ソース: [`memory.py`](experiments/pysim/tier2_runtime/memory/manager.py)。
+- 対象ソース: [`manager.py`](experiments/pysim/tier2_runtime/memory/manager.py)。
 - スイート: [`test_memory.py`](experiments/pysim/qa/tier3_platform/test_memory.py)。
 - 環境: Linux、プロジェクトのuv環境。
 - 結果: 成功16件、失敗0件、skip 0件、xfail 0件。

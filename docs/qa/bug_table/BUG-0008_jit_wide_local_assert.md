@@ -31,7 +31,7 @@ JITコンパイラは、幅が1でないローカルに触れるブロックだ�
 
 ## 4. 修正
 
-[`runtime_engine.py`](experiments/pysim/tier2_runtime/runtime/engine.py) の `_invoke_trace` から、この `assert` を削除した。
+[`engine.py`](experiments/pysim/tier2_runtime/runtime/engine.py) の `_invoke_trace` から、この `assert` を削除した。
 
 ## 5. 検証
 

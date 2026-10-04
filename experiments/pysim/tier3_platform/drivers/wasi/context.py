@@ -31,7 +31,7 @@ from tier2_runtime.hal.dispatch import (
     HalTask,
     WasiIpcCmd,
 )
-from tier2_runtime.hal.hostcall import FbSyscallId, FireballHostCallPort, WasiErrno, WasiPreview1Host
+from tier2_runtime.syscall.hostcall import FbSyscallId, FireballHostCallPort, WasiErrno, WasiPreview1Host
 from ipc_router import FB_URI_HAL_STDOUT, IPCRouter
 from tier1_core.fnv1a import fnv1a_32
 from tier2_runtime.memory.manager import MemoryManager

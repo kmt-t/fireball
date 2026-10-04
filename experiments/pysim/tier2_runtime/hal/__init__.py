@@ -1,1 +1,1 @@
-"""Tier 2 host-call and hardware abstraction runtime services."""
+"""Tier 2 HAL URI dispatch and device transport contract."""

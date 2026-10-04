@@ -17,8 +17,6 @@ from config import (
     JIT_X64_TRACE_HEADER_BYTES,
     RUNTIME_BLOCK_CACHE_SLOT_COUNT,
 )
-from tier2_runtime.interpreter.control_flow import is_control_terminator
-from tier2_runtime.wasm.jit_scoring import JIT_CANDIDATE_THRESHOLD
 from system_containers import StaticVector
 from tier2_runtime.abi.jit_abi import (
     EMPTY_NATIVE_DISPATCH_SNAPSHOT,
@@ -26,6 +24,8 @@ from tier2_runtime.abi.jit_abi import (
     NativeDispatchSnapshot,
     NativeTraceDispatchEntry,
 )
+from tier2_runtime.abi.native_abi import BufferLease
+from tier2_runtime.interpreter.control_flow import is_control_terminator
 from tier2_runtime.interpreter.interpreter import (
     NATIVE_DISPATCH_CALL_BOUNDARY,
     NATIVE_DISPATCH_OLDEST_TRACE,
@@ -35,15 +35,15 @@ from tier2_runtime.interpreter.interpreter import (
     NativeDispatchEntryPoint,
     NativeInterpreter,
 )
-from tier2_runtime.abi.native_abi import BufferLease
 from tier2_runtime.runtime.engine import RuntimeBoundaryResult
+from tier2_runtime.wasm.jit_scoring import JIT_CANDIDATE_THRESHOLD
 from tier2_runtime.wasm.module import BasicBlock, Module
 from tier2_runtime.wasm.opcodes import END
 
 from .jit_cache import (
     BlockCardMask,
     CardState,
-    FunctionUpdateBitmap,
+    CardUpdateBitmap,
     HistoryRing,
     HotspotBitmap,
     JITMultiBufferCache,
@@ -76,6 +76,7 @@ class JITCompiler(Protocol):
         loops_to: int | None,
     ) -> JITTrace | None: ...
 
+
 def _module_code_lengths(module: Module) -> StaticVector[int]:
     """Build bounded per-function code lengths from loader-owned metadata."""
 
@@ -87,12 +88,14 @@ def _module_code_lengths(module: Module) -> StaticVector[int]:
     return lengths
 
 
-def _module_function_pc_bases(module: Module) -> tuple[int, ...]:
+def _module_function_pc_bases(module: Module) -> StaticVector[int]:
     """Return per-function Code-section PCs, with zero-sized import slots."""
-    bases: list[int] = [0] * len(module.imports)
+    bases: StaticVector[int] = StaticVector(capacity=len(module.imports) + len(module.functions))
+    for _ in module.imports:
+        bases.append(0)
     for local_index in range(len(module.functions)):
         bases.append(module.function_pc_offset(len(module.imports) + local_index))
-    return tuple(bases)
+    return bases
 
 
 def _empty_block_slots() -> StaticVector[tuple[int, BasicBlock | None] | None]:
@@ -116,13 +119,13 @@ class JITRuntimeManager:
     """
 
     __slots__ = (
+        "_compile_code_leases",
+        "_compile_width_buffers",
         "_fast_block_slots",
         "_hotspot_profiling_enabled",
         "_last_analyzed_overwrite_count",
         "_native_dispatch_cache_key",
         "_native_dispatch_cache_snapshot",
-        "_compile_code_leases",
-        "_compile_width_buffers",
         "_trackable_generation",
         "aging_bytes_scanned",
         "aging_scan_bytes",
@@ -181,7 +184,7 @@ class JITRuntimeManager:
         self.min_trace_bytes = min_trace_bytes if min_trace_bytes is not None else (1 << card_shift)
         self.bitmap = HotspotBitmap(card_shift=card_shift, code_lengths=code_lengths)
         self.trackable = BlockCardMask(card_shift=card_shift, code_lengths=code_lengths)
-        self.update_bitmap = FunctionUpdateBitmap(function_count=len(code_lengths))
+        self.update_bitmap = CardUpdateBitmap(card_count=self.bitmap.card_count)
         self.ring = HistoryRing(capacity=history_capacity)
         self.cache = JITMultiBufferCache()
         self.cache.on_evict = self._handle_eviction
@@ -256,7 +259,7 @@ class JITRuntimeManager:
             code_lengths=code_lengths,
             function_pc_bases=function_pc_bases,
         )
-        self.update_bitmap = FunctionUpdateBitmap(function_count=len(code_lengths))
+        self.update_bitmap = CardUpdateBitmap(card_count=self.bitmap.card_count)
         self.ring = HistoryRing(capacity=self.history_capacity)
         self.compile_queue = StaticVector(capacity=self.compile_queue_capacity)
         self._fast_block_slots = _empty_block_slots()
@@ -488,8 +491,7 @@ class JITRuntimeManager:
         yield_requested = native_status == NATIVE_DISPATCH_YIELD
         self.on_interpreter_exit(yield_requested)
         if self.has_pending_compilation() and (
-            yield_requested
-            or len(self.compile_queue) >= self.compile_queue_capacity
+            yield_requested or len(self.compile_queue) >= self.compile_queue_capacity
         ):
             self.idle_hook(budget=idle_budget)
 
@@ -547,7 +549,7 @@ class JITRuntimeManager:
             assert module_id == self.module_id
             new_state = self.bitmap.touch(pc)
             if new_state == CardState.EXECUTED:
-                self.update_bitmap.mark(self.bitmap.function_of(pc))
+                self.update_bitmap.mark(self.bitmap.card_of(pc))
             if new_state == CardState.HOT and not self.compile_queue.contains(pc):
                 self.compile_queue.push_back(pc)
                 if len(self.compile_queue) >= self.compile_queue_capacity:
@@ -579,11 +581,12 @@ class JITRuntimeManager:
         while units < self.aging_step_units and scanned < scan_limit:
             bits = update.unit(update.cursor)
             if bits != 0:
-                for bit in range(FunctionUpdateBitmap.UNIT_FUNCTIONS):
+                for bit in range(CardUpdateBitmap.UNIT_CARDS):
                     if (bits >> bit) & 1:
-                        func_idx = update.cursor * FunctionUpdateBitmap.UNIT_FUNCTIONS + bit
-                        decayed += self.bitmap.decay_executed_function(func_idx)
-                        update.unmark(func_idx)
+                        card_index = update.cursor * CardUpdateBitmap.UNIT_CARDS + bit
+                        if card_index < update.card_count:
+                            decayed += self.bitmap.decay_executed_card(card_index)
+                            update.unmark(card_index)
                 units += 1
             update.cursor = 0 if update.cursor + 1 == update.unit_count else update.cursor + 1
             scanned += 1

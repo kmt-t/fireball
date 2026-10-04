@@ -13,7 +13,7 @@
 確認項目:
 
 - Tier 表と docs/components/ のディレクトリが一致する。
-- tier3_executer は Interpreter と JIT、tier3_plugins は Debugger と Guest Profiler を含む。
+- tier3_plugins は JIT、Debugger、Guest Profiler を含む。Interpreter は tier2_runtime に含む。
 - tier3_platform は物理ドライバとゲスト側アダプタを含む。
 - Tier 2 はランタイムのライフサイクルとプラグイン・観測契約を定義し、Tier 3 の具体実装を所有しない。
 
@@ -27,7 +27,7 @@
 確認項目:
 
 - コンポーネントごとに責務の主語と対象が明確である。
-- Runtime の契約、Executer の実行、Plugins の交換可能な実装、Platform の物理接続が混在していない。
+- Runtime の契約、Plugins の交換可能な実装、Platform の物理接続が混在していない。
 - 概要書は分類に必要な一文とリンクだけを持ち、詳細仕様を再掲していない。
 - 同じ責務を別名のコンポーネントへ分割していない。
 
@@ -71,7 +71,7 @@
 確認項目:
 
 - Tier 1 Core、Tier 1 Interface、Tier 2 Runtime、Tier 3 Platform の契約 WIT が各 Tier の `wit/` 配下にある。
-- Tier 3 Executer と Tier 3 Plugins は、Tier 2 の実行・観測・プラグイン契約を実装または利用する関係が明示されている。
+- Tier 3 Plugins は、Tier 2 の実行・観測・プラグイン契約を実装または利用する関係が明示されている。
 - Markdown は契約の説明・制約・検証方法を担い、シグネチャと型の正本は WIT と一致する。
 - WIT ファイル名は契約対象と方向を表し、汎用名だけで命名されていない。
 

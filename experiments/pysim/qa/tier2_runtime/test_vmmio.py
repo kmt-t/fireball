@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 from scheduler import Scheduler
-from tier2_runtime.hal.vmmio import TrapCode, VMMIOController, VmmioStatus
+from tier2_runtime.vmmio.controller import TrapCode, VMMIOController, VmmioStatus
 
 
 def _controller(guest_ram_size: int = 6003) -> VMMIOController:

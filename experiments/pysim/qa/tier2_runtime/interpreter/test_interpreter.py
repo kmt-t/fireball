@@ -29,7 +29,7 @@ from system_containers import StaticVector
 from tier2_runtime.interpreter.interpreter import ExecutionContext, Trap, WasmNumber
 from tier2_runtime.interpreter.interpreter import TrapCode as InterpreterTrapCode
 from tier2_runtime.runtime.engine import RuntimeEngine
-from tier2_runtime.hal.vmmio import TrapCode
+from tier2_runtime.vmmio.controller import TrapCode
 from tier2_runtime.wasm.module import F64, I32, I64, Function, FunctionTable, FuncType, Memory, Module
 from tier2_runtime.wasm.reader import parse
 

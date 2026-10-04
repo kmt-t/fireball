@@ -71,9 +71,9 @@ Element/Data初期化定義を個別配列へ展開せず、パース時検証�
 | TEST-LOAD-48 | ローダ所有のベーシックブロック索引と不変メタ情報公開 | パース済み WASM モジュール | `mod.get_block(pc)` / `mod.block_storage` | ランタイム側での再構築なしに、ローダが構築した `ReadOnlyRadixBinaryTreeStorage` と借用viewから $O(1) + O(\log n)$ で `BasicBlock` メタ情報を解決できる | `{Loader_BasicBlockIndex}` |
 | TEST-LOAD-49 | int4_t スコアリングによる JIT 候補ビットマップ生成 | WASM モジュールロード | `test_loader_candidate_gate_uses_specification_threshold`で8・9・10点と負の便益を含む2点の有効ブロックを実登録する | 128B BitView<4> テーブルから命令ごとの機械語短縮スコア（int4_t）を積算し、合計9点以上のブロックの head_pc カードビット（1bit）が正確に 1 にセットされる | `{JIT_StaticBenefitScoring}`, `{JIT_CandidateBitmap}` |
 | TEST-LOAD-50 | JITCandidateBitmap 非候補ブロックの touch/履歴バイパス | 非候補ブロック（カードビット 0）の実行 | `eng.run(cold_pc, ctx)` | インタープリタ実行は行われるが、HotspotBitmap.touch() および履歴リングへの記録が完全にバイパスされ、カード状態が UNEXECUTED のまま維持される | `{JIT_CandidateBitmap}` |
-| TEST-LOAD-51 | 到達不能な外側フレームの型ポリモーフィズム分離 | `unreachable` の後に値を要求するネストブロック | `parse(module)` | 外側フレームのunreachable状態を内側ブロックへ漏らさず、operand stack underflowとして拒否する | `wasm_reader.py` operand stack validation |
-| TEST-LOAD-52 | Custom section 名のセクション境界 | 名前長がCustom sectionの残りバイト数を超える | `parse(module)` | 次セクションのバイトを名前として読まず、section bounds違反で拒否する | `wasm_reader.py` custom section bounds |
-| TEST-LOAD-53 | LEB128幅とsection件数の事前検証 | 幅超過LEB128、短いsection内の巨大な型件数 | `parse(module)` | LEB128を最大幅・現在のsection終端で停止し、設定容量を構成する前に不正件数を拒否する | `leb128.py`, `wasm_reader.py` |
+| TEST-LOAD-51 | 到達不能な外側フレームの型ポリモーフィズム分離 | `unreachable` の後に値を要求するネストブロック | `parse(module)` | 外側フレームのunreachable状態を内側ブロックへ漏らさず、operand stack underflowとして拒否する | [`reader.py`](experiments/pysim/tier2_runtime/wasm/reader.py) operand stack validation |
+| TEST-LOAD-52 | Custom section 名のセクション境界 | 名前長がCustom sectionの残りバイト数を超える | `parse(module)` | 次セクションのバイトを名前として読まず、section bounds違反で拒否する | [`reader.py`](experiments/pysim/tier2_runtime/wasm/reader.py) custom section bounds |
+| TEST-LOAD-53 | LEB128幅とsection件数の事前検証 | 幅超過LEB128、短いsection内の巨大な型件数 | `parse(module)` | LEB128を最大幅・現在のsection終端で停止し、設定容量を構成する前に不正件数を拒否する | [`leb128.py`](experiments/pysim/tier2_runtime/wasm/leb128.py), [`reader.py`](experiments/pysim/tier2_runtime/wasm/reader.py) |
 | TEST-LOAD-54 | ROM-backed 名称範囲とハッシュ衝突解決 | 異なる名前 `ufbwjn` / `rsksbm`（同一FNV-1a 32-bit値）を持つエクスポート | `lookup_export(name)` と各エントリのROM範囲を確認 | 名前の実体をエントリへ保存せず、各ハッシュ候補をROM上の完全一致で識別する | `GOTCHA-LOAD-01` |
 | TEST-LOAD-55 | 実行時作成が使うパーサーのWASMページ上限 | 初期メモリが `FB_CONF_MAX_WASM_PAGES + 1` ページ | `wasm_reader.parse(module)` | 設定上限を超える初期メモリを拒否する | `runtime_loader.md` (Resource Constraints) |
 
@@ -92,7 +92,7 @@ Element/Data初期化定義を個別配列へ展開せず、パース時検証�
 
 この文書の前半は、Phase 1で実装するC++ `runtime_loader` の目標テスト契約である。ロード済み`ModuleView`、複数モジュール登録・リンク、ファイル位置のRadix索引は現行Pysim製品コードの機能ではない。バックログ上もC++ローダー実装は未着手である。
 
-PysimのPythonコードは参照ランタイムであり、現行のWASMパース入口は [`test_wasm_reader.py`](experiments/pysim/qa/tier2_runtime/test_wasm_reader.py) から呼ぶ `wasm_reader.parse` である。QAはこの経路の境界検証、アロケータの失敗時復元、セグメント初期化、基本ブロック索引を直接確認する。レジストリと関数リンクの契約は [`module_link_harness.py`](experiments/pysim/qa/private/tier2_runtime/module_link_harness.py) がQA内だけでモデル化し、パース済みModuleを使って未解決状態、シグネチャ一致、部分リンク防止、上限を確認する。このハーネスは製品ランタイムのリンク機能やRadix索引の証拠ではない。
+PysimのPythonコードは参照ランタイムであり、現行のWASMパース入口は [`test_wasm_reader.py`](experiments/pysim/qa/tier2_runtime/test_wasm_reader.py) から呼ぶ `reader.parse` である。QAはこの経路の境界検証、アロケータの失敗時復元、セグメント初期化、基本ブロック索引を直接確認する。レジストリと関数リンクの契約は [`module_link_harness.py`](experiments/pysim/qa/private/tier2_runtime/module_link_harness.py) がQA内だけでモデル化し、パース済みModuleを使って未解決状態、シグネチャ一致、部分リンク防止、上限を確認する。このハーネスは製品ランタイムのリンク機能やRadix索引の証拠ではない。
 
 | ケースID | 現行Pysim QA | 直接観測する結果 |
 | :--- | :--- | :--- |

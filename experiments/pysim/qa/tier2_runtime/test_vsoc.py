@@ -50,7 +50,7 @@ from tier3_plugins.jit.x64_jit import TraceCompiler
 from tier2_runtime.runtime.engine import RuntimeDriveMode, RuntimeEngine
 from tier3_platform.drivers.printk import PrintkBuffer
 from tier3_platform.drivers.wasi.context import WasiHostContext
-from tier2_runtime.hal.virq import (
+from tier2_runtime.vsoc.virq import (
     DispatchResult,
     InterruptEvent,
     RegistrationError,

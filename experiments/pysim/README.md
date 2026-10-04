@@ -48,11 +48,14 @@ experiments/pysim/
 │
 ├── tier2_runtime/         # Tier 2 Runtime & WASM 仮想マシン
 │   ├── abi/               # Interpreter/JIT ABI定義とNative adapter
-│   ├── hal/               # HAL、host call、vIRQ、vMMIO
+│   ├── hal/               # URI解決・IPCコマンド・HALバッファ仲介
 │   ├── interpreter/       # Interpreter、実行状態、control flow
 │   ├── memory/            # Tier 1メモリ契約のTier 2実装
 │   ├── observability/     # Runtimeイベントと構造化ログ
 │   ├── runtime/           # RuntimeEngine、RuntimeComposer、JIT plugin契約、recovery
+│   ├── syscall/           # ゲストhost callとWASI gateway
+│   ├── vmmio/             # ゲストアドレス変換と仮想デバイス領域
+│   ├── vsoc/              # vSoC固有の仮想割り込み配送
 │   └── wasm/              # WASM読込、Module、opcode、LEB128
 │
 ├── tier3_plugins/         # Tier 3の交換可能な実行拡張・観測プラグイン

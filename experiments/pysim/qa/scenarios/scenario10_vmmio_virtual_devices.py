@@ -22,7 +22,7 @@ import wasmtime
 from scheduler import Scheduler
 from tier2_runtime.interpreter.interpreter import Interpreter, InterpreterBindings
 from tier2_runtime.interpreter.interpreter import TrapCode as InterpreterTrapCode
-from tier2_runtime.hal.vmmio import (
+from tier2_runtime.vmmio.controller import (
     FC_STATIC_DEVICE,
     TrapCode,
     VmmioAddress,

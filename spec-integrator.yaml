@@ -77,7 +77,7 @@ verification_matrix:
   workload_runner: "experiments/pysim/qa/workloads/run_all.py"
   pairwise_test: "experiments/pysim/qa/integration/test_pairwise_combinations.py"
   expected:
-    component_specs: 25
+    component_specs: 26
     concept_files: 14
     formal_models: 20
     test_specs: 25
@@ -109,6 +109,7 @@ evidence:
 llm_judge:
   tag: "{VERIFY_LLM}"
   default_backend: "clef-flash"
+  error_score_threshold: 0.70
   backends:
     jev:
       api_key_env: "OPENROUTER_API_KEY"

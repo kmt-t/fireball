@@ -14,7 +14,7 @@ import os
 import struct
 from typing import Protocol
 
-from tier2_runtime.hal.hostcall import WasiErrno
+from tier2_runtime.syscall.hostcall import WasiErrno
 
 UVWASI_MAX_IOVECS = 64
 UVWASI_CLOCK_REALTIME = 0

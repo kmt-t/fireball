@@ -88,7 +88,7 @@ TEST-IPCR-01/20は参考実装の`test_registry_is_a_real_flat_map_view_not_a_di
 ### 3.2 局所実行結果
 
 - 実行日: 2026-10-01。
-- 対象ソース: [`ipc_router.py`](experiments/pysim/tier1_interface/ipc_router.py)、[`scheduler.py`](experiments/pysim/tier1_core/scheduler.py)、[`memory.py`](experiments/pysim/tier2_runtime/memory/manager.py)。
+- 対象ソース: [`ipc_router.py`](experiments/pysim/tier1_interface/ipc_router.py)、[`scheduler.py`](experiments/pysim/tier1_core/scheduler.py)、[`manager.py`](experiments/pysim/tier2_runtime/memory/manager.py)。
 - テストスイート: [`test_ipc_router.py`](experiments/pysim/qa/tier1_interface/test_ipc_router.py)。
 - 環境: Linux、プロジェクトのPython 3.14環境、実共有メモリアダプタとScheduler。
 - 成功121件、失敗0件、skip 0件。

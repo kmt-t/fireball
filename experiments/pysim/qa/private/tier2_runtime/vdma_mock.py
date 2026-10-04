@@ -11,7 +11,7 @@ from collections.abc import Callable, Generator
 from dataclasses import dataclass
 from enum import StrEnum
 
-from tier2_runtime.hal.hostcall import WasiErrno
+from tier2_runtime.syscall.hostcall import WasiErrno
 from interrupt_event import InterruptEvent
 from ipc_router import Role
 from scheduler import ChannelAction, TaskState

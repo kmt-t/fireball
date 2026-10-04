@@ -23,10 +23,8 @@ from config import (
     FB_CONF_RUNTIME_YIELD_THRESHOLD,
     RUNTIME_DEBUG_REPORT_LINE_CAPACITY,
 )
-from tier2_runtime.runtime.recovery import Result
 from system_containers import StaticVector
 from tier2_runtime.abi.jit_abi import EMPTY_NATIVE_DISPATCH_SNAPSHOT
-from tier2_runtime.runtime.jit_plugin import JITRuntime
 from tier2_runtime.interpreter.interpreter import (
     NATIVE_DISPATCH_YIELD,
     RETURN_SENTINEL_IP,
@@ -36,7 +34,9 @@ from tier2_runtime.interpreter.interpreter import (
     WasmNumber,
     select_native_dispatch_entry,
 )
-from tier2_runtime.hal.virq import (
+from tier2_runtime.runtime.jit_plugin import JITRuntime
+from tier2_runtime.runtime.recovery import Result
+from tier2_runtime.vsoc.virq import (
     DispatchResult,
     InterruptEvent,
     RegistrationError,
@@ -75,8 +75,8 @@ class RuntimeEngine:
     __slots__ = (
         "_bump_allocator",
         "_collect_runtime_stats",
-        "_native_dispatcher",
         "_jit_dispatcher",
+        "_native_dispatcher",
         "_owns_bump_allocator",
         "_virq",
         "_virq_interp",
@@ -343,11 +343,12 @@ class RuntimeEngine:
         if self.drive_mode == RuntimeDriveMode.COOS:
             assert call_state.finished, (
                 "COOS runtime calls must be advanced by System at each trace boundary"
-        )
+            )
         while not call_state.finished:
             call_state = self._run_bound(interp, call_state, idle_budget).call_state
 
-        self.idle_hook(budget=idle_budget)
+        if self.jit_runtime is not None and self.jit_runtime.has_pending_compilation():
+            self.idle_hook(budget=idle_budget)
         if self.debug:
             self.dump_internal_state()
         if call_state.trap is not None:

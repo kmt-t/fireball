@@ -16,7 +16,7 @@ from pathlib import Path
 
 import pytest
 from tier2_runtime.hal.dispatch import FB_CONF_HAL_BUFFER_SIZE, HalBufferMapStatus, WasiIpcCmd
-from tier2_runtime.hal.hostcall import WasiErrno
+from tier2_runtime.syscall.hostcall import WasiErrno
 from hypothesis import given, settings
 from hypothesis import strategies as st
 from ipc_router import Role, FB_URI_HAL_STDOUT

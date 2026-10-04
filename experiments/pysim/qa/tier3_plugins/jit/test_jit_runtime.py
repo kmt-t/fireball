@@ -50,6 +50,19 @@ from tier2_runtime.interpreter.interpreter import (
     InterpreterBindings,
     NativeInterpreter,
 )
+from tier2_runtime.runtime.engine import RuntimeEngine
+from tier2_runtime.wasm.module import I32, LocalWidthMap, Module, WasmOperand
+from tier2_runtime.wasm.opcodes import (
+    BR_IF,
+    BR_TABLE,
+    I32_ADD,
+    I32_CONST,
+    IF,
+    LOCAL_GET,
+    LOCAL_SET,
+    RETURN,
+)
+from tier2_runtime.wasm.reader import parse
 from tier3_plugins.jit.common_code import (
     TRACE_ENTRY_STUB_BYTES,
 )
@@ -65,10 +78,6 @@ from tier3_plugins.jit.jit_cache import (
 )
 from tier3_plugins.jit.jit_manager import JITRuntimeManager
 from tier3_plugins.jit.x64_jit import TraceCompiler
-from tier2_runtime.runtime.engine import RuntimeEngine
-from tier2_runtime.wasm.module import I32, LocalWidthMap, Module, WasmOperand
-from tier2_runtime.wasm.opcodes import BR_IF, BR_TABLE, I32_ADD, I32_CONST, IF, LOCAL_GET, LOCAL_SET, RETURN
-from tier2_runtime.wasm.reader import parse
 
 
 def test_jitr_00_cache_region_is_two_pages_with_fixed_common_area():
@@ -580,7 +589,9 @@ def test_jitr_compile_failure_unmarks_candidate_without_faking_compiled():
     assert engine.jit_runtime.bitmap.get_state(pc) == CardState.HOT
     assert not engine.jit_runtime.trackable.is_marked(pc)
     assert not engine.jit_runtime.compile_queue
-    assert not engine.jit_runtime.record_block_head(pc), "a failed candidate must never be re-queued"
+    assert not engine.jit_runtime.record_block_head(pc), (
+        "a failed candidate must never be re-queued"
+    )
 
 
 def test_jitr_26_direct_mapped_folding_xor_jit_cache():
@@ -818,6 +829,11 @@ def test_jitr_native_dispatch_snapshot_is_cached_per_hotspot_configuration():
     engine.register_module_blocks(module)
     function_index = module.export_func_index("sum")
     manager = engine.jit_runtime
+    loop_block = next(
+        block
+        for block in module.blocks
+        if block.loops_to == block.head_pc and block.func_index == function_index
+    )
 
     initial_snapshot = manager.native_dispatch_state()
     cached_snapshot = manager.native_dispatch_state()
@@ -825,20 +841,15 @@ def test_jitr_native_dispatch_snapshot_is_cached_per_hotspot_configuration():
     assert cached_snapshot.entries is initial_snapshot.entries
     assert cached_snapshot.trackable_blocks is initial_snapshot.trackable_blocks
     assert initial_snapshot.entry_count == 0
-    assert initial_snapshot.trackable_count == 0
-
-    loop_block = next(
-        block
-        for block in module.blocks
-        if block.loops_to == block.head_pc and block.func_index == function_index
-    )
+    assert initial_snapshot.trackable_count == 1
+    assert initial_snapshot.trackable_blocks[0] == loop_block.head_pc
     trace = manager._compile_trace(loop_block.head_pc, loop_block)
     assert trace is not None and manager.cache.insert(trace)
     manager.mark_compiled(loop_block.head_pc)
     compiled_snapshot = manager.native_dispatch_state()
     assert compiled_snapshot.entry_count == 1
     assert compiled_snapshot is not initial_snapshot
-    assert compiled_snapshot.trackable_count == 0
+    assert compiled_snapshot.trackable_count == 1
     assert compiled_snapshot.entries[0].head_pc == loop_block.head_pc
     assert compiled_snapshot.entries[0].entry_address == trace.raw_addr
 
@@ -2187,7 +2198,6 @@ if __name__ == "__main__":
     test_jitr_if_then_skipped_when_condition_false_after_jit()
     test_jitr_nested_loop_in_if_frame_stack_reconciliation()
     test_jitr_return_terminated_block_jit_result_correct()
-    test_jitr_terminal_trace_returns_to_interpreter_return_handler()
     test_jitr_nested_wasm_call_keeps_callee_result_on_shared_operand_stack()
     test_jitr_if_else_loop_matches_interpreter_after_jit_compilation()
     test_jitr_br_table_uses_native_handler_and_preserves_every_target()
@@ -2204,4 +2214,4 @@ if __name__ == "__main__":
     test_hotspot_and_trackable_bitmaps_share_one_code_region_card_space()
     test_gotcha_jitr_09_aging_never_drops_compiled_or_hot()
     test_jitr_62_chain_links_stay_valid_across_rotation_and_promotion()
-    print("[PASS] All 39 JIT Runtime & Cache tests passed.")
+    print("[PASS] All directly invoked JIT Runtime & Cache tests passed.")

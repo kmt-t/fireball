@@ -5,19 +5,18 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-
 from bump_allocator import BumpAllocator
 from config import FB_CONF_MAX_FUNCTIONS, FB_CONF_MAX_WASM_PAGES
+from fnv1a import fnv1a_32
+from qa.private.tier2_runtime.module_link_harness import (
+    QA_MAX_REGISTERED_MODULES,
+    QAModuleLinkHarness,
+)
 from qa.shared.helpers import (
     _build_test_wasm_binary,
     expect_assertion,
     wat_to_wasm,
 )
-from qa.private.tier2_runtime.module_link_harness import (
-    QA_MAX_REGISTERED_MODULES,
-    QAModuleLinkHarness,
-)
-from fnv1a import fnv1a_32
 from tier2_runtime.wasm.reader import parse
 
 _TEST_FILE = Path(__file__).resolve()
@@ -33,9 +32,7 @@ def _assert_parse_rejected_without_mutation(binary: bytes, message: str = "") ->
 
 
 def test_load_01_invalid_magic_rejects_and_rolls_back() -> None:
-    _assert_parse_rejected_without_mutation(
-        _build_test_wasm_binary(magic=b"\x7fELF"), "magic"
-    )
+    _assert_parse_rejected_without_mutation(_build_test_wasm_binary(magic=b"\x7fELF"), "magic")
 
 
 def test_load_02_unsupported_version_rejects_and_rolls_back() -> None:
@@ -66,9 +63,7 @@ def test_load_04_custom_sections_are_exempt_from_type_ordering() -> None:
 
 
 def test_load_05_invalid_type_index_rejects_and_rolls_back() -> None:
-    _assert_parse_rejected_without_mutation(
-        _build_test_wasm_binary(invalid_type_idx=True), "type"
-    )
+    _assert_parse_rejected_without_mutation(_build_test_wasm_binary(invalid_type_idx=True), "type")
 
 
 def test_load_06_memory_page_limit_rejects_and_rolls_back() -> None:
@@ -80,7 +75,7 @@ def test_load_06_memory_page_limit_rejects_and_rolls_back() -> None:
 
 def test_load_07_arena_exhaustion_rolls_back_partial_metadata_allocations() -> None:
     allocator = BumpAllocator(capacity=2048)
-    allocator.allocate(1748, alignment=1)
+    allocator.allocate(2040, alignment=1)
     watermark = allocator.offset
     binary = _build_test_wasm_binary()
     for _ in range(3):
@@ -131,9 +126,9 @@ def test_load_21_qa_link_harness_resolves_matching_signature_across_type_indexes
     library = harness.prepare(
         "lib_mod",
         wat_to_wasm(
-            '(module (type (func)) '
+            "(module (type (func)) "
             '(func (export "helper") (param i32 i32) (result i32) '
-            'local.get 0 local.get 1 i32.add))'
+            "local.get 0 local.get 1 i32.add))"
         ),
     )
     module = harness.prepare("app_mod", _function_import_binary())
@@ -174,7 +169,7 @@ def test_load_22_qa_link_harness_missing_late_symbol_commits_no_partial_links() 
     module = harness.prepare(
         "app_mod",
         wat_to_wasm(
-            '(module '
+            "(module "
             '(import "lib_mod" "helper" (func (param i32 i32) (result i32))) '
             '(import "lib_mod" "missing" (func)))'
         ),
@@ -215,9 +210,9 @@ def test_load_23_qa_link_harness_late_signature_mismatch_commits_no_partial_link
     module = harness.prepare(
         "app_mod",
         wat_to_wasm(
-            '(module '
+            "(module "
             '(import "lib_mod" "helper" (func (param i32 i32) (result i32))) '
-            '(import "lib_mod" "other" (func (param i64) (result i64)))'
+            '(import "lib_mod" "other" (func (param i64) (result i64))))'
         ),
     )
 
@@ -231,8 +226,7 @@ def test_load_24_qa_link_harness_enforces_registry_capacity() -> None:
     harness = QAModuleLinkHarness()
     binary = _build_test_wasm_binary()
     modules = [
-        harness.prepare(f"module_{index}", binary)
-        for index in range(QA_MAX_REGISTERED_MODULES)
+        harness.prepare(f"module_{index}", binary) for index in range(QA_MAX_REGISTERED_MODULES)
     ]
 
     with expect_assertion("registry capacity"):

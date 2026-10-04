@@ -17,7 +17,7 @@ from tier2_runtime.interpreter.interpreter import (
     NativeInterpreter,
     WasmHostFunction,
 )
-from tier2_runtime.hal.vmmio import VMMIOController
+from tier2_runtime.vmmio.controller import VMMIOController
 from tier2_runtime.wasm.module import FunctionTable, Memory, Module
 
 _WASM_SEC_TYPE = 1

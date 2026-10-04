@@ -39,7 +39,7 @@ from system import (
     System,
     WasiErrno,
 )
-from tier2_runtime.hal.virq import FB_CONF_VIRQ_MAX_NODES, INVALID_FUNCTION_INDEX, VirqNode
+from tier2_runtime.vsoc.virq import FB_CONF_VIRQ_MAX_NODES, INVALID_FUNCTION_INDEX, VirqNode
 from tier2_runtime.wasm.module import I32, Function, FuncType, Module
 
 
@@ -430,7 +430,7 @@ def test_dynamic_guest_access_checks_full_instruction_width(operation: str, widt
     from tier2_runtime.interpreter.interpreter import (
         TrapCode as InterpreterTrapCode,
     )
-    from tier2_runtime.hal.vmmio import TrapCode as VmmioTrapCode
+    from tier2_runtime.vmmio.controller import TrapCode as VmmioTrapCode
     from tier2_runtime.wasm.reader import parse
 
     system = System()

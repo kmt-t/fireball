@@ -188,7 +188,7 @@ def jit_runtime_layout() -> dict[str, int]:
     """Compile a measurement-only sizeof probe; do not add a product export."""
     expressions = {
         "runtime_bytes": "sizeof(fireball::JitRuntime)",
-        "dispatch_entries_bytes": "sizeof(decltype(fireball::JitRuntime::dispatch_entries))",
+        "execution_extension_bytes": "sizeof(decltype(fireball::JitRuntime::extension))",
         "dispatch_history_bytes": "sizeof(decltype(fireball::JitRuntime::dispatch_history))",
         "owned_traces_bytes": "sizeof(decltype(fireball::JitRuntime::owned))",
         "cache_banks_bytes": "sizeof(decltype(fireball::JitRuntime::banks))",
@@ -386,6 +386,10 @@ def main() -> None:
         print(
             f"{group.name}: files={len(group.files)}, physical={group.physical_lines}, code={group.code_lines}"
         )
+    print(
+        f"{reference_interpreter.name}: files={len(reference_interpreter.files)}, "
+        f"physical={reference_interpreter.physical_lines}, code={reference_interpreter.code_lines}"
+    )
     print(f"native text+rodata: {sum(lib.text_rodata_bytes for lib in libraries)} bytes")
 
 

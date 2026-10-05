@@ -289,7 +289,7 @@ def main() -> None:
         "measurement_model": "reference loader charges + host-native ctypes ABI",
         "jit_measurement_path": "product JITRuntimeManager with measured region_provider; no QA JIT adapter",
         "plugin_region_includes": [
-            "native JitRuntime with fixed dispatch/history/trace/cache arrays",
+            "native JitRuntime with execution extension and fixed history/trace/cache arrays",
             "packed card state, dirty and candidate masks",
             "host executable-page alignment padding",
             "JIT executable code region (not additive)",

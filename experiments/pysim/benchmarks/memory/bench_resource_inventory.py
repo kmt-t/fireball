@@ -324,6 +324,7 @@ def main() -> None:
     libraries = tuple(
         elf_size(_PYSIM / path)
         for path in (
+            "tier1_core/libprintk.so",
             "tier2_runtime/interpreter/libnative_interpreter.so",
             "tier3_plugins/jit/libtrace_compiler.so",
         )
@@ -366,7 +367,13 @@ def main() -> None:
                 filename: hashlib.sha256(
                     (_PYSIM / "native/tier3_plugins/jit" / filename).read_bytes()
                 ).hexdigest()
-                for filename in ("trace_compiler.cxx", "common_code.cxx", "jit_runtime.cxx")
+                for filename in (
+                    "trace_compiler.cxx",
+                    "common_code.cxx",
+                    "jit_runtime.cxx",
+                    "jit_runtime.hxx",
+                    "jit_runtime_exports.hxx",
+                )
             },
             "entry_frames_subtotal_bytes": stack_frames["compile_wasm_trace"]
             + stack_frames["compile_instruction_body"],

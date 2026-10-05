@@ -35,6 +35,7 @@ from qa.shared.runtime_stats import RuntimeStatsEngine
 from system import System
 from system_containers import StaticVector
 from tier2_runtime.interpreter.interpreter import InterpreterBindings, NativeInterpreter
+from tier2_runtime.runtime.engine import RuntimeEngine
 from tier3_platform.drivers.hal.dummy import DummyDriver
 from tier3_platform.drivers.wasi.context import WasiHostContext
 from tier3_plugins.jit.jit_manager import JITRuntimeManager
@@ -121,17 +122,34 @@ class Measurement:
     jit_executable_region_bytes: int
     result_words: tuple[int, ...]
     output_sha256: str
-    jit_invocations: int
+    jit_invocations: int | None
     allocation_totals: tuple[AllocationTotal, ...]
     plugin_region_requests: tuple[PluginRegionRequest, ...]
     plugin_region_bytes: int
 
 
-def _measure(workload: Workload, hybrid: bool, calls: int) -> Measurement:
+@dataclass(frozen=True)
+class JITExecutionValidation:
+    workload: str
+    jit_invocations: int
+    wasm_sha256: str
+    output_sha256: str
+
+
+def _measure(
+    workload: Workload, hybrid: bool, calls: int, *, observe_execution: bool = False
+) -> Measurement:
     arena = MeasuredArena()
     plugin_region = MeasuredPluginRegion()
     jit = JITRuntimeManager(plugin_region.reserve) if hybrid else None
-    engine = RuntimeStatsEngine(bump_allocator=arena, jit_runtime=jit, collect_runtime_stats=True)
+    observer = (
+        RuntimeStatsEngine(bump_allocator=arena, jit_runtime=jit, collect_runtime_stats=True)
+        if observe_execution
+        else None
+    )
+    engine = (
+        observer if observer is not None else RuntimeEngine(bump_allocator=arena, jit_runtime=jit)
+    )
     module = engine.load_wasm(workload.wasm)
     loaded = arena.offset
     arena.phase = "instantiate"
@@ -196,7 +214,8 @@ def _measure(workload: Workload, hybrid: bool, calls: int) -> Measurement:
         )
     if jit is not None:
         assert len(plugin_region.requests) == 1, plugin_region.requests
-        assert engine.stat_jit_invocations > 0
+        if observer is not None:
+            assert observer.stat_jit_invocations > 0
         jit.close()
     return Measurement(
         workload.name,
@@ -214,7 +233,7 @@ def _measure(workload: Workload, hybrid: bool, calls: int) -> Measurement:
         JIT_CACHE_REGION_BYTES if hybrid else 0,
         expected_result,
         hashlib.sha256(expected_output).hexdigest(),
-        engine.stat_jit_invocations,
+        None if observer is None else observer.stat_jit_invocations,
         tuple(totals),
         tuple(plugin_region.requests),
         sum(request.size_bytes for request in plugin_region.requests),
@@ -247,12 +266,25 @@ def main() -> None:
         ),
     )
     measurements: list[Measurement] = []
+    jit_execution_validation: list[JITExecutionValidation] = []
     for workload in workloads:
         native = _measure(workload, False, args.calls)
         hybrid = _measure(workload, True, args.calls)
         assert native.result_words == hybrid.result_words
         assert native.output_sha256 == hybrid.output_sha256
         measurements.extend((native, hybrid))
+        observed = _measure(workload, True, args.calls, observe_execution=True)
+        assert observed.result_words == hybrid.result_words
+        assert observed.output_sha256 == hybrid.output_sha256
+        assert observed.jit_invocations is not None and observed.jit_invocations > 0
+        jit_execution_validation.append(
+            JITExecutionValidation(
+                workload.name,
+                observed.jit_invocations,
+                observed.wasm_sha256,
+                observed.output_sha256,
+            )
+        )
         print(
             f"{workload.name}: load={native.load_bytes}, "
             f"native={native.arena_peak_bytes}, hybrid={hybrid.arena_peak_bytes}, "
@@ -287,7 +319,17 @@ def main() -> None:
             and not any(part in ("qa", "benchmarks", "__pycache__") for part in path.parts)
         },
         "measurement_model": "reference loader charges + host-native ctypes ABI",
-        "jit_measurement_path": "product JITRuntimeManager with measured region_provider; no QA JIT adapter",
+        "jit_measurement_path": "product RuntimeEngine and JITRuntimeManager with measured region_provider; no QA dispatcher in memory measurements",
+        "jit_execution_validation_path": "separate QA RuntimeStatsEngine and diagnostic interpreter dispatcher; excluded from product memory/ROM totals",
+        "jit_execution_validation": [asdict(validation) for validation in jit_execution_validation],
+        "execution_observer_sha256": {
+            path: hashlib.sha256((_PYSIM_DIR / path).read_bytes()).hexdigest()
+            for path in (
+                "qa/shared/runtime_stats.py",
+                "qa/private/interpreter_native_abi.py",
+                "qa/private/libinterpreter_probe.so",
+            )
+        },
         "plugin_region_includes": [
             "native JitRuntime with execution extension and fixed history/trace/cache arrays",
             "packed card state, dirty and candidate masks",

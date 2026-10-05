@@ -18,6 +18,9 @@
 #ifndef FB_CONF_JIT_CACHE_FAST_SLOT_COUNT
 #error "FB_CONF_JIT_CACHE_FAST_SLOT_COUNT is required"
 #endif
+#ifndef FB_CONF_JIT_CACHE_BANK_CAPACITY_BYTES
+#error "FB_CONF_JIT_CACHE_BANK_CAPACITY_BYTES is required"
+#endif
 
 namespace fireball {
 namespace {
@@ -28,7 +31,64 @@ constexpr std::uint32_t bank_count = 3;
 constexpr std::uint32_t max_entries = FB_CONF_JIT_CACHE_BANK_ENTRY_CAPACITY;
 constexpr std::uint32_t max_inbound = FB_CONF_JIT_CACHE_MAX_INBOUND_SOURCES;
 constexpr std::uint32_t fast_slots = FB_CONF_JIT_CACHE_FAST_SLOT_COUNT;
+constexpr std::size_t compile_output_bytes = header_bytes + kMaxBodyBytes;
+constexpr std::size_t compile_byte_storage_bytes = compile_output_bytes + kMaxBodyBytes;
+constexpr std::size_t compile_scratch_bytes =
+    compile_byte_storage_bytes + kMaxStackDepth * sizeof(std::int16_t);
 static_assert(fast_slots > 0 && (fast_slots & (fast_slots - 1)) == 0);
+static_assert(compile_output_bytes <= FB_CONF_JIT_CACHE_BANK_CAPACITY_BYTES);
+static_assert(compile_output_bytes % alignof(std::uint64_t) == 0);
+static_assert(compile_output_bytes == 112 && compile_byte_storage_bytes == 208 &&
+              compile_scratch_bytes == 240);
+
+struct compile_scratchpad {
+  std::uint8_t* byte_storage = nullptr;
+  std::size_t byte_capacity = 0;
+  std::int16_t* stack_locations = nullptr;
+  std::size_t stack_capacity = 0;
+  std::size_t offset = 0;
+
+  bool bind(std::uint8_t* byte_buffer, std::size_t byte_buffer_capacity,
+            std::int16_t* location_buffer, std::size_t location_buffer_capacity) {
+    if (byte_buffer == nullptr || byte_buffer_capacity < compile_byte_storage_bytes ||
+        location_buffer == nullptr || location_buffer_capacity < kMaxStackDepth ||
+        reinterpret_cast<std::uintptr_t>(byte_buffer) % alignof(std::uint64_t) != 0 ||
+        reinterpret_cast<std::uintptr_t>(location_buffer) % alignof(std::int16_t) != 0)
+      return false;
+    byte_storage = byte_buffer;
+    byte_capacity = byte_buffer_capacity;
+    stack_locations = location_buffer;
+    stack_capacity = location_buffer_capacity;
+    offset = 0;
+    return true;
+  }
+
+  std::size_t save() const { return offset; }
+  void restore(std::size_t watermark) {
+    if (watermark <= offset) offset = watermark;
+  }
+  std::uint8_t* allocate(std::size_t size, std::size_t alignment) {
+    if (byte_storage == nullptr) return nullptr;
+    if (alignment == 0 || (alignment & (alignment - 1)) != 0) return nullptr;
+    const auto aligned = (offset + alignment - 1) & ~(alignment - 1);
+    if (aligned > byte_capacity || size > byte_capacity - aligned) return nullptr;
+    offset = aligned + size;
+    return byte_storage + aligned;
+  }
+  std::int16_t* allocate_stack_locations() {
+    if (offset != compile_byte_storage_bytes || stack_locations == nullptr ||
+        stack_capacity < kMaxStackDepth)
+      return nullptr;
+    offset += kMaxStackDepth * sizeof(std::int16_t);
+    return stack_locations;
+  }
+};
+
+struct compile_scratch_checkpoint {
+  compile_scratchpad& scratch;
+  std::size_t watermark;
+  ~compile_scratch_checkpoint() { scratch.restore(watermark); }
+};
 
 struct entry {
   std::uint32_t pc = 0;
@@ -141,6 +201,7 @@ class jit_runtime final
   }
   const fireball_wasm_module_execution_view_native* module = nullptr;
   std::uint32_t workspace_cursor = 0;
+  compile_scratchpad compile_scratch{};
   using profile_type = typename runtime_storage_types<Measurement>::profile;
   profile_type profile{};
   const jit_wasm_block* block(std::uint32_t pc, jit_wasm_block& output) const {
@@ -223,15 +284,21 @@ class jit_runtime final
         const auto token = reserve_owned();
         if (token == 0) return -1;
         auto* trace = descriptor(token);
-        std::array<std::uint8_t, 8192 + header_bytes> output{};
-        status = fb_jit_compile_block(input, trace, &trace->fixups, output.data(), output.size());
+        compile_scratch_checkpoint checkpoint{compile_scratch, compile_scratch.save()};
+        auto* output = compile_scratch.allocate(compile_output_bytes, alignof(std::uint64_t));
+        auto* body = compile_scratch.allocate(kMaxBodyBytes, alignof(std::uint8_t));
+        auto* locations = compile_scratch.allocate_stack_locations();
+        if (!check(output != nullptr && body != nullptr && locations != nullptr)) return -1;
+        status = fb_jit_compile_block(input, trace, &trace->fixups, output,
+                                      compile_output_bytes, body, locations,
+                                      kMaxStackDepth);
         if (!check(status == 0 || status == 1)) return -1;
         if (status == 1) {
           trace->byte_span = input->byte_span;
           trace->frame_depth = input->frame_depth;
           trace->dispatch_next_pc = input->next_pc;
           trace->dispatch_loops_to = input->loops_to;
-          trace->code_blob = output.data();
+          trace->code_blob = output;
           trace->blob_bytes = trace->size_bytes;
           status = insert(trace, token) ? 1 : 0;
           if (error != 0) return -1;
@@ -883,12 +950,19 @@ struct native_jit_plugin {
   static Runtime* fb_jit_plugin_init(std::uint8_t* region, std::size_t bytes,
       const fireball_wasm_module_execution_view_native* view,
       std::uint32_t hotspots, std::uint32_t module_id,
-      int (*dispatch)(const fb_native_dispatch_call*, fb_native_result*)) {
+      int (*dispatch)(const fb_native_dispatch_call*, fb_native_result*),
+      std::uint8_t* compile_byte_storage, std::size_t compile_byte_storage_bytes,
+      std::int16_t* compile_stack_locations, std::size_t compile_stack_capacity) {
     if (view == nullptr || region == nullptr || bytes != fb_jit_plugin_required_bytes(view) ||
         reinterpret_cast<std::uintptr_t>(region) % fb_jit_plugin_alignment() != 0 ||
         hotspots > 1 || dispatch == nullptr)
       return nullptr;
     auto* c = ::new (region) Runtime{};
+    if (!c->compile_scratch.bind(compile_byte_storage, compile_byte_storage_bytes,
+                                 compile_stack_locations, compile_stack_capacity)) {
+      c->~Runtime();
+      return nullptr;
+    }
     if constexpr (!std::is_void_v<Measurement>) c->owns_memory = false;
     c->dispatch = dispatch;
     c->extension = {reinterpret_cast<std::uintptr_t>(c), execute_runtime_body,

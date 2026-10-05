@@ -423,6 +423,66 @@ def test_trace_compiler_bitwise_and_shifts_pic():
     assert ctx.local_stack[3] == (0x0F << 2)
 
 
+def test_clang_wasm_ngram_immediate_stencils_are_compact_and_correct():
+    """TEST-JITC-63: measured WASM n-grams select shorter x64 code with identical results."""
+    compiler = TraceCompiler()
+
+    def compile_and_run(
+        operation: int,
+        immediate: int,
+        left: int,
+        expected: int,
+        stencil: bytes | None = None,
+    ) -> JITTrace:
+        ctx = ExecutionContext()
+        assert ctx.local_stack.extend((left, 0))
+        trace = compiler.compile_instructions(
+            head_pc=0,
+            instructions=(
+                (LOCAL_GET, 0),
+                (I32_CONST, immediate),
+                (operation, None),
+                (LOCAL_SET, 1),
+            ),
+            next_pc=4,
+            loops_to=None,
+            byte_length=4,
+            local_layout=LocalWidthMap((I32, I32)),
+        )
+        assert trace is not None and trace.code_blob is not None
+        if stencil is not None:
+            assert stencil in trace.code_blob
+        trace.invoke(ctx)
+        assert ctx.local_stack[1] == expected
+        return trace
+
+    optimized_add_one = compile_and_run(I32_ADD, 1, 41, 42, bytes.fromhex("41 ff c1"))
+    generic_add_two = compile_and_run(I32_ADD, 2, 41, 43)
+    optimized_add_minus_one = compile_and_run(
+        I32_ADD, 0xFFFF_FFFF, 43, 42, bytes.fromhex("41 ff c9")
+    )
+    assert optimized_add_one.size_bytes + 1 == generic_add_two.size_bytes
+    assert optimized_add_minus_one.size_bytes + 1 == generic_add_two.size_bytes
+
+    optimized_mul_three = compile_and_run(I32_MUL, 3, 7, 21, bytes.fromhex("47 8d 0c 49"))
+    optimized_mul_five = compile_and_run(I32_MUL, 5, 7, 35, bytes.fromhex("47 8d 0c 89"))
+    generic_mul_four = compile_and_run(I32_MUL, 4, 7, 28)
+    assert optimized_mul_three.size_bytes + 3 == generic_mul_four.size_bytes
+    assert optimized_mul_five.size_bytes + 3 == generic_mul_four.size_bytes
+
+    optimized_and_byte = compile_and_run(
+        I32_AND, 255, 0xABCD_1234, 0x34, bytes.fromhex("45 0f b6 c9")
+    )
+    generic_and_511 = compile_and_run(I32_AND, 511, 0xABCD_1234, 0x34)
+    assert optimized_and_byte.size_bytes + 3 == generic_and_511.size_bytes
+
+    optimized_and_word = compile_and_run(
+        I32_AND, 0xFFFF, 0xABCD_1234, 0x1234, bytes.fromhex("45 0f b7 c9")
+    )
+    generic_and_65536 = compile_and_run(I32_AND, 0x1_0000, 0xABCD_1234, 0)
+    assert optimized_and_word.size_bytes + 3 == generic_and_65536.size_bytes
+
+
 def test_trace_header_helper_tail_jump_uses_per_trace_pointer():
     """Complex JIT boundaries load the helper target from the trace header."""
 

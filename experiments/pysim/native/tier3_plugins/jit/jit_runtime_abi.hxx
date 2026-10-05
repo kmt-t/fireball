@@ -22,7 +22,9 @@ FB_PYSIM_ABI_EXPORT fireball::JitRuntime* fb_jit_plugin_init(
     std::uint8_t* region, std::size_t bytes,
     const fireball_wasm_module_execution_view_native* view,
     std::uint32_t hotspots, std::uint32_t module_id,
-    int (*dispatch)(const fb_native_dispatch_call*, fb_native_result*));
+    int (*dispatch)(const fb_native_dispatch_call*, fb_native_result*),
+    std::uint8_t* compile_byte_storage, std::size_t compile_byte_storage_bytes,
+    std::int16_t* compile_stack_locations, std::size_t compile_stack_capacity);
 FB_PYSIM_ABI_EXPORT int fb_jit_runtime_run(
     const fb_native_dispatch_call* input, fb_native_result* result);
 FB_PYSIM_ABI_EXPORT void fb_jit_runtime_close(fireball::JitRuntime* cache);

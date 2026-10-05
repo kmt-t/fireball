@@ -5,6 +5,7 @@ from __future__ import annotations
 import ctypes
 from collections.abc import Callable
 
+from bump_allocator import BumpAllocator
 from config import FB_CONF_RUNTIME_YIELD_THRESHOLD
 from tier2_runtime.abi.native_abi import BufferLease
 from tier2_runtime.interpreter.interpreter import NativeDispatchEntryPoint, NativeModuleExecution
@@ -21,6 +22,10 @@ class JITRuntimeManager:
         "_lease",
         "_pointer",
         "_region_provider",
+        "_scratch_allocator",
+        "_scratch_bytes",
+        "_scratch_locations",
+        "_scratch_offset",
         "module",
         "module_id",
         "yield_threshold",
@@ -39,6 +44,10 @@ class JITRuntimeManager:
         self._region_provider = region_provider
         self._pointer: int | None = None
         self._lease: BufferLease | None = None
+        self._scratch_allocator: BumpAllocator | None = None
+        self._scratch_offset: int | None = None
+        self._scratch_bytes: ctypes.Array | None = None
+        self._scratch_locations: ctypes.Array | None = None
         self._execution: NativeModuleExecution | None = None
         self.module: Module | None = None
 
@@ -54,22 +63,43 @@ class JITRuntimeManager:
             return self._pointer
         view = ctypes.byref(execution._module_view)
         self.close()
-        size = native_abi.REQUIRED_BYTES(view)
-        region = self._region_provider(size, native_abi.REGION_ALIGNMENT())
-        assert not region.readonly and region.c_contiguous, (
-            "plugin region must be writable and contiguous"
-        )
-        assert region.nbytes == size, "plugin region size must match its request"
-        self._lease = BufferLease(region)
-        self._pointer = native_abi.RUNTIME_INIT(
-            self._lease.address,
-            region.nbytes,
-            view,
-            1,
-            self.module_id,
-            ctypes.cast(dispatcher, ctypes.c_void_p),
-        )
-        assert self._pointer is not None
+        allocator = execution.bump_allocator
+        assert allocator is not None, "native module execution must own a runtime arena"
+        scratch_offset = allocator.acquire(native_abi.COMPILE_SCRATCH_BYTES, alignment=8)
+        self._scratch_allocator = allocator
+        self._scratch_offset = scratch_offset
+        try:
+            size = native_abi.REQUIRED_BYTES(view)
+            region = self._region_provider(size, native_abi.REGION_ALIGNMENT())
+            assert not region.readonly and region.c_contiguous, (
+                "plugin region must be writable and contiguous"
+            )
+            assert region.nbytes == size, "plugin region size must match its request"
+            self._lease = BufferLease(region)
+            scratch_bytes = (
+                ctypes.c_uint64
+                * (native_abi.COMPILE_BYTE_STORAGE_BYTES // ctypes.sizeof(ctypes.c_uint64))
+            )()
+            scratch_locations = (ctypes.c_int16 * native_abi.COMPILE_MAX_STACK_DEPTH)()
+            self._scratch_bytes = scratch_bytes
+            self._scratch_locations = scratch_locations
+            pointer = native_abi.RUNTIME_INIT(
+                self._lease.address,
+                region.nbytes,
+                view,
+                1,
+                self.module_id,
+                ctypes.cast(dispatcher, ctypes.c_void_p),
+                ctypes.cast(scratch_bytes, ctypes.POINTER(ctypes.c_uint8)),
+                native_abi.COMPILE_BYTE_STORAGE_BYTES,
+                scratch_locations,
+                native_abi.COMPILE_MAX_STACK_DEPTH,
+            )
+            assert pointer is not None
+        except Exception:
+            self.close()
+            raise
+        self._pointer = pointer
         self._execution = execution
         return self._pointer
 
@@ -96,6 +126,14 @@ class JITRuntimeManager:
         if self._lease is not None:
             self._lease.release()
             self._lease = None
+        if self._scratch_allocator is not None and self._scratch_offset is not None:
+            self._scratch_allocator.release(
+                self._scratch_offset, native_abi.COMPILE_SCRATCH_BYTES, alignment=8
+            )
+        self._scratch_allocator = None
+        self._scratch_offset = None
+        self._scratch_bytes = None
+        self._scratch_locations = None
         self._execution = None
 
     def __del__(self) -> None:

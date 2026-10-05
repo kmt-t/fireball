@@ -86,7 +86,7 @@ uv run python experiments/pysim/benchmarks/memory/bench_runtime_memory.py \
 <!-- traceability: {Resource_Estimation_Model} {Runtime_BumpAllocator} {JIT_MultiBuffer_Cache} {GLOBAL_StrictMemoryLimit} -->
 測定環境はx86_64、ポインタ幅8バイトである。
 表の数値はバイト単位である。
-全4入力でInterpreter単独とHybrid JITのアリーナ使用量は同じであった。
+変更前の基準測定では、全4入力でInterpreter単独とHybrid JITのアリーナ使用量は同じであった。
 
 | 入力 | 関数数 / 基本ブロック数 | ロード後 | インスタンス生成後 | アリーナ最大使用量 | 製品JITの要求領域 | 線形メモリ |
 | :--- | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -96,7 +96,7 @@ uv run python experiments/pysim/benchmarks/memory/bench_runtime_memory.py \
 | AO-Bench（32×16） | 7 / 88 | 3,296 | 3,296 | 11,272 | 28,672 | 65,536 |
 
 実行コンテキストのワークスペースは各入力とも5,180バイトである。
-製品JITの管理構造体は、測定専用の `sizeof` 計測で16,864バイトである。
+変更前の製品JIT管理構造体は、測定専用の `sizeof` 計測で16,864バイトである。
 計測用コードは一時領域へ生成し、製品APIへ検査入口を追加しない。
 
 | JIT管理構造体内の主な構成要素 | バイト数 |
@@ -108,8 +108,10 @@ uv run python experiments/pysim/benchmarks/memory/bench_runtime_memory.py \
 | プロファイル履歴 | 256 |
 | コンパイル待ち | 16 |
 
-これらの領域は管理構造体の16,864バイトへ含む。
-管理フィールド、参照ポインタ、構造体内の空きも同じサイズへ含む。
+上表と管理構造体内訳は、トレースコンパイラ変更前の基準値である。現行ソースはスクラッチバッファを管理構造体へ埋め込まず、外部ビューとwatermarkの40バイトを持つ。構造体サイズのソース計算値は16,864 + 40 = 16,904バイトである。別途240バイトをランタイム `BumpAllocator` からworkspaceとして貸与する。4入力はいずれも管理構造体とカード表を合わせたデータ領域が20,480バイト以内に収まり、製品JIT要求領域はページ丸め後も28,672バイトとなる。データ領域の配置時の空きは、新しい構造体サイズを用いて下表へ反映する。
+
+変更前のこれらの領域は管理構造体の16,864バイトへ含む。
+変更前の管理フィールド、参照ポインタ、構造体内の空きも同じサイズへ含む。
 常駐件数が少なくても、固定配列の全容量を計上する。
 
 ホストの実行メモリ保護は4,096バイトのページ境界を要求する。
@@ -119,15 +121,15 @@ uv run python experiments/pysim/benchmarks/memory/bench_runtime_memory.py \
 
 | 入力 | カード状態2bit | 更新索引1bit | 候補マスク1bit | データ領域の配置時の空き |
 | :--- | ---: | ---: | ---: | ---: |
-| 算術ループ | 3 | 2 | 2 | 3,609 |
-| 間接呼出し | 8 | 4 | 4 | 3,600 |
-| 複合カーネル | 912 | 456 | 456 | 1,792 |
-| AO-Bench | 60 | 30 | 30 | 3,496 |
+| 算術ループ | 3 | 2 | 2 | 3,569 |
+| 間接呼出し | 8 | 4 | 4 | 3,560 |
+| 複合カーネル | 912 | 456 | 456 | 1,752 |
+| AO-Bench | 60 | 30 | 30 | 3,456 |
 
 アロケータのワークスペース管理表は1,344バイトである。
 64件のオフセット、サイズ、アラインメント、状態の配列から算出する。
-アリーナ、管理表、線形メモリ、製品JITの要求領域を足した既知部分は次のとおりである。
-コンパイル時stackとシステム共有領域は含まない。
+表のアリーナ最大使用量はスクラッチworkspace貸与前の測定値である。現行値には240バイトと貸与時のアラインメント空きを加える。
+次表の既知部分はスクラッチworkspace貸与前の基準値である。現行Hybrid JITのアリーナ使用量は240バイトとアラインメント空きだけ増える。コンパイル時stackとシステム共有領域は含まない。
 
 | 入力 | Interpreter単独の既知部分 | Hybrid JITの既知部分 | Hybridの既知部分を32,768バイトから引いた値 |
 | :--- | ---: | ---: | ---: |
@@ -167,8 +169,7 @@ Python管理オブジェクトとFFIの一時領域はホスト専用であり�
 ## 5. JITコンパイル時のRAM
 
 <!-- traceability: {Resource_Estimation_Model} {GLOBAL_StrictMemoryLimit} {JIT_CopyAndPatch} -->
-現行x64コンパイラの一時領域はバンプアロケータへ登録されていない。
-コンパイル中には次の配列が同時に存在する。
+旧実装（基点 `ac3087d7`）の一時領域はバンプアロケータへ登録されず、関数フレーム上の大配列が同時に存在していた。下表と続く `-fstack-usage` の値は、変更前の計測記録として残す。
 
 | 対象 | 容量と単価 | payload |
 | :--- | :--- | ---: |
@@ -176,32 +177,44 @@ Python管理オブジェクトとFFIの一時領域はホスト専用であり�
 | コード生成中のbody配列 | 8,192件×1バイト | 8,192 |
 | stack位置の作業配列 | 8,192件×4バイト | 32,768 |
 | 呼出し側の出力バッファ | body 8,192バイト + ヘッダ16バイト | 8,208 |
-| **配列payload合計** | | **180,240** |
+| **変更前の配列payload合計** | | **180,240** |
 
-通常の経路は、次の4関数を順に呼ぶ。
+現行ソースは1トレースを64命令、生成bodyを96バイト、作業スタック深さを16スロットに制限する。WASM命令は逐次復号し、8,192件の命令配列を持たない。body、`int16_t`のスタック位置、出力blobの一時領域は次の合計240バイトである。
+
+| 現行JIT runtimeスクラッチ領域 | 容量と単価 | payload |
+| :--- | :--- | ---: |
+| 出力blob（body 96バイト + x64ヘッダ16バイト） | 112バイト | 112 |
+| コード生成中のbody | 96バイト | 96 |
+| stack位置 | 16件×`int16_t` 2バイト | 32 |
+| **現行の一時payload** | | **240** |
+
+スクラッチpayloadはランタイム `BumpAllocator` から一時貸与し、JIT runtimeはバッファ参照とwatermarkを保持する。コンパイル候補ごとにwatermarkを保存し、成功・辞退・エラーの各経路で復元する。配列payloadは180,240バイトから240バイト（1KB未満）へ縮小した。これとは別に関数フレームとABI保存領域がある。変更後のARMv8-M実測値は対象ABIとコンパイラが未確定のため未計測であり、x64の旧 `-fstack-usage` 値を現行コードの測定値として扱わない。
+
+変更前の計測経路は、次の4関数を順に呼んでいた。
 
 1. `fireball::jit_runtime<void>::compile_pending`
 2. `fb_jit_compile_block`
 3. `fireball::compile_wasm_trace`
 4. `fireball::compile_instruction_body`
 
-命令配列、body配列、stack位置配列、出力バッファはこの経路で同時に生存する。
+変更前の命令配列、body配列、stack位置配列、出力バッファはこの経路で同時に生存していた。
 Clang 21.1.8 / x86_64で、製品JITビルドの設定へ `-fstack-usage` を加えて計測する。
 設定は `-O2 -g -fPIC -fvisibility=hidden -fno-exceptions -fno-rtti` である。
 
+現行のWASMコンパイル経路は `compile_pending`、`fb_jit_compile_block`、`compile_wasm_trace` の3関数で命令を逐次復号する。`compile_instruction_body` は明示命令入力を扱うQA入口であり、現行WASM経路の呼出しフレームに含まれない。
+
 | 測定対象 | バイト数 |
 | :--- | ---: |
-| `fireball::jit_runtime<void>::compile_pending` のframe（出力バッファを含む） | 8,328 |
+| `fireball::jit_runtime<void>::compile_pending` のframe（変更前出力バッファを含む） | 8,328 |
 | `fb_jit_compile_block` のframe | 104 |
-| `fireball::compile_wasm_trace` のframe | 131,208 |
-| `fireball::compile_instruction_body` のframe | 41,096 |
-| **同時に生存する4 frameの既知部分** | **180,736** |
+| `fireball::compile_wasm_trace` のframe（変更前） | 131,208 |
+| `fireball::compile_instruction_body` のframe（変更前） | 41,096 |
+| **変更前に同時に生存した4 frameの既知部分** | **180,736** |
 
-出力バッファ8,208バイトはframe小計へ含むため、再度足さない。
-180,736バイトはコンパイル経路全体の上限ではない。
+変更前の出力バッファ8,208バイトはframe小計へ含むため、再度足さない。
+180,736バイトは変更前コンパイル経路全体の上限ではない。
 他のcallee、呼出し元、FFI、Python管理情報を含まない。
-同じ配列容量のまま最小構成へ移す容量適合は成立しない。
-命令数、出力長、stack深度に対応する作業領域の設計が残る。
+現行コードでは上記の大配列をコンパイルフレームから取り除いた。現行x64スタックフレームの正確な合計は `-fstack-usage` で再計測が必要である。
 
 ## 6. ホストROM関連セクションとWASM入力
 

@@ -7,7 +7,7 @@ $src = Join-Path $dir "suite.c"
 $out = Join-Path $dir "suite.wasm"
 
 # -mcpu=mvp keeps the output inside pysim's MVP-only instruction set ({Wasm32Only}).
-& clang --target=wasm32 -mcpu=mvp -O2 -ffreestanding -fno-builtin -nostdlib -Wall -Wextra `
+& clang --target=wasm32 -std=c23 -mcpu=mvp -O2 -ffreestanding -fno-builtin -nostdlib -Wall -Wextra `
     "-Wl,--no-entry" "-Wl,--strip-all" "-Wl,-z,stack-size=4096" `
     "-Wl,--initial-memory=65536" "-Wl,--max-memory=65536" `
     -o $out $src

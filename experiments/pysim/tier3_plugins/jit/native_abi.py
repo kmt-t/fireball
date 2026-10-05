@@ -13,6 +13,13 @@ _library = ctypes.PyDLL(
         )
     )
 )
+
+COMPILE_MAX_BODY_BYTES = 96
+COMPILE_MAX_STACK_DEPTH = 16
+COMPILE_BYTE_STORAGE_BYTES = 16 + COMPILE_MAX_BODY_BYTES * 2
+COMPILE_SCRATCH_BYTES = COMPILE_BYTE_STORAGE_BYTES + COMPILE_MAX_STACK_DEPTH * ctypes.sizeof(
+    ctypes.c_int16
+)
 REGION_ALIGNMENT = _library.fb_jit_plugin_alignment
 REGION_ALIGNMENT.argtypes = ()
 REGION_ALIGNMENT.restype = ctypes.c_size_t
@@ -27,6 +34,10 @@ RUNTIME_INIT.argtypes = (
     ctypes.c_uint32,
     ctypes.c_uint32,
     ctypes.c_void_p,
+    ctypes.POINTER(ctypes.c_uint8),
+    ctypes.c_size_t,
+    ctypes.POINTER(ctypes.c_int16),
+    ctypes.c_size_t,
 )
 RUNTIME_INIT.restype = ctypes.c_void_p
 RUNTIME_RUN = _library.fb_jit_runtime_run

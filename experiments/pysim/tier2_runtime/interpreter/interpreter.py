@@ -1192,6 +1192,7 @@ class NativeModuleExecution:
         "_signature_address",
         "_table_views",
         "_templates",
+        "bump_allocator",
         "dispatch_owner",
         "globals",
         "module",
@@ -1207,6 +1208,7 @@ class NativeModuleExecution:
         allocator: BumpAllocator | None = None,
     ):
         self.dispatch_owner = 0
+        self.bump_allocator = allocator
         self.module = module
         self.tables = tables
         self.globals = env.globals

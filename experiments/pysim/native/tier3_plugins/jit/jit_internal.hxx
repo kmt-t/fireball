@@ -4,6 +4,10 @@
 #include "jit_types.hxx"
 #include "trace_compiler_abi.hxx"
 namespace fireball {
+inline constexpr std::uint32_t kMaxTraceInstructions = 64;
+inline constexpr std::uint32_t kMaxStackDepth = 16;
+inline constexpr std::uint32_t kMaxBodyBytes = 96;
+
 struct jit_compile_result {
   std::uint32_t body_bytes;
   std::int32_t helper_index;
@@ -26,7 +30,9 @@ int compile_instruction_body(const fireball::jit_instruction* instructions,
                              std::uint32_t local_count, std::uint32_t slot_words,
                              std::uint32_t tail_context_helper, std::uintptr_t helper_target,
                              std::uint8_t* output, std::uint32_t output_capacity,
-                             fireball::jit_compile_result* result);
+                             fireball::jit_compile_result* result,
+                             std::int16_t* stack_locations,
+                             std::uint32_t stack_location_capacity);
 
 int compile_wasm_trace(const std::uint8_t* code, std::uint32_t code_bytes,
                        std::uint32_t code_offset, std::uint32_t byte_span,
@@ -34,7 +40,9 @@ int compile_wasm_trace(const std::uint8_t* code, std::uint32_t code_bytes,
                        std::uint32_t loops_to, const std::uint8_t* local_widths,
                        std::uint32_t local_width_bytes, std::uint32_t local_count,
                        std::uint32_t slot_words, std::uint8_t* output,
-                       std::uint32_t output_capacity, fireball::jit_compile_result* result);
+                       std::uint32_t output_capacity, fireball::jit_compile_result* result,
+                       std::int16_t* stack_locations,
+                       std::uint32_t stack_location_capacity);
 void chain_dispatcher_code(const std::uint8_t** bytes, std::uint32_t* byte_count,
                            std::uint32_t* offset);
 std::int64_t chain_successor(std::uintptr_t address, std::uint32_t bytes, std::uint32_t offset,

@@ -17,6 +17,9 @@ _NATIVE_LIBRARY_PATH = Path(__file__).with_name(
     "jit_probe.dll" if sys.platform == "win32" else "libjit_probe.so"
 )
 _NATIVE_LIBRARY = ctypes.PyDLL(str(_NATIVE_LIBRARY_PATH))
+_COMPILE_MAX_BODY_BYTES = 96
+_COMPILE_BYTE_STORAGE_BYTES = 16 + _COMPILE_MAX_BODY_BYTES * 2
+_COMPILE_STACK_DEPTH = 16
 
 
 class JitInstruction(ctypes.Structure):
@@ -176,6 +179,10 @@ RUNTIME_INIT.argtypes = (
     ctypes.c_uint32,
     ctypes.c_uint32,
     ctypes.POINTER(ctypes.c_uint32),
+    ctypes.POINTER(ctypes.c_uint8),
+    ctypes.c_size_t,
+    ctypes.POINTER(ctypes.c_int16),
+    ctypes.c_size_t,
 )
 RUNTIME_INIT.restype = ctypes.c_void_p
 
@@ -298,6 +305,8 @@ class NativeRuntimeStorage:
         "_allocator",
         "_arena_offset",
         "_closed",
+        "_compile_byte_storage",
+        "_compile_stack_locations",
         "_cursor",
         "_dirty",
         "_states",
@@ -312,6 +321,10 @@ class NativeRuntimeStorage:
         self.arena_size = int(RUNTIME_SIZE())
         assert int(RUNTIME_ALIGNMENT()) <= ctypes.alignment(ctypes.c_uint64)
         self._storage = (ctypes.c_uint64 * ((self.arena_size + 7) // 8))()
+        self._compile_byte_storage = (
+            ctypes.c_uint64 * (_COMPILE_BYTE_STORAGE_BYTES // ctypes.sizeof(ctypes.c_uint64))
+        )()
+        self._compile_stack_locations = (ctypes.c_int16 * _COMPILE_STACK_DEPTH)()
         native_offsets = (ctypes.c_uint32 * 3)(*offsets)
         self.pointer = RUNTIME_INIT(
             ctypes.cast(self._storage, ctypes.POINTER(ctypes.c_uint8)),
@@ -319,6 +332,10 @@ class NativeRuntimeStorage:
             capacity,
             entries,
             native_offsets,
+            ctypes.cast(self._compile_byte_storage, ctypes.POINTER(ctypes.c_uint8)),
+            _COMPILE_BYTE_STORAGE_BYTES,
+            self._compile_stack_locations,
+            _COMPILE_STACK_DEPTH,
         )
         assert self.pointer is not None
         self._allocator: BumpAllocator | None = None
@@ -675,6 +692,9 @@ _COMPILE_BLOCK.argtypes = (
     ctypes.POINTER(NativeTraceFixups),
     ctypes.POINTER(ctypes.c_uint8),
     ctypes.c_uint32,
+    ctypes.POINTER(ctypes.c_uint8),
+    ctypes.POINTER(ctypes.c_int16),
+    ctypes.c_uint32,
 )
 
 
@@ -694,11 +714,20 @@ def compile_wasm(
     assert 0 <= block.locals.local_count <= 0xFFFF_FFFF
     assert 0 <= block.locals.slot_words <= 0xFFFF_FFFF
     request = marshal_block(block)
-    output = (ctypes.c_uint8 * (8192 + COMMON_LAYOUT.header_bytes))()
+    output = (ctypes.c_uint8 * (_COMPILE_MAX_BODY_BYTES + COMMON_LAYOUT.header_bytes))()
+    body_scratch = (ctypes.c_uint8 * _COMPILE_MAX_BODY_BYTES)()
+    stack_locations = (ctypes.c_int16 * 16)()
     fixups = NativeTraceFixups()
     status = int(
         _COMPILE_BLOCK(
-            ctypes.byref(request), ctypes.byref(trace), ctypes.byref(fixups), output, len(output)
+            ctypes.byref(request),
+            ctypes.byref(trace),
+            ctypes.byref(fixups),
+            output,
+            len(output),
+            body_scratch,
+            stack_locations,
+            len(stack_locations),
         )
     )
     if status == 0:
@@ -774,6 +803,9 @@ _COMPILE_INSTRUCTIONS.argtypes = (
     ctypes.POINTER(NativeTraceFixups),
     ctypes.POINTER(ctypes.c_uint8),
     ctypes.c_uint32,
+    ctypes.POINTER(ctypes.c_uint8),
+    ctypes.POINTER(ctypes.c_int16),
+    ctypes.c_uint32,
 )
 
 
@@ -818,11 +850,20 @@ def compile_instructions(
             local_layout.slot_words,
         ),
     )
-    output = (ctypes.c_uint8 * (8192 + COMMON_LAYOUT.header_bytes))()
+    output = (ctypes.c_uint8 * (_COMPILE_MAX_BODY_BYTES + COMMON_LAYOUT.header_bytes))()
+    body_scratch = (ctypes.c_uint8 * _COMPILE_MAX_BODY_BYTES)()
+    stack_locations = (ctypes.c_int16 * 16)()
     fixups = NativeTraceFixups()
     status = int(
         _COMPILE_INSTRUCTIONS(
-            ctypes.byref(request), ctypes.byref(trace), ctypes.byref(fixups), output, len(output)
+            ctypes.byref(request),
+            ctypes.byref(trace),
+            ctypes.byref(fixups),
+            output,
+            len(output),
+            body_scratch,
+            stack_locations,
+            len(stack_locations),
         )
     )
     if status == 0:

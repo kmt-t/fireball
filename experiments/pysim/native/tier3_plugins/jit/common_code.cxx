@@ -257,10 +257,13 @@ int fireball::build_trace(const std::uint8_t* body, std::uint32_t bytes,
 extern "C" int fb_jit_compile_block(const fireball::jit_wasm_block* block,
                                     fireball::jit_cache_trace* trace,
                                     fireball::jit_trace_fixups* fixups, std::uint8_t* output,
-                                    std::uint32_t capacity) {
+                                    std::uint32_t capacity, std::uint8_t* body_scratch,
+                                    std::int16_t* stack_locations,
+                                    std::uint32_t stack_location_capacity) {
   using namespace fireball;
   if (block == nullptr || trace == nullptr || fixups == nullptr || output == nullptr ||
-      capacity <= header_bytes)
+      capacity <= header_bytes || body_scratch == nullptr || stack_locations == nullptr ||
+      stack_location_capacity < kMaxStackDepth || capacity > header_bytes + kMaxBodyBytes)
     return -1;
   const auto next =
       chain_successor(reinterpret_cast<std::uintptr_t>(block->code.data), block->code.bytes,
@@ -270,8 +273,8 @@ extern "C" int fb_jit_compile_block(const fireball::jit_wasm_block* block,
   const auto status = compile_wasm_trace(
       block->code.data, block->code.bytes, block->offset, block->byte_span, next != UINT32_MAX,
       static_cast<std::uint32_t>(next), 0, 0, block->locals.widths.data, block->locals.widths.bytes,
-      block->locals.count, block->locals.slot_words, output + header_bytes, capacity - header_bytes,
-      &result);
+      block->locals.count, block->locals.slot_words, body_scratch, kMaxBodyBytes, &result,
+      stack_locations, stack_location_capacity);
   if (status != 1) return status;
   trace->head_pc = block->head_pc;
   trace->next_pc = static_cast<std::uint32_t>(next);
@@ -290,23 +293,27 @@ extern "C" int fb_jit_region_init(fireball::executable_memory* memory) {
 extern "C" int fb_jit_compile_instructions(const fireball::jit_instruction_block* block,
                                            fireball::jit_cache_trace* trace,
                                            fireball::jit_trace_fixups* fixups, std::uint8_t* output,
-                                           std::uint32_t capacity) {
+                                           std::uint32_t capacity,
+                                           std::uint8_t* body_scratch,
+                                           std::int16_t* stack_locations,
+                                           std::uint32_t stack_location_capacity) {
   using namespace fireball;
   if (block == nullptr || trace == nullptr || fixups == nullptr || output == nullptr ||
-      capacity <= header_bytes)
+      capacity <= header_bytes || body_scratch == nullptr || stack_locations == nullptr ||
+      stack_location_capacity < kMaxStackDepth || capacity > header_bytes + kMaxBodyBytes)
     return -1;
   fireball::jit_compile_result result{};
   const auto status = compile_instruction_body(
       block->instructions, block->instruction_count, block->next_pc != UINT32_MAX, block->next_pc,
       block->loops_to != UINT32_MAX, block->loops_to, block->byte_span, block->locals.widths.data,
       block->locals.widths.bytes, block->locals.count, block->locals.slot_words,
-      block->context_helper, block->helper_target, output + header_bytes, capacity - header_bytes,
-      &result);
+      block->context_helper, block->helper_target, body_scratch, kMaxBodyBytes,
+      &result, stack_locations, stack_location_capacity);
   if (status != 1) return status;
   trace->head_pc = block->head_pc;
   trace->next_pc = block->next_pc;
   trace->loops_to = block->loops_to;
-  return build_trace(output + header_bytes, result.body_bytes, &result, block->helper_target, trace,
+  return build_trace(body_scratch, result.body_bytes, &result, block->helper_target, trace,
                      fixups, output, capacity)
              ? 1
              : -1;

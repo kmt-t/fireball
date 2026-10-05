@@ -9,7 +9,7 @@
 
 ## 1. コンセプト
 <!-- traceability: {LowLatencyJIT} {JIT_CopyAndPatch} {JIT_ZeroCompileCostTheorem} {SimpleJITArchitecture} {JIT_Encoder} {PositionIndependentCode} {SinglePassCompilation} -->
-JIT Compiler は、Tier 2 Interpreter の任意拡張としてWASMバイトコードをネイティブコードへ変換するTier 3コンポーネントである。プラグインに近い構成とし、「Zero Compile Cost」方針に基づく **Copy-and-Patch** 方式を採用する。確認済みのx64トレース本体生成はC++実装がWASMコードを直接走査し、命令バイト列、レジスタ配置、スタック退避、ランタイムヘルパー境界を単一パスで確定する。Tier 3のC++ JitRuntimeはコンパイラを直接呼び、生成結果を所有キャッシュへ登録する。PythonはLoaderの借用コードとメタデータを登録境界で渡す。命令ごとのPython往復やTier 2のJIT専用APIを設けない。ARMv8-Mの物理実装と資源予算はTBDである。
+JIT Compiler は、Tier 2 Interpreter の任意拡張としてWASMバイトコードをネイティブコードへ変換するTier 3コンポーネントである。プラグインに近い構成とし、「Zero Compile Cost」方針に基づく **Copy-and-Patch** 方式を採用する。確認済みのx64トレース本体生成はC++実装がWASMコードを直接走査し、opcodeとスタック上の値配置に対応するネイティブStencilを選択して連結し、即値と相対オフセットをパッチする。`i32.const` と直後の整数演算、`local.set`、`local.tee`、`drop`、`i32.eqz` は一部をsupernodeとしてまとめ、定数演算、即値演算、identityを選ぶ。対応外の組合せは既存の命令別経路へ戻す。Tier 3のC++ JitRuntimeはコンパイラを直接呼び、生成結果を所有キャッシュへ登録する。PythonはLoaderの借用コードとメタデータを登録境界で渡す。命令ごとのPython往復やTier 2のJIT専用APIを設けない。ARMv8-Mの物理実装と資源予算はTBDである。
 
 ## 2. アーキテクチャ分類
 <!-- traceability: {META_3TierSeparation} {JIT_CopyAndPatch} -->
@@ -147,8 +147,16 @@ JIT トレースとインタープリタが共有オペランド領域上で相�
 物理配置は対象ごとのABI契約へ委譲する。Windows x64およびSystem V AMD64の16バイト配置は [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) に定義し、ARMv8-Mの物理配置と命令列はTBDである。これらの配置を一つの共通ヘッダとして扱ってはならない。
 
 #### ネイティブトレースコンパイラ (`trace_compiler.cxx`)
-<!-- traceability: {JIT_Encoder} {META_ZeroCostAbstraction} -->
-Clang 17+でビルドするC++実装であり、x64 Copy-and-Patchトレースの命令バイト列を単一パスで生成する。固定命令列は `constexpr std::array<std::uint8_t, N>` ステンシルとしてコンパイル時に確定し、実行時はステンシルのコピーと即値・相対オフセットのパッチだけを行う。固定長のネイティブ配列を使用し、実行時のヒープ確保や動的なSTLコンテナを使用しない。入力ビュー、出力buffer、およびコンパイル結果の契約はJIT ABIに従う。
+<!-- traceability: {JIT_Encoder} {META_ZeroCostAbstraction} {JIT_MultiBuffer_Cache} {Runtime_BumpAllocator} -->
+Clang 17+でビルドするC++実装であり、x64 Copy-and-Patchトレースの命令バイト列を走査しながら生成する。固定命令列は `constexpr std::array<std::uint8_t, N>` ステンシルとしてコンパイル時に確定し、実行時は対応するWASM命令n-gram、スタック配置、定数値から変種を選択してコピーし、即値・相対オフセットをパッチする。実行時のヒープ確保や動的なSTLコンテナを使用しない。入力ビュー、出力buffer、およびコンパイル結果の契約はJIT ABIに従う。
+
+ステンシル選択の候補は、ClangでC23のプロファイル用WASMゲスト [`suite.c`](experiments/pysim/benchmarks/profile/guest/suite.c) を `--target=wasm32 -mcpu=mvp -O2` でコンパイルし、`wasm-objdump` が復号した命令列のn-gramから選ぶ。再現用の [`analyze_wasm_ngrams.py`](experiments/pysim/benchmarks/profile/guest/analyze_wasm_ngrams.py) は同じCソースをコンパイルし、関数境界をまたがず2〜4命令のn-gramと即値分布を集計する。Clang 21.1.8で得た28関数・6460命令では、`local.get i32.const i32.add` が305回、`i32.const i32.add` が382回、`i32.const i32.mul` が83回、`i32.const i32.and` が60回現れた。内訳では加算即値`1` / `-1` が97 / 21回、乗算即値`3` / `5` が1 / 3回、AND即値`255` / `65535` が11 / 2回であった。これはコンパイル済みモジュール内の静的出現数であり、実行時頻度ではない。
+
+観測した即値列には対応する短いx64ステンシルを割り当てる。`i32.add 1/-1`は`inc/dec r9d`（各3バイト）を使い、既存の`add r9d, imm8`（4バイト）より1バイト短くする。`i32.mul 3/5`は`lea`（4バイト）を使い、`imul r9d, imm32`（7バイト）より3バイト短くする。`i32.and 255/65535`は`movzx`（4バイト）を使い、即値AND（7バイト）より3バイト短くする。対象Cゲストの全静的出現がJIT traceへ入ると仮定した場合の合計削減上限は169バイトである。これはホスト実行時間や動的なキャッシュ占有量の改善を示す計測値ではない。`i32.const`後の一般整数演算は、符号付き8ビットまたは32ビット即値ステンシルを使う。乗算の即値1は除去し、即値0はゼロ化ステンシルへ置き換える。シフト量はWASMの32ビット規則でマスクし、0なら命令を除去する。即値`local.set` / `local.tee`はレジスタロードを経由せず直接メモリへ格納し、`drop`はコードを出さず、定数`i32.eqz`はコンパイル時に評価する。traceの最終定数や対応しない組合せは既存の汎用Stencil経路で処理する。
+
+1トレースは最大64 WASM命令、生成body 96バイト、作業スタック深さ16スロットを上限とする。上限を超える候補はJIT化を辞退し、Interpreterへフォールバックする。スタック位置は `int16_t[16]` として扱う。WASM命令は1命令ずつ復号して処理し、命令配列を作らない。body、スタック位置、出力blobはランタイムの `BumpAllocator` から240バイトの再利用ワークスペースとして借りる。候補ごとにスクラッチwatermarkを保存して一時領域を割り当て、成功・辞退・エラーの後に同じ位置へ戻す。コンパイラの大きな配列は呼出しスタックへ置かない。
+
+PySIMの `BumpAllocator` はオフセットを会計し、JIT managerが借用期間中のtyped backing bufferを保持してネイティブ側へ渡す。実機では同じ240バイトをランタイムアリーナから連続して貸与する。実行可能コード領域とスクラッチ領域は別管理とし、スクラッチをActive/Warm/Oldestの各2KBバンクへ混在させない。
 
 命令エンコーダと命令列はx64実装に限って定義する。ARMv8-M向けエンコーダ、命令列、relocation形式はTBDである。
 
@@ -264,7 +272,7 @@ sequenceDiagram
 <!-- traceability: {JIT_CopyAndPatch} {JIT_RegisterMapping} {JIT_MultiBuffer_Cache} -->
 - **目標**: コンパイルレイテンシを最小化し、WAMRインタープリタを上回る実行速度を実現。
 - **方策**:
-    - **コピー・パッチ方式**: 複雑な最適化を省き、テンプレートコピーのみでコンパイルを完了。
+    - **コピー・パッチ方式**: opcode、オペランド配置、即値に合うコンパイル時Stencil変種を選び、命令列とsupernodeをコピー・パッチする。定数やidentityはコンパイル時に畳み込み、汎用の最適化器を実行時に起動しない。
     - **レジスタ割り当て**: x64コード生成で使う物理レジスタと呼出し保存規則は [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) で定義する。ARMv8-Mの物理レジスタ割当はTBDである。
     - **実行時検索との分離**: コード生成後の検索方式とキャッシュ管理は [`jit_runtime.md`](docs/components/tier3_plugins/jit_runtime.md) に従う。
 

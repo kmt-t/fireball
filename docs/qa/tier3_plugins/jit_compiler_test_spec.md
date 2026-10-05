@@ -15,14 +15,16 @@ Copy-and-Patchエンジンによるネイティブコード生成、4論理引�
 
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| TEST-JITC-01 | テンプレートのコピー＋パッチのみ（最適化なし） | 単純な直線コード（`i32.const`→`i32.add`等） | コンパイル | 生成ネイティブコードは事前定義テンプレートの連結+即値/分岐先パッチのみで構成される（IRを介した最適化パスが存在しない） | 「Zero Compile Cost」, `{SinglePassCompilation}` |
+| TEST-JITC-01 | 事前生成ステンシルのコピー・パッチと単一パス選択 | 単純な直線コード（`i32.const`→`i32.add`等） | コンパイル | 生成ネイティブコードは対応するステンシルの連結と即値・分岐先のパッチだけで構成される。WASM命令列に対応するコンパイル時選択は行うが、実行時IR最適化パスを持たない | 「Zero Compile Cost」, `{SinglePassCompilation}` |
 | TEST-JITC-02 | 未対応命令のエラー | x64コンパイラが未対応のWASM opcode | コンパイル | 明確なcompile-failure結果を返し、無音の誤コンパイルをしない | [`test_x64_jit.py`](experiments/pysim/qa/tier3_plugins/jit/test_x64_jit.py) |
-| TEST-JITC-03 | C++コンパイラが生成する命令列 | x64の算術・ビット演算・ローカル操作を含むtrace | C++コンパイラの結果をPythonステンシル実装を介さず実行する | 生成コードの演算結果、値の配置、境界での状態同期が正しい | [`test_x64_jit.py`](experiments/pysim/qa/tier3_plugins/jit/test_x64_jit.py) |
+| TEST-JITC-03 | WASM命令列に対応するx64ステンシル | x64の算術・ビット演算・ローカル操作を含むtrace | C++コンパイラのCopy-and-Patch結果をPythonステンシル実装を介さず実行する | 生成コードの演算結果、値の配置、境界での状態同期が正しい | [`test_x64_jit.py`](experiments/pysim/qa/tier3_plugins/jit/test_x64_jit.py) |
+| TEST-JITC-63 | Clang-WASM n-gramで選んだ即値Stencilの短縮 | `local.get`と`i32.const`に続く`i32.add`/`i32.mul`/`i32.and` trace | 対象traceを実行し、生成x64命令とコード長を検査する | `add ±1`は`inc/dec`、`mul 3/5`は`lea`、`and 255/65535`は`movzx`に選択され、結果がWASMの32ビット演算結果と一致する。各対象は汎用即値Stencilより短い | [`jit_compiler.md`](docs/components/tier3_plugins/jit_compiler.md), [`test_x64_jit.py`](experiments/pysim/qa/tier3_plugins/jit/test_x64_jit.py) |
 | TEST-JITC-04 | C++ Interpreter handlerへの境界フォールバック | 制御終端命令、複雑命令、import／host call | trace実行後のhandlerとRuntimeEngine境界を確認する | 制御終端命令は対応するC++ Interpreter handlerを通る。JIT内にopcode別handler dispatcherやhost call stubを生成しない | `{JIT_RuntimeAPI_Fallback}` |
 | TEST-JITC-05 | x64実行可能バッファのW^X確定 | Linux x64上で初期化したバッファ | `/proc/self/maps`でOSの実権限を読み、commit、再パッチ、再commit後に再確認する。生成コードをCPUで実行する | 実権限が`RW → RX → RW → RX`となる。commit後のコードは42を返し、再パッチ後は7を返す。API経由のcommit後書込みは拒否される | [`test_exec_memory.py`](experiments/pysim/qa/tier3_plugins/jit/test_exec_memory.py) |
 | TEST-JITC-06 | インタープリタ⇔JIT境界でのレジスタ書き戻しコスト | JITトレースから脱出 | 脱出処理を確認 | 値キャッシュの共有オペランド領域への書戻しが対象ABIで定める有界コストに収まる |  `{ADR_TosCacheAsymmetry}` |
 | TEST-JITC-07 | x64整数除算・剰余のヘルパー委譲 | i32除算・剰余を含むトレース | x64向けコンパイルと実行を確認 | 2つの32ビット整数を対象ABIの引数レジスタからヘルパーへ渡し、ヘルパーが結果領域ポインタへ1ワードを書き込んで対象ABIの終了処理へ戻る | `{JIT_RuntimeAPI_Fallback}` |
 | TEST-JITC-08 | ヘルパー呼出しコードの共通配置 | ARMv8-Mまたはx64のヘルパー委譲 | 共通コード領域とトレース本体のバイト数を確認 | x64整数ヘルパー入口は契約ごとに32バイトの固定スロットへ配置する。ARMv8-Mのhelper入口と配置はTBD | [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) `{JIT_MultiBuffer_Cache}` |
+| TEST-JITC-09 | トレース作業領域の固定上限 | 命令数64、生成body 96バイト、作業stack深さ16の境界内外 | 境界内の適格traceと、命令数・body長・stack深さを個別に超えるtraceをコンパイルし、結果blobとキャッシュ登録状態を確認する | 境界内はコンパイル可能で、blobは112バイト以下となる。各上限を超えるtraceはJIT化を辞退してInterpreterへフォールバックし、キャッシュへ登録しない。コンパイルスクラッチ領域は240バイトで固定される | [`jit_compiler.md`](docs/components/tier3_plugins/jit_compiler.md) |
 
 ### レジスタ規約とTOS/NOS非対称性
 

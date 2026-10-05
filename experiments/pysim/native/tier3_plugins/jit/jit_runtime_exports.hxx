@@ -33,7 +33,11 @@ extern "C" std::size_t fb_jit_plugin_required_bytes(
 extern "C" fireball::JitRuntime* fb_jit_plugin_init(std::uint8_t* region, std::size_t bytes,
     const fireball_wasm_module_execution_view_native* view,
     std::uint32_t hotspots, std::uint32_t module_id,
-    int (*dispatch)(const fb_native_dispatch_call*, fb_native_result*)) {
+    int (*dispatch)(const fb_native_dispatch_call*, fb_native_result*),
+    std::uint8_t* compile_byte_storage, std::size_t compile_byte_storage_bytes,
+    std::int16_t* compile_stack_locations, std::size_t compile_stack_capacity) {
   return reinterpret_cast<fireball::JitRuntime*>(
-      Api::fb_jit_plugin_init(region, bytes, view, hotspots, module_id, dispatch));
+      Api::fb_jit_plugin_init(region, bytes, view, hotspots, module_id, dispatch,
+                              compile_byte_storage, compile_byte_storage_bytes,
+                              compile_stack_locations, compile_stack_capacity));
 }

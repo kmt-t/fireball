@@ -326,13 +326,20 @@ extern "C" FB_PYSIM_ABI_EXPORT std::size_t fb_jit_runtime_alignment() {
 extern "C" FB_PYSIM_ABI_EXPORT JitRuntime* fb_jit_runtime_init(
     std::uint8_t* storage, std::size_t bytes,
       std::uint32_t bank_bytes, std::uint32_t entry_capacity,
-                                           const std::uint32_t* offsets) {
+      const std::uint32_t* offsets, std::uint8_t* compile_byte_storage,
+      std::size_t compile_byte_storage_bytes, std::int16_t* compile_stack_locations,
+      std::size_t compile_stack_capacity) {
   if (storage == nullptr || bytes < sizeof(JitRuntime) || offsets == nullptr ||
       reinterpret_cast<std::uintptr_t>(storage) % alignof(JitRuntime) != 0 ||
       bank_bytes < fireball::header_bytes || entry_capacity == 0 ||
       entry_capacity > fireball::max_entries)
     return nullptr;
   auto* cache = ::new (storage) JitRuntime{};
+  if (!cache->compile_scratch.bind(compile_byte_storage, compile_byte_storage_bytes,
+                                   compile_stack_locations, compile_stack_capacity)) {
+    cache->~JitRuntime();
+    return nullptr;
+  }
   if (!fb_jit_memory_init(&cache->memory, FB_CONF_JIT_CACHE_REGION_BYTES) ||
       !fireball::initialize_common_code(&cache->memory)) {
     cache->~JitRuntime();

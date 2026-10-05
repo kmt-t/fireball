@@ -24,6 +24,7 @@ _ROOT = Path(__file__).resolve().parents[4]
 _PYSIM = _ROOT / "experiments/pysim"
 _REFERENCE_INTERPRETER = _PYSIM / "tier2_runtime/interpreter"
 sys.path.insert(0, str(_PYSIM / "tier1_core"))
+import config
 from config import (
     JIT_TRACE_COMMON_CHAIN_DISPATCH_BYTES,
     JIT_TRACE_COMMON_CHAIN_DISPATCH_OFFSET,
@@ -145,7 +146,7 @@ def elf_size(path: Path) -> ELFSize:
     )
 
 
-def compiler_stack_frames() -> dict[str, int]:
+def native_jit_definitions() -> dict[str, int]:
     definitions = {
         "FB_CONF_JIT_TRACE_COMMON_CHAIN_DISPATCH_OFFSET": JIT_TRACE_COMMON_CHAIN_DISPATCH_OFFSET,
         "FB_CONF_JIT_TRACE_COMMON_CHAIN_DISPATCH_BYTES": JIT_TRACE_COMMON_CHAIN_DISPATCH_BYTES,
@@ -154,35 +155,131 @@ def compiler_stack_frames() -> dict[str, int]:
         "FB_CONF_JIT_X64_CHAIN_TARGET_OFFSET": JIT_X64_CHAIN_TARGET_OFFSET,
         "FB_CONF_JIT_X64_TRACE_ENTRY_STUB_BYTES": JIT_X64_TRACE_ENTRY_STUB_BYTES,
     }
-    source = _PYSIM / "native/tier3_plugins/jit/trace_compiler.cxx"
-    with tempfile.TemporaryDirectory(prefix="fireball-resource-") as directory:
-        output = Path(directory) / "trace_compiler.o"
+    for name in (
+        "JIT_CACHE_FAST_SLOT_COUNT",
+        "JIT_CACHE_BANK_ENTRY_CAPACITY",
+        "JIT_CACHE_MAX_INBOUND_SOURCES",
+        "JIT_CACHE_REGION_BYTES",
+        "JIT_CACHE_COMMON_CODE_BYTES",
+        "JIT_CACHE_ABSOLUTE_ADDRESS_POOL_BYTES",
+        "JIT_TRACE_COMMON_PROLOGUE_OFFSET",
+        "JIT_TRACE_COMMON_HELPER_OFFSET",
+        "JIT_TRACE_HELPER_ENTRY_BYTES",
+        "JIT_TRACE_TYPED_I32_HELPER_COUNT",
+        "JIT_TRACE_TYPED_I32_HELPER_OFFSET",
+        "JIT_TRACE_WIDE_HELPER_COUNT",
+        "JIT_TRACE_WIDE_HELPER_OFFSET",
+        "JIT_X64_HELPER_TARGET_OFFSET",
+        "JIT_HISTORY_CAPACITY",
+        "JIT_COMPILE_QUEUE_CAPACITY",
+        "JIT_CARD_SHIFT",
+        "JIT_CACHE_BANK_CAPACITY_BYTES",
+        "JIT_CACHE_ACTIVE_OFFSET_BYTES",
+        "JIT_CACHE_WARM_OFFSET_BYTES",
+        "JIT_CACHE_OLDEST_OFFSET_BYTES",
+    ):
+        definitions[f"FB_CONF_{name}"] = getattr(config, name)
+    definitions["FB_CONF_JIT_AGING_STEP_UNITS"] = config.FB_CONF_JIT_AGING_STEP_UNITS
+    definitions["FB_CONF_JIT_AGING_STEP_SCAN_BYTES"] = config.FB_CONF_JIT_AGING_STEP_SCAN_BYTES
+    return definitions
+
+
+def jit_runtime_layout() -> dict[str, int]:
+    """Compile a measurement-only sizeof probe; do not add a product export."""
+    expressions = {
+        "runtime_bytes": "sizeof(fireball::JitRuntime)",
+        "dispatch_entries_bytes": "sizeof(decltype(fireball::JitRuntime::dispatch_entries))",
+        "dispatch_history_bytes": "sizeof(decltype(fireball::JitRuntime::dispatch_history))",
+        "owned_traces_bytes": "sizeof(decltype(fireball::JitRuntime::owned))",
+        "cache_banks_bytes": "sizeof(decltype(fireball::JitRuntime::banks))",
+        "fast_cache_bytes": "sizeof(decltype(fireball::JitRuntime::fast))",
+        "profile_history_bytes": "sizeof(decltype(fireball::JitRuntime::history_records))",
+        "compile_queue_bytes": "sizeof(decltype(fireball::JitRuntime::queue_pcs))",
+        "module_block_view_bytes": "sizeof(fireball_wasm_block_execution_view_native)",
+    }
+    runtime_source = _PYSIM / "native/tier3_plugins/jit/jit_runtime.cxx"
+    with tempfile.TemporaryDirectory(prefix="fireball-resource-layout-") as directory:
+        probe = Path(directory) / "layout.cxx"
+        executable = Path(directory) / "layout"
+        probe.write_text(
+            "#include <cstdio>\n"
+            f'#include "{runtime_source}"\n'
+            "int main() {\n"
+            + "".join(f'  std::printf("%zu\\n", {value});\n' for value in expressions.values())
+            + "}\n",
+            encoding="utf-8",
+        )
         subprocess.run(
             [
                 "clang++",
                 "-std=c++23",
                 "-O2",
-                "-fPIC",
-                "-fstack-usage",
-                *(f"-D{name}={value}" for name, value in definitions.items()),
-                "-c",
-                str(source),
+                "-fno-exceptions",
+                "-fno-rtti",
+                "-ffunction-sections",
+                "-fdata-sections",
+                "-Wl,--gc-sections",
+                *(f"-D{name}={value}" for name, value in native_jit_definitions().items()),
+                str(probe),
                 "-o",
-                str(output),
+                str(executable),
             ],
             check=True,
         )
+        values = subprocess.check_output([str(executable)], text=True).splitlines()
+        assert len(values) == len(expressions)
+        return {name: int(value) for name, value in zip(expressions, values, strict=True)}
+
+
+def compiler_stack_frames() -> dict[str, int]:
+    definitions = native_jit_definitions()
+    with tempfile.TemporaryDirectory(prefix="fireball-resource-") as directory:
         frames: dict[str, int] = {}
-        for line in output.with_suffix(".su").read_text().splitlines():
-            name, size, classification = line.split("\t")
-            assert classification == "static", line
-            function = name.split(":", 3)[-1]
-            if "compile_wasm_trace" in function:
-                function = "compile_wasm_trace"
-            elif "compile_instruction_body" in function:
-                function = "compile_instruction_body"
-            frames[function] = int(size)
-        assert "compile_wasm_trace" in frames and "compile_instruction_body" in frames
+        for filename in ("trace_compiler.cxx", "common_code.cxx", "jit_runtime.cxx"):
+            source = _PYSIM / "native/tier3_plugins/jit" / filename
+            output = Path(directory) / source.with_suffix(".o").name
+            subprocess.run(
+                [
+                    "clang++",
+                    "-std=c++23",
+                    "-O2",
+                    "-g",
+                    "-fPIC",
+                    "-fvisibility=hidden",
+                    "-fno-exceptions",
+                    "-fno-rtti",
+                    "-fstack-usage",
+                    *(f"-D{name}={value}" for name, value in definitions.items()),
+                    "-c",
+                    str(source),
+                    "-o",
+                    str(output),
+                ],
+                check=True,
+            )
+            for line in output.with_suffix(".su").read_text().splitlines():
+                name, size, classification = line.split("\t")
+                assert classification == "static", line
+                function = name.split(":", 3)[-1]
+                for entry in (
+                    "compile_wasm_trace",
+                    "compile_instruction_body",
+                    "compile_pending",
+                    "fb_jit_compile_block",
+                ):
+                    if entry in function:
+                        function = entry
+                        break
+                frames[function] = int(size)
+        assert all(
+            name in frames
+            for name in (
+                "compile_wasm_trace",
+                "compile_instruction_body",
+                "compile_pending",
+                "fb_jit_compile_block",
+            )
+        )
         return frames
 
 
@@ -259,18 +356,27 @@ def main() -> None:
         "elf_scope": "x64 reference shared libraries built by checked-in -O2 build scripts; not ARM firmware",
         "source_groups": [asdict(group) for group in groups],
         "native_libraries": [asdict(library) for library in libraries],
+        "jit_runtime_layout": jit_runtime_layout(),
         "jit_compiler_stack": {
-            "measurement_flags": "-std=c++23 -O2 -fPIC -fstack-usage with checked-in JIT configuration",
+            "measurement_flags": "-std=c++23 -O2 -g -fPIC -fvisibility=hidden -fno-exceptions -fno-rtti -fstack-usage with checked-in JIT configuration",
             "source_sha256": hashlib.sha256(
                 (_PYSIM / "native/tier3_plugins/jit/trace_compiler.cxx").read_bytes()
             ).hexdigest(),
             "function_frame_bytes": stack_frames,
+            "source_sha256_by_file": {
+                filename: hashlib.sha256(
+                    (_PYSIM / "native/tier3_plugins/jit" / filename).read_bytes()
+                ).hexdigest()
+                for filename in ("trace_compiler.cxx", "common_code.cxx", "jit_runtime.cxx")
+            },
             "entry_frames_subtotal_bytes": stack_frames["compile_wasm_trace"]
             + stack_frames["compile_instruction_body"],
-            "caller_output_buffer_bytes": 8192,
+            "caller_output_buffer_bytes": 8192 + JIT_X64_TRACE_HEADER_BYTES,
+            "caller_output_buffer_in_compile_pending_frame": True,
             "minimum_known_compile_bytes": stack_frames["compile_wasm_trace"]
             + stack_frames["compile_instruction_body"]
-            + 8192,
+            + stack_frames["fb_jit_compile_block"]
+            + stack_frames["compile_pending"],
             "excluded": "additional callee/ABI frames, result structures and Python objects",
         },
     }

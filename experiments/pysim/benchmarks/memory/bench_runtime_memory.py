@@ -20,7 +20,7 @@ from pathlib import Path
 _BENCH_DIR = Path(__file__).resolve().parents[1]
 _PYSIM_DIR = _BENCH_DIR.parent
 sys.path.insert(0, str(_BENCH_DIR))
-from _bootstrap import configure_import_paths
+from _bootstrap import configure_import_paths, reserve_native_region
 
 configure_import_paths(_PYSIM_DIR, _BENCH_DIR)
 sys.path.insert(0, str(_BENCH_DIR / "interpreter"))
@@ -31,14 +31,13 @@ from bench_jit import JITCompilerBenchmark
 from bump_allocator import BumpAllocator
 from config import FB_CONF_RUNTIME_BUMP_ARENA_BYTES, JIT_CACHE_REGION_BYTES
 from ipc_router import FB_URI_HAL_STDOUT
-from qa.shared.jit_manager import JITRuntimeManager
-from qa.shared.x64_jit import TraceCompiler
 from system import System
 from system_containers import StaticVector
 from tier2_runtime.interpreter.interpreter import InterpreterBindings, NativeInterpreter
 from tier2_runtime.runtime.engine import RuntimeEngine
 from tier3_platform.drivers.hal.dummy import DummyDriver
 from tier3_platform.drivers.wasi.context import WasiHostContext
+from tier3_plugins.jit.jit_manager import JITRuntimeManager
 
 
 @dataclass(frozen=True)
@@ -89,9 +88,20 @@ class AllocationTotal:
 
 
 @dataclass(frozen=True)
-class JITStorage:
-    name: str
-    payload_bytes: int
+class PluginRegionRequest:
+    size_bytes: int
+    alignment_bytes: int
+
+
+class MeasuredPluginRegion:
+    """Measure the product plugin's public storage request without QA views."""
+
+    def __init__(self) -> None:
+        self.requests: list[PluginRegionRequest] = []
+
+    def reserve(self, size: int, alignment: int) -> memoryview:
+        self.requests.append(PluginRegionRequest(size, alignment))
+        return reserve_native_region(size, alignment)
 
 
 @dataclass(frozen=True)
@@ -111,17 +121,16 @@ class Measurement:
     jit_executable_region_bytes: int
     result_words: tuple[int, ...]
     output_sha256: str
-    resident_traces_after_call: tuple[int, ...]
     jit_invocations: int
     allocation_totals: tuple[AllocationTotal, ...]
-    dispatch_workspace_bytes: int
-    resident_trace_bytes: int
-    jit_unaccounted_storage: tuple[JITStorage, ...]
+    plugin_region_requests: tuple[PluginRegionRequest, ...]
+    plugin_region_bytes: int
 
 
 def _measure(workload: Workload, hybrid: bool, calls: int) -> Measurement:
     arena = MeasuredArena()
-    jit = JITRuntimeManager(jit_compiler=TraceCompiler()) if hybrid else None
+    plugin_region = MeasuredPluginRegion()
+    jit = JITRuntimeManager(plugin_region.reserve) if hybrid else None
     engine = RuntimeEngine(bump_allocator=arena, jit_runtime=jit, collect_runtime_stats=True)
     module = engine.load_wasm(workload.wasm)
     loaded = arena.offset
@@ -143,7 +152,6 @@ def _measure(workload: Workload, hybrid: bool, calls: int) -> Measurement:
     )
     instantiated = arena.offset
     after_calls: list[int] = []
-    traces: list[int] = []
     expected_result: tuple[int, ...] | None = None
     expected_output: bytes | None = None
     for call_index in range(calls):
@@ -159,7 +167,6 @@ def _measure(workload: Workload, hybrid: bool, calls: int) -> Measurement:
         assert result == expected_result
         assert output == expected_output
         after_calls.append(arena.offset)
-        traces.append(0 if jit is None else jit.cache.resident_count)
     assert expected_result is not None and expected_output is not None
     if workload.wasi:
         assert len(expected_output) == (workload.arguments[0] + 1) * workload.arguments[1]
@@ -187,19 +194,10 @@ def _measure(workload: Workload, hybrid: bool, calls: int) -> Measurement:
                 sum(event.padding for event in events),
             )
         )
-    unaccounted: tuple[JITStorage, ...] = ()
     if jit is not None:
-        native_storage = jit.cache._native
-        # Native trace counters are included in the owning JitRuntime storage.
-        unaccounted = (
-            JITStorage("hotspot_state_bits", len(jit.bitmap.storage.buffer)),
-            JITStorage("trackable_mask_bits", len(jit.trackable.storage.buffer)),
-            JITStorage("card_update_bits", len(jit.update_bitmap.storage.buffer)),
-            JITStorage(
-                "native_jit_cache_runtime",
-                native_storage.arena_size if native_storage.arena_offset is None else 0,
-            ),
-        )
+        assert len(plugin_region.requests) == 1, plugin_region.requests
+        assert engine.stat_jit_invocations > 0
+        jit.close()
     return Measurement(
         workload.name,
         "hybrid" if hybrid else "native",
@@ -216,12 +214,10 @@ def _measure(workload: Workload, hybrid: bool, calls: int) -> Measurement:
         JIT_CACHE_REGION_BYTES if hybrid else 0,
         expected_result,
         hashlib.sha256(expected_output).hexdigest(),
-        tuple(traces),
         engine.stat_jit_invocations,
         tuple(totals),
-        0 if jit is None else jit.native_dispatch_state().arena_size,
-        0 if jit is None else jit.cache.resident_bytes,
-        unaccounted,
+        tuple(plugin_region.requests),
+        sum(request.size_bytes for request in plugin_region.requests),
     )
 
 
@@ -236,7 +232,7 @@ def main() -> None:
     ).strip()
     workloads = (
         Workload(
-            "arithmetic", JITCompilerBenchmark()._create_heavy_loop_binary(), "heavy_loop", (1000,)
+            "arithmetic", JITCompilerBenchmark._create_heavy_loop_binary(), "heavy_loop", (1000,)
         ),
         Workload("indirect_calls", bytes(wasmtime.wat2wasm(WAT)), "bench_indirect", (100,)),
         Workload(
@@ -291,6 +287,13 @@ def main() -> None:
             and not any(part in ("qa", "benchmarks", "__pycache__") for part in path.parts)
         },
         "measurement_model": "reference loader charges + host-native ctypes ABI",
+        "jit_measurement_path": "product JITRuntimeManager with measured region_provider; no QA JIT adapter",
+        "plugin_region_includes": [
+            "native JitRuntime with fixed dispatch/history/trace/cache arrays",
+            "packed card state, dirty and candidate masks",
+            "host executable-page alignment padding",
+            "JIT executable code region (not additive)",
+        ],
         "host_machine": platform.machine(),
         "host_pointer_bytes": ctypes.sizeof(ctypes.c_void_p),
         "python_version": platform.python_version(),
@@ -306,7 +309,8 @@ def main() -> None:
         ).hexdigest(),
         "excluded": [
             "Python heap/RSS",
-            "JIT manager metadata/compiler",
+            "Python adapter objects/compiler scratch",
+            "QA-only block/profile/snapshot buffers",
             "system/IPC/COOS pools",
             "OS/IRQ/native machine stack",
             "target ROM text/rodata",

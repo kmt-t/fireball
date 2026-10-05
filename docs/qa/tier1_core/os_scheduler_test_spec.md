@@ -60,7 +60,7 @@ pysimの実装テストは [`test_scheduler.py`](experiments/pysim/qa/tier1_core
 | TEST-SCHED-12 | `test_sched_12_interrupt_fifo_orders_registered_targets_and_drops_unknown` | 受付順の起床、原因値、未登録イベントのドロップ |
 | TEST-SCHED-13 | `test_sched_13_detached_task_reattaches_once`、`test_sched_13_ready_queue_intrusive_ring_two_ended_fifo` | メンバー重複なし、FIFO順、前後リンク、定員超過後の順序保存 |
 | TEST-SCHED-14、15 | `test_sched_14_15_interrupt_generation_is_observed_once_by_existing_targets` | バースト1世代、各対象の一回観測、新規タスクの除外、保留解除 |
-| TEST-SCHED-16 | `test_sched_16_terminated_task_returns_its_tcb_slot_on_spawn`、`test_sched_16_task_ids_stay_unique_after_a_slot_is_reclaimed` | 最古終了スロット返却と生存タスク保存を確認する。過去ID非再利用の確認は採用契約へ未追従であり、解放後のID再利用と有限範囲での反復生成は未検証である |
+| TEST-SCHED-16 | `test_sched_16_terminated_task_returns_its_tcb_slot_on_spawn`、`test_sched_16_task_ids_are_reused_after_a_slot_is_reclaimed`、`test_sched_16_reused_task_ids_preserve_shared_memory_transfers`、`test_sched_16_explicit_ids_share_the_free_list_without_duplicates`、`test_sched_16_automatic_id_allocation_does_not_search_tasks` | 最古終了スロット返却、生存タスク保存、300回の有限ID再利用と待機マスク、共有メモリ移送、明示IDとの混在、および自動割当のタスク検索不使用を確認する。共有メモリはタスク終了前に解放する |
 | TEST-SCHED-17 | `test_sched_17_interrupt_fifo_rejects_overflow_then_reuses_consumed_slot` | 満杯拒否、既存原因レコード保存、消費後の再利用 |
 | TEST-SCHED-18、19 | `test_sched_18_timed_wait_runs_ready_peers_before_idle_sleep`、`test_sched_19_killing_timed_waiter_clears_only_its_deadline` | READY優先、期限時刻、idle・sleep列、取消し後の生存待機者 |
 

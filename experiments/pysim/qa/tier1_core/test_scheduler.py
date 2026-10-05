@@ -315,8 +315,9 @@ def test_sched_16_terminated_task_returns_its_tcb_slot_on_spawn():
     assert all(sched.get_task(i).state == TaskState.TERMINATED for i in first)
 
     # The table is full of terminated tasks, so a new task takes the oldest slot.
+    old_task = sched.get_task(first[0])
     fifth = sched.spawn("t4", quick())
-    assert sched.get_task(first[0]) is None
+    assert sched.get_task(fifth) is not old_task
     assert all(sched.get_task(i) is not None for i in first[1:])
     assert sched.get_task(fifth) is not None
 
@@ -340,20 +341,107 @@ def test_sched_16_terminated_task_returns_its_tcb_slot_on_spawn():
         busy.spawn("w_overflow")
 
 
-def test_sched_16_task_ids_stay_unique_after_a_slot_is_reclaimed():
-    """TEST-SCHED-16: a reclaimed slot never hands its old task ID to a new task."""
+def test_sched_16_task_ids_are_reused_after_a_slot_is_reclaimed():
+    """TEST-SCHED-16: completed IDs are reusable; live IDs and masks stay bounded."""
+    scheduler = Scheduler(max_tasks=4)
+    live_id = scheduler.spawn("live")
+    live = scheduler.get_task(live_id)
+    assert live is not None
+    scheduler.detach(live)
 
     def quick():
         return
         yield
 
-    sched = Scheduler(max_tasks=2)
-    ids = [sched.spawn("a", quick()), sched.spawn("b", quick())]
-    sched.run_to_completion()
-    ids.append(sched.spawn("c", quick()))
-    sched.run_to_completion()
-    ids.append(sched.spawn("d", quick()))
-    assert len(set(ids)) == 4
+    ids: set[int] = set()
+    for _ in range(300):
+        task_id = scheduler.spawn("temporary", quick())
+        assert 1 <= task_id <= scheduler.max_tasks
+        assert task_id != live_id
+        ids.add(task_id)
+        task = scheduler.get_task(task_id)
+        assert task is not None
+        assert scheduler.notify_interrupt(InterruptEvent(7, 0, 0, 0, 0))
+        scheduler._begin_reschedule_round()
+        assert scheduler.round_target_mask.bit_length() <= scheduler.max_tasks + 1
+        scheduler.run_to_completion()
+        assert task.state == TaskState.TERMINATED
+        assert scheduler.get_task(live_id) is live
+    assert len(ids) <= scheduler.max_tasks - 1
+
+
+def test_sched_16_reused_task_ids_preserve_shared_memory_transfers():
+    """TEST-SCHED-16 / TEST-MEM-10: repeated task creation never becomes FLIGHT."""
+    from tier2_runtime.memory.manager import FB_CONF_MEMORY_POOL_SIZE, MemoryManager
+
+    scheduler = Scheduler(max_tasks=4)
+    manager = MemoryManager(scheduler)
+    manager.init_manager(pool_base=0x00010000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
+    completed: list[int] = []
+
+    def transfer():
+        task = scheduler.current_task
+        assert task is not None
+        block = manager.allocate_shared(size=8).unwrap()
+        shm_id = block.release()
+        assert manager.grant_shared(shm_id)
+        received = manager.claim(shm_id).unwrap()
+        assert received.owner == task.task_id
+        received.write_u32(0, len(completed))
+        assert received.read_u32(0) == len(completed)
+        received.drop()
+        assert manager.shm_slots.view().find(shm_id) is None
+        completed.append(task.task_id)
+        if False:
+            yield None
+
+    for _ in range(300):
+        scheduler.spawn("sender", transfer())
+        scheduler.run_until_idle()
+    assert len(completed) == 300
+    assert max(completed) <= scheduler.max_tasks
+
+
+def test_sched_16_explicit_ids_share_the_free_list_without_duplicates():
+    """TEST-SCHED-16: explicit IDs reserve virgin and previously released IDs."""
+    scheduler = Scheduler(max_tasks=4)
+
+    def quick():
+        return
+        yield
+
+    assert scheduler.spawn("explicit", quick(), task_id=3) == 3
+    first = scheduler.spawn("first", task_id=1)
+    second = scheduler.spawn("second")
+    fourth = scheduler.spawn("fourth")
+    assert {first, second, fourth} == {1, 2, 4}
+    scheduler.run_until_idle()
+    assert scheduler.spawn("replacement", task_id=3) == 3
+    assert {task.task_id for task in scheduler._all} == {1, 2, 3, 4}
+
+
+def test_sched_16_automatic_id_allocation_does_not_search_tasks(monkeypatch):
+    """TEST-SCHED-16: allocating a virgin or released ID never calls get_task."""
+    scheduler = Scheduler(max_tasks=4)
+
+    def quick():
+        return
+        yield
+
+    def reject_task_search(self, task_id):
+        assert False, "automatic ID allocation must use next_id or the free list"
+
+    with monkeypatch.context() as patch:
+        patch.setattr(Scheduler, "get_task", reject_task_search)
+        ids = tuple(scheduler.spawn("task", quick() if index == 1 else None) for index in range(4))
+    assert ids == (1, 2, 3, 4)
+    scheduler.run_until_idle()
+    assert scheduler.get_task(2).state == TaskState.TERMINATED
+    live_tasks = tuple(task for task in scheduler._all if task.task_id != 2)
+    with monkeypatch.context() as patch:
+        patch.setattr(Scheduler, "get_task", reject_task_search)
+        assert scheduler.spawn("replacement") == 2
+    assert all(scheduler.get_task(task.task_id) is task for task in live_tasks)
 
 
 def test_sched_18_timed_wait_runs_ready_peers_before_idle_sleep():

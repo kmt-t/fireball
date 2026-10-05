@@ -405,6 +405,8 @@ class Scheduler:
         "_all",
         "_channels",
         "_clock_ns",
+        "_free_id_index",
+        "_free_ids",
         "_next_id",
         "_next_timer_deadline_ns",
         "_ready",
@@ -440,9 +442,13 @@ class Scheduler:
         self.consecutive_handoffs = 0
         self._ready: BoundedReadyQueue = BoundedReadyQueue(capacity=self.max_tasks)
         self._all: StaticVector[Task] = StaticVector(capacity=self.max_tasks)
+        self._next_id = 1
+        self._free_ids: StaticVector[int] = StaticVector(capacity=self.max_tasks)
+        self._free_id_index: StaticVector[int] = StaticVector(capacity=self.max_tasks + 1)
+        for _ in range(self.max_tasks + 1):
+            self._free_id_index.append(-1)
         self._channels: StaticVector[Channel] = StaticVector(capacity=FB_CONF_MAX_CHANNELS)
         self.current_task: Task | None = None
-        self._next_id = 1
         self._next_timer_deadline_ns = 0
         self.idle_hooks: StaticVector[Callable[[], None]] = StaticVector(
             capacity=FB_CONF_MAX_IDLE_HOOKS
@@ -558,7 +564,10 @@ class Scheduler:
         """Free the oldest terminated task's TCB slot; return whether one was freed."""
         for index in range(len(self._all)):
             if self._all[index].state == TaskState.TERMINATED:
-                self._all.pop_at(index)
+                task = self._all.pop_at(index)
+                if 1 <= task.task_id <= self.max_tasks:
+                    self._free_id_index[task.task_id] = len(self._free_ids)
+                    self._free_ids.append(task.task_id)
                 return True
         return False
 
@@ -594,11 +603,31 @@ class Scheduler:
                         assigned_id,
                     )
                 assert False, f"Task with ID {assigned_id} already exists"
+            if 1 <= assigned_id <= self.max_tasks:
+                if assigned_id >= self._next_id:
+                    for unused_id in range(self._next_id, assigned_id):
+                        self._free_id_index[unused_id] = len(self._free_ids)
+                        self._free_ids.append(unused_id)
+                    self._next_id = assigned_id + 1
+                else:
+                    free_index = self._free_id_index[assigned_id]
+                    assert free_index >= 0
+                    last_id = self._free_ids.pop_back()
+                    assert last_id is not None
+                    if free_index < len(self._free_ids):
+                        self._free_ids[free_index] = last_id
+                        self._free_id_index[last_id] = free_index
+                self._free_id_index[assigned_id] = -1
         else:
-            while self.get_task(self._next_id) is not None:
+            if self._free_ids:
+                released_id = self._free_ids.pop_back()
+                assert released_id is not None
+                assigned_id = released_id
+                self._free_id_index[assigned_id] = -1
+            else:
+                assigned_id = self._next_id
+                assert assigned_id <= self.max_tasks
                 self._next_id += 1
-            assigned_id = self._next_id
-            self._next_id += 1
 
         task = Task(assigned_id, coro, role=role, service_handle=service_handle)
         # A task created during an active generation belongs to the next round.

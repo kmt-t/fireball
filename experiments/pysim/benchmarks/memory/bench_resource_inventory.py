@@ -194,6 +194,13 @@ def jit_runtime_layout() -> dict[str, int]:
         "fast_cache_bytes": "sizeof(decltype(fireball::native_jit_plugin<void>::Runtime::fast))",
         "profile_history_bytes": "sizeof(decltype(fireball::native_jit_plugin<void>::Runtime::history_records))",
         "compile_queue_bytes": "sizeof(decltype(fireball::native_jit_plugin<void>::Runtime::queue_pcs))",
+        "compile_scratch_view_bytes": "sizeof(decltype(fireball::native_jit_plugin<void>::Runtime::compile_scratch))",
+        "compile_scratch_payload_bytes": "fireball::compile_scratch_bytes",
+        "compile_output_bytes": "fireball::compile_output_bytes",
+        "compile_body_bytes": "fireball::kMaxBodyBytes",
+        "compile_stack_locations_bytes": "fireball::kMaxStackDepth * sizeof(std::int16_t)",
+        "max_trace_instructions": "fireball::kMaxTraceInstructions",
+        "max_stack_depth": "fireball::kMaxStackDepth",
         "module_block_view_bytes": "sizeof(fireball_wasm_block_execution_view_native)",
     }
     runtime_source = _PYSIM / "native/tier3_plugins/jit/jit_runtime.cxx"
@@ -201,10 +208,13 @@ def jit_runtime_layout() -> dict[str, int]:
         probe = Path(directory) / "layout.cxx"
         executable = Path(directory) / "layout"
         probe.write_text(
-            "#include <cstdio>\n"
+            "#include <cstddef>\n#include <cstdio>\n"
             f'#include "{runtime_source}"\n'
             "int main() {\n"
-            + "".join(f'  std::printf("%zu\\n", {value});\n' for value in expressions.values())
+            + "".join(
+                f'  std::printf("%zu\\n", static_cast<std::size_t>({value}));\n'
+                for value in expressions.values()
+            )
             + "}\n",
             encoding="utf-8",
         )
@@ -330,6 +340,9 @@ def main() -> None:
         )
     )
     stack_frames = compiler_stack_frames()
+    layout = jit_runtime_layout()
+    wasm_compile_call_chain = ("compile_pending", "fb_jit_compile_block", "compile_wasm_trace")
+    wasm_compile_frames = sum(stack_frames[name] for name in wasm_compile_call_chain)
     report = {
         "measured_at_utc": datetime.now(timezone.utc).isoformat(),
         "source_revision": subprocess.check_output(
@@ -356,7 +369,15 @@ def main() -> None:
         "elf_scope": "x64 reference shared libraries built by checked-in -O2 build scripts; not ARM firmware",
         "source_groups": [asdict(group) for group in groups],
         "native_libraries": [asdict(library) for library in libraries],
-        "jit_runtime_layout": jit_runtime_layout(),
+        "native_build_script_sha256": {
+            path: hashlib.sha256((_PYSIM / path).read_bytes()).hexdigest()
+            for path in (
+                "native/tier1_core/printk/build_native.sh",
+                "native/tier2_runtime/interpreter/build_native.sh",
+                "native/tier3_plugins/jit/build_native.sh",
+            )
+        },
+        "jit_runtime_layout": layout,
         "jit_compiler_stack": {
             "measurement_flags": "-std=c++23 -O2 -g -fPIC -fvisibility=hidden -fno-exceptions -fno-rtti -fstack-usage with checked-in JIT configuration",
             "source_sha256": hashlib.sha256(
@@ -373,17 +394,21 @@ def main() -> None:
                     "jit_runtime.cxx",
                     "jit_runtime.hxx",
                     "jit_runtime_exports.hxx",
+                    "jit_internal.hxx",
+                    "stencils_x64.hxx",
                 )
             },
-            "entry_frames_subtotal_bytes": stack_frames["compile_wasm_trace"]
-            + stack_frames["compile_instruction_body"],
-            "caller_output_buffer_bytes": 8192 + JIT_X64_TRACE_HEADER_BYTES,
-            "caller_output_buffer_in_compile_pending_frame": True,
-            "minimum_known_compile_bytes": stack_frames["compile_wasm_trace"]
-            + stack_frames["compile_instruction_body"]
-            + stack_frames["fb_jit_compile_block"]
-            + stack_frames["compile_pending"],
-            "excluded": "additional callee/ABI frames, result structures and Python objects",
+            "wasm_compile_call_chain": wasm_compile_call_chain,
+            "known_wasm_compile_frame_bytes": wasm_compile_frames,
+            "qa_instruction_body_frame_bytes": stack_frames["compile_instruction_body"],
+            "qa_instruction_body_in_wasm_call_chain": False,
+            "caller_output_buffer_bytes": layout["compile_output_bytes"],
+            "caller_output_buffer_in_compile_pending_frame": False,
+            "scratch_payload_bytes": layout["compile_scratch_payload_bytes"],
+            "scratch_payload_accounting": "runtime arena workspace; already included in Hybrid memory measurements",
+            "minimum_known_compile_bytes": wasm_compile_frames
+            + layout["compile_scratch_payload_bytes"],
+            "excluded": "additional callee/ABI frames, caller frames and Python objects; not a whole-path upper bound",
         },
     }
     args.output.parent.mkdir(parents=True, exist_ok=True)

@@ -2,7 +2,6 @@
 <!-- evidence:
      formal: formal/jit_cache_model.py
      formal: formal/jit_hotspot_model.py
-     formal: formal/jit_trace_execution_model.py
      benchmark_spec: benchmarks/jit_runtime_bench_spec.md
      benchmark: ../../../experiments/pysim/benchmarks/jit/bench_jit.py
      benchmark_record: ../../../experiments/pysim/benchmarks/BENCHMARK_REPORT.md
@@ -13,7 +12,7 @@
 <!-- traceability: {SimpleJITArchitecture} {JIT_MultiBuffer_Cache} {JIT_OldestOnly_Promote} {META_AccessDictionary} {META_BinarySearch} {LowLatencyJIT} {LowOverhead} {HistoryBuffer} {RuntimeHotspotProfiler} {GLOBAL_PeriodicTask} {DirectMappedJIT16} {Runtime_BumpAllocator} -->
 JIT ランタイム管理は、Tier 2 Interpreterへ任意に接続するTier 3プラグインの実行拡張である。JIT拡張がホットスポット履歴、カード状態、コンパイル要求、ネイティブコード検索、3面キャッシュをまとめて所有する。Runtime Event Sinkとは別の内部経路で履歴を記録する。
 
-Runtime と Interpreter は Tier 2 の実行基盤である。Debugger が有効な実行ではRuntimeは通常のInterpreter経路を使う。それ以外はTier 2 Runtimeの実行境界からJIT拡張へ処理を委譲する。JIT拡張はTier 2の実行記述子供給契約を実装し、yieldやfallbackまでの実行、履歴分析、必要なコンパイル要求を一つのプラグイン内部で処理する。Tier 2 RuntimeやC++ InterpreterにJIT専用の状態オブジェクトや操作API群を追加しない。
+Runtime と Interpreter は Tier 2 の実行基盤である。Debugger が有効な実行ではRuntimeは通常のInterpreter経路を使う。それ以外はTier 2 Runtimeの実行境界からJIT拡張へ処理を委譲する。JIT拡張はTier 2の本体実行とブロック観測の接続契約を実装し、yieldやfallbackまでの実行、履歴分析、必要なコンパイル要求を一つのプラグイン内部で処理する。Tier 2 RuntimeやC++ InterpreterにJIT専用の状態オブジェクトや操作API群を追加しない。
 
 インタープリタ実行ループ内の検索は3段で構成する。第1段はカードマーキング表 (`bit_view<2>`) による $O(1)$ 事前判定、第2段はDirect-Mapped Folding XORキャッシュ（16スロット）による $O(1)$ 検索、第3段は各バンクのソート済みJITエントリ配列に対する二分探索である。エントリ数が少ないためRadix表は設けず、補助索引のメモリと更新処理を持たない。
 
@@ -31,7 +30,7 @@ JITサブシステムは、以下の2つの独立した設計書に責務を分�
 
 ### 2.2 実装責務と依存方向
 <!-- traceability: {META_ContractImplSplit} {META_StaticDI} {META_3TierSeparation} -->
-Tier 2 は実行器の接続契約と汎用のネイティブ実行記述子を定める。Tier 3 JIT はその契約を実装する。C++ Interpreter は接続先が返した実行記述子を使い、キャッシュ世代、候補評価、昇格を判断しない。別の接続先も同じ契約で置換できる。
+Tier 2は本体実行とブロック観測の接続契約を定める。Tier 3 JITはその契約を実装する。C++ Interpreterは共有実行状態を渡して接続先を呼び出す。トレース表、候補マスク、履歴を受け取らず、キャッシュ世代、候補評価、昇格を判断しない。別の接続先も同じ契約で置換できる。
 
 JIT は必要な領域サイズとアラインメントを提示し、外部の領域供給元から領域を借用する。領域内の状態、カード表、履歴、コンパイル待ち列、3面キャッシュ、実行可能コードと配置は C++ JitRuntime が管理する。Python の接続層は領域の供給契約、借用寿命、実行と破棄の呼出しだけを保持する。内部状態を読み取る API やテスト専用の明示操作は製品に設けない。検証用の状態参照と操作は QA 専用ライブラリへ置く。
 
@@ -50,7 +49,7 @@ Tier 3のC++クラス`fireball::JitRuntime`にキャッシュ管理の状態と�
 
 Tier 3/JITのPythonファイルは、LoaderとInterpreterの接続、ctypesの型変換、および借用保存領域の寿命保持を担当する。共通機械語の生成、トレース再配置、物理ヘッダpatchは[`common_code.cxx`](experiments/pysim/native/tier3_plugins/jit/common_code.cxx)に置く。実行可能領域の確保・解放とW^X切り替えは[`executable_memory.cxx`](experiments/pysim/native/tier3_plugins/jit/executable_memory.cxx)に置く。カード操作と固定容量の履歴・待ち列の内部操作は[`profiling.cxx`](experiments/pysim/native/tier3_plugins/jit/profiling.cxx)に置く。Python側に対応するアルゴリズムを重複して保持しない。
 
-ローテーションはC++内部でカードエイジングを1ステップ実行する。明示的なflushではエイジングを実行しない。エイジングの時間と回数、ローテーション数、常駐数・バイト数はC++内で集計する。測定側は集計値だけを取得する。Pythonへバンク、内部配列、fast cache枠、追い出しPC列を公開しない。
+ローテーションはC++内部でカードエイジングを1ステップ実行する。明示的なflushではエイジングを実行しない。エイジング時間、操作回数、常駐状態の診断採取はQA専用の計測型とハーネスが担当する。製品構成に計測状態や取得APIを設けない。
 
 バンクの使用バイト数と次の書込み位置を分けて保持する。削除とOldest昇格で空いた中間領域を次の書込み位置として扱わない。次の書込み位置はバンクを消去したときに先頭へ戻す。既存PCの置換は同じ位置へ収まる場合に領域を再利用し、それ以外は未使用の末尾へ配置する。末尾にも収まらない置換は常駐状態を保って失敗を返す。
 
@@ -73,13 +72,13 @@ JIT拡張はインタープリタに対するプラグインに近い選択可�
 - **カード更新表 (Card Update Bitmap)**: コード領域全体の各カードに対応する 1 ビットdirty表である。カードが `UNEXECUTED` から `EXECUTED` へ遷移した時だけ、そのカードのビットを立てる。密ビュー `fireball::bit_view<1>` として参照する。8カードを1バイトにまとめる。
 - **エイジングカーソル**: カード更新表のバイト位置を保持する整数である。モジュール登録時に 0 で初期化し、表の末尾に達したら先頭へ戻る。
 - **JITエントリ表**: モジュールごとの各バンクに `head_pc` 順で並ぶ固定容量配列である。異なるモジュールを一つの検索表へ入れる場合のキーは`(module_id, head_pc)`とする。検索は二分探索（$O(\log n)$）とし、削除済み枠は無効項目として扱う。新規キーは配列内のシフトで挿入し、削除はtombstone化する。同じキーの再挿入では無効項目を再利用する。配列容量と挿入量はバンク容量により制限される。エントリが少ないためRadix索引を設けない。
-- **ネイティブトレースディスパッチ表**: JIT拡張がキャッシュ世代に応じて作る固定容量の`NativeTraceDispatchEntry`配列である。JIT拡張はlookupと必要な昇格を内部で完了し、C++ Interpreter dispatcherへ借用ビューを返す。実行中にPythonへ戻らない。
+- **ネイティブ実行拡張の接続**: JIT拡張への本体実行、観測可否判定、観測済みブロック記録の入口と所有者を初期化時に固定する。C++ Interpreter dispatcherは共有実行状態とブロック開始PCを渡す。常駐検索と必要な昇格はJIT拡張内部で完了する。実行中にPythonへ戻らない。
   x64参照構成の記述枠は `JIT_CACHE_BANK_ENTRY_CAPACITY` により1バンク32件を上限とする。3面の上限は96件である。これはRAM予算の設定値であり、64バイトの既定コンストラクタ値や生成コードの平均サイズから導出しない。
   常駐トレースの記述枠は全バンクの容量上限に従う。同一PCの常駐トレースを重複生成しない。WarmまたはOldestに存在するPCを新規insertすると契約違反とする。Oldestの昇格はJIT拡張内部のlookup経路を使う。Tier 2は世代と昇格を扱わない。
   コード領域または記述枠が満杯になれば、既存の3面ローテーションを行う。生成コードの長さは可変である。短いtraceでも記述枠の上限を超えて挿入しない。
-  ホットスポット計測には既存のTrackable Maskを借用する。候補PC配列は確保しない。C++ dispatcherはIPからカードとbit位置を求めて履歴を記録する。
-  同一カードの構造命令位置もbitが立つ。dispatcherは制御命令だけの区間ではtrace表を検索しない。関数入口または制御処理の完了を、新しいブロック候補の開始トリガーとする。そこで確定したPCを保持し、通常命令のあるブロックだけを計測する。制御命令だけの区間を履歴へ記録しない。履歴転送時にLoader索引を検索しない。メモリ操作のruntime委譲後は同じブロックの継続として扱い、次の制御境界までtrace検索と重複した履歴記録を行わない。外部呼出し・prefix委譲の完了は次ブロックの開始トリガーとする。単なるRuntime復帰や通常命令の出現を、新しい先頭の判定に使わない。trap・関数完了では開始待ち状態を解除する。
-  通常命令の観測は候補ブロック入口の専用dispatchに限定する。最初のbody命令を観測した後は、観測処理を持たない通常dispatchへ直接末尾呼出しで移る。候補外と計測無効の経路には通常命令ごとの観測判定を追加しない。
+  ホットスポット候補の判定はJIT拡張が所有するTrackable Maskで行う。候補PC配列は確保しない。観測可否判定を通った開始PCは、記録入口からJIT拡張の固定容量リングへ直接書き込む。記録入口で候補性を再判定しない。
+  同一カードの構造命令位置もbitが立つ。dispatcherは制御命令だけの区間で本体検索とブロック観測を呼び出さない。関数入口または制御処理の完了を、新しいブロック候補の開始トリガーとする。そこで確定したPCを保持し、通常命令のあるブロックだけを通知する。履歴の複製・転送やLoader索引の再検索を行わない。メモリ操作のruntime委譲後は同じブロックの継続として扱う。次の制御境界まで本体検索と重複した観測を行わない。外部呼出し・prefix委譲の完了は次ブロックの開始トリガーとする。単なるRuntime復帰や通常命令の出現を、新しい先頭の判定に使わない。trap・関数完了では開始待ち状態を解除する。
+  通常命令の観測は候補ブロック入口の専用dispatchに限定する。最初のbody命令を観測した後は、観測処理を持たない通常dispatchへ直接末尾呼出しで移る。候補外と観測無効の経路には通常命令ごとの観測判定を追加しない。
   常駐トレースの記述枠と履歴はJIT拡張の領域内に確保する。キャッシュ更新時にも同じ記述枠を再利用する。
 - **x64参照コード領域 (8KB)**: x64参照構成では4KBページ2枚分の領域を使う。先頭2KBは開始処理、終了処理、x64ヘルパー呼出しコード、chain dispatcher、および絶対アドレスプールを置く非エビクション領域とし、残る2KBずつを`Bank 0 (Active)`, `Bank 1 (Warm)`, `Bank 2 (Oldest)`に割り当てる。x64トレースヘッダはコード近傍に置き、生成コードと共通コードが読むchain/helper targetだけを保持する。共通コード領域はflushやバンクローテーションでも維持する。ARMv8-Mの領域容量、物理配置、保護方式、ヘッダ形式はすべてTBDである。
   x64参照共通領域内の固定オフセットは次のとおりである。オフセットはコード領域先頭からの値であり、トレースヘッダのフィールド位置とは別の値である。
@@ -97,16 +96,10 @@ JIT拡張はインタープリタに対するプラグインに近い選択可�
   chain dispatcherはopcode別の分岐handlerを共通化しない。分岐条件・control frame更新・後方分岐回数はC++ Interpreterの命令別handlerが処理する。handler実行後にJIT拡張が別traceを選ぶ遷移と、共通コードchain dispatcherがtarget bodyへtail-jumpするchainは別の経路である。C++ `constexpr` assemblerで生成した固定命令列をx64参照構成の共通領域へ一度だけ配置する。ARMv8-Mの呼出し入口、配置方式、命令列はTBDである。
 - **オンデマンドコンパイルキュー (On-demand Compile Queue)**: Tier 3 JIT拡張内で`HOT`に達した命令オフセットを保持する固定容量LIFOキューである。Runtimeのidle hookは全タスクidle時と協調境界で拡張へ処理予算を渡す。通常の予算は成功コンパイル数ではなく、取り出して処理した候補数に適用する。コンパイル失敗と既存trace等によるスキップも1件に数える。固定キュー満杯時は通常予算の例外として、その場で全候補を処理してキューを空にする。処理件数の上限は固定キュー容量であり、実時間の上限は保証しない。先行ブロックより後続を先に常駐させ、直線後続chainを接続する。 `JIT_ReverseCompilationOrder` `{GLOBAL_Policy_Memory}`
 - **バンク別被チェイン逆引きテーブル (Inbound Chain Index Table)**: 各キャッシュバンクへ向けたchain元のJITエントリを保持する固定長配列である。cache回転・promote時に共通chain dispatcherが参照するtarget addressを更新または解除する。
-- **前方chainメタデータ**: 実行時cache metadataの`chain_next` / `next_pc`は直線後続traceの論理PCを保持する。x64物理ヘッダの`chain_target_addr`は共通chain dispatcherがtail-jumpするresident target bodyを保持する。後方branch linkは作らず、branch handlerへ制御を戻す。
+- **前方chainメタデータ**: 実行時cache metadataの`chain_next_pc`は直線後続traceの論理PCを保持する。x64物理ヘッダの`chain_target_addr`は共通chain dispatcherがtail-jumpするresident target bodyを保持する。後方branch linkは作らず、branch handlerへ制御を戻す。
 - **実行履歴バッファ**: ホットスポット検出が有効なJIT拡張が所有する固定容量リングである。各レコードは`module_id`と`UnifiedPC`を持つ。容量は`JIT_HISTORY_CAPACITY`以下で指定する。待ち列容量は`JIT_COMPILE_QUEUE_CAPACITY`以下で指定する。Interpreter実行区間の終了時だけ履歴順に分析し、JIT trace/chainだけの区間では記録も分析もしない。 `{HistoryBuffer}`
-- **トレース実行回数**: JIT拡張は各`JITTrace`に32ビット符号なしカウンタ`exec_count`を所有する。JIT拡張が実行した各trace bodyを1回と数える。直接chainの後続bodyも個別に数える。lookup、コンパイル、昇格、実行前の容量不足によるfallbackは数えない。通常のRuntime統計とホットスポット計測の有効・無効にかかわらず記録する。最大値`0xFFFF_FFFF`で飽和する。JIT内部の記述子がカウンタを参照し、実行中はキャッシュの更新・破棄を行わない。昇格とチェイン終端の再構成では値を保持する。再コンパイルした別traceは0から始める。`reset_stats`は常駐traceの測定区間を0から始め直す。
-  カウンタはtraceあたり4バイトである。JIT拡張は実行後に構成済みの後続参照を使って計数する。カウンタと後続参照をTier 2へ公開しない。低水準の`JITTrace.execute`等によるdispatcher外の直接呼出しはこの計測の対象外である。
-  キャッシュはrotate、flush、および既存traceの置換による破棄の直前に、任意の`on_trace_retire(head_pc, exec_count)`収集先を呼ぶ。収集先はJIT metadataへ再入しない。収集先未接続時は履歴を蓄積しない。記録からコンパイル抑制やキャッシュ方針を変更しない。
-  記録入口は[`record_trace_execution.py`](experiments/pysim/benchmarks/jit/record_trace_execution.py)である。反復するhot関数と2回だけ呼ぶcold関数を混在させ、実行中にevictされたtraceと終了時にresidentなtraceを分けてJSONへ出力する。終了時のflushで未使用evictionを作らない。各関数の戻り値を期待値と照合する。再現コマンドは次のとおりである。
 
-  ```bash
-  uv run python experiments/pysim/benchmarks/jit/record_trace_execution.py --output /tmp/trace_execution.json
-  ```
+トレース実行回数と退役記録はQA専用の計測構成で採取する。計測の正本は[`jit_runtime_bench_spec.md`](docs/components/tier3_plugins/benchmarks/jit_runtime_bench_spec.md)とする。製品構成は計数状態、時計、計測用の後続走査、退役通知を持たない。pysimでは`jit_runtime<Measurement>`のテンプレート引数で構成し、製品は`void`、QAは専用の計測型を選ぶ。計測型の実装は[`jit_measurements.hxx`](experiments/pysim/qa/private/jit_measurements.hxx)へ置く。
 
 ### 3.2 内部ブロック図
 ```mermaid
@@ -130,7 +123,7 @@ flowchart TD
 | カードマーキング表 | カードごとの 2-bit 状態表 | 密ビュー | `fireball::bit_view<2>` |
 | カード更新表 | 前回の巡回以降に `EXECUTED` へ遷移したカードの印 | 密ビュー | `fireball::bit_view<1>`、コード領域カード数ビット |
 | 被チェイン逆引きテーブル | バンクごとの被チェイン元 JIT エントリインデックス配列 | 固定長配列の配列 | `FB_CONF_JIT_MAX_INBOUND_CHAINS_PER_BANK` |
-| 履歴バッファ | Interpreterが記録した基本ブロック履歴 | 固定容量リング | `(module_id, unified_pc)` の8バイトレコード。Runtimeと同じ寿命 `{HistoryBuffer}` |
+| 履歴バッファ | JIT拡張が観測通知から直接記録した基本ブロック履歴 | 固定容量リング | `(module_id, unified_pc)` の8バイトレコード。Runtimeと同じ寿命 `{HistoryBuffer}` |
 
 ## 4. 動的モデル
 
@@ -188,7 +181,7 @@ ROM 上に配置される 128 バイトルックアップテーブル（256 オ�
 7. **3面世代交代ローテーションと局所アンリンク (`{GOTCHA-JITR-03}`, `{JIT_MultiBuffer_Cache}`, `{JIT_OldestOnly_Promote}`)**: <!-- definition: {GOTCHA-JITR-03} -->
    - Active バンク満杯時、`Oldest` バンクをパージして新 `Active` に再利用する。
    - パージ直前に、被チェイン逆引きテーブルに登録されたソースエントリ（$k$ 件）のみを参照する。
-   - 新たにリンクするchain targetはActiveまたはWarmに限定する。ターゲットがWarmからOldestへ移っても、既存の`chain_next`と`chain_target_addr`を維持する。Oldestだけに存在する後続へ新たにリンクしない。
+   - 新たにリンクするchain targetはActiveまたはWarmに限定する。ターゲットがWarmからOldestへ移っても、既存の`chain_next_pc`と`chain_target_addr`を維持する。Oldestだけに存在する後続へ新たにリンクしない。
    - 昇格済みなら再チェイニングし、完全破棄なら復帰スタブへアンパッチする。全件走査は行わない。
    - `rotate()` および `flush_all()` 実行時には Folding XOR 高速キャッシュを無効化する。古いバンクへの誤参照を防止する（`{GOTCHA-JITR-05}`）。 <!-- definition: {GOTCHA-JITR-05} -->
    - ローテーションのたびに、エイジングスイープを 1 ステップ実行する（手順10）。`flush_all()` では実行しない。
@@ -279,7 +272,7 @@ sequenceDiagram
     Active->>Mgr: Allocation exceeds bank capacity
     Mgr->>Inbound: Read registered sources of old Oldest
     loop Registered source still targets purge bank
-        Mgr->>Source: Clear chain_next and patch target to zero
+        Mgr->>Source: Clear chain_next_pc and patch target to zero
     end
     Mgr->>Bank: Retire traces and clear old Oldest
     Mgr->>Mgr: Shift roles and invalidate fast slots
@@ -325,13 +318,13 @@ JIT trace終端の制御命令はC++ Interpreterの対応ハンドラで実行�
 
 trace chainは直線後続traceが常駐する場合に限り、trace末尾から共通コード領域のchain dispatcherへ移り、dispatcherがTraceヘッダのtarget bodyへtail-jumpする経路を指す。未接続のtargetは0で表し、共通epilogueから実行境界へ戻る。opcode別handlerの呼出しや、C++ handler後にJIT拡張が別traceを選ぶ遷移はchainではない。chain dispatcherは命令を判定せず、分岐helperも持たない。
 
-常駐トレースの選択、昇格、チェインの接続、実行回数の更新はTier 3 JIT拡張が所有する。Interpreterは共有実行状態と本体の実行結果だけを受け取り、トレース記述子やチェインを参照しない。JIT拡張は本体実行後のPC、スタック位置、制御終端の付帯情報を共有実行状態へ反映する。Interpreterはその状態からWASM制御命令を実行する。
+常駐トレースの選択、昇格、チェインの接続はTier 3 JIT拡張が所有する。Interpreterは共有実行状態と本体の実行結果だけを受け取り、トレース記述子やチェインを参照しない。JIT拡張は本体実行後のPC、スタック位置、制御終端の付帯情報を共有実行状態へ反映する。Interpreterはその状態からWASM制御命令を実行する。
 
 Interpreterは制御処理で確定した次ブロックのPCを保持する。通常命令を実行したブロックの観測を実行拡張へ通知する。候補性の判定、固定長履歴への記録、カード更新、コンパイル要求はJIT拡張内部で行う。Runtime Event Sinkはこの履歴を受け取らない。JIT無効構成は履歴、候補状態、コンパイラ、実行可能領域を持たない。デバッガ付き実行ではRuntimeがJIT拡張を迂回し、通常のInterpreter dispatcherを使う。
 
 コンパイル待ち作業がないyield境界ではJIT拡張はコンパイル処理を起動しない。候補履歴が0件の実行区間では履歴を分析しない。これらの省略はyield理由、ゲスト状態、トレース選択を変更しない。
 
-チェインの終端、必要スタック量、本体数、実行回数更新用の後続参照は、JIT拡張がキャッシュの挿入・昇格・バンク回転時に構成する。実行時にInterpreterへトレース表を供給しない。JIT拡張は選択した入口を直接呼び出し、成功後にチェイン内の各本体の実行回数を更新する。
+チェインの終端、必要スタック量、本体数は、JIT拡張がキャッシュの挿入・昇格・バンク回転時に構成する。実行時にInterpreterへトレース表を供給しない。JIT拡張は選択した入口を直接呼び出し、終端の共有実行状態を返す。実行後の計測用チェイン再走査はQA計測構成だけに含める。
 
 実行入口と所有者の接続は初期化時に固定する。実行境界ごとに入口を構成し直さない。Interpreter経路とJIT経路は共通の境界結果処理を使う。
 
@@ -388,7 +381,7 @@ flowchart TD
 ### 7.1 検証対象の不変条件
 <!-- traceability: {GOTCHA-JITR-09} -->
 - **3面キャッシュ代謝の有界性**: 循環ローテーションによる Oldest パージと新 Active 再利用を検証する。
-- **制御命令だけの区間の検索抑止**: 制御命令だけの区間ではtrace表検索と履歴記録を行わない。通常命令を実行したブロックは保持した開始PCを記録する。履歴転送がLoader索引を検索しないことを単体テストで検証する。検索と履歴記録の保護条件を形式モデルで検証する。
+- **制御命令だけの区間の検索抑止**: 制御命令だけの区間ではtrace表検索と履歴記録を行わない。通常命令を実行したブロックは保持した開始PCを記録する。記録通知がLoader索引を再検索せず、JIT拡張の単一リングへ直接書き込むことを単体テストで検証する。検索と履歴記録の保護条件を形式モデルで検証する。
 - **記述枠の容量境界**: コード領域に空きがあっても、記述枠が満杯なら新しいPCを挿入せずローテーションする。有限個の枠の使用数を形式モデルで検証する。短いtraceの容量境界は単体テストで検証する。
 - **局所アンリンク安全性**: 被チェインソース$k$件だけを逆引き表から処理する。バンク再利用は全$n$項目の消去とバンク検索を伴い、$O(n + k\log n)$である。固定容量により有界だが$O(k)$のみとは主張しない。
 - **カード状態の遷移規則**: 昇格は `UNEXECUTED`、`EXECUTED`、`HOT`、`COMPILED` の順だけで進む。`UNEXECUTED` へ戻す経路は、パージ時のリセットとエイジングスイープの2つに限る。
@@ -399,7 +392,7 @@ flowchart TD
 ### 7.2 テスト仕様書との連携
 本コンポーネントのテストケースは[`jit_runtime_test_spec.md`](docs/qa/tier3_plugins/jit_runtime_test_spec.md)を正本とする。キャッシュモデルは`formal/jit_cache_model.py`、履歴境界モデルは`formal/jit_hotspot_model.py`を参照する。
 
-実行回数の抽象モデルは[`jit_trace_execution_model.py`](docs/components/tier3_plugins/formal/jit_trace_execution_model.py)を正本とする。実行対象外操作、chainの計数漏れ、飽和、および破棄時記録を検査する。`guards=False`では各違反を反証する。物理的なカウンタ寿命、uint32境界、および実際のC++ chain実行はTEST-JITR-76〜79で検査する。
+QA専用の実行回数・退役記録の計測契約、抽象モデル、およびTEST-JITR-76〜79の対応は[`jit_runtime_bench_spec.md`](docs/components/tier3_plugins/benchmarks/jit_runtime_bench_spec.md)を正本とする。これらの検査を製品構成の計測機構の要求として扱わない。
 
 ## 8. 設計判断と参考実装
 
@@ -417,6 +410,6 @@ flowchart TD
 
 - **ステータス**: 3面ローテーションとOldest hit昇格は採用。スラッシング防止方策は未決である。
 - **現行の暫定方策**: evictionでカードを`UNEXECUTED`へ戻す。再度hot判定を得たPCをコンパイル候補とする。この動作だけでスラッシングを防げるとは判定しない。
-- **判断材料**: traceごとの実行回数、破棄時の実行回数、未使用のままevictされたtraceを記録する。計数契約は本書のトレース実行回数に従う。
+- **判断材料**: QA専用の計測構成でtraceごとの実行回数、破棄時の実行回数、未使用のままevictされたtraceを記録する。採取契約は[`jit_runtime_bench_spec.md`](docs/components/tier3_plugins/benchmarks/jit_runtime_bench_spec.md)に従う。
 - **未決事項**: 未使用evictionだけを対象にするか、実行回数が少なくコンパイル費用を回収できないtraceも対象にするかを決める。再コンパイルの抑止条件、適用範囲、および再許可する回復条件を測定結果から決める。
 - **責務境界**: 記録の追加はコンパイル抑止やキャッシュ方策の採用を意味しない。Guest Profilerの変更は要求しない。

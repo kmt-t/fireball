@@ -31,10 +31,10 @@ from bench_jit import JITCompilerBenchmark
 from bump_allocator import BumpAllocator
 from config import FB_CONF_RUNTIME_BUMP_ARENA_BYTES, JIT_CACHE_REGION_BYTES
 from ipc_router import FB_URI_HAL_STDOUT
+from qa.shared.runtime_stats import RuntimeStatsEngine
 from system import System
 from system_containers import StaticVector
 from tier2_runtime.interpreter.interpreter import InterpreterBindings, NativeInterpreter
-from tier2_runtime.runtime.engine import RuntimeEngine
 from tier3_platform.drivers.hal.dummy import DummyDriver
 from tier3_platform.drivers.wasi.context import WasiHostContext
 from tier3_plugins.jit.jit_manager import JITRuntimeManager
@@ -131,7 +131,7 @@ def _measure(workload: Workload, hybrid: bool, calls: int) -> Measurement:
     arena = MeasuredArena()
     plugin_region = MeasuredPluginRegion()
     jit = JITRuntimeManager(plugin_region.reserve) if hybrid else None
-    engine = RuntimeEngine(bump_allocator=arena, jit_runtime=jit, collect_runtime_stats=True)
+    engine = RuntimeStatsEngine(bump_allocator=arena, jit_runtime=jit, collect_runtime_stats=True)
     module = engine.load_wasm(workload.wasm)
     loaded = arena.offset
     arena.phase = "instantiate"

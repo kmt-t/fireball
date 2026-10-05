@@ -52,7 +52,12 @@ SCENARIO2_WAT = """
 """
 
 
-from tier2_runtime.wasm.leb128 import encode_signed, encode_unsigned
+from qa.shared.helpers import (
+    _encode_leb128_s32 as encode_signed,
+)
+from qa.shared.helpers import (
+    _encode_leb128_u32 as encode_unsigned,
+)
 
 
 def _create_scenario2_binary() -> bytes:

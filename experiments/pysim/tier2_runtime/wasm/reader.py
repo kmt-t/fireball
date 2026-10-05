@@ -36,7 +36,7 @@ from tier2_runtime.wasm.module import (
     WASM_RAW_WORD_BYTES,
     Export,
     Function,
-    FuncType,
+    FuncTypeRecord,
     Global,
     Import,
     Module,
@@ -208,7 +208,7 @@ def _validate_section_counts(counts: _SectionCounts) -> None:
     assert counts.memories + counts.imported_memories <= 1, "only single linear memory is supported"
 
 
-def _parse_functype(data: memoryview, off: int, end: int) -> tuple[FuncType, int]:
+def _parse_functype(data: memoryview, off: int, end: int) -> tuple[FuncTypeRecord, int]:
     assert off < end, "truncated function type"
     record_offset = off
     tag = data[off]
@@ -217,28 +217,17 @@ def _parse_functype(data: memoryview, off: int, end: int) -> tuple[FuncType, int
         assert False, f"expected functype tag 0x60, got 0x{tag:02X}"
     nparams, off = decode_unsigned(data, off, end)
     assert nparams <= FB_CONF_MAX_LOCALS, "function parameter count exceeds configured maximum"
-    params_offset = off
     for _ in range(nparams):
         _read_value_type(data, off, end)
         off += 1
-    params = data[params_offset:off]
 
     nresults, off = decode_unsigned(data, off, end)
     assert nresults <= 1, "MVP functions have at most one result"
-    results_offset = off
     for _ in range(nresults):
         _read_value_type(data, off, end)
         off += 1
-    results = data[results_offset:off]
     assert off <= len(data)
-    return FuncType(
-        params=params,
-        results=results,
-        offset=record_offset,
-        size=off - record_offset,
-        params_source_offset=params_offset,
-        results_source_offset=results_offset,
-    ), off
+    return FuncTypeRecord(offset=record_offset, size=off - record_offset), off
 
 
 def _parse_type_section(
@@ -508,7 +497,6 @@ def _parse_code_section(
             Function(
                 type_index=type_indices[i],
                 locals_extra=locals_extra,
-                code=None,
                 code_offset=loff,
                 code_size=body_end - loff,
                 code_pc_offset=loff - payload_start,

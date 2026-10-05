@@ -7,6 +7,8 @@ import sys
 from collections.abc import Callable
 from pathlib import Path
 
+from tier1_core.native_buffer import BufferLease as BufferLease
+
 
 class NativeDispatchCall(ctypes.Structure):
     _fields_ = (
@@ -60,75 +62,8 @@ class NativeResult(ctypes.Structure):
         ("ip", ctypes.c_uint32),
         ("stack_size", ctypes.c_uint32),
         ("trap_code", ctypes.c_uint32),
-        ("trace_count", ctypes.c_uint32),
-        ("body_count", ctypes.c_uint32),
-        ("dispatcher_trace_transitions", ctypes.c_uint32),
-        ("control_handler_count", ctypes.c_uint32),
-        ("eligible_block_visits", ctypes.c_uint32),
-        ("interpreted_block_count", ctypes.c_uint32),
         ("error_code", ctypes.c_uint32),
     )
-
-
-class PythonBuffer(ctypes.Structure):
-    _fields_ = (
-        ("buf", ctypes.c_void_p),
-        ("obj", ctypes.c_void_p),
-        ("length", ctypes.c_ssize_t),
-        ("itemsize", ctypes.c_ssize_t),
-        ("readonly", ctypes.c_int),
-        ("ndim", ctypes.c_int),
-        ("format", ctypes.c_void_p),
-        ("shape", ctypes.POINTER(ctypes.c_ssize_t)),
-        ("strides", ctypes.POINTER(ctypes.c_ssize_t)),
-        ("suboffsets", ctypes.POINTER(ctypes.c_ssize_t)),
-        ("internal", ctypes.c_void_p),
-    )
-
-
-_PYTHON_C_API = ctypes.PyDLL(None)
-_PYOBJECT_GET_BUFFER = _PYTHON_C_API.PyObject_GetBuffer
-_PYOBJECT_GET_BUFFER.argtypes = (
-    ctypes.py_object,
-    ctypes.POINTER(PythonBuffer),
-    ctypes.c_int,
-)
-_PYOBJECT_GET_BUFFER.restype = ctypes.c_int
-_PYBUFFER_RELEASE = _PYTHON_C_API.PyBuffer_Release
-_PYBUFFER_RELEASE.argtypes = (ctypes.POINTER(PythonBuffer),)
-_PYBUFFER_RELEASE.restype = None
-
-
-class BufferLease:
-    """Hold one CPython buffer export while C++ reads or writes its bytes."""
-
-    __slots__ = ("_active", "_owner", "_view")
-
-    def __init__(self, owner: memoryview) -> None:
-        # Py_buffer.obj is opaque to GC. Keep storage reachable until all
-        # finalizers have run, including native borrowers' teardown.
-        self._owner = owner
-        self._view = PythonBuffer()
-        assert _PYOBJECT_GET_BUFFER(owner, ctypes.byref(self._view), 0) == 0
-        self._active = True
-
-    @property
-    def address(self) -> int:
-        assert self._active
-        return 0 if self._view.buf is None else int(self._view.buf)
-
-    @property
-    def size(self) -> int:
-        assert self._active
-        return self._view.length
-
-    def release(self) -> None:
-        if self._active:
-            _PYBUFFER_RELEASE(ctypes.byref(self._view))
-            self._active = False
-
-    def __del__(self) -> None:
-        self.release()
 
 
 _NATIVE_LIBRARY_NAME = (
@@ -151,16 +86,9 @@ RUN_DEBUG_DISPATCH.restype = ctypes.c_int
 RUN_DISPATCH = _LIBRARY.fb_native_run_dispatch
 RUN_DISPATCH.argtypes = (ctypes.c_void_p, ctypes.POINTER(NativeResult))
 RUN_DISPATCH.restype = ctypes.c_int
-RUN_DISPATCH_STATS = _LIBRARY.fb_native_run_dispatch_stats
-RUN_DISPATCH_STATS.argtypes = (ctypes.c_void_p, ctypes.POINTER(NativeResult))
-RUN_DISPATCH_STATS.restype = ctypes.c_int
 RUN_DISPATCH_EXTENSION = _LIBRARY.fb_native_run_dispatch_extension
 RUN_DISPATCH_EXTENSION.argtypes = (ctypes.c_void_p, ctypes.POINTER(NativeResult))
 RUN_DISPATCH_EXTENSION.restype = ctypes.c_int
-RUN_DISPATCH_STATS_EXTENSION = _LIBRARY.fb_native_run_dispatch_stats_extension
-RUN_DISPATCH_STATS_EXTENSION.argtypes = (ctypes.c_void_p, ctypes.POINTER(NativeResult))
-RUN_DISPATCH_STATS_EXTENSION.restype = ctypes.c_int
-RUNTIME_PROFILE_STATS_AVAILABLE = True
 
 
 def run_step(
@@ -207,7 +135,7 @@ def run_step(
     return result.status, result.ip, result.stack_size, result.trap_code
 
 
-NativeDispatchResult = tuple[int, int, int, int, int, int, int, int, int]
+NativeDispatchResult = tuple[int, int, int, int]
 NativeDispatchEntryPoint = Callable[..., int]
 
 
@@ -268,9 +196,4 @@ def run_native_dispatch(
         result.ip,
         result.stack_size,
         result.trap_code,
-        result.trace_count,
-        result.body_count,
-        result.dispatcher_trace_transitions,
-        result.control_handler_count,
-        result.interpreted_block_count,
     )

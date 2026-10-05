@@ -25,7 +25,7 @@ from ipc_router import (
     IPCStatus,
     OwnershipState,
     Role,
-    bytes_to_kv_storage,
+    bytes_to_kv_entries,
     kv_entries_to_bytes,
 )
 from qa.shared.fixtures.platform_drivers import create_reference_platform_drivers
@@ -40,7 +40,8 @@ from system import (
     WasiErrno,
 )
 from tier2_runtime.vsoc.virq import FB_CONF_VIRQ_MAX_NODES, INVALID_FUNCTION_INDEX, VirqNode
-from tier2_runtime.wasm.module import I32, Function, FuncType, Module
+from tier2_runtime.wasm.module import Module
+from tier2_runtime.wasm.reader import parse
 
 
 def test_syscall_01_unknown_id_returns_nosys():
@@ -559,16 +560,15 @@ def test_syscall_21_vdma_rejects_non_owner_shm_without_mutation(warm_tlb: bool) 
 
 
 def _make_syscall_virq_module() -> Module:
-    valid = FuncType(params=(I32, I32, I32, I32, I32), results=(I32,))
-    invalid = FuncType(params=(I32,), results=(I32,))
-    return Module(
-        types=(valid, invalid),
-        imports=(),
-        functions=(
-            Function(type_index=0, locals_extra=(), code=b""),
-            Function(type_index=0, locals_extra=(), code=b""),
-            Function(type_index=1, locals_extra=(), code=b""),
-        ),
+    return parse(
+        memoryview(
+            wat_to_wasm(
+                "(module "
+                "(func (param i32 i32 i32 i32 i32) (result i32) i32.const 0) "
+                "(func (param i32 i32 i32 i32 i32) (result i32) i32.const 0) "
+                "(func (param i32) (result i32) i32.const 0))"
+            )
+        )
     )
 
 
@@ -798,7 +798,7 @@ def test_syscall_06_ipc_lookup_send_recv():
             status, ch = sysv.ipc.lookup(core_uri)
             assert status == IPCStatus.COMPLETED and ch is not None
             msg = IPCMessage.from_entries(
-                bytes_to_kv_storage(reply), memory_manager=sysv.memory_manager
+                bytes_to_kv_entries(reply), memory_manager=sysv.memory_manager
             )
             received_messages.append(msg)
             status, _ = yield from sysv.ipc.send(ch, msg)
@@ -849,7 +849,7 @@ def test_syscall_50_overlapping_recv_outputs_reject_without_consuming_sender(
             status, channel = sysv.ipc.lookup("fireball://core/coos/0")
             assert status == IPCStatus.COMPLETED and channel is not None
             message = IPCMessage.from_entries(
-                bytes_to_kv_storage(payload), memory_manager=sysv.memory_manager
+                bytes_to_kv_entries(payload), memory_manager=sysv.memory_manager
             )
             messages.append(message)
             status, _ = yield from sysv.ipc.send(channel, message)

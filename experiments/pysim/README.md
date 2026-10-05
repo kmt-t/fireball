@@ -25,7 +25,7 @@
   - デコードした値のうち呼び出し側が使わないフィールドは、そもそもアンパックせずバイト位置だけ進めて捨てる（未使用の `const_value`/`memarg` 等をデコードしない）。
 - **パース/ロード時に確定する値の実行時再計算禁止**:
   - 関数やブロックの静的メタデータ（制御構造マップ、ローカル変数レイアウト、JIT コンパイル対象として妥当なブロックか等）は、ロード時に一度だけ計算してキャッシュし、ディスパッチのたびに再導出しない。`Function.control_map`、`Function.local_width_map_cache`（ローカルごとの幅を2ビットで保持）、`RuntimeEngine.trackable`（`BlockCardMask`: `next_pc is not None and byte_span >= min_trace_bytes` をロード時に1回だけ判定し1bit/ブロックでマスクする）が実例。WASM セクションの件数、要素数、ローカル数、JIT バンクの容量もロード時または入力メタデータから固定容量を決める。
-  - 呼び出し元がすでに解決済みのオブジェクト（例: `BasicBlock`）を持っている場合、それを再度 PC からルックアップし直さない（該当関数に `block: T | None = None` のような省略可能引数を足し、渡された側を優先する）。
+  - 呼び出し元がすでに解決済みのオブジェクト（例: `BasicBlock`）を持っている場合、それを再度 PC からルックアップし直さない。必要なメタデータは具象型の必須引数として渡す。テストや互換経路のために欠損扱いの分岐を製品コードへ追加しない。
 
 **この制約は `experiments/pysim/` のみに適用され、`docs/components/**/concepts/*.py` の参考実装コードには適用されません。** concept コードは仕様の意図を伝えるための説明的なスニペットであり、可読性を優先して `dict` などの通常の Python イディオムを使ってよいものとします。
 
@@ -173,8 +173,13 @@ export UV_OFFLINE=true
 export UV_NO_SYNC=true
 
 # Linux/WSL: Tier 2 Interpreter と Tier 3 JIT のC++共有ライブラリをビルド
+bash experiments/pysim/native/tier1_core/printk/build_native.sh
 bash experiments/pysim/native/tier2_runtime/interpreter/build_native.sh
 bash experiments/pysim/native/tier3_plugins/jit/build_native.sh
+
+# 診断ベンチマークとQAは検査専用ライブラリも使う
+bash experiments/pysim/native/tier2_runtime/interpreter/build_native.sh --qa
+bash experiments/pysim/native/tier3_plugins/jit/build_native.sh --qa
 
 # 全ベンチマーク一括実行（wasmtime は JIT カードエイジング測定に使用）
 uv run --offline --no-sync python experiments/pysim/benchmarks/run_all.py
@@ -188,7 +193,7 @@ uv run --offline --no-sync python -u experiments/pysim/benchmarks/jit/profile_ar
 
 `uv run`はリポジトリの`.python-version`と`.venv`を使う。`--path` は `python-handler`、`native-interpreter`、`hybrid-jit` から選ぶ。通常の速度比較には `bench_jit.py` の中央値を使い、プロファイラ収集中の実行時間は比較に使わない。Linuxの`perf stat cycles:u`で動的WASM命令あたりのホストサイクル数を測る方法、Intel VTuneとAMD uProfの収集コマンドは[JITベンチマーク仕様書](../../docs/components/tier3_plugins/benchmarks/jit_runtime_bench_spec.md)を参照する。
 
-Windows では `native/tier2_runtime/interpreter/build_native.ps1` と `native/tier3_plugins/jit/build_native.ps1` を実行してから、同じ `uv run` コマンドでベンチマークを実行します。
+WindowsのVisual Studio developer shellでは`native/tier1_core/printk/build_native.ps1`を先に実行する。続いて `native/tier2_runtime/interpreter/build_native.ps1` と `native/tier3_plugins/jit/build_native.ps1` を実行してから、同じ `uv run` コマンドでベンチマークを実行します。
 
 算術ループはPythonハンドラ、C++インタープリタ、JITの3経路を測定します。JITの速度比はPythonハンドラを基準に算出し、C++インタープリタの結果は別基準として表示します。
 
@@ -232,7 +237,7 @@ uv run --offline --no-sync python experiments/pysim/benchmarks/aobench/aobench.p
 ### JIT C++実装とABI
 `native/tier3_plugins/jit/trace_compiler.cxx` はx64 Copy-and-Patchトレースをコンパイルし、固定バイト列のステンシルは`stencils_x64.hxx`に置く。Python側にある過去のx64ステンシル／アセンブラ試作は実行経路で使われないため削除した。Python側は`ctypes`で固定レイアウトのレコードとC ABI関数を扱い、C++コードはCPython APIに依存しない。実行時はC++ dispatcherがJITトレースのCPS 4引数ABI関数ポインタを呼ぶ。Linux共有ライブラリには`-g`を付け、AMD uProfとIntel VTuneでC++ソース位置を解決できるようにする。
 
-JIT chainはtrace末尾から共通コード領域のchain dispatcherへ入り、そこから次trace bodyへtail-jumpする経路を指す。C++ handler後にC++ dispatcherが常駐traceを起動する遷移はchainではない。`native_dispatch_trace_transitions`はC++ handlerからJIT traceへのdispatcher遷移数であり、chain指標ではない。現状、共通コードchain dispatcherの実行回数を数える専用指標はない。診断カウンタはRuntime構成で有効・無効を選び、通常の速度計測では無効にする。診断実行用Runtimeは別構成として同じプロセス内に作成でき、C++共有ライブラリの再ビルドは不要である。ホットスポット観測もJIT Runtimeの構成で選ぶ。コンパイル済みtraceの定常状態を測る場合は、warm-up後に候補観測を無効化する。dispatch snapshotはcache世代が変わったときだけ再生成する。
+JIT chainはtrace末尾から共通コード領域のchain dispatcherへ入り、そこから次trace bodyへtail-jumpする経路を指す。C++ handler後にC++ dispatcherが常駐traceを起動する遷移はchainではない。QAの`native_dispatch_trace_transitions`はC++ handlerからJIT traceへのdispatcher遷移数である。診断カウンタ、内部状態ダンプ、dispatch snapshotはQAハーネスが所有する。診断実行はQA専用ライブラリを使う。製品Runtimeは診断API・状態を持たない。ホットスポット検出は製品JIT拡張の責務であり、実行履歴は一つの固定リングへ直接記録する。
 ```bash
 # Windows: clang-cl + Visual Studio Build Tools + Windows SDK が必要
 powershell experiments/pysim/native/tier3_plugins/jit/build_native.ps1
@@ -242,7 +247,7 @@ bash experiments/pysim/native/tier3_plugins/jit/build_native.sh
 ```
 
 ### Tier 2インタープリタのABI
-`native/tier2_runtime/interpreter/native_interpreter.cxx`はC++の固定256スロットハンドラ表とstep／dispatch入口を持つ。Python層は`abi/native_abi.py`で実行コンテキスト、スタック、dispatch metadataを固定レイアウトの引数レコードに組み立て、C ABIを`ctypes`で呼ぶ。C++側はCPython APIを使わず、Python所有bufferをポインタと長さで受け取る。診断カウンタとHotspot計測はC++側の構成別エントリをRuntime生成時に選ぶ。
+`native/tier2_runtime/interpreter/native_interpreter.cxx`はC++の固定256スロットハンドラ表とstep／dispatch入口を持つ。Python層は`abi/native_abi.py`で実行コンテキスト、スタック、dispatch metadataを固定レイアウトの引数レコードに組み立て、C ABIを`ctypes`で呼ぶ。C++側はCPython APIを使わず、Python所有bufferをポインタと長さで受け取る。製品のdispatch入口は通常実行と実行拡張付き実行を扱う。診断付きdispatch入口はQA専用ライブラリへ置く。
 
 C++実装済みの命令はC++ handlerが処理する。未対応命令や外部呼出しは現在のPCで実行境界へ戻り、trapと完了もstatusとして返す。Tier 2 Interpreter と Tier 3 JIT のC++実行には、それぞれの共有ライブラリを必須とする。
 ```bash

@@ -84,6 +84,28 @@ def test_load_07_arena_exhaustion_rolls_back_partial_metadata_allocations() -> N
         assert allocator.offset == watermark
 
 
+def test_load_10_signature_and_code_accessors_borrow_original_binary() -> None:
+    """TEST-LOAD-10: immutable variable-length metadata stays in the input ROM."""
+    binary = _build_test_wasm_binary()
+    module = parse(memoryview(binary))
+    assert module.source is not None and module.source.obj is binary
+    record = module.types[0]
+    assert module.source[record.offset : record.offset + record.size] == b"\x60\x02\x7f\x7f\x01\x7f"
+    signature = module.type_at(0)
+    assert signature.params.obj is binary and signature.results.obj is binary
+    assert signature.params == b"\x7f\x7f" and signature.results == b"\x7f"
+    assert (
+        signature.params
+        == module.source[signature.params_source_offset : signature.params_source_offset + 2]
+    )
+    assert (
+        signature.results
+        == module.source[signature.results_source_offset : signature.results_source_offset + 1]
+    )
+    code = module.code_for(0)
+    assert code.obj is binary and code == b"\x20\x00\x20\x01\x6a\x0b"
+
+
 def test_load_16_resolves_imported_global_offsets_for_active_segments() -> None:
     module = parse(
         memoryview(
@@ -97,8 +119,20 @@ def test_load_16_resolves_imported_global_offsets_for_active_segments() -> None:
     memory = bytearray(65536)
     module.init_memory_data(memory, (2,))
     assert memory == bytearray(2) + b"D" + bytearray(65533)
-    assert len(module.data_segments) == 0
-    assert len(module.elements) == 0
+    assert module.source is not None
+    assert (
+        module.source[
+            module.data_section_offset : module.data_section_offset + module.data_section_size
+        ]
+        == b"\x01\x00\x23\x00\x0b\x01D"
+    )
+    assert (
+        module.source[
+            module.element_section_offset : module.element_section_offset
+            + module.element_section_size
+        ]
+        == b"\x01\x00\x23\x00\x0b\x01\x00"
+    )
     assert tuple(module.table_contents(0, (2,))) == (None, None, 0, None)
 
 

@@ -22,6 +22,7 @@ from _bootstrap import configure_import_paths, reserve_native_region
 configure_import_paths(_PYSIM_DIR, _BENCH_DIR)
 
 from ipc_router import FB_URI_HAL_STDOUT
+from qa.shared.runtime_stats import RuntimeStatsEngine
 from system import System
 from tier2_runtime.interpreter.interpreter import (
     Interpreter,
@@ -44,7 +45,7 @@ def run_aobench(debug: bool = False) -> dict[str, int | float]:
     with open(wasm_path, "rb") as f:
         wasm_bytes = f.read()
 
-    module = parse(wasm_bytes)
+    module = parse(memoryview(wasm_bytes))
 
     main_fn = module.export_func_index("main")
 
@@ -96,7 +97,6 @@ def run_aobench(debug: bool = False) -> dict[str, int | float]:
     module.init_memory_data(wasi_ctx_t3.guest_memory, ())
     runtime_engine = RuntimeEngine(
         jit_runtime=JITRuntimeManager(reserve_native_region),
-        debug=debug,
     )
     runtime_engine.register_module_blocks(module)
     interp_t3 = NativeInterpreter(
@@ -124,7 +124,7 @@ def run_aobench(debug: bool = False) -> dict[str, int | float]:
 
     # Collect diagnostic path counters after the timed run so profiling code
     # does not contribute to the reported execution time.
-    diagnostic_engine = RuntimeEngine(
+    diagnostic_engine = RuntimeStatsEngine(
         jit_runtime=JITRuntimeManager(reserve_native_region),
         debug=debug,
         collect_runtime_stats=True,

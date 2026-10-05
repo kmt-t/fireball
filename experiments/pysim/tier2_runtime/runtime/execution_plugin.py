@@ -30,7 +30,5 @@ class NativeExecutionPlugin(Protocol):
 
     def idle_hook(self, budget: int = 4) -> int: ...
 
-    def reset_stats(self) -> None: ...
-
 
 __all__ = ("NativeExecutionPlugin",)

@@ -192,10 +192,20 @@ def dispatch_for_test(
         snapshot.block_history.native_bytes,
     )
     entry = partial(wrapper, ctypes.cast(native_dispatcher, ctypes.c_void_p), ctypes.byref(buffers))
-    result = interpreter.run_native_dispatch(call_state, threshold, entry)
+    from qa.private.interpreter_native_abi import NativeDiagnosticResult
+
+    result = call_state.context._native_result
+    if not isinstance(result, NativeDiagnosticResult):
+        result = NativeDiagnosticResult()
+        call_state.context._native_result = result
+    status = interpreter.run_native_dispatch(call_state, threshold, entry)
     return (
-        *result[:5],
-        call_state.context._native_result.eligible_block_visits,
-        result[5],
+        status,
+        result.trace_count,
+        result.body_count,
+        result.dispatcher_trace_transitions,
+        result.control_handler_count,
+        result.eligible_block_visits,
+        result.interpreted_block_count,
         snapshot.block_history,
     )

@@ -27,12 +27,15 @@ from ipc_router import (
 )
 from qa.shared.helpers import (
     expect_assertion,
+    get_call_cont,
     make_native_interpreter,
     make_test_ipc_message,
     wat_to_wasm,
 )
 from qa.shared.helpers import make_interpreter as Interpreter
+from qa.shared.ipc import lookup_channel_as
 from qa.shared.jit_cache import CardState, JitRuntimeBoundary, JITTrace
+from qa.shared.memory import snapshot_ipc_storage
 from scheduler import ChannelAction, Scheduler, Task, WaitDir
 from system import System, WasiErrno
 from system_containers import BitView, MutableFlatMapStorage, ReadOnlyFlatMapView
@@ -94,7 +97,7 @@ def test_intp_gotcha_01_native_stack_sync():
     interp = Interpreter(module)
 
     call_state = interp.start(0, [])
-    ip, frame, locals_arr, _ = call_state.cont
+    ip, frame, locals_arr, _ = get_call_cont(call_state)
 
     # Execute instruction 0 (i32.const 10) directly via the raw handler.
     call_state.context.bind_handler_state(ip, frame)
@@ -170,9 +173,9 @@ def test_intp_gotcha_03_if_false_no_else_no_frame_leak():
 
     call_state = interp.start(0, [])
     call_state = interp.step(call_state)
-    depth_before = len(call_state.cont[1].frames)
+    depth_before = len(get_call_cont(call_state)[1].frames)
     call_state = interp.step(call_state)
-    depth_after = len(call_state.cont[1].frames)
+    depth_after = len(get_call_cont(call_state)[1].frames)
     assert depth_after == depth_before  # No frame leaked!
 
     while not call_state.finished:
@@ -417,9 +420,9 @@ def test_ipcr_gotcha_02_preflight_rejection_preserves_sender_ownership():
     assert msg.ownership == OwnershipState.SENDER_OWNS
 
     # Even if an attacker obtains an unauthorized channel directly, send() rejects it based on TCB role
-    runtime_ch = router.channel_for_edge(Role.RUNTIME, Role.HAL_UART)
+    runtime_ch = lookup_channel_as(router, Role.RUNTIME, "fireball://hal/uart/0")
     assert runtime_ch is not None
-    before = bytes(msg.block.data)
+    before = snapshot_ipc_storage(msg.block)
     before_task = sched.current_task
     assert before_task is not None
     before_state = before_task.state
@@ -427,7 +430,7 @@ def test_ipcr_gotcha_02_preflight_rejection_preserves_sender_ownership():
         next(router.send(runtime_ch, msg))
     assert stopped.value.value == (IPCStatus.ERR_PERMISSION_DENIED, None)
     assert msg.ownership == OwnershipState.SENDER_OWNS
-    assert bytes(msg.block.data) == before
+    assert snapshot_ipc_storage(msg.block) == before
     assert runtime_ch.waiter_task is None
     assert runtime_ch.waiter_dir == WaitDir.NONE
     assert runtime_ch.reply_waiter_task is None

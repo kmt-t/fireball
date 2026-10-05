@@ -44,6 +44,3 @@ RUNTIME_YIELD.restype = ctypes.c_int
 RUNTIME_COMPILE = _library.fb_jit_runtime_compile
 RUNTIME_COMPILE.argtypes = (ctypes.c_void_p, ctypes.c_uint32)
 RUNTIME_COMPILE.restype = ctypes.c_int
-RUNTIME_RESET_COUNTS = _library.fb_jit_runtime_reset_counts
-RUNTIME_RESET_COUNTS.argtypes = (ctypes.c_void_p,)
-RUNTIME_RESET_COUNTS.restype = None

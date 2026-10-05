@@ -21,6 +21,7 @@ _REPO_ROOT = _PYSIM_DIR.parent.parent
 import pytest
 from qa.shared.helpers import (
     expect_assertion,
+    get_call_cont,
     make_native_interpreter,
     wat_to_wasm,
 )
@@ -34,11 +35,8 @@ from tier2_runtime.wasm.module import (
     F64,
     I32,
     I64,
-    Function,
     FunctionTable,
-    FuncType,
     Memory,
-    Module,
 )
 from tier2_runtime.wasm.reader import parse
 
@@ -91,15 +89,14 @@ def test_control_frame_enum_and_opcode_attribute_table():
 
 def test_intp_73_wide_frame_uses_eight_byte_slots():
     """TEST-INTP-73: a frame containing wide locals has aligned 8-byte slots."""
-    function = Function(
-        type_index=0,
-        locals_extra=(I32, I64),
-        code=bytes((0x20, 1, 0x0B)),
+    module = parse(
+        memoryview(
+            wat_to_wasm(
+                "(module (func (param i32 i64 f64) (result i64) (local i32 i64) local.get 1))"
+            )
+        )
     )
-    module = Module(
-        types=(FuncType(params=(I32, I64, F64), results=(I64,)),),
-        functions=(function,),
-    )
+    function = module.functions[0]
 
     assert function.param_packed_slot_count_cache == 5
     widths = function.local_width_map_cache
@@ -133,8 +130,8 @@ def test_intp_01_handler_returns_specific_trap_outcome():
 
     module = parse(wat_to_wasm("(module (func unreachable))"))
     call_state = Interpreter(module).start(0, [])
-    assert call_state.cont is not None
-    ip, frame, local_base, tos = call_state.cont
+    assert get_call_cont(call_state) is not None
+    ip, frame, local_base, tos = get_call_cont(call_state)
     call_state.context.bind_handler_state(ip, frame)
 
     handler = _HANDLERS[UNREACHABLE]
@@ -158,8 +155,8 @@ def test_intp_17_return_publishes_explicit_sentinel_before_frame_pop():
     interp = Interpreter(module)
     call_state = interp.step(interp.start(0, []))
     assert not call_state.finished
-    assert call_state.cont is not None
-    sentinel_ip, _, _, _ = call_state.cont
+    assert get_call_cont(call_state) is not None
+    sentinel_ip, _, _, _ = get_call_cont(call_state)
     assert sentinel_ip == RETURN_SENTINEL_IP
     assert call_state.current_pc() == RETURN_SENTINEL_PC
     completed = interp.step(call_state)
@@ -193,7 +190,6 @@ def test_native_interpreter_returns_to_python_at_loop_yield_counts(monkeypatch):
         InterpreterBindings,
         InterpreterCall,
         NativeDispatchEntryPoint,
-        NativeDispatchMetrics,
         NativeInterpreter,
     )
 
@@ -226,14 +222,14 @@ def test_native_interpreter_returns_to_python_at_loop_yield_counts(monkeypatch):
         call_state: InterpreterCall,
         yield_threshold: int,
         native_dispatcher: NativeDispatchEntryPoint,
-    ) -> NativeDispatchMetrics:
+    ) -> int:
         result = native_dispatch(
             self,
             call_state,
             yield_threshold,
             native_dispatcher,
         )
-        returned_statuses.append(result[0])
+        returned_statuses.append(result)
         return result
 
     monkeypatch.setattr(NativeInterpreter, "run_native_dispatch", record_native_dispatch)
@@ -267,17 +263,17 @@ def test_intp_16_nested_return_consumes_sentinel_and_restores_caller():
     state = interp.start(1, [])
     state = interp.step(state)
     assert not state.finished
-    assert state.cont is not None
-    assert state.cont[0] == 0
+    assert get_call_cont(state) is not None
+    assert get_call_cont(state)[0] == 0
     state = interp.step(state)
     assert not state.finished
-    assert state.cont is not None
-    assert state.cont[0] == RETURN_SENTINEL_IP
+    assert get_call_cont(state) is not None
+    assert get_call_cont(state)[0] == RETURN_SENTINEL_IP
     state = interp.step(state)
     assert not state.finished
-    assert state.cont is not None
+    assert get_call_cont(state) is not None
     assert state.func_index == 1
-    assert state.cont[0] != RETURN_SENTINEL_IP
+    assert get_call_cont(state)[0] != RETURN_SENTINEL_IP
     completed = interp.call(1, [])
     assert completed == [8]
     assert interp.call(3, []) == [71]
@@ -969,32 +965,36 @@ def test_intp_73_slot_width_follows_the_widest_local_in_each_frame():
     mixed = LocalWidthMap((I32, I64), (F32, F64))
     assert tuple(mixed.words(i) for i in range(4)) == (1, 2, 1, 2)
 
-    def only(func_type: FuncType, extra: tuple[int, ...]) -> Function:
-        return Function(type_index=0, locals_extra=extra, code=bytes((0x0B,)))
-
     cases = (
-        (FuncType(params=(I32, I32), results=()), (I32,), 1, 3),
-        (FuncType(params=(F32,), results=()), (), 1, 1),
-        (FuncType(params=(I32,), results=()), (F64,), 2, 4),
-        (FuncType(params=(I64, I32), results=()), (), 2, 4),
-        (FuncType(params=(), results=()), (), 1, 0),
+        ("(param i32 i32) (local i32)", 1, 3),
+        ("(param f32)", 1, 1),
+        ("(param i32) (local f64)", 2, 4),
+        ("(param i64 i32)", 2, 4),
+        ("", 1, 0),
     )
-    for func_type, extra, expected_words, expected_slots in cases:
-        function = only(func_type, extra)
-        Module(types=(func_type,), functions=(function,))
+    for declarations, expected_words, expected_slots in cases:
+        module = parse(memoryview(wat_to_wasm(f"(module (func {declarations}))")))
+        function = module.functions[0]
         assert function.local_width_map_cache is not None
         assert function.local_width_map_cache.slot_words == expected_words
         assert function.local_slot_count_cache == expected_slots
         widths = function.local_width_map_cache
         assert all(widths.words(i) <= expected_words for i in range(len(widths)))
 
-    narrow = Function(type_index=0, locals_extra=(I32,), code=bytes((0x20, 0, 0x20, 1, 0x6A, 0x0B)))
-    narrow_module = Module(
-        types=(FuncType(params=(I32, I32), results=(I32,)),), functions=(narrow,)
+    narrow_module = parse(
+        memoryview(
+            wat_to_wasm(
+                "(module (func (param i32 i32) (result i32) (local i32) "
+                "local.get 0 local.get 1 i32.add))"
+            )
+        )
     )
     assert Interpreter(narrow_module).call(0, [30, 12]) == [42]
-    wide = Function(type_index=0, locals_extra=(I64,), code=bytes((0x20, 1, 0x0B)))
-    wide_module = Module(types=(FuncType(params=(I32, I64), results=(I64,)),), functions=(wide,))
+    wide_module = parse(
+        memoryview(
+            wat_to_wasm("(module (func (param i32 i64) (result i64) (local i64) local.get 1))")
+        )
+    )
     assert Interpreter(wide_module).call(0, [1, 5_000_000_000]) == [5_000_000_000]
 
 

@@ -1,5 +1,29 @@
-// QA owns inspection and explicit cache manipulation; none of these symbols enters the product library.
-#include "../../native/tier3_plugins/jit/jit_runtime.cxx"
+// QA owns inspection and explicit cache manipulation.
+#include "jit_measurements.hxx"
+#include "../../native/tier3_plugins/jit/jit_runtime.hxx"
+
+namespace fireball {
+using configured_jit_plugin = native_jit_plugin<jit_measurements>;
+}
+#include "../../native/tier3_plugins/jit/jit_runtime_exports.hxx"
+
+using JitRuntime = Api::Runtime;
+using fireball::jit_cache_trace;
+static_assert(sizeof(fireball::native_jit_plugin<void>::Runtime) < sizeof(JitRuntime));
+static_assert(sizeof(jit_cache_trace) < sizeof(fireball::jit_measurements::trace_type));
+extern "C" int fb_jit_runtime_bind_cards(fireball::JitRuntime* c, std::uint8_t* states,
+    std::uint32_t state_bytes, std::uint8_t* dirty,
+    std::uint32_t dirty_bytes, std::uint32_t cards,
+    std::uint32_t shift, std::uint32_t* cursor,
+    std::uint32_t units, std::uint32_t scan_bytes) {
+  return Api::fb_jit_runtime_bind_cards(reinterpret_cast<Api::Runtime*>(c), states, state_bytes,
+      dirty, dirty_bytes, cards, shift, cursor, units, scan_bytes);
+}
+
+extern "C" int fb_jit_runtime_bind_profile(fireball::JitRuntime* c, fireball::jit_profile p) {
+  return Api::fb_jit_runtime_bind_profile(reinterpret_cast<Api::Runtime*>(c), p);
+}
+
 // Snapshot records are QA fixtures, not an interpreter/plugin contract.
 struct fb_native_trace_descriptor {
   std::uint32_t head_pc;
@@ -27,7 +51,8 @@ static int build_dispatch_table(JitRuntime* c, fb_native_trace_descriptor* outpu
     }
     if (selected.trace == nullptr) break;
     if (!c->check(output != nullptr && count < capacity && selected.trace->entry_address != 0 &&
-                  selected.trace->byte_span > 0 && selected.trace->exec_count != nullptr))
+                  selected.trace->byte_span > 0 &&
+                  fireball::jit_measurements::counter(selected.trace) != nullptr))
       return -1;
     const auto& t = *selected.trace;
     c->prepare_chains();
@@ -37,7 +62,7 @@ static int build_dispatch_table(JitRuntime* c, fb_native_trace_descriptor* outpu
         t.head_pc,           t.entry_address, t.byte_span,   t.result_words,
         t.has_return_value,  t.stack_words,   t.frame_depth, t.dispatch_next_pc,
         t.dispatch_loops_to, t.chain_next_pc, words,
-        t.exec_count};
+        fireball::jit_measurements::counter(&t)};
     ++index[selected_bank];
   }
   return static_cast<int>(count);
@@ -65,7 +90,8 @@ enum class cache_field : std::uint32_t {
   compile_ns = 24,
 };
 }
-extern "C" FB_PYSIM_ABI_EXPORT std::uint64_t fb_jit_runtime_scalar(const JitRuntime* c, std::uint32_t field) {
+extern "C" FB_PYSIM_ABI_EXPORT std::uint64_t fb_jit_runtime_scalar(
+    const JitRuntime* c, std::uint32_t field) {
   switch (static_cast<fireball::cache_field>(field)) {
     case fireball::cache_field::promotions:
       return c->promotions;
@@ -123,7 +149,8 @@ extern "C" FB_PYSIM_ABI_EXPORT std::uint64_t fb_jit_runtime_find(JitRuntime* c, 
   auto* value = c->find(pc);
   return value == nullptr ? 0 : value->token;
 }
-extern "C" FB_PYSIM_ABI_EXPORT int fb_jit_runtime_has_token(const JitRuntime* c, std::uint64_t token) {
+extern "C" FB_PYSIM_ABI_EXPORT int fb_jit_runtime_has_token(
+    const JitRuntime* c, std::uint64_t token) {
   for (const auto& bank : c->banks) {
     for (std::uint32_t i = 0; i < bank.count; ++i) {
       if (bank.entries[i].trace != nullptr && bank.entries[i].token == token) return 1;
@@ -131,11 +158,13 @@ extern "C" FB_PYSIM_ABI_EXPORT int fb_jit_runtime_has_token(const JitRuntime* c,
   }
   return 0;
 }
-extern "C" FB_PYSIM_ABI_EXPORT int fb_jit_runtime_insert(JitRuntime* c, jit_cache_trace* trace, std::uint64_t token) {
+extern "C" FB_PYSIM_ABI_EXPORT int fb_jit_runtime_insert(
+    JitRuntime* c, jit_cache_trace* trace, std::uint64_t token) {
   c->error = 0;
   return c->insert(trace, token);
 }
-extern "C" FB_PYSIM_ABI_EXPORT std::uint64_t fb_jit_runtime_lookup(JitRuntime* c, std::uint32_t pc) {
+extern "C" FB_PYSIM_ABI_EXPORT std::uint64_t fb_jit_runtime_lookup(
+    JitRuntime* c, std::uint32_t pc) {
   c->error = 0;
   return c->lookup(pc);
 }
@@ -143,33 +172,55 @@ extern "C" FB_PYSIM_ABI_EXPORT int fb_jit_runtime_rotate(JitRuntime* c) {
   c->error = 0;
   return c->rotate();
 }
-extern "C" FB_PYSIM_ABI_EXPORT void fb_jit_runtime_auto_age(JitRuntime* c, int enabled) { c->auto_age = enabled != 0; }
+extern "C" FB_PYSIM_ABI_EXPORT void fb_jit_runtime_auto_age(JitRuntime* c, int enabled) {
+  c->auto_age = enabled != 0;
+}
 extern "C" FB_PYSIM_ABI_EXPORT int fb_jit_runtime_suppress(JitRuntime* c, std::uint32_t pc) {
   c->error = 0;
   return c->suppress(pc);
 }
 extern "C" FB_PYSIM_ABI_EXPORT int fb_jit_runtime_record(JitRuntime* c, std::uint32_t pc) {
   c->error = 0;
-  return c->record(pc);
+  if (c->profile.enabled == 0) return 1;
+  if (!c->trackable(pc)) return c->error == 0;
+  return c->record_observed(pc);
 }
-extern "C" FB_PYSIM_ABI_EXPORT std::uint64_t fb_jit_runtime_filtered_lookup(JitRuntime* c, std::uint32_t pc) {
+extern "C" FB_PYSIM_ABI_EXPORT std::uint64_t fb_jit_runtime_filtered_lookup(
+    JitRuntime* c, std::uint32_t pc) {
   c->error = 0;
   if (c->profile.enabled != 0 && (!c->trackable(pc) || c->card_state(pc >> c->card_shift) != 3))
     return 0;
   return c->lookup(pc);
 }
-extern "C" FB_PYSIM_ABI_EXPORT fireball::jit_cache_trace* fb_jit_runtime_trace(JitRuntime* c, std::uint64_t token) {
+extern "C" FB_PYSIM_ABI_EXPORT fireball::jit_cache_trace* fb_jit_runtime_trace(
+    JitRuntime* c, std::uint64_t token) {
   return c->descriptor(token);
 }
-extern "C" FB_PYSIM_ABI_EXPORT int fb_qa_runtime_snapshot(fireball::JitRuntime* c,
+extern "C" FB_PYSIM_ABI_EXPORT int fb_qa_runtime_snapshot(JitRuntime* c,
     fb_native_trace_descriptor* output, std::uint32_t capacity) {
   return build_dispatch_table(c, output, capacity);
 }
-extern "C" FB_PYSIM_ABI_EXPORT int fb_qa_runtime_visits(fireball::JitRuntime* c,
+extern "C" FB_PYSIM_ABI_EXPORT int fb_qa_runtime_visits(JitRuntime* c,
     const std::uint32_t* pcs, std::uint32_t capacity, std::uint64_t total) {
-  return record_dispatch_visits(c, pcs, capacity, total);
+  c->error = 0;
+  if (c->profile.enabled == 0) return c->check(total == 0);
+  const auto retained = total < capacity ? total : capacity;
+  if (!c->check((total == 0 || (capacity != 0 && pcs != nullptr)) &&
+                retained == (total < c->history.capacity ? total : c->history.capacity) &&
+                total <= UINT64_MAX - c->execution_count))
+    return 0;
+  // QA snapshots validate every supplied PC before publishing any of them.
+  for (std::uint64_t i = total - retained; i < total; ++i)
+    if (!c->check(c->trackable(pcs[i % capacity]))) return 0;
+  for (std::uint64_t i = total - retained; i < total; ++i)
+    if (!c->record_observed(pcs[i % capacity])) return 0;
+  const auto omitted = total - retained;
+  if (!c->check(omitted <= UINT64_MAX - c->history_dropped)) return 0;
+  c->history_dropped += omitted;
+  c->execution_count += total - retained;
+  return 1;
 }
-extern "C" FB_PYSIM_ABI_EXPORT int fb_qa_runtime_analyze(fireball::JitRuntime* c, int yielded) {
+extern "C" FB_PYSIM_ABI_EXPORT int fb_qa_runtime_analyze(JitRuntime* c, int yielded) {
   c->error = 0;
   return c->analyze(yielded != 0);
 }
@@ -232,7 +283,8 @@ static void qa_record(std::uintptr_t owner, std::uint32_t pc) {
 }
 extern "C" FB_PYSIM_ABI_EXPORT int fb_qa_dispatch(
     int (*dispatch)(const fb_native_dispatch_call*, fb_native_result*),
-    const qa_dispatch_buffers* buffers, const fb_native_dispatch_call* input, fb_native_result* result) {
+    const qa_dispatch_buffers* buffers, const fb_native_dispatch_call* input,
+    fb_native_result* result) {
   if (buffers->shift >= 32 || buffers->mask_bytes < (buffers->cards + 7u) / 8u ||
       buffers->history_bytes < sizeof(std::uint32_t) || buffers->history == nullptr ||
       buffers->history_bytes % sizeof(std::uint32_t) != 0 ||
@@ -247,16 +299,28 @@ extern "C" FB_PYSIM_ABI_EXPORT int fb_qa_dispatch(
 extern "C" FB_PYSIM_ABI_EXPORT void fb_qa_runtime_bind_dispatch(JitRuntime* runtime,
     int (*dispatch)(const fb_native_dispatch_call*, fb_native_result*)) {
   runtime->dispatch = dispatch;
-  runtime->extension = {reinterpret_cast<std::uintptr_t>(runtime), fireball::execute_runtime_body,
-                       fireball::observe_runtime_body, fireball::record_runtime_body};
+  runtime->extension = {reinterpret_cast<std::uintptr_t>(runtime), Api::execute_runtime_body,
+                       Api::observe_runtime_body, Api::record_runtime_body};
+}
+
+extern "C" FB_PYSIM_ABI_EXPORT void fb_jit_runtime_reset_counts(JitRuntime* c) {
+  c->reset_trace_counts(*c);
+}
+
+extern "C" FB_PYSIM_ABI_EXPORT int fb_qa_runtime_print_measurements(
+    const JitRuntime* runtime, const fireball::printk_writer* writer) {
+  return runtime->write_measurements(*writer);
 }
 
 extern "C" FB_PYSIM_ABI_EXPORT std::size_t fb_jit_runtime_size() { return sizeof(JitRuntime); }
 
-extern "C" FB_PYSIM_ABI_EXPORT std::size_t fb_jit_runtime_alignment() { return alignof(JitRuntime); }
+extern "C" FB_PYSIM_ABI_EXPORT std::size_t fb_jit_runtime_alignment() {
+  return alignof(JitRuntime);
+}
 
-extern "C" FB_PYSIM_ABI_EXPORT JitRuntime* fb_jit_runtime_init(std::uint8_t* storage, std::size_t bytes,
-                                           std::uint32_t bank_bytes, std::uint32_t entry_capacity,
+extern "C" FB_PYSIM_ABI_EXPORT JitRuntime* fb_jit_runtime_init(
+    std::uint8_t* storage, std::size_t bytes,
+      std::uint32_t bank_bytes, std::uint32_t entry_capacity,
                                            const std::uint32_t* offsets) {
   if (storage == nullptr || bytes < sizeof(JitRuntime) || offsets == nullptr ||
       reinterpret_cast<std::uintptr_t>(storage) % alignof(JitRuntime) != 0 ||
@@ -279,7 +343,8 @@ extern "C" FB_PYSIM_ABI_EXPORT JitRuntime* fb_jit_runtime_init(std::uint8_t* sto
   return cache;
 }
 
-extern "C" FB_PYSIM_ABI_EXPORT int fb_jit_region_size(const std::uint32_t* lengths, const std::uint32_t* bases,
+extern "C" FB_PYSIM_ABI_EXPORT int fb_jit_region_size(
+    const std::uint32_t* lengths, const std::uint32_t* bases,
                                   std::uint32_t count, std::uint64_t* bytes) {
   if (bytes == nullptr || (count != 0 && lengths == nullptr)) return 0;
   std::uint64_t previous = 0, end = 0, cursor = 0;
@@ -295,7 +360,8 @@ extern "C" FB_PYSIM_ABI_EXPORT int fb_jit_region_size(const std::uint32_t* lengt
   return 1;
 }
 
-extern "C" FB_PYSIM_ABI_EXPORT int fb_jit_bits(std::uint8_t* data, std::uint32_t count, std::uint32_t bits,
+extern "C" FB_PYSIM_ABI_EXPORT int fb_jit_bits(
+    std::uint8_t* data, std::uint32_t count, std::uint32_t bits,
                            std::uint32_t index, std::uint32_t op, std::uint32_t value) {
   if ((bits != 1 && bits != 2) || (count != 0 && data == nullptr)) return -1;
   const auto bytes = (static_cast<std::uint64_t>(count) * bits + 7) / 8;
@@ -328,11 +394,13 @@ extern "C" FB_PYSIM_ABI_EXPORT int fb_jit_bits(std::uint8_t* data, std::uint32_t
   return result;
 }
 
-extern "C" FB_PYSIM_ABI_EXPORT std::int64_t fb_qa_block_score(const fireball::jit_wasm_block* block) {
+extern "C" FB_PYSIM_ABI_EXPORT std::int64_t fb_qa_block_score(
+    const fireball::jit_wasm_block* block) {
   return fireball::score_block(*block);
 }
 
-extern "C" FB_PYSIM_ABI_EXPORT std::uint64_t fb_qa_owned_pc(const JitRuntime* c, std::uint32_t slot) {
+extern "C" FB_PYSIM_ABI_EXPORT std::uint64_t fb_qa_owned_pc(
+    const JitRuntime* c, std::uint32_t slot) {
   if (slot >= c->owned.size() || !c->owned[slot].used) return UINT64_MAX;
   return c->owned[slot].trace.head_pc;
 }
@@ -349,7 +417,8 @@ extern "C" FB_PYSIM_ABI_EXPORT int fb_qa_resident_record(const JitRuntime* c, st
       if (entry.trace == nullptr) continue;
       if (index-- == 0) {
         *output = {entry.token, entry.pc,
-                   entry.trace->exec_count == nullptr ? 0 : *entry.trace->exec_count};
+                   fireball::jit_measurements::counter(entry.trace) == nullptr
+                       ? 0 : *fireball::jit_measurements::counter(entry.trace)};
         return 1;
       }
     }

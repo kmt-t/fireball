@@ -76,7 +76,7 @@ flowchart TD
 | 8 | 読出 | - | 読出可能 | 正常アクセス（本コンポーネントの関与なし） |
 | 9 | 自動解放 | - | **解放** | 仮想予約を解放し、要求サイズ分の物理バック領域をプールへ返却してアンマップ通知を発火 |
 
-- **非所有タスク操作の完全遮断 (`GOTCHA-MEM-02`)**: {GOTCHA-MEM-02} <!-- definition: {GOTCHA-MEM-02} --> `SharedBlock` APIはハンドルの所有者・現行タスク・ページ所有者・所有権世代を照合し、非所有者または移譲後の古いハンドルを拒絶する。raw accessorは、取得後に所有権検査を迂回して共有バック領域を変更できるwritable viewを返さない。pysimのraw accessorは読み取り専用コピーを返し、取得済みviewからの変更を遮断する。ゲストのFC=14アクセスではマップ済みページの所有者不一致を`OWNER_MISMATCH`、未登録・Revoke済みページを`UNREGISTERED_PAGE`で拒絶する。具体的なvMMIO契約は `runtime_vmmio.md` を正本とする。
+- **非所有タスク操作の完全遮断 (`GOTCHA-MEM-02`)**: {GOTCHA-MEM-02} <!-- definition: {GOTCHA-MEM-02} --> `SharedBlock` APIはハンドルの所有者・現行タスク・ページ所有者・所有権世代を照合し、非所有者または移譲後の古いハンドルを拒絶する。共有バック領域を直接返すAPIや、全ブロックの複製を暗黙に作るAPIは設けない。読み書きは操作ごとに所有権を検査する。ゲストのFC=14アクセスではマップ済みページの所有者不一致を`OWNER_MISMATCH`、未登録・Revoke済みページを`UNREGISTERED_PAGE`で拒絶する。具体的なvMMIO契約は `runtime_vmmio.md` を正本とする。
 - **送信中ブロックの保護状態 {GOTCHA-MEM-03}**: 送信開始（`release()`）から受信完了（`claim()`）まで、送信元タスクの旧アドレスアクセスを遮断する。アクセス結果は未登録ページフォルト（`TRAP_UNREGISTERED_PAGE`）とする。
 
 この境界により、TOCTOU競合と不正アクセスを構造的に排除する。遮断の具体的な実装（PTEアンマップ・TLB即時フラッシュ）は [`runtime_vmmio.md`](docs/components/tier2_runtime/runtime_vmmio.md) を正本とする。 <!-- definition: {GOTCHA-MEM-03} -->

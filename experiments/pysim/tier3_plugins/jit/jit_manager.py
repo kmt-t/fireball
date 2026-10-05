@@ -95,10 +95,6 @@ class JITRuntimeManager:
         result = native_abi.RUNTIME_FLUSH(self._pointer)
         assert result == 1
 
-    def reset_stats(self) -> None:
-        if self._pointer is not None:
-            native_abi.RUNTIME_RESET_COUNTS(self._pointer)
-
     def close(self) -> None:
         if self._pointer is not None:
             native_abi.RUNTIME_CLOSE(self._pointer)

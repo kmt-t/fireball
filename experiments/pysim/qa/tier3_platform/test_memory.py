@@ -305,12 +305,6 @@ def test_mem_10_shared_block_ownership_transfer():
     sb_a.write_entry(11, key=0x12345678, val=0x9ABCDEF0)
     assert sb_a.read_entry(11) == (0x12345678, 0x9ABCDEF0)
 
-    # Underlying bytearray direct accessor
-    raw_ba = sb_a.get_bytearray()
-    assert isinstance(raw_ba, memoryview)
-    assert raw_ba.readonly
-    assert raw_ba[0] == 0xAB
-
     page_idx = sb_a.page_idx
     shm_id = sb_a.release()
     assert not sb_a._is_active
@@ -376,15 +370,13 @@ def test_mem_10d_resource_revoke_invalidates_old_handle():
     mm.init_manager(pool_base=0x00010000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
     sender_block = mm.allocate_shared(size=32).unwrap()
     sender_block.write_bytes(0, b"resource payload")
-    snapshot = sender_block.get_bytearray()
     shm_id = sender_block.shm_id
 
     assert mm.revoke_shared(shm_id)
     with expect_assertion("revoked or transferred"):
         sender_block.read_u8(0)
     with expect_assertion("revoked or transferred"):
-        sender_block.get_bytearray()
-    assert snapshot.tobytes() == b"resource payload" + b"\x00" * 16
+        sender_block.read_bytes(0, 32)
 
     scheduler.current_task = scheduler.get_task(2)
     assert scheduler.current_task is not None
@@ -396,6 +388,16 @@ def test_mem_10d_resource_revoke_invalidates_old_handle():
         sender_block.write_u8(0, 0)
     scheduler.current_task = scheduler.get_task(2)
     assert receiver_block.read_bytes(0, 16) == b"resource payload"
+
+    # Returning ownership to the same task must not revive its old handle.
+    assert receiver_block.release() == shm_id
+    scheduler.current_task = scheduler.get_task(1)
+    assert mm.grant_shared(shm_id)
+    returned_block = mm.claim(shm_id).unwrap()
+    assert returned_block.read_bytes(0, 16) == b"resource payload"
+    with expect_assertion("stale after ownership changed"):
+        sender_block.write_u8(0, 0)
+    assert returned_block.read_bytes(0, 16) == b"resource payload"
 
 
 def test_mem_10c_rollback_transfer_restores_owner_id():

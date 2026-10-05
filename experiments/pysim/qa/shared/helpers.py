@@ -13,8 +13,10 @@ from system_containers import StaticVector
 from tier2_runtime.interpreter.interpreter import (
     Interpreter,
     InterpreterBindings,
+    InterpreterCall,
     NativeInterpreter,
     WasmHostFunction,
+    _Cont,
 )
 from tier2_runtime.memory.manager import MemoryManager
 from tier2_runtime.observability.logger import Logger
@@ -30,6 +32,15 @@ _WASM_SEC_EXPORT = 7
 _WASM_SEC_CODE = 10
 _WASM_VAL_I32 = 0x7F
 _WASM_EXTERNAL_FUNCTION = 0
+
+
+def get_call_cont(call: InterpreterCall) -> _Cont:
+    """Reconstruct a continuation only when QA inspects scalar call state."""
+    frame = call._frame
+    if frame is None:
+        return None
+    assert call._locals is not None
+    return call._ip, frame, call._locals, call._tos
 
 
 def _encode_leb128_u32(value: int) -> bytes:
@@ -142,6 +153,26 @@ def wat_to_wasm(wat_text: str) -> bytes:
     import wasmtime
 
     return bytes(wasmtime.wat2wasm(wat_text))
+
+
+def parse_single_function_module(code: bytes, results: tuple[int, ...] = ()) -> Module:
+    """Load a single-function binary fixture through the product ROM parser."""
+    from tier2_runtime.wasm.reader import parse
+
+    type_payload = b"\x01\x60\x00" + _encode_leb128_u32(len(results)) + bytes(results)
+    body = b"\x00" + code
+    code_payload = b"\x01" + _encode_leb128_u32(len(body)) + body
+    binary = (
+        b"\x00asm\x01\x00\x00\x00"
+        + bytes((_WASM_SEC_TYPE,))
+        + _encode_leb128_u32(len(type_payload))
+        + type_payload
+        + b"\x03\x02\x01\x00"
+        + bytes((_WASM_SEC_CODE,))
+        + _encode_leb128_u32(len(code_payload))
+        + code_payload
+    )
+    return parse(memoryview(binary))
 
 
 def make_interpreter_bindings(

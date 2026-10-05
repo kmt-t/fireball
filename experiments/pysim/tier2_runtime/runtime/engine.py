@@ -11,19 +11,13 @@ Execution model:
 
 from __future__ import annotations
 
-import os
-import sys
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from enum import IntEnum
 from functools import partial
-from typing import TextIO
 
 from bump_allocator import BumpAllocator
-from config import (
-    FB_CONF_RUNTIME_YIELD_THRESHOLD,
-    RUNTIME_DEBUG_REPORT_LINE_CAPACITY,
-)
+from config import FB_CONF_RUNTIME_YIELD_THRESHOLD
 from system_containers import StaticVector
 from tier2_runtime.interpreter.interpreter import (
     NATIVE_DISPATCH_CALL_BOUNDARY,
@@ -61,10 +55,6 @@ class RuntimeBoundaryResult:
 
     call_state: InterpreterCall
     yield_requested: bool = False
-    interpreted_block_count: int = 0
-    trace_execution_count: int = 0
-    control_handler_count: int = 0
-    trace_transition_count: int = 0
 
 
 __all__ = ("RuntimeBoundaryResult", "RuntimeDriveMode", "RuntimeEngine")
@@ -75,38 +65,24 @@ class RuntimeEngine:
 
     __slots__ = (
         "_bump_allocator",
-        "_collect_runtime_stats",
         "_execution_initializer",
         "_native_dispatcher",
         "_virq",
         "_virq_interp",
-        "debug",
         "drive_mode",
         "jit_runtime",
         "module",
-        "stat_interp_steps",
-        "stat_jit_invocations",
-        "stat_native_control_handlers",
-        "stat_native_dispatch_trace_transitions",
-        "stat_trace_exits_to_interp",
         "yield_threshold",
     )
 
     def __init__(
         self,
         jit_runtime: NativeExecutionPlugin | None = None,
-        debug: bool = False,
         drive_mode: RuntimeDriveMode = RuntimeDriveMode.SYNCHRONOUS,
         yield_threshold: int = FB_CONF_RUNTIME_YIELD_THRESHOLD,
-        collect_runtime_stats: bool = False,
         bump_allocator: BumpAllocator | None = None,
     ):
-        debug_env = os.environ.get("FIREBALL_DEBUG", "").lower()
-        self.debug = debug or debug_env == "1" or debug_env == "true" or debug_env == "yes"
-        self._collect_runtime_stats = collect_runtime_stats
-        backend_dispatcher = select_native_dispatch_entry(
-            collect_runtime_stats, jit_runtime is not None
-        )
+        backend_dispatcher = select_native_dispatch_entry(jit_runtime is not None)
         self._native_dispatcher = (
             backend_dispatcher if jit_runtime is None else jit_runtime.native_entry
         )
@@ -116,11 +92,6 @@ class RuntimeEngine:
         # RuntimeEngine is the runtime owner; loaders borrow this arena.
         self._bump_allocator = bump_allocator if bump_allocator is not None else BumpAllocator()
         self.jit_runtime = jit_runtime
-        self.stat_interp_steps: int = 0
-        self.stat_jit_invocations: int = 0
-        self.stat_native_control_handlers: int = 0
-        self.stat_native_dispatch_trace_transitions: int = 0
-        self.stat_trace_exits_to_interp: int = 0
         assert 1 <= yield_threshold <= 0xFFFF_FFFF
         self.yield_threshold = (
             jit_runtime.yield_threshold if jit_runtime is not None else yield_threshold
@@ -129,12 +100,6 @@ class RuntimeEngine:
         self.module: Module | None = None
         self._virq: VirqDispatcher | None = None
         self._virq_interp: NativeInterpreter | None = None
-
-    @property
-    def collect_runtime_stats(self) -> bool:
-        """Whether this Runtime instance was composed with diagnostic counters."""
-
-        return self._collect_runtime_stats
 
     @property
     def bump_allocator(self) -> BumpAllocator:
@@ -146,7 +111,7 @@ class RuntimeEngine:
         """Parses raw WASM binary and binds all loader-owned basic blocks and Radix trees."""
         from tier2_runtime.wasm.reader import parse
 
-        module = parse(wasm_bytes, self._bump_allocator)
+        module = parse(memoryview(wasm_bytes), self._bump_allocator)
         self.register_module_blocks(module)
         return module
 
@@ -224,55 +189,6 @@ class RuntimeEngine:
         assert budget >= 0
         return self.jit_runtime.idle_hook(budget)
 
-    def reset_stats(self) -> None:
-        """Resets execution statistics counters."""
-        self.stat_interp_steps = 0
-        self.stat_jit_invocations = 0
-        self.stat_native_control_handlers = 0
-        self.stat_native_dispatch_trace_transitions = 0
-        self.stat_trace_exits_to_interp = 0
-        if self.jit_runtime is not None:
-            self.jit_runtime.reset_stats()
-
-    def dump_internal_state(self, file: TextIO | None = None) -> str:
-        """Dump execution counters without owning Tier 3 cache diagnostics."""
-        lines: StaticVector[str] = StaticVector(capacity=RUNTIME_DEBUG_REPORT_LINE_CAPACITY)
-        lines.append("=" * 80)
-        lines.append("                  RuntimeEngine Execution Dump                  ")
-        lines.append("=" * 80)
-        lines.append(
-            "  * Runtime profile stats:      "
-            + ("enabled" if self.collect_runtime_stats else "disabled by configuration")
-        )
-
-        total_blocks = self.stat_interp_steps + self.stat_jit_invocations
-        jit_pct = (self.stat_jit_invocations / total_blocks * 100.0) if total_blocks > 0 else 0.0
-        lines.append("[1. Execution Summary]")
-        lines.append(f"  * Total Block Executions:    {total_blocks:,}")
-        lines.append(
-            f"    - Interpreter Steps:       {self.stat_interp_steps:,} ({(100.0 - jit_pct):.1f}%)"
-        )
-        lines.append(
-            f"    - JIT Invocations:         {self.stat_jit_invocations:,} ({jit_pct:.1f}%)"
-        )
-        lines.append("  * Native Dispatch Transitions:")
-        lines.append(
-            f"    - C++ handler to JIT trace: {self.stat_native_dispatch_trace_transitions:,}"
-        )
-        lines.append(f"    - Exits to Interpreter:    {self.stat_trace_exits_to_interp:,}")
-        lines.append(f"    - Native control handlers:{self.stat_native_control_handlers:>11,}")
-        lines.append(
-            "  * Tier 3 JIT manager:         "
-            + ("attached" if self.jit_runtime is not None else "disabled")
-        )
-        lines.append("=" * 80)
-
-        output_str = "\n".join(lines) + "\n"
-        target_file = file if file is not None else sys.stderr
-        target_file.write(output_str)
-        target_file.flush()
-        return output_str
-
     def run(
         self,
         interp: NativeInterpreter,
@@ -288,15 +204,7 @@ class RuntimeEngine:
     ) -> RuntimeBoundaryResult:
         """Advance an already-bound interpreter through the selected native boundary."""
         assert not call_state.finished, "cannot advance a completed interpreter call"
-        result = self._run_native_boundary(interp, call_state, idle_budget)
-        if self.collect_runtime_stats:
-            self.stat_interp_steps += result.interpreted_block_count
-            self.stat_jit_invocations += result.trace_execution_count
-            self.stat_native_control_handlers += result.control_handler_count
-            self.stat_native_dispatch_trace_transitions += result.trace_transition_count
-            if not result.call_state.finished:
-                self.stat_trace_exits_to_interp += 1
-        return result
+        return self._run_native_boundary(interp, call_state, idle_budget)
 
     def call(
         self,
@@ -326,8 +234,6 @@ class RuntimeEngine:
 
         if self.jit_runtime is not None:
             self.idle_hook(budget=idle_budget)
-        if self.debug:
-            self.dump_internal_state()
         if call_state.trap is not None:
             assert False, call_state.trap.code
         assert call_state.results is not None
@@ -352,14 +258,7 @@ class RuntimeEngine:
             return RuntimeBoundaryResult(interp.step_native(call_state))
         assert call_state._frame is not None
         frame = call_state._frame
-        (
-            native_status,
-            _trace_count,
-            body_count,
-            dispatcher_trace_transitions,
-            control_count,
-            interpreted_block_count,
-        ) = interp.run_native_dispatch(
+        native_status = interp.run_native_dispatch(
             call_state,
             self.yield_threshold,
             native_dispatcher=interp._native_dispatcher,
@@ -381,8 +280,4 @@ class RuntimeEngine:
         return RuntimeBoundaryResult(
             call_state,
             native_status == NATIVE_DISPATCH_YIELD,
-            interpreted_block_count=interpreted_block_count,
-            trace_execution_count=body_count,
-            control_handler_count=control_count,
-            trace_transition_count=dispatcher_trace_transitions,
         )

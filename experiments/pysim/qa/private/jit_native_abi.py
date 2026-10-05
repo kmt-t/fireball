@@ -10,6 +10,7 @@ from enum import IntEnum
 from pathlib import Path
 
 from bump_allocator import BumpAllocator
+from tier1_core.native_printk import NativePrintkWriter
 from tier2_runtime.wasm.module import LocalWidthMap, WasmOperand
 
 _NATIVE_LIBRARY_PATH = Path(__file__).with_name(
@@ -107,14 +108,13 @@ class NativeCacheTrace(ctypes.Structure):
         ("chain_next_pc", ctypes.c_uint32),
         ("entry_address", ctypes.c_size_t),
         ("chain_target_address", ctypes.c_uint64),
-        ("exec_count", ctypes.POINTER(ctypes.c_uint32)),
         ("code_blob", ctypes.POINTER(ctypes.c_uint8)),
         ("blob_bytes", ctypes.c_uint32),
         ("fixups", NativeTraceFixups),
-        ("chain_next", ctypes.c_void_p),
         ("chain_terminal", ctypes.c_void_p),
         ("chain_words", ctypes.c_uint32),
         ("chain_bodies", ctypes.c_uint32),
+        ("exec_count", ctypes.POINTER(ctypes.c_uint32)),
     )
 
 
@@ -281,6 +281,14 @@ RUNTIME_SNAPSHOT.restype = ctypes.c_int
 RUNTIME_RESET_COUNTS = _NATIVE_LIBRARY.fb_jit_runtime_reset_counts
 RUNTIME_RESET_COUNTS.argtypes = (ctypes.c_void_p,)
 RUNTIME_RESET_COUNTS.restype = None
+
+RUNTIME_YIELD = _NATIVE_LIBRARY.fb_jit_runtime_yield
+RUNTIME_YIELD.argtypes = (ctypes.c_void_p,)
+RUNTIME_YIELD.restype = ctypes.c_int
+
+RUNTIME_PRINT = _NATIVE_LIBRARY.fb_qa_runtime_print_measurements
+RUNTIME_PRINT.argtypes = (ctypes.c_void_p, ctypes.POINTER(NativePrintkWriter))
+RUNTIME_PRINT.restype = ctypes.c_int
 
 
 class NativeRuntimeStorage:

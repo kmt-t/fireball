@@ -63,11 +63,9 @@ struct jit_cache_trace {
   std::uint32_t chain_next_pc;
   std::uintptr_t entry_address;
   std::uint64_t chain_target_address;
-  std::uint32_t* exec_count;
   const std::uint8_t* code_blob;
   std::uint32_t blob_bytes;
   jit_trace_fixups fixups;
-  jit_cache_trace* chain_next;
   jit_cache_trace* chain_terminal;
   std::uint32_t chain_words;
   std::uint32_t chain_bodies;

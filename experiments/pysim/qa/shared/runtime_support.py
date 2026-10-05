@@ -14,6 +14,7 @@ from config import (
 from qa.shared.jit_cache import JitRuntimeBoundary, JITTrace
 from qa.shared.jit_manager import JITCompiler, JITRuntimeManager
 from qa.shared.jit_scoring import JIT_CANDIDATE_THRESHOLD
+from qa.shared.runtime_stats import RuntimeStatsEngine
 from qa.shared.x64_jit import TraceCompiler
 from system_containers import (
     ReadOnlyRadixBinaryTreeStorage,
@@ -21,8 +22,8 @@ from system_containers import (
     fold_mix32,
 )
 from tier2_runtime.interpreter.control_flow import iter_block_ops
-from tier2_runtime.runtime.engine import RuntimeDriveMode, RuntimeEngine
-from tier2_runtime.wasm.module import BasicBlock, Function, FuncType, LocalWidthMap, Module
+from tier2_runtime.runtime.engine import RuntimeDriveMode
+from tier2_runtime.wasm.module import BasicBlock, Function, FuncTypeRecord, LocalWidthMap, Module
 
 PC_ONLY_FUNCTION_STRIDE = 0x2000
 PC_ONLY_FUNCTION_BASE = 0x100
@@ -44,7 +45,7 @@ def make_runtime_engine(
     hotspot_profiling_enabled: bool = True,
     retire_observer: Callable[[int, int], None] | None = None,
     bump_allocator: BumpAllocator | None = None,
-) -> RuntimeEngine:
+) -> RuntimeStatsEngine:
     """Compose a Tier 3 runtime engine with the Tier 3 JIT manager for tests."""
 
     if (
@@ -61,7 +62,7 @@ def make_runtime_engine(
         and hotspot_profiling_enabled
         and retire_observer is None
     ):
-        return RuntimeEngine(
+        return RuntimeStatsEngine(
             debug=debug, collect_runtime_stats=collect_runtime_stats, bump_allocator=bump_allocator
         )
     manager = JITRuntimeManager(
@@ -77,7 +78,7 @@ def make_runtime_engine(
         hotspot_profiling_enabled=hotspot_profiling_enabled,
         retire_observer=retire_observer,
     )
-    return RuntimeEngine(
+    return RuntimeStatsEngine(
         jit_runtime=manager,
         debug=debug,
         drive_mode=drive_mode,
@@ -136,22 +137,29 @@ def make_pc_only_functions_module(blocks_per_function: tuple[tuple[int, ...], ..
     assert blocks_per_function
     functions = []
     heads = []
+    source = bytearray(b"\x60\x00\x00")
     for func_index, offsets in enumerate(blocks_per_function):
         assert all(offset < 0x1_0000 for offset in offsets)
+        code_size = max(offsets, default=0) + 1
+        code_offset = len(source)
+        source.extend(bytes(code_size))
         functions.append(
             Function(
                 type_index=0,
-                locals_extra=(),
-                code=bytes(max(offsets, default=0) + 1),
+                locals_extra=StaticVector(capacity=0),
+                code_offset=code_offset,
+                code_size=code_size,
                 code_pc_offset=PC_ONLY_FUNCTION_BASE + func_index * PC_ONLY_FUNCTION_STRIDE,
             )
         )
         heads.extend((func_index, offset) for offset in offsets)
     assert heads
     module = Module(
-        types=(FuncType(params=(), results=()),),
-        functions=tuple(functions),
+        types=StaticVector.of((FuncTypeRecord(offset=0, size=3),), capacity=1),
+        functions=StaticVector.of(functions, capacity=len(functions)),
+        source=memoryview(bytes(source)),
     )
+    module.prepare_function_layouts()
     blocks = StaticVector.of(
         tuple(
             BasicBlock(

@@ -9,6 +9,7 @@ from dataclasses import dataclass
 import pytest
 import wasmtime
 from qa.shared.helpers import make_native_interpreter
+from qa.shared.runtime_stats import RuntimeStatsEngine as RuntimeEngine
 from qa.shared.runtime_support import compile_runtime_block, make_runtime_engine
 from qa.shared.x64_jit import TraceCompiler
 from tier2_runtime.interpreter.interpreter import (
@@ -25,7 +26,6 @@ from tier2_runtime.runtime.composer import (
     RuntimeFactories,
     RuntimePluginSelection,
 )
-from tier2_runtime.runtime.engine import RuntimeEngine
 from tier2_runtime.runtime.recovery import Result
 from tier3_plugins.profiler.guest_profiler import GuestProfiler
 

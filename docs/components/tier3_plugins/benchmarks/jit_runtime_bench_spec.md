@@ -1,4 +1,7 @@
 # JIT コンパイラ & ランタイム ベンチマーク仕様書 (JIT Runtime Benchmark Specification)
+<!-- evidence:
+     formal: ../formal/jit_trace_execution_model.py
+-->
 
 ## 1. 目的と対象範囲
 <!-- traceability: {JIT_CopyAndPatch} {JIT_ZeroCompileCostTheorem} {LowLatencyJIT} {META_AccessDictionary} {META_BinarySearch} {ThreadedInterpreter} -->
@@ -30,7 +33,7 @@ Pythonハンドラ経路は `_step(..., stop_at_boundary=False)` を直接呼ぶ
 
 計測区間には関数実行と実行状態の初期化を含める。WASM生成・ロード、実行器の準備、JITトレースの事前コンパイルは区間から除外する。通常の速度値はプロファイラを通さず、各経路3回の中央値で報告する。
 
-実行診断カウンタは通常の速度・cycles計測用Runtimeでは無効にし、計時後の診断用Runtimeで有効にする。両Runtimeは構成別のハーネスとして同じプログラム内にインスタンス化でき、拡張の再ビルドは行わない。chainはtrace末尾から共通コード領域のchain dispatcherへ入り、そこで次trace bodyへtail-jumpする経路を指す。`native_dispatch_trace_transitions`はC++ handlerからJIT traceへのdispatcher遷移を数える別指標であり、chain回数には使わない。共通コードchain dispatcherの実行回数を数える専用指標は現状ないため、未取得の値として扱う。Hybrid JITの実行時間は通常のプラグインで測定する。実行経路にはキャッシュ内部を操作するQA用マネージャを使わない。JITの実行は計時後の診断で実行カウンタが正であることを確認する。
+通常の速度・cycles計測には検査用APIを持たない製品Runtimeを使う。実行診断カウンタは計時後にQA専用ハーネスで取得する。QAの計測入口は専用ライブラリで提供し、製品ライブラリへ公開しない。chainはtrace末尾から共通コード領域のchain dispatcherへ入り、そこで次trace bodyへtail-jumpする経路を指す。`native_dispatch_trace_transitions`はC++ handlerからJIT traceへのdispatcher遷移を数える別指標であり、chain回数には使わない。共通コードchain dispatcherの実行回数を数える専用指標は現状ないため、未取得の値として扱う。Hybrid JITの実行時間は通常のプラグインで測定する。実行経路にはキャッシュ内部を操作するQA用マネージャを使わない。JITの実行は計時後の診断で実行カウンタが正であることを確認する。
 
 Intel CPUではVTune Hotspotsを使い、3経路を個別に収集する。AMD CPUではuProfのHotspotsとIBSを使い、Hybrid JIT経路を個別に収集する。各反復で期待結果を照合し、Hybrid JITでは常駐traceが事前に準備され、実行結果が一致することを確認する。C++インタープリタとHybrid JITの共通LOOP後方分岐yieldしきい値は出力された `loop_backedge_yield_threshold` と照合する。プロファイラ収集中の所要時間は通常の速度比較に使わない。
 
@@ -149,3 +152,27 @@ VTuneは各経路を別々に収集し、ソフトウェアサンプリングを
    - 対象ABIの関数契約に一致する関数アドレスをトレースヘッダへ設定し、ヘルパー契約別の共通コード入口を選択して実行する。ARMv8-Mのhelper入口と計測条件はTBDとする。x64整数ヘルパー入口は1入口あたり32バイトとして計測する。
    - 同一のトレースバイナリを別の実行可能バッファへコピーして呼び出し、共通コード領域の呼出しコードを経由することと副作用を直接 `assert` する。
    - pysimでは `ctypes` コールバックのPython遷移コストを含むため、組込みCの性能値とは分離して報告する。
+
+
+### 3.3 QA専用のトレース実行回数と退役記録
+<!-- traceability: {Challenge_JITCacheEfficiency} {JIT_MultiBuffer_Cache} {JIT_OldestOnly_Promote} -->
+
+スラッシング防止の判断材料は、QA専用の計測型を合成したJITランタイムで採取する。製品の速度測定とは別の実行とする。計測型はC++のテンプレート引数で選ぶ。製品構成は`void`を選び、実行回数、履歴上書き回数、昇格・追い出し回数、コンパイル・aging時間の状態と更新処理を持たない。時計の読取り、実行後の計測用chain走査、および退役通知も製品構成へ組み込まない。検査用APIはQA専用ライブラリに置く。
+
+QA計測型は各トレースに32ビット符号なしの実行回数を保持する。JIT拡張が実行した各bodyを1回と数え、直接chainの後続bodyも個別に数える。lookup、コンパイル、昇格、実行前の容量不足によるfallbackは数えない。最大値`0xFFFF_FFFF`で飽和する。昇格とchain終端の再構成では値を保持し、再コンパイルした別traceは0から始める。QAの`reset_stats`で測定区間を0から始め直す。
+
+カウンタはtraceあたり4バイトであり、計測型の記述子がその所在を保持する。QA計測構成だけが本体実行後に後続traceを辿って計数する。低水準の`JITTrace.execute`等によるdispatcher外の直接呼出しは対象外とする。通常統計とホットスポット検出の有効・無効から、QA計数の有効・無効を独立させる。
+
+退役の採取はQAハーネスが行う。rotate、flush、置換等の操作前に常駐traceの識別子、PC、回数を保存する。操作後に残った識別子と比較し、脱落したtraceのPCと回数を収集先へ一度通知する。製品cacheは退役収集先を呼び出さない。収集先はQAハーネスへ再入しない。採取結果からコンパイル抑制やキャッシュ方策を変更しない。
+
+C++の計測実装はTier 1の`printk`へ64ビット数値を整形して同期出力する。Pythonの物理出力アダプタはバイト列だけを受け取る。Tier 2と製品Pythonは計測フィールドやJITの内部状態を参照しない。出力時間は実行時間の計時区間から除外する。
+
+記録入口は[`record_trace_execution.py`](experiments/pysim/benchmarks/jit/record_trace_execution.py)である。反復するhot関数と2回だけ呼ぶcold関数を混在させ、実行中にevictされたtraceと終了時にresidentなtraceを分けてJSONへ出力する。終了時のflushで未使用evictionを作らない。各関数の戻り値を期待値と照合する。
+
+```bash
+uv run python experiments/pysim/benchmarks/jit/record_trace_execution.py --output /tmp/trace_execution.json
+```
+
+計測契約の抽象モデルは[`jit_trace_execution_model.py`](docs/components/tier3_plugins/formal/jit_trace_execution_model.py)を参照する。実行対象外操作、chainの計数漏れ、飽和、および退役時記録を検査する。`guards=False`で各違反を反証する。カウンタの寿命、32ビットの飽和境界、実際のC++ chain実行は[`jit_runtime_test_spec.md`](docs/qa/tier3_plugins/jit_runtime_test_spec.md)のTEST-JITR-76〜79で検査する。モデルと試験はQA計測構成の正しさを対象とし、製品の計数機構を要求しない。
+
+`test_jitr_measurements_are_formatted_in_cpp_through_shared_printk`はC++側の整形と同期出力を検査する。

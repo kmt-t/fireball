@@ -187,14 +187,13 @@ def native_jit_definitions() -> dict[str, int]:
 def jit_runtime_layout() -> dict[str, int]:
     """Compile a measurement-only sizeof probe; do not add a product export."""
     expressions = {
-        "runtime_bytes": "sizeof(fireball::JitRuntime)",
-        "execution_extension_bytes": "sizeof(decltype(fireball::JitRuntime::extension))",
-        "dispatch_history_bytes": "sizeof(decltype(fireball::JitRuntime::dispatch_history))",
-        "owned_traces_bytes": "sizeof(decltype(fireball::JitRuntime::owned))",
-        "cache_banks_bytes": "sizeof(decltype(fireball::JitRuntime::banks))",
-        "fast_cache_bytes": "sizeof(decltype(fireball::JitRuntime::fast))",
-        "profile_history_bytes": "sizeof(decltype(fireball::JitRuntime::history_records))",
-        "compile_queue_bytes": "sizeof(decltype(fireball::JitRuntime::queue_pcs))",
+        "runtime_bytes": "sizeof(fireball::native_jit_plugin<void>::Runtime)",
+        "execution_extension_bytes": "sizeof(decltype(fireball::native_jit_plugin<void>::Runtime::extension))",
+        "owned_traces_bytes": "sizeof(decltype(fireball::native_jit_plugin<void>::Runtime::owned))",
+        "cache_banks_bytes": "sizeof(decltype(fireball::native_jit_plugin<void>::Runtime::banks))",
+        "fast_cache_bytes": "sizeof(decltype(fireball::native_jit_plugin<void>::Runtime::fast))",
+        "profile_history_bytes": "sizeof(decltype(fireball::native_jit_plugin<void>::Runtime::history_records))",
+        "compile_queue_bytes": "sizeof(decltype(fireball::native_jit_plugin<void>::Runtime::queue_pcs))",
         "module_block_view_bytes": "sizeof(fireball_wasm_block_execution_view_native)",
     }
     runtime_source = _PYSIM / "native/tier3_plugins/jit/jit_runtime.cxx"

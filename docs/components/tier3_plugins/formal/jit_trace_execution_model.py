@@ -1,9 +1,9 @@
-"""トレース実行、計数対象外操作、飽和、破棄時記録の抽象モデル。"""
+"""QA計測構成のトレース実行、計数対象外操作、飽和、退役記録の抽象モデル。"""
 
 from pyModelChecking import Kripke
 from pyModelChecking.CTL import AG, AtomicProposition, Not
 
-BACKS = ["components/tier3_plugins/jit_runtime.md"]
+BACKS = ["components/tier3_plugins/benchmarks/jit_runtime_bench_spec.md"]
 State = tuple[int, int, str, int, int, int]
 
 

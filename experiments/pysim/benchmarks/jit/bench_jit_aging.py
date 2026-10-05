@@ -37,9 +37,9 @@ configure_import_paths(_PYSIM_DIR, _BENCH_DIR)
 from bump_allocator import BumpAllocator
 from config import FB_CONF_JIT_AGING_STEP_SCAN_BYTES, FB_CONF_JIT_AGING_STEP_UNITS
 from qa.shared.jit_manager import JITRuntimeManager
+from qa.shared.runtime_stats import RuntimeStatsEngine
 from qa.shared.x64_jit import TraceCompiler
 from tier2_runtime.interpreter.interpreter import InterpreterBindings, NativeInterpreter
-from tier2_runtime.runtime.engine import RuntimeEngine
 from tier2_runtime.wasm.reader import parse
 
 try:
@@ -117,14 +117,14 @@ class JITAgingBenchmark:
         assert wasmtime is not None
         wasm = bytes(wasmtime.wat2wasm(build_workload_wat(self.hot_functions, self.cold_functions)))
         runtime_allocator = BumpAllocator()
-        module = parse(wasm, runtime_allocator)
+        module = parse(memoryview(wasm), runtime_allocator)
         compiler = TraceCompiler()
         settings: dict[str, int] = {}
         if units is not None:
             settings["aging_step_units"] = units
         if scan_bytes is not None:
             settings["aging_scan_bytes"] = scan_bytes
-        engine = RuntimeEngine(
+        engine = RuntimeStatsEngine(
             jit_runtime=JITRuntimeManager(jit_compiler=compiler, **settings),
             collect_runtime_stats=True,
             bump_allocator=runtime_allocator,
@@ -132,7 +132,9 @@ class JITAgingBenchmark:
         engine.register_module_blocks(module)
         cache = engine.jit_runtime.cache
         cache.enable_automatic_aging(aging)
-        interp = NativeInterpreter(module, InterpreterBindings.empty())
+        interp = NativeInterpreter(
+            module, InterpreterBindings.empty(), bump_allocator=runtime_allocator
+        )
         hot = [module.export_func_index(f"h{i}") for i in range(self.hot_functions)]
         cold = [module.export_func_index(f"c{i}") for i in range(self.cold_functions)]
 

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import struct
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from enum import IntEnum, IntFlag
 from typing import Protocol
@@ -122,7 +122,7 @@ class RuntimeObserver(Protocol):
 class RuntimeEventSink:
     """固定容量のC++ Runtime Event Sinkとexport経路のPysim参照モデル。"""
 
-    __slots__ = ("capacity", "clock_domain", "clock_frequency_hz", "dropped_count", "records")
+    __slots__ = ("_head", "clock_domain", "clock_frequency_hz", "dropped_count", "records")
 
     def __init__(
         self,
@@ -134,11 +134,16 @@ class RuntimeEventSink:
         assert capacity & (capacity - 1) == 0
         assert 0 <= clock_frequency_hz <= _U32_MAX
         assert 0 <= clock_domain <= _U32_MAX
-        self.capacity = capacity
+        self._head = 0
         self.records: StaticVector[RuntimeEvent] = StaticVector(capacity=capacity)
         self.dropped_count = 0
         self.clock_frequency_hz = clock_frequency_hz
         self.clock_domain = clock_domain
+
+    def _events(self) -> Iterator[RuntimeEvent]:
+        """Borrow the retained records in issue order without another buffer."""
+        for index in range(len(self.records)):
+            yield self.records[(self._head + index) & (self.records.capacity - 1)]
 
     @property
     def required_size(self) -> int:
@@ -147,11 +152,13 @@ class RuntimeEventSink:
         return _BATCH_HEADER_SIZE + len(self.records) * _EVENT_RECORD_SIZE
 
     def record(self, event: RuntimeEvent) -> None:
-        """Record one event without blocking or overwriting older records."""
+        """Keep the latest events by overwriting the oldest slot in constant time."""
 
-        if len(self.records) < self.capacity:
+        if len(self.records) < self.records.capacity:
             self.records.append(event)
             return
+        self.records[self._head] = event
+        self._head = (self._head + 1) & (self.records.capacity - 1)
         self.dropped_count = min(_U32_MAX, self.dropped_count + 1)
 
     def export(self, abi_major: int, capacity: int) -> RuntimeEventExport:
@@ -166,7 +173,7 @@ class RuntimeEventSink:
             return RuntimeEventExport(RuntimeEventExportStatus.BUFFER_TOO_SMALL, required_size, b"")
 
         batch_flags = 0
-        if any(event.flags & RuntimeEventFlags.TICK_VALID for event in self.records):
+        if any(event.flags & RuntimeEventFlags.TICK_VALID for event in self._events()):
             batch_flags |= _BATCH_FLAG_TICKS_VALID
         if self.dropped_count:
             batch_flags |= _BATCH_FLAG_OVERFLOW
@@ -187,7 +194,7 @@ class RuntimeEventSink:
             self.clock_domain if batch_flags & _BATCH_FLAG_TICKS_VALID else 0,
         )
         offset = _BATCH_HEADER_SIZE
-        for event in self.records:
+        for event in self._events():
             _EVENT_RECORD.pack_into(
                 output,
                 offset,
@@ -202,6 +209,7 @@ class RuntimeEventSink:
             )
             offset += _EVENT_RECORD_SIZE
         self.records.clear()
+        self._head = 0
         return RuntimeEventExport(RuntimeEventExportStatus.OK, required_size, bytes(output))
 
     @staticmethod

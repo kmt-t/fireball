@@ -2299,13 +2299,15 @@ struct native_dispatch_metrics {
       observations;
 };
 
-template <bool CollectStats, bool WithExtension>
+template <bool CollectStats, bool WithExtension, typename ResultType = fb_native_result>
 struct native_dispatch_state {
+  static_assert(!CollectStats || !std::is_same_v<ResultType, fb_native_result>);
   native_dispatch_call<WithExtension>& call;
   std::uint32_t current_pc;
   std::uint32_t status = kFallback;
   std::uint32_t trap_code = 0;
-  [[no_unique_address]] native_dispatch_metrics<CollectStats, WithExtension> metrics;
+  [[no_unique_address]] native_dispatch_metrics<CollectStats,
+      WithExtension && !std::is_same_v<ResultType, fb_native_result>> metrics;
 };
 
 template <bool ClearBlockBoundaryFlag, bool WithExtension, typename Debugger = void>
@@ -2337,9 +2339,10 @@ step_result execute_control_boundary(native_dispatch_call<WithExtension>& call,
   return result;
 }
 
-template <bool CollectStats, bool WithExtension, typename Debugger = void>
+template <bool CollectStats, bool WithExtension, typename Debugger = void,
+          typename ResultType = fb_native_result>
 dispatch_iteration execute_interpreted_block(
-    native_dispatch_state<CollectStats, WithExtension>& state, std::uint32_t executed_bodies = 0) {
+    native_dispatch_state<CollectStats, WithExtension, ResultType>& state, std::uint32_t executed_bodies = 0) {
   auto& call = state.call;
   auto& context = *call.context;
   if constexpr (CollectStats) {
@@ -2390,7 +2393,9 @@ dispatch_iteration execute_interpreted_block(
   if constexpr (WithExtension) {
     if ((context.runtime_flags & kObservedBlockBodyFlag) != 0) {
       call.extension->record(call.extension->owner, block_head_pc);
-      ++state.metrics.observations.eligible_block_visits;
+      if constexpr (!std::is_same_v<ResultType, fb_native_result>) {
+        ++state.metrics.observations.eligible_block_visits;
+      }
     }
   }
   context.runtime_flags = previous_flags & ~kPendingBlockHeadFlag;
@@ -2477,10 +2482,10 @@ dispatch_iteration execute_interpreted_block(
   return dispatch_iteration::continue_dispatch;
 }
 
-template <bool CollectStats, bool WithExtension>
+template <bool CollectStats, bool WithExtension, typename ResultType>
 void write_native_dispatch_result(
-    const native_dispatch_state<CollectStats, WithExtension>& state,
-    fb_native_result& result) {
+    const native_dispatch_state<CollectStats, WithExtension, ResultType>& state,
+    ResultType& result) {
   result = {};
   result.status = state.status;
   result.ip = state.call.context->ip;
@@ -2494,7 +2499,7 @@ void write_native_dispatch_result(
     result.control_handler_count = state.metrics.stats.control_handler_count;
     result.interpreted_block_count = state.metrics.stats.interpreted_block_count;
   }
-  if constexpr (WithExtension) {
+  if constexpr (WithExtension && !std::is_same_v<ResultType, fb_native_result>) {
     result.eligible_block_visits =
         state.metrics.observations.eligible_block_visits;
   }
@@ -2505,9 +2510,10 @@ int native_abi_error(fb_native_result* result, std::uint32_t error_code) {
   return 0;
 }
 
-template <bool CollectStats, bool WithExtension, typename Debugger = void>
+template <bool CollectStats, bool WithExtension, typename Debugger = void,
+          typename ResultType = fb_native_result>
 int run_native_dispatch_abi(const fb_native_dispatch_call* input,
-                            fb_native_result* result) {
+                            ResultType* result) {
   if (result == nullptr) return 0;
   *result = {};
   if (input == nullptr) return native_abi_error(result, kNativeErrorInvalidArgument);
@@ -2527,7 +2533,7 @@ int run_native_dispatch_abi(const fb_native_dispatch_call* input,
     return native_abi_error(result, call.error_code);
   }
 
-  native_dispatch_state<CollectStats, WithExtension> state{
+  native_dispatch_state<CollectStats, WithExtension, ResultType> state{
       call, call.call_frame->function_view->code_pc_offset + call.initial_ip, kFallback, 0, {}};
   const auto previous_runtime_flags = call.context->runtime_flags;
   if (call.initial_ip == 0) call.context->runtime_flags |= kPendingBlockHeadFlag;
@@ -2551,10 +2557,10 @@ int run_native_dispatch_abi(const fb_native_dispatch_call* input,
               call.extension->owner, call.context, call.stack, call.local_stack, state.current_pc);
         }
       }
-      outcome = execute_interpreted_block<CollectStats, WithExtension, Debugger>(
+      outcome = execute_interpreted_block<CollectStats, WithExtension, Debugger, ResultType>(
           state, executed_bodies);
     } else {
-      outcome = execute_interpreted_block<CollectStats, WithExtension, Debugger>(state);
+      outcome = execute_interpreted_block<CollectStats, WithExtension, Debugger, ResultType>(state);
     }
     if (outcome == dispatch_iteration::error) break;
     if (outcome == dispatch_iteration::stop_dispatch) break;
@@ -2682,19 +2688,9 @@ extern "C" int fb_native_run_dispatch(const fb_native_dispatch_call* call,
   return run_native_dispatch_abi<false, false>(call, result);
 }
 
-extern "C" int fb_native_run_dispatch_stats(const fb_native_dispatch_call* call,
-                                             fb_native_result* result) {
-  return run_native_dispatch_abi<true, false>(call, result);
-}
-
 extern "C" int fb_native_run_dispatch_extension(const fb_native_dispatch_call* call,
                                                 fb_native_result* result) {
   return run_native_dispatch_abi<false, true>(call, result);
-}
-
-extern "C" int fb_native_run_dispatch_stats_extension(
-    const fb_native_dispatch_call* call, fb_native_result* result) {
-  return run_native_dispatch_abi<true, true>(call, result);
 }
 
 extern "C" int fb_native_run_debug_dispatch(const fb_native_dispatch_call* call,

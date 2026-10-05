@@ -500,17 +500,22 @@ class JITRuntimeManager(NativeJITRuntimeManager):
 
     def on_yield(self) -> None:
         self._begin()
-        super().on_yield()
+        assert native_abi.RUNTIME_YIELD(self._native.pointer) == 1
         self._check()
 
     def idle_hook(self, budget: int = 4) -> int:
+        assert 0 <= budget <= 0x7FFF_FFFF
         self._begin()
-        result = super().idle_hook(budget)
+        result = int(native_abi.RUNTIME_COMPILE(self._native.pointer, budget))
+        assert result >= 0
         self._check()
         return result
 
     def flush_all(self) -> None:
         self.cache.flush_all()
+
+    def reset_stats(self) -> None:
+        native_abi.RUNTIME_RESET_COUNTS(self._native.pointer)
 
     def close(self) -> None:
         self._native.close()

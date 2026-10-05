@@ -106,7 +106,7 @@ ARMv8-Mの対象ボード、SRAM/ROM/周辺アドレス、メモリ保護方式�
 | `FB_CONF_VIRQ_MAX_NODES` | vIRQ静的ノード数（root + 4分類 + デバイスノード） | `1 + FB_CONF_VIRQ_CATEGORY_COUNT + FB_CONF_HAL_MAX_DEVICES` | |
 | `FB_CONF_VIRQ_MAX_SOURCES` | vIRQ静的原因源数（SYSTEM/RUNTIME/FAULT + デバイス源） | `3 + FB_CONF_HAL_MAX_DEVICES` | |
 
-実行経路の診断カウンタとJITホットスポット観測は、翻訳単位共通のビルドフラグで切り替えない。RuntimeComposerが構成に対応する具象型を選び、選択済みハーネスをインスタンス化する。同一プログラムには有効・無効の異なるRuntimeを共存させられる。
+実行経路の検査用カウンタと測定区間のリセットはQAの診断ハーネスが所有する。製品Runtimeは検査用API、累積カウンタ、集計分岐を保持しない。JITホットスポット観測はコンパイル候補を決定する製品機構として扱い、診断ハーネスとは独立して構成する。
 
 JITの有効・無効も個別のビルド定義では切り替えない。Interpreter専用構成とJIT構成はRuntimeComposerがそれぞれの型で合成する。
 

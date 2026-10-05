@@ -8,12 +8,16 @@ import pytest
 from qa.shared.helpers import expect_assertion
 from system_containers import StaticVector
 from tier2_runtime.observability.events import (
+    RUNTIME_EVENT_ABI_MAJOR,
     RUNTIME_EVENT_NO_MODULE,
     RUNTIME_EVENT_NO_PC,
     RuntimeEvent,
+    RuntimeEventAdapter,
     RuntimeEventBatch,
+    RuntimeEventExportStatus,
     RuntimeEventFlags,
     RuntimeEventKind,
+    RuntimeEventSink,
     RuntimeExecutionError,
 )
 from tier2_runtime.runtime.composer import (
@@ -296,9 +300,9 @@ def test_native_execution_plugin_can_be_replaced_without_jit_knowledge(collect_s
     import ctypes
 
     from qa.shared.helpers import wat_to_wasm
+    from qa.shared.runtime_stats import RuntimeStatsEngine as RuntimeEngine
     from tier2_runtime.abi.native_abi import NativeDispatchCall
     from tier2_runtime.interpreter.interpreter import InterpreterBindings, NativeInterpreter
-    from tier2_runtime.runtime.engine import RuntimeEngine
     from tier2_runtime.wasm.reader import parse
 
     class DelegatingPlugin:
@@ -308,7 +312,6 @@ def test_native_execution_plugin_can_be_replaced_without_jit_knowledge(collect_s
             self.bindings = []
             self.calls = 0
             self.yields = 0
-            self.resets = 0
             self.owner = 123
 
         def register_module(self, module):
@@ -333,9 +336,6 @@ def test_native_execution_plugin_can_be_replaced_without_jit_knowledge(collect_s
         def on_yield(self):
             self.yields += 1
 
-        def reset_stats(self):
-            self.resets += 1
-
     module = parse(
         wat_to_wasm("""(module
       (func (export "count") (param i32) (result i32)
@@ -358,4 +358,54 @@ def test_native_execution_plugin_can_be_replaced_without_jit_knowledge(collect_s
     assert (engine.stat_interp_steps > 0) == collect_stats
     engine.on_yield()
     engine.reset_stats()
-    assert plugin.yields == plugin.resets == 1
+    assert plugin.yields == 1
+    assert engine.stat_interp_steps == 0
+
+
+@pytest.mark.parametrize("capacity", (1, 2, 4))
+@pytest.mark.parametrize("overflow", (1, 4, 9))
+def test_event_sink_retains_latest_events_in_issue_order(capacity: int, overflow: int) -> None:
+    """TEST-OBS-03/05: 最新N件、累積欠落数、拒否後の保持と再充填を直接検査する。"""
+    sink = RuntimeEventSink(capacity=capacity)
+    runtime_id = 27
+    total_dropped = 0
+    next_call_id = 0
+    for extra in (overflow, 0, overflow + capacity):
+        issued = tuple(
+            RuntimeEvent(
+                kind=RuntimeEventKind.YIELD,
+                runtime_id=runtime_id,
+                module_id=3,
+                function_id=7,
+                guest_pc=11,
+                tick=call_id + 100,
+                call_id=call_id,
+                flags=RuntimeEventFlags.TICK_VALID,
+            )
+            for call_id in range(next_call_id, next_call_id + capacity + extra)
+        )
+        next_call_id += len(issued)
+        for event in issued:
+            sink.record(event)
+        total_dropped += extra
+        required_size = 32 + 32 * capacity
+        assert sink.required_size == required_size
+        refused = sink.export(RUNTIME_EVENT_ABI_MAJOR, required_size - 1)
+        assert refused.status == RuntimeEventExportStatus.BUFFER_TOO_SMALL
+        assert refused.required_size == required_size and refused.data == b""
+        refused = sink.export(RUNTIME_EVENT_ABI_MAJOR + 1, required_size)
+        assert refused.status == RuntimeEventExportStatus.UNSUPPORTED_VERSION
+        assert refused.required_size == required_size and refused.data == b""
+        exported = sink.export(RUNTIME_EVENT_ABI_MAJOR, required_size)
+        assert exported.status == RuntimeEventExportStatus.OK
+        batch = RuntimeEventAdapter.decode(exported.data, runtime_id)
+        assert tuple(batch.records) == issued[-capacity:]
+        assert batch.dropped_count == total_dropped
+        assert batch.clock_frequency_hz == 1_000_000_000
+        assert batch.clock_domain == 1
+        assert sink.required_size == 32
+        empty = RuntimeEventAdapter.decode(
+            sink.export(RUNTIME_EVENT_ABI_MAJOR, 32).data, runtime_id
+        )
+        assert tuple(empty.records) == ()
+        assert empty.dropped_count == total_dropped

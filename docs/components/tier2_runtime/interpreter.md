@@ -315,16 +315,16 @@ x64ではトレースが共有オペランド領域へ状態を書き戻す。AR
   - Python参照経路は `Interpreter.call()` でPythonハンドラを駆動する。
   - C++インタープリタ経路は `NativeInterpreter.call()` でC++ハンドラを駆動する。
   - C++インタープリタ＋JIT経路は `RuntimeEngine.call(native_interpreter, ...)` からTier 3 JIT拡張へ境界実行を委譲し、同じC++ dispatcherで実行する。
-  - Runtime と Interpreter は Tier 2 の実行基盤である。Tier 3 JIT 拡張は固定長トレース記述子を実行境界で渡し、C++ Interpreter はその記述子を使って実行する。Interpreter に JIT ランタイム状態や JIT 専用操作 API を持たせない。
+  - RuntimeとInterpreterはTier 2の実行基盤である。C++ Interpreterは共有実行状態を渡して実行拡張の本体実行入口を呼び出す。トレースの選択と実行はTier 3 JIT拡張内部で完了する。InterpreterにJITランタイム状態やJIT専用操作APIを持たせない。
 - **関数復帰の番兵**:
   - JITは `return` 命令や専用RETURN sentinelを生成しない。
   - JITトレースは `return` 直前で終了して共有状態を同期する。
   - インタープリタの return ハンドラが callee の `関数呼出し記述子` をポップする。
   - トップレベル復帰のみ専用の RETURN sentinel PC を生成し、RuntimeEngine が実行完了を判定する。
 - **Hotspot検知と JIT候補ビットマップによるバイパス (`JIT_CandidateBitmap`)**:
-  - JIT拡張有効かつホットスポット検出有効の構成では、Interpreterはsnapshotが借用する候補マスクを使う。関数入口・制御処理の完了でブロック開始PCを保持する。通常のメモリ操作からの復帰では新しい開始PCを設定しない。通常命令を実行したブロックだけを固定容量履歴へ実行順に記録する。最初のbody命令を観測した後は通常の無計測ハンドラ列へ移る。制御命令だけの区間は記録しない。Runtime Event Sinkや時計を通さない。履歴の所有・容量・分析境界はTier 3 [`jit_runtime.md`](docs/components/tier3_plugins/jit_runtime.md) が定める。
-  - 定義済みゲスト関数の呼出しではC++ dispatcherが呼出し先フレームを選び、呼出し先の適格ブロックも同じ実行区間の履歴へ記録する。履歴容量の超過では最古の履歴を上書きして実行を続ける。後方分岐のyield条件に達した場合はRuntime実行境界へ戻る。
-  - Interpreterがyield、fallback、trap、関数完了のいずれかでRuntime実行境界へ戻るとき、未分析履歴を一度だけ引き渡す。カード更新とコンパイル要求登録は実行境界で行う。JIT trace/chainだけを実行した区間では履歴記録・分析を行わない。
+  - JIT拡張有効かつホットスポット検出有効の構成では、Interpreterはブロック開始PCを実行拡張の観測入口へ渡す。候補性の判定はJIT拡張が所有するマスクで行う。Interpreterは関数入口・制御処理の完了でブロック開始PCを保持する。通常のメモリ操作からの復帰では新しい開始PCを設定しない。通常命令を実行したブロックだけを通知し、JIT拡張が所有する固定容量リングへ実行順に直接記録する。最初のbody命令を観測した後は通常の無観測ハンドラ列へ移る。制御命令だけの区間は通知しない。Runtime Event Sinkや時計を通さない。履歴の所有・容量・分析境界はTier 3 [`jit_runtime.md`](docs/components/tier3_plugins/jit_runtime.md) が定める。
+  - 定義済みゲスト関数の呼出しではC++ dispatcherが呼出し先フレームを選び、呼出し先の適格ブロックも同じ実行区間でJIT拡張へ通知する。JIT拡張は履歴容量の超過では最古の履歴を上書きして実行を続ける。後方分岐のyield条件に達した場合はRuntime実行境界へ戻る。
+  - Interpreterがyield、fallback、trap、関数完了のいずれかでRuntime実行境界へ戻るとき、JIT拡張は所有する未分析履歴を一度だけ分析する。カード更新とコンパイル要求登録はJIT拡張内部の実行境界で行う。JIT trace/chainだけを実行した区間では履歴記録・分析を行わない。
   - JIT cache・候補mask・compile queueの所有者はTier 3 JITランタイムであり、C++ Interpreter handlerやvSoCはそれらを直接参照しない。
   - 候補ビットマップで該当block先頭PCが候補外（`0`）の場合、JITランタイムは追跡登録を省略する。compile効果のないblockの追跡overheadを抑える。
 - **トレース境界での協調的Yield (`ADR_LoopBackedgeYield`)**:

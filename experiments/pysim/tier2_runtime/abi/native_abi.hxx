@@ -77,14 +77,9 @@ struct fb_native_result {
   std::uint32_t ip;
   std::uint32_t stack_size;
   std::uint32_t trap_code;
-  std::uint32_t trace_count;
-  std::uint32_t body_count;
-  std::uint32_t dispatcher_trace_transitions;
-  std::uint32_t control_handler_count;
-  std::uint32_t eligible_block_visits;
-  std::uint32_t interpreted_block_count;
   std::uint32_t error_code;
 };
+static_assert(sizeof(fb_native_result) == 20);
 
 FB_PYSIM_INTERPRETER_EXPORT int fb_native_run_step(
     const fb_native_step_call* call, fb_native_result* result);
@@ -92,11 +87,7 @@ FB_PYSIM_INTERPRETER_EXPORT int fb_native_run_control_step(
     const fb_native_step_call* call, fb_native_result* result);
 FB_PYSIM_INTERPRETER_EXPORT int fb_native_run_dispatch(
     const fb_native_dispatch_call* call, fb_native_result* result);
-FB_PYSIM_INTERPRETER_EXPORT int fb_native_run_dispatch_stats(
-    const fb_native_dispatch_call* call, fb_native_result* result);
 FB_PYSIM_INTERPRETER_EXPORT int fb_native_run_dispatch_extension(
-    const fb_native_dispatch_call* call, fb_native_result* result);
-FB_PYSIM_INTERPRETER_EXPORT int fb_native_run_dispatch_stats_extension(
     const fb_native_dispatch_call* call, fb_native_result* result);
 
 FB_PYSIM_INTERPRETER_EXPORT int fb_native_run_debug_dispatch(

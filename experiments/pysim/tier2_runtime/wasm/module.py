@@ -132,19 +132,10 @@ class IntegerSequence(Protocol):
     def __iter__(self) -> Iterator[int]: ...
 
 
-def _uleb_size(value: int) -> int:
-    assert value >= 0
-    size = 1
-    while value >= 0x80:
-        value >>= 7
-        size += 1
-    return size
-
-
 # Fixed reference-layout charges for loader-owned records. These sizes model
 # the 32-bit target records; final C++ sizeof values remain part of the target
 # ABI review and are not inferred from CPython object sizes.
-LOADER_TYPE_ENTRY_BYTES = 16
+LOADER_TYPE_ENTRY_BYTES = 8
 LOADER_IMPORT_ENTRY_BYTES = 32
 LOADER_FUNCTION_ENTRY_BYTES = 40
 LOADER_EXPORT_ENTRY_BYTES = 4 * WASM_RAW_WORD_BYTES
@@ -254,26 +245,30 @@ class LocalWidthMap:
 
 
 @dataclass(slots=True)
+class FuncTypeRecord:
+    """Loader-owned bounds of one function signature in the module ROM."""
+
+    offset: int
+    size: int
+
+
+@dataclass(slots=True)
 class FuncType:
-    # Parsed modules keep only the raw type record.  Directly-constructed
-    # concept modules may still provide materialized vectors. Parsed signatures
-    # are views into Module.source and are shared with the native interpreter.
-    params: IntegerSequence | None
-    results: IntegerSequence | None
-    offset: int = 0
-    size: int = 0
-    params_source_offset: int | None = None
-    results_source_offset: int | None = None
+    """Temporary decoded signature borrowing the module ROM bytes."""
+
+    params: memoryview
+    results: memoryview
+    params_source_offset: int
+    results_source_offset: int
 
 
 @dataclass(slots=True)
 class Function:
     type_index: int
     locals_extra: StaticVector[int]  # declared (non-parameter) locals, in order
-    code: memoryview | None  # direct-construction fallback; loaded modules use source offsets
-    code_offset: int = 0
-    code_size: int = 0
-    code_pc_offset: int | None = None
+    code_offset: int
+    code_size: int
+    code_pc_offset: int
     control_map: ControlMap | None = None
     select_widths: ReadOnlyFlatMapStorage[int, int] | None = None
     drop_widths: ReadOnlyFlatMapStorage[int, int] | None = None
@@ -285,10 +280,6 @@ class Function:
     param_packed_slot_count_cache: int | None = None
     param_count_cache: int | None = None
     result_arity_cache: int | None = None
-
-    def __post_init__(self) -> None:
-        if self.code is not None:
-            self.code = memoryview(self.code)
 
 
 @dataclass(slots=True)
@@ -336,33 +327,8 @@ class Table:
 
 
 @dataclass(slots=True)
-class Element:
-    table_index: int
-    offset: int
-    offset_global_index: int | None = None
-    func_indices_offset: int = 0
-    func_indices_size: int = 0
-    func_count: int = 0
-    func_indices: StaticVector[int] | None = None  # direct-construction fallback
-
-
-@dataclass(slots=True)
-class DataSegment:
-    memory_index: int
-    offset: int
-    offset_global_index: int | None = None
-    data_offset: int = 0
-    data_size: int = 0
-    data: memoryview | None = None  # direct-construction fallback
-
-    def __post_init__(self) -> None:
-        if self.data is not None:
-            self.data = memoryview(self.data)
-
-
-@dataclass(slots=True)
 class Module:
-    types: StaticVector[FuncType] = field(default_factory=lambda: StaticVector(capacity=0))
+    types: StaticVector[FuncTypeRecord] = field(default_factory=lambda: StaticVector(capacity=0))
     imports: StaticVector[Import] = field(default_factory=lambda: StaticVector(capacity=0))
     global_import_count: int = 0
     functions: StaticVector[Function] = field(default_factory=lambda: StaticVector(capacity=0))
@@ -372,10 +338,6 @@ class Module:
     globals: StaticVector[Global] = field(default_factory=lambda: StaticVector(capacity=0))
     tables: StaticVector[Table] = field(default_factory=lambda: StaticVector(capacity=0))
     table_import_count: int = 0
-    elements: StaticVector[Element] = field(default_factory=lambda: StaticVector(capacity=0))
-    data_segments: StaticVector[DataSegment] = field(
-        default_factory=lambda: StaticVector(capacity=0)
-    )
     start_function: int | None = None
     element_section_offset: int = 0
     element_section_size: int = 0
@@ -393,44 +355,6 @@ class Module:
         """Return the bytes reserved while loading this module."""
 
         return self._arena_size
-
-    def __post_init__(self) -> None:
-        # Parsed modules replace every section with its exact two-pass capacity
-        # in configure_section_capacities() before appending any records.
-        # Direct concept modules may provide already-materialized sequences;
-        # their metadata is read directly without a second full copy.
-        self.prepare_function_layouts()
-        if self.functions and all(function.code_pc_offset is None for function in self.functions):
-            payload_offset = _uleb_size(len(self.functions))
-            for function in self.functions:
-                assert function.code is not None
-                local_group_count = 0
-                locals_size = _uleb_size(0)
-                previous_type: int | None = None
-                previous_count = 0
-                for value_type in function.locals_extra:
-                    if value_type == previous_type:
-                        previous_count += 1
-                    else:
-                        if previous_type is not None:
-                            locals_size += _uleb_size(previous_count) + 1
-                        local_group_count += 1
-                        previous_type = value_type
-                        previous_count = 1
-                if previous_type is not None:
-                    locals_size += _uleb_size(previous_count) + 1
-                locals_size += _uleb_size(local_group_count) - 1
-                body_size = locals_size + len(function.code)
-                body_size_prefix = _uleb_size(body_size)
-                function.code_pc_offset = payload_offset + body_size_prefix + locals_size
-                payload_offset += body_size_prefix + body_size
-        previous_code_end = 0
-        for function in self.functions:
-            assert function.code_pc_offset is not None
-            code_size = function.code_size if function.code is None else len(function.code)
-            assert function.code_pc_offset + code_size <= 0x1_0000_0000
-            assert previous_code_end <= function.code_pc_offset
-            previous_code_end = function.code_pc_offset + code_size
 
     def configure_section_capacities(
         self,
@@ -479,8 +403,6 @@ class Module:
             self.exports.relocate_arena(offset_delta)
             self.globals.relocate_arena(offset_delta)
             self.tables.relocate_arena(offset_delta)
-            self.elements.relocate_arena(offset_delta)
-            self.data_segments.relocate_arena(offset_delta)
             self.blocks.relocate_arena(offset_delta)
             for function in self.functions:
                 function.locals_extra.relocate_arena(offset_delta)
@@ -535,23 +457,6 @@ class Module:
         """Stream active element entries to a callback without retaining them."""
 
         if self.element_section_size == 0:
-            for elem in self.elements:
-                offset = elem.offset
-                if elem.offset_global_index is not None:
-                    assert resolve_globals
-                    assert elem.offset_global_index < len(global_values)
-                    offset = global_values[elem.offset_global_index] & 0xFFFF_FFFF
-                if elem.func_indices is not None:
-                    for index, function_index in enumerate(elem.func_indices):
-                        callback(elem.table_index, offset + index, function_index)
-                else:
-                    assert self.source is not None
-                    off = elem.func_indices_offset
-                    end = off + elem.func_indices_size
-                    for index in range(elem.func_count):
-                        function_index, off = decode_unsigned(self.source, off, end)
-                        callback(elem.table_index, offset + index, function_index)
-                    assert off == end
             return
 
         assert self.source is not None
@@ -586,17 +491,6 @@ class Module:
         """Stream active data segments to a callback without retaining them."""
 
         if self.data_section_size == 0:
-            for seg in self.data_segments:
-                data = seg.data
-                if data is None:
-                    assert self.source is not None
-                    data = self.source[seg.data_offset : seg.data_offset + seg.data_size]
-                offset = seg.offset
-                if seg.offset_global_index is not None:
-                    assert resolve_globals
-                    assert seg.offset_global_index < len(global_values)
-                    offset = global_values[seg.offset_global_index] & 0xFFFF_FFFF
-                callback(offset, data)
             return
 
         assert self.source is not None
@@ -664,9 +558,6 @@ class Module:
     def code_for(self, func_index: int) -> memoryview:
         """Raw bytecode for a locally-defined function, by unified function index."""
         function = self.functions[func_index - len(self.imports)]
-        if function.code_size == 0:
-            assert function.code is not None
-            return function.code
         assert self.source is not None
         return self.source[function.code_offset : function.code_offset + function.code_size]
 
@@ -674,7 +565,6 @@ class Module:
         """Return the Code-section PC of a defined function's first instruction byte."""
         assert not self.is_import(func_index)
         function = self.functions[func_index - len(self.imports)]
-        assert function.code_pc_offset is not None
         return function.code_pc_offset
 
     def function_index_for_pc(self, pc: int) -> int | None:
@@ -708,8 +598,6 @@ class Module:
         """Return a function type whose parsed signature bytes borrow Module.source."""
         assert 0 <= type_index < len(self.types)
         raw = self.types[type_index]
-        if raw.params is not None and raw.results is not None:
-            return raw
         assert self.source is not None
         return _read_func_type(self.source, raw.offset, raw.size)
 
@@ -853,23 +741,20 @@ def _read_func_type(data: memoryview, offset: int, size: int) -> FuncType:
     nparams, off = decode_unsigned(data, off, end)
     assert nparams <= FB_CONF_MAX_LOCALS, "WASM function parameter count exceeds configured maximum"
     params_offset = off
-    for _ in range(nparams):
-        assert data[off] == I32 or data[off] == I64 or data[off] == F32 or data[off] == F64
-        off += 1
+    # The loader validated the type bytes already. Accessors skip directly
+    # across them instead of repeating a parameter-count-dependent scan.
+    off += nparams
+    assert off < end
     params = data[params_offset:off]
     nresults, off = decode_unsigned(data, off, end)
     assert nresults <= 1, "MVP functions have at most one result"
     results_offset = off
-    for _ in range(nresults):
-        assert data[off] == I32 or data[off] == I64 or data[off] == F32 or data[off] == F64
-        off += 1
+    off += nresults
     assert off == end
     results = data[results_offset:off]
     return FuncType(
         params=params,
         results=results,
-        offset=offset,
-        size=size,
         params_source_offset=params_offset,
         results_source_offset=results_offset,
     )

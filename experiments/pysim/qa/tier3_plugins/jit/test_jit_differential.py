@@ -25,10 +25,10 @@ _PYSIM_DIR = _TESTS_DIR.parent
 import pytest
 import wasmtime
 from qa.shared.helpers import make_interpreter, make_native_interpreter, wat_to_wasm
+from qa.shared.runtime_stats import RuntimeStatsEngine as RuntimeEngine
 from qa.shared.runtime_support import make_runtime_engine, resident_module_traces
 from qa.shared.x64_jit import TraceCompiler
 from tier2_runtime.interpreter.interpreter import NativeInterpreter, TrapCode
-from tier2_runtime.runtime.engine import RuntimeEngine
 from tier2_runtime.wasm.module import Module
 from tier2_runtime.wasm.reader import parse
 

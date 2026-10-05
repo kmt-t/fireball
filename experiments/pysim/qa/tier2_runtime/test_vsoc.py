@@ -61,24 +61,23 @@ from tier2_runtime.vsoc.virq import (
     VirqFaultCode,
     VirqNode,
 )
-from tier2_runtime.wasm.module import I32, Function, FuncType, Module
+from tier2_runtime.wasm.module import Module
 from tier2_runtime.wasm.reader import parse
 from tier3_platform.drivers.printk import PrintkBuffer
 from tier3_platform.drivers.wasi.context import WasiHostContext
 
 
 def _make_virq_module() -> Module:
-    valid = FuncType(params=(I32, I32, I32, I32, I32), results=(I32,))
-    invalid = FuncType(params=(I32,), results=(I32,))
-    return Module(
-        types=(valid, invalid),
-        imports=(),
-        functions=(
-            Function(type_index=0, locals_extra=(), code=b""),
-            Function(type_index=0, locals_extra=(), code=b""),
-            Function(type_index=0, locals_extra=(), code=b""),
-            Function(type_index=1, locals_extra=(), code=b""),
-        ),
+    return parse(
+        memoryview(
+            wat_to_wasm(
+                "(module "
+                "(func (param i32 i32 i32 i32 i32) (result i32) i32.const 0) "
+                "(func (param i32 i32 i32 i32 i32) (result i32) i32.const 0) "
+                "(func (param i32 i32 i32 i32 i32) (result i32) i32.const 0) "
+                "(func (param i32) (result i32) i32.const 0))"
+            )
+        )
     )
 
 

@@ -13,7 +13,7 @@ from config import FB_CONF_MAX_FUNCTIONS, FB_CONF_MAX_GLOBALS, FB_CONF_MAX_TABLE
 from tier2_runtime.wasm.module import (
     Export,
     Function,
-    FuncType,
+    FuncTypeRecord,
     Global,
     Import,
     Memory,
@@ -55,7 +55,7 @@ class WasmModuleBuilder:
         self._module = module
         self._allocator = allocator
 
-    def on_type(self, function_type: FuncType) -> None:
+    def on_type(self, function_type: FuncTypeRecord) -> None:
         self._module.types.append(function_type)
 
     def on_function_import(self, import_entry: Import) -> None:
@@ -143,6 +143,13 @@ class WasmModuleBuilder:
 
     def finish(self, index_stack_value_widths: StackWidthIndexer) -> Module:
         """Validate cross-section references and build runtime lookup metadata."""
+        previous_code_end = 0
+        for function in self._module.functions:
+            code_end = function.code_pc_offset + function.code_size
+            assert previous_code_end <= function.code_pc_offset
+            assert code_end <= 0x1_0000_0000
+            previous_code_end = code_end
+
         for import_entry in self._module.imports:
             self._module.type_at(import_entry.type_index)
 

@@ -27,7 +27,6 @@ FB_PYSIM_ABI_EXPORT int fb_jit_runtime_run(
     const fb_native_dispatch_call* input, fb_native_result* result);
 FB_PYSIM_ABI_EXPORT void fb_jit_runtime_close(fireball::JitRuntime* cache);
 FB_PYSIM_ABI_EXPORT int fb_jit_runtime_flush(fireball::JitRuntime* cache);
-FB_PYSIM_ABI_EXPORT void fb_jit_runtime_reset_counts(fireball::JitRuntime* cache);
 FB_PYSIM_ABI_EXPORT int fb_jit_runtime_yield(fireball::JitRuntime* cache);
 FB_PYSIM_ABI_EXPORT int fb_jit_runtime_compile(fireball::JitRuntime* cache, std::uint32_t budget);
 

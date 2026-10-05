@@ -28,6 +28,7 @@ from ipc_router import (
     ScopeKind,
     pack_key32,
 )
+from qa.shared.memory import snapshot_ipc_storage
 from scheduler import Scheduler, WaitDir
 from tier2_runtime.memory.manager import FB_CONF_MEMORY_POOL_SIZE, MemoryManager
 from tier2_runtime.observability.logger import (
@@ -94,9 +95,9 @@ def test_scenario_ipc_router_and_logging():
         # Corrupt the wire count after a valid internal construction. Internal
         # construction of nine entries is an assert contract, not this status path.
         oversized.block.write_u64(0, 9)
-        before = bytes(oversized.block.data)
+        before = snapshot_ipc_storage(oversized.block)
         status4, _ = yield from router.send(ch1, oversized)
-        assert bytes(oversized.block.data) == before
+        assert snapshot_ipc_storage(oversized.block) == before
         assert ch1.waiter_task is None
         assert ch1.waiter_dir == WaitDir.NONE
         sent.append(("4_too_large", status4, oversized))

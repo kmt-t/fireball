@@ -41,7 +41,7 @@ def record_usage(output: Path, hot_functions: int, cold_functions: int, iteratio
     assert hot_functions > 0 and cold_functions > 0 and iterations > 0
     allocator = BumpAllocator()
     module = parse(
-        bytes(wasmtime.wat2wasm(build_workload_wat(hot_functions, cold_functions))), allocator
+        memoryview(wasmtime.wat2wasm(build_workload_wat(hot_functions, cold_functions))), allocator
     )
     records: list[TraceExecutionRecord] = []
 
@@ -52,7 +52,7 @@ def record_usage(output: Path, hot_functions: int, cold_functions: int, iteratio
     manager = JITRuntimeManager(jit_compiler=TraceCompiler(), retire_observer=on_retire)
     engine = RuntimeEngine(jit_runtime=manager, bump_allocator=allocator)
     engine.register_module_blocks(module)
-    interpreter = NativeInterpreter(module, InterpreterBindings.empty())
+    interpreter = NativeInterpreter(module, InterpreterBindings.empty(), bump_allocator=allocator)
     for cold_index in range(cold_functions):
         for hot_index in range(hot_functions):
             expected = sum((k * (3 + hot_index)) ^ 7 for k in range(iterations))
@@ -93,7 +93,7 @@ def record_usage(output: Path, hot_functions: int, cold_functions: int, iteratio
                         _BENCH_DIR.parent / "tier2_runtime/interpreter/libnative_interpreter.so"
                     ).read_bytes()
                 ).hexdigest(),
-                "runtime_stats_enabled": engine.collect_runtime_stats,
+                "runtime_stats_enabled": False,
                 "hotspot_profiling_enabled": manager.hotspot_profiling_enabled,
                 "evicted_traces": len(evicted),
                 "zero_execution_evictions": zero_evicted,

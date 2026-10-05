@@ -1,4 +1,5 @@
 # Build the required Tier 2 native Interpreter (Windows / clang-cl).
+param([switch]$Qa)
 $ErrorActionPreference = "Stop"
 
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -16,6 +17,11 @@ New-Item -ItemType Directory -Force -Path $nativeBuildDir | Out-Null
 $sourceCxx = Join-Path $scriptDir "native_interpreter.cxx"
 $pythonPackageDir = Join-Path $projectRoot "experiments\pysim\tier2_runtime\interpreter"
 $outputDll = Join-Path $nativeBuildDir "native_interpreter.dll"
+if ($Qa) {
+    $sourceCxx = Join-Path $projectRoot "experiments\pysim\qa\private\native_interpreter_probe.cxx"
+    $pythonPackageDir = Join-Path $projectRoot "experiments\pysim\qa\private"
+    $outputDll = Join-Path $nativeBuildDir "interpreter_probe.dll"
+}
 
 Write-Host ">>> Compiling native_interpreter.cxx -> native_interpreter.dll" -ForegroundColor Yellow
 & clang-cl.exe /TP /std:c++latest /O2 /LD /W4 `
@@ -30,5 +36,5 @@ Write-Host ">>> Compiling native_interpreter.cxx -> native_interpreter.dll" -For
     "/LIBPATH:$sdkRoot\Lib\$sdkVer\ucrt\x64" `
     "/LIBPATH:$sdkRoot\Lib\$sdkVer\um\x64"
 if ($LASTEXITCODE -ne 0) { throw "clang-cl compile failed" }
-Copy-Item -Force $outputDll (Join-Path $pythonPackageDir "native_interpreter.dll")
-Write-Host "✔ Built native_interpreter.dll" -ForegroundColor Green
+Copy-Item -Force $outputDll (Join-Path $pythonPackageDir (Split-Path -Leaf $outputDll))
+Write-Host "Built $outputDll" -ForegroundColor Green

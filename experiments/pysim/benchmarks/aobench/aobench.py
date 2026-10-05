@@ -448,10 +448,8 @@ def run_aobench():
     wasi_ctx_t3 = WasiHostContext(sysv_t3)
     host_funcs_t3 = wasi_ctx_t3.build_interpreter_host_functions(module)
     module.init_memory_data(wasi_ctx_t3.guest_memory, ())
-    debug = "--debug" in sys.argv
     runtime_engine = RuntimeEngine(
         jit_runtime=JITRuntimeManager(reserve_native_region),
-        debug=debug,
     )
     runtime_engine.register_module_blocks(module)
     interp_t3 = NativeInterpreter(

@@ -1,9 +1,4 @@
-"""
-experiments/pysim/tier2_runtime/wasm/leb128.py
-LEB128 varint encode/decode, shared by the binary reader and the test-module
-builder (see wasm_builder.py -- there is no wat2wasm/wasmtime in this
-sandbox, so binaries used for testing are synthesized directly in Python).
-"""
+"""Bounded LEB128 decoding for the ROM-backed WASM binary reader."""
 
 from __future__ import annotations
 
@@ -76,31 +71,3 @@ def decode_signed(
         assert remaining_bits > 7, f"signed LEB128 integer exceeds maximum {max_bytes} bytes"
         shift += 7
     assert False, f"signed LEB128 integer exceeds maximum {max_bytes} bytes"
-
-
-def encode_unsigned(value: int) -> bytes:
-    assert value >= 0
-    out = bytearray()
-    while True:
-        byte = value & 0x7F
-        value >>= 7
-        if value != 0:
-            out.append(byte | 0x80)
-        else:
-            out.append(byte)
-            return bytes(out)
-
-
-def encode_signed(value: int) -> bytes:
-    out = bytearray()
-    more = True
-    while more:
-        byte = value & 0x7F
-        value >>= 7
-        if (value == 0 and (byte & 0x40) == 0) or (value == -1 and (byte & 0x40) != 0):
-            more = False
-        else:
-            byte |= 0x80
-
-        out.append(byte)
-    return bytes(out)

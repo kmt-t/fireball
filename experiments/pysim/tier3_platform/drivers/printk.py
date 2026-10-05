@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import ctypes
 from collections.abc import Callable
 
+from tier1_core.native_buffer import BufferLease
+from tier1_core.native_printk import BASE64, EVENT, PRINTK_WRITE, NativePrintkWriter
 from tier1_core.printk import (
-    PRINTK_HEADER_SIZE,
     PRINTK_MAX_RECORD_SIZE,
     PrintkEvent,
     PrintkLevel,
@@ -14,7 +16,6 @@ from tier1_core.printk import (
 )
 
 PRINTK_BUFFER_CAPACITY = 4096
-_BASE64_ALPHABET = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
 
 
 class PrintkBuffer:
@@ -49,13 +50,24 @@ class PrintkBuffer:
 class PrintkSink:
     """Write buffered runtime records and synchronous kernel events to one sink."""
 
-    __slots__ = ("_decode_record", "_event_buffer", "_event_view", "_sink")
+    __slots__ = (
+        "_arguments",
+        "_callback_error",
+        "_decode_record",
+        "_event_buffer",
+        "_raw_writer",
+        "_record_writer",
+        "_sink",
+    )
 
     def __init__(self, sink: PrintkWriter, decode_record: Callable[[memoryview], str]) -> None:
         self._sink = sink
         self._decode_record = decode_record
         self._event_buffer = bytearray(PRINTK_MAX_RECORD_SIZE)
-        self._event_view = memoryview(self._event_buffer)
+        self._arguments = (ctypes.c_uint32 * 4)()
+        self._callback_error: AssertionError | None = None
+        self._raw_writer = NativePrintkWriter(0, PRINTK_WRITE(self._write_native_raw))
+        self._record_writer = NativePrintkWriter(0, PRINTK_WRITE(self._write_native_record))
 
     def write(self, data: memoryview) -> int:
         """Decode one record at output time; report consumed input bytes to Logger."""
@@ -68,36 +80,36 @@ class PrintkSink:
         """Preserve guest stderr bytes on the same physical endpoint."""
         return self._sink.write(data)
 
-    def write_base64(self, data: memoryview) -> int:
-        """Encode one binary payload plus LF using the existing fixed record workspace.
-
-        Only the final group may contain padding. A failed write can leave a prefix
-        on the physical endpoint, so assert immediately rather than retry the frame.
-        """
-        assert data.ndim == 1 and data.itemsize == 1 and data.format == "B"
-        wire = self._event_buffer
-        input_offset = 0
-        output_size = 0
-        while input_offset < len(data):
-            remaining = len(data) - input_offset
-            byte0 = data[input_offset]
-            byte1 = data[input_offset + 1] if remaining > 1 else 0
-            byte2 = data[input_offset + 2] if remaining > 2 else 0
-            wire[output_size] = _BASE64_ALPHABET[byte0 >> 2]
-            wire[output_size + 1] = _BASE64_ALPHABET[((byte0 & 3) << 4) | (byte1 >> 4)]
-            wire[output_size + 2] = (
-                _BASE64_ALPHABET[((byte1 & 15) << 2) | (byte2 >> 6)] if remaining > 1 else ord("=")
+    def _write_native_raw(self, owner: int, data: int, size: int) -> int:
+        try:
+            return self._sink.write(
+                memoryview((ctypes.c_uint8 * size).from_address(data)).cast("B")
             )
-            wire[output_size + 3] = _BASE64_ALPHABET[byte2 & 63] if remaining > 2 else ord("=")
-            input_offset += min(remaining, 3)
-            output_size += 4
-            if output_size == PRINTK_MAX_RECORD_SIZE or input_offset == len(data):
-                written = self._sink.write(self._event_view[:output_size])
-                assert written == output_size, "incomplete printk base64 write"
-                output_size = 0
-        wire[0] = ord("\n")
-        written = self._sink.write(self._event_view[:1])
-        assert written == 1, "incomplete printk base64 newline"
+        except AssertionError as error:
+            self._callback_error = error
+            return 0
+
+    def _write_native_record(self, owner: int, data: int, size: int) -> int:
+        try:
+            return self.write(memoryview((ctypes.c_uint8 * size).from_address(data)).cast("B"))
+        except AssertionError as error:
+            self._callback_error = error
+            return 0
+
+    def write_base64(self, data: memoryview) -> int:
+        """Borrow a byte view; C++ encodes it in the existing fixed workspace."""
+        assert data.ndim == 1 and data.itemsize == 1 and data.format == "B"
+        self._callback_error = None
+        lease = BufferLease(data, flags=0x18)  # PyBUF_STRIDES permits sliced byte views.
+        try:
+            workspace = (ctypes.c_uint8 * PRINTK_MAX_RECORD_SIZE).from_buffer(self._event_buffer)
+            status = BASE64(
+                ctypes.byref(self._raw_writer), workspace, lease.address, lease.size, lease.stride
+            )
+        finally:
+            lease.release()
+        assert self._callback_error is None, str(self._callback_error)
+        assert status == 1, "incomplete printk base64 write"
         return len(data)
 
     def write_event(
@@ -109,34 +121,24 @@ class PrintkSink:
         arg2: int = 0,
         arg3: int = 0,
     ) -> None:
-        """Decode and emit one diagnostic synchronously without the Logger ring."""
+        """C++ emits the shared event record; the platform decodes at output time."""
         argument_count = printk_argument_count(event)
         assert 0 <= arg0 <= 0xFFFF_FFFF
         assert 0 <= arg1 <= 0xFFFF_FFFF
         assert 0 <= arg2 <= 0xFFFF_FFFF
         assert 0 <= arg3 <= 0xFFFF_FFFF
-        wire = self._event_buffer
-        wire[0] = int(level)
-        event_id = int(event)
-        assert 0 <= event_id <= 0x00FF_FFFF
-        wire[1] = event_id & 0xFF
-        wire[2] = (event_id >> 8) & 0xFF
-        wire[3] = (event_id >> 16) & 0xFF
-        if argument_count > 0:
-            self._write_u32(4, arg0)
-        if argument_count > 1:
-            self._write_u32(8, arg1)
-        if argument_count > 2:
-            self._write_u32(12, arg2)
-        if argument_count > 3:
-            self._write_u32(16, arg3)
-        record_size = PRINTK_HEADER_SIZE + 4 * argument_count
-        self.write(self._event_view[:record_size])
-
-    def _write_u32(self, offset: int, value: int) -> None:
-        assert 0 <= value <= 0xFFFF_FFFF
-        wire = self._event_buffer
-        wire[offset] = value & 0xFF
-        wire[offset + 1] = (value >> 8) & 0xFF
-        wire[offset + 2] = (value >> 16) & 0xFF
-        wire[offset + 3] = (value >> 24) & 0xFF
+        self._arguments[0] = arg0
+        self._arguments[1] = arg1
+        self._arguments[2] = arg2
+        self._arguments[3] = arg3
+        self._callback_error = None
+        workspace = (ctypes.c_uint8 * PRINTK_MAX_RECORD_SIZE).from_buffer(self._event_buffer)
+        EVENT(
+            ctypes.byref(self._record_writer),
+            workspace,
+            int(level),
+            int(event),
+            argument_count,
+            self._arguments,
+        )
+        assert self._callback_error is None, str(self._callback_error)

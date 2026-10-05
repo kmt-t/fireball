@@ -15,6 +15,7 @@ from qa.private.debugger_support import make_debug_execution
 from qa.shared.fixtures.platform_drivers import create_reference_platform_drivers
 from qa.shared.fixtures.uvwasi_reference import UvwasiReferenceContext
 from qa.shared.helpers import expect_assertion, make_native_interpreter
+from qa.shared.runtime_stats import RuntimeStatsEngine as RuntimeEngine
 from qa.shared.runtime_support import compile_runtime_block, make_runtime_engine
 from qa.shared.x64_jit import TraceCompiler
 from scheduler import ChannelAction, TaskState, WaitDir
@@ -29,7 +30,7 @@ from tier2_runtime.runtime.composer import (
     RuntimeFactories,
     RuntimePluginSelection,
 )
-from tier2_runtime.runtime.engine import RuntimeDriveMode, RuntimeEngine
+from tier2_runtime.runtime.engine import RuntimeDriveMode
 from tier2_runtime.runtime.recovery import Result
 from tier2_runtime.wasm.module import Module
 from tier2_runtime.wasm.reader import parse

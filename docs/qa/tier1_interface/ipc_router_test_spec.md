@@ -74,7 +74,7 @@ URIベースのサービス検索（3段パイプライン）、デバイス種�
 | テストケースID | 実行可能テスト | 実際に確認する範囲 |
 | :--- | :--- | :--- |
 | TEST-IPCR-02/04/05/06/15 | `test_lookup_matches_specification_permission_matrix` | 登録URIのロール、72組の許可・拒否、許可チャネルの同一性、拒否エッジの不在 |
-| TEST-IPCR-02/05 | `test_ipc_01_uri_lookup_and_permission_matrix`、`test_ipc_06_router_create_channel_authorization` | 登録URIの検索、実際の偽装send拒否、create_channelのRBAC拒否。拒否sendがyieldした場合も失敗する。 |
+| TEST-IPCR-02/05 | `test_ipc_01_uri_lookup_and_permission_matrix`、`test_ipc_06_router_lookup_authorization` | 登録URIの検索、実際の偽装send拒否、lookupのRBAC拒否。拒否sendがyieldした場合も失敗する。 |
 | TEST-IPCR-03 | `test_unknown_uri_rejection_preserves_message` | 未登録URIのERR_NOT_FOUND、内容・所有者・ページ世代・タスク状態の保全 |
 | TEST-IPCR-05/14/15、GOTCHA-IPCR-02 | `test_send_preflight_rejection_preserves_shared_memory` | 実際のsend拒否、メッセージとリソースの所有者・内容・ページ世代、チャネル待機状態の保全、拒否後の再利用 |
 | TEST-IPCR-07/11/12/21/22/23/24/25 | `test_request_reply_preserves_contents_and_transfers_exclusive_ownership` | 到達順と応答形式の4組、認証済み送信元ID、全KV、物理アドレス、リソース内容、所有者推移、失効ハンドル拒否、pending応答拒否、送信元の応答待機 |

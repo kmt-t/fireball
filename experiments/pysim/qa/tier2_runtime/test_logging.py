@@ -630,7 +630,7 @@ def test_log_18_printk_base64_roundtrip_across_chunk_boundaries(size: int) -> No
     assert output.count(b"\n") == 1 and output.endswith(b"\n")
     assert b64decode(output[:-1], validate=True) == payload
     assert sink._event_buffer is workspace
-    assert sink._event_view.obj is workspace
+    assert len(workspace) == 20
     assert len(workspace) == 20
 
 
@@ -643,6 +643,20 @@ def test_log_18_printk_base64_reads_only_the_borrowed_view() -> None:
     assert payload == b"ignored:foobar:ignored"
     assert sink.write_base64(memoryview(b"fxoxo")[::2]) == 3
     assert capture.drain_output() == b"Zm9v\n"
+    assert sink.write_base64(memoryview(b"raboof")[::-1]) == 6
+    assert capture.drain_output() == b"Zm9vYmFy\n"
+
+
+@pytest.mark.parametrize("value", (0, 0xFFFF_FFFF, 0xFFFF_FFFF_FFFF_FFFF))
+def test_printk_native_u64_preserves_full_width_values(value: int) -> None:
+    import ctypes
+
+    from tier1_core.native_printk import U64
+
+    capture = PrintkBuffer()
+    sink = PrintkSink(capture, LogDictionary().decode_record)
+    assert U64(ctypes.byref(sink._raw_writer), b"value", 5, value) == 1
+    assert capture.drain_output() == f"value={value}\n".encode()
 
 
 def test_log_18_printk_base64_shares_workspace_with_synchronous_events() -> None:

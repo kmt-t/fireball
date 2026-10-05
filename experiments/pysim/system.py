@@ -28,7 +28,7 @@ from ipc_router import (
     IPCRouter,
     IPCStatus,
     Role,
-    bytes_to_kv_storage,
+    bytes_to_kv_entries,
     kv_entries_to_bytes,
 )
 from tier2_runtime.hal.dispatch import HalBufferPool
@@ -607,7 +607,7 @@ class System:
         assert task is not None, "IPC send requires an active scheduler task"
         msg = IPCMessage.from_entries(
             memory_manager=self.memory_manager,
-            entries=bytes_to_kv_storage(payload),
+            entries=bytes_to_kv_entries(payload),
         )
 
         gen = self.ipc.send(channel, msg)

@@ -32,6 +32,8 @@ from ipc_router import (
     unpack_key32,
 )
 from qa.shared.helpers import expect_assertion, make_test_ipc_message
+from qa.shared.ipc import lookup_channel_as
+from qa.shared.memory import snapshot_ipc_storage
 from scheduler import ChannelAction, Scheduler, Task, TaskState, WaitDir
 from system import (
     System,
@@ -209,11 +211,11 @@ def test_send_preflight_rejection_preserves_shared_memory(rejection: str) -> Non
         registry.get_generation(block.page_idx),
         registry.get_generation(payload.page_idx),
     )
-    initial_bytes = bytes(block.data)
+    initial_bytes = snapshot_ipc_storage(block)
     initial_task_state = sender.state
 
     if rejection == "wrong_role_channel":
-        denied_channel = router.channel_for_edge(Role.DEBUGGER, Role.HAL_GPIO)
+        denied_channel = lookup_channel_as(router, Role.DEBUGGER, "fireball://hal/gpio/0")
         assert denied_channel is not None
         expected_status = IPCStatus.ERR_PERMISSION_DENIED
     else:
@@ -222,7 +224,7 @@ def test_send_preflight_rejection_preserves_shared_memory(rejection: str) -> Non
         # Inject a malformed wire count at the receiving boundary. The
         # internal construction API must itself assert on >8 entries.
         block.write_u64(0, 9)
-        initial_bytes = bytes(block.data)
+        initial_bytes = snapshot_ipc_storage(block)
         denied_channel = valid_channel
         expected_status = IPCStatus.ERR_MSG_TOO_LARGE
 
@@ -231,7 +233,7 @@ def test_send_preflight_rejection_preserves_shared_memory(rejection: str) -> Non
     assert response is None
     assert msg.ownership == OwnershipState.SENDER_OWNS
     assert msg.block is block
-    assert bytes(block.data) == initial_bytes
+    assert snapshot_ipc_storage(block) == initial_bytes
     assert payload.read_u32(0) == 0xCAFE_BABE
     assert registry.get_owner(block.page_idx) == sender_id
     assert registry.get_owner(payload.page_idx) == sender_id
@@ -287,8 +289,8 @@ def test_ipc_04_select_recv_picks_first_ready_sender_and_clears_group():
     assert sched.get_task(recv_id).state == TaskState.SUSPENDED_CSP
     # Selecting on both edges must not double-register: each channel still
     # has exactly one waiter, this same receiver task.
-    runtime_ch = router.channel_for_edge(Role.RUNTIME, Role.CORE_SERVICE)
-    debugger_ch = router.channel_for_edge(Role.DEBUGGER, Role.CORE_SERVICE)
+    runtime_ch = lookup_channel_as(router, Role.RUNTIME, "fireball://core/coos/0")
+    debugger_ch = lookup_channel_as(router, Role.DEBUGGER, "fireball://core/coos/0")
     assert runtime_ch is not None and debugger_ch is not None
     assert runtime_ch.waiter_dir == WaitDir.RECV
     assert debugger_ch.waiter_dir == WaitDir.RECV
@@ -350,7 +352,7 @@ def test_ipc_05_message_storage_ownership_and_access_check():
         assert len(msg) == 2
         assert 10 in msg
         msg.append(15, 150)
-        assert msg.data is not None
+        assert msg.block is not None
         assert msg.flat_map_view.find(15) == 150
         assert msg.flat_map_view.find(99) is None
 
@@ -416,10 +418,10 @@ def test_ipc_invalid_internal_batch_asserts_before_write(
     message = make_test_ipc_message([(2, 20), (4, 40)], memory_manager=router.memory_manager)
     block = message.block
     assert block is not None
-    before = bytes(block.data)
+    before = snapshot_ipc_storage(block)
     with expect_assertion(reason):
         message.write_entries(entries)
-    assert bytes(block.data) == before
+    assert snapshot_ipc_storage(block) == before
     assert tuple(message.entries) == ((2, 20), (4, 40))
 
 
@@ -512,8 +514,8 @@ def test_ipc_corrupt_count_is_not_silently_clamped() -> None:
     assert block.read_u64(0) == 9
 
 
-def test_ipc_06_router_create_channel_authorization():
-    """TEST-IPCR-02/05: create_channel は登録 URI の RBAC を検査する。"""
+def test_ipc_06_router_lookup_authorization():
+    """TEST-IPCR-02/05: lookup は登録 URI の RBAC を検査する。"""
     sched = Scheduler()
     router = _make_router(sched)
 
@@ -521,7 +523,8 @@ def test_ipc_06_router_create_channel_authorization():
     runtime_task_id = sched.spawn("runtime_task", role=Role.RUNTIME)
     sched.current_task = sched.get_task(runtime_task_id)
 
-    ch_hal = router.create_channel("fireball://hal/gpio/0")
+    status, ch_hal = router.lookup("fireball://hal/gpio/0")
+    assert status == IPCStatus.COMPLETED
     assert ch_hal is not None, "RUNTIME -> HAL_GPIO must be allowed"
 
     # Task with Role.HAL_GPIO cannot open channel to DEBUGGER (DENIED)
@@ -529,7 +532,8 @@ def test_ipc_06_router_create_channel_authorization():
     sched.current_task = sched.get_task(hal_task_id)
 
     assert router.find_service("fireball://dbg/manager/0") is not None
-    ch_denied = router.create_channel("fireball://dbg/manager/0")
+    status, ch_denied = router.lookup("fireball://dbg/manager/0")
+    assert status == IPCStatus.ERR_PERMISSION_DENIED
     assert ch_denied is None, "HAL_GPIO -> DEBUGGER must be denied by RBAC"
 
     sched.current_task = sched.get_task(runtime_task_id)
@@ -641,13 +645,12 @@ def test_lookup_matches_specification_permission_matrix(
     status, channel = router.lookup(uri)
     if allowed:
         assert status == IPCStatus.COMPLETED
-        assert channel is router.channel_for_edge(sender_role, target_role)
         assert channel is not None
+        assert sched.get_channel(channel.channel_id) is channel
         assert channel.waiter_dir == WaitDir.NONE
     else:
         assert status == IPCStatus.ERR_PERMISSION_DENIED
         assert channel is None
-        assert router.channel_for_edge(sender_role, target_role) is None
 
 
 def test_unknown_uri_rejection_preserves_message() -> None:
@@ -661,7 +664,7 @@ def test_unknown_uri_rejection_preserves_message() -> None:
     msg = make_test_ipc_message([(13, 57)], memory_manager=router.memory_manager)
     block = msg.block
     assert block is not None
-    initial_bytes = bytes(block.data)
+    initial_bytes = snapshot_ipc_storage(block)
     initial_generation = router.memory_manager.page_registry.get_generation(block.page_idx)
     initial_task_state = sender.state
 
@@ -669,7 +672,7 @@ def test_unknown_uri_rejection_preserves_message() -> None:
 
     assert msg.ownership == OwnershipState.SENDER_OWNS
     assert msg.get(13) == 57
-    assert bytes(block.data) == initial_bytes
+    assert snapshot_ipc_storage(block) == initial_bytes
     assert router.memory_manager.page_registry.get_owner(block.page_idx) == sender_id
     assert router.memory_manager.page_registry.get_generation(block.page_idx) == initial_generation
     assert sender.state == initial_task_state

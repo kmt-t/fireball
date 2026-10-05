@@ -32,10 +32,11 @@ Sinkの有効・無効で戻り値、trap、yield、ゲスト状態を変えな�
 | guest trap | 両実行方式でエラーを返す。元の結果を保持し、TRAPと中断終了を1回ずつ通知する。終了理由、相関ID、時刻も一致する |
 | host failure | 両実行方式でエラーを返す。元の結果と中断理由が一致し、TRAPを通知しない |
 
-TEST-OBS-03の新規イベント破棄を確認する旧試験は、最新履歴保持の証拠に数えない。
+TEST-OBS-03/05は同ファイルの`test_event_sink_retains_latest_events_in_issue_order`で検証する。容量1、2、4に対し、容量を超える回数の入力と再充填を行う。最新イベントの全値と発行順、累積欠落数、容量不足と未対応majorによるexport拒否後の保持を照合する。
 
 ## 4. 未検証・スコープ外
 
+- イベントリングの容量超過試験はpysimの保持順序だけを判定し、C++実装の証拠に数えない。
 - 公開call境界の構成試験は、内部命令実行イベント、実行中export拒否、C++のコード除去と資源量を判定しない。
 - 構成選択は [`runtime_plugin_architecture_test_spec.md`](docs/qa/tier2_runtime/runtime_plugin_architecture_test_spec.md) を参照する。
 - Profiler集計、JIT履歴、外部ログ形式は各コンポーネントのテスト仕様を参照する。

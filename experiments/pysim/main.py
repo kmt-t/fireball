@@ -194,13 +194,6 @@ def demo_wasmjit_hybrid_execution(sysv: System) -> None:
     result = engine.call(interp, 0, (6,))
     result_val = result[0]
     print(f"  [Result] fact(6) = {result_val} (expected 720) [OK]")
-    if engine.collect_runtime_stats:
-        print(
-            f"  [Stats] Total Interp Blocks={engine.stat_interp_steps}, "
-            f"JIT Traces={engine.stat_jit_invocations}"
-        )
-    else:
-        print("  [Stats] Runtime counters are disabled in this build.")
     assert result_val == 720
 
 

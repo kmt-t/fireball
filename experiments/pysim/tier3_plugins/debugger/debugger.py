@@ -510,18 +510,18 @@ class _InterpreterRegisterView:
         return self
 
     def __len__(self) -> int:
-        cont = self._call.cont
-        return len(cont[2]) if cont is not None else 0
+        locals_window = self._call._locals
+        return len(locals_window) if locals_window is not None else 0
 
     def __getitem__(self, index: int) -> int:
-        cont = self._call.cont
-        assert cont is not None
-        return self._call.context.local_stack[cont[2].raw_slot(index)]
+        locals_window = self._call._locals
+        assert locals_window is not None
+        return self._call.context.local_stack[locals_window.raw_slot(index)]
 
     def __setitem__(self, index: int, value: int) -> None:
-        cont = self._call.cont
-        assert cont is not None
-        self._call.context.local_stack.write_raw_at(cont[2].raw_slot(index), value)
+        locals_window = self._call._locals
+        assert locals_window is not None
+        self._call.context.local_stack.write_raw_at(locals_window.raw_slot(index), value)
 
 
 class InterpreterExecutionControl:
@@ -565,13 +565,13 @@ class InterpreterExecutionControl:
         call = self.call
         if call.finished:
             return self._control.current_pc if call.trap is not None else None
-        cont = call.cont
-        assert cont is not None
+        frame = call._frame
+        assert frame is not None
         if pc != call.current_pc():
             function_index = call.context.module.function_index_for_pc(pc)
-            assert function_index == cont[1].func_index
-            function_pc_offset = call.context.module.function_pc_offset(cont[1].func_index)
-            call.cont = (pc - function_pc_offset, cont[1], cont[2], cont[3])
+            assert function_index == frame.func_index
+            function_pc_offset = call.context.module.function_pc_offset(frame.func_index)
+            call._ip = pc - function_pc_offset
         self._control.breakpoint_count = len(debugger._breakpoints)
         self._control.single_step = int(single_step)
         self._control.executed = 0

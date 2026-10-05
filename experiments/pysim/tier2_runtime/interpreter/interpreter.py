@@ -288,24 +288,12 @@ from tier2_runtime.wasm.opcodes import (
     UNREACHABLE,
 )
 
-NATIVE_RUNTIME_PROFILE_STATS_AVAILABLE = bool(_native_abi.RUNTIME_PROFILE_STATS_AVAILABLE)
-
-NativeDispatchMetrics = tuple[int, int, int, int, int, int]
 NativeDispatchEntryPoint = _native_abi.NativeDispatchEntryPoint
 
 
-def select_native_dispatch_entry(
-    collect_stats: bool, with_extension: bool
-) -> NativeDispatchEntryPoint:
-    """Select one fixed native dispatcher while composing a Runtime instance."""
-
-    if collect_stats:
-        if with_extension:
-            return _native_abi.RUN_DISPATCH_STATS_EXTENSION
-        return _native_abi.RUN_DISPATCH_STATS
-    if with_extension:
-        return _native_abi.RUN_DISPATCH_EXTENSION
-    return _native_abi.RUN_DISPATCH
+def select_native_dispatch_entry(with_extension: bool) -> NativeDispatchEntryPoint:
+    """Select the product dispatcher for the composed execution plugin."""
+    return _native_abi.RUN_DISPATCH_EXTENSION if with_extension else _native_abi.RUN_DISPATCH
 
 
 I32_MASK = 0xFFFFFFFF
@@ -908,44 +896,15 @@ def _read_memarg(code: bytes, ip: int) -> tuple[int, int]:
     return mem_offset, next_ip
 
 
-class _PyBuffer(ctypes.Structure):
-    """Minimal CPython buffer record used to obtain a read-only view address."""
-
-    _fields_ = (
-        ("buf", ctypes.c_void_p),
-        ("obj", ctypes.c_void_p),
-        ("len", ctypes.c_ssize_t),
-        ("itemsize", ctypes.c_ssize_t),
-        ("format", ctypes.c_char_p),
-        ("ndim", ctypes.c_int),
-        ("shape", ctypes.c_void_p),
-        ("strides", ctypes.c_void_p),
-        ("suboffsets", ctypes.c_void_p),
-        ("internal", ctypes.c_void_p),
-    )
-
-
 def _native_buffer_address(view: memoryview) -> int:
-    """Return a non-owning buffer address for both writable and ROM views."""
-
+    """Borrow the address using the shared CPython buffer ABI definition."""
     if view.nbytes == 0:
         return 0
+    lease = _native_abi.BufferLease(view)
     try:
-        return ctypes.addressof(ctypes.c_ubyte.from_buffer(view))
-    except TypeError, ValueError:
-        descriptor = _PyBuffer()
-        get_buffer = ctypes.pythonapi.PyObject_GetBuffer
-        get_buffer.argtypes = (ctypes.py_object, ctypes.POINTER(_PyBuffer), ctypes.c_int)
-        get_buffer.restype = ctypes.c_int
-        release_buffer = ctypes.pythonapi.PyBuffer_Release
-        release_buffer.argtypes = (ctypes.POINTER(_PyBuffer),)
-        release_buffer.restype = None
-        assert get_buffer(view, ctypes.byref(descriptor), 0) == 0
-        try:
-            assert descriptor.buf is not None
-            return int(descriptor.buf)
-        finally:
-            release_buffer(ctypes.byref(descriptor))
+        return lease.address
+    finally:
+        lease.release()
 
 
 class CallFrame:
@@ -1228,7 +1187,6 @@ class NativeModuleExecution:
         "_global_widths",
         "_module_view",
         "_signature_address",
-        "_signature_bytes",
         "_table_views",
         "_templates",
         "dispatch_owner",
@@ -1296,53 +1254,15 @@ class NativeModuleExecution:
         type_count = len(module.types)
         type_array_type = FunctionTypeExecutionViewNative * type_count
         self._function_types = type_array_type()
-        signature_size = 0
-        source_backed_signatures = module.source is not None
+        assert module.source is not None
+        self._signature_address = _native_buffer_address(module.source)
         for type_index in range(type_count):
             function_type = module.type_at(type_index)
-            assert function_type.params is not None and function_type.results is not None
-            signature_size += len(function_type.params) + len(function_type.results)
-            source_backed_signatures = source_backed_signatures and (
-                function_type.params_source_offset is not None
-                and function_type.results_source_offset is not None
-            )
-        if source_backed_signatures:
-            assert module.source is not None
-            self._signature_bytes = None
-            self._signature_address = _native_buffer_address(module.source)
-            for type_index in range(type_count):
-                function_type = module.type_at(type_index)
-                descriptor = self._function_types[type_index]
-                assert function_type.params_source_offset is not None
-                assert function_type.results_source_offset is not None
-                assert function_type.params is not None and function_type.results is not None
-                descriptor.param_offset = function_type.params_source_offset
-                descriptor.param_count = len(function_type.params)
-                descriptor.result_offset = function_type.results_source_offset
-                descriptor.result_count = len(function_type.results)
-        else:
-            signature_array_type = ctypes.c_uint8 * signature_size
-            signature_bytes = signature_array_type()
-            self._signature_bytes = signature_bytes
-            signature_offset = 0
-            for type_index in range(type_count):
-                function_type = module.type_at(type_index)
-                assert function_type.params is not None and function_type.results is not None
-                descriptor = self._function_types[type_index]
-                descriptor.param_offset = signature_offset
-                descriptor.param_count = len(function_type.params)
-                for value_type in function_type.params:
-                    signature_bytes[signature_offset] = value_type
-                    signature_offset += 1
-                descriptor.result_offset = signature_offset
-                descriptor.result_count = len(function_type.results)
-                for value_type in function_type.results:
-                    signature_bytes[signature_offset] = value_type
-                    signature_offset += 1
-            assert signature_offset == signature_size
-            self._signature_address = (
-                0 if signature_size == 0 else ctypes.addressof(signature_bytes)
-            )
+            descriptor = self._function_types[type_index]
+            descriptor.param_offset = function_type.params_source_offset
+            descriptor.param_count = len(function_type.params)
+            descriptor.result_offset = function_type.results_source_offset
+            descriptor.result_count = len(function_type.results)
 
         global_count = len(module.globals)
         self._global_widths = (ctypes.c_uint8 * global_count)()
@@ -1382,9 +1302,6 @@ class NativeModuleExecution:
         module_view_address = ctypes.addressof(self._module_view)
         for function_index in range(function_count):
             self._function_views[function_index].module_view = module_view_address
-        signature_buffer_size = (
-            0 if self._signature_bytes is None else ctypes.sizeof(self._signature_bytes)
-        )
         arena_layout = (
             (
                 ctypes.sizeof(self._function_views),
@@ -1394,7 +1311,6 @@ class NativeModuleExecution:
                 ctypes.sizeof(self._function_types),
                 ctypes.alignment(FunctionTypeExecutionViewNative),
             ),
-            (signature_buffer_size, ctypes.alignment(ctypes.c_uint8)),
             (ctypes.sizeof(self._global_widths), ctypes.alignment(ctypes.c_uint8)),
             (ctypes.sizeof(self._table_views), ctypes.alignment(TableExecutionViewNative)),
             (ctypes.sizeof(self._block_views), ctypes.alignment(BlockExecutionViewNative)),
@@ -1522,20 +1438,9 @@ class InterpreterCall:
         self.finished = finished
         self.results = results
         self.trap = trap
-        self.cont = cont
+        self._set_cont(cont)
 
-    @property
-    def cont(self) -> _Cont:
-        """Compatibility view; the interpreter loop uses the scalar fields."""
-
-        frame = self._frame
-        if frame is None:
-            return None
-        assert self._locals is not None
-        return self._ip, frame, self._locals, self._tos
-
-    @cont.setter
-    def cont(self, value: _Cont) -> None:
+    def _set_cont(self, value: _Cont) -> None:
         if value is None:
             self._ip = 0
             self._frame = None
@@ -1718,7 +1623,7 @@ class Interpreter:
             call_state.context.end_call_frame(frame)
         while call_state.call_stack:
             call_state.call_stack.pop_back()
-        call_state.cont = None
+        call_state._set_cont(None)
         call_state.finished = True
         call_state.results = None
         call_state.trap = trap
@@ -1849,7 +1754,7 @@ class Interpreter:
         """
         Executes one basic block (up to the next boundary instruction) and returns
         `call_state`, mutated in place: still `finished == False` with a resumable
-        `.cont`, or `finished == True` with `.results` set once the outermost call
+        scalar continuation fields, or `finished == True` with `.results` set once the outermost call
         actually returns.
         """
         return self._step(call_state, stop_at_boundary=True)
@@ -1873,14 +1778,7 @@ class Interpreter:
         assert frame is not None and locals_arr is not None
         native_status = 0
         while native_status == 0 and not call_state.finished:
-            (
-                native_status,
-                _trace_count,
-                _body_count,
-                _dispatcher_trace_transitions,
-                _control_handler_count,
-                _interpreted_block_count,
-            ) = self.run_native_dispatch(
+            native_status = self.run_native_dispatch(
                 call_state,
                 FB_CONF_RUNTIME_YIELD_THRESHOLD,
                 native_dispatcher=self._native_dispatcher,
@@ -2001,7 +1899,7 @@ class Interpreter:
                     result_value = frame.values.pop_i32()
                 assert result_value is not None
                 results.append(result_value)
-            call_state.cont = None
+            call_state._set_cont(None)
             call_state.finished = True
             call_state.results = results
             call_state.context.runtime_flags &= ~EXECUTION_CONTEXT_FLAG_PENDING_BLOCK_HEAD
@@ -2083,7 +1981,7 @@ class Interpreter:
         yield_threshold: int,
         native_dispatcher: NativeDispatchEntryPoint,
         idle_budget: int = 0,
-    ) -> NativeDispatchMetrics:
+    ) -> int:
         """Run native traces and C++ handlers over Python-owned ctypes buffers."""
         frame = call_state._frame
         locals_arr = call_state._locals
@@ -2100,11 +1998,6 @@ class Interpreter:
                 native_ip,
                 native_size,
                 native_trap,
-                trace_count,
-                body_count,
-                dispatcher_trace_transitions,
-                control_handler_count,
-                interpreted_block_count,
             ) = _native_abi.run_native_dispatch(
                 native_dispatcher,
                 int(native_frame.code or 0),
@@ -2142,14 +2035,7 @@ class Interpreter:
         call_state._tos = frame.values.raw_top() if frame.values else 0
         if native_status == 2:
             self._abort_call(call_state, Trap(TrapCode(native_trap)), native_ip)
-        return (
-            native_status,
-            trace_count,
-            body_count,
-            dispatcher_trace_transitions,
-            control_handler_count,
-            interpreted_block_count,
-        )
+        return native_status
 
     def _try_native_step_to_boundary(self, call_state: InterpreterCall) -> bool:
         """Use native handlers up to the current block's next JIT boundary."""
@@ -2301,7 +2187,7 @@ class Interpreter:
                         result_value = frame.values.pop_i32()
                     assert result_value is not None
                     results.append(result_value)
-                call_state.cont = None
+                call_state._set_cont(None)
                 call_state.finished = True
                 call_state.results = results
                 call_state.context.release_workspace()

@@ -95,7 +95,8 @@ PysimのPythonコードは参照ランタイムであり、現行のWASMパー�
 | ケースID | 現行Pysim QA | 直接観測する結果 |
 | :--- | :--- | :--- |
 | TEST-LOAD-01〜07 | `test_load_01`〜`test_load_07` | 不正ヘッダ、section境界・順序、型・メモリ上限の拒否とアロケータwatermark復元 |
-| TEST-LOAD-16 | `test_load_16_resolves_imported_global_offsets_for_active_segments` | インポート済みimmutable globalを使うData/Element初期化、メモリとテーブル状態 |
+| TEST-LOAD-10 | `test_load_10_signature_and_code_accessors_borrow_original_binary` | 型レコードの範囲、引数型・戻り型・関数コードと原本バイナリの同一所有者参照 |
+| TEST-LOAD-16 | `test_load_16_resolves_imported_global_offsets_for_active_segments` | 原本上のData/Elementセクション範囲、インポート済みimmutable globalを使う初期化、メモリとテーブル状態 |
 | TEST-LOAD-20〜24 | `test_load_20`〜`test_load_24` | QA専用ハーネスによる未解決状態、関数リンク、シグネチャ拒否、部分リンク防止、登録上限 |
 | TEST-LOAD-30〜32 | `test_load_30`〜`test_load_32` | 関数上限、64件超のexport保持、u32/u64 LEB128のバイト上限 |
 | TEST-LOAD-46 | `test_load_46_parser_export_lookup_checks_names_when_hashes_collide` | 既知のハッシュ衝突名をパーサのエクスポート検索で区別 |

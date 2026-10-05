@@ -21,7 +21,7 @@
 | TEST-JITR-07 | `COMPILED`カードの重複要求をC++ Runtimeが破棄する | トレースがキャッシュに常駐し、同PCのカードが`COMPILED`で、同PCが待ち列にも積まれている | idle_hookを実行 | C++ Runtimeはコンパイルせず要求を破棄し、カード状態と常駐トレースを保つ。 | `jit_runtime.md`「コンパイル待ち列」、[`test_jit_runtime.py`](experiments/pysim/qa/tier3_plugins/jit/test_jit_runtime.py) `test_hotspot_07_idle_hook_skips_recompiling_an_already_resident_trace` |
 | TEST-JITR-08 | JITエントリテーブル（バンクのトレース一覧）は常にhead_pcでソートされ、削除は削除フラグ（トンビストーン）で行う | 複数のトレースをPC順不同で挿入し、1件削除後に同じPCを再挿入 | 挿入・削除・再挿入後にトレース一覧と該当PCの取得結果を確認 | 一覧は常にhead_pc昇順。削除直後は取得結果がNone。再挿入は既存tombstone枠を再利用し、取得結果は新しいトレースそのものになる。 | jit_runtime.md「JITエントリ表」, [`jit_runtime.cxx`](experiments/pysim/native/tier3_plugins/jit/jit_runtime.cxx), [`jit_cache.py`](experiments/pysim/qa/shared/jit_cache.py), [`test_jit_runtime.py`](experiments/pysim/qa/tier3_plugins/jit/test_jit_runtime.py) |
 | TEST-JITR-09 | OldestヒットによるPromotion時、被チェイン登録（inbound_sources）は昇格先バンクへ引き継がれる | トレースBがバンクXでチェイン元Aから被チェインされている状態で、Bのみが後にOldestからPromoteされる | Bをlookupで昇格させた後、AとBそれぞれの所属バンクを確認 | 昇格前のバンクXからAの登録がなくなり、Bの新しい所属バンクへ引き継がれる。 | [`test_jit_runtime.py`](experiments/pysim/qa/tier3_plugins/jit/test_jit_runtime.py) `test_jitr_promote_transfers_inbound_sources_avoiding_dangling_chain` |
-| TEST-JITR-09b | 通常実行ではC++ dispatcherが常駐trace表を検索する | 未コンパイルブロックが多く、実行中にtraceをコンパイルする関数 | 関数を実行し、JIT実行件数、Python側`cache.lookup()`の呼出し、常駐trace表とカード状態を確認する | 関数結果が正しく、JITを実行する。通常経路ではPython側`cache.lookup()`を呼ばない。常駐trace表の各PCは`COMPILED`のカードとキャッシュ内のtraceに対応する。 | `jit_runtime.md`「トレース実行時の分岐解決とインタープリタ復帰」、pysim `test_jitr_native_trace_lookup_uses_resident_snapshot` |
+| TEST-JITR-09b | 通常実行ではJIT拡張内部で常駐traceを検索する | 未コンパイルブロックが多く、実行中にtraceをコンパイルする関数 | 関数を実行し、QA計測でJIT実行件数、Python側`cache.lookup()`の呼出し、常駐状態とカードを確認する | 関数結果が正しく、JITを実行する。本体実行入口がJIT拡張内部でtraceを選び、Python側`cache.lookup()`を呼ばない。QA snapshotの各PCは`COMPILED`カードと常駐traceに対応する | `jit_runtime.md`「トレース実行時の分岐解決とインタープリタ復帰」、pysim `test_jitr_native_trace_lookup_uses_resident_snapshot` |
 | TEST-JITR-71 | カード表と候補抑止表はコード領域単位 | 4バイトカード境界をまたぐ2関数が同じCode-sectionカードに属する | 一方をtouchし、候補カードをmark/unmarkする | 両関数のPCが同じホットスポット状態と候補抑止bitを共有する。各表はコード領域全体を覆う単一の密ストレージを持つ | `jit_runtime.md`「Card Marking」「Trackable Mask」、pysim `test_hotspot_and_trackable_bitmaps_share_one_code_region_card_space` |
 
 ### ホットスポット判定 (yield時) と バッチコンパイル
@@ -48,7 +48,7 @@ Interpreter境界で記録する履歴と、Tier 3 JIT拡張による実行区�
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 |
 | :--- | :--- | :--- | :--- | :--- |
 | TEST-HOTSPOT-01 | 履歴レコードとInterpreter記録順 | JIT拡張有効で、複数の適格ブロックを通る関数がある | Interpreter区間を実行し、JIT拡張の履歴を読む | 各レコードがCode section payload相対PCを含む`(module_id, unified_pc)`を保持し、実行順と一致する。非適格ブロックは含まれない |
-| TEST-HOTSPOT-02 | 基本ブロック実行経路の処理制約 | Runtime Event Sink、時計、Python APIを利用できる構成である | 適格ブロックを反復実行し、呼出し・時刻読出し・割当てを記録する | Interpreterは履歴へ固定幅レコードを書くだけで、Event Sink、時計、Python API、動的確保を経由しない |
+| TEST-HOTSPOT-02 | 基本ブロック実行経路の処理制約 | Runtime Event Sink、時計、Python APIを利用できる構成である | 適格ブロックを反復実行し、呼出し・時刻読出し・割当てを記録する | Interpreterの観測通知からJIT拡張の単一リングへ固定幅レコードを書くだけで、Event Sink、時計、Python API、動的確保を経由しない |
 | TEST-HOTSPOT-03 | Interpreter区間終了時の一括分析 | 同じPCを複数回含む未分析履歴がある | yield、fallback、trap、関数完了の各終了理由でInterpreter区間を抜ける | Tier 3 JIT拡張が各終了境界で一度だけ履歴順にカードを更新し、必要なcompile requestを登録する |
 | TEST-HOTSPOT-04 | JITのみを実行した区間 | 常駐traceとchainが実行可能で履歴が空である | Interpreterを通らないJIT trace/chain区間を実行する | 履歴を追加せず、ホットスポット分析を行わず、既存カードを変更しない |
 | TEST-HOTSPOT-05 | 履歴容量超過と近似状態 | 容量Nの履歴へN+K件を記録する | 次の分析境界で履歴と分析結果を確認する | 直近N件を保持し、上書き数Kと履歴欠落状態を示す。容量超過を理由にyieldせず、分析済み範囲を消費する |
@@ -85,8 +85,8 @@ JITトレース検索時の内部状態と期待される挙動を検証する�
 | TEST-JITR-24 | 全ミス後のInterpreter復帰と再計測 | Active/Warm/Oldestいずれにも存在しない | lookup | Interpreterへ戻り、eviction／flushでカードを`UNEXECUTED`へ戻してからhotnessを再計測する。キャッシュmissだけでカードを`COMPILED`に固定しない | 直交表 ケース7 |
 | TEST-JITR-25 | キャッシュ満杯時の3面ローテーション | Activeのコード領域または記述枠が満杯 | 新規insert | Oldestをpurgeして新Activeにし、Active→Warm、Warm→Oldestへスライド。同時にchain targetのダングリング参照を無効化 | 直交表 ケース8、`test_jitr_entry_limit_rotates_before_code_region_is_full` |
 | TEST-JITR-27 | 既存記述枠の再利用と満杯時のローテーション | 短いトレースでコード領域より先に記述枠を満杯にする | 既存PCを置換した後、新規PCを挿入する | 既存PCの置換はコード位置と使用バイト数を維持する。新規PCの挿入はローテーションし、既存PCをWarmに保持する。Warm・Oldestへの重複挿入は状態を変更せず拒否する | `test_jitr_bank_entry_limit_preserves_state_and_reuses_existing_slots`, `test_jitr_insert_preserves_one_resident_trace_per_pc` |
-| TEST-JITR-28 | モジュールに対応するdispatch領域の容量と再利用 | 小さいモジュールを登録し、ホットスポット計測の有効・無効構成を用意する | snapshot生成、trace追加、候補除外、flushを順に行う | trace表の容量は常駐枠上限と基本ブロック数の小さい方となる。候補PC配列を持たず既存マスクを借用する。候補除外はそのbitに直ちに反映される。構成内の更新でアリーナ使用量は増えない。計測無効構成ではマスクを渡さない | `test_jitr_native_dispatch_snapshot_is_cached_per_hotspot_configuration` |
-| TEST-JITR-29 | 制御命令だけの区間の検索・計測抑止 | 構造命令と通常命令の開始PCが同じカードに入り、制御命令が連続する | native dispatcherで実行し、履歴とLoader索引の検索を観測する | 通常命令のあるブロックだけを開始PCで記録する。制御命令だけの区間と履歴転送でLoader索引を検索しない。NativeStepからdispatchへ切り替えても、メモリ処理の再開PCを先頭として扱わない。分岐・呼出しの結果を維持する | `test_jitr_mask_card_collision_does_not_profile_structural_pc`, `test_jitr_memory_boundary_continuation_does_not_become_a_block_head`, `test_jitr_native_step_consumes_pending_head_before_memory_fallback`, `test_jitr_memory_helper_trap_clears_block_continuation` |
+| TEST-JITR-28 | QA snapshot領域の容量と再利用 | QA専用ハーネスへ小さいモジュールを登録し、ホットスポット検出の有効・無効構成を用意する | QA snapshot生成、trace追加、候補除外、flushを順に行う | QA snapshotのtrace表容量は常駐枠上限と基本ブロック数の小さい方となる。候補マスクの観測は既存ストレージを借用する。更新でQA snapshot領域を追加確保しない。製品のdispatchへsnapshotを渡す要求とはしない | QA専用fixtureの検査、`test_jitr_native_dispatch_snapshot_is_cached_per_hotspot_configuration` |
+| TEST-JITR-29 | 制御命令だけの区間の検索・観測抑止 | 構造命令と通常命令の開始PCが同じカードに入り、制御命令が連続する | native dispatcherで実行し、QAハーネスでJIT拡張の履歴とLoader索引の検索を観測する | 通常命令のあるブロックだけを開始PCで通知し、JIT拡張の単一リングへ直接記録する。制御命令だけの区間と記録通知でLoader索引を再検索しない。NativeStepからdispatchへ切り替えても、メモリ処理の再開PCを先頭として扱わない。分岐・呼出しの結果を維持する | `test_jitr_mask_card_collision_does_not_profile_structural_pc`, `test_jitr_memory_boundary_continuation_does_not_become_a_block_head`, `test_jitr_native_step_consumes_pending_head_before_memory_fallback`, `test_jitr_memory_helper_trap_clears_block_continuation` |
 | TEST-JITR-26 | Direct-Mapped Folding XOR JIT Cache による O(1) 一発ヒット | トレースがキャッシュに存在 | lookup | 4-bit スロット選択を行う Folding XOR Hash で 16 スロットテーブルにヒットし、バンク二分探索を行わずに O(1) で即時返却される | `jit_runtime.md` , `{DirectMappedJIT16}` |
 
 | TEST-LOAD-49 | int4_t スコアリングによる JIT 候補ビットマップ生成 | JIT プラグインへモジュール登録 | `test_plugin_candidate_gate_uses_specification_threshold`で8・9・10点と負の便益を含む2点の有効ブロックを実登録する | 128B BitView<4> テーブルから命令ごとの機械語短縮スコア（int4_t）を積算し、合計9点以上のブロックの head_pc カードビット（1bit）が正確に 1 にセットされる | `{JIT_StaticBenefitScoring}`, `{JIT_CandidateBitmap}` |
@@ -143,13 +143,13 @@ TEST-JITR-33のIFと内側loopの回帰試験は、対象の制御終端直前�
 | TEST-JITR-62 | 退避・昇格・ローテーション後のチェイン再リンク | 14本の連鎖トレースと、容量の小さい3面キャッシュ。乱数で、挿入・参照（昇格）・ローテーションを繰り返す（40シード、各90手） | 各手の後にリンクを検査し、参照したトレースをネイティブ実行する | すべてのチェインポインタが、常駐トレースの有効な入口を指す。論理的な後続PCと機械語ヘッダのターゲットが一致する。同一トレースが複数の面に常駐しない。各リンク先は生成入力のindexとstrideから導いた直後のtraceである。Native実行の副作用と最終PCも生成入力から導いた期待値に一致する | `{JIT_MultiBuffer_Cache}`, `GOTCHA-JITR-02` |
 | TEST-JITR-63 | C++ディスパッチのLOOP後方辺回数制御とyield境界 | 同一関数・同一制御frameのLOOP後方`BR_IF`と常駐トレースを持つ関数 | 共通C++ディスパッチ内のJIT実行、C++ `br_if` handler回数、RuntimeEngineのyield要求を観測する | しきい値未満はC++ディスパッチが後続常駐トレースを検索して実行する。しきい値到達後はC++ handlerが分岐とframe状態を更新し、RuntimeEngineがカウンタを0へ戻してyield要求を返す | `interpreter.md`「トレース境界での協調的Yield」、`runtime_vsoc_test_spec.md` TEST-VSOC-22, pysim `test_jitr_loop_backedge_stays_in_cpp_until_coos_yield` |
 | TEST-JITR-64 | Interpreter warm-upからC++ディスパッチを使うJITへ移行 | 未コンパイルの数値ループを実行し、idle時に対象トレースをコンパイルする | RuntimeEngineで関数を完了し、返値・実行統計・キャッシュ常駐を確認する | 結果は15で、Interpreter warm-up後にLOOPトレースが常駐する。C++ dispatcherは設定された後方辺数までC++ handlerとトレースを実行してからRuntimeEngineへyieldを返す | `jit_runtime.md`「トレース実行時の分岐解決とインタープリタ復帰」、pysim `test_hybrid_interpreter_to_jit_trace_elevation` |
-| TEST-JITR-65 | dispatch snapshotの世代更新 | 未コンパイル候補blockと常駐traceを持つJIT manager | trace挿入前後のsnapshotとnative実行を確認する | JIT拡張が世代変更後にsnapshotを更新する。C++ dispatcherはsnapshotの記述表を直接検索する。候補マスクは既存ストレージを借用する | `jit_runtime.md`「ネイティブトレースディスパッチ表」、pysim `test_jitr_native_dispatch_snapshot_is_cached_per_hotspot_configuration` |
-| TEST-JITR-66 | 診断カウンタを無効にしたRuntimeの意味保存 | 診断カウンタなしで後方分岐yieldを行うC++ Interpreter構成 | 関数を実行し、結果・yieldと統計値を確認する | 結果とyield境界は変わらず、JIT body、handler、trace遷移の診断カウンタは0のままである。同じプログラム内で診断カウンタ有効Runtimeも構成できる | `jit_runtime.md`「トレース実行時の分岐解決とインタープリタ復帰」 |
+| TEST-JITR-65 | QA snapshotの常駐状態への追従 | 未コンパイル候補blockと常駐traceを持つQA専用JITハーネス | trace挿入前後のQA snapshotとnative実行を確認する | QA snapshotは常駐状態の変更を反映する。製品実行はJIT拡張の本体実行入口を使い、snapshotを供給しない。候補マスクのQA観測は既存ストレージを借用する | QA専用fixtureの検査、pysim `test_jitr_native_dispatch_snapshot_is_cached_per_hotspot_configuration` |
+| TEST-JITR-66 | 診断カウンタを無効にしたRuntimeの意味保存 | 診断カウンタなしで後方分岐yieldを行うC++ Interpreter構成 | 関数を実行し、結果・yieldと統計値を確認する | 結果とyield境界は変わらず、製品Runtimeは検査用APIと累積カウンタを持たない。QA専用ハーネスでJIT body、handler、trace遷移を計測する | `jit_runtime.md`「トレース実行時の分岐解決とインタープリタ復帰」 |
 | TEST-JITR-67 | フレーム深度をまたぐ合法なLOOP分岐はchain targetを作らない | 内側`block`から同一関数の外側`loop`へ戻る合法な`br_if` | 対象・分岐blockのframe深度、コンパイル結果、C++ handler経由の実行結果を確認する | トレース本体はコンパイル可能でも、後方分岐にchain targetは設定しない。分岐はC++ Interpreter handlerが処理し、Interpreterのみの結果と一致する | `runtime_vsoc.md`「後方分岐とyield回数」、`jit_runtime.md`「トレース実行時の分岐解決とインタープリタ復帰」、pysim `test_jitr_cross_frame_loop_branch_skips_special_link_but_keeps_trace_body` |
 | TEST-JITR-68 | ホットスポット収集中の定義済み関数呼出しをC++内で継続 | 適格なcalleeを繰り返し呼ぶcallerと、ホットスポット収集有効のRuntime | 同じ入力を初回とcalleeコンパイル後に実行し、結果、calleeの常駐、JIT実行件数、Runtime復帰件数を確認する | 両実行の結果が一致する。calleeの適格ブロックは履歴へ記録されてコンパイルされる。定義済み関数の各呼出しでPythonへ戻らず、コンパイル後はcalleeのJIT traceが実行される | `{RuntimeHotspotProfiler}`、`{LowLatencyJIT}`、pysim `test_jitr_hotspot_collection_continues_defined_calls_in_cpp` |
 | TEST-JITR-70 | 空のyield境界でのJIT制御処理省略 | コンパイル待ち作業と候補履歴がなく、後方分岐yieldを繰り返す関数 | 実行結果、yield回数、コンパイル処理・履歴引渡し・Python側trace検索の呼出しを確認する | 関数結果とyield条件を保つ。空キューのコンパイル処理と空履歴の引渡しを行わず、通常経路でtraceをPython側で検索しない | `{LowLatencyJIT}`、`{RuntimeHotspotProfiler}`、pysim `test_jitr_empty_yield_skips_python_control_work` |
 | TEST-JITR-72 | LIFOキューから元WASMコードをコンパイルする | 2つ以上の適格blockが`HOT`になり、元のWASMコードがLoader領域にある | Tier 3 JIT拡張のidle hookで逆順に処理する。Python opcodeの再構築経路を禁止する | C++ compilerは元のWASMコードを直接読み、trace本体を生成する。成功したtraceだけがcacheへ入る | `jit_runtime.md`「オンデマンドコンパイルキュー」、pysim `test_jitr_native_compiler_scans_queued_traces_without_python_opcode_marshalling` |
-| TEST-JITR-73 | C++ dispatcherがsnapshot記述表を直接検索する | JIT拡張のsnapshotにresident trace descriptorがある | Interpreter dispatcherでtraceを実行し、通常経路のPython cache lookupを観測する | 結果とJIT実行が正しい。C++ dispatcherは渡されたsnapshotからtraceを選ぶ。通常経路でPython cache lookupを呼ばない | `jit_runtime.md`「ネイティブトレースディスパッチ表」、pysim `test_jitr_native_trace_lookup_uses_resident_snapshot` |
+| TEST-JITR-73 | JIT拡張の本体実行入口で常駐traceを選ぶ | 常駐traceがあり、実行拡張が初期化時に接続済みである | Interpreter dispatcherから実行し、QA計測でJIT実行とPython cache lookupを観測する | 結果とJIT実行が正しい。trace選択はJIT拡張内部で完了し、Interpreterへsnapshotを渡さない。通常経路でPython cache lookupを呼ばない | `jit_runtime.md`「ネイティブ実行拡張の接続」、pysim `test_jitr_native_trace_lookup_uses_resident_snapshot` |
 
 ### 実装上の注意点に対応する検証
 <!-- traceability: {GOTCHA-INTP-06} {GOTCHA-JITR-01} {GOTCHA-JITR-02} {GOTCHA-JITR-03} {GOTCHA-JITR-05} {GOTCHA-JITR-06} {GOTCHA-JITR-07} {GOTCHA-JITR-08} {GOTCHA-JITR-09} -->
@@ -165,22 +165,26 @@ TEST-JITR-33のIFと内側loopの回帰試験は、対象の制御終端直前�
 | GOTCHA-JITR-08 | return直前のJIT終了とInterpreter復帰 | `return`を含むWASM関数 | トレース実行とcallee復帰を確認 | JITは`return`や`RETURN sentinel`を生成せず、終了エピローグで共有オペランド領域／実行コンテキストを同期してInterpreterへ戻る。Interpreterがcalleeの関数呼出し記述子を取り除き、ネスト時はcall helperがsentinelを消費する | [`jit_runtime.md`](docs/components/tier3_plugins/jit_runtime.md), `interpreter.md` |
 | GOTCHA-JITR-09 | エイジングスイープと常駐状態・待ち列の分離 | カードが`COMPILED`（キャッシュに常駐）、別のカードが`HOT`（コンパイル待ち列に登録済み）、別のカードが`EXECUTED` | 全ブロックを覆うまでエイジングスイープを実行し、常駐トレースをlookup | `COMPILED`のカードは`COMPILED`のままで、lookupは常駐トレースを返す。`HOT`のカードは`HOT`のままで、待ち列の要求と対応する。`EXECUTED`のカードだけが`UNEXECUTED`になる。 | [`jit_runtime.md`](docs/components/tier3_plugins/jit_runtime.md) 「エイジングスイープ」, `TEST-JITR-16`, [`test_jit_runtime.py`](experiments/pysim/qa/tier3_plugins/jit/test_jit_runtime.py) `test_gotcha_jitr_09_aging_never_drops_compiled_or_hot` |
 
-### トレース実行回数
+### QA専用計測構成のトレース実行回数
 
-<!-- traceability: {JIT_MultiBuffer_Cache} {JIT_OldestOnly_Promote} -->
+<!-- traceability: {JIT_MultiBuffer_Cache} {JIT_OldestOnly_Promote} {Challenge_JITCacheEfficiency} -->
+
+この節はQA専用の計測型を合成した構成だけに適用する。計測契約の正本は[`jit_runtime_bench_spec.md`](docs/components/tier3_plugins/benchmarks/jit_runtime_bench_spec.md)とする。製品構成は`void`を選び、計測状態、時計読取り、実行後のchain走査、および統計リセットAPIを持たない。
 
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| TEST-JITR-76 | 反復実行、飽和、昇格、測定区間のリセット | 実行回数が既知の常駐loop traceがある | 通常統計とホットスポット計測の有効・無効を組み合わせて反復実行し、Oldest昇格、snapshot再生成、uint32上限、resetを確認する | body実行ごとに1増える。lookupでは増えない。昇格とsnapshot更新では値とカウンタの所在を保持する。最大値で飽和し、reset後は0から数える | `test_jitr_trace_execution_counts_loop_bodies_and_survives_promotion` |
-| TEST-JITR-77 | 直接chainの後続bodyの実行回数 | 2 traceの直線chainがある | 通常統計の有効・無効でRuntimeからchainを実行する | 先頭と後続の回数がともに1増え、ゲストの結果が一致する | `test_jitr_trace_execution_counts_include_direct_chain_successors` |
-| TEST-JITR-78 | 破棄前の記録と新traceの計数寿命 | 実行済みと未実行のtrace、および収集先がある | 昇格、rotate、置換、flushを行う | 昇格では記録せず値を保持する。破棄直前にPCと回数を一度通知する。未実行の0も通知する。同じPCの新traceは0から始まる | `test_jitr_trace_execution_retirement_records_zero_and_used_traces` |
+| TEST-JITR-76 | 反復実行、飽和、昇格、測定区間のリセット | 実行回数が既知の常駐loop traceがある | QA計測構成で通常統計とホットスポット検出の有効・無効を組み合わせて反復実行し、Oldest昇格、QA snapshot再生成、32ビット上限、QA resetを確認する | body実行ごとに1増える。lookupでは増えない。昇格とQA snapshot更新では値とカウンタの所在を保持する。最大値で飽和し、reset後は0から数える | `test_jitr_trace_execution_counts_loop_bodies_and_survives_promotion` |
+| TEST-JITR-77 | 直接chainの後続bodyの実行回数 | 2 traceの直線chainがある | QA計測構成で通常統計の有効・無効を組み合わせ、Runtimeからchainを実行する | 先頭と後続の回数がともに1増え、ゲストの結果が一致する | `test_jitr_trace_execution_counts_include_direct_chain_successors` |
+| TEST-JITR-78 | QAの退役記録と新traceの計数寿命 | 実行済みと未実行のtrace、および収集先がある | QAハーネスで昇格、rotate、置換、flush前後の常駐状態を比較する | 昇格では記録せず値を保持する。脱落したtraceのPCと操作前に保存した回数を一度通知する。未実行の0も通知する。同じPCの新traceは0から始まる | `test_jitr_trace_execution_retirement_records_zero_and_used_traces` |
 | TEST-JITR-79 | 容量不足で実行されないtraceの除外 | 常駐traceの必要スタック量が空き容量を越える | Runtimeから関数を実行する | Interpreterで正しい結果を得て、traceの回数は0のままとなる | `test_jitr_trace_execution_count_excludes_pre_entry_stack_fallback` |
 
-形式モデルは[`jit_trace_execution_model.py`](docs/components/tier3_plugins/formal/jit_trace_execution_model.py)を参照する。dispatcher外の低水準直接呼出しは計数対象外である。
+`test_jitr_measurements_are_formatted_in_cpp_through_shared_printk`はC++が計測値を整形し、共有printkへ出力することを検査する。
+
+形式モデルは[`jit_trace_execution_model.py`](docs/components/tier3_plugins/formal/jit_trace_execution_model.py)を参照する。dispatcher外の低水準直接呼出しは計数対象外である。製品の計測状態の有無をこのモデルから要求しない。
 
 ## 3. テスト検証実績と網羅状況
 
-2026-10-05、Linux x86_64、Clang 21.1.8の参照構成でTEST-JITR-76〜79の8ケースを実行した。通常統計とホットスポット計測の構成を含めて8件成功した。関連する`test_jit_runtime.py`と`test_x64_jit.py`の回帰は109件成功した。AddressSanitizerとUndefinedBehaviorSanitizerを有効にしたC++ dispatcherでも追加8ケースが成功した。実行回数モデルの通常系4特性と`guards=False`の4特性の反証を確認した。
+2026-10-05、Linux x86_64、Clang 21.1.8の参照環境で、QA計測構成のTEST-JITR-76〜79を8ケース実行した。通常統計とホットスポット計測の構成を含めて8件成功した。関連する`test_jit_runtime.py`と`test_x64_jit.py`の回帰は109件成功した。AddressSanitizerとUndefinedBehaviorSanitizerを有効にしたC++ dispatcherでも追加8ケースが成功した。実行回数モデルの通常系4特性と`guards=False`の4特性の反証を確認した。
 
 実行コマンドは次のとおりである。
 

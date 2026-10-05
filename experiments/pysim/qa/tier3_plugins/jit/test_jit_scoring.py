@@ -8,6 +8,7 @@ import pytest
 
 _PYSIM_DIR = Path(__file__).resolve().parents[2]
 
+from qa.shared.helpers import parse_single_function_module
 from qa.shared.jit_manager import JITRuntimeManager
 from qa.shared.jit_scoring import (
     JIT_CANDIDATE_THRESHOLD,
@@ -17,8 +18,8 @@ from qa.shared.jit_scoring import (
     block_score,
     score_opcodes,
 )
-from tier2_runtime.wasm.module import Function, FuncType, Module
-from tier2_runtime.wasm.opcodes import I32_ADD, I32_CONST, I32_POPCNT, RETURN
+from tier2_runtime.wasm.module import I32
+from tier2_runtime.wasm.opcodes import END, I32_ADD, I32_CONST, I32_POPCNT
 
 
 def test_numeric_opcode_score_table() -> None:
@@ -31,12 +32,8 @@ def test_numeric_opcode_score_table() -> None:
 
 
 def test_plugin_scores_basic_block() -> None:
-    code = bytes((I32_CONST, 1, I32_CONST, 2, I32_ADD, RETURN))
-    module = Module(
-        types=[FuncType(params=(), results=())],
-        functions=[Function(type_index=0, locals_extra=[], code=code)],
-    )
-    module.build_basic_block_index()
+    code = bytes((I32_CONST, 1, I32_CONST, 2, I32_ADD, END))
+    module = parse_single_function_module(code, results=(I32,))
     assert OPCODE_BENEFIT_TABLE.score(I32_ADD) == 7
     assert len(module.blocks) == 1
     assert block_score(module, module.blocks[0]) == 19
@@ -56,11 +53,7 @@ def test_plugin_candidate_gate_uses_specification_threshold(
     code: bytes, score: int, candidate: bool
 ) -> None:
     """TEST-LOAD-49: 実登録で候補カードを生成し、非候補の履歴を記録しない。"""
-    module = Module(
-        types=(FuncType(params=(), results=()),),
-        functions=(Function(type_index=0, locals_extra=(), code=code),),
-    )
-    module.build_basic_block_index()
+    module = parse_single_function_module(code)
     assert len(module.blocks) == 1
     assert block_score(module, module.blocks[0]) == score
     manager = JITRuntimeManager(card_shift=0, min_trace_bytes=1)

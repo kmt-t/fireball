@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from qa.private.interpreter_native_abi import select_native_dispatch_entry
 from qa.shared.jit_abi import dispatch_for_test
 
 """
@@ -59,6 +60,7 @@ from qa.shared.jit_cache import (
     JITTraceHeader,
 )
 from qa.shared.jit_manager import JITRuntimeManager
+from qa.shared.runtime_stats import RuntimeStatsEngine as RuntimeEngine
 from qa.shared.runtime_support import (
     PC_ONLY_FUNCTION_BASE,
     PC_ONLY_FUNCTION_STRIDE,
@@ -75,9 +77,8 @@ from tier2_runtime.interpreter.interpreter import (
     ExecutionContext,
     InterpreterBindings,
     NativeInterpreter,
-    select_native_dispatch_entry,
 )
-from tier2_runtime.runtime.engine import RuntimeEngine
+from tier2_runtime.runtime.engine import RuntimeEngine as ProductRuntimeEngine
 from tier2_runtime.wasm.module import I32, LocalWidthMap, Module, WasmOperand
 from tier2_runtime.wasm.opcodes import (
     BR_IF,
@@ -1147,17 +1148,16 @@ def test_runtime_profile_counters_are_disabled_by_default_without_changing_resul
                 local.get 1))"""
         )
     )
-    engine = RuntimeEngine(yield_threshold=2)
+    engine = ProductRuntimeEngine(yield_threshold=2)
     function_index = module.export_func_index("sum")
     engine.register_module_blocks(module)
     result = engine.call(Interpreter(module), function_index, [5])
 
     assert list(result) == [15]
-    assert not engine.collect_runtime_stats
-    assert engine.stat_interp_steps == 0
-    assert engine.stat_jit_invocations == 0
-    assert engine.stat_native_control_handlers == 0
-    assert engine.stat_native_dispatch_trace_transitions == 0
+    assert not hasattr(engine, "collect_runtime_stats")
+    assert not hasattr(engine, "reset_stats")
+    assert not hasattr(engine, "dump_internal_state")
+    assert not any(name.startswith("stat_") for name in ProductRuntimeEngine.__slots__)
 
 
 def test_native_interpreter_with_jit_runtime_matches_interpreter_only_execution():
@@ -2596,6 +2596,7 @@ def test_jitr_trace_execution_counts_loop_bodies_and_survives_promotion(
     assert engine.call(interpreter, function, [4]) == [10]
     assert trace.exec_count == 0xFFFF_FFFF
     engine.reset_stats()
+    manager.reset_stats()
     assert trace.exec_count == 0
     assert engine.call(interpreter, function, [3]) == [6]
     assert trace.exec_count == 3
@@ -2779,3 +2780,35 @@ def test_native_product_plugin_retains_region_until_gc_close():
     )
     assert result.returncode == 0, result.stderr
     assert "result=0x55DB1420" in result.stdout
+
+
+def test_jitr_measurements_are_formatted_in_cpp_through_shared_printk():
+    """TEST-JITR-72: measurement output shares printk without product inspection APIs."""
+    from qa.private.jit_native_abi import RUNTIME_PRINT
+    from tier2_runtime.observability.logger import LogDictionary
+    from tier3_platform.drivers.printk import PrintkBuffer, PrintkSink
+
+    manager = JITRuntimeManager(code_lengths=(0x1100,), card_shift=0, history_capacity=8)
+    try:
+        for index in range(10):
+            pc = 0x1000 + index * 4
+            manager.trackable.mark(pc)
+            manager.record_block_head(pc)
+        manager.on_interpreter_exit(False)
+        capture = PrintkBuffer()
+        sink = PrintkSink(capture, LogDictionary().decode_record)
+        assert RUNTIME_PRINT(manager._native.pointer, ctypes.byref(sink._raw_writer)) == 1
+        lines = capture.drain_output().decode().splitlines()
+        assert "jit.execution_count=10" in lines
+        assert "jit.history_overwritten=2" in lines
+        assert "jit.compile_attempts=0" in lines
+        assert "jit.compile_ns=0" in lines
+        assert "jit.aging_ns=0" in lines
+        assert manager.exec_counter == 10
+        assert manager.history_overwritten_count == 2
+        rejected = PrintkBuffer(capacity=1)
+        rejected_sink = PrintkSink(rejected, LogDictionary().decode_record)
+        assert RUNTIME_PRINT(manager._native.pointer, ctypes.byref(rejected_sink._raw_writer)) == 0
+        assert rejected.drain_output() == b""
+    finally:
+        manager.close()

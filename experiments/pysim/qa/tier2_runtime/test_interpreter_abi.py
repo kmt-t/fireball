@@ -17,6 +17,7 @@ from tier2_runtime.abi.interpreter_abi import (
     WasmRunRequestNative,
     WasmRunResultNative,
 )
+from tier2_runtime.abi.native_abi import RUN_DISPATCH, NativeResult
 from tier2_runtime.abi.native_stack_abi import ControlFrameWindow, LocalStackWindow
 from tier2_runtime.interpreter.interpreter import (
     ControlFrameKind,
@@ -49,6 +50,32 @@ def test_native_layout_matches_x64_jit_context():
     ctx.mem_size = 0x4000
     assert ctx.ip == 0x1234
     assert ctx.mem_size == 0x4000
+
+
+def test_product_dispatch_result_contains_only_execution_state():
+    """The result ABI charges five raw words to every product context."""
+    assert ctypes.sizeof(NativeResult) == 20
+    assert NativeResult.status.offset == 0
+    assert NativeResult.ip.offset == 4
+    assert NativeResult.stack_size.offset == 8
+    assert NativeResult.trap_code.offset == 12
+    assert NativeResult.error_code.offset == 16
+    result = ExecutionContext()._native_result
+    assert ctypes.sizeof(result) == 20
+
+
+def test_product_dispatch_result_does_not_write_a_diagnostic_suffix():
+    """Rejecting a call writes only the five words of the product result ABI."""
+
+    class GuardedResult(ctypes.Structure):
+        _fields_ = (("result", NativeResult), ("guard", ctypes.c_uint32 * 6))
+
+    probe = GuardedResult()
+    for index in range(6):
+        probe.guard[index] = 0xA5A5_0000 + index
+    assert RUN_DISPATCH(None, ctypes.byref(probe.result)) == 0
+    assert probe.result.error_code != 0
+    assert tuple(probe.guard) == tuple(0xA5A5_0000 + index for index in range(6))
 
 
 def test_native_views_are_non_owning_fixed_width_records():

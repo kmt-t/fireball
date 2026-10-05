@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import struct
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum, IntEnum, auto
 from types import TracebackType
 from typing import Generic, TypeVar
@@ -132,7 +132,7 @@ class ShmSlot:
     owner: int
     base_address: int
     allocated: bool
-    data: memoryview = field(default_factory=lambda: memoryview(bytearray()))
+    data: memoryview
 
 
 @dataclass(slots=True)
@@ -225,7 +225,7 @@ class SharedBlock:
         owner: int,
         base_address: int,
         manager: MemoryManager,
-        data: memoryview | None = None,
+        data: memoryview,
     ):
         self.shm_id = shm_id
         self.page_idx = page_idx
@@ -239,13 +239,7 @@ class SharedBlock:
         generation = manager.page_registry.get_generation(page_idx)
         assert generation is not None, "SharedBlock page must be registered"
         self._owner_generation = generation
-        self._data: memoryview = data if data is not None else memoryview(bytearray(size))
-
-    @property
-    def data(self) -> memoryview:
-        """Return a read-only snapshot, never a revocation-bypassing backing view."""
-        self._check_handle_access()
-        return memoryview(bytes(self._data))
+        self._data: memoryview = data
 
     def _check_handle_access(self) -> None:
         assert self._is_active and not self._is_in_flight, (
@@ -277,11 +271,6 @@ class SharedBlock:
         assert 0 <= offset and offset + length <= self.size, (
             f"Access out of bounds: offset {offset} + len {length} > size {self.size}"
         )
-
-    def get_bytearray(self) -> memoryview:
-        """Returns a bounded read-only snapshot of the block contents."""
-        self._check_access(0, self.size)
-        return memoryview(bytes(self._data))
 
     def read_u8(self, offset: int) -> int:
         self._check_access(offset, 1)

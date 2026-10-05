@@ -21,8 +21,9 @@ configure_import_paths(_PYSIM_DIR, _BENCH_DIR)
 
 from bench_jit import JITCompilerBenchmark
 from config import FB_CONF_RUNTIME_YIELD_THRESHOLD
+from qa.private.interpreter_native_abi import NATIVE_RUNTIME_PROFILE_STATS_AVAILABLE
+from qa.shared.runtime_stats import RuntimeStatsEngine
 from tier2_runtime.interpreter.interpreter import (
-    NATIVE_RUNTIME_PROFILE_STATS_AVAILABLE,
     Interpreter,
     InterpreterBindings,
     NativeInterpreter,
@@ -104,7 +105,7 @@ def main() -> None:
     assert repetitions > 0
     perf_stat = PerfStatControl(args.perf_control_fifo, args.perf_ack_fifo)
 
-    module = parse(JITCompilerBenchmark._create_heavy_loop_binary())
+    module = parse(memoryview(JITCompilerBenchmark._create_heavy_loop_binary()))
     function_index = module.export_func_index("heavy_loop")
     expected_result = _expected_result()
     observed_result = 0
@@ -146,14 +147,18 @@ def main() -> None:
             perf_stat.set_enabled(False)
         observed_result = int(result[0])
     else:
-        runtime_engine = RuntimeEngine(
-            bump_allocator=module.allocator,
-            jit_runtime=JITRuntimeManager(
-                region_provider=reserve_native_region,
-                yield_threshold=FB_CONF_RUNTIME_YIELD_THRESHOLD,
-            ),
-            collect_runtime_stats=args.collect_runtime_stats,
+        plugin = JITRuntimeManager(
+            region_provider=reserve_native_region,
+            yield_threshold=FB_CONF_RUNTIME_YIELD_THRESHOLD,
         )
+        measured_stats: RuntimeStatsEngine | None = None
+        if args.collect_runtime_stats:
+            measured_stats = RuntimeStatsEngine(
+                bump_allocator=module.allocator, jit_runtime=plugin, collect_runtime_stats=True
+            )
+            runtime_engine = measured_stats
+        else:
+            runtime_engine = RuntimeEngine(bump_allocator=module.allocator, jit_runtime=plugin)
         runtime_engine.register_module_blocks(module)
         interpreter = NativeInterpreter(
             module,
@@ -163,7 +168,8 @@ def main() -> None:
         warmup_result = runtime_engine.call(interpreter, function_index, [100])
         assert int(warmup_result[0]) == 4_950
         runtime_engine.idle_hook(budget=10)
-        runtime_engine.reset_stats()
+        if measured_stats is not None:
+            measured_stats.reset_stats()
 
         arguments = [LOOP_COUNT]
         perf_stat.set_enabled(True)
@@ -176,16 +182,16 @@ def main() -> None:
             perf_stat.set_enabled(False)
         observed_result = int(result[0])
 
-        if args.collect_runtime_stats:
-            jit_invocations = runtime_engine.stat_jit_invocations
+        if measured_stats is not None:
+            jit_invocations = measured_stats.stat_jit_invocations
             native_dispatch_trace_transitions = (
-                runtime_engine.stat_native_dispatch_trace_transitions
+                measured_stats.stat_native_dispatch_trace_transitions
             )
-            interpreter_steps = runtime_engine.stat_interp_steps
-            trace_exits = runtime_engine.stat_trace_exits_to_interp
+            interpreter_steps = measured_stats.stat_interp_steps
+            trace_exits = measured_stats.stat_trace_exits_to_interp
             assert jit_invocations > 0
 
-        diagnostic = RuntimeEngine(
+        diagnostic = RuntimeStatsEngine(
             jit_runtime=JITRuntimeManager(reserve_native_region),
             collect_runtime_stats=True,
             bump_allocator=runtime_engine.bump_allocator,

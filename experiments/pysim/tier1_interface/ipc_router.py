@@ -297,11 +297,6 @@ class IPCMessage:
         self._check_ownership()
         return self._block
 
-    @property
-    def data(self) -> bytearray | None:
-        self._check_ownership()
-        return self._block.data if self._block is not None else None
-
     def _read_entries(self) -> SharedEntries:
         self._check_ownership()
         assert self._block is not None, "IPC entries require a backing SharedBlock"
@@ -427,11 +422,6 @@ def bytes_to_kv_entries(data: bytes) -> StaticVector[tuple[int, int]]:
         v = int.from_bytes(chunk, "little")
         entries.push_back((i // 4 + 1, v))
     return entries
-
-
-def bytes_to_kv_storage(data: bytes) -> StaticVector[tuple[int, int]]:
-    """Backward-compatible alias for bytes_to_kv_entries."""
-    return bytes_to_kv_entries(data)
 
 
 def kv_entries_to_bytes(entries: Sequence[tuple[int, int]], max_len: int | None = None) -> bytes:
@@ -613,13 +603,6 @@ class IPCRouter:
         handle = self.lookup_service_handle(uri)
         return self.get_service_descriptor(handle)
 
-    def channel_for_edge(self, sender_role: Role, target_role: Role) -> Channel | None:
-        """Return the first configured instance channel for compatibility with unit probes."""
-        for service_handle, (_uri, descriptor) in enumerate(_SERVICE_ENTRIES):
-            if descriptor.role == target_role:
-                return self._service_channels[service_handle][int(sender_role)]
-        return None
-
     def lookup(self, destination_uri: str) -> tuple[IPCStatus, Channel | None]:
         """
         Stage 1 URI lookup + Stage 2 RBAC authorization.
@@ -652,17 +635,6 @@ class IPCRouter:
             return (IPCStatus.ERR_PERMISSION_DENIED, None)
 
         return (IPCStatus.COMPLETED, self._service_channels[handle][int(sender_role)])
-
-    def create_channel(
-        self,
-        destination_uri: str,
-    ) -> Channel | None:
-        """
-        Backward-compatible helper: resolves URI and returns Channel if permitted.
-        Role is always obtained from current_task.role.
-        """
-        status, ch = self.lookup(destination_uri)
-        return ch if status == IPCStatus.COMPLETED else None
 
     def send(
         self, channel: Channel, message: IPCMessage

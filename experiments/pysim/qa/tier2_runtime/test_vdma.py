@@ -186,6 +186,7 @@ class VdmaFixture:
             ),
             vmmio=system.vmmio,
             phys_mem=system.phys_mem,
+            bump_allocator=system.runtime_engine.bump_allocator,
         )
 
     def clear_observation(self) -> None:
@@ -210,6 +211,7 @@ class VdmaFixture:
             ),
             vmmio=self.system.vmmio,
             phys_mem=self.system.phys_mem,
+            bump_allocator=self.system.runtime_engine.bump_allocator,
         )
 
     def address(self, region: Region, offset: int = 0) -> int:
@@ -465,7 +467,7 @@ def test_guest_store_and_dma_use_same_managed_shm(entry: Entry) -> None:
         )
         expected = replace(before, shared=bytes(shared))
         assert fixture.snapshot() == expected
-        assert bytes(fixture.block.data[65:69]) == value.to_bytes(4, "little")
+        assert fixture.block.read_bytes(65, 4) == value.to_bytes(4, "little")
         transfer = yield from fixture.transfer(fixture.shared_base + 65, 2048, 4)
         assert transfer == Outcome((0,))
         assert fixture.snapshot() == fixture.expected_copy(
@@ -963,7 +965,7 @@ def test_real_shm_release_grant_claim_preserves_data_and_rejects_old_owner(entry
         assert fixture.snapshot() == fixture.expected_copy(
             before, Region.LINEAR, Region.SHM, 4, 68, 8
         )
-        assert bytes(fixture.block.data[68:76]) == before.guest[4:12]
+        assert fixture.block.read_bytes(68, 8) == before.guest[4:12]
         fixture.prepare_tlb((Region.SHM,), True)
         shm_id = fixture.block.release()
         assert fixture.system.vmmio.ptes.view().find(fixture.shared_base >> 12) is None
@@ -981,7 +983,7 @@ def test_real_shm_release_grant_claim_preserves_data_and_rejects_old_owner(entry
             assert fixture.system.memory_manager.grant_shared(shm_id)
             claimed = fixture.system.memory_manager.claim(shm_id).unwrap()
             assert claimed.get_owner() == receiver_id
-            assert bytes(claimed.data[68:76]) == before.guest[4:12]
+            assert claimed.read_bytes(68, 8) == before.guest[4:12]
         granted = fixture.snapshot()
         old_owner = yield from fixture.transfer(
             fixture.shared_base + 68, 2048, 8, inspect_trap=entry == Entry.COPY

@@ -73,6 +73,8 @@ flowchart TD
 
 `write_event` は診断出力の失敗を処理継続条件にしない。出力先が利用できない場合も、元の状態遷移・拒否結果・契約アサーションを維持する。
 
+PythonとC++は[`printk.hxx`](experiments/pysim/native/tier1_core/printk/printk.hxx)の同期バイト出力実装を共有する。イベントのレコード作成とBase64符号化はC++で行う。pysimの物理Sinkと辞書復号のアダプタはPythonで実装する。C++の任意計測構成は同じバイト出力へ`label=value`形式の64ビット数値を出力できる。計測状態の整形は計測を所有する側で行い、printkとPythonの物理SinkはJIT固有の状態を解釈しない。
+
 ## 4. 依存方向
 
 Tier 1のCOOSとIPCは `printk` 契約だけを参照する。Tier 2 Runtimeロガーは `write` を使い、Tier 3 Platformは [`platform_driver.md`](docs/components/tier3_platform/platform_driver.md) の物理Sinkで契約を実装する。Tier 1からTier 2のロギングAPIへの依存は禁止する。

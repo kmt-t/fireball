@@ -22,7 +22,6 @@ class PageMappingCallbacks:
 class SharedBlock(Protocol):
     """Shared-memory block operations required by ownership boundaries."""
 
-    data: memoryview
     owner: int
 
     def u64_capacity(self) -> int: ...

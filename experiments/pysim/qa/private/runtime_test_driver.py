@@ -12,9 +12,9 @@ from collections.abc import Callable
 from typing import Protocol
 
 from qa.private.debugger_support import DebugTestView
+from qa.shared.runtime_stats import RuntimeStatsEngine
 from system_containers import StaticVector
 from tier2_runtime.interpreter.control_flow import iter_block_ops
-from tier2_runtime.runtime.engine import RuntimeEngine
 from tier2_runtime.runtime.execution_plugin import NativeExecutionPlugin
 from tier2_runtime.wasm.module import BasicBlock, WasmOperand
 from tier2_runtime.wasm.opcodes import (
@@ -92,7 +92,7 @@ def _build_handlers() -> tuple[Callable[[DebugTestView, WasmOperand], None] | No
 _HANDLERS = _build_handlers()
 
 
-class RuntimeEngineDebugDriver(RuntimeEngine):
+class RuntimeEngineDebugDriver(RuntimeStatsEngine):
     """Legacy test driver with loader-backed metadata and synthetic block execution.
 
     Its debugger stepping uses the local opcode subset.  A supplied JIT runtime is

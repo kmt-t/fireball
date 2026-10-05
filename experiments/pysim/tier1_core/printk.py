@@ -98,6 +98,14 @@ class PrintkWriter(Protocol):
 class Printk(PrintkWriter, Protocol):
     """Best-effort low-level event output that does not require COOS or IPC."""
 
+    def write_base64(self, data: memoryview) -> int:
+        """Synchronously encode binary bytes plus LF; assert on incomplete output."""
+        ...
+
+    def write_raw(self, data: memoryview) -> int:
+        """Write guest stderr bytes without dictionary decoding or added newlines."""
+        ...
+
     def write_event(
         self,
         level: PrintkLevel,

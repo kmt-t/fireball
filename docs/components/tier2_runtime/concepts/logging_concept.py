@@ -12,6 +12,7 @@ Implementation Invariants & Gotchas:
 """
 
 import inspect
+from base64 import b64encode
 from bisect import bisect_left
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -303,25 +304,52 @@ class Logger:
         return total_flushed
 
 
+def decode_record(data: bytes, dictionary: LogDictionary) -> str:
+    """完全な1レコードを物理出力前に復号する。"""
+    assert len(data) >= 4
+    record = memoryview(data)
+    assert 0 <= record[0] <= int(LogLevel.FATAL)
+    level = LogLevel(record[0])
+    offset = record[1] | (record[2] << 8) | (record[3] << 16)
+    record_size = 4 + 4 * dictionary.argument_count(offset)
+    assert len(data) == record_size
+    args = tuple(
+        record[index]
+        | (record[index + 1] << 8)
+        | (record[index + 2] << 16)
+        | (record[index + 3] << 24)
+        for index in range(4, record_size, 4)
+    )
+    return f"[{level.name}] {dictionary.format(offset, args)}"
+
+
+class PrintkTransport(MockHALTransport):
+    """共有辞書を借用し、同期書込み時にUTF-8テキストを出力する。"""
+
+    def __init__(self, dictionary: LogDictionary):
+        super().__init__()
+        self.dictionary = dictionary
+
+    def transmit(self, raw_record: memoryview) -> bool:
+        text = (decode_record(bytes(raw_record), self.dictionary) + "\n").encode("utf-8")
+        return super().transmit(memoryview(text))
+
+    def write_base64(self, data: memoryview) -> int:
+        """20出力バイトに収まる15入力バイトずつ符号化し、LFを付ける。"""
+        assert data.ndim == 1 and data.itemsize == 1 and data.format == "B"
+        input_chunk_size = 20 // 4 * 3
+        for offset in range(0, len(data), input_chunk_size):
+            encoded = b64encode(bytes(data[offset : offset + input_chunk_size]))
+            accepted = super().transmit(memoryview(encoded))
+            assert accepted, "incomplete printk base64 write"
+        accepted = super().transmit(memoryview(b"\n"))
+        assert accepted, "incomplete printk base64 newline"
+        return len(data)
+
+
 def decode_transport(transport: MockHALTransport, dictionary: LogDictionary) -> tuple[str, ...]:
-    """Host-side pretty printer for dictionary-sized records captured by the mock transport."""
-    messages: list[str] = []
-    for record_bytes in transport.output_log:
-        assert len(record_bytes) >= 4
-        record = memoryview(record_bytes)
-        level = LogLevel(record[0])
-        offset = record[1] | (record[2] << 8) | (record[3] << 16)
-        record_size = 4 + 4 * dictionary.argument_count(offset)
-        assert len(record_bytes) == record_size
-        args = tuple(
-            record[index]
-            | (record[index + 1] << 8)
-            | (record[index + 2] << 16)
-            | (record[index + 3] << 24)
-            for index in range(4, record_size, 4)
-        )
-        messages.append(f"[{level.name}] {dictionary.format(offset, args)}")
-    return tuple(messages)
+    """符号化の単体検証用に保存された内部レコードを復号する。"""
+    return tuple(decode_record(data, dictionary) for data in transport.output_log)
 
 
 # ==============================================================================
@@ -444,7 +472,38 @@ def test_logger_cannot_carry_a_runtime_string_but_console_can() -> None:
     assert "message" not in parameters and "text" not in parameters
 
 
+def test_printk_decodes_during_flush() -> None:
+    dictionary = LogDictionary([(1, "value=%d hex=%08X")])
+    transport = PrintkTransport(dictionary)
+    logger = Logger(transport, dictionary)
+    assert logger.log_event(LogLevel.INFO, 1, 42, 0xAB) == LogResult.SUCCESS
+    assert transport.output_log == []
+    assert logger.flush() == 1
+    assert transport.output_log == [b"[INFO] value=42 hex=000000AB\n"]
+    assert logger.ring_buffer.is_empty()
+
+
+def test_printk_base64_uses_bounded_chunks() -> None:
+    transport = PrintkTransport(LogDictionary())
+    payload = b"f" * 16
+    assert transport.write_base64(memoryview(payload)) == 16
+    assert transport.output_log == [b"ZmZmZmZmZmZmZmZmZmZm", b"Zg==", b"\n"]
+    transport.output_log.clear()
+    assert transport.write_base64(memoryview(b"")) == 0
+    assert transport.output_log == [b"\n"]
+    transport.is_busy = True
+    rejected = False
+    try:
+        transport.write_base64(memoryview(b"f"))
+    except AssertionError:
+        rejected = True
+    assert rejected, "Base64 output rejection must assert"
+    assert transport.output_log == [b"\n"]
+
+
 if __name__ == "__main__":
+    test_printk_base64_uses_bounded_chunks()
+    test_printk_decodes_during_flush()
     test_logger_dictionary_formatting()
     test_logger_buffering_and_idle_flush()
     test_logger_overwrite_on_buffer_full()

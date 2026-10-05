@@ -22,6 +22,7 @@ from qa.shared.helpers import make_native_interpreter
 from scheduler import TaskState
 from system import System
 from tier2_runtime.hal.dispatch import FB_CONF_HAL_BUFFER_SIZE, HalBufferMapStatus, WasiIpcCmd
+from tier2_runtime.observability.logger import LogDictionary
 from tier2_runtime.syscall.hostcall import WasiErrno
 from tier2_runtime.wasm.reader import parse
 from tier3_platform.drivers.hal.dummy import DummyDriver
@@ -156,12 +157,14 @@ class GuestSession:
         self.backend = ControlledBackend()
         self.hardware = ObservedHardware()
         self.log = PrintkBuffer()
+        dictionary = LogDictionary()
         self.system = System(
             drivers=PlatformDriverConfiguration(
                 stdout_transport=self.hardware,
-                printk=PrintkSink(self.log),
+                printk=PrintkSink(self.log, dictionary.decode_record),
                 wasi_backend=self.backend,
-            )
+            ),
+            log_dictionary=dictionary,
         )
         self.hardware.system = self.system
         self.driver = DummyDriver(transport=self.hardware)

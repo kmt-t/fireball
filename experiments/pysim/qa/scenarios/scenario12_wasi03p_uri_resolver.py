@@ -36,6 +36,7 @@ from tier2_runtime.hal.dispatch import (
     ARG_OFFSET,
     ARG_QUERY_CMD_ID,
 )
+from tier2_runtime.observability.logger import LogDictionary
 from tier3_platform.drivers.hal.dummy import DummyDriver
 from tier3_platform.drivers.hal.stream import StreamTransport
 from tier3_platform.drivers.platform_config import PlatformDriverConfiguration
@@ -55,12 +56,14 @@ def test_wasi03p_hierarchical_uri_and_ipc_commands():
         "[*] Running Scenario 12: WASI 0.3p Hierarchical URI Resolver, Capability Query & IPC Commands..."
     )
     stdout_transport = StreamTransport()
+    dictionary = LogDictionary()
     sysv = System(
         drivers=PlatformDriverConfiguration(
             stdout_transport=stdout_transport,
-            printk=PrintkSink(PrintkBuffer()),
+            printk=PrintkSink(PrintkBuffer(), dictionary.decode_record),
             wasi_backend=UvwasiReferenceContext(),
-        )
+        ),
+        log_dictionary=dictionary,
     )
     engine = Wasi03pEngine(sysv)
     runtime_task = sysv.start_runtime_task(name="scenario12_runtime")

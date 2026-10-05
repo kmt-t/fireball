@@ -58,7 +58,6 @@ from tier2_runtime.interpreter.interpreter import (
 )
 from tier2_runtime.memory.manager import FB_CONF_MEMORY_POOL_SIZE, MemoryManager
 from tier2_runtime.observability.logger import (
-    LOG_HEADER_SIZE,
     LogDictionary,
     Logger,
     LogLevel,
@@ -151,22 +150,6 @@ def _open_log(phase: str) -> tuple[Path, FileLogSink]:
     """One fresh log file per phase run, written through the logger HAL driver's sink."""
     path = LOG_DIR / f"fireball_vtune_{phase}.log"
     return path, FileLogSink(path.open("wb", buffering=64 * 1024))
-
-
-def _count_log_id(path: Path, dict_offset: int, dictionary: LogDictionary) -> int:
-    data = memoryview(path.read_bytes())
-    count = 0
-    record_offset = 0
-    while record_offset < len(data):
-        assert len(data) - record_offset >= LOG_HEADER_SIZE
-        record = data[record_offset:]
-        record_id = record[1] | (record[2] << 8) | (record[3] << 16)
-        record_size = LOG_HEADER_SIZE + 4 * dictionary.argument_count(record_id)
-        assert len(record) >= record_size
-        if record_id == dict_offset:
-            count += 1
-        record_offset += record_size
-    return count
 
 
 def _new_guest():
@@ -312,9 +295,9 @@ def phase_os_mix(scale: float, kernels: list[str] | None, oracle: bool) -> Phase
             runs.append(KernelRun(name, units, 0.0, result))
             checksum = zlib.crc32(result.to_bytes(4, "little"), checksum) & MASK32
     sink.close()
-    assert _count_log_id(log_path, 0x200, sysv.dictionary) == len(picked), (
-        "structured log entries lost"
-    )
+    assert sorted(log_path.read_text(encoding="utf-8").splitlines()) == sorted(
+        f"[INFO] KERNEL_DONE: idx={index} result={run.result}" for index, run in enumerate(runs)
+    ), "structured log entries lost or corrupted"
     work = f"{len(picked)} guests, waves of {OS_MIX_WAVE}, {sink.bytes_written} log bytes"
     return PhaseResult("os_mix", seconds, work, checksum, tuple(runs))
 
@@ -402,7 +385,11 @@ def phase_ipc(scale: float, kernels: list[str] | None, oracle: bool) -> PhaseRes
     router = IPCRouter(sched, manager)
     log_path, sink = _open_log("ipc")
     dictionary = LogDictionary(entries=((_LOG_ID_MSG, "MSG: seq=%d val=%d"),))
-    logger = Logger(transport=PrintkSink(sink), dictionary=dictionary, min_level=LogLevel.INFO)
+    logger = Logger(
+        transport=PrintkSink(sink, dictionary.decode_record),
+        dictionary=dictionary,
+        min_level=LogLevel.INFO,
+    )
     sent_sum = [0]
     recv_sum = [0]
     received = [0]
@@ -440,7 +427,9 @@ def phase_ipc(scale: float, kernels: list[str] | None, oracle: bool) -> PhaseRes
     sink.close()
     assert received[0] == count, (received[0], count)
     assert recv_sum[0] == sent_sum[0], "payload lost or corrupted across rendezvous"
-    assert _count_log_id(log_path, _LOG_ID_MSG, dictionary) == count, "log entries lost"
+    assert log_path.read_text(encoding="utf-8").splitlines() == [
+        f"[INFO] MSG: seq={seq} val={(seq * 2654435761) & MASK32}" for seq in range(count)
+    ], "log entries lost or corrupted"
     work = f"{count:,} msgs, {sink.bytes_written // 1024} KiB log"
     return PhaseResult("ipc", seconds, work, recv_sum[0])
 

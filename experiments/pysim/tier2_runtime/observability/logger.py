@@ -210,6 +210,25 @@ class LogDictionary:
             literal_start = index
         return formatted + fmt[literal_start:]
 
+    def decode_record(self, record: memoryview) -> str:
+        """Expand one complete printk input record before physical output."""
+        assert len(record) >= LOG_HEADER_SIZE, "truncated log header"
+        assert 0 <= record[0] <= int(LogLevel.FATAL), "invalid log level"
+        level = LogLevel(record[0])
+        dict_offset = record[1] | (record[2] << 8) | (record[3] << 16)
+        argument_count = self.argument_count(dict_offset)
+        record_size = LOG_HEADER_SIZE + 4 * argument_count
+        assert len(record) == record_size, "invalid log record length"
+        args: StaticVector[int] = StaticVector(capacity=argument_count)
+        for arg_offset in range(LOG_HEADER_SIZE, record_size, 4):
+            args.append(
+                record[arg_offset]
+                | (record[arg_offset + 1] << 8)
+                | (record[arg_offset + 2] << 16)
+                | (record[arg_offset + 3] << 24)
+            )
+        return f"[{level.name}] {self.format(dict_offset, args)}"
+
 
 @dataclass(slots=True)
 class LogEntry:
@@ -386,21 +405,11 @@ def decode_log_records(data: bytes, dictionary: LogDictionary) -> StaticVector[s
     while offset < len(data):
         assert len(data) - offset >= LOG_HEADER_SIZE, "truncated log header"
         record = memoryview(data)[offset:]
-        assert 0 <= record[0] <= int(LogLevel.FATAL), "invalid log level"
-        level = LogLevel(record[0])
         dict_offset = record[1] | (record[2] << 8) | (record[3] << 16)
         argument_count = dictionary.argument_count(dict_offset)
         record_size = LOG_HEADER_SIZE + 4 * argument_count
         assert len(record) >= record_size, "truncated log arguments"
-        args: StaticVector[int] = StaticVector(capacity=argument_count)
-        for arg_offset in range(LOG_HEADER_SIZE, record_size, 4):
-            args.append(
-                record[arg_offset]
-                | (record[arg_offset + 1] << 8)
-                | (record[arg_offset + 2] << 16)
-                | (record[arg_offset + 3] << 24)
-            )
-        messages.append(f"[{level.name}] {dictionary.format(dict_offset, args)}")
+        messages.append(dictionary.decode_record(record[:record_size]))
         offset += record_size
     return messages
 

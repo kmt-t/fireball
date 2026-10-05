@@ -5,6 +5,8 @@ pyModelChecking による Logging コンポーネントの
 (2) 保留中のログは COOS Idle Hook によるフラッシュで必ず出力されること
 (3) 同期書込みバッチ完了後に割り込みを確認し、次バッチを保留して協調復帰すること（GOTCHA-LOG-03）
 (4) 同一辞書の引数数に従う転送長と復号境界、および未知ID・欠損入力の拒否
+(5) printkの物理出力前にレコードを復号すること
+(6) Base64の作業領域上限と途中パディングの禁止
 の形式検証（証明・変異検査対応）モデル
 """
 
@@ -46,10 +48,10 @@ def build_model(*, guards: bool = True) -> Kripke:
         ("s_active_partial", "s_active_full"),
         ("s_active_partial", "s_idle_flushing"),
         ("s_active_full", "s_idle_flushing"),
-        ("s_idle_flushing", "s_flush_done"),
+        ("s_idle_flushing", "s_printk_decoded"),
         ("s_flush_done", "s_idle_empty"),
         # GOTCHA-LOG-03: バッチ後の割込確認による協調復帰と再開
-        ("s_idle_flushing", "s_irq_preempt"),
+        ("s_printk_decoded", "s_irq_preempt"),
         ("s_irq_preempt", "s_irq_handled"),
         ("s_irq_handled", "s_flush_done"),
         # 違反状態の自己ループ（Kripke 構造は全域的でなければならない）
@@ -98,6 +100,27 @@ def build_model(*, guards: bool = True) -> Kripke:
         S.append(state)
         R.extend((("s_idle_empty", state), (state, "s_idle_empty")))
         L[state] = {"rejected"} if guards else {"boundary_error"}
+    # 出力境界の抽象化。テキスト内容とUTF-8符号化はTEST-LOG-17で直接検査する。
+    S.extend(("s_printk_decoded", "s_printk_raw_output"))
+    L["s_printk_decoded"] = {"decoded_output"}
+    L["s_printk_raw_output"] = {"raw_output"}
+    R.append(("s_printk_decoded", "s_flush_done"))
+    R.append(("s_printk_raw_output", "s_printk_raw_output"))
+    if not guards:
+        R.append(("s_idle_flushing", "s_printk_raw_output"))
+    # 20出力バイトに収まるチャンクと最終グループの端数を抽象化する。
+    # 文字集合と入力ビットの符号化はTEST-LOG-18で直接検査する。
+    for input_size in range(17):
+        for final_chunk in (False, True):
+            state = f"s_base64_{input_size}_{int(final_chunk)}"
+            S.append(state)
+            encoded_size = 4 * ((input_size + 2) // 3)
+            valid = encoded_size <= 20 and (final_chunk or input_size % 3 == 0)
+            L[state] = {"base64_chunk_valid"} if valid else {"base64_chunk_error"}
+            if guards and not valid:
+                R.append((state, state))
+            else:
+                R.extend((("s_idle_empty", state), (state, "s_idle_empty")))
     return Kripke(S=S, S0=S0, R=R, L=L)
 
 
@@ -111,6 +134,22 @@ def properties():
     irq_pending = AtomicProposition("irq_pending")
     irq_handled = AtomicProposition("irq_handled")
     return [
+        {
+            "name": "base64_bounded_chunks_without_intermediate_padding",
+            "kind": "safety",
+            "logic": "CTL",
+            "formula": AG(Not(AtomicProposition("base64_chunk_error"))),
+            "violation": AtomicProposition("base64_chunk_error"),
+            "expect": True,
+        },
+        {
+            "name": "printk_decodes_before_physical_output",
+            "kind": "safety",
+            "logic": "CTL",
+            "formula": AG(Not(AtomicProposition("raw_output"))),
+            "violation": AtomicProposition("raw_output"),
+            "expect": True,
+        },
         {
             "name": "dictionary_sized_record_boundary",
             "kind": "safety",

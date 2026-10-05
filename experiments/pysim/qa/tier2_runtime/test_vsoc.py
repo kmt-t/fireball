@@ -48,7 +48,6 @@ from tier2_runtime.observability.logger import (
     LogDictionary,
     LogLevel,
     LogResult,
-    decode_log_records,
 )
 from tier2_runtime.runtime.engine import RuntimeDriveMode, RuntimeEngine
 from tier2_runtime.vsoc.virq import (
@@ -637,7 +636,7 @@ def test_idle_02_logging_flush_on_idle():
         assert system.logger.log_event(LogLevel.INFO, 1, 99) == LogResult.SUCCESS
         assert sink.bytes_written == 0
         system.scheduler.run_until_idle()
-        assert list(decode_log_records(sink.drain_output(), system.dictionary)) == [
+        assert sink.drain_output().decode("utf-8").splitlines() == [
             "[INFO] event payload=42",
             "[INFO] event payload=99",
         ]
@@ -703,7 +702,7 @@ def test_tier_01_interpreter_to_jit_cooperative_flow():
         # Scheduler handoffs occur after every two LOOP backedges.
         assert observed == [2, 4, 6, 8, 10]
         assert reported == list(range(1, 13))
-        assert list(decode_log_records(sink.drain_output(), system.dictionary)) == [
+        assert sink.drain_output().decode("utf-8").splitlines() == [
             f"[INFO] wasm iteration={value}" for value in (2, 4, 6, 8, 10)
         ]
         assert system.logger.ring.count == 0

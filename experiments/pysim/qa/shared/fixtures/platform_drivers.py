@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from qa.shared.fixtures.uvwasi_reference import UvwasiReferenceContext
+from tier2_runtime.observability.logger import LogDictionary
 from tier3_platform.drivers.hal.stream import StreamTransport
 from tier3_platform.drivers.platform_config import PlatformDriverConfiguration
 from tier3_platform.drivers.printk import PrintkBuffer, PrintkSink
@@ -16,6 +17,6 @@ def create_reference_platform_drivers(
     selected_backend = backend if backend is not None else UvwasiReferenceContext()
     return PlatformDriverConfiguration(
         stdout_transport=stdout_transport,
-        printk=PrintkSink(PrintkBuffer()),
+        printk=PrintkSink(PrintkBuffer(), LogDictionary().decode_record),
         wasi_backend=selected_backend,
     )

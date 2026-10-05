@@ -39,7 +39,6 @@ from tier2_runtime.observability.logger import (
     LogDictionary,
     LogLevel,
     LogResult,
-    decode_log_records,
 )
 from tier2_runtime.vmmio.controller import TrapCode, VMMIOController, VmmioStatus
 from tier3_platform.drivers.hal.dummy import DummyDriver, Timer
@@ -440,9 +439,7 @@ def test_hal_15_file_log_sink_receives_internal_logs():
         assert sysv.logger.flush() == 1
         assert sysv.transport.write(memoryview(b"guest-out\n")) == 10
 
-        records = decode_log_records(backing.getvalue(), sysv.dictionary)
-        assert len(records) == 1
-        assert records[0] == "[INFO] TEST_LOG: v=7"
+        assert backing.getvalue() == b"[INFO] TEST_LOG: v=7\n"
         assert sink.bytes_written == len(backing.getvalue())
         assert sysv.transport.drain_output() == b"guest-out\n"
     finally:

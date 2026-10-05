@@ -458,7 +458,7 @@ class WasiHostContext:
         total_written = 0
         for i in range(iovs_len):
             base, length = struct.unpack_from("<II", mem, iovs_ptr + i * 8)
-            written = self.sysv.logger.transport.write(memoryview(mem)[base : base + length])
+            written = self.sysv.printk.write_raw(memoryview(mem)[base : base + length])
             assert written == length
             total_written += written
         struct.pack_into("<I", mem, nwritten_ptr, total_written)

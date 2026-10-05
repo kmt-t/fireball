@@ -35,7 +35,6 @@ from tier2_runtime.observability.logger import (
     Logger,
     LogLevel,
     LogResult,
-    decode_log_records,
 )
 from tier3_platform.drivers.hal.stream import StreamTransport
 from tier3_platform.drivers.printk import PrintkSink
@@ -162,7 +161,11 @@ def test_scenario_ipc_router_and_logging():
     assert rejected, "LogDictionary must reject %s pointer specifier"
     print("    [Section 2.1] LogDictionary Pointer Specifier Rejection (%s) -> REJECTED [PASS]")
     # 3. Emit structured logs via Logger
-    logger = Logger(transport=PrintkSink(transport), dictionary=log_dict, min_level=LogLevel.INFO)
+    logger = Logger(
+        transport=PrintkSink(transport, log_dict.decode_record),
+        dictionary=log_dict,
+        min_level=LogLevel.INFO,
+    )
     assert logger.log_event(LogLevel.INFO, 0x1100, 1, 5) == LogResult.SUCCESS
     assert logger.log_event(LogLevel.DEBUG, 0x1104, 0x12345678) == LogResult.FILTERED
     assert logger.log_event(LogLevel.ERROR, 0x1104, 0xDEADBEEF) == LogResult.SUCCESS
@@ -170,7 +173,7 @@ def test_scenario_ipc_router_and_logging():
     flushed_count = logger.flush()
     assert flushed_count == 2
     # Read UART output stream
-    emitted = "\n".join(decode_log_records(transport.drain_output(), log_dict))
+    emitted = transport.drain_output().decode("utf-8")
     assert "TASK_INIT: id=1 priority=5" in emitted
     assert "0x12345678" not in emitted  # DEBUG filtered
     assert "COOS_STATE: state=0xDEADBEEF" in emitted

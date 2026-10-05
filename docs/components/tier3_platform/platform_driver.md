@@ -7,7 +7,11 @@
 
 本コンポーネントは、Tier 2 の抽象契約 [`hal_dispatch.md`](docs/components/tier2_runtime/hal_dispatch.md)（URI Resolver、コマンドプロトコル、ゼロコピー転送インターフェース）の物理ドライバ実装である。RSP Parserは含めず、UARTやSEGGER RTTなどの物理トランスポートだけを提供する。契約と実装の記述に食い違いがあれば `hal_dispatch.md` を正とする（`{META_ContractImplSplit}` 契約/実装分割パターン）。
 
-本TierにはTier 1 [`printk.md`](docs/components/tier1_core/printk.md) 契約の物理出力実装も置く。`PrintkSink` はOS診断イベントを同期出力し、Tier 2 Loggerの固定レコードも同じ出力先へ受け渡す。COOSやIPCを経由しない低層経路を保つ。
+本TierにはTier 1 [`printk.md`](docs/components/tier1_core/printk.md) 契約の物理出力実装も置く。`PrintkSink` はOS診断イベントを同期出力し、Tier 2 Loggerのレコードも書込み時に共有辞書で復号し、改行付きUTF-8テキストを同じ物理出力先へ渡す。復号処理は構成時に注入し、辞書を複製しない。COOSやIPCを経由しない低層経路を保つ。
+
+バイナリ送信は`PrintkSink.write_base64`でBase64文字列と末尾LFへ変換する。診断レコードの固定作業領域を再利用し、全チャンクの完全書込みを要求する。形式と失敗時の契約は`printk.md`を正本とする。
+
+ゲスト標準エラーは辞書レコードではないため、`write_raw`で生バイトを同じ物理出力先へ渡す。レコード種別をバイト列から推測しない。
 
 ## 1. コンセプト
 <!-- traceability: {Challenge_InterruptSafety} {TaskPollInterruptEvent} {RSPMinimalSet} {Fast_Path_GPIO} -->

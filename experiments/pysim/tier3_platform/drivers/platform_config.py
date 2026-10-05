@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from tier1_core.printk import Printk, PrintkWriter
@@ -26,6 +27,7 @@ class PlatformDriverConfiguration:
 
 
 def create_default_platform_drivers(
+    decode_record: Callable[[memoryview], str],
     printk_sink: PrintkWriter | None = None,
     debugger_sink: DebuggerSink | None = None,
 ) -> PlatformDriverConfiguration:
@@ -34,7 +36,7 @@ def create_default_platform_drivers(
     selected_printk = printk_sink if printk_sink is not None else PrintkBuffer()
     return PlatformDriverConfiguration(
         stdout_transport=stdout_transport,
-        printk=PrintkSink(selected_printk),
+        printk=PrintkSink(selected_printk, decode_record),
         wasi_backend=create_uvwasi_backend(),
         debugger_sink=debugger_sink,
     )

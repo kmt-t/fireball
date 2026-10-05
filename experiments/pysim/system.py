@@ -129,13 +129,15 @@ class System:
         drivers: PlatformDriverConfiguration | None = None,
         log_dictionary: LogDictionary | None = None,
     ):
+        self.dictionary = log_dictionary if log_dictionary is not None else LogDictionary()
         self.drivers = (
-            drivers if drivers is not None else create_default_platform_drivers(printk_sink)
+            drivers
+            if drivers is not None
+            else create_default_platform_drivers(self.dictionary.decode_record, printk_sink)
         )
         self.wasi_backend = self.drivers.wasi_backend
         self.printk = self.drivers.printk
         self.transport = self.drivers.stdout_transport
-        self.dictionary = log_dictionary if log_dictionary is not None else LogDictionary()
         self.logger = Logger(self.printk, self.dictionary, min_level=LogLevel.DEBUG)
         self.scheduler = Scheduler(printk=self.printk)
         # --- vMMIO: real FlatMap+TLB dispatch, this file's own byte

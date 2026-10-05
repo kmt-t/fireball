@@ -19,7 +19,7 @@ while not (_PYSIM_DIR / "tier1_core").is_dir():
 from system import System
 from system_containers import StaticVector
 from tier2_runtime.interpreter.interpreter import InterpreterBindings, NativeInterpreter
-from tier2_runtime.observability.logger import LogDictionary, LogLevel, decode_log_records
+from tier2_runtime.observability.logger import LogDictionary, LogLevel
 from tier2_runtime.runtime.engine import RuntimeEngine
 from tier2_runtime.runtime.recovery import RecoveryManager, RecoveryStrategy, Result
 from tier2_runtime.wasm.reader import parse
@@ -234,7 +234,7 @@ def main() -> None:
         print(f"    | {line}")
 
     print("\n== pysim: draining the printk sink ==")
-    log_messages = decode_log_records(printk_sink.drain_output(), sysv.dictionary)
+    log_messages = printk_sink.drain_output().decode("utf-8").splitlines()
     print(f"  {printk_sink.bytes_written} bytes reached the printk sink:")
     for line in log_messages:
         print(f"    | {line}")

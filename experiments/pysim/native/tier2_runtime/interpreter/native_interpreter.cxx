@@ -11,9 +11,6 @@
 #include <limits>
 #include <type_traits>
 
-#ifndef FB_CONF_NATIVE_JIT_TRACE_CAPACITY
-#error "Native JIT dispatch capacity must come from tier1_core/config.py"
-#endif
 namespace {
 
 #if defined(_WIN32)
@@ -40,7 +37,6 @@ constexpr std::uint32_t kTrapLocalStackCapacity = 1;
 constexpr std::uint32_t kTrapCallStackCapacity = 3;
 constexpr std::uint32_t kTrapOperandStackCapacity = 4;
 constexpr std::uint32_t kNativeErrorInvalidArgument = 1;
-constexpr std::uint32_t kNativeErrorInvalidTable = 2;
 constexpr std::uint32_t kNativeErrorInvalidState = 3;
 constexpr std::uint32_t kNativeErrorInternal = 4;
 constexpr std::uint32_t kTrapTableIndexOutOfBounds = 6;
@@ -117,7 +113,7 @@ struct debugger_aspect {
   }
 };
 
-struct hotspot_observer {};
+struct block_observer {};
 
 template <typename Debugger = void>
 FIREBALL_CPS_CALL step_result dispatch(execution_context* context, std::uint32_t* sp,
@@ -1953,7 +1949,7 @@ FIREBALL_CPS_CALL step_result dispatch(execution_context* context, std::uint32_t
   current.stack_checkpoint = current.sp_offset;
   const auto opcode = current.code[current.ip];
   const auto opcode_attributes = kOpcodeAttributes[opcode];
-  if constexpr (std::is_same_v<Debugger, hotspot_observer>) {
+  if constexpr (std::is_same_v<Debugger, block_observer>) {
     if ((opcode_attributes & kOpcodeBlockBody) != 0) {
       current.runtime_flags =
           (current.runtime_flags & ~kObserveBlockBodyFlag) | kObservedBlockBodyFlag;
@@ -2161,85 +2157,16 @@ FIREBALL_CPS_CALL step_result dispatch(execution_context* context, std::uint32_t
   }
 }
 
-using native_trace_descriptor = fb_native_trace_descriptor;
-
-constexpr std::size_t align_up(std::size_t value, std::size_t alignment) {
-  return ((value + alignment - 1) / alignment) * alignment;
-}
-
-static_assert(std::is_standard_layout_v<native_trace_descriptor>);
-static_assert(offsetof(native_trace_descriptor, entry_address) ==
-              align_up(sizeof(std::uint32_t), alignof(std::uintptr_t)));
-static_assert(offsetof(native_trace_descriptor, byte_span) ==
-              offsetof(native_trace_descriptor, entry_address) + sizeof(std::uintptr_t));
-static_assert(sizeof(native_trace_descriptor) ==
-              align_up(offsetof(native_trace_descriptor, exec_count) +
-                           sizeof(std::uint32_t*),
-                       alignof(native_trace_descriptor)));
-
 constexpr std::uint32_t kNoPc = 0xFFFF'FFFFu;
 
-using native_trace_entry_fn = void (*)(void*, std::uint32_t*, std::uint32_t*, std::uint32_t);
-
-bool is_control_terminator(std::uint8_t opcode) {
-  return opcode_is_control_terminator(opcode);
-}
-
-const native_trace_descriptor* find_dispatch_entry(
-    const native_trace_descriptor* entries, std::size_t count, std::uint32_t pc) {
-  std::size_t low = 0;
-  std::size_t high = count;
-  while (low < high) {
-    const auto middle = low + (high - low) / 2;
-    if (entries[middle].head_pc < pc) {
-      low = middle + 1;
-    } else {
-      high = middle;
-    }
-  }
-  return low < count && entries[low].head_pc == pc ? &entries[low] : nullptr;
-}
-
-template <bool CollectStats, bool RecordExecutions = false>
-const native_trace_descriptor* terminal_dispatch_entry(
-    const native_trace_descriptor* entries, std::size_t count,
-    const native_trace_descriptor* start, std::uint32_t& body_count) {
-  auto* current = start;
-  for (std::size_t depth = 0; depth < count; ++depth) {
-    if constexpr (CollectStats) ++body_count;
-    if constexpr (RecordExecutions) {
-      if (*current->exec_count != kNoPc) ++*current->exec_count;
-    }
-    if (current->chain_next_pc == kNoPc) return current;
-    const auto* next = find_dispatch_entry(entries, count, current->chain_next_pc);
-    if (next == nullptr || next->head_pc == current->head_pc) return nullptr;
-    current = next;
-  }
-  return nullptr;
-}
-
-template <bool CollectHotspots>
-struct native_dispatch_hotspot_buffers {};
-
-template <>
-struct native_dispatch_hotspot_buffers<true> {
-  std::uint32_t trackable_card_count = 0;
-  std::uint32_t trackable_shift = 0;
-  std::uint64_t trackable_bytes = 0;
-  std::uint64_t block_history_bytes = 0;
-  const std::uint8_t* trackable_mask = nullptr;
-  std::uint32_t* block_history = nullptr;
-};
-
-template <bool CollectHotspots>
-struct native_dispatch_call : native_dispatch_hotspot_buffers<CollectHotspots> {
-  std::uint32_t entry_count = 0;
+template <bool WithExtension>
+struct native_dispatch_call {
   std::uint64_t code_bytes = 0;
   std::uint64_t context_bytes = 0;
   std::uint64_t stack_bytes = 0;
   std::uint64_t locals_bytes = 0;
   std::uint64_t control_bytes = 0;
-  const fb_native_trace_source* trace_source = nullptr;
+  const fb_native_execution_extension* extension = nullptr;
   std::uint32_t stack_size = 0;
   std::uint32_t stack_capacity = 0;
   std::uint32_t initial_ip = 0;
@@ -2248,8 +2175,6 @@ struct native_dispatch_call : native_dispatch_hotspot_buffers<CollectHotspots> {
   std::uint32_t control_base = 0;
   std::uint32_t function_index = 0;
   std::uint32_t yield_threshold = 0;
-  std::uint32_t execution_count = 0;
-  const native_trace_descriptor* entries = nullptr;
   fireball_execution_context_native* context = nullptr;
   fireball_control_stack_native* control_stack = nullptr;
   fireball_call_frame_native* call_frame = nullptr;
@@ -2266,7 +2191,7 @@ struct native_dispatch_call : native_dispatch_hotspot_buffers<CollectHotspots> {
         stack_bytes(source.stack_bytes),
         locals_bytes(source.locals_bytes),
         control_bytes(source.control_bytes),
-        trace_source(source.trace_source),
+        extension(source.extension),
         stack_size(source.stack_size),
         stack_capacity(source.stack_capacity),
         initial_ip(source.initial_ip),
@@ -2275,25 +2200,17 @@ struct native_dispatch_call : native_dispatch_hotspot_buffers<CollectHotspots> {
         control_base(source.control_base),
         function_index(source.function_index),
         yield_threshold(source.yield_threshold),
-        execution_count(source.execution_count),
         context(static_cast<fireball_execution_context_native*>(source.context)),
         control_stack(static_cast<fireball_control_stack_native*>(source.control_stack)),
         stack(source.stack),
         local_stack(source.locals),
         code(source.code) {
-    if constexpr (CollectHotspots) {
-      this->trackable_card_count = source.trackable_card_count;
-      this->trackable_shift = source.trackable_shift;
-      this->trackable_bytes = source.trackable_bytes;
-      this->block_history_bytes = source.block_history_bytes;
-      this->trackable_mask = source.trackable_mask;
-      this->block_history = source.block_history;
-    }
+
   }
 };
 
-template <bool CollectHotspots>
-bool prepare_native_dispatch_call(native_dispatch_call<CollectHotspots>& call) {
+template <bool WithExtension>
+bool prepare_native_dispatch_call(native_dispatch_call<WithExtension>& call) {
   const auto required_context_bytes = sizeof(fireball_execution_context_native);
   const auto required_stack_bytes = 128 * sizeof(std::uint32_t);
   const auto required_local_bytes = static_cast<std::uint64_t>(
@@ -2306,38 +2223,10 @@ bool prepare_native_dispatch_call(native_dispatch_call<CollectHotspots>& call) {
       call.initial_ip > call.code_bytes ||
       call.yield_threshold == 0 || call.code == nullptr || call.context == nullptr ||
       call.stack == nullptr || call.local_stack == nullptr || call.control_stack == nullptr ||
-      (call.trace_source != nullptr && call.trace_source->resolve == nullptr)) {
+      (call.extension != nullptr && call.extension->execute == nullptr)) {
     call.error_code = kNativeErrorInvalidArgument;
     return false;
   }
-  if constexpr (CollectHotspots) {
-    if (call.trackable_shift >= 32 ||
-        call.trackable_bytes <
-            (static_cast<std::uint64_t>(call.trackable_card_count) + 7) / 8 ||
-        call.block_history_bytes < sizeof(std::uint32_t) ||
-        call.block_history_bytes % sizeof(std::uint32_t) != 0 ||
-        (call.trackable_card_count != 0 && call.trackable_mask == nullptr) ||
-        call.block_history == nullptr) {
-      call.error_code = kNativeErrorInvalidArgument;
-      return false;
-    }
-  }
-
-  auto buffers_aligned = call.entry_count == 0 ||
-                         reinterpret_cast<std::uintptr_t>(call.entries) %
-                                 alignof(native_trace_descriptor) ==
-                             0;
-  if constexpr (CollectHotspots) {
-    buffers_aligned =
-        buffers_aligned &&
-        (call.yield_threshold == 0 ||
-         reinterpret_cast<std::uintptr_t>(call.block_history) % alignof(std::uint32_t) == 0);
-  }
-  if (!buffers_aligned) {
-    call.error_code = kNativeErrorInvalidArgument;
-    return false;
-  }
-
   call.locals = call.local_stack + call.local_base;
   call.code_size = static_cast<std::uint32_t>(call.code_bytes);
   if (call.control_stack->size > FIREBALL_NATIVE_CONTROL_STACK_CAPACITY ||
@@ -2364,8 +2253,8 @@ bool prepare_native_dispatch_call(native_dispatch_call<CollectHotspots>& call) {
   return true;
 }
 
-template <bool CollectHotspots>
-bool refresh_native_dispatch_frame(native_dispatch_call<CollectHotspots>& call,
+template <bool WithExtension>
+bool refresh_native_dispatch_frame(native_dispatch_call<WithExtension>& call,
                                    std::uint32_t& current_pc) {
   const auto* active = active_frame(*call.context);
   if (active == nullptr || active->function_view == nullptr) return false;
@@ -2395,32 +2284,32 @@ struct native_dispatch_stats {
   bool control_handler_pending_trace = false;
 };
 
-struct native_dispatch_hotspots {
+struct native_dispatch_observations {
   std::uint32_t eligible_block_visits = 0;
 };
 
 struct empty_dispatch_metrics {};
 
-// Clang 18 miscompiles the no-stats hotspot variant when these empty members use
+// Clang 18 miscompiles the no-stats extension variant when these empty members use
 // [[no_unique_address]], so keep their distinct storage.
-template <bool CollectStats, bool CollectHotspots>
+template <bool CollectStats, bool WithExtension>
 struct native_dispatch_metrics {
   std::conditional_t<CollectStats, native_dispatch_stats, empty_dispatch_metrics> stats;
-  std::conditional_t<CollectHotspots, native_dispatch_hotspots, empty_dispatch_metrics>
-      hotspots;
+  std::conditional_t<WithExtension, native_dispatch_observations, empty_dispatch_metrics>
+      observations;
 };
 
-template <bool CollectStats, bool CollectHotspots>
+template <bool CollectStats, bool WithExtension>
 struct native_dispatch_state {
-  native_dispatch_call<CollectHotspots>& call;
+  native_dispatch_call<WithExtension>& call;
   std::uint32_t current_pc;
   std::uint32_t status = kFallback;
   std::uint32_t trap_code = 0;
-  [[no_unique_address]] native_dispatch_metrics<CollectStats, CollectHotspots> metrics;
+  [[no_unique_address]] native_dispatch_metrics<CollectStats, WithExtension> metrics;
 };
 
-template <bool ClearBlockBoundaryFlag, bool CollectHotspots, typename Debugger = void>
-step_result execute_control_boundary(native_dispatch_call<CollectHotspots>& call,
+template <bool ClearBlockBoundaryFlag, bool WithExtension, typename Debugger = void>
+step_result execute_control_boundary(native_dispatch_call<WithExtension>& call,
                                       std::uint32_t ip) {
   auto& context = *call.context;
   context.ip = ip;
@@ -2431,16 +2320,16 @@ step_result execute_control_boundary(native_dispatch_call<CollectHotspots>& call
     context.runtime_flags = previous_flags | kStopAfterControlFlag;
   }
   const auto result = [&]() {
-    if constexpr (CollectHotspots) {
+    if constexpr (WithExtension) {
       if ((previous_flags & kObserveBlockBodyFlag) != 0) {
-        return dispatch<hotspot_observer>(&context, call.stack, call.local_stack,
+        return dispatch<block_observer>(&context, call.stack, call.local_stack,
                                          top_value(context, call.stack));
       }
     }
     return dispatch<Debugger>(&context, call.stack, call.local_stack,
                               top_value(context, call.stack));
   }();
-  if constexpr (CollectHotspots) {
+  if constexpr (WithExtension) {
     context.runtime_flags = previous_flags | (context.runtime_flags & kObservedBlockBodyFlag);
   } else {
     context.runtime_flags = previous_flags;
@@ -2448,41 +2337,60 @@ step_result execute_control_boundary(native_dispatch_call<CollectHotspots>& call
   return result;
 }
 
-template <bool CollectStats, bool CollectHotspots, typename Debugger = void>
+template <bool CollectStats, bool WithExtension, typename Debugger = void>
 dispatch_iteration execute_interpreted_block(
-    native_dispatch_state<CollectStats, CollectHotspots>& state) {
+    native_dispatch_state<CollectStats, WithExtension>& state, std::uint32_t executed_bodies = 0) {
   auto& call = state.call;
   auto& context = *call.context;
-  if constexpr (CollectStats) ++state.metrics.stats.interpreted_block_count;
+  if constexpr (CollectStats) {
+    if (executed_bodies == 0) {
+      ++state.metrics.stats.interpreted_block_count;
+    } else {
+      ++state.metrics.stats.trace_count;
+      state.metrics.stats.body_count += executed_bodies;
+      if (state.metrics.stats.control_handler_pending_trace) {
+        ++state.metrics.stats.dispatcher_trace_transitions;
+        state.metrics.stats.control_handler_pending_trace = false;
+      }
+    }
+  }
+  if (executed_bodies != 0) call.stack_size = context.sp_offset;
+  if (context.ip >= call.code_size) {
+    context.ip = kNoPc;
+    state.status = kComplete;
+    return dispatch_iteration::stop_dispatch;
+  }
 
   const auto interpreter_ip =
-      state.current_pc - call.call_frame->function_view->code_pc_offset;
+      executed_bodies == 0
+          ? state.current_pc - call.call_frame->function_view->code_pc_offset
+          : context.ip;
   // Keep the PC established at the preceding control boundary. The first
-  // body opcode may follow NOPs or other non-JIT instructions inside it.
+  // body opcode may follow NOPs or other instructions inside it.
   const auto block_head_pc = state.current_pc;
   const auto previous_flags = context.runtime_flags;
-  if constexpr (CollectHotspots) {
-    const auto card = block_head_pc >> call.trackable_shift;
-    if ((previous_flags & kPendingBlockHeadFlag) != 0 && card < call.trackable_card_count &&
-        ((call.trackable_mask[card >> 3] >> (card & 7)) & 1u) != 0) {
+  if constexpr (WithExtension) {
+    if (executed_bodies == 0 && (previous_flags & kPendingBlockHeadFlag) != 0 &&
+        call.extension != nullptr &&
+        call.extension->observe(call.extension->owner, block_head_pc)) {
       context.runtime_flags |= kObserveBlockBodyFlag;
     }
   }
 
-  call.call_frame->boundary_next_pc = kNoPc;
-  call.call_frame->boundary_loops_to = kNoPc;
+  if (executed_bodies == 0) {
+    call.call_frame->boundary_next_pc = kNoPc;
+    call.call_frame->boundary_loops_to = kNoPc;
+  }
   context.sp_offset = call.stack_size;
   context.stack_checkpoint = call.stack_size;
   context.code = call.call_frame->code;
   context.code_size = call.call_frame->code_size;
   context.control_base = call.call_frame->control_base;
-  const auto result = execute_control_boundary<true, CollectHotspots, Debugger>(call, interpreter_ip);
-  if constexpr (CollectHotspots) {
+  const auto result = execute_control_boundary<true, WithExtension, Debugger>(call, interpreter_ip);
+  if constexpr (WithExtension) {
     if ((context.runtime_flags & kObservedBlockBodyFlag) != 0) {
-      const auto history_capacity = call.block_history_bytes / sizeof(std::uint32_t);
-      const auto visit_index = state.metrics.hotspots.eligible_block_visits % history_capacity;
-      call.block_history[visit_index] = block_head_pc;
-      ++state.metrics.hotspots.eligible_block_visits;
+      call.extension->record(call.extension->owner, block_head_pc);
+      ++state.metrics.observations.eligible_block_visits;
     }
   }
   context.runtime_flags = previous_flags & ~kPendingBlockHeadFlag;
@@ -2509,7 +2417,7 @@ dispatch_iteration execute_interpreted_block(
     }
     if constexpr (CollectStats) ++state.metrics.stats.control_handler_count;
     state.current_pc = callee->function_view->code_pc_offset + context.ip;
-    if constexpr (CollectHotspots) {
+    if constexpr (WithExtension) {
       if constexpr (CollectStats) state.metrics.stats.control_handler_pending_trace = true;
       if (context.loop_jump_count >= call.yield_threshold) {
         state.status = kDispatchYield;
@@ -2569,135 +2477,9 @@ dispatch_iteration execute_interpreted_block(
   return dispatch_iteration::continue_dispatch;
 }
 
-template <bool CollectStats, bool CollectHotspots>
-dispatch_iteration execute_native_trace(
-    native_dispatch_state<CollectStats, CollectHotspots>& state,
-    const native_trace_descriptor& start) {
-  auto& call = state.call;
-  auto& context = *call.context;
-  context.runtime_flags &= ~kPendingBlockHeadFlag;
-  std::uint32_t chain_body_count = 0;
-  const auto* terminal = terminal_dispatch_entry<CollectStats>(
-      call.entries, call.entry_count, &start, chain_body_count);
-  if (terminal == nullptr) {
-    call.error_code = kNativeErrorInvalidTable;
-    return dispatch_iteration::error;
-  }
-  const auto* active = active_frame(context);
-  if (active == nullptr || active->function_view == nullptr) {
-    call.error_code = kNativeErrorInternal;
-    return dispatch_iteration::error;
-  }
-  if (call.stack_size + terminal->stack_words > call.stack_capacity ||
-      terminal->frame_depth > FIREBALL_NATIVE_CONTROL_STACK_CAPACITY - call.control_base) {
-    context.ip = start.head_pc - active->function_view->code_pc_offset;
-    state.status = kFallback;
-    return dispatch_iteration::stop_dispatch;
-  }
-
-  if constexpr (CollectStats) {
-    if (state.metrics.stats.control_handler_pending_trace) {
-      ++state.metrics.stats.dispatcher_trace_transitions;
-      state.metrics.stats.control_handler_pending_trace = false;
-    }
-  }
-
-  const auto expected_frames = call.control_base + terminal->frame_depth;
-  if (call.control_stack->size > expected_frames) call.control_stack->size = expected_frames;
-  if (call.control_stack->size < call.control_base) {
-    call.error_code = kNativeErrorInvalidState;
-    return dispatch_iteration::error;
-  }
-  call.call_frame->boundary_next_pc = terminal->next_pc;
-  call.call_frame->boundary_loops_to = terminal->loops_to;
-  const auto trace_entry = reinterpret_cast<native_trace_entry_fn>(start.entry_address);
-  trace_entry(&context, call.stack + call.stack_size,
-              call.local_stack + active->local_base, 0);
-  // A successful entry runs the complete resident straight-line chain. Count
-  // each body only after pre-entry capacity checks and the native call, including
-  // successors that bypass dispatcher lookup. Snapshot links stay fixed here.
-  if (terminal_dispatch_entry<false, true>(
-          call.entries, call.entry_count, &start, chain_body_count) != terminal) {
-    call.error_code = kNativeErrorInternal;
-    return dispatch_iteration::error;
-  }
-  if constexpr (CollectStats) {
-    ++state.metrics.stats.trace_count;
-    state.metrics.stats.body_count += chain_body_count;
-  }
-  if (terminal->has_return_value != 0) call.stack_size += terminal->result_words;
-  context.sp_offset = call.stack_size;
-
-  const auto terminal_ip =
-      terminal->head_pc - active->function_view->code_pc_offset + terminal->byte_span;
-  if (terminal_ip >= active->code_size) {
-    context.ip = kNoPc;
-    state.status = kComplete;
-    return dispatch_iteration::stop_dispatch;
-  }
-  if (!is_control_terminator(active->code[terminal_ip])) {
-    context.ip = terminal_ip;
-    state.status = kFallback;
-    return dispatch_iteration::stop_dispatch;
-  }
-
-  context.stack_checkpoint = call.stack_size;
-  if constexpr (CollectStats) ++state.metrics.stats.control_handler_count;
-  const auto result = execute_control_boundary<false>(call, terminal_ip);
-  if (result.kind == kCallBoundary) {
-    context.runtime_flags |= kPendingBlockHeadFlag;
-    call.stack_size = context.sp_offset;
-    const auto* next_frame = active_frame(context);
-    if (next_frame == nullptr) {
-      call.error_code = kNativeErrorInternal;
-      return dispatch_iteration::error;
-    }
-    state.current_pc = next_frame->function_view->code_pc_offset + context.ip;
-    state.status = kNativeCallBoundary;
-    return dispatch_iteration::stop_dispatch;
-  }
-  if (result.kind == kFallback) {
-    context.sp_offset = context.stack_checkpoint;
-    context.ip = result.next_ip;
-    state.status = kFallback;
-    return dispatch_iteration::stop_dispatch;
-  }
-  if (result.kind == kTrap) {
-    state.trap_code = result.trap_code;
-    state.status = kTrap;
-    return dispatch_iteration::stop_dispatch;
-  }
-  if (result.kind == kComplete || result.next_ip == kNoPc || result.next_ip == kSentinel) {
-    context.ip = kNoPc;
-    state.status = kComplete;
-    return dispatch_iteration::stop_dispatch;
-  }
-  if (result.kind != kBlockBoundary) {
-    call.error_code = kNativeErrorInternal;
-    return dispatch_iteration::error;
-  }
-
-  context.runtime_flags |= kPendingBlockHeadFlag;
-  if constexpr (CollectStats) state.metrics.stats.control_handler_pending_trace = true;
-  context.ip = result.next_ip;
-  call.stack_size = context.sp_offset;
-  const auto* next_frame = active_frame(context);
-  if (next_frame == nullptr) {
-    call.error_code = kNativeErrorInternal;
-    return dispatch_iteration::error;
-  }
-  state.current_pc = next_frame->function_view->code_pc_offset + result.next_ip;
-  if (context.loop_jump_count >= call.yield_threshold) {
-    state.status = kDispatchYield;
-    return dispatch_iteration::stop_dispatch;
-  }
-  return dispatch_iteration::continue_dispatch;
-}
-
-
-template <bool CollectStats, bool CollectHotspots>
+template <bool CollectStats, bool WithExtension>
 void write_native_dispatch_result(
-    const native_dispatch_state<CollectStats, CollectHotspots>& state,
+    const native_dispatch_state<CollectStats, WithExtension>& state,
     fb_native_result& result) {
   result = {};
   result.status = state.status;
@@ -2712,9 +2494,9 @@ void write_native_dispatch_result(
     result.control_handler_count = state.metrics.stats.control_handler_count;
     result.interpreted_block_count = state.metrics.stats.interpreted_block_count;
   }
-  if constexpr (CollectHotspots) {
+  if constexpr (WithExtension) {
     result.eligible_block_visits =
-        state.metrics.hotspots.eligible_block_visits;
+        state.metrics.observations.eligible_block_visits;
   }
 }
 
@@ -2723,7 +2505,7 @@ int native_abi_error(fb_native_result* result, std::uint32_t error_code) {
   return 0;
 }
 
-template <bool CollectStats, bool CollectHotspots, typename Debugger = void>
+template <bool CollectStats, bool WithExtension, typename Debugger = void>
 int run_native_dispatch_abi(const fb_native_dispatch_call* input,
                             fb_native_result* result) {
   if (result == nullptr) return 0;
@@ -2731,7 +2513,7 @@ int run_native_dispatch_abi(const fb_native_dispatch_call* input,
   if (input == nullptr) return native_abi_error(result, kNativeErrorInvalidArgument);
 
   if constexpr (!std::is_void_v<Debugger>) {
-    if (input->context_bytes < sizeof(debug_context) || input->trace_source != nullptr) {
+    if (input->context_bytes < sizeof(debug_context) || input->extension != nullptr) {
       return native_abi_error(result, kNativeErrorInvalidArgument);
     }
     auto* debug = static_cast<debug_context*>(input->context);
@@ -2740,16 +2522,16 @@ int run_native_dispatch_abi(const fb_native_dispatch_call* input,
       return native_abi_error(result, kNativeErrorInvalidArgument);
     }
   }
-  native_dispatch_call<CollectHotspots> call(*input);
-  if (!prepare_native_dispatch_call<CollectHotspots>(call)) {
+  native_dispatch_call<WithExtension> call(*input);
+  if (!prepare_native_dispatch_call<WithExtension>(call)) {
     return native_abi_error(result, call.error_code);
   }
 
-  native_dispatch_state<CollectStats, CollectHotspots> state{
+  native_dispatch_state<CollectStats, WithExtension> state{
       call, call.call_frame->function_view->code_pc_offset + call.initial_ip, kFallback, 0, {}};
   const auto previous_runtime_flags = call.context->runtime_flags;
   if (call.initial_ip == 0) call.context->runtime_flags |= kPendingBlockHeadFlag;
-  if constexpr (CollectHotspots) {
+  if constexpr (WithExtension) {
     call.context->runtime_flags |= kStopAtDefinedCallBoundaryFlag;
   }
   while (true) {
@@ -2760,31 +2542,19 @@ int run_native_dispatch_abi(const fb_native_dispatch_call* input,
     dispatch_iteration outcome;
     if constexpr (std::is_void_v<Debugger>) {
       const auto ip = call.context->ip;
-      const auto skip_trace_lookup = (call.context->runtime_flags & kPendingBlockHeadFlag) == 0 ||
-          ip >= call.code_size ||
-          opcode_is_control_terminator(call.code[ip]) || call.code[ip] == kOpcodeFcPrefix;
-      call.entries = nullptr;
-      call.entry_count = 0;
-      if (!skip_trace_lookup && call.trace_source != nullptr) {
-        const auto view = call.trace_source->resolve(call.trace_source->owner, state.current_pc);
-        if (view.count > FB_CONF_NATIVE_JIT_TRACE_CAPACITY ||
-            (view.count != 0 && (view.entries == nullptr ||
-             reinterpret_cast<std::uintptr_t>(view.entries) % alignof(native_trace_descriptor) != 0))) {
-          call.error_code = kNativeErrorInvalidTable;
-          break;
+      std::uint32_t executed_bodies = 0;
+      if constexpr (WithExtension) {
+        if ((call.context->runtime_flags & kPendingBlockHeadFlag) != 0 &&
+            ip < call.code_size && !opcode_is_control_terminator(call.code[ip]) &&
+            call.code[ip] != kOpcodeFcPrefix && call.extension != nullptr) {
+          executed_bodies = call.extension->execute(
+              call.extension->owner, call.context, call.stack, call.local_stack, state.current_pc);
         }
-        call.entries = view.entries;
-        call.entry_count = view.count;
       }
-      const auto* start = find_dispatch_entry(call.entries, call.entry_count, state.current_pc);
-
-      outcome =
-          start == nullptr ||
-                  call.stack_size + start->chain_stack_words > call.stack_capacity
-              ? execute_interpreted_block<CollectStats, CollectHotspots, Debugger>(state)
-              : execute_native_trace<CollectStats, CollectHotspots>(state, *start);
+      outcome = execute_interpreted_block<CollectStats, WithExtension, Debugger>(
+          state, executed_bodies);
     } else {
-      outcome = execute_interpreted_block<CollectStats, CollectHotspots, Debugger>(state);
+      outcome = execute_interpreted_block<CollectStats, WithExtension, Debugger>(state);
     }
     if (outcome == dispatch_iteration::error) break;
     if (outcome == dispatch_iteration::stop_dispatch) break;
@@ -2917,12 +2687,12 @@ extern "C" int fb_native_run_dispatch_stats(const fb_native_dispatch_call* call,
   return run_native_dispatch_abi<true, false>(call, result);
 }
 
-extern "C" int fb_native_run_dispatch_hotspots(const fb_native_dispatch_call* call,
+extern "C" int fb_native_run_dispatch_extension(const fb_native_dispatch_call* call,
                                                 fb_native_result* result) {
   return run_native_dispatch_abi<false, true>(call, result);
 }
 
-extern "C" int fb_native_run_dispatch_stats_hotspots(
+extern "C" int fb_native_run_dispatch_stats_extension(
     const fb_native_dispatch_call* call, fb_native_result* result) {
   return run_native_dispatch_abi<true, true>(call, result);
 }

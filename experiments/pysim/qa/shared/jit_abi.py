@@ -1,4 +1,4 @@
-"""Tier 2 ABI types shared with the optional Tier 3 JIT extension."""
+"""QA-only trace snapshots and dispatch fixtures."""
 
 from __future__ import annotations
 
@@ -64,7 +64,6 @@ class NativeDispatchSnapshot:
         "block_history",
         "entries",
         "entry_count",
-        "trace_source_address",
         "trackable_card_count",
         "trackable_mask",
         "trackable_shift",
@@ -72,7 +71,6 @@ class NativeDispatchSnapshot:
 
     entries: ctypes.Array
     entry_count: int
-    trace_source_address: int
     trackable_mask: ctypes.Array
     trackable_shift: int
     trackable_card_count: int
@@ -92,7 +90,6 @@ class NativeDispatchSnapshot:
         assert 0 <= trackable_card_count <= len(trackable_mask) * 8
         assert 0 <= trackable_shift < 32
         self.entries = entries
-        self.trace_source_address = 0
         self.entry_count = entry_count
         self.trackable_mask = trackable_mask
         self.trackable_card_count = trackable_card_count
@@ -133,7 +130,7 @@ EMPTY_NATIVE_DISPATCH_SNAPSHOT = NativeDispatchSnapshot(
 
 
 class JITTrace(Protocol):
-    """Executable trace state exposed across the Tier 2/Tier 3 boundary."""
+    """Executable trace state inspected by QA."""
 
     head_pc: int
     has_return_val: bool
@@ -195,7 +192,7 @@ def dispatch_for_test(
         snapshot.block_history.native_bytes,
     )
     entry = partial(wrapper, ctypes.cast(native_dispatcher, ctypes.c_void_p), ctypes.byref(buffers))
-    result = interpreter.run_native_dispatch(call_state, threshold, execution_count, entry)
+    result = interpreter.run_native_dispatch(call_state, threshold, entry)
     return (
         *result[:5],
         call_state.context._native_result.eligible_block_visits,

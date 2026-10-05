@@ -121,11 +121,10 @@ class JitRuntime final {
     bool used = false;
   };
   std::array<owned_trace, max_entries * bank_count + 1> owned{};
-  std::array<fb_native_trace_descriptor, max_entries * bank_count> dispatch_entries{};
   std::array<std::uint32_t, FB_CONF_JIT_HISTORY_CAPACITY> dispatch_history{};
-  std::uint64_t dispatch_generation = UINT64_MAX;
-  std::uint32_t dispatch_count = 0;
-  fb_native_trace_source trace_source{};
+  std::uint32_t dispatch_visits = 0;
+  fb_native_execution_extension extension{};
+  int (*dispatch)(const fb_native_dispatch_call*, fb_native_result*) = nullptr;
   static constexpr std::uint64_t owned_bit = std::uint64_t{1} << 63;
   bool owns_memory = true;
   ~JitRuntime() { if (owns_memory) fb_jit_memory_close(&memory); }
@@ -455,6 +454,7 @@ class JitRuntime final {
     if (auto_age && age() < 0) return false;
     ++rotations;
     ++generation;
+    prepare_chains();
     return true;
   }
   bool install(entry value) {
@@ -507,6 +507,7 @@ class JitRuntime final {
     fast[slot(trace->head_pc)] = value;
     mark_compiled(trace->head_pc);
     ++generation;
+    prepare_chains();
     return true;
   }
   std::uint64_t lookup(std::uint32_t pc) {
@@ -550,38 +551,33 @@ class JitRuntime final {
     fast[slot(pc)] = value;
     mark_compiled(pc);
     ++generation;
+    prepare_chains();
     return value.token;
   }
-  std::uint32_t chain_words(std::uint32_t pc) {
-    std::array<std::uint32_t, max_entries * bank_count> visited{};
-    std::uint32_t count = 0, words = 0;
-    while (pc != no_pc) {
-      for (std::uint32_t i = 0; i < count; ++i)
-        if (visited[i] == pc) return words;
-      if (!check(count < visited.size())) return 0;
-      auto* value = find(pc);
-      if (!check(value != nullptr)) return 0;
-      visited[count++] = pc;
-      if (value->trace->stack_words > words) words = value->trace->stack_words;
-      pc = value->trace->chain_next_pc;
+  void prepare_chains() {
+    for (auto& bank : banks) {
+      for (std::uint32_t i = 0; i < bank.count; ++i) {
+        auto* trace = bank.entries[i].trace;
+        if (trace == nullptr) continue;
+        trace->chain_words = trace->stack_words;
+        trace->chain_bodies = 0;
+        auto* current = trace;
+        while (current != nullptr) {
+          current->chain_next = current->chain_next_pc == no_pc
+              ? nullptr : find(current->chain_next_pc)->trace;
+          ++trace->chain_bodies;
+          if (current->stack_words > trace->chain_words) trace->chain_words = current->stack_words;
+          trace->chain_terminal = current;
+          current = current->chain_next;
+        }
+      }
     }
-    return words;
   }
 };
 }  // namespace fireball
 
 using fireball::jit_cache_trace;
 using fireball::JitRuntime;
-
-
-
-
-extern "C" int fb_jit_runtime_error(const JitRuntime* cache) { return cache->error; }
-
-
-
-
-
 
 extern "C" int fb_jit_runtime_flush(JitRuntime* c) {
   c->error = 0;
@@ -628,39 +624,6 @@ extern "C" void fb_jit_runtime_reset_counts(JitRuntime* c) {
       if (trace != nullptr && trace->exec_count != nullptr) *trace->exec_count = 0;
     }
   }
-}
-static int build_dispatch_table(JitRuntime* c, fb_native_trace_descriptor* output,
-                                       std::uint32_t capacity) {
-  c->error = 0;
-  std::array<std::uint32_t, fireball::bank_count> index{};
-  std::uint32_t count = 0;
-  while (true) {
-    fireball::entry selected{};
-    std::uint32_t selected_bank = fireball::bank_count;
-    for (std::uint32_t id = 0; id < fireball::bank_count; ++id) {
-      const auto& b = c->banks[id];
-      while (index[id] < b.count && b.entries[index[id]].trace == nullptr) ++index[id];
-      if (index[id] < b.count &&
-          (selected.trace == nullptr || b.entries[index[id]].pc < selected.pc)) {
-        selected = b.entries[index[id]];
-        selected_bank = id;
-      }
-    }
-    if (selected.trace == nullptr) break;
-    if (!c->check(output != nullptr && count < capacity && selected.trace->entry_address != 0 &&
-                  selected.trace->byte_span > 0 && selected.trace->exec_count != nullptr))
-      return -1;
-    const auto& t = *selected.trace;
-    const auto words = c->chain_words(selected.pc);
-    if (c->error != 0) return -1;
-    output[count++] = {
-        t.head_pc,           t.entry_address, t.byte_span,   t.result_words,
-        t.has_return_value,  t.stack_words,   t.frame_depth, t.dispatch_next_pc,
-        t.dispatch_loops_to, t.chain_next_pc, words,
-        t.exec_count};
-    ++index[selected_bank];
-  }
-  return static_cast<int>(count);
 }
 
 namespace fireball {
@@ -774,7 +737,6 @@ extern "C" int fb_jit_runtime_bind_profile(JitRuntime* c, fireball::jit_profile 
   return 1;
 }
 
-
 static int record_dispatch_visits(JitRuntime* c, const std::uint32_t* pcs,
                                      std::uint32_t capacity, std::uint64_t total) {
   c->error = 0;
@@ -812,46 +774,60 @@ static int finish_boundary(JitRuntime* c, int yielded, std::uint32_t budget) {
   return 1;
 }
 
-
 extern "C" void fb_jit_runtime_close(JitRuntime* c) { c->~JitRuntime(); }
 
 namespace fireball {
 namespace {
-fb_native_trace_view resolve_runtime_traces(std::uintptr_t owner, std::uint32_t pc) {
-  auto* runtime = reinterpret_cast<JitRuntime*>(owner);
-  // Selection policy, including relocation, belongs exclusively to this plugin.
-  if (runtime->lookup(pc) == 0 || runtime->error != 0) return {nullptr, 0};
-  if (runtime->dispatch_generation != runtime->generation) {
-    const auto count = build_dispatch_table(runtime, runtime->dispatch_entries.data(),
-                                               runtime->dispatch_entries.size());
-    if (count < 0) return {nullptr, 0};
-    runtime->dispatch_count = static_cast<std::uint32_t>(count);
-    runtime->dispatch_generation = runtime->generation;
+std::uint32_t execute_runtime_body(std::uintptr_t owner, void* raw_context,
+    std::uint32_t* stack, std::uint32_t* locals, std::uint32_t pc) {
+  auto& runtime = *reinterpret_cast<JitRuntime*>(owner);
+  if (runtime.lookup(pc) == 0 || runtime.error != 0) return 0;
+  auto& start = *runtime.fast[runtime.slot(pc)].trace;
+  const auto& terminal = *start.chain_terminal;
+  auto& context = *static_cast<fireball_execution_context_native*>(raw_context);
+  auto& frame = context.call_stack->frames[context.call_stack->size - 1];
+  if (context.sp_offset + start.chain_words > context.sp_capacity ||
+      terminal.frame_depth > FIREBALL_NATIVE_CONTROL_STACK_CAPACITY - context.control_base) {
+    return 0;
   }
-  return {runtime->dispatch_entries.data(), runtime->dispatch_count};
+  const auto expected_frames = context.control_base + terminal.frame_depth;
+  if (context.control_stack->size > expected_frames) context.control_stack->size = expected_frames;
+  frame.boundary_next_pc = terminal.dispatch_next_pc;
+  frame.boundary_loops_to = terminal.dispatch_loops_to;
+  using entry_fn = void (*)(void*, std::uint32_t*, std::uint32_t*, std::uint32_t);
+  reinterpret_cast<entry_fn>(start.entry_address)(
+      &context, stack + context.sp_offset, locals + frame.local_base, 0);
+  for (auto* trace = &start; trace != nullptr; trace = trace->chain_next) {
+    if (*trace->exec_count != no_pc) ++*trace->exec_count;
+  }
+  if (terminal.has_return_value != 0) context.sp_offset += terminal.result_words;
+  context.ip = terminal.head_pc - frame.function_view->code_pc_offset + terminal.byte_span;
+  return start.chain_bodies;
+}
+bool observe_runtime_body(std::uintptr_t owner, std::uint32_t pc) {
+  auto& runtime = *reinterpret_cast<JitRuntime*>(owner);
+  return runtime.profile.enabled != 0 && runtime.trackable(pc);
+}
+void record_runtime_body(std::uintptr_t owner, std::uint32_t pc) {
+  auto& runtime = *reinterpret_cast<JitRuntime*>(owner);
+  runtime.dispatch_history[runtime.dispatch_visits++ % runtime.profile.history_capacity] = pc;
 }
 }  // namespace
 }  // namespace fireball
 
-extern "C" int fb_jit_runtime_run(JitRuntime* runtime,
-    int (*dispatch)(const fb_native_dispatch_call*, fb_native_result*), std::uint32_t budget,
-    const fb_native_dispatch_call* input, fb_native_result* result) {
-  if (runtime == nullptr || dispatch == nullptr || input == nullptr || result == nullptr) return 0;
+extern "C" int fb_jit_runtime_run(const fb_native_dispatch_call* input, fb_native_result* result) {
+  if (input == nullptr || result == nullptr || input->owner == 0) return 0;
+  auto* runtime = reinterpret_cast<JitRuntime*>(input->owner);
   runtime->error = 0;
+  runtime->dispatch_visits = 0;
   auto call = *input;
-  runtime->trace_source = {reinterpret_cast<std::uintptr_t>(runtime), fireball::resolve_runtime_traces};
-  call.trace_source = &runtime->trace_source;
-  call.trackable_mask = runtime->profile.enabled ? runtime->profile.trackable : nullptr;
-  call.trackable_card_count = runtime->profile.enabled ? runtime->cards : 0;
-  call.trackable_shift = runtime->card_shift;
-  call.trackable_bytes = runtime->profile.enabled ? runtime->profile.mask_bytes : 0;
-  call.block_history = runtime->dispatch_history.data();
-  call.block_history_bytes = runtime->profile.history_capacity * sizeof(std::uint32_t);
-  call.execution_count = static_cast<std::uint32_t>(runtime->execution_count);
-  if (dispatch(&call, result) != 1 || runtime->error != 0) return 0;
-  if (!record_dispatch_visits(runtime, call.block_history, runtime->profile.history_capacity,
-                              result->eligible_block_visits)) return 0;
-  return finish_boundary(runtime, result->status == 5, budget);
+  call.extension = &runtime->extension;
+  if (runtime->dispatch(&call, result) != 1 || runtime->error != 0) return 0;
+  if (!record_dispatch_visits(runtime, runtime->dispatch_history.data(),
+                              runtime->profile.history_capacity, runtime->dispatch_visits)) {
+    return 0;
+  }
+  return finish_boundary(runtime, result->status == 5, input->idle_budget);
 }
 
 namespace {
@@ -877,12 +853,17 @@ extern "C" std::size_t fb_jit_plugin_required_bytes(
 }
 extern "C" JitRuntime* fb_jit_plugin_init(std::uint8_t* region, std::size_t bytes,
     const fireball_wasm_module_execution_view_native* view,
-    std::uint32_t hotspots, std::uint32_t module_id) {
+    std::uint32_t hotspots, std::uint32_t module_id,
+    int (*dispatch)(const fb_native_dispatch_call*, fb_native_result*)) {
   if (view == nullptr || region == nullptr || bytes != fb_jit_plugin_required_bytes(view) ||
-      reinterpret_cast<std::uintptr_t>(region) % fb_jit_plugin_alignment() != 0 || hotspots > 1)
+      reinterpret_cast<std::uintptr_t>(region) % fb_jit_plugin_alignment() != 0 ||
+      hotspots > 1 || dispatch == nullptr)
     return nullptr;
   auto* c = ::new (region) JitRuntime{};
   c->owns_memory = false;
+  c->dispatch = dispatch;
+  c->extension = {reinterpret_cast<std::uintptr_t>(c), fireball::execute_runtime_body,
+                  fireball::observe_runtime_body, fireball::record_runtime_body};
   if (!fireball::borrow_executable_region(&c->memory, region + data_region_size(view),
                                          FB_CONF_JIT_CACHE_REGION_BYTES) ||
       !fireball::initialize_common_code(&c->memory)) {

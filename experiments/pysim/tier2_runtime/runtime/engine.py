@@ -13,9 +13,10 @@ from __future__ import annotations
 
 import os
 import sys
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from enum import IntEnum
+from functools import partial
 from typing import TextIO
 
 from bump_allocator import BumpAllocator
@@ -25,15 +26,16 @@ from config import (
 )
 from system_containers import StaticVector
 from tier2_runtime.interpreter.interpreter import (
+    NATIVE_DISPATCH_CALL_BOUNDARY,
     NATIVE_DISPATCH_YIELD,
     RETURN_SENTINEL_IP,
     InterpreterCall,
-    NativeDispatchEntryPoint,
     NativeInterpreter,
+    NativeModuleExecution,
     WasmNumber,
     select_native_dispatch_entry,
 )
-from tier2_runtime.runtime.jit_plugin import JITRuntime
+from tier2_runtime.runtime.execution_plugin import NativeExecutionPlugin
 from tier2_runtime.runtime.recovery import Result
 from tier2_runtime.vsoc.virq import (
     DispatchResult,
@@ -74,7 +76,7 @@ class RuntimeEngine:
     __slots__ = (
         "_bump_allocator",
         "_collect_runtime_stats",
-        "_jit_dispatcher",
+        "_execution_initializer",
         "_native_dispatcher",
         "_virq",
         "_virq_interp",
@@ -92,7 +94,7 @@ class RuntimeEngine:
 
     def __init__(
         self,
-        jit_runtime: JITRuntime | None = None,
+        jit_runtime: NativeExecutionPlugin | None = None,
         debug: bool = False,
         drive_mode: RuntimeDriveMode = RuntimeDriveMode.SYNCHRONOUS,
         yield_threshold: int = FB_CONF_RUNTIME_YIELD_THRESHOLD,
@@ -102,11 +104,14 @@ class RuntimeEngine:
         debug_env = os.environ.get("FIREBALL_DEBUG", "").lower()
         self.debug = debug or debug_env == "1" or debug_env == "true" or debug_env == "yes"
         self._collect_runtime_stats = collect_runtime_stats
-        self._native_dispatcher = select_native_dispatch_entry(collect_runtime_stats, False)
-        self._jit_dispatcher = (
-            select_native_dispatch_entry(collect_runtime_stats, True)
-            if jit_runtime is not None
-            else self._native_dispatcher
+        backend_dispatcher = select_native_dispatch_entry(
+            collect_runtime_stats, jit_runtime is not None
+        )
+        self._native_dispatcher = (
+            backend_dispatcher if jit_runtime is None else jit_runtime.native_entry
+        )
+        self._execution_initializer: Callable[[NativeModuleExecution], int] | None = (
+            None if jit_runtime is None else partial(jit_runtime.bind_execution, backend_dispatcher)
         )
         # RuntimeEngine is the runtime owner; loaders borrow this arena.
         self._bump_allocator = bump_allocator if bump_allocator is not None else BumpAllocator()
@@ -130,12 +135,6 @@ class RuntimeEngine:
         """Whether this Runtime instance was composed with diagnostic counters."""
 
         return self._collect_runtime_stats
-
-    @property
-    def native_dispatcher(self) -> NativeDispatchEntryPoint:
-        """Return the native dispatch entry selected when this Runtime was composed."""
-
-        return self._jit_dispatcher
 
     @property
     def bump_allocator(self) -> BumpAllocator:
@@ -289,15 +288,7 @@ class RuntimeEngine:
     ) -> RuntimeBoundaryResult:
         """Advance an already-bound interpreter through the selected native boundary."""
         assert not call_state.finished, "cannot advance a completed interpreter call"
-        if self.jit_runtime is not None and interp.debugger is None:
-            result = self.jit_runtime.run_boundary(
-                interp,
-                call_state,
-                idle_budget,
-                self._jit_dispatcher,
-            )
-        else:
-            result = self._run_interpreter_boundary(interp, call_state)
+        result = self._run_native_boundary(interp, call_state, idle_budget)
         if self.collect_runtime_stats:
             self.stat_interp_steps += result.interpreted_block_count
             self.stat_jit_invocations += result.trace_execution_count
@@ -349,10 +340,12 @@ class RuntimeEngine:
         )
         if self.module is None and interp.module is not None:
             self.register_module_blocks(interp.module)
+        if interp.debugger is None:
+            interp.configure_native_execution(self._native_dispatcher, self._execution_initializer)
         self._virq_interp = interp
 
-    def _run_interpreter_boundary(
-        self, interp: NativeInterpreter, call_state: InterpreterCall
+    def _run_native_boundary(
+        self, interp: NativeInterpreter, call_state: InterpreterCall, idle_budget: int
     ) -> RuntimeBoundaryResult:
         """Run C++ interpreter handlers through one count-based yield boundary."""
         if call_state._ip == RETURN_SENTINEL_IP:
@@ -362,15 +355,15 @@ class RuntimeEngine:
         (
             native_status,
             _trace_count,
-            _body_count,
-            _dispatcher_trace_transitions,
+            body_count,
+            dispatcher_trace_transitions,
             control_count,
             interpreted_block_count,
         ) = interp.run_native_dispatch(
             call_state,
             self.yield_threshold,
-            0,
-            native_dispatcher=self._native_dispatcher,
+            native_dispatcher=interp._native_dispatcher,
+            idle_budget=idle_budget,
         )
         if native_status == 0:
             call_state = interp.resolve_native_call_boundary(call_state)
@@ -381,6 +374,7 @@ class RuntimeEngine:
             or native_status == 1
             or native_status == 2
             or native_status == NATIVE_DISPATCH_YIELD
+            or native_status == NATIVE_DISPATCH_CALL_BOUNDARY
         )
         if not valid_native_status:
             assert False, f"unexpected native interpreter dispatch status: {native_status}"
@@ -388,5 +382,7 @@ class RuntimeEngine:
             call_state,
             native_status == NATIVE_DISPATCH_YIELD,
             interpreted_block_count=interpreted_block_count,
+            trace_execution_count=body_count,
             control_handler_count=control_count,
+            trace_transition_count=dispatcher_trace_transitions,
         )

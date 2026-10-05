@@ -141,7 +141,7 @@ vSoC コアエンジンの実行委譲、協調イールド、および外部介
 
 | アルゴリズム / 機構 | 契機・条件 | 動作内容 | 目的・安全性不変条件 |
 | :--- | :--- | :--- | :--- |
-| **C++実行dispatcher** | WASM実行開始時 | C++ dispatch loopがC++ Interpreter handlerと常駐JIT traceを次PCに応じて実行し、yield・trap・完了などの実行境界まで継続する | handler後のlookupで実行境界へ戻らない。handler-mediated遷移をchainと数えない（`GOTCHA-VSOC-01`） |
+| **C++実行dispatcher** | WASM実行開始時 | C++ dispatch loopが次PCで実行拡張を呼び出し、拡張が実行しなかった本体をInterpreter handlerで実行して、yield・trap・完了などの実行境界まで継続する | 本体の選択は実行拡張が所有し、handler後に実行境界へ戻らない。handler-mediated遷移をchainと数えない（`GOTCHA-VSOC-01`） |
 | **LOOP後方分岐yield** | C++ branch handlerが取得済みLOOP後方辺を処理した時 | handlerが共通contextの回数を増やす。共有しきい値に達するまではC++ dispatcherが続行し、到達時にyield statusを返す | Interpreter単独とHybrid JITが同じ回数条件で協調境界へ戻る。割り込みイベントはCOOS境界で処理する {GOTCHA-VSOC-02} <!-- definition: {GOTCHA-VSOC-02} --> |
 | **x64 trace chain** | 互換な直線後続traceがキャッシュ常駐時 | trace末尾が共通コード領域のchain dispatcherへ進み、dispatcherがheaderのtarget bodyへtail-jumpする | chain dispatcherはopcodeを判定せず、C++ Interpreter handlerの分岐処理を迂回しない |
 | **デバッガとJITの構成排他** | デバッグ構成の合成時 | Tier 2の構成器は `Interpreter + Debugger` を選択し、`Debugger + JIT` の同時構成を `assert` で拒否する | デバッガがJITキャッシュを管理する経路を生成しない |
@@ -157,7 +157,7 @@ vSoC コアエンジンの実行委譲、協調イールド、および外部介
 - **C++実行dispatcherと4論理引数契約 (`{GOTCHA-VSOC-01}`)**: <!-- definition: {GOTCHA-VSOC-01} -->
   実行入口は `(ctx, sp, local_base, tos)` の4論理引数を受け取る。物理呼出し規約は [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) のx64定義に従い、ARMv8-Mの物理配置はTBDとする。
   C++ディスパッチループはC++ Interpreter handlerと常駐JIT traceを次PCに応じて実行し、yield・trap・完了などの境界でRuntimeEngineへstatusを返す。制御handlerの後もしきい値到達まではC++側に留まり、vSoCへ命令ごとに戻らない。
-  共通コード領域のchain dispatcherは別の機械語経路である。直線traceの末尾からdispatcherへ移り、headerのtarget bodyへtail-jumpする。C++ handler後にdispatch loopがtraceをlookupする遷移はchainではない。
+  共通コード領域のchain dispatcherは別の機械語経路である。直線traceの末尾からdispatcherへ移り、headerのtarget bodyへtail-jumpする。C++ handler後に実行拡張が次の本体を選ぶ遷移はchainではない。
 #### ランタイム生成と破棄のライフサイクル（責務シーケンス図）
 <!-- traceability: {OneRuntimeOneGuest} {Runtime_BumpAllocator} {META_FaultIsolation} -->
 COOS Scheduler、vSoC Engine、Platform MemoryManager、WASM Loader、WASM Module 間の生成・ストレージ確保と、$O(1)$ 一括解放手順を示す。
@@ -213,15 +213,15 @@ sequenceDiagram
     participant R as RuntimeEngine
     participant C as C++ディスパッチャ
     participant H as C++ Interpreter handler
-    participant J as JIT trace
+    participant J as 実行拡張
 
     S->>V: run_guest()
     V->>R: run()
     R->>C: run_dispatch()
     loop until yield, trap, or completion
-        alt current PC has resident JIT trace
-            C->>J: execute trace body
-            J-->>C: next PC / chain dispatcher tail-jump
+        alt execution extension executes body
+            C->>J: execute body at current PC
+            J-->>C: updated shared execution state
         else current PC uses interpreter
             C->>H: dispatch matching opcode handler
             H-->>C: updated context and next PC
@@ -282,7 +282,7 @@ stateDiagram-v2
 | **Uninitialized** | 初期化前 | - |
 | **Loading** | WASM モジュール読み込み・リンク中 | パーサ実行、セクション検証 |
 | **Ready** | 実行準備完了 | `RuntimeEngine.run()`でC++ディスパッチへ入る |
-| **Executing** | C++ Interpreter handlerと常駐JIT traceの実行 | 次PCをC++内でdispatchする。取得したLOOP後方辺だけを数え、handlerごとにはRuntimeEngineへ戻らない |
+| **Executing** | C++ Interpreter handlerと常駐JIT traceの実行 | 次PCで実行拡張またはInterpreter handlerをC++内から呼ぶ。取得したLOOP後方辺だけを数え、handlerごとにはRuntimeEngineへ戻らない |
 | **RuntimeBoundary** | yieldまたはゲスト呼出完了時のRuntimeEngine境界 | statusと共有実行状態をSystemへ返す |
 | **CoosYield** | SystemがRuntimeEngineのYield要求を受けた状態 | COOSへ制御を返し、割り込みイベントや再スケジュール要求を処理可能にする |
 | **Debugging** | デバッガによる停止中 | メモリ検査、変数書き換え。JITキャッシュは管理しない |
@@ -295,7 +295,7 @@ stateDiagram-v2
 | :--- | :--- | :--- | :--- | :--- |
 | Load → Ready | load_ok() | モジュール有効 | リンク完了、コンテキスト初期化 | Ready |
 | Ready → Executing | run() | 通常実行を開始 | C++ディスパッチへ状態を渡す | Executing |
-| Executing → Executing | handlerまたはtrace終了 | LOOPしきい値未到達、trap・完了なし | C++内で次PCをlookupし続ける | Executing |
+| Executing → Executing | handlerまたはtrace終了 | LOOPしきい値未到達、trap・完了なし | C++内で次PCの本体実行を拡張へ委譲する | Executing |
 | Executing → RuntimeBoundary | [count >= threshold] | 取得LOOP後方辺が共通しきい値に達した | C++ dispatcherがyield statusを返す | RuntimeBoundary |
 | Executing → RuntimeBoundary | call_complete() | ゲスト関数が正常終了した | RuntimeEngineが完了状態と結果をSystemへ返す | RuntimeBoundary |
 | RuntimeBoundary → CoosYield | [yield_requested] | RuntimeEngineがyield statusを受け取る | Systemが`on_yield()`後にCOOSへ制御を返す | CoosYield |
@@ -320,7 +320,7 @@ stateDiagram-v2
 
 制御はRuntimeEngineとSystemを経てCOOSへ戻る。Interpreter単独経路も同じしきい値を使う。
 
-handler後のC++ trace lookupはchainではない。chainはx64 trace末尾から共通コード領域のchain dispatcherへ進む経路を指す。
+handler後に実行拡張が次の本体を選ぶ遷移はchainではない。chainはx64 trace末尾から共通コード領域のchain dispatcherへ進む経路を指す。
 
 chain dispatcherはtrace headerのresident target bodyへtail-jumpする。dispatcherはopcode別handlerや分岐条件を持たない。
 
@@ -369,15 +369,15 @@ sequenceDiagram
     participant R as RuntimeEngine
     participant D as C++ディスパッチャ
     participant I as C++ Interpreter handler
-    participant J as JIT trace
+    participant J as 実行拡張
 
     S->>V: run_guest()
     V->>R: run()
     R->>D: run_dispatch()
     loop until yield, trap, or completion
-        alt PC has a resident JIT trace
-            D->>J: execute trace body
-            J-->>D: next PC / common chain dispatcher tail-jump
+        alt execution extension executes body
+            D->>J: execute body at current PC
+            J-->>D: updated shared execution state
         else PC uses Interpreter
             D->>I: call opcode-specific handler
             I-->>D: updated context and next PC
@@ -483,7 +483,7 @@ sequenceDiagram
 <!-- traceability: {META_RecoveryStrategy} -->
 | 項目 | 内容 |
 | :--- | :--- |
-| 機能概要 | ゲストのプログラム実行を再開し、C++ディスパッチがyield status、トラップ、または完了を返すまで継続する。C++ dispatchはC++ Interpreter handlerと常駐JIT traceを選択して実行する。 |
+| 機能概要 | ゲストのプログラム実行を再開し、C++ディスパッチがyield status、トラップ、または完了を返すまで継続する。C++ dispatchは本体実行を実行拡張へ委譲し、未実行の本体をInterpreter handlerで実行する。 |
 | シグネチャ | `step() -> result<execution-state-category, sys-recovery-strategy>` |
 | 引数 | `ctx`: vsoc_context, `harness`: vsoc_harness |
 | 期待する結果 | 正常：一定期間の実行後に制御が戻る。異常：トラップ発生。 |

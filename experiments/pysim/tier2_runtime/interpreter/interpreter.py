@@ -289,23 +289,22 @@ from tier2_runtime.wasm.opcodes import (
 )
 
 NATIVE_RUNTIME_PROFILE_STATS_AVAILABLE = bool(_native_abi.RUNTIME_PROFILE_STATS_AVAILABLE)
-NATIVE_JIT_HOTSPOT_PROFILING_AVAILABLE = bool(_native_abi.JIT_HOTSPOT_PROFILING_AVAILABLE)
 
 NativeDispatchMetrics = tuple[int, int, int, int, int, int]
 NativeDispatchEntryPoint = _native_abi.NativeDispatchEntryPoint
 
 
 def select_native_dispatch_entry(
-    collect_stats: bool, collect_hotspots: bool
+    collect_stats: bool, with_extension: bool
 ) -> NativeDispatchEntryPoint:
     """Select one fixed native dispatcher while composing a Runtime instance."""
 
     if collect_stats:
-        if collect_hotspots:
-            return _native_abi.RUN_DISPATCH_STATS_HOTSPOTS
+        if with_extension:
+            return _native_abi.RUN_DISPATCH_STATS_EXTENSION
         return _native_abi.RUN_DISPATCH_STATS
-    if collect_hotspots:
-        return _native_abi.RUN_DISPATCH_HOTSPOTS
+    if with_extension:
+        return _native_abi.RUN_DISPATCH_EXTENSION
     return _native_abi.RUN_DISPATCH
 
 
@@ -1232,6 +1231,7 @@ class NativeModuleExecution:
         "_signature_bytes",
         "_table_views",
         "_templates",
+        "dispatch_owner",
         "globals",
         "module",
         "tables",
@@ -1245,6 +1245,7 @@ class NativeModuleExecution:
         tables: Sequence[FunctionTable],
         allocator: BumpAllocator | None = None,
     ):
+        self.dispatch_owner = 0
         self.module = module
         self.tables = tables
         self.globals = env.globals
@@ -1882,7 +1883,6 @@ class Interpreter:
             ) = self.run_native_dispatch(
                 call_state,
                 FB_CONF_RUNTIME_YIELD_THRESHOLD,
-                0,
                 native_dispatcher=self._native_dispatcher,
             )
             if native_status == 0:
@@ -2081,8 +2081,8 @@ class Interpreter:
         self,
         call_state: InterpreterCall,
         yield_threshold: int,
-        execution_count: int,
         native_dispatcher: NativeDispatchEntryPoint,
+        idle_budget: int = 0,
     ) -> NativeDispatchMetrics:
         """Run native traces and C++ handlers over Python-owned ctypes buffers."""
         frame = call_state._frame
@@ -2125,9 +2125,10 @@ class Interpreter:
                 frame.control_base,
                 call_state.func_index,
                 yield_threshold,
-                execution_count,
                 call=context._native_dispatch_call,
                 result=context._native_result,
+                owner=execution.dispatch_owner,
+                idle_budget=idle_budget,
             )
         frame.values.set_size(native_size)
         context.ip = native_ip
@@ -2425,7 +2426,7 @@ class Interpreter:
 class NativeInterpreter(Interpreter):
     """Strict C++ interpreter; defined guest calls remain in native dispatch."""
 
-    __slots__ = ("_module_execution",)
+    __slots__ = ("_execution_initializer", "_module_execution")
 
     def __init__(
         self,
@@ -2438,6 +2439,7 @@ class NativeInterpreter(Interpreter):
         bump_allocator: BumpAllocator | None = None,
         native_dispatcher: NativeDispatchEntryPoint = _native_abi.RUN_DISPATCH,
     ):
+        self._execution_initializer: Callable[[NativeModuleExecution], int] | None = None
         self._module_execution: NativeModuleExecution | None = None
         super().__init__(
             module,
@@ -2449,6 +2451,21 @@ class NativeInterpreter(Interpreter):
             native_dispatcher=native_dispatcher,
         )
 
+    def configure_native_execution(
+        self,
+        dispatcher: NativeDispatchEntryPoint,
+        initializer: Callable[[NativeModuleExecution], int] | None,
+    ) -> None:
+        """Bind the execution entry and its owner once when composing this interpreter."""
+        if self._native_dispatcher is dispatcher and self._execution_initializer is initializer:
+            return
+        self._native_dispatcher = dispatcher
+        self._execution_initializer = initializer
+        if self._module_execution is not None:
+            self._module_execution.dispatch_owner = (
+                0 if initializer is None else initializer(self._module_execution)
+            )
+
     def _prepare_native_execution(self, context: ExecutionContext) -> None:
         if self._module_execution is None:
             self._module_execution = NativeModuleExecution(
@@ -2458,6 +2475,10 @@ class NativeInterpreter(Interpreter):
                 self.tables,
                 self.bump_allocator,
             )
+            if self._execution_initializer is not None:
+                self._module_execution.dispatch_owner = self._execution_initializer(
+                    self._module_execution
+                )
         context.attach_module_execution(self._module_execution)
 
     def _complete_call(self, call_state: InterpreterCall) -> StaticVector[WasmNumber]:

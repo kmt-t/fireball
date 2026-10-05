@@ -11,29 +11,12 @@
 
 extern "C" {
 
-struct fb_native_trace_descriptor {
-  std::uint32_t head_pc;
-  std::uintptr_t entry_address;
-  std::uint32_t byte_span;
-  std::uint32_t result_words;
-  std::uint32_t has_return_value;
-  std::uint32_t stack_words;
-  std::uint32_t frame_depth;
-  std::uint32_t next_pc;
-  std::uint32_t loops_to;
-  std::uint32_t chain_next_pc;
-  std::uint32_t chain_stack_words;
-  std::uint32_t* exec_count;
-};
-
-// The provider owns trace selection and lifetime. Tier 2 consumes only executable records.
-struct fb_native_trace_view {
-  const fb_native_trace_descriptor* entries;
-  std::uint32_t count;
-};
-struct fb_native_trace_source {
+// An execution extension owns its implementation and updates the shared context.
+struct fb_native_execution_extension {
   std::uintptr_t owner;
-  fb_native_trace_view (*resolve)(std::uintptr_t owner, std::uint32_t pc);
+  std::uint32_t (*execute)(std::uintptr_t, void*, std::uint32_t*, std::uint32_t*, std::uint32_t);
+  bool (*observe)(std::uintptr_t, std::uint32_t);
+  void (*record)(std::uintptr_t, std::uint32_t);
 };
 
 struct fb_native_dispatch_call {
@@ -47,13 +30,9 @@ struct fb_native_dispatch_call {
   std::uint64_t locals_bytes;
   void* control_stack;
   std::uint64_t control_bytes;
-  const fb_native_trace_source* trace_source;
-  const std::uint8_t* trackable_mask;
-  std::uint32_t trackable_card_count;
-  std::uint32_t trackable_shift;
-  std::uint64_t trackable_bytes;
-  std::uint32_t* block_history;
-  std::uint64_t block_history_bytes;
+  const fb_native_execution_extension* extension;
+  std::uintptr_t owner;
+  std::uint32_t idle_budget;
   std::uint32_t stack_size;
   std::uint32_t stack_capacity;
   std::uint32_t initial_ip;
@@ -62,7 +41,6 @@ struct fb_native_dispatch_call {
   std::uint32_t control_base;
   std::uint32_t function_index;
   std::uint32_t yield_threshold;
-  std::uint32_t execution_count;
 };
 
 struct fb_native_step_call {
@@ -116,9 +94,9 @@ FB_PYSIM_INTERPRETER_EXPORT int fb_native_run_dispatch(
     const fb_native_dispatch_call* call, fb_native_result* result);
 FB_PYSIM_INTERPRETER_EXPORT int fb_native_run_dispatch_stats(
     const fb_native_dispatch_call* call, fb_native_result* result);
-FB_PYSIM_INTERPRETER_EXPORT int fb_native_run_dispatch_hotspots(
+FB_PYSIM_INTERPRETER_EXPORT int fb_native_run_dispatch_extension(
     const fb_native_dispatch_call* call, fb_native_result* result);
-FB_PYSIM_INTERPRETER_EXPORT int fb_native_run_dispatch_stats_hotspots(
+FB_PYSIM_INTERPRETER_EXPORT int fb_native_run_dispatch_stats_extension(
     const fb_native_dispatch_call* call, fb_native_result* result);
 
 FB_PYSIM_INTERPRETER_EXPORT int fb_native_run_debug_dispatch(

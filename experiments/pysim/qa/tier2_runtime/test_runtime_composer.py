@@ -288,3 +288,74 @@ def test_debugger_cannot_be_composed_with_jit() -> None:
 
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__]))
+
+
+@pytest.mark.parametrize("collect_stats", (False, True))
+def test_native_execution_plugin_can_be_replaced_without_jit_knowledge(collect_stats):
+    """An opaque execution owner binds once and uses the common runtime boundary."""
+    import ctypes
+
+    from qa.shared.helpers import wat_to_wasm
+    from tier2_runtime.abi.native_abi import NativeDispatchCall
+    from tier2_runtime.interpreter.interpreter import InterpreterBindings, NativeInterpreter
+    from tier2_runtime.runtime.engine import RuntimeEngine
+    from tier2_runtime.wasm.reader import parse
+
+    class DelegatingPlugin:
+        yield_threshold = 2
+
+        def __init__(self):
+            self.bindings = []
+            self.calls = 0
+            self.yields = 0
+            self.resets = 0
+            self.owner = 123
+
+        def register_module(self, module):
+            self.module = module
+
+        def bind_execution(self, dispatcher, execution):
+            assert execution.module is self.module
+            self.bindings.append(execution)
+            self.dispatcher = dispatcher
+            return self.owner
+
+        def native_entry(self, call, result):
+            request = ctypes.cast(call, ctypes.POINTER(NativeDispatchCall)).contents
+            assert request.owner == self.owner
+            assert request.idle_budget == 3
+            self.calls += 1
+            return self.dispatcher(call, result)
+
+        def idle_hook(self, budget=4):
+            return 0
+
+        def on_yield(self):
+            self.yields += 1
+
+        def reset_stats(self):
+            self.resets += 1
+
+    module = parse(
+        wat_to_wasm("""(module
+      (func (export "count") (param i32) (result i32)
+        (loop $again
+          local.get 0 i32.const 1 i32.sub local.tee 0 br_if $again)
+        local.get 0))""")
+    )
+    plugin = DelegatingPlugin()
+    engine = RuntimeEngine(
+        jit_runtime=plugin, collect_runtime_stats=collect_stats, bump_allocator=module.allocator
+    )
+    interpreter = NativeInterpreter(
+        module, InterpreterBindings.empty(), bump_allocator=engine.bump_allocator
+    )
+    for _ in range(2):
+        assert engine.call(interpreter, 0, [9], idle_budget=3) == [0]
+    assert len(plugin.bindings) == 1
+    assert plugin.calls >= 8
+    assert engine.stat_jit_invocations == 0
+    assert (engine.stat_interp_steps > 0) == collect_stats
+    engine.on_yield()
+    engine.reset_stats()
+    assert plugin.yields == plugin.resets == 1

@@ -75,6 +75,7 @@ from tier2_runtime.interpreter.interpreter import (
     ExecutionContext,
     InterpreterBindings,
     NativeInterpreter,
+    select_native_dispatch_entry,
 )
 from tier2_runtime.runtime.engine import RuntimeEngine
 from tier2_runtime.wasm.module import I32, LocalWidthMap, Module, WasmOperand
@@ -1653,7 +1654,7 @@ def test_jitr_mask_card_collision_does_not_profile_structural_pc(body, expected,
         snapshot,
         manager.yield_threshold,
         manager.exec_counter,
-        native_dispatcher=engine._jit_dispatcher,
+        native_dispatcher=select_native_dispatch_entry(collect_stats, True),
     )
     visits = native_result[5]
     history = native_result[7]
@@ -1733,7 +1734,7 @@ def test_jitr_memory_boundary_continuation_does_not_become_a_block_head(body, co
             snapshot,
             manager.yield_threshold,
             manager.exec_counter,
-            native_dispatcher=engine._jit_dispatcher,
+            native_dispatcher=select_native_dispatch_entry(collect_stats, True),
         )
         visits, history = result[5], result[7]
         recorded.extend(history[index] for index in range(visits))
@@ -1781,7 +1782,7 @@ def test_jitr_native_step_consumes_pending_head_before_memory_fallback(collect_s
         manager.native_dispatch_state(),
         manager.yield_threshold,
         manager.exec_counter,
-        native_dispatcher=engine._jit_dispatcher,
+        native_dispatcher=select_native_dispatch_entry(collect_stats, True),
     )
     assert result[0] == 1
     expected_heads = tuple(block.head_pc for block in module.blocks if block.head_pc != base)
@@ -1805,7 +1806,7 @@ def test_jitr_memory_helper_trap_clears_block_continuation():
         engine.jit_runtime.native_dispatch_state(),
         engine.yield_threshold,
         0,
-        native_dispatcher=engine._jit_dispatcher,
+        native_dispatcher=select_native_dispatch_entry(True, True),
     )
     assert result[0] == 0
     assert call.context.runtime_flags == 0
@@ -2750,6 +2751,9 @@ def test_native_product_plugin_is_opaque_and_executes_compiled_code():
     for value in (5, 10, 20):
         assert engine.call(interpreter, function, [value]) == [value * (value + 1) // 2]
     assert engine.stat_jit_invocations > 0
+    second_interpreter = Interpreter(module)
+    assert engine.call(second_interpreter, function, [11]) == [66]
+    assert engine.call(interpreter, function, [12]) == [78]
     plugin.flush_all()
     assert engine.call(interpreter, function, [7]) == [28]
     plugin.close()

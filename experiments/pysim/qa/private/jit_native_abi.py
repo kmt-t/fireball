@@ -111,6 +111,10 @@ class NativeCacheTrace(ctypes.Structure):
         ("code_blob", ctypes.POINTER(ctypes.c_uint8)),
         ("blob_bytes", ctypes.c_uint32),
         ("fixups", NativeTraceFixups),
+        ("chain_next", ctypes.c_void_p),
+        ("chain_terminal", ctypes.c_void_p),
+        ("chain_words", ctypes.c_uint32),
+        ("chain_bodies", ctypes.c_uint32),
     )
 
 
@@ -820,13 +824,7 @@ def compile_instructions(
 
 
 RUNTIME_RUN = _NATIVE_LIBRARY.fb_jit_runtime_run
-RUNTIME_RUN.argtypes = (
-    ctypes.c_void_p,
-    ctypes.c_void_p,
-    ctypes.c_uint32,
-    ctypes.c_void_p,
-    ctypes.c_void_p,
-)
+RUNTIME_RUN.argtypes = (ctypes.c_void_p, ctypes.c_void_p)
 RUNTIME_RUN.restype = ctypes.c_int
 
 
@@ -850,3 +848,8 @@ def resident_records(pointer: int) -> tuple[tuple[int, int, int], ...]:
     while RESIDENT_RECORD(pointer, len(records), ctypes.byref(record)):
         records.append((record.token, record.pc, record.count))
     return tuple(records)
+
+
+RUNTIME_BIND_DISPATCH = _NATIVE_LIBRARY.fb_qa_runtime_bind_dispatch
+RUNTIME_BIND_DISPATCH.argtypes = (ctypes.c_void_p, ctypes.c_void_p)
+RUNTIME_BIND_DISPATCH.restype = None

@@ -26,20 +26,12 @@ RUNTIME_INIT.argtypes = (
     ctypes.c_void_p,
     ctypes.c_uint32,
     ctypes.c_uint32,
+    ctypes.c_void_p,
 )
 RUNTIME_INIT.restype = ctypes.c_void_p
 RUNTIME_RUN = _library.fb_jit_runtime_run
-RUNTIME_RUN.argtypes = (
-    ctypes.c_void_p,
-    ctypes.c_void_p,
-    ctypes.c_uint32,
-    ctypes.c_void_p,
-    ctypes.c_void_p,
-)
+RUNTIME_RUN.argtypes = (ctypes.c_void_p, ctypes.c_void_p)
 RUNTIME_RUN.restype = ctypes.c_int
-RUNTIME_ERROR = _library.fb_jit_runtime_error
-RUNTIME_ERROR.argtypes = (ctypes.c_void_p,)
-RUNTIME_ERROR.restype = ctypes.c_int
 RUNTIME_CLOSE = _library.fb_jit_runtime_close
 RUNTIME_CLOSE.argtypes = (ctypes.c_void_p,)
 RUNTIME_CLOSE.restype = None

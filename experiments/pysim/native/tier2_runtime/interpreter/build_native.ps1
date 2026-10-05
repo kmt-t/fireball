@@ -4,7 +4,6 @@ $ErrorActionPreference = "Stop"
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $scriptDir
 $projectRoot = (Resolve-Path (Join-Path $scriptDir "..\..\..\..\..")).Path
-$uvPython = Join-Path $projectRoot ".venv\Scripts\python.exe"
 
 $vswhere = "C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe"
 $vsDir = & $vswhere -latest -products '*' -property installationPath
@@ -12,8 +11,6 @@ if (-not $vsDir) { throw "Visual Studio Build Tools not found." }
 $msvcVer = Get-ChildItem "$vsDir\VC\Tools\MSVC" | Select-Object -First 1 -ExpandProperty Name
 $sdkRoot = "C:\Program Files (x86)\Windows Kits\10"
 $sdkVer = Get-ChildItem "$sdkRoot\Include" | Select-Object -Last 1 -ExpandProperty Name
-$env:PYTHONPATH = Join-Path $projectRoot "experiments\pysim\tier1_core"
-$dispatchConfig = & uv run --offline --no-sync --python $uvPython python -c "from config import JIT_CACHE_BANK_COUNT, JIT_CACHE_BANK_ENTRY_CAPACITY; print(JIT_CACHE_BANK_COUNT * JIT_CACHE_BANK_ENTRY_CAPACITY)"
 $nativeBuildDir = Join-Path $env:TEMP "fireball-pysim-native"
 New-Item -ItemType Directory -Force -Path $nativeBuildDir | Out-Null
 $sourceCxx = Join-Path $scriptDir "native_interpreter.cxx"
@@ -22,7 +19,6 @@ $outputDll = Join-Path $nativeBuildDir "native_interpreter.dll"
 
 Write-Host ">>> Compiling native_interpreter.cxx -> native_interpreter.dll" -ForegroundColor Yellow
 & clang-cl.exe /TP /std:c++latest /O2 /LD /W4 `
-    "/DFB_CONF_NATIVE_JIT_TRACE_CAPACITY=$dispatchConfig" `
     "-I$scriptDir" `
     "-I$vsDir\VC\Tools\MSVC\$msvcVer\include" `
     "-I$sdkRoot\Include\$sdkVer\ucrt" `

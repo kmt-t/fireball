@@ -225,14 +225,12 @@ def test_native_interpreter_returns_to_python_at_loop_yield_counts(monkeypatch):
         self: NativeInterpreter,
         call_state: InterpreterCall,
         yield_threshold: int,
-        execution_count: int,
         native_dispatcher: NativeDispatchEntryPoint,
     ) -> NativeDispatchMetrics:
         result = native_dispatch(
             self,
             call_state,
             yield_threshold,
-            execution_count,
             native_dispatcher,
         )
         returned_statuses.append(result[0])

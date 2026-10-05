@@ -15,7 +15,7 @@ from qa.private.debugger_support import DebugTestView
 from system_containers import StaticVector
 from tier2_runtime.interpreter.control_flow import iter_block_ops
 from tier2_runtime.runtime.engine import RuntimeEngine
-from tier2_runtime.runtime.jit_plugin import JITRuntime
+from tier2_runtime.runtime.execution_plugin import NativeExecutionPlugin
 from tier2_runtime.wasm.module import BasicBlock, WasmOperand
 from tier2_runtime.wasm.opcodes import (
     I32_ADD,
@@ -104,7 +104,7 @@ class RuntimeEngineDebugDriver(RuntimeEngine):
 
     def __init__(
         self,
-        jit_runtime: JITRuntime | None = None,
+        jit_runtime: NativeExecutionPlugin | None = None,
         debug: bool = False,
     ) -> None:
         super().__init__(

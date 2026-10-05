@@ -9,12 +9,8 @@ native_build_dir="${TMPDIR:-/tmp}/fireball-pysim-native"
 mkdir -p "${native_build_dir}"
 source_cpp="${script_dir}/native_interpreter.cxx"
 python_package_dir="${project_root}/experiments/pysim/tier2_runtime/interpreter"
-trace_dispatch_capacity=$(PYTHONPATH="${project_root}/experiments/pysim/tier1_core" \
-  uv run --offline --no-sync --python "${uv_python}" python -c \
-  'from config import JIT_CACHE_BANK_COUNT, JIT_CACHE_BANK_ENTRY_CAPACITY; print(JIT_CACHE_BANK_COUNT * JIT_CACHE_BANK_ENTRY_CAPACITY)')
 echo ">>> Compiling native_interpreter.cxx -> libnative_interpreter.so"
 clang++ -std=c++23 -O2 -Wall -Wextra -Wpedantic -shared -fPIC \
-  -DFB_CONF_NATIVE_JIT_TRACE_CAPACITY="${trace_dispatch_capacity}" \
   "${source_cpp}" -o "${native_build_dir}/libnative_interpreter.so"
 cp "${native_build_dir}/libnative_interpreter.so" "${python_package_dir}/libnative_interpreter.so"
 echo "Built libnative_interpreter.so (all template variants available)"

@@ -20,13 +20,9 @@ class NativeDispatchCall(ctypes.Structure):
         ("locals_bytes", ctypes.c_uint64),
         ("control_stack", ctypes.c_void_p),
         ("control_bytes", ctypes.c_uint64),
-        ("trace_source", ctypes.c_void_p),
-        ("trackable_mask", ctypes.c_void_p),
-        ("trackable_card_count", ctypes.c_uint32),
-        ("trackable_shift", ctypes.c_uint32),
-        ("trackable_bytes", ctypes.c_uint64),
-        ("block_history", ctypes.c_void_p),
-        ("block_history_bytes", ctypes.c_uint64),
+        ("extension", ctypes.c_void_p),
+        ("owner", ctypes.c_size_t),
+        ("idle_budget", ctypes.c_uint32),
         ("stack_size", ctypes.c_uint32),
         ("stack_capacity", ctypes.c_uint32),
         ("initial_ip", ctypes.c_uint32),
@@ -35,7 +31,6 @@ class NativeDispatchCall(ctypes.Structure):
         ("control_base", ctypes.c_uint32),
         ("function_index", ctypes.c_uint32),
         ("yield_threshold", ctypes.c_uint32),
-        ("execution_count", ctypes.c_uint32),
     )
 
 
@@ -159,14 +154,13 @@ RUN_DISPATCH.restype = ctypes.c_int
 RUN_DISPATCH_STATS = _LIBRARY.fb_native_run_dispatch_stats
 RUN_DISPATCH_STATS.argtypes = (ctypes.c_void_p, ctypes.POINTER(NativeResult))
 RUN_DISPATCH_STATS.restype = ctypes.c_int
-RUN_DISPATCH_HOTSPOTS = _LIBRARY.fb_native_run_dispatch_hotspots
-RUN_DISPATCH_HOTSPOTS.argtypes = (ctypes.c_void_p, ctypes.POINTER(NativeResult))
-RUN_DISPATCH_HOTSPOTS.restype = ctypes.c_int
-RUN_DISPATCH_STATS_HOTSPOTS = _LIBRARY.fb_native_run_dispatch_stats_hotspots
-RUN_DISPATCH_STATS_HOTSPOTS.argtypes = (ctypes.c_void_p, ctypes.POINTER(NativeResult))
-RUN_DISPATCH_STATS_HOTSPOTS.restype = ctypes.c_int
+RUN_DISPATCH_EXTENSION = _LIBRARY.fb_native_run_dispatch_extension
+RUN_DISPATCH_EXTENSION.argtypes = (ctypes.c_void_p, ctypes.POINTER(NativeResult))
+RUN_DISPATCH_EXTENSION.restype = ctypes.c_int
+RUN_DISPATCH_STATS_EXTENSION = _LIBRARY.fb_native_run_dispatch_stats_extension
+RUN_DISPATCH_STATS_EXTENSION.argtypes = (ctypes.c_void_p, ctypes.POINTER(NativeResult))
+RUN_DISPATCH_STATS_EXTENSION.restype = ctypes.c_int
 RUNTIME_PROFILE_STATS_AVAILABLE = True
-JIT_HOTSPOT_PROFILING_AVAILABLE = True
 
 
 def run_step(
@@ -237,10 +231,11 @@ def run_native_dispatch(
     control_base: int,
     function_index: int,
     yield_threshold: int,
-    execution_count: int,
     *,
     call: NativeDispatchCall,
     result: NativeResult,
+    owner: int = 0,
+    idle_budget: int = 0,
 ) -> NativeDispatchResult:
     """Run the dispatcher over stable addresses without exporting buffers."""
     call.code = code_address
@@ -253,13 +248,9 @@ def run_native_dispatch(
     call.locals_bytes = locals_bytes
     call.control_stack = control_address
     call.control_bytes = control_bytes
-    call.trace_source = 0
-    call.trackable_mask = 0
-    call.trackable_card_count = 0
-    call.trackable_shift = 0
-    call.trackable_bytes = 0
-    call.block_history = 0
-    call.block_history_bytes = 0
+    call.extension = 0
+    call.owner = owner
+    call.idle_budget = idle_budget
     call.stack_size = stack_size
     call.stack_capacity = stack_capacity
     call.initial_ip = initial_ip
@@ -268,7 +259,6 @@ def run_native_dispatch(
     call.control_base = control_base
     call.function_index = function_index
     call.yield_threshold = yield_threshold
-    call.execution_count = execution_count
     status = entry(ctypes.byref(call), ctypes.byref(result))
     assert status == 1, (
         f"C++ interpreter ABI rejected call with status {status} and error {result.error_code}"

@@ -23,6 +23,7 @@ from qa.shared.jit_scoring import JIT_CANDIDATE_THRESHOLD, block_score
 from system_containers import MutableBitStorage, StaticVector
 from tier2_runtime.abi.native_abi import BufferLease
 from tier2_runtime.interpreter.interpreter import (
+    NativeDispatchEntryPoint,
     NativeModuleExecution,
 )
 from tier2_runtime.wasm.module import BasicBlock, Module
@@ -131,7 +132,6 @@ class JITRuntimeManager(NativeJITRuntimeManager):
         self.min_trace_bytes = min_trace_bytes if min_trace_bytes is not None else (1 << card_shift)
         assert 0 <= self.min_trace_bytes <= 0xFFFF_FFFF
         self._card_shift = card_shift
-        self._busy = False
         self._retire_observer = retire_observer
         self._native = native_abi.NativeRuntimeStorage(
             JIT_CACHE_BANK_CAPACITY_BYTES,
@@ -482,9 +482,35 @@ class JITRuntimeManager(NativeJITRuntimeManager):
     def age_step(self) -> int:
         return self.cache.age_step()
 
-    def _register_execution(self, execution: NativeModuleExecution) -> None:
+    def bind_execution(
+        self, dispatcher: NativeDispatchEntryPoint, execution: NativeModuleExecution
+    ) -> int:
         assert execution is not None and execution.module is self.module
         assert self._native.pointer is not None
+        native_abi.RUNTIME_BIND_DISPATCH(
+            self._native.pointer, ctypes.cast(dispatcher, ctypes.c_void_p)
+        )
+        return self._native.pointer
+
+    def native_entry(self, call, result) -> int:
+        self._begin()
+        status = native_abi.RUNTIME_RUN(call, result)
+        self._check()
+        return status
+
+    def on_yield(self) -> None:
+        self._begin()
+        super().on_yield()
+        self._check()
+
+    def idle_hook(self, budget: int = 4) -> int:
+        self._begin()
+        result = super().idle_hook(budget)
+        self._check()
+        return result
+
+    def flush_all(self) -> None:
+        self.cache.flush_all()
 
     def close(self) -> None:
         self._native.close()

@@ -1,5 +1,48 @@
 // QA owns inspection and explicit cache manipulation; none of these symbols enters the product library.
 #include "../../native/tier3_plugins/jit/jit_runtime.cxx"
+// Snapshot records are QA fixtures, not an interpreter/plugin contract.
+struct fb_native_trace_descriptor {
+  std::uint32_t head_pc;
+  std::uintptr_t entry_address;
+  std::uint32_t byte_span, result_words, has_return_value, stack_words, frame_depth;
+  std::uint32_t next_pc, loops_to, chain_next_pc, chain_stack_words;
+  std::uint32_t* exec_count;
+};
+static int build_dispatch_table(JitRuntime* c, fb_native_trace_descriptor* output,
+                                       std::uint32_t capacity) {
+  c->error = 0;
+  std::array<std::uint32_t, fireball::bank_count> index{};
+  std::uint32_t count = 0;
+  while (true) {
+    fireball::entry selected{};
+    std::uint32_t selected_bank = fireball::bank_count;
+    for (std::uint32_t id = 0; id < fireball::bank_count; ++id) {
+      const auto& b = c->banks[id];
+      while (index[id] < b.count && b.entries[index[id]].trace == nullptr) ++index[id];
+      if (index[id] < b.count &&
+          (selected.trace == nullptr || b.entries[index[id]].pc < selected.pc)) {
+        selected = b.entries[index[id]];
+        selected_bank = id;
+      }
+    }
+    if (selected.trace == nullptr) break;
+    if (!c->check(output != nullptr && count < capacity && selected.trace->entry_address != 0 &&
+                  selected.trace->byte_span > 0 && selected.trace->exec_count != nullptr))
+      return -1;
+    const auto& t = *selected.trace;
+    c->prepare_chains();
+    const auto words = selected.trace->chain_words;
+    if (c->error != 0) return -1;
+    output[count++] = {
+        t.head_pc,           t.entry_address, t.byte_span,   t.result_words,
+        t.has_return_value,  t.stack_words,   t.frame_depth, t.dispatch_next_pc,
+        t.dispatch_loops_to, t.chain_next_pc, words,
+        t.exec_count};
+    ++index[selected_bank];
+  }
+  return static_cast<int>(count);
+}
+extern "C" FB_PYSIM_ABI_EXPORT int fb_jit_runtime_error(const JitRuntime* c) { return c->error; }
 namespace fireball {
 enum class cache_field : std::uint32_t {
   promotions = 3,
@@ -138,23 +181,74 @@ struct qa_dispatch_buffers {
   std::uint32_t* history;
   std::uint64_t history_bytes;
 };
-static fb_native_trace_view qa_resolve_traces(std::uintptr_t owner, std::uint32_t) {
-  const auto& buffers = *reinterpret_cast<const qa_dispatch_buffers*>(owner);
-  return {buffers.entries, buffers.count};
+struct qa_dispatch_owner {
+  const qa_dispatch_buffers& buffers;
+  std::uint32_t visits = 0;
+};
+static const fb_native_trace_descriptor* qa_find(const qa_dispatch_buffers& b, std::uint32_t pc) {
+  for (std::uint32_t i = 0; i < b.count; ++i) if (b.entries[i].head_pc == pc) return b.entries + i;
+  return nullptr;
+}
+static std::uint32_t qa_execute(std::uintptr_t owner, void* raw,
+    std::uint32_t* stack, std::uint32_t* locals, std::uint32_t pc) {
+  const auto& b = reinterpret_cast<qa_dispatch_owner*>(owner)->buffers;
+  const auto* start = qa_find(b, pc);
+  if (start == nullptr) return 0;
+  auto& ctx = *static_cast<fireball_execution_context_native*>(raw);
+  if (ctx.sp_offset + start->chain_stack_words > ctx.sp_capacity) return 0;
+  auto* terminal = start;
+  std::uint32_t count = 1;
+  while (terminal->chain_next_pc != fireball::no_pc) {
+    terminal = qa_find(b, terminal->chain_next_pc);
+    if (terminal == nullptr || ++count > b.count) return 0;
+  }
+  auto& frame = ctx.call_stack->frames[ctx.call_stack->size - 1];
+  if (ctx.sp_offset + terminal->stack_words > ctx.sp_capacity ||
+      terminal->frame_depth > FIREBALL_NATIVE_CONTROL_STACK_CAPACITY - ctx.control_base) return 0;
+  const auto depth = ctx.control_base + terminal->frame_depth;
+  if (ctx.control_stack->size > depth) ctx.control_stack->size = depth;
+  frame.boundary_next_pc = terminal->next_pc;
+  frame.boundary_loops_to = terminal->loops_to;
+  using entry_fn = void (*)(void*, std::uint32_t*, std::uint32_t*, std::uint32_t);
+  reinterpret_cast<entry_fn>(start->entry_address)(
+      &ctx, stack + ctx.sp_offset, locals + frame.local_base, 0);
+  for (auto* current = start; current != nullptr;) {
+    if (*current->exec_count != fireball::no_pc) ++*current->exec_count;
+    current = current->chain_next_pc == fireball::no_pc
+        ? nullptr : qa_find(b, current->chain_next_pc);
+  }
+  if (terminal->has_return_value != 0) ctx.sp_offset += terminal->result_words;
+  ctx.ip = terminal->head_pc - frame.function_view->code_pc_offset + terminal->byte_span;
+  return count;
+}
+static bool qa_observe(std::uintptr_t owner, std::uint32_t pc) {
+  const auto& b = reinterpret_cast<qa_dispatch_owner*>(owner)->buffers;
+  const auto card = pc >> b.shift;
+  return card < b.cards && ((b.mask[card >> 3] >> (card & 7)) & 1u) != 0;
+}
+static void qa_record(std::uintptr_t owner, std::uint32_t pc) {
+  auto& o = *reinterpret_cast<qa_dispatch_owner*>(owner);
+  o.buffers.history[o.visits++ % (o.buffers.history_bytes / sizeof(std::uint32_t))] = pc;
 }
 extern "C" FB_PYSIM_ABI_EXPORT int fb_qa_dispatch(
     int (*dispatch)(const fb_native_dispatch_call*, fb_native_result*),
     const qa_dispatch_buffers* buffers, const fb_native_dispatch_call* input, fb_native_result* result) {
+  if (buffers->shift >= 32 || buffers->mask_bytes < (buffers->cards + 7u) / 8u ||
+      buffers->history_bytes < sizeof(std::uint32_t) || buffers->history == nullptr ||
+      buffers->history_bytes % sizeof(std::uint32_t) != 0 ||
+      (buffers->cards != 0 && buffers->mask == nullptr)) return 0;
   auto call = *input;
-  fb_native_trace_source source{reinterpret_cast<std::uintptr_t>(buffers), qa_resolve_traces};
-  call.trace_source = &source;
-  call.trackable_mask = buffers->mask;
-  call.trackable_card_count = buffers->cards;
-  call.trackable_shift = buffers->shift;
-  call.trackable_bytes = buffers->mask_bytes;
-  call.block_history = buffers->history;
-  call.block_history_bytes = buffers->history_bytes;
+  qa_dispatch_owner owner{*buffers};
+  fb_native_execution_extension extension{
+      reinterpret_cast<std::uintptr_t>(&owner), qa_execute, qa_observe, qa_record};
+  call.extension = &extension;
   return dispatch(&call, result);
+}
+extern "C" FB_PYSIM_ABI_EXPORT void fb_qa_runtime_bind_dispatch(JitRuntime* runtime,
+    int (*dispatch)(const fb_native_dispatch_call*, fb_native_result*)) {
+  runtime->dispatch = dispatch;
+  runtime->extension = {reinterpret_cast<std::uintptr_t>(runtime), fireball::execute_runtime_body,
+                       fireball::observe_runtime_body, fireball::record_runtime_body};
 }
 
 extern "C" FB_PYSIM_ABI_EXPORT std::size_t fb_jit_runtime_size() { return sizeof(JitRuntime); }

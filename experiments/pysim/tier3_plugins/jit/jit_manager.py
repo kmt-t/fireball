@@ -4,20 +4,10 @@ from __future__ import annotations
 
 import ctypes
 from collections.abc import Callable
-from functools import partial
 
 from config import FB_CONF_RUNTIME_YIELD_THRESHOLD
 from tier2_runtime.abi.native_abi import BufferLease
-from tier2_runtime.interpreter.interpreter import (
-    NATIVE_DISPATCH_CALL_BOUNDARY,
-    NATIVE_DISPATCH_YIELD,
-    RETURN_SENTINEL_IP,
-    InterpreterCall,
-    NativeDispatchEntryPoint,
-    NativeInterpreter,
-    NativeModuleExecution,
-)
-from tier2_runtime.runtime.engine import RuntimeBoundaryResult
+from tier2_runtime.interpreter.interpreter import NativeDispatchEntryPoint, NativeModuleExecution
 from tier2_runtime.wasm.module import Module
 
 from . import native_abi
@@ -27,7 +17,6 @@ class JITRuntimeManager:
     """Own native storage and borrow the runtime's module execution view."""
 
     __slots__ = (
-        "_busy",
         "_execution",
         "_lease",
         "_pointer",
@@ -47,7 +36,6 @@ class JITRuntimeManager:
         assert 0 <= module_id <= 0xFFFFFFFF
         self.yield_threshold = yield_threshold
         self.module_id = module_id
-        self._busy = False
         self._region_provider = region_provider
         self._pointer: int | None = None
         self._lease: BufferLease | None = None
@@ -57,12 +45,13 @@ class JITRuntimeManager:
     def register_module(self, module: Module) -> None:
         self.close()
         self.module = module
-        self._execution = None
 
-    def _register_execution(self, execution: NativeModuleExecution | None) -> None:
+    def bind_execution(
+        self, dispatcher: NativeDispatchEntryPoint, execution: NativeModuleExecution
+    ) -> int:
         assert execution is not None and execution.module is self.module
-        if execution is self._execution:
-            return
+        if self._pointer is not None:
+            return self._pointer
         view = ctypes.byref(execution._module_view)
         self.close()
         size = native_abi.REQUIRED_BYTES(view)
@@ -78,104 +67,32 @@ class JITRuntimeManager:
             view,
             1,
             self.module_id,
+            ctypes.cast(dispatcher, ctypes.c_void_p),
         )
         assert self._pointer is not None
         self._execution = execution
+        return self._pointer
 
-    def _begin(self) -> None:
-        assert not self._busy
-        self._busy = True
-
-    def _check(self) -> None:
-        self._busy = False
-        assert self._pointer is not None
-        assert native_abi.RUNTIME_ERROR(self._pointer) == 0, "native plugin contract violation"
-
-    def run_boundary(
-        self,
-        interp: NativeInterpreter,
-        call_state: InterpreterCall,
-        idle_budget: int,
-        native_dispatcher: NativeDispatchEntryPoint,
-    ) -> RuntimeBoundaryResult:
-        """Drive the interpreter/JIT dispatcher through one plugin boundary."""
-
-        assert interp.debugger is None, "debugger-enabled calls must bypass the JIT plugin"
-        assert 0 <= idle_budget <= 0x7FFF_FFFF
-        if call_state._ip == RETURN_SENTINEL_IP:
-            return RuntimeBoundaryResult(interp.step_native(call_state))
-        assert call_state._frame is not None
-        self._register_execution(call_state.context.module_execution)
-        frame = call_state._frame
-
-        dispatcher = partial(
-            native_abi.RUNTIME_RUN,
-            self._pointer,
-            ctypes.cast(native_dispatcher, ctypes.c_void_p),
-            idle_budget,
-        )
-        self._begin()
-        (
-            native_status,
-            _dispatch_count,
-            body_count,
-            dispatcher_trace_transitions,
-            control_count,
-            interpreted_block_count,
-        ) = interp.run_native_dispatch(
-            call_state,
-            self.yield_threshold,
-            0,
-            native_dispatcher=dispatcher,
-        )
-        self._check()
-        if native_status == 0:
-            call_state = interp.resolve_native_call_boundary(call_state)
-        yield_requested = native_status == NATIVE_DISPATCH_YIELD
-        if native_status == NATIVE_DISPATCH_YIELD:
-            frame.context.loop_jump_count = 0
-        valid_native_status = (
-            native_status == 0
-            or native_status == 1
-            or native_status == 2
-            or native_status == NATIVE_DISPATCH_YIELD
-            or native_status == NATIVE_DISPATCH_CALL_BOUNDARY
-        )
-        if not valid_native_status:
-            assert False, f"unexpected native JIT dispatch status: {native_status}"
-        return RuntimeBoundaryResult(
-            call_state,
-            yield_requested,
-            interpreted_block_count=interpreted_block_count,
-            trace_execution_count=body_count,
-            control_handler_count=control_count,
-            trace_transition_count=dispatcher_trace_transitions,
-        )
+    native_entry = native_abi.RUNTIME_RUN
 
     def on_yield(self) -> None:
         if self._pointer is None:
             return
-        self._begin()
         result = native_abi.RUNTIME_YIELD(self._pointer)
-        self._check()
         assert result == 1
 
     def idle_hook(self, budget: int = 4) -> int:
         assert 0 <= budget <= 0x7FFF_FFFF
         if self._pointer is None:
             return 0
-        self._begin()
         result = int(native_abi.RUNTIME_COMPILE(self._pointer, budget))
-        self._check()
         assert result >= 0
         return result
 
     def flush_all(self) -> None:
         if self._pointer is None:
             return
-        self._begin()
         result = native_abi.RUNTIME_FLUSH(self._pointer)
-        self._check()
         assert result == 1
 
     def reset_stats(self) -> None:

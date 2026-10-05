@@ -58,7 +58,7 @@ graph TD
     Runtime --> Context[RuntimeContext<br/>共有実行状態]
     Runtime --> EventSink
     EventSink --> Profiler
-    Exec -->|任意拡張: snapshot / 候補履歴| JitRuntime
+    Exec -->|任意拡張: 共有実行状態 / 本体実行| JitRuntime
 ```
 
 ### 3.3 プラグインスロット
@@ -66,7 +66,7 @@ graph TD
 | スロット | Tier 2 が定義する契約 | Tier 3 が実装する責務 | 無効構成の意味 |
 | :--- | :--- | :--- | :--- |
 | Execution | 共通 `call` とInterpreter実行の完了結果 | Tier 2 Interpreter | 許可しない。必ずInterpreterを結線する |
-| JIT extension | Interpreter境界への接続と境界結果 | Tier 3拡張がsnapshot、ホットスポット状態、コードキャッシュ、コンパイラを一体で実装 | JIT無効構成ではプラグイン、状態、コンパイラ、実行可能領域を合成しない |
+| JIT extension | Interpreter境界への接続と境界結果 | Tier 3拡張が本体実行、ホットスポット状態、コードキャッシュ、コンパイラを一体で実装 | JIT無効構成ではプラグイン、状態、コンパイラ、実行可能領域を合成しない |
 | Debugger | 停止、再開、観測、書込みの境界 | GDB RSP 等のプロトコルと停止処理 | デバッグ要求を無効化する |
 | Profiler | VM イベントの受信と終了通知 | コールグラフ、実行時間、ログ出力 | フック、イベント生成、状態、呼出しを合成しない |
 | Runtime Event Sink | 意味上のRuntimeイベントを記録し、停止点でABIバッチを出力する | 固定長イベントリング | 観測無効構成ではSink、リング、発行経路を合成しない |
@@ -210,7 +210,6 @@ sequenceDiagram
 ## 8. 設計判断と参考実装
 
 ### 8.1 設計上の未決事項
-- JIT拡張へ渡す固定長snapshotの容量上限。
 - 各プラグインの固定容量は `SystemConfig` の資源予算で確定する。
 
 

@@ -18,19 +18,31 @@ $sdkVer = Get-ChildItem "$sdkRoot\Include" | Select-Object -Last 1 -ExpandProper
 
 $env:PYTHONPATH = Join-Path $projectRoot "experiments\pysim\tier1_core"
 $fastSlotCount = & uv run --offline --no-sync --python $uvPython python -c "from config import JIT_CACHE_FAST_SLOT_COUNT; print(JIT_CACHE_FAST_SLOT_COUNT)"
-$nativeJitConfig = & uv run --offline --no-sync --python $uvPython python -c "from config import JIT_TRACE_COMMON_CHAIN_DISPATCH_OFFSET, JIT_TRACE_COMMON_CHAIN_DISPATCH_BYTES, JIT_TRACE_COMMON_EPILOGUE_OFFSET, JIT_X64_TRACE_HEADER_BYTES, JIT_X64_CHAIN_TARGET_OFFSET; print(JIT_TRACE_COMMON_CHAIN_DISPATCH_OFFSET, JIT_TRACE_COMMON_CHAIN_DISPATCH_BYTES, JIT_TRACE_COMMON_EPILOGUE_OFFSET, JIT_X64_TRACE_HEADER_BYTES, JIT_X64_CHAIN_TARGET_OFFSET)"
+$cacheRuntimeConfig = & uv run --offline --no-sync --python $uvPython python -c "from config import JIT_CACHE_BANK_ENTRY_CAPACITY, JIT_CACHE_MAX_INBOUND_SOURCES; print(JIT_CACHE_BANK_ENTRY_CAPACITY, JIT_CACHE_MAX_INBOUND_SOURCES)"
+$cacheRuntimeValues = (($cacheRuntimeConfig -join " ").Trim() -split "\s+")
+$bankEntries = $cacheRuntimeValues[0]
+$maxInbound = $cacheRuntimeValues[1]
+$nativeJitConfig = & uv run --offline --no-sync --python $uvPython python -c "from config import JIT_TRACE_COMMON_CHAIN_DISPATCH_OFFSET, JIT_TRACE_COMMON_CHAIN_DISPATCH_BYTES, JIT_TRACE_COMMON_EPILOGUE_OFFSET, JIT_X64_TRACE_HEADER_BYTES, JIT_X64_CHAIN_TARGET_OFFSET, JIT_X64_TRACE_ENTRY_STUB_BYTES; print(JIT_TRACE_COMMON_CHAIN_DISPATCH_OFFSET, JIT_TRACE_COMMON_CHAIN_DISPATCH_BYTES, JIT_TRACE_COMMON_EPILOGUE_OFFSET, JIT_X64_TRACE_HEADER_BYTES, JIT_X64_CHAIN_TARGET_OFFSET, JIT_X64_TRACE_ENTRY_STUB_BYTES)"
 $nativeJitValues = (($nativeJitConfig -join " ").Trim() -split "\s+")
 $chainDispatchOffset = $nativeJitValues[0]
 $chainDispatchBytes = $nativeJitValues[1]
 $commonEpilogueOffset = $nativeJitValues[2]
 $traceHeaderBytes = $nativeJitValues[3]
 $chainTargetOffset = $nativeJitValues[4]
+$entryStubBytes = $nativeJitValues[5]
 $nativeBuildDir = Join-Path $env:TEMP "fireball-pysim-native"
 New-Item -ItemType Directory -Force -Path $nativeBuildDir | Out-Null
 $nativeSourceDir = $scriptDir
 $pythonPackageDir = Join-Path $projectRoot "experiments\pysim\tier3_plugins\jit"
 $sourceCpp = Join-Path $nativeSourceDir "trace_compiler.cxx"
+$commonSourceCpp = Join-Path $nativeSourceDir "common_code.cxx"
+$memorySourceCpp = Join-Path $nativeSourceDir "executable_memory.cxx"
+$runtimeSourceCpp = Join-Path $nativeSourceDir "jit_runtime.cxx"
+$profilingSourceCpp = Join-Path $nativeSourceDir "profiling.cxx"
 $generatedDll = Join-Path $nativeBuildDir "trace_compiler.dll"
+
+$commonConfig = & uv run --offline --no-sync --python $uvPython python -c 'import config; names=(''JIT_CACHE_REGION_BYTES'', ''JIT_CACHE_COMMON_CODE_BYTES'', ''JIT_CACHE_ABSOLUTE_ADDRESS_POOL_BYTES'', ''JIT_TRACE_COMMON_PROLOGUE_OFFSET'', ''JIT_TRACE_COMMON_HELPER_OFFSET'', ''JIT_TRACE_HELPER_ENTRY_BYTES'', ''JIT_TRACE_TYPED_I32_HELPER_COUNT'', ''JIT_TRACE_TYPED_I32_HELPER_OFFSET'', ''JIT_TRACE_WIDE_HELPER_COUNT'', ''JIT_TRACE_WIDE_HELPER_OFFSET'', ''JIT_X64_HELPER_TARGET_OFFSET'', ''JIT_X64_TRACE_ENTRY_STUB_BYTES'', ''JIT_HISTORY_CAPACITY'', ''JIT_COMPILE_QUEUE_CAPACITY''); print(" ".join("/DFB_CONF_"+name+"="+str(getattr(config,name)) for name in names))'
+$commonDefines = (($commonConfig -join " ").Trim() -split "\s+")
 
 Write-Host ">>> Compiling trace_compiler.cxx -> trace_compiler.dll (clang-cl)" -ForegroundColor Yellow
 & clang-cl.exe /TP /std:c++latest /O2 /LD `
@@ -39,12 +51,16 @@ Write-Host ">>> Compiling trace_compiler.cxx -> trace_compiler.dll (clang-cl)" -
     "/DFB_CONF_JIT_TRACE_COMMON_EPILOGUE_OFFSET=$commonEpilogueOffset" `
     "/DFB_CONF_JIT_X64_TRACE_HEADER_BYTES=$traceHeaderBytes" `
     "/DFB_CONF_JIT_X64_CHAIN_TARGET_OFFSET=$chainTargetOffset" `
+    "/DFB_CONF_JIT_CACHE_FAST_SLOT_COUNT=$fastSlotCount" `
+    "/DFB_CONF_JIT_CACHE_BANK_ENTRY_CAPACITY=$bankEntries" `
+    "/DFB_CONF_JIT_CACHE_MAX_INBOUND_SOURCES=$maxInbound" `
+    -fno-exceptions -fno-rtti `
     "-I$nativeSourceDir" `
     "-I$vsDir\VC\Tools\MSVC\$msvcVer\include" `
     "-I$sdkRoot\Include\$sdkVer\ucrt" `
     "-I$sdkRoot\Include\$sdkVer\shared" `
     "-I$sdkRoot\Include\$sdkVer\um" `
-    $sourceCpp /Fe:$generatedDll `
+    @commonDefines $sourceCpp $commonSourceCpp $memorySourceCpp $runtimeSourceCpp $profilingSourceCpp /Fe:$generatedDll `
     /link `
     "/LIBPATH:$vsDir\VC\Tools\MSVC\$msvcVer\lib\x64" `
     "/LIBPATH:$sdkRoot\Lib\$sdkVer\ucrt\x64" `
@@ -53,23 +69,3 @@ if ($LASTEXITCODE -ne 0) { throw "clang-cl compile failed" }
 
 Copy-Item -Force $generatedDll (Join-Path $pythonPackageDir "trace_compiler.dll")
 Write-Host "✔ Built trace_compiler.dll" -ForegroundColor Green
-
-$cacheSourceCpp = Join-Path $nativeSourceDir "fast_cache.cxx"
-$cacheGeneratedDll = Join-Path $nativeBuildDir "fast_cache.dll"
-Write-Host ">>> Compiling fast_cache.cxx (fixed JIT lookup slots) -> fast_cache.dll (clang-cl)" -ForegroundColor Yellow
-& clang-cl.exe /TP /std:c++latest /O2 /LD `
-    "/DFB_CONF_JIT_CACHE_FAST_SLOT_COUNT=$fastSlotCount" `
-    "-I$nativeSourceDir" `
-    "-I$vsDir\VC\Tools\MSVC\$msvcVer\include" `
-    "-I$sdkRoot\Include\$sdkVer\ucrt" `
-    "-I$sdkRoot\Include\$sdkVer\shared" `
-    "-I$sdkRoot\Include\$sdkVer\um" `
-    $cacheSourceCpp /Fe:$cacheGeneratedDll `
-    /link `
-    "/LIBPATH:$vsDir\VC\Tools\MSVC\$msvcVer\lib\x64" `
-    "/LIBPATH:$sdkRoot\Lib\$sdkVer\ucrt\x64" `
-    "/LIBPATH:$sdkRoot\Lib\$sdkVer\um\x64"
-if ($LASTEXITCODE -ne 0) { throw "clang-cl fast cache compile failed" }
-
-Copy-Item -Force $cacheGeneratedDll (Join-Path $pythonPackageDir "fast_cache.dll")
-Write-Host "✔ Built fast_cache.dll with $fastSlotCount slots" -ForegroundColor Green

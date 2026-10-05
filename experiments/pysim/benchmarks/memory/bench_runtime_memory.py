@@ -115,7 +115,7 @@ class Measurement:
     jit_invocations: int
     allocation_totals: tuple[AllocationTotal, ...]
     dispatch_workspace_bytes: int
-    resident_trace_bytes: tuple[int, ...]
+    resident_trace_bytes: int
     jit_unaccounted_storage: tuple[JITStorage, ...]
 
 
@@ -159,13 +159,7 @@ def _measure(workload: Workload, hybrid: bool, calls: int) -> Measurement:
         assert result == expected_result
         assert output == expected_output
         after_calls.append(arena.offset)
-        traces.append(
-            0
-            if jit is None
-            else len(jit.cache.active.traces)
-            + len(jit.cache.warm.traces)
-            + len(jit.cache.oldest.traces)
-        )
+        traces.append(0 if jit is None else jit.cache.resident_count)
     assert expected_result is not None and expected_output is not None
     if workload.wasi:
         assert len(expected_output) == (workload.arguments[0] + 1) * workload.arguments[1]
@@ -195,22 +189,15 @@ def _measure(workload: Workload, hybrid: bool, calls: int) -> Measurement:
         )
     unaccounted: tuple[JITStorage, ...] = ()
     if jit is not None:
-        fast_storage = jit.cache._fast_cache._storage
+        native_storage = jit.cache._native
+        # Native trace counters are included in the owning JitRuntime storage.
         unaccounted = (
             JITStorage("hotspot_state_bits", len(jit.bitmap.storage.buffer)),
             JITStorage("trackable_mask_bits", len(jit.trackable.storage.buffer)),
             JITStorage("card_update_bits", len(jit.update_bitmap.storage.buffer)),
             JITStorage(
-                "native_fast_cache_arrays",
-                fast_storage.arena_size if fast_storage.arena_offset is None else 0,
-            ),
-            JITStorage(
-                "resident_execution_counters",
-                sum(
-                    ctypes.sizeof(trace._exec_count)
-                    for bank in jit.cache.banks
-                    for _, trace in bank.traces
-                ),
+                "native_jit_cache_runtime",
+                native_storage.arena_size if native_storage.arena_offset is None else 0,
             ),
         )
     return Measurement(
@@ -233,9 +220,7 @@ def _measure(workload: Workload, hybrid: bool, calls: int) -> Measurement:
         engine.stat_jit_invocations,
         tuple(totals),
         0 if jit is None else jit.native_dispatch_state().arena_size,
-        ()
-        if jit is None
-        else tuple(trace.size_bytes for bank in jit.cache.banks for _, trace in bank.traces),
+        0 if jit is None else jit.cache.resident_bytes,
         unaccounted,
     )
 

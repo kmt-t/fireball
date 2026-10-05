@@ -67,11 +67,12 @@ def test_loader_candidate_gate_uses_specification_threshold(
         assert manager.candidate_threshold == 9
         manager.register_module(module)
         assert manager.trackable.is_marked(module.blocks[0].head_pc) == candidate
-        assert manager.ring.ring.is_empty()
+        assert manager.exec_counter == 0
         head_pc = module.blocks[0].head_pc
         assert not manager.record_block_head(head_pc)
         assert manager.exec_counter == (1 if candidate else 0)
-        assert tuple(manager.ring.drain()) == (((0, head_pc),) if candidate else ())
+        manager.on_interpreter_exit(False)
+        assert manager.card_state(head_pc) == (1 if candidate else 0)
     finally:
         manager.cache.common_code.buffer.close()
 

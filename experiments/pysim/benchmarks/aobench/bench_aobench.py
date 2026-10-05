@@ -165,7 +165,7 @@ def run_aobench(debug: bool = False) -> dict[str, int | float]:
         "t3_rays_per_sec": t3_rays_per_sec,
         "speedup_ratio": speedup_ratio,
         "runtime_profile_stats_enabled": 1,
-        "compiled_traces": len(runtime_engine.jit_runtime.cache.active.traces),
+        "compiled_traces": runtime_engine.jit_runtime.cache.resident_count,
     }
     result.update(
         {

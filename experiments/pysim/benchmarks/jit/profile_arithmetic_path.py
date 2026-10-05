@@ -188,10 +188,7 @@ def main() -> None:
             trace_exits = runtime_engine.stat_trace_exits_to_interp
             assert jit_invocations > 0
         else:
-            assert (
-                runtime_engine.jit_runtime.cache.active.traces
-                or runtime_engine.jit_runtime.cache.warm.traces
-            )
+            assert runtime_engine.jit_runtime.cache.resident_count > 0
 
     assert observed_result == expected_result
     print(f"profile_path={args.path}")

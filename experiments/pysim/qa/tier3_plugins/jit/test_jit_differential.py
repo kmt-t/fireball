@@ -25,7 +25,7 @@ _PYSIM_DIR = _TESTS_DIR.parent
 import pytest
 import wasmtime
 from qa.shared.helpers import make_interpreter, make_native_interpreter, wat_to_wasm
-from qa.shared.runtime_support import make_runtime_engine
+from qa.shared.runtime_support import make_runtime_engine, resident_module_traces
 from tier2_runtime.interpreter.interpreter import NativeInterpreter, TrapCode
 from tier2_runtime.runtime.engine import RuntimeEngine
 from tier2_runtime.wasm.module import Module
@@ -295,7 +295,7 @@ def test_jitr_60_frames_with_different_slot_widths_run_side_by_side():
     )
     compiled_functions = {
         module.function_index_for_pc(trace.head_pc)
-        for _key, trace in engine.jit_runtime.cache.active.traces
+        for _key, trace in resident_module_traces(engine.jit_runtime.cache, module)
     }
     assert compiled_functions >= {0, 1}, f"traces exist only for functions {compiled_functions}"
 

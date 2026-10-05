@@ -22,7 +22,7 @@ from _bootstrap import configure_import_paths
 configure_import_paths(_PYSIM_DIR, _BENCH_DIR)
 
 from tier3_plugins.jit.jit_cache import (
-    JITMultiBufferCache,
+    JitRuntimeBoundary,
     JITTrace,
 )
 
@@ -40,7 +40,7 @@ class JITCacheMetabolismBenchmark:
         # ----------------------------------------------------------------------
         # 1. Corner Case 1: Oldest-Only Promotion ({JIT_OldestOnly_Promote})
         # ----------------------------------------------------------------------
-        cache = JITMultiBufferCache(bank_capacity=self.bank_capacity)
+        cache = JitRuntimeBoundary(bank_capacity=self.bank_capacity)
         t_active = JITTrace(head_pc=0x1000, size_bytes=64)
         t_warm = JITTrace(head_pc=0x2000, size_bytes=64)
         t_oldest = JITTrace(head_pc=0x3000, size_bytes=64)
@@ -65,8 +65,10 @@ class JITCacheMetabolismBenchmark:
         prom_after_oldest = cache.promotions
         assert hit_oldest is not None
         assert prom_after_oldest == prom_before + 1, "Oldest hit MUST trigger promotion!"
-        assert cache.active.has_trace(0x3000), "Promoted trace must now reside in Active bank!"
-        assert not cache.oldest.has_trace(0x3000), (
+        assert cache.find_bank(0x3000) == cache.active_idx, (
+            "Promoted trace must now reside in Active bank!"
+        )
+        assert not (cache.find_bank(0x3000) == cache.oldest_idx), (
             "Promoted trace must be removed from Oldest bank!"
         )
         results["oldest_hit_promotions"] = prom_after_oldest - prom_after_warm
@@ -84,7 +86,7 @@ class JITCacheMetabolismBenchmark:
             ("medium_ws_24", 24),
             ("large_ws_100", 100),
         ]:
-            cache_bench = JITMultiBufferCache(bank_capacity=self.bank_capacity)
+            cache_bench = JitRuntimeBoundary(bank_capacity=self.bank_capacity)
             traces = [JITTrace(head_pc=0x1000 + i * 16, size_bytes=64) for i in range(n_traces)]
             # Preload traces
             for t in traces:
@@ -122,11 +124,8 @@ class JITCacheMetabolismBenchmark:
         # ----------------------------------------------------------------------
         # 3. Corner Case 3: Cache Metabolism & Eviction Throughput (Churn Test)
         # ----------------------------------------------------------------------
-        cache_churn = JITMultiBufferCache(bank_capacity=512)  # small 512B banks (~8 traces/bank)
+        cache_churn = JitRuntimeBoundary(bank_capacity=512)  # small 512B banks (~8 traces/bank)
         churn_traces = 5_000
-        evicted_pcs = []
-        cache_churn.on_evict = lambda pcs: evicted_pcs.extend(pcs)
-
         t0 = time.perf_counter()
         for i in range(churn_traces):
             t = JITTrace(head_pc=0x5000 + i * 16, size_bytes=64)
@@ -134,39 +133,44 @@ class JITCacheMetabolismBenchmark:
         t1 = time.perf_counter()
 
         metabolism_time_s = t1 - t0
-        eviction_rate = len(evicted_pcs) / metabolism_time_s if metabolism_time_s > 0 else 0
+        eviction_rate = cache_churn.evictions / metabolism_time_s if metabolism_time_s > 0 else 0
         results["churn_total_inserted"] = churn_traces
-        results["churn_total_evicted"] = len(evicted_pcs)
+        results["churn_total_evicted"] = cache_churn.evictions
         results["churn_eviction_rate_per_sec"] = eviction_rate
-        results["churn_rotations"] = cache_churn.evictions
+        results["churn_rotations"] = cache_churn.rotations
 
         # ----------------------------------------------------------------------
         # 4. Corner Case 4: Local Chaining & Bounded Dangling Chain Unlinking
         # ----------------------------------------------------------------------
-        cache_chain = JITMultiBufferCache(bank_capacity=256)
+        cache_chain = JitRuntimeBoundary(bank_capacity=256)
         # Trace A (head 0x100) chains into Trace B (head 0x200)
         trace_b = JITTrace(head_pc=0x200, size_bytes=64)
         trace_a = JITTrace(head_pc=0x100, size_bytes=64, next_pc=0x200)
 
-        cache_chain.insert(trace_b)  # B in Active
-        cache_chain.insert(trace_a)  # A in Active, chained into B
-        assert trace_a.chain_next == 0x200, "Trace A must chain into Trace B!"
+        cache_chain.insert(trace_b)
+        cache_chain.rotate()  # B moves to Warm; A will survive B's purge.
+        cache_chain.insert(trace_a)
+        assert trace_a.chain_next == 0x200, "Trace A must chain into Warm trace B!"
 
-        # Rotate until Bank holding B is pushed to Oldest and evicted
-        cache_chain.rotate()  # Bank holding B moves to Warm
-        cache_chain.rotate()  # Bank holding B moves to Oldest
-        cache_chain.rotate()  # Bank holding B is purged!
+        cache_chain.rotate()  # B moves to Oldest; A moves to Warm.
+        assert trace_a.chain_next == 0x200, "Existing chains must survive Warm -> Oldest!"
+        new_source = JITTrace(head_pc=0x300, size_bytes=64, next_pc=0x200)
+        cache_chain.insert(new_source)
+        assert new_source.chain_next is None, "New chains must not target Oldest!"
 
-        # Verify that unlinking happened: trace_a.chain_next must be reset to None or unlinked
-        # Ensuring no dangling pointer/jump into reclaimed memory
+        cache_chain.rotate()  # B is purged; A remains resident in Oldest.
+        assert cache_chain.find_bank(0x100) == cache_chain.oldest_idx
+        assert trace_a.chain_next is None, "Purging B must detach surviving inbound source A!"
+        assert trace_a.header.chain_target_addr == 0
+        assert new_source.chain_next is None
         results["chain_unlinking_safety_passed"] = True
 
         # ----------------------------------------------------------------------
         # 5. Corner Case 5: Module-scoped Code-section PC isolation
         # ----------------------------------------------------------------------
         module_pc = 0x0010
-        cache_module0 = JITMultiBufferCache(bank_capacity=self.bank_capacity)
-        cache_module1 = JITMultiBufferCache(bank_capacity=self.bank_capacity)
+        cache_module0 = JitRuntimeBoundary(bank_capacity=self.bank_capacity)
+        cache_module1 = JitRuntimeBoundary(bank_capacity=self.bank_capacity)
         trace_module0 = JITTrace(head_pc=module_pc, size_bytes=64)
         trace_module1 = JITTrace(head_pc=module_pc, size_bytes=64)
 

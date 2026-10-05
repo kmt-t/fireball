@@ -498,7 +498,7 @@ def run_aobench():
     else:
         print(f"  * JIT vs C++ interpreter:   {1.0 / speedup_ratio:.2f}x slower")
     print(
-        f"  * JIT Traces Compiled:      {len(runtime_engine.jit_runtime.cache.active.traces)} traces in Active cache bank"
+        f"  * JIT Traces Compiled:      {runtime_engine.jit_runtime.cache.resident_count} resident traces"
     )
     print("================================================================================")
     print(

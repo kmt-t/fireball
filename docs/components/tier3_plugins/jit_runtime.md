@@ -31,17 +31,30 @@ JITサブシステムは、以下の2つの独立した設計書に責務を分�
 
 ### 2.2 実装責務と依存方向
 <!-- traceability: {META_ContractImplSplit} {META_StaticDI} {META_3TierSeparation} -->
-Tier 2 Runtime / Interpreter と Tier 3 JIT 拡張の境界は、任意の拡張接続と固定長 dispatch snapshot、および Interpreter のyield/fallback境界である。C++ Interpreter はsnapshot内のトレース記述子を参照し、候補PCの履歴を同じ呼出しの戻り値として返す。C++側にカード表、コンパイル待ち列、JIT状態オブジェクト、JIT専用の操作APIを追加しない。
+Tier 2 Runtime / Interpreter と Tier 3 JIT 拡張の境界は、任意の拡張接続と固定長 dispatch snapshot、および Interpreter のyield/fallback境界である。C++ Interpreter はsnapshot内のトレース記述子を参照し、候補PCの履歴を同じ呼出しの戻り値として返す。Tier 2のC++ Interpreterにカード表、コンパイル待ち列、JIT状態オブジェクト、JIT専用の操作APIを追加しない。
 
-カード表、履歴リング、コンパイル待ち列、3面キャッシュ、実行可能領域、Oldest昇格、chain patch、および`JITTrace`は Tier 3 JIT 拡張が所有する。snapshot はキャッシュ世代または候補表が変わったときに Python 側で更新する。C++ Interpreter との呼出し境界では固定長テーブルを一度渡し、実行中に Python へ戻らずに trace / handler を続ける。
+カード表、履歴リング、コンパイル待ち列、3面キャッシュ、実行可能領域、Oldest昇格、chain patch、および`JITTrace`は Tier 3 JIT 拡張が所有する。常駐トレースのsnapshotはキャッシュ世代が変わったときにTier 3のC++キャッシュ実装が生成する。Pythonの接続層はsnapshotの保存領域を用意し、候補表と履歴領域を結合する。C++ Interpreter との呼出し境界では固定長テーブルを一度渡し、実行中に Python へ戻らずに trace / handler を続ける。
 
 Tier 3 の実装は次の責務に分ける。
 
 | 実装 | 所有する責務 | 依存先 |
 | :--- | :--- | :--- |
-| Tier 3 JIT Runtime Manager | ホットスポット状態、履歴、コンパイル待ち列、3面キャッシュ、snapshot生成、InterpreterのJIT実行境界 | Tier 2 Runtime / Interpreter、Loader |
-| Tier 3 Native Trace Compiler | Loader所有のWASMコードを直接走査し、1回の呼出しで1 traceを生成 | JIT compiler ABI、LoaderのWASMコード |
+| Tier 3 JIT Runtime Manager | Loaderの借用コードとメタデータの登録、InterpreterのJIT実行境界、外部観測の通知 | Tier 2 Runtime / Interpreter、Loader |
+| Tier 3 Native JitRuntime | 候補選択、履歴リングと分析、コンパイル待ち列と抑制、カード状態遷移とエイジング、ソート済み常駐索引、直接マップ検索、3面ローテーション、Oldest昇格、被チェイン元登録と解除、snapshot生成、コンパイル済み記述子と実行可能領域の所有 | Tier 2のdispatch記述子契約、Tier 3のコンパイラと共通コード |
+| Tier 3 Native Trace Compiler | Loader所有のWASMコードを直接走査し、1回の呼出しで1 traceを生成 | Loaderの借用WASMコード、Tier 3の共通コード |
 | Tier 2 Runtime / Interpreter | 通常のInterpreter境界と状態管理。接続時はTier 3拡張へ実行境界を委譲する | Tier 1、任意のTier 3 JIT拡張 |
+
+Tier 3のC++クラス`fireball::JitRuntime`にキャッシュ管理の状態と処理を集約する。クラスの定義と実装は[`jit_runtime.cxx`](experiments/pysim/native/tier3_plugins/jit/jit_runtime.cxx)に置く。実装言語をC++にしてもTier 3のプラグイン責務を維持する。固定容量のC++オブジェクトを呼出し側が用意した保存領域へ構築する。履歴リング、コンパイル待ち列、コンパイル済み記述子と実行可能領域をC++オブジェクト内で保持する。LoaderのWASMコードとローカル幅は、登録境界で借用する。
+
+実行境界ではC++が履歴を分析し、境界の種類と処理予算からコンパイル要求を処理するか判定する。判定値をPythonへ返して呼び直す経路を設けない。待ち列からコンパイラ、キャッシュ配置、再配置とヘッダpatchへはC++の関数を直接呼び出す。これらは同じネイティブライブラリに置く。履歴と待ち列の内部操作、機械語テンプレートの生成、中間コンパイル結果とトレース組立ては外部へ公開しない。Pythonへのcallbackは外部記述枠の寿命管理と、明示的に設定したコンパイル・実行回数の観測だけに用いる。通常のネイティブコンパイルと破棄ではPythonを呼び出さない。追い出しとローテーションの通知経路は設けない。callbackの契約違反は呼出し境界で即時に伝播する。
+
+Pythonの`JitRuntimeBoundary`はC++所有者へ接続する境界アダプタである。参照表は、外部からトレース記述子を明示的に登録するときだけ確保し、その寿命を保持する。C++がコンパイルした記述子はネイティブ保存領域を参照する。外部から取得した記述子への参照は、そのトレースの削除またはキャッシュの破棄まで有効である。Pythonへ履歴レコードやバンク全体をコピーする経路を設けない。
+
+Tier 3/JITのPythonファイルは、LoaderとInterpreterの接続、ctypesの型変換、および借用保存領域の寿命保持を担当する。共通機械語の生成、トレース再配置、物理ヘッダpatchは[`common_code.cxx`](experiments/pysim/native/tier3_plugins/jit/common_code.cxx)に置く。実行可能領域の確保・解放とW^X切り替えは[`executable_memory.cxx`](experiments/pysim/native/tier3_plugins/jit/executable_memory.cxx)に置く。カード操作と固定容量の履歴・待ち列の内部操作は[`profiling.cxx`](experiments/pysim/native/tier3_plugins/jit/profiling.cxx)に置く。Python側に対応するアルゴリズムを重複して保持しない。
+
+ローテーションはC++内部でカードエイジングを1ステップ実行する。明示的なflushではエイジングを実行しない。エイジングの時間と回数、ローテーション数、常駐数・バイト数はC++内で集計する。測定側は集計値だけを取得する。Pythonへバンク、内部配列、fast cache枠、追い出しPC列を公開しない。
+
+バンクの使用バイト数と次の書込み位置を分けて保持する。削除とOldest昇格で空いた中間領域を次の書込み位置として扱わない。次の書込み位置はバンクを消去したときに先頭へ戻す。既存PCの置換は同じ位置へ収まる場合に領域を再利用し、それ以外は未使用の末尾へ配置する。末尾にも収まらない置換は常駐状態を保って失敗を返す。
 
 JIT拡張はインタープリタに対するプラグインに近い選択可能コンポーネントである。Interpreter はコンパイラ実装やキャッシュ状態を参照せず、実行境界で受け取ったsnapshotだけを使う。JIT 無効構成では snapshot 生成、履歴、コンパイラ、実行可能領域を合成しない。
 
@@ -87,7 +100,7 @@ JIT拡張はインタープリタに対するプラグインに近い選択可�
 - **オンデマンドコンパイルキュー (On-demand Compile Queue)**: Tier 3 JIT拡張内で`HOT`に達した命令オフセットを保持する固定容量LIFOキューである。Runtimeのidle hookは全タスクidle時と協調境界で拡張へ処理予算を渡す。通常の予算は成功コンパイル数ではなく、取り出して処理した候補数に適用する。コンパイル失敗と既存trace等によるスキップも1件に数える。固定キュー満杯時は通常予算の例外として、その場で全候補を処理してキューを空にする。処理件数の上限は固定キュー容量であり、実時間の上限は保証しない。先行ブロックより後続を先に常駐させ、直線後続chainを接続する。 `JIT_ReverseCompilationOrder` `{GLOBAL_Policy_Memory}`
 - **バンク別被チェイン逆引きテーブル (Inbound Chain Index Table)**: 各キャッシュバンクへ向けたchain元のJITエントリを保持する固定長配列である。cache回転・promote時に共通chain dispatcherが参照するtarget addressを更新または解除する。
 - **前方chainメタデータ**: 実行時cache metadataの`chain_next` / `next_pc`は直線後続traceの論理PCを保持する。x64物理ヘッダの`chain_target_addr`は共通chain dispatcherがtail-jumpするresident target bodyを保持する。後方branch linkは作らず、branch handlerへ制御を戻す。
-- **実行履歴バッファ**: ホットスポット検出が有効なJIT拡張が所有する固定容量リングである。各レコードは`module_id`と`UnifiedPC`を持つ。Interpreter実行区間の終了時だけ履歴順に分析し、JIT trace/chainだけの区間では記録も分析もしない。 `{HistoryBuffer}`
+- **実行履歴バッファ**: ホットスポット検出が有効なJIT拡張が所有する固定容量リングである。各レコードは`module_id`と`UnifiedPC`を持つ。容量は`JIT_HISTORY_CAPACITY`以下で指定する。待ち列容量は`JIT_COMPILE_QUEUE_CAPACITY`以下で指定する。Interpreter実行区間の終了時だけ履歴順に分析し、JIT trace/chainだけの区間では記録も分析もしない。 `{HistoryBuffer}`
 - **トレース実行回数**: JIT拡張は各`JITTrace`に32ビット符号なしカウンタ`exec_count`を所有する。RuntimeのC++ dispatcherが実行した各trace bodyを1回と数える。直接chainの後続bodyも個別に数える。lookup、コンパイル、昇格、実行前の容量不足によるfallbackは数えない。通常のRuntime統計とホットスポット計測の有効・無効にかかわらず記録する。最大値`0xFFFF_FFFF`で飽和する。snapshotはカウンタへの借用ポインタを持ち、実行中はキャッシュの更新・破棄を行わない。昇格とsnapshot再生成では値を保持する。再コンパイルした別traceは0から始める。`reset_stats`は常駐traceの測定区間を0から始め直す。
   カウンタはtraceあたり4バイトである。x64 snapshot記述枠には8バイトのポインタを追加する。C++ dispatcherは実行後に常駐chainを走査して計数する。低水準の`JITTrace.execute`等によるdispatcher外の直接呼出しはこの計測の対象外である。
   キャッシュはrotate、flush、および既存traceの置換による破棄の直前に、任意の`on_trace_retire(head_pc, exec_count)`収集先を呼ぶ。収集先はJIT metadataへ再入しない。収集先未接続時は履歴を蓄積しない。記録からコンパイル抑制やキャッシュ方針を変更しない。
@@ -144,12 +157,13 @@ flowchart TD
 7. **3面世代交代ローテーションと局所アンリンク (`{GOTCHA-JITR-03}`, `{JIT_MultiBuffer_Cache}`, `{JIT_OldestOnly_Promote}`)**: <!-- definition: {GOTCHA-JITR-03} -->
    - Active バンク満杯時、`Oldest` バンクをパージして新 `Active` に再利用する。
    - パージ直前に、被チェイン逆引きテーブルに登録されたソースエントリ（$k$ 件）のみを参照する。
+   - 新たにリンクするchain targetはActiveまたはWarmに限定する。ターゲットがWarmからOldestへ移っても、既存の`chain_next`と`chain_target_addr`を維持する。Oldestだけに存在する後続へ新たにリンクしない。
    - 昇格済みなら再チェイニングし、完全破棄なら復帰スタブへアンパッチする。全件走査は行わない。
    - `rotate()` および `flush_all()` 実行時には Folding XOR 高速キャッシュを無効化する。古いバンクへの誤参照を防止する（`{GOTCHA-JITR-05}`）。 <!-- definition: {GOTCHA-JITR-05} -->
    - ローテーションのたびに、エイジングスイープを 1 ステップ実行する（手順10）。`flush_all()` では実行しない。
    - 参照実装のバンク破棄は、破棄対象の$n$項目の消去と被チェイン元$k$件の照合を伴うため、実際の処理量は$O(n + k\log n)$である。固定容量$n_max$と被チェイン件数上限$k_max$により停止量は上限化されるが、$O(k)$とは表現しない。ターゲット実装はバンク破棄の方法を別途定義する。
 8. **トレース昇格時のインバウンドソース付け替え (`{GOTCHA-JITR-02}`)**: <!-- definition: {GOTCHA-JITR-02} -->
-   - Oldest バンクのトレースが再実行されて新 Active バンクへ昇格した際、チェイン先アドレスを新バンクへ更新する。
+   - Oldest バンクのトレースが再実行されて新 Active バンクへ昇格した際、被チェイン元のアドレスを新しい常駐アドレスへ更新する。
    - 逆引きテーブルの登録先も新バンクへ付け替える。古いバンクがパージされた後のダングリングジャンプを防止する。
 9. **キュー処理時のキャッシュ再確認と二重コンパイル抑止 (`{GOTCHA-JITR-01}`)**: <!-- definition: {GOTCHA-JITR-01} -->
    - JIT拡張はコンパイル待ち列から取得したPCのカード状態を確認し、すでに`COMPILED`ならコンパイルを行わず次の要求へ進む。cacheへの手動挿入とコンパイル要求が重なる場合、同じ拡張内で常駐状態をカードへ同期する。
@@ -226,36 +240,23 @@ Active バンク満杯時の世代交代において、局所アンリンクと�
 sequenceDiagram
     autonumber
     participant Active as Active Cache Bank (Full)
-    participant Mgr as JIT Cache Manager
-    participant Inbound as Inbound Chain Table (Oldest Bank)
-    participant Source as Preceding JIT Traces (Source)
-    participant Oldest as Oldest Cache Bank (Purged)
+    participant Mgr as JitRuntime (Tier 3, C++)
+    participant Inbound as Bank Inbound Chain Table
+    participant Source as Preceding JIT Traces
+    participant Bank as Cache Banks
 
-    Active->>Mgr: Allocation request exceeds bank capacity
-    Note over Mgr: GOTCHA-JITR-03: Trigger 3-Bank Rotation
-    Note over Mgr: Shift roles: Oldest -> New Active, Warm -> Oldest, Active -> Warm
-
-    Mgr->>Mgr: Invalidate Direct-Mapped Folding XOR Cache (16 slots)
-    Note over Mgr: GOTCHA-JITR-05: Clear fast cache to prevent stale/dangling references
-
-    Mgr->>Inbound: Inspect registered inbound source traces (k entries)
-    loop For each source trace index in Inbound Table
-        Inbound->>Source: Inspect target trace residency
-        alt Target was Promoted to Active/Warm (GOTCHA-JITR-02)
-            Source->>Source: Re-chain: Update chain_target_addr to Promoted Address
-            Source->>Mgr: Transfer inbound registration to new Bank
-            Note over Source: Common chain dispatcher uses the promoted target address
-        else Target was Evicted (Not Promoted)
-            Source->>Source: Unlink: Set chain_target_addr to 0
-            Note over Source: Zero target returns through the common epilogue
-        end
+    Active->>Mgr: Allocation exceeds bank capacity
+    Mgr->>Inbound: Read registered sources of old Oldest
+    loop Registered source still targets purge bank
+        Mgr->>Source: Clear chain_next and patch target to zero
     end
-
-    Mgr->>Oldest: Clear metadata & wipe allocation offset = 0
-    Note over Oldest: O(n + k log n), bounded by configured bank and inbound capacities
-
-    Mgr->>Mgr: Run one aging sweep step (JIT_CardAgingSweep)
-    Note over Mgr: Card states only. HOT and COMPILED cards are never modified (GOTCHA-JITR-09)
+    Mgr->>Bank: Retire traces and clear old Oldest
+    Mgr->>Mgr: Shift roles and invalidate fast slots
+    Note over Mgr: Oldest becomes Active, Active becomes Warm, Warm becomes Oldest
+    Note over Source: Existing chains into new Oldest remain connected
+    Note over Mgr: New links may target only Active/Warm
+    Mgr->>Mgr: Run one C++ aging step
+    Note over Mgr: Preserve HOT and COMPILED cards
 ```
 
 ### 4.2 状態遷移図
@@ -370,7 +371,7 @@ flowchart TD
 ### 8.1 コンパイル時期と候補処理予算
 <!-- traceability: {ADR_JitCompileScheduling} {JIT_ReverseCompilationOrder} -->
 
-- **ステータス**: 採用。候補処理数の予算について実装・テストの追従が必要である。
+- **ステータス**: 採用。C++の待ち列処理は候補処理数で予算を消費する。
 - **背景**: 全タスクidle時だけのコンパイルでは、継続的に実行可能なタスクがある構成で候補処理が進まない。固定キューの満杯時にも処理を進める必要がある。
 - **選択肢**: 全タスクidle時だけ処理する方式と、協調境界でもidle hookを実行する方式を比較する。予算の単位は成功数と候補処理数を比較する。
 - **結論**: 協調境界でも処理する。通常のidle hookは失敗・スキップを含む候補処理数で予算を消費する。満杯時は通常予算の例外として固定キュー容量ぶんをその場で全件処理する。

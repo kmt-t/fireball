@@ -124,9 +124,9 @@ def test_scenario_hybrid_jit():
 
     assert res_t3 == [168], f"Tier 3 prime count mismatch: expected 168, got {res_t3}"
     assert res_t2 == res_t3, "Tier 2 and Tier 3 calculation diverged!"
-    assert len(runtime_engine.jit_runtime.cache.active.traces) > 0, "No JIT traces were compiled"
+    assert runtime_engine.jit_runtime.cache.resident_count > 0, "No JIT traces were compiled"
     print(
-        f"    [PASS] Scenario 4 (Hybrid JIT) verified with {len(runtime_engine.jit_runtime.cache.active.traces)} hot JIT traces."
+        f"    [PASS] Scenario 4 (Hybrid JIT) verified with {runtime_engine.jit_runtime.cache.resident_count} hot JIT traces."
     )
 
 

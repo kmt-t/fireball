@@ -8,7 +8,7 @@
 
 ## 1. コンセプト
 <!-- traceability: {LowLatencyJIT} {JIT_CopyAndPatch} {JIT_ZeroCompileCostTheorem} {SimpleJITArchitecture} {JIT_Encoder} {PositionIndependentCode} {SinglePassCompilation} -->
-JIT Compiler は、Tier 2 Interpreter の任意拡張としてWASMバイトコードをネイティブコードへ変換するTier 3コンポーネントである。プラグインに近い構成とし、「Zero Compile Cost」方針に基づく **Copy-and-Patch** 方式を採用する。確認済みのx64トレース本体生成はC++実装がWASMコードを直接走査し、命令バイト列、レジスタ配置、スタック退避、ランタイムヘルパー境界を単一パスで確定する。PythonのJIT拡張は1 traceごとに既存のコンパイラ入口を呼び、生成結果を所有キャッシュへ登録する。命令ごとのPython往復やC++ JIT Runtime APIは設けない。ARMv8-Mの物理実装と資源予算はTBDである。
+JIT Compiler は、Tier 2 Interpreter の任意拡張としてWASMバイトコードをネイティブコードへ変換するTier 3コンポーネントである。プラグインに近い構成とし、「Zero Compile Cost」方針に基づく **Copy-and-Patch** 方式を採用する。確認済みのx64トレース本体生成はC++実装がWASMコードを直接走査し、命令バイト列、レジスタ配置、スタック退避、ランタイムヘルパー境界を単一パスで確定する。Tier 3のC++ JitRuntimeはコンパイラを直接呼び、生成結果を所有キャッシュへ登録する。PythonはLoaderの借用コードとメタデータを登録境界で渡す。命令ごとのPython往復やTier 2のJIT専用APIを設けない。ARMv8-Mの物理実装と資源予算はTBDである。
 
 ## 2. アーキテクチャ分類
 <!-- traceability: {META_3TierSeparation} {JIT_CopyAndPatch} -->
@@ -30,6 +30,14 @@ JITサブシステムは、以下の2つの独立した設計書に責務を分�
 - **`constexpr_assembler`**: C++の `constexpr` 機能を活用し、opcodeを判定しない共通chain dispatcherの固定命令列をビルド時に生成する。命令別handlerはC++ interpreter内で直接選択し、この共通dispatcherへ集約しない。
 - **命令テンプレート (`jit_template`)**: パッチスロットを含むネイティブ命令列の雛形（x64では `trace_compiler.cxx` のC++実装が生成する。ARMv8-Mの物理仕様はTBD）。
 - **JIT トレースヘッダ (`jit_trace_header`)**: キャッシュに書き込まれる各ネイティブトレースの先頭に配置される実行時メタデータ構造体。x64では16バイトで、生成コードと共通コードが読むchain targetとhelper targetだけを保持する。JITコードから相対参照できるコード近傍に配置する。共通コードoffsetと論理的な後続PCは重複格納しない。物理欄は対象ABIごとに定義する。
+
+#### コンパイラ入口
+<!-- traceability: {JIT_CopyAndPatch} {SinglePassCompilation} {META_ContractImplSplit} -->
+Pythonの`TraceCompiler`は単独利用のためのC++コンパイラ接続である。`compile_wasm(block: WasmBlock)`は1回のネイティブ呼出しで1 traceを生成する。ランタイムの待ち列処理は、登録済みの借用ブロック記述子をC++から直接コンパイルする。`WasmBlock`は先頭PC、コードの借用ビュー、開始offset、バイト長、直線後続PC、およびローカル幅の借用ビューと配置情報を持つ。`NativeByteView`はアドレスとバイト長を保持する。`NativeLocalLayout`は幅ビュー、ローカル数、slot wordsを保持する。呼出し側はコンパイル完了まで借用領域の寿命を保持する。
+
+C++の`fb_jit_compile_block`は制御終端判定、WASM走査、機械語本体、物理ヘッダ、戻り値形状、必要スタック量と再配置情報を生成する。Pythonの`compile_wasm`は成功時にキャッシュへ登録できる`JITTrace`を返す。未対応の場合は`None`を返す。位置付きの中間結果タプルとトレース組立てメソッドを公開しない。機械語本体の生成とトレース組立てはC++の内部関数とする。
+
+命令列を明示的に渡す単独利用は`compile_instructions`を使う。引数はkeyword-onlyとし、`head_pc`、`instructions`、`next_pc`、`loops_to`、`byte_length`、`local_layout`、`context_helper`、`helper_address`で意図と単位を表す。`fb_jit_compile_instructions`は本体とヘッダを一度に生成する。Pythonの入口は単独実行領域への配置まで行う。`compile_wasm`の結果は呼出し側のキャッシュが配置を行う。単独実行領域は初回の単独コンパイル時に確保する。
 
 ### 3.2 内部ブロック図
 ```mermaid

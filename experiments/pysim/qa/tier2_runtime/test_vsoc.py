@@ -622,8 +622,8 @@ def test_idle_01_jit_batch_compilation_on_idle():
     assert compiler.compiled_pcs == [pcs[1], pcs[0]], "LIFO compilation order required"
     assert engine.jit_runtime.bitmap.get_state(pcs[0]) == CardState.COMPILED
     assert engine.jit_runtime.bitmap.get_state(pcs[1]) == CardState.COMPILED
-    assert engine.jit_runtime.cache.active.has_trace(pcs[0])
-    assert engine.jit_runtime.cache.active.has_trace(pcs[1])
+    assert engine.jit_runtime.cache.find_bank(pcs[0]) == engine.jit_runtime.cache.active_idx
+    assert engine.jit_runtime.cache.find_bank(pcs[1]) == engine.jit_runtime.cache.active_idx
 
 
 def test_idle_02_logging_flush_on_idle():
@@ -712,7 +712,9 @@ def test_tier_01_interpreter_to_jit_cooperative_flow():
         manager = system.runtime_engine.jit_runtime
         assert manager is not None
         loop_pc = next(block.head_pc for block in module.blocks if block.loops_to is not None)
-        assert manager.cache.active.has_trace(loop_pc) or manager.cache.warm.has_trace(loop_pc)
+        assert (manager.cache.find_bank(loop_pc) == manager.cache.active_idx) or (
+            manager.cache.find_bank(loop_pc) == manager.cache.warm_idx
+        )
     finally:
         system.shutdown()
 
@@ -752,9 +754,9 @@ def test_tier_02_interpreter_to_jit_trace_transition():
     assert engine.stat_interp_steps >= 3
     assert engine.stat_jit_invocations >= 2
     assert engine.jit_runtime.bitmap.get_state(loop_pc) == CardState.COMPILED
-    assert engine.jit_runtime.cache.active.has_trace(
-        loop_pc
-    ) or engine.jit_runtime.cache.warm.has_trace(loop_pc)
+    assert (engine.jit_runtime.cache.find_bank(loop_pc) == engine.jit_runtime.cache.active_idx) or (
+        engine.jit_runtime.cache.find_bank(loop_pc) == engine.jit_runtime.cache.warm_idx
+    )
 
 
 def test_tier_03_trace_chaining_and_interpreter_fallback():
@@ -793,10 +795,8 @@ def test_tier_03_trace_chaining_and_interpreter_fallback():
     # Compile block B first, then block A (so A can chain directly into resident B)
     trace_b = compile_module_block(engine.jit_runtime.jit_compiler, mod, block_b)
     engine.jit_runtime.cache.insert(trace_b)
-    engine.jit_runtime.bitmap.mark_compiled(block_b.head_pc)
     trace_a = compile_module_block(engine.jit_runtime.jit_compiler, mod, block_a)
     engine.jit_runtime.cache.insert(trace_a)
-    engine.jit_runtime.bitmap.mark_compiled(block_a.head_pc)
     # Assert trace A chained directly into trace B
     assert trace_a.chain_next == block_b.head_pc
     results = engine.call(make_native_interpreter(mod), 0, [100])

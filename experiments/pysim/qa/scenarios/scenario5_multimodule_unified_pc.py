@@ -20,6 +20,7 @@ from bisect import bisect_left
 
 import wasmtime
 from config import FB_CONF_RUNTIME_YIELD_THRESHOLD
+from qa.shared.runtime_support import resident_module_traces
 from system import System
 from tier2_runtime.interpreter.interpreter import (
     Interpreter,
@@ -125,16 +126,21 @@ def test_scenario_multimodule_unified_pc():
     res_t3 = runtime_engine.call(interp_t3, fn_idx, [ITERS])
 
     assert res_t2 == res_t3, f"Calculations diverged: T2={res_t2} vs T3={res_t3}"
-    assert len(runtime_engine.jit_runtime.cache.active.traces) > 0, "No JIT traces compiled"
+    assert len(resident_module_traces(runtime_engine.jit_runtime.cache, module)) > 0, (
+        "No JIT traces compiled"
+    )
     # 3. Resolve Code-section PCs back to distinct function bodies.
     func_indices_in_jit = {
-        module.function_index_for_pc(pc) for pc, _ in runtime_engine.jit_runtime.cache.active.traces
+        module.function_index_for_pc(pc)
+        for pc, _ in resident_module_traces(runtime_engine.jit_runtime.cache, module)
     }
     print(f"    -> Compiled JIT traces belong to functions: {func_indices_in_jit}")
     assert len(func_indices_in_jit) >= 2, "Traces should span across multiple functions"
     # 4. Check identities in a test-local reference index of compiled UnifiedPCs.
     # Product cache lookup and its bank transitions remain unverified by this check.
-    sorted_pairs = sorted(runtime_engine.jit_runtime.cache.active.traces, key=lambda x: x[0])
+    sorted_pairs = sorted(
+        resident_module_traces(runtime_engine.jit_runtime.cache, module), key=lambda x: x[0]
+    )
     keys = tuple(pc for pc, _ in sorted_pairs)
     vals = tuple(trace for _, trace in sorted_pairs)
     for k, v in zip(keys, vals, strict=True):
@@ -143,7 +149,7 @@ def test_scenario_multimodule_unified_pc():
         assert found is v, f"Test-local binary index failed for UnifiedPC 0x{k:08X}"
 
     print(
-        f"    [PASS] Scenario 5 (Multi-Function UnifiedPC) verified with {len(runtime_engine.jit_runtime.cache.active.traces)} traces."
+        f"    [PASS] Scenario 5 (Multi-Function UnifiedPC) verified with {len(resident_module_traces(runtime_engine.jit_runtime.cache, module))} traces."
     )
 
 

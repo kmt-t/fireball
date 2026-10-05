@@ -43,17 +43,16 @@ def record_usage(output: Path, hot_functions: int, cold_functions: int, iteratio
     module = parse(
         bytes(wasmtime.wat2wasm(build_workload_wat(hot_functions, cold_functions))), allocator
     )
-    manager = JITRuntimeManager(jit_compiler=TraceCompiler())
-    engine = RuntimeEngine(jit_runtime=manager, bump_allocator=allocator)
-    engine.register_module_blocks(module)
-    interpreter = NativeInterpreter(module, InterpreterBindings.empty())
     records: list[TraceExecutionRecord] = []
 
     def on_retire(pc: int, count: int) -> None:
         # No replacement or flush in this workload: every retirement is a real eviction.
         records.append(TraceExecutionRecord(pc, count, True))
 
-    manager.cache.on_trace_retire = on_retire
+    manager = JITRuntimeManager(jit_compiler=TraceCompiler(), retire_observer=on_retire)
+    engine = RuntimeEngine(jit_runtime=manager, bump_allocator=allocator)
+    engine.register_module_blocks(module)
+    interpreter = NativeInterpreter(module, InterpreterBindings.empty())
     for cold_index in range(cold_functions):
         for hot_index in range(hot_functions):
             expected = sum((k * (3 + hot_index)) ^ 7 for k in range(iterations))
@@ -67,9 +66,10 @@ def record_usage(output: Path, hot_functions: int, cold_functions: int, iteratio
         for _ in range(2):
             assert engine.call(interpreter, cold, [cold_index]) == [expected_cold]
         engine.idle_hook()
-    for bank in manager.cache.banks:
-        for pc, trace in bank.traces:
-            records.append(TraceExecutionRecord(pc, trace.exec_count, False))
+    for block in module.blocks:
+        trace = manager.cache.find_trace(block.head_pc)
+        if trace is not None:
+            records.append(TraceExecutionRecord(block.head_pc, trace.exec_count, False))
     evicted = [row for row in records if row.evicted]
     zero_evicted = sum(row.exec_count == 0 for row in evicted)
     output.parent.mkdir(parents=True, exist_ok=True)

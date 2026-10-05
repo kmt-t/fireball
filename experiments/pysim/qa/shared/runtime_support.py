@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 
 from config import (
     FB_CONF_JIT_AGING_STEP_SCAN_BYTES,
@@ -19,7 +19,7 @@ from tier2_runtime.interpreter.control_flow import iter_block_ops
 from tier2_runtime.runtime.engine import RuntimeDriveMode, RuntimeEngine
 from tier2_runtime.wasm.jit_scoring import JIT_CANDIDATE_THRESHOLD
 from tier2_runtime.wasm.module import BasicBlock, Function, FuncType, LocalWidthMap, Module
-from tier3_plugins.jit.jit_cache import JITTrace
+from tier3_plugins.jit.jit_cache import JitRuntimeBoundary, JITTrace
 from tier3_plugins.jit.jit_manager import JITCompiler, JITRuntimeManager
 from tier3_plugins.jit.x64_jit import TraceCompiler
 
@@ -41,6 +41,7 @@ def make_runtime_engine(
     drive_mode: RuntimeDriveMode = RuntimeDriveMode.SYNCHRONOUS,
     collect_runtime_stats: bool = True,
     hotspot_profiling_enabled: bool = True,
+    retire_observer: Callable[[int, int], None] | None = None,
 ) -> RuntimeEngine:
     """Compose a Tier 3 runtime engine with the Tier 3 JIT manager for tests."""
 
@@ -56,6 +57,7 @@ def make_runtime_engine(
         and aging_scan_bytes == FB_CONF_JIT_AGING_STEP_SCAN_BYTES
         and drive_mode == RuntimeDriveMode.SYNCHRONOUS
         and hotspot_profiling_enabled
+        and retire_observer is None
     ):
         return RuntimeEngine(debug=debug, collect_runtime_stats=collect_runtime_stats)
     manager = JITRuntimeManager(
@@ -69,6 +71,7 @@ def make_runtime_engine(
         aging_step_units=aging_step_units,
         aging_scan_bytes=aging_scan_bytes,
         hotspot_profiling_enabled=hotspot_profiling_enabled,
+        retire_observer=retire_observer,
     )
     return RuntimeEngine(
         jit_runtime=manager,
@@ -86,16 +89,11 @@ class RecordingTraceCompiler(TraceCompiler):
     def __init__(self) -> None:
         super().__init__()
         self.compiled_pcs: list[int] = []
+        self.compile_observer = self._observe_compile
 
-    def build_runtime_trace(
-        self,
-        head_pc: int,
-        native_result: tuple[bytes, int, int, int, int, int, int, int, int],
-        next_pc: int | None,
-        loops_to: int | None,
-    ) -> JITTrace | None:
-        self.compiled_pcs.append(head_pc)
-        return super().build_runtime_trace(head_pc, native_result, next_pc, loops_to)
+    def _observe_compile(self, pc: int, success: bool, elapsed_ns: int) -> None:
+        if success:
+            self.compiled_pcs.append(pc)
 
 
 def compile_test_block(
@@ -106,13 +104,13 @@ def compile_test_block(
 ) -> JITTrace | None:
     """Test-only adapter: `local_types` are the locals' value types, params first."""
 
-    return compiler.compile_trace(
-        block.head_pc,
-        iter_block_ops(code, block.head_pc, block.byte_span),
-        block.next_pc,
-        block.loops_to,
-        block.byte_span,
-        LocalWidthMap(local_types),
+    return compiler.compile_instructions(
+        head_pc=block.head_pc,
+        instructions=iter_block_ops(code, block.head_pc, block.byte_span),
+        next_pc=block.next_pc,
+        loops_to=block.loops_to,
+        byte_length=block.byte_span,
+        local_layout=LocalWidthMap(local_types),
     )
 
 
@@ -124,17 +122,17 @@ def compile_module_block(
     function_index = block.func_index
     function = module.functions[function_index - len(module.imports)]
     assert function.local_width_map_cache is not None
-    return compiler.compile_trace(
-        block.head_pc,
-        iter_block_ops(
+    return compiler.compile_instructions(
+        head_pc=block.head_pc,
+        instructions=iter_block_ops(
             module.code_for(function_index),
             block.head_pc - module.function_pc_offset(function_index),
             block.byte_span,
         ),
-        block.next_pc,
-        block.loops_to,
-        block.byte_span,
-        function.local_width_map_cache,
+        next_pc=block.next_pc,
+        loops_to=block.loops_to,
+        byte_length=block.byte_span,
+        local_layout=function.local_width_map_cache,
     )
 
 
@@ -187,3 +185,22 @@ def make_pc_only_functions_module(blocks_per_function: tuple[tuple[int, ...], ..
         radix_shift=28,
     )
     return module
+
+
+def compile_runtime_block(manager: JITRuntimeManager, block: BasicBlock) -> JITTrace | None:
+    """Prepare a Loader block for the standalone compiler in explicit cache tests."""
+    assert manager.jit_compiler is not None
+    return TraceCompiler.compile_wasm(manager._block_input(block.head_pc, block))
+
+
+def resident_module_traces(
+    cache: JitRuntimeBoundary, module: Module
+) -> tuple[tuple[int, JITTrace], ...]:
+    """Observe each known Loader PC through the external trace boundary."""
+    result = []
+    for block in module.blocks:
+        trace = cache.find_trace(block.head_pc)
+        if trace is not None:
+            result.append((block.head_pc, trace))
+    assert len(result) == cache.resident_count
+    return tuple(result)

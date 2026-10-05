@@ -25,8 +25,9 @@ def build_model(*, guards: bool = True, aging_guard: bool = True) -> Kripke:
       - linked ∈ {1(yes), 0(no)}
     - 初期状態: ch_s0_t0_l1 (Active内チェイン), ch_s0_t1_l1 (ActiveからWarmへチェイン)
     - rotate() 遷移規則:
-      1. 掃引 (_sweep_dangling_chains): guards=True 時、linked=1 かつ age_target >= 2 なら linked <- 0
-      2. 加齢 (rotate): age_source, age_target をそれぞれ min(3, age + 1)
+      1. 加齢 (rotate): age_source, age_target をそれぞれ min(3, age + 1)
+      2. 局所解除: guards=True 時、更新後の age_target == 3 なら linked <- 0
+      3. 既存チェインはWarmからOldestへの移行で維持する。新規リンクの初期状態はActive/Warmに限定する
     - 違反状態 (dangling_chain): linked=1 ∧ age_source != 3 ∧ age_target == 3
     """
     S = [
@@ -47,8 +48,8 @@ def build_model(*, guards: bool = True, aging_guard: bool = True) -> Kripke:
         "ch_s0_t0_l1",  # Active内チェイン (src=0, tgt=0, linked=1)
         "ch_s0_t1_l1",  # Active->Warmチェイン (src=0, tgt=1, linked=1)
         "ch_s1_t1_l1",  # 1世代経過 (src=1, tgt=1, linked=1)
-        "ch_s1_t2_l0",  # guards=True: Warm->Oldestで掃引され unlinked=0 に無効化
-        "ch_s2_t2_l0",  # 2世代経過 (src=2, tgt=2, linked=0)
+        "ch_s1_t2_l1",  # Warm->Oldestでは既存 linked=1 を維持する
+        "ch_s2_t2_l1",  # 2世代経過 (src=2, tgt=2, linked=1)
         "ch_s2_t3_l0",  # 掃引済み安全状態 (src=2, tgt=3(dead), linked=0)
         "ch_s3_t3_l0",  # 終端安全状態 (src=3(dead), tgt=3(dead), linked=0)
         # --- 違反状態（ガード有効時は到達不能、無効時に到達可能） ---
@@ -94,9 +95,9 @@ def build_model(*, guards: bool = True, aging_guard: bool = True) -> Kripke:
         ("c_executed", "c_unexecuted"),
         # --- 遅延チェイニング共通遷移 ---
         ("ch_s0_t0_l1", "ch_s1_t1_l1"),
-        ("ch_s1_t1_l1", "ch_s2_t2_l0"),
-        ("ch_s1_t2_l0", "ch_s2_t3_l0"),
-        ("ch_s2_t2_l0", "ch_s3_t3_l0"),
+        ("ch_s1_t1_l1", "ch_s2_t2_l1"),
+        ("ch_s1_t2_l1", "ch_s2_t3_l0"),
+        ("ch_s2_t2_l1", "ch_s3_t3_l0"),
         ("ch_s2_t3_l0", "ch_s3_t3_l0"),
         ("ch_s3_t3_l0", "ch_s3_t3_l0"),
         # --- 違反状態の自己ループ ---
@@ -126,8 +127,8 @@ def build_model(*, guards: bool = True, aging_guard: bool = True) -> Kripke:
         # 3. スイープが EXECUTED を巡回しない（減衰が起きない）
         R.append(("c_executed", "s_bad_aging_stall"))
     if guards:
-        # ガード有効時: ch_s0_t1_l1 は掃引により ch_s1_t2_l0 (unlinked) へ安全遷移
-        R.append(("ch_s0_t1_l1", "ch_s1_t2_l0"))
+        # ガード有効時: Warm->Oldestの既存chainを維持し、次のpurgeで解除する
+        R.append(("ch_s0_t1_l1", "ch_s1_t2_l1"))
     else:
         # ガード無効時（変異検査）:
         # 1. ダングリング掃引無効: ch_s0_t1_l1 が linked=1 のまま s_dangling_chain へ到達
@@ -159,8 +160,8 @@ def build_model(*, guards: bool = True, aging_guard: bool = True) -> Kripke:
         "ch_s0_t0_l1": {"linked", "ro_x"},
         "ch_s0_t1_l1": {"linked", "ro_x"},
         "ch_s1_t1_l1": {"linked", "ro_x"},
-        "ch_s1_t2_l0": {"unlinked", "ro_x"},
-        "ch_s2_t2_l0": {"unlinked", "ro_x"},
+        "ch_s1_t2_l1": {"linked", "ro_x"},
+        "ch_s2_t2_l1": {"linked", "ro_x"},
         "ch_s2_t3_l0": {"unlinked", "ro_x"},
         "ch_s3_t3_l0": {"unlinked", "ro_x"},
         "s_bad_rwx": {"writing", "executing", "bad_rwx"},

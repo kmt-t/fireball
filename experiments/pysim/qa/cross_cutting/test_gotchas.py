@@ -41,7 +41,7 @@ from tier2_runtime.memory.manager import FB_CONF_MEMORY_POOL_SIZE, MemoryManager
 from tier2_runtime.observability.events import RuntimeEventBatch
 from tier2_runtime.observability.logger import LogDictionary, Logger, LogLevel, LogResult
 from tier3_platform.drivers.hal.stream import StreamTransport
-from tier3_plugins.jit.jit_cache import CardState, JITMultiBufferCache, JITTrace
+from tier3_plugins.jit.jit_cache import CardState, JitRuntimeBoundary, JITTrace
 
 
 def _make_router(sched: Scheduler) -> IPCRouter:
@@ -212,7 +212,6 @@ def test_jitr_gotcha_01_idle_hook_skips_recompiling_already_resident_trace():
     mod = engine.load_wasm(wasm_bytes)
     pc = mod.blocks[0].head_pc
     engine.jit_runtime.cache.insert(JITTrace(pc, lambda: 0, size_bytes=64))
-    engine.jit_runtime.bitmap.mark_compiled(pc)
     engine.jit_runtime.compile_queue.push_back(pc)
 
     compiled = engine.idle_hook(budget=4)
@@ -223,7 +222,7 @@ def test_jitr_gotcha_01_idle_hook_skips_recompiling_already_resident_trace():
 
 def test_jitr_gotcha_02_promotion_transfers_inbound_sources():
     """GOTCHA-JITR-02: Promotion preserves inbound sources for resident chain targets."""
-    cache = JITMultiBufferCache(bank_capacity=512)
+    cache = JitRuntimeBoundary(bank_capacity=512)
     t2 = JITTrace(head_pc=0x200, native_fn=lambda: 2, size_bytes=64)
     cache.insert(t2)  # t2 -> Active
     cache.rotate()  # t2's bank -> Warm
@@ -231,17 +230,24 @@ def test_jitr_gotcha_02_promotion_transfers_inbound_sources():
     cache.insert(t1)  # t1 in Active records the Warm-resident t2 as its logical successor
     assert t1.chain_next == 0x200
     old_bank = cache.find_bank(0x200)
-    assert 0x100 in old_bank.inbound_sources
+    assert old_bank == cache.warm_idx and t1.chain_next == t2.head_pc
 
     cache.rotate()  # t2's bank -> Oldest
     promoted = cache.lookup(0x200)  # promote t2 out of Oldest
     assert promoted is t2
     new_bank = cache.find_bank(0x200)
-    assert new_bank is not old_bank
-    assert 0x100 not in old_bank.inbound_sources, (
-        "stale registration must not remain on the bank the trace left"
-    )
-    assert 0x100 in new_bank.inbound_sources, "the inbound source must follow the promoted trace"
+    assert new_bank != old_bank
+    assert new_bank == cache.active_idx and t1.chain_next == t2.head_pc
+    # Promote the source after the target becomes Oldest. Its retained chain
+    # must be detached when the target is later purged from the new bank.
+    cache.rotate()
+    cache.rotate()
+    assert cache.lookup(t1.head_pc) is t1
+    assert t1.chain_next == t2.head_pc
+    cache.rotate()
+    assert cache.find_trace(t2.head_pc) is None
+    assert cache.find_trace(t1.head_pc) is t1 and t1.chain_next is None
+    assert t1.header.chain_target_addr == 0
 
 
 def test_jitr_gotcha_03_lifo_reverse_compilation_order():
@@ -264,9 +270,9 @@ def test_jitr_gotcha_03_lifo_reverse_compilation_order():
     count = engine.idle_hook(budget=2)
     assert count == 2
     assert compiler.compiled_pcs == [pcs[2], pcs[1]], "LIFO compilation order required"
-    assert engine.jit_runtime.cache.active.has_trace(pcs[2])
-    assert engine.jit_runtime.cache.active.has_trace(pcs[1])
-    assert not engine.jit_runtime.cache.active.has_trace(pcs[0])
+    assert engine.jit_runtime.cache.find_bank(pcs[2]) == engine.jit_runtime.cache.active_idx
+    assert engine.jit_runtime.cache.find_bank(pcs[1]) == engine.jit_runtime.cache.active_idx
+    assert not (engine.jit_runtime.cache.find_bank(pcs[0]) == engine.jit_runtime.cache.active_idx)
 
 
 # ==============================================================================
@@ -305,9 +311,9 @@ def test_vsoc_gotcha_01_02_stateless_interp_and_yield_in_vsoc():
     assert engine.stat_jit_invocations >= 2
     assert engine.stat_interp_steps >= 3
     assert engine.jit_runtime.bitmap.get_state(loop_pc) == CardState.COMPILED
-    assert engine.jit_runtime.cache.active.has_trace(
-        loop_pc
-    ) or engine.jit_runtime.cache.warm.has_trace(loop_pc)
+    assert (engine.jit_runtime.cache.find_bank(loop_pc) == engine.jit_runtime.cache.active_idx) or (
+        engine.jit_runtime.cache.find_bank(loop_pc) == engine.jit_runtime.cache.warm_idx
+    )
 
 
 # ==============================================================================

@@ -12,7 +12,7 @@ from ipc_router import FB_URI_HAL_STDOUT, IPCStatus, Role
 from qa.private.debugger_support import make_debug_execution
 from qa.shared.fixtures.uvwasi_reference import UvwasiReferenceContext
 from qa.shared.helpers import expect_assertion, make_native_interpreter
-from qa.shared.runtime_support import make_runtime_engine
+from qa.shared.runtime_support import compile_runtime_block, make_runtime_engine
 from scheduler import ChannelAction, TaskState, WaitDir
 from system import System
 from system_containers import ReadOnlyFlatMapView, StaticVector
@@ -176,36 +176,32 @@ def _prepare_cache(
         return  # Cache factors are inapplicable with JIT disabled.
     assert manager is not None
     cache = manager.cache
-    assert all(not bank.traces for bank in (cache.active, cache.warm, cache.oldest))
+    assert cache.resident_count == 0
     inc_index = module.export_func_index("inc")
     block = next(
         block for block in module.blocks if block.func_index == inc_index and block.byte_span
     )
 
     def install() -> None:
-        trace = manager._compile_trace(block.head_pc, block)
+        trace = compile_runtime_block(manager, block)
         assert trace is not None and cache.insert(trace)
-        manager.bitmap.mark_compiled(block.head_pc)
-        assert cache.active.get_trace(block.head_pc) is trace
+        assert cache.find_trace(block.head_pc) is trace
 
     if cache_mode != "cold":
         install()
         if cache_mode == "warm":
             cache.rotate()
-            assert cache.warm.has_trace(block.head_pc) and not cache.active.has_trace(block.head_pc)
+            assert (cache.find_bank(block.head_pc) == cache.warm_idx) and not (
+                cache.find_bank(block.head_pc) == cache.active_idx
+            )
         elif cache_mode == "evict":
             for _ in range(3):
                 cache.rotate()
-            assert all(
-                not bank.has_trace(block.head_pc)
-                for bank in (cache.active, cache.warm, cache.oldest)
-            )
+            assert cache.find_trace(block.head_pc) is None
         elif cache_mode == "flush":
             manager.flush_all()
-            assert all(not bank.traces for bank in (cache.active, cache.warm, cache.oldest))
-    if engine_mode == "jit" and not any(
-        bank.has_trace(block.head_pc) for bank in (cache.active, cache.warm, cache.oldest)
-    ):
+            assert cache.resident_count == 0
+    if engine_mode == "jit" and cache.find_trace(block.head_pc) is None:
         install()  # Eager JIT setup follows the observed cache transition.
 
 

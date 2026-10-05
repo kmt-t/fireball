@@ -1,11 +1,12 @@
-#include <array>
 #include <algorithm>
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
 
-#include "trace_compiler_abi.hxx"
+#include "jit_internal.hxx"
 #include "stencils_x64.hxx"
+#include "trace_compiler_abi.hxx"
 
 using namespace fireball::pysim::jit;
 
@@ -32,7 +33,7 @@ constexpr std::size_t kMaxBodyBytes = 8192;
 constexpr std::size_t kMaxStackLocations = 8192;
 constexpr std::int32_t kTos = -1;
 constexpr std::int32_t kNos = -2;
-constexpr std::size_t kTraceEntryStubBytes = 15;
+constexpr std::size_t kTraceEntryStubBytes = FB_CONF_JIT_X64_TRACE_ENTRY_STUB_BYTES;
 
 constexpr int kDrop = 0x1A;
 constexpr int kLocalGet = 0x20;
@@ -341,7 +342,7 @@ bool emit_shift(trace_builder& b, int op) {
   return false;
 }
 
-bool compile_operations(trace_builder& b, const fb_jit_instruction* instructions,
+bool compile_operations(trace_builder& b, const fireball::jit_instruction* instructions,
                         std::uint32_t instruction_count, const std::uint8_t* map,
                         std::uint32_t map_bytes, std::uint32_t local_count,
                         std::uint32_t slot_bytes) {
@@ -431,20 +432,17 @@ bool compile_operations(trace_builder& b, const fb_jit_instruction* instructions
 
 }  // namespace
 
-extern "C" int fb_jit_compile_trace(
-    const fb_jit_instruction* instructions, std::uint32_t instruction_count,
-    std::uint32_t has_next_pc, std::uint32_t next_pc,
-    std::uint32_t has_loops_to, std::uint32_t loops_to,
-    std::uint32_t byte_span, const std::uint8_t* local_widths,
-    std::uint32_t local_width_bytes, std::uint32_t local_count,
-    std::uint32_t slot_words, std::uint32_t tail_context_helper,
-    std::uintptr_t helper_target, std::uint8_t* output,
-    std::uint32_t output_capacity, fb_jit_compile_result* result) {
+int fireball::compile_instruction_body(
+    const fireball::jit_instruction* instructions, std::uint32_t instruction_count,
+    std::uint32_t has_next_pc, std::uint32_t next_pc, std::uint32_t has_loops_to,
+    std::uint32_t loops_to, std::uint32_t byte_span, const std::uint8_t* local_widths,
+    std::uint32_t local_width_bytes, std::uint32_t local_count, std::uint32_t slot_words,
+    std::uint32_t tail_context_helper, std::uintptr_t helper_target, std::uint8_t* output,
+    std::uint32_t output_capacity, fireball::jit_compile_result* result) {
   static_cast<void>(loops_to);
-  if (result == nullptr || output == nullptr || byte_span == 0 ||
-      instruction_count > byte_span || (instruction_count != 0 && instructions == nullptr) ||
-      (local_width_bytes != 0 && local_widths == nullptr) ||
-      local_count > kMaxStackLocations ||
+  if (result == nullptr || output == nullptr || byte_span == 0 || instruction_count > byte_span ||
+      (instruction_count != 0 && instructions == nullptr) ||
+      (local_width_bytes != 0 && local_widths == nullptr) || local_count > kMaxStackLocations ||
       (slot_words != 1 && slot_words != 2 && slot_words != 4)) {
     return -1;
   }
@@ -452,8 +450,8 @@ extern "C" int fb_jit_compile_trace(
   trace_builder builder;
   if (!append_stencil(builder, kEntryStencil)) return -2;
   const auto slot_bytes = slot_words * 4;
-  if (!compile_operations(builder, instructions, instruction_count, local_widths,
-                          local_width_bytes, local_count, slot_bytes)) {
+  if (!compile_operations(builder, instructions, instruction_count, local_widths, local_width_bytes,
+                          local_count, slot_bytes)) {
     return -1;
   }
   if (builder.declined || !builder.saw_op || builder.location_count > 1 ||
@@ -489,8 +487,7 @@ extern "C" int fb_jit_compile_trace(
     }
   }
   if (tail_context_helper != 0) builder.helper_index = -1;
-  if (kTraceHeaderBytes + builder.body_size > 0xFFFF ||
-      builder.body_size > output_capacity) {
+  if (kTraceHeaderBytes + builder.body_size > 0xFFFF || builder.body_size > output_capacity) {
     return -2;
   }
 
@@ -507,20 +504,19 @@ extern "C" int fb_jit_compile_trace(
   return 1;
 }
 
-extern "C" int fb_jit_compile_wasm_trace(
-    const std::uint8_t* code, std::uint32_t code_bytes,
-    std::uint32_t code_offset, std::uint32_t byte_span,
-    std::uint32_t has_next_pc, std::uint32_t next_pc,
-    std::uint32_t has_loops_to, std::uint32_t loops_to,
-    const std::uint8_t* local_widths, std::uint32_t local_width_bytes,
-    std::uint32_t local_count, std::uint32_t slot_words,
-    std::uint8_t* output, std::uint32_t output_capacity,
-    fb_jit_compile_result* result) {
+int fireball::compile_wasm_trace(const std::uint8_t* code, std::uint32_t code_bytes,
+                                 std::uint32_t code_offset, std::uint32_t byte_span,
+                                 std::uint32_t has_next_pc, std::uint32_t next_pc,
+                                 std::uint32_t has_loops_to, std::uint32_t loops_to,
+                                 const std::uint8_t* local_widths, std::uint32_t local_width_bytes,
+                                 std::uint32_t local_count, std::uint32_t slot_words,
+                                 std::uint8_t* output, std::uint32_t output_capacity,
+                                 fireball::jit_compile_result* result) {
   if (code == nullptr || byte_span == 0 || code_offset > code_bytes ||
       byte_span > code_bytes - code_offset || output == nullptr || result == nullptr) {
     return -1;
   }
-  std::array<fb_jit_instruction, kMaxBodyBytes> instructions{};
+  std::array<fireball::jit_instruction, kMaxBodyBytes> instructions{};
   std::uint32_t instruction_count = 0;
   auto cursor = code_offset;
   const auto end = code_offset + byte_span;
@@ -596,26 +592,48 @@ extern "C" int fb_jit_compile_wasm_trace(
       cursor += width;
       instruction.has_operand = 1;
       instruction.operand = operand;
-    } else if (opcode != kDrop && opcode != kI32Eqz && !is_binary(opcode) &&
-               opcode != kI32Shl && opcode != kI32ShrS && opcode != kI32ShrU &&
-               helper_index(opcode) < 0) {
+    } else if (opcode != kDrop && opcode != kI32Eqz && !is_binary(opcode) && opcode != kI32Shl &&
+               opcode != kI32ShrS && opcode != kI32ShrU && helper_index(opcode) < 0) {
       // Unsupported operators may carry immediates. Decline the complete
       // block before scanning any immediate bytes as if they were opcodes.
       return 0;
     }
   }
   if (cursor != end) return -1;
-  return fb_jit_compile_trace(
-      instructions.data(), instruction_count, has_next_pc, next_pc, has_loops_to,
-      loops_to, byte_span, local_widths, local_width_bytes, local_count, slot_words,
-      0, 0, output, output_capacity, result);
+  return compile_instruction_body(instructions.data(), instruction_count, has_next_pc, next_pc,
+                                  has_loops_to, loops_to, byte_span, local_widths,
+                                  local_width_bytes, local_count, slot_words, 0, 0, output,
+                                  output_capacity, result);
 }
 
-extern "C" void fb_jit_common_chain_dispatcher(const std::uint8_t** bytes,
-                                                std::uint32_t* byte_count,
-                                                std::uint32_t* offset) {
+void fireball::chain_dispatcher_code(const std::uint8_t** bytes, std::uint32_t* byte_count,
+                                     std::uint32_t* offset) {
   if (bytes == nullptr || byte_count == nullptr || offset == nullptr) return;
   *bytes = kChainDispatcher.data();
   *byte_count = static_cast<std::uint32_t>(kChainDispatcher.size());
   *offset = FB_CONF_JIT_TRACE_COMMON_CHAIN_DISPATCH_OFFSET;
+}
+
+std::int64_t fireball::chain_successor(std::uintptr_t code_address, std::uint32_t code_bytes,
+                                       std::uint32_t offset, std::uint32_t span,
+                                       std::uint32_t next_pc) {
+  if (code_address == 0 || offset > code_bytes || span > code_bytes - offset) return -1;
+  const auto* code = reinterpret_cast<const std::uint8_t*>(code_address);
+  const auto end = offset + span;
+  const auto terminator = end < code_bytes ? code[end] : 0x0B;
+  switch (terminator) {
+    case 0x02:
+    case 0x03:
+    case 0x04:
+    case 0x05:
+    case 0x0B:
+    case 0x0C:
+    case 0x0D:
+    case 0x0E:
+    case 0x0F:
+    case 0xFC:
+      return UINT32_MAX;
+    default:
+      return next_pc;
+  }
 }

@@ -29,6 +29,7 @@ from config import (
     JIT_TRACE_COMMON_CHAIN_DISPATCH_OFFSET,
     JIT_TRACE_COMMON_EPILOGUE_OFFSET,
     JIT_X64_CHAIN_TARGET_OFFSET,
+    JIT_X64_TRACE_ENTRY_STUB_BYTES,
     JIT_X64_TRACE_HEADER_BYTES,
 )
 
@@ -151,6 +152,7 @@ def compiler_stack_frames() -> dict[str, int]:
         "FB_CONF_JIT_TRACE_COMMON_EPILOGUE_OFFSET": JIT_TRACE_COMMON_EPILOGUE_OFFSET,
         "FB_CONF_JIT_X64_TRACE_HEADER_BYTES": JIT_X64_TRACE_HEADER_BYTES,
         "FB_CONF_JIT_X64_CHAIN_TARGET_OFFSET": JIT_X64_CHAIN_TARGET_OFFSET,
+        "FB_CONF_JIT_X64_TRACE_ENTRY_STUB_BYTES": JIT_X64_TRACE_ENTRY_STUB_BYTES,
     }
     source = _PYSIM / "native/tier3_plugins/jit/trace_compiler.cxx"
     with tempfile.TemporaryDirectory(prefix="fireball-resource-") as directory:
@@ -174,8 +176,13 @@ def compiler_stack_frames() -> dict[str, int]:
         for line in output.with_suffix(".su").read_text().splitlines():
             name, size, classification = line.split("\t")
             assert classification == "static", line
-            frames[name.rsplit(":", 1)[-1]] = int(size)
-        assert "fb_jit_compile_wasm_trace" in frames and "fb_jit_compile_trace" in frames
+            function = name.split(":", 3)[-1]
+            if "compile_wasm_trace" in function:
+                function = "compile_wasm_trace"
+            elif "compile_instruction_body" in function:
+                function = "compile_instruction_body"
+            frames[function] = int(size)
+        assert "compile_wasm_trace" in frames and "compile_instruction_body" in frames
         return frames
 
 
@@ -223,7 +230,6 @@ def main() -> None:
         for path in (
             "tier2_runtime/interpreter/libnative_interpreter.so",
             "tier3_plugins/jit/libtrace_compiler.so",
-            "tier3_plugins/jit/libfast_cache.so",
         )
     )
     stack_frames = compiler_stack_frames()
@@ -259,11 +265,11 @@ def main() -> None:
                 (_PYSIM / "native/tier3_plugins/jit/trace_compiler.cxx").read_bytes()
             ).hexdigest(),
             "function_frame_bytes": stack_frames,
-            "entry_frames_subtotal_bytes": stack_frames["fb_jit_compile_wasm_trace"]
-            + stack_frames["fb_jit_compile_trace"],
+            "entry_frames_subtotal_bytes": stack_frames["compile_wasm_trace"]
+            + stack_frames["compile_instruction_body"],
             "caller_output_buffer_bytes": 8192,
-            "minimum_known_compile_bytes": stack_frames["fb_jit_compile_wasm_trace"]
-            + stack_frames["fb_jit_compile_trace"]
+            "minimum_known_compile_bytes": stack_frames["compile_wasm_trace"]
+            + stack_frames["compile_instruction_body"]
             + 8192,
             "excluded": "additional callee/ABI frames, result structures and Python objects",
         },

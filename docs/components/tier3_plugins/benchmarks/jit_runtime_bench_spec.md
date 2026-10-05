@@ -139,7 +139,7 @@ VTuneは各経路を別々に収集し、ソフトウェアサンプリングを
 ### 3.2 標準ベンチマーク
 
 1. **コンパイル速度測定**:
-   - `TraceCompiler.compile_trace()` に対し、算術基本ブロックを $N=10,000$ 回コンパイルし、1トレースあたりの平均所要時間を算出。
+   - `TraceCompiler.compile_instructions()` に対し、算術基本ブロックを $N=10,000$ 回コンパイルし、1トレースあたりの平均所要時間を算出。
 2. **カードマーキング & JITエントリ二分探索測定**:
    - `HotspotBitmap.get_state()` と3バンク内のソート済みエントリ配列に対するbinary lookupの単体スループットを $N=100,000$ 回計測。
 3. **実行速度比較 (Differential Execution)**:

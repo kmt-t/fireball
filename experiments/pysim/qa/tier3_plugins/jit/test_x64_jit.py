@@ -169,14 +169,14 @@ def test_complex_helpers_use_shared_value_slots_for_wide_values():
 
     def run_i64(op, left: int, right: int, expected: int) -> None:
         ctx.stack.set_size(0)
-        trace = compiler.compile_trace(
-            0,
-            ((I64_CONST, left), (I64_CONST, right), (op, None)),
-            3,
-            None,
-            3,
-            LocalWidthMap(()),
-            helper_target_addr=addresses[helper_indices[op]],
+        trace = compiler.compile_instructions(
+            head_pc=0,
+            instructions=((I64_CONST, left), (I64_CONST, right), (op, None)),
+            next_pc=3,
+            loops_to=None,
+            byte_length=3,
+            local_layout=LocalWidthMap(()),
+            helper_address=addresses[helper_indices[op]],
         )
         assert trace is not None
         trace.invoke(ctx)
@@ -186,14 +186,14 @@ def test_complex_helpers_use_shared_value_slots_for_wide_values():
         ctx.stack.set_size(0)
         left_bits = struct.unpack("<I", struct.pack("<f", left))[0]
         right_bits = struct.unpack("<I", struct.pack("<f", right))[0]
-        trace = compiler.compile_trace(
-            0,
-            ((F32_CONST, left_bits), (F32_CONST, right_bits), (op, None)),
-            3,
-            None,
-            3,
-            LocalWidthMap(()),
-            helper_target_addr=addresses[helper_indices[op]],
+        trace = compiler.compile_instructions(
+            head_pc=0,
+            instructions=((F32_CONST, left_bits), (F32_CONST, right_bits), (op, None)),
+            next_pc=3,
+            loops_to=None,
+            byte_length=3,
+            local_layout=LocalWidthMap(()),
+            helper_address=addresses[helper_indices[op]],
         )
         assert trace is not None
         trace.invoke(ctx)
@@ -204,14 +204,14 @@ def test_complex_helpers_use_shared_value_slots_for_wide_values():
         ctx.stack.set_size(0)
         left_bits = struct.unpack("<Q", struct.pack("<d", left))[0]
         right_bits = struct.unpack("<Q", struct.pack("<d", right))[0]
-        trace = compiler.compile_trace(
-            0,
-            ((F64_CONST, left_bits), (F64_CONST, right_bits), (op, None)),
-            3,
-            None,
-            3,
-            LocalWidthMap(()),
-            helper_target_addr=addresses[helper_indices[op]],
+        trace = compiler.compile_instructions(
+            head_pc=0,
+            instructions=((F64_CONST, left_bits), (F64_CONST, right_bits), (op, None)),
+            next_pc=3,
+            loops_to=None,
+            byte_length=3,
+            local_layout=LocalWidthMap(()),
+            helper_address=addresses[helper_indices[op]],
         )
         assert trace is not None
         trace.invoke(ctx)
@@ -319,14 +319,14 @@ def test_x64_division_and_remainder_use_helper_boundary() -> None:
         )
     ):
         helper = make_helper(operation)
-        trace = compiler.compile_trace(
-            0,
-            ((I32_CONST, left), (I32_CONST, right), (operation, None)),
-            3,
-            None,
-            3,
-            LocalWidthMap(()),
-            helper_target_addr=ctypes.cast(helper, ctypes.c_void_p).value or 0,
+        trace = compiler.compile_instructions(
+            head_pc=0,
+            instructions=((I32_CONST, left), (I32_CONST, right), (operation, None)),
+            next_pc=3,
+            loops_to=None,
+            byte_length=3,
+            local_layout=LocalWidthMap(()),
+            helper_address=ctypes.cast(helper, ctypes.c_void_p).value or 0,
         )
         assert trace is not None
         assert trace.common_helper_offset == 352 + helper_slot * 32
@@ -397,15 +397,15 @@ def test_trace_header_helper_tail_jump_uses_per_trace_pointer():
     ctx = ExecutionContext()
     assert ctx.local_stack.extend((10,))
     helper_addr = ctypes.cast(helper_fn, ctypes.c_void_p).value or 0
-    trace = compiler.compile_trace(
-        head_pc,
-        ((LOCAL_GET, 0), (LOCAL_SET, 0)),
-        next_pc,
-        loops_to,
-        byte_span,
-        LocalWidthMap((I32,)),
-        tail_context_helper=True,
-        helper_target_addr=helper_addr,
+    trace = compiler.compile_instructions(
+        head_pc=head_pc,
+        instructions=((LOCAL_GET, 0), (LOCAL_SET, 0)),
+        next_pc=next_pc,
+        loops_to=loops_to,
+        byte_length=byte_span,
+        local_layout=LocalWidthMap((I32,)),
+        context_helper=True,
+        helper_address=helper_addr,
     )
     assert trace is not None
     trace.invoke(ctx)
@@ -445,10 +445,8 @@ def test_trace_chaining_between_traces():
     # Compile trace B first, then A (enabling immediate forward chaining)
     trace_b = compile_module_block(engine.jit_runtime.jit_compiler, mod, block_b)
     engine.jit_runtime.cache.insert(trace_b)
-    engine.jit_runtime.bitmap.mark_compiled(block_b.head_pc)
     trace_a = compile_module_block(engine.jit_runtime.jit_compiler, mod, block_a)
     engine.jit_runtime.cache.insert(trace_a)
-    engine.jit_runtime.bitmap.mark_compiled(block_a.head_pc)
     assert trace_a.chain_next == block_b.head_pc
     _assert_trace_uses_common_chain_dispatcher(trace_a)
     results = engine.call(Interpreter(mod), 0, [10])
@@ -489,9 +487,9 @@ def test_hybrid_interpreter_to_jit_trace_elevation():
     assert engine.stat_jit_invocations > 1
     assert engine.stat_native_control_handlers > 0
     assert engine.stat_interp_steps >= 3
-    assert engine.jit_runtime.cache.active.has_trace(
-        loop_pc
-    ) or engine.jit_runtime.cache.warm.has_trace(loop_pc)
+    assert (engine.jit_runtime.cache.find_bank(loop_pc) == engine.jit_runtime.cache.active_idx) or (
+        engine.jit_runtime.cache.find_bank(loop_pc) == engine.jit_runtime.cache.warm_idx
+    )
 
 
 def test_jit_chaining_uses_loader_resolved_successors():
@@ -524,11 +522,9 @@ def test_jit_chaining_uses_loader_resolved_successors():
     # Make B resident before compiling A so the native successor chain can be formed.
     trace_b = compile_module_block(engine.jit_runtime.jit_compiler, mod, block_b)
     engine.jit_runtime.cache.insert(trace_b)
-    engine.jit_runtime.bitmap.mark_compiled(block_b.head_pc)
 
     trace_a = compile_module_block(engine.jit_runtime.jit_compiler, mod, block_a)
     engine.jit_runtime.cache.insert(trace_a)
-    engine.jit_runtime.bitmap.mark_compiled(block_a.head_pc)
 
     # Logical successor metadata resolves past the block delimiter to B's head.
     assert trace_a.chain_next == block_b.head_pc
@@ -547,13 +543,11 @@ def test_jit_chaining_uses_loader_resolved_successors():
 
     trace_a2 = compile_module_block(engine2.jit_runtime.jit_compiler, mod2, block_a2)
     engine2.jit_runtime.cache.insert(trace_a2)
-    engine2.jit_runtime.bitmap.mark_compiled(block_a2.head_pc)
     assert trace_a2.chain_next is None  # B is not resident yet
 
     # Inserting B resolves A's logical successor metadata and patches its native chain target.
     trace_b2 = compile_module_block(engine2.jit_runtime.jit_compiler, mod2, block_b2)
     engine2.jit_runtime.cache.insert(trace_b2)
-    engine2.jit_runtime.bitmap.mark_compiled(block_b2.head_pc)
 
     assert trace_a2.chain_next == block_b2.head_pc
 
@@ -660,8 +654,13 @@ def _reference(program, locals_values) -> tuple[int, int]:
 
 def _run_spill_trace(program, locals_values, sp_index: int, total: int = 96):
     """Run the compiled program at `sp_index` in a sentinel-filled operand stack buffer."""
-    trace = TraceCompiler().compile_trace(
-        0, program, None, None, len(program) * 3, LocalWidthMap((I32,) * 4)
+    trace = TraceCompiler().compile_instructions(
+        head_pc=0,
+        instructions=program,
+        next_pc=None,
+        loops_to=None,
+        byte_length=len(program) * 3,
+        local_layout=LocalWidthMap((I32,) * 4),
     )
     assert trace is not None, "a straight-line i32 expression must compile"
     words = (ctypes.c_uint32 * total)(*([_SENTINEL] * total))

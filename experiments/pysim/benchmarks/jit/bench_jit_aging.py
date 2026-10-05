@@ -39,7 +39,6 @@ from config import FB_CONF_JIT_AGING_STEP_SCAN_BYTES, FB_CONF_JIT_AGING_STEP_UNI
 from tier2_runtime.interpreter.interpreter import InterpreterBindings, NativeInterpreter
 from tier2_runtime.runtime.engine import RuntimeEngine
 from tier2_runtime.wasm.reader import parse
-from tier3_plugins.jit.jit_cache import JITTrace
 from tier3_plugins.jit.jit_manager import JITRuntimeManager
 from tier3_plugins.jit.x64_jit import TraceCompiler
 
@@ -70,86 +69,6 @@ def build_workload_wat(hot_functions: int, cold_functions: int) -> str:
         )
     parts.append(")")
     return "".join(parts)
-
-
-class _CountingCompiler:
-    """Counts compile requests in front of the real trace compiler."""
-
-    def __init__(self) -> None:
-        self.inner = TraceCompiler()
-        self.compiles = 0
-        self.compile_ns = 0
-        self._compile_started_ns: int | None = None
-
-    def compile_wasm_trace(
-        self,
-        code_address: int,
-        code_bytes: int,
-        code_offset: int,
-        byte_span: int,
-        next_pc: int | None,
-        loops_to: int | None,
-        local_width_address: int,
-        local_width_bytes: int,
-        local_count: int,
-        slot_words: int,
-    ) -> tuple[bytes, int, int, int, int, int, int, int, int] | None:
-        assert self._compile_started_ns is None
-        self.compiles += 1
-        self._compile_started_ns = time.perf_counter_ns()
-        native_result = self.inner.compile_wasm_trace(
-            code_address,
-            code_bytes,
-            code_offset,
-            byte_span,
-            next_pc,
-            loops_to,
-            local_width_address,
-            local_width_bytes,
-            local_count,
-            slot_words,
-        )
-        if native_result is None:
-            self._finish_compile()
-        return native_result
-
-    def build_runtime_trace(
-        self,
-        head_pc: int,
-        native_result: tuple[bytes, int, int, int, int, int, int, int, int],
-        next_pc: int | None,
-        loops_to: int | None,
-    ) -> JITTrace | None:
-        assert self._compile_started_ns is not None
-        try:
-            return self.inner.build_runtime_trace(head_pc, native_result, next_pc, loops_to)
-        finally:
-            self._finish_compile()
-
-    def _finish_compile(self) -> None:
-        start = self._compile_started_ns
-        assert start is not None
-        self.compile_ns += time.perf_counter_ns() - start
-        self._compile_started_ns = None
-
-
-class _RotationHook:
-    """Counts bank rotations and, when aging is on, runs the aging step from them."""
-
-    def __init__(self, engine: RuntimeEngine, aging: bool) -> None:
-        self.engine = engine
-        self.aging = aging
-        self.rotations = 0
-        self.aging_ns = 0
-
-    def __call__(self) -> int:
-        self.rotations += 1
-        if not self.aging:
-            return 0
-        start = time.perf_counter_ns()
-        decayed = self.engine.age_step()
-        self.aging_ns += time.perf_counter_ns() - start
-        return decayed
 
 
 @dataclass
@@ -199,7 +118,7 @@ class JITAgingBenchmark:
         wasm = bytes(wasmtime.wat2wasm(build_workload_wat(self.hot_functions, self.cold_functions)))
         runtime_allocator = BumpAllocator()
         module = parse(wasm, runtime_allocator)
-        compiler = _CountingCompiler()
+        compiler = TraceCompiler()
         settings: dict[str, int] = {}
         if units is not None:
             settings["aging_step_units"] = units
@@ -211,8 +130,8 @@ class JITAgingBenchmark:
             bump_allocator=runtime_allocator,
         )
         engine.register_module_blocks(module)
-        hook = _RotationHook(engine, aging)
-        engine.jit_runtime.cache.on_rotate = hook
+        cache = engine.jit_runtime.cache
+        cache.enable_automatic_aging(aging)
         interp = NativeInterpreter(module, InterpreterBindings.empty())
         hot = [module.export_func_index(f"h{i}") for i in range(self.hot_functions)]
         cold = [module.export_func_index(f"c{i}") for i in range(self.cold_functions)]
@@ -229,17 +148,17 @@ class JITAgingBenchmark:
 
         jit = engine.stat_jit_invocations
         total = jit + engine.stat_interp_steps
-        compile_ms = compiler.compile_ns / 1e6
-        aging_ms = hook.aging_ns / 1e6
+        compile_ms = cache.compile_ns / 1e6
+        aging_ms = cache.aging_ns / 1e6
         assert compile_ms + aging_ms <= time_ms, "nested timings cannot exceed the total"
         return AgingResult(
             label=label,
             time_ms=time_ms,
             compile_ms=compile_ms,
             aging_ms=aging_ms,
-            compiles=compiler.compiles,
+            compiles=cache.compile_attempts,
             purged=engine.jit_runtime.cache.evictions,
-            rotations=hook.rotations,
+            rotations=cache.rotations,
             promotions=engine.jit_runtime.cache.promotions,
             jit_share_pct=(100.0 * jit / total if total > 0 else 0.0)
             if engine.collect_runtime_stats

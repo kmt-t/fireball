@@ -59,13 +59,13 @@ class JITCompilerBenchmark:
         t0 = time.perf_counter()
         compile_count = 10_000
         for _ in range(compile_count):
-            _trace = self.compiler.compile_trace(
-                head_pc,
-                iter_block_ops(code, head_pc, byte_span),
-                next_pc,
-                loops_to,
-                byte_span,
-                LocalWidthMap((I32,)),
+            _trace = self.compiler.compile_instructions(
+                head_pc=head_pc,
+                instructions=iter_block_ops(code, head_pc, byte_span),
+                next_pc=next_pc,
+                loops_to=loops_to,
+                byte_length=byte_span,
+                local_layout=LocalWidthMap((I32,)),
             )
         t1 = time.perf_counter()
         results["jit_compile_traces_per_sec"] = compile_count / (t1 - t0)
@@ -227,15 +227,15 @@ class JITCompilerBenchmark:
         helper_ctx = ExecutionContext()
         assert helper_ctx.local_stack.extend((0,))
         helper_addr = ctypes.cast(helper_fn, ctypes.c_void_p).value or 0
-        helper_trace = self.compiler.compile_trace(
-            0xF000,
-            ((op.LOCAL_GET, 0), (op.LOCAL_SET, 0)),
-            None,
-            None,
-            4,
-            LocalWidthMap((I32,)),
-            tail_context_helper=True,
-            helper_target_addr=helper_addr,
+        helper_trace = self.compiler.compile_instructions(
+            head_pc=0xF000,
+            instructions=((op.LOCAL_GET, 0), (op.LOCAL_SET, 0)),
+            next_pc=None,
+            loops_to=None,
+            byte_length=4,
+            local_layout=LocalWidthMap((I32,)),
+            context_helper=True,
+            helper_address=helper_addr,
         )
         assert helper_trace is not None
         helper_iterations = max(1, iterations // 10)

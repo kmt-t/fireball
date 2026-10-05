@@ -1,7 +1,7 @@
 {
-  "measured_at_utc": "2026-10-05T05:11:42.871572+00:00",
-  "source_revision": "c9d15d3b4b5df5d87efa4ecd1fc0730ce99d9712",
-  "source_worktree_modified": true,
+  "measured_at_utc": "2026-10-05T05:21:55.238182+00:00",
+  "source_revision": "ac3087d7a5deba5b04bddeab1a34992be88d9e22",
+  "source_worktree_modified": false,
   "runtime_source_sha256": {
     "__init__.py": "2b8295c400a7a95ae10112731aa147d04000e0a29593640dd965743ded4c2b58",
     "main.py": "384812a613c8b628df70d0e9fd8bb90d16d05b57774a7de08880b73a41be124f",
@@ -15,7 +15,7 @@
     "native/tier3_plugins/jit/executable_memory_abi.hxx": "b49500c0b0b2b855e688184d6dec7021557877ab2160595645e3dc70de2e98e1",
     "native/tier3_plugins/jit/jit_internal.hxx": "0396aacfa3d91bf734d86e061883a31048067a43c24fd59482aef772cabaf63d",
     "native/tier3_plugins/jit/jit_runtime.cxx": "7066984faeb77caded5c92076f2cfb34631ab8e53127b5675c9103f323764165",
-    "native/tier3_plugins/jit/jit_runtime.hxx": "6768155e4478249437ddd38d58602430ac132da53bd2748f3de97931854d832e",
+    "native/tier3_plugins/jit/jit_runtime.hxx": "19a9c8cf98a5e1497bf7ccd09ca4096971b621647e7ff81ab54c8654d1a62857",
     "native/tier3_plugins/jit/jit_runtime_abi.hxx": "7e51a8ed631326e168bd120ab3246c6974aa9ae02bd81eed7f3788e5c9c29fb8",
     "native/tier3_plugins/jit/jit_runtime_exports.hxx": "35389c876ed5c42f4d5d001883058766302f29f3ab6b72f2ed8c447524d2e75e",
     "native/tier3_plugins/jit/jit_types.hxx": "fbff8c9f71739873daa28cf1aab55645027802c015406452e52462757012336d",
@@ -98,7 +98,7 @@
     "tier3_plugins/debugger/gdb_server.py": "740159edc8a65b0f1ba07f56e544b799cdc79015422d42309d6b5f8988920390",
     "tier3_plugins/jit/__init__.py": "e5ea8dbb981b837dd70a9736bf8692d7ac18a5d0e781595ee7afd594576e35eb",
     "tier3_plugins/jit/jit_manager.py": "e9b75c5a6dc40f82abf0ceb5f63538b8d67117f1707d7a19059f0a1febc11483",
-    "tier3_plugins/jit/libtrace_compiler.so": "91202cf9890b1f1037c5b3a1e7b3849f443ad8b8d4b63c2a4d2570f29dd1de05",
+    "tier3_plugins/jit/libtrace_compiler.so": "874e7225da6051a33628ad37bfbe546e37a47ec6822a5f0921f62007ff6fb624",
     "tier3_plugins/jit/native_abi.py": "2947ac4a23614c48e8a962917741566a48b8234ad27228ef49b1d936c15c20ee",
     "tier3_plugins/logger/__init__.py": "e3b1ccf917e2925cf73ef9cb8965b3c80a5baadecc256ec7dc49dab30daae2e6",
     "tier3_plugins/logger/logger.py": "8c643aff4a41a4022178f77fcdbea748a6b92e973633fb29c6d6c7cd8d65572c",

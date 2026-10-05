@@ -1,7 +1,7 @@
 {
-  "measured_at_utc": "2026-10-05T05:11:44.359692+00:00",
-  "source_revision": "c9d15d3b4b5df5d87efa4ecd1fc0730ce99d9712",
-  "source_worktree_modified": true,
+  "measured_at_utc": "2026-10-05T05:21:56.698961+00:00",
+  "source_revision": "ac3087d7a5deba5b04bddeab1a34992be88d9e22",
+  "source_worktree_modified": false,
   "script_sha256": "88c20d9217877651a7176aa076ed95d15f5fedff390759534dae137da637247f",
   "host_machine": "x86_64",
   "pygments_version": "2.21.0",
@@ -643,9 +643,9 @@
         },
         {
           "path": "experiments/pysim/native/tier3_plugins/jit/jit_runtime.hxx",
-          "sha256": "6768155e4478249437ddd38d58602430ac132da53bd2748f3de97931854d832e",
-          "physical_lines": 937,
-          "code_lines": 909
+          "sha256": "19a9c8cf98a5e1497bf7ccd09ca4096971b621647e7ff81ab54c8654d1a62857",
+          "physical_lines": 933,
+          "code_lines": 905
         },
         {
           "path": "experiments/pysim/native/tier3_plugins/jit/jit_runtime_abi.hxx",
@@ -708,8 +708,8 @@
           "code_lines": 84
         }
       ],
-      "physical_lines": 5698,
-      "code_lines": 5291
+      "physical_lines": 5694,
+      "code_lines": 5287
     }
   ],
   "native_libraries": [
@@ -780,7 +780,7 @@
     },
     {
       "path": "experiments/pysim/tier3_plugins/jit/libtrace_compiler.so",
-      "sha256": "91202cf9890b1f1037c5b3a1e7b3849f443ad8b8d4b63c2a4d2570f29dd1de05",
+      "sha256": "874e7225da6051a33628ad37bfbe546e37a47ec6822a5f0921f62007ff6fb624",
       "sections": {
         ".note.gnu.build-id": 36,
         ".gnu.hash": 64,
@@ -793,7 +793,7 @@
         ".init": 27,
         ".plt": 128,
         ".plt.got": 8,
-        ".text": 27525,
+        ".text": 27541,
         ".fini": 13,
         ".rodata": 1460,
         ".eh_frame_hdr": 548,
@@ -806,17 +806,17 @@
         ".data": 8,
         ".bss": 8,
         ".comment": 77,
-        ".debug_info": 52405,
+        ".debug_info": 52383,
         ".debug_abbrev": 5825,
-        ".debug_line": 17745,
-        ".debug_str": 46218,
+        ".debug_line": 17738,
+        ".debug_str": 46118,
         ".debug_addr": 3392,
         ".debug_line_str": 1630,
-        ".debug_loclists": 17948,
-        ".debug_rnglists": 2337,
-        ".debug_str_offsets": 9844
+        ".debug_loclists": 17956,
+        ".debug_rnglists": 2321,
+        ".debug_str_offsets": 9836
       },
-      "text_rodata_bytes": 28985,
+      "text_rodata_bytes": 29001,
       "data_bss_bytes": 16,
       "unwind_bytes": 3652
     }
@@ -891,7 +891,7 @@
       "trace_compiler.cxx": "0eb1e4b11df623df33ad73c6a8220e2248e9c4d857a56c0c6419b8acdd8f026d",
       "common_code.cxx": "b176c24b30d2b1ce5dccfc9598fa1cd1522a851156e79e80d21b31614aaaf94d",
       "jit_runtime.cxx": "7066984faeb77caded5c92076f2cfb34631ab8e53127b5675c9103f323764165",
-      "jit_runtime.hxx": "6768155e4478249437ddd38d58602430ac132da53bd2748f3de97931854d832e",
+      "jit_runtime.hxx": "19a9c8cf98a5e1497bf7ccd09ca4096971b621647e7ff81ab54c8654d1a62857",
       "jit_runtime_exports.hxx": "35389c876ed5c42f4d5d001883058766302f29f3ab6b72f2ed8c447524d2e75e"
     },
     "entry_frames_subtotal_bytes": 172304,

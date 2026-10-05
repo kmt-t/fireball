@@ -4,32 +4,38 @@
 
 正本: [`runtime_observability.md`](docs/components/tier2_runtime/runtime_observability.md)
 
-本仕様は、Runtime Event Sink のイベント記録、固定幅レコード、C++/Python転送ABI、構成選択、および安全点での
-配送を検証する。JIT履歴は本仕様のイベント契約に含めない。
+イベント記録、転送ABI、安全点配送を対象とする。JIT履歴は対象外とする。
 
 ## 2. テストケース一覧
 
-| テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 |
-| :--- | :--- | :--- | :--- | :--- |
-| TEST-OBS-01 | RuntimeEventV1 の固定レイアウト | 対象C++ ABIが選択済み | `sizeof`、`alignof`、各フィールドの`offsetof`を確認する | レコードが32バイト、8バイト境界であり、全フィールド位置が契約と一致する |
-| TEST-OBS-02 | 意味上のイベントと識別子 | Sink有効構成でモジュール登録、関数呼出、JIT移行、ホスト呼出、yield、trapを実行する | 各境界で生成したレコードを読み出す | イベント種別・識別子・相関ID・終了理由が契約どおりであり、命令ごとのイベントを生成しない |
-| TEST-OBS-03 | Runtime Event Sink の容量超過 | 容量Nのイベントリングを初期化し、N+K件を記録する | リングを安全点でエクスポートする。KがN以下・N超の双方と、読出し後の再充填を確認する | 最新N件を発行順に保持し、最古K件を上書きし、累積`dropped_count`へKを加える |
-| TEST-OBS-04 | Versioned batch ABI の復号 | 既知イベント列をリングへ記録する | little-endian batchをPython Adapterで復号する | ヘッダ、レコード数、clock metadata、およびPython値がABI契約と一致し、C++レコード配置をPython APIへ露出しない |
-| TEST-OBS-05 | 不足バッファとバージョン拒否 | 未出力イベントがリングに存在する | 容量不足、未対応ABI major、不正ハンドルを指定してexportする | 状態コードと必要サイズを返し、成功以外ではリングの読出位置を変更しない |
-| TEST-OBS-06 | 安全点での一括配送と所有権 | Runtimeがイベントを記録して実行中、または停止境界にある | 実行中と停止点の両方でexportを要求する | 実行中の要求を拒否し、安全点では一括出力する。出力バッファを保持せず、Python callbackを実行ホットパスから呼ばない |
-| TEST-OBS-07 | Runtime構成とゼロオーバーヘッド | Event Sink有効・無効のRuntime型を同一プログラムで生成する | 両方を実行し、型構成・生成コード・ROM/RAMを比較する | 2構成が共存する。無効構成にはSink、リング、時計、発行経路が含まれない |
-| TEST-OBS-08 | JIT拡張からの独立性 | Event SinkとJIT拡張を独立に有効・無効化したRuntime構成を用意する | 全有効組合せでJIT履歴とイベント履歴を確認する | JITの記録・容量超過・無効化がRuntimeイベントの状態や実行経路を変更しない |
+| テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| TEST-OBS-01 | 固定レイアウト | 対象C++ ABI | サイズ、整列、全フィールド位置を調べる | 32バイト、8バイト境界で、全位置が一致する | 正本のレコード定義 |
+| TEST-OBS-02 | 境界イベント | Sink有効 | 登録、call、JIT、host call、yield、trapを実行する | 種別、識別子、相関ID、終了理由が一致し、命令ごとの通知をしない | 正本のイベント種別 |
+| TEST-OBS-03 | 容量超過 | 容量N | N+K件を記録し、読出し・再充填する。K≤NとK>Nを試す | 最新N件を発行順に保持し、累積欠落数へKを加える | `{ADR_RuntimeEventRetention}` |
+| TEST-OBS-04 | batch復号 | 既知イベント列 | little-endian batchを復号する | ヘッダ、件数、時刻情報、全イベント値が一致し、C++配置をPython APIへ露出しない | 正本の転送ABI |
+| TEST-OBS-05 | export拒否 | 未読イベントあり | 容量不足、未対応major、不正ハンドルを指定する | 状態と必要サイズを返し、読出位置を保存する | 正本のexport契約 |
+| TEST-OBS-06 | 安全点と所有権 | 実行中／停止中 | exportを要求する | 実行中は拒否し、安全点で一括配送する。バッファを保持せず、ホットパスでPythonを呼ばない | 正本の配送契約 |
+| TEST-OBS-07 | 無効機能の除去 | Sink有効／無効 | 同時生成・実行し、生成物とROM/RAMを比べる | 無効構成にSink、リング、時計、発行経路を含めない | 正本の構成契約 |
+| TEST-OBS-08 | JIT履歴との独立性 | SinkとJIT拡張の全有効組合せ | 履歴更新、容量超過、無効化を実行する | JIT履歴の操作がRuntimeイベントと実行経路を変えない | 正本の独立性 |
 
-## 3. 判定条件
-<!-- traceability: {ADR_RuntimeEventRetention} -->
+## 3. テスト検証実績と網羅状況
 
-TEST-OBS-03は最新履歴保持の採用契約を判定する。現行の新規イベント破棄を確認する実行テストはこの契約へ未追従であり、同ケースの検証完了証拠として扱わない。
+公開call境界は [`test_runtime_composer.py`](experiments/pysim/qa/tier2_runtime/test_runtime_composer.py) から実行する。
+制御した実行器を使い、構成器・Sink・転送ABI・Adapterを通った結果を照合する。
+期待イベントを実行結果から転記しない。
+Sinkの有効・無効で戻り値、trap、yield、ゲスト状態を変えない。
 
-各テストは、イベント値とABIバイト列、Runtimeの実行結果、容量超過件数、生成コード、および資源量を直接比較する。
-Sinkの有効・無効で戻り値、trap、yield、ゲスト可視状態が変化した場合は不合格とする。
+| 条件 | 操作と期待結果 |
+| :--- | :--- |
+| 成功 | Interpreter／JITで2回呼ぶ。引数、結果、全イベント値が一致し、有効な観測先だけへ配送する。前回の列を再送しない |
+| guest trap | 両実行方式でエラーを返す。元の結果を保持し、TRAPと中断終了を1回ずつ通知する。終了理由、相関ID、時刻も一致する |
+| host failure | 両実行方式でエラーを返す。元の結果と中断理由が一致し、TRAPを通知しない |
 
-## 4. 対象外
+TEST-OBS-03の新規イベント破棄を確認する旧試験は、最新履歴保持の証拠に数えない。
 
-- Guest Profilerのコールグラフ・時間集計。詳細は [`guest_profiler_test_spec.md`](docs/qa/tier3_plugins/guest_profiler_test_spec.md) に置く。
-- 基本ブロック単位のPC履歴とカード更新。詳細はTier 3 JIT拡張の [`jit_runtime_test_spec.md`](docs/qa/tier3_plugins/jit_runtime_test_spec.md)「JIT拡張ホットスポット履歴」に置く。
-- 外部ログの書式、UI、ホストI/O、およびABIに含めない診断用snapshot。
+## 4. 未検証・スコープ外
+
+- 公開call境界の構成試験は、内部命令実行イベント、実行中export拒否、C++のコード除去と資源量を判定しない。
+- 構成選択は [`runtime_plugin_architecture_test_spec.md`](docs/qa/tier2_runtime/runtime_plugin_architecture_test_spec.md) を参照する。
+- Profiler集計、JIT履歴、外部ログ形式は各コンポーネントのテスト仕様を参照する。

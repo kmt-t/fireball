@@ -82,7 +82,7 @@ verification_matrix:
     formal_models: 21
     test_specs: 25
     pysim_unit_suites: 30
-    pysim_integration_suites: 3
+    pysim_integration_suites: 4
     pysim_workload_suites: 3
     scenarios: 12
     pairwise_factors: 7

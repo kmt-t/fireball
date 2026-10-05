@@ -24,7 +24,7 @@
 | Tier 1 Core | `os_coos` | `coos_concept.py` | `coos_channel_model.py` | `os_coos_test_spec.md` | `test_coos.py` | — | — | 6, 9 | required |
 | Tier 1 Core | `os_scheduler` | `scheduler_concept.py` | N/A（決定的キュー操作はテストで直接検証） | `os_scheduler_test_spec.md` | `test_scheduler.py` | — | — | 6, 9 | required |
 | Tier 1 Core | `system_config` | N/A（静的設定の正本） | `system_config_model.py` | `system_config_test_spec.md` | `test_scheduler.py`, `test_memory.py` | — | — | 1, 10 | required |
-| Tier 1 Core | [`printk.md`](docs/components/tier1_core/printk.md) | N/A（診断出力契約） | N/A（レコード形式を単体テストで直接検証） | [`runtime_logging_test_spec.md`](docs/qa/tier2_runtime/runtime_logging_test_spec.md) | `test_logging.py`（TEST-LOG-14） | — | — | — | contract_only |
+| Tier 1 Core | [`printk.md`](docs/components/tier1_core/printk.md) | N/A（診断出力契約） | N/A（診断・復号・Base64出力を単体テストで直接検証） | [`runtime_logging_test_spec.md`](docs/qa/tier2_runtime/runtime_logging_test_spec.md) | `test_logging.py`（TEST-LOG-14、17、18） | — | — | — | contract_only |
 | Tier 1 Core | `system_containers` | `flat_view_concept.py` | N/A（コンテナ不変条件を直接検証） | `system_containers_test_spec.md` | `test_containers.py` | — | — | 1, 4, 5, 8, 9 | required |
 | Tier 3 Platform | `interface_wit` | N/A（WIT 契約） | N/A（WIT の構文・契約検証） | `interface_wit_test_spec.md` | `test_syscall.py`, `test_libfireball.py` | — | — | 2, 11, 12 | contract_only |
 | Tier 1 Interface | `ipc_router` | `ipc_router_concept.py` | `csp_handoff_model.py` | `ipc_router_test_spec.md` | `test_ipc_router.py` | — | `test_wasi_guest.py` | 9 | required |
@@ -40,9 +40,9 @@
 | Tier 2 Runtime | `runtime_syscall` | `syscall_concept.py` | `syscall_trap_model.py` | `runtime_syscall_test_spec.md` | `test_syscall.py`, `test_vdma.py` | — | `test_wasi_guest.py` | 2, 10, 11, 12 | required |
 | Tier 2 Runtime | `runtime_vmmio` | `vmmio_concept.py` | `vmmio_mapping_model.py` | `runtime_vmmio_test_spec.md` | `test_vmmio.py`, `test_syscall.py`, `test_vdma.py` | — | — | 10, 11 | required |
 | Tier 2 Runtime | `runtime_vsoc` | N/A（旧統合モデルは現行C++ dispatcherと共通chain dispatcherを表現していないため削除。実装テストと形式モデルで検証） | `vsoc_cache_coherency_model.py`, `vsoc_state_model.py` | `runtime_vsoc_test_spec.md` | `test_vsoc.py`, `test_vdma.py`, `test_recovery.py` | `test_pairwise_combinations.py` | — | 4, 5, 6, 8, 10 | required |
-| Tier 2 Runtime | `runtime_plugin_architecture` | [`composer.py`](experiments/pysim/tier2_runtime/runtime/composer.py)（pysim構成モデル） | N/A（C++生成物モデル未実装） | `runtime_plugin_architecture_test_spec.md` | `test_runtime_composer.py` | — | — | N/A（実機Runtime未統合） | contract_only |
-| Tier 2 Runtime | `runtime_observability` | [`events.py`](experiments/pysim/tier2_runtime/observability/events.py), [`composer.py`](experiments/pysim/tier2_runtime/runtime/composer.py)（公開call境界のみ） | N/A（内部実行イベント未統合） | `runtime_observability_test_spec.md` | `test_runtime_composer.py` | — | — | N/A（実機Runtime未統合） | contract_only |
-| Tier 3 Plugins | `guest_profiler` | `guest_profiler.py` | `guest_profiler_model.py` | `guest_profiler_test_spec.md` | `test_guest_profiler.py` | — | — | `test_runtime_composer.py` | required |
+| Tier 2 Runtime | `runtime_plugin_architecture` | [`composer.py`](experiments/pysim/tier2_runtime/runtime/composer.py)（pysim構成モデル） | N/A（C++生成物モデル未実装） | `runtime_plugin_architecture_test_spec.md` | `test_runtime_composer.py` | [`test_guest_profiler_runtime.py`](experiments/pysim/qa/integration/test_guest_profiler_runtime.py) | — | N/A（実機Runtime未統合） | contract_only |
+| Tier 2 Runtime | `runtime_observability` | [`events.py`](experiments/pysim/tier2_runtime/observability/events.py), [`composer.py`](experiments/pysim/tier2_runtime/runtime/composer.py)（公開call境界のみ） | N/A（内部実行イベント未統合） | `runtime_observability_test_spec.md` | `test_runtime_composer.py` | [`test_guest_profiler_runtime.py`](experiments/pysim/qa/integration/test_guest_profiler_runtime.py) | — | N/A（実機Runtime未統合） | contract_only |
+| Tier 3 Plugins | `guest_profiler` | `guest_profiler.py` | `guest_profiler_model.py` | `guest_profiler_test_spec.md` | `test_guest_profiler.py` | [`test_guest_profiler_runtime.py`](experiments/pysim/qa/integration/test_guest_profiler_runtime.py) | — | — | required |
 | Tier 3 Plugins | `jit_compiler` | N/A (x64 implementation is covered directly; ARMv8-M is TBD) | `jit_cache_model.py` | `jit_compiler_test_spec.md`, `wasm_instruction_set_test_spec.md` | `test_x64_jit.py`, `test_exec_memory.py` | — | — | 4, 5, 8 | required |
 | Tier 3 Plugins | `jit_runtime` | N/A (x64 runtime tests cover the confirmed path; ARMv8-M is TBD) | `jit_cache_model.py`, `jit_hotspot_model.py`, `jit_trace_execution_model.py` | `jit_runtime_test_spec.md` | `test_jit_runtime.py`, `test_x64_jit.py`, `test_jit_differential.py` | — | — | 4, 5, 8 | required |
 | Tier 3 Platform | `libfireball` | `libfireball.py`（pysim host-call参照モデルのみ） | N/A（raw Core Wasm ABIを実guestで検査） | `libfireball_test_spec.md` | `test_libfireball.py` | — | — | N/A（raw 4 import guest統合。実機ABIは対象外） | contract_only |
@@ -199,26 +199,22 @@
 
 ### 3.2 実行で観測する範囲
 
-288組は26行の計画データの静的被覆を表す。
-テストはCSVから導いた期待組の集合と計画組の集合を比較する。
-実行では許可された12行のワークロードと、禁止された14行の構成拒否を区別する。
-禁止された行では実行器の生成が0件であることを検査する。
-その行の他因子の動作を実行済みとして数えない。
+26行の計画が全288水準対を含むことを集合比較で確認する。
+各行は独立したpytestケースとして実行し、`TEST-PAIR-01`〜`TEST-PAIR-26`で識別する。
+許可12行は実ワークロード、禁止14行は構成時の拒否を検査する。
+禁止行では実行器・観測プラグインを生成せず、他因子の動作を検証済みと数えない。
 
-許可された行では次の状態と副作用を直接比較する。
-
-| 因子 | 実行時の観測 |
+| 検証対象 | 操作と期待結果 |
 | :--- | :--- |
-| 命令実行経路 | `interp`はJIT managerなしで構成し、manager不在とJIT呼出し0件を確認する。`jit`では事前に実トレースを配置し、`hybrid`ではホットスポットから生成する。両者とも生成コードの呼出しと独立した計算結果を確認する |
-| キャッシュ | JITを使う5行で空のcacheまたはresident traceのevictionを確認する。`warm`と`flush`は許可されたJIT行に存在しないため、この26行では動作を検証しない。対応する単体試験は[`jit_runtime_test_spec.md`](docs/qa/tier3_plugins/jit_runtime_test_spec.md)を正本とする。Interpreter専用7行のcache水準は適用外である |
-| メモリ操作・拡張 | 水準に対応する幅のstoreを実行する。隣接sentinelを含む全ゲストメモリを比較する。`grow`ではWASMの`memory.grow`の旧ページ数と追加ページのゼロ初期化を確認する |
-| 値の保管場所 | 水準に応じてlocal、global、RAM、SHMを更新する。SHMでは所有者と物理対応を設定し、ゲストload/store後の全物理バイト列を比較する |
-| ホスト境界 | ゲストimportから既存WASI、IPC、HAL経路を呼ぶ。引数、応答、stdout、VFSの読出しバイトとcursor、IPC応答後のHAL受信待ち状態を比較する。VFSの外部環境には決定的なテスト用fixtureを使う |
-| 実行制御 | `noint`では呼出し側がRuntimeEngineを同期駆動する。`yield`では既存のLOOP後方分岐境界をCOOSへ渡す。`multi`では別のCOOS coroutineと交互に進め、両タスクの結果と終了状態を比較する |
-| デバッガ | 許可された行の`inspect`と`active`は、既存の静的デバッグ構成を使う独立した補助試験で確認する。レジスタ、PC、stack、breakpoint停止、再開結果を比較する。主ワークロードとデバッガの同時実行はこの補助試験の証拠に含めない |
+| 実行経路 | Interpreter専用構成はJITを呼ばない。JITとHybridは実生成コードを呼び、ゲスト結果が独立した期待値と一致する |
+| キャッシュ | 許可5行でcold・evictを検査する。追加4ケースではJIT／Hybridとwarm／flushを組み合わせ、COOS・SHM・grow・IPCの結果を照合する。Interpreter行のcache水準は適用外である |
+| メモリと保管場所 | local、global、RAM、SHMの更新結果を照合する。幅別store後の全ゲスト・物理メモリを比較する。growは旧ページ数、拡張領域末尾のstore/load、未書込み領域のゼロを確認する |
+| ホスト境界 | ゲストimportからWASI・IPC・HALを呼ぶ。引数、応答、全出力、VFSのbyteとcursor、HALの受信待ち状態を確認する。戻り値をゲストの最終結果にも含める |
+| バッファと実行制御 | 全HALスロットとunmap後の閲覧拒否を確認する。同期呼出しは呼出元を保持する。COOSはyield後に再開し、複数タスクはguest完了前に相手を進め、両結果と終了状態を保持する |
+| デバッガ | 独立した2ケースでレジスタ参照、breakpoint停止、同じ実行状態からの再開結果を照合する。主ワークロードとの同時結線の証拠にはしない |
 
-この実行範囲を全288組の動的検証や、全因子を同時に結線した構成の完全被覆として扱わない。
-実機の性能、物理ドライバ、未実装の製品経路の適合性は、この試験の合否から導かない。
+追加ケースを26行の計画被覆へ加算しない。
+本試験は全288組の動的被覆、実機性能、物理ドライバ、未実装経路の適合性を示さない。
 
 ## 4. シナリオ因子マトリクス
 
@@ -262,7 +258,7 @@
 | ソース | [check-src.ps1](tools/check-src.ps1) | [pysim](experiments/pysim)、各Python | pysim 規約、import Tier、テスト実行、本表ゲートが合格 |
 | 形式検証 | [check-src.ps1](tools/check-src.ps1) | コンポーネント配下の各形式モデル | `pyModelChecking` 実行、guards 変異検査、モデル件数一致 |
 | 単体テスト | [run_all.py](experiments/pysim/qa/run_all.py) | 30 suite | コンポーネント単位の試験を登録・実行する |
-| 結合テスト | [run_all.py](experiments/pysim/qa/integration/run_all.py) | 3 suites + 12 scenarios | HAL/IPC結合試験、ペアワイズ試験、LLDB/RSP実プロセス結合試験、システム結合シナリオを実行する。ペアワイズは7因子、26ケースで288組を比較し、許可12行の状態・副作用と禁止14行の事前拒否を検証する |
+| 結合テスト | [run_all.py](experiments/pysim/qa/integration/run_all.py) | 4 suites + 12 scenarios | HAL/IPC結合試験、ペアワイズ試験、Guest Profiler結合試験、LLDB/RSP実プロセス結合試験、システム結合シナリオを実行する。ペアワイズ計画の288水準対、許可12行、禁止14行を独立に検査する。追加4ケースはcache遷移を含む層横断動作、独立2ケースはデバッガの停止・再開を確認する。Profilerの4ケースは実ゲストの公開call境界と集計を結線し、trap後の再呼出しと容量超過時の非干渉を確認する |
 | WASMバイナリワークロード | [run_all.py](experiments/pysim/qa/workloads/run_all.py) | 3 suites | [`test_wasi_guest.py`](experiments/pysim/qa/workloads/test_wasi_guest.py)、[`test_driver_stubs_guest.py`](experiments/pysim/qa/workloads/test_driver_stubs_guest.py)、[`test_wasm_core_spec.py`](experiments/pysim/qa/workloads/test_wasm_core_spec.py) を実行する。WASI-SDK/wasi-libcから生成した2種のゲストと、固定したWebAssembly Core Spec Testsの選択セットを含む。準備・対象範囲・skip理由は各実行結果に記録する |
 | ベンチマーク | [benchmarks](experiments/pysim/benchmarks) | — | 性能・資源計測であり、機能適合テストの合格数には含めない |
 

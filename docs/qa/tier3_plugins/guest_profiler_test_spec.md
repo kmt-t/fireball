@@ -5,41 +5,44 @@
 正本: [`guest_profiler.md`](docs/components/tier3_plugins/guest_profiler.md)
 関連正本: [`runtime_observability.md`](docs/components/tier2_runtime/runtime_observability.md)
 
-本仕様は、Runtimeイベントバッチからコールグラフ、実行時間、欠落状態を集計するGuest Profilerを検証する。
-Runtimeの実行制御とDebuggerの停止・再開・ステップ処理は対象外とする。
+Runtimeイベントからの呼出辺、時間、欠落の集計と、実ゲストへの非干渉を検証する。
 
 ## 2. テストケース一覧
+<!-- traceability: {RuntimeEventSink} -->
 
-| テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 |
-| :--- | :--- | :--- | :--- | :--- |
-| TEST-PROF-01 | 関数コールグラフと包括時間 | 親関数・子関数の`function_enter`/`function_exit`が対応する | 入れ子のイベント列をバッチで渡す | 親子の呼出辺、呼出回数、包括時間が正しく集計される |
-| TEST-PROF-02 | 自己時間の計算 | 親関数の実行中に子関数イベントがある | 子関数の開始・終了tickを変えて集計する | 子の包括時間を親の子時間から一度だけ差し引き、自己時間を正しく計算する |
-| TEST-PROF-03 | Trap後の関数離脱 | 1個以上の関数フレームが開いている | `trap`の後、Runtime契約どおり内側から外側の`function_exit`を渡す | Trap受信時点でフレームを閉じず、各離脱イベントに対応するフレームを推定値として閉じる |
-| TEST-PROF-04 | バッチの累積欠落数 | 前回より大きい`dropped_count`を持つバッチがある | 通常イベントと欠落バッチを順に集計する | 欠落差分を欠落統計へ一度だけ加え、影響する時間統計に推定値を付ける |
-| TEST-PROF-05 | 固定表と呼出スタックの容量超過 | 関数表、辺表、または呼出スタックの容量が小さい | 容量を超える関数・辺・再帰を入力する | 欠落または超過を記録し、追跡中の親フレームを誤って閉じず、影響した統計を推定値にする |
-| TEST-PROF-06 | Debugger停止時の開いたフレーム | 1個以上の関数フレームが開いている | `debug_stop`を入力する | 開いているフレームを停止tickで推定値として閉じ、Runtime状態を変更しない |
-| TEST-PROF-07 | 実行方式フラグの取扱い | 同一関数がInterpreterとJITの両方から実行される | 両方式のイベント列を集計する | 実行方式フラグを統計属性として保持し、コールグラフへ別関数を追加しない |
+| テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| TEST-PROF-01 | 呼出辺と包括時間 | 親子の入退出が対応する | 入れ子のbatchを集計する | 辺、呼出回数、包括時間が一致する | 正本の時間意味論 |
+| TEST-PROF-02 | 自己時間 | 親子の実行区間がある | 子の開始・終了tickを変える | 親の包括時間から子時間を一度だけ差し引く | 正本の時間意味論 |
+| TEST-PROF-03 | Trap後の離脱 | 開いた親子フレーム | TRAP後、内側からexitを渡す | Trapだけで閉じず、対応exitで時間と推定値を確定する | 正本の終了処理 |
+| TEST-PROF-04 | 累積欠落 | 複数batch | 欠落数5→5→8を渡す | 差分5→0→3を加算し、影響区間を推定値にする | 正本の過負荷契約 |
+| TEST-PROF-05 | 容量超過 | 小さい関数表・辺表・スタック | 各容量を超える関数・再帰を入力する | 欠落を記録し、親フレームと時間を保持する。影響する統計は推定値にする | 正本の固定容量状態 |
+| TEST-PROF-06 | Debugger停止 | 開いた親子フレーム | DEBUG_STOPを渡す | 停止tickで推定値として閉じ、Runtime状態を変えない | 正本の終了処理 |
+| TEST-PROF-07 | 実行方式 | 同じ関数IDのInterpreter／JITイベント | 両方式を集計する | 同じ関数へ集計し、方式属性を保持する | 正本の時間意味論 |
+| TEST-PROF-08 | 実ゲストとの結合 | Interpreter／実JIT、固定時計 | 正常2回、別関数、trap、正常再呼出しを実行する | 各回の結果・状態と、関数別回数・時間・推定値が一致する。フレームを残さない | 公開call境界・非干渉 |
+| TEST-PROF-09 | 集計過負荷の隔離 | Profilerのスタック容量0 | 同じ実ゲスト履歴を観測有効／無効で実行する | 欠落を記録し、結果・trap・PC・スタック深さ・メモリ・globalを変えない | 正本の容量不足契約 |
 
-## 3. 判定条件
+## 3. テスト検証実績と網羅状況
 
-関数統計、呼出辺、包括時間、自己時間、欠落数、推定値フラグ、および開いたフレーム数を直接比較する。
-ProfilerがRuntimeのPC、スタック、メモリ、停止状態を変更した場合は不合格とする。
+集計単体は [`test_guest_profiler.py`](experiments/pysim/qa/tier3_plugins/profiler/test_guest_profiler.py) でTEST-PROF-01〜07を検査する。
+TEST-PROF-06は入力batchの不変性だけを検査し、Debuggerと実Runtimeの状態保存は示さない。
+TEST-PROF-07の方式属性保持は未実装であり、同じIDへの呼出2回と時間6の集計だけを検査する。
 
-## 4. 形式検証との対応
+結合は [`test_guest_profiler_runtime.py`](experiments/pysim/qa/integration/test_guest_profiler_runtime.py) でTEST-PROF-08/09を各方式で実行する。
+Loader、native Interpreter、RuntimeEngine、構成器、Sink、転送ABI、Adapter、実GuestProfilerを通す。
+QAアダプタはnative完了・trapを構成器の結果契約へ変換する。
+イベント生成・配送と集計を代替しない。
+時計入力を固定し、公開call境界の時間を独立した期待値で照合する。
+JIT構成は実生成コードの実行も確認する。
+全ゲストメモリとglobalを各callで照合する。
+call完了時のPC、値・local・呼出・制御スタックの深さ、結果を観測無効時とも比較する。
 
-`guest_profiler_model.py`で呼出対応、包括・自己時間、Trap離脱、欠落時の推定状態、および再帰スタック超過の性質を
-検証する。通常モデルで各性質が成立し、`guards=False`変異モデルで対応する違反遷移を反証する。
+形式検証は [`guest_profiler_model.py`](docs/components/tier3_plugins/formal/guest_profiler_model.py) を参照する。
+呼出対応、時間分類、trap離脱、欠落、再帰超過を通常モデルと`guards=False`変異モデルで検査する。
 
-## 5. 現行pysimとの対応
+## 4. 未検証・スコープ外
 
-| ケース | 実行入口 | 判定範囲 |
-| :--- | :--- | :--- |
-| TEST-PROF-01/02 | `test_call_graph_and_time_accounting` | 実RuntimeEventBatchから全呼出回数、辺、包括・自己時間、フレーム終了を照合する |
-| TEST-PROF-03 | `test_trap_waits_for_ordered_exits_as_estimated` | Trap直後は2フレームを保持する。内側のexitで親を閉じず、最終exitまで各時間を照合する |
-| TEST-PROF-04 | `test_cumulative_batch_loss_is_counted_once` | 累積欠落5→5→8の差分と、推定値付きの時間7を照合する |
-| TEST-PROF-05 | 容量超過3ケース | 関数表、辺表、再帰スタックを個別に超過させ、親フレームと時間を保存する |
-| TEST-PROF-06 | `test_debug_stop_closes_nested_frames_at_stop_tick` | 停止tickで親子を閉じ、自己時間と推定属性を照合する。入力batchの不変性を検査する |
-| TEST-PROF-07 | `test_interpreter_and_jit_events_share_one_function_identity` | 同じIDへ呼出2回と時間6を集計する部分を検査する。方式フラグを統計属性として保持する製品機構は未実装である |
-
-TEST-PROF-06のbatch不変性だけで実Runtime全状態の保存を証明しない。
-実Runtimeとの結合証拠と、TEST-PROF-07の方式属性は残る製品・統合検証項目である。
+- 結合試験のイベントは公開call境界に限る。WASM内部の親子呼出辺、host call、yield、Debugger停止の実結線は未検証である。
+- 固定時計のtickは実機の実行時間や性能を示さない。
+- 方式属性の保持、複数Runtime／moduleの識別子分離は未検証である。
+- Debuggerの停止・再開・ステップ制御は [`debugger_test_spec.md`](docs/qa/tier3_plugins/debugger_test_spec.md) を参照する。

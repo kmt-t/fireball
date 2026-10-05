@@ -244,7 +244,10 @@ def _check_runner_inventory(repo_root: Path, matrix: dict, inventory: dict[str, 
     )
     required_execution_fragments = (
         *required_fragments,
-        "assert tuple(executed_case_ids) == expected_case_ids",
+        '"case_number,case_tuple",',
+        "tuple(enumerate(PAIRWISE_CASES, start=1))",
+        "def test_pairwise_case(case_number: int, case_tuple: tuple[str, ...])",
+        "ids=tuple(pairwise_case_id(number) for number in range(1, len(PAIRWISE_CASES) + 1))",
     )
     for fragment in required_execution_fragments:
         if fragment not in pairwise_source:

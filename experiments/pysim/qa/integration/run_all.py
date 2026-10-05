@@ -17,6 +17,7 @@ from qa.run_all import assert_registered_test_modules
 
 INTEGRATION_SUITES = (
     INTEGRATION_DIR / "test_pairwise_combinations.py",
+    INTEGRATION_DIR / "test_guest_profiler_runtime.py",
     INTEGRATION_DIR / "test_driver_stubs.py",
     INTEGRATION_DIR / "test_lldb_debugger.py",
 )

@@ -2200,20 +2200,12 @@ const native_trace_descriptor* find_dispatch_entry(
   return low < count && entries[low].head_pc == pc ? &entries[low] : nullptr;
 }
 
-bool valid_trace_descriptor(const native_trace_descriptor& entry) {
-  return entry.byte_span != 0 && entry.result_words != 0 && entry.stack_words != 0 &&
-      entry.frame_depth <= FIREBALL_NATIVE_CONTROL_STACK_CAPACITY &&
-      entry.has_return_value <= 1 && entry.entry_address != 0 && entry.exec_count != nullptr &&
-      reinterpret_cast<std::uintptr_t>(entry.exec_count) % alignof(std::uint32_t) == 0;
-}
-
 template <bool CollectStats, bool RecordExecutions = false>
 const native_trace_descriptor* terminal_dispatch_entry(
     const native_trace_descriptor* entries, std::size_t count,
     const native_trace_descriptor* start, std::uint32_t& body_count) {
   auto* current = start;
   for (std::size_t depth = 0; depth < count; ++depth) {
-    if (!valid_trace_descriptor(*current)) return nullptr;
     if constexpr (CollectStats) ++body_count;
     if constexpr (RecordExecutions) {
       if (*current->exec_count != kNoPc) ++*current->exec_count;

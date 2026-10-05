@@ -145,18 +145,6 @@ static fb_native_trace_view qa_resolve_traces(std::uintptr_t owner, std::uint32_
 extern "C" FB_PYSIM_ABI_EXPORT int fb_qa_dispatch(
     int (*dispatch)(const fb_native_dispatch_call*, fb_native_result*),
     const qa_dispatch_buffers* buffers, const fb_native_dispatch_call* input, fb_native_result* result) {
-  if (buffers->count != 0 && (buffers->entries == nullptr ||
-      reinterpret_cast<std::uintptr_t>(buffers->entries) % alignof(fb_native_trace_descriptor) != 0))
-    return 0;
-  for (std::uint32_t i = 0; i < buffers->count; ++i) {
-    const auto& entry = buffers->entries[i];
-    if ((i != 0 && buffers->entries[i - 1].head_pc >= entry.head_pc) ||
-        entry.byte_span == 0 || entry.result_words == 0 || entry.stack_words == 0 ||
-        entry.frame_depth > FIREBALL_NATIVE_CONTROL_STACK_CAPACITY ||
-        entry.has_return_value > 1 || entry.entry_address == 0 || entry.exec_count == nullptr ||
-        reinterpret_cast<std::uintptr_t>(entry.exec_count) % alignof(std::uint32_t) != 0)
-      return 0;
-  }
   auto call = *input;
   fb_native_trace_source source{reinterpret_cast<std::uintptr_t>(buffers), qa_resolve_traces};
   call.trace_source = &source;

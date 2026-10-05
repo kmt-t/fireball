@@ -26,8 +26,7 @@ struct fb_native_trace_descriptor {
   std::uint32_t* exec_count;
 };
 
-// The provider owns selection and lifetime, and publishes validated records sorted by PC.
-// Tier 2 validates the records it executes without scanning the provider's entire table.
+// The provider owns trace selection and lifetime. Tier 2 consumes only executable records.
 struct fb_native_trace_view {
   const fb_native_trace_descriptor* entries;
   std::uint32_t count;

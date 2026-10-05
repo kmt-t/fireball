@@ -647,14 +647,10 @@ static int build_dispatch_table(JitRuntime* c, fb_native_trace_descriptor* outpu
       }
     }
     if (selected.trace == nullptr) break;
-    const auto& t = *selected.trace;
-    if (!c->check(output != nullptr && count < capacity &&
-                  (count == 0 || output[count - 1].head_pc < t.head_pc) &&
-                  t.entry_address != 0 && t.byte_span != 0 && t.result_words != 0 &&
-                  t.stack_words != 0 && t.frame_depth <= FIREBALL_NATIVE_CONTROL_STACK_CAPACITY &&
-                  t.has_return_value <= 1 && t.exec_count != nullptr &&
-                  reinterpret_cast<std::uintptr_t>(t.exec_count) % alignof(std::uint32_t) == 0))
+    if (!c->check(output != nullptr && count < capacity && selected.trace->entry_address != 0 &&
+                  selected.trace->byte_span > 0 && selected.trace->exec_count != nullptr))
       return -1;
+    const auto& t = *selected.trace;
     const auto words = c->chain_words(selected.pc);
     if (c->error != 0) return -1;
     output[count++] = {

@@ -5,7 +5,6 @@
     "experiments/pysim/tier1_core/printk.py",
     "experiments/pysim/tier2_runtime/observability/logging_interface.py",
     "experiments/pysim/tier1_interface/memory_interface.py",
-    "experiments/pysim/tier2_runtime/abi/jit_abi.py",
     "experiments/pysim/tier2_runtime/wasm/opcodes.py"
   ],
   "exclude": [

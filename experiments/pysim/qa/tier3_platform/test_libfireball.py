@@ -289,6 +289,7 @@ def test_wit_generated_static_guest_raw_four_imports(compiled_raw_guest: Path, r
             module,
             memory=host.guest_memory,
             host_functions=host.build_interpreter_host_functions(module),
+            bump_allocator=system.runtime_engine.bump_allocator,
         )
         task_id = system.scheduler.spawn(
             "compiled_guest",

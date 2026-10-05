@@ -18,13 +18,11 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from enum import IntEnum
-from typing import TYPE_CHECKING, Protocol
+from typing import Protocol
 
+from memory_interface import PageMappingCallbacks
 from scheduler import Scheduler
 from system_containers import MutableFlatMapStorage, StaticVector
-
-if TYPE_CHECKING:
-    from tier2_runtime.memory.manager import MemoryManager
 
 # docs/components/tier1_core/system_config.md {META_FlatMapIndexed}: max PTE
 # count the FlatMap page table can hold.
@@ -340,9 +338,8 @@ class VMMIOController:
             self.ptes.remove(vpn)
         self.flush_tlb_entry(vpn)
 
-    def register_to_memory_manager(self, memory_manager: MemoryManager) -> None:
-        """Registers vMMIO FC=14 SHM page table listeners into MemoryManager."""
-        from memory_interface import PageMappingCallbacks
+    def page_mapping_callbacks(self, storage: bytearray) -> PageMappingCallbacks:
+        """Build immutable page-event callbacks borrowing the supplied physical storage."""
         from tier2_runtime.memory.manager import FB_CONF_SHM_SIM_BASE
 
         def _to_vpn(page_idx: int) -> int:
@@ -358,20 +355,16 @@ class VMMIOController:
             pte = self.ptes.view().find(vpn)
             assert pte is not None
             offset = physical_addr - FB_CONF_SHM_SIM_BASE
-            assert 0 <= offset and mapping_size <= len(memory_manager.shm_storage) - offset
+            assert 0 <= offset and mapping_size <= len(storage) - offset
             # Borrow the allocator's physical SHM store; do not create a second backing.
-            pte.mapped_storage = memoryview(memory_manager.shm_storage)[
-                offset : offset + mapping_size
-            ]
+            pte.mapped_storage = memoryview(storage)[offset : offset + mapping_size]
 
-        memory_manager.register_page_mapping_callbacks(
-            PageMappingCallbacks(
-                on_map_page=_map_shared_page,
-                on_owner_changed=lambda page_idx, _addr, _previous_owner_id, _new_owner_id: (
-                    self.unmap_shm_page(_to_vpn(page_idx))
-                ),
-                on_unmap_page=lambda page_idx, _addr: self.unmap_shm_page(_to_vpn(page_idx)),
-            )
+        return PageMappingCallbacks(
+            on_map_page=_map_shared_page,
+            on_owner_changed=lambda page_idx, _addr, _previous_owner_id, _new_owner_id: (
+                self.unmap_shm_page(_to_vpn(page_idx))
+            ),
+            on_unmap_page=lambda page_idx, _addr: self.unmap_shm_page(_to_vpn(page_idx)),
         )
 
     def flush_tlb(self) -> None:

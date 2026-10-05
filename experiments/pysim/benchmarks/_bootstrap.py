@@ -2,8 +2,16 @@
 
 from __future__ import annotations
 
+import mmap
 import sys
 from pathlib import Path
+
+
+def reserve_native_region(size: int, alignment: int) -> memoryview:
+    """Provide host storage without exposing the plugin's private layout."""
+    assert size > 0 and alignment > 0
+    assert mmap.ALLOCATIONGRANULARITY % alignment == 0
+    return memoryview(mmap.mmap(-1, size))
 
 
 def configure_import_paths(pysim_dir: Path, benchmark_dir: Path) -> None:

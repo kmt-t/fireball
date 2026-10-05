@@ -2,6 +2,7 @@ from __future__ import annotations
 
 """Tests for the native C++ CPS handler entry point."""
 
+import ctypes
 from pathlib import Path
 
 import pytest
@@ -16,22 +17,56 @@ from tier2_runtime.abi.native_stack_abi import NativeControlStack
 from tier2_runtime.interpreter.interpreter import TrapCode
 
 
+def _run_step(
+    code: memoryview,
+    context: ExecutionContextABI,
+    stack: NativeValueStack,
+    locals_stack: NativeValueStack,
+    control_stack: NativeControlStack,
+    stack_size: int,
+    stack_capacity: int,
+    ip: int,
+) -> tuple[int, int, int, int]:
+    lease = native_abi.BufferLease(code)
+    try:
+        return native_abi.run_step(
+            native_abi.RUN_STEP,
+            lease.address,
+            lease.size,
+            ctypes.addressof(context),
+            ctypes.sizeof(context),
+            stack.address,
+            stack.native_bytes,
+            locals_stack.address,
+            locals_stack.native_bytes,
+            control_stack.address,
+            control_stack.native_bytes,
+            stack_size,
+            stack_capacity,
+            ip,
+            0,
+            0,
+            call=native_abi.NativeStepCall(),
+            result=native_abi.NativeResult(),
+        )
+    finally:
+        lease.release()
+
+
 def test_native_cps_entry_uses_four_logical_arguments() -> None:
     stack = NativeValueStack()
     locals_stack = NativeValueStack()
     control_stack = NativeControlStack()
     context = ExecutionContextABI()
     code = memoryview(bytearray((0x41, 3, 0x41, 4, 0x6A, 0x0B)))
-    status, next_ip, stack_size, trap_code = native_abi.run_step(
+    status, next_ip, stack_size, trap_code = _run_step(
         code,
-        memoryview(context),
-        stack.raw_view,
-        locals_stack.raw_view,
-        control_stack.raw_view,
+        context,
+        stack,
+        locals_stack,
+        control_stack,
         0,
         stack.capacity,
-        0,
-        0,
         0,
     )
     assert (status, next_ip, stack_size, trap_code) == (1, 0xFFFF_FFFF, 1, 0)
@@ -56,17 +91,15 @@ def _run_guarded_const(
     for index in range(stack.capacity):
         stack.write_raw_at(index, 0xA5A50000 + index)
     before = tuple(stack.raw_at(index) for index in range(stack.capacity))
-    outcome = native_abi.run_step(
-        code,
-        memoryview(context),
-        stack.raw_view,
-        locals_stack.raw_view,
-        control_stack.raw_view,
+    outcome = _run_step(
+        memoryview(code),
+        context,
+        stack,
+        locals_stack,
+        control_stack,
         stack_size,
         stack_capacity,
         1,
-        0,
-        0,
     )
     after = tuple(stack.raw_at(index) for index in range(stack.capacity))
     return outcome, context, before, after

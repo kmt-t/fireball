@@ -33,7 +33,9 @@ from tier2_runtime.vmmio.controller import (
 )
 
 
-def _make_memory_manager(*task_ids: int) -> tuple[MemoryManager, Scheduler]:
+def _make_memory_manager(
+    *task_ids: int, page_mapping_factory=None
+) -> tuple[MemoryManager, Scheduler]:
     """Create a manager whose scheduler owns all test task identities."""
     ids = task_ids or (1,)
     scheduler = Scheduler()
@@ -41,7 +43,7 @@ def _make_memory_manager(*task_ids: int) -> tuple[MemoryManager, Scheduler]:
         scheduler.spawn(f"test_task_{task_id}", task_id=task_id)
     scheduler.current_task = scheduler.get_task(ids[0])
     assert scheduler.current_task is not None
-    return MemoryManager(scheduler), scheduler
+    return MemoryManager(scheduler, page_mapping_factory), scheduler
 
 
 def test_mem_01_acquire_task_heap_fixed_size():
@@ -217,7 +219,10 @@ def test_mem_10d_owner_notifications_match_each_lifecycle_boundary():
     def on_unmap(page_idx: int, address: int) -> None:
         unmapped.append((page_idx, address))
 
-    manager.register_page_mapping_callbacks(PageMappingCallbacks(on_map, on_changed, on_unmap))
+    manager = MemoryManager(
+        scheduler, lambda _storage: PageMappingCallbacks(on_map, on_changed, on_unmap)
+    )
+    assert manager.init_manager(0x00010000, FB_CONF_MEMORY_POOL_SIZE).is_ok
     block = manager.allocate_shared(size=64).unwrap()
     block.write_bytes(0, memoryview(bytes(range(64))))
     page_idx, address = block.page_idx, block.get_address()
@@ -397,7 +402,7 @@ def test_mem_10c_rollback_transfer_restores_owner_id():
     """TEST-MEM-10c: rollback_transfer() restores PTE owner_id to the original sender."""
     mm, scheduler = _make_memory_manager(1, 2)
     vmmio = VMMIOController(guest_ram_size=8192, scheduler=scheduler)
-    vmmio.register_to_memory_manager(mm)
+    mm = MemoryManager(scheduler, vmmio.page_mapping_callbacks)
     mm.init_manager(pool_base=0x00010000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
     sb = mm.allocate_shared(size=1024).unwrap()
     raw_addr = 0xE000_0000 + (sb.page_idx * 4096)
@@ -451,7 +456,7 @@ def test_mem_15_vmmio_fc14_tlb_sync():
 
     mm, sched = _make_memory_manager(1, 2)
     vmmio = VMMIOController(guest_ram_size=8192, scheduler=sched)
-    vmmio.register_to_memory_manager(mm)
+    mm = MemoryManager(sched, vmmio.page_mapping_callbacks)
     mm.init_manager(pool_base=0x00010000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
 
     sb = mm.allocate_shared(size=512).unwrap()
@@ -499,7 +504,7 @@ def test_mem_16_virtual_page_reservation_is_independent_of_shm_backing():
 
     mm, scheduler = _make_memory_manager(1)
     vmmio = VMMIOController(guest_ram_size=8192, scheduler=scheduler)
-    vmmio.register_to_memory_manager(mm)
+    mm = MemoryManager(scheduler, vmmio.page_mapping_callbacks)
     mm.init_manager(pool_base=0x00010000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
 
     first = mm.allocate_shared(300).unwrap()

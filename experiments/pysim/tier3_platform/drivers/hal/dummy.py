@@ -14,6 +14,7 @@ from tier2_runtime.hal.dispatch import (
     ARG_NANOS_HI,
     ARG_OFFSET,
     ARG_POLLABLE_HANDLE,
+    HalBufferPool,
     HalDriver,
     WasiIpcCmd,
 )
@@ -90,10 +91,11 @@ class DummyDriver(HalDriver):
 
     def __init__(
         self,
+        pool: HalBufferPool,
         transport: StreamTransport | None = None,
         stream_enabled: bool = True,
     ):
-        super().__init__()
+        super().__init__(pool)
         self.transport = transport or StreamTransport()
         self.start_time_ns = time.monotonic_ns()
         self.tick_count = 0

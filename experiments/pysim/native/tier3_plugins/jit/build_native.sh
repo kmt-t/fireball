@@ -31,8 +31,15 @@ read -r chain_dispatch_offset chain_dispatch_bytes common_epilogue_offset header
 
 common_config=$(PYTHONPATH="${project_root}/experiments/pysim/tier1_core" \
     uv run --offline --no-sync --python "${uv_python}" python -c \
-    'import config; names=("JIT_CACHE_REGION_BYTES", "JIT_CACHE_COMMON_CODE_BYTES", "JIT_CACHE_ABSOLUTE_ADDRESS_POOL_BYTES", "JIT_TRACE_COMMON_PROLOGUE_OFFSET", "JIT_TRACE_COMMON_HELPER_OFFSET", "JIT_TRACE_HELPER_ENTRY_BYTES", "JIT_TRACE_TYPED_I32_HELPER_COUNT", "JIT_TRACE_TYPED_I32_HELPER_OFFSET", "JIT_TRACE_WIDE_HELPER_COUNT", "JIT_TRACE_WIDE_HELPER_OFFSET", "JIT_X64_HELPER_TARGET_OFFSET", "JIT_X64_TRACE_ENTRY_STUB_BYTES", "JIT_HISTORY_CAPACITY", "JIT_COMPILE_QUEUE_CAPACITY"); print(" ".join("-DFB_CONF_"+name+"="+str(getattr(config,name)) for name in names))')
+    'import config; names=("JIT_CACHE_REGION_BYTES", "JIT_CACHE_COMMON_CODE_BYTES", "JIT_CACHE_ABSOLUTE_ADDRESS_POOL_BYTES", "JIT_TRACE_COMMON_PROLOGUE_OFFSET", "JIT_TRACE_COMMON_HELPER_OFFSET", "JIT_TRACE_HELPER_ENTRY_BYTES", "JIT_TRACE_TYPED_I32_HELPER_COUNT", "JIT_TRACE_TYPED_I32_HELPER_OFFSET", "JIT_TRACE_WIDE_HELPER_COUNT", "JIT_TRACE_WIDE_HELPER_OFFSET", "JIT_X64_HELPER_TARGET_OFFSET", "JIT_X64_TRACE_ENTRY_STUB_BYTES", "JIT_HISTORY_CAPACITY", "JIT_COMPILE_QUEUE_CAPACITY", "JIT_CARD_SHIFT", "JIT_CACHE_BANK_CAPACITY_BYTES", "JIT_CACHE_ACTIVE_OFFSET_BYTES", "JIT_CACHE_WARM_OFFSET_BYTES", "JIT_CACHE_OLDEST_OFFSET_BYTES", "FB_CONF_JIT_AGING_STEP_UNITS", "FB_CONF_JIT_AGING_STEP_SCAN_BYTES"); print(" ".join("-D"+(name if name.startswith("FB_CONF_") else "FB_CONF_"+name)+"="+str(getattr(config,name)) for name in names))')
 read -r -a common_definitions <<< "${common_config}"
+
+if [[ "${1:-}" == "--qa" ]]; then
+    common_definitions+=("-DFB_PYSIM_QA")
+    RUNTIME_SOURCE_CPP="${project_root}/experiments/pysim/qa/private/native_jit_probe.cxx"
+    GENERATED_SO="${NATIVE_BUILD_DIR}/libjit_probe.so"
+    python_package_dir="${project_root}/experiments/pysim/qa/private"
+fi
 
 echo ">>> Compiling Tier 3 JIT (clang++)"
 clang++ -std=c++23 -O2 -g -Wall -Wextra -Wpedantic -shared -fPIC -fvisibility=hidden \
@@ -47,5 +54,5 @@ clang++ -std=c++23 -O2 -g -Wall -Wextra -Wpedantic -shared -fPIC -fvisibility=hi
     "${common_definitions[@]}" -fno-exceptions -fno-rtti \
     "${SOURCE_CPP}" "${COMMON_SOURCE_CPP}" "${MEMORY_SOURCE_CPP}" \
     "${RUNTIME_SOURCE_CPP}" "${native_source_dir}/profiling.cxx" -o "${GENERATED_SO}"
-cp "${GENERATED_SO}" "${python_package_dir}/libtrace_compiler.so"
+cp "${GENERATED_SO}" "${python_package_dir}/$(basename "${GENERATED_SO}")"
 echo "Built Tier 3 JIT libtrace_compiler.so"

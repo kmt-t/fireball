@@ -56,6 +56,7 @@ from tier2_runtime.abi.interpreter_abi import (
     EXECUTION_CONTEXT_FLAG_PENDING_BLOCK_HEAD,
     EXECUTION_CONTEXT_FLAG_STOP_AT_BLOCK_BOUNDARY,
     NATIVE_VALUE_STACK_CAPACITY,
+    BlockExecutionViewNative,
     CallFrameNative,
     ControlMapEntryNative,
     ExecutionContextABI,
@@ -65,11 +66,6 @@ from tier2_runtime.abi.interpreter_abi import (
     NativeGlobalStorage,
     NativeValueStack,
     TableExecutionViewNative,
-)
-from tier2_runtime.abi.jit_abi import (
-    EMPTY_NATIVE_DISPATCH_SNAPSHOT,
-    NativeBlockVisitHistory,
-    NativeDispatchSnapshot,
 )
 from tier2_runtime.abi.native_stack_abi import (
     ControlFrameKind,
@@ -295,17 +291,8 @@ from tier2_runtime.wasm.opcodes import (
 NATIVE_RUNTIME_PROFILE_STATS_AVAILABLE = bool(_native_abi.RUNTIME_PROFILE_STATS_AVAILABLE)
 NATIVE_JIT_HOTSPOT_PROFILING_AVAILABLE = bool(_native_abi.JIT_HOTSPOT_PROFILING_AVAILABLE)
 
-NativeDispatchMetrics = tuple[
-    int,
-    int,
-    int,
-    int,
-    int,
-    int,
-    int,
-    NativeBlockVisitHistory,
-]
-NativeDispatchEntryPoint = Callable[..., _native_abi.NativeDispatchResult]
+NativeDispatchMetrics = tuple[int, int, int, int, int, int]
+NativeDispatchEntryPoint = _native_abi.NativeDispatchEntryPoint
 
 
 def select_native_dispatch_entry(
@@ -315,11 +302,11 @@ def select_native_dispatch_entry(
 
     if collect_stats:
         if collect_hotspots:
-            return _native_abi.run_native_dispatch_stats_hotspots
-        return _native_abi.run_native_dispatch_stats
+            return _native_abi.RUN_DISPATCH_STATS_HOTSPOTS
+        return _native_abi.RUN_DISPATCH_STATS
     if collect_hotspots:
-        return _native_abi.run_native_dispatch_hotspots
-    return _native_abi.run_native_dispatch
+        return _native_abi.RUN_DISPATCH_HOTSPOTS
+    return _native_abi.RUN_DISPATCH
 
 
 I32_MASK = 0xFFFFFFFF
@@ -332,7 +319,6 @@ RETURN_SENTINEL_PC = 0xFFFF_FFFF
 NATIVE_DISPATCH_YIELD = 5
 NATIVE_DISPATCH_DEBUG_STOP = 7
 NATIVE_DISPATCH_CALL_BOUNDARY = 6
-NATIVE_DISPATCH_OLDEST_TRACE = 4
 
 
 def _to_i32(v: int) -> int:
@@ -809,18 +795,6 @@ class ExecutionContext(ExecutionContextABI):
     def arena_size(self) -> int:
         return self._arena_size
 
-    def bind_allocator(self, allocator: BumpAllocator) -> None:
-        """Move the active workspace accounting to the owning runtime arena."""
-
-        if self._allocator is allocator and not self._workspace_released:
-            return
-        if self._allocator is not None and not self._workspace_released:
-            assert self._arena_offset is not None
-            self._allocator.release(self._arena_offset, self._arena_size, alignment=8)
-        self._allocator = allocator
-        self._arena_offset = allocator.acquire(self._arena_size, alignment=8)
-        self._workspace_released = False
-
     def release_workspace(self) -> None:
         """Return the bounded native stacks for reuse after a call completes."""
 
@@ -1248,8 +1222,7 @@ class NativeModuleExecution:
     """Own immutable module descriptors and borrow stable table buffers for C++."""
 
     __slots__ = (
-        "_allocator",
-        "_arena_layout",
+        "_block_views",
         "_function_types",
         "_function_views",
         "_function_views_address",
@@ -1272,8 +1245,6 @@ class NativeModuleExecution:
         tables: Sequence[FunctionTable],
         allocator: BumpAllocator | None = None,
     ):
-        self._allocator: BumpAllocator | None = None
-        self._arena_layout: tuple[tuple[int, int], ...] = ()
         self.module = module
         self.tables = tables
         self.globals = env.globals
@@ -1382,6 +1353,16 @@ class NativeModuleExecution:
             descriptor = self._table_views[table_index]
             descriptor.function_indices = table.native_address
             descriptor.size = len(table)
+        self._block_views = (BlockExecutionViewNative * len(module.blocks))()
+        for index, block in enumerate(module.blocks):
+            self._block_views[index] = BlockExecutionViewNative(
+                block.head_pc,
+                block.func_index,
+                0xFFFFFFFF if block.next_pc is None else block.next_pc,
+                0xFFFFFFFF if block.loops_to is None else block.loops_to,
+                block.frame_depth,
+                block.byte_span,
+            )
         self._module_view = ModuleExecutionViewNative(
             functions=self._function_views_address,
             function_count=function_count,
@@ -1394,6 +1375,8 @@ class NativeModuleExecution:
             globals=self.globals.native_address,
             global_widths=(0 if global_count == 0 else ctypes.addressof(self._global_widths)),
             global_count=global_count,
+            blocks=ctypes.addressof(self._block_views) if len(module.blocks) else 0,
+            block_count=len(module.blocks),
         )
         module_view_address = ctypes.addressof(self._module_view)
         for function_index in range(function_count):
@@ -1401,7 +1384,7 @@ class NativeModuleExecution:
         signature_buffer_size = (
             0 if self._signature_bytes is None else ctypes.sizeof(self._signature_bytes)
         )
-        self._arena_layout = (
+        arena_layout = (
             (
                 ctypes.sizeof(self._function_views),
                 ctypes.alignment(FunctionExecutionViewNative),
@@ -1413,19 +1396,12 @@ class NativeModuleExecution:
             (signature_buffer_size, ctypes.alignment(ctypes.c_uint8)),
             (ctypes.sizeof(self._global_widths), ctypes.alignment(ctypes.c_uint8)),
             (ctypes.sizeof(self._table_views), ctypes.alignment(TableExecutionViewNative)),
+            (ctypes.sizeof(self._block_views), ctypes.alignment(BlockExecutionViewNative)),
             (ctypes.sizeof(self._module_view), ctypes.alignment(ModuleExecutionViewNative)),
         )
         if allocator is not None:
-            self.bind_allocator(allocator)
-
-    def bind_allocator(self, allocator: BumpAllocator) -> None:
-        """Record all C-compatible module descriptors in the runtime arena."""
-
-        if self._allocator is allocator:
-            return
-        for size, alignment in self._arena_layout:
-            allocator.allocate(size, alignment)
-        self._allocator = allocator
+            for size, alignment in arena_layout:
+                allocator.allocate(size, alignment)
 
     def template(self, func_index: int) -> CallFrame:
         local_index = func_index - len(self.module.imports)
@@ -1614,12 +1590,14 @@ class Interpreter:
         logger: LoggerPort | None = None,
         *,
         bump_allocator: BumpAllocator | None = None,
+        native_dispatcher: NativeDispatchEntryPoint = _native_abi.RUN_DISPATCH,
     ):
-        self._native_dispatcher = _native_abi.run_native_dispatch
+        self._native_dispatcher = native_dispatcher
         self.module = module
         self.bump_allocator = (
             bump_allocator if bump_allocator is not None else module.allocator
         ) or BumpAllocator()
+        self.module.relocate_to(self.bump_allocator)
         self.logger = logger
         self.memory = bindings.memory
         if module.memory_import is not None:
@@ -1790,17 +1768,6 @@ class Interpreter:
         """Create the one context object used by Python and native execution."""
         return ExecutionContext(self.module, allocator=self.bump_allocator)
 
-    def bind_allocator(self, allocator: BumpAllocator) -> None:
-        """Bind interpreter-owned native buffers to the runtime resource arena."""
-
-        if self.bump_allocator is allocator:
-            return
-        self.bump_allocator = allocator
-        self.module.bind_allocator(allocator)
-        self.globals.bind_allocator(allocator)
-        for table in self.tables:
-            table.bind_allocator(allocator)
-
     def _prepare_native_execution(self, context: ExecutionContext) -> None:
         """Allow the strict native interpreter to install call descriptors."""
         return None
@@ -1911,12 +1878,9 @@ class Interpreter:
                 _body_count,
                 _dispatcher_trace_transitions,
                 _control_handler_count,
-                _eligible_block_visits,
                 _interpreted_block_count,
-                _visits,
             ) = self.run_native_dispatch(
                 call_state,
-                EMPTY_NATIVE_DISPATCH_SNAPSHOT,
                 FB_CONF_RUNTIME_YIELD_THRESHOLD,
                 0,
                 native_dispatcher=self._native_dispatcher,
@@ -2069,26 +2033,25 @@ class Interpreter:
         assert execution is not None
         native_frame = frame.native
         with _native_linear_memory_scope(context, frame.env.memory):
-            native_status, native_ip, native_size, native_trap = (
-                _native_abi.run_control_step_addresses(
-                    int(native_frame.code or 0),
-                    int(native_frame.code_size),
-                    int(context.context_ptr.value or 0),
-                    context.context_view.nbytes,
-                    frame.values.address,
-                    frame.values.native_bytes,
-                    locals_arr._storage.address,
-                    locals_arr._storage.native_bytes,
-                    context.control_frame_stack.address,
-                    context.control_frame_stack.native_bytes,
-                    len(frame.values),
-                    frame.values.capacity,
-                    call_state._ip,
-                    frame.local_slot_count,
-                    frame.control_base,
-                    call=context._native_step_call,
-                    result=context._native_result,
-                )
+            native_status, native_ip, native_size, native_trap = _native_abi.run_step(
+                _native_abi.RUN_CONTROL_STEP,
+                int(native_frame.code or 0),
+                int(native_frame.code_size),
+                int(context.context_ptr.value or 0),
+                context.context_view.nbytes,
+                frame.values.address,
+                frame.values.native_bytes,
+                locals_arr._storage.address,
+                locals_arr._storage.native_bytes,
+                context.control_frame_stack.address,
+                context.control_frame_stack.native_bytes,
+                len(frame.values),
+                frame.values.capacity,
+                call_state._ip,
+                frame.local_slot_count,
+                frame.control_base,
+                call=context._native_step_call,
+                result=context._native_result,
             )
 
         frame.values.set_size(native_size)
@@ -2117,7 +2080,6 @@ class Interpreter:
     def run_native_dispatch(
         self,
         call_state: InterpreterCall,
-        snapshot: NativeDispatchSnapshot,
         yield_threshold: int,
         execution_count: int,
         native_dispatcher: NativeDispatchEntryPoint,
@@ -2133,85 +2095,40 @@ class Interpreter:
         assert execution is not None
         native_frame = frame.native
         with _native_linear_memory_scope(context, frame.env.memory):
-            native_entry = _native_abi.native_dispatch_entrypoint(native_dispatcher)
-            if native_entry is not None:
-                (
-                    native_status,
-                    native_ip,
-                    native_size,
-                    native_trap,
-                    trace_count,
-                    body_count,
-                    dispatcher_trace_transitions,
-                    control_handler_count,
-                    eligible_block_visits,
-                    interpreted_block_count,
-                    visits,
-                ) = _native_abi.run_native_dispatch_from_addresses(
-                    native_entry,
-                    int(native_frame.code or 0),
-                    int(native_frame.code_size),
-                    int(context.context_ptr.value or 0),
-                    context.context_view.nbytes,
-                    frame.values.address,
-                    frame.values.native_bytes,
-                    locals_arr._storage.address,
-                    locals_arr._storage.native_bytes,
-                    context.control_frame_stack.address,
-                    context.control_frame_stack.native_bytes,
-                    snapshot.entries,
-                    snapshot.trackable_mask,
-                    snapshot.block_history,
-                    snapshot.entry_count,
-                    snapshot.trackable_card_count,
-                    snapshot.trackable_shift,
-                    len(frame.values),
-                    frame.values.capacity,
-                    call_state._ip,
-                    frame.frame_offset,
-                    frame.local_slot_count,
-                    frame.control_base,
-                    call_state.func_index,
-                    yield_threshold,
-                    execution_count,
-                    call=context._native_dispatch_call,
-                    result=context._native_result,
-                )
-            else:
-                (
-                    native_status,
-                    native_ip,
-                    native_size,
-                    native_trap,
-                    trace_count,
-                    body_count,
-                    dispatcher_trace_transitions,
-                    control_handler_count,
-                    eligible_block_visits,
-                    interpreted_block_count,
-                    visits,
-                ) = native_dispatcher(
-                    frame.code,
-                    context.context_view,
-                    frame.values.raw_view,
-                    locals_arr._storage.raw_view,
-                    context.control_frame_stack.raw_view,
-                    snapshot.entries,
-                    snapshot.trackable_mask,
-                    snapshot.block_history,
-                    snapshot.entry_count,
-                    snapshot.trackable_card_count,
-                    snapshot.trackable_shift,
-                    len(frame.values),
-                    frame.values.capacity,
-                    call_state._ip,
-                    frame.frame_offset,
-                    frame.local_slot_count,
-                    frame.control_base,
-                    call_state.func_index,
-                    yield_threshold,
-                    execution_count,
-                )
+            (
+                native_status,
+                native_ip,
+                native_size,
+                native_trap,
+                trace_count,
+                body_count,
+                dispatcher_trace_transitions,
+                control_handler_count,
+                interpreted_block_count,
+            ) = _native_abi.run_native_dispatch(
+                native_dispatcher,
+                int(native_frame.code or 0),
+                int(native_frame.code_size),
+                int(context.context_ptr.value or 0),
+                context.context_view.nbytes,
+                frame.values.address,
+                frame.values.native_bytes,
+                locals_arr._storage.address,
+                locals_arr._storage.native_bytes,
+                context.control_frame_stack.address,
+                context.control_frame_stack.native_bytes,
+                len(frame.values),
+                frame.values.capacity,
+                call_state._ip,
+                frame.frame_offset,
+                frame.local_slot_count,
+                frame.control_base,
+                call_state.func_index,
+                yield_threshold,
+                execution_count,
+                call=context._native_dispatch_call,
+                result=context._native_result,
+            )
         frame.values.set_size(native_size)
         context.ip = native_ip
         context.call_frame_stack.sync_from_native(context, self._env)
@@ -2230,9 +2147,7 @@ class Interpreter:
             body_count,
             dispatcher_trace_transitions,
             control_handler_count,
-            eligible_block_visits,
             interpreted_block_count,
-            visits,
         )
 
     def _try_native_step_to_boundary(self, call_state: InterpreterCall) -> bool:
@@ -2256,7 +2171,8 @@ class Interpreter:
         context.runtime_flags = previous_flags | EXECUTION_CONTEXT_FLAG_STOP_AT_BLOCK_BOUNDARY
         try:
             with _native_linear_memory_scope(context, frame.env.memory):
-                native_status, native_ip, native_size, native_trap = _native_abi.run_step_addresses(
+                native_status, native_ip, native_size, native_trap = _native_abi.run_step(
+                    _native_abi.RUN_STEP,
                     int(native_frame.code or 0),
                     int(native_frame.code_size),
                     int(context.context_ptr.value or 0),
@@ -2520,15 +2436,18 @@ class NativeInterpreter(Interpreter):
         logger: LoggerPort | None = None,
         *,
         bump_allocator: BumpAllocator | None = None,
+        native_dispatcher: NativeDispatchEntryPoint = _native_abi.RUN_DISPATCH,
     ):
         self._module_execution: NativeModuleExecution | None = None
-        super().__init__(module, bindings, vmmio, phys_mem, logger, bump_allocator=bump_allocator)
-
-    def bind_allocator(self, allocator: BumpAllocator) -> None:
-        previous_allocator = self.bump_allocator
-        super().bind_allocator(allocator)
-        if self._module_execution is not None and previous_allocator is not allocator:
-            self._module_execution.bind_allocator(allocator)
+        super().__init__(
+            module,
+            bindings,
+            vmmio,
+            phys_mem,
+            logger,
+            bump_allocator=bump_allocator,
+            native_dispatcher=native_dispatcher,
+        )
 
     def _prepare_native_execution(self, context: ExecutionContext) -> None:
         if self._module_execution is None:

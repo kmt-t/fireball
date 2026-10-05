@@ -4,8 +4,8 @@ The Runtime owns execution dispatch and continuation handling. An optional
 Tier 3 JIT extension owns hotspot and cache state behind the bounded contract.
 Execution model:
   Interpreter execution advances to a native dispatch boundary and preserves
-  the shared execution context. An optional JIT extension supplies a bounded
-  trace snapshot and receives candidate history at those boundaries.
+  the shared execution context. An optional extension drives that dispatch
+  through the same execution boundary contract.
   JIT cache policy and compilation remain inside that extension.
 """
 
@@ -24,7 +24,6 @@ from config import (
     RUNTIME_DEBUG_REPORT_LINE_CAPACITY,
 )
 from system_containers import StaticVector
-from tier2_runtime.abi.jit_abi import EMPTY_NATIVE_DISPATCH_SNAPSHOT
 from tier2_runtime.interpreter.interpreter import (
     NATIVE_DISPATCH_YIELD,
     RETURN_SENTINEL_IP,
@@ -77,7 +76,6 @@ class RuntimeEngine:
         "_collect_runtime_stats",
         "_jit_dispatcher",
         "_native_dispatcher",
-        "_owns_bump_allocator",
         "_virq",
         "_virq_interp",
         "debug",
@@ -103,17 +101,15 @@ class RuntimeEngine:
     ):
         debug_env = os.environ.get("FIREBALL_DEBUG", "").lower()
         self.debug = debug or debug_env == "1" or debug_env == "true" or debug_env == "yes"
-        collect_hotspots = jit_runtime is not None and jit_runtime.hotspot_profiling_enabled
         self._collect_runtime_stats = collect_runtime_stats
         self._native_dispatcher = select_native_dispatch_entry(collect_runtime_stats, False)
         self._jit_dispatcher = (
-            select_native_dispatch_entry(collect_runtime_stats, collect_hotspots)
+            select_native_dispatch_entry(collect_runtime_stats, True)
             if jit_runtime is not None
             else self._native_dispatcher
         )
         # RuntimeEngine is the runtime owner; loaders borrow this arena.
         self._bump_allocator = bump_allocator if bump_allocator is not None else BumpAllocator()
-        self._owns_bump_allocator = bump_allocator is None
         self.jit_runtime = jit_runtime
         self.stat_interp_steps: int = 0
         self.stat_jit_invocations: int = 0
@@ -160,13 +156,7 @@ class RuntimeEngine:
 
     def register_module_blocks(self, module: Module) -> None:
         """Binds the loader-owned immutable block index."""
-        if (
-            self._owns_bump_allocator
-            and self._bump_allocator.offset == 0
-            and module.allocator is not None
-        ):
-            self._bump_allocator = module.allocator
-        module.bind_allocator(self._bump_allocator)
+        module.relocate_to(self._bump_allocator)
         if module.block_storage is None:
             module.build_basic_block_index(self._bump_allocator)
         self.module = module
@@ -224,10 +214,6 @@ class RuntimeEngine:
         """Notify the optional Tier 3 extension of the Runtime yield boundary."""
         if self.jit_runtime is not None:
             self.jit_runtime.on_yield()
-
-    def age_step(self) -> int:
-        """Delegate one cache-rotation aging step to Tier 3."""
-        return self.jit_runtime.age_step() if self.jit_runtime is not None else 0
 
     def idle_hook(self, budget: int = 4) -> int:
         """
@@ -295,7 +281,7 @@ class RuntimeEngine:
         idle_budget: int = 4,
     ) -> RuntimeBoundaryResult:
         """Run native dispatch to a yield, fallback, trap, or completion boundary."""
-        self._bind_interpreter(interp, call_state)
+        self._activate_interpreter(interp)
         return self._run_bound(interp, call_state, idle_budget)
 
     def _run_bound(
@@ -332,14 +318,14 @@ class RuntimeEngine:
         assert self.drive_mode == RuntimeDriveMode.SYNCHRONOUS, (
             "COOS runtime calls must be advanced by System at each trace boundary"
         )
-        self._bind_interpreter(interp)
+        self._activate_interpreter(interp)
         return self.complete_call(interp, interp.start(func_index, args), idle_budget)
 
     def complete_call(
         self, interp: NativeInterpreter, call_state: InterpreterCall, idle_budget: int = 4
     ) -> StaticVector[WasmNumber]:
         """Finish a call by repeatedly using the same native-dispatch ``run`` path."""
-        self._bind_interpreter(interp, call_state)
+        self._activate_interpreter(interp)
         if self.drive_mode == RuntimeDriveMode.COOS:
             assert call_state.finished, (
                 "COOS runtime calls must be advanced by System at each trace boundary"
@@ -347,7 +333,7 @@ class RuntimeEngine:
         while not call_state.finished:
             call_state = self._run_bound(interp, call_state, idle_budget).call_state
 
-        if self.jit_runtime is not None and self.jit_runtime.has_pending_compilation():
+        if self.jit_runtime is not None:
             self.idle_hook(budget=idle_budget)
         if self.debug:
             self.dump_internal_state()
@@ -356,19 +342,11 @@ class RuntimeEngine:
         assert call_state.results is not None
         return call_state.results
 
-    def _bind_interpreter(
-        self, interp: NativeInterpreter, call_state: InterpreterCall | None = None
-    ) -> None:
-        """Bind module-owned metadata and the current interpreter activation."""
-        if self._owns_bump_allocator and self._bump_allocator.offset == 0:
-            if interp.module.allocator is not None:
-                self._bump_allocator = interp.module.allocator
-            else:
-                self._bump_allocator = interp.bump_allocator
-        interp.module.bind_allocator(self._bump_allocator)
-        interp.bind_allocator(self._bump_allocator)
-        if call_state is not None and not call_state.finished:
-            call_state.context.bind_allocator(self._bump_allocator)
+    def _activate_interpreter(self, interp: NativeInterpreter) -> None:
+        """Activate one interpreter that borrows the constructor-selected arena."""
+        assert interp.bump_allocator is self._bump_allocator, (
+            "interpreter and runtime must be constructed with the same arena"
+        )
         if self.module is None and interp.module is not None:
             self.register_module_blocks(interp.module)
         self._virq_interp = interp
@@ -387,12 +365,9 @@ class RuntimeEngine:
             _body_count,
             _dispatcher_trace_transitions,
             control_count,
-            _eligible_block_visits,
             interpreted_block_count,
-            _visits,
         ) = interp.run_native_dispatch(
             call_state,
-            EMPTY_NATIVE_DISPATCH_SNAPSHOT,
             self.yield_threshold,
             0,
             native_dispatcher=self._native_dispatcher,

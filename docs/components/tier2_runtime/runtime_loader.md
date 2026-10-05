@@ -33,8 +33,6 @@ WASM ローダは、ROM 上の WASM32 バイナリを解析し、実行環境向
 - **`entity_offset_storage` (`ReadOnlyRadixBinaryTreeStorage`)**: ファイル内のバイト位置（開始オフセット）をキーとしてデコード済みエンティティへ $O(1) + O(\log n)$ でマッピングする基数2進木索引。検索時だけviewを借用する。
 - **`import_storage` / `export_storage` (`ReadOnlyRadixBinaryTreeStorage`)**: シンボル名（インポート名・エクスポート名）のハッシュ値をキーとして各エントリへ $O(1) + O(\log n)$ でマッピングする基数2進木索引。検索時だけviewを借用する。
 - **`block_storage` (`ReadOnlyRadixBinaryTreeStorage`)**: モジュール内の全基本ブロックメタ情報（`BasicBlock`: `head_pc`, `next_pc`, `loops_to`, `frame_depth`, `byte_span`, `func_index`）へCode section payload相対PCをキーとしてアクセスする基数2進木索引。`head_pc`と`next_pc`はpayload内の命令先頭オフセットであり、`byte_span`は当該ブロックの命令バイト数である。PCから関数内カード位置を得るため、Loaderは各基本ブロックの関数所有情報と関数の命令開始PCを確定する。PCはsection ID・payload lengthの後から数え、payload内の関数数・body size・locals宣言を含む。`BasicBlock`はPCレンジと制御フローメタ情報のみを保持し、デコード済み命令列は持たない――命令列はブロックが実際にコンパイル・実行される瞬間にのみ、バイトコードから一度だけストリーミングで導出する。ランタイムやJITコンパイラがブロック探索・メタ情報を再生成することなく、ローダ側の不変ストレージから借用viewで $O(1) + O(\log n)$ にブロックを解決する。実行時のブロック再走査やメタデータの動的確保を避け、ホットスポット追跡時の検索負担を抑える。 `{Loader_BasicBlockIndex}` <!-- definition: {Loader_BasicBlockIndex} --> `{GOTCHA-LOAD-04}` <!-- definition: {GOTCHA-LOAD-04} -->
-- **`opcode_benefit_table` (`BitView<4>`)**: ROM 上に配置される 128 バイト（256 opcode $\times$ 4-bit）の静的テーブル。インタープリタ処理命令数と JIT 処理命令数の差分（短縮機械語命令数、分岐8倍換算）をゼロ点固定線形正規化した `int4_t`（-8〜+7、1スコア＝2命令相当短縮）を保持する。 `{JIT_StaticBenefitScoring}` <!-- definition: {JIT_StaticBenefitScoring} -->
-- **`jit_candidate_bitmap` (`BitView<1>`)**: モジュールロード時に各基本ブロックの命令スコア合算値が閾値（9点：コンパイルオーバーヘッド換算値6点＋デルタ3点）に達したブロックの `head_pc` が属する Card を 1bit でマーキングしたビットマップ。インタープリタ実行ループにおける `touch()` スキップに供される。 `{JIT_CandidateBitmap}` <!-- definition: {JIT_CandidateBitmap} -->
 - **`control_map`**: 各関数の制御デリミタと `br_table` の静的対応を保持する固定長メタデータ。インタープリタはロード済みの関数メタデータを参照し、実行時に制御構造を再走査しない。命令列そのものは保持せず、必要な命令だけをROM上のコードからストリーミングする。
 
 ### 3.2 内部ブロック図
@@ -132,7 +130,7 @@ ROM上の読み取り専用バイト列ビューをラップし、カレント�
 ## 4. 動的モデル
 
 ### 4.1 アルゴリズム
-<!-- traceability: {JIT_CandidateBitmap} {JIT_StaticBenefitScoring} {META_AccessDictionary} {META_BinarySearch} {META_BumpAllocator} {MultiModule_Support} {OneRuntimeOneGuest} {ROMParsing} {ZeroCopyIndexing} -->
+<!-- traceability: {META_AccessDictionary} {META_BinarySearch} {META_BumpAllocator} {MultiModule_Support} {OneRuntimeOneGuest} {ROMParsing} {ZeroCopyIndexing} -->
 - **バイナリパース & トランザクション保護 (`GOTCHA-LOAD-02`)**:
   - ROM 上のデータを `BinaryStream` でラップする。
   - `read_leb128` などで境界を検査しながら順次読み取る。読み取りガードは最大5バイトまたは10バイトである。
@@ -159,33 +157,7 @@ ROM上の読み取り専用バイト列ビューをラップし、カレント�
 - **メモリセクション検証**: Memory Sectionをパースし、論理ページサイズ（64KB単位）と初期ページ数を取得する。初期ページ数を`FB_CONF_MAX_WASM_PAGES`と照合する。WASMリニアメモリの物理バック方式とARMv8-Mの容量対応はTBDとする。
 - **ランタイム単位のメモリ寿命 (`OneRuntimeOneGuest`, `{Runtime_BumpAllocator}`)**:
   各ランタイムは専用バンプアロケータアリーナを所有し、ロードした全モジュールのメタデータをそこへ保持する。モジュール単位のアリーナ巻き戻しやアンロードはサポートしない。モジュール終了後もメタデータはランタイム破棄まで有効であり、破棄時にアリーナ全体を $O(1)$ でリセット・返却する。ロード中に検証または確保が失敗した場合に限り、そのロード開始時の watermark へロールバックする。
-- **基本ブロック適格性静的評価 & JIT 候補ビットマップ生成 (`{JIT_StaticBenefitScoring}`, `{JIT_CandidateBitmap}`)**:
-  WASM コードセクションを走査し、各関数の基本ブロック（`BasicBlock`）を調べる。ROM 上の `opcode_benefit_table`（`BitView<4>`、128B）から、各命令の機械語短縮スコアを取得する。スコアは `int4_t` の -8〜+7 である。1スコアは約2命令の短縮に相当し、分岐命令は8命令として換算する。各ブロックのスコアを符号付き整数（`int`）へ累積加算する。
-
-  $$TotalScore(BB) = \sum_{op \in BB} decode\_int4(opcode\_benefit\_table[op])$$
-
-  基本ブロック終端（分岐命令または `end`）到達時、累積スコア `TotalScore(BB)` を判定閾値 `S_threshold = 9`（Copy-and-Patch コンパイルオーバーヘッド約120命令を損益分岐10回で割った6点 ＋ 安全デルタ3点）と比較する。
-  `TotalScore(BB) >= 9` を満たす場合、そのブロックの `head_pc` が属するカードの `jit_candidate_bitmap` ビット（1bit/カード）を `1` にセットする。満たさない極小ブロックや呼び出し主体ブロックは `0`（インタープリタ専任）に維持される。
-  **設計理由と不変条件**: JIT キャッシュ（2KB $\times$ 3面）の容量とコンパイル・トレース管理の費用には上限がある。実行時のホットスポット検出前に、投資対効果（加速利得 $\ge$ コンパイルコスト＋マージン）を満たすブロックだけを静的に選別する。
-  対象外ブロックでは、インタープリタ実行ループの `HotspotBitmap.touch(pc)` と履歴記録を完全に省く。この処理は $O(1)$ で不要になる。これによりキャッシュ汚染とスラッシングを防ぐ。
-
-##### 命令別短縮利得スコア定義台帳 (`opcode_benefit_table` / `int4_t`)
-<!-- traceability: {JIT_StaticBenefitScoring} {JIT_CandidateBitmap} {WasmFCSubset} -->
-ROM 上に配置される 128 バイトルックアップテーブル（256 オプコード $\times$ 4-bit 符号付き整数 `int4_t`: `-8`〜`+7`）のスコア配分表を以下に定める。スコアは命令単体の実行時間ではなく、インタープリタ経路をJIT経路へ置き換えたときの期待利得を表す。インライン展開は高い正の値、JITからCヘルパーへ直接末尾遷移する命令は境界コストを差し引いた正の値、インタープリタへ戻る命令は負の値とする。構文デリミタは中立（0）、未サポート・トラップ命令は最大ペナルティ（-8）となる。
-`0xFC`はサブオペコードを持つprefix命令だが、本テーブルは先頭opcode byteで引く256要素のため、サポートする全サブオペコード（`0`〜`7`、`10`、`11`）へ共通のスコアを適用する。未対応サブオペコードはLoaderが先に拒否するので候補スコア表へ渡さない。
-
-| スコア (`int4_t`) | 換算短縮命令数 | 分類と特性 | 該当 WASM 命令 |
-| :---: | :---: | :--- | :--- |
-| **`+7` (MAX)** | 約 +14 命令短縮 | 32bit 整数加減算・基本ビット論理・シフト（極小フットプリント・最高加速利得） | `i32.add` (`0x6A`), `i32.sub` (`0x6B`), `i32.and` (`0x71`), `i32.or` (`0x72`), `i32.xor` (`0x73`), `i32.shl` (`0x74`), `i32.shr_s` (`0x75`), `i32.shr_u` (`0x76`) |
-| **`+6`** | 約 +12〜13 命令短縮 | 整数乗算・32bit 比較演算・ローカル変数/定数ロード・ビット操作のインライン展開 | `i32.mul` (`0x6C`), `i32.eqz` (`0x45`), `i32.eq` (`0x46`), `i32.ne` (`0x47`), `i32.lt_s` (`0x48`), `i32.lt_u` (`0x49`), `i32.gt_s` (`0x4A`), `i32.gt_u` (`0x4B`), `i32.le_s` (`0x4C`), `i32.le_u` (`0x4D`), `i32.ge_s` (`0x4E`), `i32.ge_u` (`0x4F`), `i32.clz` (`0x67`), `i32.ctz` (`0x68`), `i32.const` (`0x41`), `i64.const` (`0x42`), `f32.const` (`0x43`), `f64.const` (`0x44`), `local.get` (`0x20`), `local.set` (`0x21`), `local.tee` (`0x22`) |
-| **`+5`** | 約 +10〜11 命令短縮 | 境界検査付きリニアメモリアクセス・剰余/循環シフト・制御フロー直接ジャンプ | `i32.load` (`0x28`), `i32.load8_s` (`0x2C`), `i32.load8_u` (`0x2D`), `i32.load16_s` (`0x2E`), `i32.load16_u` (`0x2F`), `i32.store` (`0x36`), `i32.store8` (`0x3A`), `i32.store16` (`0x3B`), `i32.rotl` (`0x77`), `i32.rotr` (`0x78`), `i32.rem_s` (`0x6F`), `i32.rem_u` (`0x70`), `br` (`0x0C`), `br_if` (`0x0D`) |
-| **`+4`** | 約 +8 命令短縮 | 整数除算・グローバル変数アクセス・メモリサイズ・スタック操作・復帰・ニュートラル | `i32.div_s` (`0x6D`), `i32.div_u` (`0x6E`), `global.get` (`0x23`), `global.set` (`0x24`), `memory.size` (`0x3F`), `select` (`0x1B`), `return` (`0x0F`), `drop` (`0x1A`), `nop` (`0x01`) |
-| **`+3`** | 約 +6〜7 命令相当の正味利得 | 命令別Cヘルパーへの直接末尾遷移。JITコードには演算を埋め込まず、共有スタックを同期してコンテキストの関数ポインタへジャンプする | `i64.add` (`0x7C`), `i64.sub` (`0x7D`), `i64.mul` (`0x7E`), `f32.add` (`0x92`), `f32.sub` (`0x93`), `f32.mul` (`0x94`), `f32.div` (`0x95`), `f64.add` (`0xA0`), `f64.sub` (`0xA1`), `f64.mul` (`0xA2`), `f64.div` (`0xA3`) |
-| **`0`** | 0 命令短縮 | 構文デリミタ（0バイト消去・トレースヘッダ埋め込みにより加点もペナルティもなし） | `block` (`0x02`), `loop` (`0x03`), `else` (`0x05`), `end` (`0x0B`) |
-| **`-1`** | 約 -2 命令ペナルティ | 真のインタープリタ委譲・関数間コール・動的ジャンプ（フレーム生成・境界コスト） | `call` (`0x10`), `call_indirect` (`0x11`), `br_table` (`0x0E`) |
-| **`-2`** | 約 -4 命令ペナルティ | OS システムサービス・メモリ拡張・一括操作・Interpreter委譲 | `memory.grow` (`0x40`), `i32/i64.trunc_sat_f32/f64_{s,u}` (`0xFC 0x00`〜`0x07`), `memory.copy` (`0xFC 0x0A`), `memory.fill` (`0xFC 0x0B`) |
-| **`-8` (MIN)** | 最大ペナルティ | トラップ命令・未サポート・ハードウェア非対応演算（JIT 化不適格） | `unreachable` (`0x00`), `i32.popcnt` (`0x69`), `i64.div_*`, `i64.rem_*`, その他の `f32.*` / `f64.*`、未定義オプコード |
-
+JIT の候補選択と命令別利得評価は Tier 3 の [`jit_runtime.md`](docs/components/tier3_plugins/jit_runtime.md) が定める。Loader はコードと基本ブロックの範囲・制御対象だけを保持する。
 
 #### トランザクション的パース & ロールバック手順（手順アクティビティ図）
 <!-- traceability: {GOTCHA-LOAD-02} {LightweightVerifier} {META_BumpAllocator} -->

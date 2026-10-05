@@ -23,8 +23,18 @@ struct fb_native_trace_descriptor {
   std::uint32_t loops_to;
   std::uint32_t chain_next_pc;
   std::uint32_t chain_stack_words;
-  std::uint32_t promote_on_hit;
   std::uint32_t* exec_count;
+};
+
+// The provider owns selection and lifetime, and publishes validated records sorted by PC.
+// Tier 2 validates the records it executes without scanning the provider's entire table.
+struct fb_native_trace_view {
+  const fb_native_trace_descriptor* entries;
+  std::uint32_t count;
+};
+struct fb_native_trace_source {
+  std::uintptr_t owner;
+  fb_native_trace_view (*resolve)(std::uintptr_t owner, std::uint32_t pc);
 };
 
 struct fb_native_dispatch_call {
@@ -38,9 +48,7 @@ struct fb_native_dispatch_call {
   std::uint64_t locals_bytes;
   void* control_stack;
   std::uint64_t control_bytes;
-  const fb_native_trace_descriptor* entries;
-  std::uint32_t entry_count;
-  std::uint64_t entries_bytes;
+  const fb_native_trace_source* trace_source;
   const std::uint8_t* trackable_mask;
   std::uint32_t trackable_card_count;
   std::uint32_t trackable_shift;

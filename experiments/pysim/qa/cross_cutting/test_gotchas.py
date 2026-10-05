@@ -32,6 +32,7 @@ from qa.shared.helpers import (
     wat_to_wasm,
 )
 from qa.shared.helpers import make_interpreter as Interpreter
+from qa.shared.jit_cache import CardState, JitRuntimeBoundary, JITTrace
 from scheduler import ChannelAction, Scheduler, Task, WaitDir
 from system import System, WasiErrno
 from system_containers import BitView, MutableFlatMapStorage, ReadOnlyFlatMapView
@@ -41,7 +42,6 @@ from tier2_runtime.memory.manager import FB_CONF_MEMORY_POOL_SIZE, MemoryManager
 from tier2_runtime.observability.events import RuntimeEventBatch
 from tier2_runtime.observability.logger import LogDictionary, Logger, LogLevel, LogResult
 from tier3_platform.drivers.hal.stream import StreamTransport
-from tier3_plugins.jit.jit_cache import CardState, JitRuntimeBoundary, JITTrace
 
 
 def _make_router(sched: Scheduler) -> IPCRouter:
@@ -61,12 +61,11 @@ def _make_memory_manager() -> tuple[MemoryManager, Scheduler]:
 
 
 from qa.shared.runtime_support import (
-    RecordingTraceCompiler,
     make_runtime_engine,
 )
+from qa.shared.x64_jit import TraceCompiler
 from tier2_runtime.vmmio.controller import TrapCode, VMMIOController, VmmioStatus
 from tier2_runtime.wasm.reader import parse
-from tier3_plugins.jit.x64_jit import TraceCompiler
 
 # ==============================================================================
 # 1. Interpreter Gotchas (GOTCHA-INTP-01 ~ 04)
@@ -211,13 +210,20 @@ def test_jitr_gotcha_01_idle_hook_skips_recompiling_already_resident_trace():
     engine = make_runtime_engine(jit_compiler=TraceCompiler(), card_shift=3)
     mod = engine.load_wasm(wasm_bytes)
     pc = mod.blocks[0].head_pc
-    engine.jit_runtime.cache.insert(JITTrace(pc, lambda: 0, size_bytes=64))
-    engine.jit_runtime.compile_queue.push_back(pc)
+    engine.jit_runtime.trackable.mark(pc)
+    engine.jit_runtime.record_block_head(pc)
+    engine.jit_runtime.record_block_head(pc)
+    engine.on_yield()
+    assert engine.jit_runtime.has_pending_compilation()
+    resident = JITTrace(pc, lambda: 0, size_bytes=64)
+    assert engine.jit_runtime.cache.insert(resident)
 
     compiled = engine.idle_hook(budget=4)
 
     assert compiled == 0, "a pc already resident in the cache must not be recompiled"
     assert engine.jit_runtime.bitmap.get_state(pc) == CardState.COMPILED
+    assert not engine.jit_runtime.has_pending_compilation()
+    assert engine.jit_runtime.cache.find_trace(pc) is resident
 
 
 def test_jitr_gotcha_02_promotion_transfers_inbound_sources():
@@ -229,20 +235,19 @@ def test_jitr_gotcha_02_promotion_transfers_inbound_sources():
     t1 = JITTrace(head_pc=0x100, native_fn=lambda: 1, size_bytes=64, next_pc=0x200)
     cache.insert(t1)  # t1 in Active records the Warm-resident t2 as its logical successor
     assert t1.chain_next == 0x200
-    old_bank = cache.find_bank(0x200)
-    assert old_bank == cache.warm_idx and t1.chain_next == t2.head_pc
+    assert cache.find_trace(t2.head_pc) is t2 and t1.chain_next == t2.head_pc
 
     cache.rotate()  # t2's bank -> Oldest
     promoted = cache.lookup(0x200)  # promote t2 out of Oldest
     assert promoted is t2
-    new_bank = cache.find_bank(0x200)
-    assert new_bank != old_bank
-    assert new_bank == cache.active_idx and t1.chain_next == t2.head_pc
-    # Promote the source after the target becomes Oldest. Its retained chain
-    # must be detached when the target is later purged from the new bank.
+    assert cache.promotions == 1 and t1.chain_next == t2.head_pc
+    # Promote the source while it is Oldest, before another rotation purges it.
     cache.rotate()
-    cache.rotate()
+    assert cache.find_trace(t1.head_pc) is not None
     assert cache.lookup(t1.head_pc) is t1
+    assert t1.chain_next == t2.head_pc
+    cache.rotate()
+    assert cache.find_trace(t2.head_pc) is not None
     assert t1.chain_next == t2.head_pc
     cache.rotate()
     assert cache.find_trace(t2.head_pc) is None
@@ -252,7 +257,7 @@ def test_jitr_gotcha_02_promotion_transfers_inbound_sources():
 
 def test_jitr_gotcha_03_lifo_reverse_compilation_order():
     """GOTCHA-JITR-03: LIFO compile order records later straight-line successors first."""
-    compiler = RecordingTraceCompiler()
+    compiler = TraceCompiler()
     engine = make_runtime_engine(
         jit_compiler=compiler,
         min_trace_bytes=1,
@@ -266,13 +271,16 @@ def test_jitr_gotcha_03_lifo_reverse_compilation_order():
     engine.register_module_blocks(module)
     pcs = [block.head_pc for block in module.blocks]
     for pc in pcs:
-        engine.jit_runtime.compile_queue.push_back(pc)
+        engine.jit_runtime.record_block_head(pc)
+        engine.jit_runtime.record_block_head(pc)
+    engine.on_yield()
+    assert engine.jit_runtime.has_pending_compilation()
     count = engine.idle_hook(budget=2)
     assert count == 2
-    assert compiler.compiled_pcs == [pcs[2], pcs[1]], "LIFO compilation order required"
-    assert engine.jit_runtime.cache.find_bank(pcs[2]) == engine.jit_runtime.cache.active_idx
-    assert engine.jit_runtime.cache.find_bank(pcs[1]) == engine.jit_runtime.cache.active_idx
-    assert not (engine.jit_runtime.cache.find_bank(pcs[0]) == engine.jit_runtime.cache.active_idx)
+    assert engine.jit_runtime.compilation_pcs == (pcs[2], pcs[1]), "LIFO compilation order required"
+    assert engine.jit_runtime.cache.find_trace(pcs[2]) is not None
+    assert engine.jit_runtime.cache.find_trace(pcs[1]) is not None
+    assert engine.jit_runtime.cache.find_trace(pcs[0]) is None
 
 
 # ==============================================================================
@@ -311,9 +319,7 @@ def test_vsoc_gotcha_01_02_stateless_interp_and_yield_in_vsoc():
     assert engine.stat_jit_invocations >= 2
     assert engine.stat_interp_steps >= 3
     assert engine.jit_runtime.bitmap.get_state(loop_pc) == CardState.COMPILED
-    assert (engine.jit_runtime.cache.find_bank(loop_pc) == engine.jit_runtime.cache.active_idx) or (
-        engine.jit_runtime.cache.find_bank(loop_pc) == engine.jit_runtime.cache.warm_idx
-    )
+    assert engine.jit_runtime.cache.find_trace(loop_pc) is not None
 
 
 # ==============================================================================

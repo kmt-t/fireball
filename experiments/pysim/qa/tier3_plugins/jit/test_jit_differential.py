@@ -26,11 +26,11 @@ import pytest
 import wasmtime
 from qa.shared.helpers import make_interpreter, make_native_interpreter, wat_to_wasm
 from qa.shared.runtime_support import make_runtime_engine, resident_module_traces
+from qa.shared.x64_jit import TraceCompiler
 from tier2_runtime.interpreter.interpreter import NativeInterpreter, TrapCode
 from tier2_runtime.runtime.engine import RuntimeEngine
 from tier2_runtime.wasm.module import Module
 from tier2_runtime.wasm.reader import parse
-from tier3_plugins.jit.x64_jit import TraceCompiler
 
 MASK32 = 0xFFFFFFFF
 SUITE_WASM = _PYSIM_DIR / "benchmarks" / "profile" / "guest" / "suite.wasm"

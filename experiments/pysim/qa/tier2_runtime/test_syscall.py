@@ -119,6 +119,7 @@ def test_syscall_04_guest_yield_hands_off_to_ready_task():
             module,
             memory=host.guest_memory,
             host_functions=host_functions,
+            bump_allocator=system.runtime_engine.bump_allocator,
         )
         guest_id = system.scheduler.spawn(
             "yielding_guest",
@@ -355,7 +356,11 @@ def test_syscall_04_vdma_host_call_transfer(destination_kind: str, transport: st
             vdma_transfer=system.vdma_transfer,
         )
         interpreter = NativeInterpreter(
-            module, bindings, vmmio=system.vmmio, phys_mem=system.phys_mem
+            module,
+            bindings,
+            vmmio=system.vmmio,
+            phys_mem=system.phys_mem,
+            bump_allocator=system.runtime_engine.bump_allocator,
         )
         observed: list[bytes] = []
 
@@ -896,7 +901,7 @@ def test_syscall_07_wasi_fd_write():
         guest_mem[32 : 32 + len(message)] = message
         struct.pack_into("<II", guest_mem, 0, 32, len(message))
         WasiHostContext(sysv, guest_memory=guest_mem)
-        sysv.start_hal_driver(DummyDriver(transport=sysv.transport), FB_URI_HAL_STDOUT)
+        sysv.start_hal_driver(DummyDriver(sysv.pool, transport=sysv.transport), FB_URI_HAL_STDOUT)
         assert sysv.fireball_call(FbSyscallId.WASI_FD_WRITE, 1, 0, 1, 48, 0, 0) == WasiErrno.SUCCESS
         assert sysv.transport.drain_output() == message
         nwritten = struct.unpack_from("<I", guest_mem, 48)[0]
@@ -922,7 +927,7 @@ def test_wasi_01_fd_write_scatter_gather():
         struct.pack_into("<II", guest_mem, 0, 32, len(chunk1))
         struct.pack_into("<II", guest_mem, 8, 64, len(chunk2))
         WasiHostContext(sysv, guest_memory=guest_mem)
-        sysv.start_hal_driver(DummyDriver(transport=sysv.transport), FB_URI_HAL_STDOUT)
+        sysv.start_hal_driver(DummyDriver(sysv.pool, transport=sysv.transport), FB_URI_HAL_STDOUT)
         # Write to stdout (fd=1) with 2 iovecs, result at offset 100
         assert (
             sysv.fireball_call(FbSyscallId.WASI_FD_WRITE, 1, 0, 2, 100, 0, 0) == WasiErrno.SUCCESS
@@ -948,7 +953,7 @@ def test_wasi_01b_fd_write_prevalidates_all_iovecs():
         struct.pack_into("<II", guest_mem, 8, 200, 1)
         struct.pack_into("<I", guest_mem, 120, 0xA5A5A5A5)
         WasiHostContext(sysv, guest_memory=guest_mem)
-        sysv.start_hal_driver(DummyDriver(transport=sysv.transport), FB_URI_HAL_STDOUT)
+        sysv.start_hal_driver(DummyDriver(sysv.pool, transport=sysv.transport), FB_URI_HAL_STDOUT)
         before = bytes(guest_mem)
 
         assert sysv.fireball_call(FbSyscallId.WASI_FD_WRITE, 1, 0, 2, 120, 0, 0) == WasiErrno.FAULT
@@ -977,7 +982,7 @@ def test_wasi_02_fd_read_eof():
         stdin_before = bytes(backend.stdin_buffer)
         position_before = backend.stdin_pos
         WasiHostContext(sysv, guest_memory=guest_mem)
-        sysv.start_hal_driver(DummyDriver(transport=sysv.transport), FB_URI_HAL_STDOUT)
+        sysv.start_hal_driver(DummyDriver(sysv.pool, transport=sysv.transport), FB_URI_HAL_STDOUT)
         assert sysv.fireball_call(FbSyscallId.WASI_FD_READ, 0, 0, 1, 48, 0, 0) == WasiErrno.SUCCESS
         nread = struct.unpack_from("<I", guest_mem, 48)[0]
         assert nread == 0  # Standard WASI EOF

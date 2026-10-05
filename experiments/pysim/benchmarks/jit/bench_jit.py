@@ -19,12 +19,14 @@ while not (_PYSIM_DIR / "tier1_core").is_dir():
 _BENCH_DIR = Path(__file__).resolve().parents[1]
 if str(_BENCH_DIR) not in sys.path:
     sys.path.insert(0, str(_BENCH_DIR))
-from _bootstrap import configure_import_paths
+from _bootstrap import configure_import_paths, reserve_native_region
 
 configure_import_paths(_PYSIM_DIR, _BENCH_DIR)
 
 import tier2_runtime.wasm.opcodes as op
 from config import FB_CONF_RUNTIME_YIELD_THRESHOLD
+from qa.shared.jit_cache import HotspotBitmap
+from qa.shared.x64_jit import TraceCompiler
 from system_containers import ReadOnlyFlatMapView, StaticVector
 from tier2_runtime.interpreter.control_flow import extract_basic_blocks, iter_block_ops
 from tier2_runtime.interpreter.interpreter import (
@@ -37,9 +39,7 @@ from tier2_runtime.interpreter.interpreter import (
 from tier2_runtime.runtime.engine import RuntimeEngine
 from tier2_runtime.wasm.module import I32, LocalWidthMap
 from tier2_runtime.wasm.reader import parse
-from tier3_plugins.jit.jit_cache import HotspotBitmap
 from tier3_plugins.jit.jit_manager import JITRuntimeManager
-from tier3_plugins.jit.x64_jit import TraceCompiler
 
 
 class JITCompilerBenchmark:
@@ -129,10 +129,11 @@ class JITCompilerBenchmark:
             native_results.append(int(res_native[0]))
 
             runtime_engine = RuntimeEngine(
+                bump_allocator=module.allocator,
                 jit_runtime=JITRuntimeManager(
-                    jit_compiler=self.compiler,
+                    region_provider=reserve_native_region,
                     yield_threshold=FB_CONF_RUNTIME_YIELD_THRESHOLD,
-                )
+                ),
             )
             runtime_engine.register_module_blocks(module)
             interp_jit = NativeInterpreter(
@@ -154,10 +155,11 @@ class JITCompilerBenchmark:
         assert python_results[0] == python_results[1] == python_results[2]
         assert native_results[0] == native_results[1] == native_results[2]
         assert jit_results[0] == jit_results[1] == jit_results[2]
-        assert python_results[0] == native_results[0] == jit_results[0]
+        assert python_results[0] == native_results[0] == jit_results[0] == 704_982_704
         diagnostic_engine = RuntimeEngine(
+            bump_allocator=module.allocator,
             jit_runtime=JITRuntimeManager(
-                jit_compiler=TraceCompiler(),
+                region_provider=reserve_native_region,
                 yield_threshold=FB_CONF_RUNTIME_YIELD_THRESHOLD,
             ),
             collect_runtime_stats=True,
@@ -262,7 +264,8 @@ class JITCompilerBenchmark:
         assert call_state.results is not None
         return call_state.results
 
-    def _create_heavy_loop_binary(self) -> bytes:
+    @staticmethod
+    def _create_heavy_loop_binary() -> bytes:
         """Constructs a WASM binary with an intensive arithmetic loop: sum = sum + (i * 3) ^ 7."""
         code_body = bytearray()
         # 1 local group: 3 locals of type i32 (sum=1, i=2, temp=3)

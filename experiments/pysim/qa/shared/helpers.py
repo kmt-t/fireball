@@ -6,6 +6,7 @@ import struct
 from collections.abc import Iterator
 from contextlib import contextmanager
 
+from bump_allocator import BumpAllocator
 from ipc_router import IPCMessage
 from scheduler import Scheduler
 from system_containers import StaticVector
@@ -219,6 +220,7 @@ def make_native_interpreter(
     imported_tables: StaticVector[FunctionTable] | None = None,
     imported_memory: Memory | None = None,
     logger: Logger | None = None,
+    bump_allocator: BumpAllocator | None = None,
 ) -> NativeInterpreter:
     """Build the independent C++ interpreter for RuntimeEngine test runs."""
     bindings = make_interpreter_bindings(
@@ -229,7 +231,14 @@ def make_native_interpreter(
         imported_tables,
         imported_memory,
     )
-    return NativeInterpreter(module, bindings, vmmio=vmmio, phys_mem=phys_mem, logger=logger)
+    return NativeInterpreter(
+        module,
+        bindings,
+        vmmio=vmmio,
+        phys_mem=phys_mem,
+        logger=logger,
+        bump_allocator=bump_allocator,
+    )
 
 
 @contextmanager

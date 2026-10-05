@@ -25,7 +25,6 @@ class NativeTraceDispatchEntry(ctypes.Structure):
         ("loops_to", ctypes.c_uint32),
         ("chain_next_pc", ctypes.c_uint32),
         ("chain_stack_words", ctypes.c_uint32),
-        ("promote_on_hit", ctypes.c_uint32),
         ("exec_count", ctypes.c_void_p),
     )
 
@@ -65,6 +64,7 @@ class NativeDispatchSnapshot:
         "block_history",
         "entries",
         "entry_count",
+        "trace_source_address",
         "trackable_card_count",
         "trackable_mask",
         "trackable_shift",
@@ -72,6 +72,7 @@ class NativeDispatchSnapshot:
 
     entries: ctypes.Array
     entry_count: int
+    trace_source_address: int
     trackable_mask: ctypes.Array
     trackable_shift: int
     trackable_card_count: int
@@ -91,6 +92,7 @@ class NativeDispatchSnapshot:
         assert 0 <= trackable_card_count <= len(trackable_mask) * 8
         assert 0 <= trackable_shift < 32
         self.entries = entries
+        self.trace_source_address = 0
         self.entry_count = entry_count
         self.trackable_mask = trackable_mask
         self.trackable_card_count = trackable_card_count
@@ -157,3 +159,46 @@ __all__ = (
     "NativeDispatchSnapshot",
     "NativeTraceDispatchEntry",
 )
+
+
+class _DispatchBuffers(ctypes.Structure):
+    _fields_ = (
+        ("entries", ctypes.c_void_p),
+        ("count", ctypes.c_uint32),
+        ("mask", ctypes.c_void_p),
+        ("cards", ctypes.c_uint32),
+        ("shift", ctypes.c_uint32),
+        ("mask_bytes", ctypes.c_uint32),
+        ("history", ctypes.c_void_p),
+        ("history_bytes", ctypes.c_uint64),
+    )
+
+
+def dispatch_for_test(
+    interpreter, call_state, snapshot, threshold, execution_count, native_dispatcher
+):
+    from functools import partial
+
+    from qa.private.jit_native_abi import _NATIVE_LIBRARY
+
+    wrapper = _NATIVE_LIBRARY.fb_qa_dispatch
+    wrapper.argtypes = (ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p)
+    wrapper.restype = ctypes.c_int
+    buffers = _DispatchBuffers(
+        ctypes.addressof(snapshot.entries),
+        snapshot.entry_count,
+        ctypes.addressof(snapshot.trackable_mask),
+        snapshot.trackable_card_count,
+        snapshot.trackable_shift,
+        ctypes.sizeof(snapshot.trackable_mask),
+        snapshot.block_history.native_address,
+        snapshot.block_history.native_bytes,
+    )
+    entry = partial(wrapper, ctypes.cast(native_dispatcher, ctypes.c_void_p), ctypes.byref(buffers))
+    result = interpreter.run_native_dispatch(call_state, threshold, execution_count, entry)
+    return (
+        *result[:5],
+        call_state.context._native_result.eligible_block_visits,
+        result[5],
+        snapshot.block_history,
+    )

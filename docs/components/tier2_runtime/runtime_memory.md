@@ -42,11 +42,13 @@ flowchart TD
 [`system_memory.md`](docs/components/tier1_interface/system_memory.md) の 契約（所有権追跡・イベント通知インターフェース・ライフサイクルフェーズ）を、以下のとおり物理実装する。
 
 #### 4.1.1 所有権追跡の物理実装
+実行器、実行コンテキスト、Runtimeは、生成時に選んだアリーナを実行中に差し替えない。実行器とRuntimeは同じ所有アリーナを借用する。ロード済みモジュールの配置移動はメタデータの配置操作として初期化段階で完了する。
+
 各メモリブロックは `memory-info.owner` で割り当て元 task-id を追跡する。`acquire-task-heap`/`acquire_slot`/`release-task-heap`/`release_slot` や `RAII`/`drop` による解放は、用途別に事前確保された独立パーティション（固定長アリーナ）から `shm_allocator`/`system_allocator` を用いて有界に切り出し、使用後にアリーナへ返却・合体する。
 
 #### 4.1.2 共有メモリマッピングと仮想化リスナーへのコールバック委譲（物理実装）
 <!-- traceability: {VmmioShmDelegation} {OwnerMismatchTrap} -->
-物理メモリマネージャは、クリーンアーキテクチャ（依存性逆転の原則: DIP）に従い、特定の上位仮想化ハードウェア（vMMIO 等）の内部シンボルや特定の仮想アドレス体系（`0xE000_0000`）に直接依存しない。Tier 1 Interface の [`system_memory.md`](docs/components/tier1_interface/system_memory.md) が定義する `PageMappingCallbacks` を受け付け、仮想化層（vMMIO コントローラ等）がこれを登録する。
+物理メモリマネージャは、クリーンアーキテクチャ（依存性逆転の原則: DIP）に従い、特定の上位仮想化ハードウェア（vMMIO 等）の内部シンボルや特定の仮想アドレス体系（`0xE000_0000`）に直接依存しない。Tier 1 Interface の [`system_memory.md`](docs/components/tier1_interface/system_memory.md) が定義する `PageMappingCallbacks` の供給元を生成時に受け取る。所有する物理バック領域を供給元へ渡し、仮想化層（vMMIO コントローラ等）の通知先を生成時に確定する。
 
 物理メモリマネージャは4KBの仮想予約スロットごとに、予約番号、物理バック領域の基点、所有者、実サイズを通知する。4KBはアドレス予約とアクセス判定の単位であり、4KB分の物理RAMを確保する意味ではない。所有者が変わる場合は `on_owner_changed` を発火し、仮想化層側は旧PTEをアンマップしてTLBエントリをフラッシュする。`claim` またはロールバックが `on_map_page` を発火した後に、仮想化層側が予約VPNを物理基点へ対応付ける。PTEは要求サイズを保持し、その範囲を超えるアクセスを拒否する。
 

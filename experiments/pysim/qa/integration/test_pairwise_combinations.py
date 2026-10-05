@@ -16,6 +16,7 @@ from qa.shared.fixtures.platform_drivers import create_reference_platform_driver
 from qa.shared.fixtures.uvwasi_reference import UvwasiReferenceContext
 from qa.shared.helpers import expect_assertion, make_native_interpreter
 from qa.shared.runtime_support import compile_runtime_block, make_runtime_engine
+from qa.shared.x64_jit import TraceCompiler
 from scheduler import ChannelAction, TaskState, WaitDir
 from system import System
 from system_containers import ReadOnlyFlatMapView, StaticVector
@@ -35,7 +36,6 @@ from tier2_runtime.wasm.reader import parse
 from tier3_platform.drivers.hal.dummy import DummyDriver
 from tier3_platform.drivers.wasi.context import WasiHostContext
 from tier3_plugins.debugger.debugger import DebuggerManager, GDBRspProtocol
-from tier3_plugins.jit.x64_jit import TraceCompiler
 
 _REPO_ROOT = Path(__file__).resolve().parents[4]
 
@@ -206,9 +206,8 @@ def _prepare_cache(
         install()
         if cache_mode == "warm":
             cache.rotate()
-            assert (cache.find_bank(block.head_pc) == cache.warm_idx) and not (
-                cache.find_bank(block.head_pc) == cache.active_idx
-            )
+            assert cache.lookup(block.head_pc) is not None
+            assert cache.promotions == 0
         elif cache_mode == "evict":
             for _ in range(3):
                 cache.rotate()
@@ -271,7 +270,7 @@ def _run_workload(case_id: str, case_tuple: tuple[str, ...], resources: ExitStac
     resources.callback(sysv.shutdown)
     memory = bytearray(b"\xa5" * (2 * 65536))
     wasi = WasiHostContext(sysv, guest_memory=memory, uvwasi=backend)
-    driver = DummyDriver(transport=sysv.transport)
+    driver = DummyDriver(sysv.pool, transport=sysv.transport)
     driver_task_id = sysv.start_hal_driver(driver, FB_URI_HAL_STDOUT)
     payload = f"pairwise:{case_id}".encode("ascii")
     memory[1024:1032] = (1200).to_bytes(4, "little") + len(payload).to_bytes(4, "little")
@@ -343,13 +342,6 @@ def _run_workload(case_id: str, case_tuple: tuple[str, ...], resources: ExitStac
 
     module = parse(bytes(wasmtime.wat2wasm(_case_wat(storage_mode, mem_width, host_mode))))
     host_functions = StaticVector.of((host_call,) if host_mode != "none" else (), capacity=1)
-    interp = make_native_interpreter(
-        module,
-        memory=memory,
-        host_functions=host_functions,
-        vmmio=sysv.vmmio,
-        phys_mem=sysv.phys_mem,
-    )
     drive_mode = RuntimeDriveMode.SYNCHRONOUS if sched_mode == "noint" else RuntimeDriveMode.COOS
     if engine_mode == "interp":
         engine = RuntimeEngine(yield_threshold=4, drive_mode=drive_mode, collect_runtime_stats=True)
@@ -361,8 +353,15 @@ def _run_workload(case_id: str, case_tuple: tuple[str, ...], resources: ExitStac
         assert engine.jit_runtime is not None
         assert engine.jit_runtime.jit_compiler is not None
     if engine.jit_runtime is not None:
-        resources.callback(engine.jit_runtime.cache.common_code.buffer.close)
+        resources.callback(engine.jit_runtime.cache._native.close)
     engine.register_module_blocks(module)
+    interp = make_native_interpreter(
+        module,
+        memory=memory,
+        host_functions=host_functions,
+        vmmio=sysv.vmmio,
+        phys_mem=sysv.phys_mem,
+    )
     _prepare_cache(engine, module, cache_mode, engine_mode)
     main_index = module.export_func_index("main")
     schedule: list[str] = []

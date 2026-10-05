@@ -588,23 +588,16 @@ def test_dbg_12_disabled_composition_has_no_debug_state_or_weave() -> None:
     from qa.shared.helpers import make_native_interpreter
     from tier2_runtime.abi import native_abi
     from tier2_runtime.abi.interpreter_abi import ExecutionContextABI
-    from tier2_runtime.interpreter.interpreter import NativeInterpreter
     from tier2_runtime.runtime.composer import RuntimeComposer, RuntimeCompositionConfig
 
     module = RuntimeEngineDebugDriver().load_wasm(
         wat_to_wasm("(module (func (result i32) i32.const 7))")
     )
-    weave_calls: list[int] = []
-
-    def forbidden_weave(executor: NativeInterpreter) -> None:
-        weave_calls.append(1)
-
     interpreter = RuntimeComposer.compose_execution(
-        RuntimeCompositionConfig(), lambda: make_native_interpreter(module), forbidden_weave
+        RuntimeCompositionConfig(), lambda: make_native_interpreter(module)
     )
     call = interpreter.start(0, ())
-    assert weave_calls == []
-    assert interpreter._native_dispatcher is native_abi.run_native_dispatch
+    assert interpreter._native_dispatcher is native_abi.RUN_DISPATCH
     assert (
         ctypes.sizeof(call.context)
         == ctypes.sizeof(ExecutionContextABI) + ctypes.sizeof(ctypes.c_void_p)
@@ -656,16 +649,12 @@ def test_dbg_13_composition_rejects_jit_before_creating_executor() -> None:
         constructions.append(1)
         return make_native_interpreter(module)
 
-    def weave(executor: NativeInterpreter) -> None:
-        constructions.append(2)
-
     with expect_assertion():
         RuntimeComposer.compose_execution(
             RuntimeCompositionConfig(
                 execution=RuntimeExecutionKind.JIT, plugins=RuntimePluginSelection(debugger=True)
             ),
             factory,
-            weave,
         )
     assert constructions == []
 

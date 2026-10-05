@@ -31,14 +31,14 @@ from bench_jit import JITCompilerBenchmark
 from bump_allocator import BumpAllocator
 from config import FB_CONF_RUNTIME_BUMP_ARENA_BYTES, JIT_CACHE_REGION_BYTES
 from ipc_router import FB_URI_HAL_STDOUT
+from qa.shared.jit_manager import JITRuntimeManager
+from qa.shared.x64_jit import TraceCompiler
 from system import System
 from system_containers import StaticVector
 from tier2_runtime.interpreter.interpreter import InterpreterBindings, NativeInterpreter
 from tier2_runtime.runtime.engine import RuntimeEngine
 from tier3_platform.drivers.hal.dummy import DummyDriver
 from tier3_platform.drivers.wasi.context import WasiHostContext
-from tier3_plugins.jit.jit_manager import JITRuntimeManager
-from tier3_plugins.jit.x64_jit import TraceCompiler
 
 
 @dataclass(frozen=True)
@@ -129,7 +129,7 @@ def _measure(workload: Workload, hybrid: bool, calls: int) -> Measurement:
     sysv = System()
     if workload.wasi:
         wasi = WasiHostContext(sysv)
-        sysv.start_hal_driver(DummyDriver(transport=sysv.transport), FB_URI_HAL_STDOUT)
+        sysv.start_hal_driver(DummyDriver(sysv.pool, transport=sysv.transport), FB_URI_HAL_STDOUT)
         memory = wasi.guest_memory
         host_functions = wasi.build_interpreter_host_functions(module)
     else:

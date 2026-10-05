@@ -318,15 +318,10 @@ class HalDriver:
 
     __slots__ = ("_buffer_pool", "_command_bindings")
 
-    def __init__(self):
-        self._buffer_pool: HalBufferPool | None = None
+    def __init__(self, pool: HalBufferPool):
+        self._buffer_pool = pool
         self._command_bindings: StaticVector[HalCommandBinding] = StaticVector(capacity=16)
         self.register_command(WasiIpcCmd.QUERY_CAPS, self._query_caps)
-
-    def bind_buffer_pool(self, pool: HalBufferPool) -> None:
-        """Binds the system HAL buffer pool before this driver task starts."""
-        assert self._buffer_pool is None or self._buffer_pool is pool
-        self._buffer_pool = pool
 
     def register_command(self, command_id: int, callback: HalCommandCallback) -> None:
         """Registers one driver command callback before the task is started."""
@@ -369,6 +364,7 @@ class HalDriver:
         self, ipc: IPCRouter, scheduler: Scheduler, role: Role, service_handle: int
     ) -> tuple[int, HalTask]:
         """Starts this driver's dedicated HAL task and returns its task handle."""
+        assert scheduler is self._buffer_pool._scheduler, "HAL driver belongs to another scheduler"
         task = HalTask(ipc, scheduler, self)
         task_id = scheduler.spawn(
             f"hal_task[{service_handle}]", task.run(), role=role, service_handle=service_handle

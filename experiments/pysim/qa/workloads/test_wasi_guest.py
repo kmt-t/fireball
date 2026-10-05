@@ -167,7 +167,7 @@ class GuestSession:
             log_dictionary=dictionary,
         )
         self.hardware.system = self.system
-        self.driver = DummyDriver(transport=self.hardware)
+        self.driver = DummyDriver(self.system.pool, transport=self.hardware)
         self.hardware.hal_task_id = self.system.start_hal_driver(self.driver, FB_URI_HAL_STDOUT)
         self.module = parse(artifact.wasm.read_bytes())
         assert self.module.memory is not None and self.module.memory.min_pages == 1
@@ -179,6 +179,7 @@ class GuestSession:
             self.module,
             memory=self.host.guest_memory,
             host_functions=functions,
+            bump_allocator=self.system.runtime_engine.bump_allocator,
         )
         self.call("_initialize")
         self.result_address = self.call("result_address")[0]

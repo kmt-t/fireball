@@ -224,17 +224,13 @@ class RuntimeComposer:
     def compose_execution(
         config: RuntimeCompositionConfig,
         executor_factory: Callable[[], ExecutorT],
-        debugger_weave: Callable[[ExecutorT], None],
     ) -> ExecutorT:
         """起動前に有効な実行制御アスペクトだけを結線する。"""
         if config.plugins.debugger:
             assert config.execution == RuntimeExecutionKind.INTERPRETER, (
                 "debugger-enabled runtime must use interpreter-only execution"
             )
-        executor = executor_factory()
-        if config.plugins.debugger:
-            debugger_weave(executor)
-        return executor
+        return executor_factory()
 
     @staticmethod
     def compose(

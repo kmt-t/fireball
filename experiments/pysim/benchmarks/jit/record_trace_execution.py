@@ -17,11 +17,11 @@ configure_import_paths(_BENCH_DIR.parent, _BENCH_DIR)
 
 from bench_jit_aging import build_workload_wat
 from bump_allocator import BumpAllocator
+from qa.shared.jit_manager import JITRuntimeManager
+from qa.shared.x64_jit import TraceCompiler
 from tier2_runtime.interpreter.interpreter import InterpreterBindings, NativeInterpreter
 from tier2_runtime.runtime.engine import RuntimeEngine
 from tier2_runtime.wasm.reader import parse
-from tier3_plugins.jit.jit_manager import JITRuntimeManager
-from tier3_plugins.jit.x64_jit import TraceCompiler
 
 try:
     import wasmtime
@@ -81,6 +81,7 @@ def record_usage(output: Path, hot_functions: int, cold_functions: int, iteratio
                 "cold_functions": cold_functions,
                 "iterations": iterations,
                 "counter_max": 0xFFFF_FFFF,
+                "retirement_counts_are_lower_bounds": True,
                 "native_source_sha256": hashlib.sha256(
                     (
                         _BENCH_DIR.parent

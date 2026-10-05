@@ -6,6 +6,7 @@
 #include <windows.h>
 #else
 #include <sys/mman.h>
+#include <unistd.h>
 #endif
 namespace fireball {
 namespace {
@@ -29,8 +30,6 @@ bool protect(executable_memory& m, std::uint32_t protection) {
     return false;
 #endif
   m.protection = protection;
-  ++m.dsb_count;
-  ++m.isb_count;
   return true;
 }
 }  // namespace
@@ -44,7 +43,7 @@ extern "C" int fb_jit_memory_init(fireball::executable_memory* m, std::uint32_t 
   auto* address = mmap(nullptr, bytes, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
   if (address == MAP_FAILED) return 0;
 #endif
-  *m = {reinterpret_cast<std::uintptr_t>(address), bytes, fireball::writable, 1, 0, 0};
+  *m = {reinterpret_cast<std::uintptr_t>(address), bytes, fireball::writable, 1};
   return 1;
 }
 extern "C" int fb_jit_memory_begin(fireball::executable_memory* m) {
@@ -81,12 +80,6 @@ extern "C" int fb_jit_memory_write(fireball::executable_memory* m, std::uint32_t
   std::memmove(reinterpret_cast<std::uint8_t*>(m->base) + offset, source, count);
   return 1;
 }
-extern "C" int fb_jit_memory_read(const fireball::executable_memory* m, std::uint32_t offset,
-                                  std::uint8_t* output, std::uint32_t count) {
-  if (output == nullptr || !fireball::valid(m, offset, count)) return 0;
-  std::memcpy(output, reinterpret_cast<const std::uint8_t*>(m->base) + offset, count);
-  return 1;
-}
 extern "C" int fb_jit_memory_close(fireball::executable_memory* m) {
   if (m == nullptr) return 0;
   if (m->base == 0) return 1;
@@ -103,4 +96,21 @@ extern "C" std::uintptr_t fb_jit_memory_address(fireball::executable_memory* m,
                                                 std::uint32_t offset) {
   if (!fireball::valid(m, offset, 1) || !fb_jit_memory_finalize(m)) return 0;
   return m->base + offset;
+}
+
+std::size_t fireball::executable_region_alignment() {
+#if defined(_WIN32)
+  SYSTEM_INFO info{};
+  GetSystemInfo(&info);
+  return info.dwPageSize;
+#else
+  return static_cast<std::size_t>(sysconf(_SC_PAGESIZE));
+#endif
+}
+int fireball::borrow_executable_region(executable_memory* memory, std::uint8_t* region,
+                                     std::uint32_t bytes) {
+  if (memory == nullptr || region == nullptr || bytes == 0 ||
+      reinterpret_cast<std::uintptr_t>(region) % executable_region_alignment() != 0) return 0;
+  *memory = {reinterpret_cast<std::uintptr_t>(region), bytes, writable, 1};
+  return protect(*memory, writable);
 }

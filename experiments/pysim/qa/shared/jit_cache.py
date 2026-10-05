@@ -22,19 +22,18 @@ from config import (
     JIT_TRACE_DEFAULT_BYTES,
     JIT_X64_TRACE_HEADER_BYTES,
 )
+from qa.private import jit_native_abi as native_abi
+from qa.private.jit_native_abi import CacheField
 from system_containers import (
     MutableBitStorage,
     StaticVector,
 )
 from tier2_runtime.wasm.module import IntegerSequence
 
-from . import native_abi
 from .common_code import (
     COMMON_HELPER_OFFSET,
-    JITCodeCacheRegion,
 )
 from .exec_memory import ExecutableBuffer
-from .native_abi import CacheField
 
 if TYPE_CHECKING:
     from tier2_runtime.interpreter.interpreter import ExecutionContext
@@ -256,6 +255,7 @@ class JITTrace:
         "_blob_storage",
         "_exec_buf",
         "_exec_count",
+        "_fn",
         "_native_owner",
         "chain_dispatch_patch_offset",
         "code_blob",
@@ -263,13 +263,10 @@ class JITTrace:
         "entry_body_patch_offset",
         "entry_prologue_patch_offset",
         "exit_patch_offset",
-        "fn",
         "header",
         "helper_exit_patch_offset",
         "helper_header_patch_offset",
     )
-
-    FLAG_PROMOTED = 0x01
 
     def __init__(
         self,
@@ -321,7 +318,6 @@ class JITTrace:
         # resident descriptor's chain requirement before entering the trace.
         assert stack_words >= 1
         self.stack_words = stack_words
-        self.flags = 0
         self.chain_next = None
         self._exec_count = ctypes.c_uint32(0)
         self._exec_buf = buf  # Keeps executable buffer alive in memory
@@ -359,9 +355,7 @@ class JITTrace:
         trace._blob_storage = None
         trace.code_blob = None
         trace._exec_buf = None
-        trace.fn = ctypes.CFUNCTYPE(
-            None, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_uint32
-        )(pointer.contents.entry_address)
+        trace._fn = None
         trace.common_helper_offset = pointer.contents.fixups.helper_offset
         trace.entry_body_patch_offset = pointer.contents.fixups.entry_body
         trace.entry_prologue_patch_offset = pointer.contents.fixups.entry_prologue
@@ -455,14 +449,6 @@ class JITTrace:
         self._native.entry_address = value or 0
 
     @property
-    def flags(self) -> int:
-        return self._native.flags
-
-    @flags.setter
-    def flags(self, value: int) -> None:
-        self._native.flags = value
-
-    @property
     def chain_next(self) -> int | None:
         value = self._native.chain_next_pc
         return None if value == 0xFFFF_FFFF else value
@@ -489,6 +475,20 @@ class JITTrace:
         return ctypes.addressof(self._native.exec_count.contents)
 
     @property
+    def fn(self) -> NativeTraceFn | None:
+        """Resolve the entry from its descriptor after native installation or promotion."""
+
+        if self.raw_addr is not None:
+            return ctypes.CFUNCTYPE(
+                None, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_uint32
+            )(self.raw_addr)
+        return self._fn
+
+    @fn.setter
+    def fn(self, value: NativeTraceFn | None) -> None:
+        self._fn = value
+
+    @property
     def native_fn(self) -> NativeTraceFn | None:
         return self.fn
 
@@ -504,8 +504,9 @@ class JITTrace:
                 (void* ctx, void* sp, void* local_base, uint32_t tos)
         """
 
-        assert self.fn is not None
-        return self.fn(ctx_or_locals, sp_or_mem, local_base, tos)
+        entry = self.fn
+        assert entry is not None
+        return entry(ctx_or_locals, sp_or_mem, local_base, tos)
 
     def invoke(self, ctx: ExecutionContext) -> int:
         """Invoke a trace directly on the shared context through its CPS ABI."""
@@ -525,13 +526,9 @@ class JITTrace:
     ) -> None:
         """Execute the compiled PIC entry point with the shared CPS arguments."""
 
-        if self.fn is not None:
-            self.fn(ctx, sp, local_base, tos)
-            return
-        assert self.raw_addr is not None
-        ctypes.CFUNCTYPE(None, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_uint32)(
-            self.raw_addr
-        )(ctx, sp, local_base, tos)
+        entry = self.fn
+        assert entry is not None
+        entry(ctx, sp, local_base, tos)
 
 
 class JitRuntimeBoundary:
@@ -541,14 +538,13 @@ class JitRuntimeBoundary:
     Native-owned traces need no Python reference registry.
     C++ owns all bank, index, chain, promotion, rotation and aging decisions.
     Native compilation, installation and patching stay inside the C++ owner.
+    QA retirement observations use the last safe-point sample before an operation;
+    native eviction during that operation can make the sampled count a lower bound.
     """
 
     __slots__ = (
+        "_before",
         "_busy",
-        "_callback_error",
-        "_code_region",
-        "_compile_observer",
-        "_host",
         "_native",
         "_references",
         "_retire_observer",
@@ -560,26 +556,15 @@ class JitRuntimeBoundary:
         bank_capacity: int = JIT_CACHE_BANK_CAPACITY_BYTES,
         allocator: BumpAllocator | None = None,
         entry_capacity: int = JIT_CACHE_BANK_ENTRY_CAPACITY,
-        compile_observer: Callable[[int, bool, int], None] | None = None,
         retire_observer: Callable[[int, int], None] | None = None,
     ) -> None:
         assert JIT_X64_TRACE_HEADER_BYTES <= bank_capacity <= JIT_CACHE_BANK_CAPACITY_BYTES
         assert 0 < entry_capacity <= JIT_CACHE_BANK_ENTRY_CAPACITY
         self._references: StaticVector[JITTrace | None] | None = None
-        self._callback_error: BaseException | None = None
         self._busy = False
         self._retire_observer = retire_observer
+        self._before: tuple[tuple[int, int, int], ...] = ()
         self.metadata_provider: Callable[[JITTrace], None] | None = None
-        self._compile_observer = compile_observer
-        self._host = native_abi.NativeRuntimeHost(
-            native_abi.CacheReleaseExternal(self._release_external),
-            native_abi.CacheRetired(self._retired)
-            if retire_observer is not None
-            else native_abi.CacheRetired(),
-            native_abi.CacheCompiled(self._compiled)
-            if compile_observer is not None
-            else native_abi.CacheCompiled(),
-        )
         self._native = native_abi.NativeRuntimeStorage(
             bank_capacity,
             entry_capacity,
@@ -588,22 +573,47 @@ class JitRuntimeBoundary:
                 JIT_CACHE_WARM_OFFSET_BYTES,
                 JIT_CACHE_OLDEST_OFFSET_BYTES,
             ),
-            self._host,
         )
-        self._code_region: JITCodeCacheRegion | None = None
         if allocator is not None:
             self.bind_allocator(allocator)
+
+    @classmethod
+    def borrow(
+        cls,
+        owner: native_abi.NativeRuntimeStorage,
+        retire_observer: Callable[[int, int], None] | None,
+    ) -> JitRuntimeBoundary:
+        boundary = cls.__new__(cls)
+        boundary._native = owner
+        boundary._references = None
+        boundary._busy = False
+        boundary._retire_observer = retire_observer
+        boundary.metadata_provider = None
+        boundary._before = ()
+        return boundary
+
+    def scalar(self, field: CacheField) -> int:
+        return int(native_abi.RUNTIME_SCALAR(self._native.pointer, field))
 
     def _begin(self) -> None:
         assert not self._busy, "cache collection callbacks must not re-enter residency operations"
         self._busy = True
-        self._callback_error = None
+        if self._retire_observer is not None:
+            self._before = native_abi.resident_records(self._native.pointer)
 
     def _check(self) -> None:
+        if self._retire_observer is not None:
+            current = native_abi.resident_records(self._native.pointer)
+            for token, pc, count in self._before:
+                if not any(now_token == token and now_pc == pc for now_token, now_pc, _ in current):
+                    self._retire_observer(pc, count)
         self._busy = False
-        # ctypes callbacks cannot propagate Python exceptions through C++. The
-        # callback returns failure; this boundary immediately restores fail-fast.
-        assert self._callback_error is None, self._callback_error
+        if self._references is not None:
+            for index, trace in enumerate(self._references):
+                if trace is not None and not native_abi.RUNTIME_HAS_TOKEN(
+                    self._native.pointer, index + 1
+                ):
+                    self._references[index] = None
         assert native_abi.RUNTIME_ERROR(self._native.pointer) == 0, (
             "native cache contract violation"
         )
@@ -638,35 +648,6 @@ class JitRuntimeBoundary:
         self._references[empty] = trace
         return empty + 1, True
 
-    def _compiled(self, pc: int, status: int, elapsed_ns: int) -> int:
-        try:
-            assert self._compile_observer is not None
-            self._compile_observer(pc, status == 1, elapsed_ns)
-            return 1
-        except BaseException as error:
-            self._callback_error = error
-            return 0
-
-    def _release_external(self, token: int) -> int:
-        try:
-            assert self._references is not None
-            assert 0 < token <= len(self._references)
-            assert self._references[token - 1] is not None
-            self._references[token - 1] = None
-            return 1
-        except BaseException as error:
-            self._callback_error = error
-            return 0
-
-    def _retired(self, pc: int, count: int) -> int:
-        try:
-            assert self._retire_observer is not None
-            self._retire_observer(pc, count)
-            return 1
-        except BaseException as error:
-            self._callback_error = error
-            return 0
-
     def bind_allocator(self, allocator: BumpAllocator) -> None:
         self._native.bind_allocator(allocator)
 
@@ -693,74 +674,47 @@ class JitRuntimeBoundary:
         return result
 
     @property
-    def active_idx(self) -> int:
-        return self._native.scalar(CacheField.ACTIVE_BANK)
-
-    @property
-    def warm_idx(self) -> int:
-        return self._native.scalar(CacheField.WARM_BANK)
-
-    @property
-    def oldest_idx(self) -> int:
-        return self._native.scalar(CacheField.OLDEST_BANK)
-
-    @property
     def promotions(self) -> int:
-        return self._native.scalar(CacheField.PROMOTIONS)
+        return self.scalar(CacheField.PROMOTIONS)
 
     @property
     def evictions(self) -> int:
-        return self._native.scalar(CacheField.EVICTIONS)
+        return self.scalar(CacheField.EVICTIONS)
 
     @property
     def generation(self) -> int:
-        return self._native.scalar(CacheField.GENERATION)
+        return self.scalar(CacheField.GENERATION)
 
     @property
     def resident_count(self) -> int:
-        return self._native.scalar(CacheField.RESIDENT_COUNT, JIT_CACHE_BANK_COUNT)
+        return self.scalar(CacheField.RESIDENT_COUNT)
 
     @property
     def resident_bytes(self) -> int:
-        return self._native.scalar(CacheField.BANK_USED, JIT_CACHE_BANK_COUNT)
+        return self.scalar(CacheField.BANK_USED)
 
     @property
     def entry_capacity(self) -> int:
-        return self._native.scalar(CacheField.BANK_ENTRY_CAPACITY, JIT_CACHE_BANK_COUNT)
+        return self.scalar(CacheField.BANK_ENTRY_CAPACITY)
 
     @property
     def rotations(self) -> int:
-        return self._native.scalar(CacheField.ROTATIONS)
+        return self.scalar(CacheField.ROTATIONS)
 
     @property
     def aging_ns(self) -> int:
-        return self._native.scalar(CacheField.AGING_NS)
+        return self.scalar(CacheField.AGING_NS)
 
     @property
     def compile_attempts(self) -> int:
-        return self._native.scalar(CacheField.COMPILE_ATTEMPTS)
+        return self.scalar(CacheField.COMPILE_ATTEMPTS)
 
     @property
     def compile_ns(self) -> int:
-        return self._native.scalar(CacheField.COMPILE_NS)
-
-    @property
-    def common_code(self) -> JITCodeCacheRegion:
-        if self._code_region is None:
-            self._code_region = JITCodeCacheRegion(
-                ExecutableBuffer.borrow(
-                    native_abi.RUNTIME_MEMORY(self._native.pointer), self._native
-                )
-            )
-        return self._code_region
+        return self.scalar(CacheField.COMPILE_NS)
 
     def find_trace(self, head_pc: int) -> JITTrace | None:
         return self._reference(int(native_abi.RUNTIME_FIND(self._native.pointer, head_pc)))
-
-    def find_bank(self, head_pc: int) -> int | None:
-        bank_id = int(native_abi.RUNTIME_BANK(self._native.pointer, head_pc))
-        assert -1 <= bank_id < JIT_CACHE_BANK_COUNT
-        return None if bank_id < 0 else bank_id
 
     def insert(self, trace: JITTrace) -> bool:
         if self.metadata_provider is not None:
@@ -773,6 +727,8 @@ class JitRuntimeBoundary:
         if not result and added and not native_abi.RUNTIME_HAS_TOKEN(self._native.pointer, token):
             self._references[token - 1] = None
         self._check()
+        if result == 1 and trace.code_blob is not None:
+            trace._native_owner = self._native
         return result == 1
 
     def lookup(self, head_pc: int) -> JITTrace | None:

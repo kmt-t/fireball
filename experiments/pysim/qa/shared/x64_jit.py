@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable
+from collections.abc import Iterable
 
 from config import JIT_CACHE_ACTIVE_OFFSET_BYTES
+from qa.private import jit_native_abi as native_abi
 from tier2_runtime.wasm.module import LocalWidthMap, WasmOperand
 
-from . import native_abi
 from .common_code import JITCodeCacheRegion
 from .jit_cache import JITTrace
 
@@ -20,11 +20,10 @@ class TraceCompiler:
     ``compile_instructions`` also installs a standalone trace.
     """
 
-    __slots__ = ("_standalone_region", "compile_observer")
+    __slots__ = ("_standalone_region",)
 
     def __init__(self) -> None:
         self._standalone_region: JITCodeCacheRegion | None = None
-        self.compile_observer: Callable[[int, bool, int], None] | None = None
 
     @staticmethod
     def compile_wasm(block: native_abi.WasmBlock) -> JITTrace | None:

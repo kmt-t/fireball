@@ -22,12 +22,12 @@ struct jit_instruction {
 }  // namespace fireball
 
 extern "C" {
-FB_PYSIM_ABI_EXPORT int fb_jit_compile_instructions(const fireball::jit_instruction_block* block,
+FB_JIT_QA_EXPORT int fb_jit_compile_instructions(const fireball::jit_instruction_block* block,
                                                     fireball::jit_cache_trace* trace,
                                                     fireball::jit_trace_fixups* fixups,
                                                     std::uint8_t* output, std::uint32_t capacity);
 // Return a complete cache-ready blob and descriptor in one compiler call.
-FB_PYSIM_ABI_EXPORT int fb_jit_compile_block(const fireball::jit_wasm_block* block,
+FB_JIT_QA_EXPORT int fb_jit_compile_block(const fireball::jit_wasm_block* block,
                                              fireball::jit_cache_trace* trace,
                                              fireball::jit_trace_fixups* fixups,
                                              std::uint8_t* output, std::uint32_t capacity);

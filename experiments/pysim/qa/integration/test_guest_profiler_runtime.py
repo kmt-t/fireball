@@ -10,6 +10,7 @@ import pytest
 import wasmtime
 from qa.shared.helpers import make_native_interpreter
 from qa.shared.runtime_support import compile_runtime_block, make_runtime_engine
+from qa.shared.x64_jit import TraceCompiler
 from tier2_runtime.interpreter.interpreter import (
     InterpreterCall,
     NativeInterpreter,
@@ -26,7 +27,6 @@ from tier2_runtime.runtime.composer import (
 )
 from tier2_runtime.runtime.engine import RuntimeEngine
 from tier2_runtime.runtime.recovery import Result
-from tier3_plugins.jit.x64_jit import TraceCompiler
 from tier3_plugins.profiler.guest_profiler import GuestProfiler
 
 _GUEST_WAT = """(module
@@ -93,7 +93,7 @@ def _run_guest_history(
         else RuntimeEngine(collect_runtime_stats=True)
     )
     if engine.jit_runtime is not None:
-        resources.callback(engine.jit_runtime.cache.common_code.buffer.close)
+        resources.callback(engine.jit_runtime.cache._native.close)
     module = engine.load_wasm(bytes(wasmtime.wat2wasm(_GUEST_WAT)))
     memory = bytearray(b"\xa5" * 65536)
     interpreter = make_native_interpreter(module, memory=memory)

@@ -204,6 +204,20 @@ class TableExecutionViewNative(ctypes.Structure):
     _fields_ = (("function_indices", ctypes.c_void_p), ("size", ctypes.c_uint32))
 
 
+class BlockExecutionViewNative(ctypes.Structure):
+    """Loader-owned block ranges and control targets, independent of execution plugins."""
+
+    __slots__ = ()
+    _fields_ = (
+        ("head_pc", ctypes.c_uint32),
+        ("function_index", ctypes.c_uint32),
+        ("next_pc", ctypes.c_uint32),
+        ("loops_to", ctypes.c_uint32),
+        ("frame_depth", ctypes.c_uint32),
+        ("byte_span", ctypes.c_uint32),
+    )
+
+
 class ModuleExecutionViewNative(ctypes.Structure):
     """Native function, type, signature, and table metadata for one module."""
 
@@ -221,6 +235,8 @@ class ModuleExecutionViewNative(ctypes.Structure):
         ("globals", ctypes.c_void_p),
         ("global_widths", ctypes.c_void_p),
         ("global_count", ctypes.c_uint32),
+        ("blocks", ctypes.c_void_p),
+        ("block_count", ctypes.c_uint32),
     )
 
 
@@ -228,7 +244,6 @@ class NativeGlobalStorage(Sequence[int]):
     """Fixed-width globals shared directly by Python and native execution."""
 
     __slots__ = (
-        "_allocator",
         "_arena_offset",
         "_arena_size",
         "_size",
@@ -241,11 +256,15 @@ class NativeGlobalStorage(Sequence[int]):
         self.capacity = capacity
         self._size = 0
         self._values = (ctypes.c_uint64 * capacity)()
-        self._allocator: BumpAllocator | None = None
         self._arena_offset: int | None = None
         self._arena_size = 0
         if allocator is not None:
-            self.bind_allocator(allocator)
+            self._arena_size = ctypes.sizeof(self._values)
+            self._arena_offset = (
+                allocator.allocate(self._arena_size, ctypes.alignment(ctypes.c_uint64))
+                if self._arena_size
+                else None
+            )
 
     @property
     def arena_offset(self) -> int | None:
@@ -254,19 +273,6 @@ class NativeGlobalStorage(Sequence[int]):
     @property
     def arena_size(self) -> int:
         return self._arena_size
-
-    def bind_allocator(self, allocator: BumpAllocator) -> None:
-        """Record this C-compatible globals array in the owning runtime arena."""
-
-        if self._allocator is allocator:
-            return
-        self._arena_size = ctypes.sizeof(self._values)
-        self._arena_offset = (
-            allocator.allocate(self._arena_size, ctypes.alignment(ctypes.c_uint64))
-            if self._arena_size
-            else None
-        )
-        self._allocator = allocator
 
     def __len__(self) -> int:
         return self._size
@@ -722,7 +728,7 @@ assert ctypes.sizeof(FunctionExecutionViewNative) == 72
 assert FunctionExecutionViewNative.code_pc_offset.offset == 12
 assert ctypes.sizeof(FunctionTypeExecutionViewNative) == 16
 assert ctypes.sizeof(TableExecutionViewNative) == 16
-assert ctypes.sizeof(ModuleExecutionViewNative) == 80
+assert ctypes.sizeof(ModuleExecutionViewNative) == 96
 assert ModuleExecutionViewNative.globals.offset == 56
 assert ModuleExecutionViewNative.global_widths.offset == 64
 assert ModuleExecutionViewNative.global_count.offset == 72

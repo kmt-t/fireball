@@ -406,13 +406,13 @@ def run_aobench():
     module = parse(wasm_bytes)
     print(f"    -> Parsed Module: {len(module.functions)} functions, {len(module.exports)} exports")
     # 3. Setup System & WASI Context
+    from _bootstrap import reserve_native_region
     from tier2_runtime.runtime.engine import RuntimeEngine
     from tier3_plugins.jit.jit_manager import JITRuntimeManager
-    from tier3_plugins.jit.x64_jit import TraceCompiler
 
     # 3. Setup System & WASI Context for the Interpreter baseline
     sysv = System()
-    sysv.start_hal_driver(DummyDriver(transport=sysv.transport), FB_URI_HAL_STDOUT)
+    sysv.start_hal_driver(DummyDriver(sysv.pool, transport=sysv.transport), FB_URI_HAL_STDOUT)
     wasi_ctx = WasiHostContext(sysv)
     host_funcs = wasi_ctx.build_interpreter_host_functions(module)
     module.init_memory_data(wasi_ctx.guest_memory, ())
@@ -442,14 +442,15 @@ def run_aobench():
         "[*] Step 4: Executing on Tier 2 RuntimeEngine with Tier 3 JIT extension (card marking + idle compilation)..."
     )
     sysv_t3 = System()
-    sysv_t3.start_hal_driver(DummyDriver(transport=sysv_t3.transport), FB_URI_HAL_STDOUT)
+    sysv_t3.start_hal_driver(
+        DummyDriver(sysv_t3.pool, transport=sysv_t3.transport), FB_URI_HAL_STDOUT
+    )
     wasi_ctx_t3 = WasiHostContext(sysv_t3)
     host_funcs_t3 = wasi_ctx_t3.build_interpreter_host_functions(module)
     module.init_memory_data(wasi_ctx_t3.guest_memory, ())
-    trace_compiler = TraceCompiler()
     debug = "--debug" in sys.argv
     runtime_engine = RuntimeEngine(
-        jit_runtime=JITRuntimeManager(jit_compiler=trace_compiler),
+        jit_runtime=JITRuntimeManager(reserve_native_region),
         debug=debug,
     )
     runtime_engine.register_module_blocks(module)
@@ -497,9 +498,6 @@ def run_aobench():
         print(f"  * JIT vs C++ interpreter:   {speedup_ratio:.2f}x faster")
     else:
         print(f"  * JIT vs C++ interpreter:   {1.0 / speedup_ratio:.2f}x slower")
-    print(
-        f"  * JIT Traces Compiled:      {runtime_engine.jit_runtime.cache.resident_count} resident traces"
-    )
     print("================================================================================")
     print(
         f"\n[Result] Genuine 3D AO-Bench: {total_rays:,} rays in {t2_time_ms:.2f} ms (C++ interpreter) vs {t3_time_ms:.2f} ms (hybrid JIT), speedup: {speedup_ratio:.2f}x."
@@ -516,7 +514,9 @@ if __name__ == "__main__":
         wasm_float_bytes = wasmtime.wat2wasm(GENUINE_AO_FLOAT_WAT)
         module_float = parse(wasm_float_bytes)
         sysv_float = System()
-        sysv_float.start_hal_driver(DummyDriver(transport=sysv_float.transport), FB_URI_HAL_STDOUT)
+        sysv_float.start_hal_driver(
+            DummyDriver(sysv_float.pool, transport=sysv_float.transport), FB_URI_HAL_STDOUT
+        )
         wasi_ctx_float = WasiHostContext(sysv_float)
         host_funcs_float = wasi_ctx_float.build_interpreter_host_functions(module_float)
         module_float.init_memory_data(wasi_ctx_float.guest_memory, ())

@@ -5,7 +5,8 @@ from __future__ import annotations
 import ctypes
 from typing import Protocol, cast
 
-from . import native_abi
+from qa.private import jit_native_abi as native_abi
+
 from .exec_memory import ExecutableBuffer
 
 _LAYOUT = native_abi.COMMON_LAYOUT
@@ -99,9 +100,6 @@ class JITCodeCacheRegion:
             )(entry),
         )
         return fn, entry
-
-    def read_common(self) -> bytes:
-        return self.buffer.read(0, self.common_code_bytes)
 
 
 __all__ = (

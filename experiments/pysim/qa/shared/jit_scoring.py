@@ -176,3 +176,19 @@ def score_opcodes(opcodes: Iterable[int], table: OpcodeBenefitTable) -> int:
     for opcode in opcodes:
         total += table.score(opcode)
     return total
+
+
+def block_score(module, block) -> int:
+    from tier2_runtime.interpreter.control_flow import iter_block_ops
+
+    return score_opcodes(
+        (
+            opcode
+            for opcode, _ in iter_block_ops(
+                module.code_for(block.func_index),
+                block.head_pc - module.function_pc_offset(block.func_index),
+                block.byte_span,
+            )
+        ),
+        OPCODE_BENEFIT_TABLE,
+    )

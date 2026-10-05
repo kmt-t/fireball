@@ -7,8 +7,6 @@ import sys
 from collections.abc import Callable
 from pathlib import Path
 
-from tier2_runtime.abi.jit_abi import NativeBlockVisitHistory
-
 
 class NativeDispatchCall(ctypes.Structure):
     _fields_ = (
@@ -22,9 +20,7 @@ class NativeDispatchCall(ctypes.Structure):
         ("locals_bytes", ctypes.c_uint64),
         ("control_stack", ctypes.c_void_p),
         ("control_bytes", ctypes.c_uint64),
-        ("entries", ctypes.c_void_p),
-        ("entry_count", ctypes.c_uint32),
-        ("entries_bytes", ctypes.c_uint64),
+        ("trace_source", ctypes.c_void_p),
         ("trackable_mask", ctypes.c_void_p),
         ("trackable_card_count", ctypes.c_uint32),
         ("trackable_shift", ctypes.c_uint32),
@@ -111,9 +107,12 @@ _PYBUFFER_RELEASE.restype = None
 class BufferLease:
     """Hold one CPython buffer export while C++ reads or writes its bytes."""
 
-    __slots__ = ("_active", "_view")
+    __slots__ = ("_active", "_owner", "_view")
 
     def __init__(self, owner: memoryview) -> None:
+        # Py_buffer.obj is opaque to GC. Keep storage reachable until all
+        # finalizers have run, including native borrowers' teardown.
+        self._owner = owner
         self._view = PythonBuffer()
         assert _PYOBJECT_GET_BUFFER(owner, ctypes.byref(self._view), 0) == 0
         self._active = True
@@ -145,36 +144,32 @@ _LIBRARY_PATH = Path(__file__).parent.parent / "interpreter" / _NATIVE_LIBRARY_N
 _LIBRARY = ctypes.PyDLL(str(_LIBRARY_PATH))
 
 
-_RUN_STEP = _LIBRARY.fb_native_run_step
-_RUN_STEP.argtypes = (ctypes.c_void_p, ctypes.POINTER(NativeResult))
-_RUN_STEP.restype = ctypes.c_int
-_RUN_CONTROL_STEP = _LIBRARY.fb_native_run_control_step
-_RUN_CONTROL_STEP.argtypes = (ctypes.c_void_p, ctypes.POINTER(NativeResult))
-_RUN_CONTROL_STEP.restype = ctypes.c_int
-_RUN_DEBUG_DISPATCH = _LIBRARY.fb_native_run_debug_dispatch
-_RUN_DEBUG_DISPATCH.argtypes = (ctypes.c_void_p, ctypes.POINTER(NativeResult))
-_RUN_DEBUG_DISPATCH.restype = ctypes.c_int
-_RUN_DISPATCH = _LIBRARY.fb_native_run_dispatch
-_RUN_DISPATCH.argtypes = (ctypes.c_void_p, ctypes.POINTER(NativeResult))
-_RUN_DISPATCH.restype = ctypes.c_int
-_RUN_DISPATCH_STATS = _LIBRARY.fb_native_run_dispatch_stats
-_RUN_DISPATCH_STATS.argtypes = (ctypes.c_void_p, ctypes.POINTER(NativeResult))
-_RUN_DISPATCH_STATS.restype = ctypes.c_int
-_RUN_DISPATCH_HOTSPOTS = _LIBRARY.fb_native_run_dispatch_hotspots
-_RUN_DISPATCH_HOTSPOTS.argtypes = (ctypes.c_void_p, ctypes.POINTER(NativeResult))
-_RUN_DISPATCH_HOTSPOTS.restype = ctypes.c_int
-_RUN_DISPATCH_STATS_HOTSPOTS = _LIBRARY.fb_native_run_dispatch_stats_hotspots
-_RUN_DISPATCH_STATS_HOTSPOTS.argtypes = (ctypes.c_void_p, ctypes.POINTER(NativeResult))
-_RUN_DISPATCH_STATS_HOTSPOTS.restype = ctypes.c_int
+RUN_STEP = _LIBRARY.fb_native_run_step
+RUN_STEP.argtypes = (ctypes.c_void_p, ctypes.POINTER(NativeResult))
+RUN_STEP.restype = ctypes.c_int
+RUN_CONTROL_STEP = _LIBRARY.fb_native_run_control_step
+RUN_CONTROL_STEP.argtypes = (ctypes.c_void_p, ctypes.POINTER(NativeResult))
+RUN_CONTROL_STEP.restype = ctypes.c_int
+RUN_DEBUG_DISPATCH = _LIBRARY.fb_native_run_debug_dispatch
+RUN_DEBUG_DISPATCH.argtypes = (ctypes.c_void_p, ctypes.POINTER(NativeResult))
+RUN_DEBUG_DISPATCH.restype = ctypes.c_int
+RUN_DISPATCH = _LIBRARY.fb_native_run_dispatch
+RUN_DISPATCH.argtypes = (ctypes.c_void_p, ctypes.POINTER(NativeResult))
+RUN_DISPATCH.restype = ctypes.c_int
+RUN_DISPATCH_STATS = _LIBRARY.fb_native_run_dispatch_stats
+RUN_DISPATCH_STATS.argtypes = (ctypes.c_void_p, ctypes.POINTER(NativeResult))
+RUN_DISPATCH_STATS.restype = ctypes.c_int
+RUN_DISPATCH_HOTSPOTS = _LIBRARY.fb_native_run_dispatch_hotspots
+RUN_DISPATCH_HOTSPOTS.argtypes = (ctypes.c_void_p, ctypes.POINTER(NativeResult))
+RUN_DISPATCH_HOTSPOTS.restype = ctypes.c_int
+RUN_DISPATCH_STATS_HOTSPOTS = _LIBRARY.fb_native_run_dispatch_stats_hotspots
+RUN_DISPATCH_STATS_HOTSPOTS.argtypes = (ctypes.c_void_p, ctypes.POINTER(NativeResult))
+RUN_DISPATCH_STATS_HOTSPOTS.restype = ctypes.c_int
 RUNTIME_PROFILE_STATS_AVAILABLE = True
 JIT_HOTSPOT_PROFILING_AVAILABLE = True
 
 
-def _array_address(buffer: ctypes.Array) -> int:
-    return ctypes.addressof(buffer) if len(buffer) > 0 else 0
-
-
-def _run_step_addresses(
+def run_step(
     entry: Callable[..., int],
     code_address: int,
     code_bytes: int,
@@ -191,12 +186,11 @@ def _run_step_addresses(
     ip: int,
     local_slots: int,
     control_base: int,
-    call: NativeStepCall | None = None,
-    result: NativeResult | None = None,
+    *,
+    call: NativeStepCall,
+    result: NativeResult,
 ) -> tuple[int, int, int, int]:
     """Call the native step ABI with addresses owned by the active context."""
-    if call is None:
-        call = NativeStepCall()
     call.code = code_address
     call.code_bytes = code_bytes
     call.context = context_address
@@ -212,8 +206,6 @@ def _run_step_addresses(
     call.ip = ip
     call.local_slots = local_slots
     call.control_base = control_base
-    if result is None:
-        result = NativeResult()
     status = entry(ctypes.byref(call), ctypes.byref(result))
     assert status == 1, (
         f"C++ interpreter ABI rejected call with status {status} and error {result.error_code}"
@@ -221,208 +213,11 @@ def _run_step_addresses(
     return result.status, result.ip, result.stack_size, result.trap_code
 
 
-def _run_step(
-    entry: Callable[..., int],
-    code: bytes,
-    context: memoryview,
-    stack: memoryview,
-    locals_buffer: memoryview,
-    control_stack: memoryview,
-    stack_size: int,
-    stack_capacity: int,
-    ip: int,
-    local_slots: int,
-    control_base: int,
-) -> tuple[int, int, int, int]:
-    buffers = (
-        BufferLease(memoryview(code)),
-        BufferLease(context),
-        BufferLease(stack),
-        BufferLease(locals_buffer),
-        BufferLease(control_stack),
-    )
-    try:
-        code_view, context_view, stack_view, locals_view, control_view = buffers
-        return _run_step_addresses(
-            entry,
-            code_view.address,
-            code_view.size,
-            context_view.address,
-            context_view.size,
-            stack_view.address,
-            stack_view.size,
-            locals_view.address,
-            locals_view.size,
-            control_view.address,
-            control_view.size,
-            stack_size,
-            stack_capacity,
-            ip,
-            local_slots,
-            control_base,
-        )
-    finally:
-        for buffer in buffers:
-            buffer.release()
+NativeDispatchResult = tuple[int, int, int, int, int, int, int, int, int]
+NativeDispatchEntryPoint = Callable[..., int]
 
 
-def run_step(
-    code: bytes,
-    context: memoryview,
-    stack: memoryview,
-    locals_buffer: memoryview,
-    control_stack: memoryview,
-    stack_size: int,
-    stack_capacity: int,
-    ip: int,
-    local_slots: int,
-    control_base: int,
-) -> tuple[int, int, int, int]:
-    return _run_step(
-        _RUN_STEP,
-        code,
-        context,
-        stack,
-        locals_buffer,
-        control_stack,
-        stack_size,
-        stack_capacity,
-        ip,
-        local_slots,
-        control_base,
-    )
-
-
-def run_control_step(
-    code: bytes,
-    context: memoryview,
-    stack: memoryview,
-    locals_buffer: memoryview,
-    control_stack: memoryview,
-    stack_size: int,
-    stack_capacity: int,
-    ip: int,
-    local_slots: int,
-    control_base: int,
-) -> tuple[int, int, int, int]:
-    return _run_step(
-        _RUN_CONTROL_STEP,
-        code,
-        context,
-        stack,
-        locals_buffer,
-        control_stack,
-        stack_size,
-        stack_capacity,
-        ip,
-        local_slots,
-        control_base,
-    )
-
-
-def run_step_addresses(
-    code_address: int,
-    code_bytes: int,
-    context_address: int,
-    context_bytes: int,
-    stack_address: int,
-    stack_bytes: int,
-    locals_address: int,
-    locals_bytes: int,
-    control_address: int,
-    control_bytes: int,
-    stack_size: int,
-    stack_capacity: int,
-    ip: int,
-    local_slots: int,
-    control_base: int,
-    *,
-    call: NativeStepCall | None = None,
-    result: NativeResult | None = None,
-) -> tuple[int, int, int, int]:
-    """Run one C++ step using stable native addresses, without buffer exports."""
-    return _run_step_addresses(
-        _RUN_STEP,
-        code_address,
-        code_bytes,
-        context_address,
-        context_bytes,
-        stack_address,
-        stack_bytes,
-        locals_address,
-        locals_bytes,
-        control_address,
-        control_bytes,
-        stack_size,
-        stack_capacity,
-        ip,
-        local_slots,
-        control_base,
-        call,
-        result,
-    )
-
-
-def run_control_step_addresses(
-    code_address: int,
-    code_bytes: int,
-    context_address: int,
-    context_bytes: int,
-    stack_address: int,
-    stack_bytes: int,
-    locals_address: int,
-    locals_bytes: int,
-    control_address: int,
-    control_bytes: int,
-    stack_size: int,
-    stack_capacity: int,
-    ip: int,
-    local_slots: int,
-    control_base: int,
-    *,
-    call: NativeStepCall | None = None,
-    result: NativeResult | None = None,
-) -> tuple[int, int, int, int]:
-    """Run one C++ control step using stable native addresses."""
-    return _run_step_addresses(
-        _RUN_CONTROL_STEP,
-        code_address,
-        code_bytes,
-        context_address,
-        context_bytes,
-        stack_address,
-        stack_bytes,
-        locals_address,
-        locals_bytes,
-        control_address,
-        control_bytes,
-        stack_size,
-        stack_capacity,
-        ip,
-        local_slots,
-        control_base,
-        call,
-        result,
-    )
-
-
-NativeDispatchResult = tuple[
-    int,
-    int,
-    int,
-    int,
-    int,
-    int,
-    int,
-    int,
-    int,
-    int,
-    NativeBlockVisitHistory,
-]
-NativeDispatchEntryPoint = Callable[..., NativeDispatchResult]
-
-
-def _run_dispatch_addresses(
+def run_native_dispatch(
     entry: Callable[..., int],
     code_address: int,
     code_bytes: int,
@@ -434,12 +229,6 @@ def _run_dispatch_addresses(
     locals_bytes: int,
     control_address: int,
     control_bytes: int,
-    entries: ctypes.Array,
-    trackable_mask: ctypes.Array,
-    block_history: NativeBlockVisitHistory,
-    entry_count: int,
-    trackable_card_count: int,
-    trackable_shift: int,
     stack_size: int,
     stack_capacity: int,
     initial_ip: int,
@@ -449,12 +238,11 @@ def _run_dispatch_addresses(
     function_index: int,
     yield_threshold: int,
     execution_count: int,
-    call: NativeDispatchCall | None = None,
-    result: NativeResult | None = None,
+    *,
+    call: NativeDispatchCall,
+    result: NativeResult,
 ) -> NativeDispatchResult:
     """Run the dispatcher over stable addresses without exporting buffers."""
-    if call is None:
-        call = NativeDispatchCall()
     call.code = code_address
     call.code_bytes = code_bytes
     call.context = context_address
@@ -465,15 +253,13 @@ def _run_dispatch_addresses(
     call.locals_bytes = locals_bytes
     call.control_stack = control_address
     call.control_bytes = control_bytes
-    call.entries = _array_address(entries)
-    call.entry_count = entry_count
-    call.entries_bytes = ctypes.sizeof(entries)
-    call.trackable_mask = _array_address(trackable_mask)
-    call.trackable_card_count = trackable_card_count
-    call.trackable_shift = trackable_shift
-    call.trackable_bytes = ctypes.sizeof(trackable_mask)
-    call.block_history = block_history.native_address
-    call.block_history_bytes = block_history.native_bytes
+    call.trace_source = 0
+    call.trackable_mask = 0
+    call.trackable_card_count = 0
+    call.trackable_shift = 0
+    call.trackable_bytes = 0
+    call.block_history = 0
+    call.block_history_bytes = 0
     call.stack_size = stack_size
     call.stack_capacity = stack_capacity
     call.initial_ip = initial_ip
@@ -483,8 +269,6 @@ def _run_dispatch_addresses(
     call.function_index = function_index
     call.yield_threshold = yield_threshold
     call.execution_count = execution_count
-    if result is None:
-        result = NativeResult()
     status = entry(ctypes.byref(call), ctypes.byref(result))
     assert status == 1, (
         f"C++ interpreter ABI rejected call with status {status} and error {result.error_code}"
@@ -498,388 +282,5 @@ def _run_dispatch_addresses(
         result.body_count,
         result.dispatcher_trace_transitions,
         result.control_handler_count,
-        result.eligible_block_visits,
         result.interpreted_block_count,
-        block_history,
-    )
-
-
-def _run_dispatch(
-    entry: Callable[..., int],
-    code: bytes,
-    context: memoryview,
-    stack: memoryview,
-    locals_buffer: memoryview,
-    control_stack: memoryview,
-    entries: ctypes.Array,
-    trackable_mask: ctypes.Array,
-    block_history: NativeBlockVisitHistory,
-    entry_count: int,
-    trackable_card_count: int,
-    trackable_shift: int,
-    stack_size: int,
-    stack_capacity: int,
-    initial_ip: int,
-    local_base: int,
-    local_slots: int,
-    control_base: int,
-    function_index: int,
-    yield_threshold: int,
-    execution_count: int,
-) -> NativeDispatchResult:
-    buffers = (
-        BufferLease(memoryview(code)),
-        BufferLease(context),
-        BufferLease(stack),
-        BufferLease(locals_buffer),
-        BufferLease(control_stack),
-    )
-    try:
-        code_view, context_view, stack_view, locals_view, control_view = buffers
-        return _run_dispatch_addresses(
-            entry,
-            code_view.address,
-            code_view.size,
-            context_view.address,
-            context_view.size,
-            stack_view.address,
-            stack_view.size,
-            locals_view.address,
-            locals_view.size,
-            control_view.address,
-            control_view.size,
-            entries,
-            trackable_mask,
-            block_history,
-            entry_count,
-            trackable_card_count,
-            trackable_shift,
-            stack_size,
-            stack_capacity,
-            initial_ip,
-            local_base,
-            local_slots,
-            control_base,
-            function_index,
-            yield_threshold,
-            execution_count,
-        )
-    finally:
-        for buffer in buffers:
-            buffer.release()
-
-
-def run_native_dispatch(
-    code: bytes,
-    context: memoryview,
-    stack: memoryview,
-    locals_buffer: memoryview,
-    control_stack: memoryview,
-    entries: ctypes.Array,
-    trackable_mask: ctypes.Array,
-    block_history: NativeBlockVisitHistory,
-    entry_count: int,
-    trackable_card_count: int,
-    trackable_shift: int,
-    stack_size: int,
-    stack_capacity: int,
-    initial_ip: int,
-    local_base: int,
-    local_slots: int,
-    control_base: int,
-    function_index: int,
-    yield_threshold: int,
-    execution_count: int,
-) -> NativeDispatchResult:
-    return _run_dispatch(
-        _RUN_DISPATCH,
-        code,
-        context,
-        stack,
-        locals_buffer,
-        control_stack,
-        entries,
-        trackable_mask,
-        block_history,
-        entry_count,
-        trackable_card_count,
-        trackable_shift,
-        stack_size,
-        stack_capacity,
-        initial_ip,
-        local_base,
-        local_slots,
-        control_base,
-        function_index,
-        yield_threshold,
-        execution_count,
-    )
-
-
-def run_native_debug_dispatch(
-    code: bytes,
-    context: memoryview,
-    stack: memoryview,
-    locals_buffer: memoryview,
-    control_stack: memoryview,
-    entries: ctypes.Array,
-    trackable_mask: ctypes.Array,
-    block_history: NativeBlockVisitHistory,
-    entry_count: int,
-    trackable_card_count: int,
-    trackable_shift: int,
-    stack_size: int,
-    stack_capacity: int,
-    initial_ip: int,
-    local_base: int,
-    local_slots: int,
-    control_base: int,
-    function_index: int,
-    yield_threshold: int,
-    execution_count: int,
-) -> NativeDispatchResult:
-    return _run_dispatch(
-        _RUN_DEBUG_DISPATCH,
-        code,
-        context,
-        stack,
-        locals_buffer,
-        control_stack,
-        entries,
-        trackable_mask,
-        block_history,
-        entry_count,
-        trackable_card_count,
-        trackable_shift,
-        stack_size,
-        stack_capacity,
-        initial_ip,
-        local_base,
-        local_slots,
-        control_base,
-        function_index,
-        yield_threshold,
-        execution_count,
-    )
-
-
-def run_native_dispatch_stats(
-    code: bytes,
-    context: memoryview,
-    stack: memoryview,
-    locals_buffer: memoryview,
-    control_stack: memoryview,
-    entries: ctypes.Array,
-    trackable_mask: ctypes.Array,
-    block_history: NativeBlockVisitHistory,
-    entry_count: int,
-    trackable_card_count: int,
-    trackable_shift: int,
-    stack_size: int,
-    stack_capacity: int,
-    initial_ip: int,
-    local_base: int,
-    local_slots: int,
-    control_base: int,
-    function_index: int,
-    yield_threshold: int,
-    execution_count: int,
-) -> NativeDispatchResult:
-    return _run_dispatch(
-        _RUN_DISPATCH_STATS,
-        code,
-        context,
-        stack,
-        locals_buffer,
-        control_stack,
-        entries,
-        trackable_mask,
-        block_history,
-        entry_count,
-        trackable_card_count,
-        trackable_shift,
-        stack_size,
-        stack_capacity,
-        initial_ip,
-        local_base,
-        local_slots,
-        control_base,
-        function_index,
-        yield_threshold,
-        execution_count,
-    )
-
-
-def run_native_dispatch_hotspots(
-    code: bytes,
-    context: memoryview,
-    stack: memoryview,
-    locals_buffer: memoryview,
-    control_stack: memoryview,
-    entries: ctypes.Array,
-    trackable_mask: ctypes.Array,
-    block_history: NativeBlockVisitHistory,
-    entry_count: int,
-    trackable_card_count: int,
-    trackable_shift: int,
-    stack_size: int,
-    stack_capacity: int,
-    initial_ip: int,
-    local_base: int,
-    local_slots: int,
-    control_base: int,
-    function_index: int,
-    yield_threshold: int,
-    execution_count: int,
-) -> NativeDispatchResult:
-    return _run_dispatch(
-        _RUN_DISPATCH_HOTSPOTS,
-        code,
-        context,
-        stack,
-        locals_buffer,
-        control_stack,
-        entries,
-        trackable_mask,
-        block_history,
-        entry_count,
-        trackable_card_count,
-        trackable_shift,
-        stack_size,
-        stack_capacity,
-        initial_ip,
-        local_base,
-        local_slots,
-        control_base,
-        function_index,
-        yield_threshold,
-        execution_count,
-    )
-
-
-def run_native_dispatch_stats_hotspots(
-    code: bytes,
-    context: memoryview,
-    stack: memoryview,
-    locals_buffer: memoryview,
-    control_stack: memoryview,
-    entries: ctypes.Array,
-    trackable_mask: ctypes.Array,
-    block_history: NativeBlockVisitHistory,
-    entry_count: int,
-    trackable_card_count: int,
-    trackable_shift: int,
-    stack_size: int,
-    stack_capacity: int,
-    initial_ip: int,
-    local_base: int,
-    local_slots: int,
-    control_base: int,
-    function_index: int,
-    yield_threshold: int,
-    execution_count: int,
-) -> NativeDispatchResult:
-    return _run_dispatch(
-        _RUN_DISPATCH_STATS_HOTSPOTS,
-        code,
-        context,
-        stack,
-        locals_buffer,
-        control_stack,
-        entries,
-        trackable_mask,
-        block_history,
-        entry_count,
-        trackable_card_count,
-        trackable_shift,
-        stack_size,
-        stack_capacity,
-        initial_ip,
-        local_base,
-        local_slots,
-        control_base,
-        function_index,
-        yield_threshold,
-        execution_count,
-    )
-
-
-def native_dispatch_entrypoint(
-    dispatcher: NativeDispatchEntryPoint,
-) -> Callable[..., int] | None:
-    """Return the C ABI function behind a built-in Python adapter."""
-    if dispatcher is run_native_dispatch:
-        return _RUN_DISPATCH
-    if dispatcher is run_native_debug_dispatch:
-        return _RUN_DEBUG_DISPATCH
-    if dispatcher is run_native_dispatch_stats:
-        return _RUN_DISPATCH_STATS
-    if dispatcher is run_native_dispatch_hotspots:
-        return _RUN_DISPATCH_HOTSPOTS
-    if dispatcher is run_native_dispatch_stats_hotspots:
-        return _RUN_DISPATCH_STATS_HOTSPOTS
-    return None
-
-
-def run_native_dispatch_from_addresses(
-    entry: Callable[..., int],
-    code_address: int,
-    code_bytes: int,
-    context_address: int,
-    context_bytes: int,
-    stack_address: int,
-    stack_bytes: int,
-    locals_address: int,
-    locals_bytes: int,
-    control_address: int,
-    control_bytes: int,
-    entries: ctypes.Array,
-    trackable_mask: ctypes.Array,
-    block_history: NativeBlockVisitHistory,
-    entry_count: int,
-    trackable_card_count: int,
-    trackable_shift: int,
-    stack_size: int,
-    stack_capacity: int,
-    initial_ip: int,
-    local_base: int,
-    local_slots: int,
-    control_base: int,
-    function_index: int,
-    yield_threshold: int,
-    execution_count: int,
-    *,
-    call: NativeDispatchCall | None = None,
-    result: NativeResult | None = None,
-) -> NativeDispatchResult:
-    """Dispatch over borrowed native buffers without CPython buffer exports."""
-    return _run_dispatch_addresses(
-        entry,
-        code_address,
-        code_bytes,
-        context_address,
-        context_bytes,
-        stack_address,
-        stack_bytes,
-        locals_address,
-        locals_bytes,
-        control_address,
-        control_bytes,
-        entries,
-        trackable_mask,
-        block_history,
-        entry_count,
-        trackable_card_count,
-        trackable_shift,
-        stack_size,
-        stack_capacity,
-        initial_ip,
-        local_base,
-        local_slots,
-        control_base,
-        function_index,
-        yield_threshold,
-        execution_count,
-        call,
-        result,
     )

@@ -8,16 +8,17 @@ import pytest
 
 _PYSIM_DIR = Path(__file__).resolve().parents[2]
 
-from tier2_runtime.wasm.jit_scoring import (
+from qa.shared.jit_manager import JITRuntimeManager
+from qa.shared.jit_scoring import (
     JIT_CANDIDATE_THRESHOLD,
     OPCODE_BENEFIT_TABLE,
     OPCODE_TABLE_BYTES,
     OpcodeBenefitTable,
+    block_score,
     score_opcodes,
 )
 from tier2_runtime.wasm.module import Function, FuncType, Module
 from tier2_runtime.wasm.opcodes import I32_ADD, I32_CONST, I32_POPCNT, RETURN
-from tier3_plugins.jit.jit_manager import JITRuntimeManager
 
 
 def test_numeric_opcode_score_table() -> None:
@@ -29,7 +30,7 @@ def test_numeric_opcode_score_table() -> None:
     assert score_opcodes((I32_CONST, I32_CONST, I32_ADD), table) == 19
 
 
-def test_loader_scores_basic_block_once() -> None:
+def test_plugin_scores_basic_block() -> None:
     code = bytes((I32_CONST, 1, I32_CONST, 2, I32_ADD, RETURN))
     module = Module(
         types=[FuncType(params=(), results=())],
@@ -38,8 +39,8 @@ def test_loader_scores_basic_block_once() -> None:
     module.build_basic_block_index()
     assert OPCODE_BENEFIT_TABLE.score(I32_ADD) == 7
     assert len(module.blocks) == 1
-    assert module.blocks[0].jit_score == 19
-    assert JIT_CANDIDATE_THRESHOLD == 9  # runtime_loader.mdの規定値から独立に比較する。
+    assert block_score(module, module.blocks[0]) == 19
+    assert JIT_CANDIDATE_THRESHOLD == 9  # jit_runtime.mdの規定値から独立に比較する。
 
 
 @pytest.mark.parametrize(
@@ -51,7 +52,7 @@ def test_loader_scores_basic_block_once() -> None:
         (bytes.fromhex("41 01 69 1a 0b"), 2, False),
     ),
 )
-def test_loader_candidate_gate_uses_specification_threshold(
+def test_plugin_candidate_gate_uses_specification_threshold(
     code: bytes, score: int, candidate: bool
 ) -> None:
     """TEST-LOAD-49: 実登録で候補カードを生成し、非候補の履歴を記録しない。"""
@@ -61,11 +62,19 @@ def test_loader_candidate_gate_uses_specification_threshold(
     )
     module.build_basic_block_index()
     assert len(module.blocks) == 1
-    assert module.blocks[0].jit_score == score
+    assert block_score(module, module.blocks[0]) == score
     manager = JITRuntimeManager(card_shift=0, min_trace_bytes=1)
     try:
         assert manager.candidate_threshold == 9
         manager.register_module(module)
+        import ctypes
+
+        from qa.private.jit_native_abi import _NATIVE_LIBRARY
+
+        native_score = _NATIVE_LIBRARY.fb_qa_block_score
+        native_score.argtypes = (ctypes.c_void_p,)
+        native_score.restype = ctypes.c_int64
+        assert native_score(ctypes.byref(manager._block_inputs[0])) == score
         assert manager.trackable.is_marked(module.blocks[0].head_pc) == candidate
         assert manager.exec_counter == 0
         head_pc = module.blocks[0].head_pc
@@ -74,7 +83,7 @@ def test_loader_candidate_gate_uses_specification_threshold(
         manager.on_interpreter_exit(False)
         assert manager.card_state(head_pc) == (1 if candidate else 0)
     finally:
-        manager.cache.common_code.buffer.close()
+        manager.cache._native.close()
 
 
 if __name__ == "__main__":

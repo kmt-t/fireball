@@ -4,12 +4,17 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 
+from bump_allocator import BumpAllocator
 from config import (
     FB_CONF_JIT_AGING_STEP_SCAN_BYTES,
     FB_CONF_JIT_AGING_STEP_UNITS,
     FB_CONF_RUNTIME_YIELD_THRESHOLD,
     JIT_CARD_SHIFT,
 )
+from qa.shared.jit_cache import JitRuntimeBoundary, JITTrace
+from qa.shared.jit_manager import JITCompiler, JITRuntimeManager
+from qa.shared.jit_scoring import JIT_CANDIDATE_THRESHOLD
+from qa.shared.x64_jit import TraceCompiler
 from system_containers import (
     ReadOnlyRadixBinaryTreeStorage,
     StaticVector,
@@ -17,11 +22,7 @@ from system_containers import (
 )
 from tier2_runtime.interpreter.control_flow import iter_block_ops
 from tier2_runtime.runtime.engine import RuntimeDriveMode, RuntimeEngine
-from tier2_runtime.wasm.jit_scoring import JIT_CANDIDATE_THRESHOLD
 from tier2_runtime.wasm.module import BasicBlock, Function, FuncType, LocalWidthMap, Module
-from tier3_plugins.jit.jit_cache import JitRuntimeBoundary, JITTrace
-from tier3_plugins.jit.jit_manager import JITCompiler, JITRuntimeManager
-from tier3_plugins.jit.x64_jit import TraceCompiler
 
 PC_ONLY_FUNCTION_STRIDE = 0x2000
 PC_ONLY_FUNCTION_BASE = 0x100
@@ -42,6 +43,7 @@ def make_runtime_engine(
     collect_runtime_stats: bool = True,
     hotspot_profiling_enabled: bool = True,
     retire_observer: Callable[[int, int], None] | None = None,
+    bump_allocator: BumpAllocator | None = None,
 ) -> RuntimeEngine:
     """Compose a Tier 3 runtime engine with the Tier 3 JIT manager for tests."""
 
@@ -59,7 +61,9 @@ def make_runtime_engine(
         and hotspot_profiling_enabled
         and retire_observer is None
     ):
-        return RuntimeEngine(debug=debug, collect_runtime_stats=collect_runtime_stats)
+        return RuntimeEngine(
+            debug=debug, collect_runtime_stats=collect_runtime_stats, bump_allocator=bump_allocator
+        )
     manager = JITRuntimeManager(
         jit_compiler=jit_compiler,
         yield_threshold=yield_threshold,
@@ -78,22 +82,8 @@ def make_runtime_engine(
         debug=debug,
         drive_mode=drive_mode,
         collect_runtime_stats=collect_runtime_stats,
+        bump_allocator=bump_allocator,
     )
-
-
-class RecordingTraceCompiler(TraceCompiler):
-    """Observe the native compiler's queue order without replacing compilation."""
-
-    __slots__ = ("compiled_pcs",)
-
-    def __init__(self) -> None:
-        super().__init__()
-        self.compiled_pcs: list[int] = []
-        self.compile_observer = self._observe_compile
-
-    def _observe_compile(self, pc: int, success: bool, elapsed_ns: int) -> None:
-        if success:
-            self.compiled_pcs.append(pc)
 
 
 def compile_test_block(
@@ -171,7 +161,6 @@ def make_pc_only_functions_module(blocks_per_function: tuple[tuple[int, ...], ..
                 loops_to=None,
                 frame_depth=0,
                 byte_span=1,
-                jit_score=0,
             )
             for func_index, offset in sorted(heads)
         ),

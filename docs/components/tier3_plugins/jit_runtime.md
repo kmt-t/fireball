@@ -13,7 +13,7 @@
 <!-- traceability: {SimpleJITArchitecture} {JIT_MultiBuffer_Cache} {JIT_OldestOnly_Promote} {META_AccessDictionary} {META_BinarySearch} {LowLatencyJIT} {LowOverhead} {HistoryBuffer} {RuntimeHotspotProfiler} {GLOBAL_PeriodicTask} {DirectMappedJIT16} {Runtime_BumpAllocator} -->
 JIT ランタイム管理は、Tier 2 Interpreterへ任意に接続するTier 3プラグインの実行拡張である。JIT拡張がホットスポット履歴、カード状態、コンパイル要求、ネイティブコード検索、3面キャッシュをまとめて所有する。Runtime Event Sinkとは別の内部経路で履歴を記録する。
 
-Runtime と Interpreter は Tier 2 の実行基盤である。Debugger が有効な実行ではRuntimeは通常のInterpreter経路を使う。それ以外はTier 2 Runtimeの実行境界からJIT拡張へ処理を委譲する。JIT拡張は固定長dispatch snapshotをC++ Interpreterへ渡し、yieldやfallbackまでの実行、履歴分析、必要なコンパイル要求を一つのプラグイン内部で処理する。Tier 2 RuntimeやC++ InterpreterにJIT専用の状態オブジェクトや操作API群を追加しない。
+Runtime と Interpreter は Tier 2 の実行基盤である。Debugger が有効な実行ではRuntimeは通常のInterpreter経路を使う。それ以外はTier 2 Runtimeの実行境界からJIT拡張へ処理を委譲する。JIT拡張はTier 2の実行記述子供給契約を実装し、yieldやfallbackまでの実行、履歴分析、必要なコンパイル要求を一つのプラグイン内部で処理する。Tier 2 RuntimeやC++ InterpreterにJIT専用の状態オブジェクトや操作API群を追加しない。
 
 インタープリタ実行ループ内の検索は3段で構成する。第1段はカードマーキング表 (`bit_view<2>`) による $O(1)$ 事前判定、第2段はDirect-Mapped Folding XORキャッシュ（16スロット）による $O(1)$ 検索、第3段は各バンクのソート済みJITエントリ配列に対する二分探索である。エントリ数が少ないためRadix表は設けず、補助索引のメモリと更新処理を持たない。
 
@@ -31,24 +31,22 @@ JITサブシステムは、以下の2つの独立した設計書に責務を分�
 
 ### 2.2 実装責務と依存方向
 <!-- traceability: {META_ContractImplSplit} {META_StaticDI} {META_3TierSeparation} -->
-Tier 2 Runtime / Interpreter と Tier 3 JIT 拡張の境界は、任意の拡張接続と固定長 dispatch snapshot、および Interpreter のyield/fallback境界である。C++ Interpreter はsnapshot内のトレース記述子を参照し、候補PCの履歴を同じ呼出しの戻り値として返す。Tier 2のC++ Interpreterにカード表、コンパイル待ち列、JIT状態オブジェクト、JIT専用の操作APIを追加しない。
+Tier 2 は実行器の接続契約と汎用のネイティブ実行記述子を定める。Tier 3 JIT はその契約を実装する。C++ Interpreter は接続先が返した実行記述子を使い、キャッシュ世代、候補評価、昇格を判断しない。別の接続先も同じ契約で置換できる。
 
-カード表、履歴リング、コンパイル待ち列、3面キャッシュ、実行可能領域、Oldest昇格、chain patch、および`JITTrace`は Tier 3 JIT 拡張が所有する。常駐トレースのsnapshotはキャッシュ世代が変わったときにTier 3のC++キャッシュ実装が生成する。Pythonの接続層はsnapshotの保存領域を用意し、候補表と履歴領域を結合する。C++ Interpreter との呼出し境界では固定長テーブルを一度渡し、実行中に Python へ戻らずに trace / handler を続ける。
+JIT は必要な領域サイズとアラインメントを提示し、外部の領域供給元から領域を借用する。領域内の状態、カード表、履歴、コンパイル待ち列、3面キャッシュ、実行可能コードと配置は C++ JitRuntime が管理する。Python の接続層は領域の供給契約、借用寿命、実行と破棄の呼出しだけを保持する。内部状態を読み取る API やテスト専用の明示操作は製品に設けない。検証用の状態参照と操作は QA 専用ライブラリへ置く。
 
 Tier 3 の実装は次の責務に分ける。
 
 | 実装 | 所有する責務 | 依存先 |
 | :--- | :--- | :--- |
-| Tier 3 JIT Runtime Manager | Loaderの借用コードとメタデータの登録、InterpreterのJIT実行境界、外部観測の通知 | Tier 2 Runtime / Interpreter、Loader |
+| Tier 3 JIT Runtime Manager | 外部領域の借用寿命とネイティブ実行器の呼出し | Tier 2 Runtime / Interpreter、Loader |
 | Tier 3 Native JitRuntime | 候補選択、履歴リングと分析、コンパイル待ち列と抑制、カード状態遷移とエイジング、ソート済み常駐索引、直接マップ検索、3面ローテーション、Oldest昇格、被チェイン元登録と解除、snapshot生成、コンパイル済み記述子と実行可能領域の所有 | Tier 2のdispatch記述子契約、Tier 3のコンパイラと共通コード |
 | Tier 3 Native Trace Compiler | Loader所有のWASMコードを直接走査し、1回の呼出しで1 traceを生成 | Loaderの借用WASMコード、Tier 3の共通コード |
-| Tier 2 Runtime / Interpreter | 通常のInterpreter境界と状態管理。接続時はTier 3拡張へ実行境界を委譲する | Tier 1、任意のTier 3 JIT拡張 |
+| Tier 2 Runtime / Interpreter | 通常のInterpreter境界と状態管理。接続時はTier 3拡張へ実行境界を委譲する | Tier 1、Tier 2 の実行器接続契約 |
 
 Tier 3のC++クラス`fireball::JitRuntime`にキャッシュ管理の状態と処理を集約する。クラスの定義と実装は[`jit_runtime.cxx`](experiments/pysim/native/tier3_plugins/jit/jit_runtime.cxx)に置く。実装言語をC++にしてもTier 3のプラグイン責務を維持する。固定容量のC++オブジェクトを呼出し側が用意した保存領域へ構築する。履歴リング、コンパイル待ち列、コンパイル済み記述子と実行可能領域をC++オブジェクト内で保持する。LoaderのWASMコードとローカル幅は、登録境界で借用する。
 
-実行境界ではC++が履歴を分析し、境界の種類と処理予算からコンパイル要求を処理するか判定する。判定値をPythonへ返して呼び直す経路を設けない。待ち列からコンパイラ、キャッシュ配置、再配置とヘッダpatchへはC++の関数を直接呼び出す。これらは同じネイティブライブラリに置く。履歴と待ち列の内部操作、機械語テンプレートの生成、中間コンパイル結果とトレース組立ては外部へ公開しない。Pythonへのcallbackは外部記述枠の寿命管理と、明示的に設定したコンパイル・実行回数の観測だけに用いる。通常のネイティブコンパイルと破棄ではPythonを呼び出さない。追い出しとローテーションの通知経路は設けない。callbackの契約違反は呼出し境界で即時に伝播する。
-
-Pythonの`JitRuntimeBoundary`はC++所有者へ接続する境界アダプタである。参照表は、外部からトレース記述子を明示的に登録するときだけ確保し、その寿命を保持する。C++がコンパイルした記述子はネイティブ保存領域を参照する。外部から取得した記述子への参照は、そのトレースの削除またはキャッシュの破棄まで有効である。Pythonへ履歴レコードやバンク全体をコピーする経路を設けない。
+実行境界ではC++が履歴を分析し、境界の種類と処理予算からコンパイル要求を処理するか判定する。判定値をPythonへ返して呼び直す経路を設けない。待ち列からコンパイラ、キャッシュ配置、再配置とヘッダpatchへはC++の関数を直接呼び出す。これらは同じネイティブライブラリに置く。履歴と待ち列の内部操作、機械語テンプレートの生成、中間コンパイル結果とトレース組立ては外部へ公開しない。コンパイル、破棄、追い出し、ローテーションでPythonを呼び出さない。検証用の観測はQA側で行う。
 
 Tier 3/JITのPythonファイルは、LoaderとInterpreterの接続、ctypesの型変換、および借用保存領域の寿命保持を担当する。共通機械語の生成、トレース再配置、物理ヘッダpatchは[`common_code.cxx`](experiments/pysim/native/tier3_plugins/jit/common_code.cxx)に置く。実行可能領域の確保・解放とW^X切り替えは[`executable_memory.cxx`](experiments/pysim/native/tier3_plugins/jit/executable_memory.cxx)に置く。カード操作と固定容量の履歴・待ち列の内部操作は[`profiling.cxx`](experiments/pysim/native/tier3_plugins/jit/profiling.cxx)に置く。Python側に対応するアルゴリズムを重複して保持しない。
 
@@ -56,7 +54,7 @@ Tier 3/JITのPythonファイルは、LoaderとInterpreterの接続、ctypesの�
 
 バンクの使用バイト数と次の書込み位置を分けて保持する。削除とOldest昇格で空いた中間領域を次の書込み位置として扱わない。次の書込み位置はバンクを消去したときに先頭へ戻す。既存PCの置換は同じ位置へ収まる場合に領域を再利用し、それ以外は未使用の末尾へ配置する。末尾にも収まらない置換は常駐状態を保って失敗を返す。
 
-JIT拡張はインタープリタに対するプラグインに近い選択可能コンポーネントである。Interpreter はコンパイラ実装やキャッシュ状態を参照せず、実行境界で受け取ったsnapshotだけを使う。JIT 無効構成では snapshot 生成、履歴、コンパイラ、実行可能領域を合成しない。
+JIT拡張はインタープリタに対するプラグインに近い選択可能コンポーネントである。Interpreter はコンパイラ実装やキャッシュ状態を参照せず、実行記述子の供給元が返す借用ビューだけを使う。JIT 無効構成では snapshot 生成、履歴、コンパイラ、実行可能領域を合成しない。
 
 本コンポーネントには独立した概念モデルを置かない。実行経路はネイティブランタイム、x64機械語実装、形式モデルおよび対応するテスト仕様で確認する。
 
@@ -71,13 +69,13 @@ JIT拡張はインタープリタに対するプラグインに近い選択可�
   - `1: EXECUTED` (実行済み)
   - `2: HOT` (コンパイル要求中)
   - `3: COMPILED` (コンパイル済み / オンデマンド許可)
-- **コンパイル対象可否マスク (Trackable Mask)**: Tier 3 JIT拡張がコード領域全体に対して一枚だけ持つ、カードごとの 1 ビット状態表である。ロード時のブロックdescriptorは正確な候補head PCと静的適格性を保持する。実行時は制御処理で確定したブロック開始PCを保持し、コード領域マスクでカード単位の抑止を確認する。通常命令を実行したブロックだけを履歴へ記録する。`next_pc` を持ち、かつバイト長が `min_trace_bytes` 以上のブロックを対象とする。コンパイル失敗時はそのカードを解除し、同じカードに属する候補も外す。 `{TrackableBlockMask}` <!-- definition: {TrackableBlockMask} -->
+- **コンパイル対象可否マスク (Trackable Mask)**: Tier 3 JIT拡張がコード領域全体に対して一枚だけ持つ、カードごとの 1 ビット状態表である。Loader のブロック記述子は正確な head PC とコード範囲を保持する。静的適格性は JIT が評価する。実行時は制御処理で確定したブロック開始PCを保持し、コード領域マスクでカード単位の抑止を確認する。通常命令を実行したブロックだけを履歴へ記録する。`next_pc` を持ち、かつバイト長が `min_trace_bytes` 以上のブロックを対象とする。コンパイル失敗時はそのカードを解除し、同じカードに属する候補も外す。 `{TrackableBlockMask}` <!-- definition: {TrackableBlockMask} -->
 - **カード更新表 (Card Update Bitmap)**: コード領域全体の各カードに対応する 1 ビットdirty表である。カードが `UNEXECUTED` から `EXECUTED` へ遷移した時だけ、そのカードのビットを立てる。密ビュー `fireball::bit_view<1>` として参照する。8カードを1バイトにまとめる。
 - **エイジングカーソル**: カード更新表のバイト位置を保持する整数である。モジュール登録時に 0 で初期化し、表の末尾に達したら先頭へ戻る。
 - **JITエントリ表**: モジュールごとの各バンクに `head_pc` 順で並ぶ固定容量配列である。異なるモジュールを一つの検索表へ入れる場合のキーは`(module_id, head_pc)`とする。検索は二分探索（$O(\log n)$）とし、削除済み枠は無効項目として扱う。新規キーは配列内のシフトで挿入し、削除はtombstone化する。同じキーの再挿入では無効項目を再利用する。配列容量と挿入量はバンク容量により制限される。エントリが少ないためRadix索引を設けない。
-- **ネイティブトレースディスパッチ表**: JIT拡張がキャッシュ世代に応じて作る固定容量の`NativeTraceDispatchEntry`配列である。C++ Interpreter dispatcherはこのsnapshotを直接検索し、実行中にPythonへ戻らない。
+- **ネイティブトレースディスパッチ表**: JIT拡張がキャッシュ世代に応じて作る固定容量の`NativeTraceDispatchEntry`配列である。JIT拡張はlookupと必要な昇格を内部で完了し、C++ Interpreter dispatcherへ借用ビューを返す。実行中にPythonへ戻らない。
   x64参照構成の記述枠は `JIT_CACHE_BANK_ENTRY_CAPACITY` により1バンク32件を上限とする。3面の上限は96件である。これはRAM予算の設定値であり、64バイトの既定コンストラクタ値や生成コードの平均サイズから導出しない。
-  snapshotの容量は、ロード済み基本ブロック数と全バンクの記述枠上限の小さい方とする。同一PCの常駐トレースを重複生成しない。WarmまたはOldestに存在するPCを新規insertすると契約違反とする。Oldestの昇格は既存lookup経路を使う。
+  snapshotの容量は、ロード済み基本ブロック数と全バンクの記述枠上限の小さい方とする。同一PCの常駐トレースを重複生成しない。WarmまたはOldestに存在するPCを新規insertすると契約違反とする。Oldestの昇格はJIT拡張内部のlookup経路を使う。Tier 2は世代と昇格を扱わない。
   コード領域または記述枠が満杯になれば、既存の3面ローテーションを行う。生成コードの長さは可変である。短いtraceでも記述枠の上限を超えて挿入しない。
   ホットスポット計測には既存のTrackable Maskを借用する。候補PC配列は確保しない。C++ dispatcherはIPからカードとbit位置を求めて履歴を記録する。
   同一カードの構造命令位置もbitが立つ。dispatcherは制御命令だけの区間ではtrace表を検索しない。関数入口または制御処理の完了を、新しいブロック候補の開始トリガーとする。そこで確定したPCを保持し、通常命令のあるブロックだけを計測する。制御命令だけの区間を履歴へ記録しない。履歴転送時にLoader索引を検索しない。メモリ操作のruntime委譲後は同じブロックの継続として扱い、次の制御境界までtrace検索と重複した履歴記録を行わない。外部呼出し・prefix委譲の完了は次ブロックの開始トリガーとする。単なるRuntime復帰や通常命令の出現を、新しい先頭の判定に使わない。trap・関数完了では開始待ち状態を解除する。
@@ -137,6 +135,39 @@ flowchart TD
 ## 4. 動的モデル
 
 ### 4.1 アルゴリズム
+
+- **`opcode_benefit_table` (`BitView<4>`)**: ROM 上に配置される 128 バイト（256 opcode $\times$ 4-bit）の静的テーブル。インタープリタ処理命令数と JIT 処理命令数の差分（短縮機械語命令数、分岐8倍換算）をゼロ点固定線形正規化した `int4_t`（-8〜+7、1スコア＝2命令相当短縮）を保持する。 `{JIT_StaticBenefitScoring}` <!-- definition: {JIT_StaticBenefitScoring} -->
+- **`jit_candidate_bitmap` (`BitView<1>`)**: モジュールロード時に各基本ブロックの命令スコア合算値が閾値（9点：コンパイルオーバーヘッド換算値6点＋デルタ3点）に達したブロックの `head_pc` が属する Card を 1bit でマーキングしたビットマップ。インタープリタ実行ループにおける `touch()` スキップに供される。 `{JIT_CandidateBitmap}` <!-- definition: {JIT_CandidateBitmap} -->
+
+- **JIT 拡張による基本ブロック適格性評価と候補ビットマップ生成 (`{JIT_StaticBenefitScoring}`, `{JIT_CandidateBitmap}`)**:
+  WASM コードセクションを走査し、各関数の基本ブロック（`BasicBlock`）を調べる。ROM 上の `opcode_benefit_table`（`BitView<4>`、128B）から、各命令の機械語短縮スコアを取得する。スコアは `int4_t` の -8〜+7 である。1スコアは約2命令の短縮に相当し、分岐命令は8命令として換算する。各ブロックのスコアを符号付き整数（`int`）へ累積加算する。
+
+  $$TotalScore(BB) = \sum_{op \in BB} decode\_int4(opcode\_benefit\_table[op])$$
+
+  基本ブロック終端（分岐命令または `end`）到達時、累積スコア `TotalScore(BB)` を判定閾値 `S_threshold = 9`（Copy-and-Patch コンパイルオーバーヘッド約120命令を損益分岐10回で割った6点 ＋ 安全デルタ3点）と比較する。
+  `TotalScore(BB) >= 9` を満たす場合、そのブロックの `head_pc` が属するカードの `jit_candidate_bitmap` ビット（1bit/カード）を `1` にセットする。満たさない極小ブロックや呼び出し主体ブロックは `0`（インタープリタ専任）に維持される。
+  **設計理由と不変条件**: JIT キャッシュ（2KB $\times$ 3面）の容量とコンパイル・トレース管理の費用には上限がある。実行時のホットスポット検出前に、投資対効果（加速利得 $\ge$ コンパイルコスト＋マージン）を満たすブロックだけを静的に選別する。
+  対象外ブロックでは、インタープリタ実行ループの `HotspotBitmap.touch(pc)` と履歴記録を完全に省く。この処理は $O(1)$ で不要になる。これによりキャッシュ汚染とスラッシングを防ぐ。
+
+##### 命令別短縮利得スコア定義台帳 (`opcode_benefit_table` / `int4_t`)
+<!-- traceability: {JIT_StaticBenefitScoring} {JIT_CandidateBitmap} {WasmFCSubset} -->
+ROM 上に配置される 128 バイトルックアップテーブル（256 オプコード $\times$ 4-bit 符号付き整数 `int4_t`: `-8`〜`+7`）のスコア配分表を以下に定める。スコアは命令単体の実行時間ではなく、インタープリタ経路をJIT経路へ置き換えたときの期待利得を表す。インライン展開は高い正の値、JITからCヘルパーへ直接末尾遷移する命令は境界コストを差し引いた正の値、インタープリタへ戻る命令は負の値とする。構文デリミタは中立（0）、未サポート・トラップ命令は最大ペナルティ（-8）となる。
+`0xFC`はサブオペコードを持つprefix命令だが、本テーブルは先頭opcode byteで引く256要素のため、サポートする全サブオペコード（`0`〜`7`、`10`、`11`）へ共通のスコアを適用する。未対応サブオペコードはLoaderが先に拒否するので候補スコア表へ渡さない。
+
+| スコア (`int4_t`) | 換算短縮命令数 | 分類と特性 | 該当 WASM 命令 |
+| :---: | :---: | :--- | :--- |
+| **`+7` (MAX)** | 約 +14 命令短縮 | 32bit 整数加減算・基本ビット論理・シフト（極小フットプリント・最高加速利得） | `i32.add` (`0x6A`), `i32.sub` (`0x6B`), `i32.and` (`0x71`), `i32.or` (`0x72`), `i32.xor` (`0x73`), `i32.shl` (`0x74`), `i32.shr_s` (`0x75`), `i32.shr_u` (`0x76`) |
+| **`+6`** | 約 +12〜13 命令短縮 | 整数乗算・32bit 比較演算・ローカル変数/定数ロード・ビット操作のインライン展開 | `i32.mul` (`0x6C`), `i32.eqz` (`0x45`), `i32.eq` (`0x46`), `i32.ne` (`0x47`), `i32.lt_s` (`0x48`), `i32.lt_u` (`0x49`), `i32.gt_s` (`0x4A`), `i32.gt_u` (`0x4B`), `i32.le_s` (`0x4C`), `i32.le_u` (`0x4D`), `i32.ge_s` (`0x4E`), `i32.ge_u` (`0x4F`), `i32.clz` (`0x67`), `i32.ctz` (`0x68`), `i32.const` (`0x41`), `i64.const` (`0x42`), `f32.const` (`0x43`), `f64.const` (`0x44`), `local.get` (`0x20`), `local.set` (`0x21`), `local.tee` (`0x22`) |
+| **`+5`** | 約 +10〜11 命令短縮 | 境界検査付きリニアメモリアクセス・剰余/循環シフト・制御フロー直接ジャンプ | `i32.load` (`0x28`), `i32.load8_s` (`0x2C`), `i32.load8_u` (`0x2D`), `i32.load16_s` (`0x2E`), `i32.load16_u` (`0x2F`), `i32.store` (`0x36`), `i32.store8` (`0x3A`), `i32.store16` (`0x3B`), `i32.rotl` (`0x77`), `i32.rotr` (`0x78`), `i32.rem_s` (`0x6F`), `i32.rem_u` (`0x70`), `br` (`0x0C`), `br_if` (`0x0D`) |
+| **`+4`** | 約 +8 命令短縮 | 整数除算・グローバル変数アクセス・メモリサイズ・スタック操作・復帰・ニュートラル | `i32.div_s` (`0x6D`), `i32.div_u` (`0x6E`), `global.get` (`0x23`), `global.set` (`0x24`), `memory.size` (`0x3F`), `select` (`0x1B`), `return` (`0x0F`), `drop` (`0x1A`), `nop` (`0x01`) |
+| **`+3`** | 約 +6〜7 命令相当の正味利得 | 命令別Cヘルパーへの直接末尾遷移。JITコードには演算を埋め込まず、共有スタックを同期してコンテキストの関数ポインタへジャンプする | `i64.add` (`0x7C`), `i64.sub` (`0x7D`), `i64.mul` (`0x7E`), `f32.add` (`0x92`), `f32.sub` (`0x93`), `f32.mul` (`0x94`), `f32.div` (`0x95`), `f64.add` (`0xA0`), `f64.sub` (`0xA1`), `f64.mul` (`0xA2`), `f64.div` (`0xA3`) |
+| **`0`** | 0 命令短縮 | 構文デリミタ（0バイト消去・トレースヘッダ埋め込みにより加点もペナルティもなし） | `block` (`0x02`), `loop` (`0x03`), `else` (`0x05`), `end` (`0x0B`) |
+| **`-1`** | 約 -2 命令ペナルティ | 真のインタープリタ委譲・関数間コール・動的ジャンプ（フレーム生成・境界コスト） | `call` (`0x10`), `call_indirect` (`0x11`), `br_table` (`0x0E`) |
+| **`-2`** | 約 -4 命令ペナルティ | OS システムサービス・メモリ拡張・一括操作・Interpreter委譲 | `memory.grow` (`0x40`), `i32/i64.trunc_sat_f32/f64_{s,u}` (`0xFC 0x00`〜`0x07`), `memory.copy` (`0xFC 0x0A`), `memory.fill` (`0xFC 0x0B`) |
+| **`-8` (MIN)** | 最大ペナルティ | トラップ命令・未サポート・ハードウェア非対応演算（JIT 化不適格） | `unreachable` (`0x00`), `i32.popcnt` (`0x69`), `i64.div_*`, `i64.rem_*`, その他の `f32.*` / `f64.*`、未定義オプコード |
+
+
+
 <!-- traceability: {DirectMappedJIT16} -->
 1. **カードマーキング確認 ($O(1)$)**: カードマーキング表 (`bit_view<2>`) を $O(1)$ で確認する。状態が `COMPILED` でなければ即座に終了する。
 2. **Direct-Mapped Folding XOR キャッシュ確認 ($O(1)$)**:
@@ -294,11 +325,13 @@ JIT trace終端の制御命令はC++ Interpreterの対応ハンドラで実行�
 
 trace chainは直線後続traceが常駐する場合に限り、trace末尾から共通コード領域のchain dispatcherへ移り、dispatcherがTraceヘッダのtarget bodyへtail-jumpする経路を指す。未接続のtargetは0で表し、共通epilogueから実行境界へ戻る。opcode別handlerの呼出しや、C++ handler後にC++ dispatcherが別traceを選ぶ遷移はchainではない。chain dispatcherは命令を判定せず、分岐helperも持たない。
 
-常駐trace表はキャッシュ世代または候補マスク世代が変わったときだけ構築する。候補マスクは既存ストレージを借用する。Tier 3 JIT拡張が固定長snapshotをC++ dispatcherへ渡し、制御handler実行後もしきい値到達まではC++内で次のtraceまたはhandlerを選ぶ。Interpreterは制御処理で確定した次ブロックのPCを保持する。通常命令が現れるまでtrace表を検索しない。借用マスクが立つブロックで通常命令を実行した場合だけ、保持した開始PCを固定長履歴へ記録する。Tier 3は履歴転送時にLoader索引を検索しない。Tier 3 JIT拡張はdispatch終了時に履歴を分析してカードを更新し、必要なコンパイル要求を処理する。Runtime Event Sinkはこの履歴を受け取らない。JIT無効構成はsnapshot、履歴、候補状態、コンパイラ、実行可能領域を持たない。デバッガ付き実行ではRuntimeがJIT拡張を迂回し、通常のInterpreter dispatcherを使う。
+常駐 trace 表の更新と昇格は JIT 内部で行う。候補マスクは既存ストレージを借用する。Tier 3 JIT拡張の実行記述子供給元が固定長テーブルをC++ dispatcherへ渡し、制御handler実行後もしきい値到達まではC++内で次のtraceまたはhandlerを選ぶ。Interpreterは制御処理で確定した次ブロックのPCを保持する。通常命令が現れるまでtrace表を検索しない。借用マスクが立つブロックで通常命令を実行した場合だけ、保持した開始PCを固定長履歴へ記録する。Tier 3は履歴転送時にLoader索引を検索しない。Tier 3 JIT拡張はdispatch終了時に履歴を分析してカードを更新し、必要なコンパイル要求を処理する。Runtime Event Sinkはこの履歴を受け取らない。JIT無効構成はsnapshot、履歴、候補状態、コンパイラ、実行可能領域を持たない。デバッガ付き実行ではRuntimeがJIT拡張を迂回し、通常のInterpreter dispatcherを使う。
 
 コンパイル待ち作業がないyield境界ではJIT拡張はコンパイル処理を起動しない。候補履歴が0件の実行区間では履歴を分析しない。これらの省略はyield理由、ゲスト状態、トレース選択を変更しない。
 
 常駐trace descriptorと履歴は有界の実行時テーブルとして管理する。候補性は既存マスクを借用して判定する。C++ dispatcherは表の有効要素数とマスクのカード数を受け取り、直接参照する。テーブルはcache世代または候補mask世代が変化したときに再構築し、dispatcherの呼び出しごとに最大容量分をスタック上へ複製しない。テーブルの具体的な所有型はこの契約で規定しない。
+
+JITは表を公開するときに記述子の妥当性とPCの昇順を検査する。公開した記述子は実行中に変更しない。Interpreterは実行対象とそのチェインの記述子を検査する。各ディスパッチで常駐表全体を走査しない。
 
 #### コンパイル済みトレース実行後の遷移手順（アクティビティ図）
 ```mermaid

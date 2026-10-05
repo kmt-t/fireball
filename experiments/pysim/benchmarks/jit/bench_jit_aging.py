@@ -36,11 +36,11 @@ configure_import_paths(_PYSIM_DIR, _BENCH_DIR)
 
 from bump_allocator import BumpAllocator
 from config import FB_CONF_JIT_AGING_STEP_SCAN_BYTES, FB_CONF_JIT_AGING_STEP_UNITS
+from qa.shared.jit_manager import JITRuntimeManager
+from qa.shared.x64_jit import TraceCompiler
 from tier2_runtime.interpreter.interpreter import InterpreterBindings, NativeInterpreter
 from tier2_runtime.runtime.engine import RuntimeEngine
 from tier2_runtime.wasm.reader import parse
-from tier3_plugins.jit.jit_manager import JITRuntimeManager
-from tier3_plugins.jit.x64_jit import TraceCompiler
 
 try:
     import wasmtime

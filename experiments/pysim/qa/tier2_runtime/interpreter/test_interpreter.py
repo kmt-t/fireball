@@ -189,7 +189,6 @@ def test_typed_block_results_keep_wide_native_slots():
 def test_native_interpreter_returns_to_python_at_loop_yield_counts(monkeypatch):
     """Native Interpreter returns at the configured backedge count, as Hybrid JIT does."""
     from config import FB_CONF_RUNTIME_YIELD_THRESHOLD
-    from tier2_runtime.abi.jit_abi import NativeDispatchSnapshot
     from tier2_runtime.interpreter.interpreter import (
         InterpreterBindings,
         InterpreterCall,
@@ -225,7 +224,6 @@ def test_native_interpreter_returns_to_python_at_loop_yield_counts(monkeypatch):
     def record_native_dispatch(
         self: NativeInterpreter,
         call_state: InterpreterCall,
-        snapshot: NativeDispatchSnapshot,
         yield_threshold: int,
         execution_count: int,
         native_dispatcher: NativeDispatchEntryPoint,
@@ -233,7 +231,6 @@ def test_native_interpreter_returns_to_python_at_loop_yield_counts(monkeypatch):
         result = native_dispatch(
             self,
             call_state,
-            snapshot,
             yield_threshold,
             execution_count,
             native_dispatcher,
@@ -1032,6 +1029,25 @@ def test_intp_74_all_32bit_frames_use_half_the_local_stack():
     with pytest.raises(AssertionError) as failure:
         make_native_interpreter(wide_module).call(0, [6])
     assert failure.value.args == (InterpreterTrapCode.LOCAL_STACK_CAPACITY,)
+
+
+def test_runtime_keeps_constructor_arena_and_rejects_foreign_interpreter():
+    """A rejected activation cannot change the runtime owner or execute guest stores."""
+    from bump_allocator import BumpAllocator
+    from tier2_runtime.runtime.engine import RuntimeEngine
+
+    runtime = RuntimeEngine()
+    module = runtime.load_wasm(
+        wat_to_wasm("(module (memory 1) (func i32.const 0 i32.const 42 i32.store))")
+    )
+    memory = bytearray(b"\xa5" * 65536)
+    interpreter = make_native_interpreter(module, memory=memory, bump_allocator=BumpAllocator())
+    arena = runtime.bump_allocator
+    watermark = arena.offset
+    with pytest.raises(AssertionError, match="same arena"):
+        runtime.call(interpreter, 0, ())
+    assert runtime.bump_allocator is arena and arena.offset == watermark
+    assert memory == b"\xa5" * 65536
 
 
 # ===========================================================================

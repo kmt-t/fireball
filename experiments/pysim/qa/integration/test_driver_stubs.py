@@ -14,10 +14,8 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 from ipc_router import Role
 from qa.shared.fixtures.hal_stubs import (
-    AdcStubDriver,
     GpioStubDriver,
     PollStubDriver,
-    PwmStubDriver,
     StreamStubDriver,
     StubCommand,
     StubDrivers,
@@ -396,7 +394,10 @@ def test_bus_stub_rejection_preserves_reply_and_all_buffers(invalid: str) -> Non
 
 def test_adc_pwm_stubs_require_setup_and_own_configuration_snapshots() -> None:
     """TEST-HAL-23: QA setup precondition, state after commands and no retained IPC view."""
-    adc, pwm = AdcStubDriver(), PwmStubDriver()
+    drivers = StubDrivers.create()
+    task_id = drivers.scheduler.spawn("standalone_driver_test")
+    drivers.scheduler.current_task = drivers.scheduler.get_task(task_id)
+    adc, pwm = drivers.adc, drivers.pwm
     with pytest.raises(AssertionError, match="not configured"):
         adc.dispatch(WasiIpcCmd.STREAM_READ_BUFFER, params())
     with pytest.raises(AssertionError, match="not configured"):
@@ -461,7 +462,10 @@ def test_timer_stub_wait_allows_peer_to_advance_test_time() -> None:
 @pytest.mark.parametrize("driver", (GpioStubDriver, TimerStubDriver))
 def test_stub_pollable_capacity_rejection_and_reuse(driver: type[PollStubDriver]) -> None:
     """TEST-HAL-24: bounded reservations reject without invalidating existing handles."""
-    instance = driver()
+    drivers = StubDrivers.create()
+    task_id = drivers.scheduler.spawn("standalone_poll_test")
+    drivers.scheduler.current_task = drivers.scheduler.get_task(task_id)
+    instance = driver(drivers.pool)
     handles = tuple(instance.reserve() for _ in range(16))
     before = tuple((item.generation, item.active, item.ready) for item in instance.pollables)
     with pytest.raises(AssertionError, match="capacity"):

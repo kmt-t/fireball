@@ -19,7 +19,6 @@ class JITRuntime(Protocol):
     """Small lifecycle and execution-boundary contract for a Tier 3 JIT plugin."""
 
     yield_threshold: int
-    hotspot_profiling_enabled: bool
 
     def register_module(self, module: Module) -> None: ...
 
@@ -34,8 +33,6 @@ class JITRuntime(Protocol):
     def on_yield(self) -> None: ...
 
     def idle_hook(self, budget: int = 4) -> int: ...
-
-    def age_step(self) -> int: ...
 
     def reset_stats(self) -> None: ...
 

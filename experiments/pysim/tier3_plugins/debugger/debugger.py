@@ -473,13 +473,14 @@ class _DebugNativeInterpreter(NativeInterpreter):
 
     def __init__(self, module: Module, bindings: InterpreterBindings, control: _NativeDebugControl):
         self._execution_control = control
-        super().__init__(module, bindings)
+        super().__init__(module, bindings, native_dispatcher=native_abi.RUN_DEBUG_DISPATCH)
 
     def _new_context(self) -> ExecutionContext:
         """Construct the one context type with its debugger control pointer set."""
         return ExecutionContext(
             self.module,
             debug_control=ctypes.addressof(self._execution_control),
+            allocator=self.bump_allocator,
         )
 
 
@@ -540,13 +541,10 @@ class InterpreterExecutionControl:
         self._control = _NativeDebugControl()
         self.debugger: DebuggerManager | None = None
         self.interpreter = RuntimeComposer.compose_execution(
-            config, lambda: _DebugNativeInterpreter(module, bindings, self._control), self._weave
+            config, lambda: _DebugNativeInterpreter(module, bindings, self._control)
         )
         self.call = self.interpreter.start(func_index, args)
         self.context = _InterpreterRegisterView(self.interpreter, self.call)
-
-    def _weave(self, interpreter: NativeInterpreter) -> None:
-        interpreter._native_dispatcher = native_abi.run_native_debug_dispatch
 
     def attach_debugger(self, debugger: DebuggerManager) -> None:
         assert self.debugger is None

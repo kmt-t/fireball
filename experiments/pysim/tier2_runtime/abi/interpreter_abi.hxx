@@ -129,6 +129,10 @@ typedef struct fireball_wasm_table_execution_view_native {
   uint32_t size;
 } fireball_wasm_table_execution_view_native;
 
+typedef struct fireball_wasm_block_execution_view_native {
+  uint32_t head_pc, function_index, next_pc, loops_to, frame_depth, byte_span;
+} fireball_wasm_block_execution_view_native;
+
 typedef struct fireball_wasm_module_execution_view_native {
   const fireball_wasm_function_execution_view_native *functions;
   uint32_t function_count;
@@ -141,6 +145,8 @@ typedef struct fireball_wasm_module_execution_view_native {
   uint64_t *globals;
   const uint8_t *global_widths;
   uint32_t global_count;
+  const fireball_wasm_block_execution_view_native *blocks;
+  uint32_t block_count;
 } fireball_wasm_module_execution_view_native;
 
 typedef struct fireball_call_frame_native {
@@ -296,7 +302,7 @@ static_assert(sizeof(wasm_run_result_native) == 24);
 static_assert(sizeof(wasm_function_execution_view_native) == 72);
 static_assert(sizeof(wasm_function_type_execution_view_native) == 16);
 static_assert(sizeof(wasm_table_execution_view_native) == 16);
-static_assert(sizeof(wasm_module_execution_view_native) == 80);
+static_assert(sizeof(wasm_module_execution_view_native) == 96);
 static_assert(offsetof(wasm_module_execution_view_native, globals) == 56);
 static_assert(offsetof(wasm_module_execution_view_native, global_widths) == 64);
 static_assert(offsetof(wasm_module_execution_view_native, global_count) == 72);

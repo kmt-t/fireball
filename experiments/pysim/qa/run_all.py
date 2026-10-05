@@ -47,7 +47,11 @@ TEST_SUITES = [
         "WASM Reference Parser & Segments",
         TEST_DIR / "tier2_runtime" / "test_wasm_reader.py",
     ),
-    ("Tier 2 Runtime", "JIT Candidate Scoring", TEST_DIR / "tier2_runtime" / "test_jit_scoring.py"),
+    (
+        "Tier 3 Plugins",
+        "JIT Candidate Scoring",
+        TEST_DIR / "tier3_plugins" / "jit" / "test_jit_scoring.py",
+    ),
     (
         "Tier 2 Runtime",
         "WASM Interpreter & Instructions",

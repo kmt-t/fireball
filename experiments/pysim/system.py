@@ -164,8 +164,7 @@ class System:
         # Simulated Memory Manager with a 64KB-aligned pool base (WasmPageAlignment).
         # The scheduler is the sole source of the current task identity used by
         # ownership-sensitive memory operations.
-        self.memory_manager = MemoryManager(self.scheduler)
-        self.vmmio.register_to_memory_manager(self.memory_manager)
+        self.memory_manager = MemoryManager(self.scheduler, self.vmmio.page_mapping_callbacks)
         self.memory_manager.init_manager(pool_base=0x00010000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
         self.ipc = IPCRouter(
             self.scheduler,
@@ -743,7 +742,7 @@ class System:
 
     def start_hal_driver(self, driver: HalDriver, uri: str) -> int:
         """Registers and starts one driver-owned HAL device task."""
-        driver.bind_buffer_pool(self.pool)
+        assert driver._buffer_pool is self.pool, "HAL driver belongs to another buffer pool"
         desc = self.ipc.find_service(uri)
         assert desc is not None, f"HAL driver URI not registered: {uri}"
         uri_key = fnv1a_32(uri)

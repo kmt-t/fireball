@@ -15,7 +15,7 @@ while not (_PYSIM_DIR / "tier1_core").is_dir():
 _BENCH_DIR = Path(__file__).resolve().parents[1]
 if str(_BENCH_DIR) not in sys.path:
     sys.path.insert(0, str(_BENCH_DIR))
-from _bootstrap import configure_import_paths
+from _bootstrap import configure_import_paths, reserve_native_region
 
 configure_import_paths(_PYSIM_DIR, _BENCH_DIR)
 
@@ -87,12 +87,6 @@ def main() -> None:
     parser.add_argument("--path", choices=tuple(PROFILE_REPETITIONS), required=True)
     parser.add_argument("--repetitions", type=int)
     parser.add_argument(
-        "--hotspot-profiling",
-        choices=("enabled", "disabled"),
-        default="enabled",
-        help="keep dynamic JIT hotness observation enabled during measured calls",
-    )
-    parser.add_argument(
         "--collect-runtime-stats",
         action="store_true",
         help="enable diagnostic counters during the measured calls",
@@ -110,8 +104,7 @@ def main() -> None:
     assert repetitions > 0
     perf_stat = PerfStatControl(args.perf_control_fifo, args.perf_ack_fifo)
 
-    benchmark = JITCompilerBenchmark()
-    module = parse(benchmark._create_heavy_loop_binary())
+    module = parse(JITCompilerBenchmark._create_heavy_loop_binary())
     function_index = module.export_func_index("heavy_loop")
     expected_result = _expected_result()
     observed_result = 0
@@ -123,19 +116,23 @@ def main() -> None:
 
     if args.path == "python-handler":
         interpreter = Interpreter(module, InterpreterBindings.empty())
-        warmup_result = benchmark._run_python_interpreter(interpreter, function_index, 1_000)
+        warmup_result = JITCompilerBenchmark._run_python_interpreter(
+            interpreter, function_index, 1_000
+        )
         assert int(warmup_result[0]) == 499_500
         perf_stat.set_enabled(True)
         batch_start = time.perf_counter()
         try:
             for _ in range(repetitions):
-                result = benchmark._run_python_interpreter(interpreter, function_index, LOOP_COUNT)
+                result = JITCompilerBenchmark._run_python_interpreter(
+                    interpreter, function_index, LOOP_COUNT
+                )
         finally:
             elapsed_ms = (time.perf_counter() - batch_start) * 1000.0
             perf_stat.set_enabled(False)
         observed_result = int(result[0])
     elif args.path == "native-interpreter":
-        interpreter = Interpreter(module, InterpreterBindings.empty())
+        interpreter = NativeInterpreter(module, InterpreterBindings.empty())
         warmup_result = interpreter.call(function_index, [1_000])
         assert int(warmup_result[0]) == 499_500
         arguments = [LOOP_COUNT]
@@ -150,10 +147,10 @@ def main() -> None:
         observed_result = int(result[0])
     else:
         runtime_engine = RuntimeEngine(
+            bump_allocator=module.allocator,
             jit_runtime=JITRuntimeManager(
-                jit_compiler=benchmark.compiler,
+                region_provider=reserve_native_region,
                 yield_threshold=FB_CONF_RUNTIME_YIELD_THRESHOLD,
-                hotspot_profiling_enabled=args.hotspot_profiling == "enabled",
             ),
             collect_runtime_stats=args.collect_runtime_stats,
         )
@@ -187,16 +184,30 @@ def main() -> None:
             interpreter_steps = runtime_engine.stat_interp_steps
             trace_exits = runtime_engine.stat_trace_exits_to_interp
             assert jit_invocations > 0
-        else:
-            assert runtime_engine.jit_runtime.cache.resident_count > 0
+
+        diagnostic = RuntimeEngine(
+            jit_runtime=JITRuntimeManager(reserve_native_region),
+            collect_runtime_stats=True,
+            bump_allocator=runtime_engine.bump_allocator,
+        )
+        diagnostic.register_module_blocks(module)
+        diagnostic_interpreter = NativeInterpreter(
+            module, InterpreterBindings.empty(), bump_allocator=diagnostic.bump_allocator
+        )
+        assert int(diagnostic.call(diagnostic_interpreter, function_index, [100])[0]) == 4_950
+        diagnostic.idle_hook(budget=10)
+        diagnostic.reset_stats()
+        assert (
+            int(diagnostic.call(diagnostic_interpreter, function_index, arguments)[0])
+            == expected_result
+        )
+        assert diagnostic.stat_jit_invocations > 0
 
     assert observed_result == expected_result
     print(f"profile_path={args.path}")
     print(f"iterations_per_call={LOOP_COUNT}")
     print(f"repetitions={repetitions}")
     print(f"loop_backedge_yield_threshold={FB_CONF_RUNTIME_YIELD_THRESHOLD}")
-    if args.path == "hybrid-jit":
-        print(f"hotspot_profiling={args.hotspot_profiling}")
     print(f"wasm_dynamic_instructions_per_call={_dynamic_wasm_instruction_count(LOOP_COUNT)}")
     print(f"wasm_dynamic_instructions={_dynamic_wasm_instruction_count(LOOP_COUNT) * repetitions}")
     print(f"execution_batch_ms={elapsed_ms:.3f}")

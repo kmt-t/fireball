@@ -65,8 +65,7 @@ def test_hal_02_dummy_stdio_driver_streams_stdin_and_stdout():
     assert scheduler.current_task is not None
     vmmio = VMMIOController(guest_ram_size=8192, scheduler=scheduler)
     pool = HalBufferPool(scheduler, vmmio)
-    driver = DummyDriver()
-    driver.bind_buffer_pool(pool)
+    driver = DummyDriver(pool)
     try:
         rx = pool.buffer(0)
         tx = pool.buffer(1)
@@ -120,7 +119,7 @@ def test_hal_15_timer_pollables_are_deadline_checked_and_reusable():
     try:
         runtime_task = sysv.start_runtime_task(name="timer_poll_guest")
         sysv.scheduler.current_task = runtime_task
-        timer_driver = DummyDriver()
+        timer_driver = DummyDriver(sysv.pool)
         sysv.start_hal_driver(timer_driver, timer_uri)
         from tier3_platform.drivers.wasi.context import Wasi03pEngine
 
@@ -334,7 +333,7 @@ def test_hal_task_ipc_communication(offset: int, payload: bytes):
         buffer_view[:] = b"\xa5" * buffer_handle.capacity
         buffer_view[offset : offset + len(payload)] = payload
         original_buffer = bytes(buffer_view)
-        driver = DummyDriver(transport=sysv.transport)
+        driver = DummyDriver(sysv.pool, transport=sysv.transport)
         sysv.start_hal_driver(driver, FB_URI_HAL_STDOUT)
         engine = Wasi03pEngine(sysv)
         # Send command via IPC
@@ -375,7 +374,7 @@ def test_hal_command_response_separates_status_and_u64_value():
     try:
         runtime_task = sysv.start_runtime_task(name="hal_clock_guest")
         sysv.scheduler.current_task = runtime_task
-        sysv.start_hal_driver(DummyDriver(transport=sysv.transport), FB_URI_HAL_STDOUT)
+        sysv.start_hal_driver(DummyDriver(sysv.pool, transport=sysv.transport), FB_URI_HAL_STDOUT)
         engine = Wasi03pEngine(sysv)
 
         response = engine.send_ipc_command(
@@ -433,7 +432,7 @@ def test_hal_15_file_log_sink_receives_internal_logs():
     log_dictionary = LogDictionary(entries=((0x300, "TEST_LOG: v=%d"),))
     sysv = System(printk_sink=sink, log_dictionary=log_dictionary)
     try:
-        sysv.start_hal_driver(DummyDriver(transport=sysv.transport), FB_URI_HAL_STDOUT)
+        sysv.start_hal_driver(DummyDriver(sysv.pool, transport=sysv.transport), FB_URI_HAL_STDOUT)
 
         assert sysv.logger.log_event(LogLevel.INFO, 0x300, 7) == LogResult.SUCCESS
         assert sysv.logger.flush() == 1

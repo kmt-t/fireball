@@ -9,6 +9,7 @@ COOS Memory Manager simulation.
 from __future__ import annotations
 
 import struct
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum, IntEnum, auto
 from types import TracebackType
@@ -452,13 +453,16 @@ class MemoryManager:
         "total_allocated_bytes",
     )
 
-    def __init__(self, scheduler: Scheduler):
+    def __init__(
+        self,
+        scheduler: Scheduler,
+        page_mapping_factory: Callable[[bytearray], PageMappingCallbacks] | None = None,
+    ):
         self._scheduler = scheduler
         self.pool_base: int = 0
         self.pool_size: int = 0
         self.total_allocated_bytes: int = 0
         self.page_registry = ShmPageRegistry()
-        self._page_mapping_callbacks: PageMappingCallbacks | None = None
         self.partition_owners: MutableFlatMapStorage[int, PartitionView] = MutableFlatMapStorage(
             capacity=FB_CONF_MAX_TASKS
         )
@@ -466,6 +470,9 @@ class MemoryManager:
             capacity=_FB_CONF_MAX_SHM_PAGE_SLOTS
         )
         self.shm_storage = bytearray(FB_CONF_SHM_SIZE)
+        self._page_mapping_callbacks = (
+            None if page_mapping_factory is None else page_mapping_factory(self.shm_storage)
+        )
         self.shm_allocated_bytes = 0
         # One 4KB virtual reservation per block preserves page-granular ownership.
         self.shm_pages: StaticVector[ShmPageInfo] = StaticVector(
@@ -487,13 +494,6 @@ class MemoryManager:
     def current_task_id(self) -> int:
         """Returns the scheduler-authenticated identity for the active task."""
         return self._scheduler.current_task_id
-
-    def register_page_mapping_callbacks(
-        self,
-        callbacks: PageMappingCallbacks,
-    ) -> None:
-        """Registers external page table / MMU listener callbacks for SHM page events."""
-        self._page_mapping_callbacks = callbacks
 
     def _notify_shared_page_mapped(self, page_idx: int) -> None:
         callbacks = self._page_mapping_callbacks

@@ -31,11 +31,12 @@ from qa.shared.helpers import (
     wat_to_wasm,
 )
 from qa.shared.helpers import make_interpreter as Interpreter
+from qa.shared.jit_cache import CardState
 from qa.shared.runtime_support import (
-    RecordingTraceCompiler,
     compile_module_block,
     make_runtime_engine,
 )
+from qa.shared.x64_jit import TraceCompiler
 from scheduler import ChannelAction, TaskState
 from system import (
     System,
@@ -64,8 +65,6 @@ from tier2_runtime.wasm.module import I32, Function, FuncType, Module
 from tier2_runtime.wasm.reader import parse
 from tier3_platform.drivers.printk import PrintkBuffer
 from tier3_platform.drivers.wasi.context import WasiHostContext
-from tier3_plugins.jit.jit_cache import CardState
-from tier3_plugins.jit.x64_jit import TraceCompiler
 
 
 def _make_virq_module() -> Module:
@@ -249,7 +248,7 @@ def test_virq_55_does_not_enter_wasi_polling_path():
     try:
         system.start_runtime_task(name="virq_poll_guest")
         timer_uri = "fireball://hal/timer/0"
-        system.start_hal_driver(DummyDriver(stream_enabled=False), timer_uri)
+        system.start_hal_driver(DummyDriver(system.pool, stream_enabled=False), timer_uri)
         polling = Wasi03pEngine(system)
         handle = polling.clock_subscribe(timer_uri, 0)
         module = system.runtime_engine.load_wasm(
@@ -377,7 +376,9 @@ def test_system_guest_interpreter_returns_to_coos_and_resumes():
     system.runtime_engine = RuntimeEngine(yield_threshold=3, drive_mode=RuntimeDriveMode.COOS)
     memory = bytearray(65536)
     module = _counter_module()
-    interpreter = make_native_interpreter(module, memory=memory)
+    interpreter = make_native_interpreter(
+        module, memory=memory, bump_allocator=system.runtime_engine.bump_allocator
+    )
     observed: list[tuple[int, TaskState]] = []
 
     def monitor_task():
@@ -475,7 +476,7 @@ def test_hal_task_ipc_communication():
         assert sysv.pool.map_for_io(buffer_handle.buffer_id).name == "MAPPED"
         sysv.pool.view(buffer_handle, 0, 128)[:] = b"x" * 128
         sysv.scheduler.current_task = runtime_task
-        sysv.start_hal_driver(DummyDriver(transport=sysv.transport), FB_URI_HAL_STDOUT)
+        sysv.start_hal_driver(DummyDriver(sysv.pool, transport=sysv.transport), FB_URI_HAL_STDOUT)
         engine = Wasi03pEngine(sysv)
         # Send command via IPC
         response = engine.send_ipc_command(
@@ -566,7 +567,9 @@ def test_coop_01_wasm_coroutine_yields_on_loop_threshold(threshold: int):
     )
     module = _counter_module()
     memory = bytearray(65536)
-    interpreter = make_native_interpreter(module, memory=memory)
+    interpreter = make_native_interpreter(
+        module, memory=memory, bump_allocator=system.runtime_engine.bump_allocator
+    )
     values: list[int] = []
 
     def monitor():
@@ -592,7 +595,7 @@ def test_coop_01_wasm_coroutine_yields_on_loop_threshold(threshold: int):
 
 def test_idle_01_jit_batch_compilation_on_idle():
     """TEST-IDLE-01: Compile queue is drained and compiled in LIFO order when scheduler fires idle_hook."""
-    compiler = RecordingTraceCompiler()
+    compiler = TraceCompiler()
     engine = make_runtime_engine(
         jit_compiler=compiler,
         min_trace_bytes=1,
@@ -607,22 +610,23 @@ def test_idle_01_jit_batch_compilation_on_idle():
     pcs = [block.head_pc for block in module.blocks]
     assert len(pcs) == 3
     for pc in pcs[:2]:
-        engine.jit_runtime.bitmap.touch(pc)
-        engine.jit_runtime.bitmap.touch(pc)  # HOT
-    for pc in pcs[:2]:
-        engine.jit_runtime.compile_queue.push_back(pc)
+        engine.jit_runtime.record_block_head(pc)
+        engine.jit_runtime.record_block_head(pc)
+    engine.on_yield()
+    assert engine.jit_runtime.has_pending_compilation()
+    assert all(engine.jit_runtime.card_state(pc) == CardState.HOT for pc in pcs[:2])
     system = System()
     system.runtime_engine = engine
     try:
         system.scheduler.run_until_idle()
     finally:
         system.shutdown()
-    assert len(engine.jit_runtime.compile_queue) == 0
-    assert compiler.compiled_pcs == [pcs[1], pcs[0]], "LIFO compilation order required"
+    assert not engine.jit_runtime.has_pending_compilation()
+    assert engine.jit_runtime.compilation_pcs == (pcs[1], pcs[0]), "LIFO compilation order required"
     assert engine.jit_runtime.bitmap.get_state(pcs[0]) == CardState.COMPILED
     assert engine.jit_runtime.bitmap.get_state(pcs[1]) == CardState.COMPILED
-    assert engine.jit_runtime.cache.find_bank(pcs[0]) == engine.jit_runtime.cache.active_idx
-    assert engine.jit_runtime.cache.find_bank(pcs[1]) == engine.jit_runtime.cache.active_idx
+    assert engine.jit_runtime.cache.find_trace(pcs[0]) is not None
+    assert engine.jit_runtime.cache.find_trace(pcs[1]) is not None
 
 
 def test_idle_02_logging_flush_on_idle():
@@ -675,7 +679,11 @@ def test_tier_01_interpreter_to_jit_cooperative_flow():
         reported.append(value)
         return 0
 
-    interpreter = make_native_interpreter(module, host_functions=StaticVector.of((report,)))
+    interpreter = make_native_interpreter(
+        module,
+        host_functions=StaticVector.of((report,)),
+        bump_allocator=system.runtime_engine.bump_allocator,
+    )
     observed: list[int] = []
 
     def monitor():
@@ -711,8 +719,8 @@ def test_tier_01_interpreter_to_jit_cooperative_flow():
         manager = system.runtime_engine.jit_runtime
         assert manager is not None
         loop_pc = next(block.head_pc for block in module.blocks if block.loops_to is not None)
-        assert (manager.cache.find_bank(loop_pc) == manager.cache.active_idx) or (
-            manager.cache.find_bank(loop_pc) == manager.cache.warm_idx
+        assert (manager.cache.find_trace(loop_pc) is not None) or (
+            manager.cache.find_trace(loop_pc) is not None
         )
     finally:
         system.shutdown()
@@ -753,9 +761,7 @@ def test_tier_02_interpreter_to_jit_trace_transition():
     assert engine.stat_interp_steps >= 3
     assert engine.stat_jit_invocations >= 2
     assert engine.jit_runtime.bitmap.get_state(loop_pc) == CardState.COMPILED
-    assert (engine.jit_runtime.cache.find_bank(loop_pc) == engine.jit_runtime.cache.active_idx) or (
-        engine.jit_runtime.cache.find_bank(loop_pc) == engine.jit_runtime.cache.warm_idx
-    )
+    assert engine.jit_runtime.cache.find_trace(loop_pc) is not None
 
 
 def test_tier_03_trace_chaining_and_interpreter_fallback():
@@ -827,7 +833,7 @@ def test_guest_wasi_01_interpreter_fd_write():
         from tier3_platform.drivers.hal.dummy import DummyDriver
 
         ctx = WasiHostContext(sysv)
-        sysv.start_hal_driver(DummyDriver(transport=sysv.transport), FB_URI_HAL_STDOUT)
+        sysv.start_hal_driver(DummyDriver(sysv.pool, transport=sysv.transport), FB_URI_HAL_STDOUT)
         # Set up guest memory:
         # offset 0: iov { buf: 16, len: 12 }
         # offset 16: "hello guest\n"
@@ -1082,7 +1088,9 @@ def test_linear_memory_copy_uses_cpu_memmove(source: int, destination: int, coun
             StaticVector(capacity=0),
             vdma_transfer=transfer,
         )
-        interpreter = NativeInterpreter(module, bindings)
+        interpreter = NativeInterpreter(
+            module, bindings, bump_allocator=system.runtime_engine.bump_allocator
+        )
         task_id = system.scheduler.spawn(
             "linear_copy_guest",
             system.run_guest(

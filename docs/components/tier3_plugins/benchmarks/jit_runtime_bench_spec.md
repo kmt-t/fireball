@@ -30,7 +30,7 @@ Pythonハンドラ経路は `_step(..., stop_at_boundary=False)` を直接呼ぶ
 
 計測区間には関数実行と実行状態の初期化を含める。WASM生成・ロード、実行器の準備、JITトレースの事前コンパイルは区間から除外する。通常の速度値はプロファイラを通さず、各経路3回の中央値で報告する。
 
-実行診断カウンタは通常の速度・cycles計測用Runtimeでは無効にし、計時後の診断用Runtimeで有効にする。両Runtimeは構成別のハーネスとして同じプログラム内にインスタンス化でき、拡張の再ビルドは行わない。chainはtrace末尾から共通コード領域のchain dispatcherへ入り、そこで次trace bodyへtail-jumpする経路を指す。`native_dispatch_trace_transitions`はC++ handlerからJIT traceへのdispatcher遷移を数える別指標であり、chain回数には使わない。共通コードchain dispatcherの実行回数を数える専用指標は現状ないため、未取得の値として扱う。動的hotspot profilingの負荷比較では、同じtraceを事前準備して`--hotspot-profiling enabled`と`disabled`を実行する。観測設定はRuntimeの構成で選ぶ。
+実行診断カウンタは通常の速度・cycles計測用Runtimeでは無効にし、計時後の診断用Runtimeで有効にする。両Runtimeは構成別のハーネスとして同じプログラム内にインスタンス化でき、拡張の再ビルドは行わない。chainはtrace末尾から共通コード領域のchain dispatcherへ入り、そこで次trace bodyへtail-jumpする経路を指す。`native_dispatch_trace_transitions`はC++ handlerからJIT traceへのdispatcher遷移を数える別指標であり、chain回数には使わない。共通コードchain dispatcherの実行回数を数える専用指標は現状ないため、未取得の値として扱う。Hybrid JITの実行時間は通常のプラグインで測定する。実行経路にはキャッシュ内部を操作するQA用マネージャを使わない。JITの実行は計時後の診断で実行カウンタが正であることを確認する。
 
 Intel CPUではVTune Hotspotsを使い、3経路を個別に収集する。AMD CPUではuProfのHotspotsとIBSを使い、Hybrid JIT経路を個別に収集する。各反復で期待結果を照合し、Hybrid JITでは常駐traceが事前に準備され、実行結果が一致することを確認する。C++インタープリタとHybrid JITの共通LOOP後方分岐yieldしきい値は出力された `loop_backedge_yield_threshold` と照合する。プロファイラ収集中の所要時間は通常の速度比較に使わない。
 
@@ -45,7 +45,7 @@ export UV_OFFLINE=true
 export UV_NO_SYNC=true
 
 run_cycles() {
-  local path="$1" repetitions="$2" hotspot_mode="${3:-enabled}"
+  local path="$1" repetitions="$2"
   local work_dir control_fd ack_fd
   work_dir="$(mktemp -d /tmp/pysim-cycles.XXXXXX)"
   mkfifo "$work_dir/control" "$work_dir/ack"
@@ -57,7 +57,6 @@ run_cycles() {
     taskset -c 2 "$UV" run --offline --no-sync python -u \
     experiments/pysim/benchmarks/jit/profile_arithmetic_path.py \
     --path "$path" --repetitions "$repetitions" \
-    --hotspot-profiling "$hotspot_mode" \
     --perf-control-fifo "$work_dir/control" \
     --perf-ack-fifo "$work_dir/ack"; then
     status=0
@@ -73,7 +72,6 @@ run_cycles() {
 for trial in 1 2 3; do run_cycles python-handler 1; done
 for trial in 1 2 3; do run_cycles native-interpreter 128; done
 for trial in 1 2 3; do run_cycles hybrid-jit 10; done
-for trial in 1 2 3; do run_cycles hybrid-jit 10 disabled; done
 ```
 
 cycles収集コマンドでは実行統計を有効にしない。経路カウンタが必要な場合は、計時を伴わない診断実行を別に行う。
@@ -81,7 +79,7 @@ cycles収集コマンドでは実行統計を有効にしない。経路カウ�
 ```bash
 UV_CACHE_DIR=/tmp/fireball-uv-cache UV_OFFLINE=true UV_NO_SYNC=true \
   uv run --offline --no-sync python experiments/pysim/benchmarks/jit/profile_arithmetic_path.py \
-  --path hybrid-jit --repetitions 10 --hotspot-profiling enabled --collect-runtime-stats
+  --path hybrid-jit --repetitions 10 --collect-runtime-stats
 ```
 
 各試行の `perf stat` が出すサイクル数を、プログラム出力 `wasm_dynamic_instructions` で割る。`heavy_loop(100000)` の分母は1回につき1,300,012命令であり、反復回数を掛けた値が表示される。CPU番号 `2` はオンラインの論理CPUへ置き換えてよい。Intel・AMDとも同じ手順を使えるが、CPUモデルをまたいだ値は直接比較しない。`perf`でイベントが利用できない環境では、後述のVTune / uProf手順でホットスポットを調べ、サイクル数は未計測として記録する。
@@ -122,12 +120,12 @@ bash experiments/pysim/native/tier3_plugins/jit/build_native.sh
   -o "/tmp/pysim-uprof-${run_id}-hotspots" \
   "$UV" run --offline --no-sync python -u \
   experiments/pysim/benchmarks/jit/profile_arithmetic_path.py \
-  --path hybrid-jit --repetitions 12 --hotspot-profiling enabled
+  --path hybrid-jit --repetitions 12
 "$UPROF" profile --config ibs -g --detail \
   -o "/tmp/pysim-uprof-${run_id}-ibs" \
   "$UV" run --offline --no-sync python -u \
   experiments/pysim/benchmarks/jit/profile_arithmetic_path.py \
-  --path hybrid-jit --repetitions 12 --hotspot-profiling enabled
+  --path hybrid-jit --repetitions 12
 ```
 
 コマンドはリポジトリルートから実行する。uvはプロジェクトの`.python-version`と`.venv`を使う。`UV_CACHE_DIR`はキャッシュを一時領域へ向け、`UV_OFFLINE`はuvによるネットワークアクセスを止める。uProfの結果はHotspotsとIBSで別々に一時領域へ保存する。

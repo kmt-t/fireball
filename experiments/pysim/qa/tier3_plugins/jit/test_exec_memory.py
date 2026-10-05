@@ -5,30 +5,27 @@ import sys
 from pathlib import Path
 
 import pytest
+from qa.shared.exec_memory import ExecutableBuffer
 from qa.shared.helpers import expect_assertion
-from tier3_plugins.jit.exec_memory import ExecutableBuffer
 
 
 def test_executable_buffer_wx_protection_lifecycle():
     """Check executable-memory transactions and reject writes after commit."""
     buf = ExecutableBuffer(64)
     try:
-        buf.assert_no_rwx()
-        assert buf.patch_in_progress
+        with expect_assertion("Invalid begin_jit_patch"):
+            buf.begin_jit_patch()
         buf.write(0, b"\x90\x90\x90\x90")
 
         buf.commit_jit_patch()
-        buf.assert_no_rwx()
-        assert not buf.patch_in_progress
+        with expect_assertion("Invalid commit_jit_patch"):
+            buf.commit_jit_patch()
         with expect_assertion("Cannot write to ExecutableBuffer"):
             buf.write(0, b"\xcc")
 
         buf.begin_jit_patch()
-        buf.assert_no_rwx()
-        assert buf.patch_in_progress
         buf.write(0, b"\xc3")
         buf.commit_jit_patch()
-        buf.assert_no_rwx()
         buf.function_at(0, None, [])()
     finally:
         buf.close()

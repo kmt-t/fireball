@@ -34,7 +34,7 @@ _PYSIM_DIR = _BENCH_DIR.parent
 
 if str(_BENCH_DIR) not in sys.path:
     sys.path.insert(0, str(_BENCH_DIR))
-from _bootstrap import configure_import_paths
+from _bootstrap import configure_import_paths, reserve_native_region
 
 configure_import_paths(_PYSIM_DIR, _BENCH_DIR)
 
@@ -71,7 +71,6 @@ from tier3_platform.drivers.logging.file_sink import FileLogSink
 from tier3_platform.drivers.printk import PrintkSink
 from tier3_platform.drivers.wasi.context import WasiHostContext
 from tier3_plugins.jit.jit_manager import JITRuntimeManager
-from tier3_plugins.jit.x64_jit import TraceCompiler
 
 SUITE_WASM_PATH = Path(__file__).resolve().parent / "guest" / "suite.wasm"
 AO_WASM_PATH = _BENCH_DIR / "aobench" / "aobench.wasm"
@@ -167,7 +166,7 @@ def _new_interpreter_guest() -> tuple[Module, Interpreter, None]:
 
 def _new_jit_guest() -> tuple[Module, NativeInterpreter, RuntimeEngine]:
     module, bindings = _new_guest()
-    engine = RuntimeEngine(jit_runtime=JITRuntimeManager(jit_compiler=TraceCompiler()))
+    engine = RuntimeEngine(jit_runtime=JITRuntimeManager(reserve_native_region))
     engine.register_module_blocks(module)
     interpreter = NativeInterpreter(module, bindings, bump_allocator=engine.bump_allocator)
     return module, interpreter, engine
@@ -319,7 +318,7 @@ def _ao_guest(phase: str):
     _, sink = _open_log(phase)
     sysv = System(printk_sink=sink)  # keep system logs out of the guest's stdout stream
     wasi_ctx = WasiHostContext(sysv)
-    sysv.start_hal_driver(DummyDriver(transport=sysv.transport), FB_URI_HAL_STDOUT)
+    sysv.start_hal_driver(DummyDriver(sysv.pool, transport=sysv.transport), FB_URI_HAL_STDOUT)
     funcs = wasi_ctx.build_interpreter_host_functions(module)
     module.init_memory_data(wasi_ctx.guest_memory, ())
     bindings = InterpreterBindings.with_memory_and_functions(wasi_ctx.guest_memory, funcs)
@@ -354,7 +353,7 @@ def phase_ao_interp(scale: float, kernels: list[str] | None, oracle: bool) -> Ph
 def phase_ao_jit(scale: float, kernels: list[str] | None, oracle: bool) -> PhaseResult:
     width, height = _ao_size(scale)
     module, sysv, bindings, sink = _ao_guest("ao_jit")
-    engine = RuntimeEngine(jit_runtime=JITRuntimeManager(jit_compiler=TraceCompiler()))
+    engine = RuntimeEngine(jit_runtime=JITRuntimeManager(reserve_native_region))
     engine.register_module_blocks(module)
     interp = NativeInterpreter(module, bindings, bump_allocator=engine.bump_allocator)
     t0 = time.perf_counter()

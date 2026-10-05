@@ -17,7 +17,7 @@ while not (_PYSIM_DIR / "tier1_core").is_dir():
 _BENCH_DIR = Path(__file__).resolve().parents[1]
 if str(_BENCH_DIR) not in sys.path:
     sys.path.insert(0, str(_BENCH_DIR))
-from _bootstrap import configure_import_paths
+from _bootstrap import configure_import_paths, reserve_native_region
 
 configure_import_paths(_PYSIM_DIR, _BENCH_DIR)
 
@@ -33,7 +33,6 @@ from tier2_runtime.wasm.reader import parse
 from tier3_platform.drivers.hal.dummy import DummyDriver
 from tier3_platform.drivers.wasi.context import WasiHostContext
 from tier3_plugins.jit.jit_manager import JITRuntimeManager
-from tier3_plugins.jit.x64_jit import TraceCompiler
 
 
 def run_aobench(debug: bool = False) -> dict[str, int | float]:
@@ -52,7 +51,9 @@ def run_aobench(debug: bool = False) -> dict[str, int | float]:
     # Keep the Python reference and strict C++ interpreter timings distinct.
     sysv_python = System()
     wasi_python = WasiHostContext(sysv_python)
-    sysv_python.start_hal_driver(DummyDriver(transport=sysv_python.transport), FB_URI_HAL_STDOUT)
+    sysv_python.start_hal_driver(
+        DummyDriver(sysv_python.pool, transport=sysv_python.transport), FB_URI_HAL_STDOUT
+    )
     funcs_python = wasi_python.build_interpreter_host_functions(module)
     module.init_memory_data(wasi_python.guest_memory, ())
     interp_python = Interpreter(
@@ -67,7 +68,9 @@ def run_aobench(debug: bool = False) -> dict[str, int | float]:
 
     sysv_native = System()
     wasi_native = WasiHostContext(sysv_native)
-    sysv_native.start_hal_driver(DummyDriver(transport=sysv_native.transport), FB_URI_HAL_STDOUT)
+    sysv_native.start_hal_driver(
+        DummyDriver(sysv_native.pool, transport=sysv_native.transport), FB_URI_HAL_STDOUT
+    )
     funcs_native = wasi_native.build_interpreter_host_functions(module)
     module.init_memory_data(wasi_native.guest_memory, ())
     interp_native = NativeInterpreter(
@@ -86,12 +89,13 @@ def run_aobench(debug: bool = False) -> dict[str, int | float]:
     # 2. Tier 3 JIT Hybrid Execution
     sysv_t3 = System()
     wasi_ctx_t3 = WasiHostContext(sysv_t3)
-    sysv_t3.start_hal_driver(DummyDriver(transport=sysv_t3.transport), FB_URI_HAL_STDOUT)
+    sysv_t3.start_hal_driver(
+        DummyDriver(sysv_t3.pool, transport=sysv_t3.transport), FB_URI_HAL_STDOUT
+    )
     funcs_t3 = wasi_ctx_t3.build_interpreter_host_functions(module)
     module.init_memory_data(wasi_ctx_t3.guest_memory, ())
-    trace_compiler = TraceCompiler()
     runtime_engine = RuntimeEngine(
-        jit_runtime=JITRuntimeManager(jit_compiler=trace_compiler),
+        jit_runtime=JITRuntimeManager(reserve_native_region),
         debug=debug,
     )
     runtime_engine.register_module_blocks(module)
@@ -121,7 +125,7 @@ def run_aobench(debug: bool = False) -> dict[str, int | float]:
     # Collect diagnostic path counters after the timed run so profiling code
     # does not contribute to the reported execution time.
     diagnostic_engine = RuntimeEngine(
-        jit_runtime=JITRuntimeManager(jit_compiler=TraceCompiler()),
+        jit_runtime=JITRuntimeManager(reserve_native_region),
         debug=debug,
         collect_runtime_stats=True,
     )
@@ -129,7 +133,7 @@ def run_aobench(debug: bool = False) -> dict[str, int | float]:
     sysv_diagnostic = System()
     wasi_diagnostic = WasiHostContext(sysv_diagnostic)
     sysv_diagnostic.start_hal_driver(
-        DummyDriver(transport=sysv_diagnostic.transport),
+        DummyDriver(sysv_diagnostic.pool, transport=sysv_diagnostic.transport),
         FB_URI_HAL_STDOUT,
     )
     funcs_diagnostic = wasi_diagnostic.build_interpreter_host_functions(module)
@@ -144,6 +148,7 @@ def run_aobench(debug: bool = False) -> dict[str, int | float]:
     diagnostic_engine.call(interp_diagnostic, main_fn, [WIDTH, HEIGHT])
     diagnostic_output = sysv_diagnostic.transport.drain_output().decode("utf-8", errors="replace")
     assert diagnostic_output == render_output_t3
+    assert diagnostic_engine.stat_jit_invocations > 0
 
     result: dict[str, int | float] = {
         "width": WIDTH,
@@ -165,7 +170,6 @@ def run_aobench(debug: bool = False) -> dict[str, int | float]:
         "t3_rays_per_sec": t3_rays_per_sec,
         "speedup_ratio": speedup_ratio,
         "runtime_profile_stats_enabled": 1,
-        "compiled_traces": runtime_engine.jit_runtime.cache.resident_count,
     }
     result.update(
         {
@@ -205,7 +209,6 @@ def main():
         print(f"  * JIT trace transitions: {res['native_dispatch_trace_transitions']:,}")
     else:
         print("  * JIT trace transitions: runtime stats not collected")
-    print(f"  * Active JIT Traces:        {res['compiled_traces']} compiled traces")
     print("=" * 80)
     print("[PASS] 3D Ambient Occlusion benchmark completed successfully.")
 

@@ -16,6 +16,9 @@ while not (_PYSIM_DIR / "tier1_core").is_dir():
     _PYSIM_DIR = _PYSIM_DIR.parent
 
 
+import mmap
+
+from bump_allocator import BumpAllocator
 from system import System
 from system_containers import StaticVector
 from tier2_runtime.interpreter.interpreter import InterpreterBindings, NativeInterpreter
@@ -25,7 +28,6 @@ from tier2_runtime.runtime.recovery import RecoveryManager, RecoveryStrategy, Re
 from tier2_runtime.wasm.reader import parse
 from tier3_platform.drivers.printk import PrintkBuffer
 from tier3_plugins.jit.jit_manager import JITRuntimeManager
-from tier3_plugins.jit.x64_jit import TraceCompiler
 
 findings: StaticVector[str] = StaticVector(capacity=8)
 
@@ -175,13 +177,17 @@ def demo_wasmjit_hybrid_execution(sysv: System) -> None:
     """
     print("\n== wasmjit: Tiered Tracing JIT & Interpreter Hybrid Execution ==")
     mod = parse(FACTORIAL_WASM)
-    interp = NativeInterpreter(mod, InterpreterBindings.empty())
+    allocator = BumpAllocator()
+    interp = NativeInterpreter(mod, InterpreterBindings.empty(), bump_allocator=allocator)
+
+    def reserve_region(size: int, alignment: int) -> memoryview:
+        assert alignment == mmap.PAGESIZE
+        allocator.allocate(size, alignment)
+        return memoryview(mmap.mmap(-1, size))
+
     engine = RuntimeEngine(
-        jit_runtime=JITRuntimeManager(
-            jit_compiler=TraceCompiler(),
-            yield_threshold=3,
-            candidate_threshold=0,
-        ),
+        jit_runtime=JITRuntimeManager(reserve_region, yield_threshold=3),
+        bump_allocator=allocator,
     )
 
     print("  [Stage 1-3] Running through RuntimeEngine (Interpreter/JIT boundaries)...")

@@ -2,6 +2,8 @@
 # (Windows / clang-cl).
 # Requires clang-cl on PATH and a Visual Studio Build Tools +
 # Windows SDK install (for the MSVC headers/import libs clang-cl targets).
+param([switch]$QA)
+
 $ErrorActionPreference = "Stop"
 
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -41,8 +43,15 @@ $runtimeSourceCpp = Join-Path $nativeSourceDir "jit_runtime.cxx"
 $profilingSourceCpp = Join-Path $nativeSourceDir "profiling.cxx"
 $generatedDll = Join-Path $nativeBuildDir "trace_compiler.dll"
 
-$commonConfig = & uv run --offline --no-sync --python $uvPython python -c 'import config; names=(''JIT_CACHE_REGION_BYTES'', ''JIT_CACHE_COMMON_CODE_BYTES'', ''JIT_CACHE_ABSOLUTE_ADDRESS_POOL_BYTES'', ''JIT_TRACE_COMMON_PROLOGUE_OFFSET'', ''JIT_TRACE_COMMON_HELPER_OFFSET'', ''JIT_TRACE_HELPER_ENTRY_BYTES'', ''JIT_TRACE_TYPED_I32_HELPER_COUNT'', ''JIT_TRACE_TYPED_I32_HELPER_OFFSET'', ''JIT_TRACE_WIDE_HELPER_COUNT'', ''JIT_TRACE_WIDE_HELPER_OFFSET'', ''JIT_X64_HELPER_TARGET_OFFSET'', ''JIT_X64_TRACE_ENTRY_STUB_BYTES'', ''JIT_HISTORY_CAPACITY'', ''JIT_COMPILE_QUEUE_CAPACITY''); print(" ".join("/DFB_CONF_"+name+"="+str(getattr(config,name)) for name in names))'
+$commonConfig = & uv run --offline --no-sync --python $uvPython python -c 'import config; names=(''JIT_CACHE_REGION_BYTES'', ''JIT_CACHE_COMMON_CODE_BYTES'', ''JIT_CACHE_ABSOLUTE_ADDRESS_POOL_BYTES'', ''JIT_TRACE_COMMON_PROLOGUE_OFFSET'', ''JIT_TRACE_COMMON_HELPER_OFFSET'', ''JIT_TRACE_HELPER_ENTRY_BYTES'', ''JIT_TRACE_TYPED_I32_HELPER_COUNT'', ''JIT_TRACE_TYPED_I32_HELPER_OFFSET'', ''JIT_TRACE_WIDE_HELPER_COUNT'', ''JIT_TRACE_WIDE_HELPER_OFFSET'', ''JIT_X64_HELPER_TARGET_OFFSET'', ''JIT_X64_TRACE_ENTRY_STUB_BYTES'', ''JIT_HISTORY_CAPACITY'', ''JIT_COMPILE_QUEUE_CAPACITY'', ''JIT_CARD_SHIFT'', ''JIT_CACHE_BANK_CAPACITY_BYTES'', ''JIT_CACHE_ACTIVE_OFFSET_BYTES'', ''JIT_CACHE_WARM_OFFSET_BYTES'', ''JIT_CACHE_OLDEST_OFFSET_BYTES'', ''FB_CONF_JIT_AGING_STEP_UNITS'', ''FB_CONF_JIT_AGING_STEP_SCAN_BYTES''); print(" ".join("/D"+(name if name.startswith("FB_CONF_") else "FB_CONF_"+name)+"="+str(getattr(config,name)) for name in names))'
 $commonDefines = (($commonConfig -join " ").Trim() -split "\s+")
+
+if ($QA) {
+    $commonDefines += "/DFB_PYSIM_QA"
+    $runtimeSourceCpp = Join-Path $projectRoot "experiments\pysim\qa\private\native_jit_probe.cxx"
+    $generatedDll = Join-Path $nativeBuildDir "jit_probe.dll"
+    $pythonPackageDir = Join-Path $projectRoot "experiments\pysim\qa\private"
+}
 
 Write-Host ">>> Compiling trace_compiler.cxx -> trace_compiler.dll (clang-cl)" -ForegroundColor Yellow
 & clang-cl.exe /TP /std:c++latest /O2 /LD `
@@ -67,5 +76,5 @@ Write-Host ">>> Compiling trace_compiler.cxx -> trace_compiler.dll (clang-cl)" -
     "/LIBPATH:$sdkRoot\Lib\$sdkVer\um\x64"
 if ($LASTEXITCODE -ne 0) { throw "clang-cl compile failed" }
 
-Copy-Item -Force $generatedDll (Join-Path $pythonPackageDir "trace_compiler.dll")
+Copy-Item -Force $generatedDll (Join-Path $pythonPackageDir (Split-Path -Leaf $generatedDll))
 Write-Host "✔ Built trace_compiler.dll" -ForegroundColor Green

@@ -34,17 +34,21 @@ class CtypesU32Buffer:
     concrete unsigned-32-bit buffer.
     """
 
-    __slots__ = ("_allocator", "_arena_offset", "_arena_size", "_values", "capacity")
+    __slots__ = ("_arena_offset", "_arena_size", "_values", "capacity")
 
     def __init__(self, capacity: int, allocator: BumpAllocator | None = None) -> None:
         assert capacity >= 0
         self.capacity = capacity
         self._values = (ctypes.c_uint32 * capacity)()
-        self._allocator: BumpAllocator | None = None
         self._arena_offset: int | None = None
         self._arena_size = 0
         if allocator is not None:
-            self.bind_allocator(allocator)
+            self._arena_size = ctypes.sizeof(self._values)
+            self._arena_offset = (
+                allocator.allocate(self._arena_size, ctypes.alignment(ctypes.c_uint32))
+                if self._arena_size
+                else None
+            )
 
     @property
     def arena_offset(self) -> int | None:
@@ -53,19 +57,6 @@ class CtypesU32Buffer:
     @property
     def arena_size(self) -> int:
         return self._arena_size
-
-    def bind_allocator(self, allocator: BumpAllocator) -> None:
-        """Record this C-compatible buffer in the owning runtime arena."""
-
-        if self._allocator is allocator:
-            return
-        self._arena_size = ctypes.sizeof(self._values)
-        self._arena_offset = (
-            allocator.allocate(self._arena_size, ctypes.alignment(ctypes.c_uint32))
-            if self._arena_size
-            else None
-        )
-        self._allocator = allocator
 
     @property
     def native_address(self) -> int:

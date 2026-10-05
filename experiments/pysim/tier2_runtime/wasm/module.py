@@ -29,7 +29,6 @@ from system_containers import (
     StaticVector,
     fold_mix32,
 )
-from tier2_runtime.wasm.jit_scoring import OPCODE_BENEFIT_TABLE, score_opcodes
 from tier2_runtime.wasm.leb128 import decode_signed, decode_unsigned
 
 if TYPE_CHECKING:
@@ -55,7 +54,6 @@ class BasicBlock:
     loops_to: int | None = None
     frame_depth: int = 0
     byte_span: int = 0
-    jit_score: int = 0
 
 
 # WASM value types are stored as their one-byte binary encoding.  Keeping the
@@ -103,9 +101,6 @@ class FunctionTable:
 
     def __len__(self) -> int:
         return len(self._values)
-
-    def bind_allocator(self, allocator: BumpAllocator) -> None:
-        self._values.bind_allocator(allocator)
 
     def __getitem__(self, index: int) -> int | None:
         if index < 0:
@@ -190,7 +185,6 @@ class LocalWidthMap:
     """
 
     __slots__ = (
-        "_allocator",
         "_arena_offset",
         "_arena_size",
         "_storage",
@@ -199,7 +193,12 @@ class LocalWidthMap:
         "slot_words",
     )
 
-    def __init__(self, params: IntegerSequence, extra: IntegerSequence = ()) -> None:
+    def __init__(
+        self,
+        params: IntegerSequence,
+        extra: IntegerSequence = (),
+        allocator: BumpAllocator | None = None,
+    ) -> None:
         count = len(params) + len(extra)
         self._storage = MutableBitStorage(count, bits=LOCAL_WIDTH_BITS)
         self.count = count
@@ -213,9 +212,10 @@ class LocalWidthMap:
             index += 1
         self.slot_words = slot_words
         self._view: BitView = self._storage.view()
-        self._allocator: BumpAllocator | None = None
         self._arena_offset: int | None = None
         self._arena_size = len(self._storage.buffer)
+        if allocator is not None and self._arena_size:
+            self._arena_offset = allocator.allocate(self._arena_size, alignment=1)
 
     @property
     def arena_offset(self) -> int | None:
@@ -224,16 +224,6 @@ class LocalWidthMap:
     @property
     def arena_size(self) -> int:
         return self._arena_size
-
-    def bind_allocator(self, allocator: BumpAllocator) -> None:
-        """Record packed local widths in the module's runtime arena."""
-
-        if self._allocator is allocator:
-            return
-        self._arena_offset = (
-            allocator.allocate(self._arena_size, alignment=1) if self._arena_size else None
-        )
-        self._allocator = allocator
 
     def relocate_arena(self, offset_delta: int) -> None:
         """Move the recorded packed-width span with its owning module."""
@@ -475,8 +465,8 @@ class Module:
         self.globals = _allocate_loader_vector(allocator, global_count, LOADER_GLOBAL_ENTRY_BYTES)
         self.tables = _allocate_loader_vector(allocator, table_count, LOADER_TABLE_ENTRY_BYTES)
 
-    def bind_allocator(self, allocator: BumpAllocator) -> None:
-        """Account loaded module storage in the runtime's owning arena."""
+    def relocate_to(self, allocator: BumpAllocator) -> None:
+        """Relocate loaded module storage and offsets into the destination arena."""
 
         if self.allocator is allocator:
             return
@@ -500,7 +490,12 @@ class Module:
         else:
             for function in self.functions:
                 assert function.local_width_map_cache is not None
-                function.local_width_map_cache.bind_allocator(allocator)
+                widths = function.local_width_map_cache
+                widths._arena_offset = (
+                    allocator.allocate(widths.arena_size, alignment=1)
+                    if widths.arena_size
+                    else None
+                )
         self.allocator = allocator
 
     def finish_loading(self, allocator: BumpAllocator) -> None:
@@ -520,9 +515,7 @@ class Module:
             function_type = self.type_at(function.type_index)
             local_count = len(function_type.params) + len(function.locals_extra)
             assert local_count <= FB_CONF_MAX_LOCALS
-            width_map = LocalWidthMap(function_type.params, function.locals_extra)
-            if self.allocator is not None:
-                width_map.bind_allocator(self.allocator)
+            width_map = LocalWidthMap(function_type.params, function.locals_extra, self.allocator)
             function.local_width_map_cache = width_map
             function.local_slot_count_cache = local_count * width_map.slot_words
             function.param_count_cache = len(function_type.params)
@@ -656,8 +649,6 @@ class Module:
         else:
             assert len(initial) >= table.min_size
             slots = initial
-            if allocator is not None:
-                slots.bind_allocator(allocator)
 
         def write_element(segment_table_index: int, slot: int, function_index: int) -> None:
             if segment_table_index == table_index:
@@ -769,7 +760,7 @@ class Module:
 
     def build_basic_block_index(self, allocator: BumpAllocator | None = None) -> None:
         """Build the immutable block and instruction indexes during loading."""
-        from tier2_runtime.interpreter.control_flow import extract_basic_blocks, iter_block_ops
+        from tier2_runtime.interpreter.control_flow import extract_basic_blocks
 
         n_imports = len(self.imports)
         block_capacity = self.total_basic_blocks
@@ -795,15 +786,6 @@ class Module:
                             loops_to=loops_to,
                             frame_depth=frame_depth,
                             byte_span=byte_span,
-                            jit_score=score_opcodes(
-                                (
-                                    opcode
-                                    for opcode, _ in iter_block_ops(
-                                        code, head_pc - function_pc_offset, byte_span
-                                    )
-                                ),
-                                OPCODE_BENEFIT_TABLE,
-                            ),
                         )
                     )
 

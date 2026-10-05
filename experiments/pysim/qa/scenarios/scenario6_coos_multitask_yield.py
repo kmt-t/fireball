@@ -71,7 +71,11 @@ def test_scenario_coos_multitask():
     producer = make_native_interpreter(module, memory=memory)
     consumer = make_native_interpreter(module, memory=memory)
     system = System()
-    system.runtime_engine = RuntimeEngine(yield_threshold=4, drive_mode=RuntimeDriveMode.COOS)
+    system.runtime_engine = RuntimeEngine(
+        yield_threshold=4,
+        drive_mode=RuntimeDriveMode.COOS,
+        bump_allocator=module.allocator,
+    )
     observed: list[tuple[int, int]] = []
 
     def monitor():

@@ -19,7 +19,7 @@
 | TEST-JITR-04 | 評価(Eviction)でUNEXECUTEDへ戻る（EXECUTEDではない） | カードがCOMPILED、対応トレースがキャッシュから追い出される | `mark_evicted` | 状態がUNEXECUTEDに戻る。 |, `test_hotspot_bitmap_pure_2bit_state_transitions`, [`test_jit_runtime.py`](experiments/pysim/qa/tier3_plugins/jit/test_jit_runtime.py) `test_hotspot_05_3bank_cache_rotation_and_eviction_resets_card` |
 | TEST-JITR-06 | 最小トレース長未満のブロックは共有カードを更新しない | 同一コード領域カード内に2つの短いベーシックブロック（推定コンパイル後サイズがカード幅未満） | 両方のPCを繰り返し実行 | 候補外PCは共有カード状態を更新せず、コンパイル待ち列にも追加されない。カード領域の共有有無にかかわらずカード状態は `UNEXECUTED` のままである。 | `jit_runtime.md`「最小トレース長フィルタ」、[`test_jit_runtime.py`](experiments/pysim/qa/tier3_plugins/jit/test_jit_runtime.py) `test_hotspot_06_short_blocks_never_tracked_avoiding_card_aliasing` |
 | TEST-JITR-07 | `COMPILED`カードの重複要求をC++ Runtimeが破棄する | トレースがキャッシュに常駐し、同PCのカードが`COMPILED`で、同PCが待ち列にも積まれている | idle_hookを実行 | C++ Runtimeはコンパイルせず要求を破棄し、カード状態と常駐トレースを保つ。 | `jit_runtime.md`「コンパイル待ち列」、[`test_jit_runtime.py`](experiments/pysim/qa/tier3_plugins/jit/test_jit_runtime.py) `test_hotspot_07_idle_hook_skips_recompiling_an_already_resident_trace` |
-| TEST-JITR-08 | JITエントリテーブル（バンクのトレース一覧）は常にhead_pcでソートされ、削除は削除フラグ（トンビストーン）で行う | 複数のトレースをPC順不同で挿入し、1件削除後に同じPCを再挿入 | 挿入・削除・再挿入後にトレース一覧と該当PCの取得結果を確認 | 一覧は常にhead_pc昇順。削除直後は取得結果がNone。再挿入は既存tombstone枠を再利用し、取得結果は新しいトレースそのものになる。 | jit_runtime.md「JITエントリ表」, [`jit_runtime.cxx`](experiments/pysim/native/tier3_plugins/jit/jit_runtime.cxx), [`jit_cache.py`](experiments/pysim/tier3_plugins/jit/jit_cache.py), [`test_jit_runtime.py`](experiments/pysim/qa/tier3_plugins/jit/test_jit_runtime.py) |
+| TEST-JITR-08 | JITエントリテーブル（バンクのトレース一覧）は常にhead_pcでソートされ、削除は削除フラグ（トンビストーン）で行う | 複数のトレースをPC順不同で挿入し、1件削除後に同じPCを再挿入 | 挿入・削除・再挿入後にトレース一覧と該当PCの取得結果を確認 | 一覧は常にhead_pc昇順。削除直後は取得結果がNone。再挿入は既存tombstone枠を再利用し、取得結果は新しいトレースそのものになる。 | jit_runtime.md「JITエントリ表」, [`jit_runtime.cxx`](experiments/pysim/native/tier3_plugins/jit/jit_runtime.cxx), [`jit_cache.py`](experiments/pysim/qa/shared/jit_cache.py), [`test_jit_runtime.py`](experiments/pysim/qa/tier3_plugins/jit/test_jit_runtime.py) |
 | TEST-JITR-09 | OldestヒットによるPromotion時、被チェイン登録（inbound_sources）は昇格先バンクへ引き継がれる | トレースBがバンクXでチェイン元Aから被チェインされている状態で、Bのみが後にOldestからPromoteされる | Bをlookupで昇格させた後、AとBそれぞれの所属バンクを確認 | 昇格前のバンクXからAの登録がなくなり、Bの新しい所属バンクへ引き継がれる。 | [`test_jit_runtime.py`](experiments/pysim/qa/tier3_plugins/jit/test_jit_runtime.py) `test_jitr_promote_transfers_inbound_sources_avoiding_dangling_chain` |
 | TEST-JITR-09b | 通常実行ではC++ dispatcherが常駐trace表を検索する | 未コンパイルブロックが多く、実行中にtraceをコンパイルする関数 | 関数を実行し、JIT実行件数、Python側`cache.lookup()`の呼出し、常駐trace表とカード状態を確認する | 関数結果が正しく、JITを実行する。通常経路ではPython側`cache.lookup()`を呼ばない。常駐trace表の各PCは`COMPILED`のカードとキャッシュ内のtraceに対応する。 | `jit_runtime.md`「トレース実行時の分岐解決とインタープリタ復帰」、pysim `test_jitr_native_trace_lookup_uses_resident_snapshot` |
 | TEST-JITR-71 | カード表と候補抑止表はコード領域単位 | 4バイトカード境界をまたぐ2関数が同じCode-sectionカードに属する | 一方をtouchし、候補カードをmark/unmarkする | 両関数のPCが同じホットスポット状態と候補抑止bitを共有する。各表はコード領域全体を覆う単一の密ストレージを持つ | `jit_runtime.md`「Card Marking」「Trackable Mask」、pysim `test_hotspot_and_trackable_bitmaps_share_one_code_region_card_space` |
@@ -89,6 +89,9 @@ JITトレース検索時の内部状態と期待される挙動を検証する�
 | TEST-JITR-29 | 制御命令だけの区間の検索・計測抑止 | 構造命令と通常命令の開始PCが同じカードに入り、制御命令が連続する | native dispatcherで実行し、履歴とLoader索引の検索を観測する | 通常命令のあるブロックだけを開始PCで記録する。制御命令だけの区間と履歴転送でLoader索引を検索しない。NativeStepからdispatchへ切り替えても、メモリ処理の再開PCを先頭として扱わない。分岐・呼出しの結果を維持する | `test_jitr_mask_card_collision_does_not_profile_structural_pc`, `test_jitr_memory_boundary_continuation_does_not_become_a_block_head`, `test_jitr_native_step_consumes_pending_head_before_memory_fallback`, `test_jitr_memory_helper_trap_clears_block_continuation` |
 | TEST-JITR-26 | Direct-Mapped Folding XOR JIT Cache による O(1) 一発ヒット | トレースがキャッシュに存在 | lookup | 4-bit スロット選択を行う Folding XOR Hash で 16 スロットテーブルにヒットし、バンク二分探索を行わずに O(1) で即時返却される | `jit_runtime.md` , `{DirectMappedJIT16}` |
 
+| TEST-LOAD-49 | int4_t スコアリングによる JIT 候補ビットマップ生成 | JIT プラグインへモジュール登録 | `test_plugin_candidate_gate_uses_specification_threshold`で8・9・10点と負の便益を含む2点の有効ブロックを実登録する | 128B BitView<4> テーブルから命令ごとの機械語短縮スコア（int4_t）を積算し、合計9点以上のブロックの head_pc カードビット（1bit）が正確に 1 にセットされる | `{JIT_StaticBenefitScoring}`, `{JIT_CandidateBitmap}` |
+| TEST-LOAD-50 | JITCandidateBitmap 非候補ブロックの touch/履歴バイパス | 非候補ブロック（カードビット 0）の実行 | `eng.run(cold_pc, ctx)` | インタープリタ実行は行われるが、HotspotBitmap.touch() および履歴リングへの記録が完全にバイパスされ、カード状態が UNEXECUTED のまま維持される | `{JIT_CandidateBitmap}` |
+
 ### トレース・チェイニング
 <!-- traceability: {GOTCHA-INTP-06} -->
 
@@ -109,10 +112,10 @@ TEST-JITR-33のIFと内側loopの回帰試験は、対象の制御終端直前�
 
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| TEST-JITR-40 | パッチ中だけ実行可能バッファへ書き込める | x64 `ExecutableBuffer` が初期化済み | `begin_jit_patch()`前後で`write()`する | パッチ開始前の書込みはassertで拒否され、開始後は境界内の書込みが成功する | [`exec_memory.py`](experiments/pysim/tier3_plugins/jit/exec_memory.py) |
+| TEST-JITR-40 | パッチ中だけ実行可能バッファへ書き込める | x64 `ExecutableBuffer` が初期化済み | `begin_jit_patch()`前後で`write()`する | パッチ開始前の書込みはassertで拒否され、開始後は境界内の書込みが成功する | [`exec_memory.py`](experiments/pysim/qa/shared/exec_memory.py) |
 | TEST-JITR-41 | 実行可能状態へ戻した後は書込みを拒否する | x64 `ExecutableBuffer` にコードを書込み済み | `commit_jit_patch()`後に`write()`する | 書込みはassertで拒否され、バッファは実行可能状態になる | 同上 |
-| TEST-JITR-42 | x64の実行可能バッファ権限遷移 | `begin_jit_patch()`→書込み→`commit_jit_patch()` | 権限状態と同期カウンタを確認する | 状態はRW+XNからRO+Xへ遷移し、`dsb_count`と`isb_count`が各遷移で増える。ARMv8-Mの命令や保護機構はこの期待値に含めない | [`exec_memory.py`](experiments/pysim/tier3_plugins/jit/exec_memory.py) |
-| TEST-JITR-43 | x64の書込み・実行同時許可(RWX)排除 | x64 `ExecutableBuffer` が初期化済み | 各権限遷移後に`assert_no_rwx()`を呼ぶ | 全状態で書込みと実行が同時に許可されない | [`exec_memory.py`](experiments/pysim/tier3_plugins/jit/exec_memory.py) |
+| TEST-JITR-42 | x64の実行可能バッファ権限遷移 | `begin_jit_patch()`→書込み→`commit_jit_patch()` | OS が公開する実権限と生成コードの実行結果を確認する | 実権限は RW から RX へ遷移し、再パッチ中だけ RW へ戻る。生成コードは指定した値を返す。ARMv8-Mの命令や保護機構はこの期待値に含めない | [`exec_memory.py`](experiments/pysim/qa/shared/exec_memory.py) |
+| TEST-JITR-43 | x64の書込み・実行同時許可(RWX)排除 | x64 `ExecutableBuffer` が初期化済み | 各権限遷移後にOS が公開する実権限を確認する | 全状態で書込みと実行が同時に許可されない | [`exec_memory.py`](experiments/pysim/qa/shared/exec_memory.py) |
 
 ### 関数戻り値とInterpreter境界
 <!-- traceability: {TraceBoundaryInvariant} {GOTCHA-INTP-06} {GOTCHA-JITR-02} -->

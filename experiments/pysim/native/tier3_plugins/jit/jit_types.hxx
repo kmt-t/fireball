@@ -1,6 +1,15 @@
 #ifndef FIREBALL_PYSIM_JIT_TYPES_HXX
 #define FIREBALL_PYSIM_JIT_TYPES_HXX
 #include <cstdint>
+#if defined(FB_PYSIM_QA)
+#if defined(_WIN32)
+#define FB_JIT_QA_EXPORT __declspec(dllexport)
+#else
+#define FB_JIT_QA_EXPORT __attribute__((visibility("default")))
+#endif
+#else
+#define FB_JIT_QA_EXPORT
+#endif
 namespace fireball {
 struct jit_instruction;
 
@@ -51,7 +60,6 @@ struct jit_cache_trace {
   std::uint32_t dispatch_next_pc;
   std::uint32_t dispatch_loops_to;
   std::uint32_t code_offset;
-  std::uint32_t flags;
   std::uint32_t chain_next_pc;
   std::uintptr_t entry_address;
   std::uint64_t chain_target_address;

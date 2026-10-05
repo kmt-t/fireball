@@ -28,9 +28,13 @@ Verifies:
 import ctypes
 import struct
 
+from config import JIT_X64_TRACE_HEADER_BYTES
+from qa.shared.common_code import COMMON_CHAIN_DISPATCH_OFFSET
 from qa.shared.helpers import make_native_interpreter as Interpreter
 from qa.shared.helpers import wat_to_wasm
+from qa.shared.jit_cache import JITTrace
 from qa.shared.runtime_support import compile_module_block, compile_test_block, make_runtime_engine
+from qa.shared.x64_jit import TraceCompiler
 from tier2_runtime.interpreter.control_flow import extract_basic_blocks
 from tier2_runtime.interpreter.interpreter import ExecutionContext
 from tier2_runtime.wasm.module import I32, I64, BasicBlock, LocalWidthMap
@@ -73,9 +77,6 @@ from tier2_runtime.wasm.opcodes import (
     LOCAL_GET,
     LOCAL_SET,
 )
-from tier3_plugins.jit.common_code import COMMON_CHAIN_DISPATCH_OFFSET
-from tier3_plugins.jit.jit_cache import JITTrace
-from tier3_plugins.jit.x64_jit import TraceCompiler
 
 _HELPER_TYPE = ctypes.CFUNCTYPE(
     None,
@@ -95,9 +96,9 @@ _I32_HELPER_TYPE = ctypes.CFUNCTYPE(
 def _assert_trace_uses_common_chain_dispatcher(trace: JITTrace) -> None:
     assert trace.code_offset is not None
     assert trace.chain_dispatch_patch_offset >= 0
-    assert trace._exec_buf is not None
-    jump = trace._exec_buf.read(
-        trace.code_offset + trace.chain_dispatch_patch_offset - 1,
+    assert trace.raw_addr is not None
+    jump = ctypes.string_at(
+        trace.raw_addr - JIT_X64_TRACE_HEADER_BYTES + trace.chain_dispatch_patch_offset - 1,
         5,
     )
     assert jump[0] == 0xE9
@@ -411,7 +412,7 @@ def test_trace_header_helper_tail_jump_uses_per_trace_pointer():
     trace.invoke(ctx)
     assert ctx.local_stack[0] == 11
 
-    raw_blob = trace._exec_buf.read(trace.code_offset, trace.size_bytes)
+    raw_blob = ctypes.string_at(trace.raw_addr - JIT_X64_TRACE_HEADER_BYTES, trace.size_bytes)
     helper_addr_bytes = helper_addr.to_bytes(8, "little")
     assert raw_blob[0x08:0x10] == helper_addr_bytes
 
@@ -487,9 +488,7 @@ def test_hybrid_interpreter_to_jit_trace_elevation():
     assert engine.stat_jit_invocations > 1
     assert engine.stat_native_control_handlers > 0
     assert engine.stat_interp_steps >= 3
-    assert (engine.jit_runtime.cache.find_bank(loop_pc) == engine.jit_runtime.cache.active_idx) or (
-        engine.jit_runtime.cache.find_bank(loop_pc) == engine.jit_runtime.cache.warm_idx
-    )
+    assert engine.jit_runtime.cache.find_trace(loop_pc) is not None
 
 
 def test_jit_chaining_uses_loader_resolved_successors():

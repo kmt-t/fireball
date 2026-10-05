@@ -15,7 +15,9 @@ from enum import IntEnum
 from unittest.mock import patch
 
 import ipc_router
+import system as system_module
 from ipc_router import Role, ServiceDescriptor
+from scheduler import Scheduler
 from system import System
 from system_containers import ReadOnlyFlatMapView
 from tier2_runtime.hal.dispatch import (
@@ -35,9 +37,11 @@ from tier2_runtime.hal.dispatch import (
     ARG_SLAVE_ADDR,
     ARG_TX_BUFFER_HANDLE,
     ARG_VAL,
+    HalBufferPool,
     HalDriver,
     WasiIpcCmd,
 )
+from tier2_runtime.vmmio.controller import VMMIOController
 from tier3_platform.drivers.hal.stream import StreamTransport
 from tier3_platform.drivers.wasi.context import Wasi03pEngine
 
@@ -73,13 +77,13 @@ class CommandObservation:
 class StubDriver(HalDriver):
     """Record completed device commands and optionally assert their HAL task."""
 
-    def __init__(self) -> None:
-        super().__init__()
+    def __init__(self, pool: HalBufferPool) -> None:
+        super().__init__(pool)
         self.expected_task_id: int | None = None
         self.observations: list[CommandObservation] = []
 
     def dispatch(self, cmd_id: int, params: ReadOnlyFlatMapView) -> int:
-        task_id = None if self._buffer_pool is None else self._buffer_pool.current_task_id
+        task_id = self._buffer_pool.current_task_id
         if self.expected_task_id is not None:
             assert task_id == self.expected_task_id, "stub called outside its HAL task"
         parameters = snapshot(params)
@@ -88,15 +92,14 @@ class StubDriver(HalDriver):
         return result
 
     def buffer_view(self, handle: int, offset: int, length: int) -> memoryview:
-        assert self._buffer_pool is not None
         return self._buffer_pool.view_for_driver(handle, offset, length)
 
 
 class StreamStubDriver(StubDriver):
     """Independent RX/TX storage and controllable short transfers for UART/RTT/stdout."""
 
-    def __init__(self, transport: StreamTransport | None = None) -> None:
-        super().__init__()
+    def __init__(self, pool: HalBufferPool, transport: StreamTransport | None = None) -> None:
+        super().__init__(pool)
         self.transport = transport if transport is not None else StreamTransport()
         self.read_limit: int | None = None
         self.write_limit: int | None = None
@@ -152,8 +155,8 @@ class StreamStubDriver(StubDriver):
 class AdcStubDriver(StreamStubDriver):
     """Capture setup commands; test-supplied sample bytes travel through stream I/O."""
 
-    def __init__(self) -> None:
-        super().__init__()
+    def __init__(self, pool: HalBufferPool) -> None:
+        super().__init__(pool)
         self.configuration: tuple[tuple[int, int], ...] | None = None
         self.register_command(StubCommand.ADC_CONFIGURE, self._configure)
 
@@ -171,8 +174,8 @@ class AdcStubDriver(StreamStubDriver):
 class PwmStubDriver(StubDriver):
     """Capture configuration and output commands without inventing physical units."""
 
-    def __init__(self) -> None:
-        super().__init__()
+    def __init__(self, pool: HalBufferPool) -> None:
+        super().__init__(pool)
         self.configuration: tuple[tuple[int, int], ...] | None = None
         self.output: tuple[tuple[int, int], ...] | None = None
         self.register_command(StubCommand.PWM_CONFIGURE, self._configure)
@@ -205,8 +208,8 @@ class Pollable:
 class PollStubDriver(StubDriver):
     """QA event bank with the existing timer's 16-slot generation-handle shape."""
 
-    def __init__(self) -> None:
-        super().__init__()
+    def __init__(self, pool: HalBufferPool) -> None:
+        super().__init__(pool)
         self.pollables = [Pollable() for _ in range(16)]
         self.register_command(WasiIpcCmd.POLL_CHECK, self._check)
         self.register_command(WasiIpcCmd.POLL_WAIT, self._check)
@@ -243,9 +246,9 @@ class PollStubDriver(StubDriver):
 class GpioStubDriver(PollStubDriver):
     """QA pin/edge state, not a vMMIO fast path or a physical ISR emulator."""
 
-    def __init__(self, pins: int = 8) -> None:
+    def __init__(self, pool: HalBufferPool, pins: int = 8) -> None:
         assert pins > 0
-        super().__init__()
+        super().__init__(pool)
         self.modes: list[int | None] = [None] * pins
         self.levels = [0] * pins
         self.register_command(WasiIpcCmd.GPIO_CONFIG_PIN, self._configure)
@@ -296,8 +299,8 @@ class GpioStubDriver(PollStubDriver):
 class BusStubDriver(StubDriver):
     """I2C/SPI scripted replies; resolve both slices before changing either one."""
 
-    def __init__(self) -> None:
-        super().__init__()
+    def __init__(self, pool: HalBufferPool) -> None:
+        super().__init__(pool)
         self.configuration: tuple[int, int, int] | None = None
         self.reply = b""
         self.transmitted: list[bytes] = []
@@ -338,10 +341,10 @@ class BusStubDriver(StubDriver):
 class TimerStubDriver(PollStubDriver):
     """Explicitly advanced test clock; no wall-clock sleeps or automatic time jumps."""
 
-    def __init__(self, now_ns: int = 0, resolution_ns: int = 1) -> None:
+    def __init__(self, pool: HalBufferPool, now_ns: int = 0, resolution_ns: int = 1) -> None:
         assert 0 <= now_ns <= 0xFFFF_FFFF_FFFF_FFFF
         assert 0 < resolution_ns <= 0xFFFF_FFFF_FFFF_FFFF
-        super().__init__()
+        super().__init__(pool)
         self.now_ns, self.resolution_ns = now_ns, resolution_ns
         self.register_command(WasiIpcCmd.CLOCK_GET_NOW, lambda params: self.now_ns)
         self.register_command(WasiIpcCmd.CLOCK_GET_RES, lambda params: self.resolution_ns)
@@ -364,6 +367,9 @@ class TimerStubDriver(PollStubDriver):
 
 @dataclass
 class StubDrivers:
+    scheduler: Scheduler
+    vmmio: VMMIOController
+    pool: HalBufferPool
     uart: StreamStubDriver
     rtt: StreamStubDriver
     stdout: StreamStubDriver
@@ -376,16 +382,22 @@ class StubDrivers:
 
     @classmethod
     def create(cls) -> StubDrivers:
+        scheduler = Scheduler()
+        vmmio = VMMIOController(guest_ram_size=4096, scheduler=scheduler)
+        pool = HalBufferPool(scheduler, vmmio)
         return cls(
-            StreamStubDriver(),
-            StreamStubDriver(),
-            StreamStubDriver(),
-            GpioStubDriver(),
-            BusStubDriver(),
-            BusStubDriver(),
-            TimerStubDriver(),
-            AdcStubDriver(),
-            PwmStubDriver(),
+            scheduler,
+            vmmio,
+            pool,
+            StreamStubDriver(pool),
+            StreamStubDriver(pool),
+            StreamStubDriver(pool),
+            GpioStubDriver(pool),
+            BusStubDriver(pool),
+            BusStubDriver(pool),
+            TimerStubDriver(pool),
+            AdcStubDriver(pool),
+            PwmStubDriver(pool),
         )
 
     def endpoints(self) -> tuple[tuple[str, Role, StubDriver], ...]:
@@ -436,7 +448,14 @@ def stub_platform(
             ),
         )
     )
-    with patch.object(ipc_router, "_SERVICE_ENTRIES", table):
+    with (
+        patch.object(ipc_router, "_SERVICE_ENTRIES", table),
+        patch.object(system_module, "Scheduler", lambda printk: drivers.scheduler),
+        patch.object(
+            system_module, "VMMIOController", lambda guest_ram_size, scheduler: drivers.vmmio
+        ),
+        patch.object(system_module, "HalBufferPool", lambda scheduler, vmmio: drivers.pool),
+    ):
         system = System()
         try:
             for uri, _, driver in selected:

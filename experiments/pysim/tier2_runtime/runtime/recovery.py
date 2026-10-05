@@ -16,13 +16,16 @@ from __future__ import annotations
 
 import time
 from collections.abc import Callable
+from dataclasses import dataclass
 from enum import IntEnum
 from typing import Generic, Never, TypeVar
 
 from config import FB_CONF_RETRY_BACKOFF_MS, FB_CONF_RETRY_MAX_ATTEMPTS
 
-T = TypeVar("T")
-E = TypeVar("E")
+T = TypeVar("T", covariant=True)
+E = TypeVar("E", covariant=True)
+OkT = TypeVar("OkT")
+ErrorT = TypeVar("ErrorT")
 
 
 class RecoveryStrategy(IntEnum):
@@ -32,34 +35,28 @@ class RecoveryStrategy(IntEnum):
     PANIC = 3
 
 
+@dataclass(frozen=True, slots=True)
 class Result(Generic[T, E]):
     """Zero-exception Result container representing success or failure with actionable recovery strategy."""
 
-    __slots__ = ("error", "is_ok", "strategy", "value")
+    is_ok: bool
+    value: T | None = None
+    error: E | None = None
+    strategy: RecoveryStrategy = RecoveryStrategy.IGNORE
 
-    def __init__(
-        self,
-        is_ok: bool,
-        value: T | None = None,
-        error: E | None = None,
-        strategy: RecoveryStrategy = RecoveryStrategy.IGNORE,
-    ):
-        self.is_ok = is_ok
-        self.value = value
-        self.error = error
-        self.strategy = strategy
+    @staticmethod
+    def ok(value: OkT) -> Result[OkT, Never]:
+        return Result[OkT, Never](is_ok=True, value=value)
 
-    @classmethod
-    def ok(cls, value: T) -> Result[T, Never]:
-        return cls(is_ok=True, value=value, error=None, strategy=RecoveryStrategy.IGNORE)
-
-    @classmethod
-    def err(cls, error: E, strategy: RecoveryStrategy = RecoveryStrategy.RETRY) -> Result[Never, E]:
-        return cls(is_ok=False, value=None, error=error, strategy=strategy)
+    @staticmethod
+    def err(
+        error: ErrorT, strategy: RecoveryStrategy = RecoveryStrategy.RETRY
+    ) -> Result[Never, ErrorT]:
+        return Result[Never, ErrorT](is_ok=False, error=error, strategy=strategy)
 
     def unwrap(self) -> T:
-        if not self.is_ok:
-            return None  # No exception raised
+        assert self.is_ok, "Cannot unwrap a failed Result"
+        assert self.value is not None, "Cannot unwrap a Result without a value"
         return self.value
 
 
@@ -112,7 +109,9 @@ class RecoveryManager:
         max_retries: int = FB_CONF_RETRY_MAX_ATTEMPTS,
         backoff_ms: int = FB_CONF_RETRY_BACKOFF_MS,
         sleep_fn: Callable[[float], None] = time.sleep,
-    ):
+    ) -> None:
+        assert max_retries > 0
+        assert backoff_ms >= 0
         self.max_retries = max_retries
         self.backoff_ms = backoff_ms
         self.sleep_fn = sleep_fn
@@ -135,10 +134,12 @@ class RecoveryManager:
                   4. PANIC: invoke panic_fn() to safely halt kernel and return PANIC result.
         """
         # Tier 1: Initial execution and retry loop
+        res: Result[T, E] | None = None
         for attempt in range(1, self.max_retries + 1):
             res = operation()
             if res.is_ok:
                 return res
+            assert res.error is not None, "A failed operation must carry its error"
             strategy = res.strategy
             if strategy == RecoveryStrategy.IGNORE:
                 return res
@@ -155,6 +156,7 @@ class RecoveryManager:
                 self.sleep_fn(self.backoff_ms / 1000.0)
 
         # Tier 2: Retry Exhaustion -> Escalate to RESTART
+        assert res is not None and res.error is not None
         self.total_restarts += 1
         if task_reset_fn is not None:
             reset_ok = task_reset_fn()
@@ -166,6 +168,4 @@ class RecoveryManager:
         self.total_panics += 1
         if panic_fn:
             panic_fn("Unrecoverable error after restart escalation")
-        return Result.err(
-            error="RETRY_EXHAUSTED_ESCALATED_TO_PANIC", strategy=RecoveryStrategy.PANIC
-        )
+        return Result.err(error=res.error, strategy=RecoveryStrategy.PANIC)

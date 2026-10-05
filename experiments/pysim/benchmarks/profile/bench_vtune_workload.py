@@ -260,7 +260,7 @@ def phase_os_mix(scale: float, kernels: list[str] | None, oracle: bool) -> Phase
     )
 
     def guest(index: int, name: str, units: int):
-        module, interp = _new_guest()
+        module, interp, _ = _new_interpreter_guest()
         steps = interp.run_iter(module.export_func_index(name), [units])
         state = next(steps)
         for state in steps:
@@ -412,7 +412,8 @@ def phase_ipc(scale: float, kernels: list[str] | None, oracle: bool) -> PhaseRes
             assert msg[_KEY_SEQ] == seq, (msg[_KEY_SEQ], seq)
             recv_sum[0] = (recv_sum[0] + msg[_KEY_VAL]) & MASK32
             received[0] += 1
-            assert router.reply(msg, 0) == IPCStatus.COMPLETED
+            reply_status = yield from router.reply(msg, 0)
+            assert reply_status == IPCStatus.COMPLETED
             if received[0] % 8 == 0:
                 logger.flush()
 

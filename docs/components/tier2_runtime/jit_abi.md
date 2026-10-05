@@ -1,6 +1,7 @@
 # JIT 実行コンテキスト ABI 契約
 
 <!-- evidence:
+     contract-only: true
      test: docs/qa/tier3_plugins/jit_runtime_test_spec.md
 -->
 

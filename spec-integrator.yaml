@@ -499,6 +499,8 @@ source_verification:
             - "experiments/pysim/benchmarks/**"
         - id: "pysim_imports"
           enabled: true
+        - id: "pysim_assert_side_effects"
+          enabled: true
         - id: "run_tests"
           enabled: true
 

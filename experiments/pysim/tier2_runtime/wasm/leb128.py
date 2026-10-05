@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from system_containers import SequenceView
 
 
 def decode_unsigned(
-    data: Sequence[int],
+    data: SequenceView[int],
     offset: int,
     end: int | None = None,
     bits: int = 32,
@@ -34,7 +34,7 @@ def decode_unsigned(
 
 
 def decode_signed(
-    data: Sequence[int],
+    data: SequenceView[int],
     offset: int,
     end: int | None = None,
     bits: int = 32,

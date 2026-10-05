@@ -20,7 +20,8 @@ class NativeExecutionPlugin(Protocol):
 
     def register_module(self, module: Module) -> None: ...
 
-    native_entry: NativeDispatchEntryPoint
+    @property
+    def native_entry(self) -> NativeDispatchEntryPoint: ...
 
     def bind_execution(
         self, dispatcher: NativeDispatchEntryPoint, execution: NativeModuleExecution

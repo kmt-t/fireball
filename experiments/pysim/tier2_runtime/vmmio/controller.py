@@ -18,7 +18,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from enum import IntEnum
-from typing import Protocol
+from typing import Protocol, cast
 
 from memory_interface import PageMappingCallbacks
 from scheduler import Scheduler
@@ -51,14 +51,6 @@ class VmmioPte(Protocol):
 
     read: bool
     write: bool
-    valid: bool
-    owner_id: int
-    phys_page: int
-    physical_base_addr: int
-    mapping_size: int
-    mapped_storage: memoryview | None
-    handler: Callable[[int, int, bool], None] | None
-    value_handler: VmmioVectorHandler | None
 
 
 # Function Codes (bits[31:28]) — see runtime_vmmio.md "アドレス分解の対応関係"
@@ -218,7 +210,7 @@ class VMMIOController:
         value_handler: VmmioVectorHandler | None = None,
     ) -> None:
         """Registers a Tier 2 static device page (FC=12) into FlatMap."""
-        assert self.ptes.insert(
+        inserted = self.ptes.insert(
             vpn,
             StaticDevicePTE(
                 handler=handler,
@@ -226,7 +218,8 @@ class VMMIOController:
                 write=write,
                 value_handler=value_handler,
             ),
-        ), "vMMIO PTE table capacity exceeded"
+        )
+        assert inserted, "vMMIO PTE table capacity exceeded"
 
     def map_shm_page(
         self,
@@ -242,13 +235,15 @@ class VMMIOController:
             "Provide either a physical page number or a raw backing address"
         )
         assert 0 < mapping_size <= VMMIO_PAGE_SIZE
-        physical_base_addr = (
-            (phys_page << VMMIO_PAGE_SHIFT) if physical_addr is None else physical_addr
-        )
-        assert physical_base_addr is not None and physical_base_addr >= 0
+        if physical_addr is None:
+            # The XOR contract above establishes which mapping input exists.
+            physical_base_addr = cast(int, phys_page) << VMMIO_PAGE_SHIFT
+        else:
+            physical_base_addr = physical_addr
+        assert physical_base_addr >= 0
         if self.ptes.view().find(vpn) is not None:
             self.ptes.remove(vpn)
-        assert self.ptes.insert(
+        inserted = self.ptes.insert(
             vpn,
             Tier3PTE(
                 phys_page=physical_base_addr >> VMMIO_PAGE_SHIFT,
@@ -260,7 +255,8 @@ class VMMIOController:
                 physical_base_addr=physical_base_addr,
                 mapping_size=mapping_size,
             ),
-        ), "vMMIO PTE table capacity exceeded"
+        )
+        assert inserted, "vMMIO PTE table capacity exceeded"
         self.flush_tlb_entry(vpn)
 
     def map_dynamic_page(
@@ -271,7 +267,7 @@ class VMMIOController:
         assert owner_id > 0, "DYNAMIC mappings require a guest task owner"
         if self.ptes.view().find(vpn) is not None:
             self.ptes.remove(vpn)
-        assert self.ptes.insert(
+        inserted = self.ptes.insert(
             vpn,
             Tier3PTE(
                 phys_page=phys_page,
@@ -283,7 +279,8 @@ class VMMIOController:
                 mapping_size=len(storage),
                 mapped_storage=storage,
             ),
-        ), "vMMIO PTE table capacity exceeded"
+        )
+        assert inserted, "vMMIO PTE table capacity exceeded"
         self.flush_tlb_entry(vpn)
 
     def unmap_dynamic_page(self, vpn: int) -> None:
@@ -297,7 +294,8 @@ class VMMIOController:
         """Checks DYNAMIC mapping metadata for a trusted HAL buffer access."""
         assert (vpn >> 16) == FC_DYNAMIC, "DYNAMIC VPN is outside FC=13"
         assert owner_id > 0, "DYNAMIC mappings require a guest task owner"
-        pte = self.ptes.view().find(vpn)
+        registered = self.ptes.view().find(vpn)
+        pte = cast(Tier3PTE, registered) if registered is not None else None
         return (
             pte is not None
             and pte.valid
@@ -311,7 +309,7 @@ class VMMIOController:
         """Registers a Tier 3 Passthrough page (FC=15) into FlatMap."""
         if self.ptes.view().find(vpn) is not None:
             self.ptes.remove(vpn)
-        assert self.ptes.insert(
+        inserted = self.ptes.insert(
             vpn,
             Tier3PTE(
                 phys_page=phys_page,
@@ -320,7 +318,8 @@ class VMMIOController:
                 write=write,
                 exec_=True,
             ),
-        ), "vMMIO PTE table capacity exceeded"
+        )
+        assert inserted, "vMMIO PTE table capacity exceeded"
         self.flush_tlb_entry(vpn)
 
     def revoke_shm_owner(self, vpn: int) -> None:
@@ -357,7 +356,7 @@ class VMMIOController:
             offset = physical_addr - FB_CONF_SHM_SIM_BASE
             assert 0 <= offset and mapping_size <= len(storage) - offset
             # Borrow the allocator's physical SHM store; do not create a second backing.
-            pte.mapped_storage = memoryview(storage)[offset : offset + mapping_size]
+            cast(Tier3PTE, pte).mapped_storage = memoryview(storage)[offset : offset + mapping_size]
 
         return PageMappingCallbacks(
             on_map_page=_map_shared_page,
@@ -458,19 +457,21 @@ class VMMIOController:
         # any table lookup) determines the PTE's shape -- checked from that,
         # not via isinstance (no RTTI in the target build).
         if addr.fc() == FC_STATIC_DEVICE:
+            static_pte = cast(StaticDevicePTE, pte)
             if is_write and not pte.write:
                 return (TrapCode.ACCESS_VIOLATION, 0)
             if not is_write and not pte.read:
                 return (TrapCode.ACCESS_VIOLATION, 0)
             if access_size > VMMIO_PAGE_SIZE - addr.offset():
                 return (TrapCode.OUT_OF_BOUNDS, 0)
-            if value is not None and pte.value_handler is not None:
-                result = pte.value_handler(addr.offset(), value & 0xFFFF_FFFF, is_write)
+            if value is not None and static_pte.value_handler is not None:
+                result = static_pte.value_handler(addr.offset(), value & 0xFFFF_FFFF, is_write)
                 return (VmmioStatus.OK_STATIC_DEVICE, 0 if result is None else result)
-            if pte.handler is not None:
-                pte.handler(addr.device_metadata(), addr.offset(), is_write)
+            if static_pte.handler is not None:
+                static_pte.handler(addr.device_metadata(), addr.offset(), is_write)
             return (VmmioStatus.OK_STATIC_DEVICE, 0)
-        # Tier3PTE (SHM / PASSTHROUGH)
+        # FC decoding selects the physical mapping PTE without RTTI.
+        pte = cast(Tier3PTE, pte)
         if not pte.valid:
             return (TrapCode.ACCESS_VIOLATION, 0)
         if is_write and not pte.write:

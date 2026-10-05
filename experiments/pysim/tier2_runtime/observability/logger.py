@@ -13,10 +13,15 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import IntEnum
-from typing import TYPE_CHECKING, Callable, Sequence
+from typing import TYPE_CHECKING, Callable
 
 from config import FB_CONF_LOG_DICT_MAX_ENTRIES
-from system_containers import ReadOnlyFlatMapStorage, ReadOnlyFlatMapView, StaticVector
+from system_containers import (
+    ReadOnlyFlatMapStorage,
+    ReadOnlyFlatMapView,
+    SequenceView,
+    StaticVector,
+)
 from tier1_core.printk import (
     PRINTK_DICTIONARY,
     PRINTK_HEADER_SIZE,
@@ -165,7 +170,7 @@ class LogDictionary:
         return self._view
 
     @property
-    def entries(self) -> Sequence[tuple[int, str]]:
+    def entries(self) -> SequenceView[tuple[int, str]]:
         return self.storage.entries
 
     def argument_count(self, offset: int) -> int:
@@ -174,7 +179,7 @@ class LogDictionary:
         assert index >= 0, f"unregistered dictionary ID 0x{offset:X}"
         return self._argument_counts[index]
 
-    def format(self, offset: int, args: Sequence[int]) -> str:
+    def format(self, offset: int, args: SequenceView[int]) -> str:
         """Host-side expansion for one fixed dictionary ID and at most four values."""
         fmt = self._view.find(offset)
         assert fmt is not None, f"unregistered dictionary ID 0x{offset:X}"

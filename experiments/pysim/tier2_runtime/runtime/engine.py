@@ -11,14 +11,14 @@ Execution model:
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable
 from dataclasses import dataclass
 from enum import IntEnum
 from functools import partial
 
 from bump_allocator import BumpAllocator
 from config import FB_CONF_RUNTIME_YIELD_THRESHOLD
-from system_containers import StaticVector
+from system_containers import SequenceView, StaticVector
 from tier2_runtime.interpreter.interpreter import (
     NATIVE_DISPATCH_CALL_BOUNDARY,
     NATIVE_DISPATCH_YIELD,
@@ -38,6 +38,7 @@ from tier2_runtime.vsoc.virq import (
     RegistrationStatus,
     VirqDispatcher,
     VirqDispatchResult,
+    VirqFaultCode,
 )
 from tier2_runtime.wasm.module import BasicBlock, Module
 
@@ -152,7 +153,7 @@ class RuntimeEngine:
     def dispatch_interrupt_event(self, event: InterruptEvent) -> DispatchResult:
         """Dispatch one COOS event through the vIRQ hierarchy."""
         if self._virq is None:
-            return DispatchResult(VirqDispatchResult.REJECT, "VIRQ_UNAVAILABLE")
+            return DispatchResult(VirqDispatchResult.REJECT, VirqFaultCode.UNREGISTERED_SOURCE)
         return self._virq.dispatch_interrupt_event(event)
 
     def _invoke_virq(
@@ -172,7 +173,7 @@ class RuntimeEngine:
         )
         if not results:
             return int(VirqDispatchResult.REJECT)
-        return results[0] & 0xFFFF_FFFF
+        return int(results[0]) & 0xFFFF_FFFF
 
     def idle_hook(self, budget: int = 4) -> int:
         """
@@ -205,7 +206,7 @@ class RuntimeEngine:
         self,
         interp: NativeInterpreter,
         func_index: int,
-        args: Sequence[WasmNumber],
+        args: SequenceView[WasmNumber],
         idle_budget: int = 4,
     ) -> StaticVector[WasmNumber]:
         """Complete one guest call in the caller-owned, non-COOS runtime mode."""

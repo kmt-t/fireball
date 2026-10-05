@@ -134,3 +134,25 @@ ollama pull qwen3-embedding
 
 リスク評価では定義・参照を各最大4セクション標本化する。各セクションは `500文字 × (context_window_tokens / 8,192)` または `section_char_budget` の小さい方に制限する。標準設定では各最大4,000文字となる。本文上限に近づく場合はさらに短縮する。省略・短縮した範囲は保存済み評価の要約に記録する。埋め込み生成には Ollama を使う。
 OpenRouter の判定APIが HTTP エラーを返した場合、その結果を PASS/FAIL や数値スコアとして記録せず、コマンドを失敗終了する。HTTP 4xx（429 を除く）は再試行せず、現在のキャッシュ済み判定を維持する。
+
+## CIとコミット前の検証
+
+CIは全ソースゲート、全製品型検査、通常の単体・結合・guest workload、CMakeビルドとベンチマークを実行する。
+正常入力の最適化回帰は、通常・`-O`・`-OO`の独立プロセスで結果と状態を比較する。
+assertによる拒否を期待する負例は通常モードで検査する。
+QA runnerは親の最適化フラグを子へ伝播し、タイムアウトを失敗として報告する。
+型検査の対象は`pysim_imports`のTier割当てと同じ製品ファイルとする。
+
+文書ゲートもpush・PRで実行する。
+監査DBは、文書・概念・形式モデル・設定・検証器のハッシュが完全一致するGitHub Actionsキャッシュから復元する。
+キャッシュがない場合や検証義務が古い場合は失敗する。
+監査を省略して合格にする経路は設けない。
+キャッシュの参照範囲は[GitHubのbranch規則](https://docs.github.com/en/actions/reference/workflows-and-actions/dependency-caching#restrictions-for-accessing-a-cache)に従う。
+作業branchの証跡をmainから復元できない場合は、mainでも明示監査が必要となる。
+有料監査の更新は、手動workflowの`run_llm_audit`を明示指定して実行する。
+その実行にはrepository secretの`OPENROUTER_API_KEY`が必要である。
+Jevでriskと記録付きjudgeを全件実行し、文書ゲート合格後に証跡を保存する。
+
+コミット前は変更ファイルと直接関連する検証を実行する。
+コマンドの終了コードに加え、対象範囲、実行モード、失敗・skip・タイムアウトを確認する。
+未解決の失敗を検証済みとして扱わない。

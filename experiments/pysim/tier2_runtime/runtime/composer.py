@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import time
-from collections.abc import Callable, Sequence
+from collections.abc import Callable
 from dataclasses import dataclass
 from enum import IntEnum
 from typing import Generic, Protocol, TypeVar
 
-from system_containers import StaticVector
+from system_containers import SequenceView, StaticVector
 from tier2_runtime.observability.events import (
     RUNTIME_EVENT_ABI_MAJOR,
     RUNTIME_EVENT_NO_MODULE,
@@ -25,8 +25,8 @@ from tier2_runtime.observability.events import (
 )
 from tier2_runtime.runtime.recovery import Result
 
-ResultT = TypeVar("ResultT")
-ArgumentT = TypeVar("ArgumentT")
+ResultT = TypeVar("ResultT", covariant=True)
+ArgumentT = TypeVar("ArgumentT", contravariant=True)
 ExecutorT = TypeVar("ExecutorT")
 
 
@@ -34,7 +34,7 @@ class RuntimeExecutor(Protocol, Generic[ResultT, ArgumentT]):
     """Interpreter または JIT に共通する最小呼出契約。"""
 
     def call(
-        self, func_index: int, args: Sequence[ArgumentT]
+        self, func_index: int, args: SequenceView[ArgumentT]
     ) -> Result[ResultT, RuntimeExecutionError]: ...
 
 
@@ -42,7 +42,7 @@ class ComposedRuntime(Protocol, Generic[ResultT, ArgumentT]):
     """RuntimeComposer の生成結果が公開する呼出境界。"""
 
     def call(
-        self, func_index: int, args: Sequence[ArgumentT]
+        self, func_index: int, args: SequenceView[ArgumentT]
     ) -> Result[ResultT, RuntimeExecutionError]: ...
 
 
@@ -90,7 +90,7 @@ class RuntimeWithoutPlugins(Generic[ResultT, ArgumentT]):
         self.executor = executor
 
     def call(
-        self, func_index: int, args: Sequence[ArgumentT]
+        self, func_index: int, args: SequenceView[ArgumentT]
     ) -> Result[ResultT, RuntimeExecutionError]:
         return self.executor.call(func_index, args)
 
@@ -172,7 +172,7 @@ class RuntimeWithPlugins(Generic[ResultT, ArgumentT]):
             dispatch_runtime_event_batch(self.observers, batch)
 
     def call(
-        self, func_index: int, args: Sequence[ArgumentT]
+        self, func_index: int, args: SequenceView[ArgumentT]
     ) -> Result[ResultT, RuntimeExecutionError]:
         """共通呼出境界からイベントを発行して、選択済み実行器を呼び出す。"""
 
@@ -200,6 +200,7 @@ class RuntimeWithPlugins(Generic[ResultT, ArgumentT]):
                 -1,
                 RuntimeEventFlags.NONE,
             )
+        assert result.error is not None
         self._emit(
             RuntimeEventKind.FUNCTION_EXIT,
             func_index,

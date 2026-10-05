@@ -1,5 +1,6 @@
 # JIT コンパイラ コンポーネント設計書 {VERIFY_FORMAL} {VERIFY_LLM} {VERIFY_BENCHMARK}
 <!-- evidence:
+     implementation: experiments/pysim/native/tier3_plugins/jit/trace_compiler.cxx
      formal: formal/jit_cache_model.py
      benchmark: ../../../experiments/pysim/benchmarks/jit/bench_jit.py
      test: docs/qa/tier3_plugins/jit_compiler_test_spec.md
@@ -277,6 +278,10 @@ sequenceDiagram
     - **W^X 保護**: x64の実行可能バッファは書込みと実行を同時許可しない。ARMv8-Mの保護機構、属性遷移、命令キャッシュ同期はTBDである。形式モデル `formal/jit_cache_model.py` は抽象W^X状態遷移を検証し、物理機構は主張しない。
 
 ## 7. 形式検証・テスト仕様との対応
+
+独立コンセプト層は、検証因子・成果物マトリクスの責務判定に従って対象外とする。
+確認済みx64コンパイラは、生成コードの直接実行テストと形式モデルで検証する。
+ARMv8-Mのコンパイラと実機検証はTBDである。
 
 ### 7.1 検証対象の不変条件
 - **位置独立性 (PIC)**: x64コードが任意のキャッシュバンクで再コンパイル不要で動作すること。ARMv8-Mの位置独立性と分岐範囲はTBD（`TEST-INT-40`, `TEST-JITC-40`）。

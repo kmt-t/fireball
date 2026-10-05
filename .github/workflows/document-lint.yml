@@ -1,161 +1,139 @@
-name: Document Quality & Verification Pipeline
+name: Fireball Quality & Verification
 
 on:
   push:
     branches: [main]
   pull_request:
   workflow_dispatch:
+    inputs:
+      run_llm_audit:
+        description: 'Run the paid Jev audit and refresh document evidence'
+        required: false
+        type: boolean
+        default: false
 
 jobs:
   pysim:
-    name: PySim Quality Gate & Tests (Linux)
-    runs-on: ubuntu-latest
-
+    name: Source, Build, Tests & Benchmarks (Linux)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
-      with:
-        submodules: true
-
-    - name: Install uv
-      uses: astral-sh/setup-uv@v5
-      with:
-        enable-cache: true
-        python-version: '3.14'
-
-    - name: Set up Python
-      uses: actions/setup-python@v6
-      with:
-        python-version: '3.14'
-
-    - name: Install Fireball Python dependencies
-      run: uv sync --locked
-
-    - name: Ensure script execution permissions
-      run: |
-        chmod +x tools/*.sh
-
-    - name: Build PySim native extensions
-      run: |
-        clang++ --version
-        bash experiments/pysim/native/tier1_core/printk/build_native.sh
-        bash experiments/pysim/native/tier2_runtime/interpreter/build_native.sh
-        bash experiments/pysim/native/tier3_plugins/jit/build_native.sh
-        bash experiments/pysim/native/tier2_runtime/interpreter/build_native.sh --qa
-        bash experiments/pysim/native/tier3_plugins/jit/build_native.sh --qa
-
-    - name: Run PySim Source Quality Gate & Unit Tests
-      run: |
-        ./tools/check-src.sh -g pysim
-
-    - name: Run PySim Static Type Checks (Pilot Scope)
-      run: |
-        .venv/bin/pyright --project pyrightconfig.json
-
-    - name: Run PySim Unit Tests with Python Optimizations
-      run: |
-        uv run --system-certs --with wasmtime python -O experiments/pysim/qa/run_all.py
-
-    - name: Run PySim Integration Scenarios with Python Optimizations
-      run: |
-        uv run --system-certs --with wasmtime python -O experiments/pysim/qa/scenarios/run_all.py
-
-    - name: Reject assert-wrapped mutating container operations
-      run: |
-        if rg -n 'assert[^\n]*\.push_back\s*\(' experiments/pysim/tier1_core experiments/pysim/tier1_interface experiments/pysim/tier2_runtime experiments/pysim/tier3_plugins; then
-          echo 'Found a mutating push_back call inside assert.'
-          exit 1
-        fi
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          python-version: '3.14'
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.14'
+      - name: Install dependencies
+        run: |
+          uv sync --locked
+          sudo apt-get update
+          sudo apt-get install -y clang cmake ninja-build
+          chmod +x tools/*.sh
+      - name: Install the Core suite's pinned WABT
+        run: |
+          curl --fail --location --retry 3 https://github.com/WebAssembly/wabt/releases/download/1.0.36/wabt-1.0.36-ubuntu-20.04.tar.gz -o "$RUNNER_TEMP/wabt.tar.gz"
+          echo '4aa0929db06c2376cc76f6d9e920dbde2ea6f1fd55bbaed6cd65167e9e39ecd3  '"$RUNNER_TEMP/wabt.tar.gz" | sha256sum --check
+          tar -xzf "$RUNNER_TEMP/wabt.tar.gz" -C "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/wabt-1.0.36/bin" >> "$GITHUB_PATH"
+          test "$("$RUNNER_TEMP/wabt-1.0.36/bin/wast2json" --version)" = '1.0.36'
+      - name: Build native extensions and CMake executable
+        run: |
+          bash experiments/pysim/native/tier1_core/printk/build_native.sh
+          bash experiments/pysim/native/tier2_runtime/interpreter/build_native.sh
+          bash experiments/pysim/native/tier3_plugins/jit/build_native.sh
+          bash experiments/pysim/native/tier2_runtime/interpreter/build_native.sh --qa
+          bash experiments/pysim/native/tier3_plugins/jit/build_native.sh --qa
+          cmake -S . -B build/ci -G Ninja -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ -DFIREBALL_BUILD_UVWASI=ON
+          cmake --build build/ci --target fireball uvwasi
+          build/ci/fireball
+      - name: Run all source gates, concepts, formal models and component unit tests
+        run: ./tools/check-src.sh -g all
+      - name: Check all product Python types
+        run: .venv/bin/pyright --project pyrightconfig.json
+      - name: Run full integrations and scenarios
+        run: .venv/bin/python experiments/pysim/qa/integration/run_all.py
+      - name: Compare valid behavior in normal and optimized child processes
+        run: .venv/bin/python -m pytest -q experiments/pysim/qa/cross_cutting/test_entrypoint.py -k 'optimized or runner'
+      - name: Prepare pinned guest workloads
+        run: |
+          .venv/bin/python tools/guest_bindings/build_wasi_guest.py --prepare-sdk
+          .venv/bin/python tools/guest_bindings/fetch_wasm_core_suite.py
+          wast2json --version
+      - name: Run compiled WASM guest workloads and selected Core assertions
+        run: .venv/bin/python experiments/pysim/qa/workloads/run_all.py
+      - name: Run benchmark correctness and reporting
+        run: |
+          .venv/bin/python experiments/pysim/benchmarks/run_all.py
+          .venv/bin/python experiments/pysim/benchmarks/profile/bench_vtune_workload.py --scale 0.02 --log-dir reports/ci-profile
+      - name: Test the verification tooling
+        run: uv run --system-certs --project tools/spec-integrator --extra dev --extra prose python -m pytest tools/spec-integrator/tests -q
 
   lint:
-    name: Spec Quality Gates & Verification (Manual)
-    if: github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
-
+    name: Document Gates & Audit Evidence
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      SPEC_INTEGRATOR_DB_PATH: .spec-integrator/doc_cache.db
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
-      with:
-        submodules: true
-        # Full history so `origin/<base>` is resolvable below — a PR checkout
-        # otherwise only fetches the merge commit, not the base branch's ref.
-        fetch-depth: 0
-
-    - name: Install uv
-      uses: astral-sh/setup-uv@v5
-      with:
-        enable-cache: true
-        python-version: '3.14'
-
-    - name: Set up Python
-      uses: actions/setup-python@v6
-      with:
-        python-version: '3.14'
-
-    - name: Install Fireball Python dependencies
-      run: uv sync --locked
-
-    - name: Ensure script execution permissions
-      run: |
-        chmod +x tools/*.sh
-
-    - name: Build PySim native extensions
-      run: |
-        clang++ --version
-        bash experiments/pysim/native/tier1_core/printk/build_native.sh
-        bash experiments/pysim/native/tier2_runtime/interpreter/build_native.sh
-        bash experiments/pysim/native/tier3_plugins/jit/build_native.sh
-        bash experiments/pysim/native/tier2_runtime/interpreter/build_native.sh --qa
-        bash experiments/pysim/native/tier3_plugins/jit/build_native.sh --qa
-
-    - name: Run Document & Source Quality Gates
-      run: |
-        ./tools/check-doc.sh
-        ./tools/check-src.sh -g all
-
-    - name: LLM Semantic Audit (changed subgraphs only)
-      # PR-only: the comparison needs a base-branch lockfile to diff against.
-      # This is a fast, independent smoke check on the sections this PR
-      # actually touches. SPEC_INTEGRATOR_DB_PATH points it at a scratch DB so
-      # it cannot wholesale-replace the committed cache DB, which stays the
-      # full audit maintained by `spec-integrator sync` + a full `llm-judge`
-      # run locally, per tools/README.md.
-      # `llm-judge` always also runs the whole-document audit and the Design ->
-      # Test Spec -> Test Code chain audit alongside the subgraph one, and
-      # neither has a --changed-only equivalent (each always covers whichever
-      # documents/components it evaluates) -- so --max-documents/--max-targets
-      # cap them low here to keep this specific check cheap.
-      if: github.event_name == 'pull_request' && env.SAKURA_API_KEY != ''
-      env:
-        SAKURA_API_KEY: ${{ secrets.SAKURA_API_KEY }}
-        SPEC_INTEGRATOR_DB_PATH: /tmp/pr_changed_audit_cache.db
-      run: |
-        git show "origin/${{ github.base_ref }}:spec-consistency.lock" > /tmp/base.lock
-        uv run --project tools/spec-integrator python -m spec_integrator.cli llm-judge \
-          --config spec-integrator.yaml --backend sakura \
-          --changed-only --baseline /tmp/base.lock --min-references 0 \
-          --max-documents 1 --max-targets 1 \
-          | tee /tmp/pr_changed_audit.txt
-
-    - name: Publish Summary to Step Summary
-      if: always()
-      run: |
-        if [ -f reports/doc_report.md ]; then
-          cat reports/doc_report.md >> $GITHUB_STEP_SUMMARY
-        fi
-        if [ -f /tmp/pr_changed_audit.txt ]; then
-          echo -e "\n## LLM Semantic Audit (Changed Subgraphs)\n" >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-          cat /tmp/pr_changed_audit.txt >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-        fi
-
-    - name: Upload Verification Artifacts
-      if: always()
-      uses: actions/upload-artifact@v4
-      with:
-        name: spec-verification-reports
-        path: |
-          reports/doc_report.md
-          /tmp/pr_changed_audit.txt
-        if-no-files-found: ignore
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          python-version: '3.14'
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.14'
+      - name: Install document verification dependencies
+        run: |
+          uv sync --locked
+          uv sync --project tools/spec-integrator --extra dev --extra prose --locked
+          chmod +x tools/*.sh
+      - name: Restore evidence for exactly this document and verifier state
+        id: audit-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: .spec-integrator/doc_cache.db
+          key: document-audit-v1-${{ hashFiles('.github/workflows/document-lint.yml', 'docs/**/*.md', 'docs/**/*.py', 'spec-integrator.yaml', 'spec-consistency.lock', 'tools/spec-integrator/src/**/*.py', 'tools/spec-integrator/prompts/**', 'tools/spec-integrator/pyproject.toml', 'tools/spec-integrator/uv.lock', 'pyproject.toml', 'uv.lock', 'tools/*.sh', 'tools/*.ps1', 'tools/*.py') }}
+      - name: Run explicitly requested Jev audit
+        if: github.event_name == 'workflow_dispatch' && inputs.run_llm_audit
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+        run: |
+          if [ -z "$OPENROUTER_API_KEY" ]; then
+            echo 'OPENROUTER_API_KEY is required for the explicitly requested Jev audit.' >&2
+            exit 1
+          fi
+          ./tools/risk.sh --exhaustive --backend jev
+          ./tools/llm-judge.sh --exhaustive --backend jev
+      - name: Require current audit evidence
+        if: steps.audit-cache.outputs.cache-hit != 'true' && !(github.event_name == 'workflow_dispatch' && inputs.run_llm_audit)
+        run: |
+          echo 'No audit evidence matches this revision. Run this workflow manually with run_llm_audit enabled.' >&2
+          exit 1
+      - name: Run every document quality gate
+        run: ./tools/check-doc.sh
+      - name: Save verified audit evidence
+        if: github.event_name == 'workflow_dispatch' && inputs.run_llm_audit && steps.audit-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .spec-integrator/doc_cache.db
+          key: ${{ steps.audit-cache.outputs.cache-primary-key }}
+      - name: Publish report
+        if: always()
+        run: |
+          if [ -f reports/doc_report.md ]; then
+            cat reports/doc_report.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: document-verification
+          path: reports/doc_report.md
+          if-no-files-found: ignore

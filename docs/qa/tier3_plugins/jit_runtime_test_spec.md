@@ -16,7 +16,7 @@
 | TEST-JITR-01 | カードは命令単位ではなくカード単位 | 同一64バイトカード内の2つの異なる命令オフセット | 一方をtouch | 他方も同じ状態を共有する（カード粒度） | jit_runtime.md  |
 | TEST-JITR-02 | 状態遷移: UNEXECUTED→EXECUTED→HOT | 新規カード | 1回touch、2回目touch | 1回目でEXECUTED、2回目でHOT | jit_runtime.md (Card Marking) |
 | TEST-JITR-03 | COMPILED後のtouchは状態を変えない | カードがCOMPILED | touch | 状態はCOMPILEDのまま | |
-| TEST-JITR-04 | 評価(Eviction)でUNEXECUTEDへ戻る（EXECUTEDではない） | カードがCOMPILED、対応トレースがキャッシュから追い出される | `mark_evicted` | 状態がUNEXECUTEDに戻る。 |, `test_hotspot_bitmap_pure_2bit_state_transitions`, [`test_jit_runtime.py`](experiments/pysim/qa/tier3_plugins/jit/test_jit_runtime.py) `test_hotspot_05_3bank_cache_rotation_and_eviction_resets_card` |
+| TEST-JITR-04 | 評価(Eviction)でUNEXECUTEDへ戻る（EXECUTEDではない） | カードがCOMPILED、対応トレースがキャッシュから追い出される | `mark_evicted` | 状態がUNEXECUTEDに戻る。 | [`test_jit_runtime.py`](experiments/pysim/qa/tier3_plugins/jit/test_jit_runtime.py) `test_hotspot_05_3bank_cache_rotation_and_eviction_resets_card` |
 | TEST-JITR-06 | 最小トレース長未満のブロックは共有カードを更新しない | 同一コード領域カード内に2つの短いベーシックブロック（推定コンパイル後サイズがカード幅未満） | 両方のPCを繰り返し実行 | 候補外PCは共有カード状態を更新せず、コンパイル待ち列にも追加されない。カード領域の共有有無にかかわらずカード状態は `UNEXECUTED` のままである。 | `jit_runtime.md`「最小トレース長フィルタ」、[`test_jit_runtime.py`](experiments/pysim/qa/tier3_plugins/jit/test_jit_runtime.py) `test_hotspot_06_short_blocks_never_tracked_avoiding_card_aliasing` |
 | TEST-JITR-07 | `COMPILED`カードの重複要求をC++ Runtimeが破棄する | トレースがキャッシュに常駐し、同PCのカードが`COMPILED`で、同PCが待ち列にも積まれている | idle_hookを実行 | C++ Runtimeはコンパイルせず要求を破棄し、カード状態と常駐トレースを保つ。 | `jit_runtime.md`「コンパイル待ち列」、[`test_jit_runtime.py`](experiments/pysim/qa/tier3_plugins/jit/test_jit_runtime.py) `test_hotspot_07_idle_hook_skips_recompiling_an_already_resident_trace` |
 | TEST-JITR-08 | JITエントリテーブル（バンクのトレース一覧）は常にhead_pcでソートされ、削除は削除フラグ（トンビストーン）で行う | 複数のトレースをPC順不同で挿入し、1件削除後に同じPCを再挿入 | 挿入・削除・再挿入後にトレース一覧と該当PCの取得結果を確認 | 一覧は常にhead_pc昇順。削除直後は取得結果がNone。再挿入は既存tombstone枠を再利用し、取得結果は新しいトレースそのものになる。 | jit_runtime.md「JITエントリ表」, [`jit_runtime.cxx`](experiments/pysim/native/tier3_plugins/jit/jit_runtime.cxx), [`jit_cache.py`](experiments/pysim/qa/shared/jit_cache.py), [`test_jit_runtime.py`](experiments/pysim/qa/tier3_plugins/jit/test_jit_runtime.py) |
@@ -122,7 +122,7 @@ TEST-JITR-33のIFと内側loopの回帰試験は、対象の制御終端直前�
 
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| TEST-JITR-44 | JIT終了ブロックからC++ Interpreterのreturnハンドラへ復帰 | JITトレースが`return`直前で終了する関数 | トレース後のInterpreter PCと共有スタックを確認する | JITは戻り値を共有オペランド領域へ残し、C++ return handlerを一度呼び出す。handlerはreturn sentinelを設定し、次のInterpreter処理が関数復帰を完了する。x64のホスト関数ABIは [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) に従い、ARMv8-Mの物理ABIはTBDとする | `interpreter.md` 関数復帰の番兵, pysim `test_jitr_terminal_trace_returns_to_interpreter_return_handler` |
+| TEST-JITR-44 | JIT終了ブロックからC++ Interpreterのreturnハンドラへ復帰 | JITトレースが`return`直前で終了する関数 | トレース後のInterpreter PCと共有スタックを確認する | JITは戻り値を共有オペランド領域へ残し、C++ return handlerを一度呼び出す。handlerはreturn sentinelを設定し、次のInterpreter処理が関数復帰を完了する。x64のホスト関数ABIは [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) に従い、ARMv8-Mの物理ABIはTBDとする | `interpreter.md` 関数復帰の番兵、[`test_jit_runtime.py`](experiments/pysim/qa/tier3_plugins/jit/test_jit_runtime.py) `test_jitr_return_terminated_block_jit_result_correct`、`test_jitr_return_handler_publishes_sentinel_once` |
 | TEST-JITR-45 | JIT実行calleeの戻り値をcallerへ引き継ぐ | callerが反復してcalleeを呼び、calleeのブロックがJITコンパイル済み | `RuntimeEngine.call()`でcallerを実行 | calleeの結果は共有オペランド領域に残り、InterpreterがRETURN sentinelを消費して関数呼出し記述子を取り除き、callerがその結果を利用する | `interpreter.md` 関数復帰の番兵, pysim `test_jitr_nested_wasm_call_keeps_callee_result_on_shared_operand_stack` |
 | TEST-JITR-46 | JIT有効時のWASMスカラー結果型維持 | i32/i64/f32/f64のトップレベル関数 | JIT有効の`RuntimeEngine.call()`を各関数に対して反復実行 | JITコンパイル可能な結果はJIT経由、未対応型はInterpreterへ委譲し、全結果の値を保持する。f32/f64を整数へ変換しない | `interpreter.md` 関数復帰, pysim `test_jitr_runtime_engine_preserves_typed_top_level_results` |
 | TEST-JITR-47 | import/host callをInterpreter境界で実行 | ゲスト関数がWASM importを呼び、戻り値を後続命令で使う | 呼び出しブロックのコンパイルとRuntimeEngine実行を確認する | callを含むトレースはコンパイルされず、Interpreterがhost関数を呼ぶ。戻り値は共有オペランド領域に積まれ、callerの後続命令が消費する | `interpreter.md` 関数呼び出し境界, pysim `test_jitr_host_import_stays_on_interpreter_runtime_boundary` |
@@ -198,6 +198,8 @@ TEST-JITR-61は`test_jitr_61_a_trace_that_would_overflow_the_operand_stack_runs_
 - 仕様書に定義された各テストケース（不変条件・境界条件・エラー処理）の検証手順と期待結果を定義。
 
 ## 4. 未検証・スコープ外
+
+- TEST-JITR-44は対象traceの実行と最終結果を確認する。独立した終了blockの試験ではNative trace実行1回とC++ return handler呼出し1回を診断値で確認する。最初のRuntime境界で論理PCの`-1`、Native contextの`0xffffffff`、共有stackの戻り値60、未完了のcall frameを直接観測する。次のRuntime境界でframe除去と関数完了を確認し、traceとhandlerの件数が増えないことを検査する。
 
 - ARMv8-MのTOS/NOS物理レジスタ割当とtrace境界仕様はTBD。
 - [`jit_cache_model.py`](docs/components/tier3_plugins/formal/jit_cache_model.py)による抽象的なW^X不変条件、3面キャッシュ代謝、2-bit FSMの形式検証そのもの。

@@ -15,6 +15,8 @@ Reference Concept Implementation: Exhaustive WASM MVP (v1) Stack Interpreter wit
 import struct
 from collections.abc import Callable
 
+BACKS = ["components/tier2_runtime/interpreter.md", "specs/wasm_instruction_set.md"]
+
 
 class WASMTrap(Exception):
     pass
@@ -886,7 +888,12 @@ def _h_i32_div_s(
         raise WASMTrap("INTEGER_DIVIDE_BY_ZERO")
     sa = struct.unpack(">i", struct.pack(">I", a & 0xFFFF_FFFF))[0]
     sb = struct.unpack(">i", struct.pack(">I", b & 0xFFFF_FFFF))[0]
-    ctx.push(int(sa / sb) & 0xFFFF_FFFF)
+    if sa == -0x8000_0000 and sb == -1:
+        raise WASMTrap("INTEGER_OVERFLOW")
+    quotient = abs(sa) // abs(sb)
+    if (sa < 0) != (sb < 0):
+        quotient = -quotient
+    ctx.push(quotient & 0xFFFF_FFFF)
     return (None, None)
 
 
@@ -910,7 +917,9 @@ def _h_i32_rem_s(
         raise WASMTrap("INTEGER_DIVIDE_BY_ZERO")
     sa = struct.unpack(">i", struct.pack(">I", a & 0xFFFF_FFFF))[0]
     sb = struct.unpack(">i", struct.pack(">I", b & 0xFFFF_FFFF))[0]
-    res = sa % sb if sa * sb >= 0 else sa % sb - sb
+    res = abs(sa) % abs(sb)
+    if sa < 0:
+        res = -res
     ctx.push(res & 0xFFFF_FFFF)
     return (None, None)
 
@@ -1176,7 +1185,13 @@ def _h_i64_div_s(
         raise WASMTrap("INTEGER_DIVIDE_BY_ZERO")
     sa = struct.unpack(">q", struct.pack(">Q", a & 0xFFFF_FFFF_FFFF_FFFF))[0]
     sb = struct.unpack(">q", struct.pack(">Q", b & 0xFFFF_FFFF_FFFF_FFFF))[0]
-    ctx.push(int(sa / sb) & 0xFFFF_FFFF_FFFF_FFFF)
+    if sa == -0x8000_0000_0000_0000 and sb == -1:
+        raise WASMTrap("INTEGER_OVERFLOW")
+    # i64 division must retain every integer bit without a float conversion.
+    quotient = abs(sa) // abs(sb)
+    if (sa < 0) != (sb < 0):
+        quotient = -quotient
+    ctx.push(quotient & 0xFFFF_FFFF_FFFF_FFFF)
     return (None, None)
 
 
@@ -1200,7 +1215,9 @@ def _h_i64_rem_s(
         raise WASMTrap("INTEGER_DIVIDE_BY_ZERO")
     sa = struct.unpack(">q", struct.pack(">Q", a & 0xFFFF_FFFF_FFFF_FFFF))[0]
     sb = struct.unpack(">q", struct.pack(">Q", b & 0xFFFF_FFFF_FFFF_FFFF))[0]
-    res = sa % sb if sa * sb >= 0 else sa % sb - sb
+    res = abs(sa) % abs(sb)
+    if sa < 0:
+        res = -res
     ctx.push(res & 0xFFFF_FFFF_FFFF_FFFF)
     return (None, None)
 
@@ -1544,6 +1561,92 @@ def test_signed_memory_and_division_clz_popcnt() -> None:
     assert sa == -970
 
 
+def test_signed_integer_division_and_remainder_edges() -> None:
+    """WASM signed arithmetic uses truncation toward zero and dividend-signed remainder.
+
+    期待値は独立した整数リテラルである。i64の2**53超の商、符号の4組合せ、
+    整除の剰余0、最小値/-1のdivだけのoverflowを自己試験入口から検査する。
+    """
+    cases = (
+        ("i32", "div_s", 7, 3, 2),
+        ("i32", "div_s", -7, 3, -2),
+        ("i32", "div_s", 7, -3, -2),
+        ("i32", "div_s", -7, -3, 2),
+        ("i32", "div_s", 2_147_483_647, 3, 715_827_882),
+        ("i32", "div_s", -2_147_483_648, 3, -715_827_882),
+        ("i64", "div_s", 7, 3, 2),
+        ("i64", "div_s", -7, 3, -2),
+        ("i64", "div_s", 7, -3, -2),
+        ("i64", "div_s", -7, -3, 2),
+        ("i64", "div_s", 9_007_199_254_740_993, 1, 9_007_199_254_740_993),
+        ("i64", "div_s", -9_007_199_254_740_993, 1, -9_007_199_254_740_993),
+        ("i64", "div_s", 9_223_372_036_854_775_807, 1, 9_223_372_036_854_775_807),
+        ("i64", "div_s", 9_223_372_036_854_775_807, 3, 3_074_457_345_618_258_602),
+        ("i64", "div_s", -9_223_372_036_854_775_808, 3, -3_074_457_345_618_258_602),
+    )
+    for value_type, operation, left, right, expected in cases:
+        ctx = ExecutionContext()
+        ctx.funcs = [
+            [
+                (f"{value_type}.const", left),
+                (f"{value_type}.const", right),
+                (f"{value_type}.{operation}", None),
+                ("return", None),
+            ]
+        ]
+        actual = WASMInterpreter().execute_function(ctx, func_idx=0, args=[])
+        mask = 0xFFFF_FFFF if value_type == "i32" else 0xFFFF_FFFF_FFFF_FFFF
+        assert actual == expected & mask, (value_type, operation, left, right, actual)
+
+    for value_type, minimum in (("i32", -2_147_483_648), ("i64", -9_223_372_036_854_775_808)):
+        mask = 0xFFFF_FFFF if value_type == "i32" else 0xFFFF_FFFF_FFFF_FFFF
+        for left, right, expected in (
+            (7, 3, 1),
+            (-7, 3, -1),
+            (7, -3, 1),
+            (-7, -3, -1),
+            (6, 3, 0),
+            (-6, 3, 0),
+            (6, -3, 0),
+            (-6, -3, 0),
+            (0, -3, 0),
+            (minimum, -1, 0),
+            (minimum, 3, -2),
+        ):
+            ctx = ExecutionContext()
+            ctx.funcs = [
+                [
+                    (f"{value_type}.const", left),
+                    (f"{value_type}.const", right),
+                    (f"{value_type}.rem_s", None),
+                    ("return", None),
+                ]
+            ]
+            actual = WASMInterpreter().execute_function(ctx, func_idx=0, args=[])
+            assert actual == expected & mask, (value_type, "rem_s", left, right, actual)
+
+        for operation, left, right, expected_trap in (
+            ("div_s", minimum, -1, "INTEGER_OVERFLOW"),
+            ("div_s", 7, 0, "INTEGER_DIVIDE_BY_ZERO"),
+            ("rem_s", 7, 0, "INTEGER_DIVIDE_BY_ZERO"),
+        ):
+            ctx = ExecutionContext()
+            ctx.funcs = [
+                [
+                    (f"{value_type}.const", left),
+                    (f"{value_type}.const", right),
+                    (f"{value_type}.{operation}", None),
+                    ("return", None),
+                ]
+            ]
+            try:
+                WASMInterpreter().execute_function(ctx, func_idx=0, args=[])
+            except WASMTrap as trap:
+                assert trap.args == (expected_trap,)
+            else:
+                raise AssertionError((value_type, operation, left, right, expected_trap))
+
+
 def test_globals_and_memory_grow() -> None:
     """Test global variables and dynamic memory growth."""
     ctx = ExecutionContext()
@@ -1575,5 +1678,6 @@ if __name__ == "__main__":
     test_64bit_integer_arithmetic()
     test_memory_load_store_all_sizes()
     test_signed_memory_and_division_clz_popcnt()
+    test_signed_integer_division_and_remainder_edges()
     test_globals_and_memory_grow()
     print("[PASS] All Full-Set WASM MVP Interpreter concept tests passed successfully.")

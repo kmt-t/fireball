@@ -39,17 +39,18 @@ from __future__ import annotations
 import ctypes
 import math
 import struct
-from collections.abc import Callable, Iterator, Sequence
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from enum import IntEnum
-from typing import Protocol
+from typing import Protocol, cast
 
 from bump_allocator import BumpAllocator
 from config import (
     FB_CONF_MAX_VALUE_STACK,
     FB_CONF_RUNTIME_YIELD_THRESHOLD,
 )
+from system_containers import SequenceView as Sequence
 from system_containers import StaticVector
 from tier2_runtime.abi import native_abi as _native_abi
 from tier2_runtime.abi.interpreter_abi import (
@@ -86,6 +87,7 @@ from tier2_runtime.vmmio.controller import (
     FC_DYNAMIC,
     FC_PASSTHROUGH,
     FC_SHM,
+    Tier3PTE,
     VmmioAddress,
     VMMIOController,
     VmmioStatus,
@@ -499,7 +501,7 @@ FB_CONF_MAX_LOCAL_STACK = NATIVE_VALUE_STACK_CAPACITY
 
 
 def _encode_public_args(
-    values: Sequence[WasmNumber], param_types: Sequence[str]
+    values: Sequence[WasmNumber], param_types: Sequence[int]
 ) -> StaticVector[int]:
     assert len(values) == len(param_types)
     raw_args: StaticVector[int] = StaticVector(capacity=FB_CONF_MAX_VALUE_STACK)
@@ -890,7 +892,7 @@ assert ctypes.sizeof(ExecutionContext) == ctypes.sizeof(ExecutionContextABI) + c
 )
 
 
-def _read_memarg(code: bytes, ip: int) -> tuple[int, int]:
+def _read_memarg(code: Sequence[int], ip: int) -> tuple[int, int]:
     align, off = decode_unsigned(code, ip + 1)
     mem_offset, next_ip = decode_unsigned(code, off)
     return mem_offset, next_ip
@@ -945,7 +947,7 @@ class CallFrame:
         context: ExecutionContext,
         func_index: int,
         frame_offset: int,
-        env: ExecEnv | None = None,
+        env: ExecEnv,
         *,
         template: CallFrame | None = None,
         native_function_view: FunctionExecutionViewNative | None = None,
@@ -953,6 +955,7 @@ class CallFrame:
     ):
         module = context.module
         assert module is not None
+        assert env is not None
         assert not module.is_import(func_index)
         assert native_slot == -1 or 0 <= native_slot < len(context.native_call_frames)
         self._native_slot = -1
@@ -990,8 +993,8 @@ class CallFrame:
             frame_offset,
             local_widths,
         )
-        self.code = context.module.code_for(func_index)
-        self.code_pc_offset = context.module.function_pc_offset(func_index)
+        self.code = module.code_for(func_index)
+        self.code_pc_offset = module.function_pc_offset(func_index)
         assert function.control_map is not None
         self.control_map = function.control_map
         if template is None:
@@ -1337,7 +1340,8 @@ class NativeModuleExecution:
 # `cont=None` is reserved for a fully finished or trapped call. `tos` remains
 # a runtime/JIT boundary field; operand values themselves live only in the
 # Native stack.
-_Cont = tuple[int, CallFrame, _LocalStackWindow, int] | None
+_ActiveCont = tuple[int, CallFrame, _LocalStackWindow, int]
+_Cont = _ActiveCont | None
 
 
 class DebuggerAttachment(Protocol):
@@ -1367,9 +1371,7 @@ def _handler(opcode: int) -> Callable[[_HandlerFn], _HandlerFn]:
     return register
 
 
-def _handler_state(
-    ctx: ExecutionContext, sp: NativeValueStack
-) -> tuple[int, CallFrame, ExecEnv | None]:
+def _handler_state(ctx: ExecutionContext, sp: NativeValueStack) -> tuple[int, CallFrame, ExecEnv]:
     """Resolve the current instruction state from the shared execution context."""
     assert ctx.call_frame_stack
     frame = ctx.call_frame_stack[-1]
@@ -1432,7 +1434,7 @@ class InterpreterCall:
         self._frame: CallFrame | None = None
         self._locals: _LocalStackWindow | None = None
         self._tos = 0
-        self.call_stack: StaticVector[tuple[int, _Cont]] = StaticVector(
+        self.call_stack: StaticVector[tuple[int, _ActiveCont]] = StaticVector(
             capacity=FB_CONF_MAX_NESTING_DEPTH
         )
         self.finished = finished
@@ -1906,7 +1908,9 @@ class Interpreter:
             call_state.context.release_workspace()
             return call_state
 
-        parent_func_index, parent_cont = call_state.call_stack.pop_back()
+        suspended_caller = call_state.call_stack.pop_back()
+        assert suspended_caller is not None
+        parent_func_index, parent_cont = suspended_caller
         parent_ip, parent_frame, parent_locals, _ = parent_cont
         call_state.func_index = parent_func_index
         call_state._ip = parent_ip
@@ -2199,7 +2203,9 @@ class Interpreter:
             # the result -- already sitting on the context-owned operand
             # stack -- needs no copy:
             # the caller's own next pop/push simply continues from here.
-            parent_func_index, parent_cont = call_state.call_stack.pop_back()
+            suspended_caller = call_state.call_stack.pop_back()
+            assert suspended_caller is not None
+            parent_func_index, parent_cont = suspended_caller
             p_ip, p_frame, p_locals, _ = parent_cont
             call_state.func_index = parent_func_index
             call_state._ip = p_ip
@@ -2215,7 +2221,7 @@ class Interpreter:
         opcode: int,
         ip: int,
         frame: CallFrame,
-        locals_arr: StaticVector[int],
+        locals_arr: _LocalStackWindow,
         tos: int,
     ) -> Trap | None:
         """
@@ -2604,11 +2610,12 @@ def _h_local_get(
     ip, frame, env = _handler_state(ctx, sp)
     idx, next_ip = decode_unsigned(frame.code, ip + 1)
     raw_slot, raw_width = local_base.raw_span(idx)
-    assert frame.values.push_raw_from(
+    pushed = frame.values.push_raw_from(
         frame.context.local_stack,
         raw_slot,
         raw_width,
     )
+    assert pushed
     ctx.ip = next_ip
     return None
 
@@ -2653,39 +2660,6 @@ def _h_i32_const(
     val, next_ip = decode_signed(frame.code, ip + 1, bits=32)
     frame.values.push_back(_to_i32(val))
     ctx.ip = next_ip
-    return None
-
-
-@_handler(I64_CONST)
-def _h_i64_const(
-    ctx: ExecutionContext, sp: NativeValueStack, local_base: _LocalStackWindow, tos: int
-) -> _HandlerResult:
-    ip, frame, env = _handler_state(ctx, sp)
-    val, next_ip = decode_signed(frame.code, ip + 1, bits=64)
-    assert frame.values.push_i64(_to_i64(val))
-    ctx.ip = next_ip
-    return None
-
-
-@_handler(F32_CONST)
-def _h_f32_const(
-    ctx: ExecutionContext, sp: NativeValueStack, local_base: _LocalStackWindow, tos: int
-) -> _HandlerResult:
-    ip, frame, env = _handler_state(ctx, sp)
-    val = struct.unpack("<f", frame.code[ip + 1 : ip + 5])[0]
-    assert frame.values.push_f32(val)
-    ctx.ip = ip + 5
-    return None
-
-
-@_handler(F64_CONST)
-def _h_f64_const(
-    ctx: ExecutionContext, sp: NativeValueStack, local_base: _LocalStackWindow, tos: int
-) -> _HandlerResult:
-    ip, frame, env = _handler_state(ctx, sp)
-    val = struct.unpack("<d", frame.code[ip + 1 : ip + 9])[0]
-    assert frame.values.push_f64(val)
-    ctx.ip = ip + 9
     return None
 
 
@@ -2742,11 +2716,13 @@ def _vmmio_load(env: ExecEnv, addr: int, width: int, signed: bool) -> tuple[int,
         if address.fc() == FC_DYNAMIC or address.fc() == FC_SHM:
             pte = env.vmmio.ptes.view().find(address.vpn())
             assert pte is not None
+            # FC=13/14 mappings are installed with Tier3PTE backing records.
+            mapped_pte = cast(Tier3PTE, pte)
             if address.fc() == FC_DYNAMIC:
-                assert pte.mapped_storage is not None
-            if pte.mapped_storage is not None:
+                assert mapped_pte.mapped_storage is not None
+            if mapped_pte.mapped_storage is not None:
                 return int.from_bytes(
-                    pte.mapped_storage[address.offset() : address.offset() + width],
+                    mapped_pte.mapped_storage[address.offset() : address.offset() + width],
                     "little",
                     signed=signed,
                 ), None
@@ -2775,10 +2751,14 @@ def _vmmio_store(env: ExecEnv, addr: int, val_bytes: bytes) -> Trap | None:
         if address.fc() == FC_DYNAMIC or address.fc() == FC_SHM:
             pte = env.vmmio.ptes.view().find(address.vpn())
             assert pte is not None
+            # FC=13/14 mappings are installed with Tier3PTE backing records.
+            mapped_pte = cast(Tier3PTE, pte)
             if address.fc() == FC_DYNAMIC:
-                assert pte.mapped_storage is not None
-            if pte.mapped_storage is not None:
-                pte.mapped_storage[address.offset() : address.offset() + len(val_bytes)] = val_bytes
+                assert mapped_pte.mapped_storage is not None
+            if mapped_pte.mapped_storage is not None:
+                mapped_pte.mapped_storage[address.offset() : address.offset() + len(val_bytes)] = (
+                    val_bytes
+                )
                 return None
         assert env.phys_mem is not None
         assert phys_addr + len(val_bytes) <= len(env.phys_mem)
@@ -3403,7 +3383,8 @@ def _h_i64_load(
         if env.memory is None or addr + 8 > len(env.memory):
             return Trap(TrapCode.MEMORY_OUT_OF_BOUNDS, addr)
         val = struct.unpack("<q", env.memory[addr : addr + 8])[0]
-    assert frame.values.push_i64(val)
+    pushed = frame.values.push_i64(val)
+    assert pushed
     ctx.ip = next_ip
     return None
 
@@ -3427,7 +3408,8 @@ def _h_i64_load_narrow(
         if env.memory is None or addr + width > len(env.memory):
             return Trap(TrapCode.MEMORY_OUT_OF_BOUNDS, addr)
         val = int.from_bytes(env.memory[addr : addr + width], "little", signed=signed)
-    assert frame.values.push_i64(_to_i64(val))
+    pushed = frame.values.push_i64(_to_i64(val))
+    assert pushed
     ctx.ip = next_ip
     return None
 
@@ -3552,7 +3534,8 @@ def _h_f32_load(
     if env.memory is None or addr + 4 > len(env.memory):
         return Trap(TrapCode.MEMORY_OUT_OF_BOUNDS, addr)
     val = struct.unpack("<f", env.memory[addr : addr + 4])[0]
-    assert frame.values.push_f32(val)
+    pushed = frame.values.push_f32(val)
+    assert pushed
     ctx.ip = next_ip
     return None
 
@@ -3583,7 +3566,8 @@ def _h_f64_load(
     if env.memory is None or addr + 8 > len(env.memory):
         return Trap(TrapCode.MEMORY_OUT_OF_BOUNDS, addr)
     val = struct.unpack("<d", env.memory[addr : addr + 8])[0]
-    assert frame.values.push_f64(val)
+    pushed = frame.values.push_f64(val)
+    assert pushed
     ctx.ip = next_ip
     return None
 
@@ -3613,7 +3597,8 @@ def _h_i64_const(
 ) -> _HandlerResult:
     ip, frame, env = _handler_state(ctx, sp)
     val, next_ip = decode_signed(frame.code, ip + 1, bits=64)
-    assert frame.values.push_i64(_to_i64(val))
+    pushed = frame.values.push_i64(_to_i64(val))
+    assert pushed
     ctx.ip = next_ip
     return None
 
@@ -3624,7 +3609,8 @@ def _h_f32_const(
 ) -> _HandlerResult:
     ip, frame, env = _handler_state(ctx, sp)
     val = struct.unpack("<f", frame.code[ip + 1 : ip + 5])[0]
-    assert frame.values.push_f32(val)
+    pushed = frame.values.push_f32(val)
+    assert pushed
     ctx.ip = ip + 5
     return None
 
@@ -3635,7 +3621,8 @@ def _h_f64_const(
 ) -> _HandlerResult:
     ip, frame, env = _handler_state(ctx, sp)
     val = struct.unpack("<d", frame.code[ip + 1 : ip + 9])[0]
-    assert frame.values.push_f64(val)
+    pushed = frame.values.push_f64(val)
+    assert pushed
     ctx.ip = ip + 9
     return None
 
@@ -3710,7 +3697,8 @@ def _h_i64_add(
     ip, frame, env = _handler_state(ctx, sp)
     b, a = frame.values.pop_i64(), frame.values.pop_i64()
     assert b is not None and a is not None
-    assert frame.values.push_i64(_to_i64(a + b))
+    pushed = frame.values.push_i64(_to_i64(a + b))
+    assert pushed
     ctx.ip = ip + 1
     return None
 
@@ -3722,7 +3710,8 @@ def _h_i64_sub(
     ip, frame, env = _handler_state(ctx, sp)
     b, a = frame.values.pop_i64(), frame.values.pop_i64()
     assert b is not None and a is not None
-    assert frame.values.push_i64(_to_i64(a - b))
+    pushed = frame.values.push_i64(_to_i64(a - b))
+    assert pushed
     ctx.ip = ip + 1
     return None
 
@@ -3734,7 +3723,8 @@ def _h_i64_mul(
     ip, frame, env = _handler_state(ctx, sp)
     b, a = frame.values.pop_i64(), frame.values.pop_i64()
     assert b is not None and a is not None
-    assert frame.values.push_i64(_to_i64(a * b))
+    pushed = frame.values.push_i64(_to_i64(a * b))
+    assert pushed
     ctx.ip = ip + 1
     return None
 
@@ -3754,7 +3744,8 @@ def _h_i64_div_s(
     if a == -0x8000_0000_0000_0000 and b == -1:
         return Trap(TrapCode.INTEGER_OVERFLOW)
     q = abs(a) // abs(b)
-    assert frame.values.push_i64(_to_i64(-q if (a < 0) != (b < 0) else q))
+    pushed = frame.values.push_i64(_to_i64(-q if (a < 0) != (b < 0) else q))
+    assert pushed
     ctx.ip = ip + 1
     return None
 
@@ -3771,7 +3762,8 @@ def _h_i64_div_u(
     a = _to_u64(a)
     if b == 0:
         return Trap(TrapCode.INTEGER_DIVIDE_BY_ZERO)
-    assert frame.values.push_i64(_to_i64(a // b))
+    pushed = frame.values.push_i64(_to_i64(a // b))
+    assert pushed
     ctx.ip = ip + 1
     return None
 
@@ -3786,7 +3778,8 @@ def _h_f32_add(
     ip, frame, env = _handler_state(ctx, sp)
     b, a = frame.values.pop_f32(), frame.values.pop_f32()
     assert b is not None and a is not None
-    assert frame.values.push_f32(_to_f32(a + b))
+    pushed = frame.values.push_f32(_to_f32(a + b))
+    assert pushed
     ctx.ip = ip + 1
     return None
 
@@ -3798,7 +3791,8 @@ def _h_f32_sub(
     ip, frame, env = _handler_state(ctx, sp)
     b, a = frame.values.pop_f32(), frame.values.pop_f32()
     assert b is not None and a is not None
-    assert frame.values.push_f32(_to_f32(a - b))
+    pushed = frame.values.push_f32(_to_f32(a - b))
+    assert pushed
     ctx.ip = ip + 1
     return None
 
@@ -3810,7 +3804,8 @@ def _h_f32_mul(
     ip, frame, env = _handler_state(ctx, sp)
     b, a = frame.values.pop_f32(), frame.values.pop_f32()
     assert b is not None and a is not None
-    assert frame.values.push_f32(_to_f32(a * b))
+    pushed = frame.values.push_f32(_to_f32(a * b))
+    assert pushed
     ctx.ip = ip + 1
     return None
 
@@ -3822,7 +3817,8 @@ def _h_f32_div(
     ip, frame, env = _handler_state(ctx, sp)
     b, a = frame.values.pop_f32(), frame.values.pop_f32()
     assert b is not None and a is not None
-    assert frame.values.push_f32(_to_f32(_wasm_float_div(a, b)))
+    pushed = frame.values.push_f32(_to_f32(_wasm_float_div(a, b)))
+    assert pushed
     ctx.ip = ip + 1
     return None
 
@@ -3834,7 +3830,8 @@ def _h_f32_sqrt(
     ip, frame, env = _handler_state(ctx, sp)
     a = frame.values.pop_f32()
     assert a is not None
-    assert frame.values.push_f32(_to_f32(math.sqrt(a) if a >= 0 else float("nan")))
+    pushed = frame.values.push_f32(_to_f32(math.sqrt(a) if a >= 0 else float("nan")))
+    assert pushed
     ctx.ip = ip + 1
     return None
 
@@ -3846,7 +3843,8 @@ def _h_f32_min(
     ip, frame, env = _handler_state(ctx, sp)
     b, a = frame.values.pop_f32(), frame.values.pop_f32()
     assert b is not None and a is not None
-    assert frame.values.push_f32(_to_f32(_f32_min(a, b)))
+    pushed = frame.values.push_f32(_to_f32(_f32_min(a, b)))
+    assert pushed
     ctx.ip = ip + 1
     return None
 
@@ -3858,7 +3856,8 @@ def _h_f32_max(
     ip, frame, env = _handler_state(ctx, sp)
     b, a = frame.values.pop_f32(), frame.values.pop_f32()
     assert b is not None and a is not None
-    assert frame.values.push_f32(_to_f32(_f32_max(a, b)))
+    pushed = frame.values.push_f32(_to_f32(_f32_max(a, b)))
+    assert pushed
     ctx.ip = ip + 1
     return None
 
@@ -3921,7 +3920,8 @@ def _h_f64_add(
     ip, frame, env = _handler_state(ctx, sp)
     b, a = frame.values.pop_f64(), frame.values.pop_f64()
     assert b is not None and a is not None
-    assert frame.values.push_f64(float(a + b))
+    pushed = frame.values.push_f64(float(a + b))
+    assert pushed
     ctx.ip = ip + 1
     return None
 
@@ -3933,7 +3933,8 @@ def _h_f64_sub(
     ip, frame, env = _handler_state(ctx, sp)
     b, a = frame.values.pop_f64(), frame.values.pop_f64()
     assert b is not None and a is not None
-    assert frame.values.push_f64(float(a - b))
+    pushed = frame.values.push_f64(float(a - b))
+    assert pushed
     ctx.ip = ip + 1
     return None
 
@@ -3945,7 +3946,8 @@ def _h_f64_mul(
     ip, frame, env = _handler_state(ctx, sp)
     b, a = frame.values.pop_f64(), frame.values.pop_f64()
     assert b is not None and a is not None
-    assert frame.values.push_f64(float(a * b))
+    pushed = frame.values.push_f64(float(a * b))
+    assert pushed
     ctx.ip = ip + 1
     return None
 
@@ -3957,7 +3959,8 @@ def _h_f64_div(
     ip, frame, env = _handler_state(ctx, sp)
     b, a = frame.values.pop_f64(), frame.values.pop_f64()
     assert b is not None and a is not None
-    assert frame.values.push_f64(_wasm_float_div(a, b))
+    pushed = frame.values.push_f64(_wasm_float_div(a, b))
+    assert pushed
     ctx.ip = ip + 1
     return None
 
@@ -3969,7 +3972,8 @@ def _h_f64_sqrt(
     ip, frame, env = _handler_state(ctx, sp)
     a = frame.values.pop_f64()
     assert a is not None
-    assert frame.values.push_f64(float(math.sqrt(a) if a >= 0 else float("nan")))
+    pushed = frame.values.push_f64(float(math.sqrt(a) if a >= 0 else float("nan")))
+    assert pushed
     ctx.ip = ip + 1
     return None
 
@@ -4045,7 +4049,8 @@ def _h_fc_prefix(
         source_is_f32 = subopcode == 0 or subopcode == 1
         value = frame.values.pop_f32() if source_is_f32 else frame.values.pop_f64()
         converted = _truncate_saturating_float(value, 32, subopcode % 2 == 0)
-        assert frame.values.push_i32(converted)
+        pushed = frame.values.push_i32(converted)
+        assert pushed
         ctx.ip = next_ip
         return None
 
@@ -4053,7 +4058,8 @@ def _h_fc_prefix(
         source_is_f32 = subopcode == 4 or subopcode == 5
         value = frame.values.pop_f32() if source_is_f32 else frame.values.pop_f64()
         converted = _truncate_saturating_float(value, 64, subopcode % 2 == 0)
-        assert frame.values.push_i64(converted)
+        pushed = frame.values.push_i64(converted)
+        assert pushed
         ctx.ip = next_ip
         return None
 
@@ -4169,7 +4175,8 @@ def _h_i64_trunc_f32_s(
     converted = _truncate_float(a, 64, True)
     if converted is None:
         return Trap(TrapCode.INVALID_CONVERSION)
-    assert frame.values.push_i64(converted)
+    pushed = frame.values.push_i64(converted)
+    assert pushed
     ctx.ip = ip + 1
     return None
 
@@ -4184,7 +4191,8 @@ def _h_i64_trunc_f32_u(
     converted = _truncate_float(a, 64, False)
     if converted is None:
         return Trap(TrapCode.INVALID_CONVERSION)
-    assert frame.values.push_i64(converted)
+    pushed = frame.values.push_i64(converted)
+    assert pushed
     ctx.ip = ip + 1
     return None
 
@@ -4199,7 +4207,8 @@ def _h_i64_trunc_f64_s(
     converted = _truncate_float(a, 64, True)
     if converted is None:
         return Trap(TrapCode.INVALID_CONVERSION)
-    assert frame.values.push_i64(converted)
+    pushed = frame.values.push_i64(converted)
+    assert pushed
     ctx.ip = ip + 1
     return None
 
@@ -4214,7 +4223,8 @@ def _h_i64_trunc_f64_u(
     converted = _truncate_float(a, 64, False)
     if converted is None:
         return Trap(TrapCode.INVALID_CONVERSION)
-    assert frame.values.push_i64(converted)
+    pushed = frame.values.push_i64(converted)
+    assert pushed
     ctx.ip = ip + 1
     return None
 
@@ -4225,7 +4235,8 @@ def _h_f32_convert_i32_s(
 ) -> _HandlerResult:
     ip, frame, env = _handler_state(ctx, sp)
     a = _to_i32(frame.values.pop_back())
-    assert frame.values.push_f32(_to_f32(float(a)))
+    pushed = frame.values.push_f32(_to_f32(float(a)))
+    assert pushed
     ctx.ip = ip + 1
     return None
 
@@ -4236,7 +4247,8 @@ def _h_f32_convert_i32_u(
 ) -> _HandlerResult:
     ip, frame, env = _handler_state(ctx, sp)
     a = _to_u32(frame.values.pop_back())
-    assert frame.values.push_f32(_to_f32(float(a)))
+    pushed = frame.values.push_f32(_to_f32(float(a)))
+    assert pushed
     ctx.ip = ip + 1
     return None
 
@@ -4248,7 +4260,8 @@ def _h_f32_convert_i64_s(
     ip, frame, env = _handler_state(ctx, sp)
     a = frame.values.pop_i64()
     assert a is not None
-    assert frame.values.push_f32(_to_f32(float(a)))
+    pushed = frame.values.push_f32(_to_f32(float(a)))
+    assert pushed
     ctx.ip = ip + 1
     return None
 
@@ -4260,7 +4273,8 @@ def _h_f32_convert_i64_u(
     ip, frame, env = _handler_state(ctx, sp)
     a = frame.values.pop_i64()
     assert a is not None
-    assert frame.values.push_f32(_to_f32(float(_to_u64(a))))
+    pushed = frame.values.push_f32(_to_f32(float(_to_u64(a))))
+    assert pushed
     ctx.ip = ip + 1
     return None
 
@@ -4271,7 +4285,8 @@ def _h_f64_convert_i32_s(
 ) -> _HandlerResult:
     ip, frame, env = _handler_state(ctx, sp)
     a = _to_i32(frame.values.pop_back())
-    assert frame.values.push_f64(float(a))
+    pushed = frame.values.push_f64(float(a))
+    assert pushed
     ctx.ip = ip + 1
     return None
 
@@ -4282,7 +4297,8 @@ def _h_f64_convert_i32_u(
 ) -> _HandlerResult:
     ip, frame, env = _handler_state(ctx, sp)
     a = _to_u32(frame.values.pop_back())
-    assert frame.values.push_f64(float(a))
+    pushed = frame.values.push_f64(float(a))
+    assert pushed
     ctx.ip = ip + 1
     return None
 
@@ -4294,7 +4310,8 @@ def _h_f64_convert_i64_s(
     ip, frame, env = _handler_state(ctx, sp)
     a = frame.values.pop_i64()
     assert a is not None
-    assert frame.values.push_f64(float(a))
+    pushed = frame.values.push_f64(float(a))
+    assert pushed
     ctx.ip = ip + 1
     return None
 
@@ -4306,7 +4323,8 @@ def _h_f64_convert_i64_u(
     ip, frame, env = _handler_state(ctx, sp)
     a = frame.values.pop_i64()
     assert a is not None
-    assert frame.values.push_f64(float(_to_u64(a)))
+    pushed = frame.values.push_f64(float(_to_u64(a)))
+    assert pushed
     ctx.ip = ip + 1
     return None
 
@@ -4318,7 +4336,8 @@ def _h_f64_promote_f32(
     ip, frame, env = _handler_state(ctx, sp)
     a = frame.values.pop_f32()
     assert a is not None
-    assert frame.values.push_f64(float("nan") if math.isnan(a) else float(a))
+    pushed = frame.values.push_f64(float("nan") if math.isnan(a) else float(a))
+    assert pushed
     ctx.ip = ip + 1
     return None
 
@@ -4330,7 +4349,8 @@ def _h_f32_demote_f64(
     ip, frame, env = _handler_state(ctx, sp)
     a = frame.values.pop_f64()
     assert a is not None
-    assert frame.values.push_f32(float("nan") if math.isnan(a) else _to_f32(float(a)))
+    pushed = frame.values.push_f32(float("nan") if math.isnan(a) else _to_f32(float(a)))
+    assert pushed
     ctx.ip = ip + 1
     return None
 
@@ -4342,7 +4362,8 @@ def _h_f32_abs(
     ip, frame, env = _handler_state(ctx, sp)
     a = frame.values.pop_f32()
     assert a is not None
-    assert frame.values.push_f32(_to_f32(abs(a)))
+    pushed = frame.values.push_f32(_to_f32(abs(a)))
+    assert pushed
     ctx.ip = ip + 1
     return None
 
@@ -4354,7 +4375,8 @@ def _h_f32_neg(
     ip, frame, env = _handler_state(ctx, sp)
     a = frame.values.pop_f32()
     assert a is not None
-    assert frame.values.push_f32(_to_f32(-a))
+    pushed = frame.values.push_f32(_to_f32(-a))
+    assert pushed
     ctx.ip = ip + 1
     return None
 
@@ -4366,7 +4388,8 @@ def _h_f64_abs(
     ip, frame, env = _handler_state(ctx, sp)
     a = frame.values.pop_f64()
     assert a is not None
-    assert frame.values.push_f64(float(abs(a)))
+    pushed = frame.values.push_f64(float(abs(a)))
+    assert pushed
     ctx.ip = ip + 1
     return None
 
@@ -4378,7 +4401,8 @@ def _h_f64_neg(
     ip, frame, env = _handler_state(ctx, sp)
     a = frame.values.pop_f64()
     assert a is not None
-    assert frame.values.push_f64(float(-a))
+    pushed = frame.values.push_f64(float(-a))
+    assert pushed
     ctx.ip = ip + 1
     return None
 
@@ -4444,7 +4468,8 @@ def _h_i64_rem_s(
     if b == 0:
         return Trap(TrapCode.INTEGER_DIVIDE_BY_ZERO)
     r = abs(a) % abs(b)
-    assert frame.values.push_i64(_to_i64(-r if a < 0 else r))
+    pushed = frame.values.push_i64(_to_i64(-r if a < 0 else r))
+    assert pushed
     ctx.ip = ip + 1
     return None
 
@@ -4461,7 +4486,8 @@ def _h_i64_rem_u(
     a = _to_u64(a)
     if b == 0:
         return Trap(TrapCode.INTEGER_DIVIDE_BY_ZERO)
-    assert frame.values.push_i64(_to_i64(a % b))
+    pushed = frame.values.push_i64(_to_i64(a % b))
+    assert pushed
     ctx.ip = ip + 1
     return None
 
@@ -4473,7 +4499,8 @@ def _h_i64_and(
     ip, frame, env = _handler_state(ctx, sp)
     b, a = frame.values.pop_i64(), frame.values.pop_i64()
     assert b is not None and a is not None
-    assert frame.values.push_i64(_to_i64(a & b))
+    pushed = frame.values.push_i64(_to_i64(a & b))
+    assert pushed
     ctx.ip = ip + 1
     return None
 
@@ -4485,7 +4512,8 @@ def _h_i64_or(
     ip, frame, env = _handler_state(ctx, sp)
     b, a = frame.values.pop_i64(), frame.values.pop_i64()
     assert b is not None and a is not None
-    assert frame.values.push_i64(_to_i64(a | b))
+    pushed = frame.values.push_i64(_to_i64(a | b))
+    assert pushed
     ctx.ip = ip + 1
     return None
 
@@ -4497,7 +4525,8 @@ def _h_i64_xor(
     ip, frame, env = _handler_state(ctx, sp)
     b, a = frame.values.pop_i64(), frame.values.pop_i64()
     assert b is not None and a is not None
-    assert frame.values.push_i64(_to_i64(a ^ b))
+    pushed = frame.values.push_i64(_to_i64(a ^ b))
+    assert pushed
     ctx.ip = ip + 1
     return None
 
@@ -4510,7 +4539,8 @@ def _h_i64_shl(
     k = frame.values.pop_i64()
     v = frame.values.pop_i64()
     assert k is not None and v is not None
-    assert frame.values.push_i64(_to_i64((v << (k % 64)) & I64_MASK))
+    pushed = frame.values.push_i64(_to_i64((v << (k % 64)) & I64_MASK))
+    assert pushed
     ctx.ip = ip + 1
     return None
 
@@ -4523,7 +4553,8 @@ def _h_i64_shr_s(
     k = frame.values.pop_i64()
     v = frame.values.pop_i64()
     assert k is not None and v is not None
-    assert frame.values.push_i64(_to_i64(_to_i64(v) >> (k % 64)))
+    pushed = frame.values.push_i64(_to_i64(_to_i64(v) >> (k % 64)))
+    assert pushed
     ctx.ip = ip + 1
     return None
 
@@ -4536,7 +4567,8 @@ def _h_i64_shr_u(
     k = frame.values.pop_i64()
     v = frame.values.pop_i64()
     assert k is not None and v is not None
-    assert frame.values.push_i64(_to_i64(_to_u64(v) >> (k % 64)))
+    pushed = frame.values.push_i64(_to_i64(_to_u64(v) >> (k % 64)))
+    assert pushed
     ctx.ip = ip + 1
     return None
 
@@ -4552,7 +4584,8 @@ def _h_i64_rotl(
     k %= 64
     v = _to_u64(v)
     rotated = ((v << k) | (v >> (64 - k))) & I64_MASK if k else v
-    assert frame.values.push_i64(_to_i64(rotated))
+    pushed = frame.values.push_i64(_to_i64(rotated))
+    assert pushed
     ctx.ip = ip + 1
     return None
 
@@ -4568,7 +4601,8 @@ def _h_i64_rotr(
     k %= 64
     v = _to_u64(v)
     rotated = ((v >> k) | (v << (64 - k))) & I64_MASK if k else v
-    assert frame.values.push_i64(_to_i64(rotated))
+    pushed = frame.values.push_i64(_to_i64(rotated))
+    assert pushed
     ctx.ip = ip + 1
     return None
 
@@ -4582,9 +4616,11 @@ def _h_i64_clz(
     assert value is not None
     v = _to_u64(value)
     if v == 0:
-        assert frame.values.push_i64(64)
+        pushed = frame.values.push_i64(64)
+        assert pushed
     else:
-        assert frame.values.push_i64(64 - v.bit_length())
+        pushed = frame.values.push_i64(64 - v.bit_length())
+        assert pushed
     ctx.ip = ip + 1
     return None
 
@@ -4598,9 +4634,11 @@ def _h_i64_ctz(
     assert value is not None
     v = _to_u64(value)
     if v == 0:
-        assert frame.values.push_i64(64)
+        pushed = frame.values.push_i64(64)
+        assert pushed
     else:
-        assert frame.values.push_i64((v & -v).bit_length() - 1)
+        pushed = frame.values.push_i64((v & -v).bit_length() - 1)
+        assert pushed
     ctx.ip = ip + 1
     return None
 
@@ -4613,7 +4651,8 @@ def _h_i64_popcnt(
     value = frame.values.pop_i64()
     assert value is not None
     v = _to_u64(value)
-    assert frame.values.push_i64(bin(v).count("1"))
+    pushed = frame.values.push_i64(bin(v).count("1"))
+    assert pushed
     ctx.ip = ip + 1
     return None
 
@@ -4700,7 +4739,8 @@ def _h_f32_ceil(
     ip, frame, env = _handler_state(ctx, sp)
     a = frame.values.pop_f32()
     assert a is not None
-    assert frame.values.push_f32(_to_f32(_wasm_integral_round(a, "ceil")))
+    pushed = frame.values.push_f32(_to_f32(_wasm_integral_round(a, "ceil")))
+    assert pushed
     ctx.ip = ip + 1
     return None
 
@@ -4712,7 +4752,8 @@ def _h_f32_floor(
     ip, frame, env = _handler_state(ctx, sp)
     a = frame.values.pop_f32()
     assert a is not None
-    assert frame.values.push_f32(_to_f32(_wasm_integral_round(a, "floor")))
+    pushed = frame.values.push_f32(_to_f32(_wasm_integral_round(a, "floor")))
+    assert pushed
     ctx.ip = ip + 1
     return None
 
@@ -4724,7 +4765,8 @@ def _h_f32_trunc(
     ip, frame, env = _handler_state(ctx, sp)
     a = frame.values.pop_f32()
     assert a is not None
-    assert frame.values.push_f32(_to_f32(_wasm_integral_round(a, "trunc")))
+    pushed = frame.values.push_f32(_to_f32(_wasm_integral_round(a, "trunc")))
+    assert pushed
     ctx.ip = ip + 1
     return None
 
@@ -4736,7 +4778,8 @@ def _h_f32_nearest(
     ip, frame, env = _handler_state(ctx, sp)
     a = frame.values.pop_f32()
     assert a is not None
-    assert frame.values.push_f32(_to_f32(_wasm_nearest(a)))
+    pushed = frame.values.push_f32(_to_f32(_wasm_nearest(a)))
+    assert pushed
     ctx.ip = ip + 1
     return None
 
@@ -4748,7 +4791,8 @@ def _h_f32_copysign(
     ip, frame, env = _handler_state(ctx, sp)
     b, a = frame.values.pop_f32(), frame.values.pop_f32()
     assert b is not None and a is not None
-    assert frame.values.push_f32(_to_f32(math.copysign(a, b)))
+    pushed = frame.values.push_f32(_to_f32(math.copysign(a, b)))
+    assert pushed
     ctx.ip = ip + 1
     return None
 
@@ -4760,7 +4804,8 @@ def _h_f64_ceil(
     ip, frame, env = _handler_state(ctx, sp)
     a = frame.values.pop_f64()
     assert a is not None
-    assert frame.values.push_f64(_wasm_integral_round(a, "ceil"))
+    pushed = frame.values.push_f64(_wasm_integral_round(a, "ceil"))
+    assert pushed
     ctx.ip = ip + 1
     return None
 
@@ -4772,7 +4817,8 @@ def _h_f64_floor(
     ip, frame, env = _handler_state(ctx, sp)
     a = frame.values.pop_f64()
     assert a is not None
-    assert frame.values.push_f64(_wasm_integral_round(a, "floor"))
+    pushed = frame.values.push_f64(_wasm_integral_round(a, "floor"))
+    assert pushed
     ctx.ip = ip + 1
     return None
 
@@ -4784,7 +4830,8 @@ def _h_f64_trunc(
     ip, frame, env = _handler_state(ctx, sp)
     a = frame.values.pop_f64()
     assert a is not None
-    assert frame.values.push_f64(_wasm_integral_round(a, "trunc"))
+    pushed = frame.values.push_f64(_wasm_integral_round(a, "trunc"))
+    assert pushed
     ctx.ip = ip + 1
     return None
 
@@ -4796,7 +4843,8 @@ def _h_f64_nearest(
     ip, frame, env = _handler_state(ctx, sp)
     a = frame.values.pop_f64()
     assert a is not None
-    assert frame.values.push_f64(_wasm_nearest(a))
+    pushed = frame.values.push_f64(_wasm_nearest(a))
+    assert pushed
     ctx.ip = ip + 1
     return None
 
@@ -4808,7 +4856,8 @@ def _h_f64_copysign(
     ip, frame, env = _handler_state(ctx, sp)
     b, a = frame.values.pop_f64(), frame.values.pop_f64()
     assert b is not None and a is not None
-    assert frame.values.push_f64(float(math.copysign(a, b)))
+    pushed = frame.values.push_f64(float(math.copysign(a, b)))
+    assert pushed
     ctx.ip = ip + 1
     return None
 
@@ -4826,7 +4875,8 @@ def _h_f64_min(
         res = -0.0 if math.copysign(1.0, a) < 0 or math.copysign(1.0, b) < 0 else 0.0
     else:
         res = min(a, b)
-    assert frame.values.push_f64(float(res))
+    pushed = frame.values.push_f64(float(res))
+    assert pushed
     ctx.ip = ip + 1
     return None
 
@@ -4844,7 +4894,8 @@ def _h_f64_max(
         res = 0.0 if math.copysign(1.0, a) > 0 or math.copysign(1.0, b) > 0 else -0.0
     else:
         res = max(a, b)
-    assert frame.values.push_f64(float(res))
+    pushed = frame.values.push_f64(float(res))
+    assert pushed
     ctx.ip = ip + 1
     return None
 
@@ -4930,7 +4981,8 @@ def _h_i64_extend8_s(
 ) -> _HandlerResult:
     ip, frame, env = _handler_state(ctx, sp)
     value = _to_u64(frame.values.pop_i64()) & 0xFF
-    assert frame.values.push_i64(_to_i64(value - 0x100 if value & 0x80 else value))
+    pushed = frame.values.push_i64(_to_i64(value - 0x100 if value & 0x80 else value))
+    assert pushed
     ctx.ip = ip + 1
     return None
 
@@ -4941,7 +4993,8 @@ def _h_i64_extend16_s(
 ) -> _HandlerResult:
     ip, frame, env = _handler_state(ctx, sp)
     value = _to_u64(frame.values.pop_i64()) & 0xFFFF
-    assert frame.values.push_i64(_to_i64(value - 0x10000 if value & 0x8000 else value))
+    pushed = frame.values.push_i64(_to_i64(value - 0x10000 if value & 0x8000 else value))
+    assert pushed
     ctx.ip = ip + 1
     return None
 
@@ -4952,7 +5005,8 @@ def _h_i64_extend32_s(
 ) -> _HandlerResult:
     ip, frame, env = _handler_state(ctx, sp)
     value = _to_u64(frame.values.pop_i64()) & 0xFFFF_FFFF
-    assert frame.values.push_i64(_to_i64(value - 0x1_0000_0000 if value & 0x8000_0000 else value))
+    pushed = frame.values.push_i64(_to_i64(value - 0x1_0000_0000 if value & 0x8000_0000 else value))
+    assert pushed
     ctx.ip = ip + 1
     return None
 
@@ -5004,7 +5058,8 @@ def _h_i64_extend_i32_s(
     ip, frame, env = _handler_state(ctx, sp)
     a = frame.values.pop_i32()
     assert a is not None
-    assert frame.values.push_i64(_to_i64(a))
+    pushed = frame.values.push_i64(_to_i64(a))
+    assert pushed
     ctx.ip = ip + 1
     return None
 
@@ -5016,7 +5071,8 @@ def _h_i64_extend_i32_u(
     ip, frame, env = _handler_state(ctx, sp)
     a = frame.values.pop_i32()
     assert a is not None
-    assert frame.values.push_i64(_to_i64(_to_u32(a)))
+    pushed = frame.values.push_i64(_to_i64(_to_u32(a)))
+    assert pushed
     ctx.ip = ip + 1
     return None
 
@@ -5043,7 +5099,8 @@ def _h_f32_reinterpret_i32(
     assert a is not None
     a = _to_u32(a)
     f = struct.unpack("<f", struct.pack("<I", a))[0]
-    assert frame.values.push_f32(_to_f32(f))
+    pushed = frame.values.push_f32(_to_f32(f))
+    assert pushed
     ctx.ip = ip + 1
     return None
 
@@ -5056,7 +5113,8 @@ def _h_i64_reinterpret_f64(
     a = frame.values.pop_f64()
     assert a is not None
     u = struct.unpack("<q", struct.pack("<d", a))[0]
-    assert frame.values.push_i64(_to_i64(u))
+    pushed = frame.values.push_i64(_to_i64(u))
+    assert pushed
     ctx.ip = ip + 1
     return None
 
@@ -5070,7 +5128,8 @@ def _h_f64_reinterpret_i64(
     assert a is not None
     a = _to_u64(a)
     d = struct.unpack("<d", struct.pack("<Q", a))[0]
-    assert frame.values.push_f64(float(d))
+    pushed = frame.values.push_f64(float(d))
+    assert pushed
     ctx.ip = ip + 1
     return None
 

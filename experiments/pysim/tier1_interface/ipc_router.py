@@ -12,19 +12,21 @@ Fireball IPC Router: URI/RBAC front-end over the CSP rendezvous engine.
 
 from __future__ import annotations
 
-from collections.abc import Generator, Iterator, Sequence
+from collections.abc import Generator, Iterator
 from enum import IntEnum
+from typing import cast
 
 from memory_interface import MemoryManager, SharedBlock
 from scheduler import (
     FB_CONF_MAX_CHANNELS,
     Channel,
     ChannelAction,
+    ChannelPayload,
     ChannelTransferMode,
     Scheduler,
     WaitDir,
 )
-from system_containers import ReadOnlyFlatMapView, StaticVector
+from system_containers import ReadOnlyFlatMapView, SequenceView, StaticVector
 from tier1_core.printk import (
     Printk,
     PrintkEvent,
@@ -240,9 +242,8 @@ class IPCMessage:
             assert released_shm_id >= 0, "message SharedBlock must belong to current task"
             self._in_flight_shm_id = released_shm_id
         for shm_id in self._in_flight_resource_ids:
-            assert self._memory_manager.revoke_shared(shm_id), (
-                "RESOURCE handle must be backed by an allocated SHM block"
-            )
+            revoked = self._memory_manager.revoke_shared(shm_id)
+            assert revoked, "RESOURCE handle must be backed by an allocated SHM block"
 
     @property
     def sender_id(self) -> int:
@@ -281,13 +282,15 @@ class IPCMessage:
             return None
         assert self._memory_manager is not None, "IPC transfer requires a memory manager"
         if self._in_flight_shm_id is not None:
-            assert self._memory_manager.grant_shared(self._in_flight_shm_id)
+            granted = self._memory_manager.grant_shared(self._in_flight_shm_id)
+            assert granted
             result = self._memory_manager.claim(self._in_flight_shm_id)
             assert not result.is_err, "message SharedBlock grant must be claimable"
             self._block = result.unwrap()
             self._in_flight_shm_id = None
         for shm_id in self._in_flight_resource_ids:
-            assert self._memory_manager.grant_shared(shm_id)
+            granted = self._memory_manager.grant_shared(shm_id)
+            assert granted
         self._in_flight_resource_ids.clear()
         return self
 
@@ -304,7 +307,7 @@ class IPCMessage:
         len(entries)
         return entries
 
-    def write_entries(self, entries: Sequence[tuple[int, int]]) -> None:
+    def write_entries(self, entries: SequenceView[tuple[int, int]]) -> None:
         """Writes a batch of (key, value) pairs into the backing uint64_t shared memory array."""
         self._check_ownership()
         assert self._block is not None, "Cannot write entries without a backing SharedBlock"
@@ -335,7 +338,7 @@ class IPCMessage:
     @classmethod
     def from_entries(
         cls,
-        entries: Sequence[tuple[int, int]] = (),
+        entries: SequenceView[tuple[int, int]] = (),
         *,
         memory_manager: MemoryManager,
     ) -> IPCMessage:
@@ -424,7 +427,9 @@ def bytes_to_kv_entries(data: bytes) -> StaticVector[tuple[int, int]]:
     return entries
 
 
-def kv_entries_to_bytes(entries: Sequence[tuple[int, int]], max_len: int | None = None) -> bytes:
+def kv_entries_to_bytes(
+    entries: SequenceView[tuple[int, int]], max_len: int | None = None
+) -> bytes:
     """Unpacks AoS (key32, val32) entries back into raw bytes using length metadata."""
     entries_view = ReadOnlyFlatMapView(entries)
     length_value = entries_view.find(0)
@@ -479,11 +484,11 @@ _HAL_ROLES: tuple[Role, ...] = (
 )
 
 
-def _role_row(allowed_targets: Sequence[Role]) -> StaticVector[bool]:
+def _role_row(allowed_targets: SequenceView[Role]) -> StaticVector[bool]:
     row: StaticVector[bool] = StaticVector(capacity=len(Role))
     for role in Role:
         row.append(any(role == target for target in allowed_targets))
-    return row
+    return row.freeze()
 
 
 FB_CONF_ROUTER_ROLE_MATRIX: tuple[StaticVector[bool], ...] = (
@@ -534,6 +539,15 @@ class IPCStatus(IntEnum):
     ERR_INVALID_RESPONSE = 5
 
 
+def _stamp_ipc_sender(payload: ChannelPayload, sender_id: int) -> None:
+    # These callbacks are installed only on router-owned IPCMessage channels.
+    cast(IPCMessage, payload).stamp_sender(sender_id)
+
+
+def _prepare_ipc_reply(payload: ChannelPayload) -> None:
+    cast(IPCMessage, payload).prepare_reply()
+
+
 class IPCRouter:
     """
     URI/RBAC front-end (Stage 1 + Stage 2) over the CSP rendezvous engine
@@ -577,8 +591,8 @@ class IPCRouter:
                 if allowed:
                     channel = self.scheduler.create_channel(
                         transfer_mode=ChannelTransferMode.MOVABLE,
-                        sender_stamper=IPCMessage.stamp_sender,
-                        reply_stamper=IPCMessage.prepare_reply,
+                        sender_stamper=_stamp_ipc_sender,
+                        reply_stamper=_prepare_ipc_reply,
                         request_reply=True,
                     )
                     assert channel.channel_id == len(self._channel_role_masks)
@@ -748,7 +762,8 @@ class IPCRouter:
         action, _ = self.scheduler.channel_select_recv(channels)
         if action == ChannelAction.BLOCK:
             yield (ChannelAction.BLOCK, None)
-        message: IPCMessage = receiver.received_val
+        assert receiver.received_val is not None
+        message = cast(IPCMessage, receiver.received_val)
         receiver.received_val = None
         message.ownership = OwnershipState.RECEIVER_OWNS
         assert self.scheduler.get_task(message.sender_id) is not None, (
@@ -757,7 +772,9 @@ class IPCRouter:
 
         return (IPCStatus.COMPLETED, message)
 
-    def reply(self, message: IPCMessage, response_code: int | None = None) -> IPCStatus:
+    def reply(
+        self, message: IPCMessage, response_code: int | None = None
+    ) -> Generator[tuple[ChannelAction, None], None, IPCStatus]:
         """Return the received message, optionally extended, to its sender."""
         receiver = self.scheduler.current_task
         assert receiver is not None, "IPC reply requires an active scheduler task"
@@ -770,5 +787,7 @@ class IPCRouter:
             "receiver must set a response code before replying"
         )
         channel = message._reply_channel
-        channel.reply(message)
+        action, _ = channel.reply(message)
+        if action == ChannelAction.BLOCK:
+            yield (ChannelAction.BLOCK, None)
         return IPCStatus.COMPLETED

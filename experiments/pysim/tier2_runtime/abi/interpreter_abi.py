@@ -13,6 +13,7 @@ import struct
 from collections.abc import Iterator, Sequence
 
 from bump_allocator import BumpAllocator
+from system_containers import SequenceView
 from tier2_runtime.wasm.module import WASM_VALUE_SLOT_BYTES
 
 EXECUTION_CONTEXT_SIZE_BYTES = 144
@@ -483,7 +484,7 @@ class NativeValueStack:
         self._native.size = size + 1
         return True
 
-    def extend(self, values: Sequence[int]) -> bool:
+    def extend(self, values: SequenceView[int]) -> bool:
         value_count = len(values)
         size = int(self._native.size)
         if size + value_count > self._capacity:
@@ -668,7 +669,8 @@ class NativeValueStack:
 
     def clear(self) -> None:
         while self:
-            assert self.pop_back() is not None
+            popped = self.pop_back()
+            assert popped is not None
 
     def __delitem__(self, index: int) -> None:
         start = self._index(index)

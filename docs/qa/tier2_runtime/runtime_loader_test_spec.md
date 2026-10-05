@@ -86,9 +86,11 @@ Element/Data初期化定義を個別配列へ展開せず、パース時検証�
 | GOTCHA-LOAD-02 | ロード失敗時のアロケータ完全ロールバック（メモリリーク防止） | 不正なセクションまたはアリーナ容量を超える WASM バイナリ | `prepare_module` を実行 | パースまたは確保失敗時にバンプポインタがロード開始前の位置へ巻き戻される。 | [`runtime_loader.md`](docs/components/tier2_runtime/runtime_loader.md) |
 | GOTCHA-LOAD-04 | 基本ブロックメタ情報の不変保持と借用 | WASMモジュールをロード済み | 同じPCで`mod.get_block(pc)`を繰り返し、ロード時のメタ情報と比較する | 同じ境界・制御情報を持つ借用viewが返る。実行時の再走査・メタ情報再構築・動的確保が発生しない | [`runtime_loader.md`](docs/components/tier2_runtime/runtime_loader.md), `Loader_BasicBlockIndex` |
 
-## 3. Pysim参照パーサの現行QA範囲
+## 3. テスト検証実績と網羅状況
 
-この文書の前半は、Phase 1で実装するC++ `runtime_loader` の目標テスト契約である。ロード済み`ModuleView`、複数モジュール登録・リンク、ファイル位置のRadix索引は現行Pysim製品コードの機能ではない。バックログ上もC++ローダー実装は未着手である。
+### 3.1 Pysim参照パーサの現行QA範囲
+
+この文書の前半は、C++ `runtime_loader` の目標テスト契約である。ロード済み`ModuleView`、複数モジュール登録・リンク、ファイル位置のRadix索引は現行Pysim製品コードの機能ではない。バックログ上もC++ローダー実装は未着手である。
 
 PysimのPythonコードは参照ランタイムであり、現行のWASMパース入口は [`test_wasm_reader.py`](experiments/pysim/qa/tier2_runtime/test_wasm_reader.py) から呼ぶ `reader.parse` である。QAはこの経路の境界検証、アロケータの失敗時復元、セグメント初期化、基本ブロック索引を直接確認する。レジストリと関数リンクの契約は [`module_link_harness.py`](experiments/pysim/qa/private/tier2_runtime/module_link_harness.py) がQA内だけでモデル化し、パース済みModuleを使って未解決状態、シグネチャ一致、部分リンク防止、上限を確認する。このハーネスは製品ランタイムのリンク機能やRadix索引の証拠ではない。
 

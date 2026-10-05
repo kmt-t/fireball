@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import os
-import subprocess
 import sys
 import time
 from pathlib import Path
@@ -15,6 +14,7 @@ if str(PYSIM_ROOT) not in sys.path:
     sys.path.insert(0, str(PYSIM_ROOT))
 
 from qa.run_all import assert_registered_test_modules
+from qa.shared.execution import run_python
 
 WORKLOAD_SUITES = (
     WORKLOAD_DIR / "test_wasi_guest.py",
@@ -36,11 +36,11 @@ def run_all_workloads() -> int:
     started = time.perf_counter()
     for suite in WORKLOAD_SUITES:
         print(f"\n>>> Running WASM workload suite: {suite.name}", flush=True)
-        result = subprocess.run(
-            [sys.executable, "-m", "pytest", "-q", str(suite), "-s"],
+        result = run_python(
+            ["-m", "pytest", "-q", str(suite), "-s"],
             cwd=REPO_ROOT,
-            env=environment,
-            check=False,
+            environment=environment,
+            timeout=300.0,
         )
         passed += result.returncode == 0
     failures = len(WORKLOAD_SUITES) - passed

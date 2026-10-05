@@ -45,7 +45,8 @@ class BufferLease:
         self._owner = owner
         self._view = PythonBuffer()
         self._active = False
-        assert _PYOBJECT_GET_BUFFER(owner, ctypes.byref(self._view), flags) == 0
+        buffer_status = _PYOBJECT_GET_BUFFER(owner, ctypes.byref(self._view), flags)
+        assert buffer_status == 0
         self._active = True
 
     @property

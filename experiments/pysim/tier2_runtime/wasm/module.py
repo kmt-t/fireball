@@ -13,7 +13,7 @@ the Code section's implicit numbering are all in this unified space.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator, Sequence
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Protocol
 
@@ -26,6 +26,7 @@ from system_containers import (
     MutableBitStorage,
     ReadOnlyFlatMapStorage,
     ReadOnlyRadixBinaryTreeStorage,
+    SequenceView,
     StaticVector,
     fold_mix32,
 )
@@ -84,7 +85,7 @@ class FunctionTable:
 
     @classmethod
     def from_sequence(
-        cls, entries: Sequence[int | None], allocator: BumpAllocator | None = None
+        cls, entries: SequenceView[int | None], allocator: BumpAllocator | None = None
     ) -> FunctionTable:
         """Create a fixed table initialized from a bounded sequence."""
 
@@ -146,14 +147,14 @@ LOADER_BLOCK_INDEX_ENTRY_BYTES = 8
 
 
 def _allocate_loader_vector[T](
-    allocator: BumpAllocator, capacity: int, entry_bytes: int
+    allocator: BumpAllocator, capacity: int, entry_bytes: int, vector_type: type[StaticVector[T]]
 ) -> StaticVector[T]:
     """Create a bounded vector and reserve its target backing from the loader arena."""
 
     assert capacity >= 0 and entry_bytes > 0
     storage_size = capacity * entry_bytes
     offset = allocator.allocate(storage_size)
-    return StaticVector(capacity=capacity, arena_offset=offset, arena_size=storage_size)
+    return vector_type(capacity=capacity, arena_offset=offset, arena_size=storage_size)
 
 
 def value_slot_width(value_type: int) -> int:
@@ -378,16 +379,24 @@ class Module:
         assert len(self.exports) == 0
         assert len(self.globals) == 0
         assert len(self.tables) == 0
-        self.types = _allocate_loader_vector(allocator, type_count, LOADER_TYPE_ENTRY_BYTES)
+        self.types = _allocate_loader_vector(
+            allocator, type_count, LOADER_TYPE_ENTRY_BYTES, StaticVector[FuncTypeRecord]
+        )
         self.imports = _allocate_loader_vector(
-            allocator, function_import_count, LOADER_IMPORT_ENTRY_BYTES
+            allocator, function_import_count, LOADER_IMPORT_ENTRY_BYTES, StaticVector[Import]
         )
         self.functions = _allocate_loader_vector(
-            allocator, function_count, LOADER_FUNCTION_ENTRY_BYTES
+            allocator, function_count, LOADER_FUNCTION_ENTRY_BYTES, StaticVector[Function]
         )
-        self.exports = _allocate_loader_vector(allocator, export_count, LOADER_EXPORT_ENTRY_BYTES)
-        self.globals = _allocate_loader_vector(allocator, global_count, LOADER_GLOBAL_ENTRY_BYTES)
-        self.tables = _allocate_loader_vector(allocator, table_count, LOADER_TABLE_ENTRY_BYTES)
+        self.exports = _allocate_loader_vector(
+            allocator, export_count, LOADER_EXPORT_ENTRY_BYTES, StaticVector[Export]
+        )
+        self.globals = _allocate_loader_vector(
+            allocator, global_count, LOADER_GLOBAL_ENTRY_BYTES, StaticVector[Global]
+        )
+        self.tables = _allocate_loader_vector(
+            allocator, table_count, LOADER_TABLE_ENTRY_BYTES, StaticVector[Table]
+        )
 
     def relocate_to(self, allocator: BumpAllocator) -> None:
         """Relocate loaded module storage and offsets into the destination arena."""
@@ -451,7 +460,7 @@ class Module:
     def stream_element_initializers(
         self,
         callback: ElementInitializer,
-        global_values: Sequence[int],
+        global_values: SequenceView[int],
         resolve_globals: bool = True,
     ) -> None:
         """Stream active element entries to a callback without retaining them."""
@@ -485,7 +494,7 @@ class Module:
     def stream_data_initializers(
         self,
         callback: DataInitializer,
-        global_values: Sequence[int],
+        global_values: SequenceView[int],
         resolve_globals: bool = True,
     ) -> None:
         """Stream active data segments to a callback without retaining them."""
@@ -515,7 +524,7 @@ class Module:
             off = data_end
         assert off == end, "data section length mismatch"
 
-    def init_memory_data(self, memory: bytearray, global_values: Sequence[int]) -> None:
+    def init_memory_data(self, memory: bytearray, global_values: SequenceView[int]) -> None:
         """Initializes memory with active data segments."""
 
         def write_data(offset: int, data: memoryview) -> None:
@@ -527,7 +536,7 @@ class Module:
     def table_contents(
         self,
         table_index: int,
-        global_values: Sequence[int],
+        global_values: SequenceView[int],
         initial: FunctionTable | None = None,
         allocator: BumpAllocator | None = None,
     ) -> FunctionTable:
@@ -642,8 +651,10 @@ class Module:
             return ft.params
         local = self.functions[func_index - len(self.imports)]
         types: StaticVector[int] = StaticVector(capacity=len(ft.params) + len(local.locals_extra))
-        assert types.extend(ft.params)
-        assert types.extend(local.locals_extra)
+        extended = types.extend(ft.params)
+        assert extended
+        extended = types.extend(local.locals_extra)
+        assert extended
         return types
 
     def build_basic_block_index(self, allocator: BumpAllocator | None = None) -> None:
@@ -657,7 +668,7 @@ class Module:
             all_blocks: StaticVector[BasicBlock] = StaticVector(capacity=block_capacity)
         else:
             all_blocks = _allocate_loader_vector(
-                allocator, block_capacity, LOADER_BASIC_BLOCK_ENTRY_BYTES
+                allocator, block_capacity, LOADER_BASIC_BLOCK_ENTRY_BYTES, StaticVector[BasicBlock]
             )
         for idx, _fn in enumerate(self.functions):
             func_idx = n_imports + idx
@@ -693,7 +704,10 @@ class Module:
             entries: StaticVector[tuple[int, BasicBlock]] = StaticVector(capacity=len(all_blocks))
         else:
             entries = _allocate_loader_vector(
-                allocator, len(all_blocks), LOADER_BLOCK_INDEX_ENTRY_BYTES
+                allocator,
+                len(all_blocks),
+                LOADER_BLOCK_INDEX_ENTRY_BYTES,
+                StaticVector[tuple[int, BasicBlock]],
             )
         for block in all_blocks:
             entries.append((fold_mix32(block.head_pc), block))
@@ -764,7 +778,7 @@ def _read_init_offset(
     data: memoryview,
     off: int,
     end: int,
-    global_values: Sequence[int],
+    global_values: SequenceView[int],
     module: Module,
     expression_name: str,
     resolve_globals: bool,

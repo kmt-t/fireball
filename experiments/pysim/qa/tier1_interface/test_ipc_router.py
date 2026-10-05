@@ -8,6 +8,7 @@ Traceability: ipc_router_test_spec.md
 from collections.abc import Generator, Iterator
 from contextlib import contextmanager
 from pathlib import Path
+from typing import TypeVar
 
 import pytest
 from hypothesis import given
@@ -21,6 +22,7 @@ _REPO_ROOT = _PYSIM_DIR.parent.parent
 
 
 from ipc_router import (
+    FB_CONF_ROUTER_ROLE_MATRIX,
     DataType,
     IPCMessage,
     IPCRouter,
@@ -78,9 +80,12 @@ def _drive_task(sched: Scheduler, task: Task) -> Iterator[None]:
         yield
 
 
+IpcResultT = TypeVar("IpcResultT")
+
+
 def _run_immediate(
-    gen: Generator[tuple[ChannelAction, None], None, tuple[IPCStatus, IPCMessage | None]],
-) -> tuple[IPCStatus, IPCMessage | None]:
+    gen: Generator[tuple[ChannelAction, None], None, IpcResultT],
+) -> IpcResultT:
     """Return the final status of an IPC call that must complete without blocking."""
     try:
         next(gen)
@@ -151,7 +156,7 @@ def test_ipc_02_e2e_shared_block_transfer():
             assert recv_msg.sender_id == 2
             assert recv_msg.response_code == 0xFFFF_FFFF
             recv_msg.append(0x100, 0xCAFE)
-            assert sysv.ipc.reply(recv_msg, 0) == IPCStatus.COMPLETED
+            assert (yield from sysv.ipc.reply(recv_msg, 0)) == IPCStatus.COMPLETED
 
         sysv.scheduler.spawn("client_app", client_app_task(), task_id=2, role=Role.RUNTIME)
         sysv.scheduler.current_task = sysv.scheduler.get_task(2)
@@ -246,7 +251,7 @@ def test_send_preflight_rejection_preserves_shared_memory(rejection: str) -> Non
     assert denied_channel.waiter_task is None
     assert denied_channel.reply_sender_task is None
     assert denied_channel.reply_payload is None
-    assert denied_channel.reply_value is None
+    assert denied_channel.reply_sender_task is None
 
     # rollback を挟まず、同じメッセージを正規チャネルへ再送する。
     if rejection == "too_many_entries":
@@ -274,7 +279,7 @@ def test_ipc_04_select_recv_picks_first_ready_sender_and_clears_group():
         assert msg.sender_id > 0
         received.append((status, msg.sender_id, msg.get(1)))
         msg.append(2, 100)
-        assert router.reply(msg, 0x10) == IPCStatus.COMPLETED
+        assert (yield from router.reply(msg, 0x10)) == IPCStatus.COMPLETED
 
     def debugger_sender():
         status, ch = router.lookup("fireball://core/coos/0")
@@ -315,7 +320,7 @@ def test_ipc_04_select_recv_picks_first_ready_sender_and_clears_group():
     def core_receiver2():
         status, msg = yield from router.recv()
         received2.append((status, msg.get(1)))
-        assert router.reply(msg, 0) == IPCStatus.COMPLETED
+        assert (yield from router.reply(msg, 0)) == IPCStatus.COMPLETED
 
     def runtime_sender():
         status, ch = router.lookup("fireball://core/coos/0")
@@ -566,7 +571,7 @@ def test_ipc_07_message_in_shm_and_payload_shm_transfer():
         def hal_receiver():
             status, recv_msg = yield from sysv.ipc.recv()
             received.append(recv_msg)
-            assert sysv.ipc.reply(recv_msg, 0) == IPCStatus.COMPLETED
+            assert (yield from sysv.ipc.reply(recv_msg, 0)) == IPCStatus.COMPLETED
 
         sysv.scheduler.spawn(
             "hal_receiver", hal_receiver(), task_id=receiver_id, role=Role.HAL_GPIO
@@ -766,7 +771,7 @@ def test_request_reply_preserves_contents_and_transfers_exclusive_ownership(
     with _drive_task(sched, receiver):
         # pending の reply を拒否しても受信側の所有権と送信側の待機を保つ。
         with expect_assertion("receiver must set a response code"):
-            router.reply(msg)
+            _run_immediate(router.reply(msg))
         assert msg.ownership == OwnershipState.RECEIVER_OWNS
         assert msg.response_code == 0xFFFF_FFFF
         assert sender.state == TaskState.SUSPENDED_CSP
@@ -774,7 +779,7 @@ def test_request_reply_preserves_contents_and_transfers_exclusive_ownership(
         assert manager.page_registry.get_owner(payload.page_idx) == receiver_id
         if extend_reply:
             msg.append(0x100, 0xCAFE)
-        assert router.reply(msg, 0x23) == IPCStatus.COMPLETED
+        assert _run_immediate(router.reply(msg, 0x23)) == IPCStatus.COMPLETED
         with expect_assertion("inactive or in-flight"):
             received_block.read_u8(0)
         with expect_assertion():
@@ -801,8 +806,87 @@ def test_request_reply_preserves_contents_and_transfers_exclusive_ownership(
         assert manager.page_registry.get_owner(payload.page_idx) == sender_id
     assert channel.reply_sender_task is None
     assert channel.reply_payload is None
-    assert channel.reply_value is None
+    assert sender.received_val is None
     assert channel.reply_waiter_task is None
+
+
+@pytest.mark.parametrize("response_sender_first", (False, True))
+def test_reply_rendezvous_blocks_response_sender_until_receive(response_sender_first: bool) -> None:
+    """応答の両到達順で、成立前保持・Grant・COMPLETED境界を直接検査する。"""
+    sched = Scheduler()
+    router = _make_router(sched)
+    sender = sched.get_task(sched.spawn("sender", role=Role.RUNTIME))
+    receiver = sched.get_task(sched.spawn("receiver", role=Role.HAL_GPIO))
+    assert sender is not None and receiver is not None
+    with _drive_task(sched, sender):
+        status, channel = router.lookup("fireball://hal/gpio/0")
+        assert status == IPCStatus.COMPLETED and channel is not None
+        msg = make_test_ipc_message([(1, 101)], memory_manager=router.memory_manager)
+        send = router.send(channel, msg)
+        assert next(send) == (ChannelAction.BLOCK, None)
+    with _drive_task(sched, receiver):
+        assert _run_immediate(router.recv()) == (IPCStatus.COMPLETED, msg)
+        assert msg.ownership == OwnershipState.RECEIVER_OWNS
+        assert msg.response_code == 0xFFFF_FFFF
+        block = msg.block
+        assert block is not None
+        assert router.memory_manager.page_registry.get_owner(block.page_idx) == receiver.task_id
+    if not response_sender_first:
+        with _drive_task(sched, sender):
+            assert next(send) == (ChannelAction.BLOCK, None)
+        assert channel.reply_waiter_task is sender
+    with _drive_task(sched, receiver):
+        reply = router.reply(msg, 0x23)
+        if response_sender_first:
+            assert next(reply) == (ChannelAction.BLOCK, None)
+            assert receiver.state == TaskState.SUSPENDED_CSP
+            assert receiver.pending_val is msg
+            assert channel.waiter_task is receiver
+            assert channel.reply_waiter_task is None
+            assert sender.received_val is None
+            assert msg.ownership == OwnershipState.IN_FLIGHT
+            assert (
+                router.memory_manager.page_registry.get_owner(block.page_idx) == FB_TASK_ID_FLIGHT
+            )
+            with expect_assertion("IN_FLIGHT"):
+                msg.get(1)
+            with expect_assertion("inactive or in-flight"):
+                block.read_u8(0)
+            # A request receiver must not mistake the suspended response for
+            # the next request or overwrite the original authenticated sender.
+            with expect_assertion("pending response"):
+                sched.channel_recv(channel)
+            with expect_assertion("pending response"):
+                sched.channel_select_recv((channel,))
+            assert channel.reply_sender_task is sender
+            assert channel.waiter_task is receiver and receiver.pending_val is msg
+            assert msg.ownership == OwnershipState.IN_FLIGHT
+        else:
+            assert _run_immediate(reply) == IPCStatus.COMPLETED
+    with _drive_task(sched, sender):
+        assert _run_immediate(send) == (IPCStatus.COMPLETED, msg)
+        assert msg.ownership == OwnershipState.SENDER_OWNS
+        assert msg.response_code == 0x23
+        assert msg.get(1) == 101
+        assert router.memory_manager.page_registry.get_owner(block.page_idx) == sender.task_id
+    assert receiver.pending_val is None
+    assert channel.waiter_task is None and channel.waiter_dir == WaitDir.NONE
+    assert channel.reply_sender_task is None and channel.reply_payload is None
+    assert channel.reply_waiter_task is None
+    if response_sender_first:
+        assert receiver.state == TaskState.READY
+        with _drive_task(sched, receiver):
+            assert _run_immediate(reply) == IPCStatus.COMPLETED
+
+
+def test_router_role_matrix_is_immutable_after_build() -> None:
+    """ビルド時RBAC表のDENYセルは実行時に書き換えできない。"""
+    row = FB_CONF_ROUTER_ROLE_MATRIX[int(Role.RUNTIME)]
+    index = int(Role.DEBUGGER)
+    assert row[index] is False
+    with expect_assertion("frozen"):
+        row[index] = True
+    assert row[index] is False
 
 
 @pytest.mark.parametrize("request_received", (False, True), ids=("request_wait", "reply_wait"))
@@ -849,7 +933,7 @@ def test_second_send_cannot_overwrite_active_transaction(request_received: bool)
             assert next(send) == (ChannelAction.BLOCK, None)
     with _drive_task(sched, receiver):
         assert msg.get(1) == 101
-        assert router.reply(msg, 0) == IPCStatus.COMPLETED
+        assert _run_immediate(router.reply(msg, 0)) == IPCStatus.COMPLETED
     with _drive_task(sched, first):
         assert _run_immediate(send) == (IPCStatus.COMPLETED, msg)
     with _drive_task(sched, second):

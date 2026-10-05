@@ -3,6 +3,8 @@
 import math
 from typing import Literal
 
+BACKS = ["components/tier2_runtime/interpreter.md", "specs/wasm_instruction_set.md"]
+
 
 class WASMTrap(Exception):
     """A trap required by the WASM instruction semantics."""

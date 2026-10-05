@@ -216,7 +216,6 @@ def main():
         )
     else:
         print("  * JIT trace transitions:              runtime stats not collected")
-    print(f"  * Active JIT Cache Bank Traces:       {ao_res['compiled_traces']} compiled traces")
     print("=" * 80)
     print(f"[PASS] All benchmarks completed successfully in {t_total:.2f} seconds.")
 

@@ -711,7 +711,8 @@ def _analyze_control(state: _SelectAnalysisState, opcode: int, offset: int, oper
         default_type = state.pop_label(default_depth)
         for _ in range(label_count):
             depth, cursor = decode_unsigned(state.code, cursor)
-            assert state.pop_label(depth) == default_type, "br_table label types differ"
+            label_type = state.pop_label(depth)
+            assert label_type == default_type, "br_table label types differ"
         if default_type is not None:
             state.pop(default_type)
         state.mark_unreachable()

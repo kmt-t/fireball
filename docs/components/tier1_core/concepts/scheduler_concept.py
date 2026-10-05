@@ -16,6 +16,8 @@ from collections.abc import Generator
 from dataclasses import dataclass
 from enum import IntEnum
 
+BACKS = ["components/tier1_core/os_scheduler.md"]
+
 
 class TaskState(IntEnum):
     READY = 1

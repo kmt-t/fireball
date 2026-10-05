@@ -39,7 +39,7 @@ Copy-and-Patchエンジンによるネイティブコード生成、4論理引�
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | TEST-JITC-20 | x64ヘッダサイズは固定16バイト | x64向けに生成したトレース | ヘッダを解析 | `+0x00 chain_target_addr(u64)`, `+0x08 helper_target_addr(u64)`だけを含む16バイト構造 | [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) |
 | TEST-JITC-21 | 昇格状態を管理情報で保持する | OldestからActiveへ昇格するトレース | cache管理情報と物理ヘッダを確認する | 管理情報の `0x01: PROMOTED` が設定される。物理ヘッダへflags欄を追加しない | 同上 |
-| TEST-JITC-22 | x64エントリstubは16バイトヘッダ直後に配置 | x64向けに生成したトレース | 独立した機械語期待値、entry stubのbodyアドレスと共通prologueへの分岐先を比較し、生成コードを実行する | 16バイトヘッダ直後(+0x10)から15バイトのentry stubが始まり、bodyはその直後(+0x1F)から始まる。共通prologueの対象ABIの保存・引数配置と分岐先が一致し、入力5の計算結果は40である。ARMv8-Mの配置はTBD | [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md)、`test_python_trace_compiler_is_selected_per_instance` |
+| TEST-JITC-22 | x64エントリstubは16バイトヘッダ直後に配置 | x64向けに生成したトレース | 独立した機械語期待値、entry stubのbodyアドレスと共通prologueへの分岐先を比較し、生成コードを実行する | 16バイトヘッダ直後(+0x10)から15バイトのentry stubが始まり、bodyはその直後(+0x1F)から始まる。共通prologueの対象ABIの保存・引数配置と分岐先が一致し、入力5の計算結果は40である。ARMv8-Mの配置はTBD | [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md)、[`test_x64_jit.py`](experiments/pysim/qa/tier3_plugins/jit/test_x64_jit.py) `test_trace_compiler_cps_4arg_and_pic`、`test_native_common_prologue_preserves_nonzero_tos` |
 | TEST-JITC-23 | 管理情報を物理ヘッダへ複製しない | x64向けトレースを生成 | トレースヘッダを解析 | 先頭PC、コード長、flags、未使用のvariant欄を持たず、生成コードと共通コードが読む2つのtargetだけを持つ | [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md), `{JIT_RegisterMapping}` |
 
 ### ADR_ScalableCodeOffset
@@ -109,6 +109,8 @@ UV_CACHE_DIR=/tmp/fireball-test-design-uv uv run --offline --no-sync python -m p
 ```
 
 ## 4. 未検証・スコープ外
+
+- TEST-JITC-22は実行環境のABIに対するentry stubと共通prologueの機械語、bodyアドレス、分岐先を独立期待値と比較する。第4引数は3種の非ゼロ値をR9Dから共有localへ書き出して確認する。異なるホストABIの分岐は対応する環境での実行を要する。ARMv8-Mの物理配置はTBDとする。
 
 - ARMv8-Mの物理JIT仕様と実機検証はTBDであり、本書は受け入れ条件を定めない。
 - WindowsとLinux以外のOSにおける実権限の独立確認は未検証である。Linux専用の実権限試験は他OSで明示的にskipする。APIの状態検査だけでOS実権限の検証済みとは扱わない。

@@ -71,6 +71,10 @@ uv run pytest -q experiments/pysim/qa/tier3_platform/test_libfireball.py experim
 
 ## 4. 未検証・スコープ外
 
+形式モデルのvIRQ活性は、配送適格性の検査とFIFO受理が成立するイベントだけに適用する。
+未登録ノード、無効関数、シグネチャ不一致、FIFO容量超過による合法な拒否・ドロップの必達は主張しない。
+COOS協調境界へ到達しない実行の公平性と実時間の配送上限は対象外である。
+
 - TEST-WIT-10/14はWIT由来bindingの生成、静的archive経由のguestリンク、raw 4 importの実NativeInterpreter実行で検査する。Component ModelのCanonical ABI、WASI Preview1およびHAL loweringのguest統合は対象外である。
 - TEST-WIT-01〜05のリカバリー選択は`test_recovery.py`で検査する。対象サービスだけの再起動、全タスク停止、クラッシュダンプの実動作は同試験の合格だけでは検証済みとしない。
 

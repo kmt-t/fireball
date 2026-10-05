@@ -1,5 +1,6 @@
 # vSoC コンポーネント設計書 {VERIFY_FORMAL} {VERIFY_LLM}
 <!-- evidence:
+     implementation: experiments/pysim/tier2_runtime/runtime/engine.py
      formal: formal/vsoc_state_model.py
      formal: formal/vsoc_cache_coherency_model.py
      formal: ../../specs/formal/wasm_bulk_memory_model.py
@@ -292,7 +293,7 @@ stateDiagram-v2
 
 | 遷移 | トリガー | 条件 | アクション | 次状態 |
 | :--- | :--- | :--- | :--- | :--- |
-| Load → Ready | load_ok() | モジュール有効 | リンク完了、コンテキスト初期化 | Ready |
+| Loading → Ready | load_ok() | モジュール有効 | リンク完了、コンテキスト初期化 | Ready |
 | Ready → Executing | run() | 通常実行を開始 | C++ディスパッチへ状態を渡す | Executing |
 | Executing → Executing | handlerまたはtrace終了 | LOOPしきい値未到達、trap・完了なし | C++内で次PCの本体実行を拡張へ委譲する | Executing |
 | Executing → RuntimeBoundary | [count >= threshold] | 取得LOOP後方辺が共通しきい値に達した | C++ dispatcherがyield statusを返す | RuntimeBoundary |
@@ -597,6 +598,10 @@ Fireballでは、標準WASIのゲスト側アダプタを `libfireball` とし�
 - **方策**: JITコードへの境界チェック埋め込みと、vMMIOによる物理アクセスの制限を行う。物理アドレスアクセスの許可範囲は `FB_CONF_VMMIO_ALLOWED_ADDRS`（`{META_ConfigurableSystem}`）に `constexpr` 定義されたテーブルに基づき、vMMIOが検証する。
 
 ## 7. 形式検証・テスト仕様との対応
+
+独立コンセプト層は、検証因子・成果物マトリクスの責務判定に従って対象外とする。
+現行C++ dispatcherと共通chain dispatcherの実行経路は、参照実装の直接テストと形式モデルで確認する。
+この証拠からARMv8-Mの実機適合性を推定しない。
 
 ### 7.1 検証対象の不変条件
 

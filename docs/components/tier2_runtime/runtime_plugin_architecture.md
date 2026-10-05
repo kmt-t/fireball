@@ -72,7 +72,15 @@ graph TD
 | Runtime Event Sink | 意味上のRuntimeイベントを記録し、停止点でABIバッチを出力する | 固定長イベントリング | 観測無効構成ではSink、リング、発行経路を合成しない |
 | WASI | ゲスト呼出とホスト結果の変換境界 | Preview 1、Component Model、uvwasi 等 | WASI import を未対応として返す |
 
-構成は翻訳単位共通のマクロで切り替えず、`runtime_configuration<Interpreter, JitExtension, Debugger, Profiler, RuntimeEventSink>`の型で表す。Runtime Event SinkとJIT拡張は独立した型スロットで選択する。無効なスロットの型には`void`を指定し、`runtime_harness<Configuration>`は選択済みコンポーネントへの参照だけを保持する。`runtime_composer<Configuration>`はそのハーネスを値として保持する。Interpreter専用、Debugger/Profiler付きInterpreter、イベント有効・無効、JIT拡張有効・無効などの構成違いは同一プログラム内で別々にインスタンス化でき、各インスタンスの実行経路に構成選択分岐を置かない。
+構成は翻訳単位共通のマクロで切り替えない。
+`runtime_configuration<Interpreter, JitExtension, Debugger, Profiler, RuntimeEventSink>`の型で表す。
+Runtime Event SinkとJIT拡張は独立した型スロットで選択する。
+無効なスロットの型には`void`を指定する。
+`runtime_harness<Configuration>`は選択済みコンポーネントへの参照だけを保持する。
+`runtime_composer<Configuration>`はそのハーネスを値として保持する。
+構成にはInterpreter専用、Debugger/Profiler付きInterpreter、イベント有効・無効、JIT拡張有効・無効などがある。
+これらは同一プログラム内で別々にインスタンス化できる。
+各インスタンスの実行経路に構成選択分岐を置かない。
 
 ## 4. 動的モデル
 

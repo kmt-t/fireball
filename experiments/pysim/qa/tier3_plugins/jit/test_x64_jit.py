@@ -27,9 +27,14 @@ Verifies:
 
 import ctypes
 import struct
+import sys
 
-from config import JIT_X64_TRACE_HEADER_BYTES
-from qa.shared.common_code import COMMON_CHAIN_DISPATCH_OFFSET
+from config import (
+    JIT_CACHE_ACTIVE_OFFSET_BYTES,
+    JIT_TRACE_COMMON_PROLOGUE_OFFSET,
+    JIT_X64_TRACE_HEADER_BYTES,
+)
+from qa.shared.common_code import COMMON_CHAIN_DISPATCH_OFFSET, JITCodeCacheRegion
 from qa.shared.helpers import make_native_interpreter as Interpreter
 from qa.shared.helpers import wat_to_wasm
 from qa.shared.jit_cache import JITTrace
@@ -234,7 +239,7 @@ def test_complex_helpers_use_shared_value_slots_for_wide_values():
 
 
 def test_trace_compiler_cps_4arg_and_pic():
-    """TEST-JITC-01: TraceCompiler emits a header-routed CPS trace."""
+    """TEST-JITC-01/22: Verify the physical entry ABI and execute a CPS trace."""
     compiler = TraceCompiler()
     # Block: local[1] = (local[0] + 10) * 3 - 5 -- real WASM bytecode, run through
     # The test prepares the same loader metadata passed by the runtime.
@@ -266,7 +271,28 @@ def test_trace_compiler_cps_4arg_and_pic():
     trace = compile_test_block(compiler, code, block, (I32, I32))
     # 1. Header and common-area offsets
     assert trace.head_pc == head_pc
-    assert trace.size_bytes >= 16
+    assert trace.size_bytes > 31
+    assert trace.raw_addr is not None and trace.code_offset is not None
+    header_address = trace.raw_addr - 16
+    body_address = header_address + 31
+    region_address = header_address - trace.code_offset
+    entry_stub = ctypes.string_at(header_address + 16, 15)
+    # Independent x64 encodings: movabs rax, body; jmp rel32 common prologue.
+    assert entry_stub[:2] == bytes.fromhex("48 b8")
+    assert int.from_bytes(entry_stub[2:10], "little") == body_address
+    assert entry_stub[10] == 0xE9
+    branch_target = header_address + 31 + int.from_bytes(entry_stub[11:15], "little", signed=True)
+    assert branch_target == region_address + JIT_TRACE_COMMON_PROLOGUE_OFFSET
+    saved_registers = bytes.fromhex("53 41 54 41 55 41 56 41 57")
+    if sys.platform == "win32":
+        # Save RDI; retain the stack pointer; R8->R10, RDX->R12, RCX->R13.
+        argument_moves = bytes.fromhex("57 48 89 e7 4d 89 c2 49 89 d4 49 89 cd")
+    else:
+        # Save RBP; retain the stack pointer; RDX->R10, RSI->R12, RDI->R13, ECX->R9D.
+        argument_moves = bytes.fromhex("55 48 89 e5 49 89 d2 49 89 f4 49 89 fd 41 89 c9")
+    # RAX carries body; R14 must retain its header, then execution jumps to body.
+    expected_prologue = saved_registers + argument_moves + bytes.fromhex("4c 8d 70 e1 ff e0")
+    assert ctypes.string_at(branch_target, len(expected_prologue)) == expected_prologue
     # 2. Direct call via CPS 4-argument C function pointer fn(ctx, sp, local_base, tos)
     locals_arr = (ctypes.c_uint32 * 8)()
     locals_arr[0] = 5
@@ -279,6 +305,29 @@ def test_trace_compiler_cps_4arg_and_pic():
     assert res is None
     # Two i32 locals give a 4-byte slot stride, so local 1 is raw word 1.
     assert locals_arr[1] == 40
+
+
+def test_native_common_prologue_preserves_nonzero_tos() -> None:
+    """TEST-JITC-22: Observe the fourth ABI argument in the physical R9D register."""
+    region = JITCodeCacheRegion()
+    # Independent ABI probe: a 16-byte header, 15-byte entry stub, then
+    # mov [r10], r9d; jmp common epilogue. No compiler register allocation is used.
+    blob = bytes(16) + bytes.fromhex("48 b8") + bytes(8) + b"\xe9" + bytes(4)
+    blob += bytes.fromhex("45 89 0a e9") + bytes(4)
+    fn, _ = region.install_trace(
+        JIT_CACHE_ACTIVE_OFFSET_BYTES,
+        blob,
+        entry_body_patch_offset=18,
+        entry_prologue_patch_offset=27,
+        exit_patch_offset=35,
+        helper_header_patch_offset=-1,
+        helper_exit_patch_offset=-1,
+    )
+    observed = (ctypes.c_uint32 * 1)()
+    for expected in (0x1234_5678, 0x8000_0001, 0xFFFF_FFFF):
+        observed[0] = 0
+        fn(ctypes.c_void_p(0), ctypes.c_void_p(0), ctypes.cast(observed, ctypes.c_void_p), expected)
+        assert observed[0] == expected
 
 
 def test_x64_division_and_remainder_use_helper_boundary() -> None:

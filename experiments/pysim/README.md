@@ -206,13 +206,16 @@ WindowsのVisual Studio developer shellでは`native/tier1_core/printk/build_nat
 # ペアワイズ結合テストと12シナリオを実行
 uv run --offline --no-sync python experiments/pysim/qa/integration/run_all.py
 
-# Python 最適化モード（assert 副作用の回帰検査）
-uv run --offline --no-sync python -O experiments/pysim/qa/run_all.py
-uv run --offline --no-sync python -O experiments/pysim/qa/integration/run_all.py
+# 通常・-O・-OOの子プロセスで正常操作の結果と状態を比較する
+uv run --offline --no-sync python -m pytest -q experiments/pysim/qa/cross_cutting/test_entrypoint.py -k "optimized or runner"
 
 # 製品Tierの静的型検査
 uv run --offline --no-sync pyright --project pyrightconfig.json
 ```
+
+最適化回帰では合法なWASMの算術・JIT結果、READY登録、PTE、PC頻度、値スタック解放を直接比較する。
+通常の単体・結合試験は、assertによる不正入力拒否の契約も検査する。
+runnerへ`-O`を指定した場合は子プロセスにも伝播するが、拒否を期待する負例は同じ意味を持たない。
 
 ### 全単体テストの実行
 ```bash

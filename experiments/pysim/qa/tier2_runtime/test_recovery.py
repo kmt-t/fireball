@@ -163,7 +163,8 @@ def test_recovery_04_errorcode_to_strategy_mapping():
     assert not failure.is_ok
     assert failure.value is None
     assert failure.error == "failed"
-    assert failure.unwrap() is None
+    with pytest.raises(AssertionError, match="failed Result"):
+        failure.unwrap()
 
 
 def test_recovery_05_ignore_returns_original_result_without_recovery_actions():
@@ -254,6 +255,24 @@ def test_recovery_07_unrecoverable_restart_escalates_to_panic_once(reset_succeed
     assert len(panic_messages) == (0 if reset_succeeds else 1)
     assert mgr.total_restarts == 1
     assert mgr.total_panics == (0 if reset_succeeds else 1)
+
+
+def test_recovery_result_without_success_value_fails_fast() -> None:
+    result: Result[int, str] = Result(is_ok=True)
+    with pytest.raises(AssertionError, match="without a value"):
+        result.unwrap()
+
+
+def test_recovery_panic_preserves_concrete_error_value() -> None:
+    manager = RecoveryManager(sleep_fn=lambda _seconds: None)
+
+    def operation() -> Result[int, int]:
+        return Result.err(37, RecoveryStrategy.RETRY)
+
+    result = manager.execute_with_recovery(operation, task_reset_fn=lambda: False)
+    assert result.strategy == RecoveryStrategy.PANIC
+    assert result.error == 37
+    assert result.value is None
 
 
 if __name__ == "__main__":

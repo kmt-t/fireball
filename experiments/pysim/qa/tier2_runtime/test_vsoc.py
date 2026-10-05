@@ -1105,5 +1105,29 @@ def test_linear_memory_copy_uses_cpu_memmove(source: int, destination: int, coun
         system.shutdown()
 
 
+def test_virq_reject_record_capacity_fails_before_silent_drop() -> None:
+    """有効な原因源のREJECT診断が固定容量を超える場合は即時停止する。"""
+    dispatcher = VirqDispatcher(_make_virq_module(), lambda _index, _v, _s, _c, _p0, _p1: 2)
+    registration = dispatcher.register_dispatcher(int(VirqNode.ROOT), 0)
+    assert registration.is_ok
+    dispatcher.commit_pending_registrations()
+    for _ in range(len(dispatcher.active_functions)):
+        result = dispatcher.dispatch_interrupt_event(_virq_event(0x1000))
+        assert result.outcome == VirqDispatchResult.REJECT
+        assert result.error == VirqFaultCode.ROOT_REJECT
+    before = dispatcher.faults
+    assert before == (VirqFaultCode.ROOT_REJECT,) * len(dispatcher.active_functions)
+    with expect_assertion("fault record capacity"):
+        dispatcher.dispatch_interrupt_event(_virq_event(0x1000))
+    assert dispatcher.faults == before
+
+
+def test_virq_unavailable_result_keeps_enum_error_contract() -> None:
+    """未ロード状態の結果も既存の具象フォールト型で表現する。"""
+    result = RuntimeEngine().dispatch_interrupt_event(_virq_event(0x1000))
+    assert result.outcome == VirqDispatchResult.REJECT
+    assert result.error == VirqFaultCode.UNREGISTERED_SOURCE
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__]))

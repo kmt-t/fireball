@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import struct
-from collections.abc import Iterator, Sequence
+from collections.abc import Iterator
 from dataclasses import dataclass
 from enum import IntEnum, IntFlag
 from typing import Protocol
 
-from system_containers import StaticVector
+from system_containers import SequenceView, StaticVector
 
 RUNTIME_EVENT_NO_MODULE: int = 0xFFFF_FFFF
 RUNTIME_EVENT_NO_PC: int = 0xFFFF_FFFF
@@ -98,7 +98,7 @@ class RuntimeEventBatch:
     """ABI Adapterが生成するPython側のイベントバッチ。"""
 
     runtime_id: int
-    records: Sequence[RuntimeEvent]
+    records: SequenceView[RuntimeEvent]
     dropped_count: int
     clock_frequency_hz: int
     clock_domain: int

@@ -19,8 +19,8 @@ logger is internal-only).
 
 from __future__ import annotations
 
-from collections.abc import Generator, Mapping, Sequence
-from typing import TYPE_CHECKING
+from collections.abc import Generator, Mapping
+from typing import TYPE_CHECKING, cast
 
 from ipc_router import (
     FB_CONF_ROUTER_MAX_KV_PAIRS,
@@ -45,15 +45,20 @@ if TYPE_CHECKING:
     from tier2_runtime.hal.dispatch import HalDriver, HalTask
     from tier2_runtime.interpreter.execution_context import DebugExecutionView
     from tier2_runtime.interpreter.interpreter import (
-        BasicBlock,
         NativeInterpreter,
         WasmNumber,
     )
+    from tier2_runtime.wasm.module import BasicBlock
     from tier3_plugins.debugger.debugger import DebuggerManager
     from tier3_plugins.debugger.gdb_server import GDBServer
 
 from scheduler import FB_CONF_MAX_TASKS, Channel, ChannelAction, Scheduler, Task, TaskState
-from system_containers import MutableFlatMapStorage, ReadOnlyFlatMapStorage, StaticVector
+from system_containers import (
+    MutableFlatMapStorage,
+    ReadOnlyFlatMapStorage,
+    SequenceView,
+    StaticVector,
+)
 from tier1_core.fnv1a import fnv1a_32
 from tier2_runtime.memory.manager import (
     FB_CONF_MEMORY_POOL_SIZE,
@@ -65,6 +70,7 @@ from tier2_runtime.vmmio.controller import (
     FC_DYNAMIC,
     FC_SHM,
     FC_STATIC_DEVICE,
+    Tier3PTE,
     TrapCode,
     VmmioAddress,
     VMMIOController,
@@ -272,7 +278,7 @@ class System:
                 lambda a0, a1, a2, a3, a4, a5: int(self._wasi_random_get(a0, a1)),
             ),
         )
-        syscall_entries = sorted(syscall_entries, key=lambda x: int(x[0]))
+        # The fixed syscall table is declared in ascending ID order.
         syscall_handlers: ReadOnlyFlatMapStorage[int, SyscallHandler] = (
             ReadOnlyFlatMapStorage.create(syscall_entries)
         )
@@ -302,7 +308,7 @@ class System:
         self,
         interp: NativeInterpreter,
         func_index: int,
-        args: Sequence[WasmNumber],
+        args: SequenceView[WasmNumber],
         idle_budget: int = 4,
     ) -> Generator[tuple[ChannelAction, None], None, StaticVector[WasmNumber]]:
         """Drive one shared runtime boundary at a time and own COOS handoffs."""
@@ -391,11 +397,13 @@ class System:
     def _read_guest(self, offset: int, length: int) -> bytes | None:
         if not self._guest_ram_ok(offset, length):
             return None
+        assert self._guest_memory is not None
         return bytes(self._guest_memory[offset : offset + length])
 
     def _write_guest(self, offset: int, data: bytes) -> bool:
         if not self._guest_ram_ok(offset, len(data)):
             return False
+        assert self._guest_memory is not None
         self._guest_memory[offset : offset + len(data)] = data
         return True
 
@@ -459,6 +467,8 @@ class System:
         # Resolve the permitted DYNAMIC buffer or SHM/PASSTHROUGH backing.
         pte = self.vmmio.ptes.view().find(a.vpn())
         assert pte is not None
+        # FC decoding selects the registered physical-mapping PTE shape.
+        pte = cast(Tier3PTE, pte)
         if a.fc() == FC_DYNAMIC:
             handle = self.pool.buffer(pte.phys_page)
             if not self.pool.can_view(handle, a.offset(), access_size):
@@ -489,6 +499,7 @@ class System:
         errno, backing, off = self._mmio_touch(addr, is_write=True, access_size=width)
         if errno is not None:
             return errno
+        assert backing is not None and off is not None
         if off + width > len(backing):
             return WasiErrno.FAULT
         backing[off : off + width] = (value & ((1 << (8 * width)) - 1)).to_bytes(width, "little")
@@ -500,6 +511,7 @@ class System:
         errno, backing, off = self._mmio_touch(addr, is_write=False, access_size=byte_count)
         if errno is not None:
             return errno
+        assert backing is not None and off is not None
         if off + byte_count > len(backing):
             return WasiErrno.FAULT
         if not self._write_guest(dest_offset, bytes(backing[off : off + byte_count])):
@@ -513,6 +525,7 @@ class System:
         errno, backing, off = self._mmio_touch(addr, is_write=True, access_size=byte_count)
         if errno is not None:
             return errno
+        assert backing is not None and off is not None
         if off + byte_count > len(backing):
             return WasiErrno.FAULT
         backing[off : off + byte_count] = data
@@ -533,11 +546,10 @@ class System:
 
         a = VmmioAddress(addr)
         if a.is_linear():
-            return (
-                (memoryview(self._guest_memory), addr)
-                if self._guest_ram_ok(addr, count)
-                else (None, None)
-            )
+            if not self._guest_ram_ok(addr, count):
+                return None, None
+            assert self._guest_memory is not None
+            return memoryview(self._guest_memory), addr
         errno, backing, off = self._mmio_touch(addr, is_write, access_size=count)
         if errno is not None or backing is None or off is None or off + count > len(backing):
             return None, None
@@ -545,10 +557,10 @@ class System:
 
     def _run_vdma(self, src: int, dst: int, count: int) -> WasiErrno:
         src_backing, src_off = self._vdma_region(src, count, is_write=False)
-        if src_backing is None:
+        if src_backing is None or src_off is None:
             return WasiErrno.FAULT
         dst_backing, dst_off = self._vdma_region(dst, count, is_write=True)
-        if dst_backing is None:
+        if dst_backing is None or dst_off is None:
             return WasiErrno.FAULT
         dst_backing[dst_off : dst_off + count] = bytes(src_backing[src_off : src_off + count])
         return WasiErrno.SUCCESS
@@ -581,7 +593,8 @@ class System:
         if not self._channel_table.push_back(channel):
             return WasiErrno.NOMEM
         handle_id = len(self._channel_table)
-        assert self._write_guest(handle_out_ptr, handle_id.to_bytes(4, "little"))
+        written = self._write_guest(handle_out_ptr, handle_id.to_bytes(4, "little"))
+        assert written
         return WasiErrno.SUCCESS
 
     def _ipc_send(
@@ -693,7 +706,8 @@ class System:
         n = len(data)
         if not self._write_guest(buf_offset, data):
             return WasiErrno.FAULT
-        assert self._write_guest(recv_len_out_ptr, n.to_bytes(4, "little"))
+        written = self._write_guest(recv_len_out_ptr, n.to_bytes(4, "little"))
+        assert written
         task.pending_reply = msg
         return WasiErrno.SUCCESS
 
@@ -704,7 +718,23 @@ class System:
         pending = task.pending_reply
         if pending is None:
             return WasiErrno.INVAL
-        status = self.ipc.reply(pending, response_code)
+        reply = self.ipc.reply(cast(IPCMessage, pending), response_code)
+        try:
+            next(reply)
+            task.result = None
+            previous_coro = task.coro
+            task.coro = reply
+            if task.state == TaskState.READY:
+                self.scheduler.attach(task)
+            while task.result is None and task.coro is reply:
+                self.scheduler.step()
+            status = task.result
+            task.result = None
+            task.coro = previous_coro
+            task.state = TaskState.READY
+            self.scheduler.current_task = task
+        except StopIteration as completed:
+            status = completed.value
         task.pending_reply = None
         self.scheduler.run_until_idle()
         return WasiErrno.SUCCESS if status == IPCStatus.COMPLETED else WasiErrno.IO
@@ -751,7 +781,8 @@ class System:
         task_id, task = driver.start(
             self.ipc, self.scheduler, desc.role, self.ipc.lookup_service_handle(uri)
         )
-        assert self._hal_task_storage.insert(uri_key, task)
+        inserted = self._hal_task_storage.insert(uri_key, task)
+        assert inserted
         return task_id
 
     def hal_task_for(self, uri: str) -> HalTask | None:
@@ -761,8 +792,8 @@ class System:
     def spawn_gdbserver_task(
         self,
         dbg: DebuggerManager,
+        ctx: DebugExecutionView,
         start_pc: int = 0,
-        ctx: DebugExecutionView | None = None,
         blocks: Mapping[int, BasicBlock] | None = None,
         host: str = "127.0.0.1",
         port: int = 0,
@@ -786,7 +817,7 @@ class System:
             gdb_srv.run_task(
                 start_pc,
                 ctx,
-                blocks or MutableFlatMapStorage[int, BasicBlock](capacity=0),
+                blocks,
             ),
         )
         self._gdb_task_id = task_id

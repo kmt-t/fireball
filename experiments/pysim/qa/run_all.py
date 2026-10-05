@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import ast
 import os
-import subprocess
 import sys
 import time
 from collections.abc import Sequence
@@ -23,6 +22,10 @@ from pathlib import Path
 TEST_DIR = Path(__file__).resolve().parent
 PYSIM_ROOT = TEST_DIR.parent
 REPO_ROOT = PYSIM_ROOT.parent.parent
+if str(PYSIM_ROOT) not in sys.path:
+    sys.path.insert(0, str(PYSIM_ROOT))
+
+from qa.shared.execution import run_python
 
 # Ordered test suites reflecting the architecture dependency layers
 TEST_SUITES = [
@@ -188,6 +191,7 @@ def assert_registered_test_modules(test_dir: Path, registered: Sequence[Path]) -
 def run_all_tests():
     assert_registered_test_modules(TEST_DIR, tuple(path for _, _, path in TEST_SUITES))
     print("=" * 84)
+    print(f"Python optimization level (parent and children): {sys.flags.optimize}")
     print("             Fireball pysim Component Unit Test Suite (Tier 1 -> 3)              ")
     print("=" * 84)
     total_start = time.perf_counter()
@@ -208,12 +212,11 @@ def run_all_tests():
             print("-" * 84)
 
         t0 = time.perf_counter()
-        res = subprocess.run(
-            [sys.executable, "-m", "pytest", "-q", str(script_path), "-s"],
+        res = run_python(
+            ["-m", "pytest", "-q", str(script_path), "-s"],
             capture_output=True,
-            text=True,
-            cwd=str(REPO_ROOT),
-            env=test_env,
+            cwd=REPO_ROOT,
+            environment=test_env,
         )
         t1 = time.perf_counter()
         elapsed_ms = (t1 - t0) * 1000

@@ -9,7 +9,9 @@ Run with:  uv run --project ../.. python main.py     (from this directory)
 
 from __future__ import annotations
 
+from collections.abc import Generator
 from pathlib import Path
+from typing import cast
 
 _PYSIM_DIR = Path(__file__).resolve().parent
 while not (_PYSIM_DIR / "tier1_core").is_dir():
@@ -21,6 +23,7 @@ import mmap
 from bump_allocator import BumpAllocator
 from system import System
 from system_containers import StaticVector
+from tier2_runtime.hal.dispatch import HalBufferHandle
 from tier2_runtime.interpreter.interpreter import InterpreterBindings, NativeInterpreter
 from tier2_runtime.observability.logger import LogDictionary, LogLevel
 from tier2_runtime.runtime.engine import RuntimeEngine
@@ -32,7 +35,7 @@ from tier3_plugins.jit.jit_manager import JITRuntimeManager
 findings: StaticVector[str] = StaticVector(capacity=8)
 
 
-def task_structured_logger(sysv: System):
+def task_structured_logger(sysv: System) -> Generator[None, None, None]:
     """
     A guest that only ever needs pre-registered, numeric-argument events:
         exactly what {DictionaryBasedIPC} can carry.
@@ -43,7 +46,7 @@ def task_structured_logger(sysv: System):
     yield
 
 
-def task_console_writer(sysv: System):
+def task_console_writer(sysv: System) -> Generator[None, None, None]:
     """
     A guest running wasi:cli/stdout's `print` with a string built at
         runtime -- a value the build-time dictionary could never have known
@@ -56,7 +59,7 @@ def task_console_writer(sysv: System):
     yield
 
 
-def task_bus_owner(sysv: System):
+def task_bus_owner(sysv: System) -> Generator[None, None, HalBufferHandle]:
     """
     Maps one HAL buffer at a time, moves bytes between two fixed slots, and
         checks that a slice past the slot bound is refused.
@@ -64,12 +67,14 @@ def task_bus_owner(sysv: System):
 
     tx = sysv.pool.buffer(0)
     rx = sysv.pool.buffer(1)
-    assert sysv.pool.map_for_io(tx.buffer_id).name == "MAPPED"
+    map_state = sysv.pool.map_for_io(tx.buffer_id)
+    assert map_state.name == "MAPPED"
     tx_view = sysv.pool.view(tx, 0, 8)
     tx_view[:8] = b"HELLOHAL"
     payload = bytes(tx_view)
     sysv.pool.unmap_after_io(tx.buffer_id)
-    assert sysv.pool.map_for_io(rx.buffer_id).name == "MAPPED"
+    map_state = sysv.pool.map_for_io(rx.buffer_id)
+    assert map_state.name == "MAPPED"
     rx_view = sysv.pool.view(rx, 0, 8)
     rx_view[:8] = payload
     print(f"  [bus-owner] copied between pool slots: {bytes(rx_view)!r}")
@@ -84,7 +89,9 @@ def task_bus_owner(sysv: System):
     return tx
 
 
-def task_hostile_neighbor(sysv: System, other_handle):
+def task_hostile_neighbor(
+    sysv: System, other_handle: HalBufferHandle
+) -> Generator[None, None, None]:
     """
     A different task trying to view someone else's HAL buffer slot -- the
         direct experiment for "can a guest use a buffer it does not own?"
@@ -102,7 +109,7 @@ def task_hostile_neighbor(sysv: System, other_handle):
     yield
 
 
-def task_retry_then_succeed(sysv: System):
+def task_retry_then_succeed(sysv: System) -> Generator[None, None, None]:
     """
     RETRY strategy: fails twice, then succeeds on the 3rd attempt --
         managed cleanly by RecoveryManager without exceptions.
@@ -124,7 +131,7 @@ def task_retry_then_succeed(sysv: System):
     yield
 
 
-def task_retry_exhausted(sysv: System):
+def task_retry_exhausted(sysv: System) -> Generator[None, None, None]:
     """
     An operation that never succeeds: proves the concept's answer to the
         "what happens after 3 failures" gap (escalate to RESTART -> PANIC)
@@ -176,7 +183,7 @@ def demo_wasmjit_hybrid_execution(sysv: System) -> None:
         5. WASM guest invokes standard WASI Preview 1 host calls (fd_write) and fireball_call IPC.
     """
     print("\n== wasmjit: Tiered Tracing JIT & Interpreter Hybrid Execution ==")
-    mod = parse(FACTORIAL_WASM)
+    mod = parse(memoryview(FACTORIAL_WASM))
     allocator = BumpAllocator()
     interp = NativeInterpreter(mod, InterpreterBindings.empty(), bump_allocator=allocator)
 
@@ -221,7 +228,7 @@ def main() -> None:
     # neighbor now that a real handle exists to attack.
     owner = sched.get_task(owner_id)
     assert owner is not None and owner.result is not None
-    tx_handle = owner.result
+    tx_handle = cast(HalBufferHandle, owner.result)
     print("\n== pysim: a second task attacks the first task's SHM handle ==")
     sched.spawn("hostile-neighbor", task_hostile_neighbor(sysv, other_handle=tx_handle))
 

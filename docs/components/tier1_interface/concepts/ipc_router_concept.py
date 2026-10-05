@@ -16,6 +16,8 @@ from enum import IntEnum
 
 from docs.components.tier1_core.concepts.flat_view_concept import FlatMapView
 
+BACKS = ["components/tier1_interface/ipc_router.md"]
+
 _EMPTY_ENTRIES: list[tuple[int, int]] = []
 IPC_RESPONSE_PENDING = 0xFFFF_FFFF
 
@@ -439,6 +441,7 @@ if __name__ == "__main__":
     test_registry_is_a_real_flat_map_view_not_a_dict()
     test_unregistered_uri_is_rejected()
     test_permission_denied()
+    test_same_role_uri_instances_use_distinct_channels()
     test_successful_zero_copy_handoff()
     test_receive_selects_whichever_allowed_sender_is_ready()
     test_no_queue_full_state_exists()

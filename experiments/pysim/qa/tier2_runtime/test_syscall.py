@@ -31,7 +31,7 @@ from ipc_router import (
 from qa.shared.fixtures.platform_drivers import create_reference_platform_drivers
 from qa.shared.fixtures.uvwasi_reference import UvwasiReferenceContext
 from qa.shared.helpers import make_native_interpreter, wat_to_wasm
-from scheduler import TaskState
+from scheduler import ChannelAction, TaskState
 from system import (
     FB_CONF_GUEST_RAM_SIZE,
     FB_CONF_VSOC_PASSTHROUGH_BASE,
@@ -760,7 +760,7 @@ def test_syscall_06_ipc_lookup_send_recv():
         def hal_receiver():
             status, msg = yield from sysv.ipc.recv()
             sent.append(msg)
-            assert sysv.ipc.reply(msg, 0) == IPCStatus.COMPLETED
+            assert (yield from sysv.ipc.reply(msg, 0)) == IPCStatus.COMPLETED
 
         recv_id = sysv.scheduler.spawn("hal_receiver", hal_receiver(), role=Role.HAL_GPIO)
         sysv.scheduler.run_until_idle()
@@ -884,6 +884,64 @@ def test_syscall_50_overlapping_recv_outputs_reject_without_consuming_sender(
         assert completed == []
         assert sysv.fireball_call(FbSyscallId.IPC_REPLY, 0, 0, 0, 0, 0, 0) == WasiErrno.SUCCESS
         assert completed == [IPCStatus.COMPLETED]
+    finally:
+        sysv.shutdown()
+
+
+@pytest.mark.parametrize("response_sender_first", (False, True))
+def test_ipc_reply_host_call_drives_both_response_arrival_orders(
+    response_sender_first: bool,
+) -> None:
+    """IPC_REPLY waits for response Grant and restores the caller's coroutine."""
+    sysv = System()
+    receiver = sysv.start_runtime_task(name="core_receiver", role=Role.CORE_SERVICE)
+    sender_id = sysv.scheduler.spawn("debugger_sender", role=Role.DEBUGGER)
+    sender = sysv.scheduler.get_task(sender_id)
+    assert sender is not None
+    sysv.scheduler.detach(sender)
+    try:
+        with sysv.scheduler.task_context(sender):
+            status, channel = sysv.ipc.lookup("fireball://core/coos/0")
+            assert status == IPCStatus.COMPLETED and channel is not None
+            message = IPCMessage.from_entries(((1, 117),), memory_manager=sysv.memory_manager)
+            request = sysv.ipc.send(channel, message)
+            assert next(request) == (ChannelAction.BLOCK, None)
+            sender.coro = request
+        with sysv.scheduler.task_context(receiver):
+            receive = sysv.ipc.recv()
+            with pytest.raises(StopIteration) as received:
+                next(receive)
+            assert received.value.value == (IPCStatus.COMPLETED, message)
+            assert message.ownership == OwnershipState.RECEIVER_OWNS
+            assert message.response_code == 0xFFFF_FFFF
+            receiver.pending_reply = message
+        if not response_sender_first:
+            sysv.scheduler.detach(sender)
+            with sysv.scheduler.task_context(sender):
+                assert next(request) == (ChannelAction.BLOCK, None)
+            assert channel.reply_waiter_task is sender
+        caller_executions: list[bool] = []
+
+        def caller_continuation():
+            caller_executions.append(True)
+            yield None
+
+        caller_coroutine = caller_continuation()
+        receiver.coro = caller_coroutine
+        with sysv.scheduler.task_context(receiver):
+            assert (
+                sysv.fireball_call(FbSyscallId.IPC_REPLY, 0, 0x23, 0, 0, 0, 0) == WasiErrno.SUCCESS
+            )
+        assert receiver.coro is caller_coroutine
+        assert caller_executions == []
+        assert receiver.pending_reply is None and receiver.result is None
+        assert sender.result == (IPCStatus.COMPLETED, message)
+        assert message.ownership == OwnershipState.SENDER_OWNS
+        assert message.response_code == 0x23
+        assert channel.reply_sender_task is None and channel.reply_payload is None
+        assert channel.waiter_task is None and channel.reply_waiter_task is None
+        with sysv.scheduler.task_context(sender):
+            assert message.get(1) == 117
     finally:
         sysv.shutdown()
 

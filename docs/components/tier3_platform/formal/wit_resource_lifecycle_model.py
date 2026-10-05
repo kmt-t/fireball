@@ -7,7 +7,13 @@ BACKS = ["components/tier3_platform/interface_wit.md"]
 
 
 def build_model(*, guards: bool = True) -> Kripke:
-    """Model independent pollable and virtual-interrupt delivery paths."""
+    """Model poll readiness and eligible, accepted virtual-interrupt delivery.
+
+    Accepted interrupts pass registration/signature checks and FIFO admission.
+    Progress assumes a cooperative COOS boundary is reached. Invalid delivery
+    requests may be dropped; neither FIFO overflow nor uncooperative tasks have
+    a delivery guarantee in this abstraction.
+    """
     states = [
         "s_idle",
         "s_resource_active",
@@ -20,6 +26,8 @@ def build_model(*, guards: bool = True) -> Kripke:
         "s_pollable_ready",
         "s_interrupt_triggered",
         "s_interrupt_queued",
+        "s_interrupt_rejected",
+        "s_rejected_delivered",
         "s_coos_boundary",
         "s_virq_delivered",
         "s_op_performed_on_dropped",
@@ -43,6 +51,9 @@ def build_model(*, guards: bool = True) -> Kripke:
         # vIRQ follows ISR -> COOS FIFO -> cooperative boundary -> vSoC.
         ("s_idle", "s_interrupt_triggered"),
         ("s_interrupt_triggered", "s_interrupt_queued"),
+        ("s_interrupt_triggered", "s_interrupt_rejected"),
+        ("s_interrupt_rejected", "s_idle"),
+        ("s_rejected_delivered", "s_rejected_delivered"),
         ("s_interrupt_queued", "s_coos_boundary"),
         ("s_coos_boundary", "s_virq_delivered"),
         ("s_virq_delivered", "s_idle"),
@@ -55,7 +66,8 @@ def build_model(*, guards: bool = True) -> Kripke:
         # Drop guard removal permits a use-after-unmap operation.
         transitions.append(("s_op_call_on_dropped", "s_op_performed_on_dropped"))
         # Missing queue delivery loses a triggered interrupt.
-        transitions.append(("s_interrupt_triggered", "s_notification_lost"))
+        transitions.append(("s_interrupt_queued", "s_notification_lost"))
+        transitions.append(("s_interrupt_rejected", "s_rejected_delivered"))
         # A broken routing guard conflates vIRQ delivery with WASI pollable readiness.
         transitions.append(("s_interrupt_triggered", "s_interrupt_as_pollable"))
 
@@ -70,7 +82,9 @@ def build_model(*, guards: bool = True) -> Kripke:
         "s_operation_pending": {"operation_pending"},
         "s_pollable_ready": {"pollable_ready"},
         "s_interrupt_triggered": {"interrupt_triggered"},
-        "s_interrupt_queued": {"interrupt_queued"},
+        "s_interrupt_queued": {"interrupt_queued", "accepted_interrupt"},
+        "s_interrupt_rejected": {"rejected_interrupt"},
+        "s_rejected_delivered": {"rejected_interrupt_delivered"},
         "s_coos_boundary": {"coos_boundary"},
         "s_virq_delivered": {"virq_delivered"},
         "s_op_performed_on_dropped": {"op_on_dropped"},
@@ -91,16 +105,24 @@ def properties():
             "expect": True,
         },
         {
-            "name": "triggered_interrupt_reaches_virq_after_coos_boundary",
+            "name": "accepted_interrupt_reaches_virq_after_coos_boundary",
             "kind": "liveness",
             "logic": "CTL",
             "formula": AG(
                 Imply(
-                    AtomicProposition("interrupt_triggered"),
+                    AtomicProposition("accepted_interrupt"),
                     AF(AtomicProposition("virq_delivered")),
                 )
             ),
             "violation": AtomicProposition("lost"),
+            "expect": True,
+        },
+        {
+            "name": "rejected_interrupt_is_not_delivered",
+            "kind": "safety",
+            "logic": "CTL",
+            "formula": AG(Not(AtomicProposition("rejected_interrupt_delivered"))),
+            "violation": AtomicProposition("rejected_interrupt_delivered"),
             "expect": True,
         },
         {

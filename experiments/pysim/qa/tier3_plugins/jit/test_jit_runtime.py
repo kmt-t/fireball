@@ -74,6 +74,8 @@ from qa.shared.x64_jit import TraceCompiler
 from system_containers import ReadOnlyRadixBinaryTreeStorage, StaticVector
 from tier2_runtime.abi.interpreter_abi import EXECUTION_CONTEXT_FLAG_PENDING_BLOCK_HEAD
 from tier2_runtime.interpreter.interpreter import (
+    RETURN_SENTINEL_IP,
+    RETURN_SENTINEL_PC,
     ExecutionContext,
     InterpreterBindings,
     NativeInterpreter,
@@ -1394,7 +1396,7 @@ def test_jitr_nested_loop_in_if_frame_stack_reconciliation():
 def test_jitr_return_terminated_block_jit_result_correct():
     """TEST-JITR-44: RETURN直前のtraceを実行し、共有stackから結果を返す。
 
-    対象traceだけを配置する。Native実行件数と最終結果をともに検査する。
+    対象traceだけを配置し、Native実行件数と最終結果を検査する。
     """
     wat = """
     (module
@@ -1436,9 +1438,48 @@ def test_jitr_return_terminated_block_jit_result_correct():
 
     n = 20
     results = engine.call(interp, fn_idx, [n])
-    assert results == [n * 3], (
-        f"f({n}) via JIT-driven RuntimeEngine.call() = {results}, expected [{n * 3}]"
+    assert results == [60]
+    _assert_single_control_trace_executed(engine, target_pc)
+
+
+def test_jitr_return_handler_publishes_sentinel_once() -> None:
+    """TEST-JITR-44: Observe the native return boundary before completion."""
+    module = parse(
+        wat_to_wasm(
+            '(module (func (export "f") (param i32) (result i32) '
+            "local.get 0 i32.const 3 i32.mul return))"
+        )
     )
+    fn_idx = module.export_func_index("f")
+    engine = make_runtime_engine(
+        jit_compiler=TraceCompiler(),
+        yield_threshold=2,
+        card_shift=2,
+        hotspot_profiling_enabled=False,
+    )
+    engine.register_module_blocks(module)
+    target_pc = _install_single_control_trace(engine, module, RETURN)
+    interp = Interpreter(module)
+    call_state = interp.start(fn_idx, [20])
+    assert call_state.current_pc() == target_pc
+    assert len(call_state.context.call_frame_stack) == 1
+    returned = engine.run(interp, call_state)
+    assert returned.call_state is call_state
+    assert not returned.yield_requested
+    assert not call_state.finished and call_state.results is None and call_state.trap is None
+    assert call_state._ip == RETURN_SENTINEL_IP
+    assert call_state.context.ip == RETURN_SENTINEL_PC
+    assert call_state._frame is not None
+    assert list(call_state._frame.values) == [60]
+    assert len(call_state.context.call_frame_stack) == 1
+    assert engine.stat_jit_invocations == 1
+    assert engine.stat_native_control_handlers == 1
+    completed = engine.run(interp, call_state)
+    assert completed.call_state is call_state and call_state.finished
+    assert call_state.results == [60] and call_state.trap is None
+    assert len(call_state.context.call_frame_stack) == 0
+    assert engine.stat_jit_invocations == 1
+    assert engine.stat_native_control_handlers == 1
     _assert_single_control_trace_executed(engine, target_pc)
 
 
@@ -2706,6 +2747,7 @@ if __name__ == "__main__":
     test_jitr_if_then_skipped_when_condition_false_after_jit()
     test_jitr_nested_loop_in_if_frame_stack_reconciliation()
     test_jitr_return_terminated_block_jit_result_correct()
+    test_jitr_return_handler_publishes_sentinel_once()
     test_jitr_nested_wasm_call_keeps_callee_result_on_shared_operand_stack()
     test_jitr_if_else_loop_matches_interpreter_after_jit_compilation()
     test_jitr_br_table_uses_native_handler_and_preserves_every_target()

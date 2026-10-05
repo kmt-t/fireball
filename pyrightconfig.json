@@ -1,11 +1,13 @@
 {
   "include": [
-    "experiments/pysim/tier1_core/config.py",
-    "experiments/pysim/tier1_core/interrupt_event.py",
-    "experiments/pysim/tier1_core/printk.py",
-    "experiments/pysim/tier2_runtime/observability/logging_interface.py",
-    "experiments/pysim/tier1_interface/memory_interface.py",
-    "experiments/pysim/tier2_runtime/wasm/opcodes.py"
+    "experiments/pysim/tier1_core/**/*.py",
+    "experiments/pysim/tier1_interface/**/*.py",
+    "experiments/pysim/__init__.py",
+    "experiments/pysim/tier2_runtime/**/*.py",
+    "experiments/pysim/system.py",
+    "experiments/pysim/main.py",
+    "experiments/pysim/tier3_plugins/**/*.py",
+    "experiments/pysim/tier3_platform/**/*.py"
   ],
   "exclude": [
     "**/__pycache__",

@@ -30,25 +30,31 @@ class WasiPreview1Backend(Protocol):
         self, fd: int, memory: bytearray, iovs_ptr: int, iovs_len: int, nread_ptr: int
     ) -> int:
         """Read guest iovecs from uvwasi."""
+        ...
 
     def fd_write(
         self, fd: int, memory: bytearray, iovs_ptr: int, iovs_len: int, nwritten_ptr: int
     ) -> int:
         """Write guest iovecs through uvwasi."""
+        ...
 
     def fd_close(self, fd: int) -> int:
         """Close one uvwasi descriptor."""
+        ...
 
     def clock_time_get(
         self, clock_id: int, precision: int, memory: bytearray, time_ptr: int
     ) -> int:
         """Write a uvwasi clock value into guest memory."""
+        ...
 
     def random_get(self, memory: bytearray, buf_ptr: int, buf_len: int) -> int:
         """Fill guest memory with uvwasi randomness."""
+        ...
 
     def close(self) -> None:
         """Release the uvwasi embedder context."""
+        ...
 
 
 class UnavailableUvwasiBackend:

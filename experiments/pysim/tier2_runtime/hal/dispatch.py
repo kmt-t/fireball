@@ -14,7 +14,7 @@ something has to really run.
 from __future__ import annotations
 
 import bisect
-from collections.abc import Callable, Generator, Sequence
+from collections.abc import Callable, Generator
 from dataclasses import dataclass, field
 from enum import IntEnum
 from typing import TYPE_CHECKING, Protocol
@@ -25,7 +25,7 @@ if TYPE_CHECKING:
 
 from ipc_router import DataType, IPCMessage, IPCRouter, IPCStatus, Role, ScopeKind, pack_key32
 from scheduler import ChannelAction
-from system_containers import ReadOnlyFlatMapView, StaticVector
+from system_containers import ReadOnlyFlatMapView, SequenceView, StaticVector
 from tier2_runtime.vmmio.controller import (
     FC_DYNAMIC,
     VMMIO_PAGE_SHIFT,
@@ -419,7 +419,7 @@ class HalTask:
         self.driver = driver
         self.running = True
         self.last_handled_cmd: int | None = None
-        self.last_result: HalResult = None
+        self.last_result: HalResult | None = None
         self.last_response_code = 0
         self.processed_count: int = 0
 
@@ -450,6 +450,7 @@ class HalTask:
             if cmd_id is None:
                 cmd_id = msg.get(ARG_QUERY_CMD_ID, 0x00)
 
+            assert cmd_id is not None
             if cmd_id == WasiIpcCmd.POLL_WAIT:
                 self.last_result = yield from self._wait_for_pollable(msg.payload)
             else:
@@ -459,13 +460,13 @@ class HalTask:
             result_value = self.last_result & 0xFFFF_FFFF_FFFF_FFFF
             msg.append(ARG_RESULT_LO, result_value & 0xFFFF_FFFF)
             msg.append(ARG_RESULT_HI, result_value >> 32)
-            self.ipc.reply(msg, self.last_response_code)
+            yield from self.ipc.reply(msg, self.last_response_code)
             yield (ChannelAction.YIELD, None)
 
 
 def make_hal_ipc_message(
     cmd_id: int,
-    params: Sequence[tuple[int, int]] = (),
+    params: SequenceView[tuple[int, int]] = (),
     *,
     memory_manager: MemoryManager,
 ) -> IPCMessage:

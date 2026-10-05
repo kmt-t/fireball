@@ -48,7 +48,7 @@ class GDBServer:
         return self.actual_port
 
     def start(
-        self, current_pc: int, ctx: DebugExecutionView, blocks: Mapping[int, BasicBlock]
+        self, current_pc: int, ctx: DebugExecutionView, blocks: Mapping[int, BasicBlock] | None
     ) -> int:
         """Starts a blocking transport loop in a background thread."""
         port = self.bind_socket()
@@ -62,8 +62,8 @@ class GDBServer:
         return port
 
     def run_task(
-        self, start_pc: int, ctx: DebugExecutionView, blocks: Mapping[int, BasicBlock]
-    ) -> Generator[tuple[str, None], None, None]:
+        self, start_pc: int, ctx: DebugExecutionView, blocks: Mapping[int, BasicBlock] | None
+    ) -> Generator[tuple[ChannelAction, None], None, None]:
         """
         COOS cooperative task coroutine for GDBServer.
         Listens and processes RSP packets asynchronously using a non-blocking sink
@@ -148,7 +148,7 @@ class GDBServer:
             self._thread.join(timeout=1.0)
 
     def _server_loop(
-        self, start_pc: int, ctx: DebugExecutionView, blocks: Mapping[int, BasicBlock]
+        self, start_pc: int, ctx: DebugExecutionView, blocks: Mapping[int, BasicBlock] | None
     ) -> None:
         """Accepts a client connection and processes RSP packets until disconnected."""
         try:

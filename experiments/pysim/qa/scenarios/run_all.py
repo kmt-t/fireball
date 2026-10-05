@@ -4,7 +4,6 @@ Runs 12 registered files containing WASM examples and direct Python protocol/dri
 Successful process exits summarize execution, while requirement coverage is tracked in the RTM.
 """
 
-import subprocess
 import sys
 import time
 from pathlib import Path
@@ -12,6 +11,10 @@ from pathlib import Path
 SCENARIO_DIR = Path(__file__).resolve().parent
 PYSIM_ROOT = SCENARIO_DIR.parent.parent
 REPO_ROOT = PYSIM_ROOT.parent.parent
+if str(PYSIM_ROOT) not in sys.path:
+    sys.path.insert(0, str(PYSIM_ROOT))
+
+from qa.shared.execution import run_python
 
 SCENARIOS = [
     (
@@ -75,11 +78,10 @@ def run_all_scenarios():
     for name, script_path in SCENARIOS:
         print(f"\n>>> Running {name} ({script_path.name})...")
         t0 = time.perf_counter()
-        res = subprocess.run(
-            [sys.executable, "-m", "pytest", "-q", str(script_path), "-s"],
+        res = run_python(
+            ["-m", "pytest", "-q", str(script_path), "-s"],
             capture_output=True,
-            text=True,
-            cwd=str(REPO_ROOT),
+            cwd=REPO_ROOT,
         )
         t1 = time.perf_counter()
         elapsed_ms = (t1 - t0) * 1000

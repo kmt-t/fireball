@@ -23,6 +23,7 @@ from system_containers import (
     StaticVector,
 )
 from tier1_core.fnv1a import fnv1a_32
+from tier1_core.printk import Printk
 from tier2_runtime.hal.dispatch import (
     ARG_BUFFER_HANDLE,
     ARG_LENGTH,
@@ -69,18 +70,22 @@ class WasiRuntimeHost(Protocol):
     ipc: IPCRouter
     logger: LoggerPort
     memory_manager: MemoryManager
+    printk: Printk
     pool: HalBufferPool
     scheduler: Scheduler
     wasi_backend: WasiPreview1Backend
 
     def bind_runtime(self, memory: bytearray | None) -> None:
         """Bind guest linear memory and HAL slots to the active runtime."""
+        ...
 
     def attach_wasi_context(self, context: WasiPreview1Host) -> None:
         """Attach the Preview 1 host callbacks used by generic syscalls."""
+        ...
 
     def hal_task_for(self, uri: str) -> HalTask | None:
         """Resolve the HAL task registered for one URI."""
+        ...
 
 
 # ==============================================================================
@@ -99,7 +104,7 @@ class WasiInterfaceVTable:
     than via `in`/`.get()` (dict-only APIs with no C++ counterpart).
     """
 
-    write_buffer: Callable[[int, int, int], WasiValue] | None = None
+    write_buffer: Callable[[HalBufferHandle, int, int], WasiValue] | None = None
 
 
 class Wasi03pEngine:

@@ -13,7 +13,8 @@
 
 ## 2. アーキテクチャ分類
 <!-- traceability: {META_3TierSeparation} -->
-本コンポーネントは **Tier 2 (分解されたサブコンポーネント: Decomposed Subcomponent)** に属し、Tier 1 Interface の `system_memory.md` 契約を dlmalloc ベースのアロケータ群として物理実装する。
+本コンポーネントは **Tier 2 (分解されたサブコンポーネント: Decomposed Subcomponent)** に属する。
+Tier 1 Interface の `system_memory.md` 契約を、dlmalloc ベースのアロケータ群として物理実装する。
 
 ## 3. 静的モデル
 

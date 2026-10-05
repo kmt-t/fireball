@@ -10,6 +10,8 @@ Architecture:
 - Integrated Profiler & Test Tool: PC sampling counter and memory/register assertion hooks ({Debug_Integrated}).
 """
 
+BACKS = ["components/tier3_plugins/debugger.md"]
+
 
 class WASMTrap(Exception):
     pass

@@ -498,7 +498,8 @@ class MemoryManager:
         )
         if previous_owner_id == new_owner_id:
             return
-        assert self.page_registry.update_owner(page_idx, new_owner_id)
+        updated = self.page_registry.update_owner(page_idx, new_owner_id)
+        assert updated
         self.shm_pages[page_idx].owner_id = new_owner_id
         callbacks = self._page_mapping_callbacks
         if callbacks is not None:

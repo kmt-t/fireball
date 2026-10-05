@@ -13,16 +13,48 @@ from __future__ import annotations
 
 import bisect
 import ctypes
-from collections.abc import Callable, Iterable, Iterator, Sequence
+from collections.abc import Callable, Iterable, Iterator, Sized
 from dataclasses import dataclass
-from typing import Generic, TypeVar
+from typing import Generic, Protocol, Self, TypeVar, cast, overload
 
 from bump_allocator import BumpAllocator
 from config import JIT_CARD_SHIFT
 
-KeyT = TypeVar("KeyT")
+
+class Comparable(Protocol):
+    def __lt__(self, other: Self, /) -> bool: ...
+
+    def __gt__(self, other: Self, /) -> bool: ...
+
+    def __le__(self, other: Self, /) -> bool: ...
+
+
+KeyT = TypeVar("KeyT", bound=Comparable)
 ValT = TypeVar("ValT")
 T = TypeVar("T")
+T_co = TypeVar("T_co", covariant=True)
+SortKey = TypeVar("SortKey", bound=Comparable)
+
+
+class SequenceView(Protocol[T_co]):
+    """Non-owning integer-indexed sequence contract for fixed storage and ROM spans."""
+
+    def __len__(self) -> int: ...
+
+    def __getitem__(self, index: int, /) -> T_co: ...
+
+    def __iter__(self) -> Iterator[T_co]: ...
+
+
+class IntervalRecord(Protocol):
+    @property
+    def start_offset(self) -> int: ...
+
+    @property
+    def end_offset(self) -> int: ...
+
+
+IntervalT = TypeVar("IntervalT", bound=IntervalRecord)
 ALLOWED_BITS = (1, 2, 4)
 
 
@@ -263,7 +295,10 @@ class MutableBitStorage:
 
     def view(self, origin: int = 0, count: int | None = None) -> BitView:
         return BitView(
-            self._buffer, self.bits, origin=origin, count=count if count is not None else self.count
+            memoryview(self._buffer),
+            self.bits,
+            origin=origin,
+            count=count if count is not None else self.count,
         )
 
 
@@ -279,7 +314,7 @@ class ReadOnlyFlatSetStorage(Generic[KeyT]):
     keys: tuple[KeyT, ...]
 
     @classmethod
-    def create(cls, keys: Sequence[KeyT]) -> ReadOnlyFlatSetStorage[KeyT]:
+    def create(cls, keys: SequenceView[KeyT]) -> ReadOnlyFlatSetStorage[KeyT]:
         sorted_keys = sorted(keys)
         unique_keys: list[KeyT] = []
         for key in sorted_keys:
@@ -298,7 +333,7 @@ class ReadOnlyFlatSetView(Generic[KeyT]):
 
     def __init__(
         self,
-        keys: Sequence[KeyT],
+        keys: SequenceView[KeyT],
         first: int = 0,
         last: int | None = None,
     ):
@@ -311,7 +346,7 @@ class ReadOnlyFlatSetView(Generic[KeyT]):
         return len(self._keys) if self._last is None else min(self._last, len(self._keys))
 
     @property
-    def keys(self) -> Sequence[KeyT]:
+    def keys(self) -> SequenceView[KeyT]:
         if self.first == 0 and self.last == len(self._keys):
             return self._keys
         return tuple(self._keys[index] for index in range(self.first, self.last))
@@ -357,10 +392,10 @@ class ReadOnlyFlatSetView(Generic[KeyT]):
 class ReadOnlyFlatMapStorage(Generic[KeyT, ValT]):
     """Owns an immutable, sorted flat-map sequence."""
 
-    entries: Sequence[tuple[KeyT, ValT]]
+    entries: SequenceView[tuple[KeyT, ValT]]
 
     @classmethod
-    def create(cls, entries: Sequence[tuple[KeyT, ValT]]) -> ReadOnlyFlatMapStorage[KeyT, ValT]:
+    def create(cls, entries: SequenceView[tuple[KeyT, ValT]]) -> ReadOnlyFlatMapStorage[KeyT, ValT]:
         sorted_entries = tuple(sorted(entries, key=lambda entry: entry[0]))
         for index in range(1, len(sorted_entries)):
             assert sorted_entries[index - 1][0] != sorted_entries[index][0], (
@@ -389,7 +424,7 @@ class FlatMapEntryRange(Generic[KeyT, ValT]):
 
     __slots__ = ("_entries", "first", "last")
 
-    def __init__(self, entries: Sequence[tuple[KeyT, ValT]], first: int, last: int):
+    def __init__(self, entries: SequenceView[tuple[KeyT, ValT]], first: int, last: int):
         self._entries = entries
         self.first = first
         self.last = last
@@ -418,7 +453,7 @@ class ReadOnlyFlatMapView(Generic[KeyT, ValT]):
 
     def __init__(
         self,
-        entries: Sequence[tuple[KeyT, ValT]],
+        entries: SequenceView[tuple[KeyT, ValT]],
         first: int = 0,
         last: int | None = None,
     ):
@@ -434,17 +469,17 @@ class ReadOnlyFlatMapView(Generic[KeyT, ValT]):
         return self._last
 
     @property
-    def entries(self) -> Sequence[tuple[KeyT, ValT]]:
+    def entries(self) -> SequenceView[tuple[KeyT, ValT]]:
         if self.first == 0 and self.last == len(self._entries):
             return self._entries
         return FlatMapEntryRange(self._entries, self.first, self.last)
 
     @property
-    def keys(self) -> list[KeyT]:
+    def keys(self) -> tuple[KeyT, ...]:
         return tuple(self._entries[index][0] for index in range(self.first, self.last))
 
     @property
-    def values(self) -> list[ValT]:
+    def values(self) -> tuple[ValT, ...]:
         return tuple(self._entries[index][1] for index in range(self.first, self.last))
 
     def size(self) -> int:
@@ -520,7 +555,7 @@ FB_CONF_MAX_RADIX_TABLE_SIZE = 256  # Embedded constraint: max 8-bit radix prefi
 
 
 def build_radix_table(
-    keys: Sequence[int],
+    keys: SequenceView[int],
     radix_shift: int,
     key_transform: Callable[[int], int] | None = None,
 ) -> list[int]:
@@ -556,7 +591,7 @@ def build_radix_table(
 
 
 def _build_radix_table_for_sorted_entries(
-    entries: Sequence[tuple[int, ValT]],
+    entries: SequenceView[tuple[int, ValT]],
     radix_shift: int,
     key_transform: Callable[[int], int] | None,
 ) -> list[int]:
@@ -595,14 +630,14 @@ class ReadOnlyRadixBinaryTreeStorage(Generic[ValT]):
 
     radix_table: tuple[int, ...]
     radix_shift: int
-    entries: Sequence[tuple[int, ValT]]
+    entries: SequenceView[tuple[int, ValT]]
     key_transform: Callable[[int], int] | None = None
 
     @classmethod
     def create(
         cls,
-        keys: Sequence[int],
-        values: Sequence[ValT],
+        keys: SequenceView[int],
+        values: SequenceView[ValT],
         radix_shift: int = 28,
         key_transform: Callable[[int], int] | None = None,
     ) -> ReadOnlyRadixBinaryTreeStorage[ValT]:
@@ -644,7 +679,7 @@ class ReadOnlyRadixBinaryTreeStorage(Generic[ValT]):
     @classmethod
     def _from_ordered_entries(
         cls,
-        entries: Sequence[tuple[int, ValT]],
+        entries: SequenceView[tuple[int, ValT]],
         radix_shift: int,
         key_transform: Callable[[int], int] | None,
     ) -> ReadOnlyRadixBinaryTreeStorage[ValT]:
@@ -691,8 +726,8 @@ class ReadOnlyRadixBinaryTreeView(Generic[ValT]):
 
     def __init__(
         self,
-        entries: Sequence[tuple[int, ValT]],
-        radix_table: Sequence[int],
+        entries: SequenceView[tuple[int, ValT]],
+        radix_table: SequenceView[int],
         radix_shift: int,
         key_transform: Callable[[int], int] | None = None,
     ):
@@ -755,7 +790,9 @@ class ReadOnlyRadixBinaryTreeView(Generic[ValT]):
             low += 1
         return None
 
-    def find_interval(self, offset: int) -> ValT | None:
+    def find_interval(
+        self: ReadOnlyRadixBinaryTreeView[IntervalT], offset: int
+    ) -> IntervalT | None:
         """
         Range lookup for interval keys [start, end) -- finds entity where entity.start_offset <= offset < entity.end_offset.
         """
@@ -765,11 +802,8 @@ class ReadOnlyRadixBinaryTreeView(Generic[ValT]):
         idx = bisect.bisect_right(self.entries, offset, key=lambda entry: entry[0]) - 1
         if 0 <= idx < len(self.entries):
             entity = self.entries[idx][1]
-            try:
-                if entity.start_offset <= offset < entity.end_offset:
-                    return entity
-            except AttributeError:
-                pass
+            if entity.start_offset <= offset < entity.end_offset:
+                return entity
         return None
 
 
@@ -903,7 +937,8 @@ class MutableFlatMapStorage(Generic[KeyT, ValT]):
             self._count,
             key=lambda entry: entry[0] if entry is not None else key,
         )
-        if idx < self._count and self._buffer[idx] is not None and self._buffer[idx][0] == key:
+        entry = self._buffer[idx] if idx < self._count else None
+        if entry is not None and entry[0] == key:
             self._buffer[idx] = (key, value)
             return True
         if self._count >= self.capacity:
@@ -922,9 +957,10 @@ class MutableFlatMapStorage(Generic[KeyT, ValT]):
             self._count,
             key=lambda entry: entry[0] if entry is not None else key,
         )
-        if idx >= self._count or self._buffer[idx] is None or self._buffer[idx][0] != key:
+        entry = self._buffer[idx] if idx < self._count else None
+        if entry is None or entry[0] != key:
             return None
-        value = self._buffer[idx][1]
+        value = entry[1]
         for index in range(idx, self._count - 1):
             self._buffer[index] = self._buffer[index + 1]
         self._buffer[self._count - 1] = None
@@ -937,7 +973,7 @@ class MutableFlatMapStorage(Generic[KeyT, ValT]):
         self._count = 0
 
     def is_sorted(self) -> bool:
-        return all(self[index][0] <= self[index + 1][0] for index in range(self._count - 1))
+        return all(not self[index + 1][0] < self[index][0] for index in range(self._count - 1))
 
 
 # ---------------------------------------------------------------------------
@@ -945,7 +981,7 @@ class MutableFlatMapStorage(Generic[KeyT, ValT]):
 # ---------------------------------------------------------------------------
 
 
-class MutableRadixBinaryTreeStorage(Sequence[tuple[int, ValT]], Generic[ValT]):
+class MutableRadixBinaryTreeStorage(SequenceView[tuple[int, ValT]], Generic[ValT]):
     """Owns fixed-capacity sorted entries and maintains the radix table.
 
     GOTCHA-CONT-04: In-place shifts preserve the borrowed view's backing buffer
@@ -1008,7 +1044,8 @@ class MutableRadixBinaryTreeStorage(Sequence[tuple[int, ValT]], Generic[ValT]):
             self._count,
             key=lambda entry: self._order_key(entry[0]) if entry is not None else order_key,
         )
-        if idx < self._count and self._buffer[idx] is not None and self._buffer[idx][0] == key:
+        entry = self._buffer[idx] if idx < self._count else None
+        if entry is not None and entry[0] == key:
             self._buffer[idx] = (key, value)
             return True
         if self._count >= self.capacity:
@@ -1029,9 +1066,10 @@ class MutableRadixBinaryTreeStorage(Sequence[tuple[int, ValT]], Generic[ValT]):
             self._count,
             key=lambda entry: self._order_key(entry[0]) if entry is not None else order_key,
         )
-        if idx >= self._count or self._buffer[idx] is None or self._buffer[idx][0] != key:
+        entry = self._buffer[idx] if idx < self._count else None
+        if entry is None or entry[0] != key:
             return None
-        value = self._buffer[idx][1]
+        value = entry[1]
         for index in range(idx, self._count - 1):
             self._buffer[index] = self._buffer[index + 1]
         self._buffer[self._count - 1] = None
@@ -1208,13 +1246,21 @@ class StaticVector(Generic[T]):
         return self
 
     @classmethod
+    @overload
+    def of(cls, items: SequenceView[T], capacity: None = None) -> StaticVector[T]: ...
+
+    @classmethod
+    @overload
+    def of(cls, items: Iterable[T], capacity: int) -> StaticVector[T]: ...
+
+    @classmethod
     def of(cls, items: Iterable[T], capacity: int | None = None) -> StaticVector[T]:
         """Builds a StaticVector pre-populated with `items` (test/setup convenience)."""
-        cap = capacity if capacity is not None else len(items)
+        cap = capacity if capacity is not None else len(cast(Sized, items))
         vec: StaticVector[T] = cls(capacity=cap)
         for item in items:
             if not vec.push_back(item):
-                assert False, f"StaticVector.of: {len(items)} items exceed capacity {cap}"
+                assert False, f"StaticVector.of: items exceed capacity {cap}"
         return vec
 
     def push_back(self, item: T) -> bool:
@@ -1230,7 +1276,7 @@ class StaticVector(Generic[T]):
         pushed = self.push_back(item)
         assert pushed
 
-    def extend(self, items: Sequence[T]) -> bool:
+    def extend(self, items: SequenceView[T]) -> bool:
         assert not self._frozen, "cannot mutate a frozen StaticVector"
         item_count = len(items)
         if len(self._items) + item_count > self.capacity:
@@ -1285,7 +1331,7 @@ class StaticVector(Generic[T]):
         assert not self._frozen, "cannot mutate a frozen StaticVector"
         self._items.clear()
 
-    def sort(self, *, key: Callable[[T], T] | None = None) -> None:
+    def sort(self, *, key: Callable[[T], SortKey]) -> None:
         assert not self._frozen, "cannot mutate a frozen StaticVector"
         self._items.sort(key=key)
 
@@ -1329,11 +1375,10 @@ class StaticVector(Generic[T]):
     def __iter__(self) -> Iterator[T]:
         return iter(self._items)
 
-    def __eq__(self, other: Sequence[T]) -> bool:
-        try:
-            return self._items == other._items
-        except AttributeError:
-            return self._items == other
+    def __eq__(self, other: SequenceView[T]) -> bool:
+        return len(self) == len(other) and all(
+            self[index] == other[index] for index in range(len(self))
+        )
 
     def __repr__(self) -> str:
         return f"StaticVector(capacity={self.capacity}, items={self._items!r})"

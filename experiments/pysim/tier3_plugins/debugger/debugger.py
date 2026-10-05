@@ -14,11 +14,11 @@ from __future__ import annotations
 
 import bisect
 import ctypes
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Iterator, Mapping
 from typing import Protocol
 
 from config import FB_CONF_DEBUG_MAX_ASSERTIONS, FB_CONF_DEBUG_MAX_BREAKPOINTS
-from system_containers import MutableFlatMapStorage, ReadOnlyFlatMapView, StaticVector
+from system_containers import MutableFlatMapStorage, ReadOnlyFlatMapView, SequenceView, StaticVector
 from tier2_runtime.abi import native_abi
 from tier2_runtime.abi.interpreter_abi import NativeValueStack
 from tier2_runtime.interpreter.execution_context import DebugExecutionView, ExecutionControl
@@ -209,7 +209,8 @@ class DebuggerManager:
     def sample_pc(self, pc: int) -> None:
         """Samples PC execution frequency ({Debug_Integrated})."""
         count = self._pc_sample_storage.view().find(pc)
-        assert self._pc_sample_storage.insert(pc, 1 if count is None else count + 1)
+        inserted = self._pc_sample_storage.insert(pc, 1 if count is None else count + 1)
+        assert inserted
 
     @property
     def pc_sample_counts(self) -> ReadOnlyFlatMapView[int, int]:
@@ -250,7 +251,9 @@ class DebuggerManager:
             regs.append(ctx.locals[i] if i < len(ctx.locals) else 0)
         return regs
 
-    def write_virtual_registers(self, regs: Sequence[int], ctx: DebugExecutionView) -> int | None:
+    def write_virtual_registers(
+        self, regs: SequenceView[int], ctx: DebugExecutionView
+    ) -> int | None:
         """Updates registers or returns `None` when the packet violates the ABI."""
         assert len(regs) == 20, "GDB G packet must contain exactly 20 registers"
         assert all(0 <= value <= 0xFFFF_FFFF for value in regs), (
@@ -323,7 +326,7 @@ class GDBRspProtocol:
         packet: str,
         current_pc: int,
         ctx: DebugExecutionView,
-        blocks: Mapping[int, BasicBlock],
+        blocks: Mapping[int, BasicBlock] | None,
     ) -> tuple[str, int]:
         """Handles an RSP packet payload and returns (response_packet, new_pc)."""
         # Strip framing if present
@@ -535,7 +538,7 @@ class InterpreterExecutionControl:
         module: Module,
         bindings: InterpreterBindings,
         func_index: int,
-        args: Sequence[WasmNumber],
+        args: SequenceView[WasmNumber],
     ):
         assert config.plugins.debugger, "ExecutionControl requires a debugger composition"
         self._control = _NativeDebugControl()
@@ -568,9 +571,11 @@ class InterpreterExecutionControl:
         frame = call._frame
         assert frame is not None
         if pc != call.current_pc():
-            function_index = call.context.module.function_index_for_pc(pc)
+            module = call.context.module
+            assert module is not None
+            function_index = module.function_index_for_pc(pc)
             assert function_index == frame.func_index
-            function_pc_offset = call.context.module.function_pc_offset(frame.func_index)
+            function_pc_offset = module.function_pc_offset(frame.func_index)
             call._ip = pc - function_pc_offset
         self._control.breakpoint_count = len(debugger._breakpoints)
         self._control.single_step = int(single_step)

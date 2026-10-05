@@ -43,7 +43,8 @@ IPC経由のデータ交換は行わない — GPIOのようなsub-µs応答が�
 
 ## 2. アーキテクチャ分類
 <!-- traceability: {META_3TierSeparation} -->
-本コンポーネントは **Tier 2 (分解されたサブコンポーネント: Decomposed Subcomponent)** に属し、vSoC (`runtime_vsoc.md`) から分解された仮想MMIO・デバイスレジスタアクセスおよびメモリ空間マッピングを担当する。
+本コンポーネントは **Tier 2 (分解されたサブコンポーネント: Decomposed Subcomponent)** に属する。
+vSoC (`runtime_vsoc.md`) から分解された仮想MMIO・デバイスレジスタアクセスおよびメモリ空間マッピングを担当する。
 
 ## 3. 静的モデル
 
@@ -484,7 +485,8 @@ sequenceDiagram
 
 ### 4.8 ソフトウェアTLB
 <!-- traceability: {VDMA} {OwnershipTransfer} {META_ConfigurableSystem} -->
-Stage 3 アクセス（FC=14/15）において毎回 FlatMap の二分探索を走らせる遅延を排除するため、仮想ページ番号（VPN = `raw >> 12`）に基づくマッピングを32エントリのダイレクトマップキャッシュに保持する。
+Stage 3 アクセス（FC=14/15）では、毎回 FlatMap の二分探索を走らせる遅延を排除する。
+このため、仮想ページ番号（VPN = `raw >> 12`）に基づくマッピングを32エントリのダイレクトマップキャッシュに保持する。
 
 - **Guest RAM アクセス時の TLB 完全バイパス (`GOTCHA-VMMIO-01`)**: {GOTCHA-VMMIO-01} <!-- definition: {GOTCHA-VMMIO-01} -->
   **設計理由と不変条件**: 最上位ビットが 0 のアドレス空間（`0x0000_0000`〜`0x7FFF_FFFF`）はゲスト RAM 専用領域である。全メモリアクセスの 99% 以上を占める最頻パスにおいて毎回 TLB ルックアップやハッシュ計算を行うと、実行性能が致命的に劣化する。そのため、最上位ビットが 0 のアクセスは TLB を一切参照せず、直接ゲストベースアドレス加算＋サイズ境界検査のみで即時メモリアクセスを完結させる。TLB は最上位ビットが 1 の vMMIO / ペリフェラル領域にのみ適用される。

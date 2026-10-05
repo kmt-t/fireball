@@ -1,5 +1,6 @@
 # WIT インターフェース仕様書 (WASI 準拠版) {VERIFY_WIT} {VERIFY_LLM} {VERIFY_FORMAL}
 <!-- evidence:
+     contract-only: true
      wit: docs/components/tier3_platform/wit/fireball_hostcall_contract.wit
      wit: docs/components/tier3_platform/wit/fireball_hal_contract.wit
      formal: formal/wit_resource_lifecycle_model.py
@@ -104,7 +105,9 @@ WASI標準には存在しない、Fireball固有の高速 host call である。
 
 #### 5.1.1. `fireball:host/trap` の定義
 <!-- traceability: {Syscall_Mapping} {WIT_First} {WIT_Interface_Spec} -->
-WIT内では `fireball-call` という kebab-case 名で定義されるが、C++バインディングおよび公開APIとしては名前空間 `fireball` 内に `fireball_call`（snake_case）としてマッピングされ、host call として公開される。
+WIT内では `fireball-call` という kebab-case 名で定義される。
+C++バインディングおよび公開APIでは、名前空間 `fireball` 内の `fireball_call`（snake_case）としてマッピングされる。
+これはhost call として公開される。
 
 引数と戻り値型は [`fireball_hostcall_contract.wit`](docs/components/tier3_platform/wit/fireball_hostcall_contract.wit) の `trap.fireball-call` を正本とする。IDと引数の意味は [`runtime_syscall.md`](docs/components/tier2_runtime/runtime_syscall.md) を参照する。
 
@@ -190,7 +193,11 @@ WASI仕様と HAL の乖離および考慮点は以下の通り：
 本書で定めた状態、境界、所有権、およびエラー処理を検証対象とする。
 
 ### 7.2 検証モデルと反証可能性
-形式検証モデルは[wit_resource_lifecycle_model.py](docs/components/tier3_platform/formal/wit_resource_lifecycle_model.py)である。各モデルの正常系と`guards=False`変異で、保護条件が反証されることを確認する。
+形式検証モデルは[wit_resource_lifecycle_model.py](docs/components/tier3_platform/formal/wit_resource_lifecycle_model.py)である。
+正常系と`guards=False`変異で、リソース解放後の操作拒否とWASIポーリング経路の分離を確認する。
+vIRQの活性は、登録とシグネチャの検査を通り、FIFOが受理した配送適格イベントに限定する。
+無効な配送要求はドロップしてよい。モデルはこの拒否を通知欠落の変異と区別する。
+受理済みイベントの進行はCOOS協調境界への到達を仮定する。非協調タスクの公平性や実時間の配送期限は証明しない。
 
 ### 7.3 テスト仕様書との連携
 対応するテスト仕様は[interface_wit_test_spec.md](docs/qa/tier3_platform/interface_wit_test_spec.md)である。テストケースIDと実行可能テストは同仕様を正本とする。

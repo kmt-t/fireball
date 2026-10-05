@@ -1,5 +1,6 @@
 # JIT ランタイム管理 コンポーネント設計書 {VERIFY_FORMAL} {VERIFY_LLM} {VERIFY_BENCHMARK}
 <!-- evidence:
+     implementation: experiments/pysim/native/tier3_plugins/jit/jit_runtime.hxx
      formal: formal/jit_cache_model.py
      formal: formal/jit_hotspot_model.py
      benchmark_spec: benchmarks/jit_runtime_bench_spec.md
@@ -62,7 +63,7 @@ JIT拡張はインタープリタに対するプラグインに近い選択可�
 ### 3.1 データ構造
 <!-- traceability: {JIT_ReverseCompilationOrder} {WasmCodeSectionPC} {ADR_JitCompileScheduling} -->
 - **WASMプログラムカウンタ (`UnifiedPC` / `wasm_pc_t`)**: 32ビットのモジュール内Code section payload相対オフセットであり、命令先頭バイトを指す。関数インデックスを上位ビットへ格納しない。Code section payload内の関数数、body size、locals宣言も座標に含む。異なるモジュール間のキーは`(module_id, pc)`とする。
-- **`JitEntryIndex`**: WASMオフセットとネイティブコードの対応付け、および 4 段高速検索ロジックをカプセル化した主要クラスである。
+- **`JitEntryIndex`**: WASMオフセットとネイティブコードの対応付け、および 3段高速検索ロジックをカプセル化した主要クラスである。
 - **カードマーキング表 (Card Marking Table)**: モジュールのCode section payload相対PC全体を 4 バイト単位のカードで分割管理する、単一の 2 ビット状態表である。カード番号は`pc >> card_shift`で求め、全関数が同じPC座標・カード領域を共有する。関数境界をまたぐカードも同じ状態を参照する。密ビュー `fireball::bit_view<2>` として参照する。
   - `0: UNEXECUTED` (未実行)
   - `1: EXECUTED` (実行済み)
@@ -244,7 +245,7 @@ flowchart TD
     Stage1 --> CheckCompiled{"Card State == COMPILED?"}
 
     CheckCompiled -- "No" --> ExitInterp(["Fast Exit: Dispatch to Interpreter Handler"])
-    CheckCompiled -- "Yes" --> StageFast["[Stage 2] Direct-Mapped Folding XOR JIT Cache[4] (O(1))"]
+    CheckCompiled -- "Yes" --> StageFast["[Stage 2] Direct-Mapped Folding XOR JIT Cache[16] (O(1))"]
 
     StageFast --> FastHit{"Cache Tag == head_pc ?"}
     FastHit -- "HIT" --> ReturnTrace(["Return Native Code Entry: exec_trace (O(1) Direct)"])

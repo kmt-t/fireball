@@ -10,12 +10,18 @@ import ast
 import configparser
 import contextlib
 import io
+import json
+import os
+import subprocess
+import sys
 import tomllib
 from pathlib import Path
 
 import pytest
+import yaml
 from qa.integration.run_all import INTEGRATION_DIR, INTEGRATION_SUITES
 from qa.run_all import TEST_DIR, TEST_SUITES, assert_registered_test_modules
+from qa.shared.execution import run_python
 from qa.workloads.run_all import WORKLOAD_DIR, WORKLOAD_SUITES
 
 from tools.check_verification_matrix import _test_spec_paths
@@ -78,6 +84,93 @@ def test_entrypoint_06_product_modules_do_not_import_qa_support() -> None:
         for line, module in _test_only_imports(tree):
             violations.append(f"{path.relative_to(_PYSIM_DIR)}:{line}: {module}")
     assert not violations, "product code imports test-only support:\n" + "\n".join(violations)
+
+
+@pytest.mark.parametrize("optimization", (0, 1, 2))
+def test_optimized_valid_operations_preserve_results_and_state(optimization: int) -> None:
+    """Observe normal, -O and -OO behavior from an assertion-enabled parent."""
+    environment = os.environ.copy()
+    environment["PYTHONPATH"] = os.pathsep.join(str(Path(path).resolve()) for path in sys.path)
+    environment.pop("PYTHONOPTIMIZE", None)
+    result = subprocess.run(
+        [sys.executable, *(["-O"] * optimization), "-m", "qa.private.optimized_mode_probe"],
+        cwd=_PYSIM_DIR.parent.parent,
+        env=environment,
+        text=True,
+        capture_output=True,
+        timeout=15,
+        check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    observed = json.loads(result.stdout.splitlines()[-1])
+    assert observed == {
+        "optimization": optimization,
+        "rendezvous": ["DIRECT_SWITCH", 1, True, 99],
+        "local_types": [127],
+        "reference_results": [37, 1999000, 1999000, 9.0, 3.75, 33],
+        "native_results": [37, 1999000, 1999000, 9.0, 3.75, 33],
+        "jit_used": True,
+        "pte_registered": True,
+        "pc_frequency": 2,
+        "stack_size_after_clear": 0,
+    }
+
+
+@pytest.mark.parametrize("optimization", (0, 1, 2))
+def test_runner_propagates_optimization_to_its_child(optimization: int) -> None:
+    environment = os.environ.copy()
+    environment["PYTHONPATH"] = os.pathsep.join(str(Path(path).resolve()) for path in sys.path)
+    environment.pop("PYTHONOPTIMIZE", None)
+    program = (
+        "from qa.shared.execution import run_python; from pathlib import Path; "
+        "import sys; r=run_python(['-c', 'import sys; print(sys.flags.optimize)'], "
+        "cwd=Path.cwd(), capture_output=True); "
+        "print(sys.flags.optimize, r.stdout.strip()); sys.exit(r.returncode)"
+    )
+    result = subprocess.run(
+        [sys.executable, *(["-O"] * optimization), "-c", program],
+        cwd=_PYSIM_DIR.parent.parent,
+        env=environment,
+        text=True,
+        capture_output=True,
+        check=False,
+        timeout=10,
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == f"{optimization} {optimization}"
+
+
+def test_runner_timeout_is_a_failure_with_visible_output() -> None:
+    result = run_python(
+        ["-c", "import time; print('entered', flush=True); time.sleep(10)"],
+        cwd=_PYSIM_DIR.parent.parent,
+        capture_output=True,
+        timeout=0.2,
+    )
+    assert result.returncode == 124
+    assert "entered" in result.stdout
+    assert "timed out" in result.stderr
+
+
+def test_product_type_check_scope_matches_tier_inventory() -> None:
+    root = _PYSIM_DIR.parent.parent
+    config = yaml.safe_load((root / "spec-integrator.yaml").read_text(encoding="utf-8"))
+    imports = config["pysim_imports"]
+    tier_files = {
+        path.resolve()
+        for tier in imports["tiers"]
+        for pattern in tier["paths"]
+        for path in (root / imports["root"]).glob(pattern)
+        if path.is_file()
+    }
+    pyright = json.loads((root / "pyrightconfig.json").read_text(encoding="utf-8"))
+    checked_files = {
+        path.resolve()
+        for pattern in pyright["include"]
+        for path in root.glob(pattern)
+        if path.is_file()
+    }
+    assert checked_files == tier_files
 
 
 def test_entrypoint_07_test_dependencies_are_dev_only() -> None:

@@ -68,11 +68,13 @@ class VirqRegistrationPort(Protocol):
         self, node_id: int, function_index: int
     ) -> Result[RegistrationStatus, RegistrationError]:
         """Validate and stage one dispatcher registration."""
+        ...
 
     def unregister_virq_dispatcher(
         self, node_id: int
     ) -> Result[RegistrationStatus, RegistrationError]:
         """Stage removal of one dispatcher registration."""
+        ...
 
 
 class WasiPreview1Host(Protocol):
@@ -82,21 +84,27 @@ class WasiPreview1Host(Protocol):
 
     def fd_write(self, fd: int, iovs_ptr: int, iovs_len: int, nwritten_ptr: int) -> int:
         """Handle one Preview 1 fd_write import."""
+        ...
 
     def fd_read(self, fd: int, iovs_ptr: int, iovs_len: int, nread_ptr: int) -> int:
         """Handle one Preview 1 fd_read import."""
+        ...
 
     def fd_close(self, fd: int) -> int:
         """Handle one Preview 1 fd_close import."""
+        ...
 
     def clock_time_get(self, clock_id: int, precision: int, time_ptr: int) -> int:
         """Handle one Preview 1 clock_time_get import."""
+        ...
 
     def proc_exit(self, exit_code: int) -> int:
         """Handle one Preview 1 proc_exit import."""
+        ...
 
     def random_get(self, buf_ptr: int, buf_len: int) -> int:
         """Handle one Preview 1 random_get import."""
+        ...
 
 
 class FireballHostCallPort(Protocol):
@@ -115,15 +123,19 @@ class FireballHostCallPort(Protocol):
         arg5: int,
     ) -> int:
         """Dispatch one generic seven-word Fireball host call."""
+        ...
 
     def virq_register(self, node_id: int, function_index: int) -> int:
         """Stage a vIRQ dispatcher registration."""
+        ...
 
     def virq_unregister(self, node_id: int) -> int:
         """Stage removal of a vIRQ dispatcher registration."""
+        ...
 
     def vdma_start(self, source: int, destination: int, byte_count: int) -> int:
         """Execute one validated virtual DMA transfer."""
+        ...
 
 
 class RuntimeHostCallGateway:

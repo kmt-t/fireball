@@ -265,5 +265,6 @@ class VirqDispatcher:
         return VirqDispatchResult(raw_result)
 
     def _reject(self, reason: VirqFaultCode) -> DispatchResult:
-        self._faults.push_back(reason)
+        recorded = self._faults.push_back(reason)
+        assert recorded, "vIRQ fault record capacity exceeded"
         return DispatchResult(VirqDispatchResult.REJECT, reason)

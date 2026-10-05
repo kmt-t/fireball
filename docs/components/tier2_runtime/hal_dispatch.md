@@ -9,7 +9,14 @@
 
 ## 1. コンセプト
 <!-- traceability: {IPCRouter} {URIAbstraction} {TypeSafeMessaging} {IPC_ZeroCopy} -->
-HAL (Hardware Abstraction Layer) は、COOS 上で稼働する独立したタスク（`hal_task`）として常駐し、物理ハードウェアおよび仮想ペリフェラルへのアクセスを抽象化して提供する。デバイスインスタンス 1 つにつき `hal_task` インスタンス 1 つが対応する（1 タスクは正確に 1 つの物理ドライバのみを所有する）。`Role` はデバイス種別だけを表し、インスタンスは階層型URI（`fireball://hal/<driver-type>/<instance-id>`）で識別する。上位層（Runtime, Debugger, Guest 等）からの直接関数呼び出しは行わず、通信はすべて IPC ルータ（`ipc_router`）を介した CSP rendezvous メッセージパッシングによって行われる。
+HAL (Hardware Abstraction Layer) は、COOS 上で稼働する独立したタスク（`hal_task`）として常駐する。
+物理ハードウェアおよび仮想ペリフェラルへのアクセスを抽象化して提供する。
+デバイスインスタンス 1 つにつき `hal_task` インスタンス 1 つが対応する。
+1 タスクは正確に 1 つの物理ドライバのみを所有する。
+`Role` はデバイス種別だけを表す。
+インスタンスは階層型URI（`fireball://hal/<driver-type>/<instance-id>`）で識別する。
+上位層（Runtime, Debugger, Guest 等）からの直接関数呼び出しは行わない。
+通信はすべて IPC ルータ（`ipc_router`）を介した CSP rendezvous メッセージパッシングによって行われる。
 
 各 `hal_task` インスタンスは、IPC ルータ（`ipc_router`）から自身が担当する1インスタンス宛ての WASI 0.3p ドライバ通信コマンドを受信する。対象コマンドは `CMD_STREAM_*`、`CMD_CLOCK_*`、`CMD_GPIO_*`、`CMD_BUS_*` である。HAL バッファプールのバッファスライス（`hal-buffer-slice`）を介して、ゼロコピーの高速データ転送を実行する。このスライスは、本コンポーネントから見た不透明ハンドルである。物理実体は Tier 3 の vMMIO / DYNAMIC 領域にある。
 
@@ -19,7 +26,9 @@ DYNAMIC 領域は、各 I/O 操作の実行期間だけ対象スロットをマ�
 
 ## 2. アーキテクチャ分類
 <!-- traceability: {META_3TierSeparation} {IPCRouter} {URIAbstraction} {META_StaticDI} -->
-本コンポーネントは **Tier 2 (分解されたサブコンポーネント: Decomposed Subcomponent)** に属し、HAL の URI Resolver・コマンドプロトコル・ゼロコピー転送インターフェースという抽象化層を担当する。物理ドライバ実装（UART/SEGGER RTT 物理層、RSPパケット処理）は Tier 3 の [`platform_driver.md`](docs/components/tier3_platform/platform_driver.md) が担う。
+本コンポーネントは **Tier 2 (分解されたサブコンポーネント: Decomposed Subcomponent)** に属する。
+HAL の URI Resolver・コマンドプロトコル・ゼロコピー転送インターフェースという抽象化層を担当する。
+物理ドライバ実装（UART/SEGGER RTT 物理層、RSPパケット処理）は Tier 3 の [`platform_driver.md`](docs/components/tier3_platform/platform_driver.md) が担う。
 
 ## 3. 静的モデル
 

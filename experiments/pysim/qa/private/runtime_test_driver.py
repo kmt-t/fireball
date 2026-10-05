@@ -41,27 +41,32 @@ class _Debugger(Protocol):
 
 def _interp_i32_const(ctx: DebugTestView, arg: WasmOperand) -> None:
     assert arg is not None
-    assert ctx.stack.push_back(arg)
+    pushed = ctx.stack.push_back(arg)
+    assert pushed
 
 
 def _interp_i32_add(ctx: DebugTestView, _arg: WasmOperand) -> None:
     right, left = ctx.stack.pop_back(), ctx.stack.pop_back()
-    assert ctx.stack.push_back((left + right) & 0xFFFF_FFFF)
+    pushed = ctx.stack.push_back((left + right) & 0xFFFF_FFFF)
+    assert pushed
 
 
 def _interp_i32_sub(ctx: DebugTestView, _arg: WasmOperand) -> None:
     right, left = ctx.stack.pop_back(), ctx.stack.pop_back()
-    assert ctx.stack.push_back((left - right) & 0xFFFF_FFFF)
+    pushed = ctx.stack.push_back((left - right) & 0xFFFF_FFFF)
+    assert pushed
 
 
 def _interp_i32_mul(ctx: DebugTestView, _arg: WasmOperand) -> None:
     right, left = ctx.stack.pop_back(), ctx.stack.pop_back()
-    assert ctx.stack.push_back((left * right) & 0xFFFF_FFFF)
+    pushed = ctx.stack.push_back((left * right) & 0xFFFF_FFFF)
+    assert pushed
 
 
 def _interp_local_get(ctx: DebugTestView, arg: WasmOperand) -> None:
     assert arg is not None
-    assert ctx.stack.push_back(ctx.locals[arg])
+    pushed = ctx.stack.push_back(ctx.locals[arg])
+    assert pushed
 
 
 def _interp_local_set(ctx: DebugTestView, arg: WasmOperand) -> None:

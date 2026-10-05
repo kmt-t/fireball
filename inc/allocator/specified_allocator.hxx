@@ -6,6 +6,7 @@
 #pragma once
 
 #include <memory_resource>
+#include <cstdint>
 
 extern "C" {
 

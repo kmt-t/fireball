@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ctypes
 import sys
+from _ctypes import CFuncPtr
 from collections.abc import Callable
 from pathlib import Path
 
@@ -136,11 +137,12 @@ def run_step(
 
 
 NativeDispatchResult = tuple[int, int, int, int]
-NativeDispatchEntryPoint = Callable[..., int]
+# The composition boundary borrows a C entry address, not a Python callback.
+NativeDispatchEntryPoint = CFuncPtr
 
 
 def run_native_dispatch(
-    entry: Callable[..., int],
+    entry: NativeDispatchEntryPoint,
     code_address: int,
     code_bytes: int,
     context_address: int,

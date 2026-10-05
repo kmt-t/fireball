@@ -20,6 +20,8 @@ from collections.abc import Generator
 from enum import IntEnum
 from typing import Generic, TypeVar
 
+BACKS = ["components/tier1_core/os_coos.md"]
+
 MsgT = TypeVar("MsgT")
 
 

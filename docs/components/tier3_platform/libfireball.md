@@ -1,5 +1,6 @@
 # libfireball ゲストアダプタ コンポーネント設計書
 <!-- evidence:
+     contract-only: true
      implementation: experiments/pysim/tier3_platform/libfireball.py
      test: docs/qa/tier3_platform/libfireball_test_spec.md
 -->

@@ -6,57 +6,21 @@
 #pragma once
 
 #include <allocator/specified_allocator.hxx>
-#include <fireball.hxx>
 
 namespace fireball::allocator {
 
 /**
- * host_allocator_tag - Type tag for C++ standard library allocator.
+ * host_allocator_tag - Type tag for an explicitly sized host arena.
  *
- * This tag distinguishes the C++ standard library allocator instance from other
- * specified_allocator instances in the system. It enables compile-time
- * differentiation of allocator instances while maintaining type safety.
+ * The caller supplies capacity and uses the project heap API directly.
  */
 struct host_allocator_tag {};
 
 /**
- * host_allocator - Global allocator for C++ standard library containers.
- *
- * This is a type alias for specified_allocator configured with the host heap
- * size (FIREBALL_HOST_HEAP_SIZE). It provides flexible allocation/deallocation
- * for standard library containers (vector, map, string, etc.) used throughout
- * the hypervisor. The allocator is implemented as a singleton to ensure all
- * standard library allocations share the same heap partition, preventing
- * fragmentation across multiple allocator instances.
+ * host_allocator - Fixed arena with an explicit capacity in bytes.
+ * Standard dynamic containers and global new/delete are not enabled by this alias.
  */
-using host_allocator =
-    specified_allocator<FIREBALL_HOST_HEAP_SIZE, host_allocator_tag>;
+template <std::uint32_t N>
+using host_allocator = specified_allocator<N, host_allocator_tag>;
 
 } // namespace fireball::allocator
-
-[[nodiscard]]
-extern void *operator new(std::size_t num);
-
-[[nodiscard]]
-extern void *operator new(std::size_t num, std::align_val_t);
-
-[[nodiscard]]
-extern void *operator new(std::size_t num, const std::nothrow_t &) noexcept;
-
-[[nodiscard]]
-extern void *operator new(std::size_t num, std::align_val_t align,
-                          const std::nothrow_t &) noexcept;
-
-extern void operator delete(void *ptr) noexcept;
-
-extern void operator delete(void *ptr, std::size_t num) noexcept;
-
-void operator delete(void *ptr, std::align_val_t align) noexcept;
-
-extern void operator delete(void *ptr, std::size_t num,
-                            std::align_val_t align) noexcept;
-
-extern void operator delete(void *ptr, const std::nothrow_t &) noexcept;
-
-extern void operator delete(void *ptr, std::align_val_t align,
-                            const std::nothrow_t &) noexcept;

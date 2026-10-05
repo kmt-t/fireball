@@ -99,7 +99,11 @@ class GuestDriverClient:
             tuple(self._command if field == "command" else self._stream for _, field in imports),
             capacity=2,
         )
-        self.interpreter = make_native_interpreter(self.module, host_functions=bindings)
+        self.interpreter = make_native_interpreter(
+            self.module,
+            host_functions=bindings,
+            bump_allocator=platform.system.runtime_engine.bump_allocator,
+        )
         assert "clang version" in binary.with_name("compiler.txt").read_text()
         self.call("_initialize", ())
 

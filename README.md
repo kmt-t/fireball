@@ -12,9 +12,9 @@ The design favors static resolution and bounded resources. Configuration fixes c
 
 The architecture is organized into three tiers:
 
-- **Tier 1**: COOS, IPC, configuration, static containers, memory contracts, services, and WIT interfaces.
-- **Tier 2**: vSoC runtime, loader, interpreter, system calls, logging, vMMIO, debugger, and HAL dispatch.
-- **Tier 3**: JIT compilation/runtime, the `libfireball` guest adapter, and physical platform drivers.
+- **Tier 1**: COOS, low-level diagnostic output (`printk`), IPC, configuration, static containers, memory contracts, and services.
+- **Tier 2**: vSoC runtime, loader, interpreter, system calls, logging, vMMIO, HAL dispatch, and runtime execution, observation, and ABI contracts.
+- **Tier 3**: JIT compilation/runtime, debugger and guest profiler plugins, guest-facing WIT interfaces, the `libfireball` guest adapter, and physical platform drivers.
 
 ## Development Environment and Build
 

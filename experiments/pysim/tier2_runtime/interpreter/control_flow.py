@@ -13,7 +13,7 @@ without hitting Python's recursion limit.
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from enum import IntFlag
 
@@ -207,7 +207,7 @@ from tier2_runtime.wasm.opcodes import (
 ControlBlock = tuple[int, int | None, int]
 
 
-def _decode_blocktype(code: bytes, offset: int) -> tuple[int, int]:
+def _decode_blocktype(code: Sequence[int], offset: int) -> tuple[int, int]:
     """Decode a supported blocktype and return (native-slot-count, next-offset)."""
 
     assert 0 <= offset < len(code), "truncated blocktype"
@@ -279,7 +279,7 @@ def opcode_has_attribute(opcode: int, attribute: OpcodeAttribute) -> bool:
     return (packed & int(attribute)) != 0
 
 
-def _decode_fc_instruction(code: bytes, offset: int) -> tuple[int, int]:
+def _decode_fc_instruction(code: Sequence[int], offset: int) -> tuple[int, int]:
     """Decode and validate one supported 0xFC subopcode and its immediates."""
 
     subopcode, next_offset = decode_unsigned(code, offset)
@@ -567,7 +567,7 @@ class _OpenBlock:
     result_arity: int
 
 
-def build_control_map(code: bytes) -> ControlMap:
+def build_control_map(code: Sequence[int]) -> ControlMap:
     """Single linear scan over WASM bytecode to resolve block structure and br_tables once per function."""
     block_entries: StaticVector[tuple[int, ControlBlock]] = StaticVector(capacity=len(code))
     br_table_entries: StaticVector[tuple[int, tuple[tuple[int, ...], int]]] = StaticVector(
@@ -657,7 +657,7 @@ def build_control_map(code: bytes) -> ControlMap:
     )
 
 
-def iter_scan_instrs(code: bytes, start: int = 0) -> Iterator[Instr]:
+def iter_scan_instrs(code: Sequence[int], start: int = 0) -> Iterator[Instr]:
     """
     Streams every instruction in `code[start:]` as a freshly-decoded, minimal
     `Instr` (offset/opcode/end_offset/operand only), one at a time in
@@ -779,7 +779,7 @@ _IS_BB_OPCODE: ReadOnlyBitStorage = ReadOnlyBitStorage(
 
 
 def iter_block_ops(
-    code: bytes, head_offset: int, byte_span: int
+    code: Sequence[int], head_offset: int, byte_span: int
 ) -> Iterator[tuple[int, WasmOperand]]:
     """
     Streams ONE BasicBlock's compilable `(opcode, arg)` op stream directly
@@ -830,7 +830,7 @@ def iter_block_ops(
 
 
 def extract_basic_blocks(
-    code: bytes, pc_base: int = 0
+    code: Sequence[int], pc_base: int = 0
 ) -> StaticVector[tuple[int, int | None, int | None, int, int]]:
     """Extracts straight-line BasicBlock PC ranges from WASM bytecode as a flat list.
     Each entry is: (head_pc, next_pc, loops_to, frame_depth, byte_span).

@@ -1,5 +1,8 @@
 # Runtime 観測イベント・ABI契約 コンポーネント設計書
 <!-- evidence:
+     implementation: experiments/pysim/tier2_runtime/observability/events.py
+     implementation: experiments/pysim/tier2_runtime/runtime/composer.py
+     contract-only: true
      reference: docs/requires/requirement_list.md
      test: docs/qa/tier2_runtime/runtime_observability_test_spec.md
      benchmark: docs/components/tier3_plugins/benchmarks/jit_runtime_bench_spec.md
@@ -302,7 +305,7 @@ Runtimeイベントの意味、リング容量超過、バッチABIの境界検�
 - ホットスポット履歴とカード更新は、Tier 3 JIT拡張の責務であり、本契約の対象外とする。
 - Debugger の停止要求検出機構、ログ形式、通信 transport は本契約の対象外とする。
 
-## 8. 設計判断
+## 8. 設計判断と参考実装
 
 本契約の中心判断は、Guest Profiler が必要とする Runtime の粗粒度イベントだけを C++ の型付き Sink に
 記録し、停止点で一括 ABI 変換することである。ホットスポット履歴とカード更新はイベント Sink に混ぜず、

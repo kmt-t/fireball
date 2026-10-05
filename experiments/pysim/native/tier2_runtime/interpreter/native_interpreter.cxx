@@ -2451,6 +2451,7 @@ dispatch_iteration execute_interpreted_block(
 
   call.stack_size = context.sp_offset;
   if (result.kind == kComplete || result.next_ip == kNoPc || result.next_ip == kSentinel) {
+    if constexpr (CollectStats) ++state.metrics.stats.control_handler_count;
     context.runtime_flags &= ~kPendingBlockHeadFlag;
     context.ip = kNoPc;
     state.status = kComplete;

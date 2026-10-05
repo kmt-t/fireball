@@ -20,13 +20,13 @@ Implementation Invariants & Gotchas:
 from __future__ import annotations
 
 import time
-from collections.abc import Callable, Generator, Iterator, Sequence
+from collections.abc import Callable, Generator, Iterator
 from contextlib import contextmanager
 from enum import IntEnum
 from typing import Protocol, cast
 
 from interrupt_event import InterruptEvent
-from system_containers import StaticVector
+from system_containers import SequenceView, StaticVector
 from tier1_core.printk import (
     Printk,
     PrintkEvent,
@@ -261,6 +261,10 @@ class ChannelAction(IntEnum):
     YIELD = 3
 
 
+TaskSignal = tuple[ChannelAction, ChannelPayload | None]
+TaskCoroutine = Generator[TaskSignal | None, None, ChannelPayload | None]
+
+
 class SelectGroup:
     """
     Tracks one receiver's pending guarded external choice (select) across
@@ -271,7 +275,7 @@ class SelectGroup:
 
     __slots__ = ("channels",)
 
-    def __init__(self, channels: Sequence[Channel]):
+    def __init__(self, channels: SequenceView[Channel]):
         self.channels = channels
 
 
@@ -294,7 +298,6 @@ class Channel:
         "reply_payload",
         "reply_sender_task",
         "reply_stamper",
-        "reply_value",
         "reply_waiter_task",
         "request_reply",
         "scheduler",
@@ -330,7 +333,6 @@ class Channel:
         self.reply_sender_task: Task | None = None
         self.reply_waiter_task: Task | None = None
         self.reply_payload: ChannelPayload | None = None
-        self.reply_value: ChannelPayload | None = None
 
     def send(self, data: ChannelPayload) -> tuple[ChannelAction, ChannelPayload | None]:
         """Synchronous CSP send on this channel."""
@@ -377,7 +379,7 @@ class Task:
     def __init__(
         self,
         task_id: int,
-        coro: Generator[ChannelPayload, None, None] | None = None,
+        coro: TaskCoroutine | None = None,
         role: int = 0,
         service_handle: int | None = None,
     ):
@@ -574,7 +576,7 @@ class Scheduler:
     def spawn(
         self,
         name: str,
-        coro: Generator[ChannelPayload, None, None] | None = None,
+        coro: TaskCoroutine | None = None,
         task_id: int | None = None,
         role: int = 0,
         service_handle: int | None = None,
@@ -728,11 +730,9 @@ class Scheduler:
                 task.pending_val = None
             if channel.reply_waiter_task is task:
                 assert channel.reply_sender_task is task
-                assert channel.reply_value is None
                 channel.reply_waiter_task = None
             if channel.reply_sender_task is task:
                 assert channel.reply_waiter_task is None
-                assert channel.reply_value is None
                 channel.reply_sender_task = None
                 channel.reply_payload = None
 
@@ -756,7 +756,7 @@ class Scheduler:
             assert ch.reply_sender_task is None, (
                 "one waiter per channel: separate channels are required while previous sender awaits a reply"
             )
-            assert ch.reply_payload is None and ch.reply_value is None, (
+            assert ch.reply_payload is None, (
                 "a channel cannot accept a new request while a reply is pending"
             )
         if ch.sender_stamper is not None:
@@ -805,6 +805,10 @@ class Scheduler:
         if ch.waiter_dir == WaitDir.SEND:
             sender = ch.waiter_task
             assert sender is not None
+            if ch.request_reply:
+                assert ch.reply_sender_task is sender, (
+                    "request receive cannot consume a pending response"
+                )
             val = sender.pending_val
             sender.pending_val = None  # Prevent double ownership
             ch.waiter_task, ch.waiter_dir = None, WaitDir.NONE
@@ -827,7 +831,7 @@ class Scheduler:
         return (ChannelAction.BLOCK, None)
 
     def channel_select_recv(
-        self, channels: Sequence[Channel]
+        self, channels: SequenceView[Channel]
     ) -> tuple[ChannelAction, ChannelPayload | None]:
         """
         Guarded external choice (receive-only select, {ADR_RendezvousChannel}):
@@ -840,6 +844,10 @@ class Scheduler:
             if ch.waiter_dir == WaitDir.SEND:
                 sender = ch.waiter_task
                 assert sender is not None
+                if ch.request_reply:
+                    assert ch.reply_sender_task is sender, (
+                        "request receive cannot consume a pending response"
+                    )
                 val = sender.pending_val
                 sender.pending_val = None
                 ch.waiter_task, ch.waiter_dir = None, WaitDir.NONE
@@ -871,13 +879,25 @@ class Scheduler:
         assert sender is not None, "channel_wait_reply requires active running task"
         assert ch.request_reply, "channel is not configured for request/reply"
         assert ch.reply_sender_task is sender, "current task is not this channel's request sender"
-        if ch.reply_value is not None:
-            value = ch.reply_value
-            ch.reply_value = None
+        if sender.received_val is not None:
+            value = sender.received_val
             ch.reply_sender_task = None
             ch.reply_payload = None
             sender.received_val = None
             return (ChannelAction.YIELD, value)
+        if ch.waiter_dir == WaitDir.SEND:
+            receiver = ch.waiter_task
+            assert receiver is not None and receiver is not sender
+            value = receiver.pending_val
+            assert value is not None and value is ch.reply_payload
+            receiver.pending_val = None
+            ch.waiter_task, ch.waiter_dir = None, WaitDir.NONE
+            value = self._move_payload(ch, value, sender)
+            ch.reply_sender_task = None
+            ch.reply_payload = None
+            receiver.state = TaskState.READY
+            action, _ = self._handoff_or_yield(receiver)
+            return (action, value)
         assert ch.reply_waiter_task is None, "one reply waiter per channel"
         assert sender.received_val is None, "sender already has an unconsumed channel value"
         ch.reply_waiter_task = sender
@@ -897,15 +917,21 @@ class Scheduler:
         sender = ch.reply_sender_task
         assert sender is not None, "reply requires an active request transaction"
         assert ch.reply_payload is data, "reply must return the received message object"
-        assert ch.reply_value is None, "a request can receive only one reply"
         if ch.reply_stamper is not None:
             ch.reply_stamper(data)
-        data = self._move_payload(ch, data, sender)
-        ch.reply_value = data
         if ch.reply_waiter_task is None:
-            return (ChannelAction.YIELD, None)
+            assert ch.waiter_task is None and ch.waiter_dir == WaitDir.NONE
+            assert receiver.pending_val is None
+            ch.waiter_task, ch.waiter_dir = receiver, WaitDir.SEND
+            receiver.pending_val = data
+            receiver.state = TaskState.SUSPENDED_CSP
+            self._remove_round_target(receiver)
+            self._complete_reschedule_if_ready()
+            return (ChannelAction.BLOCK, None)
         assert ch.reply_waiter_task is sender
         ch.reply_waiter_task = None
+        data = self._move_payload(ch, data, sender)
+        ch.reply_payload = None
         sender.received_val = data
         sender.state = TaskState.READY
         return self._handoff_or_yield(sender)
@@ -926,13 +952,15 @@ class Scheduler:
             if self.reschedule_pending:
                 # The rendezvous itself remains atomic, but a pending generation
                 # ends the direct-handoff chain at this safe boundary.
-                assert self._ready.enqueue(target_task), "READY queue capacity exceeded"
+                enqueued = self._ready.enqueue(target_task)
+                assert enqueued, "READY queue capacity exceeded"
                 if target_task.coro is not None:
                     self._ready_coro_count += 1
                 self.consecutive_handoffs = 0
                 return (ChannelAction.YIELD, None)
             self.consecutive_handoffs += 1
-            assert self._ready.enqueue_front(target_task), "READY queue capacity exceeded"
+            enqueued = self._ready.enqueue_front(target_task)
+            assert enqueued, "READY queue capacity exceeded"
             if target_task.coro is not None:
                 self._ready_coro_count += 1
             return (ChannelAction.DIRECT_SWITCH, target_task.task_id)
@@ -944,7 +972,8 @@ class Scheduler:
                 self.consecutive_handoffs,
             )
         self.consecutive_handoffs = 0
-        assert self._ready.enqueue(target_task), "READY queue capacity exceeded"
+        enqueued = self._ready.enqueue(target_task)
+        assert enqueued, "READY queue capacity exceeded"
         if target_task.coro is not None:
             self._ready_coro_count += 1
         return (ChannelAction.YIELD, None)
@@ -983,7 +1012,8 @@ class Scheduler:
                     task.pending_interrupt_event = event
                     task.waiting_irq = None
                     task.state = TaskState.READY
-                    assert self._ready.enqueue(task), "READY queue capacity exceeded"
+                    enqueued = self._ready.enqueue(task)
+                    assert enqueued, "READY queue capacity exceeded"
                     if task.coro is not None:
                         self._ready_coro_count += 1
                     delivered = True
@@ -1030,7 +1060,8 @@ class Scheduler:
             if task.waiting_deadline_ns <= now_ns:
                 task.waiting_deadline_ns = 0
                 task.state = TaskState.READY
-                assert self._ready.enqueue(task), "READY queue capacity exceeded"
+                enqueued = self._ready.enqueue(task)
+                assert enqueued, "READY queue capacity exceeded"
                 if task.coro is not None:
                     self._ready_coro_count += 1
                 awakened += 1

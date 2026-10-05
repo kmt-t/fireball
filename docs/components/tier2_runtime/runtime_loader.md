@@ -16,7 +16,10 @@ WASM ローダは、ROM 上の WASM32 バイナリを解析し、実行環境向
 
 ## 2. アーキテクチャ分類
 <!-- traceability: {META_3TierSeparation} -->
-本コンポーネントは **Tier 2 (分解されたサブコンポーネント: Decomposed Subcomponent)** に属し、vSoC (`runtime_vsoc.md`) から分解された WASM バイナリのパース・検証、デコード値レジストリ管理、ファイル内データ位置およびインポート/エクスポートハッシュからの RadixBinaryTreeView 索引構築、および ROM 上の索引構築（ModuleView）を担当する。
+本コンポーネントは **Tier 2 (分解されたサブコンポーネント: Decomposed Subcomponent)** に属する。
+vSoC (`runtime_vsoc.md`) から分解された WASM バイナリのパース・検証と、デコード値レジストリ管理を担当する。
+ファイル内データ位置およびインポート/エクスポートハッシュから、RadixBinaryTreeView 索引を構築する。
+ROM 上の索引構築（ModuleView）も担当する。
 
 ## 3. 静的モデル
 

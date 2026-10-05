@@ -75,9 +75,7 @@ struct jit_profile {
   std::uint8_t* trackable;
   std::uint32_t mask_bytes, module_id, enabled, candidate_threshold, min_trace_bytes;
   std::uint64_t code_bytes;
-  std::uint32_t history_capacity, queue_capacity, compiler_enabled;
-  const jit_wasm_block* blocks;
-  std::uint32_t block_count;
+  std::uint32_t history_capacity, queue_capacity;
 };
 
 }  // namespace fireball

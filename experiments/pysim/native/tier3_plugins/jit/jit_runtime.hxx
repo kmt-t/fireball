@@ -101,9 +101,15 @@ struct unmeasured_owned_trace {
   bool used = false;
 };
 template <class Measurement>
-struct owned_trace_type { using type = typename Measurement::owned_trace; };
+struct runtime_storage_types {
+  using owned_trace = typename Measurement::owned_trace;
+  using profile = typename Measurement::profile_type;
+};
 template <>
-struct owned_trace_type<void> { using type = unmeasured_owned_trace; };
+struct runtime_storage_types<void> {
+  using owned_trace = unmeasured_owned_trace;
+  using profile = jit_profile;
+};
 
 template <class Measurement>
   requires (std::is_void_v<Measurement> || requires { typename Measurement::owned_trace; })
@@ -124,7 +130,7 @@ class jit_runtime final
   std::array<std::uint32_t, FB_CONF_JIT_COMPILE_QUEUE_CAPACITY> queue_pcs{};
   jit_history history{};
   jit_compile_queue queue{};
-  using owned_trace = typename owned_trace_type<Measurement>::type;
+  using owned_trace = typename runtime_storage_types<Measurement>::owned_trace;
   std::array<owned_trace, max_entries * bank_count + 1> owned{};
   fb_native_execution_extension extension{};
   int (*dispatch)(const fb_native_dispatch_call*, fb_native_result*) = nullptr;
@@ -135,36 +141,28 @@ class jit_runtime final
   }
   const fireball_wasm_module_execution_view_native* module = nullptr;
   std::uint32_t workspace_cursor = 0;
+  using profile_type = typename runtime_storage_types<Measurement>::profile;
+  profile_type profile{};
   const jit_wasm_block* block(std::uint32_t pc, jit_wasm_block& output) const {
-    if (module != nullptr) {
-      std::uint32_t first = 0, last = module->block_count;
-      while (first < last) {
-        const auto mid = first + (last - first) / 2;
-        if (module->blocks[mid].head_pc < pc) first = mid + 1;
-        else last = mid;
-      }
-      if (first == module->block_count || module->blocks[first].head_pc != pc) return nullptr;
-      const auto& b = module->blocks[first];
-      if (b.function_index >= module->function_count) return nullptr;
-      const auto& f = module->functions[b.function_index];
-      output = {b.head_pc, b.head_pc - f.code_pc_offset, b.byte_span, b.next_pc, b.loops_to,
-                b.frame_depth, 0, {f.code, f.code_size},
-                {{f.local_width_map, (f.local_width_count + 3) / 4},
-                 f.local_width_count, f.slot_words}};
-      return &output;
-    }
-    std::uint32_t first = 0, last = profile.block_count;
+    if constexpr (!std::is_void_v<Measurement>)
+      if (module == nullptr) return Measurement::fixture_block(profile, pc);
+    std::uint32_t first = 0, last = module->block_count;
     while (first < last) {
       const auto mid = first + (last - first) / 2;
-      if (profile.blocks[mid].head_pc < pc)
-        first = mid + 1;
-      else
-        last = mid;
+      if (module->blocks[mid].head_pc < pc) first = mid + 1;
+      else last = mid;
     }
-    return first < profile.block_count && profile.blocks[first].head_pc == pc
-               ? profile.blocks + first
-               : nullptr;
+    if (first == module->block_count || module->blocks[first].head_pc != pc) return nullptr;
+    const auto& b = module->blocks[first];
+    if (b.function_index >= module->function_count) return nullptr;
+    const auto& f = module->functions[b.function_index];
+    output = {b.head_pc, b.head_pc - f.code_pc_offset, b.byte_span, b.next_pc, b.loops_to,
+              b.frame_depth, 0, {f.code, f.code_size},
+              {{f.local_width_map, (f.local_width_count + 3) / 4},
+               f.local_width_count, f.slot_words}};
+    return &output;
   }
+
   std::uint64_t reserve_owned() {
     for (std::uint32_t i = 0; i < owned.size(); ++i) {
       if (!owned[i].used) {
@@ -183,13 +181,13 @@ class jit_runtime final
       const auto index = (token & ~owned_bit) - 1;
       return index < owned.size() && owned[index].used ? &owned[index].trace : nullptr;
     }
-    for (auto& bank : banks)
-      for (std::uint32_t i = 0; i < bank.count; ++i)
-        if (bank.entries[i].token == token && bank.entries[i].trace != nullptr)
-          return bank.entries[i].trace;
+    if constexpr (!std::is_void_v<Measurement>)
+      for (auto& bank : banks)
+        for (std::uint32_t i = 0; i < bank.count; ++i)
+          if (bank.entries[i].token == token && bank.entries[i].trace != nullptr)
+            return bank.entries[i].trace;
     return nullptr;
   }
-  jit_profile profile{};
 
   bool trackable(std::uint32_t pc) {
     const auto card = fb_jit_card_index(profile.code_bytes, card_shift, pc);
@@ -217,7 +215,8 @@ class jit_runtime final
       }
       int status = 0;
       const auto compile_candidate = [&]() {
-      if (profile.compiler_enabled != 0) {
+        if constexpr (!std::is_void_v<Measurement>)
+          if (profile.compiler_enabled == 0) return 0;
         jit_wasm_block input_storage{};
         const auto* input = block(static_cast<std::uint32_t>(pc), input_storage);
         if (!check(input != nullptr)) return -1;
@@ -238,7 +237,6 @@ class jit_runtime final
           if (error != 0) return -1;
         }
         if (status == 0) owned[(token & ~owned_bit) - 1].used = false;
-      }
         return status;
       };
       if constexpr (std::is_void_v<Measurement>) {
@@ -762,41 +760,50 @@ struct native_jit_plugin {
     c->age_scan = scan_bytes;
     return 1;
   }
-  static int fb_jit_runtime_bind_profile(Runtime* c, fireball::jit_profile p) {
+  static int fb_jit_runtime_bind_profile(Runtime* c, typename Runtime::profile_type p) {
     c->error = 0;
     if (!c->check(p.history_capacity > 0 && p.history_capacity <= c->history_records.size() &&
                   p.queue_capacity > 0 && p.queue_capacity <= c->queue_pcs.size() &&
-                  p.compiler_enabled <= 1 && (p.block_count == 0 || p.blocks != nullptr) &&
                   p.mask_bytes == c->dirty_bytes && (c->cards == 0 || p.trackable != nullptr) &&
                   p.enabled <= 1 && fb_jit_card_count(p.code_bytes, c->card_shift) == c->cards))
       return 0;
-    for (std::uint32_t i = 1; i < p.block_count; ++i)
-      if (!c->check(p.blocks[i - 1].head_pc < p.blocks[i].head_pc)) return 0;
+    if constexpr (!std::is_void_v<Measurement>) {
+      if (!c->check(p.compiler_enabled <= 1 && (p.block_count == 0 || p.blocks != nullptr)))
+        return 0;
+      for (std::uint32_t i = 1; i < p.block_count; ++i)
+        if (!c->check(p.blocks[i - 1].head_pc < p.blocks[i].head_pc)) return 0;
+    }
     c->history = {c->history_records.data(), p.history_capacity, 0, 0};
     c->queue = {c->queue_pcs.data(), p.queue_capacity, 0};
     c->profile = p;
     for (std::uint32_t i = 0; i < p.mask_bytes; ++i) p.trackable[i] = 0;
-    const auto block_count = c->module == nullptr ? p.block_count : c->module->block_count;
+    const auto block_count = [&]() {
+      if constexpr (!std::is_void_v<Measurement>)
+        if (c->module == nullptr) return p.block_count;
+      return c->module->block_count;
+    }();
     for (std::uint32_t i = 0; i < block_count; ++i) {
       fireball::jit_wasm_block storage{};
-      const auto* input = c->module == nullptr ? p.blocks + i :
-          c->block(c->module->blocks[i].head_pc, storage);
+      const auto* input = [&]() {
+        if constexpr (!std::is_void_v<Measurement>)
+          if (c->module == nullptr) return p.blocks + i;
+        return c->block(c->module->blocks[i].head_pc, storage);
+      }();
       if (!c->check(input != nullptr)) return 0;
       const auto& block = *input;
       const auto card = fb_jit_card_index(p.code_bytes, c->card_shift, block.head_pc);
       if (!c->check(card >= 0 && static_cast<std::uint64_t>(card) < c->cards)) return 0;
-      if (block.byte_span >= p.min_trace_bytes &&
-          (c->module == nullptr ? block.jit_score : fireball::score_block(block)) >=
-              p.candidate_threshold)
+      const auto score = [&]() {
+        if constexpr (!std::is_void_v<Measurement>)
+          if (c->module == nullptr) return block.jit_score;
+        return fireball::score_block(block);
+      }();
+      if (block.byte_span >= p.min_trace_bytes && score >= p.candidate_threshold)
         p.trackable[card / 8] |= static_cast<std::uint8_t>(1u << (card % 8));
     }
     if constexpr (!std::is_void_v<Measurement>) c->profile_bound();
     if constexpr (!std::is_void_v<Measurement>) c->mask_changed();
     return 1;
-  }
-  static int fb_jit_runtime_yield(Runtime* c) {
-    c->error = 0;
-    return c->analyze(true);
   }
   static int fb_jit_runtime_compile(Runtime* c, std::uint32_t budget) {
     c->error = 0;
@@ -909,12 +916,14 @@ struct native_jit_plugin {
     for (std::size_t i = 0; i < workspace_size(view); ++i) workspace[i] = 0;
     auto* dirty = workspace + state_bytes;
     auto* mask = dirty + mask_bytes;
+    typename Runtime::profile_type profile{};
+    static_cast<jit_profile&>(profile) = {mask, mask_bytes, module_id, hotspots, 9,
+        1u << FB_CONF_JIT_CARD_SHIFT, code_bytes, FB_CONF_JIT_HISTORY_CAPACITY,
+        FB_CONF_JIT_COMPILE_QUEUE_CAPACITY};
     if (!fb_jit_runtime_bind_cards(c, workspace, state_bytes, dirty, mask_bytes, cards,
          FB_CONF_JIT_CARD_SHIFT, &c->workspace_cursor, FB_CONF_JIT_AGING_STEP_UNITS,
          FB_CONF_JIT_AGING_STEP_SCAN_BYTES) ||
-        !fb_jit_runtime_bind_profile(c, {mask, mask_bytes, module_id, hotspots, 9,
-         1u << FB_CONF_JIT_CARD_SHIFT, code_bytes, FB_CONF_JIT_HISTORY_CAPACITY,
-         FB_CONF_JIT_COMPILE_QUEUE_CAPACITY, 1, nullptr, 0})) {
+        !fb_jit_runtime_bind_profile(c, profile)) {
       c->~Runtime();
       return nullptr;
     }

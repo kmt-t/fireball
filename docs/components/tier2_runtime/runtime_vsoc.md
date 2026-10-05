@@ -233,7 +233,6 @@ sequenceDiagram
     C-->>R: boundary status and execution state
     R-->>V: yield_requested / result
     alt yield requested
-        V->>V: on_yield()
         V-->>S: return to COOS
     else continue
         V->>R: resume from saved execution state
@@ -298,7 +297,7 @@ stateDiagram-v2
 | Executing → Executing | handlerまたはtrace終了 | LOOPしきい値未到達、trap・完了なし | C++内で次PCの本体実行を拡張へ委譲する | Executing |
 | Executing → RuntimeBoundary | [count >= threshold] | 取得LOOP後方辺が共通しきい値に達した | C++ dispatcherがyield statusを返す | RuntimeBoundary |
 | Executing → RuntimeBoundary | call_complete() | ゲスト関数が正常終了した | RuntimeEngineが完了状態と結果をSystemへ返す | RuntimeBoundary |
-| RuntimeBoundary → CoosYield | [yield_requested] | RuntimeEngineがyield statusを受け取る | Systemが`on_yield()`後にCOOSへ制御を返す | CoosYield |
+| RuntimeBoundary → CoosYield | [yield_requested] | RuntimeEngineがyield statusを受け取る | SystemがCOOSへ制御を返す | CoosYield |
 | RuntimeBoundary → Executing | [continue] | 継続可能な状態 | 保存した状態から同じ実行経路を再開する | Executing |
 | RuntimeBoundary → Ready | [call_complete] | ゲスト関数の呼出しが完了した | 呼出結果を呼出元へ返し、実行状態をReadyへ戻す | Ready |
 | CoosYield → Ready | [task scheduled] | COOSが停止中のゲストタスクを再選択した | 保存済みの継続状態から実行を再開できる状態にする | Ready |
@@ -389,7 +388,6 @@ sequenceDiagram
     end
     D-->>R: YIELD status and shared execution state
     R-->>V: yield_requested
-    V->>V: on_yield()
     V-->>S: co_yield to COOS
 
     Note over R: Cache lookup, hotspot processing, and queued compilation run at this boundary

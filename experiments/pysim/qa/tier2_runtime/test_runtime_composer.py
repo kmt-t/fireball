@@ -311,7 +311,6 @@ def test_native_execution_plugin_can_be_replaced_without_jit_knowledge(collect_s
         def __init__(self):
             self.bindings = []
             self.calls = 0
-            self.yields = 0
             self.owner = 123
 
         def register_module(self, module):
@@ -333,9 +332,6 @@ def test_native_execution_plugin_can_be_replaced_without_jit_knowledge(collect_s
         def idle_hook(self, budget=4):
             return 0
 
-        def on_yield(self):
-            self.yields += 1
-
     module = parse(
         wat_to_wasm("""(module
       (func (export "count") (param i32) (result i32)
@@ -356,9 +352,7 @@ def test_native_execution_plugin_can_be_replaced_without_jit_knowledge(collect_s
     assert plugin.calls >= 8
     assert engine.stat_jit_invocations == 0
     assert (engine.stat_interp_steps > 0) == collect_stats
-    engine.on_yield()
     engine.reset_stats()
-    assert plugin.yields == 1
     assert engine.stat_interp_steps == 0
 
 

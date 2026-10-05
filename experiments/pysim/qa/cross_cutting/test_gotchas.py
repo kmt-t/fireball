@@ -216,7 +216,7 @@ def test_jitr_gotcha_01_idle_hook_skips_recompiling_already_resident_trace():
     engine.jit_runtime.trackable.mark(pc)
     engine.jit_runtime.record_block_head(pc)
     engine.jit_runtime.record_block_head(pc)
-    engine.on_yield()
+    engine.jit_runtime.on_yield()
     assert engine.jit_runtime.has_pending_compilation()
     resident = JITTrace(pc, lambda: 0, size_bytes=64)
     assert engine.jit_runtime.cache.insert(resident)
@@ -276,7 +276,7 @@ def test_jitr_gotcha_03_lifo_reverse_compilation_order():
     for pc in pcs:
         engine.jit_runtime.record_block_head(pc)
         engine.jit_runtime.record_block_head(pc)
-    engine.on_yield()
+    engine.jit_runtime.on_yield()
     assert engine.jit_runtime.has_pending_compilation()
     count = engine.idle_hook(budget=2)
     assert count == 2

@@ -377,7 +377,6 @@ def _run_workload(case_id: str, case_tuple: tuple[str, ...], resources: ExitStac
             if boundary.yield_requested and not state.finished:
                 yielded_pcs.append(state.current_pc())
                 schedule.append("guest-yield")
-                engine.on_yield()
                 yield (ChannelAction.YIELD, None)
         result = engine.complete_call(interp, state, idle_budget=2)
         schedule.append("guest-done")

@@ -9,6 +9,10 @@ using configured_jit_plugin = native_jit_plugin<jit_measurements>;
 
 using JitRuntime = Api::Runtime;
 using fireball::jit_cache_trace;
+extern "C" FB_PYSIM_ABI_EXPORT int fb_jit_runtime_yield(JitRuntime* c) {
+  c->error = 0;
+  return c->analyze(true);
+}
 static_assert(sizeof(fireball::native_jit_plugin<void>::Runtime) < sizeof(JitRuntime));
 static_assert(sizeof(jit_cache_trace) < sizeof(fireball::jit_measurements::trace_type));
 extern "C" int fb_jit_runtime_bind_cards(fireball::JitRuntime* c, std::uint8_t* states,
@@ -20,7 +24,8 @@ extern "C" int fb_jit_runtime_bind_cards(fireball::JitRuntime* c, std::uint8_t* 
       dirty, dirty_bytes, cards, shift, cursor, units, scan_bytes);
 }
 
-extern "C" int fb_jit_runtime_bind_profile(fireball::JitRuntime* c, fireball::jit_profile p) {
+extern "C" FB_PYSIM_ABI_EXPORT int fb_jit_runtime_bind_profile(
+    fireball::JitRuntime* c, fireball::jit_measurements::profile_type p) {
   return Api::fb_jit_runtime_bind_profile(reinterpret_cast<Api::Runtime*>(c), p);
 }
 

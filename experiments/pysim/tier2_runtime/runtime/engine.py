@@ -174,11 +174,6 @@ class RuntimeEngine:
             return int(VirqDispatchResult.REJECT)
         return results[0] & 0xFFFF_FFFF
 
-    def on_yield(self) -> None:
-        """Notify the optional Tier 3 extension of the Runtime yield boundary."""
-        if self.jit_runtime is not None:
-            self.jit_runtime.on_yield()
-
     def idle_hook(self, budget: int = 4) -> int:
         """
         Gives the optional Tier 3 extension a bounded COOS idle slice.

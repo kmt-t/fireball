@@ -219,7 +219,7 @@ def test_hotspot_03_lifo_compile_queue_batch_drain():
     for pc in pcs:
         engine.jit_runtime.record_block_head(pc)
         engine.jit_runtime.record_block_head(pc)
-    engine.on_yield()
+    engine.jit_runtime.on_yield()
     assert engine.jit_runtime.has_pending_compilation()
     count = engine.idle_hook(budget=2)
     assert count == 2
@@ -613,7 +613,7 @@ def test_hotspot_07_idle_hook_skips_recompiling_an_already_resident_trace():
     engine.jit_runtime.trackable.mark(pc)
     engine.jit_runtime.record_block_head(pc)
     engine.jit_runtime.record_block_head(pc)
-    engine.on_yield()
+    engine.jit_runtime.on_yield()
     engine.jit_runtime.cache.insert(JITTrace(pc, lambda: 0, size_bytes=64))
 
     compiled = engine.idle_hook(budget=4)
@@ -649,7 +649,7 @@ def test_jitr_compile_queue_overflow_compiles_on_the_spot():
 
     for pc in pcs:
         engine.jit_runtime.record_block_head(pc)
-    engine.on_yield()
+    engine.jit_runtime.on_yield()
 
     assert len(engine.jit_runtime.compilation_pcs) == 3
     assert not engine.jit_runtime.has_pending_compilation()
@@ -680,7 +680,7 @@ def test_jitr_compile_failure_unmarks_candidate_without_faking_compiled():
     assert engine.jit_runtime.bitmap.touch(pc) == CardState.HOT
     engine.jit_runtime.record_block_head(pc)
     engine.jit_runtime.record_block_head(pc)
-    engine.on_yield()
+    engine.jit_runtime.on_yield()
 
     assert engine.idle_hook(budget=1) == 0
     assert engine.jit_runtime.bitmap.get_state(pc) == CardState.HOT
@@ -2151,7 +2151,7 @@ def _touch_via_yield(engine, pc):
     """Record one block head and let the yield handler touch its card."""
     engine.jit_runtime.trackable.mark(pc)
     engine.jit_runtime.record_block_head(pc)
-    engine.on_yield()
+    engine.jit_runtime.on_yield()
 
 
 def _aging_full_lap(engine):

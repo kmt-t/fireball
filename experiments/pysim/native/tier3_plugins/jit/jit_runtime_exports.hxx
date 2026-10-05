@@ -9,10 +9,6 @@ extern "C" int fb_jit_runtime_flush(fireball::JitRuntime* c) {
   return Api::fb_jit_runtime_flush(reinterpret_cast<Api::Runtime*>(c));
 }
 
-extern "C" int fb_jit_runtime_yield(fireball::JitRuntime* c) {
-  return Api::fb_jit_runtime_yield(reinterpret_cast<Api::Runtime*>(c));
-}
-
 extern "C" int fb_jit_runtime_compile(fireball::JitRuntime* c, std::uint32_t budget) {
   return Api::fb_jit_runtime_compile(reinterpret_cast<Api::Runtime*>(c), budget);
 }

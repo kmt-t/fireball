@@ -27,7 +27,6 @@ FB_PYSIM_ABI_EXPORT int fb_jit_runtime_run(
     const fb_native_dispatch_call* input, fb_native_result* result);
 FB_PYSIM_ABI_EXPORT void fb_jit_runtime_close(fireball::JitRuntime* cache);
 FB_PYSIM_ABI_EXPORT int fb_jit_runtime_flush(fireball::JitRuntime* cache);
-FB_PYSIM_ABI_EXPORT int fb_jit_runtime_yield(fireball::JitRuntime* cache);
 FB_PYSIM_ABI_EXPORT int fb_jit_runtime_compile(fireball::JitRuntime* cache, std::uint32_t budget);
 
 // Internal initialization and arithmetic shared with the QA library.
@@ -38,7 +37,5 @@ FB_JIT_QA_EXPORT int fb_jit_runtime_bind_cards(
 FB_JIT_QA_EXPORT std::int64_t fb_jit_card_index(
     std::uint64_t bytes, std::uint32_t shift, std::uint32_t pc);
 FB_JIT_QA_EXPORT std::int64_t fb_jit_card_count(std::uint64_t bytes, std::uint32_t shift);
-FB_JIT_QA_EXPORT int fb_jit_runtime_bind_profile(
-    fireball::JitRuntime* cache, fireball::jit_profile profile);
 }
 #endif

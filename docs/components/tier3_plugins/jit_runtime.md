@@ -99,7 +99,7 @@ JIT拡張はインタープリタに対するプラグインに近い選択可�
 - **前方chainメタデータ**: 実行時cache metadataの`chain_next_pc`は直線後続traceの論理PCを保持する。x64物理ヘッダの`chain_target_addr`は共通chain dispatcherがtail-jumpするresident target bodyを保持する。後方branch linkは作らず、branch handlerへ制御を戻す。
 - **実行履歴バッファ**: ホットスポット検出が有効なJIT拡張が所有する固定容量リングである。各レコードは`module_id`と`UnifiedPC`を持つ。容量は`JIT_HISTORY_CAPACITY`以下で指定する。待ち列容量は`JIT_COMPILE_QUEUE_CAPACITY`以下で指定する。Interpreter実行区間の終了時だけ履歴順に分析し、JIT trace/chainだけの区間では記録も分析もしない。 `{HistoryBuffer}`
 
-トレース実行回数と退役記録はQA専用の計測構成で採取する。計測の正本は[`jit_runtime_bench_spec.md`](docs/components/tier3_plugins/benchmarks/jit_runtime_bench_spec.md)とする。製品構成は計数状態、時計、計測用の後続走査、退役通知を持たない。pysimでは`jit_runtime<Measurement>`のテンプレート引数で構成し、製品は`void`、QAは専用の計測型を選ぶ。計測型の実装は[`jit_measurements.hxx`](experiments/pysim/qa/private/jit_measurements.hxx)へ置く。
+トレース実行回数と退役記録はQA専用の計測構成で採取する。計測の正本は[`jit_runtime_bench_spec.md`](docs/components/tier3_plugins/benchmarks/jit_runtime_bench_spec.md)とする。製品構成は計数状態、時計、計測用の後続走査、退役通知を持たない。pysimでは`jit_runtime<Measurement>`のテンプレート引数で構成し、製品は`void`、QAは専用の計測型を選ぶ。計測型の実装は[`jit_measurements.hxx`](experiments/pysim/qa/private/jit_measurements.hxx)へ置く。QA用の代替ブロック入力、コンパイラ無効化、自己所有メモリ、および外部trace tokenの検査もQA型へ限定する。ネイティブ実行境界で履歴分析を完了し、Pythonからのyield通知で再分析しない。
 
 ### 3.2 内部ブロック図
 ```mermaid

@@ -340,7 +340,6 @@ class VdmaFixture:
             boundary = self.system.runtime_engine.run(self.interpreter, state)
             state = boundary.call_state
             if not state.finished and boundary.yield_requested:
-                self.system.runtime_engine.on_yield()
                 yield (ChannelAction.YIELD, None)
         results = () if state.results is None else tuple(int(value) for value in state.results)
         return Outcome(results, state.trap)

@@ -611,7 +611,7 @@ def test_idle_01_jit_batch_compilation_on_idle():
     for pc in pcs[:2]:
         engine.jit_runtime.record_block_head(pc)
         engine.jit_runtime.record_block_head(pc)
-    engine.on_yield()
+    engine.jit_runtime.on_yield()
     assert engine.jit_runtime.has_pending_compilation()
     assert all(engine.jit_runtime.card_state(pc) == CardState.HOT for pc in pcs[:2])
     system = System()

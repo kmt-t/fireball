@@ -9,6 +9,21 @@ namespace fireball {
 struct jit_measurements {
   bool auto_age = true;
   bool owns_memory = true;
+  struct profile_type : jit_profile {
+    std::uint32_t compiler_enabled = 1;
+    const jit_wasm_block* blocks = nullptr;
+    std::uint32_t block_count = 0;
+  };
+  static const jit_wasm_block* fixture_block(const profile_type& profile, std::uint32_t pc) {
+    std::uint32_t first = 0, last = profile.block_count;
+    while (first < last) {
+      const auto mid = first + (last - first) / 2;
+      if (profile.blocks[mid].head_pc < pc) first = mid + 1;
+      else last = mid;
+    }
+    return first < profile.block_count && profile.blocks[first].head_pc == pc
+        ? profile.blocks + first : nullptr;
+  }
   struct trace_type : jit_cache_trace {
     std::uint32_t* exec_count = nullptr;
   };

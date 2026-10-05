@@ -318,7 +318,6 @@ class System:
             if not call_state.finished and (
                 boundary.yield_requested or generation_yield or syscall_yield
             ):
-                self.runtime_engine.on_yield()
                 yield (ChannelAction.YIELD, None)
         return self.runtime_engine.complete_call(interp, call_state, idle_budget)
 

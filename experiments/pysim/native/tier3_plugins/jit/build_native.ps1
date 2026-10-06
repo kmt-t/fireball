@@ -2,7 +2,7 @@
 # (Windows / clang-cl).
 # Requires clang-cl on PATH and a Visual Studio Build Tools +
 # Windows SDK install (for the MSVC headers/import libs clang-cl targets).
-param([switch]$QA)
+param([switch]$QA, [switch]$BlockCounters)
 
 $ErrorActionPreference = "Stop"
 
@@ -20,11 +20,10 @@ $sdkVer = Get-ChildItem "$sdkRoot\Include" | Select-Object -Last 1 -ExpandProper
 
 $env:PYTHONPATH = Join-Path $projectRoot "experiments\pysim\tier1_core"
 $fastSlotCount = & uv run --offline --no-sync --python $uvPython python -c "from config import JIT_CACHE_FAST_SLOT_COUNT; print(JIT_CACHE_FAST_SLOT_COUNT)"
-$cacheRuntimeConfig = & uv run --offline --no-sync --python $uvPython python -c "from config import JIT_CACHE_BANK_ENTRY_CAPACITY, JIT_CACHE_MAX_INBOUND_SOURCES; print(JIT_CACHE_BANK_ENTRY_CAPACITY, JIT_CACHE_MAX_INBOUND_SOURCES)"
+$cacheRuntimeConfig = & uv run --offline --no-sync --python $uvPython python -c "from config import JIT_CACHE_BANK_ENTRY_CAPACITY; print(JIT_CACHE_BANK_ENTRY_CAPACITY)"
 $cacheRuntimeValues = (($cacheRuntimeConfig -join " ").Trim() -split "\s+")
 $bankEntries = $cacheRuntimeValues[0]
-$maxInbound = $cacheRuntimeValues[1]
-$nativeJitConfig = & uv run --offline --no-sync --python $uvPython python -c "from config import JIT_TRACE_COMMON_CHAIN_DISPATCH_OFFSET, JIT_TRACE_COMMON_CHAIN_DISPATCH_BYTES, JIT_TRACE_COMMON_EPILOGUE_OFFSET, JIT_X64_TRACE_HEADER_BYTES, JIT_X64_CHAIN_TARGET_OFFSET, JIT_X64_TRACE_ENTRY_STUB_BYTES; print(JIT_TRACE_COMMON_CHAIN_DISPATCH_OFFSET, JIT_TRACE_COMMON_CHAIN_DISPATCH_BYTES, JIT_TRACE_COMMON_EPILOGUE_OFFSET, JIT_X64_TRACE_HEADER_BYTES, JIT_X64_CHAIN_TARGET_OFFSET, JIT_X64_TRACE_ENTRY_STUB_BYTES)"
+$nativeJitConfig = & uv run --offline --no-sync --python $uvPython python -c "from config import JIT_TRACE_COMMON_CHAIN_DISPATCH_OFFSET, JIT_TRACE_COMMON_CHAIN_DISPATCH_BYTES, JIT_TRACE_COMMON_EPILOGUE_OFFSET, JIT_X64_TRACE_HEADER_BYTES, JIT_X64_CHAIN_TARGET_OFFSET, JIT_X64_TRACE_ENTRY_STUB_BYTES, JIT_X64_COMMON_CODE_RELATIVE_OFFSET; print(JIT_TRACE_COMMON_CHAIN_DISPATCH_OFFSET, JIT_TRACE_COMMON_CHAIN_DISPATCH_BYTES, JIT_TRACE_COMMON_EPILOGUE_OFFSET, JIT_X64_TRACE_HEADER_BYTES, JIT_X64_CHAIN_TARGET_OFFSET, JIT_X64_TRACE_ENTRY_STUB_BYTES, JIT_X64_COMMON_CODE_RELATIVE_OFFSET)"
 $nativeJitValues = (($nativeJitConfig -join " ").Trim() -split "\s+")
 $chainDispatchOffset = $nativeJitValues[0]
 $chainDispatchBytes = $nativeJitValues[1]
@@ -32,6 +31,7 @@ $commonEpilogueOffset = $nativeJitValues[2]
 $traceHeaderBytes = $nativeJitValues[3]
 $chainTargetOffset = $nativeJitValues[4]
 $entryStubBytes = $nativeJitValues[5]
+$commonRelativeOffset = $nativeJitValues[6]
 $nativeBuildDir = Join-Path $env:TEMP "fireball-pysim-native"
 New-Item -ItemType Directory -Force -Path $nativeBuildDir | Out-Null
 $nativeSourceDir = $scriptDir
@@ -43,7 +43,7 @@ $runtimeSourceCpp = Join-Path $nativeSourceDir "jit_runtime.cxx"
 $profilingSourceCpp = Join-Path $nativeSourceDir "profiling.cxx"
 $generatedDll = Join-Path $nativeBuildDir "trace_compiler.dll"
 
-$commonConfig = & uv run --offline --no-sync --python $uvPython python -c 'import config; names=(''JIT_CACHE_REGION_BYTES'', ''JIT_CACHE_COMMON_CODE_BYTES'', ''JIT_CACHE_ABSOLUTE_ADDRESS_POOL_BYTES'', ''JIT_TRACE_COMMON_PROLOGUE_OFFSET'', ''JIT_TRACE_COMMON_HELPER_OFFSET'', ''JIT_TRACE_HELPER_ENTRY_BYTES'', ''JIT_TRACE_TYPED_I32_HELPER_COUNT'', ''JIT_TRACE_TYPED_I32_HELPER_OFFSET'', ''JIT_TRACE_WIDE_HELPER_COUNT'', ''JIT_TRACE_WIDE_HELPER_OFFSET'', ''JIT_X64_HELPER_TARGET_OFFSET'', ''JIT_X64_TRACE_ENTRY_STUB_BYTES'', ''JIT_HISTORY_CAPACITY'', ''JIT_COMPILE_QUEUE_CAPACITY'', ''JIT_CARD_SHIFT'', ''JIT_CACHE_BANK_CAPACITY_BYTES'', ''JIT_CACHE_ACTIVE_OFFSET_BYTES'', ''JIT_CACHE_WARM_OFFSET_BYTES'', ''JIT_CACHE_OLDEST_OFFSET_BYTES'', ''FB_CONF_JIT_AGING_STEP_UNITS'', ''FB_CONF_JIT_AGING_STEP_SCAN_BYTES''); print(" ".join("/D"+(name if name.startswith("FB_CONF_") else "FB_CONF_"+name)+"="+str(getattr(config,name)) for name in names))'
+$commonConfig = & uv run --offline --no-sync --python $uvPython python -c 'import config; names=(''JIT_CACHE_REGION_BYTES'', ''JIT_CACHE_COMMON_CODE_BYTES'', ''JIT_CACHE_ABSOLUTE_ADDRESS_POOL_BYTES'', ''JIT_TRACE_COMMON_PROLOGUE_OFFSET'', ''JIT_TRACE_COMMON_HELPER_OFFSET'', ''JIT_TRACE_HELPER_ENTRY_BYTES'', ''JIT_TRACE_TYPED_I32_HELPER_COUNT'', ''JIT_TRACE_TYPED_I32_HELPER_OFFSET'', ''JIT_X64_HELPER_TARGET_OFFSET'', ''JIT_HISTORY_CAPACITY'', ''JIT_COMPILE_QUEUE_CAPACITY'', ''JIT_CARD_SHIFT'', ''JIT_CACHE_BANK_CAPACITY_BYTES'', ''JIT_CACHE_ACTIVE_OFFSET_BYTES'', ''JIT_CACHE_WARM_OFFSET_BYTES'', ''JIT_CACHE_OLDEST_OFFSET_BYTES'', ''FB_CONF_JIT_AGING_STEP_UNITS'', ''FB_CONF_JIT_AGING_STEP_SCAN_BYTES''); print(" ".join("/D"+(name if name.startswith("FB_CONF_") else "FB_CONF_"+name)+"="+str(getattr(config,name)) for name in names))'
 $commonDefines = (($commonConfig -join " ").Trim() -split "\s+")
 
 if ($QA) {
@@ -52,6 +52,7 @@ if ($QA) {
     $generatedDll = Join-Path $nativeBuildDir "jit_probe.dll"
     $pythonPackageDir = Join-Path $projectRoot "experiments\pysim\qa\private"
 }
+if ($BlockCounters) { $commonDefines += "/DFB_CONF_JIT_BLOCK_COUNTERS=1" }
 
 Write-Host ">>> Compiling trace_compiler.cxx -> trace_compiler.dll (clang-cl)" -ForegroundColor Yellow
 & clang-cl.exe /TP /std:c++latest /O2 /LD `
@@ -59,10 +60,11 @@ Write-Host ">>> Compiling trace_compiler.cxx -> trace_compiler.dll (clang-cl)" -
     "/DFB_CONF_JIT_TRACE_COMMON_CHAIN_DISPATCH_BYTES=$chainDispatchBytes" `
     "/DFB_CONF_JIT_TRACE_COMMON_EPILOGUE_OFFSET=$commonEpilogueOffset" `
     "/DFB_CONF_JIT_X64_TRACE_HEADER_BYTES=$traceHeaderBytes" `
+    "/DFB_CONF_JIT_X64_TRACE_ENTRY_STUB_BYTES=$entryStubBytes" `
     "/DFB_CONF_JIT_X64_CHAIN_TARGET_OFFSET=$chainTargetOffset" `
+    "/DFB_CONF_JIT_X64_COMMON_CODE_RELATIVE_OFFSET=$commonRelativeOffset" `
     "/DFB_CONF_JIT_CACHE_FAST_SLOT_COUNT=$fastSlotCount" `
     "/DFB_CONF_JIT_CACHE_BANK_ENTRY_CAPACITY=$bankEntries" `
-    "/DFB_CONF_JIT_CACHE_MAX_INBOUND_SOURCES=$maxInbound" `
     -fno-exceptions -fno-rtti `
     "-I$nativeSourceDir" `
     "-I$vsDir\VC\Tools\MSVC\$msvcVer\include" `

@@ -1,0 +1,18 @@
+profile_compiler=Ubuntu clang version 21.1.8 (6ubuntu1)
+profile_source=/home/ubuntu/workspace/mysrc/fireball/experiments/pysim/benchmarks/profile/guest/suite.c
+profile_ngrams=i32.add:45,i32.sub:4,i32.mul:1,i32.and:1,i32.xor:14,i32.eq:1,i32.ne:3,i32.lt_s:4,i32.lt_u:1,i32.gt_s:5,i32.le_s:2,i32.ge_s:2,i32.ge_u:2
+compiler_library=experiments/pysim/qa/private/libjit_probe.so
+operation static_ngrams trace_bytes body_bytes body_instructions executions
+i32.add              45          87         30                  7          1
+i32.sub               4          87         30                  7          1
+i32.mul               1          88         31                  7          1
+i32.and               1          87         30                  7          1
+i32.xor              14          87         30                  7          1
+i32.eq                1          94         37                  9          1
+i32.ne                3          94         37                  9          1
+i32.lt_s              4          94         37                  9          1
+i32.lt_u              1          94         37                  9          1
+i32.gt_s              5          94         37                  9          1
+i32.le_s              2          94         37                  9          1
+i32.ge_s              2          94         37                  9          1
+i32.ge_u              2          94         37                  9          1

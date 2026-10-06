@@ -19,28 +19,32 @@
 
 ## 3. 静的モデル
 
-確認済みx64実行構成の `execution_context` と関連ビュー型は、固定フィールド順・サイズ・オフセットを持つ標準レイアウト構造体として定義する。インタープリタ単独実行とインタープリタからJITへの遷移で `ctx` のABI型を変えない。構造体は所有権を持たず、コード・関数表・結果配列は `address + length` の非所有ビューとして渡すため、呼び出し側が呼び出し完了まで対象領域の寿命を保証する。ARMv8-Mの構造体配置、ポインタ幅、サイズ、offsetはすべてTBDである。 `{ExecutionContext_Layout}` `{META_ZeroCostAbstraction}` <!-- definition: {ExecutionContext_Layout} -->
+確認済みx64実行構成の `execution_context` は固定フィールド順、96バイトの標準レイアウト構造体である。インタープリタ単独実行とインタープリタからJITへの遷移で `ctx` の型を変えない。ポインタは非所有であり、呼び出し側が参照先の寿命を保証する。ARMv8-Mの配置、ポインタ幅、サイズ、offsetはTBDである。 `{ExecutionContext_Layout}` `{META_ZeroCostAbstraction}`
 
 ### コンテキスト拡張
 
-既存の16個の32bit状態ワード（`+0x00`〜`+0x3F`）に、コードビュー、制御スタックビュー、境界フォールバック用チェックポイント、CallStackビュー、オペランドスタック容量、およびLOOP後方分岐カウンタを続けて配置する。x86-64のコンテキスト全体は144バイトである。Cヘルパーアドレスはトレースごとのヘッダに置く。
+実行状態、コードビュー、制御スタックビュー、境界フォールバック用チェックポイント、CallStackビュー、オペランドスタック容量、LOOP後方分岐カウンタ、借用中のリニアメモリビューを `execution_context` に置く。x86-64のコンテキストは96バイトである。CallStackの現在サイズはCallStack自身から取得する。Cヘルパーアドレスはトレースヘッダに置く。
 
 | オフセット | サイズ | フィールド | 用途 |
 | :--- | :--- | :--- | :--- |
-| `+0x3C` | 4バイト | runtime_flags | 実行時制御フラグ。Interpreterのブロック境界停止要求を含む |
-| `+0x40` | 8バイト | code | 現在のWASMコードの非所有アドレス |
-| `+0x48` | 4バイト | code_size | 現在のWASMコードのバイト数 |
-| `+0x50` | 8バイト | control_stack | 制御スタックの非所有アドレス |
-| `+0x58` | 4バイト | control_base | 現在の関数の制御フレーム窓の開始深さ |
-| `+0x5C` | 4バイト | stack_checkpoint | 境界フォールバック時のoperand stack高さ |
-| `+0x60` | 8バイト | call_stack | CallFrame配列の非所有アドレス |
-| `+0x68` | 4バイト | call_base | 現在のCallFrame窓の開始深さ |
-| `+0x6C` | 4バイト | call_offset | CallStackの現在の深さ |
-| `+0x70` | 4バイト | sp_capacity | オペランドスタックの論理容量（32bitワード数） |
-| `+0x74` | 4バイト | loop_jump_count | C++ Interpreterのbranch handlerが記録する、協調yieldまでの取得済み回数 |
-| `+0x78` | 4バイト | loop_jump_threshold | Tier 3が設定するLOOP後方分岐のyieldしきい値 |
-| `+0x80` | 8バイト | linear_memory_host_base | リニアメモリ実体のホスト基点アドレス。実行中に借用する |
-| `+0x88` | 8バイト | linear_memory_size | リニアメモリ実体の有効バイト数。境界検査に使用する |
+| `+0x00` | 4バイト | ip | 現在のWASMコード内の命令位置 |
+| `+0x04` | 4バイト | sp_offset | 値スタックの現在位置（32bitワード数） |
+| `+0x08` | 4バイト | local_offset | ローカルスタックの現在位置 |
+| `+0x0C` | 4バイト | local_capacity | ローカルスタックの論理容量 |
+| `+0x10` | 4バイト | runtime_flags | 実行時制御フラグ |
+| `+0x14` | 4バイト | code_size | 現在のWASMコードのバイト数 |
+| `+0x18` | 8バイト | code | 現在のWASMコードの非所有アドレス |
+| `+0x20` | 8バイト | control_stack | 制御スタックの非所有アドレス |
+| `+0x28` | 4バイト | control_base | 現在の関数の制御フレーム窓の開始深さ |
+| `+0x2C` | 4バイト | stack_checkpoint | 境界フォールバック時の値スタック高さ |
+| `+0x30` | 8バイト | call_stack | CallFrame配列の非所有アドレス |
+| `+0x38` | 4バイト | call_base | 現在のCallFrame窓の開始深さ |
+| `+0x3C` | 4バイト | sp_capacity | 値スタックの論理容量（32bitワード数） |
+| `+0x40` | 4バイト | loop_jump_count | C++ Interpreterが取得した後方分岐回数 |
+| `+0x44` | 4バイト | loop_jump_threshold | 協調yieldまでの後方分岐しきい値 |
+| `+0x48` | 8バイト | linear_memory_host_base | リニアメモリ実体の借用ホスト基点 |
+| `+0x50` | 8バイト | linear_memory_size | リニアメモリ実体の有効バイト数 |
+| `+0x58` | 4バイト | trap_code | 最後に発生したtrap |
 
 リニアメモリのホスト基点とサイズを末尾へ配置し、先行フィールドのオフセットを維持する。
 この2フィールドはゲストアドレスの`mem_base`と32bitの`mem_size`から区別する。
@@ -49,7 +53,7 @@
 
 トレースヘッダの `helper_target_addr` は、当該トレースが委譲する関数のアドレスである。ヘルパー契約別入口はヘッダアドレスを受け取り、このフィールドをロードして対象ABIの関数呼出し規則で呼び出す。共通領域の開始・終了・helper・chain dispatcherオフセットはビルド構成または配置時のrelocation情報で解決し、トレースごとの物理ヘッダには保持しない。共通領域に置く呼出しコードはトレースごとに複製しない。 `{PositionIndependentCode}`
 
-`execution_context` は、32ビットのゲスト状態フィールド16個を持つ。コード、制御スタック、CallStackの非所有ビュー、オペランドスタック容量、LOOP後方分岐カウンタとしきい値を含む。x86-64でのサイズは144バイトである。標準レイアウトを維持する。
+`execution_context` は96バイトであり、CallStack深さ、命令位置、値スタック位置、trap状態を重複した戻り値構造体へ複製しない。標準レイアウトを維持する。
 
 ### x64継続引数の物理レジスタ割り当て
 <!-- traceability: {JIT_RegisterMapping} {CPS_4Args} -->
@@ -73,25 +77,33 @@ Interpreter handlerとJIT trace entryが共有する4論理引数のx64関数入
 | :--- | :--- | ---: | :--- |
 | `+0x00` | `chain_target_addr` | 8バイト | 共通chain dispatcherが読み取る次trace bodyの機械語アドレス。未接続時は0 |
 | `+0x08` | `helper_target_addr` | 8バイト | trace固有のC helperアドレス |
+| `+0x10` | `common_code_relative` | 4バイト | ヘッダ位置からPIC共通コード基点への符号付き相対オフセット |
+| `+0x14` | `head_pc` | 4バイト | キャッシュ常駐entryのWASM開始PC |
+| `+0x18` | `blob_bytes` | 4バイト | ヘッダからトレース本体末尾までの配置サイズ |
+| `+0x1C` | `stack_words` | 1バイト | 当該トレースが書き込む最大スタック領域 |
+| `+0x1D` | `result_words` | 1バイト | トレースが確定する結果ワード数 |
+| `+0x1E` | `has_return_value` | 1バイト | トレース終端が値を返すことを示す |
+| `+0x1F` | `chain_words` | 1バイト | 現在のchain全体が必要とする最大スタック領域 |
+| `+0x20` | `frame_depth` | 4バイト | 関数開始位置から当該ブロック開始位置までの制御フレーム深さ |
 
-ヘッダ全体は16バイトである。traceのentry stubは `+0x10` から始まる。
+ヘッダ全体は40バイトである。traceのentry stubは `+0x28` から始まる。末尾4バイトは構造体整列のpaddingであり、情報を格納しない。
 
 ヘッダはJITコードから相対参照できるコード近傍に置く。生成コードまたは共通コードが読み取るtrace固有の値だけを保持する。
 先頭PC、コード長、昇格状態、論理的な後続PCはcacheの管理情報に保持する。未使用のvariant予約欄は設けない。
 
 `common_prologue_offset`、`common_epilogue_offset`、`common_helper_offset`、絶対アドレスpool位置はビルド構成または配置時のrelocation情報である。これらはtraceごとに物理ヘッダへ保持しない。
 
-chainはtrace終端から共通コード領域のchain dispatcherへ移り、そのdispatcherが `chain_target_addr` のbodyへtail-jumpする経路を指す。dispatcherはWASM opcodeを判定しない。分岐命令の条件評価、control frame更新、後方分岐回数の記録はC++ Interpreterの命令別handlerが行い、そのhandler実行だけをchainとは呼ばない。chain targetの更新にはW^X手順を適用する。
+chainはtrace終端から共通コード領域のchain dispatcherへ移り、そのdispatcherが `chain_target_addr` のbodyへtail-jumpする経路を指す。dispatcherはWASM opcodeを判定しない。直線後続または関数内の静的な前方`BR`では、コンパイル時にヘッダへ埋めた`frame_depth`を用いて制御スタックの深さを合わせてからtargetへ移る。条件分岐、後方分岐、動的分岐、関数呼出しはC++ Interpreter handlerが処理する。chain targetの更新にはW^X手順を適用する。
 
-共通helper入口は契約ごとに個別配置し、trace bodyのexit rel32をinstallation時に選択した入口へpatchする。コンテキスト型入口は `0x030`、x64のi32整数除算・剰余は `0x160` から32バイト単位で4入口、wideヘルパーは `0x200` から32バイト単位で11入口を置く。ARMv8-Mのhelper呼出し入口と共通コード配置はTBDである。トレース本体には関数引数の組み替えや呼出し用のスタック領域確保を置かない。
+共通helper入口は契約ごとに個別配置する。コンテキスト型入口は `0x030`、x64のi32整数除算・剰余は `0x160` から32バイト単位で4入口を置く。x64の整数除算・剰余ではトレース本体がヘッダ相対の共通コード基点から対応入口を `call` し、入口がヘッダの関数アドレスを読み出して対象ABIの引数配置でCヘルパーを呼ぶ。成功時は入口の`ret`で同じトレースの次命令へ戻り、非ゼロ状態ではトレースが共通epilogueへ脱出する。ヘルパーはトラップ時に`execution_context.trap_code`を設定する。トレース本体は既存の値スタック位置を結果ポインタとして渡し、関数呼出し用の別スタックを確保しない。ヘッダのhelper targetは1つのため、異なる契約のヘルパーを混在するtraceはコンパイルを辞退する。x64でネイティブ命令化できる整数・浮動小数点演算にhelper入口を割り当てない。ARMv8-Mのhelper呼出し入口と共通コード配置はTBDである。
 
 ## 4. 動的モデル
 
 ### JITランタイム呼出し契約
 
-Tier 2は共有実行状態とブロック開始PCを実行拡張へ渡す接続契約を定める。実行拡張は本体実行、観測可否判定、観測済みブロック記録の入口を提供する。モジュールと基本ブロック情報は初期化時に借用する。JIT拡張がキャッシュ検索、昇格、chain終端の反映、履歴記録を内部で完了する。Tier 2へトレースキャッシュの配置・置換・リンク構造を公開しない。
+Tier 2は共有実行状態とブロック開始PCを実行拡張へ渡す接続契約を定める。拡張入口は本体実行と観測済みブロック記録を担う。モジュールと基本ブロック情報は初期化時に借用する。JIT拡張がキャッシュ検索、昇格、chain終端の反映、履歴記録を内部で完了する。Tier 2へJITキャッシュ配置や置換状態を公開しない。
 
-ネイティブdispatch境界には、所有者と初期化時に固定した実行拡張の入口だけを渡す。Interpreterは制御処理で確定したブロック開始PCを保持する。通常命令のあるブロックだけを観測し、実行拡張が観測を受け付けた場合に記録入口を呼ぶ。候補マスクの判定と履歴の保持は実行拡張の責務である。トレース記述表、候補マスク、履歴配列をInterpreterへ渡さず、別の履歴へ複製・転送しない。
+ネイティブdispatchには `execution_context`、値スタック基点、ローカルスタック基点、実行拡張、yield境界で使うコンパイル予算だけを渡す。命令位置、コードと制御スタックの情報、スタック位置と容量、local base、関数番号、yieldしきい値は `execution_context` と現在のCallFrameから取得し、別の呼出し構造体へ複製しない。戻り値はstatusとABIエラーだけを持ち、命令位置、スタック位置、trap codeは `execution_context` を唯一の格納先とする。実行拡張は `owner`、本体実行入口、観測入口で構成する。観測入口はInterpreterが対象ブロックを実行した後に候補判定と履歴記録を一度に行う。候補マスクと履歴配列をInterpreterへ渡さず、複製もしない。
 
 関数呼出し記述子は、関数コード、ローカル幅、引数搬送、戻り境界を持つ96バイトの固定構造体である。関数呼出しスタックは、32個の記述子を保持する固定長配列である。定数バッファ参照、関数参照、モジュール参照は、WASMコードと関数メタデータを渡す非所有の標準レイアウト構造体である。この境界に文字列、`std::vector`、仮想関数、例外を含めない。 `{META_NoStdVector}`
 

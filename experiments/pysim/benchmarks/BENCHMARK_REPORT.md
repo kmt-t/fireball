@@ -1,5 +1,65 @@
-# PySIM ベンチマーク結果（2026-10-05）
+# PySIM ベンチマーク結果（2026-10-06更新）
 <!-- traceability: {ThreadedInterpreter} {JIT_CopyAndPatch} {JIT_CardAgingSweep} {Wasm32Only} -->
+
+## 2026-10-06 フルテスト・ベンチマーク確認
+
+### 測定条件
+
+- AMD Ryzen 5 5500GT、x86_64、Ubuntu Linux 7.0.0-34-generic、CPython 3.14.6、Clang/Clang++ 21.1.8、uv 0.12.19を使用した。
+- Interpreter、JIT製品ライブラリとQAライブラリを現行作業ツリーから再ビルドした。
+- `run_all.py`を現行QAライブラリで実行し、[実行ログ](results/run_all_20261006.txt)に保存した。CPU affinity固定はしておらず、複数回測定の中央値ではない。
+- 実測対象はx64ホスト上のPySIMである。Cortex-M33の実行時間や命令数を示さない。VTune、AMD uProf、Linux `perf`は環境にないため使用していない。
+
+### ベンチマーク結果
+
+| 系統 | 指標 | 実測値 |
+| :--- | :--- | ---: |
+| 線形メモリ | 32-bit raw bytearray read/write | 9.23 M ops/s、108.4 ns/op |
+| 線形メモリ | 8-bit / 16-bit read/write | 29.98 / 9.29 M ops/s |
+| 線形メモリ | 境界確認 / vMMIO RAM bypass | 14.95 M ops/s（66.9 ns/op） / 3.47 M ops/s（288.1 ns/op） |
+| 線形メモリ | RAM帯域 | 13.24 MB/s |
+| vMMIO | TLB hit / flat-map miss walk | 1.03 / 0.92 M ops/s（969.0 / 1,086.1 ns） |
+| vMMIO | XOR hash / 静的syscall dispatch / RBAC確認 | 11.80 / 1.29 / 1.26 M ops/s |
+| JIT | Copy-and-Patchコンパイル | 27,290 traces/s、36.64 µs/trace |
+| JIT | 100,000回算術ループ | Python 4,623.21 ms、C++ Interpreter 18.39 ms、JIT 16.78 ms |
+| JIT | Python比 / C++ Interpreter比 | 275.55倍高速 / 1.10倍高速 |
+| JIT | PIC helper tail dispatch | 0.35 M calls/s、2,886.8 ns/call（10,000回） |
+| JIT cache | eviction / generation | 6,413 evictions/s、624 generations |
+| JIT cache | working-set hit rate（N=8 / 24 / 100） | 100.00% / 100.00% / 92.44% |
+| AO-Bench（32×16） | C++ Interpreter / JIT、1,600 rays | 10.73 / 13.01 ms（149,106 / 122,977 rays/s） |
+| AO-Bench | JIT 対 C++ Interpreter | 1.21倍遅い |
+
+算術ループの3経路はすべて`704,982,704`を返した。JIT経路は200,001 trace invocations、198,439 dispatcher trace transitions、Interpreter 3 stepsを記録した。cache metabolismではOldest-only promotion、dangling chain解除、module-scoped PCの各不変条件を確認した。AO-Benchも3経路の出力が一致した。
+
+JIT aging条件は、hot onlyでは16回コンパイル・0回purge・1回rotation、agingなしでは758回コンパイル・725回purge・96回rotation、`U1O4`では727/696/92、既定`U2O8`では670/637/82、`U8O32`では458/427/57だった。各値の順はcompile/purge/rotationである。既定条件のaging処理はこの単独実行で約0.01 msだった。
+
+PIC helper tail dispatchは計測用`ctypes` callbackを呼ぶ経路であり、1呼出し約2,887 nsにはPython/C境界費用を含む。Cortex-M33のC helper実行時間とは比較しない。
+
+### テスト結果
+
+| スイート | 結果 |
+| :--- | :--- |
+| PySIM QA unit suite | 30/30 suites pass |
+| JIT runtime / x64 JIT / differential targeted tests | 133 passed |
+| Integration scenarios | 12/12 pass |
+| WASM workload runner | 3/3 suites pass。WASI guest 52 pass、driver stubs 11 pass、Core Spec 37/37 files・15,230 assertions pass |
+| `check-src.sh -g all` | pass、0 warnings。検証マトリクスは26 specs、14 concepts、21 formal models、25 test specs、12 scenarios、4 integration suites、3 WASM suites |
+| `format-src.sh -g pysim` / `format-doc.sh` | pass。ネイティブC/C++の変更19ファイルもclang-format検査済み |
+| `pyright` | 0 errors / warnings / information |
+
+文書品質ゲートにはriskと`{VERIFY_LLM}`監査も含まれ、ワークロードのベンチマーク結果とは別に管理する。
+
+ベンチマーク全体は37.56秒で完了した。CIと同じ`bench_vtune_workload.py --scale 0.02`も全6 workloadが完走し、Python/C++ Interpreter/JITのチェックサムが一致した。x64上のJITは算術ループではC++ Interpreterを上回ったが、AO-Benchでは遅かった。この測定だけからJIT全般の実行時間改善を結論づけない。Cortex-M33の物理RAM適合は対象ABIと配置で確認する必要がある。
+
+### x64 local-pairステンシル再測定
+
+Clang生成WASMの`local.get + local.get + i32.<op>`は85回出現した。QA RuntimeEngineで同一作業ツリーのコンパイラを比較し、融合なし版では9〜11命令、融合版では7〜9命令だった。全13種類の出現演算が正しい値を返した。頻度で重み付けした静的削減上限は174命令である。この値は動的実行頻度や実機性能を表さない。
+
+基準ライブラリは、現行のJIT/runtime/ABIを保ち、`is_i32_local_pair_opcode`だけを無効化したQAビルドである。以前の`889e406f`単独ソースを現行ヘッダへ差し替える方法はABI非互換であるため廃止した。測定ログは[融合なし](results/x64_stencil_instructions_20261006_baseline.txt)、[融合版](results/x64_stencil_instructions_20261006_fused.txt)、[比較](results/x64_stencil_instructions_20261006.txt)に保存した。
+
+比較の再現手順は、作業ツリーの`trace_compiler.cxx`を一時コピーし、`is_i32_local_pair_opcode`の本体を`static_cast<void>(op); return false;`に置き換えて`FIREBALL_JIT_TRACE_SOURCE`へ指定し、`--qa --block-counters`で基準ライブラリをビルドする。その後、通常のQAライブラリを再ビルドし、`bench_x64_stencil_instructions.py --baseline-library <基準.so> --compiler-library experiments/pysim/qa/private/libjit_probe.so`を実行する。
+
+同じ基準・候補ライブラリで250,000反復のループを各9回測り、各workerで3回ウォームアップした。両方とも同じWASMループトレースを生成・実行し、実行時のトレース本体は基準129 bytes、融合版117 bytesだった。実行時間の中央値は基準40.485 ms、融合版40.928 msで、融合版は1.09%遅かった。範囲は基準39.913–49.938 ms、融合版38.767–45.254 msであり、この測定では実行時間の改善を確認できない。計時区間からモジュール読込、コンパイル、ウォームアップを除外した。結果と条件は[ランタイム比較ログ](results/x64_stencil_runtime_20261006.txt)に保存した。
 
 ## 2026-10-05 統合スイート再測定
 
@@ -94,3 +154,11 @@ JSON: [1回目](results/bench_call_dispatch_retake_20261005_run1.json)、[2回�
 | PASSTHROUGH → SHM | 30.366 µs（29.452–32.375） | 62.987 µs（61.817–70.114） |
 
 JSON: [1回目](results/bench_fc_retake_20261005_run1.json)、[2回目](results/bench_fc_retake_20261005_run2.json)、[3回目](results/bench_fc_retake_20261005_run3.json)。
+
+## Cortex-M33ステンシル候補の静的選別
+
+Clang 21.1.8でC23の [`suite.c`](profile/guest/suite.c) をWASMへコンパイルし、WASM命令列から `local.get + i32.const + 整数演算` の132種類を抽出した。各候補についてClangを `armv8m.main-none-eabi` / `cortex-m33` / Thumb / `-O2` で実行し、個別のlocal読出し・定数生成・演算をつないだCプローブと、同じ演算を定数込みで表したCプローブの機械語命令数を比較した。
+
+正の削減を見積もった候補は69種類で、プローブ本体の合計は324バイト、WASMモジュール中の静的出現数で重み付けした見積削減数は534命令である。代表例は `local.get + i32.const 15 + i32.shr_u` が49出現で1出現あたり2命令、即値1の `i32.add` が90出現で1命令、即値2の `i32.shl` が40出現で2命令である。これは静的出現数に基づくCプローブ上の推定であり、動的実行頻度、実装済みARM JITの命令数、実機の性能・ROM量を示さない。ARMv8-MのJIT ABIとステンシル生成は未確定のため、採用前に実際のARMトレース出力で再計数する。
+
+再現コマンドは `uv run --project . --offline --no-sync python experiments/pysim/benchmarks/profile/guest/select_m33_ngrams.py` である。候補の即値、頻度、個別・融合プローブ命令数は [選別結果](results/m33_stencil_candidates_20261006.txt) に保存した。コードサイズ予算を指定する場合は `--rom-budget-bytes N` を追加する。

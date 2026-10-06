@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import ctypes
+import struct
 import sys
 from collections.abc import Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import IntEnum
 from pathlib import Path
 
@@ -17,9 +18,7 @@ _NATIVE_LIBRARY_PATH = Path(__file__).with_name(
     "jit_probe.dll" if sys.platform == "win32" else "libjit_probe.so"
 )
 _NATIVE_LIBRARY = ctypes.PyDLL(str(_NATIVE_LIBRARY_PATH))
-_COMPILE_MAX_BODY_BYTES = 96
-_COMPILE_BYTE_STORAGE_BYTES = 16 + _COMPILE_MAX_BODY_BYTES * 2
-_COMPILE_STACK_DEPTH = 16
+_COMPILE_MAX_BODY_BYTES = 512
 
 
 class JitInstruction(ctypes.Structure):
@@ -54,7 +53,9 @@ class WasmBlock:
     offset: int
     byte_length: int
     next_pc: int | None
+    loops_to: int | None
     locals: NativeLocalLayout
+    frame_depth: int = 0
 
 
 class CacheField(IntEnum):
@@ -80,44 +81,56 @@ class CacheField(IntEnum):
     COMPILE_NS = 24
 
 
-class NativeTraceFixups(ctypes.Structure):
+class NativeTraceHeader(ctypes.Structure):
+    """Physical code-adjacent PIC header written by the C++ compiler."""
+
     _fields_ = (
-        ("entry_body", ctypes.c_int32),
-        ("entry_prologue", ctypes.c_int32),
-        ("exit", ctypes.c_int32),
-        ("helper_header", ctypes.c_int32),
-        ("helper_exit", ctypes.c_int32),
-        ("chain_dispatch", ctypes.c_int32),
-        ("helper_offset", ctypes.c_uint32),
+        ("chain_target_address", ctypes.c_uint64),
+        ("helper_target_address", ctypes.c_uint64),
+        ("common_code_relative", ctypes.c_int32),
+        ("head_pc", ctypes.c_uint32),
+        ("blob_bytes", ctypes.c_uint32),
+        ("stack_words", ctypes.c_uint8),
+        ("result_words", ctypes.c_uint8),
+        ("has_return_value", ctypes.c_uint8),
+        ("chain_words", ctypes.c_uint8),
+        ("frame_depth", ctypes.c_uint32),
     )
 
 
-class NativeCacheTrace(ctypes.Structure):
-    """Stable descriptor borrowed and mutated by the Tier 3 C++ cache."""
+assert NativeTraceHeader.frame_depth.offset == 32
+assert NativeTraceHeader.frame_depth.size == 4
+assert ctypes.sizeof(NativeTraceHeader) == 40
 
-    _fields_ = (
-        ("head_pc", ctypes.c_uint32),
-        ("size_bytes", ctypes.c_uint32),
-        ("next_pc", ctypes.c_uint32),
-        ("loops_to", ctypes.c_uint32),
-        ("has_return_value", ctypes.c_uint32),
-        ("result_words", ctypes.c_uint32),
-        ("stack_words", ctypes.c_uint32),
-        ("byte_span", ctypes.c_uint32),
-        ("frame_depth", ctypes.c_uint32),
-        ("dispatch_next_pc", ctypes.c_uint32),
-        ("dispatch_loops_to", ctypes.c_uint32),
-        ("code_offset", ctypes.c_uint32),
-        ("chain_next_pc", ctypes.c_uint32),
-        ("entry_address", ctypes.c_size_t),
-        ("chain_target_address", ctypes.c_uint64),
-        ("code_blob", ctypes.POINTER(ctypes.c_uint8)),
-        ("blob_bytes", ctypes.c_uint32),
-        ("fixups", NativeTraceFixups),
-        ("chain_terminal", ctypes.c_void_p),
-        ("chain_words", ctypes.c_uint32),
-        ("chain_bodies", ctypes.c_uint32),
-        ("exec_count", ctypes.POINTER(ctypes.c_uint32)),
+
+@dataclass(slots=True)
+class TraceQaState:
+    """Python-only observations assembled from input metadata and native snapshots."""
+
+    head_pc: int = 0
+    size_bytes: int = 0
+    next_pc: int = 0xFFFF_FFFF
+    loops_to: int = 0xFFFF_FFFF
+    has_return_value: int = 0
+    result_words: int = 0
+    stack_words: int = 0
+    byte_span: int = 0
+    frame_depth: int = 0
+    dispatch_next_pc: int = 0xFFFF_FFFF
+    dispatch_loops_to: int = 0xFFFF_FFFF
+    code_offset: int = 0xFFFF_FFFF
+    chain_next_pc: int = 0xFFFF_FFFF
+    entry_address: int = 0
+    chain_target_address: int = 0
+    code_blob: ctypes.POINTER(ctypes.c_uint8) = field(
+        default_factory=lambda: ctypes.POINTER(ctypes.c_uint8)()
+    )
+    blob_bytes: int = 0
+    chain_terminal: int | None = None
+    chain_words: int = 0
+    chain_bodies: int = 0
+    exec_count: ctypes.POINTER(ctypes.c_uint32) = field(
+        default_factory=lambda: ctypes.POINTER(ctypes.c_uint32)()
     )
 
 
@@ -144,7 +157,17 @@ class _NativeWasmBlock(ctypes.Structure):
         ("jit_score", ctypes.c_int64),
         ("code", _NativeByteView),
         ("locals", _NativeLocalLayout),
+        ("extension_data", ctypes.c_void_p),
     )
+
+
+RUNTIME_BIND_BLOCKS = _NATIVE_LIBRARY.fb_qa_runtime_bind_blocks
+RUNTIME_BIND_BLOCKS.argtypes = (
+    ctypes.c_void_p,
+    ctypes.POINTER(_NativeWasmBlock),
+    ctypes.c_uint32,
+)
+RUNTIME_BIND_BLOCKS.restype = ctypes.c_int
 
 
 class NativeProfile(ctypes.Structure):
@@ -179,12 +202,12 @@ RUNTIME_INIT.argtypes = (
     ctypes.c_uint32,
     ctypes.c_uint32,
     ctypes.POINTER(ctypes.c_uint32),
-    ctypes.POINTER(ctypes.c_uint8),
-    ctypes.c_size_t,
-    ctypes.POINTER(ctypes.c_int16),
-    ctypes.c_size_t,
 )
 RUNTIME_INIT.restype = ctypes.c_void_p
+
+BLOCK_COUNTERS_ENABLED = _NATIVE_LIBRARY.fb_jit_block_counters_enabled
+BLOCK_COUNTERS_ENABLED.argtypes = ()
+BLOCK_COUNTERS_ENABLED.restype = ctypes.c_int
 
 RUNTIME_ERROR = _NATIVE_LIBRARY.fb_jit_runtime_error
 RUNTIME_ERROR.argtypes = (ctypes.c_void_p,)
@@ -207,6 +230,10 @@ RUNTIME_FIND.argtypes = (ctypes.c_void_p, ctypes.c_uint32)
 
 RUNTIME_FIND.restype = ctypes.c_uint64
 
+RUNTIME_HEADER = _NATIVE_LIBRARY.fb_qa_runtime_header
+RUNTIME_HEADER.argtypes = (ctypes.c_void_p, ctypes.c_uint32)
+RUNTIME_HEADER.restype = ctypes.c_void_p
+
 
 RUNTIME_HAS_TOKEN = _NATIVE_LIBRARY.fb_jit_runtime_has_token
 
@@ -220,7 +247,12 @@ RUNTIME_HAS_TOKEN.restype = ctypes.c_int
 RUNTIME_INSERT = _NATIVE_LIBRARY.fb_jit_runtime_insert
 
 
-RUNTIME_INSERT.argtypes = (ctypes.c_void_p, ctypes.POINTER(NativeCacheTrace), ctypes.c_uint64)
+RUNTIME_INSERT.argtypes = (
+    ctypes.c_void_p,
+    ctypes.POINTER(ctypes.c_uint8),
+    ctypes.c_uint32,
+    ctypes.c_uint64,
+)
 
 
 RUNTIME_INSERT.restype = ctypes.c_int
@@ -244,7 +276,7 @@ RUNTIME_ROTATE.argtypes = (ctypes.c_void_p,)
 RUNTIME_ROTATE.restype = ctypes.c_int
 
 
-RUNTIME_FLUSH = _NATIVE_LIBRARY.fb_jit_runtime_flush
+RUNTIME_FLUSH = _NATIVE_LIBRARY.fb_qa_runtime_flush
 RUNTIME_FLUSH.argtypes = (ctypes.c_void_p,)
 RUNTIME_FLUSH.restype = ctypes.c_int
 
@@ -305,8 +337,6 @@ class NativeRuntimeStorage:
         "_allocator",
         "_arena_offset",
         "_closed",
-        "_compile_byte_storage",
-        "_compile_stack_locations",
         "_cursor",
         "_dirty",
         "_states",
@@ -321,10 +351,6 @@ class NativeRuntimeStorage:
         self.arena_size = int(RUNTIME_SIZE())
         assert int(RUNTIME_ALIGNMENT()) <= ctypes.alignment(ctypes.c_uint64)
         self._storage = (ctypes.c_uint64 * ((self.arena_size + 7) // 8))()
-        self._compile_byte_storage = (
-            ctypes.c_uint64 * (_COMPILE_BYTE_STORAGE_BYTES // ctypes.sizeof(ctypes.c_uint64))
-        )()
-        self._compile_stack_locations = (ctypes.c_int16 * _COMPILE_STACK_DEPTH)()
         native_offsets = (ctypes.c_uint32 * 3)(*offsets)
         self.pointer = RUNTIME_INIT(
             ctypes.cast(self._storage, ctypes.POINTER(ctypes.c_uint8)),
@@ -332,10 +358,6 @@ class NativeRuntimeStorage:
             capacity,
             entries,
             native_offsets,
-            ctypes.cast(self._compile_byte_storage, ctypes.POINTER(ctypes.c_uint8)),
-            _COMPILE_BYTE_STORAGE_BYTES,
-            self._compile_stack_locations,
-            _COMPILE_STACK_DEPTH,
         )
         assert self.pointer is not None
         self._allocator: BumpAllocator | None = None
@@ -446,7 +468,6 @@ _COMMON_INSTALL.argtypes = (
     ctypes.c_uint32,
     ctypes.POINTER(ctypes.c_uint8),
     ctypes.c_uint32,
-    ctypes.POINTER(NativeTraceFixups),
     ctypes.POINTER(ctypes.c_size_t),
 )
 
@@ -454,9 +475,7 @@ _COMMON_INSTALL.argtypes = (
 _COMMON_INSTALL.restype = ctypes.c_int
 
 
-def install_common_trace(
-    memory: NativeExecutableMemory, offset: int, blob: bytes, fixups: NativeTraceFixups
-) -> int:
+def install_common_trace(memory: NativeExecutableMemory, offset: int, blob: bytes) -> int:
     assert 0 <= offset <= 0xFFFF_FFFF and len(blob) <= 0xFFFF_FFFF
     source = ctypes.cast(ctypes.c_char_p(blob), ctypes.POINTER(ctypes.c_uint8))
     entry = ctypes.c_size_t()
@@ -466,7 +485,6 @@ def install_common_trace(
             offset,
             source,
             len(blob),
-            ctypes.byref(fixups),
             ctypes.byref(entry),
         )
         == 1
@@ -474,24 +492,10 @@ def install_common_trace(
     return entry.value
 
 
-_PACK_HEADER = _NATIVE_LIBRARY.fb_jit_pack_header
-
-
-_PACK_HEADER.argtypes = (
-    ctypes.c_uint64,
-    ctypes.c_uint64,
-    ctypes.POINTER(ctypes.c_uint8),
-    ctypes.c_uint32,
-)
-
-
-_PACK_HEADER.restype = ctypes.c_int
-
-
 def pack_trace_header(chain: int, helper: int) -> bytes:
-    output = (ctypes.c_uint8 * COMMON_LAYOUT.header_bytes)()
-    assert _PACK_HEADER(chain, helper, output, len(output)) == 1
-    return bytes(output)
+    assert 0 <= chain <= 0xFFFF_FFFF_FFFF_FFFF
+    assert 0 <= helper <= 0xFFFF_FFFF_FFFF_FFFF
+    return struct.pack("<QQiIIBBBB", chain, helper, 0, 0, 0, 0, 0, 0, 0)
 
 
 MEMORY_INIT = _NATIVE_LIBRARY.fb_jit_memory_init
@@ -655,7 +659,7 @@ RUNTIME_ANALYZE.argtypes = (
 RUNTIME_ANALYZE.restype = ctypes.c_int
 
 
-RUNTIME_COMPILE = _NATIVE_LIBRARY.fb_jit_runtime_compile
+RUNTIME_COMPILE = _NATIVE_LIBRARY.fb_qa_runtime_compile
 RUNTIME_COMPILE.argtypes = (
     ctypes.c_void_p,
     ctypes.c_uint32,
@@ -688,8 +692,6 @@ _COMPILE_BLOCK = _NATIVE_LIBRARY.fb_jit_compile_block
 
 _COMPILE_BLOCK.argtypes = (
     ctypes.POINTER(_NativeWasmBlock),
-    ctypes.POINTER(NativeCacheTrace),
-    ctypes.POINTER(NativeTraceFixups),
     ctypes.POINTER(ctypes.c_uint8),
     ctypes.c_uint32,
     ctypes.POINTER(ctypes.c_uint8),
@@ -701,9 +703,7 @@ _COMPILE_BLOCK.argtypes = (
 _COMPILE_BLOCK.restype = ctypes.c_int
 
 
-def compile_wasm(
-    block: WasmBlock, trace: NativeCacheTrace
-) -> tuple[bytes, NativeTraceFixups] | None:
+def compile_wasm(block: WasmBlock, trace: TraceQaState) -> bytes | None:
     assert 0 <= block.head_pc < 0xFFFF_FFFF
     assert 0 <= block.offset <= block.code.byte_length <= 0xFFFF_FFFF
     assert 0 < block.byte_length <= block.code.byte_length - block.offset
@@ -717,12 +717,9 @@ def compile_wasm(
     output = (ctypes.c_uint8 * (_COMPILE_MAX_BODY_BYTES + COMMON_LAYOUT.header_bytes))()
     body_scratch = (ctypes.c_uint8 * _COMPILE_MAX_BODY_BYTES)()
     stack_locations = (ctypes.c_int16 * 16)()
-    fixups = NativeTraceFixups()
     status = int(
         _COMPILE_BLOCK(
             ctypes.byref(request),
-            ctypes.byref(trace),
-            ctypes.byref(fixups),
             output,
             len(output),
             body_scratch,
@@ -733,41 +730,55 @@ def compile_wasm(
     if status == 0:
         return None
     assert status == 1, "native block compiler contract violation"
-    return bytes(output[: trace.size_bytes]), fixups
+    header = NativeTraceHeader.from_buffer(output)
+    assert COMMON_LAYOUT.header_bytes == ctypes.sizeof(NativeTraceHeader)
+    trace.head_pc = header.head_pc
+    trace.size_bytes = header.blob_bytes
+    boundary = block.offset + block.byte_length
+    boundary_opcode = (
+        ctypes.c_uint8.from_address(block.code.address + boundary).value
+        if boundary < block.code.byte_length
+        else -1
+    )
+    control_boundary = boundary_opcode in (0x02, 0x03, 0x04, 0x05, 0x0B, 0x0D, 0x0E, 0x0F)
+    trace.next_pc = None if block.loops_to is not None or control_boundary else block.next_pc
+    trace.loops_to = 0xFFFF_FFFF if block.loops_to is None else block.loops_to
+    trace.has_return_value = int(header.has_return_value != 0)
+    trace.result_words = header.result_words
+    trace.stack_words = header.stack_words
+    trace.byte_span = block.byte_length
+    trace.frame_depth = header.frame_depth
+    trace.dispatch_next_pc = 0xFFFF_FFFF if block.next_pc is None else block.next_pc
+    trace.dispatch_loops_to = 0xFFFF_FFFF
+    trace.chain_target_address = header.chain_target_address
+    trace.chain_next_pc = 0xFFFF_FFFF
+    trace.blob_bytes = header.blob_bytes
+    trace.code_blob = ctypes.cast(output, ctypes.POINTER(ctypes.c_uint8))
+    return bytes(output[: header.blob_bytes])
 
 
-RUNTIME_TRACE = _NATIVE_LIBRARY.fb_jit_runtime_trace
-
-
-RUNTIME_TRACE.argtypes = (ctypes.c_void_p, ctypes.c_uint64)
-
-
-RUNTIME_TRACE.restype = ctypes.POINTER(NativeCacheTrace)
-
-
-RUNTIME_CLOSE = _NATIVE_LIBRARY.fb_jit_runtime_close
+RUNTIME_CLOSE = _NATIVE_LIBRARY.fb_qa_runtime_close
 RUNTIME_CLOSE.argtypes = (ctypes.c_void_p,)
 RUNTIME_CLOSE.restype = None
 
 
-def marshal_block(
-    block: WasmBlock, loops_to: int | None = None, frame_depth: int = 0, jit_score: int = 0
-) -> _NativeWasmBlock:
+def marshal_block(block: WasmBlock) -> _NativeWasmBlock:
     """Convert loader metadata once into the module's borrowed registration table."""
     return _NativeWasmBlock(
         block.head_pc,
         block.offset,
         block.byte_length,
         0xFFFF_FFFF if block.next_pc is None else block.next_pc,
-        0xFFFF_FFFF if loops_to is None else loops_to,
-        frame_depth,
-        jit_score,
+        0xFFFF_FFFF if block.loops_to is None else block.loops_to,
+        block.frame_depth,
+        0,
         _NativeByteView(block.code.address, block.code.byte_length),
         _NativeLocalLayout(
             _NativeByteView(block.locals.widths.address, block.locals.widths.byte_length),
             block.locals.local_count,
             block.locals.slot_words,
         ),
+        0,
     )
 
 
@@ -799,8 +810,6 @@ _COMPILE_INSTRUCTIONS = _NATIVE_LIBRARY.fb_jit_compile_instructions
 
 _COMPILE_INSTRUCTIONS.argtypes = (
     ctypes.POINTER(_NativeInstructionBlock),
-    ctypes.POINTER(NativeCacheTrace),
-    ctypes.POINTER(NativeTraceFixups),
     ctypes.POINTER(ctypes.c_uint8),
     ctypes.c_uint32,
     ctypes.POINTER(ctypes.c_uint8),
@@ -813,13 +822,13 @@ _COMPILE_INSTRUCTIONS.restype = ctypes.c_int
 
 
 def compile_instructions(
-    trace: NativeCacheTrace,
+    trace: TraceQaState,
     instructions: Iterable[tuple[int, WasmOperand]],
     byte_length: int,
     local_layout: LocalWidthMap,
     context_helper: bool,
     helper_address: int,
-) -> tuple[bytes, NativeTraceFixups] | None:
+) -> bytes | None:
     """Marshal explicit instructions through one complete native compiler boundary."""
     assert 0 < byte_length <= 0xFFFF_FFFF
     assert 0 <= helper_address <= 0xFFFF_FFFF_FFFF_FFFF
@@ -853,12 +862,9 @@ def compile_instructions(
     output = (ctypes.c_uint8 * (_COMPILE_MAX_BODY_BYTES + COMMON_LAYOUT.header_bytes))()
     body_scratch = (ctypes.c_uint8 * _COMPILE_MAX_BODY_BYTES)()
     stack_locations = (ctypes.c_int16 * 16)()
-    fixups = NativeTraceFixups()
     status = int(
         _COMPILE_INSTRUCTIONS(
             ctypes.byref(request),
-            ctypes.byref(trace),
-            ctypes.byref(fixups),
             output,
             len(output),
             body_scratch,
@@ -869,7 +875,17 @@ def compile_instructions(
     if status == 0:
         return None
     assert status == 1, "native instruction compiler contract violation"
-    return bytes(output[: trace.size_bytes]), fixups
+    header = NativeTraceHeader.from_buffer(output)
+    assert COMMON_LAYOUT.header_bytes == ctypes.sizeof(NativeTraceHeader)
+    trace.size_bytes = header.blob_bytes
+    trace.has_return_value = int(header.has_return_value != 0)
+    trace.frame_depth = header.frame_depth
+    trace.result_words = header.result_words
+    trace.stack_words = header.stack_words
+    trace.chain_target_address = header.chain_target_address
+    trace.blob_bytes = header.blob_bytes
+    trace.code_blob = ctypes.cast(output, ctypes.POINTER(ctypes.c_uint8))
+    return bytes(output[: header.blob_bytes])
 
 
 RUNTIME_RUN = _NATIVE_LIBRARY.fb_jit_runtime_run
@@ -902,3 +918,7 @@ def resident_records(pointer: int) -> tuple[tuple[int, int, int], ...]:
 RUNTIME_BIND_DISPATCH = _NATIVE_LIBRARY.fb_qa_runtime_bind_dispatch
 RUNTIME_BIND_DISPATCH.argtypes = (ctypes.c_void_p, ctypes.c_void_p)
 RUNTIME_BIND_DISPATCH.restype = None
+
+RUNTIME_EXTENSION = _NATIVE_LIBRARY.fb_qa_runtime_extension
+RUNTIME_EXTENSION.argtypes = (ctypes.c_void_p,)
+RUNTIME_EXTENSION.restype = ctypes.c_void_p

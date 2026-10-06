@@ -47,7 +47,7 @@ jobs:
           bash experiments/pysim/native/tier2_runtime/interpreter/build_native.sh
           bash experiments/pysim/native/tier3_plugins/jit/build_native.sh
           bash experiments/pysim/native/tier2_runtime/interpreter/build_native.sh --qa
-          bash experiments/pysim/native/tier3_plugins/jit/build_native.sh --qa
+          bash experiments/pysim/native/tier3_plugins/jit/build_native.sh --qa --block-counters
           cmake -S . -B build/ci -G Ninja -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ -DFIREBALL_BUILD_UVWASI=ON
           cmake --build build/ci --target fireball uvwasi
           build/ci/fireball

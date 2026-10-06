@@ -69,7 +69,7 @@ def test_native_cps_entry_uses_four_logical_arguments() -> None:
         stack.capacity,
         0,
     )
-    assert (status, next_ip, stack_size, trap_code) == (1, 0xFFFF_FFFF, 1, 0)
+    assert (status, next_ip, stack_size, trap_code) == (1, len(code), 1, 0)
     assert stack.raw_at(0) == 7
     assert context.code_size == len(code)
     assert context.control_stack != 0
@@ -77,7 +77,7 @@ def test_native_cps_entry_uses_four_logical_arguments() -> None:
     assert context.stack_checkpoint == 1
     assert context.ip == len(code)
     assert context.sp_offset == 1
-    assert context.cf_offset == 0
+    assert context.control_base == 0
 
 
 def _run_guarded_const(
@@ -130,7 +130,7 @@ def test_native_const_capacity_traps_without_partial_push(
         assert context.sp_offset == initial_size
         assert after == before, "failed push must preserve every existing and sentinel word"
     else:
-        assert outcome == (1, 0xFFFFFFFF, initial_size + len(raw_words), 0)
+        assert outcome == (1, len(code), initial_size + len(raw_words), 0)
         assert context.ip == len(code)
         assert context.sp_offset == initial_size + len(raw_words)
         expected = list(before)

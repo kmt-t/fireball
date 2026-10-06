@@ -66,7 +66,7 @@ x64で確認したInterpreter/JIT間の4論理引数契約と物理ABIは [`jit_
 | `0x20` | `local.get` | `[] -> [t]` | ローカル配列 `[local_base + idx]` をロード | TBD | TBD |
 | `0x21` | `local.set` | `[t] -> []` | ローカル配列 `[local_base + idx]` へストア | TBD | TBD |
 | `0x22` | `local.tee` | `[t] -> [t]` | ローカルへ保存しつつスタックに残す | TBD | TBD |
-| `0x23` | `global.get` | `[] -> [t]` | グローバル配列 `[execution_context.globals_base + idx]` ロード | TBD | TBD |
+| `0x23` | `global.get` | `[] -> [t]` | モジュール実行情報のグローバル値配列から`idx`番目をロード | TBD | TBD |
 | `0x24` | `global.set` | `[t] -> []` | グローバル配列へストア | TBD | TBD |
 
 ---
@@ -74,7 +74,7 @@ x64で確認したInterpreter/JIT間の4論理引数契約と物理ABIは [`jit_
 ### 3.4 メモリアクセス命令 (Memory Access - 32-bit Linear Memory)
 <!-- traceability: {MemoryBoundaryCheck} {FastAddressCheck} {PositionIndependentCode} -->
 
-すべてのメモリアクセスは、リニアメモリ基底（`mem_base`）加算とアライメント・境界チェックを伴う。
+すべてのメモリアクセスは、ゲスト論理アドレスに対するアライメント・境界検査を伴う。アクセス時は借用されたホスト基点へ検査済み論理アドレスを加える。ゲスト論理アドレスとホスト基点は異なる値である。
 
 | Opcode | 命令名 | スタック遷移 | インタープリタ実装 | ARMv8-M JIT mapping (TBD) | ARMv8-M physical behavior (TBD) |
 | :--- | :--- | :--- | :--- | :--- | :--- |

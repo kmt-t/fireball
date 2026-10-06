@@ -19,7 +19,9 @@ from config import (
     JIT_CACHE_OLDEST_OFFSET_BYTES,
     JIT_CACHE_WARM_OFFSET_BYTES,
     JIT_CARD_SHIFT,
+    JIT_TRACE_COMMON_HELPER_OFFSET,
     JIT_TRACE_DEFAULT_BYTES,
+    JIT_X64_COMMON_CODE_RELATIVE_OFFSET,
     JIT_X64_TRACE_HEADER_BYTES,
 )
 from qa.private import jit_native_abi as native_abi
@@ -34,6 +36,7 @@ from .common_code import (
     COMMON_HELPER_OFFSET,
 )
 from .exec_memory import ExecutableBuffer
+from .jit_abi import NativeTraceDispatchEntry
 
 if TYPE_CHECKING:
     from tier2_runtime.interpreter.interpreter import ExecutionContext
@@ -221,19 +224,12 @@ class JITTraceHeader:
     Installation-time relocation metadata is not serialized into the header.
     """
 
-    __slots__ = ("_native", "helper_target_addr")
+    __slots__ = ("_native",)
 
     def __init__(self, helper_target_addr: int = 0):
-        self._native = native_abi.NativeCacheTrace(
-            next_pc=0xFFFF_FFFF,
-            loops_to=0xFFFF_FFFF,
-            dispatch_next_pc=0xFFFF_FFFF,
-            dispatch_loops_to=0xFFFF_FFFF,
-            code_offset=0xFFFF_FFFF,
-            chain_next_pc=0xFFFF_FFFF,
-        )
+        self._native = native_abi.NativeTraceHeader()
         assert 0 <= helper_target_addr <= 0xFFFF_FFFF_FFFF_FFFF
-        self.helper_target_addr = helper_target_addr
+        self._native.helper_target_address = helper_target_addr
 
     @property
     def chain_target_addr(self) -> int:
@@ -245,7 +241,16 @@ class JITTraceHeader:
         self._native.chain_target_address = value
 
     def pack(self) -> bytes:
-        return native_abi.pack_trace_header(self.chain_target_addr, self.helper_target_addr)
+        return ctypes.string_at(ctypes.addressof(self._native), 16)
+
+    @property
+    def helper_target_addr(self) -> int:
+        return self._native.helper_target_address
+
+    @helper_target_addr.setter
+    def helper_target_addr(self, value: int) -> None:
+        assert 0 <= value <= 0xFFFF_FFFF_FFFF_FFFF
+        self._native.helper_target_address = value
 
 
 class JITTrace:
@@ -254,18 +259,11 @@ class JITTrace:
     __slots__ = (
         "_blob_storage",
         "_exec_buf",
-        "_exec_count",
         "_fn",
+        "_header",
         "_native_owner",
-        "chain_dispatch_patch_offset",
+        "_qa_state",
         "code_blob",
-        "common_helper_offset",
-        "entry_body_patch_offset",
-        "entry_prologue_patch_offset",
-        "exit_patch_offset",
-        "header",
-        "helper_exit_patch_offset",
-        "helper_header_patch_offset",
     )
 
     def __init__(
@@ -282,15 +280,10 @@ class JITTrace:
         native_fn: NativeTraceFn | None = None,
         raw_addr: int | None = None,
         code_blob: bytes | None = None,
-        entry_body_patch_offset: int = -1,
-        entry_prologue_patch_offset: int = -1,
-        exit_patch_offset: int = -1,
-        helper_header_patch_offset: int = -1,
-        helper_exit_patch_offset: int = -1,
-        chain_dispatch_patch_offset: int = -1,
         helper_target_addr: int = 0,
     ):
-        self.header = JITTraceHeader(helper_target_addr)
+        self._header = JITTraceHeader(helper_target_addr)
+        self._qa_state = native_abi.TraceQaState()
         self.head_pc = head_pc
         self.fn = fn or native_fn  # Direct ctypes CFUNCTYPE function pointer or callable
         self.raw_addr = raw_addr  # Entry point address consumed by native dispatch
@@ -298,18 +291,14 @@ class JITTrace:
         self._blob_storage: ctypes.c_char_p | None = None
         self._native_owner: native_abi.NativeRuntimeStorage | None = None
         self.code_offset = None
-        self.common_helper_offset = COMMON_HELPER_OFFSET
-        self.entry_body_patch_offset = entry_body_patch_offset
-        self.entry_prologue_patch_offset = entry_prologue_patch_offset
-        self.exit_patch_offset = exit_patch_offset
-        self.helper_header_patch_offset = helper_header_patch_offset
-        self.helper_exit_patch_offset = helper_exit_patch_offset
-        self.chain_dispatch_patch_offset = chain_dispatch_patch_offset
         assert 0 <= head_pc < 0xFFFF_FFFF
         assert JIT_X64_TRACE_HEADER_BYTES <= size_bytes <= 0xFFFF_FFFF
         self.size_bytes = size_bytes
         self.next_pc = next_pc  # Unconditional fallthrough successor
         self.loops_to = loops_to  # Conditional loop backedge (never auto-chained)
+        self._native.dispatch_next_pc = 0xFFFF_FFFF if next_pc is None else next_pc
+        self._native.dispatch_loops_to = 0xFFFF_FFFF if loops_to is None else loops_to
+        self._native.byte_span = size_bytes
         self.has_return_val = has_return_val
         assert result_words > 0
         self.result_words = result_words
@@ -319,55 +308,108 @@ class JITTrace:
         assert stack_words >= 1
         self.stack_words = stack_words
         self.chain_next = None
-        self._exec_count = ctypes.c_uint32(0)
         self._exec_buf = buf  # Keeps executable buffer alive in memory
-        self._native.exec_count = ctypes.pointer(self._exec_count)
         self.bind_code()
 
     def bind_code(self) -> None:
         """Keep external code bytes alive across the registration boundary."""
         if self.code_blob is not None:
+            blob = bytearray(self.code_blob)
+            assert len(blob) >= JIT_X64_TRACE_HEADER_BYTES
+            header = native_abi.NativeTraceHeader.from_buffer(blob)
+            header.head_pc = self.head_pc
+            header.blob_bytes = len(blob)
+            header.stack_words = self.stack_words
+            header.result_words = self.result_words
+            header.has_return_value = int(self.has_return_val)
+            header.frame_depth = self._native.frame_depth
+            header.chain_words = self.stack_words
+            header.helper_target_address = self._header.helper_target_addr
+            self._header._native = native_abi.NativeTraceHeader.from_buffer_copy(
+                bytes(blob[:JIT_X64_TRACE_HEADER_BYTES])
+            )
+            self.code_blob = bytes(blob)
             self._blob_storage = ctypes.c_char_p(self.code_blob)
             self._native.code_blob = ctypes.cast(self._blob_storage, ctypes.POINTER(ctypes.c_uint8))
             self._native.blob_bytes = len(self.code_blob)
-        self._native.fixups = native_abi.NativeTraceFixups(
-            self.entry_body_patch_offset,
-            self.entry_prologue_patch_offset,
-            self.exit_patch_offset,
-            self.helper_header_patch_offset,
-            self.helper_exit_patch_offset,
-            self.chain_dispatch_patch_offset,
-            self.common_helper_offset,
-        )
 
     @classmethod
     def borrow(
         cls,
-        pointer: ctypes._Pointer[native_abi.NativeCacheTrace],
+        entry: NativeTraceDispatchEntry,
         owner: native_abi.NativeRuntimeStorage,
     ) -> JITTrace:
-        """Expose a resident native descriptor without copying its state or code."""
+        """Build a Python QA view from one transient native dispatch snapshot."""
         trace = cls.__new__(cls)
-        trace.header = JITTraceHeader.__new__(JITTraceHeader)
-        trace.header._native = pointer.contents
-        trace.header.helper_target_addr = 0
+        trace._header = JITTraceHeader.__new__(JITTraceHeader)
+        header_address = int(entry.entry_address or 0) - JIT_X64_TRACE_HEADER_BYTES
+        assert header_address > 0
+        trace._header._native = native_abi.NativeTraceHeader.from_address(header_address)
+        state = native_abi.TraceQaState(
+            head_pc=entry.head_pc,
+            size_bytes=trace._header._native.blob_bytes,
+            next_pc=entry.next_pc,
+            loops_to=entry.loops_to,
+            has_return_value=entry.has_return_value,
+            result_words=entry.result_words,
+            stack_words=entry.stack_words,
+            byte_span=entry.byte_span,
+            frame_depth=entry.frame_depth,
+            dispatch_next_pc=entry.next_pc,
+            dispatch_loops_to=entry.loops_to,
+            code_offset=(-trace._header._native.common_code_relative) & 0xFFFF_FFFF,
+            chain_next_pc=entry.chain_next_pc,
+            entry_address=entry.entry_address or 0,
+            chain_target_address=trace._header._native.chain_target_address,
+            code_blob=ctypes.cast(header_address, ctypes.POINTER(ctypes.c_uint8)),
+            blob_bytes=trace._header._native.blob_bytes,
+            chain_words=entry.chain_stack_words,
+            exec_count=ctypes.cast(entry.exec_count, ctypes.POINTER(ctypes.c_uint32)),
+        )
+        trace._qa_state = state
         trace._native_owner = owner
         trace._blob_storage = None
         trace.code_blob = None
         trace._exec_buf = None
         trace._fn = None
-        trace.common_helper_offset = pointer.contents.fixups.helper_offset
-        trace.entry_body_patch_offset = pointer.contents.fixups.entry_body
-        trace.entry_prologue_patch_offset = pointer.contents.fixups.entry_prologue
-        trace.exit_patch_offset = pointer.contents.fixups.exit
-        trace.helper_header_patch_offset = pointer.contents.fixups.helper_header
-        trace.helper_exit_patch_offset = pointer.contents.fixups.helper_exit
-        trace.chain_dispatch_patch_offset = pointer.contents.fixups.chain_dispatch
         return trace
 
     @property
-    def _native(self) -> native_abi.NativeCacheTrace:
-        return self.header._native
+    def _native(self) -> native_abi.TraceQaState:
+        return self._qa_state
+
+    def _refresh_header(self) -> None:
+        if self._native_owner is None:
+            return
+        address = int(native_abi.RUNTIME_HEADER(self._native_owner.pointer, self.head_pc) or 0)
+        if address == 0:
+            if self._native.entry_address != 0:
+                copied = native_abi.NativeTraceHeader.from_buffer_copy(
+                    ctypes.string_at(
+                        ctypes.addressof(self._header._native), JIT_X64_TRACE_HEADER_BYTES
+                    )
+                )
+                copied.chain_target_address = 0
+                self._header._native = copied
+            self._native.entry_address = 0
+            self._native.code_offset = 0xFFFF_FFFF
+            self._native.chain_next_pc = 0xFFFF_FFFF
+            return
+        self._header._native = native_abi.NativeTraceHeader.from_address(address)
+        header = self._header._native
+        self._native.entry_address = address + JIT_X64_TRACE_HEADER_BYTES
+        self._native.size_bytes = header.blob_bytes
+        self._native.stack_words = header.stack_words
+        self._native.result_words = header.result_words
+        self._native.has_return_value = int(header.has_return_value != 0)
+        self._native.frame_depth = header.frame_depth
+        self._native.code_offset = (-header.common_code_relative) & 0xFFFF_FFFF
+        self._native.chain_target_address = header.chain_target_address
+
+    @property
+    def header(self) -> JITTraceHeader:
+        self._refresh_header()
+        return self._header
 
     @property
     def head_pc(self) -> int:
@@ -387,6 +429,7 @@ class JITTrace:
     def next_pc(self, value: int | None) -> None:
         assert value is None or 0 <= value < 0xFFFF_FFFF
         self._native.next_pc = 0xFFFF_FFFF if value is None else value
+        self._native.dispatch_next_pc = self._native.next_pc
 
     @property
     def loops_to(self) -> int | None:
@@ -397,6 +440,7 @@ class JITTrace:
     def loops_to(self, value: int | None) -> None:
         assert value is None or 0 <= value < 0xFFFF_FFFF
         self._native.loops_to = 0xFFFF_FFFF if value is None else value
+        self._native.dispatch_loops_to = self._native.loops_to
 
     @property
     def size_bytes(self) -> int:
@@ -428,11 +472,27 @@ class JITTrace:
 
     @stack_words.setter
     def stack_words(self, value: int) -> None:
-        assert 1 <= value <= 0xFFFF_FFFF
+        assert 0 <= value <= 0xFFFF_FFFF
         self._native.stack_words = value
 
     @property
+    def common_helper_offset(self) -> int:
+        """Read the called common helper offset from generated code on demand."""
+
+        if self.code_blob is None:
+            return COMMON_HELPER_OFFSET
+        prefix = bytes.fromhex("41 52 4d 63 56")
+        prefix += bytes((JIT_X64_COMMON_CODE_RELATIVE_OFFSET,))
+        prefix += bytes.fromhex("4d 01 f2 49 81 c2")
+        position = self.code_blob.find(prefix, JIT_X64_TRACE_HEADER_BYTES)
+        if position < 0:
+            return JIT_TRACE_COMMON_HELPER_OFFSET
+        offset = position + len(prefix)
+        return int.from_bytes(self.code_blob[offset : offset + 4], "little")
+
+    @property
     def code_offset(self) -> int | None:
+        self._refresh_header()
         value = self._native.code_offset
         return None if value == 0xFFFF_FFFF else value
 
@@ -442,6 +502,7 @@ class JITTrace:
 
     @property
     def raw_addr(self) -> int | None:
+        self._refresh_header()
         return self._native.entry_address or None
 
     @raw_addr.setter
@@ -450,7 +511,13 @@ class JITTrace:
 
     @property
     def chain_next(self) -> int | None:
-        value = self._native.chain_next_pc
+        target = self.header.chain_target_addr
+        if target == 0:
+            self._native.chain_next_pc = 0xFFFF_FFFF
+            return None
+        address = target - JIT_X64_TRACE_HEADER_BYTES - native_abi.COMMON_LAYOUT.entry_stub_bytes
+        value = int(native_abi.NativeTraceHeader.from_address(address).head_pc)
+        self._native.chain_next_pc = value
         return None if value == 0xFFFF_FFFF else value
 
     @chain_next.setter
@@ -461,18 +528,19 @@ class JITTrace:
     def exec_count(self) -> int:
         """Runtime-dispatched body executions in the current measurement interval."""
 
-        return self._native.exec_count.contents.value
+        return 0 if not self._native.exec_count else self._native.exec_count.contents.value
 
     @exec_count.setter
     def exec_count(self, value: int) -> None:
         assert 0 <= value <= 0xFFFF_FFFF
-        self._native.exec_count.contents.value = value
+        if self._native.exec_count:
+            self._native.exec_count.contents.value = value
 
     @property
     def exec_count_address(self) -> int:
         """Borrow the trace-owned counter without copying it into a snapshot."""
 
-        return ctypes.addressof(self._native.exec_count.contents)
+        return ctypes.addressof(self._native.exec_count.contents) if self._native.exec_count else 0
 
     @property
     def fn(self) -> NativeTraceFn | None:
@@ -545,6 +613,7 @@ class JitRuntimeBoundary:
     __slots__ = (
         "_before",
         "_busy",
+        "_fixture_blocks",
         "_native",
         "_references",
         "_retire_observer",
@@ -564,6 +633,9 @@ class JitRuntimeBoundary:
         self._busy = False
         self._retire_observer = retire_observer
         self._before: tuple[tuple[int, int, int], ...] = ()
+        self._fixture_blocks = (
+            native_abi._NativeWasmBlock * (JIT_CACHE_BANK_COUNT * entry_capacity + 1)
+        )()
         self.metadata_provider: Callable[[JITTrace], None] | None = None
         self._native = native_abi.NativeRuntimeStorage(
             bank_capacity,
@@ -576,6 +648,14 @@ class JitRuntimeBoundary:
         )
         if allocator is not None:
             self.bind_allocator(allocator)
+        assert (
+            native_abi.RUNTIME_BIND_BLOCKS(
+                self._native.pointer,
+                self._fixture_blocks,
+                0,
+            )
+            == 1
+        )
 
     @classmethod
     def borrow(
@@ -588,6 +668,7 @@ class JitRuntimeBoundary:
         boundary._references = None
         boundary._busy = False
         boundary._retire_observer = retire_observer
+        boundary._fixture_blocks = (native_abi._NativeWasmBlock * 0)()
         boundary.metadata_provider = None
         boundary._before = ()
         return boundary
@@ -614,17 +695,59 @@ class JitRuntimeBoundary:
                     self._native.pointer, index + 1
                 ):
                     self._references[index] = None
+        self._bind_fixture_blocks()
         assert native_abi.RUNTIME_ERROR(self._native.pointer) == 0, (
             "native cache contract violation"
+        )
+
+    def _bind_fixture_blocks(self) -> None:
+        if self.metadata_provider is not None or self._references is None:
+            return
+        traces = sorted(
+            (trace for trace in self._references if trace is not None),
+            key=lambda trace: trace.head_pc,
+        )
+        assert len(traces) <= len(self._fixture_blocks)
+        for index, trace in enumerate(traces):
+            self._fixture_blocks[index] = native_abi._NativeWasmBlock(
+                trace.head_pc,
+                0,
+                trace._native.byte_span,
+                trace._native.dispatch_next_pc,
+                trace._native.dispatch_loops_to,
+                trace._native.frame_depth,
+                0,
+                native_abi._NativeByteView(None, 0),
+                native_abi._NativeLocalLayout(native_abi._NativeByteView(None, 0), 0, 1),
+                ctypes.cast(trace._native.exec_count, ctypes.c_void_p).value,
+            )
+        assert (
+            native_abi.RUNTIME_BIND_BLOCKS(
+                self._native.pointer,
+                self._fixture_blocks,
+                len(traces),
+            )
+            == 1
         )
 
     def _reference(self, token: int) -> JITTrace | None:
         if token == 0:
             return None
         if token >> 63:
-            pointer = native_abi.RUNTIME_TRACE(self._native.pointer, token)
-            assert bool(pointer)
-            return JITTrace.borrow(pointer, self._native)
+            pc = (token & 0x7FFF_FFFF_FFFF_FFFF) - 1
+            entries = (
+                NativeTraceDispatchEntry * (JIT_CACHE_BANK_COUNT * JIT_CACHE_BANK_ENTRY_CAPACITY)
+            )()
+            count = int(
+                native_abi.RUNTIME_SNAPSHOT(
+                    self._native.pointer, ctypes.cast(entries, ctypes.c_void_p), len(entries)
+                )
+            )
+            assert 0 <= count <= len(entries)
+            for index in range(count):
+                if entries[index].head_pc == pc:
+                    return JITTrace.borrow(entries[index], self._native)
+            raise AssertionError("native cache token has no resident dispatch entry")
         assert self._references is not None
         assert 0 < token <= len(self._references)
         trace = self._references[token - 1]
@@ -720,10 +843,26 @@ class JitRuntimeBoundary:
         if self.metadata_provider is not None:
             self.metadata_provider(trace)
         trace.bind_code()
+        if trace.code_blob is None:
+            blob = bytearray(trace.size_bytes)
+            header = native_abi.NativeTraceHeader.from_buffer(blob)
+            header.head_pc = trace.head_pc
+            header.blob_bytes = len(blob)
+            header.stack_words = trace.stack_words
+            header.result_words = trace.result_words
+            header.has_return_value = int(trace.has_return_val)
+            header.frame_depth = trace._native.frame_depth
+            header.chain_words = trace.stack_words
+            header.helper_target_address = trace.header.helper_target_addr
+            trace.code_blob = bytes(blob)
+            trace.bind_code()
         self._begin()
         token, added = self._keep(trace)
         assert self._references is not None
-        result = native_abi.RUNTIME_INSERT(self._native.pointer, ctypes.byref(trace._native), token)
+        assert trace.code_blob is not None
+        self._bind_fixture_blocks()
+        blob = (ctypes.c_uint8 * len(trace.code_blob)).from_buffer_copy(trace.code_blob)
+        result = native_abi.RUNTIME_INSERT(self._native.pointer, blob, len(blob), token)
         if not result and added and not native_abi.RUNTIME_HAS_TOKEN(self._native.pointer, token):
             self._references[token - 1] = None
         self._check()

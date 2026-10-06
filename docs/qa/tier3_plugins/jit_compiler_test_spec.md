@@ -18,13 +18,14 @@ Copy-and-Patchエンジンによるネイティブコード生成、4論理引�
 | TEST-JITC-01 | 事前生成ステンシルのコピー・パッチと単一パス選択 | 単純な直線コード（`i32.const`→`i32.add`等） | コンパイル | 生成ネイティブコードは対応するステンシルの連結と即値・分岐先のパッチだけで構成される。WASM命令列に対応するコンパイル時選択は行うが、実行時IR最適化パスを持たない | 「Zero Compile Cost」, `{SinglePassCompilation}` |
 | TEST-JITC-02 | 未対応命令のエラー | x64コンパイラが未対応のWASM opcode | コンパイル | 明確なcompile-failure結果を返し、無音の誤コンパイルをしない | [`test_x64_jit.py`](experiments/pysim/qa/tier3_plugins/jit/test_x64_jit.py) |
 | TEST-JITC-03 | WASM命令列に対応するx64ステンシル | x64の算術・ビット演算・ローカル操作を含むtrace | C++コンパイラのCopy-and-Patch結果をPythonステンシル実装を介さず実行する | 生成コードの演算結果、値の配置、境界での状態同期が正しい | [`test_x64_jit.py`](experiments/pysim/qa/tier3_plugins/jit/test_x64_jit.py) |
-| TEST-JITC-63 | Clang-WASM n-gramで選んだ即値Stencilの短縮 | `local.get`と`i32.const`に続く`i32.add`/`i32.mul`/`i32.and` trace | 対象traceを実行し、生成x64命令とコード長を検査する | `add ±1`は`inc/dec`、`mul 3/5`は`lea`、`and 255/65535`は`movzx`に選択され、結果がWASMの32ビット演算結果と一致する。各対象は汎用即値Stencilより短い | [`jit_compiler.md`](docs/components/tier3_plugins/jit_compiler.md), [`test_x64_jit.py`](experiments/pysim/qa/tier3_plugins/jit/test_x64_jit.py) |
+| TEST-JITC-63 | Clang-WASM n-gramで選んだ即値Stencilの短縮 | `local.get`と`i32.const`に続く`i32.add`/`i32.mul`/`i32.and` trace | 対象traceをC++ native compiler経由で実行し、生成x64命令とコード長を検査する | `add ±1`は`inc/dec`、`mul 3/5`は`lea`、`and 255/65535`は`movzx`に選択され、結果がWASMの32ビット演算結果と一致する。汎用即値Stencilより短いが、単体traceの機械語命令数は同数である | [`jit_compiler.md`](docs/components/tier3_plugins/jit_compiler.md), [`test_jit_runtime.py`](experiments/pysim/qa/tier3_plugins/jit/test_jit_runtime.py) |
+| TEST-JITC-64 | Clang-WASM `local.get, local.get, i32.*` n-gramのメモリオペランド化 | 空スタックから始まる2つのi32 local readと整数二項演算を含むtrace | 加算・減算・乗算・ビット演算・比較を実行し、生成traceが第2localをメモリオペランドとして読み出すことを確認する。Clang生成ゲストのプロファイルからn-gram頻度を集計し、objdumpでtrace本体の命令数を数える | 各演算結果がWASMの32ビット意味と一致する。第2localの個別ロードとスタック移動を含む汎用列より、trace本体の機械語命令数が2〜3命令少ない。比較命令の条件符号もWASMの符号付き・符号なし規則に一致する | [`jit_compiler.md`](docs/components/tier3_plugins/jit_compiler.md), [`bench_x64_stencil_instructions.py`](experiments/pysim/benchmarks/jit/bench_x64_stencil_instructions.py), [`test_jit_runtime.py`](experiments/pysim/qa/tier3_plugins/jit/test_jit_runtime.py) |
 | TEST-JITC-04 | C++ Interpreter handlerへの境界フォールバック | 制御終端命令、複雑命令、import／host call | trace実行後のhandlerとRuntimeEngine境界を確認する | 制御終端命令は対応するC++ Interpreter handlerを通る。JIT内にopcode別handler dispatcherやhost call stubを生成しない | `{JIT_RuntimeAPI_Fallback}` |
 | TEST-JITC-05 | x64実行可能バッファのW^X確定 | Linux x64上で初期化したバッファ | `/proc/self/maps`でOSの実権限を読み、commit、再パッチ、再commit後に再確認する。生成コードをCPUで実行する | 実権限が`RW → RX → RW → RX`となる。commit後のコードは42を返し、再パッチ後は7を返す。API経由のcommit後書込みは拒否される | [`test_exec_memory.py`](experiments/pysim/qa/tier3_plugins/jit/test_exec_memory.py) |
 | TEST-JITC-06 | インタープリタ⇔JIT境界でのレジスタ書き戻しコスト | JITトレースから脱出 | 脱出処理を確認 | 値キャッシュの共有オペランド領域への書戻しが対象ABIで定める有界コストに収まる |  `{ADR_TosCacheAsymmetry}` |
-| TEST-JITC-07 | x64整数除算・剰余のヘルパー委譲 | i32除算・剰余を含むトレース | x64向けコンパイルと実行を確認 | 2つの32ビット整数を対象ABIの引数レジスタからヘルパーへ渡し、ヘルパーが結果領域ポインタへ1ワードを書き込んで対象ABIの終了処理へ戻る | `{JIT_RuntimeAPI_Fallback}` |
+| TEST-JITC-07 | x64整数除算・剰余のヘルパー呼出しとトレース再開 | 後続の通常演算を持つi32除算・剰余トレース | x64向けにコンパイルして実行し、ヘルパー呼出し回数と後続演算結果を確認する | 対応する2つの32ビット整数、実行コンテキスト、結果領域ポインタを対象ABIの引数レジスタでCヘルパーへ渡す。成功時はヘルパーから戻って同じトレースの後続命令を実行する。トラップ時は`trap_code`を保持して共通epilogueへ脱出し、後続命令を実行しない | [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md), [`test_x64_jit.py`](experiments/pysim/qa/tier3_plugins/jit/test_x64_jit.py) |
 | TEST-JITC-08 | ヘルパー呼出しコードの共通配置 | ARMv8-Mまたはx64のヘルパー委譲 | 共通コード領域とトレース本体のバイト数を確認 | x64整数ヘルパー入口は契約ごとに32バイトの固定スロットへ配置する。ARMv8-Mのhelper入口と配置はTBD | [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) `{JIT_MultiBuffer_Cache}` |
-| TEST-JITC-09 | トレース作業領域の固定上限 | 命令数64、生成body 96バイト、作業stack深さ16の境界内外 | 境界内の適格traceと、命令数・body長・stack深さを個別に超えるtraceをコンパイルし、結果blobとキャッシュ登録状態を確認する | 境界内はコンパイル可能で、blobは112バイト以下となる。各上限を超えるtraceはJIT化を辞退してInterpreterへフォールバックし、キャッシュへ登録しない。コンパイルスクラッチ領域は240バイトで固定される | [`jit_compiler.md`](docs/components/tier3_plugins/jit_compiler.md) |
+| TEST-JITC-09 | トレース作業領域の固定上限 | 命令数64、生成body 512バイト、作業stack深さ16の境界内外 | 境界内の適格traceと、命令数・body長・stack深さを個別に超えるtraceをコンパイルし、結果blobとキャッシュ登録状態を確認する | 境界内はコンパイル可能で、blobは528バイト以下となる。各上限を超えるtraceはJIT化を辞退してInterpreterへフォールバックし、キャッシュへ登録しない。コンパイルスクラッチ領域は1,072バイトで固定される | [`jit_compiler.md`](docs/components/tier3_plugins/jit_compiler.md) |
 
 ### レジスタ規約とTOS/NOS非対称性
 
@@ -39,10 +40,10 @@ Copy-and-Patchエンジンによるネイティブコード生成、4論理引�
 
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| TEST-JITC-20 | x64ヘッダサイズは固定16バイト | x64向けに生成したトレース | ヘッダを解析 | `+0x00 chain_target_addr(u64)`, `+0x08 helper_target_addr(u64)`だけを含む16バイト構造 | [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) |
+| TEST-JITC-20 | x64ヘッダサイズと配置 | x64向けに生成したトレース | C++/ctypesの物理ヘッダサイズと全フィールドoffsetを確認する。255を超える関数相対depthをコンパイルして読む | ヘッダは40バイト。全フィールドのoffsetと型が一致する。`frame_depth`は32ビット値として切り詰めず保持される | [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) |
 | TEST-JITC-21 | 昇格状態を管理情報で保持する | OldestからActiveへ昇格するトレース | cache管理情報と物理ヘッダを確認する | 管理情報の `0x01: PROMOTED` が設定される。物理ヘッダへflags欄を追加しない | 同上 |
-| TEST-JITC-22 | x64エントリstubは16バイトヘッダ直後に配置 | x64向けに生成したトレース | 独立した機械語期待値、entry stubのbodyアドレスと共通prologueへの分岐先を比較し、生成コードを実行する | 16バイトヘッダ直後(+0x10)から15バイトのentry stubが始まり、bodyはその直後(+0x1F)から始まる。共通prologueの対象ABIの保存・引数配置と分岐先が一致し、入力5の計算結果は40である。ARMv8-Mの配置はTBD | [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md)、[`test_x64_jit.py`](experiments/pysim/qa/tier3_plugins/jit/test_x64_jit.py) `test_trace_compiler_cps_4arg_and_pic`、`test_native_common_prologue_preserves_nonzero_tos` |
-| TEST-JITC-23 | 管理情報を物理ヘッダへ複製しない | x64向けトレースを生成 | トレースヘッダを解析 | 先頭PC、コード長、flags、未使用のvariant欄を持たず、生成コードと共通コードが読む2つのtargetだけを持つ | [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md), `{JIT_RegisterMapping}` |
+| TEST-JITC-22 | x64エントリstubのheader相対配置 | x64向けに生成したトレース | 独立した機械語期待値、entry stubのbodyアドレスと共通prologueへの分岐先を比較し、生成コードを実行する | 40バイトヘッダ直後(+0x28)から17バイトのentry stubが始まり、bodyはその直後(+0x39)から始まる。共通prologueの対象ABIの保存・引数配置と分岐先が一致し、入力5の計算結果は40である。ARMv8-Mの配置はTBD | [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md)、[`test_x64_jit.py`](experiments/pysim/qa/tier3_plugins/jit/test_x64_jit.py) `test_trace_compiler_cps_4arg_and_pic`、`test_native_common_prologue_preserves_nonzero_tos` |
+| TEST-JITC-23 | 物理ヘッダの実行に必要な情報だけを保持 | x64向けトレースを生成 | ヘッダとcache indexを解析 | 固定headerに実行時target、配置長、スタック要件、関数相対frame depthを持ち、patch位置一覧・再配置位置表・汎用flags・variant欄を別管理で複製しない | [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md), `{PositionIndependentCode}` |
 
 ### ADR_ScalableCodeOffset
 
@@ -97,7 +98,7 @@ Copy-and-Patchエンジンによるネイティブコード生成、4論理引�
 - **TEST-JITC-05 (W^X)**: [`test_exec_memory.py`](experiments/pysim/qa/tier3_plugins/jit/test_exec_memory.py)の`test_executable_buffer_wx_protection_lifecycle`はAPIのトランザクション状態と書込み拒否を検査する。`test_executable_buffer_linux_mapping_enforces_wx`は内部の`current_protection`を期待値に使わず、Linuxカーネルが公開する実権限を独立に確認する。初期状態、初回commit、再パッチ、再commitの4状態を確認する。
 - **TEST-JITC-05の反証確認**: `mprotect`への指定に書込み・実行ビットを追加して実権限をRWXにする試験内変異を用いる。メタデータがRXのままでも、OS実権限の期待値`r-x`との不一致で失敗することを確認する。
 - **TEST-JITC-10 (4論理引数規約)**: `(ctx, sp, local_base, tos)` の論理引数順序がInterpreterとJITで一致することを確認する。x64の物理配置は [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) が定める。
-- **TEST-JITC-20〜22 (x64 16バイト物理ヘッダ)**: x64の `jit_trace_header` はchain/helper targetだけを保持し、16バイト直後に15バイトのentry stub、さらにその後にnative bodyを配置する。ARMv8-Mの配置はTBDである。
+- **TEST-JITC-20〜22 (x64 40バイト物理ヘッダ)**: x64の `jit_trace_header` は実行に必要なtrace targetとmetadataを保持し、40バイト直後に17バイトのentry stub、さらにその後にnative bodyを配置する。ARMv8-Mの配置はTBDである。
 - **TEST-JITC-40 (PIC 位置独立性)**: トレースバイナリを別のメモリ領域・オフセットへコピーして再コンパイルなしで直接実行し、完全同一の演算結果を返すことを実証済み。
 - **TEST-JITC-42 (3面キャッシュ代謝 & 有界アンリンク)**: 3面マルチバッファキャッシュのローテーション、破棄バンク全体の消去、および被チェイン逆引きテーブルに基づく `O(n + k log n)` 処理を実証済み。
 - **TEST-JITC-43 (ホストコール ABI)**: `test_jitr_host_import_stays_on_interpreter_runtime_boundary`は、traceからInterpreterへ戻った後のhost import呼出しと結果を検査する。raw guest bindingの0〜6引数検査は型・値・port搬送の証拠である。0〜6引数の物理スタックアライメントとCaller-savedレジスタの完全保護は未検証である。

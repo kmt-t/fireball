@@ -481,6 +481,14 @@ def test_wasm_40_to_46_memory_load_store_grow_and_data():
     pages = interp.call(mod.export_func_index("mem_ops"), [])
     assert pages == [2]
     assert struct.unpack_from("<I", mem, 16)[0] == 0x12345678
+
+    native_mem = bytearray(65536)
+    mod.init_memory_data(native_mem, ())
+    native_interp = make_native_interpreter(mod, memory=native_mem)
+    assert native_interp.call(mod.export_func_index("mem_ops"), []) == [2]
+    assert struct.unpack_from("<I", native_mem, 16)[0] == 0x12345678
+    assert len(native_mem) == 2 * 65536
+
     # OOB trap check
     before = bytes(mem)
     with pytest.raises(AssertionError) as failure:
@@ -615,7 +623,7 @@ def test_intp_70_to_72_direct_bytecode_execution():
     assert frame.control_map is module.functions[0].control_map
     assert context.call_frame_stack[-1] is frame
     assert context.call_stack == context.native_call_frames.address
-    assert context.call_offset == 1
+    assert len(context.call_frame_stack) == 1
     native_frame = context.native_call_frames[-1]
     assert native_frame.func_index == 0
     assert native_frame.code != 0
@@ -633,7 +641,7 @@ def test_intp_70_to_72_direct_bytecode_execution():
     assert len(context.local_stack) == 2
     context.end_call_frame(frame)
     assert context.local_offset == 0
-    assert context.call_offset == 0
+    assert len(context.call_frame_stack) == 0
     assert not context.native_call_frames
     assert len(context.local_stack) == 0
 
@@ -952,6 +960,58 @@ def test_wasm_mvp_host_function_arguments_keep_declared_types():
     interp = Interpreter(module, host_functions=StaticVector.of((mix,), capacity=1))
     assert interp.call(module.export_func_index("call"), []) == [4294967300.25]
     assert received == [4294967297, 1.5, -2.25, 4]
+
+    native_received: StaticVector[WasmNumber] = StaticVector(capacity=4)
+
+    def native_mix(i64_value: int, f32_value: float, f64_value: float, i32_value: int) -> float:
+        native_received.append(i64_value)
+        native_received.append(f32_value)
+        native_received.append(f64_value)
+        native_received.append(i32_value)
+        return float(i64_value) + f32_value + f64_value + i32_value
+
+    native_interp = make_native_interpreter(
+        module,
+        host_functions=StaticVector.of((native_mix,), capacity=1),
+    )
+    assert native_interp.call(module.export_func_index("call"), []) == [4294967300.25]
+    assert native_received == [4294967297, 1.5, -2.25, 4]
+
+
+def test_python_runtime_api_uses_values_without_interpreter_state():
+    """Host imports and memory management cross the API as WebAssembly values."""
+    from tier2_runtime.runtime.python_api import HostFunction, PythonRuntimeAPI
+
+    module = parse(
+        memoryview(
+            wat_to_wasm(
+                """
+            (module
+              (import "env" "increment" (func $increment (param i32) (result i32)))
+              (memory 1 2))
+            """
+            )
+        )
+    )
+    memory = bytearray(65536)
+
+    def increment(value: int) -> int:
+        return value + 1
+
+    host_functions: StaticVector[HostFunction | None] = StaticVector.of((increment,), capacity=1)
+    api = PythonRuntimeAPI(
+        module,
+        memory,
+        Memory(min_pages=1, max_pages=2),
+        host_functions,
+    )
+
+    assert api.invoke_import(0, (0xFFFF_FFFF,)) == [0]
+    assert api.memory_size() == 1
+    assert api.grow_memory(1) == 1
+    assert api.memory_size() == 2
+    assert api.grow_memory(1) == -1
+    assert api.memory_size() == 2
 
 
 def test_intp_73_slot_width_follows_the_widest_local_in_each_frame():

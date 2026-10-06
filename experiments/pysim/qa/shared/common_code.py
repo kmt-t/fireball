@@ -65,29 +65,12 @@ class JITCodeCacheRegion:
         self,
         offset: int,
         blob: bytes,
-        entry_body_patch_offset: int,
-        entry_prologue_patch_offset: int,
-        exit_patch_offset: int,
-        helper_header_patch_offset: int,
-        helper_exit_patch_offset: int,
-        chain_dispatch_patch_offset: int = -1,
-        common_helper_offset: int = COMMON_HELPER_OFFSET,
     ) -> tuple[NativeTraceFunction, int]:
-        fixups = native_abi.NativeTraceFixups(
-            entry_body_patch_offset,
-            entry_prologue_patch_offset,
-            exit_patch_offset,
-            helper_header_patch_offset,
-            helper_exit_patch_offset,
-            chain_dispatch_patch_offset,
-            common_helper_offset,
-        )
         assert self.buffer.base is not None
         entry = native_abi.install_common_trace(
             self.buffer._native,
             offset,
             blob,
-            fixups,
         )
         fn = cast(
             NativeTraceFunction,

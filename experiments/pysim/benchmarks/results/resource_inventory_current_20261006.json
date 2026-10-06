@@ -1,6 +1,6 @@
 {
-  "measured_at_utc": "2026-10-06T05:41:13.317131+00:00",
-  "source_revision": "2e7a087067ab84792751838461026666bae050a3",
+  "measured_at_utc": "2026-10-06T06:48:27.360951+00:00",
+  "source_revision": "9960517a9767a5111ec04394059e7c0ce5557c1f",
   "source_worktree_modified": true,
   "script_sha256": "779117513ddd267f01dc13acd26798b6e2428e5070eb173ec680144542855c81",
   "host_machine": "x86_64",
@@ -375,7 +375,7 @@
         },
         {
           "path": "experiments/pysim/tier3_plugins/jit/jit_manager.py",
-          "sha256": "9d30eac87598d67cb33fff4f86b98928fc7c5b56dda7d1282aec1f8a31fd30ed",
+          "sha256": "395ace406f842ac9380af103d62dc9efb6b48afac45cd0d673d39292a8b53cf5",
           "physical_lines": 107,
           "code_lines": 90
         },
@@ -595,9 +595,9 @@
         },
         {
           "path": "experiments/pysim/native/tier2_runtime/interpreter/native_interpreter.cxx",
-          "sha256": "ba32e4a4c938728e7ec1efac8d1aa8e3dadb3016af828c276f176d6d3205c100",
-          "physical_lines": 2663,
-          "code_lines": 2468
+          "sha256": "e9417b8e4bc41cb5167d2b3690543588a94739c052bc2a9a976691b239878a4e",
+          "physical_lines": 3477,
+          "code_lines": 3281
         },
         {
           "path": "experiments/pysim/native/tier3_platform/libfireball/libfireball.hxx",
@@ -607,15 +607,15 @@
         },
         {
           "path": "experiments/pysim/native/tier3_plugins/jit/common_code.cxx",
-          "sha256": "781a4bf90b46be705a353ac82fcf98085aa91f4c60d27cc9c18341c975069cfa",
-          "physical_lines": 338,
-          "code_lines": 323
+          "sha256": "58213d4d12d9430376151f910b09a5839e77af30c711a70315f0973429d1a5d8",
+          "physical_lines": 396,
+          "code_lines": 381
         },
         {
           "path": "experiments/pysim/native/tier3_plugins/jit/common_code_abi.hxx",
-          "sha256": "2f64ec0e9cf6610770194921df70fdc2beb2b84417e234a937a405fc42e2cd9e",
-          "physical_lines": 18,
-          "code_lines": 15
+          "sha256": "4ffa640076b1e638970b1cff537ed31a620f375c63ab65883c9fafd20bb2e2f3",
+          "physical_lines": 19,
+          "code_lines": 16
         },
         {
           "path": "experiments/pysim/native/tier3_plugins/jit/executable_memory.cxx",
@@ -631,9 +631,9 @@
         },
         {
           "path": "experiments/pysim/native/tier3_plugins/jit/jit_internal.hxx",
-          "sha256": "28fad486ffead7143f8192383edc474f380c8fae5973a957f7343b2450e4a0d8",
-          "physical_lines": 53,
-          "code_lines": 48
+          "sha256": "181e58f80f30c38f40c36fb35331b87c00ac7e2f5ebd5fb25ff352cf2abe85b9",
+          "physical_lines": 57,
+          "code_lines": 52
         },
         {
           "path": "experiments/pysim/native/tier3_plugins/jit/jit_runtime.cxx",
@@ -643,73 +643,73 @@
         },
         {
           "path": "experiments/pysim/native/tier3_plugins/jit/jit_runtime.hxx",
-          "sha256": "c9185f599d4b5a4526b52c97239c1c0b05ceb51da99dbda7f8725264a27a80d2",
-          "physical_lines": 991,
-          "code_lines": 973
+          "sha256": "e487999c51a88d84b07d8f1a855cd2d02ebd973f7b026bf04de4bec3395b38ad",
+          "physical_lines": 1191,
+          "code_lines": 1170
         },
         {
           "path": "experiments/pysim/native/tier3_plugins/jit/jit_runtime_abi.hxx",
-          "sha256": "c2ca793f3fcb61c251d51ba66977515d9f03954f694d5694894012bf92f79613",
-          "physical_lines": 35,
-          "code_lines": 31
-        },
-        {
-          "path": "experiments/pysim/native/tier3_plugins/jit/jit_runtime_exports.hxx",
-          "sha256": "dd905ffbb7087f85456c82e8db4be5c5377e1268917110d4ce6cf88a3fb42d9a",
-          "physical_lines": 50,
-          "code_lines": 40
-        },
-        {
-          "path": "experiments/pysim/native/tier3_plugins/jit/jit_types.hxx",
-          "sha256": "bf712f0c2b2e7729f34a3aef06d048059c12af251775924909b7037780fb4508",
-          "physical_lines": 71,
-          "code_lines": 66
-        },
-        {
-          "path": "experiments/pysim/native/tier3_plugins/jit/profiling.cxx",
-          "sha256": "17071e3b5e815dfdcd835903d4f3aff65095fb65bb1481a76c14d4e3e80314ab",
-          "physical_lines": 35,
+          "sha256": "48d8c8f148cae9a600bc9a90ffa488878eb94495911282cdeae86973616f5beb",
+          "physical_lines": 36,
           "code_lines": 32
         },
         {
+          "path": "experiments/pysim/native/tier3_plugins/jit/jit_runtime_exports.hxx",
+          "sha256": "1ca95c2bcfecd3fce14b449e07d1a1bba9a769987e5eb4402bfaf84da0876449",
+          "physical_lines": 58,
+          "code_lines": 47
+        },
+        {
+          "path": "experiments/pysim/native/tier3_plugins/jit/jit_types.hxx",
+          "sha256": "6447990125ea26d599e9e11623a076407d4e3a989f564ba8689aebc6f7c9bf0c",
+          "physical_lines": 73,
+          "code_lines": 68
+        },
+        {
+          "path": "experiments/pysim/native/tier3_plugins/jit/profiling.cxx",
+          "sha256": "5ca0a119f07f10221e9e50ef18b9c579c4196d643dce4503d5bf5373e86c7947",
+          "physical_lines": 44,
+          "code_lines": 41
+        },
+        {
           "path": "experiments/pysim/native/tier3_plugins/jit/profiling.hxx",
-          "sha256": "f909ca071ed9e9c613758753683052131da94f933a633e6bca049af2fd32d45e",
-          "physical_lines": 21,
-          "code_lines": 20
+          "sha256": "febc4810670619a28320f508ea838d0169e49d8cb957beef9ced09e7dcc501de",
+          "physical_lines": 23,
+          "code_lines": 22
         },
         {
           "path": "experiments/pysim/native/tier3_plugins/jit/stencils_x64.hxx",
-          "sha256": "7406b5fb088b33a6909f7bc7ca17b3669820f789211b28ba5fd0ab67900685c6",
-          "physical_lines": 137,
-          "code_lines": 126
+          "sha256": "0a79c6486d615ccd038c2b93aa27b2078402c1d6b1b6e5c7267372c87638161c",
+          "physical_lines": 203,
+          "code_lines": 192
         },
         {
           "path": "experiments/pysim/native/tier3_plugins/jit/trace_compiler.cxx",
-          "sha256": "f977ac4b20e5d12271f6748ad407a9504a5feb904551fe639481db86316e6452",
-          "physical_lines": 1246,
-          "code_lines": 1160
+          "sha256": "1690d38afb5c88d23a687772f97db4e3fe0e43eb216ca144359c52c2c64d51ae",
+          "physical_lines": 1527,
+          "code_lines": 1441
         },
         {
           "path": "experiments/pysim/native/tier3_plugins/jit/trace_compiler_abi.hxx",
-          "sha256": "a493ab529f37562310ea86c06849e2fdeb0ad7772746cc9c8231f8ba0f7dbf46",
-          "physical_lines": 38,
-          "code_lines": 29
+          "sha256": "e25589982f2b19d44f73034946379fa5db9e081605a545c692a38a8f28f37266",
+          "physical_lines": 37,
+          "code_lines": 28
         },
         {
           "path": "experiments/pysim/tier2_runtime/abi/interpreter_abi.hxx",
-          "sha256": "972767334e1b95e22ccd775dec3941170caab8b9a22799956cbe8547d99ccddb",
-          "physical_lines": 341,
-          "code_lines": 300
+          "sha256": "a27eda6787741daf747c138ccb85bc2aa4518f772f8e935f5f23eb9e8254ca1e",
+          "physical_lines": 355,
+          "code_lines": 314
         },
         {
           "path": "experiments/pysim/tier2_runtime/abi/native_abi.hxx",
-          "sha256": "00d9d714b689661fd5e02f4a8f0f41d548bd77743668af76d69d26745edcbabd",
-          "physical_lines": 78,
-          "code_lines": 63
+          "sha256": "ea8cc08e410763d73e878831f5fff523c8c9f58a04720d1599aa58bb6778f5e5",
+          "physical_lines": 82,
+          "code_lines": 66
         }
       ],
-      "physical_lines": 6417,
-      "code_lines": 5974
+      "physical_lines": 7880,
+      "code_lines": 7431
     }
   ],
   "native_libraries": [
@@ -845,7 +845,7 @@
   },
   "jit_compiler_stack": {
     "measurement_flags": "-std=c++23 -O2 -g -fPIC -fvisibility=hidden -fno-exceptions -fno-rtti -fstack-usage with checked-in JIT configuration",
-    "source_sha256": "f977ac4b20e5d12271f6748ad407a9504a5feb904551fe639481db86316e6452",
+    "source_sha256": "1690d38afb5c88d23a687772f97db4e3fe0e43eb216ca144359c52c2c64d51ae",
     "function_frame_bytes": {
       "compile_instruction_body": 168,
       "_ZN12_GLOBAL__N_123finish_instruction_bodyERNS_13trace_builderEjjjjmjPN8fireball18jit_compile_resultE": 8,
@@ -918,13 +918,13 @@
       "_ZZN8fireball12_GLOBAL__N_111score_blockERKNS_14jit_wasm_blockEENK3$_0clEv": 0
     },
     "source_sha256_by_file": {
-      "trace_compiler.cxx": "f977ac4b20e5d12271f6748ad407a9504a5feb904551fe639481db86316e6452",
-      "common_code.cxx": "781a4bf90b46be705a353ac82fcf98085aa91f4c60d27cc9c18341c975069cfa",
+      "trace_compiler.cxx": "1690d38afb5c88d23a687772f97db4e3fe0e43eb216ca144359c52c2c64d51ae",
+      "common_code.cxx": "58213d4d12d9430376151f910b09a5839e77af30c711a70315f0973429d1a5d8",
       "jit_runtime.cxx": "7066984faeb77caded5c92076f2cfb34631ab8e53127b5675c9103f323764165",
-      "jit_runtime.hxx": "c9185f599d4b5a4526b52c97239c1c0b05ceb51da99dbda7f8725264a27a80d2",
-      "jit_runtime_exports.hxx": "dd905ffbb7087f85456c82e8db4be5c5377e1268917110d4ce6cf88a3fb42d9a",
-      "jit_internal.hxx": "28fad486ffead7143f8192383edc474f380c8fae5973a957f7343b2450e4a0d8",
-      "stencils_x64.hxx": "7406b5fb088b33a6909f7bc7ca17b3669820f789211b28ba5fd0ab67900685c6"
+      "jit_runtime.hxx": "e487999c51a88d84b07d8f1a855cd2d02ebd973f7b026bf04de4bec3395b38ad",
+      "jit_runtime_exports.hxx": "1ca95c2bcfecd3fce14b449e07d1a1bba9a769987e5eb4402bfaf84da0876449",
+      "jit_internal.hxx": "181e58f80f30c38f40c36fb35331b87c00ac7e2f5ebd5fb25ff352cf2abe85b9",
+      "stencils_x64.hxx": "0a79c6486d615ccd038c2b93aa27b2078402c1d6b1b6e5c7267372c87638161c"
     },
     "wasm_compile_call_chain": [
       "compile_pending",

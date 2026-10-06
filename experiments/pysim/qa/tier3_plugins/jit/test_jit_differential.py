@@ -9,7 +9,7 @@ Every case runs the same WASM on three independent executors and requires identi
 
 The targeted cases each pin one defect found by the large profiling workload
 (docs/qa/bug_table/); the generated and clang-suite cases widen the coverage.
-Traceability: docs/qa/tier3_plugins/jit_runtime_test_spec.md (TEST-JITR-53 .. TEST-JITR-61).
+Traceability: docs/qa/tier3_plugins/jit_runtime_test_spec.md (TEST-JITR-53 .. TEST-JITR-69).
 """
 
 from __future__ import annotations
@@ -28,8 +28,10 @@ from qa.shared.helpers import make_interpreter, make_native_interpreter, wat_to_
 from qa.shared.runtime_stats import RuntimeStatsEngine as RuntimeEngine
 from qa.shared.runtime_support import make_runtime_engine, resident_module_traces
 from qa.shared.x64_jit import TraceCompiler
+from tier2_runtime.abi.interpreter_abi import NATIVE_VALUE_STACK_CAPACITY
 from tier2_runtime.interpreter.interpreter import NativeInterpreter, TrapCode
 from tier2_runtime.wasm.module import Module
+from tier2_runtime.wasm.opcodes import BR
 from tier2_runtime.wasm.reader import parse
 
 MASK32 = 0xFFFFFFFF
@@ -301,10 +303,14 @@ def test_jitr_60_frames_with_different_slot_widths_run_side_by_side():
 
 
 def _operand_overflow_wat() -> str:
-    """`work` sums 40 values in one block; `pad` calls it with 30 values already pending."""
-    work_pushes = " ".join(f"(i32.const {i + 1})" for i in range(40))
-    work = f"(func $work (result i32) {work_pushes} {'(i32.add) ' * 39})"
-    pad = f"(func $pad (result i32) {'(i32.const 7) ' * 30} (call $work) {'(i32.add) ' * 30})"
+    """`work` fits the JIT; `pad` keeps 124 words live across its call."""
+    work_pushes = " ".join(f"(i32.const {i + 1})" for i in range(18))
+    work = f"(func $work (result i32) {work_pushes} {'(i32.add) ' * 17})"
+    pending_values = NATIVE_VALUE_STACK_CAPACITY // 2 - 2
+    pad = (
+        f"(func $pad (result i32) {'(i64.const 7) ' * pending_values} (call $work) "
+        f"(drop) {'(i64.add) ' * (pending_values - 1)} (drop) (i32.const 0))"
+    )
     return f"""
 (module
   {work}
@@ -319,11 +325,11 @@ def _operand_overflow_wat() -> str:
 
 
 def test_jitr_61_a_trace_that_would_overflow_the_operand_stack_runs_on_the_interpreter():
-    """TEST-JITR-61: 30 pending values plus a 40-deep block exceed 64 words on every executor.
+    """TEST-JITR-61: pending values plus the trace's spills exceed the stack capacity.
 
-    `work` becomes a hot compiled block at an empty operand stack.  When `pad` calls it with 30
-    values pending, the trace's spills would run past the capacity.  The engine must hand the
-    block to the interpreter, which stops on the overflow, instead of the trace writing on.
+    `work` becomes a hot compiled block at an empty operand stack. When `pad` calls it with four
+    words left, the trace's spills would run past capacity. The engine must hand the block to the
+    interpreter, which stops on overflow, instead of the trace writing past the operand stack.
     """
     wasm = wat_to_wasm(_operand_overflow_wat())
     interpreter_module = parse(wasm)
@@ -334,10 +340,58 @@ def test_jitr_61_a_trace_that_would_overflow_the_operand_stack_runs_on_the_inter
         yield_threshold=3, candidate_threshold=0, jit_compiler=TraceCompiler()
     )
     module = engine.load_wasm(wasm)
+    work_pc = next(block.head_pc for block in module.blocks if block.func_index == 0)
     with pytest.raises(AssertionError) as hybrid_failure:
         engine.call(_guest(module), module.export_func_index("main"), [])
     assert hybrid_failure.value.args == (TrapCode.OPERAND_STACK_CAPACITY,)
+    work_trace = engine.jit_runtime.cache.find_trace(work_pc)
+    assert work_trace is not None, "`work` never compiled"
+    assert work_trace.stack_words > 1
     assert engine.stat_jit_invocations > 0, "`work` never ran compiled before the overflow"
+
+
+def test_jitr_69_forward_br_chains_and_updates_control_frame_depth():
+    """The shared chain dispatcher trims a departed block frame before jumping to its target."""
+    wat = """
+    (module
+      (func (export "main") (result i32) (local $i i32) (local $x i32)
+        (loop $again
+          (block $skip
+            (local.set $x (i32.add (local.get $x) (i32.const 3)))
+            (br $skip)
+            (i32.const -1)
+            (local.set $x))
+          (local.set $i (i32.add (local.get $i) (i32.const 1)))
+          (br_if $again (i32.lt_s (local.get $i) (i32.const 40))))
+        (local.get $x)))
+    """
+    engine = _check_three_ways(wat, "main", [], compile_only=None)
+    assert engine.stat_jit_invocations > 0
+    module = engine.module
+    assert module is not None
+    function_index = module.export_func_index("main")
+    function_pc = module.function_pc_offset(function_index)
+    code = module.code_for(function_index)
+    branch_source = next(
+        block
+        for block in module.blocks
+        if block.func_index == function_index
+        and block.next_pc is not None
+        and code[block.head_pc - function_pc + block.byte_span] == BR
+    )
+    branch_target = next(
+        block
+        for block in module.blocks
+        if block.func_index == function_index and block.head_pc == branch_source.next_pc
+    )
+    assert branch_source.frame_depth == branch_target.frame_depth + 1
+    source_trace = engine.jit_runtime.cache.find_trace(branch_source.head_pc)
+    target_trace = engine.jit_runtime.cache.find_trace(branch_target.head_pc)
+    assert source_trace is not None and target_trace is not None
+    assert source_trace.header._native.frame_depth == branch_source.frame_depth
+    assert target_trace.header._native.frame_depth == branch_target.frame_depth
+    assert source_trace.chain_next == branch_target.head_pc
+    assert source_trace.header.chain_target_addr != 0
 
 
 # ---------------------------------------------------------------------------

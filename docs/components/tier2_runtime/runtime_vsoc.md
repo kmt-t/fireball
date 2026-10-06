@@ -103,22 +103,22 @@ vSoC全体の可変な実行時状態を保持する構造体。
 
 #### vSoCランタイム環境
 <!-- traceability: {ContextPointerRegister} {EnvironmentPointer} {MemoryBoundaryCheck} {FastAddressCheck} {ExecutionContext_Layout} -->
-vSoCの実行環境情報は `execution_context` の論理フィールドとして保持する。`vsoc_runtime` は独立した構造体ではなく、この実行コンテキストに含まれる環境フィールド群である。 {VsocRuntime_Layout} <!-- definition: {VsocRuntime_Layout} --> {GOTCHA-VSOC-03} <!-- definition: {GOTCHA-VSOC-03} --> 固定ABIではリニアメモリ、グローバル領域、命令ハンドラ表の参照をそれぞれ独立したフィールドに置き、別の環境構造体を特定オフセットへ埋め込まない。JITトレースとインタープリタは同じ論理状態を参照する。境界で渡す第4論理引数はスタック頂点値であり、物理レジスタへの割当は対象ABIで定義する。`memory.grow` で動的に伸長するリニアメモリの実体や、モジュール横断で共有されるグローバル変数配列など、単一の呼び出しコンテキストを超えて生存する状態を保持する。
+vSoCは実行コンテキストとモジュール実行情報を組み合わせてゲスト環境を提供する。`vsoc_runtime` は環境の論理項目をまとめる概念であり、独立した物理構造体や固定オフセットを定義しない。 <!-- definition: {VsocRuntime_Layout} --> {VsocRuntime_Layout} リニアメモリのホスト基点と有効サイズは `execution_context` が保持する。グローバル値と幅情報はモジュール実行情報が保持する。両者のx86-64配置は [`interpreter.md`](docs/components/tier2_runtime/interpreter.md) の `{ExecutionContext_Layout}` に従う。JITとInterpreterは同じ実行状態を参照する。境界で渡す第4論理引数はスタック頂点値であり、物理レジスタ割当は対象ABIで定義する（`{GOTCHA-VSOC-03}`）。 <!-- definition: {GOTCHA-VSOC-03} -->
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
-| リニアメモリ基底 | ゲストリニアメモリ（`memory.grow` で再割当されうる）の開始アドレス | アドレス値 | 32bit符号なし（`execution_context` の `+0x28`） |
-| リニアメモリサイズ | ゲストリニアメモリの現在の有効バイト数。`FastAddressCheck` の境界比較（`CMP addr, mem_size; BHS __trap`）に直接使う。マスクを使わないため2の冪制約もない | バイト数 | 32bit符号なし（`execution_context` の `+0x2C`） |
-| グローバル変数基底 | WASM `global` 配列（4バイト単位でインデックス付け）の開始アドレス | アドレス値 | 32bit符号なし（`execution_context` の `+0x30`） |
-| グローバル変数終端 | WASM `global` 配列の終端アドレス | アドレス値 | 32bit符号なし（`execution_context` の `+0x34`） |
+| リニアメモリ基点 | リニアメモリ実体の借用ホスト基点。ゲスト論理アドレスとは区別する | 非所有ポインタ | x86-64では `execution_context` の `+0x48` |
+| リニアメモリ有効サイズ | 境界検査対象の有効バイト数。ゲスト論理アドレス幅とは区別する | 64bit符号なし | x86-64では `execution_context` の `+0x50` |
+| グローバル値と幅 | WASM `global` の値配列と型幅 | モジュール実行情報への非所有ビュー | `execution_context` へ重複配置しない |
 
-`execution_context` の既存状態領域は64バイト（`+0x00`〜`+0x3F`）である。コードビュー、制御スタックビュー、境界チェックポイント、CallStackビュー、オペランドスタック容量、LOOP後方分岐カウンタとしきい値を続けて配置する。リニアメモリのホスト基点を`+0x80`、64bitの有効サイズを`+0x88`へ配置する。x86-64の実体は144バイトである。JITの委譲先関数アドレスと共通呼出し入口の選択値はトレースヘッダへ置く。
-オペランド領域、ローカル値領域、制御ブロック復帰情報領域は、それぞれ専用の境界オフセット対を持つ独立領域である。いずれか1本の伸縮が他の記録位置へ影響することはない（ADR-INTERP-03）。
-JIT の複雑処理委譲先はトレースヘッダの `helper_target_addr` からトレースごとにロードする。対象ABIの呼出しコードはヘルパー契約ごとに共通コード領域へ配置し、ヘッダの対応入口選択値で呼び出す。JITコード内へ委譲先の絶対アドレスを埋め込まない。型定義の正本は [`runtime_vsoc_contract.wit`](docs/components/tier2_runtime/wit/runtime_vsoc_contract.wit) であり、固定ABIの物理配置は [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) に従う。 `{PositionIndependentCode}`
+確認済みx86-64の `execution_context` は96バイトである。フィールド順とオフセットは [`interpreter.md`](docs/components/tier2_runtime/interpreter.md) を正本とする。物理配置は [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) のPIC契約に従う。 `{PositionIndependentCode}`
+
+オペランド領域、ローカル値領域、制御ブロック復帰情報領域は、それぞれ独立した固定容量領域である。各領域の位置と容量はInterpreterが管理する（[interpreter.md](docs/components/tier2_runtime/interpreter.md#adr-interp-03-制御フレームを専用スタックへ分離)）。
 
 > [!NOTE]
 > **構造体の役割分離**:
-> - **`execution_context` の環境フィールド**: JITトレースおよびインタープリタハンドラが実行ループ内で参照するリニアメモリとグローバル領域の情報。固定ABIでは各フィールドを実行コンテキスト内に保持する。
+> - **`execution_context` の環境フィールド**: JITトレースおよびインタープリタハンドラが参照するリニアメモリのホスト基点と有効サイズ。
+> - **モジュール実行情報**: WASMモジュールのグローバル値と幅を保持する。実行コンテキストに重複格納しない。
 > - **`vsoc_context`**: タスク全体のライフサイクル、保留中の`interrupt-event`とvIRQ配送状態、WASM モジュール構造体へのポインタを管理する**上位マネージャ層の制御構造体**。実行ループ外でのタスク切り替えやデバッガ連携時に参照される。両者は明確に役割分離して維持する。
 
 #### vSoC構成（vsoc_config）

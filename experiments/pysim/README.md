@@ -179,7 +179,7 @@ bash experiments/pysim/native/tier3_plugins/jit/build_native.sh
 
 # 診断ベンチマークとQAは検査専用ライブラリも使う
 bash experiments/pysim/native/tier2_runtime/interpreter/build_native.sh --qa
-bash experiments/pysim/native/tier3_plugins/jit/build_native.sh --qa
+bash experiments/pysim/native/tier3_plugins/jit/build_native.sh --qa --block-counters
 
 # 全ベンチマーク一括実行（wasmtime は JIT カードエイジング測定に使用）
 uv run --offline --no-sync python experiments/pysim/benchmarks/run_all.py

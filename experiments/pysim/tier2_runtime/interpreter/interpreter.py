@@ -82,6 +82,13 @@ from tier2_runtime.interpreter.control_flow import (
     opcode_has_attribute,
 )
 from tier2_runtime.observability.logging_interface import LoggerPort, LogLevel
+from tier2_runtime.runtime.python_api import (
+    PAGE_SIZE,
+    HostFunction,
+    PythonRuntimeAPI,
+    RuntimeAPI,
+    WasmNumber,
+)
 from tier2_runtime.syscall.hostcall import VdmaTransfer
 from tier2_runtime.vmmio.controller import (
     FC_DYNAMIC,
@@ -96,7 +103,6 @@ from tier2_runtime.wasm.leb128 import decode_signed, decode_unsigned
 from tier2_runtime.wasm.module import (
     F32,
     F64,
-    I32,
     I64,
     FunctionTable,
     Memory,
@@ -293,13 +299,7 @@ from tier2_runtime.wasm.opcodes import (
 NativeDispatchEntryPoint = _native_abi.NativeDispatchEntryPoint
 
 
-def select_native_dispatch_entry(with_extension: bool) -> NativeDispatchEntryPoint:
-    """Select the product dispatcher for the composed execution plugin."""
-    return _native_abi.RUN_DISPATCH_EXTENSION if with_extension else _native_abi.RUN_DISPATCH
-
-
 I32_MASK = 0xFFFFFFFF
-PAGE_SIZE = 65536
 # Reserved execution-PC values.  `-1` is kept only in the local continuation
 # because it cannot be confused with a bytecode offset; the public unified PC
 # is a named reserved value consumed by RuntimeEngine before normal lookup.
@@ -483,18 +483,7 @@ TRAP_LOG_EVENTS: tuple[tuple[int, str], ...] = (
 )
 
 
-class WasmNumber(Protocol):
-    """Numeric host value accepted at the public interpreter boundary."""
-
-    def __int__(self) -> int: ...
-
-    def __float__(self) -> float: ...
-
-
-class WasmHostFunction(Protocol):
-    """Host import callable whose arity is carried by the validated WASM type."""
-
-    def __call__(self, *args: WasmNumber) -> WasmNumber | None: ...
+WasmHostFunction = HostFunction
 
 
 FB_CONF_MAX_LOCAL_STACK = NATIVE_VALUE_STACK_CAPACITY
@@ -526,7 +515,7 @@ def _encode_public_args(
 class ExecEnv:
     """
     R2 (`env`): state shared across every call in this run -- the
-        module, linear memory, globals, tables and host-import dispatch table.
+        module, linear memory, globals, tables and runtime API.
         Never mutated per-instruction-dispatch, only by the opcodes that are
         specified to mutate it (global.set, stores, memory.grow).
     """
@@ -535,8 +524,7 @@ class ExecEnv:
     memory: bytearray | None
     globals: NativeGlobalStorage
     tables: StaticVector[FunctionTable]
-    host_functions: StaticVector[WasmHostFunction | None]
-    memory_decl: Memory
+    runtime_api: RuntimeAPI
     vmmio: VMMIOController | None = None
     phys_mem: bytearray | None = None
     vdma_transfer: VdmaTransfer | None = None
@@ -550,13 +538,11 @@ def _native_linear_memory_scope(
     memory_size = len(memory) if memory is not None else 0
     context.linear_memory_host_base = context.linear_memory_address(memory)
     context.linear_memory_size = memory_size
-    context.mem_size = min(memory_size, 0xFFFF_FFFF)
     try:
         yield
     finally:
         context.linear_memory_host_base = None
         context.linear_memory_size = 0
-        context.mem_size = 0
 
 
 @dataclass(slots=True)
@@ -697,7 +683,6 @@ class CallFrameStack:
             )
             self._frames.append(frame)
         context.local_stack.set_size(context.local_offset)
-        context.call_offset = len(self._native)
 
 
 class ExecutionContext(ExecutionContextABI):
@@ -759,7 +744,6 @@ class ExecutionContext(ExecutionContextABI):
         self.control_frame_stack: NativeControlStack = NativeControlStack(FB_CONF_MAX_NESTING_DEPTH)
         self.call_stack = self.native_call_frames.address
         self.call_base = 0
-        self.call_offset = 0
         self._allocator = allocator
         self._arena_offset: int | None = None
         self._arena_size = (
@@ -867,7 +851,6 @@ class ExecutionContext(ExecutionContextABI):
                 raw_offset += 1
         assert raw_offset == len(raw_args)
         self.local_offset += local_slot_count
-        self.call_offset = len(self.call_frame_stack)
         return frame
 
     def end_call_frame(self, frame: CallFrame) -> None:
@@ -877,7 +860,6 @@ class ExecutionContext(ExecutionContextABI):
         self.local_stack.truncate(frame.frame_offset)
         self.local_offset = frame.frame_offset
         self.call_frame_stack.pop_back()
-        self.call_offset = len(self.call_frame_stack)
 
     def bind_handler_state(self, ip: int, frame: CallFrame) -> None:
         """Publish the current native handler state in the execution context."""
@@ -1183,6 +1165,7 @@ class NativeModuleExecution:
     """Own immutable module descriptors and borrow stable table buffers for C++."""
 
     __slots__ = (
+        "_block_execution_counts",
         "_block_views",
         "_function_types",
         "_function_views",
@@ -1193,7 +1176,7 @@ class NativeModuleExecution:
         "_table_views",
         "_templates",
         "bump_allocator",
-        "dispatch_owner",
+        "dispatch_extension",
         "globals",
         "module",
         "tables",
@@ -1207,7 +1190,7 @@ class NativeModuleExecution:
         tables: Sequence[FunctionTable],
         allocator: BumpAllocator | None = None,
     ):
-        self.dispatch_owner = 0
+        self.dispatch_extension = 0
         self.bump_allocator = allocator
         self.module = module
         self.tables = tables
@@ -1280,6 +1263,7 @@ class NativeModuleExecution:
             descriptor.function_indices = table.native_address
             descriptor.size = len(table)
         self._block_views = (BlockExecutionViewNative * len(module.blocks))()
+        self._block_execution_counts = None
         for index, block in enumerate(module.blocks):
             self._block_views[index] = BlockExecutionViewNative(
                 block.head_pc,
@@ -1288,6 +1272,7 @@ class NativeModuleExecution:
                 0xFFFFFFFF if block.loops_to is None else block.loops_to,
                 block.frame_depth,
                 block.byte_span,
+                0,
             )
         self._module_view = ModuleExecutionViewNative(
             functions=self._function_views_address,
@@ -1335,6 +1320,16 @@ class NativeModuleExecution:
         return self._function_views_address + func_index * ctypes.sizeof(
             FunctionExecutionViewNative
         )
+
+    def enable_block_execution_counters(self) -> None:
+        """Attach one bounded counter to each shared module block view."""
+
+        if self._block_execution_counts is None:
+            self._block_execution_counts = (ctypes.c_uint32 * len(self._block_views))()
+            for index, block in enumerate(self._block_views):
+                block.extension_data = ctypes.addressof(self._block_execution_counts) + (
+                    index * ctypes.sizeof(ctypes.c_uint32)
+                )
 
 
 # The interpreter call's resumable continuation: (next_ip, frame, local_base,
@@ -1481,7 +1476,6 @@ class Interpreter:
         "bump_allocator",
         "debugger",
         "globals",
-        "host_functions",
         "logger",
         "memory",
         "memory_decl",
@@ -1525,7 +1519,6 @@ class Interpreter:
                 assert len(bindings.memory) >= module.memory.min_pages * PAGE_SIZE
 
         assert len(bindings.host_functions) == len(module.imports)
-        self.host_functions = bindings.host_functions
         self.globals = NativeGlobalStorage(
             capacity=len(module.globals), allocator=self.bump_allocator
         )
@@ -1568,11 +1561,15 @@ class Interpreter:
             bindings.memory,
             self.globals,
             self.tables,
-            self.host_functions,
+            PythonRuntimeAPI(
+                module,
+                bindings.memory,
+                self.memory_decl,
+                bindings.host_functions,
+            ),
             vmmio=vmmio,
             phys_mem=phys_mem,
             vdma_transfer=bindings.vdma_transfer,
-            memory_decl=self.memory_decl,
         )
         if self.module.start_function is not None:
             self.call(self.module.start_function, ())
@@ -1653,13 +1650,14 @@ class Interpreter:
         """
         context = self._new_context()
         if self.module.is_import(func_index):
-            results, trap = self._call_import(func_index, args)
+            results = self._env.runtime_api.invoke_import(func_index, args)
+            trap = Trap(TrapCode.NO_HOST_HANDLER, func_index) if results is None else None
             call_state = InterpreterCall(
                 func_index,
                 context,
                 cont=None,
                 finished=True,
-                results=results if trap is None else None,
+                results=results,
                 trap=trap,
             )
             context.release_workspace()
@@ -1681,48 +1679,6 @@ class Interpreter:
     def _prepare_native_execution(self, context: ExecutionContext) -> None:
         """Allow the strict native interpreter to install call descriptors."""
         return None
-
-    def _call_import(
-        self, func_index: int, args: Sequence[WasmNumber]
-    ) -> tuple[StaticVector[WasmNumber], Trap | None]:
-        """Resolves a host import synchronously -- there is no bytecode to step through."""
-        handler = self.host_functions[func_index] if func_index < len(self.host_functions) else None
-        if handler is None:
-            return (
-                StaticVector(capacity=4),
-                Trap(TrapCode.NO_HOST_HANDLER, func_index),
-            )
-        ft = self.module.func_type(func_index)
-        assert ft.params is not None and ft.results is not None
-        assert len(args) == len(ft.params)
-        host_args: StaticVector[WasmNumber] = StaticVector(capacity=len(ft.params))
-        for index, value_type in enumerate(ft.params):
-            value = args[index]
-            if value_type == I64:
-                argument: WasmNumber = _to_i64(int(value))
-            elif value_type == F32:
-                argument = _to_f32(float(value))
-            elif value_type == F64:
-                argument = float(value)
-            else:
-                assert value_type == I32
-                argument = _to_i32(int(value))
-            host_args.append(argument)
-        result = handler(*host_args)
-        results: StaticVector[WasmNumber] = StaticVector(capacity=4)
-        if ft.results:
-            assert len(ft.results) == 1 and result is not None
-            result_type = ft.results[0]
-            if result_type == I64:
-                result_value: WasmNumber = _to_i64(int(result))
-            elif result_type == F32:
-                result_value = _to_f32(float(result))
-            elif result_type == F64:
-                result_value = float(result)
-            else:
-                result_value = _to_i32(int(result))
-            results.append(result_value)
-        return results, None
 
     def _build_frame(
         self, func_index: int, raw_args: StaticVector[int], context: ExecutionContext
@@ -1998,6 +1954,15 @@ class Interpreter:
         execution = context.module_execution
         assert execution is not None
         native_frame = frame.native
+        context.code = int(native_frame.code or 0)
+        context.code_size = native_frame.code_size
+        context.ip = call_state._ip
+        context.sp_offset = len(frame.values)
+        context.sp_capacity = frame.values.capacity
+        context.local_offset = frame.frame_offset + frame.local_slot_count
+        context.control_stack = context.control_frame_stack.address
+        context.control_base = frame.control_base
+        context.loop_jump_threshold = yield_threshold
         with _native_linear_memory_scope(context, frame.env.memory):
             (
                 native_status,
@@ -2006,27 +1971,12 @@ class Interpreter:
                 native_trap,
             ) = _native_abi.run_native_dispatch(
                 native_dispatcher,
-                int(native_frame.code or 0),
-                int(native_frame.code_size),
                 int(context.context_ptr.value or 0),
-                context.context_view.nbytes,
                 frame.values.address,
-                frame.values.native_bytes,
                 locals_arr._storage.address,
-                locals_arr._storage.native_bytes,
-                context.control_frame_stack.address,
-                context.control_frame_stack.native_bytes,
-                len(frame.values),
-                frame.values.capacity,
-                call_state._ip,
-                frame.frame_offset,
-                frame.local_slot_count,
-                frame.control_base,
-                call_state.func_index,
-                yield_threshold,
                 call=context._native_dispatch_call,
                 result=context._native_result,
-                owner=execution.dispatch_owner,
+                extension=execution.dispatch_extension,
                 idle_budget=idle_budget,
             )
         frame.values.set_size(native_size)
@@ -2267,9 +2217,9 @@ class Interpreter:
                 popped_args.append(value)
             for index in range(len(popped_args) - 1, -1, -1):
                 call_args.append(popped_args[index])
-            results, trap = self._call_import(callee_func_index, call_args)
-            if trap is not None:
-                return trap
+            results = self._env.runtime_api.invoke_import(callee_func_index, call_args)
+            if results is None:
+                return Trap(TrapCode.NO_HOST_HANDLER, callee_func_index)
             for index, result in enumerate(results):
                 result_type = callee_ft.results[index]
                 if result_type == I64:
@@ -2350,13 +2300,13 @@ class NativeInterpreter(Interpreter):
         dispatcher: NativeDispatchEntryPoint,
         initializer: Callable[[NativeModuleExecution], int] | None,
     ) -> None:
-        """Bind the execution entry and its owner once when composing this interpreter."""
+        """Bind the native entry and its extension handle once during composition."""
         if self._native_dispatcher is dispatcher and self._execution_initializer is initializer:
             return
         self._native_dispatcher = dispatcher
         self._execution_initializer = initializer
         if self._module_execution is not None:
-            self._module_execution.dispatch_owner = (
+            self._module_execution.dispatch_extension = (
                 0 if initializer is None else initializer(self._module_execution)
             )
 
@@ -2370,7 +2320,7 @@ class NativeInterpreter(Interpreter):
                 self.bump_allocator,
             )
             if self._execution_initializer is not None:
-                self._module_execution.dispatch_owner = self._execution_initializer(
+                self._module_execution.dispatch_extension = self._execution_initializer(
                     self._module_execution
                 )
         context.attach_module_execution(self._module_execution)
@@ -2947,9 +2897,10 @@ def _h_memory_size(
     ctx: ExecutionContext, sp: NativeValueStack, local_base: _LocalStackWindow, tos: int
 ) -> _HandlerResult:
     ip, frame, env = _handler_state(ctx, sp)
-    if env.memory is None:
+    page_count = env.runtime_api.memory_size()
+    if page_count is None:
         return Trap(TrapCode.MEMORY_SECTION_MISSING)
-    frame.values.push_back(len(env.memory) // PAGE_SIZE)
+    frame.values.push_back(page_count)
     ctx.ip = ip + 2
     return None
 
@@ -2960,18 +2911,7 @@ def _h_memory_grow(
 ) -> _HandlerResult:
     ip, frame, env = _handler_state(ctx, sp)
     delta_pages = _to_u32(frame.values.pop_back())
-    if env.memory is None:
-        frame.values.push_back(_to_i32(0xFFFFFFFF))
-    else:
-        old_pages = len(env.memory) // PAGE_SIZE
-        maximum = env.memory_decl.max_pages
-        if maximum is None or maximum > 65536:
-            maximum = 65536
-        if delta_pages > maximum - old_pages:
-            frame.values.push_back(_to_i32(0xFFFFFFFF))
-        else:
-            env.memory.extend(bytes(delta_pages * PAGE_SIZE))
-            frame.values.push_back(old_pages)
+    frame.values.push_back(env.runtime_api.grow_memory(delta_pages))
     ctx.ip = ip + 2
     return None
 

@@ -305,13 +305,32 @@ def test_native_execution_plugin_can_be_replaced_without_jit_knowledge(collect_s
     from tier2_runtime.interpreter.interpreter import InterpreterBindings, NativeInterpreter
     from tier2_runtime.wasm.reader import parse
 
+    class NativeExecutionExtension(ctypes.Structure):
+        _fields_ = (
+            ("owner", ctypes.c_size_t),
+            (
+                "execute",
+                ctypes.CFUNCTYPE(
+                    ctypes.c_uint32,
+                    ctypes.c_void_p,
+                    ctypes.c_uint32,
+                ),
+            ),
+            ("observe", ctypes.CFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_uint32)),
+        )
+
+    execute = NativeExecutionExtension._fields_[1][1](lambda *args: 0)
+    observe = NativeExecutionExtension._fields_[2][1](lambda *args: False)
+    extension = NativeExecutionExtension(123, execute, observe)
+    extension_address = ctypes.addressof(extension)
+
     class DelegatingPlugin:
         yield_threshold = 2
 
         def __init__(self):
             self.bindings = []
             self.calls = 0
-            self.owner = 123
+            self.extension = extension_address
 
         def register_module(self, module):
             self.module = module
@@ -320,11 +339,11 @@ def test_native_execution_plugin_can_be_replaced_without_jit_knowledge(collect_s
             assert execution.module is self.module
             self.bindings.append(execution)
             self.dispatcher = dispatcher
-            return self.owner
+            return self.extension
 
         def native_entry(self, call, result):
             request = ctypes.cast(call, ctypes.POINTER(NativeDispatchCall)).contents
-            assert request.owner == self.owner
+            assert request.extension == self.extension
             assert request.idle_budget == 3
             self.calls += 1
             return self.dispatcher(call, result)

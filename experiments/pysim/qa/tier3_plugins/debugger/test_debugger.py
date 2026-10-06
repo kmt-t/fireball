@@ -601,7 +601,7 @@ def test_dbg_12_disabled_composition_has_no_debug_state_or_weave() -> None:
     assert (
         ctypes.sizeof(call.context)
         == ctypes.sizeof(ExecutionContextABI) + ctypes.sizeof(ctypes.c_void_p)
-        == 152
+        == 104
     )
     assert call.context.debug_control is None
     interpreter.step(call)

@@ -1,0 +1,21 @@
+baseline_library=/tmp/fireball-x64-stencil-no-local-pair.so
+candidate_library=experiments/pysim/qa/private/libjit_probe.so
+profile_compiler=Ubuntu clang version 21.1.8 (6ubuntu1)
+profile_ngrams=i32.add:45,i32.sub:4,i32.mul:1,i32.and:1,i32.xor:14,i32.eq:1,i32.ne:3,i32.lt_s:4,i32.lt_u:1,i32.gt_s:5,i32.le_s:2,i32.ge_s:2,i32.ge_u:2
+operation static_ngrams baseline_instructions candidate_instructions saved_per_match weighted_static_saving
+i32.add              45                     9                      7                2                     90
+i32.sub               4                    10                      7                3                     12
+i32.mul               1                     9                      7                2                      2
+i32.and               1                     9                      7                2                      2
+i32.xor              14                     9                      7                2                     28
+i32.eq                1                    11                      9                2                      2
+i32.ne                3                    11                      9                2                      6
+i32.lt_s              4                    11                      9                2                      8
+i32.lt_u              1                    11                      9                2                      2
+i32.gt_s              5                    11                      9                2                     10
+i32.le_s              2                    11                      9                2                      4
+i32.ge_s              2                    11                      9                2                      4
+i32.ge_u              2                    11                      9                2                      4
+selected_profitable_ngrams=local.get local.get i32.add | local.get local.get i32.sub | local.get local.get i32.mul | local.get local.get i32.and | local.get local.get i32.xor | local.get local.get i32.eq | local.get local.get i32.ne | local.get local.get i32.lt_s | local.get local.get i32.lt_u | local.get local.get i32.gt_s | local.get local.get i32.le_s | local.get local.get i32.ge_s | local.get local.get i32.ge_u
+frequency_weighted_static_saving_upper_bound=174
+Selection considers only measured, profiled local-pair operations with positive per-trace instruction savings; the weighted value assumes each static site is independently eligible.

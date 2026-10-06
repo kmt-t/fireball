@@ -19,6 +19,7 @@ from functools import partial
 from bump_allocator import BumpAllocator
 from config import FB_CONF_RUNTIME_YIELD_THRESHOLD
 from system_containers import SequenceView, StaticVector
+from tier2_runtime.abi import native_abi
 from tier2_runtime.interpreter.interpreter import (
     NATIVE_DISPATCH_CALL_BOUNDARY,
     NATIVE_DISPATCH_YIELD,
@@ -27,7 +28,6 @@ from tier2_runtime.interpreter.interpreter import (
     NativeInterpreter,
     NativeModuleExecution,
     WasmNumber,
-    select_native_dispatch_entry,
 )
 from tier2_runtime.runtime.execution_plugin import NativeExecutionPlugin
 from tier2_runtime.runtime.recovery import Result
@@ -83,7 +83,7 @@ class RuntimeEngine:
         yield_threshold: int = FB_CONF_RUNTIME_YIELD_THRESHOLD,
         bump_allocator: BumpAllocator | None = None,
     ):
-        backend_dispatcher = select_native_dispatch_entry(jit_runtime is not None)
+        backend_dispatcher = native_abi.RUN_DISPATCH
         self._native_dispatcher = (
             backend_dispatcher if jit_runtime is None else jit_runtime.native_entry
         )

@@ -10,3 +10,6 @@
 [submodule "third_party/wasi-libc"]
 	path = third_party/wasi-libc
 	url = https://github.com/WebAssembly/wasi-libc.git
+[submodule "third_party/wasm-micro-runtime"]
+	path = third_party/wasm-micro-runtime
+	url = https://github.com/bytecodealliance/wasm-micro-runtime.git

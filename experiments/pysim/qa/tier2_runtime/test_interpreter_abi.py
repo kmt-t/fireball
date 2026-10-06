@@ -28,44 +28,44 @@ from tier2_runtime.wasm.module import F32, F64, I32, I64, LocalWidthMap
 
 
 def test_native_layout_matches_x64_jit_context():
-    assert ctypes.sizeof(ExecutionContextABI) == 144
-    assert ExecutionContextABI.mem_base.offset == 0x28
-    assert ExecutionContextABI.local_capacity.offset == 0x38
-    assert ExecutionContextABI.runtime_flags.offset == 0x3C
-    assert ExecutionContextABI.loop_jump_count.offset == 0x74
-    assert ExecutionContextABI.loop_jump_threshold.offset == 0x78
-    assert ExecutionContextABI.code.offset == 0x40
-    assert ExecutionContextABI.code_size.offset == 0x48
-    assert ExecutionContextABI.control_stack.offset == 0x50
-    assert ExecutionContextABI.control_base.offset == 0x58
-    assert ExecutionContextABI.stack_checkpoint.offset == 0x5C
-    assert ExecutionContextABI.call_stack.offset == 0x60
-    assert ExecutionContextABI.call_base.offset == 0x68
-    assert ExecutionContextABI.call_offset.offset == 0x6C
-    assert ExecutionContextABI.linear_memory_host_base.offset == 0x80
-    assert ExecutionContextABI.linear_memory_size.offset == 0x88
+    assert ctypes.sizeof(ExecutionContextABI) == 96
+    assert ExecutionContextABI.ip.offset == 0x00
+    assert ExecutionContextABI.sp_offset.offset == 0x04
+    assert ExecutionContextABI.local_offset.offset == 0x08
+    assert ExecutionContextABI.local_capacity.offset == 0x0C
+    assert ExecutionContextABI.runtime_flags.offset == 0x10
+    assert ExecutionContextABI.code_size.offset == 0x14
+    assert ExecutionContextABI.code.offset == 0x18
+    assert ExecutionContextABI.control_stack.offset == 0x20
+    assert ExecutionContextABI.control_base.offset == 0x28
+    assert ExecutionContextABI.stack_checkpoint.offset == 0x2C
+    assert ExecutionContextABI.call_stack.offset == 0x30
+    assert ExecutionContextABI.call_base.offset == 0x38
+    assert ExecutionContextABI.sp_capacity.offset == 0x3C
+    assert ExecutionContextABI.loop_jump_count.offset == 0x40
+    assert ExecutionContextABI.loop_jump_threshold.offset == 0x44
+    assert ExecutionContextABI.linear_memory_host_base.offset == 0x48
+    assert ExecutionContextABI.linear_memory_size.offset == 0x50
+    assert ExecutionContextABI.trap_code.offset == 0x58
 
     ctx = ExecutionContextABI()
     ctx.ip = 0x1234
-    ctx.mem_size = 0x4000
+    ctx.linear_memory_size = 0x4000
     assert ctx.ip == 0x1234
-    assert ctx.mem_size == 0x4000
+    assert ctx.linear_memory_size == 0x4000
 
 
 def test_product_dispatch_result_contains_only_execution_state():
-    """The result ABI charges five raw words to every product context."""
-    assert ctypes.sizeof(NativeResult) == 20
+    """The result ABI carries status and error only; execution state stays in context."""
+    assert ctypes.sizeof(NativeResult) == 8
     assert NativeResult.status.offset == 0
-    assert NativeResult.ip.offset == 4
-    assert NativeResult.stack_size.offset == 8
-    assert NativeResult.trap_code.offset == 12
-    assert NativeResult.error_code.offset == 16
+    assert NativeResult.error_code.offset == 4
     result = ExecutionContext()._native_result
-    assert ctypes.sizeof(result) == 20
+    assert ctypes.sizeof(result) == 8
 
 
 def test_product_dispatch_result_does_not_write_a_diagnostic_suffix():
-    """Rejecting a call writes only the five words of the product result ABI."""
+    """Rejecting a call writes only the two words of the product result ABI."""
 
     class GuardedResult(ctypes.Structure):
         _fields_ = (("result", NativeResult), ("guard", ctypes.c_uint32 * 6))
@@ -120,7 +120,7 @@ def test_execution_context_extends_abi_record():
     assert isinstance(context, ExecutionContextABI)
     assert context.context_ptr.value == ctypes.addressof(context)
     assert context.debug_control is None
-    assert ctypes.sizeof(context) == 152
+    assert ctypes.sizeof(context) == 104
 
 
 def test_native_value_stack_owns_the_fixed_storage():

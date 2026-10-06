@@ -3,13 +3,14 @@
      implementation: experiments/pysim/native/tier3_plugins/jit/trace_compiler.cxx
      formal: formal/jit_cache_model.py
      benchmark: ../../../experiments/pysim/benchmarks/jit/bench_jit.py
+     benchmark: ../../../experiments/pysim/benchmarks/jit/bench_x64_stencil_instructions.py
      test: docs/qa/tier3_plugins/jit_compiler_test_spec.md
      test: docs/qa/specs/wasm_instruction_set_test_spec.md
 -->
 
 ## 1. コンセプト
 <!-- traceability: {LowLatencyJIT} {JIT_CopyAndPatch} {JIT_ZeroCompileCostTheorem} {SimpleJITArchitecture} {JIT_Encoder} {PositionIndependentCode} {SinglePassCompilation} -->
-JIT Compiler は、Tier 2 Interpreter の任意拡張としてWASMバイトコードをネイティブコードへ変換するTier 3コンポーネントである。プラグインに近い構成とし、「Zero Compile Cost」方針に基づく **Copy-and-Patch** 方式を採用する。確認済みのx64トレース本体生成はC++実装がWASMコードを直接走査し、opcodeとスタック上の値配置に対応するネイティブStencilを選択して連結し、即値と相対オフセットをパッチする。`i32.const` と直後の整数演算、`local.set`、`local.tee`、`drop`、`i32.eqz` は一部をsupernodeとしてまとめ、定数演算、即値演算、identityを選ぶ。対応外の組合せは既存の命令別経路へ戻す。Tier 3のC++ JitRuntimeはコンパイラを直接呼び、生成結果を所有キャッシュへ登録する。PythonはLoaderの借用コードとメタデータを登録境界で渡す。命令ごとのPython往復やTier 2のJIT専用APIを設けない。ARMv8-Mの物理実装と資源予算はTBDである。
+JIT Compiler は、Tier 2 Interpreter の任意拡張としてWASMバイトコードをネイティブコードへ変換するTier 3コンポーネントである。プラグインに近い構成とし、「Zero Compile Cost」方針に基づく **Copy-and-Patch** 方式を採用する。確認済みのx64トレース本体生成はC++実装がWASMコードを直接走査し、opcodeとスタック上の値配置に対応するネイティブStencilを選択して連結し、即値と相対オフセットをパッチする。`i32.const` と直後の整数演算、`local.set`、`local.tee`、`drop`、`i32.eqz` は一部をsupernodeとしてまとめ、定数演算、即値演算、identityを選ぶ。対応外の組合せは既存の命令別経路へ戻す。Tier 3のC++ JitRuntimeはコンパイラを直接呼び、生成結果を所有キャッシュへ登録する。WASMコードと実行メタデータはLoaderからC++ Runtime構成へ借用ビューとして渡す。Tier 2にJIT専用APIを追加しない。ARMv8-Mの物理実装と資源予算はTBDである。
 
 ## 2. アーキテクチャ分類
 <!-- traceability: {META_3TierSeparation} {JIT_CopyAndPatch} -->
@@ -30,15 +31,11 @@ JITサブシステムは、以下の2つの独立した設計書に責務を分�
 - **共通コード領域**: x64 JIT領域では開始処理、終了処理、helper契約別入口、chain dispatcherを共通領域へ配置する。命令別条件評価やhandler呼出しを単一dispatcherへ集約しない。x64の領域サイズと各offsetは [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) および [`jit_runtime.md`](docs/components/tier3_plugins/jit_runtime.md) を正本とする。ARMv8-Mのサイズと配置はTBDである。 `{JIT_MultiBuffer_Cache}`
 - **`constexpr_assembler`**: C++の `constexpr` 機能を活用し、opcodeを判定しない共通chain dispatcherの固定命令列をビルド時に生成する。命令別handlerはC++ interpreter内で直接選択し、この共通dispatcherへ集約しない。
 - **命令テンプレート (`jit_template`)**: パッチスロットを含むネイティブ命令列の雛形（x64では `trace_compiler.cxx` のC++実装が生成する。ARMv8-Mの物理仕様はTBD）。
-- **JIT トレースヘッダ (`jit_trace_header`)**: キャッシュに書き込まれる各ネイティブトレースの先頭に配置される実行時メタデータ構造体。x64では16バイトで、生成コードと共通コードが読むchain targetとhelper targetだけを保持する。JITコードから相対参照できるコード近傍に配置する。共通コードoffsetと論理的な後続PCは重複格納しない。物理欄は対象ABIごとに定義する。
+- **JIT トレースヘッダ (`jit_trace_header`)**: キャッシュに書き込まれる各ネイティブトレースの先頭に配置する実行時ヘッダである。x64では40バイトで、chain/helper target、共通コード基点への相対値、キャッシュ配置とスタック境界に必要な値、関数開始からの制御フレーム深さを保持する。コンパイラが基本ブロックのframe depthを埋め込み、共通chain dispatcherは深さが変わる静的前方分岐の前に制御スタックを更新する。ヘッダを別のtrace descriptorへ複製しない。物理欄は対象ABIごとに定義する。
 
 #### コンパイラ入口
 <!-- traceability: {JIT_CopyAndPatch} {SinglePassCompilation} {META_ContractImplSplit} -->
-Pythonの`TraceCompiler`は単独利用のためのC++コンパイラ接続である。`compile_wasm(block: WasmBlock)`は1回のネイティブ呼出しで1 traceを生成する。ランタイムの待ち列処理は、登録済みの借用ブロック記述子をC++から直接コンパイルする。`WasmBlock`は先頭PC、コードの借用ビュー、開始offset、バイト長、直線後続PC、およびローカル幅の借用ビューと配置情報を持つ。`NativeByteView`はアドレスとバイト長を保持する。`NativeLocalLayout`は幅ビュー、ローカル数、slot wordsを保持する。呼出し側はコンパイル完了まで借用領域の寿命を保持する。
-
-C++の`fb_jit_compile_block`は制御終端判定、WASM走査、機械語本体、物理ヘッダ、戻り値形状、必要スタック量と再配置情報を生成する。Pythonの`compile_wasm`は成功時にキャッシュへ登録できる`JITTrace`を返す。未対応の場合は`None`を返す。位置付きの中間結果タプルとトレース組立てメソッドを公開しない。機械語本体の生成とトレース組立てはC++の内部関数とする。
-
-命令列を明示的に渡す単独利用は`compile_instructions`を使う。引数はkeyword-onlyとし、`head_pc`、`instructions`、`next_pc`、`loops_to`、`byte_length`、`local_layout`、`context_helper`、`helper_address`で意図と単位を表す。`fb_jit_compile_instructions`は本体とヘッダを一度に生成する。Pythonの入口は単独実行領域への配置まで行う。`compile_wasm`の結果は呼出し側のキャッシュが配置を行う。単独実行領域は初回の単独コンパイル時に確保する。
+JitRuntimeはLoader所有のWASMコードと関数実行メタデータから適格な基本ブロックを選び、内部コンパイラを直接呼び出す。コンパイラは1パスで命令を走査し、固定長作業領域へtrace headerと機械語本体を生成する。結果はそのままJITキャッシュへ配置し、物理ヘッダのpatchまでC++内部で完了する。中間のtrace object、位置付き結果タプル、個別命令列のコンパイル入口、単独実行領域は製品ABIに含めない。単体コンパイラ入力と状態検査はQA専用ライブラリで扱う。
 
 ### 3.2 内部ブロック図
 ```mermaid
@@ -66,15 +63,15 @@ flowchart TD
 <!-- traceability: {Libgcc_Runtime_Helper} {LowLatencyJIT} {PositionIndependentCode} {SimpleJITArchitecture} -->
 - **関数/モジュール一括コンパイルの完全禁止**: 極小リソース環境におけるコンパイル遅延とメモリ消費をゼロ化する。関数全体やモジュール全体の事前一括コンパイルは一切行わない。
 - **純粋ベーシックブロック/トレース単位コンパイル**: カードマーキング表で HOT（`10`）に達した直線命令列（基本ブロック / トレース）のみを対象とする。スケジューラのアイドル時等に Copy-and-Patch により 1 トレースずつオンデマンド生成する。
-- **制御フローとインタープリタ委譲 (`{JIT_RuntimeAPI_Fallback}`)**: 現行x64ランタイムでは、制御終端命令をトレース本体で実行しない。`BR`、`BR_IF`、`BR_TABLE`、`BLOCK`、`LOOP`、`IF`、`ELSE`、`END`、コール、returnは、終端PCから対応するC++ Interpreter handlerへ渡す。handlerが条件、フレーム、遷移先を確定し、C++ dispatcherは設定された後方分岐数まで次の常駐トレースまたはC++ handlerを実行する。通常実行は共通機械語LOOPヘルパーへ移らず、Interpreter handlerを飛ばす直接後方分岐を作らない。
+- **制御フローとインタープリタ委譲 (`{JIT_RuntimeAPI_Fallback}`)**: 制御終端命令そのものはトレース本体で実行しない。関数内の静的前方`BR`は、分岐先のtraceが常駐し戻り値を残さない場合に限りchain dispatcherへ渡せる。dispatcherはヘッダの関数相対frame depthで制御スタックを更新してからtarget bodyへ移る。`BR_IF`、`BR_TABLE`、後方分岐、`BLOCK`、`LOOP`、`IF`、`ELSE`、`END`、call、returnはC++ Interpreter handlerが処理する。後方分岐数もhandlerが記録するため、yieldしきい値を迂回する直接loop back-edge chainは作らない。
 - **ハンドラABI**: JITトレース入口はInterpreter handlerと4論理引数の配置を共有するが、戻り値契約は異なる。Interpreter handlerは`handler_result`、JIT trace entryは`void`を返すため、関数ポインタ型を共有しない。
 
 ##### 3.3.1 現行x64の制御終端処理とchain dispatcher
 <!-- traceability: {JIT_CopyAndPatch} {JIT_LazyChaining} {PositionIndependentCode} -->
 
-現行x64実行系では、制御終端をトレース本体から除外し、終端PCからC++ Interpreter handlerを実行する。`BR`、`BR_IF`、`BR_TABLE`、`BLOCK`、`LOOP`、`IF`、`ELSE`、`END`、call、returnの条件値、スタック巻き戻し、制御フレーム更新、遷移先決定はhandlerが所有する。取得された後方分岐数もbranch handlerがコンテキストへ記録する。C++ dispatcherは同一関数内の次PCでトレース表を検索し、しきい値到達までC++側で続行する。C++ Interpreter単独実行も同じdispatcherと `FB_CONF_RUNTIME_YIELD_THRESHOLD` を使う。
+現行x64実行系では制御終端命令をトレース本体から除外する。`BR_IF`、`BR_TABLE`、後方`BR`、`BLOCK`、`LOOP`、`IF`、`ELSE`、`END`、call、returnはC++ Interpreter handlerが処理し、条件値、スタック巻き戻し、動的な制御更新、遷移先決定を行う。戻り値を残さない静的な前方`BR`だけはchain可能である。loaderが関数開始からのframe depthを各blockに確定し、コンパイラがsource/target深さをそれぞれのtrace headerへ埋める。共通chain dispatcherは両者が異なるときだけ`execution_context.control_base + target.frame_depth`を制御スタックサイズへ書き、その後bodyへtail-jumpする。後方分岐数はC++ branch handlerが記録する。C++ dispatcherは `FB_CONF_RUNTIME_YIELD_THRESHOLD` に従って続行またはyieldする。
 
-trace chainは、互換な直線後続traceが常駐する場合に共通コード領域のchain dispatcherがTraceヘッダからtarget bodyを読み、そこへtail-jumpする経路である。C++ handler実行後にC++ dispatcherが次traceを検索・起動する遷移はchainではない。chain dispatcherはopcodeごとのhandlerを共通化せず、分岐条件や制御frameを判定しない。
+trace chainは、互換な直線後続または静的前方`BR`のtarget traceが常駐する場合に、共通コード領域のchain dispatcherがTraceヘッダからtarget bodyを読み、そこへtail-jumpする経路である。必要なframe-depth更新もdispatcher内で完了する。C++ handler実行後にC++ dispatcherが次traceを検索・起動する遷移はchainではない。chain dispatcherはopcodeごとのhandlerを共通化せず、分岐条件や分岐命令を実行しない。
 
 ##### 3.3.2 ARMv8-Mの物理仕様（TBD）
 
@@ -93,13 +90,15 @@ JIT トレース内にインライン展開せず、トレース境界でイン�
 | | `0xFC 0x00`〜`0xFC 0x07` | `i32/i64.trunc_sat_f32/f64_{s,u}` | saturating変換のNaN・範囲端意味論をInterpreter共通契約で処理するため委譲 |
 | | `0xFC 0x0A` | `memory.copy` | 全範囲検査とmemmove規則を共有実装へ委譲。vDMAは条件を満たす非重複範囲だけを同期実行する |
 | | `0xFC 0x0B` | `memory.fill` | 全範囲検査を含むInterpreter共通実装へ委譲し、CPU経路で実行する |
-| **Cヘルパー演算** | `0x7C`〜`0x7E` | `i64.add` / `i64.sub` / `i64.mul` | 各命令固有の64ビット整数引数契約へ委譲 |
-| | `0x92`〜`0x95` | `f32.add` / `f32.sub` / `f32.mul` / `f32.div` | 各命令固有の32ビット浮動小数点引数契約へ委譲 |
-| | `0xA0`〜`0xA3` | `f64.add` / `f64.sub` / `f64.mul` / `f64.div` | 各命令固有の64ビット浮動小数点引数契約へ委譲 |
-| | `0x6D`〜`0x70` | `i32.div_s` / `i32.div_u` / `i32.rem_s` / `i32.rem_u` | 2個の32ビット整数引数と結果領域ポインタを持つ関数契約へ委譲 |
+| **ネイティブ演算** | `0x7C`〜`0x7E` | `i64.add` / `i64.sub` / `i64.mul` | x64ではネイティブStencilを使用。ARMv8-Mの命令選択とhelper要否はTBD |
+| | `0x92`〜`0x95` | `f32.add` / `f32.sub` / `f32.mul` / `f32.div` | x64ではネイティブStencilを使用。ARMv8-Mの命令選択とhelper要否はTBD |
+| | `0xA0`〜`0xA3` | `f64.add` / `f64.sub` / `f64.mul` / `f64.div` | x64ではネイティブStencilを使用。ARMv8-Mの命令選択とhelper要否はTBD |
+| **Cヘルパー演算** | `0x6D`〜`0x70` | `i32.div_s` / `i32.div_u` / `i32.rem_s` / `i32.rem_u` | x64では2個の32ビット整数引数と結果領域ポインタを持つ関数契約へ委譲。ARMv8-MはTBD |
 | **インタープリタ境界** | - | `i64.div_*`, `rem_*` | ゼロ除算・最小値オーバーフローのトラップ結果を返すABIを定義するまでインタープリタへ委譲 |
 
 `0xFC`は`wasm_instruction_set.md`が列挙するサブオペコードだけをロード時に受理する。未サポートサブオペコードはJITフォールバック扱いにせず、ロード時に拒否する（{WasmFCSubset}）。
+
+x64の`i32.div/rem`ヘルパーは通常の関数呼出しとして実行し、成功時は同じtrace内の次命令へ戻る。ARMv8-Mでの演算選択とヘルパー要否は未確定とする。
 
 **ABI 規約と境界チェック・バックパッチング (`GOTCHA-JITC-01`, `03`, `05`)**:
 - **スタック状態の同期**: JITトレース内では対象ABIが定める値保持方法を正本として演算する。基本ブロック終端、インタープリタ境界、トラップ時には共有オペランド領域と実行コンテキストを対象ABIの順序で同期する。キャッシュ値の破棄やダミー退避は禁止する。 `{ADR_TosCacheAsymmetry}` `{ExecutionContext_Layout}`
@@ -154,7 +153,21 @@ Clang 17+でビルドするC++実装であり、x64 Copy-and-Patchトレース�
 
 観測した即値列には対応する短いx64ステンシルを割り当てる。`i32.add 1/-1`は`inc/dec r9d`（各3バイト）を使い、既存の`add r9d, imm8`（4バイト）より1バイト短くする。`i32.mul 3/5`は`lea`（4バイト）を使い、`imul r9d, imm32`（7バイト）より3バイト短くする。`i32.and 255/65535`は`movzx`（4バイト）を使い、即値AND（7バイト）より3バイト短くする。対象Cゲストの全静的出現がJIT traceへ入ると仮定した場合の合計削減上限は169バイトである。これはホスト実行時間や動的なキャッシュ占有量の改善を示す計測値ではない。`i32.const`後の一般整数演算は、符号付き8ビットまたは32ビット即値ステンシルを使う。乗算の即値1は除去し、即値0はゼロ化ステンシルへ置き換える。シフト量はWASMの32ビット規則でマスクし、0なら命令を除去する。即値`local.set` / `local.tee`はレジスタロードを経由せず直接メモリへ格納し、`drop`はコードを出さず、定数`i32.eqz`はコンパイル時に評価する。traceの最終定数や対応しない組合せは既存の汎用Stencil経路で処理する。
 
-1トレースは最大64 WASM命令、生成body 96バイト、作業スタック深さ16スロットを上限とする。上限を超える候補はJIT化を辞退し、Interpreterへフォールバックする。スタック位置は `int16_t[16]` として扱う。WASM命令は1命令ずつ復号して処理し、命令配列を作らない。body、スタック位置、出力blobはランタイムの `BumpAllocator` から240バイトの再利用ワークスペースとして借りる。候補ごとにスクラッチwatermarkを保存して一時領域を割り当て、成功・辞退・エラーの後に同じ位置へ戻す。コンパイラの大きな配列は呼出しスタックへ置かない。
+即値Stencilの短縮はtraceのバイト数を減らすが、対象の単体traceでは機械語命令数を減らさない。命令数を減らす別候補として、空スタックからの`local.get, local.get, i32.*`を調べる。第1localを一度ロードし、第2localをALUまたは比較命令のメモリオペランドにすることで、従来の第2localロードとNOSへのレジスタ移動を省く。C23プロファイルゲストからClang 21.1.8で生成したWASMには、対応する二項演算のn-gramが静的に85件含まれた。個別関数をx64 JITし、trace headerとentry stubを除く本体をGNU objdump 2.46で逆アセンブルした比較を示す。
+
+| WASM演算 | Clang WASM内の静的出現数 | 汎用trace本体 | メモリオペランドtrace本体 | 1出現あたりの削減 | 頻度で重み付けした削減上限 |
+| :--- | ---: | ---: | ---: | ---: | ---: |
+| `i32.add` | 45 | 6命令 | 4命令 | 2命令 | 90命令 |
+| `i32.sub` | 4 | 7命令 | 4命令 | 3命令 | 12命令 |
+| `i32.mul` | 1 | 6命令 | 4命令 | 2命令 | 2命令 |
+| `i32.and` | 1 | 6命令 | 4命令 | 2命令 | 2命令 |
+| `i32.xor` | 14 | 6命令 | 4命令 | 2命令 | 28命令 |
+| 整数比較 | 20 | 8命令 | 6命令 | 2命令 | 40命令 |
+| **合計** | **85** | — | — | — | **174命令** |
+
+この重み付け値は全静的出現がそれぞれ独立して適格traceへ入ると仮定した上限であり、ゲスト実行時の到達・動的頻度・直前のWASM stack状態を示さない。対象はx64生成命令列である。Cortex-M33向け命令数、実行時間、ROM / RAM使用量は別のABIと実装で測定する。
+
+1トレースは最大64 WASM命令、生成body 512バイト、作業スタック深さ16スロットを上限とする。上限を超える候補はJIT化を辞退し、Interpreterへフォールバックする。スタック位置は `int16_t[16]` として扱う。WASM命令は1命令ずつ復号して処理し、命令配列を作らない。body、スタック位置、出力blobはランタイムの `BumpAllocator` から1,072バイトの再利用ワークスペースとして借りる。候補ごとにスクラッチwatermarkを保存して一時領域を割り当て、成功・辞退・エラーの後に同じ位置へ戻す。コンパイラの大きな配列は呼出しスタックへ置かない。
 
 PySIMの `BumpAllocator` はオフセットを会計し、JIT managerが借用期間中のtyped backing bufferを保持してネイティブ側へ渡す。実機では同じ240バイトをランタイムアリーナから連続して貸与する。実行可能コード領域とスクラッチ領域は別管理とし、スクラッチをActive/Warm/Oldestの各2KBバンクへ混在させない。
 
@@ -164,7 +177,7 @@ PySIMの `BumpAllocator` はオフセットを会計し、JIT managerが借用�
 
 ### 4.1 アルゴリズム
 <!-- traceability: {JIT_CopyAndPatch} {JIT_RuntimeAPI_Fallback} {SinglePassCompilation} -->
-1. **トレース解析とコード生成**: Tier 3 JIT 拡張はローダ所有WASMコードのアドレスと範囲を既存のC++コンパイラ入口へ一度渡す。C++コンパイラが命令列を直接走査し、対応命令を単一パスで固定長出力領域へ生成する。命令ごとのPython呼出しは行わない。未対応命令や不適格なトレースはコンパイル失敗として返す。
+1. **トレース解析とコード生成**: Tier 3 JIT 拡張はLoader所有WASMコードと関数メタデータを内部C++コンパイラへ渡す。C++コンパイラが命令列を直接走査し、対応命令を単一パスで固定長出力領域へ生成する。未対応命令や不適格なトレースはコンパイル失敗として返す。
 2. **キャッシュ配置とrelocation**: JIT runtimeがtrace headerと生成bodyをキャッシュへ配置する。x64の相対分岐、helper target、chain dispatcher targetを登録時に確定する。
 3. **実行可能メモリの確定**: x64の実行可能バッファ管理が書込み・実行権限の切替と必要な同期を行う。ARMv8-Mの権限機構、命令キャッシュ同期、バリア命令はTBDである。
 4. **制御終端の処理**: trace bodyは制御終端命令を実行せず、対応するC++ Interpreter handlerへ戻る。handlerが条件、control frame、遷移先を確定する。C++ dispatcherは設定された後方分岐数へ達するまで次の常駐traceまたはhandlerを続ける。
@@ -288,7 +301,7 @@ sequenceDiagram
 ## 7. 形式検証・テスト仕様との対応
 
 独立コンセプト層は、検証因子・成果物マトリクスの責務判定に従って対象外とする。
-確認済みx64コンパイラは、生成コードの直接実行テストと形式モデルで検証する。
+生成x64コードの演算結果と命令列は、C++ native compilerを通す実行テストで検証する。W^X、キャッシュ状態、チェイン寿命の抽象不変条件は形式モデルで検証する。
 ARMv8-Mのコンパイラと実機検証はTBDである。
 
 ### 7.1 検証対象の不変条件

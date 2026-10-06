@@ -16,9 +16,9 @@ from bump_allocator import BumpAllocator
 from system_containers import SequenceView
 from tier2_runtime.wasm.module import WASM_VALUE_SLOT_BYTES
 
-EXECUTION_CONTEXT_SIZE_BYTES = 144
-EXECUTION_CONTEXT_LOOP_JUMP_COUNT_OFFSET_BYTES = 0x74
-EXECUTION_CONTEXT_LOOP_JUMP_THRESHOLD_OFFSET_BYTES = 0x78
+EXECUTION_CONTEXT_SIZE_BYTES = 96
+EXECUTION_CONTEXT_LOOP_JUMP_COUNT_OFFSET_BYTES = 0x40
+EXECUTION_CONTEXT_LOOP_JUMP_THRESHOLD_OFFSET_BYTES = 0x44
 NATIVE_VALUE_STACK_CAPACITY = 128
 NATIVE_CONTROL_STACK_CAPACITY = 32
 NATIVE_CALL_STACK_CAPACITY = 32
@@ -34,34 +34,23 @@ class ExecutionContextABI(ctypes.Structure):
 
     _fields_ = (
         ("ip", ctypes.c_uint32),
-        ("sp_base", ctypes.c_uint32),
-        ("sp_limit", ctypes.c_uint32),
         ("sp_offset", ctypes.c_uint32),
-        ("local_base_addr", ctypes.c_uint32),
-        ("local_limit_addr", ctypes.c_uint32),
         ("local_offset", ctypes.c_uint32),
-        ("cf_base_addr", ctypes.c_uint32),
-        ("cf_limit_addr", ctypes.c_uint32),
-        ("cf_offset", ctypes.c_uint32),
-        ("mem_base", ctypes.c_uint32),
-        ("mem_size", ctypes.c_uint32),
-        ("globals_base", ctypes.c_uint32),
-        ("globals_limit", ctypes.c_uint32),
         ("local_capacity", ctypes.c_uint32),
         ("runtime_flags", ctypes.c_uint32),
-        ("code", ctypes.c_void_p),
         ("code_size", ctypes.c_uint32),
+        ("code", ctypes.c_void_p),
         ("control_stack", ctypes.c_void_p),
         ("control_base", ctypes.c_uint32),
         ("stack_checkpoint", ctypes.c_uint32),
         ("call_stack", ctypes.c_void_p),
         ("call_base", ctypes.c_uint32),
-        ("call_offset", ctypes.c_uint32),
         ("sp_capacity", ctypes.c_uint32),
         ("loop_jump_count", ctypes.c_uint32),
         ("loop_jump_threshold", ctypes.c_uint32),
         ("linear_memory_host_base", ctypes.c_void_p),
         ("linear_memory_size", ctypes.c_uint64),
+        ("trap_code", ctypes.c_uint32),
     )
 
 
@@ -216,6 +205,7 @@ class BlockExecutionViewNative(ctypes.Structure):
         ("loops_to", ctypes.c_uint32),
         ("frame_depth", ctypes.c_uint32),
         ("byte_span", ctypes.c_uint32),
+        ("extension_data", ctypes.c_void_p),
     )
 
 
@@ -699,20 +689,24 @@ class NativeValueStack:
 
 assert ctypes.sizeof(ctypes.c_void_p) == 8
 assert ctypes.sizeof(ExecutionContextABI) == EXECUTION_CONTEXT_SIZE_BYTES
-assert ExecutionContextABI.mem_base.offset == 0x28
-assert ExecutionContextABI.local_capacity.offset == 0x38
-assert ExecutionContextABI.runtime_flags.offset == 0x3C
-assert ExecutionContextABI.code.offset == 0x40
-assert ExecutionContextABI.code_size.offset == 0x48
-assert ExecutionContextABI.control_stack.offset == 0x50
-assert ExecutionContextABI.control_base.offset == 0x58
-assert ExecutionContextABI.stack_checkpoint.offset == 0x5C
-assert ExecutionContextABI.call_stack.offset == 0x60
-assert ExecutionContextABI.call_base.offset == 0x68
-assert ExecutionContextABI.call_offset.offset == 0x6C
-assert ExecutionContextABI.linear_memory_host_base.offset == 0x80
-assert ExecutionContextABI.linear_memory_size.offset == 0x88
-assert ExecutionContextABI.sp_capacity.offset == 0x70
+assert ExecutionContextABI.ip.offset == 0x00
+assert ExecutionContextABI.sp_offset.offset == 0x04
+assert ExecutionContextABI.local_offset.offset == 0x08
+assert ExecutionContextABI.local_capacity.offset == 0x0C
+assert ExecutionContextABI.runtime_flags.offset == 0x10
+assert ExecutionContextABI.code_size.offset == 0x14
+assert ExecutionContextABI.code.offset == 0x18
+assert ExecutionContextABI.control_stack.offset == 0x20
+assert ExecutionContextABI.control_base.offset == 0x28
+assert ExecutionContextABI.stack_checkpoint.offset == 0x2C
+assert ExecutionContextABI.call_stack.offset == 0x30
+assert ExecutionContextABI.call_base.offset == 0x38
+assert ExecutionContextABI.sp_capacity.offset == 0x3C
+assert ExecutionContextABI.loop_jump_count.offset == 0x40
+assert ExecutionContextABI.loop_jump_threshold.offset == 0x44
+assert ExecutionContextABI.linear_memory_host_base.offset == 0x48
+assert ExecutionContextABI.linear_memory_size.offset == 0x50
+assert ExecutionContextABI.trap_code.offset == 0x58
 assert ctypes.sizeof(ConstBufferViewNative) == 16
 assert ctypes.sizeof(WasmFunctionViewNative) == 24
 assert ctypes.sizeof(WasmModuleViewNative) == 24

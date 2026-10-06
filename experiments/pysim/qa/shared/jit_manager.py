@@ -73,6 +73,7 @@ class JITRuntimeManager(NativeJITRuntimeManager):
     """QA-only views of cache and card state; the product adapter is opaque."""
 
     __slots__ = (
+        "_block_execution_counts",
         "_block_inputs",
         "_card_shift",
         "_cards",
@@ -151,6 +152,7 @@ class JITRuntimeManager(NativeJITRuntimeManager):
             capacity=len(code_lengths)
         )
         self._block_inputs = (native_abi._NativeWasmBlock * 0)()
+        self._block_execution_counts = (ctypes.c_uint32 * 0)()
         self._bind_buffers(code_lengths, ())
         self._bind_profile()
         self.cache = JitRuntimeBoundary.borrow(self._native, retire_observer)
@@ -212,6 +214,12 @@ class JITRuntimeManager(NativeJITRuntimeManager):
         )
         self._bind_buffers(code_lengths, pc_bases)
         self._block_inputs = (native_abi._NativeWasmBlock * len(module.blocks))()
+        counters_enabled = bool(native_abi.BLOCK_COUNTERS_ENABLED())
+        self._block_execution_counts = (
+            (ctypes.c_uint32 * len(module.blocks))()
+            if counters_enabled
+            else (ctypes.c_uint32 * 0)()
+        )
         for index, block in enumerate(module.blocks):
             function = module.functions[block.func_index - len(module.imports)]
             assert function.local_width_map_cache is not None
@@ -235,6 +243,12 @@ class JITRuntimeManager(NativeJITRuntimeManager):
                     ),
                     function.local_width_map_cache.count,
                     function.local_width_map_cache.slot_words,
+                ),
+                (
+                    ctypes.addressof(self._block_execution_counts)
+                    + index * ctypes.sizeof(ctypes.c_uint32)
+                    if counters_enabled
+                    else None
                 ),
             )
         self._bind_profile()
@@ -297,6 +311,8 @@ class JITRuntimeManager(NativeJITRuntimeManager):
             offset=block_offset,
             byte_length=block.byte_span,
             next_pc=block.next_pc,
+            loops_to=block.loops_to,
+            frame_depth=block.frame_depth,
             locals=native_abi.NativeLocalLayout(
                 widths=native_abi.NativeByteView(
                     ctypes.addressof(width_buffer) if len(widths_view) > 0 else 0, len(widths_view)
@@ -427,6 +443,13 @@ class JITRuntimeManager(NativeJITRuntimeManager):
         trace._native.frame_depth = block.frame_depth
         trace._native.dispatch_next_pc = 0xFFFF_FFFF if block.next_pc is None else block.next_pc
         trace._native.dispatch_loops_to = 0xFFFF_FFFF if block.loops_to is None else block.loops_to
+        for index, registered in enumerate(self.module.blocks):
+            if registered.head_pc == block.head_pc:
+                trace._native.exec_count = ctypes.cast(
+                    self._block_inputs[index].extension_data,
+                    ctypes.POINTER(ctypes.c_uint32),
+                )
+                break
 
     def _bind_buffers(self, code_lengths: Sequence[int], pc_bases: Sequence[int]) -> None:
         lengths = (ctypes.c_uint32 * len(code_lengths))(*code_lengths)
@@ -490,7 +513,9 @@ class JITRuntimeManager(NativeJITRuntimeManager):
         native_abi.RUNTIME_BIND_DISPATCH(
             self._native.pointer, ctypes.cast(dispatcher, ctypes.c_void_p)
         )
-        return self._native.pointer
+        extension = native_abi.RUNTIME_EXTENSION(self._native.pointer)
+        assert extension is not None
+        return int(extension)
 
     def native_entry(self, call, result) -> int:
         self._begin()

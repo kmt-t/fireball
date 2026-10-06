@@ -33,28 +33,27 @@ JITサブシステムは、以下の2つの独立した設計書に責務を分�
 <!-- traceability: {META_ContractImplSplit} {META_StaticDI} {META_3TierSeparation} -->
 Tier 2は本体実行とブロック観測の接続契約を定める。Tier 3 JITはその契約を実装する。C++ Interpreterは共有実行状態を渡して接続先を呼び出す。トレース表、候補マスク、履歴を受け取らず、キャッシュ世代、候補評価、昇格を判断しない。別の接続先も同じ契約で置換できる。
 
-JIT は必要な領域サイズとアラインメントを提示し、外部の領域供給元から領域を借用する。領域内の状態、カード表、履歴、コンパイル待ち列、3面キャッシュ、実行可能コードと配置は C++ JitRuntime が管理する。Python の接続層は領域の供給契約、借用寿命、実行と破棄の呼出しだけを保持する。内部状態を読み取る API やテスト専用の明示操作は製品に設けない。検証用の状態参照と操作は QA 専用ライブラリへ置く。
+JIT RuntimeはC++から領域サイズとアラインメントを取得し、C++のRuntime構成が提供する領域を借用する。領域内の状態、カード表、履歴、コンパイル待ち列、3面キャッシュ、実行可能コードと配置はJIT Runtimeが管理する。製品ABIはC++ Runtime構成とTier 2実行契約の間に置き、内部状態の参照やQA用の明示操作を含めない。検証用の状態参照と操作はQA専用ライブラリへ置く。
 
 Tier 3 の実装は次の責務に分ける。
 
 | 実装 | 所有する責務 | 依存先 |
 | :--- | :--- | :--- |
-| Tier 3 JIT Runtime Manager | 外部領域の借用寿命とネイティブ実行器の呼出し | Tier 2 Runtime / Interpreter、Loader |
-| Tier 3 Native JitRuntime | 候補選択、履歴リングと分析、コンパイル待ち列と抑制、カード状態遷移とエイジング、ソート済み常駐索引、直接マップ検索、3面ローテーション、Oldest昇格、被チェイン元登録と解除、本体実行とチェイン終端の構成、コンパイル済み記述子と実行可能領域の所有 | Tier 2の共有実行状態と本体実行契約、Tier 3のコンパイラと共通コード |
+| Tier 3 Native JitRuntime | 候補選択、履歴リングと分析、コンパイル待ち列と抑制、カード状態遷移とエイジング、ソート済み常駐索引、直接マップ検索、3面ローテーション、Oldest昇格、被チェイン元登録と解除、本体実行とチェイン終端の構成、実行可能領域の所有 | Tier 2の共有実行状態と本体実行契約、Tier 3のコンパイラと共通コード |
 | Tier 3 Native Trace Compiler | Loader所有のWASMコードを直接走査し、1回の呼出しで1 traceを生成 | Loaderの借用WASMコード、Tier 3の共通コード |
 | Tier 2 Runtime / Interpreter | 通常のInterpreter境界と状態管理。接続時はTier 3拡張へ実行境界を委譲する | Tier 1、Tier 2 の実行器接続契約 |
 
-Tier 3のC++クラス`fireball::JitRuntime`にキャッシュ管理の状態と処理を集約する。クラスの定義と実装は[`jit_runtime.cxx`](experiments/pysim/native/tier3_plugins/jit/jit_runtime.cxx)に置く。実装言語をC++にしてもTier 3のプラグイン責務を維持する。固定容量のC++オブジェクトを呼出し側が用意した保存領域へ構築する。履歴リング、コンパイル待ち列、コンパイル済み記述子と実行可能領域をC++オブジェクト内で保持する。LoaderのWASMコードとローカル幅は、登録境界で借用する。
+Tier 3のC++ `JitRuntime`に候補評価、履歴、コンパイル待ち列、カード状態、常駐索引と実行可能領域の管理を集約する。クラスの定義と実装は[`jit_runtime.cxx`](experiments/pysim/native/tier3_plugins/jit/jit_runtime.cxx)に置く。固定容量のC++オブジェクトをC++ Runtime構成が用意した保存領域へ構築する。LoaderのWASMコードと実行メタデータは登録時に借用する。
 
-実行境界ではC++が履歴を分析し、境界の種類と処理予算からコンパイル要求を処理するか判定する。判定値をPythonへ返して呼び直す経路を設けない。待ち列からコンパイラ、キャッシュ配置、再配置とヘッダpatchへはC++の関数を直接呼び出す。これらは同じネイティブライブラリに置く。履歴と待ち列の内部操作、機械語テンプレートの生成、中間コンパイル結果とトレース組立ては外部へ公開しない。コンパイル、破棄、追い出し、ローテーションでPythonを呼び出さない。検証用の観測はQA側で行う。
+実行境界ではC++が履歴を分析し、境界と処理予算に応じてコンパイル要求を処理する。待ち列、コンパイラ、キャッシュ配置、再配置、ヘッダpatchは同じC++プラグイン内の呼出しで完了する。履歴と待ち列の内部操作、機械語テンプレート、中間コンパイル結果はプラグイン境界へ公開しない。検証用の観測はQA側で行う。
 
-Tier 3/JITのPythonファイルは、LoaderとInterpreterの接続、ctypesの型変換、および借用保存領域の寿命保持を担当する。共通機械語の生成、トレース再配置、物理ヘッダpatchは[`common_code.cxx`](experiments/pysim/native/tier3_plugins/jit/common_code.cxx)に置く。実行可能領域の確保・解放とW^X切り替えは[`executable_memory.cxx`](experiments/pysim/native/tier3_plugins/jit/executable_memory.cxx)に置く。カード操作と固定容量の履歴・待ち列の内部操作は[`profiling.cxx`](experiments/pysim/native/tier3_plugins/jit/profiling.cxx)に置く。Python側に対応するアルゴリズムを重複して保持しない。
+共通機械語の生成、トレース再配置、物理ヘッダpatchは[`common_code.cxx`](experiments/pysim/native/tier3_plugins/jit/common_code.cxx)に置く。実行可能領域の確保・解放とW^X切り替えは[`executable_memory.cxx`](experiments/pysim/native/tier3_plugins/jit/executable_memory.cxx)に置く。カード操作と固定容量の履歴・待ち列の内部操作は[`profiling.cxx`](experiments/pysim/native/tier3_plugins/jit/profiling.cxx)に置く。
 
 ローテーションはC++内部でカードエイジングを1ステップ実行する。明示的なflushではエイジングを実行しない。エイジング時間、操作回数、常駐状態の診断採取はQA専用の計測型とハーネスが担当する。製品構成に計測状態や取得APIを設けない。
 
 バンクの使用バイト数と次の書込み位置を分けて保持する。削除とOldest昇格で空いた中間領域を次の書込み位置として扱わない。次の書込み位置はバンクを消去したときに先頭へ戻す。既存PCの置換は同じ位置へ収まる場合に領域を再利用し、それ以外は未使用の末尾へ配置する。末尾にも収まらない置換は常駐状態を保って失敗を返す。
 
-JIT拡張はインタープリタに対するプラグインに近い選択可能コンポーネントである。Interpreterは共有実行状態を通じて本体実行を委譲する。コンパイラ実装、キャッシュ状態、トレース記述子を参照しない。JIT無効構成では履歴、コンパイラ、実行可能領域を合成しない。
+JIT拡張はInterpreterへ接続する選択可能コンポーネントである。Interpreterは共有実行状態を通じて本体実行を委譲する。Interpreterはコンパイラとキャッシュ内部を参照しない。JIT無効構成では履歴、コンパイラ、実行可能領域を合成しない。
 
 本コンポーネントには独立した概念モデルを置かない。実行経路はネイティブランタイム、x64機械語実装、形式モデルおよび対応するテスト仕様で確認する。
 
@@ -73,15 +72,15 @@ JIT拡張はインタープリタに対するプラグインに近い選択可�
 - **カード更新表 (Card Update Bitmap)**: コード領域全体の各カードに対応する 1 ビットdirty表である。カードが `UNEXECUTED` から `EXECUTED` へ遷移した時だけ、そのカードのビットを立てる。密ビュー `fireball::bit_view<1>` として参照する。8カードを1バイトにまとめる。
 - **エイジングカーソル**: カード更新表のバイト位置を保持する整数である。モジュール登録時に 0 で初期化し、表の末尾に達したら先頭へ戻る。
 - **JITエントリ表**: モジュールごとの各バンクに `head_pc` 順で並ぶ固定容量配列である。異なるモジュールを一つの検索表へ入れる場合のキーは`(module_id, head_pc)`とする。検索は二分探索（$O(\log n)$）とし、削除済み枠は無効項目として扱う。新規キーは配列内のシフトで挿入し、削除はtombstone化する。同じキーの再挿入では無効項目を再利用する。配列容量と挿入量はバンク容量により制限される。エントリが少ないためRadix索引を設けない。
-- **ネイティブ実行拡張の接続**: JIT拡張への本体実行、観測可否判定、観測済みブロック記録の入口と所有者を初期化時に固定する。C++ Interpreter dispatcherは共有実行状態とブロック開始PCを渡す。常駐検索と必要な昇格はJIT拡張内部で完了する。実行中にPythonへ戻らない。
+- **ネイティブ実行拡張の接続**: JIT拡張への本体実行と観測入口を初期化時に固定する。C++ Interpreter dispatcherは共有実行状態とブロック開始PCを渡す。観測入口はインタープリタ実行後に候補判定と履歴記録をまとめて行う。常駐検索と必要な昇格はJIT拡張内部で完了する。
   x64参照構成の記述枠は `JIT_CACHE_BANK_ENTRY_CAPACITY` により1バンク32件を上限とする。3面の上限は96件である。これはRAM予算の設定値であり、64バイトの既定コンストラクタ値や生成コードの平均サイズから導出しない。
-  常駐トレースの記述枠は全バンクの容量上限に従う。同一PCの常駐トレースを重複生成しない。WarmまたはOldestに存在するPCを新規insertすると契約違反とする。Oldestの昇格はJIT拡張内部のlookup経路を使う。Tier 2は世代と昇格を扱わない。
-  コード領域または記述枠が満杯になれば、既存の3面ローテーションを行う。生成コードの長さは可変である。短いtraceでも記述枠の上限を超えて挿入しない。
-  ホットスポット候補の判定はJIT拡張が所有するTrackable Maskで行う。候補PC配列は確保しない。観測可否判定を通った開始PCは、記録入口からJIT拡張の固定容量リングへ直接書き込む。記録入口で候補性を再判定しない。
+  JIT entryは全バンクの固定容量上限に従う。同一PCの常駐traceを重複生成しない。WarmまたはOldestに存在するPCを新規insertすると契約違反とする。Oldestの昇格はJIT拡張内部のlookup経路を使う。Tier 2は世代と昇格を扱わない。
+  コード領域または固定長JIT entry表が満杯になれば、既存の3面ローテーションを行う。生成コードの長さは可変である。短いtraceでもentry表の上限を超えて挿入しない。
+  ホットスポット候補の判定はJIT拡張が所有するTrackable Maskで行う。候補PC配列は確保しない。インタープリタ実行後に呼ぶ観測入口が候補性を判定し、適格な開始PCをJIT拡張の固定容量リングへ直接書き込む。
   同一カードの構造命令位置もbitが立つ。dispatcherは制御命令だけの区間で本体検索とブロック観測を呼び出さない。関数入口または制御処理の完了を、新しいブロック候補の開始トリガーとする。そこで確定したPCを保持し、通常命令のあるブロックだけを通知する。履歴の複製・転送やLoader索引の再検索を行わない。メモリ操作のruntime委譲後は同じブロックの継続として扱う。次の制御境界まで本体検索と重複した観測を行わない。外部呼出し・prefix委譲の完了は次ブロックの開始トリガーとする。単なるRuntime復帰や通常命令の出現を、新しい先頭の判定に使わない。trap・関数完了では開始待ち状態を解除する。
   通常命令の観測は候補ブロック入口の専用dispatchに限定する。最初のbody命令を観測した後は、観測処理を持たない通常dispatchへ直接末尾呼出しで移る。候補外と観測無効の経路には通常命令ごとの観測判定を追加しない。
-  常駐トレースの記述枠と履歴はJIT拡張の領域内に確保する。キャッシュ更新時にも同じ記述枠を再利用する。
-- **x64参照コード領域 (8KB)**: x64参照構成では4KBページ2枚分の領域を使う。先頭2KBは開始処理、終了処理、x64ヘルパー呼出しコード、chain dispatcher、および絶対アドレスプールを置く非エビクション領域とし、残る2KBずつを`Bank 0 (Active)`, `Bank 1 (Warm)`, `Bank 2 (Oldest)`に割り当てる。x64トレースヘッダはコード近傍に置き、生成コードと共通コードが読むchain/helper targetだけを保持する。共通コード領域はflushやバンクローテーションでも維持する。ARMv8-Mの領域容量、物理配置、保護方式、ヘッダ形式はすべてTBDである。
+  JIT entry表と履歴はJIT拡張の領域内に固定長で確保する。キャッシュ更新時にも同じ領域を再利用する。
+- **x64参照コード領域 (8KB)**: x64参照構成では4KBページ2枚分の領域を使う。先頭2KBは開始処理、終了処理、x64ヘルパー呼出しコード、chain dispatcher、および絶対アドレスプールを置く非エビクション領域とし、残る2KBずつを`Bank 0 (Active)`, `Bank 1 (Warm)`, `Bank 2 (Oldest)`に割り当てる。x64トレースヘッダはコード近傍に置き、生成コードと共通コードが読む実行時値を保持する。共通コード領域はflushやバンクローテーションでも維持する。ARMv8-Mの領域容量、物理配置、保護方式、ヘッダ形式はすべてTBDである。
   x64参照共通領域内の固定オフセットは次のとおりである。オフセットはコード領域先頭からの値であり、トレースヘッダのフィールド位置とは別の値である。
 
   | 共通領域オフセット | 配置物 | 容量・用途 |
@@ -92,15 +91,15 @@ JIT拡張はインタープリタに対するプラグインに近い選択可�
   | `0x050` | 絶対アドレスプール | 256バイトの共通アドレス領域 |
   | `0x160` | x64 i32ヘルパー入口群 | 32バイト単位で4入口。2個の32ビット整数引数と結果領域ポインタで関数を呼び出し、終了処理へ戻る |
   | `0x200` | x64 wideヘルパー入口群 | 32バイト単位で11入口。ヘルパー契約ごとの引数を設定して関数を呼び出し、終了処理へ戻る |
-  | `0x400` | x64共通chain dispatcher | 32バイト。Traceヘッダのchain targetを読み、次trace bodyへtail-jumpする。未接続時は共通終了処理へ戻る |
+  | `0x400` | x64共通chain dispatcher | 56バイト。Traceヘッダのchain targetとframe depthを読み、必要ならcontrol stackを更新してから次trace bodyへtail-jumpする。未接続時は共通終了処理へ戻る |
 
-  chain dispatcherはopcode別の分岐handlerを共通化しない。分岐条件・control frame更新・後方分岐回数はC++ Interpreterの命令別handlerが処理する。handler実行後にJIT拡張が別traceを選ぶ遷移と、共通コードchain dispatcherがtarget bodyへtail-jumpするchainは別の経路である。C++ `constexpr` assemblerで生成した固定命令列をx64参照構成の共通領域へ一度だけ配置する。ARMv8-Mの呼出し入口、配置方式、命令列はTBDである。
+  chain dispatcherはopcode別の分岐handlerを共通化しない。静的前方`BR`の制御frame深さはコンパイル時にtrace headerへ埋め込まれ、dispatcherはdepth差分がある場合にcontrol stack sizeを合わせる。条件分岐・後方分岐の条件評価と後方分岐回数はC++ Interpreterの命令別handlerが処理する。handler実行後にJIT拡張が別traceを選ぶ遷移と、共通コードchain dispatcherがtarget bodyへtail-jumpするchainは別の経路である。C++ `constexpr` assemblerで生成した固定命令列をx64参照構成の共通領域へ一度だけ配置する。ARMv8-Mの呼出し入口、配置方式、命令列はTBDである。
 - **オンデマンドコンパイルキュー (On-demand Compile Queue)**: Tier 3 JIT拡張内で`HOT`に達した命令オフセットを保持する固定容量LIFOキューである。Runtimeのidle hookは全タスクidle時と協調境界で拡張へ処理予算を渡す。通常の予算は成功コンパイル数ではなく、取り出して処理した候補数に適用する。コンパイル失敗と既存trace等によるスキップも1件に数える。固定キュー満杯時は通常予算の例外として、その場で全候補を処理してキューを空にする。処理件数の上限は固定キュー容量であり、実時間の上限は保証しない。先行ブロックより後続を先に常駐させ、直線後続chainを接続する。 `JIT_ReverseCompilationOrder` `{GLOBAL_Policy_Memory}`
 - **バンク別被チェイン逆引きテーブル (Inbound Chain Index Table)**: 各キャッシュバンクへ向けたchain元のJITエントリを保持する固定長配列である。cache回転・promote時に共通chain dispatcherが参照するtarget addressを更新または解除する。
-- **前方chainメタデータ**: 実行時cache metadataの`chain_next_pc`は直線後続traceの論理PCを保持する。x64物理ヘッダの`chain_target_addr`は共通chain dispatcherがtail-jumpするresident target bodyを保持する。後方branch linkは作らず、branch handlerへ制御を戻す。
+- **前方chainメタデータ**: 実行時cache metadataの`chain_next_pc`は直線後続または静的前方`BR`のtrace PCを保持する。x64物理ヘッダの`chain_target_addr`は共通chain dispatcherがtail-jumpするresident target bodyを保持する。後方branch linkは作らず、branch handlerへ制御を戻してyield回数を更新する。
 - **実行履歴バッファ**: ホットスポット検出が有効なJIT拡張が所有する固定容量リングである。各レコードは`module_id`と`UnifiedPC`を持つ。容量は`JIT_HISTORY_CAPACITY`以下で指定する。待ち列容量は`JIT_COMPILE_QUEUE_CAPACITY`以下で指定する。Interpreter実行区間の終了時だけ履歴順に分析し、JIT trace/chainだけの区間では記録も分析もしない。 `{HistoryBuffer}`
 
-トレース実行回数と退役記録はQA専用の計測構成で採取する。計測の正本は[`jit_runtime_bench_spec.md`](docs/components/tier3_plugins/benchmarks/jit_runtime_bench_spec.md)とする。製品構成は計数状態、時計、計測用の後続走査、退役通知を持たない。pysimでは`jit_runtime<Measurement>`のテンプレート引数で構成し、製品は`void`、QAは専用の計測型を選ぶ。計測型の実装は[`jit_measurements.hxx`](experiments/pysim/qa/private/jit_measurements.hxx)へ置く。QA用の代替ブロック入力、コンパイラ無効化、自己所有メモリ、および外部trace tokenの検査もQA型へ限定する。ネイティブ実行境界で履歴分析を完了し、Pythonからのyield通知で再分析しない。
+トレース実行回数と退役記録はQA専用の計測構成で採取する。計測の正本は[`jit_runtime_bench_spec.md`](docs/components/tier3_plugins/benchmarks/jit_runtime_bench_spec.md)とする。製品構成は計数状態、時計、計測用の後続走査、退役通知を持たない。PySIMでは`jit_runtime<Measurement>`のテンプレート引数で構成し、製品は`void`、QAは専用の計測型を選ぶ。計測型の実装は[`jit_measurements.hxx`](experiments/pysim/qa/private/jit_measurements.hxx)へ置く。QA用の代替ブロック入力、コンパイラ無効化、自己所有メモリ、および外部trace tokenの検査もQA型へ限定する。履歴分析はネイティブ実行境界で完了する。
 
 ### 3.2 内部ブロック図
 ```mermaid
@@ -317,9 +316,9 @@ stateDiagram-v2
 
 JIT trace終端の制御命令はC++ Interpreterの対応ハンドラで実行し、取得された後方分岐をそのハンドラ内で数える。C++ dispatcherは分岐後のPCで実行拡張の本体実行を呼び出す。JIT拡張が常駐トレースを選択して実行する。実行拡張が本体を実行しなかった場合はC++ Interpreter handlerで実行する。定義済みゲスト関数の呼出しもC++ handlerで処理し、呼出し先の適格ブロックを記録しながらdispatcher内で継続する。`FB_CONF_RUNTIME_YIELD_THRESHOLD`到達時にdispatcherがyield statusを返す。Tier 3 JIT拡張の境界処理は履歴を分析してRuntimeへ返し、Tier 2 RuntimeがCOOSへyieldを伝える。JITなしのInterpreter経路も同じdispatcher・カウンタ・しきい値を使う。後方分岐カウンタは時間ではなく取得した後方分岐の回数である。非対応命令、外部呼出し、trap、関数完了は必要な早期境界となる。
 
-trace chainは直線後続traceが常駐する場合に限り、trace末尾から共通コード領域のchain dispatcherへ移り、dispatcherがTraceヘッダのtarget bodyへtail-jumpする経路を指す。未接続のtargetは0で表し、共通epilogueから実行境界へ戻る。opcode別handlerの呼出しや、C++ handler後にJIT拡張が別traceを選ぶ遷移はchainではない。chain dispatcherは命令を判定せず、分岐helperも持たない。
+trace chainは直線後続traceまたは静的前方`BR`のtarget traceが常駐する場合に、trace末尾から共通コード領域のchain dispatcherへ移り、dispatcherがTraceヘッダのtarget bodyへtail-jumpする経路を指す。深さが異なる場合はheaderにコンパイル時格納した関数相対frame depthでcontrol stack sizeを更新する。未接続のtargetは0で表し、共通epilogueから実行境界へ戻る。opcode別handlerの呼出しや、C++ handler後にJIT拡張が別traceを選ぶ遷移はchainではない。chain dispatcherはopcodeを判定せず、分岐命令を実行しない。
 
-常駐トレースの選択、昇格、チェインの接続はTier 3 JIT拡張が所有する。Interpreterは共有実行状態と本体の実行結果だけを受け取り、トレース記述子やチェインを参照しない。JIT拡張は本体実行後のPC、スタック位置、制御終端の付帯情報を共有実行状態へ反映する。Interpreterはその状態からWASM制御命令を実行する。
+常駐トレースの選択、昇格、チェインの接続はTier 3 JIT拡張が所有する。Interpreterは共有実行状態と本体の実行結果だけを受け取り、JITキャッシュ内部を参照しない。JIT拡張は本体実行後のPC、スタック位置、制御終端の付帯情報を共有実行状態へ反映する。Interpreterはその状態からWASM制御命令を実行する。
 
 Interpreterは制御処理で確定した次ブロックのPCを保持する。通常命令を実行したブロックの観測を実行拡張へ通知する。候補性の判定、固定長履歴への記録、カード更新、コンパイル要求はJIT拡張内部で行う。Runtime Event Sinkはこの履歴を受け取らない。JIT無効構成は履歴、候補状態、コンパイラ、実行可能領域を持たない。デバッガ付き実行ではRuntimeがJIT拡張を迂回し、通常のInterpreter dispatcherを使う。
 
@@ -337,7 +336,8 @@ flowchart TD
     Lookup -- "ある" --> Entry["trace entryからtrace本体を実行する"]
     Entry --> Chain["共通コード領域のchain dispatcher"]
     Chain --> Target{"chain_target_addrが非0か？"}
-    Target -- "はい" --> Body["target trace bodyへtail-jumpする"]
+    Target -- "はい" --> Depth["header frame_depthに応じてcontrol stackを更新する"]
+    Depth --> Body["target trace bodyへtail-jumpする"]
     Body --> Chain
     Target -- "いいえ" --> Epilogue["共通epilogueからC++ dispatcherへ戻る"]
     Epilogue --> Terminator{"終端opcodeの処理を続けられるか？"}

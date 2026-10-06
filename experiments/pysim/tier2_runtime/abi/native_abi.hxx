@@ -11,48 +11,34 @@
 
 extern "C" {
 
-// An execution extension owns its implementation and updates the shared context.
+// An execution extension owns its implementation and updates the shared
+// context.
+struct fb_native_dispatch_call;
+
 struct fb_native_execution_extension {
   std::uintptr_t owner;
-  std::uint32_t (*execute)(std::uintptr_t, void*, std::uint32_t*, std::uint32_t*, std::uint32_t);
-  bool (*observe)(std::uintptr_t, std::uint32_t);
-  void (*record)(std::uintptr_t, std::uint32_t);
+  std::uint32_t (*execute)(const fb_native_dispatch_call *, std::uint32_t);
+  bool (*observe)(const fb_native_dispatch_call *, std::uint32_t);
 };
 
 struct fb_native_dispatch_call {
-  const std::uint8_t* code;
-  std::uint64_t code_bytes;
-  void* context;
-  std::uint64_t context_bytes;
-  std::uint32_t* stack;
-  std::uint64_t stack_bytes;
-  std::uint32_t* locals;
-  std::uint64_t locals_bytes;
-  void* control_stack;
-  std::uint64_t control_bytes;
-  const fb_native_execution_extension* extension;
-  std::uintptr_t owner;
+  void *context;
+  std::uint32_t *stack;
+  std::uint32_t *locals;
+  const fb_native_execution_extension *extension;
   std::uint32_t idle_budget;
-  std::uint32_t stack_size;
-  std::uint32_t stack_capacity;
-  std::uint32_t initial_ip;
-  std::uint32_t local_base;
-  std::uint32_t local_slots;
-  std::uint32_t control_base;
-  std::uint32_t function_index;
-  std::uint32_t yield_threshold;
 };
 
 struct fb_native_step_call {
-  const std::uint8_t* code;
+  const std::uint8_t *code;
   std::uint64_t code_bytes;
-  void* context;
+  void *context;
   std::uint64_t context_bytes;
-  std::uint32_t* stack;
+  std::uint32_t *stack;
   std::uint64_t stack_bytes;
-  std::uint32_t* locals;
+  std::uint32_t *locals;
   std::uint64_t locals_bytes;
-  void* control_stack;
+  void *control_stack;
   std::uint64_t control_bytes;
   std::uint32_t stack_size;
   std::uint32_t stack_capacity;
@@ -61,9 +47,10 @@ struct fb_native_step_call {
   std::uint32_t control_base;
 };
 
-// A selected debugger owns this fixed record; normal contexts have no control slot.
+// A selected debugger owns this fixed record; normal contexts have no control
+// slot.
 struct fb_native_debug_control {
-  const std::uint32_t* breakpoints;
+  const std::uint32_t *breakpoints;
   std::uint32_t breakpoint_count;
   std::uint32_t single_step;
   std::uint32_t executed;
@@ -74,25 +61,22 @@ struct fb_native_debug_control {
 
 struct fb_native_result {
   std::uint32_t status;
-  std::uint32_t ip;
-  std::uint32_t stack_size;
-  std::uint32_t trap_code;
   std::uint32_t error_code;
 };
-static_assert(sizeof(fb_native_result) == 20);
+static_assert(sizeof(fb_native_result) == 8);
 
-FB_PYSIM_INTERPRETER_EXPORT int fb_native_run_step(
-    const fb_native_step_call* call, fb_native_result* result);
-FB_PYSIM_INTERPRETER_EXPORT int fb_native_run_control_step(
-    const fb_native_step_call* call, fb_native_result* result);
-FB_PYSIM_INTERPRETER_EXPORT int fb_native_run_dispatch(
-    const fb_native_dispatch_call* call, fb_native_result* result);
-FB_PYSIM_INTERPRETER_EXPORT int fb_native_run_dispatch_extension(
-    const fb_native_dispatch_call* call, fb_native_result* result);
+FB_PYSIM_INTERPRETER_EXPORT int
+fb_native_run_step(const fb_native_step_call *call, fb_native_result *result);
+FB_PYSIM_INTERPRETER_EXPORT int
+fb_native_run_control_step(const fb_native_step_call *call,
+                           fb_native_result *result);
+FB_PYSIM_INTERPRETER_EXPORT int
+fb_native_run_dispatch(const fb_native_dispatch_call *call,
+                       fb_native_result *result);
 
-FB_PYSIM_INTERPRETER_EXPORT int fb_native_run_debug_dispatch(
-    const fb_native_dispatch_call* call, fb_native_result* result);
-
+FB_PYSIM_INTERPRETER_EXPORT int
+fb_native_run_debug_dispatch(const fb_native_dispatch_call *call,
+                             fb_native_result *result);
 }
 
 #endif

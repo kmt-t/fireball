@@ -1,0 +1,19 @@
+host=x86_64 iterations_per_call=250000
+samples=9 warmup_calls=3
+runtime_yield_threshold=64
+baseline_library=/tmp/fireball-x64-stencil-no-local-pair.so
+candidate_library=/home/ubuntu/workspace/mysrc/fireball/experiments/pysim/qa/private/libjit_probe.so
+sample baseline_ms candidate_ms
+     1     39.922       45.254
+     2     39.913       39.518
+     3     41.037       40.222
+     4     49.938       42.444
+     5     40.442       38.767
+     6     43.121       40.813
+     7     40.485       42.196
+     8     40.043       40.928
+     9     41.736       42.163
+baseline_median_ms=40.485 range_ms=39.913..49.938 jit_invocations=250002 loop_trace_bytes=129
+candidate_median_ms=40.928 range_ms=38.767..45.254 jit_invocations=250002 loop_trace_bytes=117
+candidate_speedup_percent=-1.09
+Timing covers a warmed native WASM JIT call on this x64 host; module loading, trace compilation and warmup are outside the timed interval.

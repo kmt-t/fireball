@@ -1,8 +1,8 @@
 {
-  "measured_at_utc": "2026-10-05T20:56:49.956341+00:00",
-  "source_revision": "889e406fb522b414ef84e947de769284ad8429e0",
+  "measured_at_utc": "2026-10-06T05:41:13.317131+00:00",
+  "source_revision": "2e7a087067ab84792751838461026666bae050a3",
   "source_worktree_modified": true,
-  "script_sha256": "2a9e5aa9afb8bdbb4ce1b5b6c41c5ab05c88a4b1a6ac266320cf5d4d81d99dde",
+  "script_sha256": "779117513ddd267f01dc13acd26798b6e2428e5070eb173ec680144542855c81",
   "host_machine": "x86_64",
   "pygments_version": "2.21.0",
   "compiler": "Ubuntu clang version 21.1.8 (6ubuntu1)",
@@ -39,13 +39,13 @@
       },
       {
         "path": "experiments/pysim/tier2_runtime/interpreter/interpreter.py",
-        "sha256": "e3d9d9bb20cfcf3a872cfe02eb660fe75aa645b9456feb0612ac71710f443caf",
-        "physical_lines": 5143,
-        "code_lines": 4300
+        "sha256": "a2aa08bfcf7f613b80bc471f760ba31a7b8006ec3fb342423aef599fab31b04f",
+        "physical_lines": 5083,
+        "code_lines": 4249
       }
     ],
-    "physical_lines": 6192,
-    "code_lines": 5122
+    "physical_lines": 6132,
+    "code_lines": 5071
   },
   "elf_scope": "x64 reference shared libraries built by checked-in -O2 build scripts; not ARM firmware",
   "source_groups": [
@@ -66,9 +66,9 @@
         },
         {
           "path": "experiments/pysim/tier1_core/config.py",
-          "sha256": "580f770c96de5169e24f327b0387739c45e0ca593b955a507483a7cbd25be3b3",
-          "physical_lines": 89,
-          "code_lines": 63
+          "sha256": "390a6d892c36eeecd8f05b6e02c0adcc167fd59812d07e1b5dd205940b16cd5b",
+          "physical_lines": 87,
+          "code_lines": 61
         },
         {
           "path": "experiments/pysim/tier1_core/fnv1a.py",
@@ -113,8 +113,8 @@
           "code_lines": 975
         }
       ],
-      "physical_lines": 3101,
-      "code_lines": 2326
+      "physical_lines": 3099,
+      "code_lines": 2324
     },
     {
       "name": "tier1_interface",
@@ -158,15 +158,15 @@
         },
         {
           "path": "experiments/pysim/tier2_runtime/abi/interpreter_abi.py",
-          "sha256": "65c0ea1c66ec663896d1f1a0c825becd92b904242f481bd760fae5a8125ec092",
-          "physical_lines": 766,
-          "code_lines": 561
+          "sha256": "8315b2b497d8fa0ade41b7dd069f5d7001969624f9a3f54145e4b92691cd4b98",
+          "physical_lines": 760,
+          "code_lines": 555
         },
         {
           "path": "experiments/pysim/tier2_runtime/abi/native_abi.py",
-          "sha256": "61d748a6ad92238a74f32e55e1eba529b2117c5c21c8cfce3bbfecc3fe2b2af6",
-          "physical_lines": 201,
-          "code_lines": 177
+          "sha256": "a3532d8474508f98aef5093345928e784f79eea69e4e6c11b5215e9b7a28f029",
+          "physical_lines": 149,
+          "code_lines": 123
         },
         {
           "path": "experiments/pysim/tier2_runtime/abi/native_stack_abi.py",
@@ -236,7 +236,7 @@
         },
         {
           "path": "experiments/pysim/tier2_runtime/runtime/engine.py",
-          "sha256": "00954b604ad9814be886deaf34f3ef65e9bfcf646964faa77d40d73630900ef5",
+          "sha256": "91e1d9a65a8fb5a12f1408bd0c7706d14efe6a68588801ea88cb606d3e4c1c4a",
           "physical_lines": 279,
           "code_lines": 214
         },
@@ -245,6 +245,12 @@
           "sha256": "e2e7fa0d1238c4af00dca801ab3eb7e0a44cb3fce20e0191779d5b7d83defa34",
           "physical_lines": 33,
           "code_lines": 18
+        },
+        {
+          "path": "experiments/pysim/tier2_runtime/runtime/python_api.py",
+          "sha256": "5c2b3db1be5f25cad0675420f4001219d720b30414a3f61ec4c52eb46b4ef076",
+          "physical_lines": 139,
+          "code_lines": 98
         },
         {
           "path": "experiments/pysim/tier2_runtime/runtime/recovery.py",
@@ -331,8 +337,8 @@
           "code_lines": 1010
         }
       ],
-      "physical_lines": 7711,
-      "code_lines": 5979
+      "physical_lines": 7792,
+      "code_lines": 6017
     },
     {
       "name": "tier3_plugins",
@@ -369,15 +375,15 @@
         },
         {
           "path": "experiments/pysim/tier3_plugins/jit/jit_manager.py",
-          "sha256": "639813dc489a23f4fd27813323ed877a68060a6a2b892ca6cd27c6640385ee65",
-          "physical_lines": 140,
-          "code_lines": 123
+          "sha256": "9d30eac87598d67cb33fff4f86b98928fc7c5b56dda7d1282aec1f8a31fd30ed",
+          "physical_lines": 107,
+          "code_lines": 90
         },
         {
           "path": "experiments/pysim/tier3_plugins/jit/native_abi.py",
-          "sha256": "ed851b4922dce771810d2d64e9a066d8b22ab5cd049fcaca70ff330564990822",
-          "physical_lines": 54,
-          "code_lines": 49
+          "sha256": "45c5d9239341e7710a39964496d728c4a3545abd3cd3d037e8b93d2e24b414c9",
+          "physical_lines": 43,
+          "code_lines": 38
         },
         {
           "path": "experiments/pysim/tier3_plugins/logger/__init__.py",
@@ -404,8 +410,8 @@
           "code_lines": 187
         }
       ],
-      "physical_lines": 1255,
-      "code_lines": 994
+      "physical_lines": 1211,
+      "code_lines": 950
     },
     {
       "name": "tier3_platform",
@@ -589,9 +595,9 @@
         },
         {
           "path": "experiments/pysim/native/tier2_runtime/interpreter/native_interpreter.cxx",
-          "sha256": "ccdc3606a1a9bedd95fc76d13838068ec7c1dc1a09f70e8c79223d1777d21ddd",
-          "physical_lines": 2700,
-          "code_lines": 2503
+          "sha256": "ba32e4a4c938728e7ec1efac8d1aa8e3dadb3016af828c276f176d6d3205c100",
+          "physical_lines": 2663,
+          "code_lines": 2468
         },
         {
           "path": "experiments/pysim/native/tier3_platform/libfireball/libfireball.hxx",
@@ -601,15 +607,15 @@
         },
         {
           "path": "experiments/pysim/native/tier3_plugins/jit/common_code.cxx",
-          "sha256": "938afb0baa26ca0c3f2fbb1212b1c86c5bef66bee696d6b0bb9f742ff0b0a95c",
-          "physical_lines": 320,
-          "code_lines": 310
+          "sha256": "781a4bf90b46be705a353ac82fcf98085aa91f4c60d27cc9c18341c975069cfa",
+          "physical_lines": 338,
+          "code_lines": 323
         },
         {
           "path": "experiments/pysim/native/tier3_plugins/jit/common_code_abi.hxx",
-          "sha256": "c0957a8bfc1a00e1959d0dd8e8b5e76f468e3fd17c5529321137f095a14ca968",
-          "physical_lines": 21,
-          "code_lines": 18
+          "sha256": "2f64ec0e9cf6610770194921df70fdc2beb2b84417e234a937a405fc42e2cd9e",
+          "physical_lines": 18,
+          "code_lines": 15
         },
         {
           "path": "experiments/pysim/native/tier3_plugins/jit/executable_memory.cxx",
@@ -625,9 +631,9 @@
         },
         {
           "path": "experiments/pysim/native/tier3_plugins/jit/jit_internal.hxx",
-          "sha256": "58e4d2dd1e14d580afcbcccc8fef2b69fa718df8c1d2a6061801a3f9585c5511",
-          "physical_lines": 58,
-          "code_lines": 53
+          "sha256": "28fad486ffead7143f8192383edc474f380c8fae5973a957f7343b2450e4a0d8",
+          "physical_lines": 53,
+          "code_lines": 48
         },
         {
           "path": "experiments/pysim/native/tier3_plugins/jit/jit_runtime.cxx",
@@ -637,73 +643,73 @@
         },
         {
           "path": "experiments/pysim/native/tier3_plugins/jit/jit_runtime.hxx",
-          "sha256": "14ab68892f72291b729980e20a3a8e3d7fa9c63f087a46f51bd91a5fb96b7118",
-          "physical_lines": 1007,
-          "code_lines": 975
+          "sha256": "c9185f599d4b5a4526b52c97239c1c0b05ceb51da99dbda7f8725264a27a80d2",
+          "physical_lines": 991,
+          "code_lines": 973
         },
         {
           "path": "experiments/pysim/native/tier3_plugins/jit/jit_runtime_abi.hxx",
-          "sha256": "3a846fe0e3a4a4d1122a81a50f1ec1400bbdd6786e6443f88998d692f019c38a",
-          "physical_lines": 43,
-          "code_lines": 37
+          "sha256": "c2ca793f3fcb61c251d51ba66977515d9f03954f694d5694894012bf92f79613",
+          "physical_lines": 35,
+          "code_lines": 31
         },
         {
           "path": "experiments/pysim/native/tier3_plugins/jit/jit_runtime_exports.hxx",
-          "sha256": "fa7b143abf1e9158f3fa22c5fa4b092afe49e107ee6b60d9d8b61051445e6ef8",
-          "physical_lines": 43,
-          "code_lines": 34
+          "sha256": "dd905ffbb7087f85456c82e8db4be5c5377e1268917110d4ce6cf88a3fb42d9a",
+          "physical_lines": 50,
+          "code_lines": 40
         },
         {
           "path": "experiments/pysim/native/tier3_plugins/jit/jit_types.hxx",
-          "sha256": "fbff8c9f71739873daa28cf1aab55645027802c015406452e52462757012336d",
-          "physical_lines": 82,
-          "code_lines": 77
+          "sha256": "bf712f0c2b2e7729f34a3aef06d048059c12af251775924909b7037780fb4508",
+          "physical_lines": 71,
+          "code_lines": 66
         },
         {
           "path": "experiments/pysim/native/tier3_plugins/jit/profiling.cxx",
-          "sha256": "ab90e31939c57eff2a0769153edf08db71a71bf5f0f804e6017e58db7e5fc35e",
-          "physical_lines": 37,
-          "code_lines": 33
+          "sha256": "17071e3b5e815dfdcd835903d4f3aff65095fb65bb1481a76c14d4e3e80314ab",
+          "physical_lines": 35,
+          "code_lines": 32
         },
         {
           "path": "experiments/pysim/native/tier3_plugins/jit/profiling.hxx",
-          "sha256": "8f6e5a7aaa0a71b5eed61ce452f853b9b494ad35cbd32195d35de372c6acef9c",
-          "physical_lines": 19,
-          "code_lines": 18
+          "sha256": "f909ca071ed9e9c613758753683052131da94f933a633e6bca049af2fd32d45e",
+          "physical_lines": 21,
+          "code_lines": 20
         },
         {
           "path": "experiments/pysim/native/tier3_plugins/jit/stencils_x64.hxx",
-          "sha256": "4204064e26d837f4902aed826563adb8f2af4f5a98946d08d5675dc6dad1602c",
-          "physical_lines": 100,
-          "code_lines": 89
+          "sha256": "7406b5fb088b33a6909f7bc7ca17b3669820f789211b28ba5fd0ab67900685c6",
+          "physical_lines": 137,
+          "code_lines": 126
         },
         {
           "path": "experiments/pysim/native/tier3_plugins/jit/trace_compiler.cxx",
-          "sha256": "434ae55a40152201c584ab79fb6e11c570ebac347219a00dbb5178f79f98e156",
-          "physical_lines": 1022,
-          "code_lines": 955
+          "sha256": "f977ac4b20e5d12271f6748ad407a9504a5feb904551fe639481db86316e6452",
+          "physical_lines": 1246,
+          "code_lines": 1160
         },
         {
           "path": "experiments/pysim/native/tier3_plugins/jit/trace_compiler_abi.hxx",
-          "sha256": "b7fb65e11095bdffd061334efa8040acf0d9a72516283521ab03dcf01ff83a68",
-          "physical_lines": 42,
-          "code_lines": 33
+          "sha256": "a493ab529f37562310ea86c06849e2fdeb0ad7772746cc9c8231f8ba0f7dbf46",
+          "physical_lines": 38,
+          "code_lines": 29
         },
         {
           "path": "experiments/pysim/tier2_runtime/abi/interpreter_abi.hxx",
-          "sha256": "7431ff52d97a8b1f1ace244d57dab7595522fde88d68d15631d7db80ef057d30",
-          "physical_lines": 326,
-          "code_lines": 287
+          "sha256": "972767334e1b95e22ccd775dec3941170caab8b9a22799956cbe8547d99ccddb",
+          "physical_lines": 341,
+          "code_lines": 300
         },
         {
           "path": "experiments/pysim/tier2_runtime/abi/native_abi.hxx",
-          "sha256": "210250d0237c67d86d53aa07da9a8111bd7d466316fc386669356c3446d9992f",
-          "physical_lines": 98,
-          "code_lines": 84
+          "sha256": "00d9d714b689661fd5e02f4a8f0f41d548bd77743668af76d69d26745edcbabd",
+          "physical_lines": 78,
+          "code_lines": 63
         }
       ],
-      "physical_lines": 6220,
-      "code_lines": 5786
+      "physical_lines": 6417,
+      "code_lines": 5974
     }
   ],
   "native_libraries": [
@@ -741,24 +747,24 @@
     },
     {
       "path": "experiments/pysim/tier2_runtime/interpreter/libnative_interpreter.so",
-      "sha256": "036e88e36b7a5e748267b38063168f643160cf88c741993216d7450f1f5e69be",
+      "sha256": "d8ae785000b0e704a20f5d700fcee0dc536b6945fc7aac5b6b325326f45131d5",
       "sections": {
         ".note.gnu.build-id": 36,
-        ".gnu.hash": 56,
-        ".dynsym": 528,
-        ".dynstr": 372,
-        ".gnu.version": 44,
+        ".gnu.hash": 52,
+        ".dynsym": 504,
+        ".dynstr": 339,
+        ".gnu.version": 42,
         ".gnu.version_r": 80,
         ".rela.dyn": 168,
         ".rela.plt": 288,
         ".init": 27,
         ".plt": 208,
         ".plt.got": 8,
-        ".text": 142994,
+        ".text": 94786,
         ".fini": 13,
-        ".rodata": 3056,
-        ".eh_frame_hdr": 4548,
-        ".eh_frame": 26812,
+        ".rodata": 2208,
+        ".eh_frame_hdr": 3052,
+        ".eh_frame": 17372,
         ".init_array": 8,
         ".fini_array": 8,
         ".dynamic": 496,
@@ -768,166 +774,171 @@
         ".bss": 8,
         ".comment": 77
       },
-      "text_rodata_bytes": 146050,
+      "text_rodata_bytes": 96994,
       "data_bss_bytes": 16,
-      "unwind_bytes": 31360
+      "unwind_bytes": 20424
     },
     {
       "path": "experiments/pysim/tier3_plugins/jit/libtrace_compiler.so",
-      "sha256": "95b1932578e6453dce79bae5325d0664aa7664f209f7623cba43dc7caf79dab5",
+      "sha256": "bc48eacd15fa33e2211bfd1c9a8a2fb350132be5e1f47665a33b7265a2db9a92",
       "sections": {
         ".note.gnu.build-id": 36,
         ".gnu.hash": 64,
-        ".dynsym": 456,
-        ".dynstr": 364,
-        ".gnu.version": 38,
-        ".gnu.version_r": 48,
-        ".rela.dyn": 168,
-        ".rela.plt": 168,
+        ".dynsym": 432,
+        ".dynstr": 346,
+        ".gnu.version": 36,
+        ".gnu.version_r": 32,
+        ".rela.dyn": 1584,
+        ".rela.plt": 144,
         ".init": 27,
-        ".plt": 128,
+        ".plt": 112,
         ".plt.got": 8,
-        ".text": 31973,
+        ".text": 32181,
         ".fini": 13,
-        ".rodata": 1972,
-        ".eh_frame_hdr": 652,
-        ".eh_frame": 3696,
+        ".rodata": 1692,
+        ".eh_frame_hdr": 692,
+        ".eh_frame": 3816,
         ".init_array": 8,
         ".fini_array": 8,
+        ".data.rel.ro": 1904,
         ".dynamic": 496,
         ".got": 32,
-        ".got.plt": 80,
+        ".got.plt": 72,
         ".data": 8,
         ".bss": 8,
         ".comment": 77,
-        ".debug_info": 53922,
-        ".debug_abbrev": 5835,
-        ".debug_line": 22507,
-        ".debug_str": 46790,
-        ".debug_addr": 4576,
-        ".debug_line_str": 1622,
-        ".debug_loclists": 22246,
-        ".debug_rnglists": 2355,
-        ".debug_str_offsets": 10000
+        ".debug_info": 60359,
+        ".debug_abbrev": 6005,
+        ".debug_line": 24557,
+        ".debug_str": 54844,
+        ".debug_addr": 5072,
+        ".debug_line_str": 1609,
+        ".debug_loclists": 31041,
+        ".debug_rnglists": 3325,
+        ".debug_str_offsets": 10984
       },
-      "text_rodata_bytes": 33945,
+      "text_rodata_bytes": 33873,
       "data_bss_bytes": 16,
-      "unwind_bytes": 4348
+      "unwind_bytes": 4508
     }
   ],
   "native_build_script_sha256": {
     "native/tier1_core/printk/build_native.sh": "6981fe9317ec3e307bca93f0e95db638d79c6d53858d2133ea6a8bce42537025",
-    "native/tier2_runtime/interpreter/build_native.sh": "a72511de49e9164e148dc4a211305f8d2fb333e1a18965853dfda8f6b51bae5d",
-    "native/tier3_plugins/jit/build_native.sh": "e9203a22c290bedfe78b9eb1a23141fb38aa5ebfbacf0f5b5486490a6909bf27"
+    "native/tier2_runtime/interpreter/build_native.sh": "1ccd0426b8cf00be1d4288aecac98a5289fed57a68810cf8e6f19a2c97fa6049",
+    "native/tier3_plugins/jit/build_native.sh": "eab870b15f78e76154063842f7272943b63368eabe173474ee75782eec12ecf1"
   },
   "jit_runtime_layout": {
-    "runtime_bytes": 16904,
-    "execution_extension_bytes": 32,
-    "owned_traces_bytes": 13192,
-    "cache_banks_bytes": 2784,
-    "fast_cache_bytes": 384,
+    "runtime_bytes": 1464,
+    "execution_extension_bytes": 24,
+    "cache_banks_bytes": 840,
+    "fast_cache_bytes": 128,
     "profile_history_bytes": 256,
     "compile_queue_bytes": 16,
-    "compile_scratch_view_bytes": 40,
-    "compile_scratch_payload_bytes": 240,
-    "compile_output_bytes": 112,
-    "compile_body_bytes": 96,
+    "compile_output_bytes": 552,
+    "compile_body_bytes": 512,
     "compile_stack_locations_bytes": 32,
     "max_trace_instructions": 64,
     "max_stack_depth": 16,
-    "module_block_view_bytes": 24
+    "trace_header_bytes": 40,
+    "cache_entry_bytes": 8,
+    "cache_bank_bytes": 280
   },
   "jit_compiler_stack": {
     "measurement_flags": "-std=c++23 -O2 -g -fPIC -fvisibility=hidden -fno-exceptions -fno-rtti -fstack-usage with checked-in JIT configuration",
-    "source_sha256": "434ae55a40152201c584ab79fb6e11c570ebac347219a00dbb5178f79f98e156",
+    "source_sha256": "f977ac4b20e5d12271f6748ad407a9504a5feb904551fe639481db86316e6452",
     "function_frame_bytes": {
       "compile_instruction_body": 168,
-      "_ZN12_GLOBAL__N_123finish_instruction_bodyERNS_13trace_builderEjjjjmjPN8fireball18jit_compile_resultE": 40,
+      "_ZN12_GLOBAL__N_123finish_instruction_bodyERNS_13trace_builderEjjjjmjPN8fireball18jit_compile_resultE": 8,
       "compile_wasm_trace": 216,
       "_ZN12_GLOBAL__N_19is_binaryEi": 0,
-      "_ZN12_GLOBAL__N_126compile_stream_instructionERNS_13trace_builderERKN8fireball15jit_instructionEPKhjjj": 104,
+      "_ZN12_GLOBAL__N_126compile_stream_instructionERNS_13trace_builderERKN8fireball15jit_instructionEPKhjjj": 88,
       "_ZN12_GLOBAL__N_123flush_pending_local_getERNS_13trace_builderEPKhjjj": 24,
       "_ZN12_GLOBAL__N_126flush_pending_i32_constantERNS_13trace_builderEPKhjjj": 72,
       "_ZN8fireball21chain_dispatcher_codeEPPKhPjS3_": 0,
       "_ZN8fireball15chain_successorEmjjjj": 0,
-      "_ZN12_GLOBAL__N_114append_stencilILm12EEEbRNS_13trace_builderERKSt5arrayIhXT_EE": 0,
+      "_ZN12_GLOBAL__N_118append_common_jumpERNS_13trace_builderEjb": 0,
       "_ZN12_GLOBAL__N_116append_u32_patchILm4EEEbRNS_13trace_builderERKSt5arrayIhXT_EEj": 0,
-      "_ZN12_GLOBAL__N_114append_stencilILm5EEEbRNS_13trace_builderERKSt5arrayIhXT_EE": 0,
-      "_ZN12_GLOBAL__N_114append_stencilILm4EEEbRNS_13trace_builderERKSt5arrayIhXT_EE": 0,
-      "_ZN12_GLOBAL__N_125append_local_i32_constantERNS_13trace_builderEjj": 0,
-      "_ZN12_GLOBAL__N_128emit_i32_immediate_supernodeERNS_13trace_builderEij": 0,
-      "_ZN12_GLOBAL__N_119compile_instructionERNS_13trace_builderERKN8fireball15jit_instructionEPKhjjj": 72,
-      "_ZN12_GLOBAL__N_118append_u32_operandILm3EEEbRNS_13trace_builderERKSt5arrayIhXT_EEj": 0,
-      "_ZN12_GLOBAL__N_117append_u8_operandILm3EEEbRNS_13trace_builderERKSt5arrayIhXT_EEh": 0,
-      "_ZN12_GLOBAL__N_19emit_pushERNS_13trace_builderEimj": 40,
-      "_ZN12_GLOBAL__N_18load_immERNS_13trace_builderEj": 0,
-      "_ZN12_GLOBAL__N_18emit_popERNS_13trace_builderE": 8,
       "_ZN12_GLOBAL__N_114append_stencilILm10EEEbRNS_13trace_builderERKSt5arrayIhXT_EE": 0,
+      "_ZN12_GLOBAL__N_118append_u32_operandERNS_13trace_builderENS_12stencil_viewEj": 0,
+      "_ZN12_GLOBAL__N_114append_stencilILm4EEEbRNS_13trace_builderERKSt5arrayIhXT_EE": 0,
+      "_ZN12_GLOBAL__N_125append_local_i32_constantERNS_13trace_builderEjj": 24,
+      "_ZN12_GLOBAL__N_128emit_i32_immediate_supernodeERNS_13trace_builderEij": 0,
+      "_ZN12_GLOBAL__N_119compile_instructionERNS_13trace_builderERKN8fireball15jit_instructionEPKhjjj": 56,
+      "_ZN12_GLOBAL__N_117append_u8_operandILm3EEEbRNS_13trace_builderERKSt5arrayIhXT_EEh": 0,
+      "_ZN12_GLOBAL__N_118append_u32_operandILm3EEEbRNS_13trace_builderERKSt5arrayIhXT_EEj": 0,
+      "_ZN12_GLOBAL__N_118append_common_callERNS_13trace_builderEj": 0,
+      "_ZN12_GLOBAL__N_17load_spERNS_13trace_builderEii": 0,
+      "_ZN12_GLOBAL__N_19emit_pushERNS_13trace_builderEimj": 40,
+      "_ZN12_GLOBAL__N_111store_localERNS_13trace_builderEj": 0,
+      "_ZN12_GLOBAL__N_18emit_popERNS_13trace_builderE": 8,
       "_ZN12_GLOBAL__N_117emit_binary_spillERNS_13trace_builderEi": 40,
       "_ZN12_GLOBAL__N_110emit_shiftERNS_13trace_builderEi": 0,
       "_ZN12_GLOBAL__N_116append_u32_patchILm3EEEbRNS_13trace_builderERKSt5arrayIhXT_EEj": 0,
+      "i32_div_s_helper": 0,
+      "i32_div_u_helper": 0,
+      "i32_rem_s_helper": 0,
+      "i32_rem_u_helper": 0,
       "fb_jit_common_layout": 0,
-      "_ZN8fireball13helper_offsetEi": 0,
       "_ZN8fireball22initialize_common_codeEPNS_17executable_memoryE": 24,
-      "fb_jit_common_install": 56,
+      "fb_jit_common_install": 72,
       "_ZN8fireball17patch_trace_chainEPNS_17executable_memoryEjm": 40,
-      "fb_jit_pack_header": 8,
-      "_ZN8fireball11build_traceEPKhjPKNS_18jit_compile_resultEmPNS_15jit_cache_traceEPNS_16jit_trace_fixupsEPhj": 40,
-      "fb_jit_compile_block": 120,
-      "fb_jit_region_init": 8,
-      "fb_jit_compile_instructions": 120,
+      "_ZN8fireball11build_traceEPKhjPKNS_18jit_compile_resultEmjjPhj": 24,
+      "fb_jit_compile_block": 104,
+      "fb_jit_region_init": 40,
+      "fb_jit_compile_instructions": 88,
       "fb_jit_runtime_flush": 0,
-      "_ZN8fireball17native_jit_pluginIvE20fb_jit_runtime_flushEPNS_11jit_runtimeIvEE": 72,
+      "_ZN8fireball17native_jit_pluginIvE20fb_jit_runtime_flushEPNS_11jit_runtimeIvEE": 56,
       "fb_jit_runtime_compile": 0,
       "fb_jit_runtime_close": 0,
-      "fb_jit_runtime_run": 184,
+      "fb_jit_runtime_run": 24,
       "fb_jit_plugin_alignment": 0,
       "fb_jit_plugin_required_bytes": 0,
       "_ZN8fireball17native_jit_pluginIvE28fb_jit_plugin_required_bytesEPK42fireball_wasm_module_execution_view_native": 24,
-      "fb_jit_plugin_init": 0,
-      "_ZN8fireball17native_jit_pluginIvE18fb_jit_plugin_initEPhmPK42fireball_wasm_module_execution_view_nativejjPFiPK23fb_native_dispatch_callP16fb_native_resultES2_mPsm": 184,
-      "compile_pending": 136,
-      "_ZN8fireball11jit_runtimeIvE4findEjPj": 8,
+      "fb_jit_plugin_init": 8,
+      "_ZN8fireball17native_jit_pluginIvE18fb_jit_plugin_initEPhmPK42fireball_wasm_module_execution_view_nativejPFiPK23fb_native_dispatch_callP16fb_native_resultE": 184,
+      "_ZN8fireball11jit_runtimeIvE10invalidateEv": 0,
+      "compile_pending": 216,
+      "_ZN8fireball11jit_runtimeIvE4findEjPj": 0,
       "_ZNK8fireball11jit_runtimeIvE5blockEjRNS_14jit_wasm_blockE": 16,
-      "_ZN8fireball11jit_runtimeIvE6insertEPNS_15jit_cache_traceEm": 200,
-      "_ZN8fireball12_GLOBAL__N_14bank8allocateEPNS_15jit_cache_traceEm": 24,
       "_ZN8fireball11jit_runtimeIvE6rotateEv": 8,
-      "_ZN8fireball11jit_runtimeIvE8try_linkENS_12_GLOBAL__N_15entryE": 88,
+      "_ZN8fireball12_GLOBAL__N_14bank8allocateEPhjjtRt": 40,
+      "_ZN8fireball11jit_runtimeIvE8try_linkENS_12_GLOBAL__N_15entryE": 40,
+      "_ZNK8fireball11jit_runtimeIvE8eligibleENS_12_GLOBAL__N_15entryE": 48,
       "_ZN8fireball11jit_runtimeIvE4linkENS_12_GLOBAL__N_15entryES3_": 56,
-      "_ZN8fireball11jit_runtimeIvE14prepare_chainsEv": 56,
+      "_ZN8fireball11jit_runtimeIvE14prepare_chainsEv": 120,
       "_ZN8fireball11jit_runtimeIvE14unlink_inboundEj": 56,
       "_ZN8fireball11jit_runtimeIvE9age_sweepEv": 48,
+      "_ZN8fireball17native_jit_pluginIvE15finish_boundaryEPNS_11jit_runtimeIvEEij": 24,
       "_ZN8fireball11jit_runtimeIvE7analyzeEb": 40,
-      "_ZN8fireball17native_jit_pluginIvE20execute_runtime_bodyEmPvPjS3_j": 56,
-      "_ZN8fireball17native_jit_pluginIvE20observe_runtime_bodyEmj": 8,
-      "_ZN8fireball17native_jit_pluginIvE19record_runtime_bodyEmj": 0,
+      "_ZN8fireball17native_jit_pluginIvE20execute_runtime_bodyEPK23fb_native_dispatch_callj": 168,
+      "_ZN8fireball17native_jit_pluginIvE20observe_runtime_bodyEPK23fb_native_dispatch_callj": 24,
       "_ZN8fireball17native_jit_pluginIvE27fb_jit_runtime_bind_profileEPNS_11jit_runtimeIvEENS_11jit_profileE": 168,
-      "_ZN8fireball11jit_runtimeIvE6lookupEj": 376,
+      "_ZN8fireball11jit_runtimeIvE6lookupEj": 120,
       "_ZZN8fireball17native_jit_pluginIvE27fb_jit_runtime_bind_profileEPNS_11jit_runtimeIvEENS_11jit_profileEENKUlvE1_clEv": 104,
       "_ZZN8fireball12_GLOBAL__N_111score_blockERKNS_14jit_wasm_blockEENK3$_0clEv": 0
     },
     "source_sha256_by_file": {
-      "trace_compiler.cxx": "434ae55a40152201c584ab79fb6e11c570ebac347219a00dbb5178f79f98e156",
-      "common_code.cxx": "938afb0baa26ca0c3f2fbb1212b1c86c5bef66bee696d6b0bb9f742ff0b0a95c",
+      "trace_compiler.cxx": "f977ac4b20e5d12271f6748ad407a9504a5feb904551fe639481db86316e6452",
+      "common_code.cxx": "781a4bf90b46be705a353ac82fcf98085aa91f4c60d27cc9c18341c975069cfa",
       "jit_runtime.cxx": "7066984faeb77caded5c92076f2cfb34631ab8e53127b5675c9103f323764165",
-      "jit_runtime.hxx": "14ab68892f72291b729980e20a3a8e3d7fa9c63f087a46f51bd91a5fb96b7118",
-      "jit_runtime_exports.hxx": "fa7b143abf1e9158f3fa22c5fa4b092afe49e107ee6b60d9d8b61051445e6ef8",
-      "jit_internal.hxx": "58e4d2dd1e14d580afcbcccc8fef2b69fa718df8c1d2a6061801a3f9585c5511",
-      "stencils_x64.hxx": "4204064e26d837f4902aed826563adb8f2af4f5a98946d08d5675dc6dad1602c"
+      "jit_runtime.hxx": "c9185f599d4b5a4526b52c97239c1c0b05ceb51da99dbda7f8725264a27a80d2",
+      "jit_runtime_exports.hxx": "dd905ffbb7087f85456c82e8db4be5c5377e1268917110d4ce6cf88a3fb42d9a",
+      "jit_internal.hxx": "28fad486ffead7143f8192383edc474f380c8fae5973a957f7343b2450e4a0d8",
+      "stencils_x64.hxx": "7406b5fb088b33a6909f7bc7ca17b3669820f789211b28ba5fd0ab67900685c6"
     },
     "wasm_compile_call_chain": [
       "compile_pending",
       "fb_jit_compile_block",
       "compile_wasm_trace"
     ],
-    "known_wasm_compile_frame_bytes": 472,
+    "known_wasm_compile_frame_bytes": 536,
     "qa_instruction_body_frame_bytes": 168,
     "qa_instruction_body_in_wasm_call_chain": false,
-    "caller_output_buffer_bytes": 112,
-    "caller_output_buffer_in_compile_pending_frame": false,
-    "scratch_payload_bytes": 240,
-    "scratch_payload_accounting": "runtime arena workspace; already included in Hybrid memory measurements",
-    "minimum_known_compile_bytes": 712,
+    "cache_output_bytes": 552,
+    "cache_output_accounting": "written directly to the executable cache; included in the plugin region",
+    "stack_locations_bytes": 32,
+    "stack_locations_in_compile_pending_frame": true,
+    "minimum_known_compile_bytes": 536,
     "excluded": "additional callee/ABI frames, caller frames and Python objects; not a whole-path upper bound"
   }
 }

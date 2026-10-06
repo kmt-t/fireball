@@ -154,11 +154,11 @@ def native_jit_definitions() -> dict[str, int]:
         "FB_CONF_JIT_X64_TRACE_HEADER_BYTES": JIT_X64_TRACE_HEADER_BYTES,
         "FB_CONF_JIT_X64_CHAIN_TARGET_OFFSET": JIT_X64_CHAIN_TARGET_OFFSET,
         "FB_CONF_JIT_X64_TRACE_ENTRY_STUB_BYTES": JIT_X64_TRACE_ENTRY_STUB_BYTES,
+        "FB_CONF_JIT_X64_COMMON_CODE_RELATIVE_OFFSET": config.JIT_X64_COMMON_CODE_RELATIVE_OFFSET,
     }
     for name in (
         "JIT_CACHE_FAST_SLOT_COUNT",
         "JIT_CACHE_BANK_ENTRY_CAPACITY",
-        "JIT_CACHE_MAX_INBOUND_SOURCES",
         "JIT_CACHE_REGION_BYTES",
         "JIT_CACHE_COMMON_CODE_BYTES",
         "JIT_CACHE_ABSOLUTE_ADDRESS_POOL_BYTES",
@@ -167,8 +167,6 @@ def native_jit_definitions() -> dict[str, int]:
         "JIT_TRACE_HELPER_ENTRY_BYTES",
         "JIT_TRACE_TYPED_I32_HELPER_COUNT",
         "JIT_TRACE_TYPED_I32_HELPER_OFFSET",
-        "JIT_TRACE_WIDE_HELPER_COUNT",
-        "JIT_TRACE_WIDE_HELPER_OFFSET",
         "JIT_X64_HELPER_TARGET_OFFSET",
         "JIT_HISTORY_CAPACITY",
         "JIT_COMPILE_QUEUE_CAPACITY",
@@ -187,21 +185,20 @@ def native_jit_definitions() -> dict[str, int]:
 def jit_runtime_layout() -> dict[str, int]:
     """Compile a measurement-only sizeof probe; do not add a product export."""
     expressions = {
-        "runtime_bytes": "sizeof(fireball::native_jit_plugin<void>::Runtime)",
-        "execution_extension_bytes": "sizeof(decltype(fireball::native_jit_plugin<void>::Runtime::extension))",
-        "owned_traces_bytes": "sizeof(decltype(fireball::native_jit_plugin<void>::Runtime::owned))",
-        "cache_banks_bytes": "sizeof(decltype(fireball::native_jit_plugin<void>::Runtime::banks))",
-        "fast_cache_bytes": "sizeof(decltype(fireball::native_jit_plugin<void>::Runtime::fast))",
-        "profile_history_bytes": "sizeof(decltype(fireball::native_jit_plugin<void>::Runtime::history_records))",
-        "compile_queue_bytes": "sizeof(decltype(fireball::native_jit_plugin<void>::Runtime::queue_pcs))",
-        "compile_scratch_view_bytes": "sizeof(decltype(fireball::native_jit_plugin<void>::Runtime::compile_scratch))",
-        "compile_scratch_payload_bytes": "fireball::compile_scratch_bytes",
+        "runtime_bytes": "sizeof(fireball::jit_runtime<void>)",
+        "execution_extension_bytes": "sizeof(decltype(fireball::jit_runtime<void>::extension))",
+        "cache_banks_bytes": "sizeof(decltype(fireball::jit_runtime<void>::banks))",
+        "fast_cache_bytes": "sizeof(decltype(fireball::jit_runtime<void>::fast))",
+        "profile_history_bytes": "sizeof(decltype(fireball::jit_runtime<void>::history_records))",
+        "compile_queue_bytes": "sizeof(decltype(fireball::jit_runtime<void>::queue_pcs))",
         "compile_output_bytes": "fireball::compile_output_bytes",
         "compile_body_bytes": "fireball::kMaxBodyBytes",
         "compile_stack_locations_bytes": "fireball::kMaxStackDepth * sizeof(std::int16_t)",
         "max_trace_instructions": "fireball::kMaxTraceInstructions",
         "max_stack_depth": "fireball::kMaxStackDepth",
-        "module_block_view_bytes": "sizeof(fireball_wasm_block_execution_view_native)",
+        "trace_header_bytes": "sizeof(fireball::jit_trace_header)",
+        "cache_entry_bytes": "sizeof(fireball::entry)",
+        "cache_bank_bytes": "sizeof(fireball::bank)",
     }
     runtime_source = _PYSIM / "native/tier3_plugins/jit/jit_runtime.cxx"
     with tempfile.TemporaryDirectory(prefix="fireball-resource-layout-") as directory:
@@ -402,12 +399,11 @@ def main() -> None:
             "known_wasm_compile_frame_bytes": wasm_compile_frames,
             "qa_instruction_body_frame_bytes": stack_frames["compile_instruction_body"],
             "qa_instruction_body_in_wasm_call_chain": False,
-            "caller_output_buffer_bytes": layout["compile_output_bytes"],
-            "caller_output_buffer_in_compile_pending_frame": False,
-            "scratch_payload_bytes": layout["compile_scratch_payload_bytes"],
-            "scratch_payload_accounting": "runtime arena workspace; already included in Hybrid memory measurements",
-            "minimum_known_compile_bytes": wasm_compile_frames
-            + layout["compile_scratch_payload_bytes"],
+            "cache_output_bytes": layout["compile_output_bytes"],
+            "cache_output_accounting": "written directly to the executable cache; included in the plugin region",
+            "stack_locations_bytes": layout["compile_stack_locations_bytes"],
+            "stack_locations_in_compile_pending_frame": True,
+            "minimum_known_compile_bytes": wasm_compile_frames,
             "excluded": "additional callee/ABI frames, caller frames and Python objects; not a whole-path upper bound",
         },
     }

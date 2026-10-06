@@ -39,7 +39,6 @@ from tier2_runtime.runtime.engine import RuntimeEngine
 from tier3_platform.drivers.hal.dummy import DummyDriver
 from tier3_platform.drivers.wasi.context import WasiHostContext
 from tier3_plugins.jit.jit_manager import JITRuntimeManager
-from tier3_plugins.jit.native_abi import COMPILE_SCRATCH_BYTES
 
 
 @dataclass(frozen=True)
@@ -127,7 +126,6 @@ class Measurement:
     allocation_totals: tuple[AllocationTotal, ...]
     plugin_region_requests: tuple[PluginRegionRequest, ...]
     plugin_region_bytes: int
-    jit_compile_scratch_bytes: int
 
 
 @dataclass(frozen=True)
@@ -216,14 +214,6 @@ def _measure(
         )
     if jit is not None:
         assert len(plugin_region.requests) == 1, plugin_region.requests
-        assert (
-            sum(
-                event.size
-                for event in arena.allocations
-                if event.origin == "JITRuntimeManager.bind_execution"
-            )
-            == COMPILE_SCRATCH_BYTES
-        )
         if observer is not None:
             assert observer.stat_jit_invocations > 0
         jit.close()
@@ -247,7 +237,6 @@ def _measure(
         tuple(totals),
         tuple(plugin_region.requests),
         sum(request.size_bytes for request in plugin_region.requests),
-        COMPILE_SCRATCH_BYTES if hybrid else 0,
     )
 
 
@@ -330,7 +319,7 @@ def main() -> None:
             and not any(part in ("qa", "benchmarks", "__pycache__") for part in path.parts)
         },
         "measurement_model": "reference loader charges + host-native ctypes ABI",
-        "jit_compile_scratch_accounting": "workspace included in arena_peak_bytes; do not add again; separate host ctypes storage represents the charged payload",
+        "jit_compile_scratch_accounting": "compiler output is written into the executable cache; stack_locations is included in native stack frames",
         "jit_measurement_path": "product RuntimeEngine and JITRuntimeManager with measured region_provider; no QA dispatcher in memory measurements",
         "jit_execution_validation_path": "separate QA RuntimeStatsEngine and diagnostic interpreter dispatcher; excluded from product memory/ROM totals",
         "jit_execution_validation": [asdict(validation) for validation in jit_execution_validation],
@@ -363,8 +352,8 @@ def main() -> None:
         ).hexdigest(),
         "excluded": [
             "Python heap/RSS",
-            "Python adapter objects (JIT compiler scratch payload is charged to the arena)",
-            "QA-only block/profile/snapshot buffers",
+            "Python adapter objects",
+            "QA-only block/profile/snapshot buffers and QA JIT instrumentation",
             "system/IPC/COOS pools",
             "OS/IRQ/native machine stack",
             "target ROM text/rodata",

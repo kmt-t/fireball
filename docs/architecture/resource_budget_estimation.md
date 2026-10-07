@@ -11,16 +11,17 @@
 静的合計21KBと物理RAM 32KBを、最小構成の容量条件として確認する。
 本書では21KBを21,504バイト、32KBを32,768バイトとして扱う。
 
-計測日は2026-10-06である。
-計測結果はcommit `9960517a9767a5111ec04394059e7c0ce5557c1f`を基点とする変更中のworktreeから取得した。
-変更中のworktreeを測定した事実と対象ファイルのハッシュを結果へ保存する。
+計測日は2026-10-07である。
+計測対象の製品コードはcommit `f02f4bb34c428e133863af8873e525b3109e6749`にある。
+結果JSONには計測時のworktree状態と対象ファイルのハッシュを保存する。
+資源一覧の計測入口には、現行JIT設定を渡すための未コミット修正を含む。
 現行製品側のJIT入口とネイティブライブラリを使う。
 QA専用のJIT管理クラスと検査用ライブラリは、製品RAMとROMへ計上しない。
 
 | 対象 | 計測入口 | 結果 |
 | :--- | :--- | :--- |
-| アリーナと製品JITの要求領域 | [`bench_runtime_memory.py`](experiments/pysim/benchmarks/memory/bench_runtime_memory.py) | [`runtime_memory_current_20261006.json`](experiments/pysim/benchmarks/results/runtime_memory_current_20261006.json) |
-| ソース規模、ホストELF、JIT管理構造体、コンパイル時stack | [`bench_resource_inventory.py`](experiments/pysim/benchmarks/memory/bench_resource_inventory.py) | [`resource_inventory_current_20261006.json`](experiments/pysim/benchmarks/results/resource_inventory_current_20261006.json) |
+| アリーナと製品JITの要求領域 | [`bench_runtime_memory.py`](experiments/pysim/benchmarks/memory/bench_runtime_memory.py) | [`runtime_memory_current_20261007.json`](experiments/pysim/benchmarks/results/runtime_memory_current_20261007.json) |
+| ソース規模、ホストELF、JIT管理構造体、コンパイル時stack | [`bench_resource_inventory.py`](experiments/pysim/benchmarks/memory/bench_resource_inventory.py) | [`resource_inventory_current_20261007.json`](experiments/pysim/benchmarks/results/resource_inventory_current_20261007.json) |
 
 アリーナの値は32ビット参照レイアウトとx86_64のネイティブABIを組み合わせたPySIM内の計上値である。
 JITの要求領域とELFはx86_64ホストの値である。
@@ -92,22 +93,35 @@ uv run python experiments/pysim/benchmarks/memory/bench_runtime_memory.py \
 
 | 入力 | 関数数 / 基本ブロック数 | ロード後 | インスタンス生成後 | Interpreter単独のアリーナ最大使用量 | Hybridのアリーナ最大使用量 | ゲスト論理リニアメモリ | x64 JIT要求領域 |
 | :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 算術ループ（1,000反復） | 1 / 4 | 268 | 268 | 5,608 | 5,608 | 0 | 12,288 |
-| 間接呼出し（100反復） | 4 / 12 | 712 | 716 | 6,544 | 6,544 | 0 | 12,288 |
-| 複合カーネル（`k_crc32(1)`） | 28 / 519 | 18,636 | 18,684 | 42,488 | 42,488 | 65,536 | 12,288 |
-| AO-Bench（32×16） | 7 / 88 | 3,296 | 3,296 | 11,816 | 11,816 | 65,536 | 12,288 |
+| 算術ループ（1,000反復） | 1 / 4 | 280 | 280 | 5,624 | 5,624 | 0 | 12,288 |
+| 間接呼出し（100反復） | 4 / 12 | 740 | 744 | 6,600 | 6,600 | 0 | 12,288 |
+| 複合カーネル（`k_crc32(1)`） | 28 / 519 | 19,428 | 19,476 | 43,504 | 43,504 | 65,536 | 12,288 |
+| AO-Bench（32×16） | 7 / 88 | 3,432 | 3,432 | 12,008 | 12,008 | 65,536 | 12,288 |
 
 表の「ゲスト論理リニアメモリ」はWASMの論理サイズである。PySIMではホストbytearrayがbackingとなるが、Cortex-M33の物理RAM量ではない。対象のCortex-M33構成では論理アドレス窓10KB、物理RAM全体32KBを別々に扱う。このホスト測定で64KBと表示される値を物理RAMへ加算してはならない。
 
 Hybrid JITのアリーナ使用量はInterpreter単独と同じだった。コンパイラは最大552バイトのtrace出力を実行コード領域へ直接書き、最大32バイトの作業stack位置配列はC++ stack frameに置く。追加の240バイトarena scratchは確保しない。
 
-現行x64製品JIT runtimeの固定管理構造体は`sizeof`で1,464バイトである。計測した配列は、3バンク分のentryが840バイト、fast lookupが128バイト、profile historyが256バイト、compile queueが16バイト、native execution extensionが24バイトである。残りはbank状態、profile、executable-memory view、pointer、alignment等を含む。
+現行x64製品JIT runtimeの固定管理構造体は`sizeof`で1,584バイトである。
+3バンク分のentryは840バイトである。
+fast lookupは128バイトである。
+profile historyは256バイトである。
+compile queueは16バイトである。
+native execution extensionは24バイトである。
+残りはbank状態、profile、executable-memory view、pointer、alignment等を含む。
 
-別にCode sectionの長さに比例するcard state・dirty・candidate bitmapを持つ。Code section payload長を`L`、card幅を4バイト、`C = ceil(L / 4)`とすると、profile領域は`ceil(C / 4) + 2 × ceil(C / 8)`バイトである。複合カーネルのCode sectionは14,578バイトでprofile bitmapは1,824バイト、固定構造体と合わせて3,288バイトとなる。AO-BenchのCode sectionは960バイトでbitmapは120バイト、合計1,584バイトとなる。この可変profile領域はモジュール規模に応じて増え、各traceのdescriptorを別配列へ保持するものではない。
+別にCode sectionの長さに比例するcard state・dirty・candidate bitmapを持つ。Code section payload長を`L`、card幅を4バイト、`C = ceil(L / 4)`とすると、profile領域は`ceil(C / 4) + 2 × ceil(C / 8)`バイトである。複合カーネルのCode sectionは14,578バイトでprofile bitmapは1,824バイト、固定構造体と合わせて3,408バイトとなる。AO-BenchのCode sectionは960バイトでbitmapは120バイト、合計1,704バイトとなる。この可変profile領域はモジュール規模に応じて増え、各traceのdescriptorを別配列へ保持するものではない。
 
 x64ホストの実行コード領域は8,192バイトである。x64のJIT region providerは管理領域と実行領域を4,096バイト単位に配置し、今回の4入力では合計12,288バイトを要求した。ページ丸めと実行コード領域は要求値に含まれる。M33の物理JIT配置は別設計であり、このホスト要求値をそのまま加算しない。
 
-アロケータのPythonワークスペース管理表は1,344バイトである。これはPython参照シミュレータのホスト管理値であり、Cortex-M33製品RAMへ移行係数で加算しない。本計測は指定入力、単一実行コンテキスト、ホストABIでの測定であり、32KB物理RAM全体の合計証明ではない。Cortex-M33の管理構造体、10KB論理アドレス窓のbacking、実行領域、Interpreter stack、kernel/driver領域を実機構成で確定した後、32,768バイトと比較する。
+アロケータのPythonワークスペース管理表は1,344バイトである。
+これはPython参照シミュレータのホスト管理値である。
+Cortex-M33製品RAMへ移行係数で加算しない。
+本計測は指定入力、単一実行コンテキスト、ホストABIを対象とする。
+32KB物理RAM全体への適合は証明しない。
+Cortex-M33の実機構成で管理構造体と10KB論理アドレス窓のbackingを確定する。
+実行領域、Interpreter stack、kernel/driver領域も確定する。
+これらを合計した後、32,768バイトと比較する。
 
 ## 4. 対象実装の配置で確定する領域
 
@@ -158,14 +172,14 @@ Clang 21.1.8 / x86_64で、製品JITビルド設定へ`-fstack-usage`を加え�
 | 測定対象 | スタックフレームのバイト数 |
 | :--- | ---: |
 | `fireball::jit_runtime<void>::compile_pending` | 216 |
-| `fb_jit_compile_block` | 104 |
+| `fb_jit_compile_block` | 88 |
 | `fireball::compile_wasm_trace` | 216 |
-| **主要3関数の既知部分** | **536** |
+| **主要3関数の既知部分** | **520** |
 
-`compile_instruction_body`は明示命令入力を扱うQA経路で、168バイトのframeをWASM compile chainへ加えない。
+`compile_instruction_body`は明示命令入力を扱うQA経路で、136バイトのframeをWASM compile chainへ加えない。
 32バイトの作業stack位置配列は`compile_pending`の216バイトframeに含まれる。
 最大552バイトの出力はx64実行コードregionへ直接生成する。
-主要3関数のframe合計536バイトは既知部分であり、命令処理の補助関数、呼出し元、ABI frame、OS/割込みstackを含む経路全体の上限ではない。
+主要3関数のframe合計520バイトは既知部分であり、命令処理の補助関数、呼出し元、ABI frame、OS/割込みstackを含む経路全体の上限ではない。
 ARMv8-Mのコンパイル時stack上限は対象ABIの全呼出し経路で確定する。
 
 ## 6. ホストROM関連セクションとWASM入力
@@ -179,15 +193,15 @@ QA用の `libjit_probe.so` と `libinterpreter_probe.so` はこの表へ含め�
 | x64参照ライブラリ | `.text` | `.rodata` | `.text` + `.rodata` | `.data.rel.ro` | `.data` + `.bss` | unwind情報 |
 | :--- | ---: | ---: | ---: | ---: | ---: | ---: |
 | printk | 872 | 65 | 937 | 0 | 16 | 296 |
-| C++ Interpreter | 94,786 | 2,208 | 96,994 | 0 | 16 | 20,424 |
-| x64 JIT | 32,181 | 1,692 | 33,873 | 1,904 | 16 | 4,508 |
-| **合計** | **127,839** | **3,965** | **131,804** | **1,904** | **48** | **25,228** |
+| C++ Interpreter | 117,949 | 3,961 | 121,910 | 4,288 | 16 | 25,708 |
+| x64 JIT | 38,773 | 3,000 | 41,773 | 1,904 | 16 | 5,380 |
+| **合計** | **157,594** | **7,026** | **164,620** | **6,192** | **48** | **31,384** |
 
-`.text` と `.rodata` の合計は約128.71KiBである。
+`.text` と `.rodata` の合計は約160.76KiBである。
 Interpreterの通常実行とデバッグの入口を含む。
 独立したprintkライブラリも集計する。
 Python側に残るLoader、Runtime、共有機能のC++移植分は含まない。
-`.data.rel.ro` 1,904バイトはJITライブラリにあり、`.text` + `.rodata` と `.data` + `.bss` の各合計へ含めていない。
+`.data.rel.ro` 6,192バイトはInterpreterとJITのライブラリにあり、`.text` + `.rodata` と `.data` + `.bss` の各合計へ含めていない。
 再配置、GOT、動的リンク情報、debug情報も別セクションである。
 unwind情報は `.eh_frame` と `.eh_frame_hdr` の合計を別欄へ示す。
 `.data` の初期値は、対象firmwareのROM load imageにも計上する。
@@ -216,22 +230,22 @@ C/C++はPygmentsの字句解析でコメントを除外する。
 
 | PySIMのPython参照実装 | ファイル数 | 物理行数 | SLOC |
 | :--- | ---: | ---: | ---: |
-| Tier 1 Core | 10 | 3,099 | 2,324 |
+| Tier 1 Core | 10 | 3,100 | 2,325 |
 | Tier 1 Interface | 3 | 851 | 587 |
-| Tier 2 Runtime | 32 | 7,792 | 6,017 |
-| Tier 3 Plugins | 11 | 1,211 | 950 |
+| Tier 2 Runtime | 31 | 7,635 | 5,898 |
+| Tier 3 Plugins | 11 | 1,206 | 945 |
 | Tier 3 Platform | 15 | 1,564 | 1,145 |
-| 共通入口 | 2 | 837 | 673 |
-| **PySIM Python合計** | **73** | **15,354** | **11,696** |
+| 共通入口 | 2 | 841 | 677 |
+| **PySIM Python合計** | **72** | **15,197** | **11,577** |
 
 | 別計上するPythonの対象 | ファイル数 | 物理行数 | SLOC |
 | :--- | ---: | ---: | ---: |
-| Python Interpreter（参照実装とホスト接続コード） | 4 | 6,132 | 5,071 |
+| Python Interpreter（参照実装とホスト接続コード） | 5 | 6,239 | 5,150 |
 
 | C/C++の対象 | ファイル数 | 物理行数 | SLOC |
 | :--- | ---: | ---: | ---: |
-| 製品側の`src/`と`inc/` | 7 | 6,279 | 3,704 |
-| PySIM native参照実装とネイティブABI | 21 | 7,880 | 7,431 |
+| 製品側の`src/`と`inc/` | 7 | 6,280 | 3,704 |
+| PySIM native参照実装とネイティブABI | 22 | 8,373 | 7,841 |
 
 `third_party/`、QA、概念コード、形式モデル、benchmark、scenarioは上のSLOC値に含めない。
 PySIM PythonとPySIM native共有ライブラリはx64参照実装であり、Cortex-M33 firmwareへリンクする対象コードではない。
@@ -246,3 +260,40 @@ bash experiments/pysim/native/tier3_plugins/jit/build_native.sh
 uv run python experiments/pysim/benchmarks/memory/bench_resource_inventory.py \
   --output /tmp/fireball-resource-inventory.json
 ```
+
+## 8. 現時点の概算と適合判定
+
+<!-- traceability: {Resource_Estimation_Model} {GLOBAL_StrictMemoryLimit} {Size_20KSLOC} {ROMParsing} -->
+最小構成のRAM予算には、要件で定める静的合計21,504バイトを置く。
+RAM 32,768バイトとの差は11,264バイトである。
+静的合計21,504バイトの構成別内訳は、要件と現行計測に記録されていない。
+この差分は名目上の余裕であり、未計上領域を含む実行時空き容量の確定値ではない。
+
+| 項目 | 概算値 | 根拠と適用範囲 |
+| :--- | ---: | :--- |
+| 最小構成の物理RAM | 32,768バイト | 要件値 |
+| 静的合計 | 21,504バイト | 要件値。構成別の内訳は未確定 |
+| 静的合計との差分 | 11,264バイト | 物理RAMから静的合計を引いた算術値 |
+| 最大アリーナ使用量 | 43,504バイト | x86_64ホストの参照計上。ARMv8-M物理RAMではない |
+| Hybrid JITの要求領域 | 12,288バイト | x64 region providerの値。実行コード8,192バイトを含む |
+| 4つのWASM入力の合計 | 17,177バイト | 4モジュールをすべてROMへ置く場合 |
+| 最小構成ROMとの差分 | 81,127バイト | 98,304バイトから4つのWASM入力合計を引いた値 |
+| 製品側`src/`と`inc/` | 3,704 SLOC | 現行計測値。20,000 SLOC制約まで16,296 SLOC |
+
+最大アリーナ使用量43,504バイトは複合カーネルの参照計測値である。
+この値には参照レイアウトとx86_64 ABIの借用記述が含まれる。
+ゲスト論理メモリ65,536バイトは別に計上し、物理RAMへ加算しない。
+JIT要求領域はアリーナとは別に計上するが、ARMv8-Mの物理配置には外挿しない。
+
+4つのWASM入力をROMへ常駐させる場合、その入力だけで17,177バイトを使う。
+残る81,127バイトにはファームウェア本体、初期値付きデータ、その他のROM資産を置く。
+x64参照ライブラリの`.text`と`.rodata`は合計164,620バイトである。
+この値はARMv8-Mのコードサイズを表さず、ROM差分の算出には使わない。
+
+現行の製品側C/C++は3,704 SLOCであり、20,000 SLOCの18.52%である。
+最終判定には、製品firmwareへ含めるファイル一覧を確定する。
+Python参照実装とPySIM native参照実装のSLOCは製品firmwareへ加えない。
+
+ARMv8-MのRAMおよびROM適合は未判定である。
+対象ボード、ARM ABI、JIT配置とMPU境界、リンクmap、全体のstack・IPC・driver構成が未確定である。
+これらを確定した後に、同時生存領域とROM load imageを重複なく計上する。

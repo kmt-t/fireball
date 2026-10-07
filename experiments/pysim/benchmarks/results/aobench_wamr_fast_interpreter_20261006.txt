@@ -147,7 +147,7 @@ Fireball NativeInterpreter、WAMR Classic Interpreter、WAMR Fast Interpreterを
 
 320×180でのピークRSSは、Fireballが3プロセス中央値27,976 KiB、WAMR Classicが11,060 KiB、WAMR Fastが10,924 KiBだった。Fireballの計測プロセスはPySIMのPythonホストを含み、WAMRはC harnessと静的リンクruntimeのプロセスであるため、このRSS差にはホスト実装の差も含む。
 
-Fireball NativeInterpreter共有ライブラリは188,176 bytes（text 119,183 bytes）。WAMRの静的リンクC harness実行ファイルはClassic 413,088 bytes（text 329,588 bytes）、Fast 436,240 bytes（text 351,900 bytes）。Fireballの値はInterpreter共有ライブラリ単体、WAMRの値はruntimeとC harnessを含む実行ファイルなので、バイナリサイズを同じリンク構成のランタイム同士として直接比較できない。FireballをC++ホストで組み込んだときのプロセスRSSは別計測が必要である。
+Fireball NativeInterpreter共有ライブラリは188,176 bytes（text 119,183 bytes）。このライブラリには通常・拡張・デバッグ構成のテンプレート実体が同時に含まれるため、この値は単一構成のサイズを示さない。単一構成のROM評価は構成ごとに別の共有ライブラリへリンクして行う。WAMRの静的リンクC harness実行ファイルはClassic 413,088 bytes（text 329,588 bytes）、Fast 436,240 bytes（text 351,900 bytes）。Fireballの値は複数構成を含むInterpreter共有ライブラリ、WAMRの値はruntimeとC harnessを含む実行ファイルなので、バイナリサイズを同じリンク構成のランタイム同士として直接比較できない。FireballをC++ホストで組み込んだときのプロセスRSSは別計測が必要である。
 
 3者比較のプロセス別生データは /tmp/aobench_fireball_wamr_threeway_20261006.json に保存した。
 

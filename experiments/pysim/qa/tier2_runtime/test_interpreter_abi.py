@@ -17,7 +17,7 @@ from tier2_runtime.abi.interpreter_abi import (
     WasmRunRequestNative,
     WasmRunResultNative,
 )
-from tier2_runtime.abi.native_abi import RUN_DISPATCH, NativeResult
+from tier2_runtime.abi.native_abi import NativeResult
 from tier2_runtime.abi.native_stack_abi import ControlFrameWindow, LocalStackWindow
 from tier2_runtime.interpreter.interpreter import (
     ControlFrameKind,
@@ -64,18 +64,23 @@ def test_product_dispatch_result_contains_only_execution_state():
     assert ctypes.sizeof(result) == 8
 
 
-def test_product_dispatch_result_does_not_write_a_diagnostic_suffix():
-    """Rejecting a call writes only the two words of the product result ABI."""
+def test_product_dispatch_asserts_on_invalid_entry():
+    """An invalid dispatch request is an internal contract violation."""
+    import signal
+    import subprocess
+    import sys
 
-    class GuardedResult(ctypes.Structure):
-        _fields_ = (("result", NativeResult), ("guard", ctypes.c_uint32 * 6))
-
-    probe = GuardedResult()
-    for index in range(6):
-        probe.guard[index] = 0xA5A5_0000 + index
-    assert RUN_DISPATCH(None, ctypes.byref(probe.result)) == 0
-    assert probe.result.error_code != 0
-    assert tuple(probe.guard) == tuple(0xA5A5_0000 + index for index in range(6))
+    process = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import ctypes; from tier2_runtime.abi.native_abi import RUN_DISPATCH, NativeResult; "
+            "RUN_DISPATCH(None, ctypes.byref(NativeResult()))",
+        ],
+        capture_output=True,
+        check=False,
+    )
+    assert process.returncode == -signal.SIGABRT
 
 
 def test_native_views_are_non_owning_fixed_width_records():

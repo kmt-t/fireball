@@ -3,6 +3,7 @@
 
 #include <array>
 #include <bit>
+#include <cassert>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -31,11 +32,11 @@ constexpr std::uint32_t kPendingBlockHeadFlag = 1u << 5;
 constexpr std::uint32_t kDispatchYield = 5;
 constexpr std::uint32_t kNativeCallBoundary = 6;
 constexpr std::uint32_t kDebugStop = 7;
+// Internal Runtime API outcome. Only CPS handlers consume this value.
+constexpr std::uint32_t kContinue = 8;
 constexpr std::uint32_t kTrapLocalStackCapacity = 1;
 constexpr std::uint32_t kTrapCallStackCapacity = 3;
 constexpr std::uint32_t kTrapOperandStackCapacity = 4;
-constexpr std::uint32_t kNativeErrorInvalidArgument = 1;
-constexpr std::uint32_t kNativeErrorInvalidState = 3;
 constexpr std::uint32_t kNativeErrorInternal = 4;
 constexpr std::uint32_t kTrapTableIndexOutOfBounds = 6;
 constexpr std::uint32_t kTrapTableSlotUninitialized = 7;
@@ -56,39 +57,48 @@ static_assert(sizeof(execution_context) == 96,
               "x86-64 execution_context ABI layout must remain 96 bytes");
 static_assert(offsetof(execution_context, trap_code) == 0x58);
 
-struct step_result {
+struct op_result {
   std::uint32_t kind;
 };
 
-step_result fallback(execution_context &current, std::uint32_t ip) {
+op_result fallback(execution_context &current, std::uint32_t ip,
+                   std::uint32_t stack_height) {
   current.ip = ip;
+  current.sp_offset = stack_height;
+  current.stack_checkpoint = stack_height;
   current.trap_code = 0;
   return {kFallback};
 }
 
-step_result block_boundary(execution_context &current, std::uint32_t ip) {
+op_result fallback(execution_context &current, std::uint32_t ip) {
+  return fallback(current, ip, current.sp_offset);
+}
+
+op_result block_boundary(execution_context &current, std::uint32_t ip) {
   current.ip = ip;
+  current.stack_checkpoint = current.sp_offset;
   current.trap_code = 0;
   return {kBlockBoundary};
 }
 
-step_result complete(execution_context &current) {
+op_result complete(execution_context &current) {
   current.ip = kSentinel;
+  current.stack_checkpoint = current.sp_offset;
   current.trap_code = 0;
   return {kComplete};
 }
 
-step_result trap(execution_context &current, std::uint32_t code) {
+op_result trap(execution_context &current, std::uint32_t code) {
   current.trap_code = code;
   return {kTrap};
 }
 
-step_result call_boundary(execution_context &current) {
+op_result call_boundary(execution_context &current) {
   current.trap_code = 0;
   return {kCallBoundary};
 }
 
-step_result debug_stop(execution_context &current) {
+op_result debug_stop(execution_context &current) {
   current.trap_code = 0;
   return {kDebugStop};
 }
@@ -102,7 +112,7 @@ static_assert(offsetof(debug_context, execution) == 0);
 static_assert(offsetof(debug_context, control) == sizeof(execution_context));
 
 struct debugger_aspect {
-  static bool before_instruction(execution_context &context) {
+  [[gnu::noinline]] static bool before_instruction(execution_context &context) {
     auto &control = *reinterpret_cast<debug_context *>(&context)->control;
     if (control.enabled == 0)
       return false;
@@ -138,11 +148,11 @@ struct debugger_aspect {
   }
 };
 
+// Inlining this boundary makes each handler tail-jump through the opcode table.
 template <typename Debugger = void>
-FIREBALL_CPS_CALL step_result dispatch(execution_context *context,
-                                       std::uint32_t *sp,
-                                       std::uint32_t *local_base,
-                                       std::uint32_t tos);
+[[gnu::always_inline]] inline FIREBALL_CPS_CALL op_result
+dispatch_next(execution_context *context, std::uint32_t *sp,
+              std::uint32_t *local_base, std::uint32_t tos);
 
 std::uint32_t top_value(const execution_context &current,
                         const std::uint32_t *sp) {
@@ -169,10 +179,11 @@ bool read_s32(const execution_context &current, std::uint32_t &ip,
   return false;
 }
 
-bool read_u32(const execution_context &current, std::uint32_t &ip,
-              std::uint32_t &value) {
-  std::uint32_t result = 0;
-  std::uint32_t shift = 0;
+[[gnu::noinline]] bool read_u32_remaining(const execution_context &current,
+                                          std::uint32_t &ip,
+                                          std::uint32_t &value,
+                                          std::uint32_t result) {
+  std::uint32_t shift = 7;
   while (ip < current.code_size && shift < 35) {
     const auto byte = current.code[ip++];
     result |= static_cast<std::uint32_t>(byte & 0x7Fu) << shift;
@@ -185,8 +196,22 @@ bool read_u32(const execution_context &current, std::uint32_t &ip,
   return false;
 }
 
-bool pop(execution_context &current, std::uint32_t *sp, std::uint32_t &value);
-bool push(execution_context &current, std::uint32_t *sp, std::uint32_t value);
+bool read_u32(const execution_context &current, std::uint32_t &ip,
+              std::uint32_t &value) {
+  if (ip >= current.code_size)
+    return false;
+  const auto first = current.code[ip++];
+  if ((first & 0x80u) == 0) {
+    value = first;
+    return true;
+  }
+  return read_u32_remaining(current, ip, value, first & 0x7Fu);
+}
+
+bool pop(execution_context &current, std::uint32_t *&sp, std::uint32_t &tos,
+         std::uint32_t &value);
+bool push(execution_context &current, std::uint32_t *&sp, std::uint32_t &tos,
+          std::uint32_t value);
 
 bool read_s64(const execution_context &current, std::uint32_t &ip,
               std::int64_t &value) {
@@ -206,25 +231,50 @@ bool read_s64(const execution_context &current, std::uint32_t &ip,
   return false;
 }
 
-bool pop_u64(execution_context &current, std::uint32_t *sp,
+bool pop_u64(execution_context &current, std::uint32_t *&sp, std::uint32_t &tos,
              std::uint64_t &value) {
   if (current.sp_offset < 2)
     return false;
-  const auto low = sp[current.sp_offset - 2];
-  const auto high = sp[current.sp_offset - 1];
+  const auto low = sp[-2];
+  const auto high = tos;
   current.sp_offset -= 2;
+  sp -= 2;
+  tos = current.sp_offset == 0 ? 0 : sp[-1];
   value = static_cast<std::uint64_t>(low) |
           (static_cast<std::uint64_t>(high) << 32);
   return true;
 }
 
-bool push_u64(execution_context &current, std::uint32_t *sp,
-              std::uint64_t value) {
+bool push_u64(execution_context &current, std::uint32_t *&sp,
+              std::uint32_t &tos, std::uint64_t value) {
   if (current.sp_capacity < 2 || current.sp_offset > current.sp_capacity - 2)
     return false;
-  sp[current.sp_offset++] = static_cast<std::uint32_t>(value);
-  sp[current.sp_offset++] = static_cast<std::uint32_t>(value >> 32);
+  *sp++ = static_cast<std::uint32_t>(value);
+  tos = static_cast<std::uint32_t>(value >> 32);
+  *sp++ = tos;
+  current.sp_offset += 2;
   return true;
+}
+
+std::uint64_t combine_u64(std::uint32_t low, std::uint32_t high) {
+  return static_cast<std::uint64_t>(low) |
+         (static_cast<std::uint64_t>(high) << 32);
+}
+
+template <bool ResultIsBool>
+void replace_u64_operands(execution_context &current, std::uint32_t *&sp,
+                          std::uint32_t &tos, std::uint64_t result,
+                          std::uint32_t operand_words) {
+  constexpr auto result_words = ResultIsBool ? 1u : 2u;
+  auto *target = sp - operand_words;
+  current.sp_offset -= operand_words - result_words;
+  sp = target + result_words;
+  tos = static_cast<std::uint32_t>(result);
+  target[0] = tos;
+  if constexpr (!ResultIsBool) {
+    tos = static_cast<std::uint32_t>(result >> 32);
+    target[1] = tos;
+  }
 }
 
 float f32_from_bits(std::uint32_t value) { return std::bit_cast<float>(value); }
@@ -238,28 +288,32 @@ std::uint64_t f64_to_bits(double value) {
   return std::bit_cast<std::uint64_t>(value);
 }
 
-bool pop_f32(execution_context &current, std::uint32_t *sp, float &value) {
+bool pop_f32(execution_context &current, std::uint32_t *&sp, std::uint32_t &tos,
+             float &value) {
   std::uint32_t raw = 0;
-  if (!pop(current, sp, raw))
+  if (!pop(current, sp, tos, raw))
     return false;
   value = f32_from_bits(raw);
   return true;
 }
 
-bool push_f32(execution_context &current, std::uint32_t *sp, float value) {
-  return push(current, sp, f32_to_bits(value));
+bool push_f32(execution_context &current, std::uint32_t *&sp,
+              std::uint32_t &tos, float value) {
+  return push(current, sp, tos, f32_to_bits(value));
 }
 
-bool pop_f64(execution_context &current, std::uint32_t *sp, double &value) {
+bool pop_f64(execution_context &current, std::uint32_t *&sp, std::uint32_t &tos,
+             double &value) {
   std::uint64_t raw = 0;
-  if (!pop_u64(current, sp, raw))
+  if (!pop_u64(current, sp, tos, raw))
     return false;
   value = f64_from_bits(raw);
   return true;
 }
 
-bool push_f64(execution_context &current, std::uint32_t *sp, double value) {
-  return push_u64(current, sp, f64_to_bits(value));
+bool push_f64(execution_context &current, std::uint32_t *&sp,
+              std::uint32_t &tos, double value) {
+  return push_u64(current, sp, tos, f64_to_bits(value));
 }
 
 const fireball_call_frame_native *
@@ -271,7 +325,8 @@ active_frame(const execution_context &current) {
   return &current.call_stack->frames[current.call_stack->size - 1];
 }
 
-bool finish_current_function(execution_context &current) {
+bool finish_current_function(execution_context &current,
+                             std::uint32_t *&local_base) {
   auto *stack = current.call_stack;
   if (stack == nullptr || stack->size <= current.call_base + 1) {
     current.ip = kSentinel;
@@ -279,21 +334,17 @@ bool finish_current_function(execution_context &current) {
   }
 
   const auto finished = stack->frames[stack->size - 1];
-  if (finished.return_ip == kSentinel ||
-      finished.return_func_index == kSentinel) {
-    current.ip = kSentinel;
-    return true;
-  }
+  assert(finished.return_ip != kSentinel);
+  assert(finished.return_func_index != kSentinel);
   --stack->size;
   current.local_offset = finished.local_base;
   current.control_stack->size = finished.control_base;
 
   const auto &caller = stack->frames[stack->size - 1];
-  if (caller.func_index != finished.return_func_index ||
-      caller.function_view == nullptr) {
-    current.ip = kSentinel;
-    return true;
-  }
+  assert(caller.func_index == finished.return_func_index);
+  assert(caller.function_view != nullptr);
+  local_base += static_cast<std::ptrdiff_t>(caller.local_base) -
+                static_cast<std::ptrdiff_t>(finished.local_base);
   current.code = caller.code;
   current.code_size = caller.code_size;
   current.control_base = caller.control_base;
@@ -332,11 +383,10 @@ bool signatures_match(const fireball_wasm_module_execution_view_native &module,
   return true;
 }
 
-template <typename Debugger, bool Indirect>
-FIREBALL_CPS_CALL step_result begin_native_call(execution_context *context,
-                                                std::uint32_t *sp,
-                                                std::uint32_t *local_stack,
-                                                std::uint32_t) {
+template <bool Indirect>
+[[gnu::always_inline]] inline op_result
+runtime_call(execution_context *context, std::uint32_t *&sp,
+             std::uint32_t *&local_stack, std::uint32_t &tos) {
   auto &current = *context;
   const auto source_ip = current.ip;
   auto operand_ip = source_ip + 1;
@@ -362,7 +412,7 @@ FIREBALL_CPS_CALL step_result begin_native_call(execution_context *context,
     const auto &table = module.tables[table_index];
     if (current.sp_offset == 0)
       return trap(current, kTrapOperandStackCapacity);
-    table_slot = sp[current.sp_offset - 1];
+    table_slot = tos;
     if (table_slot >= table.size || table.function_indices == nullptr) {
       return trap(current, kTrapTableIndexOutOfBounds);
     }
@@ -373,9 +423,6 @@ FIREBALL_CPS_CALL step_result begin_native_call(execution_context *context,
     return trap(current, kTrapUnreachable);
   }
 
-  if (function_index >= module.function_count || module.functions == nullptr) {
-    return trap(current, kTrapUnreachable);
-  }
   const auto &target = module.functions[function_index];
   if constexpr (Indirect) {
     if (!signatures_match(module, expected_type, target.type_index)) {
@@ -386,51 +433,40 @@ FIREBALL_CPS_CALL step_result begin_native_call(execution_context *context,
   // native dispatcher and never return to Python opcode handling.
   if (target.is_import != 0)
     return fallback(current, source_ip);
-  if ((target.code == nullptr && target.code_size != 0) ||
-      (target.local_width_map == nullptr && target.local_width_count != 0) ||
-      target.module_view != &module || target.result_arity > 2 ||
-      target.local_width_count < target.param_count ||
-      target.param_packed_slot_count + (Indirect ? 1u : 0u) >
-          current.sp_offset) {
-    return trap(current, kTrapUnreachable);
-  }
-  if (current.call_stack == nullptr ||
-      current.call_stack->size >= FIREBALL_NATIVE_CALL_STACK_CAPACITY) {
+  if (current.call_stack->size >= FIREBALL_NATIVE_CALL_STACK_CAPACITY) {
     return trap(current, kTrapCallStackCapacity);
   }
-  if (current.control_stack == nullptr)
-    return trap(current, kTrapUnreachable);
-  if (current.local_capacity == 0 ||
-      target.local_slot_count > current.local_capacity ||
+  if (target.local_slot_count > current.local_capacity ||
       current.local_offset > current.local_capacity - target.local_slot_count) {
     return trap(current, kTrapLocalStackCapacity);
   }
 
+  auto *local_area = local_stack - caller->local_base;
   const auto local_base = current.local_offset;
   const auto local_end = local_base + target.local_slot_count;
-  for (std::uint32_t index = local_base; index < local_end; ++index) {
-    local_stack[index] = 0;
+  for (std::uint32_t index =
+           local_base + target.param_count * target.slot_words;
+       index < local_end; ++index) {
+    local_area[index] = 0;
   }
 
   const auto argument_base =
       current.sp_offset - target.param_packed_slot_count - (Indirect ? 1u : 0u);
-  std::uint32_t argument_offset = argument_base;
-  for (std::uint32_t index = 0; index < target.param_count; ++index) {
-    const auto width_code =
-        (target.local_width_map[index >> 2] >> ((index & 3u) * 2u)) & 3u;
-    const auto width = 1u << width_code;
-    if (width > target.slot_words ||
-        argument_offset + width > current.sp_offset ||
-        local_base + index * target.slot_words + width > local_end) {
-      return trap(current, kTrapUnreachable);
+  const auto *arguments =
+      sp - target.param_packed_slot_count - (Indirect ? 1u : 0u);
+  if (target.slot_words == 1) {
+    for (std::uint32_t index = 0; index < target.param_count; ++index)
+      local_area[local_base + index] = arguments[index];
+  } else {
+    auto *argument = arguments;
+    for (std::uint32_t index = 0; index < target.param_count; ++index) {
+      const auto width_code =
+          (target.local_width_map[index >> 2] >> ((index & 3u) * 2u)) & 3u;
+      const auto width = 1u << width_code;
+      for (std::uint32_t word = 0; word < width; ++word) {
+        local_area[local_base + index * target.slot_words + word] = *argument++;
+      }
     }
-    for (std::uint32_t word = 0; word < width; ++word) {
-      local_stack[local_base + index * target.slot_words + word] =
-          sp[argument_offset++];
-    }
-  }
-  if (argument_offset != argument_base + target.param_packed_slot_count) {
-    return trap(current, kTrapUnreachable);
   }
 
   auto &callee = current.call_stack->frames[current.call_stack->size];
@@ -453,24 +489,35 @@ FIREBALL_CPS_CALL step_result begin_native_call(execution_context *context,
   callee.boundary_next_pc = kSentinel;
   callee.boundary_loops_to = kSentinel;
 
+  sp -= current.sp_offset - argument_base;
   current.sp_offset = argument_base;
+  tos = current.sp_offset == 0 ? 0 : sp[-1];
   current.local_offset = local_end;
   ++current.call_stack->size;
   current.ip = 0;
   current.code = target.code;
   current.code_size = target.code_size;
   current.control_base = callee.control_base;
-  (void)local_stack;
   if ((current.runtime_flags & kStopAtDefinedCallBoundaryFlag) != 0) {
     return call_boundary(current);
   }
-  [[clang::musttail]] return dispatch<Debugger>(context, sp, local_stack,
-                                                top_value(current, sp));
+  local_stack = local_area + local_base;
+  return {kContinue};
+}
+
+template <typename Debugger, bool Indirect>
+FIREBALL_CPS_CALL op_result h_call(execution_context *context,
+                                   std::uint32_t *sp,
+                                   std::uint32_t *local_stack,
+                                   std::uint32_t tos) {
+  const auto outcome = runtime_call<Indirect>(context, sp, local_stack, tos);
+  if (outcome.kind != kContinue)
+    return outcome;
+  [[clang::musttail]] return dispatch_next<Debugger>(context, sp, local_stack,
+                                                     tos);
 }
 
 bool is_requested_block_boundary(const execution_context &current) {
-  if ((current.runtime_flags & kStopAtBlockBoundaryFlag) == 0)
-    return false;
   const auto *frame = active_frame(current);
   if (frame == nullptr)
     return false;
@@ -499,27 +546,24 @@ control_entry(const execution_context &current, std::uint32_t ip) {
   return &frame->function_view->control_map[ip];
 }
 
-bool local_span(const execution_context &current, std::uint32_t index,
-                std::uint32_t &offset, std::uint32_t &width) {
-  const auto *frame = active_frame(current);
-  if (frame == nullptr || index >= frame->local_count ||
-      frame->local_width_map == nullptr) {
-    return false;
-  }
-  const auto *packed = frame->local_width_map;
-  const auto width_code = (packed[index >> 2] >> ((index & 3u) * 2u)) & 3u;
-  width = 1u << width_code;
-  if (width > frame->slot_words ||
-      frame->local_base + index * frame->slot_words + width >
-          frame->local_base + frame->local_slot_count) {
-    return false;
-  }
-  offset = frame->local_base + index * frame->slot_words;
-  return true;
+struct local_value_span {
+  std::uint32_t offset;
+  std::uint32_t width;
+};
+
+local_value_span local_span(const execution_context &current,
+                            std::uint32_t index) {
+  // The loader validates local indices and widths before dispatch.
+  const auto &frame = current.call_stack->frames[current.call_stack->size - 1];
+  if (frame.slot_words == 1)
+    return {index, 1};
+  const auto width_code =
+      (frame.local_width_map[index >> 2] >> ((index & 3u) * 2u)) & 3u;
+  return {index * frame.slot_words, 1u << width_code};
 }
 
-bool branch(execution_context &current, std::uint32_t *sp, std::uint32_t depth,
-            std::uint32_t &next_ip) {
+bool branch(execution_context &current, std::uint32_t *&sp, std::uint32_t &tos,
+            std::uint32_t depth, std::uint32_t &next_ip) {
   const auto frame_count = current.control_stack->size - current.control_base;
   if (depth > frame_count)
     return false;
@@ -542,14 +586,17 @@ bool branch(execution_context &current, std::uint32_t *sp, std::uint32_t depth,
       result_arity > current.sp_offset - saved_height) {
     return false;
   }
-  const auto result_start = current.sp_offset - result_arity;
-  const auto result0 = result_arity >= 1 ? sp[result_start] : 0;
-  const auto result1 = result_arity >= 2 ? sp[result_start + 1] : 0;
+  const auto result0 =
+      result_arity >= 1 ? sp[-static_cast<std::ptrdiff_t>(result_arity)] : 0;
+  const auto result1 = result_arity >= 2 ? sp[-1] : 0;
+  sp -= current.sp_offset - saved_height;
   current.sp_offset = saved_height;
   if (result_arity >= 1)
-    sp[current.sp_offset++] = result0;
+    *sp++ = result0;
   if (result_arity >= 2)
-    sp[current.sp_offset++] = result1;
+    *sp++ = result1;
+  current.sp_offset += result_arity;
+  tos = current.sp_offset == 0 ? 0 : sp[-1];
   if (depth == frame_count) {
     current.control_stack->size = current.control_base;
     next_ip = kSentinel;
@@ -583,127 +630,65 @@ void prune_control_frames_after_static_jump(execution_context &current,
   }
 }
 
-bool pop(execution_context &current, std::uint32_t *sp, std::uint32_t &value) {
+bool pop(execution_context &current, std::uint32_t *&sp, std::uint32_t &tos,
+         std::uint32_t &value) {
   if (current.sp_offset == 0) {
     return false;
   }
-  value = sp[--current.sp_offset];
+  value = tos;
+  --current.sp_offset;
+  --sp;
+  tos = current.sp_offset == 0 ? 0 : sp[-1];
   return true;
 }
 
-bool push(execution_context &current, std::uint32_t *sp, std::uint32_t value) {
+bool push(execution_context &current, std::uint32_t *&sp, std::uint32_t &tos,
+          std::uint32_t value) {
   if (current.sp_offset >= current.sp_capacity) {
     return false;
   }
-  sp[current.sp_offset++] = value;
+  *sp++ = value;
+  ++current.sp_offset;
+  tos = value;
   return true;
 }
 
-template <typename Debugger>
-FIREBALL_CPS_CALL step_result unary_i32_eqz(execution_context *context,
-                                            std::uint32_t *sp,
-                                            std::uint32_t *local_base,
-                                            std::uint32_t) {
-  auto &current = *context;
-  std::uint32_t value = 0;
-  if (!pop(current, sp, value) || !push(current, sp, value == 0 ? 1u : 0u)) {
-    return fallback(current, current.ip);
-  }
-  current.ip += 1;
-  [[clang::musttail]] return dispatch<Debugger>(context, sp, local_base,
-                                                top_value(current, sp));
+std::uint32_t i32_eqz(std::uint32_t value) { return value == 0; }
+std::uint32_t i32_clz(std::uint32_t value) { return std::countl_zero(value); }
+std::uint32_t i32_ctz(std::uint32_t value) { return std::countr_zero(value); }
+std::uint32_t i32_popcnt(std::uint32_t value) { return std::popcount(value); }
+std::uint32_t i32_extend8(std::uint32_t value) {
+  return static_cast<std::uint32_t>(
+      static_cast<std::int32_t>(static_cast<std::int8_t>(value)));
+}
+std::uint32_t i32_extend16(std::uint32_t value) {
+  return static_cast<std::uint32_t>(
+      static_cast<std::int32_t>(static_cast<std::int16_t>(value)));
 }
 
-template <typename Debugger>
-FIREBALL_CPS_CALL step_result unary_i32_clz(execution_context *context,
-                                            std::uint32_t *sp,
-                                            std::uint32_t *local_base,
-                                            std::uint32_t) {
+template <std::uint32_t (*Operation)(std::uint32_t)>
+[[gnu::always_inline]] inline op_result
+runtime_i32_unary(execution_context *context, std::uint32_t *&sp,
+                  std::uint32_t &tos) {
   auto &current = *context;
-  std::uint32_t value = 0;
-  if (!pop(current, sp, value)) {
+  if (current.sp_offset == 0)
     return fallback(current, current.ip);
-  }
-  const std::uint32_t result =
-      value == 0 ? 32u : static_cast<std::uint32_t>(__builtin_clz(value));
-  if (!push(current, sp, result)) {
-    return fallback(current, current.ip);
-  }
-  current.ip += 1;
-  [[clang::musttail]] return dispatch<Debugger>(context, sp, local_base,
-                                                top_value(current, sp));
+  tos = Operation(tos);
+  sp[-1] = tos;
+  ++current.ip;
+  return {kContinue};
 }
 
-template <typename Debugger>
-FIREBALL_CPS_CALL step_result unary_i32_ctz(execution_context *context,
-                                            std::uint32_t *sp,
-                                            std::uint32_t *local_base,
-                                            std::uint32_t) {
-  auto &current = *context;
-  std::uint32_t value = 0;
-  if (!pop(current, sp, value)) {
-    return fallback(current, current.ip);
-  }
-  const std::uint32_t result =
-      value == 0 ? 32u : static_cast<std::uint32_t>(__builtin_ctz(value));
-  if (!push(current, sp, result)) {
-    return fallback(current, current.ip);
-  }
-  current.ip += 1;
-  [[clang::musttail]] return dispatch<Debugger>(context, sp, local_base,
-                                                top_value(current, sp));
-}
-
-template <typename Debugger>
-FIREBALL_CPS_CALL step_result unary_i32_popcnt(execution_context *context,
-                                               std::uint32_t *sp,
-                                               std::uint32_t *local_base,
-                                               std::uint32_t) {
-  auto &current = *context;
-  std::uint32_t value = 0;
-  if (!pop(current, sp, value) ||
-      !push(current, sp, __builtin_popcount(value))) {
-    return fallback(current, current.ip);
-  }
-  current.ip += 1;
-  [[clang::musttail]] return dispatch<Debugger>(context, sp, local_base,
-                                                top_value(current, sp));
-}
-
-template <typename Debugger>
-FIREBALL_CPS_CALL step_result unary_i32_extend8(execution_context *context,
-                                                std::uint32_t *sp,
-                                                std::uint32_t *local_base,
-                                                std::uint32_t) {
-  auto &current = *context;
-  std::uint32_t value = 0;
-  if (!pop(current, sp, value) ||
-      !push(current, sp,
-            static_cast<std::uint32_t>(
-                static_cast<std::int32_t>(static_cast<std::int8_t>(value))))) {
-    return fallback(current, current.ip);
-  }
-  current.ip += 1;
-  [[clang::musttail]] return dispatch<Debugger>(context, sp, local_base,
-                                                top_value(current, sp));
-}
-
-template <typename Debugger>
-FIREBALL_CPS_CALL step_result unary_i32_extend16(execution_context *context,
-                                                 std::uint32_t *sp,
-                                                 std::uint32_t *local_base,
-                                                 std::uint32_t) {
-  auto &current = *context;
-  std::uint32_t value = 0;
-  if (!pop(current, sp, value) ||
-      !push(current, sp,
-            static_cast<std::uint32_t>(
-                static_cast<std::int32_t>(static_cast<std::int16_t>(value))))) {
-    return fallback(current, current.ip);
-  }
-  current.ip += 1;
-  [[clang::musttail]] return dispatch<Debugger>(context, sp, local_base,
-                                                top_value(current, sp));
+template <typename Debugger, std::uint32_t (*Operation)(std::uint32_t)>
+FIREBALL_CPS_CALL op_result h_i32_unary(execution_context *context,
+                                        std::uint32_t *sp,
+                                        std::uint32_t *local_base,
+                                        std::uint32_t tos) {
+  const auto outcome = runtime_i32_unary<Operation>(context, sp, tos);
+  if (outcome.kind != kContinue)
+    return outcome;
+  [[clang::musttail]] return dispatch_next<Debugger>(context, sp, local_base,
+                                                     tos);
 }
 
 template <std::uint32_t (*Operation)(std::uint32_t, std::uint32_t)>
@@ -1144,31 +1129,32 @@ template <typename T, bool Signed> std::uint64_t truncate_sat_i64(T value) {
 }
 
 template <typename T, bool Signed>
-bool conversion_truncate_sat_i32(execution_context &current,
-                                 std::uint32_t *sp) {
+bool conversion_truncate_sat_i32(execution_context &current, std::uint32_t *&sp,
+                                 std::uint32_t &tos) {
   T value = 0;
   const bool popped = [&]() {
     if constexpr (sizeof(T) == sizeof(float)) {
-      return pop_f32(current, sp, value);
+      return pop_f32(current, sp, tos, value);
     } else {
-      return pop_f64(current, sp, value);
+      return pop_f64(current, sp, tos, value);
     }
   }();
-  return popped && push(current, sp, truncate_sat_i32<T, Signed>(value));
+  return popped && push(current, sp, tos, truncate_sat_i32<T, Signed>(value));
 }
 
 template <typename T, bool Signed>
-bool conversion_truncate_sat_i64(execution_context &current,
-                                 std::uint32_t *sp) {
+bool conversion_truncate_sat_i64(execution_context &current, std::uint32_t *&sp,
+                                 std::uint32_t &tos) {
   T value = 0;
   const bool popped = [&]() {
     if constexpr (sizeof(T) == sizeof(float)) {
-      return pop_f32(current, sp, value);
+      return pop_f32(current, sp, tos, value);
     } else {
-      return pop_f64(current, sp, value);
+      return pop_f64(current, sp, tos, value);
     }
   }();
-  return popped && push_u64(current, sp, truncate_sat_i64<T, Signed>(value));
+  return popped &&
+         push_u64(current, sp, tos, truncate_sat_i64<T, Signed>(value));
 }
 
 bool linear_memory_range_is_valid(const execution_context &current,
@@ -1178,11 +1164,11 @@ bool linear_memory_range_is_valid(const execution_context &current,
          wide_length <= current.linear_memory_size - offset;
 }
 
-bool conversion_i32_wrap_i64(execution_context &current, std::uint32_t *sp,
-                             std::uint32_t &trap_code) {
+bool conversion_i32_wrap_i64(execution_context &current, std::uint32_t *&sp,
+                             std::uint32_t &tos, std::uint32_t &trap_code) {
   std::uint64_t value = 0;
-  if (!pop_u64(current, sp, value) ||
-      !push(current, sp, static_cast<std::uint32_t>(value))) {
+  if (!pop_u64(current, sp, tos, value) ||
+      !push(current, sp, tos, static_cast<std::uint32_t>(value))) {
     return false;
   }
   trap_code = 0;
@@ -1190,19 +1176,19 @@ bool conversion_i32_wrap_i64(execution_context &current, std::uint32_t *sp,
 }
 
 template <typename T, bool Signed>
-bool conversion_truncate_i32(execution_context &current, std::uint32_t *sp,
-                             std::uint32_t &trap_code) {
+bool conversion_truncate_i32(execution_context &current, std::uint32_t *&sp,
+                             std::uint32_t &tos, std::uint32_t &trap_code) {
   T value = 0;
   const bool popped = [&]() {
     if constexpr (sizeof(T) == sizeof(float)) {
-      return pop_f32(current, sp, value);
+      return pop_f32(current, sp, tos, value);
     } else {
-      return pop_f64(current, sp, value);
+      return pop_f64(current, sp, tos, value);
     }
   }();
   std::uint32_t result = 0;
   if (!popped || !truncate_i32(value, Signed, result) ||
-      !push(current, sp, result)) {
+      !push(current, sp, tos, result)) {
     trap_code = kTrapInvalidConversion;
     return false;
   }
@@ -1211,19 +1197,19 @@ bool conversion_truncate_i32(execution_context &current, std::uint32_t *sp,
 }
 
 template <typename T, bool Signed>
-bool conversion_truncate_i64(execution_context &current, std::uint32_t *sp,
-                             std::uint32_t &trap_code) {
+bool conversion_truncate_i64(execution_context &current, std::uint32_t *&sp,
+                             std::uint32_t &tos, std::uint32_t &trap_code) {
   T value = 0;
   const bool popped = [&]() {
     if constexpr (sizeof(T) == sizeof(float)) {
-      return pop_f32(current, sp, value);
+      return pop_f32(current, sp, tos, value);
     } else {
-      return pop_f64(current, sp, value);
+      return pop_f64(current, sp, tos, value);
     }
   }();
   std::uint64_t result = 0;
   if (!popped || !truncate_i64(value, Signed, result) ||
-      !push_u64(current, sp, result)) {
+      !push_u64(current, sp, tos, result)) {
     trap_code = kTrapInvalidConversion;
     return false;
   }
@@ -1231,11 +1217,11 @@ bool conversion_truncate_i64(execution_context &current, std::uint32_t *sp,
   return true;
 }
 
-bool conversion_i64_extend_i32_s(execution_context &current, std::uint32_t *sp,
-                                 std::uint32_t &trap_code) {
+bool conversion_i64_extend_i32_s(execution_context &current, std::uint32_t *&sp,
+                                 std::uint32_t &tos, std::uint32_t &trap_code) {
   std::uint32_t value = 0;
-  if (!pop(current, sp, value) ||
-      !push_u64(current, sp,
+  if (!pop(current, sp, tos, value) ||
+      !push_u64(current, sp, tos,
                 static_cast<std::uint64_t>(static_cast<std::int64_t>(
                     static_cast<std::int32_t>(value))))) {
     return false;
@@ -1244,116 +1230,124 @@ bool conversion_i64_extend_i32_s(execution_context &current, std::uint32_t *sp,
   return true;
 }
 
-bool conversion_i64_extend_i32_u(execution_context &current, std::uint32_t *sp,
-                                 std::uint32_t &trap_code) {
+bool conversion_i64_extend_i32_u(execution_context &current, std::uint32_t *&sp,
+                                 std::uint32_t &tos, std::uint32_t &trap_code) {
   std::uint32_t value = 0;
-  if (!pop(current, sp, value) || !push_u64(current, sp, value))
+  if (!pop(current, sp, tos, value) || !push_u64(current, sp, tos, value))
     return false;
   trap_code = 0;
   return true;
 }
 
 template <typename T>
-bool conversion_pop_i32(execution_context &current, std::uint32_t *sp,
-                        std::uint32_t &, bool is_signed, bool to_f32) {
+bool conversion_pop_i32(execution_context &current, std::uint32_t *&sp,
+                        std::uint32_t &tos, std::uint32_t &, bool is_signed,
+                        bool to_f32) {
   std::uint32_t value = 0;
-  if (!pop(current, sp, value))
+  if (!pop(current, sp, tos, value))
     return false;
   const auto integer =
       is_signed ? static_cast<double>(static_cast<std::int32_t>(value))
                 : static_cast<double>(value);
   if (to_f32)
-    return push_f32(current, sp, static_cast<float>(integer));
-  return push_f64(current, sp, integer);
+    return push_f32(current, sp, tos, static_cast<float>(integer));
+  return push_f64(current, sp, tos, integer);
 }
 
 template <typename T>
-bool conversion_pop_i64(execution_context &current, std::uint32_t *sp,
-                        std::uint32_t &, bool is_signed, bool to_f32) {
+bool conversion_pop_i64(execution_context &current, std::uint32_t *&sp,
+                        std::uint32_t &tos, std::uint32_t &, bool is_signed,
+                        bool to_f32) {
   std::uint64_t value = 0;
-  if (!pop_u64(current, sp, value))
+  if (!pop_u64(current, sp, tos, value))
     return false;
   const auto integer =
       is_signed ? static_cast<long double>(static_cast<std::int64_t>(value))
                 : static_cast<long double>(value);
   if (to_f32)
-    return push_f32(current, sp, static_cast<float>(integer));
-  return push_f64(current, sp, static_cast<double>(integer));
+    return push_f32(current, sp, tos, static_cast<float>(integer));
+  return push_f64(current, sp, tos, static_cast<double>(integer));
 }
 
-bool conversion_f32_convert_i32_s(execution_context &c, std::uint32_t *s,
-                                  std::uint32_t &t) {
-  return conversion_pop_i32<float>(c, s, t, true, true);
+bool conversion_f32_convert_i32_s(execution_context &c, std::uint32_t *&s,
+                                  std::uint32_t &tos, std::uint32_t &t) {
+  return conversion_pop_i32<float>(c, s, tos, t, true, true);
 }
-bool conversion_f32_convert_i32_u(execution_context &c, std::uint32_t *s,
-                                  std::uint32_t &t) {
-  return conversion_pop_i32<float>(c, s, t, false, true);
+bool conversion_f32_convert_i32_u(execution_context &c, std::uint32_t *&s,
+                                  std::uint32_t &tos, std::uint32_t &t) {
+  return conversion_pop_i32<float>(c, s, tos, t, false, true);
 }
-bool conversion_f64_convert_i32_s(execution_context &c, std::uint32_t *s,
-                                  std::uint32_t &t) {
-  return conversion_pop_i32<double>(c, s, t, true, false);
+bool conversion_f64_convert_i32_s(execution_context &c, std::uint32_t *&s,
+                                  std::uint32_t &tos, std::uint32_t &t) {
+  return conversion_pop_i32<double>(c, s, tos, t, true, false);
 }
-bool conversion_f64_convert_i32_u(execution_context &c, std::uint32_t *s,
-                                  std::uint32_t &t) {
-  return conversion_pop_i32<double>(c, s, t, false, false);
+bool conversion_f64_convert_i32_u(execution_context &c, std::uint32_t *&s,
+                                  std::uint32_t &tos, std::uint32_t &t) {
+  return conversion_pop_i32<double>(c, s, tos, t, false, false);
 }
-bool conversion_f32_convert_i64_s(execution_context &c, std::uint32_t *s,
-                                  std::uint32_t &t) {
-  return conversion_pop_i64<float>(c, s, t, true, true);
+bool conversion_f32_convert_i64_s(execution_context &c, std::uint32_t *&s,
+                                  std::uint32_t &tos, std::uint32_t &t) {
+  return conversion_pop_i64<float>(c, s, tos, t, true, true);
 }
-bool conversion_f32_convert_i64_u(execution_context &c, std::uint32_t *s,
-                                  std::uint32_t &t) {
-  return conversion_pop_i64<float>(c, s, t, false, true);
+bool conversion_f32_convert_i64_u(execution_context &c, std::uint32_t *&s,
+                                  std::uint32_t &tos, std::uint32_t &t) {
+  return conversion_pop_i64<float>(c, s, tos, t, false, true);
 }
-bool conversion_f64_convert_i64_s(execution_context &c, std::uint32_t *s,
-                                  std::uint32_t &t) {
-  return conversion_pop_i64<double>(c, s, t, true, false);
+bool conversion_f64_convert_i64_s(execution_context &c, std::uint32_t *&s,
+                                  std::uint32_t &tos, std::uint32_t &t) {
+  return conversion_pop_i64<double>(c, s, tos, t, true, false);
 }
-bool conversion_f64_convert_i64_u(execution_context &c, std::uint32_t *s,
-                                  std::uint32_t &t) {
-  return conversion_pop_i64<double>(c, s, t, false, false);
+bool conversion_f64_convert_i64_u(execution_context &c, std::uint32_t *&s,
+                                  std::uint32_t &tos, std::uint32_t &t) {
+  return conversion_pop_i64<double>(c, s, tos, t, false, false);
 }
 
-bool conversion_f64_promote_f32(execution_context &current, std::uint32_t *sp,
-                                std::uint32_t &trap_code) {
+bool conversion_f64_promote_f32(execution_context &current, std::uint32_t *&sp,
+                                std::uint32_t &tos, std::uint32_t &trap_code) {
   float value = 0;
-  if (!pop_f32(current, sp, value) ||
-      !push_f64(current, sp, static_cast<double>(value)))
+  if (!pop_f32(current, sp, tos, value) ||
+      !push_f64(current, sp, tos, static_cast<double>(value)))
     return false;
   trap_code = 0;
   return true;
 }
 
-bool conversion_f32_demote_f64(execution_context &current, std::uint32_t *sp,
-                               std::uint32_t &trap_code) {
+bool conversion_f32_demote_f64(execution_context &current, std::uint32_t *&sp,
+                               std::uint32_t &tos, std::uint32_t &trap_code) {
   double value = 0;
-  if (!pop_f64(current, sp, value) ||
-      !push_f32(current, sp, static_cast<float>(value)))
+  if (!pop_f64(current, sp, tos, value) ||
+      !push_f32(current, sp, tos, static_cast<float>(value)))
     return false;
   trap_code = 0;
   return true;
 }
 
-bool conversion_identity(execution_context &, std::uint32_t *,
+bool conversion_identity(execution_context &, std::uint32_t *&, std::uint32_t &,
                          std::uint32_t &trap_code) {
   trap_code = 0;
   return true;
 }
 
-template <typename Debugger>
-FIREBALL_CPS_CALL step_result h_nop(execution_context *context,
-                                    std::uint32_t *sp,
-                                    std::uint32_t *local_base, std::uint32_t) {
+[[gnu::always_inline]] inline op_result
+runtime_nop(execution_context *context) {
   auto &current = *context;
   current.ip += 1;
-  [[clang::musttail]] return dispatch<Debugger>(context, sp, local_base,
-                                                top_value(current, sp));
+  return {kContinue};
 }
 
 template <typename Debugger>
-FIREBALL_CPS_CALL step_result h_else(execution_context *context,
-                                     std::uint32_t *sp,
-                                     std::uint32_t *local_base, std::uint32_t) {
+FIREBALL_CPS_CALL op_result h_nop(execution_context *context, std::uint32_t *sp,
+                                  std::uint32_t *local_base,
+                                  std::uint32_t tos) {
+  const auto outcome = runtime_nop(context);
+  if (outcome.kind != kContinue)
+    return outcome;
+  [[clang::musttail]] return dispatch_next<Debugger>(context, sp, local_base,
+                                                     tos);
+}
+
+[[gnu::always_inline]] inline op_result
+runtime_else(execution_context *context) {
   auto &current = *context;
   if (current.control_stack->size <= current.control_base) {
     return fallback(current, current.ip);
@@ -1370,15 +1364,23 @@ FIREBALL_CPS_CALL step_result h_else(execution_context *context,
   prune_control_frames_after_static_jump(current, current.ip);
   if (should_stop_after_control(current))
     return block_boundary(current, current.ip);
-  [[clang::musttail]] return dispatch<Debugger>(context, sp, local_base,
-                                                top_value(current, sp));
+  return {kContinue};
 }
 
-template <typename Debugger, bool IsLoop>
-FIREBALL_CPS_CALL step_result h_block(execution_context *context,
-                                      std::uint32_t *sp,
-                                      std::uint32_t *local_base,
-                                      std::uint32_t) {
+template <typename Debugger>
+FIREBALL_CPS_CALL op_result h_else(execution_context *context,
+                                   std::uint32_t *sp, std::uint32_t *local_base,
+                                   std::uint32_t tos) {
+  const auto outcome = runtime_else(context);
+  if (outcome.kind != kContinue)
+    return outcome;
+  [[clang::musttail]] return dispatch_next<Debugger>(context, sp, local_base,
+                                                     tos);
+}
+
+template <bool IsLoop>
+[[gnu::always_inline]] inline op_result
+runtime_block(execution_context *context) {
   auto &current = *context;
   const auto *entry = control_entry(current, current.ip);
   if (entry == nullptr || entry->match_end == kSentinel ||
@@ -1394,30 +1396,38 @@ FIREBALL_CPS_CALL step_result h_block(execution_context *context,
   current.ip = entry->next_pc;
   if (should_stop_after_control(current))
     return block_boundary(current, current.ip);
-  [[clang::musttail]] return dispatch<Debugger>(context, sp, local_base,
-                                                top_value(current, sp));
+  return {kContinue};
 }
 
-template <typename Debugger>
-FIREBALL_CPS_CALL step_result h_if(execution_context *context,
-                                   std::uint32_t *sp, std::uint32_t *local_base,
-                                   std::uint32_t) {
+template <typename Debugger, bool IsLoop>
+FIREBALL_CPS_CALL op_result h_block(execution_context *context,
+                                    std::uint32_t *sp,
+                                    std::uint32_t *local_base,
+                                    std::uint32_t tos) {
+  const auto outcome = runtime_block<IsLoop>(context);
+  if (outcome.kind != kContinue)
+    return outcome;
+  [[clang::musttail]] return dispatch_next<Debugger>(context, sp, local_base,
+                                                     tos);
+}
+
+[[gnu::always_inline]] inline op_result
+runtime_if(execution_context *context, std::uint32_t *&sp, std::uint32_t &tos) {
   auto &current = *context;
   const auto *entry = control_entry(current, current.ip);
   std::uint32_t condition = 0;
   if (entry == nullptr || entry->match_end == kSentinel ||
-      !pop(current, sp, condition)) {
+      !pop(current, sp, tos, condition)) {
     return fallback(current, current.ip);
   }
   if (condition == 0 && entry->else_offset == kSentinel) {
     current.ip = entry->match_end + 1;
     if (should_stop_after_control(current))
       return block_boundary(current, current.ip);
-    [[clang::musttail]] return dispatch<Debugger>(context, sp, local_base,
-                                                  top_value(current, sp));
+    return {kContinue};
   }
   if (current.control_stack->size >= FIREBALL_NATIVE_CONTROL_STACK_CAPACITY) {
-    return fallback(current, current.ip);
+    return fallback(current, current.ip, current.sp_offset + 1);
   }
   auto &frame = current.control_stack->frames[current.control_stack->size++];
   frame.kind = 2u;
@@ -1428,21 +1438,30 @@ FIREBALL_CPS_CALL step_result h_if(execution_context *context,
   current.ip = condition == 0 ? entry->else_offset + 1 : entry->next_pc;
   if (should_stop_after_control(current))
     return block_boundary(current, current.ip);
-  [[clang::musttail]] return dispatch<Debugger>(context, sp, local_base,
-                                                top_value(current, sp));
+  return {kContinue};
 }
 
 template <typename Debugger>
-FIREBALL_CPS_CALL step_result h_br(execution_context *context,
-                                   std::uint32_t *sp, std::uint32_t *local_base,
-                                   std::uint32_t) {
+FIREBALL_CPS_CALL op_result h_if(execution_context *context, std::uint32_t *sp,
+                                 std::uint32_t *local_base, std::uint32_t tos) {
+  const auto outcome = runtime_if(context, sp, tos);
+  if (outcome.kind != kContinue)
+    return outcome;
+  [[clang::musttail]] return dispatch_next<Debugger>(context, sp, local_base,
+                                                     tos);
+}
+
+[[gnu::always_inline]] inline op_result runtime_br(execution_context *context,
+                                                   std::uint32_t *&sp,
+                                                   std::uint32_t *&local_base,
+                                                   std::uint32_t &tos) {
   auto &current = *context;
   const auto source_ip = current.ip;
   auto operand_ip = current.ip + 1;
   std::uint32_t depth = 0;
   std::uint32_t next_ip = 0;
   if (!read_u32(current, operand_ip, depth) ||
-      !branch(current, sp, depth, next_ip)) {
+      !branch(current, sp, tos, depth, next_ip)) {
     return fallback(current, current.ip);
   }
   if (next_ip == kSentinel) {
@@ -1450,12 +1469,11 @@ FIREBALL_CPS_CALL step_result h_br(execution_context *context,
                            current.call_stack->size <= current.call_base + 1;
     if (outermost && should_stop_after_control(current))
       return block_boundary(current, kSentinel);
-    if (finish_current_function(current))
+    if (finish_current_function(current, local_base))
       return complete(current);
     if (should_stop_after_control(current))
       return block_boundary(current, current.ip);
-    [[clang::musttail]] return dispatch<Debugger>(context, sp, local_base,
-                                                  top_value(current, sp));
+    return {kContinue};
   }
   const auto *call_frame = active_frame(current);
   if (call_frame != nullptr && call_frame->boundary_next_pc != kSentinel) {
@@ -1467,44 +1485,50 @@ FIREBALL_CPS_CALL step_result h_br(execution_context *context,
   current.ip = next_ip;
   if (should_stop_after_control(current))
     return block_boundary(current, current.ip);
-  [[clang::musttail]] return dispatch<Debugger>(context, sp, local_base,
-                                                top_value(current, sp));
+  return {kContinue};
 }
 
 template <typename Debugger>
-FIREBALL_CPS_CALL step_result h_br_if(execution_context *context,
-                                      std::uint32_t *sp,
-                                      std::uint32_t *local_base,
-                                      std::uint32_t) {
+FIREBALL_CPS_CALL op_result h_br(execution_context *context, std::uint32_t *sp,
+                                 std::uint32_t *local_base, std::uint32_t tos) {
+  const auto outcome = runtime_br(context, sp, local_base, tos);
+  if (outcome.kind != kContinue)
+    return outcome;
+  [[clang::musttail]] return dispatch_next<Debugger>(context, sp, local_base,
+                                                     tos);
+}
+
+[[gnu::always_inline]] inline op_result
+runtime_br_if(execution_context *context, std::uint32_t *&sp,
+              std::uint32_t *&local_base, std::uint32_t &tos) {
   auto &current = *context;
   const auto source_ip = current.ip;
   auto operand_ip = current.ip + 1;
   std::uint32_t depth = 0;
   std::uint32_t condition = 0;
-  if (!read_u32(current, operand_ip, depth) || !pop(current, sp, condition)) {
+  if (!read_u32(current, operand_ip, depth) ||
+      !pop(current, sp, tos, condition)) {
     return fallback(current, current.ip);
   }
   if (condition == 0) {
     current.ip = operand_ip;
     if (should_stop_after_control(current))
       return block_boundary(current, current.ip);
-    [[clang::musttail]] return dispatch<Debugger>(context, sp, local_base,
-                                                  top_value(current, sp));
+    return {kContinue};
   }
   std::uint32_t next_ip = 0;
-  if (!branch(current, sp, depth, next_ip))
-    return fallback(current, current.ip);
+  if (!branch(current, sp, tos, depth, next_ip))
+    return fallback(current, current.ip, current.sp_offset + 1);
   if (next_ip == kSentinel) {
     const bool outermost = current.call_stack == nullptr ||
                            current.call_stack->size <= current.call_base + 1;
     if (outermost && should_stop_after_control(current))
       return block_boundary(current, kSentinel);
-    if (finish_current_function(current))
+    if (finish_current_function(current, local_base))
       return complete(current);
     if (should_stop_after_control(current))
       return block_boundary(current, current.ip);
-    [[clang::musttail]] return dispatch<Debugger>(context, sp, local_base,
-                                                  top_value(current, sp));
+    return {kContinue};
   }
   const auto *call_frame = active_frame(current);
   if (call_frame != nullptr && call_frame->boundary_loops_to != kSentinel) {
@@ -1516,85 +1540,141 @@ FIREBALL_CPS_CALL step_result h_br_if(execution_context *context,
   current.ip = next_ip;
   if (should_stop_after_control(current))
     return block_boundary(current, current.ip);
-  [[clang::musttail]] return dispatch<Debugger>(context, sp, local_base,
-                                                top_value(current, sp));
+  return {kContinue};
 }
 
 template <typename Debugger>
-FIREBALL_CPS_CALL step_result h_local_get(execution_context *context,
-                                          std::uint32_t *sp,
-                                          std::uint32_t *local_base,
-                                          std::uint32_t) {
+FIREBALL_CPS_CALL op_result h_br_if(execution_context *context,
+                                    std::uint32_t *sp,
+                                    std::uint32_t *local_base,
+                                    std::uint32_t tos) {
+  const auto outcome = runtime_br_if(context, sp, local_base, tos);
+  if (outcome.kind != kContinue)
+    return outcome;
+  [[clang::musttail]] return dispatch_next<Debugger>(context, sp, local_base,
+                                                     tos);
+}
+
+[[gnu::always_inline]] inline op_result
+runtime_local_get(execution_context *context, std::uint32_t *&sp,
+                  std::uint32_t *&local_base, std::uint32_t &tos) {
   auto &current = *context;
   auto operand_ip = current.ip + 1;
   std::uint32_t index = 0;
-  std::uint32_t offset = 0;
-  std::uint32_t width = 0;
-  if (!read_u32(current, operand_ip, index) ||
-      !local_span(current, index, offset, width)) {
+  if (!read_u32(current, operand_ip, index)) {
     return fallback(current, current.ip);
   }
-  for (std::uint32_t word = 0; word < width; ++word) {
-    if (!push(current, sp, local_base[offset + word]))
-      return fallback(current, current.ip);
+  const auto [offset, width] = local_span(current, index);
+  if (width > current.sp_capacity - current.sp_offset)
+    return trap(current, kTrapOperandStackCapacity);
+  if (width == 1) {
+    tos = local_base[offset];
+    *sp++ = tos;
+  } else if (width == 2) {
+    sp[0] = local_base[offset];
+    tos = local_base[offset + 1];
+    sp[1] = tos;
+    sp += 2;
+  } else {
+    assert(width == 4);
+    sp[0] = local_base[offset];
+    sp[1] = local_base[offset + 1];
+    sp[2] = local_base[offset + 2];
+    tos = local_base[offset + 3];
+    sp[3] = tos;
+    sp += 4;
   }
+  current.sp_offset += width;
   current.ip = operand_ip;
-  [[clang::musttail]] return dispatch<Debugger>(context, sp, local_base,
-                                                top_value(current, sp));
+  return {kContinue};
 }
 
 template <typename Debugger>
-FIREBALL_CPS_CALL step_result h_local_set(execution_context *context,
-                                          std::uint32_t *sp,
-                                          std::uint32_t *local_base,
-                                          std::uint32_t) {
+FIREBALL_CPS_CALL op_result h_local_get(execution_context *context,
+                                        std::uint32_t *sp,
+                                        std::uint32_t *local_base,
+                                        std::uint32_t tos) {
+  const auto outcome = runtime_local_get(context, sp, local_base, tos);
+  if (outcome.kind != kContinue)
+    return outcome;
+  [[clang::musttail]] return dispatch_next<Debugger>(context, sp, local_base,
+                                                     tos);
+}
+
+[[gnu::always_inline]] inline op_result
+runtime_local_set(execution_context *context, std::uint32_t *&sp,
+                  std::uint32_t *&local_base, std::uint32_t &tos) {
   auto &current = *context;
   auto operand_ip = current.ip + 1;
   std::uint32_t index = 0;
-  std::uint32_t offset = 0;
-  std::uint32_t width = 0;
-  if (!read_u32(current, operand_ip, index) ||
-      !local_span(current, index, offset, width) || current.sp_offset < width) {
+  if (!read_u32(current, operand_ip, index)) {
     return fallback(current, current.ip);
   }
-  const auto source = current.sp_offset - width;
-  for (std::uint32_t word = 0; word < width; ++word) {
-    local_base[offset + word] = sp[source + word];
+  const auto [offset, width] = local_span(current, index);
+  if (current.sp_offset < width)
+    return fallback(current, current.ip);
+  if (width == 1) {
+    local_base[offset] = tos;
+  } else {
+    for (std::uint32_t word = 0; word < width; ++word)
+      local_base[offset + word] = sp[word - static_cast<std::ptrdiff_t>(width)];
   }
   current.sp_offset -= width;
+  sp -= width;
+  tos = current.sp_offset == 0 ? 0 : sp[-1];
   current.ip = operand_ip;
-  [[clang::musttail]] return dispatch<Debugger>(context, sp, local_base,
-                                                top_value(current, sp));
+  return {kContinue};
 }
 
 template <typename Debugger>
-FIREBALL_CPS_CALL step_result h_local_tee(execution_context *context,
-                                          std::uint32_t *sp,
-                                          std::uint32_t *local_base,
-                                          std::uint32_t) {
+FIREBALL_CPS_CALL op_result h_local_set(execution_context *context,
+                                        std::uint32_t *sp,
+                                        std::uint32_t *local_base,
+                                        std::uint32_t tos) {
+  const auto outcome = runtime_local_set(context, sp, local_base, tos);
+  if (outcome.kind != kContinue)
+    return outcome;
+  [[clang::musttail]] return dispatch_next<Debugger>(context, sp, local_base,
+                                                     tos);
+}
+
+[[gnu::always_inline]] inline op_result
+runtime_local_tee(execution_context *context, std::uint32_t *&sp,
+                  std::uint32_t *&local_base, std::uint32_t &tos) {
   auto &current = *context;
   auto operand_ip = current.ip + 1;
   std::uint32_t index = 0;
-  std::uint32_t offset = 0;
-  std::uint32_t width = 0;
-  if (!read_u32(current, operand_ip, index) ||
-      !local_span(current, index, offset, width) || current.sp_offset < width) {
+  if (!read_u32(current, operand_ip, index)) {
     return fallback(current, current.ip);
   }
-  const auto source = current.sp_offset - width;
-  for (std::uint32_t word = 0; word < width; ++word) {
-    local_base[offset + word] = sp[source + word];
+  const auto [offset, width] = local_span(current, index);
+  if (current.sp_offset < width)
+    return fallback(current, current.ip);
+  if (width == 1) {
+    local_base[offset] = tos;
+  } else {
+    for (std::uint32_t word = 0; word < width; ++word)
+      local_base[offset + word] = sp[word - static_cast<std::ptrdiff_t>(width)];
   }
   current.ip = operand_ip;
-  [[clang::musttail]] return dispatch<Debugger>(context, sp, local_base,
-                                                top_value(current, sp));
+  return {kContinue};
 }
 
 template <typename Debugger>
-FIREBALL_CPS_CALL step_result h_global_get(execution_context *context,
-                                           std::uint32_t *sp,
-                                           std::uint32_t *local_base,
-                                           std::uint32_t) {
+FIREBALL_CPS_CALL op_result h_local_tee(execution_context *context,
+                                        std::uint32_t *sp,
+                                        std::uint32_t *local_base,
+                                        std::uint32_t tos) {
+  const auto outcome = runtime_local_tee(context, sp, local_base, tos);
+  if (outcome.kind != kContinue)
+    return outcome;
+  [[clang::musttail]] return dispatch_next<Debugger>(context, sp, local_base,
+                                                     tos);
+}
+
+[[gnu::always_inline]] inline op_result
+runtime_global_get(execution_context *context, std::uint32_t *&sp,
+                   std::uint32_t &tos) {
   auto &current = *context;
   auto operand_ip = current.ip + 1;
   std::uint32_t index = 0;
@@ -1616,22 +1696,30 @@ FIREBALL_CPS_CALL step_result h_global_get(execution_context *context,
     return fallback(current, current.ip);
   }
   const auto value = module->globals[index];
-  if (!push(current, sp, static_cast<std::uint32_t>(value)))
-    return fallback(current, current.ip);
-  if (width == 2u &&
-      !push(current, sp, static_cast<std::uint32_t>(value >> 32))) {
-    return fallback(current, current.ip);
-  }
+  *sp++ = static_cast<std::uint32_t>(value);
+  if (width == 2u)
+    *sp++ = static_cast<std::uint32_t>(value >> 32);
+  current.sp_offset += width;
+  tos = sp[-1];
   current.ip = operand_ip;
-  [[clang::musttail]] return dispatch<Debugger>(context, sp, local_base,
-                                                top_value(current, sp));
+  return {kContinue};
 }
 
 template <typename Debugger>
-FIREBALL_CPS_CALL step_result h_global_set(execution_context *context,
-                                           std::uint32_t *sp,
-                                           std::uint32_t *local_base,
-                                           std::uint32_t) {
+FIREBALL_CPS_CALL op_result h_global_get(execution_context *context,
+                                         std::uint32_t *sp,
+                                         std::uint32_t *local_base,
+                                         std::uint32_t tos) {
+  const auto outcome = runtime_global_get(context, sp, tos);
+  if (outcome.kind != kContinue)
+    return outcome;
+  [[clang::musttail]] return dispatch_next<Debugger>(context, sp, local_base,
+                                                     tos);
+}
+
+[[gnu::always_inline]] inline op_result
+runtime_global_set(execution_context *context, std::uint32_t *&sp,
+                   std::uint32_t &tos) {
   auto &current = *context;
   auto operand_ip = current.ip + 1;
   std::uint32_t index = 0;
@@ -1651,60 +1739,94 @@ FIREBALL_CPS_CALL step_result h_global_set(execution_context *context,
   if ((width != 1u && width != 2u) || current.sp_offset < width) {
     return fallback(current, current.ip);
   }
-  const auto source = current.sp_offset - width;
-  auto value = static_cast<std::uint64_t>(sp[source]);
+  auto value =
+      static_cast<std::uint64_t>(sp[-static_cast<std::ptrdiff_t>(width)]);
   if (width == 2u)
-    value |= static_cast<std::uint64_t>(sp[source + 1]) << 32;
+    value |= static_cast<std::uint64_t>(sp[-1]) << 32;
   module->globals[index] = value;
-  current.sp_offset = source;
+  current.sp_offset -= width;
+  sp -= width;
+  tos = current.sp_offset == 0 ? 0 : sp[-1];
   current.ip = operand_ip;
-  [[clang::musttail]] return dispatch<Debugger>(context, sp, local_base,
-                                                top_value(current, sp));
+  return {kContinue};
 }
 
 template <typename Debugger>
-FIREBALL_CPS_CALL step_result h_drop(execution_context *context,
-                                     std::uint32_t *sp,
-                                     std::uint32_t *local_base, std::uint32_t) {
+FIREBALL_CPS_CALL op_result h_global_set(execution_context *context,
+                                         std::uint32_t *sp,
+                                         std::uint32_t *local_base,
+                                         std::uint32_t tos) {
+  const auto outcome = runtime_global_set(context, sp, tos);
+  if (outcome.kind != kContinue)
+    return outcome;
+  [[clang::musttail]] return dispatch_next<Debugger>(context, sp, local_base,
+                                                     tos);
+}
+
+[[gnu::always_inline]] inline op_result runtime_drop(execution_context *context,
+                                                     std::uint32_t *&sp,
+                                                     std::uint32_t &tos) {
   auto &current = *context;
   const auto *entry = control_entry(current, current.ip);
   const auto width = entry == nullptr ? 0u : entry->operand_width;
   if (width == 0 || current.sp_offset < width)
     return fallback(current, current.ip);
   current.sp_offset -= width;
+  sp -= width;
+  tos = current.sp_offset == 0 ? 0 : sp[-1];
   current.ip += 1;
-  [[clang::musttail]] return dispatch<Debugger>(context, sp, local_base,
-                                                top_value(current, sp));
+  return {kContinue};
 }
 
 template <typename Debugger>
-FIREBALL_CPS_CALL step_result h_select(execution_context *context,
-                                       std::uint32_t *sp,
-                                       std::uint32_t *local_base,
-                                       std::uint32_t) {
+FIREBALL_CPS_CALL op_result h_drop(execution_context *context,
+                                   std::uint32_t *sp, std::uint32_t *local_base,
+                                   std::uint32_t tos) {
+  const auto outcome = runtime_drop(context, sp, tos);
+  if (outcome.kind != kContinue)
+    return outcome;
+  [[clang::musttail]] return dispatch_next<Debugger>(context, sp, local_base,
+                                                     tos);
+}
+
+[[gnu::always_inline]] inline op_result
+runtime_select(execution_context *context, std::uint32_t *&sp,
+               std::uint32_t &tos) {
   auto &current = *context;
   const auto *entry = control_entry(current, current.ip);
   const auto width = entry == nullptr ? 0u : entry->operand_width;
   if ((width != 1 && width != 2) || current.sp_offset < 1 + width * 2) {
     return fallback(current, current.ip);
   }
-  const auto condition = sp[--current.sp_offset];
-  const auto b = current.sp_offset - width;
-  const auto a = b - width;
+  const auto condition = tos;
+  --current.sp_offset;
+  --sp;
   if (condition == 0) {
     for (std::uint32_t word = 0; word < width; ++word)
-      sp[a + word] = sp[b + word];
+      sp[word - static_cast<std::ptrdiff_t>(2 * width)] =
+          sp[word - static_cast<std::ptrdiff_t>(width)];
   }
-  current.sp_offset = a + width;
+  current.sp_offset -= width;
+  sp -= width;
+  tos = sp[-1];
   current.ip += 1;
-  [[clang::musttail]] return dispatch<Debugger>(context, sp, local_base,
-                                                top_value(current, sp));
+  return {kContinue};
 }
 
 template <typename Debugger>
-FIREBALL_CPS_CALL step_result h_end(execution_context *context,
-                                    std::uint32_t *sp,
-                                    std::uint32_t *local_base, std::uint32_t) {
+FIREBALL_CPS_CALL op_result h_select(execution_context *context,
+                                     std::uint32_t *sp,
+                                     std::uint32_t *local_base,
+                                     std::uint32_t tos) {
+  const auto outcome = runtime_select(context, sp, tos);
+  if (outcome.kind != kContinue)
+    return outcome;
+  [[clang::musttail]] return dispatch_next<Debugger>(context, sp, local_base,
+                                                     tos);
+}
+
+[[gnu::always_inline]] inline op_result
+runtime_end(execution_context *context, std::uint32_t *&local_base) {
   auto &current = *context;
   if (current.control_stack->size > current.control_base) {
     current.control_stack->size -= 1;
@@ -1715,42 +1837,57 @@ FIREBALL_CPS_CALL step_result h_end(execution_context *context,
                            current.call_stack->size <= current.call_base + 1;
     if (outermost && should_stop_after_control(current))
       return block_boundary(current, kSentinel);
-    if (finish_current_function(current))
+    if (finish_current_function(current, local_base))
       return complete(current);
     if (should_stop_after_control(current))
       return block_boundary(current, current.ip);
-    [[clang::musttail]] return dispatch<Debugger>(context, sp, local_base,
-                                                  top_value(current, sp));
+    return {kContinue};
   }
   if (should_stop_after_control(current))
     return block_boundary(current, current.ip);
-  [[clang::musttail]] return dispatch<Debugger>(context, sp, local_base,
-                                                top_value(current, sp));
+  return {kContinue};
 }
 
 template <typename Debugger>
-FIREBALL_CPS_CALL step_result h_return(execution_context *context,
-                                       std::uint32_t *sp,
-                                       std::uint32_t *local_stack,
-                                       std::uint32_t) {
+FIREBALL_CPS_CALL op_result h_end(execution_context *context, std::uint32_t *sp,
+                                  std::uint32_t *local_base,
+                                  std::uint32_t tos) {
+  const auto outcome = runtime_end(context, local_base);
+  if (outcome.kind != kContinue)
+    return outcome;
+  [[clang::musttail]] return dispatch_next<Debugger>(context, sp, local_base,
+                                                     tos);
+}
+
+[[gnu::always_inline]] inline op_result
+runtime_return(execution_context *context, std::uint32_t *&local_stack) {
   auto &current = *context;
   const bool outermost = current.call_stack == nullptr ||
                          current.call_stack->size <= current.call_base + 1;
   if (outermost && should_stop_after_control(current))
     return block_boundary(current, kSentinel);
-  if (finish_current_function(current))
+  if (finish_current_function(current, local_stack))
     return complete(current);
   if (should_stop_after_control(current))
     return block_boundary(current, current.ip);
-  [[clang::musttail]] return dispatch<Debugger>(context, sp, local_stack,
-                                                top_value(current, sp));
+  return {kContinue};
 }
 
 template <typename Debugger>
-FIREBALL_CPS_CALL step_result h_br_table(execution_context *context,
-                                         std::uint32_t *sp,
-                                         std::uint32_t *local_base,
-                                         std::uint32_t) {
+FIREBALL_CPS_CALL op_result h_return(execution_context *context,
+                                     std::uint32_t *sp,
+                                     std::uint32_t *local_stack,
+                                     std::uint32_t tos) {
+  const auto outcome = runtime_return(context, local_stack);
+  if (outcome.kind != kContinue)
+    return outcome;
+  [[clang::musttail]] return dispatch_next<Debugger>(context, sp, local_stack,
+                                                     tos);
+}
+
+[[gnu::always_inline]] inline op_result
+runtime_br_table(execution_context *context, std::uint32_t *&sp,
+                 std::uint32_t *&local_base, std::uint32_t &tos) {
   auto &current = *context;
   const auto source_ip = current.ip;
   auto operand_ip = current.ip + 1;
@@ -1759,302 +1896,426 @@ FIREBALL_CPS_CALL step_result h_br_table(execution_context *context,
   const auto *table = control_entry(current, source_ip);
   if (table == nullptr || table->br_table_targets == nullptr ||
       !read_u32(current, operand_ip, target_count) ||
-      !pop(current, sp, selector) ||
       target_count + 1 != table->br_table_target_count) {
     return fallback(current, current.ip);
   }
+  if (!pop(current, sp, tos, selector))
+    return fallback(current, current.ip);
 
   const auto selected_index = selector < target_count ? selector : target_count;
   const auto selected_depth = table->br_table_targets[selected_index];
 
   std::uint32_t next_ip = 0;
-  if (!branch(current, sp, selected_depth, next_ip))
-    return fallback(current, current.ip);
+  if (!branch(current, sp, tos, selected_depth, next_ip))
+    return fallback(current, current.ip, current.sp_offset + 1);
   if (next_ip == kSentinel) {
     const bool outermost = current.call_stack == nullptr ||
                            current.call_stack->size <= current.call_base + 1;
     if (outermost && should_stop_after_control(current))
       return block_boundary(current, kSentinel);
-    if (finish_current_function(current))
+    if (finish_current_function(current, local_base))
       return complete(current);
     if (should_stop_after_control(current))
       return block_boundary(current, current.ip);
-    [[clang::musttail]] return dispatch<Debugger>(context, sp, local_base,
-                                                  top_value(current, sp));
+    return {kContinue};
   }
   record_loop_backedge(current, source_ip, next_ip);
   current.ip = next_ip;
   if (should_stop_after_control(current)) {
     return block_boundary(current, current.ip);
   }
-  [[clang::musttail]] return dispatch<Debugger>(context, sp, local_base,
-                                                top_value(current, sp));
+  return {kContinue};
 }
 
 template <typename Debugger>
-FIREBALL_CPS_CALL step_result h_unreachable(execution_context *context,
-                                            std::uint32_t *, std::uint32_t *,
-                                            std::uint32_t) {
-  return trap(*context, kTrapUnreachable);
+FIREBALL_CPS_CALL op_result h_br_table(execution_context *context,
+                                       std::uint32_t *sp,
+                                       std::uint32_t *local_base,
+                                       std::uint32_t tos) {
+  const auto outcome = runtime_br_table(context, sp, local_base, tos);
+  if (outcome.kind != kContinue)
+    return outcome;
+  [[clang::musttail]] return dispatch_next<Debugger>(context, sp, local_base,
+                                                     tos);
+}
+
+[[gnu::always_inline]] inline op_result
+runtime_unreachable(execution_context &context) {
+  return trap(context, kTrapUnreachable);
 }
 
 template <typename Debugger>
-FIREBALL_CPS_CALL step_result h_i32_const(execution_context *context,
-                                          std::uint32_t *sp,
-                                          std::uint32_t *local_base,
+FIREBALL_CPS_CALL op_result h_unreachable(execution_context *context,
+                                          std::uint32_t *, std::uint32_t *,
                                           std::uint32_t) {
+  return runtime_unreachable(*context);
+}
+
+[[gnu::always_inline]] inline op_result
+runtime_i32_const(execution_context *context, std::uint32_t *&sp,
+                  std::uint32_t &tos) {
   auto &current = *context;
   auto operand_ip = current.ip + 1;
   std::int32_t value = 0;
   if (!read_s32(current, operand_ip, value))
     return fallback(current, current.ip);
-  if (!push(current, sp, static_cast<std::uint32_t>(value))) {
+  if (!push(current, sp, tos, static_cast<std::uint32_t>(value))) {
     return trap(current, kTrapOperandStackCapacity);
   }
   current.ip = operand_ip;
-  [[clang::musttail]] return dispatch<Debugger>(context, sp, local_base,
-                                                top_value(current, sp));
+  return {kContinue};
+}
+
+template <typename Debugger>
+FIREBALL_CPS_CALL op_result h_i32_const(execution_context *context,
+                                        std::uint32_t *sp,
+                                        std::uint32_t *local_base,
+                                        std::uint32_t tos) {
+  const auto outcome = runtime_i32_const(context, sp, tos);
+  if (outcome.kind != kContinue)
+    return outcome;
+  [[clang::musttail]] return dispatch_next<Debugger>(context, sp, local_base,
+                                                     tos);
+}
+
+template <std::uint32_t (*Operation)(std::uint32_t, std::uint32_t)>
+[[gnu::always_inline]] inline op_result
+runtime_i32_binary(execution_context *context, std::uint32_t *&sp,
+                   std::uint32_t &tos) {
+  auto &current = *context;
+  if (current.sp_offset < 2) {
+    return fallback(current, current.ip);
+  }
+  const auto result = Operation(sp[-2], tos);
+  --current.sp_offset;
+  --sp;
+  tos = result;
+  sp[-1] = result;
+  ++current.ip;
+  return {kContinue};
 }
 
 template <typename Debugger,
           std::uint32_t (*Operation)(std::uint32_t, std::uint32_t)>
-FIREBALL_CPS_CALL step_result h_i32_binary(execution_context *context,
-                                           std::uint32_t *sp,
-                                           std::uint32_t *local_base,
-                                           std::uint32_t) {
+FIREBALL_CPS_CALL op_result h_i32_binary(execution_context *context,
+                                         std::uint32_t *sp,
+                                         std::uint32_t *local_base,
+                                         std::uint32_t tos) {
+  const auto outcome = runtime_i32_binary<Operation>(context, sp, tos);
+  if (outcome.kind != kContinue)
+    return outcome;
+  [[clang::musttail]] return dispatch_next<Debugger>(context, sp, local_base,
+                                                     tos);
+}
+
+template <bool (*Operation)(std::uint32_t, std::uint32_t, std::uint32_t &,
+                            std::uint32_t &)>
+[[gnu::always_inline]] inline op_result
+runtime_i32_checked_binary(execution_context *context, std::uint32_t *&sp,
+                           std::uint32_t &tos) {
   auto &current = *context;
-  std::uint32_t rhs = 0;
-  std::uint32_t lhs = 0;
-  if (!pop(current, sp, rhs) || !pop(current, sp, lhs) ||
-      !push(current, sp, Operation(lhs, rhs))) {
+  if (current.sp_offset < 2)
     return fallback(current, current.ip);
-  }
+  std::uint32_t result = 0;
+  std::uint32_t trap_code = 0;
+  if (!Operation(sp[-2], tos, result, trap_code))
+    return trap(current, trap_code);
+  --current.sp_offset;
+  --sp;
+  tos = result;
+  sp[-1] = result;
   ++current.ip;
-  [[clang::musttail]] return dispatch<Debugger>(context, sp, local_base,
-                                                top_value(current, sp));
+  return {kContinue};
 }
 
 template <typename Debugger,
           bool (*Operation)(std::uint32_t, std::uint32_t, std::uint32_t &,
                             std::uint32_t &)>
-FIREBALL_CPS_CALL step_result h_i32_checked_binary(execution_context *context,
-                                                   std::uint32_t *sp,
-                                                   std::uint32_t *local_base,
-                                                   std::uint32_t) {
+FIREBALL_CPS_CALL op_result h_i32_checked_binary(execution_context *context,
+                                                 std::uint32_t *sp,
+                                                 std::uint32_t *local_base,
+                                                 std::uint32_t tos) {
+  const auto outcome = runtime_i32_checked_binary<Operation>(context, sp, tos);
+  if (outcome.kind != kContinue)
+    return outcome;
+  [[clang::musttail]] return dispatch_next<Debugger>(context, sp, local_base,
+                                                     tos);
+}
+
+template <std::uint64_t (*Operation)(std::uint64_t, std::uint64_t),
+          bool ResultIsBool>
+[[gnu::always_inline]] inline op_result
+runtime_i64_binary(execution_context *context, std::uint32_t *&sp,
+                   std::uint32_t &tos) {
   auto &current = *context;
-  std::uint32_t rhs = 0;
-  std::uint32_t lhs = 0;
-  if (!pop(current, sp, rhs) || !pop(current, sp, lhs))
+  if (current.sp_offset < 4)
     return fallback(current, current.ip);
-  std::uint32_t result = 0;
-  std::uint32_t trap_code = 0;
-  if (!Operation(lhs, rhs, result, trap_code))
-    return trap(current, trap_code);
-  if (!push(current, sp, result))
-    return fallback(current, current.ip);
+  const auto lhs = combine_u64(sp[-4], sp[-3]);
+  const auto rhs = combine_u64(sp[-2], tos);
+  const auto result = Operation(lhs, rhs);
+  replace_u64_operands<ResultIsBool>(current, sp, tos, result, 4);
   ++current.ip;
-  [[clang::musttail]] return dispatch<Debugger>(context, sp, local_base,
-                                                top_value(current, sp));
+  return {kContinue};
 }
 
 template <typename Debugger,
           std::uint64_t (*Operation)(std::uint64_t, std::uint64_t),
           bool ResultIsBool>
-FIREBALL_CPS_CALL step_result h_i64_binary(execution_context *context,
-                                           std::uint32_t *sp,
-                                           std::uint32_t *local_base,
-                                           std::uint32_t) {
+FIREBALL_CPS_CALL op_result h_i64_binary(execution_context *context,
+                                         std::uint32_t *sp,
+                                         std::uint32_t *local_base,
+                                         std::uint32_t tos) {
+  const auto outcome =
+      runtime_i64_binary<Operation, ResultIsBool>(context, sp, tos);
+  if (outcome.kind != kContinue)
+    return outcome;
+  [[clang::musttail]] return dispatch_next<Debugger>(context, sp, local_base,
+                                                     tos);
+}
+
+template <bool (*Operation)(std::uint64_t, std::uint64_t, std::uint64_t &,
+                            std::uint32_t &),
+          bool ResultIsBool>
+[[gnu::always_inline]] inline op_result
+runtime_i64_checked_binary(execution_context *context, std::uint32_t *&sp,
+                           std::uint32_t &tos) {
   auto &current = *context;
-  std::uint64_t rhs = 0;
-  std::uint64_t lhs = 0;
-  if (!pop_u64(current, sp, rhs) || !pop_u64(current, sp, lhs))
+  if (current.sp_offset < 4)
     return fallback(current, current.ip);
-  const auto result = Operation(lhs, rhs);
-  const bool pushed = [&]() {
-    if constexpr (ResultIsBool)
-      return push(current, sp, static_cast<std::uint32_t>(result));
-    return push_u64(current, sp, result);
-  }();
-  if (!pushed)
-    return fallback(current, current.ip);
+  const auto lhs = combine_u64(sp[-4], sp[-3]);
+  const auto rhs = combine_u64(sp[-2], tos);
+  std::uint64_t result = 0;
+  std::uint32_t trap_code = 0;
+  if (!Operation(lhs, rhs, result, trap_code))
+    return trap(current, trap_code);
+  replace_u64_operands<ResultIsBool>(current, sp, tos, result, 4);
   ++current.ip;
-  [[clang::musttail]] return dispatch<Debugger>(context, sp, local_base,
-                                                top_value(current, sp));
+  return {kContinue};
 }
 
 template <typename Debugger,
           bool (*Operation)(std::uint64_t, std::uint64_t, std::uint64_t &,
                             std::uint32_t &),
           bool ResultIsBool>
-FIREBALL_CPS_CALL step_result h_i64_checked_binary(execution_context *context,
-                                                   std::uint32_t *sp,
-                                                   std::uint32_t *local_base,
-                                                   std::uint32_t) {
+FIREBALL_CPS_CALL op_result h_i64_checked_binary(execution_context *context,
+                                                 std::uint32_t *sp,
+                                                 std::uint32_t *local_base,
+                                                 std::uint32_t tos) {
+  const auto outcome =
+      runtime_i64_checked_binary<Operation, ResultIsBool>(context, sp, tos);
+  if (outcome.kind != kContinue)
+    return outcome;
+  [[clang::musttail]] return dispatch_next<Debugger>(context, sp, local_base,
+                                                     tos);
+}
+
+template <std::uint64_t (*Operation)(std::uint64_t), bool ResultIsBool>
+[[gnu::always_inline]] inline op_result
+runtime_i64_unary(execution_context *context, std::uint32_t *&sp,
+                  std::uint32_t &tos) {
   auto &current = *context;
-  std::uint64_t rhs = 0;
-  std::uint64_t lhs = 0;
-  if (!pop_u64(current, sp, rhs) || !pop_u64(current, sp, lhs))
+  if (current.sp_offset < 2)
     return fallback(current, current.ip);
-  std::uint64_t result = 0;
-  std::uint32_t trap_code = 0;
-  if (!Operation(lhs, rhs, result, trap_code))
-    return trap(current, trap_code);
-  const bool pushed = [&]() {
-    if constexpr (ResultIsBool)
-      return push(current, sp, static_cast<std::uint32_t>(result));
-    return push_u64(current, sp, result);
-  }();
-  if (!pushed)
-    return fallback(current, current.ip);
+  const auto value = combine_u64(sp[-2], tos);
+  const auto result = Operation(value);
+  replace_u64_operands<ResultIsBool>(current, sp, tos, result, 2);
   ++current.ip;
-  [[clang::musttail]] return dispatch<Debugger>(context, sp, local_base,
-                                                top_value(current, sp));
+  return {kContinue};
 }
 
 template <typename Debugger, std::uint64_t (*Operation)(std::uint64_t),
           bool ResultIsBool>
-FIREBALL_CPS_CALL step_result h_i64_unary(execution_context *context,
-                                          std::uint32_t *sp,
-                                          std::uint32_t *local_base,
-                                          std::uint32_t) {
+FIREBALL_CPS_CALL op_result h_i64_unary(execution_context *context,
+                                        std::uint32_t *sp,
+                                        std::uint32_t *local_base,
+                                        std::uint32_t tos) {
+  const auto outcome =
+      runtime_i64_unary<Operation, ResultIsBool>(context, sp, tos);
+  if (outcome.kind != kContinue)
+    return outcome;
+  [[clang::musttail]] return dispatch_next<Debugger>(context, sp, local_base,
+                                                     tos);
+}
+
+template <float (*Operation)(float, float), bool ResultIsBool>
+[[gnu::always_inline]] inline op_result
+runtime_f32_binary(execution_context *context, std::uint32_t *&sp,
+                   std::uint32_t &tos) {
   auto &current = *context;
-  std::uint64_t value = 0;
-  if (!pop_u64(current, sp, value))
+  if (current.sp_offset < 2)
     return fallback(current, current.ip);
-  const auto result = Operation(value);
-  const bool pushed = [&]() {
-    if constexpr (ResultIsBool)
-      return push(current, sp, static_cast<std::uint32_t>(result));
-    return push_u64(current, sp, result);
-  }();
-  if (!pushed)
-    return fallback(current, current.ip);
+  const auto result = Operation(f32_from_bits(sp[-2]), f32_from_bits(tos));
+  --current.sp_offset;
+  --sp;
+  if constexpr (ResultIsBool)
+    tos = static_cast<std::uint32_t>(result);
+  else
+    tos = f32_to_bits(result);
+  sp[-1] = tos;
   ++current.ip;
-  [[clang::musttail]] return dispatch<Debugger>(context, sp, local_base,
-                                                top_value(current, sp));
+  return {kContinue};
 }
 
 template <typename Debugger, float (*Operation)(float, float),
           bool ResultIsBool>
-FIREBALL_CPS_CALL step_result h_f32_binary(execution_context *context,
-                                           std::uint32_t *sp,
-                                           std::uint32_t *local_base,
-                                           std::uint32_t) {
+FIREBALL_CPS_CALL op_result h_f32_binary(execution_context *context,
+                                         std::uint32_t *sp,
+                                         std::uint32_t *local_base,
+                                         std::uint32_t tos) {
+  const auto outcome =
+      runtime_f32_binary<Operation, ResultIsBool>(context, sp, tos);
+  if (outcome.kind != kContinue)
+    return outcome;
+  [[clang::musttail]] return dispatch_next<Debugger>(context, sp, local_base,
+                                                     tos);
+}
+
+template <double (*Operation)(double, double), bool ResultIsBool>
+[[gnu::always_inline]] inline op_result
+runtime_f64_binary(execution_context *context, std::uint32_t *&sp,
+                   std::uint32_t &tos) {
   auto &current = *context;
-  float rhs = 0.0f;
-  float lhs = 0.0f;
-  if (!pop_f32(current, sp, rhs) || !pop_f32(current, sp, lhs))
+  if (current.sp_offset < 4)
     return fallback(current, current.ip);
+  const auto lhs = f64_from_bits(combine_u64(sp[-4], sp[-3]));
+  const auto rhs = f64_from_bits(combine_u64(sp[-2], tos));
   const auto result = Operation(lhs, rhs);
-  const bool pushed = [&]() {
-    if constexpr (ResultIsBool)
-      return push(current, sp, static_cast<std::uint32_t>(result));
-    return push_f32(current, sp, result);
-  }();
-  if (!pushed)
-    return fallback(current, current.ip);
+  if constexpr (ResultIsBool)
+    replace_u64_operands<true>(current, sp, tos,
+                               static_cast<std::uint32_t>(result), 4);
+  else
+    replace_u64_operands<false>(current, sp, tos, f64_to_bits(result), 4);
   ++current.ip;
-  [[clang::musttail]] return dispatch<Debugger>(context, sp, local_base,
-                                                top_value(current, sp));
+  return {kContinue};
 }
 
 template <typename Debugger, double (*Operation)(double, double),
           bool ResultIsBool>
-FIREBALL_CPS_CALL step_result h_f64_binary(execution_context *context,
-                                           std::uint32_t *sp,
-                                           std::uint32_t *local_base,
-                                           std::uint32_t) {
+FIREBALL_CPS_CALL op_result h_f64_binary(execution_context *context,
+                                         std::uint32_t *sp,
+                                         std::uint32_t *local_base,
+                                         std::uint32_t tos) {
+  const auto outcome =
+      runtime_f64_binary<Operation, ResultIsBool>(context, sp, tos);
+  if (outcome.kind != kContinue)
+    return outcome;
+  [[clang::musttail]] return dispatch_next<Debugger>(context, sp, local_base,
+                                                     tos);
+}
+
+template <float (*Operation)(float)>
+[[gnu::always_inline]] inline op_result
+runtime_f32_unary(execution_context *context, std::uint32_t *&sp,
+                  std::uint32_t &tos) {
   auto &current = *context;
-  double rhs = 0.0;
-  double lhs = 0.0;
-  if (!pop_f64(current, sp, rhs) || !pop_f64(current, sp, lhs))
+  if (current.sp_offset == 0) {
     return fallback(current, current.ip);
-  const auto result = Operation(lhs, rhs);
-  const bool pushed = [&]() {
-    if constexpr (ResultIsBool)
-      return push(current, sp, static_cast<std::uint32_t>(result));
-    return push_f64(current, sp, result);
-  }();
-  if (!pushed)
-    return fallback(current, current.ip);
+  }
+  tos = f32_to_bits(Operation(f32_from_bits(tos)));
+  sp[-1] = tos;
   ++current.ip;
-  [[clang::musttail]] return dispatch<Debugger>(context, sp, local_base,
-                                                top_value(current, sp));
+  return {kContinue};
 }
 
 template <typename Debugger, float (*Operation)(float)>
-FIREBALL_CPS_CALL step_result h_f32_unary(execution_context *context,
-                                          std::uint32_t *sp,
-                                          std::uint32_t *local_base,
-                                          std::uint32_t) {
+FIREBALL_CPS_CALL op_result h_f32_unary(execution_context *context,
+                                        std::uint32_t *sp,
+                                        std::uint32_t *local_base,
+                                        std::uint32_t tos) {
+  const auto outcome = runtime_f32_unary<Operation>(context, sp, tos);
+  if (outcome.kind != kContinue)
+    return outcome;
+  [[clang::musttail]] return dispatch_next<Debugger>(context, sp, local_base,
+                                                     tos);
+}
+
+template <double (*Operation)(double)>
+[[gnu::always_inline]] inline op_result
+runtime_f64_unary(execution_context *context, std::uint32_t *&sp,
+                  std::uint32_t &tos) {
   auto &current = *context;
-  float value = 0.0f;
-  if (!pop_f32(current, sp, value) ||
-      !push_f32(current, sp, Operation(value))) {
+  if (current.sp_offset < 2) {
     return fallback(current, current.ip);
   }
+  const auto value = f64_from_bits(combine_u64(sp[-2], tos));
+  replace_u64_operands<false>(current, sp, tos, f64_to_bits(Operation(value)),
+                              2);
   ++current.ip;
-  [[clang::musttail]] return dispatch<Debugger>(context, sp, local_base,
-                                                top_value(current, sp));
+  return {kContinue};
 }
 
 template <typename Debugger, double (*Operation)(double)>
-FIREBALL_CPS_CALL step_result h_f64_unary(execution_context *context,
-                                          std::uint32_t *sp,
-                                          std::uint32_t *local_base,
-                                          std::uint32_t) {
-  auto &current = *context;
-  double value = 0.0;
-  if (!pop_f64(current, sp, value) ||
-      !push_f64(current, sp, Operation(value))) {
-    return fallback(current, current.ip);
-  }
-  ++current.ip;
-  [[clang::musttail]] return dispatch<Debugger>(context, sp, local_base,
-                                                top_value(current, sp));
+FIREBALL_CPS_CALL op_result h_f64_unary(execution_context *context,
+                                        std::uint32_t *sp,
+                                        std::uint32_t *local_base,
+                                        std::uint32_t tos) {
+  const auto outcome = runtime_f64_unary<Operation>(context, sp, tos);
+  if (outcome.kind != kContinue)
+    return outcome;
+  [[clang::musttail]] return dispatch_next<Debugger>(context, sp, local_base,
+                                                     tos);
 }
 
-template <typename Debugger,
-          bool (*Operation)(execution_context &, std::uint32_t *,
-                            std::uint32_t &)>
-FIREBALL_CPS_CALL step_result h_conversion(execution_context *context,
-                                           std::uint32_t *sp,
-                                           std::uint32_t *local_base,
-                                           std::uint32_t) {
+template <bool (*Operation)(execution_context &, std::uint32_t *&,
+                            std::uint32_t &, std::uint32_t &)>
+[[gnu::always_inline]] inline op_result
+runtime_conversion(execution_context *context, std::uint32_t *&sp,
+                   std::uint32_t &tos) {
   auto &current = *context;
   std::uint32_t trap_code = 0;
-  if (!Operation(current, sp, trap_code)) {
-    return trap_code == 0 ? fallback(current, current.ip)
+  const auto stack_height = current.sp_offset;
+  if (!Operation(current, sp, tos, trap_code)) {
+    return trap_code == 0 ? fallback(current, current.ip, stack_height)
                           : trap(current, trap_code);
   }
   ++current.ip;
-  [[clang::musttail]] return dispatch<Debugger>(context, sp, local_base,
-                                                top_value(current, sp));
+  return {kContinue};
 }
 
-template <typename Debugger>
-FIREBALL_CPS_CALL step_result h_i64_const(execution_context *context,
-                                          std::uint32_t *sp,
-                                          std::uint32_t *local_base,
-                                          std::uint32_t) {
+template <typename Debugger,
+          bool (*Operation)(execution_context &, std::uint32_t *&,
+                            std::uint32_t &, std::uint32_t &)>
+FIREBALL_CPS_CALL op_result h_conversion(execution_context *context,
+                                         std::uint32_t *sp,
+                                         std::uint32_t *local_base,
+                                         std::uint32_t tos) {
+  const auto outcome = runtime_conversion<Operation>(context, sp, tos);
+  if (outcome.kind != kContinue)
+    return outcome;
+  [[clang::musttail]] return dispatch_next<Debugger>(context, sp, local_base,
+                                                     tos);
+}
+
+[[gnu::always_inline]] inline op_result
+runtime_i64_const(execution_context *context, std::uint32_t *&sp,
+                  std::uint32_t &tos) {
   auto &current = *context;
   auto operand_ip = current.ip + 1;
   std::int64_t value = 0;
   if (!read_s64(current, operand_ip, value))
     return fallback(current, current.ip);
-  if (!push_u64(current, sp, static_cast<std::uint64_t>(value))) {
+  if (!push_u64(current, sp, tos, static_cast<std::uint64_t>(value))) {
     return trap(current, kTrapOperandStackCapacity);
   }
   current.ip = operand_ip;
-  [[clang::musttail]] return dispatch<Debugger>(context, sp, local_base,
-                                                top_value(current, sp));
+  return {kContinue};
 }
 
 template <typename Debugger>
-FIREBALL_CPS_CALL step_result h_f32_const(execution_context *context,
-                                          std::uint32_t *sp,
-                                          std::uint32_t *local_base,
-                                          std::uint32_t) {
+FIREBALL_CPS_CALL op_result h_i64_const(execution_context *context,
+                                        std::uint32_t *sp,
+                                        std::uint32_t *local_base,
+                                        std::uint32_t tos) {
+  const auto outcome = runtime_i64_const(context, sp, tos);
+  if (outcome.kind != kContinue)
+    return outcome;
+  [[clang::musttail]] return dispatch_next<Debugger>(context, sp, local_base,
+                                                     tos);
+}
+
+[[gnu::always_inline]] inline op_result
+runtime_f32_const(execution_context *context, std::uint32_t *&sp,
+                  std::uint32_t &tos) {
   auto &current = *context;
   if (current.ip + 5 > current.code_size)
     return fallback(current, current.ip);
@@ -2063,18 +2324,27 @@ FIREBALL_CPS_CALL step_result h_f32_const(execution_context *context,
       (static_cast<std::uint32_t>(current.code[current.ip + 2]) << 8) |
       (static_cast<std::uint32_t>(current.code[current.ip + 3]) << 16) |
       (static_cast<std::uint32_t>(current.code[current.ip + 4]) << 24);
-  if (!push(current, sp, bits))
+  if (!push(current, sp, tos, bits))
     return trap(current, kTrapOperandStackCapacity);
   current.ip += 5;
-  [[clang::musttail]] return dispatch<Debugger>(context, sp, local_base,
-                                                top_value(current, sp));
+  return {kContinue};
 }
 
 template <typename Debugger>
-FIREBALL_CPS_CALL step_result h_f64_const(execution_context *context,
-                                          std::uint32_t *sp,
-                                          std::uint32_t *local_base,
-                                          std::uint32_t) {
+FIREBALL_CPS_CALL op_result h_f32_const(execution_context *context,
+                                        std::uint32_t *sp,
+                                        std::uint32_t *local_base,
+                                        std::uint32_t tos) {
+  const auto outcome = runtime_f32_const(context, sp, tos);
+  if (outcome.kind != kContinue)
+    return outcome;
+  [[clang::musttail]] return dispatch_next<Debugger>(context, sp, local_base,
+                                                     tos);
+}
+
+[[gnu::always_inline]] inline op_result
+runtime_f64_const(execution_context *context, std::uint32_t *&sp,
+                  std::uint32_t &tos) {
   auto &current = *context;
   if (current.ip + 9 > current.code_size)
     return fallback(current, current.ip);
@@ -2083,11 +2353,22 @@ FIREBALL_CPS_CALL step_result h_f64_const(execution_context *context,
     bits |= static_cast<std::uint64_t>(current.code[current.ip + 1 + byte])
             << (byte * 8);
   }
-  if (!push_u64(current, sp, bits))
+  if (!push_u64(current, sp, tos, bits))
     return trap(current, kTrapOperandStackCapacity);
   current.ip += 9;
-  [[clang::musttail]] return dispatch<Debugger>(context, sp, local_base,
-                                                top_value(current, sp));
+  return {kContinue};
+}
+
+template <typename Debugger>
+FIREBALL_CPS_CALL op_result h_f64_const(execution_context *context,
+                                        std::uint32_t *sp,
+                                        std::uint32_t *local_base,
+                                        std::uint32_t tos) {
+  const auto outcome = runtime_f64_const(context, sp, tos);
+  if (outcome.kind != kContinue)
+    return outcome;
+  [[clang::musttail]] return dispatch_next<Debugger>(context, sp, local_base,
+                                                     tos);
 }
 
 template <std::uint32_t Width>
@@ -2099,12 +2380,10 @@ std::uint64_t sign_extend_memory_value(std::uint64_t value) {
   return value;
 }
 
-template <typename Debugger, std::uint32_t Width, std::uint32_t ResultWords,
-          bool Signed>
-FIREBALL_CPS_CALL step_result h_memory_load(execution_context *context,
-                                            std::uint32_t *sp,
-                                            std::uint32_t *local_base,
-                                            std::uint32_t) {
+template <std::uint32_t Width, std::uint32_t ResultWords, bool Signed>
+[[gnu::always_inline]] inline op_result
+runtime_memory_load(execution_context *context, std::uint32_t *&sp,
+                    std::uint32_t &tos) {
   auto &current = *context;
   auto operand_ip = current.ip + 1;
   std::uint32_t alignment = 0;
@@ -2115,7 +2394,7 @@ FIREBALL_CPS_CALL step_result h_memory_load(execution_context *context,
   }
   (void)alignment;
 
-  const auto address = sp[current.sp_offset - 1];
+  const auto address = tos;
   if ((address & 0x8000'0000u) != 0)
     return fallback(current, current.ip);
   const auto effective_address = static_cast<std::uint64_t>(address) + offset;
@@ -2137,24 +2416,37 @@ FIREBALL_CPS_CALL step_result h_memory_load(execution_context *context,
   if constexpr (Signed)
     value = sign_extend_memory_value<Width>(value);
 
-  --current.sp_offset;
-  const bool pushed = [&]() {
-    if constexpr (ResultWords == 2)
-      return push_u64(current, sp, value);
-    return push(current, sp, static_cast<std::uint32_t>(value));
-  }();
-  if (!pushed)
-    return fallback(current, current.ip);
+  if constexpr (ResultWords == 2) {
+    sp[-1] = static_cast<std::uint32_t>(value);
+    tos = static_cast<std::uint32_t>(value >> 32);
+    *sp++ = tos;
+    ++current.sp_offset;
+  } else {
+    tos = static_cast<std::uint32_t>(value);
+    sp[-1] = tos;
+  }
   current.ip = operand_ip;
-  [[clang::musttail]] return dispatch<Debugger>(context, sp, local_base,
-                                                top_value(current, sp));
+  return {kContinue};
 }
 
-template <typename Debugger, std::uint32_t Width, std::uint32_t ValueWords>
-FIREBALL_CPS_CALL step_result h_memory_store(execution_context *context,
-                                             std::uint32_t *sp,
-                                             std::uint32_t *local_base,
-                                             std::uint32_t) {
+template <typename Debugger, std::uint32_t Width, std::uint32_t ResultWords,
+          bool Signed>
+FIREBALL_CPS_CALL op_result h_memory_load(execution_context *context,
+                                          std::uint32_t *sp,
+                                          std::uint32_t *local_base,
+                                          std::uint32_t tos) {
+  const auto outcome =
+      runtime_memory_load<Width, ResultWords, Signed>(context, sp, tos);
+  if (outcome.kind != kContinue)
+    return outcome;
+  [[clang::musttail]] return dispatch_next<Debugger>(context, sp, local_base,
+                                                     tos);
+}
+
+template <std::uint32_t Width, std::uint32_t ValueWords>
+[[gnu::always_inline]] inline op_result
+runtime_memory_store(execution_context *context, std::uint32_t *&sp,
+                     std::uint32_t &tos) {
   auto &current = *context;
   auto operand_ip = current.ip + 1;
   std::uint32_t alignment = 0;
@@ -2167,7 +2459,7 @@ FIREBALL_CPS_CALL step_result h_memory_store(execution_context *context,
   (void)alignment;
 
   const auto address_index = current.sp_offset - ValueWords - 1;
-  const auto address = sp[address_index];
+  const auto address = sp[-static_cast<std::ptrdiff_t>(ValueWords + 1)];
   if ((address & 0x8000'0000u) != 0)
     return fallback(current, current.ip);
   const auto effective_address = static_cast<std::uint64_t>(address) + offset;
@@ -2177,44 +2469,70 @@ FIREBALL_CPS_CALL step_result h_memory_store(execution_context *context,
   if (current.linear_memory_host_base == nullptr)
     return fallback(current, current.ip);
 
-  std::uint64_t value = sp[address_index + 1];
+  std::uint64_t value = sp[-static_cast<std::ptrdiff_t>(ValueWords)];
   if constexpr (ValueWords == 2) {
-    value |= static_cast<std::uint64_t>(sp[address_index + 2]) << 32;
+    value |= static_cast<std::uint64_t>(sp[-1]) << 32;
   }
   for (std::uint32_t byte = 0; byte < Width; ++byte) {
     current.linear_memory_host_base[effective_address + byte] =
         static_cast<std::uint8_t>(value >> (byte * 8));
   }
   current.sp_offset = address_index;
+  sp -= ValueWords + 1;
+  tos = current.sp_offset == 0 ? 0 : sp[-1];
   current.ip = operand_ip;
-  [[clang::musttail]] return dispatch<Debugger>(context, sp, local_base,
-                                                top_value(current, sp));
+  return {kContinue};
 }
 
-template <typename Debugger,
-          bool (*Operation)(execution_context &, std::uint32_t *)>
-FIREBALL_CPS_CALL step_result
-h_fc_saturating_conversion(execution_context *context, std::uint32_t *sp,
-                           std::uint32_t *local_base, std::uint32_t) {
+template <typename Debugger, std::uint32_t Width, std::uint32_t ValueWords>
+FIREBALL_CPS_CALL op_result h_memory_store(execution_context *context,
+                                           std::uint32_t *sp,
+                                           std::uint32_t *local_base,
+                                           std::uint32_t tos) {
+  const auto outcome =
+      runtime_memory_store<Width, ValueWords>(context, sp, tos);
+  if (outcome.kind != kContinue)
+    return outcome;
+  [[clang::musttail]] return dispatch_next<Debugger>(context, sp, local_base,
+                                                     tos);
+}
+
+template <bool (*Operation)(execution_context &, std::uint32_t *&,
+                            std::uint32_t &)>
+[[gnu::always_inline]] inline op_result
+runtime_fc_saturating_conversion(execution_context *context, std::uint32_t *&sp,
+                                 std::uint32_t &tos) {
   auto &current = *context;
   auto operand_ip = current.ip + 1;
   std::uint32_t subopcode = 0;
+  const auto stack_height = current.sp_offset;
   if (!read_u32(current, operand_ip, subopcode) || subopcode > 7 ||
-      !Operation(current, sp)) {
-    return fallback(current, current.ip);
+      !Operation(current, sp, tos)) {
+    return fallback(current, current.ip, stack_height);
   }
   current.ip = operand_ip;
   if (should_stop_after_control(current))
     return block_boundary(current, current.ip);
-  [[clang::musttail]] return dispatch<Debugger>(context, sp, local_base,
-                                                top_value(current, sp));
+  return {kContinue};
 }
 
-template <typename Debugger>
-FIREBALL_CPS_CALL step_result h_fc_memory_copy(execution_context *context,
-                                               std::uint32_t *sp,
-                                               std::uint32_t *local_base,
-                                               std::uint32_t) {
+template <typename Debugger,
+          bool (*Operation)(execution_context &, std::uint32_t *&,
+                            std::uint32_t &)>
+FIREBALL_CPS_CALL op_result
+h_fc_saturating_conversion(execution_context *context, std::uint32_t *sp,
+                           std::uint32_t *local_base, std::uint32_t tos) {
+  const auto outcome =
+      runtime_fc_saturating_conversion<Operation>(context, sp, tos);
+  if (outcome.kind != kContinue)
+    return outcome;
+  [[clang::musttail]] return dispatch_next<Debugger>(context, sp, local_base,
+                                                     tos);
+}
+
+[[gnu::always_inline]] inline op_result
+runtime_fc_memory_copy(execution_context *context, std::uint32_t *&sp,
+                       std::uint32_t &tos) {
   auto &current = *context;
   auto operand_ip = current.ip + 1;
   std::uint32_t subopcode = 0;
@@ -2228,9 +2546,9 @@ FIREBALL_CPS_CALL step_result h_fc_memory_copy(execution_context *context,
   }
 
   const auto destination_index = current.sp_offset - 3;
-  const auto destination = sp[destination_index];
-  const auto source = sp[destination_index + 1];
-  const auto length = sp[destination_index + 2];
+  const auto destination = sp[-3];
+  const auto source = sp[-2];
+  const auto length = sp[-1];
   if (((destination | source) & 0x8000'0000u) != 0)
     return fallback(current, current.ip);
   if (!linear_memory_range_is_valid(current, destination, length) ||
@@ -2244,18 +2562,29 @@ FIREBALL_CPS_CALL step_result h_fc_memory_copy(execution_context *context,
     std::memmove(memory + destination, memory + source, length);
   }
   current.sp_offset = destination_index;
+  sp -= 3;
+  tos = current.sp_offset == 0 ? 0 : sp[-1];
   current.ip = operand_ip;
   if (should_stop_after_control(current))
     return block_boundary(current, current.ip);
-  [[clang::musttail]] return dispatch<Debugger>(context, sp, local_base,
-                                                top_value(current, sp));
+  return {kContinue};
 }
 
 template <typename Debugger>
-FIREBALL_CPS_CALL step_result h_fc_memory_fill(execution_context *context,
-                                               std::uint32_t *sp,
-                                               std::uint32_t *local_base,
-                                               std::uint32_t) {
+FIREBALL_CPS_CALL op_result h_fc_memory_copy(execution_context *context,
+                                             std::uint32_t *sp,
+                                             std::uint32_t *local_base,
+                                             std::uint32_t tos) {
+  const auto outcome = runtime_fc_memory_copy(context, sp, tos);
+  if (outcome.kind != kContinue)
+    return outcome;
+  [[clang::musttail]] return dispatch_next<Debugger>(context, sp, local_base,
+                                                     tos);
+}
+
+[[gnu::always_inline]] inline op_result
+runtime_fc_memory_fill(execution_context *context, std::uint32_t *&sp,
+                       std::uint32_t &tos) {
   auto &current = *context;
   auto operand_ip = current.ip + 1;
   std::uint32_t subopcode = 0;
@@ -2267,9 +2596,9 @@ FIREBALL_CPS_CALL step_result h_fc_memory_fill(execution_context *context,
   }
 
   const auto destination_index = current.sp_offset - 3;
-  const auto destination = sp[destination_index];
-  const auto value = static_cast<std::uint8_t>(sp[destination_index + 1]);
-  const auto length = sp[destination_index + 2];
+  const auto destination = sp[-3];
+  const auto value = static_cast<std::uint8_t>(sp[-2]);
+  const auto length = sp[-1];
   if (!linear_memory_range_is_valid(current, destination, length)) {
     return trap(current, kTrapMemoryOutOfBounds);
   }
@@ -2279,15 +2608,27 @@ FIREBALL_CPS_CALL step_result h_fc_memory_fill(execution_context *context,
     std::memset(current.linear_memory_host_base + destination, value, length);
   }
   current.sp_offset = destination_index;
+  sp -= 3;
+  tos = current.sp_offset == 0 ? 0 : sp[-1];
   current.ip = operand_ip;
   if (should_stop_after_control(current))
     return block_boundary(current, current.ip);
-  [[clang::musttail]] return dispatch<Debugger>(context, sp, local_base,
-                                                top_value(current, sp));
+  return {kContinue};
+}
+
+template <typename Debugger>
+FIREBALL_CPS_CALL op_result h_fc_memory_fill(execution_context *context,
+                                             std::uint32_t *sp,
+                                             std::uint32_t *local_base,
+                                             std::uint32_t tos) {
+  const auto outcome = runtime_fc_memory_fill(context, sp, tos);
+  if (outcome.kind != kContinue)
+    return outcome;
+  [[clang::musttail]] return dispatch_next<Debugger>(context, sp, local_base,
+                                                     tos);
 }
 
 constexpr std::uint8_t kOpcodeControlTerminator = 1u << 0;
-constexpr std::uint8_t kOpcodePrefixed = 1u << 1;
 constexpr std::uint8_t kOpcodeBlockBody = 1u << 2;
 
 constexpr auto make_opcode_attributes() {
@@ -2295,15 +2636,11 @@ constexpr auto make_opcode_attributes() {
   const auto set_control_terminator = [&attributes](std::uint8_t opcode) {
     attributes[opcode] |= kOpcodeControlTerminator;
   };
-  const auto set_prefixed = [&attributes](std::uint8_t opcode) {
-    attributes[opcode] |= kOpcodePrefixed;
-  };
 
   for (const auto opcode : {0x02u, 0x03u, 0x04u, 0x05u, 0x0Bu, 0x0Cu, 0x0Du,
                             0x0Eu, 0x0Fu, 0x10u, 0x11u}) {
     set_control_terminator(static_cast<std::uint8_t>(opcode));
   }
-  set_prefixed(kOpcodeFcPrefix);
   // Match Loader's _IS_BB_OPCODE ordinary instructions. CALL remains a
   // control boundary and must not create a control-only hotspot visit.
   for (const auto opcode :
@@ -2326,623 +2663,293 @@ bool opcode_is_block_body(std::uint8_t opcode) {
   return (kOpcodeAttributes[opcode] & kOpcodeBlockBody) != 0;
 }
 
+[[gnu::always_inline]] inline op_result
+runtime_unsupported_opcode(execution_context &context) {
+  return fallback(context, context.ip);
+}
+
 template <typename Debugger>
-FIREBALL_CPS_CALL step_result dispatch(execution_context *context,
-                                       std::uint32_t *sp,
-                                       std::uint32_t *local_base,
-                                       std::uint32_t tos) {
-  auto &current = *context;
-  if (is_requested_block_boundary(current))
-    return block_boundary(current, current.ip);
-  if (current.ip >= current.code_size) {
-    if (finish_current_function(current))
-      return complete(current);
-    [[clang::musttail]] return dispatch<Debugger>(context, sp, local_base,
-                                                  top_value(current, sp));
+FIREBALL_CPS_CALL op_result h_unsupported_opcode(execution_context *context,
+                                                 std::uint32_t *,
+                                                 std::uint32_t *,
+                                                 std::uint32_t) {
+  return runtime_unsupported_opcode(*context);
+}
+
+template <typename Debugger>
+using handler_pointer = decltype(&h_unreachable<Debugger>);
+
+template <typename Debugger>
+constexpr auto kFcOpcodeHandlers = [] {
+  std::array<handler_pointer<Debugger>, 12> handlers{};
+  handlers.fill(&h_unsupported_opcode<Debugger>);
+  handlers[0x00] =
+      &h_fc_saturating_conversion<Debugger,
+                                  conversion_truncate_sat_i32<float, true>>;
+  handlers[0x01] =
+      &h_fc_saturating_conversion<Debugger,
+                                  conversion_truncate_sat_i32<float, false>>;
+  handlers[0x02] =
+      &h_fc_saturating_conversion<Debugger,
+                                  conversion_truncate_sat_i32<double, true>>;
+  handlers[0x03] =
+      &h_fc_saturating_conversion<Debugger,
+                                  conversion_truncate_sat_i32<double, false>>;
+  handlers[0x04] =
+      &h_fc_saturating_conversion<Debugger,
+                                  conversion_truncate_sat_i64<float, true>>;
+  handlers[0x05] =
+      &h_fc_saturating_conversion<Debugger,
+                                  conversion_truncate_sat_i64<float, false>>;
+  handlers[0x06] =
+      &h_fc_saturating_conversion<Debugger,
+                                  conversion_truncate_sat_i64<double, true>>;
+  handlers[0x07] =
+      &h_fc_saturating_conversion<Debugger,
+                                  conversion_truncate_sat_i64<double, false>>;
+  handlers[0x0A] = &h_fc_memory_copy<Debugger>;
+  handlers[0x0B] = &h_fc_memory_fill<Debugger>;
+  return handlers;
+}();
+
+[[gnu::always_inline]] inline op_result
+runtime_fc_subopcode(execution_context &current, std::uint32_t &subopcode) {
+  auto operand_ip = current.ip + 1;
+  if (!read_u32(current, operand_ip, subopcode))
+    return fallback(current, current.ip);
+  return {kContinue};
+}
+
+template <typename Debugger>
+FIREBALL_CPS_CALL op_result h_fc_dispatch(execution_context *context,
+                                          std::uint32_t *sp,
+                                          std::uint32_t *local_base,
+                                          std::uint32_t tos) {
+  std::uint32_t subopcode = 0;
+  const auto outcome = runtime_fc_subopcode(*context, subopcode);
+  if (outcome.kind != kContinue)
+    return outcome;
+  if (subopcode >= kFcOpcodeHandlers<Debugger>.size()) {
+    [[clang::musttail]] return h_unsupported_opcode<Debugger>(context, sp,
+                                                              local_base, tos);
   }
+  [[clang::musttail]] return kFcOpcodeHandlers<Debugger>[subopcode](
+      context, sp, local_base, tos);
+}
+
+template <typename Debugger>
+constexpr auto kOpcodeHandlers = [] {
+  std::array<handler_pointer<Debugger>, 256> handlers{};
+  handlers.fill(&h_unsupported_opcode<Debugger>);
+  handlers[0x00] = &h_unreachable<Debugger>;
+  handlers[0x01] = &h_nop<Debugger>;
+  handlers[0x02] = &h_block<Debugger, false>;
+  handlers[0x03] = &h_block<Debugger, true>;
+  handlers[0x04] = &h_if<Debugger>;
+  handlers[0x05] = &h_else<Debugger>;
+  handlers[0x0B] = &h_end<Debugger>;
+  handlers[0x0C] = &h_br<Debugger>;
+  handlers[0x0D] = &h_br_if<Debugger>;
+  handlers[0x0E] = &h_br_table<Debugger>;
+  handlers[0x0F] = &h_return<Debugger>;
+  handlers[0x10] = &h_call<Debugger, false>;
+  handlers[0x11] = &h_call<Debugger, true>;
+  handlers[0x1A] = &h_drop<Debugger>;
+  handlers[0x1B] = &h_select<Debugger>;
+  handlers[0x20] = &h_local_get<Debugger>;
+  handlers[0x21] = &h_local_set<Debugger>;
+  handlers[0x22] = &h_local_tee<Debugger>;
+  handlers[0x23] = &h_global_get<Debugger>;
+  handlers[0x24] = &h_global_set<Debugger>;
+  handlers[0x28] = &h_memory_load<Debugger, 4, 1, false>;
+  handlers[0x29] = &h_memory_load<Debugger, 8, 2, false>;
+  handlers[0x2A] = &h_memory_load<Debugger, 4, 1, false>;
+  handlers[0x2B] = &h_memory_load<Debugger, 8, 2, false>;
+  handlers[0x2C] = &h_memory_load<Debugger, 1, 1, true>;
+  handlers[0x2D] = &h_memory_load<Debugger, 1, 1, false>;
+  handlers[0x2E] = &h_memory_load<Debugger, 2, 1, true>;
+  handlers[0x2F] = &h_memory_load<Debugger, 2, 1, false>;
+  handlers[0x30] = &h_memory_load<Debugger, 1, 2, true>;
+  handlers[0x31] = &h_memory_load<Debugger, 1, 2, false>;
+  handlers[0x32] = &h_memory_load<Debugger, 2, 2, true>;
+  handlers[0x33] = &h_memory_load<Debugger, 2, 2, false>;
+  handlers[0x34] = &h_memory_load<Debugger, 4, 2, true>;
+  handlers[0x35] = &h_memory_load<Debugger, 4, 2, false>;
+  handlers[0x36] = &h_memory_store<Debugger, 4, 1>;
+  handlers[0x37] = &h_memory_store<Debugger, 8, 2>;
+  handlers[0x38] = &h_memory_store<Debugger, 4, 1>;
+  handlers[0x39] = &h_memory_store<Debugger, 8, 2>;
+  handlers[0x3A] = &h_memory_store<Debugger, 1, 1>;
+  handlers[0x3B] = &h_memory_store<Debugger, 2, 1>;
+  handlers[0x3C] = &h_memory_store<Debugger, 1, 2>;
+  handlers[0x3D] = &h_memory_store<Debugger, 2, 2>;
+  handlers[0x3E] = &h_memory_store<Debugger, 4, 2>;
+  handlers[0x41] = &h_i32_const<Debugger>;
+  handlers[0x42] = &h_i64_const<Debugger>;
+  handlers[0x43] = &h_f32_const<Debugger>;
+  handlers[0x44] = &h_f64_const<Debugger>;
+  handlers[0x45] = &h_i32_unary<Debugger, i32_eqz>;
+  handlers[0x46] = &h_i32_binary<Debugger, op_eq>;
+  handlers[0x47] = &h_i32_binary<Debugger, op_ne>;
+  handlers[0x48] = &h_i32_binary<Debugger, op_lt_s>;
+  handlers[0x49] = &h_i32_binary<Debugger, op_lt_u>;
+  handlers[0x4A] = &h_i32_binary<Debugger, op_gt_s>;
+  handlers[0x4B] = &h_i32_binary<Debugger, op_gt_u>;
+  handlers[0x4C] = &h_i32_binary<Debugger, op_le_s>;
+  handlers[0x4D] = &h_i32_binary<Debugger, op_le_u>;
+  handlers[0x4E] = &h_i32_binary<Debugger, op_ge_s>;
+  handlers[0x4F] = &h_i32_binary<Debugger, op_ge_u>;
+  handlers[0x50] = &h_i64_unary<Debugger, i64_eqz, true>;
+  handlers[0x51] = &h_i64_binary<Debugger, i64_eq, true>;
+  handlers[0x52] = &h_i64_binary<Debugger, i64_ne, true>;
+  handlers[0x53] = &h_i64_binary<Debugger, i64_lt_s, true>;
+  handlers[0x54] = &h_i64_binary<Debugger, i64_lt_u, true>;
+  handlers[0x55] = &h_i64_binary<Debugger, i64_gt_s, true>;
+  handlers[0x56] = &h_i64_binary<Debugger, i64_gt_u, true>;
+  handlers[0x57] = &h_i64_binary<Debugger, i64_le_s, true>;
+  handlers[0x58] = &h_i64_binary<Debugger, i64_le_u, true>;
+  handlers[0x59] = &h_i64_binary<Debugger, i64_ge_s, true>;
+  handlers[0x5A] = &h_i64_binary<Debugger, i64_ge_u, true>;
+  handlers[0x5B] = &h_f32_binary<Debugger, f32_eq, true>;
+  handlers[0x5C] = &h_f32_binary<Debugger, f32_ne, true>;
+  handlers[0x5D] = &h_f32_binary<Debugger, f32_lt, true>;
+  handlers[0x5E] = &h_f32_binary<Debugger, f32_gt, true>;
+  handlers[0x5F] = &h_f32_binary<Debugger, f32_le, true>;
+  handlers[0x60] = &h_f32_binary<Debugger, f32_ge, true>;
+  handlers[0x61] = &h_f64_binary<Debugger, f64_eq, true>;
+  handlers[0x62] = &h_f64_binary<Debugger, f64_ne, true>;
+  handlers[0x63] = &h_f64_binary<Debugger, f64_lt, true>;
+  handlers[0x64] = &h_f64_binary<Debugger, f64_gt, true>;
+  handlers[0x65] = &h_f64_binary<Debugger, f64_le, true>;
+  handlers[0x66] = &h_f64_binary<Debugger, f64_ge, true>;
+  handlers[0x67] = &h_i32_unary<Debugger, i32_clz>;
+  handlers[0x68] = &h_i32_unary<Debugger, i32_ctz>;
+  handlers[0x69] = &h_i32_unary<Debugger, i32_popcnt>;
+  handlers[0x6A] = &h_i32_binary<Debugger, op_add>;
+  handlers[0x6B] = &h_i32_binary<Debugger, op_sub>;
+  handlers[0x6C] = &h_i32_binary<Debugger, op_mul>;
+  handlers[0x6D] = &h_i32_checked_binary<Debugger, evaluate_div_s>;
+  handlers[0x6E] = &h_i32_checked_binary<Debugger, evaluate_div_u>;
+  handlers[0x6F] = &h_i32_checked_binary<Debugger, evaluate_rem_s>;
+  handlers[0x70] = &h_i32_checked_binary<Debugger, evaluate_rem_u>;
+  handlers[0x71] = &h_i32_binary<Debugger, op_and>;
+  handlers[0x72] = &h_i32_binary<Debugger, op_or>;
+  handlers[0x73] = &h_i32_binary<Debugger, op_xor>;
+  handlers[0x74] = &h_i32_binary<Debugger, op_shl>;
+  handlers[0x75] = &h_i32_binary<Debugger, op_shr_s>;
+  handlers[0x76] = &h_i32_binary<Debugger, op_shr_u>;
+  handlers[0x77] = &h_i32_binary<Debugger, op_rotl>;
+  handlers[0x78] = &h_i32_binary<Debugger, op_rotr>;
+  handlers[0x79] = &h_i64_unary<Debugger, i64_clz, false>;
+  handlers[0x7A] = &h_i64_unary<Debugger, i64_ctz, false>;
+  handlers[0x7B] = &h_i64_unary<Debugger, i64_popcnt, false>;
+  handlers[0x7C] = &h_i64_binary<Debugger, i64_add, false>;
+  handlers[0x7D] = &h_i64_binary<Debugger, i64_sub, false>;
+  handlers[0x7E] = &h_i64_binary<Debugger, i64_mul, false>;
+  handlers[0x7F] = &h_i64_checked_binary<Debugger, i64_div_s, false>;
+  handlers[0x80] = &h_i64_checked_binary<Debugger, i64_div_u, false>;
+  handlers[0x81] = &h_i64_checked_binary<Debugger, i64_rem_s, false>;
+  handlers[0x82] = &h_i64_checked_binary<Debugger, i64_rem_u, false>;
+  handlers[0x83] = &h_i64_binary<Debugger, i64_and, false>;
+  handlers[0x84] = &h_i64_binary<Debugger, i64_or, false>;
+  handlers[0x85] = &h_i64_binary<Debugger, i64_xor, false>;
+  handlers[0x86] = &h_i64_binary<Debugger, i64_shl, false>;
+  handlers[0x87] = &h_i64_binary<Debugger, i64_shr_s, false>;
+  handlers[0x88] = &h_i64_binary<Debugger, i64_shr_u, false>;
+  handlers[0x89] = &h_i64_binary<Debugger, i64_rotl, false>;
+  handlers[0x8A] = &h_i64_binary<Debugger, i64_rotr, false>;
+  handlers[0x8B] = &h_f32_unary<Debugger, f32_abs>;
+  handlers[0x8C] = &h_f32_unary<Debugger, f32_neg>;
+  handlers[0x8D] = &h_f32_unary<Debugger, f32_ceil>;
+  handlers[0x8E] = &h_f32_unary<Debugger, f32_floor>;
+  handlers[0x8F] = &h_f32_unary<Debugger, f32_trunc>;
+  handlers[0x90] = &h_f32_unary<Debugger, f32_nearest>;
+  handlers[0x91] = &h_f32_unary<Debugger, f32_sqrt>;
+  handlers[0x92] = &h_f32_binary<Debugger, f32_add, false>;
+  handlers[0x93] = &h_f32_binary<Debugger, f32_sub, false>;
+  handlers[0x94] = &h_f32_binary<Debugger, f32_mul, false>;
+  handlers[0x95] = &h_f32_binary<Debugger, f32_div, false>;
+  handlers[0x96] = &h_f32_binary<Debugger, f32_min, false>;
+  handlers[0x97] = &h_f32_binary<Debugger, f32_max, false>;
+  handlers[0x98] = &h_f32_binary<Debugger, f32_copysign, false>;
+  handlers[0x99] = &h_f64_unary<Debugger, f64_abs>;
+  handlers[0x9A] = &h_f64_unary<Debugger, f64_neg>;
+  handlers[0x9B] = &h_f64_unary<Debugger, f64_ceil>;
+  handlers[0x9C] = &h_f64_unary<Debugger, f64_floor>;
+  handlers[0x9D] = &h_f64_unary<Debugger, f64_trunc>;
+  handlers[0x9E] = &h_f64_unary<Debugger, f64_nearest>;
+  handlers[0x9F] = &h_f64_unary<Debugger, f64_sqrt>;
+  handlers[0xA0] = &h_f64_binary<Debugger, f64_add, false>;
+  handlers[0xA1] = &h_f64_binary<Debugger, f64_sub, false>;
+  handlers[0xA2] = &h_f64_binary<Debugger, f64_mul, false>;
+  handlers[0xA3] = &h_f64_binary<Debugger, f64_div, false>;
+  handlers[0xA4] = &h_f64_binary<Debugger, f64_min, false>;
+  handlers[0xA5] = &h_f64_binary<Debugger, f64_max, false>;
+  handlers[0xA6] = &h_f64_binary<Debugger, f64_copysign, false>;
+  handlers[0xA7] = &h_conversion<Debugger, conversion_i32_wrap_i64>;
+  handlers[0xA8] =
+      &h_conversion<Debugger, conversion_truncate_i32<float, true>>;
+  handlers[0xA9] =
+      &h_conversion<Debugger, conversion_truncate_i32<float, false>>;
+  handlers[0xAA] =
+      &h_conversion<Debugger, conversion_truncate_i32<double, true>>;
+  handlers[0xAB] =
+      &h_conversion<Debugger, conversion_truncate_i32<double, false>>;
+  handlers[0xAC] = &h_conversion<Debugger, conversion_i64_extend_i32_s>;
+  handlers[0xAD] = &h_conversion<Debugger, conversion_i64_extend_i32_u>;
+  handlers[0xAE] =
+      &h_conversion<Debugger, conversion_truncate_i64<float, true>>;
+  handlers[0xAF] =
+      &h_conversion<Debugger, conversion_truncate_i64<float, false>>;
+  handlers[0xB0] =
+      &h_conversion<Debugger, conversion_truncate_i64<double, true>>;
+  handlers[0xB1] =
+      &h_conversion<Debugger, conversion_truncate_i64<double, false>>;
+  handlers[0xB2] = &h_conversion<Debugger, conversion_f32_convert_i32_s>;
+  handlers[0xB3] = &h_conversion<Debugger, conversion_f32_convert_i32_u>;
+  handlers[0xB4] = &h_conversion<Debugger, conversion_f32_convert_i64_s>;
+  handlers[0xB5] = &h_conversion<Debugger, conversion_f32_convert_i64_u>;
+  handlers[0xB6] = &h_conversion<Debugger, conversion_f32_demote_f64>;
+  handlers[0xB7] = &h_conversion<Debugger, conversion_f64_convert_i32_s>;
+  handlers[0xB8] = &h_conversion<Debugger, conversion_f64_convert_i32_u>;
+  handlers[0xB9] = &h_conversion<Debugger, conversion_f64_convert_i64_s>;
+  handlers[0xBA] = &h_conversion<Debugger, conversion_f64_convert_i64_u>;
+  handlers[0xBB] = &h_conversion<Debugger, conversion_f64_promote_f32>;
+  handlers[0xBC] = &h_conversion<Debugger, conversion_identity>;
+  handlers[0xBD] = &h_conversion<Debugger, conversion_identity>;
+  handlers[0xBE] = &h_conversion<Debugger, conversion_identity>;
+  handlers[0xBF] = &h_conversion<Debugger, conversion_identity>;
+  handlers[0xC0] = &h_i32_unary<Debugger, i32_extend8>;
+  handlers[0xC1] = &h_i32_unary<Debugger, i32_extend16>;
+  handlers[0xC2] = &h_i64_unary<Debugger, i64_extend8, false>;
+  handlers[0xC3] = &h_i64_unary<Debugger, i64_extend16, false>;
+  handlers[0xC4] = &h_i64_unary<Debugger, i64_extend32, false>;
+  handlers[kOpcodeFcPrefix] = &h_fc_dispatch<Debugger>;
+  return handlers;
+}();
+
+template <typename Debugger>
+[[gnu::always_inline]] inline FIREBALL_CPS_CALL op_result
+dispatch_next(execution_context *context, std::uint32_t *sp,
+              std::uint32_t *local_base, std::uint32_t tos) {
+  auto &current = *context;
+  if ((current.runtime_flags & kStopAtBlockBoundaryFlag) != 0 &&
+      is_requested_block_boundary(current))
+    return block_boundary(current, current.ip);
 
   if constexpr (std::is_same_v<Debugger, debugger_aspect>) {
     if (Debugger::before_instruction(current))
       return debug_stop(current);
   }
 
-  current.stack_checkpoint = current.sp_offset;
   const auto opcode = current.code[current.ip];
-  const auto opcode_attributes = kOpcodeAttributes[opcode];
-  if ((opcode_attributes & kOpcodePrefixed) != 0) {
-    auto operand_ip = current.ip + 1;
-    std::uint32_t subopcode = 0;
-    if (!read_u32(current, operand_ip, subopcode))
-      return fallback(current, current.ip);
-    switch (subopcode) {
-    case 0x00:
-      [[clang::musttail]] return h_fc_saturating_conversion<
-          Debugger, conversion_truncate_sat_i32<float, true>>(context, sp,
-                                                              local_base, tos);
-    case 0x01:
-      [[clang::musttail]] return h_fc_saturating_conversion<
-          Debugger, conversion_truncate_sat_i32<float, false>>(context, sp,
+  [[clang::musttail]] return kOpcodeHandlers<Debugger>[opcode](context, sp,
                                                                local_base, tos);
-    case 0x02:
-      [[clang::musttail]] return h_fc_saturating_conversion<
-          Debugger, conversion_truncate_sat_i32<double, true>>(context, sp,
-                                                               local_base, tos);
-    case 0x03:
-      [[clang::musttail]] return h_fc_saturating_conversion<
-          Debugger, conversion_truncate_sat_i32<double, false>>(
-          context, sp, local_base, tos);
-    case 0x04:
-      [[clang::musttail]] return h_fc_saturating_conversion<
-          Debugger, conversion_truncate_sat_i64<float, true>>(context, sp,
-                                                              local_base, tos);
-    case 0x05:
-      [[clang::musttail]] return h_fc_saturating_conversion<
-          Debugger, conversion_truncate_sat_i64<float, false>>(context, sp,
-                                                               local_base, tos);
-    case 0x06:
-      [[clang::musttail]] return h_fc_saturating_conversion<
-          Debugger, conversion_truncate_sat_i64<double, true>>(context, sp,
-                                                               local_base, tos);
-    case 0x07:
-      [[clang::musttail]] return h_fc_saturating_conversion<
-          Debugger, conversion_truncate_sat_i64<double, false>>(
-          context, sp, local_base, tos);
-    case 0x0A:
-      [[clang::musttail]] return h_fc_memory_copy<Debugger>(context, sp,
-                                                            local_base, tos);
-    case 0x0B:
-      [[clang::musttail]] return h_fc_memory_fill<Debugger>(context, sp,
-                                                            local_base, tos);
-    default:
-      return fallback(current, current.ip);
-    }
-  }
-
-  switch (opcode) {
-  case 0x00:
-    [[clang::musttail]] return h_unreachable<Debugger>(context, sp, local_base,
-                                                       tos);
-  case 0x01:
-    [[clang::musttail]] return h_nop<Debugger>(context, sp, local_base, tos);
-  case 0x02:
-    [[clang::musttail]] return h_block<Debugger, false>(context, sp, local_base,
-                                                        tos);
-  case 0x03:
-    [[clang::musttail]] return h_block<Debugger, true>(context, sp, local_base,
-                                                       tos);
-  case 0x04:
-    [[clang::musttail]] return h_if<Debugger>(context, sp, local_base, tos);
-  case 0x05:
-    [[clang::musttail]] return h_else<Debugger>(context, sp, local_base, tos);
-  case 0x0B:
-    [[clang::musttail]] return h_end<Debugger>(context, sp, local_base, tos);
-  case 0x0C:
-    [[clang::musttail]] return h_br<Debugger>(context, sp, local_base, tos);
-  case 0x0D:
-    [[clang::musttail]] return h_br_if<Debugger>(context, sp, local_base, tos);
-  case 0x0E:
-    [[clang::musttail]] return h_br_table<Debugger>(context, sp, local_base,
-                                                    tos);
-  case 0x0F:
-    [[clang::musttail]] return h_return<Debugger>(context, sp, local_base, tos);
-  case 0x10:
-    [[clang::musttail]] return begin_native_call<Debugger, false>(
-        context, sp, local_base, tos);
-  case 0x11:
-    [[clang::musttail]] return begin_native_call<Debugger, true>(
-        context, sp, local_base, tos);
-  case 0x1A:
-    [[clang::musttail]] return h_drop<Debugger>(context, sp, local_base, tos);
-  case 0x1B:
-    [[clang::musttail]] return h_select<Debugger>(context, sp, local_base, tos);
-  case 0x20:
-    [[clang::musttail]] return h_local_get<Debugger>(context, sp, local_base,
-                                                     tos);
-  case 0x21:
-    [[clang::musttail]] return h_local_set<Debugger>(context, sp, local_base,
-                                                     tos);
-  case 0x22:
-    [[clang::musttail]] return h_local_tee<Debugger>(context, sp, local_base,
-                                                     tos);
-  case 0x23:
-    [[clang::musttail]] return h_global_get<Debugger>(context, sp, local_base,
-                                                      tos);
-  case 0x24:
-    [[clang::musttail]] return h_global_set<Debugger>(context, sp, local_base,
-                                                      tos);
-  case 0x28:
-    [[clang::musttail]] return h_memory_load<Debugger, 4, 1, false>(
-        context, sp, local_base, tos);
-  case 0x29:
-    [[clang::musttail]] return h_memory_load<Debugger, 8, 2, false>(
-        context, sp, local_base, tos);
-  case 0x2A:
-    [[clang::musttail]] return h_memory_load<Debugger, 4, 1, false>(
-        context, sp, local_base, tos);
-  case 0x2B:
-    [[clang::musttail]] return h_memory_load<Debugger, 8, 2, false>(
-        context, sp, local_base, tos);
-  case 0x2C:
-    [[clang::musttail]] return h_memory_load<Debugger, 1, 1, true>(
-        context, sp, local_base, tos);
-  case 0x2D:
-    [[clang::musttail]] return h_memory_load<Debugger, 1, 1, false>(
-        context, sp, local_base, tos);
-  case 0x2E:
-    [[clang::musttail]] return h_memory_load<Debugger, 2, 1, true>(
-        context, sp, local_base, tos);
-  case 0x2F:
-    [[clang::musttail]] return h_memory_load<Debugger, 2, 1, false>(
-        context, sp, local_base, tos);
-  case 0x30:
-    [[clang::musttail]] return h_memory_load<Debugger, 1, 2, true>(
-        context, sp, local_base, tos);
-  case 0x31:
-    [[clang::musttail]] return h_memory_load<Debugger, 1, 2, false>(
-        context, sp, local_base, tos);
-  case 0x32:
-    [[clang::musttail]] return h_memory_load<Debugger, 2, 2, true>(
-        context, sp, local_base, tos);
-  case 0x33:
-    [[clang::musttail]] return h_memory_load<Debugger, 2, 2, false>(
-        context, sp, local_base, tos);
-  case 0x34:
-    [[clang::musttail]] return h_memory_load<Debugger, 4, 2, true>(
-        context, sp, local_base, tos);
-  case 0x35:
-    [[clang::musttail]] return h_memory_load<Debugger, 4, 2, false>(
-        context, sp, local_base, tos);
-  case 0x36:
-    [[clang::musttail]] return h_memory_store<Debugger, 4, 1>(context, sp,
-                                                              local_base, tos);
-  case 0x37:
-    [[clang::musttail]] return h_memory_store<Debugger, 8, 2>(context, sp,
-                                                              local_base, tos);
-  case 0x38:
-    [[clang::musttail]] return h_memory_store<Debugger, 4, 1>(context, sp,
-                                                              local_base, tos);
-  case 0x39:
-    [[clang::musttail]] return h_memory_store<Debugger, 8, 2>(context, sp,
-                                                              local_base, tos);
-  case 0x3A:
-    [[clang::musttail]] return h_memory_store<Debugger, 1, 1>(context, sp,
-                                                              local_base, tos);
-  case 0x3B:
-    [[clang::musttail]] return h_memory_store<Debugger, 2, 1>(context, sp,
-                                                              local_base, tos);
-  case 0x3C:
-    [[clang::musttail]] return h_memory_store<Debugger, 1, 2>(context, sp,
-                                                              local_base, tos);
-  case 0x3D:
-    [[clang::musttail]] return h_memory_store<Debugger, 2, 2>(context, sp,
-                                                              local_base, tos);
-  case 0x3E:
-    [[clang::musttail]] return h_memory_store<Debugger, 4, 2>(context, sp,
-                                                              local_base, tos);
-  case 0x41:
-    [[clang::musttail]] return h_i32_const<Debugger>(context, sp, local_base,
-                                                     tos);
-  case 0x42:
-    [[clang::musttail]] return h_i64_const<Debugger>(context, sp, local_base,
-                                                     tos);
-  case 0x43:
-    [[clang::musttail]] return h_f32_const<Debugger>(context, sp, local_base,
-                                                     tos);
-  case 0x44:
-    [[clang::musttail]] return h_f64_const<Debugger>(context, sp, local_base,
-                                                     tos);
-  case 0x45:
-    [[clang::musttail]] return unary_i32_eqz<Debugger>(context, sp, local_base,
-                                                       tos);
-  case 0x46:
-    [[clang::musttail]] return h_i32_binary<Debugger, op_eq>(context, sp,
-                                                             local_base, tos);
-  case 0x47:
-    [[clang::musttail]] return h_i32_binary<Debugger, op_ne>(context, sp,
-                                                             local_base, tos);
-  case 0x48:
-    [[clang::musttail]] return h_i32_binary<Debugger, op_lt_s>(context, sp,
-                                                               local_base, tos);
-  case 0x49:
-    [[clang::musttail]] return h_i32_binary<Debugger, op_lt_u>(context, sp,
-                                                               local_base, tos);
-  case 0x4A:
-    [[clang::musttail]] return h_i32_binary<Debugger, op_gt_s>(context, sp,
-                                                               local_base, tos);
-  case 0x4B:
-    [[clang::musttail]] return h_i32_binary<Debugger, op_gt_u>(context, sp,
-                                                               local_base, tos);
-  case 0x4C:
-    [[clang::musttail]] return h_i32_binary<Debugger, op_le_s>(context, sp,
-                                                               local_base, tos);
-  case 0x4D:
-    [[clang::musttail]] return h_i32_binary<Debugger, op_le_u>(context, sp,
-                                                               local_base, tos);
-  case 0x4E:
-    [[clang::musttail]] return h_i32_binary<Debugger, op_ge_s>(context, sp,
-                                                               local_base, tos);
-  case 0x4F:
-    [[clang::musttail]] return h_i32_binary<Debugger, op_ge_u>(context, sp,
-                                                               local_base, tos);
-  case 0x50:
-    [[clang::musttail]] return h_i64_unary<Debugger, i64_eqz, true>(
-        context, sp, local_base, tos);
-  case 0x51:
-    [[clang::musttail]] return h_i64_binary<Debugger, i64_eq, true>(
-        context, sp, local_base, tos);
-  case 0x52:
-    [[clang::musttail]] return h_i64_binary<Debugger, i64_ne, true>(
-        context, sp, local_base, tos);
-  case 0x53:
-    [[clang::musttail]] return h_i64_binary<Debugger, i64_lt_s, true>(
-        context, sp, local_base, tos);
-  case 0x54:
-    [[clang::musttail]] return h_i64_binary<Debugger, i64_lt_u, true>(
-        context, sp, local_base, tos);
-  case 0x55:
-    [[clang::musttail]] return h_i64_binary<Debugger, i64_gt_s, true>(
-        context, sp, local_base, tos);
-  case 0x56:
-    [[clang::musttail]] return h_i64_binary<Debugger, i64_gt_u, true>(
-        context, sp, local_base, tos);
-  case 0x57:
-    [[clang::musttail]] return h_i64_binary<Debugger, i64_le_s, true>(
-        context, sp, local_base, tos);
-  case 0x58:
-    [[clang::musttail]] return h_i64_binary<Debugger, i64_le_u, true>(
-        context, sp, local_base, tos);
-  case 0x59:
-    [[clang::musttail]] return h_i64_binary<Debugger, i64_ge_s, true>(
-        context, sp, local_base, tos);
-  case 0x5A:
-    [[clang::musttail]] return h_i64_binary<Debugger, i64_ge_u, true>(
-        context, sp, local_base, tos);
-  case 0x5B:
-    [[clang::musttail]] return h_f32_binary<Debugger, f32_eq, true>(
-        context, sp, local_base, tos);
-  case 0x5C:
-    [[clang::musttail]] return h_f32_binary<Debugger, f32_ne, true>(
-        context, sp, local_base, tos);
-  case 0x5D:
-    [[clang::musttail]] return h_f32_binary<Debugger, f32_lt, true>(
-        context, sp, local_base, tos);
-  case 0x5E:
-    [[clang::musttail]] return h_f32_binary<Debugger, f32_gt, true>(
-        context, sp, local_base, tos);
-  case 0x5F:
-    [[clang::musttail]] return h_f32_binary<Debugger, f32_le, true>(
-        context, sp, local_base, tos);
-  case 0x60:
-    [[clang::musttail]] return h_f32_binary<Debugger, f32_ge, true>(
-        context, sp, local_base, tos);
-  case 0x61:
-    [[clang::musttail]] return h_f64_binary<Debugger, f64_eq, true>(
-        context, sp, local_base, tos);
-  case 0x62:
-    [[clang::musttail]] return h_f64_binary<Debugger, f64_ne, true>(
-        context, sp, local_base, tos);
-  case 0x63:
-    [[clang::musttail]] return h_f64_binary<Debugger, f64_lt, true>(
-        context, sp, local_base, tos);
-  case 0x64:
-    [[clang::musttail]] return h_f64_binary<Debugger, f64_gt, true>(
-        context, sp, local_base, tos);
-  case 0x65:
-    [[clang::musttail]] return h_f64_binary<Debugger, f64_le, true>(
-        context, sp, local_base, tos);
-  case 0x66:
-    [[clang::musttail]] return h_f64_binary<Debugger, f64_ge, true>(
-        context, sp, local_base, tos);
-  case 0x67:
-    [[clang::musttail]] return unary_i32_clz<Debugger>(context, sp, local_base,
-                                                       tos);
-  case 0x68:
-    [[clang::musttail]] return unary_i32_ctz<Debugger>(context, sp, local_base,
-                                                       tos);
-  case 0x69:
-    [[clang::musttail]] return unary_i32_popcnt<Debugger>(context, sp,
-                                                          local_base, tos);
-  case 0x6A:
-    [[clang::musttail]] return h_i32_binary<Debugger, op_add>(context, sp,
-                                                              local_base, tos);
-  case 0x6B:
-    [[clang::musttail]] return h_i32_binary<Debugger, op_sub>(context, sp,
-                                                              local_base, tos);
-  case 0x6C:
-    [[clang::musttail]] return h_i32_binary<Debugger, op_mul>(context, sp,
-                                                              local_base, tos);
-  case 0x6D:
-    [[clang::musttail]] return h_i32_checked_binary<Debugger, evaluate_div_s>(
-        context, sp, local_base, tos);
-  case 0x6E:
-    [[clang::musttail]] return h_i32_checked_binary<Debugger, evaluate_div_u>(
-        context, sp, local_base, tos);
-  case 0x6F:
-    [[clang::musttail]] return h_i32_checked_binary<Debugger, evaluate_rem_s>(
-        context, sp, local_base, tos);
-  case 0x70:
-    [[clang::musttail]] return h_i32_checked_binary<Debugger, evaluate_rem_u>(
-        context, sp, local_base, tos);
-  case 0x71:
-    [[clang::musttail]] return h_i32_binary<Debugger, op_and>(context, sp,
-                                                              local_base, tos);
-  case 0x72:
-    [[clang::musttail]] return h_i32_binary<Debugger, op_or>(context, sp,
-                                                             local_base, tos);
-  case 0x73:
-    [[clang::musttail]] return h_i32_binary<Debugger, op_xor>(context, sp,
-                                                              local_base, tos);
-  case 0x74:
-    [[clang::musttail]] return h_i32_binary<Debugger, op_shl>(context, sp,
-                                                              local_base, tos);
-  case 0x75:
-    [[clang::musttail]] return h_i32_binary<Debugger, op_shr_s>(
-        context, sp, local_base, tos);
-  case 0x76:
-    [[clang::musttail]] return h_i32_binary<Debugger, op_shr_u>(
-        context, sp, local_base, tos);
-  case 0x77:
-    [[clang::musttail]] return h_i32_binary<Debugger, op_rotl>(context, sp,
-                                                               local_base, tos);
-  case 0x78:
-    [[clang::musttail]] return h_i32_binary<Debugger, op_rotr>(context, sp,
-                                                               local_base, tos);
-  case 0x79:
-    [[clang::musttail]] return h_i64_unary<Debugger, i64_clz, false>(
-        context, sp, local_base, tos);
-  case 0x7A:
-    [[clang::musttail]] return h_i64_unary<Debugger, i64_ctz, false>(
-        context, sp, local_base, tos);
-  case 0x7B:
-    [[clang::musttail]] return h_i64_unary<Debugger, i64_popcnt, false>(
-        context, sp, local_base, tos);
-  case 0x7C:
-    [[clang::musttail]] return h_i64_binary<Debugger, i64_add, false>(
-        context, sp, local_base, tos);
-  case 0x7D:
-    [[clang::musttail]] return h_i64_binary<Debugger, i64_sub, false>(
-        context, sp, local_base, tos);
-  case 0x7E:
-    [[clang::musttail]] return h_i64_binary<Debugger, i64_mul, false>(
-        context, sp, local_base, tos);
-  case 0x7F:
-    [[clang::musttail]] return h_i64_checked_binary<Debugger, i64_div_s, false>(
-        context, sp, local_base, tos);
-  case 0x80:
-    [[clang::musttail]] return h_i64_checked_binary<Debugger, i64_div_u, false>(
-        context, sp, local_base, tos);
-  case 0x81:
-    [[clang::musttail]] return h_i64_checked_binary<Debugger, i64_rem_s, false>(
-        context, sp, local_base, tos);
-  case 0x82:
-    [[clang::musttail]] return h_i64_checked_binary<Debugger, i64_rem_u, false>(
-        context, sp, local_base, tos);
-  case 0x83:
-    [[clang::musttail]] return h_i64_binary<Debugger, i64_and, false>(
-        context, sp, local_base, tos);
-  case 0x84:
-    [[clang::musttail]] return h_i64_binary<Debugger, i64_or, false>(
-        context, sp, local_base, tos);
-  case 0x85:
-    [[clang::musttail]] return h_i64_binary<Debugger, i64_xor, false>(
-        context, sp, local_base, tos);
-  case 0x86:
-    [[clang::musttail]] return h_i64_binary<Debugger, i64_shl, false>(
-        context, sp, local_base, tos);
-  case 0x87:
-    [[clang::musttail]] return h_i64_binary<Debugger, i64_shr_s, false>(
-        context, sp, local_base, tos);
-  case 0x88:
-    [[clang::musttail]] return h_i64_binary<Debugger, i64_shr_u, false>(
-        context, sp, local_base, tos);
-  case 0x89:
-    [[clang::musttail]] return h_i64_binary<Debugger, i64_rotl, false>(
-        context, sp, local_base, tos);
-  case 0x8A:
-    [[clang::musttail]] return h_i64_binary<Debugger, i64_rotr, false>(
-        context, sp, local_base, tos);
-  case 0x8B:
-    [[clang::musttail]] return h_f32_unary<Debugger, f32_abs>(context, sp,
-                                                              local_base, tos);
-  case 0x8C:
-    [[clang::musttail]] return h_f32_unary<Debugger, f32_neg>(context, sp,
-                                                              local_base, tos);
-  case 0x8D:
-    [[clang::musttail]] return h_f32_unary<Debugger, f32_ceil>(context, sp,
-                                                               local_base, tos);
-  case 0x8E:
-    [[clang::musttail]] return h_f32_unary<Debugger, f32_floor>(
-        context, sp, local_base, tos);
-  case 0x8F:
-    [[clang::musttail]] return h_f32_unary<Debugger, f32_trunc>(
-        context, sp, local_base, tos);
-  case 0x90:
-    [[clang::musttail]] return h_f32_unary<Debugger, f32_nearest>(
-        context, sp, local_base, tos);
-  case 0x91:
-    [[clang::musttail]] return h_f32_unary<Debugger, f32_sqrt>(context, sp,
-                                                               local_base, tos);
-  case 0x92:
-    [[clang::musttail]] return h_f32_binary<Debugger, f32_add, false>(
-        context, sp, local_base, tos);
-  case 0x93:
-    [[clang::musttail]] return h_f32_binary<Debugger, f32_sub, false>(
-        context, sp, local_base, tos);
-  case 0x94:
-    [[clang::musttail]] return h_f32_binary<Debugger, f32_mul, false>(
-        context, sp, local_base, tos);
-  case 0x95:
-    [[clang::musttail]] return h_f32_binary<Debugger, f32_div, false>(
-        context, sp, local_base, tos);
-  case 0x96:
-    [[clang::musttail]] return h_f32_binary<Debugger, f32_min, false>(
-        context, sp, local_base, tos);
-  case 0x97:
-    [[clang::musttail]] return h_f32_binary<Debugger, f32_max, false>(
-        context, sp, local_base, tos);
-  case 0x98:
-    [[clang::musttail]] return h_f32_binary<Debugger, f32_copysign, false>(
-        context, sp, local_base, tos);
-  case 0x99:
-    [[clang::musttail]] return h_f64_unary<Debugger, f64_abs>(context, sp,
-                                                              local_base, tos);
-  case 0x9A:
-    [[clang::musttail]] return h_f64_unary<Debugger, f64_neg>(context, sp,
-                                                              local_base, tos);
-  case 0x9B:
-    [[clang::musttail]] return h_f64_unary<Debugger, f64_ceil>(context, sp,
-                                                               local_base, tos);
-  case 0x9C:
-    [[clang::musttail]] return h_f64_unary<Debugger, f64_floor>(
-        context, sp, local_base, tos);
-  case 0x9D:
-    [[clang::musttail]] return h_f64_unary<Debugger, f64_trunc>(
-        context, sp, local_base, tos);
-  case 0x9E:
-    [[clang::musttail]] return h_f64_unary<Debugger, f64_nearest>(
-        context, sp, local_base, tos);
-  case 0x9F:
-    [[clang::musttail]] return h_f64_unary<Debugger, f64_sqrt>(context, sp,
-                                                               local_base, tos);
-  case 0xA0:
-    [[clang::musttail]] return h_f64_binary<Debugger, f64_add, false>(
-        context, sp, local_base, tos);
-  case 0xA1:
-    [[clang::musttail]] return h_f64_binary<Debugger, f64_sub, false>(
-        context, sp, local_base, tos);
-  case 0xA2:
-    [[clang::musttail]] return h_f64_binary<Debugger, f64_mul, false>(
-        context, sp, local_base, tos);
-  case 0xA3:
-    [[clang::musttail]] return h_f64_binary<Debugger, f64_div, false>(
-        context, sp, local_base, tos);
-  case 0xA4:
-    [[clang::musttail]] return h_f64_binary<Debugger, f64_min, false>(
-        context, sp, local_base, tos);
-  case 0xA5:
-    [[clang::musttail]] return h_f64_binary<Debugger, f64_max, false>(
-        context, sp, local_base, tos);
-  case 0xA6:
-    [[clang::musttail]] return h_f64_binary<Debugger, f64_copysign, false>(
-        context, sp, local_base, tos);
-  case 0xA7:
-    [[clang::musttail]] return h_conversion<Debugger, conversion_i32_wrap_i64>(
-        context, sp, local_base, tos);
-  case 0xA8:
-    [[clang::musttail]] return h_conversion<
-        Debugger, conversion_truncate_i32<float, true>>(context, sp, local_base,
-                                                        tos);
-  case 0xA9:
-    [[clang::musttail]] return h_conversion<
-        Debugger, conversion_truncate_i32<float, false>>(context, sp,
-                                                         local_base, tos);
-  case 0xAA:
-    [[clang::musttail]] return h_conversion<
-        Debugger, conversion_truncate_i32<double, true>>(context, sp,
-                                                         local_base, tos);
-  case 0xAB:
-    [[clang::musttail]] return h_conversion<
-        Debugger, conversion_truncate_i32<double, false>>(context, sp,
-                                                          local_base, tos);
-  case 0xAC:
-    [[clang::musttail]] return h_conversion<Debugger,
-                                            conversion_i64_extend_i32_s>(
-        context, sp, local_base, tos);
-  case 0xAD:
-    [[clang::musttail]] return h_conversion<Debugger,
-                                            conversion_i64_extend_i32_u>(
-        context, sp, local_base, tos);
-  case 0xAE:
-    [[clang::musttail]] return h_conversion<
-        Debugger, conversion_truncate_i64<float, true>>(context, sp, local_base,
-                                                        tos);
-  case 0xAF:
-    [[clang::musttail]] return h_conversion<
-        Debugger, conversion_truncate_i64<float, false>>(context, sp,
-                                                         local_base, tos);
-  case 0xB0:
-    [[clang::musttail]] return h_conversion<
-        Debugger, conversion_truncate_i64<double, true>>(context, sp,
-                                                         local_base, tos);
-  case 0xB1:
-    [[clang::musttail]] return h_conversion<
-        Debugger, conversion_truncate_i64<double, false>>(context, sp,
-                                                          local_base, tos);
-  case 0xB2:
-    [[clang::musttail]] return h_conversion<Debugger,
-                                            conversion_f32_convert_i32_s>(
-        context, sp, local_base, tos);
-  case 0xB3:
-    [[clang::musttail]] return h_conversion<Debugger,
-                                            conversion_f32_convert_i32_u>(
-        context, sp, local_base, tos);
-  case 0xB4:
-    [[clang::musttail]] return h_conversion<Debugger,
-                                            conversion_f32_convert_i64_s>(
-        context, sp, local_base, tos);
-  case 0xB5:
-    [[clang::musttail]] return h_conversion<Debugger,
-                                            conversion_f32_convert_i64_u>(
-        context, sp, local_base, tos);
-  case 0xB6:
-    [[clang::musttail]] return h_conversion<Debugger,
-                                            conversion_f32_demote_f64>(
-        context, sp, local_base, tos);
-  case 0xB7:
-    [[clang::musttail]] return h_conversion<Debugger,
-                                            conversion_f64_convert_i32_s>(
-        context, sp, local_base, tos);
-  case 0xB8:
-    [[clang::musttail]] return h_conversion<Debugger,
-                                            conversion_f64_convert_i32_u>(
-        context, sp, local_base, tos);
-  case 0xB9:
-    [[clang::musttail]] return h_conversion<Debugger,
-                                            conversion_f64_convert_i64_s>(
-        context, sp, local_base, tos);
-  case 0xBA:
-    [[clang::musttail]] return h_conversion<Debugger,
-                                            conversion_f64_convert_i64_u>(
-        context, sp, local_base, tos);
-  case 0xBB:
-    [[clang::musttail]] return h_conversion<Debugger,
-                                            conversion_f64_promote_f32>(
-        context, sp, local_base, tos);
-  case 0xBC:
-    [[clang::musttail]] return h_conversion<Debugger, conversion_identity>(
-        context, sp, local_base, tos);
-  case 0xBD:
-    [[clang::musttail]] return h_conversion<Debugger, conversion_identity>(
-        context, sp, local_base, tos);
-  case 0xBE:
-    [[clang::musttail]] return h_conversion<Debugger, conversion_identity>(
-        context, sp, local_base, tos);
-  case 0xBF:
-    [[clang::musttail]] return h_conversion<Debugger, conversion_identity>(
-        context, sp, local_base, tos);
-  case 0xC0:
-    [[clang::musttail]] return unary_i32_extend8<Debugger>(context, sp,
-                                                           local_base, tos);
-  case 0xC1:
-    [[clang::musttail]] return unary_i32_extend16<Debugger>(context, sp,
-                                                            local_base, tos);
-  case 0xC2:
-    [[clang::musttail]] return h_i64_unary<Debugger, i64_extend8, false>(
-        context, sp, local_base, tos);
-  case 0xC3:
-    [[clang::musttail]] return h_i64_unary<Debugger, i64_extend16, false>(
-        context, sp, local_base, tos);
-  case 0xC4:
-    [[clang::musttail]] return h_i64_unary<Debugger, i64_extend32, false>(
-        context, sp, local_base, tos);
-  default:
-    return fallback(current, current.ip);
-  }
 }
 
 constexpr std::uint32_t kNoPc = 0xFFFF'FFFFu;
 
-template <bool WithExtension> struct native_dispatch_call {
+struct native_dispatch_call {
   const fb_native_execution_extension *extension = nullptr;
   const fb_native_dispatch_call *request = nullptr;
   std::uint32_t stack_size = 0;
@@ -2965,13 +2972,9 @@ template <bool WithExtension> struct native_dispatch_call {
       : extension(input.extension), request(&input),
         context(
             static_cast<fireball_execution_context_native *>(input.context)),
-        control_stack(context == nullptr
-                          ? nullptr
-                          : static_cast<fireball_control_stack_native *>(
-                                context->control_stack)),
+        control_stack(static_cast<fireball_control_stack_native *>(
+            context->control_stack)),
         stack(input.stack), local_stack(input.locals) {
-    if (context == nullptr)
-      return;
     stack_size = context->sp_offset;
     stack_capacity = context->sp_capacity;
     initial_ip = context->ip;
@@ -2979,51 +2982,37 @@ template <bool WithExtension> struct native_dispatch_call {
     yield_threshold = context->loop_jump_threshold;
     code = context->code;
     code_size = context->code_size;
-    if (const auto *active = active_frame(*context); active != nullptr) {
-      call_frame = const_cast<fireball_call_frame_native *>(active);
-      local_base = active->local_base;
-      local_slots = active->local_slot_count;
-    }
+    const auto *active = active_frame(*context);
+    assert(active != nullptr);
+    call_frame = const_cast<fireball_call_frame_native *>(active);
+    local_base = active->local_base;
+    local_slots = active->local_slot_count;
   }
 };
 
-template <bool WithExtension>
-bool prepare_native_dispatch_call(native_dispatch_call<WithExtension> &call) {
-  if (call.context == nullptr || call.stack == nullptr ||
-      call.local_stack == nullptr || call.control_stack == nullptr ||
-      call.call_frame == nullptr) {
-    call.error_code = kNativeErrorInvalidArgument;
-    return false;
-  }
-  const auto required_local_bytes =
+void prepare_native_dispatch_call(native_dispatch_call &call) {
+  assert(call.stack != nullptr && call.local_stack != nullptr);
+  assert(call.control_stack != nullptr && call.call_frame != nullptr);
+  [[maybe_unused]] const auto required_local_bytes =
       (static_cast<std::uint64_t>(call.local_base) + call.local_slots) *
       sizeof(std::uint32_t);
-  if (call.stack_capacity > 128 || call.stack_size > call.stack_capacity ||
-      required_local_bytes >
-          static_cast<std::uint64_t>(call.context->local_capacity) *
-              sizeof(std::uint32_t) ||
-      call.initial_ip > call.code_size || call.yield_threshold == 0 ||
-      call.code == nullptr ||
-      (call.extension != nullptr && call.extension->execute == nullptr)) {
-    call.error_code = kNativeErrorInvalidArgument;
-    return false;
-  }
-  if (call.control_stack->size > FIREBALL_NATIVE_CONTROL_STACK_CAPACITY ||
-      call.control_base > call.control_stack->size ||
-      call.context->call_stack == nullptr ||
-      call.context->call_stack->size == 0 ||
-      call.context->call_stack->size > FIREBALL_NATIVE_CALL_STACK_CAPACITY) {
-    call.error_code = kNativeErrorInvalidState;
-    return false;
-  }
+  assert(call.stack_capacity <= 128 && call.stack_size <= call.stack_capacity);
+  assert(required_local_bytes <=
+         static_cast<std::uint64_t>(call.context->local_capacity) *
+             sizeof(std::uint32_t));
+  assert(call.yield_threshold != 0 && call.code != nullptr);
+  assert(call.control_stack->size <= FIREBALL_NATIVE_CONTROL_STACK_CAPACITY);
+  assert(call.control_base <= call.control_stack->size);
+  assert(call.context->call_stack != nullptr);
+  assert(call.context->call_stack->size != 0 &&
+         call.context->call_stack->size <= FIREBALL_NATIVE_CALL_STACK_CAPACITY);
   call.call_frame =
       &call.context->call_stack->frames[call.context->call_stack->size - 1];
+  assert(call.initial_ip <= call.code_size);
   call.context->stack_checkpoint = call.stack_size;
-  return true;
 }
 
-template <bool WithExtension>
-bool refresh_native_dispatch_frame(native_dispatch_call<WithExtension> &call,
+bool refresh_native_dispatch_frame(native_dispatch_call &call,
                                    std::uint32_t &current_pc) {
   const auto *active = active_frame(*call.context);
   if (active == nullptr || active->function_view == nullptr)
@@ -3075,7 +3064,7 @@ template <bool CollectStats, bool WithExtension,
           typename ResultType = fb_native_result>
 struct native_dispatch_state {
   static_assert(!CollectStats || !std::is_same_v<ResultType, fb_native_result>);
-  native_dispatch_call<WithExtension> &call;
+  native_dispatch_call &call;
   std::uint32_t current_pc;
   std::uint32_t status = kFallback;
   std::uint32_t trap_code = 0;
@@ -3084,21 +3073,18 @@ struct native_dispatch_state {
       WithExtension && !std::is_same_v<ResultType, fb_native_result>> metrics;
 };
 
-template <bool ClearBlockBoundaryFlag, bool WithExtension,
-          typename Debugger = void>
-step_result execute_control_boundary(native_dispatch_call<WithExtension> &call,
-                                     std::uint32_t ip) {
+template <typename Debugger = void>
+op_result execute_control_boundary(native_dispatch_call &call,
+                                   std::uint32_t ip) {
   auto &context = *call.context;
   context.ip = ip;
   const auto previous_flags = context.runtime_flags;
-  if constexpr (ClearBlockBoundaryFlag) {
-    context.runtime_flags =
-        (previous_flags & ~kStopAtBlockBoundaryFlag) | kStopAfterControlFlag;
-  } else {
-    context.runtime_flags = previous_flags | kStopAfterControlFlag;
-  }
-  const auto result = dispatch<Debugger>(&context, call.stack, call.local_stack,
-                                         top_value(context, call.stack));
+  context.runtime_flags =
+      (previous_flags & ~kStopAtBlockBoundaryFlag) | kStopAfterControlFlag;
+  const auto result =
+      dispatch_next<Debugger>(&context, call.stack + context.sp_offset,
+                              call.local_stack + call.call_frame->local_base,
+                              top_value(context, call.stack));
   context.runtime_flags = previous_flags;
   return result;
 }
@@ -3163,10 +3149,9 @@ dispatch_iteration execute_interpreted_block(
   context.code = call.call_frame->code;
   context.code_size = call.call_frame->code_size;
   context.control_base = call.call_frame->control_base;
-  const auto result = execute_control_boundary<true, WithExtension, Debugger>(
-      call, interpreter_ip);
+  const auto result = execute_control_boundary<Debugger>(call, interpreter_ip);
   if constexpr (WithExtension) {
-    if (observed_interpreter_body && call.extension != nullptr &&
+    if (observed_interpreter_body &&
         call.extension->observe(call.request, block_head_pc)) {
       if constexpr (!std::is_same_v<ResultType, fb_native_result>) {
         ++state.metrics.observations.eligible_block_visits;
@@ -3293,27 +3278,26 @@ template <bool CollectStats, bool WithExtension, typename Debugger = void,
           typename ResultType = fb_native_result>
 int run_native_dispatch_abi(const fb_native_dispatch_call *input,
                             ResultType *result) {
-  if (result == nullptr)
-    return 0;
+  assert(result != nullptr && input != nullptr);
+  assert(input->context != nullptr);
   *result = {};
-  if (input == nullptr)
-    return native_abi_error(result, kNativeErrorInvalidArgument);
+
+  if constexpr (WithExtension) {
+    assert(input->extension != nullptr);
+    assert(input->extension->execute != nullptr);
+    assert(input->extension->observe != nullptr);
+  } else {
+    assert(input->extension == nullptr);
+  }
 
   if constexpr (!std::is_void_v<Debugger>) {
-    if (input->extension != nullptr) {
-      return native_abi_error(result, kNativeErrorInvalidArgument);
-    }
-    auto *debug = static_cast<debug_context *>(input->context);
-    if (debug == nullptr || debug->control == nullptr ||
-        (debug->control->breakpoint_count != 0 &&
-         debug->control->breakpoints == nullptr)) {
-      return native_abi_error(result, kNativeErrorInvalidArgument);
-    }
+    [[maybe_unused]] auto *debug = static_cast<debug_context *>(input->context);
+    assert(debug != nullptr && debug->control != nullptr);
+    assert(debug->control->breakpoint_count == 0 ||
+           debug->control->breakpoints != nullptr);
   }
-  native_dispatch_call<WithExtension> call(*input);
-  if (!prepare_native_dispatch_call<WithExtension>(call)) {
-    return native_abi_error(result, call.error_code);
-  }
+  native_dispatch_call call(*input);
+  prepare_native_dispatch_call(call);
 
   native_dispatch_state<CollectStats, WithExtension, ResultType> state{
       call,
@@ -3340,7 +3324,7 @@ int run_native_dispatch_abi(const fb_native_dispatch_call *input,
         if ((call.context->runtime_flags & kPendingBlockHeadFlag) != 0 &&
             ip < call.code_size &&
             !opcode_is_control_terminator(call.code[ip]) &&
-            call.code[ip] != kOpcodeFcPrefix && call.extension != nullptr) {
+            call.code[ip] != kOpcodeFcPrefix) {
           executed_bodies =
               call.extension->execute(call.request, state.current_pc);
         }
@@ -3368,22 +3352,20 @@ int run_native_dispatch_abi(const fb_native_dispatch_call *input,
 
 int run_native_step_abi(const fb_native_step_call *call,
                         fb_native_result *output, bool direct_control) {
-  if (output == nullptr)
-    return 0;
+  assert(call != nullptr && output != nullptr);
   *output = {};
-  if (call == nullptr || call->code == nullptr || call->context == nullptr ||
-      call->stack == nullptr || call->locals == nullptr ||
-      call->control_stack == nullptr ||
-      call->code_bytes > std::numeric_limits<std::uint32_t>::max() ||
-      call->stack_capacity > 128 || call->stack_size > call->stack_capacity ||
-      call->context_bytes < sizeof(fireball_execution_context_native) ||
-      call->stack_bytes < 128 * sizeof(std::uint32_t) ||
-      call->locals_bytes < static_cast<std::uint64_t>(call->local_slots) *
-                               sizeof(std::uint32_t) ||
-      call->control_bytes < sizeof(fireball_control_stack_native) ||
-      call->ip > call->code_bytes) {
-    return native_abi_error(output, kNativeErrorInvalidArgument);
-  }
+  assert(call->code != nullptr && call->context != nullptr);
+  assert(call->stack != nullptr && call->locals != nullptr);
+  assert(call->control_stack != nullptr);
+  assert(call->code_bytes <= std::numeric_limits<std::uint32_t>::max());
+  assert(call->stack_capacity <= 128 &&
+         call->stack_size <= call->stack_capacity);
+  assert(call->context_bytes >= sizeof(fireball_execution_context_native));
+  assert(call->stack_bytes >= 128 * sizeof(std::uint32_t));
+  assert(call->locals_bytes >=
+         static_cast<std::uint64_t>(call->local_slots) * sizeof(std::uint32_t));
+  assert(call->control_bytes >= sizeof(fireball_control_stack_native));
+  assert(call->ip < call->code_bytes);
 
   const auto *raw_code = call->code;
   auto *execution_context =
@@ -3393,16 +3375,12 @@ int run_native_step_abi(const fb_native_step_call *call,
   auto *stack = call->stack;
   auto *locals = call->locals;
   execution_context->sp_capacity = call->stack_capacity;
-  if (control_stack->size > FIREBALL_NATIVE_CONTROL_STACK_CAPACITY ||
-      call->control_base > control_stack->size) {
-    return native_abi_error(output, kNativeErrorInvalidState);
-  }
+  assert(control_stack->size <= FIREBALL_NATIVE_CONTROL_STACK_CAPACITY);
+  assert(call->control_base <= control_stack->size);
   if (execution_context->call_stack != nullptr) {
-    if (execution_context->call_stack->size >
-            FIREBALL_NATIVE_CALL_STACK_CAPACITY ||
-        execution_context->call_base > execution_context->call_stack->size) {
-      return native_abi_error(output, kNativeErrorInvalidState);
-    }
+    assert(execution_context->call_stack->size <=
+           FIREBALL_NATIVE_CALL_STACK_CAPACITY);
+    assert(execution_context->call_base <= execution_context->call_stack->size);
   }
 
   execution_context->ip = call->ip;
@@ -3414,25 +3392,28 @@ int run_native_step_abi(const fb_native_step_call *call,
   execution_context->stack_checkpoint = call->stack_size;
 
   execution_context->trap_code = 0;
-  step_result step{};
+  const auto local_offset =
+      execution_context->call_stack == nullptr ||
+              execution_context->call_stack->size == 0
+          ? 0u
+          : execution_context->call_stack
+                ->frames[execution_context->call_stack->size - 1]
+                .local_base;
+  auto *local_base = locals + local_offset;
+  auto *sp = stack + execution_context->sp_offset;
+  const auto tos = top_value(*execution_context, stack);
+  op_result step{};
   if (direct_control) {
-    if (call->ip >= call->code_bytes) {
-      return native_abi_error(output, kNativeErrorInvalidArgument);
-    }
-    const auto opcode = raw_code[call->ip];
-    if (!opcode_is_control_terminator(opcode) && opcode != kOpcodeFcPrefix) {
-      return native_abi_error(output, kNativeErrorInvalidArgument);
-    }
+    assert(opcode_is_control_terminator(raw_code[call->ip]) ||
+           raw_code[call->ip] == kOpcodeFcPrefix);
     execution_context->runtime_flags &= ~kPendingBlockHeadFlag;
     const auto previous_flags = execution_context->runtime_flags;
     execution_context->runtime_flags |= kStopAfterControlFlag;
-    step = dispatch(execution_context, stack, locals,
-                    top_value(*execution_context, stack));
+    step = dispatch_next(execution_context, sp, local_base, tos);
     execution_context->runtime_flags = previous_flags;
   } else {
     execution_context->runtime_flags &= ~kPendingBlockHeadFlag;
-    step = dispatch(execution_context, stack, locals,
-                    top_value(*execution_context, stack));
+    step = dispatch_next(execution_context, sp, local_base, tos);
   }
 
   if (step.kind == kFallback) {
@@ -3466,9 +3447,13 @@ extern "C" int fb_native_run_control_step(const fb_native_step_call *call,
 
 extern "C" int fb_native_run_dispatch(const fb_native_dispatch_call *call,
                                       fb_native_result *result) {
-  if (call != nullptr && call->extension != nullptr)
-    return run_native_dispatch_abi<false, true>(call, result);
   return run_native_dispatch_abi<false, false>(call, result);
+}
+
+extern "C" int
+fb_native_run_dispatch_extension(const fb_native_dispatch_call *call,
+                                 fb_native_result *result) {
+  return run_native_dispatch_abi<false, true>(call, result);
 }
 
 extern "C" int fb_native_run_debug_dispatch(const fb_native_dispatch_call *call,

@@ -12,18 +12,19 @@
 
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| TEST-INTP-01 | ハンドラのシグネチャと継続結果が4論理引数(`ctx, sp, local_base, tos`)である | 実装コードを確認 | 各opcodeハンドラの引数と結果を確認 | すべてのハンドラが同一の4引数シグネチャを持ち、継続時は次回呼び出し用の4引数とトラップ状態を返す。正常終了は継続なし、トラップは非NULLのトラップ情報で表す | wasm_instruction_set.md, interpreter.md |
-| TEST-INTP-02 | 継続渡しの命令ディスパッチ | - | opcode属性参照と命令ハンドラへの継続を確認 | 命令ディスパッチはopcode属性を参照し、関数ポインタ表を介さず命令に対応するhandlerへ継続する | 同上 |
-| TEST-INTP-03 | Interpreter handlerとJIT traceの論理引数契約 | JITトレース生成 | handlerとtrace entryの型・引数配置を比較 | 両者は`ctx, sp, local_base, tos`の4論理引数を共有するが、Interpreter handlerは`handler_result`、JIT trace entryは`void`を返し、関数ポインタ型は分離される。x64の物理ABIは対象ABI定義に従い、ARMv8-Mの物理配置はTBD | `{ContextPointerRegister}` `{CPS_4Args}` `{PositionIndependentCode}` |
+| TEST-INTP-01 | ハンドラのシグネチャが4論理引数(`ctx, sp, local_base, tos`)である | 実装コードを確認 | 各opcodeハンドラの引数と境界結果を確認 | すべてのハンドラが同一の4引数シグネチャを持ち、継続時は次ハンドラへ末尾呼び出しする。実行境界では終了種別を返し、トラップコードは`ctx`に保持する | wasm_instruction_set.md, interpreter.md |
+| TEST-INTP-02 | 継続渡しの命令ディスパッチ | - | opcodeハンドラ表と命令ハンドラへの継続を確認 | 各ハンドラ末尾で次opcodeに対応する関数ポインタを固定長表から選び、同じ4論理引数で末尾呼び出しする。命令ごとに中央のopcode分岐へ戻らない | 同上 |
+| TEST-INTP-03 | Interpreter handlerとJIT traceの論理引数契約 | JITトレース生成 | handlerとtrace entryの型・引数配置を比較 | 両者は`ctx, sp, local_base, tos`の4論理引数を共有するが、Interpreter handlerは実行境界で`op_result`、JIT trace entryは`void`を返し、関数ポインタ型は分離される。x64の物理ABIは対象ABI定義に従い、ARMv8-Mの物理配置はTBD | `{ContextPointerRegister}` `{CPS_4Args}` `{PositionIndependentCode}` |
 | TEST-INTP-04 | JITトレースからインタープリタへのシームレスフォールバック | 未コンパイルのブロックへ分岐 | トレース実行完了 | トレース末尾でインタープリタへスムーズに復帰し、後続ブロックをインタープリタが継続実行する | `{JIT_LazyChaining}` `{JIT_RuntimeAPI_Fallback}` |
+| TEST-INTP-05 | Runtime APIとCPSハンドラの責務分離 | 主opcodeと`0xFC`副opcodeの実装がある | 各C++ハンドラと対応するRuntime APIを確認し、通常継続・trap・フォールバックを実行する | 命令意味論と状態更新はRuntime APIにあり、ハンドラはAPIを呼んで結果を返すか、更新済み4論理引数で関数ポインタ表へ末尾継続する。通常経路のAPIはインライン展開される | `{ThreadedInterpreter}`, `interpreter.md`「継続渡しハンドラの実行境界」 |
 
 ### 命令実行とロード済みモジュール
 
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| TEST-INTP-06 | 命令別handlerの継続ディスパッチ | WASMのi32命令列と実行コンテキスト | 直線区間と未対応opcodeを含む命令列を実行する | 直線区間を連続実行し、境界でPCとスタック位置を返す。未対応opcodeではスタックを変更せず実行境界へ戻る | `{ThreadedInterpreter}`, `interpreter.md` |
+| TEST-INTP-06 | 命令別handlerの継続ディスパッチ | WASMのi32命令列と実行コンテキスト | 直線区間、未対応の主opcode、未対応の`0xFC`副opcodeを含む命令列を実行する | 直線区間を連続実行し、境界でPCとスタック位置を返す。未対応opcodeでは共通の境界復帰handlerへ進み、スタックを変更せず戻る | `{ThreadedInterpreter}`, `interpreter.md` |
 | TEST-INTP-09 | ロード時デコードと命令実行の分離 | WASMモジュールをロード済み | 実行経路が即値を処理する方法を確認する | LEB128デコードはロード時に完了し、Tier 3の命令実行経路では再デコードしない | `{DirectBytecodeExecution}`, `runtime_loader.md` |
-| TEST-INTP-27 | ジャンプ・分岐境界 | `br`、`br_if`、`br_table`、`call`を含むWASM | 境界命令を実行 | ジャンプ・分岐は継続チェインせず、既存フレーム処理へ戻って正しいPC・制御スタックを保つ | InterpreterContextStackless |
+| TEST-INTP-27 | ジャンプ・分岐境界 | `br`、`br_if`、`br_table`、`call`を含むWASM | 境界命令を実行 | 定義済みゲスト関数の呼出しと分岐はC++ハンドラ間で継続し、Runtimeが要求する境界で正しいPC・制御スタックを保って戻る | InterpreterContextStackless |
 | TEST-INTP-28 | AO-Bench全命令差分 | wasmtimeとTier 2/Tier 3を利用可能 | `aobench.py`を実行 | Float32 sanity、全AO出力、Tier 2/Tier 3の528バイト出力が完全一致する | `{META_RecoveryStrategy}` |
 
 ### 3本の独立スタック・関数呼び出し ({ContextPointerRegister})
@@ -108,12 +109,12 @@
 
 | GOTCHA参照 | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| GOTCHA-INTP-01 | 継続渡し第4論理引数 `tos` とスタック領域の境界同期 | スタック空状態から複数回の push/pop | `i32.const` および二項演算を連続実行 | スタック空時は `tos=0`、値push時は旧`tos`がスタック領域へ退避され新値が`tos`に格納される。pop時は次段値が`tos`へ復元される。物理レジスタ割当は対象ABIに従い、ARMv8-MはTBD | [`interpreter.md`](docs/components/tier2_runtime/interpreter.md)「実行コンテキスト」, `{CPS_4Args}` |
+| GOTCHA-INTP-01 | 継続渡し第4論理引数 `tos` とスタック領域の境界同期 | スタック空状態から複数回の push/pop | `i32.const` および二項演算を連続実行 | スタック空時は `tos=0`、値push時は旧`tos`がスタック領域へ退避され新値が`tos`に格納される。pop時は次段値が`tos`へ復元され、次命令のフェッチでは頂点を再読込しない。物理レジスタ割当は対象ABIに従い、ARMv8-MはTBD | [`interpreter.md`](docs/components/tier2_runtime/interpreter.md)「実行コンテキスト」, `{CPS_4Args}` |
 | GOTCHA-INTP-02 | Label Arity スタック巻き戻し時の TOS 復元 | `block (result i32)` 内で値をpush後に`br 0` | ブロック脱出を実行 | ブロック開始時の深さまでスタックが巻き戻され、宣言アリティ分の結果値のうち最上位値が論理`tos`へ復元されて次handlerへ渡る。破棄された値が`tos`に残ってはならない | [`interpreter.md`](docs/components/tier2_runtime/interpreter.md) |
 | GOTCHA-INTP-03 | if 条件偽（else節なし）での制御フレームリーク防止 | `if (cond=0)` で else 節なし | `if` 命令を実行 | `match_offset + 1` へジャンプする際、`_Frame("if")` がスタックに残らずフレームスタックの深さが不変に保たれる。 | [`interpreter.md`](docs/components/tier2_runtime/interpreter.md) |
 | GOTCHA-INTP-04 | Code section 相対PCとモジュールスコープ | Code section payloadより前に複数関数bodyがあり、対象関数のbody sizeとlocals宣言を含むWASMモジュールを用意する | 先行bodyと対象命令のファイル位置、Code section payload先頭位置、Loaderが返すPCを比較し、別モジュールで同じPC値になる基本ブロックも照合する | PCは命令先頭のファイル位置からCode section payload先頭のファイル位置を引いた値である。関数数・body size・locals宣言の符号化バイトを含み、関数内オフセットを使わない。別モジュールで同じPC値を許し、モジュール横断のJIT・履歴キーは`(module_id, pc)`で区別する | [`interpreter.md`](docs/components/tier2_runtime/interpreter.md) |
 | GOTCHA-INTP-05 | 実行時の命令オブジェクト生成・二分探索排除 | 関数呼び出しおよび命令ステップ実行 | `_build_frame` および `step()` を実行 | `_build_frame` および `step()` の命令フェッチが、オフセット→命令の逆引きテーブルを一切経由せず、生のバイト列（`frame.code[cursor_offset]`）から直接デコードする。Code section payload相対PCから関数内カーソルへ変換しても、逆引き表を使わない。 | [`interpreter.md`](docs/components/tier2_runtime/interpreter.md) `{DirectBytecodeExecution}` |
-| GOTCHA-INTP-06 | JIT終端命令の分岐と制御フレーム整理 | 入れ子のloop/ifを持つ関数で、内側の分岐条件ブロックがコンパイル済み | JIT実行後、条件分岐を複数回通過する | 終端命令PCから命令handlerを呼び、残余条件を消費し、制御フレームに従って分岐とスタック整理を行う。Interpreter単独実行と同じ結果になる。実行状態の判定と更新は命令handlerが一元して行う | [`interpreter.md`](docs/components/tier2_runtime/interpreter.md)、`{InterpreterContextStackless}`, `{JIT_RuntimeAPI_Fallback}` |
+| GOTCHA-INTP-06 | JIT終端命令の分岐と制御フレーム整理 | 入れ子のloop/ifを持つ関数で、内側の分岐条件ブロックがコンパイル済み | JIT実行後、条件分岐を複数回通過する | 終端命令PCから命令handlerを呼び、Runtime APIが残余条件の消費、制御フレームに従う分岐とスタック整理を行う。Interpreter単独実行と同じ結果になる | [`interpreter.md`](docs/components/tier2_runtime/interpreter.md)、`{InterpreterContextStackless}`, `{JIT_RuntimeAPI_Fallback}` |
 
 ### 継続状態と資源境界の検証
 <!-- traceability: {GOTCHA-INTP-07} {GOTCHA-INTP-08} {GOTCHA-INTP-09} {GOTCHA-INTP-10} {GOTCHA-INTP-11} {GOTCHA-INTP-12} {GOTCHA-INTP-13} {GOTCHA-INTP-14} {GOTCHA-INTP-15} {GOTCHA-INTP-16} {GOTCHA-INTP-17} {GOTCHA-INTP-18} {GOTCHA-INTP-19} {GOTCHA-INTP-20} {GOTCHA-INTP-21} {GOTCHA-INTP-22} -->
@@ -122,8 +123,8 @@
 
 | GOTCHA参照 | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| GOTCHA-INTP-07 | Opcode属性と継続ディスパッチ | 複数処理区分のopcodeがある | 属性表の要素と対応handlerへの継続を検査する | 属性表に関数ポインタがなく、対応handlerへ4論理引数が渡る | [`interpreter.md`](docs/components/tier2_runtime/interpreter.md)。確認状況: 実装済み・テスト済み |
-| GOTCHA-INTP-08 | 正常継続とtrapの結果 | 正常命令とtrapを起こす命令がある | handlerの結果を比較する | いずれも次回用の4引数を保持し、正常時はtrapなし、拒否時は具体的なTrapを返す | [`interpreter.md`](docs/components/tier2_runtime/interpreter.md)。確認状況: 実装済み・テスト済み |
+| GOTCHA-INTP-07 | Opcode属性と継続ディスパッチ | 複数処理区分のopcodeがある | 属性表、独立したハンドラ表、対応handlerへの継続を検査する | 属性表は関数ポインタを持たず、ハンドラ表から選んだhandlerへ4論理引数が末尾継続で渡る | [`interpreter.md`](docs/components/tier2_runtime/interpreter.md)。確認状況: 実装済み・テスト済み |
+| GOTCHA-INTP-08 | 正常継続とtrapの結果 | 正常命令とtrapを起こす命令がある | handlerの継続と境界結果を比較する | 正常命令は4論理引数を末尾呼び出しで渡し、trap時は終了種別を返して具体的なtrapコードを`ctx`へ残す | [`interpreter.md`](docs/components/tier2_runtime/interpreter.md)。確認状況: 実装済み・テスト済み |
 | GOTCHA-INTP-09 | 次PCの観測元 | 連続実行、分岐、JIT境界の操作列がある | handler後のctx.ipと次の命令位置を照合する | 次PCがctx.ipと一致し、別の戻り値フィールドから再構築されない | [`interpreter.md`](docs/components/tier2_runtime/interpreter.md)。確認状況: 実装済み・テスト済み |
 | GOTCHA-INTP-10 | 異なる原因のtrap報告 | vMMIO、call_indirect、整数変換、メモリ境界の異常入力がある | 各入力を実行し、実行境界の結果を確認する | 各原因が同じ結果形式の具体的なTrapとして報告される | [`interpreter.md`](docs/components/tier2_runtime/interpreter.md)。確認状況: 実装済み・主要経路テスト済み |
 | GOTCHA-INTP-11 | Interpreter/JIT境界の共有記憶領域 | JITへ移行する関数がある | 境界前後のctx、sp、local_baseと値を確認する | 同一ctxと共有値領域を参照し、JIT専用のlocals/resultコピーが発生しない | [`interpreter.md`](docs/components/tier2_runtime/interpreter.md)。確認状況: 実装済み・既存JITテストで確認 |

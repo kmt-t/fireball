@@ -83,7 +83,9 @@ class RuntimeEngine:
         yield_threshold: int = FB_CONF_RUNTIME_YIELD_THRESHOLD,
         bump_allocator: BumpAllocator | None = None,
     ):
-        backend_dispatcher = native_abi.RUN_DISPATCH
+        backend_dispatcher = (
+            native_abi.RUN_DISPATCH if jit_runtime is None else native_abi.RUN_DISPATCH_EXTENSION
+        )
         self._native_dispatcher = (
             backend_dispatcher if jit_runtime is None else jit_runtime.native_entry
         )

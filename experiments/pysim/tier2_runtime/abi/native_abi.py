@@ -68,6 +68,9 @@ RUN_DEBUG_DISPATCH.restype = ctypes.c_int
 RUN_DISPATCH = _LIBRARY.fb_native_run_dispatch
 RUN_DISPATCH.argtypes = (ctypes.c_void_p, ctypes.POINTER(NativeResult))
 RUN_DISPATCH.restype = ctypes.c_int
+RUN_DISPATCH_EXTENSION = _LIBRARY.fb_native_run_dispatch_extension
+RUN_DISPATCH_EXTENSION.argtypes = (ctypes.c_void_p, ctypes.POINTER(NativeResult))
+RUN_DISPATCH_EXTENSION.restype = ctypes.c_int
 
 
 def run_step(

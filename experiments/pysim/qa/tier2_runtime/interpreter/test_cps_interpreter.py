@@ -80,6 +80,18 @@ def test_native_cps_entry_uses_four_logical_arguments() -> None:
     assert context.control_base == 0
 
 
+def test_native_tos_flows_through_push_pop_and_handler_dispatch() -> None:
+    stack = NativeValueStack()
+    locals_stack = NativeValueStack()
+    control_stack = NativeControlStack()
+    context = ExecutionContextABI()
+    # ((3 + 4) * 2) + 5: each operation consumes the prior handler's TOS.
+    code = memoryview(bytearray((0x41, 3, 0x41, 4, 0x6A, 0x41, 2, 0x6C, 0x41, 5, 0x6A, 0x0B)))
+    outcome = _run_step(code, context, stack, locals_stack, control_stack, 0, stack.capacity, 0)
+    assert outcome == (1, len(code), 1, 0)
+    assert stack.raw_at(0) == 19
+
+
 def _run_guarded_const(
     code: bytes, stack_capacity: int, stack_size: int
 ) -> tuple[tuple[int, int, int, int], ExecutionContextABI, tuple[int, ...], tuple[int, ...]]:
@@ -148,6 +160,8 @@ def test_native_const_capacity_traps_without_partial_push(
         pytest.param(b"\x43\x00\x00\x00", id="truncated-f32"),
         pytest.param(b"\x44\x00\x00\x00\x00\x00\x00\x00", id="truncated-f64"),
         pytest.param(b"\xff", id="unsupported-opcode"),
+        pytest.param(b"\xfc\x08", id="unsupported-fc-in-table"),
+        pytest.param(b"\xfc\x0c", id="unsupported-fc-out-of-table"),
     ],
 )
 @pytest.mark.parametrize("free_words", [0, 2])

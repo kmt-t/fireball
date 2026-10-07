@@ -44,7 +44,7 @@ graph LR
 | `{NativeAPI_Export}` | 最小限のトラップ命令とvMMIOによるホストサービス提供をサポートする。 | 高 | テスト <!-- definition: {NativeAPI_Export} --> |
 | `{JIT_Encoder}` | C++の constexpr 機能を活用し、ビルド時に命令テンプレートを生成する。 | 高 | レビュー <!-- definition: {JIT_Encoder} --> |
 | `{MultiModule_Support}` | 複数WASMモジュールのロードと、モジュール間の動的リンクをサポートする。 | 中 | テスト <!-- definition: {MultiModule_Support} --> |
-| `{ThreadedInterpreter}` | 継続渡しによる主要変数のレジスタ保持、テーブルディスパッチによる高速な命令実行、およびJITコードとの完全な呼び出し規約整合を実現する。 | 高 | テスト <!-- definition: {ThreadedInterpreter} --> |
+| `{ThreadedInterpreter}` | 命令意味論を処理するRuntime APIと、そのAPIを実行して末尾継続するCPS命令ハンドラを分離する。主要変数のレジスタ保持、関数ポインタ表によるディスパッチ、JITコードとの呼び出し規約整合を実現する。 | 高 | テスト <!-- definition: {ThreadedInterpreter} --> |
 | `{JIT_LazyChaining}` | 常駐traceの直線後続へ進む際、共通コード領域のchain dispatcherがTraceヘッダのtarget bodyへtail-jumpする。opcode別の条件評価・C++ Interpreter handler実行はchainに含めない。 | 高 | レビュー <!-- definition: {JIT_LazyChaining} --> |
 | `{Interpreter_LazyJITSwitch}` | 制御命令はC++ Interpreterの命令別handlerで処理する。C++ dispatcherは共有後方分岐しきい値へ達するまで、常駐JIT traceまたはC++ handlerを続けて実行する。しきい値到達時にyield statusを返す。接続中のJIT候補観測・cache更新・コンパイルはTier 3 JIT拡張が行い、Tier 2 Runtimeは拡張の境界結果をvSoCへ伝える。分岐handlerからvSoCへは復帰しない。 | 高 | レビュー <!-- definition: {Interpreter_LazyJITSwitch} --> |
 | `{vMMIO_TrapAndEmulate}` | ゲストからのメモリアクセスをトラップし、ホスト側のフックを呼び出す。 | 高 | テスト <!-- definition: {vMMIO_TrapAndEmulate} --> |

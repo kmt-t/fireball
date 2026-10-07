@@ -12,10 +12,12 @@ python_package_dir="${project_root}/experiments/pysim/tier2_runtime/interpreter"
 library_name="libnative_interpreter.so"
 qa_build=0
 block_counters=0
+release_define=()
 for option in "$@"; do
   case "${option}" in
     --qa) qa_build=1 ;;
     --block-counters) block_counters=1 ;;
+    --release) release_define+=("-DNDEBUG") ;;
     *) echo "Unknown option: ${option}" >&2; exit 2 ;;
   esac
 done
@@ -30,6 +32,7 @@ if [[ "${block_counters}" == "1" ]]; then
 fi
 echo ">>> Compiling Interpreter -> ${library_name}"
 clang++ -std=c++23 -O2 -Wall -Wextra -Wpedantic -shared -fPIC \
+  "${release_define[@]}" \
   "${block_counter_define[@]}" \
   "${source_cpp}" -o "${native_build_dir}/${library_name}"
 cp "${native_build_dir}/${library_name}" "${python_package_dir}/${library_name}"

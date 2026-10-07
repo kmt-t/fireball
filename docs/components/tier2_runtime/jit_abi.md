@@ -9,7 +9,7 @@
 
 ## 1. コンセプト
 
-この文書は、Tier 2ランタイムがTier 3 Pluginsへ提供する、複雑な処理をCヘルパーへ委譲するためのABI契約を定義する。Interpreter handlerとJIT trace entryが共有する`ctx`, `sp`, `local_base`, `tos`の4論理引数契約を `{CPS_4Args}` と定義する。 <!-- definition: {CPS_4Args} --> 共通コード領域の入口offsetはビルド構成または配置時のrelocation情報で解決し、JIT trace headerにはtrace固有の委譲先関数アドレスだけを保持する。実行コンテキストはこのルーティング情報を保持しない。ゲストへ公開するWIT契約は対象外であり、WIT正本は各ゲストインターフェース文書に置く。
+この文書は、Tier 2ランタイムがTier 3 Pluginsへ提供する、複雑な処理をCヘルパーへ委譲するためのABI契約を定義する。Interpreter handlerとJIT trace entryが共有する`ctx`, `sp`, `local_base`, `tos`の4論理引数契約を `{CPS_4Args}` と定義する。 <!-- definition: {CPS_4Args} --> 両者は`fireball_op_result_native`を返す同じ関数型を使い、通常のtrace完了値は`FIREBALL_NATIVE_OP_CONTINUE`（8）とする。trace内のtrap状態は`execution_context.trap_code`に記録し、JitRuntimeは復帰後にこれを確認する。共通コード領域の入口offsetはビルド構成または配置時のrelocation情報で解決し、JIT trace headerにはtrace固有の委譲先関数アドレスだけを保持する。実行コンテキストはこのルーティング情報を保持しない。ゲストへ公開するWIT契約は対象外であり、WIT正本は各ゲストインターフェース文書に置く。
 
 
 ## 2. アーキテクチャ分類
@@ -69,6 +69,8 @@ Interpreter handlerとJIT trace entryが共有する4論理引数のx64関数入
 
 共通trace prologueは`RBX`, `R12`〜`R15`を保存する。Windows x64では追加で`RDI`を、System V AMD64では`RBP`を保存し、通常復帰またはhelper委譲前に対応する値を復元する。ARMv8-Mの引数レジスタ割り当てと保存規則はTBDとする。
 
+関数の戻り値型は`fireball_op_result_native { uint32_t kind; }`であり、Interpreter handlerとJIT trace entryで共通とする。正常にtraceを終えたentryは`FIREBALL_NATIVE_OP_CONTINUE`を`EAX`で返す。trap codeはこの戻り値へ複製せず、`execution_context.trap_code`に保持する。
+
 ### x64実行環境のトレースヘッダ
 
 以下はWindows x64およびSystem V AMD64で共通に使用する物理配置である。ARMv8-Mの配置、命令列、ABIはすべてTBDであり、x64の確認結果から推定しない。物理ポインタを格納する欄は64ビットとし、32ビットのWASM PC欄と混同しない。
@@ -99,9 +101,9 @@ chainはtrace終端から共通コード領域のchain dispatcherへ移り、そ
 
 x64共通コードの絶対アドレスpoolに、ローカル Runtime API の関数ポインタ表を置く。表は `local.get`、`local.set`、`local.tee` の3入口を持つ。共通コード領域の初期化時に各入口のアドレスを表へ設定する。表の大きさは3ポインタである。
 
-関数引数を含む論理ローカル数が128以下のtraceはローカルを直接アクセスする。129以上のtraceは生成時にAPI表の対応entryを選び、header相対の共通コード基点からPIC間接呼出しする。trace headerにAPI関数の絶対アドレスを複製しない。API経路はCPS handlerやInterpreter dispatcherへ移らない。
+関数引数を含む論理ローカル数が128以下のtraceは、Loaderが前計算したオフセットとサイズを使ってローカルへ直接アクセスする。129以上のtraceは生成時にAPI表の対応entryを選び、header相対の共通コード基点からPIC間接呼出しする。trace headerにAPI関数の絶対アドレスを複製しない。API経路はCPS handlerやInterpreter dispatcherへ移らない。
 
-Runtime APIの共通シグネチャは `(ctx, local_base, stack_words, local_index)` である。`ctx` のCallStackから現行CallFrameを得る。APIはCallFrameの幅マップを使い、指定ローカルの必要wordを `stack_words` とローカル領域の間でコピーする。APIはWASM命令ディスパッチを行わない。`local.tee` が値をオペランドスタックへ残す処理は、呼出し後も値を保持するトレース生成側が担う。スタック高さと命令PCの確定もトレース境界で行う。
+Runtime APIの共通シグネチャは `(ctx, local_base, stack_words, local_index)` である。`ctx` のCallStackから現行CallFrameを得る。APIはCallFrameのローカルオフセット表とサイズ表を使い、指定ローカルの必要wordを `stack_words` とローカル領域の間でコピーする。APIはWASM命令ディスパッチを行わない。`local.tee` が値をオペランドスタックへ残す処理は、呼出し後も値を保持するトレース生成側が担う。スタック高さと命令PCの確定もトレース境界で行う。
 
 ## 4. 動的モデル
 
@@ -111,9 +113,9 @@ Tier 2は共有実行状態とブロック開始PCを実行拡張へ渡す接続
 
 ネイティブdispatchには `execution_context`、値スタック基点、ローカルスタック基点、実行拡張、yield境界で使うコンパイル予算だけを渡す。命令位置、コードと制御スタックの情報、スタック位置と容量、local base、関数番号、yieldしきい値は `execution_context` と現在のCallFrameから取得し、別の呼出し構造体へ複製しない。戻り値はstatusとABIエラーだけを持ち、命令位置、スタック位置、trap codeは `execution_context` を唯一の格納先とする。実行拡張は `owner`、本体実行入口、観測入口で構成する。観測入口はInterpreterが対象ブロックを実行した後に候補判定と履歴記録を一度に行う。候補マスクと履歴配列をInterpreterへ渡さず、複製もしない。
 
-関数呼出し記述子は、関数コード、ローカル幅、引数搬送、戻り境界を持つ96バイトの固定構造体である。関数呼出しスタックは、32個の記述子を保持する固定長配列である。定数バッファ参照、関数参照、モジュール参照は、WASMコードと関数メタデータを渡す非所有の標準レイアウト構造体である。この境界に文字列、`std::vector`、仮想関数、例外を含めない。 `{META_NoStdVector}`
+関数呼出し記述子は、関数コード、ローカルオフセット表とサイズ表、引数搬送、戻り境界を持つ96バイトの固定構造体である。関数呼出しスタックは、32個の記述子を保持する固定長配列である。定数バッファ参照、関数参照、モジュール参照は、WASMコードと関数メタデータを渡す非所有の標準レイアウト構造体である。この境界に文字列、`std::vector`、仮想関数、例外を含めない。 `{META_NoStdVector}`
 
-実行時のオペランド領域、ローカル値領域、制御ブロック復帰情報領域は、固定容量の構造体と配列として配置する。値領域は `WASM_VALUE_SLOT_BYTES` の境界に配置した型情報を持たない32ビットワード配列で、WASM の i32/f32 は1スロット、i64/f64 は2スロットを使用する。ローカル値は、フレームごとのスロット幅（4 / 8 / 16バイト）の固定スロットとし、JIT/インタープリタともスロット番号とスロット幅からアドレスを直接計算する。スロット幅は、フレーム内で最大の変数サイズで決める。JITはこの幅を命令生成時に埋め込む。したがってローカルオフセット表を保持・参照する必要はなく、i64/f64の有効ワードも自然に境界へ置かれる。値の型タグは記録せず、型を知っているハンドラが対応する読み書きメソッドを選択する。制御ブロックの復帰情報は、構造種別、開始位置、終了位置、保存済みスタック長、結果個数を持つ20バイトの固定長レコード配列として保持する。 `{META_NoStdVector}`
+実行時のオペランド領域、ローカル値領域、制御ブロック復帰情報領域は、固定容量の構造体と配列として配置する。値領域は `WASM_VALUE_SLOT_BYTES` の境界に配置した型情報を持たない32ビットワード配列で、WASM の i32/f32 は1ワード、i64/f64 は2ワードを使用する。各関数のローカル値も同じ32ビットワードを連続して使う。Loaderは引数を含む各ローカルの先頭ワードオフセット（16bit）とサイズ（8bit）を表に記録し、関数単位の占有量を実際の値サイズの合計にする。InterpreterはCallFrameの表を使い、JITは128ローカル以下ならオフセットとサイズを機械語へ埋め込む。129以上のJIT local accessはCallFrame表を読む共通Runtime APIへ間接呼び出しする。値の型タグは記録せず、型を知っているハンドラが対応する読み書きメソッドを選択する。制御ブロックの復帰情報は、構造種別、開始位置、終了位置、保存済みスタック長、結果個数を持つ20バイトの固定長レコード配列として保持する。 `{META_NoStdVector}`
 
 関数の引数・戻り値バッファも同じ原則で扱う。実行要求と結果はバッファのアドレスと要素数だけを渡し、戻り値型や型タグを保持しない。呼び出し側が関数シグネチャを知っているため、必要なスロット幅と解釈は呼び出し側で決める。
 

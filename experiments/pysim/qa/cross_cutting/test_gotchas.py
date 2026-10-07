@@ -42,7 +42,6 @@ from system_containers import BitView, MutableFlatMapStorage, ReadOnlyFlatMapVie
 from tier2_runtime.hal.dispatch import HalBufferPool
 from tier2_runtime.interpreter.interpreter import _HANDLERS
 from tier2_runtime.memory.manager import FB_CONF_MEMORY_POOL_SIZE, MemoryManager
-from tier2_runtime.observability.events import RuntimeEventBatch
 from tier2_runtime.observability.logger import LogDictionary, Logger, LogLevel, LogResult
 from tier3_platform.drivers.hal.stream import StreamTransport
 
@@ -314,10 +313,10 @@ def test_vsoc_gotcha_01_02_stateless_interp_and_yield_in_vsoc():
     )
     """
     wasm_bytes = wat_to_wasm(wat)
-    engine = make_runtime_engine(yield_threshold=3, jit_compiler=TraceCompiler())
+    engine = make_runtime_engine(jit_compiler=TraceCompiler())
     mod = engine.load_wasm(wasm_bytes)
     loop_pc = mod.blocks[0].head_pc
-    results = engine.call(make_native_interpreter(mod), 0, [5])
+    results = engine.call(make_native_interpreter(mod, yield_threshold=3), 0, [5])
     assert results[0] == 15
     assert engine.stat_jit_invocations >= 2
     assert engine.stat_interp_steps >= 3
@@ -655,40 +654,23 @@ def test_sys_gotcha_01_undefined_syscall_returns_enosys():
     assert res == int(WasiErrno.NOSYS), f"Expected NOSYS (52), got {res}"
 
 
-def test_dbg_gotcha_01_debugger_and_jit_composition_is_rejected():
-    """GOTCHA-DBG-01: Debugger and JIT cannot be enabled in one runtime composition."""
-    from qa.shared.helpers import expect_assertion
-    from tier2_runtime.runtime.composer import (
-        RuntimeComposer,
-        RuntimeCompositionConfig,
-        RuntimeExecutionKind,
-        RuntimeFactories,
-        RuntimePluginSelection,
-    )
+def test_dbg_gotcha_01_debugger_and_native_execution_plugin_are_rejected_by_interpreter():
+    """GOTCHA-DBG-01: Interpreter owns the debugger/JIT compatibility boundary."""
+    from qa.shared.helpers import expect_assertion, make_native_interpreter, wat_to_wasm
+    from qa.shared.jit_manager import JITRuntimeManager
+    from qa.shared.x64_jit import TraceCompiler
+    from tier2_runtime.wasm.reader import parse
+    from tier3_plugins.debugger.debugger import DebuggerManager
 
-    class _Executor:
-        def call(self, func_index: int, args: tuple[int, ...]) -> int:
-            return func_index + sum(args)
-
-    class _Observer:
-        def on_runtime_batch(self, batch: RuntimeEventBatch) -> None:
-            return None
-
-    factories = RuntimeFactories(
-        interpreter=_Executor,
-        jit=_Executor,
-        logger=_Observer,
-        debugger=_Observer,
-        profiler=_Observer,
-    )
-    with expect_assertion("debugger-enabled runtime must use interpreter-only execution"):
-        RuntimeComposer.compose(
-            RuntimeCompositionConfig(
-                execution=RuntimeExecutionKind.JIT,
-                plugins=RuntimePluginSelection(debugger=True),
-            ),
-            factories,
-        )
+    module = parse(wat_to_wasm("(module (func))"))
+    interpreter = make_native_interpreter(module)
+    plugin = JITRuntimeManager(jit_compiler=TraceCompiler())
+    try:
+        interpreter.attach_execution_plugin(plugin)
+        with expect_assertion("native execution plugins cannot be combined with debugger"):
+            interpreter.attach_debugger(DebuggerManager())
+    finally:
+        plugin.close()
 
 
 ALL_TESTS = sorted(

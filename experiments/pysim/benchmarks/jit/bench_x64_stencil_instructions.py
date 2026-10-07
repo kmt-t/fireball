@@ -261,7 +261,7 @@ def run_measurement(
     from qa.shared.x64_jit import TraceCompiler
     from system_containers import StaticVector
     from tier2_runtime.interpreter.interpreter import InterpreterBindings, NativeInterpreter
-    from tier2_runtime.wasm.module import LocalWidthMap, WasmOperand
+    from tier2_runtime.wasm.module import LocalLayout, WasmOperand
     from tier2_runtime.wasm.reader import parse
 
     class RuntimeCompilerOnly(TraceCompiler):
@@ -275,7 +275,7 @@ def run_measurement(
             next_pc: int | None,
             loops_to: int | None,
             byte_length: int,
-            local_layout: LocalWidthMap,
+            local_layout: LocalLayout,
             context_helper: bool = False,
             helper_address: int = 0,
         ) -> JITTrace | None:
@@ -289,7 +289,6 @@ def run_measurement(
     module = parse(wat_to_wasm(f"(module {functions})"))
     engine = make_runtime_engine(
         jit_compiler=RuntimeCompilerOnly(),
-        yield_threshold=1,
         min_trace_bytes=1,
         candidate_threshold=0,
     )

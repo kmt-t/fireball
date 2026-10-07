@@ -25,6 +25,7 @@ NATIVE_CALL_STACK_CAPACITY = 32
 NATIVE_STACK_ALIGNMENT_BYTES = WASM_VALUE_SLOT_BYTES
 EXECUTION_CONTEXT_FLAG_STOP_AT_BLOCK_BOUNDARY = 1 << 0
 EXECUTION_CONTEXT_FLAG_PENDING_BLOCK_HEAD = 1 << 5
+NATIVE_OP_CONTINUE = 8
 
 
 class ExecutionContextABI(ctypes.Structure):
@@ -160,10 +161,10 @@ class FunctionExecutionViewNative(ctypes.Structure):
         ("code_size", ctypes.c_uint32),
         ("code_pc_offset", ctypes.c_uint32),
         ("control_map", ctypes.c_void_p),
-        ("local_width_map", ctypes.c_void_p),
-        ("local_width_count", ctypes.c_uint32),
+        ("local_offsets", ctypes.c_void_p),
+        ("local_sizes", ctypes.c_void_p),
+        ("local_count", ctypes.c_uint32),
         ("local_slot_count", ctypes.c_uint32),
-        ("slot_words", ctypes.c_uint32),
         ("param_count", ctypes.c_uint32),
         ("param_packed_slot_count", ctypes.c_uint32),
         ("result_arity", ctypes.c_uint32),
@@ -333,9 +334,8 @@ class CallFrameNative(ctypes.Structure):
         ("local_base", ctypes.c_uint32),
         ("local_count", ctypes.c_uint32),
         ("local_slot_count", ctypes.c_uint32),
-        ("slot_words", ctypes.c_uint32),
-        ("local_width_map", ctypes.c_void_p),
-        ("local_width_count", ctypes.c_uint32),
+        ("local_offsets", ctypes.c_void_p),
+        ("local_sizes", ctypes.c_void_p),
         ("param_count", ctypes.c_uint32),
         ("param_packed_slot_count", ctypes.c_uint32),
         ("result_arity", ctypes.c_uint32),
@@ -720,7 +720,7 @@ assert ctypes.sizeof(ControlStackNative) == 648
 assert ControlStackNative.size.offset == 640
 assert CallFrameNative.func_index.offset == 0
 assert CallFrameNative.code.offset == 8
-assert ctypes.sizeof(FunctionExecutionViewNative) == 72
+assert ctypes.sizeof(FunctionExecutionViewNative) == 80
 assert FunctionExecutionViewNative.code_pc_offset.offset == 12
 assert ctypes.sizeof(FunctionTypeExecutionViewNative) == 16
 assert ctypes.sizeof(TableExecutionViewNative) == 16
@@ -729,7 +729,8 @@ assert ModuleExecutionViewNative.globals.offset == 56
 assert ModuleExecutionViewNative.global_widths.offset == 64
 assert ModuleExecutionViewNative.global_count.offset == 72
 assert CallFrameNative.function_view.offset == 24
-assert CallFrameNative.local_width_map.offset == 48
+assert CallFrameNative.local_offsets.offset == 48
+assert CallFrameNative.local_sizes.offset == 56
 assert ctypes.sizeof(CallFrameNative) == 96
 assert ctypes.sizeof(CallStackNative) == 3080
 assert CallStackNative.size.offset == 3072
@@ -738,6 +739,7 @@ assert CallStackNative.size.offset == 3072
 __all__ = (
     "NATIVE_CALL_STACK_CAPACITY",
     "NATIVE_CONTROL_STACK_CAPACITY",
+    "NATIVE_OP_CONTINUE",
     "NATIVE_VALUE_STACK_CAPACITY",
     "CallFrameNative",
     "CallStackNative",

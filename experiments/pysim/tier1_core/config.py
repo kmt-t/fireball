@@ -4,10 +4,10 @@ from __future__ import annotations
 
 JIT_CARD_SHIFT: int = 2
 JIT_CARD_BYTES: int = 1 << JIT_CARD_SHIFT
-# Initial estimate for a roughly 300 us quantum on a 100 MHz STM32 Cortex-M33:
+# Initial estimate for a roughly 300 us interpreter quantum on a 100 MHz STM32 Cortex-M33:
 # 30,000 cycles / 64 backedges = about 469 cycles per backedge.
 # Calibrate this backedge count on the actual target and workload.
-FB_CONF_RUNTIME_YIELD_THRESHOLD: int = 64
+FB_CONF_INTERPRETER_YIELD_THRESHOLD: int = 64
 # Retry policy shared by recovery-capable components (system_config.md §3.3.8).
 FB_CONF_RETRY_BACKOFF_MS: int = 10
 FB_CONF_RETRY_MAX_ATTEMPTS: int = 3

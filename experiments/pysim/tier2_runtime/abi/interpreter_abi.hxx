@@ -98,10 +98,10 @@ typedef struct fireball_wasm_function_execution_view_native {
   uint32_t code_size;
   uint32_t code_pc_offset;
   const fireball_control_map_entry_native *control_map;
-  const uint8_t *local_width_map;
-  uint32_t local_width_count;
+  const uint16_t *local_offsets;
+  const uint8_t *local_sizes;
+  uint32_t local_count;
   uint32_t local_slot_count;
-  uint32_t slot_words;
   uint32_t param_count;
   uint32_t param_packed_slot_count;
   uint32_t result_arity;
@@ -151,9 +151,8 @@ typedef struct fireball_call_frame_native {
   uint32_t local_base;
   uint32_t local_count;
   uint32_t local_slot_count;
-  uint32_t slot_words;
-  const uint8_t *local_width_map;
-  uint32_t local_width_count;
+  const uint16_t *local_offsets;
+  const uint8_t *local_sizes;
   uint32_t param_count;
   uint32_t param_packed_slot_count;
   uint32_t result_arity;
@@ -206,8 +205,26 @@ typedef struct fireball_control_stack_native {
   uint32_t reserved0;
 } fireball_control_stack_native;
 
+typedef struct fireball_op_result_native {
+  uint32_t kind;
+} fireball_op_result_native;
+
+enum { FIREBALL_NATIVE_OP_CONTINUE = 8 };
+
 #ifdef __cplusplus
 } // extern "C"
+
+#if defined(_WIN32)
+#define FIREBALL_NATIVE_CPS_CALL __fastcall
+#else
+#define FIREBALL_NATIVE_CPS_CALL
+#endif
+
+using fireball_native_cps_handler = fireball_op_result_native(
+    FIREBALL_NATIVE_CPS_CALL *)(fireball_execution_context_native *, uint32_t *,
+                                uint32_t *, uint32_t);
+
+static_assert(sizeof(fireball_op_result_native) == sizeof(uint32_t));
 
 static inline void fb_native_record_block_execution(
     const fireball_wasm_module_execution_view_native *module,
@@ -328,8 +345,10 @@ static_assert(sizeof(wasm_function_view_native) == 24);
 static_assert(sizeof(wasm_module_view_native) == 24);
 static_assert(sizeof(wasm_run_request_native) == 48);
 static_assert(sizeof(wasm_run_result_native) == 24);
-static_assert(sizeof(wasm_function_execution_view_native) == 72);
 static_assert(sizeof(wasm_function_type_execution_view_native) == 16);
+static_assert(sizeof(wasm_function_execution_view_native) == 80);
+static_assert(offsetof(wasm_function_execution_view_native, local_offsets) == 24);
+static_assert(offsetof(wasm_function_execution_view_native, local_sizes) == 32);
 static_assert(sizeof(wasm_table_execution_view_native) == 16);
 static_assert(sizeof(wasm_module_execution_view_native) == 96);
 static_assert(offsetof(wasm_module_execution_view_native, globals) == 56);
@@ -346,7 +365,8 @@ static_assert(sizeof(call_frame_native) == 96);
 static_assert(offsetof(call_frame_native, func_index) == 0);
 static_assert(offsetof(call_frame_native, code) == 8);
 static_assert(offsetof(call_frame_native, function_view) == 24);
-static_assert(offsetof(call_frame_native, local_width_map) == 48);
+static_assert(offsetof(call_frame_native, local_offsets) == 48);
+static_assert(offsetof(call_frame_native, local_sizes) == 56);
 static_assert(sizeof(call_stack_native) == 3080);
 static_assert(offsetof(call_stack_native, frames) == 0);
 static_assert(offsetof(call_stack_native, size) == 3072);

@@ -24,7 +24,7 @@ from _bootstrap import configure_import_paths, reserve_native_region
 configure_import_paths(_PYSIM_DIR, _BENCH_DIR)
 
 import tier2_runtime.wasm.opcodes as op
-from config import FB_CONF_RUNTIME_YIELD_THRESHOLD
+from config import FB_CONF_INTERPRETER_YIELD_THRESHOLD
 from qa.shared.jit_cache import HotspotBitmap
 from qa.shared.runtime_stats import RuntimeStatsEngine
 from qa.shared.x64_jit import TraceCompiler
@@ -38,7 +38,7 @@ from tier2_runtime.interpreter.interpreter import (
     WasmNumber,
 )
 from tier2_runtime.runtime.engine import RuntimeEngine
-from tier2_runtime.wasm.module import I32, LocalWidthMap
+from tier2_runtime.wasm.module import I32, LocalLayout
 from tier2_runtime.wasm.reader import parse
 from tier3_plugins.jit.jit_manager import JITRuntimeManager
 
@@ -66,7 +66,7 @@ class JITCompilerBenchmark:
                 next_pc=next_pc,
                 loops_to=loops_to,
                 byte_length=byte_span,
-                local_layout=LocalWidthMap((I32,)),
+                local_layout=LocalLayout((I32,)),
             )
         t1 = time.perf_counter()
         results["jit_compile_traces_per_sec"] = compile_count / (t1 - t0)
@@ -129,26 +129,23 @@ class JITCompilerBenchmark:
             native_times_ms.append((t1 - t0) * 1000)
             native_results.append(int(res_native[0]))
 
-            runtime_engine = RuntimeEngine(
-                bump_allocator=module.allocator,
-                jit_runtime=JITRuntimeManager(
-                    region_provider=reserve_native_region,
-                    yield_threshold=FB_CONF_RUNTIME_YIELD_THRESHOLD,
-                ),
-            )
+            runtime_engine = RuntimeEngine(bump_allocator=module.allocator)
             runtime_engine.register_module_blocks(module)
+            plugin = JITRuntimeManager(region_provider=reserve_native_region)
             interp_jit = NativeInterpreter(
                 module,
                 InterpreterBindings.empty(),
                 bump_allocator=runtime_engine.bump_allocator,
+                execution_plugin=plugin,
+                yield_threshold=FB_CONF_INTERPRETER_YIELD_THRESHOLD,
             )
 
             # Warm up and compile the hot traces before measuring native execution.
-            runtime_engine.call(interp_jit, fn_idx, [100])
-            runtime_engine.idle_hook(budget=10)
+            interp_jit.call(fn_idx, [100], idle_budget=0)
+            interp_jit.idle_hook(budget=10)
 
             t0 = time.perf_counter()
-            res_jit = runtime_engine.call(interp_jit, fn_idx, [LOOP_COUNT])
+            res_jit = interp_jit.call(fn_idx, [LOOP_COUNT], idle_budget=0)
             t1 = time.perf_counter()
             jit_times_ms.append((t1 - t0) * 1000)
             jit_results.append(int(res_jit[0]))
@@ -160,7 +157,6 @@ class JITCompilerBenchmark:
             bump_allocator=module.allocator,
             jit_runtime=JITRuntimeManager(
                 region_provider=reserve_native_region,
-                yield_threshold=FB_CONF_RUNTIME_YIELD_THRESHOLD,
             ),
             collect_runtime_stats=True,
         )
@@ -200,7 +196,7 @@ class JITCompilerBenchmark:
         results["jit_loop_native_dispatch_trace_transitions"] = (
             diagnostic_engine.stat_native_dispatch_trace_transitions
         )
-        results["runtime_yield_threshold"] = FB_CONF_RUNTIME_YIELD_THRESHOLD
+        results["interpreter_yield_threshold"] = FB_CONF_INTERPRETER_YIELD_THRESHOLD
 
         # 3.5 PIC trace-header-owned helper tail dispatch.  This is the
         # terminal boundary used when a complex operation is implemented by C:
@@ -235,7 +231,7 @@ class JITCompilerBenchmark:
             next_pc=None,
             loops_to=None,
             byte_length=4,
-            local_layout=LocalWidthMap((I32,)),
+            local_layout=LocalLayout((I32,)),
             context_helper=True,
             helper_address=helper_addr,
         )
@@ -360,7 +356,7 @@ def main():
         f"  * Arithmetic Loop (100,000 iters):    Python: {res['interp_python_loop_time_ms']:.2f} ms | Native interp: {res['interp_native_loop_time_ms']:.2f} ms | JIT: {res['jit_loop_time_ms']:.2f} ms"
     )
     print(
-        f"  * Native return boundary:              every {res['runtime_yield_threshold']} taken LOOP backedges"
+        f"  * Native return boundary:              every {res['interpreter_yield_threshold']} taken LOOP backedges"
     )
     print(
         f"  * Differential Result Check:          Python={res['interp_python_loop_result']:,} | Native interp={res['interp_native_loop_result']:,} | JIT={res['jit_loop_result']:,} (MATCH)"

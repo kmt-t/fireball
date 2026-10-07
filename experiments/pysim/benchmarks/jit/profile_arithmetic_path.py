@@ -20,7 +20,7 @@ from _bootstrap import configure_import_paths, reserve_native_region
 configure_import_paths(_PYSIM_DIR, _BENCH_DIR)
 
 from bench_jit import JITCompilerBenchmark
-from config import FB_CONF_RUNTIME_YIELD_THRESHOLD
+from config import FB_CONF_INTERPRETER_YIELD_THRESHOLD
 from qa.private.interpreter_native_abi import NATIVE_RUNTIME_PROFILE_STATS_AVAILABLE
 from qa.shared.runtime_stats import RuntimeStatsEngine
 from tier2_runtime.interpreter.interpreter import (
@@ -149,7 +149,6 @@ def main() -> None:
     else:
         plugin = JITRuntimeManager(
             region_provider=reserve_native_region,
-            yield_threshold=FB_CONF_RUNTIME_YIELD_THRESHOLD,
         )
         measured_stats: RuntimeStatsEngine | None = None
         if args.collect_runtime_stats:
@@ -158,16 +157,24 @@ def main() -> None:
             )
             runtime_engine = measured_stats
         else:
-            runtime_engine = RuntimeEngine(bump_allocator=module.allocator, jit_runtime=plugin)
+            runtime_engine = RuntimeEngine(bump_allocator=module.allocator)
         runtime_engine.register_module_blocks(module)
         interpreter = NativeInterpreter(
             module,
             InterpreterBindings.empty(),
             bump_allocator=runtime_engine.bump_allocator,
+            execution_plugin=None if measured_stats is not None else plugin,
+            yield_threshold=FB_CONF_INTERPRETER_YIELD_THRESHOLD,
         )
-        warmup_result = runtime_engine.call(interpreter, function_index, [100])
+        if measured_stats is None:
+            warmup_result = interpreter.call(function_index, [100], idle_budget=0)
+        else:
+            warmup_result = runtime_engine.call(interpreter, function_index, [100], idle_budget=0)
         assert int(warmup_result[0]) == 4_950
-        runtime_engine.idle_hook(budget=10)
+        if measured_stats is None:
+            interpreter.idle_hook(budget=10)
+        else:
+            runtime_engine.idle_hook(budget=10)
         if measured_stats is not None:
             measured_stats.reset_stats()
 
@@ -176,7 +183,12 @@ def main() -> None:
         batch_start = time.perf_counter()
         try:
             for _ in range(repetitions):
-                result = runtime_engine.call(interpreter, function_index, arguments)
+                if measured_stats is None:
+                    result = interpreter.call(function_index, arguments, idle_budget=0)
+                else:
+                    result = runtime_engine.call(
+                        interpreter, function_index, arguments, idle_budget=0
+                    )
         finally:
             elapsed_ms = (time.perf_counter() - batch_start) * 1000.0
             perf_stat.set_enabled(False)
@@ -213,7 +225,7 @@ def main() -> None:
     print(f"profile_path={args.path}")
     print(f"iterations_per_call={LOOP_COUNT}")
     print(f"repetitions={repetitions}")
-    print(f"loop_backedge_yield_threshold={FB_CONF_RUNTIME_YIELD_THRESHOLD}")
+    print(f"interpreter_yield_threshold={FB_CONF_INTERPRETER_YIELD_THRESHOLD}")
     print(f"wasm_dynamic_instructions_per_call={_dynamic_wasm_instruction_count(LOOP_COUNT)}")
     print(f"wasm_dynamic_instructions={_dynamic_wasm_instruction_count(LOOP_COUNT) * repetitions}")
     print(f"execution_batch_ms={elapsed_ms:.3f}")

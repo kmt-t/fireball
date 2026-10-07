@@ -683,15 +683,31 @@ bool emit_wide_binary(trace_builder &builder, int op) {
          append_stencil(builder, traits->binary);
 }
 
-int local_words(const std::uint8_t *map, std::uint32_t map_bytes,
-                std::uint32_t count, int index) {
-  if (index < 0 || static_cast<unsigned int>(index) >= count)
-    return 0;
-  const auto byte_index = static_cast<std::size_t>(index) >> 2;
-  if (byte_index >= map_bytes || map == nullptr)
-    return 0;
-  const auto byte = map[byte_index];
-  return 1 << ((byte >> ((index & 3) * 2)) & 3u);
+bool local_layout_entry(const std::uint16_t *offsets,
+                        const std::uint8_t *sizes, std::uint32_t count,
+                        std::uint32_t total_words, int index,
+                        std::uint32_t &offset_bytes,
+                        std::uint32_t &size_words) {
+  if (index < 0 || static_cast<std::uint32_t>(index) >= count ||
+      offsets == nullptr || sizes == nullptr)
+    return false;
+  const auto offset = offsets[index];
+  const auto size = sizes[index];
+  if ((size != 1 && size != 2) || offset + size > total_words)
+    return false;
+  offset_bytes = static_cast<std::uint32_t>(offset) * 4u;
+  size_words = size;
+  return true;
+}
+
+int local_words(const std::uint16_t *offsets, const std::uint8_t *sizes,
+                std::uint32_t count, std::uint32_t total_words, int index) {
+  std::uint32_t offset_bytes = 0;
+  std::uint32_t size_words = 0;
+  return local_layout_entry(offsets, sizes, count, total_words, index,
+                            offset_bytes, size_words)
+             ? static_cast<int>(size_words)
+             : 0;
 }
 
 bool load_imm(trace_builder &b, std::uint32_t value) {
@@ -765,9 +781,8 @@ bool copy_stack_to_local(trace_builder &builder, int stack_word,
   return true;
 }
 
-bool compile_wide_local(trace_builder &builder, int op, int index,
-                        int width_words, std::uint32_t slot_bytes) {
-  const auto local_offset = static_cast<std::uint32_t>(index) * slot_bytes;
+bool compile_wide_local(trace_builder &builder, int op, int width_words,
+                        std::uint32_t local_offset) {
   if (op == kLocalGet) {
     if (builder.location_count != 0 || builder.spilled_words != 0 ||
         !copy_local_to_stack(builder, local_offset, builder.helper_words,
@@ -871,7 +886,7 @@ bool compile_runtime_local(trace_builder &builder, int op,
 }
 
 bool emit_push(trace_builder &b, int op, std::uint64_t arg,
-               std::uint32_t slot_bytes) {
+               std::uint32_t local_offset_bytes) {
   // Wide values remain on the shared word stack; do not mix cache layouts.
   if (b.helper_words != 0)
     return false;
@@ -891,7 +906,7 @@ bool emit_push(trace_builder &b, int op, std::uint64_t arg,
     if (!load_imm(b, static_cast<std::uint32_t>(arg)))
       return false;
   } else if (op == kLocalGet) {
-    if (!load_local(b, static_cast<std::uint32_t>(arg * slot_bytes)))
+    if (!load_local(b, local_offset_bytes))
       return false;
   } else
     return false;
@@ -999,8 +1014,10 @@ bool emit_shift(trace_builder &b, int op) {
 
 bool compile_instruction(trace_builder &b,
                          const fireball::jit_instruction &instruction,
-                         const std::uint8_t *map, std::uint32_t map_bytes,
-                         std::uint32_t local_count, std::uint32_t slot_bytes) {
+                         const std::uint16_t *local_offsets,
+                         const std::uint8_t *local_sizes,
+                         std::uint32_t local_count,
+                         std::uint32_t local_slot_count) {
   const int op = static_cast<int>(instruction.opcode);
   const auto current_helper_index = helper_index(op);
   auto arg = instruction.operand;
@@ -1052,16 +1069,19 @@ bool compile_instruction(trace_builder &b,
     b.locations[0] = kTos;
     return true;
   }
+  std::uint32_t local_offset = 0;
+  std::uint32_t local_width = 0;
   if (op == kLocalGet || op == kLocalSet || op == kLocalTee) {
     const int index = static_cast<int>(arg);
-    const auto width = local_words(map, map_bytes, local_count, index);
-    if (width == 0) {
+    if (!local_layout_entry(local_offsets, local_sizes, local_count,
+                            local_slot_count, index, local_offset,
+                            local_width)) {
       b.declined = true;
       return false;
     }
     if (local_count > kJitDirectLocalCount) {
       if (!compile_runtime_local(b, op, static_cast<std::uint32_t>(index),
-                                 width)) {
+                                 local_width)) {
         b.declined = true;
         return false;
       }
@@ -1069,8 +1089,8 @@ bool compile_instruction(trace_builder &b,
         b.max_spilled_words = b.spilled_words;
       return true;
     }
-    if (width > 1) {
-      if (!compile_wide_local(b, op, index, width, slot_bytes)) {
+    if (local_width > 1) {
+      if (!compile_wide_local(b, op, local_width, local_offset)) {
         b.declined = true;
         return false;
       }
@@ -1092,7 +1112,7 @@ bool compile_instruction(trace_builder &b,
       arg = static_cast<std::uint64_t>(index);
     }
     if (ok)
-      ok = emit_push(b, op, arg, slot_bytes);
+      ok = emit_push(b, op, arg, local_offset);
   } else if (op == kI64Const || op == kF32Const || op == kF64Const) {
     if (b.location_count != 0)
       ok = false;
@@ -1105,15 +1125,13 @@ bool compile_instruction(trace_builder &b,
       b.max_spilled_words = b.helper_words;
   } else if (op == kLocalSet || op == kDrop) {
     if (op == kLocalSet) {
-      const int index = static_cast<int>(arg);
-      ok = store_local(b, static_cast<std::uint32_t>(index * slot_bytes));
+      ok = store_local(b, local_offset);
     }
     if (ok)
       ok = emit_pop(b);
   } else if (op == kLocalTee) {
-    const int index = static_cast<int>(arg);
     ok = b.location_count != 0 &&
-         store_local(b, static_cast<std::uint32_t>(index * slot_bytes));
+         store_local(b, local_offset);
   } else if (op == kI32Eqz) {
     ok = b.location_count != 0 && b.locations[b.location_count - 1] == kTos &&
          append_stencil(b, kI32EqzStencil);
@@ -1293,40 +1311,43 @@ bool emit_i32_immediate_supernode(trace_builder &builder, int op,
   return false;
 }
 
-bool flush_pending_i32_constant(trace_builder &builder, const std::uint8_t *map,
-                                std::uint32_t map_bytes,
+bool flush_pending_i32_constant(trace_builder &builder,
+                                const std::uint16_t *local_offsets,
+                                const std::uint8_t *local_sizes,
                                 std::uint32_t local_count,
-                                std::uint32_t slot_bytes) {
+                                std::uint32_t local_slot_count) {
   const auto pending_count = builder.pending_i32_count;
   builder.pending_i32_count = 0;
   for (std::uint8_t index = 0; index < pending_count; ++index) {
     const fireball::jit_instruction constant{kI32Const, 1,
                                              builder.pending_i32_values[index]};
-    if (!compile_instruction(builder, constant, map, map_bytes, local_count,
-                             slot_bytes))
+    if (!compile_instruction(builder, constant, local_offsets, local_sizes,
+                             local_count, local_slot_count))
       return false;
   }
   return true;
 }
 
-bool flush_pending_local_get(trace_builder &builder, const std::uint8_t *map,
-                             std::uint32_t map_bytes, std::uint32_t local_count,
-                             std::uint32_t slot_bytes) {
+bool flush_pending_local_get(trace_builder &builder,
+                             const std::uint16_t *local_offsets,
+                             const std::uint8_t *local_sizes,
+                             std::uint32_t local_count,
+                             std::uint32_t local_slot_count) {
   if (builder.pending_local_get_index == kNoPendingLocalGet)
     return true;
   const auto local_index = builder.pending_local_get_index;
   builder.pending_local_get_index = kNoPendingLocalGet;
   const fireball::jit_instruction local_get{kLocalGet, 1, local_index};
-  return compile_instruction(builder, local_get, map, map_bytes, local_count,
-                             slot_bytes);
+  return compile_instruction(builder, local_get, local_offsets, local_sizes,
+                             local_count, local_slot_count);
 }
 
 bool compile_stream_instruction(trace_builder &builder,
                                 const fireball::jit_instruction &instruction,
-                                const std::uint8_t *map,
-                                std::uint32_t map_bytes,
+                                const std::uint16_t *local_offsets,
+                                const std::uint8_t *local_sizes,
                                 std::uint32_t local_count,
-                                std::uint32_t slot_bytes) {
+                                std::uint32_t local_slot_count) {
   const auto op = static_cast<int>(instruction.opcode);
   if (local_count <= kJitDirectLocalCount &&
       builder.pending_local_get_index != kNoPendingLocalGet) {
@@ -1334,14 +1355,14 @@ bool compile_stream_instruction(trace_builder &builder,
     const bool current_local_is_i32 =
         op == kLocalGet && instruction.has_operand != 0 &&
         instruction.operand <= 0x7FFF'FFFFu &&
-        local_words(map, map_bytes, local_count,
+        local_words(local_offsets, local_sizes, local_count, local_slot_count,
                     static_cast<int>(instruction.operand)) == 1;
     if (builder.location_count == 0 && builder.pending_i32_count == 0 &&
         current_local_is_i32 &&
-        local_words(map, map_bytes, local_count,
+        local_words(local_offsets, local_sizes, local_count, local_slot_count,
                     static_cast<int>(pending_index)) == 1) {
-      if (!flush_pending_local_get(builder, map, map_bytes, local_count,
-                                   slot_bytes))
+      if (!flush_pending_local_get(builder, local_offsets, local_sizes,
+                                   local_count, local_slot_count))
         return false;
       if (builder.location_count == 1 && builder.locations[0] == kTos) {
         builder.pending_local_get_index =
@@ -1352,10 +1373,11 @@ bool compile_stream_instruction(trace_builder &builder,
     if (is_i32_local_pair_opcode(op) && instruction.has_operand == 0 &&
         builder.pending_i32_count == 0 && builder.location_count == 1 &&
         builder.locations[0] == kTos &&
-        local_words(map, map_bytes, local_count,
+        local_words(local_offsets, local_sizes, local_count, local_slot_count,
                     static_cast<int>(pending_index)) == 1) {
       builder.pending_local_get_index = kNoPendingLocalGet;
-      const auto right_offset = pending_index * slot_bytes;
+      const auto right_offset =
+          static_cast<std::uint32_t>(local_offsets[pending_index]) * 4u;
       if (!emit_i32_local_memory_binary(builder, op, right_offset)) {
         builder.declined = true;
         return false;
@@ -1365,8 +1387,8 @@ bool compile_stream_instruction(trace_builder &builder,
         builder.max_spilled_words = builder.spilled_words;
       return true;
     }
-    if (!flush_pending_local_get(builder, map, map_bytes, local_count,
-                                 slot_bytes))
+    if (!flush_pending_local_get(builder, local_offsets, local_sizes,
+                                 local_count, local_slot_count))
       return false;
   }
 
@@ -1385,9 +1407,10 @@ bool compile_stream_instruction(trace_builder &builder,
     if ((op == kLocalSet || op == kLocalTee) && instruction.has_operand != 0) {
       const auto local_index = static_cast<int>(instruction.operand);
       if (local_count <= kJitDirectLocalCount &&
-          local_words(map, map_bytes, local_count, local_index) == 1) {
+          local_words(local_offsets, local_sizes, local_count, local_slot_count,
+                      local_index) == 1) {
         const auto offset =
-            static_cast<std::uint32_t>(local_index) * slot_bytes;
+            static_cast<std::uint32_t>(local_offsets[local_index]) * 4u;
         if (!append_local_i32_constant(builder, offset,
                                        builder.pending_i32_values[1])) {
           builder.declined = true;
@@ -1411,8 +1434,8 @@ bool compile_stream_instruction(trace_builder &builder,
         return true;
       }
     }
-    if (!flush_pending_i32_constant(builder, map, map_bytes, local_count,
-                                    slot_bytes))
+    if (!flush_pending_i32_constant(builder, local_offsets, local_sizes,
+                                    local_count, local_slot_count))
       return false;
   }
 
@@ -1444,9 +1467,10 @@ bool compile_stream_instruction(trace_builder &builder,
     if ((op == kLocalSet || op == kLocalTee) && instruction.has_operand != 0) {
       const auto local_index = static_cast<int>(instruction.operand);
       if (local_count <= kJitDirectLocalCount &&
-          local_words(map, map_bytes, local_count, local_index) == 1) {
+          local_words(local_offsets, local_sizes, local_count, local_slot_count,
+                      local_index) == 1) {
         const auto offset =
-            static_cast<std::uint32_t>(local_index) * slot_bytes;
+            static_cast<std::uint32_t>(local_offsets[local_index]) * 4u;
         if (!append_local_i32_constant(builder, offset, value)) {
           builder.declined = true;
           return false;
@@ -1463,8 +1487,8 @@ bool compile_stream_instruction(trace_builder &builder,
       builder.pending_i32_count = 2;
       return true;
     }
-    if (!flush_pending_i32_constant(builder, map, map_bytes, local_count,
-                                    slot_bytes))
+    if (!flush_pending_i32_constant(builder, local_offsets, local_sizes,
+                                    local_count, local_slot_count))
       return false;
   }
 
@@ -1478,29 +1502,34 @@ bool compile_stream_instruction(trace_builder &builder,
       instruction.has_operand != 0 && instruction.operand <= 0x7FFF'FFFFu &&
       builder.location_count == 0 && builder.spilled_words == 0 &&
       builder.pending_i32_count == 0 &&
-      local_words(map, map_bytes, local_count,
+      local_words(local_offsets, local_sizes, local_count, local_slot_count,
                   static_cast<int>(instruction.operand)) == 1) {
     builder.pending_local_get_index =
         static_cast<std::uint32_t>(instruction.operand);
     return true;
   }
-  return compile_instruction(builder, instruction, map, map_bytes, local_count,
-                             slot_bytes);
+  return compile_instruction(builder, instruction, local_offsets, local_sizes,
+                             local_count, local_slot_count);
 }
 
 bool compile_operations(trace_builder &b,
                         const fireball::jit_instruction *instructions,
                         std::uint32_t instruction_count,
-                        const std::uint8_t *map, std::uint32_t map_bytes,
-                        std::uint32_t local_count, std::uint32_t slot_bytes) {
+                        const std::uint16_t *local_offsets,
+                        const std::uint8_t *local_sizes,
+                        std::uint32_t local_count,
+                        std::uint32_t local_slot_count) {
   for (std::uint32_t index = 0; index < instruction_count; ++index) {
-    if (!compile_stream_instruction(b, instructions[index], map, map_bytes,
-                                    local_count, slot_bytes))
+    if (!compile_stream_instruction(b, instructions[index], local_offsets,
+                                    local_sizes, local_count,
+                                    local_slot_count))
       return true;
   }
-  if (!flush_pending_local_get(b, map, map_bytes, local_count, slot_bytes))
+  if (!flush_pending_local_get(b, local_offsets, local_sizes, local_count,
+                               local_slot_count))
     return true;
-  return flush_pending_i32_constant(b, map, map_bytes, local_count, slot_bytes);
+  return flush_pending_i32_constant(b, local_offsets, local_sizes, local_count,
+                                    local_slot_count);
 }
 
 int finish_instruction_body(trace_builder &builder, std::uint32_t has_next_pc,
@@ -1555,9 +1584,9 @@ int fireball::compile_instruction_body(
     const fireball::jit_instruction *instructions,
     std::uint32_t instruction_count, std::uint32_t has_next_pc,
     std::uint32_t next_pc, std::uint32_t has_loops_to, std::uint32_t loops_to,
-    std::uint32_t byte_span, const std::uint8_t *local_widths,
-    std::uint32_t local_width_bytes, std::uint32_t local_count,
-    std::uint32_t slot_words, std::uint32_t tail_context_helper,
+    std::uint32_t byte_span, const std::uint16_t *local_offsets,
+    const std::uint8_t *local_sizes, std::uint32_t local_count,
+    std::uint32_t local_slot_count, std::uint32_t tail_context_helper,
     std::uintptr_t helper_target, std::uint8_t *output,
     std::uint32_t output_capacity, fireball::jit_compile_result *result,
     std::int16_t *stack_locations, std::uint32_t stack_location_capacity) {
@@ -1565,9 +1594,9 @@ int fireball::compile_instruction_body(
   if (result == nullptr || output == nullptr || byte_span == 0 ||
       instruction_count > byte_span ||
       (instruction_count != 0 && instructions == nullptr) ||
-      (local_width_bytes != 0 && local_widths == nullptr) ||
+      (local_count != 0 && (local_offsets == nullptr || local_sizes == nullptr)) ||
       stack_locations == nullptr || stack_location_capacity < kMaxStackDepth ||
-      (slot_words != 1 && slot_words != 2 && slot_words != 4)) {
+      local_slot_count > 2 * local_count) {
     return -1;
   }
   if (instruction_count > kMaxTraceInstructions ||
@@ -1578,10 +1607,9 @@ int fireball::compile_instruction_body(
                         kMaxStackDepth);
   if (!append_stencil(builder, kEntryStencil))
     return -2;
-  const auto slot_bytes = slot_words * 4;
   if (!compile_operations(builder, instructions, instruction_count,
-                          local_widths, local_width_bytes, local_count,
-                          slot_bytes)) {
+                          local_offsets, local_sizes, local_count,
+                          local_slot_count)) {
     return -1;
   }
   return finish_instruction_body(builder, has_next_pc, next_pc, has_loops_to,
@@ -1594,8 +1622,9 @@ int fireball::compile_wasm_trace(
     std::uint32_t code_offset, std::uint32_t byte_span,
     std::uint32_t has_next_pc, std::uint32_t next_pc,
     std::uint32_t has_loops_to, std::uint32_t loops_to,
-    const std::uint8_t *local_widths, std::uint32_t local_width_bytes,
-    std::uint32_t local_count, std::uint32_t slot_words, std::uint8_t *output,
+    const std::uint16_t *local_offsets, const std::uint8_t *local_sizes,
+    std::uint32_t local_count, std::uint32_t local_slot_count,
+    std::uint8_t *output,
     std::uint32_t output_capacity, fireball::jit_compile_result *result,
     std::int16_t *stack_locations, std::uint32_t stack_location_capacity) {
   if (code == nullptr || byte_span == 0 || code_offset > code_bytes ||
@@ -1611,8 +1640,8 @@ int fireball::compile_wasm_trace(
                         kMaxStackDepth);
   if (!append_stencil(builder, kEntryStencil))
     return -2;
-  const auto slot_bytes = slot_words * 4;
-  if (slot_words != 1 && slot_words != 2 && slot_words != 4)
+  if ((local_count != 0 && (local_offsets == nullptr || local_sizes == nullptr)) ||
+      local_slot_count > 2 * local_count)
     return -1;
   std::uint32_t instruction_count = 0;
   auto cursor = code_offset;
@@ -1707,19 +1736,19 @@ int fireball::compile_wasm_trace(
       // block before scanning any immediate bytes as if they were opcodes.
       return 0;
     }
-    if (!compile_stream_instruction(builder, instruction, local_widths,
-                                    local_width_bytes, local_count,
-                                    slot_bytes)) {
+    if (!compile_stream_instruction(builder, instruction, local_offsets,
+                                    local_sizes, local_count,
+                                    local_slot_count)) {
       return 0;
     }
   }
   if (cursor != end)
     return -1;
-  if (!flush_pending_local_get(builder, local_widths, local_width_bytes,
-                               local_count, slot_bytes))
+  if (!flush_pending_local_get(builder, local_offsets, local_sizes,
+                               local_count, local_slot_count))
     return 0;
-  if (!flush_pending_i32_constant(builder, local_widths, local_width_bytes,
-                                  local_count, slot_bytes))
+  if (!flush_pending_i32_constant(builder, local_offsets, local_sizes,
+                                  local_count, local_slot_count))
     return 0;
   static_cast<void>(loops_to);
   return finish_instruction_body(builder, has_next_pc, next_pc, has_loops_to, 0,

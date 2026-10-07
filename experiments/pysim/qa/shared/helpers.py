@@ -7,9 +7,11 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 
 from bump_allocator import BumpAllocator
+from config import FB_CONF_INTERPRETER_YIELD_THRESHOLD
 from ipc_router import IPCMessage
 from scheduler import Scheduler
 from system_containers import StaticVector
+from tier2_runtime.interpreter.execution_plugin import NativeExecutionPlugin
 from tier2_runtime.interpreter.interpreter import (
     Interpreter,
     InterpreterBindings,
@@ -252,8 +254,10 @@ def make_native_interpreter(
     imported_memory: Memory | None = None,
     logger: Logger | None = None,
     bump_allocator: BumpAllocator | None = None,
+    execution_plugin: NativeExecutionPlugin | None = None,
+    yield_threshold: int = FB_CONF_INTERPRETER_YIELD_THRESHOLD,
 ) -> NativeInterpreter:
-    """Build the independent C++ interpreter for RuntimeEngine test runs."""
+    """Build a C++ Interpreter with an optional Interpreter-owned plugin."""
     bindings = make_interpreter_bindings(
         module,
         memory,
@@ -269,6 +273,8 @@ def make_native_interpreter(
         phys_mem=phys_mem,
         logger=logger,
         bump_allocator=bump_allocator,
+        execution_plugin=execution_plugin,
+        yield_threshold=yield_threshold,
     )
 
 

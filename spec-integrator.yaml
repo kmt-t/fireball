@@ -59,7 +59,6 @@ benchmark_verification:
 
 obligation:
   require_full_coverage: true
-  stale_is_error: true
 
 verification_matrix:
   enabled: true

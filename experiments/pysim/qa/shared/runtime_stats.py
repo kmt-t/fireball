@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import os
 import sys
-from functools import partial
 from typing import TextIO
 
 from bump_allocator import BumpAllocator
-from config import FB_CONF_RUNTIME_YIELD_THRESHOLD, RUNTIME_DEBUG_REPORT_LINE_CAPACITY
+from config import RUNTIME_DEBUG_REPORT_LINE_CAPACITY
 from qa.private.interpreter_native_abi import NativeDiagnosticResult, select_native_dispatch_entry
 from system_containers import StaticVector
+from tier2_runtime.interpreter.execution_plugin import NativeExecutionPlugin
 from tier2_runtime.interpreter.interpreter import (
     RETURN_SENTINEL_IP,
     InterpreterCall,
@@ -18,7 +18,7 @@ from tier2_runtime.interpreter.interpreter import (
     WasmNumber,
 )
 from tier2_runtime.runtime.engine import RuntimeBoundaryResult, RuntimeDriveMode, RuntimeEngine
-from tier2_runtime.runtime.execution_plugin import NativeExecutionPlugin
+from tier2_runtime.wasm.module import Module
 
 
 class RuntimeStatsEngine(RuntimeEngine):
@@ -27,6 +27,7 @@ class RuntimeStatsEngine(RuntimeEngine):
     __slots__ = (
         "_collect_runtime_stats",
         "debug",
+        "jit_runtime",
         "stat_interp_steps",
         "stat_jit_invocations",
         "stat_native_control_handlers",
@@ -39,24 +40,17 @@ class RuntimeStatsEngine(RuntimeEngine):
         jit_runtime: NativeExecutionPlugin | None = None,
         debug: bool = False,
         drive_mode: RuntimeDriveMode = RuntimeDriveMode.SYNCHRONOUS,
-        yield_threshold: int = FB_CONF_RUNTIME_YIELD_THRESHOLD,
         collect_runtime_stats: bool = False,
         bump_allocator: BumpAllocator | None = None,
     ) -> None:
         super().__init__(
-            jit_runtime=jit_runtime,
             drive_mode=drive_mode,
-            yield_threshold=yield_threshold,
             bump_allocator=bump_allocator,
         )
         self._collect_runtime_stats = collect_runtime_stats
+        self.jit_runtime = jit_runtime
         debug_env = os.environ.get("FIREBALL_DEBUG", "").lower()
         self.debug = debug or debug_env in ("1", "true", "yes")
-        dispatcher = select_native_dispatch_entry(collect_runtime_stats, jit_runtime is not None)
-        self._native_dispatcher = dispatcher if jit_runtime is None else jit_runtime.native_entry
-        self._execution_initializer = (
-            None if jit_runtime is None else partial(jit_runtime.bind_execution, dispatcher)
-        )
         self.stat_interp_steps = 0
         self.stat_jit_invocations = 0
         self.stat_native_control_handlers = 0
@@ -67,6 +61,31 @@ class RuntimeStatsEngine(RuntimeEngine):
     def collect_runtime_stats(self) -> bool:
         return self._collect_runtime_stats
 
+    def register_module_blocks(self, module: Module) -> None:
+        super().register_module_blocks(module)
+        if self.jit_runtime is not None:
+            self.jit_runtime.register_module(module)
+
+    def _activate_interpreter(self, interp: NativeInterpreter) -> None:
+        """Install QA dispatch instrumentation at the Interpreter plugin seam."""
+        plugin = self.jit_runtime
+        if plugin is None:
+            plugin = interp._execution_plugin
+        with_extension = plugin is not None
+        dispatcher = select_native_dispatch_entry(self.collect_runtime_stats, with_extension)
+        if plugin is not None:
+            interp.attach_execution_plugin(plugin, dispatcher)
+        else:
+            interp._native_dispatcher = dispatcher
+        super()._activate_interpreter(interp)
+
+    def idle_hook(self, budget: int = 4) -> int:
+        """Service the manager retained by this QA-only driver."""
+        if self.jit_runtime is not None:
+            assert budget >= 0
+            return self.jit_runtime.idle_hook(budget)
+        return super().idle_hook(budget)
+
     def _run_bound(
         self, interp: NativeInterpreter, call_state: InterpreterCall, idle_budget: int
     ) -> RuntimeBoundaryResult:
@@ -75,6 +94,11 @@ class RuntimeStatsEngine(RuntimeEngine):
         if not isinstance(metrics, NativeDiagnosticResult):
             metrics = NativeDiagnosticResult()
             call_state.context._native_result = metrics
+        if self.collect_runtime_stats:
+            # A boundary can cross several Python memory fallbacks. Preserve
+            # their counters inside the QA dispatcher, but start this boundary
+            # with a clean aggregate.
+            metrics.reset_counters()
         result = super()._run_bound(interp, call_state, idle_budget)
         if self.collect_runtime_stats:
             if native_dispatch:
@@ -88,10 +112,28 @@ class RuntimeStatsEngine(RuntimeEngine):
                 self.stat_trace_exits_to_interp += 1
         return result
 
+    def call(
+        self,
+        interp: NativeInterpreter,
+        func_index: int,
+        args: tuple[WasmNumber, ...] | list[WasmNumber],
+        idle_budget: int = 4,
+    ) -> StaticVector[WasmNumber]:
+        """QA-only driver for collecting native dispatch counters around a call."""
+        self._activate_interpreter(interp)
+        return self.complete_call(interp, interp.start(func_index, args), idle_budget)
+
     def complete_call(
         self, interp: NativeInterpreter, call_state: InterpreterCall, idle_budget: int = 4
     ) -> StaticVector[WasmNumber]:
-        results = super().complete_call(interp, call_state, idle_budget)
+        self._activate_interpreter(interp)
+        while not call_state.finished:
+            call_state = self.run(interp, call_state, idle_budget).call_state
+        self.idle_hook(idle_budget)
+        if call_state.trap is not None:
+            assert False, call_state.trap.code
+        assert call_state.results is not None
+        results = call_state.results
         if self.debug:
             self.dump_internal_state()
         return results

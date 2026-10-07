@@ -588,14 +588,11 @@ def test_dbg_12_disabled_composition_has_no_debug_state_or_weave() -> None:
     from qa.shared.helpers import make_native_interpreter
     from tier2_runtime.abi import native_abi
     from tier2_runtime.abi.interpreter_abi import ExecutionContextABI
-    from tier2_runtime.runtime.composer import RuntimeComposer, RuntimeCompositionConfig
 
     module = RuntimeEngineDebugDriver().load_wasm(
         wat_to_wasm("(module (func (result i32) i32.const 7))")
     )
-    interpreter = RuntimeComposer.compose_execution(
-        RuntimeCompositionConfig(), lambda: make_native_interpreter(module)
-    )
+    interpreter = make_native_interpreter(module)
     call = interpreter.start(0, ())
     assert interpreter._native_dispatcher is native_abi.RUN_DISPATCH
     assert (
@@ -631,32 +628,21 @@ def test_dbg_12_continue_returns_to_python_only_at_actual_stop(
     assert steps == [1], "continue must not return through Python for each instruction"
 
 
-def test_dbg_13_composition_rejects_jit_before_creating_executor() -> None:
-    """GOTCHA-DBG-01: Static exclusion happens before construction or weaving."""
+def test_dbg_13_interpreter_rejects_attaching_debugger_to_native_plugin() -> None:
+    """GOTCHA-DBG-01: Interpreter enforces native plugin and debugger incompatibility."""
     from qa.shared.helpers import expect_assertion, make_native_interpreter
-    from tier2_runtime.interpreter.interpreter import NativeInterpreter
-    from tier2_runtime.runtime.composer import (
-        RuntimeComposer,
-        RuntimeCompositionConfig,
-        RuntimeExecutionKind,
-        RuntimePluginSelection,
-    )
+    from qa.shared.jit_manager import JITRuntimeManager
+    from qa.shared.x64_jit import TraceCompiler
 
     module = RuntimeEngineDebugDriver().load_wasm(wat_to_wasm("(module (func))"))
-    constructions: list[int] = []
-
-    def factory() -> NativeInterpreter:
-        constructions.append(1)
-        return make_native_interpreter(module)
-
-    with expect_assertion():
-        RuntimeComposer.compose_execution(
-            RuntimeCompositionConfig(
-                execution=RuntimeExecutionKind.JIT, plugins=RuntimePluginSelection(debugger=True)
-            ),
-            factory,
-        )
-    assert constructions == []
+    interpreter = make_native_interpreter(module)
+    plugin = JITRuntimeManager(jit_compiler=TraceCompiler())
+    try:
+        interpreter.attach_execution_plugin(plugin)
+        with expect_assertion("native execution plugins cannot be combined with debugger"):
+            interpreter.attach_debugger(DebuggerManager())
+    finally:
+        plugin.close()
 
 
 def test_dbg_13_two_compositions_keep_stop_state_and_storage_independent() -> None:

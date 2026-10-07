@@ -13,6 +13,7 @@ the Code section's implicit numbering are all in this unified space.
 
 from __future__ import annotations
 
+import ctypes
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Protocol
@@ -21,9 +22,7 @@ import tier2_runtime.wasm.opcodes as op
 from bump_allocator import BumpAllocator
 from config import FB_CONF_MAX_BASIC_BLOCKS, FB_CONF_MAX_LOCALS
 from system_containers import (
-    BitView,
     CtypesU32Buffer,
-    MutableBitStorage,
     ReadOnlyFlatMapStorage,
     ReadOnlyRadixBinaryTreeStorage,
     SequenceView,
@@ -164,25 +163,17 @@ def value_slot_width(value_type: int) -> int:
     return 2 if value_type == I64 or value_type == F64 else 1
 
 
-LOCAL_WIDTH_BITS = 2
-
-
-class LocalWidthMap:
-    """Raw width of every local of one function, packed at 2 bits per local.
-
-    A code `c` stands for `1 << c` raw 32-bit words: 0 is 4 bytes (i32/f32), 1 is 8 bytes
-    (i64/f64), and 2 is 16 bytes (v128).  The widest local decides `slot_words`, the stride of
-    every local slot in the frame; widths are never mixed inside a frame, so a local's address
-    is `base + index * slot_words`.  No per-local type is kept: opcodes carry the types.
-    """
+class LocalLayout:
+    """Load-time packed word offsets and sizes for locals, parameters first."""
 
     __slots__ = (
         "_arena_offset",
         "_arena_size",
+        "_offsets",
+        "_sizes",
         "_storage",
-        "_view",
         "count",
-        "slot_words",
+        "total_words",
     )
 
     def __init__(
@@ -192,22 +183,31 @@ class LocalWidthMap:
         allocator: BumpAllocator | None = None,
     ) -> None:
         count = len(params) + len(extra)
-        self._storage = MutableBitStorage(count, bits=LOCAL_WIDTH_BITS)
         self.count = count
-        slot_words = 1
+        self._storage = bytearray(count * 3)
+        self._offsets = (
+            (ctypes.c_uint16 * count).from_buffer(self._storage)
+            if count
+            else (ctypes.c_uint16 * 0)()
+        )
+        self._sizes = (
+            (ctypes.c_uint8 * count).from_buffer(self._storage, count * 2)
+            if count
+            else (ctypes.c_uint8 * 0)()
+        )
+        total_words = 0
         index = 0
         for value_type in params:
-            slot_words = self._record(index, value_type, slot_words)
+            total_words = self._record(index, value_type, total_words)
             index += 1
         for value_type in extra:
-            slot_words = self._record(index, value_type, slot_words)
+            total_words = self._record(index, value_type, total_words)
             index += 1
-        self.slot_words = slot_words
-        self._view: BitView = self._storage.view()
+        self.total_words = total_words
         self._arena_offset: int | None = None
-        self._arena_size = len(self._storage.buffer)
+        self._arena_size = len(self._storage)
         if allocator is not None and self._arena_size:
-            self._arena_offset = allocator.allocate(self._arena_size, alignment=1)
+            self._arena_offset = allocator.allocate(self._arena_size, alignment=2)
 
     @property
     def arena_offset(self) -> int | None:
@@ -218,28 +218,38 @@ class LocalWidthMap:
         return self._arena_size
 
     def relocate_arena(self, offset_delta: int) -> None:
-        """Move the recorded packed-width span with its owning module."""
+        """Move the recorded local-layout span with its owning module."""
 
         if self._arena_offset is not None:
             relocated_offset = self._arena_offset + offset_delta
             assert relocated_offset >= 0
             self._arena_offset = relocated_offset
 
-    def _record(self, index: int, value_type: int, slot_words: int) -> int:
+    def _record(self, index: int, value_type: int, offset: int) -> int:
         width = value_slot_width(value_type)
-        self._storage.put(index, width.bit_length() - 1)
-        return width if width > slot_words else slot_words
+        self._offsets[index] = offset
+        self._sizes[index] = width
+        return offset + width
 
-    def words(self, index: int) -> int:
-        """Raw words of local `index`: its own width, not the frame's slot stride."""
+    def offset(self, index: int) -> int:
+        """Return the precomputed raw-word offset of local `index`."""
         assert 0 <= index < self.count
-        return 1 << self._view.at(index)
+        return int(self._offsets[index])
 
     @property
-    def raw_view(self) -> memoryview:
-        """Return the packed two-bit local-width map as a zero-copy byte view."""
+    def sizes_address(self) -> int:
+        """Address of the contiguous per-local raw-word size table."""
+        return ctypes.addressof(self._sizes) if self.count else 0
 
-        return memoryview(self._storage.buffer)
+    @property
+    def offsets_address(self) -> int:
+        """Address of the contiguous per-local raw-word offset table."""
+        return ctypes.addressof(self._offsets) if self.count else 0
+
+    def size_words(self, index: int) -> int:
+        """Return the precomputed raw-word size of local `index`."""
+        assert 0 <= index < self.count
+        return int(self._sizes[index])
 
     def __len__(self) -> int:
         return self.count
@@ -273,10 +283,8 @@ class Function:
     control_map: ControlMap | None = None
     select_widths: ReadOnlyFlatMapStorage[int, int] | None = None
     drop_widths: ReadOnlyFlatMapStorage[int, int] | None = None
-    # The width map (2 bits per local, params then locals_extra) and the slot count are
-    # immutable load-time metadata; a local's own type is not kept.  The execution path uses the
-    # map's frame slot stride (`slot_words`) directly; no per-call offset table is needed.
-    local_width_map_cache: LocalWidthMap | None = None
+    # Per-local raw-word offsets and sizes are immutable loader metadata.
+    local_layout_cache: LocalLayout | None = None
     local_slot_count_cache: int | None = None
     param_packed_slot_count_cache: int | None = None
     param_count_cache: int | None = None
@@ -415,16 +423,16 @@ class Module:
             self.blocks.relocate_arena(offset_delta)
             for function in self.functions:
                 function.locals_extra.relocate_arena(offset_delta)
-                assert function.local_width_map_cache is not None
-                function.local_width_map_cache.relocate_arena(offset_delta)
+                assert function.local_layout_cache is not None
+                function.local_layout_cache.relocate_arena(offset_delta)
             self._arena_start = new_start
         else:
             for function in self.functions:
-                assert function.local_width_map_cache is not None
-                widths = function.local_width_map_cache
-                widths._arena_offset = (
-                    allocator.allocate(widths.arena_size, alignment=1)
-                    if widths.arena_size
+                assert function.local_layout_cache is not None
+                layout = function.local_layout_cache
+                layout._arena_offset = (
+                    allocator.allocate(layout.arena_size, alignment=2)
+                    if layout.arena_size
                     else None
                 )
         self.allocator = allocator
@@ -437,7 +445,7 @@ class Module:
         self._arena_size = allocator.offset - self._arena_start
 
     def prepare_function_layouts(self) -> None:
-        """Precompute each frame's local-slot width and the parameter widths at module load."""
+        """Precompute each local's packed word span when loading the module."""
 
         for function in self.functions:
             assert 0 <= function.type_index < len(self.types), (
@@ -446,9 +454,9 @@ class Module:
             function_type = self.type_at(function.type_index)
             local_count = len(function_type.params) + len(function.locals_extra)
             assert local_count <= FB_CONF_MAX_LOCALS
-            width_map = LocalWidthMap(function_type.params, function.locals_extra, self.allocator)
-            function.local_width_map_cache = width_map
-            function.local_slot_count_cache = local_count * width_map.slot_words
+            layout = LocalLayout(function_type.params, function.locals_extra, self.allocator)
+            function.local_layout_cache = layout
+            function.local_slot_count_cache = layout.total_words
             function.param_count_cache = len(function_type.params)
             function.param_packed_slot_count_cache = sum(
                 value_slot_width(value_type) for value_type in function_type.params

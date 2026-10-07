@@ -95,18 +95,18 @@ def run_aobench(debug: bool = False) -> dict[str, int | float]:
     )
     funcs_t3 = wasi_ctx_t3.build_interpreter_host_functions(module)
     module.init_memory_data(wasi_ctx_t3.guest_memory, ())
-    runtime_engine = RuntimeEngine(
-        jit_runtime=JITRuntimeManager(reserve_native_region),
-    )
+    runtime_engine = RuntimeEngine()
     runtime_engine.register_module_blocks(module)
+    jit_runtime = JITRuntimeManager(reserve_native_region)
     interp_t3 = NativeInterpreter(
         module,
         InterpreterBindings.with_memory_and_functions(wasi_ctx_t3.guest_memory, funcs_t3),
         bump_allocator=runtime_engine.bump_allocator,
+        execution_plugin=jit_runtime,
     )
 
     t0_t3 = time.perf_counter()
-    runtime_engine.call(interp_t3, main_fn, [WIDTH, HEIGHT])
+    interp_t3.call(main_fn, [WIDTH, HEIGHT])
     t1_t3 = time.perf_counter()
     render_output_t3 = sysv_t3.transport.drain_output().decode("utf-8", errors="replace")
     t3_time_ms = (t1_t3 - t0_t3) * 1000

@@ -64,7 +64,7 @@ GDB RSP コマンド処理（`?`, `g/G`, `m/M`, `Z0/z0`, `s`, `c`）、ブレー
 
 | GOTCHA参照 | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| GOTCHA-DBG-01 | デバッガとJITの同時構成拒否 | `RuntimeCompositionConfig(execution=JIT, debugger=True)` | ランタイム構成を合成する | 構成時 `assert` で拒否され、デバッガがJITキャッシュを操作する経路は生成されない | [`debugger.md`](docs/components/tier3_plugins/debugger.md) |
+| GOTCHA-DBG-01 | デバッガとInterpreter実行拡張の同時接続拒否 | JITネイティブ実行拡張を接続したNativeInterpreter | native dispatch前にDebuggerをattachする | attach時に`assert`し、DebuggerとJIT拡張を同じInterpreterへ接続しない | [`debugger.md`](docs/components/tier3_plugins/debugger.md) |
 | GOTCHA-DBG-02 | アタッチ中のインタープリタ専用実行 | `Interpreter + Debugger` 構成 | デバッガをアタッチして実行する | アタッチ中もインタープリタだけが実行され、JIT実行器およびデバッグ専用ハンドラテーブルへの切替は発生しない | [`debugger.md`](docs/components/tier3_plugins/debugger.md) |
 | GOTCHA-DBG-03 | GDB RSP チェックサム照合と再送制御（通信化け耐性） | GDB リモートセッション接続中 | チェックサムが不一致の破損パケットを送信 | サーバーはパケットを破棄し、NAK（`-`）を返信してクライアントに再送を要求する。 | [`debugger.md`](docs/components/tier3_plugins/debugger.md)、[`gdb_rsp_protocol.md`](docs/specs/gdb_rsp_protocol.md) |
 | GOTCHA-DBG-04 | RSP応答の部分送信と複数yield跨ぎ | COOS上のGDBServerへ長い応答を要求し、送信可能量を制限する | 複数回の協調実行と`recv`でACKおよび応答フレームを受信する | ACKに続いて完全な`$...#xx`フレームが届き、応答の欠落・重複・順序変更がない。1回のyield/recvでの完了を前提にしない | [`debugger.md`](docs/components/tier3_plugins/debugger.md) |

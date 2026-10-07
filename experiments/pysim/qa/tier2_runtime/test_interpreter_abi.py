@@ -24,7 +24,7 @@ from tier2_runtime.interpreter.interpreter import (
     ExecutionContext,
     NativeControlStack,
 )
-from tier2_runtime.wasm.module import F32, F64, I32, I64, LocalWidthMap
+from tier2_runtime.wasm.module import F32, F64, I32, I64, LocalLayout
 
 
 def test_native_layout_matches_x64_jit_context():
@@ -251,12 +251,12 @@ def test_runtime_contexts_expose_native_stack_records():
     assert isinstance(context.control_frame_stack, NativeControlStack)
 
 
-def test_local_stack_window_uses_fixed_slot_offsets_and_typed_accessors():
+def test_local_stack_window_uses_packed_offsets_and_typed_accessors():
     storage = NativeValueStack(capacity=8)
     assert storage.extend((0, 0, 0, 0, 0, 0, 0, 0))
-    window = LocalStackWindow(storage, base=0, widths=LocalWidthMap((I32, I64, F32, F64)))
+    window = LocalStackWindow(storage, base=0, layout=LocalLayout((I32, I64, F32, F64)))
     assert len(window) == 4
-    assert window.raw_slot(2) == 4
+    assert window.raw_slot(2) == 3
     assert window.raw_width(1) == 2
     window.set_i32(0, -3)
     window.set_i64(1, -4)
@@ -276,5 +276,5 @@ if __name__ == "__main__":
     test_native_control_stack_owns_flat_frame_records()
     test_control_frame_window_rewinds_multiple_frames_with_one_size_update()
     test_runtime_contexts_expose_native_stack_records()
-    test_local_stack_window_uses_fixed_slot_offsets_and_typed_accessors()
+    test_local_stack_window_uses_packed_offsets_and_typed_accessors()
     print("[PASS] test_interpreter_abi")

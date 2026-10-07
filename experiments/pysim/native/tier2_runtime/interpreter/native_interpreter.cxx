@@ -14,11 +14,7 @@
 
 namespace {
 
-#if defined(_WIN32)
-#define FIREBALL_CPS_CALL __fastcall
-#else
-#define FIREBALL_CPS_CALL
-#endif
+#define FIREBALL_CPS_CALL FIREBALL_NATIVE_CPS_CALL
 
 constexpr std::uint32_t kFallback = 0;
 constexpr std::uint32_t kComplete = 1;
@@ -33,7 +29,7 @@ constexpr std::uint32_t kDispatchYield = 5;
 constexpr std::uint32_t kNativeCallBoundary = 6;
 constexpr std::uint32_t kDebugStop = 7;
 // Internal Runtime API outcome. Only CPS handlers consume this value.
-constexpr std::uint32_t kContinue = 8;
+constexpr std::uint32_t kContinue = FIREBALL_NATIVE_OP_CONTINUE;
 constexpr std::uint32_t kTrapLocalStackCapacity = 1;
 constexpr std::uint32_t kTrapCallStackCapacity = 3;
 constexpr std::uint32_t kTrapOperandStackCapacity = 4;
@@ -57,9 +53,7 @@ static_assert(sizeof(execution_context) == 96,
               "x86-64 execution_context ABI layout must remain 96 bytes");
 static_assert(offsetof(execution_context, trap_code) == 0x58);
 
-struct op_result {
-  std::uint32_t kind;
-};
+using op_result = fireball_op_result_native;
 
 op_result fallback(execution_context &current, std::uint32_t ip,
                    std::uint32_t stack_height) {
@@ -179,9 +173,10 @@ bool read_s32(const execution_context &current, std::uint32_t &ip,
   return false;
 }
 
-[[gnu::noinline]] bool
-read_u32_remaining(const execution_context &current, std::uint32_t &ip,
-                   std::uint32_t &value, std::uint32_t result) {
+[[gnu::noinline]] bool read_u32_remaining(const execution_context &current,
+                                          std::uint32_t &ip,
+                                          std::uint32_t &value,
+                                          std::uint32_t result) {
   std::uint32_t shift = 7;
   while (ip < current.code_size && shift < 35) {
     const auto byte = current.code[ip++];
@@ -443,8 +438,7 @@ runtime_call(execution_context *context, std::uint32_t *&sp,
   auto *local_area = local_stack - caller->local_base;
   const auto local_base = current.local_offset;
   const auto local_end = local_base + target.local_slot_count;
-  for (std::uint32_t index =
-           local_base + target.param_count * target.slot_words;
+  for (std::uint32_t index = local_base + target.param_packed_slot_count;
        index < local_end; ++index) {
     local_area[index] = 0;
   }
@@ -453,18 +447,12 @@ runtime_call(execution_context *context, std::uint32_t *&sp,
       current.sp_offset - target.param_packed_slot_count - (Indirect ? 1u : 0u);
   const auto *arguments =
       sp - target.param_packed_slot_count - (Indirect ? 1u : 0u);
-  if (target.slot_words == 1) {
-    for (std::uint32_t index = 0; index < target.param_count; ++index)
-      local_area[local_base + index] = arguments[index];
-  } else {
-    auto *argument = arguments;
-    for (std::uint32_t index = 0; index < target.param_count; ++index) {
-      const auto width_code =
-          (target.local_width_map[index >> 2] >> ((index & 3u) * 2u)) & 3u;
-      const auto width = 1u << width_code;
-      for (std::uint32_t word = 0; word < width; ++word) {
-        local_area[local_base + index * target.slot_words + word] = *argument++;
-      }
+  auto *argument = arguments;
+  for (std::uint32_t index = 0; index < target.param_count; ++index) {
+    const auto offset = target.local_offsets[index];
+    const auto width = target.local_sizes[index];
+    for (std::uint32_t word = 0; word < width; ++word) {
+      local_area[local_base + offset + word] = *argument++;
     }
   }
 
@@ -474,11 +462,10 @@ runtime_call(execution_context *context, std::uint32_t *&sp,
   callee.code_size = target.code_size;
   callee.function_view = &target;
   callee.local_base = local_base;
-  callee.local_count = target.local_width_count;
+  callee.local_count = target.local_count;
   callee.local_slot_count = target.local_slot_count;
-  callee.slot_words = target.slot_words;
-  callee.local_width_map = target.local_width_map;
-  callee.local_width_count = target.local_width_count;
+  callee.local_offsets = target.local_offsets;
+  callee.local_sizes = target.local_sizes;
   callee.param_count = target.param_count;
   callee.param_packed_slot_count = target.param_packed_slot_count;
   callee.result_arity = target.result_arity;
@@ -552,12 +539,9 @@ struct local_value_span {
 
 local_value_span local_span(const fireball_call_frame_native &frame,
                             std::uint32_t index) {
-  // The loader validates local indices and widths before dispatch.
-  if (frame.slot_words == 1)
-    return {index, 1};
-  const auto width_code =
-      (frame.local_width_map[index >> 2] >> ((index & 3u) * 2u)) & 3u;
-  return {index * frame.slot_words, 1u << width_code};
+  const auto offset = static_cast<std::uint32_t>(frame.local_offsets[index]);
+  const auto width = static_cast<std::uint32_t>(frame.local_sizes[index]);
+  return {offset, width};
 }
 
 bool branch(execution_context &current, std::uint32_t *&sp, std::uint32_t &tos,
@@ -1565,19 +1549,11 @@ runtime_local_get(execution_context *context, std::uint32_t *&sp,
   if (width == 1) {
     tos = local_base[offset];
     *sp++ = tos;
-  } else if (width == 2) {
+  } else {
     sp[0] = local_base[offset];
     tos = local_base[offset + 1];
     sp[1] = tos;
     sp += 2;
-  } else {
-    assert(width == 4);
-    sp[0] = local_base[offset];
-    sp[1] = local_base[offset + 1];
-    sp[2] = local_base[offset + 2];
-    tos = local_base[offset + 3];
-    sp[3] = tos;
-    sp += 4;
   }
   current.sp_offset += width;
   current.ip = operand_ip;
@@ -1590,8 +1566,7 @@ FIREBALL_CPS_CALL op_result h_local_get_wide(execution_context *context,
                                              std::uint32_t *local_base,
                                              std::uint32_t tos) {
   auto &current = *context;
-  const auto &frame =
-      current.call_stack->frames[current.call_stack->size - 1];
+  const auto &frame = current.call_stack->frames[current.call_stack->size - 1];
   auto operand_ip = current.ip + 1;
   std::uint32_t index = 0;
   if (!read_u32(current, operand_ip, index))
@@ -1610,15 +1585,13 @@ FIREBALL_CPS_CALL op_result h_local_get(execution_context *context,
                                         std::uint32_t *local_base,
                                         std::uint32_t tos) {
   auto &current = *context;
-  const auto &frame =
-      current.call_stack->frames[current.call_stack->size - 1];
+  const auto &frame = current.call_stack->frames[current.call_stack->size - 1];
   auto operand_ip = current.ip + 1;
-  if (operand_ip >= current.code_size)
-    return fallback(current, current.ip);
+  assert(operand_ip < current.code_size);
   const auto encoded_index = current.code[operand_ip++];
   if ((encoded_index & 0x80u) != 0) [[unlikely]] {
     [[clang::musttail]] return h_local_get_wide<Debugger>(context, sp,
-                                                         local_base, tos);
+                                                          local_base, tos);
   }
   const auto index = encoded_index;
   const auto outcome =
@@ -1641,8 +1614,8 @@ runtime_local_set(execution_context *context, std::uint32_t *&sp,
   if (width == 1) {
     local_base[offset] = tos;
   } else {
-    for (std::uint32_t word = 0; word < width; ++word)
-      local_base[offset + word] = sp[word - static_cast<std::ptrdiff_t>(width)];
+    local_base[offset] = sp[-2];
+    local_base[offset + 1] = sp[-1];
   }
   current.sp_offset -= width;
   sp -= width;
@@ -1657,8 +1630,7 @@ FIREBALL_CPS_CALL op_result h_local_set_wide(execution_context *context,
                                              std::uint32_t *local_base,
                                              std::uint32_t tos) {
   auto &current = *context;
-  const auto &frame =
-      current.call_stack->frames[current.call_stack->size - 1];
+  const auto &frame = current.call_stack->frames[current.call_stack->size - 1];
   auto operand_ip = current.ip + 1;
   std::uint32_t index = 0;
   if (!read_u32(current, operand_ip, index))
@@ -1677,15 +1649,14 @@ FIREBALL_CPS_CALL op_result h_local_set(execution_context *context,
                                         std::uint32_t *local_base,
                                         std::uint32_t tos) {
   auto &current = *context;
-  const auto &frame =
-      current.call_stack->frames[current.call_stack->size - 1];
+  const auto &frame = current.call_stack->frames[current.call_stack->size - 1];
   auto operand_ip = current.ip + 1;
   if (operand_ip >= current.code_size)
     return fallback(current, current.ip);
   const auto encoded_index = current.code[operand_ip++];
   if ((encoded_index & 0x80u) != 0) [[unlikely]] {
     [[clang::musttail]] return h_local_set_wide<Debugger>(context, sp,
-                                                         local_base, tos);
+                                                          local_base, tos);
   }
   const auto index = encoded_index;
   const auto outcome =
@@ -1708,8 +1679,8 @@ runtime_local_tee(execution_context *context, std::uint32_t *&sp,
   if (width == 1) {
     local_base[offset] = tos;
   } else {
-    for (std::uint32_t word = 0; word < width; ++word)
-      local_base[offset + word] = sp[word - static_cast<std::ptrdiff_t>(width)];
+    local_base[offset] = sp[-2];
+    local_base[offset + 1] = sp[-1];
   }
   current.ip = operand_ip;
   return {kContinue};
@@ -1721,8 +1692,7 @@ FIREBALL_CPS_CALL op_result h_local_tee_wide(execution_context *context,
                                              std::uint32_t *local_base,
                                              std::uint32_t tos) {
   auto &current = *context;
-  const auto &frame =
-      current.call_stack->frames[current.call_stack->size - 1];
+  const auto &frame = current.call_stack->frames[current.call_stack->size - 1];
   auto operand_ip = current.ip + 1;
   std::uint32_t index = 0;
   if (!read_u32(current, operand_ip, index))
@@ -1741,15 +1711,14 @@ FIREBALL_CPS_CALL op_result h_local_tee(execution_context *context,
                                         std::uint32_t *local_base,
                                         std::uint32_t tos) {
   auto &current = *context;
-  const auto &frame =
-      current.call_stack->frames[current.call_stack->size - 1];
+  const auto &frame = current.call_stack->frames[current.call_stack->size - 1];
   auto operand_ip = current.ip + 1;
   if (operand_ip >= current.code_size)
     return fallback(current, current.ip);
   const auto encoded_index = current.code[operand_ip++];
   if ((encoded_index & 0x80u) != 0) [[unlikely]] {
     [[clang::musttail]] return h_local_tee_wide<Debugger>(context, sp,
-                                                         local_base, tos);
+                                                          local_base, tos);
   }
   const auto index = encoded_index;
   const auto outcome =
@@ -2766,6 +2735,8 @@ FIREBALL_CPS_CALL op_result h_unsupported_opcode(execution_context *context,
 
 template <typename Debugger>
 using handler_pointer = decltype(&h_unreachable<Debugger>);
+static_assert(
+    std::is_same_v<handler_pointer<void>, fireball_native_cps_handler>);
 
 template <typename Debugger>
 constexpr auto kFcOpcodeHandlers = [] {

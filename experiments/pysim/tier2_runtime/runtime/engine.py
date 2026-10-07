@@ -1,35 +1,19 @@
-"""Tier 2 Runtime execution boundary for the Interpreter and optional JIT extension.
+"""Tier 2 Runtime lifecycle, scheduler boundary, and vIRQ delivery.
 
-The Runtime owns execution dispatch and continuation handling. An optional
-Tier 3 JIT extension owns hotspot and cache state behind the bounded contract.
-Execution model:
-  Interpreter execution advances to a native dispatch boundary and preserves
-  the shared execution context. An optional extension drives that dispatch
-  through the same execution boundary contract.
-  JIT cache policy and compilation remain inside that extension.
+The Interpreter owns native dispatch and any optional execution plugin. Runtime
+only asks the Interpreter to advance to the next resumable scheduler boundary.
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from dataclasses import dataclass
 from enum import IntEnum
-from functools import partial
 
 from bump_allocator import BumpAllocator
-from config import FB_CONF_RUNTIME_YIELD_THRESHOLD
-from system_containers import SequenceView, StaticVector
-from tier2_runtime.abi import native_abi
 from tier2_runtime.interpreter.interpreter import (
-    NATIVE_DISPATCH_CALL_BOUNDARY,
-    NATIVE_DISPATCH_YIELD,
-    RETURN_SENTINEL_IP,
     InterpreterCall,
     NativeInterpreter,
-    NativeModuleExecution,
-    WasmNumber,
 )
-from tier2_runtime.runtime.execution_plugin import NativeExecutionPlugin
 from tier2_runtime.runtime.recovery import Result
 from tier2_runtime.vsoc.virq import (
     DispatchResult,
@@ -62,43 +46,23 @@ __all__ = ("RuntimeBoundaryResult", "RuntimeDriveMode", "RuntimeEngine")
 
 
 class RuntimeEngine:
-    """Runtime coordinator for interpreter execution and optional JIT traces."""
+    """Runtime coordinator for interpreter execution boundaries and vIRQ delivery."""
 
     __slots__ = (
         "_bump_allocator",
-        "_execution_initializer",
-        "_native_dispatcher",
         "_virq",
         "_virq_interp",
         "drive_mode",
-        "jit_runtime",
         "module",
-        "yield_threshold",
     )
 
     def __init__(
         self,
-        jit_runtime: NativeExecutionPlugin | None = None,
         drive_mode: RuntimeDriveMode = RuntimeDriveMode.SYNCHRONOUS,
-        yield_threshold: int = FB_CONF_RUNTIME_YIELD_THRESHOLD,
         bump_allocator: BumpAllocator | None = None,
     ):
-        backend_dispatcher = (
-            native_abi.RUN_DISPATCH if jit_runtime is None else native_abi.RUN_DISPATCH_EXTENSION
-        )
-        self._native_dispatcher = (
-            backend_dispatcher if jit_runtime is None else jit_runtime.native_entry
-        )
-        self._execution_initializer: Callable[[NativeModuleExecution], int] | None = (
-            None if jit_runtime is None else partial(jit_runtime.bind_execution, backend_dispatcher)
-        )
         # RuntimeEngine is the runtime owner; loaders borrow this arena.
         self._bump_allocator = bump_allocator if bump_allocator is not None else BumpAllocator()
-        self.jit_runtime = jit_runtime
-        assert 1 <= yield_threshold <= 0xFFFF_FFFF
-        self.yield_threshold = (
-            jit_runtime.yield_threshold if jit_runtime is not None else yield_threshold
-        )
         self.drive_mode = drive_mode
         self.module: Module | None = None
         self._virq: VirqDispatcher | None = None
@@ -128,8 +92,6 @@ class RuntimeEngine:
             module.build_basic_block_index(self._bump_allocator)
         self.module = module
         self._virq = VirqDispatcher(module, self._invoke_virq)
-        if self.jit_runtime is not None:
-            self.jit_runtime.register_module(module)
 
     def register_virq_dispatcher(
         self, node_id: int, function_index: int
@@ -179,13 +141,13 @@ class RuntimeEngine:
 
     def idle_hook(self, budget: int = 4) -> int:
         """
-        Gives the optional Tier 3 extension a bounded COOS idle slice.
+        Ask the active Interpreter to service its optional execution plugin.
         """
 
-        if self.jit_runtime is None:
+        if self._virq_interp is None:
             return 0
         assert budget >= 0
-        return self.jit_runtime.idle_hook(budget)
+        return self._virq_interp.idle_hook(budget)
 
     def run(
         self,
@@ -193,49 +155,16 @@ class RuntimeEngine:
         call_state: InterpreterCall,
         idle_budget: int = 4,
     ) -> RuntimeBoundaryResult:
-        """Run native dispatch to a yield, fallback, trap, or completion boundary."""
+        """Advance the Interpreter once and return its scheduler boundary."""
         self._activate_interpreter(interp)
         return self._run_bound(interp, call_state, idle_budget)
 
     def _run_bound(
         self, interp: NativeInterpreter, call_state: InterpreterCall, idle_budget: int
     ) -> RuntimeBoundaryResult:
-        """Advance an already-bound interpreter through the selected native boundary."""
+        """Advance an already-bound Interpreter through one scheduler boundary."""
         assert not call_state.finished, "cannot advance a completed interpreter call"
         return self._run_native_boundary(interp, call_state, idle_budget)
-
-    def call(
-        self,
-        interp: NativeInterpreter,
-        func_index: int,
-        args: SequenceView[WasmNumber],
-        idle_budget: int = 4,
-    ) -> StaticVector[WasmNumber]:
-        """Complete one guest call in the caller-owned, non-COOS runtime mode."""
-        assert self.drive_mode == RuntimeDriveMode.SYNCHRONOUS, (
-            "COOS runtime calls must be advanced by System at each trace boundary"
-        )
-        self._activate_interpreter(interp)
-        return self.complete_call(interp, interp.start(func_index, args), idle_budget)
-
-    def complete_call(
-        self, interp: NativeInterpreter, call_state: InterpreterCall, idle_budget: int = 4
-    ) -> StaticVector[WasmNumber]:
-        """Finish a call by repeatedly using the same native-dispatch ``run`` path."""
-        self._activate_interpreter(interp)
-        if self.drive_mode == RuntimeDriveMode.COOS:
-            assert call_state.finished, (
-                "COOS runtime calls must be advanced by System at each trace boundary"
-            )
-        while not call_state.finished:
-            call_state = self._run_bound(interp, call_state, idle_budget).call_state
-
-        if self.jit_runtime is not None:
-            self.idle_hook(budget=idle_budget)
-        if call_state.trap is not None:
-            assert False, call_state.trap.code
-        assert call_state.results is not None
-        return call_state.results
 
     def _activate_interpreter(self, interp: NativeInterpreter) -> None:
         """Activate one interpreter that borrows the constructor-selected arena."""
@@ -244,38 +173,14 @@ class RuntimeEngine:
         )
         if self.module is None and interp.module is not None:
             self.register_module_blocks(interp.module)
-        if interp.debugger is None:
-            interp.configure_native_execution(self._native_dispatcher, self._execution_initializer)
         self._virq_interp = interp
 
     def _run_native_boundary(
         self, interp: NativeInterpreter, call_state: InterpreterCall, idle_budget: int
     ) -> RuntimeBoundaryResult:
-        """Run C++ interpreter handlers through one count-based yield boundary."""
-        if call_state._ip == RETURN_SENTINEL_IP:
-            return RuntimeBoundaryResult(interp.step_native(call_state))
-        assert call_state._frame is not None
-        frame = call_state._frame
-        native_status = interp.run_native_dispatch(
-            call_state,
-            self.yield_threshold,
-            native_dispatcher=interp._native_dispatcher,
-            idle_budget=idle_budget,
-        )
-        if native_status == 0:
-            call_state = interp.resolve_native_call_boundary(call_state)
-        elif native_status == NATIVE_DISPATCH_YIELD:
-            frame.context.loop_jump_count = 0
-        valid_native_status = (
-            native_status == 0
-            or native_status == 1
-            or native_status == 2
-            or native_status == NATIVE_DISPATCH_YIELD
-            or native_status == NATIVE_DISPATCH_CALL_BOUNDARY
-        )
-        if not valid_native_status:
-            assert False, f"unexpected native interpreter dispatch status: {native_status}"
+        """Ask the Interpreter to advance its own dispatcher to one boundary."""
+        boundary = interp.step_native_boundary(call_state, idle_budget=idle_budget)
         return RuntimeBoundaryResult(
-            call_state,
-            native_status == NATIVE_DISPATCH_YIELD,
+            boundary.call_state,
+            boundary.yield_requested,
         )

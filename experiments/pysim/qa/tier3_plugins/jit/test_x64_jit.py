@@ -48,10 +48,14 @@ from qa.shared.helpers import wat_to_wasm
 from qa.shared.jit_cache import JITTrace
 from qa.shared.runtime_support import compile_module_block, compile_test_block, make_runtime_engine
 from qa.shared.x64_jit import TraceCompiler
-from tier2_runtime.abi.interpreter_abi import CallStackNative, ExecutionContextABI
+from tier2_runtime.abi.interpreter_abi import (
+    NATIVE_OP_CONTINUE,
+    CallStackNative,
+    ExecutionContextABI,
+)
 from tier2_runtime.interpreter.control_flow import extract_basic_blocks
 from tier2_runtime.interpreter.interpreter import ExecutionContext
-from tier2_runtime.wasm.module import I32, I64, BasicBlock, LocalWidthMap
+from tier2_runtime.wasm.module import I32, I64, BasicBlock, LocalLayout
 from tier2_runtime.wasm.opcodes import (
     F32_ADD,
     F32_CONST,
@@ -123,7 +127,7 @@ def test_x64_wide_arithmetic_uses_native_stencils():
             next_pc=3,
             loops_to=None,
             byte_length=3,
-            local_layout=LocalWidthMap(()),
+            local_layout=LocalLayout(()),
         )
         assert trace is not None
         trace.invoke(ctx)
@@ -139,7 +143,7 @@ def test_x64_wide_arithmetic_uses_native_stencils():
             next_pc=3,
             loops_to=None,
             byte_length=3,
-            local_layout=LocalWidthMap(()),
+            local_layout=LocalLayout(()),
         )
         assert trace is not None
         trace.invoke(ctx)
@@ -156,7 +160,7 @@ def test_x64_wide_arithmetic_uses_native_stencils():
             next_pc=3,
             loops_to=None,
             byte_length=3,
-            local_layout=LocalWidthMap(()),
+            local_layout=LocalLayout(()),
         )
         assert trace is not None
         trace.invoke(ctx)
@@ -249,8 +253,8 @@ def test_trace_compiler_cps_4arg_and_pic():
         ctypes.cast(locals_arr, ctypes.c_void_p),
         0,
     )
-    assert res is None
-    # Two i32 locals give a 4-byte slot stride, so local 1 is raw word 1.
+    assert res == NATIVE_OP_CONTINUE
+    # The precomputed offset of the second i32 local is raw word 1.
     assert locals_arr[1] == 40
 
 
@@ -334,7 +338,7 @@ def test_x64_division_and_remainder_use_helper_boundary() -> None:
             next_pc=len(instructions),
             loops_to=None,
             byte_length=len(instructions),
-            local_layout=LocalWidthMap(()),
+            local_layout=LocalLayout(()),
             helper_address=ctypes.cast(helper, ctypes.c_void_p).value or 0,
         )
         assert trace is not None
@@ -414,7 +418,7 @@ def test_trace_header_helper_tail_jump_uses_per_trace_pointer():
         next_pc=next_pc,
         loops_to=loops_to,
         byte_length=byte_span,
-        local_layout=LocalWidthMap((I32,)),
+        local_layout=LocalLayout((I32,)),
         context_helper=True,
         helper_address=helper_addr,
     )
@@ -449,7 +453,7 @@ def test_trace_chaining_between_traces():
     )
     """
     wasm_bytes = wat_to_wasm(wat)
-    engine = make_runtime_engine(yield_threshold=10, jit_compiler=TraceCompiler())
+    engine = make_runtime_engine(jit_compiler=TraceCompiler())
     mod = engine.load_wasm(wasm_bytes)
     block_a = mod.blocks[0]
     block_b = mod.blocks[1]
@@ -488,10 +492,10 @@ def test_hybrid_interpreter_to_jit_trace_elevation():
     )
     """
     wasm_bytes = wat_to_wasm(wat)
-    engine = make_runtime_engine(yield_threshold=3, jit_compiler=TraceCompiler())
+    engine = make_runtime_engine(jit_compiler=TraceCompiler())
     mod = engine.load_wasm(wasm_bytes)
     loop_pc = mod.blocks[0].head_pc
-    results = engine.call(Interpreter(mod), 0, [5])
+    results = engine.call(Interpreter(mod, yield_threshold=3), 0, [5])
     assert results[0] == 15
     # The C++ dispatcher repeats the JIT body and invokes its C++ branch handler
     # before returning at the count-based yield boundary.
@@ -523,7 +527,7 @@ def test_jit_chaining_uses_loader_resolved_successors():
     )
     """
     wasm_bytes = wat_to_wasm(wat)
-    engine = make_runtime_engine(yield_threshold=10, jit_compiler=TraceCompiler())
+    engine = make_runtime_engine(jit_compiler=TraceCompiler())
     mod = engine.load_wasm(wasm_bytes)
     block_a = mod.blocks[0]
     block_b = mod.blocks[1]
@@ -545,7 +549,7 @@ def test_jit_chaining_uses_loader_resolved_successors():
     assert engine.stat_jit_invocations == 2
 
     # 2. Forward chaining test:
-    engine2 = make_runtime_engine(yield_threshold=10, jit_compiler=TraceCompiler())
+    engine2 = make_runtime_engine(jit_compiler=TraceCompiler())
     mod2 = engine2.load_wasm(wasm_bytes)
     block_a2 = mod2.blocks[0]
     block_b2 = mod2.blocks[1]
@@ -561,8 +565,8 @@ def test_jit_chaining_uses_loader_resolved_successors():
     assert trace_a2.chain_next == block_b2.head_pc
 
 
-def test_trace_local_addressing_follows_frame_slot_width():
-    """TEST-JITC-59: local displacement is index * slot width, set by the frame's widest local."""
+def test_trace_local_addressing_uses_precomputed_compact_offsets():
+    """TEST-JITC-59: direct local displacements use loader-computed offsets."""
     code = bytes([LOCAL_GET, 0, LOCAL_SET, 2])
     head_pc, next_pc, loops_to, frame_depth, byte_span = extract_basic_blocks(code)[0]
     block = BasicBlock(
@@ -572,26 +576,27 @@ def test_trace_local_addressing_follows_frame_slot_width():
         frame_depth=frame_depth,
         byte_span=byte_span,
     )
-    for types, slot_words in (((I32, I32, I32), 1), ((I32, I64, I32), 2)):
+    for types in ((I32, I32, I32), (I32, I64, I32)):
+        layout = LocalLayout(types)
         trace = compile_test_block(TraceCompiler(), code, block, types)
         assert trace is not None
-        locals_arr = (ctypes.c_uint32 * (3 * slot_words))()
+        locals_arr = (ctypes.c_uint32 * layout.total_words)()
         for index in range(len(locals_arr)):
             locals_arr[index] = 0x10203040 + index
         expected = list(locals_arr)
-        expected[2 * slot_words] = expected[0]
+        expected[layout.offset(2)] = expected[layout.offset(0)]
         trace.fn(
             ctypes.c_void_p(0), ctypes.c_void_p(0), ctypes.cast(locals_arr, ctypes.c_void_p), 0
         )
         assert list(locals_arr) == expected, f"types {types}: all untouched words must survive"
 
 
-def test_trace_local_value_width_is_fixed_during_compilation():
-    """TEST-JITC-65: wide local copies use compile-time widths and fixed offsets."""
+def test_trace_local_layout_is_fixed_during_compilation():
+    """TEST-JITC-65: local offsets and sizes are constants in the compiled trace."""
     compiler = TraceCompiler()
     value = 0x0123_4567_89AB_CDEF
     words = (value & 0xFFFF_FFFF, value >> 32)
-    layout = LocalWidthMap((I64,))
+    layout = LocalLayout((I64,))
 
     get_trace = compiler.compile_instructions(
         head_pc=0,
@@ -672,7 +677,7 @@ def test_local_runtime_api_table_is_used_only_above_128_locals():
         next_pc=1,
         loops_to=None,
         byte_length=1,
-        local_layout=LocalWidthMap((I32,) * 128),
+        local_layout=LocalLayout((I32,) * 128),
     )
     assert direct is not None and direct.code_blob is not None
     assert bytes.fromhex("41 ff 13") not in direct.code_blob
@@ -683,7 +688,7 @@ def test_local_runtime_api_table_is_used_only_above_128_locals():
         next_pc=1,
         loops_to=None,
         byte_length=1,
-        local_layout=LocalWidthMap((I32,) * 129),
+        local_layout=LocalLayout((I32,) * 129),
     )
     assert fallback is not None and fallback.code_blob is not None
     assert_local_api_call(fallback, 0)
@@ -692,10 +697,14 @@ def test_local_runtime_api_table_is_used_only_above_128_locals():
     call_stack.size = 1
     frame = call_stack.frames[0]
     frame.local_count = 129
-    frame.slot_words = 1
     context = ExecutionContextABI()
     context.call_stack = ctypes.addressof(call_stack)
     context.call_base = 0
+    narrow_offsets = (ctypes.c_uint16 * 129)(*range(129))
+    narrow_sizes = (ctypes.c_uint8 * 129)(*([1] * 129))
+    frame.local_offsets = ctypes.addressof(narrow_offsets)
+    frame.local_sizes = ctypes.addressof(narrow_sizes)
+    frame.local_slot_count = 129
     locals_array = (ctypes.c_uint32 * 129)()
     locals_array[128] = 0x12345678
     value_stack = (ctypes.c_uint32 * 128)()
@@ -715,7 +724,7 @@ def test_local_runtime_api_table_is_used_only_above_128_locals():
             next_pc=1,
             loops_to=None,
             byte_length=2,
-            local_layout=LocalWidthMap((I32,) * 129),
+            local_layout=LocalLayout((I32,) * 129),
         )
         assert trace is not None
         assert_local_api_call(trace, 1 if opcode == LOCAL_SET else 2)
@@ -734,16 +743,15 @@ def test_local_runtime_api_table_is_used_only_above_128_locals():
         else:
             assert trace.result_words == 0
 
-    wide_layout = LocalWidthMap((I32,) * 128 + (I64,))
-    width_map = ctypes.create_string_buffer(bytes(wide_layout.raw_view))
-    frame.slot_words = wide_layout.slot_words
-    frame.local_width_map = ctypes.addressof(width_map)
-    frame.local_width_count = wide_layout.count
-    wide_locals = (ctypes.c_uint32 * (129 * wide_layout.slot_words))()
+    wide_layout = LocalLayout((I32,) * 128 + (I64,))
+    frame.local_offsets = wide_layout.offsets_address
+    frame.local_sizes = wide_layout.sizes_address
+    frame.local_slot_count = wide_layout.total_words
+    wide_locals = (ctypes.c_uint32 * wide_layout.total_words)()
     wide_value = 0x0123456789ABCDEF
     wide_words = (wide_value & 0xFFFF_FFFF, wide_value >> 32)
-    wide_locals[256] = wide_words[0]
-    wide_locals[257] = wide_words[1]
+    wide_locals[128] = wide_words[0]
+    wide_locals[129] = wide_words[1]
     value_stack[0] = value_stack[1] = 0
     wide_get = compiler.compile_instructions(
         head_pc=0,
@@ -774,7 +782,7 @@ def test_local_runtime_api_table_is_used_only_above_128_locals():
         )
         assert wide_set is not None
         assert_local_api_call(wide_set, 1 if opcode == LOCAL_SET else 2)
-        wide_locals[256] = wide_locals[257] = 0
+        wide_locals[128] = wide_locals[129] = 0
         value_stack[0] = value_stack[1] = 0
         wide_set.fn(
             ctypes.byref(context),
@@ -782,7 +790,7 @@ def test_local_runtime_api_table_is_used_only_above_128_locals():
             ctypes.cast(wide_locals, ctypes.c_void_p),
             0,
         )
-        assert (wide_locals[256], wide_locals[257]) == wide_words
+        assert (wide_locals[128], wide_locals[129]) == wide_words
         assert wide_set.result_words == (2 if opcode == LOCAL_TEE else 0)
         if opcode == LOCAL_TEE:
             assert (value_stack[0], value_stack[1]) == wide_words
@@ -863,7 +871,7 @@ def _run_spill_trace(program, locals_values, sp_index: int, total: int = 96):
         next_pc=None,
         loops_to=None,
         byte_length=len(program) * 3,
-        local_layout=LocalWidthMap((I32,) * 4),
+        local_layout=LocalLayout((I32,) * 4),
     )
     assert trace is not None, "a straight-line i32 expression must compile"
     words = (ctypes.c_uint32 * total)(*([_SENTINEL] * total))

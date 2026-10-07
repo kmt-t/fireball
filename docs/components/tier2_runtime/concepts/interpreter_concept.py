@@ -9,7 +9,7 @@ Reference Concept Implementation: Exhaustive WASM MVP (v1) Stack Interpreter wit
 - Full stack pruning (Label Arity handling) on br / br_if / br_table
 - 64-bit integer arithmetic, memory loads/stores (8/16/32/64-bit), and type conversions
 - LOOP labels and backedge stack pruning follow WASM control-flow semantics
-- Cooperative yield thresholds are owned by the C++ native dispatcher, not opcode handlers
+- Cooperative yield thresholds are Interpreter configuration; opcode handlers only count taken loop backedges
 """
 
 import struct

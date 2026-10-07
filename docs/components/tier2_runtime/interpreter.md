@@ -30,10 +30,10 @@ Interpreter は、WASM命令をスレッドインタープリタ方式で実行�
 - **`Interpreter`**: WASM命令の実行、コンテキスト管理、外部環境との連携をカプセル化した主要クラスである。
 - **`execution_context`**: 仮想CPUレジスタ、コードビュー、制御スタックビュー、CallStackビュー、スタック境界、LOOP後方辺のyield状態、リニアメモリビューを保持する構造体である。確認済みx86-64の実体は96バイトである。JIT共通領域とヘルパーはトレースヘッダが保持する。
 - **`オペランドスタック`（オペランドスタック）**: WASM のオペランド値のみを保持する固定容量スタックである。コールチェーン全体を貫く1本の連続バッファとして動作する。呼び出しを跨いでもスタックは連続して配置される。
-- **`ローカル値領域`（ローカル変数スタック）**: コールチェーン全体で共有する固定容量の、型情報を持たない32ビットワード領域である。型タグ、実行時オブジェクト、関数実行記述子を格納しない。論理ローカル1個につき、そのフレームのスロット幅の固定スロットを割り当てる。スロット幅は、フレーム内で最大の変数サイズで決める。i32/f32だけのフレームは4バイト、i64/f64を含むフレームは8バイトとする。v128を含む場合は16バイトとする。同一フレーム内でスロット幅を混在させない。アクセス先は `local_base + local_index * スロット幅` から直接計算する。
+- **`ローカル値領域`（ローカル変数スタック）**: コールチェーン全体で共有する固定容量の、型情報を持たない32ビットワード領域である。型タグ、実行時オブジェクト、関数実行記述子を格納しない。各論理ローカルは必要な1または2ワードだけを占有し、同一フレーム内で幅を混在できる。Loaderは関数ごとにローカルのワードオフセットとワード数を表へ記録する。アクセス先は `local_base + local_offsets[local_index]` から得る。
 - **制御ブロック復帰情報領域**: `block`/`loop`/`if` の入れ子構造を管理する固定容量領域である。
 - **関数実行記述子領域**: 関数ごとの実行メタデータを保持する独立した固定容量領域である。各記述子は`ローカル値領域`内のフレーム開始位置を保持し、`ローカル値領域`にはローカル値だけを置く。
-- **`interpreter_config`**: 3本のスタック容量やyield閾値などの不変な構成情報である。
+- **`interpreter_config`**: 3本のスタック容量と `FB_CONF_INTERPRETER_YIELD_THRESHOLD` など、Interpreterの不変な構成情報である。LOOP後方分岐の回数しきい値はInterpreterが所有し、RuntimeEngineは変更・上書きしない。
 
 ### 3.2 内部ブロック図
 ```mermaid
@@ -77,7 +77,7 @@ graph TD
 #### インタープリタ（Interpreter）クラス
 依存関係（vSoC環境等）と実行状態、命令属性情報をカプセル化する。
 
-`Interpreter.call()` はPython参照実装の呼出状態生成、実行完了、トラップ確定、および結果検証を行う。C++インタープリタは `NativeInterpreter.call()` で単独実行できる。JIT実行では `NativeInterpreter` を `RuntimeEngine.call()` へ渡し、同じC++インタープリタにJIT Runtimeを合成する。JIT専用のInterpreter派生クラスは持たない。
+`Interpreter.call()` はPython参照実装の呼出状態生成、実行完了、トラップ確定、および結果検証を行う。C++インタープリタは `NativeInterpreter.call()` で単独実行できる。JIT実行ではInterpreter構成時にネイティブ実行拡張を接続し、同じ `NativeInterpreter.call()` から同じdispatcherを実行する。RuntimeEngineにJIT選択や実行APIを持たせない。
 
 実行に必要な `memory`、host function、vMMIO 等の外部資源は呼び出し側が明示的に注入し、インタープリタがJIT専用の初期化経路を持たない（{GOTCHA-INTP-18}）。 <!-- definition: {GOTCHA-INTP-18} --> テスト専用の起動・検査APIを製品側へ追加せず、テストは製品の実行境界を通じて状態を構成する（{GOTCHA-INTP-20}）。 <!-- definition: {GOTCHA-INTP-20} -->
 
@@ -133,7 +133,7 @@ WASMゲストの全実行状態を管理する。JIT/Interpreter 共通の仮想
 
 構造体全体は96バイトである。コード、制御スタック、CallStackは非所有ポインタとしてコンテキスト自身から参照する。値スタックとローカルスタック基点、`tos`はCPS引数から受け取る。CallStack深さはCallStack自身から読み、重複フィールドを持たない。JITの複雑処理の委譲先アドレスは対象ABIのトレースヘッダから参照する。 `{ExecutionContext_Layout}`
 
-`CallFrame`の`control_map`は、関数コードビュー内オフセットで直接引ける固定配列を指す。各エントリは対応する`end`、`else`、関数内の命令後オフセット、ブロック結果アリティ、および`drop/select`の生ワード幅を保持する。Runtimeから受け取ったCode section PCは関数命令開始PCを引いて制御表を参照し、遷移先の関数内オフセットを`execution_context.ip`へ格納する。外部へPCを返す場合は関数命令開始PCを加える。ローカル幅表と制御表は`CallFrame`から直接参照する。
+`CallFrame`の`control_map`は、関数コードビュー内オフセットで直接引ける固定配列を指す。各エントリは対応する`end`、`else`、関数内の命令後オフセット、ブロック結果アリティ、および`drop/select`の生ワード幅を保持する。Runtimeから受け取ったCode section PCは関数命令開始PCを引いて制御表を参照し、遷移先の関数内オフセットを`execution_context.ip`へ格納する。外部へPCを返す場合は関数命令開始PCを加える。ローカルオフセット表・サイズ表と制御表は`CallFrame`から直接参照する。
 
 **スタック頂点値の保持と同期不変条件 (`{GOTCHA-INTP-01}`)**: <!-- definition: {GOTCHA-INTP-01} -->
 オペランドスタックの論理状態はInterpreter/JIT境界で共有する。x64では共有オペランド領域を正本とし、インタープリタとJITの相互移行、外部呼出し、トラップ処理で共有状態を同期する。ARMv8-Mでの値キャッシュ、物理レジスタ、境界同期はTBDであり、x64の方式から推定しない。
@@ -148,22 +148,19 @@ PCはモジュール内の座標であり、異なるモジュール間では同
 #### 関数呼出し記述子
 <!-- traceability: {PositionIndependentCode} {ContextPointerRegister} {MemoryBoundaryCheck} {EnvironmentPointer} {CPS_4Args} -->
 関数実行記述子は、実行時メタデータである。
-関数インデックス、コード、制御マップ、ローカル幅マップ、引数搬送情報、戻り境界を結び付ける。
+関数インデックス、コード、制御マップ、ローカルオフセット表・サイズ表、引数搬送情報、戻り境界を結び付ける。
 `ローカル値領域`の開始32ビットワード位置も結び付ける。
-記述子はCallStackへ固定容量で積む。関数メタデータは記述子の生成時に一度取得して紐付け、命令実行中にコードや制御表を再検索しない（{GOTCHA-INTP-14}）。 <!-- definition: {GOTCHA-INTP-14} --> ローカル値は現在の空き位置から確保し、記述子に保存した開始位置から参照する。`オペランドスタック`と`ローカル値領域`は型情報を持たない32ビットワード列であり、記述子、戻りPC、型情報を格納しない。論理ローカルは、フレームごとに決まるスロット幅の固定スロットで保持する。スロット幅は、関数のロード時に、ローカルの最大の変数サイズから求める。値の有効ワードは関数シグネチャに従う。i32/f32は1ワード、i64/f64は2ワードを占有する（{GOTCHA-INTP-13}）。 <!-- definition: {GOTCHA-INTP-13} -->
+記述子はCallStackへ固定容量で積む。関数メタデータは記述子の生成時に一度取得して紐付け、命令実行中にコードや制御表を再検索しない（{GOTCHA-INTP-14}）。 <!-- definition: {GOTCHA-INTP-14} --> ローカル値は現在の空き位置から確保し、記述子に保存した開始位置から参照する。`オペランドスタック`と`ローカル値領域`は型情報を持たない32ビットワード列であり、記述子、戻りPC、型情報を格納しない。各ローカルの開始オフセットとワード数はLoaderが関数単位で前計算し、値は必要なワード数だけ連続配置する。値の有効ワードは関数シグネチャに従う。i32/f32は1ワード、i64/f64は2ワードを占有する（{GOTCHA-INTP-13}）。 <!-- definition: {GOTCHA-INTP-13} -->
 
-`local.get`, `local.set`, `local.tee` は型を解釈しない。local index にフレームのスロット幅を掛けて、アドレスを直接計算する。必要な 1 または 2 ワードをオペランドスタックとの間で生コピーする（{GOTCHA-INTP-15}）。 <!-- definition: {GOTCHA-INTP-15} --> 型付き演算や ABI 境界の読み書きのみが、既知の型に応じて値を解釈する。オペランドスタックはコール境界を跨いで連続する。`call`と`call_indirect`はC++命令ハンドラから呼ぶRuntime APIが処理し、定義済みゲスト関数ならC++ dispatcherが呼出し先へ継続する。import・host callはInterpreter/RuntimeEngine境界へ戻す。関数復帰はC++命令ハンドラから呼ぶRuntime APIが処理し、最上位の完了をRuntimeEngineへ返す。JIT トレースが関数呼出し記述子の積み下ろしや host call helper の呼出しを代行することはない。Fireball host import の `fireball_call` も実行エンジンからホストハンドラへ直接接続し、SYSCTL/vMMIO syscall vectorを経由しない（{GOTCHA-INTP-21}）。 <!-- definition: {GOTCHA-INTP-21} -->
+`local.get`, `local.set`, `local.tee` は型を解釈しない。CallFrameの `local_offsets[local_index]` と `local_sizes[local_index]` から対象ワード範囲を取得する。必要な 1 または 2 ワードをオペランドスタックとの間で生コピーする（{GOTCHA-INTP-15}）。 <!-- definition: {GOTCHA-INTP-15} --> 型付き演算や ABI 境界の読み書きのみが、既知の型に応じて値を解釈する。オペランドスタックはコール境界を跨いで連続する。`call`と`call_indirect`はC++命令ハンドラから呼ぶRuntime APIが処理し、定義済みゲスト関数ならC++ dispatcherが呼出し先へ継続する。import・host callはInterpreter/RuntimeEngine境界へ戻す。関数復帰はC++命令ハンドラから呼ぶRuntime APIが処理し、最上位の完了をRuntimeEngineへ返す。JIT トレースが関数呼出し記述子の積み下ろしや host call helper の呼出しを代行することはない。Fireball host import の `fireball_call` も実行エンジンからホストハンドラへ直接接続し、SYSCTL/vMMIO syscall vectorを経由しない（{GOTCHA-INTP-21}）。 <!-- definition: {GOTCHA-INTP-21} -->
 
 値スタックは型タグを持たない32ビットワード列とし、型は各命令の操作側で解釈する（{GOTCHA-INTP-12}）。 <!-- definition: {GOTCHA-INTP-12} -->
 
-**フレームごとのローカルスロット幅 (`{GOTCHA-INTP-22}`)**: <!-- definition: {GOTCHA-INTP-22} -->
-スロット幅は、フレーム内で最大の変数サイズで決める。
-i32/f32だけのフレームは4バイト、i64/f64を含むフレームは8バイト、v128を含むフレームは16バイトとする。
-同一フレーム内でスロット幅を混在させない。混在させると、ローカルのアドレスがローカル番号だけで決まらなくなる。
-幅は、関数のロード時に一度だけ求める。実行中に変更しない。
-幅は、ローカルごとに2ビットのビットマップとして保持する。型の配列は保持しない。型はオペコードが決めるためである。
-JITは、関数ごとのスロット幅から `local index × スロット幅` を求め、命令生成時に埋め込む。i32のみのフレームに限定しない。
-**設計理由**: i32/f32が大半のフレームで、ローカル値領域の使用量を半分にする。固定容量のRAM予算を節約するためである。
+**ローカルレイアウト表 (`{GOTCHA-INTP-22}`)**: <!-- definition: {GOTCHA-INTP-22} -->
+Loaderは関数の全ローカルについて、引数を先頭に含むワードオフセットとワード数を一度だけ計算する。ローカルは連続配置し、i32/f32は1ワード、i64/f64は2ワードを占有する。同一フレーム内でサイズを混在できる。
+オフセット表はローカルあたり16bit、サイズ表はローカルあたり8bitで保持する。両表は関数ロード時に確定し、実行中に変更しない。`local_slot_count` は全ローカルのワード数の合計である。
+Interpreterは表から生ワード範囲を読み、JITコンパイラはローカル数128以下ならオフセットとサイズを機械語へ埋め込む。129以上ではJITのローカルRuntime APIが現行CallFrameの表を使う。
+**設計理由**: 32bitローカルだけのフレームの使用量を保ち、wide localがある場合も他のローカルへ余分なslotを割り当てない。RAM追加分はロード時表の3バイト/ローカルである。
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
@@ -173,9 +170,9 @@ JITは、関数ごとのスロット幅から `local index × スロット幅` �
 | 関数命令開始PC | 関数コードビューの先頭命令に対応するCode section payload相対PC | 32bit符号なし | Loaderがbody sizeとlocals宣言を読み飛ばして確定 |
 | 制御マップ | block/loop/if の静的な飛び先表 | 非所有参照 | ロード時に構築した表を共有 |
 | ローカル値領域開始スロット | 当該関数のローカル値の先頭 | 32bitオフセット | 固定長ローカル配列内の物理スロット位置 |
-| ローカル個数・スロット個数 | 引数を含む論理ローカル数と物理スロット数 | 32bit符号なし | `local_slot_count = local_count × slot_words` |
-| スロット幅 | フレーム内の固定ストライド | 32bit符号なし | 1 / 2 / 4ワード。`local_base + local_index * slot_words` から直接計算 |
-| ローカル幅マップ | 各ローカルの有効ワード幅 | 非所有参照 + 個数 | 2bit/ローカルのロード時固定マップ |
+| ローカル個数・ワード数 | 引数を含む論理ローカル数と物理ワード数 | 32bit符号なし | `local_slot_count = sum(local_sizes)` |
+| ローカルオフセット表 | 各ローカルの先頭ワード位置 | `uint16_t *` + 個数 | 2バイト/ローカル。ロード時に構築 |
+| ローカルサイズ表 | 各ローカルのワード数 | `uint8_t *` + 個数 | 1バイト/ローカル。MVPの値型は1または2ワード |
 | 引数個数・詰め込み個数 | 呼出し元から搬送する引数の論理数とワード数 | 32bit符号なし | `i64/f64` は2ワード |
 | 結果アリティ・制御ベース | 戻り値個数と制御フレーム窓の開始深さ | 32bit符号なし | ABI境界で検査 |
 | 戻り境界 | 復帰PCと復帰先関数 | 32bit符号なし | 最上位CallFrameへ保持 |
@@ -313,8 +310,8 @@ x64ではトレースが共有オペランド領域へ状態を書き戻す。AR
 - **JIT実行構成**:
   - Python参照経路は `Interpreter.call()` でPythonハンドラを駆動する。
   - C++インタープリタ経路は `NativeInterpreter.call()` でC++ハンドラを駆動する。
-  - C++インタープリタ＋JIT経路は `RuntimeEngine.call(native_interpreter, ...)` からTier 3 JIT拡張へ境界実行を委譲し、同じC++ dispatcherで実行する。
-  - RuntimeとInterpreterはTier 2の実行基盤である。C++ Interpreterは共有実行状態を渡して実行拡張の本体実行入口を呼び出す。トレースの選択と実行はTier 3 JIT拡張内部で完了する。InterpreterにJITランタイム状態やJIT専用操作APIを持たせない。
+  - C++インタープリタ＋JIT経路は、拡張を接続した `NativeInterpreter.call()` から同じC++ dispatcherを実行する。
+  - RuntimeEngineはSystemから要求されたscheduler境界までInterpreterを進める。C++ Interpreter dispatcherは共有実行状態を渡して任意のネイティブ実行拡張を呼び出す。トレースの選択と実行はTier 3 JIT拡張内部で完了する。InterpreterにはJIT固有状態や操作APIを持たせない。
 - **関数復帰の番兵**:
   - JITは `return` 命令や専用RETURN sentinelを生成しない。
   - JITトレースは `return` 直前で終了して共有状態を同期する。
@@ -328,7 +325,7 @@ x64ではトレースが共有オペランド領域へ状態を書き戻す。AR
   - 候補ビットマップで該当block先頭PCが候補外（`0`）の場合、JITランタイムは追跡登録を省略する。compile効果のないblockの追跡overheadを抑える。
 - **トレース境界での協調的Yield (`ADR_LoopBackedgeYield`)**:
   - インタープリタは命令ごとの精密なカウンタ評価や中断を行わない。
-  - C++ディスパッチャは常駐JITトレースとC++ Interpreter handlerを連続実行し、取得済み後方分岐数が `FB_CONF_RUNTIME_YIELD_THRESHOLD` に達した境界で状態とyield statusを返す。Tier 3 JIT拡張は同じ境界内で履歴処理を行い、Tier 2 RuntimeがvSoCへyieldを伝える。C++ Interpreter単独とJIT拡張経路は同じカウンタとしきい値を使う。
+  - Interpreterは `FB_CONF_INTERPRETER_YIELD_THRESHOLD` を所有する。C++ディスパッチャはその値を使って常駐JITトレースとC++ handlerを連続実行し、取得済み後方分岐数がしきい値に達した境界で状態とyield statusを返す。Tier 3 JIT拡張は同じ境界内で履歴処理を行い、RuntimeEngineは返されたstatusをvSoCへ伝える。C++ Interpreter単独とJIT拡張経路は同じInterpreter設定を使う。
   - 非対応命令、外部呼出し、トラップ、関数完了など、処理をC++内で続けられない境界では回数条件より先に制御を返す。
   - `co_yield` の発行と割り込み時の再スケジュール世代の観測はvSoCの責務である。vSoCはyield境界で世代観測を完了させてから`co_yield`を発行する。
   - インタープリタはコルーチンではなく単なる関数である。トレース境界での自然なレジスタ・スタック整合によりステート退避を極小化する。
@@ -378,7 +375,7 @@ sequenceDiagram
         I->>D: pre_check(ctx)
         D-->>I: continue
     end
-    loop 取得済み後方分岐が共通しきい値へ達するまで
+    loop 取得済み後方分岐数がInterpreter設定のしきい値へ達するまで
         I->>I: 常駐JIT traceまたはC++ handlerを選ぶ
         opt C++命令を実行
             I->>H: 4論理引数で開始
@@ -565,9 +562,9 @@ OSRフォールバック、即時トラップと後続命令の抑止、4論理�
 
 - **ステータス**: 承認 (Approved)
 - **コンテキスト**:
-  COOS協調型マルチタスク環境で、命令ディスパッチループがRuntimeEngineへyield statusを返す条件を定める。インタープリタ自身はコルーチンにせず、取得LOOP後方辺の共通しきい値まで命令handlerとディスパッチャが実行を続ける。
+  COOS協調型マルチタスク環境で、Interpreterの命令ディスパッチループがyield statusを返す条件を定める。インタープリタ自身はコルーチンにせず、Interpreterが所有する取得LOOP後方辺のしきい値まで命令handlerとディスパッチャが実行を続ける。
 - **決定事項**:
-  取得されたLOOP後方分岐はC++ Interpreterの命令別handlerが呼ぶRuntime APIが処理し、共通contextの回数を更新する。C++ dispatcherは常駐JIT traceまたはC++ handlerを継続実行し、共有しきい値へ達した時点でyield statusを返す。接続中のTier 3 JIT拡張はその実行境界で履歴とcache方針を処理し、Systemは協調境界で`co_yield`を発行する。各handler後にvSoC境界へ戻ってcacheを再判定してはならない。
+  取得されたLOOP後方分岐はC++ Interpreterの命令別handlerが呼ぶRuntime APIが処理し、共通contextの回数を更新する。C++ dispatcherはInterpreter設定のしきい値まで常駐JIT traceまたはC++ handlerを継続実行し、到達時にyield statusを返す。RuntimeEngineはしきい値を保持せず、返されたstatusをSystemへ渡す。接続中のTier 3 JIT拡張はその実行境界で履歴とcache方針を処理し、Systemは協調境界で`co_yield`を発行する。各handler後にvSoC境界へ戻ってcacheを再判定してはならない。
 
 #### ADR-INTERP-02: 再スケジュール世代の観測境界 (`{ADR_InterruptRescheduleGeneration}`)
 
@@ -575,14 +572,14 @@ OSRフォールバック、即時トラップと後続命令の抑止、4論理�
 - **決定事項**:
   インタープリタとJIT handlerはCOOSの再スケジュール世代を命令ごとに参照しない。SystemはC++ dispatcherがyield statusを返した後の協調境界で現在世代とタスクの最終観測世代を比較し、未観測なら記録して`co_yield`を発行する。
 - **責務境界**:
-  C++ InterpreterはWASM命令を処理し、C++ dispatcherはLOOP後方分岐しきい値到達時にRuntimeEngineへ戻る。世代の管理、READYキューの一巡判定、および割り込みイベントの配送はCOOSとSystemの責務とする。
+  InterpreterはWASM命令、LOOP後方分岐しきい値、およびdispatcherの継続を所有する。C++ dispatcherはしきい値到達時にRuntimeEngineへstatusを返す。RuntimeEngineはしきい値を決めず、世代の管理、READYキューの一巡判定、および割り込みイベントの配送はCOOSとSystemの責務とする。
 - **保証範囲**:
   この方式は取得後方辺しきい値に応じた協調yieldを保証する。LOOP後方辺へ到達しない命令列の強制プリエンプションや、割り込みからの実時間応答上限は保証しない。
 - **根拠とトレードオフ**:
   1. **ディスパッチ性能の維持**: C++ handlerが呼ぶRuntime APIはopcode固有の状態更新だけを行い、vSoCへの復帰・イベント走査を挟まない。C++ dispatcherは後方分岐しきい値まで継続する。
   2. **レジスタ・スタック整合性の保証**: C++ handlerとJIT traceの境界で共有実行コンテキストと3本の独立領域を同期する。
   3. **有界な協調間隔**: 取得後方分岐回数のしきい値でdispatcherがRuntimeEngineへ戻る。これは時間ベースのプリエンプションや実時間応答上限を保証しない。
-  4. **責務の分離**: Runtime APIは命令意味論と取得済み後方辺回数を担当し、CPS handlerとディスパッチャは実行遷移を担当する。JIT cacheとCOOS schedulingの管理はRuntimeEngineとSystemが担う。
+  4. **責務の分離**: Runtime APIは命令意味論と取得済み後方辺回数を担当し、CPS handlerとInterpreter dispatcherは実行遷移とyield条件を担当する。JIT cacheはTier 3 JIT拡張、COOS schedulingはRuntimeEngineとSystemが担う。
 - **影響範囲**:
   - `interpreter.md`, `runtime_vsoc.md`, `os_coos.md`, `jit_compiler.md`
 

@@ -29,13 +29,15 @@ Copy-and-Patch方式によるJITコンパイル速度（トレース結合＋リ
 
 BENCHMARK-JIT-05 は、同一の `heavy_loop` WASM バイナリと100,000回の入力で3経路を比較する。各経路の結果は符号付きi32値 `704,982,704` と一致しなければならない。
 
-Pythonハンドラ経路は `_step(..., stop_at_boundary=False)` を直接呼ぶ。C++インタープリタ経路は `NativeInterpreter.call()` を使う。Hybrid JIT経路は `RuntimeEngine.call(native_interpreter, ...)` を使い、C++インタープリタにJIT Runtimeを合成する。C++インタープリタとHybrid JITは、共通設定 `FB_CONF_RUNTIME_YIELD_THRESHOLD` の取得済み後方分岐数に達した時点でC++ディスパッチを止め、Python呼出し側へ戻る。RuntimeEngineをCOOSから駆動する場合、このstatusが協調yield境界となる。未対応命令、外部呼出し、トラップ、関数完了などの意味上必要な境界は回数条件より先に戻る。ベンチマークの両経路は同じ設定値を使用し、実行出力にも記録する。
+Pythonハンドラ経路は `_step(..., stop_at_boundary=False)` を直接呼ぶ。C++インタープリタ経路は拡張を接続しない `NativeInterpreter.call()` を使う。Hybrid JIT経路はTier 3拡張を接続した `NativeInterpreter.call()` を使う。両方とも同じInterpreter dispatcherとnative call入口を通る。Interpreterが所有する `FB_CONF_INTERPRETER_YIELD_THRESHOLD` の取得済み後方分岐数に達した時点でC++ディスパッチを止める。COOS実行ではRuntimeEngineが返されたstatusをscheduler境界としてSystemへ渡す。未対応命令、外部呼出し、トラップ、関数完了などの意味上必要な境界は回数条件より先に戻る。両経路は同じInterpreter設定を使い、実行出力にも記録する。
 
 計測区間には関数実行と実行状態の初期化を含める。WASM生成・ロード、実行器の準備、JITトレースの事前コンパイルは区間から除外する。通常の速度値はプロファイラを通さず、各経路3回の中央値で報告する。
 
 通常の速度・cycles計測には検査用APIを持たない製品Runtimeを使う。実行診断カウンタは計時後にQA専用ハーネスで取得する。QAの計測入口は専用ライブラリで提供し、製品ライブラリへ公開しない。chainはtrace末尾から共通コード領域のchain dispatcherへ入り、そこで次trace bodyへtail-jumpする経路を指す。`native_dispatch_trace_transitions`はC++ handlerからJIT traceへのdispatcher遷移を数える別指標であり、chain回数には使わない。共通コードchain dispatcherの実行回数を数える専用指標は現状ないため、未取得の値として扱う。Hybrid JITの実行時間は通常のプラグインで測定する。実行経路にはキャッシュ内部を操作するQA用マネージャを使わない。JITの実行は計時後の診断で実行カウンタが正であることを確認する。
 
-Intel CPUではVTune Hotspotsを使い、3経路を個別に収集する。AMD CPUではuProfのHotspotsとIBSを使い、Hybrid JIT経路を個別に収集する。各反復で期待結果を照合し、Hybrid JITでは常駐traceが事前に準備され、実行結果が一致することを確認する。C++インタープリタとHybrid JITの共通LOOP後方分岐yieldしきい値は出力された `loop_backedge_yield_threshold` と照合する。プロファイラ収集中の所要時間は通常の速度比較に使わない。
+速度比較用のInterpreter/JIT共有ライブラリは、Clang `-O2 -DNDEBUG`でビルドする。InterpreterとJITはそれぞれの`build_native.sh --release`を使う。WAMR比較では同じClang最適化レベルとassert無効化条件を使い、ビルド方式固有の機能定義は各エンジンの設定に従う。
+
+Intel CPUではVTune Hotspotsを使い、3経路を個別に収集する。AMD CPUではuProfのHotspotsとIBSを使い、Hybrid JIT経路を個別に収集する。各反復で期待結果を照合し、Hybrid JITでは常駐traceが事前に準備され、実行結果が一致することを確認する。C++インタープリタとHybrid JITで使うInterpreter所有のLOOP後方分岐yieldしきい値は、出力された `interpreter_yield_threshold` と照合する。プロファイラ収集中の所要時間は通常の速度比較に使わない。
 
 #### Linux ホストサイクル数 / 動的 WASM 命令
 
@@ -146,7 +148,7 @@ VTuneは各経路を別々に収集し、ソフトウェアサンプリングを
 3. **実行速度比較 (Differential Execution)**:
    - 同一の WASM 算術ループモジュールをPythonハンドラ、C++ネイティブハンドラ、Hybrid JITの3経路で実行し、計算結果の等価性と実行所要時間を比較する。InterpreterはTier 2、JIT拡張はTier 3の実装である。`Interpreter.call()` はビルド済みC++拡張を使うため、Pythonハンドラ経路の計測ではPythonハンドラを直接実行する。
    - ビルド済みC++インタープリタ拡張の実行時間は別の基準値として測定し、Pythonハンドラの速度比と混同しない。各経路の結果は直接比較して一致を検証する。
-   - C++インタープリタとHybrid JITは同じ `FB_CONF_RUNTIME_YIELD_THRESHOLD` を使い、取得済みLOOP後方分岐数が設定値へ達した場合にPython/COOS境界へ戻る。C++インタープリタはJIT managerのホットスポットyieldを持たないため、計測対象のHybrid JITループを事前コンパイルし、計測中の追加ホットスポットyieldを避ける。
+   - C++インタープリタとHybrid JITは同じ `FB_CONF_INTERPRETER_YIELD_THRESHOLD` を使い、取得済みLOOP後方分岐数が設定値へ達した場合にPython/COOS境界へ戻る。C++インタープリタはJIT managerのホットスポットyieldを持たないため、計測対象のHybrid JITループを事前コンパイルし、計測中の追加ホットスポットyieldを避ける。
    - 各実行経路を同じ反復回数で3回計測し、中央値を報告する。JIT経路は計測前にトレースをコンパイルし、計測区間のJIT実行回数が0より大きいことを確認する。
 4. **複雑処理の委譲測定**:
    - 対象ABIの関数契約に一致する関数アドレスをトレースヘッダへ設定し、ヘルパー契約別の共通コード入口を選択して実行する。ARMv8-Mのhelper入口と計測条件はTBDとする。x64整数ヘルパー入口は1入口あたり32バイトとして計測する。

@@ -5,8 +5,8 @@
  */
 #pragma once
 
-#include <memory_resource>
 #include <cstdint>
+#include <memory_resource>
 
 extern "C" {
 

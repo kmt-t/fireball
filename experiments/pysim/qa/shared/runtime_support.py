@@ -8,7 +8,6 @@ from bump_allocator import BumpAllocator
 from config import (
     FB_CONF_JIT_AGING_STEP_SCAN_BYTES,
     FB_CONF_JIT_AGING_STEP_UNITS,
-    FB_CONF_RUNTIME_YIELD_THRESHOLD,
     JIT_CARD_SHIFT,
 )
 from qa.shared.jit_cache import JitRuntimeBoundary, JITTrace
@@ -23,7 +22,7 @@ from system_containers import (
 )
 from tier2_runtime.interpreter.control_flow import iter_block_ops
 from tier2_runtime.runtime.engine import RuntimeDriveMode
-from tier2_runtime.wasm.module import BasicBlock, Function, FuncTypeRecord, LocalWidthMap, Module
+from tier2_runtime.wasm.module import BasicBlock, Function, FuncTypeRecord, LocalLayout, Module
 
 PC_ONLY_FUNCTION_STRIDE = 0x2000
 PC_ONLY_FUNCTION_BASE = 0x100
@@ -32,7 +31,6 @@ PC_ONLY_FUNCTION_BASE = 0x100
 def make_runtime_engine(
     jit_compiler: JITCompiler | None = None,
     debug: bool = False,
-    yield_threshold: int = FB_CONF_RUNTIME_YIELD_THRESHOLD,
     card_shift: int = JIT_CARD_SHIFT,
     code_lengths: Sequence[int] = (),
     min_trace_bytes: int | None = None,
@@ -51,7 +49,6 @@ def make_runtime_engine(
     if (
         jit_compiler is None
         and not code_lengths
-        and yield_threshold == FB_CONF_RUNTIME_YIELD_THRESHOLD
         and card_shift == JIT_CARD_SHIFT
         and min_trace_bytes is None
         and candidate_threshold == JIT_CANDIDATE_THRESHOLD
@@ -67,7 +64,6 @@ def make_runtime_engine(
         )
     manager = JITRuntimeManager(
         jit_compiler=jit_compiler,
-        yield_threshold=yield_threshold,
         card_shift=card_shift,
         code_lengths=code_lengths,
         min_trace_bytes=min_trace_bytes,
@@ -101,7 +97,7 @@ def compile_test_block(
         next_pc=block.next_pc,
         loops_to=block.loops_to,
         byte_length=block.byte_span,
-        local_layout=LocalWidthMap(local_types),
+        local_layout=LocalLayout(local_types),
     )
 
 
@@ -112,7 +108,7 @@ def compile_module_block(
 
     function_index = block.func_index
     function = module.functions[function_index - len(module.imports)]
-    assert function.local_width_map_cache is not None
+    assert function.local_layout_cache is not None
     return compiler.compile_instructions(
         head_pc=block.head_pc,
         instructions=iter_block_ops(
@@ -123,7 +119,7 @@ def compile_module_block(
         next_pc=block.next_pc,
         loops_to=block.loops_to,
         byte_length=block.byte_span,
-        local_layout=function.local_width_map_cache,
+        local_layout=function.local_layout_cache,
     )
 
 

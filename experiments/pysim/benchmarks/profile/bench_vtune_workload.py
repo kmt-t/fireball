@@ -166,9 +166,14 @@ def _new_interpreter_guest() -> tuple[Module, Interpreter, None]:
 
 def _new_jit_guest() -> tuple[Module, NativeInterpreter, RuntimeEngine]:
     module, bindings = _new_guest()
-    engine = RuntimeEngine(jit_runtime=JITRuntimeManager(reserve_native_region))
+    engine = RuntimeEngine()
     engine.register_module_blocks(module)
-    interpreter = NativeInterpreter(module, bindings, bump_allocator=engine.bump_allocator)
+    interpreter = NativeInterpreter(
+        module,
+        bindings,
+        bump_allocator=engine.bump_allocator,
+        execution_plugin=JITRuntimeManager(reserve_native_region),
+    )
     return module, interpreter, engine
 
 
@@ -230,13 +235,12 @@ def phase_suite_interp(scale: float, kernels: list[str] | None, oracle: bool) ->
 
 
 def phase_suite_jit(scale: float, kernels: list[str] | None, oracle: bool) -> PhaseResult:
-    """Every kernel through the C++ interpreter and shared RuntimeEngine JIT driver."""
+    """Every kernel through the C++ interpreter with its attached JIT plugin."""
     picked = _select_kernels(scale, kernels)
     ref = SuiteOracle(SUITE_WASM_PATH.read_bytes()) if oracle else None
 
     def call(interp, engine, module, index, units):
-        assert engine is not None
-        return engine.call(interp, index, [units])[0]
+        return interp.call(index, [units])[0]
 
     return _run_suite(picked, ref, call, "suite_jit", _new_jit_guest)
 
@@ -353,11 +357,16 @@ def phase_ao_interp(scale: float, kernels: list[str] | None, oracle: bool) -> Ph
 def phase_ao_jit(scale: float, kernels: list[str] | None, oracle: bool) -> PhaseResult:
     width, height = _ao_size(scale)
     module, sysv, bindings, sink = _ao_guest("ao_jit")
-    engine = RuntimeEngine(jit_runtime=JITRuntimeManager(reserve_native_region))
+    engine = RuntimeEngine()
     engine.register_module_blocks(module)
-    interp = NativeInterpreter(module, bindings, bump_allocator=engine.bump_allocator)
+    interp = NativeInterpreter(
+        module,
+        bindings,
+        bump_allocator=engine.bump_allocator,
+        execution_plugin=JITRuntimeManager(reserve_native_region),
+    )
     t0 = time.perf_counter()
-    engine.call(interp, module.export_func_index("main"), [width, height])
+    interp.call(module.export_func_index("main"), [width, height])
     seconds = time.perf_counter() - t0
     sysv.logger.flush()
     sink.close()

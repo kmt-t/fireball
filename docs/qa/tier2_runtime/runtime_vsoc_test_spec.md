@@ -21,7 +21,7 @@
 
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| TEST-VSOC-10 | LOOP後方分岐は有限回数で協調境界へ戻る | 同一フレームLOOP後方分岐と有限の`FB_CONF_RUNTIME_YIELD_THRESHOLD` | しきい値前後の分岐回数とyield境界を確認する | 各取得済み後方分岐で実行状態を更新する。しきい値到達までは命令実行を続け、到達後にRuntimeEngineがyield要求を返す。Interpreter単独実行とHybrid JITで同じ条件を使う | `{ADR_LoopBackedgeYield}`, `runtime_vsoc.md` |
+| TEST-VSOC-10 | LOOP後方分岐は有限回数で協調境界へ戻る | Interpreterの有限な`FB_CONF_INTERPRETER_YIELD_THRESHOLD` | しきい値前後の分岐回数とyield境界を確認する | 各取得済み後方分岐で実行状態を更新する。しきい値到達までは命令実行を続け、Interpreter dispatcherがyield statusを返す。RuntimeEngineはstatusをSystemへ伝える。Interpreter単独実行とHybrid JITで同じ条件を使う | `{ADR_LoopBackedgeYield}`, `runtime_vsoc.md` |
 | TEST-VSOC-11 | 保留interrupt-eventの構成 | - | 保留イベント構造を確認 | `vector_id`、`source_id`、`cause_code`、`payload0`、`payload1`の固定5ワードで保持される | `{GLOBAL_InterruptWakeup}` |
 | TEST-VSOC-13 | IRQ/JITレース不在 | JIT実行中に割り込みイベントが待機 | 形式検証プロパティを確認 | JITコード実行中は割り込みハンドラを開始せず、COOS協調境界から配送する(`AG(Not(handling_irq & jit_mode))`) | `irq_jit_race_freedom_proof` |
 | TEST-VSOC-14 | 抽象モデル上のflush完了性 | dirty状態になったキャッシュ | 形式検証プロパティを確認 | `AG(dirty -> AF(flushed))`（抽象遷移モデルでdirty状態からflush完了状態へ到達する。実時間の期限は対象外） | [`vsoc_cache_coherency_model.py`](docs/components/tier2_runtime/formal/vsoc_cache_coherency_model.py) `dirty_cache_eventually_flushes` |
@@ -236,9 +236,9 @@ line/branch coverageは、抜けた経路を探す診断情報として記録す
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | TEST-VSOC-20 | ロード失敗でError状態 | 不正なWASM | `prepare(module)` | `Loading→Error`に遷移 | `VSOC_Lifecycle` |
-| TEST-VSOC-21 | LOOP後方分岐しきい値到達でRuntimeEngine境界へ復帰 | C++ InterpreterまたはHybrid JIT実行中 | 共通回数しきい値まで取得後方辺を実行する | しきい値到達後にC++ dispatchがyield statusを返す。ホットスポット記録とcompile queue処理はRuntimeEngine境界で行う | `{JIT_BackedgeYield}` |
-| TEST-VSOC-22 | LOOPしきい値到達時にC++ handlerを通ってCOOSへ戻る | 同一制御フレームのLOOP後方分岐を実行するJITトレース | `loop_jump_count`が`FB_CONF_RUNTIME_YIELD_THRESHOLD`へ達するまで実行する | C++ dispatcherは取得済み後方辺ごとにC++ Interpreter handlerを実行し、共通しきい値に達した後にyield statusを返す。RuntimeEngineは`yield_requested`を返し、`System.run_guest()`は`on_yield()`後にCOOSへ制御を返す。イベント配送はCOOS境界の別処理として行う | TEST-VSOC-10, `{ADR_LoopBackedgeYield}` |
-| TEST-VSOC-23 | デバッガとJITの同時構成拒否 | `RuntimeCompositionConfig(execution=JIT, debugger=True)` | ランタイム構成を合成する | 構成時 `assert` で拒否され、デバッガがJITキャッシュを操作する経路は生成されない | `{DebuggerInterpreterComposition}` |
+| TEST-VSOC-21 | LOOP後方分岐しきい値到達でscheduler境界へ復帰 | C++ InterpreterまたはHybrid JIT実行中 | Interpreter設定の回数しきい値まで取得後方辺を実行する | しきい値到達後にC++ dispatchがyield statusを返す。JIT有効時のホットスポット記録とcompile queue処理はInterpreter拡張が境界処理として行い、RuntimeEngineは結果をSystemへ渡す | `{JIT_BackedgeYield}` |
+| TEST-VSOC-22 | LOOPしきい値到達時にC++ handlerを通ってCOOSへ戻る | 同一制御フレームのLOOP後方分岐を実行するJITトレース | Interpreterの`FB_CONF_INTERPRETER_YIELD_THRESHOLD`へ`loop_jump_count`が達するまで実行する | C++ dispatcherは取得済み後方辺ごとにC++ Interpreter handlerを実行し、Interpreter設定のしきい値に達した後にyield statusを返す。RuntimeEngineは`yield_requested`をSystemへ渡し、`System.run_guest()`は`on_yield()`後にCOOSへ制御を返す。イベント配送はCOOS境界の別処理として行う | TEST-VSOC-10, `{ADR_LoopBackedgeYield}` |
+| TEST-VSOC-23 | デバッガとInterpreter拡張の同時接続拒否 | JITネイティブ実行拡張を接続したNativeInterpreter | native dispatch前にDebuggerをattachする | 接続時 `assert` で拒否され、DebuggerとJIT拡張は同じInterpreterに存在しない | `{DebuggerInterpreterComposition}` |
 | TEST-VSOC-24 | アタッチ中のインタープリタ専用実行 | `Interpreter + Debugger` 構成 | デバッガをアタッチして `step()` または `continue` を実行する | PCを保持したままインタープリタだけが実行され、JITの動的切替とキャッシュ操作は発生しない | `{DebuggerInterpreterComposition}` |
 
 ### vIRQ登録と原因付き階層配送
@@ -275,7 +275,7 @@ line/branch coverageは、抜けた経路を探す診断情報として記録す
 | GOTCHA参照 | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | GOTCHA-VSOC-01 | 命令handler後のディスパッチ | handlerが分岐後のPCを確定した状態 | ディスパッチの制御遷移を確認する | ディスパッチャは同じ実行区間内で次PCのtraceまたはhandlerを実行し、命令ごとにはRuntimeEngineへ戻らない | `{JIT_BackedgeYield}`, [`runtime_vsoc.md`](docs/components/tier2_runtime/runtime_vsoc.md) |
-| GOTCHA-VSOC-02 | 共通LOOP後方分岐yield条件 | Interpreter単独またはHybrid JIT経路 | 分岐回数と実行状態を確認する | 共通コンテキストのLOOP後方分岐数が共通しきい値に達した時だけRuntimeEngineへyield状態を返す。両経路の復帰条件は一致する | [`runtime_vsoc.md`](docs/components/tier2_runtime/runtime_vsoc.md)、`{ADR_LoopBackedgeYield}` |
+| GOTCHA-VSOC-02 | Interpreter設定によるLOOP後方分岐yield条件 | Interpreter単独またはHybrid JIT経路 | 分岐回数と実行状態を確認する | 実行contextのLOOP後方分岐数がInterpreter設定のしきい値に達した時だけInterpreterがyield statusをRuntimeEngineへ返す。両経路はInterpreter設定の同じ条件で復帰する | [`runtime_vsoc.md`](docs/components/tier2_runtime/runtime_vsoc.md)、`{ADR_LoopBackedgeYield}` |
 | GOTCHA-VSOC-03 | `execution_context` レイアウトと委譲シグネチャ | WASMスタック初期化 | コンテキストオフセットを確認する | 確認済みx86-64 ABIでは`execution_context`は96バイトであり、リニアメモリのホスト基点は`+0x48`、64bit有効サイズは`+0x50`に置く。グローバル値と幅はモジュール実行情報から参照する。`exec_trace`は`(ctx, sp, local_base, tos)`の4引数で呼び出す | [`runtime_vsoc.md`](docs/components/tier2_runtime/runtime_vsoc.md)、`{ExecutionContext_Layout}`, `{EnvironmentPointer}`, `{VsocRuntime_Layout}` |
 
 ## 3. テスト検証実績と網羅状況

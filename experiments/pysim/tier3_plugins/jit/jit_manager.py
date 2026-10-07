@@ -5,7 +5,6 @@ from __future__ import annotations
 import ctypes
 from collections.abc import Callable
 
-from config import FB_CONF_RUNTIME_YIELD_THRESHOLD
 from tier2_runtime.abi.native_abi import BufferLease
 from tier2_runtime.interpreter.interpreter import NativeDispatchEntryPoint, NativeModuleExecution
 from tier2_runtime.wasm.module import Module
@@ -23,18 +22,14 @@ class JITRuntimeManager:
         "_region_provider",
         "module",
         "module_id",
-        "yield_threshold",
     )
 
     def __init__(
         self,
         region_provider: Callable[[int, int], memoryview],
-        yield_threshold: int = FB_CONF_RUNTIME_YIELD_THRESHOLD,
         module_id: int = 0,
     ) -> None:
-        assert 1 <= yield_threshold <= 0xFFFFFFFF
         assert 0 <= module_id <= 0xFFFFFFFF
-        self.yield_threshold = yield_threshold
         self.module_id = module_id
         self._region_provider = region_provider
         self._pointer: int | None = None
@@ -43,6 +38,8 @@ class JITRuntimeManager:
         self.module: Module | None = None
 
     def register_module(self, module: Module) -> None:
+        if self.module is module:
+            return
         self.close()
         self.module = module
 

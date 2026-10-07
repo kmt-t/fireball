@@ -30,7 +30,7 @@ from tier2_runtime.interpreter.interpreter import (
     WasmNumber,
 )
 from tier2_runtime.observability.events import RuntimeEvent, RuntimeEventBatch, RuntimeEventKind
-from tier2_runtime.runtime.composer import RuntimeComposer, RuntimeCompositionConfig
+from tier2_runtime.runtime.composer import RuntimeCompositionConfig
 from tier2_runtime.wasm.module import BasicBlock, Module
 
 # docs/components/tier1_core/system_config.md {Debug_Integrated}
@@ -543,9 +543,7 @@ class InterpreterExecutionControl:
         assert config.plugins.debugger, "ExecutionControl requires a debugger composition"
         self._control = _NativeDebugControl()
         self.debugger: DebuggerManager | None = None
-        self.interpreter = RuntimeComposer.compose_execution(
-            config, lambda: _DebugNativeInterpreter(module, bindings, self._control)
-        )
+        self.interpreter = _DebugNativeInterpreter(module, bindings, self._control)
         self.call = self.interpreter.start(func_index, args)
         self.context = _InterpreterRegisterView(self.interpreter, self.call)
 

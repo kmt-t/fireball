@@ -18,7 +18,8 @@ struct host_allocator_tag {};
 
 /**
  * host_allocator - Fixed arena with an explicit capacity in bytes.
- * Standard dynamic containers and global new/delete are not enabled by this alias.
+ * Standard dynamic containers and global new/delete are not enabled by this
+ * alias.
  */
 template <std::uint32_t N>
 using host_allocator = specified_allocator<N, host_allocator_tag>;

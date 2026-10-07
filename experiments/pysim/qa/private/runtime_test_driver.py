@@ -15,7 +15,7 @@ from qa.private.debugger_support import DebugTestView
 from qa.shared.runtime_stats import RuntimeStatsEngine
 from system_containers import StaticVector
 from tier2_runtime.interpreter.control_flow import iter_block_ops
-from tier2_runtime.runtime.execution_plugin import NativeExecutionPlugin
+from tier2_runtime.interpreter.execution_plugin import NativeExecutionPlugin
 from tier2_runtime.wasm.module import BasicBlock, WasmOperand
 from tier2_runtime.wasm.opcodes import (
     I32_ADD,

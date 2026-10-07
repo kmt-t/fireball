@@ -548,7 +548,11 @@ class JITTrace:
 
         if self.raw_addr is not None:
             return ctypes.CFUNCTYPE(
-                None, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_uint32
+                ctypes.c_uint32,
+                ctypes.c_void_p,
+                ctypes.c_void_p,
+                ctypes.c_void_p,
+                ctypes.c_uint32,
             )(self.raw_addr)
         return self._fn
 
@@ -591,12 +595,12 @@ class JITTrace:
 
     def execute(
         self, ctx: TraceArgument, sp: TraceArgument, local_base: TraceArgument, tos: int
-    ) -> None:
+    ) -> int | None:
         """Execute the compiled PIC entry point with the shared CPS arguments."""
 
         entry = self.fn
         assert entry is not None
-        entry(ctx, sp, local_base, tos)
+        return entry(ctx, sp, local_base, tos)
 
 
 class JitRuntimeBoundary:
@@ -685,8 +689,10 @@ class JitRuntimeBoundary:
     def _check(self) -> None:
         if self._retire_observer is not None:
             current = native_abi.resident_records(self._native.pointer)
-            for token, pc, count in self._before:
-                if not any(now_token == token and now_pc == pc for now_token, now_pc, _ in current):
+            for token, pc, _, count in self._before:
+                if not any(
+                    now_token == token and now_pc == pc for now_token, now_pc, _, _ in current
+                ):
                     self._retire_observer(pc, count)
         self._busy = False
         if self._references is not None:
@@ -718,7 +724,12 @@ class JitRuntimeBoundary:
                 trace._native.frame_depth,
                 0,
                 native_abi._NativeByteView(None, 0),
-                native_abi._NativeLocalLayout(native_abi._NativeByteView(None, 0), 0, 1),
+                native_abi._NativeLocalLayout(
+                    native_abi._NativeByteView(None, 0),
+                    native_abi._NativeByteView(None, 0),
+                    0,
+                    0,
+                ),
                 ctypes.cast(trace._native.exec_count, ctypes.c_void_p).value,
             )
         assert (
@@ -730,11 +741,8 @@ class JitRuntimeBoundary:
             == 1
         )
 
-    def _reference(self, token: int) -> JITTrace | None:
+    def _reference(self, token: int, pc: int) -> JITTrace | None:
         if token == 0:
-            return None
-        if token >> 63:
-            pc = (token & 0x7FFF_FFFF_FFFF_FFFF) - 1
             entries = (
                 NativeTraceDispatchEntry * (JIT_CACHE_BANK_COUNT * JIT_CACHE_BANK_ENTRY_CAPACITY)
             )()
@@ -747,7 +755,7 @@ class JitRuntimeBoundary:
             for index in range(count):
                 if entries[index].head_pc == pc:
                     return JITTrace.borrow(entries[index], self._native)
-            raise AssertionError("native cache token has no resident dispatch entry")
+            raise AssertionError("native cache PC has no resident dispatch entry")
         assert self._references is not None
         assert 0 < token <= len(self._references)
         trace = self._references[token - 1]
@@ -837,7 +845,9 @@ class JitRuntimeBoundary:
         return self.scalar(CacheField.COMPILE_NS)
 
     def find_trace(self, head_pc: int) -> JITTrace | None:
-        return self._reference(int(native_abi.RUNTIME_FIND(self._native.pointer, head_pc)))
+        location = native_abi.CacheLookup()
+        found = native_abi.RUNTIME_FIND(self._native.pointer, head_pc, ctypes.byref(location))
+        return None if found == 0 else self._reference(location.token, head_pc)
 
     def insert(self, trace: JITTrace) -> bool:
         if self.metadata_provider is not None:
@@ -872,16 +882,18 @@ class JitRuntimeBoundary:
 
     def lookup(self, head_pc: int) -> JITTrace | None:
         self._begin()
-        token = int(native_abi.RUNTIME_LOOKUP(self._native.pointer, head_pc))
+        location = native_abi.CacheLookup()
+        found = native_abi.RUNTIME_LOOKUP(self._native.pointer, head_pc, ctypes.byref(location))
         self._check()
-        return self._reference(token)
+        return None if found == 0 else self._reference(location.token, head_pc)
 
     def promote(self, head_pc: int) -> None:
         """Resume native dispatch after its Oldest boundary without creating a trace wrapper."""
         self._begin()
-        token = int(native_abi.RUNTIME_LOOKUP(self._native.pointer, head_pc))
+        location = native_abi.CacheLookup()
+        found = native_abi.RUNTIME_LOOKUP(self._native.pointer, head_pc, ctypes.byref(location))
         self._check()
-        assert token != 0, "native dispatch stopped at a missing trace"
+        assert found == 1, "native dispatch stopped at a missing trace"
 
     def rotate(self) -> None:
         self._begin()

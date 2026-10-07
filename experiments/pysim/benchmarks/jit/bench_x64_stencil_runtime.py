@@ -19,7 +19,7 @@ LOOP_ITERATIONS = 250_000
 WARMUP_ITERATIONS = 2_000
 WARMUP_CALLS = 3
 SAMPLES = 9
-YIELD_THRESHOLD = 64
+INTERPRETER_YIELD_THRESHOLD = 64
 LOOP_WAT = """
 (module
   (func (export "sum") (param i32) (result i32) (local i32 i32)
@@ -77,7 +77,6 @@ def run_worker(compiler_library: Path, iterations: int, warmup_calls: int) -> No
     function_index = module.export_func_index("sum")
     engine = make_runtime_engine(
         jit_compiler=TraceCompiler(),
-        yield_threshold=YIELD_THRESHOLD,
         min_trace_bytes=1,
         candidate_threshold=0,
     )
@@ -85,7 +84,12 @@ def run_worker(compiler_library: Path, iterations: int, warmup_calls: int) -> No
     bindings = InterpreterBindings.with_memory_and_functions(
         bytearray(65536), StaticVector(capacity=0)
     )
-    interpreter = NativeInterpreter(module, bindings, bump_allocator=engine.bump_allocator)
+    interpreter = NativeInterpreter(
+        module,
+        bindings,
+        bump_allocator=engine.bump_allocator,
+        yield_threshold=INTERPRETER_YIELD_THRESHOLD,
+    )
     expected = expected_sum(iterations)
 
     for _ in range(warmup_calls):
@@ -192,7 +196,7 @@ def main() -> None:
 
     print(f"host={platform.machine()} iterations_per_call={arguments.iterations}")
     print(f"samples={arguments.samples} warmup_calls={arguments.warmup_calls}")
-    print(f"runtime_yield_threshold={YIELD_THRESHOLD}")
+    print(f"interpreter_yield_threshold={INTERPRETER_YIELD_THRESHOLD}")
     print(f"baseline_library={arguments.baseline_library.resolve()}")
     print(f"candidate_library={arguments.compiler_library.resolve()}")
     print("sample baseline_ms candidate_ms")

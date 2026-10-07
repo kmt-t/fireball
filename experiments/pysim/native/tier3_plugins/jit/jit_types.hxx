@@ -19,8 +19,9 @@ struct jit_byte_view {
   std::uint32_t bytes;
 };
 struct jit_local_layout {
-  jit_byte_view widths;
-  std::uint32_t count, slot_words;
+  jit_byte_view offsets;
+  jit_byte_view sizes;
+  std::uint32_t count, total_words;
 };
 struct jit_wasm_block {
   std::uint32_t head_pc, offset, byte_span, next_pc, loops_to, frame_depth;

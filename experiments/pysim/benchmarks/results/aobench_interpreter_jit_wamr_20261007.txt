@@ -1,109 +1,107 @@
-AO-Bench Fireball Interpreter / Fireball Hybrid JIT / WAMR Fast 比較
-計測日: 2026-10-07
+AO-Bench Fireball Interpreter / Fireball Hybrid JIT / WAMR Fast 比較 — 2026-10-07 再計測
 
-## 目的
+## 現行結果
 
-同一AO-Bench WASMをFireball NativeInterpreter、Fireball Hybrid JIT、WAMR Fast Interpreterで同一ホスト上で実行した。Interpreterはユーザー指定に合わせ、yieldしきい値を計測プロセス内だけで `0xFFFFFFFF` にした。JITはホットトレースをコンパイルするため、既定しきい値64で実行した。WAMRにFireballのyield機構はない。
+- HEAD: `dc7d1878`。作業ツリーは変更を含む。Fireballのネイティブ共有ライブラリはこの作業ツリーから再ビルドした。
+- 計測対象: 5解像度 × 3独立プロセス × 3エンジン。各プロセス3ウォームアップ、7計時サンプル。
+- WAM: `experiments/pysim/benchmarks/aobench/aobench.wasm`; SHA-256 `9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9`.
+- 正当性: 15組すべてでInterpreter/JIT/WAMRの全出力がバイト一致。
 
-## 入力と正当性
+## 実行環境・ビルド
 
-- WASM: `experiments/pysim/benchmarks/aobench/aobench.wasm`
-- WASM SHA-256: `9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9`
-- 5解像度×3プロセスで、ウォームアップを含む全出力を3エンジン間でバイト比較した。15組すべて一致した。
-- 解像度ごとのフレームSHA-256、全試行サンプル、プロセスごとの中央値、JIT診断カウンターを以下に記録した。
-- 1フレームのray数は `width × height + 4 × hit_pixels` とした。
+- CPU: AMD Ryzen 5 5500GT with Radeon Graphics。Linux kernel `7.0.0-38-generic`。親/子プロセスをCPU 2に固定。
+- CPython `3.13.15`; Clang `21.1.8`。
+- Fireball Interpreter/JITは2026-10-07 17:49 JSTに`build_native.sh --release`で作成。比較最適化フラグはClang `-O2 -DNDEBUG`。JIT fast slot数は16。FireballはC++23。
+- WAMR `2.4.3`, commit `f5f57c09aee623436f5fb87a90798fdd2cdf39fd`; third-party worktree clean。`/tmp/wamr_aobench_runner_20261007`を再利用（2026-10-07 12:00:03 JST作成、402408 bytes）。前回と同じFast Interpreter + WASI、AOT/JIT無効、Clang `-O2 -DNDEBUG`ビルド。WAMRはプロジェクト既定のC/C++標準。
+- Fireballは`NativeInterpreter.call()`入口、yieldしきい値`0xFFFFFFFF`。JITのcompile queueは各ウォームアップ後、計時外にInterpreterの`idle_hook`から排出。計時中のcompile budgetは0。WAMRにFireballのyieldしきい値は適用しない。
+- Fireballの生成・ロード・ホスト初期化とWAMR runtime/load/instantiate/exec-env生成を計時外にした。FireballのPython WASI/HALとメモリ内`StreamTransport`、WAMRのC WASIと一時ファイルを含む。
 
-## 実行環境
-
-- CPU: AMD Ryzen 5 5500GT、x86_64、計測プロセスをCPU 2へ固定。
-- OS: Ubuntu Linux、kernel `7.0.0-38-generic`。
-- Python: CPython `3.13.15`。Clang: Ubuntu clang `21.1.8`。
-- Fireball NativeInterpreter / JIT共有ライブラリは現行作業ツリーからClang `-O2`でビルドした。
-- WAMR: `third_party/wasm-micro-runtime`、commit `f5f57c09aee623436f5fb87a90798fdd2cdf39fd`、version 2.4.3。Fast InterpreterとWASIを有効にし、AOT/JITを無効にしたClang `-O2 -DNDEBUG`ビルドを使用した。
-
-## 計測方法
-
-各エンジン・解像度につき独立プロセスで3試行を実行した。各プロセスで3フレームをウォームアップし、後続7フレームを計時した。代表値はプロセスごとの7サンプル中央値の中央値である。表の範囲は3プロセス中央値の最小値–最大値である。試行・サイズごとにエンジン実行順を交互にした。
-
-Interpreterの測定ではyieldしきい値を `0xFFFFFFFF` に設定した。JITは既定値64でウォームアップ・測定した。別途、同じJIT設定の診断用RuntimeStatsEngineを3フレーム実行し、JITトレース呼び出し数が0より大きいことを確認した。診断実行は時間計測から除外した。JITの時間にはRuntimeEngine境界と計測区間中に発生するJITランタイム処理を含む。
-
-FireballはWASM解析、System/WASI/Interpreter生成を計測区間から除外し、NativeInterpreterまたはRuntimeEngineのcallを計時した。Fireball標準出力はPython WASI/HALとメモリ内`StreamTransport`を通る。WAMRはruntime初期化、WASMロード、instantiate、exec environment生成を除外し、`wasm_runtime_call_wasm()`を計時した。WAMRのWASI標準出力は一時ファイルへ出力する。これはホスト統合込みの比較であり、opcodeディスパッチや生成コード単体の比較ではない。
-
-再実行時のコマンド:
+## 実行コマンド
 
 ```bash
 taskset -c 2 env UV_CACHE_DIR=/tmp/fireball-uv-cache UV_OFFLINE=true UV_NO_SYNC=true \
-  uv run --project . --offline --no-sync python /tmp/fireball_all_engines_aobench.py \
+  .venv/bin/python /tmp/fireball_all_engines_aobench.py \
   --wamr-binary /tmp/wamr_aobench_runner_20261007 \
-  --raw-dir /tmp/aobench_all_engines_yieldmax_20261007 \
-  > /tmp/aobench_all_engines_yieldmax_20261007.log 2>&1
+  --raw-dir /tmp/aobench_release_current_20261007
 ```
 
-## 生ログ
+比較driver、WAMR runner、生フレームは`/tmp`に置いた。生フレームはワークスペースの結果ファイルへ複製していない。
 
-trial=1 size=64x36 engine=interpreter samples_ms=18.086,18.152,18.043,17.793,18.018,18.271,18.053 median_ms=18.053 sha256=d44fed786dbb555722932e901bd3f56c56aa2daca6c594a67a858c4591e24567
-trial=1 size=64x36 engine=jit samples_ms=46.778,46.905,43.822,44.484,44.416,44.165,46.021 median_ms=44.484 sha256=d44fed786dbb555722932e901bd3f56c56aa2daca6c594a67a858c4591e24567 diagnostic_jit_invocations=1144313
-trial=1 size=64x36 engine=wamr samples_ms=4.571,4.552,4.630,4.498,4.680,4.481,4.547 median_ms=4.552 sha256=d44fed786dbb555722932e901bd3f56c56aa2daca6c594a67a858c4591e24567
+## 集計
+
+- 64×36: rays/frame=7,332, hits=1,257, interpreter=18.744 ms (range 18.185–18.853 ms), jit=27.553 ms (range 27.208–28.071 ms), wamr=4.662 ms (range 4.558–4.721 ms), JIT/Interpreter=1.470×, Interpreter/WAMR=4.021×, JIT/WAMR=5.910×
+- 128×72: rays/frame=29,732, hits=5,129, interpreter=73.199 ms (range 71.790–73.205 ms), jit=107.491 ms (range 106.714–108.262 ms), wamr=18.659 ms (range 18.434–18.748 ms), JIT/Interpreter=1.468×, Interpreter/WAMR=3.923×, JIT/WAMR=5.761×
+- 192×108: rays/frame=67,032, hits=11,574, interpreter=162.514 ms (range 159.873–162.532 ms), jit=241.025 ms (range 237.522–242.424 ms), wamr=41.095 ms (range 40.537–41.382 ms), JIT/Interpreter=1.483×, Interpreter/WAMR=3.955×, JIT/WAMR=5.865×
+- 256×144: rays/frame=119,352, hits=20,622, interpreter=287.855 ms (range 286.902–289.428 ms), jit=424.883 ms (range 423.209–425.743 ms), wamr=73.873 ms (range 72.434–74.125 ms), JIT/Interpreter=1.476×, Interpreter/WAMR=3.897×, JIT/WAMR=5.752×
+- 320×180: rays/frame=186,792, hits=32,298, interpreter=445.210 ms (range 444.360–446.494 ms), jit=663.797 ms (range 662.301–665.432 ms), wamr=114.060 ms (range 113.253–115.204 ms), JIT/Interpreter=1.491×, Interpreter/WAMR=3.903×, JIT/WAMR=5.820×
+
+## 試行別サンプルと出力検査
+
+```text
+trial=1 size=64x36 engine=interpreter samples_ms=18.391,18.185,19.540,18.410,17.932,17.981,18.018 median_ms=18.185 sha256=d44fed786dbb555722932e901bd3f56c56aa2daca6c594a67a858c4591e24567
+trial=1 size=64x36 engine=jit samples_ms=27.208,27.795,26.648,27.157,26.849,27.546,28.520 median_ms=27.208 sha256=d44fed786dbb555722932e901bd3f56c56aa2daca6c594a67a858c4591e24567 compiled_traces_before_measurement=2 diagnostic_jit_invocations=354895 diagnostic_interpreter_steps=1881578 diagnostic_trace_transitions=354895 diagnostic_trace_exits=6 diagnostic_control_handlers=2236470
+trial=1 size=64x36 engine=wamr samples_ms=8.901,4.653,4.728,4.721,4.712,4.804,4.676 median_ms=4.721 sha256=d44fed786dbb555722932e901bd3f56c56aa2daca6c594a67a858c4591e24567
 pair_pass trial=1 size=64x36 sha256=d44fed786dbb555722932e901bd3f56c56aa2daca6c594a67a858c4591e24567 output_bytes=23400
-trial=1 size=128x72 engine=jit samples_ms=184.988,181.795,181.633,180.597,184.696,188.676,184.216 median_ms=184.216 sha256=e9f20b8f0414f7406aa2f3ea96738e1c7755d0148090bf72f8703cffd3d374a4 diagnostic_jit_invocations=4604595
-trial=1 size=128x72 engine=wamr samples_ms=18.315,18.296,18.718,18.901,18.481,18.760,19.022 median_ms=18.718 sha256=e9f20b8f0414f7406aa2f3ea96738e1c7755d0148090bf72f8703cffd3d374a4
-trial=1 size=128x72 engine=interpreter samples_ms=72.433,69.610,70.617,70.459,70.790,70.588,70.089 median_ms=70.588 sha256=e9f20b8f0414f7406aa2f3ea96738e1c7755d0148090bf72f8703cffd3d374a4
+trial=1 size=128x72 engine=jit samples_ms=107.476,108.185,107.628,109.205,111.126,108.853,108.262 median_ms=108.262 sha256=e9f20b8f0414f7406aa2f3ea96738e1c7755d0148090bf72f8703cffd3d374a4 compiled_traces_before_measurement=2 diagnostic_jit_invocations=1438319 diagnostic_interpreter_steps=7577119 diagnostic_trace_transitions=1438319 diagnostic_trace_exits=6 diagnostic_control_handlers=9015435
+trial=1 size=128x72 engine=wamr samples_ms=18.659,18.246,18.584,18.746,18.311,18.957,18.941 median_ms=18.659 sha256=e9f20b8f0414f7406aa2f3ea96738e1c7755d0148090bf72f8703cffd3d374a4
+trial=1 size=128x72 engine=interpreter samples_ms=72.935,71.341,71.703,72.875,71.635,71.790,72.985 median_ms=71.790 sha256=e9f20b8f0414f7406aa2f3ea96738e1c7755d0148090bf72f8703cffd3d374a4
 pair_pass trial=1 size=128x72 sha256=e9f20b8f0414f7406aa2f3ea96738e1c7755d0148090bf72f8703cffd3d374a4 output_bytes=92880
-trial=1 size=192x108 engine=wamr samples_ms=39.696,40.190,41.153,41.289,39.937,41.152,39.914 median_ms=40.190 sha256=9f2df94afaad4a3750053789ce6be52a0b9b14d66d9b8584edf2718d1ac3c4f1
-trial=1 size=192x108 engine=interpreter samples_ms=156.602,158.473,159.742,160.060,158.933,157.281,155.075 median_ms=158.473 sha256=9f2df94afaad4a3750053789ce6be52a0b9b14d66d9b8584edf2718d1ac3c4f1
-trial=1 size=192x108 engine=jit samples_ms=406.618,405.904,408.299,437.536,419.030,421.517,410.958 median_ms=410.958 sha256=9f2df94afaad4a3750053789ce6be52a0b9b14d66d9b8584edf2718d1ac3c4f1 diagnostic_jit_invocations=10341341
+trial=1 size=192x108 engine=wamr samples_ms=40.951,40.320,40.077,40.614,40.537,40.475,40.544 median_ms=40.537 sha256=9f2df94afaad4a3750053789ce6be52a0b9b14d66d9b8584edf2718d1ac3c4f1
+trial=1 size=192x108 engine=interpreter samples_ms=160.562,158.266,166.463,165.196,165.321,160.580,162.514 median_ms=162.514 sha256=9f2df94afaad4a3750053789ce6be52a0b9b14d66d9b8584edf2718d1ac3c4f1
+trial=1 size=192x108 engine=jit samples_ms=237.163,237.522,237.584,234.603,235.984,238.484,237.989 median_ms=237.522 sha256=9f2df94afaad4a3750053789ce6be52a0b9b14d66d9b8584edf2718d1ac3c4f1 compiled_traces_before_measurement=2 diagnostic_jit_invocations=3242433 diagnostic_interpreter_steps=17028222 diagnostic_trace_transitions=3242433 diagnostic_trace_exits=6 diagnostic_control_handlers=20270652
 pair_pass trial=1 size=192x108 sha256=9f2df94afaad4a3750053789ce6be52a0b9b14d66d9b8584edf2718d1ac3c4f1 output_bytes=208440
-trial=1 size=256x144 engine=interpreter samples_ms=307.016,302.400,282.710,287.551,282.570,281.837,276.418 median_ms=282.710 sha256=f35a578dc277b57ca3bb5f74bc9381297fab5afce787bc92c54e46536fa8d2a4
-trial=1 size=256x144 engine=jit samples_ms=729.510,721.230,721.714,725.213,728.770,730.977,724.973 median_ms=725.213 sha256=f35a578dc277b57ca3bb5f74bc9381297fab5afce787bc92c54e46536fa8d2a4 diagnostic_jit_invocations=18428744
-trial=1 size=256x144 engine=wamr samples_ms=73.195,75.581,75.691,79.637,75.256,75.529,75.204 median_ms=75.529 sha256=f35a578dc277b57ca3bb5f74bc9381297fab5afce787bc92c54e46536fa8d2a4
+trial=1 size=256x144 engine=interpreter samples_ms=283.962,282.959,294.297,282.507,289.526,301.045,289.428 median_ms=289.428 sha256=f35a578dc277b57ca3bb5f74bc9381297fab5afce787bc92c54e46536fa8d2a4
+trial=1 size=256x144 engine=jit samples_ms=426.546,426.368,419.195,421.513,423.209,423.187,425.223 median_ms=423.209 sha256=f35a578dc277b57ca3bb5f74bc9381297fab5afce787bc92c54e46536fa8d2a4 compiled_traces_before_measurement=2 diagnostic_jit_invocations=5772881 diagnostic_interpreter_steps=30336028 diagnostic_trace_transitions=5772881 diagnostic_trace_exits=6 diagnostic_control_handlers=36108906
+trial=1 size=256x144 engine=wamr samples_ms=75.612,74.125,74.332,74.317,73.984,73.739,73.838 median_ms=74.125 sha256=f35a578dc277b57ca3bb5f74bc9381297fab5afce787bc92c54e46536fa8d2a4
 pair_pass trial=1 size=256x144 sha256=f35a578dc277b57ca3bb5f74bc9381297fab5afce787bc92c54e46536fa8d2a4 output_bytes=370080
-trial=1 size=320x180 engine=jit samples_ms=1291.250,1173.314,1142.430,1154.761,1157.425,1152.141,1139.876 median_ms=1154.761 sha256=6d04ea80d9a1fd773c85d413057d64797f32dbb257a753d767a378d730d7d699 diagnostic_jit_invocations=28808558
-trial=1 size=320x180 engine=wamr samples_ms=113.003,113.212,112.168,114.110,114.107,114.816,113.812 median_ms=113.812 sha256=6d04ea80d9a1fd773c85d413057d64797f32dbb257a753d767a378d730d7d699
-trial=1 size=320x180 engine=interpreter samples_ms=459.200,435.611,433.275,439.510,431.645,439.189,435.421 median_ms=435.611 sha256=6d04ea80d9a1fd773c85d413057d64797f32dbb257a753d767a378d730d7d699
+trial=1 size=320x180 engine=jit samples_ms=672.169,666.005,660.032,658.878,662.301,659.256,672.710 median_ms=662.301 sha256=6d04ea80d9a1fd773c85d413057d64797f32dbb257a753d767a378d730d7d699 compiled_traces_before_measurement=2 diagnostic_jit_invocations=9034271 diagnostic_interpreter_steps=47430820 diagnostic_trace_transitions=9034271 diagnostic_trace_exits=6 diagnostic_control_handlers=56465088
+trial=1 size=320x180 engine=wamr samples_ms=114.128,114.355,114.060,113.315,111.468,113.739,114.369 median_ms=114.060 sha256=6d04ea80d9a1fd773c85d413057d64797f32dbb257a753d767a378d730d7d699
+trial=1 size=320x180 engine=interpreter samples_ms=451.613,438.770,447.702,442.159,439.966,446.350,445.210 median_ms=445.210 sha256=6d04ea80d9a1fd773c85d413057d64797f32dbb257a753d767a378d730d7d699
 pair_pass trial=1 size=320x180 sha256=6d04ea80d9a1fd773c85d413057d64797f32dbb257a753d767a378d730d7d699 output_bytes=577800
-trial=2 size=64x36 engine=jit samples_ms=45.524,48.140,45.944,45.801,45.111,44.977,45.620 median_ms=45.620 sha256=d44fed786dbb555722932e901bd3f56c56aa2daca6c594a67a858c4591e24567 diagnostic_jit_invocations=1144313
-trial=2 size=64x36 engine=wamr samples_ms=4.511,4.483,4.762,4.594,4.560,4.641,4.568 median_ms=4.568 sha256=d44fed786dbb555722932e901bd3f56c56aa2daca6c594a67a858c4591e24567
-trial=2 size=64x36 engine=interpreter samples_ms=17.893,17.585,17.793,18.052,17.640,17.751,18.118 median_ms=17.793 sha256=d44fed786dbb555722932e901bd3f56c56aa2daca6c594a67a858c4591e24567
+trial=2 size=64x36 engine=jit samples_ms=27.923,28.054,28.390,28.631,28.628,27.788,28.071 median_ms=28.071 sha256=d44fed786dbb555722932e901bd3f56c56aa2daca6c594a67a858c4591e24567 compiled_traces_before_measurement=2 diagnostic_jit_invocations=354895 diagnostic_interpreter_steps=1881578 diagnostic_trace_transitions=354895 diagnostic_trace_exits=6 diagnostic_control_handlers=2236470
+trial=2 size=64x36 engine=wamr samples_ms=4.689,4.740,4.688,4.650,4.641,4.662,4.645 median_ms=4.662 sha256=d44fed786dbb555722932e901bd3f56c56aa2daca6c594a67a858c4591e24567
+trial=2 size=64x36 engine=interpreter samples_ms=18.544,19.002,18.868,18.816,18.853,19.042,18.801 median_ms=18.853 sha256=d44fed786dbb555722932e901bd3f56c56aa2daca6c594a67a858c4591e24567
 pair_pass trial=2 size=64x36 sha256=d44fed786dbb555722932e901bd3f56c56aa2daca6c594a67a858c4591e24567 output_bytes=23400
-trial=2 size=128x72 engine=wamr samples_ms=18.159,18.474,18.617,18.488,18.092,18.274,18.375 median_ms=18.375 sha256=e9f20b8f0414f7406aa2f3ea96738e1c7755d0148090bf72f8703cffd3d374a4
-trial=2 size=128x72 engine=interpreter samples_ms=70.456,70.578,70.386,70.038,70.507,70.178,69.552 median_ms=70.386 sha256=e9f20b8f0414f7406aa2f3ea96738e1c7755d0148090bf72f8703cffd3d374a4
-trial=2 size=128x72 engine=jit samples_ms=186.257,185.309,186.976,183.366,189.774,195.650,193.745 median_ms=186.976 sha256=e9f20b8f0414f7406aa2f3ea96738e1c7755d0148090bf72f8703cffd3d374a4 diagnostic_jit_invocations=4604595
+trial=2 size=128x72 engine=wamr samples_ms=18.840,18.860,18.662,18.736,18.828,18.684,18.748 median_ms=18.748 sha256=e9f20b8f0414f7406aa2f3ea96738e1c7755d0148090bf72f8703cffd3d374a4
+trial=2 size=128x72 engine=interpreter samples_ms=76.770,72.839,72.858,72.493,73.605,73.199,74.482 median_ms=73.199 sha256=e9f20b8f0414f7406aa2f3ea96738e1c7755d0148090bf72f8703cffd3d374a4
+trial=2 size=128x72 engine=jit samples_ms=109.494,107.531,105.917,106.282,107.107,107.491,107.962 median_ms=107.491 sha256=e9f20b8f0414f7406aa2f3ea96738e1c7755d0148090bf72f8703cffd3d374a4 compiled_traces_before_measurement=2 diagnostic_jit_invocations=1438319 diagnostic_interpreter_steps=7577119 diagnostic_trace_transitions=1438319 diagnostic_trace_exits=6 diagnostic_control_handlers=9015435
 pair_pass trial=2 size=128x72 sha256=e9f20b8f0414f7406aa2f3ea96738e1c7755d0148090bf72f8703cffd3d374a4 output_bytes=92880
-trial=2 size=192x108 engine=interpreter samples_ms=166.147,156.516,157.946,165.391,168.912,166.422,166.296 median_ms=166.147 sha256=9f2df94afaad4a3750053789ce6be52a0b9b14d66d9b8584edf2718d1ac3c4f1
-trial=2 size=192x108 engine=jit samples_ms=405.665,409.100,408.516,408.274,415.462,438.113,434.031 median_ms=409.100 sha256=9f2df94afaad4a3750053789ce6be52a0b9b14d66d9b8584edf2718d1ac3c4f1 diagnostic_jit_invocations=10341341
-trial=2 size=192x108 engine=wamr samples_ms=41.769,41.433,41.421,41.472,41.162,41.346,40.990 median_ms=41.421 sha256=9f2df94afaad4a3750053789ce6be52a0b9b14d66d9b8584edf2718d1ac3c4f1
+trial=2 size=192x108 engine=interpreter samples_ms=159.829,161.130,159.873,157.376,159.031,166.471,163.061 median_ms=159.873 sha256=9f2df94afaad4a3750053789ce6be52a0b9b14d66d9b8584edf2718d1ac3c4f1
+trial=2 size=192x108 engine=jit samples_ms=241.025,240.453,237.376,242.521,240.558,243.243,241.166 median_ms=241.025 sha256=9f2df94afaad4a3750053789ce6be52a0b9b14d66d9b8584edf2718d1ac3c4f1 compiled_traces_before_measurement=2 diagnostic_jit_invocations=3242433 diagnostic_interpreter_steps=17028222 diagnostic_trace_transitions=3242433 diagnostic_trace_exits=6 diagnostic_control_handlers=20270652
+trial=2 size=192x108 engine=wamr samples_ms=41.476,41.200,41.257,41.382,41.210,41.476,42.042 median_ms=41.382 sha256=9f2df94afaad4a3750053789ce6be52a0b9b14d66d9b8584edf2718d1ac3c4f1
 pair_pass trial=2 size=192x108 sha256=9f2df94afaad4a3750053789ce6be52a0b9b14d66d9b8584edf2718d1ac3c4f1 output_bytes=208440
-trial=2 size=256x144 engine=jit samples_ms=751.117,725.885,739.914,736.856,746.520,728.651,728.307 median_ms=736.856 sha256=f35a578dc277b57ca3bb5f74bc9381297fab5afce787bc92c54e46536fa8d2a4 diagnostic_jit_invocations=18428744
-trial=2 size=256x144 engine=wamr samples_ms=74.951,74.975,76.766,78.369,78.452,75.924,76.452 median_ms=76.452 sha256=f35a578dc277b57ca3bb5f74bc9381297fab5afce787bc92c54e46536fa8d2a4
-trial=2 size=256x144 engine=interpreter samples_ms=283.355,279.590,279.949,280.045,278.816,282.147,277.555 median_ms=279.949 sha256=f35a578dc277b57ca3bb5f74bc9381297fab5afce787bc92c54e46536fa8d2a4
+trial=2 size=256x144 engine=jit samples_ms=425.743,428.749,420.060,427.646,423.429,424.696,429.101 median_ms=425.743 sha256=f35a578dc277b57ca3bb5f74bc9381297fab5afce787bc92c54e46536fa8d2a4 compiled_traces_before_measurement=2 diagnostic_jit_invocations=5772881 diagnostic_interpreter_steps=30336028 diagnostic_trace_transitions=5772881 diagnostic_trace_exits=6 diagnostic_control_handlers=36108906
+trial=2 size=256x144 engine=wamr samples_ms=73.507,71.797,72.434,72.408,72.587,72.634,72.006 median_ms=72.434 sha256=f35a578dc277b57ca3bb5f74bc9381297fab5afce787bc92c54e46536fa8d2a4
+trial=2 size=256x144 engine=interpreter samples_ms=289.089,282.973,286.902,286.710,302.162,287.666,286.473 median_ms=286.902 sha256=f35a578dc277b57ca3bb5f74bc9381297fab5afce787bc92c54e46536fa8d2a4
 pair_pass trial=2 size=256x144 sha256=f35a578dc277b57ca3bb5f74bc9381297fab5afce787bc92c54e46536fa8d2a4 output_bytes=370080
-trial=2 size=320x180 engine=wamr samples_ms=123.281,123.966,122.785,125.967,119.713,119.778,117.181 median_ms=122.785 sha256=6d04ea80d9a1fd773c85d413057d64797f32dbb257a753d767a378d730d7d699
-trial=2 size=320x180 engine=interpreter samples_ms=465.189,439.946,440.156,462.517,462.134,441.931,436.220 median_ms=441.931 sha256=6d04ea80d9a1fd773c85d413057d64797f32dbb257a753d767a378d730d7d699
-trial=2 size=320x180 engine=jit samples_ms=1172.870,1143.205,1148.529,1150.828,1203.984,1145.916,1144.198 median_ms=1148.529 sha256=6d04ea80d9a1fd773c85d413057d64797f32dbb257a753d767a378d730d7d699 diagnostic_jit_invocations=28808558
+trial=2 size=320x180 engine=wamr samples_ms=114.543,115.124,113.253,114.010,112.712,112.800,113.227 median_ms=113.253 sha256=6d04ea80d9a1fd773c85d413057d64797f32dbb257a753d767a378d730d7d699
+trial=2 size=320x180 engine=interpreter samples_ms=446.494,454.771,452.843,442.540,444.256,452.190,443.941 median_ms=446.494 sha256=6d04ea80d9a1fd773c85d413057d64797f32dbb257a753d767a378d730d7d699
+trial=2 size=320x180 engine=jit samples_ms=665.131,663.797,656.753,658.176,667.906,670.212,661.053 median_ms=663.797 sha256=6d04ea80d9a1fd773c85d413057d64797f32dbb257a753d767a378d730d7d699 compiled_traces_before_measurement=2 diagnostic_jit_invocations=9034271 diagnostic_interpreter_steps=47430820 diagnostic_trace_transitions=9034271 diagnostic_trace_exits=6 diagnostic_control_handlers=56465088
 pair_pass trial=2 size=320x180 sha256=6d04ea80d9a1fd773c85d413057d64797f32dbb257a753d767a378d730d7d699 output_bytes=577800
-trial=3 size=64x36 engine=wamr samples_ms=4.640,4.911,4.760,4.695,4.709,4.988,4.654 median_ms=4.709 sha256=d44fed786dbb555722932e901bd3f56c56aa2daca6c594a67a858c4591e24567
-trial=3 size=64x36 engine=interpreter samples_ms=18.252,18.193,18.003,17.736,18.118,18.132,17.869 median_ms=18.118 sha256=d44fed786dbb555722932e901bd3f56c56aa2daca6c594a67a858c4591e24567
-trial=3 size=64x36 engine=jit samples_ms=45.184,44.987,44.694,44.648,44.498,45.022,46.337 median_ms=44.987 sha256=d44fed786dbb555722932e901bd3f56c56aa2daca6c594a67a858c4591e24567 diagnostic_jit_invocations=1144313
+trial=3 size=64x36 engine=wamr samples_ms=4.644,4.558,4.493,4.562,4.474,4.463,4.622 median_ms=4.558 sha256=d44fed786dbb555722932e901bd3f56c56aa2daca6c594a67a858c4591e24567
+trial=3 size=64x36 engine=interpreter samples_ms=19.445,18.548,19.014,18.556,18.367,18.744,18.868 median_ms=18.744 sha256=d44fed786dbb555722932e901bd3f56c56aa2daca6c594a67a858c4591e24567
+trial=3 size=64x36 engine=jit samples_ms=27.606,27.739,27.280,27.298,27.553,28.260,27.149 median_ms=27.553 sha256=d44fed786dbb555722932e901bd3f56c56aa2daca6c594a67a858c4591e24567 compiled_traces_before_measurement=2 diagnostic_jit_invocations=354895 diagnostic_interpreter_steps=1881578 diagnostic_trace_transitions=354895 diagnostic_trace_exits=6 diagnostic_control_handlers=2236470
 pair_pass trial=3 size=64x36 sha256=d44fed786dbb555722932e901bd3f56c56aa2daca6c594a67a858c4591e24567 output_bytes=23400
-trial=3 size=128x72 engine=interpreter samples_ms=73.706,74.888,73.869,73.490,72.455,75.245,72.178 median_ms=73.706 sha256=e9f20b8f0414f7406aa2f3ea96738e1c7755d0148090bf72f8703cffd3d374a4
-trial=3 size=128x72 engine=jit samples_ms=187.985,186.481,182.961,181.527,182.544,183.530,181.999 median_ms=182.961 sha256=e9f20b8f0414f7406aa2f3ea96738e1c7755d0148090bf72f8703cffd3d374a4 diagnostic_jit_invocations=4604595
-trial=3 size=128x72 engine=wamr samples_ms=18.678,18.658,19.029,18.714,18.756,18.143,18.543 median_ms=18.678 sha256=e9f20b8f0414f7406aa2f3ea96738e1c7755d0148090bf72f8703cffd3d374a4
+trial=3 size=128x72 engine=interpreter samples_ms=74.564,72.909,73.205,72.278,71.642,73.875,74.628 median_ms=73.205 sha256=e9f20b8f0414f7406aa2f3ea96738e1c7755d0148090bf72f8703cffd3d374a4
+trial=3 size=128x72 engine=jit samples_ms=107.929,106.275,106.406,105.914,107.483,107.039,106.714 median_ms=106.714 sha256=e9f20b8f0414f7406aa2f3ea96738e1c7755d0148090bf72f8703cffd3d374a4 compiled_traces_before_measurement=2 diagnostic_jit_invocations=1438319 diagnostic_interpreter_steps=7577119 diagnostic_trace_transitions=1438319 diagnostic_trace_exits=6 diagnostic_control_handlers=9015435
+trial=3 size=128x72 engine=wamr samples_ms=18.856,18.501,18.213,18.405,18.437,18.434,18.425 median_ms=18.434 sha256=e9f20b8f0414f7406aa2f3ea96738e1c7755d0148090bf72f8703cffd3d374a4
 pair_pass trial=3 size=128x72 sha256=e9f20b8f0414f7406aa2f3ea96738e1c7755d0148090bf72f8703cffd3d374a4 output_bytes=92880
-trial=3 size=192x108 engine=jit samples_ms=409.037,407.477,409.228,405.018,411.468,406.667,413.280 median_ms=409.037 sha256=9f2df94afaad4a3750053789ce6be52a0b9b14d66d9b8584edf2718d1ac3c4f1 diagnostic_jit_invocations=10341341
-trial=3 size=192x108 engine=wamr samples_ms=41.011,41.005,40.953,41.252,40.794,41.393,40.819 median_ms=41.005 sha256=9f2df94afaad4a3750053789ce6be52a0b9b14d66d9b8584edf2718d1ac3c4f1
-trial=3 size=192x108 engine=interpreter samples_ms=158.092,157.261,157.277,158.729,162.730,159.187,158.429 median_ms=158.429 sha256=9f2df94afaad4a3750053789ce6be52a0b9b14d66d9b8584edf2718d1ac3c4f1
+trial=3 size=192x108 engine=jit samples_ms=247.951,242.424,238.426,241.989,243.214,241.227,242.603 median_ms=242.424 sha256=9f2df94afaad4a3750053789ce6be52a0b9b14d66d9b8584edf2718d1ac3c4f1 compiled_traces_before_measurement=2 diagnostic_jit_invocations=3242433 diagnostic_interpreter_steps=17028222 diagnostic_trace_transitions=3242433 diagnostic_trace_exits=6 diagnostic_control_handlers=20270652
+trial=3 size=192x108 engine=wamr samples_ms=41.038,40.946,41.390,40.876,41.843,41.268,41.095 median_ms=41.095 sha256=9f2df94afaad4a3750053789ce6be52a0b9b14d66d9b8584edf2718d1ac3c4f1
+trial=3 size=192x108 engine=interpreter samples_ms=159.066,160.624,160.115,162.532,164.160,163.166,163.662 median_ms=162.532 sha256=9f2df94afaad4a3750053789ce6be52a0b9b14d66d9b8584edf2718d1ac3c4f1
 pair_pass trial=3 size=192x108 sha256=9f2df94afaad4a3750053789ce6be52a0b9b14d66d9b8584edf2718d1ac3c4f1 output_bytes=208440
-trial=3 size=256x144 engine=wamr samples_ms=77.298,76.980,77.487,77.175,76.405,76.685,76.276 median_ms=76.980 sha256=f35a578dc277b57ca3bb5f74bc9381297fab5afce787bc92c54e46536fa8d2a4
-trial=3 size=256x144 engine=interpreter samples_ms=277.794,278.552,278.939,278.167,278.297,279.835,284.021 median_ms=278.552 sha256=f35a578dc277b57ca3bb5f74bc9381297fab5afce787bc92c54e46536fa8d2a4
-trial=3 size=256x144 engine=jit samples_ms=722.880,725.306,737.810,726.518,724.122,725.945,722.276 median_ms=725.306 sha256=f35a578dc277b57ca3bb5f74bc9381297fab5afce787bc92c54e46536fa8d2a4 diagnostic_jit_invocations=18428744
+trial=3 size=256x144 engine=wamr samples_ms=73.873,74.123,74.648,73.310,73.931,72.674,73.553 median_ms=73.873 sha256=f35a578dc277b57ca3bb5f74bc9381297fab5afce787bc92c54e46536fa8d2a4
+trial=3 size=256x144 engine=interpreter samples_ms=290.756,286.953,285.266,284.528,288.557,290.580,287.855 median_ms=287.855 sha256=f35a578dc277b57ca3bb5f74bc9381297fab5afce787bc92c54e46536fa8d2a4
+trial=3 size=256x144 engine=jit samples_ms=424.821,424.883,420.381,423.305,431.897,427.798,427.365 median_ms=424.883 sha256=f35a578dc277b57ca3bb5f74bc9381297fab5afce787bc92c54e46536fa8d2a4 compiled_traces_before_measurement=2 diagnostic_jit_invocations=5772881 diagnostic_interpreter_steps=30336028 diagnostic_trace_transitions=5772881 diagnostic_trace_exits=6 diagnostic_control_handlers=36108906
 pair_pass trial=3 size=256x144 sha256=f35a578dc277b57ca3bb5f74bc9381297fab5afce787bc92c54e46536fa8d2a4 output_bytes=370080
-trial=3 size=320x180 engine=interpreter samples_ms=458.386,446.000,476.384,447.211,446.511,447.896,442.853 median_ms=447.211 sha256=6d04ea80d9a1fd773c85d413057d64797f32dbb257a753d767a378d730d7d699
-trial=3 size=320x180 engine=jit samples_ms=1159.351,1164.825,1155.156,1160.225,1153.896,1157.830,1137.240 median_ms=1157.830 sha256=6d04ea80d9a1fd773c85d413057d64797f32dbb257a753d767a378d730d7d699 diagnostic_jit_invocations=28808558
-trial=3 size=320x180 engine=wamr samples_ms=112.002,112.539,111.775,114.722,112.607,114.177,115.015 median_ms=112.607 sha256=6d04ea80d9a1fd773c85d413057d64797f32dbb257a753d767a378d730d7d699
+trial=3 size=320x180 engine=interpreter samples_ms=443.163,447.913,448.398,446.318,443.564,443.359,444.360 median_ms=444.360 sha256=6d04ea80d9a1fd773c85d413057d64797f32dbb257a753d767a378d730d7d699
+trial=3 size=320x180 engine=jit samples_ms=703.502,660.686,657.776,665.396,665.432,670.618,682.808 median_ms=665.432 sha256=6d04ea80d9a1fd773c85d413057d64797f32dbb257a753d767a378d730d7d699 compiled_traces_before_measurement=2 diagnostic_jit_invocations=9034271 diagnostic_interpreter_steps=47430820 diagnostic_trace_transitions=9034271 diagnostic_trace_exits=6 diagnostic_control_handlers=56465088
+trial=3 size=320x180 engine=wamr samples_ms=112.898,114.661,115.204,114.924,118.373,117.493,115.537 median_ms=115.204 sha256=6d04ea80d9a1fd773c85d413057d64797f32dbb257a753d767a378d730d7d699
 pair_pass trial=3 size=320x180 sha256=6d04ea80d9a1fd773c85d413057d64797f32dbb257a753d767a378d730d7d699 output_bytes=577800
 SUMMARY
-size=64x36 rays=7332 interpreter_ms=18.053 interpreter_range_ms=17.793-18.118 jit_ms=44.987 jit_range_ms=44.484-45.620 wamr_ms=4.568 wamr_range_ms=4.552-4.709 interpreter_over_wamr=3.952x jit_over_wamr=9.848x interpreter_rays_s=406127 jit_rays_s=162981 wamr_rays_s=1605071
-size=128x72 rays=29732 interpreter_ms=70.588 interpreter_range_ms=70.386-73.706 jit_ms=184.216 jit_range_ms=182.961-186.976 wamr_ms=18.678 wamr_range_ms=18.375-18.718 interpreter_over_wamr=3.779x jit_over_wamr=9.863x interpreter_rays_s=421206 jit_rays_s=161398 wamr_rays_s=1591841
-size=192x108 rays=67032 interpreter_ms=158.473 interpreter_range_ms=158.429-166.147 jit_ms=409.100 jit_range_ms=409.037-410.958 wamr_ms=41.005 wamr_range_ms=40.190-41.421 interpreter_over_wamr=3.865x jit_over_wamr=9.977x interpreter_rays_s=422986 jit_rays_s=163852 wamr_rays_s=1634714
-size=256x144 rays=119352 interpreter_ms=279.949 interpreter_range_ms=278.552-282.710 jit_ms=725.306 jit_range_ms=725.213-736.856 wamr_ms=76.452 wamr_range_ms=75.529-76.980 interpreter_over_wamr=3.662x jit_over_wamr=9.487x interpreter_rays_s=426335 jit_rays_s=164554 wamr_rays_s=1561142
-size=320x180 rays=186792 interpreter_ms=441.931 interpreter_range_ms=435.611-447.211 jit_ms=1154.761 jit_range_ms=1148.529-1157.830 wamr_ms=113.812 wamr_range_ms=112.607-122.785 interpreter_over_wamr=3.883x jit_over_wamr=10.146x interpreter_rays_s=422672 jit_rays_s=161758 wamr_rays_s=1641237
+size=64x36 rays=7332 interpreter_ms=18.744 interpreter_range_ms=18.185-18.853 jit_ms=27.553 jit_range_ms=27.208-28.071 wamr_ms=4.662 wamr_range_ms=4.558-4.721 interpreter_over_wamr=4.020x jit_over_wamr=5.910x interpreter_rays_s=391163 jit_rays_s=266107 wamr_rays_s=1572665
+size=128x72 rays=29732 interpreter_ms=73.199 interpreter_range_ms=71.790-73.205 jit_ms=107.491 jit_range_ms=106.714-108.262 wamr_ms=18.659 wamr_range_ms=18.434-18.748 interpreter_over_wamr=3.923x jit_over_wamr=5.761x interpreter_rays_s=406179 jit_rays_s=276600 wamr_rays_s=1593447
+size=192x108 rays=67032 interpreter_ms=162.514 interpreter_range_ms=159.873-162.532 jit_ms=241.025 jit_range_ms=237.522-242.424 wamr_ms=41.095 wamr_range_ms=40.537-41.382 interpreter_over_wamr=3.955x jit_over_wamr=5.865x interpreter_rays_s=412469 jit_rays_s=278112 wamr_rays_s=1631164
+size=256x144 rays=119352 interpreter_ms=287.855 interpreter_range_ms=286.902-289.428 jit_ms=424.883 jit_range_ms=423.209-425.743 wamr_ms=73.873 wamr_range_ms=72.434-74.125 interpreter_over_wamr=3.897x jit_over_wamr=5.752x interpreter_rays_s=414625 jit_rays_s=280906 wamr_rays_s=1615636
+size=320x180 rays=186792 interpreter_ms=445.210 interpreter_range_ms=444.360-446.494 jit_ms=663.797 jit_range_ms=662.301-665.432 wamr_ms=114.060 wamr_range_ms=113.253-115.204 interpreter_over_wamr=3.903x jit_over_wamr=5.820x interpreter_rays_s=419559 jit_rays_s=281399 wamr_rays_s=1637661
+```

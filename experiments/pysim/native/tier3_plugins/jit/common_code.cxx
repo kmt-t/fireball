@@ -78,7 +78,8 @@ constexpr void restore(code_piece &c) {
 }
 constexpr code_piece epilogue() {
   code_piece c;
-  c.emit(0x31, 0xC0);
+  c.emit(0xB8);
+  c.u32(FIREBALL_NATIVE_OP_CONTINUE);
   restore(c);
   c.emit(0xC3);
   return c;
@@ -217,17 +218,11 @@ runtime_local_span(const fireball_execution_context_native &context,
   assert(context.call_stack->size > context.call_base);
   const auto &frame = context.call_stack->frames[context.call_stack->size - 1];
   assert(local_index < frame.local_count);
-  assert(frame.slot_words == 1 || frame.slot_words == 2 ||
-         frame.slot_words == 4);
-  if (frame.slot_words == 1)
-    return {local_index, 1};
-
-  assert(frame.local_width_map != nullptr);
-  const auto packed = frame.local_width_map[local_index >> 2];
-  const auto width_code = (packed >> ((local_index & 3u) * 2u)) & 3u;
-  const auto width = 1u << width_code;
-  assert(width <= frame.slot_words);
-  return {local_index * frame.slot_words, width};
+  assert(frame.local_offsets != nullptr && frame.local_sizes != nullptr);
+  const auto offset = static_cast<std::uint32_t>(frame.local_offsets[local_index]);
+  const auto width = static_cast<std::uint32_t>(frame.local_sizes[local_index]);
+  assert((width == 1 || width == 2) && offset + width <= frame.local_slot_count);
+  return {offset, width};
 }
 } // namespace
 
@@ -431,8 +426,9 @@ extern "C" int fb_jit_compile_block(const fireball::jit_wasm_block *block,
   const auto status = compile_wasm_trace(
       block->code.data, block->code.bytes, block->offset, block->byte_span,
       next != UINT32_MAX, static_cast<std::uint32_t>(next), 0, 0,
-      block->locals.widths.data, block->locals.widths.bytes,
-      block->locals.count, block->locals.slot_words, body_scratch,
+      reinterpret_cast<const std::uint16_t *>(block->locals.offsets.data),
+      block->locals.sizes.data, block->locals.count,
+      block->locals.total_words, body_scratch,
       kMaxBodyBytes, &result, stack_locations, stack_location_capacity);
   if (status != 1)
     return status;
@@ -463,8 +459,9 @@ extern "C" int fb_jit_compile_instructions(
       block->instructions, block->instruction_count,
       block->next_pc != UINT32_MAX, block->next_pc,
       block->loops_to != UINT32_MAX, block->loops_to, block->byte_span,
-      block->locals.widths.data, block->locals.widths.bytes,
-      block->locals.count, block->locals.slot_words, block->context_helper,
+      reinterpret_cast<const std::uint16_t *>(block->locals.offsets.data),
+      block->locals.sizes.data, block->locals.count,
+      block->locals.total_words, block->context_helper,
       block->helper_target, body_scratch, kMaxBodyBytes, &result,
       stack_locations, stack_location_capacity);
   if (status != 1)

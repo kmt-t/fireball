@@ -9,7 +9,6 @@ from typing import Protocol
 from config import (
     FB_CONF_JIT_AGING_STEP_SCAN_BYTES,
     FB_CONF_JIT_AGING_STEP_UNITS,
-    FB_CONF_RUNTIME_YIELD_THRESHOLD,
     JIT_CACHE_ACTIVE_OFFSET_BYTES,
     JIT_CACHE_BANK_CAPACITY_BYTES,
     JIT_CACHE_BANK_ENTRY_CAPACITY,
@@ -79,7 +78,6 @@ class JITRuntimeManager(NativeJITRuntimeManager):
         "_cards",
         "_code_bytes",
         "_compile_code_leases",
-        "_compile_width_buffers",
         "_hotspot_profiling_enabled",
         "_native",
         "_native_dispatch_cache_key",
@@ -102,7 +100,6 @@ class JITRuntimeManager(NativeJITRuntimeManager):
     def __init__(
         self,
         jit_compiler: JITCompiler | None = None,
-        yield_threshold: int = FB_CONF_RUNTIME_YIELD_THRESHOLD,
         card_shift: int = JIT_CARD_SHIFT,
         code_lengths: Sequence[int] = (),
         min_trace_bytes: int | None = None,
@@ -115,13 +112,11 @@ class JITRuntimeManager(NativeJITRuntimeManager):
         module_id: int = 0,
         retire_observer: Callable[[int, int], None] | None = None,
     ):
-        assert 1 <= yield_threshold <= 0xFFFFFFFF
         assert 0 <= candidate_threshold <= 0xFFFF_FFFF
         assert compile_queue_capacity >= 1
         assert aging_step_units >= 1 and aging_scan_bytes >= 1
         assert history_capacity >= 1
         assert 0 <= module_id <= 0xFFFF_FFFF
-        self.yield_threshold = yield_threshold
         self.candidate_threshold = candidate_threshold
         self.compile_queue_capacity = compile_queue_capacity
         self.aging_step_units = aging_step_units
@@ -146,9 +141,6 @@ class JITRuntimeManager(NativeJITRuntimeManager):
         self._pointer = self._native.pointer
         self.module: Module | None = None
         self._compile_code_leases: StaticVector[BufferLease] = StaticVector(
-            capacity=len(code_lengths)
-        )
-        self._compile_width_buffers: StaticVector[ctypes.Array] = StaticVector(
             capacity=len(code_lengths)
         )
         self._block_inputs = (native_abi._NativeWasmBlock * 0)()
@@ -181,6 +173,10 @@ class JITRuntimeManager(NativeJITRuntimeManager):
     def register_module(self, module: Module, module_id: int | None = None) -> None:
         """Bind loader metadata and initialize all JIT-owned indexes."""
 
+        if self.module is module:
+            if module_id is not None:
+                assert module_id == self.module_id
+            return
         for lease in self._compile_code_leases:
             lease.release()
         if module_id is not None:
@@ -190,20 +186,12 @@ class JITRuntimeManager(NativeJITRuntimeManager):
             module.build_basic_block_index()
         self.module = module
         self._compile_code_leases = StaticVector(capacity=len(module.functions))
-        self._compile_width_buffers = StaticVector(capacity=len(module.functions))
         for local_index in range(len(module.functions)):
             function_index = len(module.imports) + local_index
             code = module.code_for(function_index)
             self._compile_code_leases.append(BufferLease(memoryview(code)))
             function = module.functions[local_index]
-            assert function.local_width_map_cache is not None
-            widths_view = function.local_width_map_cache.raw_view
-            width_buffer = (
-                (ctypes.c_uint8 * len(widths_view)).from_buffer(widths_view)
-                if len(widths_view) > 0
-                else (ctypes.c_uint8 * 0)()
-            )
-            self._compile_width_buffers.append(width_buffer)
+            assert function.local_layout_cache is not None
         code_lengths = tuple(
             len(module.code_for(index)) if index >= len(module.imports) else 0
             for index in range(len(module.imports) + len(module.functions))
@@ -222,10 +210,10 @@ class JITRuntimeManager(NativeJITRuntimeManager):
         )
         for index, block in enumerate(module.blocks):
             function = module.functions[block.func_index - len(module.imports)]
-            assert function.local_width_map_cache is not None
+            assert function.local_layout_cache is not None
             local_index = block.func_index - len(module.imports)
             code = module.code_for(block.func_index)
-            widths = self._compile_width_buffers[local_index]
+            layout = function.local_layout_cache
             self._block_inputs[index] = native_abi._NativeWasmBlock(
                 block.head_pc,
                 block.head_pc - module.function_pc_offset(block.func_index),
@@ -238,11 +226,10 @@ class JITRuntimeManager(NativeJITRuntimeManager):
                     self._compile_code_leases[local_index].address, len(code)
                 ),
                 native_abi._NativeLocalLayout(
-                    native_abi._NativeByteView(
-                        ctypes.addressof(widths) if len(widths) else 0, len(widths)
-                    ),
-                    function.local_width_map_cache.count,
-                    function.local_width_map_cache.slot_words,
+                    native_abi._NativeByteView(layout.offsets_address, layout.count * 2),
+                    native_abi._NativeByteView(layout.sizes_address, layout.count),
+                    layout.count,
+                    layout.total_words,
                 ),
                 (
                     ctypes.addressof(self._block_execution_counts)
@@ -297,12 +284,11 @@ class JITRuntimeManager(NativeJITRuntimeManager):
         assert self.module is not None
         function_index = block.func_index
         function = self.module.functions[function_index - len(self.module.imports)]
-        assert function.local_width_map_cache is not None
+        assert function.local_layout_cache is not None
         code = self.module.code_for(function_index)
         block_offset = pc - self.module.function_pc_offset(function_index)
         local_index = function_index - len(self.module.imports)
-        widths_view = function.local_width_map_cache.raw_view
-        width_buffer = self._compile_width_buffers[local_index]
+        layout = function.local_layout_cache
         block_input = native_abi.WasmBlock(
             head_pc=pc,
             code=native_abi.NativeByteView(
@@ -314,11 +300,10 @@ class JITRuntimeManager(NativeJITRuntimeManager):
             loops_to=block.loops_to,
             frame_depth=block.frame_depth,
             locals=native_abi.NativeLocalLayout(
-                widths=native_abi.NativeByteView(
-                    ctypes.addressof(width_buffer) if len(widths_view) > 0 else 0, len(widths_view)
-                ),
-                local_count=function.local_width_map_cache.count,
-                slot_words=function.local_width_map_cache.slot_words,
+                offsets=native_abi.NativeByteView(layout.offsets_address, layout.count * 2),
+                sizes=native_abi.NativeByteView(layout.sizes_address, layout.count),
+                local_count=layout.count,
+                total_words=layout.total_words,
             ),
         )
         return block_input
@@ -420,9 +405,12 @@ class JITRuntimeManager(NativeJITRuntimeManager):
         """Delegate filtering, lookup and promotion to the native JitRuntime."""
         assert 0 <= pc <= 0xFFFF_FFFF
         self.cache._begin()
-        token = int(native_abi.RUNTIME_FILTERED_LOOKUP(self.cache._native.pointer, pc))
+        location = native_abi.CacheLookup()
+        found = native_abi.RUNTIME_FILTERED_LOOKUP(
+            self.cache._native.pointer, pc, ctypes.byref(location)
+        )
         self.cache._check()
-        return self.cache._reference(token)
+        return None if found == 0 else self.cache._reference(location.token, pc)
 
     def unmark_trackable(self, pc: int) -> None:
         """Remove a permanently unsupported block from the candidate mask."""

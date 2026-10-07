@@ -1,4 +1,4 @@
-"""Tier 2 lifecycle contract for an opaque native execution plugin."""
+"""Optional native execution extension contract owned by the Interpreter."""
 
 from __future__ import annotations
 
@@ -14,9 +14,7 @@ if TYPE_CHECKING:
 
 
 class NativeExecutionPlugin(Protocol):
-    """Lifecycle and native entry binding for a replaceable execution plugin."""
-
-    yield_threshold: int
+    """Bind an optional native executor to the Interpreter's shared state."""
 
     def register_module(self, module: Module) -> None: ...
 

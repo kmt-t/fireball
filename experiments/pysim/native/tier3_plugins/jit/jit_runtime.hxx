@@ -1,9 +1,13 @@
 #pragma once
+#include <algorithm>
 #include <array>
+#include <bit>
+#include <cassert>
 #include <limits>
 #include <new>
 #include <type_traits>
 
+#include "../../../tier2_runtime/abi/interpreter_abi.hxx"
 #include "common_code_abi.hxx"
 #include "jit_internal.hxx"
 #include "jit_runtime_abi.hxx"
@@ -28,10 +32,13 @@ constexpr auto no_pc = std::numeric_limits<std::uint32_t>::max();
 constexpr std::uint32_t bank_count = 3;
 constexpr std::uint32_t max_entries = FB_CONF_JIT_CACHE_BANK_ENTRY_CAPACITY;
 constexpr std::uint32_t fast_slots = FB_CONF_JIT_CACHE_FAST_SLOT_COUNT;
+constexpr std::uint32_t index_capacity = bank_count * max_entries;
 constexpr std::size_t compile_output_bytes = header_bytes + kMaxBodyBytes;
 constexpr std::uint16_t no_code_offset =
     std::numeric_limits<std::uint16_t>::max();
 static_assert(fast_slots > 0 && (fast_slots & (fast_slots - 1)) == 0);
+static_assert(max_entries > 0);
+static_assert(index_capacity <= std::numeric_limits<std::uint8_t>::max() + 1u);
 static_assert(compile_output_bytes <= FB_CONF_JIT_CACHE_BANK_CAPACITY_BYTES);
 
 struct entry {
@@ -41,6 +48,10 @@ struct entry {
   bool resident() const { return code_offset != no_code_offset; }
 };
 static_assert(sizeof(entry) == 8);
+struct cache_location {
+  entry *value = nullptr;
+  std::uint32_t bank_id = bank_count;
+};
 struct bank {
   std::array<entry, max_entries> entries{};
   std::uint32_t count = 0;
@@ -51,15 +62,13 @@ struct bank {
   std::uint32_t offset = 0;
 
   std::uint32_t lower_bound(std::uint32_t pc) const {
-    std::uint32_t first = 0, last = count;
-    while (first < last) {
-      const auto middle = first + (last - first) / 2;
-      if (entries[middle].pc < pc)
-        first = middle + 1;
-      else
-        last = middle;
-    }
-    return first;
+    const auto end = entries.begin() + count;
+    const auto found =
+        std::lower_bound(entries.begin(), end, pc,
+                         [](const entry &candidate, std::uint32_t value) {
+                           return candidate.pc < value;
+                         });
+    return static_cast<std::uint32_t>(found - entries.begin());
   }
   entry *find(std::uint32_t pc) {
     const auto index = lower_bound(pc);
@@ -119,7 +128,10 @@ class jit_runtime final
                                 Measurement> {
 public:
   std::array<bank, bank_count> banks{};
+  std::array<std::uint8_t, index_capacity> sorted_index{};
+  std::uint32_t sorted_index_count = 0;
   std::array<entry, fast_slots> fast{};
+  std::array<std::uint8_t, fast_slots> fast_bank_ids{};
   std::uint32_t active = 0, warm = 1, oldest = 2;
   int error = 0;
   std::uint8_t *states = nullptr;
@@ -171,9 +183,12 @@ public:
               b.frame_depth,
               0,
               {f.code, f.code_size},
-              {{f.local_width_map, (f.local_width_count + 3) / 4},
-               f.local_width_count,
-               f.slot_words},
+              {{reinterpret_cast<const std::uint8_t *>(f.local_offsets),
+                static_cast<std::uint32_t>(
+                    f.local_count * sizeof(std::uint16_t))},
+               {f.local_sizes, f.local_count},
+               f.local_count,
+               f.local_slot_count},
               b.extension_data};
     return &output;
   }
@@ -208,7 +223,7 @@ public:
         return -1;
       if (card_state(static_cast<std::uint32_t>(pc) >> card_shift) == 3)
         continue;
-      if (find(pc) != nullptr) {
+      if (find(pc).value != nullptr) {
         mark_compiled(pc);
         continue;
       }
@@ -250,9 +265,13 @@ public:
           if (!target_bank.allocate(
                   reinterpret_cast<std::uint8_t *>(memory.base),
                   static_cast<std::uint32_t>(pc), header->blob_bytes, 0,
-                  installed_offset) ||
-              installed_offset != offset)
+                  installed_offset)) {
             status = 0;
+          } else {
+            rebuild_index();
+            if (installed_offset != offset)
+              status = 0;
+          }
         }
         if (!effect(fb_jit_memory_commit(&memory)))
           return -1;
@@ -270,7 +289,7 @@ public:
               const auto source = source_bank.entries[i];
               if (source.resident() && source.pc != compiled.pc &&
                   eligible(source) && next_pc(source) == compiled.pc &&
-                  !link(source, compiled))
+                  !patch(source, &compiled))
                 return -1;
             }
           }
@@ -375,16 +394,51 @@ public:
     pc ^= pc >> 4;
     return pc & (fast_slots - 1);
   }
-  void invalidate() { fast.fill({}); }
-  entry *find(std::uint32_t pc, std::uint32_t *bank_id = nullptr) {
-    for (std::uint32_t i = 0; i < bank_count; ++i) {
-      if (auto *value = banks[i].find(pc); value != nullptr) {
-        if (bank_id != nullptr)
-          *bank_id = i;
-        return value;
+  void invalidate() {
+    fast.fill({});
+    fast_bank_ids.fill(0);
+  }
+  entry &indexed_entry(std::uint8_t reference) {
+    const auto bank_id = reference / max_entries;
+    const auto entry_index = reference % max_entries;
+    return banks[bank_id].entries[entry_index];
+  }
+  std::uint32_t indexed_bank(std::uint8_t reference) const {
+    return reference / max_entries;
+  }
+  void rebuild_index() {
+    sorted_index_count = 0;
+    for (std::uint32_t bank_id = 0; bank_id < bank_count; ++bank_id) {
+      const auto &source = banks[bank_id];
+      for (std::uint32_t i = 0; i < source.count; ++i) {
+        if (source.entries[i].resident())
+          sorted_index[sorted_index_count++] =
+              static_cast<std::uint8_t>(bank_id * max_entries + i);
       }
     }
-    return nullptr;
+    std::sort(sorted_index.begin(), sorted_index.begin() + sorted_index_count,
+              [this](std::uint8_t left, std::uint8_t right) {
+                const auto left_pc = indexed_entry(left).pc;
+                const auto right_pc = indexed_entry(right).pc;
+                return left_pc != right_pc ? left_pc < right_pc : left < right;
+              });
+  }
+  [[gnu::always_inline]] inline cache_location find(std::uint32_t pc) {
+    const auto end = sorted_index.begin() + sorted_index_count;
+    const auto first =
+        std::lower_bound(sorted_index.begin(), end, pc,
+                         [this](std::uint8_t reference, std::uint32_t value) {
+                           return indexed_entry(reference).pc < value;
+                         });
+    cache_location result{};
+    for (auto found = first; found != end && indexed_entry(*found).pc == pc;
+         ++found) {
+      const auto bank_id = indexed_bank(*found);
+      auto &candidate = indexed_entry(*found);
+      assert(result.value == nullptr);
+      result = {&candidate, bank_id};
+    }
+    return result;
   }
   jit_trace_header *header(entry value) const {
     return reinterpret_cast<jit_trace_header *>(
@@ -448,16 +502,15 @@ public:
     if (target_header < base + FB_CONF_JIT_CACHE_COMMON_CODE_BYTES ||
         target_header >= base + FB_CONF_JIT_CACHE_REGION_BYTES)
       return nullptr;
-    return find(
-        reinterpret_cast<const jit_trace_header *>(target_header)->head_pc);
-  }
-  std::uint64_t token(entry value) const {
-    return value.token != 0 ? value.token
-                            : ((std::uint64_t{1} << 63) | (value.pc + 1ull));
+    return find(reinterpret_cast<const jit_trace_header *>(target_header)
+                    ->head_pc)
+        .value;
   }
   bool patch(entry source, const entry *target) {
-    if (!source.resident())
-      return check(false);
+    assert(source.resident());
+    assert(target == nullptr || target->resident());
+    assert(target == nullptr || eligible(source));
+    assert(target == nullptr || next_pc(source) == target->pc);
     const auto address = target == nullptr ? 0 : body_address(*target);
     if (header(source)->chain_target_address == address)
       return true;
@@ -465,23 +518,14 @@ public:
       this->cache_changed();
     return effect(patch_trace_chain(&memory, source.code_offset, address));
   }
-  bool link(entry source, entry target) {
-    std::uint32_t target_bank = 0;
-    if (!check(source.resident() && target.resident() && eligible(source) &&
-               next_pc(source) == target.pc &&
-               find(target.pc, &target_bank) != nullptr &&
-               (target_bank == active || target_bank == warm)))
-      return false;
-    return patch(source, &target);
-  }
   bool try_link(entry source) {
-    std::uint32_t target_bank = 0;
-    auto *target =
-        eligible(source) ? find(next_pc(source), &target_bank) : nullptr;
-    if (target != nullptr) {
-      if (target_bank == active || target_bank == warm)
-        return link(source, *target);
-      if (header(source)->chain_target_address == body_address(*target))
+    const auto target =
+        eligible(source) ? find(next_pc(source)) : cache_location{};
+    if (target.value != nullptr) {
+      assert(target.bank_id < bank_count);
+      if (target.bank_id != oldest)
+        return patch(source, target.value);
+      if (header(source)->chain_target_address == body_address(*target.value))
         return true;
     }
     return patch(source, nullptr);
@@ -554,6 +598,7 @@ public:
       b.entries[i] = entry{};
     }
     b.count = b.used = b.write_cursor = 0;
+    rebuild_index();
     return true;
   }
   bool unlink_inbound(std::uint32_t id) {
@@ -621,6 +666,7 @@ public:
                                   pc, bytes, cache_token, offset))
         return false;
     }
+    rebuild_index();
     invalidate();
     entry value{pc, offset, cache_token};
     if (!install(value, blob, bytes))
@@ -632,11 +678,12 @@ public:
       for (std::uint32_t i = 0; i < source_bank.count; ++i) {
         const auto source = source_bank.entries[i];
         if (source.resident() && source.pc != value.pc && eligible(source) &&
-            next_pc(source) == value.pc && !link(source, value))
+            next_pc(source) == value.pc && !patch(source, &value))
           return false;
       }
     }
     fast[slot(pc)] = value;
+    fast_bank_ids[slot(pc)] = static_cast<std::uint8_t>(active);
     mark_compiled(pc);
     if constexpr (!std::is_void_v<Measurement>)
       this->trace_inserted(pc);
@@ -644,19 +691,20 @@ public:
       this->cache_changed();
     return prepare_chains();
   }
-  std::uint64_t lookup(std::uint32_t pc) {
-    const auto cached = fast[slot(pc)];
+  [[gnu::always_inline]] inline cache_location lookup(std::uint32_t pc) {
+    const auto slot_id = slot(pc);
+    auto &cached = fast[slot_id];
     if (cached.resident() && cached.pc == pc)
-      return token(cached);
-    for (const auto id : {active, warm}) {
-      if (auto *value = banks[id].find(pc); value != nullptr) {
-        fast[slot(pc)] = *value;
-        return token(*value);
-      }
+      return {&cached, fast_bank_ids[slot_id]};
+    const auto location = find(pc);
+    if (location.value == nullptr)
+      return {};
+    if (location.bank_id != oldest) {
+      cached = *location.value;
+      fast_bank_ids[slot_id] = static_cast<std::uint8_t>(location.bank_id);
+      return {&cached, location.bank_id};
     }
-    auto *found = banks[oldest].find(pc);
-    if (found == nullptr)
-      return 0;
+    auto *found = location.value;
     const auto value = *found;
     auto *source_header = header(value);
     const auto *source_blob =
@@ -665,6 +713,7 @@ public:
     const auto old_body_address = body_address(value);
     found->code_offset = no_code_offset;
     found->token = 0;
+    rebuild_index();
     auto &previous = banks[oldest];
     previous.used -= source_bytes;
     for (auto &source_bank : banks) {
@@ -673,7 +722,7 @@ public:
         if (source.resident() &&
             header(source)->chain_target_address == old_body_address &&
             !patch(source, nullptr))
-          return 0;
+          return {};
       }
     }
     std::uint16_t promoted_offset = no_code_offset;
@@ -683,29 +732,31 @@ public:
       if (!rotate() || !check(banks[active].allocate(
                            reinterpret_cast<std::uint8_t *>(memory.base), pc,
                            source_bytes, value.token, promoted_offset)))
-        return 0;
+        return {};
     }
+    rebuild_index();
     entry promoted{pc, promoted_offset, value.token};
     if (!install(promoted, source_blob, source_bytes) || !try_link(promoted))
-      return 0;
+      return {};
     for (const auto id : {active, warm}) {
       auto &source_bank = banks[id];
       for (std::uint32_t i = 0; i < source_bank.count; ++i) {
         const auto source = source_bank.entries[i];
         if (source.resident() && source.pc != pc && eligible(source) &&
-            next_pc(source) == pc && !link(source, promoted))
-          return 0;
+            next_pc(source) == pc && !patch(source, &promoted))
+          return {};
       }
     }
     if constexpr (!std::is_void_v<Measurement>)
       this->trace_promoted();
-    fast[slot(pc)] = promoted;
+    cached = promoted;
+    fast_bank_ids[slot_id] = static_cast<std::uint8_t>(active);
     mark_compiled(pc);
     if constexpr (!std::is_void_v<Measurement>)
       this->cache_changed();
     if (!prepare_chains())
-      return 0;
-    return token(promoted);
+      return {};
+    return {&cached, active};
   }
   bool prepare_chains() {
     const auto began = !memory.patching;
@@ -1020,10 +1071,9 @@ template <class Measurement> struct native_jit_plugin {
         input->extension == nullptr || input->extension->owner == 0)
       return 0;
     auto &runtime = *reinterpret_cast<Runtime *>(input->extension->owner);
-    if (runtime.lookup(pc) == 0 || runtime.error != 0)
-      return 0;
-    auto *start = runtime.find(pc);
-    if (start == nullptr)
+    const auto start_location = runtime.lookup(pc);
+    auto *start = start_location.value;
+    if (start == nullptr || runtime.error != 0)
       return 0;
     auto *terminal = start;
     std::uint32_t chain_count = 1;
@@ -1052,10 +1102,9 @@ template <class Measurement> struct native_jit_plugin {
     frame.boundary_loops_to = terminal_block->loops_to;
     auto *stack = input->stack;
     auto *locals = input->locals;
-    using entry_fn =
-        void (*)(void *, std::uint32_t *, std::uint32_t *, std::uint32_t);
-    reinterpret_cast<entry_fn>(runtime.entry_address(*start))(
-        &context, stack + context.sp_offset, locals + frame.local_base, 0);
+    using entry_fn = fireball_native_cps_handler;
+    static_cast<void>(reinterpret_cast<entry_fn>(runtime.entry_address(*start))(
+        &context, stack + context.sp_offset, locals + frame.local_base, 0));
     if (context.control_stack->size > expected_frames)
       context.control_stack->size = expected_frames;
 #if FB_CONF_JIT_BLOCK_COUNTERS

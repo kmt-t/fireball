@@ -47,8 +47,8 @@ from typing import Protocol, cast
 
 from bump_allocator import BumpAllocator
 from config import (
+    FB_CONF_INTERPRETER_YIELD_THRESHOLD,
     FB_CONF_MAX_VALUE_STACK,
-    FB_CONF_RUNTIME_YIELD_THRESHOLD,
 )
 from system_containers import SequenceView as Sequence
 from system_containers import StaticVector
@@ -81,6 +81,7 @@ from tier2_runtime.interpreter.control_flow import (
     build_control_map,
     opcode_has_attribute,
 )
+from tier2_runtime.interpreter.execution_plugin import NativeExecutionPlugin
 from tier2_runtime.observability.logging_interface import LoggerPort, LogLevel
 from tier2_runtime.runtime.python_api import (
     PAGE_SIZE,
@@ -844,8 +845,8 @@ class ExecutionContext(ExecutionContextABI):
             assert False, "local stack capacity exceeded"
         raw_offset = 0
         for index in range(frame.param_count):
-            width = frame.local_widths.words(index)
-            local_offset = frame_offset + index * frame.local_widths.slot_words
+            width = frame.local_layout.size_words(index)
+            local_offset = frame_offset + frame.local_layout.offset(index)
             for word in range(width):
                 self.local_stack.write_raw_at(local_offset + word, raw_args[raw_offset])
                 raw_offset += 1
@@ -915,9 +916,9 @@ class CallFrame:
         "frame_offset",
         "func_index",
         "local_count",
+        "local_layout",
         "local_slot_count",
         "local_types",
-        "local_widths",
         "param_count",
         "param_packed_slot_count",
         "result_arity",
@@ -943,8 +944,8 @@ class CallFrame:
         self._native_slot = -1
         native_frame = context.native_call_frames[native_slot] if native_slot >= 0 else None
         function = module.functions[func_index - len(module.imports)]
-        local_widths = function.local_width_map_cache
-        assert local_widths is not None
+        local_layout = function.local_layout_cache
+        assert local_layout is not None
         self.context = context
         self.values = context.stack
         self.control_base = (
@@ -955,8 +956,8 @@ class CallFrame:
         self._frames = _ControlFrameWindow(context.control_frame_stack, self.control_base)
         self.func_index = func_index
         self.frame_offset = frame_offset
-        self.local_count = len(local_widths)
-        self.local_widths = local_widths
+        self.local_count = len(local_layout)
+        self.local_layout = local_layout
         local_slot_count = function.local_slot_count_cache
         param_count = function.param_count_cache
         param_packed_slot_count = function.param_packed_slot_count_cache
@@ -973,7 +974,7 @@ class CallFrame:
         self._locals = _LocalStackWindow(
             context.local_stack,
             frame_offset,
-            local_widths,
+            local_layout,
         )
         self.code = module.code_for(func_index)
         self.code_pc_offset = module.function_pc_offset(func_index)
@@ -1038,10 +1039,10 @@ class CallFrame:
             function_view.control_map = (
                 0 if len(self.code) == 0 else ctypes.addressof(native_control_map)
             )
-            function_view.local_width_map = _native_buffer_address(self.local_widths.raw_view)
-            function_view.local_width_count = self.local_count
+            function_view.local_offsets = self.local_layout.offsets_address
+            function_view.local_sizes = self.local_layout.sizes_address
+            function_view.local_count = self.local_count
             function_view.local_slot_count = self.local_slot_count
-            function_view.slot_words = self.local_widths.slot_words
             function_view.param_count = self.param_count
             function_view.param_packed_slot_count = self.param_packed_slot_count
             function_view.result_arity = self.result_arity
@@ -1082,9 +1083,8 @@ class CallFrame:
                 local_base=self.frame_offset,
                 local_count=self.local_count,
                 local_slot_count=self.local_slot_count,
-                slot_words=self.local_widths.slot_words,
-                local_width_map=self._native_function_view.local_width_map,
-                local_width_count=self.local_count,
+                local_offsets=self._native_function_view.local_offsets,
+                local_sizes=self._native_function_view.local_sizes,
                 param_count=self.param_count,
                 param_packed_slot_count=self.param_packed_slot_count,
                 result_arity=self.result_arity,
@@ -1104,9 +1104,8 @@ class CallFrame:
             assert native_frame.local_base == frame_offset
             assert native_frame.local_count == self.local_count
             assert native_frame.local_slot_count == self.local_slot_count
-            assert native_frame.slot_words == self.local_widths.slot_words
-            assert native_frame.local_width_map == self._native_function_view.local_width_map
-            assert native_frame.local_width_count == self.local_count
+            assert native_frame.local_offsets == self._native_function_view.local_offsets
+            assert native_frame.local_sizes == self._native_function_view.local_sizes
             assert native_frame.param_count == self.param_count
             assert native_frame.param_packed_slot_count == self.param_packed_slot_count
             assert native_frame.result_arity == self.result_arity
@@ -1209,10 +1208,10 @@ class NativeModuleExecution:
             view.code_size = 0
             view.code_pc_offset = 0
             view.control_map = 0
-            view.local_width_map = 0
-            view.local_width_count = 0
+            view.local_offsets = 0
+            view.local_sizes = 0
+            view.local_count = 0
             view.local_slot_count = 0
-            view.slot_words = 1
             view.param_count = len(function_type.params)
             view.param_packed_slot_count = sum(
                 value_slot_width(value_type) for value_type in function_type.params
@@ -1391,8 +1390,8 @@ class InterpreterCall:
     """
     Resumable state for one in-progress `Interpreter.call()`, stepped by
     `Interpreter.step()`. Crosses the interpreter/runtime boundary as plain
-    data -- never as a Python coroutine -- so the runtime decides on its own
-    terms what happens between steps.
+    data -- never as a Python coroutine -- so a COOS scheduler can suspend and
+    resume the Interpreter without taking ownership of its execution engine.
 
     `call_stack` holds every caller frame currently suspended on a WASM
     `call`/`call_indirect` that has not yet returned, as `(func_index,
@@ -1469,6 +1468,14 @@ class InterpreterCall:
         return frame.code_pc_offset + ip
 
 
+@dataclass(frozen=True, slots=True)
+class NativeInterpreterBoundary:
+    """One native dispatch boundary returned to the Runtime scheduler."""
+
+    call_state: InterpreterCall
+    yield_requested: bool = False
+
+
 class Interpreter:
     __slots__ = (
         "_env",
@@ -1483,6 +1490,7 @@ class Interpreter:
         "phys_mem",
         "tables",
         "vmmio",
+        "yield_threshold",
     )
 
     def __init__(
@@ -1495,8 +1503,11 @@ class Interpreter:
         *,
         bump_allocator: BumpAllocator | None = None,
         native_dispatcher: NativeDispatchEntryPoint = _native_abi.RUN_DISPATCH,
+        yield_threshold: int = FB_CONF_INTERPRETER_YIELD_THRESHOLD,
     ):
         self._native_dispatcher = native_dispatcher
+        assert 1 <= yield_threshold <= 0xFFFF_FFFF
+        self.yield_threshold = yield_threshold
         self.module = module
         self.bump_allocator = (
             bump_allocator if bump_allocator is not None else module.allocator
@@ -1697,7 +1708,7 @@ class Interpreter:
         """
         fn = self.module.functions[func_index - len(self.module.imports)]
         param_packed_slot_count = fn.param_packed_slot_count_cache
-        assert fn.local_width_map_cache is not None
+        assert fn.local_layout_cache is not None
         assert param_packed_slot_count is not None
         assert len(raw_args) == param_packed_slot_count
         if fn.control_map is None:
@@ -1720,37 +1731,44 @@ class Interpreter:
         return self._step(call_state, stop_at_boundary=True)
 
     def step_native(self, call_state: InterpreterCall) -> InterpreterCall:
-        """Advance through C++ dispatch and explicit runtime call boundaries only."""
+        """Advance native execution to its next resumable boundary."""
+        call_state = self.step_native_boundary(call_state).call_state
+        if call_state._ip == RETURN_SENTINEL_IP and not call_state.finished:
+            return self._finish_native_frame(call_state)
+        return call_state
+
+    def step_native_boundary(
+        self,
+        call_state: InterpreterCall,
+        *,
+        idle_budget: int = 0,
+    ) -> NativeInterpreterBoundary:
+        """Advance the Interpreter-owned native dispatcher to one scheduler boundary."""
         assert self.debugger is None, "native stepping does not support Python debugger hooks"
         if call_state.finished:
-            return call_state
+            return NativeInterpreterBoundary(call_state)
         if call_state._ip == RETURN_SENTINEL_IP:
-            return self._finish_native_frame(call_state)
+            return NativeInterpreterBoundary(self._finish_native_frame(call_state))
         if self._try_native_step_to_boundary(call_state):
-            return call_state
+            return NativeInterpreterBoundary(call_state)
         if call_state.finished:
-            return call_state
+            return NativeInterpreterBoundary(call_state)
         if call_state._ip == RETURN_SENTINEL_IP:
-            return self._finish_native_frame(call_state)
+            return NativeInterpreterBoundary(self._finish_native_frame(call_state))
 
-        frame = call_state._frame
-        locals_arr = call_state._locals
-        assert frame is not None and locals_arr is not None
-        native_status = 0
-        while native_status == 0 and not call_state.finished:
+        while True:
             native_status = self.run_native_dispatch(
                 call_state,
-                FB_CONF_RUNTIME_YIELD_THRESHOLD,
-                native_dispatcher=self._native_dispatcher,
+                idle_budget=idle_budget,
             )
-            if native_status == 0:
-                self.resolve_native_call_boundary(call_state)
-                if call_state.finished:
-                    native_status = 2
+            if native_status != 0:
+                break
+            host_call = self.resolve_native_call_boundary(call_state)
+            if host_call or call_state.finished or call_state._ip == RETURN_SENTINEL_IP:
+                return NativeInterpreterBoundary(call_state)
 
         if native_status == 1:
             call_state._ip = RETURN_SENTINEL_IP
-            self._finish_native_frame(call_state)
         elif native_status == 2:
             assert call_state.finished and call_state.trap is not None
         elif native_status == NATIVE_DISPATCH_YIELD:
@@ -1758,13 +1776,18 @@ class Interpreter:
         elif native_status == NATIVE_DISPATCH_DEBUG_STOP:
             # A statically composed debugger has stopped native execution.
             # This is a runtime boundary, not a different instruction driver.
-            return call_state
+            return NativeInterpreterBoundary(call_state)
+        elif native_status == NATIVE_DISPATCH_CALL_BOUNDARY:
+            return NativeInterpreterBoundary(call_state)
         else:
             assert False, f"unexpected C++ interpreter status: {native_status}"
-        return call_state
+        return NativeInterpreterBoundary(
+            call_state,
+            yield_requested=native_status == NATIVE_DISPATCH_YIELD,
+        )
 
-    def resolve_native_call_boundary(self, call_state: InterpreterCall) -> InterpreterCall:
-        """Resolve a host import or a memory-manager boundary after C++ stops."""
+    def resolve_native_call_boundary(self, call_state: InterpreterCall) -> bool:
+        """Resolve a fallback and report whether a host import ran."""
         frame = call_state._frame
         locals_arr = call_state._locals
         ip = call_state._ip
@@ -1783,7 +1806,7 @@ class Interpreter:
                 self._abort_call(call_state, trap, ip)
             elif not call_state.finished:
                 call_state.context.runtime_flags |= EXECUTION_CONTEXT_FLAG_PENDING_BLOCK_HEAD
-            return call_state
+            return True
         if opcode == CALL_INDIRECT:
             _, off = decode_unsigned(frame.code, ip + 1)
             table_index, _ = decode_unsigned(frame.code, off)
@@ -1804,9 +1827,10 @@ class Interpreter:
                 self._abort_call(call_state, trap, ip)
             elif not call_state.finished:
                 call_state.context.runtime_flags |= EXECUTION_CONTEXT_FLAG_PENDING_BLOCK_HEAD
-            return call_state
+            return True
         if I32_LOAD <= opcode <= MEMORY_GROW:
-            return self._resolve_native_memory_boundary(call_state, opcode, ip)
+            self._resolve_native_memory_boundary(call_state, opcode, ip)
+            return False
         if opcode == FC_PREFIX:
             subopcode, _ = decode_unsigned(frame.code, ip + 1)
             assert subopcode == FC_MEMORY_COPY or subopcode == FC_MEMORY_FILL, (
@@ -1815,7 +1839,7 @@ class Interpreter:
             self._resolve_native_memory_boundary(call_state, opcode, ip)
             if not call_state.finished:
                 call_state.context.runtime_flags |= EXECUTION_CONTEXT_FLAG_PENDING_BLOCK_HEAD
-            return call_state
+            return False
         assert False, f"C++ interpreter does not implement opcode 0x{opcode:02X}"
 
     def _resolve_native_memory_boundary(
@@ -1940,8 +1964,6 @@ class Interpreter:
     def run_native_dispatch(
         self,
         call_state: InterpreterCall,
-        yield_threshold: int,
-        native_dispatcher: NativeDispatchEntryPoint,
         idle_budget: int = 0,
     ) -> int:
         """Run native traces and C++ handlers over Python-owned ctypes buffers."""
@@ -1949,7 +1971,6 @@ class Interpreter:
         locals_arr = call_state._locals
         assert frame is not None and locals_arr is not None
         assert call_state._ip != RETURN_SENTINEL_IP
-        assert yield_threshold > 0
         context = call_state.context
         execution = context.module_execution
         assert execution is not None
@@ -1962,7 +1983,7 @@ class Interpreter:
         context.local_offset = frame.frame_offset + frame.local_slot_count
         context.control_stack = context.control_frame_stack.address
         context.control_base = frame.control_base
-        context.loop_jump_threshold = yield_threshold
+        context.loop_jump_threshold = self.yield_threshold
         with _native_linear_memory_scope(context, frame.env.memory):
             (
                 native_status,
@@ -1970,7 +1991,7 @@ class Interpreter:
                 native_size,
                 native_trap,
             ) = _native_abi.run_native_dispatch(
-                native_dispatcher,
+                self._native_dispatcher,
                 int(context.context_ptr.value or 0),
                 frame.values.address,
                 locals_arr._storage.address,
@@ -2270,7 +2291,12 @@ class Interpreter:
 class NativeInterpreter(Interpreter):
     """Strict C++ interpreter; defined guest calls remain in native dispatch."""
 
-    __slots__ = ("_execution_initializer", "_module_execution")
+    __slots__ = (
+        "_execution_plugin",
+        "_fallback_dispatcher",
+        "_module_execution",
+        "_native_dispatch_started",
+    )
 
     def __init__(
         self,
@@ -2282,9 +2308,19 @@ class NativeInterpreter(Interpreter):
         *,
         bump_allocator: BumpAllocator | None = None,
         native_dispatcher: NativeDispatchEntryPoint = _native_abi.RUN_DISPATCH,
+        execution_plugin: NativeExecutionPlugin | None = None,
+        yield_threshold: int = FB_CONF_INTERPRETER_YIELD_THRESHOLD,
     ):
-        self._execution_initializer: Callable[[NativeModuleExecution], int] | None = None
+        self._execution_plugin = execution_plugin
+        self._fallback_dispatcher = (
+            _native_abi.RUN_DISPATCH
+            if execution_plugin is None
+            else _native_abi.RUN_DISPATCH_EXTENSION
+        )
         self._module_execution: NativeModuleExecution | None = None
+        self._native_dispatch_started = False
+        if execution_plugin is not None:
+            native_dispatcher = execution_plugin.native_entry
         super().__init__(
             module,
             bindings,
@@ -2293,22 +2329,63 @@ class NativeInterpreter(Interpreter):
             logger,
             bump_allocator=bump_allocator,
             native_dispatcher=native_dispatcher,
+            yield_threshold=yield_threshold,
         )
 
-    def configure_native_execution(
+    def attach_execution_plugin(
         self,
-        dispatcher: NativeDispatchEntryPoint,
-        initializer: Callable[[NativeModuleExecution], int] | None,
+        plugin: NativeExecutionPlugin,
+        fallback_dispatcher: NativeDispatchEntryPoint = _native_abi.RUN_DISPATCH_EXTENSION,
     ) -> None:
-        """Bind the native entry and its extension handle once during composition."""
-        if self._native_dispatcher is dispatcher and self._execution_initializer is initializer:
+        """Attach one native execution extension before the first native dispatch."""
+        assert self.debugger is None, "native execution plugins cannot be combined with debugger"
+        assert self._execution_plugin is None or self._execution_plugin is plugin
+        if self._execution_plugin is plugin and self._fallback_dispatcher is fallback_dispatcher:
             return
-        self._native_dispatcher = dispatcher
-        self._execution_initializer = initializer
+        assert not self._native_dispatch_started
         if self._module_execution is not None:
-            self._module_execution.dispatch_extension = (
-                0 if initializer is None else initializer(self._module_execution)
+            plugin.register_module(self.module)
+            self._module_execution.dispatch_extension = plugin.bind_execution(
+                fallback_dispatcher, self._module_execution
             )
+        self._execution_plugin = plugin
+        self._fallback_dispatcher = fallback_dispatcher
+        self._native_dispatcher = plugin.native_entry
+
+    def step_native_boundary(
+        self,
+        call_state: InterpreterCall,
+        *,
+        idle_budget: int = 0,
+    ) -> NativeInterpreterBoundary:
+        """Record that native dispatch has started before advancing its boundary."""
+        self._native_dispatch_started = True
+        return super().step_native_boundary(
+            call_state,
+            idle_budget=idle_budget,
+        )
+
+    def attach_debugger(self, debugger: DebuggerAttachment) -> None:
+        """Attach debugger execution control when no native execution plugin is active."""
+        assert self._execution_plugin is None, (
+            "native execution plugins cannot be combined with debugger"
+        )
+        super().attach_debugger(debugger)
+
+    def idle_hook(self, budget: int = 4) -> int:
+        """Give the attached interpreter extension a bounded idle slice."""
+        if self._execution_plugin is None:
+            return 0
+        return self._execution_plugin.idle_hook(budget)
+
+    def call(
+        self,
+        func_index: int,
+        args: Sequence[WasmNumber],
+        idle_budget: int = 4,
+    ) -> StaticVector[WasmNumber]:
+        """Run native dispatch to completion and service the attached extension once."""
+        return self._complete_call(self.start(func_index, args), idle_budget)
 
     def _prepare_native_execution(self, context: ExecutionContext) -> None:
         if self._module_execution is None:
@@ -2319,18 +2396,25 @@ class NativeInterpreter(Interpreter):
                 self.tables,
                 self.bump_allocator,
             )
-            if self._execution_initializer is not None:
-                self._module_execution.dispatch_extension = self._execution_initializer(
-                    self._module_execution
+            if self._execution_plugin is not None:
+                self._execution_plugin.register_module(self.module)
+                self._module_execution.dispatch_extension = self._execution_plugin.bind_execution(
+                    self._fallback_dispatcher, self._module_execution
                 )
         context.attach_module_execution(self._module_execution)
 
-    def _complete_call(self, call_state: InterpreterCall) -> StaticVector[WasmNumber]:
+    def _complete_call(
+        self, call_state: InterpreterCall, idle_budget: int = 4
+    ) -> StaticVector[WasmNumber]:
         while not call_state.finished:
-            self.step_native(call_state)
+            call_state = self.step_native_boundary(
+                call_state,
+                idle_budget=idle_budget,
+            ).call_state
         if call_state.trap is not None:
             assert False, call_state.trap.code
         assert call_state.results is not None
+        self.idle_hook(idle_budget)
         return call_state.results
 
     def step(self, call_state: InterpreterCall) -> InterpreterCall:

@@ -5,7 +5,6 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 import pytest
-from qa.shared.helpers import expect_assertion
 from system_containers import StaticVector
 from tier2_runtime.observability.events import (
     RUNTIME_EVENT_ABI_MAJOR,
@@ -23,7 +22,6 @@ from tier2_runtime.observability.events import (
 from tier2_runtime.runtime.composer import (
     RuntimeComposer,
     RuntimeCompositionConfig,
-    RuntimeExecutionKind,
     RuntimeExecutor,
     RuntimeFactories,
     RuntimePluginSelection,
@@ -64,14 +62,12 @@ class _Factory:
 
 def _factories(
     interpreter: RuntimeExecutor[int, int],
-    jit: RuntimeExecutor[int, int],
 ) -> tuple[RuntimeFactories[int, int], _Factory, _Factory, _Factory]:
     logger = _Factory()
     debugger = _Factory()
     profiler = _Factory()
     factories = RuntimeFactories(
         lambda: interpreter,
-        lambda: jit,
         logger.create,
         debugger.create,
         profiler.create,
@@ -79,11 +75,9 @@ def _factories(
     return factories, logger, debugger, profiler
 
 
-@pytest.mark.parametrize("execution", tuple(RuntimeExecutionKind), ids=("interpreter", "jit"))
-def test_disabled_plugins_are_not_constructed_or_retained(execution: RuntimeExecutionKind) -> None:
+def test_disabled_plugins_are_not_constructed_or_retained() -> None:
     interpreter = _Executor()
-    jit = _Executor()
-    factories, logger, debugger, profiler = _factories(interpreter, jit)
+    factories, logger, debugger, profiler = _factories(interpreter)
 
     class ClockProbe:
         calls = 0
@@ -95,7 +89,7 @@ def test_disabled_plugins_are_not_constructed_or_retained(execution: RuntimeExec
     clock = ClockProbe()
 
     runtime = RuntimeComposer.compose(
-        RuntimeCompositionConfig(execution=execution),
+        RuntimeCompositionConfig(),
         factories,
         tick_clock=clock.read,
     )
@@ -103,17 +97,13 @@ def test_disabled_plugins_are_not_constructed_or_retained(execution: RuntimeExec
     assert isinstance(runtime, RuntimeWithoutPlugins)
     assert not hasattr(runtime, "observers")
     assert runtime.call(3, (4,)).unwrap() == 7
-    assert interpreter.calls == (
-        [(3, (4,))] if execution == RuntimeExecutionKind.INTERPRETER else []
-    )
-    assert jit.calls == ([(3, (4,))] if execution == RuntimeExecutionKind.JIT else [])
+    assert interpreter.calls == [(3, (4,))]
     assert logger.calls == 0
     assert debugger.calls == 0
     assert profiler.calls == 0
     assert clock.calls == 0
 
 
-@pytest.mark.parametrize("execution", tuple(RuntimeExecutionKind), ids=("interpreter", "jit"))
 @pytest.mark.parametrize(
     "selection",
     (
@@ -124,14 +114,12 @@ def test_disabled_plugins_are_not_constructed_or_retained(execution: RuntimeExec
     ids=("logger", "profiler", "logger-and-profiler"),
 )
 def test_selected_plugins_receive_one_shared_event_stream(
-    execution: RuntimeExecutionKind, selection: RuntimePluginSelection
+    selection: RuntimePluginSelection,
 ) -> None:
     interpreter = _Executor()
-    jit = _Executor()
-    factories, logger, debugger, profiler = _factories(interpreter, jit)
+    factories, logger, debugger, profiler = _factories(interpreter)
     runtime = RuntimeComposer.compose(
         RuntimeCompositionConfig(
-            execution=execution,
             plugins=selection,
         ),
         factories,
@@ -144,28 +132,12 @@ def test_selected_plugins_receive_one_shared_event_stream(
     assert runtime.call(5, (2,)).unwrap() == 7
     assert runtime.call(3, (4, 6)).unwrap() == 13
     expected_calls = [(5, (2,)), (3, (4, 6))]
-    assert interpreter.calls == (
-        expected_calls if execution == RuntimeExecutionKind.INTERPRETER else []
-    )
-    assert jit.calls == (expected_calls if execution == RuntimeExecutionKind.JIT else [])
+    assert interpreter.calls == expected_calls
     assert logger.calls == int(selection.logger)
     assert debugger.calls == 0
     assert profiler.calls == int(selection.profiler)
-    kinds = (
-        (
-            RuntimeEventKind.FUNCTION_ENTER,
-            RuntimeEventKind.JIT_ENTER,
-            RuntimeEventKind.JIT_EXIT,
-            RuntimeEventKind.FUNCTION_EXIT,
-        )
-        if execution == RuntimeExecutionKind.JIT
-        else (RuntimeEventKind.FUNCTION_ENTER, RuntimeEventKind.FUNCTION_EXIT)
-    )
-    flags = RuntimeEventFlags.TICK_VALID | (
-        RuntimeEventFlags.JIT
-        if execution == RuntimeExecutionKind.JIT
-        else RuntimeEventFlags.INTERPRETER
-    )
+    kinds = (RuntimeEventKind.FUNCTION_ENTER, RuntimeEventKind.FUNCTION_EXIT)
+    flags = RuntimeEventFlags.TICK_VALID | RuntimeEventFlags.INTERPRETER
     expected = tuple(
         RuntimeEvent(
             kind,
@@ -195,19 +167,18 @@ class _ErrorExecutor:
         return Result.err(self.error)
 
 
-@pytest.mark.parametrize("execution", tuple(RuntimeExecutionKind), ids=("interpreter", "jit"))
 @pytest.mark.parametrize(
     "error",
     (RuntimeExecutionError.GUEST_TRAP, RuntimeExecutionError.HOST_FAILURE),
     ids=("guest-trap", "host-failure"),
 )
 def test_execution_failure_preserves_result_and_reports_matching_events(
-    execution: RuntimeExecutionKind, error: RuntimeExecutionError
+    error: RuntimeExecutionError,
 ) -> None:
     executor = _ErrorExecutor(error)
-    factories, logger, _, _ = _factories(executor, executor)
+    factories, logger, _, _ = _factories(executor)
     runtime = RuntimeComposer.compose(
-        RuntimeCompositionConfig(execution=execution, plugins=RuntimePluginSelection(logger=True)),
+        RuntimeCompositionConfig(plugins=RuntimePluginSelection(logger=True)),
         factories,
         runtime_id=9,
         tick_clock=lambda: 10,
@@ -218,19 +189,11 @@ def test_execution_failure_preserves_result_and_reports_matching_events(
     assert not result.is_ok and result.error == error
     assert executor.calls == [(4, (17,))]
     kinds = (RuntimeEventKind.FUNCTION_ENTER,)
-    if execution == RuntimeExecutionKind.JIT:
-        kinds += (RuntimeEventKind.JIT_ENTER, RuntimeEventKind.JIT_EXIT)
     if error == RuntimeExecutionError.GUEST_TRAP:
         kinds += (RuntimeEventKind.TRAP,)
     kinds += (RuntimeEventKind.FUNCTION_EXIT,)
-    flags = RuntimeEventFlags.TICK_VALID | (
-        RuntimeEventFlags.JIT
-        if execution == RuntimeExecutionKind.JIT
-        else RuntimeEventFlags.INTERPRETER
-    )
+    flags = RuntimeEventFlags.TICK_VALID | RuntimeEventFlags.INTERPRETER
     trap_flags = RuntimeEventFlags.TICK_VALID | RuntimeEventFlags.TRAP
-    if execution == RuntimeExecutionKind.JIT:
-        trap_flags |= RuntimeEventFlags.JIT
     expected = tuple(
         RuntimeEvent(
             kind,
@@ -254,11 +217,9 @@ def test_execution_failure_preserves_result_and_reports_matching_events(
 
 def test_debugger_composition_constructs_interpreter_only_runtime() -> None:
     interpreter = _Executor()
-    jit = _Executor()
-    factories, logger, debugger, profiler = _factories(interpreter, jit)
+    factories, logger, debugger, profiler = _factories(interpreter)
     runtime = RuntimeComposer.compose(
         RuntimeCompositionConfig(
-            execution=RuntimeExecutionKind.INTERPRETER,
             plugins=RuntimePluginSelection(debugger=True),
         ),
         factories,
@@ -267,27 +228,13 @@ def test_debugger_composition_constructs_interpreter_only_runtime() -> None:
     assert isinstance(runtime, RuntimeWithPlugins)
     assert runtime.call(7, (3,)).unwrap() == 10
     assert interpreter.calls == [(7, (3,))]
-    assert jit.calls == []
     assert logger.calls == 0
     assert debugger.calls == 1
     assert profiler.calls == 0
 
 
-def test_debugger_cannot_be_composed_with_jit() -> None:
-    interpreter = _Executor()
-    jit = _Executor()
-    factories, _, _, _ = _factories(interpreter, jit)
-
-    with expect_assertion("debugger-enabled runtime must use interpreter-only execution"):
-        RuntimeComposer.compose(
-            RuntimeCompositionConfig(
-                execution=RuntimeExecutionKind.JIT,
-                plugins=RuntimePluginSelection(debugger=True),
-            ),
-            factories,
-        )
-    assert interpreter.calls == []
-    assert jit.calls == []
+def test_runtime_composer_has_no_jit_execution_factory() -> None:
+    assert "jit" not in RuntimeFactories.__dataclass_fields__
 
 
 if __name__ == "__main__":
@@ -325,8 +272,6 @@ def test_native_execution_plugin_can_be_replaced_without_jit_knowledge(collect_s
     extension_address = ctypes.addressof(extension)
 
     class DelegatingPlugin:
-        yield_threshold = 2
-
         def __init__(self):
             self.bindings = []
             self.calls = 0
@@ -360,10 +305,15 @@ def test_native_execution_plugin_can_be_replaced_without_jit_knowledge(collect_s
     )
     plugin = DelegatingPlugin()
     engine = RuntimeEngine(
-        jit_runtime=plugin, collect_runtime_stats=collect_stats, bump_allocator=module.allocator
+        jit_runtime=plugin,
+        collect_runtime_stats=collect_stats,
+        bump_allocator=module.allocator,
     )
     interpreter = NativeInterpreter(
-        module, InterpreterBindings.empty(), bump_allocator=engine.bump_allocator
+        module,
+        InterpreterBindings.empty(),
+        bump_allocator=engine.bump_allocator,
+        yield_threshold=2,
     )
     for _ in range(2):
         assert engine.call(interpreter, 0, [9], idle_budget=3) == [0]

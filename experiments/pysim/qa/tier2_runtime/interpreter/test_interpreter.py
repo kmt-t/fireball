@@ -87,8 +87,8 @@ def test_control_frame_enum_and_opcode_attribute_table():
     assert not opcode_has_attribute(I32_ADD, OpcodeAttribute.BASIC_BLOCK_BOUNDARY)
 
 
-def test_intp_73_wide_frame_uses_eight_byte_slots():
-    """TEST-INTP-73: a frame containing wide locals has aligned 8-byte slots."""
+def test_intp_73_wide_frame_uses_compact_per_local_layout():
+    """TEST-INTP-73: each local uses its precomputed packed word span."""
     module = parse(
         memoryview(
             wat_to_wasm(
@@ -99,11 +99,12 @@ def test_intp_73_wide_frame_uses_eight_byte_slots():
     function = module.functions[0]
 
     assert function.param_packed_slot_count_cache == 5
-    widths = function.local_width_map_cache
-    assert widths is not None
-    assert tuple(widths.words(i) for i in range(len(widths))) == (1, 2, 2, 1, 2)
-    assert widths.slot_words == 2
-    assert function.local_slot_count_cache == 10
+    layout = function.local_layout_cache
+    assert layout is not None
+    assert tuple(layout.offset(i) for i in range(len(layout))) == (0, 1, 3, 5, 6)
+    assert tuple(layout.size_words(i) for i in range(len(layout))) == (1, 2, 2, 1, 2)
+    assert layout.total_words == 8
+    assert function.local_slot_count_cache == 8
     assert Interpreter(module).call(0, [7, 42, 3.5]) == [42]
 
 
@@ -202,11 +203,10 @@ def test_typed_block_results_keep_wide_native_slots():
 
 def test_native_interpreter_returns_to_python_at_loop_yield_counts(monkeypatch):
     """Native Interpreter returns at the configured backedge count, as Hybrid JIT does."""
-    from config import FB_CONF_RUNTIME_YIELD_THRESHOLD
+    from config import FB_CONF_INTERPRETER_YIELD_THRESHOLD
     from tier2_runtime.interpreter.interpreter import (
         InterpreterBindings,
         InterpreterCall,
-        NativeDispatchEntryPoint,
         NativeInterpreter,
     )
 
@@ -237,20 +237,18 @@ def test_native_interpreter_returns_to_python_at_loop_yield_counts(monkeypatch):
     def record_native_dispatch(
         self: NativeInterpreter,
         call_state: InterpreterCall,
-        yield_threshold: int,
-        native_dispatcher: NativeDispatchEntryPoint,
+        idle_budget: int = 0,
     ) -> int:
         result = native_dispatch(
             self,
             call_state,
-            yield_threshold,
-            native_dispatcher,
+            idle_budget,
         )
         returned_statuses.append(result)
         return result
 
     monkeypatch.setattr(NativeInterpreter, "run_native_dispatch", record_native_dispatch)
-    iteration_count = FB_CONF_RUNTIME_YIELD_THRESHOLD * 2 + 1
+    iteration_count = FB_CONF_INTERPRETER_YIELD_THRESHOLD * 2 + 1
     results = NativeInterpreter(module, InterpreterBindings.empty()).call(
         function_index, [iteration_count]
     )
@@ -648,12 +646,12 @@ def test_intp_70_to_72_direct_bytecode_execution():
     assert native_frame.local_base == frame.frame_offset
     assert native_frame.local_count == frame.local_count
     assert native_frame.local_slot_count == frame.local_slot_count
-    assert native_frame.slot_words == frame.local_widths.slot_words
-    assert native_frame.local_width_map != 0
+    assert native_frame.local_offsets == frame.local_layout.offsets_address
+    assert native_frame.local_sizes == frame.local_layout.sizes_address
     assert native_frame.param_count == frame.param_count
     assert native_frame.param_packed_slot_count == frame.param_packed_slot_count
     # Two i32 locals: the frame uses 4-byte slots, so it occupies two raw words.
-    assert frame.local_widths.slot_words == 1
+    assert frame.local_layout.total_words == 2
     assert context.local_offset == 2
     assert len(context.local_stack) == 2
     context.end_call_frame(frame)
@@ -941,12 +939,12 @@ def test_runtime_arena_accounts_wasm_native_tables_and_reuses_call_stacks():
     assert module.arena_size == loaded_high_water
 
     interpreter = make_native_interpreter(module)
-    result = runtime.call(interpreter, module.export_func_index("call"), [])
+    result = interpreter.call(module.export_func_index("call"), [])
     first_call_high_water = runtime.bump_allocator.offset
     assert result == [42]
     assert first_call_high_water > loaded_high_water
 
-    repeated_result = runtime.call(interpreter, module.export_func_index("call"), [])
+    repeated_result = interpreter.call(module.export_func_index("call"), [])
     assert repeated_result == [42]
     assert runtime.bump_allocator.offset == first_call_high_water
 
@@ -1031,32 +1029,36 @@ def test_python_runtime_api_uses_values_without_interpreter_state():
     assert api.memory_size() == 2
 
 
-def test_intp_73_slot_width_follows_the_widest_local_in_each_frame():
-    """TEST-INTP-73: 4-byte slots for all-32-bit frames, 8-byte slots once any local is 64-bit."""
-    from tier2_runtime.wasm.module import F32, LocalWidthMap
+def test_intp_73_local_layout_precomputes_offsets_and_sizes():
+    """TEST-INTP-73: load-time local tables pack each value into its word width."""
+    from tier2_runtime.wasm.module import F32, LocalLayout
 
-    assert LocalWidthMap(()).slot_words == 1
-    assert LocalWidthMap((I32, F32, I32)).slot_words == 1
-    assert LocalWidthMap((I32, I64), (I32,)).slot_words == 2
-    assert LocalWidthMap((F64,)).slot_words == 2
-    mixed = LocalWidthMap((I32, I64), (F32, F64))
-    assert tuple(mixed.words(i) for i in range(4)) == (1, 2, 1, 2)
+    assert LocalLayout(()).total_words == 0
+    assert LocalLayout((I32, F32, I32)).total_words == 3
+    assert LocalLayout((I32, I64), (I32,)).total_words == 4
+    assert LocalLayout((F64,)).total_words == 2
+    mixed = LocalLayout((I32, I64), (F32, F64))
+    assert tuple(mixed.offset(i) for i in range(4)) == (0, 1, 3, 4)
+    assert tuple(mixed.size_words(i) for i in range(4)) == (1, 2, 1, 2)
+    assert mixed.total_words == 6
 
     cases = (
-        ("(param i32 i32) (local i32)", 1, 3),
-        ("(param f32)", 1, 1),
-        ("(param i32) (local f64)", 2, 4),
-        ("(param i64 i32)", 2, 4),
-        ("", 1, 0),
+        ("(param i32 i32) (local i32)", (1, 1, 1), 3),
+        ("(param f32)", (1,), 1),
+        ("(param i32) (local f64)", (1, 2), 3),
+        ("(param i64 i32)", (2, 1), 3),
+        ("", (), 0),
     )
-    for declarations, expected_words, expected_slots in cases:
+    for declarations, expected_sizes, expected_slots in cases:
         module = parse(memoryview(wat_to_wasm(f"(module (func {declarations}))")))
         function = module.functions[0]
-        assert function.local_width_map_cache is not None
-        assert function.local_width_map_cache.slot_words == expected_words
+        assert function.local_layout_cache is not None
+        layout = function.local_layout_cache
+        assert tuple(layout.size_words(i) for i in range(len(layout))) == expected_sizes
+        assert tuple(layout.offset(i) for i in range(len(layout))) == tuple(
+            sum(expected_sizes[:index]) for index in range(len(expected_sizes))
+        )
         assert function.local_slot_count_cache == expected_slots
-        widths = function.local_width_map_cache
-        assert all(widths.words(i) <= expected_words for i in range(len(widths)))
 
     narrow_module = parse(
         memoryview(
@@ -1075,8 +1077,8 @@ def test_intp_73_slot_width_follows_the_widest_local_in_each_frame():
     assert Interpreter(wide_module).call(0, [1, 5_000_000_000]) == [5_000_000_000]
 
 
-def test_intp_74_all_32bit_frames_use_half_the_local_stack():
-    """TEST-INTP-74: the same recursion needs half the local stack in an all-32-bit frame."""
+def test_intp_74_wide_local_adds_only_its_own_word_to_the_frame():
+    """TEST-INTP-74: a wide local adds one word without widening its siblings."""
     locals_i32 = " ".join(f"(local $v{i} i32)" for i in range(15))
 
     def recursion(extra: str) -> bytes:
@@ -1093,16 +1095,16 @@ def test_intp_74_all_32bit_frames_use_half_the_local_stack():
     local_stack_words = 128  # NATIVE_VALUE_STACK_CAPACITY
     narrow_module = parse(recursion(""))
     assert narrow_module.functions[0].local_slot_count_cache == 16
-    # Sixteen 4-byte slots per frame: seven frames use 112 of the 128 raw words.
-    assert 7 * 16 <= local_stack_words
-    assert Interpreter(narrow_module).call(0, [6]) == [6]
-    assert make_native_interpreter(narrow_module).call(0, [6]) == [6]
+    # Sixteen i32 values per frame exactly fit eight active frames.
+    assert 8 * 16 == local_stack_words
+    assert Interpreter(narrow_module).call(0, [7]) == [7]
+    assert make_native_interpreter(narrow_module).call(0, [7]) == [7]
     wide_module = parse(recursion("(local $w f64)"))
-    assert wide_module.functions[0].local_slot_count_cache == 34
-    # Seventeen 8-byte slots per frame: the same depth needs 238 raw words and must stop.
-    assert 7 * 34 > local_stack_words
+    assert wide_module.functions[0].local_slot_count_cache == 18
+    # The f64 adds two words; eight frames then exceed the fixed 128-word region.
+    assert 8 * 18 > local_stack_words
     with pytest.raises(AssertionError) as failure:
-        make_native_interpreter(wide_module).call(0, [6])
+        make_native_interpreter(wide_module).call(0, [7])
     assert failure.value.args == (InterpreterTrapCode.LOCAL_STACK_CAPACITY,)
 
 
@@ -1119,8 +1121,9 @@ def test_runtime_keeps_constructor_arena_and_rejects_foreign_interpreter():
     interpreter = make_native_interpreter(module, memory=memory, bump_allocator=BumpAllocator())
     arena = runtime.bump_allocator
     watermark = arena.offset
+    call_state = interpreter.start(0, ())
     with pytest.raises(AssertionError, match="same arena"):
-        runtime.call(interpreter, 0, ())
+        runtime.run(interpreter, call_state)
     assert runtime.bump_allocator is arena and arena.offset == watermark
     assert memory == b"\xa5" * 65536
 

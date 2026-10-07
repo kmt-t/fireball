@@ -10,7 +10,8 @@ namespace fireball::utils {
 /**
  * Report backtrace and terminate.
  */
-[[noreturn]] extern void report_backtrace_and_terminate(const char *msg) noexcept;
+[[noreturn]] extern void
+report_backtrace_and_terminate(const char *msg) noexcept;
 
 /**
  * Report a fatal error with backtrace and terminate.
@@ -23,8 +24,7 @@ namespace fireball::utils {
 /**
  * Report a fatal allocation error with backtrace and terminate.
  */
-#define THROW_NESTED_BACKTRACE(msg, outer)                                     \
-  BACKTRACE(msg)
+#define THROW_NESTED_BACKTRACE(msg, outer) BACKTRACE(msg)
 
 #ifdef __DEBUG__
 #define ASSERT_WITH_BACKTRACE(x)                                               \

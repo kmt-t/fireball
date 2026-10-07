@@ -6,7 +6,7 @@ from collections.abc import Iterable
 
 from config import JIT_CACHE_ACTIVE_OFFSET_BYTES, JIT_X64_TRACE_HEADER_BYTES
 from qa.private import jit_native_abi as native_abi
-from tier2_runtime.wasm.module import LocalWidthMap, WasmOperand
+from tier2_runtime.wasm.module import LocalLayout, WasmOperand
 
 from .common_code import JITCodeCacheRegion
 from .jit_cache import JITTrace
@@ -43,7 +43,7 @@ class TraceCompiler:
         next_pc: int | None,
         loops_to: int | None,
         byte_length: int,
-        local_layout: LocalWidthMap,
+        local_layout: LocalLayout,
         context_helper: bool = False,
         helper_address: int = 0,
     ) -> JITTrace | None:

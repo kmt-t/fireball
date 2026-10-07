@@ -185,20 +185,25 @@ def demo_wasmjit_hybrid_execution(sysv: System) -> None:
     print("\n== wasmjit: Tiered Tracing JIT & Interpreter Hybrid Execution ==")
     mod = parse(memoryview(FACTORIAL_WASM))
     allocator = BumpAllocator()
-    interp = NativeInterpreter(mod, InterpreterBindings.empty(), bump_allocator=allocator)
 
     def reserve_region(size: int, alignment: int) -> memoryview:
         assert alignment == mmap.PAGESIZE
         allocator.allocate(size, alignment)
         return memoryview(mmap.mmap(-1, size))
 
-    engine = RuntimeEngine(
-        jit_runtime=JITRuntimeManager(reserve_region, yield_threshold=3),
+    plugin = JITRuntimeManager(reserve_region)
+    engine = RuntimeEngine(bump_allocator=allocator)
+    engine.register_module_blocks(mod)
+    interp = NativeInterpreter(
+        mod,
+        InterpreterBindings.empty(),
         bump_allocator=allocator,
+        execution_plugin=plugin,
+        yield_threshold=3,
     )
 
-    print("  [Stage 1-3] Running through RuntimeEngine (Interpreter/JIT boundaries)...")
-    result = engine.call(interp, 0, (6,))
+    print("  [Stage 1-3] Running the Interpreter with its JIT execution plugin...")
+    result = interp.call(0, (6,))
     result_val = result[0]
     print(f"  [Result] fact(6) = {result_val} (expected 720) [OK]")
     assert result_val == 720

@@ -290,7 +290,7 @@ class System:
         )
 
     def _on_idle(self) -> None:
-        """COOS idle_hook dispatch: flushes deferred logs and compiles queued JIT traces."""
+        """COOS idle hook: flush logs and let the active Interpreter service its plugin."""
         self.logger.flush()
         self.runtime_engine.idle_hook(budget=4)
 
@@ -325,7 +325,11 @@ class System:
                 boundary.yield_requested or generation_yield or syscall_yield
             ):
                 yield (ChannelAction.YIELD, None)
-        return self.runtime_engine.complete_call(interp, call_state, idle_budget)
+        if call_state.trap is not None:
+            assert False, call_state.trap.code
+        assert call_state.results is not None
+        interp.idle_hook(idle_budget)
+        return call_state.results
 
     def bind_runtime(self, memory: bytearray | None, role: Role = Role.RUNTIME) -> None:
         """

@@ -342,19 +342,16 @@ def test_runtime_engine_run_advances_one_trace_boundary():
     call_state = interpreter.start(0, (2,))
     boundary = engine.run(interpreter, call_state)
     assert not boundary.call_state.finished
-    results = engine.complete_call(interpreter, boundary.call_state)
-    assert results == [2]
+    call_state = boundary.call_state
+    while not call_state.finished:
+        call_state = engine.run(interpreter, call_state).call_state
+    assert call_state.results == [2]
 
 
-def test_system_coos_runtime_rejects_synchronous_guest_execution():
-    """A COOS-bound vSoC cannot silently run a guest to completion synchronously."""
-    module = parse(wat_to_wasm('(module (func (export "entry")))'))
+def test_runtime_has_no_guest_call_entrypoint():
+    """The Runtime does not own a guest execution entrypoint."""
     system = System()
-
-    with expect_assertion("COOS runtime calls must be advanced by System at each trace boundary"):
-        system.runtime_engine.call(
-            make_native_interpreter(module), module.export_func_index("entry"), ()
-        )
+    assert not hasattr(system.runtime_engine, "call")
 
 
 def _counter_module() -> Module:
@@ -372,11 +369,14 @@ def _counter_module() -> Module:
 def test_system_guest_interpreter_returns_to_coos_and_resumes():
     """TEST-VSOC-10: native LOOP thresholds return to COOS and resume one call."""
     system = System()
-    system.runtime_engine = RuntimeEngine(yield_threshold=3, drive_mode=RuntimeDriveMode.COOS)
+    system.runtime_engine = RuntimeEngine(drive_mode=RuntimeDriveMode.COOS)
     memory = bytearray(65536)
     module = _counter_module()
     interpreter = make_native_interpreter(
-        module, memory=memory, bump_allocator=system.runtime_engine.bump_allocator
+        module,
+        memory=memory,
+        bump_allocator=system.runtime_engine.bump_allocator,
+        yield_threshold=3,
     )
     observed: list[tuple[int, TaskState]] = []
 
@@ -561,13 +561,15 @@ def test_coop_01_wasm_coroutine_yields_on_loop_threshold(threshold: int):
     """TEST-VSOC-10: LOOP backedge counts, not instruction counts, determine handoffs."""
     system = System()
     system.runtime_engine = RuntimeEngine(
-        yield_threshold=threshold,
         drive_mode=RuntimeDriveMode.COOS,
     )
     module = _counter_module()
     memory = bytearray(65536)
     interpreter = make_native_interpreter(
-        module, memory=memory, bump_allocator=system.runtime_engine.bump_allocator
+        module,
+        memory=memory,
+        bump_allocator=system.runtime_engine.bump_allocator,
+        yield_threshold=threshold,
     )
     values: list[int] = []
 
@@ -656,7 +658,6 @@ def test_tier_01_interpreter_to_jit_cooperative_flow():
     )
     system.runtime_engine = make_runtime_engine(
         jit_compiler=TraceCompiler(),
-        yield_threshold=2,
         card_shift=2,
         drive_mode=RuntimeDriveMode.COOS,
         min_trace_bytes=1,
@@ -682,6 +683,7 @@ def test_tier_01_interpreter_to_jit_cooperative_flow():
         module,
         host_functions=StaticVector.of((report,)),
         bump_allocator=system.runtime_engine.bump_allocator,
+        yield_threshold=2,
     )
     observed: list[int] = []
 
@@ -752,10 +754,10 @@ def test_tier_02_interpreter_to_jit_trace_transition():
     wasm_bytes = wat_to_wasm(wat)
     # Keep the preamble and loop heads on separate cards so this test can
     # observe the full UNEXECUTED -> EXECUTED -> HOT transition directly.
-    engine = make_runtime_engine(yield_threshold=3, card_shift=2, jit_compiler=TraceCompiler())
+    engine = make_runtime_engine(card_shift=2, jit_compiler=TraceCompiler())
     mod = engine.load_wasm(wasm_bytes)
     loop_pc = mod.blocks[1].head_pc
-    results = engine.call(make_native_interpreter(mod), 0, [5])
+    results = engine.call(make_native_interpreter(mod, yield_threshold=3), 0, [5])
     assert results[0] == 120
     assert engine.stat_interp_steps >= 3
     assert engine.stat_jit_invocations >= 2
@@ -792,7 +794,7 @@ def test_tier_03_trace_chaining_and_interpreter_fallback():
     )
     """
     wasm_bytes = wat_to_wasm(wat)
-    engine = make_runtime_engine(yield_threshold=10, jit_compiler=TraceCompiler())
+    engine = make_runtime_engine(jit_compiler=TraceCompiler())
     mod = engine.load_wasm(wasm_bytes)
     block_a = mod.blocks[0]
     block_b = mod.blocks[1]

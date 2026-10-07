@@ -12,7 +12,7 @@ from pathlib import Path
 
 from bump_allocator import BumpAllocator
 from tier1_core.native_printk import NativePrintkWriter
-from tier2_runtime.wasm.module import LocalWidthMap, WasmOperand
+from tier2_runtime.wasm.module import LocalLayout, WasmOperand
 
 _NATIVE_LIBRARY_PATH = Path(__file__).with_name(
     "jit_probe.dll" if sys.platform == "win32" else "libjit_probe.so"
@@ -39,9 +39,10 @@ class NativeByteView:
 
 @dataclass(frozen=True, slots=True)
 class NativeLocalLayout:
-    widths: NativeByteView
+    offsets: NativeByteView
+    sizes: NativeByteView
     local_count: int
-    slot_words: int
+    total_words: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -98,6 +99,15 @@ class NativeTraceHeader(ctypes.Structure):
     )
 
 
+class CacheLookup(ctypes.Structure):
+    """Compact QA result for a cache lookup, including the resolved bank."""
+
+    _fields_ = (
+        ("token", ctypes.c_uint16),
+        ("bank_id", ctypes.c_uint8),
+    )
+
+
 assert NativeTraceHeader.frame_depth.offset == 32
 assert NativeTraceHeader.frame_depth.size == 4
 assert ctypes.sizeof(NativeTraceHeader) == 40
@@ -140,9 +150,10 @@ class _NativeByteView(ctypes.Structure):
 
 class _NativeLocalLayout(ctypes.Structure):
     _fields_ = (
-        ("widths", _NativeByteView),
+        ("offsets", _NativeByteView),
+        ("sizes", _NativeByteView),
         ("count", ctypes.c_uint32),
-        ("slot_words", ctypes.c_uint32),
+        ("total_words", ctypes.c_uint32),
     )
 
 
@@ -225,10 +236,14 @@ RUNTIME_SCALAR.restype = ctypes.c_uint64
 RUNTIME_FIND = _NATIVE_LIBRARY.fb_jit_runtime_find
 
 
-RUNTIME_FIND.argtypes = (ctypes.c_void_p, ctypes.c_uint32)
+RUNTIME_FIND.argtypes = (
+    ctypes.c_void_p,
+    ctypes.c_uint32,
+    ctypes.POINTER(CacheLookup),
+)
 
 
-RUNTIME_FIND.restype = ctypes.c_uint64
+RUNTIME_FIND.restype = ctypes.c_int
 
 RUNTIME_HEADER = _NATIVE_LIBRARY.fb_qa_runtime_header
 RUNTIME_HEADER.argtypes = (ctypes.c_void_p, ctypes.c_uint32)
@@ -238,7 +253,7 @@ RUNTIME_HEADER.restype = ctypes.c_void_p
 RUNTIME_HAS_TOKEN = _NATIVE_LIBRARY.fb_jit_runtime_has_token
 
 
-RUNTIME_HAS_TOKEN.argtypes = (ctypes.c_void_p, ctypes.c_uint64)
+RUNTIME_HAS_TOKEN.argtypes = (ctypes.c_void_p, ctypes.c_uint16)
 
 
 RUNTIME_HAS_TOKEN.restype = ctypes.c_int
@@ -251,7 +266,7 @@ RUNTIME_INSERT.argtypes = (
     ctypes.c_void_p,
     ctypes.POINTER(ctypes.c_uint8),
     ctypes.c_uint32,
-    ctypes.c_uint64,
+    ctypes.c_uint16,
 )
 
 
@@ -261,10 +276,14 @@ RUNTIME_INSERT.restype = ctypes.c_int
 RUNTIME_LOOKUP = _NATIVE_LIBRARY.fb_jit_runtime_lookup
 
 
-RUNTIME_LOOKUP.argtypes = (ctypes.c_void_p, ctypes.c_uint32)
+RUNTIME_LOOKUP.argtypes = (
+    ctypes.c_void_p,
+    ctypes.c_uint32,
+    ctypes.POINTER(CacheLookup),
+)
 
 
-RUNTIME_LOOKUP.restype = ctypes.c_uint64
+RUNTIME_LOOKUP.restype = ctypes.c_int
 
 
 RUNTIME_ROTATE = _NATIVE_LIBRARY.fb_jit_runtime_rotate
@@ -672,10 +691,11 @@ RUNTIME_FILTERED_LOOKUP = _NATIVE_LIBRARY.fb_jit_runtime_filtered_lookup
 RUNTIME_FILTERED_LOOKUP.argtypes = (
     ctypes.c_void_p,
     ctypes.c_uint32,
+    ctypes.POINTER(CacheLookup),
 )
 
 
-RUNTIME_FILTERED_LOOKUP.restype = ctypes.c_uint64
+RUNTIME_FILTERED_LOOKUP.restype = ctypes.c_int
 
 
 MEMORY_ADDRESS = _NATIVE_LIBRARY.fb_jit_memory_address
@@ -709,10 +729,12 @@ def compile_wasm(block: WasmBlock, trace: TraceQaState) -> bytes | None:
     assert 0 < block.byte_length <= block.code.byte_length - block.offset
     assert block.code.address != 0
     assert block.next_pc is None or 0 <= block.next_pc < 0xFFFF_FFFF
-    assert 0 <= block.locals.widths.byte_length <= 0xFFFF_FFFF
-    assert block.locals.widths.byte_length == 0 or block.locals.widths.address != 0
+    assert block.locals.offsets.byte_length == block.locals.local_count * 2
+    assert block.locals.sizes.byte_length == block.locals.local_count
+    assert block.locals.offsets.byte_length == 0 or block.locals.offsets.address != 0
+    assert block.locals.sizes.byte_length == 0 or block.locals.sizes.address != 0
     assert 0 <= block.locals.local_count <= 0xFFFF_FFFF
-    assert 0 <= block.locals.slot_words <= 0xFFFF_FFFF
+    assert 0 <= block.locals.total_words <= 0xFFFF_FFFF
     request = marshal_block(block)
     output = (ctypes.c_uint8 * (_COMPILE_MAX_BODY_BYTES + COMMON_LAYOUT.header_bytes))()
     body_scratch = (ctypes.c_uint8 * _COMPILE_MAX_BODY_BYTES)()
@@ -774,9 +796,10 @@ def marshal_block(block: WasmBlock) -> _NativeWasmBlock:
         0,
         _NativeByteView(block.code.address, block.code.byte_length),
         _NativeLocalLayout(
-            _NativeByteView(block.locals.widths.address, block.locals.widths.byte_length),
+            _NativeByteView(block.locals.offsets.address, block.locals.offsets.byte_length),
+            _NativeByteView(block.locals.sizes.address, block.locals.sizes.byte_length),
             block.locals.local_count,
-            block.locals.slot_words,
+            block.locals.total_words,
         ),
         0,
     )
@@ -825,7 +848,7 @@ def compile_instructions(
     trace: TraceQaState,
     instructions: Iterable[tuple[int, WasmOperand]],
     byte_length: int,
-    local_layout: LocalWidthMap,
+    local_layout: LocalLayout,
     context_helper: bool,
     helper_address: int,
 ) -> bytes | None:
@@ -842,8 +865,6 @@ def compile_instructions(
             0 if operand is None else operand & 0xFFFF_FFFF_FFFF_FFFF,
         )
         count += 1
-    widths = local_layout.raw_view
-    width_buffer = (ctypes.c_uint8 * len(widths)).from_buffer(widths)
     request = _NativeInstructionBlock(
         trace.head_pc,
         trace.next_pc,
@@ -854,9 +875,10 @@ def compile_instructions(
         records,
         count,
         _NativeLocalLayout(
-            _NativeByteView(ctypes.addressof(width_buffer), len(widths)),
+            _NativeByteView(local_layout.offsets_address, local_layout.count * 2),
+            _NativeByteView(local_layout.sizes_address, local_layout.count),
             local_layout.count,
-            local_layout.slot_words,
+            local_layout.total_words,
         ),
     )
     output = (ctypes.c_uint8 * (_COMPILE_MAX_BODY_BYTES + COMMON_LAYOUT.header_bytes))()
@@ -899,7 +921,13 @@ OWNED_PC.restype = ctypes.c_uint64
 
 
 class ResidentRecord(ctypes.Structure):
-    _fields_ = (("token", ctypes.c_uint64), ("pc", ctypes.c_uint32), ("count", ctypes.c_uint32))
+    _fields_ = (
+        ("token", ctypes.c_uint16),
+        ("bank_id", ctypes.c_uint8),
+        ("reserved", ctypes.c_uint8),
+        ("pc", ctypes.c_uint32),
+        ("count", ctypes.c_uint32),
+    )
 
 
 RESIDENT_RECORD = _NATIVE_LIBRARY.fb_qa_resident_record
@@ -907,11 +935,11 @@ RESIDENT_RECORD.argtypes = (ctypes.c_void_p, ctypes.c_uint32, ctypes.POINTER(Res
 RESIDENT_RECORD.restype = ctypes.c_int
 
 
-def resident_records(pointer: int) -> tuple[tuple[int, int, int], ...]:
-    records: list[tuple[int, int, int]] = []
+def resident_records(pointer: int) -> tuple[tuple[int, int, int, int], ...]:
+    records: list[tuple[int, int, int, int]] = []
     record = ResidentRecord()
     while RESIDENT_RECORD(pointer, len(records), ctypes.byref(record)):
-        records.append((record.token, record.pc, record.count))
+        records.append((record.token, record.pc, record.bank_id, record.count))
     return tuple(records)
 
 

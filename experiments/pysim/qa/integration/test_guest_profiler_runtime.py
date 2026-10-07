@@ -22,7 +22,6 @@ from tier2_runtime.observability.events import RuntimeExecutionError
 from tier2_runtime.runtime.composer import (
     RuntimeComposer,
     RuntimeCompositionConfig,
-    RuntimeExecutionKind,
     RuntimeFactories,
     RuntimePluginSelection,
 )
@@ -82,14 +81,14 @@ class _GuestState:
 
 
 def _run_guest_history(
-    execution: RuntimeExecutionKind,
+    jit_enabled: bool,
     profiler: GuestProfiler,
     enabled: bool,
     resources: ExitStack,
 ) -> tuple[_GuestState, ...]:
     engine = (
         make_runtime_engine(jit_compiler=TraceCompiler())
-        if execution == RuntimeExecutionKind.JIT
+        if jit_enabled
         else RuntimeEngine(collect_runtime_stats=True)
     )
     if engine.jit_runtime is not None:
@@ -97,6 +96,8 @@ def _run_guest_history(
     module = engine.load_wasm(bytes(wasmtime.wat2wasm(_GUEST_WAT)))
     memory = bytearray(b"\xa5" * 65536)
     interpreter = make_native_interpreter(module, memory=memory)
+    if engine.jit_runtime is not None:
+        interpreter.attach_execution_plugin(engine.jit_runtime)
     executor = _GuestExecutor(engine, interpreter)
     if engine.jit_runtime is not None:
         inc_index = module.export_func_index("inc")
@@ -105,15 +106,12 @@ def _run_guest_history(
         assert trace is not None and engine.jit_runtime.cache.insert(trace)
     factories = RuntimeFactories(
         interpreter=lambda: executor,
-        jit=lambda: executor,
         logger=GuestProfiler,
         debugger=GuestProfiler,
         profiler=lambda: profiler,
     )
     runtime = RuntimeComposer.compose(
-        RuntimeCompositionConfig(
-            execution=execution, plugins=RuntimePluginSelection(profiler=enabled)
-        ),
+        RuntimeCompositionConfig(plugins=RuntimePluginSelection(profiler=enabled)),
         factories,
         # 時計だけを固定する。イベントは構成器・Sink・ABI・Adapterから実配送する。
         tick_clock=lambda: 10,
@@ -162,24 +160,23 @@ def _run_guest_history(
         if enabled and profiler.lost_events == 0:
             stats = profiler.stats_for(module.export_func_index(name))
             assert stats.call_count == calls, f"call {call_number}: profile call count"
-    if execution == RuntimeExecutionKind.JIT:
-        assert engine.stat_jit_invocations > 0, "the real guest must execute generated traces"
-    else:
-        assert engine.jit_runtime is None and engine.stat_jit_invocations == 0
+    assert (engine.stat_jit_invocations > 0) == jit_enabled
     return tuple(states)
 
 
-@pytest.mark.parametrize("execution", tuple(RuntimeExecutionKind), ids=("interpreter", "jit"))
+@pytest.mark.parametrize(
+    "jit_enabled", (False, True), ids=("interpreter", "interpreter-with-jit-plugin")
+)
 @pytest.mark.parametrize("stack_capacity", (64, 0), ids=("normal", "overflow"))
 def test_real_guest_profile_preserves_results_state_and_trap_history(
-    execution: RuntimeExecutionKind, stack_capacity: int
+    jit_enabled: bool, stack_capacity: int
 ) -> None:
     """TEST-PROF-08/09: 実native実行と実Profilerを結線し、無効構成とも比較する。"""
     profiler = GuestProfiler(stack_capacity=stack_capacity)
     disabled_profiler = GuestProfiler()
     with ExitStack() as resources:
-        observed = _run_guest_history(execution, profiler, True, resources)
-        unobserved = _run_guest_history(execution, disabled_profiler, False, resources)
+        observed = _run_guest_history(jit_enabled, profiler, True, resources)
+        unobserved = _run_guest_history(jit_enabled, disabled_profiler, False, resources)
     assert observed == unobserved, (
         "profiling must preserve results, trap, PC, stack depths and guest state"
     )
@@ -190,7 +187,7 @@ def test_real_guest_profile_preserves_results_state_and_trap_history(
         assert profiler.lost_events == 5
         assert profiler.estimated_events > 0
         return
-    normal_ticks, trap_ticks = (1, 2) if execution == RuntimeExecutionKind.INTERPRETER else (3, 4)
+    normal_ticks, trap_ticks = 1, 2
     # export順でなくWATの関数宣言順: inc=0, sum=1, fail=2。
     for function, calls, ticks, estimated in (
         (0, 1, normal_ticks, False),

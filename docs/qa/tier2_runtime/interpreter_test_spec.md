@@ -14,7 +14,7 @@
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | TEST-INTP-01 | ハンドラのシグネチャが4論理引数(`ctx, sp, local_base, tos`)である | 実装コードを確認 | 各opcodeハンドラの引数と境界結果を確認 | すべてのハンドラが同一の4引数シグネチャを持ち、継続時は次ハンドラへ末尾呼び出しする。実行境界では終了種別を返し、トラップコードは`ctx`に保持する | wasm_instruction_set.md, interpreter.md |
 | TEST-INTP-02 | 継続渡しの命令ディスパッチ | - | opcodeハンドラ表と命令ハンドラへの継続を確認 | 各ハンドラ末尾で次opcodeに対応する関数ポインタを固定長表から選び、同じ4論理引数で末尾呼び出しする。命令ごとに中央のopcode分岐へ戻らない | 同上 |
-| TEST-INTP-03 | Interpreter handlerとJIT traceの論理引数契約 | JITトレース生成 | handlerとtrace entryの型・引数配置を比較 | 両者は`ctx, sp, local_base, tos`の4論理引数を共有するが、Interpreter handlerは実行境界で`op_result`、JIT trace entryは`void`を返し、関数ポインタ型は分離される。x64の物理ABIは対象ABI定義に従い、ARMv8-Mの物理配置はTBD | `{ContextPointerRegister}` `{CPS_4Args}` `{PositionIndependentCode}` |
+| TEST-INTP-03 | Interpreter handlerとJIT traceのCPS関数型 | JITトレース生成 | handlerとtrace entryの型・引数・戻り値を比較 | 両者は`ctx, sp, local_base, tos`の4論理引数と`fireball_op_result_native`戻り値を共有する。正常なtrace完了は`FIREBALL_NATIVE_OP_CONTINUE`を返し、trap codeは共有`execution_context`から観測する。x64の物理ABIは対象ABI定義に従い、ARMv8-Mの物理配置はTBD | `{ContextPointerRegister}` `{CPS_4Args}` `{PositionIndependentCode}` |
 | TEST-INTP-04 | JITトレースからインタープリタへのシームレスフォールバック | 未コンパイルのブロックへ分岐 | トレース実行完了 | トレース末尾でインタープリタへスムーズに復帰し、後続ブロックをインタープリタが継続実行する | `{JIT_LazyChaining}` `{JIT_RuntimeAPI_Fallback}` |
 | TEST-INTP-05 | Runtime APIとCPSハンドラの責務分離 | 主opcodeと`0xFC`副opcodeの実装がある | 各C++ハンドラと対応するRuntime APIを確認し、通常継続・trap・フォールバックを実行する | 命令意味論と状態更新はRuntime APIにあり、ハンドラはAPIを呼んで結果を返すか、更新済み4論理引数で関数ポインタ表へ末尾継続する。通常経路のAPIはインライン展開される | `{ThreadedInterpreter}`, `interpreter.md`「継続渡しハンドラの実行境界」 |
 
@@ -80,17 +80,17 @@
 
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| TEST-INTP-50 | LOOP後方分岐回数による協調yield | 共通コンテキストの後方分岐回数がしきい値未満 | InterpreterまたはHybrid JITでループを実行する | 取得したLOOP後方分岐を数え、しきい値到達時にRuntimeEngineへyield状態を返す。命令ごとにはRuntimeEngineへ戻らない | `runtime_vsoc.md`「後方分岐とyield回数」 |
-| TEST-INTP-51 | LOOP後方分岐yieldしきい値未満で実行継続 | 共通contextの後方分岐回数がしきい値未満 | ループを実行 | C++ dispatcherはhandlerと常駐JIT traceを同一実行内で継続し、しきい値前にRuntimeEngineやCOOSへyieldしない | `runtime_vsoc.md`「後方分岐とyield回数」 |
+| TEST-INTP-50 | LOOP後方分岐回数による協調yield | Interpreter構成の後方分岐しきい値が設定され、実行contextの回数が未到達 | InterpreterまたはHybrid JITでループを実行する | Interpreter dispatcherが取得したLOOP後方分岐を数え、しきい値到達時にyield statusをRuntimeEngineへ返す。命令ごとにはRuntimeEngineへ戻らない | `runtime_vsoc.md`「後方分岐とyield回数」 |
+| TEST-INTP-51 | LOOP後方分岐yieldしきい値未満で実行継続 | 実行contextの後方分岐回数がInterpreter設定のしきい値未満 | ループを実行 | C++ dispatcherはhandlerと常駐JIT traceを同一実行内で継続し、しきい値前にRuntimeEngineやCOOSへyieldしない | `runtime_vsoc.md`「後方分岐とyield回数」 |
 
 ### デバッグ構成とインタープリタ専用実行 ({DebuggerInterpreterComposition})
 
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | TEST-INTP-60 | デバッグ未アタッチ時のゼロオーバーヘッド | デバッガ未接続 (`is_debug_mode=False`) | 通常構成を実行 | 通常構成はデバッガを保持せず、インタープリタの命令意味論へデバッグ分岐を追加しない | `{DebuggerInterpreterComposition}` |
-| TEST-INTP-61 | デバッグ構成の実行器固定 | `RuntimeCompositionConfig(execution=INTERPRETER, debugger=True)` | 構成を合成して実行 | デバッガ付き構成はインタープリタだけを生成し、JIT実行器を生成しない | `{DebuggerInterpreterComposition}` |
+| TEST-INTP-61 | デバッグ構成の実行器固定 | Debuggerを接続したNativeInterpreter | native dispatch前に実行拡張を接続しようとする | Interpreterがassertで拒否し、デバッグ実行にJIT拡張を接続しない | `{DebuggerInterpreterComposition}` |
 | TEST-INTP-62 | アタッチ中のブレークポイント検知・停止 | インタープリタとデバッガが接続され、PC=0x100 にブレークポイント設定 | 実行継続 | インタープリタ実行境界でブレークポイントを検知し、実行を中断して停止状態（SIGTRAP）へ遷移する | `{DebuggerInterpreterComposition}` |
-| TEST-INTP-65 | アタッチ中のインタープリタ専用実行 | デバッグ構成でデバッガアタッチ中 | `step` または `continue` を実行 | アタッチ中は常にインタープリタが実行され、JITへの動的切替が発生しない | `{DebuggerInterpreterComposition}` |
+| TEST-INTP-65 | アタッチ中のインタープリタ専用実行 | デバッグ構成でデバッガアタッチ中 | `step` または `continue` を実行 | アタッチ中はInterpreter handlerだけが実行され、JITへの動的切替が発生しない | `{DebuggerInterpreterComposition}` |
 
 ### ROM/Flash バイトコード直接デコードと命令オブジェクト生成ゼロ (DirectBytecodeExecution)
 <!-- traceability: {CallFrame_Layout} {DirectBytecodeExecution} {GOTCHA-INTP-22} -->
@@ -100,9 +100,9 @@
 | TEST-INTP-70 | 命令オブジェクト非生成とバイト直接フェッチ | WASM関数実行 | 実行ループのフェッチ処理を確認 | 関数内カーソルから `frame.code[cursor_offset]` を使って $O(1)$ で直接バイトを読み出し、中間 `Instr` オブジェクトを生成しない。コンテキストPCとの変換は `cursor_offset = pc - function_start_pc` とする | `interpreter.md` `DirectBytecodeExecution` |
 | TEST-INTP-71 | 足し算による次PC進行と即値のその場デコード | 算術・即値命令実行 | `ip` の遷移を確認 | 命令長または即値長を加算した `ip + len` で直接進行し、二分探索マップ（FlatMapView）を走査しない | `interpreter.md` |
 | TEST-INTP-72 | 静的制御表によるブロック境界解決 | `block/loop/if` 構文の実行 | 分岐および終了時の遷移を確認 | モジュールロード時に事前計算された静的 `control_map`（`blocks`, `br_tables`）を参照し、実行時の全命令再デコードを行わない | `interpreter.md` |
-| TEST-INTP-73 | フレームごとのスロット幅の決定 | i32のみ、f32のみ、i64を含む、f64ローカルを含む、ローカルなしの関数 | ロード後の幅マップ（ローカルごとの幅を2ビットで保持）のスロット幅と `local_slot_count_cache` を確認し、各関数を実行する | i32/f32のみは1ワード、i64/f64を含むと2ワードになる。ローカルなしは1ワードでスロット数は0である。全ローカルの幅がスロット幅以下である。実行結果が正しい | GOTCHA-INTP-22 |
-| TEST-INTP-74 | 32ビットのみのフレームによるローカル値領域の節約 | 16個のローカルを持つ再帰関数。一方はi32のみ、他方はf64ローカルを1個含む | 同じ再帰深さで実行する | i32のみの版は、1フレーム16ワードで7フレームが128ワードに収まり、成功する。f64を含む版は、1フレーム34ワードで7フレームが128ワードを超え、容量超過で停止する | GOTCHA-INTP-22 |
-| TEST-INTP-75 | CallFrameの固定ABIと積載順序 | 関数を1つ開始し、CallStackが空 | `_build_frame` 後にコンテキストと最上位CallFrameを検査する | `call_stack` がコンテキストへ接続され、CallFrameが関数番号、コードビュー、ローカル幅・スロット数、引数個数、制御ベースの順序で保持される。終了後はCallStack自身の深さが0へ戻る | `interpreter.md` `CallFrame_Layout` `{ExecutionContext_Layout}` |
+| TEST-INTP-73 | ローカルオフセットとサイズ表のロード時計算 | i32/f32/i64/f64が混在する関数とローカルなしの関数 | ロード後の各ローカルのオフセット・ワード数と `local_slot_count_cache` を確認し、実行する | 各ローカルのサイズが1または2ワードで、オフセットが先行ローカルのサイズの合計、フレーム長が全サイズの合計になる。結果が正しい | GOTCHA-INTP-22 |
+| TEST-INTP-74 | wide localを含む再帰関数のローカル領域境界 | 16個のi32値を持つ関数と、さらにf64を1個持つ関数 | 8フレーム分の再帰を実行する | i32のみの版は128ワードに収まり成功する。f64を含む版は1フレームあたり18ワードとなり、8フレームで128ワードを超えて容量超過で停止する | GOTCHA-INTP-22 |
+| TEST-INTP-75 | CallFrameの固定ABIと積載順序 | 関数を1つ開始し、CallStackが空 | `_build_frame` 後にコンテキストと最上位CallFrameを検査する | `call_stack` がコンテキストへ接続され、CallFrameが関数番号、コードビュー、ローカルオフセット表・サイズ表・ワード数、引数個数、制御ベースを保持する。終了後はCallStack自身の深さが0へ戻る | `interpreter.md` `CallFrame_Layout` `{ExecutionContext_Layout}` |
 | TEST-INTP-76 | LOOP後方分岐しきい値と再開 | LOOP後方辺を持つWASM関数がある | しきい値の2倍を超える後方分岐を実行し、yield後に再開する | しきい値到達ごとにyield状態を返し、再開時に回数を0へ戻す。最終的に実行が完了する | `{ADR_LoopBackedgeYield}`, `runtime_vsoc.md` |
 
 ### 実装上の注意点に対応する検証
@@ -139,7 +139,7 @@
 | GOTCHA-INTP-19 | ControlMapキャッシュの容量と衝突 | 異なるキーが同じ縮約スロットへ対応する | 挿入・検索・挿入失敗を検査する | 4エントリを超えず、正本の2bit縮約式と一致する。衝突してもキーを誤認せず、挿入失敗はassertで検出する | [`interpreter.md`](docs/components/tier2_runtime/interpreter.md)。確認状況: 実装済み・既存テスト済み |
 | GOTCHA-INTP-20 | テスト用起動処理の配置監査 | 製品Interpreterとテストコードがある | 製品側APIとテストの起動処理を確認する | テストはstart/stepで状態を構成し、専用起動・検査APIが製品側へ追加されていない | [`interpreter.md`](docs/components/tier2_runtime/interpreter.md)。確認状況: 方針反映・要配置監査 |
 | GOTCHA-INTP-21 | fireball_callのhost import経路 | WASMがfireball:host/trapのfireball_callを呼ぶ | IDと6引数を渡し、呼出し先・戻り値・vMMIO副作用を観測する | ホストハンドラが指定引数を受け、戻り値がWASMへ返る。SYSCTL doorbellとsyscall vectorへのアクセスがない | [`interpreter.md`](docs/components/tier2_runtime/interpreter.md) |
-| GOTCHA-INTP-22 | フレームごとのlocal幅と境界 | i32/f32だけの関数とi64/f64を含む関数がある | ロード済み幅メタ情報、localアクセス、占有ワード数、戻り値を照合する | 幅が正本のフレーム別規則と一致し、各localの値と隣接境界が保たれる。実行時にオフセット表を参照しない | [`interpreter.md`](docs/components/tier2_runtime/interpreter.md) |
+| GOTCHA-INTP-22 | Loaderのローカルレイアウト表と境界 | i32/f32/i64/f64を混在する関数がある | ロード済みオフセット・サイズ表、localアクセス、占有ワード数、戻り値を照合する | 表が正本の連続配置規則と一致し、各localの値と隣接境界が保たれる。Interpreterは事前計算済み表を使う | [`interpreter.md`](docs/components/tier2_runtime/interpreter.md) |
 
 ## 3. テスト検証実績と網羅状況
 
@@ -149,7 +149,7 @@
 - **静的分岐先の制御フレーム整理 (TEST-INTP-77)**: 分岐先より後ろの終端を持つフレームを破棄し、分岐先と一致するフレームを残すこと。
 - **ラベルアリティ & プルーニング (TEST-INTP-20〜23)**: ブロック脱出、ループ背進辺、多重ネスト br_table。
 - **i64全演算 & メモリアクセス (TEST-INTP-30〜43)**: 64bit算術・シフト・ビットカウント・境界外トラップ。
-- **LOOP後方分岐の協調yield (TEST-INTP-50〜51)**: 共通回数しきい値に達した時だけRuntimeEngineへ戻る。
+- **LOOP後方分岐の協調yield (TEST-INTP-50〜51)**: Interpreter設定の回数しきい値に達した時だけyield statusをRuntimeEngineへ返す。
 - **デバッグ構成 (TEST-INTP-60〜62, 65)**: インタープリタ専用構成、ブレークポイント停止、およびアタッチ中のJIT不使用。
 
 ### native constの容量境界と原因の識別
@@ -180,11 +180,11 @@ Python参照実装のhandler表を検査した結果は、native dispatcherの�
 | TEST-INTP-01の参照handler | `test_intp_01_python_reference_cps_handlers_and_dispatch_table`、`test_intp_01_handler_returns_specific_trap_outcome` | 論理引数の名前と順序を比較し、handler結果と実行境界が具体的な`UNREACHABLE`を報告することを確認する。native dispatcherのTEST-INTP-02の証拠へ読み替えない |
 | 制御フレーム型とopcode属性 | `test_control_frame_enum_and_opcode_attribute_table` | 実フレームのLOOP種別と、CALL、BR_IF、LOOP、I32_ADDの属性を比較する。handler/JITの論理引数契約を扱うTEST-INTP-03へ紐付けない |
 | TEST-INTP-72の静的制御表 | `test_intp_72_control_map_uses_four_entry_locality_caches` | void、i32、i64のblock終端とアリティ、および固定容量のcacheを比較する。TEST-INTP-04のJIT復帰経路へ紐付けない |
-| TEST-INTP-73の広幅フレーム | `test_intp_73_wide_frame_uses_eight_byte_slots` | 混在型の幅マップ、引数の生ワード数、フレームのスロット数と関数結果42を比較する |
+| TEST-INTP-73の混在幅フレーム | `test_intp_73_wide_frame_uses_compact_per_local_layout` | 混在型のローカルオフセット・サイズ表、引数の生ワード数、フレームのワード数と関数結果42を比較する |
 | ラベルアリティによる広幅結果の保存 | `test_typed_block_results_keep_wide_native_slots` | i64、f32、f64のblockからの分岐結果42、1.5、2.5を比較する。関数呼出し記述子の分離を扱うTEST-INTP-18の証拠へ読み替えない |
-| TEST-INTP-18/75の記述子とlocal領域 | `test_intp_70_to_72_direct_bytecode_execution` | 既存のフレーム構築後にnative記述子の関数番号、コード、幅マップ、引数・local数、独立したlocal領域位置を比較する。復帰後の記述子とlocal領域の長さが0へ戻ることを確認する |
+| TEST-INTP-18/75の記述子とlocal領域 | `test_intp_70_to_72_direct_bytecode_execution` | 既存のフレーム構築後にnative記述子の関数番号、コード、ローカル表のアドレス、引数・local数、独立したlocal領域位置を比較する。復帰後の記述子とlocal領域の長さが0へ戻ることを確認する |
 | 命令のTrap原因 | `test_wasm_10_to_15_control_flow_and_calls`、`test_wasm_40_to_46_memory_load_store_grow_and_data`、`test_wasm_50_to_56_integer_arithmetic_and_bitwise`、`test_wasm_mvp_packed_memory_and_i64_float_conversions` | 対象呼出しだけの`AssertionError`を捕捉し、外側で`UNREACHABLE`、`MEMORY_OUT_OF_BOUNDS`、`INTEGER_DIVIDE_BY_ZERO`、`INVALID_CONVERSION`を比較する。境界外メモリアクセスでは全メモリの不変も比較する |
-| TEST-INTP-74のlocal容量 | `test_intp_74_all_32bit_frames_use_half_the_local_stack` | 狭幅版は参照実装とnativeで結果6を得る。広幅版は既存native入口から`LOCAL_STACK_CAPACITY`を返す。任意の内部assertを容量Trapの代替にしない |
+| TEST-INTP-74のlocal容量 | `test_intp_74_wide_local_adds_only_its_own_word_to_the_frame` | i32のみの8フレームは結果7を返し、f64を追加した8フレームは既存native入口から`LOCAL_STACK_CAPACITY`を返す。任意の内部assertを容量Trapの代替にしない |
 
 この対応表は既存の実行入口と試験の観測対象を示す。
 TEST-INTP-03の全handler/JIT戻り型比較や、TEST-INTP-04のJIT復帰は上記の補助試験で代替せず、対応するABI試験とJIT試験の範囲で確認する。

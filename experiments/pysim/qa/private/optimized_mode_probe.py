@@ -65,9 +65,11 @@ def main() -> None:
         allocator.allocate(size, alignment)
         return memoryview(mmap.mmap(-1, size))
 
-    plugin = JITRuntimeManager(reserve_region, yield_threshold=8)
+    plugin = JITRuntimeManager(reserve_region)
     engine = RuntimeStatsEngine(
-        jit_runtime=plugin, collect_runtime_stats=True, bump_allocator=allocator
+        jit_runtime=plugin,
+        collect_runtime_stats=True,
+        bump_allocator=allocator,
     )
     engine.register_module_blocks(module)
     native = make_native_interpreter(module, bump_allocator=engine.bump_allocator)

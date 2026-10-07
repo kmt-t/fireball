@@ -147,9 +147,7 @@ def _measure(
         if observe_execution
         else None
     )
-    engine = (
-        observer if observer is not None else RuntimeEngine(bump_allocator=arena, jit_runtime=jit)
-    )
+    engine = observer if observer is not None else RuntimeEngine(bump_allocator=arena)
     module = engine.load_wasm(workload.wasm)
     loaded = arena.offset
     arena.phase = "instantiate"
@@ -167,6 +165,7 @@ def _measure(
         module,
         InterpreterBindings.with_memory_and_functions(memory, host_functions),
         bump_allocator=arena,
+        execution_plugin=jit if observer is None else None,
     )
     instantiated = arena.offset
     after_calls: list[int] = []
@@ -174,11 +173,18 @@ def _measure(
     expected_output: bytes | None = None
     for call_index in range(calls):
         arena.phase = f"call_{call_index + 1}"
-        result = tuple(
-            engine.call(
-                interpreter, module.export_func_index(workload.export), list(workload.arguments)
+        if observer is None:
+            result = tuple(
+                interpreter.call(
+                    module.export_func_index(workload.export), list(workload.arguments)
+                )
             )
-        )
+        else:
+            result = tuple(
+                engine.call(
+                    interpreter, module.export_func_index(workload.export), list(workload.arguments)
+                )
+            )
         output = sysv.transport.drain_output()
         if expected_result is None:
             expected_result, expected_output = result, output

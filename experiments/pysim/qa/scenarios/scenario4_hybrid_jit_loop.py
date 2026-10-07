@@ -16,8 +16,8 @@ and trace-boundary state synchronization are not independently asserted here.
 """
 
 import wasmtime
-from config import FB_CONF_RUNTIME_YIELD_THRESHOLD
 from qa.shared.jit_manager import JITRuntimeManager
+from qa.shared.runtime_stats import RuntimeStatsEngine as RuntimeEngine
 from qa.shared.x64_jit import TraceCompiler
 from system import System
 from tier2_runtime.interpreter.interpreter import (
@@ -25,7 +25,6 @@ from tier2_runtime.interpreter.interpreter import (
     InterpreterBindings,
     NativeInterpreter,
 )
-from tier2_runtime.runtime.engine import RuntimeEngine
 from tier2_runtime.wasm.reader import parse
 from tier3_platform.drivers.wasi.context import WasiHostContext
 
@@ -113,8 +112,7 @@ def test_scenario_hybrid_jit():
     runtime_engine = RuntimeEngine(
         jit_runtime=JITRuntimeManager(
             jit_compiler=trace_compiler,
-            yield_threshold=FB_CONF_RUNTIME_YIELD_THRESHOLD,
-        )
+        ),
     )
     runtime_engine.register_module_blocks(module)
     interp_t3 = NativeInterpreter(

@@ -14,7 +14,7 @@
 | TEST-PLUGIN-02 | 観測とJITの独立選択 | Interpreter／JITと観測有効／無効 | 各構成で呼出しを実行する | 一方の選択が他方の生成・記録・分析を変えず、有効な観測先だけへ配送する | 独立選択 |
 | TEST-PLUGIN-03 | 無効機能の除去 | 一部または全プラグインが無効 | 生成と実行を観測し、C++生成物も調べる | 無効機能を生成・呼出し・破棄しない。全観測無効なら時計も読まない | 無効機能の除去 |
 | TEST-PLUGIN-04 | 初期化と終了順序 | 複数の選択済み要素 | 正常起動、初期化失敗、破棄を実行する | 依存順に初期化し、初期化済み要素だけを逆順に終了する | ライフサイクル |
-| TEST-PLUGIN-05 | Debugger構成の排他 | Debugger有効 | Interpreter構成とJIT構成を合成する | Interpreterだけを選択し、JITとの同時構成は要素生成前に拒否する | `{DebuggerInterpreterComposition}` |
+| TEST-PLUGIN-05 | DebuggerとInterpreter拡張の排他 | ネイティブ実行拡張を接続したInterpreter | 最初のnative dispatch前にDebuggerをattachする | Interpreterがassertで拒否し、DebuggerとJIT拡張を同時に接続しない | `{DebuggerInterpreterComposition}` |
 | TEST-PLUGIN-06 | Runtime間の隔離 | 独立した複数Runtime | 状態更新と片方の破棄を実行する | 他方のモジュール、イベント、JIT状態を変更しない | 状態所有権 |
 
 ## 3. テスト検証実績と網羅状況

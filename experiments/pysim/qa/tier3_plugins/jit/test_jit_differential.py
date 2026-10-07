@@ -50,7 +50,7 @@ def _guest(module: Module) -> NativeInterpreter:
     memory = bytearray(module.memory.min_pages * 65536) if module.memory is not None else None
     if memory is not None:
         module.init_memory_data(memory, ())
-    return make_native_interpreter(module, memory=memory)
+    return make_native_interpreter(module, memory=memory, yield_threshold=3)
 
 
 def _tier2_result(wasm: bytes, export: str, args: list[int]) -> int:
@@ -70,9 +70,7 @@ def _tier3(
     `compile_only` contains Code section payload-relative block PCs. It narrows the
     trackable-block bitmap to those heads, so every other block stays on the interpreter.
     """
-    engine = make_runtime_engine(
-        yield_threshold=3, candidate_threshold=0, jit_compiler=TraceCompiler()
-    )
+    engine = make_runtime_engine(candidate_threshold=0, jit_compiler=TraceCompiler())
     module = engine.load_wasm(wasm)
     if compile_only is not None:
         engine.jit_runtime.trackable.clear()
@@ -287,7 +285,7 @@ def test_jitr_55_stale_control_frames_are_dropped_before_structural_opcodes():
 
 
 def test_jitr_56_jit_runs_in_a_frame_that_also_holds_a_wide_local():
-    """TEST-JITR-56: locals own fixed slots, so an f64 local does not disable i32 traces."""
+    """TEST-JITR-56: compact mixed-width locals do not disable i32 traces."""
     _assert_jit_ran(_check_three_ways(WIDE_LOCAL_FRAME_WAT, "main", [200]))
 
 
@@ -301,17 +299,17 @@ def test_jitr_57_hot_block_ending_at_if_hands_the_condition_to_the_interpreter()
     _assert_jit_ran(_check_three_ways(IF_TERMINATED_BLOCK_WAT, "main", [300]))
 
 
-def test_jitr_60_frames_with_different_slot_widths_run_side_by_side():
-    """TEST-JITR-60: 4-byte and 8-byte slot frames alternate on one engine, both compiled."""
+def test_jitr_60_frames_with_different_local_layout_sizes_run_side_by_side():
+    """TEST-JITR-60: compact and wide local layouts alternate on one engine."""
     engine = _check_three_ways(MIXED_SLOT_WIDTH_WAT, "main", [40])
     _assert_jit_ran(engine)
     module = engine.module
     assert module is not None
     narrow, wide = module.functions[0], module.functions[1]
-    assert narrow.local_width_map_cache is not None and wide.local_width_map_cache is not None
-    assert (narrow.local_width_map_cache.slot_words, wide.local_width_map_cache.slot_words) == (
-        1,
-        2,
+    assert narrow.local_layout_cache is not None and wide.local_layout_cache is not None
+    assert (narrow.local_layout_cache.total_words, wide.local_layout_cache.total_words) == (
+        3,
+        5,
     )
     compiled_functions = {
         module.function_index_for_pc(trace.head_pc)
@@ -354,9 +352,7 @@ def test_jitr_61_a_trace_that_would_overflow_the_operand_stack_runs_on_the_inter
     with pytest.raises(AssertionError) as interpreter_failure:
         _guest(interpreter_module).call(interpreter_module.export_func_index("main"), [])
     assert interpreter_failure.value.args == (TrapCode.OPERAND_STACK_CAPACITY,)
-    engine = make_runtime_engine(
-        yield_threshold=3, candidate_threshold=0, jit_compiler=TraceCompiler()
-    )
+    engine = make_runtime_engine(candidate_threshold=0, jit_compiler=TraceCompiler())
     module = engine.load_wasm(wasm)
     work_pc = next(block.head_pc for block in module.blocks if block.func_index == 0)
     with pytest.raises(AssertionError) as hybrid_failure:
@@ -568,7 +564,7 @@ if __name__ == "__main__":
     test_jitr_55_stale_control_frames_are_dropped_before_structural_opcodes()
     test_jitr_56_jit_runs_in_a_frame_that_also_holds_a_wide_local()
     test_jitr_57_hot_block_ending_at_if_hands_the_condition_to_the_interpreter()
-    test_jitr_60_frames_with_different_slot_widths_run_side_by_side()
+    test_jitr_60_frames_with_different_local_layout_sizes_run_side_by_side()
     test_jitr_61_a_trace_that_would_overflow_the_operand_stack_runs_on_the_interpreter()
     test_jitr_58_generated_control_flow_matches_wasmtime_and_tier2()
     test_jitr_59_clang_kernel_suite_matches_wasmtime_on_the_jit()

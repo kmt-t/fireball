@@ -64,12 +64,12 @@ flowchart TD
 - **関数/モジュール一括コンパイルの完全禁止**: 極小リソース環境におけるコンパイル遅延とメモリ消費をゼロ化する。関数全体やモジュール全体の事前一括コンパイルは一切行わない。
 - **純粋ベーシックブロック/トレース単位コンパイル**: カードマーキング表で HOT（`10`）に達した直線命令列（基本ブロック / トレース）のみを対象とする。スケジューラのアイドル時等に Copy-and-Patch により 1 トレースずつオンデマンド生成する。
 - **制御フローとインタープリタ委譲 (`{JIT_RuntimeAPI_Fallback}`)**: 制御終端命令そのものはトレース本体で実行しない。関数内の静的前方`BR`は、分岐先のtraceが常駐し戻り値を残さない場合に限りchain dispatcherへ渡せる。dispatcherはヘッダの関数相対frame depthで制御スタックを更新してからtarget bodyへ移る。`BR_IF`、`BR_TABLE`、後方分岐、`BLOCK`、`LOOP`、`IF`、`ELSE`、`END`、call、returnはC++ Interpreter handlerが処理する。後方分岐数もhandlerが記録するため、yieldしきい値を迂回する直接loop back-edge chainは作らない。
-- **ハンドラABI**: JITトレース入口はInterpreter handlerと4論理引数の配置を共有するが、戻り値契約は異なる。Interpreter handlerは`handler_result`、JIT trace entryは`void`を返すため、関数ポインタ型を共有しない。
+- **ハンドラABI**: JIT trace entryとInterpreter handlerは同じ4論理引数・`fireball_op_result_native`戻り値の関数型を使う。通常のtrace完了は`FIREBALL_NATIVE_OP_CONTINUE`を返す。JitRuntimeはtrace終端のPC・stack状態を反映し、既存の境界処理へ戻す。
 
 ##### 3.3.1 現行x64の制御終端処理とchain dispatcher
 <!-- traceability: {JIT_CopyAndPatch} {JIT_LazyChaining} {PositionIndependentCode} -->
 
-現行x64実行系では制御終端命令をトレース本体から除外する。`BR_IF`、`BR_TABLE`、後方`BR`、`BLOCK`、`LOOP`、`IF`、`ELSE`、`END`、call、returnはC++ Interpreter handlerが処理し、条件値、スタック巻き戻し、動的な制御更新、遷移先決定を行う。戻り値を残さない静的な前方`BR`だけはchain可能である。loaderが関数開始からのframe depthを各blockに確定し、コンパイラがsource/target深さをそれぞれのtrace headerへ埋める。共通chain dispatcherは両者が異なるときだけ`execution_context.control_base + target.frame_depth`を制御スタックサイズへ書き、その後bodyへtail-jumpする。後方分岐数はC++ branch handlerが記録する。C++ dispatcherは `FB_CONF_RUNTIME_YIELD_THRESHOLD` に従って続行またはyieldする。
+現行x64実行系では制御終端命令をトレース本体から除外する。`BR_IF`、`BR_TABLE`、後方`BR`、`BLOCK`、`LOOP`、`IF`、`ELSE`、`END`、call、returnはC++ Interpreter handlerが処理し、条件値、スタック巻き戻し、動的な制御更新、遷移先決定を行う。戻り値を残さない静的な前方`BR`だけはchain可能である。loaderが関数開始からのframe depthを各blockに確定し、コンパイラがsource/target深さをそれぞれのtrace headerへ埋める。共通chain dispatcherは両者が異なるときだけ`execution_context.control_base + target.frame_depth`を制御スタックサイズへ書き、その後bodyへtail-jumpする。後方分岐数はC++ branch handlerが記録する。Interpreterが設定を所有し、C++ dispatcherは `FB_CONF_INTERPRETER_YIELD_THRESHOLD` に従って続行またはyieldする。
 
 trace chainは、互換な直線後続または静的前方`BR`のtarget traceが常駐する場合に、共通コード領域のchain dispatcherがTraceヘッダからtarget bodyを読み、そこへtail-jumpする経路である。必要なframe-depth更新もdispatcher内で完了する。C++ handler実行後にC++ dispatcherが次traceを検索・起動する遷移はchainではない。chain dispatcherはopcodeごとのhandlerを共通化せず、分岐条件や分岐命令を実行しない。
 
@@ -108,7 +108,7 @@ x64の`i32.div/rem`ヘルパーは通常の関数呼出しとして実行し、�
 
 #### コピーアンドパッチエンジン（CopyAndPatchEngine）クラス
 <!-- traceability: {JIT_RegisterMapping} {ContextPointerRegister} {EnvironmentPointer} {ADR_TosCacheAsymmetry} {PositionIndependentCode} -->
-Interpreter opcode handlerとJIT trace entryは4つの論理引数を共有するが、戻り値契約は異なる。Interpreter handlerは`handler_result`を返し、JIT trace entryは`void`で終了・chainするため、関数ポインタ型を共用しない。x64の物理配置は [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) を正本とし、ARMv8-Mの物理ABIはTBDとする。
+Interpreter opcode handlerとJIT trace entryは4論理引数と`fireball_op_result_native`戻り値を共有し、同じ関数ポインタ型を使用する。通常のtrace完了値は`FIREBALL_NATIVE_OP_CONTINUE`である。x64の物理配置と戻り値契約は [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) を正本とし、ARMv8-Mの物理ABIはTBDとする。
 
 論理引数は `ctx`, `sp`, `local_base`, `tos` の順である。物理引数レジスタ、スタック配置、呼出し保存規則を定義する擬似コードは置かず、対象ABIの正本を参照する。
 
@@ -133,9 +133,9 @@ JIT トレースとインタープリタが共有オペランド領域上で相�
 - x64では、後続traceが共通コード領域のchain dispatcher経由で実行される場合、現在traceが確定した共有状態を次traceが引き継ぐ。C++ Interpreter handlerへ戻る境界では共有オペランド領域と実行コンテキストを同期する。ARMv8-Mの値保持方法と同期手順はTBDである。
 3. **制御フロー・コール境界のインタープリタ委譲不変条件 (Control & Call Delegation Invariant)**:
 - `BR`, `BR_IF`, `BR_TABLE`、構文デリミタ（`BLOCK`, `LOOP`, `ELSE`, `END`）、コール、およびreturnの終端命令は、トレース本体から除外し、境界でC++インタープリタの対応ハンドラへ渡す。ハンドラ実行後にRuntimeEngineが次のトレースを検索する。
-- 通常実行では`BR` / `BR_IF` / `BR_TABLE`をC++ Interpreter handlerへ渡し、handler内で制御frameとoperand stackを更新する。C++ dispatcherは後方分岐カウンタが共通yieldしきい値へ届くまで、遷移先の常駐traceまたはC++ handlerを続けて実行する。このhandler後のC++ dispatcher継続はchainではない。
+- 通常実行では`BR` / `BR_IF` / `BR_TABLE`をC++ Interpreter handlerへ渡し、handler内で制御frameとoperand stackを更新する。C++ dispatcherは後方分岐カウンタがInterpreter所有のyieldしきい値へ届くまで、遷移先の常駐traceまたはC++ handlerを続けて実行する。このhandler後のC++ dispatcher継続はchainではない。
 - chainは直線後続traceが常駐する場合に限り、trace末尾から共通コード領域のchain dispatcherへ移り、dispatcherがTraceヘッダのtarget bodyへtail-jumpする経路である。未接続時は共通epilogueから実行境界へ戻る。opcode別の分岐処理を共通dispatcherに持ち込まず、制御handlerを飛ばさない。
-- C++ dispatcherはC++ Interpreter単独実行にも使い、Hybrid JITと同じ `FB_CONF_RUNTIME_YIELD_THRESHOLD` を使用する。後方分岐、前方分岐、`BR_TABLE`のいずれも対応handlerを経由し、トラップ・外部呼出し・非対応命令・関数完了は必要な早期境界としてRuntimeEngineへ返す。
+- C++ dispatcherはC++ Interpreter単独実行にも使う。しきい値はInterpreterが所有し、単独実行とHybrid JITで同じ `FB_CONF_INTERPRETER_YIELD_THRESHOLD` を使う。後方分岐、前方分岐、`BR_TABLE`のいずれも対応handlerを経由し、トラップ・外部呼出し・非対応命令・関数完了は必要な早期境界としてRuntimeEngineへ返す。
 4. **押し出し量の申告不変条件 (Spill Declaration Invariant)**:
    - TOSとNOSに載らない3個目以降の値は、共有オペランド領域の `sp` 相対の位置へ押し出す。
    - コンパイラは、トレースが書き込む最大ワード数を `stack_words` としてトレースへ記録する。ヘルパー呼び出しと結果の語数も含める。
@@ -331,7 +331,7 @@ ARMv8-Mのコンパイラと実機検証はTBDである。
   - **トレース境界の2種類のエントリと2種類のエグジット**: 境界の性質は「真の脱出/新規進入」と「共通コード領域のchain dispatcherを介した継続」の2系統に分かれる。混同してはならない。物理的な命令列は対象アーキテクチャの仕様で定める。
      - **新規エントリ / 真の脱出**: インタープリタから初めて呼び出される場合は対象ABIの開始処理を通過する。真の脱出では、共有オペランド領域と実行コンテキストを同期し、対象ABIの終了処理で復帰する。WASM値は共有オペランドスタックに残し、JIT traceのC戻り値には使わない（{GOTCHA-JITC-07}）。 <!-- definition: {GOTCHA-JITC-07} -->
   - **chain dispatcher経由の継続**: 直線後続traceが常駐し、対象ABIの状態引継ぎ条件を満たす場合、trace末尾から共通コード領域のchain dispatcherへ移り、dispatcherがTraceヘッダのtarget bodyへtail-jumpする。入口保存処理を重ねない。target未接続時は共通epilogueへ進み、C++ dispatcherへ戻る。
-  - **ローカルアクセスの直接処理とAPI経路 (`ContextPointerRegister`, `JIT_RuntimeAPI_Fallback`)**: 各論理ローカルはフレームの固定スロットに配置される。関数ごとに最大値型からスロット幅を決める。論理ローカル数は関数引数を含む。論理ローカル数が128以下なら、ローカル基底相対の固定オフセットを生成時に埋め込む。ローカル幅もLoaderメタデータから生成時に確定する。`local.get` / `local.set` / `local.tee` は幅に応じた固定回数のワードコピーを生成する。生成コードはローカル幅表を読まず、幅を選ぶ分岐を持たない。論理ローカル数が129以上なら、同じ命令を共通コード領域のローカル Runtime API 表へ間接呼び出しする。Runtime APIは現在のCallFrameから幅を解決して値をコピーする。生成traceはtrace headerの相対基点から表を参照し、trace固有の絶対関数アドレスを保持しない。Runtime APIはCPS handlerやInterpreter dispatcherを経由しない。
+  - **ローカルアクセスの直接処理とAPI経路 (`ContextPointerRegister`, `JIT_RuntimeAPI_Fallback`)**: Loaderは引数を含む各ローカルのワードオフセットとサイズを前計算する。論理ローカル数は関数引数を含む。128以下なら、コンパイラがローカル表からオフセットとサイズを読み、対象オフセットと1または2ワードのコピーを機械語へ埋め込む。生成コードはローカル数や幅を判定しない。129以上なら、同じ命令を共通コード領域のローカルRuntime API表へ間接呼び出しする。Runtime APIは現在のCallFrameが参照するオフセット表とサイズ表から値をコピーする。生成traceはtrace headerの相対基点から関数ポインタ表を参照し、trace固有の絶対関数アドレスを保持しない。Runtime APIはCPS handlerやInterpreter dispatcherを経由しない。
 
 - **決定事項**:
   - **背景**: 現行x64参照構成のコードキャッシュは8KBである。生成コードは可変長であり、すべてのtraceの開始位置が一定の命令アライメントを満たす保証はない。

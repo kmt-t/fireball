@@ -22,6 +22,14 @@ class NativeDiagnosticResult(native_abi.NativeResult):
         ("interpreted_block_count", ctypes.c_uint32),
     )
 
+    def reset_counters(self) -> None:
+        self.trace_count = 0
+        self.body_count = 0
+        self.dispatcher_trace_transitions = 0
+        self.control_handler_count = 0
+        self.eligible_block_visits = 0
+        self.interpreted_block_count = 0
+
 
 _library = ctypes.PyDLL(
     str(

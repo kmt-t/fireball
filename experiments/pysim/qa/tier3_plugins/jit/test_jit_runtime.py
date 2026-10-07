@@ -73,7 +73,10 @@ from qa.shared.runtime_support import (
 )
 from qa.shared.x64_jit import TraceCompiler
 from system_containers import ReadOnlyRadixBinaryTreeStorage, StaticVector
-from tier2_runtime.abi.interpreter_abi import EXECUTION_CONTEXT_FLAG_PENDING_BLOCK_HEAD
+from tier2_runtime.abi.interpreter_abi import (
+    EXECUTION_CONTEXT_FLAG_PENDING_BLOCK_HEAD,
+    NATIVE_OP_CONTINUE,
+)
 from tier2_runtime.interpreter.interpreter import (
     RETURN_SENTINEL_IP,
     RETURN_SENTINEL_PC,
@@ -82,7 +85,7 @@ from tier2_runtime.interpreter.interpreter import (
     NativeInterpreter,
 )
 from tier2_runtime.runtime.engine import RuntimeEngine as ProductRuntimeEngine
-from tier2_runtime.wasm.module import I32, LocalWidthMap, Module, WasmOperand
+from tier2_runtime.wasm.module import I32, LocalLayout, Module, WasmOperand
 from tier2_runtime.wasm.opcodes import (
     BR_IF,
     BR_TABLE,
@@ -295,13 +298,23 @@ def test_hotspot_04_3bank_cache_oldest_only_promotion():
     # Warm hit on t1: zero promotion overhead {JIT_OldestOnly_Promote}
     assert cache.lookup(0x100) is t1
     assert cache.promotions == 0
+    location = native_abi.CacheLookup()
+    assert native_abi.RUNTIME_FIND(cache._native.pointer, 0x100, ctypes.byref(location)) == 1
+    assert location.bank_id == 0
     assert cache.find_trace(0x100) is not None
     cache.rotate()  # t1 moved to Oldest, t2 moved to Warm
+    t3 = JITTrace(head_pc=0x300, native_fn=lambda: 3, size_bytes=64)
+    cache.insert(t3)  # t3 remains in Active
     assert cache.find_trace(0x100) is not None
+    for pc, bank_id in ((0x100, 0), (0x200, 2), (0x300, 1)):
+        assert native_abi.RUNTIME_FIND(cache._native.pointer, pc, ctypes.byref(location)) == 1
+        assert location.bank_id == bank_id
     # Oldest hit on t1: must promote to Active
     promoted = cache.lookup(0x100)
     assert promoted is t1
     assert cache.promotions == 1
+    assert native_abi.RUNTIME_FIND(cache._native.pointer, 0x100, ctypes.byref(location)) == 1
+    assert location.bank_id == 1
     assert cache.find_trace(0x100) is not None
     assert cache.lookup(0x100) is t1 and cache.promotions == 1
     trace = JITTrace(head_pc=0x400, native_fn=lambda *_args: 7, size_bytes=64)
@@ -463,9 +476,9 @@ def test_jitr_native_trace_lookup_uses_resident_snapshot():
         return
     module = parse(wasm_bytes)
     fn_idx = module.export_func_index("sum_to")
-    engine = make_runtime_engine(jit_compiler=TraceCompiler(), yield_threshold=8)
+    engine = make_runtime_engine(jit_compiler=TraceCompiler())
     engine.register_module_blocks(module)
-    interp = Interpreter(module)
+    interp = Interpreter(module, yield_threshold=8)
 
     lookup_calls = []
     real_lookup = JitRuntimeBoundary.lookup
@@ -550,7 +563,10 @@ def test_jitc_trace_header_preserves_frame_depth_above_one_byte():
         next_pc=None,
         loops_to=None,
         locals=native_abi.NativeLocalLayout(
-            widths=native_abi.NativeByteView(0, 0), local_count=0, slot_words=1
+            offsets=native_abi.NativeByteView(0, 0),
+            sizes=native_abi.NativeByteView(0, 0),
+            local_count=0,
+            total_words=0,
         ),
         frame_depth=0x1234_5678,
     )
@@ -575,7 +591,7 @@ def test_jitr_native_header_chain_executes_successor_body_once(entry_name: str):
         next_pc=0x200,
         loops_to=None,
         byte_length=8,
-        local_layout=LocalWidthMap((I32,)),
+        local_layout=LocalLayout((I32,)),
     )
     target = compiler.compile_instructions(
         head_pc=0x200,
@@ -583,7 +599,7 @@ def test_jitr_native_header_chain_executes_successor_body_once(entry_name: str):
         next_pc=None,
         loops_to=None,
         byte_length=12,
-        local_layout=LocalWidthMap((I32,)),
+        local_layout=LocalLayout((I32,)),
     )
     assert source is not None and target is not None
 
@@ -671,12 +687,12 @@ def test_hotspot_06_short_blocks_never_tracked_avoiding_card_aliasing():
     )
     """
     wasm_bytes = bytes(wasmtime.wat2wasm(wat))
-    engine = make_runtime_engine(yield_threshold=17)
+    engine = make_runtime_engine(min_trace_bytes=4)
     assert engine.jit_runtime.min_trace_bytes == 4
     mod = engine.load_wasm(wasm_bytes)
     h0 = mod.blocks[0].head_pc
     h1 = mod.blocks[1].head_pc
-    for _ in range(engine.jit_runtime.yield_threshold * 2):
+    for _ in range(2):
         engine.jit_runtime.record_block_head(h0)
         engine.jit_runtime.record_block_head(h1)
     assert engine.jit_runtime.bitmap.get_state(h0) == CardState.UNEXECUTED
@@ -922,9 +938,9 @@ def test_jitr_br_if_loop_exit_jit_result_correct():
         return
     module = parse(wasm_bytes)
     fn_idx = module.export_func_index("sum_to")
-    engine = make_runtime_engine(jit_compiler=TraceCompiler(), yield_threshold=8)
+    engine = make_runtime_engine(jit_compiler=TraceCompiler())
     engine.register_module_blocks(module)
-    interp = Interpreter(module)
+    interp = Interpreter(module, yield_threshold=8)
 
     n = 50
     results = engine.call(interp, fn_idx, [n])
@@ -964,7 +980,7 @@ def test_jitr_loop_backedge_stays_in_cpp_until_coos_yield():
     """
     module = parse(wat_to_wasm(wat))
     function_index = module.export_func_index("sum")
-    engine = make_runtime_engine(jit_compiler=TraceCompiler(), yield_threshold=2)
+    engine = make_runtime_engine(jit_compiler=TraceCompiler())
     engine.register_module_blocks(module)
     loop_block = next(
         block
@@ -976,7 +992,7 @@ def test_jitr_loop_backedge_stays_in_cpp_until_coos_yield():
     assert trace.next_pc is None
     assert trace.chain_next is None
     assert engine.jit_runtime.cache.insert(trace)
-    interpreter = Interpreter(module)
+    interpreter = Interpreter(module, yield_threshold=2)
     call_state = interpreter.start(function_index, [5])
     first_boundary = engine.run(interpreter, call_state)
     assert first_boundary.yield_requested
@@ -1104,7 +1120,7 @@ def test_jitr_native_compiler_scans_queued_traces_without_python_opcode_marshall
             next_pc: int | None,
             loops_to: int | None,
             byte_length: int,
-            local_layout: LocalWidthMap,
+            local_layout: LocalLayout,
             context_helper: bool = False,
             helper_address: int = 0,
         ) -> JITTrace | None:
@@ -1115,7 +1131,6 @@ def test_jitr_native_compiler_scans_queued_traces_without_python_opcode_marshall
     )
     engine = make_runtime_engine(
         jit_compiler=RuntimeCompilerOnly(),
-        yield_threshold=1,
         min_trace_bytes=1,
         candidate_threshold=0,
     )
@@ -1147,7 +1162,7 @@ def test_jitr_clang_wasm_ngrams_select_compact_native_stencils():
             next_pc: int | None,
             loops_to: int | None,
             byte_length: int,
-            local_layout: LocalWidthMap,
+            local_layout: LocalLayout,
             context_helper: bool = False,
             helper_address: int = 0,
         ) -> JITTrace | None:
@@ -1200,7 +1215,6 @@ def test_jitr_clang_wasm_ngrams_select_compact_native_stencils():
     )
     engine = make_runtime_engine(
         jit_compiler=RuntimeCompilerOnly(),
-        yield_threshold=1,
         min_trace_bytes=1,
         candidate_threshold=0,
     )
@@ -1265,7 +1279,7 @@ def test_jitr_local_pair_ngrams_use_x64_memory_operand_stencils():
             next_pc: int | None,
             loops_to: int | None,
             byte_length: int,
-            local_layout: LocalWidthMap,
+            local_layout: LocalLayout,
             context_helper: bool = False,
             helper_address: int = 0,
         ) -> JITTrace | None:
@@ -1301,7 +1315,6 @@ def test_jitr_local_pair_ngrams_use_x64_memory_operand_stencils():
     module = parse(wat_to_wasm(module_text))
     engine = make_runtime_engine(
         jit_compiler=RuntimeCompilerOnly(),
-        yield_threshold=1,
         min_trace_bytes=1,
         candidate_threshold=0,
     )
@@ -1395,7 +1408,7 @@ def test_jitr_cross_frame_loop_branch_skips_special_link_but_keeps_trace_body():
         assert engine.stat_native_dispatch_trace_transitions > 0
 
 
-def test_interpreter_only_runtime_uses_the_shared_backedge_yield_threshold():
+def test_interpreter_only_runtime_uses_interpreter_backedge_yield_threshold():
     """A non-JIT RuntimeEngine returns to COOS at the same counted boundary."""
     module = parse(
         wat_to_wasm(
@@ -1418,9 +1431,9 @@ def test_interpreter_only_runtime_uses_the_shared_backedge_yield_threshold():
         )
     )
     function_index = module.export_func_index("sum")
-    engine = RuntimeEngine(yield_threshold=2)
+    engine = RuntimeEngine()
     engine.register_module_blocks(module)
-    interpreter = Interpreter(module)
+    interpreter = Interpreter(module, yield_threshold=2)
     first = engine.run(interpreter, interpreter.start(function_index, [5]))
 
     assert first.yield_requested
@@ -1456,12 +1469,14 @@ def test_runtime_profile_counters_are_disabled_by_default_without_changing_resul
                 local.get 1))"""
         )
     )
-    engine = ProductRuntimeEngine(yield_threshold=2)
+    engine = ProductRuntimeEngine()
     function_index = module.export_func_index("sum")
     engine.register_module_blocks(module)
-    result = engine.call(Interpreter(module), function_index, [5])
+    interpreter = Interpreter(module, bump_allocator=engine.bump_allocator)
+    result = interpreter.call(function_index, [5])
 
     assert list(result) == [15]
+    assert not hasattr(engine, "call")
     assert not hasattr(engine, "collect_runtime_stats")
     assert not hasattr(engine, "reset_stats")
     assert not hasattr(engine, "dump_internal_state")
@@ -1502,12 +1517,13 @@ def test_native_interpreter_with_jit_runtime_matches_interpreter_only_execution(
     module = parse(wat_to_wasm(wat))
     function_index = module.export_func_index("sum_to")
     expected = Interpreter(module).call(function_index, [50])
-    engine = make_runtime_engine(jit_compiler=TraceCompiler(), yield_threshold=8)
+    engine = make_runtime_engine(jit_compiler=TraceCompiler())
     engine.register_module_blocks(module)
     native_interpreter = NativeInterpreter(
         module,
         InterpreterBindings.empty(),
         bump_allocator=engine.bump_allocator,
+        yield_threshold=8,
     )
 
     assert engine.call(native_interpreter, function_index, [50]) == expected
@@ -1551,9 +1567,9 @@ def test_jitr_backward_branch_block_byte_span_not_disqualified():
     fn_idx = module.export_func_index("sum_to")
     # Use the production 4-byte card so both deliberately short loop blocks
     # remain eligible.
-    engine = make_runtime_engine(jit_compiler=TraceCompiler(), yield_threshold=8, card_shift=2)
+    engine = make_runtime_engine(jit_compiler=TraceCompiler(), card_shift=2)
     engine.register_module_blocks(module)
-    interp = Interpreter(module)
+    interp = Interpreter(module, yield_threshold=8)
 
     n = 50
     results = engine.call(interp, fn_idx, [n])
@@ -1635,12 +1651,10 @@ def test_jitr_if_then_skipped_when_condition_false_after_jit():
         return
     module = parse(wasm_bytes)
     fn_idx = module.export_func_index("abs_sum")
-    engine = make_runtime_engine(
-        jit_compiler=TraceCompiler(), yield_threshold=4, hotspot_profiling_enabled=False
-    )
+    engine = make_runtime_engine(jit_compiler=TraceCompiler(), hotspot_profiling_enabled=False)
     engine.register_module_blocks(module)
     target_pc = _install_single_control_trace(engine, module, IF)
-    interp = Interpreter(module)
+    interp = Interpreter(module, yield_threshold=4)
 
     n = 20
     results = engine.call(interp, fn_idx, [n])
@@ -1691,14 +1705,12 @@ def test_jitr_nested_loop_in_if_frame_stack_reconciliation():
         return
     module = parse(wasm_bytes)
     fn_idx = module.export_func_index("nested")
-    engine = make_runtime_engine(
-        jit_compiler=TraceCompiler(), yield_threshold=4, hotspot_profiling_enabled=False
-    )
+    engine = make_runtime_engine(jit_compiler=TraceCompiler(), hotspot_profiling_enabled=False)
     engine.register_module_blocks(module)
     target_pc = _install_single_control_trace(
         engine, module, BR_IF, bytes.fromhex("20 02 41 03 4e")
     )
-    interp = Interpreter(module)
+    interp = Interpreter(module, yield_threshold=4)
 
     n = 20
     results = engine.call(interp, fn_idx, [n])
@@ -1747,13 +1759,12 @@ def test_jitr_return_terminated_block_jit_result_correct():
     # RETURN-terminated block remains a valid JIT candidate.
     engine = make_runtime_engine(
         jit_compiler=TraceCompiler(),
-        yield_threshold=2,
         card_shift=2,
         hotspot_profiling_enabled=False,
     )
     engine.register_module_blocks(module)
     target_pc = _install_single_control_trace(engine, module, RETURN)
-    interp = Interpreter(module)
+    interp = Interpreter(module, yield_threshold=2)
 
     n = 20
     results = engine.call(interp, fn_idx, [n])
@@ -1772,13 +1783,12 @@ def test_jitr_return_handler_publishes_sentinel_once() -> None:
     fn_idx = module.export_func_index("f")
     engine = make_runtime_engine(
         jit_compiler=TraceCompiler(),
-        yield_threshold=2,
         card_shift=2,
         hotspot_profiling_enabled=False,
     )
     engine.register_module_blocks(module)
     target_pc = _install_single_control_trace(engine, module, RETURN)
-    interp = Interpreter(module)
+    interp = Interpreter(module, yield_threshold=2)
     call_state = interp.start(fn_idx, [20])
     assert call_state.current_pc() == target_pc
     assert len(call_state.context.call_frame_stack) == 1
@@ -1840,12 +1850,11 @@ def test_jitr_nested_wasm_call_keeps_callee_result_on_shared_operand_stack():
     module = parse(wasm_bytes)
     engine = make_runtime_engine(
         jit_compiler=TraceCompiler(),
-        yield_threshold=4,
         card_shift=2,
         candidate_threshold=0,
     )
     engine.register_module_blocks(module)
-    interp = Interpreter(module)
+    interp = Interpreter(module, yield_threshold=4)
 
     caller = module.export_func_index("caller")
     assert engine.call(interp, caller, [20]) == [2]
@@ -1882,7 +1891,6 @@ def test_jitr_hotspot_collection_continues_defined_calls_in_cpp():
     module = parse(wat_to_wasm(wat))
     engine = make_runtime_engine(
         jit_compiler=TraceCompiler(),
-        yield_threshold=64,
         card_shift=2,
         candidate_threshold=0,
     )
@@ -1930,7 +1938,6 @@ def test_jitr_native_history_overwrite_does_not_yield():
     module = parse(wat_to_wasm(wat))
     manager = JITRuntimeManager(
         jit_compiler=TraceCompiler(),
-        yield_threshold=3,
         history_capacity=2,
         card_shift=2,
         candidate_threshold=0,
@@ -2012,7 +2019,6 @@ def test_jitr_mask_card_collision_does_not_profile_structural_pc(body, expected,
         interpreter,
         call,
         snapshot,
-        manager.yield_threshold,
         manager.exec_counter,
         native_dispatcher=select_native_dispatch_entry(collect_stats, True),
     )
@@ -2099,7 +2105,6 @@ def test_jitr_memory_boundary_continuation_does_not_become_a_block_head(body, co
             interpreter,
             call,
             snapshot,
-            manager.yield_threshold,
             manager.exec_counter,
             native_dispatcher=select_native_dispatch_entry(collect_stats, True),
         )
@@ -2147,7 +2152,6 @@ def test_jitr_native_step_consumes_pending_head_before_memory_fallback(collect_s
         interpreter,
         call,
         manager.native_dispatch_state(),
-        manager.yield_threshold,
         manager.exec_counter,
         native_dispatcher=select_native_dispatch_entry(collect_stats, True),
     )
@@ -2171,7 +2175,6 @@ def test_jitr_memory_helper_trap_clears_block_continuation():
         interpreter,
         call,
         engine.jit_runtime.native_dispatch_state(),
-        engine.yield_threshold,
         0,
         native_dispatcher=select_native_dispatch_entry(True, True),
     )
@@ -2190,7 +2193,7 @@ def test_jitr_empty_yield_skips_python_control_work():
         __slots__ = ("idle_calls", "lookup_calls", "record_calls", "snapshot_calls")
 
         def __init__(self) -> None:
-            super().__init__(yield_threshold=2, candidate_threshold=1_000_000)
+            super().__init__(candidate_threshold=1_000_000)
             self.idle_calls = 0
             self.lookup_calls = 0
             self.record_calls = 0
@@ -2265,12 +2268,10 @@ def test_jitr_if_else_loop_matches_interpreter_after_jit_compilation():
     function_index = module.export_func_index("alternating_sum")
     interpreter_engine = make_runtime_engine(bump_allocator=module.allocator)
     interpreter_engine.register_module_blocks(module)
-    jit_engine = make_runtime_engine(
-        jit_compiler=TraceCompiler(), yield_threshold=4, bump_allocator=module.allocator
-    )
+    jit_engine = make_runtime_engine(jit_compiler=TraceCompiler(), bump_allocator=module.allocator)
     jit_module = jit_engine.load_wasm(wat_to_wasm(wat))
     interpreter = Interpreter(module)
-    jit_interpreter = Interpreter(jit_module)
+    jit_interpreter = Interpreter(jit_module, yield_threshold=4)
 
     inputs = (0, 1, 2, 17, 30)
     expected = [sum(i if i % 2 == 0 else -i for i in range(n)) for n in inputs]
@@ -2311,7 +2312,6 @@ def test_jitr_br_table_uses_native_handler_and_preserves_every_target():
     jit_engine = make_runtime_engine(
         jit_compiler=TraceCompiler(),
         bump_allocator=module.allocator,
-        yield_threshold=1,
         card_shift=0,
         candidate_threshold=0,
         min_trace_bytes=1,
@@ -2370,7 +2370,6 @@ def test_jitr_mixed_typed_stack_declines_jit_without_losing_drop_widths():
     )
     engine = make_runtime_engine(
         jit_compiler=TraceCompiler(),
-        yield_threshold=1,
         card_shift=0,
         candidate_threshold=0,
         min_trace_bytes=1,
@@ -2412,7 +2411,6 @@ def test_jitr_mixed_typed_callee_returns_keep_the_shared_stack_synchronized():
     )
     engine = make_runtime_engine(
         jit_compiler=TraceCompiler(),
-        yield_threshold=1,
         card_shift=0,
         candidate_threshold=0,
         min_trace_bytes=1,
@@ -2440,7 +2438,6 @@ def test_jitr_runtime_engine_preserves_typed_top_level_results():
     )
     engine = make_runtime_engine(
         jit_compiler=TraceCompiler(),
-        yield_threshold=1,
         card_shift=0,
         candidate_threshold=0,
         min_trace_bytes=1,
@@ -2798,7 +2795,7 @@ def _chain_stress_compile(compiler: TraceCompiler, index: int) -> JITTrace:
         next_pc=next_pc,
         loops_to=None,
         byte_length=12,
-        local_layout=LocalWidthMap((I32,)),
+        local_layout=LocalLayout((I32,)),
     )
     assert trace is not None
     return trace
@@ -2854,7 +2851,8 @@ def _chain_stress_run(cache: JitRuntimeBoundary, start: JITTrace) -> None:
         walked = successor
     context = ExecutionContext()
     assert context.local_stack.extend((0,))
-    start.execute(context.context_ptr, context.sp_ptr, context.locals_ptr, 0)
+    outcome = start.execute(context.context_ptr, context.sp_ptr, context.locals_ptr, 0)
+    assert outcome == NATIVE_OP_CONTINUE, "native JIT entry returns the CPS continue result"
     assert context.local_stack[0] == expected_mask, (
         f"native chain ran {context.local_stack[0]:#x}, chain pointers say {expected_mask:#x}"
     )
@@ -3116,8 +3114,12 @@ def test_native_product_plugin_is_opaque_and_executes_compiled_code():
         allocator.allocate(size, alignment)
         return memoryview(mmap.mmap(-1, size))
 
-    plugin = ProductPlugin(reserve_region, yield_threshold=8)
-    engine = RuntimeEngine(jit_runtime=plugin, collect_runtime_stats=True, bump_allocator=allocator)
+    plugin = ProductPlugin(reserve_region)
+    engine = RuntimeEngine(
+        jit_runtime=plugin,
+        collect_runtime_stats=True,
+        bump_allocator=allocator,
+    )
     engine.register_module_blocks(module)
     interpreter = Interpreter(module)
     function = module.export_func_index("sum")

@@ -68,11 +68,10 @@ def test_scenario_coos_multitask():
     """TEST-INT-50/51: real native threshold handoffs preserve guest progress."""
     module = parse(wat_to_wasm(SCENARIO6_WAT))
     memory = bytearray(65536)
-    producer = make_native_interpreter(module, memory=memory)
-    consumer = make_native_interpreter(module, memory=memory)
+    producer = make_native_interpreter(module, memory=memory, yield_threshold=4)
+    consumer = make_native_interpreter(module, memory=memory, yield_threshold=4)
     system = System()
     system.runtime_engine = RuntimeEngine(
-        yield_threshold=4,
         drive_mode=RuntimeDriveMode.COOS,
         bump_allocator=module.allocator,
     )

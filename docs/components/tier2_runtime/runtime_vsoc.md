@@ -143,9 +143,9 @@ vSoC コアエンジンの実行委譲、協調イールド、および外部介
 | アルゴリズム / 機構 | 契機・条件 | 動作内容 | 目的・安全性不変条件 |
 | :--- | :--- | :--- | :--- |
 | **C++実行dispatcher** | WASM実行開始時 | C++ dispatch loopが次PCで実行拡張を呼び出し、拡張が実行しなかった本体をInterpreter handlerで実行して、yield・trap・完了などの実行境界まで継続する | 本体の選択は実行拡張が所有し、handler後に実行境界へ戻らない。handler-mediated遷移をchainと数えない（`GOTCHA-VSOC-01`） |
-| **LOOP後方分岐yield** | C++ branch handlerが取得済みLOOP後方辺を処理した時 | handlerが共通contextの回数を増やす。共有しきい値に達するまではC++ dispatcherが続行し、到達時にyield statusを返す | Interpreter単独とHybrid JITが同じ回数条件で協調境界へ戻る。割り込みイベントはCOOS境界で処理する {GOTCHA-VSOC-02} <!-- definition: {GOTCHA-VSOC-02} --> |
+| **LOOP後方分岐yield** | C++ branch handlerが取得済みLOOP後方辺を処理した時 | handlerが実行contextの回数を増やす。Interpreter設定のしきい値に達するまではC++ dispatcherが続行し、到達時にyield statusを返す。RuntimeEngineはstatusをSystemへ伝える | Interpreter単独とHybrid JITがInterpreter設定の同じ回数条件で協調境界へ戻る。割り込みイベントはCOOS境界で処理する {GOTCHA-VSOC-02} <!-- definition: {GOTCHA-VSOC-02} --> |
 | **x64 trace chain** | 互換な直線後続traceがキャッシュ常駐時 | trace末尾が共通コード領域のchain dispatcherへ進み、dispatcherがheaderのtarget bodyへtail-jumpする | chain dispatcherはopcodeを判定せず、C++ Interpreter handlerの分岐処理を迂回しない |
-| **デバッガとJITの構成排他** | デバッグ構成の合成時 | Tier 2の構成器は `Interpreter + Debugger` を選択し、`Debugger + JIT` の同時構成を `assert` で拒否する | デバッガがJITキャッシュを管理する経路を生成しない |
+| **デバッガとInterpreter拡張の接続排他** | Interpreter構成時 | デバッガ付きInterpreterへのネイティブ実行拡張の接続を`assert`で拒否する | 同一InterpreterでDebuggerとJITを同時に実行しない |
 | **1ランタイム1ゲスト・専用アリーナ** | ランタイム生成時および破棄時 | データと実行可能コード用の領域を別のアロケータで管理し、ランタイム破棄時に所有する領域を一括返却する | 領域の寿命と所有権をランタイム単位で分離する。ARMv8-Mの物理配置と保護方式はTBD |
 | **選択`0xFC`メモリ命令** | `memory.copy` / `memory.fill`実行時 | 全アクセス範囲を先に検査する。copyの両端点がリニアメモリならCPU memmoveで処理する。FC=13/14/15の端点を含む場合はvMMIOの権限・所有権・範囲を検査して内部vDMAへ委譲する。fillはCPUで処理する | 範囲外の部分更新を許さない。vDMAの成功復帰は転送完了とCPU可視性を意味する。リニアメモリ間転送にDMA選択のしきい値を設けない |
 
@@ -157,7 +157,7 @@ vSoC コアエンジンの実行委譲、協調イールド、および外部介
   個別の `free()` や複雑なデストラクタ走査は一切行わない。これにより動的メモリ断片化や他モジュールからのダングリング参照を原理的に根絶する。
 - **C++実行dispatcherと4論理引数契約 (`{GOTCHA-VSOC-01}`)**: <!-- definition: {GOTCHA-VSOC-01} -->
   実行入口は `(ctx, sp, local_base, tos)` の4論理引数を受け取る。物理呼出し規約は [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) のx64定義に従い、ARMv8-Mの物理配置はTBDとする。
-  C++ディスパッチループはC++ Interpreter handlerと常駐JIT traceを次PCに応じて実行し、yield・trap・完了などの境界でRuntimeEngineへstatusを返す。制御handlerの後もしきい値到達まではC++側に留まり、vSoCへ命令ごとに戻らない。
+  C++ディスパッチループはC++ Interpreter handlerと常駐JIT traceを次PCに応じて実行し、yield・trap・完了などの境界でRuntimeEngineへstatusを返す。Interpreterが所有するしきい値に達するまではC++側に留まり、vSoCへ命令ごとに戻らない。RuntimeEngineはしきい値を保持しない。
   共通コード領域のchain dispatcherは別の機械語経路である。直線traceの末尾からdispatcherへ移り、headerのtarget bodyへtail-jumpする。C++ handler後に実行拡張が次の本体を選ぶ遷移はchainではない。
 #### ランタイム生成と破棄のライフサイクル（責務シーケンス図）
 <!-- traceability: {OneRuntimeOneGuest} {Runtime_BumpAllocator} {META_FaultIsolation} -->
@@ -212,13 +212,15 @@ sequenceDiagram
     participant S as Scheduler
     participant V as vSoC
     participant R as RuntimeEngine
+    participant I as NativeInterpreter
     participant C as C++ディスパッチャ
     participant H as C++ Interpreter handler
     participant J as 実行拡張
 
     S->>V: run_guest()
     V->>R: run()
-    R->>C: run_dispatch()
+    R->>I: step_native_boundary()
+    I->>C: run_dispatch()
     loop until yield, trap, or completion
         alt execution extension executes body
             C->>J: execute body at current PC
@@ -231,7 +233,8 @@ sequenceDiagram
             H->>H: increment loop_jump_count
         end
     end
-    C-->>R: boundary status and execution state
+    C-->>I: boundary status and execution state
+    I-->>R: boundary result
     R-->>V: yield_requested / result
     alt yield requested
         V-->>S: return to COOS
@@ -296,7 +299,7 @@ stateDiagram-v2
 | Loading → Ready | load_ok() | モジュール有効 | リンク完了、コンテキスト初期化 | Ready |
 | Ready → Executing | run() | 通常実行を開始 | C++ディスパッチへ状態を渡す | Executing |
 | Executing → Executing | handlerまたはtrace終了 | LOOPしきい値未到達、trap・完了なし | C++内で次PCの本体実行を拡張へ委譲する | Executing |
-| Executing → RuntimeBoundary | [count >= threshold] | 取得LOOP後方辺が共通しきい値に達した | C++ dispatcherがyield statusを返す | RuntimeBoundary |
+| Executing → RuntimeBoundary | [count >= interpreter.yield_threshold] | 取得LOOP後方辺がInterpreter設定のしきい値に達した | C++ dispatcherがyield statusを返す | RuntimeBoundary |
 | Executing → RuntimeBoundary | call_complete() | ゲスト関数が正常終了した | RuntimeEngineが完了状態と結果をSystemへ返す | RuntimeBoundary |
 | RuntimeBoundary → CoosYield | [yield_requested] | RuntimeEngineがyield statusを受け取る | SystemがCOOSへ制御を返す | CoosYield |
 | RuntimeBoundary → Executing | [continue] | 継続可能な状態 | 保存した状態から同じ実行経路を再開する | Executing |
@@ -309,14 +312,14 @@ stateDiagram-v2
 
 **重要な設計ポイント:**
 
-- **LOOP後方分岐yield {ADR_LoopBackedgeYield}**: C++ Interpreter handlerが取得後方辺を記録し、C++ dispatcherは共通しきい値到達までC++内で処理する。到達時だけRuntimeEngineへstatusを返し、SystemがCOOSへの協調yieldを行う。 <!-- definition: {ADR_LoopBackedgeYield} -->
+- **LOOP後方分岐yield {ADR_LoopBackedgeYield}**: C++ Interpreter handlerが取得後方辺を記録し、C++ dispatcherはInterpreterが所有するしきい値到達までC++内で処理する。到達時だけRuntimeEngineへstatusを返し、SystemがCOOSへの協調yieldを行う。 <!-- definition: {ADR_LoopBackedgeYield} -->
 
 ### 4.2.1 LOOP後方分岐とJIT chain
 <!-- traceability: {JIT_BackedgeYield} {Challenge_JITCacheEfficiency} {DebuggerInterpreterComposition} {JIT_LazyChaining} -->
 
-`br`、`br_if`、`br_table`、構造終端の意味論は命令別C++ Interpreter handlerが所有する。handlerは取得したLOOP後方辺だけを共通contextで数える。
+`br`、`br_if`、`br_table`、構造終端の意味論は命令別C++ Interpreter handlerが所有する。handlerは取得したLOOP後方辺だけを共通contextで数える。協調yield回数しきい値はInterpreter構成で指定する。
 
-共有しきい値に達するまでは、C++ディスパッチループが次のC++ handlerまたはJIT traceを実行する。しきい値へ達すると、dispatch loopはyield statusを返す。
+Interpreter設定のしきい値に達するまでは、C++ディスパッチループが次のC++ handlerまたはJIT traceを実行する。しきい値へ達すると、dispatch loopはyield statusを返す。
 
 制御はRuntimeEngineとSystemを経てCOOSへ戻る。Interpreter単独経路も同じしきい値を使う。
 
@@ -342,15 +345,15 @@ ARMv8-Mのchain構成、命令列、header、lookup方式、保護方式、物�
 <!-- traceability: {Challenge_JITCacheEfficiency} {LowLatencyJIT} {JIT_MultiBuffer_Cache} {JIT_OldestOnly_Promote} -->
 JITキャッシュの状態、検索、バンク回転、昇格、および破棄は [`jit_runtime.md`](docs/components/tier3_plugins/jit_runtime.md) を正本とする。対象ABIの物理配置は [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) を参照する。
 
-vSoCは実行境界でJIT Runtimeへ制御を渡す。キャッシュの内部状態や回転契機をvSoC側で再定義しない。ARMv8-Mの物理容量と配置はTBDである。
+Interpreter dispatcherは接続済みネイティブ実行拡張を呼び出す。RuntimeEngineはInterpreterをscheduler境界まで進める。vSoCは境界結果に従ってyieldを行い、キャッシュの内部状態や回転契機を扱わない。ARMv8-Mの物理容量と配置はTBDである。
 
 #### Debugger と JIT の構成排他
 <!-- traceability: {DebuggerInterpreterComposition} {Debug_Integrated} -->
 
-デバッグ実行とJIT実行は同一ランタイムへ同時に構成しない。構成器は次の条件を `assert` で検査する。
+デバッグ実行とJIT実行は同一Interpreterへ同時に接続しない。Interpreterは次の条件を `assert` で検査する。
 
-1. デバッグ構成は `Interpreter + Debugger` を生成する。
-2. JIT実行器を含む構成へデバッガを追加しようとした場合は構成を拒否する。
+1. デバッガ接続済みInterpreterへネイティブ実行拡張を接続しようとした場合はassertで拒否する。
+2. ネイティブ実行拡張を接続済みのInterpreterへDebuggerをattachしようとした場合もassertで拒否する。
 3. デバッガのアタッチ・デタッチはJITキャッシュを操作せず、実行器の動的切替も行わない。
 
 #### 形式検証 (pyModelChecking) 検証対象
@@ -367,13 +370,15 @@ sequenceDiagram
     participant S as Scheduler
     participant V as vSoC
     participant R as RuntimeEngine
+    participant I as NativeInterpreter
     participant D as C++ディスパッチャ
     participant I as C++ Interpreter handler
     participant J as 実行拡張
 
     S->>V: run_guest()
     V->>R: run()
-    R->>D: run_dispatch()
+    R->>I: step_native_boundary()
+    I->>D: run_dispatch()
     loop until yield, trap, or completion
         alt execution extension executes body
             D->>J: execute body at current PC
@@ -387,11 +392,12 @@ sequenceDiagram
         end
         Note over D: Continue inside C++ until the shared threshold is reached
     end
-    D-->>R: YIELD status and shared execution state
+    D-->>I: YIELD status and shared execution state
+    I-->>R: boundary result
     R-->>V: yield_requested
     V-->>S: co_yield to COOS
 
-    Note over R: Cache lookup, hotspot processing, and queued compilation run at this boundary
+    Note over I: JIT lookup and hotspot processing run inside the Interpreter extension
 ```
 
 #### WASM `memory.copy`の端点別実行
@@ -490,7 +496,7 @@ sequenceDiagram
 | 事後条件 | PCやレジスタ状態が更新されていること。 |
 | 不変条件 | ゲストRAMの境界外へのアクセスが発生しないこと。 |
 | エラー時の挙動 | トラップ（例外）発生時は、トラップ要因を保持してエラーを返す。 |
-| 補足 | C++ InterpreterとHybrid JITは共通のLOOP後方分岐しきい値でCOOS協調境界へ戻る。ARMv8-Mの物理ABIとJIT実装はTBDである。 |
+| 補足 | C++ InterpreterとHybrid JITはInterpreter構成のLOOP後方分岐しきい値でCOOS協調境界へ戻る。ARMv8-Mの物理ABIとJIT実装はTBDである。 |
 
 #### `dispatch-interrupt-event`
 <!-- traceability: {META_RecoveryStrategy} -->

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import csv
-from collections.abc import Generator, Sequence
+from collections.abc import Generator
 from contextlib import ExitStack
 from itertools import combinations
 from pathlib import Path
@@ -15,6 +15,7 @@ from qa.private.debugger_support import make_debug_execution
 from qa.shared.fixtures.platform_drivers import create_reference_platform_drivers
 from qa.shared.fixtures.uvwasi_reference import UvwasiReferenceContext
 from qa.shared.helpers import expect_assertion, make_native_interpreter
+from qa.shared.jit_manager import JITRuntimeManager
 from qa.shared.runtime_stats import RuntimeStatsEngine as RuntimeEngine
 from qa.shared.runtime_support import compile_runtime_block, make_runtime_engine
 from qa.shared.x64_jit import TraceCompiler
@@ -22,16 +23,7 @@ from scheduler import ChannelAction, TaskState, WaitDir
 from system import System
 from system_containers import ReadOnlyFlatMapView, StaticVector
 from tier2_runtime.hal.dispatch import ARG_BUFFER_HANDLE, ARG_LENGTH, ARG_OFFSET, WasiIpcCmd
-from tier2_runtime.observability.events import RuntimeEventBatch, RuntimeExecutionError
-from tier2_runtime.runtime.composer import (
-    RuntimeComposer,
-    RuntimeCompositionConfig,
-    RuntimeExecutionKind,
-    RuntimeFactories,
-    RuntimePluginSelection,
-)
 from tier2_runtime.runtime.engine import RuntimeDriveMode
-from tier2_runtime.runtime.recovery import Result
 from tier2_runtime.wasm.module import Module
 from tier2_runtime.wasm.reader import parse
 from tier3_platform.drivers.hal.dummy import DummyDriver
@@ -92,42 +84,16 @@ def _load_factor_levels() -> tuple[tuple[str, ...], ...]:
 PAIRWISE_FACTORS = _load_factor_levels()
 
 
-class _CompositionExecutor:
-    def call(self, func_index: int, args: Sequence[int]) -> Result[int, RuntimeExecutionError]:
-        return Result.ok(func_index)
-
-
-class _CompositionObserver:
-    def on_runtime_batch(self, batch: RuntimeEventBatch) -> None:
-        return None
-
-
 def _assert_debugger_jit_composition_rejected() -> None:
-    created: list[str] = []
-
-    def executor() -> _CompositionExecutor:
-        created.append("executor")
-        return _CompositionExecutor()
-
-    def observer() -> _CompositionObserver:
-        created.append("observer")
-        return _CompositionObserver()
-
-    factories = RuntimeFactories(
-        interpreter=executor,
-        jit=executor,
-        logger=observer,
-        debugger=observer,
-        profiler=observer,
-    )
-    with expect_assertion("debugger-enabled runtime must use interpreter-only execution"):
-        RuntimeComposer.compose(
-            RuntimeCompositionConfig(
-                execution=RuntimeExecutionKind.JIT, plugins=RuntimePluginSelection(debugger=True)
-            ),
-            factories,
-        )
-    assert created == [], "forbidden composition must fail before executor construction"
+    module = parse(bytes(wasmtime.wat2wasm("(module (func))")))
+    plugin = JITRuntimeManager(jit_compiler=TraceCompiler())
+    try:
+        interpreter = make_native_interpreter(module)
+        interpreter.attach_execution_plugin(plugin)
+        with expect_assertion("native execution plugins cannot be combined with debugger"):
+            interpreter.attach_debugger(DebuggerManager())
+    finally:
+        plugin.close()
 
 
 def _case_wat(storage_mode: str, mem_width: str, host_mode: str) -> str:
@@ -345,16 +311,17 @@ def _run_workload(case_id: str, case_tuple: tuple[str, ...], resources: ExitStac
     host_functions = StaticVector.of((host_call,) if host_mode != "none" else (), capacity=1)
     drive_mode = RuntimeDriveMode.SYNCHRONOUS if sched_mode == "noint" else RuntimeDriveMode.COOS
     if engine_mode == "interp":
-        engine = RuntimeEngine(yield_threshold=4, drive_mode=drive_mode, collect_runtime_stats=True)
+        engine = RuntimeEngine(drive_mode=drive_mode, collect_runtime_stats=True)
         assert engine.jit_runtime is None
     else:
-        engine = make_runtime_engine(
-            jit_compiler=TraceCompiler(), yield_threshold=4, drive_mode=drive_mode
-        )
+        engine = make_runtime_engine(jit_compiler=TraceCompiler(), drive_mode=drive_mode)
         assert engine.jit_runtime is not None
         assert engine.jit_runtime.jit_compiler is not None
     if engine.jit_runtime is not None:
         resources.callback(engine.jit_runtime.cache._native.close)
+    # System's scheduler idle hook must service the plugin attached to this
+    # test's Interpreter, rather than the default Runtime created by System.
+    sysv.runtime_engine = engine
     engine.register_module_blocks(module)
     interp = make_native_interpreter(
         module,
@@ -362,6 +329,7 @@ def _run_workload(case_id: str, case_tuple: tuple[str, ...], resources: ExitStac
         host_functions=host_functions,
         vmmio=sysv.vmmio,
         phys_mem=sysv.phys_mem,
+        yield_threshold=4,
     )
     _prepare_cache(engine, module, cache_mode, engine_mode)
     main_index = module.export_func_index("main")

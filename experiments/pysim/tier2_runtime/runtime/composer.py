@@ -5,7 +5,6 @@ from __future__ import annotations
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
-from enum import IntEnum
 from typing import Generic, Protocol, TypeVar
 
 from system_containers import SequenceView, StaticVector
@@ -27,11 +26,10 @@ from tier2_runtime.runtime.recovery import Result
 
 ResultT = TypeVar("ResultT", covariant=True)
 ArgumentT = TypeVar("ArgumentT", contravariant=True)
-ExecutorT = TypeVar("ExecutorT")
 
 
 class RuntimeExecutor(Protocol, Generic[ResultT, ArgumentT]):
-    """Interpreter または JIT に共通する最小呼出契約。"""
+    """Runtimeが呼び出すInterpreter契約。実行プラグインはInterpreter内部に属する。"""
 
     def call(
         self, func_index: int, args: SequenceView[ArgumentT]
@@ -55,27 +53,18 @@ class RuntimePluginSelection:
     profiler: bool = False
 
 
-class RuntimeExecutionKind(IntEnum):
-    """構成時に一度だけ選択する実行方式。"""
-
-    INTERPRETER = 1
-    JIT = 2
-
-
 @dataclass(frozen=True, slots=True)
 class RuntimeCompositionConfig:
-    """実行方式とプラグイン有効性を起動前に固定する構成。"""
+    """Interpreter周辺のRuntimeプラグイン有効性を起動前に固定する構成。"""
 
-    execution: RuntimeExecutionKind = RuntimeExecutionKind.INTERPRETER
     plugins: RuntimePluginSelection = RuntimePluginSelection()
 
 
 @dataclass(frozen=True, slots=True)
 class RuntimeFactories(Generic[ResultT, ArgumentT]):
-    """合成時にだけ参照する実行器・プラグイン生成器群。"""
+    """合成時にだけ参照するInterpreter・Runtimeプラグイン生成器群。"""
 
     interpreter: Callable[[], RuntimeExecutor[ResultT, ArgumentT]]
-    jit: Callable[[], RuntimeExecutor[ResultT, ArgumentT]]
     logger: Callable[[], RuntimeObserver]
     debugger: Callable[[], RuntimeObserver]
     profiler: Callable[[], RuntimeObserver]
@@ -102,7 +91,6 @@ class RuntimeWithPlugins(Generic[ResultT, ArgumentT]):
         "call_id",
         "event_sink",
         "executor",
-        "is_jit",
         "observers",
         "runtime_id",
         "tick",
@@ -116,7 +104,6 @@ class RuntimeWithPlugins(Generic[ResultT, ArgumentT]):
         runtime_id: int,
         tick_clock: Callable[[], int] = time.monotonic_ns,
         event_capacity: int = 64,
-        is_jit: bool = False,
     ):
         assert len(observers) > 0
         self.executor = executor
@@ -126,7 +113,6 @@ class RuntimeWithPlugins(Generic[ResultT, ArgumentT]):
         self.call_id = 0
         self.tick_clock = tick_clock
         self.event_sink = RuntimeEventSink(capacity=event_capacity)
-        self.is_jit = is_jit
 
     def _next_tick(self) -> int:
         observed_tick = self.tick_clock()
@@ -142,10 +128,6 @@ class RuntimeWithPlugins(Generic[ResultT, ArgumentT]):
         value: int = 0,
     ) -> None:
         event_flags = flags | RuntimeEventFlags.TICK_VALID
-        if self.is_jit:
-            event_flags |= RuntimeEventFlags.JIT
-        else:
-            event_flags |= RuntimeEventFlags.INTERPRETER
         event = RuntimeEvent(
             kind=kind,
             runtime_id=self.runtime_id,
@@ -174,15 +156,11 @@ class RuntimeWithPlugins(Generic[ResultT, ArgumentT]):
     def call(
         self, func_index: int, args: SequenceView[ArgumentT]
     ) -> Result[ResultT, RuntimeExecutionError]:
-        """共通呼出境界からイベントを発行して、選択済み実行器を呼び出す。"""
+        """Runtimeイベントを記録し、構成済みInterpreterを呼び出す。"""
 
         self.call_id += 1
         self._emit(RuntimeEventKind.FUNCTION_ENTER, func_index, -1, RuntimeEventFlags.NONE)
-        if self.is_jit:
-            self._emit(RuntimeEventKind.JIT_ENTER, func_index, -1, RuntimeEventFlags.NONE)
         result = self.executor.call(func_index, args)
-        if self.is_jit:
-            self._emit(RuntimeEventKind.JIT_EXIT, func_index, -1, RuntimeEventFlags.NONE)
         if result.is_ok:
             self._emit(
                 RuntimeEventKind.FUNCTION_EXIT,
@@ -222,18 +200,6 @@ class RuntimeComposer:
     __slots__ = ()
 
     @staticmethod
-    def compose_execution(
-        config: RuntimeCompositionConfig,
-        executor_factory: Callable[[], ExecutorT],
-    ) -> ExecutorT:
-        """起動前に有効な実行制御アスペクトだけを結線する。"""
-        if config.plugins.debugger:
-            assert config.execution == RuntimeExecutionKind.INTERPRETER, (
-                "debugger-enabled runtime must use interpreter-only execution"
-            )
-        return executor_factory()
-
-    @staticmethod
     def compose(
         config: RuntimeCompositionConfig,
         factories: RuntimeFactories[ResultT, ArgumentT],
@@ -244,15 +210,7 @@ class RuntimeComposer:
         """無効プラグインを生成せず、選択済みの具象 Runtime だけを返す。"""
 
         selection = config.plugins
-        if selection.debugger:
-            assert config.execution == RuntimeExecutionKind.INTERPRETER, (
-                "debugger-enabled runtime must use interpreter-only execution"
-            )
-        if config.execution == RuntimeExecutionKind.INTERPRETER:
-            executor = factories.interpreter()
-        else:
-            assert config.execution == RuntimeExecutionKind.JIT
-            executor = factories.jit()
+        executor = factories.interpreter()
         if not selection.logger and not selection.debugger and not selection.profiler:
             return RuntimeWithoutPlugins(executor)
 
@@ -269,5 +227,4 @@ class RuntimeComposer:
             runtime_id,
             tick_clock,
             event_capacity=event_capacity,
-            is_jit=config.execution == RuntimeExecutionKind.JIT,
         )

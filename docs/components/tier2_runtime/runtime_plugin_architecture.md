@@ -8,9 +8,9 @@
 <!-- traceability: {META_3TierSeparation} {META_ContractImplSplit} {META_StaticDI} {GLOBAL_ComponentHarness} {RuntimeEventSink} {ZeroRuntimeOverhead} -->
 本コンポーネントは、WASM ランタイムを構成する実行エンジンと補助エンジンの交換契約を定義する。System は不変な構成情報を保持する。Runtime は構成情報から実装を静的に合成する。Tier 3 のプラグインは個別の実行方式、観測方式、物理接続を実装する。
 
-本契約は、Interpreter、任意のJIT拡張、Debugger、Guest Profiler、WASIバックエンドを一つのRuntimeへ必要に応じて結線する。JIT RuntimeとコンパイラはRuntimeから見た一つのTier 3プラグインであり、その内部だけで実装責務を分割する。無効な機能はNullオブジェクトとして実行時に保持せず、構成合成時に除外する。
+本契約は、Interpreter、Debugger、Guest Profiler、WASIバックエンドをRuntimeへ必要に応じて結線する。JIT拡張はInterpreterの任意プラグインであり、Runtimeの独立スロットにしない。無効な機能はNullオブジェクトとして実行時に保持せず、Interpreter構成時に除外する。
 
-Interpreterは常に実行エンジンとして存在し、JIT拡張はその実行境界を実装する。Tier 2 RuntimeはDebugger付き実行では通常のInterpreter経路を選び、それ以外では一つの境界呼出しをJIT拡張へ委譲する。JIT拡張はInterpreterの呼出状態を共有し、yield、fallback、trap、完了の境界結果を返す。JITは別のInterpreterや独自の呼出状態を持たない。
+Interpreterは常に実行エンジンとして存在する。JIT有効構成では、Interpreterが汎用のネイティブ実行拡張を保持し、同じ実行状態でnative dispatchを行う。RuntimeはInterpreterを次のscheduler境界まで進め、境界結果をSystemへ返す。RuntimeはJIT選択、キャッシュ検索、本体実行を行わない。
 
 ## 2. アーキテクチャ分類
 <!-- traceability: {META_3TierSeparation} {META_ContractImplSplit} -->
@@ -32,11 +32,11 @@ System と Runtime の責務は次のように分離する。
 <!-- traceability: {META_StaticDI} {GLOBAL_ComponentHarness} -->
 - **`system_config`**: 起動前に確定する不変構成である。実行時のプラグイン交換を提供しない。
 - **`runtime_composer`**: `system_config` とコンパイル時のプラグイン型から、Runtime のハーネスを構築する Tier 2 の合成ルートである。構成選択と依存の結線はコンパイル時に確定する。
-- **`runtime_harness`**: Runtimeが利用するInterpreter、任意JIT拡張、Debugger、観測、WASIの契約参照をまとめた静的ハーネスである。
+- **`runtime_harness`**: Runtimeが利用するInterpreter、Debugger、観測、WASIの契約参照をまとめた静的ハーネスである。
 - **静的 weave**: `runtime_composer` が有効なアスペクトだけを `runtime_harness` へ合成する。無効なアスペクトの状態、フック、WIT 境界、翻訳単位は合成結果に含めない。
 - **`runtime_context`**: 一ゲストに専有される可変状態である。実行コンテキスト、メモリ境界、トラップ、停止理由、観測統計の所有権を保持する。
 - **`execution_strategy`**: WASM命令を実行する必須のTier 2 Interpreterである。
-- **`jit_extension_plugin`**: JIT有効構成にだけ存在し、Interpreterと同じ実行状態を使って境界まで実行するTier 3拡張である。拡張内部でホットスポット履歴、コードキャッシュ、コンパイル待ち列、コンパイラを所有する。
+- **`interpreter_execution_plugin`**: Interpreter構成時に任意接続する汎用ネイティブ実行拡張の契約である。Tier 3 JITはこの契約を実装し、ホットスポット履歴、コードキャッシュ、コンパイル待ち列、コンパイラを所有する。
 - **`runtime_event_sink`**: 意味上のRuntimeイベントを固定長リングへ記録し、安全点でABIバッチとして出力する契約である。ホットスポット履歴を記録しない。
 - **`debugger_plugin`**: 停止、再開、ブレークポイント、レジスタ・メモリ観測を担当する契約である。実行状態を変更できる唯一の補助プラグインとする。
 - **`profiler_plugin`**: Runtime 観測イベントを読み取り、関数コールグラフと実行時間を集計する契約である。実行状態を変更しない。
@@ -50,7 +50,6 @@ graph TD
     System --> Runtime[Runtime<br/>一ゲストの実行管理]
     Runtime --> Harness[RuntimeHarness<br/>Tier 2 契約束]
     Harness --> Exec[ExecutionStrategy<br/>Tier 2 Interpreter]
-    Harness --> JitRuntime[JIT Extension Plugin<br/>Tier 3]
     Harness --> Debugger[Debugger Plugin]
     Harness --> Profiler[Profiler Plugin]
     Harness --> EventSink[Runtime Event Sink]
@@ -58,7 +57,7 @@ graph TD
     Runtime --> Context[RuntimeContext<br/>共有実行状態]
     Runtime --> EventSink
     EventSink --> Profiler
-    Exec -->|任意拡張: 共有実行状態 / 本体実行| JitRuntime
+    Exec -->|任意Interpreter拡張: 共有実行状態| JitRuntime[JIT Extension Plugin<br/>Tier 3]
 ```
 
 ### 3.3 プラグインスロット
@@ -66,26 +65,26 @@ graph TD
 | スロット | Tier 2 が定義する契約 | Tier 3 が実装する責務 | 無効構成の意味 |
 | :--- | :--- | :--- | :--- |
 | Execution | 共通 `call` とInterpreter実行の完了結果 | Tier 2 Interpreter | 許可しない。必ずInterpreterを結線する |
-| JIT extension | Interpreter境界への接続と境界結果 | Tier 3拡張が本体実行、ホットスポット状態、コードキャッシュ、コンパイラを一体で実装 | JIT無効構成ではプラグイン、状態、コンパイラ、実行可能領域を合成しない |
+| Interpreter native extension | Interpreter dispatcherへの接続 | Tier 2が汎用接続契約を定め、Tier 3 JITが本体実行、ホットスポット状態、コードキャッシュ、コンパイラを実装 | Interpreter構成時に拡張を接続しない |
 | Debugger | 停止、再開、観測、書込みの境界 | GDB RSP 等のプロトコルと停止処理 | デバッグ要求を無効化する |
 | Profiler | VM イベントの受信と終了通知 | コールグラフ、実行時間、ログ出力 | フック、イベント生成、状態、呼出しを合成しない |
 | Runtime Event Sink | 意味上のRuntimeイベントを記録し、停止点でABIバッチを出力する | 固定長イベントリング | 観測無効構成ではSink、リング、発行経路を合成しない |
 | WASI | ゲスト呼出とホスト結果の変換境界 | Preview 1、Component Model、uvwasi 等 | WASI import を未対応として返す |
 
 構成は翻訳単位共通のマクロで切り替えない。
-`runtime_configuration<Interpreter, JitExtension, Debugger, Profiler, RuntimeEventSink>`の型で表す。
-Runtime Event SinkとJIT拡張は独立した型スロットで選択する。
+`runtime_configuration<Interpreter, Debugger, Profiler, RuntimeEventSink>`の型で表す。
+Runtime Event Sinkは独立した型スロットで選択する。JIT拡張の選択はInterpreterの構成に属する。
 無効なスロットの型には`void`を指定する。
 `runtime_harness<Configuration>`は選択済みコンポーネントへの参照だけを保持する。
 `runtime_composer<Configuration>`はそのハーネスを値として保持する。
-構成にはInterpreter専用、Debugger/Profiler付きInterpreter、イベント有効・無効、JIT拡張有効・無効などがある。
+構成にはJIT拡張なしのInterpreter、JIT拡張付きInterpreter、Debugger/Profiler付きInterpreter、イベント有効・無効などがある。
 これらは同一プログラム内で別々にインスタンス化できる。
 各インスタンスの実行経路に構成選択分岐を置かない。
 
 ## 4. 動的モデル
 
 ### 4.1 初期化と終了
-`runtime_composer`は、RuntimeContext、Runtime Event Sink、Interpreter、任意のJIT拡張、Debugger、Profiler、WASIのうち選択された具象実装をハーネスへ結線する。Runtime Event SinkとJIT拡張は独立して初期化・破棄する。失敗時は逆順で終了する。C++構成では不変構成をテンプレート引数または同等の生成済み型として固定する。無効なスロットはインスタンスへ含めず、Runtimeの実行経路へNullオブジェクト、有効性分岐、未選択検索実装への参照を残さない。
+`runtime_composer`は、RuntimeContext、Runtime Event Sink、Interpreter、Debugger、Profiler、WASIのうち選択された具象実装をハーネスへ結線する。JITが有効な場合はInterpreterの生成時にネイティブ実行拡張を結線する。各要素は所有者の初期化・終了順に従う。失敗時は初期化済み要素を逆順で終了する。C++構成では不変構成をテンプレート引数または同等の生成済み型として固定する。無効な機能をRuntimeの実行経路へ残さない。
 
 ```mermaid
 sequenceDiagram
@@ -102,8 +101,8 @@ sequenceDiagram
         Note over R: 観測 weave を生成しない
     end
     R->>E: Tier 2 Interpreterを初期化
-    opt JIT拡張が有効
-        R->>P: Tier 3 JIT拡張を初期化（履歴領域を含む）
+    opt Interpreterのネイティブ実行拡張が有効
+        C->>E: Interpreterへ拡張を結線
     end
     R->>P: 有効な Debugger / Profiler / WASI を初期化
     R-->>C: 構成済み Runtime
@@ -111,8 +110,8 @@ sequenceDiagram
     opt 観測有効
         R->>O: module_loadedを記録
     end
-    R->>E: call
-    E-->>R: 完了、トラップ、停止点
+    R->>E: 次のscheduler境界まで進める
+    E-->>R: yield、trap、完了
     opt 観測有効
         R->>O: Runtimeイベントを記録
         R->>A: 停止点でイベントバッチを出力
@@ -123,26 +122,18 @@ sequenceDiagram
     end
 ```
 
-### 4.2 共通呼出テンプレート
-`call` の共通処理は次の順序を保証する。Tier 3 の実装は `execute_body` に相当する実行フックだけを差し替える。
+### 4.2 実行境界の進行
+Interpreterは呼出し状態を作り、native dispatcherを完了、trap、またはyield境界まで進める。接続済みのネイティブ実行拡張はInterpreter dispatcher内で呼び出す。
 
-1. 実行可能状態、関数番号、引数型、スタック容量を検証する。
-2. 呼出フレームを作成し、選択されたRuntime Event Sinkへ関数開始イベントを記録する。
-3. 構成済み実行器を呼び出す。Interpreter 構成はインタープリタだけを実行する。JIT 構成は選択済みキャッシュ検索、コンパイル要求、ネイティブ実行を行い、トレース終端命令は C++ Interpreter の対応ハンドラへ渡す。
-4. 戻り値、トラップ、停止要求を共通形式へ変換する。
-5. 呼出フレームを確定し、選択されたRuntime Event Sinkへ関数終了イベントを記録する。
-6. Runtimeが安全点へ達した後にイベントバッチを出力し、Python Adapterが値へ変換する。
-7. 呼出元へ結果を返す。
-
-共通処理は JIT のキャッシュ状態、コンパイラの命令エンコーディング、デバッガの通信形式を参照してはならない。JIT の実行経路が共通契約を再実装することも禁止する。
+RuntimeEngineはInterpreterを一度進め、scheduler境界の結果をSystemへ返す。JITの候補判定、trace検索、本体実行、compile queue処理はInterpreter拡張の責務である。
 
 ### 4.3 プラグインの置換規則
 - 置換単位はスロット単位とする。一つの Tier 3 実装が別スロットの内部状態を兼務してはならない。
-- 実装選択と weave は Tier 2 `RuntimeComposer` が行う。ゲスト実行中の型差し替えは行わない。
+- 実装選択と weave は構成時に行う。ゲスト実行中の型差し替えは行わない。
 - C++ の `RuntimeComposer` は静的 DI で選択済みの具体型をテンプレートまたは生成済みハーネスへ結線する。実行ホットパスに構成判定を置かず、選択条件は `if constexpr` で特殊化する。
-- JIT 有効時はTier 2が単一のJIT拡張プラグインを選択する。キャッシュ検索方針とコンパイラ選択はTier 3拡張内部に置き、Runtime/Interpreterへ個別のJIT管理スロットを追加しない。
+- JIT 有効時はInterpreter構成に単一のネイティブ実行拡張を結線する。キャッシュ検索方針とコンパイラ選択はTier 3拡張内部に置き、RuntimeへJIT管理スロットを追加しない。
 - 無効なアスペクトに対応する `constexpr` 条件は偽でなければならない。このとき、イベントペイロード計算、フック呼出し、Null 判定、状態領域を翻訳単位へ生成してはならない。
-- JIT拡張はRuntime/Interpreterから見た単一プラグイン境界とする。コンパイラはその内部実装であり、別スロットやC++ Runtime操作APIを増やさない。コンパイル失敗やキャッシュミスはTier 2 Interpreter handlerへフォールバックする。JIT無効構成には代替Nullオブジェクトを置かない。
+- JIT拡張はInterpreterから見た単一プラグイン境界とする。コンパイラはその内部実装であり、別スロットやC++ Runtime操作APIを増やさない。コンパイル失敗やキャッシュミスは同じInterpreter dispatcherのCPS handlerへフォールバックする。JIT無効構成には代替Nullオブジェクトを置かない。
 - Runtime Event Sink は C++ Runtime 内で固定長レコードを記録し、C++実行中にPython callbackを呼び出さない。Python Adapterは停止点で変換したイベント値をProfilerへ渡す。
 - Runtime Event Sinkは意味上のイベントだけを記録し、基本ブロック履歴を受けない。JIT履歴はTier 3 JIT拡張が内部状態として所有する。
 - Profiler から Runtime の実行メソッドを呼び出してはならない。
@@ -163,7 +154,7 @@ sequenceDiagram
 ### 5.2 実行呼出
 | 項目 | 内容 |
 | :--- | :--- |
-| 機能概要 | Interpreterによる実行を開始し、JIT拡張が選択されていればその境界実装へ処理を委譲する。 |
+| 機能概要 | RuntimeEngineがInterpreterを次のscheduler境界まで進める。ネイティブ実行拡張はInterpreter dispatcher内で呼び出す。 |
 | 引数と役割 | ゲスト関数識別子、引数領域、実行コンテキスト、実行予算を受け取る。 |
 | 期待する結果 | 成功、ゲストトラップ、デバッガ停止、資源不足を区別した完了結果を返す。 |
 | 事前条件 | Runtime がロード済みで、呼出フレーム容量が確保されている。 |
@@ -183,8 +174,8 @@ sequenceDiagram
 
 ### 6.1 性能制約と方策
 - RuntimeComposer は静的 DI で実装を合成する。実行ホットパスのプラグイン選択を実行時に行ってはならない。
-- Interpreter 構成では JIT lookup の関数、状態、初期化、インポート、翻訳単位を生成物へ含めない。JIT 構成では選択された lookup 実装だけを含める。
-- 構成済み Interpreter と JIT のホットパスに `jit_runtime != nullptr` 相当の判定を置かない。選択は Tier 2 の合成時に完了させる。
+- JIT無効構成ではJIT lookupの関数、状態、初期化、インポート、翻訳単位を生成物へ含めない。JIT有効時はInterpreterへ結線したlookup実装だけを含める。
+- Interpreterとネイティブ実行拡張の選択は構成時に完了する。命令ホットパスへ拡張の有無を判定する条件を置かない。
 - 実行中の文字列検索、動的レジストリ検索、仮想関数による全称ディスパッチを要求しない。
 - weave 箇所は `constexpr` 条件で特殊化する。条件が偽のアスペクトでは、フック本体だけでなく呼出し、引数評価、ペイロード構築、状態領域を除去する。
 - RuntimeComposer は選択された実装をインスタンスへ静的に結線し、他スロットの状態や呼出しをそのインスタンスへ含めない。別構成のハーネスが同じプログラム内で使われる場合、その構成の実装も同時に存在できる。
@@ -207,8 +198,8 @@ sequenceDiagram
 #### 7.1.1 検証対象の不変条件
 | 不変条件 | 説明 | 範囲 | 検証方法 |
 | :--- | :--- | :--- | :--- |
-| 実行器選択 | Interpreter/JIT構成が選択した実行器だけを保持し、禁止された組合せを構築時に拒否する。 | Runtime構成テスト |
-| 独立スロット選択 | Runtime Event SinkとJIT拡張の有効・無効を独立して組み合わせる。 | Runtime構成テスト |
+| 実行器選択 | Interpreter構成に接続する任意のネイティブ実行拡張を固定し、Debuggerと同時に接続する禁止構成を拒否する。 | Runtime構成テスト |
+| 観測スロット選択 | Runtime Event Sinkの有効・無効を他の構成から独立して組み合わせる。 | Runtime構成テスト |
 | C++ weave除去 | 無効アスペクトのフック、状態、WIT境界、翻訳単位を生成物から除去する。 | 型構成、生成コード、map-file検査 |
 | 初期化・終了 | 選択された各Pluginの初期化と逆順終了を一度ずつ行う。 | Runtime lifecycleテスト |
 

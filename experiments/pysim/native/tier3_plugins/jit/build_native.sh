@@ -8,10 +8,12 @@ project_root="$(cd "${script_dir}/../../../../.." && pwd)"
 uv_python="${project_root}/.venv/bin/python"
 qa_build=0
 block_counters=0
+release_define=()
 for option in "$@"; do
     case "${option}" in
         --qa) qa_build=1 ;;
         --block-counters) block_counters=1 ;;
+        --release) release_define+=("-DNDEBUG") ;;
         *) echo "Unknown option: ${option}" >&2; exit 2 ;;
     esac
 done
@@ -55,6 +57,7 @@ fi
 
 echo ">>> Compiling Tier 3 JIT (clang++)"
 clang++ -std=c++23 -O2 -g -Wall -Wextra -Wpedantic -shared -fPIC -fvisibility=hidden \
+    "${release_define[@]}" \
     -I "${native_source_dir}" \
     -DFB_CONF_JIT_TRACE_COMMON_CHAIN_DISPATCH_OFFSET="${chain_dispatch_offset}" \
     -DFB_CONF_JIT_TRACE_COMMON_CHAIN_DISPATCH_BYTES="${chain_dispatch_bytes}" \

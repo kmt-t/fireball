@@ -205,22 +205,31 @@ fb_jit_runtime_scalar(const JitRuntime *c, std::uint32_t field) {
     return 0;
   }
 }
-extern "C" FB_PYSIM_ABI_EXPORT std::uint64_t
-fb_jit_runtime_find(JitRuntime *c, std::uint32_t pc) {
+struct qa_cache_lookup {
+  std::uint16_t token;
+  std::uint8_t bank_id;
+};
+extern "C" FB_PYSIM_ABI_EXPORT int
+fb_jit_runtime_find(JitRuntime *c, std::uint32_t pc,
+                    qa_cache_lookup *output) {
   c->error = 0;
-  auto *value = c->find(pc);
-  return value == nullptr ? 0 : c->token(*value);
+  const auto location = c->find(pc);
+  if (location.value == nullptr)
+    return 0;
+  *output = {location.value->token,
+             static_cast<std::uint8_t>(location.bank_id)};
+  return 1;
 }
 extern "C" FB_PYSIM_ABI_EXPORT const fireball::jit_trace_header *
 fb_qa_runtime_header(JitRuntime *c, std::uint32_t pc) {
-  const auto *value = c->find(pc);
-  return value == nullptr ? nullptr : c->header(*value);
+  const auto location = c->find(pc);
+  return location.value == nullptr ? nullptr : c->header(*location.value);
 }
 extern "C" FB_PYSIM_ABI_EXPORT int
-fb_jit_runtime_has_token(const JitRuntime *c, std::uint64_t token) {
+fb_jit_runtime_has_token(const JitRuntime *c, std::uint16_t token) {
   for (const auto &bank : c->banks) {
     for (std::uint32_t i = 0; i < bank.count; ++i) {
-      if (bank.entries[i].resident() && c->token(bank.entries[i]) == token)
+      if (bank.entries[i].resident() && bank.entries[i].token == token)
         return 1;
     }
   }
@@ -228,16 +237,22 @@ fb_jit_runtime_has_token(const JitRuntime *c, std::uint64_t token) {
 }
 extern "C" FB_PYSIM_ABI_EXPORT int
 fb_jit_runtime_insert(JitRuntime *c, const std::uint8_t *blob,
-                      std::uint32_t bytes, std::uint64_t token) {
+                      std::uint32_t bytes, std::uint16_t token) {
   c->error = 0;
-  if (blob == nullptr || bytes == 0 || token > 0xFFFF)
+  if (blob == nullptr || bytes == 0)
     return 0;
-  return c->insert(blob, bytes, static_cast<std::uint16_t>(token));
+  return c->insert(blob, bytes, token);
 }
-extern "C" FB_PYSIM_ABI_EXPORT std::uint64_t
-fb_jit_runtime_lookup(JitRuntime *c, std::uint32_t pc) {
+extern "C" FB_PYSIM_ABI_EXPORT int
+fb_jit_runtime_lookup(JitRuntime *c, std::uint32_t pc,
+                      qa_cache_lookup *output) {
   c->error = 0;
-  return c->lookup(pc);
+  const auto location = c->lookup(pc);
+  if (location.value == nullptr)
+    return 0;
+  *output = {location.value->token,
+             static_cast<std::uint8_t>(location.bank_id)};
+  return 1;
 }
 extern "C" FB_PYSIM_ABI_EXPORT int fb_jit_runtime_rotate(JitRuntime *c) {
   c->error = 0;
@@ -261,13 +276,20 @@ extern "C" FB_PYSIM_ABI_EXPORT int fb_jit_runtime_record(JitRuntime *c,
     return c->error == 0;
   return c->record_observed(pc);
 }
-extern "C" FB_PYSIM_ABI_EXPORT std::uint64_t
-fb_jit_runtime_filtered_lookup(JitRuntime *c, std::uint32_t pc) {
+extern "C" FB_PYSIM_ABI_EXPORT int
+fb_jit_runtime_filtered_lookup(JitRuntime *c, std::uint32_t pc,
+                               qa_cache_lookup *output) {
   c->error = 0;
   if (c->profile.enabled != 0 &&
-      (!c->trackable(pc) || c->card_state(pc >> c->card_shift) != 3))
+      (!c->trackable(pc) || c->card_state(pc >> c->card_shift) != 3)) {
     return 0;
-  return c->lookup(pc);
+  }
+  const auto location = c->lookup(pc);
+  if (location.value == nullptr)
+    return 0;
+  *output = {location.value->token,
+             static_cast<std::uint8_t>(location.bank_id)};
+  return 1;
 }
 extern "C" FB_PYSIM_ABI_EXPORT int
 fb_qa_runtime_snapshot(JitRuntime *c, fb_native_trace_descriptor *output,
@@ -540,13 +562,16 @@ fb_qa_owned_pc(const JitRuntime *c, std::uint32_t slot) {
   return c->compilation_order[slot];
 }
 struct qa_resident_record {
-  std::uint64_t token;
+  std::uint16_t token;
+  std::uint8_t bank_id;
+  std::uint8_t reserved;
   std::uint32_t pc;
   std::uint32_t count;
 };
 extern "C" FB_PYSIM_ABI_EXPORT int
 fb_qa_resident_record(const JitRuntime *c, std::uint32_t index,
                       qa_resident_record *output) {
+  std::uint8_t bank_id = 0;
   for (const auto &bank : c->banks) {
     for (std::uint32_t i = 0; i < bank.count; ++i) {
       const auto &entry = bank.entries[i];
@@ -559,11 +584,12 @@ fb_qa_resident_record(const JitRuntime *c, std::uint32_t index,
             block == nullptr
                 ? nullptr
                 : static_cast<const std::uint32_t *>(block->extension_data);
-        *output = {c->token(entry), entry.pc,
+        *output = {entry.token, bank_id, 0, entry.pc,
                    executions == nullptr ? 0 : *executions};
         return 1;
       }
     }
+    ++bank_id;
   }
   return 0;
 }

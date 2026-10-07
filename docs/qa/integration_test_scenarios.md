@@ -67,7 +67,7 @@ Scenario 9、11、12はPythonからIPC、ドライバ、ホスト互換層を直
 | `RingBuffer_Overwrite` | `system_containers.md`, `runtime_logging.md` | 満杯時の最古エントリ自動上書き | `TEST-INT-82` | 未検証。Scenario 9は2件をflushし、容量超過を発生させない |
 | `BitView_CardMarking` | `system_containers.md`, `jit_runtime.md` | 2-bitカードのUNEXEC→EXEC→HOT→COMPILED遷移 | `TEST-INT-30`, `TEST-INT-31` | 一部。Activeトレースの存在を検査する。各カード状態と遷移順序を検査しない |
 | `DirectSwitch` | `os_coos.md`, `os_scheduler.md` | スタック退避なしの継続関数呼び出し | `TEST-INT-50`, `TEST-INT-51` | 未検証。汎用コルーチンの完了結果だけでは継続呼出し方式を判別できない |
-| `FuelExhaustion_Yield`（旧表記） / `ADR_LoopBackedgeYield` | `interpreter.md`, `runtime_vsoc.md` | C++ dispatcherの継続実行、LOOP後方分岐しきい値到達時にRuntimeEngineへ戻り、vSoCが協調yieldを発行する | `TEST-INT-50` | 観測あり。Scenario 6は共通LOOP後方分岐しきい値4で24境界の進捗を検査する |
+| `FuelExhaustion_Yield`（旧表記） / `ADR_LoopBackedgeYield` | `interpreter.md`, `runtime_vsoc.md` | C++ dispatcherの継続実行、Interpreter設定のLOOP後方分岐しきい値到達時にInterpreter dispatcherがyield statusをRuntimeEngineへ返し、vSoCが協調yieldを発行する | `TEST-INT-50` | 観測あり。Scenario 6はInterpreterしきい値4で24境界の進捗を検査する |
 | `DictionaryBasedIPC` | `runtime_logging.md` | 危険書式（%s / %p）の登録時拒絶 | `TEST-INT-82` | 一部。%s拒絶を検査する。%pの独立ケースはない |
 | `BufferedLogging` | `runtime_logging.md` | リングバッファ蓄積からCOOS idle_hookでUARTへflushする | `TEST-INT-82` | 一部。logger.flushを直接呼ぶ。idle_hookからの実行は検査しない |
 | `WASI_ScatteredIO` | `libfireball.md` | ゲスト側アダプタによる多要素iovecの書込みと読込み | `TEST-INT-10`, `TEST-INT-104`, `TEST-INT-121`〜`TEST-INT-126` | 一部。SDK/libc guestの3要素writev、空要素、HAL分割、占有拒否、実IPC経路を追加検査する。製品ゲストadapterと多要素fd_readは未検証 |
@@ -197,12 +197,12 @@ Scenario 9、11、12はPythonからIPC、ドライバ、ホスト互換層を直
 
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| TEST-INT-50 | LOOP後方分岐しきい値での決定論的中断と状態保持 | RuntimeEngineの共通しきい値を設定 | しきい値到達とvSoCの協調yieldを観測し、完了まで再開する | 指定回数条件で複数回中断し、各境界のローカル変数とスタック状態を保持して完走する | `CooperativeMultitasking`, `ADR_LoopBackedgeYield` |
+| TEST-INT-50 | LOOP後方分岐しきい値での決定論的中断と状態保持 | Interpreterのyieldしきい値を設定 | しきい値到達とvSoCの協調yieldを観測し、完了まで再開する | 指定回数条件で複数回中断し、各境界のローカル変数とスタック状態を保持して完走する | `CooperativeMultitasking`, `ADR_LoopBackedgeYield` |
 | TEST-INT-51 | 共有メモリを介したタスク間データ受け渡し | 同一 ExecEnv 共有 | プロデューサ完走後にコンシューマ実行 | プロデューサが書き込んだデータが正しく読み取られ、合計値 `50500` が得られる | `CooperativeMultitasking`, `DirectContextSwitch` |
 
 2026-10-02に、テスト用yieldアダプタを既存のSystem.run_guest経路へ置き換えた。
 初期値0の新しい共有メモリで、独立した実NativeInterpreterのproducerとconsumerをCOOSへ登録する。
-共通LOOP後方分岐しきい値4で、進捗(4,4)から(96,96)まで全24境界のREADY状態と順序を照合する。
+InterpreterのLOOP後方分岐しきい値4で、進捗(4,4)から(96,96)まで全24境界のREADY状態と順序を照合する。
 全100要素の10〜1000、範囲外の保存、結果100と50500、両タスクの終了を検査する。
 通常Interpreterのstep粒度を変更せず、ランタイムへ別の1命令経路を追加しない。
 継続呼出しの実機スタック非退避は、このPython側の観測だけでは実証しない。

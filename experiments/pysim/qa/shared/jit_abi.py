@@ -146,7 +146,7 @@ class JITTrace(Protocol):
         sp: ctypes.c_void_p,
         local_base: ctypes.c_void_p,
         tos: int,
-    ) -> None: ...
+    ) -> int | None: ...
 
 
 __all__ = (
@@ -171,9 +171,7 @@ class _DispatchBuffers(ctypes.Structure):
     )
 
 
-def dispatch_for_test(
-    interpreter, call_state, snapshot, threshold, execution_count, native_dispatcher
-):
+def dispatch_for_test(interpreter, call_state, snapshot, execution_count, native_dispatcher):
     from functools import partial
 
     from qa.private.jit_native_abi import _NATIVE_LIBRARY
@@ -198,7 +196,13 @@ def dispatch_for_test(
     if not isinstance(result, NativeDiagnosticResult):
         result = NativeDiagnosticResult()
         call_state.context._native_result = result
-    status = interpreter.run_native_dispatch(call_state, threshold, entry)
+    result.reset_counters()
+    previous_dispatcher = interpreter._native_dispatcher
+    interpreter._native_dispatcher = entry
+    try:
+        status = interpreter.run_native_dispatch(call_state)
+    finally:
+        interpreter._native_dispatcher = previous_dispatcher
     return (
         status,
         result.trace_count,

@@ -506,7 +506,7 @@ def _recv_rsp_frame(client: socket.socket, sysv: System, max_steps: int = 32) ->
         sysv.scheduler.step()
         try:
             buf += client.recv(1024)
-        except socket.timeout, BlockingIOError:
+        except (socket.timeout, BlockingIOError):
             pass
         if b"$" in buf:
             dollar_idx = buf.index(b"$")

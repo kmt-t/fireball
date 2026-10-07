@@ -80,7 +80,7 @@ class GDBServer:
                 try:
                     n = self._client_sock.send(memoryview(tx_buffer))
                     del tx_buffer[:n]
-                except BlockingIOError, TimeoutError:
+                except (BlockingIOError, TimeoutError):
                     pass
 
         try:
@@ -104,7 +104,7 @@ class GDBServer:
                     if not data:
                         break
                     buffer += data.decode("latin1")
-                except BlockingIOError, TimeoutError:
+                except (BlockingIOError, TimeoutError):
                     _try_flush_tx()
                     yield (ChannelAction.YIELD, None)
                     continue

@@ -19,11 +19,12 @@
 | TEST-INTP-05 | Runtime APIとCPSハンドラの責務分離 | 主opcodeと`0xFC`副opcodeの実装がある | 各C++ハンドラと対応するRuntime APIを確認し、通常継続・trap・フォールバックを実行する | 命令意味論と状態更新はRuntime APIにあり、ハンドラはAPIを呼んで結果を返すか、更新済み4論理引数で関数ポインタ表へ末尾継続する。通常経路のAPIはインライン展開される | `{ThreadedInterpreter}`, `interpreter.md`「継続渡しハンドラの実行境界」 |
 
 ### 命令実行とロード済みモジュール
+<!-- traceability: {DirectBytecodeExecution} -->
 
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | TEST-INTP-06 | 命令別handlerの継続ディスパッチ | WASMのi32命令列と実行コンテキスト | 直線区間、未対応の主opcode、未対応の`0xFC`副opcodeを含む命令列を実行する | 直線区間を連続実行し、境界でPCとスタック位置を返す。未対応opcodeでは共通の境界復帰handlerへ進み、スタックを変更せず戻る | `{ThreadedInterpreter}`, `interpreter.md` |
-| TEST-INTP-09 | ロード時デコードと命令実行の分離 | WASMモジュールをロード済み | 実行経路が即値を処理する方法を確認する | LEB128デコードはロード時に完了し、Tier 3の命令実行経路では再デコードしない | `{DirectBytecodeExecution}`, `runtime_loader.md` |
+| TEST-INTP-09 | 命令即値の実行時直接デコード | LEB128即値を持つ命令を含むWASMモジュールをロード済み | 即値を消費する命令を実行し、関数コードビューの読出しと次PCを確認する | LEB128即値を命令実行時に関数コードから直接デコードし、次PCを命令長だけ進める | [`interpreter.md`](docs/components/tier2_runtime/interpreter.md) |
 | TEST-INTP-27 | ジャンプ・分岐境界 | `br`、`br_if`、`br_table`、`call`を含むWASM | 境界命令を実行 | 定義済みゲスト関数の呼出しと分岐はC++ハンドラ間で継続し、Runtimeが要求する境界で正しいPC・制御スタックを保って戻る | InterpreterContextStackless |
 | TEST-INTP-28 | AO-Bench全命令差分 | wasmtimeとTier 2/Tier 3を利用可能 | `aobench.py`を実行 | Float32 sanity、全AO出力、Tier 2/Tier 3の528バイト出力が完全一致する | `{META_RecoveryStrategy}` |
 
@@ -143,7 +144,7 @@
 ## 3. テスト検証実績と網羅状況
 
 - **継続渡しディスパッチと3本の独立領域 (TEST-INTP-01〜14)**: 4論理引数、オペランド領域のアンダー／オーバーフロー、ローカル値領域上の再帰呼び出し、戻り値、容量独立性。
-- **命令実行とロード済みモジュール (TEST-INTP-06, 09)**: 命令別handlerの継続ディスパッチ、境界復帰、ロード時デコードと命令実行の分離。
+- **命令実行とロード済みモジュール (TEST-INTP-06, 09)**: 命令別handlerの継続ディスパッチ、境界復帰、関数コードからの実行時即値デコード。
 - **LOOP後方分岐のyield境界 (TEST-INTP-76)**: 共有しきい値へ達したときにyieldし、再開後に実行を完了すること。
 - **静的分岐先の制御フレーム整理 (TEST-INTP-77)**: 分岐先より後ろの終端を持つフレームを破棄し、分岐先と一致するフレームを残すこと。
 - **ラベルアリティ & プルーニング (TEST-INTP-20〜23)**: ブロック脱出、ループ背進辺、多重ネスト br_table。

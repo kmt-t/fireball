@@ -1,0 +1,56 @@
+AO-Bench NativeInterpreter AMD uProf 再採取
+計測日: 2026-10-07
+
+## 対象
+
+- WASM: `experiments/pysim/benchmarks/aobench/aobench.wasm`
+- 呼出し: `main(320, 180)`
+- 1フレーム: 57,780 bytes
+- 全16フレームのSHA-256: `6d04ea80d9a1fd773c85d413057d64797f32dbb257a753d767a378d730d7d699`
+- プロファイル中の16フレームもすべて同じSHA-256となり、ベンチマークスクリプトは正常終了した。
+
+## 実行環境と方法
+
+- CPU: AMD Ryzen 5 5500GT with Radeon Graphics
+- 対象プロセス: CPython 3.13.15
+- OS: Ubuntu 26.04.1 LTS、Linux 7.0.0-38-generic
+- AMD uProf: 5.3.521.0
+- NativeInterpreter共有ライブラリ: 計測時点の作業ツリーからClang 21.1.8 `-O2`で再ビルド
+- 起動: `taskset -c 2`; 対象Pythonから取得したaffinityは`[2]`
+- 収集: 実行中PIDへ接続、Hotspots、`CPU_TIME`、サンプル間隔10 ms
+- 収集時間: 20.522秒。ベンチマークの16回が完了した。
+- uProf出力上のCPU Mask / CPU Affinity Maskは`0-11`。これはレポート記載値として併記する。
+- プロファイルの生データ: `/tmp/fireball-aobench-uprof-retake-complete-20261007/AMDuProf-Attached-Hotspots_Oct-07-2026_11-07-46`
+- uProfレポート: 同ディレクトリ内の`report.csv`
+- 実行ごとのSHAと時間: `/tmp/fireball-aobench-profiled-retake-complete-20261007.log`
+
+uProfを接続せず、CPU 2固定で16回測定した。ベンチマークスクリプト出力の中央値は786.205 ms、範囲は765.944–808.446 msだった。出力SHA-256は全回一致した。
+
+## CPU_TIME上位関数
+
+| 順位 | 関数 | サンプル秒 | 対象プロセスCPU時間比 |
+| :---: | :--- | ---: | ---: |
+| 1 | `h_local_get<void>` | 2.19 | 17.5% |
+| 2 | `h_call<void, false>` | 1.02 | 8.1% |
+| 3 | `h_i32_const<void>` | 0.69 | 5.5% |
+| 4 | `fb_native_run_dispatch` | 0.65 | 5.2% |
+| 5 | `h_local_set<void>` | 0.56 | 4.5% |
+| 6 | `h_if<void>` | 0.31 | 2.5% |
+| 7 | `python3.13!0x6398ff` | 0.18 | 1.4% |
+| 8 | `h_i32_binary<void, op_add>` | 0.18 | 1.4% |
+| 9 | `finish_current_function` | 0.16 | 1.3% |
+| 10 | `h_end<void>` | 0.15 | 1.2% |
+
+プロセス全体のCPU_TIMEサンプルは12.55秒、Interpreter共有ライブラリは6.63秒、Python実行ファイルは5.89秒だった。CPU_TIME比はプロセス全体のサンプル秒数を分母にした概算。
+
+## 前回採取との比較
+
+前回（`aobench_uprof_hotspots_20261007.txt`）と同じく`h_local_get`が最大の単一関数で、続いて`h_call`、`h_local_set`、定数処理、ディスパッチが上位を占めた。`h_local_get`のCPU_TIME比は前回約18.5%、今回約17.5%で、最大ホットスポット自体は変わっていない。サンプル秒の小さな差だけから関数単体の性能変化とは判断しない。
+
+次の調査対象は引き続き`h_local_get`。このハンドラではローカル幅判定とローカル読み出し後にオペランドスタックへ値をコピーしており、その生成コードと`local_span`を確認するのがよい。`h_call`も今回の全体CPU_TIMEの約8.1%を占めるため、次点で呼出し経路を調べる。
+
+## ビルド対象の識別
+
+- `native_interpreter.cxx` SHA-256: `90cbc6d12547c261a24ba01a9f365b2d2a29b524c035a85918fc30c7b5ce5e94`
+- `libnative_interpreter.so` SHA-256: `737da590b2b0e8cea712ced420e50dab230f7319499e8376226e1104762d46f2`
+- HEAD: `2568ce55`（計測時点で作業ツリーに未コミット変更あり）

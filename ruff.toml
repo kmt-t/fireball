@@ -1,5 +1,5 @@
 # Fireball Standard Python Linter & Formatter Configuration
-target-version = "py314"
+target-version = "py313"
 line-length = 100
 
 [lint]

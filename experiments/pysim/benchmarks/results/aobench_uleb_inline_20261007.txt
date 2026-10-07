@@ -1,0 +1,50 @@
+AO-Bench NativeInterpreter 即値デコーダ インライン化
+計測日: 2026-10-07
+
+## 条件
+
+- ワークロード: `experiments/pysim/benchmarks/aobench/aobench.wasm`、`main(320, 180)`
+- 実行経路: NativeInterpreterのみ。WASM読込・Interpreter構築は計時区間外
+- 反復: ビルド前後を独立プロセスで16フレームずつ実行
+- 出力: 57,780 bytes、全フレームでSHA-256 `6d04ea80d9a1fd773c85d413057d64797f32dbb257a753d767a378d730d7d699`
+- CPU: AMD Ryzen 5 5500GT、CPU 2へ固定
+- OS: Ubuntu 26.04.1、Linux 7.0.0-38-generic
+- Python: CPython 3.13.15
+- Compiler: Clang 21.1.8、共有ライブラリは`-O2`
+- 計測: `NativeInterpreter.call()`のwall-clock。プロファイラ非接続
+
+## 変更
+
+`read_u32_remaining`を`noinline`から通常の`inline`関数へ変更した。`read_u32`をインライン展開するClang `-O2`では、その継続デコードも`h_local_get`、`h_local_set`、`h_call`へ展開され、通常の1 byte即値経路から直接ヘルパー呼び出しがなくなった。`h_i32_const`には変更前から追加のデコーダ呼び出しがなかった。
+
+| ハンドラ | 変更前の関数呼び出し | 変更後の関数呼び出し |
+| :--- | ---: | ---: |
+| `h_local_get` | 2（デコーダ、cold assert） | 1（cold assert） |
+| `h_local_set` | 1（デコーダ） | 0 |
+| `h_call` | 2（デコーダ、`memset`） | 1（`memset`） |
+| `h_i32_const` | 0 | 0 |
+
+Opcode Runtime APIはソース上で`always_inline`指定済みであり、各CPSハンドラは`dispatch_next`へmusttailする。今回、追加のAPI境界や分岐は設けていない。
+
+## 実行時間
+
+| ビルド | 中央値 | 範囲 |
+| :--- | ---: | ---: |
+| 変更前 | 798.542 ms | 784.870–810.973 ms |
+| 変更後 | 766.411 ms | 754.964–786.077 ms |
+
+中央値は偶数16回の中央2値を平均した。変更後は変更前より32.131 ms（4.02%）短かった。測定範囲は一部重なるため、このホスト・ワークロードに対する観測値として扱う。
+
+変更前16回（ms）: 809.067, 810.973, 794.840, 801.597, 796.722, 790.202, 800.952, 791.330, 789.664, 784.870, 800.362, 804.230, 806.914, 794.185, 796.306, 810.725
+
+変更後16回（ms）: 767.026, 772.442, 763.723, 754.964, 765.795, 786.077, 769.507, 759.165, 777.861, 759.521, 757.802, 768.021, 773.450, 758.263, 763.165, 777.361
+
+## サイズと検証
+
+- 共有ライブラリ: 231,760 → 235,752 bytes（+3,992 bytes）
+- `.text`: 159,783 → 166,068 bytes（+6,285 bytes）
+- Native CPS Interpreter tests: `test_cps_interpreter.py`、`test_interpreter.py`を実行
+- 複数byte ULEB経路: 関数index 128の`call`を実行し、結果37を確認
+- 全16出力で既知のSHA-256と一致
+
+ホスト共有ライブラリのサイズ差であり、Cortex-M上のROM配置量ではない。

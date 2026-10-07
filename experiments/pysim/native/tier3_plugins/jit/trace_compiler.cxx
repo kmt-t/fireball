@@ -6,6 +6,7 @@
 
 #include "../../../tier2_runtime/abi/interpreter_abi.hxx"
 #include "jit_internal.hxx"
+#include "jit_runtime_api.hxx"
 #include "stencils_x64.hxx"
 #include "trace_compiler_abi.hxx"
 
@@ -43,6 +44,12 @@ using fireball::kMaxTraceInstructions;
 #endif
 #ifndef FB_CONF_JIT_TRACE_TYPED_I32_HELPER_OFFSET
 #error "JIT typed helper offset must come from tier1_core/config.py"
+#endif
+#ifndef FB_CONF_JIT_CACHE_ABSOLUTE_ADDRESS_POOL_OFFSET
+#error "JIT absolute address pool offset must come from tier1_core/config.py"
+#endif
+#ifndef FB_CONF_JIT_CACHE_ABSOLUTE_ADDRESS_POOL_BYTES
+#error "JIT absolute address pool size must come from tier1_core/config.py"
 #endif
 #ifndef FB_CONF_JIT_X64_COMMON_CODE_RELATIVE_OFFSET
 #error                                                                         \
@@ -110,6 +117,12 @@ constexpr std::size_t kTypedHelperOffset =
     FB_CONF_JIT_TRACE_TYPED_I32_HELPER_OFFSET;
 constexpr std::size_t kCommonRelativeOffset =
     FB_CONF_JIT_X64_COMMON_CODE_RELATIVE_OFFSET;
+constexpr std::size_t kLocalApiTableOffset =
+    FB_CONF_JIT_CACHE_ABSOLUTE_ADDRESS_POOL_OFFSET;
+static_assert(kLocalApiTableOffset % alignof(std::uintptr_t) == 0);
+static_assert(static_cast<std::size_t>(jit_local_runtime_api_index::count) *
+                  sizeof(std::uintptr_t) <=
+              FB_CONF_JIT_CACHE_ABSOLUTE_ADDRESS_POOL_BYTES);
 static_assert(kTraceHeaderBytes + kTraceEntryStubBytes <= 0x7Fu);
 static_assert(FB_CONF_JIT_X64_CHAIN_TARGET_OFFSET <= 0x7Fu);
 static_assert(kCommonRelativeOffset <= 0x7Fu && kCommonPrologueOffset == 0);
@@ -492,6 +505,69 @@ bool append_common_call(trace_builder &builder, std::uint32_t target_offset) {
          append_stencil(builder, restore_local_base);
 }
 
+bool append_local_runtime_api_call(trace_builder &builder,
+                                   jit_local_runtime_api_index api,
+                                   std::uint32_t local_index,
+                                   std::uint32_t stack_word) {
+  const auto stack_byte_offset =
+      static_cast<std::uint64_t>(stack_word) * sizeof(std::uint32_t);
+  if (stack_byte_offset > 0x7FFF'FFFFu)
+    return false;
+
+  constexpr std::array<std::uint8_t, 2> save_local_base = {0x41, 0x52};
+  constexpr std::array<std::uint8_t, 2> restore_local_base = {0x41, 0x5A};
+  if (!append_stencil(builder, save_local_base))
+    return false;
+#if defined(_WIN32)
+  if (!append_stencil(builder,
+                      std::array<std::uint8_t, 4>{0x48, 0x83, 0xEC, 0x20}) ||
+      !append_stencil(builder, std::array<std::uint8_t, 3>{0x4C, 0x89, 0xE9}) ||
+      !append_stencil(builder, std::array<std::uint8_t, 3>{0x4C, 0x89, 0xD2}) ||
+      !append_stencil(builder, std::array<std::uint8_t, 3>{0x4D, 0x89, 0xE0}))
+    return false;
+  if (stack_byte_offset != 0 &&
+      (!append_stencil(builder,
+                       std::array<std::uint8_t, 3>{0x49, 0x81, 0xC0}) ||
+       !builder.u32(static_cast<std::uint32_t>(stack_byte_offset))))
+    return false;
+  if (!append_stencil(builder, std::array<std::uint8_t, 2>{0x41, 0xB9}) ||
+      !builder.u32(local_index))
+    return false;
+#else
+  if (!append_stencil(builder, std::array<std::uint8_t, 3>{0x4C, 0x89, 0xEF}) ||
+      !append_stencil(builder, std::array<std::uint8_t, 3>{0x4C, 0x89, 0xD6}) ||
+      !append_stencil(builder, std::array<std::uint8_t, 3>{0x4C, 0x89, 0xE2}))
+    return false;
+  if (stack_byte_offset != 0 &&
+      (!append_stencil(builder,
+                       std::array<std::uint8_t, 3>{0x48, 0x81, 0xC2}) ||
+       !builder.u32(static_cast<std::uint32_t>(stack_byte_offset))))
+    return false;
+  if (!append_stencil(builder, std::array<std::uint8_t, 1>{0xB9}) ||
+      !builder.u32(local_index))
+    return false;
+#endif
+
+  const auto table_entry =
+      kLocalApiTableOffset +
+      static_cast<std::size_t>(api) * sizeof(std::uintptr_t);
+  if (!append_stencil(builder,
+                      std::array<std::uint8_t, 4>{
+                          0x4D, 0x63, 0x5E,
+                          static_cast<std::uint8_t>(kCommonRelativeOffset)}) ||
+      !append_stencil(builder, std::array<std::uint8_t, 3>{0x4D, 0x01, 0xF3}) ||
+      !append_stencil(builder, std::array<std::uint8_t, 3>{0x49, 0x81, 0xC3}) ||
+      !builder.u32(static_cast<std::uint32_t>(table_entry)) ||
+      !append_stencil(builder, std::array<std::uint8_t, 3>{0x41, 0xFF, 0x13}))
+    return false;
+#if defined(_WIN32)
+  if (!append_stencil(builder,
+                      std::array<std::uint8_t, 4>{0x48, 0x83, 0xC4, 0x20}))
+    return false;
+#endif
+  return append_stencil(builder, restore_local_base);
+}
+
 template <std::size_t N>
 bool append_u32_patch(trace_builder &builder,
                       const std::array<std::uint8_t, N> &stencil,
@@ -667,8 +743,138 @@ bool load_sp(trace_builder &b, std::int32_t location, int slot) {
                              view_of(kLoadNosStencil), offset);
 }
 
+bool copy_local_to_stack(trace_builder &builder, std::uint32_t local_offset,
+                         int stack_word, int word_count) {
+  for (int word = 0; word < word_count; ++word) {
+    if (!load_local(builder,
+                    local_offset + static_cast<std::uint32_t>(word * 4)) ||
+        !store_sp(builder, kTos, stack_word + word))
+      return false;
+  }
+  return true;
+}
+
+bool copy_stack_to_local(trace_builder &builder, int stack_word,
+                         std::uint32_t local_offset, int word_count) {
+  for (int word = 0; word < word_count; ++word) {
+    if (!load_sp(builder, kTos, stack_word + word) ||
+        !store_local(builder,
+                     local_offset + static_cast<std::uint32_t>(word * 4)))
+      return false;
+  }
+  return true;
+}
+
+bool compile_wide_local(trace_builder &builder, int op, int index,
+                        int width_words, std::uint32_t slot_bytes) {
+  const auto local_offset = static_cast<std::uint32_t>(index) * slot_bytes;
+  if (op == kLocalGet) {
+    if (builder.location_count != 0 || builder.spilled_words != 0 ||
+        !copy_local_to_stack(builder, local_offset, builder.helper_words,
+                             width_words))
+      return false;
+    builder.helper_words += width_words;
+    if (builder.helper_words > builder.max_spilled_words)
+      builder.max_spilled_words = builder.helper_words;
+    return true;
+  }
+  if (builder.location_count != 0 || builder.spilled_words != 0 ||
+      builder.helper_words < width_words ||
+      !copy_stack_to_local(builder, builder.helper_words - width_words,
+                           local_offset, width_words))
+    return false;
+  if (op == kLocalSet)
+    builder.helper_words -= width_words;
+  return true;
+}
+
+bool spill_local_api_registers(trace_builder &builder) {
+  for (std::size_t index = 0; index < builder.location_count; ++index) {
+    const auto location = builder.locations[index];
+    if (location != kTos && location != kNos)
+      continue;
+    if (!store_sp(builder, location, builder.spilled_words))
+      return false;
+    builder.locations[index] = static_cast<std::int16_t>(builder.spilled_words);
+    ++builder.spilled_words;
+  }
+  if (builder.spilled_words > builder.max_spilled_words)
+    builder.max_spilled_words = builder.spilled_words;
+  return true;
+}
+
+bool compile_runtime_local(trace_builder &builder, int op,
+                           std::uint32_t local_index, int width_words) {
+  const auto api = op == kLocalGet
+                       ? jit_local_runtime_api_index::get
+                       : (op == kLocalSet ? jit_local_runtime_api_index::set
+                                          : jit_local_runtime_api_index::tee);
+  if (width_words == 1) {
+    if (builder.helper_words != 0 || !spill_local_api_registers(builder))
+      return false;
+    if (op == kLocalGet) {
+      if (builder.location_count >= builder.locations_capacity)
+        return false;
+      const auto result_slot =
+          static_cast<std::uint32_t>(builder.spilled_words);
+      if (!append_local_runtime_api_call(builder, api, local_index,
+                                         result_slot) ||
+          !load_sp(builder, kTos, static_cast<int>(result_slot)))
+        return false;
+      if (builder.spilled_words + 1 > builder.max_spilled_words)
+        builder.max_spilled_words = builder.spilled_words + 1;
+      builder.locations[builder.location_count++] = kTos;
+      return true;
+    }
+
+    if (builder.location_count == 0 || builder.spilled_words == 0 ||
+        builder.locations[builder.location_count - 1] !=
+            builder.spilled_words - 1)
+      return false;
+    const auto value_slot =
+        static_cast<std::uint32_t>(builder.spilled_words - 1);
+    if (!append_local_runtime_api_call(builder, api, local_index, value_slot))
+      return false;
+    if (op == kLocalSet) {
+      --builder.location_count;
+      --builder.spilled_words;
+    } else {
+      if (!load_sp(builder, kTos, static_cast<int>(value_slot)))
+        return false;
+      builder.locations[builder.location_count - 1] = kTos;
+      --builder.spilled_words;
+    }
+    return true;
+  }
+
+  if (builder.location_count != 0 || builder.spilled_words != 0 ||
+      width_words > 4)
+    return false;
+  if (op == kLocalGet) {
+    const auto result_slot = static_cast<std::uint32_t>(builder.helper_words);
+    if (!append_local_runtime_api_call(builder, api, local_index, result_slot))
+      return false;
+    builder.helper_words += width_words;
+    if (builder.helper_words > builder.max_spilled_words)
+      builder.max_spilled_words = builder.helper_words;
+    return true;
+  }
+  if (builder.helper_words < width_words)
+    return false;
+  const auto value_slot =
+      static_cast<std::uint32_t>(builder.helper_words - width_words);
+  if (!append_local_runtime_api_call(builder, api, local_index, value_slot))
+    return false;
+  if (op == kLocalSet)
+    builder.helper_words -= width_words;
+  return true;
+}
+
 bool emit_push(trace_builder &b, int op, std::uint64_t arg,
                std::uint32_t slot_bytes) {
+  // Wide values remain on the shared word stack; do not mix cache layouts.
+  if (b.helper_words != 0)
+    return false;
   if (b.location_count >= 2 && b.locations[b.location_count - 2] == kNos) {
     if (!store_sp(b, kNos, b.spilled_words))
       return false;
@@ -846,6 +1052,33 @@ bool compile_instruction(trace_builder &b,
     b.locations[0] = kTos;
     return true;
   }
+  if (op == kLocalGet || op == kLocalSet || op == kLocalTee) {
+    const int index = static_cast<int>(arg);
+    const auto width = local_words(map, map_bytes, local_count, index);
+    if (width == 0) {
+      b.declined = true;
+      return false;
+    }
+    if (local_count > kJitDirectLocalCount) {
+      if (!compile_runtime_local(b, op, static_cast<std::uint32_t>(index),
+                                 width)) {
+        b.declined = true;
+        return false;
+      }
+      if (b.spilled_words > b.max_spilled_words)
+        b.max_spilled_words = b.spilled_words;
+      return true;
+    }
+    if (width > 1) {
+      if (!compile_wide_local(b, op, index, width, slot_bytes)) {
+        b.declined = true;
+        return false;
+      }
+      if (b.spilled_words > b.max_spilled_words)
+        b.max_spilled_words = b.spilled_words;
+      return true;
+    }
+  }
   int pops = 0, pushes = 0;
   if (!stack_effect(op, pops, pushes) ||
       pops > static_cast<int>(b.location_count)) {
@@ -856,8 +1089,6 @@ bool compile_instruction(trace_builder &b,
   if (op == kI32Const || op == kLocalGet) {
     if (op == kLocalGet) {
       const int index = static_cast<int>(arg);
-      if (local_words(map, map_bytes, local_count, index) != 1)
-        ok = false;
       arg = static_cast<std::uint64_t>(index);
     }
     if (ok)
@@ -870,18 +1101,18 @@ bool compile_instruction(trace_builder &b,
       ok = store_sp_imm32(b, b.helper_words++,
                           static_cast<std::uint32_t>(arg >> (word * 32)));
     }
+    if (b.helper_words > b.max_spilled_words)
+      b.max_spilled_words = b.helper_words;
   } else if (op == kLocalSet || op == kDrop) {
     if (op == kLocalSet) {
       const int index = static_cast<int>(arg);
-      ok = local_words(map, map_bytes, local_count, index) == 1 &&
-           store_local(b, static_cast<std::uint32_t>(index * slot_bytes));
+      ok = store_local(b, static_cast<std::uint32_t>(index * slot_bytes));
     }
     if (ok)
       ok = emit_pop(b);
   } else if (op == kLocalTee) {
     const int index = static_cast<int>(arg);
-    ok = local_words(map, map_bytes, local_count, index) == 1 &&
-         b.location_count != 0 &&
+    ok = b.location_count != 0 &&
          store_local(b, static_cast<std::uint32_t>(index * slot_bytes));
   } else if (op == kI32Eqz) {
     ok = b.location_count != 0 && b.locations[b.location_count - 1] == kTos &&
@@ -1097,7 +1328,8 @@ bool compile_stream_instruction(trace_builder &builder,
                                 std::uint32_t local_count,
                                 std::uint32_t slot_bytes) {
   const auto op = static_cast<int>(instruction.opcode);
-  if (builder.pending_local_get_index != kNoPendingLocalGet) {
+  if (local_count <= kJitDirectLocalCount &&
+      builder.pending_local_get_index != kNoPendingLocalGet) {
     const auto pending_index = builder.pending_local_get_index;
     const bool current_local_is_i32 =
         op == kLocalGet && instruction.has_operand != 0 &&
@@ -1152,7 +1384,8 @@ bool compile_stream_instruction(trace_builder &builder,
     }
     if ((op == kLocalSet || op == kLocalTee) && instruction.has_operand != 0) {
       const auto local_index = static_cast<int>(instruction.operand);
-      if (local_words(map, map_bytes, local_count, local_index) == 1) {
+      if (local_count <= kJitDirectLocalCount &&
+          local_words(map, map_bytes, local_count, local_index) == 1) {
         const auto offset =
             static_cast<std::uint32_t>(local_index) * slot_bytes;
         if (!append_local_i32_constant(builder, offset,
@@ -1210,7 +1443,8 @@ bool compile_stream_instruction(trace_builder &builder,
     }
     if ((op == kLocalSet || op == kLocalTee) && instruction.has_operand != 0) {
       const auto local_index = static_cast<int>(instruction.operand);
-      if (local_words(map, map_bytes, local_count, local_index) == 1) {
+      if (local_count <= kJitDirectLocalCount &&
+          local_words(map, map_bytes, local_count, local_index) == 1) {
         const auto offset =
             static_cast<std::uint32_t>(local_index) * slot_bytes;
         if (!append_local_i32_constant(builder, offset, value)) {
@@ -1240,9 +1474,10 @@ bool compile_stream_instruction(trace_builder &builder,
     builder.pending_i32_count = 1;
     return true;
   }
-  if (op == kLocalGet && instruction.has_operand != 0 &&
-      instruction.operand <= 0x7FFF'FFFFu && builder.location_count == 0 &&
-      builder.spilled_words == 0 && builder.pending_i32_count == 0 &&
+  if (local_count <= kJitDirectLocalCount && op == kLocalGet &&
+      instruction.has_operand != 0 && instruction.operand <= 0x7FFF'FFFFu &&
+      builder.location_count == 0 && builder.spilled_words == 0 &&
+      builder.pending_i32_count == 0 &&
       local_words(map, map_bytes, local_count,
                   static_cast<int>(instruction.operand)) == 1) {
     builder.pending_local_get_index =

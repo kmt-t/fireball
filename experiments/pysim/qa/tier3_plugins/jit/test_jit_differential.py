@@ -199,6 +199,19 @@ WIDE_LOCAL_FRAME_WAT = """
     (i32.add (local.get $s) (i32.trunc_f64_s (local.get $f)))))
 """
 
+WIDE_LOCAL_ARITHMETIC_WAT = """
+(module
+  (func (export "main") (param $n i32) (result i32)
+    (local $i i32) (local $value i64)
+    (block $exit
+      (loop $loop
+        (local.set $value (i64.add (local.get $value) (i64.const 1)))
+        (local.set $i (i32.add (local.get $i) (i32.const 1)))
+        (br_if $loop (i32.lt_u (local.get $i) (local.get $n)))))
+    (i32.wrap_i64 (local.get $value))))
+"""
+
+
 IF_TERMINATED_BLOCK_WAT = """
 (module
   (func (export "main") (param $n i32) (result i32) (local $i i32) (local $s i32)
@@ -276,6 +289,11 @@ def test_jitr_55_stale_control_frames_are_dropped_before_structural_opcodes():
 def test_jitr_56_jit_runs_in_a_frame_that_also_holds_a_wide_local():
     """TEST-JITR-56: locals own fixed slots, so an f64 local does not disable i32 traces."""
     _assert_jit_ran(_check_three_ways(WIDE_LOCAL_FRAME_WAT, "main", [200]))
+
+
+def test_jitr_wide_local_accesses_run_as_native_traces():
+    """Wide local get/set copies are compiled, then agree with the Interpreter result."""
+    _assert_jit_ran(_check_three_ways(WIDE_LOCAL_ARITHMETIC_WAT, "main", [64]))
 
 
 def test_jitr_57_hot_block_ending_at_if_hands_the_condition_to_the_interpreter():

@@ -107,6 +107,23 @@ def test_intp_73_wide_frame_uses_eight_byte_slots():
     assert Interpreter(module).call(0, [7, 42, 3.5]) == [42]
 
 
+def test_native_single_byte_local_boundary_and_multibyte_call():
+    prior_functions = " ".join("(func)" for _ in range(128))
+    locals_decl = " ".join("(local i32)" for _ in range(128))
+    module = parse(
+        memoryview(
+            wat_to_wasm(
+                f"(module {prior_functions} "
+                f"(func (result i32) {locals_decl} "
+                "(local.set 127 (i32.const 37)) local.get 127) "
+                '(func (export "main") (result i32) (call 128)))'
+            )
+        )
+    )
+
+    assert make_native_interpreter(module).call(module.export_func_index("main"), []) == [37]
+
+
 def test_intp_72_control_map_uses_four_entry_locality_caches():
     """TEST-INTP-72: static control metadata retains its bounded locality caches."""
     from tier2_runtime.interpreter.control_flow import build_control_map

@@ -134,7 +134,7 @@ def _assert_rejected_module(binary: bytes, location: str) -> None:
     """Treat only parser rejection as a passing malformed/invalid assertion."""
     try:
         parse(binary)
-    except AssertionError, ValueError, IndexError, struct.error:
+    except (AssertionError, ValueError, IndexError, struct.error):
         return
     raise AssertionError(f"{location}: loader accepted rejected module")
 

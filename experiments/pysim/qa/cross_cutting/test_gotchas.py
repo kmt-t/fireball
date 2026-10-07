@@ -527,7 +527,7 @@ def test_cont_gotcha_01_bit_view_power_of_two_factors():
         rejected = False
         try:
             BitView(buf, bits=invalid_bits)
-        except ValueError, AssertionError:
+        except (ValueError, AssertionError):
             rejected = True
         assert rejected, f"Expected BitView to reject bits={invalid_bits}"
 
@@ -546,7 +546,7 @@ def test_cont_gotcha_02_narrowing_never_expands_bounds():
         rejected = False
         try:
             view.slice(invalid_first, invalid_last)
-        except ValueError, IndexError, AssertionError:
+        except (ValueError, IndexError, AssertionError):
             rejected = True
         assert rejected, f"Expected slice({invalid_first}, {invalid_last}) to fail"
 

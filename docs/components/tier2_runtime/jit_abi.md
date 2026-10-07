@@ -97,6 +97,12 @@ chainはtrace終端から共通コード領域のchain dispatcherへ移り、そ
 
 共通helper入口は契約ごとに個別配置する。コンテキスト型入口は `0x030`、x64のi32整数除算・剰余は `0x160` から32バイト単位で4入口を置く。x64の整数除算・剰余ではトレース本体がヘッダ相対の共通コード基点から対応入口を `call` し、入口がヘッダの関数アドレスを読み出して対象ABIの引数配置でCヘルパーを呼ぶ。成功時は入口の`ret`で同じトレースの次命令へ戻り、非ゼロ状態ではトレースが共通epilogueへ脱出する。ヘルパーはトラップ時に`execution_context.trap_code`を設定する。トレース本体は既存の値スタック位置を結果ポインタとして渡し、関数呼出し用の別スタックを確保しない。ヘッダのhelper targetは1つのため、異なる契約のヘルパーを混在するtraceはコンパイルを辞退する。x64でネイティブ命令化できる整数・浮動小数点演算にhelper入口を割り当てない。ARMv8-Mのhelper呼出し入口と共通コード配置はTBDである。
 
+x64共通コードの絶対アドレスpoolに、ローカル Runtime API の関数ポインタ表を置く。表は `local.get`、`local.set`、`local.tee` の3入口を持つ。共通コード領域の初期化時に各入口のアドレスを表へ設定する。表の大きさは3ポインタである。
+
+関数引数を含む論理ローカル数が128以下のtraceはローカルを直接アクセスする。129以上のtraceは生成時にAPI表の対応entryを選び、header相対の共通コード基点からPIC間接呼出しする。trace headerにAPI関数の絶対アドレスを複製しない。API経路はCPS handlerやInterpreter dispatcherへ移らない。
+
+Runtime APIの共通シグネチャは `(ctx, local_base, stack_words, local_index)` である。`ctx` のCallStackから現行CallFrameを得る。APIはCallFrameの幅マップを使い、指定ローカルの必要wordを `stack_words` とローカル領域の間でコピーする。APIはWASM命令ディスパッチを行わない。`local.tee` が値をオペランドスタックへ残す処理は、呼出し後も値を保持するトレース生成側が担う。スタック高さと命令PCの確定もトレース境界で行う。
+
 ## 4. 動的モデル
 
 ### JITランタイム呼出し契約

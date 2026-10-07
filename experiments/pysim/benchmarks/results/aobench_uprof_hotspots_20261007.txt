@@ -1,0 +1,53 @@
+AO-Bench NativeInterpreter AMD uProf ホットスポット
+計測日: 2026-10-07
+
+## 対象
+
+- WASM: experiments/pysim/benchmarks/aobench/aobench.wasm
+- 呼出し: main(320, 180)
+- 出力: 57,780 bytes
+- SHA-256: 6d04ea80d9a1fd773c85d413057d64797f32dbb257a753d767a378d730d7d699
+- ホットスポット採取中の16フレームはすべて同じSHA-256になった。
+
+## 実行環境と方法
+
+- CPU: AMD Ryzen 5 5500GT、CPU 2へ固定
+- OS: Ubuntu 26.04.1、Linux 7.0.0-38-generic
+- Python: CPython 3.13.15
+- AMD uProf: 5.3.521.0
+- NativeInterpreter共有ライブラリ: 作業ツリーからClang `-O2`で再ビルド
+- Hotspots: 実行中PIDへ接続。サンプル間隔10 ms。収集時間20.480秒。
+- 収集時間には接続前の8秒待機を含む。
+- 分岐: 実行中PIDへ接続。uProfのBranch詳細ビューを使用。
+
+非プロファイル時の実行時間を別プロセスで16回測定した。中央値は792.150 ms、範囲は783.074–824.343 msだった。
+
+## CPU_TIME上位関数
+
+| 関数 | サンプル秒 |
+| :--- | ---: |
+| `h_local_get` | 2.42 |
+| `h_call` | 0.87 |
+| `h_local_set` | 0.72 |
+| `h_i32_const` | 0.65 |
+| `fb_native_run_dispatch` | 0.62 |
+| `h_if` | 0.31 |
+| `h_end` | 0.26 |
+| `h_i32_binary<op_add>` | 0.19 |
+| `finish_current_function` | 0.17 |
+
+プロセス全体のCPUサンプルは13.08秒だった。Interpreter共有ライブラリは6.97秒だった。`h_local_get`は最大の単一関数で、プロセス全体のCPUサンプルの約18.5%を占めた。
+
+## 分岐プロファイル
+
+- Interpreter共有ライブラリの分岐ミス率: 2.21%
+- `h_local_get`の分岐ミス率: 2.19%
+- `h_call`の分岐ミス率: 2.32%
+
+この結果では分岐予測ミスが主因とは確認できない。分岐命令そのものの実行コストは評価していない。
+
+## 計測上の注意
+
+uProfのPythonトレース計測は1フレームあたり約6.5–6.9秒となった。通常の約0.8秒から大幅に増加したため、このトレース計測結果を性能サンプルとして採用しない。ホットスポットはPID接続によるネイティブサンプリングから取得した。
+
+Python関数のサンプルはソース関数へ解決できなかった。C++ハンドラのCPU_TIMEはシンボル単位で取得できた。

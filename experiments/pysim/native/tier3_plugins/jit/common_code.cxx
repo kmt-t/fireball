@@ -1,11 +1,17 @@
 #include <array>
 #include <bit>
+#include <cassert>
 #include <cstring>
 #include <limits>
 
 #include "../../../tier2_runtime/abi/interpreter_abi.hxx"
 #include "common_code_abi.hxx"
 #include "jit_internal.hxx"
+#include "jit_runtime_api.hxx"
+
+#ifndef FB_CONF_JIT_CACHE_ABSOLUTE_ADDRESS_POOL_OFFSET
+#error "JIT absolute address pool offset must come from tier1_core/config.py"
+#endif
 
 namespace fireball {
 namespace {
@@ -28,7 +34,8 @@ constexpr std::uint32_t chain_bytes =
 constexpr std::uint32_t header_bytes = FB_CONF_JIT_X64_TRACE_HEADER_BYTES;
 constexpr std::uint32_t stub_bytes = FB_CONF_JIT_X64_TRACE_ENTRY_STUB_BYTES;
 constexpr std::uint32_t body_offset = header_bytes + stub_bytes;
-constexpr std::uint32_t absolute_offset = 88;
+constexpr std::uint32_t absolute_offset =
+    FB_CONF_JIT_CACHE_ABSOLUTE_ADDRESS_POOL_OFFSET;
 constexpr std::uint32_t absolute_bytes =
     FB_CONF_JIT_CACHE_ABSOLUTE_ADDRESS_POOL_BYTES;
 #if defined(_WIN32)
@@ -37,6 +44,9 @@ constexpr bool windows_abi = true;
 constexpr bool windows_abi = false;
 #endif
 static_assert(body_offset <= 127 && common_bytes < region_bytes);
+static_assert(static_cast<std::uint32_t>(jit_local_runtime_api_index::count) *
+                  sizeof(std::uintptr_t) <=
+              absolute_bytes);
 
 struct code_piece {
   std::array<std::uint8_t, 64> bytes{};
@@ -193,6 +203,65 @@ template <typename T> void little_endian(std::uint8_t *dest, T value) {
 }
 } // namespace
 } // namespace fireball
+
+namespace {
+struct local_api_span {
+  std::uint32_t offset;
+  std::uint32_t width;
+};
+
+local_api_span
+runtime_local_span(const fireball_execution_context_native &context,
+                   std::uint32_t local_index) noexcept {
+  assert(context.call_stack != nullptr);
+  assert(context.call_stack->size > context.call_base);
+  const auto &frame = context.call_stack->frames[context.call_stack->size - 1];
+  assert(local_index < frame.local_count);
+  assert(frame.slot_words == 1 || frame.slot_words == 2 ||
+         frame.slot_words == 4);
+  if (frame.slot_words == 1)
+    return {local_index, 1};
+
+  assert(frame.local_width_map != nullptr);
+  const auto packed = frame.local_width_map[local_index >> 2];
+  const auto width_code = (packed >> ((local_index & 3u) * 2u)) & 3u;
+  const auto width = 1u << width_code;
+  assert(width <= frame.slot_words);
+  return {local_index * frame.slot_words, width};
+}
+} // namespace
+
+extern "C" void
+fb_jit_runtime_local_get(fireball_execution_context_native *context,
+                         std::uint32_t *local_base, std::uint32_t *stack_words,
+                         std::uint32_t local_index) noexcept {
+  assert(context != nullptr);
+  assert(local_base != nullptr);
+  assert(stack_words != nullptr);
+  const auto span = runtime_local_span(*context, local_index);
+  for (std::uint32_t word = 0; word < span.width; ++word)
+    stack_words[word] = local_base[span.offset + word];
+}
+
+extern "C" void
+fb_jit_runtime_local_set(fireball_execution_context_native *context,
+                         std::uint32_t *local_base, std::uint32_t *stack_words,
+                         std::uint32_t local_index) noexcept {
+  assert(context != nullptr);
+  assert(local_base != nullptr);
+  assert(stack_words != nullptr);
+  const auto span = runtime_local_span(*context, local_index);
+  for (std::uint32_t word = 0; word < span.width; ++word)
+    local_base[span.offset + word] = stack_words[word];
+}
+
+extern "C" void
+fb_jit_runtime_local_tee(fireball_execution_context_native *context,
+                         std::uint32_t *local_base, std::uint32_t *stack_words,
+                         std::uint32_t local_index) noexcept {
+  fb_jit_runtime_local_set(context, local_base, stack_words, local_index);
+}
+
 extern "C" void fb_jit_common_layout(fireball::jit_common_layout *output) {
   using namespace fireball;
   if (output != nullptr)
@@ -219,6 +288,17 @@ int fireball::initialize_common_code(fireball::executable_memory *memory) {
     const auto offset = typed_offset + i * helper_bytes;
     std::memcpy(output + offset, i32_code.bytes.data(), i32_code.count);
   }
+  const std::array<jit_local_runtime_api,
+                   static_cast<std::size_t>(jit_local_runtime_api_index::count)>
+      local_apis = {&fb_jit_runtime_local_get, &fb_jit_runtime_local_set,
+                    &fb_jit_runtime_local_tee};
+  std::array<std::uintptr_t,
+             static_cast<std::size_t>(jit_local_runtime_api_index::count)>
+      api_addresses{};
+  for (std::size_t index = 0; index < local_apis.size(); ++index)
+    api_addresses[index] = reinterpret_cast<std::uintptr_t>(local_apis[index]);
+  std::memcpy(output + absolute_offset, api_addresses.data(),
+              sizeof(api_addresses));
   const std::uint8_t *chain = nullptr;
   std::uint32_t bytes = 0, offset = 0;
   chain_dispatcher_code(&chain, &bytes, &offset);

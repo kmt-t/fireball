@@ -3475,8 +3475,8 @@ def _h_f32_load(
     addr = _to_u32(frame.values.pop_back()) + offset
     if env.memory is None or addr + 4 > len(env.memory):
         return Trap(TrapCode.MEMORY_OUT_OF_BOUNDS, addr)
-    val = struct.unpack("<f", env.memory[addr : addr + 4])[0]
-    pushed = frame.values.push_f32(val)
+    bits = int.from_bytes(env.memory[addr : addr + 4], "little")
+    pushed = frame.values.push_back(bits)
     assert pushed
     ctx.ip = next_ip
     return None
@@ -3488,12 +3488,11 @@ def _h_f32_store(
 ) -> _HandlerResult:
     ip, frame, env = _handler_state(ctx, sp)
     offset, next_ip = _read_memarg(frame.code, ip)
-    val = frame.values.pop_f32()
-    assert val is not None
+    bits = frame.values.pop_back()
     addr = _to_u32(frame.values.pop_back()) + offset
     if env.memory is None or addr + 4 > len(env.memory):
         return Trap(TrapCode.MEMORY_OUT_OF_BOUNDS, addr)
-    env.memory[addr : addr + 4] = struct.pack("<f", val)
+    env.memory[addr : addr + 4] = (bits & 0xFFFF_FFFF).to_bytes(4, "little")
     ctx.ip = next_ip
     return None
 
@@ -3507,8 +3506,8 @@ def _h_f64_load(
     addr = _to_u32(frame.values.pop_back()) + offset
     if env.memory is None or addr + 8 > len(env.memory):
         return Trap(TrapCode.MEMORY_OUT_OF_BOUNDS, addr)
-    val = struct.unpack("<d", env.memory[addr : addr + 8])[0]
-    pushed = frame.values.push_f64(val)
+    bits = int.from_bytes(env.memory[addr : addr + 8], "little")
+    pushed = frame.values.push_i64(_to_i64(bits))
     assert pushed
     ctx.ip = next_ip
     return None
@@ -3520,12 +3519,12 @@ def _h_f64_store(
 ) -> _HandlerResult:
     ip, frame, env = _handler_state(ctx, sp)
     offset, next_ip = _read_memarg(frame.code, ip)
-    val = frame.values.pop_f64()
-    assert val is not None
+    bits = frame.values.pop_i64()
+    assert bits is not None
     addr = _to_u32(frame.values.pop_back()) + offset
     if env.memory is None or addr + 8 > len(env.memory):
         return Trap(TrapCode.MEMORY_OUT_OF_BOUNDS, addr)
-    env.memory[addr : addr + 8] = struct.pack("<d", val)
+    env.memory[addr : addr + 8] = _to_u64(bits).to_bytes(8, "little")
     ctx.ip = next_ip
     return None
 
@@ -3550,8 +3549,8 @@ def _h_f32_const(
     ctx: ExecutionContext, sp: NativeValueStack, local_base: _LocalStackWindow, tos: int
 ) -> _HandlerResult:
     ip, frame, env = _handler_state(ctx, sp)
-    val = struct.unpack("<f", frame.code[ip + 1 : ip + 5])[0]
-    pushed = frame.values.push_f32(val)
+    bits = int.from_bytes(frame.code[ip + 1 : ip + 5], "little")
+    pushed = frame.values.push_back(bits)
     assert pushed
     ctx.ip = ip + 5
     return None
@@ -3562,8 +3561,8 @@ def _h_f64_const(
     ctx: ExecutionContext, sp: NativeValueStack, local_base: _LocalStackWindow, tos: int
 ) -> _HandlerResult:
     ip, frame, env = _handler_state(ctx, sp)
-    val = struct.unpack("<d", frame.code[ip + 1 : ip + 9])[0]
-    pushed = frame.values.push_f64(val)
+    bits = int.from_bytes(frame.code[ip + 1 : ip + 9], "little")
+    pushed = frame.values.push_i64(_to_i64(bits))
     assert pushed
     ctx.ip = ip + 9
     return None
@@ -4302,9 +4301,8 @@ def _h_f32_abs(
     ctx: ExecutionContext, sp: NativeValueStack, local_base: _LocalStackWindow, tos: int
 ) -> _HandlerResult:
     ip, frame, env = _handler_state(ctx, sp)
-    a = frame.values.pop_f32()
-    assert a is not None
-    pushed = frame.values.push_f32(_to_f32(abs(a)))
+    bits = frame.values.pop_back()
+    pushed = frame.values.push_back(bits & 0x7FFF_FFFF)
     assert pushed
     ctx.ip = ip + 1
     return None
@@ -4315,9 +4313,8 @@ def _h_f32_neg(
     ctx: ExecutionContext, sp: NativeValueStack, local_base: _LocalStackWindow, tos: int
 ) -> _HandlerResult:
     ip, frame, env = _handler_state(ctx, sp)
-    a = frame.values.pop_f32()
-    assert a is not None
-    pushed = frame.values.push_f32(_to_f32(-a))
+    bits = frame.values.pop_back()
+    pushed = frame.values.push_back(bits ^ 0x8000_0000)
     assert pushed
     ctx.ip = ip + 1
     return None
@@ -4328,9 +4325,9 @@ def _h_f64_abs(
     ctx: ExecutionContext, sp: NativeValueStack, local_base: _LocalStackWindow, tos: int
 ) -> _HandlerResult:
     ip, frame, env = _handler_state(ctx, sp)
-    a = frame.values.pop_f64()
-    assert a is not None
-    pushed = frame.values.push_f64(float(abs(a)))
+    bits = frame.values.pop_i64()
+    assert bits is not None
+    pushed = frame.values.push_i64(_to_i64(_to_u64(bits) & 0x7FFF_FFFF_FFFF_FFFF))
     assert pushed
     ctx.ip = ip + 1
     return None
@@ -4341,9 +4338,9 @@ def _h_f64_neg(
     ctx: ExecutionContext, sp: NativeValueStack, local_base: _LocalStackWindow, tos: int
 ) -> _HandlerResult:
     ip, frame, env = _handler_state(ctx, sp)
-    a = frame.values.pop_f64()
-    assert a is not None
-    pushed = frame.values.push_f64(float(-a))
+    bits = frame.values.pop_i64()
+    assert bits is not None
+    pushed = frame.values.push_i64(_to_i64(_to_u64(bits) ^ 0x8000_0000_0000_0000))
     assert pushed
     ctx.ip = ip + 1
     return None
@@ -4731,9 +4728,8 @@ def _h_f32_copysign(
     ctx: ExecutionContext, sp: NativeValueStack, local_base: _LocalStackWindow, tos: int
 ) -> _HandlerResult:
     ip, frame, env = _handler_state(ctx, sp)
-    b, a = frame.values.pop_f32(), frame.values.pop_f32()
-    assert b is not None and a is not None
-    pushed = frame.values.push_f32(_to_f32(math.copysign(a, b)))
+    b, a = frame.values.pop_back(), frame.values.pop_back()
+    pushed = frame.values.push_back((a & 0x7FFF_FFFF) | (b & 0x8000_0000))
     assert pushed
     ctx.ip = ip + 1
     return None
@@ -4796,9 +4792,12 @@ def _h_f64_copysign(
     ctx: ExecutionContext, sp: NativeValueStack, local_base: _LocalStackWindow, tos: int
 ) -> _HandlerResult:
     ip, frame, env = _handler_state(ctx, sp)
-    b, a = frame.values.pop_f64(), frame.values.pop_f64()
+    b, a = frame.values.pop_i64(), frame.values.pop_i64()
     assert b is not None and a is not None
-    pushed = frame.values.push_f64(float(math.copysign(a, b)))
+    bits_a = _to_u64(a)
+    bits_b = _to_u64(b)
+    bits = (bits_a & 0x7FFF_FFFF_FFFF_FFFF) | (bits_b & 0x8000_0000_0000_0000)
+    pushed = frame.values.push_i64(_to_i64(bits))
     assert pushed
     ctx.ip = ip + 1
     return None
@@ -5024,10 +5023,9 @@ def _h_i32_reinterpret_f32(
     ctx: ExecutionContext, sp: NativeValueStack, local_base: _LocalStackWindow, tos: int
 ) -> _HandlerResult:
     ip, frame, env = _handler_state(ctx, sp)
-    a = frame.values.pop_f32()
-    assert a is not None
-    u = struct.unpack("<i", struct.pack("<f", a))[0]
-    frame.values.push_back(_to_i32(u))
+    bits = frame.values.pop_back()
+    pushed = frame.values.push_back(bits)
+    assert pushed
     ctx.ip = ip + 1
     return None
 
@@ -5037,11 +5035,8 @@ def _h_f32_reinterpret_i32(
     ctx: ExecutionContext, sp: NativeValueStack, local_base: _LocalStackWindow, tos: int
 ) -> _HandlerResult:
     ip, frame, env = _handler_state(ctx, sp)
-    a = frame.values.pop_i32()
-    assert a is not None
-    a = _to_u32(a)
-    f = struct.unpack("<f", struct.pack("<I", a))[0]
-    pushed = frame.values.push_f32(_to_f32(f))
+    bits = frame.values.pop_back()
+    pushed = frame.values.push_back(bits)
     assert pushed
     ctx.ip = ip + 1
     return None
@@ -5052,10 +5047,9 @@ def _h_i64_reinterpret_f64(
     ctx: ExecutionContext, sp: NativeValueStack, local_base: _LocalStackWindow, tos: int
 ) -> _HandlerResult:
     ip, frame, env = _handler_state(ctx, sp)
-    a = frame.values.pop_f64()
-    assert a is not None
-    u = struct.unpack("<q", struct.pack("<d", a))[0]
-    pushed = frame.values.push_i64(_to_i64(u))
+    bits = frame.values.pop_i64()
+    assert bits is not None
+    pushed = frame.values.push_i64(bits)
     assert pushed
     ctx.ip = ip + 1
     return None
@@ -5066,11 +5060,9 @@ def _h_f64_reinterpret_i64(
     ctx: ExecutionContext, sp: NativeValueStack, local_base: _LocalStackWindow, tos: int
 ) -> _HandlerResult:
     ip, frame, env = _handler_state(ctx, sp)
-    a = frame.values.pop_i64()
-    assert a is not None
-    a = _to_u64(a)
-    d = struct.unpack("<d", struct.pack("<Q", a))[0]
-    pushed = frame.values.push_f64(float(d))
+    bits = frame.values.pop_i64()
+    assert bits is not None
+    pushed = frame.values.push_i64(bits)
     assert pushed
     ctx.ip = ip + 1
     return None

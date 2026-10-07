@@ -1,0 +1,109 @@
+AO-Bench Fireball Interpreter / Fireball Hybrid JIT / WAMR Fast 比較
+計測日: 2026-10-07
+
+## 目的
+
+同一AO-Bench WASMをFireball NativeInterpreter、Fireball Hybrid JIT、WAMR Fast Interpreterで同一ホスト上で実行した。Interpreterはユーザー指定に合わせ、yieldしきい値を計測プロセス内だけで `0xFFFFFFFF` にした。JITはホットトレースをコンパイルするため、既定しきい値64で実行した。WAMRにFireballのyield機構はない。
+
+## 入力と正当性
+
+- WASM: `experiments/pysim/benchmarks/aobench/aobench.wasm`
+- WASM SHA-256: `9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9`
+- 5解像度×3プロセスで、ウォームアップを含む全出力を3エンジン間でバイト比較した。15組すべて一致した。
+- 解像度ごとのフレームSHA-256、全試行サンプル、プロセスごとの中央値、JIT診断カウンターを以下に記録した。
+- 1フレームのray数は `width × height + 4 × hit_pixels` とした。
+
+## 実行環境
+
+- CPU: AMD Ryzen 5 5500GT、x86_64、計測プロセスをCPU 2へ固定。
+- OS: Ubuntu Linux、kernel `7.0.0-38-generic`。
+- Python: CPython `3.13.15`。Clang: Ubuntu clang `21.1.8`。
+- Fireball NativeInterpreter / JIT共有ライブラリは現行作業ツリーからClang `-O2`でビルドした。
+- WAMR: `third_party/wasm-micro-runtime`、commit `f5f57c09aee623436f5fb87a90798fdd2cdf39fd`、version 2.4.3。Fast InterpreterとWASIを有効にし、AOT/JITを無効にしたClang `-O2 -DNDEBUG`ビルドを使用した。
+
+## 計測方法
+
+各エンジン・解像度につき独立プロセスで3試行を実行した。各プロセスで3フレームをウォームアップし、後続7フレームを計時した。代表値はプロセスごとの7サンプル中央値の中央値である。表の範囲は3プロセス中央値の最小値–最大値である。試行・サイズごとにエンジン実行順を交互にした。
+
+Interpreterの測定ではyieldしきい値を `0xFFFFFFFF` に設定した。JITは既定値64でウォームアップ・測定した。別途、同じJIT設定の診断用RuntimeStatsEngineを3フレーム実行し、JITトレース呼び出し数が0より大きいことを確認した。診断実行は時間計測から除外した。JITの時間にはRuntimeEngine境界と計測区間中に発生するJITランタイム処理を含む。
+
+FireballはWASM解析、System/WASI/Interpreter生成を計測区間から除外し、NativeInterpreterまたはRuntimeEngineのcallを計時した。Fireball標準出力はPython WASI/HALとメモリ内`StreamTransport`を通る。WAMRはruntime初期化、WASMロード、instantiate、exec environment生成を除外し、`wasm_runtime_call_wasm()`を計時した。WAMRのWASI標準出力は一時ファイルへ出力する。これはホスト統合込みの比較であり、opcodeディスパッチや生成コード単体の比較ではない。
+
+再実行時のコマンド:
+
+```bash
+taskset -c 2 env UV_CACHE_DIR=/tmp/fireball-uv-cache UV_OFFLINE=true UV_NO_SYNC=true \
+  uv run --project . --offline --no-sync python /tmp/fireball_all_engines_aobench.py \
+  --wamr-binary /tmp/wamr_aobench_runner_20261007 \
+  --raw-dir /tmp/aobench_all_engines_yieldmax_20261007 \
+  > /tmp/aobench_all_engines_yieldmax_20261007.log 2>&1
+```
+
+## 生ログ
+
+trial=1 size=64x36 engine=interpreter samples_ms=18.086,18.152,18.043,17.793,18.018,18.271,18.053 median_ms=18.053 sha256=d44fed786dbb555722932e901bd3f56c56aa2daca6c594a67a858c4591e24567
+trial=1 size=64x36 engine=jit samples_ms=46.778,46.905,43.822,44.484,44.416,44.165,46.021 median_ms=44.484 sha256=d44fed786dbb555722932e901bd3f56c56aa2daca6c594a67a858c4591e24567 diagnostic_jit_invocations=1144313
+trial=1 size=64x36 engine=wamr samples_ms=4.571,4.552,4.630,4.498,4.680,4.481,4.547 median_ms=4.552 sha256=d44fed786dbb555722932e901bd3f56c56aa2daca6c594a67a858c4591e24567
+pair_pass trial=1 size=64x36 sha256=d44fed786dbb555722932e901bd3f56c56aa2daca6c594a67a858c4591e24567 output_bytes=23400
+trial=1 size=128x72 engine=jit samples_ms=184.988,181.795,181.633,180.597,184.696,188.676,184.216 median_ms=184.216 sha256=e9f20b8f0414f7406aa2f3ea96738e1c7755d0148090bf72f8703cffd3d374a4 diagnostic_jit_invocations=4604595
+trial=1 size=128x72 engine=wamr samples_ms=18.315,18.296,18.718,18.901,18.481,18.760,19.022 median_ms=18.718 sha256=e9f20b8f0414f7406aa2f3ea96738e1c7755d0148090bf72f8703cffd3d374a4
+trial=1 size=128x72 engine=interpreter samples_ms=72.433,69.610,70.617,70.459,70.790,70.588,70.089 median_ms=70.588 sha256=e9f20b8f0414f7406aa2f3ea96738e1c7755d0148090bf72f8703cffd3d374a4
+pair_pass trial=1 size=128x72 sha256=e9f20b8f0414f7406aa2f3ea96738e1c7755d0148090bf72f8703cffd3d374a4 output_bytes=92880
+trial=1 size=192x108 engine=wamr samples_ms=39.696,40.190,41.153,41.289,39.937,41.152,39.914 median_ms=40.190 sha256=9f2df94afaad4a3750053789ce6be52a0b9b14d66d9b8584edf2718d1ac3c4f1
+trial=1 size=192x108 engine=interpreter samples_ms=156.602,158.473,159.742,160.060,158.933,157.281,155.075 median_ms=158.473 sha256=9f2df94afaad4a3750053789ce6be52a0b9b14d66d9b8584edf2718d1ac3c4f1
+trial=1 size=192x108 engine=jit samples_ms=406.618,405.904,408.299,437.536,419.030,421.517,410.958 median_ms=410.958 sha256=9f2df94afaad4a3750053789ce6be52a0b9b14d66d9b8584edf2718d1ac3c4f1 diagnostic_jit_invocations=10341341
+pair_pass trial=1 size=192x108 sha256=9f2df94afaad4a3750053789ce6be52a0b9b14d66d9b8584edf2718d1ac3c4f1 output_bytes=208440
+trial=1 size=256x144 engine=interpreter samples_ms=307.016,302.400,282.710,287.551,282.570,281.837,276.418 median_ms=282.710 sha256=f35a578dc277b57ca3bb5f74bc9381297fab5afce787bc92c54e46536fa8d2a4
+trial=1 size=256x144 engine=jit samples_ms=729.510,721.230,721.714,725.213,728.770,730.977,724.973 median_ms=725.213 sha256=f35a578dc277b57ca3bb5f74bc9381297fab5afce787bc92c54e46536fa8d2a4 diagnostic_jit_invocations=18428744
+trial=1 size=256x144 engine=wamr samples_ms=73.195,75.581,75.691,79.637,75.256,75.529,75.204 median_ms=75.529 sha256=f35a578dc277b57ca3bb5f74bc9381297fab5afce787bc92c54e46536fa8d2a4
+pair_pass trial=1 size=256x144 sha256=f35a578dc277b57ca3bb5f74bc9381297fab5afce787bc92c54e46536fa8d2a4 output_bytes=370080
+trial=1 size=320x180 engine=jit samples_ms=1291.250,1173.314,1142.430,1154.761,1157.425,1152.141,1139.876 median_ms=1154.761 sha256=6d04ea80d9a1fd773c85d413057d64797f32dbb257a753d767a378d730d7d699 diagnostic_jit_invocations=28808558
+trial=1 size=320x180 engine=wamr samples_ms=113.003,113.212,112.168,114.110,114.107,114.816,113.812 median_ms=113.812 sha256=6d04ea80d9a1fd773c85d413057d64797f32dbb257a753d767a378d730d7d699
+trial=1 size=320x180 engine=interpreter samples_ms=459.200,435.611,433.275,439.510,431.645,439.189,435.421 median_ms=435.611 sha256=6d04ea80d9a1fd773c85d413057d64797f32dbb257a753d767a378d730d7d699
+pair_pass trial=1 size=320x180 sha256=6d04ea80d9a1fd773c85d413057d64797f32dbb257a753d767a378d730d7d699 output_bytes=577800
+trial=2 size=64x36 engine=jit samples_ms=45.524,48.140,45.944,45.801,45.111,44.977,45.620 median_ms=45.620 sha256=d44fed786dbb555722932e901bd3f56c56aa2daca6c594a67a858c4591e24567 diagnostic_jit_invocations=1144313
+trial=2 size=64x36 engine=wamr samples_ms=4.511,4.483,4.762,4.594,4.560,4.641,4.568 median_ms=4.568 sha256=d44fed786dbb555722932e901bd3f56c56aa2daca6c594a67a858c4591e24567
+trial=2 size=64x36 engine=interpreter samples_ms=17.893,17.585,17.793,18.052,17.640,17.751,18.118 median_ms=17.793 sha256=d44fed786dbb555722932e901bd3f56c56aa2daca6c594a67a858c4591e24567
+pair_pass trial=2 size=64x36 sha256=d44fed786dbb555722932e901bd3f56c56aa2daca6c594a67a858c4591e24567 output_bytes=23400
+trial=2 size=128x72 engine=wamr samples_ms=18.159,18.474,18.617,18.488,18.092,18.274,18.375 median_ms=18.375 sha256=e9f20b8f0414f7406aa2f3ea96738e1c7755d0148090bf72f8703cffd3d374a4
+trial=2 size=128x72 engine=interpreter samples_ms=70.456,70.578,70.386,70.038,70.507,70.178,69.552 median_ms=70.386 sha256=e9f20b8f0414f7406aa2f3ea96738e1c7755d0148090bf72f8703cffd3d374a4
+trial=2 size=128x72 engine=jit samples_ms=186.257,185.309,186.976,183.366,189.774,195.650,193.745 median_ms=186.976 sha256=e9f20b8f0414f7406aa2f3ea96738e1c7755d0148090bf72f8703cffd3d374a4 diagnostic_jit_invocations=4604595
+pair_pass trial=2 size=128x72 sha256=e9f20b8f0414f7406aa2f3ea96738e1c7755d0148090bf72f8703cffd3d374a4 output_bytes=92880
+trial=2 size=192x108 engine=interpreter samples_ms=166.147,156.516,157.946,165.391,168.912,166.422,166.296 median_ms=166.147 sha256=9f2df94afaad4a3750053789ce6be52a0b9b14d66d9b8584edf2718d1ac3c4f1
+trial=2 size=192x108 engine=jit samples_ms=405.665,409.100,408.516,408.274,415.462,438.113,434.031 median_ms=409.100 sha256=9f2df94afaad4a3750053789ce6be52a0b9b14d66d9b8584edf2718d1ac3c4f1 diagnostic_jit_invocations=10341341
+trial=2 size=192x108 engine=wamr samples_ms=41.769,41.433,41.421,41.472,41.162,41.346,40.990 median_ms=41.421 sha256=9f2df94afaad4a3750053789ce6be52a0b9b14d66d9b8584edf2718d1ac3c4f1
+pair_pass trial=2 size=192x108 sha256=9f2df94afaad4a3750053789ce6be52a0b9b14d66d9b8584edf2718d1ac3c4f1 output_bytes=208440
+trial=2 size=256x144 engine=jit samples_ms=751.117,725.885,739.914,736.856,746.520,728.651,728.307 median_ms=736.856 sha256=f35a578dc277b57ca3bb5f74bc9381297fab5afce787bc92c54e46536fa8d2a4 diagnostic_jit_invocations=18428744
+trial=2 size=256x144 engine=wamr samples_ms=74.951,74.975,76.766,78.369,78.452,75.924,76.452 median_ms=76.452 sha256=f35a578dc277b57ca3bb5f74bc9381297fab5afce787bc92c54e46536fa8d2a4
+trial=2 size=256x144 engine=interpreter samples_ms=283.355,279.590,279.949,280.045,278.816,282.147,277.555 median_ms=279.949 sha256=f35a578dc277b57ca3bb5f74bc9381297fab5afce787bc92c54e46536fa8d2a4
+pair_pass trial=2 size=256x144 sha256=f35a578dc277b57ca3bb5f74bc9381297fab5afce787bc92c54e46536fa8d2a4 output_bytes=370080
+trial=2 size=320x180 engine=wamr samples_ms=123.281,123.966,122.785,125.967,119.713,119.778,117.181 median_ms=122.785 sha256=6d04ea80d9a1fd773c85d413057d64797f32dbb257a753d767a378d730d7d699
+trial=2 size=320x180 engine=interpreter samples_ms=465.189,439.946,440.156,462.517,462.134,441.931,436.220 median_ms=441.931 sha256=6d04ea80d9a1fd773c85d413057d64797f32dbb257a753d767a378d730d7d699
+trial=2 size=320x180 engine=jit samples_ms=1172.870,1143.205,1148.529,1150.828,1203.984,1145.916,1144.198 median_ms=1148.529 sha256=6d04ea80d9a1fd773c85d413057d64797f32dbb257a753d767a378d730d7d699 diagnostic_jit_invocations=28808558
+pair_pass trial=2 size=320x180 sha256=6d04ea80d9a1fd773c85d413057d64797f32dbb257a753d767a378d730d7d699 output_bytes=577800
+trial=3 size=64x36 engine=wamr samples_ms=4.640,4.911,4.760,4.695,4.709,4.988,4.654 median_ms=4.709 sha256=d44fed786dbb555722932e901bd3f56c56aa2daca6c594a67a858c4591e24567
+trial=3 size=64x36 engine=interpreter samples_ms=18.252,18.193,18.003,17.736,18.118,18.132,17.869 median_ms=18.118 sha256=d44fed786dbb555722932e901bd3f56c56aa2daca6c594a67a858c4591e24567
+trial=3 size=64x36 engine=jit samples_ms=45.184,44.987,44.694,44.648,44.498,45.022,46.337 median_ms=44.987 sha256=d44fed786dbb555722932e901bd3f56c56aa2daca6c594a67a858c4591e24567 diagnostic_jit_invocations=1144313
+pair_pass trial=3 size=64x36 sha256=d44fed786dbb555722932e901bd3f56c56aa2daca6c594a67a858c4591e24567 output_bytes=23400
+trial=3 size=128x72 engine=interpreter samples_ms=73.706,74.888,73.869,73.490,72.455,75.245,72.178 median_ms=73.706 sha256=e9f20b8f0414f7406aa2f3ea96738e1c7755d0148090bf72f8703cffd3d374a4
+trial=3 size=128x72 engine=jit samples_ms=187.985,186.481,182.961,181.527,182.544,183.530,181.999 median_ms=182.961 sha256=e9f20b8f0414f7406aa2f3ea96738e1c7755d0148090bf72f8703cffd3d374a4 diagnostic_jit_invocations=4604595
+trial=3 size=128x72 engine=wamr samples_ms=18.678,18.658,19.029,18.714,18.756,18.143,18.543 median_ms=18.678 sha256=e9f20b8f0414f7406aa2f3ea96738e1c7755d0148090bf72f8703cffd3d374a4
+pair_pass trial=3 size=128x72 sha256=e9f20b8f0414f7406aa2f3ea96738e1c7755d0148090bf72f8703cffd3d374a4 output_bytes=92880
+trial=3 size=192x108 engine=jit samples_ms=409.037,407.477,409.228,405.018,411.468,406.667,413.280 median_ms=409.037 sha256=9f2df94afaad4a3750053789ce6be52a0b9b14d66d9b8584edf2718d1ac3c4f1 diagnostic_jit_invocations=10341341
+trial=3 size=192x108 engine=wamr samples_ms=41.011,41.005,40.953,41.252,40.794,41.393,40.819 median_ms=41.005 sha256=9f2df94afaad4a3750053789ce6be52a0b9b14d66d9b8584edf2718d1ac3c4f1
+trial=3 size=192x108 engine=interpreter samples_ms=158.092,157.261,157.277,158.729,162.730,159.187,158.429 median_ms=158.429 sha256=9f2df94afaad4a3750053789ce6be52a0b9b14d66d9b8584edf2718d1ac3c4f1
+pair_pass trial=3 size=192x108 sha256=9f2df94afaad4a3750053789ce6be52a0b9b14d66d9b8584edf2718d1ac3c4f1 output_bytes=208440
+trial=3 size=256x144 engine=wamr samples_ms=77.298,76.980,77.487,77.175,76.405,76.685,76.276 median_ms=76.980 sha256=f35a578dc277b57ca3bb5f74bc9381297fab5afce787bc92c54e46536fa8d2a4
+trial=3 size=256x144 engine=interpreter samples_ms=277.794,278.552,278.939,278.167,278.297,279.835,284.021 median_ms=278.552 sha256=f35a578dc277b57ca3bb5f74bc9381297fab5afce787bc92c54e46536fa8d2a4
+trial=3 size=256x144 engine=jit samples_ms=722.880,725.306,737.810,726.518,724.122,725.945,722.276 median_ms=725.306 sha256=f35a578dc277b57ca3bb5f74bc9381297fab5afce787bc92c54e46536fa8d2a4 diagnostic_jit_invocations=18428744
+pair_pass trial=3 size=256x144 sha256=f35a578dc277b57ca3bb5f74bc9381297fab5afce787bc92c54e46536fa8d2a4 output_bytes=370080
+trial=3 size=320x180 engine=interpreter samples_ms=458.386,446.000,476.384,447.211,446.511,447.896,442.853 median_ms=447.211 sha256=6d04ea80d9a1fd773c85d413057d64797f32dbb257a753d767a378d730d7d699
+trial=3 size=320x180 engine=jit samples_ms=1159.351,1164.825,1155.156,1160.225,1153.896,1157.830,1137.240 median_ms=1157.830 sha256=6d04ea80d9a1fd773c85d413057d64797f32dbb257a753d767a378d730d7d699 diagnostic_jit_invocations=28808558
+trial=3 size=320x180 engine=wamr samples_ms=112.002,112.539,111.775,114.722,112.607,114.177,115.015 median_ms=112.607 sha256=6d04ea80d9a1fd773c85d413057d64797f32dbb257a753d767a378d730d7d699
+pair_pass trial=3 size=320x180 sha256=6d04ea80d9a1fd773c85d413057d64797f32dbb257a753d767a378d730d7d699 output_bytes=577800
+SUMMARY
+size=64x36 rays=7332 interpreter_ms=18.053 interpreter_range_ms=17.793-18.118 jit_ms=44.987 jit_range_ms=44.484-45.620 wamr_ms=4.568 wamr_range_ms=4.552-4.709 interpreter_over_wamr=3.952x jit_over_wamr=9.848x interpreter_rays_s=406127 jit_rays_s=162981 wamr_rays_s=1605071
+size=128x72 rays=29732 interpreter_ms=70.588 interpreter_range_ms=70.386-73.706 jit_ms=184.216 jit_range_ms=182.961-186.976 wamr_ms=18.678 wamr_range_ms=18.375-18.718 interpreter_over_wamr=3.779x jit_over_wamr=9.863x interpreter_rays_s=421206 jit_rays_s=161398 wamr_rays_s=1591841
+size=192x108 rays=67032 interpreter_ms=158.473 interpreter_range_ms=158.429-166.147 jit_ms=409.100 jit_range_ms=409.037-410.958 wamr_ms=41.005 wamr_range_ms=40.190-41.421 interpreter_over_wamr=3.865x jit_over_wamr=9.977x interpreter_rays_s=422986 jit_rays_s=163852 wamr_rays_s=1634714
+size=256x144 rays=119352 interpreter_ms=279.949 interpreter_range_ms=278.552-282.710 jit_ms=725.306 jit_range_ms=725.213-736.856 wamr_ms=76.452 wamr_range_ms=75.529-76.980 interpreter_over_wamr=3.662x jit_over_wamr=9.487x interpreter_rays_s=426335 jit_rays_s=164554 wamr_rays_s=1561142
+size=320x180 rays=186792 interpreter_ms=441.931 interpreter_range_ms=435.611-447.211 jit_ms=1154.761 jit_range_ms=1148.529-1157.830 wamr_ms=113.812 wamr_range_ms=112.607-122.785 interpreter_over_wamr=3.883x jit_over_wamr=10.146x interpreter_rays_s=422672 jit_rays_s=161758 wamr_rays_s=1641237

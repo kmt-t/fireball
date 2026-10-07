@@ -177,7 +177,10 @@ PySIMの `BumpAllocator` はオフセットを会計し、JIT managerが借用�
 
 ### 4.1 アルゴリズム
 <!-- traceability: {JIT_CopyAndPatch} {JIT_RuntimeAPI_Fallback} {SinglePassCompilation} -->
-1. **トレース解析とコード生成**: Tier 3 JIT 拡張はLoader所有WASMコードと関数メタデータを内部C++コンパイラへ渡す。C++コンパイラが命令列を直接走査し、対応命令を単一パスで固定長出力領域へ生成する。未対応命令や不適格なトレースはコンパイル失敗として返す。
+1. **トレース解析とコード生成**: Tier 3 JIT拡張はLoader所有WASMコードと関数メタデータを内部C++コンパイラへ渡す。C++コンパイラが命令列を直接走査し、対応命令を単一パスで固定長出力領域へ生成する。
+   - 関数引数を含む論理ローカル数が128以下なら、ローカルアクセスを固定オフセットの直接命令へ生成する。
+   - 論理ローカル数が129以上なら、`local.get` / `local.set` / `local.tee` を共通コード領域のRuntime API表への間接呼び出しへ生成する。この経路はCPS handlerとInterpreter dispatcherを呼ばない。
+   - 未対応命令や不適格なトレースはコンパイル失敗として返す。
 2. **キャッシュ配置とrelocation**: JIT runtimeがtrace headerと生成bodyをキャッシュへ配置する。x64の相対分岐、helper target、chain dispatcher targetを登録時に確定する。
 3. **実行可能メモリの確定**: x64の実行可能バッファ管理が書込み・実行権限の切替と必要な同期を行う。ARMv8-Mの権限機構、命令キャッシュ同期、バリア命令はTBDである。
 4. **制御終端の処理**: trace bodyは制御終端命令を実行せず、対応するC++ Interpreter handlerへ戻る。handlerが条件、control frame、遷移先を確定する。C++ dispatcherは設定された後方分岐数へ達するまで次の常駐traceまたはhandlerを続ける。
@@ -328,7 +331,7 @@ ARMv8-Mのコンパイラと実機検証はTBDである。
   - **トレース境界の2種類のエントリと2種類のエグジット**: 境界の性質は「真の脱出/新規進入」と「共通コード領域のchain dispatcherを介した継続」の2系統に分かれる。混同してはならない。物理的な命令列は対象アーキテクチャの仕様で定める。
      - **新規エントリ / 真の脱出**: インタープリタから初めて呼び出される場合は対象ABIの開始処理を通過する。真の脱出では、共有オペランド領域と実行コンテキストを同期し、対象ABIの終了処理で復帰する。WASM値は共有オペランドスタックに残し、JIT traceのC戻り値には使わない（{GOTCHA-JITC-07}）。 <!-- definition: {GOTCHA-JITC-07} -->
   - **chain dispatcher経由の継続**: 直線後続traceが常駐し、対象ABIの状態引継ぎ条件を満たす場合、trace末尾から共通コード領域のchain dispatcherへ移り、dispatcherがTraceヘッダのtarget bodyへtail-jumpする。入口保存処理を重ねない。target未接続時は共通epilogueへ進み、C++ dispatcherへ戻る。
-  - **固定ローカルスロットの直接アクセス (`ContextPointerRegister`)**: 各論理ローカルは、フレームのスロット幅の固定スロットに配置される。スロット幅は関数ごとに決まり、i32/f32だけの関数は4バイト、i64/f64を含む関数は8バイトである。ローカル領域の基底を起点とする `local index × スロット幅` を、命令生成時に直接埋め込む。実行時のオフセット表参照やベースアドレス再計算は行わない。
+  - **ローカルアクセスの直接処理とAPI経路 (`ContextPointerRegister`, `JIT_RuntimeAPI_Fallback`)**: 各論理ローカルはフレームの固定スロットに配置される。関数ごとに最大値型からスロット幅を決める。論理ローカル数は関数引数を含む。論理ローカル数が128以下なら、ローカル基底相対の固定オフセットを生成時に埋め込む。ローカル幅もLoaderメタデータから生成時に確定する。`local.get` / `local.set` / `local.tee` は幅に応じた固定回数のワードコピーを生成する。生成コードはローカル幅表を読まず、幅を選ぶ分岐を持たない。論理ローカル数が129以上なら、同じ命令を共通コード領域のローカル Runtime API 表へ間接呼び出しする。Runtime APIは現在のCallFrameから幅を解決して値をコピーする。生成traceはtrace headerの相対基点から表を参照し、trace固有の絶対関数アドレスを保持しない。Runtime APIはCPS handlerやInterpreter dispatcherを経由しない。
 
 - **決定事項**:
   - **背景**: 現行x64参照構成のコードキャッシュは8KBである。生成コードは可変長であり、すべてのtraceの開始位置が一定の命令アライメントを満たす保証はない。

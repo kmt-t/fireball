@@ -30,6 +30,7 @@ import struct
 import sys
 
 from config import (
+    JIT_CACHE_ABSOLUTE_ADDRESS_POOL_OFFSET,
     JIT_CACHE_ACTIVE_OFFSET_BYTES,
     JIT_TRACE_COMMON_PROLOGUE_OFFSET,
     JIT_X64_COMMON_CODE_RELATIVE_OFFSET,
@@ -47,6 +48,7 @@ from qa.shared.helpers import wat_to_wasm
 from qa.shared.jit_cache import JITTrace
 from qa.shared.runtime_support import compile_module_block, compile_test_block, make_runtime_engine
 from qa.shared.x64_jit import TraceCompiler
+from tier2_runtime.abi.interpreter_abi import CallStackNative, ExecutionContextABI
 from tier2_runtime.interpreter.control_flow import extract_basic_blocks
 from tier2_runtime.interpreter.interpreter import ExecutionContext
 from tier2_runtime.wasm.module import I32, I64, BasicBlock, LocalWidthMap
@@ -88,6 +90,7 @@ from tier2_runtime.wasm.opcodes import (
     I64_SUB,
     LOCAL_GET,
     LOCAL_SET,
+    LOCAL_TEE,
 )
 
 _I32_HELPER_TYPE = ctypes.CFUNCTYPE(
@@ -581,6 +584,208 @@ def test_trace_local_addressing_follows_frame_slot_width():
             ctypes.c_void_p(0), ctypes.c_void_p(0), ctypes.cast(locals_arr, ctypes.c_void_p), 0
         )
         assert list(locals_arr) == expected, f"types {types}: all untouched words must survive"
+
+
+def test_trace_local_value_width_is_fixed_during_compilation():
+    """TEST-JITC-65: wide local copies use compile-time widths and fixed offsets."""
+    compiler = TraceCompiler()
+    value = 0x0123_4567_89AB_CDEF
+    words = (value & 0xFFFF_FFFF, value >> 32)
+    layout = LocalWidthMap((I64,))
+
+    get_trace = compiler.compile_instructions(
+        head_pc=0,
+        instructions=((LOCAL_GET, 0),),
+        next_pc=1,
+        loops_to=None,
+        byte_length=1,
+        local_layout=layout,
+    )
+    assert get_trace is not None
+    context = ExecutionContext()
+    assert context.local_stack.extend(words)
+    get_trace.invoke(context)
+    assert tuple(context.stack) == words
+    assert context.local_stack.raw_at(0) == words[0]
+    assert context.local_stack.raw_at(1) == words[1]
+    assert get_trace.code_blob is not None
+    body = get_trace.code_blob[JIT_X64_TRACE_HEADER_BYTES + TRACE_ENTRY_STUB_BYTES :]
+    assert bytes.fromhex("45 8b 4a 00") in body
+    assert bytes.fromhex("45 8b 4a 04") in body
+    assert bytes.fromhex("45 89 4c 24 00") in body
+    assert bytes.fromhex("45 89 4c 24 04") in body
+    assert bytes.fromhex("41 ff d2") not in body
+
+    add_trace = compiler.compile_instructions(
+        head_pc=0,
+        instructions=((LOCAL_GET, 0), (I64_CONST, 1), (I64_ADD, None)),
+        next_pc=1,
+        loops_to=None,
+        byte_length=3,
+        local_layout=layout,
+    )
+    assert add_trace is not None
+    context = ExecutionContext()
+    assert context.local_stack.extend(words)
+    add_trace.invoke(context)
+    result = value + 1
+    assert tuple(context.stack) == (result & 0xFFFF_FFFF, result >> 32)
+
+    for opcode in (LOCAL_SET, LOCAL_TEE):
+        trace = compiler.compile_instructions(
+            head_pc=0,
+            instructions=((I64_CONST, value), (opcode, 0)),
+            next_pc=1,
+            loops_to=None,
+            byte_length=2,
+            local_layout=layout,
+        )
+        assert trace is not None
+        context = ExecutionContext()
+        assert context.local_stack.extend((0, 0))
+        trace.invoke(context)
+        assert context.local_stack.raw_at(0) == words[0]
+        assert context.local_stack.raw_at(1) == words[1]
+        expected_stack = words if opcode == LOCAL_TEE else ()
+        assert tuple(context.stack) == expected_stack
+
+
+def test_local_runtime_api_table_is_used_only_above_128_locals():
+    """TEST-JITC-66: local count selects direct code or a PIC runtime API call."""
+
+    def assert_local_api_call(trace, api_index: int) -> None:
+        assert trace.code_blob is not None
+        table_entry = JIT_CACHE_ABSOLUTE_ADDRESS_POOL_OFFSET + api_index * 8
+        pic_call = (
+            bytes.fromhex("4d 63 5e")
+            + bytes((JIT_X64_COMMON_CODE_RELATIVE_OFFSET,))
+            + bytes.fromhex("4d 01 f3 49 81 c3")
+            + struct.pack("<I", table_entry)
+            + bytes.fromhex("41 ff 13")
+        )
+        assert pic_call in trace.code_blob
+
+    compiler = TraceCompiler()
+    direct = compiler.compile_instructions(
+        head_pc=0,
+        instructions=((LOCAL_GET, 127),),
+        next_pc=1,
+        loops_to=None,
+        byte_length=1,
+        local_layout=LocalWidthMap((I32,) * 128),
+    )
+    assert direct is not None and direct.code_blob is not None
+    assert bytes.fromhex("41 ff 13") not in direct.code_blob
+
+    fallback = compiler.compile_instructions(
+        head_pc=0,
+        instructions=((LOCAL_GET, 128),),
+        next_pc=1,
+        loops_to=None,
+        byte_length=1,
+        local_layout=LocalWidthMap((I32,) * 129),
+    )
+    assert fallback is not None and fallback.code_blob is not None
+    assert_local_api_call(fallback, 0)
+
+    call_stack = CallStackNative()
+    call_stack.size = 1
+    frame = call_stack.frames[0]
+    frame.local_count = 129
+    frame.slot_words = 1
+    context = ExecutionContextABI()
+    context.call_stack = ctypes.addressof(call_stack)
+    context.call_base = 0
+    locals_array = (ctypes.c_uint32 * 129)()
+    locals_array[128] = 0x12345678
+    value_stack = (ctypes.c_uint32 * 128)()
+
+    fallback.fn(
+        ctypes.byref(context),
+        ctypes.cast(value_stack, ctypes.c_void_p),
+        ctypes.cast(locals_array, ctypes.c_void_p),
+        0,
+    )
+    assert value_stack[0] == 0x12345678
+
+    for opcode in (LOCAL_SET, LOCAL_TEE):
+        trace = compiler.compile_instructions(
+            head_pc=0,
+            instructions=((I32_CONST, 0xCAFEBABE), (opcode, 128)),
+            next_pc=1,
+            loops_to=None,
+            byte_length=2,
+            local_layout=LocalWidthMap((I32,) * 129),
+        )
+        assert trace is not None
+        assert_local_api_call(trace, 1 if opcode == LOCAL_SET else 2)
+        locals_array[128] = 0
+        value_stack[0] = 0
+        trace.fn(
+            ctypes.byref(context),
+            ctypes.cast(value_stack, ctypes.c_void_p),
+            ctypes.cast(locals_array, ctypes.c_void_p),
+            0,
+        )
+        assert locals_array[128] == 0xCAFEBABE
+        if opcode == LOCAL_TEE:
+            assert trace.result_words == 1
+            assert value_stack[0] == 0xCAFEBABE
+        else:
+            assert trace.result_words == 0
+
+    wide_layout = LocalWidthMap((I32,) * 128 + (I64,))
+    width_map = ctypes.create_string_buffer(bytes(wide_layout.raw_view))
+    frame.slot_words = wide_layout.slot_words
+    frame.local_width_map = ctypes.addressof(width_map)
+    frame.local_width_count = wide_layout.count
+    wide_locals = (ctypes.c_uint32 * (129 * wide_layout.slot_words))()
+    wide_value = 0x0123456789ABCDEF
+    wide_words = (wide_value & 0xFFFF_FFFF, wide_value >> 32)
+    wide_locals[256] = wide_words[0]
+    wide_locals[257] = wide_words[1]
+    value_stack[0] = value_stack[1] = 0
+    wide_get = compiler.compile_instructions(
+        head_pc=0,
+        instructions=((LOCAL_GET, 128),),
+        next_pc=1,
+        loops_to=None,
+        byte_length=1,
+        local_layout=wide_layout,
+    )
+    assert wide_get is not None
+    assert_local_api_call(wide_get, 0)
+    wide_get.fn(
+        ctypes.byref(context),
+        ctypes.cast(value_stack, ctypes.c_void_p),
+        ctypes.cast(wide_locals, ctypes.c_void_p),
+        0,
+    )
+    assert (value_stack[0], value_stack[1]) == wide_words
+
+    for opcode in (LOCAL_SET, LOCAL_TEE):
+        wide_set = compiler.compile_instructions(
+            head_pc=0,
+            instructions=((I64_CONST, wide_value), (opcode, 128)),
+            next_pc=1,
+            loops_to=None,
+            byte_length=2,
+            local_layout=wide_layout,
+        )
+        assert wide_set is not None
+        assert_local_api_call(wide_set, 1 if opcode == LOCAL_SET else 2)
+        wide_locals[256] = wide_locals[257] = 0
+        value_stack[0] = value_stack[1] = 0
+        wide_set.fn(
+            ctypes.byref(context),
+            ctypes.cast(value_stack, ctypes.c_void_p),
+            ctypes.cast(wide_locals, ctypes.c_void_p),
+            0,
+        )
+        assert (wide_locals[256], wide_locals[257]) == wide_words
+        assert wide_set.result_words == (2 if opcode == LOCAL_TEE else 0)
+        if opcode == LOCAL_TEE:
+            assert (value_stack[0], value_stack[1]) == wide_words
 
 
 # ---------------------------------------------------------------------------

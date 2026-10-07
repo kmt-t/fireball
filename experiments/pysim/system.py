@@ -641,7 +641,7 @@ class System:
             # Direct O(1) rendezvous handoff (atomic ownership transfer)
             try:
                 status, response = e.value
-            except TypeError, ValueError:
+            except (TypeError, ValueError):
                 status, response = IPCStatus.COMPLETED, None
             self.scheduler.run_until_idle()
 
@@ -694,7 +694,7 @@ class System:
             # Direct O(1) rendezvous handoff
             try:
                 status, msg = e.value
-            except TypeError, ValueError:
+            except (TypeError, ValueError):
                 status, msg = IPCStatus.COMPLETED, None
             self.scheduler.run_until_idle()
 

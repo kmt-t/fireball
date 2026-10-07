@@ -1,5 +1,31 @@
-# PySIM ベンチマーク結果（2026-10-06更新）
+# PySIM ベンチマーク結果（2026-10-07更新）
 <!-- traceability: {ThreadedInterpreter} {JIT_CopyAndPatch} {JIT_CardAgingSweep} {Wasm32Only} -->
+
+## 2026-10-07 Interpreter・JIT・WAMR AO-Bench比較
+
+### 測定条件
+
+Fireball NativeInterpreter、Fireball Hybrid JIT、WAMR Fast Interpreterで、同一のAO-Bench WASMを5解像度で実行した。NativeInterpreterは指定どおりyieldしきい値を計測プロセス内だけ `0xFFFFFFFF` に設定した。Hybrid JITはホットトレース生成にyield境界を使うため既定しきい値64で実行した。WAMRにFireballの協調yield設定はない。
+
+AMD Ryzen 5 5500GT / Linux `7.0.0-38-generic` / CPython 3.13.15 / Clang 21.1.8を使用し、計測プロセスをCPU 2へ固定した。各解像度・エンジンについて3独立プロセスを実行し、各プロセス3フレームをウォームアップ、後続7フレームを計時した。表はプロセス内7サンプル中央値の中央値、範囲は3プロセス中央値の最小–最大である。JITは別の診断用RuntimeStatsEngineで同じ3ウォームアップを実行し、各解像度でJITトレース呼び出しを確認した。診断実行は時間計測から除外した。
+
+NativeInterpreter/JITは現行作業ツリーからClang `-O2`で再ビルドした。WAMR 2.4.3はFast InterpreterとWASIを有効、AOT/JITを無効にしてClang `-O2 -DNDEBUG`でビルドした。
+
+### 結果
+
+| サイズ | rays/フレーム | NativeInterpreter・yield最大 | Hybrid JIT・yield 64 | WAMR Fast | Interpreter/WAMR | JIT/WAMR |
+| :--- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 64×36 | 7,332 | 18.053 ms（17.793–18.118） | 44.987 ms（44.484–45.620） | 4.568 ms（4.552–4.709） | 3.952× | 9.848× |
+| 128×72 | 29,732 | 70.588 ms（70.386–73.706） | 184.216 ms（182.961–186.976） | 18.678 ms（18.375–18.718） | 3.779× | 9.863× |
+| 192×108 | 67,032 | 158.473 ms（158.429–166.147） | 409.100 ms（409.037–410.958） | 41.005 ms（40.190–41.421） | 3.865× | 9.977× |
+| 256×144 | 119,352 | 279.949 ms（278.552–282.710） | 725.306 ms（725.213–736.856） | 76.452 ms（75.529–76.980） | 3.662× | 9.487× |
+| 320×180 | 186,792 | 441.931 ms（435.611–447.211） | 1,154.761 ms（1,148.529–1,157.830） | 113.812 ms（112.607–122.785） | 3.883× | 10.146× |
+
+全15試行で、ウォームアップを含む全フレームの出力がバイト単位で一致した。320×180でHybrid JITは約162 kRays/s、yield最大のNativeInterpreterは約423 kRays/s、WAMR Fastは約1.64 MRays/sだった。今回のRuntimeEngine/JIT経路はInterpreter経路の約2.61倍、WAMR Fastの約10.15倍の時間を要した。JITトレース実行は診断経路で確認済みであるため、これは未使用のJITを測った結果ではない。
+
+この比較はJIT生成コード単体の性能を示さない。JIT側はyieldしきい値64でRuntimeEngine境界とランタイム処理を含み、Interpreter側はyield間隔を最大化している。またFireballはPython WASI/HAL経路とメモリ内sink、WAMRはC runtime WASIとファイルsinkを使う。320×180の差から次に切り分ける対象は、JITトレース本体とyield境界・JITランタイム処理である。
+
+全サンプル、試行別出力ハッシュ、JIT呼び出し診断値、計測条件は[3エンジン比較ログ](results/aobench_interpreter_jit_wamr_20261007.txt)に保存した。
 
 ## 2026-10-06 フルテスト・ベンチマーク確認
 
@@ -8,7 +34,7 @@
 - AMD Ryzen 5 5500GT、x86_64、Ubuntu Linux 7.0.0-34-generic、CPython 3.14.6、Clang/Clang++ 21.1.8、uv 0.12.19を使用した。
 - Interpreter、JIT製品ライブラリとQAライブラリを現行作業ツリーから再ビルドした。
 - `run_all.py`を現行QAライブラリで実行し、[実行ログ](results/run_all_20261006.txt)に保存した。CPU affinity固定はしておらず、複数回測定の中央値ではない。
-- 実測対象はx64ホスト上のPySIMである。Cortex-M33の実行時間や命令数を示さない。VTune、AMD uProf、Linux `perf`は環境にないため使用していない。
+- 実測対象はx64ホスト上のPySIMである。Cortex-M33の実行時間や命令数を示さない。VTune、AMD uProf、Linux `perf`によるサンプリングはこの測定では行っていない。
 
 ### ベンチマーク結果
 
@@ -61,6 +87,20 @@ Clang生成WASMの`local.get + local.get + i32.<op>`は85回出現した。QA Ru
 
 同じ基準・候補ライブラリで250,000反復のループを各9回測り、各workerで3回ウォームアップした。両方とも同じWASMループトレースを生成・実行し、実行時のトレース本体は基準129 bytes、融合版117 bytesだった。実行時間の中央値は基準40.485 ms、融合版40.928 msで、融合版は1.09%遅かった。範囲は基準39.913–49.938 ms、融合版38.767–45.254 msであり、この測定では実行時間の改善を確認できない。計時区間からモジュール読込、コンパイル、ウォームアップを除外した。結果と条件は[ランタイム比較ログ](results/x64_stencil_runtime_20261006.txt)に保存した。
 
+### 2026-10-07 NativeInterpreter uProfホットスポット
+
+2026-10-06の比較計測とは別に、AMD uProfでNativeInterpreterのCPUホットスポットを調べた。対象はAO-Bench 320×180であり、16フレームの出力は既知のSHA-256と一致した。CPU 2へ固定し、CPython 3.13.15上でClang `-O2`のNativeInterpreter共有ライブラリを実行した。
+
+ネイティブサンプリングではプロセスCPUサンプル13.08秒のうち、`libnative_interpreter.so`が6.97秒だった。最上位関数は`h_local_get`で2.42秒を占めた。次点は`h_call` 0.87秒、`h_local_set` 0.72秒、`h_i32_const` 0.65秒、`fb_native_run_dispatch` 0.62秒だった。
+
+CPython 3.13.15・Clang 21.1.8 `-O2`で再採取したuProfでは、`h_local_get`が2.19秒（プロセスCPU_TIMEの17.5%）で引き続き最大の単一関数だった。`h_call`は1.02秒（8.1%）、`h_local_set`は0.56秒（4.5%）だった。プロファイラなし16回の中央値は786.205 ms、範囲は765.944–808.446 msだった。初回と再採取のサンプル差だけから関数単体の性能変化とは判断しない。
+
+別の分岐プロファイルでは、Interpreter共有ライブラリ全体の分岐ミス率は2.21%だった。今回のサンプルでは分岐予測ミスが主要因とは確認できない。これは分岐命令の実行コスト全体を否定する測定ではない。
+
+uProfのPythonトレース計測は1フレームあたり約6.5–6.9秒となり、通常実行の約0.8秒より大幅に遅くなった。Pythonトレース計測値は性能判断に使わず、PID接続によるネイティブサンプリングを採用した。非プロファイル実行16回の中央値は792.150 ms、範囲は783.074–824.343 msだった。
+
+この結果を受けて上位ハンドラの生成コードを調べたところ、`read_u32_remaining`が`h_local_get`、`h_local_set`、`h_call`から呼び出され、即値が1 byteの通常経路にもレジスタ退避を持ち込んでいた。継続デコーダをインライン可能にしたところ、Clang `-O2`は3ハンドラからのヘルパー呼び出しをなくし、`h_i32_const`は元から追加呼び出しがなかった。AO-Bench 320×180の同条件A/Bでは中央値が798.542 msから766.411 msへ4.02%短縮し、フレームのSHA-256は一致した。NativeInterpreterのCPSハンドラは次opcodeへ末尾ディスパッチし、Opcode Runtime APIはすでに`always_inline`指定済みだったため、残っていたこの共通即値デコーダの呼び出し境界を詰めた。詳細は[即値デコーダ最適化記録](results/aobench_uleb_inline_20261007.txt)、[初回uProf記録](results/aobench_uprof_hotspots_20261007.txt)、[再採取uProf記録](results/aobench_uprof_hotspots_retake_20261007.txt)に保存した。
+
 ## 2026-10-05 統合スイート再測定
 
 ### 測定条件
@@ -69,7 +109,7 @@ Clang生成WASMの`local.get + local.get + i32.<op>`は85回出現した。QA Ru
 - 0xFC計測は`3b0cf07c`を基点に測定し、`bench_fc.py`の未コミット修正を含む。C++ネイティブソースに差分はない。
 - AMD Ryzen 5 5500GT、Linux 7.0.0-34-generic、CPython 3.14.6、Clang 21.1.8、uv 0.12.19で測定した。
 - InterpreterとJITのC++共有ライブラリを再ビルドした。`taskset -c 2`でCPU 2に固定し、`run_all.py`を独立プロセスで3回実行した。
-- 通常実行のwall-clock値を採った。VTune、AMD uProf、Linux `perf`、ハードウェアイベントは使用していない。
+- 通常実行のwall-clock値を採った。VTune、AMD uProf、Linux `perf`、ハードウェアイベントによるプロファイルはこの測定では行っていない。
 - ホスト上のPySIM結果である。組み込みCPUの実行時間やROM/RAM使用量を示す値ではない。
 - agingの`compile_ms`は`compile_wasm_trace`の開始から`build_runtime_trace`の終了までを計時した。
 

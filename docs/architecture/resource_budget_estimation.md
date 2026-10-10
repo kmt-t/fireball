@@ -15,6 +15,8 @@
 計測対象の製品コードはcommit `f02f4bb34c428e133863af8873e525b3109e6749`にある。
 結果JSONには計測時のworktree状態と対象ファイルのハッシュを保存する。
 資源一覧の計測入口には、現行JIT設定を渡すための未コミット修正を含む。
+この測定はJIT traceを実行時に機械語化していた変更前のスナップショットである。
+現行実装はbuild時にアセンブリからPIC raw stencilを生成し、実行時に固定長traceへ組み立てる。このJIT経路のROMとcompile stackの値は未計測である。
 現行製品側のJIT入口とネイティブライブラリを使う。
 QA専用のJIT管理クラスと検査用ライブラリは、製品RAMとROMへ計上しない。
 
@@ -45,7 +47,6 @@ PySIMのWASMリニアメモリは論理ゲストメモリであり、MCUの物�
 | 実体のグローバル変数と関数テーブル | インスタンス生成時に確保する |
 | ネイティブ実行用のモジュール、関数、型、テーブル、ブロックの借用記述 | 初回実行時にホストABIの構造体サイズから計上する |
 | 実行コンテキスト、値スタック、局所変数スタック、呼出し情報、制御情報 | 呼出しワークスペースを確保し、後続呼出しで再利用する |
-| JITコンパイルの一時領域 | 最大552バイトのtrace出力を実行コード領域へ直接生成し、32バイトの作業stack位置配列をコンパイル関数のstack frameに置く |
 
 メモリ計測は、製品側の `RuntimeEngine` と `JITRuntimeManager` で実行する。
 QA用の実行カウンタと診断dispatcherは、この計測経路へ含めない。
@@ -100,7 +101,7 @@ uv run python experiments/pysim/benchmarks/memory/bench_runtime_memory.py \
 
 表の「ゲスト論理リニアメモリ」はWASMの論理サイズである。PySIMではホストbytearrayがbackingとなるが、Cortex-M33の物理RAM量ではない。対象のCortex-M33構成では論理アドレス窓10KB、物理RAM全体32KBを別々に扱う。このホスト測定で64KBと表示される値を物理RAMへ加算してはならない。
 
-Hybrid JITのアリーナ使用量はInterpreter単独と同じだった。コンパイラは最大552バイトのtrace出力を実行コード領域へ直接書き、最大32バイトの作業stack位置配列はC++ stack frameに置く。追加の240バイトarena scratchは確保しない。
+Hybrid JITのアリーナ使用量はInterpreter単独と同じだった。この計測はJIT管理領域とアリーナ使用量を対象とし、native compilerのC++ stackは含まない。現行trace compilerは最大1,584バイトの出力を実行コードregion内に構成する。trace compile中のC++ stack peak、追加scratch領域、現行のarena使用量はこの測定では確定していない。
 
 現行x64製品JIT runtimeの固定管理構造体は`sizeof`で1,584バイトである。
 3バンク分のentryは840バイトである。
@@ -146,62 +147,46 @@ Python管理オブジェクトとFFIの一時領域はホスト専用であり�
 
 ## 5. JITコンパイル時のRAM
 
-<!-- traceability: {Resource_Estimation_Model} {GLOBAL_StrictMemoryLimit} {JIT_CopyAndPatch} -->
-1トレースの命令数上限は64命令である。
-生成するtrace blobは最大552バイトで、40バイトheaderと最大512バイトのコード領域を含む。
-コンパイル中の作業スタック深さの上限は16スロットである。
-WASM命令は逐次復号する。復号した全命令を格納する配列は持たない。
+<!-- traceability: {Resource_Estimation_Model} {GLOBAL_StrictMemoryLimit} {JIT_AssemblyStencilCodegen} -->
+1トレースのWASM命令数上限は64命令である。
+生成するtrace blobは最大1,584バイトで、48バイトheaderと最大1,536バイトのassembly機械語本体・alignment padding・定数領域を含む。
+コンパイル中の共有operand stack深さの上限は128 wordである。
+C++フロントエンドは復号済み命令列とoperation symbol列を固定長配列へ一時保持する。
+build時に`operations.S`、`trace.S`、`common.S`をアセンブルし、生成したraw binaryとmetadataをC++ byte array headerへ出力する。trace compile時はC++が選択済みoperationを固定長出力へ合成し、成功接続slotを後続stencilで置き換える。命令列内の条件分岐は合成後の位置に合わせて再配置する。
 容量超過や非対応命令ではコンパイルを辞退し、C++ Interpreter handlerからruntimeへ戻る。
 
 | コンパイル中の領域 | 容量と配置 | 計上場所 |
 | :--- | ---: | :--- |
-| 出力blob（header 40バイト + body領域512バイト） | 最大552バイト | x64実行コードregion内 |
-| 作業スタック位置 | 16件×`int16_t` 2バイト = 32バイト | `compile_pending`のC++ stack frame内 |
+| 出力blob（header 48バイト + body・定数領域1,536バイト） | 最大1,584バイト | x64実行コードregion内 |
+| WASM decode staging | 64件×16バイト = 1,024バイト | `compile_wasm_trace`のC++ stack frame内 |
+| operation view列 | x64 ABIで64件×96バイト = 6,144バイト | `trace_builder`のC++ stack frame内 |
+| 定数pool staging | 最大321件×16バイト = 5,136バイト | `trace_builder`のC++ stack frame内 |
+| 作業スタックモデル | 128個のword幅、`size_t`、2個の32bit値 = 144バイト | `stack_model`のC++ stack frame内 |
+| abort slot位置列 | x64 ABIで64件×8バイト = 512バイト | `trace_builder::finish`のC++ stack frame内 |
+| stencil・scaffold scratch | 3配列×512バイト = 1,536バイト | `trace_builder`のC++ stack frame内 |
 
-一時領域を`BumpAllocator`から貸与しない。トレース生成用の240バイトscratch allocationはなく、成功、辞退、エラー時にarena offsetを復元する処理もない。出力を実行コードregionへ直接生成する。
+実行時trace compileではassemblerやlinkerを起動せず、C++の固定配列を使う。表はx64型レイアウトから見積もった領域であり、最適化後のC++ stack peakは別途計測する。
 
-現行WASMのコンパイルは、次の順に主要関数を呼ぶ。
+WASM traceのコンパイル経路は、次の順に処理する。
 
 1. `fireball::jit_runtime<void>::compile_pending`
 2. `fb_jit_compile_block`
 3. `fireball::compile_wasm_trace`
+4. C++ trace builderがbuild時生成のassembly stencilを選び、成功接続slotを後続operationで置換してfall-through列を構成する
 
-Clang 21.1.8 / x86_64で、製品JITビルド設定へ`-fstack-usage`を加えて計測した。
-設定は`-O2 -g -fPIC -fvisibility=hidden -fno-exceptions -fno-rtti`である。
-
-| 測定対象 | スタックフレームのバイト数 |
-| :--- | ---: |
-| `fireball::jit_runtime<void>::compile_pending` | 216 |
-| `fb_jit_compile_block` | 88 |
-| `fireball::compile_wasm_trace` | 216 |
-| **主要3関数の既知部分** | **520** |
-
-`compile_instruction_body`は明示命令入力を扱うQA経路で、136バイトのframeをWASM compile chainへ加えない。
-32バイトの作業stack位置配列は`compile_pending`の216バイトframeに含まれる。
-最大552バイトの出力はx64実行コードregionへ直接生成する。
-主要3関数のframe合計520バイトは既知部分であり、命令処理の補助関数、呼出し元、ABI frame、OS/割込みstackを含む経路全体の上限ではない。
-ARMv8-Mのコンパイル時stack上限は対象ABIの全呼出し経路で確定する。
+shared libraryにはbuild時生成のassembly raw binaryを保持するC++ byte arrayが入る。現行worktreeにおける全native stack peak、trace compile latency、raw code blobとshared libraryのsection sizeは再計測が必要である。
+以前の`Copy-and-Patch`実装で計測したC++ frame合計は現行のstencil composition pathへ転用しない。
+ARMv8-Mの実装は未確定であり、対象ABI向けのbuild時LIRとnative stack使用量を個別に確定する。
 
 ## 6. ホストROM関連セクションとWASM入力
 
-<!-- traceability: {Resource_Estimation_Model} {ROMParsing} {JIT_CopyAndPatch} -->
+<!-- traceability: {Resource_Estimation_Model} {ROMParsing} {JIT_AssemblyStencilCodegen} -->
 最小構成のROM上限96KBは98,304バイト、想定構成の128KBは131,072バイトとする。
-現行ホストライブラリを製品ビルドスクリプトで再生成する。
-GNU `size -A` でELFセクションを測定する。
-QA用の `libjit_probe.so` と `libinterpreter_probe.so` はこの表へ含めない。
-
-| x64参照ライブラリ | `.text` | `.rodata` | `.text` + `.rodata` | `.data.rel.ro` | `.data` + `.bss` | unwind情報 |
-| :--- | ---: | ---: | ---: | ---: | ---: | ---: |
-| printk | 872 | 65 | 937 | 0 | 16 | 296 |
-| C++ Interpreter | 117,949 | 3,961 | 121,910 | 4,288 | 16 | 25,708 |
-| x64 JIT | 38,773 | 3,000 | 41,773 | 1,904 | 16 | 5,380 |
-| **合計** | **157,594** | **7,026** | **164,620** | **6,192** | **48** | **31,384** |
-
-`.text` と `.rodata` の合計は約160.76KiBである。
-Interpreterの通常実行とデバッグの入口を含む。
-独立したprintkライブラリも集計する。
-Python側に残るLoader、Runtime、共有機能のC++移植分は含まない。
-`.data.rel.ro` 6,192バイトはInterpreterとJITのライブラリにあり、`.text` + `.rodata` と `.data` + `.bss` の各合計へ含めていない。
+現行x64 trace compilerはassembly raw binaryをC++ byte arrayとして共有libraryへ含め、実行時code generatorを持たない。
+shared libraryにはbuild時生成のoperation、trace、common codeのraw binary arrayを含む。
+これらのblobと現行ELF sectionの合計sizeは未計測であり、本版を対象に再計測する。
+このx64ホスト用JIT compilerは現行MCU向け最小RAM/ROM見積りへ加算できる対象ではない。
+組み込み向けコード生成方式を確定する際に、対象ABIのbuild時LIRと実行時native stack予算を個別に計測する。
 再配置、GOT、動的リンク情報、debug情報も別セクションである。
 unwind情報は `.eh_frame` と `.eh_frame_hdr` の合計を別欄へ示す。
 `.data` の初期値は、対象firmwareのROM load imageにも計上する。

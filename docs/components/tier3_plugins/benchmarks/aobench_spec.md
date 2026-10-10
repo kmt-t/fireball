@@ -1,14 +1,14 @@
 # 3D レイトレーシング (AO-Bench) ベンチマーク仕様書 (AO-Bench Specification)
 
 ## 1. 目的と対象範囲
-<!-- traceability: {Wasm32Only} {LowLatencyJIT} {ThreadedInterpreter} {JIT_CopyAndPatch} -->
+<!-- traceability: {Wasm32Only} {LowLatencyJIT} {ThreadedInterpreter} {JIT_AssemblyStencilCodegen} -->
 
 正本: [`jit_compiler.md`](docs/components/tier3_plugins/jit_compiler.md), [`wasm_instruction_set.md`](docs/specs/wasm_instruction_set.md)
 参考実装: [`bench_aobench.py`](experiments/pysim/benchmarks/aobench/bench_aobench.py)
 
 本仕様は、組み込み WASM 実行環境上の3D Ambient Occlusion レイトレーシング（AO-Bench）を対象とする。ベンチマークは Q8.8 固定小数点数演算を使う。
 
-実ワークロードで Tier 2 スレッド化インタープリタと Tier 3 Copy-and-Patch JIT の総合演算性能およびレイ描画スループットを測定する。両実行系の出力を差分検証（Differential Check）する。
+実ワークロードで Tier 2 スレッド化インタープリタと Tier 3 assembly stencil trace JIT の総合演算性能およびレイ描画スループットを測定する。両実行系の出力を差分検証（Differential Check）する。
 
 ## 2. ベンチマーク測定項目一覧
 <!-- traceability: {Wasm32Only} -->

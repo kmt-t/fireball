@@ -3,7 +3,7 @@
 ## 1. 目的と対象範囲
 
 正本: [`interpreter.md`](docs/components/tier2_runtime/interpreter.md), [`wasm_instruction_set.md`](docs/specs/wasm_instruction_set.md)
-`{ThreadedInterpreter}` は、4論理引数の継続渡しハンドラ方式を示す。本書では、独立した3本の値領域と関数呼出し記述子領域も検証する。ラベルアリティに基づくスタックプルーニング、i32/i64演算、境界チェック付きメモリアクセス、およびLOOP後方分岐回数による協調yield境界も対象とする。
+`{ThreadedInterpreter}` は、`ctx`, `ip*`, `sp*`の3論理引数による継続渡しハンドラ方式を示す。本書では、独立した3本の値領域と関数呼出し記述子領域も検証する。共有オペランドスタックをWASM値の格納先とする。ラベルアリティに基づくスタックプルーニング、i32/i64演算、境界チェック付きメモリアクセス、およびLOOP後方分岐回数による協調yield境界も対象とする。
 
 ## 2. テストケース一覧
 <!-- traceability: {InterpreterContextStackless} -->
@@ -12,19 +12,19 @@
 
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| TEST-INTP-01 | ハンドラのシグネチャが4論理引数(`ctx, sp, local_base, tos`)である | 実装コードを確認 | 各opcodeハンドラの引数と境界結果を確認 | すべてのハンドラが同一の4引数シグネチャを持ち、継続時は次ハンドラへ末尾呼び出しする。実行境界では終了種別を返し、トラップコードは`ctx`に保持する | wasm_instruction_set.md, interpreter.md |
-| TEST-INTP-02 | 継続渡しの命令ディスパッチ | - | opcodeハンドラ表と命令ハンドラへの継続を確認 | 各ハンドラ末尾で次opcodeに対応する関数ポインタを固定長表から選び、同じ4論理引数で末尾呼び出しする。命令ごとに中央のopcode分岐へ戻らない | 同上 |
-| TEST-INTP-03 | Interpreter handlerとJIT traceのCPS関数型 | JITトレース生成 | handlerとtrace entryの型・引数・戻り値を比較 | 両者は`ctx, sp, local_base, tos`の4論理引数と`fireball_op_result_native`戻り値を共有する。正常なtrace完了は`FIREBALL_NATIVE_OP_CONTINUE`を返し、trap codeは共有`execution_context`から観測する。x64の物理ABIは対象ABI定義に従い、ARMv8-Mの物理配置はTBD | `{ContextPointerRegister}` `{CPS_4Args}` `{PositionIndependentCode}` |
-| TEST-INTP-04 | JITトレースからインタープリタへのシームレスフォールバック | 未コンパイルのブロックへ分岐 | トレース実行完了 | トレース末尾でインタープリタへスムーズに復帰し、後続ブロックをインタープリタが継続実行する | `{JIT_LazyChaining}` `{JIT_RuntimeAPI_Fallback}` |
-| TEST-INTP-05 | Runtime APIとCPSハンドラの責務分離 | 主opcodeと`0xFC`副opcodeの実装がある | 各C++ハンドラと対応するRuntime APIを確認し、通常継続・trap・フォールバックを実行する | 命令意味論と状態更新はRuntime APIにあり、ハンドラはAPIを呼んで結果を返すか、更新済み4論理引数で関数ポインタ表へ末尾継続する。通常経路のAPIはインライン展開される | `{ThreadedInterpreter}`, `interpreter.md`「継続渡しハンドラの実行境界」 |
+| TEST-INTP-01 | ハンドラの統一プロトタイプと実行境界の終了判定 | 実装コードを確認 | 各opcodeハンドラ、CPS関数型、共有コンテキストを確認 | すべてのhandlerが`ctx`, `ip*`, `sp*`, `rel*`の同一4引数・`void`関数型を持つ。`ctx`, `ip`, `sp`が3つの実行状態引数であり、`rel`は定数プールポインタである。継続時はRuntime APIが次handlerへ末尾呼び出しする。終端理由は`ctx.runtime_flags`へ記録し、実行境界は同フィールドを読む | wasm_instruction_set.md, interpreter.md |
+| TEST-INTP-02 | 継続渡しの命令ディスパッチ | - | opcodeハンドラ表と命令ハンドラへの継続を確認 | 各ハンドラ末尾で次opcodeに対応する関数ポインタを固定長表から選び、同じ4引数で末尾呼び出しする。命令ごとに中央のopcode分岐へ戻らない | 同上 |
+| TEST-INTP-03 | Interpreter handlerとJIT traceの関数型 | JITトレース生成 | handlerとtrace entryの型・引数、および境界の状態参照を比較 | Interpreter handlerとJIT trace entryはともに`ctx, ip*, sp*, rel*`の順で4引数と`void`戻り値を使う。ローカル基点は`ctx.local_base`から取得する。`rel`は定数領域を順次読む。終端状態は`execution_context`のtrap code、PC、stack位置から判定する。x64の物理ABIは対象ABI定義に従い、ARMv8-Mの物理配置はTBD | `{ContextPointerRegister}` `{CPS_3Args}` `{PositionIndependentCode}` |
+| TEST-INTP-04 | JITトレースからインタープリタへのシームレスフォールバック | 未コンパイルのブロックへ分岐 | トレース実行完了 | トレース末尾でインタープリタへスムーズに復帰し、後続ブロックをインタープリタが継続実行する | `{JIT_LazyChaining}` `{JIT_RuntimeAPI}` |
+| TEST-INTP-05 | Runtime APIとCPSハンドラの責務分離 | 主opcodeと`0xFC`副opcodeの実装がある | 各C++ハンドラと対応するRuntime APIを確認し、通常継続・trap・Runtime API境界を実行する | 命令意味論と状態更新はRuntime APIにある。通常時は更新済み4引数で次handlerへ継続する。trapはその場でCPS列を中断し、Runtime API所有の処理は明示的なRuntime API境界でRuntimeへ渡す。汎用fallback経路は持たない | `{ThreadedInterpreter}`, `interpreter.md`「継続渡しハンドラの実行境界」 |
 
 ### 命令実行とロード済みモジュール
 <!-- traceability: {DirectBytecodeExecution} -->
 
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| TEST-INTP-06 | 命令別handlerの継続ディスパッチ | WASMのi32命令列と実行コンテキスト | 直線区間、未対応の主opcode、未対応の`0xFC`副opcodeを含む命令列を実行する | 直線区間を連続実行し、境界でPCとスタック位置を返す。未対応opcodeでは共通の境界復帰handlerへ進み、スタックを変更せず戻る | `{ThreadedInterpreter}`, `interpreter.md` |
-| TEST-INTP-09 | 命令即値の実行時直接デコード | LEB128即値を持つ命令を含むWASMモジュールをロード済み | 即値を消費する命令を実行し、関数コードビューの読出しと次PCを確認する | LEB128即値を命令実行時に関数コードから直接デコードし、次PCを命令長だけ進める | [`interpreter.md`](docs/components/tier2_runtime/interpreter.md) |
+| TEST-INTP-06 | 命令別handlerの継続ディスパッチ | WASMのi32命令列と実行コンテキスト | 直線区間、未対応の主opcode、未対応の`0xFC`副opcodeを含む命令列を実行する | 直線区間を連続実行し、yieldまたはRuntime handoff時にPCとスタック位置を保存する。未対応opcodeは`UNREACHABLE` trapで実行を中断し、PCとスタックの全wordを変更しない | `{ThreadedInterpreter}`, `interpreter.md` |
+| TEST-INTP-09 | ロード時即値デコードと定数プール走査 | 即値を持つ命令を含むWASMモジュールをロード済み | NativeInterpreterで単一・複数即値命令を実行し、ロード済みプールと`rel`、次PCを確認する | Loaderが即値を命令順に一度だけデコードして32bit値を詰める。各命令の符号化長は全即値の後ろに一度だけ格納する。実行時は定数を順に読み、`ctx.ip`を命令全体の長さだけ一度進める | [`interpreter.md`](docs/components/tier2_runtime/interpreter.md) |
 | TEST-INTP-27 | ジャンプ・分岐境界 | `br`、`br_if`、`br_table`、`call`を含むWASM | 境界命令を実行 | 定義済みゲスト関数の呼出しと分岐はC++ハンドラ間で継続し、Runtimeが要求する境界で正しいPC・制御スタックを保って戻る | InterpreterContextStackless |
 | TEST-INTP-28 | AO-Bench全命令差分 | wasmtimeとTier 2/Tier 3を利用可能 | `aobench.py`を実行 | Float32 sanity、全AO出力、Tier 2/Tier 3の528バイト出力が完全一致する | `{META_RecoveryStrategy}` |
 
@@ -41,7 +41,7 @@
 | TEST-INTP-19 | 分岐時制御frame復元の形式検証 | 通常モデルと`guards=False`変異モデル | [`interpreter_control_flow_model.py`](docs/components/tier2_runtime/formal/interpreter_control_flow_model.py)を実行 | loop対象frameの維持、block対象frameの除去、オペランド高さ・分岐結果の保持、elseなし偽`if`のframe不在が成立し、各変異モデルで反証される | [`interpreter_control_flow_model.py`](docs/components/tier2_runtime/formal/interpreter_control_flow_model.py) |
 | TEST-INTP-16 | ネストしたcalleeの戻り値と関数呼出し記述子の復帰 | callerがcalleeを呼び、calleeがi32/i64/f32/f64を返す | calleeの`return`処理を実行 | 戻り値は共有オペランド領域へ残り、calleeの関数呼出し記述子が取り除かれ、call helperが復帰sentinelを消費してcallerへ戻る。ホストABIの戻り値規約とWASM共有領域の戻り値規約を混同しない。x64の物理ABIは定義済み、ARMv8-MはTBD | `interpreter.md` 関数復帰の番兵 |
 | TEST-INTP-17 | トップレベル復帰のRETURN sentinel | 最外周WASM関数がreturnする | return handlerとRuntimeEngineを実行 | sentinelはInterpreterのreturn handlerだけが生成し、RuntimeEngineが実行完了を判定する。JITはsentinelを生成しない | `interpreter.md` 関数復帰の番兵 |
-| TEST-INTP-18 | 関数呼出し記述子とローカル値領域の分離 | callerが引数付きcalleeを呼び出す | call helperでcalleeの実行区画を開始し、calleeから復帰する | 記述子は独立した領域に置かれ、`frame_offset`がローカル値領域の開始ワード位置を示す。ローカル値領域にはローカル値だけが入り、復帰時に記述子を取り除いて`local_offset`とローカル値領域の長さを保存位置へ戻す | `interpreter.md` 関数呼び出し境界、`interpreter_concept.py` |
+| TEST-INTP-18 | 関数呼出し記述子とローカル値領域の分離 | callerが引数付きcalleeを呼び出す | call helperでcalleeの実行区画を開始し、calleeから復帰する | 記述子は独立した領域に置かれ、`local_base`はローカル値領域内のフレーム先頭を指す。ローカル値領域にはローカル値だけが入り、復帰時に記述子を取り除いて`local_stack_pointer`を保存位置へ戻す | `interpreter.md` 関数呼び出し境界、`interpreter_concept.py` |
 | TEST-INTP-77 | 静的分岐先での制御フレーム整理 | 入れ子の`block`/`loop`と条件分岐を含むWASM | 複数の`end`を越える静的後続PCへ分岐する | 分岐先より後ろで終端を迎える制御フレームを破棄し、分岐先と一致するフレームは`end`処理へ残す | `interpreter.md` 分岐処理 |
 
 ### ラベルアリティ・スタックプルーニング (`prune_stack`)
@@ -92,30 +92,30 @@
 | TEST-INTP-62 | アタッチ中のブレークポイント検知・停止 | インタープリタとデバッガが接続され、PC=0x100 にブレークポイント設定 | 実行継続 | インタープリタ実行境界でブレークポイントを検知し、実行を中断して停止状態（SIGTRAP）へ遷移する | `{DebuggerInterpreterComposition}` |
 | TEST-INTP-65 | アタッチ中のインタープリタ専用実行 | デバッグ構成でデバッガアタッチ中 | `step` または `continue` を実行 | アタッチ中はInterpreter handlerだけが実行され、JITへの動的切替が発生しない | `{DebuggerInterpreterComposition}` |
 
-### ROM/Flash バイトコード直接デコードと命令オブジェクト生成ゼロ (DirectBytecodeExecution)
+### ROM/Flash バイトコード直接フェッチと即値プール (DirectBytecodeExecution)
 <!-- traceability: {CallFrame_Layout} {DirectBytecodeExecution} {GOTCHA-INTP-22} -->
 
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| TEST-INTP-70 | 命令オブジェクト非生成とバイト直接フェッチ | WASM関数実行 | 実行ループのフェッチ処理を確認 | 関数内カーソルから `frame.code[cursor_offset]` を使って $O(1)$ で直接バイトを読み出し、中間 `Instr` オブジェクトを生成しない。コンテキストPCとの変換は `cursor_offset = pc - function_start_pc` とする | `interpreter.md` `DirectBytecodeExecution` |
-| TEST-INTP-71 | 足し算による次PC進行と即値のその場デコード | 算術・即値命令実行 | `ip` の遷移を確認 | 命令長または即値長を加算した `ip + len` で直接進行し、二分探索マップ（FlatMapView）を走査しない | `interpreter.md` |
+| TEST-INTP-70 | 命令オブジェクト非生成とopcode直接フェッチ | WASM関数実行 | 実行ループのopcodeフェッチを確認 | 関数内カーソルからコードを直接読み出し、中間`Instr`オブジェクトやopcode逆引き表を使わない。Runtime・Debuggerへ渡すPCは関数開始PCと`ctx.ip`から得る | `interpreter.md` `DirectBytecodeExecution` |
+| TEST-INTP-71 | 定数プール走査と関数呼出し復帰時の`rel`初期化 | 単一・複数即値命令および呼出し後に即値命令を持つ基本ブロック | Loaderが生成したプールを確認し、NativeInterpreterで各命令と呼出し復帰を実行する | 命令長は全即値の後ろに一度だけ格納する。先行値に符号化幅を持たせず、即値を読み終えた命令が`ctx.ip`を命令全体の長さだけ一度進める。呼出し復帰PCもプール開始位置表に持ち、ゼロ長復帰メタデータはJIT候補にしない。命令ごとのoffset表を参照しない | `interpreter.md` |
 | TEST-INTP-72 | 静的制御表によるブロック境界解決 | `block/loop/if` 構文の実行 | 分岐および終了時の遷移を確認 | モジュールロード時に事前計算された静的 `control_map`（`blocks`, `br_tables`）を参照し、実行時の全命令再デコードを行わない | `interpreter.md` |
 | TEST-INTP-73 | ローカルオフセットとサイズ表のロード時計算 | i32/f32/i64/f64が混在する関数とローカルなしの関数 | ロード後の各ローカルのオフセット・ワード数と `local_slot_count_cache` を確認し、実行する | 各ローカルのサイズが1または2ワードで、オフセットが先行ローカルのサイズの合計、フレーム長が全サイズの合計になる。結果が正しい | GOTCHA-INTP-22 |
 | TEST-INTP-74 | wide localを含む再帰関数のローカル領域境界 | 16個のi32値を持つ関数と、さらにf64を1個持つ関数 | 8フレーム分の再帰を実行する | i32のみの版は128ワードに収まり成功する。f64を含む版は1フレームあたり18ワードとなり、8フレームで128ワードを超えて容量超過で停止する | GOTCHA-INTP-22 |
-| TEST-INTP-75 | CallFrameの固定ABIと積載順序 | 関数を1つ開始し、CallStackが空 | `_build_frame` 後にコンテキストと最上位CallFrameを検査する | `call_stack` がコンテキストへ接続され、CallFrameが関数番号、コードビュー、ローカルオフセット表・サイズ表・ワード数、引数個数、制御ベースを保持する。終了後はCallStack自身の深さが0へ戻る | `interpreter.md` `CallFrame_Layout` `{ExecutionContext_Layout}` |
+| TEST-INTP-75 | 縮小CallFrame ABIと固定順序 | 関数を1つ開始し、CallStackが空 | `_build_frame` 後にコンテキスト、CallFrame、function viewを検査する | `call_stack` がコンテキストへ接続される。40-byte CallFrameはfunction view、local/control base、関数番号、復帰PC、JIT境界PCだけを持ち、コード・ローカル配置・引数数・結果アリティはfunction viewから参照する。終了後はCallStack自身の深さが0へ戻る | `interpreter.md` `CallFrame_Layout` `{ExecutionContext_Layout}` |
 | TEST-INTP-76 | LOOP後方分岐しきい値と再開 | LOOP後方辺を持つWASM関数がある | しきい値の2倍を超える後方分岐を実行し、yield後に再開する | しきい値到達ごとにyield状態を返し、再開時に回数を0へ戻す。最終的に実行が完了する | `{ADR_LoopBackedgeYield}`, `runtime_vsoc.md` |
 
 ### 実装上の注意点に対応する検証
-<!-- traceability: {InterpreterContextStackless} {JIT_RuntimeAPI_Fallback} {GOTCHA-INTP-01} {GOTCHA-INTP-02} {GOTCHA-INTP-03} {WasmCodeSectionPC} {GOTCHA-INTP-04} {GOTCHA-INTP-05} {GOTCHA-INTP-06} -->
+<!-- traceability: {InterpreterContextStackless} {JIT_RuntimeAPI} {GOTCHA-INTP-01} {GOTCHA-INTP-02} {GOTCHA-INTP-03} {WasmCodeSectionPC} {GOTCHA-INTP-04} {GOTCHA-INTP-05} {GOTCHA-INTP-06} -->
 
 | GOTCHA参照 | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| GOTCHA-INTP-01 | 継続渡し第4論理引数 `tos` とスタック領域の境界同期 | スタック空状態から複数回の push/pop | `i32.const` および二項演算を連続実行 | スタック空時は `tos=0`、値push時は旧`tos`がスタック領域へ退避され新値が`tos`に格納される。pop時は次段値が`tos`へ復元され、次命令のフェッチでは頂点を再読込しない。物理レジスタ割当は対象ABIに従い、ARMv8-MはTBD | [`interpreter.md`](docs/components/tier2_runtime/interpreter.md)「実行コンテキスト」, `{CPS_4Args}` |
-| GOTCHA-INTP-02 | Label Arity スタック巻き戻し時の TOS 復元 | `block (result i32)` 内で値をpush後に`br 0` | ブロック脱出を実行 | ブロック開始時の深さまでスタックが巻き戻され、宣言アリティ分の結果値のうち最上位値が論理`tos`へ復元されて次handlerへ渡る。破棄された値が`tos`に残ってはならない | [`interpreter.md`](docs/components/tier2_runtime/interpreter.md) |
+| GOTCHA-INTP-01 | 共有オペランドスタックを正本とするハンドラ状態 | スタック空状態から複数回の push/pop | `i32.const` および二項演算を連続実行 | 各値がpush/popごとに共有オペランドスタックへ反映され、次命令は`sp`から現行の頂点を読む | [`interpreter.md`](docs/components/tier2_runtime/interpreter.md)「実行コンテキスト」, `{CPS_3Args}` |
+| GOTCHA-INTP-02 | Label Arity スタック巻き戻し時の結果値復元 | `block (result i32)` 内で値をpush後に`br 0` | ブロック脱出を実行 | ブロック開始時の深さまでスタックが巻き戻され、宣言アリティ分の結果値が共有オペランドスタックへ復元される。破棄された値は残らない | [`interpreter.md`](docs/components/tier2_runtime/interpreter.md) |
 | GOTCHA-INTP-03 | if 条件偽（else節なし）での制御フレームリーク防止 | `if (cond=0)` で else 節なし | `if` 命令を実行 | `match_offset + 1` へジャンプする際、`_Frame("if")` がスタックに残らずフレームスタックの深さが不変に保たれる。 | [`interpreter.md`](docs/components/tier2_runtime/interpreter.md) |
 | GOTCHA-INTP-04 | Code section 相対PCとモジュールスコープ | Code section payloadより前に複数関数bodyがあり、対象関数のbody sizeとlocals宣言を含むWASMモジュールを用意する | 先行bodyと対象命令のファイル位置、Code section payload先頭位置、Loaderが返すPCを比較し、別モジュールで同じPC値になる基本ブロックも照合する | PCは命令先頭のファイル位置からCode section payload先頭のファイル位置を引いた値である。関数数・body size・locals宣言の符号化バイトを含み、関数内オフセットを使わない。別モジュールで同じPC値を許し、モジュール横断のJIT・履歴キーは`(module_id, pc)`で区別する | [`interpreter.md`](docs/components/tier2_runtime/interpreter.md) |
-| GOTCHA-INTP-05 | 実行時の命令オブジェクト生成・二分探索排除 | 関数呼び出しおよび命令ステップ実行 | `_build_frame` および `step()` を実行 | `_build_frame` および `step()` の命令フェッチが、オフセット→命令の逆引きテーブルを一切経由せず、生のバイト列（`frame.code[cursor_offset]`）から直接デコードする。Code section payload相対PCから関数内カーソルへ変換しても、逆引き表を使わない。 | [`interpreter.md`](docs/components/tier2_runtime/interpreter.md) `{DirectBytecodeExecution}` |
-| GOTCHA-INTP-06 | JIT終端命令の分岐と制御フレーム整理 | 入れ子のloop/ifを持つ関数で、内側の分岐条件ブロックがコンパイル済み | JIT実行後、条件分岐を複数回通過する | 終端命令PCから命令handlerを呼び、Runtime APIが残余条件の消費、制御フレームに従う分岐とスタック整理を行う。Interpreter単独実行と同じ結果になる | [`interpreter.md`](docs/components/tier2_runtime/interpreter.md)、`{InterpreterContextStackless}`, `{JIT_RuntimeAPI_Fallback}` |
+| GOTCHA-INTP-05 | 実行時の命令オブジェクトと逆引き表の排除 | 関数呼び出しおよび命令ステップ実行 | opcodeフェッチと定数プール開始位置の選択を確認する | opcodeを関数コードから直接読み、中間命令オブジェクトや命令PCごとの逆引き表を使わない。即値はLoader生成済み定数プールから読む。 | [`interpreter.md`](docs/components/tier2_runtime/interpreter.md) `{DirectBytecodeExecution}` |
+| GOTCHA-INTP-06 | JIT終端命令の分岐と制御フレーム整理 | 入れ子のloop/ifを持つ関数で、内側の分岐条件ブロックがコンパイル済み | JIT実行後、条件分岐を複数回通過する | 終端命令PCから命令handlerを呼び、Runtime APIが残余条件の消費、制御フレームに従う分岐とスタック整理を行う。Interpreter単独実行と同じ結果になる | [`interpreter.md`](docs/components/tier2_runtime/interpreter.md)、`{InterpreterContextStackless}`, `{JIT_RuntimeAPI}` |
 
 ### 継続状態と資源境界の検証
 <!-- traceability: {GOTCHA-INTP-07} {GOTCHA-INTP-08} {GOTCHA-INTP-09} {GOTCHA-INTP-10} {GOTCHA-INTP-11} {GOTCHA-INTP-12} {GOTCHA-INTP-13} {GOTCHA-INTP-14} {GOTCHA-INTP-15} {GOTCHA-INTP-16} {GOTCHA-INTP-17} {GOTCHA-INTP-18} {GOTCHA-INTP-19} {GOTCHA-INTP-20} {GOTCHA-INTP-21} {GOTCHA-INTP-22} -->
@@ -124,8 +124,8 @@
 
 | GOTCHA参照 | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| GOTCHA-INTP-07 | Opcode属性と継続ディスパッチ | 複数処理区分のopcodeがある | 属性表、独立したハンドラ表、対応handlerへの継続を検査する | 属性表は関数ポインタを持たず、ハンドラ表から選んだhandlerへ4論理引数が末尾継続で渡る | [`interpreter.md`](docs/components/tier2_runtime/interpreter.md)。確認状況: 実装済み・テスト済み |
-| GOTCHA-INTP-08 | 正常継続とtrapの結果 | 正常命令とtrapを起こす命令がある | handlerの継続と境界結果を比較する | 正常命令は4論理引数を末尾呼び出しで渡し、trap時は終了種別を返して具体的なtrapコードを`ctx`へ残す | [`interpreter.md`](docs/components/tier2_runtime/interpreter.md)。確認状況: 実装済み・テスト済み |
+| GOTCHA-INTP-07 | Opcode属性と継続ディスパッチ | 複数処理区分のopcodeがある | 属性表、独立したハンドラ表、対応handlerへの継続を検査する | 属性表は関数ポインタを持たず、ハンドラ表から選んだhandlerへ3つの実行状態引数と定数プールポインタ`rel`が末尾継続で渡る | [`interpreter.md`](docs/components/tier2_runtime/interpreter.md)。確認状況: 実装済み・テスト済み |
+| GOTCHA-INTP-08 | コンテキスト終了理由の判定とtrap伝播 | 複数の正常命令の後にtrapを起こす命令がある | 正常handlerの連鎖後にtrap命令を実行し、native実行境界の結果を確認する | Interpreter Runtime APIはtrapまたは境界停止を記録して`false`を返す。CPS handlerは`false`時に次のhandlerを呼ばず、実行境界は終了理由と具体的なtrapコードを`ctx`から取得する | [`interpreter.md`](docs/components/tier2_runtime/interpreter.md)、pysim `test_native_runtime_api_false_stops_before_following_store`。確認状況: 実装済み・テスト済み |
 | GOTCHA-INTP-09 | 次PCの観測元 | 連続実行、分岐、JIT境界の操作列がある | handler後のctx.ipと次の命令位置を照合する | 次PCがctx.ipと一致し、別の戻り値フィールドから再構築されない | [`interpreter.md`](docs/components/tier2_runtime/interpreter.md)。確認状況: 実装済み・テスト済み |
 | GOTCHA-INTP-10 | 異なる原因のtrap報告 | vMMIO、call_indirect、整数変換、メモリ境界の異常入力がある | 各入力を実行し、実行境界の結果を確認する | 各原因が同じ結果形式の具体的なTrapとして報告される | [`interpreter.md`](docs/components/tier2_runtime/interpreter.md)。確認状況: 実装済み・主要経路テスト済み |
 | GOTCHA-INTP-11 | Interpreter/JIT境界の共有記憶領域 | JITへ移行する関数がある | 境界前後のctx、sp、local_baseと値を確認する | 同一ctxと共有値領域を参照し、JIT専用のlocals/resultコピーが発生しない | [`interpreter.md`](docs/components/tier2_runtime/interpreter.md)。確認状況: 実装済み・既存JITテストで確認 |
@@ -143,8 +143,8 @@
 
 ## 3. テスト検証実績と網羅状況
 
-- **継続渡しディスパッチと3本の独立領域 (TEST-INTP-01〜14)**: 4論理引数、オペランド領域のアンダー／オーバーフロー、ローカル値領域上の再帰呼び出し、戻り値、容量独立性。
-- **命令実行とロード済みモジュール (TEST-INTP-06, 09)**: 命令別handlerの継続ディスパッチ、境界復帰、関数コードからの実行時即値デコード。
+- **継続渡しディスパッチと3本の独立領域 (TEST-INTP-01〜14)**: 3論理引数、共有オペランド領域のアンダー／オーバーフロー、ローカル値領域上の再帰呼び出し、戻り値、容量独立性。
+- **命令実行とロード済みモジュール (TEST-INTP-06, 09)**: 命令別handlerの継続ディスパッチ、境界復帰、Loaderによる即値プール構築と実行時の順次消費。
 - **LOOP後方分岐のyield境界 (TEST-INTP-76)**: 共有しきい値へ達したときにyieldし、再開後に実行を完了すること。
 - **静的分岐先の制御フレーム整理 (TEST-INTP-77)**: 分岐先より後ろの終端を持つフレームを破棄し、分岐先と一致するフレームを残すこと。
 - **ラベルアリティ & プルーニング (TEST-INTP-20〜23)**: ブロック脱出、ループ背進辺、多重ネスト br_table。
@@ -158,7 +158,7 @@
 
 拒否時はnative C ABIのstatusがtrap、原因が`OPERAND_STACK_CAPACITY`、停止PCがconstの位置、stackサイズが操作前と一致することを確認する。物理128 wordを個別sentinelで埋め、全wordを操作前後で比較する。wide constの片側だけの書込みと、利用可能容量の外側への書込みを検出する。
 
-`test_native_invalid_const_is_not_misclassified_as_capacity_trap`は、4型の切れた即値と未対応opcodeを、空き0/2 wordの10組で実行する。容量trapへ一括変更せず、元のfallback境界、PC、全word保存が維持されることを確認する。この低位ABI試験は不正WASMのロード受入れを意味しない。
+Native低位ABI入口も即値を実行時にデコードしない。即値を使う試験はLoaderと同じ形式の32bit値プールを明示的に渡す。切れた即値を含む不正WASMはロード時に拒否し、実行時のフォールバックデコーダでは扱わない。
 
 2026-10-01、Linux x64、Python 3.14.6、Clang 21.1.8で、修正前は容量不足の12組がFAIL、正常・負例など19件がPASSとなった。4 constハンドラのpush失敗を具体容量trapへ分離し、nativeを再ビルドした後、次の局所検証で31件PASS、FAIL 0件、SKIP 0件を確認した。
 
@@ -178,11 +178,11 @@ Python参照実装のhandler表を検査した結果は、native dispatcherの�
 | 要求・対象 | 実行関数 | 独立した期待値と観測 |
 | :--- | :--- | :--- |
 | TEST-INTP-01の参照handler | `test_intp_01_python_reference_cps_handlers_and_dispatch_table`、`test_intp_01_handler_returns_specific_trap_outcome` | 論理引数の名前と順序を比較し、handler結果と実行境界が具体的な`UNREACHABLE`を報告することを確認する。native dispatcherのTEST-INTP-02の証拠へ読み替えない |
-| 制御フレーム型とopcode属性 | `test_control_frame_enum_and_opcode_attribute_table` | 実フレームのLOOP種別と、CALL、BR_IF、LOOP、I32_ADDの属性を比較する。handler/JITの論理引数契約を扱うTEST-INTP-03へ紐付けない |
+| 縮小制御フレームとopcode属性 | `test_control_frame_stores_opener_pc_and_opcode_metadata_is_shared` | 制御フレームがopener PCとstack pointerのみを保持し、opcode属性表がCALL、BR_IF、LOOP、I32_ADDで正しいことを比較する。handler/JITの論理引数契約を扱うTEST-INTP-03へ紐付けない |
 | TEST-INTP-72の静的制御表 | `test_intp_72_control_map_uses_four_entry_locality_caches` | void、i32、i64のblock終端とアリティ、および固定容量のcacheを比較する。TEST-INTP-04のJIT復帰経路へ紐付けない |
 | TEST-INTP-73の混在幅フレーム | `test_intp_73_wide_frame_uses_compact_per_local_layout` | 混在型のローカルオフセット・サイズ表、引数の生ワード数、フレームのワード数と関数結果42を比較する |
 | ラベルアリティによる広幅結果の保存 | `test_typed_block_results_keep_wide_native_slots` | i64、f32、f64のblockからの分岐結果42、1.5、2.5を比較する。関数呼出し記述子の分離を扱うTEST-INTP-18の証拠へ読み替えない |
-| TEST-INTP-18/75の記述子とlocal領域 | `test_intp_70_to_72_direct_bytecode_execution` | 既存のフレーム構築後にnative記述子の関数番号、コード、ローカル表のアドレス、引数・local数、独立したlocal領域位置を比較する。復帰後の記述子とlocal領域の長さが0へ戻ることを確認する |
+| TEST-INTP-18/75の記述子とlocal領域 | `test_intp_70_to_72_direct_bytecode_execution` | 既存のフレーム構築後に40-byte native記述子のfunction view、関数番号、local/control baseを比較する。コードとlocal表はfunction viewから読み、復帰後は記述子とlocal領域の長さが0へ戻ることを確認する |
 | 命令のTrap原因 | `test_wasm_10_to_15_control_flow_and_calls`、`test_wasm_40_to_46_memory_load_store_grow_and_data`、`test_wasm_50_to_56_integer_arithmetic_and_bitwise`、`test_wasm_mvp_packed_memory_and_i64_float_conversions` | 対象呼出しだけの`AssertionError`を捕捉し、外側で`UNREACHABLE`、`MEMORY_OUT_OF_BOUNDS`、`INTEGER_DIVIDE_BY_ZERO`、`INVALID_CONVERSION`を比較する。境界外メモリアクセスでは全メモリの不変も比較する |
 | TEST-INTP-74のlocal容量 | `test_intp_74_wide_local_adds_only_its_own_word_to_the_frame` | i32のみの8フレームは結果7を返し、f64を追加した8フレームは既存native入口から`LOCAL_STACK_CAPACITY`を返す。任意の内部assertを容量Trapの代替にしない |
 

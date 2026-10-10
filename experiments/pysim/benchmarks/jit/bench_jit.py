@@ -6,7 +6,6 @@ Conforms to docs/components/tier3_plugins/benchmarks/jit_runtime_bench_spec.md (
 
 from __future__ import annotations
 
-import ctypes
 import sys
 import time
 from pathlib import Path
@@ -29,9 +28,12 @@ from qa.shared.jit_cache import HotspotBitmap
 from qa.shared.runtime_stats import RuntimeStatsEngine
 from qa.shared.x64_jit import TraceCompiler
 from system_containers import ReadOnlyFlatMapView, StaticVector
-from tier2_runtime.interpreter.control_flow import extract_basic_blocks, iter_block_ops
+from tier2_runtime.interpreter.control_flow import (
+    build_control_map,
+    extract_basic_blocks,
+    iter_block_ops,
+)
 from tier2_runtime.interpreter.interpreter import (
-    ExecutionContext,
     Interpreter,
     InterpreterBindings,
     NativeInterpreter,
@@ -43,8 +45,13 @@ from tier2_runtime.wasm.reader import parse
 from tier3_plugins.jit.jit_manager import JITRuntimeManager
 
 
+def _extract_benchmark_blocks(code: bytes):
+    code_view = memoryview(code)
+    return extract_basic_blocks(code_view, build_control_map(code_view))
+
+
 class JITCompilerBenchmark:
-    """Measures Copy-and-Patch compilation latency, sparse lookup, and JIT speedup."""
+    """Measures native trace composition latency, sparse lookup, and JIT speedup."""
 
     def __init__(self):
         self.compiler = TraceCompiler()
@@ -52,11 +59,11 @@ class JITCompilerBenchmark:
     def run_all(self, iterations: int = 100_000) -> dict[str, float | int]:
         results: dict[str, float | int] = {}
 
-        # 3.1 Copy-and-Patch Compilation Throughput (Arithmetic Basic Block) --
+        # 3.1 Assembly Stencil Trace Compilation Throughput (Arithmetic Basic Block) --
         # Real WASM bytecode. The loader-owned BasicBlock is the shared
         # instruction source for both interpreter and JIT paths.
         code = bytes([op.LOCAL_GET, 0, op.I32_CONST, 1, op.I32_ADD, op.LOCAL_SET, 0])
-        head_pc, next_pc, loops_to, frame_depth, byte_span = extract_basic_blocks(code)[0]
+        head_pc, next_pc, loops_to, frame_depth, byte_span = _extract_benchmark_blocks(code)[0]
         t0 = time.perf_counter()
         compile_count = 10_000
         for _ in range(compile_count):
@@ -198,54 +205,6 @@ class JITCompilerBenchmark:
         )
         results["interpreter_yield_threshold"] = FB_CONF_INTERPRETER_YIELD_THRESHOLD
 
-        # 3.5 PIC trace-header-owned helper tail dispatch.  This is the
-        # terminal boundary used when a complex operation is implemented by C:
-        # the common machine code loads the target from the trace header,
-        # restores its frame, and tail-jumps.  The callback is a C ABI supplied
-        # by ctypes in pysim; the measured result includes the simulator's
-        # Python callback cost and must not be presented as embedded C speed.
-        helper_type = ctypes.CFUNCTYPE(
-            None,
-            ctypes.c_void_p,
-            ctypes.c_void_p,
-            ctypes.c_void_p,
-            ctypes.c_uint32,
-        )
-
-        def helper(
-            _ctx: ctypes.c_void_p,
-            _sp: ctypes.c_void_p,
-            local_base: ctypes.c_void_p,
-            _tos: int,
-        ) -> None:
-            locals_ptr = ctypes.cast(local_base, ctypes.POINTER(ctypes.c_uint32))
-            locals_ptr[0] += 1
-
-        helper_fn = helper_type(helper)
-        helper_ctx = ExecutionContext()
-        assert helper_ctx.local_stack.extend((0,))
-        helper_addr = ctypes.cast(helper_fn, ctypes.c_void_p).value or 0
-        helper_trace = self.compiler.compile_instructions(
-            head_pc=0xF000,
-            instructions=((op.LOCAL_GET, 0), (op.LOCAL_SET, 0)),
-            next_pc=None,
-            loops_to=None,
-            byte_length=4,
-            local_layout=LocalLayout((I32,)),
-            context_helper=True,
-            helper_address=helper_addr,
-        )
-        assert helper_trace is not None
-        helper_iterations = max(1, iterations // 10)
-        t0 = time.perf_counter()
-        for _ in range(helper_iterations):
-            helper_trace.invoke(helper_ctx)
-        t1 = time.perf_counter()
-        assert helper_ctx.local_stack[0] == helper_iterations
-        results["context_helper_tail_mops"] = helper_iterations / (t1 - t0) / 1e6
-        results["context_helper_tail_ns"] = (t1 - t0) / helper_iterations * 1e9
-        results["context_helper_tail_invocations"] = helper_iterations
-
         return results
 
     @staticmethod
@@ -343,7 +302,7 @@ def main():
     res = bench.run_all(iterations=100_000)
 
     print(
-        f"  * Copy-and-Patch Compile Speed:       {res['jit_compile_traces_per_sec']:,.0f} Traces/sec  ({res['jit_compile_latency_us']:.2f} us/trace)"
+        f"  * Native Trace Compile Speed:           {res['jit_compile_traces_per_sec']:,.0f} Traces/sec  ({res['jit_compile_latency_us']:.2f} us/trace)"
     )
     print(f"  * Compile Cost per WASM Instruction:  {res['jit_compile_ns_per_insn']:.1f} ns/opcode")
     print(
@@ -390,9 +349,6 @@ def main():
         )
     else:
         print("  * JIT Execution Coverage:             runtime stats not collected")
-    print(
-        f"  * PIC Trace-Header Helper Tail Jump:  {res['context_helper_tail_mops']:.2f} M ops/s  ({res['context_helper_tail_ns']:.1f} ns/dispatch; {res['context_helper_tail_invocations']:,} calls)"
-    )
     print("=" * 80)
     print("[PASS] JIT Compiler benchmark completed successfully.")
 

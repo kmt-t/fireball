@@ -51,7 +51,6 @@ LOG_EVT_TRAP_OPERAND_STACK_CAPACITY = 0x0304
 LOG_EVT_TRAP_NO_HOST_HANDLER = 0x0305
 LOG_EVT_TRAP_TABLE_INDEX_OUT_OF_BOUNDS = 0x0306
 LOG_EVT_TRAP_TABLE_SLOT_UNINITIALIZED = 0x0307
-LOG_EVT_TRAP_INDIRECT_CALL_TYPE_MISMATCH = 0x0308
 LOG_EVT_TRAP_UNREACHABLE = 0x0309
 LOG_EVT_TRAP_CONTROL_FRAME_CAPACITY = 0x030A
 LOG_EVT_TRAP_VMMIO_NOT_CONFIGURED = 0x030B
@@ -73,10 +72,6 @@ STANDARD_DIAGNOSTIC_EVENTS: tuple[tuple[int, str], ...] = (
         "TRAP: table index out of bounds (pc=0x%08X, slot=%d)",
     ),
     (LOG_EVT_TRAP_TABLE_SLOT_UNINITIALIZED, "TRAP: table slot uninitialized (pc=0x%08X, slot=%d)"),
-    (
-        LOG_EVT_TRAP_INDIRECT_CALL_TYPE_MISMATCH,
-        "TRAP: indirect call type mismatch (pc=0x%08X, slot=%d)",
-    ),
     (LOG_EVT_TRAP_UNREACHABLE, "TRAP: unreachable instruction executed (pc=0x%08X)"),
     (LOG_EVT_TRAP_CONTROL_FRAME_CAPACITY, "TRAP: control frame capacity exceeded (pc=0x%08X)"),
     (

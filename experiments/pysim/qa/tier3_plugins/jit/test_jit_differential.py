@@ -1,6 +1,6 @@
 """
 experiments/pysim/qa/tier3_plugins/jit/test_jit_differential.py
-Differential tests for the Tier 3 hybrid engine (interpreter + Copy-and-Patch JIT).
+Differential tests for the Tier 3 hybrid engine (interpreter + native trace JIT).
 
 Every case runs the same WASM on three independent executors and requires identical results:
   1. the wasmtime native engine (independent of pysim),

@@ -254,7 +254,6 @@ def run_measurement(
     configure_import_paths(PYSIM_DIR, BENCHMARK_DIR)
 
     from config import JIT_TRACE_HEADER_BYTES
-    from qa.shared.common_code import TRACE_ENTRY_STUB_BYTES
     from qa.shared.helpers import wat_to_wasm
     from qa.shared.jit_cache import JITTrace
     from qa.shared.runtime_support import make_runtime_engine
@@ -276,14 +275,14 @@ def run_measurement(
             loops_to: int | None,
             byte_length: int,
             local_layout: LocalLayout,
-            context_helper: bool = False,
-            helper_address: int = 0,
         ) -> JITTrace | None:
             raise AssertionError("benchmark traces must use the native WASM scanner")
 
     functions = " ".join(
-        f'(func (export "{operation.replace(".", "_")}") (param i32 i32) (result i32) '
-        f"local.get 0 local.get 1 {operation})"
+        f'(func (export "{operation.replace(".", "_")}") (param i32 i32) '
+        f"(result i32) (local {'i32 ' * 7}i32) "
+        f"local.get 0 local.set 8 local.get 1 local.set 9 "
+        f"local.get 8 local.get 9 {operation})"
         for operation in operations
     )
     module = parse(wat_to_wasm(f"(module {functions})"))
@@ -319,7 +318,7 @@ def run_measurement(
         code_blob_address = ctypes.cast(trace._native.code_blob, ctypes.c_void_p).value
         assert code_blob_address is not None
         code_blob = ctypes.string_at(code_blob_address, trace._native.blob_bytes)
-        body = code_blob[JIT_TRACE_HEADER_BYTES + TRACE_ENTRY_STUB_BYTES :]
+        body = code_blob[JIT_TRACE_HEADER_BYTES:]
         instruction_count = disassembled_instruction_count(objdump, body)
         assert instruction_count > 0
         print(

@@ -19,9 +19,7 @@ from config import (
     JIT_CACHE_OLDEST_OFFSET_BYTES,
     JIT_CACHE_WARM_OFFSET_BYTES,
     JIT_CARD_SHIFT,
-    JIT_TRACE_COMMON_HELPER_OFFSET,
     JIT_TRACE_DEFAULT_BYTES,
-    JIT_X64_COMMON_CODE_RELATIVE_OFFSET,
     JIT_X64_TRACE_HEADER_BYTES,
 )
 from qa.private import jit_native_abi as native_abi
@@ -32,9 +30,6 @@ from system_containers import (
 )
 from tier2_runtime.wasm.module import IntegerSequence
 
-from .common_code import (
-    COMMON_HELPER_OFFSET,
-)
 from .exec_memory import ExecutableBuffer
 from .jit_abi import NativeTraceDispatchEntry
 
@@ -42,7 +37,7 @@ if TYPE_CHECKING:
     from tier2_runtime.interpreter.interpreter import ExecutionContext
 
 
-NativeTraceFn = Callable[[ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, int], int | None]
+NativeTraceFn = Callable[[ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p], None]
 TraceArgument = ctypes.c_void_p
 
 
@@ -220,16 +215,14 @@ class BlockCardMask:
 class JITTraceHeader:
     """Code-adjacent x64 targets read by generated/common native code.
 
-    +0x00 chain_target_addr(u64), +0x08 helper_target_addr(u64).
-    Installation-time relocation metadata is not serialized into the header.
+    +0x00 chain_target_addr(u64), followed by trace metadata and the relative
+    offset to the trace-tail constant pool.
     """
 
     __slots__ = ("_native",)
 
-    def __init__(self, helper_target_addr: int = 0):
+    def __init__(self):
         self._native = native_abi.NativeTraceHeader()
-        assert 0 <= helper_target_addr <= 0xFFFF_FFFF_FFFF_FFFF
-        self._native.helper_target_address = helper_target_addr
 
     @property
     def chain_target_addr(self) -> int:
@@ -241,16 +234,9 @@ class JITTraceHeader:
         self._native.chain_target_address = value
 
     def pack(self) -> bytes:
-        return ctypes.string_at(ctypes.addressof(self._native), 16)
-
-    @property
-    def helper_target_addr(self) -> int:
-        return self._native.helper_target_address
-
-    @helper_target_addr.setter
-    def helper_target_addr(self, value: int) -> None:
-        assert 0 <= value <= 0xFFFF_FFFF_FFFF_FFFF
-        self._native.helper_target_address = value
+        return ctypes.string_at(
+            ctypes.addressof(self._native), ctypes.sizeof(self._native)
+        )
 
 
 class JITTrace:
@@ -273,16 +259,14 @@ class JITTrace:
         size_bytes: int = JIT_TRACE_DEFAULT_BYTES,
         next_pc: int | None = None,
         loops_to: int | None = None,
-        has_return_val: bool = False,
-        result_words: int = 1,
+        result_words: int = 0,
         stack_words: int = 1,
         buf: ExecutableBuffer | None = None,
         native_fn: NativeTraceFn | None = None,
         raw_addr: int | None = None,
         code_blob: bytes | None = None,
-        helper_target_addr: int = 0,
     ):
-        self._header = JITTraceHeader(helper_target_addr)
+        self._header = JITTraceHeader()
         self._qa_state = native_abi.TraceQaState()
         self.head_pc = head_pc
         self.fn = fn or native_fn  # Direct ctypes CFUNCTYPE function pointer or callable
@@ -299,11 +283,10 @@ class JITTrace:
         self._native.dispatch_next_pc = 0xFFFF_FFFF if next_pc is None else next_pc
         self._native.dispatch_loops_to = 0xFFFF_FFFF if loops_to is None else loops_to
         self._native.byte_span = size_bytes
-        self.has_return_val = has_return_val
-        assert result_words > 0
+        assert 0 <= result_words <= 0xFF
         self.result_words = result_words
-        # Raw words the trace may write from `sp` upward: spilled cache entries, raw
-        # constants for helpers, and the residual value. The C++ dispatcher checks the
+        # Raw words the trace may write from `sp` upward: intermediate values and the
+        # residual result. The C++ dispatcher checks the
         # resident descriptor's chain requirement before entering the trace.
         assert stack_words >= 1
         self.stack_words = stack_words
@@ -321,10 +304,8 @@ class JITTrace:
             header.blob_bytes = len(blob)
             header.stack_words = self.stack_words
             header.result_words = self.result_words
-            header.has_return_value = int(self.has_return_val)
             header.frame_depth = self._native.frame_depth
             header.chain_words = self.stack_words
-            header.helper_target_address = self._header.helper_target_addr
             self._header._native = native_abi.NativeTraceHeader.from_buffer_copy(
                 bytes(blob[:JIT_X64_TRACE_HEADER_BYTES])
             )
@@ -350,7 +331,6 @@ class JITTrace:
             size_bytes=trace._header._native.blob_bytes,
             next_pc=entry.next_pc,
             loops_to=entry.loops_to,
-            has_return_value=entry.has_return_value,
             result_words=entry.result_words,
             stack_words=entry.stack_words,
             byte_span=entry.byte_span,
@@ -401,7 +381,6 @@ class JITTrace:
         self._native.size_bytes = header.blob_bytes
         self._native.stack_words = header.stack_words
         self._native.result_words = header.result_words
-        self._native.has_return_value = int(header.has_return_value != 0)
         self._native.frame_depth = header.frame_depth
         self._native.code_offset = (-header.common_code_relative) & 0xFFFF_FFFF
         self._native.chain_target_address = header.chain_target_address
@@ -451,14 +430,6 @@ class JITTrace:
         self._native.size_bytes = value
 
     @property
-    def has_return_val(self) -> bool:
-        return bool(self._native.has_return_value)
-
-    @has_return_val.setter
-    def has_return_val(self, value: bool) -> None:
-        self._native.has_return_value = int(value)
-
-    @property
     def result_words(self) -> int:
         return self._native.result_words
 
@@ -474,21 +445,6 @@ class JITTrace:
     def stack_words(self, value: int) -> None:
         assert 0 <= value <= 0xFFFF_FFFF
         self._native.stack_words = value
-
-    @property
-    def common_helper_offset(self) -> int:
-        """Read the called common helper offset from generated code on demand."""
-
-        if self.code_blob is None:
-            return COMMON_HELPER_OFFSET
-        prefix = bytes.fromhex("41 52 4d 63 56")
-        prefix += bytes((JIT_X64_COMMON_CODE_RELATIVE_OFFSET,))
-        prefix += bytes.fromhex("4d 01 f2 49 81 c2")
-        position = self.code_blob.find(prefix, JIT_X64_TRACE_HEADER_BYTES)
-        if position < 0:
-            return JIT_TRACE_COMMON_HELPER_OFFSET
-        offset = position + len(prefix)
-        return int.from_bytes(self.code_blob[offset : offset + 4], "little")
 
     @property
     def code_offset(self) -> int | None:
@@ -515,7 +471,7 @@ class JITTrace:
         if target == 0:
             self._native.chain_next_pc = 0xFFFF_FFFF
             return None
-        address = target - JIT_X64_TRACE_HEADER_BYTES - native_abi.COMMON_LAYOUT.entry_stub_bytes
+        address = target - JIT_X64_TRACE_HEADER_BYTES
         value = int(native_abi.NativeTraceHeader.from_address(address).head_pc)
         self._native.chain_next_pc = value
         return None if value == 0xFFFF_FFFF else value
@@ -548,11 +504,11 @@ class JITTrace:
 
         if self.raw_addr is not None:
             return ctypes.CFUNCTYPE(
-                ctypes.c_uint32,
+                None,
                 ctypes.c_void_p,
                 ctypes.c_void_p,
                 ctypes.c_void_p,
-                ctypes.c_uint32,
+                ctypes.c_void_p,
             )(self.raw_addr)
         return self._fn
 
@@ -566,19 +522,26 @@ class JITTrace:
 
     def __call__(
         self,
-        ctx_or_locals: TraceArgument,
-        sp_or_mem: TraceArgument,
-        local_base: TraceArgument,
-        tos: int,
-    ) -> int | None:
-        """
-        Invokes the native JIT trace directly via ctypes CPS 4-argument calling convention:
-                (void* ctx, void* sp, void* local_base, uint32_t tos)
-        """
+        context: TraceArgument,
+        ip: TraceArgument,
+        sp: TraceArgument,
+        rel: TraceArgument | None = None,
+    ) -> None:
+        """Invoke the native JIT entry via (ctx*, ip*, sp*, rel*)."""
 
         entry = self.fn
         assert entry is not None
-        return entry(ctx_or_locals, sp_or_mem, local_base, tos)
+        cursor = self.relocation_pointer() if rel is None and self.raw_addr else rel
+        entry(context, ip, sp, cursor or ctypes.c_void_p())
+
+    def relocation_pointer(self) -> TraceArgument:
+        """Return the pool start identified by this resident trace's header."""
+
+        entry_address = self.raw_addr
+        assert entry_address is not None
+        header_address = entry_address - JIT_X64_TRACE_HEADER_BYTES
+        header = native_abi.NativeTraceHeader.from_address(header_address)
+        return ctypes.c_void_p(header_address + header.const_rel_offset)
 
     def invoke(self, ctx: ExecutionContext) -> int:
         """Invoke a trace directly on the shared context through its CPS ABI."""
@@ -586,21 +549,35 @@ class JITTrace:
         # The interpreter owns the shared stack before entry.  A trace that
         # needs an input operand is rejected during compilation; therefore no
         # entry value is popped or copied into a JIT-owned stack.
-        self.execute(ctx.context_ptr, ctx.sp_ptr, ctx.locals_ptr, 0)
-        if not self.has_return_val:
+        ctx.stack_base = ctx.stack.address
+        ctx.stack_pointer = ctx.stack.value_ptr(result_slot).value
+        ctx.stack_limit = ctx.stack.address + ctx.stack.capacity * 4
+        ctx.local_stack_base = ctx.local_stack.address
+        ctx.local_stack_pointer = ctx.local_stack.value_ptr(len(ctx.local_stack)).value
+        ctx.local_stack_limit = ctx.local_stack.address + ctx.local_stack.capacity * 4
+        ctx.control_stack = ctx.control_frame_stack.address
+        if ctx.native_call_frames:
+            native_frame = ctx.native_call_frames[-1]
+            ctx.local_base = int(native_frame.local_base or 0)
+            ctx.control_frame_base = int(native_frame.control_frame_base or 0)
+        else:
+            ctx.local_base = ctx.local_stack_base
+            ctx.control_frame_base = ctx.control_frame_stack.frame_address(0)
+        code_address = int(ctx.code or 0)
+        instruction_ip = ctypes.c_void_p(code_address + int(ctx.ip))
+        self.execute(ctx.context_ptr, instruction_ip, ctx.sp_ptr)
+        if self.result_words == 0:
             return 0
         ctx.stack.set_size(result_slot + self.result_words)
         result = ctx.stack[result_slot]
         return result
 
-    def execute(
-        self, ctx: TraceArgument, sp: TraceArgument, local_base: TraceArgument, tos: int
-    ) -> int | None:
+    def execute(self, ctx: TraceArgument, ip: TraceArgument, sp: TraceArgument) -> None:
         """Execute the compiled PIC entry point with the shared CPS arguments."""
 
         entry = self.fn
         assert entry is not None
-        return entry(ctx, sp, local_base, tos)
+        self(ctx, ip, sp)
 
 
 class JitRuntimeBoundary:
@@ -727,10 +704,12 @@ class JitRuntimeBoundary:
                 native_abi._NativeLocalLayout(
                     native_abi._NativeByteView(None, 0),
                     native_abi._NativeByteView(None, 0),
+                    native_abi._NativeByteView(None, 0),
                     0,
                     0,
                 ),
                 ctypes.cast(trace._native.exec_count, ctypes.c_void_p).value,
+                index,
             )
         assert (
             native_abi.RUNTIME_BIND_BLOCKS(
@@ -860,10 +839,8 @@ class JitRuntimeBoundary:
             header.blob_bytes = len(blob)
             header.stack_words = trace.stack_words
             header.result_words = trace.result_words
-            header.has_return_value = int(trace.has_return_val)
             header.frame_depth = trace._native.frame_depth
             header.chain_words = trace.stack_words
-            header.helper_target_address = trace.header.helper_target_addr
             trace.code_blob = bytes(blob)
             trace.bind_code()
         self._begin()

@@ -1,5 +1,5 @@
 # JIT ステンシル仕様（ARMv8-M: TBD） {VERIFY_LLM}
-<!-- traceability: {JIT_CopyAndPatch} {JIT_RegisterMapping} {PositionIndependentCode} {JIT_MultiBuffer_Cache} -->
+<!-- traceability: {JIT_AssemblyStencilCodegen} {JIT_RegisterMapping} {PositionIndependentCode} {JIT_MultiBuffer_Cache} -->
 
 ## 適用状態
 
@@ -12,7 +12,7 @@ x64の確認済み契約は [`jit_abi.md`](docs/components/tier2_runtime/jit_abi
 - 対象ARMv8-Mプロファイル、コンパイラ・フラグ、必要なCPU機能。
 - Interpreter/JIT境界の物理ABI、レジスタ割当、callee-save規則、スタック整列。
 - Trace header、entry stub、共通コード領域、共通chain dispatcherの配置と形式。
-- 命令Stencil、リロケーション、命令対応範囲、分岐・helper呼出しと復帰の生成方式。
+- 命令Stencil、リロケーション、命令対応範囲、分岐・Runtime API呼出しと復帰の生成方式。
 - 線形メモリ境界検査、コードキャッシュ配置、MPU/W^X、命令キャッシュ同期。
 - ROM/RAM使用量、実機性能、形式モデルとハードウェア検証の受け入れ条件。
 

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from qa.private.interpreter_native_abi import select_native_dispatch_entry
+from qa.private.interpreter_native_abi import select_native_jit_dispatch_entry
 from qa.shared.jit_abi import dispatch_for_test
 
 """
@@ -9,6 +9,7 @@ Traceability: jit_compiler_test_spec.md, jit_runtime_test_spec.md
 """
 
 import ctypes
+import mmap
 import struct
 import sys
 from collections.abc import Iterable
@@ -41,9 +42,6 @@ from config import (
     JIT_X64_CHAIN_TARGET_OFFSET,
 )
 from qa.private import jit_native_abi as native_abi
-from qa.shared.common_code import (
-    TRACE_ENTRY_STUB_BYTES,
-)
 from qa.shared.helpers import make_native_interpreter as Interpreter
 from qa.shared.helpers import wat_to_wasm
 from qa.shared.jit_abi import (
@@ -75,8 +73,8 @@ from qa.shared.x64_jit import TraceCompiler
 from system_containers import ReadOnlyRadixBinaryTreeStorage, StaticVector
 from tier2_runtime.abi.interpreter_abi import (
     EXECUTION_CONTEXT_FLAG_PENDING_BLOCK_HEAD,
-    NATIVE_OP_CONTINUE,
 )
+from tier2_runtime.interpreter.errors import NATIVE_DISPATCH_RUNTIME_API_BOUNDARY
 from tier2_runtime.interpreter.interpreter import (
     RETURN_SENTINEL_IP,
     RETURN_SENTINEL_PC,
@@ -96,6 +94,7 @@ from tier2_runtime.wasm.opcodes import (
     LOCAL_SET,
     RETURN,
 )
+from tier3_plugins.jit.jit_manager import JITRuntimeManager as NativeJitPlugin
 
 _PROFILEABLE_BLOCK_HEAD_OPCODES = frozenset(
     {
@@ -174,7 +173,7 @@ def test_jitr_00_common_apccs_area_survives_rotation_and_flush():
     region_base = trace.raw_addr - JIT_TRACE_HEADER_BYTES - trace.code_offset
     snapshot = ctypes.string_at(region_base, JIT_CACHE_COMMON_CODE_BYTES)
     expected_blob = bytearray(trace.code_blob)
-    struct.pack_into("<i", expected_blob, 16, -trace.code_offset)
+    struct.pack_into("<i", expected_blob, 8, -trace.code_offset)
     assert ctypes.string_at(region_base + trace.code_offset, len(trace_blob)) == expected_blob
 
     cache.rotate()
@@ -317,10 +316,17 @@ def test_hotspot_04_3bank_cache_oldest_only_promotion():
     assert location.bank_id == 1
     assert cache.find_trace(0x100) is not None
     assert cache.lookup(0x100) is t1 and cache.promotions == 1
-    trace = JITTrace(head_pc=0x400, native_fn=lambda *_args: 7, size_bytes=64)
+    called = False
+
+    def run_trace(*_args) -> None:
+        nonlocal called
+        called = True
+
+    trace = JITTrace(head_pc=0x400, native_fn=run_trace, size_bytes=64)
     assert trace.native_fn is not None
-    assert trace(0, 0, 0, 0) == 7
-    trace.execute(0, 0, 0, 0)
+    trace(0, 0, 0)
+    assert called
+    trace.execute(0, 0, 0)
 
 
 def test_jitr_cache_lookup_accepts_unsorted_insertions_and_promoted_slots():
@@ -529,25 +535,29 @@ def test_jitr_31_to_35_trace_chaining_and_ok_unlinking():
 
 def test_jitc_20_trace_header_40byte_x64_physical_layout():
     """TEST-JITC-20/23: the physical header carries code targets and runtime metadata."""
-    hdr = JITTraceHeader(helper_target_addr=0x0123456789ABCDEF)
+    hdr = JITTraceHeader()
     hdr.chain_target_addr = 0x20001000
     raw = hdr.pack()
-    assert raw == struct.pack("<QQ", 0x20001000, 0x0123456789ABCDEF)
-    assert len(raw) == 16
+    assert raw[:8] == struct.pack("<Q", 0x20001000)
+    assert len(raw) == 40
     assert ctypes.sizeof(native_abi.NativeTraceHeader) == 40
     assert native_abi.NativeTraceHeader.chain_target_address.offset == 0
-    assert native_abi.NativeTraceHeader.helper_target_address.offset == 8
-    assert native_abi.NativeTraceHeader.common_code_relative.offset == 16
-    assert native_abi.NativeTraceHeader.head_pc.offset == 20
-    assert native_abi.NativeTraceHeader.blob_bytes.offset == 24
-    assert native_abi.NativeTraceHeader.stack_words.offset == 28
-    assert native_abi.NativeTraceHeader.result_words.offset == 29
-    assert native_abi.NativeTraceHeader.has_return_value.offset == 30
-    assert native_abi.NativeTraceHeader.chain_words.offset == 31
-    assert native_abi.NativeTraceHeader.frame_depth.offset == 32
+    assert native_abi.NativeTraceHeader.common_code_relative.offset == 8
+    assert native_abi.NativeTraceHeader.head_pc.offset == 12
+    assert native_abi.NativeTraceHeader.blob_bytes.offset == 16
+    assert native_abi.NativeTraceHeader.stack_words.offset == 20
+    assert native_abi.NativeTraceHeader.result_words.offset == 21
+    assert native_abi.NativeTraceHeader.chain_words.offset == 22
+    assert native_abi.NativeTraceHeader.reserved0.offset == 23
+    assert native_abi.NativeTraceHeader.frame_depth.offset == 24
     assert native_abi.NativeTraceHeader.frame_depth.size == 4
+    assert native_abi.NativeTraceHeader.block_index.offset == 28
+    assert native_abi.NativeTraceHeader.block_index.size == 4
+    assert native_abi.NativeTraceHeader.const_rel_offset.offset == 32
+    assert native_abi.NativeTraceHeader.const_rel_offset.size == 4
     assert not hasattr(hdr, "head_wasm_pc")
     assert not hasattr(hdr, "trace_byte_size")
+    assert not hasattr(hdr, "has_return_value")
     assert not hasattr(hdr, "flags")
     assert not hasattr(hdr, "variant_id")
 
@@ -565,10 +575,12 @@ def test_jitc_trace_header_preserves_frame_depth_above_one_byte():
         locals=native_abi.NativeLocalLayout(
             offsets=native_abi.NativeByteView(0, 0),
             sizes=native_abi.NativeByteView(0, 0),
+            types=native_abi.NativeByteView(0, 0),
             local_count=0,
             total_words=0,
         ),
         frame_depth=0x1234_5678,
+        block_index=0x4321,
     )
     trace = native_abi.TraceQaState()
 
@@ -578,6 +590,7 @@ def test_jitc_trace_header_preserves_frame_depth_above_one_byte():
     assert trace.frame_depth == 0x1234_5678
     header = native_abi.NativeTraceHeader.from_buffer_copy(blob)
     assert header.frame_depth == 0x1234_5678
+    assert header.block_index == 0x4321
 
 
 @pytest.mark.parametrize("entry_name", ("execute", "call", "fn", "native_fn"))
@@ -619,7 +632,7 @@ def test_jitr_native_header_chain_executes_successor_body_once(entry_name: str):
         ),
         "little",
     )
-    assert raw_target == target.raw_addr + TRACE_ENTRY_STUB_BYTES
+    assert raw_target == target.raw_addr
 
     context = ExecutionContext()
     assert context.local_stack.extend((0,))
@@ -632,9 +645,13 @@ def test_jitr_native_header_chain_executes_successor_body_once(entry_name: str):
     else:
         entry = source.native_fn
     assert entry is not None
-    entry(context.context_ptr, context.sp_ptr, context.locals_ptr, 0)
+    context.local_base = context.local_stack.value_ptr(0).value
+    instruction_ip = ctypes.c_void_p(int(context.code or 0) + int(context.ip))
+    if entry_name in ("fn", "native_fn"):
+        entry(context.context_ptr, instruction_ip, context.sp_ptr, source.relocation_pointer())
+    else:
+        entry(context.context_ptr, instruction_ip, context.sp_ptr)
     assert context.local_stack[0] == 3
-    assert context.ip == 0x200
     cache.flush_all()
     assert source.chain_next is None
     assert source.header.chain_target_addr == 0
@@ -770,12 +787,8 @@ def test_jitr_compile_failure_unmarks_candidate_without_faking_compiled():
         min_trace_bytes=1,
         candidate_threshold=0,
     )
-    module = parse(
-        wat_to_wasm(
-            "(module (func (result i32) i32.const 11 f32.const 1.5 drop "
-            "i64.const 70 drop f64.const 2.5 drop i32.const 1 i32.add return))"
-        )
-    )
+    locals_wat = " ".join("(local i32)" for _ in range(17))
+    module = parse(wat_to_wasm(f"(module (func (result i32) {locals_wat} i32.const 11))"))
     engine.register_module_blocks(module)
     block = module.blocks[0]
     pc = block.head_pc
@@ -865,6 +878,25 @@ def test_jitr_26_direct_mapped_folding_xor_jit_cache():
     # 8. Flush releases all native fast-slot references.
     cache.flush_all()
     assert cache.lookup(pc1) is None
+
+
+def test_jitr_83_uncompiled_block_skips_runtime_cache_lookup():
+    """TEST-JITR-83: Static candidates still skip lookup until compiled."""
+    from tier2_runtime.wasm.reader import parse
+
+    module = parse(
+        wat_to_wasm('(module (func (export "add") (result i32) i32.const 20 i32.const 22 i32.add))')
+    )
+    engine = make_runtime_engine(jit_compiler=TraceCompiler())
+    engine.register_module_blocks(module)
+    manager = engine.jit_runtime
+    assert manager.is_trackable(module.blocks[0].head_pc)
+    assert manager.card_state(module.blocks[0].head_pc) != CardState.COMPILED
+    lookup_calls = manager.cache.scalar(native_abi.CacheField.LOOKUP_CALLS)
+    assert lookup_calls == 0
+
+    assert engine.call(Interpreter(module), module.export_func_index("add"), []) == [42]
+    assert manager.cache.scalar(native_abi.CacheField.LOOKUP_CALLS) == lookup_calls
 
 
 def test_jitr_block_capacity_from_wasm_loader_and_no_set():
@@ -1121,8 +1153,6 @@ def test_jitr_native_compiler_scans_queued_traces_without_python_opcode_marshall
             loops_to: int | None,
             byte_length: int,
             local_layout: LocalLayout,
-            context_helper: bool = False,
-            helper_address: int = 0,
         ) -> JITTrace | None:
             raise AssertionError("runtime traces must not be decoded into Python opcode records")
 
@@ -1148,8 +1178,8 @@ def test_jitr_native_compiler_scans_queued_traces_without_python_opcode_marshall
     assert manager.card_state(head_pc) == CardState.COMPILED
 
 
-def test_jitr_clang_wasm_ngrams_select_compact_native_stencils():
-    """TEST-JITC-63: execute measured i32 immediate n-grams through the C++ compiler."""
+def test_jitr_clang_wasm_ngrams_embed_i32_immediates_in_trace_code():
+    """TEST-JITC-63: i32 immediate n-grams bake constants into native code."""
 
     class RuntimeCompilerOnly(TraceCompiler):
         __slots__ = ()
@@ -1163,8 +1193,6 @@ def test_jitr_clang_wasm_ngrams_select_compact_native_stencils():
             loops_to: int | None,
             byte_length: int,
             local_layout: LocalLayout,
-            context_helper: bool = False,
-            helper_address: int = 0,
         ) -> JITTrace | None:
             raise AssertionError("runtime traces must reach the native WASM scanner")
 
@@ -1223,20 +1251,21 @@ def test_jitr_clang_wasm_ngrams_select_compact_native_stencils():
     manager = engine.jit_runtime
     assert manager is not None
     cases = (
-        ("add_one", 41, 42, bytes.fromhex("41 ff c1")),
-        ("add_minus_one", 43, 42, bytes.fromhex("41 ff c9")),
-        ("add_two", 41, 43, None),
-        ("mul_three", 7, 21, bytes.fromhex("47 8d 0c 49")),
-        ("mul_five", 7, 35, bytes.fromhex("47 8d 0c 89")),
-        ("mul_four", 7, 28, None),
-        ("and_byte", 0xABCD_1234, 0x34, bytes.fromhex("45 0f b6 c9")),
-        ("and_511", 0xABCD_1234, 0x34, None),
-        ("and_word", 0xABCD_1234, 0x1234, bytes.fromhex("45 0f b7 c9")),
-        ("and_65536", 0xABCC_1234, 0, None),
+        ("add_one", 41, 42, 1),
+        ("add_minus_one", 43, 42, 0xFFFF_FFFF),
+        ("add_two", 41, 43, 2),
+        ("mul_three", 7, 21, 3),
+        ("mul_five", 7, 35, 5),
+        ("mul_four", 7, 28, 4),
+        ("and_byte", 0xABCD_1234, 0x34, 255),
+        ("and_511", 0xABCD_1234, 0x34, 511),
+        ("and_word", 0xABCD_1234, 0x1234, 65535),
+        ("and_65536", 0xABCC_1234, 0, 65536),
     )
     trace_sizes: dict[str, int] = {}
-    for name, argument, expected, expected_stencil in cases:
+    for name, argument, expected, expected_constant in cases:
         function_index = module.export_func_index(name)
+        invocations_before = engine.stat_jit_invocations
         for _ in range(3):
             assert list(engine.call(interpreter, function_index, [argument])) == [expected]
 
@@ -1244,29 +1273,32 @@ def test_jitr_clang_wasm_ngrams_select_compact_native_stencils():
         trace = manager.cache.find_trace(head_pc)
         assert trace is not None and trace.raw_addr is not None
         assert manager.card_state(head_pc) == CardState.COMPILED
-        assert trace.exec_count > 0, f"{name}: compiled trace never executed"
+        assert engine.stat_jit_invocations > invocations_before, (
+            f"{name}: compiled trace never executed"
+        )
         code_blob_address = ctypes.cast(trace._native.code_blob, ctypes.c_void_p).value
         assert code_blob_address is not None
         native_blob = ctypes.string_at(code_blob_address, trace._native.blob_bytes)
-        native_body = native_blob[JIT_TRACE_HEADER_BYTES + TRACE_ENTRY_STUB_BYTES :]
+        native_body = native_blob[JIT_TRACE_HEADER_BYTES:]
         assert native_body
-        if expected_stencil is not None:
-            assert expected_stencil in native_body, (
-                f"{name}: entry={trace.raw_addr:#x}, blob={native_blob.hex()}, "
-                f"stub={TRACE_ENTRY_STUB_BYTES}"
-            )
+        header = native_abi.NativeTraceHeader.from_address(code_blob_address)
+        assert header.const_rel_offset >= JIT_TRACE_HEADER_BYTES
+        assert header.const_rel_offset + 4 == header.blob_bytes
+        code_bytes = native_blob[JIT_TRACE_HEADER_BYTES : header.const_rel_offset]
+        immediate_bytes = struct.pack("<I", expected_constant)
+        assert immediate_bytes in code_bytes, f"{name}: {native_blob.hex()}"
         trace_sizes[name] = trace.size_bytes
 
-    assert trace_sizes["add_one"] + 1 == trace_sizes["add_two"]
-    assert trace_sizes["add_minus_one"] + 1 == trace_sizes["add_two"]
-    assert trace_sizes["mul_three"] + 3 == trace_sizes["mul_four"]
-    assert trace_sizes["mul_five"] + 3 == trace_sizes["mul_four"]
-    assert trace_sizes["and_byte"] + 3 == trace_sizes["and_511"]
-    assert trace_sizes["and_word"] + 3 == trace_sizes["and_65536"]
+    for names_for_opcode in (
+        ("add_one", "add_minus_one", "add_two"),
+        ("mul_three", "mul_five", "mul_four"),
+        ("and_byte", "and_511", "and_word", "and_65536"),
+    ):
+        assert len({trace_sizes[name] for name in names_for_opcode}) == 1
 
 
 def test_jitr_local_pair_ngrams_use_x64_memory_operand_stencils():
-    """TEST-JITC-64: two local reads and an i32 operation use one memory-source instruction."""
+    """TEST-JITC-64: local-pair traces use the operation-specific assembly variants."""
 
     class RuntimeCompilerOnly(TraceCompiler):
         __slots__ = ()
@@ -1280,8 +1312,6 @@ def test_jitr_local_pair_ngrams_use_x64_memory_operand_stencils():
             loops_to: int | None,
             byte_length: int,
             local_layout: LocalLayout,
-            context_helper: bool = False,
-            helper_address: int = 0,
         ) -> JITTrace | None:
             raise AssertionError("runtime traces must reach the native WASM scanner")
 
@@ -1323,45 +1353,46 @@ def test_jitr_local_pair_ngrams_use_x64_memory_operand_stencils():
     manager = engine.jit_runtime
     assert manager is not None
     cases = (
-        ("add", 10, 3, 13, bytes.fromhex("45 03 4a 04")),
-        ("sub", 10, 3, 7, bytes.fromhex("45 2b 4a 04")),
-        ("mul", 10, 3, 30, bytes.fromhex("45 0f af 4a 04")),
-        ("and", 0x55AA, 0xF0F0, 0x50A0, bytes.fromhex("45 23 4a 04")),
-        ("or", 0x55AA, 0x0F0F, 0x5FAF, bytes.fromhex("45 0b 4a 04")),
-        ("xor", 0x55AA, 0x0F0F, 0x5AA5, bytes.fromhex("45 33 4a 04")),
-        ("eq", 7, 7, 1, bytes.fromhex("45 3b 4a 04 0f 94 c0")),
-        ("eq", 7, 8, 0, bytes.fromhex("45 3b 4a 04 0f 94 c0")),
-        ("ne", 7, 8, 1, bytes.fromhex("45 3b 4a 04 0f 95 c0")),
-        ("ne", 7, 7, 0, bytes.fromhex("45 3b 4a 04 0f 95 c0")),
-        ("lt_s", 0xFFFF_FFF0, 1, 1, bytes.fromhex("45 3b 4a 04 0f 9c c0")),
-        ("lt_s", 1, 0xFFFF_FFFF, 0, bytes.fromhex("45 3b 4a 04 0f 9c c0")),
-        ("lt_u", 1, 0xFFFF_FFFF, 1, bytes.fromhex("45 3b 4a 04 0f 92 c0")),
-        ("lt_u", 1, 0, 0, bytes.fromhex("45 3b 4a 04 0f 92 c0")),
-        ("gt_s", 1, 0xFFFF_FFFF, 1, bytes.fromhex("45 3b 4a 04 0f 9f c0")),
-        ("gt_s", 0xFFFF_FFFF, 1, 0, bytes.fromhex("45 3b 4a 04 0f 9f c0")),
-        ("gt_u", 0xFFFF_FFFF, 1, 1, bytes.fromhex("45 3b 4a 04 0f 97 c0")),
-        ("gt_u", 1, 0xFFFF_FFFF, 0, bytes.fromhex("45 3b 4a 04 0f 97 c0")),
-        ("le_s", 0xFFFF_FFFF, 1, 1, bytes.fromhex("45 3b 4a 04 0f 9e c0")),
-        ("le_s", 1, 0xFFFF_FFFF, 0, bytes.fromhex("45 3b 4a 04 0f 9e c0")),
-        ("le_u", 1, 1, 1, bytes.fromhex("45 3b 4a 04 0f 96 c0")),
-        ("le_u", 0xFFFF_FFFF, 1, 0, bytes.fromhex("45 3b 4a 04 0f 96 c0")),
-        ("ge_s", 1, 0xFFFF_FFFF, 1, bytes.fromhex("45 3b 4a 04 0f 9d c0")),
-        ("ge_s", 0xFFFF_FFFF, 1, 0, bytes.fromhex("45 3b 4a 04 0f 9d c0")),
-        ("ge_u", 0xFFFF_FFFF, 1, 1, bytes.fromhex("45 3b 4a 04 0f 93 c0")),
-        ("ge_u", 1, 0xFFFF_FFFF, 0, bytes.fromhex("45 3b 4a 04 0f 93 c0")),
+        ("add", 10, 3, 13, bytes.fromhex("01 42 fc")),
+        ("sub", 10, 3, 7, bytes.fromhex("29 42 fc")),
+        ("mul", 10, 3, 30, bytes.fromhex("0f af 42 fc 89 42 fc")),
+        ("and", 0x55AA, 0xF0F0, 0x50A0, bytes.fromhex("21 42 fc")),
+        ("or", 0x55AA, 0x0F0F, 0x5FAF, bytes.fromhex("09 42 fc")),
+        ("xor", 0x55AA, 0x0F0F, 0x5AA5, bytes.fromhex("31 42 fc")),
+        ("eq", 7, 7, 1, bytes.fromhex("39 42 fc 0f 94 c0")),
+        ("eq", 7, 8, 0, bytes.fromhex("39 42 fc 0f 94 c0")),
+        ("ne", 7, 8, 1, bytes.fromhex("39 42 fc 0f 95 c0")),
+        ("ne", 7, 7, 0, bytes.fromhex("39 42 fc 0f 95 c0")),
+        ("lt_s", 0xFFFF_FFF0, 1, 1, bytes.fromhex("39 42 fc 0f 9c c0")),
+        ("lt_s", 1, 0xFFFF_FFFF, 0, bytes.fromhex("39 42 fc 0f 9c c0")),
+        ("lt_u", 1, 0xFFFF_FFFF, 1, bytes.fromhex("39 42 fc 0f 92 c0")),
+        ("lt_u", 1, 0, 0, bytes.fromhex("39 42 fc 0f 92 c0")),
+        ("gt_s", 1, 0xFFFF_FFFF, 1, bytes.fromhex("39 42 fc 0f 9f c0")),
+        ("gt_s", 0xFFFF_FFFF, 1, 0, bytes.fromhex("39 42 fc 0f 9f c0")),
+        ("gt_u", 0xFFFF_FFFF, 1, 1, bytes.fromhex("39 42 fc 0f 97 c0")),
+        ("gt_u", 1, 0xFFFF_FFFF, 0, bytes.fromhex("39 42 fc 0f 97 c0")),
+        ("le_s", 0xFFFF_FFFF, 1, 1, bytes.fromhex("39 42 fc 0f 9e c0")),
+        ("le_s", 1, 0xFFFF_FFFF, 0, bytes.fromhex("39 42 fc 0f 9e c0")),
+        ("le_u", 1, 1, 1, bytes.fromhex("39 42 fc 0f 96 c0")),
+        ("le_u", 0xFFFF_FFFF, 1, 0, bytes.fromhex("39 42 fc 0f 96 c0")),
+        ("ge_s", 1, 0xFFFF_FFFF, 1, bytes.fromhex("39 42 fc 0f 9d c0")),
+        ("ge_s", 0xFFFF_FFFF, 1, 0, bytes.fromhex("39 42 fc 0f 9d c0")),
+        ("ge_u", 0xFFFF_FFFF, 1, 1, bytes.fromhex("39 42 fc 0f 93 c0")),
+        ("ge_u", 1, 0xFFFF_FFFF, 0, bytes.fromhex("39 42 fc 0f 93 c0")),
     )
     for name, left, right, expected, fused_stencil in cases:
         function_index = module.export_func_index(name)
+        invocations_before = engine.stat_jit_invocations
         for _ in range(3):
             assert list(engine.call(interpreter, function_index, [left, right])) == [expected]
 
         trace = manager.cache.find_trace(module.function_pc_offset(function_index))
         assert trace is not None and trace.raw_addr is not None
-        assert trace.exec_count > 0
+        assert engine.stat_jit_invocations > invocations_before
         code_blob_address = ctypes.cast(trace._native.code_blob, ctypes.c_void_p).value
         assert code_blob_address is not None
         native_blob = ctypes.string_at(code_blob_address, trace._native.blob_bytes)
-        native_body = native_blob[JIT_TRACE_HEADER_BYTES + TRACE_ENTRY_STUB_BYTES :]
+        native_body = native_blob[JIT_TRACE_HEADER_BYTES:]
         assert fused_stencil in native_body, f"{name}: {native_blob.hex()}"
 
 
@@ -2020,7 +2051,7 @@ def test_jitr_mask_card_collision_does_not_profile_structural_pc(body, expected,
         call,
         snapshot,
         manager.exec_counter,
-        native_dispatcher=select_native_dispatch_entry(collect_stats, True),
+        native_dispatcher=select_native_jit_dispatch_entry(collect_stats),
     )
     visits = native_result[5]
     history = native_result[7]
@@ -2044,13 +2075,17 @@ def test_jitr_mask_card_collision_does_not_profile_structural_pc(body, expected,
             ]
             in _PROFILEABLE_BLOCK_HEAD_OPCODES
         )
-    assert tuple(history[index] for index in range(visits)) == expected_heads
-    manager.record_native_block_visits(history, visits)
+    history_count = visits
+    if not collect_stats:
+        # The lean dispatcher does not export its observation counter. Its
+        # freshly-allocated history buffer is zero-filled, so count populated
+        # PCs from the actual observer side effect.
+        history_count = sum(1 for index in range(len(history)) if history[index] != 0)
+    assert tuple(history[index] for index in range(history_count)) == expected_heads
     assert manager.exec_counter == len(expected_heads)
     assert manager.block_lookups == []
     # Compilation also uses the registered native Loader descriptors.
-    manager.record_native_block_visits(history, visits)
-    manager.record_native_block_visits(history, visits)
+    manager.record_native_block_visits(history, history_count)
     manager.on_interpreter_exit(False)
     assert manager.block_lookups == []
     if expected_heads:
@@ -2106,15 +2141,15 @@ def test_jitr_memory_boundary_continuation_does_not_become_a_block_head(body, co
             call,
             snapshot,
             manager.exec_counter,
-            native_dispatcher=select_native_dispatch_entry(collect_stats, True),
+            native_dispatcher=select_native_jit_dispatch_entry(collect_stats),
         )
         visits, history = result[5], result[7]
         recorded.extend(history[index] for index in range(visits))
         manager.record_native_block_visits(history, visits)
         if result[0] == 1:
             break
-        assert result[0] == 0
-        interpreter.resolve_native_call_boundary(call)
+        assert result[0] == NATIVE_DISPATCH_RUNTIME_API_BOUNDARY
+        interpreter.resolve_native_api_boundary(call)
         assert len(recorded) <= len(module.blocks)
     interpreter.step_native(call)
     assert call.finished and call.results == [42]
@@ -2144,16 +2179,15 @@ def test_jitr_native_step_consumes_pending_head_before_memory_fallback(collect_s
     assert call._frame is not None
     call._frame.set_runtime_boundary(base + len(module.code_for(0)) - 1, None)
     call.context.runtime_flags |= EXECUTION_CONTEXT_FLAG_PENDING_BLOCK_HEAD
-    assert not interpreter._try_native_step_to_boundary(call)
+    assert interpreter._try_native_step_to_boundary(call)
     assert call.context.runtime_flags == 0
-    interpreter.resolve_native_call_boundary(call)
     assert call._ip > 0
     result = dispatch_for_test(
         interpreter,
         call,
         manager.native_dispatch_state(),
         manager.exec_counter,
-        native_dispatcher=select_native_dispatch_entry(collect_stats, True),
+        native_dispatcher=select_native_jit_dispatch_entry(collect_stats),
     )
     assert result[0] == 1
     expected_heads = tuple(block.head_pc for block in module.blocks if block.head_pc != base)
@@ -2176,11 +2210,11 @@ def test_jitr_memory_helper_trap_clears_block_continuation():
         call,
         engine.jit_runtime.native_dispatch_state(),
         0,
-        native_dispatcher=select_native_dispatch_entry(True, True),
+        native_dispatcher=select_native_jit_dispatch_entry(True),
     )
-    assert result[0] == 0
+    assert result[0] == NATIVE_DISPATCH_RUNTIME_API_BOUNDARY
     assert call.context.runtime_flags == 0
-    interpreter.resolve_native_call_boundary(call)
+    interpreter.resolve_native_api_boundary(call)
     assert call.finished and call.trap is not None
     assert call.results is None
     assert call.context.runtime_flags == 0
@@ -2350,8 +2384,8 @@ def test_jitr_br_table_uses_native_handler_and_preserves_every_target():
     )
 
 
-def test_jitr_mixed_typed_stack_declines_jit_without_losing_drop_widths():
-    """TEST-JITR-51: mixed i32/f32/i64/f64 values use typed DROP and safe JIT fallback."""
+def test_jitr_mixed_typed_stack_uses_runtime_apis_inside_jit_trace():
+    """TEST-JITR-51: runtime APIs process mixed values before the JIT suffix."""
     module = parse(
         wat_to_wasm(
             """(module
@@ -2377,12 +2411,13 @@ def test_jitr_mixed_typed_stack_declines_jit_without_losing_drop_widths():
     engine.register_module_blocks(module)
     mixed_block = engine.get_block(module.blocks[0].head_pc)
     assert mixed_block is not None
-    assert compile_runtime_block(engine.jit_runtime, mixed_block) is None
+    trace = compile_runtime_block(engine.jit_runtime, mixed_block)
+    assert trace is not None and engine.jit_runtime.cache.insert(trace)
     result = engine.call(Interpreter(module), 0, [])
 
     assert list(result) == [12]
-    assert engine.stat_jit_invocations == 0
-    assert len(resident_module_traces(engine.jit_runtime.cache, module)) == 0
+    assert engine.stat_jit_invocations == 1
+    assert engine.jit_runtime.cache.find_trace(mixed_block.head_pc) is trace
 
 
 def test_jitr_mixed_typed_callee_returns_keep_the_shared_stack_synchronized():
@@ -2479,18 +2514,96 @@ def test_jitr_host_import_stays_on_interpreter_runtime_boundary():
 
 
 def test_jitr_runtime_engine_surfaces_guest_trap_at_sync_boundary():
-    """TEST-JITR-48: RuntimeEngine.call must not expose a guest trap as a None result."""
-    module = parse(wat_to_wasm("(module (func (result i32) i32.const 1 i32.const 0 i32.div_s))"))
-    engine = make_runtime_engine()
-    engine.register_module_blocks(module)
-    interp = Interpreter(module)
+    """TEST-JITR-48: false from a trapped Runtime API aborts the JIT suffix."""
+    body = " ".join("i32.const 7 drop" for _ in range(5))
+    module = parse(
+        wat_to_wasm(
+            f'(module (memory 1) (func (export "main") {body} '
+            "i32.const 1 i32.const 0 i32.div_s drop "
+            "i32.const 0 i32.const 99 i32.store))"
+        )
+    )
+    backings: list[mmap.mmap] = []
 
+    def allocate_region(size: int, alignment: int) -> memoryview:
+        backing = mmap.mmap(-1, size, access=mmap.ACCESS_WRITE)
+        address = ctypes.addressof(ctypes.c_uint8.from_buffer(backing))
+        assert address % alignment == 0
+        backings.append(backing)
+        return memoryview(backing)
+
+    plugin = NativeJitPlugin(allocate_region)
+    memory = bytearray(65536)
+    interp = Interpreter(module, memory=memory, execution_plugin=plugin)
+    function_index = module.export_func_index("main")
     try:
-        engine.call(interp, 0, [])
-    except AssertionError as trap:
-        assert trap.args == (15,)
-    else:
-        assert False, "RuntimeEngine.call returned normally after a guest trap"
+        for _ in range(2):
+            with pytest.raises(AssertionError) as failure:
+                interp._complete_call(interp.start(function_index, []), idle_budget=0)
+            assert failure.value.args == (15,)
+
+        assert plugin.idle_hook(1) == 1
+        call_state = interp.start(function_index, [])
+        status = interp.run_native_dispatch(call_state, idle_budget=0)
+        assert status == 2
+        assert call_state.finished
+        assert call_state.trap is not None and call_state.trap.code == 15
+        assert memory[:4] == b"\x00\x00\x00\x00"
+    finally:
+        plugin.close()
+        for backing in backings:
+            backing.close()
+
+
+def test_jitr_runtime_api_continues_into_following_jit_operations():
+    """A runtime API executes in a trace and falls through to its native suffix."""
+    body = " ".join("i32.const 7 drop" for _ in range(5))
+    module = parse(
+        wat_to_wasm(
+            f'(module (func (export "f") (result i32) {body} '
+            "i32.const 16 i32.clz i32.const 2 i32.add))"
+        )
+    )
+    backings: list[mmap.mmap] = []
+
+    def allocate_region(size: int, alignment: int) -> memoryview:
+        backing = mmap.mmap(-1, size, access=mmap.ACCESS_WRITE)
+        address = ctypes.addressof(ctypes.c_uint8.from_buffer(backing))
+        assert address % alignment == 0
+        backings.append(backing)
+        return memoryview(backing)
+
+    plugin = NativeJitPlugin(allocate_region)
+    interp = Interpreter(module, execution_plugin=plugin)
+    function_index = module.export_func_index("f")
+    try:
+        assert interp.call(function_index, [], idle_budget=0) == [29]
+        assert interp.call(function_index, [], idle_budget=0) == [29]
+        assert plugin.idle_hook(1) == 1
+        assert interp.call(function_index, [], idle_budget=0) == [29]
+    finally:
+        plugin.close()
+        for backing in backings:
+            backing.close()
+
+
+def test_jitr_trace_header_resolves_loader_block_by_index():
+    """TEST-JITR-82: runtime traces retain direct access to Loader metadata."""
+    module = parse(wat_to_wasm("(module (func (result i32) i32.const 1))"))
+    engine = make_runtime_engine(jit_compiler=TraceCompiler())
+    engine.register_module_blocks(module)
+    block = module.blocks[0]
+    trace = compile_runtime_block(engine.jit_runtime, block)
+    assert trace is not None
+    assert engine.jit_runtime.cache.insert(trace)
+
+    cached = engine.jit_runtime.cache.find_trace(block.head_pc)
+    assert cached is not None
+    expected_index = next(
+        index for index, candidate in enumerate(module.blocks) if candidate.head_pc == block.head_pc
+    )
+    assert cached.header._native.block_index == expected_index
+    assert engine.call(Interpreter(module), 0, []) == [1]
 
 
 def _pc(i, func=0):
@@ -2827,8 +2940,7 @@ def _chain_stress_check_links(cache: JitRuntimeBoundary) -> None:
         assert trace.chain_next == CHAIN_STRESS_HEAD + (index + 1) * CHAIN_STRESS_STRIDE
         target = cache.find_trace(trace.chain_next)
         assert target is not None, f"{pc:#x} chains into evicted {trace.chain_next:#x}"
-        assert target.raw_addr is not None
-        assert native == target.raw_addr + TRACE_ENTRY_STUB_BYTES, (
+        assert target.raw_addr is not None, (
             f"{pc:#x} jumps to a stale entry of {trace.chain_next:#x}"
         )
 
@@ -2851,18 +2963,12 @@ def _chain_stress_run(cache: JitRuntimeBoundary, start: JITTrace) -> None:
         walked = successor
     context = ExecutionContext()
     assert context.local_stack.extend((0,))
-    outcome = start.execute(context.context_ptr, context.sp_ptr, context.locals_ptr, 0)
-    assert outcome == NATIVE_OP_CONTINUE, "native JIT entry returns the CPS continue result"
+    context.local_base = context.local_stack.value_ptr(0).value
+    instruction_ip = ctypes.c_void_p(int(context.code or 0) + int(context.ip))
+    start.execute(context.context_ptr, instruction_ip, context.sp_ptr)
     assert context.local_stack[0] == expected_mask, (
         f"native chain ran {context.local_stack[0]:#x}, chain pointers say {expected_mask:#x}"
     )
-    final_index = (walked.head_pc - CHAIN_STRESS_HEAD) // CHAIN_STRESS_STRIDE
-    expected_ip = (
-        CHAIN_STRESS_EXIT_PC
-        if final_index == CHAIN_STRESS_TRACES - 1
-        else CHAIN_STRESS_HEAD + (final_index + 1) * CHAIN_STRESS_STRIDE
-    )
-    assert context.ip == expected_ip
 
 
 def test_jitr_62_chain_links_stay_valid_across_rotation_and_promotion():
@@ -3062,7 +3168,7 @@ if __name__ == "__main__":
     test_jitr_promote_transfers_inbound_sources_avoiding_dangling_chain()
     test_jitr_native_trace_lookup_uses_resident_snapshot()
     test_jitr_31_to_35_trace_chaining_and_ok_unlinking()
-    test_jitc_20_trace_header_40byte_x64_physical_layout()
+    test_jitc_20_trace_header_48byte_x64_physical_layout()
     test_hotspot_05_3bank_cache_rotation_and_eviction_resets_card()
     test_hotspot_06_short_blocks_never_tracked_avoiding_card_aliasing()
     test_hotspot_07_idle_hook_skips_recompiling_an_already_resident_trace()

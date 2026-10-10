@@ -8,12 +8,12 @@
 ## 2. テストケース一覧
 
 ### ハーネス統合 (runtime_vsoc.md (Harness))
-<!-- traceability: {CPS_4Args} -->
+<!-- traceability: {CPS_3Args} -->
 
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | TEST-VSOC-01 | vSoCはTier3実装の内部ヘッダに依存しない | - | 依存関係と`vsoc_harness`のメンバ型を確認 | 具象依存型はハーネスのメンバ型としてコンパイル時に固定する。依存注入に仮想呼出しや実行時型探索を使わない。C ABIコールバック境界は対応するABI契約に従う | `{META_StaticDI}` |
-| TEST-VSOC-02 | `exec_trace`の統一論理引数契約 | インタープリタ実行/JIT実行の双方 | 実行入口を確認する | 呼び出し側は実行エンジンの種別を意識しない（同一の4論理引数 `(ctx, sp, local_base, tos)`）。x64物理配置はABI定義に従い、ARMv8-MはTBD | 「実行エンジン委譲」 |
+| TEST-VSOC-02 | Interpreter/JIT entry signature | インタープリタ実行/JIT実行の双方 | 実行入口と関数ポインタ型を確認する | Interpreter handlerとJIT trace entryはいずれも4引数`(ctx, ip*, sp*, rel*)`を使い、先頭3引数が実行状態を表す。`rel`は定数領域ポインタであり、各trace入口でそのtraceの定数領域先頭を指す。ローカル基点はctx内、値は共有スタックにある。x64物理配置はABI定義に従い、ARMv8-MはTBD | 「実行エンジン委譲」 |
 | TEST-VSOC-03 | `register-hook`はvMMIOへの薄い転送 | - | `register-hook`を呼ぶ | `harness.vmmio`経由で`runtime_vmmio.md`の同名APIへそのまま転送され、事前/事後条件はvmmio層が正本 | register-hook |
 
 ### LOOP後方分岐yieldとJITキャッシュ協調
@@ -270,13 +270,13 @@ line/branch coverageは、抜けた経路を探す診断情報として記録す
 | TEST-VSOC-40 | `fireball_call` host-call の引数個数とパッキング | 汎用システムコール発行 | `fireball:host/trap` import の受け渡しを検証 | `fireball_call(id, arg0..arg5)`（計7引数）として統一され、6つの汎用引数がvMMIOレジスタを経由せずホストハンドラへ直接渡る。vIRQ/vDMA専用host callはこのABIに含めない | `{Syscall_Mapping}` |
 
 ### 実装上の注意点に対応する検証
-<!-- traceability: {GOTCHA-VSOC-01} {GOTCHA-VSOC-02} {GOTCHA-VSOC-03} {Interpreter_LazyJITSwitch} {ADR_LoopBackedgeYield} {ExecutionContext_Layout} {EnvironmentPointer} {VsocRuntime_Layout} {CPS_4Args} -->
+<!-- traceability: {GOTCHA-VSOC-01} {GOTCHA-VSOC-02} {GOTCHA-VSOC-03} {Interpreter_LazyJITSwitch} {ADR_LoopBackedgeYield} {ExecutionContext_Layout} {EnvironmentPointer} {VsocRuntime_Layout} {CPS_3Args} -->
 
 | GOTCHA参照 | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | GOTCHA-VSOC-01 | 命令handler後のディスパッチ | handlerが分岐後のPCを確定した状態 | ディスパッチの制御遷移を確認する | ディスパッチャは同じ実行区間内で次PCのtraceまたはhandlerを実行し、命令ごとにはRuntimeEngineへ戻らない | `{JIT_BackedgeYield}`, [`runtime_vsoc.md`](docs/components/tier2_runtime/runtime_vsoc.md) |
 | GOTCHA-VSOC-02 | Interpreter設定によるLOOP後方分岐yield条件 | Interpreter単独またはHybrid JIT経路 | 分岐回数と実行状態を確認する | 実行contextのLOOP後方分岐数がInterpreter設定のしきい値に達した時だけInterpreterがyield statusをRuntimeEngineへ返す。両経路はInterpreter設定の同じ条件で復帰する | [`runtime_vsoc.md`](docs/components/tier2_runtime/runtime_vsoc.md)、`{ADR_LoopBackedgeYield}` |
-| GOTCHA-VSOC-03 | `execution_context` レイアウトと委譲シグネチャ | WASMスタック初期化 | コンテキストオフセットを確認する | 確認済みx86-64 ABIでは`execution_context`は96バイトであり、リニアメモリのホスト基点は`+0x48`、64bit有効サイズは`+0x50`に置く。グローバル値と幅はモジュール実行情報から参照する。`exec_trace`は`(ctx, sp, local_base, tos)`の4引数で呼び出す | [`runtime_vsoc.md`](docs/components/tier2_runtime/runtime_vsoc.md)、`{ExecutionContext_Layout}`, `{EnvironmentPointer}`, `{VsocRuntime_Layout}` |
+| GOTCHA-VSOC-03 | `execution_context` レイアウトと委譲シグネチャ | WASMスタック初期化 | コンテキストoffsetと関数ポインタ型を確認する | 確認済みx86-64 ABIでは`execution_context`は152バイトであり、リニアメモリのホスト基点は`+0x78`、64bit有効サイズは`+0x80`、ローカル基点は`+0x90`に置く。値スタックとローカル値領域の基点・現在位置・上限はポインタで保持する。Interpreter handlerと`exec_trace`は4引数`(ctx, ip*, sp*, rel*)`で呼び出し、TOS値を重複して渡さない | [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md)、`{ExecutionContext_Layout}`, `{EnvironmentPointer}`, `{VsocRuntime_Layout}` |
 
 ## 3. テスト検証実績と網羅状況
 

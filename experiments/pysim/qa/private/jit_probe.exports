@@ -1,0 +1,8 @@
+/* QA ctypes probe ABI. The QA build hides all non-C ABI implementation symbols. */
+{
+  global:
+    fb_jit_*;
+    fb_qa_*;
+  local:
+    *;
+};

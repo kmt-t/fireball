@@ -18,7 +18,6 @@ class NativeTraceDispatchEntry(ctypes.Structure):
         ("entry_address", ctypes.c_void_p),
         ("byte_span", ctypes.c_uint32),
         ("result_words", ctypes.c_uint32),
-        ("has_return_value", ctypes.c_uint32),
         ("stack_words", ctypes.c_uint32),
         ("frame_depth", ctypes.c_uint32),
         ("next_pc", ctypes.c_uint32),
@@ -133,7 +132,6 @@ class JITTrace(Protocol):
     """Executable trace state inspected by QA."""
 
     head_pc: int
-    has_return_val: bool
     loops_to: int | None
     next_pc: int | None
     result_words: int
@@ -141,12 +139,8 @@ class JITTrace(Protocol):
     exec_count: int
 
     def execute(
-        self,
-        ctx: ctypes.c_void_p,
-        sp: ctypes.c_void_p,
-        local_base: ctypes.c_void_p,
-        tos: int,
-    ) -> int | None: ...
+        self, ctx: ctypes.c_void_p, ip: ctypes.c_void_p, sp: ctypes.c_void_p
+    ) -> None: ...
 
 
 __all__ = (

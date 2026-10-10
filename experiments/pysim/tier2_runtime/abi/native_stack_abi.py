@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import ctypes
-from enum import IntEnum
+from collections.abc import Callable
 
 from tier2_runtime.abi.interpreter_abi import (
     NATIVE_CALL_STACK_CAPACITY,
@@ -17,12 +17,6 @@ from tier2_runtime.abi.interpreter_abi import (
 from tier2_runtime.wasm.module import LocalLayout
 
 
-class ControlFrameKind(IntEnum):
-    BLOCK = 0
-    LOOP = 1
-    IF = 2
-
-
 class NativeControlStack:
     """Python access shim over the fixed Native control-frame record."""
 
@@ -32,11 +26,18 @@ class NativeControlStack:
         "_native_address",
         "_native_bytes",
         "_native_view",
+        "_stack_base_address",
     )
 
-    def __init__(self, capacity: int = NATIVE_CONTROL_STACK_CAPACITY):
+    def __init__(
+        self,
+        capacity: int = NATIVE_CONTROL_STACK_CAPACITY,
+        *,
+        stack_base_address: int = 0x1000_0000,
+    ):
         assert 0 <= capacity <= NATIVE_CONTROL_STACK_CAPACITY
         self._capacity = capacity
+        self._stack_base_address = stack_base_address
         self._native = ControlStackNative()
         self._native_address = ctypes.addressof(self._native)
         self._native_bytes = ctypes.sizeof(self._native)
@@ -59,6 +60,39 @@ class NativeControlStack:
     def native_bytes(self) -> int:
         """Byte size of the fixed control-frame record."""
         return self._native_bytes
+
+    def bind_stack_base(self, address: int) -> None:
+        """Bind the value-stack base used to encode control-frame heights."""
+
+        assert address != 0 and address % 4 == 0
+        self._stack_base_address = address
+
+    def frame_address(self, index: int) -> int:
+        """Return a control-frame pointer, including the one-past-end pointer."""
+
+        assert 0 <= index <= self._capacity
+        return (
+            self._native_address
+            + ControlStackNative.frames.offset
+            + index * ctypes.sizeof(ControlFrameNative)
+        )
+
+    def frame_index(self, address: int) -> int:
+        """Convert an ABI frame pointer back to its Python storage index."""
+
+        first = self.frame_address(0)
+        delta = address - first
+        assert delta >= 0 and delta % ctypes.sizeof(ControlFrameNative) == 0
+        index = delta // ctypes.sizeof(ControlFrameNative)
+        assert index <= self._capacity
+        return index
+
+    def stack_height_index(self, address: int) -> int:
+        """Decode a saved stack pointer into the Python stack's logical height."""
+
+        delta = address - self._stack_base_address
+        assert delta >= 0 and delta % 4 == 0
+        return delta // 4
 
     @property
     def raw_view(self) -> memoryview:
@@ -84,21 +118,15 @@ class NativeControlStack:
 
     def push_back(
         self,
-        kind: ControlFrameKind,
         start: int,
-        match_end: int,
         stack_height: int,
-        result_arity: int = 0,
     ) -> bool:
         size = int(self._native.size)
         if size >= self._capacity:
             return False
         native_frame = self._native.frames[size]
-        native_frame.kind = int(kind)
         native_frame.start = start
-        native_frame.match_end = match_end
-        native_frame.stack_height = stack_height
-        native_frame.result_arity = result_arity
+        native_frame.stack_height = self._stack_base_address + stack_height * 4
         self._native.frames[size] = native_frame
         self._native.size = size + 1
         return True
@@ -145,6 +173,26 @@ class NativeCallFrameStack:
     @property
     def address(self) -> int:
         return self._native_address
+
+    def frame_address(self, index: int) -> int:
+        """Return a call-frame pointer, including the one-past-end pointer."""
+
+        assert 0 <= index <= self._capacity
+        return (
+            self._native_address
+            + CallStackNative.frames.offset
+            + index * ctypes.sizeof(CallFrameNative)
+        )
+
+    def frame_index(self, address: int) -> int:
+        """Convert an ABI frame pointer back to its Python storage index."""
+
+        first = self.frame_address(0)
+        delta = address - first
+        assert delta >= 0 and delta % ctypes.sizeof(CallFrameNative) == 0
+        index = delta // ctypes.sizeof(CallFrameNative)
+        assert index <= self._capacity
+        return index
 
     @property
     def raw_view(self) -> memoryview:
@@ -222,13 +270,10 @@ class ControlFrameWindow:
 
     def push_back(
         self,
-        kind: ControlFrameKind,
         start: int,
-        match_end: int,
         stack_height: int,
-        result_arity: int = 0,
     ) -> bool:
-        return self._storage.push_back(kind, start, match_end, stack_height, result_arity)
+        return self._storage.push_back(start, stack_height)
 
     def pop_back(self) -> ControlFrameNative:
         if not self:
@@ -244,6 +289,7 @@ class ControlFrameWindow:
         self,
         depth: int,
         values: NativeValueStack,
+        resolve_control: Callable[[int], tuple[bool, int, int, int]],
         outer_result_arity: int = 0,
     ) -> int | None:
         """Unwind this function's native control frames and operand stack."""
@@ -268,10 +314,10 @@ class ControlFrameWindow:
             return None
         target_index = frame_count - depth - 1
         target = self[target_index]
-        saved_height = int(target.stack_height)
-        result_arity = (
-            0 if int(target.kind) == int(ControlFrameKind.LOOP) else int(target.result_arity)
-        )
+        is_loop, match_end, result_arity, next_pc = resolve_control(int(target.start))
+        saved_height = self._storage.stack_height_index(int(target.stack_height or 0))
+        if is_loop:
+            result_arity = 0
         assert 0 <= result_arity <= 2
         final_size = len(values)
         assert saved_height <= final_size
@@ -286,11 +332,11 @@ class ControlFrameWindow:
         if result_arity >= 2:
             pushed = values.push_back(result1)
             assert pushed
-        if int(target.kind) == int(ControlFrameKind.LOOP):
+        if is_loop:
             self._storage.set_size(self._base + target_index + 1)
-            return int(target.start) + 2
+            return next_pc
         self._storage.set_size(self._base + target_index)
-        return int(target.match_end) + 1
+        return match_end + 1
 
 
 class LocalStackWindow:
@@ -375,7 +421,6 @@ _LocalStackWindow = LocalStackWindow
 
 
 __all__ = (
-    "ControlFrameKind",
     "ControlFrameWindow",
     "LocalStackWindow",
     "NativeControlStack",

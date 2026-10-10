@@ -14,18 +14,25 @@ from collections.abc import Iterator, Sequence
 
 from bump_allocator import BumpAllocator
 from system_containers import SequenceView
-from tier2_runtime.wasm.module import WASM_VALUE_SLOT_BYTES
+from tier2_runtime.wasm.module import (
+    WASM_VALUE_SLOT_BYTES,
+    BasicBlock,
+    FuncTypeRecord,
+    NativeControlMapEntry,
+)
 
-EXECUTION_CONTEXT_SIZE_BYTES = 96
-EXECUTION_CONTEXT_LOOP_JUMP_COUNT_OFFSET_BYTES = 0x40
-EXECUTION_CONTEXT_LOOP_JUMP_THRESHOLD_OFFSET_BYTES = 0x44
+ControlMapEntryNative = NativeControlMapEntry
+FunctionTypeExecutionViewNative = FuncTypeRecord
+
+EXECUTION_CONTEXT_SIZE_BYTES = 152
+EXECUTION_CONTEXT_LOOP_JUMP_COUNT_OFFSET_BYTES = 0x70
+EXECUTION_CONTEXT_LOOP_JUMP_THRESHOLD_OFFSET_BYTES = 0x74
 NATIVE_VALUE_STACK_CAPACITY = 128
 NATIVE_CONTROL_STACK_CAPACITY = 32
 NATIVE_CALL_STACK_CAPACITY = 32
 NATIVE_STACK_ALIGNMENT_BYTES = WASM_VALUE_SLOT_BYTES
 EXECUTION_CONTEXT_FLAG_STOP_AT_BLOCK_BOUNDARY = 1 << 0
 EXECUTION_CONTEXT_FLAG_PENDING_BLOCK_HEAD = 1 << 5
-NATIVE_OP_CONTINUE = 8
 
 
 class ExecutionContextABI(ctypes.Structure):
@@ -35,23 +42,26 @@ class ExecutionContextABI(ctypes.Structure):
 
     _fields_ = (
         ("ip", ctypes.c_uint32),
-        ("sp_offset", ctypes.c_uint32),
-        ("local_offset", ctypes.c_uint32),
-        ("local_capacity", ctypes.c_uint32),
+        ("stack_base", ctypes.c_void_p),
+        ("stack_pointer", ctypes.c_void_p),
+        ("stack_limit", ctypes.c_void_p),
+        ("local_stack_base", ctypes.c_void_p),
+        ("local_stack_pointer", ctypes.c_void_p),
+        ("local_stack_limit", ctypes.c_void_p),
         ("runtime_flags", ctypes.c_uint32),
         ("code_size", ctypes.c_uint32),
         ("code", ctypes.c_void_p),
         ("control_stack", ctypes.c_void_p),
-        ("control_base", ctypes.c_uint32),
-        ("stack_checkpoint", ctypes.c_uint32),
+        ("control_frame_base", ctypes.c_void_p),
+        ("stack_checkpoint", ctypes.c_void_p),
         ("call_stack", ctypes.c_void_p),
-        ("call_base", ctypes.c_uint32),
-        ("sp_capacity", ctypes.c_uint32),
+        ("call_frame_base", ctypes.c_void_p),
         ("loop_jump_count", ctypes.c_uint32),
         ("loop_jump_threshold", ctypes.c_uint32),
         ("linear_memory_host_base", ctypes.c_void_p),
         ("linear_memory_size", ctypes.c_uint64),
         ("trap_code", ctypes.c_uint32),
+        ("local_base", ctypes.c_void_p),
     )
 
 
@@ -135,22 +145,6 @@ class WasmRunResultNative(ctypes.Structure):
     )
 
 
-class ControlMapEntryNative(ctypes.Structure):
-    """Flat control opener metadata consumed by the native interpreter."""
-
-    __slots__ = ()
-
-    _fields_ = (
-        ("match_end", ctypes.c_uint32),
-        ("else_offset", ctypes.c_uint32),
-        ("next_pc", ctypes.c_uint32),
-        ("result_arity", ctypes.c_uint32),
-        ("operand_width", ctypes.c_uint32),
-        ("br_table_target_count", ctypes.c_uint32),
-        ("br_table_targets", ctypes.c_void_p),
-    )
-
-
 class FunctionExecutionViewNative(ctypes.Structure):
     """Immutable native execution metadata for one unified function index."""
 
@@ -163,6 +157,7 @@ class FunctionExecutionViewNative(ctypes.Structure):
         ("control_map", ctypes.c_void_p),
         ("local_offsets", ctypes.c_void_p),
         ("local_sizes", ctypes.c_void_p),
+        ("local_types", ctypes.c_void_p),
         ("local_count", ctypes.c_uint32),
         ("local_slot_count", ctypes.c_uint32),
         ("param_count", ctypes.c_uint32),
@@ -171,19 +166,8 @@ class FunctionExecutionViewNative(ctypes.Structure):
         ("type_index", ctypes.c_uint32),
         ("is_import", ctypes.c_uint32),
         ("module_view", ctypes.c_void_p),
-    )
-
-
-class FunctionTypeExecutionViewNative(ctypes.Structure):
-    """Offsets and arities for one signature in the flattened type bytes."""
-
-    __slots__ = ()
-
-    _fields_ = (
-        ("param_offset", ctypes.c_uint32),
-        ("param_count", ctypes.c_uint32),
-        ("result_offset", ctypes.c_uint32),
-        ("result_count", ctypes.c_uint32),
+        ("interpreter_constant_pool", ctypes.c_void_p),
+        ("interpreter_constant_word_count", ctypes.c_uint32),
     )
 
 
@@ -193,21 +177,6 @@ class TableExecutionViewNative(ctypes.Structure):
     __slots__ = ()
 
     _fields_ = (("function_indices", ctypes.c_void_p), ("size", ctypes.c_uint32))
-
-
-class BlockExecutionViewNative(ctypes.Structure):
-    """Loader-owned block ranges and control targets, independent of execution plugins."""
-
-    __slots__ = ()
-    _fields_ = (
-        ("head_pc", ctypes.c_uint32),
-        ("function_index", ctypes.c_uint32),
-        ("next_pc", ctypes.c_uint32),
-        ("loops_to", ctypes.c_uint32),
-        ("frame_depth", ctypes.c_uint32),
-        ("byte_span", ctypes.c_uint32),
-        ("extension_data", ctypes.c_void_p),
-    )
 
 
 class ModuleExecutionViewNative(ctypes.Structure):
@@ -229,6 +198,7 @@ class ModuleExecutionViewNative(ctypes.Structure):
         ("global_count", ctypes.c_uint32),
         ("blocks", ctypes.c_void_p),
         ("block_count", ctypes.c_uint32),
+        ("block_execution_counts", ctypes.c_void_p),
     )
 
 
@@ -308,40 +278,27 @@ class ValueStackNative(ctypes.Structure):
 
 
 class ControlFrameNative(ctypes.Structure):
-    """Flat Native representation; result_arity counts shared raw stack slots."""
+    """Control opener index and saved pointer into the shared raw stack."""
 
     __slots__ = ()
 
     _fields_ = (
-        ("kind", ctypes.c_uint32),
         ("start", ctypes.c_uint32),
-        ("match_end", ctypes.c_uint32),
-        ("stack_height", ctypes.c_uint32),
-        ("result_arity", ctypes.c_uint16),
+        ("stack_height", ctypes.c_void_p),
     )
 
 
 class CallFrameNative(ctypes.Structure):
-    """Flat Native activation descriptor stored in the context call stack."""
+    """Dynamic activation state; immutable metadata lives in function_view."""
 
     __slots__ = ()
 
     _fields_ = (
-        ("func_index", ctypes.c_uint32),
-        ("code", ctypes.c_void_p),
-        ("code_size", ctypes.c_uint32),
         ("function_view", ctypes.c_void_p),
-        ("local_base", ctypes.c_uint32),
-        ("local_count", ctypes.c_uint32),
-        ("local_slot_count", ctypes.c_uint32),
-        ("local_offsets", ctypes.c_void_p),
-        ("local_sizes", ctypes.c_void_p),
-        ("param_count", ctypes.c_uint32),
-        ("param_packed_slot_count", ctypes.c_uint32),
-        ("result_arity", ctypes.c_uint32),
-        ("control_base", ctypes.c_uint32),
+        ("local_base", ctypes.c_void_p),
+        ("control_frame_base", ctypes.c_void_p),
+        ("func_index", ctypes.c_uint32),
         ("return_ip", ctypes.c_uint32),
-        ("return_func_index", ctypes.c_uint32),
         ("boundary_next_pc", ctypes.c_uint32),
         ("boundary_loops_to", ctypes.c_uint32),
     )
@@ -448,7 +405,7 @@ class NativeValueStack:
         return int(self._native.values[index])
 
     def raw_top(self) -> int:
-        """Read the raw top slot for the interpreter's CPS continuation."""
+        """Read the current raw top slot."""
 
         assert self
         return int(self._native.values[int(self._native.size) - 1])
@@ -690,56 +647,71 @@ class NativeValueStack:
 assert ctypes.sizeof(ctypes.c_void_p) == 8
 assert ctypes.sizeof(ExecutionContextABI) == EXECUTION_CONTEXT_SIZE_BYTES
 assert ExecutionContextABI.ip.offset == 0x00
-assert ExecutionContextABI.sp_offset.offset == 0x04
-assert ExecutionContextABI.local_offset.offset == 0x08
-assert ExecutionContextABI.local_capacity.offset == 0x0C
-assert ExecutionContextABI.runtime_flags.offset == 0x10
-assert ExecutionContextABI.code_size.offset == 0x14
-assert ExecutionContextABI.code.offset == 0x18
-assert ExecutionContextABI.control_stack.offset == 0x20
-assert ExecutionContextABI.control_base.offset == 0x28
-assert ExecutionContextABI.stack_checkpoint.offset == 0x2C
-assert ExecutionContextABI.call_stack.offset == 0x30
-assert ExecutionContextABI.call_base.offset == 0x38
-assert ExecutionContextABI.sp_capacity.offset == 0x3C
-assert ExecutionContextABI.loop_jump_count.offset == 0x40
-assert ExecutionContextABI.loop_jump_threshold.offset == 0x44
-assert ExecutionContextABI.linear_memory_host_base.offset == 0x48
-assert ExecutionContextABI.linear_memory_size.offset == 0x50
-assert ExecutionContextABI.trap_code.offset == 0x58
+assert ExecutionContextABI.stack_base.offset == 0x08
+assert ExecutionContextABI.stack_pointer.offset == 0x10
+assert ExecutionContextABI.stack_limit.offset == 0x18
+assert ExecutionContextABI.local_stack_base.offset == 0x20
+assert ExecutionContextABI.local_stack_pointer.offset == 0x28
+assert ExecutionContextABI.local_stack_limit.offset == 0x30
+assert ExecutionContextABI.runtime_flags.offset == 0x38
+assert ExecutionContextABI.code_size.offset == 0x3C
+assert ExecutionContextABI.code.offset == 0x40
+assert ExecutionContextABI.control_stack.offset == 0x48
+assert ExecutionContextABI.control_frame_base.offset == 0x50
+assert ExecutionContextABI.stack_checkpoint.offset == 0x58
+assert ExecutionContextABI.call_stack.offset == 0x60
+assert ExecutionContextABI.call_frame_base.offset == 0x68
+assert ExecutionContextABI.loop_jump_count.offset == 0x70
+assert ExecutionContextABI.loop_jump_threshold.offset == 0x74
+assert ExecutionContextABI.linear_memory_host_base.offset == 0x78
+assert ExecutionContextABI.linear_memory_size.offset == 0x80
+assert ExecutionContextABI.trap_code.offset == 0x88
+assert ExecutionContextABI.local_base.offset == 0x90
 assert ctypes.sizeof(ConstBufferViewNative) == 16
 assert ctypes.sizeof(WasmFunctionViewNative) == 24
 assert ctypes.sizeof(WasmModuleViewNative) == 24
 assert ctypes.sizeof(WasmRunRequestNative) == 48
 assert ctypes.sizeof(WasmRunResultNative) == 24
-assert ctypes.sizeof(ControlMapEntryNative) == 32
+assert ctypes.sizeof(ControlMapEntryNative) == 20
 assert ctypes.sizeof(ValueStackNative) == 520
 assert ValueStackNative.size.offset == 512
-assert ctypes.sizeof(ControlFrameNative) == 20
-assert ctypes.sizeof(ControlStackNative) == 648
-assert ControlStackNative.size.offset == 640
-assert CallFrameNative.func_index.offset == 0
-assert CallFrameNative.code.offset == 8
-assert ctypes.sizeof(FunctionExecutionViewNative) == 80
+assert ControlFrameNative.start.offset == 0
+assert ctypes.sizeof(ControlFrameNative) == 16
+assert ControlFrameNative.stack_height.offset == 8
+assert ctypes.sizeof(ControlStackNative) == 520
+assert ControlStackNative.size.offset == 512
+assert CallFrameNative.function_view.offset == 0
+assert CallFrameNative.local_base.offset == 8
+assert CallFrameNative.control_frame_base.offset == 16
+assert CallFrameNative.func_index.offset == 24
+assert CallFrameNative.return_ip.offset == 28
+assert ctypes.sizeof(FunctionExecutionViewNative) == 104
 assert FunctionExecutionViewNative.code_pc_offset.offset == 12
+assert FunctionExecutionViewNative.local_offsets.offset == 24
+assert FunctionExecutionViewNative.local_sizes.offset == 32
+assert FunctionExecutionViewNative.local_types.offset == 40
+assert FunctionExecutionViewNative.module_view.offset == 80
+assert FunctionExecutionViewNative.interpreter_constant_pool.offset == 88
+assert FunctionExecutionViewNative.interpreter_constant_word_count.offset == 96
 assert ctypes.sizeof(FunctionTypeExecutionViewNative) == 16
 assert ctypes.sizeof(TableExecutionViewNative) == 16
-assert ctypes.sizeof(ModuleExecutionViewNative) == 96
+assert ctypes.sizeof(ModuleExecutionViewNative) == 104
+assert ctypes.sizeof(BasicBlock) == 28
+assert BasicBlock.interpreter_constant_offset.offset == 24
 assert ModuleExecutionViewNative.globals.offset == 56
 assert ModuleExecutionViewNative.global_widths.offset == 64
 assert ModuleExecutionViewNative.global_count.offset == 72
-assert CallFrameNative.function_view.offset == 24
-assert CallFrameNative.local_offsets.offset == 48
-assert CallFrameNative.local_sizes.offset == 56
-assert ctypes.sizeof(CallFrameNative) == 96
-assert ctypes.sizeof(CallStackNative) == 3080
-assert CallStackNative.size.offset == 3072
+assert ModuleExecutionViewNative.block_execution_counts.offset == 96
+assert CallFrameNative.boundary_next_pc.offset == 32
+assert CallFrameNative.boundary_loops_to.offset == 36
+assert ctypes.sizeof(CallFrameNative) == 40
+assert ctypes.sizeof(CallStackNative) == 1288
+assert CallStackNative.size.offset == 1280
 
 
 __all__ = (
     "NATIVE_CALL_STACK_CAPACITY",
     "NATIVE_CONTROL_STACK_CAPACITY",
-    "NATIVE_OP_CONTINUE",
     "NATIVE_VALUE_STACK_CAPACITY",
     "CallFrameNative",
     "CallStackNative",

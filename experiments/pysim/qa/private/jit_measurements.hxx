@@ -27,6 +27,7 @@ struct jit_measurements {
   std::uint64_t aging_steps = 0, aging_units = 0, aging_scanned = 0,
                 aging_ns = 0;
   std::uint64_t compile_attempts = 0, compile_ns = 0;
+  std::uint64_t lookup_calls = 0;
   std::uint64_t execution_count = 0, history_overwritten = 0,
                 last_overwritten = 0;
   std::uint64_t history_dropped = 0;
@@ -96,6 +97,7 @@ struct jit_measurements {
     if (compilation_count < compilation_order.size())
       compilation_order[compilation_count++] = pc;
   }
+  void lookup_called() { ++lookup_calls; }
   void trace_evicted(std::uint32_t) { ++evictions; }
   void mask_changed() { ++trackable_generation; }
   void cache_changed() { ++generation; }
@@ -135,7 +137,9 @@ struct jit_measurements {
     for (std::uint32_t i = 0; i < count; ++i) {
       void *extension = runtime.module == nullptr
                             ? runtime.profile.blocks[i].extension_data
-                            : runtime.module->blocks[i].extension_data;
+                            : (runtime.module->block_execution_counts == nullptr
+                                   ? nullptr
+                                   : runtime.module->block_execution_counts + i);
       if (extension != nullptr)
         *static_cast<std::uint32_t *>(extension) = 0;
     }

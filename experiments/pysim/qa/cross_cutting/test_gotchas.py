@@ -96,40 +96,38 @@ def test_intp_gotcha_01_native_stack_sync():
     interp = Interpreter(module)
 
     call_state = interp.start(0, [])
-    ip, frame, locals_arr, _ = get_call_cont(call_state)
+    ip, frame, _ = get_call_cont(call_state)
 
     # Execute instruction 0 (i32.const 10) directly via the raw handler.
-    call_state.context.bind_handler_state(ip, frame)
-    result = _HANDLERS[frame.code[ip]](call_state.context, frame.values, locals_arr, 0)
-    assert result is None
     result_ctx = call_state.context
+    result_ctx.ip = ip
+    result = _HANDLERS[frame.code[ip]](result_ctx, result_ctx.ip_ptr, frame.values)
+    assert result is None
     result_sp = frame.values
-    next_tos = frame.values.raw_top()
     assert frame.values.raw_top() == 10
     assert frame.values == [10]
     ip = int(result_ctx.ip)
     frame = result_ctx.call_frame_stack[-1]
 
     # Execute instruction 1 (i32.const 20)
-    call_state.context.bind_handler_state(ip, frame)
-    result = _HANDLERS[frame.code[ip]](result_ctx, result_sp, locals_arr, next_tos)
+    result_ctx.ip = ip
+    result = _HANDLERS[frame.code[ip]](result_ctx, result_ctx.ip_ptr, result_sp)
     assert result is None
-    next_tos = frame.values.raw_top()
     assert frame.values.raw_top() == 20
     assert frame.values == [10, 20]
     ip = int(result_ctx.ip)
     frame = result_ctx.call_frame_stack[-1]
 
     # Execute instruction 2 (i32.add) -> pops 20 and 10, pushes 30.
-    call_state.context.bind_handler_state(ip, frame)
-    result = _HANDLERS[frame.code[ip]](result_ctx, result_sp, locals_arr, next_tos)
+    result_ctx.ip = ip
+    result = _HANDLERS[frame.code[ip]](result_ctx, result_ctx.ip_ptr, result_sp)
     assert result is None
     assert frame.values.raw_top() == 30
     assert frame.values == [30]
 
 
-def test_intp_gotcha_02_label_arity_pruning_restores_tos():
-    """GOTCHA-INTP-02: block result pruning preserves the label value and TOS."""
+def test_intp_gotcha_02_label_arity_pruning_preserves_stack_result():
+    """GOTCHA-INTP-02: block result pruning preserves the label value on stack."""
     wat = """
     (module
       (func (export "main") (result i32)

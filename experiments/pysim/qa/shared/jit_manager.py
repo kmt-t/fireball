@@ -17,12 +17,12 @@ from config import (
     JIT_CARD_SHIFT,
 )
 from qa.private import jit_native_abi as native_abi
+from qa.private.interpreter_native_abi import RUN_DISPATCH_JIT
 from qa.private.jit_native_abi import CacheField
 from qa.shared.jit_scoring import JIT_CANDIDATE_THRESHOLD, block_score
 from system_containers import MutableBitStorage, StaticVector
 from tier2_runtime.abi.native_abi import BufferLease
 from tier2_runtime.interpreter.interpreter import (
-    NativeDispatchEntryPoint,
     NativeModuleExecution,
 )
 from tier2_runtime.wasm.module import BasicBlock, Module
@@ -228,6 +228,7 @@ class JITRuntimeManager(NativeJITRuntimeManager):
                 native_abi._NativeLocalLayout(
                     native_abi._NativeByteView(layout.offsets_address, layout.count * 2),
                     native_abi._NativeByteView(layout.sizes_address, layout.count),
+                    native_abi._NativeByteView(layout.types_address, layout.count),
                     layout.count,
                     layout.total_words,
                 ),
@@ -237,6 +238,7 @@ class JITRuntimeManager(NativeJITRuntimeManager):
                     if counters_enabled
                     else None
                 ),
+                index,
             )
         self._bind_profile()
         self._bind_test_views(_module_code_lengths(module), _module_function_pc_bases(module))
@@ -302,6 +304,7 @@ class JITRuntimeManager(NativeJITRuntimeManager):
             locals=native_abi.NativeLocalLayout(
                 offsets=native_abi.NativeByteView(layout.offsets_address, layout.count * 2),
                 sizes=native_abi.NativeByteView(layout.sizes_address, layout.count),
+                types=native_abi.NativeByteView(layout.types_address, layout.count),
                 local_count=layout.count,
                 total_words=layout.total_words,
             ),
@@ -493,23 +496,14 @@ class JITRuntimeManager(NativeJITRuntimeManager):
     def age_step(self) -> int:
         return self.cache.age_step()
 
-    def bind_execution(
-        self, dispatcher: NativeDispatchEntryPoint, execution: NativeModuleExecution
-    ) -> int:
+    def bind_execution(self, execution: NativeModuleExecution) -> int:
         assert execution is not None and execution.module is self.module
         assert self._native.pointer is not None
-        native_abi.RUNTIME_BIND_DISPATCH(
-            self._native.pointer, ctypes.cast(dispatcher, ctypes.c_void_p)
-        )
-        extension = native_abi.RUNTIME_EXTENSION(self._native.pointer)
-        assert extension is not None
-        return int(extension)
+        provider = native_abi.RUNTIME_PROVIDER(self._native.pointer)
+        assert provider is not None
+        return int(provider)
 
-    def native_entry(self, call, result) -> int:
-        self._begin()
-        status = native_abi.RUNTIME_RUN(call, result)
-        self._check()
-        return status
+    native_entry = RUN_DISPATCH_JIT
 
     def on_yield(self) -> None:
         self._begin()

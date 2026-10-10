@@ -165,7 +165,17 @@ class WasmModuleBuilder:
         self._module.prepare_function_layouts()
         function_start = len(self._module.imports)
         function_end = function_start + len(self._module.functions)
+        from tier2_runtime.interpreter.control_flow import build_control_map
+
         for function_index in range(function_start, function_end):
             index_stack_value_widths(self._module, function_index)
+            function = self._module.functions[function_index - function_start]
+            assert function.control_map is None
+            function.control_map = build_control_map(
+                self._module.code_for(function_index),
+                function.drop_widths,
+                function.select_widths,
+                self._allocator,
+            )
         self._module.build_basic_block_index(self._allocator)
         return self._module

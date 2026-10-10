@@ -4,24 +4,23 @@
 -->
 
 ## 1. 目的と対象範囲
-<!-- traceability: {JIT_CopyAndPatch} {JIT_ZeroCompileCostTheorem} {LowLatencyJIT} {META_AccessDictionary} {META_BinarySearch} {ThreadedInterpreter} -->
+<!-- traceability: {JIT_AssemblyStencilCodegen} {LowLatencyJIT} {META_AccessDictionary} {META_BinarySearch} {ThreadedInterpreter} -->
 
 正本: [`jit_compiler.md`](docs/components/tier3_plugins/jit_compiler.md), [`jit_runtime.md`](docs/components/tier3_plugins/jit_runtime.md)
 参考実装: [`bench_jit.py`](experiments/pysim/benchmarks/jit/bench_jit.py)
 
-Copy-and-Patch方式によるJITコンパイル速度（トレース結合＋リロケーションパッチ）、2-bitカードマーキング表（`bit_view<2>`）による$O(1)$ホットスポット事前判定、少数の疎なJITエントリをソート配列から二分探索するlookup時間、およびインタープリタ対JITネイティブ実行のスループット比を計測する。
+trace compile時間（WASM decode、operation選択、raw stencilの接続slot展開、template分岐再配置）、2-bitカードマーキング表（`bit_view<2>`）による$O(1)$ホットスポット事前判定、少数の疎なJITエントリをソート配列から二分探索するlookup時間、Runtime API table呼出し、およびインタープリタ対JITネイティブ実行のスループット比を計測する。操作、trace scaffold、共通chain dispatcherはassembly sourceからbuild時に生成し、raw binaryをC++ byte arrayとしてJIT実行ライブラリへ含める。JIT実行コードが次opcodeや次operationを取得せず、operation間call/jumpなしのfall-throughでtrace内の固定operation列を実行することも生成コードで確認する。
 
 ## 2. ベンチマーク測定項目一覧
-<!-- traceability: {JIT_ZeroCompileCostTheorem} {META_BinarySearch} -->
+<!-- traceability: {META_BinarySearch} -->
 
 | ベンチマーク ID | 測定項目 | 前提条件 / 設定 | 計測指標 | 目標性能 / 合格基準 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **BENCHMARK-JIT-01** | Copy-and-Patch コンパイル速度 | 基本ブロック (BasicBlock) 4命令 | Traces/sec, µs/trace | 高速なステンシル結合（ゼロ最適化コスト） | `{JIT_CopyAndPatch}`, `JIT_ZeroCompileCostTheorem` |
-| **BENCHMARK-JIT-02** | 1命令あたりコンパイル時間 | 各 WASM オプコードのパッチ時間 | ns/opcode | 線形スケール（$O(N)$）でパッチ完了 | `{LowLatencyJIT}` |
+| **BENCHMARK-JIT-01** | native stencil trace composition latency | 4 / 16 / 64 WASM命令の適格trace | Traces/sec, µs/trace | build-timeにassembly sourceから生成したstencilを使うtrace compilerが動作し、サイズとcompile latencyを記録する | `{JIT_AssemblyStencilCodegen}`, `{LowLatencyJIT}` |
+| **BENCHMARK-JIT-02** | trace長別コンパイル時間 | 4 / 16 / 64操作と融合率を変えたtrace | ns/WASM opcode, µs/trace | trace長に対するスケーリングを計測する。固定のpatch時間は仮定しない | `{LowLatencyJIT}` |
 | **BENCHMARK-JIT-03** | 2-Bit カードマーキング状態判定 ($O(1)$) | `HotspotBitmap` / `bit_view<2>` | ns/check, M ops/sec | インタープリタ実行ループを阻害しない極低コスト | `jit_runtime.md` |
 | **BENCHMARK-JIT-04** | 少数JITエントリのソート配列二分探索 | 3バンクに収まる疎なエントリ数（上限は設定容量から算出） | ns/lookup, M ops/sec | 正確なキー検索。JIT用Radix索引は使用しない | `META_BinarySearch` |
-| **BENCHMARK-JIT-05** | ループ演算スループット比 (Interp vs JIT) | 100,000回算術ループ実行 | 実行時間 (ms), Speedup比 | 差分結果が一致し、JITトレースの実行カウンタが正であること | `jit_compiler.md` |
-| **BENCHMARK-JIT-06** | 共通コード領域のCヘルパー呼出し | トレースヘッダの委譲先関数アドレス、対象ABIの共通呼出し入口 | ns/dispatch, M dispatch/sec, 副作用回数, 呼出しコードのバイト数 | 委譲先アドレスをトレース本体へ埋め込まず、共通コード領域の呼出しコードを経由して同じヘルパーへ到達すること | [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) `{PositionIndependentCode}` |
+| **BENCHMARK-JIT-06** | 共通コード領域のRuntime API table呼出し | Runtime API stencilと登録済みAPI table entry | ns/API call, M calls/sec, 副作用回数 | 共通領域のopcode対応API tableからAPIを呼び、通常継続時に後続JIT operationへ進む | [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md), `{JIT_RuntimeAPI}`, `{PositionIndependentCode}` |
 
 ## 3. 測定手順
 
@@ -150,12 +149,6 @@ VTuneは各経路を別々に収集し、ソフトウェアサンプリングを
    - ビルド済みC++インタープリタ拡張の実行時間は別の基準値として測定し、Pythonハンドラの速度比と混同しない。各経路の結果は直接比較して一致を検証する。
    - C++インタープリタとHybrid JITは同じ `FB_CONF_INTERPRETER_YIELD_THRESHOLD` を使い、取得済みLOOP後方分岐数が設定値へ達した場合にPython/COOS境界へ戻る。C++インタープリタはJIT managerのホットスポットyieldを持たないため、計測対象のHybrid JITループを事前コンパイルし、計測中の追加ホットスポットyieldを避ける。
    - 各実行経路を同じ反復回数で3回計測し、中央値を報告する。JIT経路は計測前にトレースをコンパイルし、計測区間のJIT実行回数が0より大きいことを確認する。
-4. **複雑処理の委譲測定**:
-   - 対象ABIの関数契約に一致する関数アドレスをトレースヘッダへ設定し、ヘルパー契約別の共通コード入口を選択して実行する。ARMv8-Mのhelper入口と計測条件はTBDとする。x64整数ヘルパー入口は1入口あたり32バイトとして計測する。
-   - 同一のトレースバイナリを別の実行可能バッファへコピーして呼び出し、共通コード領域の呼出しコードを経由することと副作用を直接 `assert` する。
-   - pysimでは `ctypes` コールバックのPython遷移コストを含むため、組込みCの性能値とは分離して報告する。
-
-
 ### 3.3 QA専用のトレース実行回数と退役記録
 <!-- traceability: {Challenge_JITCacheEfficiency} {JIT_MultiBuffer_Cache} {JIT_OldestOnly_Promote} -->
 

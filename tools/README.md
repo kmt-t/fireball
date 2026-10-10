@@ -86,6 +86,14 @@ GiNZA の構文解析は、冗長性や意味の正しさを判定しない。�
 
 文章チェックを含む環境を初回に用意する場合は、<code>uv sync --project tools/spec-integrator --extra dev --extra prose</code> を実行する。
 
+## JIT ステンシル生成
+
+[`jit_stencil_gen`](jit_stencil_gen/README.md) は native JIT フォルダの x64 assembly LIR を Clang integrated assembler で PIC object にし、`objcopy` で `.text` を raw binary に抽出して C++ byte array と metadata を生成する。Linux/WSL と Windows の JIT build script が同じ `generate_assembly.py` を `trace.S`、`operations.S`、`common.S` に対して実行する。
+
+生成器は本番 C++ ABI probe の関数型と構造体 offset を検査し、GOT・PLT・未解決 relocation のない raw code を出力する。native build は生成された C++ header を取り込み、JIT trace builder が操作 stencil の接続 marker を展開して命令列を一つの flat trace body に合成する。Runtime API を必要とする操作は共通コード領域の API table を呼び、API が通常継続を返すと後続の JIT stencil へ進む。実行時コード生成や LLVM IR 経路はない。
+
+各 role の単独生成コマンドと ABI 契約は [`jit_stencil_gen/README.md`](jit_stencil_gen/README.md) を参照する。現在の native LIR は x86_64 向けである。
+
 ## WASMバイナリワークロード試験
 
 WASMワークロードは単体・結合テストから独立した [`workloads/run_all.py`](../experiments/pysim/qa/workloads/run_all.py) で実行する。現在はWASI-SDK/wasi-libcでコンパイルした層横断ゲスト、HAL用ゲスト、固定revisionの公式WebAssembly Core Spec Testsを実行する。

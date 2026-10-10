@@ -40,7 +40,6 @@ FB_CONF_LOG_DICT_MAX_ENTRIES: int = 128
 JIT_CACHE_PAGE_BYTES: int = 4096
 JIT_CACHE_COMMON_CODE_BYTES: int = 2048
 JIT_CACHE_COMMON_CODE_OFFSET_BYTES: int = 0
-JIT_CACHE_ABSOLUTE_ADDRESS_POOL_BYTES: int = 256
 JIT_CACHE_BANK_COUNT: int = 3
 # Per-bank metadata RAM budget, independent of variable generated code sizes.
 JIT_CACHE_BANK_ENTRY_CAPACITY: int = 32
@@ -60,27 +59,16 @@ JIT_CACHE_REGION_PAGE_COUNT: int = JIT_CACHE_REGION_BYTES // JIT_CACHE_PAGE_BYTE
 JIT_CACHE_FAST_SLOT_COUNT: int = 16
 # The x64 simulator has its own compact header layout, separate from ARM.
 JIT_X64_TRACE_HEADER_BYTES: int = 40
-JIT_X64_TRACE_ENTRY_STUB_BYTES: int = 17
 JIT_X64_CHAIN_TARGET_OFFSET: int = 0x00
-JIT_X64_HELPER_TARGET_OFFSET: int = 0x08
-JIT_X64_COMMON_CODE_RELATIVE_OFFSET: int = 0x10
+JIT_X64_COMMON_CODE_RELATIVE_OFFSET: int = 0x08
+JIT_X64_CONST_REL_OFFSET_OFFSET: int = 0x20
 # Compatibility name for existing simulator-wide capacity calculations.
 JIT_TRACE_HEADER_BYTES: int = JIT_X64_TRACE_HEADER_BYTES
-# Physical offsets in the trace header.  These are consumed by the common
-# helper stub and are part of the trace/code-cache ABI.
+# Trace-header offsets describe the x64 code-cache ABI.
 # Common-code offsets are code-region offsets, not trace-header field offsets.
-# Keep the x64 helper entry points in the shared code prefix. Each helper
-# contract has its own entry; ARMv8-M physical placement is TBD.
-JIT_TRACE_COMMON_PROLOGUE_OFFSET: int = 0
-JIT_TRACE_COMMON_EPILOGUE_OFFSET: int = 40
-JIT_TRACE_COMMON_HELPER_OFFSET: int = 56
-JIT_CACHE_ABSOLUTE_ADDRESS_POOL_OFFSET: int = 88
-JIT_TRACE_COMMON_CHAIN_DISPATCH_OFFSET: int = 1024
-JIT_TRACE_COMMON_CHAIN_DISPATCH_BYTES: int = 56
-JIT_TRACE_TYPED_I32_HELPER_OFFSET: int = 352
-JIT_TRACE_TYPED_I32_HELPER_COUNT: int = 4
-JIT_TRACE_HELPER_ENTRY_BYTES: int = 32
-JIT_TRACE_HELPER_TARGET_OFFSET: int = JIT_X64_HELPER_TARGET_OFFSET
+# The common area contains the assembly-generated chain dispatcher and the Runtime API function table.
+JIT_TRACE_COMMON_CHAIN_DISPATCH_OFFSET: int = 0
+JIT_TRACE_COMMON_CHAIN_DISPATCH_BYTES: int = 256
 # Default for synthetic traces; generated traces use their actual byte length.
 JIT_TRACE_DEFAULT_BYTES: int = 64
 RUNTIME_BLOCK_CACHE_SLOT_COUNT: int = 16

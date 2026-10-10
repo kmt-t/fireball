@@ -16,10 +16,10 @@ while not (_PYSIM_DIR / "tier1_core").is_dir():
 
 """
 experiments/pysim/qa/tier3_plugins/jit/test_x64_jit.py
-Spec-compliant tests for Fireball Trace-based Copy-and-Patch JIT Compiler (x64_jit.py).
+Spec-compliant tests for the Fireball x64 assembly-stencil JIT compiler.
 Verifies:
-1. Exact CPS 4-argument calling convention: (void* ctx, void* sp, void* local_base, uint32_t tos)
-2. 32-byte x64 physical JIT trace header immediately before its entry stencil
+1. Exact JIT 4-argument calling convention: (ctx*, ip*, sp*, rel*)
+2. 40-byte x64 physical JIT trace header immediately before its entry stencil
 3. Shared common-area entry/exit routing
 4. Common-code trace chaining and hybrid tiering transitions
 (docs/components/tier3_plugins/jit_compiler.md and docs/components/tier2_runtime/interpreter.md)
@@ -27,21 +27,14 @@ Verifies:
 
 import ctypes
 import struct
-import sys
 
 from config import (
-    JIT_CACHE_ABSOLUTE_ADDRESS_POOL_OFFSET,
     JIT_CACHE_ACTIVE_OFFSET_BYTES,
-    JIT_TRACE_COMMON_PROLOGUE_OFFSET,
-    JIT_X64_COMMON_CODE_RELATIVE_OFFSET,
     JIT_X64_TRACE_HEADER_BYTES,
 )
 from qa.private import jit_native_abi as native_abi
 from qa.shared.common_code import (
     COMMON_CHAIN_DISPATCH_OFFSET,
-    COMMON_EPILOGUE_OFFSET,
-    TRACE_ENTRY_STUB_BYTES,
-    JITCodeCacheRegion,
 )
 from qa.shared.helpers import make_native_interpreter as Interpreter
 from qa.shared.helpers import wat_to_wasm
@@ -49,11 +42,9 @@ from qa.shared.jit_cache import JITTrace
 from qa.shared.runtime_support import compile_module_block, compile_test_block, make_runtime_engine
 from qa.shared.x64_jit import TraceCompiler
 from tier2_runtime.abi.interpreter_abi import (
-    NATIVE_OP_CONTINUE,
-    CallStackNative,
     ExecutionContextABI,
 )
-from tier2_runtime.interpreter.control_flow import extract_basic_blocks
+from tier2_runtime.interpreter.control_flow import build_control_map, extract_basic_blocks
 from tier2_runtime.interpreter.interpreter import ExecutionContext
 from tier2_runtime.wasm.module import I32, I64, BasicBlock, LocalLayout
 from tier2_runtime.wasm.opcodes import (
@@ -97,25 +88,37 @@ from tier2_runtime.wasm.opcodes import (
     LOCAL_TEE,
 )
 
-_I32_HELPER_TYPE = ctypes.CFUNCTYPE(
-    ctypes.c_uint32,
-    ctypes.c_void_p,
-    ctypes.c_uint32,
-    ctypes.c_uint32,
-    ctypes.POINTER(ctypes.c_uint32),
-)
+
+def _extract_test_blocks(code: bytes):
+    code_view = memoryview(code)
+    return extract_basic_blocks(code_view, build_control_map(code_view))
+
+
+def _call_trace(fn, context, local_words, stack_words, sp_index: int = 0) -> None:
+    """Invoke a trace with its header-located constant pool as the rel argument."""
+    context.local_base = ctypes.addressof(local_words)
+    code_address = int(context.code or 0)
+    ip = ctypes.c_void_p(code_address + int(context.ip))
+    stack_address = ctypes.addressof(stack_words) + sp_index * ctypes.sizeof(ctypes.c_uint32)
+    entry_address = ctypes.cast(fn, ctypes.c_void_p).value
+    assert entry_address is not None
+    header_address = entry_address - JIT_X64_TRACE_HEADER_BYTES
+    header = native_abi.NativeTraceHeader.from_address(header_address)
+    rel = ctypes.c_void_p(header_address + header.const_rel_offset)
+    fn(ctypes.byref(context), ip, ctypes.c_void_p(stack_address), rel)
 
 
 def _assert_trace_uses_common_chain_dispatcher(trace: JITTrace) -> None:
-    assert trace.code_blob is not None
-    chain_jump = bytes.fromhex("4d 63 5e") + bytes((JIT_X64_COMMON_CODE_RELATIVE_OFFSET,))
-    chain_jump += bytes.fromhex("4d 01 f3 49 81 c3")
-    chain_jump += struct.pack("<I", COMMON_CHAIN_DISPATCH_OFFSET) + bytes.fromhex("41 ff e3")
-    assert chain_jump in trace.code_blob[JIT_X64_TRACE_HEADER_BYTES:]
+    assert trace.raw_addr is not None and trace.code_offset is not None
+    header_address = trace.raw_addr - JIT_X64_TRACE_HEADER_BYTES
+    header = native_abi.NativeTraceHeader.from_address(header_address)
+    common_dispatcher = header_address + header.common_code_relative
+    region_address = header_address - trace.code_offset
+    assert common_dispatcher == region_address + COMMON_CHAIN_DISPATCH_OFFSET
 
 
 def test_x64_wide_arithmetic_uses_native_stencils():
-    """Wide arithmetic executes from native x64 stencils without helper callbacks."""
+    """Wide arithmetic executes through the compiled stencil and Runtime API paths."""
     compiler = TraceCompiler()
     ctx = ExecutionContext()
 
@@ -181,7 +184,7 @@ def test_x64_wide_arithmetic_uses_native_stencils():
 
 
 def test_trace_compiler_cps_4arg_and_pic():
-    """TEST-JITC-01/22: Verify the physical entry ABI and execute a CPS trace."""
+    """TEST-JITC-01/22: Verify the logical entry ABI and execute a CPS trace."""
     compiler = TraceCompiler()
     # Block: local[1] = (local[0] + 10) * 3 - 5 -- real WASM bytecode, run through
     # The test prepares the same loader metadata passed by the runtime.
@@ -202,7 +205,7 @@ def test_trace_compiler_cps_4arg_and_pic():
             1,
         ]
     )
-    head_pc, next_pc, loops_to, frame_depth, byte_span = extract_basic_blocks(code)[0]
+    head_pc, next_pc, loops_to, frame_depth, byte_span = _extract_test_blocks(code)[0]
     block = BasicBlock(
         head_pc=head_pc,
         next_pc=next_pc,
@@ -211,127 +214,35 @@ def test_trace_compiler_cps_4arg_and_pic():
         byte_span=byte_span,
     )
     trace = compile_test_block(compiler, code, block, (I32, I32))
-    # 1. Header and common-area offsets
+    # The ordinary entry begins at the first assembled stencil.
     assert trace.head_pc == head_pc
     assert trace.size_bytes > 31
     assert trace.raw_addr is not None and trace.code_offset is not None
     header_address = trace.raw_addr - JIT_X64_TRACE_HEADER_BYTES
     region_address = header_address - trace.code_offset
-    entry_stub = ctypes.string_at(
-        header_address + JIT_X64_TRACE_HEADER_BYTES, TRACE_ENTRY_STUB_BYTES
-    )
-    assert entry_stub == (
-        bytes.fromhex("48 8d 05")
-        + struct.pack("<i", -(JIT_X64_TRACE_HEADER_BYTES + 7))
-        + bytes.fromhex("4c 63 58 10 49 01 c3 41 ff e3")
-    )
     header = native_abi.NativeTraceHeader.from_address(header_address)
     branch_target = header_address + header.common_code_relative
-    assert branch_target == region_address + JIT_TRACE_COMMON_PROLOGUE_OFFSET
-    saved_registers = bytes.fromhex("53 41 54 41 55 41 56 41 57")
-    if sys.platform == "win32":
-        # Save RDI; retain the stack pointer; R8->R10, RDX->R12, RCX->R13.
-        argument_moves = bytes.fromhex("57 48 89 e7 4d 89 c2 49 89 d4 49 89 cd")
-    else:
-        # Save RBP; retain the stack pointer; RDX->R10, RSI->R12, RDI->R13, ECX->R9D.
-        argument_moves = bytes.fromhex("55 48 89 e5 49 89 d2 49 89 f4 49 89 fd 41 89 c9")
-    # R14 retains the header and the common prologue jumps to the code after the entry stencil.
-    expected_prologue = (
-        saved_registers
-        + argument_moves
-        + bytes.fromhex("49 89 c6 49 8d 46")
-        + bytes((JIT_X64_TRACE_HEADER_BYTES + TRACE_ENTRY_STUB_BYTES,))
-        + bytes.fromhex("ff e0")
-    )
-    assert ctypes.string_at(branch_target, len(expected_prologue)) == expected_prologue
-    # 2. Direct call via CPS 4-argument C function pointer fn(ctx, sp, local_base, tos)
+    assert branch_target == region_address + COMMON_CHAIN_DISPATCH_OFFSET
+    # Direct invocation uses the platform C ABI; the assembly source follows its argument register mapping.
     locals_arr = (ctypes.c_uint32 * 8)()
     locals_arr[0] = 5
-    res = trace.fn(
-        ctypes.c_void_p(0),
-        ctypes.c_void_p(0),
-        ctypes.cast(locals_arr, ctypes.c_void_p),
-        0,
-    )
-    assert res == NATIVE_OP_CONTINUE
+    context = ExecutionContextABI()
+    stack_words = (ctypes.c_uint32 * 8)()
+    _call_trace(trace.fn, context, locals_arr, stack_words)
     # The precomputed offset of the second i32 local is raw word 1.
     assert locals_arr[1] == 40
 
 
-def test_native_common_prologue_preserves_nonzero_tos() -> None:
-    """TEST-JITC-22: Observe the fourth ABI argument in the physical R9D register."""
-    region = JITCodeCacheRegion()
-    # Header, shared entry stencil, then mov [r10], r9d; jmp common epilogue.
-    body = bytes.fromhex("45 89 0a e9") + struct.pack(
-        "<i",
-        COMMON_EPILOGUE_OFFSET
-        - (JIT_CACHE_ACTIVE_OFFSET_BYTES + JIT_X64_TRACE_HEADER_BYTES + TRACE_ENTRY_STUB_BYTES + 8),
-    )
-    blob_bytes = JIT_X64_TRACE_HEADER_BYTES + TRACE_ENTRY_STUB_BYTES + len(body)
-    header = struct.pack("<QQiIIBBBBB7x", 0, 0, 0, 0, blob_bytes, 1, 0, 0, 1, 0)
-    entry = (
-        bytes.fromhex("48 8d 05")
-        + struct.pack("<i", -(JIT_X64_TRACE_HEADER_BYTES + 7))
-        + bytes.fromhex("4c 63 58 10 49 01 c3 41 ff e3")
-    )
-    fn, _ = region.install_trace(JIT_CACHE_ACTIVE_OFFSET_BYTES, header + entry + body)
-    observed = (ctypes.c_uint32 * 1)()
-    for expected in (0x1234_5678, 0x8000_0001, 0xFFFF_FFFF):
-        observed[0] = 0
-        fn(ctypes.c_void_p(0), ctypes.c_void_p(0), ctypes.cast(observed, ctypes.c_void_p), expected)
-        assert observed[0] == expected
-
-
-def test_x64_division_and_remainder_use_helper_boundary() -> None:
-    """x64 routes integer division and remainder through the helper ABI."""
+def test_x64_division_and_remainder_use_runtime_api_stencils() -> None:
+    """Integer div/rem call their registered runtime APIs and preserve Wasm trap behavior."""
     compiler = TraceCompiler()
-
-    def signed(value: int) -> int:
-        return ctypes.c_int32(value).value
-
-    def signed_div(left: int, right: int) -> int:
-        quotient = abs(left) // abs(right)
-        return -quotient if (left < 0) != (right < 0) else quotient
-
-    def signed_rem(left: int, right: int) -> int:
-        remainder = abs(left) % abs(right)
-        return -remainder if left < 0 else remainder
-
-    def make_helper(operation: int) -> ctypes._CFuncPtr:
-        def helper(
-            _ctx: ctypes.c_void_p,
-            left: int,
-            right: int,
-            result: ctypes._Pointer,
-        ) -> int:
-            calls.append(operation)
-            if operation == I32_DIV_S:
-                value = signed_div(signed(left), signed(right))
-            elif operation == I32_DIV_U:
-                value = left // right
-            elif operation == I32_REM_S:
-                value = signed_rem(signed(left), signed(right))
-            else:
-                assert operation == I32_REM_U
-                value = left % right
-            result[0] = value & 0xFFFF_FFFF
-            return 0
-
-        return _I32_HELPER_TYPE(helper)
-
-    calls: list[int] = []
-    for helper_slot, (operation, left, right, expected, suffix) in enumerate(
-        (
-            (I32_DIV_S, 0xFFFF_FFF9, 2, 0xFFFF_FFFD, True),
-            (I32_DIV_U, 0xFFFF_FFF0, 2, 0x7FFF_FFF8, False),
-            (I32_REM_S, 0xFFFF_FFF9, 2, 0xFFFF_FFFF, False),
-            (I32_REM_U, 0xFFFF_FFF0, 3, 0, False),
-        )
+    for operation, left, right, expected in (
+        (I32_DIV_S, 0xFFFF_FFF9, 2, 0xFFFF_FFFD),
+        (I32_DIV_U, 0xFFFF_FFF0, 2, 0x7FFF_FFF8),
+        (I32_REM_S, 0xFFFF_FFF9, 2, 0xFFFF_FFFF),
+        (I32_REM_U, 0xFFFF_FFF0, 3, 0),
     ):
-        helper = make_helper(operation)
         instructions = [(I32_CONST, left), (I32_CONST, right), (operation, None)]
-        if suffix:
-            instructions.extend(((I32_CONST, 3), (I32_ADD, None)))
         trace = compiler.compile_instructions(
             head_pc=0,
             instructions=instructions,
@@ -339,15 +250,11 @@ def test_x64_division_and_remainder_use_helper_boundary() -> None:
             loops_to=None,
             byte_length=len(instructions),
             local_layout=LocalLayout(()),
-            helper_address=ctypes.cast(helper, ctypes.c_void_p).value or 0,
         )
         assert trace is not None
-        assert trace.common_helper_offset == 352 + helper_slot * 32
         ctx = ExecutionContext()
         trace.invoke(ctx)
-        expected_value = (expected + 3) & 0xFFFF_FFFF if suffix else expected
-        assert ctx.stack[0] == expected_value, (operation, ctx.stack[0], expected_value)
-    assert calls == [I32_DIV_S, I32_DIV_U, I32_REM_S, I32_REM_U]
+        assert ctx.stack[0] == expected, (operation, ctx.stack[0], expected)
 
 
 def test_trace_compiler_bitwise_and_shifts_pic():
@@ -372,7 +279,7 @@ def test_trace_compiler_bitwise_and_shifts_pic():
             3,
         ]
     )
-    head_pc, next_pc, loops_to, frame_depth, byte_span = extract_basic_blocks(code)[0]
+    head_pc, next_pc, loops_to, frame_depth, byte_span = _extract_test_blocks(code)[0]
     block = BasicBlock(
         head_pc=head_pc,
         next_pc=next_pc,
@@ -386,49 +293,6 @@ def test_trace_compiler_bitwise_and_shifts_pic():
     trace.invoke(ctx)
     assert ctx.local_stack[2] == (0x0F & 0x07)
     assert ctx.local_stack[3] == (0x0F << 2)
-
-
-def test_trace_header_helper_tail_jump_uses_per_trace_pointer():
-    """Complex JIT boundaries load the helper target from the trace header."""
-
-    compiler = TraceCompiler()
-    code = bytes([LOCAL_GET, 0, LOCAL_SET, 0])
-    head_pc, next_pc, loops_to, frame_depth, byte_span = extract_basic_blocks(code)[0]
-    helper_type = ctypes.CFUNCTYPE(
-        None,
-        ctypes.c_void_p,
-        ctypes.c_void_p,
-        ctypes.c_void_p,
-        ctypes.c_uint32,
-    )
-
-    def helper(
-        _ctx: ctypes.c_void_p, _sp: ctypes.c_void_p, local_base: ctypes.c_void_p, _tos: int
-    ) -> None:
-        locals_ptr = ctypes.cast(local_base, ctypes.POINTER(ctypes.c_uint32))
-        locals_ptr[0] += 1
-
-    helper_fn = helper_type(helper)
-    ctx = ExecutionContext()
-    assert ctx.local_stack.extend((10,))
-    helper_addr = ctypes.cast(helper_fn, ctypes.c_void_p).value or 0
-    trace = compiler.compile_instructions(
-        head_pc=head_pc,
-        instructions=((LOCAL_GET, 0), (LOCAL_SET, 0)),
-        next_pc=next_pc,
-        loops_to=loops_to,
-        byte_length=byte_span,
-        local_layout=LocalLayout((I32,)),
-        context_helper=True,
-        helper_address=helper_addr,
-    )
-    assert trace is not None
-    trace.invoke(ctx)
-    assert ctx.local_stack[0] == 11
-
-    raw_blob = ctypes.string_at(trace.raw_addr - JIT_X64_TRACE_HEADER_BYTES, trace.size_bytes)
-    helper_addr_bytes = helper_addr.to_bytes(8, "little")
-    assert raw_blob[0x08:0x10] == helper_addr_bytes
 
 
 def test_trace_chaining_between_traces():
@@ -568,7 +432,7 @@ def test_jit_chaining_uses_loader_resolved_successors():
 def test_trace_local_addressing_uses_precomputed_compact_offsets():
     """TEST-JITC-59: direct local displacements use loader-computed offsets."""
     code = bytes([LOCAL_GET, 0, LOCAL_SET, 2])
-    head_pc, next_pc, loops_to, frame_depth, byte_span = extract_basic_blocks(code)[0]
+    head_pc, next_pc, loops_to, frame_depth, byte_span = _extract_test_blocks(code)[0]
     block = BasicBlock(
         head_pc=head_pc,
         next_pc=next_pc,
@@ -585,9 +449,9 @@ def test_trace_local_addressing_uses_precomputed_compact_offsets():
             locals_arr[index] = 0x10203040 + index
         expected = list(locals_arr)
         expected[layout.offset(2)] = expected[layout.offset(0)]
-        trace.fn(
-            ctypes.c_void_p(0), ctypes.c_void_p(0), ctypes.cast(locals_arr, ctypes.c_void_p), 0
-        )
+        context = ExecutionContextABI()
+        stack_words = (ctypes.c_uint32 * 8)()
+        _call_trace(trace.fn, context, locals_arr, stack_words)
         assert list(locals_arr) == expected, f"types {types}: all untouched words must survive"
 
 
@@ -614,12 +478,6 @@ def test_trace_local_layout_is_fixed_during_compilation():
     assert context.local_stack.raw_at(0) == words[0]
     assert context.local_stack.raw_at(1) == words[1]
     assert get_trace.code_blob is not None
-    body = get_trace.code_blob[JIT_X64_TRACE_HEADER_BYTES + TRACE_ENTRY_STUB_BYTES :]
-    assert bytes.fromhex("45 8b 4a 00") in body
-    assert bytes.fromhex("45 8b 4a 04") in body
-    assert bytes.fromhex("45 89 4c 24 00") in body
-    assert bytes.fromhex("45 89 4c 24 04") in body
-    assert bytes.fromhex("41 ff d2") not in body
 
     add_trace = compiler.compile_instructions(
         head_pc=0,
@@ -655,149 +513,149 @@ def test_trace_local_layout_is_fixed_during_compilation():
         assert tuple(context.stack) == expected_stack
 
 
-def test_local_runtime_api_table_is_used_only_above_128_locals():
-    """TEST-JITC-66: local count selects direct code or a PIC runtime API call."""
-
-    def assert_local_api_call(trace, api_index: int) -> None:
-        assert trace.code_blob is not None
-        table_entry = JIT_CACHE_ABSOLUTE_ADDRESS_POOL_OFFSET + api_index * 8
-        pic_call = (
-            bytes.fromhex("4d 63 5e")
-            + bytes((JIT_X64_COMMON_CODE_RELATIVE_OFFSET,))
-            + bytes.fromhex("4d 01 f3 49 81 c3")
-            + struct.pack("<I", table_entry)
-            + bytes.fromhex("41 ff 13")
-        )
-        assert pic_call in trace.code_blob
-
+def test_i32_const_local_set_fusion_preserves_existing_stack():
+    """The fused constant store has no net operand-stack effect."""
     compiler = TraceCompiler()
-    direct = compiler.compile_instructions(
-        head_pc=0,
-        instructions=((LOCAL_GET, 127),),
-        next_pc=1,
-        loops_to=None,
-        byte_length=1,
-        local_layout=LocalLayout((I32,) * 128),
-    )
-    assert direct is not None and direct.code_blob is not None
-    assert bytes.fromhex("41 ff 13") not in direct.code_blob
-
-    fallback = compiler.compile_instructions(
-        head_pc=0,
-        instructions=((LOCAL_GET, 128),),
-        next_pc=1,
-        loops_to=None,
-        byte_length=1,
-        local_layout=LocalLayout((I32,) * 129),
-    )
-    assert fallback is not None and fallback.code_blob is not None
-    assert_local_api_call(fallback, 0)
-
-    call_stack = CallStackNative()
-    call_stack.size = 1
-    frame = call_stack.frames[0]
-    frame.local_count = 129
-    context = ExecutionContextABI()
-    context.call_stack = ctypes.addressof(call_stack)
-    context.call_base = 0
-    narrow_offsets = (ctypes.c_uint16 * 129)(*range(129))
-    narrow_sizes = (ctypes.c_uint8 * 129)(*([1] * 129))
-    frame.local_offsets = ctypes.addressof(narrow_offsets)
-    frame.local_sizes = ctypes.addressof(narrow_sizes)
-    frame.local_slot_count = 129
-    locals_array = (ctypes.c_uint32 * 129)()
-    locals_array[128] = 0x12345678
-    value_stack = (ctypes.c_uint32 * 128)()
-
-    fallback.fn(
-        ctypes.byref(context),
-        ctypes.cast(value_stack, ctypes.c_void_p),
-        ctypes.cast(locals_array, ctypes.c_void_p),
-        0,
-    )
-    assert value_stack[0] == 0x12345678
-
-    for opcode in (LOCAL_SET, LOCAL_TEE):
+    sentinel = 0xA5A5_5A5A
+    value = 0x1234_5678
+    for opcode, expected_stack in (
+        (LOCAL_SET, (sentinel,)),
+        (LOCAL_TEE, (sentinel, value)),
+    ):
         trace = compiler.compile_instructions(
             head_pc=0,
-            instructions=((I32_CONST, 0xCAFEBABE), (opcode, 128)),
+            instructions=((I32_CONST, value), (opcode, 0)),
             next_pc=1,
             loops_to=None,
             byte_length=2,
-            local_layout=LocalLayout((I32,) * 129),
+            local_layout=LocalLayout((I32,)),
         )
         assert trace is not None
-        assert_local_api_call(trace, 1 if opcode == LOCAL_SET else 2)
-        locals_array[128] = 0
-        value_stack[0] = 0
-        trace.fn(
-            ctypes.byref(context),
-            ctypes.cast(value_stack, ctypes.c_void_p),
-            ctypes.cast(locals_array, ctypes.c_void_p),
-            0,
-        )
-        assert locals_array[128] == 0xCAFEBABE
-        if opcode == LOCAL_TEE:
-            assert trace.result_words == 1
-            assert value_stack[0] == 0xCAFEBABE
-        else:
-            assert trace.result_words == 0
+        context = ExecutionContext()
+        assert context.local_stack.extend((0,))
+        assert context.stack.extend((sentinel,))
+        trace.invoke(context)
+        assert context.local_stack[0] == value
+        assert tuple(context.stack) == expected_stack
 
-    wide_layout = LocalLayout((I32,) * 128 + (I64,))
-    frame.local_offsets = wide_layout.offsets_address
-    frame.local_sizes = wide_layout.sizes_address
-    frame.local_slot_count = wide_layout.total_words
-    wide_locals = (ctypes.c_uint32 * wide_layout.total_words)()
-    wide_value = 0x0123456789ABCDEF
-    wide_words = (wide_value & 0xFFFF_FFFF, wide_value >> 32)
-    wide_locals[128] = wide_words[0]
-    wide_locals[129] = wide_words[1]
-    value_stack[0] = value_stack[1] = 0
-    wide_get = compiler.compile_instructions(
+
+def test_local_fusions_select_by_offset_without_index_cap():
+    """High local indexes use fused native stencils when their offsets fit."""
+    compiler = TraceCompiler()
+    layout = LocalLayout((I32,) * 16)
+    value = 0x1234_5678
+
+    store_trace = compiler.compile_instructions(
         head_pc=0,
-        instructions=((LOCAL_GET, 128),),
+        instructions=((I32_CONST, value), (LOCAL_SET, 8)),
+        next_pc=1,
+        loops_to=None,
+        byte_length=2,
+        local_layout=layout,
+    )
+    assert store_trace is not None
+    context = ExecutionContext()
+    assert context.local_stack.extend((0,) * 16)
+    assert context.stack.extend((0xA5A5_5A5A,))
+    store_trace.invoke(context)
+    assert context.local_stack[8] == value
+    assert tuple(context.stack) == (0xA5A5_5A5A,)
+
+    pair_trace = compiler.compile_instructions(
+        head_pc=0,
+        instructions=((LOCAL_GET, 8), (LOCAL_GET, 9), (I32_ADD, None)),
+        next_pc=1,
+        loops_to=None,
+        byte_length=3,
+        local_layout=layout,
+    )
+    assert pair_trace is not None
+    context = ExecutionContext()
+    assert context.local_stack.extend((0,) * 8 + (17, 25) + (0,) * 6)
+    pair_trace.invoke(context)
+    assert tuple(context.stack) == (42,)
+
+
+def test_local_stencils_encode_each_compact_offset_into_the_trace():
+    """The x64 instruction encoder writes each compact local displacement."""
+    compiler = TraceCompiler()
+    layout = LocalLayout((I32,) * 16)
+    for opcode in (LOCAL_GET, LOCAL_SET, LOCAL_TEE):
+        operand = 7
+        instructions = (
+            ((opcode, operand),)
+            if opcode == LOCAL_GET
+            else ((I32_CONST, 0xCAFEBABE), (opcode, operand))
+        )
+        trace = compiler.compile_instructions(
+            head_pc=0,
+            instructions=instructions,
+            next_pc=1,
+            loops_to=None,
+            byte_length=len(instructions),
+            local_layout=layout,
+        )
+        assert trace is not None
+
+    wide_layout = LocalLayout((I64,) * 16)
+    for operand in (8, 9, 15):
+        trace = compiler.compile_instructions(
+            head_pc=0,
+            instructions=((LOCAL_GET, operand),),
+            next_pc=1,
+            loops_to=None,
+            byte_length=1,
+            local_layout=wide_layout,
+        )
+        assert trace is not None
+        context = ExecutionContext()
+        values = tuple(range(32))
+        assert context.local_stack.extend(values)
+        trace.invoke(context)
+        start = wide_layout.offset(operand)
+        assert tuple(context.stack) == values[start : start + 2]
+
+    too_many_locals = compiler.compile_instructions(
+        head_pc=0,
+        instructions=((LOCAL_GET, 0),),
         next_pc=1,
         loops_to=None,
         byte_length=1,
-        local_layout=wide_layout,
+        local_layout=LocalLayout((I32,) * 17),
     )
-    assert wide_get is not None
-    assert_local_api_call(wide_get, 0)
-    wide_get.fn(
-        ctypes.byref(context),
-        ctypes.cast(value_stack, ctypes.c_void_p),
-        ctypes.cast(wide_locals, ctypes.c_void_p),
-        0,
-    )
-    assert (value_stack[0], value_stack[1]) == wide_words
+    assert too_many_locals is None
 
-    for opcode in (LOCAL_SET, LOCAL_TEE):
-        wide_set = compiler.compile_instructions(
+
+def test_jit_embeds_immutable_numeric_immediates_in_native_code():
+    """Numeric constants live in generated instructions, not the trace-tail pool."""
+    compiler = TraceCompiler()
+    cases = (
+        (I32_CONST, 0x1234_5678, 4),
+        (F32_CONST, 0x7FC1_2345, 4),
+        (I64_CONST, 0x0123_4567_89AB_CDEF, 8),
+        (F64_CONST, 0x7FF8_1234_5678_9ABC, 8),
+    )
+    for opcode, value, width in cases:
+        trace = compiler.compile_instructions(
             head_pc=0,
-            instructions=((I64_CONST, wide_value), (opcode, 128)),
+            instructions=((opcode, value),),
             next_pc=1,
             loops_to=None,
-            byte_length=2,
-            local_layout=wide_layout,
+            byte_length=1,
+            local_layout=LocalLayout(()),
         )
-        assert wide_set is not None
-        assert_local_api_call(wide_set, 1 if opcode == LOCAL_SET else 2)
-        wide_locals[128] = wide_locals[129] = 0
-        value_stack[0] = value_stack[1] = 0
-        wide_set.fn(
-            ctypes.byref(context),
-            ctypes.cast(value_stack, ctypes.c_void_p),
-            ctypes.cast(wide_locals, ctypes.c_void_p),
-            0,
+        assert trace is not None and trace.code_blob is not None
+        header = native_abi.NativeTraceHeader.from_buffer_copy(
+            trace.code_blob[:JIT_X64_TRACE_HEADER_BYTES]
         )
-        assert (wide_locals[128], wide_locals[129]) == wide_words
-        assert wide_set.result_words == (2 if opcode == LOCAL_TEE else 0)
-        if opcode == LOCAL_TEE:
-            assert (value_stack[0], value_stack[1]) == wide_words
+        encoded = value.to_bytes(width, "little")
+        code = trace.code_blob[JIT_X64_TRACE_HEADER_BYTES : header.const_rel_offset]
+        assert encoded in code
+        assert header.const_rel_offset + 4 == header.blob_bytes
 
 
 # ---------------------------------------------------------------------------
-# Register cache: values pushed beyond TOS/NOS spill to the shared operand stack
+# Every compiled WASM value uses the shared operand stack
 # ---------------------------------------------------------------------------
 
 _M32 = 0xFFFFFFFF
@@ -847,9 +705,9 @@ def _random_rpn(seed: int, max_depth: int) -> tuple[list[tuple[int, int | None]]
 
 
 def _reference(program, locals_values) -> tuple[int, int]:
-    """Evaluate the program; return (result, peak number of values beyond the top two)."""
+    """Evaluate the program; return (result, peak shared-stack word count)."""
     stack: list[int] = []
-    peak_spill = 0
+    peak_depth = 0
     for op, arg in program:
         if op == I32_CONST:
             stack.append(int(arg) & _M32)
@@ -858,9 +716,9 @@ def _reference(program, locals_values) -> tuple[int, int]:
         else:
             right, left = stack.pop(), stack.pop()
             stack.append(_SPILL_OPS[op](left, right))
-        peak_spill = max(peak_spill, len(stack) - 2)
+        peak_depth = max(peak_depth, len(stack))
     assert len(stack) == 1
-    return stack[0], peak_spill
+    return stack[0], peak_depth
 
 
 def _run_spill_trace(program, locals_values, sp_index: int, total: int = 96):
@@ -871,54 +729,62 @@ def _run_spill_trace(program, locals_values, sp_index: int, total: int = 96):
         next_pc=None,
         loops_to=None,
         byte_length=len(program) * 3,
-        local_layout=LocalLayout((I32,) * 4),
+        local_layout=LocalLayout((I32,) * len(locals_values)),
     )
     assert trace is not None, "a straight-line i32 expression must compile"
     words = (ctypes.c_uint32 * total)(*([_SENTINEL] * total))
-    locals_arr = (ctypes.c_uint32 * 4)(*locals_values)
-    trace.fn(
-        ctypes.c_void_p(0),
-        ctypes.c_void_p(ctypes.addressof(words) + 4 * sp_index),
-        ctypes.cast(locals_arr, ctypes.c_void_p),
-        0,
-    )
+    locals_arr = (ctypes.c_uint32 * len(locals_values))(*locals_values)
+    context = ExecutionContextABI()
+    _call_trace(trace.fn, context, locals_arr, words, sp_index)
     return trace, words
 
 
-def test_register_cache_spill_matches_reference_and_stays_in_bounds():
-    """TEST-JITC-60: spilled NOS/NNOS values keep their order and never leave the trace's words."""
+def test_compiled_expressions_match_reference_with_bounded_stack_writes():
+    """TEST-JITC-60: Fused traces match WASM and stay within their declared stack range."""
     checked_deep = 0
     for seed in range(240):
         max_depth = 3 + seed % 9
         program, locals_values = _random_rpn(seed, max_depth)
-        expected, peak_spill = _reference(program, locals_values)
+        expected, peak_depth = _reference(program, locals_values)
         sp_index = 3 + seed % 7
         trace, words = _run_spill_trace(program, locals_values, sp_index)
         assert words[sp_index] == expected, f"seed {seed}: {words[sp_index]:#x} != {expected:#x}"
-        assert 1 <= trace.stack_words <= max(peak_spill, 1), f"seed {seed}: stack_words"
+        assert trace.result_words == 1, f"seed {seed}: result_words"
+        assert trace.result_words <= trace.stack_words <= max(peak_depth, 1), (
+            f"seed {seed}: stack_words"
+        )
         touched = [i for i in range(len(words)) if words[i] != _SENTINEL]
         assert all(sp_index <= i < sp_index + trace.stack_words for i in touched), (
             f"seed {seed}: wrote outside [{sp_index}, {sp_index + trace.stack_words}): {touched}"
         )
-        checked_deep += peak_spill >= 3
+        checked_deep += peak_depth >= 3
     assert checked_deep > 40, "too few programs spilled three or more values"
 
 
-def test_register_cache_deep_non_commutative_chain_keeps_operand_order():
-    """TEST-JITC-61: a right-nested chain reloads each spilled operand as the left operand."""
-    depth = 11
-    program = [(I32_CONST, 100 + 7 * i) for i in range(depth)] + [(I32_SUB, None)] * (depth - 1)
-    expected, peak_spill = _reference(program, [0, 0, 0, 0])
-    assert peak_spill == depth - 2
-    # c0 - (c1 - (c2 - ... - c10)): the alternating sum of the constants.
-    assert expected == sum((-1) ** i * (100 + 7 * i) for i in range(depth)) & _M32
-    trace, words = _run_spill_trace(program, [0, 0, 0, 0], sp_index=5)
+def test_shared_stack_deep_dynamic_non_commutative_chain_keeps_operand_order():
+    """TEST-JITC-61: Dynamic local operands remain memory-backed across a deep expression."""
+    # Keep all local accesses in the direct-variant range so this test focuses
+    # on operand-stack spilling rather than rel-offset local access.
+    depth = 8
+    locals_values = [100 + 7 * i for i in range(depth)]
+    program = [(LOCAL_GET, i) for i in range(depth)] + [(I32_SUB, None)] * (depth - 1)
+    expected, peak_depth = _reference(program, locals_values)
+    assert peak_depth == depth
+    # v0 - (v1 - (v2 - ... - v7)): the alternating sum of the locals.
+    assert expected == sum((-1) ** i * value for i, value in enumerate(locals_values)) & _M32
+    trace, words = _run_spill_trace(program, locals_values, sp_index=5)
     assert words[5] == expected
-    assert 1 <= trace.stack_words <= depth - 2
-    shifts = [(I32_CONST, 1), (I32_CONST, 3), (I32_CONST, 2), (I32_SHL, None), (I32_SHL, None)]
-    reference, _ = _reference(shifts, [0, 0, 0, 0])
-    _, shift_words = _run_spill_trace(shifts, [0, 0, 0, 0], sp_index=2)
+    assert trace.stack_words == depth
+    assert [index for index, word in enumerate(words) if word != _SENTINEL] == list(
+        range(5, 5 + depth)
+    )
+    shifts = [(LOCAL_GET, i) for i in range(3)] + [(I32_SHL, None), (I32_SHL, None)]
+    shift_values = [1, 3, 2, 0]
+    reference, _ = _reference(shifts, shift_values)
+    shift_trace, shift_words = _run_spill_trace(shifts, shift_values, sp_index=2)
     assert shift_words[2] == reference == 1 << ((3 << 2) & 31)
+    assert shift_trace.stack_words == 3
+    assert [index for index, word in enumerate(shift_words) if word != _SENTINEL] == [2, 3, 4]
 
 
 ALL_TESTS = sorted(
@@ -931,7 +797,7 @@ if __name__ == "__main__":
         test()
         print(f"[PASS] {test.__name__}")
 
-    print(f"\n[PASS] All {len(ALL_TESTS)} pure trace JIT CPS 4-arg and PIC tests passed.")
+    print(f"\n[PASS] All {len(ALL_TESTS)} pure trace JIT ABI and PIC tests passed.")
 
 
 def test_trace_generated_size_is_variable_and_uses_compact_header():
@@ -942,13 +808,22 @@ def test_trace_generated_size_is_variable_and_uses_compact_header():
         bytes((LOCAL_GET, 0, LOCAL_SET, 0)),
         bytes((LOCAL_GET, 0, I32_CONST, 3, I32_ADD, LOCAL_SET, 0)),
     ):
-        head, next_pc, loops_to, depth, span = extract_basic_blocks(code)[0]
+        head, next_pc, loops_to, depth, span = _extract_test_blocks(code)[0]
         block = BasicBlock(
             head_pc=head, next_pc=next_pc, loops_to=loops_to, frame_depth=depth, byte_span=span
         )
         trace = compile_test_block(compiler, code, block, (I32,))
         assert trace.code_blob is not None
         assert trace.size_bytes == len(trace.code_blob)
-        assert trace.code_blob[:16] == trace.header.pack()
+        source_header = native_abi.NativeTraceHeader.from_buffer_copy(
+            trace.code_blob[:JIT_X64_TRACE_HEADER_BYTES]
+        )
+        resident_header = trace.header._native
+        assert trace.code_offset == JIT_CACHE_ACTIVE_OFFSET_BYTES
+        assert resident_header.common_code_relative == (
+            COMMON_CHAIN_DISPATCH_OFFSET - JIT_CACHE_ACTIVE_OFFSET_BYTES
+        )
+        source_header.common_code_relative = resident_header.common_code_relative
+        assert bytes(source_header) == trace.header.pack()
         sizes.append(trace.size_bytes)
     assert sizes[1] > sizes[0]

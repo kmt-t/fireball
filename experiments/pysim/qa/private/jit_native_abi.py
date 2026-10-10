@@ -18,7 +18,7 @@ _NATIVE_LIBRARY_PATH = Path(__file__).with_name(
     "jit_probe.dll" if sys.platform == "win32" else "libjit_probe.so"
 )
 _NATIVE_LIBRARY = ctypes.PyDLL(str(_NATIVE_LIBRARY_PATH))
-_COMPILE_MAX_BODY_BYTES = 512
+_COMPILE_MAX_BODY_BYTES = 1536
 
 
 class JitInstruction(ctypes.Structure):
@@ -41,6 +41,7 @@ class NativeByteView:
 class NativeLocalLayout:
     offsets: NativeByteView
     sizes: NativeByteView
+    types: NativeByteView
     local_count: int
     total_words: int
 
@@ -57,6 +58,7 @@ class WasmBlock:
     loops_to: int | None
     locals: NativeLocalLayout
     frame_depth: int = 0
+    block_index: int = 0xFFFF_FFFF
 
 
 class CacheField(IntEnum):
@@ -80,6 +82,7 @@ class CacheField(IntEnum):
     AGING_NS = 22
     COMPILE_ATTEMPTS = 23
     COMPILE_NS = 24
+    LOOKUP_CALLS = 25
 
 
 class NativeTraceHeader(ctypes.Structure):
@@ -87,15 +90,16 @@ class NativeTraceHeader(ctypes.Structure):
 
     _fields_ = (
         ("chain_target_address", ctypes.c_uint64),
-        ("helper_target_address", ctypes.c_uint64),
         ("common_code_relative", ctypes.c_int32),
         ("head_pc", ctypes.c_uint32),
         ("blob_bytes", ctypes.c_uint32),
         ("stack_words", ctypes.c_uint8),
         ("result_words", ctypes.c_uint8),
-        ("has_return_value", ctypes.c_uint8),
         ("chain_words", ctypes.c_uint8),
+        ("reserved0", ctypes.c_uint8),
         ("frame_depth", ctypes.c_uint32),
+        ("block_index", ctypes.c_uint32),
+        ("const_rel_offset", ctypes.c_uint32),
     )
 
 
@@ -108,8 +112,17 @@ class CacheLookup(ctypes.Structure):
     )
 
 
-assert NativeTraceHeader.frame_depth.offset == 32
+assert NativeTraceHeader.common_code_relative.offset == 8
+assert NativeTraceHeader.head_pc.offset == 12
+assert NativeTraceHeader.blob_bytes.offset == 16
+assert NativeTraceHeader.stack_words.offset == 20
+assert NativeTraceHeader.result_words.offset == 21
+assert NativeTraceHeader.chain_words.offset == 22
+assert NativeTraceHeader.reserved0.offset == 23
+assert NativeTraceHeader.frame_depth.offset == 24
 assert NativeTraceHeader.frame_depth.size == 4
+assert NativeTraceHeader.block_index.offset == 28
+assert NativeTraceHeader.const_rel_offset.offset == 32
 assert ctypes.sizeof(NativeTraceHeader) == 40
 
 
@@ -121,7 +134,6 @@ class TraceQaState:
     size_bytes: int = 0
     next_pc: int = 0xFFFF_FFFF
     loops_to: int = 0xFFFF_FFFF
-    has_return_value: int = 0
     result_words: int = 0
     stack_words: int = 0
     byte_span: int = 0
@@ -152,6 +164,7 @@ class _NativeLocalLayout(ctypes.Structure):
     _fields_ = (
         ("offsets", _NativeByteView),
         ("sizes", _NativeByteView),
+        ("types", _NativeByteView),
         ("count", ctypes.c_uint32),
         ("total_words", ctypes.c_uint32),
     )
@@ -169,6 +182,7 @@ class _NativeWasmBlock(ctypes.Structure):
         ("code", _NativeByteView),
         ("locals", _NativeLocalLayout),
         ("extension_data", ctypes.c_void_p),
+        ("block_index", ctypes.c_uint32),
     )
 
 
@@ -284,7 +298,6 @@ RUNTIME_LOOKUP.argtypes = (
 
 
 RUNTIME_LOOKUP.restype = ctypes.c_int
-
 
 RUNTIME_ROTATE = _NATIVE_LIBRARY.fb_jit_runtime_rotate
 
@@ -448,19 +461,9 @@ class NativeCommonLayout(ctypes.Structure):
     _fields_ = (
         ("region_bytes", ctypes.c_uint32),
         ("common_code_bytes", ctypes.c_uint32),
-        ("prologue_offset", ctypes.c_uint32),
-        ("prologue_size", ctypes.c_uint32),
-        ("epilogue_offset", ctypes.c_uint32),
-        ("epilogue_size", ctypes.c_uint32),
-        ("helper_offset", ctypes.c_uint32),
-        ("helper_size", ctypes.c_uint32),
         ("chain_dispatcher_offset", ctypes.c_uint32),
         ("chain_dispatcher_size", ctypes.c_uint32),
-        ("absolute_pool_offset", ctypes.c_uint32),
-        ("absolute_pool_size", ctypes.c_uint32),
-        ("context_helper_offset", ctypes.c_uint32),
         ("header_bytes", ctypes.c_uint32),
-        ("entry_stub_bytes", ctypes.c_uint32),
     )
 
 
@@ -487,6 +490,7 @@ _COMMON_INSTALL.argtypes = (
     ctypes.c_uint32,
     ctypes.POINTER(ctypes.c_uint8),
     ctypes.c_uint32,
+    ctypes.c_uint32,
     ctypes.POINTER(ctypes.c_size_t),
 )
 
@@ -494,8 +498,14 @@ _COMMON_INSTALL.argtypes = (
 _COMMON_INSTALL.restype = ctypes.c_int
 
 
-def install_common_trace(memory: NativeExecutableMemory, offset: int, blob: bytes) -> int:
+def install_common_trace(
+    memory: NativeExecutableMemory,
+    offset: int,
+    blob: bytes,
+    block_index: int = 0xFFFF_FFFF,
+) -> int:
     assert 0 <= offset <= 0xFFFF_FFFF and len(blob) <= 0xFFFF_FFFF
+    assert 0 <= block_index <= 0xFFFF_FFFF
     source = ctypes.cast(ctypes.c_char_p(blob), ctypes.POINTER(ctypes.c_uint8))
     entry = ctypes.c_size_t()
     assert (
@@ -504,6 +514,7 @@ def install_common_trace(memory: NativeExecutableMemory, offset: int, blob: byte
             offset,
             source,
             len(blob),
+            block_index,
             ctypes.byref(entry),
         )
         == 1
@@ -514,7 +525,7 @@ def install_common_trace(memory: NativeExecutableMemory, offset: int, blob: byte
 def pack_trace_header(chain: int, helper: int) -> bytes:
     assert 0 <= chain <= 0xFFFF_FFFF_FFFF_FFFF
     assert 0 <= helper <= 0xFFFF_FFFF_FFFF_FFFF
-    return struct.pack("<QQiIIBBBB", chain, helper, 0, 0, 0, 0, 0, 0, 0)
+    return struct.pack("<QQiIIBBBBIII4x", chain, helper, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
 
 
 MEMORY_INIT = _NATIVE_LIBRARY.fb_jit_memory_init
@@ -715,8 +726,6 @@ _COMPILE_BLOCK.argtypes = (
     ctypes.POINTER(ctypes.c_uint8),
     ctypes.c_uint32,
     ctypes.POINTER(ctypes.c_uint8),
-    ctypes.POINTER(ctypes.c_int16),
-    ctypes.c_uint32,
 )
 
 
@@ -736,17 +745,14 @@ def compile_wasm(block: WasmBlock, trace: TraceQaState) -> bytes | None:
     assert 0 <= block.locals.local_count <= 0xFFFF_FFFF
     assert 0 <= block.locals.total_words <= 0xFFFF_FFFF
     request = marshal_block(block)
-    output = (ctypes.c_uint8 * (_COMPILE_MAX_BODY_BYTES + COMMON_LAYOUT.header_bytes))()
+    output = (ctypes.c_uint8 * (_COMPILE_MAX_BODY_BYTES + COMMON_LAYOUT.header_bytes + 16))()
     body_scratch = (ctypes.c_uint8 * _COMPILE_MAX_BODY_BYTES)()
-    stack_locations = (ctypes.c_int16 * 16)()
     status = int(
         _COMPILE_BLOCK(
             ctypes.byref(request),
             output,
             len(output),
             body_scratch,
-            stack_locations,
-            len(stack_locations),
         )
     )
     if status == 0:
@@ -765,7 +771,6 @@ def compile_wasm(block: WasmBlock, trace: TraceQaState) -> bytes | None:
     control_boundary = boundary_opcode in (0x02, 0x03, 0x04, 0x05, 0x0B, 0x0D, 0x0E, 0x0F)
     trace.next_pc = None if block.loops_to is not None or control_boundary else block.next_pc
     trace.loops_to = 0xFFFF_FFFF if block.loops_to is None else block.loops_to
-    trace.has_return_value = int(header.has_return_value != 0)
     trace.result_words = header.result_words
     trace.stack_words = header.stack_words
     trace.byte_span = block.byte_length
@@ -798,10 +803,12 @@ def marshal_block(block: WasmBlock) -> _NativeWasmBlock:
         _NativeLocalLayout(
             _NativeByteView(block.locals.offsets.address, block.locals.offsets.byte_length),
             _NativeByteView(block.locals.sizes.address, block.locals.sizes.byte_length),
+            _NativeByteView(block.locals.types.address, block.locals.types.byte_length),
             block.locals.local_count,
             block.locals.total_words,
         ),
         0,
+        block.block_index,
     )
 
 
@@ -820,8 +827,6 @@ class _NativeInstructionBlock(ctypes.Structure):
         ("next_pc", ctypes.c_uint32),
         ("loops_to", ctypes.c_uint32),
         ("byte_span", ctypes.c_uint32),
-        ("context_helper", ctypes.c_uint32),
-        ("helper_target", ctypes.c_uint64),
         ("instructions", ctypes.POINTER(JitInstruction)),
         ("instruction_count", ctypes.c_uint32),
         ("locals", _NativeLocalLayout),
@@ -836,8 +841,6 @@ _COMPILE_INSTRUCTIONS.argtypes = (
     ctypes.POINTER(ctypes.c_uint8),
     ctypes.c_uint32,
     ctypes.POINTER(ctypes.c_uint8),
-    ctypes.POINTER(ctypes.c_int16),
-    ctypes.c_uint32,
 )
 
 
@@ -849,12 +852,9 @@ def compile_instructions(
     instructions: Iterable[tuple[int, WasmOperand]],
     byte_length: int,
     local_layout: LocalLayout,
-    context_helper: bool,
-    helper_address: int,
 ) -> bytes | None:
     """Marshal explicit instructions through one complete native compiler boundary."""
     assert 0 < byte_length <= 0xFFFF_FFFF
-    assert 0 <= helper_address <= 0xFFFF_FFFF_FFFF_FFFF
     records = (JitInstruction * byte_length)()
     count = 0
     for opcode, operand in instructions:
@@ -870,28 +870,24 @@ def compile_instructions(
         trace.next_pc,
         trace.loops_to,
         byte_length,
-        int(context_helper),
-        helper_address,
         records,
         count,
         _NativeLocalLayout(
             _NativeByteView(local_layout.offsets_address, local_layout.count * 2),
             _NativeByteView(local_layout.sizes_address, local_layout.count),
+            _NativeByteView(local_layout.types_address, local_layout.count),
             local_layout.count,
             local_layout.total_words,
         ),
     )
-    output = (ctypes.c_uint8 * (_COMPILE_MAX_BODY_BYTES + COMMON_LAYOUT.header_bytes))()
+    output = (ctypes.c_uint8 * (_COMPILE_MAX_BODY_BYTES + COMMON_LAYOUT.header_bytes + 16))()
     body_scratch = (ctypes.c_uint8 * _COMPILE_MAX_BODY_BYTES)()
-    stack_locations = (ctypes.c_int16 * 16)()
     status = int(
         _COMPILE_INSTRUCTIONS(
             ctypes.byref(request),
             output,
             len(output),
             body_scratch,
-            stack_locations,
-            len(stack_locations),
         )
     )
     if status == 0:
@@ -900,7 +896,6 @@ def compile_instructions(
     header = NativeTraceHeader.from_buffer(output)
     assert COMMON_LAYOUT.header_bytes == ctypes.sizeof(NativeTraceHeader)
     trace.size_bytes = header.blob_bytes
-    trace.has_return_value = int(header.has_return_value != 0)
     trace.frame_depth = header.frame_depth
     trace.result_words = header.result_words
     trace.stack_words = header.stack_words
@@ -908,11 +903,6 @@ def compile_instructions(
     trace.blob_bytes = header.blob_bytes
     trace.code_blob = ctypes.cast(output, ctypes.POINTER(ctypes.c_uint8))
     return bytes(output[: header.blob_bytes])
-
-
-RUNTIME_RUN = _NATIVE_LIBRARY.fb_jit_runtime_run
-RUNTIME_RUN.argtypes = (ctypes.c_void_p, ctypes.c_void_p)
-RUNTIME_RUN.restype = ctypes.c_int
 
 
 OWNED_PC = _NATIVE_LIBRARY.fb_qa_owned_pc
@@ -943,10 +933,6 @@ def resident_records(pointer: int) -> tuple[tuple[int, int, int, int], ...]:
     return tuple(records)
 
 
-RUNTIME_BIND_DISPATCH = _NATIVE_LIBRARY.fb_qa_runtime_bind_dispatch
-RUNTIME_BIND_DISPATCH.argtypes = (ctypes.c_void_p, ctypes.c_void_p)
-RUNTIME_BIND_DISPATCH.restype = None
-
-RUNTIME_EXTENSION = _NATIVE_LIBRARY.fb_qa_runtime_extension
-RUNTIME_EXTENSION.argtypes = (ctypes.c_void_p,)
-RUNTIME_EXTENSION.restype = ctypes.c_void_p
+RUNTIME_PROVIDER = _NATIVE_LIBRARY.fb_qa_runtime_provider
+RUNTIME_PROVIDER.argtypes = (ctypes.c_void_p,)
+RUNTIME_PROVIDER.restype = ctypes.c_void_p

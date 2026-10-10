@@ -44,7 +44,7 @@ class JITRuntimeManager:
         self.module = module
 
     def bind_execution(
-        self, dispatcher: NativeDispatchEntryPoint, execution: NativeModuleExecution
+        self, execution: NativeModuleExecution
     ) -> int:
         assert execution is not None and execution.module is self.module
         if self._pointer is not None:
@@ -64,7 +64,6 @@ class JITRuntimeManager:
                 region.nbytes,
                 view,
                 self.module_id,
-                ctypes.cast(dispatcher, ctypes.c_void_p),
             )
             assert pointer is not None
         except Exception as error:
@@ -75,7 +74,7 @@ class JITRuntimeManager:
         self._execution = execution
         return pointer
 
-    native_entry = native_abi.RUNTIME_RUN
+    native_entry = native_abi.NATIVE_DISPATCH
 
     def idle_hook(self, budget: int = 4) -> int:
         assert 0 <= budget <= 0x7FFF_FFFF

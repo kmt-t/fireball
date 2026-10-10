@@ -7,7 +7,10 @@ import ctypes
 from qa.shared.helpers import expect_assertion
 from tier2_runtime.abi.interpreter_abi import (
     NATIVE_STACK_ALIGNMENT_BYTES,
+    CallFrameNative,
+    CallStackNative,
     ConstBufferViewNative,
+    ControlFrameNative,
     ControlStackNative,
     ExecutionContextABI,
     NativeValueStack,
@@ -19,34 +22,42 @@ from tier2_runtime.abi.interpreter_abi import (
 )
 from tier2_runtime.abi.native_abi import NativeResult
 from tier2_runtime.abi.native_stack_abi import ControlFrameWindow, LocalStackWindow
-from tier2_runtime.interpreter.interpreter import (
-    ControlFrameKind,
-    ExecutionContext,
-    NativeControlStack,
-)
+from tier2_runtime.interpreter.interpreter import ExecutionContext, NativeControlStack
 from tier2_runtime.wasm.module import F32, F64, I32, I64, LocalLayout
 
 
+def _resolve_two_result_block(start: int) -> tuple[bool, int, int, int]:
+    assert start == 0
+    return False, 4, 2, 2
+
+
 def test_native_layout_matches_x64_jit_context():
-    assert ctypes.sizeof(ExecutionContextABI) == 96
+    assert ctypes.sizeof(ExecutionContextABI) == 152
     assert ExecutionContextABI.ip.offset == 0x00
-    assert ExecutionContextABI.sp_offset.offset == 0x04
-    assert ExecutionContextABI.local_offset.offset == 0x08
-    assert ExecutionContextABI.local_capacity.offset == 0x0C
-    assert ExecutionContextABI.runtime_flags.offset == 0x10
-    assert ExecutionContextABI.code_size.offset == 0x14
-    assert ExecutionContextABI.code.offset == 0x18
-    assert ExecutionContextABI.control_stack.offset == 0x20
-    assert ExecutionContextABI.control_base.offset == 0x28
-    assert ExecutionContextABI.stack_checkpoint.offset == 0x2C
-    assert ExecutionContextABI.call_stack.offset == 0x30
-    assert ExecutionContextABI.call_base.offset == 0x38
-    assert ExecutionContextABI.sp_capacity.offset == 0x3C
-    assert ExecutionContextABI.loop_jump_count.offset == 0x40
-    assert ExecutionContextABI.loop_jump_threshold.offset == 0x44
-    assert ExecutionContextABI.linear_memory_host_base.offset == 0x48
-    assert ExecutionContextABI.linear_memory_size.offset == 0x50
-    assert ExecutionContextABI.trap_code.offset == 0x58
+    assert ExecutionContextABI.stack_base.offset == 0x08
+    assert ExecutionContextABI.stack_pointer.offset == 0x10
+    assert ExecutionContextABI.stack_limit.offset == 0x18
+    assert ExecutionContextABI.local_stack_base.offset == 0x20
+    assert ExecutionContextABI.local_stack_pointer.offset == 0x28
+    assert ExecutionContextABI.local_stack_limit.offset == 0x30
+    assert ExecutionContextABI.runtime_flags.offset == 0x38
+    assert ExecutionContextABI.code_size.offset == 0x3C
+    assert ExecutionContextABI.code.offset == 0x40
+    assert ExecutionContextABI.control_stack.offset == 0x48
+    assert ExecutionContextABI.control_frame_base.offset == 0x50
+    assert ExecutionContextABI.stack_checkpoint.offset == 0x58
+    assert ExecutionContextABI.call_stack.offset == 0x60
+    assert ExecutionContextABI.call_frame_base.offset == 0x68
+    assert ExecutionContextABI.loop_jump_count.offset == 0x70
+    assert ExecutionContextABI.loop_jump_threshold.offset == 0x74
+    assert ExecutionContextABI.linear_memory_host_base.offset == 0x78
+    assert ExecutionContextABI.linear_memory_size.offset == 0x80
+    assert ExecutionContextABI.trap_code.offset == 0x88
+    assert ExecutionContextABI.local_base.offset == 0x90
+    assert ctypes.sizeof(ControlFrameNative) == 16
+    assert ctypes.sizeof(ControlStackNative) == 520
+    assert ctypes.sizeof(CallFrameNative) == 40
+    assert ctypes.sizeof(CallStackNative) == 1288
 
     ctx = ExecutionContextABI()
     ctx.ip = 0x1234
@@ -125,7 +136,9 @@ def test_execution_context_extends_abi_record():
     assert isinstance(context, ExecutionContextABI)
     assert context.context_ptr.value == ctypes.addressof(context)
     assert context.debug_control is None
-    assert ctypes.sizeof(context) == 104
+    assert ctypes.sizeof(context) == (
+        ctypes.sizeof(ExecutionContextABI) + ctypes.sizeof(ctypes.c_void_p)
+    )
 
 
 def test_native_value_stack_owns_the_fixed_storage():
@@ -188,20 +201,17 @@ def test_native_value_stack_owns_the_fixed_storage():
 def test_native_control_stack_owns_flat_frame_records():
     stack = NativeControlStack(capacity=2)
     assert stack.capacity == 2
-    pushed = stack.push_back(ControlFrameKind.LOOP, start=3, match_end=12, stack_height=4)
+    pushed = stack.push_back(start=3, stack_height=4)
     assert pushed
     assert stack.native.size == 1
     assert isinstance(stack.native, ControlStackNative)
     restored = stack[-1]
-    assert restored.kind == int(ControlFrameKind.LOOP)
     assert (
         restored.start,
-        restored.match_end,
-        restored.stack_height,
-        restored.result_arity,
-    ) == (3, 12, 4, 0)
-    assert stack.pop_back().kind == int(ControlFrameKind.LOOP)
-    pushed = stack.push_back(ControlFrameKind.BLOCK, start=4, match_end=8, stack_height=0)
+        stack.stack_height_index(int(restored.stack_height or 0)),
+    ) == (3, 4)
+    assert stack.pop_back().start == 3
+    pushed = stack.push_back(start=4, stack_height=0)
     assert pushed
     stack.truncate(0)
     assert len(stack) == 0
@@ -211,30 +221,24 @@ def test_native_control_stack_owns_flat_frame_records():
 
 def test_control_frame_branch_preserves_label_result_slots():
     storage = NativeControlStack(capacity=2)
-    pushed = storage.push_back(
-        ControlFrameKind.BLOCK,
-        start=0,
-        match_end=4,
-        stack_height=1,
-        result_arity=2,
-    )
+    pushed = storage.push_back(start=0, stack_height=1)
     assert pushed
     window = ControlFrameWindow(storage, base=0)
     values = NativeValueStack(capacity=8)
     assert values.extend((99, 10, 20, 77))
 
-    assert window.branch(depth=0, values=values) == 5
+    assert window.branch(depth=0, values=values, resolve_control=_resolve_two_result_block) == 5
     assert tuple(values) == (99, 20, 77)
 
 
 def test_control_frame_window_rewinds_multiple_frames_with_one_size_update():
     storage = NativeControlStack(capacity=4)
-    pushed = storage.push_back(ControlFrameKind.BLOCK, start=0, match_end=4, stack_height=0)
+    pushed = storage.push_back(start=0, stack_height=0)
     assert pushed
     window = ControlFrameWindow(storage, base=0)
-    pushed = window.push_back(ControlFrameKind.IF, start=4, match_end=8, stack_height=0)
+    pushed = window.push_back(start=4, stack_height=0)
     assert pushed
-    pushed = window.push_back(ControlFrameKind.LOOP, start=8, match_end=12, stack_height=0)
+    pushed = window.push_back(start=8, stack_height=0)
     assert pushed
     assert len(window) == 3
 

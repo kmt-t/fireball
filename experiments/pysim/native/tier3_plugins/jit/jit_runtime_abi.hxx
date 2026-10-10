@@ -18,19 +18,16 @@ extern "C" {
 FB_PYSIM_ABI_EXPORT std::size_t fb_jit_plugin_alignment();
 FB_PYSIM_ABI_EXPORT std::size_t fb_jit_plugin_required_bytes(
     const fireball_wasm_module_execution_view_native *view);
-FB_PYSIM_ABI_EXPORT const fb_native_execution_extension *fb_jit_plugin_init(
+FB_PYSIM_ABI_EXPORT const fb_native_jit_provider *fb_jit_plugin_init(
     std::uint8_t *region, std::size_t bytes,
     const fireball_wasm_module_execution_view_native *view,
-    std::uint32_t module_id,
-    int (*dispatch)(const fb_native_dispatch_call *, fb_native_result *));
-FB_PYSIM_ABI_EXPORT int fb_jit_runtime_run(const fb_native_dispatch_call *input,
-                                           fb_native_result *result);
+    std::uint32_t module_id);
 FB_PYSIM_ABI_EXPORT void
-fb_jit_runtime_close(const fb_native_execution_extension *extension);
+fb_jit_runtime_close(const fb_native_jit_provider *provider);
 FB_PYSIM_ABI_EXPORT int
-fb_jit_runtime_flush(const fb_native_execution_extension *extension);
+fb_jit_runtime_flush(const fb_native_jit_provider *provider);
 FB_PYSIM_ABI_EXPORT int
-fb_jit_runtime_compile(const fb_native_execution_extension *extension,
+fb_jit_runtime_compile(const fb_native_jit_provider *provider,
                        std::uint32_t budget);
 }
 #endif

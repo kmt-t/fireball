@@ -24,11 +24,11 @@ Phase 1の開始はオーナーのGO判定を待つ。
 
 ## Phase 1: C++23によるvSoC実装
 
-<!-- traceability: {META_AI_Native_Dev} {PositionIndependentCode} {ROMParsing} {META_AccessDictionary} {LightweightVerifier} {ContextPointerRegister} {CPS_4Args} {MemoryBoundaryCheck} {ThreadedInterpreter} {JIT_CopyAndPatch} {Interpreter_LazyJITSwitch} -->
+<!-- traceability: {META_AI_Native_Dev} {PositionIndependentCode} {ROMParsing} {META_AccessDictionary} {LightweightVerifier} {ContextPointerRegister} {CPS_3Args} {MemoryBoundaryCheck} {ThreadedInterpreter} {JIT_AssemblyStencilCodegen} {Interpreter_LazyJITSwitch} -->
 
 - [ ] **共通基盤**: 固定容量の関数ラッパー、バンプアロケータ、エラー伝播、型付き非所有ビューを整備する。
 - [ ] **Loader**: ROMの直接参照、LEB128、セクション索引、検証と失敗時のロールバックを実装する。
-- [ ] **Interpreter**: 独立した3本の領域、4論理引数の継続、musttail dispatch、命令handlerとtrapを実装する。
+- [ ] **Interpreter**: 独立した3本の領域、`ctx`, `ip`, `sp`, `rel`の4引数handler ABI（先頭3引数は実行状態）、musttail dispatch、命令handlerとtrapを実装する。
 - [ ] **JIT**: 確定した対象ABIに従ってコード生成、cache、継続、yield/fallbackを実装・検証する。
 - [ ] **ホストハーネスとWAMR比較**: Core Spec選択セットと代表入力で正当性、速度、RAM/ROM、起動時間を評価する。
 

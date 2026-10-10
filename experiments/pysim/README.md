@@ -122,7 +122,7 @@ experiments/pysim/
 3. **Scenario 3: Recursion & Indirect Table Dispatch (`qa/scenarios/scenario3_recursion_and_tables.py`)**:
    - 再帰呼び出し、CallFrame/ControlFrame インライン整合性、`call_indirect` による Table+Element 間接ディスパッチと型シグネチャ照合。
 4. **Scenario 4: Hybrid JIT Compilation & Hotspot (`qa/scenarios/scenario4_hybrid_jit_loop.py`)**:
-   - 2-bit カードマーキング（UNEXEC → EXEC → HOT → COMPILED）によるホットスポット検出、Copy-and-Patch x64 ネイティブコード生成、インタープリタと JIT の差分実行検証。
+   - 2-bit カードマーキング（UNEXEC → EXEC → HOT → COMPILED）によるホットスポット検出、Clang integrated assemblerによるx64 trace単位ネイティブコード生成、インタープリタと JIT の差分実行検証。
 5. **Scenario 5: Multi-Function Code-section PC & Radix (`qa/scenarios/scenario5_multimodule_unified_pc.py`)**:
    - Code section payload相対PCのFoldingミックス（`fold_mix32`）とRadixBinaryTreeViewによるキャッシュ索引、複数関数にまたがるJITトレース実行。
 6. **Scenario 6: COOS Cooperative Multitasking (`qa/scenarios/scenario6_coos_multitask_yield.py`)**:
@@ -147,8 +147,8 @@ experiments/pysim/
 ### A. LOOP後方分岐回数による協調的 Yield (`{ADR_LoopBackedgeYield}`)
 C++ InterpreterとHybrid JITは、同じ実行コンテキストのLOOP後方分岐回数を使う。取得した後方分岐ごとにC++ handlerが状態を更新し、回数がしきい値に達するまでC++ dispatcher内で実行を続ける。到達時に両経路は同じyield statusを返し、COOSへ制御を戻す。
 
-### B. JITの共通helper呼出し契約
-x64参照構成のhelper入口と呼出規約は [`jit_runtime.md`](docs/components/tier3_plugins/jit_runtime.md) と [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) に従う。ARMv8-Mの命令列、ABI、helper配置とROM/RAM使用量はTBDであり、x64の結果から推定しない。
+### B. JITのRuntime API呼出し契約
+x64参照構成のRuntime API tableと呼出規約は [`jit_runtime.md`](docs/components/tier3_plugins/jit_runtime.md) と [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) に従う。ARMv8-Mの命令列、ABI、Runtime API配置とROM/RAM使用量はTBDであり、x64の結果から推定しない。
 
 ### C. Ambient Occlusion ベンチマーク (`benchmarks/aobench/aobench.py`)
 Float32経路とQ8.8固定小数点経路を同じ入力で実行する。WASI `fd_write`の出力と描画結果を比較し、Interpreter/JIT間で結果が一致することを確認する。このワークロードから特定の組み込みCPUや物理メモリ予算は推定しない。
@@ -157,7 +157,7 @@ Float32経路とQ8.8固定小数点経路を同じ入力で実行する。WASI `
 
 ## 4. パフォーマンス & ベンチマーク評価 (Performance & Benchmark Evaluation)
 
-`experiments/pysim/benchmarks/` 配下には、リニアメモリアクセス、vMMIO アドレス変換、Copy-and-Patch JIT コンパイラ、JIT キャッシュ代謝（3面ローテーション）、JIT カードエイジング（キャッシュ圧迫下のコールド関数混入）、および 3D レイトレーシング Ambient Occlusion (AO-Bench) の全 6 系統のベンチマークスイートが用意されています。
+`experiments/pysim/benchmarks/` 配下には、リニアメモリアクセス、vMMIO アドレス変換、assembly stencil trace JITコンパイラ、JIT キャッシュ代謝（3面ローテーション）、JIT カードエイジング（キャッシュ圧迫下のコールド関数混入）、および 3D レイトレーシング Ambient Occlusion (AO-Bench) の全 6 系統のベンチマークスイートが用意されています。
 
 実測測定値、ホットスポット解析、JIT トレースチェイニング診断、および C++23 実機実装への性能予測の詳細レポートは、以下を参照してください：
 
@@ -238,7 +238,11 @@ uv run --offline --no-sync python experiments/pysim/benchmarks/aobench/aobench.p
 ```
 
 ### JIT C++実装とABI
-`native/tier3_plugins/jit/trace_compiler.cxx` はx64 Copy-and-Patchトレースをコンパイルし、固定バイト列のステンシルは`stencils_x64.hxx`に置く。Python側にある過去のx64ステンシル／アセンブラ試作は実行経路で使われないため削除した。Python側は`ctypes`で固定レイアウトのレコードとC ABI関数を扱い、C++コードはCPython APIに依存しない。実行時はC++ dispatcherがJITトレースのCPS 4引数ABI関数ポインタを呼ぶ。Linux共有ライブラリには`-g`を付け、AMD uProfとIntel VTuneでC++ソース位置を解決できるようにする。
+`native/tier3_plugins/jit/trace_compiler.cxx`はWASM命令をcompile時に復号し、型・offset・融合形に対応するステンシルと定数を一つのtrace blobへ連結する。x64の`operations.S`、`trace.S`、`common.S`は`tools/jit_stencil_gen/generate_assembly.py`でPIC raw binaryにアセンブルし、`.text`を抽出してC++ byte arrayへ変換する。操作間の成功slotは次のステンシルで置き換わるため、通常の命令列はfall-throughし、次opcode fetchやoperation dispatcherを持たない。
+
+Runtime APIが必要な操作はtrace内のAPI stencilから共通コード領域にあるAPI tableを呼ぶ。Runtime APIが通常継続を返すと後続のJIT operationを実行する。trapや明示的な境界exitが記録された場合だけ共通abort経路を通る。Interpreter handlerは同じRuntime APIを呼び、テンプレートadapterがCPS継続へ接続する。API呼出しはインタープリタへのフォールバックではない。
+
+Interpreter handlerとJIT trace entryはいずれも`ctx`, `ip*`, `sp*`, `rel*`の4引数を受け取る。Interpreterは基本ブロック入口で定数プールcursorを設定し、JITはtrace headerの相対offsetからtrace末尾定数poolのcursorを設定する。JITのRuntime API recordを読むたびに`rel`を進め、pool末尾の相対値からtrace headerへ戻る。ローカル基点は実行コンテキストから取得する。Python側は`ctypes`で固定レイアウトのレコードとC ABI関数を扱い、C++コードはCPython APIに依存しない。Linux共有ライブラリには`-g`を付け、AMD uProfとIntel VTuneでC++ソース位置を解決できるようにする。
 
 JIT chainはtrace末尾から共通コード領域のchain dispatcherへ入り、そこから次trace bodyへtail-jumpする経路を指す。C++ handler後にC++ dispatcherが常駐traceを起動する遷移はchainではない。QAの`native_dispatch_trace_transitions`はC++ handlerからJIT traceへのdispatcher遷移数である。診断カウンタ、内部状態ダンプ、dispatch snapshotはQAハーネスが所有する。診断実行はQA専用ライブラリを使う。製品Runtimeは診断API・状態を持たない。ホットスポット検出は製品JIT拡張の責務であり、実行履歴は一つの固定リングへ直接記録する。
 ```bash
@@ -250,7 +254,7 @@ bash experiments/pysim/native/tier3_plugins/jit/build_native.sh
 ```
 
 ### Tier 2インタープリタのABI
-`native/tier2_runtime/interpreter/native_interpreter.cxx`はC++の固定256スロットハンドラ表とstep／dispatch入口を持つ。Python層は`abi/native_abi.py`で実行コンテキスト、スタック、dispatch metadataを固定レイアウトの引数レコードに組み立て、C ABIを`ctypes`で呼ぶ。C++側はCPython APIを使わず、Python所有bufferをポインタと長さで受け取る。製品のdispatch入口は通常実行と実行拡張付き実行を扱う。診断付きdispatch入口はQA専用ライブラリへ置く。
+`native/tier2_runtime/interpreter/native_interpreter.cxx`はC ABIのstep／dispatch入口を公開し、utility、handler、runtimeのprivate headerを一つの翻訳単位へ順に取り込む。ユーティリティはデコード・固定スタック・制御プリミティブ、ハンドラはコンパイル時選択の演算と固定256スロット表、runtimeはdispatch制御とABI境界を担当する。Python層は`abi/native_abi.py`で実行コンテキスト、スタック、dispatch metadataを固定レイアウトの引数レコードに組み立て、C ABIを`ctypes`で呼ぶ。C++側はCPython APIを使わず、Python所有bufferをポインタと長さで受け取る。製品のdispatch入口は通常実行と実行拡張付き実行を扱う。診断付きdispatch入口はQA専用ライブラリへ置く。
 
 C++実装済みの命令はC++ handlerが処理する。未対応命令や外部呼出しは現在のPCで実行境界へ戻り、trapと完了もstatusとして返す。Tier 2 Interpreter と Tier 3 JIT のC++実行には、それぞれの共有ライブラリを必須とする。
 ```bash
@@ -261,4 +265,4 @@ powershell experiments/pysim/native/tier2_runtime/interpreter/build_native.ps1
 bash experiments/pysim/native/tier2_runtime/interpreter/build_native.sh
 ```
 
-実行ホットパスは`native_interpreter.cxx`のhandler tableと`fb_native_run_dispatch`系C ABIであり、LEB128はロード時デコーダの責務で実行時境界には入らない。
+実行ホットパスはhandler headerの固定表からの直接tail-callと、runtime headerのdispatch loopを通る`fb_native_run_dispatch`系C ABIである。LEB128はロード時デコーダの責務で実行時境界には入らない。

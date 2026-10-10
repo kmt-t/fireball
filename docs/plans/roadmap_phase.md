@@ -60,14 +60,14 @@
   - 不正バイナリ検証失敗時のバンプポインタ完全ロールバック
 - **Phase 1.2: WASM Stackless Fast Interpreter (`interpreter`)**
   - `execution_context` と独立した3本の領域（オペランド領域、ローカル値領域、制御ブロック復帰情報領域） `{ContextPointerRegister}`
-  - 継続渡し4論理引数（`[[clang::musttail]]`）スレッド化ディスパッチャ `{ThreadedInterpreter}`
+  - 継続渡し4引数（`ctx`, `ip*`, `sp*`, `rel*`; 先頭3引数は実行状態、`[[clang::musttail]]`）スレッド化ディスパッチャ `{ThreadedInterpreter}`
   - 全コア命令ハンドラ（算術・制御・メモリ境界トラップ） `{MemoryBoundaryCheck}`
-  - 分岐脱出時のフレームプルーニングと TOS レジスタ復元
-- **Phase 1.3: Copy-and-Patch JIT Compiler & Runtime (`jit_compiler`, `jit_runtime`)**
+  - 分岐脱出時のフレームプルーニングと共有オペランド・制御スタック更新
+- **Phase 1.3: x64 Assembly Stencil JIT Compiler & Runtime (`jit_compiler`, `jit_runtime`)**
   - x64 JIT契約を検証する。ARMv8-MのABIと物理命令生成はTBDとする。
   - x64で検証したJIT領域と3面キャッシュ契約を管理する。ARMv8-Mの物理配置と保護方式はTBD。
   - 3段検索（カードマーキング → Folding XOR高速キャッシュ → 少数のソート済みJITエントリの二分探索。Radix索引なし）
-  - C++ native dispatchによるInterpreter/JIT継続とLOOP後方分岐回数yieldを実装・検証する `{JIT_BackedgeYield}` `{JIT_RuntimeAPI_Fallback}`
+  - C++ native dispatchによるInterpreter/JIT継続とLOOP後方分岐回数yieldを実装・検証する `{JIT_BackedgeYield}` `{JIT_RuntimeAPI}`
 - **Phase 1.4: Standalone vSoC Harness & WAMR Benchmark (`runtime_vsoc`)**
   - ホスト (x86_64 / Linux / macOS / Windows) 実行ハーネス
   - WAMR (Fast Interpreter) 比較ベンチマーク (CoreMark-PRO, aobench)

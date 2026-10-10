@@ -108,7 +108,7 @@ def main():
     print("\n[Section 3: JIT Compiler & Runtime Dispatch]")
     print("-" * 80)
     print(
-        f"  * Copy-and-Patch Compile Speed:       {jit_res['jit_compile_traces_per_sec']:,.0f} Traces/sec  ({jit_res['jit_compile_latency_us']:.2f} us/trace)"
+        f"  * Native Trace Compile Speed:           {jit_res['jit_compile_traces_per_sec']:,.0f} Traces/sec  ({jit_res['jit_compile_latency_us']:.2f} us/trace)"
     )
     print(
         f"  * Compile Cost per WASM Instruction:  {jit_res['jit_compile_ns_per_insn']:.1f} ns/opcode"
@@ -154,10 +154,6 @@ def main():
         )
     else:
         print("  * JIT Execution Coverage:             runtime stats not collected")
-    print(
-        f"  * PIC Trace-Header Helper Tail Jump:  {jit_res['context_helper_tail_mops']:.2f} M ops/s  ({jit_res['context_helper_tail_ns']:.1f} ns/dispatch; {jit_res['context_helper_tail_invocations']:,} calls)"
-    )
-
     print("\n[Section 4: JIT Cache Metabolism & Corner Cases]")
     print("-" * 80)
     print(

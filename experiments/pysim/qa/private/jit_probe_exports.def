@@ -1,0 +1,19 @@
+; QA-only C ABI exports for the ctypes probe.
+LIBRARY jit_probe
+EXPORTS
+    fb_jit_region_init
+    fb_jit_common_layout
+    fb_jit_common_install
+    fb_jit_compile_instructions
+    fb_jit_compile_block
+    fb_jit_memory_init
+    fb_jit_memory_begin
+    fb_jit_memory_commit
+    fb_jit_memory_finalize
+    fb_jit_memory_no_rwx
+    fb_jit_memory_write
+    fb_jit_memory_close
+    fb_jit_memory_address
+    fb_jit_runtime_bind_cards
+    fb_jit_card_index
+    fb_jit_card_count

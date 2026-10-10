@@ -6,6 +6,8 @@ import ctypes
 import sys
 from pathlib import Path
 
+from tier2_runtime.abi.native_abi import RUN_DISPATCH_JIT
+
 _library = ctypes.PyDLL(
     str(
         Path(__file__).with_name(
@@ -26,12 +28,8 @@ RUNTIME_INIT.argtypes = (
     ctypes.c_size_t,
     ctypes.c_void_p,
     ctypes.c_uint32,
-    ctypes.c_void_p,
 )
 RUNTIME_INIT.restype = ctypes.c_void_p
-RUNTIME_RUN = _library.fb_jit_runtime_run
-RUNTIME_RUN.argtypes = (ctypes.c_void_p, ctypes.c_void_p)
-RUNTIME_RUN.restype = ctypes.c_int
 RUNTIME_CLOSE = _library.fb_jit_runtime_close
 RUNTIME_CLOSE.argtypes = (ctypes.c_void_p,)
 RUNTIME_CLOSE.restype = None
@@ -41,3 +39,6 @@ RUNTIME_FLUSH.restype = ctypes.c_int
 RUNTIME_COMPILE = _library.fb_jit_runtime_compile
 RUNTIME_COMPILE.argtypes = (ctypes.c_void_p, ctypes.c_uint32)
 RUNTIME_COMPILE.restype = ctypes.c_int
+
+# The Interpreter owns dispatch and invokes any trace returned by this plugin.
+NATIVE_DISPATCH = RUN_DISPATCH_JIT

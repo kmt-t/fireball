@@ -1,4 +1,4 @@
-"""Python binding for the native x64 Copy-and-Patch trace compiler."""
+"""Python binding for the native x64 assembly-stencil trace compiler."""
 
 from __future__ import annotations
 
@@ -44,8 +44,6 @@ class TraceCompiler:
         loops_to: int | None,
         byte_length: int,
         local_layout: LocalLayout,
-        context_helper: bool = False,
-        helper_address: int = 0,
     ) -> JITTrace | None:
         """Compile one loader-owned block and install its standalone trace."""
 
@@ -53,10 +51,9 @@ class TraceCompiler:
             head_pc=head_pc,
             next_pc=next_pc,
             loops_to=loops_to,
-            helper_target_addr=helper_address,
         )
         blob = native_abi.compile_instructions(
-            trace._native, instructions, byte_length, local_layout, context_helper, helper_address
+            trace._native, instructions, byte_length, local_layout
         )
         if blob is None:
             return None
@@ -88,6 +85,5 @@ class TraceCompiler:
         trace.size_bytes = header.blob_bytes
         trace.stack_words = header.stack_words
         trace.result_words = header.result_words
-        trace.has_return_val = bool(header.has_return_value)
         trace.header._native = header
         trace.bind_code()

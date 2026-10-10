@@ -103,15 +103,15 @@ vSoC全体の可変な実行時状態を保持する構造体。
 
 #### vSoCランタイム環境
 <!-- traceability: {ContextPointerRegister} {EnvironmentPointer} {MemoryBoundaryCheck} {FastAddressCheck} {ExecutionContext_Layout} -->
-vSoCは実行コンテキストとモジュール実行情報を組み合わせてゲスト環境を提供する。`vsoc_runtime` は環境の論理項目をまとめる概念であり、独立した物理構造体や固定オフセットを定義しない。 <!-- definition: {VsocRuntime_Layout} --> {VsocRuntime_Layout} リニアメモリのホスト基点と有効サイズは `execution_context` が保持する。グローバル値と幅情報はモジュール実行情報が保持する。両者のx86-64配置は [`interpreter.md`](docs/components/tier2_runtime/interpreter.md) の `{ExecutionContext_Layout}` に従う。JITとInterpreterは同じ実行状態を参照する。境界で渡す第4論理引数はスタック頂点値であり、物理レジスタ割当は対象ABIで定義する（`{GOTCHA-VSOC-03}`）。 <!-- definition: {GOTCHA-VSOC-03} -->
+vSoCは実行コンテキストとモジュール実行情報を組み合わせてゲスト環境を提供する。`vsoc_runtime` は環境の論理項目をまとめる概念であり、独立した物理構造体や固定オフセットを定義しない。 <!-- definition: {VsocRuntime_Layout} --> {VsocRuntime_Layout} リニアメモリのホスト基点と有効サイズは `execution_context` が保持する。グローバル値と幅情報はモジュール実行情報が保持する。両者のx86-64配置は [`interpreter.md`](docs/components/tier2_runtime/interpreter.md) の `{ExecutionContext_Layout}` に従う。JITとInterpreterは同じ実行状態と共有オペランドスタックを参照する。境界では`ctx`、`ip*`、`sp*`を渡し、TOS値を重複して渡さない（`{GOTCHA-VSOC-03}`）。 <!-- definition: {GOTCHA-VSOC-03} -->
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
-| リニアメモリ基点 | リニアメモリ実体の借用ホスト基点。ゲスト論理アドレスとは区別する | 非所有ポインタ | x86-64では `execution_context` の `+0x48` |
-| リニアメモリ有効サイズ | 境界検査対象の有効バイト数。ゲスト論理アドレス幅とは区別する | 64bit符号なし | x86-64では `execution_context` の `+0x50` |
+| リニアメモリ基点 | リニアメモリ実体の借用ホスト基点。ゲスト論理アドレスとは区別する | 非所有ポインタ | x86-64では `execution_context` の `+0x78` |
+| リニアメモリ有効サイズ | 境界検査対象の有効バイト数。ゲスト論理アドレス幅とは区別する | 64bit符号なし | x86-64では `execution_context` の `+0x80` |
 | グローバル値と幅 | WASM `global` の値配列と型幅 | モジュール実行情報への非所有ビュー | `execution_context` へ重複配置しない |
 
-確認済みx86-64の `execution_context` は96バイトである。フィールド順とオフセットは [`interpreter.md`](docs/components/tier2_runtime/interpreter.md) を正本とする。物理配置は [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) のPIC契約に従う。 `{PositionIndependentCode}`
+確認済みx86-64の `execution_context` は152バイトである。フィールド順とオフセットは [`interpreter.md`](docs/components/tier2_runtime/interpreter.md) を正本とする。物理配置は [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) のPIC契約に従う。 `{PositionIndependentCode}`
 
 オペランド領域、ローカル値領域、制御ブロック復帰情報領域は、それぞれ独立した固定容量領域である。各領域の位置と容量はInterpreterが管理する（[interpreter.md](docs/components/tier2_runtime/interpreter.md#adr-interp-03-制御フレームを専用スタックへ分離)）。
 
@@ -136,7 +136,7 @@ vSoCの動作パラメータを定義する。
 ## 4. 動的モデル
 
 ### 4.1 アルゴリズム
-<!-- traceability: {ContextPointerRegister} {GLOBAL_InterruptWakeup} {JIT_CopyAndPatch} {JIT_BackedgeYield} {OneRuntimeOneGuest} {ThreadedInterpreter} {JIT_LazyChaining} {DebuggerInterpreterComposition} {Runtime_BumpAllocator} -->
+<!-- traceability: {ContextPointerRegister} {GLOBAL_InterruptWakeup} {JIT_AssemblyStencilCodegen} {JIT_BackedgeYield} {OneRuntimeOneGuest} {ThreadedInterpreter} {JIT_LazyChaining} {DebuggerInterpreterComposition} {Runtime_BumpAllocator} -->
 
 vSoC コアエンジンの実行委譲、協調イールド、および外部介入制御の基本アルゴリズムを以下に定義する。
 
@@ -155,8 +155,8 @@ vSoC コアエンジンの実行委譲、協調イールド、および外部介
   一方、JIT コンパイラは実行可能コード領域から専用アロケータを用いて機械語トレースを確保する。x64では書込み権限と実行権限を同時に付与せず、W^Xを維持する。ARMv8-Mの物理配置と保護方式はTBDである。
   ゲスト実行終了後もロード済みモジュールのメタデータはランタイム内に保持する。ランタイム破棄時にJIT キャッシュを無効化（3-Bank Flush）し、データバンプアロケータとJITコードアロケータのアリーナを $O(1)$ で一括リセットして返還する。
   個別の `free()` や複雑なデストラクタ走査は一切行わない。これにより動的メモリ断片化や他モジュールからのダングリング参照を原理的に根絶する。
-- **C++実行dispatcherと4論理引数契約 (`{GOTCHA-VSOC-01}`)**: <!-- definition: {GOTCHA-VSOC-01} -->
-  実行入口は `(ctx, sp, local_base, tos)` の4論理引数を受け取る。物理呼出し規約は [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) のx64定義に従い、ARMv8-Mの物理配置はTBDとする。
+- **C++実行dispatcherと3論理引数契約 (`{GOTCHA-VSOC-01}`)**: <!-- definition: {GOTCHA-VSOC-01} -->
+  実行状態は `(ctx, ip*, sp*)` の3論理引数で表す。opcode handlerとInterpreter Runtime APIは、定数プール位置を表す`rel*`を第4引数に受け取る。ローカル基点は`ctx.local_base`、スタック頂点値は共有オペランドスタックから取得する。物理呼出し規約は [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) のx64定義に従い、ARMv8-Mの物理配置はTBDとする。
   C++ディスパッチループはC++ Interpreter handlerと常駐JIT traceを次PCに応じて実行し、yield・trap・完了などの境界でRuntimeEngineへstatusを返す。Interpreterが所有するしきい値に達するまではC++側に留まり、vSoCへ命令ごとに戻らない。RuntimeEngineはしきい値を保持しない。
   共通コード領域のchain dispatcherは別の機械語経路である。直線traceの末尾からdispatcherへ移り、headerのtarget bodyへtail-jumpする。C++ handler後に実行拡張が次の本体を選ぶ遷移はchainではない。
 #### ランタイム生成と破棄のライフサイクル（責務シーケンス図）
@@ -204,7 +204,7 @@ sequenceDiagram
 
 
 #### C++実行dispatcherとLOOP後方分岐yield（責務シーケンス図）
-<!-- traceability: {GOTCHA-VSOC-01} {GOTCHA-VSOC-02} {ADR_LoopBackedgeYield} {ThreadedInterpreter} {JIT_CopyAndPatch} -->
+<!-- traceability: {GOTCHA-VSOC-01} {GOTCHA-VSOC-02} {ADR_LoopBackedgeYield} {ThreadedInterpreter} {JIT_AssemblyStencilCodegen} -->
 COOS Scheduler、System、RuntimeEngine、C++ Interpreter handlerおよびJIT trace間の継続を示す。
 
 ```mermaid
@@ -244,7 +244,7 @@ sequenceDiagram
 ```
 
 ### 4.2 状態遷移図 (SysML SMD: vSoC Engine ライフサイクル)
-<!-- traceability: {DebuggerInterpreterComposition} {JIT_CopyAndPatch} {JIT_BackedgeYield} {ThreadedInterpreter} -->
+<!-- traceability: {DebuggerInterpreterComposition} {JIT_AssemblyStencilCodegen} {JIT_BackedgeYield} {ThreadedInterpreter} -->
 
 vSoC Engine の実行制御と JIT/Interpreter 切り替えの状態遷移を以下に示す。 {VSOC_Lifecycle} <!-- definition: {VSOC_Lifecycle} -->
 
@@ -361,10 +361,10 @@ Interpreter dispatcherは接続済みネイティブ実行拡張を呼び出す�
 本節で述べたLOOP後方分岐yieldとキャッシュ一貫性の性質は、検証対象の不変条件表に列挙したプロパティとして形式検証されている。個々のモデルファイルとプロパティ名の対応は **[検証対象の不変条件](#71-検証対象の不変条件)** を正本とする。
 
 ### 4.3 内部シーケンス
-<!-- traceability: {ThreadedInterpreter} {JIT_CopyAndPatch} {JIT_BackedgeYield} {DebuggerInterpreterComposition} -->
+<!-- traceability: {ThreadedInterpreter} {JIT_AssemblyStencilCodegen} {JIT_BackedgeYield} {DebuggerInterpreterComposition} -->
 #### WASM実行およびJIT遷移シーケンス
 
-<!-- traceability: {JIT_CopyAndPatch} {Interpreter_LazyJITSwitch} {Challenge_JITCacheEfficiency} -->
+<!-- traceability: {JIT_AssemblyStencilCodegen} {Interpreter_LazyJITSwitch} {Challenge_JITCacheEfficiency} -->
 ```mermaid
 sequenceDiagram
     participant S as Scheduler
@@ -590,7 +590,7 @@ Fireballでは、標準WASIのゲスト側アダプタを `libfireball` とし�
 ### 6.1 性能制約と方策
 <!-- traceability: {LowLatencyJIT} {ThreadedInterpreter} -->
 - **目標**: WAMRインタープリタを上回る実行速度を実現する。
-- **方策**: コピーアンドパッチJITによる機械語実行と、スレッドインタープリタによる高速フォールバックを組み合わせる。
+- **方策**: assembly stencilから構成したJIT traceの実行と、未コンパイル区間を処理するスレッドインタープリタを組み合わせる。
 
 ### 6.2 メモリ制約と方策
 <!-- traceability: {JIT_MultiBuffer_Cache} {GLOBAL_IndependentHeap} {WasmPageAlignment} -->

@@ -3,69 +3,41 @@
 #include <bit>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
+#include <limits>
 
-#include "../../../tier2_runtime/abi/interpreter_abi.hxx"
+#include "common_code_abi.hxx"
 #include "jit_internal.hxx"
-#include "jit_runtime_api.hxx"
 #include "stencils_x64.hxx"
 #include "trace_compiler_abi.hxx"
 
 using namespace fireball::pysim::jit;
 using fireball::kMaxBodyBytes;
+using fireball::kMaxRelocationConstants;
 using fireball::kMaxStackDepth;
 using fireball::kMaxTraceInstructions;
 
-#ifndef FB_CONF_JIT_TRACE_COMMON_CHAIN_DISPATCH_OFFSET
-#error "JIT chain dispatcher offset must come from tier1_core/config.py"
-#endif
-#ifndef FB_CONF_JIT_TRACE_COMMON_CHAIN_DISPATCH_BYTES
-#error "JIT chain dispatcher size must come from tier1_core/config.py"
-#endif
 #ifndef FB_CONF_JIT_X64_TRACE_HEADER_BYTES
 #error "x64 JIT trace header size must come from tier1_core/config.py"
 #endif
-#ifndef FB_CONF_JIT_X64_CHAIN_TARGET_OFFSET
-#error "x64 JIT chain target offset must come from tier1_core/config.py"
-#endif
-#ifndef FB_CONF_JIT_TRACE_COMMON_EPILOGUE_OFFSET
-#error "JIT common epilogue offset must come from tier1_core/config.py"
-#endif
-#ifndef FB_CONF_JIT_TRACE_COMMON_PROLOGUE_OFFSET
-#error "JIT common prologue offset must come from tier1_core/config.py"
-#endif
-#ifndef FB_CONF_JIT_TRACE_COMMON_HELPER_OFFSET
-#error "JIT common helper offset must come from tier1_core/config.py"
-#endif
-#ifndef FB_CONF_JIT_TRACE_HELPER_ENTRY_BYTES
-#error "JIT helper entry size must come from tier1_core/config.py"
-#endif
-#ifndef FB_CONF_JIT_TRACE_TYPED_I32_HELPER_COUNT
-#error "JIT typed helper count must come from tier1_core/config.py"
-#endif
-#ifndef FB_CONF_JIT_TRACE_TYPED_I32_HELPER_OFFSET
-#error "JIT typed helper offset must come from tier1_core/config.py"
-#endif
-#ifndef FB_CONF_JIT_CACHE_ABSOLUTE_ADDRESS_POOL_OFFSET
-#error "JIT absolute address pool offset must come from tier1_core/config.py"
-#endif
-#ifndef FB_CONF_JIT_CACHE_ABSOLUTE_ADDRESS_POOL_BYTES
-#error "JIT absolute address pool size must come from tier1_core/config.py"
-#endif
-#ifndef FB_CONF_JIT_X64_COMMON_CODE_RELATIVE_OFFSET
-#error                                                                         \
-    "x64 common-code-relative header field must come from tier1_core/config.py"
-#endif
-
 namespace {
 
 constexpr std::size_t kTraceHeaderBytes = FB_CONF_JIT_X64_TRACE_HEADER_BYTES;
-constexpr std::int16_t kTos = -1;
-constexpr std::int16_t kNos = -2;
-constexpr std::size_t kTraceEntryStubBytes =
-    FB_CONF_JIT_X64_TRACE_ENTRY_STUB_BYTES;
-constexpr std::uint32_t kNoPendingLocalGet = 0xFFFF'FFFFu;
+constexpr std::uint32_t kMaxLogicalLocals = 16;
+// The normal success slot is removed while composing the next operation body,
+// so successful operations fall through without an epilogue or transfer.
+// Abort slots target the single trace-level return stub.
+constexpr std::size_t kX64Rel32SlotBytes = 5;
+constexpr std::size_t kMaxOperationStencilBytes = 512;
+constexpr auto kNoLinkSlot = generated::no_link_slot;
+
+constexpr std::uint8_t kWasmI32 = 0x7F;
+constexpr std::uint8_t kWasmI64 = 0x7E;
+constexpr std::uint8_t kWasmF32 = 0x7D;
+constexpr std::uint8_t kWasmF64 = 0x7C;
 
 constexpr int kDrop = 0x1A;
+constexpr int kSelect = 0x1B;
 constexpr int kLocalGet = 0x20;
 constexpr int kLocalSet = 0x21;
 constexpr int kLocalTee = 0x22;
@@ -88,6 +60,8 @@ constexpr int kI32Add = 0x6A;
 constexpr int kI32Sub = 0x6B;
 constexpr int kI32Mul = 0x6C;
 constexpr int kI32DivS = 0x6D;
+constexpr int kI32DivU = 0x6E;
+constexpr int kI32RemS = 0x6F;
 constexpr int kI32RemU = 0x70;
 constexpr int kI32And = 0x71;
 constexpr int kI32Or = 0x72;
@@ -96,1075 +70,947 @@ constexpr int kI32Shl = 0x74;
 constexpr int kI32ShrS = 0x75;
 constexpr int kI32ShrU = 0x76;
 constexpr int kI64Add = 0x7C;
+constexpr int kI64Sub = 0x7D;
 constexpr int kI64Mul = 0x7E;
 constexpr int kF32Add = 0x92;
+constexpr int kF32Sub = 0x93;
+constexpr int kF32Mul = 0x94;
 constexpr int kF32Div = 0x95;
 constexpr int kF64Add = 0xA0;
+constexpr int kF64Sub = 0xA1;
+constexpr int kF64Mul = 0xA2;
 constexpr int kF64Div = 0xA3;
+constexpr int kFcPrefix = 0xFC;
 
-constexpr std::size_t kSharedDispatcherBytes =
-    FB_CONF_JIT_TRACE_COMMON_CHAIN_DISPATCH_BYTES;
-constexpr std::size_t kCommonEpilogueOffset =
-    FB_CONF_JIT_TRACE_COMMON_EPILOGUE_OFFSET;
-constexpr std::size_t kCommonPrologueOffset =
-    FB_CONF_JIT_TRACE_COMMON_PROLOGUE_OFFSET;
-constexpr std::size_t kCommonHelperOffset =
-    FB_CONF_JIT_TRACE_COMMON_HELPER_OFFSET;
-constexpr std::size_t kHelperEntryBytes = FB_CONF_JIT_TRACE_HELPER_ENTRY_BYTES;
-constexpr std::size_t kTypedHelperCount =
-    FB_CONF_JIT_TRACE_TYPED_I32_HELPER_COUNT;
-constexpr std::size_t kTypedHelperOffset =
-    FB_CONF_JIT_TRACE_TYPED_I32_HELPER_OFFSET;
-constexpr std::size_t kCommonRelativeOffset =
-    FB_CONF_JIT_X64_COMMON_CODE_RELATIVE_OFFSET;
-constexpr std::size_t kLocalApiTableOffset =
-    FB_CONF_JIT_CACHE_ABSOLUTE_ADDRESS_POOL_OFFSET;
-static_assert(kLocalApiTableOffset % alignof(std::uintptr_t) == 0);
-static_assert(static_cast<std::size_t>(jit_local_runtime_api_index::count) *
-                  sizeof(std::uintptr_t) <=
-              FB_CONF_JIT_CACHE_ABSOLUTE_ADDRESS_POOL_BYTES);
-static_assert(kTraceHeaderBytes + kTraceEntryStubBytes <= 0x7Fu);
-static_assert(FB_CONF_JIT_X64_CHAIN_TARGET_OFFSET <= 0x7Fu);
-static_assert(kCommonRelativeOffset <= 0x7Fu && kCommonPrologueOffset == 0);
-
-constexpr auto make_entry_stencil() {
-  std::array<std::uint8_t, 17> result = {
-      0x48,
-      0x8D,
-      0x05,
-      0,
-      0,
-      0,
-      0,
-      0x4C,
-      0x63,
-      0x58,
-      static_cast<std::uint8_t>(kCommonRelativeOffset),
-      0x49,
-      0x01,
-      0xC3,
-      0x41,
-      0xFF,
-      0xE3};
-  const auto displacement = static_cast<std::uint32_t>(
-      -static_cast<std::int32_t>(kTraceHeaderBytes + 7));
-  for (std::size_t byte = 0; byte < 4; ++byte)
-    result[3 + byte] = static_cast<std::uint8_t>(displacement >> (byte * 8));
-  return result;
-}
-inline constexpr auto kEntryStencil = make_entry_stencil();
-
-struct stencil_view {
-  const std::uint8_t *bytes = nullptr;
-  std::size_t size = 0;
-};
-
-template <std::size_t N>
-constexpr stencil_view view_of(const std::array<std::uint8_t, N> &stencil) {
-  return {stencil.data(), N};
-}
-
-constexpr std::uint8_t kBinary = 1u << 0;
-constexpr std::uint8_t kLocalPair = 1u << 1;
-
-struct opcode_traits {
-  stencil_view binary;
-  stencil_view local_memory_binary_disp8;
-  stencil_view local_memory_binary_disp32;
-  std::uint8_t flags = 0;
-  std::uint8_t compare_condition = 0;
-  std::uint8_t wide_words = 0;
-};
-
-constexpr opcode_traits i32_binary_traits(stencil_view binary,
-                                          stencil_view mem_disp8,
-                                          stencil_view mem_disp32,
-                                          std::uint8_t condition = 0) {
-  return {binary,     mem_disp8,
-          mem_disp32, static_cast<std::uint8_t>(kBinary | kLocalPair),
-          condition,  0};
-}
-
-constexpr opcode_traits wide_binary_traits(stencil_view binary,
-                                           std::uint8_t words) {
-  return {binary, {}, {}, kBinary, 0, words};
-}
-
-constexpr auto kI32ArithmeticTraits = [] {
-  std::array<opcode_traits, kI32ShrU - kI32Add + 1> result{};
-  result[kI32Add - kI32Add] = i32_binary_traits(view_of(kI32AddStencil),
-                                                view_of(kI32AddMemDisp8Stencil),
-                                                view_of(kI32AddMemStencil));
-  result[kI32Sub - kI32Add] = i32_binary_traits(view_of(kI32SubStencil),
-                                                view_of(kI32SubMemDisp8Stencil),
-                                                view_of(kI32SubMemStencil));
-  result[kI32Mul - kI32Add] = i32_binary_traits(view_of(kI32MulStencil),
-                                                view_of(kI32MulMemDisp8Stencil),
-                                                view_of(kI32MulMemStencil));
-  result[kI32And - kI32Add] = i32_binary_traits(view_of(kI32AndStencil),
-                                                view_of(kI32AndMemDisp8Stencil),
-                                                view_of(kI32AndMemStencil));
-  result[kI32Or - kI32Add] =
-      i32_binary_traits(view_of(kI32OrStencil), view_of(kI32OrMemDisp8Stencil),
-                        view_of(kI32OrMemStencil));
-  result[kI32Xor - kI32Add] = i32_binary_traits(view_of(kI32XorStencil),
-                                                view_of(kI32XorMemDisp8Stencil),
-                                                view_of(kI32XorMemStencil));
-  return result;
-}();
-
-constexpr auto kI32ComparisonTraits = [] {
-  std::array<opcode_traits, kI32GeU - kI32Eq + 1> result{};
-  result[kI32Eq - kI32Eq] = i32_binary_traits(
-      view_of(kI32EqStencil), view_of(kI32CompareMemDisp8Stencil),
-      view_of(kI32CompareMemStencil), 0x94);
-  result[kI32Ne - kI32Eq] = i32_binary_traits(
-      view_of(kI32NeStencil), view_of(kI32CompareMemDisp8Stencil),
-      view_of(kI32CompareMemStencil), 0x95);
-  result[kI32LtS - kI32Eq] = i32_binary_traits(
-      view_of(kI32LtSStencil), view_of(kI32CompareMemDisp8Stencil),
-      view_of(kI32CompareMemStencil), 0x9C);
-  result[kI32LtU - kI32Eq] = i32_binary_traits(
-      view_of(kI32LtUStencil), view_of(kI32CompareMemDisp8Stencil),
-      view_of(kI32CompareMemStencil), 0x92);
-  result[kI32GtS - kI32Eq] = i32_binary_traits(
-      view_of(kI32GtSStencil), view_of(kI32CompareMemDisp8Stencil),
-      view_of(kI32CompareMemStencil), 0x9F);
-  result[kI32GtU - kI32Eq] = i32_binary_traits(
-      view_of(kI32GtUStencil), view_of(kI32CompareMemDisp8Stencil),
-      view_of(kI32CompareMemStencil), 0x97);
-  result[kI32LeS - kI32Eq] = i32_binary_traits(
-      view_of(kI32LeSStencil), view_of(kI32CompareMemDisp8Stencil),
-      view_of(kI32CompareMemStencil), 0x9E);
-  result[kI32LeU - kI32Eq] = i32_binary_traits(
-      view_of(kI32LeUStencil), view_of(kI32CompareMemDisp8Stencil),
-      view_of(kI32CompareMemStencil), 0x96);
-  result[kI32GeS - kI32Eq] = i32_binary_traits(
-      view_of(kI32GeSStencil), view_of(kI32CompareMemDisp8Stencil),
-      view_of(kI32CompareMemStencil), 0x9D);
-  result[kI32GeU - kI32Eq] = i32_binary_traits(
-      view_of(kI32GeUStencil), view_of(kI32CompareMemDisp8Stencil),
-      view_of(kI32CompareMemStencil), 0x93);
-  return result;
-}();
-
-constexpr auto kI64BinaryTraits =
-    std::array{wide_binary_traits(view_of(kI64AddStencil), 2),
-               wide_binary_traits(view_of(kI64SubStencil), 2),
-               wide_binary_traits(view_of(kI64MulStencil), 2)};
-constexpr auto kF32BinaryTraits =
-    std::array{wide_binary_traits(view_of(kF32AddStencil), 1),
-               wide_binary_traits(view_of(kF32SubStencil), 1),
-               wide_binary_traits(view_of(kF32MulStencil), 1),
-               wide_binary_traits(view_of(kF32DivStencil), 1)};
-constexpr auto kF64BinaryTraits =
-    std::array{wide_binary_traits(view_of(kF64AddStencil), 2),
-               wide_binary_traits(view_of(kF64SubStencil), 2),
-               wide_binary_traits(view_of(kF64MulStencil), 2),
-               wide_binary_traits(view_of(kF64DivStencil), 2)};
-
-constexpr const opcode_traits *traits_for(int opcode) {
-  if (opcode >= kI32Add && opcode <= kI32ShrU)
-    return &kI32ArithmeticTraits[static_cast<std::size_t>(opcode - kI32Add)];
-  if (opcode >= kI32Eq && opcode <= kI32GeU)
-    return &kI32ComparisonTraits[static_cast<std::size_t>(opcode - kI32Eq)];
-  if (opcode >= kI64Add && opcode <= kI64Mul)
-    return &kI64BinaryTraits[static_cast<std::size_t>(opcode - kI64Add)];
-  if (opcode >= kF32Add && opcode <= kF32Div)
-    return &kF32BinaryTraits[static_cast<std::size_t>(opcode - kF32Add)];
-  if (opcode >= kF64Add && opcode <= kF64Div)
-    return &kF64BinaryTraits[static_cast<std::size_t>(opcode - kF64Add)];
-  return nullptr;
-}
-
-enum class assembler_label : std::size_t { fallback, chain, count };
-
-struct relative_fixup {
-  std::size_t displacement_offset = 0;
-  assembler_label target = assembler_label::fallback;
-};
-
-class constexpr_x64_assembler {
-public:
-  constexpr void emit(std::uint8_t value) {
-    if (size_ < bytes_.size())
-      bytes_[size_++] = value;
-  }
-
-  template <typename... Values> constexpr void emit_bytes(Values... values) {
-    (emit(static_cast<std::uint8_t>(values)), ...);
-  }
-
-  constexpr void mark(assembler_label label) {
-    labels_[static_cast<std::size_t>(label)] = size_;
-  }
-
-  constexpr void jump_if(std::uint8_t condition, assembler_label target) {
-    emit_bytes(0x0F, condition);
-    const auto displacement_offset = size_;
-    emit_bytes(0, 0, 0, 0);
-    if (fixup_count_ < fixups_.size()) {
-      fixups_[fixup_count_++] = relative_fixup{displacement_offset, target};
-    }
-  }
-
-  constexpr std::size_t jump_to_offset(std::size_t target_offset) {
-    emit(0xE9);
-    const auto displacement_offset = size_;
-    emit_bytes(0, 0, 0, 0);
-    const auto next_offset = base_offset_ + size_;
-    const auto delta = static_cast<std::int64_t>(target_offset) -
-                       static_cast<std::int64_t>(next_offset);
-    write_i32(bytes_, displacement_offset, static_cast<std::int32_t>(delta));
-    return displacement_offset;
-  }
-
-  constexpr void set_base_offset(std::size_t base_offset) {
-    base_offset_ = base_offset;
-  }
-
-  constexpr std::size_t size() const { return size_; }
-
-  constexpr std::array<std::uint8_t, kSharedDispatcherBytes> finish() const {
-    auto result = bytes_;
-    for (std::size_t index = 0; index < fixup_count_; ++index) {
-      const auto fixup = fixups_[index];
-      const auto label_index = static_cast<std::size_t>(fixup.target);
-      const auto delta =
-          static_cast<std::int64_t>(labels_[label_index]) -
-          static_cast<std::int64_t>(fixup.displacement_offset + 4);
-      write_i32(result, fixup.displacement_offset,
-                static_cast<std::int32_t>(delta));
-    }
-    return result;
-  }
-
-private:
-  static constexpr void
-  write_i32(std::array<std::uint8_t, kSharedDispatcherBytes> &target,
-            std::size_t offset, std::int32_t value) {
-    const auto bits = static_cast<std::uint32_t>(value);
-    for (std::size_t byte = 0; byte < 4; ++byte) {
-      target[offset + byte] =
-          static_cast<std::uint8_t>((bits >> (byte * 8)) & 0xFFu);
-    }
-  }
-
-  std::array<std::uint8_t, kSharedDispatcherBytes> bytes_{};
-  std::array<std::size_t, static_cast<std::size_t>(assembler_label::count)>
-      labels_{};
-  std::array<relative_fixup, 4> fixups_{};
-  std::size_t size_ = 0;
-  std::size_t fixup_count_ = 0;
-  std::size_t base_offset_ = 0;
-};
-
-constexpr std::array<std::uint8_t, kSharedDispatcherBytes>
-make_chain_dispatcher() {
-  constexpr_x64_assembler assembler;
-  assembler.set_base_offset(FB_CONF_JIT_TRACE_COMMON_CHAIN_DISPATCH_OFFSET);
-  assembler.emit_bytes(
-      0x49, 0x8B, 0x56,
-      FB_CONF_JIT_X64_CHAIN_TARGET_OFFSET); // mov rdx, [r14+chain_target]
-  assembler.emit_bytes(0x48, 0x85, 0xD2);   // test rdx, rdx
-  assembler.jump_if(0x84, assembler_label::fallback); // jz fallback
-  assembler.emit_bytes(0x41, 0x8B, 0x46,
-                       offsetof(fireball::jit_trace_header, frame_depth));
-  assembler.emit_bytes(
-      0x4C, 0x8D, 0x72,
-      -static_cast<std::int8_t>(kTraceHeaderBytes + kTraceEntryStubBytes));
-  assembler.emit_bytes(0x41, 0x8B, 0x4E,
-                       offsetof(fireball::jit_trace_header, frame_depth));
-  assembler.emit_bytes(0x39, 0xC8); // cmp eax, ecx
-  assembler.jump_if(0x84, assembler_label::chain);
-  assembler.emit_bytes(
-      0x41, 0x03, 0x4D,
-      offsetof(fireball_execution_context_native, control_base));
-  assembler.emit_bytes(
-      0x49, 0x8B, 0x45,
-      offsetof(fireball_execution_context_native, control_stack));
-  assembler.emit_bytes(0x89, 0x88);
-  constexpr auto control_size_offset =
-      offsetof(fireball_control_stack_native, size);
-  for (std::size_t i = 0; i < sizeof(std::uint32_t); ++i)
-    assembler.emit(static_cast<std::uint8_t>(control_size_offset >> (i * 8)));
-  static_assert(offsetof(fireball::jit_trace_header, frame_depth) <= 0x7F);
-  static_assert(offsetof(fireball_execution_context_native, control_base) <=
-                0x7F);
-  static_assert(offsetof(fireball_execution_context_native, control_stack) <=
-                0x7F);
-  assembler.mark(assembler_label::chain);
-  assembler.emit_bytes(0xFF,
-                       0xE2); // jmp rdx; R14 now names the next trace header
-  assembler.mark(assembler_label::fallback);
-  assembler.jump_to_offset(kCommonEpilogueOffset);
-  return assembler.finish();
-}
-
-inline constexpr auto kChainDispatcher = make_chain_dispatcher();
-static_assert(kChainDispatcher.size() == kSharedDispatcherBytes);
-
-struct trace_builder {
-  std::uint8_t *body = nullptr;
-  std::size_t body_capacity = 0;
-  std::int16_t *locations = nullptr;
-  std::size_t locations_capacity = 0;
-  std::size_t body_size = 0;
-  std::size_t location_count = 0;
-  int spilled_words = 0;
-  int max_spilled_words = 0;
-  int helper_words = 0;
-  int helper_index = -1;
-  bool saw_op = false;
-  bool declined = false;
-  std::uint8_t pending_i32_count = 0;
-  std::array<std::uint32_t, 2> pending_i32_values{};
-  std::uint32_t pending_local_get_index = kNoPendingLocalGet;
-
-  trace_builder(std::uint8_t *body_buffer, std::size_t body_buffer_capacity,
-                std::int16_t *stack_locations,
-                std::size_t stack_location_capacity)
-      : body(body_buffer), body_capacity(body_buffer_capacity),
-        locations(stack_locations),
-        locations_capacity(stack_location_capacity) {}
-
-  bool byte(std::uint8_t value) {
-    if (body == nullptr || body_size >= body_capacity)
-      return false;
-    body[body_size++] = value;
-    return true;
-  }
-  bool u32(std::uint32_t value) {
-    for (int shift = 0; shift < 32; shift += 8)
-      if (!byte(static_cast<std::uint8_t>(value >> shift)))
+bool read_unsigned_leb(const std::uint8_t *code, std::uint32_t &cursor,
+                       std::uint32_t end, std::uint32_t &value) {
+  value = 0;
+  std::uint32_t shift = 0;
+  while (cursor < end) {
+    const auto byte = code[cursor++];
+    const auto payload = static_cast<std::uint32_t>(byte & 0x7Fu);
+    const auto contributed = std::min(7u, 32u - shift);
+    if (shift < 32u)
+      value |= payload << shift;
+    if ((byte & 0x80u) == 0) {
+      if (contributed < 7u && (payload >> contributed) != 0)
         return false;
-    return true;
+      return true;
+    }
+    if (shift >= 28u)
+      return false;
+    shift += 7u;
   }
+  return false;
+}
+
+bool read_signed_leb(const std::uint8_t *code, std::uint32_t &cursor,
+                     std::uint32_t end, std::uint64_t &value,
+                     std::uint32_t bits) {
+  std::uint64_t decoded = 0;
+  std::uint32_t shift = 0;
+  bool negative = false;
+  while (cursor < end) {
+    const auto byte = code[cursor++];
+    const auto payload = static_cast<std::uint32_t>(byte & 0x7Fu);
+    const auto contributed = std::min(7u, bits - shift);
+    if (shift < 64u)
+      decoded |= static_cast<std::uint64_t>(payload) << shift;
+    negative = (byte & 0x40u) != 0;
+    if ((byte & 0x80u) == 0) {
+      shift += contributed;
+      if (negative && shift < 64u)
+        decoded |= (~std::uint64_t{0}) << shift;
+      if (bits == 32u)
+        decoded = static_cast<std::uint32_t>(decoded);
+      value = decoded;
+      return true;
+    }
+    if (shift >= bits - 7u)
+      return false;
+    shift += 7u;
+  }
+  return false;
+}
+
+enum class relocation_kind : std::uint8_t { value, trace_header };
+
+struct relocation_entry {
+  std::uint64_t value = 0;
+  std::uint8_t width = 0;
+  relocation_kind kind = relocation_kind::value;
 };
 
-template <std::size_t N>
-bool append_stencil(trace_builder &builder,
-                    const std::array<std::uint8_t, N> &stencil) {
-  if (builder.body == nullptr || builder.body_size + N > builder.body_capacity)
-    return false;
-  for (std::size_t index = 0; index < N; ++index) {
-    builder.body[builder.body_size + index] = stencil[index];
+std::size_t widened_branch_size(const std::uint8_t *stencil_code,
+                                const stencil_branch_fixup_view &branch) {
+  if (branch.instruction_size == 2) {
+    const auto opcode = stencil_code[branch.instruction_offset];
+    if (opcode >= 0x70 && opcode <= 0x7f)
+      return 6;
+    if (opcode == 0xeb)
+      return 5;
+    return 0;
   }
-  builder.body_size += N;
+  if (branch.instruction_size == 5 &&
+      stencil_code[branch.instruction_offset] == 0xe9)
+    return 5;
+  if (branch.instruction_size == 6 &&
+      stencil_code[branch.instruction_offset] == 0x0f &&
+      stencil_code[branch.instruction_offset + 1] >= 0x80 &&
+      stencil_code[branch.instruction_offset + 1] <= 0x8f)
+    return 6;
+  return 0;
+}
+
+bool map_stencil_offset(std::size_t stencil_offset, const stencil_view &stencil,
+                        const std::uint8_t *stencil_code,
+                        std::size_t &mapped_offset) {
+  if (stencil_offset > stencil.size)
+    return false;
+  std::int64_t mapped = static_cast<std::int64_t>(stencil_offset);
+  for (std::size_t index = 0; index < stencil.branch_count; ++index) {
+    const auto branch = stencil.branch_fixup(index);
+    if (branch.instruction_offset + branch.instruction_size > stencil_offset)
+      continue;
+    const auto expanded_size = widened_branch_size(stencil_code, branch);
+    if (expanded_size == 0)
+      return false;
+    mapped += static_cast<std::int64_t>(expanded_size) -
+              static_cast<std::int64_t>(branch.instruction_size);
+  }
+  if (mapped < 0 || mapped > static_cast<std::int64_t>(
+                                 std::numeric_limits<std::uint32_t>::max()))
+    return false;
+  mapped_offset = static_cast<std::size_t>(mapped);
   return true;
 }
 
-bool append_stencil(trace_builder &builder, stencil_view stencil) {
-  if (builder.body == nullptr || stencil.bytes == nullptr ||
-      builder.body_size + stencil.size > builder.body_capacity)
+bool map_linked_offset(std::size_t stencil_offset, std::size_t next_slot_offset,
+                       std::size_t downstream_size,
+                       std::size_t &mapped_offset) {
+  if (stencil_offset <= next_slot_offset) {
+    mapped_offset = stencil_offset;
+    return true;
+  }
+  if (stencil_offset < next_slot_offset + kX64Rel32SlotBytes)
     return false;
-  for (std::size_t index = 0; index < stencil.size; ++index)
-    builder.body[builder.body_size + index] = stencil.bytes[index];
-  builder.body_size += stencil.size;
+  if (downstream_size < kX64Rel32SlotBytes ||
+      stencil_offset > std::numeric_limits<std::size_t>::max() -
+                           (downstream_size - kX64Rel32SlotBytes))
+    return false;
+  mapped_offset = stencil_offset + downstream_size - kX64Rel32SlotBytes;
   return true;
 }
 
-std::int32_t common_helper_offset(std::int32_t helper) {
-  if (helper < 0)
-    return static_cast<std::int32_t>(kCommonHelperOffset);
-  if (helper < 11 ||
-      static_cast<std::uint32_t>(helper - 11) >= kTypedHelperCount)
-    return -1;
-  return static_cast<std::int32_t>(kTypedHelperOffset +
-                                   static_cast<std::uint32_t>(helper - 11) *
-                                       kHelperEntryBytes);
+bool write_rel32(std::uint8_t *code, std::size_t code_size,
+                 std::size_t displacement_offset, std::size_t next_offset) {
+  if (next_offset >
+          static_cast<std::size_t>(std::numeric_limits<std::int64_t>::max()) ||
+      displacement_offset >
+          static_cast<std::size_t>(std::numeric_limits<std::int64_t>::max()) ||
+      displacement_offset > code_size ||
+      sizeof(std::int32_t) > code_size - displacement_offset)
+    return false;
+  const auto displacement = static_cast<std::int64_t>(next_offset) -
+                            static_cast<std::int64_t>(displacement_offset + 4);
+  if (displacement < std::numeric_limits<std::int32_t>::min() ||
+      displacement > std::numeric_limits<std::int32_t>::max())
+    return false;
+  const auto encoded =
+      static_cast<std::uint32_t>(static_cast<std::int32_t>(displacement));
+  for (std::size_t byte = 0; byte < sizeof(encoded); ++byte)
+    code[displacement_offset + byte] =
+        static_cast<std::uint8_t>(encoded >> (byte * 8));
+  return true;
 }
 
-bool append_common_jump(trace_builder &builder, std::uint32_t target_offset,
-                        bool pass_header_in_rax = false) {
-  constexpr std::array<std::uint8_t, 10> prefix = {
-      0x4D, 0x63, 0x5E, static_cast<std::uint8_t>(kCommonRelativeOffset),
-      0x4D, 0x01, 0xF3, 0x49,
-      0x81, 0xC3};
-  if (!append_stencil(builder, prefix) || !builder.u32(target_offset))
+bool expand_stencil_branches(const stencil_view &stencil,
+                             const std::uint8_t *stencil_code,
+                             std::uint8_t *expanded_code,
+                             std::size_t expanded_capacity,
+                             std::size_t &expanded_size) {
+  if (!stencil.branch_range_valid())
     return false;
-  if (pass_header_in_rax &&
-      !append_stencil(builder, std::array<std::uint8_t, 3>{0x4C, 0x89, 0xF0}))
-    return false;
-  return append_stencil(builder, std::array<std::uint8_t, 3>{0x41, 0xFF, 0xE3});
-}
-
-bool append_common_call(trace_builder &builder, std::uint32_t target_offset) {
-  constexpr std::array<std::uint8_t, 2> save_local_base = {0x41, 0x52};
-  constexpr std::array<std::uint8_t, 4> prefix = {
-      0x4D, 0x63, 0x56, static_cast<std::uint8_t>(kCommonRelativeOffset)};
-  constexpr std::array<std::uint8_t, 3> base_relative = {0x4D, 0x01, 0xF2};
-  constexpr std::array<std::uint8_t, 3> add_offset = {0x49, 0x81, 0xC2};
-  constexpr std::array<std::uint8_t, 3> call_target = {0x41, 0xFF, 0xD2};
-  constexpr std::array<std::uint8_t, 2> restore_local_base = {0x41, 0x5A};
-  return append_stencil(builder, save_local_base) &&
-         append_stencil(builder, prefix) &&
-         append_stencil(builder, base_relative) &&
-         append_stencil(builder, add_offset) && builder.u32(target_offset) &&
-         append_stencil(builder, call_target) &&
-         append_stencil(builder, restore_local_base);
-}
-
-bool append_local_runtime_api_call(trace_builder &builder,
-                                   jit_local_runtime_api_index api,
-                                   std::uint32_t local_index,
-                                   std::uint32_t stack_word) {
-  const auto stack_byte_offset =
-      static_cast<std::uint64_t>(stack_word) * sizeof(std::uint32_t);
-  if (stack_byte_offset > 0x7FFF'FFFFu)
-    return false;
-
-  constexpr std::array<std::uint8_t, 2> save_local_base = {0x41, 0x52};
-  constexpr std::array<std::uint8_t, 2> restore_local_base = {0x41, 0x5A};
-  if (!append_stencil(builder, save_local_base))
-    return false;
-#if defined(_WIN32)
-  if (!append_stencil(builder,
-                      std::array<std::uint8_t, 4>{0x48, 0x83, 0xEC, 0x20}) ||
-      !append_stencil(builder, std::array<std::uint8_t, 3>{0x4C, 0x89, 0xE9}) ||
-      !append_stencil(builder, std::array<std::uint8_t, 3>{0x4C, 0x89, 0xD2}) ||
-      !append_stencil(builder, std::array<std::uint8_t, 3>{0x4D, 0x89, 0xE0}))
-    return false;
-  if (stack_byte_offset != 0 &&
-      (!append_stencil(builder,
-                       std::array<std::uint8_t, 3>{0x49, 0x81, 0xC0}) ||
-       !builder.u32(static_cast<std::uint32_t>(stack_byte_offset))))
-    return false;
-  if (!append_stencil(builder, std::array<std::uint8_t, 2>{0x41, 0xB9}) ||
-      !builder.u32(local_index))
-    return false;
-#else
-  if (!append_stencil(builder, std::array<std::uint8_t, 3>{0x4C, 0x89, 0xEF}) ||
-      !append_stencil(builder, std::array<std::uint8_t, 3>{0x4C, 0x89, 0xD6}) ||
-      !append_stencil(builder, std::array<std::uint8_t, 3>{0x4C, 0x89, 0xE2}))
-    return false;
-  if (stack_byte_offset != 0 &&
-      (!append_stencil(builder,
-                       std::array<std::uint8_t, 3>{0x48, 0x81, 0xC2}) ||
-       !builder.u32(static_cast<std::uint32_t>(stack_byte_offset))))
-    return false;
-  if (!append_stencil(builder, std::array<std::uint8_t, 1>{0xB9}) ||
-      !builder.u32(local_index))
-    return false;
-#endif
-
-  const auto table_entry =
-      kLocalApiTableOffset +
-      static_cast<std::size_t>(api) * sizeof(std::uintptr_t);
-  if (!append_stencil(builder,
-                      std::array<std::uint8_t, 4>{
-                          0x4D, 0x63, 0x5E,
-                          static_cast<std::uint8_t>(kCommonRelativeOffset)}) ||
-      !append_stencil(builder, std::array<std::uint8_t, 3>{0x4D, 0x01, 0xF3}) ||
-      !append_stencil(builder, std::array<std::uint8_t, 3>{0x49, 0x81, 0xC3}) ||
-      !builder.u32(static_cast<std::uint32_t>(table_entry)) ||
-      !append_stencil(builder, std::array<std::uint8_t, 3>{0x41, 0xFF, 0x13}))
-    return false;
-#if defined(_WIN32)
-  if (!append_stencil(builder,
-                      std::array<std::uint8_t, 4>{0x48, 0x83, 0xC4, 0x20}))
-    return false;
-#endif
-  return append_stencil(builder, restore_local_base);
-}
-
-template <std::size_t N>
-bool append_u32_patch(trace_builder &builder,
-                      const std::array<std::uint8_t, N> &stencil,
-                      std::uint32_t value) {
-  return append_stencil(builder, stencil) && builder.u32(value);
-}
-
-template <std::size_t N>
-bool append_u32_operand(trace_builder &builder,
-                        const std::array<std::uint8_t, N> &stencil,
-                        std::uint32_t value) {
-  if (builder.body == nullptr ||
-      builder.body_size + N + sizeof(value) > builder.body_capacity)
-    return false;
-  for (std::size_t index = 0; index < N; ++index)
-    builder.body[builder.body_size + index] = stencil[index];
-  builder.body_size += N;
-  return builder.u32(value);
-}
-
-bool append_u32_operand(trace_builder &builder, stencil_view stencil,
-                        std::uint32_t value) {
-  if (builder.body == nullptr || stencil.bytes == nullptr ||
-      builder.body_size + stencil.size + sizeof(value) > builder.body_capacity)
-    return false;
-  if (!append_stencil(builder, stencil))
-    return false;
-  return builder.u32(value);
-}
-
-bool append_u8_operand(trace_builder &builder, stencil_view stencil,
-                       std::uint8_t value) {
-  return append_stencil(builder, stencil) && builder.byte(value);
-}
-
-bool append_displacement(trace_builder &builder, stencil_view disp8,
-                         stencil_view disp32, std::uint32_t displacement) {
-  if (displacement <= 0x7Fu)
-    return append_u8_operand(builder, disp8,
-                             static_cast<std::uint8_t>(displacement));
-  return append_u32_operand(builder, disp32, displacement);
-}
-
-template <std::size_t N>
-bool append_u8_operand(trace_builder &builder,
-                       const std::array<std::uint8_t, N> &stencil,
-                       std::uint8_t value) {
-  if (builder.body == nullptr ||
-      builder.body_size + N + 1 > builder.body_capacity)
-    return false;
-  for (std::size_t index = 0; index < N; ++index)
-    builder.body[builder.body_size + index] = stencil[index];
-  builder.body_size += N;
-  return builder.byte(value);
-}
-
-bool append_local_i32_constant(trace_builder &builder, std::uint32_t offset,
-                               std::uint32_t value) {
-  if (offset <= 0x7Fu) {
-    return append_stencil(builder, kStoreLocalImm32Disp8Stencil) &&
-           builder.byte(static_cast<std::uint8_t>(offset)) &&
-           builder.u32(value);
+  std::size_t source_cursor = 0;
+  std::size_t output_cursor = 0;
+  for (std::size_t index = 0; index < stencil.branch_count; ++index) {
+    const auto branch = stencil.branch_fixup(index);
+    if (branch.instruction_offset < source_cursor ||
+        branch.instruction_offset > stencil.size ||
+        branch.instruction_size > stencil.size - branch.instruction_offset ||
+        branch.target_offset >= stencil.size)
+      return false;
+    const auto gap = branch.instruction_offset - source_cursor;
+    if (gap > expanded_capacity - output_cursor)
+      return false;
+    std::copy_n(stencil_code + source_cursor, gap,
+                expanded_code + output_cursor);
+    output_cursor += gap;
+    const auto widened_size = widened_branch_size(stencil_code, branch);
+    if (widened_size == 0 || widened_size > expanded_capacity - output_cursor)
+      return false;
+    const auto opcode = stencil_code[branch.instruction_offset];
+    if (branch.instruction_size == 2 && opcode >= 0x70 && opcode <= 0x7f) {
+      expanded_code[output_cursor] = 0x0f;
+      expanded_code[output_cursor + 1] =
+          static_cast<std::uint8_t>(opcode + 0x10);
+      std::fill(expanded_code + output_cursor + 2,
+                expanded_code + output_cursor + widened_size, 0);
+    } else if (branch.instruction_size == 2 && opcode == 0xeb) {
+      expanded_code[output_cursor] = 0xe9;
+      std::fill(expanded_code + output_cursor + 1,
+                expanded_code + output_cursor + widened_size, 0);
+    } else {
+      std::copy_n(stencil_code + branch.instruction_offset, widened_size,
+                  expanded_code + output_cursor);
+    }
+    source_cursor = branch.instruction_offset + branch.instruction_size;
+    output_cursor += widened_size;
   }
-  return append_u32_operand(builder, view_of(kStoreLocalImm32Stencil),
-                            offset) &&
-         builder.u32(value);
+  if (source_cursor > stencil.size ||
+      stencil.size - source_cursor > expanded_capacity - output_cursor)
+    return false;
+  std::copy_n(stencil_code + source_cursor, stencil.size - source_cursor,
+              expanded_code + output_cursor);
+  expanded_size = output_cursor + stencil.size - source_cursor;
+  return true;
 }
 
-bool is_binary(int op) {
-  const auto *traits = traits_for(op);
-  return traits != nullptr && (traits->flags & kBinary) != 0;
-}
+enum class local_memory_operation : std::uint8_t {
+  load_narrow,
+  load_wide,
+  store_narrow,
+  store_wide,
+};
 
-bool stack_effect(int op, int &pops, int &pushes) {
-  if (op == kI32Const || op == kI64Const || op == kF32Const ||
-      op == kF64Const || op == kLocalGet) {
-    pops = 0;
-    pushes = 1;
+bool encode_local_memory_instruction(local_memory_operation operation,
+                                     std::uint32_t byte_offset,
+                                     std::array<std::uint8_t, 4> &encoded) {
+  if ((byte_offset & 3u) != 0 || byte_offset > 127)
+    return false;
+  switch (operation) {
+  case local_memory_operation::load_narrow:
+    encoded = {0x41, 0x8b, 0x43, static_cast<std::uint8_t>(byte_offset)};
     return true;
-  }
-  if (op == kLocalSet || op == kDrop) {
-    pops = 1;
-    pushes = 0;
+  case local_memory_operation::load_wide:
+    encoded = {0x49, 0x8b, 0x43, static_cast<std::uint8_t>(byte_offset)};
     return true;
-  }
-  if (op == kLocalTee || op == kI32Eqz) {
-    pops = 1;
-    pushes = 1;
+  case local_memory_operation::store_narrow:
+    encoded = {0x41, 0x89, 0x43, static_cast<std::uint8_t>(byte_offset)};
     return true;
-  }
-  if (is_binary(op) || op == kI32Shl || op == kI32ShrS || op == kI32ShrU) {
-    pops = 2;
-    pushes = 1;
+  case local_memory_operation::store_wide:
+    encoded = {0x49, 0x89, 0x43, static_cast<std::uint8_t>(byte_offset)};
     return true;
   }
   return false;
 }
 
-int helper_index(int op) {
-  if (op >= kI32DivS && op <= kI32RemU)
-    return op - kI32DivS + 11;
-  return -1;
+struct trace_builder {
+  std::uint8_t *body;
+  std::size_t body_capacity;
+  std::size_t body_size = 0;
+  std::array<stencil_view, kMaxTraceInstructions> operations{};
+  std::array<std::uint64_t, kMaxTraceInstructions> patch_values{};
+  std::array<std::array<std::uint8_t, 4>, kMaxTraceInstructions>
+      local_instructions{};
+  std::size_t operation_count = 0;
+  std::array<relocation_entry, kMaxRelocationConstants> relocations{};
+  std::size_t relocation_count = 0;
+  std::size_t relocation_bytes = 0;
+
+  explicit trace_builder(std::uint8_t *output, std::size_t capacity)
+      : body(output), body_capacity(capacity) {}
+
+  bool append_node(stencil_view stencil) {
+    if (stencil.symbol == nullptr || stencil.size == 0 ||
+        operation_count >= operations.size() ||
+        (stencil.patch_slot_width == 0) !=
+            (stencil.patch_slot_offset == kNoLinkSlot) ||
+        (stencil.patch_slot_width != 0 &&
+         (stencil.patch_slot_offset > stencil.size ||
+          stencil.patch_slot_width >
+              stencil.size - stencil.patch_slot_offset)) ||
+        (stencil.instruction_slot_width == 0) !=
+            (stencil.instruction_slot_offset == kNoLinkSlot) ||
+        (stencil.instruction_slot_width != 0 &&
+         (stencil.instruction_slot_width != 4 ||
+          stencil.instruction_slot_offset > stencil.size ||
+          stencil.instruction_slot_width >
+              stencil.size - stencil.instruction_slot_offset)))
+      return false;
+    operations[operation_count++] = stencil;
+    return true;
+  }
+
+  bool append_patched(stencil_view stencil, std::uint64_t value,
+                      std::uint8_t width) {
+    if (stencil.instruction_slot_width != 0 ||
+        stencil.patch_slot_width != width || !append_node(stencil))
+      return false;
+    patch_values[operation_count - 1] = value;
+    return true;
+  }
+
+  bool append_local(stencil_view stencil, std::uint32_t byte_offset,
+                    local_memory_operation operation,
+                    std::uint64_t patch_value = 0,
+                    std::uint8_t patch_width = 0) {
+    std::array<std::uint8_t, 4> encoded{};
+    if (stencil.instruction_slot_width != encoded.size() ||
+        stencil.patch_slot_width != patch_width ||
+        !encode_local_memory_instruction(operation, byte_offset, encoded) ||
+        !append_node(stencil))
+      return false;
+    local_instructions[operation_count - 1] = encoded;
+    patch_values[operation_count - 1] = patch_value;
+    return true;
+  }
+
+  bool add_value(std::uint64_t value, std::uint8_t width) {
+    if ((width != 4 && width != 8) || relocation_count == relocations.size() ||
+        relocation_bytes > body_capacity ||
+        width > body_capacity - relocation_bytes)
+      return false;
+    relocations[relocation_count++] = {value, width, relocation_kind::value};
+    relocation_bytes += width;
+    return true;
+  }
+
+  bool add_trace_header_reference() {
+    if (relocation_count == relocations.size() ||
+        relocation_bytes > body_capacity ||
+        4 > body_capacity - relocation_bytes)
+      return false;
+    relocations[relocation_count++] = {0, 4, relocation_kind::trace_header};
+    relocation_bytes += 4;
+    return true;
+  }
+
+  bool append_runtime_api(std::uint8_t slot, std::uint32_t source_ip,
+                          std::uint32_t stack_before, std::uint32_t stack_after,
+                          const std::uint32_t *immediates = nullptr,
+                          std::uint32_t immediate_count = 0) {
+    const auto stencil = [&]() {
+      if (immediates == nullptr || immediate_count == 0)
+        return generated_stencil(asm_generated::runtime_api);
+      if (immediate_count == 1)
+        return generated_stencil(asm_generated::runtime_api_immediate_one);
+      if (immediate_count == 2)
+        return generated_stencil(asm_generated::runtime_api_immediate_two);
+      if (immediate_count == 3)
+        return generated_stencil(asm_generated::runtime_api_immediate_three);
+      return stencil_view{};
+    }();
+    if (!append_node(stencil) || !add_trace_header_reference() ||
+        !add_value(slot, 4) || !add_value(source_ip, 4) ||
+        !add_value(stack_before, 4) || !add_value(stack_after, 4))
+      return false;
+    if (immediates == nullptr)
+      return immediate_count == 0;
+    if (immediate_count == 0 || immediate_count > 3)
+      return false;
+    for (std::uint32_t index = 0; index < immediate_count; ++index)
+      if (!add_value(immediates[index], 4))
+        return false;
+    return true;
+  }
+
+  bool append_linked(stencil_view stencil) {
+    if (stencil.patch_slot_width != 0 || stencil.instruction_slot_width != 0 ||
+        !append_node(stencil))
+      return false;
+    return true;
+  }
+
+  bool finish(fireball::jit_compile_result &result) {
+    if (!add_trace_header_reference() || body == nullptr)
+      return false;
+
+    const auto entry_stencil = generated_stencil(generated::trace_entry);
+    const auto exit_stencil = generated_stencil(generated::trace_exit);
+    const auto success_stencil =
+        generated_stencil(generated::trace_return_success);
+    const auto abort_stencil = generated_stencil(generated::trace_return_abort);
+    if (entry_stencil.size == 0 ||
+        entry_stencil.size > scaffold_scratch.size() ||
+        exit_stencil.size == 0 || exit_stencil.size > scaffold_scratch.size() ||
+        success_stencil.size == 0 || success_stencil.size > body_capacity)
+      return false;
+
+    // The next-operation slot is only a build-time splice marker: its five
+    // bytes are replaced with the following body. Thus operation success has no
+    // per-operation return, epilogue, call, or jump. Only the shared terminal
+    // stencils return to the ccc trace-entry wrapper.
+    std::copy_n(generated::fb_jit_stencils_start.data() +
+                    success_stencil.code_offset,
+                success_stencil.size, body);
+    body_size = success_stencil.size;
+    std::array<std::size_t, kMaxTraceInstructions> abort_slots{};
+    std::size_t abort_slot_count = 0;
+    std::size_t expanded_size = 0;
+    for (std::size_t remaining = operation_count; remaining != 0; --remaining) {
+      const auto &stencil = operations[remaining - 1];
+      if (stencil.symbol == nullptr || stencil.size == 0 ||
+          stencil.size > stencil_scratch.size() ||
+          stencil.next_slot_offset == kNoLinkSlot ||
+          stencil.next_slot_offset > stencil.size ||
+          kX64Rel32SlotBytes > stencil.size - stencil.next_slot_offset ||
+          !stencil.branch_range_valid())
+        return false;
+
+      if (stencil.image_start == nullptr)
+        return false;
+      const auto *stencil_code = stencil.image_start + stencil.code_offset;
+      if (stencil_code[stencil.next_slot_offset] != 0xe9 ||
+          !expand_stencil_branches(stencil, stencil_code,
+                                   stencil_scratch.data(),
+                                   stencil_scratch.size(), expanded_size))
+        return false;
+      if (stencil.patch_slot_width != 0) {
+        std::size_t patch_offset = 0;
+        if (!map_stencil_offset(stencil.patch_slot_offset, stencil,
+                                stencil_code, patch_offset) ||
+            patch_offset > expanded_size ||
+            stencil.patch_slot_width > expanded_size - patch_offset)
+          return false;
+        const auto patch_value = patch_values[remaining - 1];
+        for (std::uint8_t byte = 0; byte < stencil.patch_slot_width; ++byte)
+          stencil_scratch[patch_offset + byte] =
+              static_cast<std::uint8_t>(patch_value >> (byte * 8));
+      }
+      if (stencil.instruction_slot_width != 0) {
+        std::size_t instruction_offset = 0;
+        if (!map_stencil_offset(stencil.instruction_slot_offset, stencil,
+                                stencil_code, instruction_offset) ||
+            instruction_offset > expanded_size ||
+            stencil.instruction_slot_width > expanded_size - instruction_offset)
+          return false;
+        std::copy_n(local_instructions[remaining - 1].data(),
+                    stencil.instruction_slot_width,
+                    stencil_scratch.data() + instruction_offset);
+      }
+      std::size_t expanded_next_slot = 0;
+      if (!map_stencil_offset(stencil.next_slot_offset, stencil, stencil_code,
+                              expanded_next_slot) ||
+          expanded_next_slot > expanded_size ||
+          kX64Rel32SlotBytes > expanded_size - expanded_next_slot)
+        return false;
+
+      std::size_t expanded_abort_slot = kNoLinkSlot;
+      if (stencil.abort_slot_offset != kNoLinkSlot) {
+        if (stencil.abort_slot_offset > stencil.size ||
+            kX64Rel32SlotBytes > stencil.size - stencil.abort_slot_offset ||
+            stencil_code[stencil.abort_slot_offset] != 0xe9 ||
+            !map_stencil_offset(stencil.abort_slot_offset, stencil,
+                                stencil_code, expanded_abort_slot) ||
+            expanded_abort_slot > expanded_size ||
+            kX64Rel32SlotBytes > expanded_size - expanded_abort_slot)
+          return false;
+      }
+
+      const auto downstream_size = body_size;
+      if (downstream_size < kX64Rel32SlotBytes ||
+          expanded_size < kX64Rel32SlotBytes ||
+          downstream_size > body_capacity ||
+          expanded_size - kX64Rel32SlotBytes > body_capacity - downstream_size)
+        return false;
+      const auto composed_size =
+          downstream_size + expanded_size - kX64Rel32SlotBytes;
+      if (abort_slot_count > abort_slots.size() ||
+          expanded_next_slot > body_capacity - downstream_size)
+        return false;
+
+      std::memmove(body + expanded_next_slot, body, downstream_size);
+      const auto suffix_offset = expanded_next_slot + kX64Rel32SlotBytes;
+      const auto suffix_size = expanded_size - suffix_offset;
+      std::copy_n(stencil_scratch.data() + suffix_offset, suffix_size,
+                  body + expanded_next_slot + downstream_size);
+      std::copy_n(stencil_scratch.data(), expanded_next_slot, body);
+
+      for (std::size_t index = 0; index < abort_slot_count; ++index) {
+        if (abort_slots[index] >
+            std::numeric_limits<std::size_t>::max() - expanded_next_slot)
+          return false;
+        abort_slots[index] += expanded_next_slot;
+      }
+      if (expanded_abort_slot != kNoLinkSlot) {
+        if (abort_slot_count == abort_slots.size())
+          return false;
+        std::size_t composed_abort_slot = 0;
+        if (!map_linked_offset(expanded_abort_slot, expanded_next_slot,
+                               downstream_size, composed_abort_slot))
+          return false;
+        abort_slots[abort_slot_count++] = composed_abort_slot;
+      }
+
+      for (std::size_t branch_index = 0; branch_index < stencil.branch_count;
+           ++branch_index) {
+        const auto branch = stencil.branch_fixup(branch_index);
+        std::size_t source_offset = 0;
+        std::size_t target_offset = 0;
+        std::size_t composed_source = 0;
+        std::size_t composed_target = 0;
+        if (!map_stencil_offset(branch.instruction_offset, stencil,
+                                stencil_code, source_offset) ||
+            !map_stencil_offset(branch.target_offset, stencil, stencil_code,
+                                target_offset) ||
+            !map_linked_offset(source_offset, expanded_next_slot,
+                               downstream_size, composed_source) ||
+            !map_linked_offset(target_offset, expanded_next_slot,
+                               downstream_size, composed_target))
+          return false;
+        const auto instruction_size = widened_branch_size(stencil_code, branch);
+        const auto opcode = stencil_code[branch.instruction_offset];
+        const auto displacement_offset = branch.instruction_size == 2
+                                             ? (opcode == 0xeb ? 1u : 2u)
+                                             : (opcode == 0xe9 ? 1u : 2u);
+        if (composed_source > composed_size ||
+            instruction_size > composed_size - composed_source ||
+            displacement_offset + sizeof(std::int32_t) > instruction_size ||
+            !write_rel32(body, composed_size,
+                         composed_source + displacement_offset,
+                         composed_target))
+          return false;
+      }
+      body_size = composed_size;
+    }
+
+    if (abort_slot_count != 0) {
+      if (abort_stencil.size == 0 ||
+          abort_stencil.size > body_capacity - body_size)
+        return false;
+      const auto abort_target = body_size;
+      std::copy_n(generated::fb_jit_stencils_start.data() +
+                      abort_stencil.code_offset,
+                  abort_stencil.size, body + body_size);
+      body_size += abort_stencil.size;
+      for (std::size_t index = 0; index < abort_slot_count; ++index) {
+        const auto slot_offset = abort_slots[index];
+        if (slot_offset > body_size ||
+            kX64Rel32SlotBytes > body_size - slot_offset ||
+            body[slot_offset] != 0xe9 ||
+            !write_rel32(body, body_size, slot_offset + 1, abort_target))
+          return false;
+      }
+    }
+
+    const auto sequence_size = body_size;
+    const auto *entry_code =
+        generated::fb_jit_stencils_start.data() + entry_stencil.code_offset;
+    if (entry_stencil.start_slot_offset == kNoLinkSlot ||
+        entry_stencil.exit_slot_offset == kNoLinkSlot ||
+        !entry_stencil.branch_range_valid() ||
+        entry_stencil.start_slot_offset > entry_stencil.size ||
+        kX64Rel32SlotBytes >
+            entry_stencil.size - entry_stencil.start_slot_offset ||
+        entry_stencil.exit_slot_offset > entry_stencil.size ||
+        kX64Rel32SlotBytes >
+            entry_stencil.size - entry_stencil.exit_slot_offset ||
+        entry_code[entry_stencil.start_slot_offset] != 0xe8 ||
+        entry_code[entry_stencil.exit_slot_offset] != 0xe9 ||
+        !expand_stencil_branches(entry_stencil, entry_code,
+                                 scaffold_scratch.data(),
+                                 scaffold_scratch.size(), expanded_size))
+      return false;
+
+    std::size_t expanded_start_slot = 0;
+    std::size_t expanded_exit_slot = 0;
+    if (!map_stencil_offset(entry_stencil.start_slot_offset, entry_stencil,
+                            entry_code, expanded_start_slot) ||
+        !map_stencil_offset(entry_stencil.exit_slot_offset, entry_stencil,
+                            entry_code, expanded_exit_slot) ||
+        expanded_exit_slot > expanded_size ||
+        kX64Rel32SlotBytes > expanded_size - expanded_exit_slot)
+      return false;
+    const auto wrapper_size =
+        expanded_size - kX64Rel32SlotBytes + exit_stencil.size;
+    if (wrapper_size > scaffold_code.size() || sequence_size > body_capacity ||
+        wrapper_size > body_capacity - sequence_size)
+      return false;
+
+    std::copy_n(scaffold_scratch.data(), expanded_exit_slot,
+                scaffold_code.data());
+    std::copy_n(generated::fb_jit_stencils_start.data() +
+                    exit_stencil.code_offset,
+                exit_stencil.size, scaffold_code.data() + expanded_exit_slot);
+    const auto wrapper_suffix_offset = expanded_exit_slot + kX64Rel32SlotBytes;
+    const auto wrapper_suffix_size = expanded_size - wrapper_suffix_offset;
+    std::copy_n(scaffold_scratch.data() + wrapper_suffix_offset,
+                wrapper_suffix_size,
+                scaffold_code.data() + expanded_exit_slot + exit_stencil.size);
+
+    for (std::size_t branch_index = 0;
+         branch_index < entry_stencil.branch_count; ++branch_index) {
+      const auto branch = entry_stencil.branch_fixup(branch_index);
+      std::size_t source_offset = 0;
+      std::size_t target_offset = 0;
+      std::size_t wrapper_source = 0;
+      std::size_t wrapper_target = 0;
+      if (!map_stencil_offset(branch.instruction_offset, entry_stencil,
+                              entry_code, source_offset) ||
+          !map_stencil_offset(branch.target_offset, entry_stencil, entry_code,
+                              target_offset) ||
+          !map_linked_offset(source_offset, expanded_exit_slot,
+                             exit_stencil.size, wrapper_source) ||
+          !map_linked_offset(target_offset, expanded_exit_slot,
+                             exit_stencil.size, wrapper_target))
+        return false;
+      const auto instruction_size = widened_branch_size(entry_code, branch);
+      const auto opcode = entry_code[branch.instruction_offset];
+      const auto displacement_offset = branch.instruction_size == 2
+                                           ? (opcode == 0xeb ? 1u : 2u)
+                                           : (opcode == 0xe9 ? 1u : 2u);
+      if (wrapper_source > wrapper_size ||
+          instruction_size > wrapper_size - wrapper_source ||
+          displacement_offset + sizeof(std::int32_t) > instruction_size ||
+          !write_rel32(scaffold_code.data(), wrapper_size,
+                       wrapper_source + displacement_offset, wrapper_target))
+        return false;
+    }
+
+    std::size_t wrapper_start_slot = 0;
+    if (!map_linked_offset(expanded_start_slot, expanded_exit_slot,
+                           exit_stencil.size, wrapper_start_slot) ||
+        wrapper_start_slot > wrapper_size ||
+        kX64Rel32SlotBytes > wrapper_size - wrapper_start_slot ||
+        scaffold_code[wrapper_start_slot] != 0xe8)
+      return false;
+
+    std::memmove(body + wrapper_size, body, sequence_size);
+    std::copy_n(scaffold_code.data(), wrapper_size, body);
+    body_size = wrapper_size + sequence_size;
+    for (std::size_t index = 0; index < abort_slot_count; ++index) {
+      if (abort_slots[index] >
+          std::numeric_limits<std::size_t>::max() - wrapper_size)
+        return false;
+      abort_slots[index] += wrapper_size;
+    }
+    if (!write_rel32(body, body_size, wrapper_start_slot + 1, wrapper_size))
+      return false;
+
+    constexpr auto pool_alignment = alignof(std::uintptr_t);
+    if (body_capacity < relocation_bytes + pool_alignment - 1 ||
+        body_size > body_capacity - relocation_bytes - (pool_alignment - 1))
+      return false;
+
+    const auto pool_offset =
+        (kTraceHeaderBytes + body_size + pool_alignment - 1) &
+        ~(pool_alignment - 1);
+    const auto pool_body_offset = pool_offset - kTraceHeaderBytes;
+    if (pool_offset < kTraceHeaderBytes || pool_body_offset > body_capacity ||
+        relocation_bytes > body_capacity - pool_body_offset ||
+        pool_offset + relocation_bytes >
+            std::numeric_limits<std::uint16_t>::max())
+      return false;
+    std::fill(body + body_size, body + pool_body_offset, 0);
+
+    std::size_t pool_cursor = 0;
+    for (std::size_t index = 0; index < relocation_count; ++index) {
+      const auto &entry = relocations[index];
+      std::uint64_t value = entry.value;
+      if (entry.kind == relocation_kind::trace_header) {
+        // build_trace inserts boundary metadata between the trace body and
+        // this pool, so account for it when encoding header-relative slots.
+        const auto slot_offset =
+            pool_offset + fireball::kTraceBoundaryMetadataBytes + pool_cursor;
+        if (slot_offset > static_cast<std::uint64_t>(
+                              std::numeric_limits<std::int32_t>::max()))
+          return false;
+        value =
+            static_cast<std::uint32_t>(-static_cast<std::int32_t>(slot_offset));
+      }
+      for (std::uint8_t byte = 0; byte < entry.width; ++byte)
+        body[pool_body_offset + pool_cursor + byte] =
+            static_cast<std::uint8_t>(value >> (byte * 8));
+      pool_cursor += entry.width;
+    }
+    result.body_bytes = static_cast<std::uint32_t>(pool_body_offset);
+    result.max_stack_words = 0;
+    result.result_words = 0;
+    result.relocation_bytes = static_cast<std::uint32_t>(relocation_bytes);
+    return true;
+  }
+
+  std::array<std::uint8_t, kMaxOperationStencilBytes> stencil_scratch{};
+  std::array<std::uint8_t, kMaxOperationStencilBytes> scaffold_scratch{};
+  std::array<std::uint8_t, kMaxOperationStencilBytes> scaffold_code{};
+};
+
+struct stack_model {
+  std::array<std::uint8_t, kMaxStackDepth> widths{};
+  std::size_t value_count = 0;
+  std::uint32_t word_count = 0;
+  std::uint32_t max_words = 0;
+
+  bool push(std::uint8_t width) {
+    if ((width != 1 && width != 2) || value_count == widths.size() ||
+        width > kMaxStackDepth - word_count)
+      return false;
+    widths[value_count++] = width;
+    word_count += width;
+    max_words = std::max(max_words, word_count);
+    return true;
+  }
+
+  bool top_is(std::uint8_t width) const {
+    return value_count != 0 && widths[value_count - 1] == width;
+  }
+
+  bool pop(std::uint8_t width) {
+    if (!top_is(width))
+      return false;
+    --value_count;
+    word_count -= width;
+    return true;
+  }
+
+  bool binary(std::uint8_t width) {
+    if (value_count < 2 || widths[value_count - 1] != width ||
+        widths[value_count - 2] != width)
+      return false;
+    value_count -= 2;
+    word_count -= 2 * width;
+    return push(width);
+  }
+
+  bool unary(std::uint8_t input_width, std::uint8_t output_width) {
+    return pop(input_width) && push(output_width);
+  }
+
+  bool binary_to(std::uint8_t input_width, std::uint8_t output_width) {
+    return pop(input_width) && pop(input_width) && push(output_width);
+  }
+
+  bool pop_any() { return value_count != 0 && pop(widths[value_count - 1]); }
+
+  bool select() {
+    if (value_count < 3 || widths[value_count - 2] != widths[value_count - 3])
+      return false;
+    const auto width = widths[value_count - 2];
+    return pop(1) && pop(width) && pop(width) && push(width);
+  }
+};
+
+stencil_view get_stencil(generated::stencil_range range) {
+  return generated_stencil(range);
 }
 
-int wide_binary_width(int op) {
-  const auto *traits = traits_for(op);
-  return traits == nullptr ? 0 : traits->wide_words;
+stencil_view get_stencil(asm_generated::stencil_range range) {
+  return generated_stencil(range);
 }
 
-bool emit_wide_binary(trace_builder &builder, int op) {
-  const auto *traits = traits_for(op);
-  return traits != nullptr && traits->wide_words != 0 &&
-         append_stencil(builder, traits->binary);
+stencil_view i32_binary_stencil(int op) {
+  switch (op) {
+  case kI32Add:
+    return get_stencil(asm_generated::i32_add);
+  case kI32Sub:
+    return get_stencil(asm_generated::i32_sub);
+  case kI32Mul:
+    return get_stencil(asm_generated::i32_mul);
+  case kI32DivS:
+    return get_stencil(generated::i32_div_s);
+  case kI32DivU:
+    return get_stencil(generated::i32_div_u);
+  case kI32RemS:
+    return get_stencil(generated::i32_rem_s);
+  case kI32RemU:
+    return get_stencil(generated::i32_rem_u);
+  case kI32And:
+    return get_stencil(asm_generated::i32_and);
+  case kI32Or:
+    return get_stencil(asm_generated::i32_or);
+  case kI32Xor:
+    return get_stencil(asm_generated::i32_xor);
+  case kI32Shl:
+    return get_stencil(asm_generated::i32_shl);
+  case kI32ShrS:
+    return get_stencil(asm_generated::i32_shr_s);
+  case kI32ShrU:
+    return get_stencil(asm_generated::i32_shr_u);
+  case kI32Eq:
+    return get_stencil(asm_generated::i32_eq);
+  case kI32Ne:
+    return get_stencil(asm_generated::i32_ne);
+  case kI32LtS:
+    return get_stencil(asm_generated::i32_lt_s);
+  case kI32LtU:
+    return get_stencil(asm_generated::i32_lt_u);
+  case kI32GtS:
+    return get_stencil(asm_generated::i32_gt_s);
+  case kI32GtU:
+    return get_stencil(asm_generated::i32_gt_u);
+  case kI32LeS:
+    return get_stencil(asm_generated::i32_le_s);
+  case kI32LeU:
+    return get_stencil(asm_generated::i32_le_u);
+  case kI32GeS:
+    return get_stencil(asm_generated::i32_ge_s);
+  case kI32GeU:
+    return get_stencil(asm_generated::i32_ge_u);
+  default:
+    return {};
+  }
 }
 
-bool local_layout_entry(const std::uint16_t *offsets,
-                        const std::uint8_t *sizes, std::uint32_t count,
+stencil_view i32_immediate_stencil(int op) {
+  switch (op) {
+  case kI32Add:
+    return get_stencil(asm_generated::i32_add_immediate);
+  case kI32Sub:
+    return get_stencil(asm_generated::i32_sub_immediate);
+  case kI32Mul:
+    return get_stencil(asm_generated::i32_mul_immediate);
+  case kI32And:
+    return get_stencil(asm_generated::i32_and_immediate);
+  case kI32Or:
+    return get_stencil(asm_generated::i32_or_immediate);
+  case kI32Xor:
+    return get_stencil(asm_generated::i32_xor_immediate);
+  case kI32Shl:
+    return get_stencil(asm_generated::i32_shl_immediate);
+  case kI32ShrS:
+    return get_stencil(asm_generated::i32_shr_s_immediate);
+  case kI32ShrU:
+    return get_stencil(asm_generated::i32_shr_u_immediate);
+  default:
+    return {};
+  }
+}
+
+stencil_view wide_binary_stencil(int op) {
+  switch (op) {
+  case kI64Add:
+    return get_stencil(generated::i64_add);
+  case kI64Sub:
+    return get_stencil(generated::i64_sub);
+  case kI64Mul:
+    return get_stencil(generated::i64_mul);
+  case kF32Add:
+    return get_stencil(generated::f32_add);
+  case kF32Sub:
+    return get_stencil(generated::f32_sub);
+  case kF32Mul:
+    return get_stencil(generated::f32_mul);
+  case kF32Div:
+    return get_stencil(generated::f32_div);
+  case kF64Add:
+    return get_stencil(generated::f64_add);
+  case kF64Sub:
+    return get_stencil(generated::f64_sub);
+  case kF64Mul:
+    return get_stencil(generated::f64_mul);
+  case kF64Div:
+    return get_stencil(generated::f64_div);
+  default:
+    return {};
+  }
+}
+
+bool local_layout_entry(const std::uint16_t *offsets, const std::uint8_t *sizes,
+                        const std::uint8_t *types, std::uint32_t count,
                         std::uint32_t total_words, int index,
-                        std::uint32_t &offset_bytes,
-                        std::uint32_t &size_words) {
+                        std::uint32_t &offset_bytes, std::uint8_t &width,
+                        std::uint8_t &type) {
   if (index < 0 || static_cast<std::uint32_t>(index) >= count ||
-      offsets == nullptr || sizes == nullptr)
+      offsets == nullptr || sizes == nullptr || types == nullptr)
     return false;
   const auto offset = offsets[index];
   const auto size = sizes[index];
-  if ((size != 1 && size != 2) || offset + size > total_words)
+  const auto local_type = types[index];
+  const bool narrow = local_type == kWasmI32 || local_type == kWasmF32;
+  const bool wide = local_type == kWasmI64 || local_type == kWasmF64;
+  if ((!narrow && !wide) || size != (wide ? 2 : 1) ||
+      offset + size > total_words || offset > 30)
     return false;
-  offset_bytes = static_cast<std::uint32_t>(offset) * 4u;
-  size_words = size;
+  offset_bytes = static_cast<std::uint32_t>(offset) * 4;
+  width = size;
+  type = local_type;
   return true;
 }
 
-int local_words(const std::uint16_t *offsets, const std::uint8_t *sizes,
-                std::uint32_t count, std::uint32_t total_words, int index) {
-  std::uint32_t offset_bytes = 0;
-  std::uint32_t size_words = 0;
-  return local_layout_entry(offsets, sizes, count, total_words, index,
-                            offset_bytes, size_words)
-             ? static_cast<int>(size_words)
-             : 0;
-}
-
-bool load_imm(trace_builder &b, std::uint32_t value) {
-  return append_u32_patch(b, kLoadImmStencil, value);
-}
-bool load_local(trace_builder &b, std::uint32_t offset) {
-  if (offset <= 0x7Fu)
-    return append_u8_operand(b, kLoadLocalDisp8Stencil,
-                             static_cast<std::uint8_t>(offset));
-  return append_u32_patch(b, kLoadLocalStencil, offset);
-}
-bool store_local(trace_builder &b, std::uint32_t offset) {
-  if (offset <= 0x7Fu)
-    return append_u8_operand(b, kStoreLocalDisp8Stencil,
-                             static_cast<std::uint8_t>(offset));
-  return append_u32_patch(b, kStoreLocalStencil, offset);
-}
-bool store_sp(trace_builder &b, std::int32_t location, int slot) {
-  if (slot < 0 || (location != kTos && location != kNos))
-    return false;
-  const auto offset = static_cast<std::uint32_t>(slot * 4);
-  if (location == kTos)
-    return append_displacement(b, view_of(kStoreTosDisp8Stencil),
-                               view_of(kStoreTosStencil), offset);
-  return append_displacement(b, view_of(kStoreNosDisp8Stencil),
-                             view_of(kStoreNosStencil), offset);
-}
-bool store_sp_imm32(trace_builder &b, int slot, std::uint32_t value) {
-  if (slot < 0)
-    return false;
-  const auto offset = static_cast<std::uint32_t>(slot * 4);
-  if (offset <= 0x7Fu) {
-    if (!append_stencil(b, kStoreSpImm32Disp8Stencil) ||
-        !b.byte(static_cast<std::uint8_t>(offset)))
-      return false;
-  } else if (!append_u32_patch(b, kStoreSpImm32Stencil, offset)) {
-    return false;
-  }
-  return b.u32(value);
-}
-bool load_sp(trace_builder &b, std::int32_t location, int slot) {
-  if (slot < 0 || (location != kTos && location != kNos))
-    return false;
-  const auto offset = static_cast<std::uint32_t>(slot * 4);
-  if (location == kTos)
-    return append_displacement(b, view_of(kLoadTosDisp8Stencil),
-                               view_of(kLoadTosStencil), offset);
-  return append_displacement(b, view_of(kLoadNosDisp8Stencil),
-                             view_of(kLoadNosStencil), offset);
-}
-
-bool copy_local_to_stack(trace_builder &builder, std::uint32_t local_offset,
-                         int stack_word, int word_count) {
-  for (int word = 0; word < word_count; ++word) {
-    if (!load_local(builder,
-                    local_offset + static_cast<std::uint32_t>(word * 4)) ||
-        !store_sp(builder, kTos, stack_word + word))
-      return false;
-  }
-  return true;
-}
-
-bool copy_stack_to_local(trace_builder &builder, int stack_word,
-                         std::uint32_t local_offset, int word_count) {
-  for (int word = 0; word < word_count; ++word) {
-    if (!load_sp(builder, kTos, stack_word + word) ||
-        !store_local(builder,
-                     local_offset + static_cast<std::uint32_t>(word * 4)))
-      return false;
-  }
-  return true;
-}
-
-bool compile_wide_local(trace_builder &builder, int op, int width_words,
-                        std::uint32_t local_offset) {
-  if (op == kLocalGet) {
-    if (builder.location_count != 0 || builder.spilled_words != 0 ||
-        !copy_local_to_stack(builder, local_offset, builder.helper_words,
-                             width_words))
-      return false;
-    builder.helper_words += width_words;
-    if (builder.helper_words > builder.max_spilled_words)
-      builder.max_spilled_words = builder.helper_words;
-    return true;
-  }
-  if (builder.location_count != 0 || builder.spilled_words != 0 ||
-      builder.helper_words < width_words ||
-      !copy_stack_to_local(builder, builder.helper_words - width_words,
-                           local_offset, width_words))
-    return false;
-  if (op == kLocalSet)
-    builder.helper_words -= width_words;
-  return true;
-}
-
-bool spill_local_api_registers(trace_builder &builder) {
-  for (std::size_t index = 0; index < builder.location_count; ++index) {
-    const auto location = builder.locations[index];
-    if (location != kTos && location != kNos)
-      continue;
-    if (!store_sp(builder, location, builder.spilled_words))
-      return false;
-    builder.locations[index] = static_cast<std::int16_t>(builder.spilled_words);
-    ++builder.spilled_words;
-  }
-  if (builder.spilled_words > builder.max_spilled_words)
-    builder.max_spilled_words = builder.spilled_words;
-  return true;
-}
-
-bool compile_runtime_local(trace_builder &builder, int op,
-                           std::uint32_t local_index, int width_words) {
-  const auto api = op == kLocalGet
-                       ? jit_local_runtime_api_index::get
-                       : (op == kLocalSet ? jit_local_runtime_api_index::set
-                                          : jit_local_runtime_api_index::tee);
-  if (width_words == 1) {
-    if (builder.helper_words != 0 || !spill_local_api_registers(builder))
-      return false;
-    if (op == kLocalGet) {
-      if (builder.location_count >= builder.locations_capacity)
-        return false;
-      const auto result_slot =
-          static_cast<std::uint32_t>(builder.spilled_words);
-      if (!append_local_runtime_api_call(builder, api, local_index,
-                                         result_slot) ||
-          !load_sp(builder, kTos, static_cast<int>(result_slot)))
-        return false;
-      if (builder.spilled_words + 1 > builder.max_spilled_words)
-        builder.max_spilled_words = builder.spilled_words + 1;
-      builder.locations[builder.location_count++] = kTos;
-      return true;
+stencil_view local_stencil(int operation, std::uint8_t type) {
+  switch (operation) {
+  case kLocalGet:
+    switch (type) {
+    case kWasmI32:
+      return get_stencil(asm_generated::local_get_i32);
+    case kWasmI64:
+      return get_stencil(asm_generated::local_get_i64);
+    case kWasmF32:
+      return get_stencil(asm_generated::local_get_f32);
+    case kWasmF64:
+      return get_stencil(asm_generated::local_get_f64);
+    default:
+      return {};
     }
-
-    if (builder.location_count == 0 || builder.spilled_words == 0 ||
-        builder.locations[builder.location_count - 1] !=
-            builder.spilled_words - 1)
-      return false;
-    const auto value_slot =
-        static_cast<std::uint32_t>(builder.spilled_words - 1);
-    if (!append_local_runtime_api_call(builder, api, local_index, value_slot))
-      return false;
-    if (op == kLocalSet) {
-      --builder.location_count;
-      --builder.spilled_words;
-    } else {
-      if (!load_sp(builder, kTos, static_cast<int>(value_slot)))
-        return false;
-      builder.locations[builder.location_count - 1] = kTos;
-      --builder.spilled_words;
+  case kLocalSet:
+    switch (type) {
+    case kWasmI32:
+      return get_stencil(asm_generated::local_set_i32);
+    case kWasmI64:
+      return get_stencil(asm_generated::local_set_i64);
+    case kWasmF32:
+      return get_stencil(asm_generated::local_set_f32);
+    case kWasmF64:
+      return get_stencil(asm_generated::local_set_f64);
+    default:
+      return {};
     }
-    return true;
+  case kLocalTee:
+    switch (type) {
+    case kWasmI32:
+      return get_stencil(asm_generated::local_tee_i32);
+    case kWasmI64:
+      return get_stencil(asm_generated::local_tee_i64);
+    case kWasmF32:
+      return get_stencil(asm_generated::local_tee_f32);
+    case kWasmF64:
+      return get_stencil(asm_generated::local_tee_f64);
+    default:
+      return {};
+    }
+  default:
+    return {};
   }
-
-  if (builder.location_count != 0 || builder.spilled_words != 0 ||
-      width_words > 4)
-    return false;
-  if (op == kLocalGet) {
-    const auto result_slot = static_cast<std::uint32_t>(builder.helper_words);
-    if (!append_local_runtime_api_call(builder, api, local_index, result_slot))
-      return false;
-    builder.helper_words += width_words;
-    if (builder.helper_words > builder.max_spilled_words)
-      builder.max_spilled_words = builder.helper_words;
-    return true;
-  }
-  if (builder.helper_words < width_words)
-    return false;
-  const auto value_slot =
-      static_cast<std::uint32_t>(builder.helper_words - width_words);
-  if (!append_local_runtime_api_call(builder, api, local_index, value_slot))
-    return false;
-  if (op == kLocalSet)
-    builder.helper_words -= width_words;
-  return true;
 }
 
-bool emit_push(trace_builder &b, int op, std::uint64_t arg,
-               std::uint32_t local_offset_bytes) {
-  // Wide values remain on the shared word stack; do not mix cache layouts.
-  if (b.helper_words != 0)
-    return false;
-  if (b.location_count >= 2 && b.locations[b.location_count - 2] == kNos) {
-    if (!store_sp(b, kNos, b.spilled_words))
-      return false;
-    b.locations[b.location_count - 2] = b.spilled_words++;
-  } else if (b.location_count >= 2 && b.locations[b.location_count - 2] < 0)
-    return false;
-  if (b.location_count > 0) {
-    if (b.locations[b.location_count - 1] != kTos ||
-        !append_stencil(b, kMoveNosFromTosStencil))
-      return false;
-    b.locations[b.location_count - 1] = kNos;
+stencil_view fused_local_binary_stencil(int op) {
+  switch (op) {
+  case kI32Add:
+    return get_stencil(asm_generated::i32_add_local);
+  case kI32Sub:
+    return get_stencil(asm_generated::i32_sub_local);
+  case kI32Mul:
+    return get_stencil(asm_generated::i32_mul_local);
+  case kI32And:
+    return get_stencil(asm_generated::i32_and_local);
+  case kI32Or:
+    return get_stencil(asm_generated::i32_or_local);
+  case kI32Xor:
+    return get_stencil(asm_generated::i32_xor_local);
+  case kI32Eq:
+    return get_stencil(asm_generated::i32_eq_local);
+  case kI32Ne:
+    return get_stencil(asm_generated::i32_ne_local);
+  case kI32LtS:
+    return get_stencil(asm_generated::i32_lt_s_local);
+  case kI32LtU:
+    return get_stencil(asm_generated::i32_lt_u_local);
+  case kI32GtS:
+    return get_stencil(asm_generated::i32_gt_s_local);
+  case kI32GtU:
+    return get_stencil(asm_generated::i32_gt_u_local);
+  case kI32LeS:
+    return get_stencil(asm_generated::i32_le_s_local);
+  case kI32LeU:
+    return get_stencil(asm_generated::i32_le_u_local);
+  case kI32GeS:
+    return get_stencil(asm_generated::i32_ge_s_local);
+  case kI32GeU:
+    return get_stencil(asm_generated::i32_ge_u_local);
+  default:
+    return {};
   }
-  if (op == kI32Const) {
-    if (!load_imm(b, static_cast<std::uint32_t>(arg)))
-      return false;
-  } else if (op == kLocalGet) {
-    if (!load_local(b, local_offset_bytes))
-      return false;
-  } else
-    return false;
-  if (b.location_count >= b.locations_capacity)
-    return false;
-  b.locations[b.location_count++] = kTos;
-  return true;
-}
-
-bool emit_binary(trace_builder &builder, int opcode) {
-  const auto *traits = traits_for(opcode);
-  return traits != nullptr && append_stencil(builder, traits->binary);
-}
-
-bool is_i32_local_pair_opcode(int op) {
-  const auto *traits = traits_for(op);
-  return traits != nullptr && (traits->flags & kLocalPair) != 0;
-}
-
-bool i32_compare_condition(int op, std::uint8_t &condition) {
-  const auto *traits = traits_for(op);
-  if (traits == nullptr || traits->compare_condition == 0)
-    return false;
-  condition = traits->compare_condition;
-  return true;
-}
-
-bool emit_i32_local_memory_binary(trace_builder &builder, int op,
-                                  std::uint32_t right_offset) {
-  const auto *traits = traits_for(op);
-  if (traits == nullptr || (traits->flags & kLocalPair) == 0)
-    return false;
-  std::uint8_t condition = 0;
-  const auto stencil = right_offset <= 0x7Fu
-                           ? traits->local_memory_binary_disp8
-                           : traits->local_memory_binary_disp32;
-  if (stencil.size != 0) {
-    const auto ok =
-        right_offset <= 0x7Fu
-            ? append_u8_operand(builder, stencil,
-                                static_cast<std::uint8_t>(right_offset))
-            : append_u32_operand(builder, stencil, right_offset);
-    if (!ok)
-      return false;
-    if (!i32_compare_condition(op, condition))
-      return true;
-  } else {
-    return false;
-  }
-  return builder.byte(0x0F) && builder.byte(condition) && builder.byte(0xC0) &&
-         append_stencil(builder, kI32MoveZeroExtendAlStencil);
-}
-
-bool emit_pop(trace_builder &b) {
-  if (b.location_count == 0 || b.locations[b.location_count - 1] != kTos)
-    return false;
-  --b.location_count;
-  if (b.location_count == 0)
-    return true;
-  if (b.locations[b.location_count - 1] == kNos) {
-    b.locations[b.location_count - 1] = kTos;
-    return true;
-  }
-  if (b.locations[b.location_count - 1] != b.spilled_words - 1 ||
-      b.spilled_words <= 0)
-    return false;
-  const auto slot = b.locations[b.location_count - 1];
-  if (!load_sp(b, kTos, slot))
-    return false;
-  --b.location_count;
-  --b.spilled_words;
-  b.locations[b.location_count++] = kTos;
-  return true;
-}
-
-bool emit_binary_spill(trace_builder &b, int op) {
-  if (b.location_count < 2 || b.locations[b.location_count - 1] != kTos)
-    return false;
-  auto &nos = b.locations[b.location_count - 2];
-  if (nos >= 0) {
-    if (nos != b.spilled_words - 1 || b.spilled_words <= 0 ||
-        !load_sp(b, kNos, nos))
-      return false;
-    nos = kNos;
-    --b.spilled_words;
-  }
-  if (nos != kNos || !emit_binary(b, op))
-    return false;
-  b.location_count -= 2;
-  b.locations[b.location_count++] = kTos;
-  return true;
-}
-
-bool emit_shift(trace_builder &b, int op) {
-  if (!append_stencil(b, kShiftPrefixStencil))
-    return false;
-  if (op == kI32Shl)
-    return append_stencil(b, kI32ShlStencil);
-  if (op == kI32ShrS)
-    return append_stencil(b, kI32ShrSStencil);
-  if (op == kI32ShrU)
-    return append_stencil(b, kI32ShrUStencil);
-  return false;
-}
-
-bool compile_instruction(trace_builder &b,
-                         const fireball::jit_instruction &instruction,
-                         const std::uint16_t *local_offsets,
-                         const std::uint8_t *local_sizes,
-                         std::uint32_t local_count,
-                         std::uint32_t local_slot_count) {
-  const int op = static_cast<int>(instruction.opcode);
-  const auto current_helper_index = helper_index(op);
-  auto arg = instruction.operand;
-  const bool expects_operand =
-      op == kI32Const || op == kI64Const || op == kF32Const ||
-      op == kF64Const || op == kLocalGet || op == kLocalSet || op == kLocalTee;
-  if ((instruction.has_operand != 0) != expects_operand) {
-    b.declined = true;
-    return false;
-  }
-  if (b.spilled_words > b.max_spilled_words)
-    b.max_spilled_words = b.spilled_words;
-  b.saw_op = true;
-  if (current_helper_index >= 0) {
-    if (b.helper_index >= 0 && b.helper_index != current_helper_index) {
-      b.declined = true;
-      return false;
-    }
-    b.helper_index = current_helper_index;
-  }
-  const auto wide_width = wide_binary_width(op);
-  if (wide_width != 0) {
-    const auto input_words = wide_width * 2;
-    if (b.location_count != 0 || b.spilled_words != 0 ||
-        b.helper_words != input_words || !emit_wide_binary(b, op)) {
-      b.declined = true;
-      return false;
-    }
-    b.helper_words = wide_width;
-    b.saw_op = true;
-    return true;
-  }
-  if (current_helper_index >= 11) {
-    if (b.location_count != 2 || b.spilled_words != 0 || b.helper_words != 0 ||
-        b.locations[0] != kNos || b.locations[1] != kTos) {
-      b.declined = true;
-      return false;
-    }
-    const auto helper_offset = common_helper_offset(current_helper_index);
-    if (helper_offset < 0 ||
-        !append_common_call(b, static_cast<std::uint32_t>(helper_offset)) ||
-        !append_stencil(b,
-                        std::array<std::uint8_t, 4>{0x85, 0xC0, 0x74, 0x11}) ||
-        !append_common_jump(b, kCommonEpilogueOffset) || !load_sp(b, kTos, 0)) {
-      b.declined = true;
-      return false;
-    }
-    b.location_count = 1;
-    b.locations[0] = kTos;
-    return true;
-  }
-  std::uint32_t local_offset = 0;
-  std::uint32_t local_width = 0;
-  if (op == kLocalGet || op == kLocalSet || op == kLocalTee) {
-    const int index = static_cast<int>(arg);
-    if (!local_layout_entry(local_offsets, local_sizes, local_count,
-                            local_slot_count, index, local_offset,
-                            local_width)) {
-      b.declined = true;
-      return false;
-    }
-    if (local_count > kJitDirectLocalCount) {
-      if (!compile_runtime_local(b, op, static_cast<std::uint32_t>(index),
-                                 local_width)) {
-        b.declined = true;
-        return false;
-      }
-      if (b.spilled_words > b.max_spilled_words)
-        b.max_spilled_words = b.spilled_words;
-      return true;
-    }
-    if (local_width > 1) {
-      if (!compile_wide_local(b, op, local_width, local_offset)) {
-        b.declined = true;
-        return false;
-      }
-      if (b.spilled_words > b.max_spilled_words)
-        b.max_spilled_words = b.spilled_words;
-      return true;
-    }
-  }
-  int pops = 0, pushes = 0;
-  if (!stack_effect(op, pops, pushes) ||
-      pops > static_cast<int>(b.location_count)) {
-    b.declined = true;
-    return false;
-  }
-  bool ok = true;
-  if (op == kI32Const || op == kLocalGet) {
-    if (op == kLocalGet) {
-      const int index = static_cast<int>(arg);
-      arg = static_cast<std::uint64_t>(index);
-    }
-    if (ok)
-      ok = emit_push(b, op, arg, local_offset);
-  } else if (op == kI64Const || op == kF32Const || op == kF64Const) {
-    if (b.location_count != 0)
-      ok = false;
-    const int width = op == kF32Const ? 1 : 2;
-    for (int word = 0; ok && word < width; ++word) {
-      ok = store_sp_imm32(b, b.helper_words++,
-                          static_cast<std::uint32_t>(arg >> (word * 32)));
-    }
-    if (b.helper_words > b.max_spilled_words)
-      b.max_spilled_words = b.helper_words;
-  } else if (op == kLocalSet || op == kDrop) {
-    if (op == kLocalSet) {
-      ok = store_local(b, local_offset);
-    }
-    if (ok)
-      ok = emit_pop(b);
-  } else if (op == kLocalTee) {
-    ok = b.location_count != 0 &&
-         store_local(b, local_offset);
-  } else if (op == kI32Eqz) {
-    ok = b.location_count != 0 && b.locations[b.location_count - 1] == kTos &&
-         append_stencil(b, kI32EqzStencil);
-  } else if (is_binary(op)) {
-    ok = emit_binary_spill(b, op);
-  } else if (op == kI32Shl || op == kI32ShrS || op == kI32ShrU) {
-    if (b.location_count < 2 || b.locations[b.location_count - 1] != kTos)
-      ok = false;
-    if (ok) {
-      auto &nos = b.locations[b.location_count - 2];
-      if (nos >= 0) {
-        ok = nos == b.spilled_words - 1 && b.spilled_words > 0 &&
-             load_sp(b, kNos, nos);
-        if (ok) {
-          nos = kNos;
-          --b.spilled_words;
-        }
-      }
-      if (ok && nos == kNos && emit_shift(b, op)) {
-        b.location_count -= 2;
-        b.locations[b.location_count++] = kTos;
-      } else {
-        ok = false;
-      }
-    }
-  } else {
-    ok = false;
-  }
-  if (b.spilled_words > b.max_spilled_words)
-    b.max_spilled_words = b.spilled_words;
-  if (!ok)
-    b.declined = true;
-  return ok;
 }
 
 bool is_i32_immediate_opcode(int op) {
@@ -1196,6 +1042,10 @@ bool fold_i32_binary(int op, std::uint32_t left, std::uint32_t right,
     return true;
   case kI32Shl:
     result = left << (right & 31u);
+    return true;
+  case kI32ShrS:
+    result = std::bit_cast<std::uint32_t>(std::bit_cast<std::int32_t>(left) >>
+                                          (right & 31u));
     return true;
   case kI32ShrU:
     result = left >> (right & 31u);
@@ -1239,343 +1089,470 @@ bool fold_i32_binary(int op, std::uint32_t left, std::uint32_t right,
   }
 }
 
-bool emit_i32_immediate_supernode(trace_builder &builder, int op,
-                                  std::uint32_t value) {
-  const auto signed_value = std::bit_cast<std::int32_t>(value);
-  const bool fits_i8 = signed_value >= -128 && signed_value <= 127;
-  if (op == kI32Add) {
-    if (value == 0)
-      return true;
-    if (value == 1)
-      return append_stencil(builder, kI32IncStencil);
-    if (value == 0xFFFFFFFFu)
-      return append_stencil(builder, kI32DecStencil);
-    return fits_i8 ? append_u8_operand(builder, kI32AddImm8Stencil,
-                                       static_cast<std::uint8_t>(value))
-                   : append_u32_operand(builder, kI32AddImm32Stencil, value);
+bool is_i32_binary(int op) { return i32_binary_stencil(op).size != 0; }
+
+bool emit_constant(trace_builder &builder, stack_model &stack, int op,
+                   std::uint64_t value) {
+  stencil_view stencil{};
+  std::uint8_t width = 0;
+  switch (op) {
+  case kI32Const:
+    stencil = get_stencil(asm_generated::i32_const);
+    width = 1;
+    break;
+  case kF32Const:
+    stencil = get_stencil(asm_generated::f32_const);
+    width = 1;
+    break;
+  case kI64Const:
+    stencil = get_stencil(generated::i64_const);
+    width = 2;
+    break;
+  case kF64Const:
+    stencil = get_stencil(generated::f64_const);
+    width = 2;
+    break;
+  default:
+    return false;
   }
-  if (op == kI32Sub) {
-    if (value == 0)
-      return true;
-    return fits_i8 ? append_u8_operand(builder, kI32SubImm8Stencil,
-                                       static_cast<std::uint8_t>(value))
-                   : append_u32_operand(builder, kI32SubImm32Stencil, value);
-  }
-  if (op == kI32Mul) {
-    if (value == 1)
-      return true;
-    if (value == 0)
-      return append_stencil(builder, kI32XorZeroStencil);
-    if (value == 3)
-      return append_stencil(builder, kI32Mul3Stencil);
-    if (value == 5)
-      return append_stencil(builder, kI32Mul5Stencil);
-    return append_u32_operand(builder, kI32ImulImm32Stencil, value);
-  }
-  if (op == kI32And) {
-    if (value == 0xFFFFFFFFu)
-      return true;
-    if (value == 0)
-      return append_stencil(builder, kI32XorZeroStencil);
-    if (value == 0x000000FFu)
-      return append_stencil(builder, kI32And255Stencil);
-    if (value == 0x0000FFFFu)
-      return append_stencil(builder, kI32And65535Stencil);
-    return fits_i8 ? append_u8_operand(builder, kI32AndImm8Stencil,
-                                       static_cast<std::uint8_t>(value))
-                   : append_u32_operand(builder, kI32AndImm32Stencil, value);
-  }
-  if (op == kI32Or) {
-    if (value == 0)
-      return true;
-    return fits_i8 ? append_u8_operand(builder, kI32OrImm8Stencil,
-                                       static_cast<std::uint8_t>(value))
-                   : append_u32_operand(builder, kI32OrImm32Stencil, value);
-  }
-  if (op == kI32Xor) {
-    if (value == 0)
-      return true;
-    return fits_i8 ? append_u8_operand(builder, kI32XorImm8Stencil,
-                                       static_cast<std::uint8_t>(value))
-                   : append_u32_operand(builder, kI32XorImm32Stencil, value);
-  }
-  const auto shift = static_cast<std::uint8_t>(value & 31u);
-  if (shift == 0)
-    return true;
-  if (op == kI32Shl)
-    return append_u8_operand(builder, kI32ShlImm8Stencil, shift);
-  if (op == kI32ShrS)
-    return append_u8_operand(builder, kI32ShrSImm8Stencil, shift);
-  if (op == kI32ShrU)
-    return append_u8_operand(builder, kI32ShrUImm8Stencil, shift);
-  return false;
+  const auto immediate_width = width == 1 ? std::uint8_t{4} : std::uint8_t{8};
+  return builder.append_patched(stencil, value, immediate_width) &&
+         stack.push(width);
 }
 
-bool flush_pending_i32_constant(trace_builder &builder,
-                                const std::uint16_t *local_offsets,
-                                const std::uint8_t *local_sizes,
-                                std::uint32_t local_count,
-                                std::uint32_t local_slot_count) {
-  const auto pending_count = builder.pending_i32_count;
-  builder.pending_i32_count = 0;
-  for (std::uint8_t index = 0; index < pending_count; ++index) {
-    const fireball::jit_instruction constant{kI32Const, 1,
-                                             builder.pending_i32_values[index]};
-    if (!compile_instruction(builder, constant, local_offsets, local_sizes,
-                             local_count, local_slot_count))
+bool emit_runtime_api(trace_builder &builder, stack_model &stack, int op,
+                      std::uint32_t source_ip);
+bool emit_runtime_api(trace_builder &builder, stack_model &stack, int op,
+                      std::uint32_t source_ip, const std::uint32_t *immediates,
+                      std::uint32_t immediate_count);
+bool compile_instructions(
+    trace_builder &builder, const fireball::jit_instruction *instructions,
+    std::uint32_t instruction_count, const std::uint16_t *local_offsets,
+    const std::uint8_t *local_sizes, const std::uint8_t *local_types,
+    std::uint32_t local_count, std::uint32_t local_slot_count,
+    stack_model &stack, const std::uint32_t *source_offsets = nullptr,
+    const std::uint32_t *source_end_offsets = nullptr) {
+  if (local_count > kMaxLogicalLocals || local_slot_count > 2 * local_count ||
+      (local_count != 0 && (local_offsets == nullptr ||
+                            local_sizes == nullptr || local_types == nullptr)))
+    return false;
+
+  for (std::uint32_t index = 0; index < instruction_count;) {
+    const auto &instruction = instructions[index];
+    const auto op = static_cast<int>(instruction.opcode);
+    const bool has_operand = instruction.has_operand != 0;
+
+    if ((op == kI32Const || op == kI64Const || op == kF32Const ||
+         op == kF64Const || op == kLocalGet || op == kLocalSet ||
+         op == kLocalTee) != has_operand)
       return false;
+
+    if (op == kI32Const && index + 2 < instruction_count &&
+        instructions[index + 1].opcode == kI32Const &&
+        instructions[index + 2].has_operand == 0) {
+      std::uint32_t folded = 0;
+      const auto next_op = static_cast<int>(instructions[index + 2].opcode);
+      if (fold_i32_binary(
+              next_op, static_cast<std::uint32_t>(instruction.operand),
+              static_cast<std::uint32_t>(instructions[index + 1].operand),
+              folded)) {
+        if (!emit_constant(builder, stack, kI32Const, folded))
+          return false;
+        index += 3;
+        continue;
+      }
+    }
+
+    if (op == kI32Const && index + 1 < instruction_count &&
+        instructions[index + 1].has_operand == 0) {
+      const auto next_op = static_cast<int>(instructions[index + 1].opcode);
+      const auto value = static_cast<std::uint32_t>(instruction.operand);
+      if (next_op == kDrop) {
+        index += 2;
+        continue;
+      }
+      if (next_op == kI32Eqz) {
+        if (!emit_constant(builder, stack, kI32Const, value == 0 ? 1 : 0))
+          return false;
+        index += 2;
+        continue;
+      }
+      if (is_i32_immediate_opcode(next_op) && stack.top_is(1)) {
+        const bool identity = (((next_op == kI32Add || next_op == kI32Sub ||
+                                 next_op == kI32Or || next_op == kI32Xor) &&
+                                value == 0) ||
+                               ((next_op == kI32Shl || next_op == kI32ShrS ||
+                                 next_op == kI32ShrU) &&
+                                (value & 31u) == 0) ||
+                               (next_op == kI32Mul && value == 1) ||
+                               (next_op == kI32And && value == UINT32_MAX));
+        if (!identity) {
+          const auto immediate_stencil = i32_immediate_stencil(next_op);
+          const auto immediate =
+              (next_op == kI32Shl || next_op == kI32ShrS || next_op == kI32ShrU)
+                  ? static_cast<std::uint64_t>(value & 31u)
+                  : static_cast<std::uint64_t>(value);
+          const auto immediate_width =
+              (next_op == kI32Shl || next_op == kI32ShrS || next_op == kI32ShrU)
+                  ? std::uint8_t{1}
+                  : std::uint8_t{4};
+          if (!builder.append_patched(immediate_stencil, immediate,
+                                      immediate_width))
+            return false;
+        }
+        index += 2;
+        continue;
+      }
+    }
+
+    if (op == kI32Const && index + 1 < instruction_count &&
+        (instructions[index + 1].opcode == kLocalSet ||
+         instructions[index + 1].opcode == kLocalTee) &&
+        instructions[index + 1].has_operand != 0) {
+      const auto local_index =
+          static_cast<int>(instructions[index + 1].operand);
+      std::uint32_t offset = 0;
+      std::uint8_t width = 0, type = 0;
+      const auto set_op = static_cast<int>(instructions[index + 1].opcode);
+      if (local_layout_entry(local_offsets, local_sizes, local_types,
+                             local_count, local_slot_count, local_index, offset,
+                             width, type) &&
+          type == kWasmI32) {
+        const auto local_set_const =
+            get_stencil(asm_generated::local_set_const_i32);
+        if (local_set_const.symbol != nullptr) {
+          if (!builder.append_local(
+                  local_set_const, offset, local_memory_operation::store_narrow,
+                  static_cast<std::uint32_t>(instruction.operand), 4))
+            return false;
+          if (set_op == kLocalTee &&
+              !emit_constant(builder, stack, kI32Const,
+                             static_cast<std::uint32_t>(instruction.operand)))
+            return false;
+          index += 2;
+          continue;
+        }
+      }
+    }
+
+    if (op == kLocalGet && index + 2 < instruction_count && has_operand &&
+        instructions[index + 1].has_operand != 0 &&
+        instructions[index + 1].opcode == kLocalGet &&
+        instructions[index + 2].has_operand == 0 && stack.word_count == 0) {
+      const auto second_op = static_cast<int>(instructions[index + 2].opcode);
+      if (is_i32_binary(second_op) && second_op != kI32DivS &&
+          second_op != kI32DivU && second_op != kI32RemS &&
+          second_op != kI32RemU) {
+        std::uint32_t first_offset = 0, second_offset = 0;
+        std::uint8_t first_width = 0, second_width = 0;
+        std::uint8_t first_type = 0, second_type = 0;
+        if (local_layout_entry(local_offsets, local_sizes, local_types,
+                               local_count, local_slot_count,
+                               static_cast<int>(instruction.operand),
+                               first_offset, first_width, first_type) &&
+            local_layout_entry(
+                local_offsets, local_sizes, local_types, local_count,
+                local_slot_count,
+                static_cast<int>(instructions[index + 1].operand),
+                second_offset, second_width, second_type) &&
+            first_type == kWasmI32 && second_type == kWasmI32) {
+          const auto fused_local = fused_local_binary_stencil(second_op);
+          const auto first_local = local_stencil(kLocalGet, first_type);
+          if (first_local.symbol != nullptr && fused_local.symbol != nullptr) {
+            if (!builder.append_local(first_local, first_offset,
+                                      local_memory_operation::load_narrow) ||
+                !stack.push(1) ||
+                !builder.append_local(fused_local, second_offset,
+                                      local_memory_operation::load_narrow))
+              return false;
+            index += 3;
+            continue;
+          }
+        }
+      }
+    }
+
+    if (op == kI32Const || op == kI64Const || op == kF32Const ||
+        op == kF64Const) {
+      if (!emit_constant(builder, stack, op, instruction.operand))
+        return false;
+      ++index;
+      continue;
+    }
+
+    if (op == kLocalGet || op == kLocalSet || op == kLocalTee) {
+      std::uint32_t offset = 0;
+      std::uint8_t width = 0, type = 0;
+      if (!local_layout_entry(local_offsets, local_sizes, local_types,
+                              local_count, local_slot_count,
+                              static_cast<int>(instruction.operand), offset,
+                              width, type))
+        return false;
+      const auto local_op = local_stencil(op, type);
+      if (local_op.symbol == nullptr)
+        return false;
+      const auto encoding = width == 1 ? local_memory_operation::load_narrow
+                                       : local_memory_operation::load_wide;
+      const auto store_encoding = width == 1
+                                      ? local_memory_operation::store_narrow
+                                      : local_memory_operation::store_wide;
+      if (op == kLocalGet) {
+        if (!builder.append_local(local_op, offset, encoding) ||
+            !stack.push(width))
+          return false;
+      } else if (op == kLocalSet) {
+        if (!stack.pop(width) ||
+            !builder.append_local(local_op, offset, store_encoding))
+          return false;
+      } else if (!stack.top_is(width) ||
+                 !builder.append_local(local_op, offset, store_encoding)) {
+        return false;
+      }
+      ++index;
+      continue;
+    }
+
+    if (op == kDrop) {
+      if (stack.value_count == 0)
+        return false;
+      const auto width = stack.widths[stack.value_count - 1];
+      const auto stencil = width == 1 ? get_stencil(asm_generated::drop)
+                                      : get_stencil(asm_generated::drop_wide);
+      if (!stack.pop(width) || !builder.append_linked(stencil))
+        return false;
+      ++index;
+      continue;
+    }
+    if (op == kSelect) {
+      if (stack.value_count < 3 || stack.widths[stack.value_count - 2] !=
+                                       stack.widths[stack.value_count - 3])
+        return false;
+      const auto width = stack.widths[stack.value_count - 2];
+      const auto stencil = width == 1 ? get_stencil(asm_generated::select_i32)
+                                      : get_stencil(asm_generated::select_i64);
+      if (!stack.select() || !builder.append_linked(stencil))
+        return false;
+      ++index;
+      continue;
+    }
+    if (op == kI32Eqz) {
+      if (!stack.top_is(1) ||
+          !builder.append_linked(get_stencil(asm_generated::i32_eqz)))
+        return false;
+      ++index;
+      continue;
+    }
+    if (is_i32_binary(op)) {
+      if (!stack.binary(1) || !builder.append_linked(i32_binary_stencil(op)))
+        return false;
+      ++index;
+      continue;
+    }
+    const auto wide_stencil = wide_binary_stencil(op);
+    if (wide_stencil.size != 0) {
+      const auto width =
+          (op >= kI64Add && op <= kI64Mul) || (op >= kF64Add && op <= kF64Div)
+              ? 2
+              : 1;
+      if (!stack.binary(static_cast<std::uint8_t>(width)) ||
+          !builder.append_linked(wide_stencil))
+        return false;
+      ++index;
+      continue;
+    }
+    const bool wasm_memory_operation = op >= 0x28 && op <= 0x3E;
+    const bool wasm_fc_operation =
+        (op & 0xFF00) == 0xFC00 &&
+        (((op & 0xFF) <= 7) || (op & 0xFF) == 0x0A || (op & 0xFF) == 0x0B);
+    if (source_offsets != nullptr && source_end_offsets != nullptr &&
+        (wasm_memory_operation || wasm_fc_operation)) {
+      const auto subopcode = static_cast<std::uint32_t>(op & 0xFF);
+      const auto packed_memory_indices = instruction.operand;
+      if (wasm_fc_operation && subopcode == 0x0A && packed_memory_indices != 0)
+        return false;
+      if (wasm_fc_operation && subopcode == 0x0B &&
+          static_cast<std::uint32_t>(packed_memory_indices) != 0)
+        return false;
+      const std::uint32_t immediates[3] = {
+          source_end_offsets[index],
+          wasm_memory_operation
+              ? static_cast<std::uint32_t>(instruction.operand)
+              : static_cast<std::uint32_t>(packed_memory_indices),
+          wasm_fc_operation && subopcode == 0x0A
+              ? static_cast<std::uint32_t>(packed_memory_indices >> 32)
+              : 0u};
+      if (!emit_runtime_api(builder, stack, op, source_offsets[index],
+                            immediates, wasm_memory_operation ? 2u : 1u))
+        return false;
+      ++index;
+      continue;
+    }
+    if (source_offsets == nullptr ||
+        !emit_runtime_api(builder, stack, op, source_offsets[index]))
+      return false;
+    ++index;
   }
   return true;
 }
 
-bool flush_pending_local_get(trace_builder &builder,
-                             const std::uint16_t *local_offsets,
-                             const std::uint8_t *local_sizes,
-                             std::uint32_t local_count,
-                             std::uint32_t local_slot_count) {
-  if (builder.pending_local_get_index == kNoPendingLocalGet)
-    return true;
-  const auto local_index = builder.pending_local_get_index;
-  builder.pending_local_get_index = kNoPendingLocalGet;
-  const fireball::jit_instruction local_get{kLocalGet, 1, local_index};
-  return compile_instruction(builder, local_get, local_offsets, local_sizes,
-                             local_count, local_slot_count);
-}
-
-bool compile_stream_instruction(trace_builder &builder,
-                                const fireball::jit_instruction &instruction,
-                                const std::uint16_t *local_offsets,
-                                const std::uint8_t *local_sizes,
-                                std::uint32_t local_count,
-                                std::uint32_t local_slot_count) {
-  const auto op = static_cast<int>(instruction.opcode);
-  if (local_count <= kJitDirectLocalCount &&
-      builder.pending_local_get_index != kNoPendingLocalGet) {
-    const auto pending_index = builder.pending_local_get_index;
-    const bool current_local_is_i32 =
-        op == kLocalGet && instruction.has_operand != 0 &&
-        instruction.operand <= 0x7FFF'FFFFu &&
-        local_words(local_offsets, local_sizes, local_count, local_slot_count,
-                    static_cast<int>(instruction.operand)) == 1;
-    if (builder.location_count == 0 && builder.pending_i32_count == 0 &&
-        current_local_is_i32 &&
-        local_words(local_offsets, local_sizes, local_count, local_slot_count,
-                    static_cast<int>(pending_index)) == 1) {
-      if (!flush_pending_local_get(builder, local_offsets, local_sizes,
-                                   local_count, local_slot_count))
-        return false;
-      if (builder.location_count == 1 && builder.locations[0] == kTos) {
-        builder.pending_local_get_index =
-            static_cast<std::uint32_t>(instruction.operand);
-        return true;
-      }
-    }
-    if (is_i32_local_pair_opcode(op) && instruction.has_operand == 0 &&
-        builder.pending_i32_count == 0 && builder.location_count == 1 &&
-        builder.locations[0] == kTos &&
-        local_words(local_offsets, local_sizes, local_count, local_slot_count,
-                    static_cast<int>(pending_index)) == 1) {
-      builder.pending_local_get_index = kNoPendingLocalGet;
-      const auto right_offset =
-          static_cast<std::uint32_t>(local_offsets[pending_index]) * 4u;
-      if (!emit_i32_local_memory_binary(builder, op, right_offset)) {
-        builder.declined = true;
-        return false;
-      }
-      builder.saw_op = true;
-      if (builder.spilled_words > builder.max_spilled_words)
-        builder.max_spilled_words = builder.spilled_words;
-      return true;
-    }
-    if (!flush_pending_local_get(builder, local_offsets, local_sizes,
-                                 local_count, local_slot_count))
-      return false;
-  }
-
-  if (builder.pending_i32_count == 2) {
-    if (op == kDrop && instruction.has_operand == 0) {
-      builder.pending_i32_count = 1;
-      builder.saw_op = true;
-      return true;
-    }
-    if (op == kI32Eqz && instruction.has_operand == 0) {
-      builder.pending_i32_values[1] =
-          builder.pending_i32_values[1] == 0 ? 1u : 0u;
-      builder.saw_op = true;
-      return true;
-    }
-    if ((op == kLocalSet || op == kLocalTee) && instruction.has_operand != 0) {
-      const auto local_index = static_cast<int>(instruction.operand);
-      if (local_count <= kJitDirectLocalCount &&
-          local_words(local_offsets, local_sizes, local_count, local_slot_count,
-                      local_index) == 1) {
-        const auto offset =
-            static_cast<std::uint32_t>(local_offsets[local_index]) * 4u;
-        if (!append_local_i32_constant(builder, offset,
-                                       builder.pending_i32_values[1])) {
-          builder.declined = true;
-          return false;
-        }
-        builder.saw_op = true;
-        if (op == kLocalSet) {
-          builder.pending_i32_values[1] = builder.pending_i32_values[0];
-          builder.pending_i32_count = 1;
-        }
-        return true;
-      }
-    }
-    if (instruction.has_operand == 0) {
-      std::uint32_t folded = 0;
-      if (fold_i32_binary(op, builder.pending_i32_values[0],
-                          builder.pending_i32_values[1], folded)) {
-        builder.pending_i32_values[0] = folded;
-        builder.pending_i32_count = 1;
-        builder.saw_op = true;
-        return true;
-      }
-    }
-    if (!flush_pending_i32_constant(builder, local_offsets, local_sizes,
-                                    local_count, local_slot_count))
-      return false;
-  }
-
-  if (builder.pending_i32_count == 1) {
-    const auto value = builder.pending_i32_values[0];
-    if (op == kDrop && instruction.has_operand == 0) {
-      builder.pending_i32_count = 0;
-      builder.saw_op = true;
-      return true;
-    }
-    if (op == kI32Eqz && instruction.has_operand == 0) {
-      builder.pending_i32_values[0] = value == 0 ? 1u : 0u;
-      builder.saw_op = true;
-      return true;
-    }
-    if (is_i32_immediate_opcode(op) && instruction.has_operand == 0 &&
-        builder.location_count != 0 &&
-        builder.locations[builder.location_count - 1] == kTos) {
-      if (!emit_i32_immediate_supernode(builder, op, value)) {
-        builder.declined = true;
-        return false;
-      }
-      builder.pending_i32_count = 0;
-      builder.saw_op = true;
-      if (builder.spilled_words > builder.max_spilled_words)
-        builder.max_spilled_words = builder.spilled_words;
-      return true;
-    }
-    if ((op == kLocalSet || op == kLocalTee) && instruction.has_operand != 0) {
-      const auto local_index = static_cast<int>(instruction.operand);
-      if (local_count <= kJitDirectLocalCount &&
-          local_words(local_offsets, local_sizes, local_count, local_slot_count,
-                      local_index) == 1) {
-        const auto offset =
-            static_cast<std::uint32_t>(local_offsets[local_index]) * 4u;
-        if (!append_local_i32_constant(builder, offset, value)) {
-          builder.declined = true;
-          return false;
-        }
-        builder.saw_op = true;
-        if (op == kLocalSet)
-          builder.pending_i32_count = 0;
-        return true;
-      }
-    }
-    if (op == kI32Const && instruction.has_operand != 0) {
-      builder.pending_i32_values[1] =
-          static_cast<std::uint32_t>(instruction.operand);
-      builder.pending_i32_count = 2;
-      return true;
-    }
-    if (!flush_pending_i32_constant(builder, local_offsets, local_sizes,
-                                    local_count, local_slot_count))
-      return false;
-  }
-
-  if (op == kI32Const && instruction.has_operand != 0) {
-    builder.pending_i32_values[0] =
-        static_cast<std::uint32_t>(instruction.operand);
-    builder.pending_i32_count = 1;
-    return true;
-  }
-  if (local_count <= kJitDirectLocalCount && op == kLocalGet &&
-      instruction.has_operand != 0 && instruction.operand <= 0x7FFF'FFFFu &&
-      builder.location_count == 0 && builder.spilled_words == 0 &&
-      builder.pending_i32_count == 0 &&
-      local_words(local_offsets, local_sizes, local_count, local_slot_count,
-                  static_cast<int>(instruction.operand)) == 1) {
-    builder.pending_local_get_index =
-        static_cast<std::uint32_t>(instruction.operand);
-    return true;
-  }
-  return compile_instruction(builder, instruction, local_offsets, local_sizes,
-                             local_count, local_slot_count);
-}
-
-bool compile_operations(trace_builder &b,
-                        const fireball::jit_instruction *instructions,
-                        std::uint32_t instruction_count,
-                        const std::uint16_t *local_offsets,
-                        const std::uint8_t *local_sizes,
-                        std::uint32_t local_count,
-                        std::uint32_t local_slot_count) {
-  for (std::uint32_t index = 0; index < instruction_count; ++index) {
-    if (!compile_stream_instruction(b, instructions[index], local_offsets,
-                                    local_sizes, local_count,
-                                    local_slot_count))
-      return true;
-  }
-  if (!flush_pending_local_get(b, local_offsets, local_sizes, local_count,
-                               local_slot_count))
-    return true;
-  return flush_pending_i32_constant(b, local_offsets, local_sizes, local_count,
-                                    local_slot_count);
-}
-
-int finish_instruction_body(trace_builder &builder, std::uint32_t has_next_pc,
-                            std::uint32_t next_pc, std::uint32_t has_loops_to,
-                            std::uint32_t tail_context_helper,
-                            std::uintptr_t helper_target,
-                            std::uint32_t output_capacity,
-                            fireball::jit_compile_result *result) {
-  if (builder.declined || !builder.saw_op || builder.location_count > 1 ||
-      builder.spilled_words != 0) {
+int finish_trace(trace_builder &builder, stack_model &stack,
+                 fireball::jit_compile_result *result) {
+  if (result == nullptr || !builder.finish(*result))
     return 0;
-  }
-  if (tail_context_helper != 0) {
-    if (builder.helper_index >= 0 || builder.location_count != 0 ||
-        helper_target == 0)
-      return 0;
-    if (!append_common_jump(builder, kCommonHelperOffset, true))
-      return 0;
-  } else {
-    if (builder.location_count != 0 && !store_sp(builder, kTos, 0))
-      return 0;
-    if (has_next_pc != 0 && has_loops_to == 0) {
-      if (!append_u32_patch(builder, kPublishNextPcStencil, next_pc))
-        return 0;
-      if (!append_common_jump(builder,
-                              FB_CONF_JIT_TRACE_COMMON_CHAIN_DISPATCH_OFFSET))
-        return 0;
-    } else {
-      if (!append_common_jump(builder, kCommonEpilogueOffset))
-        return 0;
-    }
-  }
-  if (tail_context_helper != 0)
-    builder.helper_index = -1;
-  if (kTraceHeaderBytes + builder.body_size > 0xFFFF ||
-      builder.body_size > output_capacity)
-    return -2;
-
-  result->body_bytes = static_cast<std::uint32_t>(builder.body_size);
-  result->helper_index = builder.helper_index;
-  result->helper_words = static_cast<std::uint32_t>(builder.helper_words);
-  result->max_spilled_words =
-      static_cast<std::uint32_t>(builder.max_spilled_words);
-  result->stack_location_count =
-      static_cast<std::uint32_t>(builder.location_count);
+  result->max_stack_words = stack.max_words;
+  result->result_words = stack.word_count;
   return 1;
+}
+
+bool runtime_api_slot(int op, std::uint8_t &slot) {
+  const bool fc_prefix = (op & 0xFF00) == 0xFC00;
+  const auto opcode = static_cast<std::uint32_t>(fc_prefix ? op & 0xFF : op);
+  return fb_jit_runtime_api_slot(opcode, fc_prefix ? 1u : 0u, &slot) == 1;
+}
+
+bool pop_values(stack_model &stack, std::uint32_t count, std::uint8_t width) {
+  while (count != 0) {
+    if (!stack.pop(width))
+      return false;
+    --count;
+  }
+  return true;
+}
+
+bool apply_runtime_api_stack_effect(int op, stack_model &stack) {
+  if ((op & 0xFF00) == 0xFC00) {
+    const auto subopcode = op & 0xFF;
+    if (subopcode <= 7) {
+      const auto input_width =
+          subopcode == 0 || subopcode == 1 || subopcode == 4 || subopcode == 5
+              ? 1u
+              : 2u;
+      const auto output_width = subopcode < 4 ? 1u : 2u;
+      return stack.unary(static_cast<std::uint8_t>(input_width),
+                         static_cast<std::uint8_t>(output_width));
+    }
+    if (subopcode == 0x0A || subopcode == 0x0B)
+      return pop_values(stack, 3, 1);
+    return false;
+  }
+
+  if (op == 0x01)
+    return true;
+  if (op == 0x1A)
+    return stack.pop_any();
+  if (op == 0x1B)
+    return stack.select();
+  if (op >= 0x28 && op <= 0x35) {
+    const auto result_width =
+        (op == 0x29 || (op >= 0x30 && op <= 0x35)) ? 2u : 1u;
+    return stack.unary(1, static_cast<std::uint8_t>(result_width));
+  }
+  if (op >= 0x36 && op <= 0x3E) {
+    const auto value_width =
+        (op == 0x37 || (op >= 0x3C && op <= 0x3E)) ? 2u : 1u;
+    return stack.pop(static_cast<std::uint8_t>(value_width)) && stack.pop(1);
+  }
+  if (op == 0x3F)
+    return stack.push(1);
+  if (op == 0x40)
+    return stack.unary(1, 1);
+  if (op >= 0x67 && op <= 0x69)
+    return stack.unary(1, 1);
+  if (op == 0x50)
+    return stack.unary(2, 1);
+  if (op >= 0x51 && op <= 0x5A)
+    return stack.binary_to(2, 1);
+  if (op >= 0x5B && op <= 0x60)
+    return stack.binary_to(1, 1);
+  if (op >= 0x61 && op <= 0x66)
+    return stack.binary_to(2, 1);
+  if (op >= 0x79 && op <= 0x7B)
+    return stack.unary(2, 2);
+  if (op >= 0x7C && op <= 0x8A)
+    return stack.binary_to(2, 2);
+  if (op >= 0x8B && op <= 0x91)
+    return stack.unary(1, 1);
+  if (op >= 0x92 && op <= 0x98)
+    return stack.binary_to(1, 1);
+  if (op >= 0x99 && op <= 0x9F)
+    return stack.unary(2, 2);
+  if (op >= 0xA0 && op <= 0xA6)
+    return stack.binary_to(2, 2);
+  switch (op) {
+  case 0xA7:
+    return stack.unary(2, 1);
+  case 0xA8:
+  case 0xA9:
+    return stack.unary(1, 1);
+  case 0xAA:
+  case 0xAB:
+    return stack.unary(2, 1);
+  case 0xAC:
+  case 0xAD:
+    return stack.unary(1, 2);
+  case 0xAE:
+  case 0xAF:
+    return stack.unary(1, 2);
+  case 0xB0:
+  case 0xB1:
+    return stack.unary(2, 2);
+  case 0xB2:
+  case 0xB3:
+    return stack.unary(1, 1);
+  case 0xB4:
+  case 0xB5:
+  case 0xB6:
+    return stack.unary(2, 1);
+  case 0xB7:
+  case 0xB8:
+    return stack.unary(1, 2);
+  case 0xB9:
+  case 0xBA:
+    return stack.unary(2, 2);
+  case 0xBB:
+    return stack.unary(1, 2);
+  case 0xBC:
+  case 0xBE:
+    return stack.unary(1, 1);
+  case 0xBD:
+  case 0xBF:
+    return stack.unary(2, 2);
+  case 0xC0:
+  case 0xC1:
+    return stack.unary(1, 1);
+  case 0xC2:
+  case 0xC3:
+  case 0xC4:
+    return stack.unary(2, 2);
+  default:
+    return false;
+  }
+}
+
+bool emit_runtime_api(trace_builder &builder, stack_model &stack, int op,
+                      std::uint32_t source_ip) {
+  std::uint8_t slot = 0;
+  if (!runtime_api_slot(op, slot))
+    return false;
+  const auto stack_before = stack.word_count;
+  if (!apply_runtime_api_stack_effect(op, stack))
+    return false;
+  return builder.append_runtime_api(slot, source_ip, stack_before,
+                                    stack.word_count);
+}
+
+bool emit_runtime_api(trace_builder &builder, stack_model &stack, int op,
+                      std::uint32_t source_ip, const std::uint32_t *immediates,
+                      std::uint32_t immediate_count) {
+  std::uint8_t slot = 0;
+  if (immediates == nullptr || !runtime_api_slot(op, slot))
+    return false;
+  const auto stack_before = stack.word_count;
+  if (!apply_runtime_api_stack_effect(op, stack))
+    return false;
+  return builder.append_runtime_api(slot, source_ip, stack_before,
+                                    stack.word_count, immediates,
+                                    immediate_count);
 }
 
 } // namespace
@@ -1585,36 +1562,30 @@ int fireball::compile_instruction_body(
     std::uint32_t instruction_count, std::uint32_t has_next_pc,
     std::uint32_t next_pc, std::uint32_t has_loops_to, std::uint32_t loops_to,
     std::uint32_t byte_span, const std::uint16_t *local_offsets,
-    const std::uint8_t *local_sizes, std::uint32_t local_count,
-    std::uint32_t local_slot_count, std::uint32_t tail_context_helper,
-    std::uintptr_t helper_target, std::uint8_t *output,
-    std::uint32_t output_capacity, fireball::jit_compile_result *result,
-    std::int16_t *stack_locations, std::uint32_t stack_location_capacity) {
+    const std::uint8_t *local_sizes, const std::uint8_t *local_types,
+    std::uint32_t local_count, std::uint32_t local_slot_count,
+    std::uint8_t *output, std::uint32_t output_capacity,
+    fireball::jit_compile_result *result) {
+  static_cast<void>(has_next_pc);
+  static_cast<void>(next_pc);
+  static_cast<void>(has_loops_to);
   static_cast<void>(loops_to);
   if (result == nullptr || output == nullptr || byte_span == 0 ||
       instruction_count > byte_span ||
-      (instruction_count != 0 && instructions == nullptr) ||
-      (local_count != 0 && (local_offsets == nullptr || local_sizes == nullptr)) ||
-      stack_locations == nullptr || stack_location_capacity < kMaxStackDepth ||
-      local_slot_count > 2 * local_count) {
+      (instruction_count != 0 && instructions == nullptr))
     return -1;
-  }
-  if (instruction_count > kMaxTraceInstructions ||
+  *result = {};
+  if (instruction_count == 0 || instruction_count > kMaxTraceInstructions ||
       output_capacity > kMaxBodyBytes)
     return 0;
-  *result = {};
-  trace_builder builder(output, output_capacity, stack_locations,
-                        kMaxStackDepth);
-  if (!append_stencil(builder, kEntryStencil))
-    return -2;
-  if (!compile_operations(builder, instructions, instruction_count,
-                          local_offsets, local_sizes, local_count,
-                          local_slot_count)) {
-    return -1;
-  }
-  return finish_instruction_body(builder, has_next_pc, next_pc, has_loops_to,
-                                 tail_context_helper, helper_target,
-                                 output_capacity, result);
+
+  trace_builder builder(output, output_capacity);
+  stack_model stack{};
+  if (!compile_instructions(builder, instructions, instruction_count,
+                            local_offsets, local_sizes, local_types,
+                            local_count, local_slot_count, stack))
+    return 0;
+  return finish_trace(builder, stack, result);
 }
 
 int fireball::compile_wasm_trace(
@@ -1623,98 +1594,108 @@ int fireball::compile_wasm_trace(
     std::uint32_t has_next_pc, std::uint32_t next_pc,
     std::uint32_t has_loops_to, std::uint32_t loops_to,
     const std::uint16_t *local_offsets, const std::uint8_t *local_sizes,
-    std::uint32_t local_count, std::uint32_t local_slot_count,
-    std::uint8_t *output,
-    std::uint32_t output_capacity, fireball::jit_compile_result *result,
-    std::int16_t *stack_locations, std::uint32_t stack_location_capacity) {
+    const std::uint8_t *local_types, std::uint32_t local_count,
+    std::uint32_t local_slot_count, std::uint8_t *output,
+    std::uint32_t output_capacity, fireball::jit_compile_result *result) {
+  static_cast<void>(has_next_pc);
+  static_cast<void>(next_pc);
+  static_cast<void>(has_loops_to);
+  static_cast<void>(loops_to);
   if (code == nullptr || byte_span == 0 || code_offset > code_bytes ||
       byte_span > code_bytes - code_offset || output == nullptr ||
-      result == nullptr) {
-    return -1;
-  }
-  if (stack_locations == nullptr || stack_location_capacity < kMaxStackDepth ||
-      output_capacity > kMaxBodyBytes)
+      result == nullptr)
     return -1;
   *result = {};
-  trace_builder builder(output, output_capacity, stack_locations,
-                        kMaxStackDepth);
-  if (!append_stencil(builder, kEntryStencil))
-    return -2;
-  if ((local_count != 0 && (local_offsets == nullptr || local_sizes == nullptr)) ||
-      local_slot_count > 2 * local_count)
+  if (output_capacity > kMaxBodyBytes)
     return -1;
+
+  std::array<fireball::jit_instruction, kMaxTraceInstructions> instructions{};
+  std::array<std::uint32_t, kMaxTraceInstructions> source_offsets{};
+  std::array<std::uint32_t, kMaxTraceInstructions> source_end_offsets{};
   std::uint32_t instruction_count = 0;
+  std::uint32_t interpreter_rel_words = 0;
   auto cursor = code_offset;
   const auto end = code_offset + byte_span;
 
-  auto read_unsigned_leb = [&](std::uint32_t &value) -> bool {
-    value = 0;
-    std::uint32_t shift = 0;
-    for (std::uint32_t count = 0; count < 5 && cursor < end; ++count) {
-      const auto byte = code[cursor++];
-      const auto payload = static_cast<std::uint32_t>(byte & 0x7Fu);
-      const auto remaining = 32u - shift;
-      if (remaining < 7u && payload >= (1u << remaining))
-        return false;
-      value |= payload << shift;
-      if ((byte & 0x80u) == 0)
-        return true;
-      shift += 7u;
-    }
-    return false;
-  };
-
-  auto read_signed_leb = [&](std::uint64_t &value, std::uint32_t bits) -> bool {
-    std::uint64_t decoded = 0;
-    std::uint32_t shift = 0;
-    const auto max_bytes = (bits + 6u) / 7u;
-    for (std::uint32_t count = 0; count < max_bytes && cursor < end; ++count) {
-      const auto byte = code[cursor++];
-      const auto payload = static_cast<std::uint64_t>(byte & 0x7Fu);
-      const auto remaining = bits - shift;
-      const auto contributed = remaining < 7u ? remaining : 7u;
-      const bool negative = ((payload >> (contributed - 1u)) & 1u) != 0;
-      if (remaining < 7u) {
-        const auto unused = payload >> contributed;
-        const auto expected = negative ? ((1u << (7u - contributed)) - 1u) : 0u;
-        if (unused != expected)
-          return false;
-      }
-      decoded |= (payload & ((std::uint64_t{1} << contributed) - 1u)) << shift;
-      if ((byte & 0x80u) == 0) {
-        shift += contributed;
-        if (negative && shift < 64u)
-          decoded |= (~std::uint64_t{0}) << shift;
-        value = decoded;
-        return true;
-      }
-      if (remaining <= 7u)
-        return false;
-      shift += 7u;
-    }
-    return false;
-  };
-
   while (cursor < end) {
-    if (instruction_count >= kMaxTraceInstructions)
+    if (instruction_count == instructions.size())
       return 0;
+    const auto instruction_ip = cursor;
     const auto opcode = code[cursor++];
-    fireball::jit_instruction instruction{};
-    ++instruction_count;
+    const auto instruction_index = instruction_count++;
+    source_offsets[instruction_index] = instruction_ip;
+    auto &instruction = instructions[instruction_index];
     instruction.opcode = opcode;
     instruction.has_operand = 0;
     instruction.operand = 0;
 
+    if (opcode == kFcPrefix) {
+      std::uint32_t subopcode = 0;
+      if (!read_unsigned_leb(code, cursor, end, subopcode) || subopcode > 17)
+        return -1;
+      instruction.opcode = 0xFC00u | subopcode;
+      std::uint32_t immediate_count = 0;
+      if (subopcode == 8 || subopcode == 0x0A || subopcode == 0x0C ||
+          subopcode == 0x0E)
+        immediate_count = 2;
+      else if (subopcode == 9 || subopcode == 0x0B || subopcode == 0x0D ||
+               (subopcode >= 0x0F && subopcode <= 0x11))
+        immediate_count = 1;
+      interpreter_rel_words += 1 + immediate_count;
+      if (subopcode == 0x0A) {
+        std::uint32_t destination_memory = 0;
+        std::uint32_t source_memory = 0;
+        if (!read_unsigned_leb(code, cursor, end, destination_memory) ||
+            !read_unsigned_leb(code, cursor, end, source_memory))
+          return -1;
+        instruction.operand = static_cast<std::uint64_t>(destination_memory) |
+                              (static_cast<std::uint64_t>(source_memory) << 32);
+      } else if (subopcode == 0x0B) {
+        std::uint32_t memory_index = 0;
+        if (!read_unsigned_leb(code, cursor, end, memory_index))
+          return -1;
+        instruction.operand = memory_index;
+      } else {
+        while (immediate_count != 0) {
+          std::uint32_t ignored = 0;
+          if (!read_unsigned_leb(code, cursor, end, ignored))
+            return -1;
+          --immediate_count;
+        }
+      }
+      source_end_offsets[instruction_index] = cursor;
+      continue;
+    }
+
     if (opcode == kLocalGet || opcode == kLocalSet || opcode == kLocalTee) {
       std::uint32_t operand = 0;
-      if (!read_unsigned_leb(operand))
+      if (!read_unsigned_leb(code, cursor, end, operand))
         return -1;
+      ++interpreter_rel_words;
       instruction.has_operand = 1;
       instruction.operand = operand;
+    } else if (opcode == 0x23 || opcode == 0x24 || opcode == 0x25 ||
+               opcode == 0x26 || opcode == 0x3F || opcode == 0x40) {
+      std::uint32_t operand = 0;
+      if (!read_unsigned_leb(code, cursor, end, operand))
+        return -1;
+      if (opcode == 0x23 || opcode == 0x24 || opcode == 0x3F || opcode == 0x40)
+        ++interpreter_rel_words;
+      instruction.operand = operand;
+    } else if (opcode >= 0x28 && opcode <= 0x3E) {
+      std::uint32_t alignment = 0;
+      std::uint32_t offset = 0;
+      if (!read_unsigned_leb(code, cursor, end, alignment) ||
+          !read_unsigned_leb(code, cursor, end, offset))
+        return -1;
+      interpreter_rel_words += 2;
+      instruction.operand = offset;
     } else if (opcode == kI32Const || opcode == kI64Const) {
       std::uint64_t operand = 0;
-      if (!read_signed_leb(operand, opcode == kI32Const ? 32u : 64u))
+      if (!read_signed_leb(code, cursor, end, operand,
+                           opcode == kI32Const ? 32u : 64u))
         return -1;
+      interpreter_rel_words += opcode == kI32Const ? 1u : 2u;
       instruction.has_operand = 1;
       instruction.operand = operand;
     } else if (opcode == kF32Const || opcode == kF64Const) {
@@ -1722,47 +1703,31 @@ int fireball::compile_wasm_trace(
       if (end - cursor < width)
         return -1;
       std::uint64_t operand = 0;
-      for (std::uint32_t byte = 0; byte < width; ++byte) {
+      for (std::uint32_t byte = 0; byte < width; ++byte)
         operand |= static_cast<std::uint64_t>(code[cursor + byte])
                    << (byte * 8u);
-      }
       cursor += width;
       instruction.has_operand = 1;
       instruction.operand = operand;
-    } else if (opcode != kDrop && opcode != kI32Eqz && !is_binary(opcode) &&
-               opcode != kI32Shl && opcode != kI32ShrS && opcode != kI32ShrU &&
-               helper_index(opcode) < 0) {
-      // Unsupported operators may carry immediates. Decline the complete
-      // block before scanning any immediate bytes as if they were opcodes.
-      return 0;
     }
-    if (!compile_stream_instruction(builder, instruction, local_offsets,
-                                    local_sizes, local_count,
-                                    local_slot_count)) {
-      return 0;
-    }
+    source_end_offsets[instruction_index] = cursor;
   }
   if (cursor != end)
     return -1;
-  if (!flush_pending_local_get(builder, local_offsets, local_sizes,
-                               local_count, local_slot_count))
+  if (instruction_count == 0)
     return 0;
-  if (!flush_pending_i32_constant(builder, local_offsets, local_sizes,
-                                  local_count, local_slot_count))
-    return 0;
-  static_cast<void>(loops_to);
-  return finish_instruction_body(builder, has_next_pc, next_pc, has_loops_to, 0,
-                                 0, output_capacity, result);
-}
 
-void fireball::chain_dispatcher_code(const std::uint8_t **bytes,
-                                     std::uint32_t *byte_count,
-                                     std::uint32_t *offset) {
-  if (bytes == nullptr || byte_count == nullptr || offset == nullptr)
-    return;
-  *bytes = kChainDispatcher.data();
-  *byte_count = static_cast<std::uint32_t>(kChainDispatcher.size());
-  *offset = FB_CONF_JIT_TRACE_COMMON_CHAIN_DISPATCH_OFFSET;
+  trace_builder builder(output, output_capacity);
+  stack_model stack{};
+  if (!compile_instructions(builder, instructions.data(), instruction_count,
+                            local_offsets, local_sizes, local_types,
+                            local_count, local_slot_count, stack,
+                            source_offsets.data(), source_end_offsets.data()))
+    return 0;
+  const auto status = finish_trace(builder, stack, result);
+  if (status == 1)
+    result->interpreter_rel_words = interpreter_rel_words;
+  return status;
 }
 
 std::int64_t fireball::chain_successor(std::uintptr_t code_address,

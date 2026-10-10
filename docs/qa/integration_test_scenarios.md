@@ -79,14 +79,14 @@ Scenario 9、11、12はPythonからIPC、ドライバ、ホスト互換層を直
 | `OwnerMismatchTrap` | `runtime_vmmio.md` | 非所有者SHMアクセスの遮断 | `TEST-INT-93` | 一部。OWNER_MISMATCHを検査する。物理副作用不在の独立assertはない |
 | `UnregisteredPageTrap` | `runtime_vmmio.md` | Revoke後のSHMアクセスを遮断する | `TEST-INT-94` | 観測あり。Revoke後のUNREGISTERED_PAGEを検査する |
 | `ActiveDataSegments` | `runtime_loader.md` | Active dataセグメントをリニアメモリへ配置する | `TEST-INT-01` | 観測あり。2セグメントの文字列とバイト配列を検査する |
-| `CPS_4Args` | `interpreter.md` | ctx、sp、local_base、tosの4論理引数によるディスパッチ | `TEST-INT-01`〜`TEST-INT-105` | 未検証。通常の計算結果だけでは引数配置とABI境界の違反を判別できない |
+| `CPS_3Args` | `interpreter.md` | 実行状態の`ctx`, `ip*`, `sp*`と定数プールの`rel*`を渡す4引数ディスパッチ。ローカル基点はctx内、頂点値は共有スタック内 | `TEST-INT-01`〜`TEST-INT-105` | 未検証。通常の計算結果だけでは引数配置とABI境界の違反を判別できない |
 | `SignZeroExtension` | `interpreter.md` | メモリ命令の符号拡張とゼロ拡張 | `TEST-INT-70` | 一部。指定した8/16/32-bit入力の合成結果65757を検査する。各演算の独立結果と全境界値は検査しない |
 | `ControlFrameCleanup` | `interpreter.md` | ネスト脱出時の制御フレーム不変性とリーク防止 | `TEST-INT-20`, `TEST-INT-22` | 一部。再帰値とbr_tableの行先の結果を検査する。実行前後のフレーム状態を直接検査しない |
 | `RSPMinimalSet` | `debugger.md`, `gdb_rsp_protocol.md` | RSP最小コマンドとsの1命令ステップ | `TEST-INT-60`〜`TEST-INT-64`, `TEST-INT-129` | 実TCPと構成済みnativeフックでs、ブレークポイント、停止状態の読書き、継続と正常終了を検査する。LLDB結合ケースはDWARF関数名からZ0設定と停止まで確認する |
 | `DebuggerInterpreterComposition` | `debugger.md`, `runtime_vsoc.md` | Interpreter + Debugger構成とDebugger + JIT構成の拒否 | `TEST-DBG-13`, `TEST-VSOC-23` | 別スイート。[test_runtime_composer.py](experiments/pysim/qa/tier2_runtime/test_runtime_composer.py)と[test_vsoc.py](experiments/pysim/qa/tier2_runtime/test_vsoc.py)で検査する。結合12シナリオの合格数へ含めない |
 | `HAL_PeripheralDrivers` | `platform_driver.md` | GPIO、エッジIRQ、I2C、SPI、Timer | `TEST-INT-100`〜`TEST-INT-102` | 未検証。Scenario 11にGPIO/I2C/SPI操作がない。Timerはtick_countと時計の非減少だけを検査する |
 | `WASI_InMemVFS` | `libfireball.md` | ゲスト側WASI互換アダプタによるVFS、乱数、クロック委譲 | `TEST-INT-103`〜`TEST-INT-105`, `TEST-INT-125`〜`TEST-INT-128` | 一部。SDK/libc guestから既存バックエンド境界へ読書き、close、u64時計を委譲し、失敗結果も照合する。実uvwasi、製品ゲストadapter、乱数品質、時計の単調増加は別の検証である |
-| `CopyAndPatch_JIT` | `jit_compiler.md` | Copy-and-Patchトレースの生成と実行 | `TEST-INT-30`, `TEST-INT-40` | 一部。生成トレースの存在と戻り値を検査する。JIT実行回数を直接検査しない |
+| `Assembly_Stencil_Trace_JIT` | `jit_compiler.md` | assembly stencilから生成したtraceの生成と実行 | `TEST-INT-30`, `TEST-INT-40` | 一部。生成トレースの存在と戻り値を検査する。JIT実行回数を直接検査しない |
 | `TraceBoundaryInvariant` | `jit_compiler.md` | 境界のスタック自己完結性、状態同期、フォールバック | `TEST-INT-31`, `TEST-INT-41` | 未検証。戻り値の一致だけでは各境界の状態不変条件を実証できない |
 | `ThreeBankCacheEviction` | `jit_runtime.md` | Active/Warm/Oldest代謝とOldestからActiveへの昇格 | `TEST-INT-31`, `TEST-INT-41` | 未検証。バンク移動と昇格の状態を検査するassertがない |
 
@@ -145,7 +145,7 @@ Scenario 9、11、12はPythonからIPC、ドライバ、ホスト互換層を直
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | TEST-INT-20 | 深い再帰呼び出しとフレーム巻き戻し | 統合スタック初期化 | `fib(12)` を実行 | スタックオーバーフローやフレーム破壊を起こさず、正確に `144` を返す | `ThreadedInterpreter`, `ControlFrameCleanup` |
-| TEST-INT-21 | テーブル動的ディスパッチ (`call_indirect`) | 関数テーブル登録済み | `dispatch_calc(op_id, a, b)` | 指定した演算関数（add/sub/mul/xor）が型安全にディスパッチされて正しい値を返す | `ThreadedInterpreter`, `CPS_4Args` |
+| TEST-INT-21 | テーブル動的ディスパッチ (`call_indirect`) | 関数テーブル登録済み | `dispatch_calc(op_id, a, b)` | 指定した演算関数（add/sub/mul/xor）が型安全にディスパッチされて正しい値を返す | `ThreadedInterpreter`, `CPS_3Args` |
 | TEST-INT-22 | 多段ジャンプスイッチ (`br_table`) | ブロックネスト | `test_br_table(selector)` | セレクタ値（0/1/2/default）に応じて対応するブロック外へ正確にジャンプする | `ControlFrameCleanup` |
 
 ---
@@ -163,7 +163,7 @@ Scenario 9、11、12はPythonからIPC、ドライバ、ホスト互換層を直
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | TEST-INT-30 | ホットスポット検出と JIT 自動コンパイル | ループ実行 | `idle_hook` を呼び出す | ループ内の BasicBlock が HOT 昇格し、JIT キャッシュバンクに登録される | `BitView_CardMarking`, `JIT_MultiBuffer_Cache` |
-| TEST-INT-31 | JIT / インタープリタ差分検証 | 同一ワークロード | Tier 2 と Tier 3 の結果を比較 | 双方が正確に `168`（1000未満の素数の個数）を返し、値が 100% 一致する | `JIT_CopyAndPatch`, `TraceBoundaryInvariant` |
+| TEST-INT-31 | JIT / インタープリタ差分検証 | 同一ワークロード | Tier 2 と Tier 3 の結果を比較 | 双方が正確に `168`（1000未満の素数の個数）を返し、値が 100% 一致する | `JIT_AssemblyStencilCodegen`, `TraceBoundaryInvariant` |
 
 現行assertは戻り値168とActiveトレースの存在を検査する。カードの各遷移、COOS idle_hook結線、JIT実行到達、および境界状態の同期は独立に検査しない。
 

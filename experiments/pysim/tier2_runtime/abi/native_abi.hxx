@@ -11,21 +11,51 @@
 
 extern "C" {
 
-// An execution extension owns its implementation and updates the shared
-// context.
 struct fb_native_dispatch_call;
+struct fb_native_dispatch_extension_call;
 
+// QA observation hooks are carried by a QA-only wrapper, not the production
+// dispatch call.
 struct fb_native_execution_extension {
   std::uintptr_t owner;
-  std::uint32_t (*execute)(const fb_native_dispatch_call *, std::uint32_t);
   bool (*observe)(const fb_native_dispatch_call *, std::uint32_t);
+  void (*trace_executed)(const fb_native_dispatch_call *, std::uintptr_t);
+};
+
+// Tier 2 native execution extension contract. The Interpreter owns invoking
+// the returned trace entry; an extension may only look up and describe it.
+struct fb_native_jit_trace {
+  std::uintptr_t entry_address;
+  const std::uint8_t *rel;
+  std::uint32_t body_end_pc;
+  std::uint32_t next_pc;
+  std::uint32_t loops_to;
+  std::uint32_t terminal_block_index;
+  std::uint32_t interpreter_rel_words;
+  std::uint32_t frame_depth;
+  std::uint32_t stack_words;
+  std::uint32_t result_words;
+  std::uint32_t body_count;
+  std::uintptr_t trace_cookie;
+};
+
+struct fb_native_jit_provider {
+  std::uintptr_t owner;
+  // Return 1 for a resident trace, 0 for a cache miss, and -1 on failure.
+  int (*lookup)(std::uintptr_t owner, std::uint32_t pc,
+                fb_native_jit_trace *trace);
+  // Record an interpreted basic-block visit for hotspot analysis.
+  int (*observe_block)(std::uintptr_t owner, std::uint32_t pc);
+  // Analyze profile state and process the bounded compile queue at a handoff.
+  int (*finish_boundary)(std::uintptr_t owner, std::uint32_t status,
+                         std::uint32_t budget);
 };
 
 struct fb_native_dispatch_call {
   void *context;
   std::uint32_t *stack;
   std::uint32_t *locals;
-  const fb_native_execution_extension *extension;
+  const fb_native_jit_provider *jit_provider;
   std::uint32_t idle_budget;
 };
 
@@ -44,7 +74,9 @@ struct fb_native_step_call {
   std::uint32_t stack_capacity;
   std::uint32_t ip;
   std::uint32_t local_slots;
-  std::uint32_t control_base;
+  void *control_frame_base;
+  // Byte cursor passed to the native dispatch entry.
+  const std::uint8_t *rel;
 };
 
 // A selected debugger owns this fixed record; normal contexts have no control
@@ -74,12 +106,14 @@ FB_PYSIM_INTERPRETER_EXPORT int
 fb_native_run_dispatch(const fb_native_dispatch_call *call,
                        fb_native_result *result);
 FB_PYSIM_INTERPRETER_EXPORT int
-fb_native_run_dispatch_extension(const fb_native_dispatch_call *call,
-                                 fb_native_result *result);
+fb_native_run_dispatch_block(const fb_native_dispatch_call *call,
+                             fb_native_result *result);
 
 FB_PYSIM_INTERPRETER_EXPORT int
 fb_native_run_debug_dispatch(const fb_native_dispatch_call *call,
                              fb_native_result *result);
 }
+
+inline constexpr std::uint32_t fb_native_cps_exit_mask = 0xFu << 8;
 
 #endif

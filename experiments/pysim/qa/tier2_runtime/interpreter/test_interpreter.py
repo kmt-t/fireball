@@ -5,6 +5,7 @@ Unit tests for Tier 2 Runtime: WASM Interpreter & Instructions
 Traceability: interpreter_test_spec.md, wasm_instruction_set_test_spec.md
 """
 
+import ctypes
 import struct
 from pathlib import Path
 
@@ -42,7 +43,7 @@ from tier2_runtime.wasm.reader import parse
 
 
 def test_intp_01_python_reference_cps_handlers_and_dispatch_table():
-    """TEST-INTP-01 (Python reference): handlers share the four logical arguments.
+    """TEST-INTP-01 (Python reference): handlers share stack-backed state.
 
     The reference table is not evidence of the native dispatcher implementation (TEST-INTP-02).
     """
@@ -53,17 +54,17 @@ def test_intp_01_python_reference_cps_handlers_and_dispatch_table():
     # Direct 256-element fixed-capacity table (no dynamic dict lookup)
     assert type(_HANDLERS) is StaticVector
     assert len(_HANDLERS) == 256
-    # Every registered handler must accept exactly 4 raw arguments.
+    # Every registered handler receives the context, instruction pointer, and operand stack.
     registered_count = 0
     for op, handler in enumerate(_HANDLERS):
         if handler is not None:
             registered_count += 1
             sig = inspect.signature(handler)
-            assert len(sig.parameters) == 4, (
-                f"Handler for opcode 0x{op:02X} must have exactly 4 arguments"
+            assert len(sig.parameters) == 3, (
+                f"Handler for opcode 0x{op:02X} must have exactly 3 arguments"
             )
-            assert tuple(sig.parameters) == ("ctx", "sp", "local_base", "tos"), (
-                f"Handler for opcode 0x{op:02X} must use the native CPS prototype"
+            assert tuple(sig.parameters) == ("ctx", "ip", "sp"), (
+                f"Handler for opcode 0x{op:02X} must use the shared ctx/ip/sp ABI"
             )
 
     assert registered_count >= 30, (
@@ -71,20 +72,88 @@ def test_intp_01_python_reference_cps_handlers_and_dispatch_table():
     )
 
 
-def test_control_frame_enum_and_opcode_attribute_table():
-    """Control-frame kinds and loader opcode metadata are typed and shared."""
+def test_python_interpreter_preserves_shared_operand_stack_across_call():
+    """The caller's live operand remains on the context stack across a nested call."""
+    module = parse(
+        wat_to_wasm(
+            '(module (func (export "main") (result i32) '
+            "i32.const 10 call 1 i32.add) "
+            "(func (result i32) i32.const 32))"
+        )
+    )
+    interpreter = Interpreter(module)
+    call_state = interpreter.start(module.export_func_index("main"), [])
+    context_stack = call_state.context.stack
+    caller = call_state._frame
+
+    assert caller is not None
+    assert caller.values is context_stack
+    call_state = interpreter.step(call_state)
+    callee = call_state._frame
+    assert callee is not None and callee is not caller
+    assert callee.values is context_stack
+    assert len(context_stack) == 1
+    assert context_stack.raw_at(0) == 10
+
+    for _ in range(5):
+        if call_state.finished:
+            break
+        call_state = interpreter.step(call_state)
+
+    assert call_state.finished
+    assert call_state.results == [42]
+
+
+def test_control_frame_stores_opener_pc_and_opcode_metadata_is_shared():
+    """Control frames store dynamic state and resolve opcode metadata by PC."""
     from tier2_runtime.interpreter.control_flow import OpcodeAttribute, opcode_has_attribute
-    from tier2_runtime.interpreter.interpreter import ControlFrameKind, NativeControlStack
+    from tier2_runtime.interpreter.interpreter import NativeControlStack
     from tier2_runtime.wasm.opcodes import BR_IF, CALL, I32_ADD, LOOP
 
     control_stack = NativeControlStack(capacity=1)
-    pushed = control_stack.push_back(ControlFrameKind.LOOP, start=0, match_end=4, stack_height=0)
+    pushed = control_stack.push_back(start=0, stack_height=0)
     assert pushed
-    assert control_stack[0].kind == int(ControlFrameKind.LOOP)
+    assert control_stack[0].start == 0
     assert opcode_has_attribute(CALL, OpcodeAttribute.CALL)
     assert opcode_has_attribute(BR_IF, OpcodeAttribute.BRANCH)
     assert opcode_has_attribute(LOOP, OpcodeAttribute.BASIC_BLOCK_BOUNDARY)
     assert not opcode_has_attribute(I32_ADD, OpcodeAttribute.BASIC_BLOCK_BOUNDARY)
+
+
+def test_loader_builds_control_map_before_interpreter_creation():
+    module = parse(
+        wat_to_wasm(
+            "(module (global i64 (i64.const 0)) "
+            '(func (export "main") i32.const 1 drop (block (br 0))))'
+        )
+    )
+    function = module.functions[0]
+
+    assert function.control_map is not None
+    loaded_control_map = function.control_map
+    assert function.interpreter_constant_pool is not None
+    loaded_constant_pool = function.interpreter_constant_pool
+    assert module.blocks
+    assert tuple(loaded_constant_pool) == (1, 0)
+    assert tuple(block.interpreter_constant_offset for block in module.blocks) == (0,)
+    Interpreter(module)
+    assert function.control_map is loaded_control_map
+    assert function.interpreter_constant_pool is loaded_constant_pool
+    assert tuple(block.interpreter_constant_offset for block in module.blocks) == (0,)
+
+    from qa.shared.helpers import make_native_interpreter
+
+    native = make_native_interpreter(module)
+    assert native.call(module.export_func_index("main"), []) == []
+    native_execution = native._module_execution
+    assert native_execution is not None
+    assert native_execution._module_view.blocks == module.blocks.native_address
+    assert native_execution._module_view.types == module.types.native_address
+    assert native_execution._module_view.global_widths == module.global_widths_address
+    assert ctypes.c_uint8.from_address(module.global_widths_address).value == 2
+    function_view = native_execution._templates[0]._native_function_view
+    assert function_view.control_map == ctypes.addressof(loaded_control_map.native_entries)
+    assert function_view.interpreter_constant_pool == loaded_constant_pool.native_address
 
 
 def test_intp_73_wide_frame_uses_compact_per_local_layout():
@@ -108,6 +177,37 @@ def test_intp_73_wide_frame_uses_compact_per_local_layout():
     assert Interpreter(module).call(0, [7, 42, 3.5]) == [42]
 
 
+def test_interpreter_constant_pool_omits_fixed_width_float_immediates():
+    """Pool only decoded operands; fixed-width floats remain in bytecode."""
+    from tier2_runtime.interpreter.control_flow import build_interpreter_constant_pool
+
+    code = bytes.fromhex(
+        "28 02 04 "  # i32.load: alignment, then offset
+        "11 01 02 "  # call_indirect: type index, then table index
+        "0e 01 00 01 "  # br_table: count and two depths
+        "42 80 01 "  # i64.const 128: two u32 words
+        "43 00 00 c0 7f "  # f32.const: fixed-width payload stays in bytecode
+        "44 00 00 00 00 00 00 f8 7f "  # f64.const: fixed-width payload
+        "0b"
+    )
+    constants, block_offsets = build_interpreter_constant_pool(
+        memoryview(code), (0, 3, 6, 10, 13, 18, 27)
+    )
+
+    assert list(block_offsets) == [0, 2, 4, 7, 9, 9, 9]
+    assert list(constants) == [
+        2,
+        4,
+        1,
+        2,
+        1,
+        0,
+        1,
+        128,
+        0,
+    ]
+
+
 def test_native_single_byte_local_boundary_and_multibyte_call():
     prior_functions = " ".join("(func)" for _ in range(128))
     locals_decl = " ".join("(local i32)" for _ in range(128))
@@ -125,15 +225,47 @@ def test_native_single_byte_local_boundary_and_multibyte_call():
     assert make_native_interpreter(module).call(module.export_func_index("main"), []) == [37]
 
 
+def test_native_call_restores_rel_for_unindexed_caller_continuation():
+    prior_functions = " ".join("(func)" for _ in range(128))
+    module = parse(
+        memoryview(
+            wat_to_wasm(
+                f"(module {prior_functions} (func (drop (i32.const 0))) "
+                '(func (export "main") (result i64) (call 128) (i64.const 42)))'
+            )
+        )
+    )
+
+    assert make_native_interpreter(module).call(module.export_func_index("main"), []) == [42]
+
+
+def test_native_runtime_api_false_stops_before_following_store():
+    module = parse(
+        wat_to_wasm(
+            '(module (memory 1) (func (export "main") '
+            "i32.const 1 i32.const 0 i32.div_s drop "
+            "i32.const 0 i32.const 99 i32.store))"
+        )
+    )
+    memory = bytearray(65536)
+    interpreter = make_native_interpreter(module, memory=memory)
+
+    with pytest.raises(AssertionError) as failure:
+        interpreter.call(module.export_func_index("main"), [])
+
+    assert failure.value.args == (InterpreterTrapCode.INTEGER_DIVIDE_BY_ZERO,)
+    assert memory[:4] == b"\x00\x00\x00\x00"
+
+
 def test_intp_72_control_map_uses_four_entry_locality_caches():
     """TEST-INTP-72: static control metadata retains its bounded locality caches."""
     from tier2_runtime.interpreter.control_flow import build_control_map
 
-    control_map = build_control_map(b"\x02\x40\x0b")
+    control_map = build_control_map(memoryview(b"\x02\x40\x0b"))
     assert control_map.block(0) == (2, None, 0)
-    typed_map = build_control_map(b"\x02\x7f\x0b")
+    typed_map = build_control_map(memoryview(b"\x02\x7f\x0b"))
     assert typed_map.block(0) == (2, None, 1)
-    wide_map = build_control_map(b"\x02\x7e\x0b")
+    wide_map = build_control_map(memoryview(b"\x02\x7e\x0b"))
     assert wide_map.block(0) == (2, None, 2)
     assert len(control_map.block_cache) == 4
     assert len(control_map.br_table_cache) == 4
@@ -149,12 +281,12 @@ def test_intp_01_handler_returns_specific_trap_outcome():
     module = parse(wat_to_wasm("(module (func unreachable))"))
     call_state = Interpreter(module).start(0, [])
     assert get_call_cont(call_state) is not None
-    ip, frame, local_base, tos = get_call_cont(call_state)
-    call_state.context.bind_handler_state(ip, frame)
+    ip, frame, _ = get_call_cont(call_state)
+    call_state.context.ip = ip
 
     handler = _HANDLERS[UNREACHABLE]
     assert handler is not None
-    result = handler(call_state.context, frame.values, local_base, tos)
+    result = handler(call_state.context, call_state.context.ip_ptr, frame.values)
     assert isinstance(result, Trap)
     assert result.code == InterpreterTrapCode.UNREACHABLE
 
@@ -174,7 +306,7 @@ def test_intp_17_return_publishes_explicit_sentinel_before_frame_pop():
     call_state = interp.step(interp.start(0, []))
     assert not call_state.finished
     assert get_call_cont(call_state) is not None
-    sentinel_ip, _, _, _ = get_call_cont(call_state)
+    sentinel_ip, _, _ = get_call_cont(call_state)
     assert sentinel_ip == RETURN_SENTINEL_IP
     assert call_state.current_pc() == RETURN_SENTINEL_PC
     completed = interp.step(call_state)
@@ -641,21 +773,16 @@ def test_intp_70_to_72_direct_bytecode_execution():
     assert len(context.call_frame_stack) == 1
     native_frame = context.native_call_frames[-1]
     assert native_frame.func_index == 0
-    assert native_frame.code != 0
-    assert native_frame.code_size == len(frame.code)
-    assert native_frame.local_base == frame.frame_offset
-    assert native_frame.local_count == frame.local_count
-    assert native_frame.local_slot_count == frame.local_slot_count
-    assert native_frame.local_offsets == frame.local_layout.offsets_address
-    assert native_frame.local_sizes == frame.local_layout.sizes_address
-    assert native_frame.param_count == frame.param_count
-    assert native_frame.param_packed_slot_count == frame.param_packed_slot_count
+    assert native_frame.function_view == ctypes.addressof(frame._native_function_view)
+    assert frame._native_function_view.code != 0
+    assert frame._native_function_view.code_size == len(frame.code)
+    assert native_frame.local_base == context.local_stack.value_ptr(frame.frame_offset).value
     # Two i32 locals: the frame uses 4-byte slots, so it occupies two raw words.
     assert frame.local_layout.total_words == 2
-    assert context.local_offset == 2
+    assert context.local_stack_pointer == context.local_stack.value_ptr(2).value
     assert len(context.local_stack) == 2
     context.end_call_frame(frame)
-    assert context.local_offset == 0
+    assert context.local_stack_pointer == context.local_stack_base
     assert len(context.call_frame_stack) == 0
     assert not context.native_call_frames
     assert len(context.local_stack) == 0
@@ -917,6 +1044,46 @@ def test_wasm_mvp_imported_table_and_active_element_segment():
     assert interp.tables[0] is external_table
     assert external_table[0] == 0
     assert interp.call(module.export_func_index("call"), []) == [42]
+    with pytest.raises(AssertionError, match="immutable"):
+        external_table[0] = None
+
+
+def test_call_indirect_signature_mismatch_fails_while_linking_table():
+    """A table's initialized targets must satisfy every linked call_indirect site."""
+    wat = """
+    (module
+      (type $expected (func (result i32)))
+      (type $actual (func (result i64)))
+      (table 1 funcref)
+      (func $wrong (type $actual) (i64.const 42))
+      (elem (i32.const 0) $wrong)
+      (func (export "call") (result i32)
+        (call_indirect (type $expected) (i32.const 0)))
+    )
+    """
+    module = parse(wat_to_wasm(wat))
+
+    with pytest.raises(AssertionError, match="incompatible signature"):
+        make_native_interpreter(module)
+
+
+def test_call_indirect_links_structurally_equal_duplicate_signatures():
+    """Distinct type indices with identical signatures remain compatible."""
+    wat = """
+    (module
+      (type $expected (func (result i32)))
+      (type $actual (func (result i32)))
+      (table 1 funcref)
+      (func $answer (type $actual) (i32.const 42))
+      (elem (i32.const 0) $answer)
+      (func (export "call") (result i32)
+        (call_indirect (type $expected) (i32.const 0)))
+    )
+    """
+    module = parse(wat_to_wasm(wat))
+    interpreter = make_native_interpreter(module)
+
+    assert interpreter.call(module.export_func_index("call"), []) == [42]
 
 
 def test_runtime_arena_accounts_wasm_native_tables_and_reuses_call_stacks():

@@ -1,0 +1,109 @@
+# AO-Bench NativeInterpreter / Hybrid JIT / WAMR Fast Interpreter — 2026-10-11 再計測
+
+## 対象と再現情報
+
+- HEAD: f262506fef381b92368c8f99e6c69c1e6eaa2406。作業ツリーは未コミット変更を含む。
+- CPU: AMD Ryzen 5 5500GT with Radeon Graphics、Ubuntu 26.04.1、Linux 7.0.0-38-generic、x86_64。
+- Runtime: CPython 3.13.15、Clang 21.1.8。ベンチ対象はPython参照インタープリタではない。
+- WASM: experiments/pysim/benchmarks/aobench/aobench.wasm; SHA-256 9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9。
+- WAMR: 2.4.3, commit f5f57c09aee6; Fast Interpreter + WASI、AOT/JIT無効。
+- Interpreter/JIT共有ライブラリは2026-10-11に現行作業ツリーからrelease再ビルドした。InterpreterはClang -O2 -DNDEBUG、JITはClang -O2 -g -DNDEBUG、C++23を使用した。WAMR runnerはClang -O2 -DNDEBUGでビルドした。
+- 条件: 5解像度×3独立プロセス×3エンジン。各プロセス3回ウォームアップし、続く7回を計時した。CPU 2に固定し、試行ごとにエンジン順を入れ替えた。yield thresholdは4096。
+- Interpreter/JITの計時対象はNativeInterpreter.call()、WAMRはwasm_runtime_call_wasm()。module/host初期化と準備は計時外。
+- JITはウォームアップ後にidle_hookを呼び、計時中はidle_budget=0とした。`compiled_traces_drained_before_measurement=0` は最後の明示queue drainが処理した件数であり、コンパイル済みtrace数ではない。各解像度の独立QA診断でJIT実行数が0より大きいことを別途確認した。
+- 各プロセスは10フレームを出力した。全45出力（5解像度×3エンジン×3試行）の全バイトを照合し、同一解像度の9出力がすべて一致した。出力SHA-256:
+  - 64x36: 570ecec0d82c7dfc11805f203e7f5282f12cf1882d0f774783b8d9c057ac5ee2
+  - 128x72: b6a28d273e549e783d8e5526fd2f9ad1ed8f08b45fba32571f689d7034f6ea03
+  - 192x108: 48b7b02de263c6610328b961fd0f5c2ea901cb82731901b6c36477c0eb913c0c
+  - 256x144: 2ce48b29f0eeabda19490cdf68d35742bbbc837ebb2e6b5d3185df980cdfa67c
+  - 320x180: b836421dc04ef17309c5bb32b760cdb38f4de85e9cea5943fb90df0697f92f48
+- JIT診断呼び出し数（64×36から順）: 202,094、842,888、2,025,432、3,642,052、5,820,810。
+- Interpreter library SHA-256: ecfe7891b82dd4b7cad7ba3e8f0556343c89eb8da012c812c81132d04ed89a99。
+- JIT library SHA-256: c97beefdc37d77f8d13d53f105674b3c847c3b8b265bd44281e461db69cfa6b9。
+- Benchmark orchestrator SHA-256: eed2a13a6ab6f7cdbab8e8e7beb41127ebbe0a22f4a017a32e7fcc8e747e0be4。
+- Fireball process runner SHA-256: 0ef0e4154a2d23c84c444901bdec09908678292c698d2084ea050d2377af57ba。
+- QA diagnostic runner SHA-256: a741f6fdd7681d32748fc2d85e15202ce4de37124cda019cbe462355b0ea0ecd。
+- WAMR runner SHA-256: 5620f12afaa6e817dd018d6aed65618df4d2bd1da95947e37da1f795cd9d0f90。
+
+## 計測ログ
+
+以下は各独立プロセスの全7サンプル、フレーム出力ハッシュ、QA診断カウンターである。
+
+---
+
+AO-Bench Fireball NativeInterpreter / Hybrid JIT / WAMR Fast Interpreter — 2026-10-11
+
+Conditions: 5 resolutions; 3 independent processes per engine/resolution; 3 warmup calls + 7 timed calls per process; CPU 2 pinned; engine order rotated by trial; yield threshold 4096; no Python-interpreter timing.
+Fireball timing covers NativeInterpreter.call() only. JIT queue is drained after warmup with idle_hook before timing; measured calls use idle_budget=0.
+WASM SHA-256: 9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9
+
+trial=1 size=64x36 engine=interpreter samples_ms=49.961,54.284,48.929,48.624,52.425,48.740,49.332 median_ms=49.332 frames_sha256=570ecec0d82c7dfc11805f203e7f5282f12cf1882d0f774783b8d9c057ac5ee2
+trial=1 size=64x36 engine=jit samples_ms=53.255,54.654,56.286,54.235,54.602,56.076,53.656 median_ms=54.602 frames_sha256=570ecec0d82c7dfc11805f203e7f5282f12cf1882d0f774783b8d9c057ac5ee2
+  compiled_traces_drained_before_measurement=0
+trial=1 size=64x36 engine=wamr samples_ms=5.268,5.314,5.311,5.247,5.210,5.195,5.303 median_ms=5.268 frames_sha256=570ecec0d82c7dfc11805f203e7f5282f12cf1882d0f774783b8d9c057ac5ee2
+trial=2 size=64x36 engine=jit samples_ms=55.568,55.292,55.075,55.534,54.609,62.433,55.600 median_ms=55.534 frames_sha256=570ecec0d82c7dfc11805f203e7f5282f12cf1882d0f774783b8d9c057ac5ee2
+  compiled_traces_drained_before_measurement=0
+trial=2 size=64x36 engine=wamr samples_ms=5.334,5.760,5.873,5.501,5.231,5.241,5.231 median_ms=5.334 frames_sha256=570ecec0d82c7dfc11805f203e7f5282f12cf1882d0f774783b8d9c057ac5ee2
+trial=2 size=64x36 engine=interpreter samples_ms=49.633,51.351,48.469,49.070,48.731,48.077,49.504 median_ms=49.070 frames_sha256=570ecec0d82c7dfc11805f203e7f5282f12cf1882d0f774783b8d9c057ac5ee2
+trial=3 size=64x36 engine=wamr samples_ms=5.150,5.161,5.147,5.108,5.142,5.110,5.155 median_ms=5.147 frames_sha256=570ecec0d82c7dfc11805f203e7f5282f12cf1882d0f774783b8d9c057ac5ee2
+trial=3 size=64x36 engine=interpreter samples_ms=48.987,50.546,50.722,48.904,48.631,49.132,49.582 median_ms=49.132 frames_sha256=570ecec0d82c7dfc11805f203e7f5282f12cf1882d0f774783b8d9c057ac5ee2
+trial=3 size=64x36 engine=jit samples_ms=53.426,54.409,53.336,53.856,54.118,55.928,52.891 median_ms=53.856 frames_sha256=570ecec0d82c7dfc11805f203e7f5282f12cf1882d0f774783b8d9c057ac5ee2
+  compiled_traces_drained_before_measurement=0
+JIT path diagnostic size=64x36: diagnostic_jit_invocations=202094 diagnostic_interpreter_steps=543398 trace_transitions=202090
+SUMMARY size=64x36 rays=7332 interpreter_ms=49.132 interpreter_range_ms=49.070-49.332 jit_ms=54.602 jit_range_ms=53.856-55.534 wamr_ms=5.268 wamr_range_ms=5.147-5.334 jit_over_interpreter=1.111x interpreter_over_wamr=9.327x jit_over_wamr=10.365x frame_sha256=570ecec0d82c7dfc11805f203e7f5282f12cf1882d0f774783b8d9c057ac5ee2
+trial=1 size=128x72 engine=interpreter samples_ms=193.319,194.204,195.514,197.481,194.207,194.183,198.810 median_ms=194.207 frames_sha256=b6a28d273e549e783d8e5526fd2f9ad1ed8f08b45fba32571f689d7034f6ea03
+trial=1 size=128x72 engine=jit samples_ms=212.735,216.531,219.159,218.600,218.236,217.960,216.635 median_ms=217.960 frames_sha256=b6a28d273e549e783d8e5526fd2f9ad1ed8f08b45fba32571f689d7034f6ea03
+  compiled_traces_drained_before_measurement=0
+trial=1 size=128x72 engine=wamr samples_ms=21.208,21.232,21.335,21.185,21.438,21.351,21.399 median_ms=21.335 frames_sha256=b6a28d273e549e783d8e5526fd2f9ad1ed8f08b45fba32571f689d7034f6ea03
+trial=2 size=128x72 engine=jit samples_ms=216.840,217.913,218.220,221.324,217.800,215.157,214.920 median_ms=217.800 frames_sha256=b6a28d273e549e783d8e5526fd2f9ad1ed8f08b45fba32571f689d7034f6ea03
+  compiled_traces_drained_before_measurement=0
+trial=2 size=128x72 engine=wamr samples_ms=20.712,20.588,20.592,20.852,21.263,21.717,21.409 median_ms=20.852 frames_sha256=b6a28d273e549e783d8e5526fd2f9ad1ed8f08b45fba32571f689d7034f6ea03
+trial=2 size=128x72 engine=interpreter samples_ms=193.686,201.391,193.815,195.898,194.578,196.127,197.722 median_ms=195.898 frames_sha256=b6a28d273e549e783d8e5526fd2f9ad1ed8f08b45fba32571f689d7034f6ea03
+trial=3 size=128x72 engine=wamr samples_ms=20.851,21.191,21.212,20.471,20.610,21.046,21.202 median_ms=21.046 frames_sha256=b6a28d273e549e783d8e5526fd2f9ad1ed8f08b45fba32571f689d7034f6ea03
+trial=3 size=128x72 engine=interpreter samples_ms=199.131,198.068,199.968,195.982,195.796,200.566,199.192 median_ms=199.131 frames_sha256=b6a28d273e549e783d8e5526fd2f9ad1ed8f08b45fba32571f689d7034f6ea03
+trial=3 size=128x72 engine=jit samples_ms=214.793,214.045,215.041,217.761,218.793,232.421,214.708 median_ms=215.041 frames_sha256=b6a28d273e549e783d8e5526fd2f9ad1ed8f08b45fba32571f689d7034f6ea03
+  compiled_traces_drained_before_measurement=0
+JIT path diagnostic size=128x72: diagnostic_jit_invocations=842888 diagnostic_interpreter_steps=2162259 trace_transitions=842869
+SUMMARY size=128x72 rays=29732 interpreter_ms=195.898 interpreter_range_ms=194.207-199.131 jit_ms=217.800 jit_range_ms=215.041-217.960 wamr_ms=21.046 wamr_range_ms=20.852-21.335 jit_over_interpreter=1.112x interpreter_over_wamr=9.308x jit_over_wamr=10.349x frame_sha256=b6a28d273e549e783d8e5526fd2f9ad1ed8f08b45fba32571f689d7034f6ea03
+trial=1 size=192x108 engine=interpreter samples_ms=436.510,440.979,443.963,440.752,441.411,437.322,447.124 median_ms=440.979 frames_sha256=48b7b02de263c6610328b961fd0f5c2ea901cb82731901b6c36477c0eb913c0c
+trial=1 size=192x108 engine=jit samples_ms=493.454,488.111,485.094,485.716,502.369,486.357,481.376 median_ms=486.357 frames_sha256=48b7b02de263c6610328b961fd0f5c2ea901cb82731901b6c36477c0eb913c0c
+  compiled_traces_drained_before_measurement=0
+trial=1 size=192x108 engine=wamr samples_ms=46.094,46.528,46.772,46.551,46.213,46.348,46.042 median_ms=46.348 frames_sha256=48b7b02de263c6610328b961fd0f5c2ea901cb82731901b6c36477c0eb913c0c
+trial=2 size=192x108 engine=jit samples_ms=491.342,490.413,483.608,483.426,484.547,491.749,479.955 median_ms=484.547 frames_sha256=48b7b02de263c6610328b961fd0f5c2ea901cb82731901b6c36477c0eb913c0c
+  compiled_traces_drained_before_measurement=0
+trial=2 size=192x108 engine=wamr samples_ms=48.669,46.398,47.835,46.604,47.569,47.639,48.690 median_ms=47.639 frames_sha256=48b7b02de263c6610328b961fd0f5c2ea901cb82731901b6c36477c0eb913c0c
+trial=2 size=192x108 engine=interpreter samples_ms=442.511,437.013,446.116,436.978,452.504,444.480,444.179 median_ms=444.179 frames_sha256=48b7b02de263c6610328b961fd0f5c2ea901cb82731901b6c36477c0eb913c0c
+trial=3 size=192x108 engine=wamr samples_ms=47.988,47.644,47.003,47.102,47.060,47.939,47.234 median_ms=47.234 frames_sha256=48b7b02de263c6610328b961fd0f5c2ea901cb82731901b6c36477c0eb913c0c
+trial=3 size=192x108 engine=interpreter samples_ms=438.897,435.528,438.856,440.044,440.988,440.614,449.298 median_ms=440.044 frames_sha256=48b7b02de263c6610328b961fd0f5c2ea901cb82731901b6c36477c0eb913c0c
+trial=3 size=192x108 engine=jit samples_ms=481.738,497.233,487.996,504.900,484.421,489.537,475.159 median_ms=487.996 frames_sha256=48b7b02de263c6610328b961fd0f5c2ea901cb82731901b6c36477c0eb913c0c
+  compiled_traces_drained_before_measurement=0
+JIT path diagnostic size=192x108: diagnostic_jit_invocations=2025432 diagnostic_interpreter_steps=4731454 trace_transitions=2025398
+SUMMARY size=192x108 rays=67032 interpreter_ms=440.979 interpreter_range_ms=440.044-444.179 jit_ms=486.357 jit_range_ms=484.547-487.996 wamr_ms=47.234 wamr_range_ms=46.348-47.639 jit_over_interpreter=1.103x interpreter_over_wamr=9.336x jit_over_wamr=10.297x frame_sha256=48b7b02de263c6610328b961fd0f5c2ea901cb82731901b6c36477c0eb913c0c
+trial=1 size=256x144 engine=interpreter samples_ms=782.268,781.241,781.420,781.620,778.884,781.784,779.060 median_ms=781.420 frames_sha256=2ce48b29f0eeabda19490cdf68d35742bbbc837ebb2e6b5d3185df980cdfa67c
+trial=1 size=256x144 engine=jit samples_ms=855.916,864.824,864.198,869.155,852.214,868.020,877.432 median_ms=864.824 frames_sha256=2ce48b29f0eeabda19490cdf68d35742bbbc837ebb2e6b5d3185df980cdfa67c
+  compiled_traces_drained_before_measurement=0
+trial=1 size=256x144 engine=wamr samples_ms=86.228,84.246,83.941,85.655,85.642,84.923,85.621 median_ms=85.621 frames_sha256=2ce48b29f0eeabda19490cdf68d35742bbbc837ebb2e6b5d3185df980cdfa67c
+trial=2 size=256x144 engine=jit samples_ms=879.009,883.250,877.485,882.388,861.903,888.982,898.568 median_ms=882.388 frames_sha256=2ce48b29f0eeabda19490cdf68d35742bbbc837ebb2e6b5d3185df980cdfa67c
+  compiled_traces_drained_before_measurement=0
+trial=2 size=256x144 engine=wamr samples_ms=82.804,83.922,83.195,82.410,86.192,81.906,83.892 median_ms=83.195 frames_sha256=2ce48b29f0eeabda19490cdf68d35742bbbc837ebb2e6b5d3185df980cdfa67c
+trial=2 size=256x144 engine=interpreter samples_ms=780.296,929.559,1066.381,780.078,1036.896,784.441,782.363 median_ms=784.441 frames_sha256=2ce48b29f0eeabda19490cdf68d35742bbbc837ebb2e6b5d3185df980cdfa67c
+trial=3 size=256x144 engine=wamr samples_ms=81.857,85.347,84.690,85.669,83.636,90.730,83.562 median_ms=84.690 frames_sha256=2ce48b29f0eeabda19490cdf68d35742bbbc837ebb2e6b5d3185df980cdfa67c
+trial=3 size=256x144 engine=interpreter samples_ms=786.700,793.177,795.647,808.914,791.355,793.758,806.753 median_ms=793.758 frames_sha256=2ce48b29f0eeabda19490cdf68d35742bbbc837ebb2e6b5d3185df980cdfa67c
+trial=3 size=256x144 engine=jit samples_ms=911.998,884.379,883.683,933.705,1005.786,945.246,860.822 median_ms=911.998 frames_sha256=2ce48b29f0eeabda19490cdf68d35742bbbc837ebb2e6b5d3185df980cdfa67c
+  compiled_traces_drained_before_measurement=0
+JIT path diagnostic size=256x144: diagnostic_jit_invocations=3642052 diagnostic_interpreter_steps=8394252 trace_transitions=3641979
+SUMMARY size=256x144 rays=119352 interpreter_ms=784.441 interpreter_range_ms=781.420-793.758 jit_ms=882.388 jit_range_ms=864.824-911.998 wamr_ms=84.690 wamr_range_ms=83.195-85.621 jit_over_interpreter=1.125x interpreter_over_wamr=9.263x jit_over_wamr=10.419x frame_sha256=2ce48b29f0eeabda19490cdf68d35742bbbc837ebb2e6b5d3185df980cdfa67c
+trial=1 size=320x180 engine=interpreter samples_ms=1269.018,1232.484,1230.378,1455.020,1224.611,1230.994,1223.617 median_ms=1230.994 frames_sha256=b836421dc04ef17309c5bb32b760cdb38f4de85e9cea5943fb90df0697f92f48
+trial=1 size=320x180 engine=jit samples_ms=1354.510,1352.683,1354.890,1343.770,1369.981,1348.005,1355.639 median_ms=1354.510 frames_sha256=b836421dc04ef17309c5bb32b760cdb38f4de85e9cea5943fb90df0697f92f48
+  compiled_traces_drained_before_measurement=0
+trial=1 size=320x180 engine=wamr samples_ms=131.094,132.422,127.685,126.101,128.759,126.808,126.356 median_ms=127.685 frames_sha256=b836421dc04ef17309c5bb32b760cdb38f4de85e9cea5943fb90df0697f92f48
+trial=2 size=320x180 engine=jit samples_ms=1363.281,1356.930,1365.348,1410.753,1362.342,1443.881,1421.224 median_ms=1365.348 frames_sha256=b836421dc04ef17309c5bb32b760cdb38f4de85e9cea5943fb90df0697f92f48
+  compiled_traces_drained_before_measurement=0
+trial=2 size=320x180 engine=wamr samples_ms=128.599,127.616,128.624,169.562,161.133,128.320,134.852 median_ms=128.624 frames_sha256=b836421dc04ef17309c5bb32b760cdb38f4de85e9cea5943fb90df0697f92f48
+trial=2 size=320x180 engine=interpreter samples_ms=1230.969,1227.719,1234.039,1229.271,1283.346,1223.412,1218.746 median_ms=1229.271 frames_sha256=b836421dc04ef17309c5bb32b760cdb38f4de85e9cea5943fb90df0697f92f48
+trial=3 size=320x180 engine=wamr samples_ms=131.711,131.078,129.747,129.477,129.107,128.545,129.713 median_ms=129.713 frames_sha256=b836421dc04ef17309c5bb32b760cdb38f4de85e9cea5943fb90df0697f92f48
+trial=3 size=320x180 engine=interpreter samples_ms=1228.358,1223.280,1225.886,1223.202,1216.953,1218.755,1218.198 median_ms=1223.202 frames_sha256=b836421dc04ef17309c5bb32b760cdb38f4de85e9cea5943fb90df0697f92f48
+trial=3 size=320x180 engine=jit samples_ms=1433.623,1357.776,1346.695,1339.451,1357.503,1347.642,1357.675 median_ms=1357.503 frames_sha256=b836421dc04ef17309c5bb32b760cdb38f4de85e9cea5943fb90df0697f92f48
+  compiled_traces_drained_before_measurement=0
+JIT path diagnostic size=320x180: diagnostic_jit_invocations=5820810 diagnostic_interpreter_steps=13000888 trace_transitions=5820692
+SUMMARY size=320x180 rays=186792 interpreter_ms=1229.271 interpreter_range_ms=1223.202-1230.994 jit_ms=1357.503 jit_range_ms=1354.510-1365.348 wamr_ms=128.624 wamr_range_ms=127.685-129.713 jit_over_interpreter=1.104x interpreter_over_wamr=9.557x jit_over_wamr=10.554x frame_sha256=b836421dc04ef17309c5bb32b760cdb38f4de85e9cea5943fb90df0697f92f48

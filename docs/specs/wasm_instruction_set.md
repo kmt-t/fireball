@@ -6,10 +6,10 @@
 -->
 
 ## 1. 概要と適用方針
-<!-- traceability: {ThreadedInterpreter} {JIT_CopyAndPatch} {Wasm32Only} {WasmFCSubset} {META_ZeroCostAbstraction} -->
+<!-- traceability: {ThreadedInterpreter} {JIT_AssemblyStencilCodegen} {Wasm32Only} {WasmFCSubset} {META_ZeroCostAbstraction} -->
 本仕様書は、wasm32単一リニアメモリのWASM Core 1.0 MVPを基礎とし、`0xFC`のうち飽和型浮動小数点→整数変換8命令と`memory.copy`/`memory.fill`だけを追加した命令意味論とインタープリタ動作を定義する。その他の`0xFC`サブオペコードは非対応とする。ARMv8-M向けJITの物理命令列・レジスタ・ABI・メモリ保護方式はTBDとし、本書で確定しない。
 
-x64で確認したInterpreter/JIT間の4論理引数契約と物理ABIは [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) を参照する。ARMv8-Mでは論理引数の物理配置、callee-save規則、値キャッシュ、トレース境界同期をすべてTBDとする。
+x64で確認したInterpreter/JIT間の3論理引数契約と物理ABIは [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) を参照する。共有オペランドスタックを値の正本とし、TOS値を別途キャッシュしない。ARMv8-Mの論理引数の物理配置、callee-save規則、トレース境界同期はTBDとする。
 
 ---
 
@@ -29,9 +29,9 @@ x64で確認したInterpreter/JIT間の4論理引数契約と物理ABIは [`jit_
 ## 3. WASMオプコード物理マトリクス
 
 ### 3.1 制御フロー命令 (Control Flow)
-<!-- traceability: {ThreadedInterpreter} {JIT_RuntimeAPI_Fallback} {ContextPointerRegister} -->
+<!-- traceability: {ThreadedInterpreter} {JIT_RuntimeAPI} {ContextPointerRegister} -->
 
-| Opcode | 命令名 | スタック遷移 | インタープリタ実装（継続渡し4論理引数） | ARMv8-M JIT mapping (TBD) | ARMv8-M physical behavior (TBD) |
+| Opcode | 命令名 | スタック遷移 | インタープリタ実装（継続渡し3論理引数） | ARMv8-M JIT mapping (TBD) | ARMv8-M physical behavior (TBD) |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | `0x00` | `unreachable` | `[] -> []` | トラップハンドラへジャンプ | TBD | TBD |
 | `0x01` | `nop` | `[] -> []` | `ip + 1` へ継続渡し | TBD | TBD |
@@ -45,6 +45,8 @@ x64で確認したInterpreter/JIT間の4論理引数契約と物理ABIは [`jit_
 | `0x0E` | `br_table` | `[i32] -> []` | テーブルインデックス分岐 | TBD | TBD |
 | `0x10` | `call` | `[t1*] -> [t2*]`| 関数呼出し記述子を積んで関数を呼び出す | TBD | TBD |
 | `0x11` | `call_indirect`| `[t1*, i32] -> [t2*]`| 関数テーブル照合 $\to$ 間接呼出 | TBD | TBD |
+
+`call_indirect`の型シグネチャはInterpreterのリンク時に検証する。各呼出しが参照するテーブルの初期化済み要素は、すべて期待シグネチャと一致しなければならない。不一致はリンク失敗とする。`call_indirect`が参照するリンク済みテーブルの要素は不変である。実行時にはテーブル範囲と未初期化要素を検査する。
 
 ---
 
@@ -114,7 +116,7 @@ x64で確認したInterpreter/JIT間の4論理引数契約と物理ABIは [`jit_
 ---
 
 ### 3.5 整数算術・論理・比較命令 (Integer Arithmetic, Logic & Comparison)
-<!-- traceability: {JIT_CopyAndPatch} {META_ZeroCostAbstraction} -->
+<!-- traceability: {JIT_AssemblyStencilCodegen} {META_ZeroCostAbstraction} -->
 
 | Opcode | 命令名 | スタック遷移 | インタープリタ実装 | ARMv8-M JIT mapping (TBD) | ARMv8-M physical behavior (TBD) |
 | :--- | :--- | :--- | :--- | :--- | :--- |
@@ -146,10 +148,10 @@ x64で確認したInterpreter/JIT間の4論理引数契約と物理ABIは [`jit_
 
 ---
 
-### 3.6 64ビット整数・浮動小数点命令と Libgcc ランタイムヘルパー
-<!-- traceability: {Libgcc_Runtime_Helper} {JIT_RuntimeAPI_Fallback} {ThreadedInterpreter} -->
+### 3.6 64ビット整数・浮動小数点命令のRuntime API
+<!-- traceability: {JIT_RuntimeAPI} {ThreadedInterpreter} -->
 
-ARMv8-Mでの64-bit整数・浮動小数点命令の命令選択、libgcc等の依存、helper呼出し規約はすべてTBDである。
+インタープリタとJITは命令ごとのRuntime APIを使ってWASM演算意味論を実行する。API内部の命令選択やcompiler runtimeへの依存は対象ABIの実装詳細とする。JIT traceからAPI tableに登録されていない関数アドレスへ直接遷移する契約は設けない。ARMv8-Mでの64-bit整数・浮動小数点命令のlowering、FPU構成、compiler runtime依存はTBDである。
 
 | Opcode 群 | カテゴリ / 代表命令名 | スタック遷移 | インタープリタ実装 | ARMv8-M JIT mapping (TBD) | ARMv8-M physical behavior (TBD) |
 | :--- | :--- | :--- | :--- | :--- | :--- |
@@ -161,7 +163,7 @@ ARMv8-Mでの64-bit整数・浮動小数点命令の命令選択、libgcc等の�
 | `0xA7`〜`0xBF` | **型変換・再解釈命令** (`i32.wrap_i64`, `i64.extend_i32_*`, `i32/i64.trunc_f*`, `f32/f64.convert_i*`, `reinterpret`) | `[t1] -> [t2]` | 型変換・ビット再解釈ハンドラ | TBD | TBD |
 
 ### 3.7 飽和型浮動小数点→整数変換 ({WasmFCSubset})
-<!-- traceability: {WasmFCSubset} {ThreadedInterpreter} {JIT_RuntimeAPI_Fallback} -->
+<!-- traceability: {WasmFCSubset} {ThreadedInterpreter} {JIT_RuntimeAPI} -->
 
 飽和変換は`0xFC` prefixのサブオペコード`0`〜`7`で符号化される。サブオペコードは符号なしLEB128としてデコードする。スタック上の浮動小数点値を整数へ変換して1値を置き換える。全命令で変換自体はtrapを発生させない。
 

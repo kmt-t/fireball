@@ -24,7 +24,7 @@ JIT拡張はInterpreterのネイティブ実行拡張として接続する。Int
 本コンポーネントは **Tier 3 Plugin** に属し、Interpreterへ任意接続するJIT pluginの実行時検索、3面コードキャッシュ管理、局所アンリンク、ホットスポット検出を担当する。コード生成コアは同plugin内の [`jit_compiler.md`](docs/components/tier3_plugins/jit_compiler.md) が担当する。
 
 ### 2.1 JIT サブシステムのデコンポジション
-<!-- traceability: {JIT_CopyAndPatch} {JIT_Encoder} {SimpleJITArchitecture} -->
+<!-- traceability: {JIT_AssemblyStencilCodegen} {SimpleJITArchitecture} -->
 JITサブシステムは、以下の2つの独立した設計書に責務を分離して構成される。
 - **[jit_compiler.md](docs/components/tier3_plugins/jit_compiler.md)**: 命令テンプレートを用いたネイティブコード生成および静的命令エンコードを担当する。
 - **[jit_runtime.md](docs/components/tier3_plugins/jit_runtime.md)**: ホットスポット履歴の記録・分析、カード更新・コンパイル要求、PCとネイティブコードの検索、3面キャッシュローテーションを担当する。 `SimpleJITArchitecture` `{JIT_MultiBuffer_Cache}`
@@ -72,7 +72,7 @@ JIT拡張はInterpreterへ接続する選択可能コンポーネントである
 - **カード更新表 (Card Update Bitmap)**: コード領域全体の各カードに対応する 1 ビットdirty表である。カードが `UNEXECUTED` から `EXECUTED` へ遷移した時だけ、そのカードのビットを立てる。密ビュー `fireball::bit_view<1>` として参照する。8カードを1バイトにまとめる。
 - **エイジングカーソル**: カード更新表のバイト位置を保持する整数である。モジュール登録時に 0 で初期化し、表の末尾に達したら先頭へ戻る。
 - **JITエントリ表と全バンク索引**: 各バンクは`head_pc`順の固定容量エントリ配列を持つ。別の固定容量参照配列を3バンク共通で一つ持ち、常駐エントリを`head_pc`順に索引する。参照はバンク番号とエントリ位置を示す。検索は共通配列を一度だけ二分探索し、PCとバンク番号を返す。同じPCの常駐エントリが二つ以上見つかった場合はassertする。バンク配列のシフト、挿入、削除、昇格、破棄後に索引を再整列する。現行設定では最大96件であり、参照は8ビットで表現する。Radix索引は設けない。
-- **ネイティブ実行拡張の接続**: JIT拡張への本体実行と観測入口を初期化時に固定する。C++ Interpreter dispatcherは共有実行状態とブロック開始PCを渡す。観測入口はインタープリタ実行後に候補判定と履歴記録をまとめて行う。常駐検索と必要な昇格はJIT拡張内部で完了する。
+- **ネイティブ実行拡張の接続**: JIT拡張への本体実行と観測入口を初期化時に固定する。C++ Interpreter dispatcherは共有実行状態とブロック開始PCを渡す。本体実行入口はカード状態を確認し、`COMPILED`でなければtrace lookupを行わずInterpreterへ継続を返す。観測入口はインタープリタ実行後に候補判定と履歴記録をまとめて行う。常駐検索と必要な昇格はJIT拡張内部で完了する。
   x64参照構成の記述枠は `JIT_CACHE_BANK_ENTRY_CAPACITY` により1バンク32件を上限とする。3面の上限は96件である。これはRAM予算の設定値であり、64バイトの既定コンストラクタ値や生成コードの平均サイズから導出しない。
   JIT entryは全バンクの固定容量上限に従う。同一PCの常駐traceを重複生成しない。WarmまたはOldestに存在するPCを新規insertすると契約違反とする。Oldestの昇格はJIT拡張内部のlookup経路を使う。Tier 2は世代と昇格を扱わない。
   コード領域または固定長JIT entry表が満杯になれば、既存の3面ローテーションを行う。生成コードの長さは可変である。短いtraceでもentry表の上限を超えて挿入しない。
@@ -80,23 +80,11 @@ JIT拡張はInterpreterへ接続する選択可能コンポーネントである
   同一カードの構造命令位置もbitが立つ。dispatcherは制御命令だけの区間で本体検索とブロック観測を呼び出さない。関数入口または制御処理の完了を、新しいブロック候補の開始トリガーとする。そこで確定したPCを保持し、通常命令のあるブロックだけを通知する。履歴の複製・転送やLoader索引の再検索を行わない。メモリ操作のruntime委譲後は同じブロックの継続として扱う。次の制御境界まで本体検索と重複した観測を行わない。外部呼出し・prefix委譲の完了は次ブロックの開始トリガーとする。単なるRuntime復帰や通常命令の出現を、新しい先頭の判定に使わない。trap・関数完了では開始待ち状態を解除する。
   通常命令の観測は候補ブロック入口の専用dispatchに限定する。最初のbody命令を観測した後は、観測処理を持たない通常dispatchへ直接末尾呼出しで移る。候補外と観測無効の経路には通常命令ごとの観測判定を追加しない。
   JIT entry表と履歴はJIT拡張の領域内に固定長で確保する。キャッシュ更新時にも同じ領域を再利用する。
-- **x64参照コード領域 (8KB)**: x64参照構成では4KBページ2枚分の領域を使う。先頭2KBは開始処理、終了処理、x64ヘルパー呼出しコード、chain dispatcher、および絶対アドレスプールを置く非エビクション領域とし、残る2KBずつを`Bank 0 (Active)`, `Bank 1 (Warm)`, `Bank 2 (Oldest)`に割り当てる。x64トレースヘッダはコード近傍に置き、生成コードと共通コードが読む実行時値を保持する。共通コード領域はflushやバンクローテーションでも維持する。ARMv8-Mの領域容量、物理配置、保護方式、ヘッダ形式はすべてTBDである。
-  x64参照共通領域内の固定オフセットは次のとおりである。オフセットはコード領域先頭からの値であり、トレースヘッダのフィールド位置とは別の値である。
-
-  | 共通領域オフセット | 配置物 | 容量・用途 |
-  | :--- | :--- | :--- |
-  | `0x000` | x64参照開始処理 | 4つの論理引数を受けてトレース本体へ移行する |
-  | `0x020` | x64参照終了処理 | 共有状態を同期して呼び出し元へ復帰する |
-  | `0x030` | コンテキスト型ヘルパー入口 | トレースヘッダの関数アドレスを共通呼出しコードへ渡す |
-  | `0x050` | 絶対アドレスプール | 256バイトの共通アドレス領域 |
-  | `0x160` | x64 i32ヘルパー入口群 | 32バイト単位で4入口。2個の32ビット整数引数と結果領域ポインタで関数を呼び出し、終了処理へ戻る |
-  | `0x200` | x64 wideヘルパー入口群 | 32バイト単位で11入口。ヘルパー契約ごとの引数を設定して関数を呼び出し、終了処理へ戻る |
-  | `0x400` | x64共通chain dispatcher | 56バイト。Traceヘッダのchain targetとframe depthを読み、必要ならcontrol stackを更新してから次trace bodyへtail-jumpする。未接続時は共通終了処理へ戻る |
-
-  chain dispatcherはopcode別の分岐handlerを共通化しない。静的前方`BR`の制御frame深さはコンパイル時にtrace headerへ埋め込まれ、dispatcherはdepth差分がある場合にcontrol stack sizeを合わせる。条件分岐・後方分岐の条件評価と後方分岐回数はC++ Interpreterの命令別handlerが処理する。handler実行後にJIT拡張が別traceを選ぶ遷移と、共通コードchain dispatcherがtarget bodyへtail-jumpするchainは別の経路である。C++ `constexpr` assemblerで生成した固定命令列をx64参照構成の共通領域へ一度だけ配置する。ARMv8-Mの呼出し入口、配置方式、命令列はTBDである。
+- **x64参照コード領域 (8KB)**: x64参照構成では4KBページ2枚分の領域を使う。先頭2KBはassembly生成chain dispatcherとRuntime API table用の非エビクション領域とする。残る2KBずつを`Bank 0 (Active)`, `Bank 1 (Warm)`, `Bank 2 (Oldest)`に割り当てる。共通コード領域はflushやバンクローテーションでも維持する。ARMv8-Mの領域容量、物理配置、保護方式、ヘッダ形式はTBDである。
+  共通コード領域のchain dispatcherは`0x000`から配置する。固定slotは256バイトである。Tier 3 JITが所有するJIT Runtime API function pointer tableはこの固定slotの直後に置き、操作stencilからopcode対応APIを呼び出す。Interpreter opcode handler表からRuntime API関数ポインタを取得しない。`chain_target_addr`が0ならtrace callerへ戻る。接続済みの場合はtarget headerから`const_rel_offset`を取得し、target traceへmusttail呼出しする。操作間の継続deltaはtrace末尾poolに保持しない。chain対象は同一frame深さの直線後続、およびloaderが解決した静的前方`BR`のtarget traceである。後者はdispatcherがtargetのframe depthへ制御スタックを調整する。条件分岐と後方分岐はC++ Interpreter handlerが処理する。chain dispatcherはopcodeを判定しない。`native/tier3_plugins/jit/lir/x64/common.S`を対象x64 ABIでアセンブルし、raw binaryとして共通領域へ一度だけ配置する。Runtime API tableはdispatcher固定slotの後ろに初期化する。ARMv8-Mの配置方式と命令列はTBDである。
 - **オンデマンドコンパイルキュー (On-demand Compile Queue)**: Tier 3 JIT拡張内で`HOT`に達した命令オフセットを保持する固定容量LIFOキューである。Runtimeのidle hookは全タスクidle時と協調境界で拡張へ処理予算を渡す。通常の予算は成功コンパイル数ではなく、取り出して処理した候補数に適用する。コンパイル失敗と既存trace等によるスキップも1件に数える。固定キュー満杯時は通常予算の例外として、その場で全候補を処理してキューを空にする。処理件数の上限は固定キュー容量であり、実時間の上限は保証しない。先行ブロックより後続を先に常駐させ、直線後続chainを接続する。 `JIT_ReverseCompilationOrder` `{GLOBAL_Policy_Memory}`
 - **バンク別被チェイン逆引きテーブル (Inbound Chain Index Table)**: 各キャッシュバンクへ向けたchain元のJITエントリを保持する固定長配列である。cache回転・promote時に共通chain dispatcherが参照するtarget addressを更新または解除する。
-- **前方chainメタデータ**: 実行時cache metadataの`chain_next_pc`は直線後続または静的前方`BR`のtrace PCを保持する。x64物理ヘッダの`chain_target_addr`は共通chain dispatcherがtail-jumpするresident target bodyを保持する。後方branch linkは作らず、branch handlerへ制御を戻してyield回数を更新する。
+- **前方chainメタデータ**: 実行時cache metadataの`chain_next_pc`は直線後続または静的前方`BR`のtarget PCを保持する。x64物理ヘッダの`chain_target_addr`は共通chain dispatcherがtail-jumpするresident target bodyを保持する。後方branch linkは作らず、branch handlerへ制御を戻してyield回数を更新する。
 - **実行履歴バッファ**: ホットスポット検出が有効なJIT拡張が所有する固定容量リングである。各レコードは`module_id`と`UnifiedPC`を持つ。容量は`JIT_HISTORY_CAPACITY`以下で指定する。待ち列容量は`JIT_COMPILE_QUEUE_CAPACITY`以下で指定する。Interpreter実行区間の終了時だけ履歴順に分析し、JIT trace/chainだけの区間では記録も分析もしない。 `{HistoryBuffer}`
 
 トレース実行回数と退役記録はQA専用の計測構成で採取する。計測の正本は[`jit_runtime_bench_spec.md`](docs/components/tier3_plugins/benchmarks/jit_runtime_bench_spec.md)とする。製品構成は計数状態、時計、計測用の後続走査、退役通知を持たない。PySIMでは`jit_runtime<Measurement>`のテンプレート引数で構成し、製品は`void`、QAは専用の計測型を選ぶ。計測型の実装は[`jit_measurements.hxx`](experiments/pysim/qa/private/jit_measurements.hxx)へ置く。QA用の代替ブロック入力、コンパイラ無効化、自己所有メモリ、および16ビットtrace参照IDの検査もQA型へ限定する。履歴分析はネイティブ実行境界で完了する。
@@ -138,14 +126,14 @@ flowchart TD
 
   $$TotalScore(BB) = \sum_{op \in BB} decode\_int4(opcode\_benefit\_table[op])$$
 
-  基本ブロック終端（分岐命令または `end`）到達時、累積スコア `TotalScore(BB)` を判定閾値 `S_threshold = 9`（Copy-and-Patch コンパイルオーバーヘッド約120命令を損益分岐10回で割った6点 ＋ 安全デルタ3点）と比較する。
+  基本ブロック終端（分岐命令または `end`）到達時、累積スコア `TotalScore(BB)` を判定閾値 `S_threshold = 9` と比較する。現行trace compileはWASM decode、variant選択、raw stencilのslot展開、template分岐再配置を実行するため、閾値が損益分岐回数を保証するものではない。compile latencyは [`jit_runtime_bench_spec.md`](docs/components/tier3_plugins/benchmarks/jit_runtime_bench_spec.md) のtrace単位計測で評価する。
   `TotalScore(BB) >= 9` を満たす場合、そのブロックの `head_pc` が属するカードの `jit_candidate_bitmap` ビット（1bit/カード）を `1` にセットする。満たさない極小ブロックや呼び出し主体ブロックは `0`（インタープリタ専任）に維持される。
   **設計理由と不変条件**: JIT キャッシュ（2KB $\times$ 3面）の容量とコンパイル・トレース管理の費用には上限がある。実行時のホットスポット検出前に、投資対効果（加速利得 $\ge$ コンパイルコスト＋マージン）を満たすブロックだけを静的に選別する。
   対象外ブロックでは、インタープリタ実行ループの `HotspotBitmap.touch(pc)` と履歴記録を完全に省く。この処理は $O(1)$ で不要になる。これによりキャッシュ汚染とスラッシングを防ぐ。
 
 ##### 命令別短縮利得スコア定義台帳 (`opcode_benefit_table` / `int4_t`)
 <!-- traceability: {JIT_StaticBenefitScoring} {JIT_CandidateBitmap} {WasmFCSubset} -->
-ROM 上に配置される 128 バイトルックアップテーブル（256 オプコード $\times$ 4-bit 符号付き整数 `int4_t`: `-8`〜`+7`）のスコア配分表を以下に定める。スコアは命令単体の実行時間ではなく、インタープリタ経路をJIT経路へ置き換えたときの期待利得を表す。インライン展開は高い正の値、JITからCヘルパーへ直接末尾遷移する命令は境界コストを差し引いた正の値、インタープリタへ戻る命令は負の値とする。構文デリミタは中立（0）、未サポート・トラップ命令は最大ペナルティ（-8）となる。
+ROM 上に配置される 128 バイトルックアップテーブル（256 オプコード $\times$ 4-bit 符号付き整数 `int4_t`: `-8`〜`+7`）のスコア配分表を以下に定める。スコアは命令単体の実行時間ではなく、インタープリタ経路をJIT経路へ置き換えたときの期待利得を表す。直接生成命令は高い正の値、JIT共通コード領域のRuntime API tableから実行する命令は呼出しコストを差し引いた正の値、実行境界へ戻る命令は負の値とする。構文デリミタは中立（0）、未サポート・トラップ命令は最大ペナルティ（-8）となる。
 `0xFC`はサブオペコードを持つprefix命令だが、本テーブルは先頭opcode byteで引く256要素のため、サポートする全サブオペコード（`0`〜`7`、`10`、`11`）へ共通のスコアを適用する。未対応サブオペコードはLoaderが先に拒否するので候補スコア表へ渡さない。
 
 | スコア (`int4_t`) | 換算短縮命令数 | 分類と特性 | 該当 WASM 命令 |
@@ -154,7 +142,7 @@ ROM 上に配置される 128 バイトルックアップテーブル（256 オ�
 | **`+6`** | 約 +12〜13 命令短縮 | 整数乗算・32bit 比較演算・ローカル変数/定数ロード・ビット操作のインライン展開 | `i32.mul` (`0x6C`), `i32.eqz` (`0x45`), `i32.eq` (`0x46`), `i32.ne` (`0x47`), `i32.lt_s` (`0x48`), `i32.lt_u` (`0x49`), `i32.gt_s` (`0x4A`), `i32.gt_u` (`0x4B`), `i32.le_s` (`0x4C`), `i32.le_u` (`0x4D`), `i32.ge_s` (`0x4E`), `i32.ge_u` (`0x4F`), `i32.clz` (`0x67`), `i32.ctz` (`0x68`), `i32.const` (`0x41`), `i64.const` (`0x42`), `f32.const` (`0x43`), `f64.const` (`0x44`), `local.get` (`0x20`), `local.set` (`0x21`), `local.tee` (`0x22`) |
 | **`+5`** | 約 +10〜11 命令短縮 | 境界検査付きリニアメモリアクセス・剰余/循環シフト・制御フロー直接ジャンプ | `i32.load` (`0x28`), `i32.load8_s` (`0x2C`), `i32.load8_u` (`0x2D`), `i32.load16_s` (`0x2E`), `i32.load16_u` (`0x2F`), `i32.store` (`0x36`), `i32.store8` (`0x3A`), `i32.store16` (`0x3B`), `i32.rotl` (`0x77`), `i32.rotr` (`0x78`), `i32.rem_s` (`0x6F`), `i32.rem_u` (`0x70`), `br` (`0x0C`), `br_if` (`0x0D`) |
 | **`+4`** | 約 +8 命令短縮 | 整数除算・グローバル変数アクセス・メモリサイズ・スタック操作・復帰・ニュートラル | `i32.div_s` (`0x6D`), `i32.div_u` (`0x6E`), `global.get` (`0x23`), `global.set` (`0x24`), `memory.size` (`0x3F`), `select` (`0x1B`), `return` (`0x0F`), `drop` (`0x1A`), `nop` (`0x01`) |
-| **`+3`** | 約 +6〜7 命令相当の正味利得 | 命令別Cヘルパーへの直接末尾遷移。JITコードには演算を埋め込まず、共有スタックを同期してコンテキストの関数ポインタへジャンプする | `i64.add` (`0x7C`), `i64.sub` (`0x7D`), `i64.mul` (`0x7E`), `f32.add` (`0x92`), `f32.sub` (`0x93`), `f32.mul` (`0x94`), `f32.div` (`0x95`), `f64.add` (`0xA0`), `f64.sub` (`0xA1`), `f64.mul` (`0xA2`), `f64.div` (`0xA3`) |
+| **`+3`** | 約 +6〜7 命令相当の正味利得 | 共通Runtime API tableを通じた命令別API呼出し。APIはopcode意味論と状態更新を行い、正常継続時はtrace内の後続operationへ戻る | `i64.add` (`0x7C`), `i64.sub` (`0x7D`), `i64.mul` (`0x7E`), `f32.add` (`0x92`), `f32.sub` (`0x93`), `f32.mul` (`0x94`), `f32.div` (`0x95`), `f64.add` (`0xA0`), `f64.sub` (`0xA1`), `f64.mul` (`0xA2`), `f64.div` (`0xA3`) |
 | **`0`** | 0 命令短縮 | 構文デリミタ（0バイト消去・トレースヘッダ埋め込みにより加点もペナルティもなし） | `block` (`0x02`), `loop` (`0x03`), `else` (`0x05`), `end` (`0x0B`) |
 | **`-1`** | 約 -2 命令ペナルティ | 真のインタープリタ委譲・関数間コール・動的ジャンプ（フレーム生成・境界コスト） | `call` (`0x10`), `call_indirect` (`0x11`), `br_table` (`0x0E`) |
 | **`-2`** | 約 -4 命令ペナルティ | OS システムサービス・メモリ拡張・一括操作・Interpreter委譲 | `memory.grow` (`0x40`), `i32/i64.trunc_sat_f32/f64_{s,u}` (`0xFC 0x00`〜`0x07`), `memory.copy` (`0xFC 0x0A`), `memory.fill` (`0xFC 0x0B`) |
@@ -163,16 +151,16 @@ ROM 上に配置される 128 バイトルックアップテーブル（256 オ�
 
 
 <!-- traceability: {DirectMappedJIT16} -->
-1. **カードマーキング確認 ($O(1)$)**: カードマーキング表 (`bit_view<2>`) を $O(1)$ で確認する。状態が `COMPILED` でなければ即座に終了する。
+1. **カードマーキング確認 ($O(1)$)**: カードマーキング表 (`bit_view<2>`) を $O(1)$ で確認する。状態が `COMPILED` でなければ即座にInterpreterへ戻し、キャッシュ検索を行わない。静的利得スコアが閾値未満のブロックは候補登録されず、該当カードは`COMPILED`へ遷移しない。
 2. **Direct-Mapped Folding XOR キャッシュ確認 ($O(1)$)**:
    - `UnifiedPC` を 32→16→8→4 ビットと3回の XOR で折りたたむ。
    - `slot = temp & 0x0F` を計算して16スロットの高速テーブルを照合する。
-   - スロットのタグが `head_pc` と一致（Hit）した場合、バンク検索をバイパスして $O(1)$ でトレースを返す。
+   - スロットのタグが `head_pc` と一致した場合、バンク検索をバイパスして $O(1)$ でトレースを返す。
 3. **全バンク参照索引の二分探索 ($O(\log n)$)**:
-   - キャッシュミス時、3バンク共通の`head_pc`昇順参照索引を一度だけ二分探索する。
+   - 高速テーブルにタグがない場合、3バンク共通の`head_pc`昇順参照索引を一度だけ二分探索する。この段へ進むのは該当カードが`COMPILED`の場合だけである。
    - 参照から該当エントリとバンク番号を得る。同じPCの常駐エントリが複数ある状態はassertで検出する。
-   - ヒット時はネイティブコードアドレス（`exec_trace`）とバンク番号を返す。Radix表は設けない。
-   - 次回用として高速スロットへ格納する。
+   - ヒット時はネイティブコードアドレス（`exec_trace`）とバンク番号を返し、高速スロットへ格納する。Radix表は設けない。
+   - miss時はInterpreterへ戻る。トレースの挿入・コンパイル・ローテーション・flushでは高速スロットを無効化する。
 5. **ホットスポット昇格判定**:
    - C++ Interpreterはブロック開始PCを保持する。通常命令を実行したブロックを実行拡張へ通知する。候補マスクの判定と開始PCの固定履歴バッファへの記録はTier 3 JIT拡張が行う。JIT拡張は境界で履歴を分析し、カード状態を更新する。JIT trace/chainだけの実行区間では記録しない。
    - 実行頻度が閾値に達したカードを`HOT`のままJIT拡張内のコンパイル待ち列へ登録する。Tier 3 JIT拡張が元のWASMコードをコンパイルし、コードcacheへの挿入まで成功した場合に`COMPILED`へ遷移する。
@@ -184,7 +172,7 @@ ROM 上に配置される 128 バイトルックアップテーブル（256 オ�
    - パージ直前に、被チェイン逆引きテーブルに登録されたソースエントリ（$k$ 件）のみを参照する。
    - 新たにリンクするchain targetはActiveまたはWarmに限定する。ターゲットがWarmからOldestへ移っても、既存の`chain_next_pc`と`chain_target_addr`を維持する。Oldestだけに存在する後続へ新たにリンクしない。
    - 昇格済みなら再チェイニングし、完全破棄なら復帰スタブへアンパッチする。全件走査は行わない。
-   - `rotate()` および `flush_all()` 実行時には Folding XOR 高速キャッシュを無効化する。古いバンクへの誤参照を防止する（`{GOTCHA-JITR-05}`）。 <!-- definition: {GOTCHA-JITR-05} -->
+   - `rotate()` および `flush_all()` 実行時には Folding XOR 高速キャッシュを無効化し、古いバンクへの誤参照を防ぐ（`{GOTCHA-JITR-05}`）。 <!-- definition: {GOTCHA-JITR-05} -->
    - ローテーションのたびに、エイジングスイープを 1 ステップ実行する（手順10）。`flush_all()` では実行しない。
    - 参照実装のバンク破棄は、破棄対象の$n$項目の消去と被チェイン元$k$件の照合を伴うため、実際の処理量は$O(n + k\log n)$である。固定容量$n_max$と被チェイン件数上限$k_max$により停止量は上限化されるが、$O(k)$とは表現しない。ターゲット実装はバンク破棄の方法を別途定義する。
 8. **トレース昇格時のインバウンドソース付け替え (`{GOTCHA-JITR-02}`)**: <!-- definition: {GOTCHA-JITR-02} -->
@@ -303,7 +291,7 @@ stateDiagram-v2
 コンパイル失敗時はカードを`COMPILED`にせず、独立したTrackable Maskの対象bitを解除する。これはカード状態の遷移ではなく再試行対象の除外であり、eviction後に候補性を保ったままhotnessを取り直す動作とは異なる。
 
 ### 4.3 トレース実行時の分岐解決とインタープリタ復帰
-<!-- traceability: {JIT_RuntimeAPI_Fallback} {DirectBytecodeExecution} {GOTCHA-JITR-02} -->
+<!-- traceability: {JIT_RuntimeAPI} {DirectBytecodeExecution} {GOTCHA-JITR-02} -->
 制御フロー・コール境界のインタープリタ委譲不変条件を示す。ロード時の静的解析で各基本ブロックに付帯情報を持たせる。これにより実行時の分岐解決を定数時間で行う。
 
 | 付帯情報 | 意味 |
@@ -317,15 +305,15 @@ stateDiagram-v2
 
 JIT trace終端の制御命令はC++ Interpreterの対応ハンドラで実行し、取得された後方分岐をそのハンドラ内で数える。C++ dispatcherは分岐後のPCで実行拡張の本体実行を呼び出す。JIT拡張が常駐トレースを選択して実行する。実行拡張が本体を実行しなかった場合はC++ Interpreter handlerで実行する。定義済みゲスト関数の呼出しもC++ handlerで処理し、呼出し先の適格ブロックを記録しながらdispatcher内で継続する。Interpreterが所有する`FB_CONF_INTERPRETER_YIELD_THRESHOLD`到達時にdispatcherがyield statusを返す。Tier 3 JIT拡張の境界処理は履歴を分析してRuntimeへ返し、Tier 2 RuntimeがCOOSへyieldを伝える。JITなしのInterpreter経路も同じdispatcher・カウンタ・しきい値を使う。後方分岐カウンタは時間ではなく取得した後方分岐の回数である。非対応命令、外部呼出し、trap、関数完了は必要な早期境界となる。
 
-trace chainは直線後続traceまたは静的前方`BR`のtarget traceが常駐する場合に、trace末尾から共通コード領域のchain dispatcherへ移り、dispatcherがTraceヘッダのtarget bodyへtail-jumpする経路を指す。深さが異なる場合はheaderにコンパイル時格納した関数相対frame depthでcontrol stack sizeを更新する。未接続のtargetは0で表し、共通epilogueから実行境界へ戻る。opcode別handlerの呼出しや、C++ handler後にJIT拡張が別traceを選ぶ遷移はchainではない。chain dispatcherはopcodeを判定せず、分岐命令を実行しない。
+trace chainは同一関数frame深さの直線後続trace、またはloaderが解決した静的前方`BR`のtarget traceが常駐する場合に、trace末尾から共通コード領域のassembly生成chain dispatcherへ移り、dispatcherがTraceヘッダのtarget bodyへtail-jumpする経路を指す。フレーム深さが異なる直線後続、条件分岐、後方分岐はchainしない。静的前方`BR`ではdispatcherがtargetの`frame_depth`に制御スタックを合わせる。未接続のtargetは0で表し、dispatcherは現在のtraceへ戻る。opcode別handlerの呼出しや、C++ handler後にJIT拡張が別traceを選ぶ遷移はchainではない。chain dispatcherはopcodeを判定せず、分岐命令を実行しない。
 
-常駐トレースの選択、昇格、チェインの接続はTier 3 JIT拡張が所有する。Interpreterは共有実行状態と本体の実行結果だけを受け取り、JITキャッシュ内部を参照しない。JIT拡張は本体実行後のPC、スタック位置、制御終端の付帯情報を共有実行状態へ反映する。Interpreterはその状態からWASM制御命令を実行する。
+常駐トレースの選択、昇格、チェインの接続はTier 3 JIT拡張が所有する。Interpreterは共有実行状態と本体の実行結果だけを受け取り、JITキャッシュ内部を参照しない。JIT trace entryは値を返さず、入口でtrace専用`rel`カーソルを当該トレースの定数領域先頭に設定する。chain dispatcherはtarget traceへ移る前に`rel`をtargetの定数領域先頭へ設定する。JitRuntimeは復帰後のPC、スタック位置、trap code、制御終端の付帯情報を共有実行状態から読む。Interpreterはその状態からWASM制御命令を実行する。
 
 Interpreterは制御処理で確定した次ブロックのPCを保持する。通常命令を実行したブロックの観測を実行拡張へ通知する。候補性の判定、固定長履歴への記録、カード更新、コンパイル要求はJIT拡張内部で行う。Runtime Event Sinkはこの履歴を受け取らない。JIT無効構成は履歴、候補状態、コンパイラ、実行可能領域を持たない。デバッガ付き実行ではRuntimeがJIT拡張を迂回し、通常のInterpreter dispatcherを使う。
 
 コンパイル待ち作業がないyield境界ではJIT拡張はコンパイル処理を起動しない。候補履歴が0件の実行区間では履歴を分析しない。これらの省略はyield理由、ゲスト状態、トレース選択を変更しない。
 
-チェインの終端、必要スタック量、本体数は、JIT拡張がキャッシュの挿入・昇格・バンク回転時に構成する。実行時にInterpreterへトレース表を供給しない。JIT拡張は選択した入口を直接呼び出し、終端の共有実行状態を返す。実行後の計測用チェイン再走査はQA計測構成だけに含める。
+必要スタック量、機械語chain target、Loader block配列のindexは、JIT拡張がtraceを作る時点でheaderへ記録する。実行時は開始PCを通常検索し、chain先はtrace headerのtarget addressを直接たどって終端と本体数を得る。各リンクでPC索引を再検索せず、終端のLoader block metadataもheaderのindexから直接参照する。選択したvoid入口を呼び出し、復帰後に終端の共有実行状態を読む。block indexはLoader metadataの寿命内だけ有効であり、traceと同時に退役する。実行後の計測用chain再走査はQA計測構成だけに含める。
 
 実行入口と所有者の接続は初期化時に固定する。実行境界ごとに入口を構成し直さない。Interpreter経路とJIT経路は共通の境界結果処理を使う。
 
@@ -337,11 +325,11 @@ flowchart TD
     Lookup -- "ある" --> Entry["trace entryからtrace本体を実行する"]
     Entry --> Chain["共通コード領域のchain dispatcher"]
     Chain --> Target{"chain_target_addrが非0か？"}
-    Target -- "はい" --> Depth["header frame_depthに応じてcontrol stackを更新する"]
-    Depth --> Body["target trace bodyへtail-jumpする"]
+    Target -- "はい" --> Rel["target headerから定数領域先頭を求める"]
+    Rel --> Body["target trace bodyへtail-jumpする"]
     Body --> Chain
-    Target -- "いいえ" --> Epilogue["共通epilogueからC++ dispatcherへ戻る"]
-    Epilogue --> Terminator{"終端opcodeの処理を続けられるか？"}
+    Target -- "いいえ" --> Return["trace entryへ戻る"]
+    Return --> Terminator{"終端opcodeの処理を続けられるか？"}
     Terminator -- "制御終端" --> Handler
     Terminator -- "fallback / trap / completion" --> Boundary["RuntimeBoundaryResultを返す"]
     Handler --> Backedge{"取得済み後方辺数がしきい値へ到達したか？"}
@@ -351,11 +339,11 @@ flowchart TD
 
 - **分岐条件の扱い**: `BR_IF` はJITトレースが残した条件値をC++ Interpreter handlerが消費する。`IF` も同じハンドラが条件を消費し、必要な制御frameを積む。
 - **関数終了の定数時間解決 (`{GOTCHA-JITR-08}`)**: `RETURN` で終わるブロックでは命令列を再走査しない。トレースは戻り値を共有operand stackへ確定した後、C++ Interpreterのreturn handlerを通る。 <!-- definition: {GOTCHA-JITR-08} -->
-- **制御フレームの整合 (`{GOTCHA-JITR-06}`)**: JIT trace bodyは制御終端命令（`RETURN`を含む）を実行しない。共通chain dispatcherからepilogue経由でC++ dispatcherへ戻った後、対応するC++ handlerを一度実行する。handlerが条件を消費し、制御frameを更新し、遷移先PCを決める。通常実行では同じC++ dispatcherが次PCで実行拡張を呼び出し、後方分岐しきい値まで処理を続ける。 <!-- definition: {GOTCHA-JITR-06} -->
+- **制御フレームの整合 (`{GOTCHA-JITR-06}`)**: JIT trace bodyは制御終端命令（`RETURN`を含む）を実行しない。未接続chain dispatcherからtrace entryへ戻った後、対応するC++ handlerを一度実行する。handlerが条件を消費し、制御frameを更新し、遷移先PCを決める。通常実行では同じC++ dispatcherが次PCで実行拡張を呼び出し、後方分岐しきい値まで処理を続ける。 <!-- definition: {GOTCHA-JITR-06} -->
 - **短小判定の符号 (`{GOTCHA-JITR-07}`)**: ブロックの足切り判定は自身の命令バイト数で行う。後続アドレスとの差分で代用すると、後方分岐ブロックで差分が負になり、高頻度ブロックが永久に除外されてしまう。 <!-- definition: {GOTCHA-JITR-07} -->
 - **エイジングと常駐状態の分離 (`{GOTCHA-JITR-09}`)**: エイジングスイープは `EXECUTED` のカードだけを変更する。`COMPILED` まで戻すと、常駐トレースのカードが `UNEXECUTED` になり、lookup が常駐コードを見逃す。`HOT` まで戻すと、コンパイル待ち列の要求とカード状態が食い違う。常駐性の正本はキャッシュ、待ち列の正本は待ち列であり、スイープはどちらも書き換えない。 <!-- definition: {GOTCHA-JITR-09} -->
 - **押し出し量の事前確認**: ランタイムは、トレースを呼ぶ前に、連鎖先を含む最大の `stack_words` が空き容量に収まることを確認する。収まらない場合はトレースを使わず、インタープリタが実行する。インタープリタは、容量超過を `assert` で停止する。JITだけが容量外へ書き込む状態を作らないためである。
-- **連鎖の再リンク**: 昇格とローテーションの後も、非0のchain targetは常駐トレースbodyの有効なアドレスを指す。cache metadataとネイティブtrace headerの値は一致する。後続が退避された場合は`chain_target_addr`を0にし、共通chain dispatcherから共通epilogueへ戻す。制御終端はC++ Interpreter handlerが処理し、次の本体選択はC++ dispatcherから呼ばれたJIT拡張が行う。
+- **連鎖の再リンク**: 昇格とローテーションの後も、非0のchain targetは常駐トレースbodyの有効なアドレスを指す。cache metadataとネイティブtrace headerの値は一致する。後続が退避された場合は`chain_target_addr`を0にし、共通chain dispatcherから現在のtrace entryへ戻す。静的前方`BR`以外の制御終端はC++ Interpreter handlerが処理し、次の本体選択はC++ dispatcherから呼ばれたJIT拡張が行う。
 
 ## 5. インターフェース定義
 
@@ -372,7 +360,7 @@ flowchart TD
 ## 6. 制約達成の方策
 
 ### 6.1 性能制約
-- **方策**: カードマーキング表と16スロットFolding XORキャッシュの $O(1)$ 事前検索後、キャッシュミス時に少数のソート済みJITエントリを二分探索する（$O(\log n)$）。Radix索引は設けず、固定容量配列と二分探索を共通の検索契約とする。
+- **方策**: コンパイル済みカードだけを16スロットFolding XORキャッシュとソート済みJITエントリの検索へ進める。未コンパイルカードはここでInterpreterへ戻し、二分探索を行わない。compiledカード内では高速キャッシュを $O(1)$ で確認し、miss時だけ全バンク索引を二分探索する（$O(\log n)$）。Radix索引は設けず、固定容量配列と二分探索を共通の検索契約とする。
 
 ### 6.2 メモリ制約
 <!-- traceability: {JIT_MultiBuffer_Cache} {JIT_OldestOnly_Promote} -->

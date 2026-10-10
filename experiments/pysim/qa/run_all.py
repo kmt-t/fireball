@@ -139,7 +139,7 @@ TEST_SUITES = [
     ),
     (
         "Tier 3 Plugins",
-        "x64 Copy-and-Patch JIT",
+        "x64 Assembly Stencil Trace JIT",
         TEST_DIR / "tier3_plugins" / "jit" / "test_x64_jit.py",
     ),
     (

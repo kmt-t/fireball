@@ -90,7 +90,14 @@ def test_load_10_signature_and_code_accessors_borrow_original_binary() -> None:
     module = parse(memoryview(binary))
     assert module.source is not None and module.source.obj is binary
     record = module.types[0]
-    assert module.source[record.offset : record.offset + record.size] == b"\x60\x02\x7f\x7f\x01\x7f"
+    assert record.param_count == 2
+    assert (
+        module.source[record.param_offset : record.param_offset + record.param_count] == b"\x7f\x7f"
+    )
+    assert record.result_count == 1
+    assert (
+        module.source[record.result_offset : record.result_offset + record.result_count] == b"\x7f"
+    )
     signature = module.type_at(0)
     assert signature.params.obj is binary and signature.results.obj is binary
     assert signature.params == b"\x7f\x7f" and signature.results == b"\x7f"

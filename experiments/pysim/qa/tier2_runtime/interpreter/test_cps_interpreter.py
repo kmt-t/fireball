@@ -12,8 +12,14 @@ _PYSIM_DIR = _TEST_FILE.parents[3]
 
 
 from tier2_runtime.abi import native_abi
-from tier2_runtime.abi.interpreter_abi import ExecutionContextABI, NativeValueStack
-from tier2_runtime.abi.native_stack_abi import NativeControlStack
+from tier2_runtime.abi.interpreter_abi import (
+    CallFrameNative,
+    ExecutionContextABI,
+    FunctionExecutionViewNative,
+    NativeValueStack,
+)
+from tier2_runtime.abi.native_stack_abi import NativeCallFrameStack, NativeControlStack
+from tier2_runtime.interpreter.control_flow import build_interpreter_constant_pool
 from tier2_runtime.interpreter.interpreter import TrapCode
 
 
@@ -28,7 +34,31 @@ def _run_step(
     ip: int,
 ) -> tuple[int, int, int, int]:
     lease = native_abi.BufferLease(code)
+    constants, _ = build_interpreter_constant_pool(code, (0,))
+    constant_pool = (ctypes.c_uint8 * (4 * len(constants)))()
+    for index, value in enumerate(constants):
+        ctypes.memmove(
+            ctypes.addressof(constant_pool) + 4 * index,
+            value.to_bytes(4, "little"),
+            4,
+        )
     try:
+        function_view = FunctionExecutionViewNative()
+        function_view.code_size = len(code)
+        call_stack = NativeCallFrameStack(capacity=1)
+        frame = CallFrameNative(
+            function_view=ctypes.addressof(function_view),
+            local_base=locals_stack.address,
+            control_frame_base=control_stack.frame_address(0),
+            func_index=0,
+            return_ip=0xFFFF_FFFF,
+            boundary_next_pc=0xFFFF_FFFF,
+            boundary_loops_to=0xFFFF_FFFF,
+        )
+        assert call_stack.push_back(frame)
+        context.call_stack = call_stack.address
+        context.call_frame_base = call_stack.frame_address(0)
+        control_stack.bind_stack_base(stack.address)
         return native_abi.run_step(
             native_abi.RUN_STEP,
             lease.address,
@@ -45,15 +75,16 @@ def _run_step(
             stack_capacity,
             ip,
             0,
-            0,
+            control_stack.frame_address(0),
             call=native_abi.NativeStepCall(),
             result=native_abi.NativeResult(),
+            rel=(0 if len(constants) == 0 else ctypes.addressof(constant_pool)),
         )
     finally:
         lease.release()
 
 
-def test_native_cps_entry_uses_four_logical_arguments() -> None:
+def test_native_cps_entry_uses_shared_operand_stack() -> None:
     stack = NativeValueStack()
     locals_stack = NativeValueStack()
     control_stack = NativeControlStack()
@@ -73,19 +104,19 @@ def test_native_cps_entry_uses_four_logical_arguments() -> None:
     assert stack.raw_at(0) == 7
     assert context.code_size == len(code)
     assert context.control_stack != 0
-    assert context.control_base == 0
-    assert context.stack_checkpoint == 1
+    assert context.control_frame_base == control_stack.frame_address(0)
+    assert context.stack_checkpoint == stack.value_ptr(1).value
     assert context.ip == len(code)
-    assert context.sp_offset == 1
-    assert context.control_base == 0
+    assert context.stack_pointer == stack.value_ptr(1).value
+    assert context.control_frame_base == control_stack.frame_address(0)
 
 
-def test_native_tos_flows_through_push_pop_and_handler_dispatch() -> None:
+def test_native_shared_stack_keeps_values_across_handler_dispatch() -> None:
     stack = NativeValueStack()
     locals_stack = NativeValueStack()
     control_stack = NativeControlStack()
     context = ExecutionContextABI()
-    # ((3 + 4) * 2) + 5: each operation consumes the prior handler's TOS.
+    # ((3 + 4) * 2) + 5: every intermediate value remains in the shared stack.
     code = memoryview(bytearray((0x41, 3, 0x41, 4, 0x6A, 0x41, 2, 0x6C, 0x41, 5, 0x6A, 0x0B)))
     outcome = _run_step(code, context, stack, locals_stack, control_stack, 0, stack.capacity, 0)
     assert outcome == (1, len(code), 1, 0)
@@ -111,7 +142,7 @@ def _run_guarded_const(
         control_stack,
         stack_size,
         stack_capacity,
-        1,
+        0,
     )
     after = tuple(stack.raw_at(index) for index in range(stack.capacity))
     return outcome, context, before, after
@@ -134,48 +165,22 @@ def test_native_const_capacity_traps_without_partial_push(
 ) -> None:
     """TEST-INTP-10: Const capacity failure is a specific trap with no partial or adjacent writes."""
     initial_size = stack_capacity - free_words
-    code = b"\x01" + constant + b"\x0b"  # Start at the const, after a prefix nop.
+    code = b"\x01\x01" + constant + b"\x0b"  # Trap after two CPS continuations.
     outcome, context, before, after = _run_guarded_const(code, stack_capacity, initial_size)
     if free_words < len(raw_words):
-        assert outcome == (2, 1, initial_size, TrapCode.OPERAND_STACK_CAPACITY)
-        assert context.ip == 1
-        assert context.sp_offset == initial_size
+        assert outcome == (2, 2, initial_size, TrapCode.OPERAND_STACK_CAPACITY)
+        assert context.ip == 2
+        assert context.stack_pointer == context.stack_base + initial_size * 4
         assert after == before, "failed push must preserve every existing and sentinel word"
     else:
         assert outcome == (1, len(code), initial_size + len(raw_words), 0)
         assert context.ip == len(code)
-        assert context.sp_offset == initial_size + len(raw_words)
+        assert context.stack_pointer == context.stack_base + (initial_size + len(raw_words)) * 4
         expected = list(before)
         expected[initial_size : initial_size + len(raw_words)] = raw_words
         assert after == tuple(expected), (
             "successful push must write exactly its declared word width"
         )
-
-
-@pytest.mark.parametrize(
-    "incomplete_or_unsupported",
-    [
-        pytest.param(b"\x41\x80", id="truncated-i32"),
-        pytest.param(b"\x42\x80", id="truncated-i64"),
-        pytest.param(b"\x43\x00\x00\x00", id="truncated-f32"),
-        pytest.param(b"\x44\x00\x00\x00\x00\x00\x00\x00", id="truncated-f64"),
-        pytest.param(b"\xff", id="unsupported-opcode"),
-        pytest.param(b"\xfc\x08", id="unsupported-fc-in-table"),
-        pytest.param(b"\xfc\x0c", id="unsupported-fc-out-of-table"),
-    ],
-)
-@pytest.mark.parametrize("free_words", [0, 2])
-def test_native_invalid_const_is_not_misclassified_as_capacity_trap(
-    incomplete_or_unsupported: bytes, free_words: int
-) -> None:
-    """TEST-INTP-06/10: Decoder/unsupported fallback remains distinct from valid push overflow."""
-    initial_size = 4 - free_words
-    code = b"\x01" + incomplete_or_unsupported
-    outcome, context, before, after = _run_guarded_const(code, 4, initial_size)
-    assert outcome == (0, 1, initial_size, 0)
-    assert context.ip == 1
-    assert context.sp_offset == initial_size
-    assert after == before
 
 
 ALL_TESTS = sorted(

@@ -42,7 +42,7 @@ def get_call_cont(call: InterpreterCall) -> _Cont:
     if frame is None:
         return None
     assert call._locals is not None
-    return call._ip, frame, call._locals, call._tos
+    return call._ip, frame, call._locals
 
 
 def _encode_leb128_u32(value: int) -> bytes:

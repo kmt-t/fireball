@@ -14,17 +14,17 @@ std::size_t executable_region_alignment();
 int borrow_executable_region(executable_memory* memory, std::uint8_t* region, std::uint32_t bytes);
 }  // namespace fireball
 extern "C" {
-FB_JIT_QA_EXPORT int fb_jit_memory_init(fireball::executable_memory* memory,
-                                           std::uint32_t bytes);
-FB_JIT_QA_EXPORT int fb_jit_memory_begin(fireball::executable_memory* memory);
-FB_JIT_QA_EXPORT int fb_jit_memory_commit(fireball::executable_memory* memory);
-FB_JIT_QA_EXPORT int fb_jit_memory_finalize(fireball::executable_memory* memory);
-FB_JIT_QA_EXPORT int fb_jit_memory_no_rwx(const fireball::executable_memory* memory);
-FB_JIT_QA_EXPORT int fb_jit_memory_write(fireball::executable_memory* memory,
-                                            std::uint32_t offset, const std::uint8_t* source,
-                                            std::uint32_t count);
-FB_JIT_QA_EXPORT int fb_jit_memory_close(fireball::executable_memory* memory);
-FB_JIT_QA_EXPORT std::uintptr_t fb_jit_memory_address(fireball::executable_memory* memory,
-                                                         std::uint32_t offset);
+int fb_jit_memory_init(fireball::executable_memory* memory,
+                       std::uint32_t bytes);
+int fb_jit_memory_begin(fireball::executable_memory* memory);
+int fb_jit_memory_commit(fireball::executable_memory* memory);
+int fb_jit_memory_finalize(fireball::executable_memory* memory);
+int fb_jit_memory_no_rwx(const fireball::executable_memory* memory);
+int fb_jit_memory_write(fireball::executable_memory* memory,
+                        std::uint32_t offset, const std::uint8_t* source,
+                        std::uint32_t count);
+int fb_jit_memory_close(fireball::executable_memory* memory);
+std::uintptr_t fb_jit_memory_address(fireball::executable_memory* memory,
+                                     std::uint32_t offset);
 }
 #endif

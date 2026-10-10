@@ -1,0 +1,118 @@
+# AO-Bench NativeInterpreter / Hybrid JIT / WAMR Fast Interpreter — 2026-10-11
+
+## 対象と再現情報
+
+- HEAD: f262506fef381b92368c8f99e6c69c1e6eaa2406。作業ツリーは未コミット変更を含む。
+- CPU: AMD Ryzen 5 5500GT with Radeon Graphics、Ubuntu 26.04.1、Linux 7.0.0-38-generic、x86_64。
+- Runtime: CPython 3.13.15、Clang 21.1.8、AMD uProf 5.3.521.0。
+- WASM: experiments/pysim/benchmarks/aobench/aobench.wasm; SHA-256 9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9。
+- WAMR: 2.4.3, commit f5f57c09aee6; source worktree clean.
+- Interpreter/JIT release libraries were rebuilt from the current working tree on 2026-10-11 with -O2 -DNDEBUG; JIT also used -g.
+- Process order was rotated across 3 trials. Each process used 3 warmups and 7 timed frames, pinned to CPU 2. Interpreter/JIT used the same NativeInterpreter.call() API and yield threshold 4096. Python reference interpreter was excluded.
+- The JIT warmups used idle_budget=4 and serviced the compiler queue after each call. Timed calls used idle_budget=0. A separate QA diagnostic run after timing confirmed JIT trace execution at every resolution.
+The per-process additional_idle_hook_compiles_after_warmup field counts only the final explicit queue drain; it excludes compilations performed inline by NativeInterpreter.call() while servicing yielded boundaries with idle_budget=4, so the field can be zero even when the JIT has compiled traces.
+- Setup and module/host initialization were outside timing. Timed sections covered NativeInterpreter.call() or wasm_runtime_call_wasm().
+- Each engine emitted 10 frames per process. All output streams matched byte-for-byte across engines and trials; single-frame SHA-256 by resolution:
+  - 64x36: d44fed786dbb555722932e901bd3f56c56aa2daca6c594a67a858c4591e24567
+  - 128x72: e9f20b8f0414f7406aa2f3ea96738e1c7755d0148090bf72f8703cffd3d374a4
+  - 192x108: 9f2df94afaad4a3750053789ce6be52a0b9b14d66d9b8584edf2718d1ac3c4f1
+  - 256x144: f35a578dc277b57ca3bb5f74bc9381297fab5afce787bc92c54e46536fa8d2a4
+  - 320x180: 6d04ea80d9a1fd773c85d413057d64797f32dbb257a753d767a378d730d7d699
+- Benchmark driver SHA-256: 061395c695810faee10c53e1e6abfb71d7ebe544cc4ec2d5b7e79bd85cf26f66.
+- Fireball process runner SHA-256: 0ef0e4154a2d23c84c444901bdec09908678292c698d2084ea050d2377af57ba.
+- Diagnostic runner SHA-256: 43cc8c863acd9054e1daeeb1dc3261dcfc018cb971847d87d20a8bf5ff67eed8.
+- WAMR runner SHA-256: 5620f12afaa6e817dd018d6aed65618df4d2bd1da95947e37da1f795cd9d0f90.
+- Interpreter library SHA-256: 6de8df0c74a769e37ae9e58639e1d84be2245eebd5a2c5cf2751fd3e2475230f.
+- JIT library SHA-256: a25c67980ea669d3669437a974c29ad82fcec075579b54fcf2dc903e832c03f5.
+
+AO-Bench Fireball NativeInterpreter / Hybrid JIT / WAMR Fast Interpreter — 2026-10-11
+
+Conditions: 5 resolutions; 3 independent processes per engine/resolution; 3 warmup calls + 7 timed calls per process; CPU 2 pinned; engine order rotated by trial; yield threshold 4096; no Python-interpreter timing.
+Fireball timing covers NativeInterpreter.call() only. JIT queue is drained after warmup with idle_hook before timing; measured calls use idle_budget=0.
+WASM SHA-256: 9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9
+
+trial=1 size=64x36 engine=interpreter samples_ms=48.955,49.068,47.849,48.609,48.311,48.212,48.776 median_ms=48.609 frames_sha256=570ecec0d82c7dfc11805f203e7f5282f12cf1882d0f774783b8d9c057ac5ee2
+trial=1 size=64x36 engine=jit samples_ms=55.221,55.620,55.809,56.034,56.433,55.137,57.167 median_ms=55.809 frames_sha256=570ecec0d82c7dfc11805f203e7f5282f12cf1882d0f774783b8d9c057ac5ee2
+  additional_idle_hook_compiles_after_warmup=0
+trial=1 size=64x36 engine=wamr samples_ms=5.117,5.048,5.471,5.231,5.159,5.205,5.197 median_ms=5.197 frames_sha256=570ecec0d82c7dfc11805f203e7f5282f12cf1882d0f774783b8d9c057ac5ee2
+trial=2 size=64x36 engine=jit samples_ms=54.439,55.635,58.042,56.846,54.772,55.260,56.171 median_ms=55.635 frames_sha256=570ecec0d82c7dfc11805f203e7f5282f12cf1882d0f774783b8d9c057ac5ee2
+  additional_idle_hook_compiles_after_warmup=0
+trial=2 size=64x36 engine=wamr samples_ms=5.005,5.041,4.892,5.031,5.064,5.046,5.079 median_ms=5.041 frames_sha256=570ecec0d82c7dfc11805f203e7f5282f12cf1882d0f774783b8d9c057ac5ee2
+trial=2 size=64x36 engine=interpreter samples_ms=48.930,48.849,49.384,51.949,49.680,48.035,48.627 median_ms=48.930 frames_sha256=570ecec0d82c7dfc11805f203e7f5282f12cf1882d0f774783b8d9c057ac5ee2
+trial=3 size=64x36 engine=wamr samples_ms=5.024,5.122,5.098,5.036,5.102,5.217,5.121 median_ms=5.102 frames_sha256=570ecec0d82c7dfc11805f203e7f5282f12cf1882d0f774783b8d9c057ac5ee2
+trial=3 size=64x36 engine=interpreter samples_ms=48.979,48.828,48.705,50.268,49.339,49.049,49.473 median_ms=49.049 frames_sha256=570ecec0d82c7dfc11805f203e7f5282f12cf1882d0f774783b8d9c057ac5ee2
+trial=3 size=64x36 engine=jit samples_ms=54.107,55.702,56.641,55.990,57.006,55.126,56.666 median_ms=55.990 frames_sha256=570ecec0d82c7dfc11805f203e7f5282f12cf1882d0f774783b8d9c057ac5ee2
+  additional_idle_hook_compiles_after_warmup=0
+JIT path diagnostic size=64x36: diagnostic_jit_invocations=192322 diagnostic_interpreter_steps=553170 trace_transitions=192318
+SUMMARY size=64x36 rays=7332 interpreter_ms=48.930 interpreter_range_ms=48.609-49.049 jit_ms=55.809 jit_range_ms=55.635-55.990 wamr_ms=5.102 wamr_range_ms=5.041-5.197 jit_over_interpreter=1.141x interpreter_over_wamr=9.590x jit_over_wamr=10.938x frame_sha256=570ecec0d82c7dfc11805f203e7f5282f12cf1882d0f774783b8d9c057ac5ee2
+trial=1 size=128x72 engine=interpreter samples_ms=195.535,194.548,196.320,193.405,195.725,197.012,194.320 median_ms=195.535 frames_sha256=b6a28d273e549e783d8e5526fd2f9ad1ed8f08b45fba32571f689d7034f6ea03
+trial=1 size=128x72 engine=jit samples_ms=217.291,216.697,219.555,221.553,221.820,229.697,220.990 median_ms=220.990 frames_sha256=b6a28d273e549e783d8e5526fd2f9ad1ed8f08b45fba32571f689d7034f6ea03
+  additional_idle_hook_compiles_after_warmup=0
+trial=1 size=128x72 engine=wamr samples_ms=20.793,20.817,20.871,21.164,21.124,21.462,21.062 median_ms=21.062 frames_sha256=b6a28d273e549e783d8e5526fd2f9ad1ed8f08b45fba32571f689d7034f6ea03
+trial=2 size=128x72 engine=jit samples_ms=220.361,221.432,219.894,221.680,223.778,217.963,220.025 median_ms=220.361 frames_sha256=b6a28d273e549e783d8e5526fd2f9ad1ed8f08b45fba32571f689d7034f6ea03
+  additional_idle_hook_compiles_after_warmup=0
+trial=2 size=128x72 engine=wamr samples_ms=20.890,21.047,20.714,20.994,21.050,21.063,20.878 median_ms=20.994 frames_sha256=b6a28d273e549e783d8e5526fd2f9ad1ed8f08b45fba32571f689d7034f6ea03
+trial=2 size=128x72 engine=interpreter samples_ms=194.988,194.784,194.084,193.947,195.758,193.223,194.585 median_ms=194.585 frames_sha256=b6a28d273e549e783d8e5526fd2f9ad1ed8f08b45fba32571f689d7034f6ea03
+trial=3 size=128x72 engine=wamr samples_ms=20.089,20.259,20.378,20.043,20.076,19.856,20.536 median_ms=20.089 frames_sha256=b6a28d273e549e783d8e5526fd2f9ad1ed8f08b45fba32571f689d7034f6ea03
+trial=3 size=128x72 engine=interpreter samples_ms=193.240,193.046,194.149,195.540,195.470,196.855,197.207 median_ms=195.470 frames_sha256=b6a28d273e549e783d8e5526fd2f9ad1ed8f08b45fba32571f689d7034f6ea03
+trial=3 size=128x72 engine=jit samples_ms=223.888,219.960,222.334,223.956,222.367,223.957,221.515 median_ms=222.367 frames_sha256=b6a28d273e549e783d8e5526fd2f9ad1ed8f08b45fba32571f689d7034f6ea03
+  additional_idle_hook_compiles_after_warmup=0
+JIT path diagnostic size=128x72: diagnostic_jit_invocations=802996 diagnostic_interpreter_steps=2202151 trace_transitions=802978
+SUMMARY size=128x72 rays=29732 interpreter_ms=195.470 interpreter_range_ms=194.585-195.535 jit_ms=220.990 jit_range_ms=220.361-222.367 wamr_ms=20.994 wamr_range_ms=20.089-21.062 jit_over_interpreter=1.131x interpreter_over_wamr=9.311x jit_over_wamr=10.526x frame_sha256=b6a28d273e549e783d8e5526fd2f9ad1ed8f08b45fba32571f689d7034f6ea03
+trial=1 size=192x108 engine=interpreter samples_ms=439.011,439.408,440.125,456.370,443.788,439.612,435.294 median_ms=439.612 frames_sha256=48b7b02de263c6610328b961fd0f5c2ea901cb82731901b6c36477c0eb913c0c
+trial=1 size=192x108 engine=jit samples_ms=500.125,500.969,522.728,502.355,507.844,504.386,508.495 median_ms=504.386 frames_sha256=48b7b02de263c6610328b961fd0f5c2ea901cb82731901b6c36477c0eb913c0c
+  additional_idle_hook_compiles_after_warmup=0
+trial=1 size=192x108 engine=wamr samples_ms=48.068,48.400,48.438,48.133,47.870,48.197,47.739 median_ms=48.133 frames_sha256=48b7b02de263c6610328b961fd0f5c2ea901cb82731901b6c36477c0eb913c0c
+trial=2 size=192x108 engine=jit samples_ms=492.742,500.890,503.857,496.854,501.036,501.201,505.208 median_ms=501.036 frames_sha256=48b7b02de263c6610328b961fd0f5c2ea901cb82731901b6c36477c0eb913c0c
+  additional_idle_hook_compiles_after_warmup=0
+trial=2 size=192x108 engine=wamr samples_ms=46.353,46.295,47.656,48.162,48.180,48.157,46.865 median_ms=47.656 frames_sha256=48b7b02de263c6610328b961fd0f5c2ea901cb82731901b6c36477c0eb913c0c
+trial=2 size=192x108 engine=interpreter samples_ms=441.014,443.333,436.895,441.158,440.614,438.087,441.411 median_ms=441.014 frames_sha256=48b7b02de263c6610328b961fd0f5c2ea901cb82731901b6c36477c0eb913c0c
+trial=3 size=192x108 engine=wamr samples_ms=47.420,47.511,47.834,47.693,47.407,47.496,47.458 median_ms=47.496 frames_sha256=48b7b02de263c6610328b961fd0f5c2ea901cb82731901b6c36477c0eb913c0c
+trial=3 size=192x108 engine=interpreter samples_ms=438.667,447.712,438.083,441.566,437.938,439.460,436.055 median_ms=438.667 frames_sha256=48b7b02de263c6610328b961fd0f5c2ea901cb82731901b6c36477c0eb913c0c
+trial=3 size=192x108 engine=jit samples_ms=505.915,500.193,494.202,494.956,498.978,501.944,501.862 median_ms=500.193 frames_sha256=48b7b02de263c6610328b961fd0f5c2ea901cb82731901b6c36477c0eb913c0c
+  additional_idle_hook_compiles_after_warmup=0
+JIT path diagnostic size=192x108: diagnostic_jit_invocations=1997675 diagnostic_interpreter_steps=4759211 trace_transitions=1997635
+SUMMARY size=192x108 rays=67032 interpreter_ms=439.612 interpreter_range_ms=438.667-441.014 jit_ms=501.036 jit_range_ms=500.193-504.386 wamr_ms=47.656 wamr_range_ms=47.496-48.133 jit_over_interpreter=1.140x interpreter_over_wamr=9.225x jit_over_wamr=10.514x frame_sha256=48b7b02de263c6610328b961fd0f5c2ea901cb82731901b6c36477c0eb913c0c
+trial=1 size=256x144 engine=interpreter samples_ms=788.673,782.614,813.383,784.583,790.134,788.690,784.032 median_ms=788.673 frames_sha256=2ce48b29f0eeabda19490cdf68d35742bbbc837ebb2e6b5d3185df980cdfa67c
+trial=1 size=256x144 engine=jit samples_ms=899.617,917.156,879.400,904.643,898.652,891.894,988.618 median_ms=899.617 frames_sha256=2ce48b29f0eeabda19490cdf68d35742bbbc837ebb2e6b5d3185df980cdfa67c
+  additional_idle_hook_compiles_after_warmup=0
+trial=1 size=256x144 engine=wamr samples_ms=84.820,84.802,85.697,84.139,84.270,84.375,94.841 median_ms=84.802 frames_sha256=2ce48b29f0eeabda19490cdf68d35742bbbc837ebb2e6b5d3185df980cdfa67c
+trial=2 size=256x144 engine=jit samples_ms=911.695,931.602,895.234,897.477,895.029,916.849,905.321 median_ms=905.321 frames_sha256=2ce48b29f0eeabda19490cdf68d35742bbbc837ebb2e6b5d3185df980cdfa67c
+  additional_idle_hook_compiles_after_warmup=0
+trial=2 size=256x144 engine=wamr samples_ms=84.701,81.932,82.282,83.494,83.423,83.057,82.504 median_ms=83.057 frames_sha256=2ce48b29f0eeabda19490cdf68d35742bbbc837ebb2e6b5d3185df980cdfa67c
+trial=2 size=256x144 engine=interpreter samples_ms=793.498,792.927,789.222,778.586,794.340,786.879,790.967 median_ms=790.967 frames_sha256=2ce48b29f0eeabda19490cdf68d35742bbbc837ebb2e6b5d3185df980cdfa67c
+trial=3 size=256x144 engine=wamr samples_ms=84.096,83.262,82.570,79.801,80.446,83.473,83.056 median_ms=83.056 frames_sha256=2ce48b29f0eeabda19490cdf68d35742bbbc837ebb2e6b5d3185df980cdfa67c
+trial=3 size=256x144 engine=interpreter samples_ms=788.786,831.005,782.963,788.064,787.657,786.592,789.452 median_ms=788.064 frames_sha256=2ce48b29f0eeabda19490cdf68d35742bbbc837ebb2e6b5d3185df980cdfa67c
+trial=3 size=256x144 engine=jit samples_ms=877.647,903.961,891.085,913.270,910.384,890.547,882.655 median_ms=891.085 frames_sha256=2ce48b29f0eeabda19490cdf68d35742bbbc837ebb2e6b5d3185df980cdfa67c
+  additional_idle_hook_compiles_after_warmup=0
+JIT path diagnostic size=256x144: diagnostic_jit_invocations=3614179 diagnostic_interpreter_steps=8422125 trace_transitions=3614105
+SUMMARY size=256x144 rays=119352 interpreter_ms=788.673 interpreter_range_ms=788.064-790.967 jit_ms=899.617 jit_range_ms=891.085-905.321 wamr_ms=83.057 wamr_range_ms=83.056-84.802 jit_over_interpreter=1.141x interpreter_over_wamr=9.496x jit_over_wamr=10.831x frame_sha256=2ce48b29f0eeabda19490cdf68d35742bbbc837ebb2e6b5d3185df980cdfa67c
+trial=1 size=320x180 engine=interpreter samples_ms=1260.605,1234.015,1251.594,1247.422,1301.413,1272.337,1242.324 median_ms=1251.594 frames_sha256=b836421dc04ef17309c5bb32b760cdb38f4de85e9cea5943fb90df0697f92f48
+trial=1 size=320x180 engine=jit samples_ms=1394.026,1383.091,1408.913,1375.334,1440.596,1397.325,1396.689 median_ms=1396.689 frames_sha256=b836421dc04ef17309c5bb32b760cdb38f4de85e9cea5943fb90df0697f92f48
+  additional_idle_hook_compiles_after_warmup=0
+trial=1 size=320x180 engine=wamr samples_ms=128.011,131.050,132.569,131.841,130.231,129.337,130.184 median_ms=130.231 frames_sha256=b836421dc04ef17309c5bb32b760cdb38f4de85e9cea5943fb90df0697f92f48
+trial=2 size=320x180 engine=jit samples_ms=1397.687,1376.876,1397.514,1381.579,1422.797,1401.459,1482.640 median_ms=1397.687 frames_sha256=b836421dc04ef17309c5bb32b760cdb38f4de85e9cea5943fb90df0697f92f48
+  additional_idle_hook_compiles_after_warmup=0
+trial=2 size=320x180 engine=wamr samples_ms=131.785,131.764,137.367,132.565,132.529,132.273,131.374 median_ms=132.273 frames_sha256=b836421dc04ef17309c5bb32b760cdb38f4de85e9cea5943fb90df0697f92f48
+trial=2 size=320x180 engine=interpreter samples_ms=1240.467,1234.329,1238.684,1233.027,1260.261,1229.496,1223.107 median_ms=1234.329 frames_sha256=b836421dc04ef17309c5bb32b760cdb38f4de85e9cea5943fb90df0697f92f48
+trial=3 size=320x180 engine=wamr samples_ms=131.953,130.026,131.983,128.444,130.433,129.093,129.074 median_ms=130.026 frames_sha256=b836421dc04ef17309c5bb32b760cdb38f4de85e9cea5943fb90df0697f92f48
+trial=3 size=320x180 engine=interpreter samples_ms=1234.495,1303.550,1244.672,1225.999,1231.451,1232.066,1232.383 median_ms=1232.383 frames_sha256=b836421dc04ef17309c5bb32b760cdb38f4de85e9cea5943fb90df0697f92f48
+trial=3 size=320x180 engine=jit samples_ms=1392.632,1376.548,1384.047,1363.621,1393.980,1377.156,1379.737 median_ms=1379.737 frames_sha256=b836421dc04ef17309c5bb32b760cdb38f4de85e9cea5943fb90df0697f92f48
+  additional_idle_hook_compiles_after_warmup=0
+JIT path diagnostic size=320x180: diagnostic_jit_invocations=5704770 diagnostic_interpreter_steps=13116928 trace_transitions=5704653
+SUMMARY size=320x180 rays=186792 interpreter_ms=1234.329 interpreter_range_ms=1232.383-1251.594 jit_ms=1396.689 jit_range_ms=1379.737-1397.687 wamr_ms=130.231 wamr_range_ms=130.026-132.273 jit_over_interpreter=1.132x interpreter_over_wamr=9.478x jit_over_wamr=10.725x frame_sha256=b836421dc04ef17309c5bb32b760cdb38f4de85e9cea5943fb90df0697f92f48
+
+
+## uProf diagnostics
+
+Hotspots command:
+AMDuProfCLI profile --config hotspots -o /tmp/aobench-uprof-current-jit-20261011 taskset -c 2 .venv/bin/python /tmp/fireball_aobench_runner_current.py jit 320 180 4096 3 7
+
+IBS command:
+AMDuProfCLI profile --config ibs -o /tmp/aobench-uprof-current-jit-ibs-20261011 /usr/bin/taskset -c 2 .venv/bin/python /tmp/fireball_aobench_runner_current.py jit 320 180 4096 3 3
+
+Hotspots profile duration was 30.594 seconds. Its CPU_TIME top entries were syscall 7.21 s, fb_native_run_dispatch_extension 2.43 s, runtime_call 1.65 s, read_u32 1.49 s, runtime_local_get 1.17 s, execute_runtime_body 0.89 s. The helper emitted repeated 'python: not found' messages, but report.csv was generated.
+IBS profile duration was 9.616 seconds and completed. IBS_ALL_OPS had 33,003 samples. Top modules: libnative_interpreter.so 28,033; libtrace_compiler.so 2,867; CPython 1,560. Top functions included fb_native_run_dispatch_extension 6,230 samples, runtime_call 3,371, runtime_local_get 3,056, read_u32 2,959, h_runtime_api<runtime_local_get> 2,531, and execute_runtime_body 1,886.
+uProf reported CPU affinity 0-11 although taskset -c 2 launched the target. Do not use the profile duration or reported affinity as normal benchmark timing or core-affinity evidence.
+
+Raw benchmark frames/logs and uProf databases were kept under /tmp/aobench-current-all-20261011 and /tmp/aobench-uprof-current-jit-20261011*. They are diagnostic intermediates, not repository artifacts.

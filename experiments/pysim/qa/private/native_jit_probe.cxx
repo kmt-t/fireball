@@ -3,6 +3,11 @@
 #include "jit_measurements.hxx"
 #include "jit_native_probe.hxx"
 
+struct fb_native_dispatch_extension_call {
+  fb_native_dispatch_call call;
+  const fb_native_execution_extension *extension;
+};
+
 namespace fireball {
 using configured_jit_plugin = native_jit_plugin<jit_measurements>;
 }
@@ -66,8 +71,7 @@ fb_qa_runtime_bind_blocks(JitRuntime *c, const fireball::jit_wasm_block *blocks,
 struct fb_native_trace_descriptor {
   std::uint32_t head_pc;
   std::uintptr_t entry_address;
-  std::uint32_t byte_span, result_words, has_return_value, stack_words,
-      frame_depth;
+  std::uint32_t byte_span, result_words, stack_words, frame_depth;
   std::uint32_t next_pc, loops_to, chain_next_pc, chain_stack_words;
   std::uint32_t *exec_count;
 };
@@ -102,8 +106,8 @@ static int build_dispatch_table(JitRuntime *c,
                   c->entry_address(selected) != 0 && header->blob_bytes > 0 &&
                   block != nullptr))
       return -1;
-    auto *next = c->chain_next(selected);
-    const auto next_pc = next == nullptr ? fireball::no_pc : next->pc;
+    const auto *next = c->chain_target_header(*header);
+    const auto next_pc = next == nullptr ? fireball::no_pc : next->head_pc;
     const auto words = header->chain_words;
     if (c->error != 0)
       return -1;
@@ -111,7 +115,6 @@ static int build_dispatch_table(JitRuntime *c,
                        c->entry_address(selected),
                        block->byte_span,
                        header->result_words,
-                       header->has_return_value != 0,
                        header->stack_words,
                        block->frame_depth,
                        block->next_pc,
@@ -146,6 +149,7 @@ enum class cache_field : std::uint32_t {
   aging_ns = 22,
   compile_attempts = 23,
   compile_ns = 24,
+  lookup_calls = 25,
 };
 }
 extern "C" FB_PYSIM_ABI_EXPORT std::uint64_t
@@ -201,6 +205,8 @@ fb_jit_runtime_scalar(const JitRuntime *c, std::uint32_t field) {
     return c->compile_attempts;
   case fireball::cache_field::compile_ns:
     return c->compile_ns;
+  case fireball::cache_field::lookup_calls:
+    return c->lookup_calls;
   default:
     return 0;
   }
@@ -210,8 +216,7 @@ struct qa_cache_lookup {
   std::uint8_t bank_id;
 };
 extern "C" FB_PYSIM_ABI_EXPORT int
-fb_jit_runtime_find(JitRuntime *c, std::uint32_t pc,
-                    qa_cache_lookup *output) {
+fb_jit_runtime_find(JitRuntime *c, std::uint32_t pc, qa_cache_lookup *output) {
   c->error = 0;
   const auto location = c->find(pc);
   if (location.value == nullptr)
@@ -340,6 +345,7 @@ struct qa_dispatch_owner {
   const qa_dispatch_buffers &buffers;
   std::uint32_t visits = 0;
 };
+
 static const fb_native_trace_descriptor *qa_find(const qa_dispatch_buffers &b,
                                                  std::uint32_t pc) {
   for (std::uint32_t i = 0; i < b.count; ++i)
@@ -347,97 +353,142 @@ static const fb_native_trace_descriptor *qa_find(const qa_dispatch_buffers &b,
       return b.entries + i;
   return nullptr;
 }
-static std::uint32_t qa_execute(const fb_native_dispatch_call *input,
-                                std::uint32_t pc) {
-  if (input == nullptr || input->context == nullptr ||
-      input->stack == nullptr || input->locals == nullptr ||
-      input->extension == nullptr || input->extension->owner == 0)
-    return 0;
-  const auto &b =
-      reinterpret_cast<qa_dispatch_owner *>(input->extension->owner)->buffers;
+
+static int qa_lookup_trace(std::uintptr_t owner, std::uint32_t pc,
+                           fb_native_jit_trace *output) {
+  if (owner == 0 || output == nullptr)
+    return -1;
+  const auto &b = reinterpret_cast<qa_dispatch_owner *>(owner)->buffers;
   const auto *start = qa_find(b, pc);
   if (start == nullptr)
     return 0;
-  auto &ctx = *static_cast<fireball_execution_context_native *>(input->context);
-  auto *stack = input->stack;
-  auto *locals = input->locals;
-  if (ctx.sp_offset + start->chain_stack_words > ctx.sp_capacity)
-    return 0;
+  if (start->entry_address == 0 ||
+      start->entry_address < FB_CONF_JIT_X64_TRACE_HEADER_BYTES)
+    return -1;
   auto *terminal = start;
   std::uint32_t count = 1;
   while (terminal->chain_next_pc != fireball::no_pc) {
     terminal = qa_find(b, terminal->chain_next_pc);
     if (terminal == nullptr || ++count > b.count)
-      return 0;
+      return -1;
   }
-  auto &frame = ctx.call_stack->frames[ctx.call_stack->size - 1];
-  if (ctx.sp_offset + terminal->stack_words > ctx.sp_capacity ||
-      terminal->frame_depth >
-          FIREBALL_NATIVE_CONTROL_STACK_CAPACITY - ctx.control_base)
-    return 0;
-  const auto depth = ctx.control_base + terminal->frame_depth;
-  if (ctx.control_stack->size > depth)
-    ctx.control_stack->size = depth;
-  frame.boundary_next_pc = terminal->next_pc;
-  frame.boundary_loops_to = terminal->loops_to;
-  using entry_fn =
-      void (*)(void *, std::uint32_t *, std::uint32_t *, std::uint32_t);
-  reinterpret_cast<entry_fn>(start->entry_address)(
-      &ctx, stack + ctx.sp_offset, locals + frame.local_base, 0);
-  for (auto *current = start; current != nullptr;) {
-    if (*current->exec_count != fireball::no_pc)
+  const auto *header = reinterpret_cast<const fireball::jit_trace_header *>(
+      start->entry_address - FB_CONF_JIT_X64_TRACE_HEADER_BYTES);
+  const auto *terminal_header =
+      reinterpret_cast<const fireball::jit_trace_header *>(
+          terminal->entry_address - FB_CONF_JIT_X64_TRACE_HEADER_BYTES);
+  if (header->blob_bytes < FB_CONF_JIT_X64_TRACE_HEADER_BYTES ||
+      header->const_rel_offset > header->blob_bytes ||
+      terminal_header->const_rel_offset <
+          sizeof(fireball::jit_trace_boundary_metadata) ||
+      terminal_header->const_rel_offset > terminal_header->blob_bytes)
+    return -1;
+  const auto *boundary_metadata =
+      reinterpret_cast<const fireball::jit_trace_boundary_metadata *>(
+          reinterpret_cast<const std::uint8_t *>(terminal_header) +
+          terminal_header->const_rel_offset -
+          sizeof(fireball::jit_trace_boundary_metadata));
+  const auto *rel = reinterpret_cast<const std::uint8_t *>(
+      reinterpret_cast<const std::uint8_t *>(header) +
+      header->const_rel_offset);
+  *output = {start->entry_address,
+             rel,
+             boundary_metadata->body_end_pc,
+             boundary_metadata->next_pc,
+             boundary_metadata->loops_to,
+             terminal_header->block_index,
+             boundary_metadata->interpreter_rel_words,
+             terminal->frame_depth,
+             start->chain_stack_words,
+             terminal->result_words,
+             count,
+             reinterpret_cast<std::uintptr_t>(start)};
+  return 1;
+}
+
+static int qa_observe_block(std::uintptr_t owner, std::uint32_t) {
+  return owner == 0 ? -1 : 1;
+}
+
+static int qa_finish_boundary(std::uintptr_t owner, std::uint32_t,
+                              std::uint32_t) {
+  return owner == 0 ? 0 : 1;
+}
+
+static qa_dispatch_owner *qa_owner(const fb_native_dispatch_call *input) {
+  if (input == nullptr)
+    return nullptr;
+  const auto *extension_call =
+      reinterpret_cast<const fb_native_dispatch_extension_call *>(input);
+  if (extension_call->extension == nullptr ||
+      extension_call->extension->owner == 0)
+    return nullptr;
+  return reinterpret_cast<qa_dispatch_owner *>(
+      extension_call->extension->owner);
+}
+
+static bool qa_observe(const fb_native_dispatch_call *input, std::uint32_t pc) {
+  auto *owner = qa_owner(input);
+  if (owner == nullptr)
+    return false;
+  auto &dispatch = *owner;
+  const auto &b = dispatch.buffers;
+  const auto card = pc >> b.shift;
+  if (card >= b.cards || b.history_bytes == 0 ||
+      ((b.mask[card >> 3] >> (card & 7)) & 1u) == 0)
+    return false;
+  b.history[dispatch.visits++ % (b.history_bytes / sizeof(std::uint32_t))] = pc;
+  return true;
+}
+
+static void qa_trace_executed(const fb_native_dispatch_call *input,
+                              std::uintptr_t trace_cookie) {
+  auto *owner = qa_owner(input);
+  auto *current =
+      reinterpret_cast<const fb_native_trace_descriptor *>(trace_cookie);
+  if (owner == nullptr || current == nullptr)
+    return;
+  const auto &b = owner->buffers;
+  std::uint32_t count = 0;
+  while (current != nullptr && count++ < b.count) {
+    if (current->exec_count != nullptr &&
+        *current->exec_count != fireball::no_pc)
       ++*current->exec_count;
     current = current->chain_next_pc == fireball::no_pc
                   ? nullptr
                   : qa_find(b, current->chain_next_pc);
   }
-  if (terminal->result_words != 0)
-    ctx.sp_offset += terminal->result_words;
-  ctx.ip = terminal->head_pc - frame.function_view->code_pc_offset +
-           terminal->byte_span;
-  return count;
 }
-static bool qa_observe(const fb_native_dispatch_call *input, std::uint32_t pc) {
-  if (input == nullptr || input->extension == nullptr ||
-      input->extension->owner == 0)
-    return false;
-  auto &dispatch =
-      *reinterpret_cast<qa_dispatch_owner *>(input->extension->owner);
-  const auto &b = dispatch.buffers;
-  const auto card = pc >> b.shift;
-  if (card >= b.cards || ((b.mask[card >> 3] >> (card & 7)) & 1u) == 0)
-    return false;
-  b.history[dispatch.visits++ % (b.history_bytes / sizeof(std::uint32_t))] = pc;
-  return true;
-}
-extern "C" FB_PYSIM_ABI_EXPORT int fb_qa_dispatch(
-    int (*dispatch)(const fb_native_dispatch_call *, fb_native_result *),
-    const qa_dispatch_buffers *buffers, const fb_native_dispatch_call *input,
-    fb_native_result *result) {
-  if (buffers->shift >= 32 ||
+
+extern "C" FB_PYSIM_ABI_EXPORT int
+fb_qa_dispatch(int (*dispatch)(const fb_native_dispatch_extension_call *,
+                               fb_native_result *),
+               const qa_dispatch_buffers *buffers,
+               const fb_native_dispatch_call *input, fb_native_result *result) {
+  if (dispatch == nullptr || buffers == nullptr || input == nullptr ||
+      result == nullptr || buffers->shift >= 32 ||
       buffers->mask_bytes < (buffers->cards + 7u) / 8u ||
       buffers->history_bytes < sizeof(std::uint32_t) ||
       buffers->history == nullptr ||
       buffers->history_bytes % sizeof(std::uint32_t) != 0 ||
-      (buffers->cards != 0 && buffers->mask == nullptr))
+      (buffers->cards != 0 && buffers->mask == nullptr) ||
+      (buffers->count != 0 && buffers->entries == nullptr))
     return 0;
   auto call = *input;
   qa_dispatch_owner owner{*buffers};
-  fb_native_execution_extension extension{
-      reinterpret_cast<std::uintptr_t>(&owner), qa_execute, qa_observe};
-  call.extension = &extension;
-  return dispatch(&call, result);
+  const auto owner_address = reinterpret_cast<std::uintptr_t>(&owner);
+  const fb_native_jit_provider provider{owner_address, qa_lookup_trace,
+                                        qa_observe_block, qa_finish_boundary};
+  call.jit_provider = &provider;
+  fb_native_execution_extension extension{owner_address, qa_observe,
+                                          qa_trace_executed};
+  fb_native_dispatch_extension_call extension_call{call, &extension};
+  return dispatch(&extension_call, result);
 }
-extern "C" FB_PYSIM_ABI_EXPORT void fb_qa_runtime_bind_dispatch(
-    JitRuntime *runtime,
-    int (*dispatch)(const fb_native_dispatch_call *, fb_native_result *)) {
-  runtime->dispatch = dispatch;
-  runtime->extension = {reinterpret_cast<std::uintptr_t>(runtime),
-                        Api::execute_runtime_body, Api::observe_runtime_body};
-}
-extern "C" FB_PYSIM_ABI_EXPORT const fb_native_execution_extension *
-fb_qa_runtime_extension(JitRuntime *runtime) {
-  return &runtime->extension;
+
+extern "C" FB_PYSIM_ABI_EXPORT const fb_native_jit_provider *
+fb_qa_runtime_provider(JitRuntime *runtime) {
+  return &runtime->provider;
 }
 
 extern "C" FB_PYSIM_ABI_EXPORT void fb_jit_runtime_reset_counts(JitRuntime *c) {
@@ -472,6 +523,9 @@ fb_jit_runtime_init(std::uint8_t *storage, std::size_t bytes,
       entry_capacity > fireball::max_entries)
     return nullptr;
   auto *cache = ::new (storage) JitRuntime{};
+  cache->provider = {reinterpret_cast<std::uintptr_t>(cache),
+                     Api::lookup_runtime_trace, Api::observe_runtime_block,
+                     Api::finish_runtime_boundary};
   if (!fb_jit_memory_init(&cache->memory, FB_CONF_JIT_CACHE_REGION_BYTES) ||
       !fireball::initialize_common_code(&cache->memory)) {
     cache->~JitRuntime();

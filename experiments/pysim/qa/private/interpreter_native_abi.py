@@ -50,6 +50,21 @@ RUN_DISPATCH_STATS.restype = ctypes.c_int
 RUN_DISPATCH_STATS_EXTENSION = _library.fb_qa_run_dispatch_stats_extension
 RUN_DISPATCH_STATS_EXTENSION.argtypes = (ctypes.c_void_p, ctypes.POINTER(NativeDiagnosticResult))
 RUN_DISPATCH_STATS_EXTENSION.restype = ctypes.c_int
+RUN_DISPATCH_JIT = _library.fb_qa_run_dispatch_jit
+RUN_DISPATCH_JIT.argtypes = (ctypes.c_void_p, ctypes.POINTER(NativeDiagnosticResult))
+RUN_DISPATCH_JIT.restype = ctypes.c_int
+RUN_DISPATCH_JIT_EXTENSION = _library.fb_qa_run_dispatch_jit_extension
+RUN_DISPATCH_JIT_EXTENSION.argtypes = (
+    ctypes.c_void_p,
+    ctypes.POINTER(NativeDiagnosticResult),
+)
+RUN_DISPATCH_JIT_EXTENSION.restype = ctypes.c_int
+RUN_DISPATCH_JIT_STATS = _library.fb_qa_run_dispatch_jit_stats
+RUN_DISPATCH_JIT_STATS.argtypes = (
+    ctypes.c_void_p,
+    ctypes.POINTER(NativeDiagnosticResult),
+)
+RUN_DISPATCH_JIT_STATS.restype = ctypes.c_int
 NATIVE_RUNTIME_PROFILE_STATS_AVAILABLE = True
 
 
@@ -59,3 +74,23 @@ def select_native_dispatch_entry(
     if collect_stats:
         return RUN_DISPATCH_STATS_EXTENSION if with_extension else RUN_DISPATCH_STATS
     return RUN_DISPATCH_EXTENSION if with_extension else RUN_DISPATCH
+
+
+def select_runtime_dispatch_entry(
+    collect_stats: bool, with_jit: bool
+) -> NativeDispatchEntryPoint:
+    """Select QA dispatch instrumentation independently from the JIT provider."""
+    if with_jit:
+        return RUN_DISPATCH_JIT_STATS if collect_stats else RUN_DISPATCH_JIT
+    return RUN_DISPATCH_STATS if collect_stats else RUN_DISPATCH
+
+
+def select_native_jit_dispatch_entry(
+    collect_stats: bool,
+) -> NativeDispatchEntryPoint:
+    """Select the JIT+QA-extension dispatcher used by snapshot-driven tests."""
+    return (
+        RUN_DISPATCH_JIT_STATS_EXTENSION
+        if collect_stats
+        else RUN_DISPATCH_JIT_EXTENSION
+    )

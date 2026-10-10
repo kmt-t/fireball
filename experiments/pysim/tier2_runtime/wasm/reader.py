@@ -210,24 +210,25 @@ def _validate_section_counts(counts: _SectionCounts) -> None:
 
 def _parse_functype(data: memoryview, off: int, end: int) -> tuple[FuncTypeRecord, int]:
     assert off < end, "truncated function type"
-    record_offset = off
     tag = data[off]
     off += 1
     if tag != 0x60:
         assert False, f"expected functype tag 0x60, got 0x{tag:02X}"
     nparams, off = decode_unsigned(data, off, end)
     assert nparams <= FB_CONF_MAX_LOCALS, "function parameter count exceeds configured maximum"
+    params_offset = off
     for _ in range(nparams):
         _read_value_type(data, off, end)
         off += 1
 
     nresults, off = decode_unsigned(data, off, end)
     assert nresults <= 1, "MVP functions have at most one result"
+    results_offset = off
     for _ in range(nresults):
         _read_value_type(data, off, end)
         off += 1
     assert off <= len(data)
-    return FuncTypeRecord(offset=record_offset, size=off - record_offset), off
+    return FuncTypeRecord(params_offset, nparams, results_offset, nresults), off
 
 
 def _parse_type_section(

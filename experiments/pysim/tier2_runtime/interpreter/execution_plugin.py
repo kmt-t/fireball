@@ -1,4 +1,4 @@
-"""Optional native execution extension contract owned by the Interpreter."""
+"""Optional JIT trace provider contract owned by the Interpreter."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 
 
 class NativeExecutionPlugin(Protocol):
-    """Bind an optional native executor to the Interpreter's shared state."""
+    """Bind compiled trace lookup and cache lifetime to an Interpreter."""
 
     def register_module(self, module: Module) -> None: ...
 
@@ -22,7 +22,7 @@ class NativeExecutionPlugin(Protocol):
     def native_entry(self) -> NativeDispatchEntryPoint: ...
 
     def bind_execution(
-        self, dispatcher: NativeDispatchEntryPoint, execution: NativeModuleExecution
+        self, execution: NativeModuleExecution
     ) -> int: ...
 
     def idle_hook(self, budget: int = 4) -> int: ...

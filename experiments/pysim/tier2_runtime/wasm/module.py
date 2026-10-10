@@ -40,20 +40,190 @@ ElementInitializer = Callable[[int, int, int], None]
 DataInitializer = Callable[[int, memoryview], None]
 
 
-@dataclass(slots=True)
-class BasicBlock:
+class BasicBlock(ctypes.Structure):
     """
     A straight-line run of WASM instructions ending with branch/return, as PC
     range + control-flow metadata only. Decoded instructions are never stored
-    in the module; consumers obtain a one-shot iterator over raw bytecode.
+    in the module; consumers obtain a one-shot iterator over raw bytecode. A
+    zero-length entry marks a call-resume PC that needs a constant-pool start
+    but contains no JIT-eligible instructions. The pool start is stored here
+    so every block owns the metadata needed to initialize `rel`.
     """
 
-    head_pc: int
-    func_index: int = 0
-    next_pc: int | None = None
-    loops_to: int | None = None
-    frame_depth: int = 0
-    byte_span: int = 0
+    __slots__ = ()
+    _fields_ = (
+        ("head_pc", ctypes.c_uint32),
+        ("function_index", ctypes.c_uint32),
+        ("_next_pc", ctypes.c_uint32),
+        ("_loops_to", ctypes.c_uint32),
+        ("frame_depth", ctypes.c_uint32),
+        ("byte_span", ctypes.c_uint32),
+        ("interpreter_constant_offset", ctypes.c_uint32),
+    )
+
+    def __init__(
+        self,
+        head_pc: int,
+        func_index: int = 0,
+        next_pc: int | None = None,
+        loops_to: int | None = None,
+        frame_depth: int = 0,
+        byte_span: int = 0,
+        interpreter_constant_offset: int = 0,
+    ) -> None:
+        self.head_pc = head_pc
+        self.function_index = func_index
+        self.next_pc = next_pc
+        self.loops_to = loops_to
+        self.frame_depth = frame_depth
+        self.byte_span = byte_span
+        self.interpreter_constant_offset = interpreter_constant_offset
+
+    @property
+    def func_index(self) -> int:
+        return int(self.function_index)
+
+    @property
+    def next_pc(self) -> int | None:
+        value = int(self._next_pc)
+        return None if value == 0xFFFF_FFFF else value
+
+    @next_pc.setter
+    def next_pc(self, value: int | None) -> None:
+        self._next_pc = 0xFFFF_FFFF if value is None else value
+
+    @property
+    def loops_to(self) -> int | None:
+        value = int(self._loops_to)
+        return None if value == 0xFFFF_FFFF else value
+
+    @loops_to.setter
+    def loops_to(self, value: int | None) -> None:
+        self._loops_to = 0xFFFF_FFFF if value is None else value
+
+
+class BasicBlockStorage:
+    """Bounded contiguous BasicBlock storage shared with the native ABI."""
+
+    __slots__ = ("_arena_offset", "_arena_size", "_entries", "_native", "capacity")
+
+    def __init__(
+        self,
+        capacity: int,
+        allocator: BumpAllocator | None = None,
+        arena_offset: int | None = None,
+        arena_size: int | None = None,
+    ) -> None:
+        assert capacity >= 0
+        self.capacity = capacity
+        self._native = (BasicBlock * capacity)()
+        # Keep stable ctypes views for Python identity semantics. The views
+        # point into _native; record bytes exist only in that ABI array.
+        self._entries: StaticVector[BasicBlock] = StaticVector(capacity=capacity)
+        self._arena_offset = arena_offset
+        self._arena_size = (
+            capacity * ctypes.sizeof(BasicBlock) if arena_size is None else arena_size
+        )
+        assert self._arena_size == capacity * ctypes.sizeof(BasicBlock)
+        if allocator is not None and self._arena_size:
+            assert self._arena_offset is None
+            self._arena_offset = allocator.allocate(self._arena_size, ctypes.alignment(BasicBlock))
+
+    @property
+    def native_address(self) -> int:
+        """Return the first ABI record in the contiguous loader-owned array."""
+
+        return 0 if not self._entries else ctypes.addressof(self._native)
+
+    @property
+    def arena_size(self) -> int:
+        return self._arena_size
+
+    def append(self, block: BasicBlock) -> None:
+        assert len(self._entries) < self.capacity
+        index = len(self._entries)
+        self._native[index] = block
+        self._entries.append(self._native[index])
+
+    def relocate_arena(self, offset_delta: int) -> None:
+        if self._arena_offset is not None:
+            relocated_offset = self._arena_offset + offset_delta
+            assert relocated_offset >= 0
+            self._arena_offset = relocated_offset
+
+    def __len__(self) -> int:
+        return len(self._entries)
+
+    def __getitem__(self, index: int) -> BasicBlock:
+        return self._entries[index]
+
+    def __iter__(self) -> Iterator[BasicBlock]:
+        return iter(self._entries)
+
+
+class InterpreterConstantPool:
+    """Loader-owned packed 32-bit constants exposed as an unaligned byte span."""
+
+    __slots__ = ("_arena_offset", "_bytes", "_size", "capacity")
+
+    def __init__(self, capacity: int, allocator: BumpAllocator | None = None) -> None:
+        assert capacity >= 0
+        self.capacity = capacity
+        self._size = 0
+        self._bytes = (ctypes.c_uint8 * (capacity * WASM_RAW_WORD_BYTES))()
+        self._arena_offset = (
+            allocator.allocate(ctypes.sizeof(self._bytes), alignment=1)
+            if allocator is not None and capacity
+            else None
+        )
+
+    @property
+    def native_address(self) -> int:
+        return ctypes.addressof(self._bytes) if self._size else 0
+
+    def append(self, value: int) -> None:
+        assert self._size < self.capacity
+        assert 0 <= value <= 0xFFFF_FFFF
+        offset = self._size * WASM_RAW_WORD_BYTES
+        for byte_index in range(WASM_RAW_WORD_BYTES):
+            self._bytes[offset + byte_index] = (value >> (byte_index * 8)) & 0xFF
+        self._size += 1
+
+    def __len__(self) -> int:
+        return self._size
+
+    def __getitem__(self, index: int) -> int:
+        if index < 0:
+            index += self._size
+        assert 0 <= index < self._size
+        offset = index * WASM_RAW_WORD_BYTES
+        return sum(
+            int(self._bytes[offset + byte_index]) << (byte_index * 8)
+            for byte_index in range(WASM_RAW_WORD_BYTES)
+        )
+
+    def __iter__(self) -> Iterator[int]:
+        for index in range(self._size):
+            yield self[index]
+
+    def relocate_arena(self, offset_delta: int) -> None:
+        if self._arena_offset is not None:
+            relocated_offset = self._arena_offset + offset_delta
+            assert relocated_offset >= 0
+            self._arena_offset = relocated_offset
+
+
+class NativeControlMapEntry(ctypes.Structure):
+    """Flat control opener metadata shared with the native interpreter ABI."""
+
+    __slots__ = ()
+    _fields_ = (
+        ("match_end", ctypes.c_uint32),
+        ("else_offset", ctypes.c_uint32),
+        ("next_pc", ctypes.c_uint32),
+        ("result_arity", ctypes.c_uint32),
+        ("operand_width", ctypes.c_uint32),
+    )
 
 
 # WASM value types are stored as their one-byte binary encoding.  Keeping the
@@ -74,11 +244,12 @@ class FunctionTable:
     `UNINITIALIZED_TABLE_FUNCTION` represents a Python `None` slot in the ABI.
     """
 
-    __slots__ = ("_values",)
+    __slots__ = ("_sealed", "_values")
 
     def __init__(self, capacity: int, allocator: BumpAllocator | None = None) -> None:
         assert capacity >= 0
         self._values = CtypesU32Buffer(capacity, allocator)
+        self._sealed = False
         for index in range(len(self._values)):
             self._values.put(index, UNINITIALIZED_TABLE_FUNCTION)
 
@@ -110,6 +281,7 @@ class FunctionTable:
         return None if value == UNINITIALIZED_TABLE_FUNCTION else value
 
     def __setitem__(self, index: int, value: int | None) -> None:
+        assert not self._sealed, "linked function table is immutable"
         if index < 0:
             index += len(self)
         assert 0 <= index < len(self)
@@ -118,6 +290,11 @@ class FunctionTable:
         else:
             assert 0 <= value < UNINITIALIZED_TABLE_FUNCTION
             self._values.put(index, value)
+
+    def seal(self) -> None:
+        """Freeze table contents after interpreter linking validates call_indirect sites."""
+
+        self._sealed = True
 
     def __iter__(self) -> Iterator[int | None]:
         for index in range(len(self)):
@@ -135,13 +312,12 @@ class IntegerSequence(Protocol):
 # Fixed reference-layout charges for loader-owned records. These sizes model
 # the 32-bit target records; final C++ sizeof values remain part of the target
 # ABI review and are not inferred from CPython object sizes.
-LOADER_TYPE_ENTRY_BYTES = 8
 LOADER_IMPORT_ENTRY_BYTES = 32
 LOADER_FUNCTION_ENTRY_BYTES = 40
 LOADER_EXPORT_ENTRY_BYTES = 4 * WASM_RAW_WORD_BYTES
 LOADER_GLOBAL_ENTRY_BYTES = 20
 LOADER_TABLE_ENTRY_BYTES = 12
-LOADER_BASIC_BLOCK_ENTRY_BYTES = 24
+LOADER_BASIC_BLOCK_ENTRY_BYTES = ctypes.sizeof(BasicBlock)
 LOADER_BLOCK_INDEX_ENTRY_BYTES = 8
 
 
@@ -164,7 +340,7 @@ def value_slot_width(value_type: int) -> int:
 
 
 class LocalLayout:
-    """Load-time packed word offsets and sizes for locals, parameters first."""
+    """Load-time packed offsets, sizes, and WASM types for locals, parameters first."""
 
     __slots__ = (
         "_arena_offset",
@@ -172,6 +348,7 @@ class LocalLayout:
         "_offsets",
         "_sizes",
         "_storage",
+        "_types",
         "count",
         "total_words",
     )
@@ -184,7 +361,7 @@ class LocalLayout:
     ) -> None:
         count = len(params) + len(extra)
         self.count = count
-        self._storage = bytearray(count * 3)
+        self._storage = bytearray(count * 4)
         self._offsets = (
             (ctypes.c_uint16 * count).from_buffer(self._storage)
             if count
@@ -192,6 +369,11 @@ class LocalLayout:
         )
         self._sizes = (
             (ctypes.c_uint8 * count).from_buffer(self._storage, count * 2)
+            if count
+            else (ctypes.c_uint8 * 0)()
+        )
+        self._types = (
+            (ctypes.c_uint8 * count).from_buffer(self._storage, count * 3)
             if count
             else (ctypes.c_uint8 * 0)()
         )
@@ -229,6 +411,7 @@ class LocalLayout:
         width = value_slot_width(value_type)
         self._offsets[index] = offset
         self._sizes[index] = width
+        self._types[index] = value_type
         return offset + width
 
     def offset(self, index: int) -> int:
@@ -242,6 +425,11 @@ class LocalLayout:
         return ctypes.addressof(self._sizes) if self.count else 0
 
     @property
+    def types_address(self) -> int:
+        """Address of the contiguous per-local WASM value-type table."""
+        return ctypes.addressof(self._types) if self.count else 0
+
+    @property
     def offsets_address(self) -> int:
         """Address of the contiguous per-local raw-word offset table."""
         return ctypes.addressof(self._offsets) if self.count else 0
@@ -251,16 +439,87 @@ class LocalLayout:
         assert 0 <= index < self.count
         return int(self._sizes[index])
 
+    def value_type(self, index: int) -> int:
+        """Return the original WASM value type of local `index`."""
+        assert 0 <= index < self.count
+        return int(self._types[index])
+
     def __len__(self) -> int:
         return self.count
 
 
-@dataclass(slots=True)
-class FuncTypeRecord:
-    """Loader-owned bounds of one function signature in the module ROM."""
+class FuncTypeRecord(ctypes.Structure):
+    """Loader-owned ABI signature view into parameter and result type bytes."""
 
-    offset: int
-    size: int
+    __slots__ = ()
+    _fields_ = (
+        ("param_offset", ctypes.c_uint32),
+        ("param_count", ctypes.c_uint32),
+        ("result_offset", ctypes.c_uint32),
+        ("result_count", ctypes.c_uint32),
+    )
+
+    def __init__(
+        self,
+        param_offset: int,
+        param_count: int,
+        result_offset: int,
+        result_count: int,
+    ) -> None:
+        self.param_offset = param_offset
+        self.param_count = param_count
+        self.result_offset = result_offset
+        self.result_count = result_count
+
+
+class FuncTypeStorage:
+    """Fixed contiguous function type records owned and shared by the Loader."""
+
+    __slots__ = ("_arena_offset", "_entries", "_native", "capacity")
+
+    def __init__(
+        self,
+        capacity: int,
+        allocator: BumpAllocator | None = None,
+        arena_offset: int | None = None,
+    ) -> None:
+        assert capacity >= 0
+        self.capacity = capacity
+        self._native = (FuncTypeRecord * capacity)()
+        # Keep stable ctypes views for Python callers; _native is the only
+        # storage for the record fields shared with the native ABI.
+        self._entries: StaticVector[FuncTypeRecord] = StaticVector(capacity=capacity)
+        self._arena_offset = arena_offset
+        if allocator is not None and capacity:
+            assert self._arena_offset is None
+            self._arena_offset = allocator.allocate(
+                ctypes.sizeof(self._native), ctypes.alignment(FuncTypeRecord)
+            )
+
+    @property
+    def native_address(self) -> int:
+        return ctypes.addressof(self._native) if self._entries else 0
+
+    def append(self, record: FuncTypeRecord) -> None:
+        assert len(self._entries) < self.capacity
+        index = len(self._entries)
+        self._native[index] = record
+        self._entries.append(self._native[index])
+
+    def relocate_arena(self, offset_delta: int) -> None:
+        if self._arena_offset is not None:
+            relocated_offset = self._arena_offset + offset_delta
+            assert relocated_offset >= 0
+            self._arena_offset = relocated_offset
+
+    def __len__(self) -> int:
+        return len(self._entries)
+
+    def __getitem__(self, index: int) -> FuncTypeRecord:
+        return self._entries[index]
+
+    def __iter__(self) -> Iterator[FuncTypeRecord]:
+        return iter(self._entries)
 
 
 @dataclass(slots=True)
@@ -281,6 +540,7 @@ class Function:
     code_size: int
     code_pc_offset: int
     control_map: ControlMap | None = None
+    interpreter_constant_pool: InterpreterConstantPool | None = None
     select_widths: ReadOnlyFlatMapStorage[int, int] | None = None
     drop_widths: ReadOnlyFlatMapStorage[int, int] | None = None
     # Per-local raw-word offsets and sizes are immutable loader metadata.
@@ -337,7 +597,7 @@ class Table:
 
 @dataclass(slots=True)
 class Module:
-    types: StaticVector[FuncTypeRecord] = field(default_factory=lambda: StaticVector(capacity=0))
+    types: FuncTypeStorage = field(default_factory=lambda: FuncTypeStorage(capacity=0))
     imports: StaticVector[Import] = field(default_factory=lambda: StaticVector(capacity=0))
     global_import_count: int = 0
     functions: StaticVector[Function] = field(default_factory=lambda: StaticVector(capacity=0))
@@ -353,11 +613,13 @@ class Module:
     data_section_offset: int = 0
     data_section_size: int = 0
     block_storage: ReadOnlyRadixBinaryTreeStorage[BasicBlock] | None = None
-    blocks: StaticVector[BasicBlock] = field(default_factory=lambda: StaticVector(capacity=0))
+    blocks: BasicBlockStorage = field(default_factory=lambda: BasicBlockStorage(capacity=0))
     source: memoryview | None = None
     allocator: BumpAllocator | None = field(default=None, repr=False)
     _arena_start: int = field(default=0, repr=False)
     _arena_size: int = field(default=0, repr=False)
+    _global_widths: ctypes.Array | None = field(default=None, repr=False)
+    _global_widths_arena_offset: int | None = field(default=None, repr=False)
 
     @property
     def arena_size(self) -> int:
@@ -387,9 +649,7 @@ class Module:
         assert len(self.exports) == 0
         assert len(self.globals) == 0
         assert len(self.tables) == 0
-        self.types = _allocate_loader_vector(
-            allocator, type_count, LOADER_TYPE_ENTRY_BYTES, StaticVector[FuncTypeRecord]
-        )
+        self.types = FuncTypeStorage(type_count, allocator)
         self.imports = _allocate_loader_vector(
             allocator, function_import_count, LOADER_IMPORT_ENTRY_BYTES, StaticVector[Import]
         )
@@ -421,12 +681,20 @@ class Module:
             self.globals.relocate_arena(offset_delta)
             self.tables.relocate_arena(offset_delta)
             self.blocks.relocate_arena(offset_delta)
+            if self._global_widths_arena_offset is not None:
+                self._global_widths_arena_offset += offset_delta
             for function in self.functions:
                 function.locals_extra.relocate_arena(offset_delta)
                 assert function.local_layout_cache is not None
                 function.local_layout_cache.relocate_arena(offset_delta)
             self._arena_start = new_start
         else:
+            self.build_native_global_widths(allocator)
+            if self._global_widths_arena_offset is None and len(self.globals):
+                assert self._global_widths is not None
+                self._global_widths_arena_offset = allocator.allocate(
+                    ctypes.sizeof(self._global_widths), ctypes.alignment(ctypes.c_uint8)
+                )
             for function in self.functions:
                 assert function.local_layout_cache is not None
                 layout = function.local_layout_cache
@@ -614,9 +882,16 @@ class Module:
     def type_at(self, type_index: int) -> FuncType:
         """Return a function type whose parsed signature bytes borrow Module.source."""
         assert 0 <= type_index < len(self.types)
-        raw = self.types[type_index]
+        record = self.types[type_index]
         assert self.source is not None
-        return _read_func_type(self.source, raw.offset, raw.size)
+        params_end = record.param_offset + record.param_count
+        results_end = record.result_offset + record.result_count
+        return FuncType(
+            params=self.source[record.param_offset : params_end],
+            results=self.source[record.result_offset : results_end],
+            params_source_offset=record.param_offset,
+            results_source_offset=record.result_offset,
+        )
 
     def export_func_index(self, name: str) -> int:
         assert self.source is not None
@@ -665,36 +940,71 @@ class Module:
         assert extended
         return types
 
+    def build_native_global_widths(self, allocator: BumpAllocator | None = None) -> None:
+        """Build the ABI width table once from loader-owned global declarations."""
+
+        if self._global_widths is None:
+            widths_type = ctypes.c_uint8 * len(self.globals)
+            self._global_widths = widths_type()
+            for index, global_value in enumerate(self.globals):
+                self._global_widths[index] = value_slot_width(global_value.vtype)
+        if allocator is not None and len(self.globals):
+            if self._global_widths_arena_offset is not None:
+                return
+            self._global_widths_arena_offset = allocator.allocate(
+                ctypes.sizeof(self._global_widths), ctypes.alignment(ctypes.c_uint8)
+            )
+
+    @property
+    def global_widths_address(self) -> int:
+        return (
+            0
+            if self._global_widths is None or len(self.globals) == 0
+            else ctypes.addressof(self._global_widths)
+        )
+
     def build_basic_block_index(self, allocator: BumpAllocator | None = None) -> None:
         """Build the immutable block and instruction indexes during loading."""
-        from tier2_runtime.interpreter.control_flow import extract_basic_blocks
+        from tier2_runtime.interpreter.control_flow import (
+            build_interpreter_constant_pool,
+            extract_basic_blocks,
+        )
 
         n_imports = len(self.imports)
         block_capacity = self.total_basic_blocks
         assert block_capacity <= FB_CONF_MAX_BASIC_BLOCKS
-        if allocator is None:
-            all_blocks: StaticVector[BasicBlock] = StaticVector(capacity=block_capacity)
-        else:
-            all_blocks = _allocate_loader_vector(
-                allocator, block_capacity, LOADER_BASIC_BLOCK_ENTRY_BYTES, StaticVector[BasicBlock]
-            )
+        all_blocks = BasicBlockStorage(block_capacity, allocator)
         for idx, _fn in enumerate(self.functions):
             func_idx = n_imports + idx
             code = self.code_for(func_idx)
             function_pc_offset = self.function_pc_offset(func_idx)
-            extracted = extract_basic_blocks(code, pc_base=function_pc_offset)
-            for head_pc, next_pc, loops_to, frame_depth, byte_span in extracted:
-                if byte_span > 0:
-                    all_blocks.append(
-                        BasicBlock(
-                            head_pc=head_pc,
-                            func_index=func_idx,
-                            next_pc=next_pc,
-                            loops_to=loops_to,
-                            frame_depth=frame_depth,
-                            byte_span=byte_span,
-                        )
+            function = self.functions[idx]
+            assert function.control_map is not None
+            extracted = extract_basic_blocks(code, function.control_map, pc_base=function_pc_offset)
+            block_heads: StaticVector[int] = StaticVector(capacity=len(extracted))
+            for block in extracted:
+                block_heads.append(block[0] - function_pc_offset)
+            constants, block_constant_offsets = build_interpreter_constant_pool(
+                code, block_heads, allocator
+            )
+            function.interpreter_constant_pool = constants
+            assert len(block_constant_offsets) == len(extracted)
+            for block_index, (head_pc, next_pc, loops_to, frame_depth, byte_span) in enumerate(
+                extracted
+            ):
+                all_blocks.append(
+                    BasicBlock(
+                        head_pc=head_pc,
+                        func_index=func_idx,
+                        next_pc=next_pc,
+                        loops_to=loops_to,
+                        frame_depth=frame_depth,
+                        byte_span=byte_span,
+                        interpreter_constant_offset=block_constant_offsets[block_index],
                     )
+                )
+
+        self.build_native_global_widths(allocator)
 
         # `all_blocks` is already in ascending head_pc order here (functions
         # walked in order, extract_basic_blocks yields blocks in bytecode
@@ -739,47 +1049,14 @@ class Module:
         """Returns the exact total number of basic blocks across all functions in the module."""
         if self.blocks:
             return len(self.blocks)
-        from tier2_runtime.interpreter.control_flow import extract_basic_blocks
+        from tier2_runtime.interpreter.control_flow import count_basic_blocks
 
         n_imports = len(self.imports)
         count = 0
-        for idx, _fn in enumerate(self.functions):
+        for idx, _function in enumerate(self.functions):
             function_index = n_imports + idx
-            extracted = extract_basic_blocks(
-                self.code_for(function_index), pc_base=self.function_pc_offset(function_index)
-            )
-            # Matches build_basic_block_index's own filter exactly, so this
-            # fallback path (self.blocks not yet built) agrees with the fast
-            # `len(self.blocks)` path above once it has been.
-            count += sum(1 for entry in extracted if entry[4] > 0)
+            count += count_basic_blocks(self.code_for(function_index))
         return count
-
-
-def _read_func_type(data: memoryview, offset: int, size: int) -> FuncType:
-    end = offset + size
-    off = offset
-    assert data[off] == 0x60
-    off += 1
-    nparams, off = decode_unsigned(data, off, end)
-    assert nparams <= FB_CONF_MAX_LOCALS, "WASM function parameter count exceeds configured maximum"
-    params_offset = off
-    # The loader validated the type bytes already. Accessors skip directly
-    # across them instead of repeating a parameter-count-dependent scan.
-    off += nparams
-    assert off < end
-    params = data[params_offset:off]
-    nresults, off = decode_unsigned(data, off, end)
-    assert nresults <= 1, "MVP functions have at most one result"
-    results_offset = off
-    off += nresults
-    assert off == end
-    results = data[results_offset:off]
-    return FuncType(
-        params=params,
-        results=results,
-        params_source_offset=params_offset,
-        results_source_offset=results_offset,
-    )
 
 
 def _read_init_offset(

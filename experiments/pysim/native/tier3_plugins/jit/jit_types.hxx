@@ -2,15 +2,6 @@
 #define FIREBALL_PYSIM_JIT_TYPES_HXX
 #include <cstddef>
 #include <cstdint>
-#if defined(FB_PYSIM_QA)
-#if defined(_WIN32)
-#define FB_JIT_QA_EXPORT __declspec(dllexport)
-#else
-#define FB_JIT_QA_EXPORT __attribute__((visibility("default")))
-#endif
-#else
-#define FB_JIT_QA_EXPORT
-#endif
 namespace fireball {
 struct jit_instruction;
 
@@ -21,6 +12,7 @@ struct jit_byte_view {
 struct jit_local_layout {
   jit_byte_view offsets;
   jit_byte_view sizes;
+  jit_byte_view types;
   std::uint32_t count, total_words;
 };
 struct jit_wasm_block {
@@ -29,37 +21,51 @@ struct jit_wasm_block {
   jit_byte_view code;
   jit_local_layout locals;
   void *extension_data;
+  std::uint32_t block_index = 0xFFFF'FFFFu;
 };
 struct jit_instruction_block {
-  std::uint32_t head_pc, next_pc, loops_to, byte_span, context_helper;
-  std::uint64_t helper_target;
+  std::uint32_t head_pc, next_pc, loops_to, byte_span;
   const fireball::jit_instruction *instructions;
   std::uint32_t instruction_count;
   jit_local_layout locals;
 };
+struct jit_trace_boundary_metadata {
+  std::uint32_t body_end_pc;
+  std::uint32_t next_pc;
+  std::uint32_t loops_to;
+  std::uint32_t interpreter_rel_words;
+};
+static_assert(sizeof(jit_trace_boundary_metadata) == 16);
 struct jit_common_layout {
   std::uint32_t region_bytes, common_code_bytes;
-  std::uint32_t prologue_offset, prologue_size, epilogue_offset, epilogue_size;
-  std::uint32_t helper_offset, helper_size, chain_dispatcher_offset,
-      chain_dispatcher_size;
-  std::uint32_t absolute_pool_offset, absolute_pool_size;
-  std::uint32_t context_helper_offset, header_bytes, entry_stub_bytes;
+  std::uint32_t chain_dispatcher_offset, chain_dispatcher_size;
+  std::uint32_t header_bytes;
 };
 // The only per-trace runtime data lives beside its code. Runtime indexes keep
 // a PC and a region-relative code offset; they never own a second descriptor.
 struct jit_trace_header {
   std::uint64_t chain_target_address;
-  std::uint64_t helper_target_address;
   std::int32_t common_code_relative;
   std::uint32_t head_pc;
   std::uint32_t blob_bytes;
   std::uint8_t stack_words;
   std::uint8_t result_words;
-  std::uint8_t has_return_value;
   std::uint8_t chain_words;
+  std::uint8_t reserved0;
   std::uint32_t frame_depth;
+  std::uint32_t block_index;
+  std::uint32_t const_rel_offset;
 };
-static_assert(offsetof(jit_trace_header, frame_depth) == 32);
+static_assert(offsetof(jit_trace_header, common_code_relative) == 8);
+static_assert(offsetof(jit_trace_header, head_pc) == 12);
+static_assert(offsetof(jit_trace_header, blob_bytes) == 16);
+static_assert(offsetof(jit_trace_header, stack_words) == 20);
+static_assert(offsetof(jit_trace_header, result_words) == 21);
+static_assert(offsetof(jit_trace_header, chain_words) == 22);
+static_assert(offsetof(jit_trace_header, reserved0) == 23);
+static_assert(offsetof(jit_trace_header, frame_depth) == 24);
+static_assert(offsetof(jit_trace_header, block_index) == 28);
+static_assert(offsetof(jit_trace_header, const_rel_offset) == 32);
 static_assert(sizeof(jit_trace_header) == 40);
 
 struct jit_profile {

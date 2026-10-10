@@ -31,7 +31,7 @@
 | TEST-WASM-12 | `block`/`loop`/`if`/`else`/`end`のラベル解決 | ネストしたブロック | 実行 | 分岐先ラベルが正しく記録・解決される | wasm_instruction_set.md (Control Flow) |
 | TEST-WASM-13 | `br`/`br_if`/`br_table` | 各種分岐条件 | 実行 | スタック遷移`[i32]->[]`等を満たし、正しい深さへジャンプ | wasm_instruction_set.md (Control Flow) |
 | TEST-WASM-14 | `return` | 関数呼び出し中 | 実行 | コールフレームをpopして復帰 | wasm_instruction_set.md (Control Flow) |
-| TEST-WASM-15 | `call`/`call_indirect` | 直接/間接呼び出し | 実行 | 関数呼出し記述子を積んで関数を呼び出す。`call_indirect`は型シグネチャ照合を行う | wasm_instruction_set.md (Control Flow) |
+| TEST-WASM-15 | `call`/`call_indirect` | 直接/間接呼び出しと不一致型のテーブル要素 | 実行・リンク | 適合する`call_indirect`は関数を呼び出す。不一致の初期化済み要素を含むテーブルはリンク時に拒否する。`call_indirect`が参照するリンク済みテーブルの要素は書き換えられない | wasm_instruction_set.md (Control Flow) |
 
 ### パラメトリック
 
@@ -83,7 +83,7 @@
 | TEST-WASM-61 | 飽和変換のNaN・無限大 | f32/f64のNaN、`+∞`、`-∞` | 8変換命令を実行 | NaNは0、正の無限大は整数上限、負の無限大はsigned下限またはunsigned 0。変換trapなし | `{WasmFCSubset}` |
 | TEST-WASM-62 | 飽和変換のsigned境界 | i32/i64 signed変換先の下限・上限および隣接値 | f32/f64から実行 | 0方向への切り捨て後にsigned範囲へ収まり、範囲外値は下限/上限へ飽和 | `{WasmFCSubset}` |
 | TEST-WASM-63 | 飽和変換のunsigned境界 | i32/i64 unsigned変換先、負の小数を含む | f32/f64から実行 | 負の値は0方向切捨て後に0、上限超過はunsigned最大値へ飽和 | `{WasmFCSubset}` |
-| TEST-WASM-64 | Interpreter/JIT間の飽和変換一致 | 同一の変換命令列 | InterpreterとJIT有効構成で実行 | 8命令の結果ビット幅、NaN、境界値が一致する。未実装JIT命令はInterpreterへ委譲する | `{WasmFCSubset}` `{JIT_RuntimeAPI_Fallback}` |
+| TEST-WASM-64 | Interpreter/JIT間の飽和変換一致 | 同一の変換命令列 | InterpreterとJIT有効構成で実行 | 8命令の結果ビット幅、NaN、境界値が一致する。未実装JIT命令はInterpreterへ委譲する | `{WasmFCSubset}` `{JIT_RuntimeAPI}` |
 | TEST-WASM-70 | `memory.copy`の重複領域 | 同一memory内で前方・後方重複、完全一致 | copy実行後に全byteを比較 | memmove意味論でコピー元の元データと一致し、vDMAを起動しない | `{WasmFCSubset}` `{VDMA}` |
 | TEST-WASM-71 | `memory.copy`の非重複領域とゼロ長 | 有効な範囲、境界ちょうどのゼロ長範囲 | copy実行 | byte列が一致する。`len == 0`は範囲内offsetで無変更・DMAなし | `{WasmFCSubset}` |
 | TEST-WASM-72 | `memory.copy`の両範囲境界 | sourceまたはdestinationが終端を超える。ゼロ長でoffsetが終端より大きい場合も含む | copy実行 | WASM memory trapとなり、宛先を含むメモリに部分更新がない | `{WasmFCSubset}` `{MemoryBoundaryCheck}` |

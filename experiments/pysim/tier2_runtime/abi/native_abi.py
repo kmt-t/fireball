@@ -16,7 +16,7 @@ class NativeDispatchCall(ctypes.Structure):
         ("context", ctypes.c_void_p),
         ("stack", ctypes.c_void_p),
         ("locals", ctypes.c_void_p),
-        ("extension", ctypes.c_void_p),
+        ("jit_provider", ctypes.c_void_p),
         ("idle_budget", ctypes.c_uint32),
     )
 
@@ -37,7 +37,8 @@ class NativeStepCall(ctypes.Structure):
         ("stack_capacity", ctypes.c_uint32),
         ("ip", ctypes.c_uint32),
         ("local_slots", ctypes.c_uint32),
-        ("control_base", ctypes.c_uint32),
+        ("control_frame_base", ctypes.c_void_p),
+        ("rel", ctypes.c_void_p),
     )
 
 
@@ -68,9 +69,9 @@ RUN_DEBUG_DISPATCH.restype = ctypes.c_int
 RUN_DISPATCH = _LIBRARY.fb_native_run_dispatch
 RUN_DISPATCH.argtypes = (ctypes.c_void_p, ctypes.POINTER(NativeResult))
 RUN_DISPATCH.restype = ctypes.c_int
-RUN_DISPATCH_EXTENSION = _LIBRARY.fb_native_run_dispatch_extension
-RUN_DISPATCH_EXTENSION.argtypes = (ctypes.c_void_p, ctypes.POINTER(NativeResult))
-RUN_DISPATCH_EXTENSION.restype = ctypes.c_int
+RUN_DISPATCH_JIT = _LIBRARY.fb_native_run_dispatch_jit
+RUN_DISPATCH_JIT.argtypes = (ctypes.c_void_p, ctypes.POINTER(NativeResult))
+RUN_DISPATCH_JIT.restype = ctypes.c_int
 
 
 def run_step(
@@ -89,10 +90,11 @@ def run_step(
     stack_capacity: int,
     ip: int,
     local_slots: int,
-    control_base: int,
+    control_frame_base: int,
     *,
     call: NativeStepCall,
     result: NativeResult,
+    rel: int = 0,
 ) -> tuple[int, int, int, int]:
     """Call the native step ABI with addresses owned by the active context."""
     call.code = code_address
@@ -109,7 +111,8 @@ def run_step(
     call.stack_capacity = stack_capacity
     call.ip = ip
     call.local_slots = local_slots
-    call.control_base = control_base
+    call.control_frame_base = control_frame_base
+    call.rel = rel
     status = entry(ctypes.byref(call), ctypes.byref(result))
     assert status == 1, (
         f"C++ interpreter ABI rejected call with status {status} and error {result.error_code}"
@@ -117,7 +120,8 @@ def run_step(
     from tier2_runtime.abi.interpreter_abi import ExecutionContextABI
 
     context = ctypes.cast(context_address, ctypes.POINTER(ExecutionContextABI)).contents
-    return result.status, context.ip, context.sp_offset, context.trap_code
+    stack_size = (int(context.stack_pointer or 0) - stack_address) // 4
+    return result.status, context.ip, stack_size, context.trap_code
 
 
 NativeDispatchResult = tuple[int, int, int, int]
@@ -133,14 +137,14 @@ def run_native_dispatch(
     *,
     call: NativeDispatchCall,
     result: NativeResult,
-    extension: int = 0,
+    jit_provider: int = 0,
     idle_budget: int = 0,
 ) -> NativeDispatchResult:
     """Run native dispatch from its context-owned state and borrowed value stacks."""
     call.context = context_address
     call.stack = stack_address
     call.locals = locals_address
-    call.extension = extension
+    call.jit_provider = jit_provider
     call.idle_budget = idle_budget
     status = entry(ctypes.byref(call), ctypes.byref(result))
     assert status == 1, (
@@ -149,4 +153,5 @@ def run_native_dispatch(
     from tier2_runtime.abi.interpreter_abi import ExecutionContextABI
 
     context = ctypes.cast(context_address, ctypes.POINTER(ExecutionContextABI)).contents
-    return result.status, context.ip, context.sp_offset, context.trap_code
+    stack_size = (int(context.stack_pointer or 0) - stack_address) // 4
+    return result.status, context.ip, stack_size, context.trap_code

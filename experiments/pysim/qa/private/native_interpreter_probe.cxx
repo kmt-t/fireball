@@ -1,4 +1,11 @@
 // Diagnostic dispatcher instantiations belong only to the QA library.
+#include "../../tier2_runtime/abi/native_abi.hxx"
+
+struct fb_native_dispatch_extension_call {
+  fb_native_dispatch_call call;
+  const fb_native_execution_extension *extension;
+};
+
 #include "../../native/tier2_runtime/interpreter/native_interpreter.cxx"
 
 struct qa_native_result : fb_native_result {
@@ -11,15 +18,15 @@ struct qa_native_result : fb_native_result {
 };
 static_assert(sizeof(qa_native_result) == 32);
 
-template <bool WithExtension>
-int run_stats_dispatch(const fb_native_dispatch_call *call,
+template <bool WithJit, bool WithExtension>
+int run_stats_dispatch(const dispatch_input_t<WithExtension> *call,
                        fb_native_result *result) {
   // One scheduling boundary can cross multiple Python memory fallbacks.
   auto &total = *static_cast<qa_native_result *>(result);
   qa_native_result current{};
   const auto status =
-      run_native_dispatch_abi<true, WithExtension, void, qa_native_result>(
-          call, &current);
+      run_native_dispatch_abi<true, WithJit, WithExtension, false, void,
+                               qa_native_result>(call, &current);
   total.status = current.status;
   total.error_code = current.error_code;
   total.trace_count += current.trace_count;
@@ -34,25 +41,54 @@ int run_stats_dispatch(const fb_native_dispatch_call *call,
 extern "C" FB_PYSIM_INTERPRETER_EXPORT int
 fb_qa_run_dispatch(const fb_native_dispatch_call *call,
                    fb_native_result *result) {
-  return run_native_dispatch_abi<false, false, void, qa_native_result>(
+  return run_native_dispatch_abi<false, false, false, false, void,
+                                 qa_native_result>(
       call, static_cast<qa_native_result *>(result));
 }
 
 extern "C" FB_PYSIM_INTERPRETER_EXPORT int
 fb_qa_run_dispatch_extension(const fb_native_dispatch_call *call,
                              fb_native_result *result) {
-  return run_native_dispatch_abi<false, true, void, qa_native_result>(
-      call, static_cast<qa_native_result *>(result));
+  return run_native_dispatch_abi<false, false, true, false, void,
+                                 qa_native_result>(
+      reinterpret_cast<const fb_native_dispatch_extension_call *>(call),
+      static_cast<qa_native_result *>(result));
 }
 
 extern "C" FB_PYSIM_INTERPRETER_EXPORT int
 fb_qa_run_dispatch_stats(const fb_native_dispatch_call *call,
                          fb_native_result *result) {
-  return run_stats_dispatch<false>(call, result);
+  return run_stats_dispatch<false, false>(call, result);
 }
 
 extern "C" FB_PYSIM_INTERPRETER_EXPORT int
 fb_qa_run_dispatch_stats_extension(const fb_native_dispatch_call *call,
                                    fb_native_result *result) {
-  return run_stats_dispatch<true>(call, result);
+  return run_stats_dispatch<false, true>(
+      reinterpret_cast<const fb_native_dispatch_extension_call *>(call),
+      result);
+}
+
+extern "C" FB_PYSIM_INTERPRETER_EXPORT int
+fb_qa_run_dispatch_jit(const fb_native_dispatch_call *call,
+                       fb_native_result *result) {
+  return run_native_dispatch_abi<false, true, false>(call, result);
+}
+
+extern "C" FB_PYSIM_INTERPRETER_EXPORT int
+fb_qa_run_dispatch_jit_extension(
+    const fb_native_dispatch_extension_call *call, fb_native_result *result) {
+  return run_native_dispatch_abi<false, true, true>(call, result);
+}
+
+extern "C" FB_PYSIM_INTERPRETER_EXPORT int
+fb_qa_run_dispatch_jit_stats(const fb_native_dispatch_call *call,
+                             fb_native_result *result) {
+  return run_stats_dispatch<true, false>(call, result);
+}
+
+extern "C" FB_PYSIM_INTERPRETER_EXPORT int
+fb_qa_run_dispatch_jit_stats_extension(
+    const fb_native_dispatch_extension_call *call, fb_native_result *result) {
+  return run_stats_dispatch<true, true>(call, result);
 }

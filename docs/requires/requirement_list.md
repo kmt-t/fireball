@@ -37,12 +37,11 @@ graph LR
 
 | キーワード | 内容 | 優先度 | 検証方法 |
 | :--- | :--- | :--- | :--- |
-| `{JIT_CopyAndPatch}` | 命令テンプレートを連結しパッチを当てる方式を採用する。 | 高 | レビュー <!-- definition: {JIT_CopyAndPatch} --> |
+| `{JIT_AssemblyStencilCodegen}` | x64の操作、trace入口・出口、共通chain dispatcherをアセンブリsourceで記述し、ビルド時にPIC raw binaryとC++ byte arrayへ変換する。trace生成時は選択したステンシル本体で成功接続markerを置き換え、命令間をfall-throughで実行する。operation間call/jumpによる接続はしない。実行時に次opcodeや次操作を取得してディスパッチしない。JITでコード生成時に確定する即値はtrace codeへ直接埋め込む。Runtime APIが実行時に必要とする引数recordはtrace末尾の定数領域に置き、`rel`で読む。 | 高 | レビュー <!-- definition: {JIT_AssemblyStencilCodegen} --> |
 | `{JIT_MultiBuffer_Cache}` | 連続8KB（4KBページ×2）のJITコード領域を、共通コード2KB（非エビクション）とActive/Warm/Oldest各2KBの3面循環キャッシュへ固定分割し、キャッシュ置換の局所性を高める。JITエントリ検索は少数疎キー用のXORキャッシュとソート配列二分探索を使い、JIT用Radix表は持たない。 | 高 | テスト <!-- definition: {JIT_MultiBuffer_Cache} --> |
 | `{PositionIndependentCode}` | 出力バイナリはPIC（位置独立コード）とする。 | 高 | テスト <!-- definition: {PositionIndependentCode} --> |
 | `{WasmCodeSectionPC}` | WASM PCは各モジュールのCode section payload先頭を0とし、payload内にある命令先頭バイトのオフセットで表す。PC単独はモジュールを越えて一意ではなく、モジュール横断の識別には`(module_id, pc)`を使う。 | 高 | テスト <!-- definition: {WasmCodeSectionPC} --> |
 | `{NativeAPI_Export}` | 最小限のトラップ命令とvMMIOによるホストサービス提供をサポートする。 | 高 | テスト <!-- definition: {NativeAPI_Export} --> |
-| `{JIT_Encoder}` | C++の constexpr 機能を活用し、ビルド時に命令テンプレートを生成する。 | 高 | レビュー <!-- definition: {JIT_Encoder} --> |
 | `{MultiModule_Support}` | 複数WASMモジュールのロードと、モジュール間の動的リンクをサポートする。 | 中 | テスト <!-- definition: {MultiModule_Support} --> |
 | `{ThreadedInterpreter}` | 命令意味論を処理するRuntime APIと、そのAPIを実行して末尾継続するCPS命令ハンドラを分離する。主要変数のレジスタ保持、関数ポインタ表によるディスパッチ、JITコードとの呼び出し規約整合を実現する。 | 高 | テスト <!-- definition: {ThreadedInterpreter} --> |
 | `{JIT_LazyChaining}` | 常駐traceの直線後続へ進む際、共通コード領域のchain dispatcherがTraceヘッダのtarget bodyへtail-jumpする。opcode別の条件評価・C++ Interpreter handler実行はchainに含めない。 | 高 | レビュー <!-- definition: {JIT_LazyChaining} --> |
@@ -60,13 +59,12 @@ graph LR
 | `{WasmFCSubset}` | `0xFC`の飽和型浮動小数点→整数変換8命令と、単一メモリ向け`memory.copy`/`memory.fill`だけをサポートする。変換はNaN・無限大・範囲外値をWASM規則で飽和させ、メモリ操作は全範囲を事前検証する。`memory.copy`はゲストリニアアドレスとvMMIO管理下のDYNAMIC・SHM・PASSTHROUGHアドレスを扱う。vMMIO側は内部vDMA経路で転送し、完了とCPU可視性を確認してから次命令へ進む。内部の同期・非同期は転送対象と操作に応じる。コピーの観測結果はWASMのmemmove意味論を保つ。 | 高 | テスト <!-- definition: {WasmFCSubset} --> |
 | `{FastAddressCheck}` | ゲストアドレスの境界チェックをサイズ比較の単一命令で高速化し、境界外は即座にトラップする（黙ったラップアラウンドは不可）。 | 中 | レビュー <!-- definition: {FastAddressCheck} --> |
 | `{vMMIO_Isolation}` | vMMIO空間へのアクセスのみをデバイスI/Oとして許可し、メモリ安全性を確保する。 | 高 | テスト <!-- definition: {vMMIO_Isolation} --> |
-| `{JIT_RuntimeAPI_Fallback}` | 複雑な命令をランタイムAPI呼び出しにフォールバックさせ、JITエンジンの複雑さを抑える。 | 高 | レビュー <!-- definition: {JIT_RuntimeAPI_Fallback} --> |
+| `{JIT_RuntimeAPI}` | Runtime APIをJIT traceから呼べる共通関数表へ置き、opcodeの状態更新を再利用する。APIが通常継続を返した場合は、trace内の後続JIT operationをそのまま実行する。Interpreter handlerも同じAPIを呼び、CPS継続への接続だけを担う。 | 高 | レビュー <!-- definition: {JIT_RuntimeAPI} --> |
 | `{OneRuntimeOneGuest}` | 1つのWASMランタイムは厳密に1つのゲストモジュールのみを担当し、マルチインスタンス実行は共有VM内のスレッドではなく独立した別ランタイムの並行起動とIPC協調によって完全なメモリ・障害隔離を実現する。 | 高 | レビュー <!-- definition: {OneRuntimeOneGuest} --> |
 | `{Runtime_BumpAllocator}` | 各ランタイムが専用の固定長バンプアロケータ（`bump_allocator`）を所有し、ロードした全モジュールのシステムコンテナストレージ確保を一括管理する。メモリはランタイム破棄時に個別モジュールの破棄なしで $O(1)$ 解放する。 | 高 | テスト <!-- definition: {Runtime_BumpAllocator} --> |
 | `{System_Allocator}` | カーネル・仮想化基盤（COOS, vMMIO, IPC Router等）が常駐・運用するシステムコンテナの内部ストレージを dlmalloc（`mspace`）により動的アロケートし、個別解放・自動合体によるメモリ再利用を可能にする。 | 高 | レビュー <!-- definition: {System_Allocator} --> |
 | `{Shm_Allocator}` | IPC共有メモリプールから、タスクが要求する可変長（`size`）の `shared_block` バッファを切り出し、独立した4KB仮想予約スロット単位の権限分離を維持しつつ、要求サイズ分の物理バック領域をRAII解放時に再利用する。 | 高 | テスト <!-- definition: {Shm_Allocator} --> |
 | `InterpreterContextStackless` | Cスタックを使わないスタックレスなインタープリタ実行。 | 高 | レビュー |
-| `{SinglePassCompilation}` | 中間表現を介さず、1パスでバイナリを生成する。 | 高 | レビュー <!-- definition: {SinglePassCompilation} --> |
 | `{JIT_OldestOnly_Promote}` | 3面循環コードキャッシュにおいて Oldest バンクでヒットしたコードのみを Active バンクへ昇格させるキャッシュ追い出し・代謝ポリシー（Oldest 限定昇格）。 | 高 | レビュー <!-- definition: {JIT_OldestOnly_Promote} --> |
 
 #### 3.1.2 タスク管理・通信 (COOS)
@@ -151,9 +149,8 @@ graph LR
 | キーワード | 内容 | 優先度 | 検証方法 |
 | :--- | :--- | :--- | :--- |
 | `{LowLatencyJIT}` | コンパイルレイテンシの最小化を最優先する。 | 高 | 計測 <!-- definition: {LowLatencyJIT} --> |
-| `{JIT_ZeroCompileCostTheorem}` | 最適化不要なほど高速なコンパイルを実現する。 | 中 | ベンチマーク <!-- definition: {JIT_ZeroCompileCostTheorem} --> |
 | `{SimpleJITArchitecture}` | 小規模なJITキャッシュ領域で効率的に運用する。 | 高 | 計測 <!-- definition: {SimpleJITArchitecture} --> |
-| `{JIT_RegisterMapping}` | Interpreter/JIT境界の4論理引数を対象ABIに従って物理レジスタへ割り当てる。Windows x64とSystem V AMD64の割当は定義済み、ARMv8-MはTBDとする。 | 高 | レビュー <!-- definition: {JIT_RegisterMapping} --> |
+| `{JIT_RegisterMapping}` | Interpreter handlerとJIT trace entryはいずれも`ctx`, `ip`, `sp`, `rel`の4引数を受け取る。先頭3引数は実行状態、`rel`は定数領域ポインタである。ローカル基点は実行コンテキストから取得し、共有オペランドスタックを値の正本としてTOSキャッシュを持たない。x64 assembly stencilはSysV AMD64とWindows x64の物理引数配置を対象ABIに従わせ、caller-save規則を守る。 | 高 <!-- definition: {JIT_RegisterMapping} --> |
 | `{ContextPointerRegister}` | スタックボトム配置と統合スタックモデルによりコンテキスト基底を渡し、スタック長をコンテキスト管理して不要な状態搬送を減らす。物理引数配置は対象ABIに従い、ARMv8-MはTBDとする。 | 高 | レビュー <!-- definition: {ContextPointerRegister} --> |
 | `{Resource_Estimation_Model}` | 設計段階でROM/RAMフットプリントを概算し、制約適合性を検証する。 | 高 | 概算レポート <!-- definition: {Resource_Estimation_Model} --> |
 | `{ConsolidatedHeap}` | 【全体管理】物理メモリ全体から各パーティションを切り出す際、単一の物理プール（統合物理プール）として一括管理し、メモリ効率を最大化する。 | 高 | 計測 <!-- definition: {ConsolidatedHeap} --> |
@@ -212,7 +209,6 @@ graph LR
 | `{Challenge_DebuggerResource}` | 極小メモリ環境でのデバッグ用バッファ確保、インタープリタ専用デバッグ構成、およびJIT同時構成拒否の制約。 | 決定済 <!-- definition: {Challenge_DebuggerResource} --> |
 | `{ADR_ScalableCodeOffset}` | 現行x64参照構成の8KBキャッシュではバイト単位のコードオフセットを使用する。64KBを超える拡張の表現とARMv8-Mの物理配置はTBDとする。 | 現行構成は決定済・拡張はTBD <!-- definition: {ADR_ScalableCodeOffset} --> |
 | `{ADR_SafeQueuingOnHotMiss}` | ホットスポット検出時の二重コンパイル要求防止策。 | 決定済 <!-- definition: {ADR_SafeQueuingOnHotMiss} --> |
-| `{ADR_TosCacheAsymmetry}` | 4つの論理引数と境界での共有状態同期を共通契約とする。値キャッシュと物理レジスタは対象ABIで定め、ARMv8-Mの割当はTBDとする。 | 共通契約は決定済・ARMv8-MはTBD <!-- definition: {ADR_TosCacheAsymmetry} --> |
 | `{ADR_RendezvousChannel}` | 要求と応答の双方をバッファなしの同期ランデブーとする。相手の受信待機まで送信側をBLOCKする。ランデブー成立後のCPU実行順序に追加の制約を課さず、COOSに従う。 | 決定済 <!-- definition: {ADR_RendezvousChannel} --> |
 | `{ADR_TaskIdLifetime}` | タスクIDは生存期間内だけ有効とする。終了タスクの登録・待機・所有資源を解放した後に再利用を許可する。終了済みIDの使用は契約違反とする。 | 決定済 <!-- definition: {ADR_TaskIdLifetime} --> |
 | `{ADR_JitCompileScheduling}` | idle hookを協調境界でも実行する。通常は処理候補数へ予算を適用する。固定キュー満杯時は予算の例外として、その場で全件処理して空にする。 | 決定済 <!-- definition: {ADR_JitCompileScheduling} --> |
@@ -243,5 +239,4 @@ graph LR
 - **COOS**: Coroutine-based Operating System. 本プロジェクト独自の協調型OS。
 - **vSoC**: Virtual System on Chip. WASMランタイム and 仮想周辺機器を含む実行環境。
 - **CSP**: Communicating Sequential Processes. プロセス間通信のモデル。
-- **Copy-and-Patch**: 高速なJITコンパイル手法の一種。
 - **ゲストリニアメモリ**: WASMリニアメモリ領域。

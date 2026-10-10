@@ -8,7 +8,10 @@ from typing import TextIO
 
 from bump_allocator import BumpAllocator
 from config import RUNTIME_DEBUG_REPORT_LINE_CAPACITY
-from qa.private.interpreter_native_abi import NativeDiagnosticResult, select_native_dispatch_entry
+from qa.private.interpreter_native_abi import (
+    NativeDiagnosticResult,
+    select_runtime_dispatch_entry,
+)
 from system_containers import StaticVector
 from tier2_runtime.interpreter.execution_plugin import NativeExecutionPlugin
 from tier2_runtime.interpreter.interpreter import (
@@ -71,12 +74,12 @@ class RuntimeStatsEngine(RuntimeEngine):
         plugin = self.jit_runtime
         if plugin is None:
             plugin = interp._execution_plugin
-        with_extension = plugin is not None
-        dispatcher = select_native_dispatch_entry(self.collect_runtime_stats, with_extension)
         if plugin is not None:
-            interp.attach_execution_plugin(plugin, dispatcher)
-        else:
-            interp._native_dispatcher = dispatcher
+            interp.attach_execution_plugin(plugin)
+        interp._native_dispatcher = select_runtime_dispatch_entry(
+            self.collect_runtime_stats,
+            plugin is not None,
+        )
         super()._activate_interpreter(interp)
 
     def idle_hook(self, budget: int = 4) -> int:

@@ -22,7 +22,15 @@ from system_containers import (
 )
 from tier2_runtime.interpreter.control_flow import iter_block_ops
 from tier2_runtime.runtime.engine import RuntimeDriveMode
-from tier2_runtime.wasm.module import BasicBlock, Function, FuncTypeRecord, LocalLayout, Module
+from tier2_runtime.wasm.module import (
+    BasicBlock,
+    BasicBlockStorage,
+    Function,
+    FuncTypeRecord,
+    FuncTypeStorage,
+    LocalLayout,
+    Module,
+)
 
 PC_ONLY_FUNCTION_STRIDE = 0x2000
 PC_ONLY_FUNCTION_BASE = 0x100
@@ -150,14 +158,17 @@ def make_pc_only_functions_module(blocks_per_function: tuple[tuple[int, ...], ..
         )
         heads.extend((func_index, offset) for offset in offsets)
     assert heads
+    types = FuncTypeStorage(capacity=1)
+    types.append(FuncTypeRecord(param_offset=2, param_count=0, result_offset=3, result_count=0))
     module = Module(
-        types=StaticVector.of((FuncTypeRecord(offset=0, size=3),), capacity=1),
+        types=types,
         functions=StaticVector.of(functions, capacity=len(functions)),
         source=memoryview(bytes(source)),
     )
     module.prepare_function_layouts()
-    blocks = StaticVector.of(
-        tuple(
+    blocks = BasicBlockStorage(capacity=len(heads))
+    for func_index, offset in sorted(heads):
+        blocks.append(
             BasicBlock(
                 head_pc=module.function_pc_offset(func_index) + offset,
                 func_index=func_index,
@@ -166,10 +177,7 @@ def make_pc_only_functions_module(blocks_per_function: tuple[tuple[int, ...], ..
                 frame_depth=0,
                 byte_span=1,
             )
-            for func_index, offset in sorted(heads)
-        ),
-        capacity=len(heads),
-    )
+        )
     module.blocks = blocks
     radix_sorted = tuple(sorted(blocks, key=lambda block: fold_mix32(block.head_pc)))
     entries = tuple((fold_mix32(block.head_pc), block) for block in radix_sorted)

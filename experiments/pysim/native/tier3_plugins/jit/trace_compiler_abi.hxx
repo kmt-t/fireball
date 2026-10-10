@@ -22,16 +22,14 @@ struct jit_instruction {
 } // namespace fireball
 
 extern "C" {
-FB_JIT_QA_EXPORT int fb_jit_compile_instructions(
+int fb_jit_compile_instructions(
     const fireball::jit_instruction_block *block, std::uint8_t *output,
-    std::uint32_t capacity, std::uint8_t *body_scratch,
-    std::int16_t *stack_locations, std::uint32_t stack_location_capacity);
+    std::uint32_t capacity, std::uint8_t *body_scratch);
 // Return only the cache-ready code blob; trace state is kept in its header.
-FB_JIT_QA_EXPORT int
+int
 fb_jit_compile_block(const fireball::jit_wasm_block *block,
                      std::uint8_t *output, std::uint32_t capacity,
-                     std::uint8_t *body_scratch, std::int16_t *stack_locations,
-                     std::uint32_t stack_location_capacity);
+                     std::uint8_t *body_scratch);
 }
 
 #endif

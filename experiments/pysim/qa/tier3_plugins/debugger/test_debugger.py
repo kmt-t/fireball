@@ -595,10 +595,9 @@ def test_dbg_12_disabled_composition_has_no_debug_state_or_weave() -> None:
     interpreter = make_native_interpreter(module)
     call = interpreter.start(0, ())
     assert interpreter._native_dispatcher is native_abi.RUN_DISPATCH
-    assert (
-        ctypes.sizeof(call.context)
-        == ctypes.sizeof(ExecutionContextABI) + ctypes.sizeof(ctypes.c_void_p)
-        == 104
+    assert ctypes.sizeof(ExecutionContextABI) == 152
+    assert ctypes.sizeof(call.context) == (
+        ctypes.sizeof(ExecutionContextABI) + ctypes.sizeof(ctypes.c_void_p)
     )
     assert call.context.debug_control is None
     interpreter.step(call)

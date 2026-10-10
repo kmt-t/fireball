@@ -54,8 +54,10 @@ def test_plugin_candidate_gate_uses_specification_threshold(
 ) -> None:
     """TEST-LOAD-49: 実登録で候補カードを生成し、非候補の履歴を記録しない。"""
     module = parse_single_function_module(code)
-    assert len(module.blocks) == 1
-    assert block_score(module, module.blocks[0]) == score
+    executable_blocks = tuple(block for block in module.blocks if block.byte_span != 0)
+    assert len(executable_blocks) == 1
+    block = executable_blocks[0]
+    assert block_score(module, block) == score
     manager = JITRuntimeManager(card_shift=0, min_trace_bytes=1)
     try:
         assert manager.candidate_threshold == 9
@@ -67,10 +69,13 @@ def test_plugin_candidate_gate_uses_specification_threshold(
         native_score = _NATIVE_LIBRARY.fb_qa_block_score
         native_score.argtypes = (ctypes.c_void_p,)
         native_score.restype = ctypes.c_int64
-        assert native_score(ctypes.byref(manager._block_inputs[0])) == score
-        assert manager.trackable.is_marked(module.blocks[0].head_pc) == candidate
+        block_index = next(
+            index for index, item in enumerate(module.blocks) if item.head_pc == block.head_pc
+        )
+        assert native_score(ctypes.byref(manager._block_inputs[block_index])) == score
+        assert manager.trackable.is_marked(block.head_pc) == candidate
         assert manager.exec_counter == 0
-        head_pc = module.blocks[0].head_pc
+        head_pc = block.head_pc
         assert not manager.record_block_head(head_pc)
         assert manager.exec_counter == (1 if candidate else 0)
         manager.on_interpreter_exit(False)

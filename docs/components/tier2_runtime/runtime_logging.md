@@ -123,7 +123,6 @@ Tier 1診断イベントの辞書エントリと引数数も、構成時に共�
 | `0x0305` | インタープリタ | `ERROR` | `TRAP: import has no bound host handler (pc=0x%08X, func=%d)` | `unified_pc`, `callee_func_index`, 0, 0 | インポート関数呼出し先にホストハンドラが未結合 |
 | `0x0306` | インタープリタ | `ERROR` | `TRAP: table index out of bounds (pc=0x%08X, slot=%d)` | `unified_pc`, `table_slot`, 0, 0 | `call_indirect` のテーブル索引が範囲外 |
 | `0x0307` | インタープリタ | `ERROR` | `TRAP: table slot uninitialized (pc=0x%08X, slot=%d)` | `unified_pc`, `table_slot`, 0, 0 | `call_indirect` が未初期化テーブルスロットを参照 |
-| `0x0308` | インタープリタ | `ERROR` | `TRAP: indirect call type mismatch (pc=0x%08X, slot=%d)` | `unified_pc`, `table_slot`, 0, 0 | `call_indirect` の実関数シグネチャが期待型と不一致 |
 | `0x0309` | インタープリタ | `ERROR` | `TRAP: unreachable instruction executed (pc=0x%08X)` | `unified_pc`, 0, 0, 0 | `unreachable` 命令の実行 |
 | `0x030A` | インタープリタ | `ERROR` | `TRAP: control frame capacity exceeded (pc=0x%08X)` | `unified_pc`, 0, 0, 0 | `block`/`loop`/`if` 制御ブロック復帰情報領域の固定容量超過 |
 | `0x030B` | インタープリタ | `ERROR` | `TRAP: vMMIO region not configured (pc=0x%08X, addr=0x%08X)` | `unified_pc`, `guest_addr`, 0, 0 | 未登録の vMMIO アドレス領域へのアクセス（詳細は `runtime_vmmio.md` 正本） |

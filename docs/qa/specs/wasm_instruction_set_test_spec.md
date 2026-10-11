@@ -39,7 +39,7 @@
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | TEST-WASM-20 | `drop` | スタックに1値 | 実行 | `[t]->[]` | wasm_instruction_set.md (Parametric) |
 | TEST-WASM-21 | `select` | 条件+2値 | 実行 | `[t,t,i32]->[t]`、条件で選択 | wasm_instruction_set.md (Parametric) |
-| TEST-WASM-22 | 広幅値を含む混在operand stack上の`drop` | 周囲にi32値を残し、f32/i64/f64値を順に積む | 各値を`drop`してからi32演算・returnを実行 | i64/f64はそれぞれ2 raw word分が除去され、下のi32値を壊さない | wasm_instruction_set.md (Parametric), pysim `test_jitr_mixed_typed_stack_declines_jit_without_losing_drop_widths` |
+| TEST-WASM-22 | 広幅値を含む混在operand stack上の`drop` | 周囲にi32値を残し、f32/i64/f64値を順に積む | 各値を`drop`してからi32演算・returnをInterpreterとJITで実行する | i64/f64はそれぞれ2 raw word分が除去され、下のi32値を壊さない。型混在やBasicBlock入口stackを理由にJIT全体を辞退しない | wasm_instruction_set.md (Parametric), pysim `test_jitr_mixed_typed_stack_drop_widths` |
 
 ### 変数アクセス
 

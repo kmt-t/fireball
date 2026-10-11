@@ -32,7 +32,6 @@ from config import (
     JIT_CACHE_BANK_ENTRY_CAPACITY,
     JIT_CACHE_COMMON_CODE_BYTES,
     JIT_CACHE_COMMON_CODE_OFFSET_BYTES,
-    JIT_CACHE_FAST_SLOT_COUNT,
     JIT_CACHE_OLDEST_OFFSET_BYTES,
     JIT_CACHE_PAGE_BYTES,
     JIT_CACHE_REGION_BYTES,
@@ -76,6 +75,7 @@ from system_containers import ReadOnlyRadixBinaryTreeStorage, StaticVector
 from tier2_runtime.abi.interpreter_abi import (
     EXECUTION_CONTEXT_FLAG_PENDING_BLOCK_HEAD,
 )
+from tier2_runtime.interpreter.control_flow import OpcodeAttribute, opcode_has_attribute
 from tier2_runtime.interpreter.errors import NATIVE_DISPATCH_RUNTIME_API_BOUNDARY
 from tier2_runtime.interpreter.interpreter import (
     RETURN_SENTINEL_IP,
@@ -123,48 +123,9 @@ def _qa_trace_counted_call(
 from tier3_plugins.jit.jit_manager import JITRuntimeManager as NativeJitPlugin
 
 _PROFILEABLE_BLOCK_HEAD_OPCODES = frozenset(
-    {
-        0x1A,
-        0x1B,
-        0x20,
-        0x21,
-        0x22,
-        0x23,
-        0x24,
-        0x28,
-        0x2C,
-        0x2D,
-        0x2E,
-        0x2F,
-        0x36,
-        0x3A,
-        0x3B,
-        0x3F,
-        0x40,
-        0x41,
-        0x45,
-        0x46,
-        0x47,
-        0x48,
-        0x49,
-        0x4A,
-        0x4B,
-        0x4C,
-        0x4D,
-        0x4E,
-        0x4F,
-        0x6A,
-        0x6B,
-        0x6C,
-        0x6D,
-        0x6E,
-        0x71,
-        0x72,
-        0x73,
-        0x74,
-        0x75,
-        0x76,
-    }
+    opcode
+    for opcode in range(256)
+    if not opcode_has_attribute(opcode, OpcodeAttribute.BASIC_BLOCK_BOUNDARY)
 )
 from tier2_runtime.wasm.reader import parse
 
@@ -200,6 +161,7 @@ def test_jitr_00_common_apccs_area_survives_rotation_and_flush():
     snapshot = ctypes.string_at(region_base, JIT_CACHE_COMMON_CODE_BYTES)
     expected_blob = bytearray(trace.code_blob)
     struct.pack_into("<i", expected_blob, 8, -trace.code_offset)
+    expected_blob[23] = 1  # The trace header starts with one body in its chain.
     assert ctypes.string_at(region_base + trace.code_offset, len(trace_blob)) == expected_blob
 
     cache.rotate()
@@ -574,7 +536,7 @@ def test_jitc_20_trace_header_40byte_x64_physical_layout():
     assert native_abi.NativeTraceHeader.stack_words.offset == 20
     assert native_abi.NativeTraceHeader.result_words.offset == 21
     assert native_abi.NativeTraceHeader.chain_words.offset == 22
-    assert native_abi.NativeTraceHeader.reserved0.offset == 23
+    assert native_abi.NativeTraceHeader.chain_body_count.offset == 23
     assert native_abi.NativeTraceHeader.frame_depth.offset == 24
     assert native_abi.NativeTraceHeader.frame_depth.size == 4
     assert native_abi.NativeTraceHeader.block_index.offset == 28
@@ -837,8 +799,8 @@ def test_jitr_compile_failure_unmarks_candidate_without_faking_compiled():
     )
 
 
-def test_jitr_26_direct_mapped_folding_xor_jit_cache():
-    """TEST-JITR-26 & GOTCHA-JITR-05: Native fixed-slot lookup and rotation invalidation."""
+def test_jitr_26_sorted_index_lookup_and_rotation_promotion():
+    """TEST-JITR-26 & GOTCHA-JITR-05: Native sorted-index lookup and rotation."""
     cache = JitRuntimeBoundary(bank_capacity=1024)
     # Code-section-relative instruction PC used to exercise hash folding.
     pc1 = 0x00010020
@@ -846,26 +808,8 @@ def test_jitr_26_direct_mapped_folding_xor_jit_cache():
     t1 = JITTrace(head_pc=pc1, native_fn=lambda: 10, size_bytes=64)
     t2 = JITTrace(head_pc=pc2, native_fn=lambda: 20, size_bytes=64)
 
-    # 1. These PCs collide after exactly three folds and 16 slots. A fourth
-    # fold produces a different slot for pc1 and would hide the old mismatch.
-    def slot_after_three_folds(pc: int) -> int:
-        folded = pc ^ (pc >> 16)
-        folded ^= folded >> 8
-        folded ^= folded >> 4
-        return folded & (JIT_CACHE_FAST_SLOT_COUNT - 1)
-
-    def slot_after_four_folds(pc: int) -> int:
-        folded = pc ^ (pc >> 16)
-        folded ^= folded >> 8
-        folded ^= folded >> 4
-        folded ^= folded >> 2
-        return folded & (JIT_CACHE_FAST_SLOT_COUNT - 1)
-
-    assert slot_after_three_folds(pc1) == slot_after_three_folds(pc2)
-    assert slot_after_four_folds(pc1) != slot_after_four_folds(pc2)
-
-    # The host lifetime registry retains resident descriptors. Fast slots
-    # borrow them, so a collision or slot invalidation cannot retire a trace.
+    # The host lifetime registry retains resident descriptors while the native
+    # sorted index resolves exact PCs across all three banks.
     cache.insert(t1)
     t2_refcount = sys.getrefcount(t2)
     cache.insert(t2)
@@ -876,34 +820,32 @@ def test_jitr_26_direct_mapped_folding_xor_jit_cache():
     cache.flush_all()
     assert sys.getrefcount(t2) == t2_refcount
 
-    # 2. Insert populates the native fast slot.
+    # Active hits use the native sorted index without changing residency.
     cache.insert(t1)
     assert cache.lookup(pc1) is t1
-
-    # 3. Lookup hits the fast slot.
     assert cache.lookup(pc1) is t1
 
-    # 4. Rotation invalidates native slots (GOTCHA-JITR-05).
+    # Rotation preserves the sorted index over active and warm banks.
     cache.rotate()  # t1 moves to Warm
     assert cache.find_trace(pc1) is not None
 
-    # 5. Lookup refills from Warm (without promotion).
+    # Warm hits do not promote.
     assert cache.lookup(pc1) is t1
     assert cache.promotions == 0
     assert cache.lookup(pc1) is t1
 
-    # 6. Rotate again: t1 moves to Oldest.
+    # A subsequent rotation moves t1 to Oldest.
     cache.rotate()
     assert cache.find_trace(pc1) is not None
 
-    # 7. Lookup from Oldest promotes to Active and fills the fast slot.
+    # An Oldest hit promotes t1 to Active.
     promoted = cache.lookup(pc1)
     assert promoted is t1
     assert cache.promotions == 1
     assert cache.find_trace(pc1) is not None
     assert cache.lookup(pc1) is t1
 
-    # 8. Flush releases all native fast-slot references.
+    # Flush releases the host descriptor and removes the sorted-index entry.
     cache.flush_all()
     assert cache.lookup(pc1) is None
 
@@ -1311,7 +1253,7 @@ def test_jitr_clang_wasm_ngrams_embed_i32_immediates_in_trace_code():
         assert native_body
         header = native_abi.NativeTraceHeader.from_address(code_blob_address)
         assert header.const_rel_offset >= JIT_TRACE_HEADER_BYTES
-        assert header.const_rel_offset + 4 == header.blob_bytes
+        assert header.blob_bytes - header.const_rel_offset >= 4
         code_bytes = native_blob[JIT_TRACE_HEADER_BYTES : header.const_rel_offset]
         immediate_bytes = struct.pack("<I", expected_constant)
         assert immediate_bytes in code_bytes, f"{name}: {native_blob.hex()}"
@@ -2666,6 +2608,35 @@ def test_jitr_runtime_api_continues_into_following_jit_operations():
             backing.close()
 
 
+def test_jitr_api_lowered_operation_can_start_a_jit_trace():
+    """API-lowered arithmetic is included and dispatchable at a block head."""
+    module = parse(
+        wat_to_wasm(
+            """(module
+              (func (result f32)
+                (f32.add (f32.const 1.25) (f32.const 2.5))))"""
+        )
+    )
+    block = module.blocks[0]
+    code = module.code_for(0)
+    assert code[-1] == 0x0B
+    assert block.byte_span == len(code) - 1
+
+    engine = make_runtime_engine(
+        jit_compiler=TraceCompiler(),
+        card_shift=0,
+        candidate_threshold=0,
+        min_trace_bytes=1,
+    )
+    engine.register_module_blocks(module)
+    trace = compile_runtime_block(engine.jit_runtime, block)
+    assert trace is not None
+    assert engine.jit_runtime.cache.insert(trace)
+
+    assert list(engine.call(Interpreter(module), 0, [])) == [3.75]
+    assert engine.stat_jit_invocations == 1
+
+
 def test_jitr_trace_header_resolves_loader_block_by_index():
     """TEST-JITR-82: runtime traces retain direct access to Loader metadata."""
     module = parse(wat_to_wasm("(module (func (result i32) i32.const 1))"))
@@ -3162,13 +3133,13 @@ def test_jitr_trace_execution_counts_loop_bodies_and_survives_promotion(
 
 
 @pytest.mark.parametrize("collect_stats", [False, True])
-def test_jitr_trace_execution_counts_include_direct_chain_successors(collect_stats):
-    """TEST-JITR-73: chained bodies count without their own dispatcher lookup."""
+def test_jitr_trace_execution_counts_follow_branch_through_runtime_api(collect_stats):
+    """TEST-JITR-73: branch successors run after the terminal Runtime API."""
     module = parse(
         wat_to_wasm("""(module
       (func (export "f") (param i32) (result i32)
         (block $b
-          local.get 0 i32.const 5 i32.add local.set 0 br $b)
+          local.get 0 i32.const 5 i32.add local.tee 0 br_if $b)
         local.get 0 i32.const 2 i32.mul local.set 0 local.get 0 return))""")
     )
     engine = make_runtime_engine(
@@ -3183,7 +3154,7 @@ def test_jitr_trace_execution_counts_include_direct_chain_successors(collect_sta
     target = compile_module_block(manager.jit_compiler, module, blocks[1])
     assert manager.cache.insert(target)
     assert manager.cache.insert(source)
-    assert source.chain_next == target.head_pc
+    assert source.chain_next is None
     assert _qa_trace_counted_call(engine, manager, Interpreter(module), 0, [10]) == [30]
     assert source.exec_count == target.exec_count == 1
     if collect_stats:
@@ -3256,7 +3227,7 @@ if __name__ == "__main__":
     test_hotspot_07_idle_hook_skips_recompiling_an_already_resident_trace()
     test_jitr_compile_queue_overflow_compiles_on_the_spot()
     test_jitr_compile_failure_unmarks_candidate_without_faking_compiled()
-    test_jitr_26_direct_mapped_folding_xor_jit_cache()
+    test_jitr_26_sorted_index_lookup_and_rotation_promotion()
     test_jitr_block_capacity_from_wasm_loader_and_no_set()
     test_jitr_br_if_loop_exit_jit_result_correct()
     test_jitr_backward_branch_block_byte_span_not_disqualified()

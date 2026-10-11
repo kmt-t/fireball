@@ -14,9 +14,11 @@ from qa.private.tier2_runtime.module_link_harness import (
 )
 from qa.shared.helpers import (
     _build_test_wasm_binary,
+    _encode_leb128_u32,
     expect_assertion,
     wat_to_wasm,
 )
+from system_containers import fold_mix32
 from tier2_runtime.wasm.reader import parse
 
 _TEST_FILE = Path(__file__).resolve()
@@ -29,6 +31,23 @@ def _assert_parse_rejected_without_mutation(binary: bytes, message: str = "") ->
         with expect_assertion(message):
             parse(memoryview(binary), allocator)
         assert allocator.offset == watermark
+
+
+def _single_void_function_module(code: bytes) -> bytes:
+    body = b"\x00" + code
+    type_payload = b"\x01\x60\x00\x00"
+    function_payload = b"\x01\x00"
+    code_payload = b"\x01" + _encode_leb128_u32(len(body)) + body
+
+    def section(section_id: int, payload: bytes) -> bytes:
+        return bytes((section_id,)) + _encode_leb128_u32(len(payload)) + payload
+
+    return (
+        b"\x00asm\x01\x00\x00\x00"
+        + section(1, type_payload)
+        + section(3, function_payload)
+        + section(10, code_payload)
+    )
 
 
 def test_load_01_invalid_magic_rejects_and_rolls_back() -> None:
@@ -310,25 +329,52 @@ def test_load_32_unsigned_leb128_byte_budget() -> None:
 
 
 def test_load_48_module_builds_basic_block_index() -> None:
-    wasm_bytes = wat_to_wasm(
-        """(module
-            (func (export "f1") (result i32) (i32.const 10) (return))
-            (func (export "f2") (result i32) (i32.const 20) (return)))"""
-    )
+    function_count = 40
+    function_declarations = " ".join("(func)" for _ in range(function_count))
+    wasm_bytes = wat_to_wasm(f"(module {function_declarations})")
     module = parse(memoryview(wasm_bytes))
 
     assert module.block_storage is not None
-    assert len(module.blocks) == 4
-    assert module.total_basic_blocks == 4
+    assert len(module.blocks) == function_count
+    assert module.total_basic_blocks == function_count
+    buckets = {fold_mix32(block.head_pc) >> module.block_radix_shift for block in module.blocks}
+    assert buckets == set(range(16))
+    native_entries = module.block_index_entries
+    radix_table = module.block_radix_table
+    assert native_entries is not None
+    assert radix_table is not None
+    for block_index, block in enumerate(module.blocks):
+        assert module.get_block(block.head_pc) is block
+        search_index = module.block_storage.view().find(fold_mix32(block.head_pc))
+        assert search_index == block_index
+    for entry_index, (folded_pc, block_index) in enumerate(module.block_storage.entries):
+        word_index = entry_index * 2
+        assert native_entries.at(word_index) == folded_pc
+        assert native_entries.at(word_index + 1) == block_index
+    assert tuple(radix_table.at(index) for index in range(len(radix_table))) == (
+        module.block_storage.radix_table
+    )
+
+
+def test_load_59_indexes_more_than_ten_thousand_basic_blocks() -> None:
+    repetitions = 3_334
+    block_sequence = b"\x02\x40\x0c\x00\x0b" * repetitions
+    wasm_bytes = _single_void_function_module(block_sequence + b"\x0b")
+    module = parse(memoryview(wasm_bytes), BumpAllocator(capacity=768 * 1024))
+
+    assert len(module.blocks) > 10_000
+    assert module.block_storage is not None
+    assert module.block_index_entries is not None
+    assert module.block_radix_table is not None
     for block in module.blocks:
         assert module.get_block(block.head_pc) is block
 
 
-def test_load_57_indexes_interpreter_only_block_heads() -> None:
+def test_load_57_includes_runtime_api_operations_in_trace_span() -> None:
     wasm_bytes = wat_to_wasm(
         """(module
-            (func (export "f32_only") (result f32)
-              (f32.add (f32.const 1.0) (f32.const 2.0))))"""
+            (func (export "popcount") (result i32)
+              (i32.popcnt (i32.const 240))))"""
     )
     module = parse(memoryview(wasm_bytes))
 
@@ -337,8 +383,10 @@ def test_load_57_indexes_interpreter_only_block_heads() -> None:
     assert entry is not None
     assert entry.func_index == 0
     assert entry.head_pc == function.code_pc_offset
-    assert entry.byte_span == 0
-    assert entry.interpreter_constant_offset == 0
+    code = module.code_for(0)
+    assert code[-1] == 0x0B  # END is a trace terminator, outside the body span.
+    assert entry.byte_span == len(code) - 1
+    assert entry.interpreter_constant_byte_offset == 0
 
 
 def test_load_51_keeps_unreachable_polymorphism_inside_its_control_frame() -> None:

@@ -257,14 +257,8 @@ def test_native_execution_plugin_can_be_replaced_without_jit_knowledge(collect_s
         _fields_ = (
             ("entry_address", ctypes.c_size_t),
             ("rel", ctypes.c_void_p),
-            ("body_end_pc", ctypes.c_uint32),
-            ("next_pc", ctypes.c_uint32),
-            ("loops_to", ctypes.c_uint32),
-            ("terminal_block_index", ctypes.c_uint32),
-            ("interpreter_rel_words", ctypes.c_uint32),
             ("frame_depth", ctypes.c_uint32),
             ("stack_words", ctypes.c_uint32),
-            ("result_words", ctypes.c_uint32),
             ("body_count", ctypes.c_uint32),
             ("trace_cookie", ctypes.c_size_t),
         )
@@ -273,18 +267,21 @@ def test_native_execution_plugin_can_be_replaced_without_jit_knowledge(collect_s
         ctypes.c_int,
         ctypes.c_size_t,
         ctypes.c_uint32,
+        ctypes.c_uint32,
         ctypes.POINTER(NativeJitTrace),
     )
-    JitObserve = ctypes.CFUNCTYPE(ctypes.c_int, ctypes.c_size_t, ctypes.c_uint32)
+    JitObserve = ctypes.CFUNCTYPE(
+        ctypes.c_int, ctypes.c_size_t, ctypes.c_uint32, ctypes.c_uint32
+    )
     JitFinish = ctypes.CFUNCTYPE(ctypes.c_int, ctypes.c_size_t, ctypes.c_uint32, ctypes.c_uint32)
     callbacks = [0, 0, 0]
 
-    def lookup(owner, pc, trace):
+    def lookup(owner, block_index, pc, trace):
         assert owner == 123
         callbacks[0] += 1
         return 0
 
-    def observe(owner, pc):
+    def observe(owner, block_index, pc):
         assert owner == 123
         callbacks[1] += 1
         return 1

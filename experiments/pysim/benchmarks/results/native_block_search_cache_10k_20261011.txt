@@ -1,0 +1,26 @@
+Native Interpreter BasicBlock search cache A/B — 2026-10-11
+
+Purpose: isolate the dispatch-local PC-to-BasicBlock cache on a module with more than 10,000 BasicBlocks. The fixture executes a 250,000-iteration loop, then skips 3,334 cold blocks. AO-Bench is not used because its module does not stress a large BasicBlock index.
+Conditions: CPU 2 pinned; 3 independent process trials; 3 warmup calls + 9 timed calls per variant and process; yield threshold 4096; NativeInterpreter.call() timed; module parsing and construction excluded. Variant order alternated per timed sample. The cache-off shared library was built from the same source with FB_CONF_NATIVE_BLOCK_SEARCH_CACHE=0.
+
+trial=1 mode=cached median_ms=11.769 samples_ms=11.882,11.853,12.044,11.754,11.743,11.769,11.896,11.763,11.732
+trial=1 mode=nocache median_ms=16.192 samples_ms=16.300,16.092,16.189,16.204,16.140,16.707,16.187,16.192,16.473
+trial=1 speedup=1.376x
+
+trial=2 mode=cached median_ms=12.342 samples_ms=12.788,15.502,12.092,12.342,12.458,11.813,12.501,12.106,11.831
+trial=2 mode=nocache median_ms=16.793 samples_ms=17.441,16.466,17.012,16.670,16.731,17.005,16.741,16.793,17.306
+trial=2 speedup=1.361x
+
+trial=3 mode=cached median_ms=12.113 samples_ms=13.077,12.198,12.189,11.983,12.157,11.787,12.113,11.911,12.080
+trial=3 mode=nocache median_ms=16.194 samples_ms=16.094,16.194,17.709,16.855,16.219,16.099,17.985,16.186,16.157
+trial=3 speedup=1.337x
+
+Median-of-three-trials: cached=12.113 ms, no-cache=16.194 ms, speedup=1.337x. All three paired process trials favored the cache. This synthetic result demonstrates the lookup-heavy case and is not an AO-Bench or whole-application speedup claim.
+
+The fixture returned successfully with no trap and no WASM results in all executions. The native interpreter and ABI behavior were also verified by the related QA suite.
+
+Provenance:
+- Host: AMD Ryzen 5 5500GT; x86_64; CPython 3.13.15; Clang 21.1.8.
+- Benchmark source SHA-256: 702cbc2c8f941b8c46a94994c464c8ea0cfdd701e1930c908ee950c86eb4669d.
+- NativeInterpreter cache-on library SHA-256: 3a0c35a7ee270b6f605d3de3b8908fe04f4c69121c9cd04f20f8444d91514d7b.
+- NativeInterpreter cache-off library SHA-256: dfa31666dcbbb9e6a909c2dfec0bc8ca9e48bc88f6b1bdc6d6dbc2af683389d7.

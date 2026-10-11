@@ -30,7 +30,7 @@ Tier は単なる「OSやハードウェアの実行レイヤ」ではなく、*
            ▼
 [ Tier 2: 分解されたサブコンポーネント (Decomposed Subcomponents) ] ─ (How - Subsystem)
   · Runtime and Interpreter (runtime_vsoc, runtime_loader, runtime_vmmio, interpreter)
-  · Runtime Contracts (runtime_plugin_architecture, runtime_observability, runtime_syscall, hal_dispatch)
+  · Runtime Contracts (runtime_plugin_architecture, runtime_observability, jit_abi)
   · Memory Implementation (runtime_memory) — `system_memory` 契約を実装する `system_allocator`/`shm_allocator`（dlmalloc アリーナ）
   · HAL Abstraction (hal_dispatch) — URI Resolver・トランスポート抽象、`{IPCRouter}` 経由のデバイス仲介
   · Logging Subsystem (runtime_logging) — COOS上に常駐するリングバッファロギングタスク、COOSのタスクスケジューリングに依存
@@ -106,7 +106,7 @@ Tier は単なる「OSやハードウェアの実行レイヤ」ではなく、*
 | :--- | :--- | :--- |
 | **Tier 1 Core** | COOS、スケジューラ、ログ等の基盤契約 | [`coos_system_contract.wit`](docs/components/tier1_core/wit/coos_system_contract.wit) |
 | **Tier 1 Interface** | IPC ルータ、システムメモリ等のホスト内部契約 | [`ipc_router_contract.wit`](docs/components/tier1_interface/wit/ipc_router_contract.wit)、[`system_memory_contract.wit`](docs/components/tier1_interface/wit/system_memory_contract.wit) |
-| **Tier 2 Runtime** | vSoC Runtime、HAL、システムコール、観測、プラグイン接続等の Runtime 契約 | [`runtime_vsoc_contract.wit`](docs/components/tier2_runtime/wit/runtime_vsoc_contract.wit) および各契約 WIT |
+| **Tier 2 Runtime** | Tier 2と他Tierの間で共有するRuntime契約。内部コンポーネント間だけで使う実装APIは対象外 | [`runtime_vsoc_contract.wit`](docs/components/tier2_runtime/wit/runtime_vsoc_contract.wit) |
 | **Tier 3 Plugins** | Tier 2 Interpreterを拡張するJIT、およびDebugger、Guest Profiler | 対応する Tier 2 契約を正本として利用し、同じ契約を重複定義しない。Tier 3 固有の外部契約だけ各 Tier の `wit/` に置く |
 | **Tier 3 Platform** | ゲスト公開 WIT、ゲストアダプタ、物理ドライバ境界 | [`fireball_hostcall_contract.wit`](docs/components/tier3_platform/wit/fireball_hostcall_contract.wit)、[`fireball_hal_contract.wit`](docs/components/tier3_platform/wit/fireball_hal_contract.wit) |
 

@@ -1,0 +1,27 @@
+AO-Bench 320x180 block-search cache A/B — 2026-10-11 latest retest
+
+Purpose: isolate the native Interpreter PC-to-BasicBlock cache on the AO-Bench workload after the latest code changes. Each line gives the median of seven timed calls in one fresh runner process. Three warmups precede the timed calls; CPU 2 is pinned; cache/no-cache and Interpreter/JIT order is rotated across three trials. Yield threshold is 4096. The no-cache Interpreter library was built from the same current source with FB_CONF_NATIVE_BLOCK_SEARCH_CACHE=0. JIT is otherwise the same product build. This single AO-Bench resolution is complemented by the >10,000-block synthetic lookup workload in native_block_search_cache_10k_20261011_latest_retest.txt.
+
+trial=1 mode=cached engine=interpreter median_ms=473.534 samples_ms=472.478,473.534,474.735,472.411,474.012,472.587,476.645 frame_sha256=6d04ea80d9a1fd773c85d413057d64797f32dbb257a753d767a378d730d7d699
+trial=1 mode=nocache engine=interpreter median_ms=474.403 samples_ms=472.552,480.369,476.314,472.893,474.403,471.255,490.243 frame_sha256=6d04ea80d9a1fd773c85d413057d64797f32dbb257a753d767a378d730d7d699
+trial=1 mode=nocache engine=jit median_ms=623.824 samples_ms=621.197,624.106,622.550,623.824,623.368,631.002,631.042 frame_sha256=6d04ea80d9a1fd773c85d413057d64797f32dbb257a753d767a378d730d7d699
+trial=1 mode=cached engine=jit median_ms=618.416 samples_ms=616.707,614.638,622.153,616.330,621.322,626.654,618.416 frame_sha256=6d04ea80d9a1fd773c85d413057d64797f32dbb257a753d767a378d730d7d699
+trial=2 mode=nocache engine=jit median_ms=625.022 samples_ms=616.406,630.974,625.757,625.015,622.197,625.022,631.614 frame_sha256=6d04ea80d9a1fd773c85d413057d64797f32dbb257a753d767a378d730d7d699
+trial=2 mode=cached engine=jit median_ms=618.973 samples_ms=616.768,615.124,621.270,619.299,619.609,616.301,618.973 frame_sha256=6d04ea80d9a1fd773c85d413057d64797f32dbb257a753d767a378d730d7d699
+trial=2 mode=cached engine=interpreter median_ms=476.280 samples_ms=476.535,475.006,476.280,473.704,476.089,491.746,481.570 frame_sha256=6d04ea80d9a1fd773c85d413057d64797f32dbb257a753d767a378d730d7d699
+trial=2 mode=nocache engine=interpreter median_ms=485.123 samples_ms=474.565,509.027,486.007,484.072,475.745,485.123,496.004 frame_sha256=6d04ea80d9a1fd773c85d413057d64797f32dbb257a753d767a378d730d7d699
+trial=3 mode=nocache engine=interpreter median_ms=479.675 samples_ms=474.224,480.688,471.936,478.850,479.675,481.265,508.886 frame_sha256=6d04ea80d9a1fd773c85d413057d64797f32dbb257a753d767a378d730d7d699
+trial=3 mode=cached engine=interpreter median_ms=474.013 samples_ms=472.359,532.420,474.013,474.416,474.405,472.383,473.196 frame_sha256=6d04ea80d9a1fd773c85d413057d64797f32dbb257a753d767a378d730d7d699
+trial=3 mode=cached engine=jit median_ms=632.421 samples_ms=636.499,633.061,636.653,632.421,629.295,630.614,627.274 frame_sha256=6d04ea80d9a1fd773c85d413057d64797f32dbb257a753d767a378d730d7d699
+trial=3 mode=nocache engine=jit median_ms=618.737 samples_ms=617.840,617.501,617.732,620.882,618.737,618.841,625.256 frame_sha256=6d04ea80d9a1fd773c85d413057d64797f32dbb257a753d767a378d730d7d699
+SUMMARY engine=interpreter cached_ms=474.013 nocache_ms=479.675 delta_pct=-1.18%
+SUMMARY engine=jit cached_ms=618.973 nocache_ms=623.824 delta_pct=-0.78%
+
+Provenance:
+- AO-Bench WASM SHA-256: 9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9.
+- Cache-on release Interpreter SHA-256: e1f195245d0e9493b53bab6dd4567b96251894b9f7421b2494d156ea2fc3a26a.
+- JIT release library SHA-256: 97da3f1e76c041f34c427a50dc424af103d30e25f592e3e1b189e4864d215fe0.
+- Cache-off Interpreter library SHA-256: 7579b5f20b9351cefea4f004e4f83c5eac29b402c1db08fe5f739c77c7ded415.
+- A/B driver SHA-256: 255aae14dfc371abe26c7d5b8b5ea78368492a68437601fd90047527ef036460.
+- Cache-on runner SHA-256: a23d941a3498fd67c1d4776d2f8a4a251ae5dca8908dfaff2fca444187e32e56.
+- Cache-off runner SHA-256: 2d4458915dc0c5705bc625a1079bfd302cbbb9277495cd4167ed85890409ca22.

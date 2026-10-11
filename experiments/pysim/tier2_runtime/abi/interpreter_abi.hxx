@@ -8,6 +8,7 @@
  */
 #pragma once
 
+#include <assert.h>
 #include <stdint.h>
 
 #ifndef FB_CONF_JIT_BLOCK_COUNTERS
@@ -22,6 +23,7 @@ struct fireball_control_stack_native;
 struct fireball_control_frame_native;
 struct fireball_call_stack_native;
 struct fireball_call_frame_native;
+struct fb_native_jit_trace_exit;
 
 typedef struct fireball_control_map_entry_native {
   uint32_t match_end;
@@ -114,8 +116,8 @@ typedef struct fireball_wasm_function_execution_view_native {
   uint32_t is_import;
   const struct fireball_wasm_module_execution_view_native *module_view;
   const uint8_t *interpreter_constant_pool;
-  // Counts packed 32-bit values; rel itself is an unaligned byte pointer.
-  uint32_t interpreter_constant_word_count;
+  // Byte size of the unaligned pool containing operands and instruction widths.
+  uint32_t interpreter_constant_byte_count;
 } fireball_wasm_function_execution_view_native;
 
 typedef struct fireball_wasm_function_type_execution_view_native {
@@ -131,9 +133,18 @@ typedef struct fireball_wasm_table_execution_view_native {
 } fireball_wasm_table_execution_view_native;
 
 typedef struct fireball_wasm_block_execution_view_native {
-  uint32_t head_pc, function_index, next_pc, loops_to, frame_depth, byte_span;
-  uint32_t interpreter_constant_offset;
+  uint32_t head_pc, function_index, next_pc, loops_to;
+  uint16_t frame_depth;
+  uint8_t jit_cache_reference;
+  uint8_t reserved0;
+  uint32_t byte_span;
+  uint32_t interpreter_constant_byte_offset;
 } fireball_wasm_block_execution_view_native;
+
+typedef struct fireball_wasm_block_index_entry_native {
+  uint32_t folded_pc;
+  uint32_t block_index;
+} fireball_wasm_block_index_entry_native;
 
 typedef struct fireball_wasm_module_execution_view_native {
   const fireball_wasm_function_execution_view_native *functions;
@@ -147,10 +158,18 @@ typedef struct fireball_wasm_module_execution_view_native {
   uint64_t *globals;
   const uint8_t *global_widths;
   uint32_t global_count;
-  const fireball_wasm_block_execution_view_native *blocks;
+  fireball_wasm_block_execution_view_native *blocks;
   uint32_t block_count;
   uint32_t *block_execution_counts;
+  const struct fireball_wasm_block_index_entry_native *block_index_entries;
+  const uint32_t *block_radix_table;
+  uint32_t block_radix_table_count;
+  uint32_t block_radix_shift;
 } fireball_wasm_module_execution_view_native;
+
+enum {
+  FIREBALL_NATIVE_BLOCK_SEARCH_CACHE_SIZE = 8,
+};
 
 typedef struct fireball_call_frame_native {
   const fireball_wasm_function_execution_view_native *function_view;
@@ -218,34 +237,57 @@ using fireball_native_cps_handler = void(FIREBALL_NATIVE_CPS_CALL *)(
 
 // JIT trace entries receive the Interpreter execution state and a trace-local
 // constant-pool pointer named rel as their fourth argument.
-using fireball_native_jit_trace_entry = void(FIREBALL_NATIVE_CPS_CALL *)(
+using fireball_native_jit_trace_entry =
+    bool(FIREBALL_NATIVE_CPS_CALL *)(
     fireball_execution_context_native *, const uint8_t *, uint32_t *,
     const uint8_t *) noexcept;
 
-static inline void fb_native_record_block_execution(
+static inline uint32_t fb_native_find_block_index_folded(
     const fireball_wasm_module_execution_view_native *module,
-    uint32_t head_pc) {
-#if FB_CONF_JIT_BLOCK_COUNTERS
-  if (module == nullptr || module->blocks == nullptr)
-    return;
-  uint32_t first = 0, last = module->block_count;
+    [[maybe_unused]] uint32_t head_pc, uint32_t folded_pc) {
+  assert(module != 0);
+  assert(module->blocks != 0);
+  assert(module->block_count != 0);
+  assert(module->block_index_entries != 0);
+  assert(module->block_radix_table != 0);
+  assert(module->block_radix_table_count >= 2);
+  assert(module->block_radix_shift > 0 && module->block_radix_shift < 32);
+
+  const uint32_t prefix = folded_pc >> module->block_radix_shift;
+  assert(prefix < module->block_radix_table_count - 1);
+  uint32_t first = module->block_radix_table[prefix];
+  uint32_t last = module->block_radix_table[prefix + 1];
+  assert(first <= last && last <= module->block_count);
+
   while (first < last) {
     const uint32_t middle = first + (last - first) / 2;
-    if (module->blocks[middle].head_pc < head_pc)
+    if (module->block_index_entries[middle].folded_pc < folded_pc)
       first = middle + 1;
     else
       last = middle;
   }
-  if (first == module->block_count ||
-      module->blocks[first].head_pc != head_pc ||
-      module->block_execution_counts == nullptr)
+
+  assert(first < module->block_radix_table[prefix + 1]);
+  assert(module->block_index_entries[first].folded_pc == folded_pc);
+  const uint32_t block_index = module->block_index_entries[first].block_index;
+  assert(block_index < module->block_count);
+  assert(module->blocks[block_index].head_pc == head_pc);
+  return block_index;
+}
+
+static inline void fb_native_record_block_execution(
+    const fireball_wasm_module_execution_view_native *module,
+    uint32_t block_index) {
+#if FB_CONF_JIT_BLOCK_COUNTERS
+  if (module == 0 || module->block_execution_counts == 0)
     return;
-  uint32_t *count = module->block_execution_counts + first;
+  assert(block_index < module->block_count);
+  uint32_t *count = module->block_execution_counts + block_index;
   if (*count != UINT32_MAX)
     ++*count;
 #else
   (void)module;
-  (void)head_pc;
+  (void)block_index;
 #endif
 }
 
@@ -356,17 +398,30 @@ static_assert(offsetof(wasm_function_execution_view_native, module_view) == 80);
 static_assert(offsetof(wasm_function_execution_view_native,
                        interpreter_constant_pool) == 88);
 static_assert(offsetof(wasm_function_execution_view_native,
-                       interpreter_constant_word_count) == 96);
+                       interpreter_constant_byte_count) == 96);
 static_assert(sizeof(wasm_table_execution_view_native) == 16);
 static_assert(sizeof(wasm_block_execution_view_native) == 28);
+static_assert(sizeof(fireball_wasm_block_index_entry_native) == 8);
+static_assert(offsetof(wasm_block_execution_view_native, frame_depth) == 16);
+static_assert(offsetof(wasm_block_execution_view_native, jit_cache_reference) ==
+              18);
+static_assert(offsetof(wasm_block_execution_view_native, byte_span) == 20);
 static_assert(offsetof(wasm_block_execution_view_native,
-                       interpreter_constant_offset) == 24);
-static_assert(sizeof(wasm_module_execution_view_native) == 104);
+                       interpreter_constant_byte_offset) == 24);
+static_assert(sizeof(wasm_module_execution_view_native) == 128);
 static_assert(offsetof(wasm_module_execution_view_native, globals) == 56);
 static_assert(offsetof(wasm_module_execution_view_native, global_widths) == 64);
 static_assert(offsetof(wasm_module_execution_view_native, global_count) == 72);
 static_assert(offsetof(wasm_module_execution_view_native,
                        block_execution_counts) == 96);
+static_assert(offsetof(wasm_module_execution_view_native,
+                       block_index_entries) == 104);
+static_assert(offsetof(wasm_module_execution_view_native, block_radix_table) ==
+              112);
+static_assert(offsetof(wasm_module_execution_view_native,
+                       block_radix_table_count) == 120);
+static_assert(offsetof(wasm_module_execution_view_native, block_radix_shift) ==
+              124);
 static_assert(sizeof(value_stack_native) == 520);
 static_assert(offsetof(value_stack_native, values) == 0);
 static_assert(offsetof(value_stack_native, size) == 512);

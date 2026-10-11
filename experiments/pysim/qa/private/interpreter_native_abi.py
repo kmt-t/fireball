@@ -20,6 +20,8 @@ class NativeDiagnosticResult(native_abi.NativeResult):
         ("control_handler_count", ctypes.c_uint32),
         ("eligible_block_visits", ctypes.c_uint32),
         ("interpreted_block_count", ctypes.c_uint32),
+        ("block_search_cache_hits", ctypes.c_uint32),
+        ("block_search_cache_misses", ctypes.c_uint32),
     )
 
     def reset_counters(self) -> None:
@@ -29,6 +31,8 @@ class NativeDiagnosticResult(native_abi.NativeResult):
         self.control_handler_count = 0
         self.eligible_block_visits = 0
         self.interpreted_block_count = 0
+        self.block_search_cache_hits = 0
+        self.block_search_cache_misses = 0
 
 
 _library = ctypes.PyDLL(

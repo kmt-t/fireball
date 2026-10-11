@@ -5,6 +5,7 @@
 #else
 #define FB_REL_REG rcx
 #endif
+#define FB_CTX_REG r12
 
 #ifndef FB_TRACE_CONST_REL_OFFSET
 #error "FB_TRACE_CONST_REL_OFFSET must come from the production C++ ABI probe"
@@ -14,6 +15,18 @@
 #endif
 #ifndef FB_TRACE_CHAIN_TARGET_OFFSET
 #error "FB_TRACE_CHAIN_TARGET_OFFSET must come from the production C++ ABI probe"
+#endif
+#ifndef FB_TRACE_CHAIN_ENTRY_OFFSET
+#error "FB_TRACE_CHAIN_ENTRY_OFFSET must come from tier1_core/config.py"
+#endif
+#ifndef FB_TRACE_BOUNDARY_METADATA_BYTES
+#error "FB_TRACE_BOUNDARY_METADATA_BYTES must come from the production C++ ABI probe"
+#endif
+#ifndef FB_CONTEXT_IP_OFFSET
+#error "FB_CONTEXT_IP_OFFSET must come from the production C++ ABI probe"
+#endif
+#ifndef FB_CONTEXT_REL_OFFSET
+#error "FB_CONTEXT_REL_OFFSET must come from the production C++ ABI probe"
 #endif
 
 .intel_syntax noprefix
@@ -32,9 +45,20 @@ fb_common_chain_dispatcher:
    * resolve the header-relative constant-pool offset, then enter the body. */
   mov r10d, dword ptr [rax - (FB_TRACE_HEADER_BYTES - FB_TRACE_CONST_REL_OFFSET)]
   lea FB_REL_REG, [rax + r10 - FB_TRACE_HEADER_BYTES]
+  add rax, FB_TRACE_CHAIN_ENTRY_OFFSET
   jmp rax
 
 .Lchain_return:
+  /* Only the unlinked terminal path publishes its footer and terminal opcode
+   * PC. The bool return marks normal completion; lookup never walks the chain. */
+  mov eax, dword ptr [FB_REL_REG + FB_TRACE_CONST_REL_OFFSET]
+  lea rax, [FB_REL_REG + rax - FB_TRACE_BOUNDARY_METADATA_BYTES]
+  mov qword ptr [FB_CTX_REG + FB_CONTEXT_REL_OFFSET], rax
+  mov edx, dword ptr [rax]
+  mov dword ptr [FB_CTX_REG + FB_CONTEXT_IP_OFFSET], edx
+  add rsp, 8
+  pop r12
+  mov eax, 1
   ret
 #if !defined(_WIN32)
 .size fb_common_chain_dispatcher,.-fb_common_chain_dispatcher

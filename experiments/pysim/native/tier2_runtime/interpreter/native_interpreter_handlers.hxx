@@ -7,31 +7,22 @@ namespace {
 template <typename Debugger>
 inline FIREBALL_CPS_CALL void
 h_unreachable(execution_context *context,
-              const std::uint8_t *instruction_ip [[maybe_unused]],
+              const std::uint8_t *instruction_ip,
               std::uint32_t *sp,
               [[maybe_unused]] const std::uint8_t *rel) {
+  context->ip = instruction_offset(*context, instruction_ip);
   context->stack_pointer = sp;
   trap(*context, kTrapUnreachable);
   return;
 }
 
 constexpr std::uint8_t kOpcodeControlTerminator = 1u << 0;
-constexpr std::uint8_t kOpcodeBlockBody = 1u << 1;
 
 inline constexpr auto make_opcode_attributes() {
   std::array<std::uint8_t, 256> attributes{};
   for (const auto opcode : {0x02u, 0x03u, 0x04u, 0x05u, 0x0Bu, 0x0Cu, 0x0Du,
                             0x0Eu, 0x0Fu, 0x10u, 0x11u}) {
     attributes[opcode] |= kOpcodeControlTerminator;
-  }
-  // Match Loader's _IS_BB_OPCODE ordinary instructions. CALL remains a
-  // control boundary and must not create a control-only hotspot visit.
-  for (const auto opcode :
-       {0x41u, 0x6Au, 0x6Bu, 0x6Cu, 0x6Du, 0x6Eu, 0x71u, 0x72u, 0x73u, 0x74u,
-        0x75u, 0x76u, 0x20u, 0x21u, 0x22u, 0x23u, 0x24u, 0x45u, 0x46u, 0x47u,
-        0x48u, 0x49u, 0x4Au, 0x4Bu, 0x4Cu, 0x4Du, 0x4Eu, 0x4Fu, 0x1Au, 0x1Bu,
-        0x28u, 0x2Cu, 0x2Du, 0x2Eu, 0x2Fu, 0x36u, 0x3Au, 0x3Bu, 0x3Fu, 0x40u}) {
-    attributes[opcode] |= kOpcodeBlockBody;
   }
   return attributes;
 }
@@ -43,15 +34,19 @@ inline bool opcode_is_control_terminator(std::uint8_t opcode) {
 }
 
 inline bool opcode_is_block_body(std::uint8_t opcode) {
-  return (kOpcodeAttributes[opcode] & kOpcodeBlockBody) != 0;
+  // A JIT body may start with a direct stencil or a Runtime API lowering.
+  // Control opcodes and the separately dispatched 0xFC prefix remain
+  // boundaries.
+  return opcode != 0xFCu && !opcode_is_control_terminator(opcode);
 }
 
 template <typename Debugger>
 inline FIREBALL_CPS_CALL void
 h_unsupported_opcode(execution_context *context,
-                     const std::uint8_t *instruction_ip [[maybe_unused]],
+                     const std::uint8_t *instruction_ip,
                      std::uint32_t *sp,
                      [[maybe_unused]] const std::uint8_t *rel) {
+  context->ip = instruction_offset(*context, instruction_ip);
   context->stack_pointer = sp;
   trap(*context, kTrapUnreachable);
   return;
@@ -60,14 +55,17 @@ h_unsupported_opcode(execution_context *context,
 template <typename Debugger, auto RuntimeApi>
 [[gnu::always_inline]] inline FIREBALL_CPS_CALL void
 h_runtime_api(execution_context *context,
-              [[maybe_unused]] const std::uint8_t *instruction_ip,
+              const std::uint8_t *instruction_ip,
               std::uint32_t *sp, const std::uint8_t *rel) {
   static_assert(std::is_same_v<decltype(RuntimeApi), runtime_api_pointer>,
                 "interpreter Runtime APIs must share one prototype");
   auto *local_base = context->local_base;
-  const bool should_continue = RuntimeApi(context, sp, local_base, rel);
+  const bool should_continue =
+      RuntimeApi(context, instruction_ip, sp, local_base, rel);
   context->local_base = local_base;
   if (!should_continue) {
+    if (cps_exit_kind(*context) == kTrap)
+      context->ip = instruction_offset(*context, instruction_ip);
     context->rel = rel;
     context->stack_pointer = sp;
     assert(cps_exit_pending(*context));
@@ -75,7 +73,7 @@ h_runtime_api(execution_context *context,
   }
   assert(!cps_exit_pending(*context));
   [[clang::musttail]] return continue_cps<Debugger>(
-      context, context->code + context->ip, sp, rel);
+      context, instruction_ip, sp, rel);
 }
 
 using native_opcode_handler = fireball_native_cps_handler;
@@ -598,21 +596,23 @@ dispatch_next(execution_context *context, const std::uint8_t *ip,
   auto &current = *context;
   assert(current.code != nullptr && ip >= current.code &&
          ip <= current.code + current.code_size);
-  assert(ip == current.code + current.ip);
-  if (current.ip >= current.code_size) {
+  const auto ip_offset = instruction_offset(current, ip);
+  if (ip_offset >= current.code_size) {
+    current.ip = ip_offset;
     current.stack_pointer = sp;
     trap(current, kTrapUnreachable);
     return;
   }
   if ((current.runtime_flags & kStopAtBlockBoundaryFlag) != 0 &&
-      is_requested_block_boundary(current)) {
+      is_requested_block_boundary(current, ip_offset)) {
     current.stack_pointer = sp;
-    block_boundary(current, current.ip);
+    block_boundary(current, ip_offset);
     return;
   }
 
   if constexpr (std::is_same_v<Debugger, debugger_aspect>) {
-    if (Debugger::before_instruction(current)) {
+    if (Debugger::before_instruction(current, ip)) {
+      current.ip = ip_offset;
       current.rel = rel;
       current.stack_pointer = sp;
       debug_stop(current);

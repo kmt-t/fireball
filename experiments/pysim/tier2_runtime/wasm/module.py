@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING, Protocol
 
 import tier2_runtime.wasm.opcodes as op
 from bump_allocator import BumpAllocator
-from config import FB_CONF_MAX_BASIC_BLOCKS, FB_CONF_MAX_LOCALS
+from config import FB_CONF_MAX_LOCALS
 from system_containers import (
     CtypesU32Buffer,
     ReadOnlyFlatMapStorage,
@@ -56,9 +56,11 @@ class BasicBlock(ctypes.Structure):
         ("function_index", ctypes.c_uint32),
         ("_next_pc", ctypes.c_uint32),
         ("_loops_to", ctypes.c_uint32),
-        ("frame_depth", ctypes.c_uint32),
+        ("frame_depth", ctypes.c_uint16),
+        ("jit_cache_reference", ctypes.c_uint8),
+        ("_reserved0", ctypes.c_uint8),
         ("byte_span", ctypes.c_uint32),
-        ("interpreter_constant_offset", ctypes.c_uint32),
+        ("interpreter_constant_byte_offset", ctypes.c_uint32),
     )
 
     def __init__(
@@ -69,15 +71,18 @@ class BasicBlock(ctypes.Structure):
         loops_to: int | None = None,
         frame_depth: int = 0,
         byte_span: int = 0,
-        interpreter_constant_offset: int = 0,
+        interpreter_constant_byte_offset: int = 0,
     ) -> None:
         self.head_pc = head_pc
         self.function_index = func_index
         self.next_pc = next_pc
         self.loops_to = loops_to
+        assert 0 <= frame_depth <= 0xFFFF
         self.frame_depth = frame_depth
+        self.jit_cache_reference = 0xFF
+        self._reserved0 = 0
         self.byte_span = byte_span
-        self.interpreter_constant_offset = interpreter_constant_offset
+        self.interpreter_constant_byte_offset = interpreter_constant_byte_offset
 
     @property
     def func_index(self) -> int:
@@ -162,7 +167,7 @@ class BasicBlockStorage:
 
 
 class InterpreterConstantPool:
-    """Loader-owned packed 32-bit constants exposed as an unaligned byte span."""
+    """Loader-owned packed constants and instruction widths exposed as bytes."""
 
     __slots__ = ("_arena_offset", "_bytes", "_size", "capacity")
 
@@ -170,7 +175,7 @@ class InterpreterConstantPool:
         assert capacity >= 0
         self.capacity = capacity
         self._size = 0
-        self._bytes = (ctypes.c_uint8 * (capacity * WASM_RAW_WORD_BYTES))()
+        self._bytes = (ctypes.c_uint8 * capacity)()
         self._arena_offset = (
             allocator.allocate(ctypes.sizeof(self._bytes), alignment=1)
             if allocator is not None and capacity
@@ -181,13 +186,17 @@ class InterpreterConstantPool:
     def native_address(self) -> int:
         return ctypes.addressof(self._bytes) if self._size else 0
 
-    def append(self, value: int) -> None:
+    def append_byte(self, value: int) -> None:
         assert self._size < self.capacity
-        assert 0 <= value <= 0xFFFF_FFFF
-        offset = self._size * WASM_RAW_WORD_BYTES
-        for byte_index in range(WASM_RAW_WORD_BYTES):
-            self._bytes[offset + byte_index] = (value >> (byte_index * 8)) & 0xFF
+        assert 0 <= value <= 0xFF
+        self._bytes[self._size] = value
         self._size += 1
+
+    def append(self, value: int) -> None:
+        assert 0 <= value <= 0xFFFF_FFFF
+        assert self.capacity - self._size >= WASM_RAW_WORD_BYTES
+        for byte_index in range(WASM_RAW_WORD_BYTES):
+            self.append_byte((value >> (byte_index * 8)) & 0xFF)
 
     def __len__(self) -> int:
         return self._size
@@ -196,11 +205,7 @@ class InterpreterConstantPool:
         if index < 0:
             index += self._size
         assert 0 <= index < self._size
-        offset = index * WASM_RAW_WORD_BYTES
-        return sum(
-            int(self._bytes[offset + byte_index]) << (byte_index * 8)
-            for byte_index in range(WASM_RAW_WORD_BYTES)
-        )
+        return int(self._bytes[index])
 
     def __iter__(self) -> Iterator[int]:
         for index in range(self._size):
@@ -319,6 +324,8 @@ LOADER_GLOBAL_ENTRY_BYTES = 20
 LOADER_TABLE_ENTRY_BYTES = 12
 LOADER_BASIC_BLOCK_ENTRY_BYTES = ctypes.sizeof(BasicBlock)
 LOADER_BLOCK_INDEX_ENTRY_BYTES = 8
+LOADER_BLOCK_INDEX_ENTRY_WORDS = LOADER_BLOCK_INDEX_ENTRY_BYTES // WASM_RAW_WORD_BYTES
+LOADER_BLOCK_RADIX_SHIFT = 28
 
 
 def _allocate_loader_vector[T](
@@ -612,8 +619,11 @@ class Module:
     element_section_size: int = 0
     data_section_offset: int = 0
     data_section_size: int = 0
-    block_storage: ReadOnlyRadixBinaryTreeStorage[BasicBlock] | None = None
+    block_storage: ReadOnlyRadixBinaryTreeStorage[int] | None = None
     blocks: BasicBlockStorage = field(default_factory=lambda: BasicBlockStorage(capacity=0))
+    block_index_entries: CtypesU32Buffer | None = field(default=None, repr=False)
+    block_radix_table: CtypesU32Buffer | None = field(default=None, repr=False)
+    block_radix_shift: int = LOADER_BLOCK_RADIX_SHIFT
     source: memoryview | None = None
     allocator: BumpAllocator | None = field(default=None, repr=False)
     _arena_start: int = field(default=0, repr=False)
@@ -681,6 +691,10 @@ class Module:
             self.globals.relocate_arena(offset_delta)
             self.tables.relocate_arena(offset_delta)
             self.blocks.relocate_arena(offset_delta)
+            if self.block_index_entries is not None:
+                self.block_index_entries.relocate_arena(offset_delta)
+            if self.block_radix_table is not None:
+                self.block_radix_table.relocate_arena(offset_delta)
             if self._global_widths_arena_offset is not None:
                 self._global_widths_arena_offset += offset_delta
             for function in self.functions:
@@ -972,7 +986,6 @@ class Module:
 
         n_imports = len(self.imports)
         block_capacity = self.total_basic_blocks
-        assert block_capacity <= FB_CONF_MAX_BASIC_BLOCKS
         all_blocks = BasicBlockStorage(block_capacity, allocator)
         for idx, _fn in enumerate(self.functions):
             func_idx = n_imports + idx
@@ -1000,7 +1013,7 @@ class Module:
                         loops_to=loops_to,
                         frame_depth=frame_depth,
                         byte_span=byte_span,
-                        interpreter_constant_offset=block_constant_offsets[block_index],
+                        interpreter_constant_byte_offset=block_constant_offsets[block_index],
                     )
                 )
 
@@ -1016,33 +1029,41 @@ class Module:
         self.blocks = all_blocks
         if not all_blocks:
             self.block_storage = None
+            self.block_index_entries = None
+            self.block_radix_table = None
+            self.block_radix_shift = LOADER_BLOCK_RADIX_SHIFT
             return
 
-        if allocator is None:
-            entries: StaticVector[tuple[int, BasicBlock]] = StaticVector(capacity=len(all_blocks))
-        else:
-            entries = _allocate_loader_vector(
-                allocator,
-                len(all_blocks),
-                LOADER_BLOCK_INDEX_ENTRY_BYTES,
-                StaticVector[tuple[int, BasicBlock]],
-            )
-        for block in all_blocks:
-            entries.append((fold_mix32(block.head_pc), block))
-        entries.sort(key=lambda entry: (entry[0], entry[1].head_pc))
-        radix_shift = 28
+        entries: StaticVector[tuple[int, int]] = StaticVector(capacity=len(all_blocks))
+        for block_index, block in enumerate(all_blocks):
+            entries.append((fold_mix32(block.head_pc), block_index))
+        entries.sort(key=lambda entry: (entry[0], entry[1]))
         self.block_storage = ReadOnlyRadixBinaryTreeStorage.from_sorted_static_entries(
             entries,
-            radix_shift=radix_shift,
+            radix_shift=LOADER_BLOCK_RADIX_SHIFT,
         )
-        if allocator is not None:
-            allocator.allocate(len(self.block_storage.radix_table) * WASM_RAW_WORD_BYTES)
+        self.block_index_entries = CtypesU32Buffer(
+            len(entries) * LOADER_BLOCK_INDEX_ENTRY_WORDS,
+            allocator,
+        )
+        for entry_index, (folded_pc, block_index) in enumerate(entries):
+            word_index = entry_index * LOADER_BLOCK_INDEX_ENTRY_WORDS
+            self.block_index_entries.put(word_index, folded_pc)
+            self.block_index_entries.put(word_index + 1, block_index)
+        self.block_radix_table = CtypesU32Buffer(
+            len(self.block_storage.radix_table),
+            allocator,
+        )
+        for table_index, entry_index in enumerate(self.block_storage.radix_table):
+            self.block_radix_table.put(table_index, entry_index)
+        self.block_radix_shift = LOADER_BLOCK_RADIX_SHIFT
 
     def get_block(self, pc: int) -> BasicBlock | None:
         """Looks up a BasicBlock by UnifiedPC via the loader's Radix tree (O(1) + O(log n))."""
         if self.block_storage is None:
             return None
-        return self.block_storage.view().find(fold_mix32(pc))
+        block_index = self.block_storage.view().find(fold_mix32(pc))
+        return None if block_index is None else self.blocks[block_index]
 
     @property
     def total_basic_blocks(self) -> int:

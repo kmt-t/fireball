@@ -68,7 +68,7 @@ Element/Data初期化定義を個別配列へ展開せず、パース時検証�
 | TEST-LOAD-45 | インポートテーブルのハッシュ＋RadixBinaryTreeView 検索 | インポートエントリ多数 | `find_import(module, field)` | ハッシュ値から RadixBinaryTreeView を $O(1)+O(\log n)$ で探索し、元のモジュール名・フィールド名を照合して解決される | 「インポートテーブル検索」 |
 | TEST-LOAD-46 | シンボルハッシュ衝突時の安全な文字列一致検証 | 同一ハッシュ値を持つ異なるシンボル名 | `lookup_export(name)` | ハッシュ一致後に ROM 上の文字列を 1 回照合し、誤ったシンボルの誤認を確実に防ぐ | 「シンボル検索」 |
 | TEST-LOAD-47 | 未定義シンボルの高速不存在判定 | 未エクスポートのシンボル名 | `lookup_export(non_existent)` | ハッシュ索引の $O(1)$ の区間絞り込みと有界探索 $O(\log n)$ の後、候補がなければ `None` を返す。候補がある場合のみ元文字列を照合する | - |
-| TEST-LOAD-48 | ローダ所有のベーシックブロック索引と不変メタ情報公開 | パース済み WASM モジュール | `mod.get_block(pc)` / `mod.block_storage` | ランタイム側での再構築なしに、ローダが構築した `ReadOnlyRadixBinaryTreeStorage` と借用viewから $O(1) + O(\log n)$ で `BasicBlock` メタ情報を解決できる | `{Loader_BasicBlockIndex}` |
+| TEST-LOAD-48 | ローダ所有のBasicBlock Radix索引とメタ情報公開 | 10,000件以上のBasicBlockを持つパース済みWASMモジュール | `fold_mix32(pc) = (pc * 0x9E3779B1) & 0xFFFFFFFF`でPCを変換し、Radix候補範囲から変換キー順の検索配列を二分探索する | 奇数乗数による32bit全域の全単射であることを式から確認する。関数indexが上位に偏る40関数の合成ケースを含め、過去に1/16 bucketへ集中した形状で16/16 bucketへ分布することを確認する。自然順`module.blocks`のindexへ戻し、元PCとの完全一致確認を経て正しいBasicBlockを得る。制御情報、定数プールoffset、可変JIT cache referenceを同じエントリから参照できる。PC自体のCode section payload相対仕様は変更しない | `{Loader_BasicBlockIndex}` |
 | TEST-LOAD-51 | 到達不能な外側フレームの型ポリモーフィズム分離 | `unreachable` の後に値を要求するネストブロック | `parse(module)` | 外側フレームのunreachable状態を内側ブロックへ漏らさず、operand stack underflowとして拒否する | [`reader.py`](experiments/pysim/tier2_runtime/wasm/reader.py) operand stack validation |
 | TEST-LOAD-52 | Custom section 名のセクション境界 | 名前長がCustom sectionの残りバイト数を超える | `parse(module)` | 次セクションのバイトを名前として読まず、section bounds違反で拒否する | [`reader.py`](experiments/pysim/tier2_runtime/wasm/reader.py) custom section bounds |
 | TEST-LOAD-53 | LEB128幅とsection件数の事前検証 | 幅超過LEB128、短いsection内の巨大な型件数 | `parse(module)` | LEB128を最大幅・現在のsection終端で停止し、設定容量を構成する前に不正件数を拒否する | [`leb128.py`](experiments/pysim/tier2_runtime/wasm/leb128.py), [`reader.py`](experiments/pysim/tier2_runtime/wasm/reader.py) |
@@ -76,7 +76,8 @@ Element/Data初期化定義を個別配列へ展開せず、パース時検証�
 | TEST-LOAD-55 | 実行時作成が使うパーサーのWASMページ上限 | 初期メモリが `FB_CONF_MAX_WASM_PAGES + 1` ページ | `wasm_reader.parse(module)` | 設定上限を超える初期メモリを拒否する | `runtime_loader.md` (Resource Constraints) |
 
 | TEST-LOAD-56 | メモリ命令の整列指定上限 | `i32.load`の整列指定がアクセス幅を超える | `parse(module)` | 4バイト指定を許可し、8バイト指定を拒否する | [WebAssembly Core・memarg検証](https://webassembly.github.io/spec/core/valid/instructions.html#valid-memarg)、pysim `test_load_56_rejects_overaligned_memory_access` |
-| TEST-LOAD-57 | インタープリタ専用ブロックのrel開始位置 | 直接ステンシルのない `f32` のみの関数 | パース後に関数先頭PCの`BasicBlock`を検索 | 関数先頭のブロックメタ情報が存在し、`byte_span`が0、定数pool offsetが関数先頭に対応する | `{Loader_BasicBlockIndex}`、pysim `test_load_57_indexes_interpreter_only_block_heads` |
+| TEST-LOAD-57 | Runtime API命令を含むtrace範囲 | `i32.const`の後ろに`i32.popcnt`を置く関数 | パース後に関数先頭PCの`BasicBlock`をRadix検索し、関数コードと範囲を比較する | `byte_span`が`i32.const`と末尾の`i32.popcnt`を含み、終端`end`を含まない。ブロックのInterpreter定数pool開始offsetが設定される | `{Loader_BasicBlockIndex}`、pysim `test_load_57_includes_runtime_api_operations_in_trace_span` |
+| TEST-LOAD-58 | BasicBlock単位のLEB128定数プール構築 | 複数ブロックにLEB128即値、`br_table`、固定幅`f32.const`/`f64.const`を含む関数 | Loaderの各ブロック別プール範囲、連結順、BasicBlockの開始byte offsetを検査する | 各BasicBlockのコード範囲を個別にパースし、可変長LEB128即値と各命令の幅recordを8bit-packed関数プールへブロック順に追加する。`br_table`即値はそのブロックの範囲内に置く。固定幅float payloadとopcodeはプールへ入れないが、float命令の幅は格納する。幅は1byte、または`0xFF` sentinel + little-endian 32bit値とする。PC/即値offset表は生成しない | `{Loader_BasicBlockIndex}`, `interpreter.md`「Interpreter定数プール」 |
 
 ### 実装上の注意点に対応する検証
 <!-- traceability: {Loader_BasicBlockIndex} {GOTCHA-LOAD-01} {GOTCHA-LOAD-02} {GOTCHA-LOAD-04} -->
@@ -85,7 +86,7 @@ Element/Data初期化定義を個別配列へ展開せず、パース時検証�
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | GOTCHA-LOAD-01 | ハッシュ衝突時の文字列完全一致確認（シンボル誤認防止） | 同一ハッシュ値を持つ異なるシンボル名 | `lookup_export(name)` を実行 | ハッシュ値による探索後に ROM 上の文字列を 1 回比較し、異なる文字列であれば一致と誤判定しない。 | [`runtime_loader.md`](docs/components/tier2_runtime/runtime_loader.md) |
 | GOTCHA-LOAD-02 | ロード失敗時のアロケータ完全ロールバック（メモリリーク防止） | 不正なセクションまたはアリーナ容量を超える WASM バイナリ | `prepare_module` を実行 | パースまたは確保失敗時にバンプポインタがロード開始前の位置へ巻き戻される。 | [`runtime_loader.md`](docs/components/tier2_runtime/runtime_loader.md) |
-| GOTCHA-LOAD-04 | 基本ブロックメタ情報の不変保持と借用 | WASMモジュールをロード済み | 同じPCで`mod.get_block(pc)`を繰り返し、ロード時のメタ情報と比較する | 同じ境界・制御情報を持つ借用viewが返る。実行時の再走査・メタ情報再構築・動的確保が発生しない | [`runtime_loader.md`](docs/components/tier2_runtime/runtime_loader.md), `Loader_BasicBlockIndex` |
+| GOTCHA-LOAD-04 | 基本ブロックメタ情報の所有と可変JIT参照の分離 | WASMモジュールをロード済み | 同じPCをRadix検索し、境界・制御情報とJIT参照をキャッシュ変更の前後で比較する | 境界・制御情報・定数プールoffsetは不変である。`jit_cache_reference`だけはJITキャッシュの挿入・移動・退役で更新または無効化される。索引の再構築や動的確保は発生しない | [`runtime_loader.md`](docs/components/tier2_runtime/runtime_loader.md), `Loader_BasicBlockIndex` |
 
 ## 3. テスト検証実績と網羅状況
 
@@ -103,7 +104,7 @@ PysimのPythonコードは参照ランタイムであり、現行のWASMパー�
 | TEST-LOAD-20〜24 | `test_load_20`〜`test_load_24` | QA専用ハーネスによる未解決状態、関数リンク、シグネチャ拒否、部分リンク防止、登録上限 |
 | TEST-LOAD-30〜32 | `test_load_30`〜`test_load_32` | 関数上限、64件超のexport保持、u32/u64 LEB128のバイト上限 |
 | TEST-LOAD-46 | `test_load_46_parser_export_lookup_checks_names_when_hashes_collide` | 既知のハッシュ衝突名をパーサのエクスポート検索で区別 |
-| TEST-LOAD-48、57 | `test_load_48_module_builds_basic_block_index`、`test_load_57_indexes_interpreter_only_block_heads` | 全ブロック入口のローダ索引とインタープリタ専用ブロックのrel開始位置 |
+| TEST-LOAD-48、57、58 | `test_load_48_module_builds_basic_block_index`、`test_load_57_indexes_interpreter_only_block_heads`、`test_load_58_builds_interpreter_constant_pool_per_basic_block` | 大規模BasicBlock Radix索引、インタープリタ専用ブロックのrel開始位置、BasicBlock単位のLEB128プール |
 | TEST-LOAD-51〜53、55〜56 | 対応する`test_load_*` | 到達不能時の型検証、Custom名境界、LEB128/件数、メモリページ・整列上限 |
 
 ## 4. 未検証・スコープ外

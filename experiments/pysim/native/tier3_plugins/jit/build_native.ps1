@@ -22,7 +22,6 @@ $clangPath = (Get-Command clang.exe).Source
 $clangxxPath = (Get-Command clang++.exe).Source
 
 $env:PYTHONPATH = Join-Path $projectRoot "experiments\pysim\tier1_core"
-$fastSlotCount = & uv run --offline --no-sync --python $uvPython python -c "from config import JIT_CACHE_FAST_SLOT_COUNT; print(JIT_CACHE_FAST_SLOT_COUNT)"
 $cacheRuntimeConfig = & uv run --offline --no-sync --python $uvPython python -c "from config import JIT_CACHE_BANK_ENTRY_CAPACITY; print(JIT_CACHE_BANK_ENTRY_CAPACITY)"
 $cacheRuntimeValues = (($cacheRuntimeConfig -join " ").Trim() -split "\s+")
 $bankEntries = $cacheRuntimeValues[0]
@@ -104,7 +103,6 @@ if ($QA) {
     "/DFB_CONF_JIT_X64_TRACE_HEADER_BYTES=$traceHeaderBytes" `
     "/DFB_CONF_JIT_X64_CHAIN_TARGET_OFFSET=$chainTargetOffset" `
     "/DFB_CONF_JIT_X64_COMMON_CODE_RELATIVE_OFFSET=$commonRelativeOffset" `
-    "/DFB_CONF_JIT_CACHE_FAST_SLOT_COUNT=$fastSlotCount" `
     "/DFB_CONF_JIT_CACHE_BANK_ENTRY_CAPACITY=$bankEntries" `
     -fno-exceptions -fno-rtti `
     "-I$nativeSourceDir" `

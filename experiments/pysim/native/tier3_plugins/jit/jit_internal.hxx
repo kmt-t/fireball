@@ -6,6 +6,7 @@
 #include "trace_compiler_abi.hxx"
 namespace fireball {
 inline constexpr std::uint32_t kMaxTraceInstructions = 64;
+inline constexpr std::uint32_t kMaxTraceOperations = kMaxTraceInstructions + 1;
 inline constexpr std::uint32_t kMaxStackDepth =
     FIREBALL_NATIVE_VALUE_STACK_CAPACITY;
 inline constexpr std::uint32_t kMaxRelocationConstants =
@@ -19,7 +20,7 @@ struct jit_compile_result {
   std::uint32_t max_stack_words;
   std::uint32_t result_words;
   std::uint32_t relocation_bytes;
-  std::uint32_t interpreter_rel_words;
+  std::uint32_t interpreter_rel_bytes;
 };
 
 // Returns 1 for a compiled trace, 0 when the trace is unsupported, and a
@@ -54,7 +55,7 @@ int patch_trace_chain(executable_memory *memory, std::uint32_t offset,
 int build_trace(const std::uint8_t *body, std::uint32_t body_bytes,
                 const fireball::jit_compile_result *result,
                 std::uint32_t head_pc, std::uint32_t frame_depth,
-                std::uint32_t block_index, std::uint32_t body_end_pc,
+                std::uint32_t block_index, std::uint32_t body_end_ip,
                 std::uint32_t next_pc, std::uint32_t loops_to,
                 std::uint8_t *output, std::uint32_t capacity);
 } // namespace fireball

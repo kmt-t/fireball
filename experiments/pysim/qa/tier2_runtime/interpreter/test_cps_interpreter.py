@@ -35,13 +35,6 @@ def _run_step(
 ) -> tuple[int, int, int, int]:
     lease = native_abi.BufferLease(code)
     constants, _ = build_interpreter_constant_pool(code, (0,))
-    constant_pool = (ctypes.c_uint8 * (4 * len(constants)))()
-    for index, value in enumerate(constants):
-        ctypes.memmove(
-            ctypes.addressof(constant_pool) + 4 * index,
-            value.to_bytes(4, "little"),
-            4,
-        )
     try:
         function_view = FunctionExecutionViewNative()
         function_view.code_size = len(code)
@@ -78,7 +71,7 @@ def _run_step(
             control_stack.frame_address(0),
             call=native_abi.NativeStepCall(),
             result=native_abi.NativeResult(),
-            rel=(0 if len(constants) == 0 else ctypes.addressof(constant_pool)),
+            rel=constants.native_address,
         )
     finally:
         lease.release()

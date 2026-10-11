@@ -712,7 +712,7 @@ class CallFrame:
             function_view.is_import = 0
             function_view.module_view = 0
             function_view.interpreter_constant_pool = constants.native_address
-            function_view.interpreter_constant_word_count = len(constants)
+            function_view.interpreter_constant_byte_count = len(constants)
             self._native_function_view = function_view
         else:
             assert native_function_view is None
@@ -875,7 +875,7 @@ class NativeModuleExecution:
             view.type_index = import_record.type_index
             view.is_import = 1
             view.interpreter_constant_pool = 0
-            view.interpreter_constant_word_count = 0
+            view.interpreter_constant_byte_count = 0
 
         self._templates: StaticVector[CallFrame] = StaticVector(capacity=len(module.functions))
         for local_index in range(len(module.functions)):
@@ -919,6 +919,18 @@ class NativeModuleExecution:
             blocks=module.blocks.native_address,
             block_count=len(module.blocks),
             block_execution_counts=0,
+            block_index_entries=(
+                0
+                if module.block_index_entries is None
+                else module.block_index_entries.native_address
+            ),
+            block_radix_table=(
+                0 if module.block_radix_table is None else module.block_radix_table.native_address
+            ),
+            block_radix_table_count=(
+                0 if module.block_radix_table is None else len(module.block_radix_table)
+            ),
+            block_radix_shift=module.block_radix_shift,
         )
         module_view_address = ctypes.addressof(self._module_view)
         for function_index in range(function_count):
@@ -1476,6 +1488,23 @@ class Interpreter:
         call_state.context.runtime_flags |= EXECUTION_CONTEXT_FLAG_PENDING_BLOCK_HEAD
         return call_state
 
+    def _native_rel_cursor(self, call_state: InterpreterCall) -> int:
+        """Select a block's loader-provided pool start at native block entry."""
+        frame = call_state._frame
+        assert frame is not None and call_state._ip != RETURN_SENTINEL_IP
+        context = call_state.context
+        if context.runtime_flags & EXECUTION_CONTEXT_FLAG_PENDING_BLOCK_HEAD:
+            pc = frame.code_pc_offset + call_state._ip
+            block = self.module.get_block(pc)
+            assert block is not None
+            assert block.func_index == frame.func_index and block.head_pc == pc
+            constants = frame._native_interpreter_constants
+            assert constants is not None and constants.native_address != 0
+            return constants.native_address + block.interpreter_constant_byte_offset
+        rel = int(context.rel or 0)
+        assert rel != 0
+        return rel
+
     def step_native_control(self, call_state: InterpreterCall) -> InterpreterCall:
         """Execute one supported structured-control opcode through its C++ handler."""
         frame = call_state._frame
@@ -1487,6 +1516,7 @@ class Interpreter:
         )
 
         context = call_state.context
+        rel = self._native_rel_cursor(call_state)
         execution = context.module_execution
         assert execution is not None
         with _native_linear_memory_scope(context, frame.env.memory):
@@ -1509,7 +1539,7 @@ class Interpreter:
                 context.control_frame_stack.frame_address(frame.control_base),
                 call=context._native_step_call,
                 result=context._native_result,
-                rel=0,
+                rel=rel,
             )
 
         frame.values.set_size(native_size)
@@ -1609,6 +1639,7 @@ class Interpreter:
             return False
 
         context = call_state.context
+        rel = self._native_rel_cursor(call_state)
         previous_flags = int(context.runtime_flags)
         context.runtime_flags = previous_flags | EXECUTION_CONTEXT_FLAG_STOP_AT_BLOCK_BOUNDARY
         try:
@@ -1632,7 +1663,7 @@ class Interpreter:
                     context.control_frame_stack.frame_address(frame.control_base),
                     call=context._native_step_call,
                     result=context._native_result,
-                    rel=0,
+                    rel=rel,
                 )
         finally:
             context.runtime_flags = (

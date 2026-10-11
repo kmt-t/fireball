@@ -10,6 +10,7 @@ from config import (
     FB_CONF_JIT_AGING_STEP_UNITS,
     JIT_CARD_SHIFT,
 )
+from qa.private import jit_native_abi as native_abi
 from qa.shared.jit_cache import JitRuntimeBoundary, JITTrace
 from qa.shared.jit_manager import JITCompiler, JITRuntimeManager
 from qa.shared.jit_scoring import JIT_CANDIDATE_THRESHOLD
@@ -20,6 +21,7 @@ from system_containers import (
     StaticVector,
     fold_mix32,
 )
+from tier2_runtime.abi.native_abi import BufferLease
 from tier2_runtime.interpreter.control_flow import iter_block_ops
 from tier2_runtime.runtime.engine import RuntimeDriveMode
 from tier2_runtime.wasm.module import (
@@ -112,23 +114,37 @@ def compile_test_block(
 def compile_module_block(
     compiler: TraceCompiler, module: Module, block: BasicBlock
 ) -> JITTrace | None:
-    """Test-only adapter deriving local metadata from the loaded function."""
+    """Compile one loader block with its complete native ABI metadata."""
 
     assert block.byte_span > 0, "a direct JIT body must contain instructions"
+    assert module.block_storage is not None
     function_index = block.func_index
     function = module.functions[function_index - len(module.imports)]
     assert function.local_layout_cache is not None
-    return compiler.compile_instructions(
-        head_pc=block.head_pc,
-        instructions=iter_block_ops(
-            module.code_for(function_index),
-            block.head_pc - module.function_pc_offset(function_index),
-            block.byte_span,
-        ),
-        next_pc=block.next_pc,
-        loops_to=block.loops_to,
-        byte_length=block.byte_span,
-        local_layout=function.local_layout_cache,
+    block_index = module.block_storage.view().find(fold_mix32(block.head_pc))
+    assert block_index is not None
+    assert module.blocks[block_index].head_pc == block.head_pc
+    code = module.code_for(function_index)
+    code_lease = BufferLease(memoryview(code))
+    layout = function.local_layout_cache
+    return compiler.compile_wasm_standalone(
+        native_abi.WasmBlock(
+            head_pc=block.head_pc,
+            code=native_abi.NativeByteView(code_lease.address, len(code)),
+            offset=block.head_pc - module.function_pc_offset(function_index),
+            byte_length=block.byte_span,
+            next_pc=block.next_pc,
+            loops_to=block.loops_to,
+            frame_depth=block.frame_depth,
+            locals=native_abi.NativeLocalLayout(
+                offsets=native_abi.NativeByteView(layout.offsets_address, layout.count * 2),
+                sizes=native_abi.NativeByteView(layout.sizes_address, layout.count),
+                types=native_abi.NativeByteView(layout.types_address, layout.count),
+                local_count=layout.count,
+                total_words=layout.total_words,
+            ),
+            block_index=block_index,
+        )
     )
 
 
@@ -188,8 +204,12 @@ def make_pc_only_functions_module(blocks_per_function: tuple[tuple[int, ...], ..
             )
         )
     module.blocks = blocks
-    radix_sorted = tuple(sorted(blocks, key=lambda block: fold_mix32(block.head_pc)))
-    entries = tuple((fold_mix32(block.head_pc), block) for block in radix_sorted)
+    entries = tuple(
+        sorted(
+            ((fold_mix32(block.head_pc), block_index) for block_index, block in enumerate(blocks)),
+            key=lambda entry: (entry[0], entry[1]),
+        )
+    )
     module.block_storage = ReadOnlyRadixBinaryTreeStorage.from_sorted_entries(
         entries,
         radix_shift=28,

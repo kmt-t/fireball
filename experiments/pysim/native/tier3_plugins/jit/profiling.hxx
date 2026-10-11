@@ -3,14 +3,14 @@
 #include "jit_types.hxx"
 namespace fireball {
 struct jit_history_record {
-  std::uint32_t module_id, pc;
+  std::uint32_t block_index, pc;
 };
 struct jit_history {
   jit_history_record *records;
   std::uint32_t capacity, head, count;
 };
 struct jit_compile_queue {
-  std::uint32_t *pcs;
+  std::uint32_t *items;
   std::uint32_t capacity, count;
 };
 

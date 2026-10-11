@@ -73,6 +73,7 @@ struct fb_native_trace_descriptor {
   std::uintptr_t entry_address;
   std::uint32_t byte_span, result_words, stack_words, frame_depth;
   std::uint32_t next_pc, loops_to, chain_next_pc, chain_stack_words;
+  std::uint32_t chain_body_count;
   std::uint32_t *exec_count;
 };
 static int build_dispatch_table(JitRuntime *c,
@@ -98,7 +99,7 @@ static int build_dispatch_table(JitRuntime *c,
       break;
     auto *header = c->header(selected);
     fireball::jit_wasm_block block_storage{};
-    const auto *block = c->block(selected.pc, block_storage);
+    const auto *block = c->block_for_trace(*header, block_storage);
     auto *executions =
         block == nullptr ? nullptr
                          : static_cast<std::uint32_t *>(block->extension_data);
@@ -121,6 +122,7 @@ static int build_dispatch_table(JitRuntime *c,
                        block->loops_to,
                        next_pc,
                        words,
+                       header->chain_body_count,
                        executions};
     ++index[selected_bank];
   }
@@ -354,8 +356,9 @@ static const fb_native_trace_descriptor *qa_find(const qa_dispatch_buffers &b,
   return nullptr;
 }
 
-static int qa_lookup_trace(std::uintptr_t owner, std::uint32_t pc,
-                           fb_native_jit_trace *output) {
+static int qa_lookup_trace(std::uintptr_t owner,
+                           [[maybe_unused]] std::uint32_t block_index,
+                           std::uint32_t pc, fb_native_jit_trace *output) {
   if (owner == 0 || output == nullptr)
     return -1;
   const auto &b = reinterpret_cast<qa_dispatch_owner *>(owner)->buffers;
@@ -365,48 +368,26 @@ static int qa_lookup_trace(std::uintptr_t owner, std::uint32_t pc,
   if (start->entry_address == 0 ||
       start->entry_address < FB_CONF_JIT_X64_TRACE_HEADER_BYTES)
     return -1;
-  auto *terminal = start;
-  std::uint32_t count = 1;
-  while (terminal->chain_next_pc != fireball::no_pc) {
-    terminal = qa_find(b, terminal->chain_next_pc);
-    if (terminal == nullptr || ++count > b.count)
-      return -1;
-  }
   const auto *header = reinterpret_cast<const fireball::jit_trace_header *>(
       start->entry_address - FB_CONF_JIT_X64_TRACE_HEADER_BYTES);
-  const auto *terminal_header =
-      reinterpret_cast<const fireball::jit_trace_header *>(
-          terminal->entry_address - FB_CONF_JIT_X64_TRACE_HEADER_BYTES);
   if (header->blob_bytes < FB_CONF_JIT_X64_TRACE_HEADER_BYTES ||
       header->const_rel_offset > header->blob_bytes ||
-      terminal_header->const_rel_offset <
-          sizeof(fireball::jit_trace_boundary_metadata) ||
-      terminal_header->const_rel_offset > terminal_header->blob_bytes)
+      start->chain_body_count == 0)
     return -1;
-  const auto *boundary_metadata =
-      reinterpret_cast<const fireball::jit_trace_boundary_metadata *>(
-          reinterpret_cast<const std::uint8_t *>(terminal_header) +
-          terminal_header->const_rel_offset -
-          sizeof(fireball::jit_trace_boundary_metadata));
   const auto *rel = reinterpret_cast<const std::uint8_t *>(
       reinterpret_cast<const std::uint8_t *>(header) +
       header->const_rel_offset);
   *output = {start->entry_address,
              rel,
-             boundary_metadata->body_end_pc,
-             boundary_metadata->next_pc,
-             boundary_metadata->loops_to,
-             terminal_header->block_index,
-             boundary_metadata->interpreter_rel_words,
-             terminal->frame_depth,
+             header->frame_depth,
              start->chain_stack_words,
-             terminal->result_words,
-             count,
+             start->chain_body_count,
              reinterpret_cast<std::uintptr_t>(start)};
   return 1;
 }
 
-static int qa_observe_block(std::uintptr_t owner, std::uint32_t) {
+static int qa_observe_block(std::uintptr_t owner, std::uint32_t,
+                            std::uint32_t) {
   return owner == 0 ? -1 : 1;
 }
 
@@ -478,13 +459,9 @@ fb_qa_dispatch(int (*dispatch)(const fb_native_dispatch_extension_call *,
   qa_dispatch_owner owner{*buffers};
   const auto owner_address = reinterpret_cast<std::uintptr_t>(&owner);
   static constexpr std::uint8_t all_compiled_cards[] = {0xFFu, 0xFFu};
-  const fb_native_jit_provider provider{owner_address,
-                                        all_compiled_cards,
-                                        8,
-                                        29,
-                                        qa_lookup_trace,
-                                        qa_observe_block,
-                                        qa_finish_boundary};
+  const fb_native_jit_provider provider{
+      owner_address,    all_compiled_cards, 8, 29, qa_lookup_trace,
+      qa_observe_block, qa_finish_boundary};
   call.jit_provider = &provider;
   fb_native_execution_extension extension{owner_address, qa_observe,
                                           qa_trace_executed};
@@ -530,8 +507,12 @@ fb_jit_runtime_init(std::uint8_t *storage, std::size_t bytes,
     return nullptr;
   auto *cache = ::new (storage) JitRuntime{};
   cache->provider = {reinterpret_cast<std::uintptr_t>(cache),
-                     nullptr, 0, 0, Api::lookup_runtime_trace,
-                     Api::observe_runtime_block, Api::finish_runtime_boundary};
+                     nullptr,
+                     0,
+                     0,
+                     Api::lookup_runtime_trace,
+                     Api::observe_runtime_block,
+                     Api::finish_runtime_boundary};
   if (!fb_jit_memory_init(&cache->memory, FB_CONF_JIT_CACHE_REGION_BYTES) ||
       !fireball::initialize_common_code(&cache->memory)) {
     cache->~JitRuntime();
@@ -639,7 +620,8 @@ fb_qa_resident_record(const JitRuntime *c, std::uint32_t index,
         continue;
       if (index-- == 0) {
         fireball::jit_wasm_block storage{};
-        const auto *block = c->block(entry.pc, storage);
+        const auto *trace = c->header(entry);
+        const auto *block = c->block_for_trace(*trace, storage);
         const auto *executions =
             block == nullptr
                 ? nullptr

@@ -105,6 +105,12 @@ class CtypesU32Buffer:
         assert 0 <= value <= 0xFFFF_FFFF
         self._values[index] = value
 
+    def relocate_arena(self, offset_delta: int) -> None:
+        if self._arena_offset is not None:
+            relocated_offset = self._arena_offset + offset_delta
+            assert relocated_offset >= 0
+            self._arena_offset = relocated_offset
+
     def __len__(self) -> int:
         return self.capacity
 

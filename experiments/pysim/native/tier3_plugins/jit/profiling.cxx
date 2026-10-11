@@ -18,21 +18,21 @@ std::int64_t fireball::jit_card_index(std::uint64_t bytes, std::uint32_t shift,
 }
 
 std::int64_t fireball::queue_operation(fireball::jit_compile_queue *q,
-                                       std::uint32_t op, std::uint32_t pc) {
-  if (q == nullptr || q->pcs == nullptr || q->capacity == 0 ||
+                                       std::uint32_t op, std::uint32_t item) {
+  if (q == nullptr || q->items == nullptr || q->capacity == 0 ||
       q->count > q->capacity)
     return -2;
   if (op == 0) {
     if (q->count == q->capacity)
       return -2;
-    q->pcs[q->count++] = pc;
+    q->items[q->count++] = item;
     return 1;
   }
   if (op == 1)
-    return q->count == 0 ? -1 : static_cast<std::int64_t>(q->pcs[--q->count]);
+    return q->count == 0 ? -1 : static_cast<std::int64_t>(q->items[--q->count]);
   if (op == 2) {
     for (std::uint32_t i = 0; i < q->count; ++i)
-      if (q->pcs[i] == pc)
+      if (q->items[i] == item)
         return 1;
     return 0;
   }

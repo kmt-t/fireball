@@ -11,15 +11,15 @@
 
 ## 1. コンセプト
 <!-- traceability: {LowLatencyJIT} {MemoryIsolation} {META_FaultIsolation} {EnvironmentPointer} {OneRuntimeOneGuest} {Runtime_BumpAllocator} {WasmFCSubset} {VDMA} -->
-vSoC (Virtual System-on-Chip) は WASM 実行環境の統合マネージャである。Loader、Interpreter、JIT、vMMIO、Debugger を統括して実行制御を行う。
+vSoC (Virtual System-on-Chip) は WASM 実行環境の統合マネージャである。Loader、Interpreter、vMMIO、Debugger を統括して実行制御を行う。JITはInterpreter dispatcherへ任意接続する実行拡張であり、vSoCの独立した実行器ではない。
 各サブコンポーネントを統合する環境としての役割を担う。`execution_context` 内のリニアメモリ情報やグローバル変数テーブル（`vsoc_runtime` 領域）を介して実行環境を提供する。
 本システムは **1ランタイム1ゲストの直交分離原則** を採用する。各 vSoC インスタンスは厳密に 1 つのゲストモジュールのみを担当する。
 各ランタイムは**自身専用の固定長データバンプアロケータ**を所有する。ロードした全モジュールのシステムコンテナストレージ（RAM/XN）の確保を一元管理する。モジュールはランタイムと同じ期間保持し、個別アンロードは行わない。ランタイム破棄時にアリーナ全体を $O(1)$ で一括リセットし、メモリ断片化を根絶する。
-JIT機械語キャッシュ（3-Bank）は、Tier 3のJIT拡張が専用のコード領域から**専用の JIT コードアロケータ**により確保する。Tier 2 vSoCは [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) が定義する境界で選択済み実行拡張を結線する。RuntimeとInterpreterが実行・yield境界を所有し、JIT拡張がキャッシュ・ホットスポット・コンパイル待ち列を所有する。x64参照構成では実行可能バッファの書込・実行権限を切り替える。ARMv8-Mの物理保護方式、領域配置、同期処理はすべてTBDとする。
+JIT機械語キャッシュ（3-Bank）は、Tier 3のJIT拡張が専用のコード領域に構築する。Tier 2 vSoCは [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) のInterpreter拡張契約に従い、Interpreter構成時に拡張を結線する。Interpreter dispatcherがtraceをlookupし、返されたentryを呼び出して実行する。RuntimeはInterpreterをscheduler境界まで進める。JIT拡張はキャッシュ、ホットスポット、コンパイル待ち列を所有する。x64参照構成では実行可能バッファの書込・実行権限を切り替える。ARMv8-Mの物理保護方式、領域配置、同期処理はすべてTBDとする。
 
 ## 2. アーキテクチャ分類
 <!-- traceability: {META_3TierSeparation} {GLOBAL_ComponentHarness} {META_StaticDI} {OneRuntimeOneGuest} -->
-本コンポーネントは **Tier 2 (分解されたサブコンポーネント: Decomposed Subcomponent)** に属する。WASM 仮想実行環境として Loader、Interpreter、JIT、vMMIO、Debugger などのサブコンポーネント群を統合する。統合には型で依存を結線する静的ハーネスパターン（`vsoc_harness`）を用いる。
+本コンポーネントは **Tier 2 (分解されたサブコンポーネント: Decomposed Subcomponent)** に属する。WASM 仮想実行環境として Loader、Interpreter、vMMIO、Debugger などのサブコンポーネント群を統合する。JITはInterpreterの任意拡張として結線し、vSoCの独立したハーネスメンバーにはしない。統合には型で依存を結線する静的ハーネスパターン（`vsoc_harness`）を用いる。
 Tier 2 の vSoC は Tier 3 具象エンジンの内部ヘッダに依存しない。`vsoc_harness` のメンバ型はコンパイル時に固定し、コンポジションルートで具象型を選択する。メンバが非所有ポインタを保持する場合も、実行時の型探索や仮想呼出しは行わない。依存解決による実行時オーバーヘッドは発生しない。
 C ABIのコールバック表を境界で使う場合は、静的ハーネス注入とは区別する。間接呼出しの契約とコストは対応するABI仕様へ記述する。
 依存性解決の共通方針は [`dependency_resolution.md`](docs/architecture/dependency_resolution.md) に従う。
@@ -29,8 +29,8 @@ C ABIのコールバック表を境界で使う場合は、静的ハーネス注
 
 ### 3.1 データ構造
 <!-- traceability: {META_StaticDI} {Runtime_BumpAllocator} {GLOBAL_InterruptWakeup} -->
-- **`vsoc_harness`**: vSoCが依存する各種エンジン（Loader, Interpreter, JIT等）のインターフェースを集約した構造体。
-- **`vsoc_context`**: 現在の実行状態、仮想割り込み、Tier 3 `JITRuntime` 契約への参照、専用データバンプアロケータおよびJITコードアロケータなど、可変なランタイム状態。JITキャッシュの内部状態は保持しない。
+- **`vsoc_harness`**: vSoCが直接依存するLoader、Interpreter、vMMIO、Debugger等のインターフェースを集約した構造体。JITはInterpreter構成へ任意拡張として結線する。
+- **`vsoc_context`**: 現在の実行状態、仮想割り込み、専用データバンプアロケータおよびJITコード領域など、可変なランタイム状態。JITキャッシュの内部状態は保持しない。
 - **`vsoc_config`**: メモリ割り当てやJIT有効化フラグなどの不変な構成情報。
 
 ### 3.2 内部ブロック図
@@ -57,19 +57,19 @@ graph TD
 
     Harness -- points to --> Loader
     Harness -- points to --> Interp
-    Harness -- points to --> JIT
-    Harness -- calls contract --> JITRuntime
     Harness -- points to --> vMMIO
     Harness -- points to --> Debug
     Harness -- operates on --> Context
     Harness -- provides --> BulkCopy
+    Interp -- requests trace lookup --> JITRuntime
+    Interp -- calls returned entry --> TraceBody[Resident JIT trace body]
     Interp -- memory.copy --> BulkCopy
     BulkCopy -- vMMIO endpoint --> VDMA
     BulkCopy -- both endpoints in linear memory: CPU memmove --> Context
     Context -- owns --> Alloc
     Context -- owns --> JitAlloc
     Loader -- allocates containers from --> Alloc
-    JITRuntime -- owns cache state --> JitAlloc
+    JITRuntime -- manages cache in borrowed region --> JitAlloc
     JITRuntime -- invokes compiler --> JIT
 ```
 
@@ -83,8 +83,6 @@ graph TD
 | :--- | :--- | :--- |
 | WASMローダ | WASMモジュールのロードと解析を担うコンポーネントへの参照。 | `WasmLoader*` |
 | インタープリタ | WASMバイトコードを逐次実行するエンジンへの参照。 | `Interpreter*` |
-| JITランタイム契約 | Tier 3のホットスポット管理・トレース検索・キャッシュ無効化を呼び出す契約への参照。 | `JitRuntime*` |
-| JITコンパイラ | ホットスポットを機械語に変換するTier 3実装への参照。 | `JitCompiler*` |
 | リニアメモリコピーサービス | `memory.copy`の範囲検査と、端点に応じたCPUコピーまたはvDMA転送を担う内部サービス。 | `LinearMemoryCopyService*` |
 | デバッガ | RSPプロトコルを介したデバッグ機能を提供するコンポーネントへの参照。 | `Debugger*` |
 | vMMIO | 仮想的なメモリマップドI/Oを制御するコンポーネントへの参照。 | `VmmioController*` |
@@ -96,7 +94,6 @@ vSoC全体の可変な実行時状態を保持する構造体。
 | :--- | :--- | :--- |
 | 実行状態 | 現在のvSoCの実行状態（停止、実行中、ブレークポイント等）。 | `VsocState` 列挙型 |
 | 割り込みイベント状態 | COOSから受け取った固定5ワードの`interrupt-event`とvIRQ配送状態。 | `interrupt_event` + 固定長状態 |
-| JITランタイム契約 | Tier 3のJIT実行サービスへの参照。 | JITランタイム契約型 |
 | WASMモジュール参照 | 現在ロードされているWASMモジュールのインスタンスへのポインタ。 | `WasmModule*` |
 | 専用データバンプアロケータ | ランタイム内の全モジュールのシステムコンテナストレージ（RAM/XN）を切り出す専用アロケータ。ランタイム破棄時に一括リセットされる。 | `bump_allocator` インスタンス |
 | JITコードアロケータ | 選択されたJIT実行構成のコード領域から3-Bankコードキャッシュを切り出す専用アロケータ。x64参照構成の実行可能バッファ契約は [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) に従い、ARMv8-Mの物理割当と保護方式はTBD。 | `jit_code_allocator` 構造体 |
@@ -142,7 +139,7 @@ vSoC コアエンジンの実行委譲、協調イールド、および外部介
 
 | アルゴリズム / 機構 | 契機・条件 | 動作内容 | 目的・安全性不変条件 |
 | :--- | :--- | :--- | :--- |
-| **C++実行dispatcher** | WASM実行開始時 | C++ dispatch loopが次PCで実行拡張を呼び出し、拡張が実行しなかった本体をInterpreter handlerで実行して、yield・trap・完了などの実行境界まで継続する | 本体の選択は実行拡張が所有し、handler後に実行境界へ戻らない。handler-mediated遷移をchainと数えない（`GOTCHA-VSOC-01`） |
+| **C++ Interpreter dispatcher** | WASM実行開始時 | Interpreter dispatcherはBasicBlockを解決し、JIT拡張が接続されていればtrace lookupを依頼する。返されたtrace entryをdispatcher自身が呼び出す。traceがない場合はopcode handlerを実行し、いずれもyield・trap・完了などの境界まで同じdispatchで続ける | JIT拡張は候補・cache・lookupを所有し、trace bodyの呼出しと実行状態更新はInterpreter dispatcherが行う。handler-mediated遷移をchainと数えない（`GOTCHA-VSOC-01`） |
 | **LOOP後方分岐yield** | C++ branch handlerが取得済みLOOP後方辺を処理した時 | handlerが実行contextの回数を増やす。Interpreter設定のしきい値に達するまではC++ dispatcherが続行し、到達時にyield statusを返す。RuntimeEngineはstatusをSystemへ伝える | Interpreter単独とHybrid JITがInterpreter設定の同じ回数条件で協調境界へ戻る。割り込みイベントはCOOS境界で処理する {GOTCHA-VSOC-02} <!-- definition: {GOTCHA-VSOC-02} --> |
 | **x64 trace chain** | 互換な直線後続traceがキャッシュ常駐時 | trace末尾が共通コード領域のchain dispatcherへ進み、dispatcherがheaderのtarget bodyへtail-jumpする | chain dispatcherはopcodeを判定せず、C++ Interpreter handlerの分岐処理を迂回しない |
 | **デバッガとInterpreter拡張の接続排他** | Interpreter構成時 | デバッガ付きInterpreterへのネイティブ実行拡張の接続を`assert`で拒否する | 同一InterpreterでDebuggerとJITを同時に実行しない |
@@ -156,8 +153,8 @@ vSoC コアエンジンの実行委譲、協調イールド、および外部介
   ゲスト実行終了後もロード済みモジュールのメタデータはランタイム内に保持する。ランタイム破棄時にJIT キャッシュを無効化（3-Bank Flush）し、データバンプアロケータとJITコードアロケータのアリーナを $O(1)$ で一括リセットして返還する。
   個別の `free()` や複雑なデストラクタ走査は一切行わない。これにより動的メモリ断片化や他モジュールからのダングリング参照を原理的に根絶する。
 - **C++実行dispatcherと3論理引数契約 (`{GOTCHA-VSOC-01}`)**: <!-- definition: {GOTCHA-VSOC-01} -->
-  実行状態は `(ctx, ip*, sp*)` の3論理引数で表す。opcode handlerとInterpreter Runtime APIは、定数プール位置を表す`rel*`を第4引数に受け取る。ローカル基点は`ctx.local_base`、スタック頂点値は共有オペランドスタックから取得する。物理呼出し規約は [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) のx64定義に従い、ARMv8-Mの物理配置はTBDとする。
-  C++ディスパッチループはC++ Interpreter handlerと常駐JIT traceを次PCに応じて実行し、yield・trap・完了などの境界でRuntimeEngineへstatusを返す。Interpreterが所有するしきい値に達するまではC++側に留まり、vSoCへ命令ごとに戻らない。RuntimeEngineはしきい値を保持しない。
+  実行状態は `(ctx, ip*, sp*)` の3論理引数で表す。opcode handlerとInterpreter Runtime APIは、定数プール位置を表す`rel*`を継続引数として受け取る。Runtime APIは`ip`、`sp`、ローカル基点、`rel`を参照で更新する。ローカル基点は`ctx.local_base`、スタック頂点値は共有オペランドスタックから取得する。物理呼出し規約は [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) のx64定義に従い、ARMv8-Mの物理配置はTBDとする。
+  C++ Interpreter dispatcherはJIT拡張へtrace lookupを依頼し、返された常駐trace entryをdispatcher自身が呼び出す。常駐traceがない場合はC++ Interpreter handlerを実行する。yield・trap・完了などの境界でRuntimeEngineへstatusを返し、Interpreterが所有するしきい値に達するまではC++側に留まる。vSoCへ命令ごとに戻らず、RuntimeEngineはしきい値を保持しない。
   共通コード領域のchain dispatcherは別の機械語経路である。直線traceの末尾からdispatcherへ移り、headerのtarget bodyへtail-jumpする。C++ handler後に実行拡張が次の本体を選ぶ遷移はchainではない。
 #### ランタイム生成と破棄のライフサイクル（責務シーケンス図）
 <!-- traceability: {OneRuntimeOneGuest} {Runtime_BumpAllocator} {META_FaultIsolation} -->
@@ -215,17 +212,20 @@ sequenceDiagram
     participant I as NativeInterpreter
     participant C as C++ディスパッチャ
     participant H as C++ Interpreter handler
-    participant J as 実行拡張
+    participant J as JIT lookup拡張
+    participant T as 常駐JIT trace body
 
     S->>V: run_guest()
     V->>R: run()
     R->>I: step_native_boundary()
     I->>C: run_dispatch()
     loop until yield, trap, or completion
-        alt execution extension executes body
-            C->>J: execute body at current PC
-            J-->>C: updated shared execution state
-        else current PC uses interpreter
+        alt JIT trace is resident
+            C->>J: lookup BasicBlock trace
+            J-->>C: trace entry metadata
+            C->>T: call trace entry
+            T-->>C: shared execution state at trace exit
+        else no resident JIT trace
             C->>H: dispatch matching opcode handler
             H-->>C: updated context and next PC
         end

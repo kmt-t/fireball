@@ -134,21 +134,21 @@ def test_loader_builds_control_map_before_interpreter_creation():
     assert function.interpreter_constant_pool is not None
     loaded_constant_pool = function.interpreter_constant_pool
     assert module.blocks
-    assert tuple(loaded_constant_pool) == (1, 0)
-    assert tuple(block.interpreter_constant_offset for block in module.blocks) == (
+    assert tuple(loaded_constant_pool) == (1, 0, 0, 0, 2, 1, 2, 0, 0, 0, 0, 2, 1, 1)
+    assert tuple(block.interpreter_constant_byte_offset for block in module.blocks) == (
         0,
-        1,
-        2,
-        2,
+        7,
+        12,
+        13,
     )
     Interpreter(module)
     assert function.control_map is loaded_control_map
     assert function.interpreter_constant_pool is loaded_constant_pool
-    assert tuple(block.interpreter_constant_offset for block in module.blocks) == (
+    assert tuple(block.interpreter_constant_byte_offset for block in module.blocks) == (
         0,
-        1,
-        2,
-        2,
+        7,
+        12,
+        13,
     )
 
     from qa.shared.helpers import make_native_interpreter
@@ -187,8 +187,8 @@ def test_intp_73_wide_frame_uses_compact_per_local_layout():
     assert Interpreter(module).call(0, [7, 42, 3.5]) == [42]
 
 
-def test_interpreter_constant_pool_omits_fixed_width_float_immediates():
-    """Pool only decoded operands; fixed-width floats remain in bytecode."""
+def test_interpreter_constant_pool_stores_instruction_widths():
+    """Store decoded operands and widths; fixed-width float payloads stay in code."""
     from tier2_runtime.interpreter.control_flow import build_interpreter_constant_pool
 
     code = bytes.fromhex(
@@ -204,18 +204,16 @@ def test_interpreter_constant_pool_omits_fixed_width_float_immediates():
         memoryview(code), (0, 3, 6, 10, 13, 18, 27)
     )
 
-    assert list(block_offsets) == [0, 2, 4, 7, 9, 9, 9]
-    assert list(constants) == [
-        2,
-        4,
-        1,
-        2,
-        1,
-        0,
-        1,
-        128,
-        0,
-    ]
+    assert list(block_offsets) == [0, 9, 18, 31, 40, 41, 42]
+    assert list(constants) == list(
+        bytes.fromhex(
+            "02 00 00 00 04 00 00 00 03 "
+            "01 00 00 00 02 00 00 00 03 "
+            "01 00 00 00 00 00 00 00 01 "
+            "00 00 00 04 80 00 00 00 00 "
+            "00 00 00 03 05 09 01"
+        )
+    )
 
 
 def test_native_single_byte_local_boundary_and_multibyte_call():
@@ -235,7 +233,16 @@ def test_native_single_byte_local_boundary_and_multibyte_call():
     assert make_native_interpreter(module).call(module.export_func_index("main"), []) == [37]
 
 
-def test_native_call_restores_rel_for_unindexed_caller_continuation():
+def test_native_call_dispatch_resolves_callee_and_caller_blocks(monkeypatch):
+    from qa.private.interpreter_native_abi import (
+        RUN_DISPATCH_STATS,
+        NativeDiagnosticResult,
+    )
+    from tier2_runtime.interpreter.interpreter import (
+        InterpreterBindings,
+        NativeInterpreter,
+    )
+
     prior_functions = " ".join("(func)" for _ in range(128))
     module = parse(
         memoryview(
@@ -246,7 +253,26 @@ def test_native_call_restores_rel_for_unindexed_caller_continuation():
         )
     )
 
-    assert make_native_interpreter(module).call(module.export_func_index("main"), []) == [42]
+    native_dispatch = NativeInterpreter.run_native_dispatch
+    observations: list[NativeDiagnosticResult] = []
+
+    def capture_stats(self, call_state, idle_budget=0):
+        result = NativeDiagnosticResult()
+        call_state.context._native_result = result
+        status = native_dispatch(self, call_state, idle_budget)
+        observations.append(result)
+        return status
+
+    monkeypatch.setattr(NativeInterpreter, "run_native_dispatch", capture_stats)
+    interpreter = NativeInterpreter(
+        module,
+        InterpreterBindings.empty(),
+        native_dispatcher=RUN_DISPATCH_STATS,
+    )
+
+    assert interpreter.call(module.export_func_index("main"), []) == [42]
+    assert len(observations) == 1
+    assert observations[0].block_search_cache_misses >= 3
 
 
 def test_native_runtime_api_false_stops_before_following_store():
@@ -397,6 +423,54 @@ def test_native_interpreter_returns_to_python_at_loop_yield_counts(monkeypatch):
 
     assert results == [sum(range(1, iteration_count + 1))]
     assert returned_statuses == [5, 5, 1]
+
+
+def test_native_dispatch_reuses_block_search_results_within_dispatch(monkeypatch):
+    from qa.private.interpreter_native_abi import (
+        RUN_DISPATCH_STATS,
+        NativeDiagnosticResult,
+    )
+    from tier2_runtime.interpreter.interpreter import (
+        InterpreterBindings,
+        NativeInterpreter,
+    )
+
+    module = parse(
+        wat_to_wasm(
+            """(module
+              (func (export "sum_to") (param $n i32) (result i32)
+                (local $sum i32)
+                (block $exit
+                  (loop $top
+                    (br_if $exit (i32.eqz (local.get $n)))
+                    (local.set $sum (i32.add (local.get $sum) (local.get $n)))
+                    (local.set $n (i32.sub (local.get $n) (i32.const 1)))
+                    (br $top)))
+                (local.get $sum)))"""
+        )
+    )
+    native_dispatch = NativeInterpreter.run_native_dispatch
+    observations: list[NativeDiagnosticResult] = []
+
+    def capture_stats(self, call_state, idle_budget=0):
+        result = NativeDiagnosticResult()
+        call_state.context._native_result = result
+        status = native_dispatch(self, call_state, idle_budget)
+        observations.append(result)
+        return status
+
+    monkeypatch.setattr(NativeInterpreter, "run_native_dispatch", capture_stats)
+    interpreter = NativeInterpreter(
+        module,
+        InterpreterBindings.empty(),
+        native_dispatcher=RUN_DISPATCH_STATS,
+        yield_threshold=64,
+    )
+
+    assert interpreter.call(module.export_func_index("sum_to"), [8]) == [36]
+    assert len(observations) == 1
+    assert observations[0].block_search_cache_misses > 0
+    assert observations[0].block_search_cache_hits > 0
 
 
 def test_intp_16_nested_return_consumes_sentinel_and_restores_caller():

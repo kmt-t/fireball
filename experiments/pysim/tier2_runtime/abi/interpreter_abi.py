@@ -168,7 +168,7 @@ class FunctionExecutionViewNative(ctypes.Structure):
         ("is_import", ctypes.c_uint32),
         ("module_view", ctypes.c_void_p),
         ("interpreter_constant_pool", ctypes.c_void_p),
-        ("interpreter_constant_word_count", ctypes.c_uint32),
+        ("interpreter_constant_byte_count", ctypes.c_uint32),
     )
 
 
@@ -200,6 +200,10 @@ class ModuleExecutionViewNative(ctypes.Structure):
         ("blocks", ctypes.c_void_p),
         ("block_count", ctypes.c_uint32),
         ("block_execution_counts", ctypes.c_void_p),
+        ("block_index_entries", ctypes.c_void_p),
+        ("block_radix_table", ctypes.c_void_p),
+        ("block_radix_table_count", ctypes.c_uint32),
+        ("block_radix_shift", ctypes.c_uint32),
     )
 
 
@@ -694,16 +698,23 @@ assert FunctionExecutionViewNative.local_sizes.offset == 32
 assert FunctionExecutionViewNative.local_types.offset == 40
 assert FunctionExecutionViewNative.module_view.offset == 80
 assert FunctionExecutionViewNative.interpreter_constant_pool.offset == 88
-assert FunctionExecutionViewNative.interpreter_constant_word_count.offset == 96
+assert FunctionExecutionViewNative.interpreter_constant_byte_count.offset == 96
 assert ctypes.sizeof(FunctionTypeExecutionViewNative) == 16
 assert ctypes.sizeof(TableExecutionViewNative) == 16
-assert ctypes.sizeof(ModuleExecutionViewNative) == 104
+assert ctypes.sizeof(ModuleExecutionViewNative) == 128
 assert ctypes.sizeof(BasicBlock) == 28
-assert BasicBlock.interpreter_constant_offset.offset == 24
+assert BasicBlock.frame_depth.offset == 16
+assert BasicBlock.jit_cache_reference.offset == 18
+assert BasicBlock.byte_span.offset == 20
+assert BasicBlock.interpreter_constant_byte_offset.offset == 24
 assert ModuleExecutionViewNative.globals.offset == 56
 assert ModuleExecutionViewNative.global_widths.offset == 64
 assert ModuleExecutionViewNative.global_count.offset == 72
 assert ModuleExecutionViewNative.block_execution_counts.offset == 96
+assert ModuleExecutionViewNative.block_index_entries.offset == 104
+assert ModuleExecutionViewNative.block_radix_table.offset == 112
+assert ModuleExecutionViewNative.block_radix_table_count.offset == 120
+assert ModuleExecutionViewNative.block_radix_shift.offset == 124
 assert CallFrameNative.boundary_next_pc.offset == 32
 assert CallFrameNative.boundary_loops_to.offset == 36
 assert ctypes.sizeof(CallFrameNative) == 40

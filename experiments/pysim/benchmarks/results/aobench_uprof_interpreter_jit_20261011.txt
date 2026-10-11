@@ -1,0 +1,71 @@
+AO-Bench NativeInterpreter / Hybrid JIT AMD uProf Hotspots — 2026-10-11
+
+## 計測条件
+
+- WASM: `experiments/pysim/benchmarks/aobench/aobench.wasm`、320x180、186,792 rays。
+- Interpreter / Hybrid JITを別プロセスで各40フレーム実行。各プロセスは3回warmup後、uProfの収集開始後に40回を解放するgate runnerを使用した。JITのwarmupとcompile queue drainは計測区間外。
+- Interpreter yield threshold: 4096。対象PIDは`taskset -c 2`でCPU 2へ固定。
+- AMD uProf Hotspots、`CPU_TIME`、各30秒の収集。両runnerとも40フレームを完了した。IBSは使用していない。
+- 出力frame SHA-256は両経路で一致: `6d04ea80d9a1fd773c85d413057d64797f32dbb257a753d767a378d730d7d699`。
+- 以前の固定10秒収集では両エンジンが異なる量の仕事を完了していたため、関数ごとの絶対CPU時間を直接比較できなかった。その表と解釈は撤回する。
+
+## 同一40フレームに対するCPU_TIME
+
+uProfが報告した対象プロセスのCPU_TIMEはInterpreter 19.25秒、Hybrid JIT 24.34秒だった。JITは同一仕事量で約26.4%多くCPU時間を使った。これはprofile内のCPU_TIME比較であり、通常のベンチマーク時間はプロファイラなしの別計測を正とする。
+
+| Interpreter関数 | CPU_TIME | JIT関数 | CPU_TIME |
+| :--- | ---: | :--- | ---: |
+| `fb_native_run_dispatch` | 7.06 s (36.7%) | `fb_native_run_dispatch_jit` | 9.08 s (37.3%) |
+| `runtime_local_get` | 3.32 s (17.2%) | `runtime_local_get` | 2.57 s (10.6%) |
+| `runtime_call<false>` | 1.90 s (9.9%) | `runtime_call<false>` | 2.10 s (8.6%) |
+| `runtime_local_set` | 0.84 s (4.4%) | `lookup_runtime_trace` | 1.99 s (8.2%) |
+| `runtime_i32_const` | 0.84 s (4.4%) | `observe_runtime_block` | 1.02 s (4.2%) |
+| `runtime_if` | 0.39 s (2.0%) | `runtime_i32_const` | 0.77 s (3.2%) |
+| `runtime_end` | 0.37 s (1.9%) | `runtime_local_set` | 0.61 s (2.5%) |
+| `runtime_br_if` | 0.32 s (1.7%) | `runtime_end` | 0.58 s (2.4%) |
+| `runtime_br` | 0.25 s (1.3%) | `runtime_if` | 0.42 s (1.7%) |
+
+Function shares use the corresponding process CPU_TIME as denominator. JIT dispatcher self CPU_TIME exceeds Interpreter dispatcher by 2.02 seconds for these 40 frames. JIT additionally samples 1.99 seconds in `lookup_runtime_trace` and 1.02 seconds in `observe_runtime_block`.
+
+## 実行回数と検索cache診断
+
+同一worktreeのAO-Bench診断runnerでNative dispatcherの統計も取得した。
+
+- `interpreted_blocks=13,000,888`
+- `jit_operation_bodies=5,820,810`
+- `trace_transitions=5,820,692`
+- `trace_exits=402`
+- Hybrid JITのBasicBlock検索cache: hit `7,178,464`、miss `11,643,233`、hit率 `38.1393%`
+- Interpreter-onlyの同じ診断でもBasicBlock検索cacheはhit `7,178,464`、miss `11,643,233`、hit率 `38.1393%`
+
+`jit_operation_bodies`と`trace_transitions`はほぼ同数であり、このworkloadではdispatcherからtraceへ遷移するごとにほぼ1 bodyしか実行していない。chainによる入口・lookup費用の償却はほぼ起きていない。
+
+`observe_runtime_block`はJITの遅延コンパイル用hotness観測callbackであり、QA計測ではない。InterpreterがJIT未実行のbody blockを実行した後にJIT providerへ渡し、JIT側で`profile.enabled`とTrackable Maskを確認して該当PCを履歴ringへ記録する。呼出しはblock body単位で行われる。Hotspotsでは1.02秒（4.2%）を占める。
+
+`lookup_runtime_trace`はブロック先頭のカード状態が`COMPILED`の時だけ呼ばれ、JIT cacheから当該PCのentryとchain終端metadataを解決する。BasicBlockの`jit_cache_reference`が有効なら索引二分探索を省くが、InterpreterからJIT providerへのcallbackとtrace情報組み立ては毎回発生する。カード状態は複数BasicBlockで共有されるため、未コンパイルblockのlookup missが繰り返される可能性もある。現profileではcallback全体が1.99秒を占めるが、miss lookupとhit lookupの内訳は計測していない。
+
+8-entry BasicBlock検索cacheのhit率38.1%は低く、11.64 million回のmissはLoaderのfolded-PC検索へ進む。これは両経路に共通するdispatcher負荷であり、この計測ではJITだけの速度差を説明しない。miss率が高い原因のslot競合と、JIT側lookupのhit/miss頻度は別々に調べる必要がある。
+
+## 通常ベンチマーク
+
+プロファイラを使わない同一build・同一条件の比較は[`aobench_interpreter_jit_wamr_20261011_latest_retest.txt`](aobench_interpreter_jit_wamr_20261011_latest_retest.txt)を正とする。320x180の3プロセス中央値はInterpreter 479.342 ms、JIT 621.428 msであり、JITは1.296倍（29.6%）遅い。frame SHA-256は一致する。
+
+## モジュール内訳
+
+| Engine | `libnative_interpreter.so` | `libtrace_compiler.so` | CPython | その他 |
+| :--- | ---: | ---: | ---: | ---: |
+| Interpreter | 16.68 s | — | 2.53 s | 0.04 s |
+| Hybrid JIT | 17.93 s | 3.27 s | 2.61 s | 0.53 s |
+
+## 再現情報
+
+- CPU: AMD Ryzen 5 5500GT with Radeon Graphics。
+- OS: Ubuntu 26.04.1 LTS、Linux 7.0.0-38-generic、x86_64。
+- CPython: 3.13.15。AMD uProf: 5.3.521.0。
+- AO-Bench WASM SHA-256: `9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9`。
+- NativeInterpreter release library SHA-256: `e1f195245d0e9493b53bab6dd4567b96251894b9f7421b2494d156ea2fc3a26a`。
+- Hybrid JIT release library SHA-256: `97da3f1e76c041f34c427a50dc424af103d30e25f592e3e1b189e4864d215fe0`。
+- Ordinary benchmark runner SHA-256: `a23d941a3498fd67c1d4776d2f8a4a251ae5dca8908dfaff2fca444187e32e56`。
+- Gate runner SHA-256: `495182df07388136c35d409e6d5ef7073d5839293d1b78ae308a094c2e443f54`。
+- Raw uProf reports: `/tmp/fireball-uprof-ao-current-interpreter-fixed40/report.csv`、`/tmp/fireball-uprof-ao-current-jit-fixed40/report.csv`。
+- Hotspots report does not require changing `perf_event_paranoid`. IBS was not collected.

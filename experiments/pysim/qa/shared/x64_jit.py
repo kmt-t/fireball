@@ -35,6 +35,14 @@ class TraceCompiler:
         TraceCompiler._attach_code(trace, blob)
         return trace
 
+    def compile_wasm_standalone(self, block: native_abi.WasmBlock) -> JITTrace | None:
+        """Compile loader-owned metadata and install it for direct QA invocation."""
+        trace = self.compile_wasm(block)
+        if trace is None:
+            return None
+        self._install_standalone(trace)
+        return trace
+
     def compile_instructions(
         self,
         *,
@@ -58,6 +66,11 @@ class TraceCompiler:
         if blob is None:
             return None
         self._attach_code(trace, blob)
+        self._install_standalone(trace)
+        return trace
+
+    def _install_standalone(self, trace: JITTrace) -> None:
+        """Install an attached trace into this compiler's QA executable region."""
         assert trace.code_blob is not None
         if self._standalone_region is None:
             self._standalone_region = JITCodeCacheRegion()
@@ -75,7 +88,6 @@ class TraceCompiler:
         trace.header._native = native_abi.NativeTraceHeader.from_address(
             raw_addr - JIT_X64_TRACE_HEADER_BYTES
         )
-        return trace
 
     @staticmethod
     def _attach_code(trace: JITTrace, blob: bytes) -> None:

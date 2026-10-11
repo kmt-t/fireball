@@ -1,0 +1,40 @@
+AO-Bench block-search cache A/B — 2026-10-11
+
+Purpose: compare the Interpreter dispatch-local BasicBlock search cache with the same release path built without its cache fast path. This is an isolated 320x180 A/B; WAMR was not part of this cache-only comparison.
+Conditions: CPU 2 pinned; 3 warmup calls + 7 timed calls per process; yield threshold 4096; Fireball entry is NativeInterpreter.call(); Python reference interpreter is not timed. Each A/B variant ran in three interleaved child processes for Interpreter and JIT.
+The cache-off library was a temporary release build from the same source with only the dispatch-cache short circuit bypassed. The product source and release library were restored after the build.
+
+trial=1 mode=cached engine=interpreter median_ms=859.547 samples_ms=863.586,923.797,859.547,862.393,852.341,849.329,851.715
+trial=1 mode=nocache engine=interpreter median_ms=864.950 samples_ms=860.434,865.348,884.832,862.269,858.228,864.950,960.125
+trial=1 mode=cached engine=jit median_ms=1403.171 samples_ms=1405.554,1383.840,1412.162,1468.052,1403.171,1392.712,1383.989
+trial=1 mode=nocache engine=jit median_ms=1399.478 samples_ms=1399.478,1411.019,1384.050,1400.334,1393.026,1387.385,1417.320
+trial=2 mode=nocache engine=jit median_ms=684.270 samples_ms=689.615,684.270,682.058,673.656,684.827,681.970,692.951
+trial=2 mode=cached engine=jit median_ms=687.674 samples_ms=688.194,687.674,700.405,679.501,681.412,677.715,688.279
+trial=2 mode=nocache engine=interpreter median_ms=430.339 samples_ms=422.228,442.560,430.792,425.572,428.499,430.339,463.514
+trial=2 mode=cached engine=interpreter median_ms=430.955 samples_ms=422.711,425.760,433.139,432.995,433.660,427.316,430.955
+trial=3 mode=cached engine=interpreter median_ms=423.431 samples_ms=513.469,674.826,423.431,421.778,421.954,422.812,424.356
+trial=3 mode=nocache engine=interpreter median_ms=423.615 samples_ms=425.019,428.985,423.469,422.424,423.615,422.916,455.087
+trial=3 mode=nocache engine=jit median_ms=685.413 samples_ms=683.259,690.188,685.413,680.713,708.112,679.867,690.728
+trial=3 mode=cached engine=jit median_ms=682.467 samples_ms=682.049,678.397,683.730,678.751,684.301,682.467,683.644
+
+A/B engine=interpreter cache_ms=430.955 no_cache_ms=430.339 change_pct=+0.14%
+A/B engine=jit cache_ms=687.674 no_cache_ms=685.413 change_pct=+0.33%
+
+The three-process medians do not show a stable speed difference. Trial 1 was about twice as slow for both variants and both engines; the reported median-of-three is determined by trials 2 and 3. An additional sequential Interpreter pair measured 429.885 ms with cache (`425.777,426.409,428.595,431.739,433.296,429.885,431.671`) and 442.336 ms without cache (`442.336,440.124,451.669,443.053,437.222,437.678,462.534`), but its order was not reversed and the interleaved pairs did not reproduce that difference. Treat the AO-Bench timing evidence as inconclusive; retain the requested cache contract.
+
+All cache-on/off calls produced the same single-frame SHA-256: 6d04ea80d9a1fd773c85d413057d64797f32dbb257a753d767a378d730d7d699. The full AO-Bench comparison separately confirms Interpreter/JIT/WAMR output agreement using the historical 3 warmup + 7 timed frame aggregate hashes.
+
+QA cache diagnostic at 320x180 (outside the timed run): hits=6,703,075, misses=12,118,622, hit_ratio=0.356136. This counter measures cache lookup outcomes, not saved cycles.
+
+Provenance:
+- Host: AMD Ryzen 5 5500GT; Linux 7.0.0-38-generic x86_64; Python 3.13.15; Clang 21.1.8.
+- Cache-on Interpreter release library SHA-256: 4dc749e9115420084c433ef3e22008ff69855e31516291b507f4087a66355a01.
+- Cache-off temporary Interpreter release library SHA-256: 5aa9df34f365942323dea882c5c84ed9351eac744c194ba4c7ad1108d81d081e.
+- JIT release library SHA-256: 306828cf2bff4932f58a6187aa295fc5725f335d30f6ac447d87870be6da3c41.
+- Interleaved A/B driver SHA-256: c89d5a506323f854658894b64980439bb011917cfeb2297eba4ac3951f378aca.
+- Cache-on per-engine runner SHA-256: a23d941a3498fd67c1d4776d2f8a4a251ae5dca8908dfaff2fca444187e32e56.
+- Cache-off per-engine runner SHA-256: 2d4458915dc0c5705bc625a1079bfd302cbbb9277495cd4167ed85890409ca22.
+- WASM SHA-256: 9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9.
+- Full AO comparison driver SHA-256: 5891be5db8ce4131554676269f834f3a4bc734b08c3997723f44eab015b726bb.
+- WAMR runner source SHA-256: 5efb13e7cb08bbd64f5833df01a20fc879e3e2d382be53b2009af8de4201fc87.
+- WAMR 2.4.3, commit f5f57c09aee623436f5fb87a90798fdd2cdf39fd; Fast Interpreter + WASI, AOT/JIT disabled.

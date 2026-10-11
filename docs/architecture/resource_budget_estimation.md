@@ -147,13 +147,13 @@ Python管理オブジェクトとFFIの一時領域はホスト専用であり�
 
 ## 5. JITコンパイル時のRAM
 
-<!-- traceability: {Resource_Estimation_Model} {GLOBAL_StrictMemoryLimit} {JIT_AssemblyStencilCodegen} -->
+<!-- traceability: {Resource_Estimation_Model} {GLOBAL_StrictMemoryLimit} {JIT_AssemblyStencilCodegen} {JIT_RuntimeAPI} -->
 1トレースのWASM命令数上限は64命令である。
 生成するtrace blobは最大1,584バイトで、48バイトheaderと最大1,536バイトのassembly機械語本体・alignment padding・定数領域を含む。
 コンパイル中の共有operand stack深さの上限は128 wordである。
 C++フロントエンドは復号済み命令列とoperation symbol列を固定長配列へ一時保持する。
 build時に`operations.S`、`trace.S`、`common.S`をアセンブルし、生成したraw binaryとmetadataをC++ byte array headerへ出力する。trace compile時はC++が選択済みoperationを固定長出力へ合成し、成功接続slotを後続stencilで置き換える。命令列内の条件分岐は合成後の位置に合わせて再配置する。
-容量超過や非対応命令ではコンパイルを辞退し、C++ Interpreter handlerからruntimeへ戻る。
+Loaderが受理したopcodeに直接assembly stencilがない場合はJIT Runtime API stencilから処理する。APIが通常継続を返すと、後続operationも同じtrace内で実行する。trapと制御境界はその命令のRuntime APIまたはInterpreter境界で処理する。
 
 | コンパイル中の領域 | 容量と配置 | 計上場所 |
 | :--- | ---: | :--- |

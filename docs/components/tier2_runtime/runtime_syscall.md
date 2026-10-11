@@ -88,42 +88,9 @@ vIRQの `vector_id` はホスト設定の原因源表で固定する。WASIのpo
 
 ## 5. インターフェース定義
 
-### 5.1 `fireball_call` WIT定義
+### 5.1 ゲスト公開WIT契約
 <!-- traceability: {WIT_Interface_Spec} -->
-`fireball_call`のWIT (WebAssembly Interface Type) 定義は以下の通りである。詳細は [`interface_wit.md`](docs/components/tier3_platform/interface_wit.md) を参照のこと。
-WITシグネチャの正本は [`fireball_hostcall_contract.wit`](docs/components/tier3_platform/wit/fireball_hostcall_contract.wit) である。
-
-```wit
-package fireball:host@0.1.0;
-
-interface trap {
-  /// Performs a low-level host call with one fixed seven-word ABI.
-  fireball-call: func(
-    id: u32,
-    arg0: u32,
-    arg1: u32,
-    arg2: u32,
-    arg3: u32,
-    arg4: u32,
-    arg5: u32
-  ) -> u32;
-}
-
-interface virq {
-  register: func(node-id: u32, function-index: u32) -> u32;
-  unregister: func(node-id: u32) -> u32;
-}
-
-interface vdma {
-  start: func(source: u32, destination: u32, byte-count: u32) -> u32;
-}
-
-world fireball-hostcall {
-  import trap;
-  import virq;
-  import vdma;
-}
-```
+ゲストへ公開するWIT interfaceとシグネチャの正本はTier 3 Platformの[`fireball_hostcall_contract.wit`](docs/components/tier3_platform/wit/fireball_hostcall_contract.wit)である。Tier 2 Runtimeの本書は、Interpreter/JITからホスト側Runtime APIへ到達した後のディスパッチ、引数解釈、エラー意味論を定める。WIT宣言を複製しない。
 
 ###### ホストコール高速パス
 <!-- traceability: {Trap_Interface} -->

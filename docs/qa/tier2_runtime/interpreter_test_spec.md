@@ -12,10 +12,10 @@
 
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| TEST-INTP-01 | ハンドラの統一プロトタイプと実行境界の終了判定 | 実装コードを確認 | 各opcodeハンドラ、CPS関数型、共有コンテキストを確認 | すべてのhandlerが`ctx`, `ip*`, `sp*`, `rel*`の同一4引数・`void`関数型を持つ。`ctx`, `ip`, `sp`が3つの実行状態引数であり、`rel`は定数プールポインタである。継続時はRuntime APIが次handlerへ末尾呼び出しする。終端理由は`ctx.runtime_flags`へ記録し、実行境界は同フィールドを読む | wasm_instruction_set.md, interpreter.md |
+| TEST-INTP-01 | ハンドラの統一プロトタイプと実行境界の終了判定 | 実装コードを確認 | 各opcodeハンドラ、CPS関数型、共有コンテキストを確認 | すべてのhandlerが`ctx`, `ip*`, `sp*`, `rel*`の同一4引数・`void`関数型を持つ。`ctx`, `ip`, `sp`が3つの実行状態引数であり、`rel`は定数プールポインタである。Runtime APIは命令の状態更新を行って`bool`を返す。`true`の場合にCPS handlerが次handlerへ末尾呼び出しし、`false`の場合は継続しない。終端理由は`ctx.runtime_flags`へ記録し、実行境界は同フィールドを読む | wasm_instruction_set.md, interpreter.md |
 | TEST-INTP-02 | 継続渡しの命令ディスパッチ | - | opcodeハンドラ表と命令ハンドラへの継続を確認 | 各ハンドラ末尾で次opcodeに対応する関数ポインタを固定長表から選び、同じ4引数で末尾呼び出しする。命令ごとに中央のopcode分岐へ戻らない | 同上 |
-| TEST-INTP-03 | Interpreter handlerとJIT traceの関数型 | JITトレース生成 | handlerとtrace entryの型・引数、および境界の状態参照を比較 | Interpreter handlerとJIT trace entryはともに`ctx, ip*, sp*, rel*`の順で4引数と`void`戻り値を使う。ローカル基点は`ctx.local_base`から取得する。`rel`は定数領域を順次読む。終端状態は`execution_context`のtrap code、PC、stack位置から判定する。x64の物理ABIは対象ABI定義に従い、ARMv8-Mの物理配置はTBD | `{ContextPointerRegister}` `{CPS_3Args}` `{PositionIndependentCode}` |
-| TEST-INTP-04 | JITトレースからインタープリタへのシームレスフォールバック | 未コンパイルのブロックへ分岐 | トレース実行完了 | トレース末尾でインタープリタへスムーズに復帰し、後続ブロックをインタープリタが継続実行する | `{JIT_LazyChaining}` `{JIT_RuntimeAPI}` |
+| TEST-INTP-03 | Interpreter handlerとJIT traceの関数型 | JITトレース生成 | handlerとtrace entryの型・引数、および境界の状態参照を比較 | Interpreter handlerは`ctx, ip*, sp*, rel*`の順で4引数と`void`戻り値を使う。JIT trace entryは同じ4引数で`bool`を返す。`true`なら未接続chain targetに到達した終端dispatcherがmetadata pointerを一時的に`execution_context.rel`へ渡し、`body_end_ip`を`execution_context.ip`へ設定している。Interpreter dispatcherはmetadataからstack、control frame、Interpreter `rel`を更新する。`false`ならmetadataを読まずtrap/CPS exitを処理する。x64の物理ABIは対象ABI定義に従い、ARMv8-Mの物理配置はTBD | `{ContextPointerRegister}` `{CPS_3Args}` `{PositionIndependentCode}` |
+| TEST-INTP-04 | JIT trace exit後のInterpreter dispatcher継続 | JIT拡張付きInterpreterで、traceの後に未コンパイルBasicBlockと常駐traceを続ける | trace実行後、未コンパイルブロックのhandler処理と後続traceの実行を確認する | trace exit後はInterpreter dispatcherへ戻る。dispatcherが未コンパイルブロックのhandlerを実行し、後続BasicBlockでも同じdispatch内でtrace lookupと実行を続ける | `{JIT_LazyChaining}` `{JIT_RuntimeAPI}` |
 | TEST-INTP-05 | Runtime APIとCPSハンドラの責務分離 | 主opcodeと`0xFC`副opcodeの実装がある | 各C++ハンドラと対応するRuntime APIを確認し、通常継続・trap・Runtime API境界を実行する | 命令意味論と状態更新はRuntime APIにある。通常時は更新済み4引数で次handlerへ継続する。trapはその場でCPS列を中断し、Runtime API所有の処理は明示的なRuntime API境界でRuntimeへ渡す。汎用fallback経路は持たない | `{ThreadedInterpreter}`, `interpreter.md`「継続渡しハンドラの実行境界」 |
 
 ### 命令実行とロード済みモジュール
@@ -24,8 +24,8 @@
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | TEST-INTP-06 | 命令別handlerの継続ディスパッチ | WASMのi32命令列と実行コンテキスト | 直線区間、未対応の主opcode、未対応の`0xFC`副opcodeを含む命令列を実行する | 直線区間を連続実行し、yieldまたはRuntime handoff時にPCとスタック位置を保存する。未対応opcodeは`UNREACHABLE` trapで実行を中断し、PCとスタックの全wordを変更しない | `{ThreadedInterpreter}`, `interpreter.md` |
-| TEST-INTP-09 | ロード時即値デコードと定数プール走査 | 即値を持つ命令を含むWASMモジュールをロード済み | NativeInterpreterで単一・複数即値命令を実行し、ロード済みプールと`rel`、次PCを確認する | Loaderが即値を命令順に一度だけデコードして32bit値を詰める。各命令の符号化長は全即値の後ろに一度だけ格納する。実行時は定数を順に読み、`ctx.ip`を命令全体の長さだけ一度進める | [`interpreter.md`](docs/components/tier2_runtime/interpreter.md) |
-| TEST-INTP-27 | ジャンプ・分岐境界 | `br`、`br_if`、`br_table`、`call`を含むWASM | 境界命令を実行 | 定義済みゲスト関数の呼出しと分岐はC++ハンドラ間で継続し、Runtimeが要求する境界で正しいPC・制御スタックを保って戻る | InterpreterContextStackless |
+| TEST-INTP-09 | BasicBlock単位のLEB128定数プール走査 | 複数ブロックに可変長LEB128即値と固定幅float定数を含むWASMモジュールをロード済み | 各BasicBlockの開始byte offsetとプール値を確認し、NativeInterpreterで各ブロック入口を実行する | Loaderが各BasicBlockを個別にパースし、LEB128即値の後ろに各命令の幅recordを格納する。固定幅`f32.const`/`f64.const` payloadはプールへ格納しないが、その命令幅は格納する。ブロック入口で`rel`を一度設定し、PC/即値offset表を使わない | [`interpreter.md`](docs/components/tier2_runtime/interpreter.md)、`TEST-LOAD-58` |
+| TEST-INTP-27 | ジャンプ・分岐・関数入口境界 | `br`、`br_if`、`br_table`、`call`を含むWASM | 境界命令を実行し、定義関数の呼出しと復帰時のBasicBlock index・定数プール開始offsetを確認する | Runtime APIは呼出し先メソッドまたは復帰PCを設定する。Interpreter dispatcherがそのPCからBasicBlockを検索し、対応する`rel`を設定して同じdispatch内で実行を続ける。ゲスト分岐・関数呼出しからRuntimeEngineへ復帰しない | InterpreterContextStackless、`interpreter.md` |
 | TEST-INTP-28 | AO-Bench全命令差分 | wasmtimeとTier 2/Tier 3を利用可能 | `aobench.py`を実行 | Float32 sanity、全AO出力、Tier 2/Tier 3の528バイト出力が完全一致する | `{META_RecoveryStrategy}` |
 
 ### 3本の独立スタック・関数呼び出し ({ContextPointerRegister})
@@ -98,12 +98,13 @@
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | TEST-INTP-70 | 命令オブジェクト非生成とopcode直接フェッチ | WASM関数実行 | 実行ループのopcodeフェッチを確認 | 関数内カーソルからコードを直接読み出し、中間`Instr`オブジェクトやopcode逆引き表を使わない。Runtime・Debuggerへ渡すPCは関数開始PCと`ctx.ip`から得る | `interpreter.md` `DirectBytecodeExecution` |
-| TEST-INTP-71 | 定数プール走査と関数呼出し復帰時の`rel`初期化 | 単一・複数即値命令および呼出し後に即値命令を持つ基本ブロック | Loaderが生成したプールを確認し、NativeInterpreterで各命令と呼出し復帰を実行する | 命令長は全即値の後ろに一度だけ格納する。先行値に符号化幅を持たせず、即値を読み終えた命令が`ctx.ip`を命令全体の長さだけ一度進める。呼出し復帰PCもプール開始位置表に持ち、ゼロ長復帰メタデータはJIT候補にしない。命令ごとのoffset表を参照しない | `interpreter.md` |
+| TEST-INTP-71 | BasicBlock単位の定数プール走査と`rel`初期化 | 複数ブロックにLEB128即値と固定幅float定数を持ち、呼出し後に即値命令を実行する関数 | Loader生成後のブロック別開始byte offsetを確認し、NativeInterpreterで命令と呼出し復帰を実行する | 各ブロックのLEB128即値と各命令の幅recordが個別に生成され、呼出し復帰を含むブロック入口でのみ対応する`rel`を初期化する。各recordの読出しで`rel`が進む。固定幅`f32.const`/`f64.const` payloadは元コードから読む。命令ごとのPC/即値offset表は持たない | `interpreter.md`「Interpreter定数プール」、TEST-LOAD-58 |
 | TEST-INTP-72 | 静的制御表によるブロック境界解決 | `block/loop/if` 構文の実行 | 分岐および終了時の遷移を確認 | モジュールロード時に事前計算された静的 `control_map`（`blocks`, `br_tables`）を参照し、実行時の全命令再デコードを行わない | `interpreter.md` |
 | TEST-INTP-73 | ローカルオフセットとサイズ表のロード時計算 | i32/f32/i64/f64が混在する関数とローカルなしの関数 | ロード後の各ローカルのオフセット・ワード数と `local_slot_count_cache` を確認し、実行する | 各ローカルのサイズが1または2ワードで、オフセットが先行ローカルのサイズの合計、フレーム長が全サイズの合計になる。結果が正しい | GOTCHA-INTP-22 |
 | TEST-INTP-74 | wide localを含む再帰関数のローカル領域境界 | 16個のi32値を持つ関数と、さらにf64を1個持つ関数 | 8フレーム分の再帰を実行する | i32のみの版は128ワードに収まり成功する。f64を含む版は1フレームあたり18ワードとなり、8フレームで128ワードを超えて容量超過で停止する | GOTCHA-INTP-22 |
 | TEST-INTP-75 | 縮小CallFrame ABIと固定順序 | 関数を1つ開始し、CallStackが空 | `_build_frame` 後にコンテキスト、CallFrame、function viewを検査する | `call_stack` がコンテキストへ接続される。40-byte CallFrameはfunction view、local/control base、関数番号、復帰PC、JIT境界PCだけを持ち、コード・ローカル配置・引数数・結果アリティはfunction viewから参照する。終了後はCallStack自身の深さが0へ戻る | `interpreter.md` `CallFrame_Layout` `{ExecutionContext_Layout}` |
-| TEST-INTP-76 | LOOP後方分岐しきい値と再開 | LOOP後方辺を持つWASM関数がある | しきい値の2倍を超える後方分岐を実行し、yield後に再開する | しきい値到達ごとにyield状態を返し、再開時に回数を0へ戻す。最終的に実行が完了する | `{ADR_LoopBackedgeYield}`, `runtime_vsoc.md` |
+| TEST-INTP-76 | dispatchとRuntime API共有PC→BasicBlock検索cache | 10,000超のBasicBlockを持ち、同じloop headへRuntime API経由で繰り返し戻るWASM関数 | Native Interpreterで実行して結果を確認し、dispatch後にcall stackのcache tagとblock indexを確認する。QA stats dispatchではdispatcher側のhit/missも確認する | 初回はLoader Radix＋二分検索でblock indexを得て、dispatchとRuntime APIの双方が同じcacheを参照する。同じmoduleと絶対`head_pc`への再訪ではLoader検索を省く。tag衝突時はRadix検索へ戻り、結果と制御状態を保つ | `interpreter.md`「BasicBlock検索cache」、`runtime_loader.md` `block_storage` |
+| TEST-INTP-77 | LOOP後方分岐しきい値と再開 | LOOP後方辺を持つWASM関数がある | しきい値の2倍を超える後方分岐を実行し、yield後に再開する | しきい値到達ごとにyield状態を返し、再開時に回数を0へ戻す。最終的に実行が完了する | `{ADR_LoopBackedgeYield}`, `runtime_vsoc.md` |
 
 ### 実装上の注意点に対応する検証
 <!-- traceability: {InterpreterContextStackless} {JIT_RuntimeAPI} {GOTCHA-INTP-01} {GOTCHA-INTP-02} {GOTCHA-INTP-03} {WasmCodeSectionPC} {GOTCHA-INTP-04} {GOTCHA-INTP-05} {GOTCHA-INTP-06} -->

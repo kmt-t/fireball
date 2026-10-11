@@ -96,7 +96,7 @@ class NativeTraceHeader(ctypes.Structure):
         ("stack_words", ctypes.c_uint8),
         ("result_words", ctypes.c_uint8),
         ("chain_words", ctypes.c_uint8),
-        ("reserved0", ctypes.c_uint8),
+        ("chain_body_count", ctypes.c_uint8),
         ("frame_depth", ctypes.c_uint32),
         ("block_index", ctypes.c_uint32),
         ("const_rel_offset", ctypes.c_uint32),
@@ -118,7 +118,7 @@ assert NativeTraceHeader.blob_bytes.offset == 16
 assert NativeTraceHeader.stack_words.offset == 20
 assert NativeTraceHeader.result_words.offset == 21
 assert NativeTraceHeader.chain_words.offset == 22
-assert NativeTraceHeader.reserved0.offset == 23
+assert NativeTraceHeader.chain_body_count.offset == 23
 assert NativeTraceHeader.frame_depth.offset == 24
 assert NativeTraceHeader.frame_depth.size == 4
 assert NativeTraceHeader.block_index.offset == 28

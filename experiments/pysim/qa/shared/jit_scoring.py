@@ -87,7 +87,24 @@ def _decode_int4(value: int) -> int:
 
 # Numeric entries keep the loader independent of opcode-name strings and
 # make the table directly translatable to a ROM-resident C++ constexpr array.
+# Loader-supported operations in these ranges use the JIT Runtime API. Direct
+# wide arithmetic and operations with a more specific score are listed below.
+_RUNTIME_API_SCORE_ENTRIES: tuple[tuple[int, int], ...] = tuple(
+    (opcode, 3)
+    for first, last in (
+        (0x28, 0x3E),
+        (0x50, 0x66),
+        (0x69, 0x69),
+        (0x79, 0x7B),
+        (0x7F, 0x91),
+        (0x96, 0x9F),
+        (0xA4, 0xC4),
+    )
+    for opcode in range(first, last + 1)
+)
+
 _SCORE_ENTRIES: tuple[tuple[int, int], ...] = (
+    *_RUNTIME_API_SCORE_ENTRIES,
     (I32_ADD, 7),
     (I32_SUB, 7),
     (I32_AND, 7),
@@ -125,8 +142,19 @@ _SCORE_ENTRIES: tuple[tuple[int, int], ...] = (
     (NOP, 4),
     (I32_REM_S, 4),
     (I32_REM_U, 4),
+    (0x23, 4),  # global.get
+    (0x24, 4),  # global.set
+    (0x3F, 4),  # memory.size
     (BR, 5),
     (BR_IF, 5),
+    (0x28, 5),  # i32.load
+    (0x2C, 5),  # i32.load8_s
+    (0x2D, 5),  # i32.load8_u
+    (0x2E, 5),  # i32.load16_s
+    (0x2F, 5),  # i32.load16_u
+    (0x36, 5),  # i32.store
+    (0x3A, 5),  # i32.store8
+    (0x3B, 5),  # i32.store16
     (I64_ADD, 3),
     (I64_SUB, 3),
     (I64_MUL, 3),
@@ -146,6 +174,7 @@ _SCORE_ENTRIES: tuple[tuple[int, int], ...] = (
     (CALL_INDIRECT, -1),
     (BR_TABLE, -1),
     (MEMORY_GROW, -2),
+    (0xFC, -2),  # 0xfc prefix; its admitted subopcodes share the API score.
     (UNREACHABLE, -8),
 )
 

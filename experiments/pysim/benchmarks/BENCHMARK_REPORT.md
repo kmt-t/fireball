@@ -1,9 +1,77 @@
-# PySIM AO-Bench 性能比較（2026-10-11 card-state gate後）
+# PySIM AO-Bench 性能比較（2026-10-12）
 <!-- traceability: {ThreadedInterpreter} {Wasm32Only} -->
 
-## 現行結果
+## Runtime API命令を含むJIT trace範囲の修正後（最終再計測、2026-10-12）
 
-card-state bitmapでJIT provider lookupをゲートする変更を含む作業ツリーから、NativeInterpreterとHybrid JITのrelease共有ライブラリを再ビルドした。WAMR Fast Interpreterと同じAO-Bench条件で5解像度×3試行を完走した。全解像度で各エンジンの出力ハッシュが一致した。計測ソースと実行環境の識別情報は[card-state gate後の再計測ログ](results/aobench_interpreter_jit_wamr_20261011_card_gate.txt)に記録した。
+Loaderのtrace範囲を直接stencilの有無で絞らず、Runtime API loweringされる通常命令も含める修正を反映した最終ソースをrelease再ビルドして計測した。5解像度、3独立プロセス、各3 warmup・7 timed calls、CPU 2固定、yieldしきい値4096、WAMR 2.4.3 Fast Interpreterとの比較である。Python参照Interpreterは対象外とした。全解像度で3実行系のframe hashが一致した。
+
+| サイズ | NativeInterpreter | Hybrid JIT | WAMR Fast |
+| :--- | ---: | ---: | ---: |
+| 64×36 | 19.477 ms（19.442–19.542） | 25.067 ms（24.907–25.129） | 5.308 ms（5.224–5.385） |
+| 128×72 | 74.400 ms（73.972–76.163） | 96.950 ms（96.316–98.123） | 21.556 ms（21.032–22.746） |
+| 192×108 | 166.590 ms（165.692–168.090） | 218.846 ms（218.468–221.107） | 46.798 ms（46.583–47.756） |
+| 256×144 | 295.573 ms（291.688–297.119） | 390.792 ms（388.355–396.171） | 84.833 ms（83.450–86.489） |
+| 320×180 | 463.430 ms（461.691–468.642） | 611.654 ms（607.592–637.384） | 131.888 ms（131.437–132.349） |
+
+計時とは別のQA診断で、320×180のJIT operation bodyを3,947,129回実行し、frame hashも計時runと一致した。修正対象のRuntime API loweringを含むJIT trace経路が実際に動作している。AO-BenchではHybrid JITは全解像度でNativeInterpreterより遅く、320×180では32.0%遅い。WAMR Fastは同サイズでNativeInterpreterの3.51倍、Hybrid JITの4.64倍速かった。この修正でtrace対象範囲と機能の欠落は直ったが、AO-BenchのJIT性能改善は確認できない。個別変更による速度差とは扱わない。全サンプル、出力hash、実行ライブラリとrunnerのSHA-256は[最終計測ログ](results/aobench_interpreter_jit_wamr_20261012_api_span_fix_final.txt)に記録した。
+
+## JIT trace terminal dispatch更新後の再計測（2026-10-12）
+
+JIT traceの正常終端でIPを設定してInterpreterへ戻り、次の基本ブロック設定をInterpreter側で行う変更を含む作業ツリーをreleaseビルドして計測した。前回と同じAO-Bench、5解像度、3独立プロセス、各3 warmup・7 timed calls、CPU 2固定、yieldしきい値4096、WAMR Fast Interpreter比較である。Python参照Interpreterは対象外とした。全解像度でNativeInterpreter、Hybrid JIT、WAMRのフレームhashが一致した。
+
+| サイズ | NativeInterpreter | Hybrid JIT | WAMR Fast |
+| :--- | ---: | ---: | ---: |
+| 64×36 | 19.390 ms（19.193–19.907） | 25.017 ms（24.972–25.757） | 5.325 ms（5.216–5.326） |
+| 128×72 | 75.884 ms（74.780–76.188） | 96.777 ms（96.703–97.946） | 20.843 ms（20.425–20.998） |
+| 192×108 | 169.274 ms（169.060–170.083） | 214.921 ms（214.524–215.133） | 47.421 ms（46.457–48.262） |
+| 256×144 | 300.114 ms（299.661–300.204） | 383.760 ms（381.374–385.641） | 84.920 ms（83.429–85.327） |
+| 320×180 | 468.359 ms（468.153–468.617） | 597.786 ms（593.941–598.083） | 132.697 ms（132.127–144.059） |
+
+320×180ではHybrid JITはInterpreterより27.6%遅く、WAMR FastはInterpreterの3.53倍、Hybrid JITの4.50倍速かった。計時runとは分けたQA診断でも、JIT operation bodyが5,522,136回実行され、trace連結を含むJIT実行経路が有効なことを確認した。診断runのframe hashも一致した。前回値との差は測定変動と複数の作業ツリー変更を含むため、今回のterminal dispatch変更単独の効果とは扱わない。
+
+全プロセスのサンプル、hash、共有ライブラリとrunnerのSHA-256は[2026-10-12 terminal dispatch後の計測ログ](results/aobench_interpreter_jit_wamr_20261012_trace_terminal.txt)に記録した。
+
+## 現行作業ツリーの最新再計測
+
+block-search cacheのhashと関数入口dispatch経路を更新した後、現行作業ツリーからInterpreterとJITをrelease再ビルドして計測した。WAMR Fast Interpreterも同じAO-Bench入力で比較した。5解像度、3独立プロセス、各3 warmup・7 timed calls、CPU 2固定、yieldしきい値4096である。Python参照インタープリタは計時していない。全解像度でInterpreter、Hybrid JIT、WAMRの出力hashが一致した。
+
+| サイズ | NativeInterpreter | Hybrid JIT | WAMR Fast |
+| :--- | ---: | ---: | ---: |
+| 64×36 | 19.841 ms（19.821–19.848） | 25.926 ms（25.497–26.134） | 5.322 ms（5.287–5.332） |
+| 128×72 | 77.411 ms（77.123–77.551） | 101.446 ms（100.737–102.996） | 21.560 ms（21.297–21.829） |
+| 192×108 | 173.044 ms（171.280–173.128） | 225.027 ms（222.983–225.496） | 47.474 ms（47.067–47.643） |
+| 256×144 | 304.261 ms（304.079–306.671） | 395.313 ms（395.309–398.078） | 86.824 ms（84.903–87.017） |
+| 320×180 | 479.342 ms（477.542–482.454） | 621.428 ms（620.282–630.779） | 136.761 ms（134.788–138.940） |
+
+320×180ではHybrid JITがInterpreterより29.6%遅く、WAMRはInterpreterの3.51倍、Hybrid JITの4.54倍速かった。block-search cache単独の効果はAO-Bench 320×180のA/Bでも確認した。cacheありのプロセス中央値はInterpreter 474.013 ms、JIT 618.973 ms、cacheなしはInterpreter 479.675 ms、JIT 623.824 msであり、差はそれぞれ1.18%、0.78%だった。AO-Benchではblock検索cacheの差は小さい。
+
+10,007件のBasicBlockを持つ合成fixtureでは、250,000回のloopを実行し、その後3,334件のcold blockを飛ばした。cacheあり7.460 ms、cacheなし11.224 msで1.505倍だった。大規模block表で同じPCを繰り返し検索する場合には効果があるが、AO-Bench全体の高速化率とは区別する。
+
+全プロセスのサンプル、フレームhash、ライブラリとrunnerのSHA-256は[現行ツリーのInterpreter・JIT・WAMR再計測ログ](results/aobench_interpreter_jit_wamr_20261011_latest_retest.txt)、[AO-Bench block-search cache A/Bログ](results/aobench_block_search_cache_ab_20261011_latest_retest.txt)、[10k BasicBlock block-search cache A/Bログ](results/native_block_search_cache_10k_20261011_latest_retest.txt)に記録した。
+
+## 10,000件BasicBlockでのblock-search cache A/B（初回実装時の履歴）
+
+AO-BenchのBasicBlock数は少ないため、block検索cacheの効果を切り分けられない。10,007件のBasicBlockを持つ合成モジュールを用意し、250,000回のloop実行と3,334件の未実行blockを含む条件でA/B計測した。3独立プロセスすべてでcacheありの方が速く、3試行中央値はcacheあり12.113 ms、cacheなし16.194 ms、1.337倍だった。これはlookupを多く行う合成fixtureでの結果であり、AO-Benchやアプリケーション全体の高速化率を示さない。詳細なサンプルとbuild識別子は[10k BasicBlock cache A/Bログ](results/native_block_search_cache_10k_20261011.txt)に記録した。
+
+## Interpreter block-search cache初回導入時のAO-Bench結果（履歴）
+
+これは2026-10-11に計測した当時のdispatch-local block-search cache実装スナップショットのAO-Bench結果であり、本turnでcache slotのhashと関数入口のdispatch経路を改めた後の再計測値ではない。AO-Benchを従来と同じ5解像度・3独立プロセス・3 warmup・7 timed calls・CPU 2固定・yieldしきい値4096で計測した。当時のInterpreter、Hybrid JIT、WAMR出力は各解像度で一致した。全サンプルは[block-search cache後のAO-Benchログ](results/aobench_interpreter_jit_wamr_20261011_block_search_cache.txt)、cache有無の比較は[block-search cache A/Bログ](results/aobench_block_search_cache_ab_20261011.txt)に記録した。
+
+| サイズ | rays/フレーム | NativeInterpreter | Hybrid JIT | WAMR Fast | JIT/Interpreter | Interpreter/WAMR | JIT/WAMR |
+| :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 64×36 | 7,332 | 17.403 ms（17.376–17.495） | 27.777 ms（27.737–27.956） | 5.241 ms（5.231–5.261） | 1.596× | 3.321× | 5.300× |
+| 128×72 | 29,732 | 68.146 ms（67.673–68.613） | 109.592 ms（109.459–109.692） | 21.026 ms（20.854–21.119） | 1.608× | 3.241× | 5.212× |
+| 192×108 | 67,032 | 152.874 ms（151.460–153.431） | 246.035 ms（245.353–246.093） | 49.084 ms（48.786–49.305） | 1.609× | 3.115× | 5.013× |
+| 256×144 | 119,352 | 271.583 ms（269.863–277.551） | 440.613 ms（434.692–442.096） | 86.042 ms（85.116–86.785） | 1.622× | 3.156× | 5.121× |
+| 320×180 | 186,792 | 427.135 ms（426.045–428.798） | 695.104 ms（692.933–702.089） | 138.342 ms（136.496–138.541） | 1.627× | 3.088× | 5.025× |
+
+値は各独立プロセス内7サンプルの中央値を取り、3プロセス中央値の中央値を代表値とした。括弧内は3プロセス中央値の最小値と最大値である。320×180のInterpreterは427.135 msで、400 msを超えている。
+
+card-state gate後の基準値との差は、複数の実装変更と測定変動を含むため、block-search cache単独の効果とは扱わない。キャッシュ単独の有無は別のA/Bで確認した。
+
+## card-state gate後の基準結果
+
+block-search cache A/B前に、card-state bitmapでJIT provider lookupをゲートする作業ツリーから計測した値である。計測ソースと実行環境の識別情報は[card-state gate後の再計測ログ](results/aobench_interpreter_jit_wamr_20261011_card_gate.txt)に記録した。
 
 | サイズ | rays/フレーム | NativeInterpreter | Hybrid JIT | WAMR Fast | JIT/Interpreter | Interpreter/WAMR | JIT/WAMR |
 | :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -67,4 +135,4 @@ profileのlookup時間とAO-Bench callback差分が同じ箇所を示すため�
 
 ## 詳細記録
 
-各プロセスの全サンプル、出力ハッシュ、QA診断カウンター、build識別子は[card-state gate後の再計測ログ](results/aobench_interpreter_jit_wamr_20261011_card_gate.txt)に記録した。gate前の同条件計測は[gate前ログ](results/aobench_interpreter_jit_wamr_20261011_final_current.txt)、直前のloader更新後計測は[loader更新後ログ](results/aobench_interpreter_jit_wamr_20261011_post_loader.txt)、過去値は[2026-10-07の計測ログ](results/aobench_interpreter_jit_wamr_20261007.txt)にある。
+各プロセスの全サンプル、出力ハッシュ、build識別子は[block-search cache後のAO-Benchログ](results/aobench_interpreter_jit_wamr_20261011_block_search_cache.txt)に記録した。キャッシュA/B前のQA診断カウンターと計測識別子は[card-state gate後の再計測ログ](results/aobench_interpreter_jit_wamr_20261011_card_gate.txt)にある。gate前の同条件計測は[gate前ログ](results/aobench_interpreter_jit_wamr_20261011_final_current.txt)、直前のloader更新後計測は[loader更新後ログ](results/aobench_interpreter_jit_wamr_20261011_post_loader.txt)、過去値は[2026-10-07の計測ログ](results/aobench_interpreter_jit_wamr_20261007.txt)にある。

@@ -214,10 +214,16 @@ FB_TRACE_BEGIN fb_trace_exit
 FB_TRACE_END fb_trace_exit
 
 FB_TRACE_BEGIN fb_trace_entry
+  push r12
+  sub rsp, 8
+  mov r12, FB_CTX_REG
   FB_SLOT_MARK fb_jit_start_slot__fb_trace_entry, 0xe8
   movq r10, xmm0
   test r10b, 1
   jnz .Ltrace_entry_success
+  xor eax, eax
+  add rsp, 8
+  pop r12
   ret
 .Ltrace_entry_success:
   pshufd xmm1, xmm0, 238

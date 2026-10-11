@@ -28,6 +28,7 @@ from system_containers import (
 )
 from tier2_runtime.wasm.leb128 import decode_signed, decode_unsigned
 from tier2_runtime.wasm.module import (
+    WASM_RAW_WORD_BYTES,
     InterpreterConstantPool,
     NativeControlMapEntry,
     WasmOperand,
@@ -107,45 +108,23 @@ from tier2_runtime.wasm.opcodes import (
     FC_PREFIX,
     GLOBAL_GET,
     GLOBAL_SET,
-    I32_ADD,
-    I32_AND,
     I32_CONST,
-    I32_DIV_S,
-    I32_DIV_U,
-    I32_EQ,
-    I32_EQZ,
     I32_EXTEND8_S,
     I32_EXTEND16_S,
-    I32_GE_S,
-    I32_GE_U,
-    I32_GT_S,
-    I32_GT_U,
-    I32_LE_S,
-    I32_LE_U,
     I32_LOAD,
     I32_LOAD8_S,
     I32_LOAD8_U,
     I32_LOAD16_S,
     I32_LOAD16_U,
-    I32_LT_S,
-    I32_LT_U,
-    I32_MUL,
-    I32_NE,
-    I32_OR,
     I32_REINTERPRET_F32,
-    I32_SHL,
-    I32_SHR_S,
-    I32_SHR_U,
     I32_STORE,
     I32_STORE8,
     I32_STORE16,
-    I32_SUB,
     I32_TRUNC_F32_S,
     I32_TRUNC_F32_U,
     I32_TRUNC_F64_S,
     I32_TRUNC_F64_U,
     I32_WRAP_I64,
-    I32_XOR,
     I64_ADD,
     I64_AND,
     I64_CLZ,
@@ -803,22 +782,40 @@ def _count_interpreter_constant_words(code: memoryview) -> int:
     return word_count
 
 
+def _instruction_width_record_size(instruction_width: int) -> int:
+    assert instruction_width > 0
+    return 1 if instruction_width < 0xFF else 1 + WASM_RAW_WORD_BYTES
+
+
+def _count_interpreter_constant_pool_bytes(code: memoryview) -> int:
+    pool_bytes = _count_interpreter_constant_words(code) * WASM_RAW_WORD_BYTES
+    for instruction in iter_scan_instrs(code):
+        pool_bytes += _instruction_width_record_size(instruction.end_offset - instruction.offset)
+    return pool_bytes
+
+
 def build_interpreter_constant_pool(
     code: memoryview,
     block_heads: Sequence[int],
     allocator: BumpAllocator | None = None,
 ) -> tuple[InterpreterConstantPool, StaticVector[int]]:
-    """Decode variable-width operands into 32-bit words, indexed by block head.
+    """Decode LEB128 operands and instruction widths into each block's pool.
 
     Fixed-width float immediates stay in the original bytecode. Runtime reads
-    advance through this pool; they do not look up an offset for each PC.
+    advance through this byte pool; they do not look up an offset for each PC.
+    Each block is parsed independently, and its starting byte offset is
+    recorded before its operands and instruction-width records are appended.
     """
 
-    constants = InterpreterConstantPool(
-        capacity=_count_interpreter_constant_words(code), allocator=allocator
-    )
+    assert len(block_heads) > 0
+    total_bytes = 0
+    for block_index, start in enumerate(block_heads):
+        end = block_heads[block_index + 1] if block_index + 1 < len(block_heads) else len(code)
+        assert 0 <= start <= end <= len(code)
+        total_bytes += _count_interpreter_constant_pool_bytes(code[start:end])
+
+    constants = InterpreterConstantPool(capacity=total_bytes, allocator=allocator)
     block_offsets: StaticVector[int] = StaticVector(capacity=len(block_heads))
-    block_index = 0
 
     def append_word(value: int) -> None:
         assert 0 <= value <= 0xFFFF_FFFF
@@ -829,112 +826,64 @@ def build_interpreter_constant_pool(
         append_word(bits & 0xFFFF_FFFF)
         append_word(bits >> 32)
 
-    for instruction in iter_scan_instrs(code):
-        if block_index < len(block_heads):
-            assert block_heads[block_index] >= instruction.offset
-            if block_heads[block_index] == instruction.offset:
-                appended = block_offsets.push_back(len(constants))
-                assert appended
-                block_index += 1
-        cursor = instruction.offset + 1
-        opcode = instruction.opcode
-        if _LEB_UNSIGNED_OPERAND.at(opcode):
-            value, _ = decode_unsigned(code, cursor)
-            append_word(value)
-        elif opcode == I32_CONST:
-            value, _ = decode_signed(code, cursor, bits=32)
-            append_word(value & 0xFFFF_FFFF)
-        elif opcode == I64_CONST:
-            value, _ = decode_signed(code, cursor, bits=64)
-            append_wide(value)
-        elif _MEMARG_OPCODES.at(opcode):
-            alignment, next_cursor = decode_unsigned(code, cursor)
-            append_word(alignment)
-            offset, end = decode_unsigned(code, next_cursor)
-            append_word(offset)
-        elif _MEMORY_INDEX_OPCODES.at(opcode):
-            append_word(code[cursor])
-        elif opcode == BR_TABLE:
-            label_count, next_cursor = decode_unsigned(code, cursor)
-            append_word(label_count)
-            cursor = next_cursor
-            for _index in range(label_count + 1):
-                target, end = decode_unsigned(code, cursor)
-                append_word(target)
-                cursor = end
-        elif opcode == CALL_INDIRECT:
-            type_index, next_cursor = decode_unsigned(code, cursor)
-            append_word(type_index)
-            table_index, end = decode_unsigned(code, next_cursor)
-            append_word(table_index)
-        elif opcode == FC_PREFIX:
-            subopcode, next_cursor = decode_unsigned(code, cursor)
-            append_word(subopcode)
-            cursor = next_cursor
-            if subopcode == FC_MEMORY_COPY:
-                destination_memory, next_cursor = decode_unsigned(code, cursor)
-                append_word(destination_memory)
-                source_memory, end = decode_unsigned(code, next_cursor)
-                append_word(source_memory)
-            elif subopcode == FC_MEMORY_FILL:
-                memory_index, _ = decode_unsigned(code, cursor)
-                append_word(memory_index)
+    def append_instruction_width(instruction_width: int) -> None:
+        if instruction_width < 0xFF:
+            constants.append_byte(instruction_width)
+            return
+        constants.append_byte(0xFF)
+        append_word(instruction_width)
 
-    assert block_index == len(block_heads), "basic-block head is not an instruction PC"
+    for block_index, start in enumerate(block_heads):
+        end = block_heads[block_index + 1] if block_index + 1 < len(block_heads) else len(code)
+        appended = block_offsets.push_back(len(constants))
+        assert appended
+        block_code = code[start:end]
+        for instruction in iter_scan_instrs(block_code):
+            cursor = instruction.offset + 1
+            opcode = instruction.opcode
+            if _LEB_UNSIGNED_OPERAND.at(opcode):
+                value, _ = decode_unsigned(block_code, cursor)
+                append_word(value)
+            elif opcode == I32_CONST:
+                value, _ = decode_signed(block_code, cursor, bits=32)
+                append_word(value & 0xFFFF_FFFF)
+            elif opcode == I64_CONST:
+                value, _ = decode_signed(block_code, cursor, bits=64)
+                append_wide(value)
+            elif _MEMARG_OPCODES.at(opcode):
+                alignment, next_cursor = decode_unsigned(block_code, cursor)
+                append_word(alignment)
+                offset, _ = decode_unsigned(block_code, next_cursor)
+                append_word(offset)
+            elif _MEMORY_INDEX_OPCODES.at(opcode):
+                append_word(block_code[cursor])
+            elif opcode == BR_TABLE:
+                label_count, next_cursor = decode_unsigned(block_code, cursor)
+                append_word(label_count)
+                cursor = next_cursor
+                for _index in range(label_count + 1):
+                    target, cursor = decode_unsigned(block_code, cursor)
+                    append_word(target)
+            elif opcode == CALL_INDIRECT:
+                type_index, next_cursor = decode_unsigned(block_code, cursor)
+                append_word(type_index)
+                table_index, _ = decode_unsigned(block_code, next_cursor)
+                append_word(table_index)
+            elif opcode == FC_PREFIX:
+                subopcode, cursor = decode_unsigned(block_code, cursor)
+                append_word(subopcode)
+                if subopcode == FC_MEMORY_COPY:
+                    destination_memory, cursor = decode_unsigned(block_code, cursor)
+                    append_word(destination_memory)
+                    source_memory, _ = decode_unsigned(block_code, cursor)
+                    append_word(source_memory)
+                elif subopcode == FC_MEMORY_FILL:
+                    memory_index, _ = decode_unsigned(block_code, cursor)
+                    append_word(memory_index)
+            append_instruction_width(instruction.end_offset - instruction.offset)
+
+    assert len(constants) == total_bytes
     return constants, block_offsets
-
-
-_IS_BB_OPCODE_BUILD = MutableBitStorage(count=256, bits=1)
-for _op in (
-    I32_CONST,
-    I32_ADD,
-    I32_SUB,
-    I32_MUL,
-    I32_DIV_S,
-    I32_DIV_U,
-    I32_AND,
-    I32_OR,
-    I32_XOR,
-    I32_SHL,
-    I32_SHR_S,
-    I32_SHR_U,
-    LOCAL_GET,
-    LOCAL_SET,
-    LOCAL_TEE,
-    GLOBAL_GET,
-    GLOBAL_SET,
-    I32_EQZ,
-    I32_EQ,
-    I32_NE,
-    I32_LT_S,
-    I32_LT_U,
-    I32_GT_S,
-    I32_GT_U,
-    I32_LE_S,
-    I32_LE_U,
-    I32_GE_S,
-    I32_GE_U,
-    DROP,
-    SELECT,
-    CALL,
-    I32_LOAD,
-    I32_LOAD8_S,
-    I32_LOAD8_U,
-    I32_LOAD16_S,
-    I32_LOAD16_U,
-    I32_STORE,
-    I32_STORE8,
-    I32_STORE16,
-    MEMORY_SIZE,
-    MEMORY_GROW,
-):
-    _IS_BB_OPCODE_BUILD.put(_op, 1)
-# Read-only 1-bit-per-opcode membership table (32 bytes total, not a
-# 256-slot Python list of bool object pointers): frozen once at import
-# time, never mutated again.
-_IS_BB_OPCODE: ReadOnlyBitStorage = ReadOnlyBitStorage(
-    bytes(_IS_BB_OPCODE_BUILD.buffer), bits=1, count=256
-)
 
 
 def iter_block_ops(
@@ -946,9 +895,9 @@ def iter_block_ops(
     one instruction at a time -- never materializes the whole block's op
     list. Called on demand, at the moment a block is actually compiled or
     interpreted (see `wasm_module.BasicBlock`). A block's own
-    byte_span, by construction (see `extract_basic_blocks`), spans only
-    BB-opcode instructions, so every instruction decoded in range belongs in
-    the result -- no filtering needed here.
+    byte_span, by construction (see `extract_basic_blocks`), spans the full
+    straight-line operation body, including operations lowered through JIT
+    Runtime APIs. Every instruction decoded in range belongs in the result.
     """
     off = head_offset
     end = head_offset + byte_span
@@ -1018,9 +967,9 @@ def extract_basic_blocks(
 ) -> StaticVector[tuple[int, int | None, int | None, int, int]]:
     """Extracts straight-line BasicBlock PC ranges from WASM bytecode as a flat list.
     Each entry is: (head_pc, next_pc, loops_to, frame_depth, byte_span).
-    A zero-span entry records a call-resume PC or a block with no direct-stencil
-    instructions. Both still need a loader-owned `rel` start for interpreter
-    dispatch; JIT scoring excludes the zero-span block.
+    A zero-span entry records a call-resume PC or a control boundary with no
+    operation body. Both still need a loader-owned `rel` start for interpreter
+    dispatch.
     head_pc = pc_base + start_offset. frame_depth is the count of
     enclosing BLOCK/LOOP/IF frames the interpreter's frame.frames stack must
     hold once execution resumes at head_pc. byte_span is this block's own
@@ -1060,11 +1009,10 @@ def extract_basic_blocks(
     blocks: StaticVector[tuple[int, int | None, int | None, int, int]] = StaticVector(
         capacity=block_capacity
     )
-    cur_op_count = 0  # count only -- the ops themselves are never materialized here
     cur_head: int | None = None
     cur_head_offset = 0
     cur_frame_depth = 0
-    cur_span_end = 0  # local offset just past the last BB-opcode instruction seen
+    cur_span_end = 0  # local offset just past the last body instruction seen
     # Fixed-size buffer of still-open BLOCK/LOOP/IF instructions, indexed by
     # active_openers_depth (see FB_CONF_MAX_NESTING_DEPTH) -- never a
     # dynamically-growing list ({Policy_Memory}).
@@ -1098,8 +1046,10 @@ def extract_basic_blocks(
             active_openers[active_openers_depth] = ins
             active_openers_depth += 1
 
-        if ins.opcode < 256 and _IS_BB_OPCODE.at(ins.opcode):
-            cur_op_count += 1
+        if (
+            not opcode_has_attribute(ins.opcode, OpcodeAttribute.BASIC_BLOCK_BOUNDARY)
+            or ins.opcode == CALL
+        ):
             cur_span_end = ins.end_offset
 
         # Check if this instruction ends the basic block
@@ -1181,7 +1131,7 @@ def extract_basic_blocks(
                     next_pc = pc_base + _skip_trailing_ends(ins.end_offset)
                     loops_to = branch_target if ins.opcode == BR_IF else None
 
-                byte_span = cur_span_end - cur_head_offset if cur_op_count else 0
+                byte_span = cur_span_end - cur_head_offset
                 block = (cur_head, next_pc, loops_to, cur_frame_depth, byte_span)
                 if (
                     pending_call_resume_block is not None
@@ -1191,7 +1141,6 @@ def extract_basic_blocks(
                     pending_call_resume_block = None
                 elif not blocks.push_back(block):
                     assert False, "basic-block count exceeds its precomputed capacity"
-                cur_op_count = 0
 
             cur_head = None
 
@@ -1207,7 +1156,7 @@ def extract_basic_blocks(
             active_openers[active_openers_depth] = None
 
     if cur_head is not None:
-        byte_span = cur_span_end - cur_head_offset if cur_op_count else 0
+        byte_span = cur_span_end - cur_head_offset
         block = (cur_head, None, None, cur_frame_depth, byte_span)
         if (
             pending_call_resume_block is not None

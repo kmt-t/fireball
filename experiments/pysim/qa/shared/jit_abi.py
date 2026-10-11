@@ -25,6 +25,7 @@ class NativeTraceDispatchEntry(ctypes.Structure):
         ("loops_to", ctypes.c_uint32),
         ("chain_next_pc", ctypes.c_uint32),
         ("chain_stack_words", ctypes.c_uint32),
+        ("chain_body_count", ctypes.c_uint32),
         ("exec_count", ctypes.c_void_p),
     )
 

@@ -1,0 +1,66 @@
+AO-Bench Fireball NativeInterpreter / Hybrid JIT / WAMR Fast Interpreter — 2026-10-11 block-search cache
+
+Conditions: 5 resolutions; 3 independent processes per engine and resolution; 3 warmup calls + 7 timed calls per process; CPU 2 pinned; engine order rotated by trial; yield threshold 4096; no Python-interpreter timing.
+Fireball timing covers NativeInterpreter.call() only. JIT queue is drained after warmup with idle_hook before timing; measured calls use idle_budget=0. WASM parsing, module/host setup, and WAMR initialization/load/instantiate are outside the timed interval.
+WASM SHA-256: 9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9
+
+trial=1 size=64x36 engine=interpreter samples_ms=18.745,17.350,17.464,17.460,17.403,17.381,17.382 median_ms=17.403 frame_sha256=d44fed786dbb555722932e901bd3f56c56aa2daca6c594a67a858c4591e24567
+trial=1 size=64x36 engine=jit samples_ms=27.737,27.612,27.784,27.676,27.431,27.751,28.015 median_ms=27.737 frame_sha256=d44fed786dbb555722932e901bd3f56c56aa2daca6c594a67a858c4591e24567
+trial=1 size=64x36 engine=wamr samples_ms=5.266,5.272,5.242,5.274,5.261,5.221,5.248 median_ms=5.261 frame_sha256=d44fed786dbb555722932e901bd3f56c56aa2daca6c594a67a858c4591e24567
+trial=2 size=64x36 engine=jit samples_ms=27.890,27.852,28.234,28.134,27.459,27.956,29.227 median_ms=27.956 frame_sha256=d44fed786dbb555722932e901bd3f56c56aa2daca6c594a67a858c4591e24567
+trial=2 size=64x36 engine=wamr samples_ms=5.231,5.264,5.229,5.246,5.230,5.279,5.219 median_ms=5.231 frame_sha256=d44fed786dbb555722932e901bd3f56c56aa2daca6c594a67a858c4591e24567
+trial=2 size=64x36 engine=interpreter samples_ms=17.466,17.442,17.220,17.451,17.257,17.331,17.376 median_ms=17.376 frame_sha256=d44fed786dbb555722932e901bd3f56c56aa2daca6c594a67a858c4591e24567
+trial=3 size=64x36 engine=wamr samples_ms=5.231,5.280,5.238,5.241,5.271,5.262,5.234 median_ms=5.241 frame_sha256=d44fed786dbb555722932e901bd3f56c56aa2daca6c594a67a858c4591e24567
+trial=3 size=64x36 engine=interpreter samples_ms=17.456,17.611,17.376,17.495,17.521,17.495,17.382 median_ms=17.495 frame_sha256=d44fed786dbb555722932e901bd3f56c56aa2daca6c594a67a858c4591e24567
+trial=3 size=64x36 engine=jit samples_ms=27.777,27.814,27.726,28.039,27.701,27.583,27.985 median_ms=27.777 frame_sha256=d44fed786dbb555722932e901bd3f56c56aa2daca6c594a67a858c4591e24567
+SUMMARY size=64x36 frame_sha256=d44fed786dbb555722932e901bd3f56c56aa2daca6c594a67a858c4591e24567 interpreter_ms=17.402897 interpreter_range_ms=[17.376398, 17.494508] jit_ms=27.776987 jit_range_ms=[27.736612, 27.956201] wamr_ms=5.241 wamr_range_ms=[5.231, 5.261]
+trial=1 size=128x72 engine=interpreter samples_ms=68.894,67.397,68.876,68.140,67.673,67.350,67.673 median_ms=67.673 frame_sha256=e9f20b8f0414f7406aa2f3ea96738e1c7755d0148090bf72f8703cffd3d374a4
+trial=1 size=128x72 engine=jit samples_ms=109.592,109.992,109.108,109.306,110.683,110.001,109.109 median_ms=109.592 frame_sha256=e9f20b8f0414f7406aa2f3ea96738e1c7755d0148090bf72f8703cffd3d374a4
+trial=1 size=128x72 engine=wamr samples_ms=20.914,21.169,21.258,20.981,21.179,21.026,20.947 median_ms=21.026 frame_sha256=e9f20b8f0414f7406aa2f3ea96738e1c7755d0148090bf72f8703cffd3d374a4
+trial=2 size=128x72 engine=jit samples_ms=109.967,111.438,109.174,109.543,110.378,109.692,108.496 median_ms=109.692 frame_sha256=e9f20b8f0414f7406aa2f3ea96738e1c7755d0148090bf72f8703cffd3d374a4
+trial=2 size=128x72 engine=wamr samples_ms=21.180,20.854,20.766,20.851,20.928,20.793,20.937 median_ms=20.854 frame_sha256=e9f20b8f0414f7406aa2f3ea96738e1c7755d0148090bf72f8703cffd3d374a4
+trial=2 size=128x72 engine=interpreter samples_ms=68.635,68.613,68.819,68.263,68.552,68.795,68.492 median_ms=68.613 frame_sha256=e9f20b8f0414f7406aa2f3ea96738e1c7755d0148090bf72f8703cffd3d374a4
+trial=3 size=128x72 engine=wamr samples_ms=20.933,20.958,20.685,21.119,21.403,21.575,21.412 median_ms=21.119 frame_sha256=e9f20b8f0414f7406aa2f3ea96738e1c7755d0148090bf72f8703cffd3d374a4
+trial=3 size=128x72 engine=interpreter samples_ms=68.146,68.609,67.951,68.079,68.857,72.672,68.017 median_ms=68.146 frame_sha256=e9f20b8f0414f7406aa2f3ea96738e1c7755d0148090bf72f8703cffd3d374a4
+trial=3 size=128x72 engine=jit samples_ms=109.459,110.385,109.458,109.106,109.954,110.769,108.625 median_ms=109.459 frame_sha256=e9f20b8f0414f7406aa2f3ea96738e1c7755d0148090bf72f8703cffd3d374a4
+SUMMARY size=128x72 frame_sha256=e9f20b8f0414f7406aa2f3ea96738e1c7755d0148090bf72f8703cffd3d374a4 interpreter_ms=68.145623 interpreter_range_ms=[67.673132, 68.612715] jit_ms=109.59218 jit_range_ms=[109.459022, 109.692167] wamr_ms=21.026 wamr_range_ms=[20.854, 21.119]
+trial=1 size=192x108 engine=interpreter samples_ms=151.185,151.899,151.460,150.860,150.502,151.789,152.747 median_ms=151.460 frame_sha256=9f2df94afaad4a3750053789ce6be52a0b9b14d66d9b8584edf2718d1ac3c4f1
+trial=1 size=192x108 engine=jit samples_ms=245.353,243.412,243.593,244.601,246.402,247.359,250.669 median_ms=245.353 frame_sha256=9f2df94afaad4a3750053789ce6be52a0b9b14d66d9b8584edf2718d1ac3c4f1
+trial=1 size=192x108 engine=wamr samples_ms=49.515,49.133,49.247,49.336,49.186,49.305,49.446 median_ms=49.305 frame_sha256=9f2df94afaad4a3750053789ce6be52a0b9b14d66d9b8584edf2718d1ac3c4f1
+trial=2 size=192x108 engine=jit samples_ms=246.035,245.296,244.863,245.421,246.787,247.719,247.297 median_ms=246.035 frame_sha256=9f2df94afaad4a3750053789ce6be52a0b9b14d66d9b8584edf2718d1ac3c4f1
+trial=2 size=192x108 engine=wamr samples_ms=48.881,49.084,48.902,49.234,48.979,49.710,49.507 median_ms=49.084 frame_sha256=9f2df94afaad4a3750053789ce6be52a0b9b14d66d9b8584edf2718d1ac3c4f1
+trial=2 size=192x108 engine=interpreter samples_ms=153.580,153.431,156.823,152.364,152.291,151.569,154.205 median_ms=153.431 frame_sha256=9f2df94afaad4a3750053789ce6be52a0b9b14d66d9b8584edf2718d1ac3c4f1
+trial=3 size=192x108 engine=wamr samples_ms=48.617,49.524,48.591,48.363,48.845,48.786,48.809 median_ms=48.786 frame_sha256=9f2df94afaad4a3750053789ce6be52a0b9b14d66d9b8584edf2718d1ac3c4f1
+trial=3 size=192x108 engine=interpreter samples_ms=153.674,153.155,152.175,151.262,151.448,155.279,152.874 median_ms=152.874 frame_sha256=9f2df94afaad4a3750053789ce6be52a0b9b14d66d9b8584edf2718d1ac3c4f1
+trial=3 size=192x108 engine=jit samples_ms=246.196,244.075,243.857,245.408,246.133,246.093,246.275 median_ms=246.093 frame_sha256=9f2df94afaad4a3750053789ce6be52a0b9b14d66d9b8584edf2718d1ac3c4f1
+SUMMARY size=192x108 frame_sha256=9f2df94afaad4a3750053789ce6be52a0b9b14d66d9b8584edf2718d1ac3c4f1 interpreter_ms=152.874393 interpreter_range_ms=[151.459553, 153.431143] jit_ms=246.03535 jit_range_ms=[245.353016, 246.093198] wamr_ms=49.084 wamr_range_ms=[48.786, 49.305]
+trial=1 size=256x144 engine=interpreter samples_ms=270.255,269.470,277.930,274.033,271.583,271.990,271.055 median_ms=271.583 frame_sha256=f35a578dc277b57ca3bb5f74bc9381297fab5afce787bc92c54e46536fa8d2a4
+trial=1 size=256x144 engine=jit samples_ms=439.354,440.588,439.418,443.087,444.038,444.615,442.096 median_ms=442.096 frame_sha256=f35a578dc277b57ca3bb5f74bc9381297fab5afce787bc92c54e46536fa8d2a4
+trial=1 size=256x144 engine=wamr samples_ms=85.798,85.116,84.954,84.853,85.194,85.202,84.885 median_ms=85.116 frame_sha256=f35a578dc277b57ca3bb5f74bc9381297fab5afce787bc92c54e46536fa8d2a4
+trial=2 size=256x144 engine=jit samples_ms=441.411,444.491,440.159,440.613,438.768,435.795,442.375 median_ms=440.613 frame_sha256=f35a578dc277b57ca3bb5f74bc9381297fab5afce787bc92c54e46536fa8d2a4
+trial=2 size=256x144 engine=wamr samples_ms=86.405,86.785,86.851,86.556,86.388,87.218,86.959 median_ms=86.785 frame_sha256=f35a578dc277b57ca3bb5f74bc9381297fab5afce787bc92c54e46536fa8d2a4
+trial=2 size=256x144 engine=interpreter samples_ms=277.551,289.481,334.282,291.104,277.032,276.355,276.256 median_ms=277.551 frame_sha256=f35a578dc277b57ca3bb5f74bc9381297fab5afce787bc92c54e46536fa8d2a4
+trial=3 size=256x144 engine=wamr samples_ms=85.892,85.976,86.929,86.042,86.256,86.092,86.007 median_ms=86.042 frame_sha256=f35a578dc277b57ca3bb5f74bc9381297fab5afce787bc92c54e46536fa8d2a4
+trial=3 size=256x144 engine=interpreter samples_ms=268.092,269.863,279.617,282.709,270.562,269.651,268.560 median_ms=269.863 frame_sha256=f35a578dc277b57ca3bb5f74bc9381297fab5afce787bc92c54e46536fa8d2a4
+trial=3 size=256x144 engine=jit samples_ms=432.486,434.158,435.236,434.692,435.381,432.161,437.977 median_ms=434.692 frame_sha256=f35a578dc277b57ca3bb5f74bc9381297fab5afce787bc92c54e46536fa8d2a4
+SUMMARY size=256x144 frame_sha256=f35a578dc277b57ca3bb5f74bc9381297fab5afce787bc92c54e46536fa8d2a4 interpreter_ms=271.583127 interpreter_range_ms=[269.862586, 277.550863] jit_ms=440.61293 jit_range_ms=[434.691929, 442.095516] wamr_ms=86.042 wamr_range_ms=[85.116, 86.785]
+trial=1 size=320x180 engine=interpreter samples_ms=423.349,423.120,422.844,426.045,435.357,436.532,430.272 median_ms=426.045 frame_sha256=6d04ea80d9a1fd773c85d413057d64797f32dbb257a753d767a378d730d7d699
+trial=1 size=320x180 engine=jit samples_ms=763.743,702.089,707.827,693.345,702.011,692.495,910.894 median_ms=702.089 frame_sha256=6d04ea80d9a1fd773c85d413057d64797f32dbb257a753d767a378d730d7d699
+trial=1 size=320x180 engine=wamr samples_ms=138.342,138.833,138.078,138.396,138.713,135.343,135.564 median_ms=138.342 frame_sha256=6d04ea80d9a1fd773c85d413057d64797f32dbb257a753d767a378d730d7d699
+trial=2 size=320x180 engine=jit samples_ms=698.994,694.170,698.310,684.745,695.104,695.383,695.075 median_ms=695.104 frame_sha256=6d04ea80d9a1fd773c85d413057d64797f32dbb257a753d767a378d730d7d699
+trial=2 size=320x180 engine=wamr samples_ms=136.315,138.800,138.541,137.830,139.311,140.459,134.301 median_ms=138.541 frame_sha256=6d04ea80d9a1fd773c85d413057d64797f32dbb257a753d767a378d730d7d699
+trial=2 size=320x180 engine=interpreter samples_ms=428.798,429.553,429.637,435.566,428.538,426.717,426.207 median_ms=428.798 frame_sha256=6d04ea80d9a1fd773c85d413057d64797f32dbb257a753d767a378d730d7d699
+trial=3 size=320x180 engine=wamr samples_ms=137.030,136.496,136.518,135.709,135.377,136.079,138.992 median_ms=136.496 frame_sha256=6d04ea80d9a1fd773c85d413057d64797f32dbb257a753d767a378d730d7d699
+trial=3 size=320x180 engine=interpreter samples_ms=425.273,426.573,426.418,433.551,430.317,432.809,427.135 median_ms=427.135 frame_sha256=6d04ea80d9a1fd773c85d413057d64797f32dbb257a753d767a378d730d7d699
+trial=3 size=320x180 engine=jit samples_ms=692.933,685.928,699.228,707.507,740.640,686.206,680.643 median_ms=692.933 frame_sha256=6d04ea80d9a1fd773c85d413057d64797f32dbb257a753d767a378d730d7d699
+SUMMARY size=320x180 frame_sha256=6d04ea80d9a1fd773c85d413057d64797f32dbb257a753d767a378d730d7d699 interpreter_ms=427.135418 interpreter_range_ms=[426.044522, 428.797609] jit_ms=695.103658 jit_range_ms=[692.932808, 702.089305] wamr_ms=138.342 wamr_range_ms=[136.496, 138.541]
+
+Provenance:
+- Host: AMD Ryzen 5 5500GT; Linux 7.0.0-38-generic x86_64; Python 3.13.15; Clang 21.1.8.
+- NativeInterpreter release library SHA-256: 4dc749e9115420084c433ef3e22008ff69855e31516291b507f4087a66355a01.
+- JIT release library SHA-256: 306828cf2bff4932f58a6187aa295fc5725f335d30f6ac447d87870be6da3c41.
+- WAMR: 2.4.3, commit f5f57c09aee623436f5fb87a90798fdd2cdf39fd; Fast Interpreter + WASI, AOT/JIT disabled.
+- NativeInterpreter runner SHA-256: a23d941a3498fd67c1d4776d2f8a4a251ae5dca8908dfaff2fca444187e32e56.
+- WAMR runner SHA-256: 5efb13e7cb08bbd64f5833df01a20fc879e3e2d382be53b2009af8de4201fc87.
+- Comparison driver SHA-256: 5891be5db8ce4131554676269f834f3a4bc734b08c3997723f44eab015b726bb.
+- Aggregate output hashes over 3 warmup + 7 timed frames: 64x36 `570ecec0d82c7dfc11805f203e7f5282f12cf1882d0f774783b8d9c057ac5ee2`; 128x72 `b6a28d273e549e783d8e5526fd2f9ad1ed8f08b45fba32571f689d7034f6ea03`; 192x108 `48b7b02de263c6610328b961fd0f5c2ea901cb82731901b6c36477c0eb913c0c`; 256x144 `2ce48b29f0eeabda19490cdf68d35742bbbc837ebb2e6b5d3185df980cdfa67c`; 320x180 `b836421dc04ef17309c5bb32b760cdb38f4de85e9cea5943fb90df0697f92f48`.

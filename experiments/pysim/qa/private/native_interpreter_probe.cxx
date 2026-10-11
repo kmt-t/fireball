@@ -15,8 +15,10 @@ struct qa_native_result : fb_native_result {
   std::uint32_t control_handler_count;
   std::uint32_t eligible_block_visits;
   std::uint32_t interpreted_block_count;
+  std::uint32_t block_search_cache_hits;
+  std::uint32_t block_search_cache_misses;
 };
-static_assert(sizeof(qa_native_result) == 32);
+static_assert(sizeof(qa_native_result) == 40);
 
 template <bool WithJit, bool WithExtension>
 int run_stats_dispatch(const dispatch_input_t<WithExtension> *call,
@@ -26,7 +28,7 @@ int run_stats_dispatch(const dispatch_input_t<WithExtension> *call,
   qa_native_result current{};
   const auto status =
       run_native_dispatch_abi<true, WithJit, WithExtension, false, void,
-                               qa_native_result>(call, &current);
+                              qa_native_result>(call, &current);
   total.status = current.status;
   total.error_code = current.error_code;
   total.trace_count += current.trace_count;
@@ -35,6 +37,8 @@ int run_stats_dispatch(const dispatch_input_t<WithExtension> *call,
   total.control_handler_count += current.control_handler_count;
   total.eligible_block_visits += current.eligible_block_visits;
   total.interpreted_block_count += current.interpreted_block_count;
+  total.block_search_cache_hits += current.block_search_cache_hits;
+  total.block_search_cache_misses += current.block_search_cache_misses;
   return status;
 }
 
@@ -76,8 +80,8 @@ fb_qa_run_dispatch_jit(const fb_native_dispatch_call *call,
 }
 
 extern "C" FB_PYSIM_INTERPRETER_EXPORT int
-fb_qa_run_dispatch_jit_extension(
-    const fb_native_dispatch_extension_call *call, fb_native_result *result) {
+fb_qa_run_dispatch_jit_extension(const fb_native_dispatch_extension_call *call,
+                                 fb_native_result *result) {
   return run_native_dispatch_abi<false, true, true>(call, result);
 }
 

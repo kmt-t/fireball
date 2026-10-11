@@ -13,7 +13,6 @@ constexpr std::uint32_t kCallBoundary = 4;
 constexpr std::uint32_t kRuntimeApiBoundary = 8;
 constexpr std::uint32_t kStopAtBlockBoundaryFlag = 1u << 0;
 constexpr std::uint32_t kStopAfterControlFlag = 1u << 1;
-constexpr std::uint32_t kStopAtDefinedCallBoundaryFlag = 1u << 2;
 constexpr std::uint32_t kPendingBlockHeadFlag = 1u << 5;
 constexpr std::uint32_t kCpsExitShift = 8;
 constexpr std::uint32_t kCpsExitMask = fb_native_cps_exit_mask;
@@ -36,6 +35,9 @@ constexpr std::uint32_t kSentinel = 0xFFFF'FFFFu;
 constexpr std::uint32_t kOpcodeFcPrefix = 0xFC;
 
 using execution_context = fireball_execution_context_native;
+
+[[gnu::always_inline]] inline std::uint32_t
+instruction_offset(const execution_context &current, const std::uint8_t *ip);
 
 [[gnu::always_inline]] inline fireball_call_frame_native &
 active_frame(execution_context &current);
@@ -117,7 +119,8 @@ inline bool trap(execution_context &current, std::uint32_t code) {
   return false;
 }
 
-inline bool call_boundary(execution_context &current) {
+inline bool call_boundary(execution_context &current, std::uint32_t ip) {
+  current.ip = ip;
   current.trap_code = 0;
   record_cps_exit(current, kCallBoundary);
   return false;
@@ -139,12 +142,13 @@ static_assert(offsetof(debug_context, control) == sizeof(execution_context));
 
 struct debugger_aspect {
   [[gnu::always_inline]] static inline bool
-  before_instruction(execution_context &context) {
+  before_instruction(execution_context &context, const std::uint8_t *ip) {
     auto &control = *reinterpret_cast<debug_context *>(&context)->control;
     if (control.enabled == 0)
       return false;
     const auto &frame = active_frame(context);
-    const auto pc = frame.function_view->code_pc_offset + context.ip;
+    const auto pc = frame.function_view->code_pc_offset +
+                    instruction_offset(context, ip);
     control.current_pc = pc;
     if (control.single_step != 0 && control.executed != 0) {
       control.stopped = 1;
@@ -196,31 +200,45 @@ continue_cps(execution_context *context, const std::uint8_t *ip,
   return value;
 }
 
+[[gnu::always_inline]] inline std::uint32_t
+instruction_width(const std::uint8_t *rel) {
+  if (*rel != 0xFFu)
+    return *rel;
+  std::uint32_t width;
+  std::memcpy(&width, rel + 1, sizeof(width));
+  assert(width >= 0xFFu);
+  return width;
+}
+
+[[gnu::always_inline]] inline void
+advance_instruction_ip(const std::uint8_t *&ip, const std::uint8_t *&rel) {
+  if (*rel != 0xFFu) {
+    ip += *rel++;
+    return;
+  }
+  std::uint32_t width;
+  std::memcpy(&width, rel + 1, sizeof(width));
+  assert(width >= 0xFFu);
+  ip += width;
+  rel += 1 + sizeof(width);
+}
+
+[[gnu::always_inline]] inline void
+consume_instruction_width(const std::uint8_t *&rel) {
+  rel += *rel == 0xFFu ? 1 + sizeof(std::uint32_t) : 1;
+}
+
+[[gnu::always_inline]] inline std::uint32_t
+instruction_offset(const execution_context &current, const std::uint8_t *ip) {
+  assert(current.code != nullptr && ip >= current.code &&
+         ip <= current.code + current.code_size);
+  return static_cast<std::uint32_t>(ip - current.code);
+}
+
 [[gnu::always_inline]] inline std::uint32_t peek_u32(const std::uint8_t *rel) {
   std::uint32_t value = 0;
   std::memcpy(&value, rel, sizeof(value));
   return value;
-}
-
-[[gnu::always_inline]] inline const std::uint8_t *
-leb128_end(const std::uint8_t *cursor) {
-  [[maybe_unused]] const auto *start = cursor;
-  std::uint8_t byte = 0;
-  do {
-    byte = *cursor++;
-    assert(cursor - start <= 10);
-  } while ((byte & 0x80u) != 0);
-  return cursor;
-}
-
-template <std::uint32_t OperandCount>
-[[gnu::always_inline]] inline std::uint32_t
-encoded_instruction_size(const execution_context &current) {
-  const auto *start = current.code + current.ip;
-  auto *cursor = start + 1;
-  for (std::uint32_t index = 0; index < OperandCount; ++index)
-    cursor = leb128_end(cursor);
-  return static_cast<std::uint32_t>(cursor - start);
 }
 
 inline bool pop(execution_context &current, std::uint32_t *&sp,
@@ -346,58 +364,32 @@ active_frame(const execution_context &current) {
 }
 
 [[gnu::always_inline]] inline const std::uint8_t *
-interpreter_rel_for_block(const fireball_call_frame_native &frame,
-                          std::uint32_t ip) {
+interpreter_rel_for_block_index(const fireball_call_frame_native &frame,
+                                std::uint32_t block_index) {
   assert(frame.function_view != nullptr);
   const auto &function = *frame.function_view;
   assert(function.interpreter_constant_pool != nullptr ||
-         function.interpreter_constant_word_count == 0);
+         function.interpreter_constant_byte_count == 0);
   assert(function.module_view != nullptr);
-  assert(ip < function.code_size);
   const auto &module = *function.module_view;
   assert(module.blocks != nullptr);
-  assert(module.block_count != 0);
-  const auto absolute_pc =
-      static_cast<std::uint64_t>(function.code_pc_offset) + ip;
-  assert(absolute_pc <= std::numeric_limits<std::uint32_t>::max());
-
-  std::uint32_t first = 0;
-  std::uint32_t last = module.block_count;
-  while (first < last) {
-    const auto middle = first + (last - first) / 2;
-    if (module.blocks[middle].head_pc < absolute_pc)
-      first = middle + 1;
-    else
-      last = middle;
-  }
-  std::uint32_t block_index = 0;
-  if (first < module.block_count &&
-      module.blocks[first].head_pc == absolute_pc) {
-    block_index = first;
-  } else if (first != 0 &&
-             module.blocks[first - 1].function_index == frame.func_index) {
-    block_index = first - 1;
-  } else {
-    assert(first < module.block_count);
-    assert(module.blocks[first].function_index == frame.func_index);
-    block_index = first;
-  }
-
-  const auto offset = module.blocks[block_index].interpreter_constant_offset;
+  assert(block_index < module.block_count);
+  const auto &block = module.blocks[block_index];
+  assert(block.function_index == frame.func_index);
+  const auto offset = block.interpreter_constant_byte_offset;
   assert(offset != kSentinel);
-  assert(offset <= function.interpreter_constant_word_count);
+  assert(offset <= function.interpreter_constant_byte_count);
   if (function.interpreter_constant_pool == nullptr) {
-    assert(offset == 0 && function.interpreter_constant_word_count == 0);
+    assert(offset == 0 && function.interpreter_constant_byte_count == 0);
     return nullptr;
   }
-  return function.interpreter_constant_pool +
-         static_cast<std::size_t>(offset) * sizeof(std::uint32_t);
+  return function.interpreter_constant_pool + offset;
 }
 
 [[gnu::always_inline]] inline const std::uint8_t *
 interpreter_rel_after_jit_trace(const fireball_call_frame_native &frame,
                                 std::uint32_t block_index,
-                                std::uint32_t consumed_words) {
+                                std::uint32_t consumed_bytes) {
   assert(frame.function_view != nullptr);
   const auto &function = *frame.function_view;
   assert(function.module_view != nullptr);
@@ -406,30 +398,23 @@ interpreter_rel_after_jit_trace(const fireball_call_frame_native &frame,
   assert(block_index < module.block_count);
   assert(module.blocks[block_index].function_index == frame.func_index);
   const auto block_offset =
-      module.blocks[block_index].interpreter_constant_offset;
+      module.blocks[block_index].interpreter_constant_byte_offset;
   assert(block_offset != kSentinel);
-  assert(block_offset <= function.interpreter_constant_word_count);
-  assert(consumed_words <=
-         function.interpreter_constant_word_count - block_offset);
-  const auto word_offset = block_offset + consumed_words;
+  assert(block_offset <= function.interpreter_constant_byte_count);
+  assert(consumed_bytes <=
+         function.interpreter_constant_byte_count - block_offset);
+  const auto byte_offset = block_offset + consumed_bytes;
   if (function.interpreter_constant_pool == nullptr) {
-    assert(word_offset == 0 && function.interpreter_constant_word_count == 0);
+    assert(byte_offset == 0 && function.interpreter_constant_byte_count == 0);
     return nullptr;
   }
-  return function.interpreter_constant_pool +
-         static_cast<std::size_t>(word_offset) * sizeof(std::uint32_t);
-}
-
-[[gnu::always_inline]] inline const std::uint8_t *
-interpreter_rel_for_current_block(execution_context &current,
-                                  std::uint32_t ip) {
-  // Pool offsets are indexed by basic block, not by individual instruction PC.
-  return interpreter_rel_for_block(active_frame(current), ip);
+  return function.interpreter_constant_pool + byte_offset;
 }
 
 [[gnu::always_inline]] inline bool
-finish_current_function(execution_context &current, std::uint32_t *&local_base,
-                        const std::uint8_t *&rel) {
+finish_current_function(execution_context &current,
+                        std::uint32_t *&local_base,
+                        const std::uint8_t *&instruction_ip) {
   auto *stack = current.call_stack;
   assert(stack != nullptr);
   assert(stack->size != 0);
@@ -452,14 +437,14 @@ finish_current_function(execution_context &current, std::uint32_t *&local_base,
   current.code = caller.function_view->code;
   current.code_size = caller.function_view->code_size;
   current.control_frame_base = caller.control_frame_base;
-  current.ip = finished.return_ip;
-  rel = interpreter_rel_for_block(caller, current.ip);
+  instruction_ip = current.code + finished.return_ip;
   return false;
 }
 
-inline bool is_requested_block_boundary(const execution_context &current) {
+inline bool is_requested_block_boundary(const execution_context &current,
+                                        std::uint32_t ip) {
   const auto &frame = active_frame(current);
-  const auto pc = frame.function_view->code_pc_offset + current.ip;
+  const auto pc = frame.function_view->code_pc_offset + ip;
   return pc == frame.boundary_next_pc || pc == frame.boundary_loops_to;
 }
 

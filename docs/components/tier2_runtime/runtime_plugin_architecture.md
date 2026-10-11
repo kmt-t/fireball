@@ -36,7 +36,7 @@ System と Runtime の責務は次のように分離する。
 - **静的 weave**: `runtime_composer` が有効なアスペクトだけを `runtime_harness` へ合成する。無効なアスペクトの状態、フック、WIT 境界、翻訳単位は合成結果に含めない。
 - **`runtime_context`**: 一ゲストに専有される可変状態である。実行コンテキスト、メモリ境界、トラップ、停止理由、観測統計の所有権を保持する。
 - **`execution_strategy`**: WASM命令を実行する必須のTier 2 Interpreterである。
-- **`interpreter_execution_plugin`**: Interpreter構成時に任意接続する汎用ネイティブ実行拡張の契約である。Tier 3 JITはこの契約を実装し、ホットスポット履歴、コードキャッシュ、コンパイル待ち列、コンパイラを所有する。
+- **`interpreter_execution_plugin`**: Interpreter構成時に任意接続する汎用ネイティブ実行拡張の契約である。Tier 3 JITはこの契約を実装し、ホットスポット履歴、コードキャッシュ、トレース検索、コンパイル待ち列、コンパイラを所有する。トレースentryの呼出しと実行状態の更新はInterpreter dispatcherが行う。
 - **`runtime_event_sink`**: 意味上のRuntimeイベントを固定長リングへ記録し、安全点でABIバッチとして出力する契約である。ホットスポット履歴を記録しない。
 - **`debugger_plugin`**: 停止、再開、ブレークポイント、レジスタ・メモリ観測を担当する契約である。実行状態を変更できる唯一の補助プラグインとする。
 - **`profiler_plugin`**: Runtime 観測イベントを読み取り、関数コールグラフと実行時間を集計する契約である。実行状態を変更しない。
@@ -65,7 +65,7 @@ graph TD
 | スロット | Tier 2 が定義する契約 | Tier 3 が実装する責務 | 無効構成の意味 |
 | :--- | :--- | :--- | :--- |
 | Execution | 共通 `call` とInterpreter実行の完了結果 | Tier 2 Interpreter | 許可しない。必ずInterpreterを結線する |
-| Interpreter native extension | Interpreter dispatcherへの接続 | Tier 2が汎用接続契約を定め、Tier 3 JITが本体実行、ホットスポット状態、コードキャッシュ、コンパイラを実装 | Interpreter構成時に拡張を接続しない |
+| Interpreter native extension | Interpreter dispatcherへの接続 | Tier 2が汎用接続契約を定め、Tier 3 JITがホットスポット状態、コードキャッシュ、トレース検索、コンパイラを実装する。選択したtrace entryはTier 2 Interpreter dispatcherが呼び出す | Interpreter構成時に拡張を接続しない |
 | Debugger | 停止、再開、観測、書込みの境界 | GDB RSP 等のプロトコルと停止処理 | デバッグ要求を無効化する |
 | Profiler | VM イベントの受信と終了通知 | コールグラフ、実行時間、ログ出力 | フック、イベント生成、状態、呼出しを合成しない |
 | Runtime Event Sink | 意味上のRuntimeイベントを記録し、停止点でABIバッチを出力する | 固定長イベントリング | 観測無効構成ではSink、リング、発行経路を合成しない |
@@ -125,7 +125,7 @@ sequenceDiagram
 ### 4.2 実行境界の進行
 Interpreterは呼出し状態を作り、native dispatcherを完了、trap、またはyield境界まで進める。接続済みのネイティブ実行拡張はInterpreter dispatcher内で呼び出す。
 
-RuntimeEngineはInterpreterを一度進め、scheduler境界の結果をSystemへ返す。JITの候補判定、trace検索、本体実行、compile queue処理はInterpreter拡張の責務である。
+RuntimeEngineはInterpreterを一度進め、scheduler境界の結果をSystemへ返す。JITの候補判定、trace検索、compile queue処理はInterpreter拡張の責務である。trace entryの呼出しとbody実行はInterpreter dispatcherの責務である。
 
 ### 4.3 プラグインの置換規則
 - 置換単位はスロット単位とする。一つの Tier 3 実装が別スロットの内部状態を兼務してはならない。
@@ -133,7 +133,7 @@ RuntimeEngineはInterpreterを一度進め、scheduler境界の結果をSystem�
 - C++ の `RuntimeComposer` は静的 DI で選択済みの具体型をテンプレートまたは生成済みハーネスへ結線する。実行ホットパスに構成判定を置かず、選択条件は `if constexpr` で特殊化する。
 - JIT 有効時はInterpreter構成に単一のネイティブ実行拡張を結線する。キャッシュ検索方針とコンパイラ選択はTier 3拡張内部に置き、RuntimeへJIT管理スロットを追加しない。
 - 無効なアスペクトに対応する `constexpr` 条件は偽でなければならない。このとき、イベントペイロード計算、フック呼出し、Null 判定、状態領域を翻訳単位へ生成してはならない。
-- JIT拡張はInterpreterから見た単一プラグイン境界とする。コンパイラはその内部実装であり、別スロットやC++ Runtime操作APIを増やさない。コンパイル失敗やキャッシュミスは同じInterpreter dispatcherのCPS handlerへフォールバックする。JIT無効構成には代替Nullオブジェクトを置かない。
+- JIT拡張はInterpreterから見た単一プラグイン境界とする。コンパイラはその内部実装であり、別スロットやC++ Runtime操作APIを増やさない。trace未常駐またはコンパイル対象外のBasicBlockは、同じInterpreter dispatcherが対応CPS handlerを実行し、その後も次のBasicBlockのtraceまたはhandlerを選ぶ。JIT無効構成には代替Nullオブジェクトを置かない。
 - Runtime Event Sink は C++ Runtime 内で固定長レコードを記録し、C++実行中にPython callbackを呼び出さない。Python Adapterは停止点で変換したイベント値をProfilerへ渡す。
 - Runtime Event Sinkは意味上のイベントだけを記録し、基本ブロック履歴を受けない。JIT履歴はTier 3 JIT拡張が内部状態として所有する。
 - Profiler から Runtime の実行メソッドを呼び出してはならない。

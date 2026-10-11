@@ -52,7 +52,7 @@ python3 tools/jit_stencil_gen/generate_assembly.py \
 
 ## ABI と PIC 契約
 
-- Trace entry は `ctx`, `ip`, `sp`, `rel` の四つの論理引数を受け取る。`operations.S` は SysV AMD64 と Windows x64 の物理引数レジスタを明示する。
+- Trace entry は `ctx`, `ip`, `sp`, `rel` の四つの論理引数を受け取り、`bool` を返す。通常完了時は未接続chain targetに到達した終端dispatcherだけが終端metadata pointerを`ctx.rel`へ渡し、`body_end_ip`を`ctx.ip`へ設定する。`false`はtrapまたはCPS exitを示す。`operations.S` は SysV AMD64 と Windows x64 の物理引数レジスタを明示する。
 - assembly source が一時レジスタと呼出し規約を明示する。各操作は成功接続 marker を除いて他の操作へ call/jump しない。
 - Runtime API 用ステンシルは共通コード領域の API table から該当 API を呼び、API が通常継続を返した場合は後続の合成済み操作へ進む。
 - `abi_probe.cxx` が本番 C++ ABI の関数型と構造体 offset を検査し、必要な offset を assembly 定義として渡す。

@@ -8,6 +8,13 @@ using jit_runtime_api_pointer = bool (*)(execution_context *, std::uint32_t *&,
                                          std::uint32_t *&,
                                          const std::uint8_t *);
 
+inline bool jit_runtime_unreachable(execution_context *context,
+                                    [[maybe_unused]] std::uint32_t *&sp,
+                                    [[maybe_unused]] std::uint32_t *&local_base,
+                                    [[maybe_unused]] const std::uint8_t *rel) {
+  return trap(*context, kTrapUnreachable);
+}
+
 inline std::uint32_t load_jit_immediate(const std::uint8_t *rel,
                                         std::uint32_t index) {
   std::uint32_t value = 0;
@@ -21,8 +28,13 @@ inline bool jit_runtime_api_passthrough(execution_context *context,
                                         std::uint32_t *&local_base,
                                         const std::uint8_t *rel) {
   assert(rel != nullptr);
+  const std::uint8_t *instruction_ip = context->code + context->ip;
   auto *cursor = rel;
-  return RuntimeApi(context, sp, local_base, cursor);
+  const auto completed =
+      RuntimeApi(context, instruction_ip, sp, local_base, cursor);
+  if (!cps_exit_pending(*context))
+    context->ip = instruction_offset(*context, instruction_ip);
+  return completed;
 }
 
 template <std::uint32_t Width, std::uint32_t ResultWords, bool Signed>
@@ -31,9 +43,15 @@ jit_runtime_memory_load(execution_context *context, std::uint32_t *&sp,
                         std::uint32_t *&local_base, const std::uint8_t *rel) {
   if (rel == nullptr)
     return trap(*context, kTrapUnreachable);
-  return runtime_memory_load_decoded<Width, ResultWords, Signed>(
-      context, sp, local_base, load_jit_immediate(rel, 0),
-      load_jit_immediate(rel, 1));
+  const auto source_ip = context->ip;
+  const auto *instruction_ip = context->code + source_ip;
+  const auto completed =
+      runtime_memory_load_decoded<Width, ResultWords, Signed>(
+          context, sp, local_base, instruction_ip, source_ip,
+          load_jit_immediate(rel, 0), load_jit_immediate(rel, 1));
+  if (!cps_exit_pending(*context))
+    context->ip = instruction_offset(*context, instruction_ip);
+  return completed;
 }
 
 template <std::uint32_t Width, std::uint32_t ValueWords>
@@ -42,77 +60,51 @@ jit_runtime_memory_store(execution_context *context, std::uint32_t *&sp,
                          std::uint32_t *&local_base, const std::uint8_t *rel) {
   if (rel == nullptr)
     return trap(*context, kTrapUnreachable);
-  return runtime_memory_store_decoded<Width, ValueWords>(
-      context, sp, local_base, load_jit_immediate(rel, 0),
-      load_jit_immediate(rel, 1));
-}
-
-inline bool jit_runtime_local_get(execution_context *context,
-                                  std::uint32_t *&sp,
-                                  std::uint32_t *&local_base,
-                                  const std::uint8_t *rel) {
-  if (rel == nullptr)
-    return trap(*context, kTrapUnreachable);
-  return runtime_local_get_decoded(context, sp, local_base,
-                                   load_jit_immediate(rel, 0));
-}
-
-inline bool jit_runtime_local_set(execution_context *context,
-                                  std::uint32_t *&sp,
-                                  std::uint32_t *&local_base,
-                                  const std::uint8_t *rel) {
-  if (rel == nullptr)
-    return trap(*context, kTrapUnreachable);
-  return runtime_local_set_decoded(context, sp, local_base,
-                                   load_jit_immediate(rel, 0));
-}
-
-inline bool jit_runtime_local_tee(execution_context *context,
-                                  std::uint32_t *&sp,
-                                  std::uint32_t *&local_base,
-                                  const std::uint8_t *rel) {
-  if (rel == nullptr)
-    return trap(*context, kTrapUnreachable);
-  return runtime_local_tee_decoded(context, sp, local_base,
-                                   load_jit_immediate(rel, 0));
+  const auto source_ip = context->ip;
+  const auto *instruction_ip = context->code + source_ip;
+  const auto completed = runtime_memory_store_decoded<Width, ValueWords>(
+      context, sp, local_base, instruction_ip, source_ip,
+      load_jit_immediate(rel, 0), load_jit_immediate(rel, 1));
+  if (!cps_exit_pending(*context))
+    context->ip = instruction_offset(*context, instruction_ip);
+  return completed;
 }
 
 template <bool (*Operation)(execution_context &, std::uint32_t *&)>
-inline bool jit_runtime_fc_saturating_conversion(execution_context *context,
-                                                 std::uint32_t *&sp,
-                                                 std::uint32_t *&local_base,
-                                                 const std::uint8_t *rel) {
-  if (rel == nullptr)
-    return trap(*context, kTrapUnreachable);
-  auto *cursor = static_cast<const std::uint8_t *>(nullptr);
-  return runtime_fc_saturating_conversion_decoded<Operation>(
-      context, sp, local_base, load_jit_immediate(rel, 0), cursor);
+inline bool jit_runtime_fc_saturating_conversion(
+    execution_context *context, std::uint32_t *&sp,
+    [[maybe_unused]] std::uint32_t *&local_base,
+    [[maybe_unused]] const std::uint8_t *rel) {
+  return runtime_fc_saturating_conversion_decoded<Operation>(context, sp);
 }
 
-inline bool jit_runtime_fc_memory_copy(execution_context *context,
-                                       std::uint32_t *&sp,
-                                       std::uint32_t *&local_base,
-                                       const std::uint8_t *rel) {
+inline bool
+jit_runtime_fc_memory_copy(execution_context *context, std::uint32_t *&sp,
+                           [[maybe_unused]] std::uint32_t *&local_base,
+                           const std::uint8_t *rel) {
   if (rel == nullptr)
     return trap(*context, kTrapUnreachable);
-  auto *cursor = static_cast<const std::uint8_t *>(nullptr);
-  return runtime_fc_memory_copy_decoded(context, sp, local_base,
-                                        load_jit_immediate(rel, 0), cursor);
+  const auto source_ip = context->ip;
+  const auto *instruction_ip = context->code + source_ip;
+  return runtime_fc_memory_copy_decoded(context, sp, instruction_ip, source_ip,
+                                        load_jit_immediate(rel, 0));
 }
 
-inline bool jit_runtime_fc_memory_fill(execution_context *context,
-                                       std::uint32_t *&sp,
-                                       std::uint32_t *&local_base,
-                                       const std::uint8_t *rel) {
+inline bool
+jit_runtime_fc_memory_fill(execution_context *context, std::uint32_t *&sp,
+                           [[maybe_unused]] std::uint32_t *&local_base,
+                           const std::uint8_t *rel) {
   if (rel == nullptr)
     return trap(*context, kTrapUnreachable);
-  auto *cursor = static_cast<const std::uint8_t *>(nullptr);
-  return runtime_fc_memory_fill_decoded(context, sp, local_base,
-                                        load_jit_immediate(rel, 0), cursor);
+  const auto source_ip = context->ip;
+  const auto *instruction_ip = context->code + source_ip;
+  return runtime_fc_memory_fill_decoded(context, sp, instruction_ip, source_ip,
+                                        load_jit_immediate(rel, 0));
 }
 
 constexpr auto make_opcode_jit_runtime_api_table() {
   std::array<jit_runtime_api_pointer, 256> apis{};
+  apis[0x00] = &jit_runtime_unreachable;
   apis[0x01] = &jit_runtime_api_passthrough<&runtime_nop>;
   apis[0x02] = &jit_runtime_api_passthrough<&runtime_block>;
   apis[0x03] = &jit_runtime_api_passthrough<&runtime_block>;
@@ -127,9 +119,6 @@ constexpr auto make_opcode_jit_runtime_api_table() {
   apis[0x11] = &jit_runtime_api_passthrough<&runtime_call<true>>;
   apis[0x1A] = &jit_runtime_api_passthrough<&runtime_drop>;
   apis[0x1B] = &jit_runtime_api_passthrough<&runtime_select>;
-  apis[0x20] = &jit_runtime_local_get;
-  apis[0x21] = &jit_runtime_local_set;
-  apis[0x22] = &jit_runtime_local_tee;
   apis[0x23] = &jit_runtime_api_passthrough<&runtime_global_get>;
   apis[0x24] = &jit_runtime_api_passthrough<&runtime_global_set>;
   apis[0x28] = &jit_runtime_memory_load<4, 1, false>;
@@ -422,6 +411,10 @@ constexpr auto make_opcode_jit_runtime_api_table() {
 
 inline constexpr auto kOpcodeJitRuntimeApis =
     make_opcode_jit_runtime_api_table();
+static_assert(kOpcodeJitRuntimeApis[0x20] == nullptr &&
+                  kOpcodeJitRuntimeApis[0x21] == nullptr &&
+                  kOpcodeJitRuntimeApis[0x22] == nullptr,
+              "local operations must be emitted by the JIT encoder");
 
 constexpr auto make_fc_opcode_jit_runtime_api_table() {
   std::array<jit_runtime_api_pointer, 12> apis{};

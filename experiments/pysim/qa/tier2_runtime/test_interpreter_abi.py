@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ctypes
+from pathlib import Path
 
 from qa.shared.helpers import expect_assertion
 from tier2_runtime.abi.interpreter_abi import (
@@ -59,6 +60,7 @@ def test_native_layout_matches_x64_jit_context():
     assert ctypes.sizeof(ControlStackNative) == 520
     assert ctypes.sizeof(CallFrameNative) == 40
     assert ctypes.sizeof(CallStackNative) == 1288
+    assert CallStackNative.size.offset == 1280
 
     ctx = ExecutionContextABI()
     ctx.ip = 0x1234
@@ -78,10 +80,15 @@ def test_product_dispatch_result_contains_only_execution_state():
 
 def test_product_dispatch_asserts_on_invalid_entry():
     """An invalid dispatch request is an internal contract violation."""
+    import os
     import signal
     import subprocess
     import sys
 
+    environment = os.environ.copy()
+    environment["PYTHONPATH"] = os.pathsep.join(
+        str(Path(path or ".").resolve()) for path in sys.path
+    )
     process = subprocess.run(
         [
             sys.executable,
@@ -90,6 +97,7 @@ def test_product_dispatch_asserts_on_invalid_entry():
             "RUN_DISPATCH(None, ctypes.byref(NativeResult()))",
         ],
         capture_output=True,
+        env=environment,
         check=False,
     )
     assert process.returncode == -signal.SIGABRT

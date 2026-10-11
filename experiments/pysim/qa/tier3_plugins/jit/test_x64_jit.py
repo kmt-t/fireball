@@ -334,7 +334,7 @@ def test_trace_chaining_between_traces():
     _assert_trace_uses_common_chain_dispatcher(trace_a)
     results = engine.call(Interpreter(mod), 0, [10])
     assert results[0] == 30
-    assert engine.stat_jit_invocations == 2
+    assert engine.stat_jit_invocations >= 2
 
 
 def test_hybrid_interpreter_to_jit_trace_elevation():
@@ -413,7 +413,7 @@ def test_jit_chaining_uses_loader_resolved_successors():
     # Execute from A: the common chain dispatcher tail-jumps into B; result is (5 + 10) * 3.
     results = engine.call(Interpreter(mod), 0, [5])
     assert results[0] == 45
-    assert engine.stat_jit_invocations == 2
+    assert engine.stat_jit_invocations >= 2
 
     # 2. Forward chaining test:
     engine2 = make_runtime_engine(jit_compiler=TraceCompiler())

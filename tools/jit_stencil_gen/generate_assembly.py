@@ -103,9 +103,9 @@ def compile_abi_probe(
         "production C++ ABI extraction",
     )
     raw = section_path.read_bytes()
-    if len(raw) != 9 * 4:
-        raise GenerationError(f"production ABI section has {len(raw)} bytes; expected 36")
-    return struct.unpack("<9I", raw)
+    if len(raw) != 11 * 4:
+        raise GenerationError(f"production ABI section has {len(raw)} bytes; expected 44")
+    return struct.unpack("<11I", raw)
 
 
 def parse_symbols(nm: str, object_path: Path) -> dict[str, Symbol]:
@@ -437,6 +437,8 @@ def role_definitions(role: str, abi: tuple[int, ...], config_path: Path) -> dict
         context_ip,
         context_sp,
         context_flags,
+        boundary_metadata_bytes,
+        context_rel,
     ) = abi
     config = runpy.run_path(str(config_path))
     api_table_offset = (
@@ -463,6 +465,12 @@ def role_definitions(role: str, abi: tuple[int, ...], config_path: Path) -> dict
             "FB_TRACE_CONST_REL_OFFSET": const_rel,
             "FB_TRACE_HEADER_BYTES": header,
             "FB_TRACE_CHAIN_TARGET_OFFSET": chain_target,
+            "FB_TRACE_CHAIN_ENTRY_OFFSET": config[
+                "JIT_X64_TRACE_CHAIN_ENTRY_OFFSET"
+            ],
+            "FB_TRACE_BOUNDARY_METADATA_BYTES": boundary_metadata_bytes,
+            "FB_CONTEXT_IP_OFFSET": context_ip,
+            "FB_CONTEXT_REL_OFFSET": context_rel,
         }
     raise GenerationError(f"unsupported assembly role {role!r}")
 

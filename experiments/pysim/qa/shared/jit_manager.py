@@ -20,7 +20,7 @@ from qa.private import jit_native_abi as native_abi
 from qa.private.interpreter_native_abi import RUN_DISPATCH_JIT
 from qa.private.jit_native_abi import CacheField
 from qa.shared.jit_scoring import JIT_CANDIDATE_THRESHOLD, block_score
-from system_containers import MutableBitStorage, StaticVector
+from system_containers import MutableBitStorage, StaticVector, fold_mix32
 from tier2_runtime.abi.native_abi import BufferLease
 from tier2_runtime.interpreter.interpreter import (
     NativeModuleExecution,
@@ -287,6 +287,10 @@ class JITRuntimeManager(NativeJITRuntimeManager):
         function_index = block.func_index
         function = self.module.functions[function_index - len(self.module.imports)]
         assert function.local_layout_cache is not None
+        assert self.module.block_storage is not None
+        block_index = self.module.block_storage.view().find(fold_mix32(pc))
+        assert block_index is not None
+        assert self.module.blocks[block_index].head_pc == pc
         code = self.module.code_for(function_index)
         block_offset = pc - self.module.function_pc_offset(function_index)
         local_index = function_index - len(self.module.imports)
@@ -308,6 +312,7 @@ class JITRuntimeManager(NativeJITRuntimeManager):
                 local_count=layout.count,
                 total_words=layout.total_words,
             ),
+            block_index=block_index,
         )
         return block_input
 

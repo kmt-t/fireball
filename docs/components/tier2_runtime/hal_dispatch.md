@@ -97,7 +97,7 @@ HAL全体の制限値を定義する。物理値は Tier 3 で確定される。
 
 HAL の公開境界は、WASI 0.3p の interface / stream / pollable に対応しやすい汎用操作で構成する。ゲスト側の Preview1 API への変換は Tier 3 のゲストアダプタが担当し、HAL はその変換後の契約だけを受け取る。
 
-公開操作のシグネチャと型は [`fireball_hal_contract.wit`](docs/components/tier3_platform/wit/fireball_hal_contract.wit) の `resolver` を正本とする。本書は操作の適用条件とIPCコマンドへの対応を定める。
+ゲストへ公開するresource・functionのシグネチャはTier 3 Platformの[`fireball_hal_contract.wit`](docs/components/tier3_platform/wit/fireball_hal_contract.wit)を正本とする。本書はTier 2 HALが受け取る内部操作の適用条件、URI解決、IPCコマンドへの対応を定める。WIT宣言をTier 2の内部IPC契約として扱わない。
 
 - バッファ操作では対象スロットを今回のI/O期間だけDYNAMICへマップする。競合時は `BUSY` を返し、I/O終了時にアンマップする。
 - クロック購読で予約した一回限りのpollableは、指定時間後にreadyとなる。確認と待機はその単一ハンドルを対象とし、破棄時に固定スロットを解放する。
@@ -145,7 +145,7 @@ HAL が管轄するすべてのハードウェアドライバおよびコンソ�
 <!-- traceability: {WASI_Implementation} {URIAbstraction} {TypeSafeMessaging} {META_ZeroCostAbstraction} -->
 
 #### HAL の公開契約
-Fireball の HAL は、WASI 0.3p と親和性のある汎用インターフェースとして URI 解決、固定バッファスロット参照、ストリーム、クロック、ポーリングを提供する。`resolver` WIT の型と関数は [`interface_wit.md`](docs/components/tier3_platform/interface_wit.md) の契約に従う。
+Fireball の HAL は、WASI 0.3p と親和性のある汎用インターフェースとして URI 解決、固定バッファスロット参照、ストリーム、クロック、ポーリングを提供する。ゲスト側の`resolver` WIT型と関数はTier 3 Platformの[`interface_wit.md`](docs/components/tier3_platform/interface_wit.md)に従い、本書はホストHAL内のURI解決とIPC動作を定める。
 
 #### ゲスト側アダプタ
 既存の WASI Preview1 バイナリとの互換性を提供する `fd_write` 等の変換は、Tier 3 のゲストアダプタが担当する。`hal_dispatch` は Preview1 ABI、ゲスト iovec の走査、errno 変換の順序を定義せず、変換後の HAL 操作だけを処理する。

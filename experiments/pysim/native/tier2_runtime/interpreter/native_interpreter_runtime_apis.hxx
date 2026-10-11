@@ -5,18 +5,20 @@
 // the next opcode; CPS handlers are thin adapters around this shared interface.
 namespace {
 
-using runtime_api_pointer = bool (*)(execution_context *, std::uint32_t *&,
+using runtime_api_pointer = bool (*)(execution_context *,
+                                     const std::uint8_t *&, std::uint32_t *&,
                                      std::uint32_t *&, const std::uint8_t *&);
 template <auto Operation>
 [[gnu::always_inline]] inline bool
-runtime_i32_unary(execution_context *context, std::uint32_t *&sp,
+runtime_i32_unary(execution_context *context,
+                  const std::uint8_t *&instruction_ip, std::uint32_t *&sp,
                   [[maybe_unused]] std::uint32_t *&local_base,
                   [[maybe_unused]] const std::uint8_t *&rel) {
   auto &current = *context;
   if (sp == current.stack_base)
     return trap(current, kTrapOperandStackCapacity);
   sp[-1] = Operation(sp[-1]);
-  ++current.ip;
+  advance_instruction_ip(instruction_ip, rel);
   return true;
 }
 
@@ -448,11 +450,12 @@ inline bool conversion_identity(execution_context &, std::uint32_t *&,
 
 template <bool Indirect>
 [[gnu::always_inline]] inline bool
-runtime_call(execution_context *context, std::uint32_t *&sp,
+runtime_call(execution_context *context,
+                  const std::uint8_t *&instruction_ip, std::uint32_t *&sp,
              std::uint32_t *&local_stack,
              [[maybe_unused]] const std::uint8_t *&rel) {
   auto &current = *context;
-  const auto source_ip = current.ip;
+  const auto source_ip = instruction_offset(current, instruction_ip);
   std::uint32_t function_index = 0;
   std::uint32_t table_index = 0;
   std::uint32_t table_slot = 0;
@@ -483,8 +486,10 @@ runtime_call(execution_context *context, std::uint32_t *&sp,
   const auto &target = module.functions[function_index];
   // Imports cross the host-call boundary; defined guest functions stay in this
   // native dispatcher and never return to Python opcode handling.
-  if (target.is_import != 0)
+  if (target.is_import != 0) {
+    consume_instruction_width(rel);
     return runtime_api_boundary(current, source_ip);
+  }
   if (current.call_stack->size >= FIREBALL_NATIVE_CALL_STACK_CAPACITY) {
     return trap(current, kTrapCallStackCapacity);
   }
@@ -521,38 +526,35 @@ runtime_call(execution_context *context, std::uint32_t *&sp,
   callee.control_frame_base =
       current.control_stack->frames + current.control_stack->size;
   callee.func_index = function_index;
-  callee.return_ip =
-      current.ip + encoded_instruction_size<Indirect ? 2u : 1u>(current);
+  callee.return_ip = source_ip + instruction_width(rel);
   callee.boundary_next_pc = kSentinel;
   callee.boundary_loops_to = kSentinel;
+  consume_instruction_width(rel);
 
   sp = argument_base;
   current.local_stack_pointer = local_end;
   ++current.call_stack->size;
-  current.ip = 0;
   current.code = target.code;
   current.code_size = target.code_size;
+  instruction_ip = current.code;
   current.control_frame_base = callee.control_frame_base;
   local_stack = callee_local_base;
   current.local_base = local_stack;
-  rel = interpreter_rel_for_block(callee, 0);
-  if ((current.runtime_flags & kStopAtDefinedCallBoundaryFlag) != 0) {
-    return call_boundary(current);
-  }
-  return true;
+  return call_boundary(current, 0);
 }
 
 [[gnu::always_inline]] inline bool
-runtime_nop(execution_context *context, [[maybe_unused]] std::uint32_t *&sp,
+runtime_nop(execution_context *, const std::uint8_t *&instruction_ip,
+            [[maybe_unused]] std::uint32_t *&sp,
             [[maybe_unused]] std::uint32_t *&local_base,
             [[maybe_unused]] const std::uint8_t *&rel) {
-  auto &current = *context;
-  current.ip += 1;
+  advance_instruction_ip(instruction_ip, rel);
   return true;
 }
 
 [[gnu::always_inline]] inline bool
-runtime_else(execution_context *context, [[maybe_unused]] std::uint32_t *&sp,
+runtime_else(execution_context *context,
+                  const std::uint8_t *&instruction_ip, [[maybe_unused]] std::uint32_t *&sp,
              [[maybe_unused]] std::uint32_t *&local_base,
              [[maybe_unused]] const std::uint8_t *&rel) {
   auto &current = *context;
@@ -565,75 +567,75 @@ runtime_else(execution_context *context, [[maybe_unused]] std::uint32_t *&sp,
   const auto &call_frame = active_frame(current);
   const auto *entry = control_entry(current, frame.start);
   assert(entry != nullptr && entry->match_end != kSentinel);
-  current.ip = call_frame.boundary_next_pc != kSentinel
-                   ? call_frame.boundary_next_pc -
-                         call_frame.function_view->code_pc_offset
-                   : entry->match_end + 1;
-  prune_control_frames_after_static_jump(current, current.ip);
-  rel = interpreter_rel_for_current_block(current, current.ip);
-  if (should_stop_after_control(current))
-    return block_boundary(current, current.ip);
-  return true;
+  consume_instruction_width(rel);
+  const auto next_ip = call_frame.boundary_next_pc != kSentinel
+                           ? call_frame.boundary_next_pc -
+                                 call_frame.function_view->code_pc_offset
+                           : entry->match_end + 1;
+  prune_control_frames_after_static_jump(current, next_ip);
+  instruction_ip = current.code + next_ip;
+  return block_boundary(current, next_ip);
 }
 
 [[gnu::always_inline]] inline bool
-runtime_block(execution_context *context, [[maybe_unused]] std::uint32_t *&sp,
+runtime_block(execution_context *context,
+                  const std::uint8_t *&instruction_ip, [[maybe_unused]] std::uint32_t *&sp,
               [[maybe_unused]] std::uint32_t *&local_base,
               [[maybe_unused]] const std::uint8_t *&rel) {
   auto &current = *context;
-  const auto *entry = control_entry(current, current.ip);
+  const auto source_ip = instruction_offset(current, instruction_ip);
+  const auto *entry = control_entry(current, source_ip);
   if (entry == nullptr || entry->match_end == kSentinel)
     return trap(current, kTrapUnreachable);
   if (current.control_stack->size >= FIREBALL_NATIVE_CONTROL_STACK_CAPACITY)
     return trap(current, kTrapControlFrameCapacity);
   auto &frame = current.control_stack->frames[current.control_stack->size++];
-  frame.start = current.ip;
+  frame.start = source_ip;
   frame.stack_height = sp;
-  current.ip = entry->next_pc;
-  rel = interpreter_rel_for_current_block(current, current.ip);
-  if (should_stop_after_control(current))
-    return block_boundary(current, current.ip);
-  return true;
+  consume_instruction_width(rel);
+  instruction_ip = current.code + entry->next_pc;
+  return block_boundary(current, entry->next_pc);
 }
 
 [[gnu::always_inline]] inline bool
-runtime_if(execution_context *context, std::uint32_t *&sp,
+runtime_if(execution_context *context,
+                  const std::uint8_t *&instruction_ip, std::uint32_t *&sp,
            [[maybe_unused]] std::uint32_t *&local_base,
            [[maybe_unused]] const std::uint8_t *&rel) {
   auto &current = *context;
-  const auto *entry = control_entry(current, current.ip);
+  const auto source_ip = instruction_offset(current, instruction_ip);
+  const auto *entry = control_entry(current, source_ip);
   std::uint32_t condition = 0;
   if (entry == nullptr || entry->match_end == kSentinel)
     return trap(current, kTrapUnreachable);
   if (!pop(current, sp, condition))
     return trap(current, kTrapOperandStackCapacity);
+  consume_instruction_width(rel);
   if (condition == 0 && entry->else_offset == kSentinel) {
-    current.ip = entry->match_end + 1;
-    rel = interpreter_rel_for_current_block(current, current.ip);
-    if (should_stop_after_control(current))
-      return block_boundary(current, current.ip);
-    return true;
+    const auto next_ip = entry->match_end + 1;
+    instruction_ip = current.code + next_ip;
+    return block_boundary(current, next_ip);
   }
   if (current.control_stack->size >= FIREBALL_NATIVE_CONTROL_STACK_CAPACITY) {
     return trap(current, kTrapControlFrameCapacity);
   }
   auto &frame = current.control_stack->frames[current.control_stack->size++];
-  frame.start = current.ip;
+  frame.start = source_ip;
   frame.stack_height = sp;
-  current.ip = condition == 0 ? entry->else_offset + 1 : entry->next_pc;
-  rel = interpreter_rel_for_current_block(current, current.ip);
-  if (should_stop_after_control(current))
-    return block_boundary(current, current.ip);
-  return true;
+  const auto next_ip = condition == 0 ? entry->else_offset + 1 : entry->next_pc;
+  instruction_ip = current.code + next_ip;
+  return block_boundary(current, next_ip);
 }
 
 [[gnu::always_inline]] inline bool
-runtime_br(execution_context *context, std::uint32_t *&sp,
+runtime_br(execution_context *context,
+                  const std::uint8_t *&instruction_ip, std::uint32_t *&sp,
            [[maybe_unused]] std::uint32_t *&local_base,
            [[maybe_unused]] const std::uint8_t *&rel) {
   auto &current = *context;
-  const auto source_ip = current.ip;
+  const auto source_ip = instruction_offset(current, instruction_ip);
   const auto depth = read_u32(rel);
+  consume_instruction_width(rel);
   std::uint32_t next_ip = 0;
   if (!branch(current, sp, depth, next_ip))
     return trap(current, kTrapUnreachable);
@@ -641,11 +643,9 @@ runtime_br(execution_context *context, std::uint32_t *&sp,
     const bool outermost = &active_frame(current) == current.call_frame_base;
     if (outermost && should_stop_after_control(current))
       return block_boundary(current, kSentinel);
-    if (finish_current_function(current, local_base, rel))
+    if (finish_current_function(current, local_base, instruction_ip))
       return complete(current);
-    if (should_stop_after_control(current))
-      return block_boundary(current, current.ip);
-    return true;
+    return block_boundary(current, instruction_offset(current, instruction_ip));
   }
   const auto &call_frame = active_frame(current);
   if (call_frame.boundary_next_pc != kSentinel) {
@@ -653,33 +653,29 @@ runtime_br(execution_context *context, std::uint32_t *&sp,
         call_frame.boundary_next_pc - call_frame.function_view->code_pc_offset;
   }
   prune_control_frames_after_static_jump(current, next_ip);
-  const bool loop_backedge = record_loop_backedge(current, source_ip, next_ip);
-  current.ip = next_ip;
-  rel = interpreter_rel_for_current_block(current, current.ip);
-  if (should_stop_after_control(current) ||
-      (loop_backedge && current.loop_jump_count >= current.loop_jump_threshold))
-    return block_boundary(current, current.ip);
-  return true;
+  record_loop_backedge(current, source_ip, next_ip);
+  instruction_ip = current.code + next_ip;
+  return block_boundary(current, next_ip);
 }
 
 [[gnu::always_inline]] inline bool
-runtime_br_if(execution_context *context, std::uint32_t *&sp,
+runtime_br_if(execution_context *context,
+                  const std::uint8_t *&instruction_ip, std::uint32_t *&sp,
               [[maybe_unused]] std::uint32_t *&local_base,
               [[maybe_unused]] const std::uint8_t *&rel) {
   auto &current = *context;
-  const auto source_ip = current.ip;
+  const auto source_ip = instruction_offset(current, instruction_ip);
   std::uint32_t depth = 0;
   std::uint32_t condition = 0;
   depth = read_u32(rel);
   if (!pop(current, sp, condition))
     return trap(current, kTrapOperandStackCapacity);
   if (condition == 0) {
-    current.ip = source_ip + encoded_instruction_size<1>(current);
-    rel = interpreter_rel_for_current_block(current, current.ip);
-    if (should_stop_after_control(current))
-      return block_boundary(current, current.ip);
-    return true;
+    advance_instruction_ip(instruction_ip, rel);
+    const auto next_ip = instruction_offset(current, instruction_ip);
+    return block_boundary(current, next_ip);
   }
+  consume_instruction_width(rel);
   std::uint32_t next_ip = 0;
   if (!branch(current, sp, depth, next_ip))
     return trap(current, kTrapUnreachable);
@@ -687,11 +683,9 @@ runtime_br_if(execution_context *context, std::uint32_t *&sp,
     const bool outermost = &active_frame(current) == current.call_frame_base;
     if (outermost && should_stop_after_control(current))
       return block_boundary(current, kSentinel);
-    if (finish_current_function(current, local_base, rel))
+    if (finish_current_function(current, local_base, instruction_ip))
       return complete(current);
-    if (should_stop_after_control(current))
-      return block_boundary(current, current.ip);
-    return true;
+    return block_boundary(current, instruction_offset(current, instruction_ip));
   }
   const auto &call_frame = active_frame(current);
   if (call_frame.boundary_loops_to != kSentinel) {
@@ -699,13 +693,9 @@ runtime_br_if(execution_context *context, std::uint32_t *&sp,
         call_frame.boundary_loops_to - call_frame.function_view->code_pc_offset;
   }
   prune_control_frames_after_static_jump(current, next_ip);
-  const bool loop_backedge = record_loop_backedge(current, source_ip, next_ip);
-  current.ip = next_ip;
-  rel = interpreter_rel_for_current_block(current, current.ip);
-  if (should_stop_after_control(current) ||
-      (loop_backedge && current.loop_jump_count >= current.loop_jump_threshold))
-    return block_boundary(current, current.ip);
-  return true;
+  record_loop_backedge(current, source_ip, next_ip);
+  instruction_ip = current.code + next_ip;
+  return block_boundary(current, next_ip);
 }
 
 // These helpers mutate only the local and operand state. The instruction
@@ -795,14 +785,14 @@ runtime_local_get_decoded(execution_context *context, std::uint32_t *&sp,
 }
 
 [[gnu::always_inline]] inline bool
-runtime_local_get(execution_context *context, std::uint32_t *&sp,
+runtime_local_get(execution_context *context,
+                  const std::uint8_t *&instruction_ip, std::uint32_t *&sp,
                   std::uint32_t *&local_base,
                   [[maybe_unused]] const std::uint8_t *&rel) {
-  auto &current = *context;
   const auto index = read_u32(rel);
   if (!runtime_local_get_decoded(context, sp, local_base, index))
     return false;
-  current.ip += encoded_instruction_size<1>(current);
+  advance_instruction_ip(instruction_ip, rel);
   return true;
 }
 
@@ -814,14 +804,14 @@ runtime_local_set_decoded(execution_context *context, std::uint32_t *&sp,
 }
 
 [[gnu::always_inline]] inline bool
-runtime_local_set(execution_context *context, std::uint32_t *&sp,
+runtime_local_set(execution_context *context,
+                  const std::uint8_t *&instruction_ip, std::uint32_t *&sp,
                   std::uint32_t *&local_base,
                   [[maybe_unused]] const std::uint8_t *&rel) {
-  auto &current = *context;
   const auto index = read_u32(rel);
   if (!runtime_local_set_decoded(context, sp, local_base, index))
     return false;
-  current.ip += encoded_instruction_size<1>(current);
+  advance_instruction_ip(instruction_ip, rel);
   return true;
 }
 
@@ -833,19 +823,20 @@ runtime_local_tee_decoded(execution_context *context, std::uint32_t *&sp,
 }
 
 [[gnu::always_inline]] inline bool
-runtime_local_tee(execution_context *context, std::uint32_t *&sp,
+runtime_local_tee(execution_context *context,
+                  const std::uint8_t *&instruction_ip, std::uint32_t *&sp,
                   std::uint32_t *&local_base,
                   [[maybe_unused]] const std::uint8_t *&rel) {
-  auto &current = *context;
   const auto index = read_u32(rel);
   if (!runtime_local_tee_decoded(context, sp, local_base, index))
     return false;
-  current.ip += encoded_instruction_size<1>(current);
+  advance_instruction_ip(instruction_ip, rel);
   return true;
 }
 
 [[gnu::always_inline]] inline bool
-runtime_global_get(execution_context *context, std::uint32_t *&sp,
+runtime_global_get(execution_context *context,
+                  const std::uint8_t *&instruction_ip, std::uint32_t *&sp,
                    [[maybe_unused]] std::uint32_t *&local_base,
                    [[maybe_unused]] const std::uint8_t *&rel) {
   auto &current = *context;
@@ -865,12 +856,13 @@ runtime_global_get(execution_context *context, std::uint32_t *&sp,
   *sp++ = static_cast<std::uint32_t>(value);
   if (width == 2u)
     *sp++ = static_cast<std::uint32_t>(value >> 32);
-  current.ip += encoded_instruction_size<1>(current);
+  advance_instruction_ip(instruction_ip, rel);
   return true;
 }
 
 [[gnu::always_inline]] inline bool
-runtime_global_set(execution_context *context, std::uint32_t *&sp,
+runtime_global_set(execution_context *context,
+                  const std::uint8_t *&instruction_ip, std::uint32_t *&sp,
                    [[maybe_unused]] std::uint32_t *&local_base,
                    [[maybe_unused]] const std::uint8_t *&rel) {
   auto &current = *context;
@@ -892,30 +884,32 @@ runtime_global_set(execution_context *context, std::uint32_t *&sp,
     value |= static_cast<std::uint64_t>(sp[-1]) << 32;
   module->globals[index] = value;
   sp -= width;
-  current.ip += encoded_instruction_size<1>(current);
+  advance_instruction_ip(instruction_ip, rel);
   return true;
 }
 
 [[gnu::always_inline]] inline bool
-runtime_drop(execution_context *context, std::uint32_t *&sp,
+runtime_drop(execution_context *context,
+                  const std::uint8_t *&instruction_ip, std::uint32_t *&sp,
              [[maybe_unused]] std::uint32_t *&local_base,
              [[maybe_unused]] const std::uint8_t *&rel) {
   auto &current = *context;
-  const auto *entry = control_entry(current, current.ip);
+  const auto *entry = control_entry(current, instruction_offset(current, instruction_ip));
   const auto width = entry == nullptr ? 0u : entry->operand_width;
   if (width == 0 || sp < current.stack_base + width)
     return trap(current, kTrapOperandStackCapacity);
   sp -= width;
-  current.ip += 1;
+  advance_instruction_ip(instruction_ip, rel);
   return true;
 }
 
 [[gnu::always_inline]] inline bool
-runtime_select(execution_context *context, std::uint32_t *&sp,
+runtime_select(execution_context *context,
+                  const std::uint8_t *&instruction_ip, std::uint32_t *&sp,
                [[maybe_unused]] std::uint32_t *&local_base,
                [[maybe_unused]] const std::uint8_t *&rel) {
   auto &current = *context;
-  const auto *entry = control_entry(current, current.ip);
+  const auto *entry = control_entry(current, instruction_offset(current, instruction_ip));
   const auto width = entry == nullptr ? 0u : entry->operand_width;
   if ((width != 1 && width != 2) || sp < current.stack_base + 1 + width * 2) {
     return trap(current, kTrapOperandStackCapacity);
@@ -928,12 +922,13 @@ runtime_select(execution_context *context, std::uint32_t *&sp,
           sp[word - static_cast<std::ptrdiff_t>(width)];
   }
   sp -= width;
-  current.ip += 1;
+  advance_instruction_ip(instruction_ip, rel);
   return true;
 }
 
 [[gnu::always_inline]] inline bool
-runtime_end(execution_context *context, [[maybe_unused]] std::uint32_t *&sp,
+runtime_end(execution_context *context,
+                  const std::uint8_t *&instruction_ip, [[maybe_unused]] std::uint32_t *&sp,
             [[maybe_unused]] std::uint32_t *&local_base,
             [[maybe_unused]] const std::uint8_t *&rel) {
   auto &current = *context;
@@ -941,44 +936,41 @@ runtime_end(execution_context *context, [[maybe_unused]] std::uint32_t *&sp,
       current.control_frame_base) {
     current.control_stack->size -= 1;
   }
-  current.ip += 1;
-  if (current.ip >= current.code_size) {
+  advance_instruction_ip(instruction_ip, rel);
+  const auto next_ip = instruction_offset(current, instruction_ip);
+  if (next_ip >= current.code_size) {
     const bool outermost = &active_frame(current) == current.call_frame_base;
     if (outermost && should_stop_after_control(current))
       return block_boundary(current, kSentinel);
-    if (finish_current_function(current, local_base, rel))
+    if (finish_current_function(current, local_base, instruction_ip))
       return complete(current);
-    if (should_stop_after_control(current))
-      return block_boundary(current, current.ip);
-    return true;
+    return block_boundary(current, instruction_offset(current, instruction_ip));
   }
-  rel = interpreter_rel_for_current_block(current, current.ip);
-  if (should_stop_after_control(current))
-    return block_boundary(current, current.ip);
-  return true;
+  return block_boundary(current, next_ip);
 }
 
 [[gnu::always_inline]] inline bool
-runtime_return(execution_context *context, [[maybe_unused]] std::uint32_t *&sp,
+runtime_return(execution_context *context,
+                  const std::uint8_t *&instruction_ip, [[maybe_unused]] std::uint32_t *&sp,
                [[maybe_unused]] std::uint32_t *&local_base,
                [[maybe_unused]] const std::uint8_t *&rel) {
   auto &current = *context;
+  consume_instruction_width(rel);
   const bool outermost = &active_frame(current) == current.call_frame_base;
   if (outermost && should_stop_after_control(current))
     return block_boundary(current, kSentinel);
-  if (finish_current_function(current, local_base, rel))
+  if (finish_current_function(current, local_base, instruction_ip))
     return complete(current);
-  if (should_stop_after_control(current))
-    return block_boundary(current, current.ip);
-  return true;
+  return block_boundary(current, instruction_offset(current, instruction_ip));
 }
 
 [[gnu::always_inline]] inline bool
-runtime_br_table(execution_context *context, std::uint32_t *&sp,
+runtime_br_table(execution_context *context,
+                  const std::uint8_t *&instruction_ip, std::uint32_t *&sp,
                  [[maybe_unused]] std::uint32_t *&local_base,
                  [[maybe_unused]] const std::uint8_t *&rel) {
   auto &current = *context;
-  const auto source_ip = current.ip;
+  const auto source_ip = instruction_offset(current, instruction_ip);
   if (source_ip >= current.code_size)
     return trap(current, kTrapUnreachable);
 
@@ -998,6 +990,7 @@ runtime_br_table(execution_context *context, std::uint32_t *&sp,
     if (index == selected_index)
       selected_depth = depth;
   }
+  consume_instruction_width(rel);
   std::uint32_t next_ip = 0;
   if (!branch(current, sp, selected_depth, next_ip))
     return trap(current, kTrapUnreachable);
@@ -1005,25 +998,18 @@ runtime_br_table(execution_context *context, std::uint32_t *&sp,
     const bool outermost = &active_frame(current) == current.call_frame_base;
     if (outermost && should_stop_after_control(current))
       return block_boundary(current, kSentinel);
-    if (finish_current_function(current, local_base, rel))
+    if (finish_current_function(current, local_base, instruction_ip))
       return complete(current);
-    if (should_stop_after_control(current))
-      return block_boundary(current, current.ip);
-    return true;
+    return block_boundary(current, instruction_offset(current, instruction_ip));
   }
-  const bool loop_backedge = record_loop_backedge(current, source_ip, next_ip);
-  current.ip = next_ip;
-  rel = interpreter_rel_for_current_block(current, current.ip);
-  if (should_stop_after_control(current) ||
-      (loop_backedge &&
-       current.loop_jump_count >= current.loop_jump_threshold)) {
-    return block_boundary(current, current.ip);
-  }
-  return true;
+  record_loop_backedge(current, source_ip, next_ip);
+  instruction_ip = current.code + next_ip;
+  return block_boundary(current, next_ip);
 }
 
 [[gnu::always_inline]] inline bool
-runtime_i32_const(execution_context *context, std::uint32_t *&sp,
+runtime_i32_const(execution_context *context,
+                  const std::uint8_t *&instruction_ip, std::uint32_t *&sp,
                   [[maybe_unused]] std::uint32_t *&local_base,
                   [[maybe_unused]] const std::uint8_t *&rel) {
   auto &current = *context;
@@ -1031,13 +1017,14 @@ runtime_i32_const(execution_context *context, std::uint32_t *&sp,
   if (!push(current, sp, static_cast<std::uint32_t>(value))) {
     return trap(current, kTrapOperandStackCapacity);
   }
-  current.ip += encoded_instruction_size<1>(current);
+  advance_instruction_ip(instruction_ip, rel);
   return true;
 }
 
 template <auto Operation>
 [[gnu::always_inline]] inline bool
-runtime_i32_binary(execution_context *context, std::uint32_t *&sp,
+runtime_i32_binary(execution_context *context,
+                  const std::uint8_t *&instruction_ip, std::uint32_t *&sp,
                    [[maybe_unused]] std::uint32_t *&local_base,
                    [[maybe_unused]] const std::uint8_t *&rel) {
   auto &current = *context;
@@ -1046,13 +1033,14 @@ runtime_i32_binary(execution_context *context, std::uint32_t *&sp,
   const auto result = Operation(sp[-2], sp[-1]);
   --sp;
   sp[-1] = result;
-  ++current.ip;
+  advance_instruction_ip(instruction_ip, rel);
   return true;
 }
 
 template <auto Operation>
 [[gnu::always_inline]] inline bool
-runtime_i32_checked_binary(execution_context *context, std::uint32_t *&sp,
+runtime_i32_checked_binary(execution_context *context,
+                  const std::uint8_t *&instruction_ip, std::uint32_t *&sp,
                            [[maybe_unused]] std::uint32_t *&local_base,
                            [[maybe_unused]] const std::uint8_t *&rel) {
   auto &current = *context;
@@ -1064,13 +1052,14 @@ runtime_i32_checked_binary(execution_context *context, std::uint32_t *&sp,
     return trap(current, trap_code);
   --sp;
   sp[-1] = result;
-  ++current.ip;
+  advance_instruction_ip(instruction_ip, rel);
   return true;
 }
 
 template <auto Operation, bool ResultIsBool>
 [[gnu::always_inline]] inline bool
-runtime_i64_binary(execution_context *context, std::uint32_t *&sp,
+runtime_i64_binary(execution_context *context,
+                  const std::uint8_t *&instruction_ip, std::uint32_t *&sp,
                    [[maybe_unused]] std::uint32_t *&local_base,
                    [[maybe_unused]] const std::uint8_t *&rel) {
   auto &current = *context;
@@ -1080,13 +1069,14 @@ runtime_i64_binary(execution_context *context, std::uint32_t *&sp,
   const auto rhs = combine_u64(sp[-2], sp[-1]);
   const auto result = Operation(lhs, rhs);
   replace_u64_operands<ResultIsBool>(sp, result, 4);
-  ++current.ip;
+  advance_instruction_ip(instruction_ip, rel);
   return true;
 }
 
 template <auto Operation, bool ResultIsBool>
 [[gnu::always_inline]] inline bool
-runtime_i64_checked_binary(execution_context *context, std::uint32_t *&sp,
+runtime_i64_checked_binary(execution_context *context,
+                  const std::uint8_t *&instruction_ip, std::uint32_t *&sp,
                            [[maybe_unused]] std::uint32_t *&local_base,
                            [[maybe_unused]] const std::uint8_t *&rel) {
   auto &current = *context;
@@ -1099,13 +1089,14 @@ runtime_i64_checked_binary(execution_context *context, std::uint32_t *&sp,
   if (!Operation(lhs, rhs, result, trap_code))
     return trap(current, trap_code);
   replace_u64_operands<ResultIsBool>(sp, result, 4);
-  ++current.ip;
+  advance_instruction_ip(instruction_ip, rel);
   return true;
 }
 
 template <auto Operation, bool ResultIsBool>
 [[gnu::always_inline]] inline bool
-runtime_i64_unary(execution_context *context, std::uint32_t *&sp,
+runtime_i64_unary(execution_context *context,
+                  const std::uint8_t *&instruction_ip, std::uint32_t *&sp,
                   [[maybe_unused]] std::uint32_t *&local_base,
                   [[maybe_unused]] const std::uint8_t *&rel) {
   auto &current = *context;
@@ -1114,13 +1105,14 @@ runtime_i64_unary(execution_context *context, std::uint32_t *&sp,
   const auto value = combine_u64(sp[-2], sp[-1]);
   const auto result = Operation(value);
   replace_u64_operands<ResultIsBool>(sp, result, 2);
-  ++current.ip;
+  advance_instruction_ip(instruction_ip, rel);
   return true;
 }
 
 template <auto Operation, bool ResultIsBool>
 [[gnu::always_inline]] inline bool
-runtime_f32_binary(execution_context *context, std::uint32_t *&sp,
+runtime_f32_binary(execution_context *context,
+                  const std::uint8_t *&instruction_ip, std::uint32_t *&sp,
                    [[maybe_unused]] std::uint32_t *&local_base,
                    [[maybe_unused]] const std::uint8_t *&rel) {
   auto &current = *context;
@@ -1132,13 +1124,14 @@ runtime_f32_binary(execution_context *context, std::uint32_t *&sp,
     sp[-1] = static_cast<std::uint32_t>(result);
   else
     sp[-1] = f32_to_bits(result);
-  ++current.ip;
+  advance_instruction_ip(instruction_ip, rel);
   return true;
 }
 
 template <auto Operation, bool ResultIsBool>
 [[gnu::always_inline]] inline bool
-runtime_f64_binary(execution_context *context, std::uint32_t *&sp,
+runtime_f64_binary(execution_context *context,
+                  const std::uint8_t *&instruction_ip, std::uint32_t *&sp,
                    [[maybe_unused]] std::uint32_t *&local_base,
                    [[maybe_unused]] const std::uint8_t *&rel) {
   auto &current = *context;
@@ -1151,26 +1144,28 @@ runtime_f64_binary(execution_context *context, std::uint32_t *&sp,
     replace_u64_operands<true>(sp, static_cast<std::uint32_t>(result), 4);
   else
     replace_u64_operands<false>(sp, f64_to_bits(result), 4);
-  ++current.ip;
+  advance_instruction_ip(instruction_ip, rel);
   return true;
 }
 
 template <auto Operation>
 [[gnu::always_inline]] inline bool
-runtime_f32_unary(execution_context *context, std::uint32_t *&sp,
+runtime_f32_unary(execution_context *context,
+                  const std::uint8_t *&instruction_ip, std::uint32_t *&sp,
                   [[maybe_unused]] std::uint32_t *&local_base,
                   [[maybe_unused]] const std::uint8_t *&rel) {
   auto &current = *context;
   if (sp == current.stack_base)
     return trap(current, kTrapOperandStackCapacity);
   sp[-1] = f32_to_bits(Operation(f32_from_bits(sp[-1])));
-  ++current.ip;
+  advance_instruction_ip(instruction_ip, rel);
   return true;
 }
 
 template <auto Operation>
 [[gnu::always_inline]] inline bool
-runtime_f64_unary(execution_context *context, std::uint32_t *&sp,
+runtime_f64_unary(execution_context *context,
+                  const std::uint8_t *&instruction_ip, std::uint32_t *&sp,
                   [[maybe_unused]] std::uint32_t *&local_base,
                   [[maybe_unused]] const std::uint8_t *&rel) {
   auto &current = *context;
@@ -1178,14 +1173,15 @@ runtime_f64_unary(execution_context *context, std::uint32_t *&sp,
     return trap(current, kTrapOperandStackCapacity);
   const auto value = f64_from_bits(combine_u64(sp[-2], sp[-1]));
   replace_u64_operands<false>(sp, f64_to_bits(Operation(value)), 2);
-  ++current.ip;
+  advance_instruction_ip(instruction_ip, rel);
   return true;
 }
 
 template <bool (*Operation)(execution_context &, std::uint32_t *&,
                             std::uint32_t &)>
 [[gnu::always_inline]] inline bool
-runtime_conversion(execution_context *context, std::uint32_t *&sp,
+runtime_conversion(execution_context *context,
+                  const std::uint8_t *&instruction_ip, std::uint32_t *&sp,
                    [[maybe_unused]] std::uint32_t *&local_base,
                    [[maybe_unused]] const std::uint8_t *&rel) {
   auto &current = *context;
@@ -1194,12 +1190,13 @@ runtime_conversion(execution_context *context, std::uint32_t *&sp,
     return trap(current,
                 trap_code == 0 ? kTrapOperandStackCapacity : trap_code);
   }
-  ++current.ip;
+  advance_instruction_ip(instruction_ip, rel);
   return true;
 }
 
 [[gnu::always_inline]] inline bool
-runtime_i64_const(execution_context *context, std::uint32_t *&sp,
+runtime_i64_const(execution_context *context,
+                  const std::uint8_t *&instruction_ip, std::uint32_t *&sp,
                   [[maybe_unused]] std::uint32_t *&local_base,
                   [[maybe_unused]] const std::uint8_t *&rel) {
   auto &current = *context;
@@ -1207,33 +1204,33 @@ runtime_i64_const(execution_context *context, std::uint32_t *&sp,
   if (!push_u64(current, sp, static_cast<std::uint64_t>(value))) {
     return trap(current, kTrapOperandStackCapacity);
   }
-  current.ip += encoded_instruction_size<1>(current);
+  advance_instruction_ip(instruction_ip, rel);
   return true;
 }
 
 [[gnu::always_inline]] inline bool
-runtime_f32_const(execution_context *context, std::uint32_t *&sp,
+runtime_f32_const(execution_context *context,
+                  const std::uint8_t *&instruction_ip, std::uint32_t *&sp,
                   [[maybe_unused]] std::uint32_t *&local_base,
                   [[maybe_unused]] const std::uint8_t *&rel) {
-  auto &current = *context;
   std::uint32_t bits = 0;
-  std::memcpy(&bits, current.code + current.ip + 1, sizeof(bits));
-  if (!push(current, sp, static_cast<std::uint32_t>(bits)))
-    return trap(current, kTrapOperandStackCapacity);
-  current.ip += 5;
+  std::memcpy(&bits, instruction_ip + 1, sizeof(bits));
+  if (!push(*context, sp, static_cast<std::uint32_t>(bits)))
+    return trap(*context, kTrapOperandStackCapacity);
+  advance_instruction_ip(instruction_ip, rel);
   return true;
 }
 
 [[gnu::always_inline]] inline bool
-runtime_f64_const(execution_context *context, std::uint32_t *&sp,
+runtime_f64_const(execution_context *context,
+                  const std::uint8_t *&instruction_ip, std::uint32_t *&sp,
                   [[maybe_unused]] std::uint32_t *&local_base,
                   [[maybe_unused]] const std::uint8_t *&rel) {
-  auto &current = *context;
   std::uint64_t bits = 0;
-  std::memcpy(&bits, current.code + current.ip + 1, sizeof(bits));
-  if (!push_u64(current, sp, bits))
-    return trap(current, kTrapOperandStackCapacity);
-  current.ip += 9;
+  std::memcpy(&bits, instruction_ip + 1, sizeof(bits));
+  if (!push_u64(*context, sp, bits))
+    return trap(*context, kTrapOperandStackCapacity);
+  advance_instruction_ip(instruction_ip, rel);
   return true;
 }
 
@@ -1250,20 +1247,22 @@ template <std::uint32_t Width, std::uint32_t ResultWords, bool Signed>
 [[gnu::always_inline]] inline bool
 runtime_memory_load_decoded(execution_context *context, std::uint32_t *&sp,
                             [[maybe_unused]] std::uint32_t *&local_base,
-                            std::uint32_t next_pc, std::uint32_t offset) {
+                            const std::uint8_t *&instruction_ip,
+                            std::uint32_t source_ip, std::uint32_t next_pc,
+                            std::uint32_t offset) {
   auto &current = *context;
   if (sp == current.stack_base)
     return trap(current, kTrapOperandStackCapacity);
 
   const auto address = sp[-1];
   if ((address & 0x8000'0000u) != 0)
-    return runtime_api_boundary(current, current.ip);
+    return runtime_api_boundary(current, source_ip);
   const auto effective_address = static_cast<std::uint64_t>(address) + offset;
   if (!linear_memory_range_is_valid(current, effective_address, Width)) {
     return trap(current, kTrapMemoryOutOfBounds);
   }
   if (current.linear_memory_host_base == nullptr)
-    return runtime_api_boundary(current, current.ip);
+    return runtime_api_boundary(current, source_ip);
 
   if (current.stack_limit - (sp - 1) < ResultWords) {
     return trap(current, kTrapOperandStackCapacity);
@@ -1283,29 +1282,34 @@ runtime_memory_load_decoded(execution_context *context, std::uint32_t *&sp,
   } else {
     sp[-1] = static_cast<std::uint32_t>(value);
   }
-  current.ip = next_pc;
+  instruction_ip = current.code + next_pc;
   return true;
 }
 
 template <std::uint32_t Width, std::uint32_t ResultWords, bool Signed>
 [[gnu::always_inline]] inline bool
-runtime_memory_load(execution_context *context, std::uint32_t *&sp,
+runtime_memory_load(execution_context *context,
+                  const std::uint8_t *&instruction_ip, std::uint32_t *&sp,
                     std::uint32_t *&local_base,
                     [[maybe_unused]] const std::uint8_t *&rel) {
   auto &current = *context;
   const auto alignment = read_u32(rel);
   const auto offset = read_u32(rel);
   (void)alignment;
+  const auto source_ip = instruction_offset(current, instruction_ip);
+  const auto next_ip = source_ip + instruction_width(rel);
+  consume_instruction_width(rel);
   return runtime_memory_load_decoded<Width, ResultWords, Signed>(
-      context, sp, local_base,
-      current.ip + encoded_instruction_size<2>(current), offset);
+      context, sp, local_base, instruction_ip, source_ip, next_ip, offset);
 }
 
 template <std::uint32_t Width, std::uint32_t ValueWords>
 [[gnu::always_inline]] inline bool
 runtime_memory_store_decoded(execution_context *context, std::uint32_t *&sp,
                              [[maybe_unused]] std::uint32_t *&local_base,
-                             std::uint32_t next_pc, std::uint32_t offset) {
+                             const std::uint8_t *&instruction_ip,
+                             std::uint32_t source_ip, std::uint32_t next_pc,
+                             std::uint32_t offset) {
   auto &current = *context;
   if (sp < current.stack_base + ValueWords + 1)
     return trap(current, kTrapOperandStackCapacity);
@@ -1313,13 +1317,13 @@ runtime_memory_store_decoded(execution_context *context, std::uint32_t *&sp,
   auto *address_stack_pointer = sp - ValueWords - 1;
   const auto address = sp[-static_cast<std::ptrdiff_t>(ValueWords + 1)];
   if ((address & 0x8000'0000u) != 0)
-    return runtime_api_boundary(current, current.ip);
+    return runtime_api_boundary(current, source_ip);
   const auto effective_address = static_cast<std::uint64_t>(address) + offset;
   if (!linear_memory_range_is_valid(current, effective_address, Width)) {
     return trap(current, kTrapMemoryOutOfBounds);
   }
   if (current.linear_memory_host_base == nullptr)
-    return runtime_api_boundary(current, current.ip);
+    return runtime_api_boundary(current, source_ip);
 
   std::uint64_t value = sp[-static_cast<std::ptrdiff_t>(ValueWords)];
   if constexpr (ValueWords == 2) {
@@ -1330,58 +1334,59 @@ runtime_memory_store_decoded(execution_context *context, std::uint32_t *&sp,
         static_cast<std::uint8_t>(value >> (byte * 8));
   }
   sp = address_stack_pointer;
-  current.ip = next_pc;
+  instruction_ip = current.code + next_pc;
   return true;
 }
 
 template <std::uint32_t Width, std::uint32_t ValueWords>
 [[gnu::always_inline]] inline bool
-runtime_memory_store(execution_context *context, std::uint32_t *&sp,
+runtime_memory_store(execution_context *context,
+                  const std::uint8_t *&instruction_ip, std::uint32_t *&sp,
                      std::uint32_t *&local_base,
                      [[maybe_unused]] const std::uint8_t *&rel) {
   auto &current = *context;
   const auto alignment = read_u32(rel);
   const auto offset = read_u32(rel);
   (void)alignment;
+  const auto source_ip = instruction_offset(current, instruction_ip);
+  const auto next_ip = source_ip + instruction_width(rel);
+  consume_instruction_width(rel);
   return runtime_memory_store_decoded<Width, ValueWords>(
-      context, sp, local_base,
-      current.ip + encoded_instruction_size<2>(current), offset);
+      context, sp, local_base, instruction_ip, source_ip, next_ip, offset);
 }
 
 template <bool (*Operation)(execution_context &, std::uint32_t *&)>
 [[gnu::always_inline]] inline bool runtime_fc_saturating_conversion_decoded(
-    execution_context *context, std::uint32_t *&sp,
-    [[maybe_unused]] std::uint32_t *&local_base, std::uint32_t next_pc,
-    const std::uint8_t *&rel) {
+    execution_context *context, std::uint32_t *&sp) {
   auto &current = *context;
   if (!Operation(current, sp))
     return trap(current, kTrapOperandStackCapacity);
-  current.ip = next_pc;
-  rel = interpreter_rel_for_current_block(current, current.ip);
-  if (should_stop_after_control(current))
-    return block_boundary(current, current.ip);
   return true;
 }
 
 template <bool (*Operation)(execution_context &, std::uint32_t *&)>
 [[gnu::always_inline]] inline bool
-runtime_fc_saturating_conversion(execution_context *context, std::uint32_t *&sp,
-                                 std::uint32_t *&local_base,
+runtime_fc_saturating_conversion(execution_context *context,
+                  const std::uint8_t *&instruction_ip, std::uint32_t *&sp,
+                                 [[maybe_unused]] std::uint32_t *&local_base,
                                  [[maybe_unused]] const std::uint8_t *&rel) {
   auto &current = *context;
   const auto subopcode = read_u32(rel);
   if (subopcode > 7)
     return trap(current, kTrapUnreachable);
-  return runtime_fc_saturating_conversion_decoded<Operation>(
-      context, sp, local_base,
-      current.ip + encoded_instruction_size<1>(current), rel);
+  const auto next_ip = instruction_offset(current, instruction_ip) +
+                       instruction_width(rel);
+  consume_instruction_width(rel);
+  if (!runtime_fc_saturating_conversion_decoded<Operation>(context, sp))
+    return false;
+  instruction_ip = current.code + next_ip;
+  return block_boundary(current, next_ip);
 }
 
 [[gnu::always_inline]] inline bool
 runtime_fc_memory_copy_decoded(execution_context *context, std::uint32_t *&sp,
-                               [[maybe_unused]] std::uint32_t *&local_base,
-                               std::uint32_t next_pc,
-                               const std::uint8_t *&rel) {
+                               const std::uint8_t *&instruction_ip,
+                               std::uint32_t source_ip, std::uint32_t next_pc) {
   auto &current = *context;
   if (sp < current.stack_base + 3)
     return trap(current, kTrapOperandStackCapacity);
@@ -1391,28 +1396,26 @@ runtime_fc_memory_copy_decoded(execution_context *context, std::uint32_t *&sp,
   const auto source = sp[-2];
   const auto length = sp[-1];
   if (((destination | source) & 0x8000'0000u) != 0)
-    return runtime_api_boundary(current, current.ip);
+    return runtime_api_boundary(current, source_ip);
   if (!linear_memory_range_is_valid(current, destination, length) ||
       !linear_memory_range_is_valid(current, source, length)) {
     return trap(current, kTrapMemoryOutOfBounds);
   }
   if (length != 0) {
     if (current.linear_memory_host_base == nullptr)
-      return runtime_api_boundary(current, current.ip);
+      return runtime_api_boundary(current, source_ip);
     auto *memory = current.linear_memory_host_base;
     std::memmove(memory + destination, memory + source, length);
   }
   sp = destination_stack_pointer;
-  current.ip = next_pc;
-  rel = interpreter_rel_for_current_block(current, current.ip);
-  if (should_stop_after_control(current))
-    return block_boundary(current, current.ip);
+  instruction_ip = current.code + next_pc;
   return true;
 }
 
 [[gnu::always_inline]] inline bool
-runtime_fc_memory_copy(execution_context *context, std::uint32_t *&sp,
-                       std::uint32_t *&local_base,
+runtime_fc_memory_copy(execution_context *context,
+                  const std::uint8_t *&instruction_ip, std::uint32_t *&sp,
+                       [[maybe_unused]] std::uint32_t *&local_base,
                        [[maybe_unused]] const std::uint8_t *&rel) {
   auto &current = *context;
   const auto subopcode = read_u32(rel);
@@ -1420,16 +1423,19 @@ runtime_fc_memory_copy(execution_context *context, std::uint32_t *&sp,
   const auto source_memory = read_u32(rel);
   if (subopcode != 0x0A || destination_memory != 0 || source_memory != 0)
     return trap(current, kTrapUnreachable);
-  return runtime_fc_memory_copy_decoded(
-      context, sp, local_base,
-      current.ip + encoded_instruction_size<3>(current), rel);
+  const auto source_ip = instruction_offset(current, instruction_ip);
+  const auto next_ip = source_ip + instruction_width(rel);
+  consume_instruction_width(rel);
+  if (!runtime_fc_memory_copy_decoded(
+          context, sp, instruction_ip, source_ip, next_ip))
+    return false;
+  return block_boundary(current, next_ip);
 }
 
 [[gnu::always_inline]] inline bool
 runtime_fc_memory_fill_decoded(execution_context *context, std::uint32_t *&sp,
-                               [[maybe_unused]] std::uint32_t *&local_base,
-                               std::uint32_t next_pc,
-                               const std::uint8_t *&rel) {
+                               const std::uint8_t *&instruction_ip,
+                               std::uint32_t source_ip, std::uint32_t next_pc) {
   auto &current = *context;
   if (sp < current.stack_base + 3)
     return trap(current, kTrapOperandStackCapacity);
@@ -1443,38 +1449,43 @@ runtime_fc_memory_fill_decoded(execution_context *context, std::uint32_t *&sp,
   }
   if (length != 0) {
     if (current.linear_memory_host_base == nullptr)
-      return runtime_api_boundary(current, current.ip);
+      return runtime_api_boundary(current, source_ip);
     std::memset(current.linear_memory_host_base + destination, value, length);
   }
   sp = destination_stack_pointer;
-  current.ip = next_pc;
-  rel = interpreter_rel_for_current_block(current, current.ip);
-  if (should_stop_after_control(current))
-    return block_boundary(current, current.ip);
+  instruction_ip = current.code + next_pc;
   return true;
 }
 
 [[gnu::always_inline]] inline bool
-runtime_fc_memory_fill(execution_context *context, std::uint32_t *&sp,
-                       std::uint32_t *&local_base,
+runtime_fc_memory_fill(execution_context *context,
+                  const std::uint8_t *&instruction_ip, std::uint32_t *&sp,
+                       [[maybe_unused]] std::uint32_t *&local_base,
                        [[maybe_unused]] const std::uint8_t *&rel) {
   auto &current = *context;
   const auto subopcode = read_u32(rel);
   const auto memory_index = read_u32(rel);
   if (subopcode != 0x0B || memory_index != 0)
     return trap(current, kTrapUnreachable);
-  return runtime_fc_memory_fill_decoded(
-      context, sp, local_base,
-      current.ip + encoded_instruction_size<2>(current), rel);
+  const auto source_ip = instruction_offset(current, instruction_ip);
+  const auto next_ip = source_ip + instruction_width(rel);
+  consume_instruction_width(rel);
+  if (!runtime_fc_memory_fill_decoded(
+          context, sp, instruction_ip, source_ip, next_ip))
+    return false;
+  return block_boundary(current, next_ip);
 }
 
 inline bool
 runtime_memory_manager_api_boundary(execution_context *context,
+                  const std::uint8_t *&instruction_ip,
                                     [[maybe_unused]] std::uint32_t *&sp,
                                     [[maybe_unused]] std::uint32_t *&local_base,
                                     const std::uint8_t *&rel) {
   (void)read_u32(rel);
-  return runtime_api_boundary(*context, context->ip);
+  const auto source_ip = instruction_offset(*context, instruction_ip);
+  consume_instruction_width(rel);
+  return runtime_api_boundary(*context, source_ip);
 }
 
 } // namespace

@@ -168,7 +168,7 @@ int fireball::patch_trace_chain(fireball::executable_memory *memory,
 int fireball::build_trace(const std::uint8_t *body, std::uint32_t bytes,
                           const fireball::jit_compile_result *r,
                           std::uint32_t head_pc, std::uint32_t frame_depth,
-                          std::uint32_t block_index, std::uint32_t body_end_pc,
+                          std::uint32_t block_index, std::uint32_t body_end_ip,
                           std::uint32_t next_pc, std::uint32_t loops_to,
                           std::uint8_t *output, std::uint32_t capacity) {
   using namespace fireball;
@@ -200,7 +200,7 @@ int fireball::build_trace(const std::uint8_t *body, std::uint32_t bytes,
              static_cast<std::uint8_t>(words),
              static_cast<std::uint8_t>(result_words),
              static_cast<std::uint8_t>(words),
-             0,
+             1,
              frame_depth,
              block_index,
              pool_offset};
@@ -215,7 +215,14 @@ int fireball::build_trace(const std::uint8_t *body, std::uint32_t bytes,
     std::memset(output + header_bytes + bytes, 0,
                 metadata_offset - header_bytes - bytes);
   const jit_trace_boundary_metadata boundary_metadata{
-      body_end_pc, next_pc, loops_to, r->interpreter_rel_words};
+      body_end_ip,
+      next_pc,
+      loops_to,
+      r->interpreter_rel_bytes,
+      block_index,
+      static_cast<std::uint16_t>(frame_depth),
+      static_cast<std::uint8_t>(result_words),
+      0};
   std::memcpy(output + metadata_offset, &boundary_metadata,
               sizeof(boundary_metadata));
   return 1;
@@ -246,7 +253,7 @@ extern "C" int fb_jit_compile_block(const fireball::jit_wasm_block *block,
     return status;
   return build_trace(body_scratch, result.body_bytes, &result, block->head_pc,
                      block->frame_depth, block->block_index,
-                     block->head_pc + block->byte_span, block->next_pc,
+                     block->offset + block->byte_span, block->next_pc,
                      block->loops_to, output, capacity)
              ? 1
              : -1;

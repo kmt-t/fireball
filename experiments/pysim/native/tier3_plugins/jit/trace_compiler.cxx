@@ -14,6 +14,7 @@
 using namespace fireball::pysim::jit;
 using fireball::kMaxBodyBytes;
 using fireball::kMaxRelocationConstants;
+using fireball::kMaxTraceOperations;
 using fireball::kMaxStackDepth;
 using fireball::kMaxTraceInstructions;
 
@@ -30,6 +31,8 @@ constexpr std::uint32_t kMaxLogicalLocals = 16;
 constexpr std::size_t kX64Rel32SlotBytes = 5;
 constexpr std::size_t kMaxOperationStencilBytes = 512;
 constexpr auto kNoLinkSlot = generated::no_link_slot;
+static_assert(generated::trace_entry.start_slot_offset ==
+              FB_CONF_JIT_X64_TRACE_CHAIN_ENTRY_OFFSET);
 
 constexpr std::uint8_t kWasmI32 = 0x7F;
 constexpr std::uint8_t kWasmI64 = 0x7E;
@@ -309,9 +312,9 @@ struct trace_builder {
   std::uint8_t *body;
   std::size_t body_capacity;
   std::size_t body_size = 0;
-  std::array<stencil_view, kMaxTraceInstructions> operations{};
-  std::array<std::uint64_t, kMaxTraceInstructions> patch_values{};
-  std::array<std::array<std::uint8_t, 4>, kMaxTraceInstructions>
+  std::array<stencil_view, kMaxTraceOperations> operations{};
+  std::array<std::uint64_t, kMaxTraceOperations> patch_values{};
+  std::array<std::array<std::uint8_t, 4>, kMaxTraceOperations>
       local_instructions{};
   std::size_t operation_count = 0;
   std::array<relocation_entry, kMaxRelocationConstants> relocations{};
@@ -376,6 +379,27 @@ struct trace_builder {
     return true;
   }
 
+  bool add_payload(const std::uint8_t *bytes, std::size_t count) {
+    if (count != 0 && bytes == nullptr)
+      return false;
+    while (count != 0) {
+      const auto width = std::min(count, sizeof(std::uint64_t));
+      if (relocation_count == relocations.size() ||
+          relocation_bytes > body_capacity ||
+          width > body_capacity - relocation_bytes)
+        return false;
+      std::uint64_t value = 0;
+      for (std::size_t index = 0; index < width; ++index)
+        value |= static_cast<std::uint64_t>(bytes[index]) << (index * 8);
+      relocations[relocation_count++] = {
+          value, static_cast<std::uint8_t>(width), relocation_kind::value};
+      relocation_bytes += width;
+      bytes += width;
+      count -= width;
+    }
+    return true;
+  }
+
   bool add_trace_header_reference() {
     if (relocation_count == relocations.size() ||
         relocation_bytes > body_capacity ||
@@ -389,6 +413,8 @@ struct trace_builder {
   bool append_runtime_api(std::uint8_t slot, std::uint32_t source_ip,
                           const std::uint32_t *immediates = nullptr,
                           std::uint32_t immediate_count = 0) {
+    if (immediate_count > 3)
+      return false;
     const auto stencil = [&]() {
       if (immediates == nullptr || immediate_count == 0)
         return generated_stencil(asm_generated::runtime_api);
@@ -396,7 +422,7 @@ struct trace_builder {
         return generated_stencil(asm_generated::runtime_api_immediate_one);
       if (immediate_count == 2)
         return generated_stencil(asm_generated::runtime_api_immediate_two);
-      if (immediate_count == 3)
+      if (immediate_count >= 3)
         return generated_stencil(asm_generated::runtime_api_immediate_three);
       return stencil_view{};
     }();
@@ -411,6 +437,21 @@ struct trace_builder {
       if (!add_value(immediates[index], 4))
         return false;
     return true;
+  }
+
+  bool append_terminal_runtime_api(std::uint8_t slot,
+                                   std::uint32_t source_ip,
+                                   const std::uint8_t *rel_payload,
+                                   std::size_t rel_payload_bytes) {
+    // The terminal Runtime API always returns an exit, so its callback stencil
+    // may use the three-word variant even when a br_table has a longer payload.
+    const auto stencil =
+        generated_stencil(asm_generated::runtime_api_immediate_three);
+    if (rel_payload == nullptr || rel_payload_bytes == 0 ||
+        !append_node(stencil) || !add_trace_header_reference() ||
+        !add_value(slot, 4) || !add_value(source_ip, 4))
+      return false;
+    return add_payload(rel_payload, rel_payload_bytes);
   }
 
   bool append_linked(stencil_view stencil) {
@@ -438,12 +479,12 @@ struct trace_builder {
     // The next-operation slot is only a build-time splice marker: its five
     // bytes are replaced with the following body. Thus operation success has no
     // per-operation return, epilogue, call, or jump. Only the shared terminal
-    // stencils return to the ccc trace-entry wrapper.
+    // stencils return to the C ABI trace-entry wrapper.
     std::copy_n(generated::fb_jit_stencils_start.data() +
                     success_stencil.code_offset,
                 success_stencil.size, body);
     body_size = success_stencil.size;
-    std::array<std::size_t, kMaxTraceInstructions> abort_slots{};
+    std::array<std::size_t, kMaxTraceOperations> abort_slots{};
     std::size_t abort_slot_count = 0;
     std::size_t expanded_size = 0;
     for (std::size_t remaining = operation_count; remaining != 0; --remaining) {
@@ -1119,8 +1160,6 @@ bool emit_constant(trace_builder &builder, stack_model &stack, int op,
 }
 
 bool emit_runtime_api(trace_builder &builder, stack_model &stack, int op,
-                      std::uint32_t source_ip);
-bool emit_runtime_api(trace_builder &builder, stack_model &stack, int op,
                       std::uint32_t source_ip, const std::uint32_t *immediates,
                       std::uint32_t immediate_count);
 bool compile_instructions(
@@ -1358,6 +1397,18 @@ bool compile_instructions(
       ++index;
       continue;
     }
+    if (op == 0x00) {
+      const auto instruction_width =
+          source_offsets != nullptr && source_end_offsets != nullptr
+              ? source_end_offsets[index] - source_offsets[index]
+              : 1u;
+      const auto source_ip =
+          source_offsets != nullptr ? source_offsets[index] : 0u;
+      if (!emit_runtime_api(builder, stack, op, source_ip, &instruction_width,
+                            1))
+        return false;
+      return true;
+    }
     const bool wasm_memory_operation = op >= 0x28 && op <= 0x3E;
     const bool wasm_fc_operation =
         (op & 0xFF00) == 0xFC00 &&
@@ -1385,8 +1436,18 @@ bool compile_instructions(
       ++index;
       continue;
     }
-    if (source_offsets == nullptr ||
-        !emit_runtime_api(builder, stack, op, source_offsets[index]))
+    if (source_offsets == nullptr || source_end_offsets == nullptr)
+      return false;
+    std::array<std::uint32_t, 2> runtime_rel{};
+    std::uint32_t runtime_rel_count = 0;
+    if (op == 0x23 || op == 0x24 || op == 0x3F || op == 0x40)
+      runtime_rel[runtime_rel_count++] =
+          static_cast<std::uint32_t>(instruction.operand);
+    const auto instruction_width =
+        source_end_offsets[index] - source_offsets[index];
+    runtime_rel[runtime_rel_count++] = instruction_width;
+    if (!emit_runtime_api(builder, stack, op, source_offsets[index],
+                          runtime_rel.data(), runtime_rel_count))
       return false;
     ++index;
   }
@@ -1418,6 +1479,8 @@ bool pop_values(stack_model &stack, std::uint32_t count, std::uint8_t width) {
 }
 
 bool apply_runtime_api_stack_effect(int op, stack_model &stack) {
+  if (op == 0x00)
+    return true;
   if ((op & 0xFF00) == 0xFC00) {
     const auto subopcode = op & 0xFF;
     if (subopcode <= 7) {
@@ -1528,16 +1591,6 @@ bool apply_runtime_api_stack_effect(int op, stack_model &stack) {
 }
 
 bool emit_runtime_api(trace_builder &builder, stack_model &stack, int op,
-                      std::uint32_t source_ip) {
-  std::uint8_t slot = 0;
-  if (!runtime_api_slot(op, slot))
-    return false;
-  if (!apply_runtime_api_stack_effect(op, stack))
-    return false;
-  return builder.append_runtime_api(slot, source_ip);
-}
-
-bool emit_runtime_api(trace_builder &builder, stack_model &stack, int op,
                       std::uint32_t source_ip, const std::uint32_t *immediates,
                       std::uint32_t immediate_count) {
   std::uint8_t slot = 0;
@@ -1547,6 +1600,136 @@ bool emit_runtime_api(trace_builder &builder, stack_model &stack, int op,
     return false;
   return builder.append_runtime_api(slot, source_ip, immediates,
                                     immediate_count);
+}
+
+bool is_trace_terminator_opcode(std::uint8_t opcode) {
+  switch (opcode) {
+  case 0x00: // unreachable
+  case 0x02: // block
+  case 0x03: // loop
+  case 0x04: // if
+  case 0x05: // else
+  case 0x0B: // end
+  case 0x0C: // br
+  case 0x0D: // br_if
+  case 0x0E: // br_table
+  case 0x0F: // return
+  case 0x10: // call
+  case 0x11: // call_indirect
+    return true;
+  default:
+    return false;
+  }
+}
+
+int append_trace_terminator_runtime_api(trace_builder &builder,
+                                        const std::uint8_t *code,
+                                        std::uint32_t code_bytes,
+                                        std::uint32_t source_ip,
+                                        std::uint32_t &interpreter_rel_bytes) {
+  if (source_ip >= code_bytes)
+    return 1;
+
+  auto cursor = source_ip;
+  const auto opcode = code[cursor++];
+  if (!is_trace_terminator_opcode(opcode))
+    return 1;
+
+  std::uint8_t slot = 0;
+  if (!runtime_api_slot(opcode, slot))
+    return 0;
+
+  std::array<std::uint8_t, kMaxBodyBytes> rel_payload{};
+  std::size_t rel_payload_bytes = 0;
+  std::uint32_t interpreter_operand_words = 0;
+  auto append_word = [&](std::uint32_t value) {
+    if (rel_payload_bytes > rel_payload.size() - sizeof(value))
+      return false;
+    for (std::size_t byte = 0; byte < sizeof(value); ++byte)
+      rel_payload[rel_payload_bytes + byte] =
+          static_cast<std::uint8_t>(value >> (byte * 8));
+    rel_payload_bytes += sizeof(value);
+    ++interpreter_operand_words;
+    return true;
+  };
+
+  switch (opcode) {
+  case 0x02:
+  case 0x03:
+  case 0x04: {
+    [[maybe_unused]] std::uint64_t block_type = 0;
+    if (!read_signed_leb(code, cursor, code_bytes, block_type, 33u))
+      return -1;
+    break;
+  }
+  case 0x0C:
+  case 0x0D:
+  case 0x10: {
+    std::uint32_t operand = 0;
+    if (!read_unsigned_leb(code, cursor, code_bytes, operand) ||
+        !append_word(operand))
+      return -1;
+    break;
+  }
+  case 0x11: {
+    std::uint32_t type_index = 0;
+    std::uint32_t table_index = 0;
+    if (!read_unsigned_leb(code, cursor, code_bytes, type_index) ||
+        !read_unsigned_leb(code, cursor, code_bytes, table_index) ||
+        !append_word(type_index) || !append_word(table_index))
+      return -1;
+    break;
+  }
+  case 0x0E: {
+    std::uint32_t case_count = 0;
+    if (!read_unsigned_leb(code, cursor, code_bytes, case_count))
+      return -1;
+    const auto max_operand_words =
+        (rel_payload.size() - 5u) / sizeof(std::uint32_t);
+    if (max_operand_words < 2u || case_count > max_operand_words - 2u ||
+        !append_word(case_count))
+      return 0;
+    for (std::uint32_t index = 0; index <= case_count; ++index) {
+      std::uint32_t depth = 0;
+      if (!read_unsigned_leb(code, cursor, code_bytes, depth) ||
+          !append_word(depth))
+        return -1;
+    }
+    break;
+  }
+  default:
+    break;
+  }
+
+  const auto interpreter_immediate_words = interpreter_operand_words;
+  const auto instruction_width = cursor - source_ip;
+  const auto width_record_bytes = instruction_width < 0xFFu
+                                      ? std::size_t{1}
+                                      : 1u + sizeof(instruction_width);
+  if (rel_payload_bytes > rel_payload.size() - width_record_bytes)
+    return 0;
+  if (instruction_width < 0xFFu) {
+    rel_payload[rel_payload_bytes++] =
+        static_cast<std::uint8_t>(instruction_width);
+  } else {
+    rel_payload[rel_payload_bytes++] = 0xFFu;
+    if (!append_word(instruction_width))
+      return 0;
+  }
+
+  if (!builder.append_terminal_runtime_api(slot, source_ip, rel_payload.data(),
+                                           rel_payload_bytes))
+    return 0;
+
+  const auto added_rel_bytes =
+      static_cast<std::uint64_t>(interpreter_immediate_words) *
+          sizeof(std::uint32_t) +
+      width_record_bytes;
+  if (added_rel_bytes >
+      std::numeric_limits<std::uint32_t>::max() - interpreter_rel_bytes)
+    return -1;
+  interpreter_rel_bytes += static_cast<std::uint32_t>(added_rel_bytes);
+  return 1;
 }
 
 } // namespace
@@ -1607,7 +1790,7 @@ int fireball::compile_wasm_trace(
   std::array<std::uint32_t, kMaxTraceInstructions> source_offsets{};
   std::array<std::uint32_t, kMaxTraceInstructions> source_end_offsets{};
   std::uint32_t instruction_count = 0;
-  std::uint32_t interpreter_rel_words = 0;
+  std::uint32_t interpreter_rel_bytes = 0;
   auto cursor = code_offset;
   const auto end = code_offset + byte_span;
 
@@ -1635,7 +1818,7 @@ int fireball::compile_wasm_trace(
       else if (subopcode == 9 || subopcode == 0x0B || subopcode == 0x0D ||
                (subopcode >= 0x0F && subopcode <= 0x11))
         immediate_count = 1;
-      interpreter_rel_words += 1 + immediate_count;
+      interpreter_rel_bytes += (1 + immediate_count) * sizeof(std::uint32_t);
       if (subopcode == 0x0A) {
         std::uint32_t destination_memory = 0;
         std::uint32_t source_memory = 0;
@@ -1658,6 +1841,8 @@ int fireball::compile_wasm_trace(
         }
       }
       source_end_offsets[instruction_index] = cursor;
+      const auto encoded_width = cursor - instruction_ip;
+      interpreter_rel_bytes += encoded_width < 0xFFu ? 1u : 5u;
       continue;
     }
 
@@ -1665,7 +1850,7 @@ int fireball::compile_wasm_trace(
       std::uint32_t operand = 0;
       if (!read_unsigned_leb(code, cursor, end, operand))
         return -1;
-      ++interpreter_rel_words;
+      interpreter_rel_bytes += sizeof(std::uint32_t);
       instruction.has_operand = 1;
       instruction.operand = operand;
     } else if (opcode == 0x23 || opcode == 0x24 || opcode == 0x25 ||
@@ -1674,7 +1859,7 @@ int fireball::compile_wasm_trace(
       if (!read_unsigned_leb(code, cursor, end, operand))
         return -1;
       if (opcode == 0x23 || opcode == 0x24 || opcode == 0x3F || opcode == 0x40)
-        ++interpreter_rel_words;
+        interpreter_rel_bytes += sizeof(std::uint32_t);
       instruction.operand = operand;
     } else if (opcode >= 0x28 && opcode <= 0x3E) {
       std::uint32_t alignment = 0;
@@ -1682,14 +1867,15 @@ int fireball::compile_wasm_trace(
       if (!read_unsigned_leb(code, cursor, end, alignment) ||
           !read_unsigned_leb(code, cursor, end, offset))
         return -1;
-      interpreter_rel_words += 2;
+      interpreter_rel_bytes += 2 * sizeof(std::uint32_t);
       instruction.operand = offset;
     } else if (opcode == kI32Const || opcode == kI64Const) {
       std::uint64_t operand = 0;
       if (!read_signed_leb(code, cursor, end, operand,
                            opcode == kI32Const ? 32u : 64u))
         return -1;
-      interpreter_rel_words += opcode == kI32Const ? 1u : 2u;
+      interpreter_rel_bytes +=
+          (opcode == kI32Const ? 1u : 2u) * sizeof(std::uint32_t);
       instruction.has_operand = 1;
       instruction.operand = operand;
     } else if (opcode == kF32Const || opcode == kF64Const) {
@@ -1705,6 +1891,8 @@ int fireball::compile_wasm_trace(
       instruction.operand = operand;
     }
     source_end_offsets[instruction_index] = cursor;
+    const auto encoded_width = cursor - instruction_ip;
+    interpreter_rel_bytes += encoded_width < 0xFFu ? 1u : 5u;
   }
   if (cursor != end)
     return -1;
@@ -1718,9 +1906,13 @@ int fireball::compile_wasm_trace(
                             local_count, local_slot_count, stack,
                             source_offsets.data(), source_end_offsets.data()))
     return 0;
+  const auto terminator_status = append_trace_terminator_runtime_api(
+      builder, code, code_bytes, end, interpreter_rel_bytes);
+  if (terminator_status != 1)
+    return terminator_status;
   const auto status = finish_trace(builder, stack, result);
   if (status == 1)
-    result->interpreter_rel_words = interpreter_rel_words;
+    result->interpreter_rel_bytes = interpreter_rel_bytes;
   return status;
 }
 
@@ -1739,9 +1931,12 @@ std::int64_t fireball::chain_successor(std::uintptr_t code_address,
   case 0x04:
   case 0x05:
   case 0x0B:
+  case 0x0C:
   case 0x0D:
   case 0x0E:
   case 0x0F:
+  case 0x10:
+  case 0x11:
   case 0xFC:
     return UINT32_MAX;
   default:

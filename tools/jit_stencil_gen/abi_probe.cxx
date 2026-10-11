@@ -5,9 +5,12 @@
 #include <cstdint>
 #include <type_traits>
 
-extern "C" void FIREBALL_NATIVE_CPS_CALL fb_abi_jit_trace_entry_probe(
+extern "C" bool FIREBALL_NATIVE_CPS_CALL
+fb_abi_jit_trace_entry_probe(
     fireball_execution_context_native *, const std::uint8_t *, std::uint32_t *,
-    const std::uint8_t *) noexcept {}
+    const std::uint8_t *) noexcept {
+  return false;
+}
 
 static_assert(std::is_same_v<decltype(&fb_abi_jit_trace_entry_probe),
                              fireball_native_jit_trace_entry>);
@@ -39,4 +42,8 @@ extern "C" __attribute__((used, section(".fb_abi"))) const std::uint32_t
             offsetof(fireball_execution_context_native, stack_pointer)),
         static_cast<std::uint32_t>(
             offsetof(fireball_execution_context_native, runtime_flags)),
+        static_cast<std::uint32_t>(
+            sizeof(fireball::jit_trace_boundary_metadata)),
+        static_cast<std::uint32_t>(
+            offsetof(fireball_execution_context_native, rel)),
 };

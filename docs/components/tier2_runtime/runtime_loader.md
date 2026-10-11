@@ -35,9 +35,9 @@ ROM 上の索引構築（ModuleView）も担当する。
 - **`decoded_entity_registry`**: 各エンティティの種類・ファイル内開始位置・長さ・参照に必要な最小メタ情報だけを保持する固定長レジストリ。関数コード、名前文字列、データ本体は所有せず、WASM原本上の範囲を参照する。
 - **`entity_offset_storage` (`ReadOnlyRadixBinaryTreeStorage`)**: ファイル内のバイト位置（開始オフセット）をキーとしてデコード済みエンティティへ $O(1) + O(\log n)$ でマッピングする基数2進木索引。検索時だけviewを借用する。
 - **`import_storage` / `export_storage` (`ReadOnlyRadixBinaryTreeStorage`)**: シンボル名（インポート名・エクスポート名）のハッシュ値をキーとして各エントリへ $O(1) + O(\log n)$ でマッピングする基数2進木索引。検索時だけviewを借用する。
-- **`block_storage` (`ReadOnlyRadixBinaryTreeStorage`)**: モジュール内の全基本ブロックメタ情報（`BasicBlock`: `head_pc`, `next_pc`, `loops_to`, `frame_depth`, `byte_span`, `func_index`）をPCで索引化する。各インタープリタ再開位置に定数プールの開始位置を対応させるため、直接ステンシルを持たないブロックも格納する。`byte_span`はtrace compilerへ渡す連続命令範囲であり、直接ステンシルを含まないブロックでは0とする。JITは0バイトのエントリをコンパイル候補にしない。
+- **`module.blocks`と`block_storage`**: モジュール内の全基本ブロックメタ情報（`BasicBlock`: `head_pc`, `next_pc`, `loops_to`, `frame_depth`, `byte_span`, `func_index`, `interpreter_constant_byte_offset`, `jit_cache_reference`）を固定配列`module.blocks`に保持する。`module.blocks`の順序はWASMコード順とする。検索用の別配列は`fold_mix32(pc) = (pc * 0x9E3779B1) & 0xFFFFFFFF`で求めた32bitキーと`module.blocks`のindexを保持し、変換キー順に整列する。乗数は奇数なので、この乗算をmodulo 2^32で行う変換は32bit全域の全単射である。Radix prefixに使う上位キーbitは`func_index`を含む入力bit全体の影響を受け、関数indexがPC上位側に偏る入力でもprefixの情報量を保つ。`block_storage`（`ReadOnlyRadixBinaryTreeStorage`）は変換PCでRadix候補区間を絞り、その区間の整列済み変換キーを二分探索して元のBasicBlock indexを返す。最後に`module.blocks[index].head_pc`を元PCと照合し、完全一致を確認する。Native dispatcherは短命な固定長block検索キャッシュで同一dispatch中の反復PCを再利用する。キャッシュキーはmoduleと元`head_pc`であり、tag不一致時はこのRadix＋二分探索を行う。キャッシュはLoader索引を置き換えず、JIT trace参照とも別の状態である。Native dispatcherはブロック入口でBasicBlockから制御情報、Interpreter定数プール開始位置、JITキャッシュ参照を得てからJITを呼び出す。JIT常駐エントリ索引は独立した最大96件のソート配列であり、JIT用Radix表は設けない。`byte_span`はtrace compilerへ渡すtrace本体の連続命令範囲であり、Runtime API lowering対象の命令も含む。`call`はRuntime API operationとして範囲に含め、構造制御境界、`call_indirect`、`0xFC` prefixは範囲外に置く。JITは各命令を直接stencilまたはRuntime APIでlowerする。命令本体のない入口では`byte_span`を0とする。
 
-  `head_pc`と`next_pc`はCode section payload内の命令先頭オフセットである。PCはsection IDとpayload lengthの後から数え、payload内の関数数・body size・locals宣言を含む。各エントリは関数所有情報と関数先頭PCを持つ。`BasicBlock`はPC・制御フローメタ情報のみを保持し、デコード済み命令列を持たない。命令列は対象ブロックの処理時にROM上のコードから一度だけストリーミングで導出する。ランタイムやJITコンパイラはブロック索引を再生成せず、ローダ所有の不変ストレージから借用viewで $O(1) + O(\log n)$ にブロックを解決する。 `{Loader_BasicBlockIndex}` <!-- definition: {Loader_BasicBlockIndex} --> `{GOTCHA-LOAD-04}` <!-- definition: {GOTCHA-LOAD-04} -->
+  `head_pc`と`next_pc`はCode section payload内の命令先頭オフセットである。PCはsection IDとpayload lengthの直後を0として数え、payload内の関数数・body size・locals宣言を含む。このPC定義は索引キー変換とは独立しており、`fold_mix32`の導入で変更しない。各エントリは関数所有情報と関数先頭PCを持つ。`BasicBlock`はデコード済み命令列を持たず、ローダーは各ブロックのコード範囲を個別にパースする。Interpreter定数プールには、その範囲内の可変長LEB128即値をデコードし、各命令のオペランドrecordの後ろへ命令幅recordを付けて関数所有の8bit-packed領域へブロック順に連結する。幅は`0xFF`未満なら1byte、`0xFF`以上ならsentinel `0xFF`とlittle-endian 32bit値で表す。固定幅`f32.const`/`f64.const`即値はプールへ複製しないが、その命令幅は格納する。各ブロックはプール先頭からのbyte offsetを開始位置として保持する。`jit_cache_reference`はJITキャッシュ上の位置を示す8bitの可変ヒントであり、未設定値は`0xFF`とする。JITキャッシュの挿入・昇格・退避・flushで参照を更新または無効化する。その他のブロック境界・制御情報はロード後不変である。Block Radix索引はPCに`fold_mix32(pc) = (pc * 0x9E3779B1) & 0xFFFFFFFF`を適用したキーでRadix表の候補範囲を引き、変換キー順に整列した検索配列の該当範囲を二分探索する。検索配列のindexから自然なWASMコード順の`module.blocks`を参照し、元`head_pc`も照合する。JIT拡張はこのindexを受け取る。ランタイムやJITコンパイラはブロック索引を再生成しない。 `{Loader_BasicBlockIndex}` <!-- definition: {Loader_BasicBlockIndex} --> `{GOTCHA-LOAD-04}` <!-- definition: {GOTCHA-LOAD-04} -->
 - **`control_map`**: 各関数の制御デリミタと `br_table` の静的対応を保持する固定長メタデータ。インタープリタはロード済みの関数メタデータを参照し、実行時に制御構造を再走査しない。命令列そのものは保持せず、必要な命令だけをROM上のコードからストリーミングする。
 
 ### 3.2 内部ブロック図
@@ -397,9 +397,10 @@ sequenceDiagram
 対応するテスト仕様は[runtime_loader_test_spec.md](docs/qa/tier2_runtime/runtime_loader_test_spec.md)である。テストケースIDと実行可能テストは同仕様を正本とする。
 
 ### 7.4 既知の制限・対象外
+<!-- traceability: {JIT_RuntimeAPI} -->
 ホスト実機依存の挙動、未実装アーキテクチャ、およびテスト仕様が明示する対象外条件は未検証として扱う。
 
-命令利得の表は校正対象の目標値であり、対象CPUで測定済みの短縮命令数ではない。現行x64 compilerが未対応のload/store、global、および`0xFC`命令には、候補計算で未対応命令のペナルティを適用する。目標表の正の利得からコンパイル対応済みとは判定しない。対応命令の`rem`等にも参照実装との値の差があるため、対応範囲と利得値の同期・校正を残作業とする。数値の差を新たなADRの決定事項にはしない。
+JIT候補スコアとopcode loweringは [`jit_runtime.md`](docs/components/tier3_plugins/jit_runtime.md) と [`jit_compiler.md`](docs/components/tier3_plugins/jit_compiler.md) が定める。候補スコアはcompile優先度の便益評価である。Loaderが受理したopcodeは直接stencilまたはJIT Runtime API経路で処理する。スコア値は対象CPUの実測で校正する。
 
 
 ## 8. 設計判断と参考実装

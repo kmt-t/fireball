@@ -153,7 +153,6 @@ def native_jit_definitions() -> dict[str, int]:
         "FB_CONF_JIT_X64_COMMON_CODE_RELATIVE_OFFSET": config.JIT_X64_COMMON_CODE_RELATIVE_OFFSET,
     }
     for name in (
-        "JIT_CACHE_FAST_SLOT_COUNT",
         "JIT_CACHE_BANK_ENTRY_CAPACITY",
         "JIT_CACHE_REGION_BYTES",
         "JIT_CACHE_COMMON_CODE_BYTES",

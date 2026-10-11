@@ -27,7 +27,11 @@ def test_numeric_opcode_score_table() -> None:
     assert len(table.storage) == OPCODE_TABLE_BYTES
     assert table.score(I32_CONST) == 6
     assert table.score(I32_ADD) == 7
-    assert table.score(I32_POPCNT) == -8
+    assert table.score(I32_POPCNT) == 3
+    assert table.score(0x7F) == 3  # i64.div_s uses a JIT Runtime API.
+    assert table.score(0x91) == 3  # f32.sqrt uses a JIT Runtime API.
+    assert table.score(0x23) == 4  # global.get uses a JIT Runtime API.
+    assert table.score(0xFC) == -2  # Admitted 0xfc subopcodes use Runtime APIs.
     assert score_opcodes((I32_CONST, I32_CONST, I32_ADD), table) == 19
 
 
@@ -41,19 +45,19 @@ def test_plugin_scores_basic_block() -> None:
 
 
 @pytest.mark.parametrize(
-    "code, score, candidate",
+    "code, results, score, candidate",
     (
-        (bytes.fromhex("41 01 69 45 1a 0b"), 8, False),
-        (bytes.fromhex("41 01 1a 10 00 0b"), 9, True),
-        (bytes.fromhex("41 01 1a 0b"), 10, True),
-        (bytes.fromhex("41 01 69 1a 0b"), 2, False),
+        (bytes.fromhex("41 01 00 45 1a 0b"), (), 8, False),
+        (bytes.fromhex("41 01 69 0b"), (I32,), 9, True),
+        (bytes.fromhex("41 01 1a 0b"), (), 10, True),
+        (bytes.fromhex("00 0b"), (), -8, False),
     ),
 )
 def test_plugin_candidate_gate_uses_specification_threshold(
-    code: bytes, score: int, candidate: bool
+    code: bytes, results: tuple[int, ...], score: int, candidate: bool
 ) -> None:
     """TEST-LOAD-49: 実登録で候補カードを生成し、非候補の履歴を記録しない。"""
-    module = parse_single_function_module(code)
+    module = parse_single_function_module(code, results=results)
     executable_blocks = tuple(block for block in module.blocks if block.byte_span != 0)
     assert len(executable_blocks) == 1
     block = executable_blocks[0]

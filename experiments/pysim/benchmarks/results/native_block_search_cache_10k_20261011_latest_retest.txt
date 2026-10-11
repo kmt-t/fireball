@@ -1,0 +1,26 @@
+Native Interpreter BasicBlock search cache A/B — 2026-10-11 latest retest
+
+Fixture: 10,007 BasicBlocks; one hot loop of 250,000 iterations and 3,334 cold blocks skipped after the loop. The hot back edge remains one block so repeated dispatches measure lookup of the same PC with a large block table. Each trial is a separate process; CPU 2 is pinned; each process performs three warmups and nine timed samples per variant, alternating cache-on and cache-off order. Yield threshold is 4096. Module creation and parsing are outside timed intervals. The module completes with no trap and no WASM results.
+
+trial=1 basic_blocks=10007 loop_iterations=250000 cold_blocks=3334 yield_threshold=4096
+trial=1 cached_ms=7.422,7.414,7.269,7.312,7.457,7.347,7.562,7.494,7.471
+trial=1 uncached_ms=11.182,11.190,11.384,11.129,11.330,11.223,11.171,11.090,11.163
+trial=1 cached_median_ms=7.422 uncached_median_ms=11.182 speedup=1.507x
+
+trial=2 basic_blocks=10007 loop_iterations=250000 cold_blocks=3334 yield_threshold=4096
+trial=2 cached_ms=7.654,7.569,7.434,7.510,7.510,7.439,7.522,7.511,7.470
+trial=2 uncached_ms=11.443,11.277,11.311,11.268,11.297,11.207,11.177,11.303,11.485
+trial=2 cached_median_ms=7.510 uncached_median_ms=11.297 speedup=1.504x
+
+trial=3 basic_blocks=10007 loop_iterations=250000 cold_blocks=3334 yield_threshold=4096
+trial=3 cached_ms=7.408,7.369,7.385,7.609,7.552,7.538,7.460,7.538,7.424
+trial=3 uncached_ms=11.224,11.233,14.980,15.733,11.218,11.165,11.218,11.327,11.097
+trial=3 cached_median_ms=7.460 uncached_median_ms=11.224 speedup=1.505x
+
+Median of the three process medians: cached=7.460 ms; uncached=11.224 ms; speedup=1.505x. AO-Bench remains a separate whole-workload result: its 320x180 cache A/B difference is under 1.2% and does not stress a large block table.
+
+Provenance:
+- Host: AMD Ryzen 5 5500GT; Linux x86_64; CPython 3.13.15; Clang 21.1.8.
+- Benchmark source SHA-256: 702cbc2c8f941b8c46a94994c464c8ea0cfdd701e1930c908ee950c86eb4669d.
+- Cache-on NativeInterpreter release library SHA-256: e1f195245d0e9493b53bab6dd4567b96251894b9f7421b2494d156ea2fc3a26a.
+- Cache-off library SHA-256: 7579b5f20b9351cefea4f004e4f83c5eac29b402c1db08fe5f739c77c7ded415.

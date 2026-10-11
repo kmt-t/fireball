@@ -34,6 +34,7 @@ from qa.shared.helpers import make_interpreter as Interpreter
 from qa.shared.jit_cache import CardState
 from qa.shared.runtime_support import (
     compile_module_block,
+    instruction_blocks,
     make_runtime_engine,
 )
 from qa.shared.x64_jit import TraceCompiler
@@ -719,7 +720,9 @@ def test_tier_01_interpreter_to_jit_cooperative_flow():
         assert system.runtime_engine.stat_jit_invocations > 0
         manager = system.runtime_engine.jit_runtime
         assert manager is not None
-        loop_pc = next(block.head_pc for block in module.blocks if block.loops_to is not None)
+        loop_pc = next(
+            block.head_pc for block in instruction_blocks(module) if block.loops_to is not None
+        )
         assert (manager.cache.find_trace(loop_pc) is not None) or (
             manager.cache.find_trace(loop_pc) is not None
         )
@@ -796,8 +799,7 @@ def test_tier_03_trace_chaining_and_interpreter_fallback():
     wasm_bytes = wat_to_wasm(wat)
     engine = make_runtime_engine(jit_compiler=TraceCompiler())
     mod = engine.load_wasm(wasm_bytes)
-    block_a = mod.blocks[0]
-    block_b = mod.blocks[1]
+    block_a, block_b = instruction_blocks(mod)[:2]
     # Compile block B first, then block A (so A can chain directly into resident B)
     trace_b = compile_module_block(engine.jit_runtime.jit_compiler, mod, block_b)
     engine.jit_runtime.cache.insert(trace_b)
@@ -958,7 +960,7 @@ def test_debugger_manager_gdb_rsp_integration():
     )
     """
     mod = engine.load_wasm(wat_to_wasm(step_wat))
-    block1, block2 = mod.blocks[0], mod.blocks[1]
+    block1, block2 = instruction_blocks(mod)[:2]
     blocks = {block1.head_pc: block1, block2.head_pc: block2}
     execution = make_debug_execution(mod, 0, (10,), memory=mem)
     dbg.detach()
@@ -1005,8 +1007,7 @@ def test_interpreter_debugger_attachment_and_hooks():
     engine = RuntimeEngineDebugDriver()
     dbg = DebuggerManager(engine=engine)
     mod = engine.load_wasm(wasm_bytes)
-    block1 = mod.blocks[0]
-    block2 = mod.blocks[1]
+    block1, block2 = instruction_blocks(mod)[:2]
     # 1. Normal interpreter composition (normal interpreter-only selection)
     assert engine.handler_table == "interpreter"
     assert engine.debugger is None

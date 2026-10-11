@@ -1043,6 +1043,9 @@ template <class Measurement> struct native_jit_plugin {
     c->cursor = cursor;
     c->age_units = units;
     c->age_scan = scan_bytes;
+    c->provider.card_states = states;
+    c->provider.card_count = cards;
+    c->provider.card_shift = shift;
     return 1;
   }
   static int fb_jit_runtime_bind_profile(Runtime *c,
@@ -1134,8 +1137,7 @@ template <class Measurement> struct native_jit_plugin {
     const auto card = pc >> runtime.card_shift;
     if (card >= runtime.cards)
       return -1;
-    if (runtime.card_state(card) != 3)
-      return 0;
+    assert(runtime.card_state(card) == 3);
     const auto start_location = runtime.lookup(pc);
     auto *start = start_location.value;
     if (runtime.error != 0)
@@ -1233,8 +1235,9 @@ template <class Measurement> struct native_jit_plugin {
     auto *c = ::new (region) Runtime{};
     if constexpr (!std::is_void_v<Measurement>)
       c->owns_memory = false;
-    c->provider = {reinterpret_cast<std::uintptr_t>(c), lookup_runtime_trace,
-                   observe_runtime_block, finish_runtime_boundary};
+    c->provider = {reinterpret_cast<std::uintptr_t>(c), nullptr, 0, 0,
+                   lookup_runtime_trace, observe_runtime_block,
+                   finish_runtime_boundary};
     if (!fireball::borrow_executable_region(&c->memory,
                                             region + data_region_size(view),
                                             FB_CONF_JIT_CACHE_REGION_BYTES) ||

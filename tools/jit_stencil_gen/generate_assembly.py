@@ -197,7 +197,10 @@ def check_pic_object(objdump: str, object_path: Path) -> None:
             continue
         if active_text_relocations and line.strip():
             raise GenerationError(f"PIC stencil object retains a .text relocation: {line.strip()}")
-        if re.search(r"GOT|PLT|R_X86_64_64", line, re.IGNORECASE):
+        relocation = re.search(r"\bR_[A-Z0-9_]+\b", line)
+        if relocation is not None and re.search(
+            r"(?:GOT|PLT|R_X86_64_64)", relocation.group(), re.IGNORECASE
+        ):
             raise GenerationError(f"PIC stencil contains a GOT/PLT relocation: {line}")
 
 

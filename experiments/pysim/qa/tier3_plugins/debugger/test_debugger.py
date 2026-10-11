@@ -27,6 +27,7 @@ from config import FB_CONF_DEBUG_MAX_BREAKPOINTS
 from qa.private.debugger_support import DebugTestView, make_debug_execution
 from qa.private.runtime_test_driver import RuntimeEngineDebugDriver
 from qa.shared.helpers import wat_to_wasm
+from qa.shared.runtime_support import instruction_blocks
 from tier3_plugins.debugger.debugger import (
     DebuggerManager,
     GDBRspProtocol,
@@ -217,7 +218,7 @@ def test_dbg_08_09_breakpoints_and_hit():
     dbg = DebuggerManager(engine=execution)
     dbg.attach()
     rsp = GDBRspProtocol(dbg)
-    block1, block2 = mod.blocks[0], mod.blocks[1]
+    block1, block2 = instruction_blocks(mod)[:2]
     blocks = {block1.head_pc: block1, block2.head_pc: block2}
     # Set breakpoint at block2's head
     res_z, _ = rsp.handle_packet(
@@ -261,7 +262,7 @@ def test_dbg_11_native_execution_termination_response():
     dbg = DebuggerManager(engine=execution)
     dbg.attach()
     rsp = GDBRspProtocol(dbg)
-    block1, block2 = mod.blocks[0], mod.blocks[1]
+    block1, block2 = instruction_blocks(mod)[:2]
     blocks = {block1.head_pc: block1, block2.head_pc: block2}
     ctx = execution.context
     # Step 1 executes `local.get 0` and stops at the next instruction.
@@ -282,7 +283,7 @@ def test_dbg_10_23_one_rsp_step_executes_only_one_wasm_instruction() -> None:
         wat_to_wasm("(module (func (param i32) (result i32) local.get 0 i32.const 10 i32.add))")
     )
     assert module.code_for(0) == b"\x20\x00\x41\x0a\x6a\x0b"
-    block = module.blocks[0]
+    block = instruction_blocks(module)[0]
     execution = make_debug_execution(module, 0, (5,))
     debugger = DebuggerManager(engine=execution)
     debugger.attach()
@@ -315,7 +316,7 @@ def test_dbg_14_15_pc_sampling_and_memory_assertions():
     dbg.attach()
     rsp = GDBRspProtocol(dbg)
     ctx = execution.context
-    block = mod.blocks[0]
+    block = instruction_blocks(mod)[0]
     blocks = {block.head_pc: block}
     # Add memory assertion: address 1 must equal 0x42, address 2 must equal 0xFF (will fail)
     dbg.add_memory_assertion(1, 0x42, "status byte")
@@ -595,7 +596,7 @@ def test_dbg_12_disabled_composition_has_no_debug_state_or_weave() -> None:
     interpreter = make_native_interpreter(module)
     call = interpreter.start(0, ())
     assert interpreter._native_dispatcher is native_abi.RUN_DISPATCH
-    assert ctypes.sizeof(ExecutionContextABI) == 152
+    assert ctypes.sizeof(ExecutionContextABI) == 160
     assert ctypes.sizeof(call.context) == (
         ctypes.sizeof(ExecutionContextABI) + ctypes.sizeof(ctypes.c_void_p)
     )

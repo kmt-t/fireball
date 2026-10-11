@@ -68,6 +68,7 @@ h_runtime_api(execution_context *context,
   const bool should_continue = RuntimeApi(context, sp, local_base, rel);
   context->local_base = local_base;
   if (!should_continue) {
+    context->rel = rel;
     context->stack_pointer = sp;
     assert(cps_exit_pending(*context));
     return;
@@ -612,6 +613,7 @@ dispatch_next(execution_context *context, const std::uint8_t *ip,
 
   if constexpr (std::is_same_v<Debugger, debugger_aspect>) {
     if (Debugger::before_instruction(current)) {
+      current.rel = rel;
       current.stack_pointer = sp;
       debug_stop(current);
       return;

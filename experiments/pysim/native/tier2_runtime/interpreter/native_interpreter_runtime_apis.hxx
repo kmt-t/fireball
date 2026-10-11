@@ -536,7 +536,6 @@ runtime_call(execution_context *context, std::uint32_t *&sp,
   local_stack = callee_local_base;
   current.local_base = local_stack;
   rel = interpreter_rel_for_block(callee, 0);
-  assert(rel != nullptr);
   if ((current.runtime_flags & kStopAtDefinedCallBoundaryFlag) != 0) {
     return call_boundary(current);
   }
@@ -1473,7 +1472,8 @@ inline bool
 runtime_memory_manager_api_boundary(execution_context *context,
                                     [[maybe_unused]] std::uint32_t *&sp,
                                     [[maybe_unused]] std::uint32_t *&local_base,
-                                    [[maybe_unused]] const std::uint8_t *&rel) {
+                                    const std::uint8_t *&rel) {
+  (void)read_u32(rel);
   return runtime_api_boundary(*context, context->ip);
 }
 

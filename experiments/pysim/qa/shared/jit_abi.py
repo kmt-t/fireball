@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ctypes
+from _ctypes import CFuncPtr
 from typing import Protocol
 
 from bump_allocator import BumpAllocator
@@ -50,6 +51,10 @@ class NativeBlockVisitHistory:
     def __getitem__(self, index: int) -> int:
         assert 0 <= index < len(self)
         return int(self._storage[index])
+
+    def clear(self) -> None:
+        """Clear stale PCs before reusing this QA dispatch buffer."""
+        ctypes.memset(self.native_address, 0, self.native_bytes)
 
 
 class NativeDispatchSnapshot:
@@ -119,6 +124,10 @@ class NativeDispatchSnapshot:
         self._workspace_released = True
 
 
+class _NativeSnapshotProvider(Protocol):
+    def native_dispatch_state(self) -> NativeDispatchSnapshot: ...
+
+
 EMPTY_NATIVE_DISPATCH_SNAPSHOT = NativeDispatchSnapshot(
     (NativeTraceDispatchEntry * 0)(),
     0,
@@ -138,9 +147,7 @@ class JITTrace(Protocol):
     stack_words: int
     exec_count: int
 
-    def execute(
-        self, ctx: ctypes.c_void_p, ip: ctypes.c_void_p, sp: ctypes.c_void_p
-    ) -> None: ...
+    def execute(self, ctx: ctypes.c_void_p, ip: ctypes.c_void_p, sp: ctypes.c_void_p) -> None: ...
 
 
 __all__ = (
@@ -183,6 +190,7 @@ def dispatch_for_test(interpreter, call_state, snapshot, execution_count, native
         snapshot.block_history.native_address,
         snapshot.block_history.native_bytes,
     )
+    snapshot.block_history.clear()
     entry = partial(wrapper, ctypes.cast(native_dispatcher, ctypes.c_void_p), ctypes.byref(buffers))
     from qa.private.interpreter_native_abi import NativeDiagnosticResult
 
@@ -207,3 +215,43 @@ def dispatch_for_test(interpreter, call_state, snapshot, execution_count, native
         result.interpreted_block_count,
         snapshot.block_history,
     )
+
+
+def make_qa_jit_dispatch_entry(manager: _NativeSnapshotProvider, collect_stats: bool) -> CFuncPtr:
+    """Create a QA-only dispatcher that refreshes the manager's trace snapshot."""
+    from qa.private.interpreter_native_abi import select_native_jit_dispatch_entry
+    from qa.private.jit_native_abi import _NATIVE_LIBRARY
+
+    dispatch = select_native_jit_dispatch_entry(collect_stats)
+    qa_dispatch = _NATIVE_LIBRARY.fb_qa_dispatch
+    qa_dispatch.argtypes = (
+        ctypes.c_void_p,
+        ctypes.c_void_p,
+        ctypes.c_void_p,
+        ctypes.c_void_p,
+    )
+    qa_dispatch.restype = ctypes.c_int
+    callback_type = ctypes.CFUNCTYPE(ctypes.c_int, ctypes.c_void_p, ctypes.c_void_p)
+
+    def invoke(call: int, result: int) -> int:
+        snapshot = manager.native_dispatch_state()
+        snapshot.block_history.clear()
+        buffers = _DispatchBuffers(
+            ctypes.addressof(snapshot.entries),
+            snapshot.entry_count,
+            ctypes.addressof(snapshot.trackable_mask),
+            snapshot.trackable_card_count,
+            snapshot.trackable_shift,
+            ctypes.sizeof(snapshot.trackable_mask),
+            snapshot.block_history.native_address,
+            snapshot.block_history.native_bytes,
+        )
+        status = qa_dispatch(
+            ctypes.cast(dispatch, ctypes.c_void_p),
+            ctypes.byref(buffers),
+            call,
+            result,
+        )
+        return int(status)
+
+    return callback_type(invoke)

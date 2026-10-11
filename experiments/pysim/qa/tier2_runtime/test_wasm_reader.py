@@ -318,10 +318,27 @@ def test_load_48_module_builds_basic_block_index() -> None:
     module = parse(memoryview(wasm_bytes))
 
     assert module.block_storage is not None
-    assert len(module.blocks) == 2
-    assert module.total_basic_blocks == 2
+    assert len(module.blocks) == 4
+    assert module.total_basic_blocks == 4
     for block in module.blocks:
         assert module.get_block(block.head_pc) is block
+
+
+def test_load_57_indexes_interpreter_only_block_heads() -> None:
+    wasm_bytes = wat_to_wasm(
+        """(module
+            (func (export "f32_only") (result f32)
+              (f32.add (f32.const 1.0) (f32.const 2.0))))"""
+    )
+    module = parse(memoryview(wasm_bytes))
+
+    function = module.functions[0]
+    entry = module.get_block(function.code_pc_offset)
+    assert entry is not None
+    assert entry.func_index == 0
+    assert entry.head_pc == function.code_pc_offset
+    assert entry.byte_span == 0
+    assert entry.interpreter_constant_offset == 0
 
 
 def test_load_51_keeps_unreachable_polymorphism_inside_its_control_frame() -> None:

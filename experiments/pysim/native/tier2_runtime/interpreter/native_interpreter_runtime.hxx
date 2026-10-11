@@ -241,9 +241,12 @@ inline void execute_dispatch_segment(
         interpreter_ip < context.code_size &&
         opcode_is_block_body(context.code[interpreter_ip]);
   }
-  const auto *rel = executed_bodies == 0
-                        ? interpreter_rel_for_block(frame, context.ip)
-                        : dispatch_rel;
+  const std::uint8_t *rel = dispatch_rel;
+  if (executed_bodies == 0) {
+    if ((context.runtime_flags & kPendingBlockHeadFlag) != 0)
+      context.rel = interpreter_rel_for_block(frame, context.ip);
+    rel = context.rel;
+  }
   // Every terminal handler writes a fresh CPS exit kind.
   dispatch_next<Debugger>(&context, context.code + context.ip,
                           context.stack_pointer, rel);
@@ -374,6 +377,9 @@ inline int run_native_dispatch_abi(const dispatch_input_t<WithExtension> *input,
     assert(jit_provider->lookup != nullptr &&
            jit_provider->observe_block != nullptr &&
            jit_provider->finish_boundary != nullptr);
+    assert(jit_provider->card_shift < 32 &&
+           (jit_provider->card_count == 0 ||
+            jit_provider->card_states != nullptr));
   } else {
     assert(jit_provider == nullptr);
   }
@@ -424,11 +430,19 @@ inline int run_native_dispatch_abi(const dispatch_input_t<WithExtension> *input,
       if constexpr (WithJit) {
         if ((context.runtime_flags & kPendingBlockHeadFlag) != 0 &&
             ip < context.code_size && opcode_is_block_body(context.code[ip])) {
-          executed_bodies =
-              execute_jit_trace<CollectStats, WithExtension,
-                                ReturnAtBlockBoundary, ResultType>(
-                  state, frame, frame.function_view->code_pc_offset + ip,
-                  dispatch_rel);
+          const auto pc = frame.function_view->code_pc_offset + ip;
+          const auto card = pc >> state.jit_provider->card_shift;
+          assert(card < state.jit_provider->card_count &&
+                 state.jit_provider->card_states != nullptr);
+          const auto card_state =
+              (state.jit_provider->card_states[card >> 2] >>
+               ((card & 3u) * 2u)) &
+              3u;
+          if (card_state == 3u)
+            executed_bodies =
+                execute_jit_trace<CollectStats, WithExtension,
+                                  ReturnAtBlockBoundary, ResultType>(
+                    state, frame, pc, dispatch_rel);
         }
       }
     }

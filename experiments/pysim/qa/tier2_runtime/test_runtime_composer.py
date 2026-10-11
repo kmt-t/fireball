@@ -242,56 +242,101 @@ if __name__ == "__main__":
 
 
 @pytest.mark.parametrize("collect_stats", (False, True))
-def test_native_execution_plugin_can_be_replaced_without_jit_knowledge(collect_stats):
+@pytest.mark.parametrize("card_state", (0, 1, 2, 3))
+def test_native_execution_plugin_can_be_replaced_without_jit_knowledge(collect_stats, card_state):
     """An opaque execution owner binds once and uses the common runtime boundary."""
     import ctypes
 
     from qa.shared.helpers import wat_to_wasm
     from qa.shared.runtime_stats import RuntimeStatsEngine as RuntimeEngine
-    from tier2_runtime.abi.native_abi import NativeDispatchCall
+    from tier2_runtime.abi import native_abi
     from tier2_runtime.interpreter.interpreter import InterpreterBindings, NativeInterpreter
     from tier2_runtime.wasm.reader import parse
 
-    class NativeExecutionExtension(ctypes.Structure):
+    class NativeJitTrace(ctypes.Structure):
         _fields_ = (
-            ("owner", ctypes.c_size_t),
-            (
-                "execute",
-                ctypes.CFUNCTYPE(
-                    ctypes.c_uint32,
-                    ctypes.c_void_p,
-                    ctypes.c_uint32,
-                ),
-            ),
-            ("observe", ctypes.CFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_uint32)),
+            ("entry_address", ctypes.c_size_t),
+            ("rel", ctypes.c_void_p),
+            ("body_end_pc", ctypes.c_uint32),
+            ("next_pc", ctypes.c_uint32),
+            ("loops_to", ctypes.c_uint32),
+            ("terminal_block_index", ctypes.c_uint32),
+            ("interpreter_rel_words", ctypes.c_uint32),
+            ("frame_depth", ctypes.c_uint32),
+            ("stack_words", ctypes.c_uint32),
+            ("result_words", ctypes.c_uint32),
+            ("body_count", ctypes.c_uint32),
+            ("trace_cookie", ctypes.c_size_t),
         )
 
-    execute = NativeExecutionExtension._fields_[1][1](lambda *args: 0)
-    observe = NativeExecutionExtension._fields_[2][1](lambda *args: False)
-    extension = NativeExecutionExtension(123, execute, observe)
-    extension_address = ctypes.addressof(extension)
+    JitLookup = ctypes.CFUNCTYPE(
+        ctypes.c_int,
+        ctypes.c_size_t,
+        ctypes.c_uint32,
+        ctypes.POINTER(NativeJitTrace),
+    )
+    JitObserve = ctypes.CFUNCTYPE(ctypes.c_int, ctypes.c_size_t, ctypes.c_uint32)
+    JitFinish = ctypes.CFUNCTYPE(ctypes.c_int, ctypes.c_size_t, ctypes.c_uint32, ctypes.c_uint32)
+    callbacks = [0, 0, 0]
+
+    def lookup(owner, pc, trace):
+        assert owner == 123
+        callbacks[0] += 1
+        return 0
+
+    def observe(owner, pc):
+        assert owner == 123
+        callbacks[1] += 1
+        return 1
+
+    def finish_boundary(owner, status, budget):
+        assert owner == 123
+        callbacks[2] += 1
+        return 1
+
+    lookup_callback = JitLookup(lookup)
+    observe_callback = JitObserve(observe)
+    finish_callback = JitFinish(finish_boundary)
+
+    class NativeJitProvider(ctypes.Structure):
+        _fields_ = (
+            ("owner", ctypes.c_size_t),
+            ("card_states", ctypes.c_void_p),
+            ("card_count", ctypes.c_uint32),
+            ("card_shift", ctypes.c_uint32),
+            ("lookup", JitLookup),
+            ("observe_block", JitObserve),
+            ("finish_boundary", JitFinish),
+        )
+
+    packed_card_states = card_state | (card_state << 2)
+    card_states = ctypes.c_uint8(packed_card_states)
+    provider = NativeJitProvider(
+        123,
+        ctypes.addressof(card_states),
+        2,
+        31,
+        lookup_callback,
+        observe_callback,
+        finish_callback,
+    )
+    provider_address = ctypes.addressof(provider)
 
     class DelegatingPlugin:
         def __init__(self):
             self.bindings = []
-            self.calls = 0
-            self.extension = extension_address
 
         def register_module(self, module):
             self.module = module
 
-        def bind_execution(self, dispatcher, execution):
+        def bind_execution(self, execution):
             assert execution.module is self.module
             self.bindings.append(execution)
-            self.dispatcher = dispatcher
-            return self.extension
+            return provider_address
 
-        def native_entry(self, call, result):
-            request = ctypes.cast(call, ctypes.POINTER(NativeDispatchCall)).contents
-            assert request.extension == self.extension
-            assert request.idle_budget == 3
-            self.calls += 1
-            return self.dispatcher(call, result)
+        @property
+        def native_entry(self):
+            return native_abi.RUN_DISPATCH_JIT
 
         def idle_hook(self, budget=4):
             return 0
@@ -318,7 +363,9 @@ def test_native_execution_plugin_can_be_replaced_without_jit_knowledge(collect_s
     for _ in range(2):
         assert engine.call(interpreter, 0, [9], idle_budget=3) == [0]
     assert len(plugin.bindings) == 1
-    assert plugin.calls >= 8
+    assert (callbacks[0] >= 8) == (card_state == 3)
+    assert callbacks[1] >= 8
+    assert callbacks[2] > 0
     assert engine.stat_jit_invocations == 0
     assert (engine.stat_interp_steps > 0) == collect_stats
     engine.reset_stats()

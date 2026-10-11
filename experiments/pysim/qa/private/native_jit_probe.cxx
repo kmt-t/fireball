@@ -477,8 +477,14 @@ fb_qa_dispatch(int (*dispatch)(const fb_native_dispatch_extension_call *,
   auto call = *input;
   qa_dispatch_owner owner{*buffers};
   const auto owner_address = reinterpret_cast<std::uintptr_t>(&owner);
-  const fb_native_jit_provider provider{owner_address, qa_lookup_trace,
-                                        qa_observe_block, qa_finish_boundary};
+  static constexpr std::uint8_t all_compiled_cards[] = {0xFFu, 0xFFu};
+  const fb_native_jit_provider provider{owner_address,
+                                        all_compiled_cards,
+                                        8,
+                                        29,
+                                        qa_lookup_trace,
+                                        qa_observe_block,
+                                        qa_finish_boundary};
   call.jit_provider = &provider;
   fb_native_execution_extension extension{owner_address, qa_observe,
                                           qa_trace_executed};
@@ -524,8 +530,8 @@ fb_jit_runtime_init(std::uint8_t *storage, std::size_t bytes,
     return nullptr;
   auto *cache = ::new (storage) JitRuntime{};
   cache->provider = {reinterpret_cast<std::uintptr_t>(cache),
-                     Api::lookup_runtime_trace, Api::observe_runtime_block,
-                     Api::finish_runtime_boundary};
+                     nullptr, 0, 0, Api::lookup_runtime_trace,
+                     Api::observe_runtime_block, Api::finish_runtime_boundary};
   if (!fb_jit_memory_init(&cache->memory, FB_CONF_JIT_CACHE_REGION_BYTES) ||
       !fireball::initialize_common_code(&cache->memory)) {
     cache->~JitRuntime();

@@ -1383,7 +1383,7 @@ class Interpreter:
             trap = self._enter_or_resolve_call(call_state, opcode, ip, frame, locals_arr)
             if trap is not None:
                 self._abort_call(call_state, trap, ip)
-            elif not call_state.finished:
+            else:
                 call_state.context.runtime_flags |= EXECUTION_CONTEXT_FLAG_PENDING_BLOCK_HEAD
             return True
         if opcode == CALL_INDIRECT:
@@ -1402,7 +1402,7 @@ class Interpreter:
             trap = self._enter_or_resolve_call(call_state, opcode, ip, frame, locals_arr)
             if trap is not None:
                 self._abort_call(call_state, trap, ip)
-            elif not call_state.finished:
+            else:
                 call_state.context.runtime_flags |= EXECUTION_CONTEXT_FLAG_PENDING_BLOCK_HEAD
             return True
         if I32_LOAD <= opcode <= MEMORY_GROW:
@@ -1414,8 +1414,6 @@ class Interpreter:
                 f"C++ interpreter does not implement 0xFC subopcode {subopcode}"
             )
             self._resolve_native_memory_boundary(call_state, opcode, ip)
-            if not call_state.finished:
-                call_state.context.runtime_flags |= EXECUTION_CONTEXT_FLAG_PENDING_BLOCK_HEAD
             return False
         assert False, f"C++ interpreter does not implement opcode 0x{opcode:02X}"
 
@@ -1664,7 +1662,7 @@ class Interpreter:
         if native_status == NATIVE_DISPATCH_RUNTIME_API_BOUNDARY:
             self.resolve_native_api_boundary(call_state)
             return True
-        raise AssertionError(f"unexpected native interpreter status: {native_status}")
+        assert False, f"unexpected native interpreter status: {native_status}"
 
     def _step(self, call_state: InterpreterCall, stop_at_boundary: bool) -> InterpreterCall:
         """Run until a boundary or completion, depending on the driving caller."""

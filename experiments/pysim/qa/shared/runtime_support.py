@@ -114,6 +114,7 @@ def compile_module_block(
 ) -> JITTrace | None:
     """Test-only adapter deriving local metadata from the loaded function."""
 
+    assert block.byte_span > 0, "a direct JIT body must contain instructions"
     function_index = block.func_index
     function = module.functions[function_index - len(module.imports)]
     assert function.local_layout_cache is not None
@@ -129,6 +130,14 @@ def compile_module_block(
         byte_length=block.byte_span,
         local_layout=function.local_layout_cache,
     )
+
+
+def instruction_blocks(module: Module) -> tuple[BasicBlock, ...]:
+    """Return nonempty blocks, excluding loader entries for structural boundaries."""
+
+    blocks = tuple(block for block in module.blocks if block.byte_span > 0)
+    assert blocks, "module has no nonempty basic blocks"
+    return blocks
 
 
 def make_pc_only_functions_module(blocks_per_function: tuple[tuple[int, ...], ...]) -> Module:

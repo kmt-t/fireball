@@ -39,7 +39,12 @@ from qa.shared.common_code import (
 from qa.shared.helpers import make_native_interpreter as Interpreter
 from qa.shared.helpers import wat_to_wasm
 from qa.shared.jit_cache import JITTrace
-from qa.shared.runtime_support import compile_module_block, compile_test_block, make_runtime_engine
+from qa.shared.runtime_support import (
+    compile_module_block,
+    compile_test_block,
+    instruction_blocks,
+    make_runtime_engine,
+)
 from qa.shared.x64_jit import TraceCompiler
 from tier2_runtime.abi.interpreter_abi import (
     ExecutionContextABI,
@@ -319,8 +324,7 @@ def test_trace_chaining_between_traces():
     wasm_bytes = wat_to_wasm(wat)
     engine = make_runtime_engine(jit_compiler=TraceCompiler())
     mod = engine.load_wasm(wasm_bytes)
-    block_a = mod.blocks[0]
-    block_b = mod.blocks[1]
+    block_a, block_b = instruction_blocks(mod)[:2]
     # Compile trace B first, then A (enabling immediate forward chaining)
     trace_b = compile_module_block(engine.jit_runtime.jit_compiler, mod, block_b)
     engine.jit_runtime.cache.insert(trace_b)
@@ -358,7 +362,7 @@ def test_hybrid_interpreter_to_jit_trace_elevation():
     wasm_bytes = wat_to_wasm(wat)
     engine = make_runtime_engine(jit_compiler=TraceCompiler())
     mod = engine.load_wasm(wasm_bytes)
-    loop_pc = mod.blocks[0].head_pc
+    loop_pc = next(block.head_pc for block in instruction_blocks(mod) if block.loops_to is not None)
     results = engine.call(Interpreter(mod, yield_threshold=3), 0, [5])
     assert results[0] == 15
     # The C++ dispatcher repeats the JIT body and invokes its C++ branch handler
@@ -393,8 +397,7 @@ def test_jit_chaining_uses_loader_resolved_successors():
     wasm_bytes = wat_to_wasm(wat)
     engine = make_runtime_engine(jit_compiler=TraceCompiler())
     mod = engine.load_wasm(wasm_bytes)
-    block_a = mod.blocks[0]
-    block_b = mod.blocks[1]
+    block_a, block_b = instruction_blocks(mod)[:2]
 
     # Make B resident before compiling A so the native successor chain can be formed.
     trace_b = compile_module_block(engine.jit_runtime.jit_compiler, mod, block_b)
@@ -415,8 +418,7 @@ def test_jit_chaining_uses_loader_resolved_successors():
     # 2. Forward chaining test:
     engine2 = make_runtime_engine(jit_compiler=TraceCompiler())
     mod2 = engine2.load_wasm(wasm_bytes)
-    block_a2 = mod2.blocks[0]
-    block_b2 = mod2.blocks[1]
+    block_a2, block_b2 = instruction_blocks(mod2)[:2]
 
     trace_a2 = compile_module_block(engine2.jit_runtime.jit_compiler, mod2, block_a2)
     engine2.jit_runtime.cache.insert(trace_a2)

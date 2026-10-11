@@ -44,8 +44,8 @@ active_frame(const execution_context &current);
 
 static_assert(sizeof(void *) == 8,
               "native interpreter requires a 64-bit host ABI");
-static_assert(sizeof(execution_context) == 152,
-              "x86-64 execution_context ABI layout must remain 152 bytes");
+static_assert(sizeof(execution_context) == 160,
+              "x86-64 execution_context ABI layout must remain 160 bytes");
 static_assert(offsetof(execution_context, trap_code) == 0x88);
 static_assert(offsetof(execution_context, local_base) == 0x90);
 
@@ -204,7 +204,7 @@ continue_cps(execution_context *context, const std::uint8_t *ip,
 
 [[gnu::always_inline]] inline const std::uint8_t *
 leb128_end(const std::uint8_t *cursor) {
-  const auto *start = cursor;
+  [[maybe_unused]] const auto *start = cursor;
   std::uint8_t byte = 0;
   do {
     byte = *cursor++;

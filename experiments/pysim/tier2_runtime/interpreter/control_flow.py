@@ -989,30 +989,25 @@ def iter_block_ops(
 
 
 def count_basic_blocks(code: memoryview) -> int:
-    """Count emitted basic-block records without allocating their storage."""
+    """Count interpreter block entries without allocating their storage."""
     block_count = 0
     code_size = len(code)
     current_head: int | None = None
-    current_has_body = False
     pending_call_resume: int | None = None
     for instruction in iter_scan_instrs(code):
         if current_head is None:
             current_head = instruction.offset
-        if instruction.opcode < 256 and _IS_BB_OPCODE.at(instruction.opcode):
-            current_has_body = True
         if opcode_has_attribute(instruction.opcode, OpcodeAttribute.BASIC_BLOCK_BOUNDARY):
-            if current_has_body:
-                if pending_call_resume != current_head:
-                    block_count += 1
-                else:
-                    pending_call_resume = None
-                current_has_body = False
+            if pending_call_resume != current_head:
+                block_count += 1
+            else:
+                pending_call_resume = None
             current_head = None
             if instruction.opcode == CALL or instruction.opcode == CALL_INDIRECT:
                 if instruction.end_offset < code_size:
                     block_count += 1
                     pending_call_resume = instruction.end_offset
-    if current_head is not None and current_has_body:
+    if current_head is not None:
         if pending_call_resume != current_head:
             block_count += 1
     return block_count
@@ -1023,8 +1018,9 @@ def extract_basic_blocks(
 ) -> StaticVector[tuple[int, int | None, int | None, int, int]]:
     """Extracts straight-line BasicBlock PC ranges from WASM bytecode as a flat list.
     Each entry is: (head_pc, next_pc, loops_to, frame_depth, byte_span).
-    A zero-span entry records a call-resume PC that needs a fresh `rel` start
-    even when no executable instruction follows before the function end.
+    A zero-span entry records a call-resume PC or a block with no direct-stencil
+    instructions. Both still need a loader-owned `rel` start for interpreter
+    dispatch; JIT scoring excludes the zero-span block.
     head_pc = pc_base + start_offset. frame_depth is the count of
     enclosing BLOCK/LOOP/IF frames the interpreter's frame.frames stack must
     hold once execution resumes at head_pc. byte_span is this block's own
@@ -1108,7 +1104,7 @@ def extract_basic_blocks(
 
         # Check if this instruction ends the basic block
         if opcode_has_attribute(ins.opcode, OpcodeAttribute.BASIC_BLOCK_BOUNDARY):
-            if cur_op_count:
+            if cur_head is not None:
                 branch_target = None
                 if (
                     opcode_has_attribute(ins.opcode, OpcodeAttribute.BRANCH)
@@ -1185,7 +1181,7 @@ def extract_basic_blocks(
                     next_pc = pc_base + _skip_trailing_ends(ins.end_offset)
                     loops_to = branch_target if ins.opcode == BR_IF else None
 
-                byte_span = cur_span_end - cur_head_offset
+                byte_span = cur_span_end - cur_head_offset if cur_op_count else 0
                 block = (cur_head, next_pc, loops_to, cur_frame_depth, byte_span)
                 if (
                     pending_call_resume_block is not None
@@ -1210,8 +1206,8 @@ def extract_basic_blocks(
             active_openers_depth -= 1
             active_openers[active_openers_depth] = None
 
-    if cur_head is not None and cur_op_count:
-        byte_span = cur_span_end - cur_head_offset
+    if cur_head is not None:
+        byte_span = cur_span_end - cur_head_offset if cur_op_count else 0
         block = (cur_head, None, None, cur_frame_depth, byte_span)
         if (
             pending_call_resume_block is not None

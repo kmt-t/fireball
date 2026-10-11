@@ -19,17 +19,17 @@
 
 ## 3. 静的モデル
 
-確認済みx64実行構成の `execution_context` は固定フィールド順、152バイトの標準レイアウト構造体である。インタープリタ単独実行とインタープリタからJITへの遷移で `ctx` の型を変えない。ポインタは非所有であり、呼び出し側が参照先の寿命を保証する。ARMv8-Mの配置、ポインタ幅、サイズ、offsetはTBDである。 `{ExecutionContext_Layout}` `{META_ZeroCostAbstraction}`
+確認済みx64実行構成の `execution_context` は固定フィールド順、160バイトの標準レイアウト構造体である。インタープリタ単独実行とインタープリタからJITへの遷移で `ctx` の型を変えない。ポインタは非所有であり、呼び出し側が参照先の寿命を保証する。ARMv8-Mの配置、ポインタ幅、サイズ、offsetはTBDである。 `{ExecutionContext_Layout}` `{META_ZeroCostAbstraction}`
 
 ### コンテキスト拡張
 
-実行状態、コードビュー、制御スタックビュー、Runtimeへ制御を返すときのスタック位置、CallStackビュー、値スタックとローカル値領域それぞれの基点・現在位置・上限、LOOP後方分岐カウンタ、借用中のリニアメモリビュー、現在のローカルフレーム基点を `execution_context` に置く。x86-64のコンテキストは152バイトである。CallStackの現在サイズはCallStack自身から取得する。フィールド順と物理offsetは[`interpreter.md`](docs/components/tier2_runtime/interpreter.md)の`{ExecutionContext_Layout}`を正本とし、ここでは重複定義しない。
+実行状態、コードビュー、制御スタックビュー、Runtimeへ制御を返すときのスタック位置、CallStackビュー、値スタックとローカル値領域それぞれの基点・現在位置・上限、LOOP後方分岐カウンタ、借用中のリニアメモリビュー、現在のローカルフレーム基点、Runtime API境界で再開するためのInterpreter定数プールカーソルを `execution_context` に置く。x86-64のコンテキストは160バイトである。CallStackの現在サイズはCallStack自身から取得する。フィールド順と物理offsetは[`interpreter.md`](docs/components/tier2_runtime/interpreter.md)の`{ExecutionContext_Layout}`を正本とし、ここでは重複定義しない。
 
 値スタックとローカル値領域は、それぞれ基点・現在位置・上限をポインタで保持する。`stack_checkpoint`と関数の`control_frame_base` / `call_frame_base`もポインタであり、固定容量領域内の差分を各利用箇所で計算しない。リニアメモリのホスト基点とサイズは`+0x78`と`+0x80`にある。この2フィールドはゲストアドレスの`mem_base`と32bitの`mem_size`から区別する。ホスト基点は非所有の借用値である。実行呼出し中は参照先の寿命を保証し、メモリ再配置後は基点とサイズを更新する。
 
 共通chain dispatcherへの相対値はtrace headerの`common_code_relative`に保持する。共通chain dispatcherは`lir/x64/common.S`から生成し、traceごとに複製しない。共通コード領域にはchain dispatcherに続けてRuntime API function pointer tableを配置する。JIT operationがRuntime APIを必要とする場合は、opcodeに対応するtable entryを呼び出す。trace終端から任意関数へ直接tail-callする契約は設けない。 `{PositionIndependentCode}`
 
-`execution_context` は152バイトである。CallStack深さ、命令位置、値スタック位置、trap状態を戻り値構造体へ複製しない。オペランドスタックをWASM値の格納先とする。標準レイアウトを維持する。
+`execution_context` は160バイトである。CallStack深さ、命令位置、値スタック位置、trap状態を戻り値構造体へ複製しない。オペランドスタックをWASM値の格納先とする。標準レイアウトを維持する。
 
 ### x64 継続引数と assembly ABI
 <!-- traceability: {JIT_RegisterMapping} {CPS_3Args} {JIT_RuntimeAPI} -->
@@ -73,7 +73,7 @@ chainはtrace終端から共通コード領域のchain dispatcherへ移り、そ
 
 ### JITランタイム呼出し契約
 
-Tier 2は共有実行状態とブロック開始PCを実行拡張へ渡す接続契約を定める。拡張入口は本体実行と観測済みブロック記録を担う。モジュールと基本ブロック情報は初期化時に借用する。JIT拡張がキャッシュ検索、昇格、chain終端の反映、履歴記録を内部で完了する。Tier 2へJITキャッシュ配置や置換状態を公開しない。
+Tier 2は共有実行状態とブロック開始PCを実行拡張へ渡す接続契約を定める。JIT providerは2-bit card-state表の読み取り専用ビューとカード範囲を渡す。Interpreter dispatcherはブロック開始時にカード状態を読み、`COMPILED`以外ではlookup関数を呼ばない。ビューの領域はdispatch期間中JIT拡張が保持する。JIT拡張が正確なPCのキャッシュ検索、昇格、chain終端の反映、履歴記録を内部で完了する。Tier 2へJITキャッシュ配置や置換状態を公開しない。
 
 ネイティブdispatchには `execution_context`、値スタック基点、ローカルスタック基点、実行拡張、yield境界で使うコンパイル予算だけを渡す。命令位置、コードと制御スタックの情報、スタック位置と容量、local base、関数番号、yieldしきい値は `execution_context` と現在のCallFrameから取得し、別の呼出し構造体へ複製しない。戻り値はstatusとABIエラーだけを持ち、命令位置、スタック位置、trap codeは `execution_context` を唯一の格納先とする。実行拡張は `owner`、本体実行入口、観測入口で構成する。観測入口はInterpreterが対象ブロックを実行した後に候補判定と履歴記録を一度に行う。候補マスクと履歴配列をInterpreterへ渡さず、複製もしない。
 

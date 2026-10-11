@@ -38,6 +38,8 @@ from _bootstrap import configure_import_paths, reserve_native_region
 
 configure_import_paths(_PYSIM_DIR, _BENCH_DIR)
 
+import wasmtime
+from bump_allocator import BumpAllocator
 from ipc_router import (
     FB_URI_HAL_STDOUT,
     DataType,
@@ -131,8 +133,6 @@ class SuiteOracle:
     """Reference results from wasmtime executing suite.wasm natively (independent of pysim)."""
 
     def __init__(self, wasm: bytes) -> None:
-        import wasmtime
-
         engine = wasmtime.Engine()
         module = wasmtime.Module(engine, wasm)
         self._store = wasmtime.Store(engine)
@@ -152,7 +152,7 @@ def _open_log(phase: str) -> tuple[Path, FileLogSink]:
 
 
 def _new_guest():
-    module = parse(SUITE_WASM_PATH.read_bytes())
+    module = parse(SUITE_WASM_PATH.read_bytes(), BumpAllocator(524_288))
     memory = bytearray(module.memory.min_pages * 65536)
     module.init_memory_data(memory, ())
     bindings = InterpreterBindings.with_memory_and_functions(memory, StaticVector(capacity=0))
@@ -166,7 +166,7 @@ def _new_interpreter_guest() -> tuple[Module, Interpreter, None]:
 
 def _new_jit_guest() -> tuple[Module, NativeInterpreter, RuntimeEngine]:
     module, bindings = _new_guest()
-    engine = RuntimeEngine()
+    engine = RuntimeEngine(bump_allocator=module.allocator)
     engine.register_module_blocks(module)
     interpreter = NativeInterpreter(
         module,

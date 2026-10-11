@@ -288,13 +288,9 @@ FB_STENCIL_BEGIN \name
   mov eax, dword ptr [FB_REL_REG + 4]
   mov r10d, dword ptr [FB_REL_REG + 8]
   mov dword ptr [FB_CTX_REG + FB_CONTEXT_IP_OFFSET], r10d
-  movsxd r10, dword ptr [FB_REL_REG + 12]
-  shl r10, 2
-  add qword ptr [FB_CTX_REG + FB_CONTEXT_SP_OFFSET], r10
   movsxd r10, dword ptr [r11 + FB_TRACE_COMMON_RELATIVE_OFFSET]
   lea r11, [r11 + r10 + FB_TRACE_RUNTIME_API_TABLE_OFFSET]
   mov rax, qword ptr [r11 + rax * 8]
-  mov r10d, dword ptr [FB_REL_REG + 16]
   push FB_CTX_REG
   push FB_IP_REG
   push FB_SP_REG
@@ -303,30 +299,35 @@ FB_STENCIL_BEGIN \name
   mov qword ptr [rsp + 32], FB_SP_REG
   mov r11, qword ptr [FB_CTX_REG + FB_CONTEXT_LOCAL_BASE_OFFSET]
   mov qword ptr [rsp + 40], r11
-  mov dword ptr [rsp + 48], r10d
+  mov r11, qword ptr [rsp + 88]
+  mov r10, qword ptr [r11 + FB_CONTEXT_SP_OFFSET]
+  mov qword ptr [rsp + 56], r10
+  mov qword ptr [r11 + FB_CONTEXT_SP_OFFSET], FB_SP_REG
 #if defined(_WIN32)
   mov rcx, qword ptr [rsp + 88]
   lea rdx, [rsp + 32]
   lea r8, [rsp + 40]
-  lea r9, [FB_REL_REG + 20]
+  lea r9, [FB_REL_REG + 12]
 #else
   mov rdi, qword ptr [rsp + 88]
   lea rsi, [rsp + 32]
   lea rdx, [rsp + 40]
-  lea rcx, [FB_REL_REG + 20]
+  lea rcx, [FB_REL_REG + 12]
 #endif
   call rax
   mov r11, qword ptr [rsp + 88]
   mov r10, qword ptr [rsp + 40]
   mov qword ptr [r11 + FB_CONTEXT_LOCAL_BASE_OFFSET], r10
   test al, al
-  sete r8b
-  movzx r8d, r8b
-  test r8d, r8d
-  jnz .Lruntime_api_exit\@
-  movsxd r10, dword ptr [rsp + 48]
-  shl r10, 2
-  sub qword ptr [r11 + FB_CONTEXT_SP_OFFSET], r10
+  jz .Lruntime_api_abort_sync\@
+  mov r10, qword ptr [rsp + 56]
+  mov qword ptr [r11 + FB_CONTEXT_SP_OFFSET], r10
+  xor r8d, r8d
+  jmp .Lruntime_api_exit\@
+.Lruntime_api_abort_sync\@:
+  mov r10, qword ptr [rsp + 32]
+  mov qword ptr [r11 + FB_CONTEXT_SP_OFFSET], r10
+  mov r8d, 1
 .Lruntime_api_exit\@:
   mov r10, qword ptr [rsp + 32]
   mov r11, qword ptr [rsp + 64]
@@ -347,10 +348,10 @@ FB_STENCIL_BEGIN \name
   FB_STENCIL_END \name
 .endm
 
-FB_RUNTIME_API_STENCIL fb_stencil_runtime_api, 20
-FB_RUNTIME_API_STENCIL fb_stencil_runtime_api_immediate_one, 24
-FB_RUNTIME_API_STENCIL fb_stencil_runtime_api_immediate_two, 28
-FB_RUNTIME_API_STENCIL fb_stencil_runtime_api_immediate_three, 32
+FB_RUNTIME_API_STENCIL fb_stencil_runtime_api, 12
+FB_RUNTIME_API_STENCIL fb_stencil_runtime_api_immediate_one, 16
+FB_RUNTIME_API_STENCIL fb_stencil_runtime_api_immediate_two, 20
+FB_RUNTIME_API_STENCIL fb_stencil_runtime_api_immediate_three, 24
 
 .macro FB_LOCAL_SET_CONST_I32
   FB_STENCIL_BEGIN fb_stencil_local_set_const_i32

@@ -53,6 +53,7 @@ typedef struct fireball_execution_context_native {
   uint64_t linear_memory_size;
   uint32_t trap_code;
   uint32_t *local_base;
+  const uint8_t *rel;
 } fireball_execution_context_native;
 
 typedef struct fireball_const_buffer_view_native {
@@ -315,7 +316,7 @@ static_assert(__is_trivially_copyable(call_frame_native));
 static_assert(__is_standard_layout(call_stack_native));
 static_assert(__is_trivially_copyable(call_stack_native));
 
-static_assert(sizeof(execution_context_native) == 152);
+static_assert(sizeof(execution_context_native) == 160);
 static_assert(offsetof(execution_context_native, ip) == 0x00);
 static_assert(offsetof(execution_context_native, stack_base) == 0x08);
 static_assert(offsetof(execution_context_native, stack_pointer) == 0x10);
@@ -338,6 +339,7 @@ static_assert(offsetof(execution_context_native, linear_memory_host_base) ==
 static_assert(offsetof(execution_context_native, linear_memory_size) == 0x80);
 static_assert(offsetof(execution_context_native, trap_code) == 0x88);
 static_assert(offsetof(execution_context_native, local_base) == 0x90);
+static_assert(offsetof(execution_context_native, rel) == 0x98);
 static_assert(sizeof(const_buffer_view_native) == 16);
 static_assert(sizeof(control_map_entry_native) == 20);
 static_assert(sizeof(wasm_function_view_native) == 24);

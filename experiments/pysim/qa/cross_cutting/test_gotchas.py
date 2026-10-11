@@ -63,6 +63,7 @@ def _make_memory_manager() -> tuple[MemoryManager, Scheduler]:
 
 
 from qa.shared.runtime_support import (
+    instruction_blocks,
     make_runtime_engine,
 )
 from qa.shared.x64_jit import TraceCompiler
@@ -313,7 +314,7 @@ def test_vsoc_gotcha_01_02_stateless_interp_and_yield_in_vsoc():
     wasm_bytes = wat_to_wasm(wat)
     engine = make_runtime_engine(jit_compiler=TraceCompiler())
     mod = engine.load_wasm(wasm_bytes)
-    loop_pc = mod.blocks[0].head_pc
+    loop_pc = next(block.head_pc for block in instruction_blocks(mod) if block.loops_to is not None)
     results = engine.call(make_native_interpreter(mod, yield_threshold=3), 0, [5])
     assert results[0] == 15
     assert engine.stat_jit_invocations >= 2

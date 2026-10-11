@@ -72,7 +72,7 @@ JIT拡張はInterpreterへ接続する選択可能コンポーネントである
 - **カード更新表 (Card Update Bitmap)**: コード領域全体の各カードに対応する 1 ビットdirty表である。カードが `UNEXECUTED` から `EXECUTED` へ遷移した時だけ、そのカードのビットを立てる。密ビュー `fireball::bit_view<1>` として参照する。8カードを1バイトにまとめる。
 - **エイジングカーソル**: カード更新表のバイト位置を保持する整数である。モジュール登録時に 0 で初期化し、表の末尾に達したら先頭へ戻る。
 - **JITエントリ表と全バンク索引**: 各バンクは`head_pc`順の固定容量エントリ配列を持つ。別の固定容量参照配列を3バンク共通で一つ持ち、常駐エントリを`head_pc`順に索引する。参照はバンク番号とエントリ位置を示す。検索は共通配列を一度だけ二分探索し、PCとバンク番号を返す。同じPCの常駐エントリが二つ以上見つかった場合はassertする。バンク配列のシフト、挿入、削除、昇格、破棄後に索引を再整列する。現行設定では最大96件であり、参照は8ビットで表現する。Radix索引は設けない。
-- **ネイティブ実行拡張の接続**: JIT拡張への本体実行と観測入口を初期化時に固定する。C++ Interpreter dispatcherは共有実行状態とブロック開始PCを渡す。本体実行入口はカード状態を確認し、`COMPILED`でなければtrace lookupを行わずInterpreterへ継続を返す。観測入口はインタープリタ実行後に候補判定と履歴記録をまとめて行う。常駐検索と必要な昇格はJIT拡張内部で完了する。
+- **ネイティブ実行拡張の接続**: JIT拡張への本体実行と観測入口を初期化時に固定する。JIT providerは2-bit card-state表の読み取り専用ビューをdispatch期間中貸し出す。C++ Interpreter dispatcherはブロック開始時にそのカード状態を確認し、`COMPILED`以外ではlookup関数を呼ばずInterpreter実行を続ける。`COMPILED`はカード内の常駐traceを示すため、JIT拡張はPCを正確に検索する。観測入口はインタープリタ実行後に候補判定と履歴記録をまとめて行う。必要な昇格はJIT拡張内部で完了する。
   x64参照構成の記述枠は `JIT_CACHE_BANK_ENTRY_CAPACITY` により1バンク32件を上限とする。3面の上限は96件である。これはRAM予算の設定値であり、64バイトの既定コンストラクタ値や生成コードの平均サイズから導出しない。
   JIT entryは全バンクの固定容量上限に従う。同一PCの常駐traceを重複生成しない。WarmまたはOldestに存在するPCを新規insertすると契約違反とする。Oldestの昇格はJIT拡張内部のlookup経路を使う。Tier 2は世代と昇格を扱わない。
   コード領域または固定長JIT entry表が満杯になれば、既存の3面ローテーションを行う。生成コードの長さは可変である。短いtraceでもentry表の上限を超えて挿入しない。
@@ -121,6 +121,8 @@ flowchart TD
 - **`opcode_benefit_table` (`BitView<4>`)**: ROM 上に配置される 128 バイト（256 opcode $\times$ 4-bit）の静的テーブル。インタープリタ処理命令数と JIT 処理命令数の差分（短縮機械語命令数、分岐8倍換算）をゼロ点固定線形正規化した `int4_t`（-8〜+7、1スコア＝2命令相当短縮）を保持する。 `{JIT_StaticBenefitScoring}` <!-- definition: {JIT_StaticBenefitScoring} -->
 - **`jit_candidate_bitmap` (`BitView<1>`)**: モジュールロード時に各基本ブロックの命令スコア合算値が閾値（9点：コンパイルオーバーヘッド換算値6点＋デルタ3点）に達したブロックの `head_pc` が属する Card を 1bit でマーキングしたビットマップ。インタープリタ実行ループにおける `touch()` スキップに供される。 `{JIT_CandidateBitmap}` <!-- definition: {JIT_CandidateBitmap} -->
 
+  Loaderの`byte_span`が0のエントリは、インタープリタの定数pool開始位置を示す索引である。JIT候補スコアと候補ビットマップから除外する。
+
 - **JIT 拡張による基本ブロック適格性評価と候補ビットマップ生成 (`{JIT_StaticBenefitScoring}`, `{JIT_CandidateBitmap}`)**:
   WASM コードセクションを走査し、各関数の基本ブロック（`BasicBlock`）を調べる。ROM 上の `opcode_benefit_table`（`BitView<4>`、128B）から、各命令の機械語短縮スコアを取得する。スコアは `int4_t` の -8〜+7 である。1スコアは約2命令の短縮に相当し、分岐命令は8命令として換算する。各ブロックのスコアを符号付き整数（`int`）へ累積加算する。
 
@@ -151,7 +153,7 @@ ROM 上に配置される 128 バイトルックアップテーブル（256 オ�
 
 
 <!-- traceability: {DirectMappedJIT16} -->
-1. **カードマーキング確認 ($O(1)$)**: カードマーキング表 (`bit_view<2>`) を $O(1)$ で確認する。状態が `COMPILED` でなければ即座にInterpreterへ戻し、キャッシュ検索を行わない。静的利得スコアが閾値未満のブロックは候補登録されず、該当カードは`COMPILED`へ遷移しない。
+1. **Interpreter dispatcherによるカード状態確認 ($O(1)$)**: JIT providerがカードマーキング表 (`bit_view<2>`) の読み取り専用ビューを渡す。Interpreter dispatcherはブロック開始時にカード状態を確認する。状態が `COMPILED` でなければlookup関数を呼ばずInterpreter命令を実行する。`COMPILED`カードだけがJIT拡張の正確なPC検索へ進む。静的利得スコアが閾値未満のブロックは候補登録されず、該当カードは`COMPILED`へ遷移しない。
 2. **Direct-Mapped Folding XOR キャッシュ確認 ($O(1)$)**:
    - `UnifiedPC` を 32→16→8→4 ビットと3回の XOR で折りたたむ。
    - `slot = temp & 0x0F` を計算して16スロットの高速テーブルを照合する。
@@ -229,7 +231,7 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    Start(["Input module-scoped Code-section PC"]) --> Stage1["[Stage 1] Card Marking: resolve code-region card from PC (O(1))"]
+    Start(["Interpreter reaches block start PC"]) --> Stage1["[Stage 1] Interpreter reads provider card state (O(1))"]
     Stage1 --> CheckCompiled{"Card State == COMPILED?"}
 
     CheckCompiled -- "No" --> ExitInterp(["Fast Exit: Dispatch to Interpreter Handler"])

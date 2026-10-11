@@ -41,7 +41,12 @@ struct fb_native_jit_trace {
 
 struct fb_native_jit_provider {
   std::uintptr_t owner;
+  // Borrowed two-bit card-state map. State 3 is COMPILED.
+  const std::uint8_t *card_states;
+  std::uint32_t card_count;
+  std::uint32_t card_shift;
   // Return 1 for a resident trace, 0 for a cache miss, and -1 on failure.
+  // The Interpreter calls lookup only when this PC's card state is COMPILED.
   int (*lookup)(std::uintptr_t owner, std::uint32_t pc,
                 fb_native_jit_trace *trace);
   // Record an interpreted basic-block visit for hotspot analysis.

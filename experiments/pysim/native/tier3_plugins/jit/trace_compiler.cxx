@@ -387,7 +387,6 @@ struct trace_builder {
   }
 
   bool append_runtime_api(std::uint8_t slot, std::uint32_t source_ip,
-                          std::uint32_t stack_before, std::uint32_t stack_after,
                           const std::uint32_t *immediates = nullptr,
                           std::uint32_t immediate_count = 0) {
     const auto stencil = [&]() {
@@ -402,8 +401,7 @@ struct trace_builder {
       return stencil_view{};
     }();
     if (!append_node(stencil) || !add_trace_header_reference() ||
-        !add_value(slot, 4) || !add_value(source_ip, 4) ||
-        !add_value(stack_before, 4) || !add_value(stack_after, 4))
+        !add_value(slot, 4) || !add_value(source_ip, 4))
       return false;
     if (immediates == nullptr)
       return immediate_count == 0;
@@ -1534,11 +1532,9 @@ bool emit_runtime_api(trace_builder &builder, stack_model &stack, int op,
   std::uint8_t slot = 0;
   if (!runtime_api_slot(op, slot))
     return false;
-  const auto stack_before = stack.word_count;
   if (!apply_runtime_api_stack_effect(op, stack))
     return false;
-  return builder.append_runtime_api(slot, source_ip, stack_before,
-                                    stack.word_count);
+  return builder.append_runtime_api(slot, source_ip);
 }
 
 bool emit_runtime_api(trace_builder &builder, stack_model &stack, int op,
@@ -1547,11 +1543,9 @@ bool emit_runtime_api(trace_builder &builder, stack_model &stack, int op,
   std::uint8_t slot = 0;
   if (immediates == nullptr || !runtime_api_slot(op, slot))
     return false;
-  const auto stack_before = stack.word_count;
   if (!apply_runtime_api_stack_effect(op, stack))
     return false;
-  return builder.append_runtime_api(slot, source_ip, stack_before,
-                                    stack.word_count, immediates,
+  return builder.append_runtime_api(slot, source_ip, immediates,
                                     immediate_count);
 }
 

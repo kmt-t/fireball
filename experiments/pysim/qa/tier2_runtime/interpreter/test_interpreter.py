@@ -135,11 +135,21 @@ def test_loader_builds_control_map_before_interpreter_creation():
     loaded_constant_pool = function.interpreter_constant_pool
     assert module.blocks
     assert tuple(loaded_constant_pool) == (1, 0)
-    assert tuple(block.interpreter_constant_offset for block in module.blocks) == (0,)
+    assert tuple(block.interpreter_constant_offset for block in module.blocks) == (
+        0,
+        1,
+        2,
+        2,
+    )
     Interpreter(module)
     assert function.control_map is loaded_control_map
     assert function.interpreter_constant_pool is loaded_constant_pool
-    assert tuple(block.interpreter_constant_offset for block in module.blocks) == (0,)
+    assert tuple(block.interpreter_constant_offset for block in module.blocks) == (
+        0,
+        1,
+        2,
+        2,
+    )
 
     from qa.shared.helpers import make_native_interpreter
 

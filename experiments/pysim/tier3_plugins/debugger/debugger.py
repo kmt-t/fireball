@@ -20,7 +20,10 @@ from typing import Protocol
 from config import FB_CONF_DEBUG_MAX_ASSERTIONS, FB_CONF_DEBUG_MAX_BREAKPOINTS
 from system_containers import MutableFlatMapStorage, ReadOnlyFlatMapView, SequenceView, StaticVector
 from tier2_runtime.abi import native_abi
-from tier2_runtime.abi.interpreter_abi import NativeValueStack
+from tier2_runtime.abi.interpreter_abi import (
+    EXECUTION_CONTEXT_FLAG_PENDING_BLOCK_HEAD,
+    NativeValueStack,
+)
 from tier2_runtime.interpreter.execution_context import DebugExecutionView, ExecutionControl
 from tier2_runtime.interpreter.interpreter import (
     ExecutionContext,
@@ -571,10 +574,12 @@ class InterpreterExecutionControl:
         if pc != call.current_pc():
             module = call.context.module
             assert module is not None
+            assert module.get_block(pc) is not None, "debug PC must target an indexed block head"
             function_index = module.function_index_for_pc(pc)
             assert function_index == frame.func_index
             function_pc_offset = module.function_pc_offset(frame.func_index)
             call._ip = pc - function_pc_offset
+            call.context.runtime_flags |= EXECUTION_CONTEXT_FLAG_PENDING_BLOCK_HEAD
         self._control.breakpoint_count = len(debugger._breakpoints)
         self._control.single_step = int(single_step)
         self._control.executed = 0

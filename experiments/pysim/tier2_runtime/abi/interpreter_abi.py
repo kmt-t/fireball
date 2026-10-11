@@ -24,7 +24,7 @@ from tier2_runtime.wasm.module import (
 ControlMapEntryNative = NativeControlMapEntry
 FunctionTypeExecutionViewNative = FuncTypeRecord
 
-EXECUTION_CONTEXT_SIZE_BYTES = 152
+EXECUTION_CONTEXT_SIZE_BYTES = 160
 EXECUTION_CONTEXT_LOOP_JUMP_COUNT_OFFSET_BYTES = 0x70
 EXECUTION_CONTEXT_LOOP_JUMP_THRESHOLD_OFFSET_BYTES = 0x74
 NATIVE_VALUE_STACK_CAPACITY = 128
@@ -62,6 +62,7 @@ class ExecutionContextABI(ctypes.Structure):
         ("linear_memory_size", ctypes.c_uint64),
         ("trap_code", ctypes.c_uint32),
         ("local_base", ctypes.c_void_p),
+        ("rel", ctypes.c_void_p),
     )
 
 
@@ -667,6 +668,7 @@ assert ExecutionContextABI.linear_memory_host_base.offset == 0x78
 assert ExecutionContextABI.linear_memory_size.offset == 0x80
 assert ExecutionContextABI.trap_code.offset == 0x88
 assert ExecutionContextABI.local_base.offset == 0x90
+assert ExecutionContextABI.rel.offset == 0x98
 assert ctypes.sizeof(ConstBufferViewNative) == 16
 assert ctypes.sizeof(WasmFunctionViewNative) == 24
 assert ctypes.sizeof(WasmModuleViewNative) == 24

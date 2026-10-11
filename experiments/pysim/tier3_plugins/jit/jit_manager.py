@@ -6,7 +6,7 @@ import ctypes
 from collections.abc import Callable
 
 from tier2_runtime.abi.native_abi import BufferLease
-from tier2_runtime.interpreter.interpreter import NativeDispatchEntryPoint, NativeModuleExecution
+from tier2_runtime.interpreter.interpreter import NativeModuleExecution
 from tier2_runtime.wasm.module import Module
 
 from . import native_abi
@@ -43,9 +43,7 @@ class JITRuntimeManager:
         self.close()
         self.module = module
 
-    def bind_execution(
-        self, execution: NativeModuleExecution
-    ) -> int:
+    def bind_execution(self, execution: NativeModuleExecution) -> int:
         assert execution is not None and execution.module is self.module
         if self._pointer is not None:
             return self._pointer

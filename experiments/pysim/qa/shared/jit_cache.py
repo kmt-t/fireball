@@ -234,9 +234,7 @@ class JITTraceHeader:
         self._native.chain_target_address = value
 
     def pack(self) -> bytes:
-        return ctypes.string_at(
-            ctypes.addressof(self._native), ctypes.sizeof(self._native)
-        )
+        return ctypes.string_at(ctypes.addressof(self._native), ctypes.sizeof(self._native))
 
 
 class JITTrace:

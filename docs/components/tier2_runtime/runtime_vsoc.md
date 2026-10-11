@@ -111,7 +111,7 @@ vSoCは実行コンテキストとモジュール実行情報を組み合わせ�
 | リニアメモリ有効サイズ | 境界検査対象の有効バイト数。ゲスト論理アドレス幅とは区別する | 64bit符号なし | x86-64では `execution_context` の `+0x80` |
 | グローバル値と幅 | WASM `global` の値配列と型幅 | モジュール実行情報への非所有ビュー | `execution_context` へ重複配置しない |
 
-確認済みx86-64の `execution_context` は152バイトである。フィールド順とオフセットは [`interpreter.md`](docs/components/tier2_runtime/interpreter.md) を正本とする。物理配置は [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) のPIC契約に従う。 `{PositionIndependentCode}`
+確認済みx86-64の `execution_context` は160バイトである。フィールド順とオフセットは [`interpreter.md`](docs/components/tier2_runtime/interpreter.md) を正本とする。物理配置は [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) のPIC契約に従う。 `{PositionIndependentCode}`
 
 オペランド領域、ローカル値領域、制御ブロック復帰情報領域は、それぞれ独立した固定容量領域である。各領域の位置と容量はInterpreterが管理する（[interpreter.md](docs/components/tier2_runtime/interpreter.md#adr-interp-03-制御フレームを専用スタックへ分離)）。
 

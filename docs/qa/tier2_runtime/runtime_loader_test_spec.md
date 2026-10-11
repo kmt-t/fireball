@@ -76,6 +76,7 @@ Element/Data初期化定義を個別配列へ展開せず、パース時検証�
 | TEST-LOAD-55 | 実行時作成が使うパーサーのWASMページ上限 | 初期メモリが `FB_CONF_MAX_WASM_PAGES + 1` ページ | `wasm_reader.parse(module)` | 設定上限を超える初期メモリを拒否する | `runtime_loader.md` (Resource Constraints) |
 
 | TEST-LOAD-56 | メモリ命令の整列指定上限 | `i32.load`の整列指定がアクセス幅を超える | `parse(module)` | 4バイト指定を許可し、8バイト指定を拒否する | [WebAssembly Core・memarg検証](https://webassembly.github.io/spec/core/valid/instructions.html#valid-memarg)、pysim `test_load_56_rejects_overaligned_memory_access` |
+| TEST-LOAD-57 | インタープリタ専用ブロックのrel開始位置 | 直接ステンシルのない `f32` のみの関数 | パース後に関数先頭PCの`BasicBlock`を検索 | 関数先頭のブロックメタ情報が存在し、`byte_span`が0、定数pool offsetが関数先頭に対応する | `{Loader_BasicBlockIndex}`、pysim `test_load_57_indexes_interpreter_only_block_heads` |
 
 ### 実装上の注意点に対応する検証
 <!-- traceability: {Loader_BasicBlockIndex} {GOTCHA-LOAD-01} {GOTCHA-LOAD-02} {GOTCHA-LOAD-04} -->
@@ -102,7 +103,7 @@ PysimのPythonコードは参照ランタイムであり、現行のWASMパー�
 | TEST-LOAD-20〜24 | `test_load_20`〜`test_load_24` | QA専用ハーネスによる未解決状態、関数リンク、シグネチャ拒否、部分リンク防止、登録上限 |
 | TEST-LOAD-30〜32 | `test_load_30`〜`test_load_32` | 関数上限、64件超のexport保持、u32/u64 LEB128のバイト上限 |
 | TEST-LOAD-46 | `test_load_46_parser_export_lookup_checks_names_when_hashes_collide` | 既知のハッシュ衝突名をパーサのエクスポート検索で区別 |
-| TEST-LOAD-48 | `test_load_48_module_builds_basic_block_index` | パース済みModuleの基本ブロック索引と同一オブジェクト参照 |
+| TEST-LOAD-48、57 | `test_load_48_module_builds_basic_block_index`、`test_load_57_indexes_interpreter_only_block_heads` | 全ブロック入口のローダ索引とインタープリタ専用ブロックのrel開始位置 |
 | TEST-LOAD-51〜53、55〜56 | 対応する`test_load_*` | 到達不能時の型検証、Custom名境界、LEB128/件数、メモリページ・整列上限 |
 
 ## 4. 未検証・スコープ外

@@ -48,6 +48,7 @@ from qa.shared.jit_abi import (
     NativeBlockVisitHistory,
     NativeDispatchSnapshot,
     NativeTraceDispatchEntry,
+    make_qa_jit_dispatch_entry,
 )
 from qa.shared.jit_cache import (
     BlockCardMask,
@@ -65,6 +66,7 @@ from qa.shared.runtime_support import (
     PC_ONLY_FUNCTION_STRIDE,
     compile_module_block,
     compile_runtime_block,
+    instruction_blocks,
     make_pc_only_functions_module,
     make_runtime_engine,
     resident_module_traces,
@@ -94,6 +96,30 @@ from tier2_runtime.wasm.opcodes import (
     LOCAL_SET,
     RETURN,
 )
+
+
+def _qa_trace_counted_call(
+    engine: RuntimeEngine,
+    manager: JITRuntimeManager,
+    interpreter: NativeInterpreter,
+    function_index: int,
+    args: list[int],
+    idle_budget: int = 4,
+) -> StaticVector[int]:
+    """Run a JIT call through the QA snapshot dispatcher with trace-body counters."""
+    engine._activate_interpreter(interpreter)
+    call_state = interpreter.start(function_index, args)
+    interpreter._native_dispatcher = make_qa_jit_dispatch_entry(
+        manager, engine.collect_runtime_stats
+    )
+    while not call_state.finished:
+        call_state = engine._run_bound(interpreter, call_state, idle_budget).call_state
+    engine.idle_hook(idle_budget)
+    assert call_state.trap is None
+    assert call_state.results is not None
+    return call_state.results
+
+
 from tier3_plugins.jit.jit_manager import JITRuntimeManager as NativeJitPlugin
 
 _PROFILEABLE_BLOCK_HEAD_OPCODES = frozenset(
@@ -763,7 +789,9 @@ def test_jitr_compile_queue_overflow_compiles_on_the_spot():
         candidate_threshold=0,
     )
     mod = engine.load_wasm(wasm_bytes)
-    pcs = [b.head_pc for b in mod.blocks]
+    blocks = instruction_blocks(mod)
+    pcs = [block.head_pc for block in blocks]
+    assert len(pcs) == 3
     for pc in pcs:
         engine.jit_runtime.bitmap.touch(pc)
         engine.jit_runtime.bitmap.touch(pc)
@@ -910,11 +938,11 @@ def test_jitr_block_capacity_from_wasm_loader_and_no_set():
     mod = parse(wasm_bytes)
 
     # 1. WASM loader provides total_basic_blocks metadata and owns block_storage
-    assert mod.total_basic_blocks == 2
+    assert mod.total_basic_blocks == len(mod.blocks) == 4
     assert mod.block_storage is not None
     assert isinstance(mod.block_storage, ReadOnlyRadixBinaryTreeStorage)
     assert len(mod.block_storage.entries) == mod.total_basic_blocks
-    assert len(mod.blocks) == 2
+    assert len(instruction_blocks(mod)) == 2
 
     # 2. RuntimeEngine binds loader-owned blocks and resolves them seamlessly
     engine = make_runtime_engine()
@@ -2065,7 +2093,15 @@ def test_jitr_mask_card_collision_does_not_profile_structural_pc(body, expected,
         selected_offset = bytes(module.code_for(0)).index(bytes((I32_CONST, expected[0])))
         expected_heads = (base, base + selected_offset)
     elif "call" in body:
-        expected_heads = tuple(block.head_pc for block in module.blocks if block.func_index == 1)
+        expected_heads = tuple(
+            block.head_pc
+            for block in module.blocks
+            if block.func_index == 1
+            and module.code_for(block.func_index)[
+                block.head_pc - module.function_pc_offset(block.func_index)
+            ]
+            in _PROFILEABLE_BLOCK_HEAD_OPCODES
+        )
     else:
         expected_heads = tuple(
             block.head_pc
@@ -2082,11 +2118,33 @@ def test_jitr_mask_card_collision_does_not_profile_structural_pc(body, expected,
         # PCs from the actual observer side effect.
         history_count = sum(1 for index in range(len(history)) if history[index] != 0)
     assert tuple(history[index] for index in range(history_count)) == expected_heads
-    assert manager.exec_counter == len(expected_heads)
     assert manager.block_lookups == []
     # Compilation also uses the registered native Loader descriptors.
     manager.record_native_block_visits(history, history_count)
     manager.on_interpreter_exit(False)
+    assert manager.block_lookups == []
+
+    second_call = interpreter.start(0, [])
+    second_result = dispatch_for_test(
+        interpreter,
+        second_call,
+        snapshot,
+        manager.exec_counter,
+        native_dispatcher=select_native_jit_dispatch_entry(collect_stats),
+    )
+    assert second_result[0] == 1
+    interpreter.step_native(second_call)
+    assert second_call.finished
+    assert second_call.results == expected
+    second_count = second_result[5]
+    if not collect_stats:
+        second_count = sum(
+            1 for index in range(len(second_result[7])) if second_result[7][index] != 0
+        )
+    assert tuple(second_result[7][index] for index in range(second_count)) == expected_heads
+    manager.record_native_block_visits(second_result[7], second_count)
+    manager.on_interpreter_exit(False)
+    assert manager.exec_counter == 2 * len(expected_heads)
     assert manager.block_lookups == []
     if expected_heads:
         assert manager.has_pending_compilation()
@@ -2144,6 +2202,8 @@ def test_jitr_memory_boundary_continuation_does_not_become_a_block_head(body, co
             native_dispatcher=select_native_jit_dispatch_entry(collect_stats),
         )
         visits, history = result[5], result[7]
+        if not collect_stats:
+            visits = sum(1 for index in range(len(history)) if history[index] != 0)
         recorded.extend(history[index] for index in range(visits))
         manager.record_native_block_visits(history, visits)
         if result[0] == 1:
@@ -2154,7 +2214,15 @@ def test_jitr_memory_boundary_continuation_does_not_become_a_block_head(body, co
     interpreter.step_native(call)
     assert call.finished and call.results == [42]
     assert call.context.runtime_flags == 0
-    expected_heads = tuple(block.head_pc for block in module.blocks)
+    expected_heads = tuple(
+        block.head_pc
+        for block in module.blocks
+        if block.func_index == function_index
+        and module.code_for(block.func_index)[
+            block.head_pc - module.function_pc_offset(block.func_index)
+        ]
+        in _PROFILEABLE_BLOCK_HEAD_OPCODES
+    )
     assert tuple(recorded) == expected_heads
     assert manager.exec_counter == len(expected_heads)
 
@@ -2190,9 +2258,20 @@ def test_jitr_native_step_consumes_pending_head_before_memory_fallback(collect_s
         native_dispatcher=select_native_jit_dispatch_entry(collect_stats),
     )
     assert result[0] == 1
-    expected_heads = tuple(block.head_pc for block in module.blocks if block.head_pc != base)
+    history_count = result[5]
+    if not collect_stats:
+        history_count = sum(1 for index in range(len(result[7])) if result[7][index] != 0)
+    expected_heads = tuple(
+        block.head_pc
+        for block in module.blocks
+        if block.head_pc != base
+        and module.code_for(block.func_index)[
+            block.head_pc - module.function_pc_offset(block.func_index)
+        ]
+        in _PROFILEABLE_BLOCK_HEAD_OPCODES
+    )
     assert expected_heads
-    assert tuple(result[7][index] for index in range(result[5])) == expected_heads
+    assert tuple(result[7][index] for index in range(history_count)) == expected_heads
     interpreter.step_native(call)
     assert call.finished and call.results == [42]
     assert call.context.runtime_flags == 0
@@ -3050,13 +3129,15 @@ def test_jitr_trace_execution_counts_loop_bodies_and_survives_promotion(
     assert trace.exec_count == 0
     interpreter = Interpreter(module)
     function = module.export_func_index("sum")
-    assert engine.call(interpreter, function, [5]) == [15]
+    assert _qa_trace_counted_call(engine, manager, interpreter, function, [5]) == [15]
     assert trace.exec_count == 5
     manager.cache.rotate()
     manager.cache.rotate()
     promotions_before = manager.cache.promotions
     assert manager.cache.find_trace(trace.head_pc) is trace
-    assert engine.call(interpreter, function, [2]) == [3]
+    assert manager.lookup(trace.head_pc) is trace
+    assert manager.cache.promotions == promotions_before + 1
+    assert _qa_trace_counted_call(engine, manager, interpreter, function, [2]) == [3]
     assert trace.exec_count == 7
     assert manager.cache.promotions == promotions_before + 1
     assert manager.cache.find_trace(trace.head_pc) is trace
@@ -3064,19 +3145,19 @@ def test_jitr_trace_execution_counts_loop_bodies_and_survives_promotion(
     assert manager.native_dispatch_state() is not snapshot
     assert trace.exec_count_address == snapshot.entries[0].exec_count
     trace.exec_count = 0xFFFF_FFFE
-    assert engine.call(interpreter, function, [4]) == [10]
+    assert _qa_trace_counted_call(engine, manager, interpreter, function, [4]) == [10]
     assert trace.exec_count == 0xFFFF_FFFF
     engine.reset_stats()
     manager.reset_stats()
     assert trace.exec_count == 0
-    assert engine.call(interpreter, function, [3]) == [6]
+    assert _qa_trace_counted_call(engine, manager, interpreter, function, [3]) == [6]
     assert trace.exec_count == 3
     manager.flush_all()
     assert [count for pc, count in retired if pc == trace.head_pc] == [3]
     replacement = compile_runtime_block(manager, block)
     assert replacement is not None and manager.cache.insert(replacement)
     assert replacement.exec_count == 3
-    assert engine.call(interpreter, function, [2]) == [3]
+    assert _qa_trace_counted_call(engine, manager, interpreter, function, [2]) == [3]
     assert replacement.exec_count == trace.exec_count == 5
 
 
@@ -3097,12 +3178,13 @@ def test_jitr_trace_execution_counts_include_direct_chain_successors(collect_sta
     )
     engine.register_module_blocks(module)
     manager = engine.jit_runtime
-    source = compile_module_block(manager.jit_compiler, module, module.blocks[0])
-    target = compile_module_block(manager.jit_compiler, module, module.blocks[1])
+    blocks = instruction_blocks(module)
+    source = compile_module_block(manager.jit_compiler, module, blocks[0])
+    target = compile_module_block(manager.jit_compiler, module, blocks[1])
     assert manager.cache.insert(target)
     assert manager.cache.insert(source)
     assert source.chain_next == target.head_pc
-    assert engine.call(Interpreter(module), 0, [10]) == [30]
+    assert _qa_trace_counted_call(engine, manager, Interpreter(module), 0, [10]) == [30]
     assert source.exec_count == target.exec_count == 1
     if collect_stats:
         assert engine.stat_jit_invocations == 2
@@ -3168,7 +3250,7 @@ if __name__ == "__main__":
     test_jitr_promote_transfers_inbound_sources_avoiding_dangling_chain()
     test_jitr_native_trace_lookup_uses_resident_snapshot()
     test_jitr_31_to_35_trace_chaining_and_ok_unlinking()
-    test_jitc_20_trace_header_48byte_x64_physical_layout()
+    test_jitc_20_trace_header_40byte_x64_physical_layout()
     test_hotspot_05_3bank_cache_rotation_and_eviction_resets_card()
     test_hotspot_06_short_blocks_never_tracked_avoiding_card_aliasing()
     test_hotspot_07_idle_hook_skips_recompiling_an_already_resident_trace()
@@ -3185,7 +3267,7 @@ if __name__ == "__main__":
     test_jitr_nested_wasm_call_keeps_callee_result_on_shared_operand_stack()
     test_jitr_if_else_loop_matches_interpreter_after_jit_compilation()
     test_jitr_br_table_uses_native_handler_and_preserves_every_target()
-    test_jitr_mixed_typed_stack_declines_jit_without_losing_drop_widths()
+    test_jitr_mixed_typed_stack_uses_runtime_apis_inside_jit_trace()
     test_jitr_mixed_typed_callee_returns_keep_the_shared_stack_synchronized()
     test_jitr_runtime_engine_preserves_typed_top_level_results()
     test_jitr_host_import_stays_on_interpreter_runtime_boundary()

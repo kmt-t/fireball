@@ -24,6 +24,7 @@ _PYSIM_DIR = _TESTS_DIR.parent
 
 import pytest
 import wasmtime
+from bump_allocator import BumpAllocator
 from qa.shared.helpers import make_interpreter, make_native_interpreter, wat_to_wasm
 from qa.shared.runtime_stats import RuntimeStatsEngine as RuntimeEngine
 from qa.shared.runtime_support import make_runtime_engine, resident_module_traces
@@ -63,14 +64,22 @@ def _tier2_result(wasm: bytes, export: str, args: list[int]) -> int:
 
 
 def _tier3(
-    wasm: bytes, export: str, args: list[int], compile_only: tuple[int, ...] | None = None
+    wasm: bytes,
+    export: str,
+    args: list[int],
+    compile_only: tuple[int, ...] | None = None,
+    bump_allocator: BumpAllocator | None = None,
 ) -> tuple[int, RuntimeEngine]:
     """Run on the hybrid engine; hot blocks compile at the first yield.
 
     `compile_only` contains Code section payload-relative block PCs. It narrows the
     trackable-block bitmap to those heads, so every other block stays on the interpreter.
     """
-    engine = make_runtime_engine(candidate_threshold=0, jit_compiler=TraceCompiler())
+    engine = make_runtime_engine(
+        candidate_threshold=0,
+        jit_compiler=TraceCompiler(),
+        bump_allocator=bump_allocator,
+    )
     module = engine.load_wasm(wasm)
     if compile_only is not None:
         engine.jit_runtime.trackable.clear()
@@ -552,7 +561,12 @@ def test_jitr_59_clang_kernel_suite_matches_wasmtime_on_the_jit():
     compiled = 0
     for kernel, units in CLANG_KERNEL_UNITS:
         expected = _wasmtime_result(wasm, kernel, [units])
-        result, engine = _tier3(wasm, kernel, [units])
+        result, engine = _tier3(
+            wasm,
+            kernel,
+            [units],
+            bump_allocator=BumpAllocator(512 * 1024),
+        )
         assert result == expected, f"{kernel}({units}) = {result:#x}, wasmtime {expected:#x}"
         compiled += engine.stat_jit_invocations
     assert compiled > 1000, f"suite kernels barely used the JIT ({compiled} trace invocations)"

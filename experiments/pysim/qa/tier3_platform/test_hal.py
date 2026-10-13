@@ -60,7 +60,7 @@ def test_hal_02_dummy_stdio_driver_streams_stdin_and_stdout():
     from tier2_runtime.hal.dispatch import ARG_BUFFER_HANDLE, ARG_LENGTH, ARG_MAX_LEN, ARG_OFFSET
 
     scheduler = Scheduler()
-    task_id = scheduler.spawn("stdio_guest")
+    task_id = scheduler.spawn("stdio_guest").unwrap()
     scheduler.current_task = scheduler.get_task(task_id)
     assert scheduler.current_task is not None
     vmmio = VMMIOController(guest_ram_size=8192, scheduler=scheduler)
@@ -85,7 +85,7 @@ def test_hal_02_dummy_stdio_driver_streams_stdin_and_stdout():
                 ReadOnlyFlatMapView(
                     [(ARG_BUFFER_HANDLE, rx.buffer_id), (ARG_OFFSET, 0), (ARG_MAX_LEN, 32)]
                 ),
-            )
+            ).unwrap()
             == 8
         )
         assert bytes(pool.view(rx, 0, 8)) == b"in-1in-2"
@@ -98,7 +98,7 @@ def test_hal_02_dummy_stdio_driver_streams_stdin_and_stdout():
                 ReadOnlyFlatMapView(
                     [(ARG_BUFFER_HANDLE, tx.buffer_id), (ARG_OFFSET, 0), (ARG_LENGTH, 10)]
                 ),
-            )
+            ).unwrap()
             == 10
         )
         assert driver.drain_stdout() == b"out-1out-2"
@@ -120,14 +120,14 @@ def test_hal_15_timer_pollables_are_deadline_checked_and_reusable():
     sysv = System()
     timer_uri = "fireball://hal/timer/0"
     try:
-        runtime_task = sysv.start_runtime_task(name="timer_poll_guest")
+        runtime_task = sysv.start_runtime_task(name="timer_poll_guest").unwrap()
         sysv.scheduler.current_task = runtime_task
         timer_driver = DummyDriver(sysv.pool)
-        sysv.start_hal_driver(timer_driver, timer_uri)
+        sysv.start_hal_driver(timer_driver, timer_uri).unwrap()
         from tier3_platform.drivers.wasi.context import Wasi03pEngine
 
         engine = Wasi03pEngine(sysv)
-        handle = engine.clock_subscribe(timer_uri, 100_000_000)
+        handle = engine.clock_subscribe(timer_uri, 100_000_000).unwrap()
         assert handle != 0
         assert engine.poll_check(timer_uri, handle) is False
         peer_ran_ns: list[int] = []
@@ -138,13 +138,13 @@ def test_hal_15_timer_pollables_are_deadline_checked_and_reusable():
             peer_ran_ns.append(time.monotonic_ns())
             yield (ChannelAction.YIELD, None)
 
-        sysv.scheduler.spawn("timer_wait_peer", ready_peer(), role=runtime_task.role)
+        sysv.scheduler.spawn("timer_wait_peer", ready_peer(), role=runtime_task.role).unwrap()
         deadline_ns = timer_driver.timer.wakeup_ns(handle)
         assert engine.poll_wait(timer_uri, handle) is True
         assert len(peer_ran_ns) == 1 and peer_ran_ns[0] < deadline_ns
         assert engine.poll_check(timer_uri, handle) is True
         assert engine.poll_drop(timer_uri, handle) == 0
-        replacement = engine.clock_subscribe(timer_uri, 0)
+        replacement = engine.clock_subscribe(timer_uri, 0).unwrap()
         assert replacement != handle
         with expect_assertion("stale HAL timer pollable handle"):
             engine.poll_check(timer_uri, handle)
@@ -154,7 +154,7 @@ def test_hal_15_timer_pollables_are_deadline_checked_and_reusable():
 
 def test_hal_04_hal_buffer_pool_maps_fixed_slots():
     scheduler = Scheduler()
-    task_id = scheduler.spawn("test_task")
+    task_id = scheduler.spawn("test_task").unwrap()
     scheduler.current_task = scheduler.get_task(task_id)
     vmmio = VMMIOController(guest_ram_size=8192, scheduler=scheduler)
     pool = HalBufferPool(scheduler, vmmio)
@@ -169,8 +169,8 @@ def test_hal_04_hal_buffer_pool_maps_fixed_slots():
 
 def test_hal_05_hal_buffer_slice_bounds_and_guest_mapping():
     scheduler = Scheduler()
-    owner_id = scheduler.spawn("owner")
-    other_id = scheduler.spawn("other")
+    owner_id = scheduler.spawn("owner").unwrap()
+    other_id = scheduler.spawn("other").unwrap()
     scheduler.current_task = scheduler.get_task(owner_id)
     vmmio = VMMIOController(guest_ram_size=8192, scheduler=scheduler)
     pool = HalBufferPool(scheduler, vmmio)
@@ -228,7 +228,7 @@ def test_hal_05_hal_buffer_slice_bounds_and_guest_mapping():
 def test_hal_06_rejection_preserves_mapping_and_all_slot_bytes(rejection: str) -> None:
     """TEST-HAL-06 / GOTCHA-HAL-01: Reject bad I/O without corrupting the live or adjacent slots."""
     scheduler = Scheduler()
-    owner_id = scheduler.spawn("owner")
+    owner_id = scheduler.spawn("owner").unwrap()
     scheduler.current_task = scheduler.get_task(owner_id)
     vmmio = VMMIOController(guest_ram_size=8192, scheduler=scheduler)
     pool = HalBufferPool(scheduler, vmmio)
@@ -335,7 +335,7 @@ def test_hal_task_ipc_communication(offset: int, payload: bytes):
 
     sysv = System()
     try:
-        runtime_task = sysv.start_runtime_task(name="hal_ipc_guest")
+        runtime_task = sysv.start_runtime_task(name="hal_ipc_guest").unwrap()
         sysv.scheduler.current_task = runtime_task
         buffer_handle = sysv.pool.buffer(0)
         assert_result_9 = sysv.pool.map_for_io(buffer_handle.buffer_id)
@@ -345,7 +345,7 @@ def test_hal_task_ipc_communication(offset: int, payload: bytes):
         buffer_view[offset : offset + len(payload)] = payload
         original_buffer = bytes(buffer_view)
         driver = DummyDriver(sysv.pool, transport=sysv.transport)
-        sysv.start_hal_driver(driver, FB_URI_HAL_STDOUT)
+        sysv.start_hal_driver(driver, FB_URI_HAL_STDOUT).unwrap()
         engine = Wasi03pEngine(sysv)
         # Send command via IPC
         response = engine.send_ipc_command(
@@ -383,9 +383,11 @@ def test_hal_command_response_separates_status_and_u64_value():
 
     sysv = System()
     try:
-        runtime_task = sysv.start_runtime_task(name="hal_clock_guest")
+        runtime_task = sysv.start_runtime_task(name="hal_clock_guest").unwrap()
         sysv.scheduler.current_task = runtime_task
-        sysv.start_hal_driver(DummyDriver(sysv.pool, transport=sysv.transport), FB_URI_HAL_STDOUT)
+        sysv.start_hal_driver(
+            DummyDriver(sysv.pool, transport=sysv.transport), FB_URI_HAL_STDOUT
+        ).unwrap()
         engine = Wasi03pEngine(sysv)
 
         response = engine.send_ipc_command(
@@ -443,7 +445,9 @@ def test_hal_15_file_log_sink_receives_internal_logs():
     log_dictionary = LogDictionary(entries=((0x300, "TEST_LOG: v=%d"),))
     sysv = System(printk_sink=sink, log_dictionary=log_dictionary)
     try:
-        sysv.start_hal_driver(DummyDriver(sysv.pool, transport=sysv.transport), FB_URI_HAL_STDOUT)
+        sysv.start_hal_driver(
+            DummyDriver(sysv.pool, transport=sysv.transport), FB_URI_HAL_STDOUT
+        ).unwrap()
 
         assert sysv.logger.log_event(LogLevel.INFO, 0x300, 7) == LogResult.SUCCESS
         assert sysv.logger.flush() == 1

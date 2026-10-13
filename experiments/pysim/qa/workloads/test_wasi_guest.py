@@ -168,7 +168,9 @@ class GuestSession:
         )
         self.hardware.system = self.system
         self.driver = DummyDriver(self.system.pool, transport=self.hardware)
-        self.hardware.hal_task_id = self.system.start_hal_driver(self.driver, FB_URI_HAL_STDOUT)
+        self.hardware.hal_task_id = self.system.start_hal_driver(
+            self.driver, FB_URI_HAL_STDOUT
+        ).unwrap()
         self.module = parse(artifact.wasm.read_bytes())
         assert self.module.memory is not None and self.module.memory.min_pages == 1
         self.host = WasiHostContext(self.system)
@@ -196,7 +198,7 @@ class GuestSession:
             "sdk_libc_guest",
             self.system.run_guest(self.interpreter, self.module.export_func_index(name), args),
             role=Role.RUNTIME,
-        )
+        ).unwrap()
         self.hardware.guest_task_id = task_id
         self.system.scheduler.run_until_idle()
         task = self.system.scheduler.get_task(task_id)
@@ -332,7 +334,7 @@ def test_sdk_busy_mapping_preserves_owner_and_recovers_after_owner_unmaps(
     session: GuestSession,
 ) -> None:
     """TEST-INT-124: libc -1/errno, old owner/data, no I/O, then a valid retry."""
-    owner_id = session.system.scheduler.spawn("mapping_owner", role=Role.RUNTIME)
+    owner_id = session.system.scheduler.spawn("mapping_owner", role=Role.RUNTIME).unwrap()
     owner = session.system.scheduler.get_task(owner_id)
     assert owner is not None
     session.system.scheduler.detach(owner)

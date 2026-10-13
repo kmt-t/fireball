@@ -32,7 +32,7 @@ class LinearMemoryBenchmark:
         self.ram_size = ram_size
         self.ram = bytearray(ram_size)
         scheduler = Scheduler()
-        task_id = scheduler.spawn("benchmark_task")
+        task_id = scheduler.spawn("benchmark_task").unwrap()
         scheduler.current_task = scheduler.get_task(task_id)
         self.vmmio = VMMIOController(guest_ram_size=ram_size, scheduler=scheduler)
 

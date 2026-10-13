@@ -22,11 +22,11 @@ from __future__ import annotations
 import time
 from collections.abc import Callable, Generator, Iterator
 from contextlib import contextmanager
-from enum import IntEnum
+from enum import Enum, IntEnum, auto
 from typing import Protocol, cast
 
 from interrupt_event import InterruptEvent
-from system_containers import SequenceView, StaticVector
+from system_containers import Result, SequenceView, StaticVector
 from tier1_core.printk import (
     Printk,
     PrintkEvent,
@@ -39,6 +39,13 @@ FB_CONF_MAX_CONSECUTIVE_HANDOFFS = 4
 FB_CONF_INTERRUPT_QUEUE_SIZE = 16
 FB_CONF_MAX_IDLE_HOOKS = 8
 FB_CONF_TIMER_IDLE_POLL_SLICE_NS = 1_000_000
+
+
+class SchedulerError(Enum):
+    """Local semantic errors from os_scheduler.md; not serialized errno values."""
+
+    ERR_MAX_TASKS_REACHED = auto()
+    ERR_INVALID_ARG = auto()
 
 
 def _sleep_for_ns(duration_ns: int) -> None:
@@ -580,7 +587,7 @@ class Scheduler:
         task_id: int | None = None,
         role: int = 0,
         service_handle: int | None = None,
-    ) -> int:
+    ) -> Result[int, SchedulerError]:
         """Spawn a task within bounds; capacity and duplicate failures go to printk."""
         # os_scheduler.md: a terminated task returns its TCB slot.  The slot is reclaimed here,
         # when the table is full, so a finished task's result stays readable until then.
@@ -594,7 +601,7 @@ class Scheduler:
                     self.max_tasks,
                     len(self._all) + 1,
                 )
-            assert False, f"Task capacity exceeded (max {self.max_tasks})"
+            return Result.err(SchedulerError.ERR_MAX_TASKS_REACHED)
         if task_id is not None:
             assigned_id = task_id
             if self.get_task(assigned_id) is not None:
@@ -604,7 +611,7 @@ class Scheduler:
                         PrintkEvent.COOS_DUPLICATE_TASK,
                         assigned_id,
                     )
-                assert False, f"Task with ID {assigned_id} already exists"
+                return Result.err(SchedulerError.ERR_INVALID_ARG)
             if 1 <= assigned_id <= self.max_tasks:
                 if assigned_id >= self._next_id:
                     for unused_id in range(self._next_id, assigned_id):
@@ -638,7 +645,7 @@ class Scheduler:
         self._ready.enqueue(task)
         if coro is not None:
             self._ready_coro_count += 1
-        return task.task_id
+        return Result.ok(task.task_id)
 
     def detach(self, task: Task) -> None:
         """

@@ -1683,7 +1683,7 @@ def test_vmmio_load_preserves_backing_and_missing_dynamic_contract() -> None:
     from tier2_runtime.vmmio.controller import Tier3PTE, VMMIOController
 
     scheduler = Scheduler()
-    scheduler.current_task = scheduler.get_task(scheduler.spawn("reader"))
+    scheduler.current_task = scheduler.get_task(scheduler.spawn("reader").unwrap())
     controller = VMMIOController(guest_ram_size=65536, scheduler=scheduler)
     dynamic = bytearray(4096)
     dynamic[16:20] = (61).to_bytes(4, "little")

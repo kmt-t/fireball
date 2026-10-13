@@ -222,11 +222,11 @@ def main() -> None:
         lambda: print(f"  [idle_hook] flushed {sysv.logger.flush()} log entr(y/ies)")
     )
     print("== pysim: spawning guest tasks ==")
-    sched.spawn("structured-logger", task_structured_logger(sysv))
-    sched.spawn("console-writer", task_console_writer(sysv))
-    owner_id = sched.spawn("bus-owner", task_bus_owner(sysv))
-    sched.spawn("retry-then-succeed", task_retry_then_succeed(sysv))
-    sched.spawn("retry-exhausted", task_retry_exhausted(sysv))
+    sched.spawn("structured-logger", task_structured_logger(sysv)).unwrap()
+    sched.spawn("console-writer", task_console_writer(sysv)).unwrap()
+    owner_id = sched.spawn("bus-owner", task_bus_owner(sysv)).unwrap()
+    sched.spawn("retry-then-succeed", task_retry_then_succeed(sysv)).unwrap()
+    sched.spawn("retry-exhausted", task_retry_exhausted(sysv)).unwrap()
     print("\n== pysim: running scheduler to completion ==")
     sched.run_to_completion()
     # bus-owner already ran and returned the slot it wrote; spawn the hostile
@@ -235,7 +235,7 @@ def main() -> None:
     assert owner is not None and owner.result is not None
     tx_handle = cast(HalBufferHandle, owner.result)
     print("\n== pysim: a second task attacks the first task's SHM handle ==")
-    sched.spawn("hostile-neighbor", task_hostile_neighbor(sysv, other_handle=tx_handle))
+    sched.spawn("hostile-neighbor", task_hostile_neighbor(sysv, other_handle=tx_handle)).unwrap()
 
     sched.run_to_completion()
     print("\n== pysim: draining the stdout transport the whole run wrote to ==")

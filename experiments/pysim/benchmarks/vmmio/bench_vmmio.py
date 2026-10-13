@@ -30,7 +30,7 @@ class VMMIOBenchmark:
 
     def __init__(self):
         scheduler = Scheduler()
-        task_id = scheduler.spawn("benchmark_task")
+        task_id = scheduler.spawn("benchmark_task").unwrap()
         scheduler.current_task = scheduler.get_task(task_id)
         self.vmmio = VMMIOController(guest_ram_size=65536, scheduler=scheduler)
         # Register static device (FC=0xC)
@@ -105,7 +105,7 @@ class VMMIOBenchmark:
 
         # 2.5 Security Isolation Check (TRAP_OWNER_MISMATCH detection)
         mismatch_traps = 0
-        task2_id = vmmio.scheduler.spawn("isolation_probe")
+        task2_id = vmmio.scheduler.spawn("isolation_probe").unwrap()
         vmmio.scheduler.current_task = vmmio.scheduler.get_task(task2_id)
         assert vmmio.scheduler.current_task is not None
         t0 = time.perf_counter()

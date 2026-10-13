@@ -11,7 +11,7 @@ from tier2_runtime.vmmio.controller import TrapCode, VMMIOController, VmmioStatu
 
 def _controller(guest_ram_size: int = 6003) -> VMMIOController:
     scheduler = Scheduler()
-    scheduler.current_task = scheduler.get_task(scheduler.spawn("owner"))
+    scheduler.current_task = scheduler.get_task(scheduler.spawn("owner").unwrap())
     return VMMIOController(guest_ram_size=guest_ram_size, scheduler=scheduler)
 
 
@@ -153,7 +153,7 @@ def test_vmmio_20_to_23_unmap_or_revoke_removes_pte_and_warm_translation(revoke:
     """TEST-VMMIO-20, TEST-VMMIO-21, TEST-VMMIO-22, TEST-VMMIO-23 / GOTCHA-VMMIO-03: Both former owner and peer are denied after revoke."""
     ctrl = _controller()
     owner = ctrl.scheduler.current_task
-    peer = ctrl.scheduler.get_task(ctrl.scheduler.spawn("peer"))
+    peer = ctrl.scheduler.get_task(ctrl.scheduler.spawn("peer").unwrap())
     ctrl.map_shm_page(0xE0000, phys_page=2, owner_id=owner.task_id)
     assert ctrl.access(0xE000_0009, True) == (VmmioStatus.OK_PHYSICAL, 0x2009)
     slot = ctrl.tlb[ctrl.tlb_index(0xE0000)]
@@ -210,7 +210,7 @@ def test_vmmio_29_32_cached_owned_mapping_rejects_nonowner_read_and_write(
     """TEST-VMMIO-29, TEST-VMMIO-32: A warm DYNAMIC/SHM mapping never yields a physical address to a peer."""
     ctrl = _controller()
     owner = ctrl.scheduler.current_task
-    peer = ctrl.scheduler.get_task(ctrl.scheduler.spawn("peer"))
+    peer = ctrl.scheduler.get_task(ctrl.scheduler.spawn("peer").unwrap())
     vpn = function_code << 16
     if function_code == 13:
         ctrl.map_dynamic_page(

@@ -128,7 +128,7 @@ class ControlledVdmaMock:
         if self.deferred:
             self.producer_id = self.system.scheduler.spawn(
                 "mock_dma_device", self._producer(), role=Role.CORE_SERVICE
-            )
+            ).unwrap()
             self._wait_for_completion()
         else:
             self._progress()

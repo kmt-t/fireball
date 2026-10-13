@@ -376,7 +376,7 @@ def run_case(
             fixture.block.drop()
 
     try:
-        task_id = system.scheduler.spawn("vdma_contract_guest", guest(), role=Role.RUNTIME)
+        task_id = system.scheduler.spawn("vdma_contract_guest", guest(), role=Role.RUNTIME).unwrap()
         system.scheduler.run_until_idle()
         task = system.scheduler.get_task(task_id)
         assert task is not None and task.state == TaskState.TERMINATED
@@ -731,7 +731,7 @@ def test_non_owner_rejection_preserves_storage_and_owner_access(
 
     def scenario(fixture: VdmaFixture) -> Generator[tuple[ChannelAction, None], None, None]:
         fixture.prepare_tlb((region,), warm)
-        foreign_id = fixture.system.scheduler.spawn("vdma_non_owner", role=Role.RUNTIME)
+        foreign_id = fixture.system.scheduler.spawn("vdma_non_owner", role=Role.RUNTIME).unwrap()
         foreign = fixture.system.scheduler.get_task(foreign_id)
         assert foreign is not None
         fixture.system.scheduler.detach(foreign)
@@ -981,7 +981,9 @@ def test_real_shm_release_grant_claim_preserves_data_and_rejects_old_owner(entry
             fixture.shared_base + 68, 2048, 8, inspect_trap=entry == Entry.COPY
         )
         fixture.assert_rejected(rejected, released)
-        receiver_id = fixture.system.scheduler.spawn("vdma_shm_receiver", role=Role.RUNTIME)
+        receiver_id = fixture.system.scheduler.spawn(
+            "vdma_shm_receiver", role=Role.RUNTIME
+        ).unwrap()
         receiver = fixture.system.scheduler.get_task(receiver_id)
         assert receiver is not None
         fixture.system.scheduler.detach(receiver)

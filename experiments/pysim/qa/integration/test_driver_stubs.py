@@ -152,7 +152,7 @@ def test_stub_capabilities_match_each_device_profile(name: str) -> None:
         task = platform.system.scheduler.get_task(driver.expected_task_id)
         assert task is not None
         with platform.system.scheduler.task_context(task), pytest.raises(AssertionError):
-            driver.dispatch(0xFFFF, params())
+            driver.dispatch(0xFFFF, params()).unwrap()
         assert tuple(driver.observations) == before
 
 
@@ -243,7 +243,7 @@ def test_stream_close_flush_and_invalid_slice_preserve_state(name: str) -> None:
                             (ARG_MAX_LEN, 2),
                         )
                     ),
-                )
+                ).unwrap()
         finally:
             pool.unmap_after_io(0)
         assert slots(platform) == before and driver.transport._input_len == 7
@@ -386,7 +386,9 @@ def test_bus_stub_rejection_preserves_reply_and_all_buffers(invalid: str) -> Non
         before_calls = tuple(drivers.spi.observations)
         try:
             with platform.system.scheduler.task_context(task), pytest.raises(AssertionError):
-                drivers.spi.dispatch(WasiIpcCmd.BUS_TRANSFER_BUFFER, params(tuple(values.items())))
+                drivers.spi.dispatch(
+                    WasiIpcCmd.BUS_TRANSFER_BUFFER, params(tuple(values.items()))
+                ).unwrap()
             assert platform.system.pool._mapped_buffer_id == 0
             assert slots(platform) == before
             assert drivers.spi.reply == b"reply" and drivers.spi.transmitted == []
@@ -399,21 +401,23 @@ def test_bus_stub_rejection_preserves_reply_and_all_buffers(invalid: str) -> Non
 def test_adc_pwm_stubs_require_setup_and_own_configuration_snapshots() -> None:
     """TEST-HAL-23: QA setup precondition, state after commands and no retained IPC view."""
     drivers = StubDrivers.create()
-    task_id = drivers.scheduler.spawn("standalone_driver_test")
+    task_id = drivers.scheduler.spawn("standalone_driver_test").unwrap()
     drivers.scheduler.current_task = drivers.scheduler.get_task(task_id)
     adc, pwm = drivers.adc, drivers.pwm
     with pytest.raises(AssertionError, match="not configured"):
-        adc.dispatch(WasiIpcCmd.STREAM_READ_BUFFER, params())
+        adc.dispatch(WasiIpcCmd.STREAM_READ_BUFFER, params()).unwrap()
     with pytest.raises(AssertionError, match="not configured"):
-        pwm.dispatch(StubCommand.PWM_WRITE, params(((ARG_VAL, 25),)))
+        pwm.dispatch(StubCommand.PWM_WRITE, params(((ARG_VAL, 25),))).unwrap()
     assert adc.configuration is None and pwm.output is None
     assert adc.observations == [] and pwm.observations == []
     entries = [(ARG_CLOCK_HZ, 20_000)]
-    assert adc.dispatch(StubCommand.ADC_CONFIGURE, ReadOnlyFlatMapView(entries)) == 0
-    assert pwm.dispatch(StubCommand.PWM_CONFIGURE, ReadOnlyFlatMapView(entries)) == 0
+    assert adc.dispatch(StubCommand.ADC_CONFIGURE, ReadOnlyFlatMapView(entries)).unwrap() == 0
+    assert pwm.dispatch(StubCommand.PWM_CONFIGURE, ReadOnlyFlatMapView(entries)).unwrap() == 0
     entries[0] = (ARG_CLOCK_HZ, 1)
     assert adc.configuration == pwm.configuration == ((ARG_CLOCK_HZ, 20_000),)
-    assert pwm.dispatch(StubCommand.PWM_WRITE, params(((ARG_PIN_NO, 2), (ARG_VAL, 25)))) == 0
+    assert (
+        pwm.dispatch(StubCommand.PWM_WRITE, params(((ARG_PIN_NO, 2), (ARG_VAL, 25)))).unwrap() == 0
+    )
     assert pwm.output == tuple(sorted(((ARG_PIN_NO, 2), (ARG_VAL, 25))))
     assert pwm.is_supported(WasiIpcCmd.STREAM_WRITE_BUFFER) == 0
 
@@ -425,13 +429,13 @@ def test_timer_stub_manual_deadlines_keep_u64_and_stale_handles() -> None:
     with stub_platform(drivers, (uri("timer"),)) as platform:
         assert command(platform, "timer", WasiIpcCmd.CLOCK_GET_NOW) == 0xFEDC_BA98_0000_0001
         assert command(platform, "timer", WasiIpcCmd.CLOCK_GET_RES) == 1
-        handle = platform.engine.clock_subscribe(uri("timer"), 500)
+        handle = platform.engine.clock_subscribe(uri("timer"), 500).unwrap()
         drivers.timer.advance(499)
         assert not platform.engine.poll_check(uri("timer"), handle)
         drivers.timer.advance(1)
         assert platform.engine.poll_wait(uri("timer"), handle)
         assert platform.engine.poll_drop(uri("timer"), handle) == 0
-        assert platform.engine.clock_subscribe(uri("timer"), 0) != handle
+        assert platform.engine.clock_subscribe(uri("timer"), 0).unwrap() != handle
         with pytest.raises(AssertionError, match="stale"):
             drivers.timer.pollable(handle)
 
@@ -440,7 +444,7 @@ def test_timer_stub_wait_allows_peer_to_advance_test_time() -> None:
     """TEST-HAL-24: pending poll uses the real cooperative wait, with explicit stimulus."""
     drivers = StubDrivers.create()
     with stub_platform(drivers, (uri("timer"),)) as platform:
-        handle = platform.engine.clock_subscribe(uri("timer"), 500)
+        handle = platform.engine.clock_subscribe(uri("timer"), 500).unwrap()
         task_id = drivers.timer.expected_task_id
         assert task_id is not None
         hal_task = platform.system.scheduler.get_task(task_id)
@@ -457,7 +461,7 @@ def test_timer_stub_wait_allows_peer_to_advance_test_time() -> None:
             drivers.timer.advance(500)
             yield (ChannelAction.YIELD, None)
 
-        platform.system.scheduler.spawn("stub_clock_peer", peer(), role=Role.RUNTIME)
+        platform.system.scheduler.spawn("stub_clock_peer", peer(), role=Role.RUNTIME).unwrap()
         assert platform.engine.poll_wait(uri("timer"), handle)
         assert observed == [0] and drivers.timer.now_ns == 500
         assert platform.engine.poll_drop(uri("timer"), handle) == 0
@@ -467,7 +471,7 @@ def test_timer_stub_wait_allows_peer_to_advance_test_time() -> None:
 def test_stub_pollable_capacity_rejection_and_reuse(driver: type[PollStubDriver]) -> None:
     """TEST-HAL-24: bounded reservations reject without invalidating existing handles."""
     drivers = StubDrivers.create()
-    task_id = drivers.scheduler.spawn("standalone_poll_test")
+    task_id = drivers.scheduler.spawn("standalone_poll_test").unwrap()
     drivers.scheduler.current_task = drivers.scheduler.get_task(task_id)
     instance = driver(drivers.pool)
     handles = tuple(instance.reserve() for _ in range(16))
@@ -478,7 +482,10 @@ def test_stub_pollable_capacity_rejection_and_reuse(driver: type[PollStubDriver]
         tuple((item.generation, item.active, item.ready) for item in instance.pollables) == before
     )
     assert (
-        instance.dispatch(WasiIpcCmd.POLL_DROP, params(((ARG_POLLABLE_HANDLE, handles[5]),))) == 0
+        instance.dispatch(
+            WasiIpcCmd.POLL_DROP, params(((ARG_POLLABLE_HANDLE, handles[5]),))
+        ).unwrap()
+        == 0
     )
     replacement = instance.reserve()
     assert replacement != handles[5] and replacement & 15 == handles[5] & 15

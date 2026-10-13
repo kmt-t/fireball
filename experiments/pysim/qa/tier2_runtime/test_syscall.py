@@ -47,7 +47,7 @@ from tier2_runtime.wasm.reader import parse
 def test_syscall_01_unknown_id_returns_nosys():
     """TEST-SYS-90 / GOTCHA-SYS-01: unknown IDs return NOSYS without stopping the system."""
     sysv = System()
-    sysv.start_runtime_task(name="test_runtime_task")
+    sysv.start_runtime_task(name="test_runtime_task").unwrap()
     try:
         assert not sysv.halted and not sysv.reset_requested
         assert sysv.fireball_call(0xDEAD, 0, 0, 0, 0, 0, 0) == WasiErrno.NOSYS
@@ -60,7 +60,7 @@ def test_syscall_16_trigger_set_pin_reserved_nosys():
     """TEST-SYS-16: TRIGGER_SET_PIN is a registered ID with no pysim GPIO register
     backing yet; it must be safely undispatched (NOSYS), not crash or panic."""
     sysv = System()
-    sysv.start_runtime_task(name="test_runtime_task")
+    sysv.start_runtime_task(name="test_runtime_task").unwrap()
     try:
         assert sysv.fireball_call(FbSyscallId.TRIGGER_SET_PIN, 0, 1, 0, 0, 0, 0) == WasiErrno.NOSYS
     finally:
@@ -70,7 +70,7 @@ def test_syscall_16_trigger_set_pin_reserved_nosys():
 def test_syscall_02_host_call_system_control():
     """TEST-SYS-02, TEST-SYS-03: HALT and RESET change their specified system state."""
     sysv = System()
-    sysv.start_runtime_task(name="test_runtime_task")
+    sysv.start_runtime_task(name="test_runtime_task").unwrap()
     try:
         assert sysv.fireball_call(FbSyscallId.SYS_RESET, 0, 0, 0, 0, 0, 0) == WasiErrno.SUCCESS
         assert sysv.reset_requested
@@ -125,7 +125,7 @@ def test_syscall_04_guest_yield_hands_off_to_ready_task():
         guest_id = system.scheduler.spawn(
             "yielding_guest",
             system.run_guest(interpreter, module.export_func_index("main"), ()),
-        )
+        ).unwrap()
         observed_guest_state: list[TaskState] = []
         observed_guest_memory: list[int] = []
 
@@ -136,7 +136,7 @@ def test_syscall_04_guest_yield_hands_off_to_ready_task():
             observed_guest_memory.append(int.from_bytes(host.guest_memory[:4], "little"))
             yield (ChannelAction.YIELD, None)
 
-        system.scheduler.spawn("yield_observer", monitor_task())
+        system.scheduler.spawn("yield_observer", monitor_task()).unwrap()
         system.scheduler.run_until_idle()
 
         guest = system.scheduler.get_task(guest_id)
@@ -151,7 +151,7 @@ def test_syscall_04_guest_yield_hands_off_to_ready_task():
 def test_syscall_03_mmio_read_write():
     """TEST-SYS-10, 11, 12, 93: MMIO data uses the output pointer, including errno-valued data."""
     sysv = System()
-    sysv.start_runtime_task(name="test_runtime_task")
+    sysv.start_runtime_task(name="test_runtime_task").unwrap()
     try:
         guest_mem = bytearray(64)
         sysv.bind_runtime(guest_mem)
@@ -187,7 +187,7 @@ def test_syscall_03_mmio_read_write():
 def test_syscall_11_mmio_read32_out_of_bounds():
     """TEST-SYS-11: MMIO_READ32 on a linear guest-RAM address beyond FB_CONF_GUEST_RAM_SIZE is rejected."""
     sysv = System()
-    sysv.start_runtime_task(name="test_runtime_task")
+    sysv.start_runtime_task(name="test_runtime_task").unwrap()
     try:
         guest_mem = bytearray(b"\xa5" * 16)
         sysv.bind_runtime(guest_mem)
@@ -204,7 +204,7 @@ def test_syscall_11_mmio_read32_out_of_bounds():
 def test_syscall_12_mmio_write32_permission_denied():
     """TEST-SYS-12: MMIO_WRITE32 to a page mapped read-only is rejected."""
     sysv = System()
-    sysv.start_runtime_task(name="test_runtime_task")
+    sysv.start_runtime_task(name="test_runtime_task").unwrap()
     try:
         vpn = (FB_CONF_VSOC_PASSTHROUGH_BASE >> 12) + 100  # fresh page, unused at startup
         sysv.vmmio.map_passthrough_page(vpn=vpn, phys_page=0, write=False)
@@ -221,7 +221,7 @@ def test_syscall_12_mmio_write32_permission_denied():
 def test_syscall_13_mmio_read8_write8():
     """TEST-SYS-13: MMIO_READ8/MMIO_WRITE8 round-trip at 8-bit width."""
     sysv = System()
-    sysv.start_runtime_task(name="test_runtime_task")
+    sysv.start_runtime_task(name="test_runtime_task").unwrap()
     try:
         guest_mem = bytearray(b"\xa5" * 16)
         sysv.bind_runtime(guest_mem)
@@ -241,7 +241,7 @@ def test_syscall_13_mmio_read8_write8():
 def test_syscall_14_mmio_bulk_read_write_invalid_size():
     """TEST-SYS-14: MMIO_BULK_READ/WRITE with an oversized byte_count is rejected."""
     sysv = System()
-    sysv.start_runtime_task(name="test_runtime_task")
+    sysv.start_runtime_task(name="test_runtime_task").unwrap()
     try:
         guest_mem = bytearray(b"\xa5" * 64)
         sysv.bind_runtime(guest_mem)
@@ -268,7 +268,7 @@ def test_syscall_14_mmio_bulk_read_write_invalid_size():
 def test_syscall_15_mmio_bulk_read_dest_offset_out_of_bounds():
     """TEST-SYS-15: MMIO_BULK_READ rejects a dest_offset beyond guest RAM and writes nothing."""
     sysv = System()
-    sysv.start_runtime_task(name="test_runtime_task")
+    sysv.start_runtime_task(name="test_runtime_task").unwrap()
     try:
         guest_mem = bytearray(b"\xaa" * 16)
         sysv.bind_runtime(guest_mem)
@@ -286,7 +286,7 @@ def test_syscall_15_mmio_bulk_read_dest_offset_out_of_bounds():
 def test_syscall_16_mmio_access_width_stays_inside_shm_mapping():
     """TEST-SYS-94: a valid start address does not permit a width beyond the SHM mapping."""
     sysv = System()
-    runtime_task = sysv.start_runtime_task(name="test_runtime_task")
+    runtime_task = sysv.start_runtime_task(name="test_runtime_task").unwrap()
     try:
         vpn = 0xE000_3000 >> 12
         physical_addr = 0x1000
@@ -384,7 +384,7 @@ def test_syscall_04_vdma_host_call_transfer(destination_kind: str, transport: st
                     == b"\xa5" * 3 + b"\x44\x33\x22\x11" + b"\xa5" * 9
                 )
 
-        task_id = system.scheduler.spawn("dma_guest", guest(), role=Role.RUNTIME)
+        task_id = system.scheduler.spawn("dma_guest", guest(), role=Role.RUNTIME).unwrap()
         system.scheduler.run_until_idle()
         task = system.scheduler.get_task(task_id)
         assert task is not None and task.state == TaskState.TERMINATED
@@ -401,7 +401,7 @@ def test_vdma_dynamic_bounds_rejection_preserves_real_buffer(offset: int, count:
     from tier3_platform.drivers.wasi.context import WasiHostContext
 
     system = System()
-    task = system.start_runtime_task(name="dynamic_owner")
+    task = system.start_runtime_task(name="dynamic_owner").unwrap()
     try:
         host = WasiHostContext(system)
         host.guest_memory[:] = b"\x5a" * len(host.guest_memory)
@@ -442,7 +442,7 @@ def test_dynamic_guest_access_checks_full_instruction_width(operation: str, widt
     from tier2_runtime.wasm.reader import parse
 
     system = System()
-    owner = system.start_runtime_task(name="dynamic_width_owner")
+    owner = system.start_runtime_task(name="dynamic_width_owner").unwrap()
     try:
         handle = system.pool.buffer(1)
         assert_result_2 = system.pool.map_for_io(handle.buffer_id)
@@ -508,7 +508,7 @@ def test_syscall_21_vdma_rejects_non_owner_shm_without_mutation(warm_tlb: bool) 
     from tier3_platform.drivers.wasi.context import WasiHostContext
 
     sysv = System()
-    owner = sysv.start_runtime_task(name="shm_owner")
+    owner = sysv.start_runtime_task(name="shm_owner").unwrap()
     try:
         guest_memory = bytearray(b"source-data" + b"\xa5" * 53)
         host = WasiHostContext(sysv, guest_memory=guest_memory)
@@ -527,7 +527,7 @@ def test_syscall_21_vdma_rejects_non_owner_shm_without_mutation(warm_tlb: bool) 
             assert transfer(0, destination, 4) == WasiErrno.SUCCESS
             assert bytes(sysv.phys_mem[physical_offset : physical_offset + 4]) == b"sour"
 
-        intruder_id = sysv.scheduler.spawn("non_owner", role=Role.RUNTIME)
+        intruder_id = sysv.scheduler.spawn("non_owner", role=Role.RUNTIME).unwrap()
         intruder = sysv.scheduler.get_task(intruder_id)
         assert intruder is not None
         memory_before = bytes(guest_memory)
@@ -578,7 +578,7 @@ def _make_syscall_virq_module() -> Module:
 def test_syscall_05_virq_registration_host_calls():
     """TEST-SYS-30: host registration replaces the active function only at commit."""
     sysv = System()
-    sysv.start_runtime_task(name="test_runtime_task")
+    sysv.start_runtime_task(name="test_runtime_task").unwrap()
     try:
         sysv.runtime_engine.register_module_blocks(_make_syscall_virq_module())
         from tier3_platform.drivers.wasi.context import WasiHostContext
@@ -611,7 +611,7 @@ def test_syscall_31_virq_unregister_is_deferred_until_commit() -> None:
     from tier3_platform.drivers.wasi.context import WasiHostContext
 
     sysv = System()
-    sysv.start_runtime_task(name="test_runtime_task")
+    sysv.start_runtime_task(name="test_runtime_task").unwrap()
     try:
         sysv.runtime_engine.register_module_blocks(_make_syscall_virq_module())
         host = WasiHostContext(sysv, guest_memory=bytearray(64))
@@ -647,7 +647,7 @@ def test_syscall_32_invalid_virq_registration_preserves_active_and_pending(
     from tier3_platform.drivers.wasi.context import WasiHostContext
 
     sysv = System()
-    sysv.start_runtime_task(name="test_runtime_task")
+    sysv.start_runtime_task(name="test_runtime_task").unwrap()
     try:
         sysv.runtime_engine.register_module_blocks(_make_syscall_virq_module())
         host = WasiHostContext(sysv, guest_memory=bytearray(64))
@@ -678,7 +678,7 @@ def test_syscall_32_invalid_virq_unregister_preserves_active_and_pending(node_id
     from tier3_platform.drivers.wasi.context import WasiHostContext
 
     sysv = System()
-    sysv.start_runtime_task(name="test_runtime_task")
+    sysv.start_runtime_task(name="test_runtime_task").unwrap()
     try:
         sysv.runtime_engine.register_module_blocks(_make_syscall_virq_module())
         host = WasiHostContext(sysv, guest_memory=bytearray(64))
@@ -716,7 +716,7 @@ def test_syscall_06_ipc_lookup_send_recv():
     call itself would otherwise fail.
     """
     sysv = System()
-    sysv.start_runtime_task(name="test_runtime_task")
+    sysv.start_runtime_task(name="test_runtime_task").unwrap()
     try:
         uri = "fireball://hal/gpio/0"
         uri_bytes = uri.encode()
@@ -765,7 +765,7 @@ def test_syscall_06_ipc_lookup_send_recv():
             sent.append(msg)
             assert (yield from sysv.ipc.reply(msg, 0)) == IPCStatus.COMPLETED
 
-        recv_id = sysv.scheduler.spawn("hal_receiver", hal_receiver(), role=Role.HAL_GPIO)
+        recv_id = sysv.scheduler.spawn("hal_receiver", hal_receiver(), role=Role.HAL_GPIO).unwrap()
         sysv.scheduler.run_until_idle()
         assert sysv.scheduler.get_task(recv_id).state.name == "SUSPENDED_CSP"
         sysv.scheduler.current_task = guest_task
@@ -807,7 +807,7 @@ def test_syscall_06_ipc_lookup_send_recv():
             status, _ = yield from sysv.ipc.send(ch, msg)
             sent_status.append(status)
 
-        sysv.scheduler.spawn("debugger_sender", debugger_sender(), role=Role.DEBUGGER)
+        sysv.scheduler.spawn("debugger_sender", debugger_sender(), role=Role.DEBUGGER).unwrap()
         sysv.scheduler.run_until_idle()
         sysv.scheduler.current_task = guest_task
         assert received_messages and received_messages[0].ownership == OwnershipState.IN_FLIGHT
@@ -840,7 +840,7 @@ def test_syscall_50_overlapping_recv_outputs_reject_without_consuming_sender(
 ) -> None:
     """TEST-SYS-50: overlapping output ranges reject before CSP and preserve the waiting message."""
     sysv = System()
-    receiver = sysv.start_runtime_task(name="core_receiver", role=Role.CORE_SERVICE)
+    receiver = sysv.start_runtime_task(name="core_receiver", role=Role.CORE_SERVICE).unwrap()
     try:
         guest_memory = bytearray(b"\xa5" * 128)
         sysv.bind_runtime(guest_memory, role=Role.CORE_SERVICE)
@@ -858,7 +858,9 @@ def test_syscall_50_overlapping_recv_outputs_reject_without_consuming_sender(
             status, _ = yield from sysv.ipc.send(channel, message)
             completed.append(status)
 
-        sender_id = sysv.scheduler.spawn("debugger_sender", debugger_sender(), role=Role.DEBUGGER)
+        sender_id = sysv.scheduler.spawn(
+            "debugger_sender", debugger_sender(), role=Role.DEBUGGER
+        ).unwrap()
         sysv.scheduler.run_until_idle()
         sender = sysv.scheduler.get_task(sender_id)
         assert sender is not None and sender.state == TaskState.SUSPENDED_CSP
@@ -897,8 +899,8 @@ def test_ipc_reply_host_call_drives_both_response_arrival_orders(
 ) -> None:
     """IPC_REPLY waits for response Grant and restores the caller's coroutine."""
     sysv = System()
-    receiver = sysv.start_runtime_task(name="core_receiver", role=Role.CORE_SERVICE)
-    sender_id = sysv.scheduler.spawn("debugger_sender", role=Role.DEBUGGER)
+    receiver = sysv.start_runtime_task(name="core_receiver", role=Role.CORE_SERVICE).unwrap()
+    sender_id = sysv.scheduler.spawn("debugger_sender", role=Role.DEBUGGER).unwrap()
     sender = sysv.scheduler.get_task(sender_id)
     assert sender is not None
     sysv.scheduler.detach(sender)
@@ -952,7 +954,7 @@ def test_ipc_reply_host_call_drives_both_response_arrival_orders(
 def test_syscall_07_wasi_fd_write():
     """TEST-SYS-80: WASI_FD_WRITE writes one iovec to standard output and reports its size."""
     sysv = System()
-    sysv.start_runtime_task(name="test_runtime_task")
+    sysv.start_runtime_task(name="test_runtime_task").unwrap()
     try:
         from tier3_platform.drivers.hal.dummy import DummyDriver
         from tier3_platform.drivers.wasi.context import WasiHostContext
@@ -962,7 +964,9 @@ def test_syscall_07_wasi_fd_write():
         guest_mem[32 : 32 + len(message)] = message
         struct.pack_into("<II", guest_mem, 0, 32, len(message))
         WasiHostContext(sysv, guest_memory=guest_mem)
-        sysv.start_hal_driver(DummyDriver(sysv.pool, transport=sysv.transport), FB_URI_HAL_STDOUT)
+        sysv.start_hal_driver(
+            DummyDriver(sysv.pool, transport=sysv.transport), FB_URI_HAL_STDOUT
+        ).unwrap()
         assert sysv.fireball_call(FbSyscallId.WASI_FD_WRITE, 1, 0, 1, 48, 0, 0) == WasiErrno.SUCCESS
         assert sysv.transport.drain_output() == message
         nwritten = struct.unpack_from("<I", guest_mem, 48)[0]
@@ -974,7 +978,7 @@ def test_syscall_07_wasi_fd_write():
 def test_wasi_01_fd_write_scatter_gather():
     """TEST-SYS-80: WASI_FD_WRITE supports scatter-gather output with multiple iovecs."""
     sysv = System()
-    sysv.start_runtime_task(name="test_runtime_task")
+    sysv.start_runtime_task(name="test_runtime_task").unwrap()
     try:
         from tier3_platform.drivers.hal.dummy import DummyDriver
         from tier3_platform.drivers.wasi.context import WasiHostContext
@@ -988,7 +992,9 @@ def test_wasi_01_fd_write_scatter_gather():
         struct.pack_into("<II", guest_mem, 0, 32, len(chunk1))
         struct.pack_into("<II", guest_mem, 8, 64, len(chunk2))
         WasiHostContext(sysv, guest_memory=guest_mem)
-        sysv.start_hal_driver(DummyDriver(sysv.pool, transport=sysv.transport), FB_URI_HAL_STDOUT)
+        sysv.start_hal_driver(
+            DummyDriver(sysv.pool, transport=sysv.transport), FB_URI_HAL_STDOUT
+        ).unwrap()
         # Write to stdout (fd=1) with 2 iovecs, result at offset 100
         assert (
             sysv.fireball_call(FbSyscallId.WASI_FD_WRITE, 1, 0, 2, 100, 0, 0) == WasiErrno.SUCCESS
@@ -1003,7 +1009,7 @@ def test_wasi_01_fd_write_scatter_gather():
 def test_wasi_01b_fd_write_prevalidates_all_iovecs():
     """GOTCHA-SYS-03: an invalid later iovec cannot partially write output."""
     sysv = System()
-    sysv.start_runtime_task(name="test_runtime_task")
+    sysv.start_runtime_task(name="test_runtime_task").unwrap()
     try:
         from tier3_platform.drivers.hal.dummy import DummyDriver
         from tier3_platform.drivers.wasi.context import WasiHostContext
@@ -1014,7 +1020,9 @@ def test_wasi_01b_fd_write_prevalidates_all_iovecs():
         struct.pack_into("<II", guest_mem, 8, 200, 1)
         struct.pack_into("<I", guest_mem, 120, 0xA5A5A5A5)
         WasiHostContext(sysv, guest_memory=guest_mem)
-        sysv.start_hal_driver(DummyDriver(sysv.pool, transport=sysv.transport), FB_URI_HAL_STDOUT)
+        sysv.start_hal_driver(
+            DummyDriver(sysv.pool, transport=sysv.transport), FB_URI_HAL_STDOUT
+        ).unwrap()
         before = bytes(guest_mem)
 
         assert sysv.fireball_call(FbSyscallId.WASI_FD_WRITE, 1, 0, 2, 120, 0, 0) == WasiErrno.FAULT
@@ -1031,7 +1039,7 @@ def test_wasi_02_fd_read_eof():
     backend = UvwasiReferenceContext()
     backend.stdin_pos = len(backend.stdin_buffer)
     sysv = System(drivers=create_reference_platform_drivers(backend))
-    sysv.start_runtime_task(name="test_runtime_task")
+    sysv.start_runtime_task(name="test_runtime_task").unwrap()
     try:
         from tier3_platform.drivers.hal.dummy import DummyDriver
         from tier3_platform.drivers.wasi.context import WasiHostContext
@@ -1043,7 +1051,9 @@ def test_wasi_02_fd_read_eof():
         stdin_before = bytes(backend.stdin_buffer)
         position_before = backend.stdin_pos
         WasiHostContext(sysv, guest_memory=guest_mem)
-        sysv.start_hal_driver(DummyDriver(sysv.pool, transport=sysv.transport), FB_URI_HAL_STDOUT)
+        sysv.start_hal_driver(
+            DummyDriver(sysv.pool, transport=sysv.transport), FB_URI_HAL_STDOUT
+        ).unwrap()
         assert sysv.fireball_call(FbSyscallId.WASI_FD_READ, 0, 0, 1, 48, 0, 0) == WasiErrno.SUCCESS
         nread = struct.unpack_from("<I", guest_mem, 48)[0]
         assert nread == 0  # Standard WASI EOF
@@ -1063,7 +1073,7 @@ def test_wasi_03_fd_close():
     kept = backend.files.view().find(4)
     assert opened is not None and kept is not None
     sysv = System(drivers=create_reference_platform_drivers(backend))
-    sysv.start_runtime_task(name="test_runtime_task")
+    sysv.start_runtime_task(name="test_runtime_task").unwrap()
     try:
         WasiHostContext(sysv, guest_memory=bytearray(64))
         assert sysv.fireball_call(FbSyscallId.WASI_FD_CLOSE, 3, 0, 0, 0, 0, 0) == WasiErrno.SUCCESS
@@ -1080,7 +1090,7 @@ def test_wasi_04_clock_time_get_monotonic():
     from tier3_platform.drivers.wasi.context import WasiHostContext
 
     sysv = System(drivers=create_reference_platform_drivers())
-    sysv.start_runtime_task(name="test_runtime_task")
+    sysv.start_runtime_task(name="test_runtime_task").unwrap()
     try:
         guest_mem = bytearray(b"\xa5" * 64)
         WasiHostContext(sysv, guest_memory=guest_mem)
@@ -1112,7 +1122,7 @@ def test_wasi_04_clock_time_get_monotonic():
 def test_wasi_05_proc_exit():
     """TEST-SYS-84: WASI_PROC_EXIT sets system halted state and exit code."""
     sysv = System()
-    sysv.start_runtime_task(name="test_runtime_task")
+    sysv.start_runtime_task(name="test_runtime_task").unwrap()
     try:
         assert sysv.halted is False
         assert (
@@ -1131,7 +1141,7 @@ def test_wasi_06_random_get():
     from tier3_platform.drivers.wasi.context import WasiHostContext
 
     sysv = System(drivers=create_reference_platform_drivers())
-    sysv.start_runtime_task(name="test_runtime_task")
+    sysv.start_runtime_task(name="test_runtime_task").unwrap()
     try:
         guest_mem = bytearray(b"\xa5" * 64)
         WasiHostContext(sysv, guest_memory=guest_mem)
@@ -1152,7 +1162,7 @@ def test_wasi_06_random_get():
 def test_wasi_07_invalid_fd_returns_badf():
     """TEST-SYS-91: WASI_FD_WRITE to invalid fd (e.g. fd=99) returns EBADF."""
     sysv = System(drivers=create_reference_platform_drivers())
-    sysv.start_runtime_task(name="test_runtime_task")
+    sysv.start_runtime_task(name="test_runtime_task").unwrap()
     try:
         from tier3_platform.drivers.wasi.context import WasiHostContext
 
@@ -1171,7 +1181,7 @@ def test_wasi_07_invalid_fd_returns_badf():
 def test_wasi_08_out_of_bounds_offset_returns_fault():
     """TEST-SYS-92: Out-of-bounds guest memory offset in WASI call returns EFAULT instantly."""
     sysv = System()
-    sysv.start_runtime_task(name="test_runtime_task")
+    sysv.start_runtime_task(name="test_runtime_task").unwrap()
     try:
         from tier3_platform.drivers.wasi.context import WasiHostContext
 

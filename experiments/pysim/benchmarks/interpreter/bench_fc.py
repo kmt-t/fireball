@@ -335,7 +335,7 @@ class VdmaModel:
         self.linear_memory = linear_memory
         self.system = System()
         self.shared_block: SharedBlock | None = None
-        task_id = self.system.scheduler.spawn("bench_fc_vdma", role=Role.RUNTIME)
+        task_id = self.system.scheduler.spawn("bench_fc_vdma", role=Role.RUNTIME).unwrap()
         task = self.system.scheduler.get_task(task_id)
         assert task is not None
         self.task = task

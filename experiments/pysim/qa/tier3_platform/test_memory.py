@@ -40,7 +40,7 @@ def _make_memory_manager(
     ids = task_ids or (1,)
     scheduler = Scheduler()
     for task_id in ids:
-        scheduler.spawn(f"test_task_{task_id}", task_id=task_id)
+        scheduler.spawn(f"test_task_{task_id}", task_id=task_id).unwrap()
     scheduler.current_task = scheduler.get_task(ids[0])
     assert scheduler.current_task is not None
     return MemoryManager(scheduler, page_mapping_factory), scheduler

@@ -54,8 +54,8 @@ def _make_router(sched: Scheduler) -> IPCRouter:
 
 def _make_memory_manager() -> tuple[MemoryManager, Scheduler]:
     scheduler = Scheduler()
-    scheduler.spawn("task_1", task_id=1)
-    scheduler.spawn("task_2", task_id=2)
+    scheduler.spawn("task_1", task_id=1).unwrap()
+    scheduler.spawn("task_2", task_id=2).unwrap()
     scheduler.current_task = scheduler.get_task(1)
     manager = MemoryManager(scheduler)
     manager.init_manager(pool_base=0x00010000, pool_size=0x40000)
@@ -324,7 +324,7 @@ def test_vsoc_gotcha_01_02_stateless_interp_and_yield_in_vsoc():
 def test_vmmio_gotcha_01_ram_bypass_never_touches_tlb():
     """GOTCHA-VMMIO-01: Bit 31 == 0 is Guest RAM bypass and never increments TLB hit/miss."""
     scheduler = Scheduler()
-    task_id = scheduler.spawn("test_task")
+    task_id = scheduler.spawn("test_task").unwrap()
     scheduler.current_task = scheduler.get_task(task_id)
     ctrl = VMMIOController(guest_ram_size=64 * 1024, scheduler=scheduler)
     hits_before = ctrl.tlb_hits
@@ -346,7 +346,7 @@ def test_vmmio_gotcha_02_folding_xor_hash_disperses_function_codes():
 def test_vmmio_gotcha_03_revoke_invalidates_tlb_blocks_inflight():
     """GOTCHA-VMMIO-03: Revoke immediately invalidates TLB entry and blocks access in-flight."""
     scheduler = Scheduler()
-    owner_id = scheduler.spawn("owner")
+    owner_id = scheduler.spawn("owner").unwrap()
     scheduler.activate_task(scheduler.get_task(owner_id))
     ctrl = VMMIOController(guest_ram_size=64 * 1024, scheduler=scheduler)
     vpn = 0xE0000
@@ -358,7 +358,7 @@ def test_vmmio_gotcha_03_revoke_invalidates_tlb_blocks_inflight():
     ctrl.revoke_shm_owner(vpn=vpn)
 
     stat1, _ = ctrl.access(raw_addr=0xE000_0000, is_write=True)
-    task2_id = ctrl.scheduler.spawn("rogue")
+    task2_id = ctrl.scheduler.spawn("rogue").unwrap()
     with ctrl.scheduler.task_context(ctrl.scheduler.get_task(task2_id)):
         stat2, _ = ctrl.access(raw_addr=0xE000_0000, is_write=True)
     assert stat1 == TrapCode.UNREGISTERED_PAGE
@@ -374,7 +374,7 @@ def test_ipcr_gotcha_01_no_queue_assertion_on_duplicate_send():
     """GOTCHA-IPCR-01: CSP rendezvous channel has no queue; duplicate send raises assertion, not QUEUE_FULL."""
     sched = Scheduler()
     router = _make_router(sched)
-    sender_id = sched.spawn("sender", role=Role.RUNTIME)
+    sender_id = sched.spawn("sender", role=Role.RUNTIME).unwrap()
     sched.current_task = sched.get_task(sender_id)
 
     status, ch = router.lookup("fireball://hal/gpio/0")
@@ -390,7 +390,7 @@ def test_ipcr_gotcha_01_no_queue_assertion_on_duplicate_send():
 
     # Duplicate send on the busy channel raises assertion (no queue exists)
     msg2 = make_test_ipc_message([(2, 200)], memory_manager=router.memory_manager)
-    sender2_id = sched.spawn("sender2", role=Role.RUNTIME)
+    sender2_id = sched.spawn("sender2", role=Role.RUNTIME).unwrap()
     sched.current_task = sched.get_task(sender2_id)
     gen2 = router.send(ch, msg2)
     with expect_assertion():
@@ -401,7 +401,7 @@ def test_ipcr_gotcha_02_preflight_rejection_preserves_sender_ownership():
     """GOTCHA-IPCR-02: Preflight rejection (RBAC denial) keeps message in SENDER_OWNS."""
     sched = Scheduler()
     router = _make_router(sched)
-    sender_id = sched.spawn("sender_hal", role=Role.HAL_UART)
+    sender_id = sched.spawn("sender_hal", role=Role.HAL_UART).unwrap()
     sched.current_task = sched.get_task(sender_id)
 
     msg = make_test_ipc_message([(1, 99)], memory_manager=router.memory_manager)
@@ -435,8 +435,8 @@ def test_sched_gotcha_01_handoff_limit_forces_return_to_main_loop():
     ch1 = sched.create_channel()
     ch2 = sched.create_channel()
     ch3 = sched.create_channel()
-    t1 = sched.get_task(sched.spawn("t1"))
-    t2 = sched.get_task(sched.spawn("t2"))
+    t1 = sched.get_task(sched.spawn("t1").unwrap())
+    t2 = sched.get_task(sched.spawn("t2").unwrap())
 
     _activate_scheduler_task(sched, t1)
     ch1.send(1)
@@ -474,8 +474,8 @@ def test_coos_gotcha_01_no_data_slot_in_channel():
     assert not hasattr(ch, "buffer"), "Channel must not contain a message buffer queue"
     assert not hasattr(ch, "data_slot"), "Channel must not have a data slot"
 
-    t1 = sched.get_task(sched.spawn("sender"))
-    t2 = sched.get_task(sched.spawn("receiver"))
+    t1 = sched.get_task(sched.spawn("sender").unwrap())
+    t2 = sched.get_task(sched.spawn("receiver").unwrap())
 
     _activate_scheduler_task(sched, t1)
     act1, val1 = ch.send(999)
@@ -495,8 +495,8 @@ def test_coos_gotcha_02_single_waiter_assert():
     """GOTCHA-COOS-02: 1-channel-1-waiter constraint triggers assertion on duplicate wait direction."""
     sched = Scheduler()
     ch = sched.create_channel()
-    t1 = sched.get_task(sched.spawn("sender1"))
-    t2 = sched.get_task(sched.spawn("sender2"))
+    t1 = sched.get_task(sched.spawn("sender1").unwrap())
+    t2 = sched.get_task(sched.spawn("sender2").unwrap())
 
     _activate_scheduler_task(sched, t1)
     ch.send(100)
@@ -624,7 +624,7 @@ def test_mem_gotcha_02b_release_owner_only():
 def test_hal_gotcha_01_hal_buffer_pool_bounds_violation_rejected():
     """GOTCHA-HAL-01: fixed HAL slots reject out-of-bounds slices."""
     scheduler = Scheduler()
-    owner_id = scheduler.spawn("owner")
+    owner_id = scheduler.spawn("owner").unwrap()
     scheduler.current_task = scheduler.get_task(owner_id)
     from tier2_runtime.vmmio.controller import VMMIOController
 
@@ -642,7 +642,7 @@ def test_hal_gotcha_01_hal_buffer_pool_bounds_violation_rejected():
 def test_sys_gotcha_01_undefined_syscall_returns_enosys():
     """GOTCHA-SYS-01: Undefined syscall ID safely returns WasiErrno.NOSYS instead of aborting or panicking."""
     sys_inst = System()
-    sys_inst.start_runtime_task(name="test_runtime_task")
+    sys_inst.start_runtime_task(name="test_runtime_task").unwrap()
     res = sys_inst.fireball_call(0xFE, 0, 0, 0, 0, 0, 0)
     assert res == int(WasiErrno.NOSYS), f"Expected NOSYS (52), got {res}"
 

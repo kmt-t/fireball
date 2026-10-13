@@ -294,7 +294,7 @@ def test_wit_generated_static_guest_raw_four_imports(compiled_raw_guest: Path, r
         task_id = system.scheduler.spawn(
             "compiled_guest",
             system.run_guest(interpreter, module.export_func_index("probe"), (128,)),
-        )
+        ).unwrap()
         system.scheduler.run_until_idle()
         task = system.scheduler.get_task(task_id)
         assert task is not None and task.state == TaskState.TERMINATED

@@ -52,7 +52,15 @@ if TYPE_CHECKING:
     from tier3_plugins.debugger.debugger import DebuggerManager
     from tier3_plugins.debugger.gdb_server import GDBServer
 
-from scheduler import FB_CONF_MAX_TASKS, Channel, ChannelAction, Scheduler, Task, TaskState
+from scheduler import (
+    FB_CONF_MAX_TASKS,
+    Channel,
+    ChannelAction,
+    Scheduler,
+    SchedulerError,
+    Task,
+    TaskState,
+)
 from system_containers import (
     MutableFlatMapStorage,
     ReadOnlyFlatMapStorage,
@@ -296,15 +304,21 @@ class System:
         self.logger.flush()
         self.runtime_engine.idle_hook(budget=4)
 
-    def start_runtime_task(self, name: str = "runtime_host", role: Role = Role.RUNTIME) -> Task:
+    def start_runtime_task(
+        self, name: str = "runtime_host", role: Role = Role.RUNTIME
+    ) -> Result[Task, SchedulerError]:
         """Starts an explicitly scheduler-owned task for a runtime host entrypoint."""
         assert self.scheduler.current_task is None, "A scheduler task is already active"
-        task_id = self.scheduler.spawn(name, role=role)
+        outcome = self.scheduler.spawn(name, role=role)
+        if not outcome.is_ok:
+            assert outcome.error is not None
+            return Result.err(outcome.error)
+        task_id = outcome.unwrap()
         task = self.scheduler.get_task(task_id)
         assert task is not None
         self.scheduler.detach(task)
         self.scheduler.activate_task(task)
-        return task
+        return Result.ok(task)
 
     def run_guest(
         self,
@@ -333,7 +347,9 @@ class System:
         interp.idle_hook(idle_budget)
         return Result.ok(call_state.results)
 
-    def bind_runtime(self, memory: bytearray | None, role: Role = Role.RUNTIME) -> None:
+    def bind_runtime(
+        self, memory: bytearray | None, role: Role = Role.RUNTIME
+    ) -> Result[bool, SchedulerError]:
         """
         Must be called before invoking guest code that will use
                 `fb_offset_t` arguments (IPC_*/WASI_*): those are relative offsets
@@ -342,17 +358,22 @@ class System:
                 models as one mutable binding set by the embedder rather than a
                 per-task table.
         """
-        self._guest_memory = memory
         # fireball_call's IPC_SEND/IPC_RECV delegate to scheduler.Channel,
         # which rendezvous on registered Task objects, not bare task_id ints.
         # This task is driven directly by fireball_call, never by the
         # scheduler's own run_until_idle() loop, so it must not sit in READY.
         task = self.scheduler.current_task
         if task is None:
-            task = self.start_runtime_task(name="guest_task", role=role)
+            outcome = self.start_runtime_task(name="guest_task", role=role)
+            if not outcome.is_ok:
+                assert outcome.error is not None
+                return Result.err(outcome.error)
+            task = outcome.unwrap()
         assert task.role == role, "Guest binding role must match the current scheduler task"
         self.scheduler.require_active_task(task)
         self._bound_runtime_task = task
+        self._guest_memory = memory
+        return Result.ok(True)
 
     def attach_wasi_context(self, context: WasiPreview1Host) -> None:
         """Connect the Tier 2 Preview 1 host implementation used by syscall handlers."""
@@ -775,7 +796,7 @@ class System:
         assert self.wasi_context is not None, "WASI random_get requires a bound WASI context"
         return WasiErrno(self.wasi_context.random_get(buf_ptr, buf_len))
 
-    def start_hal_driver(self, driver: HalDriver, uri: str) -> int:
+    def start_hal_driver(self, driver: HalDriver, uri: str) -> Result[int, SchedulerError]:
         """Registers and starts one driver-owned HAL device task."""
         assert driver._buffer_pool is self.pool, "HAL driver belongs to another buffer pool"
         desc = self.ipc.find_service(uri)
@@ -784,12 +805,16 @@ class System:
         assert self._hal_task_storage.view().find(uri_key) is None, (
             f"duplicate HAL driver URI: {uri}"
         )
-        task_id, task = driver.start(
+        outcome = driver.start(
             self.ipc, self.scheduler, desc.role, self.ipc.lookup_service_handle(uri)
         )
+        if not outcome.is_ok:
+            assert outcome.error is not None
+            return Result.err(outcome.error)
+        task_id, task = outcome.unwrap()
         inserted = self._hal_task_storage.insert(uri_key, task)
         assert inserted
-        return task_id
+        return Result.ok(task_id)
 
     def hal_task_for(self, uri: str) -> HalTask | None:
         """Returns the dedicated HalTask instance bound to `uri`, if spawned."""
@@ -803,7 +828,7 @@ class System:
         blocks: Mapping[int, BasicBlock] | None = None,
         host: str = "127.0.0.1",
         port: int = 0,
-    ) -> tuple[int, int]:
+    ) -> Result[tuple[int, int], SchedulerError]:
         """Spawns the GDB Server Task on the COOS scheduler (debugger.md).
         GDBServer runs as a cooperative task communicating via non-blocking TCP socket.
         Returns: (task_id, bound_port).
@@ -817,8 +842,7 @@ class System:
             transport=self.drivers.debugger_sink,
         )
         bound_port = gdb_srv.bind_socket()
-        self.gdb_server = gdb_srv
-        task_id = self.scheduler.spawn(
+        outcome = self.scheduler.spawn(
             "gdbserver_task",
             gdb_srv.run_task(
                 start_pc,
@@ -826,8 +850,14 @@ class System:
                 blocks,
             ),
         )
+        if not outcome.is_ok:
+            gdb_srv.stop()
+            assert outcome.error is not None
+            return Result.err(outcome.error)
+        task_id = outcome.unwrap()
+        self.gdb_server = gdb_srv
         self._gdb_task_id = task_id
-        return (task_id, bound_port)
+        return Result.ok((task_id, bound_port))
 
     def shutdown(self) -> None:
         if self.gdb_server is not None:

@@ -24,8 +24,9 @@ if TYPE_CHECKING:
     from tier2_runtime.memory.manager import MemoryManager
 
 from ipc_router import DataType, IPCMessage, IPCRouter, IPCStatus, Role, ScopeKind, pack_key32
-from scheduler import ChannelAction
+from scheduler import ChannelAction, SchedulerError
 from system_containers import ReadOnlyFlatMapView, SequenceView, StaticVector
+from tier2_runtime.runtime.recovery import Result
 from tier2_runtime.vmmio.controller import (
     FC_DYNAMIC,
     VMMIO_PAGE_SHIFT,
@@ -296,7 +297,7 @@ class HalBufferPool:
 
 
 HalResult = int
-HalCommandCallback = Callable[[ReadOnlyFlatMapView], HalResult]
+HalCommandCallback = Callable[[ReadOnlyFlatMapView], Result[HalResult, int]]
 
 
 @dataclass(frozen=True, slots=True)
@@ -341,15 +342,17 @@ class HalDriver:
                 return binding.callback
         return None
 
-    def _query_caps(self, params: ReadOnlyFlatMapView) -> int:
+    def _query_caps(self, params: ReadOnlyFlatMapView) -> Result[int, int]:
         query_cmd = params.find(ARG_QUERY_CMD_ID)
-        return 1 if query_cmd is not None and self._find_command(query_cmd) is not None else 0
+        return Result.ok(
+            1 if query_cmd is not None and self._find_command(query_cmd) is not None else 0
+        )
 
     def is_supported(self, cmd_id: int) -> int:
         """Checks if this driver supports the given command ID (1=True, 0=False)."""
         return 1 if self._find_command(cmd_id) is not None else 0
 
-    def dispatch(self, cmd_id: int, params: ReadOnlyFlatMapView) -> HalResult:
+    def dispatch(self, cmd_id: int, params: ReadOnlyFlatMapView) -> Result[HalResult, int]:
         """Dispatches an IPC command through the driver's registered callback."""
         callback = self._find_command(cmd_id)
         assert callback is not None, f"unregistered HAL command {cmd_id:#x}"
@@ -362,14 +365,17 @@ class HalDriver:
 
     def start(
         self, ipc: IPCRouter, scheduler: Scheduler, role: Role, service_handle: int
-    ) -> tuple[int, HalTask]:
+    ) -> Result[tuple[int, HalTask], SchedulerError]:
         """Starts this driver's dedicated HAL task and returns its task handle."""
         assert scheduler is self._buffer_pool._scheduler, "HAL driver belongs to another scheduler"
         task = HalTask(ipc, scheduler, self)
-        task_id = scheduler.spawn(
+        outcome = scheduler.spawn(
             f"hal_task[{service_handle}]", task.run(), role=role, service_handle=service_handle
         )
-        return task_id, task
+        if not outcome.is_ok:
+            assert outcome.error is not None
+            return Result.err(outcome.error)
+        return Result.ok((outcome.unwrap(), task))
 
 
 ARG_RESULT_LO = pack_key32(ScopeKind.FUNCTIONAL, DataType.UINT32, key_id=0xFF)
@@ -425,12 +431,16 @@ class HalTask:
 
     def _wait_for_pollable(
         self, params: ReadOnlyFlatMapView
-    ) -> Generator[tuple[ChannelAction, None], None, int]:
+    ) -> Generator[tuple[ChannelAction, None], None, Result[HalResult, int]]:
         handle = params.find(ARG_POLLABLE_HANDLE)
         assert handle is not None
-        while self.driver.dispatch(WasiIpcCmd.POLL_CHECK, params) == 0:
+        outcome = self.driver.dispatch(WasiIpcCmd.POLL_CHECK, params)
+        while outcome.is_ok and outcome.value == 0:
             self.scheduler.wait_until(self.driver.poll_wakeup_ns(handle))
             yield (ChannelAction.BLOCK, None)
+            outcome = self.driver.dispatch(WasiIpcCmd.POLL_CHECK, params)
+        if not outcome.is_ok:
+            return outcome
         return self.driver.dispatch(WasiIpcCmd.POLL_WAIT, params)
 
     def run(self) -> Generator[tuple[ChannelAction, None], None, None]:
@@ -452,14 +462,19 @@ class HalTask:
 
             assert cmd_id is not None
             if cmd_id == WasiIpcCmd.POLL_WAIT:
-                self.last_result = yield from self._wait_for_pollable(msg.payload)
+                outcome = yield from self._wait_for_pollable(msg.payload)
             else:
-                self.last_result = self.driver.dispatch(cmd_id, msg.payload)
+                outcome = self.driver.dispatch(cmd_id, msg.payload)
             self.last_handled_cmd = cmd_id
-            self.last_response_code = 0
-            result_value = self.last_result & 0xFFFF_FFFF_FFFF_FFFF
-            msg.append(ARG_RESULT_LO, result_value & 0xFFFF_FFFF)
-            msg.append(ARG_RESULT_HI, result_value >> 32)
+            self.last_result = outcome.value
+            if outcome.is_ok:
+                self.last_response_code = 0
+                result_value = outcome.unwrap() & 0xFFFF_FFFF_FFFF_FFFF
+                msg.append(ARG_RESULT_LO, result_value & 0xFFFF_FFFF)
+                msg.append(ARG_RESULT_HI, result_value >> 32)
+            else:
+                assert outcome.error is not None
+                self.last_response_code = outcome.error
             yield from self.ipc.reply(msg, self.last_response_code)
             yield (ChannelAction.YIELD, None)
 

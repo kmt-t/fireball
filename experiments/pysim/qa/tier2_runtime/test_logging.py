@@ -214,8 +214,8 @@ def test_printk_14_coos_and_ipc_diagnostics_preserve_event_ids_and_arguments():
             yield
 
         with expect_assertion():
-            sysv.scheduler.spawn("dup_task", dummy_coro(), task_id=99)
-            sysv.scheduler.spawn("dup_task_2", dummy_coro(), task_id=99)
+            sysv.scheduler.spawn("dup_task", dummy_coro(), task_id=99).unwrap()
+            sysv.scheduler.spawn("dup_task_2", dummy_coro(), task_id=99).unwrap()
 
         # 2. COOS IRQ Queue Overflow -> 0x0104
         for irq_idx in range(FB_CONF_INTERRUPT_QUEUE_SIZE + 4):
@@ -231,7 +231,7 @@ def test_printk_14_coos_and_ipc_diagnostics_preserve_event_ids_and_arguments():
             return
             yield
 
-        sysv.scheduler.spawn("bad_uri_task", bad_uri_task(), role=Role.RUNTIME)
+        sysv.scheduler.spawn("bad_uri_task", bad_uri_task(), role=Role.RUNTIME).unwrap()
         sysv.scheduler.run_until_idle()
 
         # 4. IPC RBAC Denied -> 0x0201
@@ -243,7 +243,7 @@ def test_printk_14_coos_and_ipc_diagnostics_preserve_event_ids_and_arguments():
             return
             yield
 
-        sysv.scheduler.spawn("rbac_denied_task", rbac_denied_task(), role=Role.RUNTIME)
+        sysv.scheduler.spawn("rbac_denied_task", rbac_denied_task(), role=Role.RUNTIME).unwrap()
         sysv.scheduler.run_until_idle()
 
         # 5. IPC Message Too Large -> 0x0203
@@ -263,7 +263,7 @@ def test_printk_14_coos_and_ipc_diagnostics_preserve_event_ids_and_arguments():
             assert status == IPCStatus.ERR_MSG_TOO_LARGE
             assert response is None
 
-        sysv.scheduler.spawn("too_large_task", too_large_task(), role=Role.RUNTIME)
+        sysv.scheduler.spawn("too_large_task", too_large_task(), role=Role.RUNTIME).unwrap()
         sysv.scheduler.run_until_idle()
 
         # Tier 1 printk events are synchronous; draining also includes buffered logger records.

@@ -154,7 +154,9 @@ def _measure(
     sysv = System()
     if workload.wasi:
         wasi = WasiHostContext(sysv)
-        sysv.start_hal_driver(DummyDriver(sysv.pool, transport=sysv.transport), FB_URI_HAL_STDOUT)
+        sysv.start_hal_driver(
+            DummyDriver(sysv.pool, transport=sysv.transport), FB_URI_HAL_STDOUT
+        ).unwrap()
         memory = wasi.guest_memory
         host_functions = wasi.build_interpreter_host_functions(module)
     else:

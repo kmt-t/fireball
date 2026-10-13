@@ -49,7 +49,7 @@ def test_scenario_vmmio_virtual_devices():
     # Phase 2: vMMIO Page Table Registration & PTE Permission Checks
     # -------------------------------------------------------------------------
     scheduler = Scheduler()
-    task_id = scheduler.spawn("scenario_task")
+    task_id = scheduler.spawn("scenario_task").unwrap()
     scheduler.current_task = scheduler.get_task(task_id)
     controller = VMMIOController(guest_ram_size=64 * 1024, scheduler=scheduler)
     # Handlers tracking
@@ -92,7 +92,7 @@ def test_scenario_vmmio_virtual_devices():
     print("    [Phase 3.3] Direct-Mapped Software TLB Hit (Folding XOR Hash) -> TLB_HIT [PASS]")
     # 3.4 Permission Violation: Write to Read-Only SHM
     # First access to SHM (Owner 2) write check
-    task2_id = controller.scheduler.spawn("task2")
+    task2_id = controller.scheduler.spawn("task2").unwrap()
     controller.scheduler.current_task = controller.scheduler.get_task(task2_id)
     status_shm_w, _ = controller.access(raw_addr=0xE000_2008, is_write=True)
     # SHM was mapped with write=True by default in map_shm_page; verify owner mismatch for task 1

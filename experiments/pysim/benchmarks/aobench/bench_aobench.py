@@ -54,7 +54,7 @@ def run_aobench(debug: bool = False) -> dict[str, int | float]:
     wasi_python = WasiHostContext(sysv_python)
     sysv_python.start_hal_driver(
         DummyDriver(sysv_python.pool, transport=sysv_python.transport), FB_URI_HAL_STDOUT
-    )
+    ).unwrap()
     funcs_python = wasi_python.build_interpreter_host_functions(module)
     module.init_memory_data(wasi_python.guest_memory, ())
     interp_python = Interpreter(
@@ -71,7 +71,7 @@ def run_aobench(debug: bool = False) -> dict[str, int | float]:
     wasi_native = WasiHostContext(sysv_native)
     sysv_native.start_hal_driver(
         DummyDriver(sysv_native.pool, transport=sysv_native.transport), FB_URI_HAL_STDOUT
-    )
+    ).unwrap()
     funcs_native = wasi_native.build_interpreter_host_functions(module)
     module.init_memory_data(wasi_native.guest_memory, ())
     interp_native = NativeInterpreter(
@@ -92,7 +92,7 @@ def run_aobench(debug: bool = False) -> dict[str, int | float]:
     wasi_ctx_t3 = WasiHostContext(sysv_t3)
     sysv_t3.start_hal_driver(
         DummyDriver(sysv_t3.pool, transport=sysv_t3.transport), FB_URI_HAL_STDOUT
-    )
+    ).unwrap()
     funcs_t3 = wasi_ctx_t3.build_interpreter_host_functions(module)
     module.init_memory_data(wasi_ctx_t3.guest_memory, ())
     runtime_engine = RuntimeEngine()
@@ -137,7 +137,7 @@ def run_aobench(debug: bool = False) -> dict[str, int | float]:
     sysv_diagnostic.start_hal_driver(
         DummyDriver(sysv_diagnostic.pool, transport=sysv_diagnostic.transport),
         FB_URI_HAL_STDOUT,
-    )
+    ).unwrap()
     funcs_diagnostic = wasi_diagnostic.build_interpreter_host_functions(module)
     module.init_memory_data(wasi_diagnostic.guest_memory, ())
     interp_diagnostic = NativeInterpreter(

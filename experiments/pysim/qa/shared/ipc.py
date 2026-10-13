@@ -7,7 +7,7 @@ from scheduler import Channel, TaskState
 def lookup_channel_as(router: IPCRouter, role: Role, uri: str) -> Channel:
     """Acquire a channel under a registered caller for spoofing or select tests."""
     scheduler = router.scheduler
-    probe = scheduler.get_task(scheduler.spawn("lookup_probe", role=role))
+    probe = scheduler.get_task(scheduler.spawn("lookup_probe", role=role).unwrap())
     assert probe is not None
     scheduler.detach(probe)
     try:

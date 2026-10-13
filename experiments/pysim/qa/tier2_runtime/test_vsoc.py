@@ -246,11 +246,11 @@ def test_virq_55_does_not_enter_wasi_polling_path():
 
     system = System()
     try:
-        system.start_runtime_task(name="virq_poll_guest")
+        system.start_runtime_task(name="virq_poll_guest").unwrap()
         timer_uri = "fireball://hal/timer/0"
-        system.start_hal_driver(DummyDriver(system.pool, stream_enabled=False), timer_uri)
+        system.start_hal_driver(DummyDriver(system.pool, stream_enabled=False), timer_uri).unwrap()
         polling = Wasi03pEngine(system)
-        handle = polling.clock_subscribe(timer_uri, 0)
+        handle = polling.clock_subscribe(timer_uri, 0).unwrap()
         module = system.runtime_engine.load_wasm(
             wat_to_wasm(
                 """(module (memory 1)
@@ -393,8 +393,8 @@ def test_system_guest_interpreter_returns_to_coos_and_resumes():
             "guest",
             system.run_guest(interpreter, 0, (10,)),
             role=Role.RUNTIME,
-        )
-        system.scheduler.spawn("monitor", monitor_task())
+        ).unwrap()
+        system.scheduler.spawn("monitor", monitor_task()).unwrap()
         system.scheduler.run_until_idle()
         guest = system.scheduler.get_task(guest_task_id)
         assert guest is not None and guest.state == TaskState.TERMINATED
@@ -446,8 +446,8 @@ def test_virq_unregisters_dispatcher_at_coos_boundary():
         yield (ChannelAction.YIELD, None)
 
     try:
-        guest_id = system.scheduler.spawn("virq_guest", guest(), role=Role.RUNTIME)
-        system.scheduler.spawn("source", source())
+        guest_id = system.scheduler.spawn("virq_guest", guest(), role=Role.RUNTIME).unwrap()
+        system.scheduler.spawn("source", source()).unwrap()
         system.scheduler.run_until_idle()
         task = system.scheduler.get_task(guest_id)
         assert task is not None and task.state == TaskState.TERMINATED
@@ -471,13 +471,15 @@ def test_hal_task_ipc_communication():
 
     sysv = System()
     try:
-        runtime_task = sysv.start_runtime_task(name="hal_ipc_guest")
+        runtime_task = sysv.start_runtime_task(name="hal_ipc_guest").unwrap()
         buffer_handle = sysv.pool.buffer(0)
         assert_result_1 = sysv.pool.map_for_io(buffer_handle.buffer_id)
         assert assert_result_1.name == "MAPPED"
         sysv.pool.view(buffer_handle, 0, 128)[:] = b"x" * 128
         sysv.scheduler.current_task = runtime_task
-        sysv.start_hal_driver(DummyDriver(sysv.pool, transport=sysv.transport), FB_URI_HAL_STDOUT)
+        sysv.start_hal_driver(
+            DummyDriver(sysv.pool, transport=sysv.transport), FB_URI_HAL_STDOUT
+        ).unwrap()
         engine = Wasi03pEngine(sysv)
         # Send command via IPC
         response = engine.send_ipc_command(
@@ -526,7 +528,7 @@ def test_gdbserver_task_coos_cooperative_execution():
     dbg = DebuggerManager()
     ctx = DebugTestView()
     ctx.locals[:2] = (10, 20)
-    task_id, port = sysv.spawn_gdbserver_task(dbg, start_pc=0x10, ctx=ctx)
+    task_id, port = sysv.spawn_gdbserver_task(dbg, start_pc=0x10, ctx=ctx).unwrap()
 
     try:
         # Connect client to the non-blocking gdbserver task with short polling timeout
@@ -586,8 +588,8 @@ def test_coop_01_wasm_coroutine_yields_on_loop_threshold(threshold: int):
             yield (ChannelAction.YIELD, None)
 
     try:
-        guest_id = system.scheduler.spawn("guest", system.run_guest(interpreter, 0, (10,)))
-        system.scheduler.spawn("monitor", monitor())
+        guest_id = system.scheduler.spawn("guest", system.run_guest(interpreter, 0, (10,))).unwrap()
+        system.scheduler.spawn("monitor", monitor()).unwrap()
         system.scheduler.run_until_idle()
         task = system.scheduler.get_task(guest_id)
         assert task is not None and task.result.unwrap() == [10]
@@ -705,8 +707,8 @@ def test_tier_01_interpreter_to_jit_cooperative_flow():
     try:
         guest_id = system.scheduler.spawn(
             "guest", system.run_guest(interpreter, module.export_func_index("count"), (12,))
-        )
-        system.scheduler.spawn("monitor", monitor())
+        ).unwrap()
+        system.scheduler.spawn("monitor", monitor()).unwrap()
         system.scheduler.run_until_idle()
         guest = system.scheduler.get_task(guest_id)
         assert guest is not None and guest.result.unwrap() == [12]
@@ -837,7 +839,9 @@ def test_guest_wasi_01_interpreter_fd_write():
         from tier3_platform.drivers.hal.dummy import DummyDriver
 
         ctx = WasiHostContext(sysv)
-        sysv.start_hal_driver(DummyDriver(sysv.pool, transport=sysv.transport), FB_URI_HAL_STDOUT)
+        sysv.start_hal_driver(
+            DummyDriver(sysv.pool, transport=sysv.transport), FB_URI_HAL_STDOUT
+        ).unwrap()
         # Set up guest memory:
         # offset 0: iov { buf: 16, len: 12 }
         # offset 16: "hello guest\n"
@@ -1099,7 +1103,7 @@ def test_linear_memory_copy_uses_cpu_memmove(source: int, destination: int, coun
             system.run_guest(
                 interpreter, module.export_func_index("copy"), (destination, source, count)
             ),
-        )
+        ).unwrap()
         system.scheduler.run_until_idle()
         task = system.scheduler.get_task(task_id)
         assert task is not None and task.state == TaskState.TERMINATED

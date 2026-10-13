@@ -43,9 +43,9 @@ def test_scenario_hal_and_wasi_drivers():
     # -------------------------------------------------------------------------
     # 1. Standard I/O stream driver
     sysv = System()
-    runtime_task = sysv.start_runtime_task(name="scenario11_stdio_guest")
+    runtime_task = sysv.start_runtime_task(name="scenario11_stdio_guest").unwrap()
     stdio = DummyDriver(sysv.pool, transport=sysv.transport)
-    sysv.start_hal_driver(stdio, FB_URI_HAL_STDOUT)
+    sysv.start_hal_driver(stdio, FB_URI_HAL_STDOUT).unwrap()
     sysv.scheduler.current_task = runtime_task
     rx = sysv.pool.buffer(0)
     tx = sysv.pool.buffer(1)
@@ -64,7 +64,7 @@ def test_scenario_hal_and_wasi_drivers():
             ReadOnlyFlatMapView(
                 ((ARG_BUFFER_HANDLE, rx.buffer_id), (ARG_OFFSET, 0), (ARG_MAX_LEN, 64))
             ),
-        )
+        ).unwrap()
         == 26
     )
     assert bytes(sysv.pool.view(rx, 0, 26)) == b"stdin-chunk-1stdin-chunk-2"
@@ -78,7 +78,7 @@ def test_scenario_hal_and_wasi_drivers():
             ReadOnlyFlatMapView(
                 ((ARG_BUFFER_HANDLE, tx.buffer_id), (ARG_OFFSET, 0), (ARG_LENGTH, 28))
             ),
-        )
+        ).unwrap()
         == 28
     )
     assert stdio.drain_stdout() == b"stdout-chunk-1stdout-chunk-2"

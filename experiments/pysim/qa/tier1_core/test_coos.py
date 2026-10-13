@@ -39,7 +39,7 @@ def test_coos_01_send_first_suspends_csp():
     """TEST-COOS-01: Sender arriving first transitions to SUSPENDED_CSP; value stays in frame."""
     sched = Scheduler()
     ch = sched.create_channel()
-    t1_id = sched.spawn("t1")
+    t1_id = sched.spawn("t1").unwrap()
     t1 = sched.get_task(t1_id)
     _activate_task(sched, t1)
     action, _ = ch.send(42)
@@ -54,8 +54,8 @@ def test_coos_02_recv_after_send_completes_rendezvous():
     """TEST-COOS-02: Receiver arriving second completes rendezvous and takes ownership."""
     sched = Scheduler()
     ch = sched.create_channel()
-    t1 = sched.get_task(sched.spawn("t1"))
-    t2 = sched.get_task(sched.spawn("t2"))
+    t1 = sched.get_task(sched.spawn("t1").unwrap())
+    t2 = sched.get_task(sched.spawn("t2").unwrap())
     _activate_task(sched, t1)
     ch.send("DATA_PAYLOAD")
     _activate_task(sched, t2)
@@ -71,7 +71,7 @@ def test_coos_03_recv_first_suspends_csp():
     """TEST-COOS-03: Receiver arriving first transitions to SUSPENDED_CSP."""
     sched = Scheduler()
     ch = sched.create_channel()
-    t2 = sched.get_task(sched.spawn("t2"))
+    t2 = sched.get_task(sched.spawn("t2").unwrap())
     _activate_task(sched, t2)
     action, _ = ch.recv()
     assert action == ChannelAction.BLOCK
@@ -84,8 +84,8 @@ def test_coos_04_send_after_recv_completes_rendezvous():
     """TEST-COOS-04: Sender arriving second completes rendezvous and transfers ownership."""
     sched = Scheduler()
     ch = sched.create_channel()
-    t1 = sched.get_task(sched.spawn("t1"))
-    t2 = sched.get_task(sched.spawn("t2"))
+    t1 = sched.get_task(sched.spawn("t1").unwrap())
+    t2 = sched.get_task(sched.spawn("t2").unwrap())
     _activate_task(sched, t2)
     ch.recv()
     _activate_task(sched, t1)
@@ -101,8 +101,8 @@ def test_coos_05_one_waiter_per_channel_enforced():
     for direction in (WaitDir.SEND, WaitDir.RECV):
         sched = Scheduler()
         ch = sched.create_channel()
-        first = sched.get_task(sched.spawn("first"))
-        second = sched.get_task(sched.spawn("second"))
+        first = sched.get_task(sched.spawn("first").unwrap())
+        second = sched.get_task(sched.spawn("second").unwrap())
         assert first is not None and second is not None
         _activate_task(sched, first)
         result = ch.send(1) if direction == WaitDir.SEND else ch.recv()
@@ -128,8 +128,8 @@ def test_coos_06_csp_handoff_direct_switch():
     """TEST-COOS-06: Rendezvous completion performs direct symmetric handoff to head of READY queue."""
     sched = Scheduler()
     ch = sched.create_channel()
-    t1 = sched.get_task(sched.spawn("t1"))
-    t2 = sched.get_task(sched.spawn("t2"))
+    t1 = sched.get_task(sched.spawn("t1").unwrap())
+    t2 = sched.get_task(sched.spawn("t2").unwrap())
     _activate_task(sched, t1)
     ch.send(99)
     _activate_task(sched, t2)
@@ -145,8 +145,8 @@ def test_coos_07_consecutive_handoff_limit_yields():
     ch1 = sched.create_channel()
     ch2 = sched.create_channel()
     ch3 = sched.create_channel()
-    t1 = sched.get_task(sched.spawn("t1"))
-    t2 = sched.get_task(sched.spawn("t2"))
+    t1 = sched.get_task(sched.spawn("t1").unwrap())
+    t2 = sched.get_task(sched.spawn("t2").unwrap())
     _activate_task(sched, t1)
     ch1.send(1)
     _activate_task(sched, t2)
@@ -168,7 +168,7 @@ def test_coos_07_consecutive_handoff_limit_yields():
         dispatched.append("peer-ran")
         yield (ChannelAction.YIELD, None)
 
-    peer = sched.get_task(sched.spawn("ready_peer", ready_peer()))
+    peer = sched.get_task(sched.spawn("ready_peer", ready_peer()).unwrap())
     assert peer is not None
     assert tuple(sched._ready) == (peer,)
     act3, _ = ch3.recv()
@@ -197,7 +197,7 @@ def test_coos_08_interrupt_notification_and_drain():
         received.append(event.words())
         woken.append("IRQ_PROCESSED")
 
-    sched.spawn("handler", irq_handler())
+    sched.spawn("handler", irq_handler()).unwrap()
     sched.run_until_idle()
     assert len(woken) == 0
     sched.notify_interrupt(InterruptEvent(16, 0, 0, 0, 0))
@@ -212,13 +212,13 @@ def test_coos_09_interrupt_queue_overflow_drops():
 
     for round_observed in (False, True):
         sched = Scheduler()
-        waiter = sched.get_task(sched.spawn("irq_waiter"))
+        waiter = sched.get_task(sched.spawn("irq_waiter").unwrap())
         assert waiter is not None
         _activate_task(sched, waiter)
         sched.wait_for_interrupt(0)
         sched.current_task = None
-        peer = sched.get_task(sched.spawn("ready_peer"))
-        second_peer = sched.get_task(sched.spawn("second_ready_peer"))
+        peer = sched.get_task(sched.spawn("ready_peer").unwrap())
+        second_peer = sched.get_task(sched.spawn("second_ready_peer").unwrap())
         assert peer is not None and second_peer is not None
         events = tuple(
             InterruptEvent(i, i + 100, i + 200, i + 300, i + 400)
@@ -303,8 +303,8 @@ def test_coos_13_interrupt_reschedule_generation_round():
         yield (ChannelAction.YIELD, None)
         trace.append(f"{name}:done")
 
-    first_id = sched.spawn("first", worker("first"))
-    second_id = sched.spawn("second", worker("second"))
+    first_id = sched.spawn("first", worker("first")).unwrap()
+    second_id = sched.spawn("second", worker("second")).unwrap()
     first = sched.get_task(first_id)
     second = sched.get_task(second_id)
     assert first is not None and second is not None
@@ -334,8 +334,8 @@ def test_coos_14_pending_generation_ends_direct_handoff_chain():
     """TEST-COOS-16: A pending generation yields without losing the rendezvous payload."""
     sched = Scheduler()
     ch = sched.create_channel()
-    sender_id = sched.spawn("sender")
-    receiver_id = sched.spawn("receiver")
+    sender_id = sched.spawn("sender").unwrap()
+    receiver_id = sched.spawn("receiver").unwrap()
     sender = sched.get_task(sender_id)
     receiver = sched.get_task(receiver_id)
     assert sender is not None and receiver is not None
@@ -374,7 +374,7 @@ def test_coos_10_idle_detection_when_all_blocked():
         ch.recv()
         yield (ChannelAction.BLOCK, None)
 
-    task_id = sched.spawn("blocked_receiver", blocked_receiver())
+    task_id = sched.spawn("blocked_receiver", blocked_receiver()).unwrap()
     assert idle_calls == [], "idle hook must not fire before the run loop is driven"
     sched.run_until_idle()
     assert idle_calls == [1], "idle hook must fire exactly once when READY queue empties"
@@ -393,7 +393,7 @@ def test_coos_10_budget_exhaustion_with_ready_task_is_not_idle(budget: int | Non
         while True:
             yield (ChannelAction.YIELD, None)
 
-    task = sched.get_task(sched.spawn("worker", worker()))
+    task = sched.get_task(sched.spawn("worker", worker()).unwrap())
     assert task is not None
     sched.run_until_idle(budget=budget)
     assert task.state == TaskState.READY
@@ -412,7 +412,7 @@ def test_coos_10_pending_event_at_budget_end_is_not_idle() -> None:
         assert sched.notify_interrupt(event)
         yield from ()
 
-    task = sched.get_task(sched.spawn("notifier", notifier()))
+    task = sched.get_task(sched.spawn("notifier", notifier()).unwrap())
     assert task is not None
     sched.run_until_idle(budget=1)
     assert task.state == TaskState.TERMINATED
@@ -430,8 +430,8 @@ def test_coos_11_no_double_ownership_sanity():
     coos_channel_model.py's AG(Not(double_owned)))."""
     sched = Scheduler()
     ch = sched.create_channel()
-    t1 = sched.get_task(sched.spawn("t1"))
-    t2 = sched.get_task(sched.spawn("t2"))
+    t1 = sched.get_task(sched.spawn("t1").unwrap())
+    t2 = sched.get_task(sched.spawn("t2").unwrap())
     _activate_task(sched, t1)
     ch.send("PAYLOAD")
     assert t1.pending_val == "PAYLOAD" and ch.waiter_task == t1
@@ -453,7 +453,7 @@ def test_coos_12_task_killed_removes_csp_and_irq_wait_registrations():
         channel_a.recv()
         yield (ChannelAction.BLOCK, None)
 
-    task_id = sched.spawn("selected_receiver", selected_receiver())
+    task_id = sched.spawn("selected_receiver", selected_receiver()).unwrap()
     task = sched.get_task(task_id)
     assert task is not None
     _activate_task(sched, task)
@@ -466,7 +466,7 @@ def test_coos_12_task_killed_removes_csp_and_irq_wait_registrations():
     assert channel_b.waiter_task is None
     assert task.coro is None
 
-    irq_task_id = sched.spawn("irq_waiter")
+    irq_task_id = sched.spawn("irq_waiter").unwrap()
     irq_task = sched.get_task(irq_task_id)
     assert irq_task is not None
     _activate_task(sched, irq_task)
@@ -481,7 +481,7 @@ def test_coos_12_task_killed_removes_csp_and_irq_wait_registrations():
     assert not sched.task_killed(-1)
     assert not sched.task_killed(irq_task_id)
 
-    running_task_id = sched.spawn("running_task")
+    running_task_id = sched.spawn("running_task").unwrap()
     running_task = sched.get_task(running_task_id)
     assert running_task is not None
     _activate_task(sched, running_task)

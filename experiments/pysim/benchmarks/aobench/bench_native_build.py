@@ -67,7 +67,9 @@ def measure(
     system = System()
     system.transport = StreamTransport(1 << 20)
     wasi = WasiHostContext(system)
-    system.start_hal_driver(DummyDriver(system.pool, transport=system.transport), FB_URI_HAL_STDOUT)
+    system.start_hal_driver(
+        DummyDriver(system.pool, transport=system.transport), FB_URI_HAL_STDOUT
+    ).unwrap()
     functions = wasi.build_interpreter_host_functions(module)
     module.init_memory_data(wasi.guest_memory, ())
     runtime = RuntimeEngine()

@@ -114,8 +114,8 @@ def test_scenario_ipc_router_and_logging():
         received_payloads.append((msg[_KEY_CMD], msg[_KEY_TASK_ID]))
         assert (yield from router.reply(msg, 0)) == IPCStatus.COMPLETED
 
-    sched.spawn("coos_receiver", coos_receiver(), role=Role.CORE_SERVICE)
-    sched.spawn("client_app", client_app_task(), role=Role.RUNTIME)
+    sched.spawn("coos_receiver", coos_receiver(), role=Role.CORE_SERVICE).unwrap()
+    sched.spawn("client_app", client_app_task(), role=Role.RUNTIME).unwrap()
     sched.run_until_idle()
 
     results = {name: (status, msg) for name, status, msg in sent}

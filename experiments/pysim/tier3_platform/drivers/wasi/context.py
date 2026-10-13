@@ -43,6 +43,7 @@ from tier2_runtime.hal.dispatch import (
 )
 from tier2_runtime.memory.manager import MemoryManager
 from tier2_runtime.observability.logging_interface import LoggerPort
+from tier2_runtime.runtime.recovery import Result
 from tier2_runtime.syscall.hostcall import (
     FbSyscallId,
     FireballHostCallPort,
@@ -160,7 +161,7 @@ class Wasi03pEngine:
             else response.response_code
         )
 
-    def clock_subscribe(self, uri: str, nanos: int) -> int:
+    def clock_subscribe(self, uri: str, nanos: int) -> Result[int, int]:
         """Reserve a one-shot timer through the URI-routed HAL command path."""
         assert 0 <= nanos <= 0xFFFF_FFFF_FFFF_FFFF
         params = ReadOnlyFlatMapView(
@@ -169,7 +170,10 @@ class Wasi03pEngine:
                 (ARG_NANOS_HI, nanos >> 32),
             )
         )
-        return int(self.dispatch_command(uri, WasiIpcCmd.CLOCK_SUBSCRIBE, params))
+        response = self.send_ipc_command(uri, WasiIpcCmd.CLOCK_SUBSCRIBE, params)
+        if response.response_code != WasiErrno.SUCCESS:
+            return Result.err(response.response_code)
+        return Result.ok(int(response.value))
 
     def poll_check(self, uri: str, handle: int) -> bool:
         """Check one pollable through the HAL task."""
@@ -234,7 +238,9 @@ class Wasi03pEngine:
                 )
             )
 
-        self.sysv.scheduler.spawn("wasi_ipc_sender", sender_coro(), role=Role.RUNTIME)
+        spawned = self.sysv.scheduler.spawn("wasi_ipc_sender", sender_coro(), role=Role.RUNTIME)
+        if not spawned.is_ok:
+            return HalCommandResponse(response_code=int(WasiErrno.NOMEM), value=0)
         self.sysv.scheduler.run_until_idle()
         self.sysv.scheduler.require_active_task(caller_task)
 

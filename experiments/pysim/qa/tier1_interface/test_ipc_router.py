@@ -102,7 +102,7 @@ def test_ipc_01_uri_lookup_and_permission_matrix():
     assert entry is not None
     assert entry.role == Role.HAL_GPIO
 
-    sender_id = sched.spawn("sender", role=Role.RUNTIME)
+    sender_id = sched.spawn("sender", role=Role.RUNTIME).unwrap()
     sched.current_task = sched.get_task(sender_id)
 
     # RUNTIME has permission to send to HAL_GPIO
@@ -115,7 +115,7 @@ def test_ipc_01_uri_lookup_and_permission_matrix():
     assert msg1.ownership == OwnershipState.IN_FLIGHT
 
     # HAL_GPIO has no outgoing edges at all (role matrix row is all-DENY).
-    hal_task_id = sched.spawn("hal_task", role=Role.HAL_GPIO)
+    hal_task_id = sched.spawn("hal_task", role=Role.HAL_GPIO).unwrap()
     sched.current_task = sched.get_task(hal_task_id)
 
     status_bad, ch_bad = router.lookup("fireball://hal/gpio/0")
@@ -158,7 +158,7 @@ def test_ipc_02_e2e_shared_block_transfer():
             recv_msg.append(0x100, 0xCAFE)
             assert (yield from sysv.ipc.reply(recv_msg, 0)) == IPCStatus.COMPLETED
 
-        sysv.scheduler.spawn("client_app", client_app_task(), task_id=2, role=Role.RUNTIME)
+        sysv.scheduler.spawn("client_app", client_app_task(), task_id=2, role=Role.RUNTIME).unwrap()
         sysv.scheduler.current_task = sysv.scheduler.get_task(2)
         # Sender allocates SharedBlock
         sb = sysv.memory_manager.allocate_shared(size=256).unwrap()
@@ -173,7 +173,9 @@ def test_ipc_02_e2e_shared_block_transfer():
         )
 
         # Spawn receiver (task 1) then sender (task 2)
-        sysv.scheduler.spawn("gpio_receiver", gpio_receiver(), task_id=1, role=Role.HAL_GPIO)
+        sysv.scheduler.spawn(
+            "gpio_receiver", gpio_receiver(), task_id=1, role=Role.HAL_GPIO
+        ).unwrap()
         sysv.scheduler.run_until_idle()
 
         assert sent == [IPCStatus.COMPLETED]
@@ -199,7 +201,7 @@ def test_send_preflight_rejection_preserves_shared_memory(rejection: str) -> Non
     """TEST-IPCR-05/14/15, GOTCHA-IPCR-02: 拒否時は Revoke せず、後続の正規送信ができる。"""
     sched = Scheduler()
     router = _make_router(sched)
-    sender_id = sched.spawn("runtime_sender", role=Role.RUNTIME)
+    sender_id = sched.spawn("runtime_sender", role=Role.RUNTIME).unwrap()
     sender = sched.get_task(sender_id)
     assert sender is not None
     sched.current_task = sender
@@ -289,7 +291,7 @@ def test_ipc_04_select_recv_picks_first_ready_sender_and_clears_group():
         )
         assert status == IPCStatus.COMPLETED
 
-    recv_id = sched.spawn("core_receiver", core_receiver(), role=Role.CORE_SERVICE)
+    recv_id = sched.spawn("core_receiver", core_receiver(), role=Role.CORE_SERVICE).unwrap()
     sched.run_until_idle()
     assert sched.get_task(recv_id).state == TaskState.SUSPENDED_CSP
     # Selecting on both edges must not double-register: each channel still
@@ -301,7 +303,9 @@ def test_ipc_04_select_recv_picks_first_ready_sender_and_clears_group():
     assert debugger_ch.waiter_dir == WaitDir.RECV
     assert runtime_ch.waiter_task is debugger_ch.waiter_task
 
-    debugger_sender_id = sched.spawn("debugger_sender", debugger_sender(), role=Role.DEBUGGER)
+    debugger_sender_id = sched.spawn(
+        "debugger_sender", debugger_sender(), role=Role.DEBUGGER
+    ).unwrap()
     sched.run_until_idle()
 
     assert len(received) == 1
@@ -330,8 +334,8 @@ def test_ipc_04_select_recv_picks_first_ready_sender_and_clears_group():
         )
         assert status == IPCStatus.COMPLETED
 
-    sched.spawn("core_receiver2", core_receiver2(), role=Role.CORE_SERVICE)
-    sched.spawn("runtime_sender", runtime_sender(), role=Role.RUNTIME)
+    sched.spawn("core_receiver2", core_receiver2(), role=Role.CORE_SERVICE).unwrap()
+    sched.spawn("runtime_sender", runtime_sender(), role=Role.RUNTIME).unwrap()
     sched.run_until_idle()
 
     assert len(received2) == 1
@@ -343,7 +347,7 @@ def test_ipc_05_message_storage_ownership_and_access_check():
     from ipc_router import OwnershipState
 
     scheduler = Scheduler()
-    owner_id = scheduler.spawn("message_owner")
+    owner_id = scheduler.spawn("message_owner").unwrap()
     owner = scheduler.get_task(owner_id)
     assert owner is not None
     manager = MemoryManager(scheduler)
@@ -389,7 +393,7 @@ def test_ipc_batch_sorted_unique_map_roundtrip(entries: list[tuple[int, int]]) -
     """TEST-IPCR-19/26: u32境界を含む一意なKVを、実共有ブロックへ格納して検索する。"""
     scheduler = Scheduler()
     router = _make_router(scheduler)
-    owner_id = scheduler.spawn("owner")
+    owner_id = scheduler.spawn("owner").unwrap()
     scheduler.current_task = scheduler.get_task(owner_id)
     message = make_test_ipc_message(entries, memory_manager=router.memory_manager)
     assert tuple(message.entries) == tuple(sorted(entries))
@@ -419,7 +423,7 @@ def test_ipc_invalid_internal_batch_asserts_before_write(
     """TEST-IPCR-26: OS内部の構築契約違反はassertし、共有バイトを変更しない。"""
     scheduler = Scheduler()
     router = _make_router(scheduler)
-    scheduler.current_task = scheduler.get_task(scheduler.spawn("owner"))
+    scheduler.current_task = scheduler.get_task(scheduler.spawn("owner").unwrap())
     message = make_test_ipc_message([(2, 20), (4, 40)], memory_manager=router.memory_manager)
     block = message.block
     assert block is not None
@@ -438,7 +442,7 @@ def test_ipc_borrow_and_narrowed_entries_read_live_shared_bytes(
 
     scheduler = Scheduler()
     router = _make_router(scheduler)
-    scheduler.current_task = scheduler.get_task(scheduler.spawn("owner"))
+    scheduler.current_task = scheduler.get_task(scheduler.spawn("owner").unwrap())
     message = make_test_ipc_message(
         [(i, i * 10) for i in range(8)], memory_manager=router.memory_manager
     )
@@ -471,8 +475,8 @@ def test_ipc_old_borrows_fail_after_actual_handoff_and_reply() -> None:
     """TEST-IPCR-07/19: Revoke前のviewはGrant後も失効し、新所有者は新たに借用する。"""
     scheduler = Scheduler()
     router = _make_router(scheduler)
-    sender = scheduler.get_task(scheduler.spawn("sender", role=Role.RUNTIME))
-    receiver = scheduler.get_task(scheduler.spawn("receiver", role=Role.HAL_GPIO))
+    sender = scheduler.get_task(scheduler.spawn("sender", role=Role.RUNTIME).unwrap())
+    receiver = scheduler.get_task(scheduler.spawn("receiver", role=Role.HAL_GPIO).unwrap())
     assert sender is not None and receiver is not None
     with scheduler.task_context(sender):
         message = make_test_ipc_message(
@@ -509,7 +513,7 @@ def test_ipc_corrupt_count_is_not_silently_clamped() -> None:
     """TEST-IPCR-26: 実体の上限違反を8要素へ丸めて処理を続けない。"""
     scheduler = Scheduler()
     router = _make_router(scheduler)
-    scheduler.current_task = scheduler.get_task(scheduler.spawn("owner"))
+    scheduler.current_task = scheduler.get_task(scheduler.spawn("owner").unwrap())
     message = make_test_ipc_message([(1, 10)], memory_manager=router.memory_manager)
     block = message.block
     assert block is not None
@@ -525,7 +529,7 @@ def test_ipc_06_router_lookup_authorization():
     router = _make_router(sched)
 
     # Task with Role.RUNTIME can open channel to HAL (ALLOWED)
-    runtime_task_id = sched.spawn("runtime_task", role=Role.RUNTIME)
+    runtime_task_id = sched.spawn("runtime_task", role=Role.RUNTIME).unwrap()
     sched.current_task = sched.get_task(runtime_task_id)
 
     status, ch_hal = router.lookup("fireball://hal/gpio/0")
@@ -533,7 +537,7 @@ def test_ipc_06_router_lookup_authorization():
     assert ch_hal is not None, "RUNTIME -> HAL_GPIO must be allowed"
 
     # Task with Role.HAL_GPIO cannot open channel to DEBUGGER (DENIED)
-    hal_task_id = sched.spawn("hal_task", role=Role.HAL_GPIO)
+    hal_task_id = sched.spawn("hal_task", role=Role.HAL_GPIO).unwrap()
     sched.current_task = sched.get_task(hal_task_id)
 
     assert router.find_service("fireball://dbg/manager/0") is not None
@@ -575,8 +579,10 @@ def test_ipc_07_message_in_shm_and_payload_shm_transfer():
 
         sysv.scheduler.spawn(
             "hal_receiver", hal_receiver(), task_id=receiver_id, role=Role.HAL_GPIO
-        )
-        sysv.scheduler.spawn("client_sender", client_sender(), task_id=sender_id, role=Role.RUNTIME)
+        ).unwrap()
+        sysv.scheduler.spawn(
+            "client_sender", client_sender(), task_id=sender_id, role=Role.RUNTIME
+        ).unwrap()
         sysv.scheduler.current_task = sysv.scheduler.get_task(sender_id)
 
         # 1. Allocate SharedBlock for the message itself (message is shared memory!)
@@ -635,7 +641,7 @@ def test_lookup_matches_specification_permission_matrix(
     """TEST-IPCR-02/04/05/06/15: 9 ロール × 8 登録 URI の許可表を独立に照合する。"""
     sched = Scheduler()
     router = _make_router(sched)
-    sender_id = sched.spawn("caller", role=sender_role)
+    sender_id = sched.spawn("caller", role=sender_role).unwrap()
     sched.current_task = sched.get_task(sender_id)
     descriptor = router.find_service(uri)
     assert descriptor is not None and descriptor.role == target_role
@@ -662,7 +668,7 @@ def test_unknown_uri_rejection_preserves_message() -> None:
     """TEST-IPCR-03, GOTCHA-IPCR-02: 未登録 URI は宛先チャネルも Revoke も発生させない。"""
     sched = Scheduler()
     router = _make_router(sched)
-    sender_id = sched.spawn("sender", role=Role.RUNTIME)
+    sender_id = sched.spawn("sender", role=Role.RUNTIME).unwrap()
     sender = sched.get_task(sender_id)
     assert sender is not None
     sched.current_task = sender
@@ -704,8 +710,8 @@ def test_request_reply_preserves_contents_and_transfers_exclusive_ownership(
     sched = Scheduler()
     router = _make_router(sched)
     manager = router.memory_manager
-    sender_id = sched.spawn("sender", task_id=17, role=Role.RUNTIME)
-    receiver_id = sched.spawn("receiver", task_id=29, role=Role.HAL_GPIO)
+    sender_id = sched.spawn("sender", task_id=17, role=Role.RUNTIME).unwrap()
+    receiver_id = sched.spawn("receiver", task_id=29, role=Role.HAL_GPIO).unwrap()
     sender = sched.get_task(sender_id)
     receiver = sched.get_task(receiver_id)
     assert sender is not None and receiver is not None
@@ -815,8 +821,8 @@ def test_reply_rendezvous_blocks_response_sender_until_receive(response_sender_f
     """応答の両到達順で、成立前保持・Grant・COMPLETED境界を直接検査する。"""
     sched = Scheduler()
     router = _make_router(sched)
-    sender = sched.get_task(sched.spawn("sender", role=Role.RUNTIME))
-    receiver = sched.get_task(sched.spawn("receiver", role=Role.HAL_GPIO))
+    sender = sched.get_task(sched.spawn("sender", role=Role.RUNTIME).unwrap())
+    receiver = sched.get_task(sched.spawn("receiver", role=Role.HAL_GPIO).unwrap())
     assert sender is not None and receiver is not None
     with _drive_task(sched, sender):
         status, channel = router.lookup("fireball://hal/gpio/0")
@@ -894,9 +900,9 @@ def test_second_send_cannot_overwrite_active_transaction(request_received: bool)
     """TEST-IPCR-08/10, GOTCHA-IPCR-01: 要求待機・応答待機の双方で二重送信を拒否する。"""
     sched = Scheduler()
     router = _make_router(sched)
-    first_id = sched.spawn("first_sender", role=Role.RUNTIME)
-    second_id = sched.spawn("second_sender", role=Role.RUNTIME)
-    receiver_id = sched.spawn("receiver", role=Role.HAL_GPIO)
+    first_id = sched.spawn("first_sender", role=Role.RUNTIME).unwrap()
+    second_id = sched.spawn("second_sender", role=Role.RUNTIME).unwrap()
+    receiver_id = sched.spawn("receiver", role=Role.HAL_GPIO).unwrap()
     first = sched.get_task(first_id)
     second = sched.get_task(second_id)
     receiver = sched.get_task(receiver_id)

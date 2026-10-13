@@ -299,7 +299,7 @@ def make_test_ipc_message(
 
     if memory_manager is None:
         scheduler = Scheduler()
-        task_id = scheduler.spawn("test_message_owner")
+        task_id = scheduler.spawn("test_message_owner").unwrap()
         task = scheduler.get_task(task_id)
         assert task is not None
         manager = MemoryManager(scheduler)

@@ -172,6 +172,32 @@ def test_optimized_guest_traps_preserve_results_and_side_effects(optimization: i
 
 
 @pytest.mark.parametrize("optimization", (0, 1, 2))
+def test_optimized_resource_failures_preserve_results_and_state(optimization: int) -> None:
+    environment = os.environ.copy()
+    environment["PYTHONPATH"] = os.pathsep.join(str(Path(path).resolve()) for path in sys.path)
+    environment.pop("PYTHONOPTIMIZE", None)
+    result = subprocess.run(
+        [sys.executable, *(["-O"] * optimization), "-m", "qa.private.optimized_resource_probe"],
+        cwd=_PYSIM_DIR.parent.parent,
+        env=environment,
+        capture_output=True,
+        text=True,
+        timeout=15,
+        check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert json.loads(result.stdout.splitlines()[-1]) == {
+        "optimization": optimization,
+        "scheduler": [False, "ERR_INVALID_ARG", True, False, "ERR_MAX_TASKS_REACHED", True],
+        "timer": [False, 48, None, True, 32],
+        "invalid_wasm": [18, 18],
+        "wire": [False, 48, None, 48],
+        "sender": [False, 48, True],
+        "binding": [False, "ERR_MAX_TASKS_REACHED", True],
+    }
+
+
+@pytest.mark.parametrize("optimization", (0, 1, 2))
 def test_runner_propagates_optimization_to_its_child(optimization: int) -> None:
     environment = os.environ.copy()
     environment["PYTHONPATH"] = os.pathsep.join(str(Path(path).resolve()) for path in sys.path)

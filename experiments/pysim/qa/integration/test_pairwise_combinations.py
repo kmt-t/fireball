@@ -241,7 +241,7 @@ def _run_workload(case_id: str, case_tuple: tuple[str, ...], resources: ExitStac
     memory = bytearray(b"\xa5" * (2 * 65536))
     wasi = WasiHostContext(sysv, guest_memory=memory, uvwasi=backend)
     driver = DummyDriver(sysv.pool, transport=sysv.transport)
-    driver_task_id = sysv.start_hal_driver(driver, FB_URI_HAL_STDOUT)
+    driver_task_id = sysv.start_hal_driver(driver, FB_URI_HAL_STDOUT).unwrap()
     payload = f"pairwise:{case_id}".encode("ascii")
     memory[1024:1032] = (1200).to_bytes(4, "little") + len(payload).to_bytes(4, "little")
     memory[1200 : 1200 + len(payload)] = payload
@@ -377,7 +377,9 @@ def _run_workload(case_id: str, case_tuple: tuple[str, ...], resources: ExitStac
         assert schedule == [] and yielded_pcs == []
     else:
         peer_id = (
-            sysv.scheduler.spawn("pairwise_peer", peer_task()) if sched_mode == "multi" else None
+            sysv.scheduler.spawn("pairwise_peer", peer_task()).unwrap()
+            if sched_mode == "multi"
+            else None
         )
         sysv.scheduler.run_until_idle()
         assert task.state == TaskState.TERMINATED

@@ -117,7 +117,7 @@ class GuestDriverClient:
                 arguments,
             ),
             role=Role.RUNTIME,
-        )
+        ).unwrap()
         system.scheduler.run_until_idle()
         task = system.scheduler.get_task(task_id)
         assert task is not None and task.state == TaskState.TERMINATED

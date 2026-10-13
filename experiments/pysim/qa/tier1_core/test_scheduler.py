@@ -88,8 +88,8 @@ def test_sched_01_pure_round_robin_fifo():
             yield None
 
     sched = Scheduler()
-    sched.spawn("a", worker("a", 2))
-    sched.spawn("b", worker("b", 2))
+    sched.spawn("a", worker("a", 2)).unwrap()
+    sched.spawn("b", worker("b", 2)).unwrap()
     sched.run_to_completion()
     assert order == ["a", "b", "a", "b"]
 
@@ -98,10 +98,11 @@ def test_sched_09_task_capacity_limit():
     """TEST-SCHED-09: Rejected overflow preserves the live tasks and READY order."""
     sched = Scheduler(max_tasks=4)
     for i in range(4):
-        sched.spawn(f"t{i}")
+        sched.spawn(f"t{i}").unwrap()
 
-    with expect_assertion("capacity exceeded"):
-        sched.spawn("t_overflow")
+    outcome = sched.spawn("t_overflow")
+    assert not outcome.is_ok
+    assert outcome.error.name == "ERR_MAX_TASKS_REACHED"
     assert [task.task_id for task in sched._ready] == [1, 2, 3, 4]
     assert all(sched.get_task(task_id).state == TaskState.READY for task_id in range(1, 5))
 
@@ -109,10 +110,11 @@ def test_sched_09_task_capacity_limit():
 def test_sched_10_duplicate_task_id_rejected():
     """TEST-SCHED-10: A duplicate ID cannot replace its task or alter READY order."""
     sched = Scheduler()
-    sched.spawn("t1", task_id=10)
+    sched.spawn("t1", task_id=10).unwrap()
     original = sched.get_task(10)
-    with expect_assertion("already exists"):
-        sched.spawn("t2", task_id=10)
+    outcome = sched.spawn("t2", task_id=10)
+    assert not outcome.is_ok
+    assert outcome.error.name == "ERR_INVALID_ARG"
     assert sched.get_task(10) is original
     assert list(sched._ready) == [original]
 
@@ -134,8 +136,8 @@ def test_mem_10_shared_block_move_semantics_csp_rendezvous():
     mm.init_manager(pool_base=0x00010000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
     ch = sched.create_channel(transfer_mode=ChannelTransferMode.MOVABLE)
 
-    t1 = sched.get_task(sched.spawn("sender", task_id=1))
-    t2 = sched.get_task(sched.spawn("receiver", task_id=2))
+    t1 = sched.get_task(sched.spawn("sender", task_id=1).unwrap())
+    t2 = sched.get_task(sched.spawn("receiver", task_id=2).unwrap())
 
     # Task 1 allocates a SharedBlock
     _activate_task(sched, t1)
@@ -220,7 +222,7 @@ def test_sched_13_detached_task_reattaches_once():
     assert not queue
 
     scheduler = Scheduler(max_tasks=3)
-    task_id = scheduler.spawn("detached")
+    task_id = scheduler.spawn("detached").unwrap()
     task = scheduler.get_task(task_id)
     assert task is not None
     scheduler.detach(task)
@@ -334,20 +336,20 @@ def test_sched_16_terminated_task_returns_its_tcb_slot_on_spawn():
         yield
 
     sched = Scheduler(max_tasks=4)
-    first = [sched.spawn(f"t{i}", quick()) for i in range(4)]
+    first = [sched.spawn(f"t{i}", quick()).unwrap() for i in range(4)]
     sched.run_to_completion()
     assert all(sched.get_task(i).state == TaskState.TERMINATED for i in first)
 
     # The table is full of terminated tasks, so a new task takes the oldest slot.
     old_task = sched.get_task(first[0])
-    fifth = sched.spawn("t4", quick())
+    fifth = sched.spawn("t4", quick()).unwrap()
     assert sched.get_task(fifth) is not old_task
     assert all(sched.get_task(i) is not None for i in first[1:])
     assert sched.get_task(fifth) is not None
 
     # Lifetime spawns exceed the table size when tasks finish in between.
     sched.run_to_completion()
-    later = [sched.spawn(f"u{i}", quick()) for i in range(3)]
+    later = [sched.spawn(f"u{i}", quick()).unwrap() for i in range(3)]
     sched.run_to_completion()
     assert len(later) == 3
     assert all(sched.get_task(i) is not None for i in later)
@@ -360,15 +362,16 @@ def test_sched_16_terminated_task_returns_its_tcb_slot_on_spawn():
         yield None
 
     for i in range(4):
-        busy.spawn(f"w{i}", waiting())
-    with expect_assertion("capacity exceeded"):
-        busy.spawn("w_overflow")
+        busy.spawn(f"w{i}", waiting()).unwrap()
+    outcome = busy.spawn("w_overflow")
+    assert not outcome.is_ok
+    assert outcome.error.name == "ERR_MAX_TASKS_REACHED"
 
 
 def test_sched_16_task_ids_are_reused_after_a_slot_is_reclaimed():
     """TEST-SCHED-16: completed IDs are reusable; live IDs and masks stay bounded."""
     scheduler = Scheduler(max_tasks=4)
-    live_id = scheduler.spawn("live")
+    live_id = scheduler.spawn("live").unwrap()
     live = scheduler.get_task(live_id)
     assert live is not None
     scheduler.detach(live)
@@ -379,7 +382,7 @@ def test_sched_16_task_ids_are_reused_after_a_slot_is_reclaimed():
 
     ids: set[int] = set()
     for _ in range(300):
-        task_id = scheduler.spawn("temporary", quick())
+        task_id = scheduler.spawn("temporary", quick()).unwrap()
         assert 1 <= task_id <= scheduler.max_tasks
         assert task_id != live_id
         ids.add(task_id)
@@ -421,7 +424,7 @@ def test_sched_16_reused_task_ids_preserve_shared_memory_transfers():
             yield None
 
     for _ in range(300):
-        scheduler.spawn("sender", transfer())
+        scheduler.spawn("sender", transfer()).unwrap()
         scheduler.run_until_idle()
     assert len(completed) == 300
     assert max(completed) <= scheduler.max_tasks
@@ -435,13 +438,13 @@ def test_sched_16_explicit_ids_share_the_free_list_without_duplicates():
         return
         yield
 
-    assert scheduler.spawn("explicit", quick(), task_id=3) == 3
-    first = scheduler.spawn("first", task_id=1)
-    second = scheduler.spawn("second")
-    fourth = scheduler.spawn("fourth")
+    assert scheduler.spawn("explicit", quick(), task_id=3).unwrap() == 3
+    first = scheduler.spawn("first", task_id=1).unwrap()
+    second = scheduler.spawn("second").unwrap()
+    fourth = scheduler.spawn("fourth").unwrap()
     assert {first, second, fourth} == {1, 2, 4}
     scheduler.run_until_idle()
-    assert scheduler.spawn("replacement", task_id=3) == 3
+    assert scheduler.spawn("replacement", task_id=3).unwrap() == 3
     assert {task.task_id for task in scheduler._all} == {1, 2, 3, 4}
 
 
@@ -458,14 +461,16 @@ def test_sched_16_automatic_id_allocation_does_not_search_tasks(monkeypatch):
 
     with monkeypatch.context() as patch:
         patch.setattr(Scheduler, "get_task", reject_task_search)
-        ids = tuple(scheduler.spawn("task", quick() if index == 1 else None) for index in range(4))
+        ids = tuple(
+            scheduler.spawn("task", quick() if index == 1 else None).unwrap() for index in range(4)
+        )
     assert ids == (1, 2, 3, 4)
     scheduler.run_until_idle()
     assert scheduler.get_task(2).state == TaskState.TERMINATED
     live_tasks = tuple(task for task in scheduler._all if task.task_id != 2)
     with monkeypatch.context() as patch:
         patch.setattr(Scheduler, "get_task", reject_task_search)
-        assert scheduler.spawn("replacement") == 2
+        assert scheduler.spawn("replacement").unwrap() == 2
     assert all(scheduler.get_task(task.task_id) is task for task in live_tasks)
 
 
@@ -497,8 +502,8 @@ def test_sched_18_timed_wait_runs_ready_peers_before_idle_sleep():
         events.append(("peer", now_ns))
         yield None
 
-    waiter_id = sched.spawn("timed_waiter", timed_waiter())
-    peer_id = sched.spawn("ready_peer", ready_peer())
+    waiter_id = sched.spawn("timed_waiter", timed_waiter()).unwrap()
+    peer_id = sched.spawn("ready_peer", ready_peer()).unwrap()
     sched.run_until_idle()
 
     assert events == [("wait", 100), ("peer", 100), ("resume", 105)]
@@ -530,8 +535,8 @@ def test_sched_19_killing_timed_waiter_clears_only_its_deadline():
         yield (ChannelAction.BLOCK, None)
         resumed.append(name)
 
-    earliest_id = sched.spawn("earliest", waiter("earliest", 110))
-    survivor_id = sched.spawn("survivor", waiter("survivor", 120))
+    earliest_id = sched.spawn("earliest", waiter("earliest", 110)).unwrap()
+    survivor_id = sched.spawn("survivor", waiter("survivor", 120)).unwrap()
     assert sched.step() is not None
     assert sched.step() is not None
     assert sched.get_task(earliest_id).state == TaskState.BLOCKED_TIMER
@@ -556,7 +561,7 @@ def test_sched_02_spawn_appends_behind_existing_ready_peer() -> None:
 
     def parent():
         events.append("A")
-        scheduler.spawn("C", child())
+        scheduler.spawn("C", child()).unwrap()
         yield None
         events.append("A resumed")
 
@@ -564,8 +569,8 @@ def test_sched_02_spawn_appends_behind_existing_ready_peer() -> None:
         events.append("B")
         yield None
 
-    a_id = scheduler.spawn("A", parent())
-    b_id = scheduler.spawn("B", peer())
+    a_id = scheduler.spawn("A", parent()).unwrap()
+    b_id = scheduler.spawn("B", peer()).unwrap()
     assert scheduler.step().task_id == a_id
     assert [task.task_id for task in scheduler._ready] == [b_id, 3, a_id]
     assert scheduler.step().task_id == b_id
@@ -585,7 +590,7 @@ def test_sched_03_yield_returns_to_ready_and_runs_again() -> None:
             yield None
         observed.append(scheduler.current_task.state)
 
-    task = scheduler.get_task(scheduler.spawn("worker", worker()))
+    task = scheduler.get_task(scheduler.spawn("worker", worker()).unwrap())
     for _ in range(2):
         assert scheduler.step() is task
         assert task.state == TaskState.READY
@@ -606,7 +611,7 @@ def test_sched_05_terminated_task_is_never_redispatched() -> None:
         return
         yield
 
-    task = scheduler.get_task(scheduler.spawn("worker", worker()))
+    task = scheduler.get_task(scheduler.spawn("worker", worker()).unwrap())
     assert scheduler.step() is task
     assert task.state == TaskState.TERMINATED
     assert task.waiting_irq is None
@@ -629,8 +634,8 @@ def test_sched_04_06_07_interrupt_defers_targeted_wakeup_until_drain() -> None:
         assert event is not None
         received.append(event.words())
 
-    a = scheduler.get_task(scheduler.spawn("A", waiter(7)))
-    b = scheduler.get_task(scheduler.spawn("B", waiter(8)))
+    a = scheduler.get_task(scheduler.spawn("A", waiter(7)).unwrap())
+    b = scheduler.get_task(scheduler.spawn("B", waiter(8)).unwrap())
     scheduler.set_idle_hook(lambda: idle_states.append((a.state, b.state)))
     assert scheduler.step() is a
     assert scheduler.step() is b
@@ -662,7 +667,7 @@ def test_sched_11_unnotified_waiter_reaches_explicit_sweep_limit() -> None:
         scheduler.wait_for_interrupt(7)
         yield (ChannelAction.BLOCK, None)
 
-    task = scheduler.get_task(scheduler.spawn("waiter", waiter()))
+    task = scheduler.get_task(scheduler.spawn("waiter", waiter()).unwrap())
     with expect_assertion("within 2 sweeps"):
         scheduler.run_to_completion(max_sweeps=2)
     assert task.state == TaskState.BLOCKED
@@ -678,8 +683,8 @@ def test_sched_12_interrupt_fifo_orders_registered_targets_and_drops_unknown() -
         scheduler.wait_for_interrupt(vector_id)
         yield (ChannelAction.BLOCK, None)
 
-    a = scheduler.get_task(scheduler.spawn("A", waiter(7)))
-    b = scheduler.get_task(scheduler.spawn("B", waiter(8)))
+    a = scheduler.get_task(scheduler.spawn("A", waiter(7)).unwrap())
+    b = scheduler.get_task(scheduler.spawn("B", waiter(8)).unwrap())
     scheduler.step()
     scheduler.step()
     for event in (
@@ -700,8 +705,8 @@ def test_sched_12_interrupt_fifo_orders_registered_targets_and_drops_unknown() -
 def test_sched_14_15_interrupt_generation_is_observed_once_by_existing_targets() -> None:
     """TEST-SCHED-14, TEST-SCHED-15: One burst creates one round; a newly spawned task is excluded."""
     scheduler = Scheduler()
-    a = scheduler.get_task(scheduler.spawn("A"))
-    b = scheduler.get_task(scheduler.spawn("B"))
+    a = scheduler.get_task(scheduler.spawn("A").unwrap())
+    b = scheduler.get_task(scheduler.spawn("B").unwrap())
     for vector in (98, 99):
         assert scheduler.notify_interrupt(InterruptEvent(vector, 0, 0, 0, 0))
     assert scheduler.reschedule_generation == 1
@@ -711,7 +716,7 @@ def test_sched_14_15_interrupt_generation_is_observed_once_by_existing_targets()
     assert b.last_seen_generation == 0
     assert scheduler.round_target_mask == 1 << b.task_id
     assert scheduler.reschedule_pending
-    c = scheduler.get_task(scheduler.spawn("C"))
+    c = scheduler.get_task(scheduler.spawn("C").unwrap())
     assert c.last_seen_generation == 1
     assert scheduler.round_target_mask & (1 << c.task_id) == 0
     assert not scheduler.observe_reschedule_generation(c)

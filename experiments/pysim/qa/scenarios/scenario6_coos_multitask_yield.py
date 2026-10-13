@@ -94,7 +94,7 @@ def test_scenario_coos_multitask():
                 module.export_func_index("producer_task"),
                 (100,),
             ),
-        )
+        ).unwrap()
         cons_id = system.scheduler.spawn(
             "consumer",
             system.run_guest(
@@ -102,8 +102,8 @@ def test_scenario_coos_multitask():
                 module.export_func_index("consumer_task"),
                 (100,),
             ),
-        )
-        system.scheduler.spawn("monitor", monitor())
+        ).unwrap()
+        system.scheduler.spawn("monitor", monitor()).unwrap()
         system.scheduler.run_until_idle()
         prod = system.scheduler.get_task(prod_id)
         cons = system.scheduler.get_task(cons_id)

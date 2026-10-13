@@ -21,8 +21,8 @@ from tier3_plugins.jit.jit_manager import JITRuntimeManager
 def main() -> None:
     scheduler = Scheduler()
     channel = scheduler.create_channel()
-    sender = scheduler.get_task(scheduler.spawn("sender"))
-    receiver = scheduler.get_task(scheduler.spawn("receiver"))
+    sender = scheduler.get_task(scheduler.spawn("sender").unwrap())
+    receiver = scheduler.get_task(scheduler.spawn("receiver").unwrap())
     assert sender is not None and receiver is not None
     scheduler.detach(sender)
     scheduler.activate_task(sender)

@@ -41,6 +41,7 @@ from tier2_runtime.hal.dispatch import (
     HalDriver,
     WasiIpcCmd,
 )
+from tier2_runtime.runtime.recovery import Result
 from tier2_runtime.vmmio.controller import VMMIOController
 from tier3_platform.drivers.hal.stream import StreamTransport
 from tier3_platform.drivers.wasi.context import Wasi03pEngine
@@ -82,7 +83,7 @@ class StubDriver(HalDriver):
         self.expected_task_id: int | None = None
         self.observations: list[CommandObservation] = []
 
-    def dispatch(self, cmd_id: int, params: ReadOnlyFlatMapView) -> int:
+    def dispatch(self, cmd_id: int, params: ReadOnlyFlatMapView) -> Result[int, int]:
         task_id = self._buffer_pool.current_task_id
         if self.expected_task_id is not None:
             assert task_id == self.expected_task_id, "stub called outside its HAL task"
@@ -121,28 +122,28 @@ class StreamStubDriver(StubDriver):
         assert limit is None or limit >= 0
         return requested if limit is None else min(requested, limit)
 
-    def _read(self, params: ReadOnlyFlatMapView) -> int:
+    def _read(self, params: ReadOnlyFlatMapView) -> Result[int, int]:
         view = self._view(params, ARG_MAX_LEN)
         count = self._count(len(view), self.read_limit)
         if count == 0:
-            return 0
+            return Result.ok(0)
         data = self.transport.read_input(count)
         view[: len(data)] = data
-        return len(data)
+        return Result.ok(len(data))
 
-    def _write(self, params: ReadOnlyFlatMapView) -> int:
+    def _write(self, params: ReadOnlyFlatMapView) -> Result[int, int]:
         view = self._view(params, ARG_LENGTH)
         count = self._count(len(view), self.write_limit)
-        return self.transport.write(view[:count])
+        return Result.ok(self.transport.write(view[:count]))
 
-    def _flush(self, params: ReadOnlyFlatMapView) -> int:
+    def _flush(self, params: ReadOnlyFlatMapView) -> Result[int, int]:
         assert not self.closed, "stub stream is closed"
         self.flush_count += 1
-        return 0
+        return Result.ok(0)
 
-    def _close(self, params: ReadOnlyFlatMapView) -> int:
+    def _close(self, params: ReadOnlyFlatMapView) -> Result[int, int]:
         self.closed = True
-        return 0
+        return Result.ok(0)
 
     def feed_input(self, data: bytes) -> int:
         assert not self.closed, "stub stream is closed"
@@ -160,11 +161,11 @@ class AdcStubDriver(StreamStubDriver):
         self.configuration: tuple[tuple[int, int], ...] | None = None
         self.register_command(StubCommand.ADC_CONFIGURE, self._configure)
 
-    def _configure(self, params: ReadOnlyFlatMapView) -> int:
+    def _configure(self, params: ReadOnlyFlatMapView) -> Result[int, int]:
         configuration = snapshot(params)
         assert configuration, "ADC stub configuration is empty"
         self.configuration = configuration
-        return 0
+        return Result.ok(0)
 
     def _view(self, params: ReadOnlyFlatMapView, key: int) -> memoryview:
         assert self.configuration is not None, "ADC stub is not configured"
@@ -181,18 +182,18 @@ class PwmStubDriver(StubDriver):
         self.register_command(StubCommand.PWM_CONFIGURE, self._configure)
         self.register_command(StubCommand.PWM_WRITE, self._write)
 
-    def _configure(self, params: ReadOnlyFlatMapView) -> int:
+    def _configure(self, params: ReadOnlyFlatMapView) -> Result[int, int]:
         configuration = snapshot(params)
         assert configuration, "PWM stub configuration is empty"
         self.configuration = configuration
-        return 0
+        return Result.ok(0)
 
-    def _write(self, params: ReadOnlyFlatMapView) -> int:
+    def _write(self, params: ReadOnlyFlatMapView) -> Result[int, int]:
         assert self.configuration is not None, "PWM stub is not configured"
         output = snapshot(params)
         assert output, "PWM stub command is empty"
         self.output = output
-        return 0
+        return Result.ok(0)
 
 
 @dataclass
@@ -231,12 +232,12 @@ class PollStubDriver(StubDriver):
         assert item.active and item.generation == handle >> 4, "stale stub pollable"
         return item
 
-    def _check(self, params: ReadOnlyFlatMapView) -> int:
-        return int(self.pollable(required(params, ARG_POLLABLE_HANDLE)).ready)
+    def _check(self, params: ReadOnlyFlatMapView) -> Result[int, int]:
+        return Result.ok(int(self.pollable(required(params, ARG_POLLABLE_HANDLE)).ready))
 
-    def _drop(self, params: ReadOnlyFlatMapView) -> int:
+    def _drop(self, params: ReadOnlyFlatMapView) -> Result[int, int]:
         self.pollable(required(params, ARG_POLLABLE_HANDLE)).active = False
-        return 0
+        return Result.ok(0)
 
     def poll_wakeup_ns(self, handle: int) -> int:
         self.pollable(handle)
@@ -261,27 +262,27 @@ class GpioStubDriver(PollStubDriver):
         assert pin < len(self.levels), "stub pin out of range"
         return pin
 
-    def _configure(self, params: ReadOnlyFlatMapView) -> int:
+    def _configure(self, params: ReadOnlyFlatMapView) -> Result[int, int]:
         pin, mode = self._pin(params), required(params, ARG_MODE)
         assert mode <= 3, "stub pin mode out of range"
         self.modes[pin] = mode
-        return 0
+        return Result.ok(0)
 
-    def _set(self, params: ReadOnlyFlatMapView) -> int:
+    def _set(self, params: ReadOnlyFlatMapView) -> Result[int, int]:
         pin, value = self._pin(params), required(params, ARG_VAL)
         assert self.modes[pin] == 1, "stub pin is not an output"
         assert value <= 1, "stub pin level out of range"
         self.levels[pin] = value
-        return 0
+        return Result.ok(0)
 
-    def _get(self, params: ReadOnlyFlatMapView) -> int:
-        return self.levels[self._pin(params)]
+    def _get(self, params: ReadOnlyFlatMapView) -> Result[int, int]:
+        return Result.ok(self.levels[self._pin(params)])
 
-    def _subscribe(self, params: ReadOnlyFlatMapView) -> int:
+    def _subscribe(self, params: ReadOnlyFlatMapView) -> Result[int, int]:
         pin, edge = self._pin(params), required(params, ARG_EDGE_TYPE)
         assert self.modes[pin] is not None and self.modes[pin] != 1
         assert 1 <= edge <= 3, "stub edge selector out of range"
-        return self.reserve(source=pin, selector=edge)
+        return Result.ok(self.reserve(source=pin, selector=edge))
 
     def set_input(self, pin: int, value: int) -> None:
         assert 0 <= pin < len(self.levels) and value in (0, 1)
@@ -309,18 +310,18 @@ class BusStubDriver(StubDriver):
         self.register_command(WasiIpcCmd.BUS_CONFIG, self._configure)
         self.register_command(WasiIpcCmd.BUS_TRANSFER_BUFFER, self._transfer)
 
-    def _configure(self, params: ReadOnlyFlatMapView) -> int:
+    def _configure(self, params: ReadOnlyFlatMapView) -> Result[int, int]:
         self.configuration = (
             required(params, ARG_CLOCK_HZ),
             required(params, ARG_SLAVE_ADDR),
             required(params, ARG_MODE),
         )
-        return 0
+        return Result.ok(0)
 
     def feed_reply(self, data: bytes) -> None:
         self.reply += data
 
-    def _transfer(self, params: ReadOnlyFlatMapView) -> int:
+    def _transfer(self, params: ReadOnlyFlatMapView) -> Result[int, int]:
         assert self.configuration is not None, "stub bus is not configured"
         length = required(params, ARG_LENGTH)
         tx = self.buffer_view(required(params, ARG_TX_BUFFER_HANDLE), 0, length)
@@ -335,7 +336,7 @@ class BusStubDriver(StubDriver):
         self.transmitted.append(outgoing)
         self.transfer_configurations.append(self.configuration)
         self.reply = self.reply[count:]
-        return count
+        return Result.ok(count)
 
 
 class TimerStubDriver(PollStubDriver):
@@ -346,23 +347,25 @@ class TimerStubDriver(PollStubDriver):
         assert 0 < resolution_ns <= 0xFFFF_FFFF_FFFF_FFFF
         super().__init__(pool)
         self.now_ns, self.resolution_ns = now_ns, resolution_ns
-        self.register_command(WasiIpcCmd.CLOCK_GET_NOW, lambda params: self.now_ns)
-        self.register_command(WasiIpcCmd.CLOCK_GET_RES, lambda params: self.resolution_ns)
+        self.register_command(WasiIpcCmd.CLOCK_GET_NOW, lambda params: Result.ok(self.now_ns))
+        self.register_command(
+            WasiIpcCmd.CLOCK_GET_RES, lambda params: Result.ok(self.resolution_ns)
+        )
         self.register_command(WasiIpcCmd.CLOCK_SUBSCRIBE, self._subscribe)
 
     def advance(self, nanos: int) -> None:
         assert nanos >= 0 and self.now_ns + nanos <= 0xFFFF_FFFF_FFFF_FFFF
         self.now_ns += nanos
 
-    def _subscribe(self, params: ReadOnlyFlatMapView) -> int:
+    def _subscribe(self, params: ReadOnlyFlatMapView) -> Result[int, int]:
         nanos = required(params, ARG_NANOS) | required(params, ARG_NANOS_HI) << 32
         assert self.now_ns + nanos <= 0xFFFF_FFFF_FFFF_FFFF
-        return self.reserve(deadline=self.now_ns + nanos)
+        return Result.ok(self.reserve(deadline=self.now_ns + nanos))
 
-    def _check(self, params: ReadOnlyFlatMapView) -> int:
+    def _check(self, params: ReadOnlyFlatMapView) -> Result[int, int]:
         item = self.pollable(required(params, ARG_POLLABLE_HANDLE))
         item.ready = self.now_ns >= item.deadline
-        return int(item.ready)
+        return Result.ok(int(item.ready))
 
 
 @dataclass
@@ -459,8 +462,8 @@ def stub_platform(
         system = System()
         try:
             for uri, _, driver in selected:
-                driver.expected_task_id = system.start_hal_driver(driver, uri)
-            runtime = system.start_runtime_task(name="stub_driver_client")
+                driver.expected_task_id = system.start_hal_driver(driver, uri).unwrap()
+            runtime = system.start_runtime_task(name="stub_driver_client").unwrap()
             system.scheduler.current_task = runtime
             yield StubPlatform(system, drivers, Wasi03pEngine(system))
         finally:

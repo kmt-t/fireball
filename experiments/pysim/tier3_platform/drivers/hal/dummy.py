@@ -18,6 +18,8 @@ from tier2_runtime.hal.dispatch import (
     HalDriver,
     WasiIpcCmd,
 )
+from tier2_runtime.runtime.recovery import Result
+from tier2_runtime.syscall.hostcall import WasiErrno
 from tier3_platform.drivers.hal.stream import StreamTransport
 
 FB_CONF_HAL_MAX_POLLABLES = 16
@@ -48,7 +50,7 @@ class Timer:
     def get_now_ns(self) -> int:
         return time.monotonic_ns()
 
-    def subscribe(self, nanos: int) -> int:
+    def subscribe(self, nanos: int) -> Result[int, WasiErrno]:
         """Reserve one bounded one-shot pollable timer and return its generation handle."""
         assert nanos >= 0
         for slot_index, slot in enumerate(self._subscriptions):
@@ -57,8 +59,8 @@ class Timer:
                 slot.generation += 1
                 slot.deadline_ns = self.get_now_ns() + nanos
                 slot.active = True
-                return (slot.generation << _POLLABLE_SLOT_BITS) | slot_index
-        assert False, "HAL timer pollable capacity exceeded"
+                return Result.ok((slot.generation << _POLLABLE_SLOT_BITS) | slot_index)
+        return Result.err(WasiErrno.NOMEM)
 
     def is_ready(self, handle: int) -> bool:
         """Check a live subscription without changing its state."""
@@ -130,21 +132,21 @@ class DummyDriver(HalDriver):
         assert length is not None
         return self._buffer_pool.view_for_driver(handle, offset, length)
 
-    def _write_buffer(self, params: ReadOnlyFlatMapView) -> int:
+    def _write_buffer(self, params: ReadOnlyFlatMapView) -> Result[int, int]:
         view = self._buffer_view(params, ARG_LENGTH)
-        return self.transport.write(view)
+        return Result.ok(self.transport.write(view))
 
-    def _read_buffer(self, params: ReadOnlyFlatMapView) -> int:
+    def _read_buffer(self, params: ReadOnlyFlatMapView) -> Result[int, int]:
         view = self._buffer_view(params, ARG_MAX_LEN)
         data = self.transport.read_input(len(view))
         view[: len(data)] = data
-        return len(data)
+        return Result.ok(len(data))
 
-    def _flush(self, params: ReadOnlyFlatMapView) -> int:
-        return 0
+    def _flush(self, params: ReadOnlyFlatMapView) -> Result[int, int]:
+        return Result.ok(0)
 
-    def _close(self, params: ReadOnlyFlatMapView) -> int:
-        return 0
+    def _close(self, params: ReadOnlyFlatMapView) -> Result[int, int]:
+        return Result.ok(0)
 
     def get_monotonic_ns(self) -> int:
         return time.monotonic_ns() - self.start_time_ns
@@ -154,35 +156,35 @@ class DummyDriver(HalDriver):
         self.tick_count += count
         return self.tick_count
 
-    def _get_now(self, params: ReadOnlyFlatMapView) -> int:
-        return self.timer.get_now_ns()
+    def _get_now(self, params: ReadOnlyFlatMapView) -> Result[int, int]:
+        return Result.ok(self.timer.get_now_ns())
 
-    def _subscribe(self, params: ReadOnlyFlatMapView) -> int:
+    def _subscribe(self, params: ReadOnlyFlatMapView) -> Result[int, int]:
         nanos_low = params.find(ARG_NANOS)
         nanos_high = params.find(ARG_NANOS_HI)
         assert nanos_low is not None
         assert nanos_high is not None
         return self.timer.subscribe(nanos_low | (nanos_high << 32))
 
-    def _get_resolution(self, params: ReadOnlyFlatMapView) -> int:
+    def _get_resolution(self, params: ReadOnlyFlatMapView) -> Result[int, int]:
         resolution = time.get_clock_info("monotonic").resolution
-        return max(1, round(resolution * 1_000_000_000))
+        return Result.ok(max(1, round(resolution * 1_000_000_000)))
 
-    def _poll_check(self, params: ReadOnlyFlatMapView) -> int:
+    def _poll_check(self, params: ReadOnlyFlatMapView) -> Result[int, int]:
         handle = params.find(ARG_POLLABLE_HANDLE)
         assert handle is not None
-        return 1 if self.timer.is_ready(handle) else 0
+        return Result.ok(1 if self.timer.is_ready(handle) else 0)
 
-    def _poll_wait(self, params: ReadOnlyFlatMapView) -> int:
+    def _poll_wait(self, params: ReadOnlyFlatMapView) -> Result[int, int]:
         handle = params.find(ARG_POLLABLE_HANDLE)
         assert handle is not None
-        return 1 if self.timer.is_ready(handle) else 0
+        return Result.ok(1 if self.timer.is_ready(handle) else 0)
 
     def poll_wakeup_ns(self, handle: int) -> int:
         return self.timer.wakeup_ns(handle)
 
-    def _poll_drop(self, params: ReadOnlyFlatMapView) -> int:
+    def _poll_drop(self, params: ReadOnlyFlatMapView) -> Result[int, int]:
         handle = params.find(ARG_POLLABLE_HANDLE)
         assert handle is not None
         self.timer.drop(handle)
-        return 0
+        return Result.ok(0)

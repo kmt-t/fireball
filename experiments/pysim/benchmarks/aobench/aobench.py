@@ -412,7 +412,9 @@ def run_aobench():
 
     # 3. Setup System & WASI Context for the Interpreter baseline
     sysv = System()
-    sysv.start_hal_driver(DummyDriver(sysv.pool, transport=sysv.transport), FB_URI_HAL_STDOUT)
+    sysv.start_hal_driver(
+        DummyDriver(sysv.pool, transport=sysv.transport), FB_URI_HAL_STDOUT
+    ).unwrap()
     wasi_ctx = WasiHostContext(sysv)
     host_funcs = wasi_ctx.build_interpreter_host_functions(module)
     module.init_memory_data(wasi_ctx.guest_memory, ())
@@ -444,7 +446,7 @@ def run_aobench():
     sysv_t3 = System()
     sysv_t3.start_hal_driver(
         DummyDriver(sysv_t3.pool, transport=sysv_t3.transport), FB_URI_HAL_STDOUT
-    )
+    ).unwrap()
     wasi_ctx_t3 = WasiHostContext(sysv_t3)
     host_funcs_t3 = wasi_ctx_t3.build_interpreter_host_functions(module)
     module.init_memory_data(wasi_ctx_t3.guest_memory, ())
@@ -514,7 +516,7 @@ if __name__ == "__main__":
         sysv_float = System()
         sysv_float.start_hal_driver(
             DummyDriver(sysv_float.pool, transport=sysv_float.transport), FB_URI_HAL_STDOUT
-        )
+        ).unwrap()
         wasi_ctx_float = WasiHostContext(sysv_float)
         host_funcs_float = wasi_ctx_float.build_interpreter_host_functions(module_float)
         module_float.init_memory_data(wasi_ctx_float.guest_memory, ())

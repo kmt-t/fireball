@@ -279,7 +279,7 @@ def phase_os_mix(scale: float, kernels: list[str] | None, oracle: bool) -> Phase
     for wave in range(0, len(picked), OS_MIX_WAVE):
         members = picked[wave : wave + OS_MIX_WAVE]
         task_ids = [
-            sysv.scheduler.spawn(name, guest(wave + i, name, units))
+            sysv.scheduler.spawn(name, guest(wave + i, name, units)).unwrap()
             for i, (name, units) in enumerate(members)
         ]
         t0 = time.perf_counter()
@@ -322,7 +322,9 @@ def _ao_guest(phase: str):
     _, sink = _open_log(phase)
     sysv = System(printk_sink=sink)  # keep system logs out of the guest's stdout stream
     wasi_ctx = WasiHostContext(sysv)
-    sysv.start_hal_driver(DummyDriver(sysv.pool, transport=sysv.transport), FB_URI_HAL_STDOUT)
+    sysv.start_hal_driver(
+        DummyDriver(sysv.pool, transport=sysv.transport), FB_URI_HAL_STDOUT
+    ).unwrap()
     funcs = wasi_ctx.build_interpreter_host_functions(module)
     module.init_memory_data(wasi_ctx.guest_memory, ())
     bindings = InterpreterBindings.with_memory_and_functions(wasi_ctx.guest_memory, funcs)
@@ -426,8 +428,8 @@ def phase_ipc(scale: float, kernels: list[str] | None, oracle: bool) -> PhaseRes
             if received[0] % 8 == 0:
                 logger.flush()
 
-    sched.spawn("coos_receiver", consumer(), role=Role.CORE_SERVICE)
-    sched.spawn("client_app", producer(), role=Role.RUNTIME)
+    sched.spawn("coos_receiver", consumer(), role=Role.CORE_SERVICE).unwrap()
+    sched.spawn("client_app", producer(), role=Role.RUNTIME).unwrap()
     t0 = time.perf_counter()
     # One sweep runs ~1000 scheduler steps, so a large message count needs many sweeps.
     sched.run_to_completion(max_sweeps=OS_MIX_MAX_SWEEPS)

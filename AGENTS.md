@@ -18,7 +18,7 @@
 - 仕様の追加・改定・レビューでは、[仕様の必要性と既存機構の確認](.agents/skills/specification-review.md)を適用する。
 - 迷ったら `docs/plans/backlog_list.md` と `docs/plans/roadmap_phase.md` を確認する。
 - 仕様変更時は `docs/components/`、`docs/requires/` を必要に応じて更新し、形式検証モデル（`docs/components/<tier>/formal/`）を整合させる。
-- 仕様、計画、検証に触れる変更では、`docs/architecture/document_structure.md` に従って `{Keyword}` の紐付けを保つ。
+- 仕様、計画、検証に触れる変更では、`docs/architecture/document_structure.md` に従って、文書間の紐付け（definition と traceability）を保つ。
 - ルールの再掲は `GLOBAL` / `LOCAL` のスコープ差がある場合のみ意図的とみなす。
 
 ## 主要ルール
@@ -53,7 +53,7 @@
   - キーワードリスク評価: `powershell tools/risk.ps1`
   - 単体ドキュメントレビュー: `powershell tools/llm-single-review.ps1 -file <path>`
   - 高リスク島レビュー: `powershell tools/llm-keyword-review.ps1`
-  - `{VERIFY_LLM}` 義務の履行（Obligation Gate、判定をハッシュ固定してDB永続化）: `powershell tools/llm-judge.ps1`
+  - LLM 判定義務（VERIFY_LLM）の履行（Obligation Gate、判定をハッシュ固定してDB永続化）: `powershell tools/llm-judge.ps1`
 
 ## エージェント入口
 

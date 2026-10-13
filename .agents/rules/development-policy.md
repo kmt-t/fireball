@@ -20,7 +20,7 @@ Fireball の開発方針と作業順序を定める。
 - **Contract-First / Fail-Fast**: システム内部の契約違反を、早期return、処理のスキップ、既定値、再試行、暗黙のフォールバックで吸収する防衛的プログラミングを禁止する。責務を持つ境界で事前条件と不変条件を早期 `assert` により確定する。成立した契約を下流で再判定せず、有効な状態に必要な処理経路だけを残してコードを単純化する。外部入力の拒否、資源不足、I/Oの通常の失敗は契約違反と区別し、仕様で定めた結果を明示的な戻り値で伝播する。`assert` の式に必要な副作用を置かない。
 - **WASM実行系の失敗境界**: 不正なWASMバイナリの検証失敗と、WASM仕様上の実行エラーはtrapとして扱う。Interpreter・JIT・LoaderのホストAPI引数、設定、内部状態、所有権、バッファ範囲、実装環境の前提は契約とし、違反を責務境界の早期 `assert` で停止させる。内部の `AssertionError` を捕捉してWASMのtrapへ変換しない。cache miss、コンパイル対象外、バンク満杯など、仕様で定めた正常なアルゴリズム選択は失敗分類と分ける。
 - **Single-Pass Hot Path**: 同じ実行単位の検索、状態更新、走査を重複させない。ホットパスの分岐とコードキャッシュ書換えは実測で必要性を確認し、不要な処理経路を削除する。
-- **Strict Memory Policy `{GLOBAL_Policy_Memory}`**: `malloc` / `free` / `realloc` / `calloc` および通常の `new` / `delete` を禁止する。placement/in-place `new` と、プロジェクトで提供する独自ヒープ API・独自コンテナは許可する。標準の動的 STL コンテナは、システム提供アロケータを使用していても禁止する。
+- **Strict Memory Policy**: `malloc` / `free` / `realloc` / `calloc` および通常の `new` / `delete` を禁止する。placement/in-place `new` と、プロジェクトで提供する独自ヒープ API・独自コンテナは許可する。標準の動的 STL コンテナは、システム提供アロケータを使用していても禁止する。
 - **Code Size Constraint (20 KSLOC制約)**: 対象はターゲットへ組み込む C/C++ 製品コードとする。現時点のゲートは `inc/` と `src/` の作成済みファイルを計測する。pysim の Python とホスト native コードは別の参照実装として扱う。除外条件、計数方式、最終適合判定に必要なビルド構成は `docs/architecture/resource_budget_estimation.md` を正本とする。
 - **Rule Independence**: ルールに一時的な計測値やツールの内部実装を複製しない。変わり得る値は正本を参照する。
 
@@ -69,7 +69,7 @@ Fireball の開発方針と作業順序を定める。
 
 - 実装・仕様変更の着手時は `docs/plans/backlog_list.md` と `docs/plans/roadmap_phase.md` で作業の位置を確認する。
 - `Step 3` の着手前に、対象範囲で `Step 0-2` の仕様・テスト設計・形式検証・Gotchas 還元が整っているか確認する。欠落があれば補うか、未決事項を明示する。
-- 仕様・ドキュメント作成時は `.agents/rules/documentation-standards.md` を遵守し、上位要求とのトレーサビリティ `{Keyword}` を維持すること。
+- 仕様・ドキュメント作成時は `.agents/rules/documentation-standards.md` を遵守し、上位要求とのトレーサビリティを維持すること。
 - 不確実な仕様は憶測で埋めず、必要ならユーザーに質問すること。
 - `TODO(未決): [課題] [アクション]` を TODO 管理の基本形式とする。フェーズ番号（Phase 1 等）は `docs/plans/**` にのみ記述し、他の文書やコードには書かない。
 - 仕様と実装・形式モデル・テストにまたがる変更は、対応する層を同じ変更単位で整合させる。層間矛盾の観点は `.agents/rules/verification-antipatterns.md` を参照する。

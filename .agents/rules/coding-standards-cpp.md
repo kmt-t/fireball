@@ -22,7 +22,7 @@ scope: GLOBAL
 
 - **内部契約と処理経路**: [開発方針](development-policy.md)の `Contract-First / Fail-Fast` と「WASM実行系の失敗境界」を適用する。入口で契約を `assert` し、下流の重複したエラー分岐を削る。アサーションを無効化しても必要な状態更新が実行される構造とする。
 
-- **メモリ確保 API とコンテナの制約 `{GLOBAL_Policy_Memory}`**:
+- **メモリ確保 API とコンテナの制約**:
   - ヒープ確保関数（`malloc`, `free`, `realloc`, `calloc`）および通常の演算子（`new`, `new[]`, `delete`, `delete[]`）の使用を禁止する。
   - placement/in-place `new`（例: `::new (storage) T(...)`）は許可する。使用時は保存領域のサイズ、アラインメント、オブジェクト寿命、および破棄手順を保証する。
   - プロジェクトで提供する独自ヒープ API および独自コンテナは許可する。それらは各コンポーネントの仕様、所有権、容量、寿命、および失敗時挙動に従う。

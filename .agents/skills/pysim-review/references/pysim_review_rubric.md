@@ -82,7 +82,7 @@ pysim は「**通常の `new` / `delete`、`malloc` / `free` / `realloc` / `call
   - 成功・失敗の表現に `Result[T, Never]` や `Result[Never, E]` を活用し、`Any` や緩い Union を排除しているか。
 
 ### 2.3 set、dict、listを使っていないか (No Built-in Containers: set/dict/list)
-- **組み込みコンテナの完全禁止 (`{GLOBAL_Policy_Memory}`)**:
+- **組み込みコンテナの完全禁止**:
   - Python の素の `dict`、`set`、`list` が実行時データ構造（ルックアップ、テーブル、キャッシュ等）として使われていないか。リテラル、コンストラクタ、型注釈、内包表記も違反とする。
   - ただし `experiments/pysim/tier1_core/system_containers.py` のシステムコンテナ実装内部に限り、内部表現としての組み込みコンテナは設定で除外する。利用側コードの違反を免除するものではない。
   - 禁止された可変 `list` を可変 `tuple` の連結・再生成へ置き換えるだけの形式的対応も違反とする。構築中は固定容量システムコンテナ、不変化後だけ `tuple`/`bytes` とする。

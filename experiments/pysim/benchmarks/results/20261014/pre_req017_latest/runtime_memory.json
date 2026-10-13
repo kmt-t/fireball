@@ -1,0 +1,987 @@
+{
+  "measured_at_utc": "2026-10-13T16:30:57.239955+00:00",
+  "source_revision": "29dc47c9e0fb243ba30c73ea2c25f1febd9699be",
+  "source_worktree_modified": true,
+  "runtime_source_sha256": {
+    "__init__.py": "2b8295c400a7a95ae10112731aa147d04000e0a29593640dd965743ded4c2b58",
+    "main.py": "482b63f6421fbf8882f84af06ef659b4650d3bca3fa6a2b3964a51e228546df9",
+    "native/tier1_core/printk/build_native.sh": "6981fe9317ec3e307bca93f0e95db638d79c6d53858d2133ea6a8bce42537025",
+    "native/tier1_core/printk/printk.cxx": "d3a6bc5e2b00eb441f76f98a857027178de965fa4853af7e8ca600e9b2785c13",
+    "native/tier1_core/printk/printk.hxx": "3fc6723d3a49bd7d8615bea543994888c1202855f29a9ae64902d64172b755bd",
+    "native/tier2_runtime/interpreter/build_native.sh": "cbc4029561dccd6d85871609d511ad1e1186732ec87b5362574328532e95db6c",
+    "native/tier2_runtime/interpreter/native_interpreter.cxx": "000e30080076084ee375493c99155f6d61af950f7e67bd6bf8dee6436b207c1e",
+    "native/tier2_runtime/interpreter/native_interpreter_runtime.hxx": "42a42628279f23e15c8d2a5e4c7d82472364658b803c8b575e3294fce8bdcf0f",
+    "native/tier2_runtime/interpreter/native_wasm_operations.cxx": "fc5f9ba42b51515cc0d65a81eb6cabcab9a41367d468dc6af687bc71e8a451b3",
+    "native/tier2_runtime/interpreter/native_wasm_operations.hxx": "8a75ba20eec2fcb25c8cfa290bf2509625d885618477bd549a8efc04ac33b809",
+    "native/tier3_platform/libfireball/libfireball.hxx": "8c40723bbf6501eae10dc0d6747ed16b1bdce03d2ea60ab7b34c6af7b26f7c67",
+    "native/tier3_plugins/jit/build_native.sh": "72849bf6a890e2ebb19b44250387af05dc353e74addfdba12c794069038403a9",
+    "native/tier3_plugins/jit/common_code.cxx": "a14f140f8c122e3d3aac28c117135059943b8d6a5b2a8155774428baf10d8841",
+    "native/tier3_plugins/jit/common_code_abi.hxx": "9018533c4a4b1d90f8422f9f3acf0f31a2741754b452891fe949d776ebd3da87",
+    "native/tier3_plugins/jit/executable_memory.cxx": "4d533543de59e266605e8212263499297608270a414b5331034b3148e57a01da",
+    "native/tier3_plugins/jit/executable_memory_abi.hxx": "a26e6147e6cb5db100c0a22b8e885e9b6aba1e397e609ffd8a7b5db974f27b0b",
+    "native/tier3_plugins/jit/jit_internal.hxx": "3e6bd8a580b6b1914bc75191b2d60bb1adf36ec547699654c956f5f9876b343e",
+    "native/tier3_plugins/jit/jit_runtime.cxx": "d38cb3b2652055d11f5165b0527eb9c7613f4f86f6116f87a513fe287054ef67",
+    "native/tier3_plugins/jit/jit_runtime.hxx": "f2ed2abff31fe9f02150d406fd07f7373e97d3babd5da04fdd824bb82d59f54d",
+    "native/tier3_plugins/jit/jit_runtime_abi.hxx": "68dbd8d0078736afeda5c785eee30b2f919325d425c1c234b473d49d6db8d7ce",
+    "native/tier3_plugins/jit/jit_runtime_apis.cxx": "39fb3a1aa60bc71ad2a327c102b61b1c7f1ec5c12299f60e1bb87f944448ffa8",
+    "native/tier3_plugins/jit/jit_runtime_apis.hxx": "f59356fb3a8a6eea50d19e86c4db7df6862c8a9bd9c685be80558f30882f636d",
+    "native/tier3_plugins/jit/jit_types.hxx": "8f8ae9de6d22d8bc38cf92126453492e67c9182586bc8b2861716f366d188144",
+    "native/tier3_plugins/jit/profiling.cxx": "4e0360fadc6d9456460dfbbcfa3ef94b438665e11f4d881670b6e64246fd5bb1",
+    "native/tier3_plugins/jit/profiling.hxx": "ac928ea91d94a12cc7149e22488a487db1dd2a895b159f48aa88293587f85d7a",
+    "native/tier3_plugins/jit/stencils_x64.hxx": "6957560d7dad8896eb6863f70ca21fa8f4ecff33a802232e31de48519c037cb5",
+    "native/tier3_plugins/jit/trace_compiler.cxx": "6f2123123c981e734cc27b5baefbb91605740884c1857485dfbbcd8ee48df1bb",
+    "native/tier3_plugins/jit/trace_compiler_abi.hxx": "18264c2605568252aeddcc31fbd1ed016c8e7bda4c24f7a92ba78d3e1a6c4eff",
+    "system.py": "bf6dc2dbe7a1ec0e40be92762266049ef394d9d404e5d0b1a3b68f9d29c163b4",
+    "tier1_core/__init__.py": "4e990d5be458f6688c26ee30e9b2baff016f20a0eea8d46b4d46ad00b1b78d28",
+    "tier1_core/bump_allocator.py": "35241775a79c0af57659388f682204093f9bd7c93d88f0c6f043a359f8f0ebf3",
+    "tier1_core/config.py": "f5d43150d199b8c065e0541463ce0a462bcf2c93268ed689c2e313b233be91b7",
+    "tier1_core/fnv1a.py": "8dcbbc61fbe86393e98a42e76317a72dd5b7d2ad7440abec174022de2908626c",
+    "tier1_core/interrupt_event.py": "00e8672cce9cba07c90c69d6f86b031bb4b6cf189f4e1c6c91405a9d3079db94",
+    "tier1_core/libprintk.so": "cf80471d13971db80a4326e1c3bc69f4115faea3305eb469e90f3a5928137224",
+    "tier1_core/native_buffer.py": "239cadc96a2f9e7ef4356a4fb8a4ce283765076d349eb02c3d38c9045614fc05",
+    "tier1_core/native_printk.py": "efa6427175a817acd3669728da8cbd7b8c2c19fc1db94bbd50c738b67d0bb2e7",
+    "tier1_core/printk.py": "8275ee678eb1f05e62578ef01b3e4afedc7373180c249485b874320358d9cb53",
+    "tier1_core/scheduler.py": "549174790da17e9c55b99a1de143c19102badeade3c71f5fce1da3ed77452fb6",
+    "tier1_core/system_containers.py": "ae44ccb7c1a9956f52c15fabf36c098a6d7c837d9ad6050d5e86683dc3dab222",
+    "tier1_interface/__init__.py": "1d18daae9bd0fc18eb48d8045bea0224c1fe2d46250ca7a1d914838551778b4f",
+    "tier1_interface/ipc_router.py": "97edafeec842eb1058003359c15717a62badcdceeebc2f166ff7bc2c35d383be",
+    "tier1_interface/memory_interface.py": "8c61d91865eab1cf4983b919628f537b5b8c52c2a550a864e21abfa1ba88e9fd",
+    "tier2_runtime/__init__.py": "dbbfed7445a542abf92cc840d9529ef1fa97b9a93d8023beb422d6d86cb7da1f",
+    "tier2_runtime/abi/__init__.py": "7d503558d2b751148d2af44ad4332eabbbbd9d549ef86e3364b5a02ee450edae",
+    "tier2_runtime/abi/integer_types.hxx": "391f2379fa6af74bcde57c2c4f899de9846f87ae89892611dd665855c65e1604",
+    "tier2_runtime/abi/integer_types.py": "8e9f2754d7a2e0f05513cf44bd6a6995c25d766fda4a53aee53a6ef913376269",
+    "tier2_runtime/abi/interpreter_abi.hxx": "d2851e53b245711392f8039bbffb1f926e3dee012f28bf3f4fbadb8b4bfb0053",
+    "tier2_runtime/abi/interpreter_abi.py": "633c44665d10bdb2a0e298687f977489f83dfe1ac9f8dd7610030e029c39c278",
+    "tier2_runtime/abi/native_abi.hxx": "139053e40b786b5bc2dd1612d301fb8109b7b7e20ea772d3e77b531ebaad226f",
+    "tier2_runtime/abi/native_abi.py": "98e265dcb611be0d7a86d8d19ceabd138ae6d38b13a1e4cebd6710433f526db1",
+    "tier2_runtime/abi/native_stack_abi.py": "7cb48452b28da283a2e2dbf5cb1446670d69fc595fb5efa55629c017efc64c87",
+    "tier2_runtime/hal/__init__.py": "25a666aa3c0b838af9111230d870844c99a8181f94807ad6a77d4386cecb3c77",
+    "tier2_runtime/hal/dispatch.py": "89cb39acee833a12174482d818e6ac7d7bb8c7b3dac012d8102fd0d91b6616d6",
+    "tier2_runtime/interpreter/__init__.py": "7f66de44ec95ea903d694690e14124c121f5f11d96f1393fbc1875270b8631b5",
+    "tier2_runtime/interpreter/control_flow.py": "3b18b91f7ddcbdcbf0533323497471ab8d30e5c6c1ebcdcbdc5fcd96c6695994",
+    "tier2_runtime/interpreter/errors.py": "925ca17bb4353a9660e6629cbc1c98ad8470bdfcc28bd9ec45273698efd13b99",
+    "tier2_runtime/interpreter/execution_context.py": "49d9afc6c39e48094eef3b83dd3d78288d89b30a4d7a162e5b265d148f6e9eba",
+    "tier2_runtime/interpreter/execution_plugin.py": "ba05d7b815aa7d1090d6f23b087aed769fb1d399885a745b9066a714f5e3dad9",
+    "tier2_runtime/interpreter/handlers.py": "d61cb253ff8061b6d5572852a3c1b60eb5e8ba100497da5a5a6ca3f5aec18b55",
+    "tier2_runtime/interpreter/interpreter.py": "113c3804fdd396aae881210cad359fa309a99464dc8f72c302edf824c8ac79d0",
+    "tier2_runtime/interpreter/libnative_interpreter.so": "589a5efc563f7de49da491303e7eceb5893fdf8ce21aaec06d332f92ef936b74",
+    "tier2_runtime/interpreter/utilities.py": "c998ee7adbefe602404f765312514a897b42dcfa2c62b0899b5a897e9fa278f8",
+    "tier2_runtime/memory/__init__.py": "6a8a5a73076c61836a785d47260156ad32a222bd4d9fbcb0329956a16abf60fe",
+    "tier2_runtime/memory/manager.py": "d524fc91530dc548b120605d6c3a17d0f9ec74cfc9d5861d3e2f69d32bb51a14",
+    "tier2_runtime/observability/__init__.py": "69cc81b72e4abe9020d72ac77644a352e24231e18b25be86c611d4d5889eda93",
+    "tier2_runtime/observability/events.py": "5c96cf8e766e53b797951f3f62cccd5c84b82e3388d4bc109b6e5c9462cf5799",
+    "tier2_runtime/observability/logger.py": "6d328df766477b9b52fbac643d12298f079c1efaa400646fdce4b740a5c55846",
+    "tier2_runtime/observability/logging_interface.py": "8a240b36ba258ccd4bac1657d4c41311fbbfd55e9adbef1424d758a775ddbc4a",
+    "tier2_runtime/runtime/__init__.py": "fa4bd76dc96af1ddc73f6748d26b392294462eafb734f1f29bfcdc353d3567f5",
+    "tier2_runtime/runtime/composer.py": "369817ce4682b465df4a90e761cc12b81bbe7381673f27d949fbf49a4a420895",
+    "tier2_runtime/runtime/engine.py": "dbd6c3fdb8c5655f155c62b1befa40b7a98b99ec50971bd0479326468f3adcb9",
+    "tier2_runtime/runtime/python_api.py": "5c2b3db1be5f25cad0675420f4001219d720b30414a3f61ec4c52eb46b4ef076",
+    "tier2_runtime/runtime/recovery.py": "cd2fdb61f5632a16e46caaa2e1c5140d39e65e45890499f10fc4036bc9b73a6c",
+    "tier2_runtime/syscall/__init__.py": "e06047079b0e590e15bfc46a3427cb84bf07a1bdd67753f32259d42e96c0e433",
+    "tier2_runtime/syscall/hostcall.py": "b7c90823032e961e4aa777a950464b1e8852d1429c4bac51df51d112afed6993",
+    "tier2_runtime/vmmio/__init__.py": "4602613421366ce273c86a870b97e8ecc486fde7ee0b0d84520761b25d141c22",
+    "tier2_runtime/vmmio/controller.py": "7d0954853113034e2b1266e53b733c93d369a0b45a20a6a239a840250d9c9a85",
+    "tier2_runtime/vsoc/__init__.py": "c9d6cba6e8ee9861137db7a135c7d362c50124617a8a3562bfdd4b0816cec8f2",
+    "tier2_runtime/vsoc/virq.py": "2e0c5863af8f99e45ecc5b7658483e66e40698cab0d1b5f7cbe457aeaa48c9ea",
+    "tier2_runtime/wasm/__init__.py": "f79c4ca12ce71de0442d4819ed4104c1154d9798eb8ee42d72413036ebb8c80c",
+    "tier2_runtime/wasm/binary.py": "3959f0a686a9400643a696c77b75aa28db974456a99169885ab856949fd1cbbf",
+    "tier2_runtime/wasm/builder.py": "6c644de17c1c0542da01419f23bf0755332fd2e20960d4a6933ab449a4158db6",
+    "tier2_runtime/wasm/leb128.py": "71c4142722ca69bd1b921751fe77bcb1230975726e24aa3f29617581b44dff83",
+    "tier2_runtime/wasm/module.py": "97e09910cb2bb92ba0e2272ebde561f5460861fa6cbd69762eba3a40ff599973",
+    "tier2_runtime/wasm/opcodes.py": "9cb404b11f75fb29d49c193d74427595a7673591d694fea7e87795fe359a8b4e",
+    "tier2_runtime/wasm/reader.py": "4e0154f3b86a3e28dcdbf0330d5965ee6c6cff0b74a4d8d1a58bb8bea267f944",
+    "tier2_runtime/wasm/validation.py": "2ba8d2b58a63220d1e6d35eaef9dcdec973074b92473ff1e6ebe04542c945ada",
+    "tier3_platform/__init__.py": "357b8886adccf56f2999c0105ed178036d182178cb01965175551ac450d1d103",
+    "tier3_platform/drivers/__init__.py": "b879ece36ec5721937f67e6201d7452967cb6adc7726cede85c4afd7d705ba10",
+    "tier3_platform/drivers/debugger/__init__.py": "cfdf64e5135273f7ae2893f17afd78bfd9b8c0ceecae7277e60efe9a280bb1f6",
+    "tier3_platform/drivers/debugger/transport.py": "627ea839046b572840d0a2714999893b08a94bdc7486ac4b7bf23d4e4afdf6e6",
+    "tier3_platform/drivers/hal/__init__.py": "e548ee76cdac5990b6fe1131c52f8462d18debbff254885a17f6331c173c613c",
+    "tier3_platform/drivers/hal/dummy.py": "63bb1f274dd921a7320c98e4562f1de752658b9830464e3aa6c001b24f10a3d7",
+    "tier3_platform/drivers/hal/stream.py": "43f9fb4ffb22e5e301c57b576d143df0518f3633213ef8d261ace9a6a5b1d97f",
+    "tier3_platform/drivers/logging/__init__.py": "10f8c6c61561a8a04e03b6f2c9bbdc88404d0b5ce9f5abc54ebbb0beebaeb212",
+    "tier3_platform/drivers/logging/file_sink.py": "271d119d11ab35f0499216cd55fb37c94e1baf4a74db1305000a0e2c5c8ef55a",
+    "tier3_platform/drivers/platform_config.py": "21f5f7bedde1e1254052ba7cba01adadf156b1dbe3cf092064a4aff795ff2235",
+    "tier3_platform/drivers/printk.py": "b9aee2a5625a5dafd4ac4ac2081cad913696c07bf9925377be4f721afa044ea2",
+    "tier3_platform/drivers/wasi/__init__.py": "f22bd9e76234a333ea84f55eb135e9a5274d1169b45d9024395c835ebe2a78ba",
+    "tier3_platform/drivers/wasi/context.py": "af4b22081ad97f2b3c61b273a3a345b2289dfd4310c6154afa27ce0f8b4c9c46",
+    "tier3_platform/drivers/wasi/uvwasi.py": "1a84f13b9572914b11772cad516bea24683cf82721c392a2313ed7b3cdcfc024",
+    "tier3_platform/libfireball.py": "1e0e3e0c7d491f9846a010230165e3bde9eb90b2b2f90a27d907c02a4bec778a",
+    "tier3_plugins/__init__.py": "2f9988c91457b787d6c20e77c716529794822f77f7cde1fbc31af14def1939c4",
+    "tier3_plugins/debugger/__init__.py": "f7f5f531063817a4d58ec09b7b47179d758b0db90506d9502eb1491867841a73",
+    "tier3_plugins/debugger/debugger.py": "741015749658d34b8719159d775ac6d83d7cfdf68a405e11491965a11658b346",
+    "tier3_plugins/debugger/gdb_server.py": "34e18ec6c0bb8d2961d91e4ac7eef5302e4bc7023debc0df2359839343f7194b",
+    "tier3_plugins/jit/__init__.py": "e5ea8dbb981b837dd70a9736bf8692d7ac18a5d0e781595ee7afd594576e35eb",
+    "tier3_plugins/jit/jit_manager.py": "2d02f19f43014933e5201a5903c5e37ec7fd88c9c6cbe9023e2a1d38ee8d7c66",
+    "tier3_plugins/jit/libtrace_compiler.so": "ebd2aa9c4b4e5a6cf311c207e5030e74699c29e072e738752050c22ee0863a66",
+    "tier3_plugins/jit/native_abi.py": "f49b37135a1abc118d100a7886499a6546792a3c86420ffea10bf9199ebf1d40",
+    "tier3_plugins/logger/__init__.py": "e3b1ccf917e2925cf73ef9cb8965b3c80a5baadecc256ec7dc49dab30daae2e6",
+    "tier3_plugins/logger/logger.py": "3edbd1dc96b9073c98879d8b8af4e67ae895cb34b0fd3e5952b074c8ff134098",
+    "tier3_plugins/profiler/__init__.py": "acd1a7c574d25174bff1dc6a221fd9c452a430b9030391b09f24e7bf88548049",
+    "tier3_plugins/profiler/aggregate.py": "5310c9d2035f113f7364e83c7516e275cbd415a53c38de49b20bbe941e0486e7",
+    "tier3_plugins/profiler/guest_profiler.py": "ec24dcf8f80cb9e8d70fd8957a157be4caeebf8ae23a125927577ba003de7a86"
+  },
+  "measurement_model": "reference loader charges + host-native ctypes ABI",
+  "jit_compile_scratch_accounting": "compile_one_candidate scratch and emitter arrays are included in native stack frames; resident code is included in the executable region",
+  "jit_measurement_path": "product RuntimeEngine and JITRuntimeManager with measured region_provider; no QA dispatcher in memory measurements",
+  "jit_execution_validation_path": "separate QA RuntimeStatsEngine and diagnostic interpreter dispatcher; excluded from product memory/ROM totals",
+  "jit_execution_validation": [
+    {
+      "workload": "arithmetic",
+      "jit_invocations": 5875,
+      "wasm_sha256": "6d8b0656e9b3a82ba90ba2f2e902aed849a624a6129ab03c2213206a1604f8cb",
+      "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "workload": "indirect_calls",
+      "jit_invocations": 711,
+      "wasm_sha256": "feb4dc2d346ac58b120fa3951a2a144994125f0674ed4875b78a7d2f1476720b",
+      "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "workload": "kernel_suite",
+      "jit_invocations": 2945,
+      "wasm_sha256": "15be324af0ae7708c3b25515b88173fb52a02dd750b1518a5f69704ea23511f6",
+      "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "workload": "aobench",
+      "jit_invocations": 160850,
+      "wasm_sha256": "9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9",
+      "output_sha256": "5cd38f158314486141e032776845b8eabba32e3be1699b3b382ba92c80bba47e"
+    }
+  ],
+  "execution_observer_sha256": {
+    "qa/shared/runtime_stats.py": "28161e74613ebd1679f92f50a3035d7a642b77bee1146f97d7d5fc4a1bb1edb1",
+    "qa/private/interpreter_native_abi.py": "d15c2de62909d454bd3f1781141376d4dd85d927493f5d7cf08e1a5a7c95c107",
+    "qa/private/libinterpreter_probe.so": "f2a97f75fd4aaf3100ba3b1d6a347e3a8d5c24343bfb043ebb1b626ffa9cdb70"
+  },
+  "plugin_region_includes": [
+    "native JitRuntime with execution extension and fixed history/trace/cache arrays",
+    "packed card state, dirty and candidate masks",
+    "host executable-page alignment padding",
+    "JIT executable code region (not additive)"
+  ],
+  "host_machine": "x86_64",
+  "host_pointer_bytes": 8,
+  "python_version": "3.13.15",
+  "arena_capacity_bytes": 131072,
+  "allocator_workspace_directory_bytes": 1344,
+  "calls_per_mode": 3,
+  "measurement_script_sha256": "558d56284f06aa63878432a26bb56fbe79339bd5b40b1258d514d138ad71fb4e",
+  "allocator_sha256": "35241775a79c0af57659388f682204093f9bd7c93d88f0c6f043a359f8f0ebf3",
+  "config_sha256": "f5d43150d199b8c065e0541463ce0a462bcf2c93268ed689c2e313b233be91b7",
+  "excluded": [
+    "Python heap/RSS",
+    "Python adapter objects",
+    "QA-only block/profile/snapshot buffers and QA JIT instrumentation",
+    "system/IPC/COOS pools",
+    "OS/IRQ/native machine stack",
+    "target ROM text/rodata"
+  ],
+  "measurements": [
+    {
+      "workload": "arithmetic",
+      "mode": "native",
+      "wasm_sha256": "6d8b0656e9b3a82ba90ba2f2e902aed849a624a6129ab03c2213206a1604f8cb",
+      "wasm_source_bytes": 83,
+      "functions": 1,
+      "basic_blocks": 7,
+      "load_bytes": 390,
+      "instantiated_bytes": 390,
+      "after_call_bytes": [
+        3184,
+        3184,
+        3184
+      ],
+      "arena_peak_bytes": 3184,
+      "alignment_padding_bytes": 3,
+      "guest_linear_memory_bytes": 0,
+      "jit_executable_region_bytes": 0,
+      "result_words": [
+        499500
+      ],
+      "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "jit_invocations": null,
+      "allocation_totals": [
+        {
+          "phase": "call_1",
+          "origin": "ExecutionContext.__init__",
+          "allocations": 1,
+          "payload_bytes": 2616,
+          "padding_bytes": 2
+        },
+        {
+          "phase": "call_1",
+          "origin": "NativeModuleExecution.__init__",
+          "allocations": 3,
+          "payload_bytes": 176,
+          "padding_bytes": 0
+        },
+        {
+          "phase": "load",
+          "origin": "BasicBlockStorage.__init__",
+          "allocations": 1,
+          "payload_bytes": 224,
+          "padding_bytes": 0
+        },
+        {
+          "phase": "load",
+          "origin": "FuncTypeStorage.__init__",
+          "allocations": 1,
+          "payload_bytes": 16,
+          "padding_bytes": 0
+        },
+        {
+          "phase": "load",
+          "origin": "InterpreterAnnotationPool.__init__",
+          "allocations": 1,
+          "payload_bytes": 74,
+          "padding_bytes": 0
+        },
+        {
+          "phase": "load",
+          "origin": "LocalLayout.__init__",
+          "allocations": 1,
+          "payload_bytes": 12,
+          "padding_bytes": 1
+        },
+        {
+          "phase": "load",
+          "origin": "Module.configure_section_capacities",
+          "allocations": 5,
+          "payload_bytes": 56,
+          "padding_bytes": 0
+        },
+        {
+          "phase": "load",
+          "origin": "_parse_code_section",
+          "allocations": 1,
+          "payload_bytes": 3,
+          "padding_bytes": 0
+        },
+        {
+          "phase": "load",
+          "origin": "_parse_function_section",
+          "allocations": 1,
+          "payload_bytes": 4,
+          "padding_bytes": 0
+        }
+      ],
+      "plugin_region_requests": [],
+      "plugin_region_bytes": 0
+    },
+    {
+      "workload": "arithmetic",
+      "mode": "hybrid",
+      "wasm_sha256": "6d8b0656e9b3a82ba90ba2f2e902aed849a624a6129ab03c2213206a1604f8cb",
+      "wasm_source_bytes": 83,
+      "functions": 1,
+      "basic_blocks": 7,
+      "load_bytes": 390,
+      "instantiated_bytes": 390,
+      "after_call_bytes": [
+        3184,
+        3184,
+        3184
+      ],
+      "arena_peak_bytes": 3184,
+      "alignment_padding_bytes": 3,
+      "guest_linear_memory_bytes": 0,
+      "jit_executable_region_bytes": 8192,
+      "result_words": [
+        499500
+      ],
+      "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "jit_invocations": null,
+      "allocation_totals": [
+        {
+          "phase": "call_1",
+          "origin": "ExecutionContext.__init__",
+          "allocations": 1,
+          "payload_bytes": 2616,
+          "padding_bytes": 2
+        },
+        {
+          "phase": "call_1",
+          "origin": "NativeModuleExecution.__init__",
+          "allocations": 3,
+          "payload_bytes": 176,
+          "padding_bytes": 0
+        },
+        {
+          "phase": "load",
+          "origin": "BasicBlockStorage.__init__",
+          "allocations": 1,
+          "payload_bytes": 224,
+          "padding_bytes": 0
+        },
+        {
+          "phase": "load",
+          "origin": "FuncTypeStorage.__init__",
+          "allocations": 1,
+          "payload_bytes": 16,
+          "padding_bytes": 0
+        },
+        {
+          "phase": "load",
+          "origin": "InterpreterAnnotationPool.__init__",
+          "allocations": 1,
+          "payload_bytes": 74,
+          "padding_bytes": 0
+        },
+        {
+          "phase": "load",
+          "origin": "LocalLayout.__init__",
+          "allocations": 1,
+          "payload_bytes": 12,
+          "padding_bytes": 1
+        },
+        {
+          "phase": "load",
+          "origin": "Module.configure_section_capacities",
+          "allocations": 5,
+          "payload_bytes": 56,
+          "padding_bytes": 0
+        },
+        {
+          "phase": "load",
+          "origin": "_parse_code_section",
+          "allocations": 1,
+          "payload_bytes": 3,
+          "padding_bytes": 0
+        },
+        {
+          "phase": "load",
+          "origin": "_parse_function_section",
+          "allocations": 1,
+          "payload_bytes": 4,
+          "padding_bytes": 0
+        }
+      ],
+      "plugin_region_requests": [
+        {
+          "size_bytes": 12288,
+          "alignment_bytes": 4096
+        }
+      ],
+      "plugin_region_bytes": 12288
+    },
+    {
+      "workload": "indirect_calls",
+      "mode": "native",
+      "wasm_sha256": "feb4dc2d346ac58b120fa3951a2a144994125f0674ed4875b78a7d2f1476720b",
+      "wasm_source_bytes": 337,
+      "functions": 4,
+      "basic_blocks": 24,
+      "load_bytes": 1263,
+      "instantiated_bytes": 1268,
+      "after_call_bytes": [
+        4296,
+        4296,
+        4296
+      ],
+      "arena_peak_bytes": 4296,
+      "alignment_padding_bytes": 13,
+      "guest_linear_memory_bytes": 0,
+      "jit_executable_region_bytes": 0,
+      "result_words": [
+        5050
+      ],
+      "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "jit_invocations": null,
+      "allocation_totals": [
+        {
+          "phase": "call_1",
+          "origin": "ExecutionContext.__init__",
+          "allocations": 1,
+          "payload_bytes": 2616,
+          "padding_bytes": 4
+        },
+        {
+          "phase": "call_1",
+          "origin": "NativeModuleExecution.__init__",
+          "allocations": 3,
+          "payload_bytes": 408,
+          "padding_bytes": 0
+        },
+        {
+          "phase": "instantiate",
+          "origin": "CtypesU32Buffer.__init__",
+          "allocations": 1,
+          "payload_bytes": 4,
+          "padding_bytes": 1
+        },
+        {
+          "phase": "load",
+          "origin": "BasicBlockStorage.__init__",
+          "allocations": 1,
+          "payload_bytes": 768,
+          "padding_bytes": 1
+        },
+        {
+          "phase": "load",
+          "origin": "FuncTypeStorage.__init__",
+          "allocations": 1,
+          "payload_bytes": 16,
+          "padding_bytes": 0
+        },
+        {
+          "phase": "load",
+          "origin": "InterpreterAnnotationPool.__init__",
+          "allocations": 4,
+          "payload_bytes": 199,
+          "padding_bytes": 0
+        },
+        {
+          "phase": "load",
+          "origin": "LocalLayout.__init__",
+          "allocations": 4,
+          "payload_bytes": 30,
+          "padding_bytes": 3
+        },
+        {
+          "phase": "load",
+          "origin": "Module.configure_section_capacities",
+          "allocations": 5,
+          "payload_bytes": 220,
+          "padding_bytes": 0
+        },
+        {
+          "phase": "load",
+          "origin": "_parse_code_section",
+          "allocations": 4,
+          "payload_bytes": 6,
+          "padding_bytes": 4
+        },
+        {
+          "phase": "load",
+          "origin": "_parse_function_section",
+          "allocations": 1,
+          "payload_bytes": 16,
+          "padding_bytes": 0
+        }
+      ],
+      "plugin_region_requests": [],
+      "plugin_region_bytes": 0
+    },
+    {
+      "workload": "indirect_calls",
+      "mode": "hybrid",
+      "wasm_sha256": "feb4dc2d346ac58b120fa3951a2a144994125f0674ed4875b78a7d2f1476720b",
+      "wasm_source_bytes": 337,
+      "functions": 4,
+      "basic_blocks": 24,
+      "load_bytes": 1263,
+      "instantiated_bytes": 1268,
+      "after_call_bytes": [
+        4296,
+        4296,
+        4296
+      ],
+      "arena_peak_bytes": 4296,
+      "alignment_padding_bytes": 13,
+      "guest_linear_memory_bytes": 0,
+      "jit_executable_region_bytes": 8192,
+      "result_words": [
+        5050
+      ],
+      "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "jit_invocations": null,
+      "allocation_totals": [
+        {
+          "phase": "call_1",
+          "origin": "ExecutionContext.__init__",
+          "allocations": 1,
+          "payload_bytes": 2616,
+          "padding_bytes": 4
+        },
+        {
+          "phase": "call_1",
+          "origin": "NativeModuleExecution.__init__",
+          "allocations": 3,
+          "payload_bytes": 408,
+          "padding_bytes": 0
+        },
+        {
+          "phase": "instantiate",
+          "origin": "CtypesU32Buffer.__init__",
+          "allocations": 1,
+          "payload_bytes": 4,
+          "padding_bytes": 1
+        },
+        {
+          "phase": "load",
+          "origin": "BasicBlockStorage.__init__",
+          "allocations": 1,
+          "payload_bytes": 768,
+          "padding_bytes": 1
+        },
+        {
+          "phase": "load",
+          "origin": "FuncTypeStorage.__init__",
+          "allocations": 1,
+          "payload_bytes": 16,
+          "padding_bytes": 0
+        },
+        {
+          "phase": "load",
+          "origin": "InterpreterAnnotationPool.__init__",
+          "allocations": 4,
+          "payload_bytes": 199,
+          "padding_bytes": 0
+        },
+        {
+          "phase": "load",
+          "origin": "LocalLayout.__init__",
+          "allocations": 4,
+          "payload_bytes": 30,
+          "padding_bytes": 3
+        },
+        {
+          "phase": "load",
+          "origin": "Module.configure_section_capacities",
+          "allocations": 5,
+          "payload_bytes": 220,
+          "padding_bytes": 0
+        },
+        {
+          "phase": "load",
+          "origin": "_parse_code_section",
+          "allocations": 4,
+          "payload_bytes": 6,
+          "padding_bytes": 4
+        },
+        {
+          "phase": "load",
+          "origin": "_parse_function_section",
+          "allocations": 1,
+          "payload_bytes": 16,
+          "padding_bytes": 0
+        }
+      ],
+      "plugin_region_requests": [
+        {
+          "size_bytes": 12288,
+          "alignment_bytes": 4096
+        }
+      ],
+      "plugin_region_bytes": 12288
+    },
+    {
+      "workload": "kernel_suite",
+      "mode": "native",
+      "wasm_sha256": "15be324af0ae7708c3b25515b88173fb52a02dd750b1518a5f69704ea23511f6",
+      "wasm_source_bytes": 15316,
+      "functions": 28,
+      "basic_blocks": 885,
+      "load_bytes": 51911,
+      "instantiated_bytes": 51956,
+      "after_call_bytes": [
+        56712,
+        56712,
+        56712
+      ],
+      "arena_peak_bytes": 56712,
+      "alignment_padding_bytes": 51,
+      "guest_linear_memory_bytes": 65536,
+      "jit_executable_region_bytes": 0,
+      "result_words": [
+        1440420896
+      ],
+      "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "jit_invocations": null,
+      "allocation_totals": [
+        {
+          "phase": "call_1",
+          "origin": "ExecutionContext.__init__",
+          "allocations": 1,
+          "payload_bytes": 2616,
+          "padding_bytes": 4
+        },
+        {
+          "phase": "call_1",
+          "origin": "NativeModuleExecution.__init__",
+          "allocations": 3,
+          "payload_bytes": 2136,
+          "padding_bytes": 0
+        },
+        {
+          "phase": "instantiate",
+          "origin": "CtypesU32Buffer.__init__",
+          "allocations": 1,
+          "payload_bytes": 36,
+          "padding_bytes": 0
+        },
+        {
+          "phase": "instantiate",
+          "origin": "NativeGlobalStorage.__init__",
+          "allocations": 1,
+          "payload_bytes": 8,
+          "padding_bytes": 1
+        },
+        {
+          "phase": "load",
+          "origin": "BasicBlockStorage.__init__",
+          "allocations": 1,
+          "payload_bytes": 28320,
+          "padding_bytes": 1
+        },
+        {
+          "phase": "load",
+          "origin": "FuncTypeStorage.__init__",
+          "allocations": 1,
+          "payload_bytes": 32,
+          "padding_bytes": 0
+        },
+        {
+          "phase": "load",
+          "origin": "InterpreterAnnotationPool.__init__",
+          "allocations": 28,
+          "payload_bytes": 20822,
+          "padding_bytes": 0
+        },
+        {
+          "phase": "load",
+          "origin": "LocalLayout.__init__",
+          "allocations": 28,
+          "payload_bytes": 861,
+          "padding_bytes": 14
+        },
+        {
+          "phase": "load",
+          "origin": "Module.build_native_global_widths",
+          "allocations": 1,
+          "payload_bytes": 1,
+          "padding_bytes": 0
+        },
+        {
+          "phase": "load",
+          "origin": "Module.configure_section_capacities",
+          "allocations": 5,
+          "payload_bytes": 1456,
+          "padding_bytes": 0
+        },
+        {
+          "phase": "load",
+          "origin": "_parse_code_section",
+          "allocations": 28,
+          "payload_bytes": 261,
+          "padding_bytes": 31
+        },
+        {
+          "phase": "load",
+          "origin": "_parse_function_section",
+          "allocations": 1,
+          "payload_bytes": 112,
+          "padding_bytes": 0
+        }
+      ],
+      "plugin_region_requests": [],
+      "plugin_region_bytes": 0
+    },
+    {
+      "workload": "kernel_suite",
+      "mode": "hybrid",
+      "wasm_sha256": "15be324af0ae7708c3b25515b88173fb52a02dd750b1518a5f69704ea23511f6",
+      "wasm_source_bytes": 15316,
+      "functions": 28,
+      "basic_blocks": 885,
+      "load_bytes": 51911,
+      "instantiated_bytes": 51956,
+      "after_call_bytes": [
+        56712,
+        56712,
+        56712
+      ],
+      "arena_peak_bytes": 56712,
+      "alignment_padding_bytes": 51,
+      "guest_linear_memory_bytes": 65536,
+      "jit_executable_region_bytes": 8192,
+      "result_words": [
+        1440420896
+      ],
+      "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "jit_invocations": null,
+      "allocation_totals": [
+        {
+          "phase": "call_1",
+          "origin": "ExecutionContext.__init__",
+          "allocations": 1,
+          "payload_bytes": 2616,
+          "padding_bytes": 4
+        },
+        {
+          "phase": "call_1",
+          "origin": "NativeModuleExecution.__init__",
+          "allocations": 3,
+          "payload_bytes": 2136,
+          "padding_bytes": 0
+        },
+        {
+          "phase": "instantiate",
+          "origin": "CtypesU32Buffer.__init__",
+          "allocations": 1,
+          "payload_bytes": 36,
+          "padding_bytes": 0
+        },
+        {
+          "phase": "instantiate",
+          "origin": "NativeGlobalStorage.__init__",
+          "allocations": 1,
+          "payload_bytes": 8,
+          "padding_bytes": 1
+        },
+        {
+          "phase": "load",
+          "origin": "BasicBlockStorage.__init__",
+          "allocations": 1,
+          "payload_bytes": 28320,
+          "padding_bytes": 1
+        },
+        {
+          "phase": "load",
+          "origin": "FuncTypeStorage.__init__",
+          "allocations": 1,
+          "payload_bytes": 32,
+          "padding_bytes": 0
+        },
+        {
+          "phase": "load",
+          "origin": "InterpreterAnnotationPool.__init__",
+          "allocations": 28,
+          "payload_bytes": 20822,
+          "padding_bytes": 0
+        },
+        {
+          "phase": "load",
+          "origin": "LocalLayout.__init__",
+          "allocations": 28,
+          "payload_bytes": 861,
+          "padding_bytes": 14
+        },
+        {
+          "phase": "load",
+          "origin": "Module.build_native_global_widths",
+          "allocations": 1,
+          "payload_bytes": 1,
+          "padding_bytes": 0
+        },
+        {
+          "phase": "load",
+          "origin": "Module.configure_section_capacities",
+          "allocations": 5,
+          "payload_bytes": 1456,
+          "padding_bytes": 0
+        },
+        {
+          "phase": "load",
+          "origin": "_parse_code_section",
+          "allocations": 28,
+          "payload_bytes": 261,
+          "padding_bytes": 31
+        },
+        {
+          "phase": "load",
+          "origin": "_parse_function_section",
+          "allocations": 1,
+          "payload_bytes": 112,
+          "padding_bytes": 0
+        }
+      ],
+      "plugin_region_requests": [
+        {
+          "size_bytes": 12288,
+          "alignment_bytes": 4096
+        }
+      ],
+      "plugin_region_bytes": 12288
+    },
+    {
+      "workload": "aobench",
+      "mode": "native",
+      "wasm_sha256": "9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9",
+      "wasm_source_bytes": 1441,
+      "functions": 7,
+      "basic_blocks": 107,
+      "load_bytes": 5741,
+      "instantiated_bytes": 5741,
+      "after_call_bytes": [
+        8968,
+        8968,
+        8968
+      ],
+      "arena_peak_bytes": 8968,
+      "alignment_padding_bytes": 6,
+      "guest_linear_memory_bytes": 65536,
+      "jit_executable_region_bytes": 0,
+      "result_words": [
+        528
+      ],
+      "output_sha256": "5cd38f158314486141e032776845b8eabba32e3be1699b3b382ba92c80bba47e",
+      "jit_invocations": null,
+      "allocation_totals": [
+        {
+          "phase": "call_1",
+          "origin": "ExecutionContext.__init__",
+          "allocations": 1,
+          "payload_bytes": 2616,
+          "padding_bytes": 3
+        },
+        {
+          "phase": "call_1",
+          "origin": "NativeModuleExecution.__init__",
+          "allocations": 3,
+          "payload_bytes": 608,
+          "padding_bytes": 0
+        },
+        {
+          "phase": "load",
+          "origin": "BasicBlockStorage.__init__",
+          "allocations": 1,
+          "payload_bytes": 3424,
+          "padding_bytes": 0
+        },
+        {
+          "phase": "load",
+          "origin": "FuncTypeStorage.__init__",
+          "allocations": 1,
+          "payload_bytes": 80,
+          "padding_bytes": 0
+        },
+        {
+          "phase": "load",
+          "origin": "InterpreterAnnotationPool.__init__",
+          "allocations": 6,
+          "payload_bytes": 1729,
+          "padding_bytes": 0
+        },
+        {
+          "phase": "load",
+          "origin": "LocalLayout.__init__",
+          "allocations": 6,
+          "payload_bytes": 150,
+          "padding_bytes": 0
+        },
+        {
+          "phase": "load",
+          "origin": "Module.configure_section_capacities",
+          "allocations": 5,
+          "payload_bytes": 304,
+          "padding_bytes": 0
+        },
+        {
+          "phase": "load",
+          "origin": "_parse_code_section",
+          "allocations": 6,
+          "payload_bytes": 27,
+          "padding_bytes": 3
+        },
+        {
+          "phase": "load",
+          "origin": "_parse_function_section",
+          "allocations": 1,
+          "payload_bytes": 24,
+          "padding_bytes": 0
+        }
+      ],
+      "plugin_region_requests": [],
+      "plugin_region_bytes": 0
+    },
+    {
+      "workload": "aobench",
+      "mode": "hybrid",
+      "wasm_sha256": "9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9",
+      "wasm_source_bytes": 1441,
+      "functions": 7,
+      "basic_blocks": 107,
+      "load_bytes": 5741,
+      "instantiated_bytes": 5741,
+      "after_call_bytes": [
+        8968,
+        8968,
+        8968
+      ],
+      "arena_peak_bytes": 8968,
+      "alignment_padding_bytes": 6,
+      "guest_linear_memory_bytes": 65536,
+      "jit_executable_region_bytes": 8192,
+      "result_words": [
+        528
+      ],
+      "output_sha256": "5cd38f158314486141e032776845b8eabba32e3be1699b3b382ba92c80bba47e",
+      "jit_invocations": null,
+      "allocation_totals": [
+        {
+          "phase": "call_1",
+          "origin": "ExecutionContext.__init__",
+          "allocations": 1,
+          "payload_bytes": 2616,
+          "padding_bytes": 3
+        },
+        {
+          "phase": "call_1",
+          "origin": "NativeModuleExecution.__init__",
+          "allocations": 3,
+          "payload_bytes": 608,
+          "padding_bytes": 0
+        },
+        {
+          "phase": "load",
+          "origin": "BasicBlockStorage.__init__",
+          "allocations": 1,
+          "payload_bytes": 3424,
+          "padding_bytes": 0
+        },
+        {
+          "phase": "load",
+          "origin": "FuncTypeStorage.__init__",
+          "allocations": 1,
+          "payload_bytes": 80,
+          "padding_bytes": 0
+        },
+        {
+          "phase": "load",
+          "origin": "InterpreterAnnotationPool.__init__",
+          "allocations": 6,
+          "payload_bytes": 1729,
+          "padding_bytes": 0
+        },
+        {
+          "phase": "load",
+          "origin": "LocalLayout.__init__",
+          "allocations": 6,
+          "payload_bytes": 150,
+          "padding_bytes": 0
+        },
+        {
+          "phase": "load",
+          "origin": "Module.configure_section_capacities",
+          "allocations": 5,
+          "payload_bytes": 304,
+          "padding_bytes": 0
+        },
+        {
+          "phase": "load",
+          "origin": "_parse_code_section",
+          "allocations": 6,
+          "payload_bytes": 27,
+          "padding_bytes": 3
+        },
+        {
+          "phase": "load",
+          "origin": "_parse_function_section",
+          "allocations": 1,
+          "payload_bytes": 24,
+          "padding_bytes": 0
+        }
+      ],
+      "plugin_region_requests": [
+        {
+          "size_bytes": 12288,
+          "alignment_bytes": 4096
+        }
+      ],
+      "plugin_region_bytes": 12288
+    }
+  ]
+}

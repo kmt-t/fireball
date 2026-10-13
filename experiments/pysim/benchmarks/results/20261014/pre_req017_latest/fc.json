@@ -1,0 +1,163 @@
+{
+  "benchmark_id": "PYSIM-INTP-FC-01",
+  "host": {
+    "machine": "x86_64",
+    "processor": "AMD Ryzen 5 5500GT with Radeon Graphics",
+    "python": "3.13.15",
+    "release": "7.0.0-38-generic",
+    "system": "Linux"
+  },
+  "linear_memory_copy": [
+    {
+      "iterations": 8192,
+      "length_bytes": 16,
+      "native_ns_per_copy": 239.5545655176079,
+      "native_over_python_ratio": 0.006675582204069772,
+      "python_ns_per_copy": 35885.19445862914
+    },
+    {
+      "iterations": 2048,
+      "length_bytes": 256,
+      "native_ns_per_copy": 313.7690427479356,
+      "native_over_python_ratio": 0.00689986529195569,
+      "python_ns_per_copy": 45474.66210880202
+    },
+    {
+      "iterations": 128,
+      "length_bytes": 4096,
+      "native_ns_per_copy": 2075.1249962813745,
+      "native_over_python_ratio": 0.008433596904175144,
+      "python_ns_per_copy": 246054.5624671795
+    }
+  ],
+  "linear_memory_fill": [
+    {
+      "iterations": 8192,
+      "length_bytes": 16,
+      "native_ns_per_fill": 222.97937007920154,
+      "native_over_python_ratio": 0.006522179691652365,
+      "python_ns_per_fill": 34187.86059583567
+    },
+    {
+      "iterations": 2048,
+      "length_bytes": 256,
+      "native_ns_per_fill": 305.3647468220788,
+      "native_over_python_ratio": 0.007840412735088615,
+      "python_ns_per_fill": 38947.53466937573
+    },
+    {
+      "iterations": 128,
+      "length_bytes": 4096,
+      "native_ns_per_fill": 1871.8515661930724,
+      "native_over_python_ratio": 0.011891355745033558,
+      "python_ns_per_fill": 157412.7968524408
+    }
+  ],
+  "measurement": {
+    "iterations_scale": 1,
+    "rounds": 3,
+    "statistic": "median"
+  },
+  "native_implementation": "Clang-built libnative_interpreter C ABI",
+  "saturating_conversion": [
+    {
+      "iterations": 2048,
+      "native_ns_per_instruction": 293.43310359308816,
+      "native_over_python_ratio": 0.009046407506889686,
+      "python_ns_per_instruction": 32436.4233392771,
+      "subopcode": 0
+    },
+    {
+      "iterations": 2048,
+      "native_ns_per_instruction": 305.37451323198184,
+      "native_over_python_ratio": 0.009559788194808877,
+      "python_ns_per_instruction": 31943.648437504635,
+      "subopcode": 1
+    },
+    {
+      "iterations": 2048,
+      "native_ns_per_instruction": 317.50146334275087,
+      "native_over_python_ratio": 0.009355898169698701,
+      "python_ns_per_instruction": 33935.96826128942,
+      "subopcode": 2
+    },
+    {
+      "iterations": 2048,
+      "native_ns_per_instruction": 287.0249034003791,
+      "native_over_python_ratio": 0.008599647971225713,
+      "python_ns_per_instruction": 33376.35498112945,
+      "subopcode": 3
+    },
+    {
+      "iterations": 2048,
+      "native_ns_per_instruction": 294.8027351123983,
+      "native_over_python_ratio": 0.008909862638523022,
+      "python_ns_per_instruction": 33087.23681527681,
+      "subopcode": 4
+    },
+    {
+      "iterations": 2048,
+      "native_ns_per_instruction": 303.55957036931613,
+      "native_over_python_ratio": 0.00898526538889078,
+      "python_ns_per_instruction": 33784.15185650851,
+      "subopcode": 5
+    },
+    {
+      "iterations": 2048,
+      "native_ns_per_instruction": 295.57079983533185,
+      "native_over_python_ratio": 0.008613909338824806,
+      "python_ns_per_instruction": 34313.20068614241,
+      "subopcode": 6
+    },
+    {
+      "iterations": 2048,
+      "native_ns_per_instruction": 314.19433454971113,
+      "native_over_python_ratio": 0.009057553791795523,
+      "python_ns_per_instruction": 34688.65234168561,
+      "subopcode": 7
+    }
+  ],
+  "semantic_checks": {
+    "linear_memory_copy_fill_cases": 4,
+    "saturating_conversion_cases": 38,
+    "vdma_routes": 4
+  },
+  "vdma_memory_copy": [
+    {
+      "destination_function_code": 13,
+      "iterations": 512,
+      "native_enabled_api_ns_per_transfer": 30557.982427126262,
+      "python_reference_ns_per_transfer": 49130.2070315669,
+      "route": "linear_to_dynamic",
+      "source_function_code": 0,
+      "vdma_calls_per_run": 512
+    },
+    {
+      "destination_function_code": 0,
+      "iterations": 512,
+      "native_enabled_api_ns_per_transfer": 26406.664062506024,
+      "python_reference_ns_per_transfer": 45960.38672843861,
+      "route": "shm_to_linear",
+      "source_function_code": 14,
+      "vdma_calls_per_run": 512
+    },
+    {
+      "destination_function_code": 15,
+      "iterations": 512,
+      "native_enabled_api_ns_per_transfer": 33237.06249602765,
+      "python_reference_ns_per_transfer": 53866.07227819695,
+      "route": "dynamic_to_passthrough",
+      "source_function_code": 13,
+      "vdma_calls_per_run": 512
+    },
+    {
+      "destination_function_code": 14,
+      "iterations": 512,
+      "native_enabled_api_ns_per_transfer": 33659.060534318996,
+      "python_reference_ns_per_transfer": 51099.75975869929,
+      "route": "passthrough_to_shm",
+      "source_function_code": 15,
+      "vdma_calls_per_run": 512
+    }
+  ]
+}

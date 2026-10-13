@@ -1,0 +1,33 @@
+{
+  "_measurement_context": {
+    "head": "506d1213e2d3045fb2b7ccec9016ed2e0d1c0849",
+    "source_worktree_clean_at_measurement_start": true,
+    "source_worktree_modified": false,
+    "measurement_date_local": "2026-10-14",
+    "host_architecture": "x86_64",
+    "host_only_no_arm_compliance_claim": true,
+    "build": "x86_64 host build-time raw assembly stencil generation",
+    "cpu_affinity": 3,
+    "cpu_pinned": true,
+    "runs": 1
+  },
+  "roles": {
+    "trace": {
+      "bytes": 665,
+      "sha256": "f1cb2d8a6399e07bcd8705d2e6a0552afb532f774bfeceb77ab667be138cbbf2",
+      "file": "stencil_rom/trace.bin"
+    },
+    "operations": {
+      "bytes": 1438,
+      "sha256": "3d13047e9e3dc4daba4e688227b5ddebfb5734f1426642c92a0f8c3696e8ee61",
+      "file": "stencil_rom/operations.bin"
+    },
+    "common": {
+      "bytes": 69,
+      "sha256": "986788698b72d50ec569bf9fb80f3d022bde83952d0885bab843d25fe1bc58d9",
+      "file": "stencil_rom/common.bin"
+    }
+  },
+  "total_raw_stencil_bytes": 2172,
+  "accounting": "these raw blobs are embedded in libtrace_compiler.so; do not add them again to ELF section totals"
+}

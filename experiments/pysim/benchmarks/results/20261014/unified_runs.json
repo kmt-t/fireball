@@ -1,0 +1,62 @@
+{
+  "_measurement_context": {
+    "head": "506d1213e2d3045fb2b7ccec9016ed2e0d1c0849",
+    "source_worktree_clean_at_measurement_start": true,
+    "source_worktree_modified": false,
+    "measurement_date_local": "2026-10-14",
+    "host_architecture": "x86_64",
+    "host_only_no_arm_compliance_claim": true,
+    "build": "normal assert-enabled -O3 ThinLTO",
+    "native_flags": [
+      "-O3",
+      "-flto=thin",
+      "-fuse-ld=lld",
+      "assert enabled"
+    ],
+    "qa_libraries": [
+      "libinterpreter_probe.so",
+      "libjit_probe.so"
+    ],
+    "block_counters": true,
+    "cpu_affinity": 3,
+    "cpu_pinned": true,
+    "independent_runs": 3
+  },
+  "runs": [
+    {
+      "trial": 1,
+      "elapsed_seconds": 30.77,
+      "aobench_32x16_ms": {
+        "python": 4323.36,
+        "native_interpreter": 10.57,
+        "hybrid_jit": 13.49,
+        "jit_trace_transitions": 54069
+      }
+    },
+    {
+      "trial": 2,
+      "elapsed_seconds": 30.87,
+      "aobench_32x16_ms": {
+        "python": 4297.75,
+        "native_interpreter": 12.03,
+        "hybrid_jit": 13.63,
+        "jit_trace_transitions": 54069
+      }
+    },
+    {
+      "trial": 3,
+      "elapsed_seconds": 30.7,
+      "aobench_32x16_ms": {
+        "python": 4303.82,
+        "native_interpreter": 12.1,
+        "hybrid_jit": 13.46,
+        "jit_trace_transitions": 54069
+      }
+    }
+  ],
+  "elapsed_seconds": {
+    "median": 30.77,
+    "min": 30.7,
+    "max": 30.87
+  }
+}

@@ -1,7 +1,7 @@
 {
-  "measured_at_utc": "2026-10-13T16:30:57.239955+00:00",
-  "source_revision": "29dc47c9e0fb243ba30c73ea2c25f1febd9699be",
-  "source_worktree_modified": true,
+  "measured_at_utc": "2026-10-13T18:01:44.091205+00:00",
+  "source_revision": "506d1213e2d3045fb2b7ccec9016ed2e0d1c0849",
+  "source_worktree_modified": false,
   "runtime_source_sha256": {
     "__init__.py": "2b8295c400a7a95ae10112731aa147d04000e0a29593640dd965743ded4c2b58",
     "main.py": "482b63f6421fbf8882f84af06ef659b4650d3bca3fa6a2b3964a51e228546df9",
@@ -983,5 +983,24 @@
       ],
       "plugin_region_bytes": 12288
     }
-  ]
+  ],
+  "_measurement_context": {
+    "head": "506d1213e2d3045fb2b7ccec9016ed2e0d1c0849",
+    "source_worktree_clean_at_measurement_start": true,
+    "source_worktree_modified": false,
+    "measurement_date_local": "2026-10-14",
+    "host_architecture": "x86_64",
+    "host_only_no_arm_compliance_claim": true,
+    "build": "normal assert-enabled -O3 ThinLTO",
+    "native_flags": [
+      "-O3",
+      "-flto=thin",
+      "-fuse-ld=lld",
+      "assert enabled"
+    ],
+    "cpu_affinity": 3,
+    "cpu_pinned": true,
+    "metric": "arena/load/plugin allocation sizes; no timing comparison",
+    "calls_per_mode": 3
+  }
 }

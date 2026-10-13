@@ -1,7 +1,7 @@
 {
-  "measured_at_utc": "2026-10-13T16:31:00.636273+00:00",
-  "source_revision": "29dc47c9e0fb243ba30c73ea2c25f1febd9699be",
-  "source_worktree_modified": true,
+  "measured_at_utc": "2026-10-13T18:01:52.385460+00:00",
+  "source_revision": "506d1213e2d3045fb2b7ccec9016ed2e0d1c0849",
+  "source_worktree_modified": false,
   "script_sha256": "8f733034b837ad7a1e0436db08cd48f9e6550c26c23a3524e60149ddad2eb8c7",
   "host_machine": "x86_64",
   "pygments_version": "2.21.0",
@@ -1048,5 +1048,23 @@
     "stack_widths_accounting": "emitter stack width state is included in compiler stack frames",
     "minimum_known_compile_bytes": 22784,
     "excluded": "additional callee/ABI frames, caller frames and Python objects; not a whole-path upper bound"
+  },
+  "_measurement_context": {
+    "head": "506d1213e2d3045fb2b7ccec9016ed2e0d1c0849",
+    "source_worktree_clean_at_measurement_start": true,
+    "source_worktree_modified": false,
+    "measurement_date_local": "2026-10-14",
+    "host_architecture": "x86_64",
+    "host_only_no_arm_compliance_claim": true,
+    "build": "normal assert-enabled -O3 ThinLTO",
+    "native_flags": [
+      "-O3",
+      "-flto=thin",
+      "-fuse-ld=lld",
+      "assert enabled"
+    ],
+    "cpu_affinity": 3,
+    "cpu_pinned": true,
+    "stack_build": "temporary object build with -O2 -g -fstack-usage; official shared library unchanged"
   }
 }

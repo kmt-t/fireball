@@ -1,7 +1,7 @@
 # PySIM ベンチマークレポート（2026-10-14）
 <!-- traceability: {ThreadedInterpreter} {Wasm32Only} {JIT_CardAgingSweep} {JIT_MultiBuffer_Cache} {MemoryBoundaryCheck} -->
 
-このレポートは現行ソースの最新計測結果を示す。計測条件が異なる結果は別の表に記載する。
+以下の第1〜6節は前回計測の履歴である。計測時のsource revisionは `29dc47c9e0fb243ba30c73ea2c25f1febd9699be`、worktreeはmodifiedだった。前回の数値と証跡は [`前回データ`](results/20261014/pre_req017_latest/metadata.json) に保持し、REQ-017の最新結果は第7節に記録する。
 数値はLinux x86-64上の参照実装の結果である。ARMv8-Mの速度や物理RAM・ROM適合性を示さない。
 
 ## 1. 実行環境と証跡
@@ -10,14 +10,14 @@
 統合スイートはassert有効のO3・ThinLTOビルドを使う。WAMR比較はO3・NDEBUG・ThinLTOのreleaseビルドを使う。
 統合スイートの時間とWAMR比較の時間は、入力サイズと準備実行が異なるため直接比較しない。
 
-計測ログ、全サンプル、ソースとライブラリのSHA-256は[最新データ](results/latest/metadata.json)に対応付ける。
+計測ログ、全サンプル、ソースとライブラリのSHA-256は[最新データ](results/20261014/pre_req017_latest/metadata.json)に対応付ける。
 過去の設計判断で参照する証跡は各設計文書の参照先に保持する。
 
 ## 2. 統合ベンチマーク
 
 登録済み6系統を同一条件で3回実行し、すべて完走した。総実行時間の中央値は30.77秒、min/maxは30.61–31.19秒である。
 以下の値は3回の実行結果の中央値で、括弧内に実行間のmin/maxを示す。
-[統合スイートの全出力](results/latest/unified.log)には3回分の全指標と差分検査結果を記録する。
+[統合スイートの全出力](results/20261014/pre_req017_latest/unified.log)には3回分の全指標と差分検査結果を記録する。
 
 ### メモリアクセスとvMMIO
 
@@ -110,7 +110,7 @@ Fireballのyieldしきい値は4096とした。JIT候補は準備実行後に処
 FireballはPython WASI・HAL・StreamTransportを使う。WAMRはC WASIからメモリ上のファイルへ出力する。
 ホストの出力処理は計時に含む。この結果はホスト統合を含むワークロード比較である。
 WAMRはFast InterpreterとWASIを有効にし、AOT・LLVM JIT・Fast JITを無効にした。固定commitは`f5f57c09aee623436f5fb87a90798fdd2cdf39fd`である。
-全サンプル、build設定、source・library・WASM hashは[WAMR比較データ](results/latest/aobench_wamr.json)に保存する。
+全サンプル、build設定、source・library・WASM hashは[WAMR比較データ](results/20261014/pre_req017_latest/aobench_wamr.json)に保存する。
 
 ## 4. 呼出しと選択0xFC命令の追加計測
 
@@ -125,14 +125,14 @@ WAMRはFast InterpreterとWASIを有効にし、AOT・LLVM JIT・Fast JITを無�
 | native | direct | 2.689 ms (2.682–2.692) |
 | native | indirect | 2.740 ms (2.699–2.846) |
 
-呼出し比較はassert有効の通常ビルドを使う。[全サンプル](results/latest/call_dispatch.json)を保存する。
+呼出し比較はassert有効の通常ビルドを使う。[全サンプル](results/20261014/pre_req017_latest/call_dispatch.json)を保存する。
 選択0xFC命令はCPU 2固定、`-O3 -DNDEBUG -flto=thin`のreleaseビルドで3回計測し、各回の内部3ラウンドの中央値を比較した。以下は実行間の中央値とmin/maxである。飽和変換38ケース、copy/fill境界4ケース、vDMA経路4種類の意味論を検査した。
 
 | 操作 | 16 B | 256 B | 4096 B |
 | :--- | ---: | ---: | ---: |
 | Native copy (ns/op) | 234.9 (227.0–239.6) | 313.8 (309.2–319.6) | 2075.1 (1996.7–2188.6) |
 | Native fill (ns/op) | 223.0 (221.6–251.1) | 305.4 (303.8–340.2) | 1871.9 (1834.6–1873.9) |
-[0xFC計測データ](results/latest/fc.json)は各入力サイズの時間と結果検査を保持する。
+[0xFC計測データ](results/20261014/pre_req017_latest/fc.json)は各入力サイズの時間と結果検査を保持する。
 `NDEBUG`専用の回帰テストは、copy/fillの注釈カーソル更新と後続命令の実行、周辺メモリの保持を検査する。
 
 ## 5. 資源計測
@@ -149,15 +149,15 @@ WAMRはFast InterpreterとWASIを有効にし、AOT・LLVM JIT・Fast JITを無�
 ホストABI上のJIT Runtime状態は1656 Bである。コンパイルscratchは1588 Bである。
 O2・stack-usage計測で、既知のWASMコンパイル呼出し列のframe合計は22784 Bである。
 これは既知frameの合計であり、経路全体のstack上限ではない。scratchとemitter配列はframeに含まれるため重複加算しない。
-通常ネイティブライブラリのELF section、ソース規模、frameごとの計測は[資源一覧](results/latest/resource_inventory.json)に保存する。
-割当起点、callごとのpeak、独立領域、出力hashは[Runtimeメモリ計測](results/latest/runtime_memory.json)に保存する。
+通常ネイティブライブラリのELF section、ソース規模、frameごとの計測は[資源一覧](results/20261014/pre_req017_latest/resource_inventory.json)に保存する。
+割当起点、callごとのpeak、独立領域、出力hashは[Runtimeメモリ計測](results/20261014/pre_req017_latest/runtime_memory.json)に保存する。
 
 ## 6. 検証結果と再実行
 
 コンポーネント単体は30/30グループ、1284テストが成功した。結合4スイートと12シナリオも成功した。
 WASMワークロードは3/3スイート成功した。公式Core選択セットは37/37ファイル、15,230アサーション、skip 0である。
 通常・`-O`・`-OO`の動作比較は単体スイートに含む。`NDEBUG` copy/fill 回帰は2件成功した。製品型検査はエラー0件、検証ツールは172テスト成功した（警告2件）。
-全ソースゲートは0警告で合格した。文書ゲートはエラー0件、警告79件、義務44/44件を履行した。全結果は[最終検証記録](results/latest/validation.json)に記録する。文書ゲートの警告は合格と区別して記録する。
+全ソースゲートは0警告で合格した。文書ゲートはエラー0件、警告79件、義務44/44件を履行した。全結果は[最終検証記録](results/20261014/pre_req017_latest/validation.json)に記録する。文書ゲートの警告は合格と区別して記録する。
 
 ```bash
 UV_CACHE_DIR=/tmp/uv-cache bash experiments/pysim/native/tier2_runtime/interpreter/build_native.sh
@@ -167,5 +167,71 @@ UV_CACHE_DIR=/tmp/uv-cache bash experiments/pysim/native/tier3_plugins/jit/build
 .venv/bin/python experiments/pysim/benchmarks/memory/bench_resource_inventory.py --output /tmp/resource_inventory.json
 ```
 
-WAMR比較の準備・実行コマンドとビルド条件は[再実行コマンド](results/latest/commands.md)に記載する。
-各計測ファイルのSHA-256は[チェックサム](results/latest/SHA256SUMS)に固定する。
+WAMR比較の準備・実行コマンドとビルド条件は[再実行コマンド](results/20261014/pre_req017_latest/commands.md)に記載する。
+各計測ファイルのSHA-256は[チェックサム](results/20261014/pre_req017_latest/SHA256SUMS)に固定する。
+
+## 7. REQ-017 最新計測（2026-10-14）
+
+計測対象はHEAD `506d1213e2d3045fb2b7ccec9016ed2e0d1c0849`で、開始時のworktreeはcleanだった。WAMRはcommit `f5f57c09aee623436f5fb87a90798fdd2cdf39fd`を使った。計測前の負荷平均は0.25、0.53、0.44で、CPU idleは96.7%だった。
+
+AO、WAMR、0xFCは`-O3 -DNDEBUG -flto=thin`のrelease build、呼出しと統合測定はassert有効の通常buildを使った。AOと呼出しはCPU 2、統合・vMMIOと資源測定はCPU 3へ固定した。統合スイートと0xFCは独立実行を各3回行い、中央値とmin/maxを記録した。
+
+### 7.1 統合スイートとAO/WAMR
+
+統合スイートは3回すべて完走し、実行時間は30.77秒（30.70–30.87秒）だった。内包する32×16 AO-BenchはPython 4,303.82 ms（4,297.75–4,323.36）、NativeInterpreter 12.03 ms（10.57–12.10）、Hybrid JIT 13.49 ms（13.46–13.63）だった。3回ともJIT trace transitionは54,069回だった。
+
+既存のAO/WAMR比較器は64×36から320×180までの5解像度を固定している。依頼にある32×16も除外しないよう、同じCPU・release build・各3プロセス・各3 warmup・7計時で追加した。値は各engineのプロセス中央値の中央値で、括弧内にプロセス中央値のmin/maxを示す。
+
+| サイズ | NativeInterpreter ms | Hybrid JIT ms | WAMR Fast ms |
+| :--- | ---: | ---: | ---: |
+| 32×16（追加） | 4.210 (4.169–4.214) | 4.928 (4.907–4.935) | 1.167 (1.149–1.191) |
+| 64×36 | 15.896 (15.882–16.002) | 18.678 (18.634–18.690) | 4.800 (4.756–4.883) |
+| 128×72 | 61.381 (61.021–61.720) | 72.608 (72.406–73.468) | 19.095 (19.079–19.412) |
+| 192×108 | 137.694 (137.211–138.718) | 164.393 (163.324–180.365) | 42.322 (42.165–43.372) |
+| 256×144 | 246.837 (246.576–247.663) | 290.057 (287.738–293.599) | 77.037 (75.738–79.119) |
+| 320×180 | 387.356 (385.509–390.298) | 452.974 (452.490–459.395) | 120.962 (118.308–121.641) |
+
+全プロセスで出力hashが一致した。全サンプルとbuild・source・library情報は[AO/WAMR結果](results/latest/aobench_wamr.json)と[32×16追加結果](results/latest/aobench_wamr_32x16.json)、統合スイートの全出力は[unified.log](results/latest/unified.log)に保存した。
+
+### 7.2 呼出しと0xFC
+
+呼出し計測はCPU 2固定、各条件10,000反復、3回計時とした。各行は中央値（min–max）である。
+
+| 実行系 | 負荷 | 時間 |
+| :--- | :--- | ---: |
+| Python | baseline | 401.266 ms (399.720–402.592) |
+| Python | direct | 843.902 ms (829.980–853.645) |
+| Python | indirect | 889.503 ms (889.169–891.047) |
+| Native | baseline | 2.345 ms (2.296–2.367) |
+| Native | direct | 2.771 ms (2.696–2.794) |
+| Native | indirect | 2.693 ms (2.688–2.711) |
+
+0xFC計測はCPU 2固定、release buildで3プロセスを実行し、各プロセスの内部3ラウンド中央値から実行間の中央値（min–max）を求めた。
+
+| 操作 | 16 B | 256 B | 4096 B |
+| :--- | ---: | ---: | ---: |
+| Native copy (ns/op) | 224.8 (212.3–227.8) | 303.9 (292.8–305.7) | 1,959.0 (1,940.0–1,991.1) |
+| Native fill (ns/op) | 218.5 (216.3–220.7) | 301.4 (298.1–303.5) | 1,948.1 (1,935.7–1,970.4) |
+
+飽和変換38ケース、copy/fill境界4ケース、vDMA経路4種類を検査した。全サンプルは[呼出し結果](results/latest/call_dispatch.json)と[0xFC結果](results/latest/fc.json)にある。
+
+### 7.3 アリーナ、JIT ROM、compile stack、SLOC
+
+アリーナは各入力の3呼出しで同じ最大値を観測した。ゲスト線形メモリは論理サイズであり、物理RAMへ加算しない。
+
+| 入力 | 関数数 / 基本ブロック数 | load | instantiate | Native arena peak | Hybrid arena peak | guest linear memory | JIT要求領域 |
+| :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| arithmetic | 1 / 7 | 390 B | 390 B | 3,184 B (3,184–3,184) | 3,184 B (3,184–3,184) | 0 B | 12,288 B |
+| indirect_calls | 4 / 24 | 1,263 B | 1,268 B | 4,296 B (4,296–4,296) | 4,296 B (4,296–4,296) | 0 B | 12,288 B |
+| kernel_suite | 28 / 885 | 51,911 B | 51,956 B | 56,712 B (56,712–56,712) | 56,712 B (56,712–56,712) | 65,536 B | 12,288 B |
+| AO-Bench | 7 / 107 | 5,741 B | 5,741 B | 8,968 B (8,968–8,968) | 8,968 B (8,968–8,968) | 65,536 B | 12,288 B |
+
+build時に生成するJIT stencil raw binaryはtrace 665 B、operations 1,438 B、common 69 B、合計2,172 Bだった。これらは`libtrace_compiler.so`へ埋め込まれているため、ELF section値へ重ねて加算しない。
+
+一時directoryで`-O2 -g -fstack-usage`を使って計測した既知のcompile call chainは、`compile_queued_candidates` 56 B、`compile_one_candidate` 1,944 B、`fb_jit_compile_block` 120 B、`compile_wasm_trace` 20,664 B、合計22,784 Bだった。この値はx86_64 hostで既知の関数frameを合計したものであり、ABIや追加caller/callee frameを含む全経路の上限ではない。
+
+通常buildでのhost ELF `.text + .rodata`はprintk 921 B、interpreter 370,992 B、JIT 185,597 B、合計557,510 Bだった。Firmware SLOCは3,704/20,000、PySIM Python参照実装は75ファイル・15,652物理行・11,974 SLOCだった。詳細は[資源一覧](results/latest/resource_inventory.json)、[メモリ結果](results/latest/runtime_memory.json)、[SLOC](results/latest/sloc.json)、[stencil ROM](results/latest/stencil_rom.json)、[stack usage](results/latest/stack_usage.json)を参照する。
+
+フル検証では単体30/30グループ・1,284件、結合12/12シナリオ、WASM workload 3/3、公式Core 37/37ファイル・15,230 assertionsが成功した。Pyrightは0 error、全ソースゲートは0 warning、spec-integratorは172 passed（warning 2件）、文書ゲートは0 error・79 warningで44/44義務を履行した。文書ゲートのwarningは合格数と分けて扱う。
+
+これらはx86_64ホスト値であり、Cortex-M33の速度、物理RAM、ROM適合を示さない。全テスト・ゲートの結果は[validation.json](results/latest/validation.json)、再実行条件は[commands.md](results/latest/commands.md)、証跡hashは[SHA256SUMS](results/latest/SHA256SUMS)に保存した。

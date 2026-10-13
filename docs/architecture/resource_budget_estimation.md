@@ -11,19 +11,21 @@
 静的合計21KBと物理RAM 32KBを、最小構成の容量条件として確認する。
 本書では21KBを21,504バイト、32KBを32,768バイトとして扱う。
 
-計測日は2026-10-07である。
-計測対象の製品コードはcommit `f02f4bb34c428e133863af8873e525b3109e6749`にある。
-結果JSONには計測時のworktree状態と対象ファイルのハッシュを保存する。
-資源一覧の計測入口には、現行JIT設定を渡すための未コミット修正を含む。
-この測定はJIT traceを実行時に機械語化していた変更前のスナップショットである。
-現行実装はbuild時にアセンブリからPIC raw stencilを生成し、実行時に固定長traceへ組み立てる。このJIT経路のROMとcompile stackの値は未計測である。
+最新計測日は2026-10-14（Asia/Tokyo）である。
+計測対象のHEADはcommit `506d1213e2d3045fb2b7ccec9016ed2e0d1c0849`であり、計測開始時のworktreeはcleanである。
+結果JSONにはHEAD、計測時のworktree状態、ビルド種別、CPU affinity、試行回数、対象ファイルのハッシュを保存する。
+2026-10-07の計測結果は履歴として[`metadata.json`](experiments/pysim/benchmarks/results/20261014/pre_req017_latest/metadata.json)に保持する。
+現行実装はbuild時にアセンブリからPIC raw stencilを生成し、実行時に固定長traceへ組み立てる。
+このホスト用JIT経路のraw stencil ROM量とcompile stackを新たに計測した。値はx86_64ホストの結果であり、ARMv8-Mの適合を示さない。
 現行製品側のJIT入口とネイティブライブラリを使う。
 QA専用のJIT管理クラスと検査用ライブラリは、製品RAMとROMへ計上しない。
 
 | 対象 | 計測入口 | 結果 |
 | :--- | :--- | :--- |
-| アリーナと製品JITの要求領域 | [`bench_runtime_memory.py`](experiments/pysim/benchmarks/memory/bench_runtime_memory.py) | [`runtime_memory_current_20261007.json`](experiments/pysim/benchmarks/results/runtime_memory_current_20261007.json) |
-| ソース規模、ホストELF、JIT管理構造体、コンパイル時stack | [`bench_resource_inventory.py`](experiments/pysim/benchmarks/memory/bench_resource_inventory.py) | [`resource_inventory_current_20261007.json`](experiments/pysim/benchmarks/results/resource_inventory_current_20261007.json) |
+| アリーナと製品JITの要求領域 | [`bench_runtime_memory.py`](experiments/pysim/benchmarks/memory/bench_runtime_memory.py) | [`runtime_memory.json`](experiments/pysim/benchmarks/results/latest/runtime_memory.json) |
+| ソース規模、ホストELF、JIT管理構造体、コンパイル時stack | [`bench_resource_inventory.py`](experiments/pysim/benchmarks/memory/bench_resource_inventory.py) | [`resource_inventory.json`](experiments/pysim/benchmarks/results/latest/resource_inventory.json) |
+| JIT stencil raw binary | [`generate_assembly.py`](tools/jit_stencil_gen/generate_assembly.py) | [`stencil_rom.json`](experiments/pysim/benchmarks/results/latest/stencil_rom.json) |
+| 製品C/C++のSLOC | [`check_source_size.py`](tools/check_source_size.py) | [`sloc.json`](experiments/pysim/benchmarks/results/latest/sloc.json) |
 
 アリーナの値は32ビット参照レイアウトとx86_64のネイティブABIを組み合わせたPySIM内の計上値である。
 JITの要求領域とELFはx86_64ホストの値である。
@@ -94,22 +96,19 @@ uv run python experiments/pysim/benchmarks/memory/bench_runtime_memory.py \
 
 | 入力 | 関数数 / 基本ブロック数 | ロード後 | インスタンス生成後 | Interpreter単独のアリーナ最大使用量 | Hybridのアリーナ最大使用量 | ゲスト論理リニアメモリ | x64 JIT要求領域 |
 | :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 算術ループ（1,000反復） | 1 / 4 | 280 | 280 | 5,624 | 5,624 | 0 | 12,288 |
-| 間接呼出し（100反復） | 4 / 12 | 740 | 744 | 6,600 | 6,600 | 0 | 12,288 |
-| 複合カーネル（`k_crc32(1)`） | 28 / 519 | 19,428 | 19,476 | 43,504 | 43,504 | 65,536 | 12,288 |
-| AO-Bench（32×16） | 7 / 88 | 3,432 | 3,432 | 12,008 | 12,008 | 65,536 | 12,288 |
+| arithmetic | 1 / 7 | 390 | 390 | 3,184 | 3,184 | 0 | 12,288 |
+| indirect_calls | 4 / 24 | 1,263 | 1,268 | 4,296 | 4,296 | 0 | 12,288 |
+| kernel_suite | 28 / 885 | 51,911 | 51,956 | 56,712 | 56,712 | 65,536 | 12,288 |
+| AO-Bench（32×16） | 7 / 107 | 5,741 | 5,741 | 8,968 | 8,968 | 65,536 | 12,288 |
 
 表の「ゲスト論理リニアメモリ」はWASMの論理サイズである。PySIMではホストbytearrayがbackingとなるが、Cortex-M33の物理RAM量ではない。対象のCortex-M33構成では論理アドレス窓10KB、物理RAM全体32KBを別々に扱う。このホスト測定で64KBと表示される値を物理RAMへ加算してはならない。
 
-Hybrid JITのアリーナ使用量はInterpreter単独と同じだった。この計測はJIT管理領域とアリーナ使用量を対象とし、native compilerのC++ stackは含まない。現行trace compilerは最大1,568バイトの出力を実行コードregion内に構成する。trace compile中のC++ stack peak、追加scratch領域、現行のarena使用量はこの測定では確定していない。
+Hybrid JITのアリーナ使用量はInterpreter単独と同じだった。各入力を3回呼び出した後の値は、同一入力内ですべて同じだった。この計測はJIT管理領域とアリーナ使用量を対象とし、native compilerのC++ stackとは分けて記録する。現行trace compilerは最大1,568バイトの出力を実行コードregion内に構成する。
 
-現行x64製品JIT runtimeの固定管理構造体は`sizeof`で1,584バイトである。
-3バンク分のentryは840バイトである。
-fast lookupは128バイトである。
-profile historyは256バイトである。
-compile queueは16バイトである。
-native execution extensionは24バイトである。
-残りはbank状態、profile、executable-memory view、pointer、alignment等を含む。
+現行x64製品JIT runtimeの固定管理構造体は`sizeof`で1,656バイトである。
+この内側にcache banks 936バイト、PC index 72バイト、inbound chain heads 64バイト、inbound chain next 72バイト、profile history 256バイト、compile queue 16バイト、execution extension 48バイトを含む。
+各内訳はruntime構造体の一部であり、構造体全体へ重ねて加算しない。
+compile scratch 1,588バイトはruntime構造体外のcompiler stack frame内にあり、stack計測値へ含める。
 
 別にCode sectionの長さに比例するcard state・dirty・candidate bitmapを持つ。Code section payload長を`L`、card幅を4バイト、`C = ceil(L / 4)`とすると、profile領域は`ceil(C / 4) + 2 × ceil(C / 8)`バイトである。複合カーネルのCode sectionは14,578バイトでprofile bitmapは1,824バイト、固定構造体と合わせて3,408バイトとなる。AO-BenchのCode sectionは960バイトでbitmapは120バイト、合計1,704バイトとなる。この可変profile領域はモジュール規模に応じて増え、各traceのdescriptorを別配列へ保持するものではない。
 
@@ -165,7 +164,7 @@ Loaderが受理したopcodeに直接assembly stencilがない場合はJIT Runtim
 | abort slot位置列 | x64 ABIで64件×8バイト = 512バイト | `trace_builder::finish`のC++ stack frame内 |
 | stencil・scaffold scratch | 3配列×512バイト = 1,536バイト | `trace_builder`のC++ stack frame内 |
 
-実行時trace compileではassemblerやlinkerを起動せず、C++の固定配列を使う。表はx64型レイアウトから見積もった領域であり、最適化後のC++ stack peakは別途計測する。
+実行時trace compileではassemblerやlinkerを起動せず、C++の固定配列を使う。表はx64型レイアウトから見積もった領域であり、最適化後のC++ stack値は別途`-fstack-usage`で計測した。
 
 WASM traceのコンパイル経路は、次の順に処理する。
 
@@ -174,7 +173,19 @@ WASM traceのコンパイル経路は、次の順に処理する。
 3. `fireball::compile_wasm_trace`
 4. C++ trace builderがbuild時生成のassembly stencilを選び、成功接続slotを後続operationで置換してfall-through列を構成する
 
-shared libraryにはbuild時生成のassembly raw binaryを保持するC++ byte arrayが入る。現行worktreeにおける全native stack peak、trace compile latency、raw code blobとshared libraryのsection sizeは再計測が必要である。
+現行のtrace compilerを別の一時build directoryで`-O2 -g -fstack-usage`付きでコンパイルし、次の関数frameを得た。
+
+| コンパイル経路 | frame bytes |
+| :--- | ---: |
+| `compile_queued_candidates` | 56 |
+| `compile_one_candidate` | 1,944 |
+| `fb_jit_compile_block` | 120 |
+| `compile_wasm_trace` | 20,664 |
+| 既知のWASM compile call chain合計 | 22,784 |
+
+22,784バイトは既知関数frameの合計であり、ABI、呼出し元、追加callee frameを含む経路全体のstack上限ではない。scratch 1,588バイトは`compile_one_candidate` frame内に含まれ、stack width 128バイトもcompiler frame内に含まれるため重ねて加算しない。計測はx86_64ホスト用shared libraryの構築経路であり、ARMv8-Mのstack使用量を示さない。
+
+shared libraryにはbuild時生成のassembly raw binaryを保持するC++ byte arrayが入る。JIT compile latencyとARMv8-M向けstack使用量は別途確定する。
 以前の`Copy-and-Patch`実装で計測したC++ frame合計は現行のstencil composition pathへ転用しない。
 ARMv8-Mの実装は未確定であり、対象ABI向けのbuild時LIRとnative stack使用量を個別に確定する。
 
@@ -183,8 +194,11 @@ ARMv8-Mの実装は未確定であり、対象ABI向けのbuild時LIRとnative s
 <!-- traceability: {Resource_Estimation_Model} {ROMParsing} {JIT_AssemblyStencilCodegen} -->
 最小構成のROM上限96KBは98,304バイト、想定構成の128KBは131,072バイトとする。
 現行x64 trace compilerはassembly raw binaryをC++ byte arrayとして共有libraryへ含め、実行時code generatorを持たない。
-shared libraryにはbuild時生成のoperation、trace、common codeのraw binary arrayを含む。
-これらのblobと現行ELF sectionの合計sizeは未計測であり、本版を対象に再計測する。
+raw binaryはtrace 665バイト、operations 1,438バイト、common 69バイト、合計2,172バイトである。
+これらは`libtrace_compiler.so`へ含まれており、ELF section sizeへ重ねて加算しない。
+通常buildのx86_64 shared libraryは、`.text + .rodata`がprintk 921バイト、interpreter 370,992バイト、JIT 185,597バイトである。
+3 libraryの`.text + .rodata`合計は557,510バイトであり、JIT raw stencil 2,172バイトはこの合計の内側にある。
+これらはdebugや再配置情報を含むARM firmware全体のROM sizeではない。
 このx64ホスト用JIT compilerは現行MCU向け最小RAM/ROM見積りへ加算できる対象ではない。
 組み込み向けコード生成方式を確定する際に、対象ABIのbuild時LIRと実行時native stack予算を個別に計測する。
 再配置、GOT、動的リンク情報、debug情報も別セクションである。
@@ -215,22 +229,22 @@ C/C++はPygmentsの字句解析でコメントを除外する。
 
 | PySIMのPython参照実装 | ファイル数 | 物理行数 | SLOC |
 | :--- | ---: | ---: | ---: |
-| Tier 1 Core | 10 | 3,100 | 2,325 |
+| Tier 1 Core | 10 | 3,235 | 2,419 |
 | Tier 1 Interface | 3 | 851 | 587 |
-| Tier 2 Runtime | 31 | 7,635 | 5,898 |
-| Tier 3 Plugins | 11 | 1,206 | 945 |
-| Tier 3 Platform | 15 | 1,564 | 1,145 |
-| 共通入口 | 2 | 841 | 677 |
-| **PySIM Python合計** | **72** | **15,197** | **11,577** |
+| Tier 2 Runtime | 33 | 7,966 | 6,212 |
+| Tier 3 Plugins | 12 | 1,157 | 896 |
+| Tier 3 Platform | 15 | 1,570 | 1,151 |
+| 共通入口 | 2 | 873 | 709 |
+| **PySIM Python合計** | **75** | **15,652** | **11,974** |
 
 | 別計上するPythonの対象 | ファイル数 | 物理行数 | SLOC |
 | :--- | ---: | ---: | ---: |
-| Python Interpreter（参照実装とホスト接続コード） | 5 | 6,239 | 5,150 |
+| Python Interpreter（参照実装とホスト接続コード） | 8 | 6,527 | 5,427 |
 
 | C/C++の対象 | ファイル数 | 物理行数 | SLOC |
 | :--- | ---: | ---: | ---: |
 | 製品側の`src/`と`inc/` | 7 | 6,280 | 3,704 |
-| PySIM native参照実装とネイティブABI | 22 | 8,373 | 7,841 |
+| PySIM native参照実装とネイティブABI | 26 | 10,348 | 9,274 |
 
 `third_party/`、QA、概念コード、形式モデル、benchmark、scenarioは上のSLOC値に含めない。
 PySIM PythonとPySIM native共有ライブラリはx64参照実装であり、Cortex-M33 firmwareへリンクする対象コードではない。

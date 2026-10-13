@@ -1,0 +1,53 @@
+{
+  "head": "506d1213e2d3045fb2b7ccec9016ed2e0d1c0849",
+  "source_worktree_clean_at_measurement_start": true,
+  "source_worktree_modified": false,
+  "measurement_date_local": "2026-10-14",
+  "host_architecture": "x86_64",
+  "host_only_no_arm_compliance_claim": true,
+  "measured_at_utc_start": "2026-10-13T17:56:10Z",
+  "measured_at_utc_finished": "2026-10-13T18:02:13.112964+00:00",
+  "timezone_for_result_date": "Asia/Tokyo",
+  "benchmark_scope": "REQ-017 release AO/WAMR+0xFC; normal calls/runtime memory/unified; inventory/SLOC/stencil ROM/stack",
+  "wamr_commit": "f5f57c09aee623436f5fb87a90798fdd2cdf39fd",
+  "release_native_flags": [
+    "-O3",
+    "-DNDEBUG",
+    "-flto=thin",
+    "-fuse-ld=lld"
+  ],
+  "normal_native_flags": [
+    "-O3",
+    "-flto=thin",
+    "-fuse-ld=lld",
+    "assert enabled"
+  ],
+  "cpu_affinity": {
+    "AO_WAMR_FC_call_dispatch": 2,
+    "unified_vmmio_resource": 3
+  },
+  "host": {
+    "architecture": "x86_64",
+    "os": "Linux",
+    "python": "3.13.15",
+    "cpu": "AMD Ryzen 5 5500GT with Radeon Graphics",
+    "compiler": "Ubuntu clang 21.1.8 (6ubuntu1)"
+  },
+  "preconditions": {
+    "E-1_clean_worktree": true,
+    "E-2_head_recorded": "506d1213e2d3045fb2b7ccec9016ed2e0d1c0849",
+    "E-3_idle_check": "uptime load 0.25, 0.53, 0.44; top CPU idle 96.7%; no workload processes",
+    "E-4_cpu_affinity": "AO and call dispatch CPU 2; common/vMMIO/resource CPU 3",
+    "E-5_builds_separated": true
+  },
+  "previous_latest_archive": "pre_req017_latest/",
+  "custom_32_measurement_runner_sha256": "82f9f0b664c8cd4b6830204d66595adac1ff47ad4deee51974991f08b2d1a2d4",
+  "post_measurement_document_gate": {
+    "status": "passed",
+    "errors": 0,
+    "warnings": 79,
+    "obligations_discharged": "44/44",
+    "log": "validation/doc-check-final.log",
+    "report": "validation/doc-check-final-report.md"
+  }
+}

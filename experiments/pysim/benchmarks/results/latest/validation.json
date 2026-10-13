@@ -1,128 +1,14 @@
 {
-  "completed_at_utc": "2026-10-13T16:45:52.711625+00:00",
-  "unit": {
-    "groups_passed": 30,
-    "groups_failed": 0,
-    "tests_passed": 1284,
-    "log": "unit.log"
-  },
-  "integration": {
-    "suites_passed": 4,
-    "scenarios_passed": 12,
-    "failed": 0,
-    "log": "integration.log"
-  },
-  "workloads": {
-    "suites_passed": 3,
-    "core_files": 37,
-    "core_assertions": 15230,
-    "core_skipped": 0,
-    "log": "workloads.log"
-  },
-  "native_release_regression": {
-    "cases_passed": 2,
-    "compile_flags": [
-      "-O2",
-      "-DNDEBUG"
-    ],
-    "log": "release_regression.log"
-  },
-  "python_optimization_modes": {
-    "levels": [
-      0,
-      1,
-      2
-    ],
-    "covered_by": "unit.log"
-  },
-  "optimized_test_selection": {
-    "passed": 16,
-    "deselected": 9,
-    "log": "optimized.log"
-  },
-  "types": {
-    "errors": 0,
-    "warnings": 0,
-    "log": "types.log"
-  },
-  "source_gate": {
-    "groups": [
-      "cpp",
-      "python_concepts",
-      "python_formal",
-      "python_pysim"
-    ],
-    "warnings": 0,
-    "log": "source_gate.log"
-  },
-  "document_gate": {
-    "scope": "docs",
-    "errors": 0,
-    "warnings": 79,
-    "obligations_discharged": 44,
-    "obligations_total": 44,
-    "log": "document_gate.log"
-  },
-  "verification_tools": {
-    "passed": 172,
-    "warnings": 2,
-    "log": "verification_tools.log"
-  },
-  "cmake": {
-    "targets": [
-      "fireball",
-      "uvwasi"
-    ],
-    "build_passed": true,
-    "boot_passed": true,
-    "log": "cmake.log"
-  },
-  "document_database": {
-    "built": true,
-    "log": "document_build.log"
-  },
-  "registered_benchmarks": {
-    "suites_passed": 6,
-    "skipped": 0,
-    "runs": 3,
-    "elapsed_seconds": [
-      30.61,
-      30.77,
-      31.19
-    ],
-    "elapsed_min_seconds": 30.61,
-    "elapsed_max_seconds": 31.19,
-    "log": "unified.log"
-  },
-  "aobench_wamr": {
-    "trials": 3,
-    "processes": 45,
-    "warmup_calls_per_process": 3,
-    "timed_samples": 315,
-    "cpu_affinity": 2,
-    "log": "aobench_wamr.log",
-    "data": "aobench_wamr.json"
-  },
-  "fc": {
-    "process_runs": 3,
-    "rounds_per_run": 3,
-    "semantic_checks": {
-      "linear_memory_copy_fill_cases": 4,
-      "saturating_conversion_cases": 38,
-      "vdma_routes": 4
-    },
-    "data": [
-      "fc.json",
-      "fc_run2.json",
-      "fc_run3.json"
-    ]
-  },
-  "report": {
-    "formatter_passed": true,
-    "links_checked": true,
-    "gate_scope_note": "check-doc is limited to docs; the experiments report is checked by formatter, data reconciliation and relative-link validation",
-    "link_check_log": "report_link_check.log",
-    "data_reconciled": true,
-    "data_reconciliation_log": "data_reconciliation.log"
-  }
+  "head": "506d1213e2d3045fb2b7ccec9016ed2e0d1c0849",
+  "source_worktree_clean_at_measurement_start": true,
+  "source_worktree_modified": false,
+  "unit": "30/30 groups passed; 1284 tests",
+  "integration": "12/12 scenarios passed; 5/5 integration groups",
+  "workloads": "3/3 suites passed; official Core selection 37/37 files, 15230 assertions, 0 skipped",
+  "pyright": "0 errors, 0 warnings, 0 informations",
+  "source_gate": "all source checks passed; 0 warnings; verification matrix passed; firmware 3704/20000 SLOC",
+  "document_gate": "all quality gates passed; 44/44 verification obligations discharged; verification matrix passed",
+  "spec_integrator": "172 passed, 2 warnings",
+  "cmake": "configure/build succeeded; fireball executable ran successfully",
+  "document_gate_after_result_update": "0 errors, 79 warnings, 44/44 obligations discharged; full verification matrix passed"
 }

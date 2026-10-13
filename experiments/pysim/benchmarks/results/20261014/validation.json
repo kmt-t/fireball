@@ -1,0 +1,14 @@
+{
+  "head": "506d1213e2d3045fb2b7ccec9016ed2e0d1c0849",
+  "source_worktree_clean_at_measurement_start": true,
+  "source_worktree_modified": false,
+  "unit": "30/30 groups passed; 1284 tests",
+  "integration": "12/12 scenarios passed; 5/5 integration groups",
+  "workloads": "3/3 suites passed; official Core selection 37/37 files, 15230 assertions, 0 skipped",
+  "pyright": "0 errors, 0 warnings, 0 informations",
+  "source_gate": "all source checks passed; 0 warnings; verification matrix passed; firmware 3704/20000 SLOC",
+  "document_gate": "all quality gates passed; 44/44 verification obligations discharged; verification matrix passed",
+  "spec_integrator": "172 passed, 2 warnings",
+  "cmake": "configure/build succeeded; fireball executable ran successfully",
+  "document_gate_after_result_update": "0 errors, 79 warnings, 44/44 obligations discharged; full verification matrix passed"
+}

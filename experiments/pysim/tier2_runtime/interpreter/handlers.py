@@ -524,28 +524,26 @@ def _vmmio_load(env: ExecEnv, addr: int, width: int, signed: bool) -> tuple[int,
         return 0, Trap(TrapCode.VMMIO_ACCESS, int(status))
     if status == VmmioStatus.OK_STATIC_DEVICE:
         return phys_addr, None
-    if status == VmmioStatus.OK_PHYSICAL:
-        address = VmmioAddress(addr)
-        if address.fc() == FC_DYNAMIC or address.fc() == FC_SHM:
-            pte = env.vmmio.ptes.view().find(address.vpn())
-            assert pte is not None
-            # FC=13/14 mappings are installed with Tier3PTE backing records.
-            mapped_pte = cast(Tier3PTE, pte)
-            if address.fc() == FC_DYNAMIC:
-                assert mapped_pte.mapped_storage is not None
-            if mapped_pte.mapped_storage is not None:
-                return int.from_bytes(
-                    mapped_pte.mapped_storage[address.offset() : address.offset() + width],
-                    "little",
-                    signed=signed,
-                ), None
-        assert env.phys_mem is not None
-        assert phys_addr + width <= len(env.phys_mem)
-        return (
-            int.from_bytes(env.phys_mem[phys_addr : phys_addr + width], "little", signed=signed),
-            None,
-        )
-    return 0, None
+    assert status == VmmioStatus.OK_PHYSICAL, "unexpected vMMIO success status"
+    address = VmmioAddress(addr)
+    function_class = address.fc()
+    if function_class == FC_DYNAMIC or function_class == FC_SHM:
+        pte = env.vmmio.ptes.view().find(address.vpn())
+        assert pte is not None
+        # FC=13/14 mappings are installed with Tier3PTE backing records.
+        mapped_pte = cast(Tier3PTE, pte)
+        storage = mapped_pte.mapped_storage
+        if storage is not None:
+            return int.from_bytes(
+                storage[address.offset() : address.offset() + width], "little", signed=signed
+            ), None
+        assert function_class == FC_SHM, "DYNAMIC mappings require backing storage"
+    assert env.phys_mem is not None
+    assert phys_addr + width <= len(env.phys_mem)
+    return (
+        int.from_bytes(env.phys_mem[phys_addr : phys_addr + width], "little", signed=signed),
+        None,
+    )
 
 
 def _vmmio_store(env: ExecEnv, addr: int, val_bytes: bytes) -> Trap | None:

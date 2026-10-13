@@ -1663,6 +1663,45 @@ def test_runtime_keeps_constructor_arena_and_rejects_foreign_interpreter():
     assert memory == b"\xa5" * 65536
 
 
+@pytest.mark.parametrize("status", (-1, 0))
+def test_vmmio_load_rejects_unknown_success_status(monkeypatch, status: int) -> None:
+    from scheduler import Scheduler
+    from tier2_runtime.interpreter.handlers import _vmmio_load
+    from tier2_runtime.vmmio.controller import VMMIOController
+
+    module = parse(wat_to_wasm("(module (memory 1) (func))"))
+    controller = VMMIOController(guest_ram_size=65536, scheduler=Scheduler())
+    interpreter = Interpreter(module, memory=bytearray(65536), vmmio=controller)
+    monkeypatch.setattr(VMMIOController, "access", lambda *args, **kwargs: (status, 0))
+    with pytest.raises(AssertionError, match="unexpected vMMIO success status"):
+        _vmmio_load(interpreter._env, 0xC0000000, 4, True)
+
+
+def test_vmmio_load_preserves_backing_and_missing_dynamic_contract() -> None:
+    from scheduler import Scheduler
+    from tier2_runtime.interpreter.handlers import _vmmio_load
+    from tier2_runtime.vmmio.controller import Tier3PTE, VMMIOController
+
+    scheduler = Scheduler()
+    scheduler.current_task = scheduler.get_task(scheduler.spawn("reader"))
+    controller = VMMIOController(guest_ram_size=65536, scheduler=scheduler)
+    dynamic = bytearray(4096)
+    dynamic[16:20] = (61).to_bytes(4, "little")
+    controller.map_dynamic_page(0xD0000, 0, 1, memoryview(dynamic))
+    controller.map_shm_page(0xE0000, phys_page=0, owner_id=1)
+    physical = bytearray(4096)
+    physical[16:20] = (37).to_bytes(4, "little")
+    module = parse(wat_to_wasm("(module (memory 1) (func))"))
+    interpreter = Interpreter(module, memory=bytearray(65536), vmmio=controller, phys_mem=physical)
+    assert _vmmio_load(interpreter._env, 0xD0000010, 4, False) == (61, None)
+    assert _vmmio_load(interpreter._env, 0xE0000010, 4, False) == (37, None)
+    pte = controller.ptes.view().find(0xD0000)
+    assert isinstance(pte, Tier3PTE)
+    pte.mapped_storage = None
+    with pytest.raises(AssertionError, match="DYNAMIC mappings require backing storage"):
+        _vmmio_load(interpreter._env, 0xD0000010, 4, False)
+
+
 # ===========================================================================
 # Test Runner
 # ===========================================================================
